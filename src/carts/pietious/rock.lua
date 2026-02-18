@@ -23,7 +23,6 @@ end
 function rock:ctor()
 	self.collider:apply_collision_profile('enemy')
 	self:gfx('stone')
-	self.sprite_component.offset = { x = 0, y = 0, z = 10 }
 	self:bind_events()
 end
 

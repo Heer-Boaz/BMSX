@@ -260,7 +260,6 @@ function player:ctor()
 		program = player_abilities.build_input_action_effect_program(),
 	}))
 	self:gfx('pietolon_stand_r')
-	self.sprite_component.offset = { x = 0, y = 0, z = 110 }
 	self.width = constants.player.width
 	self.height = constants.player.height
 	self.collider.id_local = 'body'

@@ -36,7 +36,6 @@ end
 function loot_drop:ctor()
 	self.collider:apply_collision_profile('pickup')
 	self:gfx('item_health')
-	self.sprite_component.offset = { x = 0, y = 0, z = 112 }
 	self:bind_events()
 end
 

@@ -6,7 +6,6 @@ world_item.__index = world_item
 function world_item:ctor()
 	self.collider:apply_collision_profile('pickup')
 	self:gfx(constants.world_item.sprite[self.item_type])
-	self.sprite_component.offset = { x = 0, y = 0, z = 8 }
 	self:bind_events()
 end
 

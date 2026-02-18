@@ -81,7 +81,6 @@ end
 
 function enemy_explosion:ctor()
 	self:gfx(explosion_frames[1])
-	self.sprite_component.offset = { x = 0, y = 0, z = 114 }
 	self:define_timeline(timeline.new({
 		id = explosion_timeline_id,
 		frames = explosion_frames,

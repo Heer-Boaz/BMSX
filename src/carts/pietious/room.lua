@@ -446,10 +446,10 @@ end
 
 function room.is_solid_at_tile(room_state, tx, ty)
 	if ty < 1 or ty > room_state.tile_rows then
-		return true
+		return false
 	end
 	if tx < 1 or tx > room_state.tile_columns then
-		return true
+		return false
 	end
 	if room_state.collision_map[ty][tx] ~= 0 then
 		return true
@@ -515,17 +515,14 @@ function room.sync_lithograph_instances(room_state)
 	local lithograph_defs = room_state.lithographs
 	for i = 1, #lithograph_defs do
 		local lithograph_def = lithograph_defs[i]
-		local instance = object(lithograph_def.id)
-		if instance == nil then
+		if object(lithograph_def.id) == nil then
 			inst('lithograph.def', {
 				id = lithograph_def.id,
 				space_id = room_state.space_id,
-				pos = { x = lithograph_def.x, y = lithograph_def.y, z = 140 },
+				pos = { x = lithograph_def.x, y = lithograph_def.y, z = 10 },
 				text = lithograph_def.text,
 				room_number = room_state.room_number,
 			})
-		else
-			instance:configure_from_room_def(lithograph_def, room_state)
 		end
 	end
 end
@@ -554,7 +551,7 @@ end
 
 function room.switch_room(room_state, direction)
 	local target_room_number = room_state.links[direction]
-	if target_room_number == nil or target_room_number == 0 then
+	if target_room_number == nil or target_room_number == 0 then -- TODO: force a single exit room value (either nil or 0) instead of allowing both
 		return nil
 	end
 
@@ -624,7 +621,7 @@ function room_object:render_tiles(room_state)
 		local row = room_state.tiles[y]
 		for x = 1, room_state.tile_columns do
 			local draw_x = origin_x + ((x - 1) * tile_size)
-			put_sprite(row[x], draw_x, draw_y, 20)
+			put_sprite(row[x], draw_x, draw_y, 0)
 		end
 	end
 end
