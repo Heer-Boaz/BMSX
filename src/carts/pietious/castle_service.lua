@@ -1,14 +1,31 @@
 local constants = require('constants')
 local room_module = require('room')
 local castle_map = require('castle_map')
+local world_instance = require('world').instance
 
 local castle_service = {}
 local enemy_transition_space_id = 'eh'
+local persistent_room_object_ids = {
+	pietolon = true,
+	room = true,
+	ui = true,
+}
 
 local function clear_map(map)
 	for key in pairs(map) do
 		map[key] = nil
 	end
+end
+
+local function should_dispose_runtime_room_object(obj, room_space)
+	if persistent_room_object_ids[obj.id] then
+		return false
+	end
+	local space_id = obj.space_id
+	if space_id == room_space or space_id == enemy_transition_space_id then
+		return true
+	end
+	return false
 end
 
 local function resolve_enemy_instance(self, id)
@@ -273,6 +290,18 @@ function castle_service:ctor()
 	self:bind_enemy_events()
 end
 
+function castle_service:despawn_room_runtime_objects(room_space)
+	for obj in world_instance:objects({ scope = 'all' }) do
+		if should_dispose_runtime_room_object(obj, room_space) then
+			obj:mark_for_disposal()
+		end
+	end
+	clear_map(self.enemies_by_id)
+	clear_map(self.active_enemy_ids)
+	clear_map(self.active_enemy_ids_scratch)
+	self.enemies_suspended_for_transition = false
+end
+
 function castle_service:sync_world_entrance_states_for_room(room_state)
 	local world_entrances = room_state.world_entrances
 	for i = 1, #world_entrances do
@@ -340,6 +369,7 @@ function castle_service:can_cross_edge(direction, player_top, player_bottom)
 end
 
 function castle_service:switch_room(direction, player_top, player_bottom)
+	local previous_space = self.current_room.space_id
 	if not self:can_cross_edge(direction, player_top, player_bottom) then
 		return nil
 	end
@@ -353,6 +383,7 @@ function castle_service:switch_room(direction, player_top, player_bottom)
 		self.last_room_switch = switch
 		return switch
 	end
+	self:despawn_room_runtime_objects(previous_space)
 
 	self.current_room_number = self.current_room.room_number
 	self.map_id = self.current_room.world_number
@@ -373,10 +404,12 @@ end
 
 function castle_service:enter_world(target)
 	local transition = castle_map.world_transitions[target]
+	local previous_space = self.current_room.space_id
 
 	local from_room_number = self.current_room_number
 
 	self.current_room = room_module.create_room(transition.world_room_number)
+	self:despawn_room_runtime_objects(previous_space)
 	self.current_room_number = self.current_room.room_number
 	self.map_id = transition.world_number
 	self.map_x = transition.world_map_x
@@ -404,11 +437,13 @@ end
 
 function castle_service:leave_world_to_castle()
 	local world_number = self.current_room.world_number
+	local previous_space = self.current_room.space_id
 
 	local transition = castle_map.world_transitions_by_number[world_number]
 	local from_room_number = self.current_room_number
 
 	self.current_room = room_module.create_room(transition.castle_room_number)
+	self:despawn_room_runtime_objects(previous_space)
 	self.current_room_number = self.current_room.room_number
 	self.map_id = 0
 	self.map_x = transition.castle_map_x
