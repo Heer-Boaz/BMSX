@@ -696,7 +696,7 @@ function player:find_near_open_world_entrance()
 		local entrance_state = castle_service.world_entrance_states[world_entrance.target].state
 		if entrance_state == 'open' then
 			local within_x = self.x >= (world_entrance.stair_x - constants.world_entrance.trigger_half_width)
-				and self.x <= (world_entrance.stair_x + constants.world_entrance.trigger_half_width)
+			and self.x <= (world_entrance.stair_x + constants.world_entrance.trigger_half_width)
 			local on_trigger_y = self.y == world_entrance.stair_y
 			if within_x and on_trigger_y then
 				return world_entrance
@@ -1155,7 +1155,7 @@ function player:try_step_off_stairs()
 			else
 				target_x = self.x - 4
 			end
-				target_y = current_room.tile_origin_y + (ty * constants.room.tile_size)
+			target_y = current_room.tile_origin_y + (ty * constants.room.tile_size)
 		else
 			self.facing = dir
 			return false
@@ -1220,9 +1220,9 @@ function player:collides_with_elevator_at(x, y)
 		local elevator = elevator_routes[i]
 		if elevator.current_room_number == current_room_number then
 			if x < (elevator.x + constants.room.tile_size4)
-				and right > elevator.x
-				and y < (elevator.y + constants.room.tile_size2)
-				and bottom > elevator.y
+			and right > elevator.x
+			and y < (elevator.y + constants.room.tile_size2)
+			and bottom > elevator.y
 			then
 				return true
 			end
@@ -1239,10 +1239,10 @@ function player:try_snap_to_elevator_platform(next_x)
 	for i = 1, #elevator_routes do
 		local elevator = elevator_routes[i]
 		if elevator.current_room_number == current_room_number
-			and self.y >= (elevator.y - constants.room.tile_size2)
-			and self.y < elevator.y
-			and self.x > (elevator.x - (constants.room.tile_size2 - 4))
-			and self.x < ((elevator.x + constants.room.tile_size4) - 3)
+		and self.y >= (elevator.y - constants.room.tile_size2)
+		and self.y < elevator.y
+		and self.x > (elevator.x - (constants.room.tile_size2 - 4))
+		and self.x < ((elevator.x + constants.room.tile_size4) - 3)
 		then
 			self.y = elevator.y - self.height
 			self.x = next_x
@@ -2390,9 +2390,9 @@ function player:tick()
 end
 
 local function define_player_fsm()
-		local states = {
-			quiet = {
-				tags = { state_tags.variant.quiet },
+	local states = {
+		quiet = {
+			tags = { state_tags.variant.quiet },
 			on = {
 				['jump_input'] = '/jumping',
 				['left_down'] = '/walking_left',
@@ -2412,8 +2412,8 @@ local function define_player_fsm()
 				},
 			},
 		},
-			walking_right = {
-				tags = { state_tags.variant.walking_right },
+		walking_right = {
+			tags = { state_tags.variant.walking_right },
 			on = {
 				['jump_input'] = '/jumping',
 				['left_override'] = '/walking_left',
@@ -2439,8 +2439,8 @@ local function define_player_fsm()
 				},
 			},
 		},
-			walking_left = {
-				tags = { state_tags.variant.walking_left },
+		walking_left = {
+			tags = { state_tags.variant.walking_left },
 			on = {
 				['jump_input'] = '/jumping',
 				['right_override'] = '/walking_right',
@@ -2503,87 +2503,87 @@ local function define_player_fsm()
 			process_input = player.sample_input,
 			tick = player.tick_uncontrolled_fall_motion,
 		},
-			quiet_sword = {
-				tags = {
-					state_tags.variant.quiet_sword,
-					state_tags.group.sword,
-					state_tags.visual.ground_sword,
-				},
-				on = {
-					[player_sword_end_event] = '/quiet',
-					['no_ground'] = '/uc_fall_sword',
-				},
-				entering_state = function(self)
-					self.abilities:begin('sword')
-				end,
-				process_input = player.sample_input,
-				tick = player.tick_quiet_sword,
+		quiet_sword = {
+			tags = {
+				state_tags.variant.quiet_sword,
+				state_tags.group.sword,
+				state_tags.visual.ground_sword,
 			},
+			on = {
+				[player_sword_end_event] = '/quiet',
+				['no_ground'] = '/uc_fall_sword',
+			},
+			entering_state = function(self)
+				self.abilities:begin('sword')
+			end,
+			process_input = player.sample_input,
+			tick = player.tick_quiet_sword,
+		},
 		uc_fall_sword = {
 			tags = {
 				state_tags.variant.uc_fall_sword,
 				state_tags.group.sword,
 				state_tags.visual.jump_sword,
 			},
-				on = {
-					[player_sword_end_event] = '/uncontrolled_fall',
-					['landed_to_quiet_sword'] = '/quiet_sword',
-				},
-				entering_state = function(self)
-					self.abilities:begin('sword')
-				end,
-				process_input = player.sample_input,
-				tick = player.tick_uncontrolled_fall_motion,
+			on = {
+				[player_sword_end_event] = '/uncontrolled_fall',
+				['landed_to_quiet_sword'] = '/quiet_sword',
 			},
+			entering_state = function(self)
+				self.abilities:begin('sword')
+			end,
+			process_input = player.sample_input,
+			tick = player.tick_uncontrolled_fall_motion,
+		},
 		c_fall_sword = {
 			tags = {
 				state_tags.variant.c_fall_sword,
 				state_tags.group.sword,
 				state_tags.visual.jump_sword,
 			},
-				on = {
-					[player_sword_end_event] = '/controlled_fall',
-					['landed_to_quiet_sword'] = '/quiet_sword',
-				},
-				entering_state = function(self)
-					self.abilities:begin('sword')
-				end,
-				process_input = player.sample_input,
-				tick = player.tick_controlled_fall_motion,
+			on = {
+				[player_sword_end_event] = '/controlled_fall',
+				['landed_to_quiet_sword'] = '/quiet_sword',
 			},
+			entering_state = function(self)
+				self.abilities:begin('sword')
+			end,
+			process_input = player.sample_input,
+			tick = player.tick_controlled_fall_motion,
+		},
 		jumping_sword = {
 			tags = {
 				state_tags.variant.jumping_sword,
 				state_tags.group.sword,
 				state_tags.visual.jump_sword,
 			},
-				on = {
-					[player_sword_end_event] = '/jumping',
-					['ceiling_to_sj_sword'] = '/sj_sword',
-					['jump_apex_to_c_fall_sword'] = '/c_fall_sword',
-				},
-				entering_state = function(self)
-					self.abilities:begin('sword')
-				end,
-				process_input = player.sample_input,
-				tick = player.tick_jump_motion,
+			on = {
+				[player_sword_end_event] = '/jumping',
+				['ceiling_to_sj_sword'] = '/sj_sword',
+				['jump_apex_to_c_fall_sword'] = '/c_fall_sword',
 			},
+			entering_state = function(self)
+				self.abilities:begin('sword')
+			end,
+			process_input = player.sample_input,
+			tick = player.tick_jump_motion,
+		},
 		sj_sword = {
 			tags = {
 				state_tags.variant.sj_sword,
 				state_tags.group.sword,
 				state_tags.visual.jump_sword,
 			},
-				on = {
-					[player_sword_end_event] = '/stopped_jumping',
-					['stopped_to_fall_to_c_fall_sword'] = '/c_fall_sword',
-				},
-				entering_state = function(self)
-					self.abilities:begin('sword')
-				end,
-				process_input = player.sample_input,
-				tick = player.tick_stopped_jump_motion,
+			on = {
+				[player_sword_end_event] = '/stopped_jumping',
+				['stopped_to_fall_to_c_fall_sword'] = '/c_fall_sword',
 			},
+			entering_state = function(self)
+				self.abilities:begin('sword')
+			end,
+			process_input = player.sample_input,
+			tick = player.tick_stopped_jump_motion,
+		},
 		up_stairs = {
 			tags = { state_tags.variant.up_stairs, state_tags.group.stairs },
 			on = {
@@ -2636,15 +2636,15 @@ local function define_player_fsm()
 				state_tags.group.sword,
 				state_tags.visual.stairs_sword,
 			},
-				on = {
-					[player_sword_end_event] = '/quiet_stairs',
-				},
-				entering_state = function(self)
-					self.abilities:begin('sword')
-				end,
-				process_input = player.sample_input,
-				tick = player.tick_sword_stairs,
+			on = {
+				[player_sword_end_event] = '/quiet_stairs',
 			},
+			entering_state = function(self)
+				self.abilities:begin('sword')
+			end,
+			process_input = player.sample_input,
+			tick = player.tick_sword_stairs,
+		},
 		entering_world = {
 			tags = {
 				state_tags.variant.entering_world,
@@ -2705,40 +2705,40 @@ local function define_player_fsm()
 			process_input = player.sample_input,
 			tick = player.tick_entering_shrine,
 		},
-			waiting_shrine = {
+		waiting_shrine = {
 			tags = {
 				state_tags.variant.waiting_shrine,
 				state_tags.group.transition_lock,
 				state_tags.group.damage_lock,
 			},
-				on = {
-					['leave_shrine_overlay'] = '/leaving_shrine',
-				},
-				process_input = player.sample_input,
-				tick = player.reset_motion_for_transition_lock,
+			on = {
+				['leave_shrine_overlay'] = '/leaving_shrine',
 			},
-			leaving_shrine = {
-				tags = {
-					state_tags.variant.leaving_shrine,
-					state_tags.group.transition_lock,
-					state_tags.group.damage_lock,
-				},
-				on = {
-					['timeline.end.p.tl.sx'] = '/quiet',
-				},
-				entering_state = function(self)
-					self.transition_step = 0
-					self.to_enter_cut = 0
-					self.enter_leave_anim_frame = 0
-					self:play_timeline(player_shrine_exit_timeline_id, { rewind = true, snap_to_start = true })
-				end,
-				leaving_state = function(self)
-					self:stop_timeline(player_shrine_exit_timeline_id)
-					self.to_enter_cut = 0
-				end,
-				process_input = player.sample_input,
-				tick = player.reset_motion_for_transition_lock,
+			process_input = player.sample_input,
+			tick = player.reset_motion_for_transition_lock,
+		},
+		leaving_shrine = {
+			tags = {
+				state_tags.variant.leaving_shrine,
+				state_tags.group.transition_lock,
+				state_tags.group.damage_lock,
 			},
+			on = {
+				['timeline.end.p.tl.sx'] = '/quiet',
+			},
+			entering_state = function(self)
+				self.transition_step = 0
+				self.to_enter_cut = 0
+				self.enter_leave_anim_frame = 0
+				self:play_timeline(player_shrine_exit_timeline_id, { rewind = true, snap_to_start = true })
+			end,
+			leaving_state = function(self)
+				self:stop_timeline(player_shrine_exit_timeline_id)
+				self.to_enter_cut = 0
+			end,
+			process_input = player.sample_input,
+			tick = player.reset_motion_for_transition_lock,
+		},
 		hit_fall = {
 			tags = { state_tags.variant.hit_fall, state_tags.group.damage_lock },
 			on = {
@@ -2798,18 +2798,18 @@ local function define_player_fsm()
 				state_tags.variant.hit_collision,
 				state_tags.variant.hit_recovery,
 			},
-	[state_tags.group.movement_walk] = {
-		state_tags.variant.walking_right,
-		state_tags.variant.walking_left,
-	},
-	[state_tags.group.player_stairs] = {
-		state_tags.variant.up_stairs,
-		state_tags.variant.down_stairs,
-	},
-	[state_tags.group.movement_jump] = {
-		state_tags.variant.jumping,
-		state_tags.variant.stopped_jumping,
-		state_tags.variant.controlled_fall,
+			[state_tags.group.movement_walk] = {
+				state_tags.variant.walking_right,
+				state_tags.variant.walking_left,
+			},
+			[state_tags.group.player_stairs] = {
+				state_tags.variant.up_stairs,
+				state_tags.variant.down_stairs,
+			},
+			[state_tags.group.movement_jump] = {
+				state_tags.variant.jumping,
+				state_tags.variant.stopped_jumping,
+				state_tags.variant.controlled_fall,
 			},
 			[state_tags.group.can_switch_up] = {
 				state_tags.variant.up_stairs,
@@ -2841,26 +2841,26 @@ local function define_player_fsm()
 				state_tags.variant.uncontrolled_fall,
 			},
 		},
-			on = {
-				[player_abilities.command_ids.activate_sword] = {
-					go = function(self)
-						self.abilities:activate('sword')
-					end,
-				},
-				[player_abilities.command_ids.activate_pepernoot] = {
-					go = function(self)
-						self.abilities:activate('pepernoot')
-					end,
-				},
-				[player_abilities.command_ids.activate_spyglass] = {
-					go = function(self)
-						self.abilities:activate('spyglass')
-					end,
-				},
-				['enemy.contact_damage'] = {
-					go = function(self, _state, event)
-						self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
-					end,
+		on = {
+			[player_abilities.command_ids.activate_sword] = {
+				go = function(self)
+					self.abilities:activate('sword')
+				end,
+			},
+			[player_abilities.command_ids.activate_pepernoot] = {
+				go = function(self)
+					self.abilities:activate('pepernoot')
+				end,
+			},
+			[player_abilities.command_ids.activate_spyglass] = {
+				go = function(self)
+					self.abilities:activate('spyglass')
+				end,
+			},
+			['enemy.contact_damage'] = {
+				go = function(self, _state, event)
+					self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
+				end,
 			},
 			['hp_zero'] = '/dying',
 			['damage'] = '/hit_fall',
@@ -2939,12 +2939,12 @@ local function register_player_definition()
 			enter_leave_world_target = '',
 			enter_leave_shrine_text_lines = {},
 			inventory_items = nil,
-				secondary_weapon = 'none',
-				weapon_level = 0,
-				pepernoot_projectile_sequence = 0,
-				pepernoot_projectile_ids = {},
-			},
-		})
+			secondary_weapon = 'none',
+			weapon_level = 0,
+			pepernoot_projectile_sequence = 0,
+			pepernoot_projectile_ids = {},
+		},
+	})
 end
 
 return {
