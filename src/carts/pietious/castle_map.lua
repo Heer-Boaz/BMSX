@@ -196,7 +196,20 @@ local function split_text_lines(text)
 	return lines
 end
 
-local function build_enemies(room_number, object_defs)
+local function resolve_wall_tiletype(room_subtype, tiletype)
+	if tiletype == 'frontworld_blue_l' or tiletype == 'frontworld_blue_r' then
+		if room_subtype == 'castlegold' then
+			return 'castle_front_gold_1'
+		end
+		if room_subtype == 'world' then
+			return 'frontworld_l'
+		end
+		return 'castle_front_blue_1'
+	end
+	return tiletype
+end
+
+local function build_enemies(room_number, room_subtype, object_defs)
 	local enemies = {}
 	local enemy_index = 0
 	local supported_kinds = {
@@ -209,6 +222,8 @@ local function build_enemies(room_number, object_defs)
 		cloud = true,
 		marspeinenaardappel = true,
 		vlokspawner = true,
+		breakablewall = true,
+		disappearingwall = true,
 	}
 
 	for i = 1, #object_defs do
@@ -216,25 +231,49 @@ local function build_enemies(room_number, object_defs)
 		local kind = object_def.type
 		if supported_kinds[kind] == true then
 			enemy_index = enemy_index + 1
-			local enemy_x = tile_x_to_world(object_def.x or 0)
-			local enemy_y = tile_y_to_world(object_def.y or 0)
 			local conditions = resolve_conditions(object_def)
-			if kind == 'stafffoe' then
-				enemy_y = enemy_y + 2
+			if kind == 'breakablewall' or kind == 'disappearingwall' then
+				local area = object_def.area
+				local left = area[1]
+				local top = area[2]
+				local right = area[3]
+				local bottom = area[4]
+				enemies[#enemies + 1] = {
+					id = string.format('enemy_%03d_%02d', room_number, enemy_index),
+					kind = kind,
+					x = tile_x_to_world(left),
+					y = tile_y_to_world(top),
+					direction = nil,
+					damage = 0,
+					health = object_def.hp,
+					speedx = nil,
+					speedy = nil,
+					trigger = object_def.trigger,
+					conditions = conditions,
+					width_tiles = right - left,
+					height_tiles = bottom - top,
+					tiletype = resolve_wall_tiletype(room_subtype, object_def.tiletype),
+				}
+			else
+				local enemy_x = tile_x_to_world(object_def.x or 0)
+				local enemy_y = tile_y_to_world(object_def.y or 0)
+				if kind == 'stafffoe' then
+					enemy_y = enemy_y + 2
+				end
+				enemies[#enemies + 1] = {
+					id = string.format('enemy_%03d_%02d', room_number, enemy_index),
+					kind = kind,
+					x = enemy_x,
+					y = enemy_y,
+					direction = object_def.direction,
+					damage = constants.damage.enemy_contact_damage,
+					health = object_def.health,
+					speedx = object_def.speedx,
+					speedy = object_def.speedy,
+					trigger = object_def.trigger,
+					conditions = conditions,
+				}
 			end
-			enemies[#enemies + 1] = {
-				id = string.format('enemy_%03d_%02d', room_number, enemy_index),
-				kind = kind,
-				x = enemy_x,
-				y = enemy_y,
-				direction = object_def.direction,
-				damage = constants.damage.enemy_contact_damage,
-				health = object_def.health,
-				speedx = object_def.speedx,
-				speedy = object_def.speedy,
-				trigger = object_def.trigger,
-				conditions = conditions,
-			}
 		end
 	end
 
@@ -371,7 +410,7 @@ local function load_room_templates()
 			spawn = build_spawn(map_rows),
 			links = links,
 			edge_gates = build_edge_gates(map_rows, links),
-			enemies = build_enemies(room_number, object_defs),
+			enemies = build_enemies(room_number, room_def.subtype, object_defs),
 			rocks = build_rocks(room_number, object_defs),
 			items = build_items(room_number, object_defs),
 			lithographs = build_lithographs(room_number, object_defs),

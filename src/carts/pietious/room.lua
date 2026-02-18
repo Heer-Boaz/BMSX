@@ -439,7 +439,10 @@ function room.is_wall_at_tile(room_state, tx, ty)
 	if room_state.collision_map[ty][tx] ~= 0 then
 		return true
 	end
-	return room.is_active_rock_at_tile(room_state, tx, ty)
+	if room.is_active_rock_at_tile(room_state, tx, ty) then
+		return true
+	end
+	return room.is_active_breakable_wall_at_tile(room_state, tx, ty)
 end
 
 function room.is_solid_at_tile(room_state, tx, ty)
@@ -452,7 +455,10 @@ function room.is_solid_at_tile(room_state, tx, ty)
 	if room_state.collision_map[ty][tx] ~= 0 then
 		return true
 	end
-	return room.is_active_rock_at_tile(room_state, tx, ty)
+	if room.is_active_rock_at_tile(room_state, tx, ty) then
+		return true
+	end
+	return room.is_active_breakable_wall_at_tile(room_state, tx, ty)
 end
 
 function room.overlaps_active_rock(room_state, x, y, w, h)
@@ -476,6 +482,29 @@ end
 function room.is_active_rock_at_tile(room_state, tx, ty)
 	local world_x, world_y = room.tile_to_world(room_state, tx, ty)
 	return room.overlaps_active_rock(room_state, world_x, world_y, room_state.tile_size, room_state.tile_size)
+end
+
+function room.overlaps_active_breakable_wall(room_state, x, y, w, h)
+	local enemy_defs = room_state.enemies
+	for i = 1, #enemy_defs do
+		local enemy_def = enemy_defs[i]
+		if enemy_def.kind == 'breakablewall' or enemy_def.kind == 'disappearingwall' then
+			local wall = object(enemy_def.id)
+			if wall ~= nil and wall.active and wall.space_id == room_state.space_id then
+				local wall_width = enemy_def.width_tiles * room_state.tile_size
+				local wall_height = enemy_def.height_tiles * room_state.tile_size
+				if rect_overlaps(x, y, w, h, enemy_def.x, enemy_def.y, wall_width, wall_height) then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+function room.is_active_breakable_wall_at_tile(room_state, tx, ty)
+	local world_x, world_y = room.tile_to_world(room_state, tx, ty)
+	return room.overlaps_active_breakable_wall(room_state, world_x, world_y, room_state.tile_size, room_state.tile_size)
 end
 
 function room.is_solid_at_world(room_state, world_x, world_y)

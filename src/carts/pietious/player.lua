@@ -1265,6 +1265,9 @@ function player:collides_at(x, y, include_elevator)
 	if room.overlaps_active_rock(service('c').current_room, x, y, self.width, self.height) then
 		return true
 	end
+	if room.overlaps_active_breakable_wall(service('c').current_room, x, y, self.width, self.height) then
+		return true
+	end
 
 	if include_elevator ~= false and self:collides_with_elevator_at(x, y) then
 		return true

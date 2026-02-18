@@ -1,6 +1,8 @@
 local boekfoe_module = require('enemies/boekfoe')
+local breakablewall_module = require('enemies/breakablewall')
 local cloud_module = require('enemies/cloud')
 local crossfoe_module = require('enemies/crossfoe')
+local disappearingwall_module = require('enemies/disappearingwall')
 local marspeinenaardappel_module = require('enemies/marspeinenaardappel')
 local mijterfoe_module = require('enemies/mijterfoe')
 local muziekfoe_module = require('enemies/muziekfoe')
@@ -15,6 +17,8 @@ local zakfoe_module = require('enemies/zakfoe')
 local enemy_registry = {}
 
 function enemy_registry.register_all()
+	breakablewall_module.register_enemy_definition()
+	disappearingwall_module.register_enemy_definition()
 	boekfoe_module.register_behaviour_tree('enemy.bt.boekfoe')
 	cloud_module.register_behaviour_tree('enemy.bt.cloud')
 	crossfoe_module.register_behaviour_tree('enemy.bt.crossfoe')

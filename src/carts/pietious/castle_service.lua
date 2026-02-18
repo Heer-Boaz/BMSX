@@ -93,6 +93,9 @@ function castle_service:sync_enemy_instance(enemy_def, room, force_reset_from_ro
 			direction = enemy_def.direction,
 			speed_x_num = enemy_def.speedx,
 			speed_y_num = enemy_def.speedy,
+			width_tiles = enemy_def.width_tiles,
+			height_tiles = enemy_def.height_tiles,
+			tiletype = enemy_def.tiletype,
 		})
 	else
 		local should_reset_from_room_template = force_reset_from_room_template or (not instance.active)
@@ -100,6 +103,15 @@ function castle_service:sync_enemy_instance(enemy_def, room, force_reset_from_ro
 		instance.trigger = enemy_def.trigger
 		instance.conditions = enemy_def.conditions
 		instance.damage = enemy_def.damage
+		instance.width_tiles = enemy_def.width_tiles
+		instance.height_tiles = enemy_def.height_tiles
+		instance.tiletype = enemy_def.tiletype
+		if enemy_def.width_tiles ~= nil then
+			instance.sx = enemy_def.width_tiles * constants.room.tile_size
+		end
+		if enemy_def.height_tiles ~= nil then
+			instance.sy = enemy_def.height_tiles * constants.room.tile_size
+		end
 		if enemy_def.health ~= nil then
 			instance.max_health = enemy_def.health
 			if should_reset_from_room_template then
@@ -340,6 +352,24 @@ function castle_service:begin_open_world_entrance(target)
 end
 
 function castle_service:tick()
+	if self.current_room_number == 106 and self.enemy_condition_flags.world1walldisappear ~= true then
+		local enemies = self.current_room.enemies
+		local has_marspeinenaardappel
+		for i = 1, #enemies do
+			local enemy_def = enemies[i]
+			if enemy_def.kind == 'marspeinenaardappel' and self:enemy_should_spawn(enemy_def) then
+				has_marspeinenaardappel = true
+				break
+			end
+		end
+		if has_marspeinenaardappel ~= true then
+			self.events:emit('room.condition_set', {
+				room_number = self.current_room_number,
+				condition = 'world1walldisappear',
+			})
+		end
+	end
+
 	for _, entrance_state in pairs(self.world_entrance_states) do
 		if entrance_state.state == 'opening_1' or entrance_state.state == 'opening_2' then
 			entrance_state.open_step = entrance_state.open_step + 1
