@@ -197,7 +197,7 @@
 		{
 			"type": "pickString",
 			"id": "romtobuild",
-			"description": "Choose ROM to build",
+			"description": "Choose cart to debug/run",
 			"options": [
 				"pietious",
 				"nemesis_s",
