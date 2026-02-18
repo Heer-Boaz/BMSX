@@ -289,7 +289,7 @@ function createMappings() {
 
 	add('stone@cx', 'Stone');
 	add('stone_broken', 'Stone_Broken');
-	add('elevator_platform', 'Elevator');
+	add('elevator_platform@cx', 'Elevator');
 	add('crossfoe@cx', 'CrossFoe');
 	add('crossfoe_turned@cx', 'CrossFoeTurned');
 	add('marspeinenaardappel@cx', 'MarsepeinenAardappel');
@@ -311,23 +311,23 @@ function createMappings() {
 	add('explosion_3', 'Explosion_3');
 	add('sword_r@cx', 'Popolon_Slash_R', { crop: { x: 16, y: 0, w: 16, h: 16 } });
 
-	add('pietolon_stand_r', 'Popolon_Stand_R');
-	add('pietolon_walk_r', 'Popolon_Walk_R');
-	add('pietolon_jump_r', 'Popolon_Jump_R');
-	add('pietolon_hit_r', 'Popolon_Hit_R');
-	add('pietolon_recover_r', 'Popolon_Recover_R');
-	add('pietolon_stairs_up_1', 'Popolon_Stairs_Up_1');
-	add('pietolon_stairs_up_2', 'Popolon_Stairs_Up_2');
-	add('pietolon_stairs_down_1', 'Popolon_Stairs_Down_1');
-	add('pietolon_stairs_down_2', 'Popolon_Stairs_Down_2');
+	add('pietolon_stand_r@cx', 'Popolon_Stand_R');
+	add('pietolon_walk_r@cx', 'Popolon_Walk_R');
+	add('pietolon_jump_r@cx', 'Popolon_Jump_R');
+	add('pietolon_hit_r@cx', 'Popolon_Hit_R');
+	add('pietolon_recover_r@cx', 'Popolon_Recover_R');
+	add('pietolon_stairs_up_1@cx', 'Popolon_Stairs_Up_1');
+	add('pietolon_stairs_up_2@cx', 'Popolon_Stairs_Up_2');
+	add('pietolon_stairs_down_1@cx', 'Popolon_Stairs_Down_1');
+	add('pietolon_stairs_down_2@cx', 'Popolon_Stairs_Down_2');
 	add('pietolon_dying_1', 'Popolon_Dying_1');
 	add('pietolon_dying_2', 'Popolon_Dying_2');
 	add('pietolon_dying_3', 'Popolon_Dying_3');
 	add('pietolon_dying_4', 'Popolon_Dying_4');
 	add('pietolon_dying_5', 'Popolon_Dying_5');
 
-	add('pietolon_slash_r', 'Popolon_Slash_R', { crop: { x: 0, y: 0, w: 16, h: 16 } });
-	add('pietolon_jumpslash_r', 'Popolon_JumpSlash_R', { crop: { x: 0, y: 0, w: 16, h: 16 } });
+	add('pietolon_slash_r@cx', 'Popolon_Slash_R', { crop: { x: 0, y: 0, w: 16, h: 16 } });
+	add('pietolon_jumpslash_r@cx', 'Popolon_JumpSlash_R', { crop: { x: 0, y: 0, w: 16, h: 16 } });
 
 	return mappings;
 }
