@@ -59,6 +59,32 @@ function director:queue_banner_transition(mode, world_number, post_action)
 	self:dispatch_state_event('banner_requested')
 end
 
+function director:expect_room_switch_banner(mode, world_number, post_action)
+	self.next_room_switch_banner_mode = mode
+	self.next_room_switch_banner_world_number = world_number
+	self.next_room_switch_banner_post_action = post_action
+end
+
+function director:clear_expected_room_switch_banner()
+	self.next_room_switch_banner_mode = nil
+	self.next_room_switch_banner_world_number = 0
+	self.next_room_switch_banner_post_action = nil
+end
+
+function director:queue_expected_room_switch_banner_if_any()
+	local mode = self.next_room_switch_banner_mode
+	if mode == nil then
+		return false
+	end
+	self:queue_banner_transition(
+		mode,
+		self.next_room_switch_banner_world_number,
+		self.next_room_switch_banner_post_action
+	)
+	self:clear_expected_room_switch_banner()
+	return true
+end
+
 function director:open_shrine(text_lines)
 	self.pending_shrine_text_lines = text_lines
 	self:dispatch_state_event('shrine_overlay_requested')
@@ -101,12 +127,26 @@ end
 function director:enter_world(target)
 	local switch = service('c'):enter_world(target)
 	self:sync_room_state_from_castle()
+	self:expect_room_switch_banner('world_banner', switch.world_number, nil)
 	return switch
 end
 
 function director:leave_world_to_castle()
 	local switch = service('c'):leave_world_to_castle()
 	self:sync_room_state_from_castle()
+	self:expect_room_switch_banner('castle_banner', 0, 'castle_emerge')
+	return switch
+end
+
+function director:halo_teleport_to_start_room()
+	local from_world = service('c').current_room.world_number ~= 0
+	local switch = service('c'):halo_teleport_to_start_room()
+	self:sync_room_state_from_castle()
+	if from_world then
+		self:expect_room_switch_banner('castle_banner', 0, nil)
+	else
+		self:clear_expected_room_switch_banner()
+	end
 	return switch
 end
 
@@ -115,13 +155,9 @@ function director:bind_events()
 		event = 'room.switched',
 		emitter = 'pietolon',
 		subscriber = self,
-		handler = function(event)
-			if event.transition_kind == 'world_banner' then
-				self:queue_banner_transition('world_banner', event.world_number, nil)
-				return
-			end
-			if event.transition_kind == 'castle_banner' then
-				self:queue_banner_transition('castle_banner', 0, event.post_action)
+		handler = function(_event)
+			self:sync_room_state_from_castle()
+			if self:queue_expected_room_switch_banner_if_any() then
 				return
 			end
 			self:dispatch_state_event('room_switch_start')
@@ -142,6 +178,9 @@ function director:ctor()
 	self.pending_banner_mode = nil
 	self.pending_banner_world_number = 0
 	self.pending_banner_post_action = nil
+	self.next_room_switch_banner_mode = nil
+	self.next_room_switch_banner_world_number = 0
+	self.next_room_switch_banner_post_action = nil
 	self.pending_shrine_text_lines = {}
 	self.overlay_mode = 'none'
 	self.overlay_text_lines = {}
@@ -493,6 +532,7 @@ local function register_director_service_definition()
 			map_y = 12,
 			last_room_switch = nil,
 			pending_banner_world_number = 0,
+			next_room_switch_banner_world_number = 0,
 			pending_shrine_text_lines = {},
 			overlay_mode = 'none',
 			overlay_text_lines = {},

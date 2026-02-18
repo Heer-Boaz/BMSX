@@ -889,8 +889,6 @@ function player:try_switch_room(direction, keep_stairs_lock)
 			space = service('c').current_room.space_id,
 			x = self.x,
 			y = self.y,
-			transition_kind = 'castle_banner',
-			post_action = 'castle_emerge',
 		})
 		return true
 	end
@@ -1750,8 +1748,6 @@ function player:tick_entering_world()
 			space = service('c').current_room.space_id,
 			x = self.x,
 			y = self.y,
-			transition_kind = switch.transition_kind,
-			world_number = switch.world_number,
 		})
 	end
 
