@@ -53,7 +53,7 @@ end
 function transition:draw_transition_overlay()
 	local director_service = service('d')
 	local mode = director_service.overlay_mode
-	if mode == 'none' then
+	if mode == nil then
 		return
 	end
 	if mode == 'world_banner' or mode == 'castle_banner' then

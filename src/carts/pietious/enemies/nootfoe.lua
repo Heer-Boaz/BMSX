@@ -41,7 +41,7 @@ function nootfoe.register_behaviour_tree(bt_id)
 end
 
 function nootfoe.choose_drop_type(_self)
-	return 'none'
+	return nil
 end
 
 enemy_base.extend(nootfoe, 'nootfoe')

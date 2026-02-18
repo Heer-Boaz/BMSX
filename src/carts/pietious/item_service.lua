@@ -90,6 +90,7 @@ local function condition_matches(condition, player, room_flags)
 end
 
 function item_service:item_should_spawn(item_def, room_number, player)
+	if item_def.item_def == nil then return false end -- Don't spawn items that are not there (e.g. empty stone)
 	if self.picked_item_ids[item_def.id] == true then
 		return false
 	end
@@ -188,7 +189,7 @@ function item_service:set_room_condition(room_number, condition)
 end
 
 function item_service:add_item_drop_from_rock(rock_id, room_number, item_type, x, y)
-	if item_type == 'none' then
+	if item_type == nil then
 		return
 	end
 

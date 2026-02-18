@@ -29,7 +29,7 @@ function paperfoe.register_behaviour_tree(bt_id)
 end
 
 function paperfoe.choose_drop_type(_self, _random_percent_hit)
-	return 'none'
+	return nil
 end
 
 enemy_base.extend(paperfoe, 'paperfoe')

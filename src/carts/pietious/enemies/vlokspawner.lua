@@ -56,7 +56,7 @@ function vlokspawner.register_behaviour_tree(bt_id)
 end
 
 function vlokspawner.choose_drop_type(_self)
-	return 'none'
+	return nil
 end
 
 enemy_base.extend(vlokspawner, 'vlokspawner')

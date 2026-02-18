@@ -14,7 +14,7 @@ local function animate_level(current, target)
 end
 
 local function secondary_weapon_sprite_id(item_type)
-	if item_type == 'none' then
+	if item_type == nil then
 		return nil
 	end
 	if item_type == 'pepernoot' then

@@ -104,7 +104,9 @@ local function activate_spyglass_ability(owner, state_tags)
 	if lithograph == nil then
 		return false
 	end
-	service('d'):start_lithograph_screen(lithograph.text)
+	owner.events:emit('lithograph.request', {
+		text_line = lithograph.text,
+	})
 	return true
 end
 
@@ -207,11 +209,11 @@ function player_abilities.attach_player_methods(player)
 	end
 
 	function player:equip_subweapon(id)
-		local next_id = id or 'none'
+		local next_id = id
 		self:remove_tag(equip_tags.pepernoot)
 		self:remove_tag(equip_tags.spyglass)
 		self.secondary_weapon = next_id
-		local grant_tag = equip_tags[next_id]
+		local grant_tag = equip_tags[next_id or 'none']
 		if grant_tag ~= nil then
 			self:add_tag(grant_tag)
 		end

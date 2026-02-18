@@ -33,7 +33,7 @@ function director:activate_spaces()
 end
 
 function director:begin_black_wait(frames)
-	self.overlay_mode = 'none'
+	self.overlay_mode = nil
 	self.overlay_text_lines = {}
 	self.transition_frames_left = frames
 	set_space('transition')
@@ -90,13 +90,8 @@ function director:open_shrine(text_lines)
 	self:dispatch_state_event('shrine_overlay_requested')
 end
 
-function director:start_lithograph_screen(text_line)
-	self.lithograph_text_lines = { text_line }
-	self:dispatch_state_event('lithograph_screen_start')
-end
-
 function director:has_modal_overlay()
-	return self.overlay_mode ~= 'none'
+	return self.overlay_mode ~= nil
 end
 
 function director:has_pending_banner()
@@ -172,6 +167,17 @@ function director:bind_events()
 			self:dispatch_state_event('shrine_transition_done')
 		end,
 	})
+
+	self.events:on({
+		event = 'lithograph.request',
+		emitter = 'pietolon',
+		subscriber = self,
+		handler = function(event)
+			self:dispatch_state_event('lithograph_request', {
+				text_line = event.text_line,
+			})
+		end,
+	})
 end
 
 function director:ctor()
@@ -182,12 +188,13 @@ function director:ctor()
 	self.next_room_switch_banner_world_number = 0
 	self.next_room_switch_banner_post_action = nil
 	self.pending_shrine_text_lines = {}
-	self.overlay_mode = 'none'
+	self.overlay_mode = nil
 	self.overlay_text_lines = {}
 	self.transition_frames_left = 0
 	self.banner_post_action = nil
-	self.active_transition_kind = 'none'
+	self.active_transition_kind = nil
 	self.lithograph_text_lines = {}
+	self.lithograph_close_input_guard = false
 	self.current_room_number = 0
 	self.map_id = 0
 	self.map_x = 5
@@ -206,7 +213,6 @@ local function define_director_fsm()
 			['halo_transition_start'] = '/halo_teleport',
 			['seal_dissolution_start'] = '/seal_dissolution',
 			['daemon_appearance_start'] = '/daemon_appearance',
-			['lithograph_screen_start'] = '/lithograph_screen',
 			['title_screen_start'] = '/title_screen',
 			['story_start'] = '/story',
 			['ending_start'] = '/ending',
@@ -217,8 +223,8 @@ local function define_director_fsm()
 			room = {
 				entering_state = function(self)
 					self:sync_room_state_from_castle()
-					self.active_transition_kind = 'none'
-					self.overlay_mode = 'none'
+					self.active_transition_kind = nil
+					self.overlay_mode = nil
 					self.overlay_text_lines = {}
 					self.transition_frames_left = 0
 					local room_space = service('c').current_room.space_id
@@ -229,6 +235,12 @@ local function define_director_fsm()
 				end,
 				on = {
 					['room_switch_start'] = '/room_switch_wait',
+					['lithograph_request'] = {
+						go = function(self, _state, event)
+							self.lithograph_text_lines = { event.text_line }
+							return '/lithograph_screen'
+						end,
+					},
 				},
 				tick = function(self)
 					if self.pending_banner_mode ~= nil then
@@ -305,7 +317,7 @@ local function define_director_fsm()
 					if self.transition_frames_left > 0 then
 						return
 					end
-					self.overlay_mode = 'none'
+					self.overlay_mode = nil
 					self.overlay_text_lines = {}
 					if self.banner_post_action == 'castle_emerge' then
 						self.banner_post_action = nil
@@ -339,7 +351,7 @@ local function define_director_fsm()
 				entering_state = function(self)
 					self.active_transition_kind = 'shrine'
 					service('c'):park_active_enemies_for_transition()
-					self.overlay_mode = 'none'
+					self.overlay_mode = nil
 					self.overlay_text_lines = {}
 					set_space(service('c').current_room.space_id)
 					object('ui').space_id = service('c').current_room.space_id
@@ -438,12 +450,21 @@ local function define_director_fsm()
 					service('c'):park_active_enemies_for_transition()
 					self.overlay_mode = 'lithograph'
 					self.overlay_text_lines = self.lithograph_text_lines
+					self.lithograph_close_input_guard = true
 					set_space('transition')
 					object('ui').space_id = 'transition'
 					self:emit_state_changed('lithograph')
 				end,
 				tick = function(self)
+					if self.lithograph_close_input_guard then
+						if action_triggered('down[jp]', self.player_index) or action_triggered('b[jp]', self.player_index) then
+							return
+						end
+						self.lithograph_close_input_guard = false
+						return
+					end
 					if action_triggered('down[jp]', self.player_index) or action_triggered('b[jp]', self.player_index) then
+						self.lithograph_text_lines = {}
 						return '/room'
 					end
 				end,
@@ -534,7 +555,7 @@ local function register_director_service_definition()
 			pending_banner_world_number = 0,
 			next_room_switch_banner_world_number = 0,
 			pending_shrine_text_lines = {},
-			overlay_mode = 'none',
+			overlay_mode = nil,
 			overlay_text_lines = {},
 			transition_frames_left = 0,
 			tick_enabled = true,

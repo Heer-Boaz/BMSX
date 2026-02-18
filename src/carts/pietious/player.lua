@@ -287,7 +287,7 @@ function player:ctor()
 	self.sword_sprite.enabled = false
 	self:define_runtime_timelines()
 	self.inventory_items = {}
-	self.secondary_weapon = 'none'
+	self.secondary_weapon = nil
 	self:equip_subweapon(self.secondary_weapon)
 	self.weapon_level = 0
 	self:reset_runtime()
@@ -2935,7 +2935,7 @@ local function register_player_definition()
 			enter_leave_world_target = '',
 			enter_leave_shrine_text_lines = {},
 			inventory_items = nil,
-			secondary_weapon = 'none',
+			secondary_weapon = nil,
 			weapon_level = 0,
 			pepernoot_projectile_sequence = 0,
 			pepernoot_projectile_ids = {},

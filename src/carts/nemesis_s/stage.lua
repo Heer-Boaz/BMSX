@@ -303,7 +303,7 @@ local function decode_stage_tile(map_rows, x, y)
 		return 'lantaarn1'
 	end
 	if ch == 'p' or ch == 'P' or ch == 'm' or ch == 'M' then
-		return 'none'
+		return nil
 	end
 	if ch == '-' then
 		if left ~= ' ' and right ~= ' ' then
@@ -356,19 +356,19 @@ local function decode_stage_tile(map_rows, x, y)
 		if should_snow_from_neighbors(below, left_down, right_down) then
 			return 'snow'
 		end
-		return 'none'
+		return nil
 	end
 	if ch == 'Z' then
 		if should_snow_from_neighbors(below, left_down, right_down) then
 			return 'snow'
 		end
-		return 'none'
+		return nil
 	end
 	if ch == 'N' then
 		if should_snow_from_neighbors(below, left_down, right_down) then
 			return 'snow'
 		end
-		return 'none'
+		return nil
 	end
 	if ch == 't' then
 		if right == '1' then
@@ -413,58 +413,58 @@ local function decode_stage_tile(map_rows, x, y)
 		if left == '7' then
 			return 'snowtree21'
 		end
-		return 'none'
+		return nil
 	end
 	if ch == '1' then
 		if left == 't' then
 			return 'snowtree2'
 		end
-		return 'none'
+		return nil
 	end
 	if ch == '2' then
 		if left == 't' then
 			return 'snowtree5'
 		end
-		return 'none'
+		return nil
 	end
 	if ch == '3' then
 		if left == 't' then
 			return 'snowtree8'
 		end
-		return 'none'
+		return nil
 	end
 	if ch == '4' then
 		if left == 't' then
 			return 'snowtree11'
 		end
-		return 'none'
+		return nil
 	end
 	if ch == '5' then
 		if left == 't' then
 			return 'snowtree14'
 		end
-		return 'none'
+		return nil
 	end
 	if ch == '6' then
 		if left == 't' then
 			return 'snowtree17'
 		end
-		return 'none'
+		return nil
 	end
 	if ch == '7' then
 		if left == 't' then
 			return 'snowtree20'
 		end
-		return 'none'
+		return nil
 	end
 	if ch == 'K' or ch == "'" then
-		return 'none'
+		return nil
 	end
 	error('nemesis_s unsupported stage symbol "' .. ch .. '" at x=' .. tostring(x) .. ', y=' .. tostring(y))
 end
 
 local function resolve_tile_material(tile_key)
-	if tile_key == 'none' then
+	if tile_key == nil then
 		return nil, 0
 	end
 

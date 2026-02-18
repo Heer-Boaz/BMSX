@@ -145,7 +145,7 @@ function crossfoe.choose_drop_type(_self)
 	if math.random(100) <= constants.enemy.cross_drop_ammo_chance_pct then
 		return 'ammo'
 	end
-	return 'none'
+	return nil
 end
 
 enemy_base.extend(crossfoe, 'crossfoe')

@@ -201,7 +201,7 @@ function mijterfoe.choose_drop_type(_self)
 	if math.random(100) <= constants.enemy.mijter_drop_ammo_chance_pct then
 		return 'ammo'
 	end
-	return 'none'
+	return nil
 end
 
 enemy_base.extend(mijterfoe, 'mijterfoe')

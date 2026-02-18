@@ -28,7 +28,7 @@ function vlokfoe.register_behaviour_tree(bt_id)
 end
 
 function vlokfoe.choose_drop_type(_self)
-	return 'none'
+	return nil
 end
 
 enemy_base.extend(vlokfoe, 'vlokfoe')

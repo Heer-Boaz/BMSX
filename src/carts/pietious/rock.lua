@@ -112,7 +112,7 @@ local function register_rock_definition()
 		fsms = { 'rock.fsm' },
 		defaults = {
 			rock_service_id = 'r',
-			item_type = 'none',
+			item_type = nil,
 			max_health = constants.rock.max_health,
 			health = constants.rock.max_health,
 			break_steps = 0,

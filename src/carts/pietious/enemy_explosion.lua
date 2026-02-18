@@ -60,7 +60,7 @@ function enemy_explosion:sync_explosion_sprite(imgid)
 end
 
 function enemy_explosion:spawn_loot()
-	if self.loot_type == 'none' then
+	if self.loot_type == nil then
 		return
 	end
 
@@ -109,7 +109,7 @@ local function register_enemy_explosion_definition()
 		type = 'sprite',
 		fsms = { 'enemy_explosion.fsm' },
 		defaults = {
-			loot_type = 'none',
+			loot_type = nil,
 			tick_enabled = false,
 		},
 	})
