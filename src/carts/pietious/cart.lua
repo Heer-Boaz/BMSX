@@ -19,6 +19,7 @@ local castle_service_module = require('castle_service')
 local elevator_service_module = require('elevator_service')
 local director_module = require('director')
 local collision_profiles = require('collision_profiles')
+local castle_map = require('castle_map')
 
 local function register_collision_profiles()
 	collision_profiles.define('player', {
@@ -122,7 +123,7 @@ function new_game()
 	local castle_service = create_service('castle_service.def', {
 		id = 'c',
 	})
-	local room = castle_service:initialize(1)
+	local room = castle_service:initialize(castle_map.start_room_number)
 
 	inst('player.def', {
 		id = 'pietolon',
