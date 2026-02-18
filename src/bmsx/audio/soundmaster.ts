@@ -417,6 +417,8 @@ export class SoundMaster implements RegisterablePersistent {
 	private musicTransitionRequestId: number;
 	private pendingStingerReturnTo: asset_id;
 	private pendingStingerReturnUnsub: (() => void) | null;
+	private pendingStingerType: AudioType | null;
+	private pendingStingerVoice: VoiceId | null;
 	private maxVoicesByType: Record<AudioType, number>;
 	private voiceRecordByHandle: WeakMap<VoiceHandle, ActiveVoiceRecord>;
 	private mixSampleRate: number;
@@ -452,6 +454,8 @@ export class SoundMaster implements RegisterablePersistent {
 		this.musicTransitionRequestId = 0;
 		this.pendingStingerReturnTo = null;
 		this.pendingStingerReturnUnsub = null;
+		this.pendingStingerType = null;
+		this.pendingStingerVoice = null;
 		this.maxVoicesByType = { sfx: DEFAULT_MAX_VOICES.sfx, music: DEFAULT_MAX_VOICES.music, ui: DEFAULT_MAX_VOICES.ui };
 		this.voiceRecordByHandle = new WeakMap();
 		this.mixSampleRate = 0;
@@ -1538,18 +1542,28 @@ export class SoundMaster implements RegisterablePersistent {
 			if (!this.isAudioType(stingerType)) {
 				throw new Error(`[SoundMaster] Audio asset '${String(sync.stinger)}' has unknown audio type.`);
 			}
-			if (sync.return_to_previous) {
-				const previousId = this.currentTrackByType('music');
-				const previousOffset = this.currentTimeByType('music') ?? 0;
-				this.pendingStingerReturnTo = previousId !== null ? previousId : opts.to;
-				this.stop('music', 'all');
-				this.play(sync.stinger).then(voiceId => {
-					if (voiceId === null) {
-						if (transitionId === this.musicTransitionRequestId) {
-							this.pendingStingerReturnTo = null;
+				if (sync.return_to_previous) {
+					const previousId = this.currentTrackByType('music');
+					const previousOffset = this.currentTimeByType('music') ?? 0;
+					this.pendingStingerReturnTo = previousId !== null ? previousId : opts.to;
+					this.stop('music', 'all');
+					this.play(sync.stinger).then(voiceId => {
+						if (transitionId !== this.musicTransitionRequestId) {
+							if (voiceId !== null) {
+								this.stop(stingerType, 'byvoice', voiceId);
+							}
+							return;
+						}
+						if (voiceId === null) {
+							if (transitionId === this.musicTransitionRequestId) {
+								this.pendingStingerReturnTo = null;
+							this.pendingStingerType = null;
+							this.pendingStingerVoice = null;
 						}
 						return;
 					}
+					this.pendingStingerType = stingerType;
+					this.pendingStingerVoice = voiceId;
 					const unsub = this.addEndedListener(stingerType, info => {
 						if (info.voiceId !== voiceId) {
 							return;
@@ -1563,6 +1577,8 @@ export class SoundMaster implements RegisterablePersistent {
 						}
 						const target = this.pendingStingerReturnTo;
 						this.pendingStingerReturnTo = null;
+						this.pendingStingerType = null;
+						this.pendingStingerVoice = null;
 						if (target !== null) {
 							this.startMusicWithFade(target, fade_ms, start_at_loop_start, previousOffset);
 						}
@@ -1571,34 +1587,46 @@ export class SoundMaster implements RegisterablePersistent {
 				}).catch(() => {});
 				return;
 			}
-			const returnTarget = sync.return_to !== undefined ? sync.return_to : opts.to;
-			this.pendingStingerReturnTo = returnTarget;
-			this.stop('music', 'all');
-			this.play(sync.stinger).then(voiceId => {
-				if (voiceId === null) {
-					if (transitionId === this.musicTransitionRequestId) {
-						this.pendingStingerReturnTo = null;
-					}
-					return;
-				}
-				const unsub = this.addEndedListener(stingerType, info => {
-					if (info.voiceId !== voiceId) {
+				const returnTarget = sync.return_to !== undefined ? sync.return_to : opts.to;
+				this.pendingStingerReturnTo = returnTarget;
+				this.stop('music', 'all');
+				this.play(sync.stinger).then(voiceId => {
+						if (transitionId !== this.musicTransitionRequestId) {
+							if (voiceId !== null) {
+								this.stop(stingerType, 'byvoice', voiceId);
+							}
+							return;
+						}
+						if (voiceId === null) {
+							if (transitionId === this.musicTransitionRequestId) {
+								this.pendingStingerReturnTo = null;
+							this.pendingStingerType = null;
+							this.pendingStingerVoice = null;
+						}
 						return;
 					}
+					this.pendingStingerType = stingerType;
+					this.pendingStingerVoice = voiceId;
+					const unsub = this.addEndedListener(stingerType, info => {
+						if (info.voiceId !== voiceId) {
+							return;
+						}
 					unsub();
 					if (transitionId !== this.musicTransitionRequestId) {
 						return;
 					}
-					if (this.pendingStingerReturnUnsub === unsub) {
-						this.pendingStingerReturnUnsub = null;
-					}
-					const target = this.pendingStingerReturnTo;
-					this.pendingStingerReturnTo = null;
-					if (target !== null) {
-						this.startMusicWithFade(target, fade_ms, start_at_loop_start);
-					}
-				});
-				this.pendingStingerReturnUnsub = unsub;
+						if (this.pendingStingerReturnUnsub === unsub) {
+							this.pendingStingerReturnUnsub = null;
+						}
+						const target = this.pendingStingerReturnTo;
+						this.pendingStingerReturnTo = null;
+						this.pendingStingerType = null;
+						this.pendingStingerVoice = null;
+						if (target !== null) {
+							this.startMusicWithFade(target, fade_ms, start_at_loop_start);
+						}
+					});
+					this.pendingStingerReturnUnsub = unsub;
 			}).catch(() => {});
 			return;
 		}
@@ -1694,8 +1722,13 @@ export class SoundMaster implements RegisterablePersistent {
 		if (this.pendingStingerReturnUnsub !== null) {
 			this.pendingStingerReturnUnsub();
 		}
+		if (this.pendingStingerType !== null && this.pendingStingerVoice !== null) {
+			this.stop(this.pendingStingerType, 'byvoice', this.pendingStingerVoice);
+		}
 		this.pendingStingerReturnUnsub = null;
 		this.pendingStingerReturnTo = null;
+		this.pendingStingerType = null;
+		this.pendingStingerVoice = null;
 		return this.musicTransitionRequestId;
 	}
 

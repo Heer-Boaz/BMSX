@@ -85,6 +85,8 @@ void SoundMaster::resetPlaybackState() {
 	m_currentAudioIdByType = {"", "", ""};
 	m_currentParamsByType = {ModulationParams{}, ModulationParams{}, ModulationParams{}};
 	cancelActiveMusicTransition();
+	m_pendingStingerVoiceType.reset();
+	m_pendingStingerVoiceId = 0;
 	m_audioTimeSec = 0.0;
 	m_nextVoiceId = 1;
 }
@@ -301,10 +303,15 @@ void SoundMaster::cancelActiveMusicTransition() {
 	m_pendingTransition.reset();
 	m_pendingStingerReturnTo.reset();
 	m_pendingStingerReturnOffset.reset();
+	if (m_pendingStingerVoiceType.has_value() && m_pendingStingerVoiceId != 0) {
+		stop(m_pendingStingerVoiceType.value(), AudioStopSelector::ByVoice, m_pendingStingerVoiceId);
+	}
 	if (m_pendingStingerEndListener.has_value()) {
 		m_pendingStingerEndListener->unsubscribe();
 		m_pendingStingerEndListener.reset();
 	}
+	m_pendingStingerVoiceType.reset();
+	m_pendingStingerVoiceId = 0;
 }
 
 void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) {
@@ -330,20 +337,26 @@ void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) 
 		m_pendingStingerReturnOffset = returnToPrevious ? (previousOffset.has_value() ? previousOffset : std::optional<f64>{0.0}) : std::optional<f64>{};
 		stopMusic();
 
-		const VoiceId stingerVoice = play(resolved.sync.stinger);
-		if (stingerVoice == 0) {
-			m_pendingStingerReturnTo.reset();
-			m_pendingStingerReturnOffset.reset();
-			return;
-		}
-		const u64 transitionId = m_musicTransitionRequestId;
-		auto unsub = std::make_shared<SubscriptionHandle>();
-		*unsub = addEndedListener(stingerType, [this, stingerVoice, resolved, transitionId, unsub](const ActiveVoiceInfo& info) {
-			if (info.voiceId != stingerVoice) return;
-			unsub->unsubscribe();
-			if (transitionId != m_musicTransitionRequestId) return;
-			m_pendingStingerEndListener.reset();
-			if (!m_pendingStingerReturnTo.has_value()) return;
+	const VoiceId stingerVoice = play(resolved.sync.stinger);
+	if (stingerVoice == 0) {
+		m_pendingStingerVoiceType.reset();
+		m_pendingStingerVoiceId = 0;
+		m_pendingStingerReturnTo.reset();
+		m_pendingStingerReturnOffset.reset();
+		return;
+	}
+	m_pendingStingerVoiceType = stingerType;
+	m_pendingStingerVoiceId = stingerVoice;
+	const u64 transitionId = m_musicTransitionRequestId;
+	auto unsub = std::make_shared<SubscriptionHandle>();
+	*unsub = addEndedListener(stingerType, [this, stingerVoice, resolved, transitionId, unsub](const ActiveVoiceInfo& info) {
+		if (info.voiceId != stingerVoice) return;
+		unsub->unsubscribe();
+		if (transitionId != m_musicTransitionRequestId) return;
+		m_pendingStingerEndListener.reset();
+		m_pendingStingerVoiceType.reset();
+		m_pendingStingerVoiceId = 0;
+		if (!m_pendingStingerReturnTo.has_value()) return;
 			const auto target = m_pendingStingerReturnTo;
 			const auto offset = m_pendingStingerReturnOffset;
 			m_pendingStingerReturnTo.reset();

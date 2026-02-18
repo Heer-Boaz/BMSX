@@ -246,6 +246,8 @@ private:
 	std::optional<AssetId> m_pendingStingerReturnTo;
 	std::optional<f64> m_pendingStingerReturnOffset;
 	std::optional<SubscriptionHandle> m_pendingStingerEndListener;
+	std::optional<AudioType> m_pendingStingerVoiceType;
+	VoiceId m_pendingStingerVoiceId = 0;
 	u64 m_musicTransitionRequestId = 0;
 
 	std::array<size_t, 3> m_maxVoicesByType;
