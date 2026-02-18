@@ -240,9 +240,13 @@ private:
 	std::mt19937 m_rng;
 	mutable std::uniform_real_distribution<f32> m_unitDist;
 
+	void cancelActiveMusicTransition();
+
 	std::optional<PendingTransition> m_pendingTransition;
 	std::optional<AssetId> m_pendingStingerReturnTo;
 	std::optional<f64> m_pendingStingerReturnOffset;
+	std::optional<SubscriptionHandle> m_pendingStingerEndListener;
+	u64 m_musicTransitionRequestId = 0;
 
 	std::array<size_t, 3> m_maxVoicesByType;
 	std::vector<f32> m_mixBuffer;

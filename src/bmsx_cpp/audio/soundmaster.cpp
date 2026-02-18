@@ -84,9 +84,7 @@ void SoundMaster::resetPlaybackState() {
 	m_currentVoiceIdByType = {0, 0, 0};
 	m_currentAudioIdByType = {"", "", ""};
 	m_currentParamsByType = {ModulationParams{}, ModulationParams{}, ModulationParams{}};
-	m_pendingTransition.reset();
-	m_pendingStingerReturnTo.reset();
-	m_pendingStingerReturnOffset.reset();
+	cancelActiveMusicTransition();
 	m_audioTimeSec = 0.0;
 	m_nextVoiceId = 1;
 }
@@ -298,9 +296,21 @@ SubscriptionHandle SoundMaster::addEndedListener(AudioType type, std::function<v
 	});
 }
 
+void SoundMaster::cancelActiveMusicTransition() {
+	++m_musicTransitionRequestId;
+	m_pendingTransition.reset();
+	m_pendingStingerReturnTo.reset();
+	m_pendingStingerReturnOffset.reset();
+	if (m_pendingStingerEndListener.has_value()) {
+		m_pendingStingerEndListener->unsubscribe();
+		m_pendingStingerEndListener.reset();
+	}
+}
+
 void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) {
 	MusicTransitionRequest resolved = request;
 	if (resolved.fadeMs < 0) resolved.fadeMs = 0;
+	cancelActiveMusicTransition();
 
 	if (resolved.sync.kind != MusicTransitionSync::Kind::Stinger && !resolved.startFresh) {
 		if (currentTrackByType(AudioType::Music) == resolved.to) {
@@ -321,11 +331,18 @@ void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) 
 		stopMusic();
 
 		const VoiceId stingerVoice = play(resolved.sync.stinger);
-		if (stingerVoice == 0) return;
+		if (stingerVoice == 0) {
+			m_pendingStingerReturnTo.reset();
+			m_pendingStingerReturnOffset.reset();
+			return;
+		}
+		const u64 transitionId = m_musicTransitionRequestId;
 		auto unsub = std::make_shared<SubscriptionHandle>();
-		*unsub = addEndedListener(stingerType, [this, stingerVoice, resolved, unsub](const ActiveVoiceInfo& info) {
+		*unsub = addEndedListener(stingerType, [this, stingerVoice, resolved, transitionId, unsub](const ActiveVoiceInfo& info) {
 			if (info.voiceId != stingerVoice) return;
 			unsub->unsubscribe();
+			if (transitionId != m_musicTransitionRequestId) return;
+			m_pendingStingerEndListener.reset();
 			if (!m_pendingStingerReturnTo.has_value()) return;
 			const auto target = m_pendingStingerReturnTo;
 			const auto offset = m_pendingStingerReturnOffset;
@@ -335,6 +352,7 @@ void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) 
 				startMusicWithFade(target.value(), resolved.fadeMs / 1000.0, resolved.startAtLoopStart, offset);
 			}
 		});
+		m_pendingStingerEndListener = *unsub;
 		return;
 	}
 
