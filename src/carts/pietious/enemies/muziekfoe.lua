@@ -66,7 +66,7 @@ function muziekfoe.bt_tick(self, blackboard)
 		local delta_scale = 8
 		local delta_x, delta_y = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
 		local delta_divisor = math.random(1, 2)
-		inst('enemy.def.nootfoe', {
+		inst('enemy.nootfoe', {
 			space_id = room.space_id,
 			despawn_on_room_switch = true,
 			direction = delta_x < 0 and 'left' or 'right',
@@ -112,7 +112,7 @@ enemy_base.extend(muziekfoe, 'muziekfoe')
 
 function muziekfoe.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.muziekfoe',
+		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
 		type = 'sprite',
 		bts = { 'enemy.bt.muziekfoe' },

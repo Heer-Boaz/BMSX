@@ -152,7 +152,7 @@ enemy_base.extend(crossfoe, 'crossfoe')
 
 function crossfoe.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.crossfoe',
+		def_id = 'enemy.crossfoe',
 		class = crossfoe,
 		type = 'sprite',
 		bts = { 'enemy.bt.crossfoe' },

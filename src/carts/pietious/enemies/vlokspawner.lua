@@ -25,7 +25,7 @@ function vlokspawner.bt_tick(self, blackboard)
 	local spawn_x = math.random(2, 29) * room.tile_size
 	local spawn_y = room.world_top
 	local random_x = math.random(-5, 4)
-	inst('enemy.def.vlokfoe', {
+	inst('enemy.vlokfoe', {
 		space_id = room.space_id,
 		despawn_on_room_switch = true,
 		direction = random_x < 0 and 'left' or 'right',
@@ -63,7 +63,7 @@ enemy_base.extend(vlokspawner, 'vlokspawner')
 
 function vlokspawner.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.vlokspawner',
+		def_id = 'enemy.vlokspawner',
 		class = vlokspawner,
 		type = 'sprite',
 		bts = { 'enemy.bt.vlokspawner' },

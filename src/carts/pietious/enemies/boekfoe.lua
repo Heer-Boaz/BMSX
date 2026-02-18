@@ -48,7 +48,7 @@ function boekfoe.bt_tick(self, blackboard)
 	if spawn_ticks <= 0 then
 		local y_speed_num = math.random(-5, 4)
 		service('c').events:emit('evt.cue.paperspawn', {})
-		inst('enemy.def.paperfoe', {
+		inst('enemy.paperfoe', {
 			space_id = room.space_id,
 			despawn_on_room_switch = true,
 			direction = self.direction == 'left' and 'left' or 'right',
@@ -105,7 +105,7 @@ enemy_base.extend(boekfoe, 'boekfoe')
 
 function boekfoe.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.boekfoe',
+		def_id = 'enemy.boekfoe',
 		class = boekfoe,
 		type = 'sprite',
 		bts = { 'enemy.bt.boekfoe' },

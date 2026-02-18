@@ -59,7 +59,7 @@ function stafffoe.bt_tick(self, blackboard)
 	for i = 0, 3 do
 		local angle = (base_angle + (i * 90)) % 360
 		local speed_x_num, speed_y_num = speed_components_from_angle(constants.enemy.staff_bullet_speed_num, angle)
-		inst('enemy.def.staffspawn', {
+		inst('enemy.staffspawn', {
 			space_id = room.space_id,
 			despawn_on_room_switch = true,
 			direction = speed_x_num < 0 and 'left' or 'right',
@@ -101,7 +101,7 @@ enemy_base.extend(stafffoe, 'stafffoe')
 
 function stafffoe.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.stafffoe',
+		def_id = 'enemy.stafffoe',
 		class = stafffoe,
 		type = 'sprite',
 		bts = { 'enemy.bt.stafffoe' },

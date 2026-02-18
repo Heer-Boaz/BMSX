@@ -120,7 +120,7 @@ enemy_base.extend(zakfoe, 'zakfoe')
 
 function zakfoe.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.zakfoe',
+		def_id = 'enemy.zakfoe',
 		class = zakfoe,
 		type = 'sprite',
 		bts = { 'enemy.bt.zakfoe' },

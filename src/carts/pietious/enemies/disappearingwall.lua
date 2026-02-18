@@ -43,7 +43,7 @@ end
 
 function disappearingwall.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.disappearingwall',
+		def_id = 'enemy.disappearingwall',
 		class = disappearingwall,
 		components = { 'collider2dcomponent', 'customvisualcomponent' },
 		defaults = {

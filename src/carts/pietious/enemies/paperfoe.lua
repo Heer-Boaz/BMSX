@@ -36,7 +36,7 @@ enemy_base.extend(paperfoe, 'paperfoe')
 
 function paperfoe.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.paperfoe',
+		def_id = 'enemy.paperfoe',
 		class = paperfoe,
 		type = 'sprite',
 		bts = { 'enemy.bt.paperfoe' },

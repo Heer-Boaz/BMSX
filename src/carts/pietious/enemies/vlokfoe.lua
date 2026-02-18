@@ -35,7 +35,7 @@ enemy_base.extend(vlokfoe, 'vlokfoe')
 
 function vlokfoe.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.vlokfoe',
+		def_id = 'enemy.vlokfoe',
 		class = vlokfoe,
 		type = 'sprite',
 		bts = { 'enemy.bt.vlokfoe' },

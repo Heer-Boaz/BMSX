@@ -73,7 +73,7 @@ enemy_base.extend(marspeinenaardappel, 'marspeinenaardappel')
 
 function marspeinenaardappel.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.marspeinenaardappel',
+		def_id = 'enemy.marspeinenaardappel',
 		class = marspeinenaardappel,
 		type = 'sprite',
 		bts = { 'enemy.bt.marspeinenaardappel' },

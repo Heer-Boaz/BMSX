@@ -89,7 +89,7 @@ function cloud.bt_tick(self, blackboard)
 				random_x = math.random(-5, 4)
 				random_y = math.random(-5, 4)
 			end
-			inst('enemy.def.vlokfoe', {
+			inst('enemy.vlokfoe', {
 				space_id = room.space_id,
 				despawn_on_room_switch = true,
 				direction = random_x < 0 and 'left' or 'right',
@@ -130,7 +130,7 @@ enemy_base.extend(cloud, 'cloud')
 
 function cloud.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.cloud',
+		def_id = 'enemy.cloud',
 		class = cloud,
 		type = 'sprite',
 		bts = { 'enemy.bt.cloud' },

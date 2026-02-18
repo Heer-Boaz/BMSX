@@ -208,7 +208,7 @@ enemy_base.extend(mijterfoe, 'mijterfoe')
 
 function mijterfoe.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.mijterfoe',
+		def_id = 'enemy.mijterfoe',
 		class = mijterfoe,
 		type = 'sprite',
 		bts = { 'enemy.bt.mijterfoe' },

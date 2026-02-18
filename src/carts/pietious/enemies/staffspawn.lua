@@ -36,7 +36,7 @@ enemy_base.extend(staffspawn, 'staffspawn')
 
 function staffspawn.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.staffspawn',
+		def_id = 'enemy.staffspawn',
 		class = staffspawn,
 		type = 'sprite',
 		bts = { 'enemy.bt.staffspawn' },

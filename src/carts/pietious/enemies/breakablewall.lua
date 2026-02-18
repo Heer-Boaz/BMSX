@@ -49,7 +49,7 @@ end
 
 function breakablewall.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.breakablewall',
+		def_id = 'enemy.breakablewall',
 		class = breakablewall,
 		components = { 'collider2dcomponent', 'customvisualcomponent' },
 		defaults = {

@@ -48,7 +48,7 @@ enemy_base.extend(nootfoe, 'nootfoe')
 
 function nootfoe.register_enemy_definition()
 	define_prefab({
-		def_id = 'enemy.def.nootfoe',
+		def_id = 'enemy.nootfoe',
 		class = nootfoe,
 		type = 'sprite',
 		bts = { 'enemy.bt.nootfoe' },
