@@ -466,9 +466,9 @@ function player:sample_input()
 	local was_attack_held = self.attack_held
 	self.left_held = action_triggered('left[p]')
 	self.right_held = action_triggered('right[p]')
-	self.up_held = action_triggered('up[p]')
+	self.up_held = action_triggered('up[p] || a[p]')
 	self.down_held = action_triggered('down[p]')
-	self.attack_held = action_triggered('?(x[p], b[p], a[p])')
+	self.attack_held = action_triggered('?(x[p])')
 	self.up_pressed = self.up_held and (not was_up_held)
 	self.up_released = (not self.up_held) and was_up_held
 	self.down_pressed = self.down_held and (not was_down_held)
