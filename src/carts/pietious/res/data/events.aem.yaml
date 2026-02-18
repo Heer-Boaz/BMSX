@@ -26,6 +26,14 @@ events:
                       audio_id: music_shrine_2
                       sync:
                           stinger: shrine1
+            - when:
+                  equals:
+                      state: lithograph
+              go:
+                  music_transition:
+                      audio_id: music_lithograph2
+                      sync:
+                          stinger: music_lithograph1
 
     enemy.defeated:
         channel: sfx

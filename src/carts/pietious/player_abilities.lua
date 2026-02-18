@@ -101,7 +101,7 @@ local function activate_spyglass_ability(owner, state_tags)
 	if owner:has_tag(state_tags.group.damage_lock) then
 		return false
 	end
-	local lithograph = owner:find_near_lithograph()
+	local lithograph = room_module.find_near_lithograph(service('c').current_room, owner)
 	if lithograph == nil then
 		return false
 	end
@@ -205,27 +205,6 @@ function player_abilities.attach_player_methods(player)
 		for i = write_index, #ids do
 			ids[i] = nil
 		end
-	end
-
-	function player:find_near_lithograph()
-		local lithographs = service('c').current_room.lithographs
-		local player_left = self.x
-		local player_top = self.y
-		local player_right = self.x + self.width
-		local player_bottom = self.y + self.height
-
-		for i = 1, #lithographs do
-			local lithograph = lithographs[i]
-			local area_left = lithograph.x + constants.lithograph.hit_left_px
-			local area_top = lithograph.y + constants.lithograph.hit_top_px
-			local area_right = lithograph.x + constants.lithograph.hit_right_px
-			local area_bottom = lithograph.y + constants.lithograph.hit_bottom_px
-			if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
-				return lithograph
-			end
-		end
-
-		return nil
 	end
 
 	function player:equip_subweapon(id)

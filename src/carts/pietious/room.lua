@@ -512,6 +512,47 @@ function room.is_solid_at_world(room_state, world_x, world_y)
 	return room.is_solid_at_tile(room_state, tx, ty)
 end
 
+function room.sync_lithograph_instances(room_state)
+	local lithograph_defs = room_state.lithographs
+	for i = 1, #lithograph_defs do
+		local lithograph_def = lithograph_defs[i]
+		local instance = object(lithograph_def.id)
+		if instance == nil then
+			inst('lithograph.def', {
+				id = lithograph_def.id,
+				space_id = room_state.space_id,
+				pos = { x = lithograph_def.x, y = lithograph_def.y, z = 140 },
+				text = lithograph_def.text,
+				room_number = room_state.room_number,
+			})
+		else
+			instance:configure_from_room_def(lithograph_def, room_state)
+		end
+	end
+end
+
+function room.find_near_lithograph(room_state, player)
+	room.sync_lithograph_instances(room_state)
+	local lithograph_defs = room_state.lithographs
+	local player_left = player.x
+	local player_top = player.y
+	local player_right = player.x + player.width
+	local player_bottom = player.y + player.height
+
+	for i = 1, #lithograph_defs do
+		local lithograph = object(lithograph_defs[i].id)
+		local area_left = lithograph.x + constants.lithograph.hit_left_px
+		local area_top = lithograph.y + constants.lithograph.hit_top_px
+		local area_right = lithograph.x + constants.lithograph.hit_right_px
+		local area_bottom = lithograph.y + constants.lithograph.hit_bottom_px
+		if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
+			return lithograph
+		end
+	end
+
+	return nil
+end
+
 function room.switch_room(room_state, direction)
 	local target_room_number = room_state.links[direction]
 	if target_room_number == nil or target_room_number == 0 then
@@ -563,11 +604,13 @@ function room_object:bind_events()
 		subscriber = self,
 		handler = function(event)
 			self.space_id = event.space
+			room.sync_lithograph_instances(service('c').current_room)
 		end,
 	})
 end
 
 function room_object:ctor()
+	room.sync_lithograph_instances(service('c').current_room)
 	self:bind_visual()
 	self:bind_events()
 end
