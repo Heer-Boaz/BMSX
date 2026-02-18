@@ -74,7 +74,6 @@
     - not_destroyed
     x: 13
     y: 13
-    item: none
   - type: rock
     condition:
     - not_destroyed
@@ -130,13 +129,11 @@
     - not_destroyed
     x: 13
     y: 17
-    item: none
   - type: rock
     condition:
     - not_destroyed
     x: 10
     y: 1
-    item: none
 4:
   type: castle
   subtype: castlegarden
@@ -192,7 +189,6 @@
     - not_destroyed
     x: 17
     y: 5
-    item: none
   - type: shrine
     x: 17
     y: 5
@@ -411,7 +407,6 @@
     - not_destroyed
     x: 25
     y: 6
-    item: none
   - type: rock
     condition:
     - not_destroyed
@@ -599,13 +594,11 @@
     - not_destroyed
     x: 24
     y: 5
-    item: none
   - type: rock
     condition:
     - not_destroyed
     x: 4
     y: 1
-    item: none
   - type: rock
     condition:
     - not_destroyed
@@ -671,13 +664,11 @@
     - not_destroyed
     x: 17
     y: 4
-    item: none
   - type: rock
     condition:
     - not_destroyed
     x: 13
     y: 13
-    item: none
 13:
   type: castle
   subtype: castlegold
@@ -713,7 +704,6 @@
     - not_destroyed
     x: 26
     y: 10
-    item: none
   - type: rock
     condition:
     - not_destroyed

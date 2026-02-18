@@ -90,11 +90,14 @@ local function condition_matches(condition, player, room_flags)
 end
 
 function item_service:item_should_spawn(item_def, room_number, player)
-	if item_def.item_def == nil then return false end -- Don't spawn items that are not there (e.g. empty stone)
+	local item_type = item_def.item_type
+	if item_type == nil then
+		return false
+	end
 	if self.picked_item_ids[item_def.id] == true then
 		return false
 	end
-	if player.inventory_items[item_def.item_type] == true then
+	if player.inventory_items[item_type] == true then
 		return false
 	end
 
