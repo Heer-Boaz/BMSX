@@ -527,6 +527,20 @@ function room.sync_lithograph_instances(room_state)
 	end
 end
 
+function room.sync_shrine_instances(room_state)
+	local shrine_defs = room_state.shrines
+	for i = 1, #shrine_defs do
+		local shrine_def = shrine_defs[i]
+		if object(shrine_def.id) == nil then
+			inst('room_shrine.def', {
+				id = shrine_def.id,
+				space_id = room_state.space_id,
+				pos = { x = shrine_def.x, y = shrine_def.y, z = 22 },
+			})
+		end
+	end
+end
+
 function room.find_near_lithograph(room_state, player)
 	room.sync_lithograph_instances(room_state)
 	local lithograph_defs = room_state.lithographs
@@ -601,12 +615,14 @@ function room_object:bind_events()
 		handler = function(event)
 			self.space_id = event.space
 			room.sync_lithograph_instances(service('c').current_room)
+			room.sync_shrine_instances(service('c').current_room)
 		end,
 	})
 end
 
 function room_object:ctor()
 	room.sync_lithograph_instances(service('c').current_room)
+	room.sync_shrine_instances(service('c').current_room)
 	self:bind_visual()
 	self:bind_events()
 end
@@ -627,12 +643,6 @@ function room_object:render_tiles(room_state)
 end
 
 function room_object:render_room_objects(room_state)
-	local shrines = room_state.shrines
-	for i = 1, #shrines do
-		local shrine = shrines[i]
-		put_sprite('shrine', shrine.x, shrine.y, 22)
-	end
-
 	local castle_service = service('c')
 	local world_entrances = room_state.world_entrances
 	for i = 1, #world_entrances do

@@ -27,8 +27,25 @@ function shrine:render()
 	end
 end
 
+local room_shrine = {}
+room_shrine.__index = room_shrine
+
+function room_shrine:ctor()
+	self.collider.enabled = false
+	self:gfx('shrine')
+end
+
 local function define_shrine_fsm()
 	define_fsm('shrine.fsm', {
+		initial = 'active',
+		states = {
+			active = {},
+		},
+	})
+end
+
+local function define_room_shrine_fsm()
+	define_fsm('room_shrine.fsm', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -50,8 +67,23 @@ local function register_shrine_definition()
 	})
 end
 
+local function register_room_shrine_definition()
+	define_prefab({
+		def_id = 'room_shrine.def',
+		class = room_shrine,
+		type = 'sprite',
+		fsms = { 'room_shrine.fsm' },
+		defaults = {
+			tick_enabled = false,
+		},
+	})
+end
+
 return {
 	shrine = shrine,
+	room_shrine = room_shrine,
 	define_shrine_fsm = define_shrine_fsm,
+	define_room_shrine_fsm = define_room_shrine_fsm,
 	register_shrine_definition = register_shrine_definition,
+	register_room_shrine_definition = register_room_shrine_definition,
 }
