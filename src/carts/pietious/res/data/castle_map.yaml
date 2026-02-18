@@ -424,8 +424,8 @@
     area:
     - 10
     - 5
-    - 28
-    - 13
+    - 18
+    - 8
     hp: 20
     trigger: castlewalldestroyed
     tiletype: frontworld_blue_l
@@ -1045,8 +1045,8 @@
     area:
     - 10
     - 1
-    - 25
-    - 5
+    - 15
+    - 4
     trigger: world1walldisappear
     tiletype: frontworld_l
   - type: lithograph

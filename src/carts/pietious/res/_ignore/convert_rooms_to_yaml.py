@@ -120,13 +120,16 @@ def extract_vector2(v_str):
     return None
 
 def extract_rect_or_area(v_str):
-    # Matches "new Rect(x, y, w, h)" or "new Area(x, y, w, h)"
-    m = re.search(r'new\s+(?:Rect|Area)\s*\(([^)]+)\)', v_str)
+    # Matches "new Rect(x, y, w, h)" or "new Area(sx, sy, ex, ey)"
+    m = re.search(r'new\s+(Rect|Area)\s*\(([^)]+)\)', v_str)
     if m:
-        r_str = m.group(1)
+        kind = m.group(1)
+        r_str = m.group(2)
         r_args = [int(x.strip()) for x in r_str.split(',')]
         if len(r_args) >= 4:
-            return [r_args[0], r_args[1], r_args[0]+r_args[2], r_args[1]+r_args[3]]
+            if kind == 'Area':
+                return [r_args[0], r_args[1], r_args[2], r_args[3]]
+            return [r_args[0], r_args[1], r_args[0] + r_args[2], r_args[1] + r_args[3]]
     return None
 
 # --- Logic ---

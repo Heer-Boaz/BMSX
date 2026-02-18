@@ -99,6 +99,15 @@ events:
                   audio_id: foedamage
                   priority: 10
 
+    evt.cue.appearance:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: appearance
+                  priority: 105
+
     evt.cue.paperspawn:
         channel: sfx
         max_voices: 1
