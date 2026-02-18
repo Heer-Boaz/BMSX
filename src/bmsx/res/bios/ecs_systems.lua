@@ -541,9 +541,8 @@ function textrendersystem.new(priority)
 end
 
 function textrendersystem:update()
-	local active_space = world_instance:get_space()
 	for obj, tc in world_instance:objects_with_components(textcomponent, { scope = "active" }) do
-		if not tc.enabled or world_instance:_object_space_id(obj) ~= active_space then
+		if not tc.enabled then
 			goto continue
 		end
 		local offset = tc.offset
@@ -580,9 +579,8 @@ function spriterendersystem.new(priority)
 end
 
 function spriterendersystem:update()
-	local active_space = world_instance:get_space()
 	for obj, sc in world_instance:objects_with_components(spritecomponent, { scope = "active" }) do
-		if obj.visible == false or not sc.enabled or world_instance:_object_space_id(obj) ~= active_space then
+		if obj.visible == false or not sc.enabled then
 			goto continue
 		end
 		local offset = sc.offset
@@ -616,9 +614,8 @@ function meshrendersystem.new(priority)
 end
 
 function meshrendersystem:update()
-	local active_space = world_instance:get_space()
 	for obj, mc in world_instance:objects_with_components(meshcomponent, { scope = "active" }) do
-		if obj.visible == false or not mc.enabled or world_instance:_object_space_id(obj) ~= active_space then
+		if obj.visible == false or not mc.enabled then
 			goto continue
 		end
 		put_mesh(mc.mesh, mc.matrix, {
@@ -640,9 +637,8 @@ function rendersubmitsystem.new(priority)
 end
 
 function rendersubmitsystem:update()
-	local active_space = world_instance:get_space()
 	for obj, rc in world_instance:objects_with_components(customvisualcomponent, { scope = "active" }) do
-		if obj.visible == false or not rc.enabled or world_instance:_object_space_id(obj) ~= active_space then
+		if obj.visible == false or not rc.enabled then
 			goto continue
 		end
 		rc:flush()

@@ -236,11 +236,7 @@ function world_class:_object_in_scope(obj, scope)
 		if not obj.active then
 			return false
 		end
-		local space_id = self:_object_space_id(obj)
-		if space_id == self.active_space_id then
-			return true
-		end
-		return space_id == "ui"
+		return self:_object_space_id(obj) == self.active_space_id
 	end
 	return true
 end
