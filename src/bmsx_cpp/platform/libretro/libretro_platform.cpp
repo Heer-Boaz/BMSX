@@ -788,16 +788,20 @@ LibretroInputHub::LibretroInputHub(LibretroPlatform* platform)
 namespace {
 
 #if defined(BMSX_SNESMINI_LEGACY)
-constexpr const char* kLibretroBtnA = "a";
-constexpr const char* kLibretroBtnB = "b";
-#else
 constexpr const char* kLibretroBtnA = "b";
 constexpr const char* kLibretroBtnB = "a";
+constexpr const char* kLibretroBtnX = "y";
+constexpr const char* kLibretroBtnY = "x";
+#else
+constexpr const char* kLibretroBtnA = "a";
+constexpr const char* kLibretroBtnB = "b";
+constexpr const char* kLibretroBtnX = "x";
+constexpr const char* kLibretroBtnY = "y";
 #endif
 
 constexpr std::array<const char*, InputState::BUTTONS_PER_PLAYER> kLibretroButtonIds = {
 	kLibretroBtnB,      // RETRO_DEVICE_ID_JOYPAD_B
-	"x",      // RETRO_DEVICE_ID_JOYPAD_Y
+	kLibretroBtnY,      // RETRO_DEVICE_ID_JOYPAD_Y
 	"select", // RETRO_DEVICE_ID_JOYPAD_SELECT
 	"start",  // RETRO_DEVICE_ID_JOYPAD_START
 	"up",     // RETRO_DEVICE_ID_JOYPAD_UP
@@ -805,7 +809,7 @@ constexpr std::array<const char*, InputState::BUTTONS_PER_PLAYER> kLibretroButto
 	"left",   // RETRO_DEVICE_ID_JOYPAD_LEFT
 	"right",  // RETRO_DEVICE_ID_JOYPAD_RIGHT
 	kLibretroBtnA,      // RETRO_DEVICE_ID_JOYPAD_A
-	"y",      // RETRO_DEVICE_ID_JOYPAD_X
+	kLibretroBtnX,      // RETRO_DEVICE_ID_JOYPAD_X
 	"lb",     // RETRO_DEVICE_ID_JOYPAD_L
 	"rb",     // RETRO_DEVICE_ID_JOYPAD_R
 	"lt",     // RETRO_DEVICE_ID_JOYPAD_L2

@@ -3623,13 +3623,40 @@ static uint16_t map_ev_key_to_pad(uint16_t code) {
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L);
 		case BTN_TR:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R);
+		case KEY_LEFTSHIFT:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L);
+		case KEY_RIGHTSHIFT:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R);
+		case BTN_TL2:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L2);
+		case BTN_TR2:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R2);
 
 		case BTN_START:
 		case KEY_ENTER:
+		case KEY_KPENTER:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START);
 		case BTN_SELECT:
-		case KEY_RIGHTSHIFT:
+		case KEY_BACKSPACE:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
+		case KEY_LEFTCTRL:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L2);
+		case KEY_RIGHTCTRL:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R2);
+
+		case KEY_Q:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L3);
+		case KEY_E:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R3);
+
+		case KEY_X:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_A);
+		case KEY_C:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_B);
+		case KEY_Z:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_X);
+		case KEY_S:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_Y);
 
 		case BTN_SOUTH:
 			// SNES mini button wiring reports A/B swapped; map to physical layout.
@@ -3658,23 +3685,33 @@ static uint16_t map_sdl_key_to_pad(SDL_Keycode code) {
 		case SDLK_RIGHT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
 
-		case SDLK_q:
+		case SDLK_LSHIFT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L);
-		case SDLK_w:
+		case SDLK_RSHIFT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R);
+
+		case SDLK_LCTRL:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L2);
+		case SDLK_RCTRL:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R2);
+
+		case SDLK_q:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L3);
+		case SDLK_e:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R3);
 
 		case SDLK_RETURN:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START);
-		case SDLK_RSHIFT:
+		case SDLK_BACKSPACE:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
 
 		case SDLK_x:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_A);
-		case SDLK_z:
+		case SDLK_c:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_B);
-		case SDLK_s:
+		case SDLK_z:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_X);
-		case SDLK_a:
+		case SDLK_s:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_Y);
 		default:
 			return 0;
@@ -3710,6 +3747,10 @@ static uint16_t map_sdl_button_to_pad(uint8_t button) {
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_X);
 		case SDL_CONTROLLER_BUTTON_Y:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_Y);
+		case SDL_CONTROLLER_BUTTON_LEFTSTICK:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L3);
+		case SDL_CONTROLLER_BUTTON_RIGHTSTICK:
+			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R3);
 		default:
 			return 0;
 	}
@@ -4028,16 +4069,20 @@ static void poll_input_devices_sdl(void) {
 			SDLK_DOWN,
 			SDLK_LEFT,
 			SDLK_RIGHT,
-			SDLK_q,
-			SDLK_w,
-			SDLK_RETURN,
-			SDLK_BACKSPACE,
-			SDLK_ESCAPE,
+
+			SDLK_LSHIFT,
 			SDLK_RSHIFT,
+			SDLK_LCTRL,
+			SDLK_RCTRL,
+			SDLK_BACKSPACE,
+			SDLK_RETURN,
+
 			SDLK_x,
+			SDLK_c,
 			SDLK_z,
 			SDLK_s,
-			SDLK_a,
+			SDLK_q,
+			SDLK_e,
 		};
 		for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
 			SDL_Scancode sc = SDL_GetScancodeFromKey(keys[i]);
@@ -4060,6 +4105,8 @@ static void poll_input_devices_sdl(void) {
 			SDL_CONTROLLER_BUTTON_B,
 			SDL_CONTROLLER_BUTTON_X,
 			SDL_CONTROLLER_BUTTON_Y,
+			SDL_CONTROLLER_BUTTON_LEFTSTICK,
+			SDL_CONTROLLER_BUTTON_RIGHTSTICK,
 		};
 		for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); ++i) {
 			if (SDL_GameControllerGetButton(g_sdl_gamepad, buttons[i])) {
