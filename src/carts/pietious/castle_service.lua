@@ -424,22 +424,8 @@ function castle_service:tick()
 	end
 end
 
-function castle_service:can_cross_edge(direction, player_top, player_bottom)
-	local gate = self.current_room.edge_gates[direction]
-	if gate == nil then
-		return true
-	end
-	if player_bottom < gate.y_min or player_top > gate.y_max then
-		return false
-	end
-	return true
-end
-
 function castle_service:switch_room(direction, player_top, player_bottom)
 	local previous_space = self.current_room.space_id
-	if not self:can_cross_edge(direction, player_top, player_bottom) then
-		return nil
-	end
 
 	local switch = room_module.switch_room(self.current_room, direction)
 	if switch == nil then
