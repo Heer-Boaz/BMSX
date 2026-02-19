@@ -1,6 +1,4 @@
 local constants = require('constants')
-local tile_half = constants.room.tile_half
-local tile_size = constants.room.tile_size
 local sprite_id_by_kind = {
 	[1] = {
 		closed = 'draaideur_1_closed',
@@ -16,8 +14,6 @@ local sprite_id_by_kind = {
 	},
 }
 local closed_offset_x = 0
-local open_half_offset_x = -tile_half
-local open_full_offset_x = -tile_size
 
 local draaideur = {}
 draaideur.__index = draaideur
@@ -152,24 +148,24 @@ function draaideur:sync_sprite()
 	if self.state < -16 then
 		local sprite_id = self.state2 == 0 and sprite_set.open_1 or sprite_set.open_3
 		self:gfx(sprite_id)
-		self.sprite_component.offset.x = open_half_offset_x
+		self.sprite_component.offset.x = -constants.room.tile_half
 		return
 	end
 
 	if self.state < -8 then
 		self:gfx(sprite_set.open_2)
-		self.sprite_component.offset.x = open_full_offset_x
+		self.sprite_component.offset.x = -constants.room.tile_size
 		return
 	end
 
 	if self.state2 == 0 then
 		self:gfx(sprite_set.open_3)
-		self.sprite_component.offset.x = open_half_offset_x
+		self.sprite_component.offset.x = -constants.room.tile_half
 		return
 	end
 
 	self:gfx(sprite_set.open_1)
-	self.sprite_component.offset.x = open_half_offset_x
+	self.sprite_component.offset.x = -constants.room.tile_half
 end
 
 function draaideur:ctor()
