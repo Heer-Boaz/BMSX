@@ -1,4 +1,23 @@
 local constants = require('constants')
+local tile_half = constants.room.tile_half
+local tile_size = constants.room.tile_size
+local sprite_id_by_kind = {
+	[1] = {
+		closed = 'draaideur_1_closed',
+		open_1 = 'draaideur_1_open_1',
+		open_2 = 'draaideur_1_open_2',
+		open_3 = 'draaideur_1_open_3',
+	},
+	[2] = {
+		closed = 'draaideur_2_closed',
+		open_1 = 'draaideur_2_open_1',
+		open_2 = 'draaideur_2_open_2',
+		open_3 = 'draaideur_2_open_3',
+	},
+}
+local closed_offset_x = 0
+local open_half_offset_x = -tile_half
+local open_full_offset_x = -tile_size
 
 local draaideur = {}
 draaideur.__index = draaideur
@@ -122,37 +141,35 @@ function draaideur:tick_active()
 	self:sync_sprite()
 end
 
-function draaideur:draw_sprite_info()
-	local sprite_set_prefix
-	if self.kind == 1 then
-		sprite_set_prefix = 'draaideur_1_'
-	else
-		sprite_set_prefix = 'draaideur_2_'
-	end
-
+function draaideur:sync_sprite()
+	local sprite_set = sprite_id_by_kind[self.kind]
 	if self.state >= 0 then
-		return sprite_set_prefix .. 'closed', 0
+		self:gfx(sprite_set.closed)
+		self.sprite_component.offset.x = closed_offset_x
+		return
 	end
 
 	if self.state < -16 then
-		if self.state2 == 0 then
-			return sprite_set_prefix .. 'open_1', -constants.room.tile_half
-		end
-		return sprite_set_prefix .. 'open_3', -constants.room.tile_half
+		local sprite_id = self.state2 == 0 and sprite_set.open_1 or sprite_set.open_3
+		self:gfx(sprite_id)
+		self.sprite_component.offset.x = open_half_offset_x
+		return
 	end
-	if self.state < -8 then
-		return sprite_set_prefix .. 'open_2', -constants.room.tile_size
-	end
-	if self.state2 == 0 then
-		return sprite_set_prefix .. 'open_3', -constants.room.tile_half
-	end
-	return sprite_set_prefix .. 'open_1', -constants.room.tile_half
-end
 
-function draaideur:sync_sprite()
-	local sprite_id, draw_offset_x = self:draw_sprite_info()
-	self:gfx(sprite_id)
-	self.sprite_component.offset.x = draw_offset_x
+	if self.state < -8 then
+		self:gfx(sprite_set.open_2)
+		self.sprite_component.offset.x = open_full_offset_x
+		return
+	end
+
+	if self.state2 == 0 then
+		self:gfx(sprite_set.open_3)
+		self.sprite_component.offset.x = open_half_offset_x
+		return
+	end
+
+	self:gfx(sprite_set.open_1)
+	self.sprite_component.offset.x = open_half_offset_x
 end
 
 function draaideur:ctor()
@@ -181,7 +198,6 @@ local function register_draaideur_definition()
 			kind = 1,
 			state = 0,
 			state2 = 0,
-			tick_enabled = true,
 		},
 	})
 end

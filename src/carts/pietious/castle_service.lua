@@ -1,6 +1,7 @@
 local constants = require('constants')
 local room_module = require('room')
 local castle_map = require('castle_map')
+local set_utils = require('set_utils')
 local world_instance = require('world').instance
 
 local castle_service = {}
@@ -10,12 +11,7 @@ local persistent_room_object_ids = {
 	room = true,
 	ui = true,
 }
-
-local function clear_map(map)
-	for key in pairs(map) do
-		map[key] = nil
-	end
-end
+local clear_map = set_utils.clear_map
 
 local function create_room_switch(from_room_number, to_room_number, direction)
 	return {

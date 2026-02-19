@@ -1,7 +1,15 @@
 local constants = require('constants')
 local castle_map = require('castle_map')
+local set_utils = require('set_utils')
 
 local room = {}
+local clear_map = set_utils.clear_map
+
+local function append_definition_ids(target, defs)
+	for i = 1, #defs do
+		target[defs[i].id] = true
+	end
+end
 
 local background_themes = {
 	castleblue = {
@@ -428,6 +436,16 @@ local function apply_room_template(room_state, template)
 	room_state.draaideuren = template.draaideuren
 	room_state.links = template.links
 	room_state.edge_gates = template.edge_gates
+
+	local runtime_object_ids = room_state.runtime_object_ids or {}
+	clear_map(runtime_object_ids)
+	room_state.runtime_object_ids = runtime_object_ids
+	append_definition_ids(runtime_object_ids, room_state.enemies)
+	append_definition_ids(runtime_object_ids, room_state.rocks)
+	append_definition_ids(runtime_object_ids, room_state.items)
+	append_definition_ids(runtime_object_ids, room_state.lithographs)
+	append_definition_ids(runtime_object_ids, room_state.shrines)
+	append_definition_ids(runtime_object_ids, room_state.draaideuren)
 end
 
 function room.create_room(room_number)
