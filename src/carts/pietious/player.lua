@@ -28,6 +28,7 @@ local state_tags = {
 		waiting_world_banner = 'v.wwb',
 		waiting_world_emerge = 'v.wwe',
 		emerging_world = 'v.ewd',
+		slowdoorpass = 'v.sdp',
 		entering_shrine = 'v.es',
 		waiting_shrine = 'v.ws',
 		leaving_shrine = 'v.ls',
@@ -158,6 +159,7 @@ function player:reset_runtime()
 	self.stairs_anim_distance = 0
 	self.hit_stairs_lock = false
 	self.stairs_landing_sound_pending = false
+	self.slow_doorpass_substate = 0
 	self.health = constants.damage.max_health
 	self.max_health = constants.damage.max_health
 	self.hit_invulnerability_timer = 0
@@ -792,6 +794,13 @@ function player:begin_world_emerge_from_door()
 	self:dispatch_state_event('world_emerge_start')
 end
 
+function player:start_slow_doorpass()
+	self.abilities:end_once('sword', 'slowdoorpass')
+	self:force_seek_timeline('p.seq.s', 0)
+	self.slow_doorpass_substate = 0
+	self:dispatch_state_event('slowdoorpass_start')
+end
+
 function player:leave_shrine_overlay()
 	self:reset_enter_leave_animation()
 	self.enter_leave_shrine_text_lines = {}
@@ -1272,6 +1281,9 @@ function player:collides_at(x, y, include_elevator)
 		return true
 	end
 	if room.overlaps_active_breakable_wall(service('c').current_room, x, y, self.width, self.height) then
+		return true
+	end
+	if room.overlaps_active_draaideur(service('c').current_room, x, y, self.width, self.height) then
 		return true
 	end
 
@@ -1851,9 +1863,7 @@ function player:tick_walking_right()
 
 	local move_result = self:apply_move(walk_dx, 0)
 	self.walk_move_collided_x = move_result.collided_x
-	if self.last_dx ~= 0 then
-		self:advance_walk_animation(math.abs(self.last_dx))
-	end
+	self:advance_walk_animation(walk_dx)
 end
 
 function player:tick_walking_left()
@@ -1874,9 +1884,35 @@ function player:tick_walking_left()
 
 	local move_result = self:apply_move(-walk_dx, 0)
 	self.walk_move_collided_x = move_result.collided_x
-	if self.last_dx ~= 0 then
-		self:advance_walk_animation(math.abs(self.last_dx))
+	self:advance_walk_animation(walk_dx)
+end
+
+function player:tick_slowdoorpass()
+	self.abilities:end_once('sword', 'slowdoorpass')
+	self:force_seek_timeline('p.seq.s', 0)
+
+	local substate = self.slow_doorpass_substate
+	if substate <= 24 then
+		if self.facing > 0 then
+			self:apply_move(1, 0)
+		else
+			self:apply_move(-1, 0)
+		end
+		if (math.modf(substate / 4) % 2) == 0 then
+			self.walk_frame = 1
+		else
+			self.walk_frame = 0
+		end
 	end
+
+	if substate >= 24 then
+		self.slow_doorpass_substate = 0
+		self.walk_frame = 0
+		self:dispatch_state_event('slowdoorpass_done')
+		return
+	end
+
+	self.slow_doorpass_substate = substate + 1
 end
 
 function player:tick_jump_motion()
@@ -2407,6 +2443,7 @@ local function define_player_fsm()
 			tags = { state_tags.variant.walking_right },
 			on = {
 				['jump_input'] = '/jumping',
+				['slowdoorpass_start'] = '/slowdoorpass',
 				['left_override'] = '/walking_left',
 				['right_released_to_left'] = '/walking_left',
 				['right_released_to_quiet'] = '/quiet',
@@ -2432,6 +2469,7 @@ local function define_player_fsm()
 			tags = { state_tags.variant.walking_left },
 			on = {
 				['jump_input'] = '/jumping',
+				['slowdoorpass_start'] = '/slowdoorpass',
 				['right_override'] = '/walking_right',
 				['left_released_to_right'] = '/walking_right',
 				['left_released_to_quiet'] = '/quiet',
@@ -2452,6 +2490,18 @@ local function define_player_fsm()
 					end,
 				},
 			},
+		},
+		slowdoorpass = {
+			tags = { state_tags.variant.slowdoorpass, state_tags.group.damage_lock },
+			on = {
+				['slowdoorpass_done'] = '/quiet',
+			},
+			entering_state = function(self)
+				self.slow_doorpass_substate = 0
+				self.walk_frame = 0
+			end,
+			process_input = player.sample_input,
+			tick = player.tick_slowdoorpass,
 		},
 		jumping = {
 			tags = { state_tags.variant.jumping },
@@ -2788,6 +2838,7 @@ local function define_player_fsm()
 			[state_tags.group.movement_walk] = {
 				state_tags.variant.walking_right,
 				state_tags.variant.walking_left,
+				state_tags.variant.slowdoorpass,
 			},
 			[state_tags.group.player_stairs] = {
 				state_tags.variant.up_stairs,
@@ -2913,6 +2964,7 @@ local function register_player_definition()
 			stairs_anim_distance = 0,
 			hit_stairs_lock = false,
 			stairs_landing_sound_pending = false,
+			slow_doorpass_substate = 0,
 			health = constants.damage.max_health,
 			max_health = constants.damage.max_health,
 			hit_invulnerability_timer = 0,

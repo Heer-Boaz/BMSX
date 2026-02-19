@@ -168,7 +168,16 @@ events:
         rules:
             - go:
                   audio_id: worlddooropen
-                  priority: 11
+                  priority: 30
+
+    evt.cue.rotatedoor:
+        channel: sfx
+        max_voices: 1
+        policy: replace
+        rules:
+            - go:
+                  audio_id: rotatedoor
+                  priority: 30
 
     evt.cue.enterleave:
         channel: sfx

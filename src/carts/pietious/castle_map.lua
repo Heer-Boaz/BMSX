@@ -4,7 +4,7 @@ local romdir = require('romdir')
 local castle_map = {}
 local empty_conditions = {}
 
-local start_room_number = 102
+local start_room_number = 106
 
 local world_transition_specs = {
 	world_1 = {
@@ -386,6 +386,35 @@ local function build_world_entrances(room_number, object_defs)
 	return world_entrances
 end
 
+local function build_draaideuren(room_number, object_defs)
+	local draaideuren = {}
+	local door_index = 0
+
+	for i = 1, #object_defs do
+		local object_def = object_defs[i]
+		local object_type = object_def.type
+		if object_type == 'draaideur' or object_type == 'draaideur2' or object_type == 'draaideur3' then
+			door_index = door_index + 1
+			local kind
+			if object_type == 'draaideur' then
+				kind = 1
+			elseif object_type == 'draaideur2' then
+				kind = 2
+			else
+				kind = 3
+			end
+			draaideuren[#draaideuren + 1] = {
+				id = string.format('draaideur_%03d_%02d', room_number, door_index),
+				x = tile_x_to_world(object_def.x),
+				y = tile_y_to_world(object_def.y),
+				kind = kind,
+			}
+		end
+	end
+
+	return draaideuren
+end
+
 local function load_room_templates()
 	local data = assets.data[romdir.token('castle_map')]
 	local room_numbers = sort_room_numbers(data)
@@ -416,6 +445,7 @@ local function load_room_templates()
 			lithographs = build_lithographs(room_number, object_defs),
 			shrines = build_shrines(room_number, object_defs),
 			world_entrances = build_world_entrances(room_number, object_defs),
+			draaideuren = build_draaideuren(room_number, object_defs),
 		}
 	end
 

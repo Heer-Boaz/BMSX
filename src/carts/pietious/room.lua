@@ -152,6 +152,25 @@ local function build_collision_map(map_rows)
 	return collision
 end
 
+local function build_visual_map_rows(map_rows, draaideuren, tile_size, origin_x, origin_y)
+	local visual_rows = {}
+	for y = 1, #map_rows do
+		visual_rows[y] = map_rows[y]
+	end
+
+	for i = 1, #draaideuren do
+		local draaideur = draaideuren[i]
+		local tx = math.modf((draaideur.x - origin_x) / tile_size) + 1
+		local ty = math.modf((draaideur.y - origin_y) / tile_size) + 1
+		for row = ty, ty + 2 do
+			local line = visual_rows[row]
+			visual_rows[row] = line:sub(1, tx - 1) .. '.' .. line:sub(tx + 1)
+		end
+	end
+
+	return visual_rows
+end
+
 local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
 	local background = background_themes[room_subtype]
 	local pillars = pillar_themes[room_subtype]
@@ -372,7 +391,13 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 end
 
 local function apply_room_template(room_state, template)
-	local map_rows = template.map_rows
+	local map_rows = build_visual_map_rows(
+		template.map_rows,
+		template.draaideuren,
+		constants.room.tile_size,
+		constants.room.tile_origin_x,
+		constants.room.tile_origin_y
+	)
 	local collision_map = build_collision_map(map_rows)
 	local tiles = build_tile_grid(map_rows, collision_map, template.room_subtype)
 
@@ -400,6 +425,7 @@ local function apply_room_template(room_state, template)
 	room_state.lithographs = template.lithographs
 	room_state.shrines = template.shrines
 	room_state.world_entrances = template.world_entrances
+	room_state.draaideuren = template.draaideuren
 	room_state.links = template.links
 	room_state.edge_gates = template.edge_gates
 end
@@ -441,6 +467,9 @@ function room.is_wall_at_tile(room_state, tx, ty)
 	if room.is_active_rock_at_tile(room_state, tx, ty) then
 		return true
 	end
+	if room.is_active_draaideur_at_tile(room_state, tx, ty) then
+		return true
+	end
 	return room.is_active_breakable_wall_at_tile(room_state, tx, ty)
 end
 
@@ -455,6 +484,9 @@ function room.is_solid_at_tile(room_state, tx, ty)
 		return true
 	end
 	if room.is_active_rock_at_tile(room_state, tx, ty) then
+		return true
+	end
+	if room.is_active_draaideur_at_tile(room_state, tx, ty) then
 		return true
 	end
 	return room.is_active_breakable_wall_at_tile(room_state, tx, ty)
@@ -501,6 +533,49 @@ function room.overlaps_active_breakable_wall(room_state, x, y, w, h)
 	return false
 end
 
+function room.overlaps_active_draaideur(room_state, x, y, w, h)
+	local tx0, ty0 = room.world_to_tile(room_state, x, y)
+	local tx1, ty1 = room.world_to_tile(room_state, x + w - 1, y + h - 1)
+	if tx1 < tx0 then
+		tx0, tx1 = tx1, tx0
+	end
+	if ty1 < ty0 then
+		ty0, ty1 = ty1, ty0
+	end
+
+	for ty = ty0, ty1 do
+		for tx = tx0, tx1 do
+			if room.is_active_draaideur_at_tile(room_state, tx, ty) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function room.is_active_draaideur_at_tile(room_state, tx, ty)
+	if ty < 1 or ty > room_state.tile_rows then
+		return false
+	end
+	if tx < 1 or tx > room_state.tile_columns then
+		return false
+	end
+
+	local draaideuren = room_state.draaideuren
+	for i = 1, #draaideuren do
+		local door_def = draaideuren[i]
+		local door_tx = math.modf((door_def.x - room_state.tile_origin_x) / room_state.tile_size) + 1
+		local door_ty = math.modf((door_def.y - room_state.tile_origin_y) / room_state.tile_size) + 1
+		if tx == door_tx and ty >= door_ty and ty <= door_ty + 2 then
+			local draaideur = object(door_def.id)
+			if draaideur ~= nil and draaideur:blocks_movement() then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 function room.is_active_breakable_wall_at_tile(room_state, tx, ty)
 	local world_x, world_y = room.tile_to_world(room_state, tx, ty)
 	return room.overlaps_active_breakable_wall(room_state, world_x, world_y, room_state.tile_size, room_state.tile_size)
@@ -536,6 +611,21 @@ function room.sync_shrine_instances(room_state)
 				id = shrine_def.id,
 				space_id = room_state.space_id,
 				pos = { x = shrine_def.x, y = shrine_def.y, z = 22 },
+			})
+		end
+	end
+end
+
+function room.sync_draaideur_instances(room_state)
+	local draaideur_defs = room_state.draaideuren
+	for i = 1, #draaideur_defs do
+		local draaideur_def = draaideur_defs[i]
+		if object(draaideur_def.id) == nil then
+			inst('draaideur.def', {
+				id = draaideur_def.id,
+				space_id = room_state.space_id,
+				pos = { x = draaideur_def.x, y = draaideur_def.y, z = 22 },
+				kind = draaideur_def.kind,
 			})
 		end
 	end
@@ -616,6 +706,7 @@ function room_object:bind_events()
 			self.space_id = event.space
 			room.sync_lithograph_instances(service('c').current_room)
 			room.sync_shrine_instances(service('c').current_room)
+			room.sync_draaideur_instances(service('c').current_room)
 		end,
 	})
 end
@@ -623,6 +714,7 @@ end
 function room_object:ctor()
 	room.sync_lithograph_instances(service('c').current_room)
 	room.sync_shrine_instances(service('c').current_room)
+	room.sync_draaideur_instances(service('c').current_room)
 	self:bind_visual()
 	self:bind_events()
 end
