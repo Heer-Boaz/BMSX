@@ -94,7 +94,7 @@ void Runtime::handleLuaError(const std::string& message) {
 
 void Runtime::runEngineBuiltinPrelude() {
 	std::cout << "[Runtime] prelude: binding engine builtins" << std::endl;
-	static const std::array<const char*, 40> engineBuiltins = {
+	static const std::array<const char*, 41> engineBuiltins = {
 		"define_fsm",
 		"define_prefab",
 		"define_service",
@@ -124,6 +124,7 @@ void Runtime::runEngineBuiltinPrelude() {
 		"on_irq",
 		"on_vdp_load",
 		"bool01",
+		"clear_map",
 		"deep_clone",
 		"consume_axis_accum",
 		"set_velocity",

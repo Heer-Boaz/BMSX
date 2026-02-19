@@ -1,9 +1,7 @@
 local constants = require('constants')
 local castle_map = require('castle_map')
-local set_utils = require('set_utils')
 
 local room = {}
-local clear_map = set_utils.clear_map
 
 local function append_definition_ids(target, defs)
 	for i = 1, #defs do

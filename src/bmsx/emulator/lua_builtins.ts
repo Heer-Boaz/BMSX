@@ -40,6 +40,7 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> =
 	{ name: 'on_irq', params: ['mask_or_handler', 'handler?'], signature: 'on_irq(mask_or_handler [, handler])', description: 'Registers a per-bit IRQ handler with on_irq(mask, fn), or a legacy full-flags handler with on_irq(fn).' },
 	{ name: 'on_vdp_load', params: ['handler?'], signature: 'on_vdp_load(handler)', description: 'Registers a VDP load callback; return true to skip BIOS mapping.' },
 	{ name: 'bool01', params: ['value'], signature: 'bool01(value)', description: 'Converts a Lua value to 0 or 1; falsy values become 0, truthy values become 1.' },
+	{ name: 'clear_map', params: ['map'], signature: 'clear_map(map)', description: 'Clears all keys from a table-style map by setting each key to nil.' },
 	{ name: 'deep_clone', params: ['value'], signature: 'deep_clone(value)', description: 'Recursively clones a Lua value, including tables. Note that this does not handle cycles and will error if a cycle is encountered.' },
 	{ name: 'consume_axis_accum', params: ['accum', 'speed_num', 'speed_den'], signature: 'consume_axis_accum(accum, speed_num, speed_den)' },
 	{ name: 'set_velocity', params: ['target', 'speed_x_num', 'speed_y_num', 'speed_den'], signature: 'set_velocity(target, speed_x_num, speed_y_num, speed_den)' },
