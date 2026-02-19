@@ -1100,6 +1100,9 @@
     x: 15
     y: 15
     trigger: staff2destroyed
+  - type: draaideur
+    x: 15
+    y: 2
 108:
   type: world
   subtype: world
