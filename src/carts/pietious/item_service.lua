@@ -1,8 +1,7 @@
 local constants = require('constants')
+local progression = require('progression')
 local item_service = {}
 item_service.__index = item_service
-
-local pickup_handlers
 
 local function pickup_inventory_item(player, item_type)
 	player.inventory_items[item_type] = true
@@ -10,14 +9,14 @@ local function pickup_inventory_item(player, item_type)
 	return true
 end
 
-local function pickup_keyworld1(player)
+local function pickup_keyworld1(player, _item_type)
 	player.health = player.max_health
 	player.inventory_items.keyworld1 = true
 	player.events:emit('evt.cue.worldkey', {})
 	return true
 end
 
-local function pickup_life(player)
+local function pickup_life(player, _item_type)
 	local picked = player:collect_loot('life', constants.pickup_item.life_regen)
 	if picked then
 		player.events:emit('evt.cue.healing', {})
@@ -25,7 +24,7 @@ local function pickup_life(player)
 	return picked
 end
 
-local function pickup_ammo(player)
+local function pickup_ammo(player, _item_type)
 	local picked = player:collect_loot('ammo', constants.pickup_item.ammo_regen)
 	if picked then
 		player.events:emit('evt.cue.pickupitem', {})
@@ -33,7 +32,7 @@ local function pickup_ammo(player)
 	return picked
 end
 
-pickup_handlers = {
+local pickup_handlers = {
 	ammo = pickup_ammo,
 	ammofromrock = pickup_ammo,
 	life = pickup_life,
@@ -48,67 +47,19 @@ pickup_handlers = {
 	greenvase = pickup_inventory_item,
 }
 
-local function room_flags_for(self, room_number)
-	local room_flags = self.condition_flags_by_room[room_number]
-	if room_flags == nil then
-		room_flags = {}
-		self.condition_flags_by_room[room_number] = room_flags
-	end
-	return room_flags
-end
-
-local function event_item_defs_for(self, room_number)
-	local defs = self.event_item_defs_by_room[room_number]
-	if defs == nil then
-		defs = {}
-		self.event_item_defs_by_room[room_number] = defs
-	end
-	return defs
-end
-
-local function condition_matches(condition, player, room_flags)
-	if condition == 'not_destroyed' then
-		return true
-	end
-
-	local inverted = condition:sub(1, 1) == '!'
-	local token = inverted and condition:sub(2) or condition
-
-	if token:sub(1, 4) == 'has_' then
-		local has_item = player.inventory_items[token:sub(5)] == true
-		if inverted then
-			return not has_item
-		end
-		return has_item
-	end
-
-	local flag_is_set = room_flags[token] == true
-	if inverted then
-		return not flag_is_set
-	end
-	return flag_is_set
-end
-
 function item_service:item_should_spawn(item_def, room_number, player)
 	local item_type = item_def.item_type
 	if item_type == nil then
 		return false
 	end
-	if self.picked_item_ids[item_def.id] == true then
+	if self.picked_item_ids[item_def.id] then
 		return false
 	end
-	if player.inventory_items[item_type] == true then
+	if player.inventory_items[item_type] then
 		return false
 	end
 
-	local room_flags = room_flags_for(self, room_number)
-	local conditions = item_def.conditions
-	for i = 1, #conditions do
-		if not condition_matches(conditions[i], player, room_flags) then
-			return false
-		end
-	end
-	return true
+	return progression.matches(self, item_def.conditions)
 end
 
 function item_service:sync_item_instance(item_def, room)
@@ -147,7 +98,7 @@ function item_service:deactivate_unused_items(active_ids)
 
 		instance = live_instance
 		self.items_by_id[id] = instance
-		if active_ids[id] ~= true then
+		if not active_ids[id] then
 			instance.visible = false
 			if instance.active then
 				instance:deactivate()
@@ -163,6 +114,21 @@ function item_service:refresh_current_room_items()
 	self.synced_room_number = room_number
 
 	local player = object('pietolon')
+	progression.unmount(self)
+	progression.mount(self, self.empty_progression_program)
+	for item_type, has_item in pairs(player.inventory_items) do
+		if has_item then
+			progression.set(self, item_type, true)
+		end
+	end
+	local room_flags = self.condition_flags_by_room[room_number]
+	if room_flags ~= nil then
+		for condition, is_set in pairs(room_flags) do
+			if is_set then
+				progression.set(self, condition, true)
+			end
+		end
+	end
 	local active_ids = {}
 
 	local room_item_defs = room.items
@@ -188,7 +154,12 @@ function item_service:refresh_current_room_items()
 end
 
 function item_service:set_room_condition(room_number, condition)
-	room_flags_for(self, room_number)[condition] = true
+	local room_flags = self.condition_flags_by_room[room_number]
+	if room_flags == nil then
+		room_flags = {}
+		self.condition_flags_by_room[room_number] = room_flags
+	end
+	room_flags[condition] = true
 end
 
 function item_service:add_item_drop_from_rock(rock_id, room_number, item_type, x, y)
@@ -197,17 +168,22 @@ function item_service:add_item_drop_from_rock(rock_id, room_number, item_type, x
 	end
 
 	local drop_id = string.format('rock_drop_%s', rock_id)
-	if self.picked_item_ids[drop_id] == true then
+	if self.picked_item_ids[drop_id] then
 		return
 	end
 
 	local player = object('pietolon')
-	if player.inventory_items[item_type] == true then
+	if player.inventory_items[item_type] then
 		self.picked_item_ids[drop_id] = true
 		return
 	end
 
-	event_item_defs_for(self, room_number)[drop_id] = {
+	local event_defs = self.event_item_defs_by_room[room_number]
+	if event_defs == nil then
+		event_defs = {}
+		self.event_item_defs_by_room[room_number] = event_defs
+	end
+	event_defs[drop_id] = {
 		id = drop_id,
 		room_number = room_number,
 		x = x,
@@ -221,20 +197,12 @@ function item_service:add_item_drop_from_rock(rock_id, room_number, item_type, x
 	end
 end
 
-function item_service:apply_pickup_to_player(player, item_type)
-	local pickup_handler = pickup_handlers[item_type]
-	if pickup_handler == pickup_inventory_item then
-		return pickup_handler(player, item_type)
-	end
-	return pickup_handler(player)
-end
-
 function item_service:try_pick_item(item_id, room_number, item_type)
 	local player = object('pietolon')
 	if player.health <= 0 then
 		return false
 	end
-	if not self:apply_pickup_to_player(player, item_type) then
+	if not pickup_handlers[item_type](player, item_type) then
 		return false
 	end
 	self:on_item_picked(item_id, room_number, item_type)
@@ -296,6 +264,7 @@ function item_service:ctor()
 	self.event_item_defs_by_room = {}
 	self.picked_item_ids = {}
 	self.condition_flags_by_room = {}
+	self.empty_progression_program = progression.compile_program({ rules = {} })
 	self.synced_room_number = 0
 	self:bind_events()
 	self:refresh_current_room_items()

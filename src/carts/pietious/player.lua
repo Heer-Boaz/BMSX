@@ -70,6 +70,14 @@ local player_hit_fall_frames = {
 local player_sword_end_event = 'sword.end'
 local player_shrine_exit_timeline_id = 'p.tl.sx'
 local hit_blink_colorize = { r = 1, g = 0.35, b = 0.35, a = 1 }
+local vertical_exit_directions = {
+	up = true,
+	down = true,
+}
+local stairs_landing_events = {
+	stairs_end_top = true,
+	stairs_end_bottom = true,
+}
 
 local function build_shrine_exit_transition_frames()
 	local frames = {}
@@ -810,7 +818,7 @@ function player:leave_shrine_overlay()
 end
 
 function player:try_open_world_entrance_with_key()
-	if self.inventory_items.keyworld1 ~= true then
+	if not self.inventory_items.keyworld1 then
 		return false
 	end
 
@@ -849,7 +857,7 @@ function player:try_start_world_or_shrine_interaction_from_down()
 end
 
 function player:get_walk_dx()
-	if self.inventory_items['schoentjes'] == true then
+	if self.inventory_items['schoentjes'] then
 		self.walk_speed_accum = self.walk_speed_accum + constants.physics.walk_dx_schoentjes_num
 		local walk_dx = math.modf(self.walk_speed_accum / constants.physics.walk_dx_schoentjes_den)
 		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * constants.physics.walk_dx_schoentjes_den)
@@ -872,7 +880,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		return false
 	end
 
-	if switch.outside == true then
+	if switch.outside then
 		service('d'):dispatch_state_event('world_transition_start')
 		local leave_switch = service('d'):leave_world_to_castle()
 		self.x = leave_switch.spawn_x
@@ -970,7 +978,7 @@ end
 
 function player:try_vertical_room_switch_from_position()
 	local direction = self:nearing_room_exit()
-	if direction == 'up' or direction == 'down' then
+	if vertical_exit_directions[direction] then
 		if direction == 'up' and (not self:can_switch_up_from_state()) then
 			local up_limit = service('c').current_room.world_top - service('c').current_room.tile_size
 			if self.y < up_limit then
@@ -1100,7 +1108,7 @@ end
 function player:leave_stairs(event_name)
 	self.stairs_direction = 0
 	self.stairs_x = -1
-	if event_name == 'stairs_end_top' or event_name == 'stairs_end_bottom' then
+	if stairs_landing_events[event_name] then
 		self.stairs_landing_sound_pending = true
 	else
 		self.stairs_landing_sound_pending = false
@@ -1287,7 +1295,7 @@ function player:collides_at(x, y, include_elevator)
 		return true
 	end
 
-	if include_elevator ~= false and self:collides_with_elevator_at(x, y) then
+	if (include_elevator == nil or include_elevator) and self:collides_with_elevator_at(x, y) then
 		return true
 	end
 
@@ -1400,11 +1408,11 @@ function player:apply_move(dx, dy, include_elevator_collision)
 			end
 		end
 	else
-		if next_y >= old_y then
-			if include_elevator_collision ~= false and self:try_snap_to_elevator_platform(next_x) then
-				found = true
-			else
-				self.y = next_y
+			if next_y >= old_y then
+				if (include_elevator_collision == nil or include_elevator_collision) and self:try_snap_to_elevator_platform(next_x) then
+					found = true
+				else
+					self.y = next_y
 				test_x_col = true
 				found = true
 			end
@@ -1456,10 +1464,10 @@ function player:apply_move(dx, dy, include_elevator_collision)
 	self.previous_y_collision = upward_block
 
 	return {
-		collided_x = collided_x == true,
-		collided_y = collided_y == true,
-		landed = landed == true,
-		hit_ceiling = hit_ceiling == true,
+		collided_x = collided_x,
+		collided_y = collided_y,
+		landed = landed,
+		hit_ceiling = hit_ceiling,
 	}
 end
 

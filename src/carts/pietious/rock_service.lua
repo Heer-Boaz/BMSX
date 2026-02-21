@@ -33,7 +33,7 @@ function rock_service:deactivate_unused_rocks(active_ids)
 
 		instance = live_instance
 		self.rocks_by_id[id] = instance
-		if active_ids[id] ~= true then
+		if not active_ids[id] then
 			instance.visible = false
 			if instance.active then
 				instance:deactivate()
@@ -57,7 +57,7 @@ function rock_service:sync_room_rocks()
 
 	for i = 1, #rock_defs do
 		local def = rock_defs[i]
-		if self.destroyed_rock_ids[def.id] ~= true then
+		if not self.destroyed_rock_ids[def.id] then
 			self:sync_rock_instance(def, room)
 			active_ids[def.id] = true
 		end
@@ -67,7 +67,7 @@ function rock_service:sync_room_rocks()
 end
 
 function rock_service:on_rock_break_started(rock_id, room_number, item_type, x, y)
-	if self.destroyed_rock_ids[rock_id] == true then
+	if self.destroyed_rock_ids[rock_id] then
 		return
 	end
 	self.destroyed_rock_ids[rock_id] = true

@@ -2,6 +2,10 @@ local worldobject = require('worldobject')
 local combat_overlap = require('combat_overlap')
 
 local enemy_base = {}
+local damaging_contact_kinds = {
+	sword = true,
+	projectile = true,
+}
 
 function enemy_base.ctor(self)
 	self.collider:apply_collision_profile('enemy')
@@ -87,6 +91,7 @@ function enemy_base.take_weapon_hit(self, weapon_kind)
 		self.dangerous = false
 		self:spawn_death_effect()
 		service('c').events:emit('enemy.defeated', {
+			service_id = service('c').id,
 			enemy_id = self.id,
 			room_number = service('c').current_room.room_number,
 			kind = self.enemy_kind,
@@ -105,7 +110,7 @@ function enemy_base.on_overlap(self, event)
 	if contact_kind == nil then
 		return
 	end
-	if contact_kind == 'sword' or contact_kind == 'projectile' then
+	if damaging_contact_kinds[contact_kind] then
 		self.events:emit('weapon_hit', {
 			weapon_kind = contact_kind,
 			contact_kind = contact_kind,

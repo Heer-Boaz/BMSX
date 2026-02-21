@@ -84,7 +84,7 @@ function item_screen:draw_inventory_items()
 	local room_space = service('c').current_room.space_id
 	for i = 1, #inventory_item_order do
 		local item_type = inventory_item_order[i]
-		if player.inventory_items[item_type] == true then
+		if player.inventory_items[item_type] then
 			if item_type ~= 'map_world1' or room_space == 'world' then
 				local x, y = self:item_position_px(item_type)
 				put_sprite(constants.world_item.sprite[item_type], x, y, 321)
@@ -109,7 +109,7 @@ function item_screen:draw_map()
 	if world_number <= 0 then
 		return
 	end
-	if world_number == 1 and player.inventory_items.map_world1 ~= true then
+	if world_number == 1 and not player.inventory_items.map_world1 then
 		return
 	end
 
@@ -122,7 +122,7 @@ function item_screen:draw_map()
 		local sprite_id
 		if self.map_highlight and proxy.room_number == room.room_number then
 			sprite_id = 'room_proxy_red'
-		elseif self.map_highlight and proxy.is_boss_room and player.inventory_items['lamp'] == true then
+		elseif self.map_highlight and proxy.is_boss_room and player.inventory_items['lamp'] then
 			sprite_id = 'room_proxy_blue'
 		else
 			sprite_id = 'room_proxy'
@@ -147,14 +147,14 @@ function item_screen:tick_secondary_weapon_selection()
 	local previous_index = self.secondary_weapon_selection_index
 	if action_triggered('right[jp]') then
 		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do
-			if player.inventory_items[secondary_weapon_order[i]] == true then
+			if player.inventory_items[secondary_weapon_order[i]] then
 				self.secondary_weapon_selection_index = i - 1
 				break
 			end
 		end
 	elseif action_triggered('left[jp]') then
 		for i = self.secondary_weapon_selection_index, 1, -1 do
-			if player.inventory_items[secondary_weapon_order[i]] == true then
+			if player.inventory_items[secondary_weapon_order[i]] then
 				self.secondary_weapon_selection_index = i - 1
 				break
 			end
@@ -165,7 +165,7 @@ function item_screen:tick_secondary_weapon_selection()
 	end
 
 	local selected_weapon = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
-	if selected_weapon ~= nil and player.inventory_items[selected_weapon] == true then
+	if selected_weapon ~= nil and player.inventory_items[selected_weapon] then
 		player:equip_subweapon(selected_weapon)
 	end
 end

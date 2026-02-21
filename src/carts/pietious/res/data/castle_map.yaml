@@ -71,12 +71,10 @@
     direction: up
   - type: rock
     condition:
-    - not_destroyed
     x: 13
     y: 13
   - type: rock
     condition:
-    - not_destroyed
     x: 18
     y: 17
     item: schoentjes
@@ -120,18 +118,15 @@
     direction: down
   - type: rock
     condition:
-    - not_destroyed
     x: 28
     y: 1
     item: pepernoot
   - type: rock
     condition:
-    - not_destroyed
     x: 13
     y: 17
   - type: rock
     condition:
-    - not_destroyed
     x: 10
     y: 1
 4:
@@ -166,7 +161,6 @@
   objects:
   - type: boekfoe
     condition:
-    - not_destroyed
     x: 27
     y: 11
     direction: left
@@ -180,13 +174,11 @@
     direction: down
   - type: rock
     condition:
-    - not_destroyed
     x: 6
     y: 13
     item: ammofromrock
   - type: rock
     condition:
-    - not_destroyed
     x: 17
     y: 5
   - type: shrine
@@ -309,13 +301,11 @@
     speedy: 0
   - type: boekfoe
     condition:
-    - not_destroyed
     x: 9
     y: 1
     direction: right
   - type: rock
     condition:
-    - not_destroyed
     x: 21
     y: 2
     item: keyworld1
@@ -352,15 +342,12 @@
   - type: vlokspawner
     condition:
     - '!cloud_1_destroyed'
-    - not_destroyed
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 3
     y: 9
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 27
     y: 9
 7:
@@ -404,12 +391,10 @@
       PEPERNOTEN!
   - type: rock
     condition:
-    - not_destroyed
     x: 25
     y: 6
   - type: rock
     condition:
-    - not_destroyed
     x: 27
     y: 6
     item: halo
@@ -426,17 +411,14 @@
     tiletype: frontworld_blue_l
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 5
     y: 5
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 5
     y: 9
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 26
     y: 9
 8:
@@ -471,13 +453,11 @@
   objects:
   - type: boekfoe
     condition:
-    - not_destroyed
     x: 1
     y: 12
     direction: right
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 5
     y: 16
   - type: mijterfoe
@@ -528,19 +508,16 @@
   objects:
   - type: boekfoe
     condition:
-    - not_destroyed
     x: 3
     y: 3
     direction: right
   - type: boekfoe
     condition:
-    - not_destroyed
     x: 23
     y: 9
     direction: left
   - type: rock
     condition:
-    - not_destroyed
     x: 20
     y: 10
     item: spyglass
@@ -586,22 +563,18 @@
     speedy: -2
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 11
     y: 0
   - type: rock
     condition:
-    - not_destroyed
     x: 24
     y: 5
   - type: rock
     condition:
-    - not_destroyed
     x: 4
     y: 1
   - type: rock
     condition:
-    - not_destroyed
     x: 14
     y: 17
     item: ammofromrock
@@ -637,12 +610,10 @@
   objects:
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 11
     y: 8
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 5
     y: 12
   - type: mijterfoe
@@ -655,18 +626,15 @@
     direction: down
   - type: rock
     condition:
-    - not_destroyed
     x: 8
     y: 9
     item: lamp
   - type: rock
     condition:
-    - not_destroyed
     x: 17
     y: 4
   - type: rock
     condition:
-    - not_destroyed
     x: 13
     y: 13
 13:
@@ -701,25 +669,22 @@
   objects:
   - type: rock
     condition:
-    - not_destroyed
     x: 26
     y: 10
   - type: rock
     condition:
-    - not_destroyed
     x: 7
     y: 3
     item: ammofromrock
   - type: cloud
     condition:
-    - not_destroyed
     x: 16
     y: 10
     direction: right
   - type: item
     condition:
     - clouddestroyed
-    - '!has_greenvase'
+    - '!greenvase'
     - no_clouds
     x: 23
     y: 3
@@ -758,7 +723,7 @@
   objects:
   - type: item
     condition:
-    - '!has_map_world1'
+    - '!map_world1'
     x: 4
     y: 9
     itemtype: map_world1
@@ -850,17 +815,14 @@
       DE ZAK TE KOMEN.
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 15
     y: 3
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 29
     y: 10
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 2
     y: 10
 104:
@@ -896,13 +858,11 @@
   objects:
   - type: muziekfoe
     condition:
-    - not_destroyed
     x: 24
     y: 8
     direction: left
   - type: stafffoe
     condition:
-    - not_destroyed
     x: 7
     y: 1
     trigger: staff1destroyed
@@ -1076,27 +1036,22 @@
   objects:
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 5
     y: 2
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 10
     y: 6
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 29
     y: 6
   - type: crossfoe
     condition:
-    - not_destroyed
     x: 1
     y: 10
   - type: stafffoe
     condition:
-    - not_destroyed
     x: 15
     y: 15
     trigger: staff2destroyed
@@ -1140,31 +1095,26 @@
     text: ''
   - type: muziekfoe
     condition:
-    - not_destroyed
     x: 2
     y: 0
     direction: right
   - type: muziekfoe
     condition:
-    - not_destroyed
     x: 8
     y: 15
     direction: right
   - type: muziekfoe
     condition:
-    - not_destroyed
     x: 25
     y: 15
     direction: left
   - type: mijterfoe
     condition:
-    - not_destroyed
     x: 14
     y: 6
     direction: up
   - type: mijterfoe
     condition:
-    - not_destroyed
     x: 17
     y: 8
     direction: right
@@ -1280,61 +1230,51 @@
     direction: down
   - type: zakfoe
     condition:
-    - not_destroyed
     x: 14
     y: 2
     direction: right
   - type: zakfoe
     condition:
-    - not_destroyed
     x: 27
     y: 2
     direction: right
   - type: zakfoe
     condition:
-    - not_destroyed
     x: 27
     y: 6
     direction: left
   - type: zakfoe
     condition:
-    - not_destroyed
     x: 29
     y: 10
     direction: left
   - type: zakfoe
     condition:
-    - not_destroyed
     x: 14
     y: 10
     direction: right
   - type: zakfoe
     condition:
-    - not_destroyed
     x: 1
     y: 10
     direction: right
   - type: zakfoe
     condition:
-    - not_destroyed
     x: 16
     y: 6
     direction: left
   - type: zakfoe
     condition:
-    - not_destroyed
     x: 29
     y: 14
     direction: left
   - type: zakfoe
     condition:
-    - not_destroyed
     x: 12
     y: 14
     direction: right
   - type: stafffoe
     condition:
-    - not_destroyed
     x: 15
     y: 0
     trigger: staff3destroyed

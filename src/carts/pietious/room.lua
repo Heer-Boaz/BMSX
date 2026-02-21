@@ -2,6 +2,22 @@ local constants = require('constants')
 local castle_map = require('castle_map')
 
 local room = {}
+local solid_tiles = {
+	['#'] = true,
+	['$'] = true,
+}
+local stair_left_tiles = {
+	['-'] = true,
+	['_'] = true,
+}
+local stair_right_tiles = {
+	['='] = true,
+	['+'] = true,
+}
+local breakable_wall_kinds = {
+	breakablewall = true,
+	disappearingwall = true,
+}
 
 local function append_definition_ids(target, defs)
 	for i = 1, #defs do
@@ -147,7 +163,7 @@ local function build_collision_map(map_rows)
 		local collision_row = {}
 		for x = 1, width do
 			local ch = row:sub(x, x)
-			if ch == '#' or ch == '$' then
+			if solid_tiles[ch] then
 				collision_row[x] = 1
 			else
 				collision_row[x] = 0
@@ -190,10 +206,10 @@ local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
 		end
 		return background.front
 	end
-	if ch == '-' or ch == '_' then
+	if stair_left_tiles[ch] then
 		return 'castle_stairs_l'
 	end
-	if ch == '=' or ch == '+' then
+	if stair_right_tiles[ch] then
 		return 'castle_stairs_r'
 	end
 	if ch == 'p' then
@@ -330,14 +346,6 @@ local function build_solids(collision_map, tile_size, origin_x, origin_y)
 	return solids
 end
 
-local function is_stair_left(ch)
-	return ch == '-' or ch == '_'
-end
-
-local function is_stair_right(ch)
-	return ch == '=' or ch == '+'
-end
-
 local function world_entrance_sprite_id(world_entrance_state)
 	if world_entrance_state == 'opening_2' then
 		return 'world_entrance_half_open'
@@ -359,7 +367,7 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 			local row = map_rows[ty]
 			local left = row:sub(tx, tx)
 			local right = row:sub(tx + 1, tx + 1)
-			if is_stair_left(left) and is_stair_right(right) then
+			if stair_left_tiles[left] and stair_right_tiles[right] then
 				local min_row = ty
 				local max_row
 				max_row = ty
@@ -368,7 +376,7 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 					local next_row = map_rows[ty]
 					local next_left = next_row:sub(tx, tx)
 					local next_right = next_row:sub(tx + 1, tx + 1)
-					if not (is_stair_left(next_left) and is_stair_right(next_right)) then
+					if not (stair_left_tiles[next_left] and stair_right_tiles[next_right]) then
 						break
 					end
 					max_row = ty
@@ -463,7 +471,7 @@ function room.create_room(room_number)
 end
 
 function room.patch_rows(room_state, rows)
-	local changed = false
+	local changed
 	for i = 1, #rows do
 		local patch = rows[i]
 		local row_index = patch.index
@@ -553,7 +561,7 @@ function room.overlaps_active_rock(room_state, x, y, w, h)
 	local destroyed_rock_ids = service('r').destroyed_rock_ids
 	for i = 1, #rocks do
 		local rock = rocks[i]
-		if destroyed_rock_ids[rock.id] ~= true then
+		if not destroyed_rock_ids[rock.id] then
 			if rect_overlaps(x, y, w, h, rock.x, rock.y, constants.rock.width, constants.rock.height) then
 				return true
 			end
@@ -571,7 +579,7 @@ function room.overlaps_active_breakable_wall(room_state, x, y, w, h)
 	local enemy_defs = room_state.enemies
 	for i = 1, #enemy_defs do
 		local enemy_def = enemy_defs[i]
-		if enemy_def.kind == 'breakablewall' or enemy_def.kind == 'disappearingwall' then
+		if breakable_wall_kinds[enemy_def.kind] then
 			local wall = object(enemy_def.id)
 			if wall ~= nil and wall.active and wall.space_id == room_state.space_id then
 				local wall_width = enemy_def.width_tiles * room_state.tile_size

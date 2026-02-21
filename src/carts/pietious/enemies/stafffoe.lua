@@ -54,7 +54,7 @@ function stafffoe.bt_tick(self, blackboard)
 	end
 
 	local player = object('pietolon')
-	local bullets_dangerous = player.inventory_items.greenvase ~= true
+	local bullets_dangerous = not player.inventory_items.greenvase
 	local base_angle = math.random(0, 359)
 	for i = 0, 3 do
 		local angle = (base_angle + (i * 90)) % 360

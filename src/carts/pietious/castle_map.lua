@@ -1,5 +1,6 @@
 local constants = require('constants')
 local romdir = require('romdir')
+local text = require('text')
 
 local castle_map = {}
 local empty_conditions = {}
@@ -25,7 +26,7 @@ local world_transition_specs = {
 	},
 }
 
-local map_world_proxies = {
+castle_map.map_world_proxies = {
 	[1] = {
 		{ x = 3, y = 2, room_number = 101, is_boss_room = false },
 		{ x = 2, y = 2, room_number = 102, is_boss_room = false },
@@ -39,6 +40,36 @@ local map_world_proxies = {
 		{ x = 3, y = 4, room_number = 110, is_boss_room = false },
 		{ x = 2, y = 5, room_number = 100, is_boss_room = true },
 	},
+}
+
+local frontworld_blue_tiletypes = {
+	frontworld_blue_l = true,
+	frontworld_blue_r = true,
+}
+
+local supported_enemy_kinds = {
+	mijterfoe = true,
+	crossfoe = true,
+	zakfoe = true,
+	boekfoe = true,
+	muziekfoe = true,
+	stafffoe = true,
+	cloud = true,
+	marspeinenaardappel = true,
+	vlokspawner = true,
+	breakablewall = true,
+	disappearingwall = true,
+}
+
+local wall_enemy_kinds = {
+	breakablewall = true,
+	disappearingwall = true,
+}
+
+local draaideur_kind_by_type = {
+	draaideur = 1,
+	draaideur2 = 2,
+	draaideur3 = 3,
 }
 
 local function tile_x_to_world(tile_x)
@@ -180,88 +211,8 @@ local function build_spawn(map_rows)
 	error('pietious castle_map failed to find spawn tile')
 end
 
-local function resolve_conditions(object_def)
-	local conditions = object_def.condition
-	if conditions then
-		return conditions
-	end
-	return empty_conditions
-end
-
-local function compile_enemy_condition(raw_condition, enemy_id)
-	if type(raw_condition) == 'string' then
-		if raw_condition == 'not_destroyed' then
-			return {
-				key = 'enemy.destroyed.' .. enemy_id,
-				equals = false,
-			}
-		end
-		if raw_condition:sub(1, 1) == '!' then
-			return {
-				key = raw_condition:sub(2),
-				equals = false,
-			}
-		end
-		return {
-			key = raw_condition,
-			equals = true,
-		}
-	end
-
-	local key = raw_condition.key or raw_condition[1]
-	if type(key) ~= 'string' or key == '' then
-		error('pietious castle_map enemy condition requires key')
-	end
-	local op = raw_condition.op or raw_condition[2]
-	local equals = raw_condition.equals
-	if equals == nil then
-		equals = raw_condition.value
-	end
-	if equals == nil then
-		equals = raw_condition[3]
-	end
-	if equals == nil then
-		equals = true
-	end
-
-	local compiled = {
-		key = key,
-		equals = equals,
-	}
-	if op ~= nil then
-		compiled.op = op
-	end
-	return compiled
-end
-
-local function compile_enemy_conditions(raw_conditions, enemy_id)
-	local compiled = {
-		{
-			key = 'enemy.destroyed.' .. enemy_id,
-			equals = false,
-		},
-	}
-
-	if raw_conditions == nil then
-		return compiled
-	end
-
-	for i = 1, #raw_conditions do
-		compiled[#compiled + 1] = compile_enemy_condition(raw_conditions[i], enemy_id)
-	end
-	return compiled
-end
-
-local function split_text_lines(text)
-	local lines = {}
-	for line in text:gmatch('[^\r\n]+') do
-		lines[#lines + 1] = line
-	end
-	return lines
-end
-
 local function resolve_wall_tiletype(room_subtype, tiletype)
-	if tiletype == 'frontworld_blue_l' or tiletype == 'frontworld_blue_r' then
+	if frontworld_blue_tiletypes[tiletype] then
 		if room_subtype == 'castlegold' then
 			return 'castle_front_gold_1'
 		end
@@ -276,28 +227,24 @@ end
 local function build_enemies(room_number, room_subtype, object_defs)
 	local enemies = {}
 	local enemy_index = 0
-	local supported_kinds = {
-		mijterfoe = true,
-		crossfoe = true,
-		zakfoe = true,
-		boekfoe = true,
-		muziekfoe = true,
-		stafffoe = true,
-		cloud = true,
-		marspeinenaardappel = true,
-		vlokspawner = true,
-		breakablewall = true,
-		disappearingwall = true,
-	}
 
 	for i = 1, #object_defs do
 		local object_def = object_defs[i]
 		local kind = object_def.type
-		if supported_kinds[kind] == true then
+		if supported_enemy_kinds[kind] then
 			enemy_index = enemy_index + 1
 			local enemy_id = string.format('enemy_%03d_%02d', room_number, enemy_index)
-			local conditions = compile_enemy_conditions(object_def.condition, enemy_id)
-			if kind == 'breakablewall' or kind == 'disappearingwall' then
+			local raw_conditions = object_def.condition or empty_conditions
+			local conditions = {
+				{
+					key = enemy_id,
+					equals = false,
+				},
+			}
+			for j = 1, #raw_conditions do
+				conditions[#conditions + 1] = raw_conditions[j]
+			end
+			if wall_enemy_kinds[kind] then
 				local area = object_def.area
 				local left = area[1]
 				local top = area[2]
@@ -358,7 +305,7 @@ local function build_rocks(room_number, object_defs)
 				x = tile_x_to_world(object_def.x),
 				y = tile_y_to_world(object_def.y),
 				item_type = object_def.item,
-				conditions = resolve_conditions(object_def),
+				conditions = object_def.condition or empty_conditions,
 			}
 		end
 	end
@@ -379,7 +326,7 @@ local function build_items(room_number, object_defs)
 				x = tile_x_to_world(object_def.x),
 				y = tile_y_to_world(object_def.y),
 				item_type = object_def.itemtype,
-				conditions = resolve_conditions(object_def),
+				conditions = object_def.condition or empty_conditions,
 			}
 		end
 	end
@@ -399,7 +346,7 @@ local function build_lithographs(room_number, object_defs)
 				id = string.format('lithograph_%03d_%02d', room_number, lithograph_index),
 				x = tile_x_to_world(object_def.x),
 				y = tile_y_to_world(object_def.y),
-				text = object_def.text or '',
+				text = object_def.text,
 			}
 		end
 	end
@@ -419,7 +366,7 @@ local function build_shrines(room_number, object_defs)
 				id = string.format('shrine_%03d_%02d', room_number, shrine_index),
 				x = tile_x_to_world(object_def.x),
 				y = tile_y_to_world(object_def.y),
-				text_lines = split_text_lines(object_def.text),
+				text_lines = text.split_lines(object_def.text),
 			}
 		end
 	end
@@ -458,16 +405,9 @@ local function build_draaideuren(room_number, object_defs)
 	for i = 1, #object_defs do
 		local object_def = object_defs[i]
 		local object_type = object_def.type
-		if object_type == 'draaideur' or object_type == 'draaideur2' or object_type == 'draaideur3' then
+		local kind = draaideur_kind_by_type[object_type]
+		if kind ~= nil then
 			door_index = door_index + 1
-			local kind
-			if object_type == 'draaideur' then
-				kind = 1
-			elseif object_type == 'draaideur2' then
-				kind = 2
-			else
-				kind = 3
-			end
 			draaideuren[#draaideuren + 1] = {
 				id = string.format('draaideur_%03d_%02d', room_number, door_index),
 				x = tile_x_to_world(object_def.x),
@@ -530,20 +470,15 @@ local function attach_world_transition_metadata(room_templates)
 	end
 end
 
-local room_templates = load_room_templates()
-attach_world_transition_metadata(room_templates)
-
-local world_transition_by_number = {}
+castle_map.start_room_number = start_room_number
+castle_map.room_templates = load_room_templates()
+attach_world_transition_metadata(castle_map.room_templates)
+castle_map.elevator_routes = build_elevator_routes()
+castle_map.world_transitions = world_transition_specs
+castle_map.world_transitions_by_number = {}
 
 for _, spec in pairs(world_transition_specs) do
-	world_transition_by_number[spec.world_number] = spec
+	castle_map.world_transitions_by_number[spec.world_number] = spec
 end
-
-castle_map.start_room_number = start_room_number
-castle_map.room_templates = room_templates
-castle_map.elevator_routes = build_elevator_routes()
-castle_map.map_world_proxies = map_world_proxies
-castle_map.world_transitions = world_transition_specs
-castle_map.world_transitions_by_number = world_transition_by_number
 
 return castle_map

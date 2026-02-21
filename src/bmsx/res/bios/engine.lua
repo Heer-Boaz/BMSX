@@ -42,6 +42,7 @@ local rol8 = require("rol8")
 local swap_remove = require("swap_remove")
 local timeline = require("timeline")
 local audio_router = require("audio_router")
+local progression = require("progression")
 
 local world_instance = world_module.instance
 
@@ -630,6 +631,7 @@ function $.emit(name_or_event, emitter, payload, ...)
 end
 
 audio_router.init()
+progression.init()
 
 if not world_instance._ecs_pipeline_built then
 	world_instance._ecs_pipeline_built = true

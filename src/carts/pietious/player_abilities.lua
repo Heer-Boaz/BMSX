@@ -111,7 +111,7 @@ local function activate_spyglass_ability(owner, state_tags)
 end
 
 local function activate_halo_ability(owner)
-	if owner.inventory_items.halo ~= true then
+	if not owner.inventory_items.halo then
 		return false
 	end
 	owner:teleport_to_halo_destination()

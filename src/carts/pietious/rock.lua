@@ -3,8 +3,13 @@ local combat_overlap = require('combat_overlap')
 local rock = {}
 rock.__index = rock
 
+local dropped_item_uses_y_offset = {
+	pepernoot = true,
+	spyglass = true,
+}
+
 local function drop_offset_y_for_item_type(item_type)
-	if item_type == 'pepernoot' or item_type == 'spyglass' then
+	if dropped_item_uses_y_offset[item_type] then
 		return constants.room.tile_size
 	end
 	return 0
