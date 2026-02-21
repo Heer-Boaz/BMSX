@@ -121,7 +121,6 @@ type TopLevelLocalStringConstant = {
 	readonly declaration: LuaIdentifierExpression;
 };
 
-const BIOS_ROOT_PATH = normalizeWorkspacePath('src/bmsx/res');
 const SKIPPED_DIRECTORY_NAMES = new Set<string>([
 	'.git',
 	'.svn',
@@ -255,7 +254,7 @@ function isSameOrDescendantPath(path: string, root: string): boolean {
 }
 
 function shouldSkipPath(path: string): boolean {
-	return isSameOrDescendantPath(path, BIOS_ROOT_PATH);
+	return false;
 }
 
 async function collectLuaFilesFromRoot(rootPath: string, output: string[]): Promise<void> {

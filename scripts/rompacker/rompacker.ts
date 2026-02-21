@@ -898,11 +898,13 @@ async function main() {
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
 			appendProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, optLevel });
 			stripLuaAssets(romAssets, romPackDebug);
-			await progress.taskCompleted();
-			if (!isEngineMode) {
-				await progress.runWithDetail('Lint cart Lua', () => lintCartLuaSources({ roots: Array.from(extraLuaPathSet) }));
 				await progress.taskCompleted();
-			}
+				if (!isEngineMode) {
+					const lintLuaRoots = new Set<string>(extraLuaPathSet);
+					lintLuaRoots.add(normalizePathKey(commonResPath));
+					await progress.runWithDetail('Lint cart Lua', () => lintCartLuaSources({ roots: Array.from(lintLuaRoots) }));
+					await progress.taskCompleted();
+				}
 
 			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message), debug: romPackDebug, zipRom: false }));
 			await progress.taskCompleted();
