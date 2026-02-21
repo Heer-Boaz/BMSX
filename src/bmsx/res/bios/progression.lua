@@ -5,12 +5,15 @@ local progression = {}
 progression.__index = progression
 
 local EMPTY_LIST = {}
-local EMPTY_PROGRAM = {
-	key2idx = {},
-	idx2key = {},
-	rules = {},
-	rules_by_key = {},
-}
+
+local function new_empty_program()
+	return {
+		key2idx = {},
+		idx2key = {},
+		rules = {},
+		rules_by_key = {},
+	}
+end
 
 local OP_EQ = 1
 local OP_NE = 2
@@ -114,6 +117,10 @@ local function normalize_condition(spec)
 		value = true
 	end
 
+	if (op == OP_LT or op == OP_LTE or op == OP_GT or op == OP_GTE) and type(value) ~= 'number' then
+		error("progression condition '" .. key .. "' expects numeric value for operator '" .. tostring(op_text) .. "'.")
+	end
+
 	return key, op, value
 end
 
@@ -132,6 +139,26 @@ local function compile_predicates(program, source)
 		out_index = out_index + 4
 	end
 	return compiled
+end
+
+local function resolve_when_all(def, rule_label)
+	if def.when_all ~= nil then
+		return def.when_all
+	end
+	local when = def.when
+	if when == nil then
+		return nil
+	end
+	if type(when) ~= 'table' then
+		error("progression rule '" .. rule_label .. "' has invalid 'when' value.")
+	end
+	if when.all ~= nil then
+		return when.all
+	end
+	if when[1] ~= nil then
+		return when
+	end
+	error("progression rule '" .. rule_label .. "' requires 'when.all' or 'when_all'.")
 end
 
 local function is_compiled_predicates(source)
@@ -198,7 +225,8 @@ function progression.compile_program(program_spec)
 
 	for i = 1, #rule_defs do
 		local def = rule_defs[i]
-		local cond = compile_predicates(program, def.when_all)
+		local rule_label = def.id or ('rule_' .. i)
+		local cond = compile_predicates(program, resolve_when_all(def, rule_label))
 		local scope_key_idx = 0
 		local scope_op = OP_EQ
 		local scope_value = true
@@ -212,7 +240,7 @@ function progression.compile_program(program_spec)
 		end
 
 		program.rules[i] = {
-			id = def.id or ('rule_' .. i),
+			id = rule_label,
 			cond = cond,
 			scope_key_idx = scope_key_idx,
 			scope_op = scope_op,
@@ -300,6 +328,16 @@ local function clear_candidates(self)
 	self.candidate_count = 0
 end
 
+local function add_candidates_for_key_idx(self, key_idx)
+	local list = self.program.rules_by_key[key_idx]
+	if list == nil then
+		return
+	end
+	for i = 1, #list do
+		add_candidate(self, list[i])
+	end
+end
+
 local function emit_commands(self, commands)
 	local base = self.command_count
 	for i = 1, #commands do
@@ -310,7 +348,7 @@ end
 
 function progression.new(program)
 	local self = setmetatable({
-		program = EMPTY_PROGRAM,
+		program = new_empty_program(),
 		values = {},
 		dirty_map = {},
 		dirty_keys = {},
@@ -335,7 +373,7 @@ function progression.new(program)
 end
 
 function progression:attach_program(program)
-	self.program = program or EMPTY_PROGRAM
+	self.program = program or new_empty_program()
 	self.values = {}
 	self.dirty_map = {}
 	self.dirty_keys = {}
@@ -438,22 +476,31 @@ function progression:add(key, delta)
 	return self:add_by_index(key_idx, delta)
 end
 
-function progression:reevaluate(full_scan)
+function progression:reevaluate(hint)
 	local rules = self.program.rules
 
-	if full_scan == true then
+	if hint == true or hint == 'all' then
 		for i = 1, #rules do
 			add_candidate(self, i)
 		end
-	else
-		local rules_by_key = self.program.rules_by_key
-		for i = 1, self.dirty_count do
-			local list = rules_by_key[self.dirty_keys[i]]
-			if list ~= nil then
-				for j = 1, #list do
-					add_candidate(self, list[j])
-				end
+	elseif type(hint) == 'table' and hint.keys ~= nil then
+		local key2idx = self.program.key2idx
+		local keys = hint.keys
+		for i = 1, #keys do
+			local key = keys[i]
+			local key_idx
+			if type(key) == 'number' then
+				key_idx = key
+			else
+				key_idx = key2idx[key]
 			end
+			if key_idx ~= nil then
+				add_candidates_for_key_idx(self, key_idx)
+			end
+		end
+	else
+		for i = 1, self.dirty_count do
+			add_candidates_for_key_idx(self, self.dirty_keys[i])
 		end
 	end
 
