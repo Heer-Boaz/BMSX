@@ -33,6 +33,7 @@ type LuaLintIssueRule =
 	'pure_copy_function_pattern' |
 	'useless_assert_pattern' |
 	'empty_string_condition_pattern' |
+	'empty_string_fallback_pattern' |
 	'cross_file_local_global_constant_pattern' |
 	'unused_init_value_pattern' |
 	'getter_setter_pattern' |
@@ -49,6 +50,7 @@ type LuaLintIssueRule =
 	'constant_copy_pattern' |
 	'split_local_table_init_pattern' |
 	'handler_identity_dispatch_pattern' |
+	'staged_export_local_call_pattern' |
 	'require_lua_extension_pattern' |
 	'ensure_pattern';
 
@@ -385,6 +387,25 @@ function lintEmptyStringConditionPattern(expression: LuaExpression, issues: LuaL
 		'empty_string_condition_pattern',
 		expression,
 		'Empty-string condition pattern is forbidden. Prefer truthy checks, and do not define empty strings as default/start/empty values.',
+	);
+}
+
+function matchesEmptyStringFallbackPattern(expression: LuaExpression): boolean {
+	if (expression.kind !== LuaSyntaxKind.BinaryExpression || expression.operator !== LuaBinaryOperator.Or) {
+		return false;
+	}
+	return isEmptyStringLiteral(expression.left) || isEmptyStringLiteral(expression.right);
+}
+
+function lintEmptyStringFallbackPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (!matchesEmptyStringFallbackPattern(expression)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'empty_string_fallback_pattern',
+		expression,
+		'Empty-string fallback via "or \'\'" is forbidden. Do not use empty strings as fallback/default values; keep string truthy-check semantics intact.',
 	);
 }
 
@@ -1294,6 +1315,67 @@ function lintSplitLocalTableInitPattern(statements: ReadonlyArray<LuaStatement>,
 				`Split local declaration + table initialization is forbidden ("${localName}"). Initialize the table in the local declaration.`,
 			);
 			break;
+		}
+	}
+}
+
+function isModuleFieldAssignmentTarget(expression: LuaExpression): boolean {
+	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+		return expression.base.kind === LuaSyntaxKind.IdentifierExpression;
+	}
+	if (expression.kind === LuaSyntaxKind.IndexExpression) {
+		return expression.base.kind === LuaSyntaxKind.IdentifierExpression;
+	}
+	return false;
+}
+
+function lintStagedExportLocalCallPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	const stagedLocalCallDeclarations = new Map<string, LuaIdentifierExpression>();
+	const flagged = new Set<string>();
+	for (const statement of statements) {
+		if (statement.kind === LuaSyntaxKind.LocalAssignmentStatement) {
+			const valueCount = Math.min(statement.names.length, statement.values.length);
+			for (let index = 0; index < valueCount; index += 1) {
+				const name = statement.names[index];
+				const value = statement.values[index];
+				if (isSingleUseLocalCandidateValue(value)) {
+					stagedLocalCallDeclarations.set(name.name, name);
+				} else {
+					stagedLocalCallDeclarations.delete(name.name);
+				}
+			}
+			for (let index = valueCount; index < statement.names.length; index += 1) {
+				stagedLocalCallDeclarations.delete(statement.names[index].name);
+			}
+			continue;
+		}
+		if (statement.kind !== LuaSyntaxKind.AssignmentStatement) {
+			continue;
+		}
+		if (statement.operator !== LuaAssignmentOperator.Assign) {
+			continue;
+		}
+		const pairCount = Math.min(statement.left.length, statement.right.length);
+		for (let index = 0; index < pairCount; index += 1) {
+			const left = statement.left[index];
+			const right = statement.right[index];
+			if (right.kind !== LuaSyntaxKind.IdentifierExpression) {
+				continue;
+			}
+			const declaration = stagedLocalCallDeclarations.get(right.name);
+			if (!declaration || flagged.has(right.name)) {
+				continue;
+			}
+			if (!isModuleFieldAssignmentTarget(left)) {
+				continue;
+			}
+			flagged.add(right.name);
+			pushIssue(
+				issues,
+				'staged_export_local_call_pattern',
+				declaration,
+				`Staged local call-result export is forbidden ("${right.name}"). Assign call results directly to the module field and use that field directly.`,
+			);
 		}
 	}
 }
@@ -2250,6 +2332,7 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 		return;
 	}
 	lintEmptyStringConditionPattern(expression, issues);
+	lintEmptyStringFallbackPattern(expression, issues);
 	if (topLevel) {
 		lintMultiHasTagPattern(expression, issues);
 	}
@@ -2441,6 +2524,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 				const chunk = parsed.path;
 				topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
 				lintSplitLocalTableInitPattern(chunk.body, issues);
+				lintStagedExportLocalCallPattern(chunk.body, issues);
 				lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
 				lintStatements(chunk.body, issues);
 				lintSingleUseHasTagPattern(chunk.body, issues);
