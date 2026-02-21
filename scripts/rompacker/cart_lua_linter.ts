@@ -34,6 +34,8 @@ type LuaLintIssueRule =
 	'useless_assert_pattern' |
 	'empty_string_condition_pattern' |
 	'empty_string_fallback_pattern' |
+	'explicit_truthy_comparison_pattern' |
+	'string_or_chain_comparison_pattern' |
 	'cross_file_local_global_constant_pattern' |
 	'unused_init_value_pattern' |
 	'getter_setter_pattern' |
@@ -50,7 +52,10 @@ type LuaLintIssueRule =
 	'constant_copy_pattern' |
 	'split_local_table_init_pattern' |
 	'handler_identity_dispatch_pattern' |
+	'ensure_local_alias_pattern' |
+	'inline_static_lookup_table_pattern' |
 	'staged_export_local_call_pattern' |
+	'staged_export_local_table_pattern' |
 	'require_lua_extension_pattern' |
 	'ensure_pattern';
 
@@ -406,6 +411,114 @@ function lintEmptyStringFallbackPattern(expression: LuaExpression, issues: LuaLi
 		'empty_string_fallback_pattern',
 		expression,
 		'Empty-string fallback via "or \'\'" is forbidden. Do not use empty strings as fallback/default values; keep string truthy-check semantics intact.',
+	);
+}
+
+function isBooleanLiteralExpression(expression: LuaExpression): boolean {
+	return expression.kind === LuaSyntaxKind.BooleanLiteralExpression;
+}
+
+function matchesExplicitTruthyComparisonPattern(expression: LuaExpression): boolean {
+	if (expression.kind !== LuaSyntaxKind.BinaryExpression) {
+		return false;
+	}
+	if (expression.operator !== LuaBinaryOperator.Equal && expression.operator !== LuaBinaryOperator.NotEqual) {
+		return false;
+	}
+	const leftBoolean = isBooleanLiteralExpression(expression.left);
+	const rightBoolean = isBooleanLiteralExpression(expression.right);
+	if (!leftBoolean && !rightBoolean) {
+		return false;
+	}
+	return !(leftBoolean && rightBoolean);
+}
+
+function lintExplicitTruthyComparisonPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (!matchesExplicitTruthyComparisonPattern(expression)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'explicit_truthy_comparison_pattern',
+		expression,
+		'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.',
+	);
+}
+
+function expressionsEquivalentForLint(left: LuaExpression, right: LuaExpression): boolean {
+	if (left.kind !== right.kind) {
+		return false;
+	}
+	switch (left.kind) {
+		case LuaSyntaxKind.IdentifierExpression:
+			return left.name === (right as LuaIdentifierExpression).name;
+		case LuaSyntaxKind.MemberExpression:
+			return left.identifier === right.identifier && expressionsEquivalentForLint(left.base, right.base);
+		case LuaSyntaxKind.IndexExpression:
+			return expressionsEquivalentForLint(left.base, right.base) && expressionsEquivalentForLint(left.index, right.index);
+		case LuaSyntaxKind.StringLiteralExpression:
+			return left.value === right.value;
+		case LuaSyntaxKind.NumericLiteralExpression:
+			return left.value === right.value;
+		case LuaSyntaxKind.BooleanLiteralExpression:
+			return left.value === right.value;
+		case LuaSyntaxKind.NilLiteralExpression:
+			return true;
+		default:
+			return false;
+	}
+}
+
+function getStringComparisonOperand(expression: LuaExpression): LuaExpression | undefined {
+	if (expression.kind !== LuaSyntaxKind.BinaryExpression || expression.operator !== LuaBinaryOperator.Equal) {
+		return undefined;
+	}
+	if (expression.left.kind === LuaSyntaxKind.StringLiteralExpression && expression.right.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return expression.right;
+	}
+	if (expression.right.kind === LuaSyntaxKind.StringLiteralExpression && expression.left.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return expression.left;
+	}
+	return undefined;
+}
+
+function collectStringOrChainOperands(expression: LuaExpression, operands: LuaExpression[]): boolean {
+	if (expression.kind === LuaSyntaxKind.BinaryExpression && expression.operator === LuaBinaryOperator.Or) {
+		return collectStringOrChainOperands(expression.left, operands) && collectStringOrChainOperands(expression.right, operands);
+	}
+	const operand = getStringComparisonOperand(expression);
+	if (!operand) {
+		return false;
+	}
+	operands.push(operand);
+	return true;
+}
+
+function matchesStringOrChainComparisonPattern(expression: LuaExpression): boolean {
+	const operands: LuaExpression[] = [];
+	if (!collectStringOrChainOperands(expression, operands)) {
+		return false;
+	}
+	if (operands.length <= 1) {
+		return false;
+	}
+	for (let index = 1; index < operands.length; index += 1) {
+		if (!expressionsEquivalentForLint(operands[0], operands[index])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function lintStringOrChainComparisonPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (!matchesStringOrChainComparisonPattern(expression)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'string_or_chain_comparison_pattern',
+		expression,
+		'OR-chains that compare the same expression against multiple string literals are forbidden. Use lookup-based membership instead.',
 	);
 }
 
@@ -1278,6 +1391,111 @@ function matchesEnsurePattern(functionExpression: LuaFunctionExpression): boolea
 	return returnStatement.expressions.length === 1 && isIdentifier(returnStatement.expressions[0], variableName);
 }
 
+function matchesEnsureLocalAliasPattern(functionExpression: LuaFunctionExpression): boolean {
+	const body = functionExpression.body.body;
+	if (body.length !== 3) {
+		return false;
+	}
+	const localAssignment = body[0];
+	const ifStatement = body[1];
+	const returnStatement = body[2];
+	if (localAssignment.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+		return false;
+	}
+	if (localAssignment.names.length !== 1 || localAssignment.values.length !== 1) {
+		return false;
+	}
+	const localName = localAssignment.names[0].name;
+	if (ifStatement.kind !== LuaSyntaxKind.IfStatement || ifStatement.clauses.length !== 1) {
+		return false;
+	}
+	const onlyClause = ifStatement.clauses[0];
+	if (!onlyClause.condition || onlyClause.condition.kind !== LuaSyntaxKind.BinaryExpression || onlyClause.condition.operator !== LuaBinaryOperator.Equal) {
+		return false;
+	}
+	const comparesNil = (isIdentifier(onlyClause.condition.left, localName) && isNilExpression(onlyClause.condition.right))
+		|| (isIdentifier(onlyClause.condition.right, localName) && isNilExpression(onlyClause.condition.left));
+	if (!comparesNil || onlyClause.block.body.length !== 2) {
+		return false;
+	}
+	const assignLocal = onlyClause.block.body[0];
+	const assignStorage = onlyClause.block.body[1];
+	if (assignLocal.kind !== LuaSyntaxKind.AssignmentStatement || assignStorage.kind !== LuaSyntaxKind.AssignmentStatement) {
+		return false;
+	}
+	if (assignLocal.operator !== LuaAssignmentOperator.Assign || assignLocal.left.length !== 1 || assignLocal.right.length !== 1) {
+		return false;
+	}
+	if (!isIdentifier(assignLocal.left[0], localName)) {
+		return false;
+	}
+	if (assignStorage.operator !== LuaAssignmentOperator.Assign || assignStorage.left.length !== 1 || assignStorage.right.length !== 1) {
+		return false;
+	}
+	if (!isIdentifier(assignStorage.right[0], localName)) {
+		return false;
+	}
+	const storageTarget = assignStorage.left[0];
+	if (!isAssignableStorageExpression(storageTarget)) {
+		return false;
+	}
+	if (storageTarget.kind === LuaSyntaxKind.IdentifierExpression && storageTarget.name === localName) {
+		return false;
+	}
+	return returnStatement.kind === LuaSyntaxKind.ReturnStatement
+		&& returnStatement.expressions.length === 1
+		&& isIdentifier(returnStatement.expressions[0], localName);
+}
+
+function isPrimitiveLiteralExpression(expression: LuaExpression): boolean {
+	return expression.kind === LuaSyntaxKind.StringLiteralExpression
+		|| expression.kind === LuaSyntaxKind.NumericLiteralExpression
+		|| expression.kind === LuaSyntaxKind.BooleanLiteralExpression
+		|| expression.kind === LuaSyntaxKind.NilLiteralExpression;
+}
+
+function isStaticLookupTableConstructor(expression: LuaExpression): boolean {
+	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression || expression.fields.length === 0) {
+		return false;
+	}
+	for (const field of expression.fields) {
+		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+			if (!isPrimitiveLiteralExpression(field.key) && field.key.kind !== LuaSyntaxKind.IdentifierExpression) {
+				return false;
+			}
+		}
+		if (!isPrimitiveLiteralExpression(field.value)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function lintInlineStaticLookupTablePattern(
+	functionName: string,
+	functionExpression: LuaFunctionExpression,
+	issues: LuaLintIssue[],
+): void {
+	for (const statement of functionExpression.body.body) {
+		if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+			continue;
+		}
+		if (statement.names.length !== 1 || statement.values.length !== 1) {
+			continue;
+		}
+		const onlyValue = statement.values[0];
+		if (!isStaticLookupTableConstructor(onlyValue)) {
+			continue;
+		}
+		pushIssue(
+			issues,
+			'inline_static_lookup_table_pattern',
+			statement.names[0],
+			`Inline static lookup table inside function is forbidden ("${statement.names[0].name}" in "${functionName}"). Hoist static lookup tables to file scope.`,
+		);
+	}
+}
+
 function lintSplitLocalTableInitPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
 	for (let index = 0; index < statements.length; index += 1) {
 		const statement = statements[index];
@@ -1329,6 +1547,151 @@ function isModuleFieldAssignmentTarget(expression: LuaExpression): boolean {
 	return false;
 }
 
+function getModuleFieldAssignmentBaseIdentifier(expression: LuaExpression): string | undefined {
+	if (expression.kind === LuaSyntaxKind.MemberExpression && expression.base.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.base.name;
+	}
+	if (expression.kind === LuaSyntaxKind.IndexExpression && expression.base.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.base.name;
+	}
+	return undefined;
+}
+
+function countIdentifierMentionsInExpression(expression: LuaExpression | null, identifierName: string): number {
+	if (!expression) {
+		return 0;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.IdentifierExpression:
+			return expression.name === identifierName ? 1 : 0;
+		case LuaSyntaxKind.MemberExpression:
+			return countIdentifierMentionsInExpression(expression.base, identifierName);
+		case LuaSyntaxKind.IndexExpression:
+			return countIdentifierMentionsInExpression(expression.base, identifierName)
+				+ countIdentifierMentionsInExpression(expression.index, identifierName);
+		case LuaSyntaxKind.BinaryExpression:
+			return countIdentifierMentionsInExpression(expression.left, identifierName)
+				+ countIdentifierMentionsInExpression(expression.right, identifierName);
+		case LuaSyntaxKind.UnaryExpression:
+			return countIdentifierMentionsInExpression(expression.operand, identifierName);
+		case LuaSyntaxKind.CallExpression: {
+			let count = countIdentifierMentionsInExpression(expression.callee, identifierName);
+			for (const argument of expression.arguments) {
+				count += countIdentifierMentionsInExpression(argument, identifierName);
+			}
+			return count;
+		}
+		case LuaSyntaxKind.TableConstructorExpression: {
+			let count = 0;
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					count += countIdentifierMentionsInExpression(field.key, identifierName);
+				}
+				count += countIdentifierMentionsInExpression(field.value, identifierName);
+			}
+			return count;
+		}
+		case LuaSyntaxKind.FunctionExpression:
+			return countIdentifierMentionsInStatements(expression.body.body, identifierName);
+		default:
+			return 0;
+	}
+}
+
+function countIdentifierMentionsInStatement(statement: LuaStatement, identifierName: string): number {
+	switch (statement.kind) {
+		case LuaSyntaxKind.LocalAssignmentStatement: {
+			let count = 0;
+			for (const value of statement.values) {
+				count += countIdentifierMentionsInExpression(value, identifierName);
+			}
+			return count;
+		}
+		case LuaSyntaxKind.AssignmentStatement: {
+			let count = 0;
+			for (const left of statement.left) {
+				count += countIdentifierMentionsInExpression(left, identifierName);
+			}
+			for (const right of statement.right) {
+				count += countIdentifierMentionsInExpression(right, identifierName);
+			}
+			return count;
+		}
+		case LuaSyntaxKind.LocalFunctionStatement: {
+			let count = statement.name.name === identifierName ? 1 : 0;
+			count += countIdentifierMentionsInExpression(statement.functionExpression, identifierName);
+			return count;
+		}
+		case LuaSyntaxKind.FunctionDeclarationStatement: {
+			let count = 0;
+			for (const namePart of statement.name.identifiers) {
+				if (namePart === identifierName) {
+					count += 1;
+				}
+			}
+			if (statement.name.methodName === identifierName) {
+				count += 1;
+			}
+			count += countIdentifierMentionsInExpression(statement.functionExpression, identifierName);
+			return count;
+		}
+		case LuaSyntaxKind.ReturnStatement: {
+			let count = 0;
+			for (const expression of statement.expressions) {
+				count += countIdentifierMentionsInExpression(expression, identifierName);
+			}
+			return count;
+		}
+		case LuaSyntaxKind.IfStatement: {
+			let count = 0;
+			for (const clause of statement.clauses) {
+				if (clause.condition) {
+					count += countIdentifierMentionsInExpression(clause.condition, identifierName);
+				}
+				count += countIdentifierMentionsInStatements(clause.block.body, identifierName);
+			}
+			return count;
+		}
+		case LuaSyntaxKind.WhileStatement:
+			return countIdentifierMentionsInExpression(statement.condition, identifierName)
+				+ countIdentifierMentionsInStatements(statement.block.body, identifierName);
+		case LuaSyntaxKind.RepeatStatement:
+			return countIdentifierMentionsInStatements(statement.block.body, identifierName)
+				+ countIdentifierMentionsInExpression(statement.condition, identifierName);
+		case LuaSyntaxKind.ForNumericStatement:
+			return countIdentifierMentionsInExpression(statement.start, identifierName)
+				+ countIdentifierMentionsInExpression(statement.limit, identifierName)
+				+ countIdentifierMentionsInExpression(statement.step, identifierName)
+				+ countIdentifierMentionsInStatements(statement.block.body, identifierName);
+		case LuaSyntaxKind.ForGenericStatement: {
+			let count = 0;
+			for (const iterator of statement.iterators) {
+				count += countIdentifierMentionsInExpression(iterator, identifierName);
+			}
+			count += countIdentifierMentionsInStatements(statement.block.body, identifierName);
+			return count;
+		}
+		case LuaSyntaxKind.DoStatement:
+			return countIdentifierMentionsInStatements(statement.block.body, identifierName);
+		case LuaSyntaxKind.CallStatement:
+			return countIdentifierMentionsInExpression(statement.expression, identifierName);
+		case LuaSyntaxKind.BreakStatement:
+		case LuaSyntaxKind.GotoStatement:
+		case LuaSyntaxKind.LabelStatement:
+			return 0;
+		default:
+			return 0;
+	}
+}
+
+function countIdentifierMentionsInStatements(statements: ReadonlyArray<LuaStatement>, identifierName: string): number {
+	let count = 0;
+	for (const statement of statements) {
+		count += countIdentifierMentionsInStatement(statement, identifierName);
+	}
+	return count;
+}
+
 function lintStagedExportLocalCallPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
 	const stagedLocalCallDeclarations = new Map<string, LuaIdentifierExpression>();
 	const flagged = new Set<string>();
@@ -1377,6 +1740,69 @@ function lintStagedExportLocalCallPattern(statements: ReadonlyArray<LuaStatement
 				`Staged local call-result export is forbidden ("${right.name}"). Assign call results directly to the module field and use that field directly.`,
 			);
 		}
+	}
+}
+
+function lintStagedExportLocalTablePattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	const stagedLocalTableDeclarations = new Map<string, { declaration: LuaIdentifierExpression; declarationStatementIndex: number; }>();
+	const flagged = new Set<string>();
+	for (let statementIndex = 0; statementIndex < statements.length; statementIndex += 1) {
+		const statement = statements[statementIndex];
+		if (statement.kind === LuaSyntaxKind.LocalAssignmentStatement) {
+			const valueCount = Math.min(statement.names.length, statement.values.length);
+			for (let index = 0; index < valueCount; index += 1) {
+				const name = statement.names[index];
+				const value = statement.values[index];
+				if (value.kind === LuaSyntaxKind.TableConstructorExpression) {
+					stagedLocalTableDeclarations.set(name.name, {
+						declaration: name,
+						declarationStatementIndex: statementIndex,
+					});
+				} else {
+					stagedLocalTableDeclarations.delete(name.name);
+				}
+			}
+			for (let index = valueCount; index < statement.names.length; index += 1) {
+				stagedLocalTableDeclarations.delete(statement.names[index].name);
+			}
+			continue;
+		}
+		if (statement.kind !== LuaSyntaxKind.AssignmentStatement || statement.operator !== LuaAssignmentOperator.Assign) {
+			continue;
+		}
+		const pairCount = Math.min(statement.left.length, statement.right.length);
+		for (let index = 0; index < pairCount; index += 1) {
+			const left = statement.left[index];
+			const right = statement.right[index];
+				if (right.kind !== LuaSyntaxKind.IdentifierExpression) {
+					continue;
+				}
+				const stagedDeclaration = stagedLocalTableDeclarations.get(right.name);
+				if (!stagedDeclaration || flagged.has(right.name)) {
+					continue;
+				}
+				if (!isModuleFieldAssignmentTarget(left)) {
+				continue;
+			}
+			const targetBase = getModuleFieldAssignmentBaseIdentifier(left);
+				if (targetBase === right.name) {
+					continue;
+				}
+				const mentionCountAfterDeclaration = countIdentifierMentionsInStatements(
+					statements.slice(stagedDeclaration.declarationStatementIndex + 1),
+					right.name,
+				);
+				if (mentionCountAfterDeclaration > 2) {
+					continue;
+				}
+				flagged.add(right.name);
+				pushIssue(
+					issues,
+					'staged_export_local_table_pattern',
+					stagedDeclaration.declaration,
+					`Staged local table export is forbidden ("${right.name}"). Build table values directly on the destination module field instead.`,
+				);
+			}
 	}
 }
 
@@ -2262,6 +2688,17 @@ function lintFunctionBody(
 			`Ensure-style lazy initialization pattern is forbidden ("${functionName}").`,
 		);
 	}
+	if (matchesEnsureLocalAliasPattern(functionExpression)) {
+		pushIssue(
+			issues,
+			'ensure_local_alias_pattern',
+			functionExpression,
+			`Ensure-style local alias lazy initialization is forbidden ("${functionName}").`,
+		);
+	}
+	if (isNamedFunction) {
+		lintInlineStaticLookupTablePattern(functionName, functionExpression, issues);
+	}
 	if (isNamedFunction && matchesHandlerIdentityDispatchPattern(functionExpression)) {
 		pushIssue(
 			issues,
@@ -2333,6 +2770,8 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 	}
 	lintEmptyStringConditionPattern(expression, issues);
 	lintEmptyStringFallbackPattern(expression, issues);
+	lintExplicitTruthyComparisonPattern(expression, issues);
+	lintStringOrChainComparisonPattern(expression, issues);
 	if (topLevel) {
 		lintMultiHasTagPattern(expression, issues);
 	}
@@ -2525,6 +2964,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 				topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
 				lintSplitLocalTableInitPattern(chunk.body, issues);
 				lintStagedExportLocalCallPattern(chunk.body, issues);
+				lintStagedExportLocalTablePattern(chunk.body, issues);
 				lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
 				lintStatements(chunk.body, issues);
 				lintSingleUseHasTagPattern(chunk.body, issues);
