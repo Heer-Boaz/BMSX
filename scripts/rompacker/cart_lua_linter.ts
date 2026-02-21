@@ -59,6 +59,8 @@ type LuaLintIssueRule =
 	'require_lua_extension_pattern' |
 	'ensure_pattern';
 
+type LuaLintProfile = 'cart' | 'bios';
+
 type LuaLintIssue = {
 	readonly rule: LuaLintIssueRule;
 	readonly path: string;
@@ -112,6 +114,7 @@ type SingleUseLocalContext = {
 
 type LuaCartLintOptions = {
 	readonly roots: ReadonlyArray<string>;
+	readonly profile?: LuaLintProfile;
 };
 
 type TopLevelLocalStringConstant = {
@@ -168,6 +171,67 @@ const FORBIDDEN_STATE_CALL_RECEIVERS = new Set<string>([
 const LINT_SUPPRESSION_OPEN_MARKER = '-- bmsx-lint:disable';
 const LINT_SUPPRESSION_CLOSE_MARKER = '-- bmsx-lint:enable';
 const suppressedLineRangesByPath = new Map<string, ReadonlyArray<LuaLintSuppressionRange>>();
+const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
+	'uppercase_code_pattern',
+	'visual_update_pattern',
+	'bool01_duplicate_pattern',
+	'pure_copy_function_pattern',
+	'useless_assert_pattern',
+	'empty_string_condition_pattern',
+	'empty_string_fallback_pattern',
+	'explicit_truthy_comparison_pattern',
+	'string_or_chain_comparison_pattern',
+	'cross_file_local_global_constant_pattern',
+	'unused_init_value_pattern',
+	'getter_setter_pattern',
+	'single_line_method_pattern',
+	'builtin_recreation_pattern',
+	'multi_has_tag_pattern',
+	'single_use_has_tag_pattern',
+	'single_use_local_pattern',
+	'imgid_assignment_pattern',
+	'self_imgid_assignment_pattern',
+	'imgid_fallback_pattern',
+	'forbidden_transition_to_pattern',
+	'forbidden_matches_state_path_pattern',
+	'constant_copy_pattern',
+	'split_local_table_init_pattern',
+	'handler_identity_dispatch_pattern',
+	'ensure_local_alias_pattern',
+	'inline_static_lookup_table_pattern',
+	'staged_export_local_call_pattern',
+	'staged_export_local_table_pattern',
+	'require_lua_extension_pattern',
+	'ensure_pattern',
+];
+const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
+	'visual_update_pattern',
+	'bool01_duplicate_pattern',
+	'pure_copy_function_pattern',
+	'imgid_assignment_pattern',
+	'self_imgid_assignment_pattern',
+	'imgid_fallback_pattern',
+	'forbidden_transition_to_pattern',
+	'forbidden_matches_state_path_pattern',
+	'multi_has_tag_pattern',
+	'single_use_has_tag_pattern',
+	'handler_identity_dispatch_pattern',
+	'getter_setter_pattern',
+	'single_line_method_pattern',
+	'useless_assert_pattern',
+]);
+let activeLintRules: ReadonlySet<LuaLintIssueRule> = new Set(ALL_LUA_LINT_RULES);
+
+function resolveEnabledRules(profile: LuaLintProfile): ReadonlySet<LuaLintIssueRule> {
+	if (profile === 'cart') {
+		return new Set(ALL_LUA_LINT_RULES);
+	}
+	const enabled = new Set(ALL_LUA_LINT_RULES);
+	for (const rule of BIOS_PROFILE_DISABLED_RULES) {
+		enabled.delete(rule);
+	}
+	return enabled;
+}
 
 // STRICT FORBIDDEN: do not add lint suppression comments in cart code.
 function collectSuppressedLineRanges(source: string): LuaLintSuppressionRange[] {
@@ -305,6 +369,9 @@ async function collectLuaFiles(roots: ReadonlyArray<string>): Promise<string[]> 
 }
 
 function pushIssue(issues: LuaLintIssue[], rule: LuaLintIssueRule, node: { readonly range: { readonly path: string; readonly start: { readonly line: number; readonly column: number; }; }; }, message: string): void {
+	if (!activeLintRules.has(rule)) {
+		return;
+	}
 	if (isLineSuppressed(node.range.path, node.range.start.line)) {
 		return;
 	}
@@ -318,6 +385,9 @@ function pushIssue(issues: LuaLintIssue[], rule: LuaLintIssueRule, node: { reado
 }
 
 function pushIssueAt(issues: LuaLintIssue[], rule: LuaLintIssueRule, path: string, line: number, column: number, message: string): void {
+	if (!activeLintRules.has(rule)) {
+		return;
+	}
 	if (isLineSuppressed(path, line)) {
 		return;
 	}
@@ -2916,7 +2986,7 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 	}
 }
 
-function formatIssues(issues: LuaLintIssue[]): string {
+function formatIssues(issues: LuaLintIssue[], profile: LuaLintProfile): string {
 	const sorted = [...issues].sort((a, b) => {
 		if (a.path !== b.path) return a.path.localeCompare(b.path);
 		if (a.line !== b.line) return a.line - b.line;
@@ -2924,12 +2994,16 @@ function formatIssues(issues: LuaLintIssue[]): string {
 		return a.rule.localeCompare(b.rule);
 	});
 	const lines = sorted.map(issue => `${issue.path}:${issue.line}:${issue.column}: ${issue.message}`);
-	return `[Lua Cart Lint] ${sorted.length} violation(s):\n${lines.join('\n')}`;
+	const profileLabel = profile === 'bios' ? 'Lua BIOS Lint' : 'Lua Cart Lint';
+	return `[${profileLabel}] ${sorted.length} violation(s):\n${lines.join('\n')}`;
 }
 
 export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<void> {
+	const profile = options.profile ?? 'cart';
+	activeLintRules = resolveEnabledRules(profile);
 	const files = await collectLuaFiles(options.roots);
 	if (files.length === 0) {
+		activeLintRules = new Set(ALL_LUA_LINT_RULES);
 		return;
 	}
 
@@ -2956,9 +3030,9 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 				}
 				throw error;
 			}
-			if (parsed.syntaxError) {
-				continue;
-			}
+				if (parsed.syntaxError) {
+					continue;
+				}
 				const chunk = parsed.path;
 				topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
 				lintSplitLocalTableInitPattern(chunk.body, issues);
@@ -2971,10 +3045,11 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			}
 			lintCrossFileLocalGlobalConstantPattern(topLevelLocalStringConstants, issues);
 		} finally {
+		activeLintRules = new Set(ALL_LUA_LINT_RULES);
 		suppressedLineRangesByPath.clear();
 	}
 
 	if (issues.length > 0) {
-		throw new Error(formatIssues(issues));
+		throw new Error(formatIssues(issues, profile));
 	}
 }
