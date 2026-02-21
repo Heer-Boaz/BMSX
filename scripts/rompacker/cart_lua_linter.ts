@@ -47,6 +47,8 @@ type LuaLintIssueRule =
 	'forbidden_transition_to_pattern' |
 	'forbidden_matches_state_path_pattern' |
 	'constant_copy_pattern' |
+	'split_local_table_init_pattern' |
+	'handler_identity_dispatch_pattern' |
 	'require_lua_extension_pattern' |
 	'ensure_pattern';
 
@@ -1255,6 +1257,107 @@ function matchesEnsurePattern(functionExpression: LuaFunctionExpression): boolea
 	return returnStatement.expressions.length === 1 && isIdentifier(returnStatement.expressions[0], variableName);
 }
 
+function lintSplitLocalTableInitPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	for (let index = 0; index < statements.length; index += 1) {
+		const statement = statements[index];
+		if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+			continue;
+		}
+		if (statement.names.length !== 1 || statement.values.length !== 0) {
+			continue;
+		}
+		const localName = statement.names[0].name;
+		for (let nextIndex = index + 1; nextIndex < statements.length; nextIndex += 1) {
+			const nextStatement = statements[nextIndex];
+			if (nextStatement.kind === LuaSyntaxKind.LocalAssignmentStatement) {
+				if (nextStatement.names.some(name => name.name === localName)) {
+					break;
+				}
+				continue;
+			}
+			if (nextStatement.kind !== LuaSyntaxKind.AssignmentStatement) {
+				continue;
+			}
+			if (nextStatement.operator !== LuaAssignmentOperator.Assign || nextStatement.left.length !== 1 || nextStatement.right.length !== 1) {
+				continue;
+			}
+			if (!isIdentifier(nextStatement.left[0], localName)) {
+				continue;
+			}
+			if (nextStatement.right[0].kind !== LuaSyntaxKind.TableConstructorExpression) {
+				break;
+			}
+			pushIssue(
+				issues,
+				'split_local_table_init_pattern',
+				statement.names[0],
+				`Split local declaration + table initialization is forbidden ("${localName}"). Initialize the table in the local declaration.`,
+			);
+			break;
+		}
+	}
+}
+
+function getReturnedCallToIdentifier(statement: LuaStatement, name: string): LuaCallExpression | undefined {
+	if (statement.kind !== LuaSyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
+		return undefined;
+	}
+	const expression = statement.expressions[0];
+	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+		return undefined;
+	}
+	if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression || expression.callee.name !== name) {
+		return undefined;
+	}
+	return expression;
+}
+
+function conditionComparesIdentifierWithValue(condition: LuaExpression, name: string): boolean {
+	if (condition.kind !== LuaSyntaxKind.BinaryExpression || condition.operator !== LuaBinaryOperator.Equal) {
+		return false;
+	}
+	return isIdentifier(condition.left, name) || isIdentifier(condition.right, name);
+}
+
+function matchesHandlerIdentityDispatchPattern(functionExpression: LuaFunctionExpression): boolean {
+	const body = functionExpression.body.body;
+	if (body.length !== 3) {
+		return false;
+	}
+	const localAssignment = body[0];
+	const ifStatement = body[1];
+	const fallbackReturn = body[2];
+	if (localAssignment.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+		return false;
+	}
+	if (localAssignment.names.length !== 1 || localAssignment.values.length !== 1) {
+		return false;
+	}
+	if (localAssignment.values[0].kind !== LuaSyntaxKind.IndexExpression) {
+		return false;
+	}
+	const localName = localAssignment.names[0].name;
+	if (ifStatement.kind !== LuaSyntaxKind.IfStatement || ifStatement.clauses.length !== 1) {
+		return false;
+	}
+	const onlyClause = ifStatement.clauses[0];
+	if (!onlyClause.condition || !conditionComparesIdentifierWithValue(onlyClause.condition, localName)) {
+		return false;
+	}
+	if (onlyClause.block.body.length !== 1) {
+		return false;
+	}
+	const specialReturnCall = getReturnedCallToIdentifier(onlyClause.block.body[0], localName);
+	if (!specialReturnCall) {
+		return false;
+	}
+	const fallbackReturnCall = getReturnedCallToIdentifier(fallbackReturn, localName);
+	if (!fallbackReturnCall) {
+		return false;
+	}
+	return specialReturnCall.arguments.length !== fallbackReturnCall.arguments.length;
+}
+
 function enterUnusedInitValueScope(context: UnusedInitValueContext): void {
 	context.scopeStack.push({ names: [] });
 }
@@ -2077,6 +2180,14 @@ function lintFunctionBody(
 			`Ensure-style lazy initialization pattern is forbidden ("${functionName}").`,
 		);
 	}
+	if (isNamedFunction && matchesHandlerIdentityDispatchPattern(functionExpression)) {
+		pushIssue(
+			issues,
+			'handler_identity_dispatch_pattern',
+			functionExpression,
+			`Handler-identity dispatch branching with mixed call signatures is forbidden ("${functionName}"). Use uniform handler signatures and direct dispatch without a cached handler local.`,
+		);
+	}
 }
 
 function lintLocalAssignment(statement: LuaLocalAssignmentStatement, issues: LuaLintIssue[]): void {
@@ -2327,8 +2438,9 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			if (parsed.syntaxError) {
 				continue;
 			}
-			const chunk = parsed.path;
+				const chunk = parsed.path;
 				topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
+				lintSplitLocalTableInitPattern(chunk.body, issues);
 				lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
 				lintStatements(chunk.body, issues);
 				lintSingleUseHasTagPattern(chunk.body, issues);
