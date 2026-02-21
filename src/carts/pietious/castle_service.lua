@@ -1,6 +1,7 @@
 local constants = require('constants')
 local room_module = require('room')
 local castle_map = require('castle_map')
+local progression_module = require('progression')
 local world_instance = require('world').instance
 
 local castle_service = {}
@@ -10,6 +11,110 @@ local persistent_room_object_ids = {
 	room = true,
 	ui = true,
 }
+
+local key_location_id = 'location_id'
+local key_entered_location_id = 'entered_location_id'
+local location_hint = {
+	keys = {
+		key_location_id,
+		key_entered_location_id,
+	},
+}
+
+local function enemy_destroyed_keys_for_room_kind(room_number, enemy_kind)
+	local keys = {}
+	local enemies = castle_map.room_templates[room_number].enemies
+	for i = 1, #enemies do
+		local enemy_def = enemies[i]
+		if enemy_def.kind == enemy_kind then
+			keys[#keys + 1] = 'enemy.destroyed.' .. enemy_def.id
+		end
+	end
+	return keys
+end
+
+local world1_marspein_destroyed_keys = enemy_destroyed_keys_for_room_kind(106, 'marspeinenaardappel')
+local world1_stairs_open_row = '#...........................-=.#'
+local progression_rules = {
+	{
+		id = 'world1.stairs.apply',
+		when_all = {
+			'staff1destroyed',
+			'staff2destroyed',
+			'staff3destroyed',
+		},
+		scope = {
+			key = key_location_id,
+			equals = 109,
+		},
+		apply_once = true,
+		apply = {
+			{
+				op = 'room.patch_rows',
+				room_number = 109,
+				rows = {
+					{ index = 18, value = world1_stairs_open_row },
+					{ index = 19, value = world1_stairs_open_row },
+					{ index = 20, value = world1_stairs_open_row },
+				},
+			},
+		},
+	},
+	{
+		id = 'world1.stairs.cue.on_enter',
+		when_all = {
+			'staff1destroyed',
+			'staff2destroyed',
+			'staff3destroyed',
+		},
+		scope = {
+			key = key_entered_location_id,
+			equals = 109,
+		},
+		apply_once = true,
+		apply = {
+			{
+				op = 'emit_event',
+				event = 'evt.cue.appearance',
+			},
+		},
+	},
+	{
+		id = 'world1.wall.disappear',
+		when_all = world1_marspein_destroyed_keys,
+		scope = {
+			key = key_location_id,
+			equals = 106,
+		},
+		apply_once = true,
+		apply = {
+			{
+				op = 'emit_event',
+				event = 'room.condition_set',
+				payload = {
+					room_number = 106,
+					condition = 'world1walldisappear',
+				},
+			},
+		},
+	},
+}
+
+local progression_program = progression_module.compile_program({
+	rules = progression_rules,
+})
+
+local progression_runtime_by_service = setmetatable({}, { __mode = 'k' })
+local enemy_destroyed_key_by_id = {}
+
+for _, room_template in pairs(castle_map.room_templates) do
+	local enemies = room_template.enemies
+	for i = 1, #enemies do
+		local enemy_id = enemies[i].id
+		enemy_destroyed_key_by_id[enemy_id] = 'enemy.destroyed.' .. enemy_id
+	end
+end
+
 local function create_room_switch(from_room_number, to_room_number, direction)
 	return {
 		from_room_number = from_room_number,
@@ -41,41 +146,66 @@ local function resolve_enemy_instance(self, id)
 	return instance
 end
 
-local function condition_matches(self, condition, enemy_id)
-	if condition == 'not_destroyed' then
-		return self.defeated_enemy_ids[enemy_id] ~= true
+local function progression_runtime(self)
+	local runtime = progression_runtime_by_service[self]
+	if runtime ~= nil then
+		return runtime
 	end
-
-	local inverted = condition:sub(1, 1) == '!'
-	local token = inverted and condition:sub(2) or condition
-	local flag_is_set = self.enemy_condition_flags[token] == true
-	if inverted then
-		return not flag_is_set
-	end
-	return flag_is_set
+	runtime = progression_module.progression.new(progression_program)
+	runtime.values = self.progression_values
+	runtime.apply_done = self.progression_apply_done
+	progression_runtime_by_service[self] = runtime
+	return runtime
 end
 
-local function set_enemy_condition_flag(self, condition)
-	if self.enemy_condition_flags[condition] then
-		return false
+local progression_command_handlers = {
+	['room.patch_rows'] = function(self, command)
+		room_module.apply_progression_command(self.current_room, command)
+	end,
+	emit_event = function(self, command)
+		if command.payload == nil then
+			self.events:emit(command.event, {})
+			return
+		end
+		self.events:emit(command.event, command.payload)
+	end,
+}
+
+local function reevaluate_progression(self, hint)
+	local runtime = progression_runtime(self)
+	local next_hint = hint
+	repeat
+		runtime:reevaluate(next_hint)
+		next_hint = nil
+		self.processing_progression_commands = true
+		runtime:drain_commands(function(command)
+			local handler = progression_command_handlers[command.op]
+			if handler == nil then
+				error("Unsupported progression command op '" .. tostring(command.op) .. "'.")
+			end
+			handler(self, command)
+		end)
+		self.processing_progression_commands = false
+	until runtime.dirty_count == 0
+end
+
+local function set_progression_value(self, key, value)
+	return progression_runtime(self):set(key, value)
+end
+
+local function sync_progression_location(self)
+	local runtime = progression_runtime(self)
+	local room_number = self.current_room_number
+	local location_changed = runtime:set(key_location_id, room_number)
+	local entered_changed = runtime:set(key_entered_location_id, room_number)
+	if location_changed or entered_changed then
+		reevaluate_progression(self, location_hint)
 	end
-	self.enemy_condition_flags[condition] = true
-	return true
+	runtime:set(key_entered_location_id, 0)
 end
 
 function castle_service:enemy_should_spawn(enemy_def)
-	if self.defeated_enemy_ids[enemy_def.id] == true then
-		return false
-	end
-
-	local conditions = enemy_def.conditions
-	for i = 1, #conditions do
-		if not condition_matches(self, conditions[i], enemy_def.id) then
-			return false
-		end
-	end
-
-	return true
+	return progression_runtime(self):matches_filter(enemy_def.conditions)
 end
 
 function castle_service:sync_enemy_instance(enemy_def, room, force_reset_from_room_template)
@@ -263,7 +393,13 @@ function castle_service:bind_enemy_events()
 		subscriber = self,
 		handler = function(event)
 			local enemy_id = event.enemy_id
-			self.defeated_enemy_ids[enemy_id] = true
+			local destroyed_key = enemy_destroyed_key_by_id[enemy_id]
+			if destroyed_key == nil then
+				destroyed_key = 'enemy.destroyed.' .. enemy_id
+				enemy_destroyed_key_by_id[enemy_id] = destroyed_key
+			end
+
+			local progression_changed = set_progression_value(self, destroyed_key, true)
 			self.enemies_by_id[enemy_id] = nil
 			self.active_enemy_ids[enemy_id] = nil
 			self.active_enemy_ids_scratch[enemy_id] = nil
@@ -276,19 +412,22 @@ function castle_service:bind_enemy_events()
 				end
 			end
 
-			local should_refresh_room = false
-			if event.kind == 'cloud' then
-				should_refresh_room = set_enemy_condition_flag(self, 'cloud_1_destroyed') or should_refresh_room
+			if event.kind == 'cloud' and set_progression_value(self, 'cloud_1_destroyed', true) then
+				progression_changed = true
 			end
+
 			if event.trigger then
 				self.events:emit('room.condition_set', {
 					room_number = event.room_number,
 					condition = event.trigger,
 				})
-				should_refresh_room = false
 			end
-			if should_refresh_room and event.room_number == self.current_room_number then
-				self:refresh_current_room_enemies()
+
+			if progression_changed then
+				if event.trigger == nil and event.room_number == self.current_room_number then
+					self:refresh_current_room_enemies()
+				end
+				reevaluate_progression(self)
 			end
 		end,
 	})
@@ -297,14 +436,15 @@ function castle_service:bind_enemy_events()
 		event = 'room.condition_set',
 		subscriber = self,
 		handler = function(event)
-			if not set_enemy_condition_flag(self, event.condition) then
-				return
-			end
+			local changed = set_progression_value(self, event.condition, true)
 			if event.room_number == self.current_room_number then
 				if self:current_room_has_active_disappearing_wall_for_condition(event.condition) then
 					self.events:emit('evt.cue.appearance', {})
 				end
 				self:refresh_current_room_enemies()
+			end
+			if changed and not self.processing_progression_commands then
+				reevaluate_progression(self)
 			end
 		end,
 	})
@@ -312,11 +452,12 @@ end
 
 function castle_service:ctor()
 	self.enemies_by_id = {}
-	self.defeated_enemy_ids = {}
-	self.enemy_condition_flags = {}
 	self.active_enemy_ids = {}
 	self.active_enemy_ids_scratch = {}
 	self.enemies_suspended_for_transition = false
+	self.processing_progression_commands = false
+	self.progression_values = {}
+	self.progression_apply_done = {}
 	self:bind_enemy_events()
 end
 
@@ -355,6 +496,7 @@ function castle_service:commit_room_switch(previous_space, switch, map_id, map_x
 	self.last_room_switch = switch
 	self:sync_world_entrance_states_for_room(self.current_room)
 	self:refresh_current_room_enemies(true)
+	sync_progression_location(self)
 	return switch
 end
 
@@ -368,6 +510,7 @@ function castle_service:initialize(initial_room_number)
 	self.world_entrance_states = {}
 	self:sync_world_entrance_states_for_room(self.current_room)
 	self:refresh_current_room_enemies(true)
+	sync_progression_location(self)
 	return self.current_room
 end
 
@@ -382,24 +525,6 @@ function castle_service:begin_open_world_entrance(target)
 end
 
 function castle_service:tick()
-	if self.current_room_number == 106 and self.enemy_condition_flags.world1walldisappear ~= true then
-		local enemies = self.current_room.enemies
-		local has_marspeinenaardappel
-		for i = 1, #enemies do
-			local enemy_def = enemies[i]
-			if enemy_def.kind == 'marspeinenaardappel' and self:enemy_should_spawn(enemy_def) then
-				has_marspeinenaardappel = true
-				break
-			end
-		end
-		if has_marspeinenaardappel ~= true then
-			self.events:emit('room.condition_set', {
-				room_number = self.current_room_number,
-				condition = 'world1walldisappear',
-			})
-		end
-	end
-
 	for _, entrance_state in pairs(self.world_entrance_states) do
 		if entrance_state.state == 'opening_1' or entrance_state.state == 'opening_2' then
 			entrance_state.open_step = entrance_state.open_step + 1
@@ -537,9 +662,10 @@ local function register_castle_service_definition()
 			last_room_switch = nil,
 			world_entrance_states = {},
 			enemies_by_id = {},
-			defeated_enemy_ids = {},
-			enemy_condition_flags = {},
 			enemies_suspended_for_transition = false,
+			processing_progression_commands = false,
+			progression_values = {},
+			progression_apply_done = {},
 			tick_enabled = true,
 		},
 	})

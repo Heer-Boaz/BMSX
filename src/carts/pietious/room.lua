@@ -396,6 +396,15 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 	return stairs
 end
 
+local function refresh_room_geometry(room_state)
+	local map_rows = room_state.map_rows
+	local collision_map = build_collision_map(map_rows)
+	room_state.collision_map = collision_map
+	room_state.tiles = build_tile_grid(map_rows, collision_map, room_state.room_subtype)
+	room_state.solids = build_solids(collision_map, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
+	room_state.stairs = build_stairs(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y, constants.player.height)
+end
+
 local function apply_room_template(room_state, template)
 	local map_rows = build_visual_map_rows(
 		template.map_rows,
@@ -451,6 +460,33 @@ function room.create_room(room_number)
 	local room_state = {}
 	apply_room_template(room_state, castle_map.room_templates[target_room_number])
 	return room_state
+end
+
+function room.patch_rows(room_state, rows)
+	local changed = false
+	for i = 1, #rows do
+		local patch = rows[i]
+		local row_index = patch.index
+		local row_value = patch.value
+		if room_state.map_rows[row_index] ~= row_value then
+			room_state.map_rows[row_index] = row_value
+			changed = true
+		end
+	end
+	if changed then
+		refresh_room_geometry(room_state)
+	end
+	return changed
+end
+
+function room.apply_progression_command(room_state, command)
+	if command.room_number ~= nil and command.room_number ~= room_state.room_number then
+		return false
+	end
+	if command.op == 'room.patch_rows' then
+		return room.patch_rows(room_state, command.rows)
+	end
+	error("Unsupported room progression command op '" .. tostring(command.op) .. "'.")
 end
 
 function room.world_to_tile(room_state, world_x, world_y)

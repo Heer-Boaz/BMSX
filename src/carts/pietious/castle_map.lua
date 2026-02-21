@@ -188,6 +188,70 @@ local function resolve_conditions(object_def)
 	return empty_conditions
 end
 
+local function compile_enemy_condition(raw_condition, enemy_id)
+	if type(raw_condition) == 'string' then
+		if raw_condition == 'not_destroyed' then
+			return {
+				key = 'enemy.destroyed.' .. enemy_id,
+				equals = false,
+			}
+		end
+		if raw_condition:sub(1, 1) == '!' then
+			return {
+				key = raw_condition:sub(2),
+				equals = false,
+			}
+		end
+		return {
+			key = raw_condition,
+			equals = true,
+		}
+	end
+
+	local key = raw_condition.key or raw_condition[1]
+	if type(key) ~= 'string' or key == '' then
+		error('pietious castle_map enemy condition requires key')
+	end
+	local op = raw_condition.op or raw_condition[2]
+	local equals = raw_condition.equals
+	if equals == nil then
+		equals = raw_condition.value
+	end
+	if equals == nil then
+		equals = raw_condition[3]
+	end
+	if equals == nil then
+		equals = true
+	end
+
+	local compiled = {
+		key = key,
+		equals = equals,
+	}
+	if op ~= nil then
+		compiled.op = op
+	end
+	return compiled
+end
+
+local function compile_enemy_conditions(raw_conditions, enemy_id)
+	local compiled = {
+		{
+			key = 'enemy.destroyed.' .. enemy_id,
+			equals = false,
+		},
+	}
+
+	if raw_conditions == nil then
+		return compiled
+	end
+
+	for i = 1, #raw_conditions do
+		compiled[#compiled + 1] = compile_enemy_condition(raw_conditions[i], enemy_id)
+	end
+	return compiled
+end
+
 local function split_text_lines(text)
 	local lines = {}
 	for line in text:gmatch('[^\r\n]+') do
@@ -231,7 +295,8 @@ local function build_enemies(room_number, room_subtype, object_defs)
 		local kind = object_def.type
 		if supported_kinds[kind] == true then
 			enemy_index = enemy_index + 1
-			local conditions = resolve_conditions(object_def)
+			local enemy_id = string.format('enemy_%03d_%02d', room_number, enemy_index)
+			local conditions = compile_enemy_conditions(object_def.condition, enemy_id)
 			if kind == 'breakablewall' or kind == 'disappearingwall' then
 				local area = object_def.area
 				local left = area[1]
@@ -239,7 +304,7 @@ local function build_enemies(room_number, room_subtype, object_defs)
 				local right = area[3]
 				local bottom = area[4]
 				enemies[#enemies + 1] = {
-					id = string.format('enemy_%03d_%02d', room_number, enemy_index),
+					id = enemy_id,
 					kind = kind,
 					x = tile_x_to_world(left),
 					y = tile_y_to_world(top),
@@ -261,7 +326,7 @@ local function build_enemies(room_number, room_subtype, object_defs)
 					enemy_y = enemy_y + 2
 				end
 				enemies[#enemies + 1] = {
-					id = string.format('enemy_%03d_%02d', room_number, enemy_index),
+					id = enemy_id,
 					kind = kind,
 					x = enemy_x,
 					y = enemy_y,

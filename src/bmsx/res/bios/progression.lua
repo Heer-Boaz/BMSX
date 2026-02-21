@@ -210,12 +210,7 @@ function progression.compile_program(program_spec)
 		rule_defs = program_spec
 	end
 
-	local program = {
-		key2idx = {},
-		idx2key = {},
-		rules = {},
-		rules_by_key = {},
-	}
+	local program = new_empty_program()
 
 	if seed_keys ~= nil then
 		for i = 1, #seed_keys do
@@ -247,9 +242,7 @@ function progression.compile_program(program_spec)
 			scope_value = scope_value,
 			scope_default = scope_default,
 			apply_commands = def.apply or EMPTY_LIST,
-			enter_commands = def.enter or EMPTY_LIST,
 			apply_once = def.apply_once == true,
-			enter_once = def.enter_once == true,
 		}
 
 		local touched = {}
@@ -357,9 +350,7 @@ function progression.new(program)
 		candidate_rules = {},
 		candidate_count = 0,
 		prev_rule_ok = {},
-		prev_scope_ok = {},
 		apply_done = {},
-		enter_done = {},
 		command_buffer = {},
 		command_count = 0,
 		filter_cache = setmetatable({}, { __mode = 'k' }),
@@ -382,9 +373,7 @@ function progression:attach_program(program)
 	self.candidate_rules = {}
 	self.candidate_count = 0
 	self.prev_rule_ok = {}
-	self.prev_scope_ok = {}
 	self.apply_done = {}
-	self.enter_done = {}
 	self.command_buffer = {}
 	self.command_count = 0
 	self.filter_cache = setmetatable({}, { __mode = 'k' })
@@ -507,7 +496,6 @@ function progression:reevaluate(hint)
 	for i = 1, self.candidate_count do
 		local rule_idx = self.candidate_rules[i]
 		local rule = rules[rule_idx]
-
 		local cond_ok = eval_predicates(self.values, rule.cond)
 		local scope_ok
 		if rule.scope_key_idx == 0 then
@@ -530,17 +518,7 @@ function progression:reevaluate(hint)
 			end
 		end
 
-		if scope_ok and self.prev_scope_ok[rule_idx] ~= true and cond_ok then
-			if #rule.enter_commands > 0 and (not rule.enter_once or self.enter_done[rule_idx] ~= true) then
-				emit_commands(self, rule.enter_commands)
-				if rule.enter_once then
-					self.enter_done[rule_idx] = true
-				end
-			end
-		end
-
 		self.prev_rule_ok[rule_idx] = rule_ok == true
-		self.prev_scope_ok[rule_idx] = scope_ok == true
 	end
 
 	clear_candidates(self)
