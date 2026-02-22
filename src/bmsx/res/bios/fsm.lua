@@ -2010,7 +2010,9 @@ end
 
 function statemachinecontroller:add_statemachine(id, definition)
 	local def
-	if not (definition and definition.__is_state_definition) then
+	if definition and definition.__is_state_definition then
+		def = definition
+	else
 		def = statedefinition.new(id, definition)
 	end
 	local machine = state.new(def, self.target)
