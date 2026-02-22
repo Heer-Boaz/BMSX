@@ -137,7 +137,7 @@ end
 local function register_elevator_service_definition()
 	local elevator_routes = build_elevator_routes()
 	define_service({
-		def_id = 'elevator_service.def',
+		def_id = 'elevator_service',
 		class = elevator_service,
 		fsms = { 'elevator_service.fsm' },
 		defaults = {

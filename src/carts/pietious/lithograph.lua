@@ -17,7 +17,7 @@ end
 
 local function register_lithograph_definition()
 	define_prefab({
-		def_id = 'lithograph.def',
+		def_id = 'lithograph',
 		class = lithograph,
 		type = 'sprite',
 		fsms = { 'lithograph.fsm' },

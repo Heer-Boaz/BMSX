@@ -110,7 +110,7 @@ end
 
 local function register_rock_definition()
 	define_prefab({
-		def_id = 'rock.def',
+		def_id = 'rock',
 		class = rock,
 		type = 'sprite',
 		fsms = { 'rock.fsm' },

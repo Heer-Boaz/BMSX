@@ -281,13 +281,13 @@ end
 
 local function register_item_service_definition()
 	define_service({
-		def_id = 'item_service.def',
+		def_id = 'item_service',
 		class = item_service,
 		fsms = { 'item_service.fsm' },
 		auto_activate = true,
 		defaults = {
 			id = 'i',
-				world_item_def_id = 'world_item.def',
+				world_item_def_id = 'world_item',
 			items_by_id = {},
 			event_item_defs_by_room = {},
 			picked_item_ids = {},

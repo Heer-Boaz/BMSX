@@ -100,7 +100,7 @@ end
 
 local function register_ui_definition()
 	define_prefab({
-		def_id = 'ui.def',
+		def_id = 'ui',
 		class = ui,
 		fsms = { 'ui.fsm' },
 			components = { 'customvisualcomponent' },

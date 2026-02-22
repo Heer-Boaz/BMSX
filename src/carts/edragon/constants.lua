@@ -1,11 +1,11 @@
 local constants = {}
 
 constants.ids = {
-	fighter_def = 'edragon.fighter.def',
+	fighter_def = 'edragon.fighter',
 	fighter_fsm = 'edragon.fighter.fsm',
 	player_instance = 'edragon.player',
 	enemy_instance = 'edragon.enemy',
-	arena_def = 'edragon.arena.def',
+	arena_def = 'edragon.arena',
 	arena_instance = 'edragon.arena',
 }
 

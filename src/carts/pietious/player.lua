@@ -2922,7 +2922,7 @@ end
 
 local function register_player_definition()
 	define_prefab({
-		def_id = 'player.def',
+		def_id = 'player',
 		class = player,
 		type = 'sprite',
 		fsms = { 'player.fsm' },

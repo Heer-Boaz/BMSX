@@ -78,7 +78,7 @@ end
 
 local function register_loot_drop_definition()
 	define_prefab({
-		def_id = 'loot_drop.def',
+		def_id = 'loot_drop',
 		class = loot_drop,
 		type = 'sprite',
 		fsms = { 'loot_drop.fsm' },

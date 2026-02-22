@@ -76,7 +76,7 @@ end
 
 function enemy_base.spawn_death_effect(self)
 	local room = service('c').current_room
-	inst('enemy_explosion.def', {
+	inst('enemy_explosion', {
 		room_number = room.room_number,
 		loot_type = self:choose_drop_type(),
 		space_id = room.space_id,

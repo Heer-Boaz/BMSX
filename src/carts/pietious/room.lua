@@ -651,7 +651,7 @@ function room.sync_lithograph_instances(room_state)
 	for i = 1, #lithograph_defs do
 		local lithograph_def = lithograph_defs[i]
 		if object(lithograph_def.id) == nil then
-			inst('lithograph.def', {
+			inst('lithograph', {
 				id = lithograph_def.id,
 				space_id = room_state.space_id,
 				pos = { x = lithograph_def.x, y = lithograph_def.y, z = 10 },
@@ -667,7 +667,7 @@ function room.sync_shrine_instances(room_state)
 	for i = 1, #shrine_defs do
 		local shrine_def = shrine_defs[i]
 		if object(shrine_def.id) == nil then
-			inst('room_shrine.def', {
+			inst('room_shrine', {
 				id = shrine_def.id,
 				space_id = room_state.space_id,
 				pos = { x = shrine_def.x, y = shrine_def.y, z = 22 },
@@ -681,7 +681,7 @@ function room.sync_draaideur_instances(room_state)
 	for i = 1, #draaideur_defs do
 		local draaideur_def = draaideur_defs[i]
 		if object(draaideur_def.id) == nil then
-			inst('draaideur.def', {
+			inst('draaideur', {
 				id = draaideur_def.id,
 				space_id = room_state.space_id,
 				pos = { x = draaideur_def.x, y = draaideur_def.y, z = 22 },
@@ -826,7 +826,7 @@ end
 
 local function register_room_definition()
 	define_prefab({
-		def_id = 'room.def',
+		def_id = 'room',
 		class = room_object,
 		fsms = { 'room.fsm' },
 		components = { 'customvisualcomponent' },

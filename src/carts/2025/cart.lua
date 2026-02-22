@@ -141,52 +141,52 @@ local function register_director()
 		},
 	})
 	define_prefab({
-		def_id = 'p3.bg.def',
+		def_id = 'p3.bg',
 		class = {},
 		type = 'sprite',
 	})
 	define_prefab({
-		def_id = 'p3.text.main.def',
+		def_id = 'p3.text.main',
 		class = {},
 		type = 'textobject',
 	})
 	define_prefab({
-		def_id = 'p3.text.choice.def',
+		def_id = 'p3.text.choice',
 		class = {},
 		type = 'textobject',
 	})
 	define_prefab({
-		def_id = 'p3.text.prompt.def',
+		def_id = 'p3.text.prompt',
 		class = {},
 		type = 'textobject',
 	})
 	define_prefab({
-		def_id = 'p3.text.transition.def',
+		def_id = 'p3.text.transition',
 		class = {},
 		type = 'textobject',
 	})
 	define_prefab({
-		def_id = 'p3.text.results.def',
+		def_id = 'p3.text.results',
 		class = {},
 		type = 'textobject',
 	})
 	define_prefab({
-		def_id = 'p3.combat.monster.def',
+		def_id = 'p3.combat.monster',
 		class = {},
 		type = 'sprite',
 	})
 	define_prefab({
-		def_id = 'p3.combat.maya_a.def',
+		def_id = 'p3.combat.maya_a',
 		class = {},
 		type = 'sprite',
 	})
 	define_prefab({
-		def_id = 'p3.combat.maya_b.def',
+		def_id = 'p3.combat.maya_b',
 		class = {},
 		type = 'sprite',
 	})
 	define_prefab({
-		def_id = 'p3.combat.all_out.def',
+		def_id = 'p3.combat.all_out',
 		class = {},
 		type = 'sprite',
 	})
@@ -220,37 +220,37 @@ function new_game()
 	local choice_top = h - (line_height * (prompt_lines + choice_lines))
 	local main_top = h - (line_height * (prompt_lines + choice_lines + main_lines))
 
-	inst('p3.bg.def', {
+	inst('p3.bg', {
 		id = bg_id,
 		pos = { x = 0, y = 0, z = 0 },
 		imgid = 'none',
 		visible = false,
 	})
-	inst('p3.bg.def', {
+	inst('p3.bg', {
 		id = transition_overlay_id,
 		pos = { x = 0, y = 0, z = 850 },
 		imgid = 'whitepixel',
 		visible = false,
 	})
-	inst('p3.bg.def', {
+	inst('p3.bg', {
 		id = transition_panel_ids[1],
 		pos = { x = 0, y = 0, z = 860 },
 		imgid = 'whitepixel',
 		visible = false,
 	})
-	inst('p3.bg.def', {
+	inst('p3.bg', {
 		id = transition_panel_ids[2],
 		pos = { x = 0, y = 0, z = 861 },
 		imgid = 'whitepixel',
 		visible = false,
 	})
-	inst('p3.bg.def', {
+	inst('p3.bg', {
 		id = transition_panel_ids[3],
 		pos = { x = 0, y = 0, z = 862 },
 		imgid = 'whitepixel',
 		visible = false,
 	})
-	inst('p3.bg.def', {
+	inst('p3.bg', {
 		id = transition_accent_id,
 		pos = { x = 0, y = 0, z = 870 },
 		imgid = 'whitepixel',
@@ -258,13 +258,13 @@ function new_game()
 	})
 
 	local horizontal_margin = w / 10
-	inst('p3.text.main.def', {
+	inst('p3.text.main', {
 		id = text_main_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
 		pos = { z = 1000 },
 		layer = 'ui',
 	})
-	inst('p3.text.choice.def', {
+	inst('p3.text.choice', {
 		id = text_choice_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
 		pos = { z = 1001 },
@@ -273,19 +273,19 @@ function new_game()
 		highlight_jitter_enabled = false,
 		layer = 'ui',
 	})
-	inst('p3.text.prompt.def', {
+	inst('p3.text.prompt', {
 		id = text_prompt_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
 		pos = { z = 1002 },
 		layer = 'ui',
 	})
-	inst('p3.text.transition.def', {
+	inst('p3.text.transition', {
 		id = text_transition_id,
 		dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
 		pos = { z = 900 },
 		layer = 'ui',
 	})
-	inst('p3.text.results.def', {
+	inst('p3.text.results', {
 		id = text_results_id,
 		dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
 		pos = { z = 1003 },
@@ -294,25 +294,25 @@ function new_game()
 
 	clear_texts(text_ids_all)
 
-	inst('p3.combat.monster.def', {
+	inst('p3.combat.monster', {
 		id = combat_monster_id,
 		pos = { x = 0, y = 0, z = 200 },
 		imgid = 'monster_snoozer',
 		visible = false,
 	})
-	inst('p3.combat.maya_a.def', {
+	inst('p3.combat.maya_a', {
 		id = combat_maya_a_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_a',
 		visible = false,
 	})
-	inst('p3.combat.maya_b.def', {
+	inst('p3.combat.maya_b', {
 		id = combat_maya_b_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_b',
 		visible = false,
 	})
-	inst('p3.combat.all_out.def', {
+	inst('p3.combat.all_out', {
 		id = combat_all_out_id,
 		pos = { x = 0, y = 0, z = 800 },
 		imgid = 'all_out',

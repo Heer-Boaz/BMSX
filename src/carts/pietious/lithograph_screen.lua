@@ -41,7 +41,7 @@ end
 
 local function register_lithograph_screen_definition()
 	define_prefab({
-		def_id = 'lithograph_screen.def',
+		def_id = 'lithograph_screen',
 		class = lithograph_screen,
 		fsms = { 'lithograph_screen.fsm' },
 		components = { 'customvisualcomponent' },

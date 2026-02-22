@@ -59,7 +59,7 @@ end
 
 local function register_transition_definition()
 	define_prefab({
-		def_id = 'transition.def',
+		def_id = 'transition',
 		class = transition,
 		fsms = { 'transition.fsm' },
 		components = { 'customvisualcomponent' },

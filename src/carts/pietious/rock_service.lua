@@ -124,13 +124,13 @@ end
 
 local function register_rock_service_definition()
 	define_service({
-		def_id = 'rock_service.def',
+		def_id = 'rock_service',
 		class = rock_service,
 		fsms = { 'rock_service.fsm' },
 		auto_activate = true,
 		defaults = {
 			id = 'r',
-				rock_def_id = 'rock.def',
+				rock_def_id = 'rock',
 			rocks_by_id = {},
 			destroyed_rock_ids = {},
 			synced_room_number = 0,

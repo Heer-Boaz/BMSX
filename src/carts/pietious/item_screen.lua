@@ -193,7 +193,7 @@ end
 
 local function register_item_screen_definition()
 		define_prefab({
-			def_id = 'item_screen.def',
+			def_id = 'item_screen',
 			class = item_screen,
 			fsms = { 'item_screen.fsm' },
 			components = { 'customvisualcomponent' },

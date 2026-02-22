@@ -134,73 +134,71 @@ function new_game()
 	add_space('ui')
 	set_space('castle')
 
-	local castle_service = create_service('castle_service.def', {
+	local castle_service = create_service('castle_service', {
 		id = 'c',
 	})
 	local room = castle_service:initialize(castle_map.start_room_number)
 
-	inst('player.def', {
+	inst('player', {
 		id = 'pietolon',
-		room = room,
-		space_id = room.space_id,
+		space_id = 'castle',
 		spawn_x = constants.player.start_x,
 		spawn_y = constants.player.start_y,
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
 	})
 	grant_starting_loadout()
 
-	inst('room.def', {
+	inst('room', {
 		id = 'room',
-		room = room,
-		space_id = room.space_id,
+		space_id = 'castle',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	inst('transition.def', {
+	inst('transition', {
 		id = 'transition',
 		space_id = 'transition',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	inst('shrine.def', {
+	inst('shrine', {
 		id = 'shrine',
 		space_id = 'shrine',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	inst('lithograph_screen.def', {
+	inst('lithograph_screen', {
 		id = 'lithograph',
 		space_id = 'lithograph',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	inst('item_screen.def', {
+	inst('item_screen', {
 		id = 'item_screen',
 		space_id = 'item',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	inst('ui.def', {
+	inst('ui', {
 		id = 'ui',
-		space_id = room.space_id,
+		space_id = 'castle',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	create_service('director_service.def', {
+	create_service('director_service', {
 		id = 'd',
 	})
 
-	create_service('item_service.def', {
+	create_service('item_service', {
 		id = 'i',
 	})
 
-	local elevator_service = create_service('elevator_service.def', {
+	local elevator_service = create_service('elevator_service', {
 		id = 'elevator_service',
 		castle_service_id = 'c',
 	})
 	elevator_service:activate()
 
-	create_service('rock_service.def', {
+	create_service('rock_service', {
 		id = 'r',
 	})
 end

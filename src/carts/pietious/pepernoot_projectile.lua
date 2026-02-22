@@ -75,7 +75,7 @@ end
 
 local function register_pepernoot_projectile_definition()
 	define_prefab({
-		def_id = 'pepernoot_projectile.def',
+		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
 		type = 'sprite',
 		fsms = { 'pepernoot_projectile.fsm' },

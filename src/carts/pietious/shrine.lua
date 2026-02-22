@@ -55,7 +55,7 @@ end
 
 local function register_shrine_definition()
 	define_prefab({
-		def_id = 'shrine.def',
+		def_id = 'shrine',
 		class = shrine,
 		fsms = { 'shrine.fsm' },
 		components = { 'customvisualcomponent' },
@@ -69,7 +69,7 @@ end
 
 local function register_room_shrine_definition()
 	define_prefab({
-		def_id = 'room_shrine.def',
+		def_id = 'room_shrine',
 		class = room_shrine,
 		type = 'sprite',
 		fsms = { 'room_shrine.fsm' },

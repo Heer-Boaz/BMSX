@@ -563,7 +563,7 @@ end
 
 local function register_director_service_definition()
 	define_service({
-		def_id = 'director_service.def',
+		def_id = 'director_service',
 		class = director,
 		fsms = { 'director.fsm' },
 		auto_activate = true,

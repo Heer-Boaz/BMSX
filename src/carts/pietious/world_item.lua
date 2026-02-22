@@ -53,7 +53,7 @@ end
 
 local function register_world_item_definition()
 	define_prefab({
-		def_id = 'world_item.def',
+		def_id = 'world_item',
 		class = world_item,
 		type = 'sprite',
 		fsms = { 'world_item.fsm' },

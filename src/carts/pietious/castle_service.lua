@@ -645,7 +645,7 @@ end
 
 local function register_castle_service_definition()
 	define_service({
-		def_id = 'castle_service.def',
+		def_id = 'castle_service',
 		class = castle_service,
 		fsms = { 'castle_service.fsm' },
 		auto_activate = true,

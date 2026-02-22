@@ -182,7 +182,7 @@ end
 
 local function register_draaideur_definition()
 	define_prefab({
-		def_id = 'draaideur.def',
+		def_id = 'draaideur',
 		class = draaideur,
 		type = 'sprite',
 		fsms = { 'draaideur.fsm' },

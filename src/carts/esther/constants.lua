@@ -2,10 +2,10 @@
 local constants = {}
 
 constants.ids = {
-	player_def = 'dkc.player.def',
+	player_def = 'dkc.player',
 	player_instance = 'dkc.player',
 	player_fsm = 'dkc.player.fsm',
-	director_def = 'dkc.director.def',
+	director_def = 'dkc.director',
 	director_instance = 'dkc.director',
 	director_fsm = 'dkc.director.fsm',
 }

@@ -80,7 +80,7 @@ local function activate_pepernoot_ability(owner, state_tags)
 	local spawn_y = owner.y + constants.secondary_weapon.pepernoot_spawn_offset_y
 	spawn_x, spawn_y = room_module.snap_world_to_tile(room, spawn_x, spawn_y)
 
-	inst('pepernoot_projectile.def', {
+	inst('pepernoot_projectile', {
 		id = projectile_id,
 		room = room,
 		space_id = room.space_id,
