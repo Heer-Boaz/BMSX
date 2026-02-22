@@ -618,6 +618,10 @@ async function runEngineBuild(options: ParsedOptions): Promise<void> {
 	const engineCanonicalization = engineManifest.machine.canonicalization ?? previousCanonicalization;
 	setLuaCanonicalization(engineCanonicalization);
 	try {
+		const biosLuaRoots = [normalizePathKey(engineResPath)];
+		logInfo('Lint BIOS Lua');
+		await lintCartLuaSources({ roots: biosLuaRoots, profile: 'bios' });
+
 		const engineResMetaList = await getResMetaList([engineResPath], engineRomName, {
 			includeCode: false,
 			extraLuaPaths: [],
