@@ -16,7 +16,7 @@ end
 function mesh.new(opts)
 	local self = setmetatable({}, mesh)
 	opts = opts or {}
-	self.name = opts.meshname or ""
+	self.name = (opts.meshname)
 	self.positions = opts.positions or {}
 	self.texcoords = opts.texcoords or {}
 	self.texcoords1 = opts.texcoords1 or {}

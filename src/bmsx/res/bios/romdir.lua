@@ -1,22 +1,22 @@
 -- romdir.lua
 -- Runtime ROM directory lookup helpers (BIOS-level, no builtins)
 
-local CART_ROM_MAGIC = 0x58534d42
-local BTOC_MAGIC = 0x434f5442
-local BTOC_HEADER_SIZE = 48
-local BTOC_ENTRY_SIZE = 80
-local BTOC_INVALID_U32 = 0xffffffff
-local FNV_OFFSET_BASIS_LO = 0x84222325
-local FNV_OFFSET_BASIS_HI = 0xcbf29ce4
-local FNV_PRIME = 0x1b3
-local U32_MOD = 0x100000000
+local cart_rom_magic = 0x58534d42
+local btoc_magic = 0x434f5442
+local btoc_header_size = 48
+local btoc_entry_size = 80
+local btoc_invalid_u32 = 0xffffffff
+local fnv_offset_basis_lo = 0x84222325
+local fnv_offset_basis_hi = 0xcbf29ce4
+local fnv_prime = 0x1b3
+local u32_mod = 0x100000000
 
 local function read_u32(addr)
 	return peek(addr)
 end
 
 local function read_cart_header(base)
-	if read_u32(base) ~= CART_ROM_MAGIC then
+	if read_u32(base) ~= cart_rom_magic then
 		return nil
 	end
 	return {
@@ -33,23 +33,23 @@ end
 local function read_btoc_header(rom_base, cart_header)
 	local toc_base = rom_base + cart_header.toc_off
 	local toc_len = cart_header.toc_len
-	if toc_len < BTOC_HEADER_SIZE then
+	if toc_len < btoc_header_size then
 		error("BTOC header exceeds TOC length.")
 	end
-	if read_u32(toc_base) ~= BTOC_MAGIC then
+	if read_u32(toc_base) ~= btoc_magic then
 		error("BTOC magic mismatch.")
 	end
 	local header_size = read_u32(toc_base + 4)
-	if header_size ~= BTOC_HEADER_SIZE then
+	if header_size ~= btoc_header_size then
 		error("BTOC header size mismatch.")
 	end
 	local entry_size = read_u32(toc_base + 8)
-	if entry_size ~= BTOC_ENTRY_SIZE then
+	if entry_size ~= btoc_entry_size then
 		error("BTOC entry size mismatch.")
 	end
 	local entry_count = read_u32(toc_base + 12)
 	local entry_offset = read_u32(toc_base + 16)
-	if entry_offset ~= BTOC_HEADER_SIZE then
+	if entry_offset ~= btoc_header_size then
 		error("BTOC entry offset mismatch.")
 	end
 	local string_table_offset = read_u32(toc_base + 20)
@@ -82,13 +82,15 @@ local function read_btoc_header(rom_base, cart_header)
 end
 
 local function canonicalize_id(id)
-	if id == nil or id == "" then
+	if id == nil then
 		return ""
 	end
 	local normalized = string.gsub(id, "\\\\", "/")
-	local start = 1
+	local start
 	if string.sub(normalized, 1, 2) == "./" then
 		start = 3
+	else
+		start = 1
 	end
 	local out = {}
 	local prev_slash = false
@@ -113,19 +115,19 @@ end
 
 local function hash_id(id)
 	local canonical = canonicalize_id(id)
-	local lo = FNV_OFFSET_BASIS_LO
-	local hi = FNV_OFFSET_BASIS_HI
+	local lo = fnv_offset_basis_lo
+	local hi = fnv_offset_basis_hi
 	for i = 1, #canonical do
 		local byte = string.byte(canonical, i)
 		lo = lo ~ byte
-		if lo < 0 then lo = lo + U32_MOD end
-		local lo_mul = lo * FNV_PRIME
-		local carry = math.floor(lo_mul / U32_MOD)
-		local lo_low = lo_mul - (carry * U32_MOD)
-		local hi_mul = hi * FNV_PRIME + carry
-		local hi_low = hi_mul % U32_MOD
-		local lo_shift = (lo * 0x100) % U32_MOD
-		hi = (hi_low + lo_shift) % U32_MOD
+		if lo < 0 then lo = lo + u32_mod end
+		local lo_mul = lo * fnv_prime
+		local carry = math.floor(lo_mul / u32_mod)
+		local lo_low = lo_mul - (carry * u32_mod)
+		local hi_mul = hi * fnv_prime + carry
+		local hi_low = hi_mul % u32_mod
+		local lo_shift = (lo * 0x100) % u32_mod
+		hi = (hi_low + lo_shift) % u32_mod
 		lo = lo_low
 	end
 	return lo, hi
@@ -136,7 +138,7 @@ local function token_key(lo, hi)
 end
 
 local function normalize_u32(value)
-	if value == BTOC_INVALID_U32 then
+	if value == btoc_invalid_u32 then
 		return nil
 	end
 	return value

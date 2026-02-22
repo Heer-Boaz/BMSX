@@ -106,9 +106,7 @@ function ecspipelineregistry:get_last_diagnostics()
 	return self._last_diagnostics
 end
 
-local defaultecspipelineregistry = ecspipelineregistry.new()
-
 return {
 	ecspipelineregistry = ecspipelineregistry,
-	defaultecspipelineregistry = defaultecspipelineregistry,
+	defaultecspipelineregistry = ecspipelineregistry.new(),
 }

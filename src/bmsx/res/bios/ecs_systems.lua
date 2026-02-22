@@ -3,7 +3,6 @@
 
 local ecs = require("ecs")
 local action_effects = require("action_effects")
-local audio_router = require("audio_router")
 local registry = require("registry")
 local collision2d = require("collision2d")
 local world_instance = require("world").instance
@@ -42,12 +41,11 @@ function audioroutersystem.new(priority)
 end
 
 function audioroutersystem:update()
-	audio_router.tick()
 end
 
 function behaviortreesystem:update()
 	for obj in world_instance:objects({ scope = "active" }) do
-		if obj.tick_enabled == false then
+		if not (obj.tick_enabled) then
 			goto continue
 		end
 		local bts = obj.btreecontexts
@@ -84,7 +82,7 @@ end
 
 function statemachinesystem:update(dt_ms)
 	for obj in world_instance:objects({ scope = "active" }) do
-		if obj.tick_enabled == false then
+		if not (obj.tick_enabled) then
 			goto continue
 		end
 		obj.sc:tick(dt_ms)
@@ -546,14 +544,18 @@ function textrendersystem:update()
 			goto continue
 		end
 		local offset = tc.offset
-		local x = obj.x + offset.x
-		local y = obj.y + offset.y
-		local z = obj.z + offset.z
+		local x
+		local y
+		local z
 		local t = obj:get_component(transformcomponent)
 		if t then
 			x = t.position.x + offset.x
 			y = t.position.y + offset.y
 			z = t.position.z + offset.z
+		else
+			x = obj.x + offset.x
+			y = obj.y + offset.y
+			z = obj.z + offset.z
 		end
 		put_glyphs(tc.text, x, y, z, {
 			font = tc.font,
@@ -580,18 +582,22 @@ end
 
 function spriterendersystem:update()
 	for obj, sc in world_instance:objects_with_components(spritecomponent, { scope = "active" }) do
-		if obj.visible == false or not sc.enabled then
+		if not obj.visible or not sc.enabled then
 			goto continue
 		end
 		local offset = sc.offset
-		local x = obj.x + offset.x
-		local y = obj.y + offset.y
-		local z = obj.z + offset.z
+		local x
+		local y
+		local z
 		local t = obj:get_component("transformcomponent")
 		if t then
 			x = t.position.x + offset.x
 			y = t.position.y + offset.y
 			z = t.position.z + offset.z
+		else
+			x = obj.x + offset.x
+			y = obj.y + offset.y
+			z = obj.z + offset.z
 		end
 		put_sprite(sc.imgid, x, y, z, {
 			scale = sc.scale,
@@ -615,7 +621,7 @@ end
 
 function meshrendersystem:update()
 	for obj, mc in world_instance:objects_with_components(meshcomponent, { scope = "active" }) do
-		if obj.visible == false or not mc.enabled then
+		if not obj.visible or not mc.enabled then
 			goto continue
 		end
 		put_mesh(mc.mesh, mc.matrix, {
@@ -638,7 +644,7 @@ end
 
 function rendersubmitsystem:update()
 	for obj, rc in world_instance:objects_with_components(customvisualcomponent, { scope = "active" }) do
-		if obj.visible == false or not rc.enabled then
+		if not obj.visible or not rc.enabled then
 			goto continue
 		end
 		rc:flush()

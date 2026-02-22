@@ -61,7 +61,7 @@ local function compile_effect(effect, slot, analysis)
 		if type(spec) ~= "table" then
 			error("[inputactioneffectcompiler] dispatch.command must be a table.")
 		end
-		if type(spec.event) ~= "string" or spec.event == "" then
+		if type(spec.event) ~= "string" then
 			error("[inputactioneffectcompiler] dispatch.command is missing event.")
 		end
 		return function(env)
@@ -110,7 +110,7 @@ local function compile_predicate(binding)
 		end
 	end
 	local mode_pred = when.mode
-	local mode_items = nil
+	local mode_items
 	if mode_pred then
 		if type(mode_pred) == "table" and mode_pred[1] ~= nil then
 			mode_items = mode_pred
@@ -133,7 +133,7 @@ local function compile_predicate(binding)
 		return function(env)
 			for i = 1, #mode_items do
 				local entry = mode_items[i]
-				local matches = true
+				local matches
 				if entry.path ~= nil then
 					matches = env.owner:matches_state_path(entry.path)
 				end
@@ -165,9 +165,13 @@ local function compile_custom_effects(binding, analysis)
 	return map
 end
 
+local function create_binding_analysis()
+	return { uses_effect_triggers = false }
+end
+
 local function compile_binding(binding, parse)
 	local priority = binding.priority or 0
-	local analysis = { uses_effect_triggers = false }
+	local analysis = create_binding_analysis()
 	local predicate = compile_predicate(binding)
 	local on = binding.on
 	if not on then
@@ -223,7 +227,7 @@ function compile_program(program, parse)
 		return a.index < b.index
 	end)
 
-	local uses_effect_triggers = false
+	local uses_effect_triggers
 	for i = 1, #compiled_entries do
 		if compiled_entries[i].compiled.uses_effect_triggers then
 			uses_effect_triggers = true
@@ -250,8 +254,8 @@ local function validate_effect(effect, ctx)
 	end
 	if effect["effect.trigger"] ~= nil then
 		local descriptor = effect["effect.trigger"]
-		local effect_id = nil
-		local payload = nil
+		local effect_id
+		local payload
 		if type(descriptor) == "string" then
 			effect_id = descriptor
 		else
@@ -266,7 +270,7 @@ local function validate_effect(effect, ctx)
 		if type(spec) ~= "table" then
 			error("[inputactioneffectcompiler] program '" .. ctx.program_id .. "' binding '" .. ctx.binding_name .. "' slot '" .. ctx.slot .. "' emit.gameplay must be a table.")
 		end
-		if type(spec.event) ~= "string" or spec.event == "" then
+		if type(spec.event) ~= "string" then
 			error("[inputactioneffectcompiler] program '" .. ctx.program_id .. "' binding '" .. ctx.binding_name .. "' slot '" .. ctx.slot .. "' emit.gameplay missing event.")
 		end
 		local payload = spec.payload
@@ -285,7 +289,7 @@ local function validate_effect(effect, ctx)
 		if type(spec) ~= "table" then
 			error("[inputactioneffectcompiler] program '" .. ctx.program_id .. "' binding '" .. ctx.binding_name .. "' slot '" .. ctx.slot .. "' dispatch.command must be a table.")
 		end
-		if type(spec.event) ~= "string" or spec.event == "" then
+		if type(spec.event) ~= "string" then
 			error("[inputactioneffectcompiler] program '" .. ctx.program_id .. "' binding '" .. ctx.binding_name .. "' slot '" .. ctx.slot .. "' dispatch.command missing event.")
 		end
 		return

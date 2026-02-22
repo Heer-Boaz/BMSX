@@ -17,7 +17,10 @@ local function component_key(type_or_name)
 	end
 	if t == "table" then
 		local name = type_or_name.type_name or type_or_name.typename or type_or_name.name
-		return string.lower(name or '')
+		if name == nil then
+			error("worldobject component key table is missing type name")
+		end
+		return string.lower(name)
 	end
 	return string.lower(tostring(type_or_name))
 end
@@ -33,7 +36,10 @@ function worldobject.new(opts)
 	self.sx = opts.sx or 0
 	self.sy = opts.sy or 0
 	self.sz = opts.sz or 0
-	self.visible = opts.visible ~= false
+	self.visible = true
+	if opts.visible ~= nil then
+		self.visible = opts.visible
+	end
 	self.active = false
 	self.tick_enabled = false
 	self.eventhandling_enabled = false
@@ -234,7 +240,7 @@ function worldobject:iterate_components()
 end
 
 function worldobject:has_tag(tag)
-	return self.tags[tag] == true
+	return (self.tags[tag])
 end
 
 function worldobject:add_tag(tag)
@@ -260,7 +266,7 @@ function worldobject:dispatch_command(event_or_name, payload)
 end
 
 function worldobject:emit_gameplay_fact(event_or_name, payload)
-	local event = event_or_name
+	local event
 	if type(event_or_name) ~= "table" then
 		local spec = { type = event_or_name, emitter = self }
 		if payload ~= nil then

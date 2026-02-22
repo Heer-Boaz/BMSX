@@ -1,7 +1,7 @@
 local ecs = require("ecs")
 
 local tickgroup = ecs.tickgroup
-local world_instance = nil
+local world_instance
 
 local world_class = {}
 world_class.__index = world_class
@@ -195,7 +195,7 @@ function world_class.new()
 end
 
 function world_class:add_space(space_id)
-	if type(space_id) ~= "string" or space_id == "" then
+	if type(space_id) ~= "string" then
 		error("world.add_space expects a non-empty space id")
 	end
 	if self._spaces[space_id] then
@@ -222,7 +222,7 @@ end
 
 function world_class:_object_space_id(obj)
 	local space_id = obj.space_id
-	if space_id == nil or space_id == "" then
+	if space_id == nil then
 		return "default"
 	end
 	return space_id
@@ -252,7 +252,7 @@ function world_class:spawn(obj, pos)
 end
 
 function world_class:despawn(id_or_obj)
-	local obj = id_or_obj
+	local obj
 	if type(id_or_obj) ~= "table" then
 		obj = self._by_id[id_or_obj]
 	end

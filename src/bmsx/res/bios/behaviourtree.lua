@@ -58,11 +58,11 @@ function blackboard:copy_properties(target, properties)
 end
 
 function blackboard:get_action_in_progress()
-	return self.nodedata.actioninprogress == true
+	return (self.nodedata.actioninprogress)
 end
 
 function blackboard:set_action_in_progress(v)
-	self.nodedata.actioninprogress = v == true
+	self.nodedata.actioninprogress = (v)
 end
 
 local btnode = {}
@@ -148,7 +148,7 @@ function parallel.new(id, children, success_policy, priority)
 end
 
 function parallel:tick(target, blackboard)
-	local any_running = false
+	local any_running
 	local success_count = 0
 	for i = 1, #self.children do
 		local status = normalize_status(self.children[i]:tick(target, blackboard))
@@ -345,7 +345,7 @@ function compositeaction.new(id, actions, priority, parameters)
 end
 
 function compositeaction:tick(target, blackboard)
-	local outcome = behaviourtree.success
+	local outcome
 	for i = 1, #self.actions do
 		local status = normalize_status(self.actions[i]:tick(target, blackboard))
 		if status == behaviourtree.failure then
@@ -362,62 +362,62 @@ local behaviourtreedefinitions = {}
 
 local function build_node(spec, id)
 	local node_type = spec.type or spec.kind or spec.node
-	if node_type == "selector" or node_type == "selector" then
+	if node_type == 'selector' then
 		local children = {}
 		for i = 1, #spec.children do
 			children[i] = build_node(spec.children[i], id)
 		end
 		return selector.new(id, children, spec.priority)
 	end
-	if node_type == "sequence" or node_type == "sequence" then
+	if node_type == 'sequence' then
 		local children = {}
 		for i = 1, #spec.children do
 			children[i] = build_node(spec.children[i], id)
 		end
 		return sequence.new(id, children, spec.priority)
 	end
-	if node_type == "parallel" or node_type == "parallel" then
+	if node_type == 'parallel' then
 		local children = {}
 		for i = 1, #spec.children do
 			children[i] = build_node(spec.children[i], id)
 		end
 		return parallel.new(id, children, spec.successpolicy, spec.priority)
 	end
-	if node_type == "decorator" or node_type == "decorator" then
+	if node_type == 'decorator' then
 		local child = build_node(spec.child, id)
 		return decorator.new(id, child, spec.decorator, spec.priority)
 	end
-	if node_type == "condition" or node_type == "condition" then
+	if node_type == 'condition' then
 		return condition.new(id, spec.condition, spec.modifier, spec.priority, spec.parameters)
 	end
-	if node_type == "compositecondition" or node_type == "compositecondition" then
+	if node_type == 'compositecondition' then
 		return compositecondition.new(id, spec.conditions, spec.modifier, spec.priority, spec.parameters)
 	end
-	if node_type == "randomselector" or node_type == "randomselector" then
+	if node_type == 'randomselector' then
 		local children = {}
 		for i = 1, #spec.children do
 			children[i] = build_node(spec.children[i], id)
 		end
 		return randomselector.new(id, children, spec.currentchild_propname, spec.priority)
 	end
-	if node_type == "limit" or node_type == "limit" then
+	if node_type == 'limit' then
 		local child = build_node(spec.child, id)
 		return limit.new(id, spec.limit, spec.count_propname, child, spec.priority)
 	end
-	if node_type == "priorityselector" or node_type == "priorityselector" then
+	if node_type == 'priorityselector' then
 		local children = {}
 		for i = 1, #spec.children do
 			children[i] = build_node(spec.children[i], id)
 		end
 		return priorityselector.new(id, children, spec.priority)
 	end
-	if node_type == "wait" or node_type == "wait" then
+	if node_type == 'wait' then
 		return wait.new(id, spec.wait_time, spec.wait_propname, spec.priority)
 	end
-	if node_type == "action" or node_type == "action" then
+	if node_type == 'action' then
 		return action.new(id, spec.action, spec.priority, spec.parameters)
 	end
-	if node_type == "compositeaction" or node_type == "compositeaction" then
+	if node_type == 'compositeaction' then
 		local actions = {}
 		for i = 1, #spec.actions do
 			actions[i] = build_node(spec.actions[i], id)

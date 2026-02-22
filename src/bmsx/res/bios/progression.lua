@@ -17,16 +17,16 @@ local progression = {
 	_is_dispatching = false,
 }
 
-local EMPTY_LIST = {}
+local empty_list = {}
 
 local function compile_set_actions(state_program, actions)
 	if actions == nil then
-		return EMPTY_LIST
+		return empty_list
 	end
 	for i = 1, #actions do
 		local action = actions[i]
 		local key = action.key
-		if type(key) ~= 'string' or key == '' then
+		if type(key) ~= 'string' then
 			error("progression set action at index " .. i .. " must define a non-empty string key.")
 		end
 		progression_core.ensure_key(state_program, key)
@@ -44,10 +44,10 @@ function progression.compile_program(program_spec)
 	local seed_keys
 
 	if program_spec == nil then
-		rule_defs = EMPTY_LIST
+		rule_defs = empty_list
 		handlers = {}
 	elseif program_spec.rules ~= nil or program_spec.handlers ~= nil or program_spec.keys ~= nil then
-		rule_defs = program_spec.rules or EMPTY_LIST
+		rule_defs = program_spec.rules or empty_list
 		handlers = program_spec.handlers or {}
 		seed_keys = program_spec.keys
 	else
@@ -57,7 +57,7 @@ function progression.compile_program(program_spec)
 
 	local state_program = progression_core.compile_program({
 		keys = seed_keys,
-		rules = EMPTY_LIST,
+		rules = empty_list,
 	})
 	local rules = {}
 	local rules_by_event = {}
@@ -72,8 +72,8 @@ function progression.compile_program(program_spec)
 			when_all = progression_core.compile_filter(state_program, rule_def.when_all),
 			when_event = event_matcher.compile(rule_def.when_event),
 			set = compile_set_actions(state_program, rule_def.set),
-			apply = rule_def.apply or EMPTY_LIST,
-			apply_once = rule_def.apply_once == true,
+			apply = rule_def.apply or empty_list,
+			apply_once = (rule_def.apply_once),
 		}
 		rules[i] = rule
 		local event_rules = rules_by_event[event_name]
@@ -82,7 +82,7 @@ function progression.compile_program(program_spec)
 			rules_by_event[event_name] = event_rules
 		end
 		event_rules[#event_rules + 1] = rule
-		if seen_event[event_name] ~= true then
+		if not (seen_event[event_name]) then
 			seen_event[event_name] = true
 			event_names[#event_names + 1] = event_name
 		end
@@ -109,7 +109,7 @@ local function runtime_for_event(event)
 end
 
 local function apply_set_actions(runtime, actions)
-	local changed = false
+	local changed
 	local state = runtime.state
 	for i = 1, #actions do
 		local action = actions[i]
@@ -143,11 +143,11 @@ local function dispatch_event_now(event)
 	repeat
 		changed = false
 		for i = 1, #rules do
-			if fired[i] ~= true then
+			if not (fired[i]) then
 				local rule = rules[i]
 				if rule.when_event(event) and runtime.state:matches_filter(rule.when_all) then
 					fired[i] = true
-					if not rule.apply_once or runtime.apply_done[rule.id] ~= true then
+					if not rule.apply_once or not (runtime.apply_done[rule.id]) then
 						if apply_set_actions(runtime, rule.set) then
 							changed = true
 						end

@@ -4,64 +4,14 @@
 local eventemitter = require("eventemitter").eventemitter
 local compile_matcher = require("event_matcher").compile
 
-local router = { _inited = false, _bound = false, _events = nil, _any_handler = nil }
+local router = { _inited = false, _bound = false, _events = nil }
 local last_random_pick_by_rule = {}
 local last_played_at = {}
-local pending_events = {}
+local mergeable_entry_types = { ["table"] = true, ["native"] = true }
 local handle_event
 
 local function now_ms()
 	return os.clock() * 1000
-end
-
-local function should_buffer_event(event)
-	if not event then
-		return false
-	end
-	local name = event.type
-	if not name then
-		return false
-	end
-	if string.sub(name, 1, 9) == "timeline." then
-		return false
-	end
-	return true
-end
-
-local function stash_event(event)
-	if not should_buffer_event(event) then
-		return
-	end
-	pending_events[event.type] = event
-end
-
-local function flush_pending()
-	if not router._events then
-		return
-	end
-	local latest_event = nil
-	local latest_name = nil
-	local latest_ts = -1
-	for event_name, event in pairs(pending_events) do
-		local entry = router._events[event_name]
-		if entry then
-			local ts = event.timestamp or event.timeStamp or 0
-			if ts >= latest_ts then
-				latest_ts = ts
-				latest_event = event
-				latest_name = event_name
-			end
-		end
-	end
-	for k in pairs(pending_events) do
-		pending_events[k] = nil
-	end
-	if latest_event and latest_name then
-		local entry = router._events[latest_name]
-		if entry then
-			handle_event(latest_name, entry, latest_event)
-		end
-	end
 end
 
 local function compile_rules(rules)
@@ -76,7 +26,7 @@ local function compile_rules(rules)
 		if spec and spec.one_of then
 			local actions = {}
 			local weights = {}
-			local has_weights = false
+			local has_weights
 			for j = 1, #spec.one_of do
 				local item = spec.one_of[j]
 				if type(item) == "string" or type(item) == "number" then
@@ -121,9 +71,11 @@ local function pick_weighted_index(weights, avoid_index)
 	end
 	local total = 0
 	for i = 1, count do
-		local weight = weights[i]
+		local weight
 		if avoid_index and avoid_index == i then
 			weight = 0
+		else
+			weight = weights[i]
 		end
 		if weight < 0 then
 			weight = 0
@@ -162,11 +114,11 @@ local function resolve_action_spec(event_name, rule_index, rule, payload)
 			pick_mode = "uniform"
 		end
 	end
-	local actor_key = payload.actorId or "global"
+	local actor_key = payload['actorId'] or "global"
 	local rule_key = event_name .. "#" .. rule_index .. "#" .. actor_key
 	local last_index = last_random_pick_by_rule[rule_key]
 	local avoid = spec.avoid_repeat and last_index or nil
-	local idx = 1
+	local idx
 	if pick_mode == "weighted" then
 		idx = pick_weighted_index(weights, avoid)
 	else
@@ -176,11 +128,15 @@ local function resolve_action_spec(event_name, rule_index, rule, payload)
 	return actions[idx]
 end
 
+local function has_entries(map)
+	return map ~= nil and next(map) ~= nil
+end
+
 local function merge_events(map)
 	local merged = {}
 
 	local function add_or_merge(event_name, entry)
-		if not event_name or event_name == "" then
+		if event_name == nil then
 			error("audio_router event name is missing")
 		end
 		local cur = merged[event_name]
@@ -236,11 +192,11 @@ local function merge_events(map)
 				add_or_merge(event_name, entry)
 			end
 		else
-			local found_direct = false
+			local found_direct
 			for key, entry in pairs(value) do
 				if key ~= "$type" and key ~= "events" and key ~= "name" and key ~= "channel" and key ~= "max_voices" and key ~= "policy" and key ~= "rules" then
 					local entry_type = type(entry)
-					if entry_type == "table" or entry_type == "native" then
+					if mergeable_entry_types[entry_type] then
 						if entry.rules ~= nil then
 							found_direct = true
 							add_or_merge(key, entry)
@@ -250,7 +206,7 @@ local function merge_events(map)
 			end
 			if not found_direct and value.rules ~= nil then
 				local event_name = value.name
-				if type(event_name) ~= "string" or event_name == "" then
+				if type(event_name) ~= "string" then
 					error("audio_router event entry is missing name")
 				end
 				add_or_merge(event_name, value)
@@ -261,16 +217,12 @@ local function merge_events(map)
 	return merged
 end
 
-local function resolve_channel(entry)
-	return entry.channel or "sfx"
-end
-
 local function apply_cooldown(event_name, action, payload)
 	local cooldown_ms = action.cooldown_ms
 	if not cooldown_ms or cooldown_ms <= 0 then
 		return true
 	end
-	local actor_key = payload.actorId or "global"
+	local actor_key = payload['actorId'] or "global"
 	local key = event_name .. ":" .. actor_key .. ":" .. tostring(action.audio_id)
 	local now = now_ms()
 	local last = last_played_at[key] or 0
@@ -294,20 +246,13 @@ local function dispatch_action(event_name, entry, action, payload)
 	if not apply_cooldown(event_name, action, payload) then
 		return
 	end
-	action_opts.modulation_preset = nil
-	action_opts.modulation_params = nil
-	action_opts.priority = nil
-	action_opts.policy = nil
-	action_opts.max_voices = nil
-	action_opts.channel = nil
 	action_opts.modulation_preset = action.modulation_preset
 	action_opts.modulation_params = action.modulation_params
 	action_opts.priority = action.priority
 	action_opts.policy = entry.policy
 	action_opts.max_voices = entry.max_voices
 	action_opts.channel = entry.channel
-	local channel = resolve_channel(entry)
-	if channel == "music" then
+	if entry.channel == "music" then
 		music(action.audio_id, action_opts)
 	else
 		sfx(action.audio_id, action_opts)
@@ -328,52 +273,41 @@ handle_event = function(event_name, entry, payload)
 	end
 end
 
-local function bind_events()
+local function build_merged_events()
 	local audioevents = assets.audioevents
-	if audioevents == nil then
-		return false
-	end
-	if next(audioevents) == nil then
-		return false
+	if not has_entries(audioevents) then
+		return {}
 	end
 	local merged = merge_events(audioevents)
-	if next(merged) == nil then
-		return false
+	if not has_entries(merged) then
+		return {}
 	end
+	return merged
+end
+
+local function bind_events(merged)
 	router._events = merged
-	for event_name, entry in pairs(merged) do
-		local bound_name = event_name
+	for event_name in pairs(merged) do
 		eventemitter.instance:on({
-			event_name = bound_name,
+			event_name = event_name,
 			handler = function(payload)
-				local actual_name = payload.type
-				local current_entry = router._events[actual_name]
-				handle_event(actual_name, current_entry, payload)
+				handle_event(payload.type, router._events[payload.type], payload)
 			end,
 			subscriber = router,
 		})
 	end
 	router._bound = true
-	if router._any_handler then
-		eventemitter.instance:off_any(router._any_handler, true)
-		router._any_handler = nil
-	end
-	return true
 end
 
 function router.try_bind()
-	if router._bound then
-		return true
+	if not router._inited then
+		router.init()
 	end
-	if not bind_events() then
-		return false
-	end
-	flush_pending()
-	return true
+	return router._bound
 end
 
 function router.tick()
-	router.try_bind()
+	-- Binding is deterministic during init; no per-tick binding attempts.
 end
 
 function router.init()
@@ -381,16 +315,8 @@ function router.init()
 		return
 	end
 	router._inited = true
-	if router.try_bind() then
-		return
-	end
-	router._any_handler = function(event)
-		if not router._bound then
-			stash_event(event)
-			router.try_bind()
-		end
-	end
-	eventemitter.instance:on_any(router._any_handler)
+	local merged = build_merged_events()
+	bind_events(merged)
 end
 
 return router

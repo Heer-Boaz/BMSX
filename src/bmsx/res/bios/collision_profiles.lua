@@ -37,7 +37,7 @@ function collision_profiles.apply(collider, name)
 	return collider
 end
 
-collision_profiles.define("default", { layer = (1 << 0), mask = 0xFFFFFFFF })
+collision_profiles.define("default", { layer = (1 << 0), mask = 0xffffffff })
 collision_profiles.define("ui", { layer = (1 << 1), mask = (1 << 1) })
 
 return collision_profiles

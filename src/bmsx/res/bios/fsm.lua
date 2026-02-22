@@ -5,6 +5,10 @@ local statedefinition = {}
 statedefinition.__index = statedefinition
 
 local start_state_prefixes = { ["_"] = true, ["#"] = true }
+local payload_primitive_types = { ["number"] = true, ["boolean"] = true }
+local no_op_aliases = { ["no-op"] = true, ["noop"] = true, ["no_op"] = true }
+local ignored_relative_segments = { [""] = true, ["."] = true }
+local input_eval_modes = { ["first"] = true, ["all"] = true }
 
 local function make_def_id(id, parent)
 	if not parent then
@@ -115,7 +119,7 @@ function statedefinition.new(id, def, root, parent)
 	self.tags = def and def.tags or nil
 	self.tag_derivations = nil
 	if self.root == self then
-		local raw_tag_derivations = nil
+		local raw_tag_derivations
 		if def then
 			raw_tag_derivations = def.tag_derivations or def.derived_tags or def.tag_groups
 		end
@@ -159,9 +163,9 @@ state.diagnostics = {
 	max_entries_per_machine = 512,
 }
 
-local BST_MAX_HISTORY = 10
-local MAX_TRANSITIONS_PER_TICK = 1000
-local EMPTY_GAME_EVENT = { type = "__fsm.synthetic__", emitter = nil, timestamp = 0 }
+local bst_max_history = 10
+local max_transitions_per_tick = 1000
+local empty_game_event = { type = "__fsm.synthetic__", emitter = nil, timestamp = 0 }
 local target_state_tag_refs = setmetatable({}, { __mode = "k" })
 
 local function clear_map(map)
@@ -225,12 +229,12 @@ end
 
 local function should_trace_transitions()
 	local diag = state.diagnostics
-	return diag and diag.trace_transitions == true
+	return diag and (diag.trace_transitions)
 end
 
 local function should_trace_dispatch()
 	local diag = state.diagnostics
-	return diag and diag.trace_dispatch == true
+	return diag and (diag.trace_dispatch)
 end
 
 local function append_trace_entry(id, message)
@@ -261,7 +265,7 @@ local function describe_payload(payload)
 	if t == "string" then
 		return payload
 	end
-	if t == "number" or t == "boolean" then
+	if payload_primitive_types[t] then
 		return tostring(payload)
 	end
 	return tostring(payload)
@@ -304,7 +308,7 @@ local function is_no_op_string(value)
 	end
 	local trimmed = trim_string(value)
 	local lower = string.lower(trimmed)
-	return lower == "no-op" or lower == "noop" or lower == "no_op"
+	return no_op_aliases[lower] ~= nil
 end
 
 local function resolve_state_key(definition, state_id)
@@ -389,7 +393,7 @@ function state.new(definition, target, parent)
 end
 
 function state:is_root()
-	return self.parent == nil
+	return not self.parent
 end
 
 function state:make_id()
@@ -471,11 +475,23 @@ function state:create_timeline_binding(key, config)
 	if type(config.create) ~= "function" then
 		error("timeline '" .. tostring(key) .. "' is missing a create() factory.")
 	end
+	local autoplay
+	if config.autoplay ~= nil then
+		autoplay = config.autoplay
+	else
+		autoplay = true
+	end
+	local stop_on_exit
+	if config.stop_on_exit ~= nil then
+		stop_on_exit = config.stop_on_exit
+	else
+		stop_on_exit = true
+	end
 	return {
 		id = config.id or key,
 		create = config.create,
-		autoplay = config.autoplay ~= false,
-		stop_on_exit = config.stop_on_exit ~= false,
+		autoplay = autoplay,
+		stop_on_exit = stop_on_exit,
 		play_options = config.play_options,
 		defined = false,
 	}
@@ -554,7 +570,7 @@ function state:start()
 	self:with_critical_section(function()
 		start_instance:activate_timelines()
 		local enter_start = start_state_def.entering_state
-		local start_next = nil
+		local start_next
 		if type(enter_start) == "function" then
 			start_next = enter_start(self.target, start_instance)
 		end
@@ -709,9 +725,9 @@ function state:format_guard_diagnostics(guard)
 	for i = 1, #guard.evaluations do
 		local ev = guard.evaluations[i]
 		local status = ev.passed and "pass" or "fail"
-		local descriptor = ev.descriptor and ev.descriptor ~= "<none>" and "(" .. ev.descriptor .. ")" or ""
+		local descriptor = (((ev.descriptor and (ev.descriptor ~= '<none>')) and ('(' .. (ev.descriptor .. ')'))))
 		local note = ev.reason and not ev.passed and ("!" .. ev.reason) or nil
-		local suffix = note and ("[" .. note .. "]") or ""
+		local suffix = ((note and ('[' .. (note .. ']'))))
 		parts[#parts + 1] = ev.side .. ":" .. status .. descriptor .. suffix
 	end
 	return table.concat(parts, ",")
@@ -743,7 +759,8 @@ function state:emit_transition_trace(entry)
 end
 
 function state:compose_transition_trace_message(entry)
-	local parts = { "[transition]" }
+	local parts = {}
+	parts[1] = "[transition]"
 	parts[#parts + 1] = "outcome=" .. entry.outcome
 	parts[#parts + 1] = "exec=" .. entry.execution
 	parts[#parts + 1] = "to='" .. tostring(entry.to) .. "'"
@@ -800,14 +817,14 @@ end
 
 function state:hydrate_context(snapshot, trigger, description)
 	if snapshot then
-		local action_evaluations = nil
+		local action_evaluations
 		if snapshot.action_evaluations then
 			action_evaluations = {}
 			for i = 1, #snapshot.action_evaluations do
 				action_evaluations[i] = snapshot.action_evaluations[i]
 			end
 		end
-		local guard_evaluations = nil
+		local guard_evaluations
 		if snapshot.guard_evaluations then
 			guard_evaluations = {}
 			for i = 1, #snapshot.guard_evaluations do
@@ -917,7 +934,8 @@ function state:emit_event_dispatch_trace(event_name, emitter, detail, handled, b
 	end
 	local ctx = context or self:create_fallback_snapshot("event", "event:" .. event_name, detail)
 	local transition = ctx.last_transition
-	local parts = { "[dispatch]" }
+	local parts = {}
+	parts[1] = "[dispatch]"
 	parts[#parts + 1] = "event=" .. event_name
 	parts[#parts + 1] = "handled=" .. tostring(handled)
 	parts[#parts + 1] = "bubbled=" .. tostring(bubbled)
@@ -988,7 +1006,7 @@ function state:handle_state_transition(action, event)
 		return true
 	end
 	if dt == "function" then
-		local handler_event = event or EMPTY_GAME_EVENT
+		local handler_event = event or empty_game_event
 		local next_state = do_handler(self.target, self, handler_event)
 		local detail = "do:<anonymous>"
 		if next_state then
@@ -1008,7 +1026,7 @@ function state:handle_state_transition(action, event)
 end
 
 function state:check_state_guard_conditions(target_state_id)
-	local allowed = true
+	local allowed
 	local evaluations = {}
 
 	local cur_def = self:current_state_definition()
@@ -1107,7 +1125,7 @@ end
 function state:transition_to_state(state_id)
 	if self.in_tick then
 		self._transitions_this_tick = self._transitions_this_tick + 1
-		if self._transitions_this_tick > MAX_TRANSITIONS_PER_TICK then
+		if self._transitions_this_tick > max_transitions_per_tick then
 			error("transition limit exceeded in one tick for '" .. tostring(self.id) .. "'.")
 		end
 	end
@@ -1211,7 +1229,7 @@ function state:transition_to_state(state_id)
 
 		cur:activate_timelines()
 		local enter_handler = cur_def.entering_state
-		local next_state = nil
+		local next_state
 		if type(enter_handler) == "function" then
 			next_state = self:run_with_transition_context(
 				function()
@@ -1247,7 +1265,7 @@ function state:transition_to_state(state_id)
 end
 
 function state:push_history(to_push)
-	local cap = BST_MAX_HISTORY
+	local cap = bst_max_history
 	local tail_index = (self._hist_head + self._hist_size) % cap
 	self._hist[tail_index + 1] = to_push
 	if self._hist_size < cap then
@@ -1261,7 +1279,7 @@ function state:pop_and_transition()
 	if self._hist_size <= 0 then
 		return
 	end
-	local cap = BST_MAX_HISTORY
+	local cap = bst_max_history
 	local tail_index = (self._hist_head + self._hist_size - 1 + cap) % cap
 	local popped_state_id = self._hist[tail_index + 1]
 	self._hist_size = self._hist_size - 1
@@ -1273,7 +1291,7 @@ end
 function state:get_history_snapshot()
 	local out = {}
 	for i = 1, self._hist_size do
-		out[#out + 1] = self._hist[(self._hist_head + i - 1) % BST_MAX_HISTORY + 1]
+		out[#out + 1] = self._hist[(self._hist_head + i - 1) % bst_max_history + 1]
 	end
 	return out
 end
@@ -1347,7 +1365,7 @@ function state.parse_fs_path(input)
 	end
 	local len = #input
 	local i = 1
-	local abs = false
+	local abs
 	local up = 0
 	local segs = {}
 	if len == 0 then
@@ -1369,7 +1387,7 @@ function state.parse_fs_path(input)
 	end
 
 	local function push_seg(seg)
-		if seg == "" or seg == "." then
+		if ignored_relative_segments[seg] then
 			return
 		end
 		if seg == ".." then
@@ -1390,7 +1408,7 @@ function state.parse_fs_path(input)
 		elseif c == "[" and string.sub(input, i + 1, i + 1) == "\"" then
 			i = i + 2
 			local seg = ""
-			local closed = false
+			local closed
 			while i <= len do
 				local ch = string.sub(input, i, i)
 				i = i + 1
@@ -1560,7 +1578,7 @@ function state:collect_derived_state_tags(out)
 	end
 	local unresolved = #derivations
 	while unresolved > 0 do
-		local changed = false
+		local changed
 		for i = 1, #derivations do
 			local rule = derivations[i]
 			local derived_tag = rule.derived_tag
@@ -1662,16 +1680,16 @@ function state:dispatch_event(event_or_name, payload)
 	if self.paused then
 		return false
 	end
-	local event_name = event_or_name
-	local data = payload
+	local event_name
+	local data
 	if type(event_or_name) == "table" then
 		event_name = event_or_name.type
 		data = event_or_name
 	end
 	local trace_dispatch = should_trace_dispatch()
 	local trace_transitions = should_trace_transitions()
-	local emitter_id = nil
-	local detail = nil
+	local emitter_id
+	local detail
 	if trace_dispatch or trace_transitions then
 		emitter_id = resolve_emitter_id(data, self.target_id)
 		detail = resolve_event_payload(data)
@@ -1712,8 +1730,8 @@ function state:dispatch_input_event(event_or_name, payload)
 	if self.paused then
 		return false
 	end
-	local event_name = event_or_name
-	local data = payload
+	local event_name
+	local data
 	if type(event_or_name) == "table" then
 		event_name = event_or_name.type
 		data = event_or_name
@@ -1752,9 +1770,9 @@ function state:resolve_input_eval_mode()
 	local node = self
 	while node do
 		local mode = node.definition.input_eval
-		if mode == "first" or mode == "all" then
-			return mode
-		end
+			if input_eval_modes[mode] then
+				return mode
+			end
 		node = node.parent
 	end
 	return "all"
@@ -1794,7 +1812,7 @@ end
 function state:process_input()
 	self:process_input_events()
 	local process_input = self.definition.process_input
-	local next_state = nil
+	local next_state
 	if type(process_input) == "function" then
 		next_state = self:run_with_transition_context(
 			function()
@@ -1803,7 +1821,7 @@ function state:process_input()
 				return ctx
 			end,
 			function()
-				return process_input(self.target, self, EMPTY_GAME_EVENT)
+				return process_input(self.target, self, empty_game_event)
 			end
 		)
 	end
@@ -1812,14 +1830,14 @@ end
 
 function state:run_current_state()
 	local tick_handler = self.definition.tick
-	local next_state = nil
+	local next_state
 	if type(tick_handler) == "function" then
 		next_state = self:run_with_transition_context(
 			function()
 				return self:create_tick_context("<anonymous>")
 			end,
 			function()
-				return tick_handler(self.target, self, EMPTY_GAME_EVENT)
+				return tick_handler(self.target, self, empty_game_event)
 			end
 		)
 	end
@@ -1920,7 +1938,11 @@ end
 function state:reset(reset_tree)
 	local def = self.definition
 	self.data = def.data and clone_defaults(def.data) or {}
-	if reset_tree ~= false then
+	local should_reset = reset_tree
+	if should_reset == nil then
+		should_reset = true
+	end
+	if should_reset then
 		self:reset_submachine(true)
 	end
 end
@@ -1932,7 +1954,7 @@ function state:reset_submachine(reset_tree)
 	self._hist_size = 0
 	self.paused = false
 	self.data = def.data and clone_defaults(def.data) or {}
-	if reset_tree ~= false and self.states then
+	if (reset_tree == nil or reset_tree) and self.states then
 		for _, child in pairs(self.states) do
 			child:reset(reset_tree)
 		end
@@ -1972,7 +1994,10 @@ function statemachinecontroller.new(opts)
 	opts = opts or {}
 	self.target = opts.target
 	self.statemachines = {}
-	self.tick_enabled = opts.tick_enabled ~= false
+	self.tick_enabled = true
+	if opts.tick_enabled ~= nil then
+		self.tick_enabled = opts.tick_enabled
+	end
 	self._started = false
 	self._event_subscriptions = {}
 	if opts.definition then
@@ -1984,7 +2009,7 @@ function statemachinecontroller.new(opts)
 end
 
 function statemachinecontroller:add_statemachine(id, definition)
-	local def = definition
+	local def
 	if not (definition and definition.__is_state_definition) then
 		def = statedefinition.new(id, definition)
 	end
@@ -2043,7 +2068,11 @@ function statemachinecontroller:unsubscribe_events_for(machine, event_names)
 end
 
 function statemachinecontroller:auto_dispatch(event)
-	if self.target.eventhandling_enabled == false then
+	local eventhandling_enabled = self.target.eventhandling_enabled
+	if eventhandling_enabled == nil then
+		eventhandling_enabled = true
+	end
+	if not eventhandling_enabled then
 		return
 	end
 	if not event.emitter then
@@ -2074,13 +2103,13 @@ function statemachinecontroller:tick()
 end
 
 function statemachinecontroller:dispatch(event_or_name, payload)
-	local event_name = event_or_name
-	local data = payload
+	local event_name
+	local data
 	if type(event_or_name) == "table" then
 		event_name = event_or_name.type
 		data = event_or_name
 	end
-	local handled = false
+	local handled
 	for _, machine in pairs(self.statemachines) do
 		if machine:dispatch_event(event_name, data) then
 			handled = true
@@ -2090,13 +2119,13 @@ function statemachinecontroller:dispatch(event_or_name, payload)
 end
 
 function statemachinecontroller:dispatch_input(event_or_name, payload)
-	local event_name = event_or_name
-	local data = payload
+	local event_name
+	local data
 	if type(event_or_name) == "table" then
 		event_name = event_or_name.type
 		data = event_or_name
 	end
-	local handled = false
+	local handled
 	for _, machine in pairs(self.statemachines) do
 		if machine:dispatch_input_event(event_name, data) then
 			handled = true

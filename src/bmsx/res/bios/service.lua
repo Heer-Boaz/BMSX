@@ -15,7 +15,10 @@ function service.new(opts)
 	opts = opts or {}
 	self.id = opts.id or "service"
 	self.type_name = "service"
-	self.registrypersistent = opts.registrypersistent ~= false
+	self.registrypersistent = true
+	if opts.registrypersistent ~= nil then
+		self.registrypersistent = opts.registrypersistent
+	end
 	self.active = false
 	self.tick_enabled = true
 	self.eventhandling_enabled = false

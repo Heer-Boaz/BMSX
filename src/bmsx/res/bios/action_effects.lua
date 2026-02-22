@@ -120,7 +120,7 @@ local function can_trigger(definition, context, args)
 	end
 	local trigger_gate = definition.can_trigger
 	if trigger_gate then
-		return trigger_gate(context, table.unpack(args or {})) == true
+		return (trigger_gate(context, table.unpack((args or {}))))
 	end
 	return true
 end

@@ -60,7 +60,7 @@ end
 
 local function eval_wave(track, time_seconds)
 	local u = (time_seconds / track.period) + (track.phase or 0)
-	local w = nil
+	local w
 	if track.wave == "pingpong" then
 		w = easing.pingpong01(u)
 	elseif track.wave == "sin" then
@@ -121,8 +121,15 @@ function component.new(opts)
 	self.parent = opts.parent
 	self.type_name = opts.type_name or "component"
 	self.id_local = opts.id_local
-	self.id = opts.id or (self.parent.id .. "_" .. self.type_name .. (self.id_local and ("_" .. self.id_local) or ""))
-	self.enabled = opts.enabled ~= false
+	local generated_id = self.parent.id .. "_" .. self.type_name
+	if self.id_local ~= nil then
+		generated_id = generated_id .. "_" .. self.id_local
+	end
+	self.id = opts.id or generated_id
+	self.enabled = true
+	if opts.enabled ~= nil then
+		self.enabled = opts.enabled
+	end
 	self.tags = opts.tags or {}
 	self.unique = opts.unique or false
 	return self
@@ -164,7 +171,7 @@ function component:dispose()
 end
 
 function component:has_tag(tag)
-	return self.tags[tag] == true
+	return (self.tags[tag])
 end
 
 function component:add_tag(tag)
@@ -231,8 +238,8 @@ function spritecomponent:sync_collider()
 	end
 
 	local id = self.imgid
-	local flip_h = self.flip.flip_h == true
-	local flip_v = self.flip.flip_v == true
+	local flip_h = (self.flip.flip_h)
+	local flip_v = (self.flip.flip_v)
 	local offset = self.offset or { x = 0, y = 0 }
 	local offset_x = offset.x or 0
 	local offset_y = offset.y or 0
@@ -287,10 +294,16 @@ function collider2dcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = "collider2dcomponent"
 	local self = setmetatable(component.new(opts), collider2dcomponent)
-	self.hittable = opts.hittable ~= false
+	self.hittable = true
+	if opts.hittable ~= nil then
+		self.hittable = opts.hittable
+	end
 	self.layer = opts.layer or 1
-	self.mask = opts.mask or 0xFFFFFFFF
-	self.istrigger = opts.istrigger ~= false
+	self.mask = opts.mask or 0xffffffff
+	self.istrigger = true
+	if opts.istrigger ~= nil then
+		self.istrigger = opts.istrigger
+	end
 	self.spaceevents = opts.spaceevents or "current"
 	self._local_area = nil
 	self._local_polys = nil
@@ -460,10 +473,10 @@ function timelinecomponent:play(id, opts)
 	end
 	local instance = entry.instance
 	local owner = self.parent
-	local rewind = true
-	local snap = true
-	local params = nil
-	local target = entry.target
+	local rewind
+	local snap
+	local params
+	local target
 	if opts ~= nil then
 		if opts.rewind ~= nil then
 			rewind = opts.rewind
@@ -477,6 +490,12 @@ function timelinecomponent:play(id, opts)
 		if opts.target ~= nil then
 			target = opts.target
 		end
+	end
+	if rewind == nil then
+		rewind = true
+	end
+	if snap == nil then
+		snap = true
 	end
 	if params == nil then
 		params = instance.def.params
@@ -553,7 +572,7 @@ function timelinecomponent:process_events(entry, events, dt_ms)
 				apply_tracks(target, tracks, entry.params, payload)
 			end
 			if entry.apply then
-				if entry.apply == true then
+				if (entry.apply) then
 					apply_frame(target, payload.frame_value)
 				else
 					entry.apply(target, payload.frame_value, entry.params, payload)
@@ -663,7 +682,7 @@ function textcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = "textcomponent"
 	local self = setmetatable(component.new(opts), textcomponent)
-	self.text = opts.text or ""
+	self.text = (opts.text)
 	self.font = opts.font
 	self.color = opts.color or { r = 1, g = 1, b = 1, a = 1 }
 	self.background_color = opts.background_color
@@ -860,7 +879,7 @@ function abilitiescomponent.new(opts)
 end
 
 function abilitiescomponent:register_ability(id, definition)
-	if type(id) ~= "string" or id == "" then
+	if type(id) ~= "string" or not (id) then
 		error("[abilitiescomponent] ability id must be a non-empty string.")
 	end
 	if type(definition) ~= "table" then
@@ -884,7 +903,10 @@ function abilitiescomponent:activate(id, payload)
 		ability = id,
 		payload = payload,
 	})
-	return result ~= false
+	if result == nil then
+		return true
+	end
+	return result
 end
 
 function abilitiescomponent:begin(id, payload)
@@ -950,7 +972,10 @@ function screenboundarycomponent.new(opts)
 	opts.type_name = "screenboundarycomponent"
 	opts.unique = true
 	local self = setmetatable(positionupdateaxiscomponent.new(opts), screenboundarycomponent)
-	self.stick_to_edge = opts.stick_to_edge ~= false
+	self.stick_to_edge = true
+	if opts.stick_to_edge ~= nil then
+		self.stick_to_edge = opts.stick_to_edge
+	end
 	return self
 end
 

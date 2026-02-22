@@ -4,7 +4,7 @@
 local progression = {}
 progression.__index = progression
 
-local EMPTY_LIST = {}
+local empty_list = {}
 
 local function new_empty_program()
 	return {
@@ -15,28 +15,28 @@ local function new_empty_program()
 	}
 end
 
-local OP_EQ = 1
-local OP_NE = 2
-local OP_LT = 3
-local OP_LTE = 4
-local OP_GT = 5
-local OP_GTE = 6
+local op_eq = 1
+local op_ne = 2
+local op_lt = 3
+local op_lte = 4
+local op_gt = 5
+local op_gte = 6
 
-local OP_BY_TEXT = {
-	['=='] = OP_EQ,
-	['='] = OP_EQ,
-	eq = OP_EQ,
-	['!='] = OP_NE,
-	['~='] = OP_NE,
-	ne = OP_NE,
-	['<'] = OP_LT,
-	lt = OP_LT,
-	['<='] = OP_LTE,
-	lte = OP_LTE,
-	['>'] = OP_GT,
-	gt = OP_GT,
-	['>='] = OP_GTE,
-	gte = OP_GTE,
+local op_by_text = {
+	['=='] = op_eq,
+	['='] = op_eq,
+	eq = op_eq,
+	['!='] = op_ne,
+	['~='] = op_ne,
+	ne = op_ne,
+	['<'] = op_lt,
+	lt = op_lt,
+	['<='] = op_lte,
+	lte = op_lte,
+	['>'] = op_gt,
+	gt = op_gt,
+	['>='] = op_gte,
+	gte = op_gte,
 }
 
 local function default_for(value)
@@ -51,26 +51,26 @@ local function default_for(value)
 end
 
 local function compare(left, op, right)
-	if op == OP_EQ then
+	if op == op_eq then
 		return left == right
 	end
-	if op == OP_NE then
+	if op == op_ne then
 		return left ~= right
 	end
-	if op == OP_LT then
+	if op == op_lt then
 		return left < right
 	end
-	if op == OP_LTE then
+	if op == op_lte then
 		return left <= right
 	end
-	if op == OP_GT then
+	if op == op_gt then
 		return left > right
 	end
 	return left >= right
 end
 
 local function intern_key(program, key)
-	if type(key) ~= 'string' or key == '' then
+	if type(key) ~= 'string' then
 		error('progression key must be a non-empty string.')
 	end
 	local key_idx = program.key2idx[key]
@@ -86,9 +86,9 @@ end
 local function normalize_condition(spec)
 	if type(spec) == 'string' then
 		if spec:sub(1, 1) == '!' then
-			return spec:sub(2), OP_EQ, false
+			return spec:sub(2), op_eq, false
 		end
-		return spec, OP_EQ, true
+		return spec, op_eq, true
 	end
 
 	if type(spec) ~= 'table' then
@@ -96,12 +96,12 @@ local function normalize_condition(spec)
 	end
 
 	local key = spec.key or spec[1]
-	if type(key) ~= 'string' or key == '' then
+	if type(key) ~= 'string' then
 		error('progression condition is missing key.')
 	end
 
 	local op_text = spec.op or spec[2] or '=='
-	local op = OP_BY_TEXT[op_text]
+	local op = op_by_text[op_text]
 	if op == nil then
 		error("progression condition has unknown operator '" .. tostring(op_text) .. "'.")
 	end
@@ -117,7 +117,7 @@ local function normalize_condition(spec)
 		value = true
 	end
 
-	if (op == OP_LT or op == OP_LTE or op == OP_GT or op == OP_GTE) and type(value) ~= 'number' then
+	if (op == op_lt or op == op_lte or op == op_gt or op == op_gte) and type(value) ~= 'number' then
 		error("progression condition '" .. key .. "' expects numeric value for operator '" .. tostring(op_text) .. "'.")
 	end
 
@@ -126,7 +126,7 @@ end
 
 local function compile_predicates(program, source)
 	if source == nil then
-		return EMPTY_LIST
+		return empty_list
 	end
 	local compiled = {}
 	local out_index = 1
@@ -202,9 +202,9 @@ function progression.compile_program(program_spec)
 	local seed_keys
 
 	if program_spec == nil then
-		rule_defs = EMPTY_LIST
+		rule_defs = empty_list
 	elseif program_spec.rules ~= nil or program_spec.keys ~= nil then
-		rule_defs = program_spec.rules or EMPTY_LIST
+		rule_defs = program_spec.rules or empty_list
 		seed_keys = program_spec.keys
 	else
 		rule_defs = program_spec
@@ -222,10 +222,10 @@ function progression.compile_program(program_spec)
 		local def = rule_defs[i]
 		local rule_label = def.id or ('rule_' .. i)
 		local cond = compile_predicates(program, resolve_when_all(def, rule_label))
-		local scope_key_idx = 0
-		local scope_op = OP_EQ
-		local scope_value = true
-		local scope_default = true
+		local scope_key_idx
+		local scope_op
+		local scope_value
+		local scope_default
 		if def.scope ~= nil then
 			local key, op, value = normalize_condition(def.scope)
 			scope_key_idx = intern_key(program, key)
@@ -241,19 +241,19 @@ function progression.compile_program(program_spec)
 			scope_op = scope_op,
 			scope_value = scope_value,
 			scope_default = scope_default,
-			apply_commands = def.apply or EMPTY_LIST,
-			apply_once = def.apply_once == true,
+			apply_commands = def.apply or empty_list,
+			apply_once = (def.apply_once),
 		}
 
 		local touched = {}
 		for j = 1, #cond, 4 do
 			local key_idx = cond[j]
-			if touched[key_idx] ~= true then
+			if not (touched[key_idx]) then
 				touched[key_idx] = true
 				add_rule_key(program, key_idx, i)
 			end
 		end
-		if scope_key_idx ~= 0 and touched[scope_key_idx] ~= true then
+		if scope_key_idx ~= 0 and not (touched[scope_key_idx]) then
 			add_rule_key(program, scope_key_idx, i)
 		end
 	end
@@ -274,7 +274,7 @@ end
 
 function progression.compile_filters(program, sources)
 	if sources == nil then
-		return EMPTY_LIST
+		return empty_list
 	end
 	local out = {}
 	for i = 1, #sources do
@@ -284,7 +284,7 @@ function progression.compile_filters(program, sources)
 end
 
 local function mark_dirty(self, key_idx)
-	if self.dirty_map[key_idx] == true then
+	if (self.dirty_map[key_idx]) then
 		return
 	end
 	self.dirty_map[key_idx] = true
@@ -303,7 +303,7 @@ local function clear_dirty(self)
 end
 
 local function add_candidate(self, rule_idx)
-	if self.candidate_map[rule_idx] == true then
+	if (self.candidate_map[rule_idx]) then
 		return
 	end
 	self.candidate_map[rule_idx] = true
@@ -448,7 +448,7 @@ end
 function progression:reevaluate(hint)
 	local rules = self.program.rules
 
-	if hint == true or hint == 'all' then
+	if (type(hint) == 'boolean' and hint) or hint == 'all' then
 		for i = 1, #rules do
 			add_candidate(self, i)
 		end
@@ -489,8 +489,8 @@ function progression:reevaluate(hint)
 		end
 		local rule_ok = cond_ok and scope_ok
 
-		if rule_ok and self.prev_rule_ok[rule_idx] ~= true then
-			if #rule.apply_commands > 0 and (not rule.apply_once or self.apply_done[rule_idx] ~= true) then
+		if rule_ok and not (self.prev_rule_ok[rule_idx]) then
+			if #rule.apply_commands > 0 and (not rule.apply_once or not (self.apply_done[rule_idx])) then
 				emit_commands(self, rule.apply_commands)
 				if rule.apply_once then
 					self.apply_done[rule_idx] = true
@@ -498,7 +498,7 @@ function progression:reevaluate(hint)
 			end
 		end
 
-		self.prev_rule_ok[rule_idx] = rule_ok == true
+		self.prev_rule_ok[rule_idx] = (rule_ok)
 	end
 
 	clear_candidates(self)

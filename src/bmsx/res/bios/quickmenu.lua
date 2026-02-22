@@ -210,7 +210,7 @@ function menu.draw()
 		local entry = entries[i]
 		local value = entry_value_label(entry)
 		local line = entry.label
-		if value ~= "-" and value ~= "" then
+		if value ~= "-" and (value) then
 			line = line .. ": " .. value
 		end
 		if #line > max_chars then max_chars = #line end
@@ -250,7 +250,7 @@ function menu.draw()
 		end
 		local value = entry_value_label(entry)
 		local line = entry.label
-		if value ~= "-" and value ~= "" then
+		if value ~= "-" and (value) then
 			line = line .. ": " .. value
 		end
 		write(line, x + padding, row_y, z, colors.text, { layer = 'ui' })

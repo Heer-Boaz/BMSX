@@ -16,6 +16,8 @@ local highlight_move_in_frames = 6
 local highlight_move_settle_frames = 3
 local highlight_move_overshoot = 0.12
 local highlight_move_ticks_per_frame = 12
+local inline_whitespace_chars = { [' '] = true, ['\t'] = true, ['\r'] = true, ['\f'] = true, ['\v'] = true }
+local wrap_break_chars = { ['\n'] = true, [' '] = true, ['\t'] = true, ['\r'] = true, ['\f'] = true, ['\v'] = true }
 
 local function trim(text)
 	return string.gsub(text, "^%s*(.-)%s*$", "%1")
@@ -24,7 +26,7 @@ end
 local function wrap_glyphs(text, max_line_length)
 	local lines = {}
 	local line_map = {}
-	local current_line = ""
+	local current_line
 	local i = 1
 	local logical_line_index = 1
 
@@ -36,39 +38,43 @@ local function wrap_glyphs(text, max_line_length)
 	while i <= #text do
 		local ch = string.sub(text, i, i)
 		if ch == "\n" then
-			push_line(trim(current_line))
-			current_line = ""
+			if current_line then
+				push_line(trim(current_line))
+			else
+				push_line("")
+			end
+			current_line = nil
 			logical_line_index = logical_line_index + 1
 			i = i + 1
-		elseif ch == " " or ch == "\t" or ch == "\r" or ch == "\f" or ch == "\v" then
-			i = i + 1
-		else
-			local j = i
-			while j <= #text do
-				local cj = string.sub(text, j, j)
-				if cj == "\n" or cj == " " or cj == "\t" or cj == "\r" or cj == "\f" or cj == "\v" then
-					break
-				end
+			elseif inline_whitespace_chars[ch] then
+				i = i + 1
+			else
+				local j = i
+				while j <= #text do
+					local cj = string.sub(text, j, j)
+					if wrap_break_chars[cj] then
+						break
+					end
 				j = j + 1
 			end
 			local word = string.sub(text, i, j - 1)
-			local tentative = current_line == "" and word or (current_line .. " " .. word)
+				local tentative = current_line and (current_line .. " " .. word) or word
 			if #tentative <= max_line_length then
 				current_line = tentative
 			else
-				if current_line ~= "" then
+				if (current_line) then
 					push_line(trim(current_line))
 					current_line = word
 				else
 					push_line(word)
-					current_line = ""
+						current_line = nil
 				end
 			end
 			i = j
 		end
 	end
 
-	if trim(current_line) ~= "" then
+	if current_line then
 		push_line(trim(current_line))
 	end
 
@@ -215,7 +221,7 @@ function textobject:compute_highlight_block()
 	end
 	local target_line = highlighted + 1
 	local first = nil
-	local last = nil
+	local last
 	for i = 1, #self.text do
 		if self.wrapped_line_to_logical_line[i] == target_line then
 			if first == nil then
@@ -282,7 +288,7 @@ end
 function textobject:set_text(text_or_lines, opts)
 	opts = opts or {}
 	local typed = opts.typed
-	local snap = opts.snap == true
+	local snap = (opts.snap)
 	if typed == nil then
 		typed = true
 	end

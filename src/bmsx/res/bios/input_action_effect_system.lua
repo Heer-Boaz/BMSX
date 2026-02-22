@@ -9,7 +9,8 @@ local romdir = require("romdir")
 local world_instance = require("world").instance
 local inputintentcomponent = "inputintentcomponent"
 local inputactioneffectcomponent = "inputactioneffectcomponent"
-local actioneffectcomponent = "actioneffectcomponent"
+local actioneffectcomponentid = "actioneffectcomponent"
+local assigned_value_edges = { ['hold'] = true, ['press'] = true }
 
 local asset_programs_validated = false
 
@@ -59,7 +60,7 @@ end
 
 function inputactioneffectsystem:process_input_intents()
 	for obj, component in world_instance:objects_with_components(inputintentcomponent, { scope = "active" }) do
-		if obj.tick_enabled == false then
+		if not (obj.tick_enabled) then
 			goto continue
 		end
 		if not component.bindings or #component.bindings == 0 then
@@ -75,14 +76,14 @@ end
 
 function inputactioneffectsystem:process_input_action_programs()
 	for obj, component in world_instance:objects_with_components(inputactioneffectcomponent, { scope = "active" }) do
-		if obj.tick_enabled == false then
+		if not (obj.tick_enabled) then
 			goto continue
 		end
 		local program = self:resolve_compiled_program(component)
 		local program_key = self:resolve_program_key(component, obj)
 
 		local player_index = obj.player_index or 1
-		local effects = obj:get_component(actioneffectcomponent)
+		local effects = obj:get_component(actioneffectcomponentid)
 		if (not effects) and program.uses_effect_triggers then
 			error("[inputactioneffectsystem] program '" .. program_key .. "' triggers effects but object '" .. obj.id .. "' has no actioneffectcomponent.")
 		end
@@ -130,17 +131,17 @@ function inputactioneffectsystem:evaluate_intent_binding(owner, player_index, bi
 end
 
 function inputactioneffectsystem:run_intent_assignments(owner, player_index, binding, edge, spec)
-	local assignments = spec
+	local assignments
 	if type(spec) ~= "table" or spec.path then
 		assignments = { spec }
 	end
 	for i = 1, #assignments do
 		local assignment = assignments[i]
 		local path = assignment.path
-		local should_clear = assignment.clear == true or (assignment.value == nil and edge == "release")
-		local resolved_value = should_clear and nil or (assignment.value == nil and (edge == "hold" or edge == "press") or assignment.value)
+		local should_clear = assignment.clear or (assignment.value == nil and edge == "release")
+			local resolved_value = should_clear and nil or (assignment.value == nil and assigned_value_edges[edge] or assignment.value)
 		self:assign_owner_path(owner, path, resolved_value, should_clear)
-		if assignment.consume == true then
+		if (assignment.consume) then
 			consume_action(player_index, binding.action)
 		end
 	end
@@ -201,7 +202,7 @@ function inputactioneffectsystem:evaluate_program(program, env, program_key)
 		end
 
 		local binding_key = self:make_binding_key(env.owner_id, program_key, env.player_index, binding, i)
-		local armed = self.binding_latch[binding_key] == true
+		local armed = (self.binding_latch[binding_key])
 		if armed then
 			self.frame_latch_touched[binding_key] = true
 		end
@@ -219,7 +220,7 @@ function inputactioneffectsystem:evaluate_program(program, env, program_key)
 			scratch[j] = custom_edges[j].match(env)
 		end
 
-		local matched = false
+		local matched
 		local function run_effect(effect)
 			if not effect then
 				return false

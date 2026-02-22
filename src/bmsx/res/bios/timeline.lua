@@ -181,7 +181,7 @@ function timeline.new(def)
 	self.continuous = continuous
 	local autotick = def.autotick
 	if autotick == nil then
-		autotick = self.continuous == true or self.ticks_per_frame ~= 0
+		autotick = self.continuous or self.ticks_per_frame ~= 0
 	end
 	self.auto_tick = autotick
 	self.head = timeline_start_index
@@ -300,10 +300,10 @@ function timeline:apply_frame(target, reason)
 	local last_index = self.length - 1
 	local previous = self.head
 	local next = target
-	local rewound = false
-	local emit_frame = true
-	local emit_end = false
-	local wrapped = false
+	local rewound
+	local emit_frame
+	local emit_end
+	local wrapped
 
 	if reason == "seek" then
 		self.direction = 1
@@ -341,6 +341,10 @@ function timeline:apply_frame(target, reason)
 
 	if previous == next and not rewound and not emit_end and reason == "advance" then
 		return events
+	end
+
+	if emit_frame == nil then
+		emit_frame = true
 	end
 
 	self.head = next

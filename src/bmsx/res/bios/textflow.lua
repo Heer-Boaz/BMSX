@@ -16,10 +16,10 @@ end
 function textflow.wrap_prefixed(text, line_slots, first_prefix, next_prefix)
 	local lines = {}
 	local remaining = tostring(text)
-	local prefix = first_prefix or ''
-	local first_limit = line_slots - #prefix
+	local prefix = first_prefix
+	local first_limit = line_slots - (prefix ~= nil and #prefix or 0)
 	local next = next_prefix or prefix
-	local next_limit = line_slots - #next
+	local next_limit = line_slots - (next ~= nil and #next or 0)
 	local limit = first_limit
 	if limit < 1 then
 		limit = 1
@@ -27,26 +27,32 @@ function textflow.wrap_prefixed(text, line_slots, first_prefix, next_prefix)
 	if next_limit < 1 then
 		next_limit = 1
 	end
+	local function prefixed(value, active_prefix)
+		if active_prefix == nil then
+			return value
+		end
+		return active_prefix .. value
+	end
 	while #remaining > limit do
 		local chunk = string.sub(remaining, 1, limit)
 		local split = string.match(chunk, '.*()%s+')
 		if split and split >= math.floor(limit * 0.5) then
-			lines[#lines + 1] = prefix .. string.sub(remaining, 1, split - 1)
+			lines[#lines + 1] = prefixed(string.sub(remaining, 1, split - 1), prefix)
 			remaining = string.gsub(string.sub(remaining, split + 1), '^%s+', '')
 		else
-			lines[#lines + 1] = prefix .. chunk
+			lines[#lines + 1] = prefixed(chunk, prefix)
 			remaining = string.gsub(string.sub(remaining, limit + 1), '^%s+', '')
 		end
 		prefix = next
 		limit = next_limit
 	end
-	lines[#lines + 1] = prefix .. remaining
+	lines[#lines + 1] = prefixed(remaining, prefix)
 	return lines
 end
 
 function textflow.wrap_entries(entries, line_slots, first_prefix, next_prefix)
 	local lines = {}
-	local first = first_prefix or ''
+	local first = first_prefix
 	local next = next_prefix or first
 	for i = 1, #entries do
 		local wrapped = textflow.wrap_prefixed(entries[i], line_slots, first, next)

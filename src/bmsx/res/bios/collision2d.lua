@@ -4,8 +4,8 @@
 local collision2d = {}
 local world_instance = require("world").instance
 
-local EPS = 1e-8
-local EPS_PARALLEL = 1e-12
+local eps = 1e-8
+local eps_parallel = 1e-12
 
 local function new_area(left, top, right, bottom)
 	return {
@@ -61,7 +61,7 @@ local function point_in_poly(px, py, poly)
 		local yi = poly[i + 1]
 		local xj = poly[j]
 		local yj = poly[j + 1]
-		if ((yi > py) ~= (yj > py)) and (px < ((xj - xi) * (py - yi) / (((yj - yi) ~= 0 and (yj - yi) or EPS_PARALLEL)) + xi)) then
+		if ((yi > py) ~= (yj > py)) and (px < ((xj - xi) * (py - yi) / (((yj - yi) ~= 0 and (yj - yi) or eps_parallel)) + xi)) then
 			inside = not inside
 		end
 		j = i
@@ -150,7 +150,7 @@ local function circle_poly_overlap(circle, polys)
 			local nx = -ey
 			local ny = ex
 			local length = math.sqrt((nx * nx) + (ny * ny))
-			if length > EPS then
+			if length > eps then
 				local ax = nx / length
 				local ay = ny / length
 				local pmin = math.huge
@@ -189,7 +189,7 @@ local function circle_poly_overlap(circle, polys)
 		local ax = vx - circle.x
 		local ay = vy - circle.y
 		local axis_len = math.sqrt((ax * ax) + (ay * ay))
-		if axis_len > EPS then
+		if axis_len > eps then
 			local ux = ax / axis_len
 			local uy = ay / axis_len
 			local pmin = math.huge
@@ -240,9 +240,9 @@ local function contact_circle_circle(a, b)
 		return nil
 	end
 	local depth = rr - dist
-	local nx = 1
-	local ny = 0
-	if dist > EPS then
+	local nx
+	local ny
+	if dist > eps then
 		nx = dx / dist
 		ny = dy / dist
 	end
@@ -291,7 +291,7 @@ local function contact_circle_poly(circle, poly_shape)
 			local nx = -(poly[ni + 1] - poly[j + 1])
 			local ny = poly[ni] - poly[j]
 			local edge_len = math.sqrt((nx * nx) + (ny * ny))
-			if edge_len > EPS then
+			if edge_len > eps then
 				if not test_axis(poly, nx / edge_len, ny / edge_len) then
 					return nil
 				end
@@ -314,7 +314,7 @@ local function contact_circle_poly(circle, poly_shape)
 		local ax = vx - circle.x
 		local ay = vy - circle.y
 		local axis_len = math.sqrt((ax * ax) + (ay * ay))
-		if axis_len > EPS then
+		if axis_len > eps then
 			if not test_axis(poly, ax / axis_len, ay / axis_len) then
 				return nil
 			end
@@ -341,7 +341,7 @@ local function contact_poly_poly(a_shape, b_shape)
 				local nx = -(poly[ni + 1] - poly[i + 1])
 				local ny = poly[ni] - poly[i]
 				local edge_len = math.sqrt((nx * nx) + (ny * ny))
-				if edge_len > EPS then
+				if edge_len > eps then
 					local ax = nx / edge_len
 					local ay = ny / edge_len
 					local min_a = math.huge
@@ -538,9 +538,10 @@ end
 local world_index = nil
 
 function collision2d.ensure_index(cell_size)
-	if world_index == nil then
-		world_index = broadphase_index.new(cell_size or 64)
+	if world_index ~= nil then
+		return world_index
 	end
+	world_index = broadphase_index.new(cell_size or 64)
 	return world_index
 end
 

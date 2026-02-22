@@ -51,11 +51,11 @@ local service_definitions = {}
 local component_definitions = {}
 local vdp_load_job_seq = 0
 local vdp_load_queue = {}
-local vdp_load_queue_head = 1
-local vdp_load_queue_tail = 0
-local vdp_active_job = nil
-local vdp_load_handler = nil
-local cart_irq_handler = nil
+local vdp_load_queue_head
+local vdp_load_queue_tail
+local vdp_active_job
+local vdp_load_handler
+local cart_irq_handler
 local cart_irq_handlers = {}
 local sys_atlas_id = 254
 
@@ -112,6 +112,9 @@ local function apply_ctor(instance, class_table, ctor_args, def_id)
 end
 
 local function vdp_dequeue_job()
+	if vdp_load_queue_head == nil or vdp_load_queue_tail == nil then
+		return nil
+	end
 	if vdp_load_queue_head > vdp_load_queue_tail then
 		return nil
 	end
@@ -119,8 +122,8 @@ local function vdp_dequeue_job()
 	vdp_load_queue[vdp_load_queue_head] = nil
 	vdp_load_queue_head = vdp_load_queue_head + 1
 	if vdp_load_queue_head > vdp_load_queue_tail then
-		vdp_load_queue_head = 1
-		vdp_load_queue_tail = 0
+		vdp_load_queue_head = nil
+		vdp_load_queue_tail = nil
 	end
 	return job
 end
@@ -218,6 +221,10 @@ local function attach_bts(instance, bts)
 	end
 end
 
+local function create_apply_definition_skip_keys()
+	return { pos = true }
+end
+
 local function apply_definition(instance, def, addons, skip_key)
 	local class_table = def and def.class
 	if def then
@@ -228,7 +235,7 @@ local function apply_definition(instance, def, addons, skip_key)
 		attach_effects(instance, def.effects)
 		attach_bts(instance, def.bts)
 	end
-	local skip_keys = { pos = true }
+	local skip_keys = create_apply_definition_skip_keys()
 	if skip_key then
 		skip_keys[skip_key] = true
 	end
@@ -299,6 +306,10 @@ function engine.vdp_map_slot(slot, atlas_id)
 end
 
 function engine.vdp_load_slot(slot, atlas_id)
+	if vdp_load_queue_head == nil then
+		vdp_load_queue_head = 1
+		vdp_load_queue_tail = 0
+	end
 	local atlas_name = string.format("_atlas_%02d", atlas_id)
 	local entry = romdir.cart(atlas_name)
 	if entry == nil then
@@ -339,6 +350,10 @@ function engine.vdp_load_slot(slot, atlas_id)
 end
 
 function engine.vdp_load_sys_atlas()
+	if vdp_load_queue_head == nil then
+		vdp_load_queue_head = 1
+		vdp_load_queue_tail = 0
+	end
 	local atlas_name = string.format("_atlas_%02d", sys_atlas_id)
 	local entry = romdir.sys(atlas_name)
 	if entry == nil then
@@ -462,7 +477,7 @@ end
 
 function engine.irq(flags)
 	local ack = 0
-	local fatal = nil
+	local fatal
 	local has_reinit_handler = cart_irq_handlers[irq_reinit] ~= nil
 	local has_newgame_handler = cart_irq_handlers[irq_newgame] ~= nil
 	if (flags & irq_img_done) ~= 0 then
@@ -470,10 +485,14 @@ function engine.irq(flags)
 		if vdp_active_job == nil then
 			fatal = "irq: img_DONE without pending atlas load"
 		else
-			local skip_map = false
-			if vdp_active_job.allow_handler ~= false and vdp_load_handler ~= nil then
+			local skip_map
+			local allow_handler = vdp_active_job.allow_handler
+			if allow_handler == nil then
+				allow_handler = true
+			end
+			if allow_handler and vdp_load_handler ~= nil then
 				local should_skip = vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, "done")
-				if should_skip == true then
+				if should_skip then
 					skip_map = true
 				end
 			end
@@ -489,7 +508,11 @@ function engine.irq(flags)
 		if vdp_active_job == nil then
 			fatal = "irq: img_ERROR without pending atlas load"
 		else
-			if vdp_active_job.allow_handler ~= false and vdp_load_handler ~= nil then
+			local allow_handler = vdp_active_job.allow_handler
+			if allow_handler == nil then
+				allow_handler = true
+			end
+			if allow_handler and vdp_load_handler ~= nil then
 				vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, "error")
 			end
 			vdp_active_job = nil
