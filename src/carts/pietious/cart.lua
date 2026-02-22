@@ -1,5 +1,6 @@
 local constants = require('constants')
 local enemy_registry = require('enemy_registry')
+local progression = require('progression')
 local pietious_font = require('pietious_font')
 local player_module = require('player')
 local room_module = require('room')
@@ -61,6 +62,10 @@ local function grant_starting_loadout()
 	player.inventory_items['pepernoot'] = true
 	player:equip_subweapon('pepernoot')
 	player.weapon_level = constants.hud.weapon_level
+	local castle_service = service('c')
+	progression.set(castle_service, 'staff1destroyed', true)
+	progression.set(castle_service, 'staff2destroyed', true)
+	progression.set(castle_service, 'staff3destroyed', true)
 end
 
 function init()
