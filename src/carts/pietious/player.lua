@@ -1808,7 +1808,7 @@ end
 function player:tick_waiting_world_banner()
 	self:reset_motion_for_transition_lock()
 	local director = service('d')
-	if director:has_pending_banner() or director:has_modal_overlay() then
+	if director.pending_banner_mode or director.overlay_mode then
 		self.enter_leave_wait_started = true
 		return
 	end
@@ -1819,7 +1819,7 @@ end
 function player:tick_waiting_world_emerge()
 	self:reset_motion_for_transition_lock()
 	local director = service('d')
-	if director:has_pending_banner() or director:has_modal_overlay() then
+	if director.pending_banner_mode or director.overlay_mode then
 		self.enter_leave_wait_started = true
 		return
 	end

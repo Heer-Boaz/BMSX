@@ -628,7 +628,7 @@ function room.is_active_draaideur_at_tile(room_state, tx, ty)
 		local door_ty = math.modf((door_def.y - room_state.tile_origin_y) / room_state.tile_size) + 1
 		if tx == door_tx and ty >= door_ty and ty <= door_ty + 2 then
 			local draaideur = object(door_def.id)
-			if draaideur ~= nil and draaideur:blocks_movement() then
+			if draaideur ~= nil and draaideur.state >= 0 then
 				return true
 			end
 		end

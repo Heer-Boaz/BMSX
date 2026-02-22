@@ -27,10 +27,6 @@ function draaideur:configure_from_room_def(def, _room)
 	self:sync_sprite()
 end
 
-function draaideur:blocks_movement()
-	return self.state >= 0
-end
-
 function draaideur:touches_player(player, walking_left, walking_right)
 	if walking_left then
 		if rect_overlaps(

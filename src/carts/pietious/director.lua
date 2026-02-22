@@ -102,14 +102,6 @@ function director:open_shrine(text_lines)
 	self:dispatch_state_event('shrine_overlay_requested')
 end
 
-function director:has_modal_overlay()
-	return self.overlay_mode ~= nil
-end
-
-function director:has_pending_banner()
-	return self.pending_banner_mode ~= nil
-end
-
 function director:sync_room_state_from_castle()
 	local castle_service = service('c')
 	self.current_room_number = castle_service.current_room_number
