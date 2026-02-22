@@ -108,9 +108,9 @@ local function runtime_for_event(event)
 	return progression._runtime_by_service_id[service_id]
 end
 
-local function apply_set_actions(runtime, actions)
+local function apply_set_actions(rt, actions)
 	local changed
-	local state = runtime.state
+	local state = rt.state
 	for i = 1, #actions do
 		local action = actions[i]
 		if state:set(action.key, action.value) then
@@ -120,9 +120,9 @@ local function apply_set_actions(runtime, actions)
 	return changed
 end
 
-local function apply_commands(runtime, commands, event)
-	local handlers = runtime.program.handlers
-	local ctx = runtime.ctx
+local function apply_commands(rt, commands, event)
+	local handlers = rt.program.handlers
+	local ctx = rt.ctx
 	for i = 1, #commands do
 		local command = commands[i]
 		handlers[command.op](ctx, command, event)
@@ -130,11 +130,11 @@ local function apply_commands(runtime, commands, event)
 end
 
 local function dispatch_event_now(event)
-	local runtime = runtime_for_event(event)
-	if runtime == nil then
+	local rt = runtime_for_event(event)
+	if rt == nil then
 		return
 	end
-	local rules = runtime.program.rules_by_event[event.type]
+	local rules = rt.program.rules_by_event[event.type]
 	if rules == nil then
 		return
 	end
@@ -145,15 +145,15 @@ local function dispatch_event_now(event)
 		for i = 1, #rules do
 			if not (fired[i]) then
 				local rule = rules[i]
-				if rule.when_event(event) and runtime.state:matches_filter(rule.when_all) then
+				if rule.when_event(event) and rt.state:matches_filter(rule.when_all) then
 					fired[i] = true
-					if not rule.apply_once or not (runtime.apply_done[rule.id]) then
-						if apply_set_actions(runtime, rule.set) then
+					if not rule.apply_once or not (rt.apply_done[rule.id]) then
+						if apply_set_actions(rt, rule.set) then
 							changed = true
 						end
-						apply_commands(runtime, rule.apply, event)
+						apply_commands(rt, rule.apply, event)
 						if rule.apply_once then
-							runtime.apply_done[rule.id] = true
+							rt.apply_done[rule.id] = true
 						end
 					end
 				end
@@ -198,20 +198,20 @@ function progression.mount(ctx, program_or_rule_defs)
 	local program = progression.compile_program(program_or_rule_defs)
 	local state = progression_core.progression.new(program.state_program)
 
-	local runtime = {
+	local rt = {
 		ctx = ctx,
 		program = program,
 		state = state,
 		apply_done = {},
 	}
-	progression._runtime_by_ctx[ctx] = runtime
-	progression._runtime_by_service_id[ctx.id] = runtime
-	return runtime
+	progression._runtime_by_ctx[ctx] = rt
+	progression._runtime_by_service_id[ctx.id] = rt
+	return rt
 end
 
 function progression.unmount(ctx)
-	local runtime = progression._runtime_by_ctx[ctx]
-	if runtime == nil then
+	local rt = progression._runtime_by_ctx[ctx]
+	if rt == nil then
 		return
 	end
 	progression._runtime_by_ctx[ctx] = nil
@@ -223,8 +223,8 @@ function progression.matches(ctx, filter)
 end
 
 function progression.set(ctx, key, value)
-	local runtime = progression._runtime_by_ctx[ctx]
-	return runtime.state:set(key, value)
+	local rt = progression._runtime_by_ctx[ctx]
+	return rt.state:set(key, value)
 end
 
 function progression.get(ctx, key)
