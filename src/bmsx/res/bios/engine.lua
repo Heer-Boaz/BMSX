@@ -221,10 +221,6 @@ local function attach_bts(instance, bts)
 	end
 end
 
-local function create_apply_definition_skip_keys()
-	return { pos = true }
-end
-
 local function apply_definition(instance, def, addons, skip_key)
 	local class_table = def and def.class
 	if def then
@@ -235,7 +231,7 @@ local function apply_definition(instance, def, addons, skip_key)
 		attach_effects(instance, def.effects)
 		attach_bts(instance, def.bts)
 	end
-	local skip_keys = create_apply_definition_skip_keys()
+	local skip_keys = { pos = true }
 	if skip_key then
 		skip_keys[skip_key] = true
 	end

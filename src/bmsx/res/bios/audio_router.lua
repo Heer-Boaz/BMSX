@@ -10,10 +10,6 @@ local last_played_at = {}
 local mergeable_entry_types = { ["table"] = true, ["native"] = true }
 local handle_event
 
-local function now_ms()
-	return os.clock() * 1000
-end
-
 local function compile_rules(rules)
 	if not rules or #rules == 0 then
 		return {}
@@ -224,7 +220,7 @@ local function apply_cooldown(event_name, action, payload)
 	end
 	local actor_key = payload['actorId'] or "global"
 	local key = event_name .. ":" .. actor_key .. ":" .. tostring(action.audio_id)
-	local now = now_ms()
+	local now = os.clock() * 1000
 	local last = last_played_at[key] or 0
 	if (now - last) < cooldown_ms then
 		return false

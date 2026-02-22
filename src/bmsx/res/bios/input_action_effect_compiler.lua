@@ -165,13 +165,9 @@ local function compile_custom_effects(binding, analysis)
 	return map
 end
 
-local function create_binding_analysis()
-	return { uses_effect_triggers = false }
-end
-
 local function compile_binding(binding, parse)
 	local priority = binding.priority or 0
-	local analysis = create_binding_analysis()
+	local analysis = { uses_effect_triggers = false }
 	local predicate = compile_predicate(binding)
 	local on = binding.on
 	if not on then
