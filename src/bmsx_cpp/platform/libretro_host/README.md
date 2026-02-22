@@ -9,7 +9,7 @@ Unlike RetroArch, this executable directly loads a libretro core via `dlopen()` 
 From repo root:
 
 ```bash
-npm run build:libretro-snesmini:debug
+npm run build:platform:libretro-snesmini:debug
 ```
 
 Artifacts are placed in `dist/`:

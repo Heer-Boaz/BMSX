@@ -4,7 +4,7 @@ New split packaging lets you build the engine once and ship carts as pure Lua/da
 
 ```bash
 # 1) Build the standalone engine runtime + assets
-npm run build:engine:debug
+npm run build:bios:debug
 
 # 2) Build a cart (resources under src/carts/<name>)
 npx tsx scripts/rompacker/rompacker.ts \
