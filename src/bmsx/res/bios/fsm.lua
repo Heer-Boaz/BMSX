@@ -1,11 +1,12 @@
 -- fsm.lua
 -- finite state machine runtime for system rom
 
+local fsm_trace = require("fsm_trace")
+
 local statedefinition = {}
 statedefinition.__index = statedefinition
 
 local start_state_prefixes = { ["_"] = true, ["#"] = true }
-local payload_primitive_types = { ["number"] = true, ["boolean"] = true }
 local no_op_aliases = { ["no-op"] = true, ["noop"] = true, ["no_op"] = true }
 local ignored_relative_segments = { [""] = true, ["."] = true }
 local input_eval_modes = { ["first"] = true, ["all"] = true }
@@ -94,6 +95,102 @@ local function compile_tag_derivations(raw)
 	return compiled
 end
 
+local function validate_optional_state_function(def_id, field_name, value)
+	if value ~= nil and type(value) ~= "function" then
+		error(
+			"state definition '" .. tostring(def_id)
+				.. "' field '" .. tostring(field_name)
+				.. "' must be a function, but got " .. type(value) .. "."
+		)
+	end
+end
+
+local function validate_no_op_alias_value(def_id, field_name, value)
+	if type(value) ~= "string" then
+		return
+	end
+	if no_op_aliases[value] then
+		return
+	end
+	local lowered = string.lower(value)
+	if no_op_aliases[lowered] then
+		error(
+			"state definition '" .. tostring(def_id)
+				.. "' field '" .. tostring(field_name)
+				.. "' uses invalid no-op alias '" .. tostring(value)
+				.. "'. use lowercase '" .. lowered .. "'."
+		)
+	end
+end
+
+local function validate_transition_spec(def_id, field_name, spec)
+	if spec == nil then
+		return
+	end
+	local kind = type(spec)
+	if kind == "string" then
+		validate_no_op_alias_value(def_id, field_name, spec)
+		return
+	end
+	if kind == "function" then
+		return
+	end
+	if kind ~= "table" then
+		error(
+			"state definition '" .. tostring(def_id)
+				.. "' field '" .. tostring(field_name)
+				.. "' must be a string, function, or transition table, but got " .. kind .. "."
+		)
+	end
+	local go = spec.go
+	if go == nil then
+		return
+	end
+	local go_kind = type(go)
+	if go_kind == "string" then
+		validate_no_op_alias_value(def_id, field_name .. ".go", go)
+		return
+	end
+	if go_kind ~= "function" then
+		error(
+			"state definition '" .. tostring(def_id)
+				.. "' field '" .. tostring(field_name)
+				.. ".go' must be a string or function, but got " .. go_kind .. "."
+		)
+	end
+end
+
+local function validate_transition_spec_map(def_id, field_name, map)
+	if map == nil then
+		return
+	end
+	if type(map) ~= "table" then
+		error(
+			"state definition '" .. tostring(def_id)
+				.. "' field '" .. tostring(field_name)
+				.. "' must be a table, but got " .. type(map) .. "."
+		)
+	end
+	for key, spec in pairs(map) do
+		validate_transition_spec(def_id, field_name .. "[" .. tostring(key) .. "]", spec)
+	end
+end
+
+local function validate_run_checks(def_id, checks)
+	if checks == nil then
+		return
+	end
+	if type(checks) ~= "table" then
+		error(
+			"state definition '" .. tostring(def_id)
+				.. "' field 'run_checks' must be an array, but got " .. type(checks) .. "."
+		)
+	end
+	for i = 1, #checks do
+		validate_transition_spec(def_id, "run_checks[" .. tostring(i) .. "]", checks[i])
+	end
+end
+
 function statedefinition.new(id, def, root, parent)
 	local self = setmetatable({}, statedefinition)
 	self.__is_state_definition = true
@@ -113,16 +210,27 @@ function statedefinition.new(id, def, root, parent)
 	self.process_input = def and def.process_input or nil
 	self.is_concurrent = def and def.is_concurrent or false
 	self.input_eval = def and def.input_eval or nil
+	if self.input_eval ~= nil and not input_eval_modes[self.input_eval] then
+		error(
+			"state definition '" .. tostring(self.def_id)
+				.. "' has invalid input_eval '" .. tostring(self.input_eval)
+				.. "'. expected 'first' or 'all', but got " .. type(self.input_eval) .. "."
+		)
+	end
+	validate_optional_state_function(self.def_id, "tick", self.tick)
+	validate_optional_state_function(self.def_id, "entering_state", self.entering_state)
+	validate_optional_state_function(self.def_id, "exiting_state", self.exiting_state)
+	validate_optional_state_function(self.def_id, "process_input", self.process_input)
+	validate_transition_spec_map(self.def_id, "on", self.on)
+	validate_transition_spec_map(self.def_id, "input_event_handlers", self.input_event_handlers)
+	validate_run_checks(self.def_id, self.run_checks)
 	self.event_list = def and def.event_list or nil
 	self.timelines = def and def.timelines or nil
 	self.transition_guards = def and def.transition_guards or nil
 	self.tags = def and def.tags or nil
 	self.tag_derivations = nil
 	if self.root == self then
-		local raw_tag_derivations
-		if def then
-			raw_tag_derivations = def.tag_derivations or def.derived_tags or def.tag_groups
-		end
+		local raw_tag_derivations = def and (def.tag_derivations or def.derived_tags or def.tag_groups) or nil
 		self.tag_derivations = compile_tag_derivations(raw_tag_derivations)
 	end
 
@@ -257,20 +365,6 @@ local function append_trace_entry(id, message)
 	end
 end
 
-local function describe_payload(payload)
-	if payload == nil then
-		return "nil"
-	end
-	local t = type(payload)
-	if t == "string" then
-		return payload
-	end
-	if payload_primitive_types[t] then
-		return tostring(payload)
-	end
-	return tostring(payload)
-end
-
 local function resolve_emitter_id(event, fallback)
 	if not event or not event.emitter then
 		return fallback
@@ -298,17 +392,8 @@ local function resolve_event_payload(event)
 	return payload
 end
 
-local function trim_string(value)
-	return (string.match(value, "^%s*(.-)%s*$"))
-end
-
 local function is_no_op_string(value)
-	if not value then
-		return false
-	end
-	local trimmed = trim_string(value)
-	local lower = string.lower(trimmed)
-	return no_op_aliases[lower] ~= nil
+	return type(value) == "string" and no_op_aliases[value] ~= nil
 end
 
 local function resolve_state_key(definition, state_id)
@@ -571,7 +656,7 @@ function state:start()
 		start_instance:activate_timelines()
 		local enter_start = start_state_def.entering_state
 		local start_next
-		if type(enter_start) == "function" then
+		if enter_start then
 			start_next = enter_start(self.target, start_instance)
 		end
 		start_instance:transition_to_next_state_if_provided(start_next)
@@ -717,35 +802,12 @@ function state:resolve_context_snapshot(provided)
 	return self:peek_transition_context()
 end
 
-function state:format_guard_diagnostics(guard)
-	if not guard or not guard.evaluations or #guard.evaluations == 0 then
-		return nil
-	end
-	local parts = {}
-	for i = 1, #guard.evaluations do
-		local ev = guard.evaluations[i]
-		local status = ev.passed and "pass" or "fail"
-		local descriptor = (((ev.descriptor and (ev.descriptor ~= '<none>')) and ('(' .. (ev.descriptor .. ')'))))
-		local note = ev.reason and not ev.passed and ("!" .. ev.reason) or nil
-		local suffix = ((note and ('[' .. (note .. ']'))))
-		parts[#parts + 1] = ev.side .. ":" .. status .. descriptor .. suffix
-	end
-	return table.concat(parts, ",")
-end
-
-function state:format_action_evaluations(context)
-	if not context or not context.action_evaluations or #context.action_evaluations == 0 then
-		return nil
-	end
-	return table.concat(context.action_evaluations, ";")
-end
-
 function state:emit_transition_trace(entry)
 	if not should_trace_transitions() then
 		return
 	end
 	local context = self:resolve_context_snapshot(entry.context)
-	local message = self:compose_transition_trace_message({
+	local message = fsm_trace.compose_transition_trace_message({
 		outcome = entry.outcome,
 		execution = entry.execution,
 		from = entry.from,
@@ -758,60 +820,12 @@ function state:emit_transition_trace(entry)
 	append_trace_entry(self.id, message)
 end
 
-function state:compose_transition_trace_message(entry)
-	local parts = {}
-	parts[1] = "[transition]"
-	parts[#parts + 1] = "outcome=" .. entry.outcome
-	parts[#parts + 1] = "exec=" .. entry.execution
-	parts[#parts + 1] = "to='" .. tostring(entry.to) .. "'"
-	if entry.from ~= nil then
-		parts[#parts + 1] = "from='" .. tostring(entry.from) .. "'"
-	end
-	if entry.context and entry.context.trigger then
-		local trigger = entry.context.event_name and (entry.context.trigger .. "(" .. entry.context.event_name .. ")") or entry.context.trigger
-		parts[#parts + 1] = "trigger=" .. trigger
-	end
-	if entry.context and entry.context.description then
-		parts[#parts + 1] = "desc=" .. entry.context.description
-	end
-	if entry.context and entry.context.handler_name then
-		parts[#parts + 1] = "handler=" .. entry.context.handler_name
-	end
-	if entry.context and entry.context.emitter then
-		parts[#parts + 1] = "emitter=" .. tostring(entry.context.emitter)
-	end
-	if entry.context and entry.context.bubbled then
-		parts[#parts + 1] = "bubbled=true"
-	end
-	if entry.reason then
-		parts[#parts + 1] = "reason=" .. entry.reason
-	end
-	local guard_summary = self:format_guard_diagnostics(entry.guard)
-	if guard_summary then
-		parts[#parts + 1] = "guards=" .. guard_summary
-	end
-	local action_summary = self:format_action_evaluations(entry.context)
-	if action_summary then
-		parts[#parts + 1] = "actions=" .. action_summary
-	end
-	if entry.context and entry.context.payload_summary then
-		parts[#parts + 1] = "payload=" .. entry.context.payload_summary
-	end
-	if entry.queue_size ~= nil then
-		parts[#parts + 1] = "queue=" .. tostring(entry.queue_size)
-	end
-	if entry.context and entry.context.timestamp then
-		parts[#parts + 1] = "ts=" .. tostring(entry.context.timestamp)
-	end
-	return table.concat(parts, " ")
-end
-
 function state:create_fallback_snapshot(trigger, description, payload)
 	return {
 		trigger = trigger,
 		description = description,
 		timestamp = $.platform.clock.now(),
-		payload_summary = payload ~= nil and describe_payload(payload) or nil,
+		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload) or nil,
 	}
 end
 
@@ -823,6 +837,8 @@ function state:hydrate_context(snapshot, trigger, description)
 			for i = 1, #snapshot.action_evaluations do
 				action_evaluations[i] = snapshot.action_evaluations[i]
 			end
+		else
+			action_evaluations = nil
 		end
 		local guard_evaluations
 		if snapshot.guard_evaluations then
@@ -830,6 +846,8 @@ function state:hydrate_context(snapshot, trigger, description)
 			for i = 1, #snapshot.guard_evaluations do
 				guard_evaluations[i] = snapshot.guard_evaluations[i]
 			end
+		else
+			guard_evaluations = nil
 		end
 		return {
 			trigger = snapshot.trigger,
@@ -859,119 +877,26 @@ function state:hydrate_context(snapshot, trigger, description)
 	}
 end
 
-function state:create_event_context(event_name, emitter, payload)
-	return {
-		trigger = "event",
-		description = "event:" .. event_name,
-		event_name = event_name,
-		emitter = emitter,
-		timestamp = $.platform.clock.now(),
-		payload_summary = payload ~= nil and describe_payload(payload) or nil,
-	}
-end
-
-function state:create_input_context(pattern, player_index)
-	return {
-		trigger = "input",
-		description = "input:" .. pattern,
-		timestamp = $.platform.clock.now(),
-		payload_summary = "player=" .. tostring(player_index),
-	}
-end
-
-function state:create_process_input_context()
-	return {
-		trigger = "process-input",
-		description = "process_input",
-		timestamp = $.platform.clock.now(),
-	}
-end
-
-function state:create_tick_context(handler_name)
-	return {
-		trigger = "tick",
-		description = "tick:" .. handler_name,
-		timestamp = $.platform.clock.now(),
-	}
-end
-
-function state:create_run_check_context(index)
-	return {
-		trigger = "run-check",
-		description = "run_check#" .. tostring(index),
-		timestamp = $.platform.clock.now(),
-	}
-end
-
-function state:create_enter_context(state_id)
-	return {
-		trigger = "enter",
-		description = "enter:" .. tostring(state_id),
-		timestamp = $.platform.clock.now(),
-	}
-end
-
-function state:describe_string_handler(target_state)
-	return "transition:" .. target_state
-end
-
-function state:describe_action_handler(spec)
-	if type(spec) ~= "table" then
-		return "handler"
-	end
-	if type(spec.go) == "function" then
-		return "<anonymous>"
-	end
-	if type(spec.go) == "string" then
-		return "do:" .. spec.go
-	end
-	return "handler"
-end
-
 function state:emit_event_dispatch_trace(event_name, emitter, detail, handled, bubbled, depth, context)
 	if not should_trace_dispatch() then
 		return
 	end
 	local ctx = context or self:create_fallback_snapshot("event", "event:" .. event_name, detail)
-	local transition = ctx.last_transition
-	local parts = {}
-	parts[1] = "[dispatch]"
-	parts[#parts + 1] = "event=" .. event_name
-	parts[#parts + 1] = "handled=" .. tostring(handled)
-	parts[#parts + 1] = "bubbled=" .. tostring(bubbled)
-	if depth > 0 then
-		parts[#parts + 1] = "depth=" .. tostring(depth)
-	end
-	parts[#parts + 1] = "emitter=" .. tostring(emitter)
-	if ctx.handler_name then
-		parts[#parts + 1] = "handler=" .. ctx.handler_name
-	end
-	parts[#parts + 1] = "state=" .. tostring(self.current_id)
-	if transition then
-		parts[#parts + 1] = "target=" .. tostring(transition.to)
-		parts[#parts + 1] = "transition=" .. tostring(transition.execution)
-		if transition.guard_summary then
-			parts[#parts + 1] = "guards=" .. transition.guard_summary
-		end
-	else
-		parts[#parts + 1] = "target=" .. tostring(self.current_id)
-		parts[#parts + 1] = "transition=none"
-	end
-	local payload_summary = ctx.payload_summary or (detail ~= nil and describe_payload(detail) or nil)
-	if payload_summary then
-		parts[#parts + 1] = "payload=" .. payload_summary
-	end
-	if ctx.timestamp then
-		parts[#parts + 1] = "ts=" .. tostring(ctx.timestamp)
-	end
-	append_trace_entry(self.id, table.concat(parts, " "))
+	local message = fsm_trace.compose_event_dispatch_trace_message({
+		event_name = event_name,
+		emitter = emitter,
+		detail = detail,
+		handled = handled,
+		bubbled = bubbled,
+		depth = depth,
+		context = ctx,
+		current_id = self.current_id,
+	})
+	append_trace_entry(self.id, message)
 end
 
 function state:transition_to_next_state_if_provided(next_state)
-	if not next_state then
-		return
-	end
-	if is_no_op_string(next_state) then
+	if not next_state or is_no_op_string(next_state) then
 		return
 	end
 	self:transition_to(next_state)
@@ -987,6 +912,19 @@ function state:handle_state_transition(action, event)
 			return true
 		end
 		self:transition_to(action)
+		return true
+	end
+	if t == "function" then
+		local handler_event = event or empty_game_event
+		local next_state = action(self.target, self, handler_event)
+		local detail = "do:<anonymous>"
+		if next_state then
+			detail = detail .. "->" .. tostring(next_state)
+		end
+		self:append_action_evaluation(detail)
+		if next_state and not is_no_op_string(next_state) then
+			self:transition_to(next_state)
+		end
 		return true
 	end
 	if t ~= "table" then
@@ -1013,13 +951,9 @@ function state:handle_state_transition(action, event)
 			detail = detail .. "->" .. tostring(next_state)
 		end
 		self:append_action_evaluation(detail)
-		if not next_state then
-			return true
+		if next_state and not is_no_op_string(next_state) then
+			self:transition_to(next_state)
 		end
-		if is_no_op_string(next_state) then
-			return true
-		end
-		self:transition_to(next_state)
 		return true
 	end
 	return false
@@ -1185,7 +1119,7 @@ function state:transition_to_state(state_id)
 				to = state_id,
 				execution = execution,
 				status = "blocked",
-				guard_summary = self:format_guard_diagnostics(guard_diagnostics),
+				guard_summary = fsm_trace.format_guard_diagnostics(guard_diagnostics),
 			}
 			self:record_transition_outcome_on_context(outcome)
 			self:emit_transition_trace({
@@ -1230,17 +1164,21 @@ function state:transition_to_state(state_id)
 		cur:activate_timelines()
 		local enter_handler = cur_def.entering_state
 		local next_state
-		if type(enter_handler) == "function" then
-			next_state = self:run_with_transition_context(
-				function()
-					local ctx = self:create_enter_context(state_id)
-					ctx.handler_name = "<anonymous>"
-					return ctx
-				end,
-				function()
-					return enter_handler(self.target, cur)
-				end
-			)
+		if enter_handler then
+			if should_trace_transitions() then
+				next_state = self:run_with_transition_context(
+					function()
+						local ctx = fsm_trace.create_enter_context(state_id)
+						ctx.handler_name = "<anonymous>"
+						return ctx
+					end,
+					function()
+						return enter_handler(self.target, cur)
+					end
+				)
+			else
+				next_state = enter_handler(self.target, cur)
+			end
 		end
 		cur:transition_to_next_state_if_provided(next_state)
 
@@ -1250,7 +1188,7 @@ function state:transition_to_state(state_id)
 				to = state_id,
 				execution = execution,
 				status = "success",
-				guard_summary = self:format_guard_diagnostics(guard_diagnostics),
+				guard_summary = fsm_trace.format_guard_diagnostics(guard_diagnostics),
 			}
 			self:record_transition_outcome_on_context(outcome)
 			self:emit_transition_trace({
@@ -1643,34 +1581,44 @@ function state:handle_event(event_name, emitter_id, detail, event)
 	if self.paused then
 		return { handled = false }
 	end
+	local trace_transitions = should_trace_transitions()
 	local captured_context = nil
-	local handled = self:with_critical_section(function()
-		return self:run_with_transition_context(
-			function()
-				return self:create_event_context(event_name, emitter_id, detail)
-			end,
-			function(ctx)
-				captured_context = ctx
-				local handlers = self.definition.on
-				if not handlers then
-					return false
-				end
-				local spec = handlers[event_name]
-				if not spec then
-					return false
-				end
-				if ctx then
-					if type(spec) == "string" then
-						ctx.handler_name = self:describe_string_handler(spec)
-					else
-						ctx.handler_name = self:describe_action_handler(spec)
+	local handled
+	if trace_transitions then
+		handled = self:with_critical_section(function()
+			return self:run_with_transition_context(
+				function()
+					return fsm_trace.create_event_context(event_name, emitter_id, detail)
+				end,
+				function(ctx)
+					captured_context = ctx
+					local handlers = self.definition.on
+					if not handlers then
+						return false
 					end
+					local spec = handlers[event_name]
+					if not spec then
+						return false
+					end
+					ctx.handler_name = fsm_trace.describe_transition_handler(spec)
+					return self:handle_state_transition(spec, event)
 				end
-				return self:handle_state_transition(spec, event)
+			)
+		end)
+	else
+		handled = self:with_critical_section(function()
+			local handlers = self.definition.on
+			if not handlers then
+				return false
 			end
-		)
-	end)
-	if not should_trace_dispatch() and not should_trace_transitions() then
+			local spec = handlers[event_name]
+			if not spec then
+				return false
+			end
+			return self:handle_state_transition(spec, event)
+		end)
+	end
+	if not should_trace_dispatch() and not trace_transitions then
 		return { handled = handled }
 	end
 	return { handled = handled, context = captured_context }
@@ -1685,6 +1633,9 @@ function state:dispatch_event(event_or_name, payload)
 	if type(event_or_name) == "table" then
 		event_name = event_or_name.type
 		data = event_or_name
+	else
+		event_name = event_or_name
+		data = payload
 	end
 	local trace_dispatch = should_trace_dispatch()
 	local trace_transitions = should_trace_transitions()
@@ -1693,6 +1644,8 @@ function state:dispatch_event(event_or_name, payload)
 	if trace_dispatch or trace_transitions then
 		emitter_id = resolve_emitter_id(data, self.target_id)
 		detail = resolve_event_payload(data)
+	else
+		detail = nil
 	end
 
 	if self.states and next(self.states) ~= nil and self.current_id then
@@ -1735,6 +1688,9 @@ function state:dispatch_input_event(event_or_name, payload)
 	if type(event_or_name) == "table" then
 		event_name = event_or_name.type
 		data = event_or_name
+	else
+		event_name = event_or_name
+		data = payload
 	end
 	if self.states and next(self.states) ~= nil and self.current_id then
 		local child = self.states[self.current_id]
@@ -1770,9 +1726,9 @@ function state:resolve_input_eval_mode()
 	local node = self
 	while node do
 		local mode = node.definition.input_eval
-			if input_eval_modes[mode] then
-				return mode
-			end
+		if mode and input_eval_modes[mode] then
+			return mode
+		end
 		node = node.parent
 	end
 	return "all"
@@ -1783,25 +1739,25 @@ function state:process_input_events()
 	if not handlers then
 		return
 	end
+	local trace_transitions = should_trace_transitions()
 	local player_index = self.target.player_index or 1
 	local eval_mode = self:resolve_input_eval_mode()
 	for pattern, handler in pairs(handlers) do
 		if action_triggered(pattern, player_index) then
-			local handled = self:run_with_transition_context(
-				function()
-					return self:create_input_context(pattern, player_index)
-				end,
-				function(ctx)
-					if ctx then
-						if type(handler) == "string" then
-							ctx.handler_name = self:describe_string_handler(handler)
-						else
-							ctx.handler_name = self:describe_action_handler(handler)
-						end
+			local handled
+			if trace_transitions then
+				handled = self:run_with_transition_context(
+					function()
+						return fsm_trace.create_input_context(pattern, player_index)
+					end,
+					function(ctx)
+						ctx.handler_name = fsm_trace.describe_transition_handler(handler)
+						return self:handle_state_transition(handler)
 					end
-					return self:handle_state_transition(handler)
-				end
-			)
+				)
+			else
+				handled = self:handle_state_transition(handler)
+			end
 			if handled and eval_mode == "first" then
 				return
 			end
@@ -1812,11 +1768,14 @@ end
 function state:process_input()
 	self:process_input_events()
 	local process_input = self.definition.process_input
+	if not process_input then
+		return
+	end
 	local next_state
-	if type(process_input) == "function" then
+	if should_trace_transitions() then
 		next_state = self:run_with_transition_context(
 			function()
-				local ctx = self:create_process_input_context()
+				local ctx = fsm_trace.create_process_input_context()
 				ctx.handler_name = "<anonymous>"
 				return ctx
 			end,
@@ -1824,26 +1783,31 @@ function state:process_input()
 				return process_input(self.target, self, empty_game_event)
 			end
 		)
+	else
+		next_state = process_input(self.target, self, empty_game_event)
 	end
 	self:transition_to_next_state_if_provided(next_state)
 end
 
 function state:run_current_state()
 	local tick_handler = self.definition.tick
+	if not tick_handler then
+		return
+	end
 	local next_state
-	if type(tick_handler) == "function" then
+	if should_trace_transitions() then
 		next_state = self:run_with_transition_context(
 			function()
-				return self:create_tick_context("<anonymous>")
+				return fsm_trace.create_tick_context("<anonymous>")
 			end,
 			function()
 				return tick_handler(self.target, self, empty_game_event)
 			end
 		)
+	else
+		next_state = tick_handler(self.target, self, empty_game_event)
 	end
-	if next_state then
-		self:transition_to_next_state_if_provided(next_state)
-	end
+	self:transition_to_next_state_if_provided(next_state)
 end
 
 function state:run_substate_machines()
@@ -1863,31 +1827,28 @@ function state:run_substate_machines()
 	end
 end
 
-function state:do_run_checks()
-	if self.paused then
-		return
-	end
-	self:run_checks_for_current_state()
-end
-
 function state:run_checks_for_current_state()
 	local checks = self.definition.run_checks
 	if not checks then
 		return
 	end
+	local trace_transitions = should_trace_transitions()
 	for i = 1, #checks do
 		local rc = checks[i]
-		local handled = self:run_with_transition_context(
-			function()
-				return self:create_run_check_context(i - 1)
-			end,
-			function(ctx)
-				if ctx then
-					ctx.handler_name = self:describe_action_handler(rc)
+		local handled
+		if trace_transitions then
+			handled = self:run_with_transition_context(
+				function()
+					return fsm_trace.create_run_check_context(i - 1)
+				end,
+				function(ctx)
+					ctx.handler_name = fsm_trace.describe_action_handler(rc)
+					return self:handle_state_transition(rc)
 				end
-				return self:handle_state_transition(rc)
-			end
-		)
+			)
+		else
+			handled = self:handle_state_transition(rc)
+		end
 		if handled then
 			break
 		end
@@ -1895,7 +1856,7 @@ function state:run_checks_for_current_state()
 end
 
 function state:tick()
-	if not self.definition or self.paused then
+	if self.paused then
 		return
 	end
 	self._transitions_this_tick = 0
@@ -1904,7 +1865,7 @@ function state:tick()
 		self:run_substate_machines()
 		self:process_input()
 		self:run_current_state()
-		self:do_run_checks()
+		self:run_checks_for_current_state()
 		self.in_tick = false
 	end)
 end
@@ -2110,6 +2071,9 @@ function statemachinecontroller:dispatch(event_or_name, payload)
 	if type(event_or_name) == "table" then
 		event_name = event_or_name.type
 		data = event_or_name
+	else
+		event_name = event_or_name
+		data = payload
 	end
 	local handled
 	for _, machine in pairs(self.statemachines) do
@@ -2126,6 +2090,9 @@ function statemachinecontroller:dispatch_input(event_or_name, payload)
 	if type(event_or_name) == "table" then
 		event_name = event_or_name.type
 		data = event_or_name
+	else
+		event_name = event_or_name
+		data = payload
 	end
 	local handled
 	for _, machine in pairs(self.statemachines) do

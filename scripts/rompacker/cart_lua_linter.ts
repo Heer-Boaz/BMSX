@@ -59,6 +59,7 @@ type LuaLintIssueRule =
 	'staged_export_local_call_pattern' |
 	'staged_export_local_table_pattern' |
 	'require_lua_extension_pattern' |
+	'branch_uninitialized_local_pattern' |
 	'ensure_pattern';
 
 type LuaLintProfile = 'cart' | 'bios';
@@ -227,6 +228,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'staged_export_local_call_pattern',
 	'staged_export_local_table_pattern',
 	'require_lua_extension_pattern',
+	'branch_uninitialized_local_pattern',
 	'ensure_pattern',
 ];
 const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
@@ -3375,6 +3377,294 @@ function lintTableField(field: LuaTableField, issues: LuaLintIssue[]): void {
 	}
 }
 
+function expressionUsesIdentifier(expression: LuaExpression | null, name: string): boolean {
+	if (!expression) {
+		return false;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.IdentifierExpression:
+			return expression.name === name;
+		case LuaSyntaxKind.MemberExpression:
+			return expressionUsesIdentifier(expression.base, name);
+		case LuaSyntaxKind.IndexExpression:
+			return expressionUsesIdentifier(expression.base, name) || expressionUsesIdentifier(expression.index, name);
+		case LuaSyntaxKind.BinaryExpression:
+			return expressionUsesIdentifier(expression.left, name) || expressionUsesIdentifier(expression.right, name);
+		case LuaSyntaxKind.UnaryExpression:
+			return expressionUsesIdentifier(expression.operand, name);
+		case LuaSyntaxKind.CallExpression:
+			if (expressionUsesIdentifier(expression.callee, name)) {
+				return true;
+			}
+			for (const argument of expression.arguments) {
+				if (expressionUsesIdentifier(argument, name)) {
+					return true;
+				}
+			}
+			return false;
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey && expressionUsesIdentifier(field.key, name)) {
+					return true;
+				}
+				if (expressionUsesIdentifier(field.value, name)) {
+					return true;
+				}
+			}
+			return false;
+		case LuaSyntaxKind.FunctionExpression:
+			// Nested function bodies are intentionally excluded for this rule.
+			return false;
+		default:
+			return false;
+	}
+}
+
+function isUnsafeBinaryOperator(operator: LuaBinaryOperator): boolean {
+	return operator !== LuaBinaryOperator.Or
+		&& operator !== LuaBinaryOperator.And
+		&& operator !== LuaBinaryOperator.Equal
+		&& operator !== LuaBinaryOperator.NotEqual;
+}
+
+function isUnsafeUnaryOperator(operator: LuaUnaryOperator): boolean {
+	return operator === LuaUnaryOperator.Negate
+		|| operator === LuaUnaryOperator.Length
+		|| operator === LuaUnaryOperator.BitwiseNot;
+}
+
+function expressionUsesIdentifierUnsafely(expression: LuaExpression | null, name: string): boolean {
+	if (!expression) {
+		return false;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.IdentifierExpression:
+			return false;
+		case LuaSyntaxKind.MemberExpression:
+			if (expressionUsesIdentifier(expression.base, name)) {
+				return true;
+			}
+			return expressionUsesIdentifierUnsafely(expression.base, name);
+		case LuaSyntaxKind.IndexExpression:
+			if (expressionUsesIdentifier(expression.base, name) || expressionUsesIdentifier(expression.index, name)) {
+				return true;
+			}
+			return expressionUsesIdentifierUnsafely(expression.base, name)
+				|| expressionUsesIdentifierUnsafely(expression.index, name);
+		case LuaSyntaxKind.BinaryExpression:
+			if (isUnsafeBinaryOperator(expression.operator)
+				&& (expressionUsesIdentifier(expression.left, name) || expressionUsesIdentifier(expression.right, name))) {
+				return true;
+			}
+			return expressionUsesIdentifierUnsafely(expression.left, name)
+				|| expressionUsesIdentifierUnsafely(expression.right, name);
+		case LuaSyntaxKind.UnaryExpression:
+			if (isUnsafeUnaryOperator(expression.operator) && expressionUsesIdentifier(expression.operand, name)) {
+				return true;
+			}
+			return expressionUsesIdentifierUnsafely(expression.operand, name);
+		case LuaSyntaxKind.CallExpression:
+			if (expressionUsesIdentifier(expression.callee, name) || expressionUsesIdentifierUnsafely(expression.callee, name)) {
+				return true;
+			}
+			for (const argument of expression.arguments) {
+				if (expressionUsesIdentifierUnsafely(argument, name)) {
+					return true;
+				}
+			}
+			return false;
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey && expressionUsesIdentifierUnsafely(field.key, name)) {
+					return true;
+				}
+				if (expressionUsesIdentifierUnsafely(field.value, name)) {
+					return true;
+				}
+			}
+			return false;
+		case LuaSyntaxKind.FunctionExpression:
+			// Nested function bodies are intentionally excluded for this rule.
+			return false;
+		default:
+			return false;
+	}
+}
+
+function assignmentDirectlyTargetsIdentifier(statement: LuaStatement, name: string): boolean {
+	if (statement.kind !== LuaSyntaxKind.AssignmentStatement || statement.operator !== LuaAssignmentOperator.Assign) {
+		return false;
+	}
+	for (const left of statement.left) {
+		if (left.kind === LuaSyntaxKind.IdentifierExpression && left.name === name) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function blockDirectlyAssignsIdentifier(blockStatements: ReadonlyArray<LuaStatement>, name: string): boolean {
+	for (const statement of blockStatements) {
+		if (assignmentDirectlyTargetsIdentifier(statement, name)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isSingleBranchConditionalAssignment(statement: LuaIfStatement, name: string): boolean {
+	if (statement.clauses.length !== 1) {
+		return false;
+	}
+	const onlyClause = statement.clauses[0];
+	if (!onlyClause.condition) {
+		return false;
+	}
+	return blockDirectlyAssignsIdentifier(onlyClause.block.body, name);
+}
+
+function statementUsesIdentifierUnsafelyInCurrentScope(statement: LuaStatement, name: string): boolean {
+	switch (statement.kind) {
+		case LuaSyntaxKind.LocalAssignmentStatement:
+			for (const value of statement.values) {
+				if (expressionUsesIdentifierUnsafely(value, name)) {
+					return true;
+				}
+			}
+			return false;
+		case LuaSyntaxKind.AssignmentStatement:
+			for (const left of statement.left) {
+				if (left.kind === LuaSyntaxKind.IdentifierExpression && left.name === name) {
+					if (statement.operator !== LuaAssignmentOperator.Assign) {
+						return true;
+					}
+				} else if (expressionUsesIdentifierUnsafely(left, name)) {
+					return true;
+				}
+			}
+			for (const right of statement.right) {
+				if (expressionUsesIdentifierUnsafely(right, name)) {
+					return true;
+				}
+			}
+			return false;
+		case LuaSyntaxKind.LocalFunctionStatement:
+		case LuaSyntaxKind.FunctionDeclarationStatement:
+			return false;
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					if (expressionUsesIdentifierUnsafely(expression, name)) {
+						return true;
+					}
+				}
+				return false;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					if (clause.condition && expressionUsesIdentifierUnsafely(clause.condition, name)) {
+						return true;
+					}
+					for (const nested of clause.block.body) {
+						if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
+							return true;
+						}
+					}
+				}
+				return false;
+			case LuaSyntaxKind.WhileStatement:
+				if (expressionUsesIdentifierUnsafely(statement.condition, name)) {
+					return true;
+				}
+				for (const nested of statement.block.body) {
+					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
+						return true;
+					}
+				}
+				return false;
+			case LuaSyntaxKind.RepeatStatement:
+				for (const nested of statement.block.body) {
+					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
+						return true;
+					}
+				}
+				return expressionUsesIdentifierUnsafely(statement.condition, name);
+			case LuaSyntaxKind.ForNumericStatement:
+				if (expressionUsesIdentifier(statement.start, name)
+					|| expressionUsesIdentifier(statement.limit, name)
+					|| expressionUsesIdentifier(statement.step, name)) {
+					return true;
+				}
+				for (const nested of statement.block.body) {
+					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
+						return true;
+					}
+				}
+				return false;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					if (expressionUsesIdentifierUnsafely(iterator, name)) {
+						return true;
+					}
+				}
+				for (const nested of statement.block.body) {
+					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
+						return true;
+					}
+				}
+				return false;
+			case LuaSyntaxKind.DoStatement:
+				for (const nested of statement.block.body) {
+					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
+						return true;
+					}
+				}
+				return false;
+			case LuaSyntaxKind.CallStatement:
+				return expressionUsesIdentifierUnsafely(statement.expression, name);
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				return false;
+		default:
+			return false;
+	}
+}
+
+function lintBranchUninitializedLocalPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	for (let index = 0; index + 2 < statements.length; index += 1) {
+		const declaration = statements[index];
+		if (declaration.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
+			continue;
+		}
+		if (declaration.names.length !== 1 || declaration.values.length !== 0) {
+			continue;
+		}
+		const name = declaration.names[0].name;
+		const maybeIf = statements[index + 1];
+		if (maybeIf.kind !== LuaSyntaxKind.IfStatement) {
+			continue;
+		}
+		if (!isSingleBranchConditionalAssignment(maybeIf, name)) {
+			continue;
+		}
+		let usedAfter = false;
+		for (let scan = index + 2; scan < statements.length; scan += 1) {
+			if (statementUsesIdentifierUnsafelyInCurrentScope(statements[scan], name)) {
+				usedAfter = true;
+				break;
+			}
+		}
+		if (!usedAfter) {
+			continue;
+		}
+		pushIssue(
+			issues,
+			'branch_uninitialized_local_pattern',
+			declaration.names[0],
+			`Local "${name}" is declared without initialization and only conditionally assigned before use. Assign deterministically or assign in all branches before use.`,
+		);
+	}
+}
+
 function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[], topLevel = true): void {
 	if (!expression) {
 		return;
@@ -3424,6 +3714,7 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 }
 
 function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	lintBranchUninitializedLocalPattern(statements, issues);
 	for (const statement of statements) {
 		switch (statement.kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement:

@@ -222,17 +222,19 @@ function progression.compile_program(program_spec)
 		local def = rule_defs[i]
 		local rule_label = def.id or ('rule_' .. i)
 		local cond = compile_predicates(program, resolve_when_all(def, rule_label))
-		local scope_key_idx
-		local scope_op
-		local scope_value
-		local scope_default
-		if def.scope ~= nil then
-			local key, op, value = normalize_condition(def.scope)
-			scope_key_idx = intern_key(program, key)
-			scope_op = op
-			scope_value = value
-			scope_default = default_for(value)
-		end
+			local scope_key_idx
+			local scope_op
+			local scope_value
+			local scope_default
+			if def.scope ~= nil then
+				local key, op, value = normalize_condition(def.scope)
+				scope_key_idx = intern_key(program, key)
+				scope_op = op
+				scope_value = value
+				scope_default = default_for(value)
+			else
+				scope_default = nil
+			end
 
 		program.rules[i] = {
 			id = rule_label,

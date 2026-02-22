@@ -245,6 +245,9 @@ local function contact_circle_circle(a, b)
 	if dist > eps then
 		nx = dx / dist
 		ny = dy / dist
+	else
+		nx = 1
+		ny = 0
 	end
 	return {
 		normal = { x = nx, y = ny },

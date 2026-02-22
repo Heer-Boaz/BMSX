@@ -205,6 +205,8 @@ local function draw_code_area()
 		if max_scroll > 0 then
 			local range = track_height - thumb_height
 			thumb_top = track_top + math.floor(range * (state.scroll_row / max_scroll))
+		else
+			thumb_top = track_top
 		end
 		put_rectfill(track_left, thumb_top, track_right, thumb_top + thumb_height, 0, constants.color_scrollbar_thumb)
 	end
@@ -223,6 +225,8 @@ local function draw_code_area()
 		if max_scroll > 0 then
 			local range = track_width - thumb_width
 			thumb_left = track_left + math.floor(range * (state.scroll_column / max_scroll))
+		else
+			thumb_left = track_left
 		end
 		put_rectfill(thumb_left, track_top, thumb_left + thumb_width, track_bottom, 0, constants.color_scrollbar_thumb)
 	end

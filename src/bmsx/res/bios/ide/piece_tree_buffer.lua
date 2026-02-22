@@ -295,6 +295,8 @@ function piece_tree_buffer:position_at(offset, out)
 	local row_start
 	if row > 0 then
 		row_start = self:find_offset_of_nth_lf(row - 1) + 1
+	else
+		row_start = 0
 	end
 	out.row = row
 	out.column = offset - row_start

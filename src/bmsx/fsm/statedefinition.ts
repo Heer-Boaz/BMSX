@@ -94,6 +94,9 @@ export class StateDefinition {
 		this.parent = parent; // The parent state machine is either the provided parent or null (for root machines)
 		this.is_concurrent ??= false; // Unless already defined, parallel is false
 		this.def_id = this.make_id(); // Alias for def_id
+		if (this.input_eval !== undefined && this.input_eval !== 'first' && this.input_eval !== 'all') {
+			throw new Error(`State definition '${this.def_id}' has invalid input_eval '${String(this.input_eval)}'. Expected 'first' or 'all'.`);
+		}
 		if (partialdef.states) {
 			this.construct_substate_machine(partialdef.states, this.root);
 		}

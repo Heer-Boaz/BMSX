@@ -177,7 +177,7 @@ function actioneffectcomponent.new(opts)
 	return self
 end
 
-function actioneffectcomponent:advance_time(dt_ms)
+function actioneffectcomponent:tick(dt_ms)
 	self.time_ms = self.time_ms + dt_ms
 	for id, until_time in pairs(self.cooldown_until) do
 		if self.time_ms >= until_time then
@@ -186,17 +186,9 @@ function actioneffectcomponent:advance_time(dt_ms)
 	end
 end
 
-function actioneffectcomponent:tick(dt_ms)
-	self:advance_time(dt_ms)
-end
-
-function actioneffectcomponent:grant_effect(definition)
-	self.definitions[definition.id] = definition
-end
-
-function actioneffectcomponent:grant_effect_by_id(id)
+function actioneffectcomponent:grant_effect(id)
 	local definition = registry.definitions[id]
-	self:grant_effect(definition)
+	self.definitions[definition.id] = definition
 end
 
 function actioneffectcomponent:revoke_effect(id)

@@ -207,7 +207,7 @@ local function attach_effects(instance, effects)
 	local component = action_effects.actioneffectcomponent.new({ parent = instance })
 	instance:add_component(component)
 	for i = 1, #effects do
-		component:grant_effect_by_id(effects[i])
+		component:grant_effect(effects[i])
 	end
 	instance.actioneffects = component
 end
@@ -605,7 +605,7 @@ function engine.grant_effect(object_id, effect_id)
 	if not component then
 		error("world object '" .. object_id .. "' does not have an actioneffectcomponent.")
 	end
-	component:grant_effect_by_id(effect_id)
+	component:grant_effect(effect_id)
 end
 
 function engine.trigger_effect(object_id, effect_id, options)

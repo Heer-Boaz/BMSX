@@ -255,6 +255,8 @@ function world_class:despawn(id_or_obj)
 	local obj
 	if type(id_or_obj) ~= "table" then
 		obj = self._by_id[id_or_obj]
+	else
+		obj = id_or_obj
 	end
 	obj:ondespawn()
 	obj:dispose()

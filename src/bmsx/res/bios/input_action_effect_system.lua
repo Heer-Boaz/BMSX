@@ -134,6 +134,8 @@ function inputactioneffectsystem:run_intent_assignments(owner, player_index, bin
 	local assignments
 	if type(spec) ~= "table" or spec.path then
 		assignments = { spec }
+	else
+		assignments = spec
 	end
 	for i = 1, #assignments do
 		local assignment = assignments[i]

@@ -978,7 +978,7 @@ end
 
 function player:try_vertical_room_switch_from_position()
 	local direction = self:nearing_room_exit()
-	if vertical_exit_directions[direction] then
+	if direction and vertical_exit_directions[direction] then
 		if direction == 'up' and (not self:can_switch_up_from_state()) then
 			local up_limit = service('c').current_room.world_top - service('c').current_room.tile_size
 			if self.y < up_limit then
