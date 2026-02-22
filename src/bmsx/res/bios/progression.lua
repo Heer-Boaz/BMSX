@@ -82,10 +82,7 @@ local function compare(left, op, right)
 	return left >= right
 end
 
-local function ensure_key(program, key)
-	if type(key) ~= 'string' then
-		error('progression key must be a string.')
-	end
+local function intern_key(program, key)
 	local key_idx = program.key2idx[key]
 	if key_idx ~= nil then
 		return key_idx
@@ -159,7 +156,7 @@ local function compile_predicates(program, source)
 	local out_index = 1
 	for i = 1, #source do
 		local key, op, value = normalize_condition(source[i])
-		compiled[out_index] = ensure_key(program, key)
+		compiled[out_index] = intern_key(program, key)
 		compiled[out_index + 1] = op
 		compiled[out_index + 2] = value
 		compiled[out_index + 3] = default_for(value)
@@ -199,7 +196,7 @@ end
 function progression_state:set(key, value)
 	local key_idx = self.program.key2idx[key]
 	if key_idx == nil then
-		key_idx = ensure_key(self.program, key)
+		key_idx = intern_key(self.program, key)
 	end
 	if self.values[key_idx] == value then
 		return false
@@ -241,7 +238,7 @@ local function compile_set_actions(state_program, actions)
 		if type(key) ~= 'string' then
 			error("progression set action at index " .. i .. " must define a string key.")
 		end
-		ensure_key(state_program, key)
+		intern_key(state_program, key)
 	end
 	return actions
 end
@@ -270,7 +267,7 @@ function progression.compile_program(program_spec)
 	local state_program = new_state_program()
 	if seed_keys ~= nil then
 		for i = 1, #seed_keys do
-			ensure_key(state_program, seed_keys[i])
+			intern_key(state_program, seed_keys[i])
 		end
 	end
 	local rules = {}
