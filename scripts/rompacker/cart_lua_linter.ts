@@ -102,10 +102,15 @@ type SingleUseHasTagContext = {
 	readonly scopeStack: UnusedInitValueScope[];
 };
 
+type SingleUseLocalReportKind =
+	'call_result' |
+	'small_helper';
+
 type SingleUseLocalBinding = {
 	readonly declaration: LuaIdentifierExpression;
-	readonly reportable: boolean;
+	readonly reportKind: SingleUseLocalReportKind | null;
 	readCount: number;
+	callReadCount: number;
 };
 
 type SingleUseLocalContext = {
@@ -185,6 +190,7 @@ const FORBIDDEN_STATE_CALL_RECEIVERS = new Set<string>([
 	'sc',
 	'worldobject',
 ]);
+const SINGLE_USE_LOCAL_SMALL_HELPER_MAX_LINES = 7;
 const LINT_SUPPRESSION_OPEN_MARKER = '-- bmsx-lint:disable';
 const LINT_SUPPRESSION_CLOSE_MARKER = '-- bmsx-lint:enable';
 const suppressedLineRangesByPath = new Map<string, ReadonlyArray<LuaLintSuppressionRange>>();
@@ -926,6 +932,45 @@ function isSingleUseLocalCandidateValue(expression: LuaExpression | undefined): 
 	return true;
 }
 
+function getRangeLineSpan(node: { readonly range: { readonly start: { readonly line: number; }; readonly end: { readonly line: number; }; }; }): number {
+	const lineSpan = node.range.end.line - node.range.start.line + 1;
+	if (lineSpan <= 0) {
+		return 1;
+	}
+	return lineSpan;
+}
+
+function isTrivialSingleUseLocalHelperFunctionExpression(expression: LuaFunctionExpression): boolean {
+	if (getRangeLineSpan(expression) > SINGLE_USE_LOCAL_SMALL_HELPER_MAX_LINES) {
+		return false;
+	}
+	if (expression.parameters.length !== 0) {
+		return false;
+	}
+	const bodyStatements = expression.body.body;
+	if (bodyStatements.length !== 1) {
+		return false;
+	}
+	const onlyStatement = bodyStatements[0];
+	if (onlyStatement.kind !== LuaSyntaxKind.ReturnStatement) {
+		return false;
+	}
+	if (onlyStatement.expressions.length !== 1) {
+		return false;
+	}
+	return true;
+}
+
+function resolveSingleUseLocalReportKindForValue(expression: LuaExpression | undefined): SingleUseLocalReportKind | null {
+	if (isSingleUseLocalCandidateValue(expression)) {
+		return 'call_result';
+	}
+	if (expression && expression.kind === LuaSyntaxKind.FunctionExpression && isTrivialSingleUseLocalHelperFunctionExpression(expression)) {
+		return 'small_helper';
+	}
+	return null;
+}
+
 function lintSelfImgIdAssignmentPattern(target: LuaExpression, value: LuaExpression | undefined, issues: LuaLintIssue[]): void {
 	if (!isSelfImageIdAssignmentTarget(target) || !value) {
 		return;
@@ -1609,29 +1654,137 @@ function isStaticLookupTableConstructor(expression: LuaExpression): boolean {
 	return true;
 }
 
+function lintInlineStaticLookupTableExpression(
+	expression: LuaExpression | null,
+	functionName: string,
+	issues: LuaLintIssue[],
+): void {
+	if (!expression) {
+		return;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					lintInlineStaticLookupTableExpression(field.key, functionName, issues);
+				}
+				lintInlineStaticLookupTableExpression(field.value, functionName, issues);
+			}
+			return;
+		case LuaSyntaxKind.MemberExpression:
+			lintInlineStaticLookupTableExpression(expression.base, functionName, issues);
+			return;
+		case LuaSyntaxKind.IndexExpression:
+			if (isStaticLookupTableConstructor(expression.base)) {
+				pushIssue(
+					issues,
+					'inline_static_lookup_table_pattern',
+					expression.base,
+					`Inline static lookup table expression inside function is forbidden (in "${functionName}"). Hoist static lookup tables to file scope.`,
+				);
+			} else {
+				lintInlineStaticLookupTableExpression(expression.base, functionName, issues);
+			}
+			lintInlineStaticLookupTableExpression(expression.index, functionName, issues);
+			return;
+		case LuaSyntaxKind.BinaryExpression:
+			lintInlineStaticLookupTableExpression(expression.left, functionName, issues);
+			lintInlineStaticLookupTableExpression(expression.right, functionName, issues);
+			return;
+		case LuaSyntaxKind.UnaryExpression:
+			lintInlineStaticLookupTableExpression(expression.operand, functionName, issues);
+			return;
+		case LuaSyntaxKind.CallExpression:
+			lintInlineStaticLookupTableExpression(expression.callee, functionName, issues);
+			for (const argument of expression.arguments) {
+				lintInlineStaticLookupTableExpression(argument, functionName, issues);
+			}
+			return;
+		case LuaSyntaxKind.FunctionExpression:
+			// Nested function bodies are linted separately by lintFunctionBody/lintStatements.
+			return;
+		default:
+			return;
+	}
+}
+
+function lintInlineStaticLookupTableStatements(
+	statements: ReadonlyArray<LuaStatement>,
+	functionName: string,
+	issues: LuaLintIssue[],
+): void {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement:
+				for (const value of statement.values) {
+					lintInlineStaticLookupTableExpression(value, functionName, issues);
+				}
+				break;
+			case LuaSyntaxKind.AssignmentStatement:
+				for (const left of statement.left) {
+					lintInlineStaticLookupTableExpression(left, functionName, issues);
+				}
+				for (const right of statement.right) {
+					lintInlineStaticLookupTableExpression(right, functionName, issues);
+				}
+				break;
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					lintInlineStaticLookupTableExpression(expression, functionName, issues);
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					if (clause.condition) {
+						lintInlineStaticLookupTableExpression(clause.condition, functionName, issues);
+					}
+					lintInlineStaticLookupTableStatements(clause.block.body, functionName, issues);
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement:
+				lintInlineStaticLookupTableExpression(statement.condition, functionName, issues);
+				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
+				break;
+			case LuaSyntaxKind.RepeatStatement:
+				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
+				lintInlineStaticLookupTableExpression(statement.condition, functionName, issues);
+				break;
+			case LuaSyntaxKind.ForNumericStatement:
+				lintInlineStaticLookupTableExpression(statement.start, functionName, issues);
+				lintInlineStaticLookupTableExpression(statement.limit, functionName, issues);
+				lintInlineStaticLookupTableExpression(statement.step, functionName, issues);
+				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
+				break;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					lintInlineStaticLookupTableExpression(iterator, functionName, issues);
+				}
+				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
+				break;
+			case LuaSyntaxKind.DoStatement:
+				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
+				break;
+			case LuaSyntaxKind.CallStatement:
+				lintInlineStaticLookupTableExpression(statement.expression, functionName, issues);
+				break;
+			case LuaSyntaxKind.LocalFunctionStatement:
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
+		}
+	}
+}
+
 function lintInlineStaticLookupTablePattern(
 	functionName: string,
 	functionExpression: LuaFunctionExpression,
 	issues: LuaLintIssue[],
 ): void {
-	for (const statement of functionExpression.body.body) {
-		if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
-			continue;
-		}
-		if (statement.names.length !== 1 || statement.values.length !== 1) {
-			continue;
-		}
-		const onlyValue = statement.values[0];
-		if (!isStaticLookupTableConstructor(onlyValue)) {
-			continue;
-		}
-		pushIssue(
-			issues,
-			'inline_static_lookup_table_pattern',
-			statement.names[0],
-			`Inline static lookup table inside function is forbidden ("${statement.names[0].name}" in "${functionName}"). Hoist static lookup tables to file scope.`,
-		);
-	}
+	lintInlineStaticLookupTableStatements(functionExpression.body.body, functionName, issues);
 }
 
 function lintSplitLocalTableInitPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
@@ -2564,6 +2717,13 @@ function enterSingleUseLocalScope(context: SingleUseLocalContext): void {
 	context.scopeStack.push({ names: [] });
 }
 
+function singleUseLocalMessage(binding: SingleUseLocalBinding): string {
+	if (binding.reportKind === 'small_helper') {
+		return `Small one-off local helper "${binding.declaration.name}" is forbidden. Inline it, or keep it only if it materially reduces complexity.`;
+	}
+	return `One-off cached call-result local "${binding.declaration.name}" is forbidden. Inline the call/value instead.`;
+}
+
 function leaveSingleUseLocalScope(context: SingleUseLocalContext): void {
 	const scope = context.scopeStack.pop();
 	if (!scope) {
@@ -2576,13 +2736,18 @@ function leaveSingleUseLocalScope(context: SingleUseLocalContext): void {
 			continue;
 		}
 		const binding = stack.pop();
-		if (binding && binding.reportable && binding.readCount === 1) {
-			pushIssue(
-				context.issues,
-				'single_use_local_pattern',
-				binding.declaration,
-				`One-off cached call-result local "${binding.declaration.name}" is forbidden. Inline the call/value instead.`,
-			);
+		if (binding && binding.reportKind !== null) {
+			const shouldReport = binding.reportKind === 'small_helper'
+				? binding.readCount === 1 && binding.callReadCount === 1
+				: binding.readCount === 1;
+			if (shouldReport) {
+				pushIssue(
+					context.issues,
+					'single_use_local_pattern',
+					binding.declaration,
+					singleUseLocalMessage(binding),
+				);
+			}
 		}
 		if (stack.length === 0) {
 			context.bindingStacksByName.delete(name);
@@ -2593,7 +2758,7 @@ function leaveSingleUseLocalScope(context: SingleUseLocalContext): void {
 function declareSingleUseLocalBinding(
 	context: SingleUseLocalContext,
 	declaration: LuaIdentifierExpression,
-	reportable: boolean,
+	reportKind: SingleUseLocalReportKind | null,
 ): void {
 	const isTopLevelScope = context.scopeStack.length === 1;
 	const scope = context.scopeStack[context.scopeStack.length - 1];
@@ -2605,17 +2770,22 @@ function declareSingleUseLocalBinding(
 	}
 	stack.push({
 		declaration,
-		reportable: reportable && isTopLevelScope && !declaration.name.startsWith('_'),
+		reportKind: isTopLevelScope && !declaration.name.startsWith('_') ? reportKind : null,
 		readCount: 0,
+		callReadCount: 0,
 	});
 }
 
-function markSingleUseLocalRead(context: SingleUseLocalContext, identifier: LuaIdentifierExpression): void {
+function markSingleUseLocalRead(context: SingleUseLocalContext, identifier: LuaIdentifierExpression, isCallRead = false): void {
 	const stack = context.bindingStacksByName.get(identifier.name);
 	if (!stack || stack.length === 0) {
 		return;
 	}
-	stack[stack.length - 1].readCount += 1;
+	const binding = stack[stack.length - 1];
+	binding.readCount += 1;
+	if (isCallRead) {
+		binding.callReadCount += 1;
+	}
 }
 
 function lintSingleUseLocalInExpression(expression: LuaExpression, context: SingleUseLocalContext): void {
@@ -2637,32 +2807,36 @@ function lintSingleUseLocalInExpression(expression: LuaExpression, context: Sing
 			lintSingleUseLocalInExpression(expression.left, context);
 			lintSingleUseLocalInExpression(expression.right, context);
 			return;
-		case LuaSyntaxKind.UnaryExpression:
-			lintSingleUseLocalInExpression(expression.operand, context);
-			return;
-		case LuaSyntaxKind.CallExpression:
-			lintSingleUseLocalInExpression(expression.callee, context);
-			for (const argument of expression.arguments) {
-				lintSingleUseLocalInExpression(argument, context);
-			}
-			return;
-		case LuaSyntaxKind.TableConstructorExpression:
+			case LuaSyntaxKind.UnaryExpression:
+				lintSingleUseLocalInExpression(expression.operand, context);
+				return;
+			case LuaSyntaxKind.CallExpression:
+				if (expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
+					markSingleUseLocalRead(context, expression.callee, true);
+				} else {
+					lintSingleUseLocalInExpression(expression.callee, context);
+				}
+				for (const argument of expression.arguments) {
+					lintSingleUseLocalInExpression(argument, context);
+				}
+				return;
+			case LuaSyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
 				if (field.kind === LuaTableFieldKind.ExpressionKey) {
 					lintSingleUseLocalInExpression(field.key, context);
 				}
 				lintSingleUseLocalInExpression(field.value, context);
 			}
-			return;
-		case LuaSyntaxKind.FunctionExpression: {
-			enterSingleUseLocalScope(context);
-			for (const parameter of expression.parameters) {
-				declareSingleUseLocalBinding(context, parameter, false);
+				return;
+			case LuaSyntaxKind.FunctionExpression: {
+				enterSingleUseLocalScope(context);
+				for (const parameter of expression.parameters) {
+					declareSingleUseLocalBinding(context, parameter, null);
+				}
+				lintSingleUseLocalInStatements(expression.body.body, context);
+				leaveSingleUseLocalScope(context);
+				return;
 			}
-			lintSingleUseLocalInStatements(expression.body.body, context);
-			leaveSingleUseLocalScope(context);
-			return;
-		}
 		default:
 			return;
 	}
@@ -2692,16 +2866,16 @@ function lintSingleUseLocalInAssignmentTarget(
 function lintSingleUseLocalInStatements(statements: ReadonlyArray<LuaStatement>, context: SingleUseLocalContext): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement:
-				for (const value of statement.values) {
-					lintSingleUseLocalInExpression(value, context);
-				}
-				for (let index = 0; index < statement.names.length; index += 1) {
-					const value = index < statement.values.length ? statement.values[index] : undefined;
-					const reportable = isSingleUseLocalCandidateValue(value);
-					declareSingleUseLocalBinding(context, statement.names[index], reportable);
-				}
-				break;
+				case LuaSyntaxKind.LocalAssignmentStatement:
+					for (const value of statement.values) {
+						lintSingleUseLocalInExpression(value, context);
+					}
+					for (let index = 0; index < statement.names.length; index += 1) {
+						const value = index < statement.values.length ? statement.values[index] : undefined;
+						const reportKind = resolveSingleUseLocalReportKindForValue(value);
+						declareSingleUseLocalBinding(context, statement.names[index], reportKind);
+					}
+					break;
 			case LuaSyntaxKind.AssignmentStatement:
 				for (const right of statement.right) {
 					lintSingleUseLocalInExpression(right, context);
@@ -2712,24 +2886,25 @@ function lintSingleUseLocalInStatements(statements: ReadonlyArray<LuaStatement>,
 				break;
 			case LuaSyntaxKind.LocalFunctionStatement: {
 				const localFunction = statement as LuaLocalFunctionStatement;
-				declareSingleUseLocalBinding(context, localFunction.name, false);
+				const reportKind = isTrivialSingleUseLocalHelperFunctionExpression(localFunction.functionExpression) ? 'small_helper' : null;
+				declareSingleUseLocalBinding(context, localFunction.name, reportKind);
 				enterSingleUseLocalScope(context);
 				for (const parameter of localFunction.functionExpression.parameters) {
-					declareSingleUseLocalBinding(context, parameter, false);
+					declareSingleUseLocalBinding(context, parameter, null);
+					}
+					lintSingleUseLocalInStatements(localFunction.functionExpression.body.body, context);
+					leaveSingleUseLocalScope(context);
+					break;
 				}
-				lintSingleUseLocalInStatements(localFunction.functionExpression.body.body, context);
-				leaveSingleUseLocalScope(context);
-				break;
-			}
-			case LuaSyntaxKind.FunctionDeclarationStatement: {
-				const declaration = statement as LuaFunctionDeclarationStatement;
-				enterSingleUseLocalScope(context);
-				for (const parameter of declaration.functionExpression.parameters) {
-					declareSingleUseLocalBinding(context, parameter, false);
-				}
-				lintSingleUseLocalInStatements(declaration.functionExpression.body.body, context);
-				leaveSingleUseLocalScope(context);
-				break;
+				case LuaSyntaxKind.FunctionDeclarationStatement: {
+					const declaration = statement as LuaFunctionDeclarationStatement;
+					enterSingleUseLocalScope(context);
+					for (const parameter of declaration.functionExpression.parameters) {
+						declareSingleUseLocalBinding(context, parameter, null);
+					}
+					lintSingleUseLocalInStatements(declaration.functionExpression.body.body, context);
+					leaveSingleUseLocalScope(context);
+					break;
 			}
 			case LuaSyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
@@ -2758,26 +2933,26 @@ function lintSingleUseLocalInStatements(statements: ReadonlyArray<LuaStatement>,
 				leaveSingleUseLocalScope(context);
 				lintSingleUseLocalInExpression(statement.condition, context);
 				break;
-			case LuaSyntaxKind.ForNumericStatement:
-				lintSingleUseLocalInExpression(statement.start, context);
-				lintSingleUseLocalInExpression(statement.limit, context);
-				lintSingleUseLocalInExpression(statement.step, context);
-				enterSingleUseLocalScope(context);
-				declareSingleUseLocalBinding(context, statement.variable, false);
-				lintSingleUseLocalInStatements(statement.block.body, context);
-				leaveSingleUseLocalScope(context);
-				break;
-			case LuaSyntaxKind.ForGenericStatement:
-				for (const iterator of statement.iterators) {
+				case LuaSyntaxKind.ForNumericStatement:
+					lintSingleUseLocalInExpression(statement.start, context);
+					lintSingleUseLocalInExpression(statement.limit, context);
+					lintSingleUseLocalInExpression(statement.step, context);
+					enterSingleUseLocalScope(context);
+					declareSingleUseLocalBinding(context, statement.variable, null);
+					lintSingleUseLocalInStatements(statement.block.body, context);
+					leaveSingleUseLocalScope(context);
+					break;
+				case LuaSyntaxKind.ForGenericStatement:
+					for (const iterator of statement.iterators) {
 					lintSingleUseLocalInExpression(iterator, context);
 				}
-				enterSingleUseLocalScope(context);
-				for (const variable of statement.variables) {
-					declareSingleUseLocalBinding(context, variable, false);
-				}
-				lintSingleUseLocalInStatements(statement.block.body, context);
-				leaveSingleUseLocalScope(context);
-				break;
+					enterSingleUseLocalScope(context);
+					for (const variable of statement.variables) {
+						declareSingleUseLocalBinding(context, variable, null);
+					}
+					lintSingleUseLocalInStatements(statement.block.body, context);
+					leaveSingleUseLocalScope(context);
+					break;
 			case LuaSyntaxKind.DoStatement:
 				enterSingleUseLocalScope(context);
 				lintSingleUseLocalInStatements(statement.block.body, context);
