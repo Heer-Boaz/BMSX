@@ -28,6 +28,7 @@ import type {
 
 type LuaLintIssueRule =
 	'uppercase_code_pattern' |
+	'comparison_wrapper_getter_pattern' |
 	'visual_update_pattern' |
 	'bool01_duplicate_pattern' |
 	'pure_copy_function_pattern' |
@@ -51,6 +52,7 @@ type LuaLintIssueRule =
 	'forbidden_matches_state_path_pattern' |
 	'constant_copy_pattern' |
 	'split_local_table_init_pattern' |
+	'duplicate_initializer_pattern' |
 	'handler_identity_dispatch_pattern' |
 	'ensure_local_alias_pattern' |
 	'inline_static_lookup_table_pattern' |
@@ -110,6 +112,21 @@ type SingleUseLocalContext = {
 	readonly issues: LuaLintIssue[];
 	readonly bindingStacksByName: Map<string, SingleUseLocalBinding[]>;
 	readonly scopeStack: UnusedInitValueScope[];
+};
+
+type DuplicateInitializerBinding = {
+	readonly declaration: LuaIdentifierExpression;
+	initializerSignature: string;
+};
+
+type DuplicateInitializerScope = {
+	readonly names: string[];
+};
+
+type DuplicateInitializerContext = {
+	readonly issues: LuaLintIssue[];
+	readonly bindingStacksByName: Map<string, DuplicateInitializerBinding[]>;
+	readonly scopeStack: DuplicateInitializerScope[];
 };
 
 type LuaCartLintOptions = {
@@ -173,6 +190,7 @@ const LINT_SUPPRESSION_CLOSE_MARKER = '-- bmsx-lint:enable';
 const suppressedLineRangesByPath = new Map<string, ReadonlyArray<LuaLintSuppressionRange>>();
 const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'uppercase_code_pattern',
+	'comparison_wrapper_getter_pattern',
 	'visual_update_pattern',
 	'bool01_duplicate_pattern',
 	'pure_copy_function_pattern',
@@ -196,6 +214,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'forbidden_matches_state_path_pattern',
 	'constant_copy_pattern',
 	'split_local_table_init_pattern',
+	'duplicate_initializer_pattern',
 	'handler_identity_dispatch_pattern',
 	'ensure_local_alias_pattern',
 	'inline_static_lookup_table_pattern',
@@ -1114,6 +1133,56 @@ function matchesGetterPattern(functionExpression: LuaFunctionExpression): boolea
 		|| matchesCallDelegationGetter(expression, parameterNames);
 }
 
+function isComparisonOperator(operator: LuaBinaryOperator): boolean {
+	return operator === LuaBinaryOperator.Equal
+		|| operator === LuaBinaryOperator.NotEqual
+		|| operator === LuaBinaryOperator.LessThan
+		|| operator === LuaBinaryOperator.LessEqual
+		|| operator === LuaBinaryOperator.GreaterThan
+		|| operator === LuaBinaryOperator.GreaterEqual;
+}
+
+function isComparisonWrapperProbeExpression(expression: LuaExpression): boolean {
+	if (isDirectValueGetterExpression(expression)) {
+		return true;
+	}
+	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+		return false;
+	}
+	if (isBuiltinCallExpression(expression)) {
+		return false;
+	}
+	return isDelegationCallCandidate(expression);
+}
+
+function isSingleValueComparisonWrapperExpression(expression: LuaExpression): boolean {
+	if (expression.kind !== LuaSyntaxKind.BinaryExpression || !isComparisonOperator(expression.operator)) {
+		return false;
+	}
+	const leftLiteral = isPrimitiveLiteralExpression(expression.left);
+	const rightLiteral = isPrimitiveLiteralExpression(expression.right);
+	if (leftLiteral === rightLiteral) {
+		return false;
+	}
+	const probe = leftLiteral ? expression.right : expression.left;
+	return isComparisonWrapperProbeExpression(probe);
+}
+
+function matchesComparisonWrapperGetterPattern(functionExpression: LuaFunctionExpression): boolean {
+	if (functionExpression.parameters.length !== 0 || functionExpression.hasVararg) {
+		return false;
+	}
+	const body = functionExpression.body.body;
+	if (body.length !== 1) {
+		return false;
+	}
+	const statement = body[0];
+	if (statement.kind !== LuaSyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
+		return false;
+	}
+	return isSingleValueComparisonWrapperExpression(statement.expressions[0]);
+}
+
 function isAssignableStorageExpression(expression: LuaExpression): boolean {
 	return expression.kind === LuaSyntaxKind.IdentifierExpression
 		|| expression.kind === LuaSyntaxKind.MemberExpression
@@ -1603,6 +1672,295 @@ function lintSplitLocalTableInitPattern(statements: ReadonlyArray<LuaStatement>,
 			);
 			break;
 		}
+	}
+}
+
+function getExpressionSignature(expression: LuaExpression): string {
+	switch (expression.kind) {
+		case LuaSyntaxKind.NumericLiteralExpression:
+			return `n:${String(expression.value)}`;
+		case LuaSyntaxKind.StringLiteralExpression:
+			return `s:${JSON.stringify(expression.value)}`;
+		case LuaSyntaxKind.BooleanLiteralExpression:
+			return expression.value ? 'b:1' : 'b:0';
+		case LuaSyntaxKind.NilLiteralExpression:
+			return 'nil';
+		case LuaSyntaxKind.VarargExpression:
+			return 'vararg';
+		case LuaSyntaxKind.IdentifierExpression:
+			return `id:${expression.name}`;
+		case LuaSyntaxKind.MemberExpression:
+			return `member:${getExpressionSignature(expression.base)}.${expression.identifier}`;
+		case LuaSyntaxKind.IndexExpression:
+			return `index:${getExpressionSignature(expression.base)}[${getExpressionSignature(expression.index)}]`;
+		case LuaSyntaxKind.UnaryExpression:
+			return `unary:${expression.operator}:${getExpressionSignature(expression.operand)}`;
+		case LuaSyntaxKind.BinaryExpression:
+			return `binary:${expression.operator}:${getExpressionSignature(expression.left)}:${getExpressionSignature(expression.right)}`;
+		case LuaSyntaxKind.CallExpression: {
+			const argumentSignatures = expression.arguments.map(getExpressionSignature);
+			return `call:${expression.methodName ?? ''}:${getExpressionSignature(expression.callee)}(${argumentSignatures.join(',')})`;
+		}
+		case LuaSyntaxKind.TableConstructorExpression: {
+			const fieldSignatures = expression.fields.map(field => {
+				if (field.kind === LuaTableFieldKind.Array) {
+					return `a:${getExpressionSignature(field.value)}`;
+				}
+				if (field.kind === LuaTableFieldKind.IdentifierKey) {
+					return `k:${field.name}:${getExpressionSignature(field.value)}`;
+				}
+				return `e:${getExpressionSignature(field.key)}:${getExpressionSignature(field.value)}`;
+			});
+			return `table:{${fieldSignatures.join('|')}}`;
+		}
+		case LuaSyntaxKind.FunctionExpression:
+			return '';
+		default:
+			return '';
+	}
+}
+
+function createDuplicateInitializerContext(issues: LuaLintIssue[]): DuplicateInitializerContext {
+	const context: DuplicateInitializerContext = {
+		issues,
+		bindingStacksByName: new Map<string, DuplicateInitializerBinding[]>(),
+		scopeStack: [],
+	};
+	enterDuplicateInitializerScope(context);
+	return context;
+}
+
+function resolveDuplicateInitializerBinding(context: DuplicateInitializerContext, name: string): DuplicateInitializerBinding {
+	const stack = context.bindingStacksByName.get(name);
+	if (!stack || stack.length === 0) {
+		return undefined;
+	}
+	return stack[stack.length - 1];
+}
+
+function enterDuplicateInitializerScope(context: DuplicateInitializerContext): void {
+	context.scopeStack.push({ names: [] });
+}
+
+function leaveDuplicateInitializerScope(context: DuplicateInitializerContext): void {
+	const scope = context.scopeStack.pop();
+	if (!scope) {
+		return;
+	}
+	for (const name of scope.names) {
+		const stack = context.bindingStacksByName.get(name);
+		if (!stack || stack.length === 0) {
+			continue;
+		}
+		stack.pop();
+		if (stack.length === 0) {
+			context.bindingStacksByName.delete(name);
+		}
+	}
+}
+
+function declareDuplicateInitializerBinding(
+	context: DuplicateInitializerContext,
+	declaration: LuaIdentifierExpression,
+	initializerSignature: string,
+): void {
+	const scope = context.scopeStack[context.scopeStack.length - 1];
+	scope.names.push(declaration.name);
+	let stack = context.bindingStacksByName.get(declaration.name);
+	if (!stack) {
+		stack = [];
+		context.bindingStacksByName.set(declaration.name, stack);
+	}
+	stack.push({
+		declaration,
+		initializerSignature,
+	});
+}
+
+function lintDuplicateInitializerInExpression(expression: LuaExpression | null, context: DuplicateInitializerContext): void {
+	if (!expression) {
+		return;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.MemberExpression:
+			lintDuplicateInitializerInExpression(expression.base, context);
+			return;
+		case LuaSyntaxKind.IndexExpression:
+			lintDuplicateInitializerInExpression(expression.base, context);
+			lintDuplicateInitializerInExpression(expression.index, context);
+			return;
+		case LuaSyntaxKind.BinaryExpression:
+			lintDuplicateInitializerInExpression(expression.left, context);
+			lintDuplicateInitializerInExpression(expression.right, context);
+			return;
+		case LuaSyntaxKind.UnaryExpression:
+			lintDuplicateInitializerInExpression(expression.operand, context);
+			return;
+		case LuaSyntaxKind.CallExpression:
+			lintDuplicateInitializerInExpression(expression.callee, context);
+			for (const argument of expression.arguments) {
+				lintDuplicateInitializerInExpression(argument, context);
+			}
+			return;
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					lintDuplicateInitializerInExpression(field.key, context);
+				}
+				lintDuplicateInitializerInExpression(field.value, context);
+			}
+			return;
+		case LuaSyntaxKind.FunctionExpression:
+			enterDuplicateInitializerScope(context);
+			for (const parameter of expression.parameters) {
+				declareDuplicateInitializerBinding(context, parameter, '');
+			}
+			lintDuplicateInitializerInStatements(expression.body.body, context);
+			leaveDuplicateInitializerScope(context);
+			return;
+		default:
+			return;
+	}
+}
+
+function lintDuplicateInitializerInStatements(
+	statements: ReadonlyArray<LuaStatement>,
+	context: DuplicateInitializerContext,
+): void {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement: {
+				for (const value of statement.values) {
+					lintDuplicateInitializerInExpression(value, context);
+				}
+				const isTopLevelScope = context.scopeStack.length === 1;
+				for (let index = 0; index < statement.names.length; index += 1) {
+					const hasInitializer = index < statement.values.length;
+					const initializerSignature = isTopLevelScope && hasInitializer
+						? getExpressionSignature(statement.values[index])
+						: '';
+					declareDuplicateInitializerBinding(context, statement.names[index], initializerSignature);
+				}
+				break;
+			}
+			case LuaSyntaxKind.AssignmentStatement: {
+				for (const left of statement.left) {
+					lintDuplicateInitializerInExpression(left, context);
+				}
+				for (const right of statement.right) {
+					lintDuplicateInitializerInExpression(right, context);
+				}
+				const pairCount = Math.min(statement.left.length, statement.right.length);
+				for (let index = 0; index < pairCount; index += 1) {
+					const left = statement.left[index];
+					if (left.kind !== LuaSyntaxKind.IdentifierExpression) {
+						continue;
+					}
+					const binding = resolveDuplicateInitializerBinding(context, left.name);
+					if (!binding || binding.initializerSignature.length === 0) {
+						continue;
+					}
+					const assignmentSignature = getExpressionSignature(statement.right[index]);
+					if (assignmentSignature.length === 0 || assignmentSignature !== binding.initializerSignature) {
+						continue;
+					}
+					pushIssue(
+						context.issues,
+						'duplicate_initializer_pattern',
+						left,
+						`Duplicate initializer pattern is forbidden ("${left.name}"). Do not initialize and later reassign the same value expression; keep one deterministic initialization point.`,
+					);
+				}
+				break;
+			}
+			case LuaSyntaxKind.LocalFunctionStatement:
+				declareDuplicateInitializerBinding(context, statement.name, '');
+				enterDuplicateInitializerScope(context);
+				for (const parameter of statement.functionExpression.parameters) {
+					declareDuplicateInitializerBinding(context, parameter, '');
+				}
+				lintDuplicateInitializerInStatements(statement.functionExpression.body.body, context);
+				leaveDuplicateInitializerScope(context);
+				break;
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+				enterDuplicateInitializerScope(context);
+				for (const parameter of statement.functionExpression.parameters) {
+					declareDuplicateInitializerBinding(context, parameter, '');
+				}
+				lintDuplicateInitializerInStatements(statement.functionExpression.body.body, context);
+				leaveDuplicateInitializerScope(context);
+				break;
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					lintDuplicateInitializerInExpression(expression, context);
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					if (clause.condition) {
+						lintDuplicateInitializerInExpression(clause.condition, context);
+					}
+					enterDuplicateInitializerScope(context);
+					lintDuplicateInitializerInStatements(clause.block.body, context);
+					leaveDuplicateInitializerScope(context);
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement:
+				lintDuplicateInitializerInExpression(statement.condition, context);
+				enterDuplicateInitializerScope(context);
+				lintDuplicateInitializerInStatements(statement.block.body, context);
+				leaveDuplicateInitializerScope(context);
+				break;
+			case LuaSyntaxKind.RepeatStatement:
+				enterDuplicateInitializerScope(context);
+				lintDuplicateInitializerInStatements(statement.block.body, context);
+				lintDuplicateInitializerInExpression(statement.condition, context);
+				leaveDuplicateInitializerScope(context);
+				break;
+			case LuaSyntaxKind.ForNumericStatement:
+				lintDuplicateInitializerInExpression(statement.start, context);
+				lintDuplicateInitializerInExpression(statement.limit, context);
+				lintDuplicateInitializerInExpression(statement.step, context);
+				enterDuplicateInitializerScope(context);
+				declareDuplicateInitializerBinding(context, statement.variable, '');
+				lintDuplicateInitializerInStatements(statement.block.body, context);
+				leaveDuplicateInitializerScope(context);
+				break;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					lintDuplicateInitializerInExpression(iterator, context);
+				}
+				enterDuplicateInitializerScope(context);
+				for (const variable of statement.variables) {
+					declareDuplicateInitializerBinding(context, variable, '');
+				}
+				lintDuplicateInitializerInStatements(statement.block.body, context);
+				leaveDuplicateInitializerScope(context);
+				break;
+			case LuaSyntaxKind.DoStatement:
+				enterDuplicateInitializerScope(context);
+				lintDuplicateInitializerInStatements(statement.block.body, context);
+				leaveDuplicateInitializerScope(context);
+				break;
+			case LuaSyntaxKind.CallStatement:
+				lintDuplicateInitializerInExpression(statement.expression, context);
+				break;
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+function lintDuplicateInitializerPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	const context = createDuplicateInitializerContext(issues);
+	try {
+		lintDuplicateInitializerInStatements(statements, context);
+	} finally {
+		leaveDuplicateInitializerScope(context);
 	}
 }
 
@@ -2714,6 +3072,15 @@ function lintFunctionBody(
 			`Getter/setter wrapper pattern is forbidden ("${functionName}").`,
 		);
 	}
+	const isComparisonWrapperGetter = isNamedFunction && matchesComparisonWrapperGetterPattern(functionExpression);
+	if (isComparisonWrapperGetter) {
+		pushIssue(
+			issues,
+			'comparison_wrapper_getter_pattern',
+			functionExpression,
+			`Single-value comparison wrapper is forbidden ("${functionName}"). Inline the comparison or expose the original value source directly.`,
+		);
+	}
 	const isBuiltinRecreation = isNamedFunction && matchesBuiltinRecreationPattern(functionExpression);
 	if (isBuiltinRecreation) {
 		pushIssue(
@@ -3036,6 +3403,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 				const chunk = parsed.path;
 				topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
 				lintSplitLocalTableInitPattern(chunk.body, issues);
+				lintDuplicateInitializerPattern(chunk.body, issues);
 				lintStagedExportLocalCallPattern(chunk.body, issues);
 				lintStagedExportLocalTablePattern(chunk.body, issues);
 				lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
