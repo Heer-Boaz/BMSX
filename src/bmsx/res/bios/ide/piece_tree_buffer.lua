@@ -126,7 +126,7 @@ function piece_tree_buffer.new(text)
 	self.root = nil
 	self.buffers = {}
 	self.buffers_len = 0
-	self.original = new_buffer_block(text or "")
+	self.original = new_buffer_block((text))
 	self.added = new_added_buffer()
 	self.buffers[0] = self.original
 	self.buffers[1] = self.added
@@ -292,7 +292,7 @@ end
 function piece_tree_buffer:position_at(offset, out)
 	assert_ok(offset >= 0 and offset <= self:length(), "[piece_tree_buffer] position_at offset out of range")
 	local row = self:count_lf_before(offset)
-	local row_start = 0
+	local row_start
 	if row > 0 then
 		row_start = self:find_offset_of_nth_lf(row - 1) + 1
 	end

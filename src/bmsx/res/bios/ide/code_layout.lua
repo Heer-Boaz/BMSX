@@ -4,6 +4,7 @@ local syntax_highlight = require("syntax_highlight")
 
 local code_layout = {}
 code_layout.__index = code_layout
+local wrap_break_chars = { [' '] = true, ['\t'] = true, ['-'] = true }
 
 local function clamp(value, min_value, max_value)
 	if value < min_value then
@@ -326,9 +327,9 @@ function code_layout:find_wrap_break(line, entry, start_column, wrap_width)
 		end
 		if column < length then
 			local ch = string.sub(line, column + 1, column + 1)
-			if ch == " " or ch == "\t" or ch == "-" then
-				last_break = column
-				local skip = column + 1
+				if wrap_break_chars[ch] then
+					last_break = column
+					local skip = column + 1
 				while skip < length and string.sub(line, skip + 1, skip + 1) == " " do
 					skip = skip + 1
 				end
@@ -378,8 +379,8 @@ function code_layout:compute_hot_row_window(line_count, scroll_row, visible_rows
 	if line_count == 0 then
 		return { start = 0, ["end"] = -1 }
 	end
-	local start_row = 0
-	local end_row = line_count - 1
+	local start_row
+	local end_row
 	local total_visual = self.visual_count
 	if total_visual > 0 then
 		local start_segment = self:visual_index_to_segment(clamp(scroll_row, 0, total_visual - 1))
@@ -390,6 +391,12 @@ function code_layout:compute_hot_row_window(line_count, scroll_row, visible_rows
 		if end_segment then
 			end_row = end_segment.row
 		end
+	end
+	if start_row == nil then
+		start_row = 0
+	end
+	if end_row == nil then
+		end_row = line_count - 1
 	end
 	local margin = math.max(self.viewport_row_margin, visible_rows * 2)
 	start_row = clamp(start_row - margin, 0, line_count - 1)

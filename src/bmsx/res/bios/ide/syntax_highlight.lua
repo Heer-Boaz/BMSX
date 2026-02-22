@@ -38,6 +38,42 @@ local multi_char_operators = {
 	[">>"] = true,
 }
 
+local operator_chars = {
+	["+"] = true,
+	["-"] = true,
+	["*"] = true,
+	["/"] = true,
+	["%"] = true,
+	["<"] = true,
+	[">"] = true,
+	["="] = true,
+	["#"] = true,
+	["("] = true,
+	[")"] = true,
+	["{"] = true,
+	["}"] = true,
+	["["] = true,
+	["]"] = true,
+	[":"] = true,
+	[","] = true,
+	["."] = true,
+	[";"] = true,
+	["&"] = true,
+	["|"] = true,
+	["~"] = true,
+	["^"] = true,
+}
+
+local identifier_path_separators = {
+	["."] = true,
+	[":"] = true,
+}
+
+local string_delimiters = {
+	['"'] = true,
+	["'"] = true,
+}
+
 local comment_annotations = { "TODO", "FIXME", "BUG", "HACK", "NOTE", "WARNING" }
 
 local function byte_at(line, index)
@@ -76,9 +112,7 @@ local function is_identifier_part_code(code)
 end
 
 local function is_operator_char(ch)
-	return ch == "+" or ch == "-" or ch == "*" or ch == "/" or ch == "%" or ch == "<" or ch == ">" or ch == "="
-		or ch == "#" or ch == "(" or ch == ")" or ch == "{" or ch == "}" or ch == "[" or ch == "]"
-		or ch == ":" or ch == "," or ch == "." or ch == ";" or ch == "&" or ch == "|" or ch == "~" or ch == "^"
+	return operator_chars[ch] ~= nil
 end
 
 local function is_number_start(line, index)
@@ -231,7 +265,7 @@ local function highlight_comment(line, start_index, length, column_colors)
 		local open_level = long_bracket_level_at(line, start_index + 2, length)
 		if open_level >= 0 then
 			local close_index = start_index + 2 + open_level + 2
-			local end_index = length
+			local end_index
 			while close_index < length do
 				local close_len = long_bracket_close_length_at(line, close_index, open_level, length)
 				if close_len > 0 then
@@ -239,6 +273,9 @@ local function highlight_comment(line, start_index, length, column_colors)
 					break
 				end
 				close_index = close_index + 1
+			end
+			if not end_index then
+				end_index = length
 			end
 			for column = start_index, end_index - 1 do
 				column_colors[column] = constants.color_syntax.comment
@@ -268,8 +305,8 @@ local function read_identifier_path(line, start_index, length)
 		if index >= length then
 			break
 		end
-		local separator = char_at(line, index)
-		if (separator == "." or separator == ":") and index + 1 < length and is_identifier_start_code(byte_at(line, index + 1)) then
+			local separator = char_at(line, index)
+			if (identifier_path_separators[separator] ~= nil) and index + 1 < length and is_identifier_start_code(byte_at(line, index + 1)) then
 			delim_count = delim_count + 1
 			delimiters[delim_count] = index
 			index = index + 1
@@ -311,7 +348,7 @@ local function highlight_function_name_path(line, start_index, length, column_co
 		segments[seg_count] = { start = segment_start, ["end"] = index }
 		if index < length then
 			local separator = char_at(line, index)
-			if separator == "." or separator == ":" then
+				if identifier_path_separators[separator] ~= nil then
 				column_colors[index] = constants.color_syntax.operator
 				index = index + 1
 			else
@@ -458,7 +495,7 @@ local function highlight_text_line(line, builtin_lookup)
 				local open_level = long_bracket_level_at(line, i, length)
 				if open_level >= 0 then
 					local close_index = i + open_level + 2
-					local end_index = length
+					local end_index
 					while close_index < length do
 						local close_len = long_bracket_close_length_at(line, close_index, open_level, length)
 						if close_len > 0 then
@@ -467,13 +504,16 @@ local function highlight_text_line(line, builtin_lookup)
 						end
 						close_index = close_index + 1
 					end
+					if not end_index then
+						end_index = length
+					end
 					for column = i, end_index - 1 do
 						column_colors[column] = constants.color_syntax.string
 					end
 					i = end_index
 				else
 					local ch = char_at(line, i)
-					if ch == "\"" or ch == "'" then
+						if string_delimiters[ch] ~= nil then
 						local delimiter = ch
 						column_colors[i] = constants.color_syntax.string
 						i = i + 1
@@ -563,7 +603,7 @@ local function highlight_text_line(line, builtin_lookup)
 	end
 	column_to_display[length] = display_index
 	local text = table.concat(text_parts)
-	local upper_text = text
+	local upper_text
 	for index = 0, display_index - 1 do
 		if colors[index] ~= constants.color_syntax.string then
 			local ch = string.sub(text, index + 1, index + 1)
@@ -582,6 +622,9 @@ local function highlight_text_line(line, builtin_lookup)
 				break
 			end
 		end
+	end
+	if not upper_text then
+		upper_text = text
 	end
 
 	return {

@@ -119,9 +119,9 @@ local function draw_code_area()
 	local wrap_enabled = state.word_wrap_enabled
 
 	local horizontal_visible = (not wrap_enabled) and state.code_horizontal_scrollbar_visible
-	local vertical_visible = state.code_vertical_scrollbar_visible
-	local row_capacity = 1
-	local column_capacity = 1
+	local vertical_visible
+	local row_capacity
+	local column_capacity
 	local visual_count = state.layout:get_visual_line_count()
 
 	for _ = 1, 3 do
@@ -201,7 +201,7 @@ local function draw_code_area()
 		local max_scroll = math.max(0, visual_count - row_capacity)
 		local thumb_height = math.floor(track_height * (row_capacity / math.max(1, visual_count)))
 		thumb_height = math.max(constants.scrollbar_min_thumb_height, thumb_height)
-		local thumb_top = track_top
+		local thumb_top
 		if max_scroll > 0 then
 			local range = track_height - thumb_height
 			thumb_top = track_top + math.floor(range * (state.scroll_row / max_scroll))
@@ -219,7 +219,7 @@ local function draw_code_area()
 		local max_scroll = math.max(0, compute_max_line_length() - column_capacity)
 		local thumb_width = math.floor(track_width * (column_capacity / math.max(1, compute_max_line_length())))
 		thumb_width = math.max(constants.scrollbar_min_thumb_height, thumb_width)
-		local thumb_left = track_left
+		local thumb_left
 		if max_scroll > 0 then
 			local range = track_width - thumb_width
 			thumb_left = track_left + math.floor(range * (state.scroll_column / max_scroll))
@@ -230,7 +230,7 @@ end
 
 function editor.init()
 	state.font = get_default_font()
-	state.line_height = state.font.lineHeight
+	state.line_height = state.font.lineheight
 	state.char_advance = state.font:advance("M")
 	state.header_height = state.line_height + 4
 	state.status_height = state.line_height + 6
