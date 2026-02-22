@@ -89,22 +89,22 @@ local function build_progression_program()
 	}
 
 	local stairs_latch_conditions = {
-		{ key = 'world1.room109.stairs_open', equals = false },
+		{ key = 'r109.stairs', equals = false },
 		{ key = 'staff1destroyed', equals = true },
 		{ key = 'staff2destroyed', equals = true },
 		{ key = 'staff3destroyed', equals = true },
 	}
 	rules[#rules + 1] = {
-		id = 'world1.room109.stairs_open.latch',
+		id = 'r109.stairs.set',
 		on = 'enemy.defeated',
 		when_all = stairs_latch_conditions,
 		set = {
-			{ key = 'world1.room109.stairs_open', value = true },
+			{ key = 'r109.stairs', value = true },
 		},
 	}
 
 	local world1_wall_conditions = {
-		{ key = 'world1walldisappear', equals = false },
+		{ key = 'r106.wall', equals = false },
 	}
 	for i = 1, #world1_marspein_destroyed_keys do
 		world1_wall_conditions[#world1_wall_conditions + 1] = {
@@ -113,11 +113,11 @@ local function build_progression_program()
 		}
 	end
 	rules[#rules + 1] = {
-		id = 'world1.wall.disappear',
+		id = 'r106.wall.set',
 		on = 'enemy.defeated',
 		when_all = world1_wall_conditions,
 		set = {
-			{ key = 'world1walldisappear', value = true },
+			{ key = 'r106.wall', value = true },
 		},
 		apply = {
 			{
@@ -125,17 +125,21 @@ local function build_progression_program()
 				event = 'room.condition_set',
 				payload = {
 					room_number = 106,
-					condition = 'world1walldisappear',
+					condition = 'r106.wall',
 				},
+			},
+			{
+				op = 'emit_event',
+				event = 'evt.cue.appearance',
 			},
 		},
 	}
 
 	rules[#rules + 1] = {
-		id = 'world1.room109.stairs.apply',
+		id = 'r109.stairs.apply',
 		on = 'room.enter',
 		when_all = {
-			{ key = 'world1.room109.stairs_open', equals = true },
+			{ key = 'r109.stairs', equals = true },
 		},
 		when_event = {
 			equals = {
@@ -156,20 +160,17 @@ local function build_progression_program()
 	}
 
 	rules[#rules + 1] = {
-		id = 'world1.room109.stairs.cue.once',
+		id = 'r109.stairs.cue',
 		on = 'room.enter',
 		when_all = {
-			{ key = 'world1.room109.stairs_open', equals = true },
-			{ key = 'world1.room109.stairs_open_notified', equals = false },
+			{ key = 'r109.stairs', equals = true },
 		},
 		when_event = {
 			equals = {
 				room_number = 109,
 			},
 		},
-		set = {
-			{ key = 'world1.room109.stairs_open_notified', value = true },
-		},
+		apply_once = true,
 		apply = {
 			{
 				op = 'emit_event',
@@ -199,11 +200,6 @@ local function build_progression_program()
 			apply_room_condition = function(ctx, command, event)
 				if event.room_number ~= ctx.current_room_number then
 					return
-				end
-				if ctx:current_room_has_active_disappearing_wall_for_condition(event.condition) then
-					ctx.events:emit('evt.cue.appearance', {
-						service_id = ctx.id,
-					})
 				end
 				ctx:refresh_current_room_enemies()
 			end,
@@ -357,20 +353,6 @@ function castle_service:for_each_active_enemy_instance(visitor)
 			visitor(instance, id)
 		end
 	end
-end
-
-function castle_service:current_room_has_active_disappearing_wall_for_condition(condition)
-	local enemy_defs = self.current_room.enemies
-	for i = 1, #enemy_defs do
-		local enemy_def = enemy_defs[i]
-		if enemy_def.kind == 'disappearingwall' and enemy_def.trigger == condition then
-			local instance = object(enemy_def.id)
-			if instance ~= nil and instance.active then
-				return true
-			end
-		end
-	end
-	return false
 end
 
 function castle_service:apply_enemy_transition_space_if_needed()

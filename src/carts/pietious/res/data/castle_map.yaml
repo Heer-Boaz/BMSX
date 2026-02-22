@@ -942,62 +942,62 @@
   objects:
   - type: marspeinenaardappel
     condition:
-    - '!world1walldisappear'
+    - '!r106.wall'
     x: 2
     y: 5
     speedx: 2
     speedy: 2
   - type: marspeinenaardappel
     condition:
-    - '!world1walldisappear'
+    - '!r106.wall'
     x: 10
     y: 15
     speedx: -2
     speedy: 2
   - type: marspeinenaardappel
     condition:
-    - '!world1walldisappear'
+    - '!r106.wall'
     x: 20
     y: 12
     speedx: 2
     speedy: -2
   - type: marspeinenaardappel
     condition:
-    - '!world1walldisappear'
+    - '!r106.wall'
     x: 6
     y: 10
     speedx: -2
     speedy: -2
   - type: marspeinenaardappel
     condition:
-    - '!world1walldisappear'
+    - '!r106.wall'
     x: 13
     y: 13
     speedx: -2
     speedy: 2
   - type: marspeinenaardappel
     condition:
-    - '!world1walldisappear'
+    - '!r106.wall'
     x: 18
     y: 8
     speedx: -2
     speedy: -2
   - type: marspeinenaardappel
     condition:
-    - '!world1walldisappear'
+    - '!r106.wall'
     x: 25
     y: 7
     speedx: 2
     speedy: -2
   - type: disappearingwall
     condition:
-    - '!world1walldisappear'
+    - '!r106.wall'
     area:
     - 10
     - 1
     - 15
     - 4
-    trigger: world1walldisappear
+    trigger: r106.wall
     tiletype: frontworld_l
   - type: lithograph
     x: 10

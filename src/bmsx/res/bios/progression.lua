@@ -3,7 +3,6 @@
 
 local eventemitter = require('eventemitter').eventemitter
 local event_matcher = require('event_matcher')
-local progression_core = require('progression_core')
 
 local progression = {
 	_inited = false,
@@ -17,7 +16,220 @@ local progression = {
 	_is_dispatching = false,
 }
 
+local progression_state = {}
+progression_state.__index = progression_state
+
 local empty_list = {}
+
+local op_eq = 1
+local op_ne = 2
+local op_lt = 3
+local op_lte = 4
+local op_gt = 5
+local op_gte = 6
+
+local op_by_text = {
+	['=='] = op_eq,
+	['='] = op_eq,
+	eq = op_eq,
+	['!='] = op_ne,
+	['~='] = op_ne,
+	ne = op_ne,
+	['<'] = op_lt,
+	lt = op_lt,
+	['<='] = op_lte,
+	lte = op_lte,
+	['>'] = op_gt,
+	gt = op_gt,
+	['>='] = op_gte,
+	gte = op_gte,
+}
+
+local function new_state_program()
+	return {
+		key2idx = {},
+		idx2key = {},
+	}
+end
+
+local function default_for(value)
+	local value_type = type(value)
+	if value_type == 'boolean' then
+		return false
+	end
+	if value_type == 'number' then
+		return 0
+	end
+	return nil
+end
+
+local function compare(left, op, right)
+	if op == op_eq then
+		return left == right
+	end
+	if op == op_ne then
+		return left ~= right
+	end
+	if op == op_lt then
+		return left < right
+	end
+	if op == op_lte then
+		return left <= right
+	end
+	if op == op_gt then
+		return left > right
+	end
+	return left >= right
+end
+
+local function ensure_key(program, key)
+	if type(key) ~= 'string' then
+		error('progression key must be a string.')
+	end
+	local key_idx = program.key2idx[key]
+	if key_idx ~= nil then
+		return key_idx
+	end
+	key_idx = #program.idx2key + 1
+	program.key2idx[key] = key_idx
+	program.idx2key[key_idx] = key
+	return key_idx
+end
+
+local function normalize_condition(spec)
+	if type(spec) == 'string' then
+		if spec:sub(1, 1) == '!' then
+			return spec:sub(2), op_eq, false
+		end
+		return spec, op_eq, true
+	end
+
+	if type(spec) ~= 'table' then
+		error('progression condition must be string or table.')
+	end
+
+	local key = spec.key or spec[1]
+	if type(key) ~= 'string' then
+		error('progression condition is missing key.')
+	end
+
+	local op_text = spec.op or spec[2] or '=='
+	local op = op_by_text[op_text]
+	if op == nil then
+		error("progression condition has unknown operator '" .. tostring(op_text) .. "'.")
+	end
+
+	local value = spec.equals
+	if value == nil then
+		value = spec.value
+	end
+	if value == nil then
+		value = spec[3]
+	end
+	if value == nil then
+		value = true
+	end
+
+	if (op == op_lt or op == op_lte or op == op_gt or op == op_gte) and type(value) ~= 'number' then
+		error("progression condition '" .. key .. "' expects numeric value for operator '" .. tostring(op_text) .. "'.")
+	end
+
+	return key, op, value
+end
+
+local function is_compiled_predicates(source)
+	if type(source) ~= 'table' then
+		return false
+	end
+	local count = #source
+	if count == 0 then
+		return true
+	end
+	if count % 4 ~= 0 then
+		return false
+	end
+	return type(source[1]) == 'number'
+end
+
+local function compile_predicates(program, source)
+	if source == nil then
+		return empty_list
+	end
+	local compiled = {}
+	local out_index = 1
+	for i = 1, #source do
+		local key, op, value = normalize_condition(source[i])
+		compiled[out_index] = ensure_key(program, key)
+		compiled[out_index + 1] = op
+		compiled[out_index + 2] = value
+		compiled[out_index + 3] = default_for(value)
+		out_index = out_index + 4
+	end
+	return compiled
+end
+
+local function compile_filter(program, source)
+	if is_compiled_predicates(source) then
+		return source
+	end
+	return compile_predicates(program, source)
+end
+
+local function eval_predicates(values, predicates)
+	for i = 1, #predicates, 4 do
+		local left = values[predicates[i]]
+		if left == nil then
+			left = predicates[i + 3]
+		end
+		if not compare(left, predicates[i + 1], predicates[i + 2]) then
+			return false
+		end
+	end
+	return true
+end
+
+function progression_state.new(program)
+	return setmetatable({
+		program = program or new_state_program(),
+		values = {},
+		filter_cache = setmetatable({}, { __mode = 'k' }),
+	}, progression_state)
+end
+
+function progression_state:set(key, value)
+	local key_idx = self.program.key2idx[key]
+	if key_idx == nil then
+		key_idx = ensure_key(self.program, key)
+	end
+	if self.values[key_idx] == value then
+		return false
+	end
+	self.values[key_idx] = value
+	return true
+end
+
+function progression_state:get(key)
+	local key_idx = self.program.key2idx[key]
+	if key_idx == nil then
+		return nil
+	end
+	return self.values[key_idx]
+end
+
+function progression_state:matches_filter(filter)
+	if filter == nil then
+		return true
+	end
+	if is_compiled_predicates(filter) then
+		return eval_predicates(self.values, filter)
+	end
+	local cached = self.filter_cache[filter]
+	if cached == nil then
+		cached = compile_predicates(self.program, filter)
+		self.filter_cache[filter] = cached
+	end
+	return eval_predicates(self.values, cached)
+end
 
 local function compile_set_actions(state_program, actions)
 	if actions == nil then
@@ -27,9 +239,9 @@ local function compile_set_actions(state_program, actions)
 		local action = actions[i]
 		local key = action.key
 		if type(key) ~= 'string' then
-			error("progression set action at index " .. i .. " must define a non-empty string key.")
+			error("progression set action at index " .. i .. " must define a string key.")
 		end
-		progression_core.ensure_key(state_program, key)
+		ensure_key(state_program, key)
 	end
 	return actions
 end
@@ -55,10 +267,12 @@ function progression.compile_program(program_spec)
 		handlers = {}
 	end
 
-	local state_program = progression_core.compile_program({
-		keys = seed_keys,
-		rules = empty_list,
-	})
+	local state_program = new_state_program()
+	if seed_keys ~= nil then
+		for i = 1, #seed_keys do
+			ensure_key(state_program, seed_keys[i])
+		end
+	end
 	local rules = {}
 	local rules_by_event = {}
 	local event_names = {}
@@ -69,7 +283,7 @@ function progression.compile_program(program_spec)
 		local rule = {
 			id = rule_def.id or ('rule_' .. i),
 			on = event_name,
-			when_all = progression_core.compile_filter(state_program, rule_def.when_all),
+			when_all = compile_filter(state_program, rule_def.when_all),
 			when_event = event_matcher.compile(rule_def.when_event),
 			set = compile_set_actions(state_program, rule_def.set),
 			apply = rule_def.apply or empty_list,
@@ -196,7 +410,7 @@ end
 
 function progression.mount(ctx, program_or_rule_defs)
 	local program = progression.compile_program(program_or_rule_defs)
-	local state = progression_core.progression.new(program.state_program)
+	local state = progression_state.new(program.state_program)
 
 	local rt = {
 		ctx = ctx,
