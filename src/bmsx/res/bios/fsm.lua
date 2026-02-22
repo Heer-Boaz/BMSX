@@ -978,9 +978,7 @@ function state:check_state_guard_conditions(target_state_id)
 		}
 		self:append_guard_evaluation(evaluation)
 		evaluations[#evaluations + 1] = evaluation
-		if not passed then
-			allowed = false
-		end
+		allowed = passed
 	else
 		local evaluation
 		if exit_guard == nil then
@@ -997,6 +995,7 @@ function state:check_state_guard_conditions(target_state_id)
 		end
 		self:append_guard_evaluation(evaluation)
 		evaluations[#evaluations + 1] = evaluation
+		allowed = true
 	end
 
 	if not allowed then
