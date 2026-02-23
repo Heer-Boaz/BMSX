@@ -107,8 +107,8 @@ function player:bind_events()
 	self.events:on({
 		event = 'room.switched',
 		subscriber = self,
-		handler = function(event)
-			self:set_space(event.space)
+		handler = function()
+			self:set_space('main')
 		end,
 	})
 end
@@ -928,7 +928,6 @@ function player:try_switch_room(direction, keep_stairs_lock)
 			from = leave_switch.from_room_number,
 			to = leave_switch.to_room_number,
 			dir = 'right',
-			space = service('c').current_room.space_id,
 			x = self.x,
 			y = self.y,
 		})
@@ -960,7 +959,6 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		from = switch.from_room_number,
 		to = switch.to_room_number,
 		dir = direction,
-		space = service('c').current_room.space_id,
 		x = self.x,
 		y = self.y,
 	})
@@ -1806,7 +1804,6 @@ function player:tick_entering_world()
 			from = switch.from_room_number,
 			to = switch.to_room_number,
 			dir = switch.direction,
-			space = service('c').current_room.space_id,
 			x = self.x,
 			y = self.y,
 		})
@@ -2955,7 +2952,6 @@ local function register_player_definition()
 		fsms = { 'player' },
 		defaults = {
 			imgid = 'pietolon_stand_r',
-			space_id = 'main',
 			player_index = 1,
 			width = constants.player.width,
 			height = constants.player.height,

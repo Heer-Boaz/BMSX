@@ -227,12 +227,11 @@ local function create_room_switch(from_room_number, to_room_number, direction)
 	}
 end
 
-local function should_dispose_runtime_room_object(obj, room_space)
+local function should_dispose_runtime_room_object(obj)
 	if persistent_room_object_ids[obj.id] then
 		return false
 	end
-	local space_id = obj.space_id
-	if space_id == room_space then
+	if obj.space_id == 'main' then
 		return true
 	end
 	return false
@@ -256,7 +255,6 @@ function castle_service:sync_enemy_instance(enemy_def, room, force_reset_from_ro
 	if instance == nil then
 		instance = inst('enemy.' .. enemy_def.kind, {
 			id = id,
-			space_id = room.space_id,
 			pos = { x = enemy_def.x, y = enemy_def.y, z = 140 },
 			trigger = enemy_def.trigger,
 			conditions = enemy_def.conditions,
@@ -272,7 +270,7 @@ function castle_service:sync_enemy_instance(enemy_def, room, force_reset_from_ro
 		})
 	else
 		local should_reset_from_room_template = force_reset_from_room_template or (not instance.active)
-		instance:set_space(room.space_id)
+		instance:set_space('main')
 		instance.trigger = enemy_def.trigger
 		instance.conditions = enemy_def.conditions
 		instance.damage = enemy_def.damage
@@ -378,9 +376,8 @@ function castle_service:restore_active_enemies_after_shrine_transition()
 		return
 	end
 	self.enemies_hidden_for_shrine = false
-	local room_space = self.current_room.space_id
 	self:for_each_active_enemy_instance(function(instance)
-		instance:set_space(room_space)
+		instance:set_space('main')
 	end)
 end
 
@@ -482,9 +479,9 @@ function castle_service:ctor()
 	self:bind_enemy_events()
 end
 
-function castle_service:despawn_room_runtime_objects(room_space)
+function castle_service:despawn_room_runtime_objects()
 	for obj in world_instance:objects({ scope = 'all' }) do
-		if should_dispose_runtime_room_object(obj, room_space) then
+		if should_dispose_runtime_room_object(obj) then
 			obj:mark_for_disposal()
 		end
 	end
@@ -508,8 +505,8 @@ function castle_service:sync_world_entrance_states_for_room(room_state)
 	end
 end
 
-function castle_service:commit_room_switch(previous_space, switch, map_id, map_x, map_y)
-	self:despawn_room_runtime_objects(previous_space)
+function castle_service:commit_room_switch(switch, map_id, map_x, map_y)
+	self:despawn_room_runtime_objects()
 	self.current_room.map_id = map_id
 	self.current_room.map_x = map_x
 	self.current_room.map_y = map_y
@@ -583,8 +580,6 @@ function castle_service:tick()
 end
 
 function castle_service:switch_room(direction, player_top, player_bottom)
-	local previous_space = self.current_room.space_id
-
 	local switch = room_module.switch_room(self.current_room, direction)
 	if switch == nil then
 		return nil
@@ -606,20 +601,18 @@ function castle_service:switch_room(direction, player_top, player_bottom)
 	else
 		map_y = map_y + 1
 	end
-	self:commit_room_switch(previous_space, switch, self.current_room.world_number, map_x, map_y)
+	self:commit_room_switch(switch, self.current_room.world_number, map_x, map_y)
 	return switch
 end
 
 function castle_service:enter_world(target)
 	local transition = castle_map.world_transitions[target]
 	local from_room_number = self.current_room.room_number
-	local previous_space = self.current_room.space_id
 	self:despawn_active_enemies()
 
 	self.current_room = room_module.create_room(transition.world_room_number)
 	local switch = create_room_switch(from_room_number, self.current_room.room_number, 'down')
 	self:commit_room_switch(
-		previous_space,
 		switch,
 		transition.world_number,
 		transition.world_map_x,
@@ -640,14 +633,12 @@ end
 function castle_service:leave_world_to_castle()
 	local world_number = self.current_room.world_number
 	local from_room_number = self.current_room.room_number
-	local previous_space = self.current_room.space_id
 
 	local transition = castle_map.world_transitions_by_number[world_number]
 
 	self.current_room = room_module.create_room(transition.castle_room_number)
 	local switch = create_room_switch(from_room_number, self.current_room.room_number, 'right')
 	self:commit_room_switch(
-		previous_space,
 		switch,
 		0,
 		transition.castle_map_x,
@@ -666,11 +657,10 @@ end
 
 function castle_service:halo_teleport_to_start_room()
 	local from_room_number = self.current_room.room_number
-	local previous_space = self.current_room.space_id
 
 	self.current_room = room_module.create_room(castle_map.start_room_number)
 	local switch = create_room_switch(from_room_number, self.current_room.room_number, 'halo')
-	self:commit_room_switch(previous_space, switch, 0, 5, 12)
+	self:commit_room_switch(switch, 0, 5, 12)
 
 	return {
 		from_room_number = switch.from_room_number,

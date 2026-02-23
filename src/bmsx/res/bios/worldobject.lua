@@ -47,7 +47,7 @@ function worldobject.new(opts)
 	self.tags = opts.tags or {}
 	self.components = {}
 	self.component_map = {}
-	self:set_space(opts.space_id or 'main')
+	self.space_id = opts.space_id
 	self.dispose_flag = false
 	self.events = eventemitter.events_of(self)
 	local definition = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))

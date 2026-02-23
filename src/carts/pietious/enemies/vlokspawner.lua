@@ -26,7 +26,6 @@ function vlokspawner.bt_tick(self, blackboard)
 	local spawn_y = room.world_top
 	local random_x = math.random(-5, 4)
 	inst('enemy.vlokfoe', {
-		space_id = room.space_id,
 		despawn_on_room_switch = true,
 		direction = random_x < 0 and 'left' or 'right',
 		speed_x_num = random_x * 2,

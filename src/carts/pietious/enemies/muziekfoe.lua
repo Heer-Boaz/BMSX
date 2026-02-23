@@ -67,7 +67,6 @@ function muziekfoe.bt_tick(self, blackboard)
 		local delta_x, delta_y = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
 		local delta_divisor = math.random(1, 2)
 		inst('enemy.nootfoe', {
-			space_id = room.space_id,
 			despawn_on_room_switch = true,
 			direction = delta_x < 0 and 'left' or 'right',
 			speed_x_num = delta_x,

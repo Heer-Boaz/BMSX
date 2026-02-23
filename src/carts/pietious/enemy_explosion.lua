@@ -67,13 +67,11 @@ function enemy_explosion:spawn_loot()
 		return
 	end
 
-	local room_space = service('c').current_room.space_id
 	loot_spawn_sequence = loot_spawn_sequence + 1
 	local loot_id = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
 	inst('loot_drop', {
 		id = loot_id,
 		loot_type = self.loot_type,
-		space_id = room_space,
 		loot_value = loot_value_for_type(self.loot_type),
 		pos = { x = self.x, y = self.y, z = 113 },
 	})

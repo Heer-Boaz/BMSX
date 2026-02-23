@@ -49,7 +49,6 @@ function boekfoe.bt_tick(self, blackboard)
 		local y_speed_num = math.random(-5, 4)
 		service('c').events:emit('evt.cue.paperspawn', {})
 		inst('enemy.paperfoe', {
-			space_id = room.space_id,
 			despawn_on_room_switch = true,
 			direction = self.direction == 'left' and 'left' or 'right',
 			speed_x_num = (self.direction == 'left' and -constants.enemy.paper_speed_x or constants.enemy.paper_speed_x) * 5,

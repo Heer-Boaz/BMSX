@@ -68,7 +68,6 @@ function item_service:sync_item_instance(item_def, room)
 	if instance == nil then
 		instance = inst(self.world_item_def_id, {
 			id = id,
-			space_id = room.space_id,
 			pos = { x = item_def.x, y = item_def.y, z = 140 },
 			item_id = item_def.id,
 			room_number = room.room_number,
@@ -77,7 +76,7 @@ function item_service:sync_item_instance(item_def, room)
 		self.items_by_id[id] = instance
 		return instance
 	end
-	instance:set_space(room.space_id)
+	instance:set_space('main')
 
 	self.items_by_id[id] = instance
 	if not instance.active then

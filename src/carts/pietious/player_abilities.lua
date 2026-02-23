@@ -83,7 +83,6 @@ local function activate_pepernoot_ability(owner, state_tags)
 	inst('pepernoot_projectile', {
 		id = projectile_id,
 		room = room,
-		space_id = room.space_id,
 		room_number = room.room_number,
 		owner_id = owner.id,
 		direction = owner.facing,
@@ -243,14 +242,13 @@ function player_abilities.attach_player_methods(player)
 		self:force_seek_timeline('p.seq.s', 0)
 		self:reset_fall_substate_sequence()
 		self:dispatch_state_event('stairs_lock_lost_after_room_switch')
-		self.events:emit('room.switched', {
-			from = switch.from_room_number,
-			to = switch.to_room_number,
-			dir = switch.direction,
-			space = castle_service.current_room.space_id,
-			x = self.x,
-			y = self.y,
-		})
+			self.events:emit('room.switched', {
+				from = switch.from_room_number,
+				to = switch.to_room_number,
+				dir = switch.direction,
+				x = self.x,
+				y = self.y,
+			})
 		director_service:dispatch_state_event('halo_transition_done')
 	end
 end

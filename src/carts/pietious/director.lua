@@ -234,13 +234,12 @@ local function define_director_fsm()
 					object('shrine').lines = {}
 					object('lithograph').lines = {}
 					self.transition_frames_left = 0
-					local castle_service = service('c')
-					local current_room = castle_service.current_room
-					local room_space = current_room.space_id
-					set_space(room_space)
-					object('ui'):set_space(get_space())
-					castle_service:restore_active_enemies_after_shrine_transition()
-					self:emit_state_changed(room_state_name(current_room))
+						local castle_service = service('c')
+						local current_room = castle_service.current_room
+						set_space('main')
+						object('ui'):set_space(get_space())
+						castle_service:restore_active_enemies_after_shrine_transition()
+						self:emit_state_changed(room_state_name(current_room))
 				end,
 				on = {
 					['room_switch_start'] = '/room_switch_wait',
@@ -274,12 +273,12 @@ local function define_director_fsm()
 					return '/room'
 				end,
 			},
-				world_transition = {
-					entering_state = function(self)
-						self.active_transition_kind = 'world'
-						set_space(service('c').current_room.space_id)
-						object('ui'):set_space(get_space())
-					end,
+					world_transition = {
+						entering_state = function(self)
+							self.active_transition_kind = 'world'
+							set_space('main')
+							object('ui'):set_space(get_space())
+						end,
 				on = {
 					['world_transition_done'] = '/room_switch_wait',
 					['banner_requested'] = '/banner_transition',
@@ -290,13 +289,13 @@ local function define_director_fsm()
 					end
 				end,
 			},
-				shrine_transition_enter = {
-					entering_state = function(self)
-						self.active_transition_kind = 'shrine'
-						service('c'):hide_active_enemies_for_shrine_transition()
-						set_space(service('c').current_room.space_id)
-						object('ui'):set_space(get_space())
-					end,
+					shrine_transition_enter = {
+						entering_state = function(self)
+							self.active_transition_kind = 'shrine'
+							service('c'):hide_active_enemies_for_shrine_transition()
+							set_space('main')
+							object('ui'):set_space(get_space())
+						end,
 				on = {
 					['shrine_overlay_requested'] = '/shrine_overlay',
 				},
@@ -354,16 +353,16 @@ local function define_director_fsm()
 					end
 				end,
 			},
-				shrine_transition_exit = {
-					entering_state = function(self)
-						self.active_transition_kind = 'shrine'
-						self.overlay_mode = nil
-						self.overlay_text_lines = {}
-					object('shrine').lines = {}
-					set_space(service('c').current_room.space_id)
-					object('ui'):set_space(get_space())
-					object('pietolon'):leave_shrine_overlay()
-				end,
+					shrine_transition_exit = {
+						entering_state = function(self)
+							self.active_transition_kind = 'shrine'
+							self.overlay_mode = nil
+							self.overlay_text_lines = {}
+						object('shrine').lines = {}
+						set_space('main')
+						object('ui'):set_space(get_space())
+						object('pietolon'):leave_shrine_overlay()
+					end,
 				on = {
 					['shrine_transition_done'] = '/room_switch_wait',
 				},

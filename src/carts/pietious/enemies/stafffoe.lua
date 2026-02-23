@@ -60,7 +60,6 @@ function stafffoe.bt_tick(self, blackboard)
 		local angle = (base_angle + (i * 90)) % 360
 		local speed_x_num, speed_y_num = speed_components_from_angle(constants.enemy.staff_bullet_speed_num, angle)
 		inst('enemy.staffspawn', {
-			space_id = room.space_id,
 			despawn_on_room_switch = true,
 			direction = speed_x_num < 0 and 'left' or 'right',
 			speed_x_num = speed_x_num,

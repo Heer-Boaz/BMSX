@@ -81,11 +81,11 @@ end
 
 function item_screen:draw_inventory_items()
 	local player = object('pietolon')
-	local room_space = service('c').current_room.space_id
+	local world_number = service('c').current_room.world_number
 	for i = 1, #inventory_item_order do
 		local item_type = inventory_item_order[i]
 		if player.inventory_items[item_type] then
-			if item_type ~= 'map_world1' or room_space == 'world' then
+			if item_type ~= 'map_world1' or world_number > 0 then
 				local x, y = self:item_position_px(item_type)
 				put_sprite(constants.world_item.sprite[item_type], x, y, 321)
 			end

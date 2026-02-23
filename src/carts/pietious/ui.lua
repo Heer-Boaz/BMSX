@@ -105,7 +105,6 @@ local function register_ui_definition()
 		fsms = { 'ui' },
 		components = { 'customvisualcomponent' },
 		defaults = {
-			space_id = 'main',
 			hud_health_level = constants.hud.health_level,
 			hud_health_target = constants.hud.health_level,
 			hud_health_anim_ticks = 0,

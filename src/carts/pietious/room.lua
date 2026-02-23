@@ -435,7 +435,6 @@ local function apply_room_template(room_state, template)
 	local tiles = build_tile_grid(map_rows, collision_map, template.room_subtype)
 
 	room_state.room_number = template.room_number
-	room_state.space_id = template.space_id
 	room_state.world_number = template.world_number
 	room_state.room_subtype = template.room_subtype
 	room_state.custom = template.custom
@@ -629,12 +628,12 @@ function room.overlaps_active_breakable_wall(room_state, x, y, w, h)
 	local enemy_defs = room_state.enemies
 	for i = 1, #enemy_defs do
 		local enemy_def = enemy_defs[i]
-		if breakable_wall_kinds[enemy_def.kind] then
-			local wall = object(enemy_def.id)
-			if wall ~= nil and wall.active and wall.space_id == room_state.space_id then
-				local wall_width = enemy_def.width_tiles * room_state.tile_size
-				local wall_height = enemy_def.height_tiles * room_state.tile_size
-				if rect_overlaps(x, y, w, h, enemy_def.x, enemy_def.y, wall_width, wall_height) then
+			if breakable_wall_kinds[enemy_def.kind] then
+				local wall = object(enemy_def.id)
+				if wall ~= nil and wall.active and wall.space_id == 'main' then
+					local wall_width = enemy_def.width_tiles * room_state.tile_size
+					local wall_height = enemy_def.height_tiles * room_state.tile_size
+					if rect_overlaps(x, y, w, h, enemy_def.x, enemy_def.y, wall_width, wall_height) then
 					return true
 				end
 			end
@@ -700,13 +699,12 @@ function room.sync_lithograph_instances(room_state)
 	local lithograph_defs = room_state.lithographs
 	for i = 1, #lithograph_defs do
 		local lithograph_def = lithograph_defs[i]
-		if object(lithograph_def.id) == nil then
-			inst('lithograph', {
-				id = lithograph_def.id,
-				space_id = room_state.space_id,
-				pos = { x = lithograph_def.x, y = lithograph_def.y, z = 10 },
-				text = lithograph_def.text,
-				room_number = room_state.room_number,
+			if object(lithograph_def.id) == nil then
+				inst('lithograph', {
+					id = lithograph_def.id,
+					pos = { x = lithograph_def.x, y = lithograph_def.y, z = 10 },
+					text = lithograph_def.text,
+					room_number = room_state.room_number,
 			})
 		end
 	end
@@ -716,13 +714,12 @@ function room.sync_shrine_instances(room_state)
 	local shrine_defs = room_state.shrines
 	for i = 1, #shrine_defs do
 		local shrine_def = shrine_defs[i]
-		if object(shrine_def.id) == nil then
-			inst('room_shrine', {
-				id = shrine_def.id,
-				space_id = room_state.space_id,
-				pos = { x = shrine_def.x, y = shrine_def.y, z = 22 },
-			})
-		end
+			if object(shrine_def.id) == nil then
+				inst('room_shrine', {
+					id = shrine_def.id,
+					pos = { x = shrine_def.x, y = shrine_def.y, z = 22 },
+				})
+			end
 	end
 end
 
@@ -730,13 +727,12 @@ function room.sync_draaideur_instances(room_state)
 	local draaideur_defs = room_state.draaideuren
 	for i = 1, #draaideur_defs do
 		local draaideur_def = draaideur_defs[i]
-		if object(draaideur_def.id) == nil then
-			inst('draaideur', {
-				id = draaideur_def.id,
-				space_id = room_state.space_id,
-				pos = { x = draaideur_def.x, y = draaideur_def.y, z = 22 },
-				kind = draaideur_def.kind,
-			})
+			if object(draaideur_def.id) == nil then
+				inst('draaideur', {
+					id = draaideur_def.id,
+					pos = { x = draaideur_def.x, y = draaideur_def.y, z = 22 },
+					kind = draaideur_def.kind,
+				})
 		end
 	end
 end
@@ -812,8 +808,8 @@ function room_object:bind_events()
 		event = 'room.switched',
 		emitter = 'pietolon',
 		subscriber = self,
-		handler = function(event)
-			self:set_space(event.space)
+		handler = function()
+			self:set_space('main')
 			room.sync_lithograph_instances(service('c').current_room)
 			room.sync_shrine_instances(service('c').current_room)
 			room.sync_draaideur_instances(service('c').current_room)
@@ -910,7 +906,6 @@ local function register_room_definition()
 		fsms = { 'room' },
 		components = { 'customvisualcomponent' },
 		defaults = {
-			space_id = 'main',
 			tick_enabled = false,
 		},
 	})

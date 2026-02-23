@@ -90,7 +90,6 @@ function cloud.bt_tick(self, blackboard)
 				random_y = math.random(-5, 4)
 			end
 			inst('enemy.vlokfoe', {
-				space_id = room.space_id,
 				despawn_on_room_switch = true,
 				direction = random_x < 0 and 'left' or 'right',
 				speed_x_num = random_x,
