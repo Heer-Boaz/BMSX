@@ -49,7 +49,7 @@ function transition:ctor()
 end
 
 local function define_transition_fsm()
-	define_fsm('transition.fsm', {
+	define_fsm('transition', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -61,7 +61,7 @@ local function register_transition_definition()
 	define_prefab({
 		def_id = 'transition',
 		class = transition,
-		fsms = { 'transition.fsm' },
+		fsms = { 'transition' },
 		components = { 'customvisualcomponent' },
 		defaults = {
 			id = 'transition',

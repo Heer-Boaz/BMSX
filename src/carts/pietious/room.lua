@@ -816,7 +816,7 @@ function room_object:render_room()
 end
 
 local function define_room_fsm()
-	define_fsm('room.fsm', {
+	define_fsm('room', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -828,9 +828,10 @@ local function register_room_definition()
 	define_prefab({
 		def_id = 'room',
 		class = room_object,
-		fsms = { 'room.fsm' },
+		fsms = { 'room' },
 		components = { 'customvisualcomponent' },
 		defaults = {
+			space_id = 'castle',
 			tick_enabled = false,
 		},
 	})

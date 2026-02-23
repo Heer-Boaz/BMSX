@@ -37,7 +37,7 @@ function world_item:on_overlap(event)
 end
 
 local function define_world_item_fsm()
-	define_fsm('world_item.fsm', {
+	define_fsm('world_item', {
 		initial = 'active',
 		states = {
 			active = {
@@ -56,7 +56,7 @@ local function register_world_item_definition()
 		def_id = 'world_item',
 		class = world_item,
 		type = 'sprite',
-		fsms = { 'world_item.fsm' },
+		fsms = { 'world_item' },
 		defaults = {
 			item_id = '',
 			item_type = '',

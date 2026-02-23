@@ -115,7 +115,7 @@ function muziekfoe.register_enemy_definition()
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
 		type = 'sprite',
-		bts = { 'enemy.bt.muziekfoe' },
+		bts = { 'enemy_muziekfoe' },
 		defaults = {
 			conditions = {},
 			damage = 4,

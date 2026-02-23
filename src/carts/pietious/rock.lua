@@ -71,7 +71,7 @@ function rock:finish_break()
 end
 
 local function define_rock_fsm()
-	define_fsm('rock.fsm', {
+	define_fsm('rock', {
 		initial = 'idle',
 		states = {
 			idle = {
@@ -112,7 +112,7 @@ local function register_rock_definition()
 		def_id = 'rock',
 		class = rock,
 		type = 'sprite',
-		fsms = { 'rock.fsm' },
+		fsms = { 'rock' },
 		defaults = {
 			item_type = nil,
 			max_health = constants.rock.max_health,

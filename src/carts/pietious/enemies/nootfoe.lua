@@ -51,7 +51,7 @@ function nootfoe.register_enemy_definition()
 		def_id = 'enemy.nootfoe',
 		class = nootfoe,
 		type = 'sprite',
-		bts = { 'enemy.bt.nootfoe' },
+		bts = { 'enemy_nootfoe' },
 		defaults = {
 			trigger = nil,
 			conditions = {},

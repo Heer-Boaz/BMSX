@@ -7,7 +7,7 @@ function lithograph:ctor()
 end
 
 local function define_lithograph_fsm()
-	define_fsm('lithograph.fsm', {
+	define_fsm('lithograph', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -20,7 +20,7 @@ local function register_lithograph_definition()
 		def_id = 'lithograph',
 		class = lithograph,
 		type = 'sprite',
-		fsms = { 'lithograph.fsm' },
+		fsms = { 'lithograph' },
 		defaults = {
 			text = '',
 			room_number = 0,

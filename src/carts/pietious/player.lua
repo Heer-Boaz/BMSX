@@ -2819,7 +2819,7 @@ local function define_player_fsm()
 		},
 	}
 
-	define_fsm('player.fsm', {
+	define_fsm('player', {
 		initial = 'quiet',
 		tag_derivations = {
 			[state_tags.group.world_transition_waiting] = {
@@ -2925,9 +2925,10 @@ local function register_player_definition()
 		def_id = 'player',
 		class = player,
 		type = 'sprite',
-		fsms = { 'player.fsm' },
+		fsms = { 'player' },
 		defaults = {
 			imgid = 'pietolon_stand_r',
+			space_id = 'castle',
 			player_index = 1,
 			width = constants.player.width,
 			height = constants.player.height,

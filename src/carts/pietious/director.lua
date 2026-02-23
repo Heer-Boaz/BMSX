@@ -208,7 +208,7 @@ function director:ctor()
 end
 
 local function define_director_fsm()
-	define_fsm('director.fsm', {
+	define_fsm('director', {
 		initial = 'room',
 		on = {
 			['world_transition_start'] = '/world_transition',
@@ -565,7 +565,7 @@ local function register_director_service_definition()
 	define_service({
 		def_id = 'director',
 		class = director,
-		fsms = { 'director.fsm' },
+		fsms = { 'director' },
 		auto_activate = true,
 		defaults = {
 			id = 'd',

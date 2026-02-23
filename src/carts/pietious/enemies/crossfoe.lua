@@ -155,7 +155,7 @@ function crossfoe.register_enemy_definition()
 		def_id = 'enemy.crossfoe',
 		class = crossfoe,
 		type = 'sprite',
-		bts = { 'enemy.bt.crossfoe' },
+		bts = { 'enemy_crossfoe' },
 		defaults = {
 			trigger = nil,
 			conditions = {},

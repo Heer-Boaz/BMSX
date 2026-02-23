@@ -31,7 +31,7 @@ function lithograph_screen:ctor()
 end
 
 local function define_lithograph_screen_fsm()
-	define_fsm('lithograph_screen.fsm', {
+	define_fsm('lithograph_screen', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -43,7 +43,7 @@ local function register_lithograph_screen_definition()
 	define_prefab({
 		def_id = 'lithograph_screen',
 		class = lithograph_screen,
-		fsms = { 'lithograph_screen.fsm' },
+		fsms = { 'lithograph_screen' },
 		components = { 'customvisualcomponent' },
 		defaults = {
 			id = 'lithograph',

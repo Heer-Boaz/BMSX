@@ -271,7 +271,7 @@ function item_service:ctor()
 end
 
 local function define_item_service_fsm()
-	define_fsm('item_service.fsm', {
+	define_fsm('item_service', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -283,7 +283,7 @@ local function register_item_service_definition()
 	define_service({
 		def_id = 'item',
 		class = item_service,
-		fsms = { 'item_service.fsm' },
+		fsms = { 'item_service' },
 		auto_activate = true,
 		defaults = {
 			id = 'i',

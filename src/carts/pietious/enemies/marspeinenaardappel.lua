@@ -76,7 +76,7 @@ function marspeinenaardappel.register_enemy_definition()
 		def_id = 'enemy.marspeinenaardappel',
 		class = marspeinenaardappel,
 		type = 'sprite',
-		bts = { 'enemy.bt.marspeinenaardappel' },
+		bts = { 'enemy_marspeinenaardappel' },
 		defaults = {
 			trigger = nil,
 			conditions = {},

@@ -139,7 +139,6 @@ function new_game()
 
 	inst('player', {
 		id = 'pietolon',
-		space_id = 'castle',
 		spawn_x = constants.player.start_x,
 		spawn_y = constants.player.start_y,
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
@@ -148,7 +147,6 @@ function new_game()
 
 	inst('room', {
 		id = 'room',
-		space_id = 'castle',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
@@ -178,7 +176,6 @@ function new_game()
 
 	inst('ui', {
 		id = 'ui',
-		space_id = 'castle',
 		pos = { x = 0, y = 0, z = 0 },
 	})
 

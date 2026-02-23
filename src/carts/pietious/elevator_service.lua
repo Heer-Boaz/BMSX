@@ -124,7 +124,7 @@ function elevator_service:tick()
 end
 
 local function define_elevator_service_fsm()
-	define_fsm('elevator_service.fsm', {
+	define_fsm('elevator_service', {
 		initial = 'active',
 		states = {
 			active = {
@@ -139,7 +139,7 @@ local function register_elevator_service_definition()
 	define_service({
 		def_id = 'elevator',
 		class = elevator_service,
-		fsms = { 'elevator_service.fsm' },
+		fsms = { 'elevator_service' },
 		defaults = {
 			id = 'e',
 			elevator_routes = elevator_routes,

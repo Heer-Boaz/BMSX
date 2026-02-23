@@ -90,7 +90,7 @@ function ui:draw_ui()
 end
 
 local function define_ui_fsm()
-	define_fsm('ui.fsm', {
+	define_fsm('ui', {
 		initial = 'playing',
 		states = {
 			playing = {},
@@ -102,11 +102,12 @@ local function register_ui_definition()
 	define_prefab({
 		def_id = 'ui',
 		class = ui,
-		fsms = { 'ui.fsm' },
-			components = { 'customvisualcomponent' },
-			defaults = {
-				hud_health_level = constants.hud.health_level,
-				hud_health_target = constants.hud.health_level,
+		fsms = { 'ui' },
+		components = { 'customvisualcomponent' },
+		defaults = {
+			space_id = 'castle',
+			hud_health_level = constants.hud.health_level,
+			hud_health_target = constants.hud.health_level,
 			hud_health_anim_ticks = 0,
 			hud_weapon_level = constants.hud.weapon_level,
 			hud_weapon_target = constants.hud.weapon_level,

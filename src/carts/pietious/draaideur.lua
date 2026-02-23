@@ -170,7 +170,7 @@ function draaideur:ctor()
 end
 
 local function define_draaideur_fsm()
-	define_fsm('draaideur.fsm', {
+	define_fsm('draaideur', {
 		initial = 'active',
 		states = {
 			active = {
@@ -185,7 +185,7 @@ local function register_draaideur_definition()
 		def_id = 'draaideur',
 		class = draaideur,
 		type = 'sprite',
-		fsms = { 'draaideur.fsm' },
+		fsms = { 'draaideur' },
 		defaults = {
 			kind = 1,
 			state = 0,

@@ -183,7 +183,7 @@ function item_screen:draw_screen()
 end
 
 local function define_item_screen_fsm()
-	define_fsm('item_screen.fsm', {
+	define_fsm('item_screen', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -195,7 +195,7 @@ local function register_item_screen_definition()
 		define_prefab({
 			def_id = 'item_screen',
 			class = item_screen,
-			fsms = { 'item_screen.fsm' },
+			fsms = { 'item_screen' },
 			components = { 'customvisualcomponent' },
 			defaults = {
 				space_id = 'item',

@@ -110,7 +110,7 @@ function rock_service:ctor()
 end
 
 local function define_rock_service_fsm()
-	define_fsm('rock_service.fsm', {
+	define_fsm('rock_service', {
 		initial = 'active',
 		states = {
 			active = {
@@ -126,7 +126,7 @@ local function register_rock_service_definition()
 	define_service({
 		def_id = 'rock',
 		class = rock_service,
-		fsms = { 'rock_service.fsm' },
+		fsms = { 'rock_service' },
 		auto_activate = true,
 		defaults = {
 			id = 'r',

@@ -36,7 +36,7 @@ function room_shrine:ctor()
 end
 
 local function define_shrine_fsm()
-	define_fsm('shrine.fsm', {
+	define_fsm('shrine', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -45,7 +45,7 @@ local function define_shrine_fsm()
 end
 
 local function define_room_shrine_fsm()
-	define_fsm('room_shrine.fsm', {
+	define_fsm('room_shrine', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -57,7 +57,7 @@ local function register_shrine_definition()
 	define_prefab({
 		def_id = 'shrine',
 		class = shrine,
-		fsms = { 'shrine.fsm' },
+		fsms = { 'shrine' },
 		components = { 'customvisualcomponent' },
 		defaults = {
 			id = 'shrine',
@@ -72,7 +72,7 @@ local function register_room_shrine_definition()
 		def_id = 'room_shrine',
 		class = room_shrine,
 		type = 'sprite',
-		fsms = { 'room_shrine.fsm' },
+		fsms = { 'room_shrine' },
 		defaults = {
 			tick_enabled = false,
 		},

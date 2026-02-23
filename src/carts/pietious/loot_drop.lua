@@ -56,7 +56,7 @@ function loot_drop:on_overlap_begin(event)
 end
 
 local function define_loot_drop_fsm()
-	define_fsm('loot_drop.fsm', {
+	define_fsm('loot_drop', {
 		initial = 'active',
 		states = {
 			active = {
@@ -81,7 +81,7 @@ local function register_loot_drop_definition()
 		def_id = 'loot_drop',
 		class = loot_drop,
 		type = 'sprite',
-		fsms = { 'loot_drop.fsm' },
+		fsms = { 'loot_drop' },
 		defaults = {
 			loot_type = 'life',
 			loot_value = constants.enemy.loot_life_regen,

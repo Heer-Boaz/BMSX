@@ -104,7 +104,7 @@ function stafffoe.register_enemy_definition()
 		def_id = 'enemy.stafffoe',
 		class = stafffoe,
 		type = 'sprite',
-		bts = { 'enemy.bt.stafffoe' },
+		bts = { 'enemy_stafffoe' },
 		defaults = {
 			conditions = {},
 			damage = 4,

@@ -211,7 +211,7 @@ function mijterfoe.register_enemy_definition()
 		def_id = 'enemy.mijterfoe',
 		class = mijterfoe,
 		type = 'sprite',
-		bts = { 'enemy.bt.mijterfoe' },
+		bts = { 'enemy_mijterfoe' },
 		defaults = {
 			trigger = nil,
 			conditions = {},

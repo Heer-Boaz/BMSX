@@ -633,7 +633,7 @@ function castle_service:halo_teleport_to_start_room()
 end
 
 local function define_castle_service_fsm()
-	define_fsm('castle_service.fsm', {
+	define_fsm('castle_service', {
 		initial = 'active',
 		states = {
 			active = {
@@ -647,7 +647,7 @@ local function register_castle_service_definition()
 	define_service({
 		def_id = 'castle',
 		class = castle_service,
-		fsms = { 'castle_service.fsm' },
+		fsms = { 'castle_service' },
 		auto_activate = true,
 		defaults = {
 			id = 'c',

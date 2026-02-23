@@ -65,7 +65,7 @@ function pepernoot_projectile:tick()
 end
 
 local function define_pepernoot_projectile_fsm()
-	define_fsm('pepernoot_projectile.fsm', {
+	define_fsm('pepernoot_projectile', {
 		initial = 'active',
 		states = {
 			active = {},
@@ -78,7 +78,7 @@ local function register_pepernoot_projectile_definition()
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
 		type = 'sprite',
-		fsms = { 'pepernoot_projectile.fsm' },
+		fsms = { 'pepernoot_projectile' },
 		defaults = {
 			owner_id = 'pietolon',
 			direction = 1,

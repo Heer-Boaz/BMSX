@@ -39,7 +39,7 @@ function paperfoe.register_enemy_definition()
 		def_id = 'enemy.paperfoe',
 		class = paperfoe,
 		type = 'sprite',
-		bts = { 'enemy.bt.paperfoe' },
+		bts = { 'enemy_paperfoe' },
 		defaults = {
 			trigger = nil,
 			conditions = {},

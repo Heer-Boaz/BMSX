@@ -92,7 +92,7 @@ function enemy_explosion:ctor()
 end
 
 local function define_enemy_explosion_fsm()
-	define_fsm('enemy_explosion.fsm', {
+	define_fsm('enemy_explosion', {
 		initial = 'animating',
 			states = {
 				animating = {
@@ -109,7 +109,7 @@ local function register_enemy_explosion_definition()
 		def_id = 'enemy_explosion',
 		class = enemy_explosion,
 		type = 'sprite',
-		fsms = { 'enemy_explosion.fsm' },
+		fsms = { 'enemy_explosion' },
 		defaults = {
 			loot_type = nil,
 			tick_enabled = false,
