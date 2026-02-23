@@ -31,8 +31,20 @@ function transition:draw_transition_overlay()
 	if mode == 'seal_dissolution' then
 		local total = constants.flow.seal_flash_frames + constants.flow.seal_dissolve_frames
 		local elapsed = total - director_service.transition_frames_left
-		if elapsed < constants.flow.seal_flash_frames and (elapsed % 2) == 0 then
+		if elapsed >= 0 and (elapsed % 2) == 0 then
 			put_rectfill(0, 0, display_width(), display_height(), 342, 15)
+		end
+	end
+	if mode == 'daemon_appearance' then
+		local clouds = director_service.daemon_clouds
+		for i = 1, #clouds do
+			local cloud = clouds[i]
+			local cloud_frame = math.modf(cloud.age / 8) % 2
+			local cloud_sprite = 'cloud_1'
+			if cloud_frame == 1 then
+				cloud_sprite = 'cloud_2'
+			end
+			put_sprite(cloud_sprite, cloud.x, cloud.y, 23)
 		end
 	end
 	local lines = director_service.overlay_text_lines

@@ -446,9 +446,11 @@ end
 function castle_service:begin_seal_dissolution()
 	local room_state = self.current_room
 	room_state.seal_sequence_active = true
-	room_state.room_dissolve_step = 1
-	room_state.seal_dissolve_step = 1
+	room_state.room_dissolve_step = 0
+	room_state.seal_dissolve_step = 0
+	room_state.seal_sequence_frame = 0
 	room_state.seal_dissolve_timer = 0
+	room_state.daemon_fight_active = false
 	object('room'):set_space('transition')
 	local player = object('pietolon')
 	player:set_space('transition')
@@ -456,7 +458,9 @@ function castle_service:begin_seal_dissolution()
 	player:refresh_active_pepernoot_projectiles()
 	local projectile_ids = player.pepernoot_projectile_ids
 	for i = 1, #projectile_ids do
-		object(projectile_ids[i]):dispatch_state_event('seal_breaking')
+		local projectile = object(projectile_ids[i])
+		projectile:set_space('transition')
+		projectile:dispatch_state_event('seal_breaking')
 	end
 	self:sync_current_room_seal_instance()
 end
@@ -465,6 +469,21 @@ function castle_service:finish_seal_dissolution()
 	local room_state = self.current_room
 	room_state.seal_sequence_active = false
 	room_state.has_active_seal = false
+	room_state.daemon_fight_active = false
+	local row_patches = {}
+	for i = 1, #room_state.map_rows do
+		local row = room_state.map_rows[i]
+		local patched_row = row:gsub('%$', '.')
+		if patched_row ~= row then
+			row_patches[#row_patches + 1] = {
+				index = i,
+				value = patched_row,
+			}
+		end
+	end
+	if #row_patches > 0 then
+		room_module.patch_rows(room_state, row_patches)
+	end
 	object('room'):set_space('main')
 	local player = object('pietolon')
 	player:set_space('main')
@@ -472,11 +491,17 @@ function castle_service:finish_seal_dissolution()
 	player:refresh_active_pepernoot_projectiles()
 	local projectile_ids = player.pepernoot_projectile_ids
 	for i = 1, #projectile_ids do
-		object(projectile_ids[i]):dispatch_state_event('seal_broken')
+		local projectile = object(projectile_ids[i])
+		projectile:set_space('main')
+		projectile:dispatch_state_event('seal_broken')
 	end
 	progression.set(self, 'boss_defeated', true)
 	self:refresh_current_room_customizations()
 	self:refresh_current_room_enemies()
+end
+
+function castle_service:activate_current_room_daemon_fight()
+	self.current_room.daemon_fight_active = true
 end
 
 function castle_service:refresh_current_room_enemies(force_reset_from_room_template)
@@ -620,13 +645,30 @@ function castle_service:tick()
 	local room_state = self.current_room
 	local seal_step_changed
 	if room_state.seal_sequence_active then
-		room_state.seal_dissolve_timer = room_state.seal_dissolve_timer + 1
-		if room_state.seal_dissolve_timer >= constants.flow.seal_dissolve_step_frames then
-			room_state.seal_dissolve_timer = 0
-			if room_state.room_dissolve_step < constants.flow.seal_room_dissolve_steps then
-				room_state.room_dissolve_step = room_state.room_dissolve_step + 1
-			elseif room_state.seal_dissolve_step < constants.flow.seal_sprite_dissolve_steps then
-				room_state.seal_dissolve_step = room_state.seal_dissolve_step + 1
+		room_state.seal_sequence_frame = room_state.seal_sequence_frame + 1
+		if room_state.seal_sequence_frame > constants.flow.seal_flash_frames then
+			local dissolve_elapsed = room_state.seal_sequence_frame - constants.flow.seal_flash_frames
+			local total_steps = constants.flow.seal_room_dissolve_steps + constants.flow.seal_sprite_dissolve_steps
+			local dissolve_steps = math.modf((dissolve_elapsed * total_steps) / constants.flow.seal_dissolve_frames)
+			if dissolve_steps > total_steps then
+				dissolve_steps = total_steps
+			end
+			local room_step = dissolve_steps
+			if room_step > constants.flow.seal_room_dissolve_steps then
+				room_step = constants.flow.seal_room_dissolve_steps
+			end
+			local seal_step = dissolve_steps - constants.flow.seal_room_dissolve_steps
+			if seal_step < 0 then
+				seal_step = 0
+			end
+			if seal_step > constants.flow.seal_sprite_dissolve_steps then
+				seal_step = constants.flow.seal_sprite_dissolve_steps
+			end
+			if room_step ~= room_state.room_dissolve_step then
+				room_state.room_dissolve_step = room_step
+			end
+			if seal_step ~= room_state.seal_dissolve_step then
+				room_state.seal_dissolve_step = seal_step
 				seal_step_changed = true
 			end
 		end

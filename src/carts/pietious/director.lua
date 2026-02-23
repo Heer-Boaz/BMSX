@@ -8,6 +8,9 @@ local function room_state_name(room_state)
 		if room_state.has_active_seal then
 			return 'seal'
 		end
+		if room_state.daemon_fight_active then
+			return 'daemon_fight'
+		end
 		return 'world'
 	end
 	return 'castle'
@@ -91,9 +94,9 @@ function director:queue_expected_room_switch_banner_if_any()
 		return false
 	end
 	self:queue_banner_transition(
-		mode,
-		self.next_room_switch_banner_world_number,
-		self.next_room_switch_banner_post_action
+	mode,
+	self.next_room_switch_banner_world_number,
+	self.next_room_switch_banner_post_action
 	)
 	self:clear_expected_room_switch_banner()
 	return true
@@ -200,6 +203,8 @@ function director:ctor()
 	self.banner_post_action = nil
 	self.active_transition_kind = nil
 	self.lithograph_text_lines = {}
+	self.daemon_clouds = {}
+	self.daemon_cloud_spawn_timer = 0
 	self.current_room_number = 0
 	self.map_id = 0
 	self.map_x = 5
@@ -217,7 +222,6 @@ local function define_director_fsm()
 			['shrine_transition_start'] = '/shrine_transition_enter',
 			['halo_transition_start'] = '/halo_teleport',
 			['seal_dissolution_start'] = '/seal_dissolution',
-			['daemon_appearance_start'] = '/daemon_appearance',
 			['title_screen_start'] = '/title_screen',
 			['story_start'] = '/story',
 			['ending_start'] = '/ending',
@@ -234,12 +238,12 @@ local function define_director_fsm()
 					object('shrine').lines = {}
 					object('lithograph').lines = {}
 					self.transition_frames_left = 0
-						local castle_service = service('c')
-						local current_room = castle_service.current_room
-						set_space('main')
-						object('ui'):set_space(get_space())
-						castle_service:restore_active_enemies_after_shrine_transition()
-						self:emit_state_changed(room_state_name(current_room))
+					local castle_service = service('c')
+					local current_room = castle_service.current_room
+					set_space('main')
+					object('ui'):set_space(get_space())
+					castle_service:restore_active_enemies_after_shrine_transition()
+					self:emit_state_changed(room_state_name(current_room))
 				end,
 				on = {
 					['room_switch_start'] = '/room_switch_wait',
@@ -260,11 +264,11 @@ local function define_director_fsm()
 					end
 				end,
 			},
-				room_switch_wait = {
-					entering_state = function(self)
-						self.active_transition_kind = 'room_switch'
-						self:begin_black_wait(constants.flow.room_switch_wait_frames)
-					end,
+			room_switch_wait = {
+				entering_state = function(self)
+					self.active_transition_kind = 'room_switch'
+					self:begin_black_wait(constants.flow.room_switch_wait_frames)
+				end,
 				tick = function(self)
 					self.transition_frames_left = self.transition_frames_left - 1
 					if self.transition_frames_left > 0 then
@@ -273,12 +277,12 @@ local function define_director_fsm()
 					return '/room'
 				end,
 			},
-					world_transition = {
-						entering_state = function(self)
-							self.active_transition_kind = 'world'
-							set_space('main')
-							object('ui'):set_space(get_space())
-						end,
+			world_transition = {
+				entering_state = function(self)
+					self.active_transition_kind = 'world'
+					set_space('main')
+					object('ui'):set_space(get_space())
+				end,
 				on = {
 					['world_transition_done'] = '/room_switch_wait',
 					['banner_requested'] = '/banner_transition',
@@ -289,21 +293,21 @@ local function define_director_fsm()
 					end
 				end,
 			},
-					shrine_transition_enter = {
-						entering_state = function(self)
-							self.active_transition_kind = 'shrine'
-							service('c'):hide_active_enemies_for_shrine_transition()
-							set_space('main')
-							object('ui'):set_space(get_space())
-						end,
+			shrine_transition_enter = {
+				entering_state = function(self)
+					self.active_transition_kind = 'shrine'
+					service('c'):hide_active_enemies_for_shrine_transition()
+					set_space('main')
+					object('ui'):set_space(get_space())
+				end,
 				on = {
 					['shrine_overlay_requested'] = '/shrine_overlay',
 				},
 			},
-				banner_transition = {
-					entering_state = function(self)
-						self.overlay_mode = self.pending_banner_mode
-						self.overlay_text_lines = self:banner_lines()
+			banner_transition = {
+				entering_state = function(self)
+					self.overlay_mode = self.pending_banner_mode
+					self.overlay_text_lines = self:banner_lines()
 					self.banner_post_action = self.pending_banner_post_action
 					if self.overlay_mode == 'world_banner' then
 						self.transition_frames_left = constants.flow.world_banner_frames
@@ -334,10 +338,10 @@ local function define_director_fsm()
 					return '/room_switch_wait'
 				end,
 			},
-				shrine_overlay = {
-					entering_state = function(self)
-						self.overlay_mode = 'shrine'
-						object('shrine').lines = self.pending_shrine_text_lines
+			shrine_overlay = {
+				entering_state = function(self)
+					self.overlay_mode = 'shrine'
+					object('shrine').lines = self.pending_shrine_text_lines
 					self.overlay_text_lines = {}
 					self.pending_shrine_text_lines = {}
 					set_space('shrine')
@@ -353,16 +357,16 @@ local function define_director_fsm()
 					end
 				end,
 			},
-					shrine_transition_exit = {
-						entering_state = function(self)
-							self.active_transition_kind = 'shrine'
-							self.overlay_mode = nil
-							self.overlay_text_lines = {}
-						object('shrine').lines = {}
-						set_space('main')
-						object('ui'):set_space(get_space())
-						object('pietolon'):leave_shrine_overlay()
-					end,
+			shrine_transition_exit = {
+				entering_state = function(self)
+					self.active_transition_kind = 'shrine'
+					self.overlay_mode = nil
+					self.overlay_text_lines = {}
+					object('shrine').lines = {}
+					set_space('main')
+					object('ui'):set_space(get_space())
+					object('pietolon'):leave_shrine_overlay()
+				end,
 				on = {
 					['shrine_transition_done'] = '/room_switch_wait',
 				},
@@ -412,11 +416,11 @@ local function define_director_fsm()
 					return '/room'
 				end,
 			},
-				halo_teleport = {
-					entering_state = function(self)
-						self.active_transition_kind = 'halo'
-						set_space('transition')
-						object('ui'):set_space(get_space())
+			halo_teleport = {
+				entering_state = function(self)
+					self.active_transition_kind = 'halo'
+					set_space('transition')
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('halo')
 					self.events:emit('transition.mask.play', {})
 				end,
@@ -424,68 +428,89 @@ local function define_director_fsm()
 					['halo_transition_done'] = '/room_switch_wait',
 				},
 			},
-				seal_dissolution = {
-					entering_state = function(self)
-						self.active_transition_kind = 'seal_dissolution'
-						self.overlay_mode = 'seal_dissolution'
-						self.transition_frames_left = constants.flow.seal_flash_frames + constants.flow.seal_dissolve_frames
-						set_space('transition')
-						object('ui'):set_space(get_space())
-						self:emit_state_changed('seal_dissolution')
-						service('c'):begin_seal_dissolution()
-					end,
-					on = {
-						['seal_dissolution_done'] = {
-							go = function(self)
-								service('c'):finish_seal_dissolution()
-								return '/room'
-							end,
-						},
+			seal_dissolution = {
+				entering_state = function(self)
+					self.active_transition_kind = 'seal_dissolution'
+					self.overlay_mode = 'seal_dissolution'
+					self.transition_frames_left = constants.flow.seal_flash_frames + constants.flow.seal_dissolve_frames
+					set_space('transition')
+					object('ui'):set_space(get_space())
+					self:emit_state_changed('seal_dissolution')
+					service('c'):begin_seal_dissolution()
+				end,
+				on = {
+					['seal_dissolution_done'] = {
+						go = function(self)
+							service('c'):finish_seal_dissolution()
+							return '/daemon_appearance'
+						end,
 					},
-					tick = function(self)
-						self.transition_frames_left = self.transition_frames_left - 1
-						if self.transition_frames_left > 0 then
-							return
-						end
-						self:dispatch_state_event('seal_dissolution_done')
-					end,
+				},
+				tick = function(self)
+					self.transition_frames_left = self.transition_frames_left - 1
+					if self.transition_frames_left > 0 then
+						return
+					end
+					self:dispatch_state_event('seal_dissolution_done')
+				end,
 			},
-				daemon_appearance = {
-					entering_state = function(self)
-						self.active_transition_kind = 'daemon_appearance'
-						self.overlay_mode = 'daemon_appearance'
-						self.transition_frames_left = constants.flow.daemon_appearance_frames
-						set_space('transition')
-						object('ui'):set_space(get_space())
-						object('room'):set_space('transition')
-						local player = object('pietolon')
-						player:set_space('transition')
-						player:dispatch_state_event('daemon_appearance_start')
-						self:emit_state_changed('daemon_appearance')
-					end,
-					on = {
-						['daemon_appearance_done'] = {
-							go = function(self)
-								object('room'):set_space('main')
-								local player = object('pietolon')
-								player:set_space('main')
-								player:dispatch_state_event('daemon_appearance_done')
-								return '/room'
-							end,
-						},
+			daemon_appearance = {
+				entering_state = function(self)
+					self.active_transition_kind = 'daemon_appearance'
+					self.overlay_mode = 'daemon_appearance'
+					self.transition_frames_left = constants.flow.daemon_appearance_frames
+					self.daemon_clouds = {}
+					self.daemon_cloud_spawn_timer = 0
+					set_space('main')
+					object('ui'):set_space(get_space())
+					object('transition'):set_space(get_space())
+					self:emit_state_changed('daemon_appearance')
+				end,
+				on = {
+					['daemon_appearance_done'] = {
+						go = function(self)
+							object('transition'):set_space('transition')
+							service('c'):activate_current_room_daemon_fight()
+							return '/room'
+						end,
 					},
-					tick = function(self)
-						self.transition_frames_left = self.transition_frames_left - 1
-						if self.transition_frames_left > 0 then
-							return
+				},
+				tick = function(self)
+					local clouds = self.daemon_clouds
+					for i = #clouds, 1, -1 do
+						local cloud = clouds[i]
+						cloud.age = cloud.age + 1
+						if cloud.age >= constants.flow.daemon_cloud_lifetime_frames then
+							table.remove(clouds, i)
 						end
-						self:dispatch_state_event('daemon_appearance_done')
-					end,
+					end
+
+					if self.transition_frames_left > 0 then
+						self.transition_frames_left = self.transition_frames_left - 1
+						self.daemon_cloud_spawn_timer = self.daemon_cloud_spawn_timer + 1
+						if self.daemon_cloud_spawn_timer >= constants.flow.daemon_cloud_spawn_step_frames then
+							self.daemon_cloud_spawn_timer = 0
+							if #clouds >= constants.flow.daemon_cloud_max then
+								table.remove(clouds, 1)
+							end
+							clouds[#clouds + 1] = {
+								x = constants.room.tile_origin_x + (math.random(4, 26) * constants.room.tile_size),
+								y = constants.room.tile_origin_y + (math.random(4, 11) * constants.room.tile_size),
+								age = 1,
+							}
+						end
+						return
+					end
+					if #clouds > 0 then
+						return
+					end
+					self:dispatch_state_event('daemon_appearance_done')
+				end,
 			},
-				lithograph_screen_open = {
-					entering_state = function(self)
-						self.active_transition_kind = 'lithograph'
-						object('lithograph').lines = self.lithograph_text_lines
+			lithograph_screen_open = {
+				entering_state = function(self)
+					self.active_transition_kind = 'lithograph'
+					object('lithograph').lines = self.lithograph_text_lines
 					set_space('lithograph')
 					object('ui'):set_space(get_space())
 					self:emit_state_changed('lithograph')
@@ -569,10 +594,10 @@ local function define_director_fsm()
 					['victory_dance_done'] = '/room',
 				},
 			},
-				death = {
-					entering_state = function(self)
-						self.active_transition_kind = 'death'
-						self.overlay_mode = 'death'
+			death = {
+				entering_state = function(self)
+					self.active_transition_kind = 'death'
+					self.overlay_mode = 'death'
 					set_space('transition')
 					object('ui'):set_space(get_space())
 					self:emit_state_changed('death')

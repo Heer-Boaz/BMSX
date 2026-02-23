@@ -442,6 +442,9 @@ local function apply_room_template(room_state, template)
 	room_state.seal_sequence_active = false
 	room_state.room_dissolve_step = 0
 	room_state.seal_dissolve_step = 0
+	room_state.seal_sequence_frame = 0
+	room_state.seal_dissolve_timer = 0
+	room_state.daemon_fight_active = false
 	room_state.world_width = constants.room.width
 	room_state.world_height = constants.room.height
 	room_state.world_top = constants.room.hud_height
@@ -809,8 +812,14 @@ function room_object:render_tiles(room_state)
 			local tile_id = row[x]
 			if dissolve_step > 0 then
 				local dissolve_index = dissolve_step - 1
-				if room_state.room_subtype == 'world' and map_row:sub(x, x) == '$' and dissolve_index > 0 then
-					goto continue
+				if room_state.room_subtype == 'world' and map_row:sub(x, x) == '$' then
+					if dissolve_index >= 6 then
+						goto continue
+					end
+					local wall_phase = ((x + (y * 3)) % 6) + 1
+					if dissolve_index >= wall_phase then
+						goto continue
+					end
 				end
 				local dissolve_prefix = world_dissolve_prefix_by_tile_id[tile_id]
 				if dissolve_prefix ~= nil then
