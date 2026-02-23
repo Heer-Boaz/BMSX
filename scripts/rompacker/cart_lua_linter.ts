@@ -52,6 +52,10 @@ type LuaLintIssueRule =
 	'forbidden_transition_to_pattern' |
 	'forbidden_matches_state_path_pattern' |
 	'event_handler_dispatch_pattern' |
+	'event_handler_state_dispatch_pattern' |
+	'dispatch_fanout_loop_pattern' |
+	'set_space_roundtrip_pattern' |
+	'fsm_state_name_mirror_assignment_pattern' |
 	'constant_copy_pattern' |
 	'split_local_table_init_pattern' |
 	'duplicate_initializer_pattern' |
@@ -229,6 +233,10 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'forbidden_transition_to_pattern',
 	'forbidden_matches_state_path_pattern',
 	'event_handler_dispatch_pattern',
+	'event_handler_state_dispatch_pattern',
+	'dispatch_fanout_loop_pattern',
+	'set_space_roundtrip_pattern',
+	'fsm_state_name_mirror_assignment_pattern',
 	'constant_copy_pattern',
 	'split_local_table_init_pattern',
 	'duplicate_initializer_pattern',
@@ -257,6 +265,10 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'forbidden_transition_to_pattern',
 	'forbidden_matches_state_path_pattern',
 	'event_handler_dispatch_pattern',
+	'event_handler_state_dispatch_pattern',
+	'dispatch_fanout_loop_pattern',
+	'set_space_roundtrip_pattern',
+	'fsm_state_name_mirror_assignment_pattern',
 	'multi_has_tag_pattern',
 	'single_use_has_tag_pattern',
 	'handler_identity_dispatch_pattern',
@@ -1479,6 +1491,16 @@ function getCallMethodName(expression: LuaCallExpression): string {
 	return undefined;
 }
 
+function getCallReceiverExpression(expression: LuaCallExpression): LuaExpression | undefined {
+	if (expression.methodName && expression.methodName.length > 0) {
+		return expression.callee;
+	}
+	if (expression.callee.kind === LuaSyntaxKind.MemberExpression) {
+		return expression.callee.base;
+	}
+	return undefined;
+}
+
 function isErrorCallExpression(expression: LuaExpression): boolean {
 	if (expression.kind !== LuaSyntaxKind.CallExpression) {
 		return false;
@@ -1590,48 +1612,61 @@ function isStateControllerExpression(expression: LuaExpression): boolean {
 	return false;
 }
 
-function isStateControllerDispatchCallExpression(expression: LuaExpression): boolean {
-	if (expression.kind !== LuaSyntaxKind.CallExpression) {
-		return false;
-	}
+function isStateControllerDispatchCallExpression(expression: LuaCallExpression): boolean {
 	const methodName = getCallMethodName(expression);
 	if (methodName !== 'dispatch') {
 		return false;
 	}
-	if (expression.methodName && expression.methodName.length > 0) {
-		return isStateControllerExpression(expression.callee);
-	}
-	if (expression.callee.kind !== LuaSyntaxKind.MemberExpression) {
+	const receiver = getCallReceiverExpression(expression);
+	if (!receiver) {
 		return false;
 	}
-	return isStateControllerExpression(expression.callee.base);
+	return isStateControllerExpression(receiver);
 }
 
-function findStateControllerDispatchCallInExpression(expression: LuaExpression | null): LuaCallExpression {
+function isDispatchStateEventCallExpression(expression: LuaCallExpression): boolean {
+	return getCallMethodName(expression) === 'dispatch_state_event';
+}
+
+function isCrossObjectDispatchStateEventCallExpression(expression: LuaCallExpression): boolean {
+	if (!isDispatchStateEventCallExpression(expression)) {
+		return false;
+	}
+	const receiver = getCallReceiverExpression(expression);
+	if (!receiver) {
+		return true;
+	}
+	return !isSelfExpressionRoot(receiver);
+}
+
+function findCallExpressionInExpression(
+	expression: LuaExpression | null,
+	predicate: (expression: LuaCallExpression) => boolean,
+): LuaCallExpression | undefined {
 	if (!expression) {
 		return undefined;
 	}
-	if (isStateControllerDispatchCallExpression(expression)) {
+	if (expression.kind === LuaSyntaxKind.CallExpression && predicate(expression)) {
 		return expression as LuaCallExpression;
 	}
 	switch (expression.kind) {
 		case LuaSyntaxKind.MemberExpression:
-			return findStateControllerDispatchCallInExpression(expression.base);
+			return findCallExpressionInExpression(expression.base, predicate);
 		case LuaSyntaxKind.IndexExpression:
-			return findStateControllerDispatchCallInExpression(expression.base)
-				|| findStateControllerDispatchCallInExpression(expression.index);
+			return findCallExpressionInExpression(expression.base, predicate)
+				|| findCallExpressionInExpression(expression.index, predicate);
 		case LuaSyntaxKind.BinaryExpression:
-			return findStateControllerDispatchCallInExpression(expression.left)
-				|| findStateControllerDispatchCallInExpression(expression.right);
+			return findCallExpressionInExpression(expression.left, predicate)
+				|| findCallExpressionInExpression(expression.right, predicate);
 		case LuaSyntaxKind.UnaryExpression:
-			return findStateControllerDispatchCallInExpression(expression.operand);
+			return findCallExpressionInExpression(expression.operand, predicate);
 		case LuaSyntaxKind.CallExpression: {
-			const fromCallee = findStateControllerDispatchCallInExpression(expression.callee);
+			const fromCallee = findCallExpressionInExpression(expression.callee, predicate);
 			if (fromCallee) {
 				return fromCallee;
 			}
 			for (const argument of expression.arguments) {
-				const fromArg = findStateControllerDispatchCallInExpression(argument);
+				const fromArg = findCallExpressionInExpression(argument, predicate);
 				if (fromArg) {
 					return fromArg;
 				}
@@ -1641,30 +1676,33 @@ function findStateControllerDispatchCallInExpression(expression: LuaExpression |
 		case LuaSyntaxKind.TableConstructorExpression:
 			for (const field of expression.fields) {
 				if (field.kind === LuaTableFieldKind.ExpressionKey) {
-					const fromKey = findStateControllerDispatchCallInExpression(field.key);
+					const fromKey = findCallExpressionInExpression(field.key, predicate);
 					if (fromKey) {
 						return fromKey;
 					}
 				}
-				const fromValue = findStateControllerDispatchCallInExpression(field.value);
+				const fromValue = findCallExpressionInExpression(field.value, predicate);
 				if (fromValue) {
 					return fromValue;
 				}
 			}
 			return undefined;
 		case LuaSyntaxKind.FunctionExpression:
-			return findStateControllerDispatchCallInStatements(expression.body.body);
+			return findCallExpressionInStatements(expression.body.body, predicate);
 		default:
 			return undefined;
 	}
 }
 
-function findStateControllerDispatchCallInStatements(statements: ReadonlyArray<LuaStatement>): LuaCallExpression {
+function findCallExpressionInStatements(
+	statements: ReadonlyArray<LuaStatement>,
+	predicate: (expression: LuaCallExpression) => boolean,
+): LuaCallExpression | undefined {
 	for (const statement of statements) {
 		switch (statement.kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {
-					const fromValue = findStateControllerDispatchCallInExpression(value);
+					const fromValue = findCallExpressionInExpression(value, predicate);
 					if (fromValue) {
 						return fromValue;
 					}
@@ -1672,27 +1710,27 @@ function findStateControllerDispatchCallInStatements(statements: ReadonlyArray<L
 				break;
 			case LuaSyntaxKind.AssignmentStatement:
 				for (const left of statement.left) {
-					const fromLeft = findStateControllerDispatchCallInExpression(left);
+					const fromLeft = findCallExpressionInExpression(left, predicate);
 					if (fromLeft) {
 						return fromLeft;
 					}
 				}
 				for (const right of statement.right) {
-					const fromRight = findStateControllerDispatchCallInExpression(right);
+					const fromRight = findCallExpressionInExpression(right, predicate);
 					if (fromRight) {
 						return fromRight;
 					}
 				}
 				break;
 			case LuaSyntaxKind.LocalFunctionStatement: {
-				const fromFunction = findStateControllerDispatchCallInStatements(statement.functionExpression.body.body);
+				const fromFunction = findCallExpressionInStatements(statement.functionExpression.body.body, predicate);
 				if (fromFunction) {
 					return fromFunction;
 				}
 				break;
 			}
 			case LuaSyntaxKind.FunctionDeclarationStatement: {
-				const fromFunction = findStateControllerDispatchCallInStatements(statement.functionExpression.body.body);
+				const fromFunction = findCallExpressionInStatements(statement.functionExpression.body.body, predicate);
 				if (fromFunction) {
 					return fromFunction;
 				}
@@ -1700,7 +1738,7 @@ function findStateControllerDispatchCallInStatements(statements: ReadonlyArray<L
 			}
 			case LuaSyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
-					const fromExpression = findStateControllerDispatchCallInExpression(expression);
+					const fromExpression = findCallExpressionInExpression(expression, predicate);
 					if (fromExpression) {
 						return fromExpression;
 					}
@@ -1708,52 +1746,52 @@ function findStateControllerDispatchCallInStatements(statements: ReadonlyArray<L
 				break;
 			case LuaSyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
-					const fromCondition = findStateControllerDispatchCallInExpression(clause.condition);
+					const fromCondition = findCallExpressionInExpression(clause.condition, predicate);
 					if (fromCondition) {
 						return fromCondition;
 					}
-					const fromBlock = findStateControllerDispatchCallInStatements(clause.block.body);
+					const fromBlock = findCallExpressionInStatements(clause.block.body, predicate);
 					if (fromBlock) {
 						return fromBlock;
 					}
 				}
 				break;
 			case LuaSyntaxKind.WhileStatement: {
-				const fromCondition = findStateControllerDispatchCallInExpression(statement.condition);
+				const fromCondition = findCallExpressionInExpression(statement.condition, predicate);
 				if (fromCondition) {
 					return fromCondition;
 				}
-				const fromBlock = findStateControllerDispatchCallInStatements(statement.block.body);
+				const fromBlock = findCallExpressionInStatements(statement.block.body, predicate);
 				if (fromBlock) {
 					return fromBlock;
 				}
 				break;
 			}
 			case LuaSyntaxKind.RepeatStatement: {
-				const fromBlock = findStateControllerDispatchCallInStatements(statement.block.body);
+				const fromBlock = findCallExpressionInStatements(statement.block.body, predicate);
 				if (fromBlock) {
 					return fromBlock;
 				}
-				const fromCondition = findStateControllerDispatchCallInExpression(statement.condition);
+				const fromCondition = findCallExpressionInExpression(statement.condition, predicate);
 				if (fromCondition) {
 					return fromCondition;
 				}
 				break;
 			}
 			case LuaSyntaxKind.ForNumericStatement: {
-				const fromStart = findStateControllerDispatchCallInExpression(statement.start);
+				const fromStart = findCallExpressionInExpression(statement.start, predicate);
 				if (fromStart) {
 					return fromStart;
 				}
-				const fromLimit = findStateControllerDispatchCallInExpression(statement.limit);
+				const fromLimit = findCallExpressionInExpression(statement.limit, predicate);
 				if (fromLimit) {
 					return fromLimit;
 				}
-				const fromStep = findStateControllerDispatchCallInExpression(statement.step);
+				const fromStep = findCallExpressionInExpression(statement.step, predicate);
 				if (fromStep) {
 					return fromStep;
 				}
-				const fromBlock = findStateControllerDispatchCallInStatements(statement.block.body);
+				const fromBlock = findCallExpressionInStatements(statement.block.body, predicate);
 				if (fromBlock) {
 					return fromBlock;
 				}
@@ -1761,27 +1799,27 @@ function findStateControllerDispatchCallInStatements(statements: ReadonlyArray<L
 			}
 			case LuaSyntaxKind.ForGenericStatement:
 				for (const iterator of statement.iterators) {
-					const fromIterator = findStateControllerDispatchCallInExpression(iterator);
+					const fromIterator = findCallExpressionInExpression(iterator, predicate);
 					if (fromIterator) {
 						return fromIterator;
 					}
 				}
 				{
-					const fromBlock = findStateControllerDispatchCallInStatements(statement.block.body);
+					const fromBlock = findCallExpressionInStatements(statement.block.body, predicate);
 					if (fromBlock) {
 						return fromBlock;
 					}
 				}
 				break;
 			case LuaSyntaxKind.DoStatement: {
-				const fromBlock = findStateControllerDispatchCallInStatements(statement.block.body);
+				const fromBlock = findCallExpressionInStatements(statement.block.body, predicate);
 				if (fromBlock) {
 					return fromBlock;
 				}
 				break;
 			}
 			case LuaSyntaxKind.CallStatement: {
-				const fromCall = findStateControllerDispatchCallInExpression(statement.expression);
+				const fromCall = findCallExpressionInExpression(statement.expression, predicate);
 				if (fromCall) {
 					return fromCall;
 				}
@@ -1798,6 +1836,30 @@ function findStateControllerDispatchCallInStatements(statements: ReadonlyArray<L
 	return undefined;
 }
 
+function isGetSpaceCallExpression(expression: LuaExpression | null): boolean {
+	if (!expression || expression.kind !== LuaSyntaxKind.CallExpression) {
+		return false;
+	}
+	return expression.callee.kind === LuaSyntaxKind.IdentifierExpression
+		&& expression.callee.name === 'get_space'
+		&& expression.arguments.length === 0;
+}
+
+function lintSetSpaceRoundtripPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (getCallMethodName(expression) !== 'set_space' || expression.arguments.length !== 1) {
+		return;
+	}
+	if (!isGetSpaceCallExpression(expression.arguments[0])) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'set_space_roundtrip_pattern',
+		expression,
+		'set_space(get_space()) is forbidden. Set the target space directly instead of re-reading and re-applying the same space.',
+	);
+}
+
 function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
 	if (!isEventsOnCallExpression(expression)) {
 		return;
@@ -1807,17 +1869,50 @@ function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: 
 		if (!handlerField || handlerField.value.kind !== LuaSyntaxKind.FunctionExpression) {
 			continue;
 		}
-		const dispatchCall = findStateControllerDispatchCallInStatements(handlerField.value.body.body);
-		if (!dispatchCall) {
-			continue;
-		}
-		pushIssue(
-			issues,
-			'event_handler_dispatch_pattern',
-			dispatchCall,
-			'Event handler callbacks must not call sc:dispatch(...). Route event-driven transitions via FSM definitions instead of manual dispatch inside events:on handlers.',
+		const scDispatchCall = findCallExpressionInStatements(
+			handlerField.value.body.body,
+			isStateControllerDispatchCallExpression,
 		);
+		if (scDispatchCall) {
+			pushIssue(
+				issues,
+				'event_handler_dispatch_pattern',
+				scDispatchCall,
+				'Event handler callbacks must not call sc:dispatch(...). Route event-driven transitions via FSM definitions instead of manual dispatch inside events:on handlers.',
+			);
+		}
+		const stateDispatchCall = findCallExpressionInStatements(
+			handlerField.value.body.body,
+			isDispatchStateEventCallExpression,
+		);
+		if (stateDispatchCall) {
+			pushIssue(
+				issues,
+				'event_handler_state_dispatch_pattern',
+				stateDispatchCall,
+				'Event handler callbacks must not call dispatch_state_event(...). Model event-driven transitions directly in FSM definitions instead of manual state dispatch inside events:on handlers.',
+			);
+		}
 	}
+}
+
+function lintDispatchFanoutLoopPattern(statement: LuaStatement, issues: LuaLintIssue[]): void {
+	if (statement.kind !== LuaSyntaxKind.ForNumericStatement && statement.kind !== LuaSyntaxKind.ForGenericStatement) {
+		return;
+	}
+	const dispatchCall = findCallExpressionInStatements(
+		statement.block.body,
+		isCrossObjectDispatchStateEventCallExpression,
+	);
+	if (!dispatchCall) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'dispatch_fanout_loop_pattern',
+		dispatchCall,
+		'Fan-out dispatch_state_event(...) loops are forbidden. Objects/services must own their own FSM/event handling instead of external manual dispatch loops.',
+	);
 }
 
 function getEnsureVariableName(statement: LuaIfStatement): string {
@@ -3895,6 +3990,273 @@ function lintFsmIdLabelPattern(expression: LuaCallExpression, issues: LuaLintIss
 	);
 }
 
+function normalizeStateNameToken(stateName: string): string {
+	if (stateName.startsWith('/')) {
+		return stateName.slice(1);
+	}
+	return stateName;
+}
+
+function getStateNameFromStateField(field: LuaTableField): string | undefined {
+	if (field.kind === LuaTableFieldKind.IdentifierKey) {
+		return field.name;
+	}
+	if (field.kind === LuaTableFieldKind.ExpressionKey) {
+		return getExpressionKeyName(field.key);
+	}
+	return undefined;
+}
+
+function getSelfAssignedPropertyNameFromTarget(target: LuaExpression): string | undefined {
+	if (target.kind === LuaSyntaxKind.MemberExpression && isSelfExpressionRoot(target.base)) {
+		return target.identifier;
+	}
+	if (target.kind === LuaSyntaxKind.IndexExpression && isSelfExpressionRoot(target.base)) {
+		return getExpressionKeyName(target.index);
+	}
+	return undefined;
+}
+
+function findStateNameMirrorAssignmentInExpression(
+	expression: LuaExpression | null,
+	stateName: string,
+): { readonly propertyName: string; readonly valueNode: LuaExpression; } | undefined {
+	if (!expression) {
+		return undefined;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.MemberExpression:
+			return findStateNameMirrorAssignmentInExpression(expression.base, stateName);
+		case LuaSyntaxKind.IndexExpression:
+			return findStateNameMirrorAssignmentInExpression(expression.base, stateName)
+				|| findStateNameMirrorAssignmentInExpression(expression.index, stateName);
+		case LuaSyntaxKind.BinaryExpression:
+			return findStateNameMirrorAssignmentInExpression(expression.left, stateName)
+				|| findStateNameMirrorAssignmentInExpression(expression.right, stateName);
+		case LuaSyntaxKind.UnaryExpression:
+			return findStateNameMirrorAssignmentInExpression(expression.operand, stateName);
+		case LuaSyntaxKind.CallExpression: {
+			const fromCallee = findStateNameMirrorAssignmentInExpression(expression.callee, stateName);
+			if (fromCallee) {
+				return fromCallee;
+			}
+			for (const argument of expression.arguments) {
+				const fromArgument = findStateNameMirrorAssignmentInExpression(argument, stateName);
+				if (fromArgument) {
+					return fromArgument;
+				}
+			}
+			return undefined;
+		}
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					const fromKey = findStateNameMirrorAssignmentInExpression(field.key, stateName);
+					if (fromKey) {
+						return fromKey;
+					}
+				}
+				const fromValue = findStateNameMirrorAssignmentInExpression(field.value, stateName);
+				if (fromValue) {
+					return fromValue;
+				}
+			}
+			return undefined;
+		case LuaSyntaxKind.FunctionExpression:
+			return findStateNameMirrorAssignmentInStatements(expression.body.body, stateName);
+		default:
+			return undefined;
+	}
+}
+
+function findStateNameMirrorAssignmentInStatements(
+	statements: ReadonlyArray<LuaStatement>,
+	stateName: string,
+): { readonly propertyName: string; readonly valueNode: LuaExpression; } | undefined {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement:
+				for (const value of statement.values) {
+					const fromValue = findStateNameMirrorAssignmentInExpression(value, stateName);
+					if (fromValue) {
+						return fromValue;
+					}
+				}
+				break;
+			case LuaSyntaxKind.AssignmentStatement: {
+				for (let index = 0; index < statement.left.length && index < statement.right.length; index += 1) {
+					const propertyName = getSelfAssignedPropertyNameFromTarget(statement.left[index]);
+					if (!propertyName) {
+						continue;
+					}
+					const right = statement.right[index];
+					if (right.kind !== LuaSyntaxKind.StringLiteralExpression) {
+						continue;
+					}
+					if (normalizeStateNameToken(right.value) !== stateName) {
+						continue;
+					}
+					return { propertyName, valueNode: right };
+				}
+				for (const left of statement.left) {
+					const fromLeft = findStateNameMirrorAssignmentInExpression(left, stateName);
+					if (fromLeft) {
+						return fromLeft;
+					}
+				}
+				for (const right of statement.right) {
+					const fromRight = findStateNameMirrorAssignmentInExpression(right, stateName);
+					if (fromRight) {
+						return fromRight;
+					}
+				}
+				break;
+			}
+			case LuaSyntaxKind.LocalFunctionStatement: {
+				const fromFunction = findStateNameMirrorAssignmentInStatements(statement.functionExpression.body.body, stateName);
+				if (fromFunction) {
+					return fromFunction;
+				}
+				break;
+			}
+			case LuaSyntaxKind.FunctionDeclarationStatement: {
+				const fromFunction = findStateNameMirrorAssignmentInStatements(statement.functionExpression.body.body, stateName);
+				if (fromFunction) {
+					return fromFunction;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					const fromExpression = findStateNameMirrorAssignmentInExpression(expression, stateName);
+					if (fromExpression) {
+						return fromExpression;
+					}
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					const fromCondition = findStateNameMirrorAssignmentInExpression(clause.condition, stateName);
+					if (fromCondition) {
+						return fromCondition;
+					}
+					const fromBlock = findStateNameMirrorAssignmentInStatements(clause.block.body, stateName);
+					if (fromBlock) {
+						return fromBlock;
+					}
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement: {
+				const fromCondition = findStateNameMirrorAssignmentInExpression(statement.condition, stateName);
+				if (fromCondition) {
+					return fromCondition;
+				}
+				const fromBlock = findStateNameMirrorAssignmentInStatements(statement.block.body, stateName);
+				if (fromBlock) {
+					return fromBlock;
+				}
+				break;
+			}
+			case LuaSyntaxKind.RepeatStatement: {
+				const fromBlock = findStateNameMirrorAssignmentInStatements(statement.block.body, stateName);
+				if (fromBlock) {
+					return fromBlock;
+				}
+				const fromCondition = findStateNameMirrorAssignmentInExpression(statement.condition, stateName);
+				if (fromCondition) {
+					return fromCondition;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ForNumericStatement: {
+				const fromStart = findStateNameMirrorAssignmentInExpression(statement.start, stateName);
+				if (fromStart) {
+					return fromStart;
+				}
+				const fromLimit = findStateNameMirrorAssignmentInExpression(statement.limit, stateName);
+				if (fromLimit) {
+					return fromLimit;
+				}
+				const fromStep = findStateNameMirrorAssignmentInExpression(statement.step, stateName);
+				if (fromStep) {
+					return fromStep;
+				}
+				const fromBlock = findStateNameMirrorAssignmentInStatements(statement.block.body, stateName);
+				if (fromBlock) {
+					return fromBlock;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					const fromIterator = findStateNameMirrorAssignmentInExpression(iterator, stateName);
+					if (fromIterator) {
+						return fromIterator;
+					}
+				}
+				{
+					const fromBlock = findStateNameMirrorAssignmentInStatements(statement.block.body, stateName);
+					if (fromBlock) {
+						return fromBlock;
+					}
+				}
+				break;
+			case LuaSyntaxKind.DoStatement: {
+				const fromBlock = findStateNameMirrorAssignmentInStatements(statement.block.body, stateName);
+				if (fromBlock) {
+					return fromBlock;
+				}
+				break;
+			}
+			case LuaSyntaxKind.CallStatement: {
+				const fromCall = findStateNameMirrorAssignmentInExpression(statement.expression, stateName);
+				if (fromCall) {
+					return fromCall;
+				}
+				break;
+			}
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
+		}
+	}
+	return undefined;
+}
+
+function lintFsmStateNameMirrorAssignmentPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isGlobalCall(expression, 'define_fsm')) {
+		return;
+	}
+	const definition = expression.arguments[1];
+	const statesField = findTableFieldByKey(definition, 'states');
+	if (!statesField || statesField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const stateField of statesField.value.fields) {
+		const stateNameRaw = getStateNameFromStateField(stateField);
+		if (!stateNameRaw || stateField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+			continue;
+		}
+		const stateName = normalizeStateNameToken(stateNameRaw);
+		if (!stateName) {
+			continue;
+		}
+		const mirror = findStateNameMirrorAssignmentInExpression(stateField.value, stateName);
+		if (!mirror) {
+			continue;
+		}
+		pushIssue(
+			issues,
+			'fsm_state_name_mirror_assignment_pattern',
+			mirror.valueNode,
+			`FSM state "${stateName}" must not be mirrored into self.${mirror.propertyName} using the same string literal. Derive behavior from the active state instead of duplicating state-name strings in properties.`,
+		);
+	}
+}
+
 function lintBtIdLabelPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
 	const methodName = getCallMethodName(expression);
 	if (methodName !== 'register_behaviour_tree' && methodName !== 'register_definition') {
@@ -4371,10 +4733,12 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 			lintRequireCall(expression, issues);
 			lintForbiddenStateCalls(expression, issues);
 			lintEventHandlerDispatchPattern(expression, issues);
+			lintSetSpaceRoundtripPattern(expression, issues);
 			lintServiceDefinitionSuffixPattern(expression, issues);
 			lintCreateServiceIdAddonPattern(expression, issues);
 			lintDefineServiceIdPattern(expression, issues);
 			lintFsmIdLabelPattern(expression, issues);
+			lintFsmStateNameMirrorAssignmentPattern(expression, issues);
 			lintBtIdLabelPattern(expression, issues);
 			lintExpression(expression.callee, issues, false);
 			for (const arg of expression.arguments) {
@@ -4489,12 +4853,14 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 				lintExpression(statement.condition, issues);
 				break;
 			case LuaSyntaxKind.ForNumericStatement:
+				lintDispatchFanoutLoopPattern(statement, issues);
 				lintExpression(statement.start, issues);
 				lintExpression(statement.limit, issues);
 				lintExpression(statement.step, issues);
 				lintStatements(statement.block.body, issues);
 				break;
 			case LuaSyntaxKind.ForGenericStatement:
+				lintDispatchFanoutLoopPattern(statement, issues);
 				for (const iterator of statement.iterators) {
 					lintExpression(iterator, issues);
 				}
