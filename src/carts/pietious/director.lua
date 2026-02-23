@@ -457,10 +457,22 @@ local function define_director_fsm()
 						self.transition_frames_left = constants.flow.daemon_appearance_frames
 						set_space('transition')
 						object('ui'):set_space(get_space())
+						object('room'):set_space('transition')
+						local player = object('pietolon')
+						player:set_space('transition')
+						player:dispatch_state_event('daemon_appearance_start')
 						self:emit_state_changed('daemon_appearance')
 					end,
 					on = {
-						['daemon_appearance_done'] = '/room',
+						['daemon_appearance_done'] = {
+							go = function(self)
+								object('room'):set_space('main')
+								local player = object('pietolon')
+								player:set_space('main')
+								player:dispatch_state_event('daemon_appearance_done')
+								return '/room'
+							end,
+						},
 					},
 					tick = function(self)
 						self.transition_frames_left = self.transition_frames_left - 1

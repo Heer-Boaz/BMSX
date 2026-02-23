@@ -387,6 +387,7 @@ function castle_service:sync_current_room_seal_instance()
 	if seal == nil then
 		return
 	end
+	local active_space = get_space()
 
 	local seal_instance = object(seal.id)
 	if not room_state.has_active_seal and not room_state.seal_sequence_active then
@@ -414,10 +415,11 @@ function castle_service:sync_current_room_seal_instance()
 	if seal_instance == nil then
 		seal_instance = inst('seal', {
 			id = seal.id,
+			space_id = active_space,
 			pos = { x = seal.x, y = seal.y, z = 23 },
 		})
 	else
-		seal_instance:set_space('main')
+		seal_instance:set_space(active_space)
 		if not seal_instance.active then
 			seal_instance:activate()
 		end
@@ -444,9 +446,18 @@ end
 function castle_service:begin_seal_dissolution()
 	local room_state = self.current_room
 	room_state.seal_sequence_active = true
-	room_state.room_dissolve_step = 0
-	room_state.seal_dissolve_step = 0
+	room_state.room_dissolve_step = 1
+	room_state.seal_dissolve_step = 1
 	room_state.seal_dissolve_timer = 0
+	object('room'):set_space('transition')
+	local player = object('pietolon')
+	player:set_space('transition')
+	player:dispatch_state_event('seal_breaking')
+	player:refresh_active_pepernoot_projectiles()
+	local projectile_ids = player.pepernoot_projectile_ids
+	for i = 1, #projectile_ids do
+		object(projectile_ids[i]):dispatch_state_event('seal_breaking')
+	end
 	self:sync_current_room_seal_instance()
 end
 
@@ -454,6 +465,15 @@ function castle_service:finish_seal_dissolution()
 	local room_state = self.current_room
 	room_state.seal_sequence_active = false
 	room_state.has_active_seal = false
+	object('room'):set_space('main')
+	local player = object('pietolon')
+	player:set_space('main')
+	player:dispatch_state_event('seal_broken')
+	player:refresh_active_pepernoot_projectiles()
+	local projectile_ids = player.pepernoot_projectile_ids
+	for i = 1, #projectile_ids do
+		object(projectile_ids[i]):dispatch_state_event('seal_broken')
+	end
 	progression.set(self, 'boss_defeated', true)
 	self:refresh_current_room_customizations()
 	self:refresh_current_room_enemies()

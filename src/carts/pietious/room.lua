@@ -802,12 +802,16 @@ function room_object:render_tiles(room_state)
 
 	for y = 1, room_state.tile_rows do
 		local draw_y = origin_y + ((y - 1) * tile_size)
+		local map_row = room_state.map_rows[y]
 		local row = room_state.tiles[y]
 		for x = 1, room_state.tile_columns do
 			local draw_x = origin_x + ((x - 1) * tile_size)
 			local tile_id = row[x]
 			if dissolve_step > 0 then
 				local dissolve_index = dissolve_step - 1
+				if room_state.room_subtype == 'world' and map_row:sub(x, x) == '$' and dissolve_index > 0 then
+					goto continue
+				end
 				local dissolve_prefix = world_dissolve_prefix_by_tile_id[tile_id]
 				if dissolve_prefix ~= nil then
 					if dissolve_index >= 6 then

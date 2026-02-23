@@ -1557,7 +1557,7 @@ function player:advance_walk_animation(distance_px)
 end
 
 function player:runcheck_quiet_controls()
-	if not self:has_tag(state_tags.variant.quiet) then
+	if not self:has_tag(state_tags.variant.quiet) then -- ???
 		return
 	end
 
@@ -2785,6 +2785,15 @@ local function define_player_fsm()
 			process_input = player.sample_input,
 			tick = player.reset_motion_for_transition_lock,
 		},
+		freeze = {
+			on = {
+				['seal_broken'] = {
+					go = function(_self, state)
+						state:pop_and_transition()
+					end,
+				},
+			},
+		},
 		hit_fall = {
 			tags = { state_tags.variant.hit_fall, state_tags.group.damage_lock },
 			on = {
@@ -2916,6 +2925,7 @@ local function define_player_fsm()
 			['enter_world_start'] = '/entering_world',
 			['leave_world_start'] = '/waiting_world_emerge',
 			['enter_shrine_start'] = '/entering_shrine',
+			['seal_breaking'] = '/freeze',
 		},
 		states = states,
 	})

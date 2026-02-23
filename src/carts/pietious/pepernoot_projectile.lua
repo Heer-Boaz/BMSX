@@ -67,8 +67,20 @@ end
 local function define_pepernoot_projectile_fsm()
 	define_fsm('pepernoot_projectile', {
 		initial = 'active',
+		on = {
+			['seal_breaking'] = '/freeze',
+		},
 		states = {
 			active = {},
+			freeze = {
+				on = {
+					['seal_broken'] = {
+						go = function(_self, state)
+							state:pop_and_transition()
+						end,
+					},
+				},
+			},
 		},
 	})
 end
