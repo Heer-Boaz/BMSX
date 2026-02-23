@@ -235,7 +235,7 @@ local function define_director_fsm()
 					local room_space = current_room.space_id
 					set_space(room_space)
 					object('ui'):set_space(get_space())
-					service('c'):resume_active_enemies_after_transition()
+					service('c'):restore_active_enemies_after_shrine_transition()
 					self:emit_state_changed(room_state_name(current_room))
 				end,
 				on = {
@@ -257,12 +257,11 @@ local function define_director_fsm()
 					end
 				end,
 			},
-			room_switch_wait = {
-				entering_state = function(self)
-					self.active_transition_kind = 'room_switch'
-					service('c'):park_active_enemies_for_transition()
-					self:begin_black_wait(constants.flow.room_switch_wait_frames)
-				end,
+				room_switch_wait = {
+					entering_state = function(self)
+						self.active_transition_kind = 'room_switch'
+						self:begin_black_wait(constants.flow.room_switch_wait_frames)
+					end,
 				tick = function(self)
 					self.transition_frames_left = self.transition_frames_left - 1
 					if self.transition_frames_left > 0 then
@@ -271,13 +270,12 @@ local function define_director_fsm()
 					return '/room'
 				end,
 			},
-			world_transition = {
-				entering_state = function(self)
-					self.active_transition_kind = 'world'
-					service('c'):park_active_enemies_for_transition()
-					set_space(service('c').current_room.space_id)
-					object('ui'):set_space(get_space())
-				end,
+				world_transition = {
+					entering_state = function(self)
+						self.active_transition_kind = 'world'
+						set_space(service('c').current_room.space_id)
+						object('ui'):set_space(get_space())
+					end,
 				on = {
 					['world_transition_done'] = '/room_switch_wait',
 					['banner_requested'] = '/banner_transition',
@@ -288,22 +286,21 @@ local function define_director_fsm()
 					end
 				end,
 			},
-			shrine_transition_enter = {
-				entering_state = function(self)
-					self.active_transition_kind = 'shrine'
-					service('c'):park_active_enemies_for_transition()
-					set_space(service('c').current_room.space_id)
-					object('ui'):set_space(get_space())
-				end,
+				shrine_transition_enter = {
+					entering_state = function(self)
+						self.active_transition_kind = 'shrine'
+						service('c'):hide_active_enemies_for_shrine_transition()
+						set_space(service('c').current_room.space_id)
+						object('ui'):set_space(get_space())
+					end,
 				on = {
 					['shrine_overlay_requested'] = '/shrine_overlay',
 				},
 			},
-			banner_transition = {
-				entering_state = function(self)
-					service('c'):park_active_enemies_for_transition()
-					self.overlay_mode = self.pending_banner_mode
-					self.overlay_text_lines = self:banner_lines()
+				banner_transition = {
+					entering_state = function(self)
+						self.overlay_mode = self.pending_banner_mode
+						self.overlay_text_lines = self:banner_lines()
 					self.banner_post_action = self.pending_banner_post_action
 					if self.overlay_mode == 'world_banner' then
 						self.transition_frames_left = constants.flow.world_banner_frames
@@ -334,11 +331,10 @@ local function define_director_fsm()
 					return '/room_switch_wait'
 				end,
 			},
-			shrine_overlay = {
-				entering_state = function(self)
-					service('c'):park_active_enemies_for_transition()
-					self.overlay_mode = 'shrine'
-					object('shrine').lines = self.pending_shrine_text_lines
+				shrine_overlay = {
+					entering_state = function(self)
+						self.overlay_mode = 'shrine'
+						object('shrine').lines = self.pending_shrine_text_lines
 					self.overlay_text_lines = {}
 					self.pending_shrine_text_lines = {}
 					set_space('shrine')
@@ -354,12 +350,11 @@ local function define_director_fsm()
 					end
 				end,
 			},
-			shrine_transition_exit = {
-				entering_state = function(self)
-					self.active_transition_kind = 'shrine'
-					service('c'):park_active_enemies_for_transition()
-					self.overlay_mode = nil
-					self.overlay_text_lines = {}
+				shrine_transition_exit = {
+					entering_state = function(self)
+						self.active_transition_kind = 'shrine'
+						self.overlay_mode = nil
+						self.overlay_text_lines = {}
 					object('shrine').lines = {}
 					set_space(service('c').current_room.space_id)
 					object('ui'):set_space(get_space())
@@ -414,12 +409,11 @@ local function define_director_fsm()
 					return '/room'
 				end,
 			},
-			halo_teleport = {
-				entering_state = function(self)
-					self.active_transition_kind = 'halo'
-					service('c'):park_active_enemies_for_transition()
-					set_space('transition')
-					object('ui'):set_space(get_space())
+				halo_teleport = {
+					entering_state = function(self)
+						self.active_transition_kind = 'halo'
+						set_space('transition')
+						object('ui'):set_space(get_space())
 					self:emit_state_changed('halo')
 					self.events:emit('transition.mask.play', {})
 				end,
@@ -427,11 +421,10 @@ local function define_director_fsm()
 					['halo_transition_done'] = '/room_switch_wait',
 				},
 			},
-			seal_dissolution = {
-				entering_state = function(self)
-					self.active_transition_kind = 'seal_dissolution'
-					service('c'):park_active_enemies_for_transition()
-					self.overlay_mode = 'seal_dissolution'
+				seal_dissolution = {
+					entering_state = function(self)
+						self.active_transition_kind = 'seal_dissolution'
+						self.overlay_mode = 'seal_dissolution'
 					set_space('transition')
 					object('ui'):set_space(get_space())
 					self:emit_state_changed('seal_dissolution')
@@ -441,11 +434,10 @@ local function define_director_fsm()
 					['seal_dissolution_done'] = '/room',
 				},
 			},
-			daemon_appearance = {
-				entering_state = function(self)
-					self.active_transition_kind = 'daemon_appearance'
-					service('c'):park_active_enemies_for_transition()
-					self.overlay_mode = 'daemon_appearance'
+				daemon_appearance = {
+					entering_state = function(self)
+						self.active_transition_kind = 'daemon_appearance'
+						self.overlay_mode = 'daemon_appearance'
 					set_space('transition')
 					object('ui'):set_space(get_space())
 					self:emit_state_changed('daemon_appearance')
@@ -455,11 +447,10 @@ local function define_director_fsm()
 					['daemon_appearance_done'] = '/room',
 				},
 			},
-			lithograph_screen_open = {
-				entering_state = function(self)
-					self.active_transition_kind = 'lithograph'
-					service('c'):park_active_enemies_for_transition()
-					object('lithograph').lines = self.lithograph_text_lines
+				lithograph_screen_open = {
+					entering_state = function(self)
+						self.active_transition_kind = 'lithograph'
+						object('lithograph').lines = self.lithograph_text_lines
 					set_space('lithograph')
 					object('ui'):set_space(get_space())
 					self:emit_state_changed('lithograph')
@@ -543,11 +534,10 @@ local function define_director_fsm()
 					['victory_dance_done'] = '/room',
 				},
 			},
-			death = {
-				entering_state = function(self)
-					self.active_transition_kind = 'death'
-					service('c'):park_active_enemies_for_transition()
-					self.overlay_mode = 'death'
+				death = {
+					entering_state = function(self)
+						self.active_transition_kind = 'death'
+						self.overlay_mode = 'death'
 					set_space('transition')
 					object('ui'):set_space(get_space())
 					self:emit_state_changed('death')

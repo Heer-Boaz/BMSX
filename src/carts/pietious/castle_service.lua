@@ -5,7 +5,6 @@ local progression = require('progression')
 local world_instance = require('world').instance
 
 local castle_service = {}
-local enemy_transition_space_id = 'eh'
 local persistent_room_object_ids = {
 	pietolon = true,
 	room = true,
@@ -231,7 +230,7 @@ local function should_dispose_runtime_room_object(obj, room_space)
 		return false
 	end
 	local space_id = obj.space_id
-	if space_id == room_space or space_id == enemy_transition_space_id then
+	if space_id == room_space then
 		return true
 	end
 	return false
@@ -339,6 +338,16 @@ function castle_service:deactivate_stale_active_enemies(next_active_ids)
 	end
 end
 
+function castle_service:despawn_active_enemies()
+	self:for_each_active_enemy_instance(function(instance)
+		world_instance:despawn(instance)
+	end)
+	clear_map(self.enemies_by_id)
+	clear_map(self.active_enemy_ids)
+	clear_map(self.active_enemy_ids_scratch)
+	self.enemies_hidden_for_shrine = false
+end
+
 function castle_service:commit_active_enemy_ids(next_active_ids)
 	local previous_active_ids = self.active_enemy_ids
 	self.active_enemy_ids = next_active_ids
@@ -355,31 +364,21 @@ function castle_service:for_each_active_enemy_instance(visitor)
 	end
 end
 
-function castle_service:apply_enemy_transition_space_if_needed()
-	if not self.enemies_suspended_for_transition then
-		return
-	end
-
+function castle_service:hide_active_enemies_for_shrine_transition()
+	self.enemies_hidden_for_shrine = true
 	self:for_each_active_enemy_instance(function(instance)
-		instance:set_space(enemy_transition_space_id)
+		instance:set_space('transition')
 	end)
 end
 
-function castle_service:park_active_enemies_for_transition()
-	self.enemies_suspended_for_transition = true
-	self:apply_enemy_transition_space_if_needed()
-end
-
-function castle_service:resume_active_enemies_after_transition()
-	self.enemies_suspended_for_transition = false
-
+function castle_service:restore_active_enemies_after_shrine_transition()
+	if not self.enemies_hidden_for_shrine then
+		return
+	end
+	self.enemies_hidden_for_shrine = false
 	local room_space = self.current_room.space_id
 	self:for_each_active_enemy_instance(function(instance)
 		instance:set_space(room_space)
-		instance.visible = true
-		if not instance.active then
-			instance:activate()
-		end
 	end)
 end
 
@@ -411,7 +410,6 @@ function castle_service:refresh_current_room_enemies(force_reset_from_room_templ
 
 	self:deactivate_stale_active_enemies(next_active_ids)
 	self:commit_active_enemy_ids(next_active_ids)
-	self:apply_enemy_transition_space_if_needed()
 end
 
 function castle_service:bind_enemy_events()
@@ -447,7 +445,7 @@ function castle_service:ctor()
 	self.enemies_by_id = {}
 	self.active_enemy_ids = {}
 	self.active_enemy_ids_scratch = {}
-	self.enemies_suspended_for_transition = false
+	self.enemies_hidden_for_shrine = false
 	progression.mount(self, build_progression_program())
 	self:bind_enemy_events()
 end
@@ -461,7 +459,7 @@ function castle_service:despawn_room_runtime_objects(room_space)
 	clear_map(self.enemies_by_id)
 	clear_map(self.active_enemy_ids)
 	clear_map(self.active_enemy_ids_scratch)
-	self.enemies_suspended_for_transition = false
+	self.enemies_hidden_for_shrine = false
 end
 
 function castle_service:sync_world_entrance_states_for_room(room_state)
@@ -570,6 +568,7 @@ end
 function castle_service:enter_world(target)
 	local transition = castle_map.world_transitions[target]
 	local previous_space = self.current_room.space_id
+	self:despawn_active_enemies()
 
 	self.current_room = room_module.create_room(transition.world_room_number)
 	local switch = create_room_switch(self.current_room_number, self.current_room.room_number, 'down')
@@ -659,7 +658,7 @@ local function register_castle_service_definition()
 			last_room_switch = nil,
 			world_entrance_states = {},
 			enemies_by_id = {},
-			enemies_suspended_for_transition = false,
+			enemies_hidden_for_shrine = false,
 			tick_enabled = true,
 		},
 	})
