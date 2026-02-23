@@ -6,13 +6,8 @@ constants.flow = {
 	castle_banner_frames = 30,
 	room_switch_wait_frames = 6,
 	item_screen_wait_frames = 6,
-	seal_flash_frames = 32,
-	seal_dissolve_frames = 64,
-	seal_dissolve_step_frames = 5,
 	seal_room_dissolve_steps = 7,
 	seal_sprite_dissolve_steps = 6,
-	daemon_appearance_frames = 64,
-	daemon_cloud_spawn_step_frames = 4,
 	daemon_cloud_lifetime_frames = 32,
 	daemon_cloud_max = 8,
 }

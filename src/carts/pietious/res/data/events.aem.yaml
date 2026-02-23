@@ -37,14 +37,6 @@ events:
                           stinger: seal_breakdown
             - when:
                   equals:
-                      state: daemon_appearance
-              go:
-                  music_transition:
-                      audio_id: music_daemonappears
-                      loop: false
-                      sync: immediate
-            - when:
-                  equals:
                       state: daemon_fight
               go:
                   music_transition:

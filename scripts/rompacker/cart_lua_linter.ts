@@ -51,6 +51,7 @@ type LuaLintIssueRule =
 	'imgid_fallback_pattern' |
 	'forbidden_transition_to_pattern' |
 	'forbidden_matches_state_path_pattern' |
+	'event_handler_dispatch_pattern' |
 	'constant_copy_pattern' |
 	'split_local_table_init_pattern' |
 	'duplicate_initializer_pattern' |
@@ -227,6 +228,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'imgid_fallback_pattern',
 	'forbidden_transition_to_pattern',
 	'forbidden_matches_state_path_pattern',
+	'event_handler_dispatch_pattern',
 	'constant_copy_pattern',
 	'split_local_table_init_pattern',
 	'duplicate_initializer_pattern',
@@ -254,6 +256,7 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'imgid_fallback_pattern',
 	'forbidden_transition_to_pattern',
 	'forbidden_matches_state_path_pattern',
+	'event_handler_dispatch_pattern',
 	'multi_has_tag_pattern',
 	'single_use_has_tag_pattern',
 	'handler_identity_dispatch_pattern',
@@ -1529,6 +1532,290 @@ function lintForbiddenStateCalls(expression: LuaCallExpression, issues: LuaLintI
 			'forbidden_matches_state_path_pattern',
 			expression,
 			`Use of "${receiverName}:matches_state_path" is forbidden.`,
+		);
+	}
+}
+
+function isEventsContainerExpression(expression: LuaExpression): boolean {
+	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.name === 'events';
+	}
+	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+		return expression.identifier === 'events';
+	}
+	if (expression.kind !== LuaSyntaxKind.IndexExpression) {
+		return false;
+	}
+	if (expression.index.kind === LuaSyntaxKind.StringLiteralExpression) {
+		return expression.index.value === 'events';
+	}
+	if (expression.index.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.index.name === 'events';
+	}
+	return false;
+}
+
+function isEventsOnCallExpression(expression: LuaCallExpression): boolean {
+	const methodName = getCallMethodName(expression);
+	if (methodName !== 'on') {
+		return false;
+	}
+	let receiver: LuaExpression;
+	if (expression.methodName && expression.methodName.length > 0) {
+		receiver = expression.callee;
+	} else if (expression.callee.kind === LuaSyntaxKind.MemberExpression) {
+		receiver = expression.callee.base;
+	} else {
+		return false;
+	}
+	return isEventsContainerExpression(receiver);
+}
+
+function isStateControllerExpression(expression: LuaExpression): boolean {
+	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.name === 'sc';
+	}
+	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+		return expression.identifier === 'sc';
+	}
+	if (expression.kind !== LuaSyntaxKind.IndexExpression) {
+		return false;
+	}
+	if (expression.index.kind === LuaSyntaxKind.StringLiteralExpression) {
+		return expression.index.value === 'sc';
+	}
+	if (expression.index.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.index.name === 'sc';
+	}
+	return false;
+}
+
+function isStateControllerDispatchCallExpression(expression: LuaExpression): boolean {
+	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+		return false;
+	}
+	const methodName = getCallMethodName(expression);
+	if (methodName !== 'dispatch') {
+		return false;
+	}
+	if (expression.methodName && expression.methodName.length > 0) {
+		return isStateControllerExpression(expression.callee);
+	}
+	if (expression.callee.kind !== LuaSyntaxKind.MemberExpression) {
+		return false;
+	}
+	return isStateControllerExpression(expression.callee.base);
+}
+
+function findStateControllerDispatchCallInExpression(expression: LuaExpression | null): LuaCallExpression {
+	if (!expression) {
+		return undefined;
+	}
+	if (isStateControllerDispatchCallExpression(expression)) {
+		return expression as LuaCallExpression;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.MemberExpression:
+			return findStateControllerDispatchCallInExpression(expression.base);
+		case LuaSyntaxKind.IndexExpression:
+			return findStateControllerDispatchCallInExpression(expression.base)
+				|| findStateControllerDispatchCallInExpression(expression.index);
+		case LuaSyntaxKind.BinaryExpression:
+			return findStateControllerDispatchCallInExpression(expression.left)
+				|| findStateControllerDispatchCallInExpression(expression.right);
+		case LuaSyntaxKind.UnaryExpression:
+			return findStateControllerDispatchCallInExpression(expression.operand);
+		case LuaSyntaxKind.CallExpression: {
+			const fromCallee = findStateControllerDispatchCallInExpression(expression.callee);
+			if (fromCallee) {
+				return fromCallee;
+			}
+			for (const argument of expression.arguments) {
+				const fromArg = findStateControllerDispatchCallInExpression(argument);
+				if (fromArg) {
+					return fromArg;
+				}
+			}
+			return undefined;
+		}
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					const fromKey = findStateControllerDispatchCallInExpression(field.key);
+					if (fromKey) {
+						return fromKey;
+					}
+				}
+				const fromValue = findStateControllerDispatchCallInExpression(field.value);
+				if (fromValue) {
+					return fromValue;
+				}
+			}
+			return undefined;
+		case LuaSyntaxKind.FunctionExpression:
+			return findStateControllerDispatchCallInStatements(expression.body.body);
+		default:
+			return undefined;
+	}
+}
+
+function findStateControllerDispatchCallInStatements(statements: ReadonlyArray<LuaStatement>): LuaCallExpression {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement:
+				for (const value of statement.values) {
+					const fromValue = findStateControllerDispatchCallInExpression(value);
+					if (fromValue) {
+						return fromValue;
+					}
+				}
+				break;
+			case LuaSyntaxKind.AssignmentStatement:
+				for (const left of statement.left) {
+					const fromLeft = findStateControllerDispatchCallInExpression(left);
+					if (fromLeft) {
+						return fromLeft;
+					}
+				}
+				for (const right of statement.right) {
+					const fromRight = findStateControllerDispatchCallInExpression(right);
+					if (fromRight) {
+						return fromRight;
+					}
+				}
+				break;
+			case LuaSyntaxKind.LocalFunctionStatement: {
+				const fromFunction = findStateControllerDispatchCallInStatements(statement.functionExpression.body.body);
+				if (fromFunction) {
+					return fromFunction;
+				}
+				break;
+			}
+			case LuaSyntaxKind.FunctionDeclarationStatement: {
+				const fromFunction = findStateControllerDispatchCallInStatements(statement.functionExpression.body.body);
+				if (fromFunction) {
+					return fromFunction;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					const fromExpression = findStateControllerDispatchCallInExpression(expression);
+					if (fromExpression) {
+						return fromExpression;
+					}
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					const fromCondition = findStateControllerDispatchCallInExpression(clause.condition);
+					if (fromCondition) {
+						return fromCondition;
+					}
+					const fromBlock = findStateControllerDispatchCallInStatements(clause.block.body);
+					if (fromBlock) {
+						return fromBlock;
+					}
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement: {
+				const fromCondition = findStateControllerDispatchCallInExpression(statement.condition);
+				if (fromCondition) {
+					return fromCondition;
+				}
+				const fromBlock = findStateControllerDispatchCallInStatements(statement.block.body);
+				if (fromBlock) {
+					return fromBlock;
+				}
+				break;
+			}
+			case LuaSyntaxKind.RepeatStatement: {
+				const fromBlock = findStateControllerDispatchCallInStatements(statement.block.body);
+				if (fromBlock) {
+					return fromBlock;
+				}
+				const fromCondition = findStateControllerDispatchCallInExpression(statement.condition);
+				if (fromCondition) {
+					return fromCondition;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ForNumericStatement: {
+				const fromStart = findStateControllerDispatchCallInExpression(statement.start);
+				if (fromStart) {
+					return fromStart;
+				}
+				const fromLimit = findStateControllerDispatchCallInExpression(statement.limit);
+				if (fromLimit) {
+					return fromLimit;
+				}
+				const fromStep = findStateControllerDispatchCallInExpression(statement.step);
+				if (fromStep) {
+					return fromStep;
+				}
+				const fromBlock = findStateControllerDispatchCallInStatements(statement.block.body);
+				if (fromBlock) {
+					return fromBlock;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					const fromIterator = findStateControllerDispatchCallInExpression(iterator);
+					if (fromIterator) {
+						return fromIterator;
+					}
+				}
+				{
+					const fromBlock = findStateControllerDispatchCallInStatements(statement.block.body);
+					if (fromBlock) {
+						return fromBlock;
+					}
+				}
+				break;
+			case LuaSyntaxKind.DoStatement: {
+				const fromBlock = findStateControllerDispatchCallInStatements(statement.block.body);
+				if (fromBlock) {
+					return fromBlock;
+				}
+				break;
+			}
+			case LuaSyntaxKind.CallStatement: {
+				const fromCall = findStateControllerDispatchCallInExpression(statement.expression);
+				if (fromCall) {
+					return fromCall;
+				}
+				break;
+			}
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
+		}
+	}
+	return undefined;
+}
+
+function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isEventsOnCallExpression(expression)) {
+		return;
+	}
+	for (const argument of expression.arguments) {
+		const handlerField = findTableFieldByKey(argument, 'handler');
+		if (!handlerField || handlerField.value.kind !== LuaSyntaxKind.FunctionExpression) {
+			continue;
+		}
+		const dispatchCall = findStateControllerDispatchCallInStatements(handlerField.value.body.body);
+		if (!dispatchCall) {
+			continue;
+		}
+		pushIssue(
+			issues,
+			'event_handler_dispatch_pattern',
+			dispatchCall,
+			'Event handler callbacks must not call sc:dispatch(...). Route event-driven transitions via FSM definitions instead of manual dispatch inside events:on handlers.',
 		);
 	}
 }
@@ -4083,6 +4370,7 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 		case LuaSyntaxKind.CallExpression:
 			lintRequireCall(expression, issues);
 			lintForbiddenStateCalls(expression, issues);
+			lintEventHandlerDispatchPattern(expression, issues);
 			lintServiceDefinitionSuffixPattern(expression, issues);
 			lintCreateServiceIdAddonPattern(expression, issues);
 			lintDefineServiceIdPattern(expression, issues);

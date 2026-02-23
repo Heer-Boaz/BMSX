@@ -203,8 +203,13 @@ function director:ctor()
 	self.banner_post_action = nil
 	self.active_transition_kind = nil
 	self.lithograph_text_lines = {}
-	self.daemon_clouds = {}
-	self.daemon_cloud_spawn_timer = 0
+	self.demon_intro_state = 0
+	self.seal_flash_on = false
+	self.daemon_smoke_x = {}
+	self.daemon_smoke_y = {}
+	self.daemon_smoke_t = {}
+	self.daemon_smoke_sprite = {}
+	self.daemon_smoke_next = 1
 	self.current_room_number = 0
 	self.map_id = 0
 	self.map_x = 5
@@ -238,6 +243,12 @@ local function define_director_fsm()
 					object('shrine').lines = {}
 					object('lithograph').lines = {}
 					self.transition_frames_left = 0
+					self.demon_intro_state = 0
+					self.seal_flash_on = false
+					for i = 1, constants.flow.daemon_cloud_max do
+						self.daemon_smoke_t[i] = 0
+						self.daemon_smoke_sprite[i] = nil
+					end
 					local castle_service = service('c')
 					local current_room = castle_service.current_room
 					set_space('main')
@@ -432,9 +443,12 @@ local function define_director_fsm()
 				entering_state = function(self)
 					self.active_transition_kind = 'seal_dissolution'
 					self.overlay_mode = 'seal_dissolution'
-					self.transition_frames_left = constants.flow.seal_flash_frames + constants.flow.seal_dissolve_frames
-					set_space('transition')
+					self.transition_frames_left = 0
+					self.demon_intro_state = 1
+					self.seal_flash_on = false
+					set_space('main')
 					object('ui'):set_space(get_space())
+					object('transition'):set_space(get_space())
 					self:emit_state_changed('seal_dissolution')
 					service('c'):begin_seal_dissolution()
 				end,
@@ -447,10 +461,14 @@ local function define_director_fsm()
 					},
 				},
 				tick = function(self)
-					self.transition_frames_left = self.transition_frames_left - 1
-					if self.transition_frames_left > 0 then
+					local intro_state = self.demon_intro_state
+					self.seal_flash_on = intro_state < 32 and (intro_state % 4) >= 2
+					service('c'):set_seal_dissolve_intro_state(intro_state)
+					if intro_state < 95 then
+						self.demon_intro_state = intro_state + 1
 						return
 					end
+					self.seal_flash_on = false
 					self:dispatch_state_event('seal_dissolution_done')
 				end,
 			},
@@ -458,9 +476,15 @@ local function define_director_fsm()
 				entering_state = function(self)
 					self.active_transition_kind = 'daemon_appearance'
 					self.overlay_mode = 'daemon_appearance'
-					self.transition_frames_left = constants.flow.daemon_appearance_frames
-					self.daemon_clouds = {}
-					self.daemon_cloud_spawn_timer = 0
+					self.transition_frames_left = 0
+					self.demon_intro_state = 97
+					for i = 1, constants.flow.daemon_cloud_max do
+						self.daemon_smoke_x[i] = 0
+						self.daemon_smoke_y[i] = 0
+						self.daemon_smoke_t[i] = 0
+						self.daemon_smoke_sprite[i] = nil
+					end
+					self.daemon_smoke_next = 1
 					set_space('main')
 					object('ui'):set_space(get_space())
 					object('transition'):set_space(get_space())
@@ -476,32 +500,38 @@ local function define_director_fsm()
 					},
 				},
 				tick = function(self)
-					local clouds = self.daemon_clouds
-					for i = #clouds, 1, -1 do
-						local cloud = clouds[i]
-						cloud.age = cloud.age + 1
-						if cloud.age >= constants.flow.daemon_cloud_lifetime_frames then
-							table.remove(clouds, i)
+					local intro_state = self.demon_intro_state
+					if intro_state > 96 and intro_state < 160 and (intro_state % 8) < 4 then
+						local smoke_index = self.daemon_smoke_next
+						self.daemon_smoke_t[smoke_index] = 1
+						self.daemon_smoke_x[smoke_index] = constants.room.tile_origin_x + (math.random(4, 26) * constants.room.tile_size)
+						self.daemon_smoke_y[smoke_index] = constants.room.tile_origin_y + (math.random(4, 11) * constants.room.tile_size)
+						self.daemon_smoke_sprite[smoke_index] = 'daemon_smoke_small'
+						smoke_index = smoke_index + 1
+						if smoke_index > constants.flow.daemon_cloud_max then
+							smoke_index = 1
+						end
+						self.daemon_smoke_next = smoke_index
+					end
+
+					for i = 1, constants.flow.daemon_cloud_max do
+						local smoke_t = self.daemon_smoke_t[i]
+						if smoke_t > 0 then
+							smoke_t = smoke_t + 1
+							if smoke_t >= constants.flow.daemon_cloud_lifetime_frames then
+								smoke_t = 0
+								self.daemon_smoke_sprite[i] = nil
+							elseif (math.modf(smoke_t / 8) % 2) == 0 then
+								self.daemon_smoke_sprite[i] = 'daemon_smoke_small'
+							else
+								self.daemon_smoke_sprite[i] = 'daemon_smoke_large'
+							end
+							self.daemon_smoke_t[i] = smoke_t
 						end
 					end
 
-					if self.transition_frames_left > 0 then
-						self.transition_frames_left = self.transition_frames_left - 1
-						self.daemon_cloud_spawn_timer = self.daemon_cloud_spawn_timer + 1
-						if self.daemon_cloud_spawn_timer >= constants.flow.daemon_cloud_spawn_step_frames then
-							self.daemon_cloud_spawn_timer = 0
-							if #clouds >= constants.flow.daemon_cloud_max then
-								table.remove(clouds, 1)
-							end
-							clouds[#clouds + 1] = {
-								x = constants.room.tile_origin_x + (math.random(4, 26) * constants.room.tile_size),
-								y = constants.room.tile_origin_y + (math.random(4, 11) * constants.room.tile_size),
-								age = 1,
-							}
-						end
-						return
-					end
-					if #clouds > 0 then
+					if self.demon_intro_state < 159 then
+						self.demon_intro_state = self.demon_intro_state + 1
 						return
 					end
 					self:dispatch_state_event('daemon_appearance_done')

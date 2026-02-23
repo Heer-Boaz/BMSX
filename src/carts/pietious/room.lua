@@ -787,9 +787,19 @@ function room_object:bind_events()
 			room.sync_draaideur_instances(service('c').current_room)
 		end,
 	})
+	self.events:on({
+		event = 'director.state_changed',
+		emitter = 'd',
+		subscriber = self,
+		handler = function(event)
+			self.sc:dispatch(event.state)
+		end,
+	})
 end
 
 function room_object:ctor()
+	self.seal_fx_active = false
+	self.daemon_fx_active = false
 	room.sync_lithograph_instances(service('c').current_room)
 	room.sync_shrine_instances(service('c').current_room)
 	room.sync_draaideur_instances(service('c').current_room)
@@ -854,13 +864,66 @@ function room_object:render_room()
 	local room_state = castle_service.current_room
 	self:render_tiles(room_state)
 	self:render_room_objects(room_state)
+	local director_service = service('d')
+	if self.seal_fx_active and director_service.seal_flash_on then
+		for y = constants.room.tile_origin_y, display_height() - 1 do
+			for x = 0, display_width() - 1 do
+				if ((x + y) % 2) == 0 then
+					put_rectfill(x, y, x, y, 342, 15)
+				end
+			end
+		end
+	end
+	if self.daemon_fx_active then
+		for i = 1, constants.flow.daemon_cloud_max do
+			local cloud_sprite = director_service.daemon_smoke_sprite[i]
+			if cloud_sprite ~= nil then
+				put_sprite(cloud_sprite, director_service.daemon_smoke_x[i], director_service.daemon_smoke_y[i], 23)
+			end
+		end
+	end
 end
 
 local function define_room_fsm()
 	define_fsm('room', {
 		initial = 'active',
+		on = {
+			['seal_dissolution'] = '/seal_fx',
+			['daemon_appearance'] = '/daemon_fx',
+			['castle'] = '/active',
+			['world'] = '/active',
+			['seal'] = '/active',
+			['daemon_fight'] = '/active',
+			['transition'] = '/active',
+			['halo'] = '/active',
+			['shrine'] = '/active',
+			['item'] = '/active',
+			['lithograph'] = '/active',
+			['title'] = '/active',
+			['story'] = '/active',
+			['ending'] = '/active',
+			['victory_dance'] = '/active',
+			['death'] = '/active',
+		},
 		states = {
-			active = {},
+			active = {
+				entering_state = function(self)
+					self.seal_fx_active = false
+					self.daemon_fx_active = false
+				end,
+			},
+			seal_fx = {
+				entering_state = function(self)
+					self.seal_fx_active = true
+					self.daemon_fx_active = false
+				end,
+			},
+			daemon_fx = {
+				entering_state = function(self)
+					self.seal_fx_active = false
+					self.daemon_fx_active = true
+				end,
+			},
 		},
 	})
 end
