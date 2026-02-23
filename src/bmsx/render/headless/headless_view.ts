@@ -7,9 +7,13 @@ import type {
 	ViewportMetricsProvider,
 	OverlayManager,
 	OnscreenGamepadHandleProvider,
+	DisplayModeController,
 	GameViewHostCapabilityId,
 	GameViewHostCapabilityMap,
 	WindowEventHub,
+	HostWindowEventType,
+	HostEventListenerTarget,
+	HostEventOptions,
 	SubscriptionHandle,
 	ViewportDimensions,
 } from '../../platform';
@@ -17,10 +21,21 @@ import { createSubscriptionHandle } from '../../platform';
 import { HeadlessGPUBackend } from './headless_backend';
 
 class HeadlessOverlay implements OverlayHandle {
-	setText(_text: string): void { }
-	addClass(_className: string): void { }
-	removeClass(_className: string): void { }
-	onAnimationEnd(_callback: () => void): void { }
+	private text = '';
+	private readonly classes = new Set<string>();
+
+	setText(text: string): void {
+		this.text = text;
+	}
+	addClass(className: string): void {
+		this.classes.add(className);
+	}
+	removeClass(className: string): void {
+		this.classes.delete(className);
+	}
+	onAnimationEnd(callback: () => void): void {
+		callback();
+	}
 	forceReflow(): void { }
 	remove(): void { }
 }
@@ -45,12 +60,32 @@ class HeadlessGameViewCanvas implements GameViewCanvas {
 	measureDisplay(): { width: number; height: number; left: number; top: number; } {
 		return { width: this.renderWidth, height: this.renderHeight, left: 0, top: 0 };
 	}
-	requestWebGL2Context(_attributes: WebGLContextAttributes): WebGL2RenderingContext { return null; }
-	requestWebGPUContext(): GPUCanvasContext { return null; }
+	requestWebGL2Context(_attributes: WebGLContextAttributes): WebGL2RenderingContext {
+		throw new Error('[HeadlessGameViewCanvas] WebGL2 context is not available in headless mode.');
+	}
+	requestWebGPUContext(): GPUCanvasContext {
+		throw new Error('[HeadlessGameViewCanvas] WebGPU context is not available in headless mode.');
+	}
 }
 
 class HeadlessWindowEventHub implements WindowEventHub {
-	subscribe(): SubscriptionHandle {
+	subscribe(_type: HostWindowEventType, _listener: HostEventListenerTarget, _options?: HostEventOptions): SubscriptionHandle {
+		return createSubscriptionHandle(() => void 0);
+	}
+}
+
+class HeadlessDisplayModeController implements DisplayModeController {
+	isSupported(): boolean {
+		return false;
+	}
+
+	isFullscreen(): boolean {
+		return false;
+	}
+
+	async setFullscreen(_enabled: boolean): Promise<void> { }
+
+	onChange(_listener: (isFullscreen: boolean) => void): SubscriptionHandle {
 		return createSubscriptionHandle(() => void 0);
 	}
 }
@@ -62,6 +97,7 @@ export class HeadlessGameViewHost implements GameViewHost {
 	private readonly overlayCapability: OverlayManager;
 	private readonly gamepadCapability: OnscreenGamepadHandleProvider;
 	private readonly windowEventCapability: WindowEventHub;
+	private readonly displayModeCapability: DisplayModeController;
 
 	constructor(initialSize: vec2) {
 		this.surface = new HeadlessGameViewCanvas(initialSize);
@@ -85,12 +121,13 @@ export class HeadlessGameViewHost implements GameViewHost {
 				}
 				return overlay;
 			},
-			getOverlay: (id: string): OverlayHandle => this.overlays.get(id) ,
+			getOverlay: (id: string): OverlayHandle => this.overlays.get(id) as OverlayHandle,
 		};
 		this.gamepadCapability = {
 			getHandles: () => null,
 		};
 		this.windowEventCapability = new HeadlessWindowEventHub();
+		this.displayModeCapability = new HeadlessDisplayModeController();
 	}
 
 	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] {
@@ -103,8 +140,10 @@ export class HeadlessGameViewHost implements GameViewHost {
 				return this.gamepadCapability as GameViewHostCapabilityMap[T];
 			case 'window-events':
 				return this.windowEventCapability as GameViewHostCapabilityMap[T];
+			case 'display-mode':
+				return this.displayModeCapability as GameViewHostCapabilityMap[T];
 			default:
-				return null;
+				throw new Error(`[HeadlessGameViewHost] Unknown capability '${String(capability)}'.`);
 		}
 	}
 

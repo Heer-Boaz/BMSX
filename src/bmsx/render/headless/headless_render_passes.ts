@@ -33,8 +33,8 @@ export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 }
 
 function registerFramePasses(registry: RenderPassLibrary): void {
-	registry.register({ id: 'frame_resolve', name: 'HeadlessFrameResolve', stateOnly: true, exec: () => { /* noop */ } });
-	registry.register({ id: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, exec: () => { /* noop */ } });
+	registry.register({ id: 'frame_resolve', name: 'HeadlessFrameResolve', stateOnly: true, graph: { skip: true }, exec: () => { /* noop */ } });
+	registry.register({ id: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, graph: { skip: true }, exec: () => { /* noop */ } });
 }
 
 type Snapshot = string[];
