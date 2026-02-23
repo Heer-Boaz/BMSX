@@ -184,6 +184,7 @@ function player:reset_runtime()
 	self.enter_leave_shrine_text_lines = {}
 	self.pepernoot_projectile_sequence = 0
 	self.pepernoot_projectile_ids = {}
+	self.seal_projectiles_frozen = false
 end
 
 function player:update_collision_state()

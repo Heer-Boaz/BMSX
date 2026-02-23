@@ -50,6 +50,9 @@ function pepernoot_projectile:on_overlap_begin(event)
 end
 
 function pepernoot_projectile:tick()
+	if object(self.owner_id).seal_projectiles_frozen then
+		return
+	end
 	local room = service('c').current_room
 	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
 	self:refresh_tile_aligned_sprite_offset()

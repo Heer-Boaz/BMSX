@@ -787,14 +787,6 @@ function room_object:bind_events()
 			room.sync_draaideur_instances(service('c').current_room)
 		end,
 	})
-	self.events:on({
-		event = 'director.state_changed',
-		emitter = 'd',
-		subscriber = self,
-		handler = function(event)
-			self.sc:dispatch(event.state)
-		end,
-	})
 end
 
 function room_object:ctor()

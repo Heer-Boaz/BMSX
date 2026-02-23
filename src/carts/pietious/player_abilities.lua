@@ -193,17 +193,15 @@ end
 
 function player_abilities.attach_player_methods(player)
 	function player:refresh_active_pepernoot_projectiles()
-		local ids = self.pepernoot_projectile_ids
 		local write_index = 1
-		for i = 1, #ids do
-			local id = ids[i]
-			if object(id) ~= nil then
-				ids[write_index] = id
+		for i = 1, #self.pepernoot_projectile_ids do
+			if object(self.pepernoot_projectile_ids[i]) ~= nil then
+				self.pepernoot_projectile_ids[write_index] = self.pepernoot_projectile_ids[i]
 				write_index = write_index + 1
 			end
 		end
-		for i = write_index, #ids do
-			ids[i] = nil
+		for i = write_index, #self.pepernoot_projectile_ids do
+			self.pepernoot_projectile_ids[i] = nil
 		end
 	end
 
