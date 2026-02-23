@@ -1230,7 +1230,7 @@ end
 function player:collides_with_elevator_at(x, y)
 	local castle_service = service('c')
 	local current_room_number = castle_service.current_room_number
-	local elevator_routes = service('elevator_service').elevator_routes
+	local elevator_routes = service('e').elevator_routes
 	local right = x + self.width
 	local bottom = y + self.height
 	for i = 1, #elevator_routes do
@@ -1258,7 +1258,7 @@ end
 function player:try_snap_to_elevator_platform(next_x)
 	local castle_service = service('c')
 	local current_room_number = castle_service.current_room_number
-	local elevator_routes = service('elevator_service').elevator_routes
+	local elevator_routes = service('e').elevator_routes
 	for i = 1, #elevator_routes do
 		local elevator = elevator_routes[i]
 		if elevator.current_room_number == current_room_number

@@ -19,7 +19,7 @@ function rock_service:sync_rock_instance(rock_def, room)
 		instance:activate()
 	end
 	instance.visible = true
-	instance:configure_from_room_def(rock_def, room, self.id)
+	instance:configure_from_room_def(rock_def, room)
 	return instance
 end
 
@@ -124,7 +124,7 @@ end
 
 local function register_rock_service_definition()
 	define_service({
-		def_id = 'rock_service',
+		def_id = 'rock',
 		class = rock_service,
 		fsms = { 'rock_service.fsm' },
 		auto_activate = true,

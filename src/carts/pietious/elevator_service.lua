@@ -66,7 +66,7 @@ function elevator_service:tick()
 	local player = object('pietolon')
 	player.on_vertical_elevator = false
 
-	local castle_service = service(self.castle_service_id)
+	local castle_service = service('c')
 	local map_id = castle_service.map_id
 	local current_room_number = castle_service.current_room_number
 
@@ -137,12 +137,11 @@ end
 local function register_elevator_service_definition()
 	local elevator_routes = build_elevator_routes()
 	define_service({
-		def_id = 'elevator_service',
+		def_id = 'elevator',
 		class = elevator_service,
 		fsms = { 'elevator_service.fsm' },
 		defaults = {
-			id = 'elevator_service',
-			castle_service_id = 'c',
+			id = 'e',
 			elevator_routes = elevator_routes,
 			tick_enabled = true,
 		},

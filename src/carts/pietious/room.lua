@@ -804,7 +804,7 @@ function room_object:render_room_objects(room_state)
 		put_sprite(sprite_id, world_entrance.x, world_entrance.y, 22)
 	end
 
-	local elevator_service = service('elevator_service')
+	local elevator_service = service('e')
 	render_elevators(castle_service.current_room_number, elevator_service.elevator_routes)
 end
 

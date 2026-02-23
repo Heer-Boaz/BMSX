@@ -134,9 +134,7 @@ function new_game()
 	add_space('ui')
 	set_space('castle')
 
-	local castle_service = create_service('castle_service', {
-		id = 'c',
-	})
+	local castle_service = create_service('castle')
 	local room = castle_service:initialize(castle_map.start_room_number)
 
 	inst('player', {
@@ -184,23 +182,14 @@ function new_game()
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	create_service('director_service', {
-		id = 'd',
-	})
+	create_service('director')
 
-	create_service('item_service', {
-		id = 'i',
-	})
+	create_service('item')
 
-	local elevator_service = create_service('elevator_service', {
-		id = 'elevator_service',
-		castle_service_id = 'c',
-	})
+	local elevator_service = create_service('elevator')
 	elevator_service:activate()
 
-	create_service('rock_service', {
-		id = 'r',
-	})
+	create_service('rock')
 end
 
 while true do

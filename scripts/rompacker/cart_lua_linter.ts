@@ -55,6 +55,12 @@ type LuaLintIssueRule =
 	'duplicate_initializer_pattern' |
 	'handler_identity_dispatch_pattern' |
 	'ensure_local_alias_pattern' |
+	'service_definition_suffix_pattern' |
+	'create_service_id_addon_pattern' |
+	'define_service_id_pattern' |
+	'fsm_id_label_pattern' |
+	'bt_id_label_pattern' |
+	'injected_service_id_property_pattern' |
 	'inline_static_lookup_table_pattern' |
 	'staged_export_local_call_pattern' |
 	'staged_export_local_table_pattern' |
@@ -224,6 +230,12 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'duplicate_initializer_pattern',
 	'handler_identity_dispatch_pattern',
 	'ensure_local_alias_pattern',
+	'service_definition_suffix_pattern',
+	'create_service_id_addon_pattern',
+	'define_service_id_pattern',
+	'fsm_id_label_pattern',
+	'bt_id_label_pattern',
+	'injected_service_id_property_pattern',
 	'inline_static_lookup_table_pattern',
 	'staged_export_local_call_pattern',
 	'staged_export_local_table_pattern',
@@ -246,6 +258,10 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'getter_setter_pattern',
 	'single_line_method_pattern',
 	'useless_assert_pattern',
+	'define_service_id_pattern',
+	'fsm_id_label_pattern',
+	'bt_id_label_pattern',
+	'injected_service_id_property_pattern',
 ]);
 let activeLintRules: ReadonlySet<LuaLintIssueRule> = new Set(ALL_LUA_LINT_RULES);
 
@@ -3360,7 +3376,361 @@ function lintRequireCall(expression: LuaCallExpression, issues: LuaLintIssue[]):
 	);
 }
 
+function isGlobalCall(expression: LuaCallExpression, name: string): boolean {
+	return expression.callee.kind === LuaSyntaxKind.IdentifierExpression && expression.callee.name === name;
+}
+
+function containsServiceLabel(value: string): boolean {
+	return value.toLowerCase().includes('service');
+}
+
+function containsLabel(value: string, label: string): boolean {
+	return value.toLowerCase().includes(label.toLowerCase());
+}
+
+function removeLabel(value: string, label: string): string | undefined {
+	const stripped = value
+		.replace(new RegExp(label, 'gi'), '')
+		.replace(/[._-]{2,}/g, '_')
+		.replace(/^[._-]+|[._-]+$/g, '');
+	if (stripped.length === 0 || stripped === value) {
+		return undefined;
+	}
+	return stripped;
+}
+
+function removeServiceLabel(value: string): string | undefined {
+	return removeLabel(value, 'service');
+}
+
+function appendSuggestionMessage(baseMessage: string, value: string, label: string): string {
+	const suggested = removeLabel(value, label);
+	if (!suggested) {
+		return baseMessage;
+	}
+	return `${baseMessage} Use "${suggested}" instead.`;
+}
+
+function readStringFieldValueFromTable(expression: LuaExpression | undefined, fieldName: string): string | undefined {
+	if (!expression || expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return undefined;
+	}
+	for (const field of expression.fields) {
+		if (getTableFieldKey(field) !== fieldName) {
+			continue;
+		}
+		if (field.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
+			return undefined;
+		}
+		return field.value.value;
+	}
+	return undefined;
+}
+
+function findTableFieldByKey(expression: LuaExpression | undefined, fieldName: string): LuaTableField | undefined {
+	if (!expression || expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return undefined;
+	}
+	for (const field of expression.fields) {
+		if (getTableFieldKey(field) === fieldName) {
+			return field;
+		}
+	}
+	return undefined;
+}
+
+function lintServiceDefinitionSuffixPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (isGlobalCall(expression, 'define_service')) {
+		const definitionId = readStringFieldValueFromTable(expression.arguments[0], 'def_id');
+		if (definitionId && containsServiceLabel(definitionId)) {
+			const suggestedName = removeServiceLabel(definitionId);
+			const suggestion = suggestedName
+				? ` Use "${suggestedName}" instead.`
+				: '';
+			pushIssue(
+				issues,
+				'service_definition_suffix_pattern',
+				expression.arguments[0],
+				`Service definition id must not contain "service" ("${definitionId}").${suggestion}`,
+			);
+		}
+		return;
+	}
+	if (!isGlobalCall(expression, 'create_service')) {
+		return;
+	}
+	const definitionArgument = expression.arguments[0];
+	if (!definitionArgument || definitionArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return;
+	}
+	const definitionId = definitionArgument.value;
+	if (!containsServiceLabel(definitionId)) {
+		return;
+	}
+	const suggestedName = removeServiceLabel(definitionId);
+	const suggestion = suggestedName
+		? ` Use "${suggestedName}" instead.`
+		: '';
+	pushIssue(
+		issues,
+		'service_definition_suffix_pattern',
+		definitionArgument,
+		`Service definition id must not contain "service" ("${definitionId}").${suggestion}`,
+	);
+}
+
+function lintCreateServiceIdAddonPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isGlobalCall(expression, 'create_service')) {
+		return;
+	}
+	if (expression.arguments.length < 2) {
+		return;
+	}
+	const addons = expression.arguments[1];
+	const idField = findTableFieldByKey(addons, 'id');
+	if (!idField) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'create_service_id_addon_pattern',
+		idField.value,
+		'Passing "id" in create_service(...) addons is forbidden. Set the id in define_service.defaults.id.',
+	);
+}
+
+function lintDefineServiceIdPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isGlobalCall(expression, 'define_service')) {
+		return;
+	}
+	const definition = expression.arguments[0];
+	if (!definition || definition.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	const defaultsField = findTableFieldByKey(definition, 'defaults');
+	if (!defaultsField || defaultsField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		pushIssue(
+			issues,
+			'define_service_id_pattern',
+			definition,
+			'Service id must be defined via define_service.defaults.id (string literal, no "_service" suffix).',
+		);
+		return;
+	}
+	const idField = findTableFieldByKey(defaultsField.value, 'id');
+	if (!idField) {
+		pushIssue(
+			issues,
+			'define_service_id_pattern',
+			defaultsField.value,
+			'Service id must be defined via define_service.defaults.id (string literal, no "_service" suffix).',
+		);
+		return;
+	}
+	if (idField.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		pushIssue(
+			issues,
+			'define_service_id_pattern',
+			idField.value,
+			'Service id in define_service.defaults.id must be a string literal and must not contain "service".',
+		);
+		return;
+	}
+	const serviceId = idField.value.value;
+	if (!containsServiceLabel(serviceId)) {
+		return;
+	}
+	const suggestedId = removeServiceLabel(serviceId);
+	const suggestion = suggestedId
+		? ` Use "${suggestedId}" instead.`
+		: '';
+	pushIssue(
+		issues,
+		'define_service_id_pattern',
+		idField.value,
+		`Service id in define_service.defaults.id must not contain "service" ("${serviceId}").${suggestion}`,
+	);
+}
+
+function lintFsmIdLabelPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isGlobalCall(expression, 'define_fsm')) {
+		return;
+	}
+	const idArgument = expression.arguments[0];
+	if (!idArgument || idArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return;
+	}
+	const fsmId = idArgument.value;
+	if (!containsLabel(fsmId, 'fsm')) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'fsm_id_label_pattern',
+		idArgument,
+		appendSuggestionMessage(
+			`FSM id must not contain "fsm" ("${fsmId}").`,
+			fsmId,
+			'fsm',
+		),
+	);
+}
+
+function lintBtIdLabelPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	const methodName = getCallMethodName(expression);
+	if (methodName !== 'register_behaviour_tree' && methodName !== 'register_definition') {
+		return;
+	}
+	const idArgument = expression.arguments[0];
+	if (!idArgument || idArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return;
+	}
+	const btId = idArgument.value;
+	if (!containsLabel(btId, 'bt')) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'bt_id_label_pattern',
+		idArgument,
+		appendSuggestionMessage(
+			`Behavior-tree id must not contain "bt" ("${btId}").`,
+			btId,
+			'bt',
+		),
+	);
+}
+
+function lintCollectionStringValuesForLabel(
+	expression: LuaExpression,
+	label: string,
+	rule: LuaLintIssueRule,
+	issues: LuaLintIssue[],
+	messagePrefix: string,
+): void {
+	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
+		if (!containsLabel(expression.value, label)) {
+			return;
+		}
+		pushIssue(
+			issues,
+			rule,
+			expression,
+			appendSuggestionMessage(
+				`${messagePrefix} must not contain "${label}" ("${expression.value}").`,
+				expression.value,
+				label,
+			),
+		);
+		return;
+	}
+	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const field of expression.fields) {
+		if (field.kind !== LuaTableFieldKind.Array || field.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
+			continue;
+		}
+		const value = field.value.value;
+		if (!containsLabel(value, label)) {
+			continue;
+		}
+		pushIssue(
+			issues,
+			rule,
+			field.value,
+			appendSuggestionMessage(
+				`${messagePrefix} must not contain "${label}" ("${value}").`,
+				value,
+				label,
+			),
+		);
+	}
+}
+
+function lintCollectionLabelPatterns(field: LuaTableField, issues: LuaLintIssue[]): void {
+	if (field.kind !== LuaTableFieldKind.IdentifierKey) {
+		return;
+	}
+	if (field.name === 'fsms') {
+		lintCollectionStringValuesForLabel(
+			field.value,
+			'fsm',
+			'fsm_id_label_pattern',
+			issues,
+			'FSM id',
+		);
+		return;
+	}
+	if (field.name === 'bts') {
+		lintCollectionStringValuesForLabel(
+			field.value,
+			'bt',
+			'bt_id_label_pattern',
+			issues,
+			'Behavior-tree id',
+		);
+	}
+}
+
+function isInjectedServiceIdPropertyName(propertyName: string): boolean {
+	return propertyName.toLowerCase().endsWith('_service_id');
+}
+
+function getExpressionKeyName(expression: LuaExpression): string | undefined {
+	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
+		return expression.value;
+	}
+	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+		return expression.name;
+	}
+	return undefined;
+}
+
+function getInjectedServiceIdPropertyNameFromTarget(target: LuaExpression): string | undefined {
+	if (target.kind === LuaSyntaxKind.MemberExpression) {
+		return target.identifier;
+	}
+	if (target.kind === LuaSyntaxKind.IndexExpression) {
+		return getExpressionKeyName(target.index);
+	}
+	return undefined;
+}
+
+function lintInjectedServiceIdPropertyAssignmentTarget(target: LuaExpression, issues: LuaLintIssue[]): void {
+	const propertyName = getInjectedServiceIdPropertyNameFromTarget(target);
+	if (!propertyName || !isInjectedServiceIdPropertyName(propertyName)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'injected_service_id_property_pattern',
+		target,
+		`Injecting service ids via property "${propertyName}" is forbidden. Do not pass/store service ids on objects/services; resolve services directly via service('<id>').`,
+	);
+}
+
+function lintInjectedServiceIdPropertyTableField(field: LuaTableField, issues: LuaLintIssue[]): void {
+	let propertyName: string | undefined;
+	if (field.kind === LuaTableFieldKind.IdentifierKey) {
+		propertyName = field.name;
+	} else if (field.kind === LuaTableFieldKind.ExpressionKey) {
+		propertyName = getExpressionKeyName(field.key);
+	}
+	if (!propertyName || !isInjectedServiceIdPropertyName(propertyName)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'injected_service_id_property_pattern',
+		field,
+		`Injecting service ids via property "${propertyName}" is forbidden. Do not pass/store service ids on objects/services; resolve services directly via service('<id>').`,
+	);
+}
+
 function lintTableField(field: LuaTableField, issues: LuaLintIssue[]): void {
+	lintCollectionLabelPatterns(field, issues);
+	lintInjectedServiceIdPropertyTableField(field, issues);
 	switch (field.kind) {
 		case LuaTableFieldKind.Array:
 			lintExpression(field.value, issues, false);
@@ -3680,6 +4050,11 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 		case LuaSyntaxKind.CallExpression:
 			lintRequireCall(expression, issues);
 			lintForbiddenStateCalls(expression, issues);
+			lintServiceDefinitionSuffixPattern(expression, issues);
+			lintCreateServiceIdAddonPattern(expression, issues);
+			lintDefineServiceIdPattern(expression, issues);
+			lintFsmIdLabelPattern(expression, issues);
+			lintBtIdLabelPattern(expression, issues);
 			lintExpression(expression.callee, issues, false);
 			for (const arg of expression.arguments) {
 				lintExpression(arg, issues, false);
@@ -3732,6 +4107,7 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 					const right = statement.right[index];
 					lintSpriteImgIdAssignmentPattern(left, issues);
 					lintSelfImgIdAssignmentPattern(left, right, issues);
+					lintInjectedServiceIdPropertyAssignmentTarget(left, issues);
 				}
 				for (const right of statement.right) {
 					lintExpression(right, issues);

@@ -31,8 +31,7 @@ function rock:ctor()
 	self:bind_events()
 end
 
-function rock:configure_from_room_def(def, room, rock_service_id)
-	self.rock_service_id = rock_service_id
+function rock:configure_from_room_def(def, room)
 	self.item_type = def.item_type
 	self.max_health = constants.rock.max_health
 	self.health = self.max_health
@@ -55,7 +54,7 @@ end
 function rock:begin_break()
 	local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
 	local room = service('c').current_room
-	service(self.rock_service_id):on_rock_break_started(self.id, room.room_number, self.item_type, self.x, drop_y)
+	service('r'):on_rock_break_started(self.id, room.room_number, self.item_type, self.x, drop_y)
 end
 
 function rock:on_overlap(event)
@@ -67,7 +66,7 @@ function rock:on_overlap(event)
 end
 
 function rock:finish_break()
-	service(self.rock_service_id):on_rock_destroyed(self.id)
+	service('r'):on_rock_destroyed(self.id)
 	self:mark_for_disposal()
 end
 
@@ -115,7 +114,6 @@ local function register_rock_definition()
 		type = 'sprite',
 		fsms = { 'rock.fsm' },
 		defaults = {
-			rock_service_id = 'r',
 			item_type = nil,
 			max_health = constants.rock.max_health,
 			health = constants.rock.max_health,

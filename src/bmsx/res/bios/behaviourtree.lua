@@ -5,16 +5,6 @@ local behaviourtree = {}
 behaviourtree.success = "success"
 behaviourtree.failure = "failed"
 behaviourtree.running = "running"
-behaviourtree.success = behaviourtree.success
-behaviourtree.failure = behaviourtree.failure
-behaviourtree.running = behaviourtree.running
-
-local function normalize_status(result)
-	if type(result) == "table" and result.status then
-		return result.status
-	end
-	return result
-end
 
 local blackboard = {}
 blackboard.__index = blackboard
@@ -22,47 +12,12 @@ blackboard.__index = blackboard
 function blackboard.new(opts)
 	local self = setmetatable({}, blackboard)
 	self.id = opts.id
-	self.data = {}
 	self.nodedata = {}
-	self.execution_path = {}
 	return self
-end
-
-function blackboard:set(key, value)
-	self.data[key] = value
-end
-
-function blackboard:get(key)
-	return self.data[key]
 end
 
 function blackboard:clear_node_data()
 	self.nodedata = {}
-end
-
-function blackboard:apply_updates(updates)
-	for _, properties in pairs(updates) do
-		for _, entry in ipairs(properties) do
-			local key = entry.key or entry.property
-			self.data[key] = entry.value
-		end
-	end
-end
-
-function blackboard:copy_properties(target, properties)
-	for i = 1, #properties do
-		local entry = properties[i]
-		local key = entry.key or entry.property
-		self.data[key] = target[entry.property]
-	end
-end
-
-function blackboard:get_action_in_progress()
-	return (self.nodedata.actioninprogress)
-end
-
-function blackboard:set_action_in_progress(v)
-	self.nodedata.actioninprogress = (v)
 end
 
 local btnode = {}
@@ -72,18 +27,11 @@ function btnode.new(id, priority)
 	local self = setmetatable({}, btnode)
 	self.id = id or "node"
 	self.priority = priority or 0
-	self.enabled = true
 	return self
 end
 
 function btnode:tick(_target, _blackboard)
-	return behaviourtree.success
-end
-
-function btnode:debug_tick(target, blackboard)
-	local status = self:tick(target, blackboard)
-	blackboard.execution_path[#blackboard.execution_path + 1] = { node = self, status = status }
-	return status
+	error("behaviour tree node '" .. tostring(self.id) .. "' must implement tick().")
 end
 
 local parametrizednode = {}
@@ -92,7 +40,7 @@ setmetatable(parametrizednode, { __index = btnode })
 
 function parametrizednode.new(id, priority, parameters)
 	local self = setmetatable(btnode.new(id, priority), parametrizednode)
-	self.parameters = parameters or {}
+	self.parameters = parameters
 	return self
 end
 
@@ -108,7 +56,7 @@ end
 
 function sequence:tick(target, blackboard)
 	for i = 1, #self.children do
-		local status = normalize_status(self.children[i]:tick(target, blackboard))
+		local status = self.children[i]:tick(target, blackboard)
 		if status ~= behaviourtree.success then
 			return status
 		end
@@ -128,7 +76,7 @@ end
 
 function selector:tick(target, blackboard)
 	for i = 1, #self.children do
-		local status = normalize_status(self.children[i]:tick(target, blackboard))
+		local status = self.children[i]:tick(target, blackboard)
 		if status ~= behaviourtree.failure then
 			return status
 		end
@@ -151,7 +99,7 @@ function parallel:tick(target, blackboard)
 	local any_running
 	local success_count = 0
 	for i = 1, #self.children do
-		local status = normalize_status(self.children[i]:tick(target, blackboard))
+		local status = self.children[i]:tick(target, blackboard)
 		if status == behaviourtree.running then
 			any_running = true
 		elseif status == behaviourtree.success then
@@ -181,7 +129,7 @@ function decorator.new(id, child, decorator_fn, priority)
 end
 
 function decorator:tick(target, blackboard)
-	local status = normalize_status(self.child:tick(target, blackboard))
+	local status = self.child:tick(target, blackboard)
 	return self.decorator(target, blackboard, status)
 end
 
@@ -197,7 +145,7 @@ function condition.new(id, condition_fn, modifier, priority, parameters)
 end
 
 function condition:tick(target, blackboard)
-	local result = self.condition(target, blackboard, table.unpack(self.parameters))
+	local result = self.condition(target, blackboard, self.parameters)
 	if self.modifier == "not" then
 		result = not result
 	end
@@ -218,7 +166,7 @@ end
 function compositecondition:tick(target, blackboard)
 	local combined = (self.modifier == "and")
 	for i = 1, #self.conditions do
-		local result = self.conditions[i](target, blackboard, table.unpack(self.parameters))
+		local result = self.conditions[i](target, blackboard, self.parameters)
 		if self.modifier == "and" then
 			combined = combined and result
 		else
@@ -245,7 +193,7 @@ function randomselector:tick(target, blackboard)
 		idx = math.random(1, #self.children)
 		blackboard.nodedata[self.currentchild_propname] = idx
 	end
-	local status = normalize_status(self.children[idx]:tick(target, blackboard))
+	local status = self.children[idx]:tick(target, blackboard)
 	if status ~= behaviourtree.running then
 		blackboard.nodedata[self.currentchild_propname] = nil
 	end
@@ -267,7 +215,7 @@ end
 function limit:tick(target, blackboard)
 	local count = blackboard.nodedata[self.count_propname] or 0
 	if count < self.limit then
-		local status = normalize_status(self.child:tick(target, blackboard))
+		local status = self.child:tick(target, blackboard)
 		if status ~= behaviourtree.running then
 			blackboard.nodedata[self.count_propname] = count + 1
 		end
@@ -280,18 +228,22 @@ local priorityselector = {}
 priorityselector.__index = priorityselector
 setmetatable(priorityselector, { __index = btnode })
 
+local function sort_by_priority_desc(a, b)
+	return (a.priority or 0) > (b.priority or 0)
+end
+
 function priorityselector.new(id, children, priority)
 	local self = setmetatable(btnode.new(id, priority), priorityselector)
 	self.children = children or {}
+	if #self.children > 1 then
+		table.sort(self.children, sort_by_priority_desc)
+	end
 	return self
 end
 
 function priorityselector:tick(target, blackboard)
-	table.sort(self.children, function(a, b)
-		return (a.priority or 0) > (b.priority or 0)
-	end)
 	for i = 1, #self.children do
-		local status = normalize_status(self.children[i]:tick(target, blackboard))
+		local status = self.children[i]:tick(target, blackboard)
 		if status ~= behaviourtree.failure then
 			return status
 		end
@@ -331,7 +283,7 @@ function action.new(id, action_fn, priority, parameters)
 end
 
 function action:tick(target, blackboard)
-	return self.action(target, blackboard, table.unpack(self.parameters))
+	return self.action(target, blackboard, self.parameters)
 end
 
 local compositeaction = {}
@@ -347,7 +299,7 @@ end
 function compositeaction:tick(target, blackboard)
 	local outcome
 	for i = 1, #self.actions do
-		local status = normalize_status(self.actions[i]:tick(target, blackboard))
+		local status = self.actions[i]:tick(target, blackboard)
 		if status == behaviourtree.failure then
 			return status
 		end
@@ -355,13 +307,19 @@ function compositeaction:tick(target, blackboard)
 			outcome = status
 		end
 	end
-	return outcome
+	return outcome or behaviourtree.success
 end
 
 local behaviourtreedefinitions = {}
 
 local function build_node(spec, id)
+	if type(spec) ~= 'table' then
+		error("behavior tree '" .. tostring(id) .. "' has invalid node spec: expected table.")
+	end
 	local node_type = spec.type or spec.kind or spec.node
+	if node_type == nil then
+		error("behavior tree '" .. tostring(id) .. "' node is missing required type/kind/node.")
+	end
 	if node_type == 'selector' then
 		local children = {}
 		for i = 1, #spec.children do
@@ -424,15 +382,29 @@ local function build_node(spec, id)
 		end
 		return compositeaction.new(id, actions, spec.priority, spec.parameters)
 	end
-	return btnode.new(id)
+	error("behavior tree '" .. tostring(id) .. "' has unsupported node type '" .. tostring(node_type) .. "'.")
 end
 
 function behaviourtree.register_definition(id, definition)
+	if type(id) ~= 'string' or #id == 0 then
+		error('behavior tree definition id must be a non-empty string.')
+	end
+	if behaviourtreedefinitions[id] ~= nil then
+		error("behavior tree '" .. id .. "' is already registered.")
+	end
+	if type(definition) ~= 'table' then
+		error("behavior tree '" .. id .. "' definition must be a table.")
+	end
+	local root = definition.root or definition
+	build_node(root, id)
 	behaviourtreedefinitions[id] = definition
 end
 
 function behaviourtree.instantiate(id)
 	local def = behaviourtreedefinitions[id]
+	if def == nil then
+		error("behavior tree '" .. tostring(id) .. "' is not registered.")
+	end
 	local root = def.root or def
 	return build_node(root, id)
 end
@@ -451,6 +423,5 @@ behaviourtree.priorityselector = priorityselector
 behaviourtree.wait = wait
 behaviourtree.action = action
 behaviourtree.compositeaction = compositeaction
-behaviourtree.definitions = behaviourtreedefinitions
 
 return behaviourtree

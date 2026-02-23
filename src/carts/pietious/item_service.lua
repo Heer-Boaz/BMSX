@@ -281,7 +281,7 @@ end
 
 local function register_item_service_definition()
 	define_service({
-		def_id = 'item_service',
+		def_id = 'item',
 		class = item_service,
 		fsms = { 'item_service.fsm' },
 		auto_activate = true,
