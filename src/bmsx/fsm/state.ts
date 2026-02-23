@@ -1681,7 +1681,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * If there is no previous state, nothing happens.
 	 */
 	public pop_and_transition(): void {
-		if (this._histSize <= 0) return;
+		if (this._histSize <= 0) {
+			if (this.parent) this.parent.pop_and_transition();
+			return;
+		}
 		const cap = BST_MAX_HISTORY;
 		const tailIndex = (this._histHead + this._histSize - 1 + cap) % cap;
 		const poppedStateId = this._hist[tailIndex];

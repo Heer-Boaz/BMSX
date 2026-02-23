@@ -1205,6 +1205,9 @@ end
 
 function state:pop_and_transition()
 	if self._hist_size <= 0 then
+		if self.parent ~= nil then
+			self.parent:pop_and_transition()
+		end
 		return
 	end
 	local cap = bst_max_history

@@ -295,7 +295,6 @@ function worldobject:activate()
 	self.active = true
 	self.tick_enabled = true
 	self.eventhandling_enabled = true
-	self.sc:resume()
 	self.sc:start()
 end
 
