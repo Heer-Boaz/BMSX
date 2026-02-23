@@ -33,7 +33,7 @@ function fsm_trace.format_guard_diagnostics(guard)
 		else
 			descriptor = ""
 		end
-		local note = evaluation.reason and not evaluation.passed and ("!" .. evaluation.reason) or nil
+		local note = evaluation.reason and not evaluation.passed and ("!" .. evaluation.reason)
 		local suffix
 		if note then
 			suffix = "[" .. note .. "]"
@@ -105,7 +105,7 @@ function fsm_trace.create_fallback_snapshot(trigger, description, payload)
 		trigger = trigger,
 		description = description,
 		timestamp = $.platform.clock.now(),
-		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload) or nil,
+		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload),
 	}
 end
 
@@ -116,7 +116,7 @@ function fsm_trace.create_event_context(event_name, emitter, payload)
 		event_name = event_name,
 		emitter = emitter,
 		timestamp = $.platform.clock.now(),
-		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload) or nil,
+		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload),
 	}
 end
 
@@ -217,7 +217,7 @@ function fsm_trace.compose_event_dispatch_trace_message(entry)
 		parts[#parts + 1] = "target=" .. tostring(entry.current_id)
 		parts[#parts + 1] = "transition=none"
 	end
-	local payload_summary = entry.context.payload_summary or (entry.detail ~= nil and fsm_trace.describe_payload(entry.detail) or nil)
+	local payload_summary = entry.context.payload_summary or (entry.detail ~= nil and fsm_trace.describe_payload(entry.detail))
 	if payload_summary then
 		parts[#parts + 1] = "payload=" .. payload_summary
 	end

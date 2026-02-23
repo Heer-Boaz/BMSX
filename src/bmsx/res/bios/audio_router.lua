@@ -113,7 +113,7 @@ local function resolve_action_spec(event_name, rule_index, rule, payload)
 	local actor_key = payload['actorId'] or "global"
 	local rule_key = event_name .. "#" .. rule_index .. "#" .. actor_key
 	local last_index = last_random_pick_by_rule[rule_key]
-	local avoid = spec.avoid_repeat and last_index or nil
+		local avoid = spec.avoid_repeat and last_index
 	local idx
 	if pick_mode == "weighted" then
 		idx = pick_weighted_index(weights, avoid)

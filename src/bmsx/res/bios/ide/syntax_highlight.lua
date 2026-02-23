@@ -536,7 +536,7 @@ local function highlight_text_line(line, builtin_lookup)
 						column_colors[i + 2] = constants.color_syntax.operator
 						i = i + 3
 					else
-						local pair = i + 2 <= length and slice(line, i, i + 2) or nil
+						local pair = i + 2 <= length and slice(line, i, i + 2)
 						if pair and multi_char_operators[pair] then
 							column_colors[i] = constants.color_syntax.operator
 							column_colors[i + 1] = constants.color_syntax.operator

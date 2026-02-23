@@ -35,6 +35,7 @@ type LuaLintIssueRule =
 	'useless_assert_pattern' |
 	'empty_string_condition_pattern' |
 	'empty_string_fallback_pattern' |
+	'or_nil_fallback_pattern' |
 	'explicit_truthy_comparison_pattern' |
 	'string_or_chain_comparison_pattern' |
 	'cross_file_local_global_constant_pattern' |
@@ -210,6 +211,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'useless_assert_pattern',
 	'empty_string_condition_pattern',
 	'empty_string_fallback_pattern',
+	'or_nil_fallback_pattern',
 	'explicit_truthy_comparison_pattern',
 	'string_or_chain_comparison_pattern',
 	'cross_file_local_global_constant_pattern',
@@ -523,6 +525,25 @@ function lintEmptyStringFallbackPattern(expression: LuaExpression, issues: LuaLi
 		'empty_string_fallback_pattern',
 		expression,
 		'Empty-string fallback via "or \'\'" is forbidden. Do not use empty strings as fallback/default values; keep string truthy-check semantics intact.',
+	);
+}
+
+function matchesOrNilFallbackPattern(expression: LuaExpression): boolean {
+	if (expression.kind !== LuaSyntaxKind.BinaryExpression || expression.operator !== LuaBinaryOperator.Or) {
+		return false;
+	}
+	return isNilExpression(expression.left) || isNilExpression(expression.right);
+}
+
+function lintOrNilFallbackPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (!matchesOrNilFallbackPattern(expression)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'or_nil_fallback_pattern',
+		expression,
+		'"or nil" fallback pattern is forbidden. Lua has no undefined; remove the nil fallback and keep direct truthy semantics.',
 	);
 }
 
@@ -4041,6 +4062,7 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 	}
 	lintEmptyStringConditionPattern(expression, issues);
 	lintEmptyStringFallbackPattern(expression, issues);
+	lintOrNilFallbackPattern(expression, issues);
 	lintExplicitTruthyComparisonPattern(expression, issues);
 	lintStringOrChainComparisonPattern(expression, issues);
 	if (topLevel) {

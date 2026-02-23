@@ -5,7 +5,7 @@ local text = require('text')
 local castle_map = {}
 local empty_conditions = {}
 
-local start_room_number = 106
+local start_room_number = 1
 
 local world_transition_specs = {
 	world_1 = {

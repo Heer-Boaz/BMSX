@@ -173,9 +173,9 @@ local function compile_binding(binding, parse)
 	if not on then
 		error("[inputactioneffectcompiler] binding '" .. (binding.name or "(unnamed)") .. "' is missing an 'on' clause.")
 	end
-	local press = on.press and parse(on.press) or nil
-	local hold = on.hold and parse(on.hold) or nil
-	local release = on.release and parse(on.release) or nil
+	local press = on.press and parse(on.press)
+	local hold = on.hold and parse(on.hold)
+	local release = on.release and parse(on.release)
 	local custom_entries = on.custom or {}
 	local custom_effects = compile_custom_effects(binding, analysis)
 	local custom_edges = {}
@@ -195,9 +195,9 @@ local function compile_binding(binding, parse)
 		press = press,
 		hold = hold,
 		release = release,
-		press_effect = compile_effect_list(binding.go and binding.go.press or nil, "press", analysis),
-		hold_effect = compile_effect_list(binding.go and binding.go.hold or nil, "hold", analysis),
-		release_effect = compile_effect_list(binding.go and binding.go.release or nil, "release", analysis),
+		press_effect = compile_effect_list(binding.go and binding.go.press, "press", analysis),
+		hold_effect = compile_effect_list(binding.go and binding.go.hold, "hold", analysis),
+		release_effect = compile_effect_list(binding.go and binding.go.release, "release", analysis),
 		custom_edges = custom_edges,
 		uses_effect_triggers = analysis.uses_effect_triggers,
 	}

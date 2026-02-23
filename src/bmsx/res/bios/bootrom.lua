@@ -76,7 +76,7 @@ local function flatten_manifest(manifest, root_path)
 		title = manifest.title,
 		short_name = manifest.short_name,
 		rom_name = manifest.rom_name,
-		entry_path = manifest.lua and manifest.lua.entry_path or nil,
+		entry_path = manifest.lua and manifest.lua.entry_path,
 		namespace = machine.namespace,
 		viewport = format_viewport_label(machine.viewport),
 		canonicalization = machine.canonicalization,
@@ -772,11 +772,11 @@ end
 local function build_info()
 	local cart_header = read_cart_header(cart_rom_base)
 	local cart_manifest_raw = cart_manifest
-	local cart_root_path = assets and assets.project_root_path or nil
-	local cart_manifest = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path) or nil
+	local cart_root_path = assets and assets.project_root_path
+	local cart_manifest = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path)
 	local sys_header = read_cart_header(system_rom_base)
 	local sys_manifest_raw = sys_manifest
-	local sys_manifest = sys_header and flatten_manifest(sys_manifest_raw, nil) or nil
+	local sys_manifest = sys_header and flatten_manifest(sys_manifest_raw, nil)
 
 	local cart_title = cart_manifest and display_text(cart_manifest.title) or '--'
 	-- local cart_short = cart_manifest and display_text(cart_manifest.short_name) or '--'
@@ -786,7 +786,7 @@ local function build_info()
 	-- local cart_canon = cart_manifest and display_text(cart_manifest.canonicalization) or '--'
 	-- local cart_entry = cart_manifest and display_text(cart_manifest.entry_path) or '--'
 	-- local cart_input = cart_manifest and display_text(cart_manifest.input) or '--'
-	local cart_cpu_raw = cart_manifest and cart_manifest.cpu_freq_hz or nil
+	local cart_cpu_raw = cart_manifest and cart_manifest.cpu_freq_hz
 	local cart_cpu_label = format_cpu_mhz_from_hz(cart_cpu_raw)
 	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest)
 	local cart_has_errors = #cart_errors > 0
@@ -1033,8 +1033,8 @@ function update()
 	local scroll_delta = consume_boot_scroll_delta()
 	local cart_header = read_cart_header(cart_rom_base)
 	local cart_manifest_raw = cart_manifest
-	local cart_root_path = assets and assets.project_root_path or nil
-	local cart_manifest_value = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path) or nil
+	local cart_root_path = assets and assets.project_root_path
+	local cart_manifest_value = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path)
 	ensure_program_link_precheck(cart_header)
 	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest_value)
 	local cart_has_errors = cart_header and #cart_errors > 0

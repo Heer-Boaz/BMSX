@@ -200,16 +200,16 @@ function statedefinition.new(id, def, root, parent)
 	self.def_id = def and def.def_id or make_def_id(id, parent)
 	self.data = def and def.data or {}
 	self.states = {}
-	self.initial = def and def.initial or nil
+	self.initial = def and def.initial
 	self.on = def and def.on or {}
-	self.tick = def and def.tick or nil
-	self.entering_state = def and def.entering_state or nil
-	self.exiting_state = def and (def.exiting_state or def.leaving_state) or nil
-	self.run_checks = def and def.run_checks or nil
+	self.tick = def and def.tick
+	self.entering_state = def and def.entering_state
+	self.exiting_state = def and (def.exiting_state or def.leaving_state)
+	self.run_checks = def and def.run_checks
 	self.input_event_handlers = def and def.input_event_handlers or {}
-	self.process_input = def and def.process_input or nil
+	self.process_input = def and def.process_input
 	self.is_concurrent = def and def.is_concurrent or false
-	self.input_eval = def and def.input_eval or nil
+	self.input_eval = def and def.input_eval
 	if self.input_eval ~= nil and not input_eval_modes[self.input_eval] then
 		error(
 			"state definition '" .. tostring(self.def_id)
@@ -224,13 +224,13 @@ function statedefinition.new(id, def, root, parent)
 	validate_transition_spec_map(self.def_id, "on", self.on)
 	validate_transition_spec_map(self.def_id, "input_event_handlers", self.input_event_handlers)
 	validate_run_checks(self.def_id, self.run_checks)
-	self.event_list = def and def.event_list or nil
-	self.timelines = def and def.timelines or nil
-	self.transition_guards = def and def.transition_guards or nil
-	self.tags = def and def.tags or nil
+	self.event_list = def and def.event_list
+	self.timelines = def and def.timelines
+	self.transition_guards = def and def.transition_guards
+	self.tags = def and def.tags
 	self.tag_derivations = nil
 	if self.root == self then
-		local raw_tag_derivations = def and (def.tag_derivations or def.derived_tags or def.tag_groups) or nil
+		local raw_tag_derivations = def and (def.tag_derivations or def.derived_tags or def.tag_groups)
 		self.tag_derivations = compile_tag_derivations(raw_tag_derivations)
 	end
 
@@ -825,7 +825,7 @@ function state:create_fallback_snapshot(trigger, description, payload)
 		trigger = trigger,
 		description = description,
 		timestamp = $.platform.clock.now(),
-		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload) or nil,
+		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload),
 	}
 end
 
@@ -860,14 +860,14 @@ function state:hydrate_context(snapshot, trigger, description)
 			bubbled = snapshot.bubbled,
 			action_evaluations = action_evaluations,
 			guard_evaluations = guard_evaluations,
-			last_transition = snapshot.last_transition and {
-				from = snapshot.last_transition.from,
-				to = snapshot.last_transition.to,
-				execution = snapshot.last_transition.execution,
-				status = snapshot.last_transition.status,
-				guard_summary = snapshot.last_transition.guard_summary,
-				reason = snapshot.last_transition.reason,
-			} or nil,
+				last_transition = snapshot.last_transition and {
+					from = snapshot.last_transition.from,
+					to = snapshot.last_transition.to,
+					execution = snapshot.last_transition.execution,
+					status = snapshot.last_transition.status,
+					guard_summary = snapshot.last_transition.guard_summary,
+					reason = snapshot.last_transition.reason,
+				},
 		}
 	end
 	return {
@@ -965,7 +965,7 @@ function state:check_state_guard_conditions(target_state_id)
 
 	local cur_def = self:current_state_definition()
 	local exit_guard_def = cur_def.transition_guards
-	local exit_guard = exit_guard_def and exit_guard_def.can_exit or nil
+	local exit_guard = exit_guard_def and exit_guard_def.can_exit
 	if type(exit_guard) == "function" then
 		local passed = exit_guard(self.target, self)
 		local evaluation = {
@@ -1018,7 +1018,7 @@ function state:check_state_guard_conditions(target_state_id)
 		error("target state '" .. tostring(target_state_id) .. "' not found under '" .. tostring(self.id) .. "'.")
 	end
 	local enter_guard_def = self:child_definition_or_throw(target_state_id).transition_guards
-	local enter_guard = enter_guard_def and enter_guard_def.can_enter or nil
+	local enter_guard = enter_guard_def and enter_guard_def.can_enter
 	if type(enter_guard) == "function" then
 		local passed = enter_guard(self.target, tgt)
 		local evaluation = {

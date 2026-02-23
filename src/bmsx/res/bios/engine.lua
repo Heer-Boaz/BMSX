@@ -382,7 +382,7 @@ function engine.inst(definition_id, addons)
 	local def = definitions[definition_id]
 	local object_type = def and def.type
 	if object_type == 'sprite' then
-		local class_table = def and def.class or nil
+		local class_table = def and def.class
 		local instance_id = (addons and addons.id) or (class_table and class_table.id)
 		local instance = spriteobject.new({ id = instance_id })
 		apply_definition(instance, def, addons, "imgid")
@@ -394,7 +394,7 @@ function engine.inst(definition_id, addons)
 		return instance
 	end
 	if object_type == 'textobject' then
-		local class_table = def and def.class or nil
+		local class_table = def and def.class
 		local instance_id = (addons and addons.id) or (class_table and class_table.id)
 		local instance = textobject.new({ id = instance_id })
 		apply_definition(instance, def, addons, "dimensions")
@@ -405,7 +405,7 @@ function engine.inst(definition_id, addons)
 		world_instance:spawn(instance, addons and addons.pos)
 		return instance
 	end
-	local class_table = def and def.class or nil
+	local class_table = def and def.class
 	local instance_id = (addons and addons.id) or (class_table and class_table.id)
 	local instance = worldobject.new({ id = instance_id })
 	apply_definition(instance, def, addons)
@@ -415,7 +415,7 @@ end
 
 function engine.create_service(definition_id, addons)
 	local def = service_definitions[definition_id]
-	local class_table = def and def.class or nil
+	local class_table = def and def.class
 	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
 	local instance = service.new({ id = instance_id })
 	apply_definition(instance, def, addons)
@@ -614,7 +614,7 @@ function engine.trigger_effect(object_id, effect_id, options)
 	if not component then
 		error("world object '" .. object_id .. "' does not have an actioneffectcomponent.")
 	end
-	local payload = options and options.payload or nil
+	local payload = options and options.payload
 	if payload ~= nil then
 		return component:trigger(effect_id, { payload = payload })
 	end

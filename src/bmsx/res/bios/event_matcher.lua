@@ -56,7 +56,7 @@ function event_matcher.compile(matcher)
 			or_predicates[i] = event_matcher.compile(matcher['or'][i])
 		end
 	end
-	local not_predicate = matcher['not'] and event_matcher.compile(matcher['not']) or nil
+	local not_predicate = matcher['not'] and event_matcher.compile(matcher['not'])
 
 	return function(payload)
 		if equals then

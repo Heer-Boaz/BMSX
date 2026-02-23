@@ -126,7 +126,7 @@ end
 function worldobject:get_component(type_name)
 	local key = component_key(type_name)
 	local list = self.component_map[key]
-	return list and list[1] or nil
+	return list and list[1]
 end
 
 function worldobject:get_components(type_name)
@@ -171,7 +171,7 @@ end
 
 function worldobject:get_component_at(type_name, index)
 	local list = self.component_map[component_key(type_name)]
-	return list and list[index + 1] or nil
+	return list and list[index + 1]
 end
 
 function worldobject:find_component(predicate, type_name)

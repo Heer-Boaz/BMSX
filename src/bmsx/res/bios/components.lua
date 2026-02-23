@@ -207,7 +207,7 @@ function spritecomponent.new(opts)
 	self.scale = opts and opts.scale or { x = 1, y = 1 }
 	self.offset = opts and opts.offset or { x = 0, y = 0, z = 0 }
 	self.parallax_weight = opts and opts.parallax_weight or 0
-	self.collider_local_id = opts and opts.collider_local_id or nil
+	self.collider_local_id = opts and opts.collider_local_id
 	self.collider_geometry_token = ""
 	self.collider_offset_token = ""
 	return self
@@ -438,7 +438,7 @@ end
 
 function timelinecomponent:get(id)
 	local entry = self.registry[id]
-	return entry and entry.instance or nil
+	return entry and entry.instance
 end
 
 function timelinecomponent:seek(id, frame)
