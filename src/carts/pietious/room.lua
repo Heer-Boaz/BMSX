@@ -488,37 +488,6 @@ function room.create_room(room_number)
 	return room_state
 end
 
-function room.apply_customizations(room_state, has_active_seal)
-	if room_state.custom ~= 'removetilesbehindseal' then
-		return false
-	end
-	if not has_active_seal then
-		return false
-	end
-
-	local seal = room_state.seal
-	if seal == nil then
-		return false
-	end
-
-	local changed
-	local x0 = seal.tile_x + 1
-	local y0 = seal.tile_y + 1
-	for y = y0, y0 + 7 do
-		local row = room_state.map_rows[y]
-		local patched = row:sub(1, x0 - 1) .. row:sub(x0, x0 + 7):gsub('[^.]', '.') .. row:sub(x0 + 8)
-		if patched ~= row then
-			room_state.map_rows[y] = patched
-			changed = true
-		end
-	end
-
-	if changed then
-		refresh_room_geometry(room_state)
-	end
-	return changed
-end
-
 function room.patch_rows(room_state, rows)
 	local changed
 	for i = 1, #rows do
@@ -865,22 +834,6 @@ function room_object:render_room_objects(room_state)
 
 	local elevator_service = service('e')
 	render_elevators(room_state.room_number, elevator_service.elevator_routes)
-
-	local seal = room_state.seal
-	if seal ~= nil then
-		local sprite_id
-		local dissolve_step = room_state.seal_dissolve_step
-		if dissolve_step > 0 then
-			if dissolve_step < 6 then
-				sprite_id = 'seal_dissolve_' .. tostring(dissolve_step)
-			end
-		elseif room_state.has_active_seal or room_state.seal_sequence_active then
-			sprite_id = 'seal'
-		end
-		if sprite_id ~= nil then
-			put_sprite(sprite_id, seal.x, seal.y, 23)
-		end
-	end
 end
 
 function room_object:render_room()

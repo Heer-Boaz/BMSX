@@ -381,17 +381,64 @@ function castle_service:restore_active_enemies_after_shrine_transition()
 	end)
 end
 
+function castle_service:sync_current_room_seal_instance()
+	local room_state = self.current_room
+	local seal = room_state.seal
+	if seal == nil then
+		return
+	end
+
+	local seal_instance = object(seal.id)
+	if not room_state.has_active_seal and not room_state.seal_sequence_active then
+		if seal_instance ~= nil then
+			world_instance:despawn(seal_instance)
+		end
+		return
+	end
+
+	local dissolve_step = room_state.seal_dissolve_step
+	if dissolve_step >= 6 then
+		if seal_instance ~= nil then
+			world_instance:despawn(seal_instance)
+		end
+		return
+	end
+
+	local sprite_id
+	if dissolve_step > 0 then
+		sprite_id = 'seal_dissolve_' .. tostring(dissolve_step)
+	else
+		sprite_id = 'seal'
+	end
+
+	if seal_instance == nil then
+		seal_instance = inst('seal', {
+			id = seal.id,
+			pos = { x = seal.x, y = seal.y, z = 23 },
+		})
+	else
+		seal_instance:set_space('main')
+		if not seal_instance.active then
+			seal_instance:activate()
+		end
+		seal_instance.visible = true
+		seal_instance.x = seal.x
+		seal_instance.y = seal.y
+		seal_instance.z = 23
+	end
+
+	seal_instance:gfx(sprite_id)
+end
+
 function castle_service:refresh_current_room_customizations()
 	local room_state = self.current_room
 	local seal = room_state.seal
-	local has_active_seal
-	if seal ~= nil then
-		has_active_seal = progression.matches(self, seal.conditions)
+	if seal == nil then
+		room_state.has_active_seal = false
 	else
-		has_active_seal = false
+		room_state.has_active_seal = progression.matches(self, seal.conditions)
 	end
-	room_state.has_active_seal = has_active_seal
-	room_module.apply_customizations(room_state, has_active_seal)
+	self:sync_current_room_seal_instance()
 end
 
 function castle_service:begin_seal_dissolution()
@@ -400,6 +447,7 @@ function castle_service:begin_seal_dissolution()
 	room_state.room_dissolve_step = 0
 	room_state.seal_dissolve_step = 0
 	room_state.seal_dissolve_timer = 0
+	self:sync_current_room_seal_instance()
 end
 
 function castle_service:finish_seal_dissolution()
@@ -550,6 +598,7 @@ end
 
 function castle_service:tick()
 	local room_state = self.current_room
+	local seal_step_changed
 	if room_state.seal_sequence_active then
 		room_state.seal_dissolve_timer = room_state.seal_dissolve_timer + 1
 		if room_state.seal_dissolve_timer >= constants.flow.seal_dissolve_step_frames then
@@ -558,8 +607,12 @@ function castle_service:tick()
 				room_state.room_dissolve_step = room_state.room_dissolve_step + 1
 			elseif room_state.seal_dissolve_step < constants.flow.seal_sprite_dissolve_steps then
 				room_state.seal_dissolve_step = room_state.seal_dissolve_step + 1
+				seal_step_changed = true
 			end
 		end
+	end
+	if seal_step_changed then
+		self:sync_current_room_seal_instance()
 	end
 
 	for _, entrance_state in pairs(self.world_entrance_states) do

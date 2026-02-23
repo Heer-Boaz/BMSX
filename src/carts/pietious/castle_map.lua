@@ -5,7 +5,7 @@ local text = require('text')
 local castle_map = {}
 local empty_conditions = {}
 
-local start_room_number = 1
+local start_room_number = 100
 
 local world_transition_specs = {
 	world_1 = {
@@ -369,8 +369,6 @@ local function build_seal(room_number, object_defs)
 				id = string.format('seal_%03d_01', room_number),
 				x = tile_x_to_world(object_def.x),
 				y = tile_y_to_world(object_def.y),
-				tile_x = object_def.x,
-				tile_y = object_def.y,
 				text = object_def.text,
 				conditions = object_def.condition or empty_conditions,
 			}

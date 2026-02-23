@@ -676,26 +676,6 @@ function player:find_near_shrine()
 	return nil
 end
 
-function player:find_near_seal()
-	local seal = service('c').current_room.seal
-	if seal == nil then
-		return nil
-	end
-
-	local player_left = self.x
-	local player_top = self.y
-	local player_right = self.x + self.width
-	local player_bottom = self.y + self.height
-	local area_left = seal.x + constants.seal.hit_left_px
-	local area_top = seal.y + constants.seal.hit_top_px
-	local area_right = seal.x + constants.seal.hit_right_px
-	local area_bottom = seal.y + constants.seal.hit_bottom_px
-	if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
-		return seal
-	end
-	return nil
-end
-
 function player:find_world_entrance_for_unlock()
 	local world_entrances = service('c').current_room.world_entrances
 	local castle_service = service('c')
@@ -875,11 +855,8 @@ function player:try_start_world_or_shrine_interaction_from_down()
 
 	local current_room = service('c').current_room
 	if current_room.has_active_seal and not current_room.seal_sequence_active then
-		local seal = self:find_near_seal()
-		if seal ~= nil then
-			service('d'):dispatch_state_event('seal_dissolution_start')
-			return true
-		end
+		service('d'):dispatch_state_event('seal_dissolution_start')
+		return true
 	end
 
 	return false
