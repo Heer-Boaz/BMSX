@@ -12,7 +12,7 @@ local persistent_room_object_ids = {
 	ui = true,
 }
 
-local world1_stairs_open_row = '#...........................-=.#'
+local world1_stairs_open_row = '#............................-=#'
 local world_entrance_opening_states = {
 	opening_1 = true,
 	opening_2 = true,
