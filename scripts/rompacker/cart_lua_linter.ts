@@ -46,6 +46,7 @@ type LuaLintIssueRule =
 	'multi_has_tag_pattern' |
 	'single_use_has_tag_pattern' |
 	'single_use_local_pattern' |
+	'self_property_local_alias_pattern' |
 	'imgid_assignment_pattern' |
 	'self_imgid_assignment_pattern' |
 	'imgid_fallback_pattern' |
@@ -53,8 +54,13 @@ type LuaLintIssueRule =
 	'forbidden_matches_state_path_pattern' |
 	'event_handler_dispatch_pattern' |
 	'event_handler_state_dispatch_pattern' |
+	'event_handler_flag_proxy_pattern' |
 	'dispatch_fanout_loop_pattern' |
+	'tick_flag_polling_pattern' |
+	'tick_input_check_pattern' |
 	'set_space_roundtrip_pattern' |
+	'cross_object_state_event_relay_pattern' |
+	'foreign_object_internal_mutation_pattern' |
 	'fsm_state_name_mirror_assignment_pattern' |
 	'constant_copy_pattern' |
 	'split_local_table_init_pattern' |
@@ -147,6 +153,20 @@ type DuplicateInitializerContext = {
 	readonly scopeStack: DuplicateInitializerScope[];
 };
 
+type ForeignObjectAliasBinding = {
+	readonly declaration: LuaIdentifierExpression;
+};
+
+type ForeignObjectAliasScope = {
+	readonly names: string[];
+};
+
+type ForeignObjectMutationContext = {
+	readonly issues: LuaLintIssue[];
+	readonly bindingStacksByName: Map<string, Array<ForeignObjectAliasBinding | null>>;
+	readonly scopeStack: ForeignObjectAliasScope[];
+};
+
 type LuaCartLintOptions = {
 	readonly roots: ReadonlyArray<string>;
 	readonly profile?: LuaLintProfile;
@@ -227,6 +247,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'multi_has_tag_pattern',
 	'single_use_has_tag_pattern',
 	'single_use_local_pattern',
+	'self_property_local_alias_pattern',
 	'imgid_assignment_pattern',
 	'self_imgid_assignment_pattern',
 	'imgid_fallback_pattern',
@@ -234,8 +255,13 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'forbidden_matches_state_path_pattern',
 	'event_handler_dispatch_pattern',
 	'event_handler_state_dispatch_pattern',
+	'event_handler_flag_proxy_pattern',
 	'dispatch_fanout_loop_pattern',
+	'tick_flag_polling_pattern',
+	'tick_input_check_pattern',
 	'set_space_roundtrip_pattern',
+	'cross_object_state_event_relay_pattern',
+	'foreign_object_internal_mutation_pattern',
 	'fsm_state_name_mirror_assignment_pattern',
 	'constant_copy_pattern',
 	'split_local_table_init_pattern',
@@ -266,11 +292,17 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'forbidden_matches_state_path_pattern',
 	'event_handler_dispatch_pattern',
 	'event_handler_state_dispatch_pattern',
+	'event_handler_flag_proxy_pattern',
 	'dispatch_fanout_loop_pattern',
+	'tick_flag_polling_pattern',
+	'tick_input_check_pattern',
 	'set_space_roundtrip_pattern',
+	'cross_object_state_event_relay_pattern',
+	'foreign_object_internal_mutation_pattern',
 	'fsm_state_name_mirror_assignment_pattern',
 	'multi_has_tag_pattern',
 	'single_use_has_tag_pattern',
+	'self_property_local_alias_pattern',
 	'handler_identity_dispatch_pattern',
 	'getter_setter_pattern',
 	'single_line_method_pattern',
@@ -862,6 +894,16 @@ function isSelfExpressionRoot(expression: LuaExpression): boolean {
 		return expression.name === 'self';
 	}
 	if (expression.kind === LuaSyntaxKind.MemberExpression || expression.kind === LuaSyntaxKind.IndexExpression) {
+		return isSelfExpressionRoot(expression.base);
+	}
+	return false;
+}
+
+function isSelfPropertyAliasExpression(expression: LuaExpression): boolean {
+	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+		return isSelfExpressionRoot(expression.base);
+	}
+	if (expression.kind === LuaSyntaxKind.IndexExpression) {
 		return isSelfExpressionRoot(expression.base);
 	}
 	return false;
@@ -1860,6 +1902,223 @@ function lintSetSpaceRoundtripPattern(expression: LuaCallExpression, issues: Lua
 	);
 }
 
+function isEventProxyFlagPropertyName(propertyName: string): boolean {
+	const lowered = propertyName.toLowerCase();
+	return lowered.endsWith('_requested')
+		|| lowered.endsWith('_pending')
+		|| lowered.endsWith('_done')
+		|| lowered.startsWith('pending_');
+}
+
+type SelfPropertyAssignmentMatch = {
+	readonly propertyName: string;
+	readonly target: LuaExpression;
+};
+
+function findSelfPropertyAssignmentInStatements(
+	statements: ReadonlyArray<LuaStatement>,
+	propertyPredicate: (propertyName: string) => boolean,
+): SelfPropertyAssignmentMatch | undefined {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.AssignmentStatement:
+				for (const target of statement.left) {
+					const propertyName = getSelfAssignedPropertyNameFromTarget(target);
+					if (!propertyName || !propertyPredicate(propertyName)) {
+						continue;
+					}
+					return {
+						propertyName,
+						target,
+					};
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					const nested = findSelfPropertyAssignmentInStatements(clause.block.body, propertyPredicate);
+					if (nested) {
+						return nested;
+					}
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement: {
+				const nested = findSelfPropertyAssignmentInStatements(statement.block.body, propertyPredicate);
+				if (nested) {
+					return nested;
+				}
+				break;
+			}
+			case LuaSyntaxKind.RepeatStatement: {
+				const nested = findSelfPropertyAssignmentInStatements(statement.block.body, propertyPredicate);
+				if (nested) {
+					return nested;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ForNumericStatement: {
+				const nested = findSelfPropertyAssignmentInStatements(statement.block.body, propertyPredicate);
+				if (nested) {
+					return nested;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ForGenericStatement: {
+				const nested = findSelfPropertyAssignmentInStatements(statement.block.body, propertyPredicate);
+				if (nested) {
+					return nested;
+				}
+				break;
+			}
+			case LuaSyntaxKind.DoStatement: {
+				const nested = findSelfPropertyAssignmentInStatements(statement.block.body, propertyPredicate);
+				if (nested) {
+					return nested;
+				}
+				break;
+			}
+			case LuaSyntaxKind.LocalAssignmentStatement:
+			case LuaSyntaxKind.LocalFunctionStatement:
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+			case LuaSyntaxKind.ReturnStatement:
+			case LuaSyntaxKind.CallStatement:
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
+		}
+	}
+	return undefined;
+}
+
+function isTickInputCheckCallExpression(expression: LuaCallExpression): boolean {
+	if (expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
+		const calleeName = expression.callee.name.toLowerCase();
+		if (calleeName === 'action_triggered'
+			|| calleeName === 'action_pressed'
+			|| calleeName === 'action_released'
+			|| calleeName === 'action_held') {
+			return true;
+		}
+	}
+	const methodName = getCallMethodName(expression);
+	if (!methodName) {
+		return false;
+	}
+	const loweredMethodName = methodName.toLowerCase();
+	if (!loweredMethodName.includes('pressed')
+		&& !loweredMethodName.includes('held')
+		&& !loweredMethodName.includes('triggered')
+		&& !loweredMethodName.includes('input')) {
+		return false;
+	}
+	const receiver = getCallReceiverExpression(expression);
+	return !!receiver && isSelfExpressionRoot(receiver);
+}
+
+function getSelfPropertyNameFromConditionExpression(expression: LuaExpression | null): string | undefined {
+	if (!expression) {
+		return undefined;
+	}
+	if (expression.kind === LuaSyntaxKind.MemberExpression && isSelfExpressionRoot(expression.base)) {
+		return expression.identifier;
+	}
+	if (expression.kind === LuaSyntaxKind.IndexExpression && isSelfExpressionRoot(expression.base)) {
+		return getExpressionKeyName(expression.index);
+	}
+	if (expression.kind === LuaSyntaxKind.UnaryExpression && expression.operator === LuaUnaryOperator.Not) {
+		return getSelfPropertyNameFromConditionExpression(expression.operand);
+	}
+	return undefined;
+}
+
+function isFalseOrNilExpression(expression: LuaExpression): boolean {
+	return expression.kind === LuaSyntaxKind.NilLiteralExpression
+		|| (expression.kind === LuaSyntaxKind.BooleanLiteralExpression && expression.value === false);
+}
+
+function hasSelfPropertyResetInStatements(statements: ReadonlyArray<LuaStatement>, propertyName: string): boolean {
+	for (const statement of statements) {
+		if (statement.kind !== LuaSyntaxKind.AssignmentStatement || statement.operator !== LuaAssignmentOperator.Assign) {
+			continue;
+		}
+		for (let index = 0; index < statement.left.length && index < statement.right.length; index += 1) {
+			const targetPropertyName = getSelfAssignedPropertyNameFromTarget(statement.left[index]);
+			if (targetPropertyName !== propertyName) {
+				continue;
+			}
+			if (isFalseOrNilExpression(statement.right[index])) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+function lintTickFlagPollingPattern(functionExpression: LuaFunctionExpression, issues: LuaLintIssue[]): void {
+	for (const statement of functionExpression.body.body) {
+		if (statement.kind !== LuaSyntaxKind.IfStatement) {
+			continue;
+		}
+		for (const clause of statement.clauses) {
+			const propertyName = getSelfPropertyNameFromConditionExpression(clause.condition);
+			if (!propertyName || !isEventProxyFlagPropertyName(propertyName)) {
+				continue;
+			}
+			if (!hasSelfPropertyResetInStatements(clause.block.body, propertyName)) {
+				continue;
+			}
+			pushIssue(
+				issues,
+				'tick_flag_polling_pattern',
+				clause.condition ?? statement,
+				`Tick polling on self.${propertyName} is forbidden. Use FSM events/timelines/input handlers for transitions instead of tick-flag polling and manual resets.`,
+			);
+		}
+	}
+}
+
+function lintTickInputCheckPattern(functionExpression: LuaFunctionExpression, issues: LuaLintIssue[]): void {
+	const inputCheck = findCallExpressionInStatements(functionExpression.body.body, isTickInputCheckCallExpression);
+	if (!inputCheck) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'tick_input_check_pattern',
+		inputCheck,
+		'Input checks inside tick are forbidden. Use FSM input handlers (player-index based) or events/timelines instead of polling input in tick.',
+	);
+}
+
+function isObjectOrServiceResolverCallExpression(expression: LuaExpression | undefined): boolean {
+	if (!expression || expression.kind !== LuaSyntaxKind.CallExpression) {
+		return false;
+	}
+	return expression.callee.kind === LuaSyntaxKind.IdentifierExpression
+		&& (expression.callee.name === 'object' || expression.callee.name === 'service');
+}
+
+function lintCrossObjectStateEventRelayPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isCrossObjectDispatchStateEventCallExpression(expression)) {
+		return;
+	}
+	if (expression.arguments.length === 0 || expression.arguments[0].kind !== LuaSyntaxKind.IdentifierExpression) {
+		return;
+	}
+	const receiver = getCallReceiverExpression(expression);
+	if (!isObjectOrServiceResolverCallExpression(receiver)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'cross_object_state_event_relay_pattern',
+		expression,
+		'Cross-object dispatch_state_event relay with dynamic event names is forbidden. Keep event ownership local and model transitions via FSM events/on maps.',
+	);
+}
+
 function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
 	if (!isEventsOnCallExpression(expression)) {
 		return;
@@ -1869,9 +2128,9 @@ function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: 
 		if (!handlerField || handlerField.value.kind !== LuaSyntaxKind.FunctionExpression) {
 			continue;
 		}
-		const scDispatchCall = findCallExpressionInStatements(
-			handlerField.value.body.body,
-			isStateControllerDispatchCallExpression,
+			const scDispatchCall = findCallExpressionInStatements(
+				handlerField.value.body.body,
+				isStateControllerDispatchCallExpression,
 		);
 		if (scDispatchCall) {
 			pushIssue(
@@ -1881,19 +2140,31 @@ function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: 
 				'Event handler callbacks must not call sc:dispatch(...). Route event-driven transitions via FSM definitions instead of manual dispatch inside events:on handlers.',
 			);
 		}
-		const stateDispatchCall = findCallExpressionInStatements(
-			handlerField.value.body.body,
-			isDispatchStateEventCallExpression,
-		);
-		if (stateDispatchCall) {
-			pushIssue(
-				issues,
-				'event_handler_state_dispatch_pattern',
-				stateDispatchCall,
-				'Event handler callbacks must not call dispatch_state_event(...). Model event-driven transitions directly in FSM definitions instead of manual state dispatch inside events:on handlers.',
+			const crossObjectStateDispatchCall = findCallExpressionInStatements(
+				handlerField.value.body.body,
+				isCrossObjectDispatchStateEventCallExpression,
 			);
+			if (crossObjectStateDispatchCall) {
+				pushIssue(
+					issues,
+					'event_handler_state_dispatch_pattern',
+					crossObjectStateDispatchCall,
+					'Event handler callbacks must not dispatch_state_event(...) on other objects/services. Keep transitions owned by each object/service FSM.',
+				);
+			}
+			const proxyFlagAssignment = findSelfPropertyAssignmentInStatements(
+				handlerField.value.body.body,
+				isEventProxyFlagPropertyName,
+			);
+			if (proxyFlagAssignment) {
+				pushIssue(
+					issues,
+					'event_handler_flag_proxy_pattern',
+					proxyFlagAssignment.target,
+					`Event handler flag-proxy pattern is forbidden (self.${proxyFlagAssignment.propertyName}). Do not stage FSM transitions through *_requested/*_pending/*_done flags; use FSM events/timelines/input handlers directly.`,
+				);
+			}
 		}
-	}
 }
 
 function lintDispatchFanoutLoopPattern(statement: LuaStatement, issues: LuaLintIssue[]): void {
@@ -2535,6 +2806,292 @@ function lintDuplicateInitializerPattern(statements: ReadonlyArray<LuaStatement>
 		lintDuplicateInitializerInStatements(statements, context);
 	} finally {
 		leaveDuplicateInitializerScope(context);
+	}
+}
+
+function createForeignObjectMutationContext(issues: LuaLintIssue[]): ForeignObjectMutationContext {
+	const context: ForeignObjectMutationContext = {
+		issues,
+		bindingStacksByName: new Map<string, Array<ForeignObjectAliasBinding | null>>(),
+		scopeStack: [],
+	};
+	enterForeignObjectMutationScope(context);
+	return context;
+}
+
+function enterForeignObjectMutationScope(context: ForeignObjectMutationContext): void {
+	context.scopeStack.push({ names: [] });
+}
+
+function leaveForeignObjectMutationScope(context: ForeignObjectMutationContext): void {
+	const scope = context.scopeStack.pop();
+	if (!scope) {
+		return;
+	}
+	for (let index = scope.names.length - 1; index >= 0; index -= 1) {
+		const name = scope.names[index];
+		const stack = context.bindingStacksByName.get(name);
+		if (!stack || stack.length === 0) {
+			continue;
+		}
+		stack.pop();
+		if (stack.length === 0) {
+			context.bindingStacksByName.delete(name);
+		}
+	}
+}
+
+function declareForeignObjectBinding(
+	context: ForeignObjectMutationContext,
+	declaration: LuaIdentifierExpression,
+	binding: ForeignObjectAliasBinding | null,
+): void {
+	const scope = context.scopeStack[context.scopeStack.length - 1];
+	scope.names.push(declaration.name);
+	let stack = context.bindingStacksByName.get(declaration.name);
+	if (!stack) {
+		stack = [];
+		context.bindingStacksByName.set(declaration.name, stack);
+	}
+	stack.push(binding);
+}
+
+function resolveForeignObjectBinding(
+	context: ForeignObjectMutationContext,
+	name: string,
+): ForeignObjectAliasBinding | null | undefined {
+	const stack = context.bindingStacksByName.get(name);
+	if (!stack || stack.length === 0) {
+		return undefined;
+	}
+	return stack[stack.length - 1];
+}
+
+function setForeignObjectBinding(
+	context: ForeignObjectMutationContext,
+	name: string,
+	binding: ForeignObjectAliasBinding | null,
+): void {
+	const stack = context.bindingStacksByName.get(name);
+	if (!stack || stack.length === 0) {
+		return;
+	}
+	stack[stack.length - 1] = binding;
+}
+
+function isForeignObjectAliasInitializer(expression: LuaExpression | undefined): boolean {
+	return isObjectOrServiceResolverCallExpression(expression);
+}
+
+function getAssignedPropertyNameFromTarget(target: LuaExpression): string | undefined {
+	if (target.kind === LuaSyntaxKind.MemberExpression) {
+		return target.identifier;
+	}
+	if (target.kind === LuaSyntaxKind.IndexExpression) {
+		return getExpressionKeyName(target.index);
+	}
+	return undefined;
+}
+
+function lintForeignObjectMutationInExpression(
+	expression: LuaExpression | null,
+	context: ForeignObjectMutationContext,
+): void {
+	if (!expression) {
+		return;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.MemberExpression:
+			lintForeignObjectMutationInExpression(expression.base, context);
+			return;
+		case LuaSyntaxKind.IndexExpression:
+			lintForeignObjectMutationInExpression(expression.base, context);
+			lintForeignObjectMutationInExpression(expression.index, context);
+			return;
+		case LuaSyntaxKind.BinaryExpression:
+			lintForeignObjectMutationInExpression(expression.left, context);
+			lintForeignObjectMutationInExpression(expression.right, context);
+			return;
+		case LuaSyntaxKind.UnaryExpression:
+			lintForeignObjectMutationInExpression(expression.operand, context);
+			return;
+		case LuaSyntaxKind.CallExpression:
+			lintForeignObjectMutationInExpression(expression.callee, context);
+			for (const argument of expression.arguments) {
+				lintForeignObjectMutationInExpression(argument, context);
+			}
+			return;
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					lintForeignObjectMutationInExpression(field.key, context);
+				}
+				lintForeignObjectMutationInExpression(field.value, context);
+			}
+			return;
+		case LuaSyntaxKind.FunctionExpression:
+			enterForeignObjectMutationScope(context);
+			for (const parameter of expression.parameters) {
+				declareForeignObjectBinding(context, parameter, null);
+			}
+			lintForeignObjectMutationInStatements(expression.body.body, context);
+			leaveForeignObjectMutationScope(context);
+			return;
+		default:
+			return;
+	}
+}
+
+function lintForeignObjectMutationInStatements(
+	statements: ReadonlyArray<LuaStatement>,
+	context: ForeignObjectMutationContext,
+): void {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement:
+				for (const value of statement.values) {
+					lintForeignObjectMutationInExpression(value, context);
+				}
+				for (let index = 0; index < statement.names.length; index += 1) {
+					const declaration = statement.names[index];
+					const value = index < statement.values.length ? statement.values[index] : undefined;
+					const binding = value && isForeignObjectAliasInitializer(value)
+						? { declaration }
+						: null;
+					declareForeignObjectBinding(context, declaration, binding);
+				}
+				break;
+			case LuaSyntaxKind.AssignmentStatement: {
+				for (const left of statement.left) {
+					const propertyName = getAssignedPropertyNameFromTarget(left);
+					if (!propertyName) {
+						lintForeignObjectMutationInExpression(left, context);
+						continue;
+					}
+					const rootName = left.kind === LuaSyntaxKind.MemberExpression
+						? getRootIdentifier(left.base)
+						: getRootIdentifier(left.base);
+					if (!rootName) {
+						continue;
+					}
+					const binding = resolveForeignObjectBinding(context, rootName);
+					if (!binding) {
+						continue;
+					}
+					pushIssue(
+						context.issues,
+						'foreign_object_internal_mutation_pattern',
+						left,
+						`Direct internal mutation on ${rootName}.${propertyName} is forbidden. Do not mutate internals of object()/service() instances via aliases; expose explicit methods/events instead.`,
+					);
+				}
+				for (const right of statement.right) {
+					lintForeignObjectMutationInExpression(right, context);
+				}
+				if (statement.operator === LuaAssignmentOperator.Assign) {
+					const pairCount = Math.min(statement.left.length, statement.right.length);
+					for (let index = 0; index < pairCount; index += 1) {
+						const left = statement.left[index];
+						if (left.kind !== LuaSyntaxKind.IdentifierExpression) {
+							continue;
+						}
+						const right = statement.right[index];
+						const binding = isForeignObjectAliasInitializer(right)
+							? { declaration: left }
+							: null;
+						setForeignObjectBinding(context, left.name, binding);
+					}
+				}
+				break;
+			}
+			case LuaSyntaxKind.LocalFunctionStatement:
+				declareForeignObjectBinding(context, statement.name, null);
+				enterForeignObjectMutationScope(context);
+				for (const parameter of statement.functionExpression.parameters) {
+					declareForeignObjectBinding(context, parameter, null);
+				}
+				lintForeignObjectMutationInStatements(statement.functionExpression.body.body, context);
+				leaveForeignObjectMutationScope(context);
+				break;
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+				enterForeignObjectMutationScope(context);
+				for (const parameter of statement.functionExpression.parameters) {
+					declareForeignObjectBinding(context, parameter, null);
+				}
+				lintForeignObjectMutationInStatements(statement.functionExpression.body.body, context);
+				leaveForeignObjectMutationScope(context);
+				break;
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					lintForeignObjectMutationInExpression(expression, context);
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					if (clause.condition) {
+						lintForeignObjectMutationInExpression(clause.condition, context);
+					}
+					enterForeignObjectMutationScope(context);
+					lintForeignObjectMutationInStatements(clause.block.body, context);
+					leaveForeignObjectMutationScope(context);
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement:
+				lintForeignObjectMutationInExpression(statement.condition, context);
+				enterForeignObjectMutationScope(context);
+				lintForeignObjectMutationInStatements(statement.block.body, context);
+				leaveForeignObjectMutationScope(context);
+				break;
+			case LuaSyntaxKind.RepeatStatement:
+				enterForeignObjectMutationScope(context);
+				lintForeignObjectMutationInStatements(statement.block.body, context);
+				lintForeignObjectMutationInExpression(statement.condition, context);
+				leaveForeignObjectMutationScope(context);
+				break;
+			case LuaSyntaxKind.ForNumericStatement:
+				lintForeignObjectMutationInExpression(statement.start, context);
+				lintForeignObjectMutationInExpression(statement.limit, context);
+				lintForeignObjectMutationInExpression(statement.step, context);
+				enterForeignObjectMutationScope(context);
+				declareForeignObjectBinding(context, statement.variable, null);
+				lintForeignObjectMutationInStatements(statement.block.body, context);
+				leaveForeignObjectMutationScope(context);
+				break;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					lintForeignObjectMutationInExpression(iterator, context);
+				}
+				enterForeignObjectMutationScope(context);
+				for (const variable of statement.variables) {
+					declareForeignObjectBinding(context, variable, null);
+				}
+				lintForeignObjectMutationInStatements(statement.block.body, context);
+				leaveForeignObjectMutationScope(context);
+				break;
+			case LuaSyntaxKind.DoStatement:
+				enterForeignObjectMutationScope(context);
+				lintForeignObjectMutationInStatements(statement.block.body, context);
+				leaveForeignObjectMutationScope(context);
+				break;
+			case LuaSyntaxKind.CallStatement:
+				lintForeignObjectMutationInExpression(statement.expression, context);
+				break;
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+function lintForeignObjectInternalMutationPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	const context = createForeignObjectMutationContext(issues);
+	try {
+		lintForeignObjectMutationInStatements(statements, context);
+	} finally {
+		leaveForeignObjectMutationScope(context);
 	}
 }
 
@@ -3756,6 +4313,15 @@ function lintLocalAssignment(statement: LuaLocalAssignmentStatement, issues: Lua
 	const valueCount = Math.min(statement.names.length, statement.values.length);
 	for (let index = 0; index < valueCount; index += 1) {
 		const value = statement.values[index];
+		const localName = statement.names[index].name;
+		if (localName !== '_' && isSelfPropertyAliasExpression(value)) {
+			pushIssue(
+				issues,
+				'self_property_local_alias_pattern',
+				statement.names[index],
+				`Local alias of self.* is forbidden (${localName}). Read self.<property> directly. If self.player_index is needed, use the FSM input handlers for that state (they already trigger on player_index).`,
+			);
+		}
 		if (!isConstantAccessExpression(value)) {
 			continue;
 		}
@@ -4412,6 +4978,12 @@ function lintInjectedServiceIdPropertyTableField(field: LuaTableField, issues: L
 function lintTableField(field: LuaTableField, issues: LuaLintIssue[]): void {
 	lintCollectionLabelPatterns(field, issues);
 	lintInjectedServiceIdPropertyTableField(field, issues);
+	if (field.kind === LuaTableFieldKind.IdentifierKey
+		&& field.name === 'tick'
+		&& field.value.kind === LuaSyntaxKind.FunctionExpression) {
+		lintTickFlagPollingPattern(field.value, issues);
+		lintTickInputCheckPattern(field.value, issues);
+	}
 	switch (field.kind) {
 		case LuaTableFieldKind.Array:
 			lintExpression(field.value, issues, false);
@@ -4728,14 +5300,15 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 	if (topLevel) {
 		lintMultiHasTagPattern(expression, issues);
 	}
-	switch (expression.kind) {
-		case LuaSyntaxKind.CallExpression:
-			lintRequireCall(expression, issues);
-			lintForbiddenStateCalls(expression, issues);
-			lintEventHandlerDispatchPattern(expression, issues);
-			lintSetSpaceRoundtripPattern(expression, issues);
-			lintServiceDefinitionSuffixPattern(expression, issues);
-			lintCreateServiceIdAddonPattern(expression, issues);
+		switch (expression.kind) {
+			case LuaSyntaxKind.CallExpression:
+				lintRequireCall(expression, issues);
+				lintForbiddenStateCalls(expression, issues);
+				lintEventHandlerDispatchPattern(expression, issues);
+				lintCrossObjectStateEventRelayPattern(expression, issues);
+				lintSetSpaceRoundtripPattern(expression, issues);
+				lintServiceDefinitionSuffixPattern(expression, issues);
+				lintCreateServiceIdAddonPattern(expression, issues);
 			lintDefineServiceIdPattern(expression, issues);
 			lintFsmIdLabelPattern(expression, issues);
 			lintFsmStateNameMirrorAssignmentPattern(expression, issues);
@@ -4933,11 +5506,12 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 				topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
 				lintSplitLocalTableInitPattern(chunk.body, issues);
 				lintDuplicateInitializerPattern(chunk.body, issues);
-				lintStagedExportLocalCallPattern(chunk.body, issues);
-				lintStagedExportLocalTablePattern(chunk.body, issues);
-				lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
-				lintStatements(chunk.body, issues);
-				lintSingleUseHasTagPattern(chunk.body, issues);
+					lintStagedExportLocalCallPattern(chunk.body, issues);
+					lintStagedExportLocalTablePattern(chunk.body, issues);
+					lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
+					lintForeignObjectInternalMutationPattern(chunk.body, issues);
+					lintStatements(chunk.body, issues);
+					lintSingleUseHasTagPattern(chunk.body, issues);
 				lintSingleUseLocalPattern(chunk.body, issues);
 			}
 			lintCrossFileLocalGlobalConstantPattern(topLevelLocalStringConstants, issues);
