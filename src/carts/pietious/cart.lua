@@ -126,13 +126,13 @@ end
 
 function new_game()
 	reset()
-	add_space('castle')
+	add_space('main')
 	add_space('transition')
 	add_space('shrine')
 	add_space('lithograph')
 	add_space('item')
 	add_space('ui')
-	set_space('castle')
+	set_space('main')
 
 	local castle_service = create_service('castle')
 	local room = castle_service:initialize(castle_map.start_room_number)

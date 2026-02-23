@@ -831,7 +831,7 @@ local function register_room_definition()
 		fsms = { 'room' },
 		components = { 'customvisualcomponent' },
 		defaults = {
-			space_id = 'castle',
+			space_id = 'main',
 			tick_enabled = false,
 		},
 	})

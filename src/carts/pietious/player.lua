@@ -2928,7 +2928,7 @@ local function register_player_definition()
 		fsms = { 'player' },
 		defaults = {
 			imgid = 'pietolon_stand_r',
-			space_id = 'castle',
+			space_id = 'main',
 			player_index = 1,
 			width = constants.player.width,
 			height = constants.player.height,

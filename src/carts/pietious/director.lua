@@ -3,8 +3,8 @@ local constants = require('constants')
 local director = {}
 director.__index = director
 
-local function room_state_name(room_space)
-	if room_space == 'world' then
+local function room_state_name(room_state)
+	if room_state.world_number ~= 0 then
 		return 'world'
 	end
 	return 'castle'
@@ -34,8 +34,7 @@ function director:lithograph_close_held()
 end
 
 function director:activate_spaces()
-	add_space('castle')
-	add_space('world')
+	add_space('main')
 	add_space('transition')
 	add_space('shrine')
 	add_space('lithograph')
@@ -232,11 +231,12 @@ local function define_director_fsm()
 					object('shrine').lines = {}
 					object('lithograph').lines = {}
 					self.transition_frames_left = 0
-					local room_space = service('c').current_room.space_id
+					local current_room = service('c').current_room
+					local room_space = current_room.space_id
 					set_space(room_space)
 					object('ui').space_id = room_space
 					service('c'):resume_active_enemies_after_transition()
-					self:emit_state_changed(room_state_name(room_space))
+					self:emit_state_changed(room_state_name(current_room))
 				end,
 				on = {
 					['room_switch_start'] = '/room_switch_wait',

@@ -437,7 +437,7 @@ local function load_room_templates()
 		local object_defs = room_def.objects or {}
 		templates[room_number] = {
 			room_number = room_number,
-			space_id = room_def.type,
+			space_id = 'main',
 			world_number = world_number or 0,
 			room_subtype = room_def.subtype,
 			map_rows = map_rows,
