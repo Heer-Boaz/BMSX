@@ -47,7 +47,7 @@ function worldobject.new(opts)
 	self.tags = opts.tags or {}
 	self.components = {}
 	self.component_map = {}
-	self.space_id = opts.space_id
+	self:set_space(opts.space_id or 'main')
 	self.dispose_flag = false
 	self.events = eventemitter.events_of(self)
 	local definition = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
@@ -83,6 +83,10 @@ function worldobject:set_pos(x, y, z)
 	self.x = x or self.x
 	self.y = y or self.y
 	self.z = z or self.z
+end
+
+function worldobject:set_space(space_id)
+	return world_instance:set_object_space(self, space_id)
 end
 
 function worldobject:move_by(dx, dy, dz)

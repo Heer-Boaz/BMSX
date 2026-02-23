@@ -47,7 +47,7 @@ function director:begin_black_wait(frames)
 	self.overlay_text_lines = {}
 	self.transition_frames_left = frames
 	set_space('transition')
-	object('ui').space_id = 'transition'
+	object('ui'):set_space(get_space())
 	self:emit_state_changed('transition')
 	self.events:emit('transition.mask.play', {})
 end
@@ -234,7 +234,7 @@ local function define_director_fsm()
 					local current_room = service('c').current_room
 					local room_space = current_room.space_id
 					set_space(room_space)
-					object('ui').space_id = room_space
+					object('ui'):set_space(get_space())
 					service('c'):resume_active_enemies_after_transition()
 					self:emit_state_changed(room_state_name(current_room))
 				end,
@@ -276,7 +276,7 @@ local function define_director_fsm()
 					self.active_transition_kind = 'world'
 					service('c'):park_active_enemies_for_transition()
 					set_space(service('c').current_room.space_id)
-					object('ui').space_id = service('c').current_room.space_id
+					object('ui'):set_space(get_space())
 				end,
 				on = {
 					['world_transition_done'] = '/room_switch_wait',
@@ -293,7 +293,7 @@ local function define_director_fsm()
 					self.active_transition_kind = 'shrine'
 					service('c'):park_active_enemies_for_transition()
 					set_space(service('c').current_room.space_id)
-					object('ui').space_id = service('c').current_room.space_id
+					object('ui'):set_space(get_space())
 				end,
 				on = {
 					['shrine_overlay_requested'] = '/shrine_overlay',
@@ -314,7 +314,7 @@ local function define_director_fsm()
 					self.pending_banner_world_number = 0
 					self.pending_banner_post_action = nil
 					set_space('transition')
-					object('ui').space_id = 'transition'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('transition')
 					self.events:emit('transition.mask.play', {})
 				end,
@@ -342,7 +342,7 @@ local function define_director_fsm()
 					self.overlay_text_lines = {}
 					self.pending_shrine_text_lines = {}
 					set_space('shrine')
-					object('ui').space_id = 'shrine'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('shrine')
 				end,
 				on = {
@@ -362,7 +362,7 @@ local function define_director_fsm()
 					self.overlay_text_lines = {}
 					object('shrine').lines = {}
 					set_space(service('c').current_room.space_id)
-					object('ui').space_id = service('c').current_room.space_id
+					object('ui'):set_space(get_space())
 					object('pietolon'):leave_shrine_overlay()
 				end,
 				on = {
@@ -386,7 +386,7 @@ local function define_director_fsm()
 				entering_state = function(self)
 					self.active_transition_kind = 'item'
 					set_space('item')
-					object('ui').space_id = 'item'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('item')
 				end,
 				tick = function(self)
@@ -419,7 +419,7 @@ local function define_director_fsm()
 					self.active_transition_kind = 'halo'
 					service('c'):park_active_enemies_for_transition()
 					set_space('transition')
-					object('ui').space_id = 'transition'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('halo')
 					self.events:emit('transition.mask.play', {})
 				end,
@@ -433,7 +433,7 @@ local function define_director_fsm()
 					service('c'):park_active_enemies_for_transition()
 					self.overlay_mode = 'seal_dissolution'
 					set_space('transition')
-					object('ui').space_id = 'transition'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('seal_dissolution')
 					self.events:emit('transition.mask.play', {})
 				end,
@@ -447,7 +447,7 @@ local function define_director_fsm()
 					service('c'):park_active_enemies_for_transition()
 					self.overlay_mode = 'daemon_appearance'
 					set_space('transition')
-					object('ui').space_id = 'transition'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('daemon_appearance')
 					self.events:emit('transition.mask.play', {})
 				end,
@@ -461,7 +461,7 @@ local function define_director_fsm()
 					service('c'):park_active_enemies_for_transition()
 					object('lithograph').lines = self.lithograph_text_lines
 					set_space('lithograph')
-					object('ui').space_id = 'lithograph'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('lithograph')
 				end,
 				tick = function(self)
@@ -496,7 +496,7 @@ local function define_director_fsm()
 					self.active_transition_kind = 'title'
 					self.overlay_mode = 'title'
 					set_space('transition')
-					object('ui').space_id = 'transition'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('title')
 					self.events:emit('transition.mask.play', {})
 				end,
@@ -509,7 +509,7 @@ local function define_director_fsm()
 					self.active_transition_kind = 'story'
 					self.overlay_mode = 'story'
 					set_space('transition')
-					object('ui').space_id = 'transition'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('story')
 					self.events:emit('transition.mask.play', {})
 				end,
@@ -522,7 +522,7 @@ local function define_director_fsm()
 					self.active_transition_kind = 'ending'
 					self.overlay_mode = 'ending'
 					set_space('transition')
-					object('ui').space_id = 'transition'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('ending')
 					self.events:emit('transition.mask.play', {})
 				end,
@@ -535,7 +535,7 @@ local function define_director_fsm()
 					self.active_transition_kind = 'victory_dance'
 					self.overlay_mode = 'victory_dance'
 					set_space('transition')
-					object('ui').space_id = 'transition'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('victory_dance')
 					self.events:emit('transition.mask.play', {})
 				end,
@@ -549,7 +549,7 @@ local function define_director_fsm()
 					service('c'):park_active_enemies_for_transition()
 					self.overlay_mode = 'death'
 					set_space('transition')
-					object('ui').space_id = 'transition'
+					object('ui'):set_space(get_space())
 					self:emit_state_changed('death')
 					self.events:emit('transition.mask.play', {})
 				end,

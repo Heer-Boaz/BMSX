@@ -763,7 +763,7 @@ function room_object:bind_events()
 		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(event)
-			self.space_id = event.space
+			self:set_space(event.space)
 			room.sync_lithograph_instances(service('c').current_room)
 			room.sync_shrine_instances(service('c').current_room)
 			room.sync_draaideur_instances(service('c').current_room)

@@ -181,8 +181,9 @@ function world_class.new()
 	local self = setmetatable({}, world_class)
 	self._objects = {}
 	self._by_id = {}
-	self._spaces = { default = true }
-	self._space_order = { "main" }
+	self._spaces = {}
+	self._space_order = {}
+	self._obj_to_space = {}
 	self.active_space_id = "main"
 	self.systems = ecs.ecsystemmanager.new()
 	self.current_phase = nil
@@ -191,6 +192,7 @@ function world_class.new()
 	self.gameheight = display_height()
 	-- id counter for unique id generation
 	self.idcounter = 0
+	self:add_space("main")
 	return self
 end
 
@@ -198,16 +200,22 @@ function world_class:add_space(space_id)
 	if type(space_id) ~= "string" then
 		error("world.add_space expects a non-empty space id")
 	end
-	if self._spaces[space_id] then
+	if self._spaces[space_id] ~= nil then
 		return false
 	end
-	self._spaces[space_id] = true
+	self._spaces[space_id] = {
+		id = space_id,
+		objects = {},
+		by_id = {},
+	}
 	self._space_order[#self._space_order + 1] = space_id
 	return true
 end
 
 function world_class:set_space(space_id)
-	self:add_space(space_id)
+	if self._spaces[space_id] == nil then
+		error("world.set_space unknown space id '" .. tostring(space_id) .. "'.")
+	end
 	self.active_space_id = space_id
 	return self.active_space_id
 end
@@ -220,6 +228,44 @@ function world_class:list_spaces()
 	return self._space_order
 end
 
+function world_class:set_object_space(obj, space_id)
+	local target_space = self._spaces[space_id]
+	if target_space == nil then
+		error("world.set_object_space unknown space id '" .. tostring(space_id) .. "'.")
+	end
+
+	local object_id = obj.id
+	if self._by_id[object_id] == nil then
+		obj.space_id = space_id
+		return space_id
+	end
+
+	local current_space_id = self._obj_to_space[object_id]
+	if current_space_id == space_id then
+		obj.space_id = space_id
+		return space_id
+	end
+
+	if current_space_id ~= nil then
+		local current_space = self._spaces[current_space_id]
+		current_space.by_id[object_id] = nil
+		local current_space_objects = current_space.objects
+		for i = #current_space_objects, 1, -1 do
+			if current_space_objects[i] == obj then
+				table.remove(current_space_objects, i)
+				break
+			end
+		end
+	end
+
+	local target_space_objects = target_space.objects
+	target_space_objects[#target_space_objects + 1] = obj
+	target_space.by_id[object_id] = obj
+	self._obj_to_space[object_id] = space_id
+	obj.space_id = space_id
+	return space_id
+end
+
 function world_class:_object_in_scope(obj, scope)
 	if obj.dispose_flag then
 		return false
@@ -228,17 +274,19 @@ function world_class:_object_in_scope(obj, scope)
 		if not obj.active then
 			return false
 		end
-		return obj.space_id == self.active_space_id
+		return self._obj_to_space[obj.id] == self.active_space_id
 	end
 	return true
 end
 
 function world_class:spawn(obj, pos)
 	local space_id = obj.space_id
-	self:add_space(space_id)
-	obj.space_id = space_id
+	if space_id == nil then
+		space_id = self.active_space_id
+	end
 	self._by_id[obj.id] = obj
 	self._objects[#self._objects + 1] = obj
+	self:set_object_space(obj, space_id)
 	obj:onspawn(pos)
 	return obj
 end
@@ -250,9 +298,25 @@ function world_class:despawn(id_or_obj)
 	else
 		obj = id_or_obj
 	end
+
+	local object_id = obj.id
+	local space_id = self._obj_to_space[object_id]
+	if space_id ~= nil then
+		local space = self._spaces[space_id]
+		space.by_id[object_id] = nil
+		local space_objects = space.objects
+		for i = #space_objects, 1, -1 do
+			if space_objects[i] == obj then
+				table.remove(space_objects, i)
+				break
+			end
+		end
+		self._obj_to_space[object_id] = nil
+	end
+
 	obj:ondespawn()
 	obj:dispose()
-	self._by_id[obj.id] = nil
+	self._by_id[object_id] = nil
 	for i = #self._objects, 1, -1 do
 		if self._objects[i] == obj then
 			table.remove(self._objects, i)
@@ -311,7 +375,21 @@ function world_class:update()
 	for i = #self._objects, 1, -1 do
 		local obj = self._objects[i]
 		if obj.dispose_flag then
-			self._by_id[obj.id] = nil
+			local object_id = obj.id
+			local space_id = self._obj_to_space[object_id]
+			if space_id ~= nil then
+				local space = self._spaces[space_id]
+				space.by_id[object_id] = nil
+				local space_objects = space.objects
+				for j = #space_objects, 1, -1 do
+					if space_objects[j] == obj then
+						table.remove(space_objects, j)
+						break
+					end
+				end
+				self._obj_to_space[object_id] = nil
+			end
+			self._by_id[object_id] = nil
 			obj:ondespawn()
 			obj:dispose()
 			table.remove(self._objects, i)
@@ -342,8 +420,10 @@ function world_class:clear()
 	end
 	self._objects = {}
 	self._by_id = {}
-	self._spaces = { default = true }
-	self._space_order = { "main" }
+	self._spaces = {}
+	self._space_order = {}
+	self._obj_to_space = {}
+	self:add_space("main")
 	self.active_space_id = "main"
 end
 world_instance = world_class.new()

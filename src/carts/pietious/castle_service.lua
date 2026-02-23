@@ -271,7 +271,7 @@ function castle_service:sync_enemy_instance(enemy_def, room, force_reset_from_ro
 		})
 	else
 		local should_reset_from_room_template = force_reset_from_room_template or (not instance.active)
-		instance.space_id = room.space_id
+		instance:set_space(room.space_id)
 		instance.trigger = enemy_def.trigger
 		instance.conditions = enemy_def.conditions
 		instance.damage = enemy_def.damage
@@ -361,7 +361,7 @@ function castle_service:apply_enemy_transition_space_if_needed()
 	end
 
 	self:for_each_active_enemy_instance(function(instance)
-		instance.space_id = enemy_transition_space_id
+		instance:set_space(enemy_transition_space_id)
 	end)
 end
 
@@ -375,7 +375,7 @@ function castle_service:resume_active_enemies_after_transition()
 
 	local room_space = self.current_room.space_id
 	self:for_each_active_enemy_instance(function(instance)
-		instance.space_id = room_space
+		instance:set_space(room_space)
 		instance.visible = true
 		if not instance.active then
 			instance:activate()

@@ -77,7 +77,7 @@ function item_service:sync_item_instance(item_def, room)
 		self.items_by_id[id] = instance
 		return instance
 	end
-	instance.space_id = room.space_id
+	instance:set_space(room.space_id)
 
 	self.items_by_id[id] = instance
 	if not instance.active then

@@ -108,7 +108,7 @@ function player:bind_events()
 		event = 'room.switched',
 		subscriber = self,
 		handler = function(event)
-			self.space_id = event.space
+			self:set_space(event.space)
 		end,
 	})
 end

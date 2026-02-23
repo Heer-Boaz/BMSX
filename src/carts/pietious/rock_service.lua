@@ -12,7 +12,7 @@ function rock_service:sync_rock_instance(rock_def, room)
 			pos = { x = rock_def.x, y = rock_def.y, z = 140 },
 		})
 	end
-	instance.space_id = room.space_id
+	instance:set_space(room.space_id)
 
 	self.rocks_by_id[id] = instance
 	if not instance.active then
