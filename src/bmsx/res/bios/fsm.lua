@@ -2,6 +2,7 @@
 -- finite state machine runtime for system rom
 
 local fsm_trace = require("fsm_trace")
+local clear_map = require("clear_map")
 
 local statedefinition = {}
 statedefinition.__index = statedefinition

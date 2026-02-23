@@ -1,5 +1,9 @@
 local function clear_map(map)
-	for key in pairs(map) do
+	while true do
+		local key = next(map)
+		if key == nil then
+			break
+		end
 		map[key] = nil
 	end
 end
