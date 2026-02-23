@@ -370,7 +370,7 @@ function overlap2dsystem:update()
 		if owner.dispose_flag or not owner.active then
 			goto continue_event_collider
 		end
-		local owner_space = world_instance:_object_space_id(owner)
+		local owner_space = owner.space_id
 		local candidates = broadphase:query_aabb(collider:get_world_area())
 		for j = 1, #candidates do
 			local other = candidates[j]
@@ -386,7 +386,7 @@ function overlap2dsystem:update()
 				local a_hits_b = (collider.mask & other.layer) ~= 0
 				local b_hits_a = (other.mask & collider.layer) ~= 0
 				if a_hits_b and b_hits_a then
-					local other_space = world_instance:_object_space_id(other_owner)
+					local other_space = other_owner.space_id
 					if self:space_match(collider.spaceevents, owner_space, other_space) then
 						if not (other.id < collider.id) then
 							if collision2d.collides(collider, other) then

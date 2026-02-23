@@ -182,8 +182,8 @@ function world_class.new()
 	self._objects = {}
 	self._by_id = {}
 	self._spaces = { default = true }
-	self._space_order = { "default" }
-	self.active_space_id = "default"
+	self._space_order = { "main" }
+	self.active_space_id = "main"
 	self.systems = ecs.ecsystemmanager.new()
 	self.current_phase = nil
 	self.paused = false
@@ -220,14 +220,6 @@ function world_class:list_spaces()
 	return self._space_order
 end
 
-function world_class:_object_space_id(obj)
-	local space_id = obj.space_id
-	if space_id == nil then
-		return "default"
-	end
-	return space_id
-end
-
 function world_class:_object_in_scope(obj, scope)
 	if obj.dispose_flag then
 		return false
@@ -236,13 +228,13 @@ function world_class:_object_in_scope(obj, scope)
 		if not obj.active then
 			return false
 		end
-		return self:_object_space_id(obj) == self.active_space_id
+		return obj.space_id == self.active_space_id
 	end
 	return true
 end
 
 function world_class:spawn(obj, pos)
-	local space_id = self:_object_space_id(obj)
+	local space_id = obj.space_id
 	self:add_space(space_id)
 	obj.space_id = space_id
 	self._by_id[obj.id] = obj
@@ -351,8 +343,8 @@ function world_class:clear()
 	self._objects = {}
 	self._by_id = {}
 	self._spaces = { default = true }
-	self._space_order = { "default" }
-	self.active_space_id = "default"
+	self._space_order = { "main" }
+	self.active_space_id = "main"
 end
 world_instance = world_class.new()
 
