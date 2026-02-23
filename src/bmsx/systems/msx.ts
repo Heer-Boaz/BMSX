@@ -4,7 +4,7 @@ export const MSX1ScreenWidth: number = 256;
 export const MSX1ScreenHeight: number = 192;
 export const MSX2ScreenWidth: number = 256;
 export const MSX2ScreenHeight: number = 212;
-export const Msx1Colors: color[] = [
+export const Msx1ColorsStrict: color[] = [
 	{ r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 0 }, // 0 = Transparent
 	{ r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 1 }, // 1 = Black
 	{ r: 0 / 255, g: 241 / 255, b: 20 / 255, a: 1 }, // 2 = Medium Green
@@ -21,6 +21,9 @@ export const Msx1Colors: color[] = [
 	{ r: 231 / 255, g: 80 / 255, b: 229 / 255, a: 1 }, // 13 = Magenta
 	{ r: 208 / 255, g: 208 / 255, b: 208 / 255, a: 1 }, // 14 = Grey
 	{ r: 255 / 255, g: 255 / 255, b: 255 / 255, a: 1 }, // 15 = White
+];
+export const Msx1Colors: color[] = [
+	...Msx1ColorsStrict,
 	// Extra MSX1 color for extended palettes. Let's call them "BMSX" palette entries :-)
 	// Bright brown
 	{ r: 222 / 255, g: 184 / 255, b: 135 / 255, a: 1 }, // 16 = Brown
