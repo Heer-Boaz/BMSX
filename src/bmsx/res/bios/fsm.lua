@@ -276,16 +276,6 @@ local max_transitions_per_tick = 1000
 local empty_game_event = { type = "__fsm.synthetic__", emitter = nil, timestamp = 0 }
 local target_state_tag_refs = setmetatable({}, { __mode = "k" })
 
-local function clear_map(map)
-	while true do
-		local key = next(map)
-		if key == nil then
-			break
-		end
-		map[key] = nil
-	end
-end
-
 local function get_target_state_tag_refs(target)
 	local refs = target_state_tag_refs[target]
 	if refs then

@@ -3,6 +3,10 @@ local font = require('font')
 
 local transition = {}
 transition.__index = transition
+local overlay_modes_that_render_room = {
+	seal_dissolution = true,
+	daemon_appearance = true,
+}
 
 function transition:bind_visual()
 	local rc = self:get_component('customvisualcomponent')
@@ -27,6 +31,16 @@ function transition:draw_transition_overlay()
 	local mode = director_service.overlay_mode
 	if mode == nil then
 		return
+	end
+	if overlay_modes_that_render_room[mode] then
+		object('room'):render_room()
+	end
+	if mode == 'seal_dissolution' then
+		local total = constants.flow.seal_flash_frames + constants.flow.seal_dissolve_frames
+		local elapsed = total - director_service.transition_frames_left
+		if elapsed < constants.flow.seal_flash_frames and (elapsed % 2) == 0 then
+			put_rectfill(0, 0, display_width(), display_height(), 342, 15)
+		end
 	end
 	local lines = director_service.overlay_text_lines
 	if #lines > 0 then

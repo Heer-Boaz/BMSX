@@ -5,6 +5,9 @@ director.__index = director
 
 local function room_state_name(room_state)
 	if room_state.world_number ~= 0 then
+		if room_state.has_active_seal then
+			return 'seal'
+		end
 		return 'world'
 	end
 	return 'castle'
@@ -102,12 +105,12 @@ function director:open_shrine(text_lines)
 end
 
 function director:sync_room_state_from_castle()
-	local castle_service = service('c')
-	self.current_room_number = castle_service.current_room_number
-	self.map_id = castle_service.map_id
-	self.map_x = castle_service.map_x
-	self.map_y = castle_service.map_y
-	self.last_room_switch = castle_service.last_room_switch
+	local current_room = service('c').current_room
+	self.current_room_number = current_room.room_number
+	self.map_id = current_room.map_id
+	self.map_x = current_room.map_x
+	self.map_y = current_room.map_y
+	self.last_room_switch = current_room.last_room_switch
 end
 
 function director:open_world_entrance(target)
@@ -231,11 +234,12 @@ local function define_director_fsm()
 					object('shrine').lines = {}
 					object('lithograph').lines = {}
 					self.transition_frames_left = 0
-					local current_room = service('c').current_room
+					local castle_service = service('c')
+					local current_room = castle_service.current_room
 					local room_space = current_room.space_id
 					set_space(room_space)
 					object('ui'):set_space(get_space())
-					service('c'):restore_active_enemies_after_shrine_transition()
+					castle_service:restore_active_enemies_after_shrine_transition()
 					self:emit_state_changed(room_state_name(current_room))
 				end,
 				on = {
@@ -425,27 +429,47 @@ local function define_director_fsm()
 					entering_state = function(self)
 						self.active_transition_kind = 'seal_dissolution'
 						self.overlay_mode = 'seal_dissolution'
-					set_space('transition')
-					object('ui'):set_space(get_space())
-					self:emit_state_changed('seal_dissolution')
-					self.events:emit('transition.mask.play', {})
-				end,
-				on = {
-					['seal_dissolution_done'] = '/room',
-				},
+						self.transition_frames_left = constants.flow.seal_flash_frames + constants.flow.seal_dissolve_frames
+						set_space('transition')
+						object('ui'):set_space(get_space())
+						self:emit_state_changed('seal_dissolution')
+						service('c'):begin_seal_dissolution()
+					end,
+					on = {
+						['seal_dissolution_done'] = {
+							go = function(self)
+								service('c'):finish_seal_dissolution()
+								return '/room'
+							end,
+						},
+					},
+					tick = function(self)
+						self.transition_frames_left = self.transition_frames_left - 1
+						if self.transition_frames_left > 0 then
+							return
+						end
+						self:dispatch_state_event('seal_dissolution_done')
+					end,
 			},
 				daemon_appearance = {
 					entering_state = function(self)
 						self.active_transition_kind = 'daemon_appearance'
 						self.overlay_mode = 'daemon_appearance'
-					set_space('transition')
-					object('ui'):set_space(get_space())
-					self:emit_state_changed('daemon_appearance')
-					self.events:emit('transition.mask.play', {})
-				end,
-				on = {
-					['daemon_appearance_done'] = '/room',
-				},
+						self.transition_frames_left = constants.flow.daemon_appearance_frames
+						set_space('transition')
+						object('ui'):set_space(get_space())
+						self:emit_state_changed('daemon_appearance')
+					end,
+					on = {
+						['daemon_appearance_done'] = '/room',
+					},
+					tick = function(self)
+						self.transition_frames_left = self.transition_frames_left - 1
+						if self.transition_frames_left > 0 then
+							return
+						end
+						self:dispatch_state_event('daemon_appearance_done')
+					end,
 			},
 				lithograph_screen_open = {
 					entering_state = function(self)

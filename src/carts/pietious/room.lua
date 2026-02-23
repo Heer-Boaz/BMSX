@@ -18,6 +18,16 @@ local breakable_wall_kinds = {
 	breakablewall = true,
 	disappearingwall = true,
 }
+local world_dissolve_prefix_by_tile_id = {
+	backworld_ul = 'backworld_ul_dissolve_',
+	backworld_ul_dark = 'backworld_ul_dissolve_',
+	backworld_ur = 'backworld_ur_dissolve_',
+	backworld_ur_dark = 'backworld_ur_dissolve_',
+	backworld_dl = 'backworld_dl_dissolve_',
+	backworld_dl_dark = 'backworld_dl_dissolve_',
+	backworld_dr = 'backworld_dr_dissolve_',
+	backworld_dr_dark = 'backworld_dr_dissolve_',
+}
 
 local function append_definition_ids(target, defs)
 	for i = 1, #defs do
@@ -428,6 +438,11 @@ local function apply_room_template(room_state, template)
 	room_state.space_id = template.space_id
 	room_state.world_number = template.world_number
 	room_state.room_subtype = template.room_subtype
+	room_state.custom = template.custom
+	room_state.has_active_seal = false
+	room_state.seal_sequence_active = false
+	room_state.room_dissolve_step = 0
+	room_state.seal_dissolve_step = 0
 	room_state.world_width = constants.room.width
 	room_state.world_height = constants.room.height
 	room_state.world_top = constants.room.hud_height
@@ -447,6 +462,7 @@ local function apply_room_template(room_state, template)
 	room_state.items = template.items
 	room_state.lithographs = template.lithographs
 	room_state.shrines = template.shrines
+	room_state.seal = template.seal
 	room_state.world_entrances = template.world_entrances
 	room_state.draaideuren = template.draaideuren
 	room_state.links = template.links
@@ -460,6 +476,9 @@ local function apply_room_template(room_state, template)
 	append_definition_ids(runtime_object_ids, room_state.items)
 	append_definition_ids(runtime_object_ids, room_state.lithographs)
 	append_definition_ids(runtime_object_ids, room_state.shrines)
+	if room_state.seal ~= nil then
+		runtime_object_ids[room_state.seal.id] = true
+	end
 	append_definition_ids(runtime_object_ids, room_state.draaideuren)
 end
 
@@ -468,6 +487,37 @@ function room.create_room(room_number)
 	local room_state = {}
 	apply_room_template(room_state, castle_map.room_templates[target_room_number])
 	return room_state
+end
+
+function room.apply_customizations(room_state, has_active_seal)
+	if room_state.custom ~= 'removetilesbehindseal' then
+		return false
+	end
+	if not has_active_seal then
+		return false
+	end
+
+	local seal = room_state.seal
+	if seal == nil then
+		return false
+	end
+
+	local changed
+	local x0 = seal.tile_x + 1
+	local y0 = seal.tile_y + 1
+	for y = y0, y0 + 7 do
+		local row = room_state.map_rows[y]
+		local patched = row:sub(1, x0 - 1) .. row:sub(x0, x0 + 7):gsub('[^.]', '.') .. row:sub(x0 + 8)
+		if patched ~= row then
+			room_state.map_rows[y] = patched
+			changed = true
+		end
+	end
+
+	if changed then
+		refresh_room_geometry(room_state)
+	end
+	return changed
 end
 
 function room.patch_rows(room_state, rows)
@@ -783,13 +833,26 @@ function room_object:render_tiles(room_state)
 	local tile_size = room_state.tile_size
 	local origin_x = room_state.tile_origin_x
 	local origin_y = room_state.tile_origin_y
+	local dissolve_step = room_state.room_dissolve_step
 
 	for y = 1, room_state.tile_rows do
 		local draw_y = origin_y + ((y - 1) * tile_size)
 		local row = room_state.tiles[y]
 		for x = 1, room_state.tile_columns do
 			local draw_x = origin_x + ((x - 1) * tile_size)
-			put_sprite(row[x], draw_x, draw_y, 0)
+			local tile_id = row[x]
+			if dissolve_step > 0 then
+				local dissolve_index = dissolve_step - 1
+				local dissolve_prefix = world_dissolve_prefix_by_tile_id[tile_id]
+				if dissolve_prefix ~= nil then
+					if dissolve_index >= 6 then
+						goto continue
+					end
+					tile_id = dissolve_prefix .. tostring(dissolve_index)
+				end
+			end
+			put_sprite(tile_id, draw_x, draw_y, 0)
+			::continue::
 		end
 	end
 end
@@ -805,7 +868,23 @@ function room_object:render_room_objects(room_state)
 	end
 
 	local elevator_service = service('e')
-	render_elevators(castle_service.current_room_number, elevator_service.elevator_routes)
+	render_elevators(room_state.room_number, elevator_service.elevator_routes)
+
+	local seal = room_state.seal
+	if seal ~= nil then
+		local sprite_id
+		local dissolve_step = room_state.seal_dissolve_step
+		if dissolve_step > 0 then
+			if dissolve_step < 6 then
+				sprite_id = 'seal_dissolve_' .. tostring(dissolve_step)
+			end
+		elseif room_state.has_active_seal or room_state.seal_sequence_active then
+			sprite_id = 'seal'
+		end
+		if sprite_id ~= nil then
+			put_sprite(sprite_id, seal.x, seal.y, 23)
+		end
+	end
 end
 
 function room_object:render_room()

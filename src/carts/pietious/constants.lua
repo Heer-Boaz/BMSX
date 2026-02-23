@@ -6,6 +6,12 @@ constants.flow = {
 	castle_banner_frames = 30,
 	room_switch_wait_frames = 6,
 	item_screen_wait_frames = 6,
+	seal_flash_frames = 60,
+	seal_dissolve_frames = 132,
+	seal_dissolve_step_frames = 6,
+	seal_room_dissolve_steps = 7,
+	seal_sprite_dissolve_steps = 6,
+	daemon_appearance_frames = 24,
 }
 
 constants.room = {
@@ -251,6 +257,13 @@ constants.shrine = {
 	hit_bottom_px = constants.room.tile_size2,
 	text_x = constants.room.tile_size * 6,
 	text_y = constants.room.hud_height + (constants.room.tile_size * 5),
+}
+
+constants.seal = {
+	hit_left_px = 0,
+	hit_top_px = 0,
+	hit_right_px = constants.room.tile_size,
+	hit_bottom_px = constants.room.tile_size,
 }
 
 constants.palette = {

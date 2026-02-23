@@ -20,6 +20,29 @@ events:
                       sync: immediate
             - when:
                   equals:
+                      state: seal
+              go:
+                  music_transition:
+                      audio_id: music_seal_2
+                      sync:
+                          stinger: music_seal_1
+            - when:
+                  equals:
+                      state: seal_dissolution
+              go:
+                  music_transition:
+                      audio_id: music_daemonappears
+                      sync:
+                          stinger: seal_breakdown
+            - when:
+                  equals:
+                      state: daemon_appearance
+              go:
+                  music_transition:
+                      audio_id: music_daemonfight
+                      sync: immediate
+            - when:
+                  equals:
                       state: shrine
               go:
                   music_transition:

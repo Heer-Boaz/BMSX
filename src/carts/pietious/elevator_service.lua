@@ -66,9 +66,9 @@ function elevator_service:tick()
 	local player = object('pietolon')
 	player.on_vertical_elevator = false
 
-	local castle_service = service('c')
-	local map_id = castle_service.map_id
-	local current_room_number = castle_service.current_room_number
+	local current_room = service('c').current_room
+	local map_id = current_room.map_id
+	local current_room_number = current_room.room_number
 
 	for i = 1, #self.elevator_routes do
 		local elevator = self.elevator_routes[i]

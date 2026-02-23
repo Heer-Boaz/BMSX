@@ -67,9 +67,8 @@ local wall_enemy_kinds = {
 }
 
 local draaideur_kind_by_type = {
-	draaideur = 1,
-	draaideur2 = 2,
-	draaideur3 = 3,
+	draaideur_blauw = 1,
+	draaideur_rood = 2, -- unused right now
 }
 
 local function tile_x_to_world(tile_x)
@@ -117,22 +116,10 @@ local function build_elevator_routes()
 	return routes
 end
 
-local function sort_room_numbers(room_table)
-	local room_numbers = {}
-	for room_number, _ in pairs(room_table) do
-		room_numbers[#room_numbers + 1] = tonumber(room_number)
-	end
-	table.sort(room_numbers)
-	return room_numbers
-end
-
-local function build_links(exits)
-	return {
-		up = exits[1],
-		right = exits[2],
-		down = exits[3],
-		left = exits[4],
-	}
+local function build_links(room_number, exits)
+	local up, right, down, left = tonumber(exits[1]), tonumber(exits[2]), tonumber(exits[3]), tonumber(exits[4])
+	assert(up and right and down and left, 'pietious castle_map room ' .. tostring(room_number) .. ' has non-numeric exits')
+	return { up = up, right = right, down = down, left = left, }
 end
 
 local function build_edge_gate(map_rows, border_x)
@@ -374,6 +361,24 @@ local function build_shrines(room_number, object_defs)
 	return shrines
 end
 
+local function build_seal(room_number, object_defs)
+	for i = 1, #object_defs do
+		local object_def = object_defs[i]
+		if object_def.type == 'seal' then
+			return {
+				id = string.format('seal_%03d_01', room_number),
+				x = tile_x_to_world(object_def.x),
+				y = tile_y_to_world(object_def.y),
+				tile_x = object_def.x,
+				tile_y = object_def.y,
+				text = object_def.text,
+				conditions = object_def.condition or empty_conditions,
+			}
+		end
+	end
+	return nil
+end
+
 local function build_world_entrances(room_number, object_defs)
 	local world_entrances = {}
 	local entrance_index = 0
@@ -422,24 +427,19 @@ end
 
 local function load_room_templates()
 	local data = assets.data[romdir.token('castle_map')]
-	local room_numbers = sort_room_numbers(data)
 	local templates = {}
 
-	for i = 1, #room_numbers do
-		local room_number = room_numbers[i]
+	for i = 1, #data do
+		local room_number = tonumber(data[i])
 		local room_def = data[tostring(room_number)]
-		local world_number
-		if room_def.type == 'world' then
-			world_number = room_def.worldnumber
-		end
-		local links = build_links(room_def.exits)
+		local links = build_links(room_number, room_def.exits)
 		local map_rows = room_def.map
 		local object_defs = room_def.objects or {}
 		templates[room_number] = {
 			room_number = room_number,
-			space_id = 'main',
-			world_number = world_number or 0,
+			world_number = room_def.worldnumber,
 			room_subtype = room_def.subtype,
+			custom = room_def.custom,
 			map_rows = map_rows,
 			spawn = build_spawn(map_rows),
 			links = links,
@@ -449,6 +449,7 @@ local function load_room_templates()
 			items = build_items(room_number, object_defs),
 			lithographs = build_lithographs(room_number, object_defs),
 			shrines = build_shrines(room_number, object_defs),
+			seal = build_seal(room_number, object_defs),
 			world_entrances = build_world_entrances(room_number, object_defs),
 			draaideuren = build_draaideuren(room_number, object_defs),
 		}
