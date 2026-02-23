@@ -32,6 +32,7 @@ events:
               go:
                   music_transition:
                       audio_id: music_daemonappears
+                      loop: false
                       sync:
                           stinger: seal_breakdown
             - when:
