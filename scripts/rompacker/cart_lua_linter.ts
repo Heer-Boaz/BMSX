@@ -3060,7 +3060,14 @@ function markUnusedInitValueRead(context: UnusedInitValueContext, name: string):
 	binding.pendingInitValue = false;
 }
 
-function markUnusedInitValueWrite(context: UnusedInitValueContext, identifier: LuaIdentifierExpression): void {
+function markUnusedInitValueWrite(
+	context: UnusedInitValueContext,
+	identifier: LuaIdentifierExpression,
+	isGuaranteedWrite: boolean,
+): void {
+	if (!isGuaranteedWrite) {
+		return;
+	}
 	const binding = resolveUnusedInitValueBinding(context, identifier.name);
 	if (!binding || !binding.pendingInitValue) {
 		return;
@@ -3139,7 +3146,11 @@ function lintUnusedInitValuesInAssignmentTarget(
 	}
 }
 
-function lintUnusedInitValuesInStatements(statements: ReadonlyArray<LuaStatement>, context: UnusedInitValueContext): void {
+function lintUnusedInitValuesInStatements(
+	statements: ReadonlyArray<LuaStatement>,
+	context: UnusedInitValueContext,
+	isGuaranteedPath: boolean,
+): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement:
@@ -3159,7 +3170,7 @@ function lintUnusedInitValuesInStatements(statements: ReadonlyArray<LuaStatement
 				}
 				for (const left of statement.left) {
 					if (left.kind === LuaSyntaxKind.IdentifierExpression) {
-						markUnusedInitValueWrite(context, left);
+						markUnusedInitValueWrite(context, left, isGuaranteedPath);
 					}
 				}
 				break;
@@ -3191,19 +3202,19 @@ function lintUnusedInitValuesInStatements(statements: ReadonlyArray<LuaStatement
 						lintUnusedInitValuesInExpression(clause.condition, context);
 					}
 					enterUnusedInitValueScope(context);
-					lintUnusedInitValuesInStatements(clause.block.body, context);
+					lintUnusedInitValuesInStatements(clause.block.body, context, false);
 					leaveUnusedInitValueScope(context);
 				}
 				break;
 			case LuaSyntaxKind.WhileStatement:
 				lintUnusedInitValuesInExpression(statement.condition, context);
 				enterUnusedInitValueScope(context);
-				lintUnusedInitValuesInStatements(statement.block.body, context);
+				lintUnusedInitValuesInStatements(statement.block.body, context, false);
 				leaveUnusedInitValueScope(context);
 				break;
 			case LuaSyntaxKind.RepeatStatement:
 				enterUnusedInitValueScope(context);
-				lintUnusedInitValuesInStatements(statement.block.body, context);
+				lintUnusedInitValuesInStatements(statement.block.body, context, false);
 				lintUnusedInitValuesInExpression(statement.condition, context);
 				leaveUnusedInitValueScope(context);
 				break;
@@ -3213,7 +3224,7 @@ function lintUnusedInitValuesInStatements(statements: ReadonlyArray<LuaStatement
 				lintUnusedInitValuesInExpression(statement.step, context);
 				enterUnusedInitValueScope(context);
 				declareUnusedInitValueBinding(context, statement.variable, false);
-				lintUnusedInitValuesInStatements(statement.block.body, context);
+				lintUnusedInitValuesInStatements(statement.block.body, context, false);
 				leaveUnusedInitValueScope(context);
 				break;
 			case LuaSyntaxKind.ForGenericStatement:
@@ -3224,12 +3235,12 @@ function lintUnusedInitValuesInStatements(statements: ReadonlyArray<LuaStatement
 				for (const variable of statement.variables) {
 					declareUnusedInitValueBinding(context, variable, false);
 				}
-				lintUnusedInitValuesInStatements(statement.block.body, context);
+				lintUnusedInitValuesInStatements(statement.block.body, context, false);
 				leaveUnusedInitValueScope(context);
 				break;
 			case LuaSyntaxKind.DoStatement:
 				enterUnusedInitValueScope(context);
-				lintUnusedInitValuesInStatements(statement.block.body, context);
+				lintUnusedInitValuesInStatements(statement.block.body, context, isGuaranteedPath);
 				leaveUnusedInitValueScope(context);
 				break;
 			case LuaSyntaxKind.CallStatement:
@@ -3255,7 +3266,7 @@ function lintUnusedInitValuesInFunctionBody(
 		for (const parameter of parameters) {
 			declareUnusedInitValueBinding(context, parameter, false);
 		}
-		lintUnusedInitValuesInStatements(statements, context);
+		lintUnusedInitValuesInStatements(statements, context, true);
 	} finally {
 		leaveUnusedInitValueScope(context);
 	}
