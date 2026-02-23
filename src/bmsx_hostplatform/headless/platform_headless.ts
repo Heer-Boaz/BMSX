@@ -213,11 +213,11 @@ class HeadlessOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 	attach(_hooks: OnscreenGamepadPlatformHooks): OnscreenGamepadPlatformSession {
 		return new NullOnscreenSession();
 	}
-	hideElements(): void { }
-	collectElementIds(): string[] { return []; }
-	setElementActive(): void { }
-	resetElements(): void { }
-	updateDpadRing(): void { }
+	hideElements(_elementIds: string[]): void { }
+	collectElementIds(_x: number, _y: number, _kind: 'dpad' | 'action'): string[] { return []; }
+	setElementActive(_elementId: string, _active: boolean): void { }
+	resetElements(_elementIds: string[]): void { }
+	updateDpadRing(_activeElementIds: string[]): void { }
 	supportsVibration(): boolean { return false; }
 	vibrate(_durationMs: number): void { }
 }
