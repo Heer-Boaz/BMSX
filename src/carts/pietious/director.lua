@@ -221,7 +221,6 @@ local function define_director_fsm()
 				room = {
 					entering_state = function(self)
 					self:sync_room_state_from_castle()
-					self.active_transition_kind = nil
 					self.overlay_mode = nil
 					self.overlay_text_lines = {}
 					object('shrine').lines = {}
@@ -239,6 +238,7 @@ local function define_director_fsm()
 					object('ui'):set_space('main')
 						castle_service:restore_active_enemies_after_shrine_transition()
 						self:emit_state_changed(room_state_name(current_room))
+						self.active_transition_kind = nil
 					end,
 					on = {
 						['room_switched'] = '/room_switch_wait',

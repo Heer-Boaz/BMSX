@@ -21,6 +21,14 @@ events:
             - when:
                   equals:
                       state: seal
+                      transition_kind: item_close
+              go:
+                  music_transition:
+                      audio_id: music_seal_2
+                      sync: immediate
+            - when:
+                  equals:
+                      state: seal
               go:
                   music_transition:
                       audio_id: music_seal_2
