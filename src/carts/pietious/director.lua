@@ -160,9 +160,9 @@ function director:leave_world_to_castle()
 	return switch
 end
 
-function director:halo_teleport_to_start_room()
+function director:halo_teleport_to_room_1()
 	local from_world = service('c').current_room.world_number ~= 0
-	local switch = service('c'):halo_teleport_to_start_room()
+	local switch = service('c'):halo_teleport_to_room_1()
 	self:sync_room_state_from_castle()
 	if from_world then
 		self:expect_room_switch_banner('castle_banner', 0, nil)

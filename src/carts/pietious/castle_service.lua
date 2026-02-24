@@ -16,6 +16,7 @@ local world_entrance_opening_states = {
 	opening_1 = true,
 	opening_2 = true,
 }
+local halo_destination_room_number = 1
 
 local function build_progression_program()
 	local rules = {}
@@ -738,10 +739,10 @@ function castle_service:leave_world_to_castle()
 	}
 end
 
-function castle_service:halo_teleport_to_start_room()
+function castle_service:halo_teleport_to_room_1()
 	local from_room_number = self.current_room.room_number
 
-	self.current_room = room_module.create_room(castle_map.start_room_number)
+	self.current_room = room_module.create_room(halo_destination_room_number)
 	local switch = create_room_switch(from_room_number, self.current_room.room_number, 'halo')
 	self:commit_room_switch(switch, 0, 5, 12)
 

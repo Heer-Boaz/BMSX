@@ -367,7 +367,7 @@ function player:apply_presentation_state()
 		self.visible = true
 		return
 	end
-	self.sprite_component.offset.y = 0 -- Reset any stair cut offset when not in a world transition, to avoid visual bugs with hitstun knockback or similar effects that modify y position. UGLY DIRTY SHIT!!!!! BUT CODEX IS UNABLE TO WRITE PROPER CODE AND THUS HAVE TO FIX THIS MYSELF
+	self.sprite_component.offset.y = 0 -- Reset any stair cut offset when not in a world transition, to avoid visual bugs with exiting the shrine or similar effects that modify y offset (!= position!). UGLY DIRTY SHIT!!!!! BUT CODEX IS UNABLE TO WRITE PROPER CODE AND THUS HAVE TO FIX THIS MYSELF
 	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and not self:has_tag(state_tags.variant.dying) then
 		self:apply_colorize(hit_blink_colorize.r, hit_blink_colorize.g, hit_blink_colorize.b, hit_blink_colorize.a)
 	else

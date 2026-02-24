@@ -219,7 +219,7 @@ function player_abilities.attach_player_methods(player)
 	function player:teleport_to_halo_destination()
 		local director_service = service('d')
 		director_service.events:emit('halo_transition_start', {})
-		local switch = director_service:halo_teleport_to_start_room()
+		local switch = director_service:halo_teleport_to_room_1()
 		local castle_service = service('c')
 
 		self.x = constants.room.tile_size * 23
