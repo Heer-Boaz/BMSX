@@ -308,17 +308,6 @@ function progression.compile_program(program_spec)
 	}
 end
 
-local function runtime_for_event(event)
-	local service_id = event.service_id
-	if service_id == nil and event.emitter ~= nil then
-		service_id = event.emitter.id
-	end
-	if service_id == nil then
-		return nil
-	end
-	return progression._runtime_by_service_id[service_id]
-end
-
 local function apply_set_actions(rt, actions)
 	local changed
 	local state = rt.state
@@ -340,15 +329,7 @@ local function apply_commands(rt, commands, event)
 	end
 end
 
-local function dispatch_event_now(event)
-	local rt = runtime_for_event(event)
-	if rt == nil then
-		return
-	end
-	local rules = rt.program.rules_by_event[event.type]
-	if rules == nil then
-		return
-	end
+local function dispatch_rules_to_runtime(rt, rules, event)
 	local fired = {}
 	local changed
 	repeat
@@ -371,6 +352,16 @@ local function dispatch_event_now(event)
 			end
 		end
 	until not changed
+end
+
+local function dispatch_event_now(event)
+	local event_type = event.type
+	for _, rt in pairs(progression._runtime_by_service_id) do
+		local rules = rt.program.rules_by_event[event_type]
+		if rules ~= nil then
+			dispatch_rules_to_runtime(rt, rules, event)
+		end
+	end
 end
 
 function progression.dispatch_event(event)

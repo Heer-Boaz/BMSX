@@ -302,7 +302,7 @@ function textobject:set_text(text_or_lines, opts)
 	if typed and not snap then
 		self.displayed_lines = {}
 		for i = 1, #self.full_text_lines do
-			self.displayed_lines[i] = ""
+			self.displayed_lines[i] = nil
 		end
 		self.current_line_index = 0
 		self.current_char_index = 0

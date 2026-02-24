@@ -208,8 +208,8 @@ function spritecomponent.new(opts)
 	self.offset = opts and opts.offset or { x = 0, y = 0, z = 0 }
 	self.parallax_weight = opts and opts.parallax_weight or 0
 	self.collider_local_id = opts and opts.collider_local_id
-	self.collider_geometry_token = ""
-	self.collider_offset_token = ""
+	self.collider_geometry_token = nil
+	self.collider_offset_token = nil
 	return self
 end
 
@@ -232,8 +232,8 @@ end
 function spritecomponent:sync_collider()
 	local collider = self:resolve_collider()
 	if collider == nil then
-		self.collider_geometry_token = ""
-		self.collider_offset_token = ""
+		self.collider_geometry_token = nil
+		self.collider_offset_token = nil
 		return
 	end
 
