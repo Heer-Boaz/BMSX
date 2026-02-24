@@ -1437,7 +1437,7 @@ function combat.register_director()
 		type = 'object',
 		fsms = { combat_director_fsm_id },
 		defaults = {
-			node_id = '',
+			node_id = nil,
 			choice_index = 1,
 			combat_round_index = 1,
 			combat_points = 0,
@@ -1470,7 +1470,7 @@ function combat.register_director()
 			all_out_shake_maya_b_y = 0,
 			all_out_shake_bg_x = 0,
 			all_out_shake_bg_y = 0,
-			combat_exit_target_bg = '',
+			combat_exit_target_bg = nil,
 			combat_results_prev_bg_scale_x = 1,
 			combat_results_prev_bg_scale_y = 1,
 			combat_results_maya_target_x = 0,
@@ -1482,7 +1482,7 @@ function combat.register_director()
 				combat_parallax_impact_side = nil,
 			skip_combat_fade_in = false,
 			skip_transition_fade = false,
-			combat_node_id = '',
+			combat_node_id = nil,
 			combat_rewards = {},
 		},
 	})

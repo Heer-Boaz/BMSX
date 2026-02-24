@@ -135,7 +135,7 @@ function dialogue.register_states(states)
 					if node.kind == 'dialogue_inline' then
 						self.node_id = self.inline_next
 						self.inline_pages = {}
-						self.inline_next = ''
+						self.inline_next = nil
 					else
 						self.node_id = node.next
 					end
@@ -155,10 +155,10 @@ function dialogue.register_states(states)
 			clear_text(text_choice_id)
 			clear_text(text_prompt_id)
 			local total = self.stats.planning + self.stats.opdekin + self.stats.rust + self.stats.makeup
-			local title = ''
-			local total_line = ''
-			local line1 = ''
-			local line2 = ''
+			local title = nil
+			local total_line = nil
+			local line1 = nil
+			local line2 = nil
 			if total <= 1 then
 				title = 'Ending C - Bijna, maar net niet'
 				total_line = 'Totaal <= 1 (' .. total .. ')'

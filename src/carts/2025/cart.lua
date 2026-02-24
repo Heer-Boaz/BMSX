@@ -38,7 +38,7 @@ local function build_director_fsm()
 			entering_state = function(self)
 				self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
 				self.inline_pages = {}
-				self.inline_next = ''
+				self.inline_next = nil
 				self.just_finished_combat = false
 				self.skip_combat_fade_in = false
 				self.skip_transition_fade = false
@@ -116,7 +116,7 @@ local function register_director()
 			choice_index = 1,
 			stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 },
 			inline_pages = {},
-			inline_next = '',
+			inline_next = nil,
 			pages = {},
 			transition_center_x = 0,
 			transition_target_bg = story.title.bg,
