@@ -30,10 +30,11 @@ const HELP_TEXT = [
 	' COMMANDS:',
 	' CLS              Clear screen',
 	' CONT             Continue (after error)',
-	' REBOOT           Reboot game (cold start)',
+	' REBOOT           Reboot game (cold start; recompiles in Lua source mode)',
 	' EXIT / QUIT      Close this application',
 	' PRINT / ?        Print value or expression',
 	' JSSTACK [ON/OFF] Toggle JS stack frames in console errors',
+	' OPTLEVEL [0-3]   Show/set real-time Lua compile optimization',
 	' SYS              Show system information',
 	' SYS FAULT        Show faulted state',
 	' SYS FAULT CLEAR  Clear faulted state', // SYS CLEAR FAULT is also allowed
@@ -128,6 +129,10 @@ export class TerminalCommandDispatcher {
 		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'JSSTACK') {
 			this.handleJsStack(tokens);
+			return true;
+		}
+		if (tokens.length >= 1 && (tokens[0].toUpperCase() === 'OPTLEVEL' || tokens[0].toUpperCase() === 'OPT')) {
+			this.handleOptLevel(tokens);
 			return true;
 		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'SYS') {
@@ -263,6 +268,7 @@ export class TerminalCommandDispatcher {
 		lines.push(`Lua runtime: ${runtimeState} | Entry: ${pathLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
 		lines.push(`Canonicalization: ${this.runtime.canonicalization}`);
+		lines.push(`Real-time compile opt: -O${this.runtime.realtimeCompileOptLevel}`);
 		lines.push(`Overlay: ${this.runtime.overlayResolutionMode} ${overlay.width}x${overlay.height}`);
 		if (root) {
 			lines.push(`Workspace root: ${root}`);
@@ -439,6 +445,23 @@ export class TerminalCommandDispatcher {
 			if (mode === 'OFF') {
 				this.runtime.jsStackEnabled = false;
 				this.runtime.terminal.appendStdout('JS stack traces OFF');
+				return;
+			}
+		}
+		this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
+	}
+
+	private handleOptLevel(tokens: string[]): void {
+		if (tokens.length === 1) {
+			this.runtime.terminal.appendStdout(`Real-time Lua compile optimization: -O${this.runtime.realtimeCompileOptLevel}`);
+			return;
+		}
+		if (tokens.length === 2) {
+			const parsed = Number.parseInt(tokens[1], 10);
+			if (parsed >= 0 && parsed <= 3) {
+				this.runtime.realtimeCompileOptLevel = parsed as 0 | 1 | 2 | 3;
+				this.runtime.terminal.appendStdout(`Real-time Lua compile optimization set to -O${parsed}`);
+				this.runtime.terminal.appendStdout('Applies on next compile/reload/reboot.');
 				return;
 			}
 		}

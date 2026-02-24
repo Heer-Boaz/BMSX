@@ -616,6 +616,7 @@ export class Runtime {
 		this.dmaBulkRate.resetCarry();
 	}
 	private includeJsStackTraces = false;
+	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
 	public frameDeltaMs = 0;
 	public currentFrameState: FrameState = null;
 	public drawFrameState: FrameState = null;
