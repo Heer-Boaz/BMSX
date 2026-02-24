@@ -52,6 +52,7 @@ type LuaLintIssueRule =
 	'imgid_fallback_pattern' |
 	'forbidden_transition_to_pattern' |
 	'forbidden_matches_state_path_pattern' |
+	'forbidden_dispatch_pattern' |
 	'event_handler_dispatch_pattern' |
 	'event_handler_state_dispatch_pattern' |
 	'event_handler_flag_proxy_pattern' |
@@ -254,6 +255,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'imgid_fallback_pattern',
 	'forbidden_transition_to_pattern',
 	'forbidden_matches_state_path_pattern',
+	'forbidden_dispatch_pattern',
 	'event_handler_dispatch_pattern',
 	'event_handler_state_dispatch_pattern',
 	'event_handler_flag_proxy_pattern',
@@ -292,6 +294,7 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'imgid_fallback_pattern',
 	'forbidden_transition_to_pattern',
 	'forbidden_matches_state_path_pattern',
+	'forbidden_dispatch_pattern',
 	'event_handler_dispatch_pattern',
 	'event_handler_state_dispatch_pattern',
 	'event_handler_flag_proxy_pattern',
@@ -1684,6 +1687,26 @@ function isDispatchStateEventCallExpression(expression: LuaCallExpression): bool
 	return getCallMethodName(expression) === 'dispatch_state_event';
 }
 
+function lintForbiddenDispatchPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (isDispatchStateEventCallExpression(expression)) {
+		pushIssue(
+			issues,
+			'forbidden_dispatch_pattern',
+			expression,
+			'dispatch_state_event(...) is forbidden in cart code. Model transitions directly in FSM definitions (on/input/process_input/timelines) instead of manual dispatch.',
+		);
+		return;
+	}
+	if (isStateControllerDispatchCallExpression(expression)) {
+		pushIssue(
+			issues,
+			'forbidden_dispatch_pattern',
+			expression,
+			'sc:dispatch(...) is forbidden in cart code. Model transitions directly in FSM definitions (on/input/process_input/timelines) instead of manual dispatch.',
+		);
+	}
+}
+
 function isCrossObjectDispatchStateEventCallExpression(expression: LuaCallExpression): boolean {
 	if (!isDispatchStateEventCallExpression(expression)) {
 		return false;
@@ -2195,6 +2218,9 @@ function isObjectOrServiceResolverCallExpression(expression: LuaExpression | und
 }
 
 function lintCrossObjectStateEventRelayPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (activeLintRules.has('forbidden_dispatch_pattern')) {
+		return;
+	}
 	if (!isCrossObjectDispatchStateEventCallExpression(expression)) {
 		return;
 	}
@@ -2217,16 +2243,18 @@ function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: 
 	if (!isEventsOnCallExpression(expression)) {
 		return;
 	}
+	const globalDispatchBan = activeLintRules.has('forbidden_dispatch_pattern');
 	for (const argument of expression.arguments) {
 		const handlerField = findTableFieldByKey(argument, 'handler');
 		if (!handlerField || handlerField.value.kind !== LuaSyntaxKind.FunctionExpression) {
 			continue;
 		}
-			const scDispatchCall = findCallExpressionInStatements(
-				handlerField.value.body.body,
-				isStateControllerDispatchCallExpression,
-		);
-		if (scDispatchCall) {
+		if (!globalDispatchBan) {
+				const scDispatchCall = findCallExpressionInStatements(
+					handlerField.value.body.body,
+					isStateControllerDispatchCallExpression,
+			);
+			if (scDispatchCall) {
 			pushIssue(
 				issues,
 				'event_handler_dispatch_pattern',
@@ -2234,22 +2262,23 @@ function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: 
 				'Event handler callbacks must not call sc:dispatch(...). Route event-driven transitions via FSM definitions instead of manual dispatch inside events:on handlers.',
 			);
 		}
-			const crossObjectStateDispatchCall = findCallExpressionInStatements(
-				handlerField.value.body.body,
-				isCrossObjectDispatchStateEventCallExpression,
-			);
-			if (crossObjectStateDispatchCall) {
+				const crossObjectStateDispatchCall = findCallExpressionInStatements(
+					handlerField.value.body.body,
+					isCrossObjectDispatchStateEventCallExpression,
+				);
+				if (crossObjectStateDispatchCall) {
 				pushIssue(
 					issues,
 					'event_handler_state_dispatch_pattern',
 					crossObjectStateDispatchCall,
-					'Event handler callbacks must not dispatch_state_event(...) on other objects/services. Keep transitions owned by each object/service FSM.',
+						'Event handler callbacks must not dispatch_state_event(...) on other objects/services. Keep transitions owned by each object/service FSM.',
+					);
+				}
+		}
+				const proxyFlagAssignment = findSelfPropertyAssignmentInStatements(
+					handlerField.value.body.body,
+					isEventProxyFlagPropertyName,
 				);
-			}
-			const proxyFlagAssignment = findSelfPropertyAssignmentInStatements(
-				handlerField.value.body.body,
-				isEventProxyFlagPropertyName,
-			);
 			if (proxyFlagAssignment) {
 				pushIssue(
 					issues,
@@ -2262,6 +2291,9 @@ function lintEventHandlerDispatchPattern(expression: LuaCallExpression, issues: 
 }
 
 function lintDispatchFanoutLoopPattern(statement: LuaStatement, issues: LuaLintIssue[]): void {
+	if (activeLintRules.has('forbidden_dispatch_pattern')) {
+		return;
+	}
 	if (statement.kind !== LuaSyntaxKind.ForNumericStatement && statement.kind !== LuaSyntaxKind.ForGenericStatement) {
 		return;
 	}
@@ -5425,13 +5457,14 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 	if (topLevel) {
 		lintMultiHasTagPattern(expression, issues);
 	}
-		switch (expression.kind) {
-			case LuaSyntaxKind.CallExpression:
-				lintRequireCall(expression, issues);
-				lintForbiddenStateCalls(expression, issues);
-				lintEventHandlerDispatchPattern(expression, issues);
-				lintCrossObjectStateEventRelayPattern(expression, issues);
-				lintSetSpaceRoundtripPattern(expression, issues);
+			switch (expression.kind) {
+				case LuaSyntaxKind.CallExpression:
+					lintRequireCall(expression, issues);
+					lintForbiddenStateCalls(expression, issues);
+					lintForbiddenDispatchPattern(expression, issues);
+					lintEventHandlerDispatchPattern(expression, issues);
+					lintCrossObjectStateEventRelayPattern(expression, issues);
+					lintSetSpaceRoundtripPattern(expression, issues);
 				lintServiceDefinitionSuffixPattern(expression, issues);
 				lintCreateServiceIdAddonPattern(expression, issues);
 			lintDefineServiceIdPattern(expression, issues);
