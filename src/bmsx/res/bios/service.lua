@@ -4,6 +4,7 @@
 local eventemitter = require("eventemitter")
 local fsm = require("fsm")
 local fsmlibrary = require("fsmlibrary")
+local components = require("components")
 
 local registry = require("registry")
 
@@ -23,8 +24,10 @@ function service.new(opts)
 	self.tick_enabled = true
 	self.eventhandling_enabled = false
 	self.events = eventemitter.events_of(self)
+	self.tags = opts.tags or {}
 	local definition = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
 	self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
+	self.timelines = components.timelinecomponent.new({ parent = self })
 	return self
 end
 
@@ -57,6 +60,46 @@ end
 -- Useless alias for dispatch_state_event, but provided for semantic clarity in some cases, so that Codex can recognize the intent as dispatching a command rather than a gameplay fact.
 function service:dispatch_command(event_or_name, payload)
 	return self.sc:dispatch(event_or_name, payload)
+end
+
+function service:has_tag(tag)
+	return self.tags[tag] ~= nil
+end
+
+function service:add_tag(tag)
+	self.tags[tag] = true
+end
+
+function service:remove_tag(tag)
+	self.tags[tag] = nil
+end
+
+function service:define_timeline(def)
+	self.timelines:define(def)
+end
+
+function service:play_timeline(id, opts)
+	self.timelines:play(id, opts)
+end
+
+function service:stop_timeline(id)
+	self.timelines:stop(id)
+end
+
+function service:get_timeline(id)
+	return self.timelines:get(id)
+end
+
+function service:seek_timeline(id, frame)
+	return self.timelines:seek(id, frame)
+end
+
+function service:force_seek_timeline(id, frame)
+	return self.timelines:force_seek(id, frame)
+end
+
+function service:advance_timeline(id)
+	return self.timelines:advance(id)
 end
 
 function service:dispose()

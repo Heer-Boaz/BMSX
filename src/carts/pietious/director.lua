@@ -1,4 +1,5 @@
 local constants = require('constants')
+local halo_teleport_timeline_id = 'director.halo.transition'
 
 local director = {}
 director.__index = director
@@ -161,7 +162,8 @@ function director:leave_world_to_castle()
 end
 
 function director:halo_teleport_to_room_1()
-	local from_world = service('c').current_room.world_number ~= 0
+	local current_room = service('c').current_room
+	local from_world = (current_room.world_number or 0) ~= 0
 	local switch = service('c'):halo_teleport_to_room_1()
 	self:sync_room_state_from_castle()
 	if from_world then
@@ -176,7 +178,6 @@ function director:perform_halo_teleport(player)
 	self.events:emit('halo_transition_start', {})
 	local switch = self:halo_teleport_to_room_1()
 	player:apply_halo_teleport_arrival(switch, service('c').current_room)
-	self.events:emit('halo_transition_done', {})
 	return switch
 end
 
@@ -504,6 +505,23 @@ local function define_director_fsm()
 				end,
 			},
 			halo_teleport = {
+				timelines = {
+					[halo_teleport_timeline_id] = {
+						create = function()
+							return timeline.new({
+								id = halo_teleport_timeline_id,
+								frames = timeline.range(1),
+								playback_mode = 'once',
+							})
+						end,
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = {
+							rewind = true,
+							snap_to_start = true,
+						},
+					},
+				},
 				entering_state = function(self)
 					self.active_transition_kind = 'halo'
 					set_space('transition')
@@ -512,7 +530,7 @@ local function define_director_fsm()
 					self.events:emit('transition.mask.play', {})
 				end,
 				on = {
-					['halo_transition_done'] = '/room_switch_wait',
+					['timeline.end.' .. halo_teleport_timeline_id] = '/room_switch_wait',
 				},
 			},
 			seal_dissolution = {

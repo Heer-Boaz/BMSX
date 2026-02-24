@@ -91,6 +91,9 @@ function statemachinesystem:update(dt_ms)
 	for _, entity in pairs(registry.instance:get_registered_entities()) do
 		if entity.type_name == "service" and not entity.dispose_flag and entity.active and entity.tick_enabled then
 			entity.sc:tick(dt_ms)
+			if entity.timelines.enabled then
+				entity.timelines:tick_active(dt_ms)
+			end
 		end
 	end
 end
