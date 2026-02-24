@@ -1,4 +1,4 @@
-import { OpCode, type SourceRange, type UpvalueDesc, type Value } from './cpu';
+import { OpCode, type Proto, type SourceRange, type UpvalueDesc, type Value } from './cpu';
 import { MAX_EXT_CONST } from './instruction_format';
 import { isStringValue, stringValueToString } from './string_pool';
 import { applyGlobalOptimizations } from './program_optimizer_ssa';
@@ -17,10 +17,14 @@ export type Instruction = {
 
 export type OptimizationLevel = 0 | 1 | 2 | 3;
 
+type OptimizationProtoMeta = Pick<Proto, 'numParams' | 'isVararg' | 'maxStack' | 'upvalueDescs'>;
+
 export type OptimizationContext = {
 	constPool: ReadonlyArray<Value>;
 	constIndex: (value: Value) => number;
 	getClosureUpvalues: (protoIndex: number) => ReadonlyArray<UpvalueDesc>;
+	getProtoMeta: (protoIndex: number) => OptimizationProtoMeta;
+	getProtoInstructionSet: (protoIndex: number) => InstructionSet | null;
 };
 
 export type InstructionSet = {
@@ -1939,6 +1943,626 @@ const reorderSegments = (set: InstructionSet): InstructionSet => {
 	return { instructions: nextInstructions, ranges: nextRanges };
 };
 
+type InlineCallee = {
+	meta: OptimizationProtoMeta;
+	set: InstructionSet;
+};
+
+const MAX_INLINE_CALLEE_INSTRUCTIONS = 48;
+const MAX_INLINE_GROWTH = 256;
+const MAX_INLINE_CALLS_PER_FUNCTION = 64;
+
+const cloneInstruction = (instruction: Instruction): Instruction => ({
+	op: instruction.op,
+	a: instruction.a,
+	b: instruction.b,
+	c: instruction.c,
+	format: instruction.format,
+	rkMask: instruction.rkMask,
+	target: instruction.target,
+});
+
+const hasDynamicTopUsage = (instructions: Instruction[]): boolean => {
+	for (let i = 0; i < instructions.length; i += 1) {
+		const instruction = instructions[i];
+		if (instruction.op === OpCode.CALL && (instruction.b === 0 || instruction.c === 0)) {
+			return true;
+		}
+		if (instruction.op === OpCode.RET && instruction.b === 0) {
+			return true;
+		}
+	}
+	return false;
+};
+
+const equalClosureMaps = (left: Map<number, number>, right: Map<number, number>): boolean => {
+	if (left.size !== right.size) {
+		return false;
+	}
+	for (const [reg, protoIndex] of left) {
+		if (right.get(reg) !== protoIndex) {
+			return false;
+		}
+	}
+	return true;
+};
+
+const intersectClosureMaps = (maps: Array<Map<number, number>>): Map<number, number> => {
+	if (maps.length === 0) {
+		return new Map<number, number>();
+	}
+	const [first, ...rest] = maps;
+	const result = new Map<number, number>();
+	for (const [reg, protoIndex] of first) {
+		let same = true;
+		for (let i = 0; i < rest.length; i += 1) {
+			if (rest[i].get(reg) !== protoIndex) {
+				same = false;
+				break;
+			}
+		}
+		if (same) {
+			result.set(reg, protoIndex);
+		}
+	}
+	return result;
+};
+
+const clearClosureRange = (closures: Map<number, number>, start: number, countValue: number | null): void => {
+	if (countValue === null) {
+		for (const reg of Array.from(closures.keys())) {
+			if (reg >= start) {
+				closures.delete(reg);
+			}
+		}
+		return;
+	}
+	for (let offset = 0; offset < countValue; offset += 1) {
+		closures.delete(start + offset);
+	}
+};
+
+const computeCapturedRegistersForInlining = (instructions: Instruction[], context: OptimizationContext): number[] => {
+	if (instructions.length === 0) {
+		return [];
+	}
+	const maxRegister = computeMaxRegister(instructions);
+	const registerCount = maxRegister + 1;
+	const captured = new Uint8Array(registerCount);
+	for (let i = 0; i < instructions.length; i += 1) {
+		const instruction = instructions[i];
+		if (instruction.op !== OpCode.CLOSURE) {
+			continue;
+		}
+		const upvalues = context.getClosureUpvalues(instruction.b);
+		for (let u = 0; u < upvalues.length; u += 1) {
+			const desc = upvalues[u];
+			if (!desc.inStack) {
+				continue;
+			}
+			if (desc.index >= registerCount) {
+				throw new Error(`[ProgramOptimizer] Closure upvalue register out of range: r${desc.index}.`);
+			}
+			captured[desc.index] = 1;
+		}
+	}
+	const capturedRegisters: number[] = [];
+	for (let reg = 0; reg < registerCount; reg += 1) {
+		if (captured[reg] !== 0) {
+			capturedRegisters.push(reg);
+		}
+	}
+	return capturedRegisters;
+};
+
+const applyClosureTransferForInlining = (
+	closures: Map<number, number>,
+	instruction: Instruction,
+	capturedRegisters: ReadonlyArray<number>,
+): void => {
+	switch (instruction.op) {
+		case OpCode.MOV: {
+			const source = closures.get(instruction.b);
+			if (source !== undefined) {
+				closures.set(instruction.a, source);
+			} else {
+				closures.delete(instruction.a);
+			}
+			return;
+		}
+		case OpCode.CLOSURE:
+			closures.set(instruction.a, instruction.b);
+			return;
+		case OpCode.LOADNIL:
+			clearClosureRange(closures, instruction.a, instruction.b);
+			return;
+		case OpCode.VARARG: {
+			const countValue = instruction.b === 0 ? null : instruction.b;
+			clearClosureRange(closures, instruction.a, countValue);
+			return;
+		}
+		case OpCode.CALL: {
+			const countValue = instruction.c === 0 ? null : instruction.c;
+			clearClosureRange(closures, instruction.a, countValue);
+			for (let i = 0; i < capturedRegisters.length; i += 1) {
+				closures.delete(capturedRegisters[i]);
+			}
+			return;
+		}
+		case OpCode.LOADK:
+		case OpCode.LOADBOOL:
+		case OpCode.GETG:
+		case OpCode.GETT:
+		case OpCode.NEWT:
+		case OpCode.ADD:
+		case OpCode.SUB:
+		case OpCode.MUL:
+		case OpCode.DIV:
+		case OpCode.MOD:
+		case OpCode.FLOORDIV:
+		case OpCode.POW:
+		case OpCode.BAND:
+		case OpCode.BOR:
+		case OpCode.BXOR:
+		case OpCode.SHL:
+		case OpCode.SHR:
+		case OpCode.CONCAT:
+		case OpCode.CONCATN:
+		case OpCode.UNM:
+		case OpCode.NOT:
+		case OpCode.LEN:
+		case OpCode.BNOT:
+		case OpCode.GETUP:
+		case OpCode.LOAD_MEM:
+		case OpCode.TESTSET:
+			closures.delete(instruction.a);
+			return;
+		default:
+			return;
+	}
+};
+
+const computeClosureInForInlining = (
+	instructions: Instruction[],
+	context: OptimizationContext,
+): {
+	blocks: Block[];
+	inMaps: Array<Map<number, number>>;
+	capturedRegisters: number[];
+} => {
+	const blocks = buildBasicBlocks(instructions);
+	const { predecessors } = buildBlockGraph(instructions, blocks);
+	const blockCount = blocks.length;
+	const inMaps: Array<Map<number, number>> = new Array(blockCount);
+	const outMaps: Array<Map<number, number>> = new Array(blockCount);
+	const capturedRegisters = computeCapturedRegistersForInlining(instructions, context);
+	for (let i = 0; i < blockCount; i += 1) {
+		inMaps[i] = new Map<number, number>();
+		outMaps[i] = new Map<number, number>();
+	}
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (let blockIndex = 0; blockIndex < blockCount; blockIndex += 1) {
+			const preds = predecessors[blockIndex];
+			const nextIn = preds.length === 0
+				? new Map<number, number>()
+				: intersectClosureMaps(preds.map(pred => outMaps[pred]));
+			if (!equalClosureMaps(nextIn, inMaps[blockIndex])) {
+				inMaps[blockIndex] = nextIn;
+				changed = true;
+			}
+			const closures = new Map(inMaps[blockIndex]);
+			const block = blocks[blockIndex];
+			for (let i = block.start; i < block.end; i += 1) {
+				applyClosureTransferForInlining(closures, instructions[i], capturedRegisters);
+			}
+			if (!equalClosureMaps(closures, outMaps[blockIndex])) {
+				outMaps[blockIndex] = closures;
+				changed = true;
+			}
+		}
+	}
+	return { blocks, inMaps, capturedRegisters };
+};
+
+const buildInlineExpansion = (
+	callInstruction: Instruction,
+	callRange: SourceRange | null,
+	callee: InlineCallee,
+): InstructionSet | null => {
+	const argCount = callInstruction.b;
+	const resultCount = callInstruction.c;
+	const callBase = callInstruction.a;
+	const { instructions, ranges } = callee.set;
+	const calleeCount = instructions.length;
+	const mapRegister = (register: number): number => callBase + register;
+	const remapRkOperand = (operand: number): number => (operand >= 0 ? mapRegister(operand) : operand);
+	const generatedInstructions: Instruction[] = [];
+	const generatedRanges: Array<SourceRange | null> = [];
+	const oldToNewStart = new Array<number>(calleeCount);
+	const pendingCalleeJumps: Array<{ localIndex: number; target: number }> = [];
+	const pendingExitJumps: number[] = [];
+
+	const copiedParams = Math.min(argCount, callee.meta.numParams);
+	for (let index = 0; index < copiedParams; index += 1) {
+		generatedInstructions.push({
+			op: OpCode.MOV,
+			a: mapRegister(index),
+			b: callBase + 1 + index,
+			c: 0,
+			format: 'ABC',
+			rkMask: 0,
+			target: null,
+		});
+		generatedRanges.push(callRange);
+	}
+
+	if (callee.meta.numParams > argCount) {
+		generatedInstructions.push({
+			op: OpCode.LOADNIL,
+			a: mapRegister(argCount),
+			b: callee.meta.numParams - argCount,
+			c: 0,
+			format: 'ABC',
+			rkMask: 0,
+			target: null,
+		});
+		generatedRanges.push(callRange);
+	}
+
+	for (let i = 0; i < calleeCount; i += 1) {
+		oldToNewStart[i] = generatedInstructions.length;
+		const instruction = instructions[i];
+		const range = ranges[i] ?? callRange;
+		if (instruction.op === OpCode.RET) {
+			const copied = Math.min(instruction.b, resultCount);
+			const retBase = mapRegister(instruction.a);
+			for (let offset = 0; offset < copied; offset += 1) {
+				generatedInstructions.push({
+					op: OpCode.MOV,
+					a: callBase + offset,
+					b: retBase + offset,
+					c: 0,
+					format: 'ABC',
+					rkMask: 0,
+					target: null,
+				});
+				generatedRanges.push(range);
+			}
+			if (resultCount > copied) {
+				generatedInstructions.push({
+					op: OpCode.LOADNIL,
+					a: callBase + copied,
+					b: resultCount - copied,
+					c: 0,
+					format: 'ABC',
+					rkMask: 0,
+					target: null,
+				});
+				generatedRanges.push(range);
+			}
+			const jumpIndex = generatedInstructions.length;
+			generatedInstructions.push({
+				op: OpCode.JMP,
+				a: 0,
+				b: 0,
+				c: 0,
+				format: 'AsBx',
+				rkMask: 0,
+				target: null,
+			});
+			generatedRanges.push(range);
+			pendingExitJumps.push(jumpIndex);
+			continue;
+		}
+
+		const mapped = cloneInstruction(instruction);
+		switch (mapped.op) {
+			case OpCode.MOV:
+			case OpCode.UNM:
+			case OpCode.NOT:
+			case OpCode.LEN:
+			case OpCode.BNOT:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = mapRegister(mapped.b);
+				break;
+			case OpCode.LOADK:
+			case OpCode.LOADBOOL:
+			case OpCode.GETG:
+			case OpCode.NEWT:
+				mapped.a = mapRegister(mapped.a);
+				break;
+			case OpCode.LOADNIL:
+				mapped.a = mapRegister(mapped.a);
+				break;
+			case OpCode.GETT:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = mapRegister(mapped.b);
+				mapped.c = remapRkOperand(mapped.c);
+				break;
+			case OpCode.SETT:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = remapRkOperand(mapped.b);
+				mapped.c = remapRkOperand(mapped.c);
+				break;
+			case OpCode.ADD:
+			case OpCode.SUB:
+			case OpCode.MUL:
+			case OpCode.DIV:
+			case OpCode.MOD:
+			case OpCode.FLOORDIV:
+			case OpCode.POW:
+			case OpCode.BAND:
+			case OpCode.BOR:
+			case OpCode.BXOR:
+			case OpCode.SHL:
+			case OpCode.SHR:
+			case OpCode.CONCAT:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = remapRkOperand(mapped.b);
+				mapped.c = remapRkOperand(mapped.c);
+				break;
+			case OpCode.EQ:
+			case OpCode.LT:
+			case OpCode.LE:
+				mapped.b = remapRkOperand(mapped.b);
+				mapped.c = remapRkOperand(mapped.c);
+				break;
+			case OpCode.CONCATN:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = mapRegister(mapped.b);
+				break;
+			case OpCode.TEST:
+			case OpCode.JMPIF:
+			case OpCode.JMPIFNOT:
+				mapped.a = mapRegister(mapped.a);
+				break;
+			case OpCode.TESTSET:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = mapRegister(mapped.b);
+				break;
+			case OpCode.SETG:
+				mapped.a = mapRegister(mapped.a);
+				break;
+			case OpCode.JMP:
+				break;
+			case OpCode.GETUP: {
+				const desc = callee.meta.upvalueDescs[mapped.b];
+				if (!desc) {
+					throw new Error('[ProgramOptimizer] Missing callee upvalue descriptor.');
+				}
+				if (desc.inStack) {
+					mapped.op = OpCode.MOV;
+					mapped.a = mapRegister(mapped.a);
+					mapped.b = desc.index;
+					mapped.c = 0;
+					mapped.format = 'ABC';
+					mapped.rkMask = 0;
+					mapped.target = null;
+					break;
+				}
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = desc.index;
+				break;
+			}
+			case OpCode.SETUP: {
+				const desc = callee.meta.upvalueDescs[mapped.b];
+				if (!desc) {
+					throw new Error('[ProgramOptimizer] Missing callee upvalue descriptor.');
+				}
+				if (desc.inStack) {
+					const source = mapRegister(mapped.a);
+					mapped.op = OpCode.MOV;
+					mapped.a = desc.index;
+					mapped.b = source;
+					mapped.c = 0;
+					mapped.format = 'ABC';
+					mapped.rkMask = 0;
+					mapped.target = null;
+					break;
+				}
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = desc.index;
+				break;
+			}
+			case OpCode.VARARG:
+			case OpCode.CLOSURE:
+			case OpCode.RET:
+				return null;
+			case OpCode.CALL:
+				mapped.a = mapRegister(mapped.a);
+				break;
+			case OpCode.LOAD_MEM:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = mapRegister(mapped.b);
+				break;
+			case OpCode.STORE_MEM:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = mapRegister(mapped.b);
+				break;
+			default:
+				break;
+		}
+		if (isJump(mapped)) {
+			pendingCalleeJumps.push({ localIndex: generatedInstructions.length, target: getJumpTarget(instruction) });
+		}
+		generatedInstructions.push(mapped);
+		generatedRanges.push(range);
+	}
+
+	const exitIndex = generatedInstructions.length;
+	for (let i = 0; i < pendingExitJumps.length; i += 1) {
+		generatedInstructions[pendingExitJumps[i]].target = exitIndex;
+	}
+	for (let i = 0; i < pendingCalleeJumps.length; i += 1) {
+		const pending = pendingCalleeJumps[i];
+		if (pending.target < 0 || pending.target > calleeCount) {
+			throw new Error(`[ProgramOptimizer] Invalid inlined jump target ${pending.target}.`);
+		}
+		const mappedTarget = pending.target === calleeCount ? exitIndex : oldToNewStart[pending.target];
+		generatedInstructions[pending.localIndex].target = mappedTarget;
+	}
+
+	return {
+		instructions: generatedInstructions,
+		ranges: generatedRanges,
+	};
+};
+
+const inlineCallAtIndex = (
+	set: InstructionSet,
+	callIndex: number,
+	expansion: InstructionSet,
+): InstructionSet => {
+	const { instructions, ranges } = set;
+	const count = instructions.length;
+	const expansionCount = expansion.instructions.length;
+	const nextCount = count - 1 + expansionCount;
+	const nextInstructions: Instruction[] = new Array(nextCount);
+	const nextRanges: Array<SourceRange | null> = new Array(nextCount);
+	const origin = new Array<number>(nextCount).fill(-1);
+	const indexMap = new Array<number>(count + 1);
+	let writeIndex = 0;
+	for (let i = 0; i < count; i += 1) {
+		if (i === callIndex) {
+			indexMap[i] = writeIndex;
+			const localStart = writeIndex;
+			for (let j = 0; j < expansionCount; j += 1) {
+				const instruction = cloneInstruction(expansion.instructions[j]);
+				if (isJump(instruction)) {
+					instruction.target = localStart + getJumpTarget(instruction);
+				}
+				nextInstructions[writeIndex] = instruction;
+				nextRanges[writeIndex] = expansion.ranges[j];
+				writeIndex += 1;
+			}
+			continue;
+		}
+		indexMap[i] = writeIndex;
+		nextInstructions[writeIndex] = instructions[i];
+		nextRanges[writeIndex] = ranges[i];
+		origin[writeIndex] = i;
+		writeIndex += 1;
+	}
+	indexMap[count] = nextCount;
+
+	for (let i = 0; i < nextCount; i += 1) {
+		const sourceIndex = origin[i];
+		if (sourceIndex < 0) {
+			continue;
+		}
+		const instruction = nextInstructions[i];
+		if (!isJump(instruction)) {
+			continue;
+		}
+		const oldTarget = getJumpTarget(instructions[sourceIndex]);
+		instruction.target = oldTarget === count ? nextCount : indexMap[oldTarget];
+	}
+
+	return { instructions: nextInstructions, ranges: nextRanges };
+};
+
+const inlineFunctionCalls = (
+	set: InstructionSet,
+	context: OptimizationContext,
+): InstructionSet => {
+	if (set.instructions.length === 0 || hasDynamicTopUsage(set.instructions)) {
+		return set;
+	}
+	const initialCount = set.instructions.length;
+	const maxCount = initialCount + MAX_INLINE_GROWTH;
+	const calleeCache = new Map<number, InlineCallee | null>();
+	const getInlineCallee = (protoIndex: number): InlineCallee | null => {
+		const cached = calleeCache.get(protoIndex);
+		if (cached !== undefined) {
+			return cached;
+		}
+		const instructionSet = context.getProtoInstructionSet(protoIndex);
+		if (!instructionSet) {
+			calleeCache.set(protoIndex, null);
+			return null;
+		}
+		const meta = context.getProtoMeta(protoIndex);
+		if (meta.isVararg || instructionSet.instructions.length === 0 || instructionSet.instructions.length > MAX_INLINE_CALLEE_INSTRUCTIONS) {
+			calleeCache.set(protoIndex, null);
+			return null;
+		}
+		if (hasDynamicTopUsage(instructionSet.instructions)) {
+			calleeCache.set(protoIndex, null);
+			return null;
+		}
+		let hasReturn = false;
+		for (let i = 0; i < instructionSet.instructions.length; i += 1) {
+			const instruction = instructionSet.instructions[i];
+			if (instruction.op === OpCode.RET) {
+				if (instruction.b === 0) {
+					calleeCache.set(protoIndex, null);
+					return null;
+				}
+				hasReturn = true;
+				continue;
+			}
+			if (instruction.op === OpCode.CLOSURE || instruction.op === OpCode.VARARG) {
+				calleeCache.set(protoIndex, null);
+				return null;
+			}
+			if (instruction.op === OpCode.CALL && (instruction.b === 0 || instruction.c === 0)) {
+				calleeCache.set(protoIndex, null);
+				return null;
+			}
+		}
+		if (!hasReturn) {
+			calleeCache.set(protoIndex, null);
+			return null;
+		}
+		const callee: InlineCallee = { meta, set: instructionSet };
+		calleeCache.set(protoIndex, callee);
+		return callee;
+	};
+
+	let current = set;
+	let inlinedCalls = 0;
+	while (inlinedCalls < MAX_INLINE_CALLS_PER_FUNCTION && current.instructions.length < maxCount) {
+		const { instructions, ranges } = current;
+		const analysis = computeClosureInForInlining(instructions, context);
+		let inlined = false;
+		for (let blockIndex = 0; blockIndex < analysis.blocks.length; blockIndex += 1) {
+			const block = analysis.blocks[blockIndex];
+			const closures = new Map(analysis.inMaps[blockIndex]);
+			for (let index = block.start; index < block.end; index += 1) {
+				const instruction = instructions[index];
+				if (instruction.op === OpCode.CALL && instruction.b > 0 && instruction.c > 0) {
+					const protoIndex = closures.get(instruction.a);
+					if (protoIndex !== undefined) {
+						const callee = getInlineCallee(protoIndex);
+						if (callee && instruction.b <= callee.meta.numParams && callee.meta.maxStack <= Math.max(instruction.b + 1, instruction.c)) {
+							const expansion = buildInlineExpansion(instruction, ranges[index], callee);
+							if (expansion) {
+								const nextCount = instructions.length - 1 + expansion.instructions.length;
+								if (nextCount <= maxCount) {
+									current = inlineCallAtIndex(current, index, expansion);
+									inlinedCalls += 1;
+									inlined = true;
+									break;
+								}
+							}
+						}
+					}
+				}
+				applyClosureTransferForInlining(closures, instruction, analysis.capturedRegisters);
+			}
+			if (inlined) {
+				break;
+			}
+		}
+		if (!inlined) {
+			break;
+		}
+	}
+	return current;
+};
+
 const runMidLevelOptimizations = (
 	set: InstructionSet,
 	context: OptimizationContext,
@@ -1989,6 +2613,11 @@ export const optimizeInstructions = (
 		if (!context) {
 			throw new Error('[ProgramOptimizer] Optimization context is required for level 3.');
 		}
+		current = inlineFunctionCalls(current, context);
+		current = removeNoOps(current);
+		current = threadJumps(current);
+		current = removeUnreachable(current);
+		current = removeNoOps(current);
 		current = applyGlobalOptimizations(current, context);
 		current = removeNoOps(current);
 		current = threadJumps(current);

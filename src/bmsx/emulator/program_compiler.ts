@@ -28,7 +28,7 @@ import {
 } from '../lua/lua_ast';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange } from './cpu';
-import { optimizeInstructions, type Instruction, type OptimizationLevel } from './program_optimizer';
+import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './program_optimizer';
 import type { ProgramConstReloc } from './program_asset';
 import { StringPool, StringValue, isStringValue } from './string_pool';
 import type { CanonicalizationType } from '../rompack/rompack';
@@ -103,6 +103,7 @@ class ProgramBuilder {
 	public readonly protoCode: Uint8Array[] = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
 	public readonly protoConstRelocs: ReadonlyArray<ProgramConstReloc>[] = [];
+	public readonly protoInstructionSets: Array<InstructionSet | null> = [];
 	public readonly protoIds: string[] = [];
 	private readonly protoIdMap: Map<string, number> = new Map();
 	private readonly assignedProtoIds: Set<string> = new Set();
@@ -150,6 +151,7 @@ class ProgramBuilder {
 		ranges: ReadonlyArray<SourceRange | null>,
 		constRelocs: ReadonlyArray<ProgramConstReloc>,
 		protoId: string,
+		instructionSet: InstructionSet | null,
 	): number {
 		if (this.assignedProtoIds.has(protoId)) {
 			throw new Error(`[ProgramBuilder] Duplicate proto id '${protoId}'.`);
@@ -161,6 +163,7 @@ class ProgramBuilder {
 			this.protoCode[existing] = code;
 			this.protoRanges[existing] = ranges;
 			this.protoConstRelocs[existing] = constRelocs;
+			this.protoInstructionSets[existing] = instructionSet;
 			this.protoIds[existing] = protoId;
 			return existing;
 		}
@@ -169,6 +172,7 @@ class ProgramBuilder {
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
 		this.protoConstRelocs.push(constRelocs);
+		this.protoInstructionSets.push(instructionSet);
 		this.protoIds.push(protoId);
 		this.protoIdMap.set(protoId, index);
 		return index;
@@ -186,6 +190,7 @@ class ProgramBuilder {
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
 		this.protoConstRelocs.push(constRelocs);
+		this.protoInstructionSets.push(null);
 		this.protoIds.push(protoId);
 		this.protoIdMap.set(protoId, index);
 	}
@@ -397,6 +402,14 @@ class FunctionBuilder {
 		return this.finalizedConstRelocs!;
 	}
 
+	public getInstructionSet(): InstructionSet {
+		this.finalizeCode();
+		return {
+			instructions: this.code,
+			ranges: this.ranges,
+		};
+	}
+
 	private finalizeCode(): void {
 		if (this.finalizedCode) {
 			return;
@@ -412,6 +425,14 @@ class FunctionBuilder {
 					}
 					return proto.upvalueDescs;
 				},
+				getProtoMeta: (protoIndex: number) => {
+					const proto = this.program.protos[protoIndex];
+					if (!proto) {
+						throw new Error(`[ProgramCompiler] Missing proto for index ${protoIndex}.`);
+					}
+					return proto;
+				},
+				getProtoInstructionSet: (protoIndex: number) => this.program.protoInstructionSets[protoIndex] ?? null,
 			});
 			if (optimized.instructions !== this.code) {
 				this.code.length = 0;
@@ -1904,6 +1925,7 @@ function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunct
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
 	const constRelocs = builder.getConstRelocs();
+	const instructionSet = builder.getInstructionSet();
 	const protoIndex = program.addProto({
 		entryPC: 0,
 		codeLen: ranges.length * INSTRUCTION_BYTES,
@@ -1911,7 +1933,7 @@ function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunct
 		isVararg: expression.hasVararg,
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: builder.getUpvalueDescs(),
-	}, code, ranges, constRelocs, protoId);
+	}, code, ranges, constRelocs, protoId, instructionSet);
 	return protoIndex;
 }
 
@@ -1977,6 +1999,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		const entryCode = entryBuilder.getCode();
 		const entryRanges = entryBuilder.getRanges();
 		const entryConstRelocs = entryBuilder.getConstRelocs();
+		const entryInstructionSet = entryBuilder.getInstructionSet();
 		entryProtoIndex = programBuilder.addProto({
 			entryPC: 0,
 			codeLen: entryRanges.length * INSTRUCTION_BYTES,
@@ -1984,7 +2007,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			isVararg: false,
 			maxStack: entryBuilder.getMaxStack(),
 			upvalueDescs: entryBuilder.getUpvalueDescs(),
-		}, entryCode, entryRanges, entryConstRelocs, entryProtoId);
+		}, entryCode, entryRanges, entryConstRelocs, entryProtoId, entryInstructionSet);
 	} catch (error) {
 		compileErrors.push({
 			path: chunk.range.path,
@@ -2002,6 +2025,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			const code = builder.getCode();
 			const ranges = builder.getRanges();
 			const constRelocs = builder.getConstRelocs();
+			const instructionSet = builder.getInstructionSet();
 			const protoIndex = programBuilder.addProto({
 				entryPC: 0,
 				codeLen: ranges.length * INSTRUCTION_BYTES,
@@ -2009,7 +2033,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 				isVararg: false,
 				maxStack: builder.getMaxStack(),
 				upvalueDescs: builder.getUpvalueDescs(),
-			}, code, ranges, constRelocs, moduleProtoId);
+			}, code, ranges, constRelocs, moduleProtoId, instructionSet);
 			moduleProtoMap.set(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push({
@@ -2040,6 +2064,7 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 		const entryCode = entryBuilder.getCode();
 		const entryRanges = entryBuilder.getRanges();
 		const entryConstRelocs = entryBuilder.getConstRelocs();
+		const entryInstructionSet = entryBuilder.getInstructionSet();
 		entryProtoIndex = programBuilder.addProto({
 			entryPC: 0,
 			codeLen: entryRanges.length * INSTRUCTION_BYTES,
@@ -2047,7 +2072,7 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 			isVararg: false,
 			maxStack: entryBuilder.getMaxStack(),
 			upvalueDescs: entryBuilder.getUpvalueDescs(),
-		}, entryCode, entryRanges, entryConstRelocs, entryProtoId);
+		}, entryCode, entryRanges, entryConstRelocs, entryProtoId, entryInstructionSet);
 	} catch (error) {
 		compileErrors.push({
 			path: chunk.range.path,
