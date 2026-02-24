@@ -1309,22 +1309,20 @@ function player:apply_move(dx, dy, include_elevator_collision)
 	local landed
 	local hit_ceiling
 	local upward_block = false
-	local function collides(x, y)
-		return self:collides_at(x, y, include_elevator_collision)
-	end
 
 	local next_x = old_x + dx
 	local next_y = old_y + dy
 	local test_x_col
 	local found
+	local room = service('c').current_room
 
-	if collides(next_x, next_y) then
+	if self:collides_at(next_x, next_y, include_elevator_collision) then
 		if next_y ~= old_y then
 			collided_y = true
 		end
 		local inc = next_y > old_y and -1 or 1
 		if next_y > old_y then
-			if collides(old_x, old_y) then
+			if self:collides_at(old_x, old_y, include_elevator_collision) then
 				local resolved_x = self:find_clear_x_with_probe(next_x, next_y, include_elevator_collision)
 				if resolved_x ~= nil then
 					self.x = resolved_x
@@ -1334,7 +1332,7 @@ function player:apply_move(dx, dy, include_elevator_collision)
 			end
 			local y_probe = next_y + inc
 			while (not found) and y_probe ~= old_y do
-				if not collides(old_x, y_probe) then
+				if not self:collides_at(old_x, y_probe, include_elevator_collision) then
 					self.y = y_probe
 					test_x_col = true
 					found = true
@@ -1348,7 +1346,7 @@ function player:apply_move(dx, dy, include_elevator_collision)
 		elseif next_y < old_y then
 			local y_probe = next_y
 			while (not found) and y_probe ~= old_y do
-				if not collides(next_x, y_probe) then
+				if not self:collides_at(next_x, y_probe, include_elevator_collision) then
 					self.x = next_x
 					self.y = y_probe
 					found = true
@@ -1385,33 +1383,34 @@ function player:apply_move(dx, dy, include_elevator_collision)
 	end
 
 	if test_x_col or (not found) then
-		if collides(next_x, self.y) then
+		if self:collides_at(next_x, self.y, include_elevator_collision) then
 			collided_x = true
 			local resolved_x = self:find_clear_x_with_probe(next_x, self.y, include_elevator_collision)
 			if resolved_x ~= nil then
 				self.x = resolved_x
 			end
 		else
+			collided_x = false
 			self.x = next_x
 		end
 	end
 
-	local max_x = service('c').current_room.world_width - self.width
-	if self.x < service('c').current_room.tile_size then
-		if service('c').current_room.links.left <= 0 then
-			self.x = service('c').current_room.tile_size
+	local max_x = room.world_width - self.width
+	if self.x < room.tile_size then
+		if room.links.left <= 0 then
+			self.x = room.tile_size
 			collided_x = true
 		end
 	end
 	if self.x > max_x then
-		if service('c').current_room.links.right <= 0 then
+		if room.links.right <= 0 then
 			self.x = max_x
 			collided_x = true
 		end
 	end
 
-	local max_y = service('c').current_room.world_height - self.height
-	if self.y > max_y and service('c').current_room.links.down <= 0 then
+	local max_y = room.world_height - self.height
+	if self.y > max_y and room.links.down <= 0 then
 		self.y = max_y
 		landed = true
 		collided_y = true
