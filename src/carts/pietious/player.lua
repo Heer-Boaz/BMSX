@@ -915,11 +915,10 @@ function player:try_side_room_switch_from_position()
 end
 
 function player:can_switch_up_from_state()
-	local can_switch_up = self:has_tag(state_tags.group.can_switch_up)
-	if not can_switch_up and self.jumping_from_elevator then
-		can_switch_up = self:has_tag(state_tags.group.movement_jump)
+	if self:has_tag(state_tags.group.can_switch_up) then
+		return true
 	end
-	return can_switch_up
+	return self.jumping_from_elevator and self:has_tag(state_tags.variant.jumping)
 end
 
 function player:nearing_room_exit()
@@ -1191,7 +1190,11 @@ function player:start_stairs(direction, stair, event_name)
 end
 
 function player:collides_with_elevator_at(x, y)
-	local current_room_number = service('c').current_room.room_number
+	local current_room = service('c').current_room
+	if current_room.map_id ~= 0 then
+		return false
+	end
+	local current_room_number = current_room.room_number
 	local elevator_routes = service('e').elevator_routes
 	local right = x + self.width
 	local bottom = y + self.height
@@ -1218,7 +1221,11 @@ end
 -- bmsx-lint:enable
 
 function player:try_snap_to_elevator_platform(next_x)
-	local current_room_number = service('c').current_room.room_number
+	local current_room = service('c').current_room
+	if current_room.map_id ~= 0 then
+		return false
+	end
+	local current_room_number = current_room.room_number
 	local elevator_routes = service('e').elevator_routes
 	for i = 1, #elevator_routes do
 		local elevator = elevator_routes[i]
@@ -2746,7 +2753,8 @@ local function define_player_fsm()
 			[state_tags.group.can_switch_up] = {
 				state_tags.variant.up_stairs,
 				state_tags.variant.quiet,
-				state_tags.group.movement_walk,
+				state_tags.variant.walking_right,
+				state_tags.variant.walking_left,
 			},
 			[state_tags.group.hit_lock_states] = {
 				state_tags.variant.hit_fall,
