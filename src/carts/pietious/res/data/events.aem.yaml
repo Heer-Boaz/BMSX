@@ -21,7 +21,6 @@ events:
               go:
                   music_transition:
                       audio_id: music_world
-                      sync: immediate
             - when:
                   equals:
                       changed_axis: room

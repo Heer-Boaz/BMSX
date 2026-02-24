@@ -9,6 +9,9 @@ local dropped_item_uses_y_offset = {
 }
 
 local function drop_offset_y_for_item_type(item_type)
+	if item_type == nil then
+		return 0
+	end
 	if dropped_item_uses_y_offset[item_type] then
 		return constants.room.tile_size
 	end

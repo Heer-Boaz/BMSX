@@ -180,15 +180,6 @@ function director:bind_events()
 	})
 
 	self.events:on({
-		event = 'timeline.end.p.tl.sx',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function()
-			self.events:emit('shrine_transition_done', {})
-		end,
-	})
-
-	self.events:on({
 		event = 'lithograph.request',
 		emitter = 'pietolon',
 		subscriber = self,
@@ -428,20 +419,22 @@ local function define_director_fsm()
 					['down[jp]'] = '/shrine_transition_exit',
 				},
 			},
-			shrine_transition_exit = {
-				entering_state = function(self)
-					self.active_transition_kind = 'shrine'
-					self.overlay_mode = nil
-					self.overlay_text_lines = {}
-					object('shrine').lines = {}
-					set_space('main')
-					object('ui'):set_space('main')
-					object('pietolon'):leave_shrine_overlay()
-				end,
-				on = {
-					['shrine_transition_done'] = '/room_switch_wait',
+				shrine_transition_exit = {
+					entering_state = function(self)
+						self.active_transition_kind = 'shrine'
+						self.overlay_mode = nil
+						self.overlay_text_lines = {}
+						object('shrine').lines = {}
+						set_space('main')
+						object('ui'):set_space('main')
+						object('pietolon'):leave_shrine_overlay()
+					end,
+					on = {
+						['shrine_transition_done'] = '/room_switch_wait',
+						['timeline.end.p.tl.sx'] = '/room_switch_wait',
+						['shrine_exit_done'] = '/room_switch_wait',
+					},
 				},
-			},
 			item_screen_opening = {
 				entering_state = function(self)
 					self.active_transition_kind = 'item_open'

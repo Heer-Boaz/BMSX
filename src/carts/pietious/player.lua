@@ -1839,6 +1839,15 @@ function player:tick_emerging_world()
 		self.events:emit('world_emerge_done', {})
 	end
 end
+
+function player:tick_leaving_shrine()
+	self:reset_motion_for_transition_lock()
+	self.transition_step = self.transition_step + 1
+	if self.transition_step > constants.world_entrance.enter_world_total_steps then
+		self.events:emit('shrine_exit_done', {})
+	end
+end
+
 function player:tick_quiet()
 	self.previous_x_collision = false
 	self.previous_y_collision = false
@@ -2761,28 +2770,29 @@ local function define_player_fsm()
 			process_input = player.sample_input,
 			tick = player.reset_motion_for_transition_lock,
 		},
-		leaving_shrine = {
-			tags = {
-				state_tags.variant.leaving_shrine,
-				state_tags.group.transition_lock,
-				state_tags.group.damage_lock,
-			},
-			on = {
-				['timeline.end.p.tl.sx'] = '/quiet',
-			},
-			entering_state = function(self)
-				self.transition_step = 0
-				self.to_enter_cut = 0
+			leaving_shrine = {
+				tags = {
+					state_tags.variant.leaving_shrine,
+					state_tags.group.transition_lock,
+					state_tags.group.damage_lock,
+				},
+				on = {
+					['timeline.end.p.tl.sx'] = '/quiet',
+					['shrine_exit_done'] = '/quiet',
+				},
+				entering_state = function(self)
+					self.transition_step = 0
+					self.to_enter_cut = 0
 				self.enter_leave_anim_frame = 0
 				self:play_timeline(player_shrine_exit_timeline_id, { rewind = true, snap_to_start = true })
 			end,
-			leaving_state = function(self)
-				self:stop_timeline(player_shrine_exit_timeline_id)
-				self.to_enter_cut = 0
-			end,
-			process_input = player.sample_input,
-			tick = player.reset_motion_for_transition_lock,
-		},
+				leaving_state = function(self)
+					self:stop_timeline(player_shrine_exit_timeline_id)
+					self.to_enter_cut = 0
+				end,
+				process_input = player.sample_input,
+				tick = player.tick_leaving_shrine,
+			},
 		freeze = {
 			on = {
 				['seal_broken'] = {
