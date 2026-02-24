@@ -1911,15 +1911,14 @@ function player:tick_jump_motion()
 		dy = 0
 	end
 	local hit_ceiling = (not sword_jump) and self.previous_y_collision
-	if (not hit_ceiling) and dy < 0 then
-		if sword_jump then
-			hit_ceiling = self:collides_at_jump_sword_ceiling_profile(self.x, self.y + dy)
-		else
-			hit_ceiling = self:collides_at_jump_ceiling_profile(self.x, self.y + dy)
-		end
+	if sword_jump and (not hit_ceiling) and dy < 0 then
+		hit_ceiling = self:collides_at_jump_sword_ceiling_profile(self.x, self.y + dy)
 	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
-	self:apply_move(dx, dy)
+	local move_result = self:apply_move(dx, dy)
+	if (not sword_jump) and move_result.hit_ceiling then
+		hit_ceiling = true
+	end
 
 	if hit_ceiling and self.jump_substate < constants.physics.jump_release_cut_substate then
 		self.jump_substate = constants.physics.jump_release_cut_substate
@@ -1979,9 +1978,9 @@ function player:tick_controlled_fall_motion()
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
 	local should_land = (not self:collides_at(self.x, self.y, true)) and self:collides_at(self.x, self.y + dy, true)
-	self:apply_move(dx, dy)
+	local move_result = self:apply_move(dx, dy)
 
-	if should_land then
+	if should_land or move_result.landed then
 		self.stairs_landing_sound_pending = false
 		self:reset_fall_substate_sequence()
 		if self:has_tag(state_tags.group.sword) then
@@ -2001,9 +2000,9 @@ function player:tick_uncontrolled_fall_motion()
 	end
 	local dy = self:get_uncontrolled_fall_dy()
 	local should_land = self:collides_at(self.x, self.y + dy, true)
-	self:apply_move(0, dy)
+	local move_result = self:apply_move(0, dy)
 
-	if should_land then
+	if should_land or move_result.landed then
 		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then
 			self.events:emit('evt.cue.fall', {})
 		end
