@@ -9,10 +9,8 @@ local equip_tags = {
 	spyglass = 'eq.spy',
 }
 
-local command_ids = {
+player_abilities.command_ids = {
 	activate_sword = 'cmd.ability.activate.sword',
-	activate_pepernoot = 'cmd.ability.activate.pepernoot',
-	activate_spyglass = 'cmd.ability.activate.spyglass',
 }
 
 local function activate_sword_ability(owner, state_tags)
@@ -56,59 +54,64 @@ local function activate_sword_ability(owner, state_tags)
 	return true
 end
 
-local function activate_pepernoot_ability(owner, state_tags)
-	if owner:has_tag(state_tags.group.damage_lock) then
-		return false
-	end
-	if owner:has_tag(state_tags.group.stairs) then
-		if not owner:has_tag(state_tags.variant.quiet_stairs) then
+action_effects.register_effect('pepernoot', {
+	id = 'pepernoot',
+	blocked_tags = { 'g.dl' },
+	can_trigger = function(context)
+		local owner = context.owner
+		if owner:has_tag('g.st') then
+			if not owner:has_tag('v.qst') then
+				return false
+			end
+		end
+		owner:refresh_active_pepernoot_projectiles()
+		if #owner.pepernoot_projectile_ids >= constants.secondary_weapon.pepernoot_max_active then
 			return false
 		end
-	end
+		if owner.weapon_level < constants.secondary_weapon.pepernoot_weapon_level_cost then
+			return false
+		end
+		return true
+	end,
+	handler = function(context)
+		local owner = context.owner
+		local room = service('c').current_room
+		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
+		local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
+		local spawn_x = owner.x + (owner.facing < 0 and -constants.secondary_weapon.pepernoot_spawn_offset_x or constants.secondary_weapon.pepernoot_spawn_offset_x)
+		local spawn_y = owner.y + constants.secondary_weapon.pepernoot_spawn_offset_y
+		spawn_x, spawn_y = room_module.snap_world_to_tile(room, spawn_x, spawn_y)
+		inst('pepernoot_projectile', {
+			id = projectile_id,
+			room = room,
+			room_number = room.room_number,
+			owner_id = owner.id,
+			direction = owner.facing,
+			pos = { x = spawn_x, y = spawn_y, z = 113 },
+		})
+		owner.pepernoot_projectile_ids[#owner.pepernoot_projectile_ids + 1] = projectile_id
+		owner.weapon_level = owner.weapon_level - constants.secondary_weapon.pepernoot_weapon_level_cost
+		owner.events:emit('evt.cue.fire_pepernoot', {})
+	end,
+})
 
-	owner:refresh_active_pepernoot_projectiles()
-	if #owner.pepernoot_projectile_ids >= constants.secondary_weapon.pepernoot_max_active then
-		return false
-	end
-	if owner.weapon_level < constants.secondary_weapon.pepernoot_weapon_level_cost then
-		return false
-	end
-	local room = service('c').current_room
-
-	owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
-	local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
-	local spawn_x = owner.x + (owner.facing < 0 and -constants.secondary_weapon.pepernoot_spawn_offset_x or constants.secondary_weapon.pepernoot_spawn_offset_x)
-	local spawn_y = owner.y + constants.secondary_weapon.pepernoot_spawn_offset_y
-	spawn_x, spawn_y = room_module.snap_world_to_tile(room, spawn_x, spawn_y)
-
-	inst('pepernoot_projectile', {
-		id = projectile_id,
-		room = room,
-		room_number = room.room_number,
-		owner_id = owner.id,
-		direction = owner.facing,
-		pos = { x = spawn_x, y = spawn_y, z = 113 },
-	})
-
-	owner.pepernoot_projectile_ids[#owner.pepernoot_projectile_ids + 1] = projectile_id
-	owner.weapon_level = owner.weapon_level - constants.secondary_weapon.pepernoot_weapon_level_cost
-	owner.events:emit('evt.cue.fire_pepernoot', {})
-	return true
-end
-
-local function activate_spyglass_ability(owner, state_tags)
-	if owner:has_tag(state_tags.group.damage_lock) then
-		return false
-	end
-	local lithograph = room_module.find_near_lithograph(service('c').current_room, owner)
-	if lithograph == nil then
-		return false
-	end
-	owner.events:emit('lithograph.request', {
-		text_line = lithograph.text,
-	})
-	return true
-end
+action_effects.register_effect('spyglass', {
+	id = 'spyglass',
+	blocked_tags = { 'g.dl' },
+	can_trigger = function(context)
+		local lithograph = room_module.find_near_lithograph(service('c').current_room, context.owner)
+		if lithograph == nil then
+			return false
+		end
+		context.lithograph = lithograph
+		return true
+	end,
+	handler = function(context)
+		context.owner.events:emit('lithograph.request', {
+			text_line = context.lithograph.text,
+		})
+	end,
+})
 
 action_effects.register_effect('halo', {
 	id = 'halo',
@@ -140,9 +143,7 @@ function player_abilities.build_input_action_effect_program()
 				on = { press = 'b[jp]' },
 				go = {
 					press = {
-						['dispatch.command'] = {
-							event = command_ids.activate_pepernoot,
-						},
+						['effect.trigger'] = 'pepernoot',
 					},
 				},
 			},
@@ -156,9 +157,7 @@ function player_abilities.build_input_action_effect_program()
 				on = { press = 'b[jp]' },
 				go = {
 					press = {
-						['dispatch.command'] = {
-							event = command_ids.activate_spyglass,
-						},
+						['effect.trigger'] = 'spyglass',
 					},
 				},
 			},
@@ -181,16 +180,6 @@ function player_abilities.configure_player_abilities(player, state_tags)
 	player.abilities:register_ability('sword', {
 			activate = function(context)
 				return activate_sword_ability(context.owner, state_tags)
-			end,
-		})
-	player.abilities:register_ability('pepernoot', {
-			activate = function(context)
-				return activate_pepernoot_ability(context.owner, state_tags)
-			end,
-		})
-	player.abilities:register_ability('spyglass', {
-			activate = function(context)
-				return activate_spyglass_ability(context.owner, state_tags)
 			end,
 		})
 end
@@ -249,7 +238,6 @@ function player_abilities.attach_player_methods(player)
 	end
 end
 
-player_abilities.command_ids = command_ids
 player_abilities.equip_tags = equip_tags
 
 return player_abilities

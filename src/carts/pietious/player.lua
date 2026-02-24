@@ -212,6 +212,8 @@ function player:ctor()
 		parent = self,
 	}))
 	self.actioneffects:grant_effect('halo')
+	self.actioneffects:grant_effect('pepernoot')
+	self.actioneffects:grant_effect('spyglass')
 	self:add_component(components.inputactioneffectcomponent.new({
 		parent = self,
 		program = player_abilities.build_input_action_effect_program(),
@@ -2850,16 +2852,6 @@ local function define_player_fsm()
 			[player_abilities.command_ids.activate_sword] = {
 				go = function(self)
 					self.abilities:activate('sword')
-				end,
-			},
-			[player_abilities.command_ids.activate_pepernoot] = {
-				go = function(self)
-					self.abilities:activate('pepernoot')
-				end,
-			},
-			[player_abilities.command_ids.activate_spyglass] = {
-				go = function(self)
-					self.abilities:activate('spyglass')
 				end,
 			},
 			['enemy.contact_damage'] = {
