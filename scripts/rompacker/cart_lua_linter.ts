@@ -58,6 +58,7 @@ type LuaLintIssueRule =
 	'dispatch_fanout_loop_pattern' |
 	'tick_flag_polling_pattern' |
 	'tick_input_check_pattern' |
+	'action_triggered_bool_chain_pattern' |
 	'set_space_roundtrip_pattern' |
 	'cross_object_state_event_relay_pattern' |
 	'foreign_object_internal_mutation_pattern' |
@@ -259,6 +260,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'dispatch_fanout_loop_pattern',
 	'tick_flag_polling_pattern',
 	'tick_input_check_pattern',
+	'action_triggered_bool_chain_pattern',
 	'set_space_roundtrip_pattern',
 	'cross_object_state_event_relay_pattern',
 	'foreign_object_internal_mutation_pattern',
@@ -296,6 +298,7 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'dispatch_fanout_loop_pattern',
 	'tick_flag_polling_pattern',
 	'tick_input_check_pattern',
+	'action_triggered_bool_chain_pattern',
 	'set_space_roundtrip_pattern',
 	'cross_object_state_event_relay_pattern',
 	'foreign_object_internal_mutation_pattern',
@@ -2028,6 +2031,30 @@ function isTickInputCheckCallExpression(expression: LuaCallExpression): boolean 
 	return !!receiver && isSelfExpressionRoot(receiver);
 }
 
+function isDirectActionTriggeredCallExpression(expression: LuaExpression): expression is LuaCallExpression {
+	return expression.kind === LuaSyntaxKind.CallExpression
+		&& expression.callee.kind === LuaSyntaxKind.IdentifierExpression
+		&& expression.callee.name === 'action_triggered';
+}
+
+function lintActionTriggeredBoolChainPattern(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (expression.kind !== LuaSyntaxKind.BinaryExpression) {
+		return;
+	}
+	if (expression.operator !== LuaBinaryOperator.Or && expression.operator !== LuaBinaryOperator.And) {
+		return;
+	}
+	if (!isDirectActionTriggeredCallExpression(expression.left) || !isDirectActionTriggeredCallExpression(expression.right)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'action_triggered_bool_chain_pattern',
+		expression,
+		'Combining multiple action_triggered(...) calls with and/or is forbidden. Use one action_triggered query with complex action-query syntax instead.',
+	);
+}
+
 function getSelfPropertyNameFromConditionExpression(expression: LuaExpression | null): string | undefined {
 	if (!expression) {
 		return undefined;
@@ -2047,6 +2074,55 @@ function getSelfPropertyNameFromConditionExpression(expression: LuaExpression | 
 function isFalseOrNilExpression(expression: LuaExpression): boolean {
 	return expression.kind === LuaSyntaxKind.NilLiteralExpression
 		|| (expression.kind === LuaSyntaxKind.BooleanLiteralExpression && expression.value === false);
+}
+
+function hasTransitionReturnInStatements(statements: ReadonlyArray<LuaStatement>): boolean {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					if (expression.kind === LuaSyntaxKind.StringLiteralExpression && expression.value.startsWith('/')) {
+						return true;
+					}
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					if (hasTransitionReturnInStatements(clause.block.body)) {
+						return true;
+					}
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement:
+				if (hasTransitionReturnInStatements(statement.block.body)) {
+					return true;
+				}
+				break;
+			case LuaSyntaxKind.RepeatStatement:
+				if (hasTransitionReturnInStatements(statement.block.body)) {
+					return true;
+				}
+				break;
+			case LuaSyntaxKind.ForNumericStatement:
+				if (hasTransitionReturnInStatements(statement.block.body)) {
+					return true;
+				}
+				break;
+			case LuaSyntaxKind.ForGenericStatement:
+				if (hasTransitionReturnInStatements(statement.block.body)) {
+					return true;
+				}
+				break;
+			case LuaSyntaxKind.DoStatement:
+				if (hasTransitionReturnInStatements(statement.block.body)) {
+					return true;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	return false;
 }
 
 function hasSelfPropertyResetInStatements(statements: ReadonlyArray<LuaStatement>, propertyName: string): boolean {
@@ -2074,17 +2150,24 @@ function lintTickFlagPollingPattern(functionExpression: LuaFunctionExpression, i
 		}
 		for (const clause of statement.clauses) {
 			const propertyName = getSelfPropertyNameFromConditionExpression(clause.condition);
-			if (!propertyName || !isEventProxyFlagPropertyName(propertyName)) {
+			if (!propertyName) {
 				continue;
 			}
-			if (!hasSelfPropertyResetInStatements(clause.block.body, propertyName)) {
+			const hasReset = hasSelfPropertyResetInStatements(clause.block.body, propertyName);
+			if (!hasReset) {
+				continue;
+			}
+			const hasTransitionReturn = hasTransitionReturnInStatements(clause.block.body);
+			if (!hasTransitionReturn && !isEventProxyFlagPropertyName(propertyName)) {
 				continue;
 			}
 			pushIssue(
 				issues,
 				'tick_flag_polling_pattern',
 				clause.condition ?? statement,
-				`Tick polling on self.${propertyName} is forbidden. Use FSM events/timelines/input handlers for transitions instead of tick-flag polling and manual resets.`,
+				hasTransitionReturn
+					? `Delayed event-proxy transition via self.${propertyName} in tick is forbidden. Handle the transition directly via FSM events/on maps, input handlers, process_input, or timelines instead of flag polling + reset + return.`
+					: `Tick polling on self.${propertyName} is forbidden. Use FSM events/timelines/input handlers for transitions instead of tick-flag polling and manual resets.`,
 			);
 		}
 	}
@@ -5338,6 +5421,7 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 	lintOrNilFallbackPattern(expression, issues);
 	lintExplicitTruthyComparisonPattern(expression, issues);
 	lintStringOrChainComparisonPattern(expression, issues);
+	lintActionTriggeredBoolChainPattern(expression, issues);
 	if (topLevel) {
 		lintMultiHasTagPattern(expression, issues);
 	}
