@@ -157,12 +157,12 @@ function player:emit_room_switched(from_room, to_room, direction)
 end
 
 function player:land_from_hit()
-	self.events:emit('evt.cue.fall', {})
+	self.events:emit('evt.cue.fall')
 	self.hit_substate = 0
 	self.hit_recovery_timer = 0
 	self.last_dx = 0
 	self.last_dy = 0
-	self.events:emit('hit_ground', {})
+	self.events:emit('hit_ground')
 end
 
 function player:update_collision_state()
@@ -436,11 +436,11 @@ function player:apply_presentation_state()
 end
 
 function player:respawn()
-	service('d').events:emit('death_done', {})
+	service('d').events:emit('death_done')
 	self:force_seek_timeline('p.seq.s', 0)
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
-	self.events:emit('respawn', {})
+	self.events:emit('respawn')
 end
 
 function player:sample_input()
@@ -483,7 +483,7 @@ function player:advance_sword_sequence()
 			-- 	self.x = self.x + 2
 			-- end
 		end
-		self.events:emit(player_sword_end_event, {})
+		self.events:emit(player_sword_end_event)
 		return
 	end
 	self:advance_timeline('p.seq.s')
@@ -549,8 +549,8 @@ function player:start_dying()
 	if self:has_tag(state_tags.variant.dying) then
 		return
 	end
-	service('d').events:emit('death_start', {})
-	self.events:emit('evt.cue.dying', {})
+	service('d').events:emit('death_start')
+	self.events:emit('evt.cue.dying')
 	self:force_seek_timeline('p.seq.s', 0)
 	self.hit_direction = 0
 	self.hit_substate = 0
@@ -559,7 +559,7 @@ function player:start_dying()
 	self.hit_stairs_lock = false
 	self:reset_hit_invulnerability_sequence()
 	self:zero_motion()
-	self.events:emit('hp_zero', {})
+	self.events:emit('hp_zero')
 end
 
 function player:take_hit(amount, source_x, source_y, reason)
@@ -572,9 +572,9 @@ function player:take_hit(amount, source_x, source_y, reason)
 		self.health = 0
 	end
 	if self.health <= 8 then
-		self.events:emit('evt.cue.approachingdeath', {})
+		self.events:emit('evt.cue.approachingdeath')
 	else
-		self.events:emit('evt.cue.hit', {})
+		self.events:emit('evt.cue.hit')
 	end
 
 	local hit_on_stairs = self:has_tag(state_tags.group.stairs)
@@ -742,9 +742,9 @@ function player:begin_entering_world(world_entrance)
 	self.enter_leave_shrine_text_lines = {}
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
-	service('d').events:emit('world_transition_start', {})
-	self.events:emit('evt.cue.enterleave', {})
-	self.events:emit('enter_world_start', {})
+	service('d').events:emit('world_transition_start')
+	self.events:emit('evt.cue.enterleave')
+	self.events:emit('enter_world_start')
 end
 
 function player:begin_entering_shrine(shrine)
@@ -755,10 +755,10 @@ function player:begin_entering_shrine(shrine)
 	self.enter_leave_shrine_text_lines = shrine.text_lines
 	self.x = shrine.x
 	self:reset_enter_leave_animation()
-	service('d').events:emit('shrine_transition_start', {})
+	service('d').events:emit('shrine_transition_start')
 	stop_music()
-	self.events:emit('evt.cue.enterleave', {})
-	self.events:emit('enter_shrine_start', {})
+	self.events:emit('evt.cue.enterleave')
+	self.events:emit('enter_shrine_start')
 end
 
 function player:begin_world_emerge_from_door()
@@ -767,13 +767,13 @@ function player:begin_world_emerge_from_door()
 	self:reset_enter_leave_animation()
 	self.enter_leave_world_target = nil
 	self.enter_leave_shrine_text_lines = {}
-	self.events:emit('world_emerge_start', {})
+	self.events:emit('world_emerge_start')
 end
 
 function player:start_slow_doorpass()
 	self:force_seek_timeline('p.seq.s', 0)
 	self.slow_doorpass_substate = 0
-	self.events:emit('slowdoorpass_start', {})
+	self.events:emit('slowdoorpass_start')
 end
 
 function player:apply_halo_teleport_arrival(switch)
@@ -785,7 +785,7 @@ function player:apply_halo_teleport_arrival(switch)
 	self.enter_leave_shrine_text_lines = {}
 	self:force_seek_timeline('p.seq.s', 0)
 	self:reset_fall_substate_sequence()
-	self.events:emit('stairs_lock_lost_after_room_switch', {})
+	self.events:emit('stairs_lock_lost_after_room_switch')
 	self:emit_room_switched(switch.from_room_number, switch.to_room_number, switch.direction)
 end
 
@@ -793,8 +793,8 @@ function player:leave_shrine_overlay()
 	self:reset_enter_leave_animation()
 	self.enter_leave_shrine_text_lines = {}
 	stop_music()
-	self.events:emit('evt.cue.enterleave', {})
-	self.events:emit('leave_shrine_overlay', {})
+	self.events:emit('evt.cue.enterleave')
+	self.events:emit('leave_shrine_overlay')
 end
 
 function player:try_open_world_entrance_with_key()
@@ -812,7 +812,7 @@ function player:try_open_world_entrance_with_key()
 		return false
 	end
 	self.inventory_items.keyworld1 = false
-	self.events:emit('evt.cue.worlddooropen', {})
+	self.events:emit('evt.cue.worlddooropen')
 	return true
 end
 
@@ -835,7 +835,7 @@ function player:try_start_world_or_shrine_interaction_from_down()
 
 	local current_room = service('c').current_room
 	if current_room.has_active_seal and not current_room.seal_sequence_active then
-		service('d').events:emit('seal_dissolution_start', {})
+		service('d').events:emit('seal_dissolution_start')
 		return true
 	end
 
@@ -867,7 +867,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	end
 
 	if switch.outside then
-		service('d').events:emit('world_transition_start', {})
+		service('d').events:emit('world_transition_start')
 		local leave_switch = service('d'):leave_world_to_castle()
 		self:apply_spawn_position(leave_switch)
 		self:zero_motion()
@@ -875,7 +875,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.enter_leave_world_target = nil
 		self.enter_leave_shrine_text_lines = {}
 		self.enter_leave_wait_started = false
-		self.events:emit('leave_world_start', {})
+		self.events:emit('leave_world_start')
 		self:emit_room_switched(leave_switch.from_room_number, leave_switch.to_room_number, 'right')
 		return true
 	end
@@ -971,7 +971,7 @@ function player:try_vertical_room_switch_from_position()
 		if keep_stairs_lock and (not self:sync_stairs_after_vertical_room_switch(direction)) then
 			self:reset_stairs_lock()
 			if self:has_tag(state_tags.group.stairs) then
-				self.events:emit('stairs_lock_lost_after_room_switch', {})
+				self.events:emit('stairs_lock_lost_after_room_switch')
 			end
 		end
 		return true
@@ -1076,7 +1076,7 @@ function player:leave_stairs(event_name)
 	else
 		self.stairs_landing_sound_pending = false
 	end
-	self.events:emit(event_name, {})
+	self.events:emit(event_name)
 end
 
 function player:try_step_off_stairs()
@@ -1187,7 +1187,7 @@ function player:start_stairs(direction, stair, event_name)
 	self.stairs_anim_frame = 0
 	self.last_dx = 0
 	self.last_dy = 0
-	self.events:emit(event_name, {})
+	self.events:emit(event_name)
 end
 
 function player:collides_with_elevator_at(x, y)
@@ -1437,7 +1437,7 @@ function player:start_jump(inertia)
 	self:reset_fall_substate_sequence()
 	self.jump_inertia = inertia
 	self.jumping_from_elevator = self.on_vertical_elevator
-	self.events:emit('evt.cue.jump', {})
+	self.events:emit('evt.cue.jump')
 	if inertia < 0 then
 		self.facing = -1
 	elseif inertia > 0 then
@@ -1546,14 +1546,14 @@ function player:runcheck_quiet_controls()
 			inertia = 0
 		end
 		self:start_jump(inertia)
-		self.events:emit('jump_input', {})
+		self.events:emit('jump_input')
 		return
 	end
 
 	if self.left_held and not self.right_held then
 		if self.facing < 0 then
 			self.walk_state = 0
-			self.events:emit('left_down', {})
+			self.events:emit('left_down')
 		else
 			self.facing = -1
 		end
@@ -1562,7 +1562,7 @@ function player:runcheck_quiet_controls()
 	if self.right_held and not self.left_held then
 		if self.facing > 0 then
 			self.walk_state = 1
-			self.events:emit('right_down', {})
+			self.events:emit('right_down')
 		else
 			self.facing = 1
 		end
@@ -1585,7 +1585,7 @@ function player:runcheck_walking_right_controls()
 			return
 		end
 		self:start_jump(1)
-		self.events:emit('jump_input', {})
+		self.events:emit('jump_input')
 		return
 	end
 	if self:try_start_world_or_shrine_interaction_from_down() then
@@ -1600,15 +1600,15 @@ function player:runcheck_walking_right_controls()
 	end
 
 	if self.left_held and self.walk_state == 0 then
-		self.events:emit('left_override', {})
+		self.events:emit('left_override')
 		return
 	end
 	if not self.right_held then
 		if self.left_held then
-			self.events:emit('right_released_to_left', {})
+			self.events:emit('right_released_to_left')
 			return
 		end
-		self.events:emit('right_released_to_quiet', {})
+		self.events:emit('right_released_to_quiet')
 		return
 	end
 
@@ -1630,7 +1630,7 @@ function player:runcheck_walking_left_controls()
 			return
 		end
 		self:start_jump(-1)
-		self.events:emit('jump_input', {})
+		self.events:emit('jump_input')
 		return
 	end
 	if self:try_start_world_or_shrine_interaction_from_down() then
@@ -1645,15 +1645,15 @@ function player:runcheck_walking_left_controls()
 	end
 
 	if self.right_held and self.walk_state == 1 then
-		self.events:emit('right_override', {})
+		self.events:emit('right_override')
 		return
 	end
 	if not self.left_held then
 		if self.right_held then
-			self.events:emit('left_released_to_right', {})
+			self.events:emit('left_released_to_right')
 			return
 		end
-		self.events:emit('left_released_to_quiet', {})
+		self.events:emit('left_released_to_quiet')
 		return
 	end
 
@@ -1667,7 +1667,7 @@ function player:runcheck_quiet_stairs_controls()
 	if self.down_held then
 		local was_at_or_below_bottom = self.y >= self.stairs_bottom_y
 		self.stairs_direction = 1
-		self.events:emit('stairs_down_hold', {})
+		self.events:emit('stairs_down_hold')
 		self.last_dy = constants.stairs.down_start_push_px
 		self.y = self.y + self.last_dy
 		if self.last_dy ~= 0 then
@@ -1680,7 +1680,7 @@ function player:runcheck_quiet_stairs_controls()
 	end
 
 	if self.up_held then
-		self.events:emit('stairs_up_hold', {})
+		self.events:emit('stairs_up_hold')
 		local next_y
 		if self.y > self.stairs_top_y then
 			next_y = self.y - constants.stairs.speed_px
@@ -1723,7 +1723,7 @@ function player:tick_entering_world()
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(1)
 	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
-		self.events:emit('evt.cue.gamestart', {})
+		self.events:emit('evt.cue.gamestart')
 		local switch = service('d'):enter_world(self.enter_leave_world_target)
 		self:apply_spawn_position(switch)
 		self.enter_leave_world_target = nil
@@ -1734,7 +1734,7 @@ function player:tick_entering_world()
 
 	if self.transition_step > constants.world_entrance.enter_world_total_steps then
 		self.to_enter_cut = 0
-		self.events:emit('world_entered', {})
+		self.events:emit('world_entered')
 		return
 	end
 end
@@ -1747,7 +1747,7 @@ function player:tick_entering_shrine()
 	if self.transition_step > constants.world_entrance.enter_world_total_steps then
 		service('d'):open_shrine(self.enter_leave_shrine_text_lines)
 		self.enter_leave_wait_started = false
-		self.events:emit('shrine_entered', {})
+		self.events:emit('shrine_entered')
 		return
 	end
 end
@@ -1760,7 +1760,7 @@ function player:tick_waiting_world_banner()
 		return
 	end
 	self.enter_leave_wait_started = false
-	self.events:emit('world_banner_done', {})
+	self.events:emit('world_banner_done')
 end
 
 function player:tick_waiting_world_emerge()
@@ -1782,8 +1782,8 @@ function player:tick_emerging_world()
 	self:update_enter_leave_cut(-1)
 	if self.transition_step > constants.world_entrance.enter_world_total_steps then
 		self.to_enter_cut = 0
-		service('d').events:emit('world_transition_done', {})
-		self.events:emit('world_emerge_done', {})
+		service('d').events:emit('world_transition_done')
+		self.events:emit('world_emerge_done')
 	end
 end
 
@@ -1791,7 +1791,7 @@ function player:tick_leaving_shrine()
 	self:reset_motion_for_transition_lock()
 	self.transition_step = self.transition_step + 1
 	if self.transition_step > constants.flow.room_switch_wait_frames then
-		self.events:emit('shrine_exit_done', {})
+		self.events:emit('shrine_exit_done')
 	end
 end
 
@@ -1800,7 +1800,7 @@ function player:tick_quiet()
 
 	if not self:is_ground_below_at(self.x, self.y, true) then
 		self:reset_fall_substate_sequence()
-		self.events:emit('no_ground', {})
+		self.events:emit('no_ground')
 		return
 	end
 	self.stairs_landing_sound_pending = false
@@ -1815,7 +1815,7 @@ function player:tick_walking_right()
 	if not self:is_ground_below_at(self.x, self.y, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
-		self.events:emit('no_ground', {})
+		self.events:emit('no_ground')
 		return
 	end
 
@@ -1833,7 +1833,7 @@ function player:tick_walking_left()
 	if not self:is_ground_below_at(self.x, self.y, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
-		self.events:emit('no_ground', {})
+		self.events:emit('no_ground')
 		return
 	end
 
@@ -1860,7 +1860,7 @@ function player:tick_slowdoorpass()
 	if self.slow_doorpass_substate >= 24 then
 		self.slow_doorpass_substate = 0
 		self.walk_frame = 0
-		self.events:emit('slowdoorpass_done', {})
+		self.events:emit('slowdoorpass_done')
 		return
 	end
 
@@ -1911,16 +1911,16 @@ function player:tick_jump_motion()
 	local sword_state = self:has_tag(state_tags.group.sword)
 	if hit_ceiling then
 		if sword_state then
-			self.events:emit('ceiling_to_sj_sword', {})
+			self.events:emit('ceiling_to_sj_sword')
 		else
-			self.events:emit('ceiling_to_stopped_jumping', {})
+			self.events:emit('ceiling_to_stopped_jumping')
 		end
 	end
 	if reached_fall then
 		if sword_state then
-			self.events:emit('jump_apex_to_c_fall_sword', {})
+			self.events:emit('jump_apex_to_c_fall_sword')
 		else
-			self.events:emit('jump_apex_to_controlled_fall', {})
+			self.events:emit('jump_apex_to_controlled_fall')
 		end
 	end
 end
@@ -1939,9 +1939,9 @@ function player:tick_stopped_jump_motion()
 	if self.jump_substate >= constants.physics.jump_to_fall_substate then
 		self:reset_fall_substate_sequence()
 		if self:has_tag(state_tags.group.sword) then
-			self.events:emit('stopped_to_fall_to_c_fall_sword', {})
+			self.events:emit('stopped_to_fall_to_c_fall_sword')
 		else
-			self.events:emit('stopped_to_fall_to_controlled_fall', {})
+			self.events:emit('stopped_to_fall_to_controlled_fall')
 		end
 	end
 end
@@ -1963,9 +1963,9 @@ function player:tick_controlled_fall_motion()
 		self.stairs_landing_sound_pending = false
 		self:reset_fall_substate_sequence()
 		if self:has_tag(state_tags.group.sword) then
-			self.events:emit('landed_to_quiet_sword', {})
+			self.events:emit('landed_to_quiet_sword')
 		else
-			self.events:emit('landed_to_quiet', {})
+			self.events:emit('landed_to_quiet')
 		end
 		return
 	end
@@ -1983,14 +1983,14 @@ function player:tick_uncontrolled_fall_motion()
 
 	if should_land or move_result.landed then
 		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then
-			self.events:emit('evt.cue.fall', {})
+			self.events:emit('evt.cue.fall')
 		end
 		self.stairs_landing_sound_pending = false
 		self:reset_fall_substate_sequence()
 		if self:has_tag(state_tags.group.sword) then
-			self.events:emit('landed_to_quiet_sword', {})
+			self.events:emit('landed_to_quiet_sword')
 		else
-			self.events:emit('landed_to_quiet', {})
+			self.events:emit('landed_to_quiet')
 		end
 		return
 	end
@@ -2004,7 +2004,7 @@ function player:tick_quiet_sword()
 
 	if not self:is_ground_below_at(self.x, self.y, true) then
 		self:reset_fall_substate_sequence()
-		self.events:emit('no_ground', {})
+		self.events:emit('no_ground')
 		return
 	end
 	self.stairs_landing_sound_pending = false
@@ -2034,7 +2034,7 @@ function player:tick_up_stairs()
 		end
 	elseif self.down_held then
 		self.stairs_direction = 1
-		self.events:emit('stairs_reverse_down', {})
+		self.events:emit('stairs_reverse_down')
 		if self.y < self.stairs_bottom_y then
 			next_y = self.y + constants.stairs.speed_px
 			moved = true
@@ -2045,12 +2045,12 @@ function player:tick_up_stairs()
 	elseif self.left_held and not self.right_held then
 		self.facing = -1
 		self.stairs_direction = 0
-		self.events:emit('stairs_quiet_left', {})
+		self.events:emit('stairs_quiet_left')
 		return
 	elseif self.right_held and not self.left_held then
 		self.facing = 1
 		self.stairs_direction = 0
-		self.events:emit('stairs_quiet_right', {})
+		self.events:emit('stairs_quiet_right')
 		return
 	else
 		self.stairs_direction = 0
@@ -2089,7 +2089,7 @@ function player:tick_down_stairs()
 		end
 	elseif self.up_held then
 		self.stairs_direction = -1
-		self.events:emit('stairs_reverse_up', {})
+		self.events:emit('stairs_reverse_up')
 		if self.y > self.stairs_top_y then
 			next_y = self.y - constants.stairs.speed_px
 			moved = true
@@ -2100,12 +2100,12 @@ function player:tick_down_stairs()
 	elseif self.left_held and not self.right_held then
 		self.facing = -1
 		self.stairs_direction = 0
-		self.events:emit('stairs_quiet_left', {})
+		self.events:emit('stairs_quiet_left')
 		return
 	elseif self.right_held and not self.left_held then
 		self.facing = 1
 		self.stairs_direction = 0
-		self.events:emit('stairs_quiet_right', {})
+		self.events:emit('stairs_quiet_right')
 		return
 	else
 		self.stairs_direction = 0
@@ -2215,7 +2215,7 @@ function player:tick_hit_fall()
 
 	self.hit_substate = self.hit_substate + 1
 	if hit_wall then
-		self.events:emit('hit_wall', {})
+		self.events:emit('hit_wall')
 	end
 end
 
@@ -2282,7 +2282,7 @@ function player:tick_hit_recovery()
 	self.hit_recovery_timer = 0
 	self.hit_substate = 0
 	self.hit_stairs_lock = false
-	self.events:emit('hit_recovered', {})
+	self.events:emit('hit_recovered')
 end
 
 function player:tick_dying()
@@ -2657,7 +2657,7 @@ local function define_player_fsm()
 				end,
 				leaving_state = function(self)
 					self.to_enter_cut = 0
-					service('d').events:emit('shrine_exit_done', {})
+					service('d').events:emit('shrine_exit_done')
 				end,
 				process_input = player.sample_input,
 				tick = player.tick_leaving_shrine,

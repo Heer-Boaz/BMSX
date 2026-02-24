@@ -19,7 +19,7 @@ local function room_state_name(room_state)
 end
 
 function director:emit_state_changed(state_name)
-	object('room').events:emit(state_name, {})
+	object('room').events:emit(state_name)
 	self.events:emit('director.state_changed', {
 		state = state_name,
 		mode_state = self.mode_state,
@@ -75,7 +75,7 @@ function director:begin_black_wait(frames)
 	set_space('transition')
 	object('ui'):set_space('transition')
 	self:set_mode_state('transition')
-	self.events:emit('transition.mask.play', {})
+	self.events:emit('transition.mask.play')
 end
 
 function director:banner_lines()
@@ -93,7 +93,7 @@ function director:queue_banner_transition(mode, world_number, post_action)
 	self.pending_banner_mode = mode
 	self.pending_banner_world_number = world_number
 	self.pending_banner_post_action = post_action
-	self.events:emit('banner_requested', {})
+	self.events:emit('banner_requested')
 end
 
 function director:expect_room_switch_banner(mode, world_number, post_action)
@@ -123,7 +123,7 @@ end
 
 function director:open_shrine(text_lines)
 	self.pending_shrine_text_lines = text_lines
-	self.events:emit('shrine_overlay_requested', {})
+	self.events:emit('shrine_overlay_requested')
 end
 
 function director:sync_room_state_from_castle()
@@ -175,7 +175,7 @@ function director:halo_teleport_to_room_1()
 end
 
 function director:perform_halo_teleport(player)
-	self.events:emit('halo_transition_start', {})
+	self.events:emit('halo_transition_start')
 	local switch = self:halo_teleport_to_room_1()
 	player:apply_halo_teleport_arrival(switch)
 	return switch
@@ -191,7 +191,7 @@ function director:bind_events()
 			if self:queue_expected_room_switch_banner_if_any() then
 				return
 			end
-			self.events:emit('room_switched', {})
+			self.events:emit('room_switched')
 		end,
 	})
 
@@ -201,7 +201,7 @@ function director:bind_events()
 		subscriber = self,
 		handler = function(event)
 			self.lithograph_text_lines = { event.text_line }
-			self.events:emit('lithograph_requested', {})
+			self.events:emit('lithograph_requested')
 		end,
 	})
 end
@@ -283,7 +283,7 @@ local function define_director_fsm()
 					input_event_handlers = {
 						['lb[jp] || rb[jp]'] = {
 							go = function(self)
-								self.events:emit('evt.cue.f1', {})
+								self.events:emit('evt.cue.f1')
 								return '/item_screen_opening'
 							end,
 						},
@@ -403,7 +403,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui'):set_space('transition')
 					self:set_mode_state('transition')
-					self.events:emit('transition.mask.play', {})
+					self.events:emit('transition.mask.play')
 				end,
 				tick = function(self)
 					self.transition_frames_left = self.transition_frames_left - 1
@@ -527,7 +527,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui'):set_space('transition')
 					self:set_mode_state('halo')
-					self.events:emit('transition.mask.play', {})
+					self.events:emit('transition.mask.play')
 				end,
 				on = {
 					['timeline.end.' .. halo_teleport_timeline_id] = '/room_switch_wait',
@@ -541,7 +541,7 @@ local function define_director_fsm()
 					self.demon_intro_state = 1
 					self.seal_flash_on = false
 					object('pietolon').seal_projectiles_frozen = true
-					object('pietolon').events:emit('seal_breaking', {})
+					object('pietolon').events:emit('seal_breaking')
 					set_space('main')
 					object('ui'):set_space('main')
 					object('transition'):set_space('main')
@@ -552,7 +552,7 @@ local function define_director_fsm()
 					['seal_dissolution_done'] = {
 						go = function(self)
 							object('pietolon').seal_projectiles_frozen = false
-							object('pietolon').events:emit('seal_broken', {})
+							object('pietolon').events:emit('seal_broken')
 							service('c'):finish_seal_dissolution()
 							return '/daemon_appearance'
 						end,
@@ -566,7 +566,7 @@ local function define_director_fsm()
 						return
 					end
 					self.seal_flash_on = false
-					self.events:emit('seal_dissolution_done', {})
+					self.events:emit('seal_dissolution_done')
 				end,
 			},
 			daemon_appearance = {
@@ -626,7 +626,7 @@ local function define_director_fsm()
 						self.demon_intro_state = self.demon_intro_state + 1
 						return
 					end
-					self.events:emit('daemon_appearance_done', {})
+					self.events:emit('daemon_appearance_done')
 				end,
 			},
 			lithograph_screen_open = {
@@ -666,7 +666,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui'):set_space('transition')
 					self:set_mode_state('title')
-					self.events:emit('transition.mask.play', {})
+					self.events:emit('transition.mask.play')
 				end,
 				on = {
 					['title_screen_done'] = '/room',
@@ -679,7 +679,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui'):set_space('transition')
 					self:set_mode_state('story')
-					self.events:emit('transition.mask.play', {})
+					self.events:emit('transition.mask.play')
 				end,
 				on = {
 					['story_done'] = '/room',
@@ -692,7 +692,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui'):set_space('transition')
 					self:set_mode_state('ending')
-					self.events:emit('transition.mask.play', {})
+					self.events:emit('transition.mask.play')
 				end,
 				on = {
 					['ending_done'] = '/room',
@@ -705,7 +705,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui'):set_space('transition')
 					self:set_mode_state('victory_dance')
-					self.events:emit('transition.mask.play', {})
+					self.events:emit('transition.mask.play')
 				end,
 				on = {
 					['victory_dance_done'] = '/room',
@@ -718,7 +718,7 @@ local function define_director_fsm()
 					set_space('transition')
 					object('ui'):set_space('transition')
 					self:set_mode_state('death')
-					self.events:emit('transition.mask.play', {})
+					self.events:emit('transition.mask.play')
 				end,
 				on = {
 					['death_done'] = '/room',

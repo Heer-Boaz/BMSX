@@ -39,17 +39,17 @@ function rock:configure_from_room_def(def, room)
 	self.max_health = constants.rock.max_health
 	self.health = self.max_health
 	self.break_steps = 0
-	self.events:emit('reset', {})
+	self.events:emit('reset')
 end
 
 function rock:take_weapon_hit(weapon_kind)
 	self.health = self.health - 1
 	if self.health <= 0 then
 		self.health = 0
-		service('c').events:emit('evt.cue.foeexplosion', {})
-		self.events:emit('break', {})
+		service('c').events:emit('evt.cue.foeexplosion')
+		self.events:emit('break')
 	else
-		service('c').events:emit('evt.cue.foedamage', {})
+		service('c').events:emit('evt.cue.foedamage')
 	end
 	return true
 end

@@ -21,7 +21,7 @@ function player_abilities.activate_sword(owner)
 		return false
 	end
 	owner:force_seek_timeline('p.seq.s', 0)
-	owner.events:emit('sword_start', {})
+	owner.events:emit('sword_start')
 	return true
 end
 
@@ -68,7 +68,7 @@ action_effects.register_effect('pepernoot', {
 		})
 		owner.pepernoot_projectile_ids[#owner.pepernoot_projectile_ids + 1] = projectile_id
 		owner.weapon_level = owner.weapon_level - constants.secondary_weapon.pepernoot_weapon_level_cost
-		owner.events:emit('evt.cue.fire_pepernoot', {})
+		owner.events:emit('evt.cue.fire_pepernoot')
 	end,
 })
 

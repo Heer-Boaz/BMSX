@@ -107,7 +107,7 @@ function draaideur:try_begin_open(player, walking_left, walking_right)
 	else
 		self.state2 = 0
 	end
-	service('c').events:emit('evt.cue.rotatedoor', {})
+	service('c').events:emit('evt.cue.rotatedoor')
 	player:start_slow_doorpass()
 end
 

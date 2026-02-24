@@ -96,7 +96,7 @@ function combat_director:start_combat(node_id, opts)
 	self.combat_rewards = {}
 	self.skip_transition_fade = false
 	self.skip_combat_fade_in = opts.skip_fade_in
-	self.events:emit('combat.start', {})
+	self.events:emit('combat.start')
 end
 
 function combat_director:apply_combat_round(node)
