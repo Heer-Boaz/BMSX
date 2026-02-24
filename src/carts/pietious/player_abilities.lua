@@ -167,7 +167,7 @@ function player_abilities.build_input_action_effect_program()
 				go = {
 					press = {
 						['dispatch.command'] = {
-							event = command_ids.activate_sword,
+							event = player_abilities.command_ids.activate_sword,
 						},
 					},
 				},
