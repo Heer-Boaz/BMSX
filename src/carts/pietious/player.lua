@@ -1965,7 +1965,7 @@ function player:tick_controlled_fall_motion()
 	end
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
-	local should_land = (not self:is_ground_below_at(self.x, self.y, true)) and self:is_ground_below_at(self.x, self.y + dy, true)
+	local should_land = (not self:collides_at(self.x, self.y, true)) and self:collides_at(self.x, self.y + dy, true)
 	self:apply_move(dx, dy)
 
 	if should_land then
@@ -1987,7 +1987,7 @@ function player:tick_uncontrolled_fall_motion()
 		self:advance_sword_sequence()
 	end
 	local dy = self:get_uncontrolled_fall_dy()
-	local should_land = (not self:is_ground_below_at(self.x, self.y, true)) and self:is_ground_below_at(self.x, self.y + dy, true)
+	local should_land = self:collides_at(self.x, self.y + dy, true)
 	self:apply_move(0, dy)
 
 	if should_land then
