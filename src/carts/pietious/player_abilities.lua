@@ -113,9 +113,6 @@ local function can_activate_halo_ability(owner, state_tags)
 	if not owner.inventory_items.halo then
 		return false
 	end
-	if owner:has_tag(state_tags.group.transition_lock) then -- ???
-		return false
-	end
 	if service('c').current_room.daemon_fight_active then
 		return false
 	end
@@ -229,10 +226,10 @@ function player_abilities.attach_player_methods(player)
 		end
 	end
 
-	function player:apply_halo_teleport_arrival(switch, destination_room)
-		self.x = destination_room.spawn.x
-		self.y = destination_room.spawn.y
-		self.facing = 1
+	function player:apply_halo_teleport_arrival(switch)
+		self.x = switch.spawn_x
+		self.y = switch.spawn_y
+		self.facing = switch.spawn_facing
 		self.last_dx = 0
 		self.last_dy = 0
 		self.stairs_direction = 0

@@ -36,8 +36,6 @@ function new_game()
 	inst(fighter_module.fighter_def_id, {
 		id = fighter_module.player_instance_id,
 		role = fighter_module.player_role,
-		spawn_x = constants.player.start_x,
-		spawn_y = constants.player.start_y,
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = constants.z.fighter },
 		target_id = fighter_module.enemy_instance_id,
 	})
@@ -45,8 +43,6 @@ function new_game()
 	inst(fighter_module.fighter_def_id, {
 		id = fighter_module.enemy_instance_id,
 		role = fighter_module.enemy_role,
-		spawn_x = constants.enemy.start_x,
-		spawn_y = constants.enemy.start_y,
 		pos = { x = constants.enemy.start_x, y = constants.enemy.start_y, z = constants.z.fighter },
 		target_id = fighter_module.player_instance_id,
 		max_health = constants.enemy.max_health,

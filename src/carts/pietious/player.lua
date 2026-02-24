@@ -127,66 +127,6 @@ function player:clear_input_state()
 	self.attack_released = false
 end
 
-function player:reset_runtime()
-	self.x = self.spawn_x
-	self.y = self.spawn_y
-	self.facing = 1
-	self.jump_substate = 0
-	self.fall_substate = 0
-	self.jump_inertia = 0
-	self.grounded = true
-	self.left_held = false
-	self.right_held = false
-	self.up_held = false
-	self.down_held = false
-	self.up_pressed = false
-	self.up_released = false
-	self.down_pressed = false
-	self.down_released = false
-	self.attack_held = false
-	self.attack_pressed = false
-	self.attack_released = false
-	self.last_dx = 0
-	self.last_dy = 0
-	self.previous_x_collision = false
-	self.previous_y_collision = false
-	self.on_vertical_elevator = false
-	self.jumping_from_elevator = false
-	self.walk_frame = 0
-	self.walk_distance_accum = 0
-	self.walk_speed_accum = 0
-	self.walk_state = 0
-	self.walk_move_dx = 0
-	self.walk_move_collided_x = false
-	self.sword_ground_origin = 'quiet'
-	self.stairs_direction = 0
-	self.stairs_x = -1
-	self.stairs_top_y = self.spawn_y
-	self.stairs_bottom_y = self.spawn_y
-	self.stairs_anim_frame = 0
-	self.stairs_anim_distance = 0
-	self.hit_stairs_lock = false
-	self.stairs_landing_sound_pending = false
-	self.slow_doorpass_substate = 0
-	self.health = constants.damage.max_health
-	self.max_health = constants.damage.max_health
-	self.hit_invulnerability_timer = 0
-	self.hit_blink_on = false
-	self.hit_substate = 0
-	self.hit_direction = 0
-	self.hit_recovery_timer = 0
-	self.death_timer = 0
-	self.enter_leave_anim_frame = 0
-	self.to_enter_cut = 0
-	self.transition_step = 0
-	self.enter_leave_wait_started = false
-	self.enter_leave_world_target = ''
-	self.enter_leave_shrine_text_lines = {}
-	self.pepernoot_projectile_sequence = 0
-	self.pepernoot_projectile_ids = {}
-	self.seal_projectiles_frozen = false
-end
-
 function player:update_collision_state()
 	self.collider.enabled = true
 	self.sword_collider.enabled = self:has_tag(state_tags.group.sword)
@@ -302,7 +242,6 @@ function player:ctor()
 	self.secondary_weapon = nil
 	self:equip_subweapon(self.secondary_weapon)
 	self.weapon_level = 0
-	self:reset_runtime()
 	self:apply_presentation_state()
 	self:update_collision_state()
 	self:force_seek_timeline('p.seq.s', 0)
@@ -458,7 +397,6 @@ end
 
 function player:respawn()
 	self.abilities:end_once('sword', 'respawn')
-	self:reset_runtime()
 	service('d').events:emit('death_done', {})
 	self:force_seek_timeline('p.seq.s', 0)
 	self:reset_hit_invulnerability_sequence()

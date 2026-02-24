@@ -34,8 +34,6 @@ function new_game()
 	inst(player_module.player_def_id, {
 		id = player_module.player_instance_id,
 		level = level,
-		spawn_x = spawn.x,
-		spawn_y = spawn.y,
 		pos = { x = spawn.x, y = spawn.y, z = 300 },
 	})
 

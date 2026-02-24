@@ -745,11 +745,17 @@ function castle_service:halo_teleport_to_room_1()
 	self.current_room = room_module.create_room(halo_destination_room_number)
 	local switch = create_room_switch(from_room_number, self.current_room.room_number, 'halo')
 	self:commit_room_switch(switch, 0, 5, 12)
+	switch.spawn_x = constants.player.start_x
+	switch.spawn_y = constants.player.start_y
+	switch.spawn_facing = 1
 
 	return {
 		from_room_number = switch.from_room_number,
 		to_room_number = switch.to_room_number,
 		direction = switch.direction,
+		spawn_x = switch.spawn_x,
+		spawn_y = switch.spawn_y,
+		spawn_facing = switch.spawn_facing,
 	}
 end
 

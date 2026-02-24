@@ -9234,10 +9234,6 @@ end
 -- timeline system
 -- ============================================================================
 
-function player:respawn()
-	self:reset_runtime()
-end
-
 function player:consume_reset_request()
 	local requested = self.reset_requested
 	self.reset_requested = false

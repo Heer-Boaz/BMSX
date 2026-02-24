@@ -699,8 +699,6 @@ local function register_fighter_definition()
 			role = role_player,
 			target_id = constants.ids.enemy_instance,
 			facing = 1,
-			spawn_x = constants.player.start_x,
-			spawn_y = constants.player.start_y,
 			width = constants.player.width,
 			height = constants.player.height,
 			x = constants.player.start_x,

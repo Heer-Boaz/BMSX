@@ -177,7 +177,7 @@ end
 function director:perform_halo_teleport(player)
 	self.events:emit('halo_transition_start', {})
 	local switch = self:halo_teleport_to_room_1()
-	player:apply_halo_teleport_arrival(switch, service('c').current_room)
+	player:apply_halo_teleport_arrival(switch)
 	return switch
 end
 

@@ -22,8 +22,6 @@ function vlokspawner.bt_tick(self, blackboard)
 	end
 
 	local room = service('c').current_room
-	local spawn_x = math.random(2, 29) * room.tile_size
-	local spawn_y = room.world_top
 	local random_x = math.random(-5, 4)
 	inst('enemy.vlokfoe', {
 		despawn_on_room_switch = true,
@@ -34,8 +32,8 @@ function vlokspawner.bt_tick(self, blackboard)
 		speed_accum_x = 0,
 		speed_accum_y = 0,
 		pos = {
-			x = spawn_x,
-			y = spawn_y,
+			x = math.random(2, 29) * room.tile_size,
+			y = room.world_top,
 			z = 140,
 		},
 	})
