@@ -51,7 +51,7 @@ local function activate_sword_ability(owner, state_tags)
 	end
 
 	owner:force_seek_timeline('p.seq.s', 0)
-	owner.sc:dispatch(event_name)
+	owner.events:emit(event_name, {})
 	return true
 end
 
@@ -218,7 +218,7 @@ function player_abilities.attach_player_methods(player)
 
 	function player:teleport_to_halo_destination()
 		local director_service = service('d')
-		director_service.sc:dispatch('halo_transition_start')
+		director_service.events:emit('halo_transition_start', {})
 		local switch = director_service:halo_teleport_to_start_room()
 		local castle_service = service('c')
 
@@ -239,7 +239,7 @@ function player_abilities.attach_player_methods(player)
 		self.abilities:end_once('sword', 'halo')
 		self:force_seek_timeline('p.seq.s', 0)
 		self:reset_fall_substate_sequence()
-		self.sc:dispatch('stairs_lock_lost_after_room_switch')
+		self.events:emit('stairs_lock_lost_after_room_switch', {})
 			self.events:emit('room.switched', {
 				from = switch.from_room_number,
 				to = switch.to_room_number,
@@ -247,7 +247,7 @@ function player_abilities.attach_player_methods(player)
 				x = self.x,
 				y = self.y,
 			})
-		director_service.sc:dispatch('halo_transition_done')
+		director_service.events:emit('halo_transition_done', {})
 	end
 end
 

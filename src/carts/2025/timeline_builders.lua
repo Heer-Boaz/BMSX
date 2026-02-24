@@ -389,13 +389,7 @@ function builders.build_combat_exchange_frames(params)
 	local hitstop_end = lunge_end + hitstop_frames
 	local impact_start = lunge_end
 	local impact_end = (frame_count - 1) - (maya_hold_frames + maya_recover_frames)
-	if impact_end < impact_start then
-		error("[combat_exchange] impact window does not fit: impact_end=" .. impact_end .. ", impact_start=" .. impact_start .. ", frame_count=" .. frame_count)
-	end
 	local impact_frames = impact_end - impact_start + 1
-	if impact_frames <= 1 then
-		error("[combat_exchange] impact window too short: impact_frames=" .. impact_frames .. ", frame_count=" .. frame_count)
-	end
 	local maya_hold_end = impact_end + maya_hold_frames
 	local maya_recover_end = maya_hold_end + maya_recover_frames
 

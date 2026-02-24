@@ -1,11 +1,15 @@
-require('globals.lua')
-require('story.lua')
+require('globals')
+require('story')
 local start_node = 'title'
 -- local start_node = 'combat_wekker'
 
-local combat_module = require('combat.lua')
-local dialogue_module = require('dialogue.lua')
-local transition_module = require('transition.lua')
+local combat_module = require('combat')
+local dialogue_module = require('dialogue')
+local transition_module = require('transition')
+local dialogue_node_kinds = {
+	dialogue = true,
+	dialogue_inline = true,
+}
 
 local director_def_id = 'p3.director'
 local director_fsm_id = 'p3.director.fsm'
@@ -53,7 +57,7 @@ local function build_director_fsm()
 				if node.kind == 'transition' then
 					return '/transition'
 				end
-				if node.kind == 'dialogue' or node.kind == 'dialogue_inline' then
+				if dialogue_node_kinds[node.kind] then
 					return '/dialogue'
 				end
 				if node.kind == 'ending' then

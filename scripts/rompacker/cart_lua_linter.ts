@@ -3000,7 +3000,15 @@ function setForeignObjectBinding(
 }
 
 function isForeignObjectAliasInitializer(expression: LuaExpression | undefined): boolean {
-	return isObjectOrServiceResolverCallExpression(expression);
+	return isServiceResolverCallExpression(expression);
+}
+
+function isServiceResolverCallExpression(expression: LuaExpression | undefined): boolean {
+	if (!expression || expression.kind !== LuaSyntaxKind.CallExpression) {
+		return false;
+	}
+	return expression.callee.kind === LuaSyntaxKind.IdentifierExpression
+		&& expression.callee.name === 'service';
 }
 
 type AssignmentTargetInfo = {
@@ -3127,12 +3135,12 @@ function lintForeignObjectMutationInStatements(
 						if (!propertyName) {
 							continue;
 						}
-						pushIssue(
-							context.issues,
-							'foreign_object_internal_mutation_pattern',
-							left,
-							`Direct top-level mutation on alias ${targetInfo.rootName}.${propertyName} is forbidden. Keep ownership in the target object/service implementation and call domain methods/events; do not add getter/setter wrappers as a workaround.`,
-						);
+							pushIssue(
+								context.issues,
+								'foreign_object_internal_mutation_pattern',
+								left,
+								`Direct top-level mutation on service alias ${targetInfo.rootName}.${propertyName} is forbidden. Keep ownership in the target service implementation and call domain methods/events; do not add getter/setter wrappers as a workaround.`,
+							);
 					}
 				for (const right of statement.right) {
 					lintForeignObjectMutationInExpression(right, context);

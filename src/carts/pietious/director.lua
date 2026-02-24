@@ -17,13 +17,7 @@ local function room_state_name(room_state)
 end
 
 function director:emit_state_changed(state_name)
-	if state_name == 'seal_dissolution' then
-		object('room').sc:dispatch('seal_fx_start')
-	elseif state_name == 'daemon_appearance' then
-		object('room').sc:dispatch('daemon_fx_start')
-	else
-		object('room').sc:dispatch('fx_stop')
-	end
+	object('room').events:emit(state_name, {})
 	self.events:emit('director.state_changed', {
 		state = state_name,
 		space = object('ui').space_id,
@@ -65,7 +59,7 @@ function director:queue_banner_transition(mode, world_number, post_action)
 	self.pending_banner_mode = mode
 	self.pending_banner_world_number = world_number
 	self.pending_banner_post_action = post_action
-	self.sc:dispatch('banner_requested')
+	self.events:emit('banner_requested', {})
 end
 
 function director:expect_room_switch_banner(mode, world_number, post_action)
@@ -95,7 +89,7 @@ end
 
 function director:open_shrine(text_lines)
 	self.pending_shrine_text_lines = text_lines
-	self.sc:dispatch('shrine_overlay_requested')
+	self.events:emit('shrine_overlay_requested', {})
 end
 
 function director:sync_room_state_from_castle()
@@ -155,7 +149,7 @@ function director:bind_events()
 			if self:queue_expected_room_switch_banner_if_any() then
 				return
 			end
-			self.sc:dispatch('room_switched')
+			self.events:emit('room_switched', {})
 		end,
 	})
 
@@ -164,7 +158,7 @@ function director:bind_events()
 		emitter = 'pietolon',
 		subscriber = self,
 		handler = function()
-			self.sc:dispatch('shrine_transition_done')
+			self.events:emit('shrine_transition_done', {})
 		end,
 	})
 
@@ -174,7 +168,7 @@ function director:bind_events()
 		subscriber = self,
 		handler = function(event)
 			self.lithograph_text_lines = { event.text_line }
-			self.sc:dispatch('lithograph_requested')
+			self.events:emit('lithograph_requested', {})
 		end,
 	})
 end
@@ -425,7 +419,7 @@ local function define_director_fsm()
 					self.demon_intro_state = 1
 					self.seal_flash_on = false
 					object('pietolon').seal_projectiles_frozen = true
-					object('pietolon').sc:dispatch('seal_breaking')
+					object('pietolon').events:emit('seal_breaking', {})
 					set_space('main')
 					object('ui'):set_space('main')
 					object('transition'):set_space('main')
@@ -436,7 +430,7 @@ local function define_director_fsm()
 					['seal_dissolution_done'] = {
 						go = function(self)
 							object('pietolon').seal_projectiles_frozen = false
-							object('pietolon').sc:dispatch('seal_broken')
+							object('pietolon').events:emit('seal_broken', {})
 							service('c'):finish_seal_dissolution()
 							return '/daemon_appearance'
 						end,
@@ -450,7 +444,7 @@ local function define_director_fsm()
 						return
 					end
 					self.seal_flash_on = false
-					self.sc:dispatch('seal_dissolution_done')
+					self.events:emit('seal_dissolution_done', {})
 				end,
 			},
 			daemon_appearance = {
@@ -510,7 +504,7 @@ local function define_director_fsm()
 						self.demon_intro_state = self.demon_intro_state + 1
 						return
 					end
-					self.sc:dispatch('daemon_appearance_done')
+					self.events:emit('daemon_appearance_done', {})
 				end,
 			},
 			lithograph_screen_open = {

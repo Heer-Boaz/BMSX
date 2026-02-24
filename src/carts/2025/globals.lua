@@ -230,7 +230,7 @@ combat_results_bg_a = 0.85
 function set_text_lines(text_object_id, lines, typed)
 	local text_obj = object(text_object_id)
 	-- Convert table to newline-separated string (portable to C++)
-	local should_type = typed == true
+	local should_type = typed
 	text_obj:set_text(lines, { typed = should_type, snap = not should_type })
 end
 

@@ -1,6 +1,6 @@
 local stagger = {}
 
-local STAGGER_TIMELINE_PREFIX = 'p3.stagger.'
+local stagger_timeline_prefix = 'p3.stagger.'
 
 local presets = {
 	calm = {
@@ -91,7 +91,7 @@ local function apply_bg_alpha(bg, base, alpha)
 	color.a = alpha
 end
 
-local function apply_pose(entry, scale, nudge)
+local function pose_apply(entry, scale, nudge)
 	local obj = entry.obj
 	local sc = obj.sprite_component
 	local target = sc.scale
@@ -110,7 +110,7 @@ local function stagger_track(target, params, event)
 	local bg_ease = params.bg_ease
 	local pose_ease = params.pose_ease
 	local text_ease = params.text_ease
-	local text_active = text_main ~= nil and text_main.is_typing == true
+	local text_active = text_main ~= nil and text_main.is_typing
 
 	target.stagger_blocked = t < cfg.text_start
 
@@ -126,11 +126,11 @@ local function stagger_track(target, params, event)
 		local scale = cfg.pose_from + ((cfg.pose_to - cfg.pose_from) * u)
 		local nudge = text_active and params.pose_text_nudge or 0
 		for i = 1, #poses do
-			apply_pose(poses[i], scale, nudge)
+			pose_apply(poses[i], scale, nudge)
 		end
 	end
 
-	if params.text_started == false and t >= cfg.text_start then
+	if not params.text_started and t >= cfg.text_start then
 		if params.text_lines then
 			set_text_lines(text_main.id, params.text_lines, params.text_typed)
 		end
@@ -157,7 +157,7 @@ local function stagger_track(target, params, event)
 end
 
 local function ensure_timeline(owner, preset_id, cfg)
-	local timeline_id = STAGGER_TIMELINE_PREFIX .. preset_id
+	local timeline_id = stagger_timeline_prefix .. preset_id
 	if owner:get_timeline(timeline_id) then
 		return timeline_id
 	end
@@ -194,9 +194,6 @@ end
 
 function stagger.play(owner, preset_id, opts)
 	local cfg = presets[preset_id]
-	if not cfg then
-		error("[stagger] unknown preset '" .. tostring(preset_id) .. "'.")
-	end
 	opts = opts or {}
 	local timeline_cfg = {
 		bg_start = 0,
@@ -222,7 +219,7 @@ function stagger.play(owner, preset_id, opts)
 	if bg then
 		local base = bg.sprite_component.colorize
 		timeline_cfg.bg_base_color = { r = base.r, g = base.g, b = base.b, a = base.a }
-		if opts.bg_dim == false then
+		if opts.bg_dim ~= nil and not opts.bg_dim then
 			timeline_cfg.bg_from = base.a
 			timeline_cfg.bg_to = base.a
 		elseif opts.bg_alpha ~= nil then
@@ -264,7 +261,7 @@ function stagger.play(owner, preset_id, opts)
 			text_lines = opts.text_lines,
 			text_choice_lines = opts.text_choice_lines,
 			text_prompt_line = opts.text_prompt_line,
-			text_typed = opts.text_typed == true,
+				text_typed = opts.text_typed,
 			text_started = false,
 			text_base_alpha = text_base_alpha,
 			pose_text_nudge = opts.pose_text_nudge or cfg.pose_text_nudge or 0,

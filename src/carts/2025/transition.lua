@@ -5,6 +5,10 @@ local build_transition_fade_in_frames = timeline_builders.build_transition_fade_
 local build_fade_frames = timeline_builders.build_fade_frames
 
 function transition.register_states(states)
+	local fade_hold_black_kinds = {
+		transition = true,
+		combat = true,
+	}
 
 	local function resolve_transition_style(node, target_kind)
 		if node.transition_style then
@@ -359,7 +363,7 @@ function transition.register_states(states)
 			reset_text_colors()
 			local next_node = story[node.next]
 			local next_kind = next_node.kind
-			self.fade_hold_black = next_kind == 'transition' or next_kind == 'combat'
+			self.fade_hold_black = fade_hold_black_kinds[next_kind]
 			local target_kind = next_kind
 			if next_kind == 'transition' then
 				target_kind = story[next_node.next].kind

@@ -61,7 +61,7 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	self.cross_spin_direction = 'left'
 	apply_spin_visual(self)
 	service('c').events:emit('evt.cue.cross', {})
-	self.sc:dispatch('takeoff')
+	self.events:emit('takeoff', {})
 	return behaviourtree.running
 end
 
@@ -85,7 +85,7 @@ function crossfoe.bt_tick_flying(self, blackboard)
 		node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
 		node.cross_turn_ticks = constants.enemy.cross_turn_steps
 		service('c').events:emit('evt.cue.crossland', {})
-		self.sc:dispatch('land')
+		self.events:emit('land', {})
 		return behaviourtree.running
 	end
 

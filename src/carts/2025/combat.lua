@@ -1,6 +1,6 @@
 local combat = {}
-local timeline_builders = require('timeline_builders.lua')
-local stagger = require('stagger.lua')
+local timeline_builders = require('timeline_builders')
+local stagger = require('stagger')
 
 local function stat_label(stat_id)
 	if stat_id == 'planning' then
@@ -17,7 +17,7 @@ local function stat_label(stat_id)
 	end
 end
 
-local all_out_shake = timeline_builders.build_all_out_shake(combat_all_out_frame_count)
+combat.all_out_shake = timeline_builders.build_all_out_shake(combat_all_out_frame_count)
 local round = timeline_builders.round
 local combat_all_out_prompt_timeline_id = 'combat_all_out_prompt'
 
@@ -54,7 +54,7 @@ end
 local function build_all_out_screen_shake_frames(params)
 	local frames = {}
 	for frame_index = 0, combat_all_out_frame_count - 1 do
-		local dx, dy = all_out_shake(frame_index)
+		local dx, dy = combat.all_out_shake(frame_index)
 		dx = round(dx)
 		dy = round(dy)
 		frames[#frames + 1] = {
@@ -84,8 +84,6 @@ local function build_all_out_screen_shake_frames(params)
 end
 
 local combat_fade_frames = timeline_builders.build_combat_fade_frames()
-local combat_results_fade_out_frames_table = timeline_builders.build_combat_results_fade_out_frames()
-local combat_exit_fade_in_frames_table = timeline_builders.build_combat_exit_fade_in_frames()
 
 local combat_director = {}
 combat_director.__index = combat_director
@@ -98,7 +96,7 @@ function combat_director:start_combat(node_id, opts)
 	self.combat_rewards = {}
 	self.skip_transition_fade = false
 	self.skip_combat_fade_in = opts.skip_fade_in
-	self:dispatch_state_event('combat.start')
+	self.events:emit('combat.start', {})
 end
 
 function combat_director:apply_combat_round(node)
@@ -137,7 +135,7 @@ local function refresh_combat_parallax(self)
 	local monster_weight = -(combat_parallax_vy_base + (combat_parallax_vy_momentum * momentum)) / rig_vy
 	local bias_px = combat_parallax_bias_base - (combat_parallax_bias_momentum * momentum)
 	local flip_strength = 0
-	if self.combat_parallax_impact_side ~= '' then
+	if self.combat_parallax_impact_side then
 		flip_strength = combat_parallax_flip_strength
 	end
 	local hero = object(combat_maya_a_id)
@@ -165,7 +163,7 @@ end
 function combat_director:reset_combat_parallax()
 	self.combat_parallax_enabled = true
 	self.combat_parallax_momentum = 0
-	self.combat_parallax_impact_side = ''
+	self.combat_parallax_impact_side = nil
 	refresh_combat_parallax(self)
 end
 
@@ -197,21 +195,13 @@ function combat_director:push_combat_momentum(side, power)
 	end
 end
 
-function combat_director:is_typing()
-	return object(text_main_id).is_typing
-end
-
 function combat_director:skip_typing()
-	if self:is_typing() then
+	if object(text_main_id).is_typing then
 		finish_text(text_main_id)
 		consume_action('b')
 		return true
 	end
 	return false
-end
-
-function combat_director:resolve_combat_rewards(node)
-	return node.rewards[self.combat_points + 1]
 end
 
 function combat.setup_timelines(self)
@@ -724,7 +714,7 @@ function combat.define_fsm()
 			['a[jp]'] = {
 				go = function(self)
 					if self.stagger_blocked then return end
-					if self:is_typing() then return end
+						if object(text_main_id).is_typing then return end
 					local node = story[self.node_id]
 					local round = node.rounds[self.combat_round_index]
 					local option = round.options[self.choice_index]
@@ -1074,7 +1064,7 @@ function combat.define_fsm()
 			},
 			['a[jp]'] = {
 				go = function(self)
-					if self:is_typing() then return end
+						if object(text_main_id).is_typing then return end
 					return '/combat_all_out'
 				end,
 			},
@@ -1231,7 +1221,7 @@ function combat.define_fsm()
 		entering_state = function(self)
 			self:disable_combat_parallax() -- Not required, as the "All Out" state already does this, but just to be safe.
 			local node = story[self.node_id]
-			local rewards = self:resolve_combat_rewards(node)
+				local rewards = node.rewards[self.combat_points + 1]
 			self.combat_rewards = rewards
 			object(director_instance_id).events:emit('combat.results', {
 				combat_node_id = self.combat_node_id,
@@ -1353,7 +1343,7 @@ function combat.define_fsm()
 				create = function()
 			return timeline.new({
 				id = combat_results_fade_out_timeline_id,
-				frames = combat_results_fade_out_frames_table,
+					frames = timeline_builders.build_combat_results_fade_out_frames(),
 						ticks_per_frame = combat_results_fade_out_ticks_per_frame,
 						playback_mode = 'once',
 						target = {
@@ -1395,7 +1385,7 @@ function combat.define_fsm()
 				create = function()
 			return timeline.new({
 				id = combat_exit_fade_in_timeline_id,
-				frames = combat_exit_fade_in_frames_table,
+					frames = timeline_builders.build_combat_exit_fade_in_frames(),
 						ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
 						playback_mode = 'once',
 						target = object(bg_id),
@@ -1489,7 +1479,7 @@ function combat.register_director()
 			combat_results_text_start_x = 0,
 			combat_parallax_enabled = false,
 			combat_parallax_momentum = 0,
-			combat_parallax_impact_side = '',
+				combat_parallax_impact_side = nil,
 			skip_combat_fade_in = false,
 			skip_transition_fade = false,
 			combat_node_id = '',

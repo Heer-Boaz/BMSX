@@ -51,7 +51,7 @@ function loot_drop:on_overlap_begin(event)
 		else
 			player.events:emit('evt.cue.pickupitem', {})
 		end
-		self.sc:dispatch('picked')
+		self.events:emit('picked', {})
 	end
 end
 

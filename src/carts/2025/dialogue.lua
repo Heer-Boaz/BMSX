@@ -1,5 +1,5 @@
 local dialogue = {}
-local stagger = require('stagger.lua')
+local stagger = require('stagger')
 
 function dialogue.register_methods(director)
 
@@ -17,12 +17,8 @@ function dialogue.register_methods(director)
 		})
 	end
 
-	function director:is_typing()
-		return object(text_main_id).is_typing
-	end
-
 	function director:skip_typing()
-		if self:is_typing() then
+		if object(text_main_id).is_typing then
 			finish_text(text_main_id)
 			self:update_dialogue_prompt()
 			consume_action('b')
@@ -126,7 +122,7 @@ function dialogue.register_states(states)
 			['a[jp]'] = {
 				go = function(self)
 					if self.stagger_blocked then return end
-					if self:is_typing() then return end
+						if object(text_main_id).is_typing then return end
 
 					if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
@@ -218,7 +214,7 @@ function dialogue.register_states(states)
 			['a[jp]'] = {
 				go = function(self)
 					if self.stagger_blocked then return end
-					if self:is_typing() then return end
+						if object(text_main_id).is_typing then return end
 					if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
 						local node = story[self.node_id]
@@ -276,7 +272,7 @@ function dialogue.register_states(states)
 			['a[jp]'] = {
 				go = function(self)
 					if self.stagger_blocked then return end
-					if self:is_typing() then return end
+						if object(text_main_id).is_typing then return end
 					local node = story[self.node_id]
 					local option = node.options[self.choice_index]
 					self:apply_effects(option.effects)
