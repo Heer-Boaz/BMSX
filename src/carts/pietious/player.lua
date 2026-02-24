@@ -1911,14 +1911,15 @@ function player:tick_jump_motion()
 		dy = 0
 	end
 	local hit_ceiling = (not sword_jump) and self.previous_y_collision
-	if sword_jump and (not hit_ceiling) and dy < 0 then
-		hit_ceiling = self:collides_at_jump_sword_ceiling_profile(self.x, self.y + dy)
+	if (not hit_ceiling) and dy < 0 then
+		if sword_jump then
+			hit_ceiling = self:collides_at_jump_sword_ceiling_profile(self.x, self.y + dy)
+		else
+			hit_ceiling = self:collides_at_jump_ceiling_profile(self.x, self.y + dy)
+		end
 	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
-	local move_result = self:apply_move(dx, dy)
-	if (not sword_jump) and move_result.hit_ceiling then
-		hit_ceiling = true
-	end
+	self:apply_move(dx, dy)
 
 	if hit_ceiling and self.jump_substate < constants.physics.jump_release_cut_substate then
 		self.jump_substate = constants.physics.jump_release_cut_substate
