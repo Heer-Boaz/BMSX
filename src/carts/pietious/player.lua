@@ -1305,11 +1305,11 @@ end
 function player:apply_move(dx, dy, include_elevator_collision)
 	local old_x = self.x
 	local old_y = self.y
-	local collided_x
+	local collided_x = self.previous_x_collision
 	local collided_y
 	local landed
 	local hit_ceiling
-	local upward_block
+	local upward_block = false
 	local function collides(x, y)
 		return self:collides_at(x, y, include_elevator_collision)
 	end
