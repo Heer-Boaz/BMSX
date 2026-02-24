@@ -11,6 +11,7 @@ import { seedLuaGlobals, valueToString } from './lua_globals';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
 import { linkProgramAssets } from './program_linker';
+import type { OptimizationLevel } from './program_optimizer';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import type { RuntimeState, SymbolEntry, SymbolKind } from './types';
 import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
@@ -81,6 +82,7 @@ const LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 ]);
 
 const ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
+const RUNTIME_REALTIME_OPT_LEVEL: OptimizationLevel = 3;
 
 function resolvePositiveSafeInteger(value: number | undefined, label: string): number {
 	if (value === undefined) {
@@ -279,6 +281,7 @@ export function hotReloadProgramEntry(runtime: Runtime, params: { path: string; 
 		baseProgram: runtime.cpu.getProgram(),
 		baseMetadata,
 		canonicalization: runtime.canonicalization,
+		optLevel: RUNTIME_REALTIME_OPT_LEVEL,
 	});
 	runtime.moduleProtos.clear();
 	for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
@@ -431,7 +434,10 @@ export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: {
 	resetRuntimeState(runtime);
 	const chunk = interpreter.compileChunk(params.source, binding.source_path);
 	const { modules, modulePaths } = buildModuleChunks(runtime, binding.source_path);
-	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, { canonicalization: runtime.canonicalization });
+	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
+		canonicalization: runtime.canonicalization,
+		optLevel: RUNTIME_REALTIME_OPT_LEVEL,
+	});
 	runtime.moduleProtos.clear();
 	for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 		runtime.moduleProtos.set(modulePath, protoIndex);
@@ -639,7 +645,10 @@ export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, meta
 	interpreter.setReservedIdentifiers([]);
 	const chunk = interpreter.compileChunk(source, ENGINE_BUILTIN_PRELUDE_PATH);
 	interpreter.setReservedIdentifiers(runtime.getReservedLuaIdentifiers());
-	const compiled = appendLuaChunkToProgram(program, metadata, chunk, { canonicalization: runtime.canonicalization });
+	const compiled = appendLuaChunkToProgram(program, metadata, chunk, {
+		canonicalization: runtime.canonicalization,
+		optLevel: RUNTIME_REALTIME_OPT_LEVEL,
+	});
 	runtime.cpu.setProgram(compiled.program, compiled.metadata);
 	runtime.programMetadata = compiled.metadata;
 	runtime.callClosure({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
@@ -914,7 +923,10 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 	const interpreter = runtime.createLuaInterpreterForCanonicalization(runtime.cartCanonicalization);
 	const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 	const { modules, modulePaths } = buildModuleChunksForInterpreter(runtime, entryPath, interpreter, [runtime.cartLuaSources, runtime.engineLuaSources]);
-	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, { canonicalization: runtime.cartCanonicalization });
+	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, {
+		canonicalization: runtime.cartCanonicalization,
+		optLevel: RUNTIME_REALTIME_OPT_LEVEL,
+	});
 	return {
 		program,
 		metadata,
@@ -1049,7 +1061,10 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 		const entrySource = options?.sourceOverride?.source ?? resourceSourceForChunk(runtime, entryPath);
 		const entryChunk = interpreter.compileChunk(entrySource, entryPath);
 		const { modules, modulePaths } = buildModuleChunks(runtime, entryPath);
-		const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, { canonicalization: runtime.canonicalization });
+		const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, {
+			canonicalization: runtime.canonicalization,
+			optLevel: RUNTIME_REALTIME_OPT_LEVEL,
+		});
 		runtime.moduleProtos.clear();
 		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
 			runtime.moduleProtos.set(modulePath, protoIndex);
@@ -1250,7 +1265,10 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	const chunk = runtime.interpreter.compileChunk(source, 'console');
 	const currentProgram = runtime.cpu.getProgram();
 	const baseMetadata = runtime.programMetadata ?? runtime.consoleMetadata ?? buildConsoleMetadata(currentProgram);
-	const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, { canonicalization: runtime.canonicalization });
+	const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, {
+		canonicalization: runtime.canonicalization,
+		optLevel: RUNTIME_REALTIME_OPT_LEVEL,
+	});
 	runtime.cpu.setProgram(compiled.program, compiled.metadata);
 	if (runtime.programMetadata) {
 		runtime.programMetadata = compiled.metadata;
