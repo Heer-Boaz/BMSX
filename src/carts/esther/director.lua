@@ -179,7 +179,7 @@ function director:emit_event(frame, name, extra)
 	if not telemetry.enabled then
 		return
 	end
-	if extra ~= nil and extra ~= '' then
+	if extra ~= nil then
 		print(string.format('%s|f=%d|name=%s|%s', telemetry.event_prefix, frame, name, extra))
 		return
 	end

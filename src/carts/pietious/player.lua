@@ -204,10 +204,6 @@ end
 
 function player:ctor()
 	self:bind_events()
-	self:add_component(components.abilitiescomponent.new({
-		parent = self,
-	}))
-	player_abilities.configure_player_abilities(self, state_tags)
 	self:add_component(components.new_component('actioneffectcomponent', {
 		parent = self,
 	}))
@@ -402,7 +398,6 @@ function player:apply_presentation_state()
 end
 
 function player:respawn()
-	self.abilities:end_once('sword', 'respawn')
 	service('d').events:emit('death_done', {})
 	self:force_seek_timeline('p.seq.s', 0)
 	self:reset_hit_invulnerability_sequence()
@@ -450,7 +445,6 @@ function player:advance_sword_sequence()
 			-- 	self.x = self.x + 2
 			-- end
 		end
-		self.abilities:end_once('sword', 'natural_end')
 		self.events:emit(player_sword_end_event, {})
 		return
 	end
@@ -519,7 +513,6 @@ function player:start_dying()
 	end
 	service('d').events:emit('death_start', {})
 	self.events:emit('evt.cue.dying', {})
-	self.abilities:end_once('sword', 'dying')
 	self:force_seek_timeline('p.seq.s', 0)
 	self.hit_direction = 0
 	self.hit_substate = 0
@@ -558,7 +551,6 @@ function player:take_hit(amount, source_x, source_y, reason)
 		damage_event = 'damage'
 	end
 
-	self.abilities:end_once('sword', 'damage')
 	self:force_seek_timeline('p.seq.s', 0)
 	self.hit_stairs_lock = hit_on_stairs
 	self.hit_direction = hit_direction
@@ -706,7 +698,6 @@ function player:update_enter_leave_cut(direction)
 end
 
 function player:begin_entering_world(world_entrance)
-	self.abilities:end_once('sword', 'transition')
 	self:force_seek_timeline('p.seq.s', 0)
 	self:clear_input_state()
 	self.stairs_direction = 0
@@ -722,13 +713,12 @@ function player:begin_entering_world(world_entrance)
 end
 
 function player:begin_entering_shrine(shrine)
-	self.abilities:end_once('sword', 'transition')
 	self:force_seek_timeline('p.seq.s', 0)
 	self:clear_input_state()
 	self.stairs_direction = 0
 	self.stairs_x = -1
 	self.hit_stairs_lock = false
-	self.enter_leave_world_target = ''
+	self.enter_leave_world_target = nil
 	self.enter_leave_shrine_text_lines = shrine.text_lines
 	self.x = shrine.x
 	self:reset_enter_leave_animation()
@@ -739,20 +729,44 @@ function player:begin_entering_shrine(shrine)
 end
 
 function player:begin_world_emerge_from_door()
-	self.abilities:end_once('sword', 'transition')
 	self:force_seek_timeline('p.seq.s', 0)
 	self:clear_input_state()
 	self:reset_enter_leave_animation()
-	self.enter_leave_world_target = ''
+	self.enter_leave_world_target = nil
 	self.enter_leave_shrine_text_lines = {}
 	self.events:emit('world_emerge_start', {})
 end
 
 function player:start_slow_doorpass()
-	self.abilities:end_once('sword', 'slowdoorpass')
 	self:force_seek_timeline('p.seq.s', 0)
 	self.slow_doorpass_substate = 0
 	self.events:emit('slowdoorpass_start', {})
+end
+
+function player:apply_halo_teleport_arrival(switch)
+	self.x = switch.spawn_x
+	self.y = switch.spawn_y
+	self.facing = switch.spawn_facing
+	self.last_dx = 0
+	self.last_dy = 0
+	self.stairs_direction = 0
+	self.stairs_x = -1
+	self.hit_stairs_lock = false
+	self.enter_leave_world_target = nil
+	self.enter_leave_shrine_text_lines = {}
+	self.enter_leave_wait_started = false
+	self.transition_step = 0
+	self.to_enter_cut = 0
+	self:force_seek_timeline('p.seq.s', 0)
+	self:reset_fall_substate_sequence()
+	self.events:emit('stairs_lock_lost_after_room_switch', {})
+	self.events:emit('room.switched', {
+		from = switch.from_room_number,
+		to = switch.to_room_number,
+		dir = switch.direction,
+		x = self.x,
+		y = self.y,
+	})
 end
 
 function player:leave_shrine_overlay()
@@ -843,7 +857,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.stairs_direction = 0
 		self.stairs_x = -1
 		self.hit_stairs_lock = false
-		self.enter_leave_world_target = ''
+		self.enter_leave_world_target = nil
 		self.enter_leave_shrine_text_lines = {}
 		self.enter_leave_wait_started = false
 		self.events:emit('leave_world_start', {})
@@ -1306,7 +1320,9 @@ function player:apply_move(dx, dy, include_elevator_collision)
 	local found
 
 	if collides(next_x, next_y) then
-		collided_y = true
+		if next_y ~= old_y then
+			collided_y = true
+		end
 		local inc = next_y > old_y and -1 or 1
 		if next_y > old_y then
 			if collides(old_x, old_y) then
@@ -1330,23 +1346,21 @@ function player:apply_move(dx, dy, include_elevator_collision)
 			if not found then
 				landed = true
 			end
-		else
-			if next_y < old_y then
-				local y_probe = next_y
-				while (not found) and y_probe ~= old_y do
-					if not collides(next_x, y_probe) then
-						self.x = next_x
+		elseif next_y < old_y then
+			local y_probe = next_y
+			while (not found) and y_probe ~= old_y do
+				if not collides(next_x, y_probe) then
+					self.x = next_x
+					self.y = y_probe
+					found = true
+				else
+					local resolved_x = self:find_clear_x_with_probe(next_x, y_probe, include_elevator_collision)
+					if resolved_x ~= nil then
+						self.x = resolved_x
 						self.y = y_probe
 						found = true
 					else
-						local resolved_x = self:find_clear_x_with_probe(next_x, y_probe, include_elevator_collision)
-						if resolved_x ~= nil then
-							self.x = resolved_x
-							self.y = y_probe
-							found = true
-						else
-							y_probe = y_probe + inc
-						end
+						y_probe = y_probe + inc
 					end
 				end
 			end
@@ -1718,7 +1732,7 @@ function player:tick_entering_world()
 		self.x = switch.spawn_x
 		self.y = switch.spawn_y
 		self.facing = switch.spawn_facing
-		self.enter_leave_world_target = ''
+		self.enter_leave_world_target = nil
 		self.enter_leave_shrine_text_lines = {}
 		self.enter_leave_wait_started = false
 		self.events:emit('room.switched', {
@@ -1850,7 +1864,6 @@ function player:tick_walking_left()
 end
 
 function player:tick_slowdoorpass()
-	self.abilities:end_once('sword', 'slowdoorpass')
 	self:force_seek_timeline('p.seq.s', 0)
 
 	if self.slow_doorpass_substate <= 24 then
@@ -2196,7 +2209,6 @@ function player:advance_hit_stairs_fall(dy)
 end
 
 function player:tick_hit_fall()
-	self.abilities:end_once('sword', 'damage_lock')
 	self:force_seek_timeline('p.seq.s', 0)
 
 	local dx = self.hit_direction * constants.damage.knockback_dx
@@ -2251,7 +2263,6 @@ function player:tick_hit_fall()
 end
 
 function player:tick_hit_collision()
-	self.abilities:end_once('sword', 'damage_lock')
 	self:force_seek_timeline('p.seq.s', 0)
 
 	local dy
@@ -2318,7 +2329,6 @@ function player:tick_hit_collision()
 end
 
 function player:tick_hit_recovery()
-	self.abilities:end_once('sword', 'damage_lock')
 	self:force_seek_timeline('p.seq.s', 0)
 	self.previous_x_collision = false
 	self.previous_y_collision = false
@@ -2337,7 +2347,6 @@ function player:tick_hit_recovery()
 end
 
 function player:tick_dying()
-	self.abilities:end_once('sword', 'dying')
 	self.previous_x_collision = false
 	self.previous_y_collision = false
 	self.last_dx = 0
@@ -2388,7 +2397,7 @@ local function define_player_fsm()
 				['no_ground'] = '/uncontrolled_fall',
 				['stairs_up'] = '/up_stairs',
 				['stairs_down'] = '/down_stairs',
-				['sword_start_quiet'] = '/quiet_sword',
+				['sword_start'] = '/quiet_sword',
 			},
 			process_input = player.sample_input,
 			tick = player.tick_quiet,
@@ -2411,7 +2420,7 @@ local function define_player_fsm()
 				['no_ground'] = '/uncontrolled_fall',
 				['stairs_up'] = '/up_stairs',
 				['stairs_down'] = '/down_stairs',
-				['sword_start_walking_right'] = '/quiet_sword',
+				['sword_start'] = '/quiet_sword',
 			},
 			entering_state = function(self)
 				self:reset_walk_animation()
@@ -2437,7 +2446,7 @@ local function define_player_fsm()
 				['no_ground'] = '/uncontrolled_fall',
 				['stairs_up'] = '/up_stairs',
 				['stairs_down'] = '/down_stairs',
-				['sword_start_walking_left'] = '/quiet_sword',
+				['sword_start'] = '/quiet_sword',
 			},
 			entering_state = function(self)
 				self:reset_walk_animation()
@@ -2469,7 +2478,7 @@ local function define_player_fsm()
 			on = {
 				['ceiling_to_stopped_jumping'] = '/stopped_jumping',
 				['jump_apex_to_controlled_fall'] = '/controlled_fall',
-				['sword_start_jumping'] = '/jumping_sword',
+				['sword_start'] = '/jumping_sword',
 			},
 			process_input = player.sample_input,
 			tick = player.tick_jump_motion,
@@ -2478,7 +2487,7 @@ local function define_player_fsm()
 			tags = { state_tags.variant.stopped_jumping },
 			on = {
 				['stopped_to_fall_to_controlled_fall'] = '/controlled_fall',
-				['sword_start_stopped_jumping'] = '/sj_sword',
+				['sword_start'] = '/sj_sword',
 			},
 			process_input = player.sample_input,
 			tick = player.tick_stopped_jump_motion,
@@ -2487,7 +2496,7 @@ local function define_player_fsm()
 			tags = { state_tags.variant.controlled_fall },
 			on = {
 				['landed_to_quiet'] = '/quiet',
-				['sword_start_controlled_fall'] = '/c_fall_sword',
+				['sword_start'] = '/c_fall_sword',
 			},
 			process_input = player.sample_input,
 			tick = player.tick_controlled_fall_motion,
@@ -2496,7 +2505,7 @@ local function define_player_fsm()
 			tags = { state_tags.variant.uncontrolled_fall },
 			on = {
 				['landed_to_quiet'] = '/quiet',
-				['sword_start_uncontrolled_fall'] = '/uc_fall_sword',
+				['sword_start'] = '/uc_fall_sword',
 			},
 			process_input = player.sample_input,
 			tick = player.tick_uncontrolled_fall_motion,
@@ -2511,9 +2520,6 @@ local function define_player_fsm()
 				[player_sword_end_event] = '/quiet',
 				['no_ground'] = '/uc_fall_sword',
 			},
-			entering_state = function(self)
-				self.abilities:begin('sword')
-			end,
 			process_input = player.sample_input,
 			tick = player.tick_quiet_sword,
 		},
@@ -2527,9 +2533,6 @@ local function define_player_fsm()
 				[player_sword_end_event] = '/uncontrolled_fall',
 				['landed_to_quiet_sword'] = '/quiet_sword',
 			},
-			entering_state = function(self)
-				self.abilities:begin('sword')
-			end,
 			process_input = player.sample_input,
 			tick = player.tick_uncontrolled_fall_motion,
 		},
@@ -2543,9 +2546,6 @@ local function define_player_fsm()
 				[player_sword_end_event] = '/controlled_fall',
 				['landed_to_quiet_sword'] = '/quiet_sword',
 			},
-			entering_state = function(self)
-				self.abilities:begin('sword')
-			end,
 			process_input = player.sample_input,
 			tick = player.tick_controlled_fall_motion,
 		},
@@ -2560,9 +2560,6 @@ local function define_player_fsm()
 				['ceiling_to_sj_sword'] = '/sj_sword',
 				['jump_apex_to_c_fall_sword'] = '/c_fall_sword',
 			},
-			entering_state = function(self)
-				self.abilities:begin('sword')
-			end,
 			process_input = player.sample_input,
 			tick = player.tick_jump_motion,
 		},
@@ -2576,9 +2573,6 @@ local function define_player_fsm()
 				[player_sword_end_event] = '/stopped_jumping',
 				['stopped_to_fall_to_c_fall_sword'] = '/c_fall_sword',
 			},
-			entering_state = function(self)
-				self.abilities:begin('sword')
-			end,
 			process_input = player.sample_input,
 			tick = player.tick_stopped_jump_motion,
 		},
@@ -2615,7 +2609,7 @@ local function define_player_fsm()
 				['stairs_end_bottom'] = '/quiet',
 				['stairs_step_off_left'] = '/quiet',
 				['stairs_step_off_right'] = '/quiet',
-				['sword_start_stairs'] = '/sword_stairs',
+				['sword_start'] = '/sword_stairs',
 			},
 			process_input = player.sample_input,
 			tick = player.tick_quiet_stairs,
@@ -2637,9 +2631,6 @@ local function define_player_fsm()
 			on = {
 				[player_sword_end_event] = '/quiet_stairs',
 			},
-			entering_state = function(self)
-				self.abilities:begin('sword')
-			end,
 			process_input = player.sample_input,
 			tick = player.tick_sword_stairs,
 		},
@@ -2851,7 +2842,7 @@ local function define_player_fsm()
 		on = {
 			[player_abilities.command_ids.activate_sword] = {
 				go = function(self)
-					self.abilities:activate('sword')
+					player_abilities.activate_sword(self)
 				end,
 			},
 			['enemy.contact_damage'] = {
@@ -2915,7 +2906,6 @@ local function register_player_definition()
 				walk_state = 0,
 				walk_move_dx = 0,
 			walk_move_collided_x = false,
-			sword_ground_origin = 'quiet',
 			stairs_direction = 0,
 			stairs_x = -1,
 			stairs_top_y = constants.player.start_y,
@@ -2937,7 +2927,7 @@ local function register_player_definition()
 			to_enter_cut = 0,
 			enter_leave_anim_frame = 0,
 			enter_leave_wait_started = false,
-			enter_leave_world_target = '',
+			enter_leave_world_target = nil,
 			enter_leave_shrine_text_lines = {},
 			inventory_items = nil,
 			secondary_weapon = nil,

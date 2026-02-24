@@ -22,7 +22,7 @@ local function register_lithograph_definition()
 		type = 'sprite',
 		fsms = { 'lithograph' },
 		defaults = {
-			text = '',
+			text = nil,
 			room_number = 0,
 		},
 	})

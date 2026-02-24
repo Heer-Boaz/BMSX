@@ -58,8 +58,8 @@ local function register_world_item_definition()
 		type = 'sprite',
 		fsms = { 'world_item' },
 		defaults = {
-			item_id = '',
-			item_type = '',
+			item_id = nil,
+			item_type = nil,
 		},
 	})
 end

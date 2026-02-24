@@ -13,7 +13,7 @@ function player:emit_event(name, extra)
 	if not telemetry.enabled then
 		return
 	end
-	if extra ~= nil and extra ~= '' then
+	if extra ~= nil then
 		print(string.format('%s|kind=player|f=%d|name=%s|%s', telemetry.event_prefix, self.frame, name, extra))
 		return
 	end
