@@ -55,6 +55,8 @@ events:
               go:
                   music_transition:
                       audio_id: music_seal_2
+                      sync:
+                          stinger: music_seal_1
             - when:
                   equals:
                       changed_axis: mode
