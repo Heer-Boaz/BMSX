@@ -2,6 +2,16 @@ local constants = require('constants')
 local castle_map = require('castle_map')
 
 local elevator_service = {}
+local elevator_platform = {}
+elevator_platform.__index = elevator_platform
+
+function elevator_platform:ctor()
+	self:gfx('elevator_platform')
+	self.collider.enabled = true
+	self.collider.layer = constants.collision.world_layer
+	self.collider.mask = constants.collision.player_layer
+	self.collider.spaceevents = 'current'
+end
 
 local function build_elevator_routes()
 	local route_specs = castle_map.elevator_routes
@@ -19,6 +29,7 @@ local function build_elevator_routes()
 		end
 		local start_point = path[1]
 		routes[i] = {
+			platform_id = 'e.p' .. tostring(i),
 			current_room_number = start_point.room_number,
 			x = start_point.x,
 			y = start_point.y,
@@ -28,6 +39,28 @@ local function build_elevator_routes()
 		}
 	end
 	return routes
+end
+
+function elevator_service:sync_platform_instances(current_room_number)
+	for i = 1, #self.elevator_routes do
+		local elevator = self.elevator_routes[i]
+		local platform = object(elevator.platform_id)
+		if platform == nil then
+			platform = inst(self.platform_def_id, {
+				id = elevator.platform_id,
+				pos = { x = elevator.x, y = elevator.y, z = 21 },
+			})
+		end
+		platform.x = elevator.x
+		platform.y = elevator.y
+		local in_current_room = elevator.current_room_number == current_room_number
+		platform.visible = in_current_room
+		platform.collider.enabled = in_current_room
+	end
+end
+
+function elevator_service:ctor()
+	self:sync_platform_instances(service('c').current_room.room_number)
 end
 
 local function move_elevator_vertical(elevator, target, vertical, character_over, player)
@@ -64,18 +97,16 @@ end
 
 function elevator_service:tick()
 	local player = object('pietolon')
-	object('pietolon').on_vertical_elevator = false
+	player.on_vertical_elevator = false
 
 	local current_room = service('c').current_room
-	local map_id = current_room.map_id
 	local current_room_number = current_room.room_number
 
 	for i = 1, #self.elevator_routes do
 		local elevator = self.elevator_routes[i]
 		local character_over
 
-		if map_id == 0
-			and current_room_number == elevator.current_room_number
+		if current_room_number == elevator.current_room_number
 			and player.y >= (elevator.y - constants.room.tile_size2)
 			and player.y < (elevator.y + constants.room.tile_size2)
 		then
@@ -85,8 +116,8 @@ function elevator_service:tick()
 			then
 				character_over = true
 			end
-			if player.x > (elevator.x - (constants.room.tile_size2 - 5))
-				and player.x < ((elevator.x + constants.room.tile_size4) - constants.room.tile_half)
+			if player.x > (elevator.x - (constants.room.tile_size2 - (constants.room.tile_unit * 5)))
+				and player.x < ((elevator.x + constants.room.tile_size4) - (constants.room.tile_unit * 4))
 			then
 				character_over = true
 			end
@@ -110,17 +141,20 @@ function elevator_service:tick()
 
 		move_elevator_vertical(elevator, target, vertical, character_over, player)
 
-			if elevator.x == target.x
-				and elevator.y == target.y
-				and elevator.current_room_number == target.room_number
-			then
-				if elevator.going_to == 1 then
-					elevator.going_to = 2
-				else
+		if elevator.x == target.x
+			and elevator.y == target.y
+			and elevator.current_room_number == target.room_number
+		then
+			if elevator.going_to == 1 then
+				elevator.going_to = 2
+			else
 				elevator.going_to = 1
 			end
 		end
 	end
+
+	self:sync_platform_instances(current_room_number)
+	player:try_room_switches_from_position()
 end
 
 local function define_elevator_service_fsm()
@@ -136,12 +170,22 @@ end
 
 local function register_elevator_service_definition()
 	local elevator_routes = build_elevator_routes()
+	define_prefab({
+		def_id = 'elevator_platform_obj',
+		class = elevator_platform,
+		type = 'sprite',
+		defaults = {
+			tick_enabled = false,
+		},
+	})
+
 	define_service({
 		def_id = 'elevator',
 		class = elevator_service,
 		fsms = { 'elevator_service' },
 		defaults = {
 			id = 'e',
+			platform_def_id = 'elevator_platform_obj',
 			elevator_routes = elevator_routes,
 			tick_enabled = true,
 		},

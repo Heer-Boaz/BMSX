@@ -126,37 +126,14 @@ function director:open_shrine(text_lines)
 	self.events:emit('shrine_overlay_requested')
 end
 
-function director:sync_room_state_from_castle()
-	local current_room = service('c').current_room
-	self.current_room_number = current_room.room_number
-	self.map_id = current_room.map_id
-	self.map_x = current_room.map_x
-	self.map_y = current_room.map_y
-	self.last_room_switch = current_room.last_room_switch
-end
-
-function director:open_world_entrance(target)
-	local opened = service('c'):begin_open_world_entrance(target)
-	self:sync_room_state_from_castle()
-	return opened
-end
-
-function director:switch_room(direction, player_top, player_bottom)
-	local switch = service('c'):switch_room(direction, player_top, player_bottom)
-	self:sync_room_state_from_castle()
-	return switch
-end
-
 function director:enter_world(target)
 	local switch = service('c'):enter_world(target)
-	self:sync_room_state_from_castle()
 	self:expect_room_switch_banner('world_banner', switch.world_number, nil)
 	return switch
 end
 
 function director:leave_world_to_castle()
 	local switch = service('c'):leave_world_to_castle()
-	self:sync_room_state_from_castle()
 	self:expect_room_switch_banner('castle_banner', 0, 'castle_emerge')
 	return switch
 end
@@ -165,7 +142,6 @@ function director:halo_teleport_to_room_1()
 	local current_room = service('c').current_room
 	local from_world = (current_room.world_number or 0) ~= 0
 	local switch = service('c'):halo_teleport_to_room_1()
-	self:sync_room_state_from_castle()
 	if from_world then
 		self:expect_room_switch_banner('castle_banner', 0, nil)
 	else
@@ -187,7 +163,6 @@ function director:bind_events()
 		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(_event)
-			self:sync_room_state_from_castle()
 			if self:queue_expected_room_switch_banner_if_any() then
 				return
 			end
@@ -227,11 +202,6 @@ function director:ctor()
 	self.daemon_smoke_t = {}
 	self.daemon_smoke_sprite = {}
 	self.daemon_smoke_next = 1
-	self.current_room_number = 0
-	self.map_id = 0
-	self.map_x = 5
-	self.map_y = 12
-	self.last_room_switch = nil
 	self.mode_state = nil
 	self.room_state = nil
 	self.changed_axis = nil
@@ -256,7 +226,7 @@ local function define_director_fsm()
 		states = {
 				room = {
 					entering_state = function(self)
-					self:sync_room_state_from_castle()
+
 					self.overlay_mode = nil
 					self.overlay_text_lines = {}
 					object('shrine').lines = {}
@@ -271,7 +241,7 @@ local function define_director_fsm()
 					local castle_service = service('c')
 					set_space('main')
 					object('ui'):set_space('main')
-						castle_service:restore_active_enemies_after_shrine_transition()
+					service('en'):restore_active_enemies_after_shrine_transition()
 						self:set_mode_state('room')
 						self.active_transition_kind = nil
 					end,
@@ -379,7 +349,7 @@ local function define_director_fsm()
 			shrine_transition_enter = {
 				entering_state = function(self)
 					self.active_transition_kind = 'shrine'
-					service('c'):hide_active_enemies_for_shrine_transition()
+					service('en'):hide_active_enemies_for_shrine_transition()
 					set_space('main')
 					object('ui'):set_space('main')
 				end,
@@ -738,11 +708,6 @@ local function register_director_service_definition()
 			id = 'd',
 			space_id = 'ui',
 			player_index = 1,
-			current_room_number = 0,
-			map_id = 0,
-			map_x = 5,
-			map_y = 12,
-			last_room_switch = nil,
 			mode_state = nil,
 			room_state = nil,
 			changed_axis = nil,

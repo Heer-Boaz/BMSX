@@ -19,6 +19,7 @@ local rock_module = require('rock')
 local rock_service_module = require('rock_service')
 local pepernoot_projectile_module = require('pepernoot_projectile')
 local enemy_explosion_module = require('enemy_explosion')
+local enemy_service_module = require('enemy_service')
 local castle_service_module = require('castle_service')
 local elevator_service_module = require('elevator_service')
 local director_module = require('director')
@@ -98,6 +99,7 @@ function init()
 	rock_service_module.define_rock_service_fsm()
 	pepernoot_projectile_module.define_pepernoot_projectile_fsm()
 	enemy_explosion_module.define_enemy_explosion_fsm()
+	enemy_service_module.define_enemy_service_fsm()
 	castle_service_module.define_castle_service_fsm()
 	elevator_service_module.define_elevator_service_fsm()
 	director_module.define_director_fsm()
@@ -119,6 +121,7 @@ function init()
 	rock_service_module.register_rock_service_definition()
 	pepernoot_projectile_module.register_pepernoot_projectile_definition()
 	enemy_explosion_module.register_enemy_explosion_definition()
+	enemy_service_module.register_enemy_service_definition()
 	castle_service_module.register_castle_service_definition()
 	elevator_service_module.register_elevator_service_definition()
 	director_module.register_director_service_definition()
@@ -137,21 +140,21 @@ function new_game()
 	add_space('ui')
 	set_space('main')
 
+	create_service('enemy')
 	local castle_service = create_service('castle')
-	local room = castle_service:initialize(castle_map.start_room_number)
-
-	inst('player', {
-		id = 'pietolon',
-		spawn_x = constants.player.start_x,
-		spawn_y = constants.player.start_y,
-		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
-	})
-	grant_starting_loadout()
 
 	inst('room', {
 		id = 'room',
 		pos = { x = 0, y = 0, z = 0 },
 	})
+
+	castle_service:initialize(castle_map.start_room_number)
+
+	inst('player', {
+		id = 'pietolon',
+		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
+	})
+	grant_starting_loadout()
 
 	inst('transition', {
 		id = 'transition',

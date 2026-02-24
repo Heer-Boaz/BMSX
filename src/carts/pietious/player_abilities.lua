@@ -1,5 +1,4 @@
 local constants = require('constants')
-local room_module = require('room')
 local action_effects = require('action_effects')
 
 local player_abilities = {}
@@ -57,7 +56,7 @@ action_effects.register_effect('pepernoot', {
 		local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
 		local spawn_x = owner.x + (owner.facing < 0 and -constants.secondary_weapon.pepernoot_spawn_offset_x or constants.secondary_weapon.pepernoot_spawn_offset_x)
 		local spawn_y = owner.y + constants.secondary_weapon.pepernoot_spawn_offset_y
-		spawn_x, spawn_y = room_module.snap_world_to_tile(room, spawn_x, spawn_y)
+		spawn_x, spawn_y = room:snap_world_to_tile(spawn_x, spawn_y)
 		inst('pepernoot_projectile', {
 			id = projectile_id,
 			room = room,
@@ -76,10 +75,10 @@ action_effects.register_effect('spyglass', {
 	id = 'spyglass',
 	blocked_tags = { 'g.dl' },
 	can_trigger = function(context)
-		return room_module.find_near_lithograph(service('c').current_room, context.owner) ~= nil
+		return object('room'):find_near_lithograph(context.owner) ~= nil
 	end,
 	handler = function(context)
-		local lithograph = room_module.find_near_lithograph(service('c').current_room, context.owner)
+		local lithograph = object('room'):find_near_lithograph(context.owner)
 		context.owner.events:emit('lithograph.request', {
 			text_line = lithograph.text,
 		})

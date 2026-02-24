@@ -24,6 +24,7 @@ constants.room = {
 }
 constants.room.tile_origin_y = constants.room.hud_height
 constants.room.tile_half = constants.room.tile_size / 2
+constants.room.tile_unit = constants.room.tile_size / 4
 constants.room.tile_size2 = constants.room.tile_size * 2
 constants.room.tile_size3 = constants.room.tile_size * 3
 constants.room.tile_size4 = constants.room.tile_size * 4

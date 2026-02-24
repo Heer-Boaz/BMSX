@@ -1,5 +1,4 @@
 local constants = require('constants')
-local room_module = require('room')
 
 local pepernoot_projectile = {}
 pepernoot_projectile.__index = pepernoot_projectile
@@ -12,7 +11,7 @@ end
 
 function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
 	local room = service('c').current_room
-	local snapped_x, snapped_y = room_module.snap_world_to_tile(room, self.x, self.y)
+	local snapped_x, snapped_y = room:snap_world_to_tile(self.x, self.y)
 	self.sprite_component.offset.x = snapped_x - self.x
 	self.sprite_component.offset.y = snapped_y - self.y
 end
@@ -61,8 +60,8 @@ function pepernoot_projectile:tick()
 		self:mark_for_disposal()
 		return
 	end
-	local overlaps_rock = room_module.overlaps_active_rock(room, self.x, self.y, self.sx, self.sy)
-	if room_module.is_solid_at_world(room, self.x, self.y) and not overlaps_rock then
+	local overlaps_rock = room:overlaps_active_rock(self.x, self.y, self.sx, self.sy)
+	if room:is_solid_at_world(self.x, self.y) and not overlaps_rock then
 		self:mark_for_disposal()
 	end
 end

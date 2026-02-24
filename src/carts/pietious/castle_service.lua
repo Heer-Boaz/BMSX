@@ -1,10 +1,10 @@
 local constants = require('constants')
-local room_module = require('room')
 local castle_map = require('castle_map')
 local progression = require('progression')
 local world_instance = require('world').instance
 
 local castle_service = {}
+
 local persistent_room_object_ids = {
 	pietolon = true,
 	room = true,
@@ -190,12 +190,12 @@ local function build_progression_program()
 		rules = rules,
 		handlers = {
 			['room.patch_rows'] = function(ctx, command)
-				room_module.apply_progression_command(ctx.current_room, command)
+				ctx.current_room:apply_progression_command(command)
 			end,
 			refresh_current_room_enemies = function(ctx, command, event)
 				if event.room_number == ctx.current_room.room_number then
 					ctx:refresh_current_room_customizations()
-					ctx:refresh_current_room_enemies()
+					service('en'):refresh_current_room_enemies()
 				end
 			end,
 			apply_room_condition = function(ctx, command, event)
@@ -203,12 +203,10 @@ local function build_progression_program()
 					return
 				end
 				ctx:refresh_current_room_customizations()
-				ctx:refresh_current_room_enemies()
+				service('en'):refresh_current_room_enemies()
 			end,
 			emit_event = function(ctx, command)
-				local payload = {
-					service_id = ctx.id,
-				}
+				local payload = {}
 				if command.payload ~= nil then
 					for key, value in pairs(command.payload) do
 						payload[key] = value
@@ -236,148 +234,6 @@ local function should_dispose_runtime_room_object(obj)
 		return true
 	end
 	return false
-end
-
-local function resolve_enemy_instance(self, id)
-	local instance = self.enemies_by_id[id]
-	if instance ~= nil then
-		return instance
-	end
-	instance = object(id)
-	if instance ~= nil then
-		self.enemies_by_id[id] = instance
-	end
-	return instance
-end
-
-function castle_service:sync_enemy_instance(enemy_def, room, force_reset_from_room_template)
-	local id = enemy_def.id
-	local instance = object(id)
-	if instance == nil then
-		instance = inst('enemy.' .. enemy_def.kind, {
-			id = id,
-			pos = { x = enemy_def.x, y = enemy_def.y, z = 140 },
-			trigger = enemy_def.trigger,
-			conditions = enemy_def.conditions,
-			damage = enemy_def.damage,
-			health = enemy_def.health,
-			max_health = enemy_def.health,
-			direction = enemy_def.direction,
-			speed_x_num = enemy_def.speedx,
-			speed_y_num = enemy_def.speedy,
-			width_tiles = enemy_def.width_tiles,
-			height_tiles = enemy_def.height_tiles,
-			tiletype = enemy_def.tiletype,
-		})
-	else
-		local should_reset_from_room_template = force_reset_from_room_template or (not instance.active)
-		instance:set_space('main')
-		instance.trigger = enemy_def.trigger
-		instance.conditions = enemy_def.conditions
-		instance.damage = enemy_def.damage
-		instance.width_tiles = enemy_def.width_tiles
-		instance.height_tiles = enemy_def.height_tiles
-		instance.tiletype = enemy_def.tiletype
-		if enemy_def.width_tiles ~= nil then
-			instance.sx = enemy_def.width_tiles * constants.room.tile_size
-		end
-		if enemy_def.height_tiles ~= nil then
-			instance.sy = enemy_def.height_tiles * constants.room.tile_size
-		end
-		if enemy_def.health ~= nil then
-			instance.max_health = enemy_def.health
-			if should_reset_from_room_template then
-				instance.health = enemy_def.health
-			end
-		end
-		if should_reset_from_room_template and enemy_def.direction ~= nil then
-			instance.direction = enemy_def.direction
-		end
-		if should_reset_from_room_template and enemy_def.speedx ~= nil then
-			instance.speed_x_num = enemy_def.speedx
-			instance.speed_accum_x = 0
-		end
-		if should_reset_from_room_template and enemy_def.speedy ~= nil then
-			instance.speed_y_num = enemy_def.speedy
-			instance.speed_accum_y = 0
-		end
-		if should_reset_from_room_template then
-			instance.x = enemy_def.x
-			instance.y = enemy_def.y
-		end
-	end
-
-	self.enemies_by_id[id] = instance
-	if not instance.active then
-		instance:activate()
-	end
-	instance.visible = true
-	return instance
-end
-
-function castle_service:deactivate_enemy_by_id(id)
-	if self.enemies_by_id[id] == nil then
-		self.enemies_by_id[id] = object(id)
-		if self.enemies_by_id[id] == nil then
-			return
-		end
-	end
-	self.enemies_by_id[id].visible = false
-	if self.enemies_by_id[id].active then
-		self.enemies_by_id[id]:deactivate()
-	end
-end
-
-function castle_service:deactivate_stale_active_enemies(next_active_ids)
-	local previous_active_ids = self.active_enemy_ids
-	for id in pairs(previous_active_ids) do
-		if not next_active_ids[id] then
-			self:deactivate_enemy_by_id(id)
-		end
-	end
-end
-
-function castle_service:despawn_active_enemies()
-	self:for_each_active_enemy_instance(function(instance)
-		world_instance:despawn(instance)
-	end)
-	clear_map(self.enemies_by_id)
-	clear_map(self.active_enemy_ids)
-	clear_map(self.active_enemy_ids_scratch)
-	self.enemies_hidden_for_shrine = false
-end
-
-function castle_service:commit_active_enemy_ids(next_active_ids)
-	local previous_active_ids = self.active_enemy_ids
-	self.active_enemy_ids = next_active_ids
-	self.active_enemy_ids_scratch = previous_active_ids
-	clear_map(previous_active_ids)
-end
-
-function castle_service:for_each_active_enemy_instance(visitor)
-	for id in pairs(self.active_enemy_ids) do
-		local instance = resolve_enemy_instance(self, id)
-		if instance ~= nil then
-			visitor(instance, id)
-		end
-	end
-end
-
-function castle_service:hide_active_enemies_for_shrine_transition()
-	self.enemies_hidden_for_shrine = true
-	self:for_each_active_enemy_instance(function(instance)
-		instance:set_space('transition')
-	end)
-end
-
-function castle_service:restore_active_enemies_after_shrine_transition()
-	if not self.enemies_hidden_for_shrine then
-		return
-	end
-	self.enemies_hidden_for_shrine = false
-	self:for_each_active_enemy_instance(function(instance)
-		instance:set_space('main')
-	end)
 end
 
 function castle_service:sync_current_room_seal_instance()
@@ -498,83 +354,19 @@ function castle_service:finish_seal_dissolution()
 		end
 	end
 	if #row_patches > 0 then
-		room_module.patch_rows(self.current_room, row_patches)
+		self.current_room:patch_rows(row_patches)
 	end
 	progression.set(self, 'boss_defeated', true)
 	self:refresh_current_room_customizations()
-	self:refresh_current_room_enemies()
+	service('en'):refresh_current_room_enemies()
 end
 
 function castle_service:activate_current_room_daemon_fight()
 	self.current_room.daemon_fight_active = true
 end
 
-function castle_service:refresh_current_room_enemies(force_reset_from_room_template)
-	local room = self.current_room
-	local enemy_defs = room.enemies
-	local next_active_ids = self.active_enemy_ids_scratch
-	local previous_active_ids = self.active_enemy_ids
-	clear_map(next_active_ids)
-
-	for i = 1, #enemy_defs do
-		local enemy_def = enemy_defs[i]
-		local enemy_id = enemy_def.id
-		if not progression.matches(self, enemy_def.conditions) then
-			goto continue
-		end
-		if not force_reset_from_room_template and previous_active_ids[enemy_id] then
-			local live_instance = object(enemy_id)
-			if live_instance ~= nil then
-				self.enemies_by_id[enemy_id] = live_instance
-				next_active_ids[enemy_id] = true
-				goto continue
-			end
-		end
-		self:sync_enemy_instance(enemy_def, room, force_reset_from_room_template)
-		next_active_ids[enemy_id] = true
-		::continue::
-	end
-
-	self:deactivate_stale_active_enemies(next_active_ids)
-	self:commit_active_enemy_ids(next_active_ids)
-end
-
-function castle_service:bind_enemy_events()
-	self.events:on({
-		event = 'enemy.defeated',
-		subscriber = self,
-		handler = function(event)
-			local enemy_id = event.enemy_id
-			self.enemies_by_id[enemy_id] = nil
-			self.active_enemy_ids[enemy_id] = nil
-			self.active_enemy_ids_scratch[enemy_id] = nil
-
-				local enemy_instance = object(enemy_id)
-				if enemy_instance ~= nil then
-					object(enemy_id).visible = false
-					if enemy_instance.active then
-						enemy_instance:deactivate()
-					end
-			end
-
-			if event.trigger then
-				self.events:emit('room.condition_set', {
-					service_id = self.id,
-					room_number = event.room_number,
-					condition = event.trigger,
-				})
-			end
-		end,
-	})
-end
-
 function castle_service:ctor()
-	self.enemies_by_id = {}
-	self.active_enemy_ids = {}
-	self.active_enemy_ids_scratch = {}
-	self.enemies_hidden_for_shrine = false
 	progression.mount(self, build_progression_program())
-	self:bind_enemy_events()
 end
 
 function castle_service:despawn_room_runtime_objects()
@@ -583,10 +375,7 @@ function castle_service:despawn_room_runtime_objects()
 			obj:mark_for_disposal()
 		end
 	end
-	clear_map(self.enemies_by_id)
-	clear_map(self.active_enemy_ids)
-	clear_map(self.active_enemy_ids_scratch)
-	self.enemies_hidden_for_shrine = false
+	service('en'):clear_enemy_state()
 end
 
 function castle_service:sync_world_entrance_states_for_room(room_state)
@@ -610,29 +399,28 @@ function castle_service:commit_room_switch(switch, map_id, map_x, map_y)
 	self.current_room.last_room_switch = switch
 	self:sync_world_entrance_states_for_room(self.current_room)
 	self:refresh_current_room_customizations()
-	self:refresh_current_room_enemies(true)
+	service('en'):refresh_current_room_enemies(true)
 	self.events:emit('room.enter', {
-		service_id = self.id,
 		room_number = self.current_room.room_number,
 	})
 	return switch
 end
 
 function castle_service:initialize(initial_room_number)
-	self.current_room = room_module.create_room(initial_room_number)
-	self.current_room.map_id = self.current_room.world_number
-	self.current_room.map_x = 5
-	self.current_room.map_y = 12
-	self.current_room.last_room_switch = nil
+	local rm = object('room')
+	self.current_room = rm
+	rm:load_room(initial_room_number)
+	rm.map_id = rm.world_number
+	rm.map_x = 5
+	rm.map_y = 12
+	rm.last_room_switch = nil
 	self.world_entrance_states = {}
-	self:sync_world_entrance_states_for_room(self.current_room)
+	self:sync_world_entrance_states_for_room(rm)
 	self:refresh_current_room_customizations()
-	self:refresh_current_room_enemies(true)
+	service('en'):refresh_current_room_enemies(true)
 	self.events:emit('room.enter', {
-		service_id = self.id,
-		room_number = self.current_room.room_number,
+		room_number = rm.room_number,
 	})
-	return self.current_room
 end
 
 function castle_service:begin_open_world_entrance(target)
@@ -664,7 +452,7 @@ function castle_service:tick()
 end
 
 function castle_service:switch_room(direction, player_top, player_bottom)
-	local switch = room_module.switch_room(self.current_room, direction)
+	local switch = self.current_room:switch_room(direction)
 	if switch == nil then
 		return nil
 	end
@@ -692,9 +480,9 @@ end
 function castle_service:enter_world(target)
 	local transition = castle_map.world_transitions[target]
 	local from_room_number = self.current_room.room_number
-	self:despawn_active_enemies()
+	service('en'):despawn_active_enemies()
 
-	self.current_room = room_module.create_room(transition.world_room_number)
+	self.current_room:load_room(transition.world_room_number)
 	local switch = create_room_switch(from_room_number, self.current_room.room_number, 'down')
 	self:commit_room_switch(
 		switch,
@@ -720,7 +508,7 @@ function castle_service:leave_world_to_castle()
 
 	local transition = castle_map.world_transitions_by_number[world_number]
 
-	self.current_room = room_module.create_room(transition.castle_room_number)
+	self.current_room:load_room(transition.castle_room_number)
 	local switch = create_room_switch(from_room_number, self.current_room.room_number, 'right')
 	self:commit_room_switch(
 		switch,
@@ -742,7 +530,7 @@ end
 function castle_service:halo_teleport_to_room_1()
 	local from_room_number = self.current_room.room_number
 
-	self.current_room = room_module.create_room(halo_destination_room_number)
+	self.current_room:load_room(halo_destination_room_number)
 	local switch = create_room_switch(from_room_number, self.current_room.room_number, 'halo')
 	self:commit_room_switch(switch, 0, 5, 12)
 	switch.spawn_x = constants.player.start_x
@@ -780,8 +568,6 @@ local function register_castle_service_definition()
 			id = 'c',
 			current_room = nil,
 			world_entrance_states = {},
-			enemies_by_id = {},
-			enemies_hidden_for_shrine = false,
 			tick_enabled = true,
 		},
 	})

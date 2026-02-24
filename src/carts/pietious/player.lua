@@ -1,5 +1,4 @@
 local constants = require('constants')
-local room = require('room')
 local components = require('components')
 local player_abilities = require('player_abilities')
 
@@ -601,7 +600,7 @@ function player:take_hit(amount, source_x, source_y, reason)
 
 	if damage_event == 'damage' then
 		if constants.damage.knockup_px > 0 then
-			self:apply_move(0, -constants.damage.knockup_px)
+			self:apply_move(0, -constants.damage.knockup_px, true)
 		end
 	end
 
@@ -807,7 +806,7 @@ function player:try_open_world_entrance_with_key()
 		return false
 	end
 
-	local opened = service('d'):open_world_entrance(world_entrance.target)
+	local opened = service('c'):begin_open_world_entrance(world_entrance.target)
 	if not opened then
 		return false
 	end
@@ -861,7 +860,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.x = self.stairs_x
 	end
 
-	local switch = service('d'):switch_room(direction, self.y, self.y + self.height)
+	local switch = service('c'):switch_room(direction, self.y, self.y + self.height)
 	if switch == nil then
 		return false
 	end
@@ -976,6 +975,16 @@ function player:try_vertical_room_switch_from_position()
 		return true
 	end
 	return false
+end
+
+function player:try_room_switches_from_position()
+	if self:has_tag(state_tags.group.transition_lock) then
+		return false
+	end
+	if self:try_side_room_switch_from_position() then
+		return true
+	end
+	return self:try_vertical_room_switch_from_position()
 end
 
 function player:get_jump_inertia(default_inertia)
@@ -1115,7 +1124,7 @@ function player:try_step_off_stairs()
 	end
 
 	local can_bottom_step
-	if dty > constants.room.tile_half and room.is_wall_at_tile(current_room, wall_tx, wall_ty) and not self:collides_at(self.x + probe_dx, self.y) then
+	if dty > constants.room.tile_half and current_room:is_wall_at_tile(wall_tx, wall_ty) and not self:collides_at(self.x + probe_dx, self.y, true) then
 		can_bottom_step = true
 	else
 		can_bottom_step = false
@@ -1153,7 +1162,7 @@ function player:try_step_off_stairs()
 
 	local old_x = self.x
 	local old_y = self.y
-	if self:collides_at(target_x, target_y) then
+	if self:collides_at(target_x, target_y, true) then
 		self.facing = dir
 		return false
 	end
@@ -1189,31 +1198,6 @@ function player:start_stairs(direction, stair, event_name)
 	self.events:emit(event_name)
 end
 
-function player:collides_with_elevator_at(x, y)
-	local current_room = service('c').current_room
-	if current_room.map_id ~= 0 then
-		return false
-	end
-	local current_room_number = current_room.room_number
-	local elevator_routes = service('e').elevator_routes
-	local right = x + self.width
-	local bottom = y + self.height
-	for i = 1, #elevator_routes do
-		local elevator = elevator_routes[i]
-		if elevator.current_room_number == current_room_number then
-			if x < (elevator.x + constants.room.tile_size4)
-			and right > elevator.x
-			and y < (elevator.y + constants.room.tile_size2)
-			and bottom > elevator.y
-			then
-				return true
-			end
-		end
-	end
-
-	return false
-end
-
 -- bmsx-lint:disable
 function player:is_ground_below_at(x, y, include_elevator)
 	return self:collides_at(x, y + 1, include_elevator)
@@ -1222,20 +1206,21 @@ end
 
 function player:try_snap_to_elevator_platform(next_x)
 	local current_room = service('c').current_room
-	if current_room.map_id ~= 0 then
-		return false
-	end
 	local current_room_number = current_room.room_number
 	local elevator_routes = service('e').elevator_routes
 	for i = 1, #elevator_routes do
 		local elevator = elevator_routes[i]
+		local platform = object(elevator.platform_id)
+		local platform_area = platform.collider:get_world_area()
+		local platform_x = platform_area.left
+		local platform_y = platform_area.top
 		if elevator.current_room_number == current_room_number
-		and self.y >= (elevator.y - constants.room.tile_size2)
-		and self.y < elevator.y
-		and self.x > (elevator.x - (constants.room.tile_size2 - 4))
-		and self.x < ((elevator.x + constants.room.tile_size4) - 3)
+		and self.y >= (platform_y - constants.room.tile_size2)
+		and self.y < platform_y
+		and self.x > (platform_x - (constants.room.tile_size2 - (constants.room.tile_unit * 4)))
+		and self.x < ((platform_x + constants.room.tile_size4) - (constants.room.tile_unit * 3))
 		then
-			self.y = elevator.y - self.height
+			self.y = platform_y - self.height
 			self.x = next_x
 			return true
 		end
@@ -1245,7 +1230,8 @@ function player:try_snap_to_elevator_platform(next_x)
 end
 
 function player:collides_at(x, y, include_elevator)
-	local solids = service('c').current_room.solids
+	local rm = object('room')
+	local solids = rm.solids
 	for i = 1, #solids do
 		local solid = solids[i]
 		if x < (solid.x + solid.w) and (x + self.width) > solid.x and y < (solid.y + solid.h) and (y + self.height) > solid.y then
@@ -1253,40 +1239,40 @@ function player:collides_at(x, y, include_elevator)
 		end
 	end
 
-	if room.overlaps_active_rock(service('c').current_room, x, y, self.width, self.height) then
+	if rm:overlaps_active_rock(x, y, self.width, self.height) then
 		return true
 	end
-	if room.overlaps_active_breakable_wall(service('c').current_room, x, y, self.width, self.height) then
+	if rm:overlaps_active_breakable_wall(x, y, self.width, self.height) then
 		return true
 	end
-	if room.overlaps_active_draaideur(service('c').current_room, x, y, self.width, self.height) then
+	if rm:overlaps_active_draaideur(x, y, self.width, self.height) then
 		return true
 	end
 
-	if (include_elevator == nil or include_elevator) and self:collides_with_elevator_at(x, y) then
+	if include_elevator and rm:overlaps_active_elevator(self, x, y) then
 		return true
 	end
 
 	return false
 end
 
-function player:collides_at_jump_ceiling_profile(x, y)
+function player:collides_at_jump_ceiling_profile(x, y, include_elevator)
 	for x_offset = -constants.room.tile_half, constants.room.tile_half, 1 do
-		if not self:collides_at(x + x_offset, y) then
+		if not self:collides_at(x + x_offset, y, include_elevator) then
 			return false
 		end
 	end
 	return true
 end
 
-function player:collides_at_jump_sword_ceiling_profile(x, y)
-	if not self:collides_at(x, y) then
+function player:collides_at_jump_sword_ceiling_profile(x, y, include_elevator)
+	if not self:collides_at(x, y, include_elevator) then
 		return false
 	end
-	if not self:collides_at(x + constants.room.tile_half, y) then
+	if not self:collides_at(x + constants.room.tile_half, y, include_elevator) then
 		return false
 	end
-	if not self:collides_at(x - constants.room.tile_half, y) then
+	if not self:collides_at(x - constants.room.tile_half, y, include_elevator) then
 		return false
 	end
 	return true
@@ -1375,7 +1361,7 @@ function player:apply_move(dx, dy, include_elevator_collision)
 		end
 	else
 			if next_y >= old_y then
-				if (include_elevator_collision == nil or include_elevator_collision) and self:try_snap_to_elevator_platform(next_x) then
+				if include_elevator_collision and self:try_snap_to_elevator_platform(next_x) then
 					found = true
 				else
 					self.y = next_y
@@ -1825,7 +1811,7 @@ function player:tick_walking_right()
 		return
 	end
 
-	local move_result = self:apply_move(walk_dx, 0)
+	local move_result = self:apply_move(walk_dx, 0, true)
 	self.walk_move_collided_x = move_result.collided_x
 	self:advance_walk_animation(walk_dx)
 end
@@ -1843,7 +1829,7 @@ function player:tick_walking_left()
 		return
 	end
 
-	local move_result = self:apply_move(-walk_dx, 0)
+	local move_result = self:apply_move(-walk_dx, 0, true)
 	self.walk_move_collided_x = move_result.collided_x
 	self:advance_walk_animation(walk_dx)
 end
@@ -1852,9 +1838,9 @@ function player:tick_slowdoorpass()
 
 	if self.slow_doorpass_substate <= 24 then
 		if self.facing > 0 then
-			self:apply_move(1, 0)
+			self:apply_move(1, 0, true)
 		else
-			self:apply_move(-1, 0)
+			self:apply_move(-1, 0, true)
 		end
 		if (math.modf(self.slow_doorpass_substate / 4) % 2) == 0 then
 			self.walk_frame = 1
@@ -1897,13 +1883,13 @@ function player:tick_jump_motion()
 	local hit_ceiling = (not sword_jump) and self.previous_y_collision
 	if (not hit_ceiling) and dy < 0 then
 		if sword_jump then
-			hit_ceiling = self:collides_at_jump_sword_ceiling_profile(self.x, self.y + dy)
+			hit_ceiling = self:collides_at_jump_sword_ceiling_profile(self.x, self.y + dy, true)
 		else
-			hit_ceiling = self:collides_at_jump_ceiling_profile(self.x, self.y + dy)
+			hit_ceiling = self:collides_at_jump_ceiling_profile(self.x, self.y + dy, true)
 		end
 	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
-	self:apply_move(dx, dy)
+	self:apply_move(dx, dy, true)
 
 	if hit_ceiling then
 		self.jump_substate = constants.physics.jump_release_cut_substate
@@ -1939,7 +1925,7 @@ function player:tick_stopped_jump_motion()
 		self.jump_inertia = 0
 	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
-	self:apply_move(dx, 0)
+	self:apply_move(dx, 0, true)
 
 	self.jump_substate = self.jump_substate + 1
 	if self.jump_substate >= constants.physics.jump_to_fall_substate then
@@ -1963,7 +1949,7 @@ function player:tick_controlled_fall_motion()
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
 	local should_land = (not self:collides_at(self.x, self.y, true)) and self:collides_at(self.x, self.y + dy, true)
-	self:apply_move(dx, dy)
+	self:apply_move(dx, dy, true)
 
 	if should_land then
 		self.stairs_landing_sound_pending = false
@@ -1985,7 +1971,7 @@ function player:tick_uncontrolled_fall_motion()
 	end
 	local dy = self:get_uncontrolled_fall_dy()
 	local should_land = self:collides_at(self.x, self.y + dy, true)
-	self:apply_move(0, dy)
+	self:apply_move(0, dy, true)
 
 	if should_land then
 		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then
@@ -2316,8 +2302,6 @@ function player:tick()
 
 	self:try_open_world_entrance_with_key()
 	self:update_hit_stairs_lock()
-	self:try_side_room_switch_from_position()
-	self:try_vertical_room_switch_from_position()
 	if self:has_tag(state_tags.group.hit_overlap_states) then
 		self:resolve_hit_overlap_if_needed()
 	end

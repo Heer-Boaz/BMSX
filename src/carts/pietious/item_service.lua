@@ -231,7 +231,6 @@ function item_service:bind_events()
 
 	self.events:on({
 		event = 'enemy.defeated',
-		emitter = 'c',
 		subscriber = self,
 		handler = function(event)
 			self:set_room_condition(event.room_number, 'defeated_' .. event.kind)
@@ -247,7 +246,6 @@ function item_service:bind_events()
 
 	self.events:on({
 		event = 'room.condition_set',
-		emitter = 'c',
 		subscriber = self,
 		handler = function(event)
 			self:set_room_condition(event.room_number, event.condition)

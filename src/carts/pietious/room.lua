@@ -1,5 +1,6 @@
 local constants = require('constants')
 local castle_map = require('castle_map')
+local collision2d = require('collision2d')
 
 local room = {}
 local solid_tiles = {
@@ -484,97 +485,98 @@ local function apply_room_template(room_state, template)
 	append_definition_ids(runtime_object_ids, room_state.draaideuren)
 end
 
-function room.create_room(room_number)
+local room_object = {}
+room_object.__index = room_object
+
+function room_object:load_room(room_number)
 	local target_room_number = room_number or castle_map.start_room_number
-	local room_state = {}
-	apply_room_template(room_state, castle_map.room_templates[target_room_number])
-	return room_state
+	apply_room_template(self, castle_map.room_templates[target_room_number])
 end
 
-function room.patch_rows(room_state, rows)
+function room_object:patch_rows(rows)
 	local changed
 	for i = 1, #rows do
 		local patch = rows[i]
 		local row_index = patch.index
 		local row_value = patch.value
-		if room_state.map_rows[row_index] ~= row_value then
-			room_state.map_rows[row_index] = row_value
+		if self.map_rows[row_index] ~= row_value then
+			self.map_rows[row_index] = row_value
 			changed = true
 		end
 	end
 	if changed then
-		refresh_room_geometry(room_state)
+		refresh_room_geometry(self)
 	end
 	return changed
 end
 
-function room.apply_progression_command(room_state, command)
-	if command.room_number ~= nil and command.room_number ~= room_state.room_number then
+function room_object:apply_progression_command(command)
+	if command.room_number ~= nil and command.room_number ~= self.room_number then
 		return false
 	end
 	if command.op == 'room.patch_rows' then
-		return room.patch_rows(room_state, command.rows)
+		return self:patch_rows(command.rows)
 	end
 	error("Unsupported room progression command op '" .. tostring(command.op) .. "'.")
 end
 
-function room.world_to_tile(room_state, world_x, world_y)
-	local tx = math.modf((world_x - room_state.tile_origin_x) / room_state.tile_size) + 1
-	local ty = math.modf((world_y - room_state.tile_origin_y) / room_state.tile_size) + 1
+function room_object:world_to_tile(world_x, world_y)
+	local tx = math.modf((world_x - self.tile_origin_x) / self.tile_size) + 1
+	local ty = math.modf((world_y - self.tile_origin_y) / self.tile_size) + 1
 	return tx, ty
 end
 
-function room.tile_to_world(room_state, tx, ty)
-	local world_x = room_state.tile_origin_x + ((tx - 1) * room_state.tile_size)
-	local world_y = room_state.tile_origin_y + ((ty - 1) * room_state.tile_size)
+function room_object:tile_to_world(tx, ty)
+	local world_x = self.tile_origin_x + ((tx - 1) * self.tile_size)
+	local world_y = self.tile_origin_y + ((ty - 1) * self.tile_size)
 	return world_x, world_y
 end
 
-function room.snap_world_to_tile(room_state, world_x, world_y)
-	local tx, ty = room.world_to_tile(room_state, world_x, world_y)
-	return room.tile_to_world(room_state, tx, ty)
+function room_object:snap_world_to_tile(world_x, world_y)
+	local tx, ty = self:world_to_tile(world_x, world_y)
+	return self:tile_to_world(tx, ty)
 end
 
-function room.is_wall_at_tile(room_state, tx, ty)
-	if ty < 1 or ty > room_state.tile_rows then
+function room_object:is_wall_at_tile(tx, ty)
+	if ty < 1 or ty > self.tile_rows then
 		return false
 	end
-	if tx < 1 or tx > room_state.tile_columns then
+	if tx < 1 or tx > self.tile_columns then
 		return false
 	end
-	if room_state.collision_map[ty][tx] ~= 0 then
+	if self.collision_map[ty][tx] ~= 0 then
 		return true
 	end
-	if room.is_active_rock_at_tile(room_state, tx, ty) then
+	if self:is_active_rock_at_tile(tx, ty) then
 		return true
 	end
-	if room.is_active_draaideur_at_tile(room_state, tx, ty) then
+	if self:is_active_draaideur_at_tile(tx, ty) then
 		return true
 	end
-	return room.is_active_breakable_wall_at_tile(room_state, tx, ty)
+	return self:is_active_breakable_wall_at_tile(tx, ty)
 end
 
-function room.is_solid_at_tile(room_state, tx, ty)
-	if ty < 1 or ty > room_state.tile_rows then
+function room_object:is_solid_at_tile(tx, ty)
+	if ty < 1 or ty > self.tile_rows then
 		return false
 	end
-	if tx < 1 or tx > room_state.tile_columns then
+	if tx < 1 or tx > self.tile_columns then
 		return false
 	end
-	if room_state.collision_map[ty][tx] ~= 0 then
+	if self.collision_map[ty][tx] ~= 0 then
 		return true
 	end
-	if room.is_active_rock_at_tile(room_state, tx, ty) then
+	if self:is_active_rock_at_tile(tx, ty) then
 		return true
 	end
-	if room.is_active_draaideur_at_tile(room_state, tx, ty) then
+	if self:is_active_draaideur_at_tile(tx, ty) then
 		return true
 	end
-	return room.is_active_breakable_wall_at_tile(room_state, tx, ty)
+	return self:is_active_breakable_wall_at_tile(tx, ty)
 end
 
-function room.overlaps_active_rock(room_state, x, y, w, h)
-	local rocks = room_state.rocks
+function room_object:overlaps_active_rock(x, y, w, h)
+	local rocks = self.rocks
 	if #rocks == 0 then
 		return false
 	end
@@ -591,21 +593,21 @@ function room.overlaps_active_rock(room_state, x, y, w, h)
 	return false
 end
 
-function room.is_active_rock_at_tile(room_state, tx, ty)
-	local world_x, world_y = room.tile_to_world(room_state, tx, ty)
-	return room.overlaps_active_rock(room_state, world_x, world_y, room_state.tile_size, room_state.tile_size)
+function room_object:is_active_rock_at_tile(tx, ty)
+	local world_x, world_y = self:tile_to_world(tx, ty)
+	return self:overlaps_active_rock(world_x, world_y, self.tile_size, self.tile_size)
 end
 
-function room.overlaps_active_breakable_wall(room_state, x, y, w, h)
-	local enemy_defs = room_state.enemies
+function room_object:overlaps_active_breakable_wall(x, y, w, h)
+	local enemy_defs = self.enemies
 	for i = 1, #enemy_defs do
 		local enemy_def = enemy_defs[i]
-			if breakable_wall_kinds[enemy_def.kind] then
-				local wall = object(enemy_def.id)
-				if wall ~= nil and wall.active and wall.space_id == 'main' then
-					local wall_width = enemy_def.width_tiles * room_state.tile_size
-					local wall_height = enemy_def.height_tiles * room_state.tile_size
-					if rect_overlaps(x, y, w, h, enemy_def.x, enemy_def.y, wall_width, wall_height) then
+		if breakable_wall_kinds[enemy_def.kind] then
+			local wall = object(enemy_def.id)
+			if wall ~= nil and wall.active and wall.space_id == 'main' then
+				local wall_width = enemy_def.width_tiles * self.tile_size
+				local wall_height = enemy_def.height_tiles * self.tile_size
+				if rect_overlaps(x, y, w, h, enemy_def.x, enemy_def.y, wall_width, wall_height) then
 					return true
 				end
 			end
@@ -614,9 +616,9 @@ function room.overlaps_active_breakable_wall(room_state, x, y, w, h)
 	return false
 end
 
-function room.overlaps_active_draaideur(room_state, x, y, w, h)
-	local tx0, ty0 = room.world_to_tile(room_state, x, y)
-	local tx1, ty1 = room.world_to_tile(room_state, x + w - 1, y + h - 1)
+function room_object:overlaps_active_draaideur(x, y, w, h)
+	local tx0, ty0 = self:world_to_tile(x, y)
+	local tx1, ty1 = self:world_to_tile(x + w - 1, y + h - 1)
 	if tx1 < tx0 then
 		tx0, tx1 = tx1, tx0
 	end
@@ -626,7 +628,7 @@ function room.overlaps_active_draaideur(room_state, x, y, w, h)
 
 	for ty = ty0, ty1 do
 		for tx = tx0, tx1 do
-			if room.is_active_draaideur_at_tile(room_state, tx, ty) then
+			if self:is_active_draaideur_at_tile(tx, ty) then
 				return true
 			end
 		end
@@ -634,19 +636,43 @@ function room.overlaps_active_draaideur(room_state, x, y, w, h)
 	return false
 end
 
-function room.is_active_draaideur_at_tile(room_state, tx, ty)
-	if ty < 1 or ty > room_state.tile_rows then
+function room_object:overlaps_active_elevator(player, x, y)
+	local old_x = player.x
+	local old_y = player.y
+	player.x = x
+	player.y = y
+
+	local elevator_routes = service('e').elevator_routes
+	for i = 1, #elevator_routes do
+		local elevator = elevator_routes[i]
+		if elevator.current_room_number == self.room_number then
+			local platform = object(elevator.platform_id)
+			if collision2d.collides(player.collider, platform.collider) then
+				player.x = old_x
+				player.y = old_y
+				return true
+			end
+		end
+	end
+
+	player.x = old_x
+	player.y = old_y
+	return false
+end
+
+function room_object:is_active_draaideur_at_tile(tx, ty)
+	if ty < 1 or ty > self.tile_rows then
 		return false
 	end
-	if tx < 1 or tx > room_state.tile_columns then
+	if tx < 1 or tx > self.tile_columns then
 		return false
 	end
 
-	local draaideuren = room_state.draaideuren
+	local draaideuren = self.draaideuren
 	for i = 1, #draaideuren do
 		local door_def = draaideuren[i]
-		local door_tx = math.modf((door_def.x - room_state.tile_origin_x) / room_state.tile_size) + 1
-		local door_ty = math.modf((door_def.y - room_state.tile_origin_y) / room_state.tile_size) + 1
+		local door_tx = math.modf((door_def.x - self.tile_origin_x) / self.tile_size) + 1
+		local door_ty = math.modf((door_def.y - self.tile_origin_y) / self.tile_size) + 1
 		if tx == door_tx and ty >= door_ty and ty <= door_ty + 2 then
 			local draaideur = object(door_def.id)
 			if draaideur ~= nil and draaideur.state >= 0 then
@@ -657,61 +683,61 @@ function room.is_active_draaideur_at_tile(room_state, tx, ty)
 	return false
 end
 
-function room.is_active_breakable_wall_at_tile(room_state, tx, ty)
-	local world_x, world_y = room.tile_to_world(room_state, tx, ty)
-	return room.overlaps_active_breakable_wall(room_state, world_x, world_y, room_state.tile_size, room_state.tile_size)
+function room_object:is_active_breakable_wall_at_tile(tx, ty)
+	local world_x, world_y = self:tile_to_world(tx, ty)
+	return self:overlaps_active_breakable_wall(world_x, world_y, self.tile_size, self.tile_size)
 end
 
-function room.is_solid_at_world(room_state, world_x, world_y)
-	local tx, ty = room.world_to_tile(room_state, world_x, world_y)
-	return room.is_solid_at_tile(room_state, tx, ty)
+function room_object:is_solid_at_world(world_x, world_y)
+	local tx, ty = self:world_to_tile(world_x, world_y)
+	return self:is_solid_at_tile(tx, ty)
 end
 
-function room.sync_lithograph_instances(room_state)
-	local lithograph_defs = room_state.lithographs
+function room_object:sync_lithograph_instances()
+	local lithograph_defs = self.lithographs
 	for i = 1, #lithograph_defs do
 		local lithograph_def = lithograph_defs[i]
-			if object(lithograph_def.id) == nil then
-				inst('lithograph', {
-					id = lithograph_def.id,
-					pos = { x = lithograph_def.x, y = lithograph_def.y, z = 10 },
-					text = lithograph_def.text,
-					room_number = room_state.room_number,
+		if object(lithograph_def.id) == nil then
+			inst('lithograph', {
+				id = lithograph_def.id,
+				pos = { x = lithograph_def.x, y = lithograph_def.y, z = 10 },
+				text = lithograph_def.text,
+				room_number = self.room_number,
 			})
 		end
 	end
 end
 
-function room.sync_shrine_instances(room_state)
-	local shrine_defs = room_state.shrines
+function room_object:sync_shrine_instances()
+	local shrine_defs = self.shrines
 	for i = 1, #shrine_defs do
 		local shrine_def = shrine_defs[i]
-			if object(shrine_def.id) == nil then
-				inst('room_shrine', {
-					id = shrine_def.id,
-					pos = { x = shrine_def.x, y = shrine_def.y, z = 22 },
-				})
-			end
-	end
-end
-
-function room.sync_draaideur_instances(room_state)
-	local draaideur_defs = room_state.draaideuren
-	for i = 1, #draaideur_defs do
-		local draaideur_def = draaideur_defs[i]
-			if object(draaideur_def.id) == nil then
-				inst('draaideur', {
-					id = draaideur_def.id,
-					pos = { x = draaideur_def.x, y = draaideur_def.y, z = 22 },
-					kind = draaideur_def.kind,
-				})
+		if object(shrine_def.id) == nil then
+			inst('room_shrine', {
+				id = shrine_def.id,
+				pos = { x = shrine_def.x, y = shrine_def.y, z = 22 },
+			})
 		end
 	end
 end
 
-function room.find_near_lithograph(room_state, player)
-	room.sync_lithograph_instances(room_state)
-	local lithograph_defs = room_state.lithographs
+function room_object:sync_draaideur_instances()
+	local draaideur_defs = self.draaideuren
+	for i = 1, #draaideur_defs do
+		local draaideur_def = draaideur_defs[i]
+		if object(draaideur_def.id) == nil then
+			inst('draaideur', {
+				id = draaideur_def.id,
+				pos = { x = draaideur_def.x, y = draaideur_def.y, z = 22 },
+				kind = draaideur_def.kind,
+			})
+		end
+	end
+end
+
+function room_object:find_near_lithograph(player)
+	self:sync_lithograph_instances()
+	local lithograph_defs = self.lithographs
 	local player_left = player.x
 	local player_top = player.y
 	local player_right = player.x + player.width
@@ -731,13 +757,13 @@ function room.find_near_lithograph(room_state, player)
 	return nil
 end
 
-function room.switch_room(room_state, direction)
-	local target_room_number = room_state.links[direction]
+function room_object:switch_room(direction)
+	local target_room_number = self.links[direction]
 	if target_room_number == nil or target_room_number == 0 then -- TODO: force a single exit room value (either nil or 0) instead of allowing both
 		return nil
 	end
 
-	local from_room_number = room_state.room_number
+	local from_room_number = self.room_number
 
 	if target_room_number < 0 then
 		return {
@@ -748,24 +774,12 @@ function room.switch_room(room_state, direction)
 		}
 	end
 
-	apply_room_template(room_state, castle_map.room_templates[target_room_number])
+	apply_room_template(self, castle_map.room_templates[target_room_number])
 	return {
 		from_room_number = from_room_number,
-		to_room_number = room_state.room_number,
+		to_room_number = self.room_number,
 		direction = direction,
 	}
-end
-
-local room_object = {}
-room_object.__index = room_object
-
-local function render_elevators(room_number, elevator_routes)
-	for i = 1, #elevator_routes do
-		local elevator = elevator_routes[i]
-		if elevator.current_room_number == room_number then
-			put_sprite('elevator_platform', elevator.x, elevator.y, 21)
-		end
-	end
 end
 
 function room_object:bind_visual()
@@ -782,9 +796,9 @@ function room_object:bind_events()
 		subscriber = self,
 		handler = function()
 			self:set_space('main')
-			room.sync_lithograph_instances(service('c').current_room)
-			room.sync_shrine_instances(service('c').current_room)
-			room.sync_draaideur_instances(service('c').current_room)
+			self:sync_lithograph_instances()
+			self:sync_shrine_instances()
+			self:sync_draaideur_instances()
 		end,
 	})
 end
@@ -792,29 +806,26 @@ end
 function room_object:ctor()
 	self.seal_fx_active = false
 	self.daemon_fx_active = false
-	room.sync_lithograph_instances(service('c').current_room)
-	room.sync_shrine_instances(service('c').current_room)
-	room.sync_draaideur_instances(service('c').current_room)
 	self:bind_visual()
 	self:bind_events()
 end
 
-function room_object:render_tiles(room_state)
-	local tile_size = room_state.tile_size
-	local origin_x = room_state.tile_origin_x
-	local origin_y = room_state.tile_origin_y
-	local dissolve_step = room_state.room_dissolve_step
+function room_object:render_tiles()
+	local tile_size = self.tile_size
+	local origin_x = self.tile_origin_x
+	local origin_y = self.tile_origin_y
+	local dissolve_step = self.room_dissolve_step
 
-	for y = 1, room_state.tile_rows do
+	for y = 1, self.tile_rows do
 		local draw_y = origin_y + ((y - 1) * tile_size)
-		local map_row = room_state.map_rows[y]
-		local row = room_state.tiles[y]
-		for x = 1, room_state.tile_columns do
+		local map_row = self.map_rows[y]
+		local row = self.tiles[y]
+		for x = 1, self.tile_columns do
 			local draw_x = origin_x + ((x - 1) * tile_size)
 			local tile_id = row[x]
 			if dissolve_step > 0 then
 				local dissolve_index = dissolve_step - 1
-				if room_state.room_subtype == 'world' and map_row:sub(x, x) == '$' then
+				if self.room_subtype == 'world' and map_row:sub(x, x) == '$' then
 					if dissolve_index >= 6 then
 						goto continue
 					end
@@ -837,25 +848,20 @@ function room_object:render_tiles(room_state)
 	end
 end
 
-function room_object:render_room_objects(room_state)
+function room_object:render_room_objects()
 	local castle_service = service('c')
-	local world_entrances = room_state.world_entrances
+	local world_entrances = self.world_entrances
 	for i = 1, #world_entrances do
 		local world_entrance = world_entrances[i]
 		local entrance_state = castle_service.world_entrance_states[world_entrance.target].state
 		local sprite_id = world_entrance_sprite_id(entrance_state)
 		put_sprite(sprite_id, world_entrance.x, world_entrance.y, 22)
 	end
-
-	local elevator_service = service('e')
-	render_elevators(room_state.room_number, elevator_service.elevator_routes)
 end
 
 function room_object:render_room()
-	local castle_service = service('c')
-	local room_state = castle_service.current_room
-	self:render_tiles(room_state)
-	self:render_room_objects(room_state)
+	self:render_tiles()
+	self:render_room_objects()
 	local director_service = service('d')
 	if self.seal_fx_active and director_service.seal_flash_on then
 		for y = constants.room.tile_origin_y, display_height() - 1 do
@@ -932,7 +938,6 @@ local function register_room_definition()
 	})
 end
 
-room.room_object = room_object
 room.define_room_fsm = define_room_fsm
 room.register_room_definition = register_room_definition
 
