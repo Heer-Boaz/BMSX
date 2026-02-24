@@ -899,14 +899,25 @@ function isSelfExpressionRoot(expression: LuaExpression): boolean {
 	return false;
 }
 
-function isSelfPropertyAliasExpression(expression: LuaExpression): boolean {
+function getSelfPropertyNameFromAliasExpression(expression: LuaExpression): string | undefined {
 	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		return isSelfExpressionRoot(expression.base);
+		if (!isSelfExpressionRoot(expression.base)) {
+			return undefined;
+		}
+		return expression.identifier;
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
-		return isSelfExpressionRoot(expression.base);
+		if (!isSelfExpressionRoot(expression.base)) {
+			return undefined;
+		}
+		return getExpressionKeyName(expression.index);
 	}
-	return false;
+	return undefined;
+}
+
+function isStateLikeAliasName(name: string): boolean {
+	const lowered = name.toLowerCase();
+	return lowered.includes('state') || lowered.includes('substate');
 }
 
 function isSelfImageIdAssignmentTarget(target: LuaExpression): boolean {
@@ -2088,7 +2099,7 @@ function lintTickInputCheckPattern(functionExpression: LuaFunctionExpression, is
 		issues,
 		'tick_input_check_pattern',
 		inputCheck,
-		'Input checks inside tick are forbidden. Use FSM input handlers (player-index based) or events/timelines instead of polling input in tick.',
+		'Input checks inside tick are forbidden. Use FSM input handlers (player-index based), the FSM process_input handler, or events/timelines instead of polling input in tick.',
 	);
 }
 
@@ -2883,12 +2894,40 @@ function isForeignObjectAliasInitializer(expression: LuaExpression | undefined):
 	return isObjectOrServiceResolverCallExpression(expression);
 }
 
-function getAssignedPropertyNameFromTarget(target: LuaExpression): string | undefined {
+type AssignmentTargetInfo = {
+	depth: number;
+	rootName: string;
+	terminalPropertyName?: string;
+};
+
+function getAssignmentTargetInfo(target: LuaExpression): AssignmentTargetInfo | undefined {
+	if (target.kind === LuaSyntaxKind.IdentifierExpression) {
+		return {
+			depth: 0,
+			rootName: target.name,
+		};
+	}
 	if (target.kind === LuaSyntaxKind.MemberExpression) {
-		return target.identifier;
+		const baseInfo = getAssignmentTargetInfo(target.base);
+		if (!baseInfo) {
+			return undefined;
+		}
+		return {
+			depth: baseInfo.depth + 1,
+			rootName: baseInfo.rootName,
+			terminalPropertyName: target.identifier,
+		};
 	}
 	if (target.kind === LuaSyntaxKind.IndexExpression) {
-		return getExpressionKeyName(target.index);
+		const baseInfo = getAssignmentTargetInfo(target.base);
+		if (!baseInfo) {
+			return undefined;
+		}
+		return {
+			depth: baseInfo.depth + 1,
+			rootName: baseInfo.rootName,
+			terminalPropertyName: getExpressionKeyName(target.index),
+		};
 	}
 	return undefined;
 }
@@ -2961,30 +3000,31 @@ function lintForeignObjectMutationInStatements(
 					declareForeignObjectBinding(context, declaration, binding);
 				}
 				break;
-			case LuaSyntaxKind.AssignmentStatement: {
-				for (const left of statement.left) {
-					const propertyName = getAssignedPropertyNameFromTarget(left);
-					if (!propertyName) {
-						lintForeignObjectMutationInExpression(left, context);
-						continue;
+				case LuaSyntaxKind.AssignmentStatement: {
+					for (const left of statement.left) {
+						const targetInfo = getAssignmentTargetInfo(left);
+						if (!targetInfo || targetInfo.depth < 1) {
+							lintForeignObjectMutationInExpression(left, context);
+							continue;
+						}
+						const binding = resolveForeignObjectBinding(context, targetInfo.rootName);
+						if (!binding) {
+							continue;
+						}
+						if (targetInfo.depth !== 1) {
+							continue;
+						}
+						const propertyName = targetInfo.terminalPropertyName;
+						if (!propertyName) {
+							continue;
+						}
+						pushIssue(
+							context.issues,
+							'foreign_object_internal_mutation_pattern',
+							left,
+							`Direct top-level mutation on alias ${targetInfo.rootName}.${propertyName} is forbidden. Keep ownership in the target object/service implementation and call domain methods/events; do not add getter/setter wrappers as a workaround.`,
+						);
 					}
-					const rootName = left.kind === LuaSyntaxKind.MemberExpression
-						? getRootIdentifier(left.base)
-						: getRootIdentifier(left.base);
-					if (!rootName) {
-						continue;
-					}
-					const binding = resolveForeignObjectBinding(context, rootName);
-					if (!binding) {
-						continue;
-					}
-					pushIssue(
-						context.issues,
-						'foreign_object_internal_mutation_pattern',
-						left,
-						`Direct internal mutation on ${rootName}.${propertyName} is forbidden. Do not mutate internals of object()/service() instances via aliases; expose explicit methods/events instead.`,
-					);
-				}
 				for (const right of statement.right) {
 					lintForeignObjectMutationInExpression(right, context);
 				}
@@ -4314,12 +4354,13 @@ function lintLocalAssignment(statement: LuaLocalAssignmentStatement, issues: Lua
 	for (let index = 0; index < valueCount; index += 1) {
 		const value = statement.values[index];
 		const localName = statement.names[index].name;
-		if (localName !== '_' && isSelfPropertyAliasExpression(value)) {
+		const selfPropertyName = getSelfPropertyNameFromAliasExpression(value);
+		if (localName !== '_' && selfPropertyName && (isStateLikeAliasName(localName) || isStateLikeAliasName(selfPropertyName))) {
 			pushIssue(
 				issues,
 				'self_property_local_alias_pattern',
 				statement.names[index],
-				`Local alias of self.* is forbidden (${localName}). Read self.<property> directly. If self.player_index is needed, use the FSM input handlers for that state (they already trigger on player_index).`,
+				`Local alias of self state-data is forbidden (${localName}). Read state values directly from self instead of caching them in locals.`,
 			);
 		}
 		if (!isConstantAccessExpression(value)) {
