@@ -432,13 +432,21 @@ local function define_director_fsm()
 						self.overlay_mode = nil
 						self.overlay_text_lines = {}
 						object('shrine').lines = {}
+						self.transition_frames_left = constants.flow.room_switch_wait_frames
 						set_space('main')
 						object('ui'):set_space('main')
 						object('pietolon'):leave_shrine_overlay()
 					end,
 					on = {
-						['shrine_exit_done'] = '/room_switch_wait',
+						['shrine_exit_done'] = '/room',
 					},
+					tick = function(self)
+						self.transition_frames_left = self.transition_frames_left - 1
+						if self.transition_frames_left > 0 then
+							return
+						end
+						return '/room'
+					end,
 				},
 			item_screen_opening = {
 				entering_state = function(self)
