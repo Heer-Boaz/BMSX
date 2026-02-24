@@ -89,8 +89,7 @@ function enemy_base.take_weapon_hit(self, weapon_kind)
 		self.health = 0
 		self.dangerous = false
 		self:spawn_death_effect()
-		service('c').events:emit('enemy.defeated', {
-			service_id = service('c').id,
+		service('en').events:emit('enemy.defeated', {
 			enemy_id = self.id,
 			room_number = service('c').current_room.room_number,
 			kind = self.enemy_kind,

@@ -1,7 +1,6 @@
 local constants = require('constants')
 local behaviourtree = require('behaviourtree')
 local enemy_base = require('enemies/enemy_base')
-local room_module = require('room')
 
 local zakfoe = {}
 zakfoe.__index = zakfoe
@@ -49,16 +48,18 @@ function zakfoe.bt_tick(self, blackboard)
 		self.current_vertical_speed = self.current_vertical_speed + constants.enemy.zak_vertical_speed_step
 
 		if self.direction == 'left' then
+			local rm = object('room')
 			if self.x < 0
-				or room_module.is_solid_at_world(service('c').current_room, self.x + 2, self.y + 2)
-				or not room_module.is_solid_at_world(service('c').current_room, self.x + 2 - constants.room.tile_half, self.y + 14 + constants.room.tile_size)
+				or rm:is_solid_at_world(self.x + 2, self.y + 2)
+				or not rm:is_solid_at_world(self.x + 2 - constants.room.tile_half, self.y + 14 + constants.room.tile_size)
 			then
 				self.direction = 'right'
 			end
 		else
-			if self.x + 14 >= service('c').current_room.world_width
-				or room_module.is_solid_at_world(service('c').current_room, self.x + 14, self.y + 2)
-				or not room_module.is_solid_at_world(service('c').current_room, self.x + 14 + constants.room.tile_half, self.y + 14 + constants.room.tile_size)
+			local rm = object('room')
+			if self.x + 14 >= rm.world_width
+				or rm:is_solid_at_world(self.x + 14, self.y + 2)
+				or not rm:is_solid_at_world(self.x + 14 + constants.room.tile_half, self.y + 14 + constants.room.tile_size)
 			then
 				self.direction = 'left'
 			end

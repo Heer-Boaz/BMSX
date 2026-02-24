@@ -13,7 +13,6 @@ function breakablewall:take_weapon_hit()
 	self.health = 0
 	local room_number = service('c').current_room.room_number
 	service('c').events:emit('room.condition_set', {
-		service_id = service('c').id,
 		room_number = room_number,
 		condition = self.trigger,
 	})
