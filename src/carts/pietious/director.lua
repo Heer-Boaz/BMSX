@@ -4,7 +4,8 @@ local director = {}
 director.__index = director
 
 local function room_state_name(room_state)
-	if room_state.world_number ~= 0 then
+	local world_number = room_state.world_number or 0
+	if world_number ~= 0 then
 		if room_state.has_active_seal then
 			return 'seal'
 		end
@@ -30,11 +31,17 @@ end
 
 function director:set_mode_state(mode_state)
 	self.mode_state = mode_state
+	if mode_state == 'room' then
+		self.room_state = room_state_name(service('c').current_room)
+	end
 	self.changed_axis = 'mode'
 	self:emit_state_changed(mode_state)
 end
 
 function director:set_room_state(room_state)
+	if self.room_state == room_state then
+		return
+	end
 	self.room_state = room_state
 	self.changed_axis = 'room'
 	self:emit_state_changed(room_state)

@@ -15,12 +15,31 @@ events:
                       fade_ms: 250
             - when:
                   equals:
+                      changed_axis: mode
+                      mode_state: room
+                      room_state: castle
+              go:
+                  music_transition:
+                      audio_id: music_castle
+                      sync: immediate
+                      fade_ms: 250
+            - when:
+                  equals:
                       changed_axis: room
                       mode_state: room
                       room_state: world
               go:
                   music_transition:
                       audio_id: music_world
+            - when:
+                  equals:
+                      changed_axis: mode
+                      mode_state: room
+                      room_state: world
+              go:
+                  music_transition:
+                      audio_id: music_world
+                      sync: immediate
             - when:
                   equals:
                       changed_axis: room
@@ -34,6 +53,15 @@ events:
             - when:
                   equals:
                       changed_axis: mode
+                      mode_state: room
+                      room_state: seal
+              go:
+                  music_transition:
+                      audio_id: music_seal_2
+                      sync: immediate
+            - when:
+                  equals:
+                      changed_axis: mode
                       mode_state: seal_dissolution
               go:
                   music_transition:
@@ -44,6 +72,15 @@ events:
             - when:
                   equals:
                       changed_axis: room
+                      mode_state: room
+                      room_state: daemon_fight
+              go:
+                  music_transition:
+                      audio_id: music_daemonfight
+                      sync: immediate
+            - when:
+                  equals:
+                      changed_axis: mode
                       mode_state: room
                       room_state: daemon_fight
               go:
