@@ -79,7 +79,7 @@ function rock_service:on_rock_destroyed(rock_id)
 
 	local instance = object(rock_id)
 	if instance ~= nil then
-		instance.visible = false
+		object(rock_id).visible = false
 		if instance.active then
 			instance:deactivate()
 		end

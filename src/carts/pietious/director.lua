@@ -17,24 +17,18 @@ local function room_state_name(room_state)
 end
 
 function director:emit_state_changed(state_name)
-	object('room'):dispatch_state_event(state_name)
+	if state_name == 'seal_dissolution' then
+		object('room').sc:dispatch('seal_fx_start')
+	elseif state_name == 'daemon_appearance' then
+		object('room').sc:dispatch('daemon_fx_start')
+	else
+		object('room').sc:dispatch('fx_stop')
+	end
 	self.events:emit('director.state_changed', {
 		state = state_name,
 		space = object('ui').space_id,
 		transition_kind = self.active_transition_kind,
 	})
-end
-
-function director:item_screen_toggle_pressed()
-	return action_triggered('lb[jp]', self.player_index) or action_triggered('rb[jp]', self.player_index)
-end
-
-function director:lithograph_close_pressed()
-	return action_triggered('b[jp]', self.player_index) or action_triggered('x[jp]', self.player_index)
-end
-
-function director:lithograph_close_held()
-	return action_triggered('b[p]', self.player_index) or action_triggered('x[p]', self.player_index)
 end
 
 function director:activate_spaces()
@@ -71,7 +65,7 @@ function director:queue_banner_transition(mode, world_number, post_action)
 	self.pending_banner_mode = mode
 	self.pending_banner_world_number = world_number
 	self.pending_banner_post_action = post_action
-	self:dispatch_state_event('banner_requested')
+	self.sc:dispatch('banner_requested')
 end
 
 function director:expect_room_switch_banner(mode, world_number, post_action)
@@ -101,7 +95,7 @@ end
 
 function director:open_shrine(text_lines)
 	self.pending_shrine_text_lines = text_lines
-	self:dispatch_state_event('shrine_overlay_requested')
+	self.sc:dispatch('shrine_overlay_requested')
 end
 
 function director:sync_room_state_from_castle()
@@ -161,7 +155,7 @@ function director:bind_events()
 			if self:queue_expected_room_switch_banner_if_any() then
 				return
 			end
-			self.room_switch_requested = true
+			self.sc:dispatch('room_switched')
 		end,
 	})
 
@@ -170,7 +164,7 @@ function director:bind_events()
 		emitter = 'pietolon',
 		subscriber = self,
 		handler = function()
-			self.shrine_transition_done = true
+			self.sc:dispatch('shrine_transition_done')
 		end,
 	})
 
@@ -179,8 +173,8 @@ function director:bind_events()
 		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(event)
-			self.pending_lithograph_text_line = event.text_line
-			self.lithograph_request_pending = true
+			self.lithograph_text_lines = { event.text_line }
+			self.sc:dispatch('lithograph_requested')
 		end,
 	})
 end
@@ -211,10 +205,6 @@ function director:ctor()
 	self.map_x = 5
 	self.map_y = 12
 	self.last_room_switch = nil
-	self.room_switch_requested = false
-	self.shrine_transition_done = false
-	self.lithograph_request_pending = false
-	self.pending_lithograph_text_line = nil
 	self:activate_spaces()
 	self:bind_events()
 end
@@ -234,8 +224,8 @@ local function define_director_fsm()
 			['death_start'] = '/death',
 		},
 		states = {
-			room = {
-				entering_state = function(self)
+				room = {
+					entering_state = function(self)
 					self:sync_room_state_from_castle()
 					self.active_transition_kind = nil
 					self.overlay_mode = nil
@@ -253,29 +243,23 @@ local function define_director_fsm()
 					local current_room = castle_service.current_room
 					set_space('main')
 					object('ui'):set_space('main')
-					castle_service:restore_active_enemies_after_shrine_transition()
-					self:emit_state_changed(room_state_name(current_room))
-				end,
-				tick = function(self)
-					if self.pending_banner_mode ~= nil then
-						return '/banner_transition'
-					end
-					if self.room_switch_requested then
-						self.room_switch_requested = false
-						return '/room_switch_wait'
-					end
-					if self.lithograph_request_pending then
-						self.lithograph_request_pending = false
-						self.lithograph_text_lines = { self.pending_lithograph_text_line }
-						self.pending_lithograph_text_line = nil
-						return '/lithograph_screen_open'
-					end
-					if self:item_screen_toggle_pressed() then
-						self.events:emit('evt.cue.f1', {})
-						return '/item_screen_opening'
-					end
-				end,
-			},
+						castle_service:restore_active_enemies_after_shrine_transition()
+						self:emit_state_changed(room_state_name(current_room))
+					end,
+					on = {
+						['room_switched'] = '/room_switch_wait',
+						['lithograph_requested'] = '/lithograph_screen_open',
+						['banner_requested'] = '/banner_transition',
+					},
+					input_event_handlers = {
+						['lb[jp] || rb[jp]'] = {
+							go = function(self)
+								self.events:emit('evt.cue.f1', {})
+								return '/item_screen_opening'
+							end,
+						},
+					},
+				},
 			room_switch_wait = {
 				entering_state = function(self)
 					self.active_transition_kind = 'room_switch'
@@ -289,22 +273,17 @@ local function define_director_fsm()
 					return '/room'
 				end,
 			},
-			world_transition = {
+				world_transition = {
 				entering_state = function(self)
 					self.active_transition_kind = 'world'
 					set_space('main')
 					object('ui'):set_space('main')
 				end,
-				on = {
-					['world_transition_done'] = '/room_switch_wait',
-					['banner_requested'] = '/banner_transition',
+					on = {
+						['world_transition_done'] = '/room_switch_wait',
+						['banner_requested'] = '/banner_transition',
+					},
 				},
-				tick = function(self)
-					if self.pending_banner_mode ~= nil then
-						return '/banner_transition'
-					end
-				end,
-			},
 			shrine_transition_enter = {
 				entering_state = function(self)
 					self.active_transition_kind = 'shrine'
@@ -360,14 +339,9 @@ local function define_director_fsm()
 					object('ui'):set_space('shrine')
 					self:emit_state_changed('shrine')
 				end,
-				on = {
-					['shrine_overlay_close_requested'] = '/shrine_transition_exit',
+				input_event_handlers = {
+					['down[jp]'] = '/shrine_transition_exit',
 				},
-				tick = function(self)
-					if action_triggered('down[jp]', self.player_index) then
-						self:dispatch_state_event('shrine_overlay_close_requested')
-					end
-				end,
 			},
 			shrine_transition_exit = {
 				entering_state = function(self)
@@ -377,16 +351,12 @@ local function define_director_fsm()
 					object('shrine').lines = {}
 					set_space('main')
 					object('ui'):set_space('main')
-					self.shrine_transition_done = false
 					object('pietolon'):leave_shrine_overlay()
 				end,
-					tick = function(self)
-						if self.shrine_transition_done then
-							self.shrine_transition_done = false
-							return '/room_switch_wait'
-						end
-					end,
+				on = {
+					['shrine_transition_done'] = '/room_switch_wait',
 				},
+			},
 			item_screen_opening = {
 				entering_state = function(self)
 					self.active_transition_kind = 'item_open'
@@ -400,25 +370,28 @@ local function define_director_fsm()
 					return '/item_screen'
 				end,
 			},
-			item_screen = {
+				item_screen = {
 				entering_state = function(self)
 					self.active_transition_kind = 'item'
 					set_space('item')
 					object('ui'):set_space('item')
 					self:emit_state_changed('item')
 				end,
-				tick = function(self)
-					if self.pending_banner_mode ~= nil then
-						return '/banner_transition'
-					end
-					if action_triggered('start[jp]', self.player_index) and object('pietolon').abilities:activate('halo') then
-						return '/room'
-					end
-					if self:item_screen_toggle_pressed() then
-						return '/item_screen_closing'
-					end
-				end,
-			},
+					input_event_handlers = {
+						['start[jp]'] = {
+							guard = function(_self)
+								return object('pietolon').abilities:activate('halo')
+							end,
+							go = '/room',
+						},
+						['lb[jp] || rb[jp]'] = {
+							go = '/item_screen_closing',
+						},
+					},
+						on = {
+							['banner_requested'] = '/banner_transition',
+						},
+					},
 			item_screen_closing = {
 				entering_state = function(self)
 					self.active_transition_kind = 'item_close'
@@ -451,9 +424,8 @@ local function define_director_fsm()
 					self.transition_frames_left = 0
 					self.demon_intro_state = 1
 					self.seal_flash_on = false
-					local player = object('pietolon')
-					player.seal_projectiles_frozen = true
-					player:dispatch_state_event('seal_breaking')
+					object('pietolon').seal_projectiles_frozen = true
+					object('pietolon').sc:dispatch('seal_breaking')
 					set_space('main')
 					object('ui'):set_space('main')
 					object('transition'):set_space('main')
@@ -463,9 +435,8 @@ local function define_director_fsm()
 				on = {
 					['seal_dissolution_done'] = {
 						go = function(self)
-							local player = object('pietolon')
-							player.seal_projectiles_frozen = false
-							player:dispatch_state_event('seal_broken')
+							object('pietolon').seal_projectiles_frozen = false
+							object('pietolon').sc:dispatch('seal_broken')
 							service('c'):finish_seal_dissolution()
 							return '/daemon_appearance'
 						end,
@@ -479,7 +450,7 @@ local function define_director_fsm()
 						return
 					end
 					self.seal_flash_on = false
-					self:dispatch_state_event('seal_dissolution_done')
+					self.sc:dispatch('seal_dissolution_done')
 				end,
 			},
 			daemon_appearance = {
@@ -539,7 +510,7 @@ local function define_director_fsm()
 						self.demon_intro_state = self.demon_intro_state + 1
 						return
 					end
-					self:dispatch_state_event('daemon_appearance_done')
+					self.sc:dispatch('daemon_appearance_done')
 				end,
 			},
 			lithograph_screen_open = {
@@ -550,26 +521,21 @@ local function define_director_fsm()
 					object('ui'):set_space('lithograph')
 					self:emit_state_changed('lithograph')
 				end,
-				tick = function(self)
-					if self:lithograph_close_held() then
+				process_input = function(self)
+					if action_triggered('b[p] || x[p]', self.player_index) then
 						return
 					end
 					return '/lithograph_screen'
 				end,
 			},
 			lithograph_screen = {
-				tick = function(self)
-					if self:lithograph_close_pressed() then
-						return '/lithograph_screen_close'
-					end
-				end,
-				on = {
-					['lithograph_screen_done'] = '/room',
+				input_event_handlers = {
+					['b[jp] || x[jp]'] = '/lithograph_screen_close',
 				},
 			},
 			lithograph_screen_close = {
-				tick = function(self)
-					if self:lithograph_close_held() then
+				process_input = function(self)
+					if action_triggered('b[p] || x[p]', self.player_index) then
 						return
 					end
 					self.lithograph_text_lines = {}

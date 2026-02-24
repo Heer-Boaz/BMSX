@@ -62,7 +62,7 @@ local function start_flying(self, blackboard)
 	self:change_sprite_on_direction()
 	blackboard.nodedata.mijter_takeoff_ticks = math.random(constants.enemy.mijter_wait_takeoff_min_steps, constants.enemy.mijter_wait_takeoff_max_steps)
 	blackboard.nodedata.mijter_turn_ticks = math.random(constants.enemy.mijter_turn_min_steps, constants.enemy.mijter_turn_max_steps)
-	self:dispatch_state_event('takeoff')
+	self.sc:dispatch('takeoff')
 	return behaviourtree.running
 end
 

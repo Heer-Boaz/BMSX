@@ -1688,23 +1688,17 @@ function isDispatchStateEventCallExpression(expression: LuaCallExpression): bool
 }
 
 function lintForbiddenDispatchPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
-	if (isDispatchStateEventCallExpression(expression)) {
-		pushIssue(
-			issues,
-			'forbidden_dispatch_pattern',
-			expression,
-			'dispatch_state_event(...) is forbidden in cart code. Model transitions directly in FSM definitions (on/input/process_input/timelines) instead of manual dispatch.',
-		);
+	const dispatchStateEventCall = isDispatchStateEventCallExpression(expression);
+	const stateControllerDispatchCall = isStateControllerDispatchCallExpression(expression);
+	if (!dispatchStateEventCall && !stateControllerDispatchCall) {
 		return;
 	}
-	if (isStateControllerDispatchCallExpression(expression)) {
-		pushIssue(
-			issues,
-			'forbidden_dispatch_pattern',
-			expression,
-			'sc:dispatch(...) is forbidden in cart code. Model transitions directly in FSM definitions (on/input/process_input/timelines) instead of manual dispatch.',
-		);
-	}
+	pushIssue(
+		issues,
+		'forbidden_dispatch_pattern',
+		expression,
+		'State dispatch APIs are forbidden in cart code (dispatch_state_event(...) and sc:dispatch(...)). Do not replace one with the other; model transitions directly in FSM definitions (on/input/process_input/timelines).',
+	);
 }
 
 function isCrossObjectDispatchStateEventCallExpression(expression: LuaCallExpression): boolean {

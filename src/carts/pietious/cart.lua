@@ -62,7 +62,7 @@ local function grant_starting_loadout()
 	player.inventory_items['map_world1'] = true
 	player.inventory_items['pepernoot'] = true
 	player:equip_subweapon('pepernoot')
-	player.weapon_level = constants.hud.weapon_level
+	object('pietolon').weapon_level = constants.hud.weapon_level
 	local castle_service = service('c')
 	progression.set(castle_service, 'staff1destroyed', true)
 	progression.set(castle_service, 'staff2destroyed', true)

@@ -64,7 +64,7 @@ end
 
 function elevator_service:tick()
 	local player = object('pietolon')
-	player.on_vertical_elevator = false
+	object('pietolon').on_vertical_elevator = false
 
 	local current_room = service('c').current_room
 	local map_id = current_room.map_id
@@ -95,18 +95,18 @@ function elevator_service:tick()
 		local target = elevator.path[elevator.going_to]
 		local vertical = elevator.vertical_to_point[elevator.going_to]
 
-		if elevator.x < target.x then
-			elevator.x = elevator.x + 2
-			if character_over then
-				player.x = player.x + 2
+			if elevator.x < target.x then
+				elevator.x = elevator.x + 2
+				if character_over then
+					object('pietolon').x = object('pietolon').x + 2
+				end
 			end
-		end
-		if elevator.x > target.x then
-			elevator.x = elevator.x - 2
-			if character_over then
-				player.x = player.x - 2
+			if elevator.x > target.x then
+				elevator.x = elevator.x - 2
+				if character_over then
+					object('pietolon').x = object('pietolon').x - 2
+				end
 			end
-		end
 
 		move_elevator_vertical(elevator, target, vertical, character_over, player)
 

@@ -315,17 +315,15 @@ function castle_service:sync_enemy_instance(enemy_def, room, force_reset_from_ro
 end
 
 function castle_service:deactivate_enemy_by_id(id)
-	local instance = self.enemies_by_id[id]
-	if instance == nil then
-		instance = object(id)
-		if instance == nil then
+	if self.enemies_by_id[id] == nil then
+		self.enemies_by_id[id] = object(id)
+		if self.enemies_by_id[id] == nil then
 			return
 		end
 	end
-	self.enemies_by_id[id] = instance
-	instance.visible = false
-	if instance.active then
-		instance:deactivate()
+	self.enemies_by_id[id].visible = false
+	if self.enemies_by_id[id].active then
+		self.enemies_by_id[id]:deactivate()
 	end
 end
 
@@ -382,22 +380,21 @@ function castle_service:restore_active_enemies_after_shrine_transition()
 end
 
 function castle_service:sync_current_room_seal_instance()
-	local room_state = self.current_room
-	local seal = room_state.seal
+	local seal = self.current_room.seal
 	if seal == nil then
 		return
 	end
 	local active_space = get_space()
 
 	local seal_instance = object(seal.id)
-	if not room_state.has_active_seal and not room_state.seal_sequence_active then
+	if not self.current_room.has_active_seal and not self.current_room.seal_sequence_active then
 		if seal_instance ~= nil then
 			world_instance:despawn(seal_instance)
 		end
 		return
 	end
 
-	local dissolve_step = room_state.seal_dissolve_step
+	local dissolve_step = self.current_room.seal_dissolve_step
 	if dissolve_step >= 6 then
 		if seal_instance ~= nil then
 			world_instance:despawn(seal_instance)
@@ -433,28 +430,25 @@ function castle_service:sync_current_room_seal_instance()
 end
 
 function castle_service:refresh_current_room_customizations()
-	local room_state = self.current_room
-	local seal = room_state.seal
+	local seal = self.current_room.seal
 	if seal == nil then
-		room_state.has_active_seal = false
+		self.current_room.has_active_seal = false
 	else
-		room_state.has_active_seal = progression.matches(self, seal.conditions)
+		self.current_room.has_active_seal = progression.matches(self, seal.conditions)
 	end
 	self:sync_current_room_seal_instance()
 end
 
 function castle_service:begin_seal_dissolution()
-	local room_state = self.current_room
-	room_state.seal_sequence_active = true
-	room_state.room_dissolve_step = 0
-	room_state.seal_dissolve_step = 0
-	room_state.daemon_fight_active = false
+	self.current_room.seal_sequence_active = true
+	self.current_room.room_dissolve_step = 0
+	self.current_room.seal_dissolve_step = 0
+	self.current_room.daemon_fight_active = false
 	self:set_seal_dissolve_intro_state(1)
 	self:sync_current_room_seal_instance()
 end
 
 function castle_service:set_seal_dissolve_intro_state(intro_state)
-	local room_state = self.current_room
 	local room_dissolve_step = 0
 	local seal_dissolve_step = 0
 	if intro_state >= 32 then
@@ -478,23 +472,22 @@ function castle_service:set_seal_dissolve_intro_state(intro_state)
 	if seal_dissolve_step > constants.flow.seal_sprite_dissolve_steps then
 		seal_dissolve_step = constants.flow.seal_sprite_dissolve_steps
 	end
-	if room_state.room_dissolve_step ~= room_dissolve_step then
-		room_state.room_dissolve_step = room_dissolve_step
+	if self.current_room.room_dissolve_step ~= room_dissolve_step then
+		self.current_room.room_dissolve_step = room_dissolve_step
 	end
-	if room_state.seal_dissolve_step ~= seal_dissolve_step then
-		room_state.seal_dissolve_step = seal_dissolve_step
+	if self.current_room.seal_dissolve_step ~= seal_dissolve_step then
+		self.current_room.seal_dissolve_step = seal_dissolve_step
 		self:sync_current_room_seal_instance()
 	end
 end
 
 function castle_service:finish_seal_dissolution()
-	local room_state = self.current_room
-	room_state.seal_sequence_active = false
-	room_state.has_active_seal = false
-	room_state.daemon_fight_active = false
+	self.current_room.seal_sequence_active = false
+	self.current_room.has_active_seal = false
+	self.current_room.daemon_fight_active = false
 	local row_patches = {}
-	for i = 1, #room_state.map_rows do
-		local row = room_state.map_rows[i]
+	for i = 1, #self.current_room.map_rows do
+		local row = self.current_room.map_rows[i]
 		local patched_row = row:gsub('%$', '.')
 		if patched_row ~= row then
 			row_patches[#row_patches + 1] = {
@@ -504,7 +497,7 @@ function castle_service:finish_seal_dissolution()
 		end
 	end
 	if #row_patches > 0 then
-		room_module.patch_rows(room_state, row_patches)
+		room_module.patch_rows(self.current_room, row_patches)
 	end
 	progression.set(self, 'boss_defeated', true)
 	self:refresh_current_room_customizations()
@@ -555,12 +548,12 @@ function castle_service:bind_enemy_events()
 			self.active_enemy_ids[enemy_id] = nil
 			self.active_enemy_ids_scratch[enemy_id] = nil
 
-			local enemy_instance = object(enemy_id)
-			if enemy_instance ~= nil then
-				enemy_instance.visible = false
-				if enemy_instance.active then
-					enemy_instance:deactivate()
-				end
+				local enemy_instance = object(enemy_id)
+				if enemy_instance ~= nil then
+					object(enemy_id).visible = false
+					if enemy_instance.active then
+						enemy_instance:deactivate()
+					end
 			end
 
 			if event.trigger then
@@ -599,8 +592,7 @@ function castle_service:sync_world_entrance_states_for_room(room_state)
 	local world_entrances = room_state.world_entrances
 	for i = 1, #world_entrances do
 		local target = world_entrances[i].target
-		local entrance_state = self.world_entrance_states[target]
-		if entrance_state == nil then
+		if self.world_entrance_states[target] == nil then
 			self.world_entrance_states[target] = {
 				state = 'closed',
 				open_step = 0,
@@ -643,12 +635,11 @@ function castle_service:initialize(initial_room_number)
 end
 
 function castle_service:begin_open_world_entrance(target)
-	local entrance_state = self.world_entrance_states[target]
-	if entrance_state.state ~= 'closed' then
+	if self.world_entrance_states[target].state ~= 'closed' then
 		return false
 	end
-	entrance_state.state = 'opening_1'
-	entrance_state.open_step = 0
+	self.world_entrance_states[target].state = 'opening_1'
+	self.world_entrance_states[target].open_step = 0
 	return true
 end
 
