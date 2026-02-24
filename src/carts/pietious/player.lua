@@ -367,6 +367,7 @@ function player:apply_presentation_state()
 		self.visible = true
 		return
 	end
+	self.sprite_component.offset.y = 0 -- Reset any stair cut offset when not in a world transition, to avoid visual bugs with hitstun knockback or similar effects that modify y position. UGLY DIRTY SHIT!!!!! BUT CODEX IS UNABLE TO WRITE PROPER CODE AND THUS HAVE TO FIX THIS MYSELF
 	if self.hit_invulnerability_timer > 0 and self.hit_blink_on and not self:has_tag(state_tags.variant.dying) then
 		self:apply_colorize(hit_blink_colorize.r, hit_blink_colorize.g, hit_blink_colorize.b, hit_blink_colorize.a)
 	else
@@ -1843,7 +1844,7 @@ end
 function player:tick_leaving_shrine()
 	self:reset_motion_for_transition_lock()
 	self.transition_step = self.transition_step + 1
-	if self.transition_step > constants.world_entrance.enter_world_total_steps then
+	if self.transition_step > constants.flow.room_switch_wait_frames then
 		self.events:emit('shrine_exit_done', {})
 	end
 end
@@ -2777,18 +2778,16 @@ local function define_player_fsm()
 					state_tags.group.damage_lock,
 				},
 				on = {
-					['timeline.end.p.tl.sx'] = '/quiet',
 					['shrine_exit_done'] = '/quiet',
 				},
 				entering_state = function(self)
 					self.transition_step = 0
 					self.to_enter_cut = 0
-				self.enter_leave_anim_frame = 0
-				self:play_timeline(player_shrine_exit_timeline_id, { rewind = true, snap_to_start = true })
-			end,
+					self.enter_leave_anim_frame = 0
+				end,
 				leaving_state = function(self)
-					self:stop_timeline(player_shrine_exit_timeline_id)
 					self.to_enter_cut = 0
+					service('d').events:emit('shrine_exit_done', {})
 				end,
 				process_input = player.sample_input,
 				tick = player.tick_leaving_shrine,

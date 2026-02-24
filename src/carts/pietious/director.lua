@@ -437,8 +437,6 @@ local function define_director_fsm()
 						object('pietolon'):leave_shrine_overlay()
 					end,
 					on = {
-						['shrine_transition_done'] = '/room_switch_wait',
-						['timeline.end.p.tl.sx'] = '/room_switch_wait',
 						['shrine_exit_done'] = '/room_switch_wait',
 					},
 				},
