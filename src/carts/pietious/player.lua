@@ -1799,7 +1799,7 @@ function player:tick_quiet()
 
 	if not self:is_ground_below_at(self.x, self.y, true) then
 		self:reset_fall_substate_sequence()
-		self.events:emit('no_ground')
+		self.events:emit('falling')
 		return
 	end
 	self.stairs_landing_sound_pending = false
@@ -1814,7 +1814,7 @@ function player:tick_walking_right()
 	if not self:is_ground_below_at(self.x, self.y, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
-		self.events:emit('no_ground')
+		self.events:emit('falling')
 		return
 	end
 
@@ -1832,7 +1832,7 @@ function player:tick_walking_left()
 	if not self:is_ground_below_at(self.x, self.y, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
-		self.events:emit('no_ground')
+		self.events:emit('falling')
 		return
 	end
 
@@ -2003,7 +2003,7 @@ function player:tick_quiet_sword()
 
 	if not self:is_ground_below_at(self.x, self.y, true) then
 		self:reset_fall_substate_sequence()
-		self.events:emit('no_ground')
+		self.events:emit('falling')
 		return
 	end
 	self.stairs_landing_sound_pending = false
@@ -2328,7 +2328,7 @@ local function define_player_fsm()
 				['jump_input'] = '/jumping',
 				['left_down'] = '/walking_left',
 				['right_down'] = '/walking_right',
-				['no_ground'] = '/uncontrolled_fall',
+				['falling'] = '/uncontrolled_fall',
 				['stairs_up'] = '/up_stairs',
 				['stairs_down'] = '/down_stairs',
 				['sword_start'] = '/quiet_sword',
@@ -2351,7 +2351,7 @@ local function define_player_fsm()
 				['left_override'] = '/walking_left',
 				['right_released_to_left'] = '/walking_left',
 				['right_released_to_quiet'] = '/quiet',
-				['no_ground'] = '/uncontrolled_fall',
+				['falling'] = '/uncontrolled_fall',
 				['stairs_up'] = '/up_stairs',
 				['stairs_down'] = '/down_stairs',
 				['sword_start'] = '/quiet_sword',
@@ -2377,7 +2377,7 @@ local function define_player_fsm()
 				['right_override'] = '/walking_right',
 				['left_released_to_right'] = '/walking_right',
 				['left_released_to_quiet'] = '/quiet',
-				['no_ground'] = '/uncontrolled_fall',
+				['falling'] = '/uncontrolled_fall',
 				['stairs_up'] = '/up_stairs',
 				['stairs_down'] = '/down_stairs',
 				['sword_start'] = '/quiet_sword',
@@ -2452,7 +2452,7 @@ local function define_player_fsm()
 			},
 			on = {
 				[player_sword_end_event] = '/quiet',
-				['no_ground'] = '/uc_fall_sword',
+				['falling'] = '/uc_fall_sword',
 			},
 			process_input = player.sample_input,
 			tick = player.tick_quiet_sword,
