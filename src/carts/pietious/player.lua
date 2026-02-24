@@ -1898,7 +1898,7 @@ function player:tick_jump_motion()
 	local dx = self.jump_inertia * constants.physics.jump_dx
 	self:apply_move(dx, dy)
 
-	if hit_ceiling and self.jump_substate < constants.physics.jump_release_cut_substate then
+	if hit_ceiling then
 		self.jump_substate = constants.physics.jump_release_cut_substate
 	end
 
@@ -1956,9 +1956,9 @@ function player:tick_controlled_fall_motion()
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
 	local should_land = (not self:collides_at(self.x, self.y, true)) and self:collides_at(self.x, self.y + dy, true)
-	local move_result = self:apply_move(dx, dy)
+	self:apply_move(dx, dy)
 
-	if should_land or move_result.landed then
+	if should_land then
 		self.stairs_landing_sound_pending = false
 		self:reset_fall_substate_sequence()
 		if self:has_tag(state_tags.group.sword) then
@@ -1978,9 +1978,9 @@ function player:tick_uncontrolled_fall_motion()
 	end
 	local dy = self:get_uncontrolled_fall_dy()
 	local should_land = self:collides_at(self.x, self.y + dy, true)
-	local move_result = self:apply_move(0, dy)
+	self:apply_move(0, dy)
 
-	if should_land or move_result.landed then
+	if should_land then
 		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then
 			self.events:emit('evt.cue.fall')
 		end
