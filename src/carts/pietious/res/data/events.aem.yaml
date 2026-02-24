@@ -5,7 +5,9 @@ events:
         rules:
             - when:
                   equals:
-                      state: castle
+                      changed_axis: room
+                      mode_state: room
+                      room_state: castle
               go:
                   music_transition:
                       audio_id: music_castle
@@ -13,22 +15,18 @@ events:
                       fade_ms: 250
             - when:
                   equals:
-                      state: world
+                      changed_axis: room
+                      mode_state: room
+                      room_state: world
               go:
                   music_transition:
                       audio_id: music_world
                       sync: immediate
             - when:
                   equals:
-                      state: seal
-                      transition_kind: item_close
-              go:
-                  music_transition:
-                      audio_id: music_seal_2
-                      sync: immediate
-            - when:
-                  equals:
-                      state: seal
+                      changed_axis: room
+                      mode_state: room
+                      room_state: seal
               go:
                   music_transition:
                       audio_id: music_seal_2
@@ -36,7 +34,8 @@ events:
                           stinger: music_seal_1
             - when:
                   equals:
-                      state: seal_dissolution
+                      changed_axis: mode
+                      mode_state: seal_dissolution
               go:
                   music_transition:
                       audio_id: music_daemonappears
@@ -45,14 +44,17 @@ events:
                           stinger: seal_breakdown
             - when:
                   equals:
-                      state: daemon_fight
+                      changed_axis: room
+                      mode_state: room
+                      room_state: daemon_fight
               go:
                   music_transition:
                       audio_id: music_daemonfight
                       sync: immediate
             - when:
                   equals:
-                      state: shrine
+                      changed_axis: mode
+                      mode_state: shrine
               go:
                   music_transition:
                       audio_id: music_shrine_2
@@ -60,7 +62,8 @@ events:
                           stinger: shrine1
             - when:
                   equals:
-                      state: lithograph
+                      changed_axis: mode
+                      mode_state: lithograph
               go:
                   music_transition:
                       audio_id: music_lithograph2
