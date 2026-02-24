@@ -208,6 +208,10 @@ function player:ctor()
 		parent = self,
 	}))
 	player_abilities.configure_player_abilities(self, state_tags)
+	self:add_component(components.new_component('actioneffectcomponent', {
+		parent = self,
+	}))
+	self.actioneffects:grant_effect('halo')
 	self:add_component(components.inputactioneffectcomponent.new({
 		parent = self,
 		program = player_abilities.build_input_action_effect_program(),

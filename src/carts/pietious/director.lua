@@ -480,7 +480,7 @@ local function define_director_fsm()
 					input_event_handlers = {
 						['start[jp]'] = {
 							go = function(_self)
-								object('pietolon').abilities:activate('halo')
+								object('pietolon').actioneffects:trigger('halo')
 							end,
 						},
 						['lb[jp] || rb[jp]'] = {

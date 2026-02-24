@@ -1,5 +1,6 @@
 local constants = require('constants')
 local room_module = require('room')
+local action_effects = require('action_effects')
 
 local player_abilities = {}
 
@@ -109,23 +110,21 @@ local function activate_spyglass_ability(owner, state_tags)
 	return true
 end
 
-local function can_activate_halo_ability(owner, state_tags)
-	if not owner.inventory_items.halo then
-		return false
-	end
-	if service('c').current_room.daemon_fight_active then
-		return false
-	end
-	return true
-end
-
-local function activate_halo_ability(owner, state_tags)
-	if not can_activate_halo_ability(owner, state_tags) then
-		return false
-	end
-	service('d'):perform_halo_teleport(owner)
-	return true
-end
+action_effects.register_effect('halo', {
+	id = 'halo',
+	can_trigger = function(context)
+		if not context.owner.inventory_items.halo then
+			return false
+		end
+		if service('c').current_room.daemon_fight_active then
+			return false
+		end
+		return true
+	end,
+	handler = function(context)
+		service('d'):perform_halo_teleport(context.owner)
+	end,
+})
 
 function player_abilities.build_input_action_effect_program()
 	return {
@@ -192,11 +191,6 @@ function player_abilities.configure_player_abilities(player, state_tags)
 	player.abilities:register_ability('spyglass', {
 			activate = function(context)
 				return activate_spyglass_ability(context.owner, state_tags)
-			end,
-		})
-	player.abilities:register_ability('halo', {
-			activate = function(context)
-				return activate_halo_ability(context.owner, state_tags)
 			end,
 		})
 end
