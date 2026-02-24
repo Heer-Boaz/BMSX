@@ -172,6 +172,14 @@ function director:halo_teleport_to_room_1()
 	return switch
 end
 
+function director:perform_halo_teleport(player)
+	self.events:emit('halo_transition_start', {})
+	local switch = self:halo_teleport_to_room_1()
+	player:apply_halo_teleport_arrival(switch, service('c').current_room)
+	self.events:emit('halo_transition_done', {})
+	return switch
+end
+
 function director:bind_events()
 	self.events:on({
 		event = 'room.switched',
@@ -470,10 +478,9 @@ local function define_director_fsm()
 				end,
 					input_event_handlers = {
 						['start[jp]'] = {
-							guard = function(_self)
-								return object('pietolon').abilities:activate('halo')
+							go = function(_self)
+								object('pietolon').abilities:activate('halo')
 							end,
-							go = '/room',
 						},
 						['lb[jp] || rb[jp]'] = {
 							go = '/item_screen_closing',

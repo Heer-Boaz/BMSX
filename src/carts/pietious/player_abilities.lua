@@ -109,11 +109,24 @@ local function activate_spyglass_ability(owner, state_tags)
 	return true
 end
 
-local function activate_halo_ability(owner)
+local function can_activate_halo_ability(owner, state_tags)
 	if not owner.inventory_items.halo then
 		return false
 	end
-	owner:teleport_to_halo_destination()
+	if owner:has_tag(state_tags.group.transition_lock) then -- ???
+		return false
+	end
+	if service('c').current_room.daemon_fight_active then
+		return false
+	end
+	return true
+end
+
+local function activate_halo_ability(owner, state_tags)
+	if not can_activate_halo_ability(owner, state_tags) then
+		return false
+	end
+	service('d'):perform_halo_teleport(owner)
 	return true
 end
 
@@ -186,7 +199,7 @@ function player_abilities.configure_player_abilities(player, state_tags)
 		})
 	player.abilities:register_ability('halo', {
 			activate = function(context)
-				return activate_halo_ability(context.owner)
+				return activate_halo_ability(context.owner, state_tags)
 			end,
 		})
 end
@@ -216,14 +229,9 @@ function player_abilities.attach_player_methods(player)
 		end
 	end
 
-	function player:teleport_to_halo_destination()
-		local director_service = service('d')
-		director_service.events:emit('halo_transition_start', {})
-		local switch = director_service:halo_teleport_to_room_1()
-		local castle_service = service('c')
-
-		self.x = constants.room.tile_size * 23
-		self.y = constants.player.start_y
+	function player:apply_halo_teleport_arrival(switch, destination_room)
+		self.x = destination_room.spawn.x
+		self.y = destination_room.spawn.y
 		self.facing = 1
 		self.last_dx = 0
 		self.last_dy = 0
@@ -240,14 +248,13 @@ function player_abilities.attach_player_methods(player)
 		self:force_seek_timeline('p.seq.s', 0)
 		self:reset_fall_substate_sequence()
 		self.events:emit('stairs_lock_lost_after_room_switch', {})
-			self.events:emit('room.switched', {
-				from = switch.from_room_number,
-				to = switch.to_room_number,
-				dir = switch.direction,
-				x = self.x,
-				y = self.y,
-			})
-		director_service.events:emit('halo_transition_done', {})
+		self.events:emit('room.switched', {
+			from = switch.from_room_number,
+			to = switch.to_room_number,
+			dir = switch.direction,
+			x = self.x,
+			y = self.y,
+		})
 	end
 end
 
