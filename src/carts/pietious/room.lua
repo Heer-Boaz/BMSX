@@ -357,15 +357,7 @@ local function build_solids(collision_map, tile_size, origin_x, origin_y)
 	return solids
 end
 
-local function world_entrance_sprite_id(world_entrance_state)
-	if world_entrance_state == 'opening_2' then
-		return 'world_entrance_half_open'
-	end
-	if world_entrance_state == 'open' then
-		return 'world_entrance_open'
-	end
-	return 'world_entrance'
-end
+
 
 local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_height)
 	local stairs = {}
@@ -796,6 +788,7 @@ function room_object:bind_events()
 		subscriber = self,
 		handler = function()
 			self:set_space('main')
+			self:sync_world_entrance_instances()
 			self:sync_lithograph_instances()
 			self:sync_shrine_instances()
 			self:sync_draaideur_instances()
@@ -805,7 +798,6 @@ end
 
 function room_object:ctor()
 	self.seal_fx_active = false
-	self.daemon_fx_active = false
 	self:bind_visual()
 	self:bind_events()
 end
@@ -848,20 +840,25 @@ function room_object:render_tiles()
 	end
 end
 
-function room_object:render_room_objects()
-	local castle_service = service('c')
+function room_object:sync_world_entrance_instances()
 	local world_entrances = self.world_entrances
+	local castle = service('c')
 	for i = 1, #world_entrances do
-		local world_entrance = world_entrances[i]
-		local entrance_state = castle_service.world_entrance_states[world_entrance.target].state
-		local sprite_id = world_entrance_sprite_id(entrance_state)
-		put_sprite(sprite_id, world_entrance.x, world_entrance.y, 22)
+		local we_def = world_entrances[i]
+		local entrance = object(we_def.id)
+		if entrance == nil then
+			entrance = inst('world_entrance', {
+				id = we_def.id,
+				pos = { x = we_def.x, y = we_def.y, z = 22 },
+				target = we_def.target,
+			})
+		end
+		entrance:set_entrance_state(castle.world_entrance_states[we_def.target].state)
 	end
 end
 
 function room_object:render_room()
 	self:render_tiles()
-	self:render_room_objects()
 	local director_service = service('d')
 	if self.seal_fx_active and director_service.seal_flash_on then
 		for y = constants.room.tile_origin_y, display_height() - 1 do
@@ -869,14 +866,6 @@ function room_object:render_room()
 				if ((x + y) % 2) == 0 then
 					put_rectfill(x, y, x, y, 342, 15)
 				end
-			end
-		end
-	end
-	if self.daemon_fx_active then
-		for i = 1, constants.flow.daemon_cloud_max do
-			local cloud_sprite = director_service.daemon_smoke_sprite[i]
-			if cloud_sprite ~= nil then
-				put_sprite(cloud_sprite, director_service.daemon_smoke_x[i], director_service.daemon_smoke_y[i], 23)
 			end
 		end
 	end
@@ -907,21 +896,14 @@ local function define_room_fsm()
 			active = {
 				entering_state = function(self)
 					self.seal_fx_active = false
-					self.daemon_fx_active = false
 				end,
 			},
 			seal_fx = {
 				entering_state = function(self)
 					self.seal_fx_active = true
-					self.daemon_fx_active = false
 				end,
 			},
-			daemon_fx = {
-				entering_state = function(self)
-					self.seal_fx_active = false
-					self.daemon_fx_active = true
-				end,
-			},
+			daemon_fx = {},
 		},
 	})
 end

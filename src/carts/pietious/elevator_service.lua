@@ -1,5 +1,6 @@
 local constants = require('constants')
 local castle_map = require('castle_map')
+local world_instance = require('world').instance
 
 local elevator_service = {}
 local elevator_platform = {}
@@ -44,18 +45,22 @@ end
 function elevator_service:sync_platform_instances(current_room_number)
 	for i = 1, #self.elevator_routes do
 		local elevator = self.elevator_routes[i]
-		local platform = object(elevator.platform_id)
-		if platform == nil then
-			platform = inst(self.platform_def_id, {
-				id = elevator.platform_id,
-				pos = { x = elevator.x, y = elevator.y, z = 21 },
-			})
-		end
-		platform.x = elevator.x
-		platform.y = elevator.y
 		local in_current_room = elevator.current_room_number == current_room_number
-		platform.visible = in_current_room
-		platform.collider.enabled = in_current_room
+		local platform = object(elevator.platform_id)
+
+		if in_current_room then
+			if platform == nil then
+				platform = inst(self.platform_def_id, {
+					id = elevator.platform_id,
+					pos = { x = elevator.x, y = elevator.y, z = 21 },
+					space_id = 'main',
+				})
+			end
+			platform.x = elevator.x
+			platform.y = elevator.y
+		elseif platform ~= nil then
+			world_instance:despawn(platform)
+		end
 	end
 end
 

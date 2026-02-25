@@ -400,10 +400,11 @@ static std::optional<MusicTransitionRequest> parseMusicTransition(const Value& v
 
 	Value syncVal = table.get(key("sync"));
 	Value fadeVal = table.get(key("fade_ms"));
+	Value crossfadeVal = table.get(key("crossfade_ms"));
 	Value loopVal = table.get(key("start_at_loop_start"));
 	Value freshVal = table.get(key("start_fresh"));
 	Value audioIdVal = table.get(key("audio_id"));
-	const bool hasTransition = !isNil(syncVal) || !isNil(fadeVal) || !isNil(loopVal) || !isNil(freshVal) || !isNil(audioIdVal);
+	const bool hasTransition = !isNil(syncVal) || !isNil(fadeVal) || !isNil(crossfadeVal) || !isNil(loopVal) || !isNil(freshVal) || !isNil(audioIdVal);
 	if (!hasTransition) {
 		return std::nullopt;
 	}
@@ -428,6 +429,15 @@ static std::optional<MusicTransitionRequest> parseMusicTransition(const Value& v
 			throw BMSX_RUNTIME_ERROR("music_transition.fade_ms must be a number");
 		}
 		request.fadeMs = static_cast<i32>(std::floor(valueToNumber(fadeVal)));
+	}
+	if (!isNil(crossfadeVal)) {
+		if (!valueIsNumber(crossfadeVal)) {
+			throw BMSX_RUNTIME_ERROR("music_transition.crossfade_ms must be a number");
+		}
+		request.crossfadeMs = static_cast<i32>(std::floor(valueToNumber(crossfadeVal)));
+	}
+	if (!isNil(fadeVal) && !isNil(crossfadeVal)) {
+		throw BMSX_RUNTIME_ERROR("music_transition cannot specify both fade_ms and crossfade_ms");
 	}
 	if (!isNil(loopVal)) {
 		if (!valueIsBool(loopVal)) {

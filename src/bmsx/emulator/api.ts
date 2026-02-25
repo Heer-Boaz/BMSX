@@ -45,6 +45,7 @@ type AudioRouterOptions = {
 	audio_id?: asset_id;
 	sync?: MusicTransitionSync;
 	fade_ms?: number;
+	crossfade_ms?: number;
 	start_at_loop_start?: boolean;
 	start_fresh?: boolean;
 };
@@ -195,6 +196,7 @@ const resolveMusicTransition = (options: AudioPlayOptions | undefined, id?: asse
 		to: asset_id;
 		sync?: MusicTransitionSync;
 		fade_ms?: number;
+		crossfade_ms?: number;
 		start_at_loop_start?: boolean;
 		start_fresh?: boolean;
 	};
@@ -207,6 +209,7 @@ const resolveMusicTransition = (options: AudioPlayOptions | undefined, id?: asse
 	}
 	const hasTransition = options.sync !== undefined
 		|| options.fade_ms !== undefined
+		|| options.crossfade_ms !== undefined
 		|| options.start_at_loop_start !== undefined
 		|| options.start_fresh !== undefined
 		|| options.audio_id !== undefined;
@@ -219,6 +222,12 @@ const resolveMusicTransition = (options: AudioPlayOptions | undefined, id?: asse
 	}
 	if (options.fade_ms !== undefined && typeof options.fade_ms !== 'number') {
 		throw new Error('music_transition.fade_ms must be a number.');
+	}
+	if (options.crossfade_ms !== undefined && typeof options.crossfade_ms !== 'number') {
+		throw new Error('music_transition.crossfade_ms must be a number.');
+	}
+	if (options.fade_ms !== undefined && options.crossfade_ms !== undefined) {
+		throw new Error('music_transition cannot specify both fade_ms and crossfade_ms.');
 	}
 	if (options.start_at_loop_start !== undefined && typeof options.start_at_loop_start !== 'boolean') {
 		throw new Error('music_transition.start_at_loop_start must be a boolean.');
@@ -235,6 +244,7 @@ const resolveMusicTransition = (options: AudioPlayOptions | undefined, id?: asse
 			to: target,
 			sync: sync,
 			fade_ms: options.fade_ms,
+			crossfade_ms: options.crossfade_ms,
 			start_at_loop_start: options.start_at_loop_start,
 			start_fresh: options.start_fresh,
 		},

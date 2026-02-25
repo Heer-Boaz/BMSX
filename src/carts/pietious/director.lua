@@ -1,4 +1,5 @@
 local constants = require('constants')
+local world_instance = require('world').instance
 local halo_teleport_timeline_id = 'director.halo.transition'
 
 local director = {}
@@ -157,6 +158,33 @@ function director:perform_halo_teleport(player)
 	return switch
 end
 
+function director:spawn_daemon_clouds()
+	for i = 1, constants.flow.daemon_cloud_max do
+		local cloud_id = 'dc.' .. tostring(i)
+		self.daemon_smoke_t[i] = 0
+		if object(cloud_id) == nil then
+			inst('daemon_cloud', {
+				id = cloud_id,
+				pos = { x = 0, y = 0, z = 23 },
+			})
+		end
+		local cloud = object(cloud_id)
+		cloud.visible = false
+	end
+	self.daemon_smoke_next = 1
+end
+
+function director:despawn_daemon_clouds()
+	for i = 1, constants.flow.daemon_cloud_max do
+		self.daemon_smoke_t[i] = 0
+		local cloud = object('dc.' .. tostring(i))
+		if cloud ~= nil then
+			world_instance:despawn(cloud)
+		end
+	end
+	self.daemon_smoke_next = 1
+end
+
 function director:bind_events()
 	self.events:on({
 		event = 'room.switched',
@@ -197,10 +225,7 @@ function director:ctor()
 	self.lithograph_text_lines = {}
 	self.demon_intro_state = 0
 	self.seal_flash_on = false
-	self.daemon_smoke_x = {}
-	self.daemon_smoke_y = {}
 	self.daemon_smoke_t = {}
-	self.daemon_smoke_sprite = {}
 	self.daemon_smoke_next = 1
 	self.mode_state = nil
 	self.room_state = nil
@@ -234,10 +259,7 @@ local function define_director_fsm()
 					self.transition_frames_left = 0
 					self.demon_intro_state = 0
 					self.seal_flash_on = false
-					for i = 1, constants.flow.daemon_cloud_max do
-						self.daemon_smoke_t[i] = 0
-						self.daemon_smoke_sprite[i] = nil
-					end
+				self:despawn_daemon_clouds()
 					local castle_service = service('c')
 					set_space('main')
 					object('ui'):set_space('main')
@@ -545,13 +567,7 @@ local function define_director_fsm()
 					self.overlay_mode = 'daemonfx'
 					self.transition_frames_left = 0
 					self.demon_intro_state = 97
-					for i = 1, constants.flow.daemon_cloud_max do
-						self.daemon_smoke_x[i] = 0
-						self.daemon_smoke_y[i] = 0
-						self.daemon_smoke_t[i] = 0
-						self.daemon_smoke_sprite[i] = nil
-					end
-					self.daemon_smoke_next = 1
+					self:spawn_daemon_clouds()
 					set_space('main')
 					object('ui'):set_space('main')
 					object('transition'):set_space('main')
@@ -568,11 +584,14 @@ local function define_director_fsm()
 				},
 				tick = function(self)
 					if self.demon_intro_state > 96 and self.demon_intro_state < 160 and (self.demon_intro_state % 8) < 4 then
-						self.daemon_smoke_t[self.daemon_smoke_next] = 1
-						self.daemon_smoke_x[self.daemon_smoke_next] = constants.room.tile_origin_x + (math.random(4, 26) * constants.room.tile_size)
-						self.daemon_smoke_y[self.daemon_smoke_next] = constants.room.tile_origin_y + (math.random(4, 11) * constants.room.tile_size)
-						self.daemon_smoke_sprite[self.daemon_smoke_next] = 'daemon_smoke_small'
-						self.daemon_smoke_next = self.daemon_smoke_next + 1
+						local idx = self.daemon_smoke_next
+						local cloud = object('dc.' .. tostring(idx))
+						self.daemon_smoke_t[idx] = 1
+						cloud.x = constants.room.tile_origin_x + (math.random(4, 26) * constants.room.tile_size)
+						cloud.y = constants.room.tile_origin_y + (math.random(4, 11) * constants.room.tile_size)
+						cloud:gfx('daemon_smoke_small')
+						cloud.visible = true
+						self.daemon_smoke_next = idx + 1
 						if self.daemon_smoke_next > constants.flow.daemon_cloud_max then
 							self.daemon_smoke_next = 1
 						end
@@ -581,13 +600,14 @@ local function define_director_fsm()
 					for i = 1, constants.flow.daemon_cloud_max do
 						if self.daemon_smoke_t[i] > 0 then
 							self.daemon_smoke_t[i] = self.daemon_smoke_t[i] + 1
+							local cloud = object('dc.' .. tostring(i))
 							if self.daemon_smoke_t[i] >= constants.flow.daemon_cloud_lifetime_frames then
 								self.daemon_smoke_t[i] = 0
-								self.daemon_smoke_sprite[i] = nil
+								cloud.visible = false
 							elseif (math.modf(self.daemon_smoke_t[i] / 8) % 2) == 0 then
-								self.daemon_smoke_sprite[i] = 'daemon_smoke_small'
+								cloud:gfx('daemon_smoke_small')
 							else
-								self.daemon_smoke_sprite[i] = 'daemon_smoke_large'
+								cloud:gfx('daemon_smoke_large')
 							end
 						end
 					end

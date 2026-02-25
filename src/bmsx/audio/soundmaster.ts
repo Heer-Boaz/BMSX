@@ -1523,15 +1523,23 @@ export class SoundMaster implements RegisterablePersistent {
 		to: asset_id;
 		sync?: MusicTransitionSync;
 		fade_ms?: number;
+		crossfade_ms?: number;
 		start_at_loop_start?: boolean;
 		start_fresh?: boolean;
 	}): void {
 		const transitionId = this.beginMusicTransition();
+		if (opts.fade_ms !== undefined && opts.crossfade_ms !== undefined) {
+			throw new Error('[SoundMaster] music_transition cannot specify both fade_ms and crossfade_ms.');
+		}
 
 		const sync = opts.sync !== undefined ? opts.sync : 'immediate';
 		const fade_ms = opts.fade_ms !== undefined ? opts.fade_ms : 250;
+		const crossfade_ms = opts.crossfade_ms;
 		const start_at_loop_start = opts.start_at_loop_start !== undefined ? opts.start_at_loop_start : false;
 		const start_fresh = opts.start_fresh !== undefined ? opts.start_fresh : false;
+		const runTransition = (target: asset_id, startAtSeconds?: number): void => {
+			this.startMusicTransition(target, fade_ms, crossfade_ms, start_at_loop_start, startAtSeconds);
+		};
 
 		if (!isMusicTransitionStingerSync(sync) && !start_fresh && this.currentTrackByType('music') === opts.to) {
 			return;
@@ -1575,16 +1583,16 @@ export class SoundMaster implements RegisterablePersistent {
 						if (this.pendingStingerReturnUnsub === unsub) {
 							this.pendingStingerReturnUnsub = null;
 						}
-						const target = this.pendingStingerReturnTo;
-						this.pendingStingerReturnTo = null;
-						this.pendingStingerType = null;
-						this.pendingStingerVoice = null;
-						if (target !== null) {
-							this.startMusicWithFade(target, fade_ms, start_at_loop_start, previousOffset);
-						}
-					});
-					this.pendingStingerReturnUnsub = unsub;
-				}).catch(() => {});
+							const target = this.pendingStingerReturnTo;
+							this.pendingStingerReturnTo = null;
+							this.pendingStingerType = null;
+							this.pendingStingerVoice = null;
+							if (target !== null) {
+								runTransition(target, previousOffset);
+							}
+						});
+						this.pendingStingerReturnUnsub = unsub;
+					}).catch(() => {});
 				return;
 			}
 				const returnTarget = sync.return_to !== undefined ? sync.return_to : opts.to;
@@ -1618,21 +1626,21 @@ export class SoundMaster implements RegisterablePersistent {
 						if (this.pendingStingerReturnUnsub === unsub) {
 							this.pendingStingerReturnUnsub = null;
 						}
-						const target = this.pendingStingerReturnTo;
-						this.pendingStingerReturnTo = null;
-						this.pendingStingerType = null;
-						this.pendingStingerVoice = null;
-						if (target !== null) {
-							this.startMusicWithFade(target, fade_ms, start_at_loop_start);
-						}
-					});
-					this.pendingStingerReturnUnsub = unsub;
+							const target = this.pendingStingerReturnTo;
+							this.pendingStingerReturnTo = null;
+							this.pendingStingerType = null;
+							this.pendingStingerVoice = null;
+							if (target !== null) {
+								runTransition(target);
+							}
+						});
+						this.pendingStingerReturnUnsub = unsub;
 			}).catch(() => {});
 			return;
 		}
 
 		if (sync === 'immediate') {
-			this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
+			runTransition(opts.to, start_fresh ? 0 : undefined);
 			return;
 		}
 
@@ -1640,26 +1648,29 @@ export class SoundMaster implements RegisterablePersistent {
 			const delay_ms = sync.delay_ms >= 0 ? sync.delay_ms : 0;
 			this.musicTransitionTimer = setTimeout(() => {
 				this.musicTransitionTimer = null;
-				this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
+				if (transitionId !== this.musicTransitionRequestId) {
+					return;
+				}
+				runTransition(opts.to, start_fresh ? 0 : undefined);
 			}, delay_ms);
 			return;
 		}
 
 		const currentRecord = this.getCurrentRecord('music');
 		if (!currentRecord) {
-			this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
+			runTransition(opts.to, start_fresh ? 0 : undefined);
 			return;
 		}
 
 		const duration = currentRecord.clip.duration;
 		if (!(duration > 0)) {
-			this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
+			runTransition(opts.to, start_fresh ? 0 : undefined);
 			return;
 		}
 
 		const nowOffset = this.currentTimeByType('music');
 		if (nowOffset === null) {
-			this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
+			runTransition(opts.to, start_fresh ? 0 : undefined);
 			return;
 		}
 
@@ -1672,7 +1683,10 @@ export class SoundMaster implements RegisterablePersistent {
 		const delaySec = Math.max(0, boundary - offsetMod);
 		this.musicTransitionTimer = setTimeout(() => {
 			this.musicTransitionTimer = null;
-			this.startMusicWithFade(opts.to, fade_ms, start_at_loop_start, start_fresh ? 0 : undefined);
+			if (transitionId !== this.musicTransitionRequestId) {
+				return;
+			}
+			runTransition(opts.to, start_fresh ? 0 : undefined);
 		}, Math.floor(delaySec * 1000));
 	}
 
@@ -1683,26 +1697,100 @@ export class SoundMaster implements RegisterablePersistent {
 		return record && !record.finalized ? record : null;
 	}
 
-	private startMusicWithFade(target: asset_id, fade_ms: number, start_at_loop_start: boolean, startAtSeconds?: number): void {
+	private startMusicTransition(target: asset_id, fade_ms: number, crossfade_ms: number | undefined, start_at_loop_start: boolean, startAtSeconds?: number): void {
+		if (crossfade_ms !== undefined) {
+			this.startMusicWithCrossfade(target, crossfade_ms, start_at_loop_start, startAtSeconds);
+			return;
+		}
+		this.startMusicAfterFadeOut(target, fade_ms, start_at_loop_start, startAtSeconds);
+	}
+
+	private startMusicNow(target: asset_id, start_at_loop_start: boolean, startAtSeconds?: number): void {
 		const meta = this.getAudioMetaOrThrow(target);
 		const baseOffset = startAtSeconds !== undefined ? startAtSeconds : ((start_at_loop_start && meta.loop !== undefined && meta.loop !== null) ? meta.loop : 0);
-		const fadeSec = Math.max(0, fade_ms) / 1000;
-		const oldHandle = this.currentVoiceByType.music;
-		const oldRecord = oldHandle ? this.voiceRecordByHandle.get(oldHandle) : undefined;
 		void (async () => {
 			try {
 				const clip = await this.clipFor(target);
 				const params: ModulationParams = { offset: baseOffset };
 				const playback = this.createVoiceParams(meta, params, clip);
-				playback.gainLinear = MIN_GAIN;
 				const priority = meta.priority !== undefined ? meta.priority : 0;
-				const voiceId = this.startVoice('music', target, meta, clip, params, priority, playback, (voice) => {
-					voice.rampGainLinear(1.0, fadeSec);
-				});
-				if (voiceId !== null && oldRecord && !oldRecord.finalized) {
-					oldRecord.handle.rampGainLinear(MIN_GAIN, fadeSec);
-					if (fade_ms > 0) {
-						setTimeout(() => this.stopVoiceRecord('music', oldRecord), fade_ms);
+				this.startVoice('music', target, meta, clip, params, priority, playback, null);
+			} catch (error) {
+				console.error(error);
+			}
+		})();
+	}
+
+	private startMusicAfterFadeOut(target: asset_id, fade_ms: number, start_at_loop_start: boolean, startAtSeconds?: number): void {
+		const fadeOutMs = Math.max(0, Math.floor(fade_ms));
+		const oldRecords = this.voicesByType.music.slice();
+		if (oldRecords.length === 0) {
+			this.startMusicNow(target, start_at_loop_start, startAtSeconds);
+			return;
+		}
+		if (fadeOutMs <= 0) {
+			this.stop('music', 'all');
+			this.startMusicNow(target, start_at_loop_start, startAtSeconds);
+			return;
+		}
+		const fadeOutSec = fadeOutMs / 1000;
+		for (let i = 0; i < oldRecords.length; i++) {
+			const record = oldRecords[i];
+			if (!record.finalized) {
+				record.handle.rampGainLinear(MIN_GAIN, fadeOutSec);
+			}
+		}
+		const transitionId = this.musicTransitionRequestId;
+		this.musicTransitionTimer = setTimeout(() => {
+			this.musicTransitionTimer = null;
+			if (transitionId !== this.musicTransitionRequestId) {
+				return;
+			}
+			for (let i = 0; i < oldRecords.length; i++) {
+				const record = oldRecords[i];
+				if (!record.finalized) {
+					this.stopVoiceRecord('music', record);
+				}
+			}
+			this.startMusicNow(target, start_at_loop_start, startAtSeconds);
+		}, fadeOutMs);
+	}
+
+	private startMusicWithCrossfade(target: asset_id, crossfade_ms: number, start_at_loop_start: boolean, startAtSeconds?: number): void {
+		const crossfadeMs = Math.max(0, Math.floor(crossfade_ms));
+		const crossfadeSec = crossfadeMs / 1000;
+		const oldRecords = this.voicesByType.music.slice();
+		const meta = this.getAudioMetaOrThrow(target);
+		const baseOffset = startAtSeconds !== undefined ? startAtSeconds : ((start_at_loop_start && meta.loop !== undefined && meta.loop !== null) ? meta.loop : 0);
+		void (async () => {
+			try {
+				const clip = await this.clipFor(target);
+				const params: ModulationParams = { offset: baseOffset };
+				const playback = this.createVoiceParams(meta, params, clip);
+				if (crossfadeMs > 0) {
+					playback.gainLinear = MIN_GAIN;
+				}
+				const priority = meta.priority !== undefined ? meta.priority : 0;
+				const voiceId = this.startVoice('music', target, meta, clip, params, priority, playback, crossfadeMs > 0
+					? (voice) => {
+						voice.rampGainLinear(1.0, crossfadeSec);
+					}
+					: null);
+				if (voiceId === null) {
+					return;
+				}
+				for (let i = 0; i < oldRecords.length; i++) {
+					const oldRecord = oldRecords[i];
+					if (oldRecord.finalized || oldRecord.voiceId === voiceId) {
+						continue;
+					}
+					if (crossfadeMs > 0) {
+						oldRecord.handle.rampGainLinear(MIN_GAIN, crossfadeSec);
+						setTimeout(() => {
+							if (!oldRecord.finalized) {
+								this.stopVoiceRecord('music', oldRecord);
+							}
+						}, crossfadeMs);
 					} else {
 						this.stopVoiceRecord('music', oldRecord);
 					}

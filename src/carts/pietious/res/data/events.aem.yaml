@@ -52,6 +52,12 @@ events:
                       changed_axis: mode
                       mode_state: room
                       room_state: seal
+                  not:
+                      any_of:
+                          transition_kind:
+                              - item_close
+                              - shrine
+                              - lithograph
               go:
                   music_transition:
                       audio_id: music_seal_2

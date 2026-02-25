@@ -1205,17 +1205,18 @@ end
 -- bmsx-lint:enable
 
 function player:try_snap_to_elevator_platform(next_x)
-	local current_room = service('c').current_room
-	local current_room_number = current_room.room_number
+	local current_room_number = service('c').current_room.room_number
 	local elevator_routes = service('e').elevator_routes
 	for i = 1, #elevator_routes do
 		local elevator = elevator_routes[i]
+		if elevator.current_room_number ~= current_room_number then
+			goto continue
+		end
 		local platform = object(elevator.platform_id)
 		local platform_area = platform.collider:get_world_area()
 		local platform_x = platform_area.left
 		local platform_y = platform_area.top
-		if elevator.current_room_number == current_room_number
-		and self.y >= (platform_y - constants.room.tile_size2)
+		if self.y >= (platform_y - constants.room.tile_size2)
 		and self.y < platform_y
 		and self.x > (platform_x - (constants.room.tile_size2 - (constants.room.tile_unit * 4)))
 		and self.x < ((platform_x + constants.room.tile_size4) - (constants.room.tile_unit * 3))
@@ -1224,6 +1225,7 @@ function player:try_snap_to_elevator_platform(next_x)
 			self.x = next_x
 			return true
 		end
+		::continue::
 	end
 
 	return false

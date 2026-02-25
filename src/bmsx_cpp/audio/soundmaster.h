@@ -95,6 +95,7 @@ struct MusicTransitionRequest {
 	AssetId to;
 	MusicTransitionSync sync;
 	i32 fadeMs = 250;
+	std::optional<i32> crossfadeMs;
 	bool startAtLoopStart = false;
 	bool startFresh = false;
 };
@@ -209,7 +210,10 @@ private:
 	void stopVoice(AudioType type, size_t index);
 	int selectVoiceDropIndex(const std::vector<VoiceRecord>& pool) const;
 
-	void startMusicWithFade(const AssetId& target, f64 fadeSec, bool startAtLoopStart, std::optional<f64> startAtSeconds);
+	void startMusicNow(const AssetId& target, bool startAtLoopStart, std::optional<f64> startAtSeconds);
+	void startMusicWithCrossfade(const AssetId& target, f64 crossfadeSec, bool startAtLoopStart, std::optional<f64> startAtSeconds);
+	void startMusicAfterFadeOut(const AssetId& target, f64 fadeSec, bool startAtLoopStart, std::optional<f64> startAtSeconds);
+	void startMusicTransition(const AssetId& target, i32 fadeMs, std::optional<i32> crossfadeMs, bool startAtLoopStart, std::optional<f64> startAtSeconds);
 	void enqueueTransition(const MusicTransitionRequest& request, f64 delaySec, std::optional<f64> startAtSeconds);
 	void processPendingTransitions(f64 dt);
 	void rampVoiceGain(VoiceRecord& record, f32 target, f64 durationSec);

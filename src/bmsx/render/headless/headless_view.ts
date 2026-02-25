@@ -21,11 +21,9 @@ import { createSubscriptionHandle } from '../../platform';
 import { HeadlessGPUBackend } from './headless_backend';
 
 class HeadlessOverlay implements OverlayHandle {
-	private text = '';
 	private readonly classes = new Set<string>();
 
-	setText(text: string): void {
-		this.text = text;
+	setText(_text: string): void {
 	}
 	addClass(className: string): void {
 		this.classes.add(className);

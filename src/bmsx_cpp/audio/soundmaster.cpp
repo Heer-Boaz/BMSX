@@ -317,6 +317,9 @@ void SoundMaster::cancelActiveMusicTransition() {
 void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) {
 	MusicTransitionRequest resolved = request;
 	if (resolved.fadeMs < 0) resolved.fadeMs = 0;
+	if (resolved.crossfadeMs.has_value() && resolved.crossfadeMs.value() < 0) {
+		resolved.crossfadeMs = 0;
+	}
 	cancelActiveMusicTransition();
 
 	if (resolved.sync.kind != MusicTransitionSync::Kind::Stinger && !resolved.startFresh) {
@@ -362,7 +365,7 @@ void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) 
 			m_pendingStingerReturnTo.reset();
 			m_pendingStingerReturnOffset.reset();
 			if (target.has_value()) {
-				startMusicWithFade(target.value(), resolved.fadeMs / 1000.0, resolved.startAtLoopStart, offset);
+				startMusicTransition(target.value(), resolved.fadeMs, resolved.crossfadeMs, resolved.startAtLoopStart, offset);
 			}
 		});
 		m_pendingStingerEndListener = *unsub;
@@ -370,7 +373,7 @@ void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) 
 	}
 
 	if (resolved.sync.kind == MusicTransitionSync::Kind::Immediate) {
-		startMusicWithFade(resolved.to, resolved.fadeMs / 1000.0, resolved.startAtLoopStart, resolved.startFresh ? 0.0 : std::optional<f64>{});
+		startMusicTransition(resolved.to, resolved.fadeMs, resolved.crossfadeMs, resolved.startAtLoopStart, resolved.startFresh ? 0.0 : std::optional<f64>{});
 		return;
 	}
 
@@ -383,14 +386,14 @@ void SoundMaster::requestMusicTransition(const MusicTransitionRequest& request) 
 	const auto currentRecord = currentTrackMetaByType(AudioType::Music);
 	const std::optional<f64> currentOffset = currentTimeByType(AudioType::Music);
 	if (!currentRecord || !currentOffset.has_value()) {
-		startMusicWithFade(resolved.to, resolved.fadeMs / 1000.0, resolved.startAtLoopStart, resolved.startFresh ? 0.0 : std::optional<f64>{});
+		startMusicTransition(resolved.to, resolved.fadeMs, resolved.crossfadeMs, resolved.startAtLoopStart, resolved.startFresh ? 0.0 : std::optional<f64>{});
 		return;
 	}
 
 	const AudioAsset& currentAsset = getAudioOrThrow(currentTrackByType(AudioType::Music));
 	const f64 duration = static_cast<f64>(currentAsset.frames) / currentAsset.sampleRate;
 	if (duration <= 0.0) {
-		startMusicWithFade(resolved.to, resolved.fadeMs / 1000.0, resolved.startAtLoopStart, resolved.startFresh ? 0.0 : std::optional<f64>{});
+		startMusicTransition(resolved.to, resolved.fadeMs, resolved.crossfadeMs, resolved.startAtLoopStart, resolved.startFresh ? 0.0 : std::optional<f64>{});
 		return;
 	}
 	f64 offsetMod = std::fmod(currentOffset.value(), duration);
@@ -1306,7 +1309,7 @@ int SoundMaster::selectVoiceDropIndex(const std::vector<VoiceRecord>& pool) cons
 	return static_cast<int>(index);
 }
 
-void SoundMaster::startMusicWithFade(const AssetId& target, f64 fadeSec, bool startAtLoopStart, std::optional<f64> startAtSeconds) {
+void SoundMaster::startMusicNow(const AssetId& target, bool startAtLoopStart, std::optional<f64> startAtSeconds) {
 	const AudioAsset& asset = getAudioOrThrow(target);
 	const f64 baseOffset = startAtSeconds.has_value()
 		? startAtSeconds.value()
@@ -1314,27 +1317,95 @@ void SoundMaster::startMusicWithFade(const AssetId& target, f64 fadeSec, bool st
 
 	ModulationParams params;
 	params.offset = static_cast<f32>(baseOffset);
-	const f32 initialGain = MIN_GAIN;
-	const VoiceId newVoiceId = startVoice(AudioType::Music, target, asset, params, asset.meta.priority, initialGain);
+	const VoiceId newVoiceId = startVoice(AudioType::Music, target, asset, params, asset.meta.priority, 1.0f);
 	if (newVoiceId == 0) return;
+}
+
+void SoundMaster::startMusicWithCrossfade(const AssetId& target, f64 crossfadeSec, bool startAtLoopStart, std::optional<f64> startAtSeconds) {
+	const f64 clampedCrossfadeSec = std::max(0.0, crossfadeSec);
+	const AudioAsset& asset = getAudioOrThrow(target);
+	const f64 baseOffset = startAtSeconds.has_value()
+		? startAtSeconds.value()
+		: (startAtLoopStart && asset.meta.loopStart.has_value() ? asset.meta.loopStart.value() : 0.0);
 
 	const size_t musicIdx = typeIndex(AudioType::Music);
 	auto& pool = m_voicesByType[musicIdx];
+	std::vector<VoiceId> oldVoiceIds;
+	oldVoiceIds.reserve(pool.size());
+	for (const auto& record : pool) {
+		oldVoiceIds.push_back(record.voiceId);
+	}
+
+	ModulationParams params;
+	params.offset = static_cast<f32>(baseOffset);
+	const f32 initialGain = clampedCrossfadeSec > 0.0 ? MIN_GAIN : 1.0f;
+	const VoiceId newVoiceId = startVoice(AudioType::Music, target, asset, params, asset.meta.priority, initialGain);
+	if (newVoiceId == 0) return;
+
 	for (auto& record : pool) {
 		if (record.voiceId == newVoiceId) {
-			rampVoiceGain(record, 1.0f, fadeSec);
+			if (clampedCrossfadeSec > 0.0) {
+				rampVoiceGain(record, 1.0f, clampedCrossfadeSec);
+			}
 			break;
 		}
 	}
 
-	if (pool.size() > 1) {
+	if (oldVoiceIds.empty()) {
+		return;
+	}
+
+	if (clampedCrossfadeSec > 0.0) {
 		for (auto& record : pool) {
 			if (record.voiceId != newVoiceId) {
-				rampVoiceGain(record, MIN_GAIN, fadeSec);
-				record.stopAfter = fadeSec;
+				rampVoiceGain(record, MIN_GAIN, clampedCrossfadeSec);
+				record.stopAfter = clampedCrossfadeSec;
 			}
 		}
+		return;
 	}
+
+	for (size_t i = 0; i < oldVoiceIds.size(); ++i) {
+		if (oldVoiceIds[i] == newVoiceId) {
+			continue;
+		}
+		stop(AudioType::Music, AudioStopSelector::ByVoice, oldVoiceIds[i]);
+	}
+}
+
+void SoundMaster::startMusicAfterFadeOut(const AssetId& target, f64 fadeSec, bool startAtLoopStart, std::optional<f64> startAtSeconds) {
+	const f64 clampedFadeSec = std::max(0.0, fadeSec);
+	const size_t musicIdx = typeIndex(AudioType::Music);
+	auto& pool = m_voicesByType[musicIdx];
+	if (pool.empty()) {
+		startMusicNow(target, startAtLoopStart, startAtSeconds);
+		return;
+	}
+	if (clampedFadeSec <= 0.0) {
+		stopMusic();
+		startMusicNow(target, startAtLoopStart, startAtSeconds);
+		return;
+	}
+	for (auto& record : pool) {
+		rampVoiceGain(record, MIN_GAIN, clampedFadeSec);
+		record.stopAfter = clampedFadeSec;
+	}
+	MusicTransitionRequest follow;
+	follow.to = target;
+	follow.sync.kind = MusicTransitionSync::Kind::Immediate;
+	follow.fadeMs = 0;
+	follow.crossfadeMs = std::nullopt;
+	follow.startAtLoopStart = startAtLoopStart;
+	follow.startFresh = false;
+	enqueueTransition(follow, clampedFadeSec, startAtSeconds);
+}
+
+void SoundMaster::startMusicTransition(const AssetId& target, i32 fadeMs, std::optional<i32> crossfadeMs, bool startAtLoopStart, std::optional<f64> startAtSeconds) {
+	if (crossfadeMs.has_value()) {
+		startMusicWithCrossfade(target, static_cast<f64>(crossfadeMs.value()) / 1000.0, startAtLoopStart, startAtSeconds);
+		return;
+	}
+	startMusicAfterFadeOut(target, static_cast<f64>(fadeMs) / 1000.0, startAtLoopStart, startAtSeconds);
 }
 
 void SoundMaster::enqueueTransition(const MusicTransitionRequest& request, f64 delaySec, std::optional<f64> startAtSeconds) {
@@ -1350,9 +1421,10 @@ void SoundMaster::processPendingTransitions(f64 dt) {
 	auto& pending = m_pendingTransition.value();
 	pending.remainingSec -= dt;
 	if (pending.remainingSec > 0.0) return;
-	const auto startAt = pending.startAtSeconds;
-	startMusicWithFade(pending.request.to, pending.request.fadeMs / 1000.0, pending.request.startAtLoopStart, startAt);
+	const PendingTransition due = pending;
 	m_pendingTransition.reset();
+	const auto startAt = due.startAtSeconds;
+	startMusicTransition(due.request.to, due.request.fadeMs, due.request.crossfadeMs, due.request.startAtLoopStart, startAt);
 }
 
 void SoundMaster::rampVoiceGain(VoiceRecord& record, f32 target, f64 durationSec) {

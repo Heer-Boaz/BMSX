@@ -400,6 +400,7 @@ function castle_service:commit_room_switch(switch, map_id, map_x, map_y)
 	self:sync_world_entrance_states_for_room(self.current_room)
 	self:refresh_current_room_customizations()
 	service('en'):refresh_current_room_enemies(true)
+	service('e'):sync_platform_instances(self.current_room.room_number)
 	self.events:emit('room.enter', {
 		room_number = self.current_room.room_number,
 	})
@@ -432,7 +433,19 @@ function castle_service:begin_open_world_entrance(target)
 	return true
 end
 
+function castle_service:sync_world_entrance_visuals()
+	local world_entrances = self.current_room.world_entrances
+	for i = 1, #world_entrances do
+		local we_def = world_entrances[i]
+		local entrance = object(we_def.id)
+		if entrance ~= nil then
+			entrance:set_entrance_state(self.world_entrance_states[we_def.target].state)
+		end
+	end
+end
+
 function castle_service:tick()
+	local visuals_dirty = false
 
 	for _, entrance_state in pairs(self.world_entrance_states) do
 		if world_entrance_opening_states[entrance_state.state] then
@@ -446,8 +459,13 @@ function castle_service:tick()
 			else
 				entrance_state.state = 'open'
 			end
+			visuals_dirty = true
 		end
 		::continue::
+	end
+
+	if visuals_dirty then
+		self:sync_world_entrance_visuals()
 	end
 end
 

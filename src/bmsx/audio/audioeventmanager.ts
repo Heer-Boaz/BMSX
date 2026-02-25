@@ -101,7 +101,14 @@ export interface MusicTransitionSpec {
 		 * - { stinger, return_to?: AudioId, return_to_previous?: boolean }: play stinger immediately, then switch to either a specific id (return_to) or the previously playing music (return_to_previous). Specify at most one of these follow-up targets.
 		 */
 		sync?: AudioSyncMode;
+		/**
+		 * Pure fade-out of current music, then start next track (no overlap).
+		 */
 		fade_ms?: number;
+		/**
+		 * Crossfade duration (overlap old/new tracks). Mutually exclusive with fade_ms.
+		 */
+		crossfade_ms?: number;
 		/** If true and target has a loop point, start at its loopStart (skip intro) */
 		start_at_loop_start?: boolean;
 		/** If true, start target at t=0 (fresh) instead of resuming an offset */
@@ -335,10 +342,14 @@ export class AudioEventManager implements RegisterablePersistent {
 			const d = r.go;
 			const transition = (d as MusicTransitionSpec).music_transition;
 			if (transition) {
+				if (transition.fade_ms !== undefined && transition.crossfade_ms !== undefined) {
+					throw new Error('[AudioEventManager] music_transition cannot specify both fade_ms and crossfade_ms.');
+				}
 				$.sndmaster.requestMusicTransition({
 					to: transition.audio_id,
 					sync: transition.sync,
 					fade_ms: transition.fade_ms,
+					crossfade_ms: transition.crossfade_ms,
 					start_at_loop_start: transition.start_at_loop_start,
 					start_fresh: transition.start_fresh,
 				});

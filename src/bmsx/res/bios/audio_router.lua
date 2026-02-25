@@ -233,7 +233,11 @@ local action_opts = {}
 
 local function dispatch_action(event_name, entry, action, payload)
 	if action.music_transition then
-		music(action.music_transition.audio_id, action.music_transition)
+		local transition = action.music_transition
+		if transition.fade_ms ~= nil and transition.crossfade_ms ~= nil then
+			error("audio_router music_transition cannot specify both fade_ms and crossfade_ms")
+		end
+		music(transition.audio_id, transition)
 		return
 	end
 	if not action.audio_id then
