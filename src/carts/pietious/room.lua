@@ -872,13 +872,7 @@ function room_object:render_room()
 	self:render_tiles()
 	local director_service = service('d')
 	if self.seal_fx_active and director_service.seal_flash_on then
-		for y = constants.room.tile_origin_y, display_height() - 1 do
-			for x = 0, display_width() - 1 do
-				if ((x + y) % 2) == 0 then
-					put_rectfill(x, y, x, y, 342, 15)
-				end
-			end
-		end
+		put_rectfillcolor(0, constants.room.tile_origin_y, display_width(), display_height(), 342, { r = 1, g = 1, b = 1, a = 0.5 })
 	end
 end
 
