@@ -1,6 +1,5 @@
 local constants = require('constants')
 local castle_map = require('castle_map')
-local collision2d = require('collision2d')
 
 local room = {}
 local solid_tiles = {
@@ -629,37 +628,21 @@ function room_object:overlaps_active_draaideur(x, y, w, h)
 end
 
 function room_object:overlaps_active_elevator(player, x, y)
-	local old_x = player.x
-	local old_y = player.y
-	player.x = x
-	player.y = y
-	local player_collider = player.collider
-	local player_area = player_collider:get_world_area()
-
+	-- Floor-from-above only: mirrors C++ parity where elevators act as floors, never walls or ceilings.
+	-- Vertical: player bottom (y + height) must cross elevator.y (= top surface), player top must be above it.
+	-- Horizontal: uses the same bounds as try_snap_to_elevator_platform so snap and collision are always in sync.
 	local elevator_routes = service('e').elevator_routes
 	for i = 1, #elevator_routes do
 		local elevator = elevator_routes[i]
-		if elevator.current_room_number == self.room_number then
-			local platform = object(elevator.platform_id)
-			local platform_collider = platform.collider
-			local platform_area = platform_collider:get_world_area()
-			if player_area.left < platform_area.right
-			and player_area.right > platform_area.left
-			and player_area.top < platform_area.bottom
-			and player_area.bottom > platform_area.top
-			then
-				local contact = collision2d.get_contact2d(player_collider, platform_collider)
-				if contact ~= nil and contact.depth > 0 then
-					player.x = old_x
-					player.y = old_y
-					return true
-				end
-			end
+		if elevator.current_room_number == self.room_number
+		and y < elevator.y
+		and y + player.height > elevator.y
+		and x > (elevator.x - (constants.room.tile_size2 - constants.room.tile_unit * 4))
+		and x < (elevator.x + constants.room.tile_size4 - constants.room.tile_unit * 3)
+		then
+			return true
 		end
 	end
-
-	player.x = old_x
-	player.y = old_y
 	return false
 end
 
