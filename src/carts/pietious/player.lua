@@ -1360,12 +1360,15 @@ function player:apply_move(dx, dy, include_elevator_collision)
 	else
 			if next_y >= old_y then
 				if include_elevator_collision and self:try_snap_to_elevator_platform(next_x) then
-					found = true
+					-- Keep `found` false/nil here so the x-collision pass still runs.
+					-- This mirrors the original C++ flow where snap-on-elevator still
+					-- proceeds through horizontal collision resolution.
+					landed = true
 				else
 					self.y = next_y
-				test_x_col = true
-				found = true
-			end
+					test_x_col = true
+					found = true
+				end
 		else
 			self.y = next_y
 			test_x_col = true
@@ -1947,7 +1950,10 @@ function player:tick_controlled_fall_motion()
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
 	local should_land = (not self:collides_at(self.x, self.y, true)) and self:collides_at(self.x, self.y + dy, true)
-	self:apply_move(dx, dy, true)
+	local move_result = self:apply_move(dx, dy, true)
+	if move_result.landed then
+		should_land = true
+	end
 
 	if should_land then
 		self.stairs_landing_sound_pending = false
@@ -1969,7 +1975,10 @@ function player:tick_uncontrolled_fall_motion()
 	end
 	local dy = self:get_uncontrolled_fall_dy()
 	local should_land = self:collides_at(self.x, self.y + dy, true)
-	self:apply_move(0, dy, true)
+	local move_result = self:apply_move(0, dy, true)
+	if move_result.landed then
+		should_land = true
+	end
 
 	if should_land then
 		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then
