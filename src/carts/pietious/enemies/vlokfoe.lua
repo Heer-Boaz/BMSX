@@ -6,6 +6,7 @@ vlokfoe.__index = vlokfoe
 
 function vlokfoe:ctor()
 	self:gfx('vlok')
+	self.collider.enabled = false -- debug
 end
 
 function vlokfoe.bt_tick(self, _blackboard)

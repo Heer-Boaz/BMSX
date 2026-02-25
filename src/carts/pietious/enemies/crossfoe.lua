@@ -35,6 +35,7 @@ function crossfoe:ctor()
 	self.cross_state = 'waiting'
 	self.cross_spin_direction = 'down'
 	apply_spin_visual(self)
+	self.collider.enabled = false -- debug
 end
 
 function crossfoe.bt_tick_waiting(self, blackboard)
