@@ -23,10 +23,10 @@ local function define_daemon_cloud_fsm()
 							return timeline.new({
 								id = anim_timeline_id,
 								frames = timeline.build_frame_sequence({
-									{ value = 'daemon_smoke_small', hold = 10 },
-									{ value = 'daemon_smoke_large', hold = 10 },
-									{ value = 'daemon_smoke_small', hold = 10 },
-									{ value = 'daemon_smoke_large', hold = 10 },
+								{ value = 'daemon_smoke_small', hold = 16 },
+								{ value = 'daemon_smoke_large', hold = 16 },
+								{ value = 'daemon_smoke_small', hold = 16 },
+								{ value = 'daemon_smoke_large', hold = 16 },
 								}),
 								playback_mode = 'once',
 							})

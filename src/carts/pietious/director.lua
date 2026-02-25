@@ -596,7 +596,7 @@ local function define_director_fsm()
 					},
 				},
 				tick = function(self)
-					if self.demon_intro_state > 96 and self.demon_intro_state < 160 and (self.demon_intro_state % 8) < 2 then
+					if self.demon_intro_state > 96 and self.demon_intro_state < 215 and (self.demon_intro_state % 8) < 2 then
 						local idx = self.daemon_smoke_next
 						local cloud = object('dc.' .. tostring(idx))
 						cloud.x = constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size)
@@ -608,7 +608,7 @@ local function define_director_fsm()
 						end
 					end
 
-					if self.demon_intro_state < 159 then
+					if self.demon_intro_state < 222 then
 						self.demon_intro_state = self.demon_intro_state + 1
 						return
 					end
