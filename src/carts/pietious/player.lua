@@ -1212,16 +1212,12 @@ function player:try_snap_to_elevator_platform(next_x)
 		if elevator.current_room_number ~= current_room_number then
 			goto continue
 		end
-		local platform = object(elevator.platform_id)
-		local platform_area = platform.collider:get_world_area()
-		local platform_x = platform_area.left
-		local platform_y = platform_area.top
-		if self.y >= (platform_y - constants.room.tile_size2)
-		and self.y < platform_y
-		and self.x > (platform_x - (constants.room.tile_size2 - (constants.room.tile_unit * 4)))
-		and self.x < ((platform_x + constants.room.tile_size4) - (constants.room.tile_unit * 3))
+		if self.y >= (elevator.y - constants.room.tile_size2)
+		and self.y < elevator.y
+		and self.x > (elevator.x - (constants.room.tile_size2 - (constants.room.tile_unit * 4)))
+		and self.x < ((elevator.x + constants.room.tile_size4) - (constants.room.tile_unit * 3))
 		then
-			self.y = platform_y - self.height
+			self.y = elevator.y - self.height
 			self.x = next_x
 			return true
 		end
