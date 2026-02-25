@@ -8,12 +8,11 @@ constants.flow = {
 	item_screen_wait_frames = 6,
 	seal_room_dissolve_steps = 7,
 	seal_sprite_dissolve_steps = 6,
-	daemon_cloud_lifetime_frames = 32,
 	daemon_cloud_max = 4,
-	daemon_cloud_spawn_x_min = 10,
-	daemon_cloud_spawn_x_max = 21,
-	daemon_cloud_spawn_y_min = 5,
-	daemon_cloud_spawn_y_max = 10,
+	daemon_cloud_spawn_x_min = 13,
+	daemon_cloud_spawn_x_max = 20,
+	daemon_cloud_spawn_y_min = 6,
+	daemon_cloud_spawn_y_max = 12,
 }
 
 constants.room = {

@@ -161,22 +161,19 @@ end
 function director:spawn_daemon_clouds()
 	for i = 1, constants.flow.daemon_cloud_max do
 		local cloud_id = 'dc.' .. tostring(i)
-		self.daemon_smoke_t[i] = 0
 		if object(cloud_id) == nil then
 			inst('daemon_cloud', {
 				id = cloud_id,
 				pos = { x = 0, y = 0, z = 23 },
 			})
 		end
-		local cloud = object(cloud_id)
-		cloud.visible = false
+		object(cloud_id).visible = false
 	end
 	self.daemon_smoke_next = 1
 end
 
 function director:despawn_daemon_clouds()
 	for i = 1, constants.flow.daemon_cloud_max do
-		self.daemon_smoke_t[i] = 0
 		local cloud = object('dc.' .. tostring(i))
 		if cloud ~= nil then
 			world_instance:despawn(cloud)
@@ -225,7 +222,6 @@ function director:ctor()
 	self.lithograph_text_lines = {}
 	self.demon_intro_state = 0
 	self.seal_flash_on = false
-	self.daemon_smoke_t = {}
 	self.daemon_smoke_next = 1
 	self._seal_sequence_exit = false
 	self.mode_state = nil
@@ -603,29 +599,12 @@ local function define_director_fsm()
 					if self.demon_intro_state > 96 and self.demon_intro_state < 160 and (self.demon_intro_state % 8) < 2 then
 						local idx = self.daemon_smoke_next
 						local cloud = object('dc.' .. tostring(idx))
-						self.daemon_smoke_t[idx] = 1
 						cloud.x = constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size)
 						cloud.y = constants.room.tile_origin_y + (math.random(constants.flow.daemon_cloud_spawn_y_min, constants.flow.daemon_cloud_spawn_y_max) * constants.room.tile_size)
-						cloud:gfx('daemon_smoke_small')
-						cloud.visible = true
+						cloud.events:emit('daemon_cloud.play')
 						self.daemon_smoke_next = idx + 1
 						if self.daemon_smoke_next > constants.flow.daemon_cloud_max then
 							self.daemon_smoke_next = 1
-						end
-					end
-
-					for i = 1, constants.flow.daemon_cloud_max do
-						if self.daemon_smoke_t[i] > 0 then
-							self.daemon_smoke_t[i] = self.daemon_smoke_t[i] + 1
-							local cloud = object('dc.' .. tostring(i))
-							if self.daemon_smoke_t[i] >= constants.flow.daemon_cloud_lifetime_frames then
-								self.daemon_smoke_t[i] = 0
-								cloud.visible = false
-							elseif (math.modf(self.daemon_smoke_t[i] / 8) % 2) == 0 then
-								cloud:gfx('daemon_smoke_small')
-							else
-								cloud:gfx('daemon_smoke_large')
-							end
 						end
 					end
 
