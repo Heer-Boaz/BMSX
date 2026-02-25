@@ -76,7 +76,7 @@ local function define_pepernoot_projectile_fsm()
 			active = {},
 			freeze = {
 				on = {
-					['seal_broken'] = {
+					['seal_flash_done'] = {
 						go = function(_self, state)
 							state:pop_and_transition()
 						end,

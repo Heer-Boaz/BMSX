@@ -227,6 +227,7 @@ function director:ctor()
 	self.seal_flash_on = false
 	self.daemon_smoke_t = {}
 	self.daemon_smoke_next = 1
+	self._seal_sequence_exit = false
 	self.mode_state = nil
 	self.room_state = nil
 	self.changed_axis = nil
@@ -526,7 +527,13 @@ local function define_director_fsm()
 				},
 			},
 			seal_dissolution = {
+				transition_guards = {
+					can_exit = function(self)
+						return self._seal_sequence_exit
+					end,
+				},
 				entering_state = function(self)
+					self._seal_sequence_exit = false
 					self.active_transition_kind = 'sealfx'
 					self.overlay_mode = 'sealfx'
 					self.transition_frames_left = 0
@@ -543,15 +550,18 @@ local function define_director_fsm()
 				on = {
 					['seal_dissolution_done'] = {
 						go = function(self)
-							object('pietolon').seal_projectiles_frozen = false
-							object('pietolon').events:emit('seal_broken')
 							service('c'):finish_seal_dissolution()
+							self._seal_sequence_exit = true
 							return '/daemon_appearance'
 						end,
 					},
 				},
 				tick = function(self)
 					self.seal_flash_on = self.demon_intro_state < 32 and (self.demon_intro_state % 4) >= 2
+					if self.demon_intro_state == 32 then
+						object('pietolon').seal_projectiles_frozen = false
+						object('pietolon').events:emit('seal_flash_done')
+					end
 					service('c'):set_seal_dissolve_intro_state(self.demon_intro_state)
 					if self.demon_intro_state < 95 then
 						self.demon_intro_state = self.demon_intro_state + 1
@@ -562,7 +572,13 @@ local function define_director_fsm()
 				end,
 			},
 			daemon_appearance = {
+				transition_guards = {
+					can_exit = function(self)
+						return self._seal_sequence_exit
+					end,
+				},
 				entering_state = function(self)
+					self._seal_sequence_exit = false
 					self.active_transition_kind = 'daemonfx'
 					self.overlay_mode = 'daemonfx'
 					self.transition_frames_left = 0
@@ -578,17 +594,18 @@ local function define_director_fsm()
 						go = function(self)
 							object('transition'):set_space('transition')
 							service('c'):activate_current_room_daemon_fight()
+							self._seal_sequence_exit = true
 							return '/room'
 						end,
 					},
 				},
 				tick = function(self)
-					if self.demon_intro_state > 96 and self.demon_intro_state < 160 and (self.demon_intro_state % 8) < 4 then
+					if self.demon_intro_state > 96 and self.demon_intro_state < 160 and (self.demon_intro_state % 8) < 2 then
 						local idx = self.daemon_smoke_next
 						local cloud = object('dc.' .. tostring(idx))
 						self.daemon_smoke_t[idx] = 1
-						cloud.x = constants.room.tile_origin_x + (math.random(4, 26) * constants.room.tile_size)
-						cloud.y = constants.room.tile_origin_y + (math.random(4, 11) * constants.room.tile_size)
+						cloud.x = constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size)
+						cloud.y = constants.room.tile_origin_y + (math.random(constants.flow.daemon_cloud_spawn_y_min, constants.flow.daemon_cloud_spawn_y_max) * constants.room.tile_size)
 						cloud:gfx('daemon_smoke_small')
 						cloud.visible = true
 						self.daemon_smoke_next = idx + 1

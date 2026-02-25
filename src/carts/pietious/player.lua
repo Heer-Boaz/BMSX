@@ -2661,7 +2661,7 @@ local function define_player_fsm()
 			},
 		freeze = {
 			on = {
-				['seal_broken'] = {
+				['seal_flash_done'] = {
 					go = function(_self, state)
 						state:pop_and_transition()
 					end,
@@ -2767,6 +2767,10 @@ local function define_player_fsm()
 				state_tags.variant.walking_right,
 				state_tags.variant.walking_left,
 				state_tags.variant.quiet_sword,
+				state_tags.variant.jumping_sword,
+				state_tags.variant.sj_sword,
+				state_tags.variant.c_fall_sword,
+				state_tags.variant.uc_fall_sword,
 				state_tags.variant.hit_recovery,
 				state_tags.variant.controlled_fall,
 				state_tags.variant.uncontrolled_fall,

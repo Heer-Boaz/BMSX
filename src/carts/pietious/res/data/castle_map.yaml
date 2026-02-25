@@ -311,7 +311,7 @@
     item: keyworld1
 6:
   type: castle
-  subtype: castlegold
+  subtype: castlegarden
   exits:
   - 13
   - 12
@@ -639,7 +639,7 @@
     y: 13
 13:
   type: castle
-  subtype: castlegold
+  subtype: castlegarden
   exits:
   - -1
   - -1

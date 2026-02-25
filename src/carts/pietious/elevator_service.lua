@@ -106,6 +106,9 @@ function elevator_service:tick()
 
 	local current_room = service('c').current_room
 	local current_room_number = current_room.room_number
+	if player.last_dy >= 0 then
+		player:try_snap_to_elevator_platform(player.x)
+	end
 
 	for i = 1, #self.elevator_routes do
 		local elevator = self.elevator_routes[i]
@@ -115,9 +118,10 @@ function elevator_service:tick()
 			and player.y >= (elevator.y - constants.room.tile_size2)
 			and player.y < (elevator.y + constants.room.tile_size2)
 		then
+			local standing_on_top = player.y == (elevator.y - constants.player.height)
 			if player.x > (elevator.x - constants.room.tile_size2)
 				and player.x < (elevator.x + constants.room.tile_size4)
-				and player:has_tag('g.et')
+				and (player:has_tag('g.et') or standing_on_top)
 			then
 				character_over = true
 			end
