@@ -70,6 +70,8 @@ type LuaLintIssueRule =
 	'handler_identity_dispatch_pattern' |
 	'ensure_local_alias_pattern' |
 	'service_definition_suffix_pattern' |
+	'define_factory_tick_enabled_pattern' |
+	'define_factory_space_id_pattern' |
 	'create_service_id_addon_pattern' |
 	'define_service_id_pattern' |
 	'fsm_id_label_pattern' |
@@ -273,6 +275,8 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'handler_identity_dispatch_pattern',
 	'ensure_local_alias_pattern',
 	'service_definition_suffix_pattern',
+	'define_factory_tick_enabled_pattern',
+	'define_factory_space_id_pattern',
 	'create_service_id_addon_pattern',
 	'define_service_id_pattern',
 	'fsm_id_label_pattern',
@@ -314,6 +318,8 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'single_line_method_pattern',
 	'useless_assert_pattern',
 	'define_service_id_pattern',
+	'define_factory_tick_enabled_pattern',
+	'define_factory_space_id_pattern',
 	'fsm_id_label_pattern',
 	'bt_id_label_pattern',
 	'injected_service_id_property_pattern',
@@ -4690,6 +4696,56 @@ function lintDefineServiceIdPattern(expression: LuaCallExpression, issues: LuaLi
 	);
 }
 
+function visitTableFieldsRecursively(
+	expression: LuaExpression | undefined,
+	onField: (field: LuaTableField) => void,
+): void {
+	if (!expression || expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const field of expression.fields) {
+		onField(field);
+		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+			visitTableFieldsRecursively(field.key, onField);
+		}
+		visitTableFieldsRecursively(field.value, onField);
+	}
+}
+
+function lintDefineFactoryTickEnabledAndSpaceIdPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	let factoryName: string | undefined;
+	if (isGlobalCall(expression, 'define_service')) {
+		factoryName = 'define_service';
+	} else if (isGlobalCall(expression, 'define_prefab')) {
+		factoryName = 'define_prefab';
+	}
+	if (!factoryName) {
+		return;
+	}
+	const definition = expression.arguments[0];
+	visitTableFieldsRecursively(definition, (field) => {
+		const key = getTableFieldKey(field);
+		if (key === 'tick_enabled' && field.value.kind === LuaSyntaxKind.BooleanLiteralExpression) {
+			pushIssue(
+				issues,
+				'define_factory_tick_enabled_pattern',
+				field.value,
+				`${factoryName}: tick_enabled=true/false is forbidden. Remove it: true is redundant (default), and false is ineffective because ticking is enabled on activate.`,
+			);
+			return;
+		}
+		if (key !== 'space_id') {
+			return;
+		}
+		pushIssue(
+			issues,
+			'define_factory_space_id_pattern',
+			field.value,
+			`${factoryName}: space_id is forbidden. Services must not carry space_id, and prefab/object space must be assigned at inst(..., { space_id = ... }).`,
+		);
+	});
+}
+
 function lintFsmIdLabelPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
@@ -5469,10 +5525,11 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 					lintSetSpaceRoundtripPattern(expression, issues);
 				lintServiceDefinitionSuffixPattern(expression, issues);
 				lintCreateServiceIdAddonPattern(expression, issues);
-			lintDefineServiceIdPattern(expression, issues);
-			lintFsmIdLabelPattern(expression, issues);
-			lintFsmStateNameMirrorAssignmentPattern(expression, issues);
-			lintBtIdLabelPattern(expression, issues);
+				lintDefineServiceIdPattern(expression, issues);
+				lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, issues);
+				lintFsmIdLabelPattern(expression, issues);
+				lintFsmStateNameMirrorAssignmentPattern(expression, issues);
+				lintBtIdLabelPattern(expression, issues);
 			lintExpression(expression.callee, issues, false);
 			for (const arg of expression.arguments) {
 				lintExpression(arg, issues, false);
