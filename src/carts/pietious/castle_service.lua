@@ -301,6 +301,17 @@ function castle_service:refresh_current_room_customizations()
 	self:sync_current_room_seal_instance()
 end
 
+function castle_service:bind_events()
+	self.events:on({
+		event = 'seal_dissolution_done',
+		emitter = 'd',
+		subscriber = self,
+		handler = function()
+			self:finish_seal_dissolution()
+		end,
+	})
+end
+
 function castle_service:begin_seal_dissolution()
 	self.world_boss_defeated[self.current_room.world_number] = false
 	self.current_room.seal_sequence_active = true
@@ -398,6 +409,7 @@ end
 
 function castle_service:ctor()
 	self.world_boss_defeated = {}
+	self:bind_events()
 	progression.mount(self, build_progression_program())
 end
 
@@ -620,7 +632,6 @@ local function register_castle_service_definition()
 			current_room = nil,
 			world_entrance_states = {},
 			world_boss_defeated = {},
-			tick_enabled = true,
 		},
 	})
 end

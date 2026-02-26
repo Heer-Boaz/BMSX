@@ -10,12 +10,8 @@ end
 
 local function define_daemon_cloud_fsm()
 	define_fsm('daemon_cloud', {
-		initial = 'idle',
-		on = {
-			['daemon_cloud.play'] = '/playing',
-		},
+		initial = 'playing',
 		states = {
-			idle = {},
 			playing = {
 				timelines = {
 					[anim_timeline_id] = {
@@ -49,12 +45,12 @@ local function define_daemon_cloud_fsm()
 							self:gfx(self:get_timeline(anim_timeline_id):value())
 						end,
 					},
-					['timeline.end.' .. anim_timeline_id] = '/idle',
+					['timeline.end.' .. anim_timeline_id] = {
+						go = function(self)
+							self:mark_for_disposal()
+						end,
+					},
 				},
-				exiting_state = function(self)
-					self.visible = false
-					self:gfx('daemon_smoke_small')
-				end,
 			},
 		},
 	})
@@ -67,7 +63,7 @@ local function register_daemon_cloud_definition()
 		type = 'sprite',
 		fsms = { 'daemon_cloud' },
 		defaults = {
-			tick_enabled = true,
+			daemon_cloud_fx = true,
 		},
 	})
 end

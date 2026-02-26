@@ -61,8 +61,6 @@ local function register_shrine_definition()
 		components = { 'customvisualcomponent' },
 		defaults = {
 			id = 'shrine',
-			space_id = 'shrine',
-			tick_enabled = false,
 		},
 	})
 end
@@ -74,7 +72,6 @@ local function register_room_shrine_definition()
 		type = 'sprite',
 		fsms = { 'room_shrine' },
 		defaults = {
-			tick_enabled = false,
 		},
 	})
 end

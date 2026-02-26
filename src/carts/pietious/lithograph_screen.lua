@@ -47,8 +47,6 @@ local function register_lithograph_screen_definition()
 		components = { 'customvisualcomponent' },
 		defaults = {
 			id = 'lithograph',
-			space_id = 'lithograph',
-			tick_enabled = false,
 		},
 	})
 end

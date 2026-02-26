@@ -3,6 +3,10 @@ local constants = require('constants')
 local pepernoot_projectile = {}
 pepernoot_projectile.__index = pepernoot_projectile
 
+local state_tags = {
+	frozen = 'v.fz',
+}
+
 function pepernoot_projectile:ctor()
 	self.collider:apply_collision_profile('projectile')
 	self:gfx('pepernoot_16')
@@ -49,7 +53,7 @@ function pepernoot_projectile:on_overlap_begin(event)
 end
 
 function pepernoot_projectile:tick()
-	if object(self.owner_id).seal_projectiles_frozen then
+	if self:has_tag(state_tags.frozen) then
 		return
 	end
 	local room = service('c').current_room
@@ -75,6 +79,7 @@ local function define_pepernoot_projectile_fsm()
 		states = {
 			active = {},
 			freeze = {
+				tags = { state_tags.frozen },
 				on = {
 					['seal_flash_done'] = {
 						go = function(_self, state)

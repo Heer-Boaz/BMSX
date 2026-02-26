@@ -22,7 +22,6 @@ local function register_seal_definition()
 		type = 'sprite',
 		fsms = { 'seal' },
 		defaults = {
-			tick_enabled = false,
 		},
 	})
 end

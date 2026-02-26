@@ -35,7 +35,6 @@ local function register_world_entrance_definition()
 		fsms = { 'world_entrance' },
 		defaults = {
 			target = nil,
-			tick_enabled = false,
 		},
 	})
 end

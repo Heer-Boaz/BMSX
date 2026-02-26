@@ -64,8 +64,6 @@ local function register_transition_definition()
 		components = { 'customvisualcomponent' },
 		defaults = {
 			id = 'transition',
-			space_id = 'transition',
-			tick_enabled = false,
 		},
 	})
 end

@@ -158,28 +158,47 @@ function director:perform_halo_teleport(player)
 	return switch
 end
 
-function director:spawn_daemon_clouds()
-	for i = 1, constants.flow.daemon_cloud_max do
-		local cloud_id = 'dc.' .. tostring(i)
-		if object(cloud_id) == nil then
-			inst('daemon_cloud', {
-				id = cloud_id,
-				pos = { x = 0, y = 0, z = 23 },
-			})
-		end
-		object(cloud_id).visible = false
-	end
-	self.daemon_smoke_next = 1
+function director:spawn_daemon_cloud()
+	inst('daemon_cloud', {
+		pos = {
+			x = constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size),
+			y = constants.room.tile_origin_y + (math.random(constants.flow.daemon_cloud_spawn_y_min, constants.flow.daemon_cloud_spawn_y_max) * constants.room.tile_size),
+			z = 23,
+		},
+	})
 end
 
 function director:despawn_daemon_clouds()
-	for i = 1, constants.flow.daemon_cloud_max do
-		local cloud = object('dc.' .. tostring(i))
-		if cloud ~= nil then
+	for cloud in world_instance:objects({ scope = 'all', reverse = true }) do
+		if cloud.daemon_cloud_fx then
 			world_instance:despawn(cloud)
 		end
 	end
-	self.daemon_smoke_next = 1
+end
+
+function director:runcheck_seal_dissolution()
+	self.seal_flash_on = self.demon_intro_state < 32 and (self.demon_intro_state % 4) >= 2
+	if self.demon_intro_state == 32 then
+		self.events:emit('seal_flash_done')
+	end
+	service('c'):set_seal_dissolve_intro_state(self.demon_intro_state)
+	if self.demon_intro_state < 95 then
+		self.demon_intro_state = self.demon_intro_state + 1
+		return
+	end
+	self.seal_flash_on = false
+	self.events:emit('seal_dissolution_done')
+end
+
+function director:runcheck_daemon_appearance()
+	if self.demon_intro_state > 96 and self.demon_intro_state < 215 and (self.demon_intro_state % 8) == 0 then
+		self:spawn_daemon_cloud()
+	end
+	if self.demon_intro_state < 222 then
+		self.demon_intro_state = self.demon_intro_state + 1
+		return
+	end
+	self.events:emit('daemon_appearance_done')
 end
 
 function director:bind_events()
@@ -222,8 +241,6 @@ function director:ctor()
 	self.lithograph_text_lines = {}
 	self.demon_intro_state = 0
 	self.seal_flash_on = false
-	self.daemon_smoke_next = 1
-	self._seal_sequence_exit = false
 	self.mode_state = nil
 	self.room_state = nil
 	self.changed_axis = nil
@@ -472,9 +489,7 @@ local function define_director_fsm()
 								object('pietolon').actioneffects:trigger('halo')
 							end,
 						},
-						['lb[jp] || rb[jp]'] = {
-							go = '/item_screen_closing',
-						},
+						['lb[jp] || rb[jp]'] = '/item_screen_closing',
 					},
 						on = {
 							['banner_requested'] = '/banner_transition',
@@ -521,65 +536,36 @@ local function define_director_fsm()
 				on = {
 					['timeline.end.' .. halo_teleport_timeline_id] = '/room_switch_wait',
 				},
-			},
-				seal_dissolution = {
-					transition_guards = {
-						can_exit = function(self)
-							return self._seal_sequence_exit
-						end,
 				},
-				entering_state = function(self)
-					self._seal_sequence_exit = false
-					self.active_transition_kind = 'sealfx'
-					self.overlay_mode = 'sealfx'
-					self.transition_frames_left = 0
-					self.demon_intro_state = 1
-					self.seal_flash_on = false
-					object('pietolon').seal_projectiles_frozen = true
-					object('pietolon').events:emit('seal_breaking')
-					set_space('main')
-					object('ui'):set_space('main')
-					object('transition'):set_space('main')
-					self:set_mode_state('seal_dissolution')
-					service('c'):begin_seal_dissolution()
-				end,
+				seal_dissolution = {
+					entering_state = function(self)
+						self.active_transition_kind = 'sealfx'
+						self.overlay_mode = 'sealfx'
+						self.transition_frames_left = 0
+						self.demon_intro_state = 1
+						self.seal_flash_on = false
+						self.events:emit('seal_breaking')
+						set_space('main')
+						object('ui'):set_space('main')
+						object('transition'):set_space('main')
+						self:set_mode_state('seal_dissolution')
+						service('c'):begin_seal_dissolution()
+					end,
 					on = {
-						['seal_dissolution_done'] = {
-							go = function(self)
-								service('c'):finish_seal_dissolution()
-								self._seal_sequence_exit = true
-								return '/daemon_appearance'
-							end,
+						['seal_dissolution_done'] = '/daemon_appearance',
+					},
+					run_checks = {
+						{
+							go = director.runcheck_seal_dissolution,
+						},
 					},
 				},
-				tick = function(self)
-					self.seal_flash_on = self.demon_intro_state < 32 and (self.demon_intro_state % 4) >= 2
-					if self.demon_intro_state == 32 then
-						object('pietolon').seal_projectiles_frozen = false
-						object('pietolon').events:emit('seal_flash_done')
-					end
-					service('c'):set_seal_dissolve_intro_state(self.demon_intro_state)
-					if self.demon_intro_state < 95 then
-						self.demon_intro_state = self.demon_intro_state + 1
-						return
-					end
-					self.seal_flash_on = false
-					self.events:emit('seal_dissolution_done')
-				end,
-			},
-			daemon_appearance = {
-				transition_guards = {
-					can_exit = function(self)
-						return self._seal_sequence_exit
-					end,
-				},
-				entering_state = function(self)
-					self._seal_sequence_exit = false
-					self.active_transition_kind = 'daemonfx'
-					self.overlay_mode = 'daemonfx'
-					self.transition_frames_left = 0
-					self.demon_intro_state = 97
-					self:spawn_daemon_clouds()
+				daemon_appearance = {
+					entering_state = function(self)
+						self.active_transition_kind = 'daemonfx'
+						self.overlay_mode = 'daemonfx'
+						self.transition_frames_left = 0
+						self.demon_intro_state = 97
 						set_space('main')
 						object('ui'):set_space('main')
 						object('transition'):set_space('main')
@@ -588,64 +574,50 @@ local function define_director_fsm()
 					end,
 					on = {
 						['daemon_appearance_done'] = {
-								go = function(self)
-									object('transition'):set_space('transition')
-									service('c'):activate_current_room_daemon_fight()
-								self._seal_sequence_exit = true
+							go = function(self)
+								object('transition'):set_space('transition')
+								self:despawn_daemon_clouds()
+								service('c'):activate_current_room_daemon_fight()
 								return '/room'
 							end,
 						},
 					},
-				tick = function(self)
-					if self.demon_intro_state > 96 and self.demon_intro_state < 215 and (self.demon_intro_state % 8) == 0 then
-						local idx = self.daemon_smoke_next
-						local cloud = object('dc.' .. tostring(idx))
-						cloud.x = constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size)
-						cloud.y = constants.room.tile_origin_y + (math.random(constants.flow.daemon_cloud_spawn_y_min, constants.flow.daemon_cloud_spawn_y_max) * constants.room.tile_size)
-						cloud.events:emit('daemon_cloud.play')
-						self.daemon_smoke_next = idx + 1
-						if self.daemon_smoke_next > constants.flow.daemon_cloud_max then
-							self.daemon_smoke_next = 1
-						end
-					end
-
-					if self.demon_intro_state < 222 then
-						self.demon_intro_state = self.demon_intro_state + 1
-						return
-					end
-					self.events:emit('daemon_appearance_done')
-				end,
-			},
-			lithograph_screen_open = {
-				entering_state = function(self)
-					self.active_transition_kind = 'lithograph'
-					object('lithograph').lines = self.lithograph_text_lines
-					set_space('lithograph')
-					object('ui'):set_space('lithograph')
-					self:set_mode_state('lithograph')
-				end,
-				process_input = function(self)
-					if action_triggered('b[p] || x[p]', self.player_index) then
-						return
-					end
-					return '/lithograph_screen'
-				end,
-			},
-			lithograph_screen = {
-				input_event_handlers = {
-					['b[jp] || x[jp]'] = '/lithograph_screen_close',
+					run_checks = {
+						{
+							go = director.runcheck_daemon_appearance,
+						},
+					},
 				},
-			},
-			lithograph_screen_close = {
-				process_input = function(self)
-					if action_triggered('b[p] || x[p]', self.player_index) then
-						return
-					end
-					self.lithograph_text_lines = {}
-					object('lithograph').lines = {}
-					return '/room'
-				end,
-			},
+				lithograph_screen_open = {
+					entering_state = function(self)
+						self.active_transition_kind = 'lithograph'
+						object('lithograph').lines = self.lithograph_text_lines
+						set_space('lithograph')
+						object('ui'):set_space('lithograph')
+						self:set_mode_state('lithograph')
+					end,
+					process_input = function(self)
+						if action_triggered('b[p] || x[p]', self.player_index) then
+							return
+						end
+						return '/lithograph_screen'
+					end,
+				},
+				lithograph_screen = {
+					input_event_handlers = {
+						['b[jp] || x[jp]'] = '/lithograph_screen_close',
+					},
+				},
+				lithograph_screen_close = {
+					process_input = function(self)
+						if action_triggered('b[p] || x[p]', self.player_index) then
+							return
+						end
+						self.lithograph_text_lines = {}
+						object('lithograph').lines = {}
+						return '/room'
+					end,
+				},
 			title_screen = {
 				entering_state = function(self)
 					self.active_transition_kind = 'title'
@@ -713,7 +685,7 @@ local function define_director_fsm()
 								local castle_service = service('c')
 								local current_room = castle_service.current_room
 								if current_room.seal_sequence_active and current_room.has_active_seal then
-									castle_service:finish_seal_dissolution()
+									self.events:emit('seal_dissolution_done')
 								end
 								if castle_service:should_restart_daemon_appearance_after_death() then
 									return '/daemon_appearance'
@@ -735,10 +707,6 @@ local function register_director_service_definition()
 		auto_activate = true,
 		defaults = {
 			id = 'd',
-			space_id = 'ui',
-			player_index = 1,
-			mode_state = nil,
-			room_state = nil,
 			changed_axis = nil,
 			pending_banner_world_number = 0,
 			next_room_switch_banner_world_number = 0,
@@ -746,7 +714,6 @@ local function register_director_service_definition()
 			overlay_mode = nil,
 			overlay_text_lines = {},
 			transition_frames_left = 0,
-			tick_enabled = true,
 		},
 	})
 end

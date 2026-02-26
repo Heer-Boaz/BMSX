@@ -66,7 +66,6 @@ function breakablewall.register_enemy_definition()
 			tiletype = 'castle_front_blue_1',
 			enemy_kind = 'breakablewall',
 			despawn_on_room_switch = true,
-			tick_enabled = false,
 		},
 	})
 end

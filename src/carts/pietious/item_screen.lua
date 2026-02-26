@@ -198,12 +198,10 @@ local function register_item_screen_definition()
 			fsms = { 'item_screen' },
 			components = { 'customvisualcomponent' },
 			defaults = {
-				space_id = 'item',
 				secondary_weapon_selection_index = 0,
 				selector_hidden = false,
 				selector_blink_counter = 0,
 				map_highlight = true,
-				tick_enabled = true,
 			},
 		})
 end

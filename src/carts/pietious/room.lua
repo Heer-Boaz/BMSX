@@ -904,7 +904,6 @@ local function register_room_definition()
 		fsms = { 'room' },
 		components = { 'customvisualcomponent' },
 		defaults = {
-			tick_enabled = false,
 		},
 	})
 end

@@ -110,7 +110,6 @@ local function register_enemy_explosion_definition()
 		fsms = { 'enemy_explosion' },
 		defaults = {
 			loot_type = nil,
-			tick_enabled = false,
 		},
 	})
 end

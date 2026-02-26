@@ -184,7 +184,6 @@ local function register_elevator_service_definition()
 		class = elevator_platform,
 		type = 'sprite',
 		defaults = {
-			tick_enabled = false,
 		},
 	})
 
@@ -196,7 +195,6 @@ local function register_elevator_service_definition()
 			id = 'e',
 			platform_def_id = 'elevator_platform_obj',
 			elevator_routes = elevator_routes,
-			tick_enabled = true,
 		},
 	})
 end
