@@ -522,11 +522,11 @@ local function define_director_fsm()
 					['timeline.end.' .. halo_teleport_timeline_id] = '/room_switch_wait',
 				},
 			},
-			seal_dissolution = {
-				transition_guards = {
-					can_exit = function(self)
-						return self._seal_sequence_exit
-					end,
+				seal_dissolution = {
+					transition_guards = {
+						can_exit = function(self)
+							return self._seal_sequence_exit
+						end,
 				},
 				entering_state = function(self)
 					self._seal_sequence_exit = false
@@ -543,13 +543,13 @@ local function define_director_fsm()
 					self:set_mode_state('seal_dissolution')
 					service('c'):begin_seal_dissolution()
 				end,
-				on = {
-					['seal_dissolution_done'] = {
-						go = function(self)
-							service('c'):finish_seal_dissolution()
-							self._seal_sequence_exit = true
-							return '/daemon_appearance'
-						end,
+					on = {
+						['seal_dissolution_done'] = {
+							go = function(self)
+								service('c'):finish_seal_dissolution()
+								self._seal_sequence_exit = true
+								return '/daemon_appearance'
+							end,
 					},
 				},
 				tick = function(self)
@@ -580,21 +580,22 @@ local function define_director_fsm()
 					self.transition_frames_left = 0
 					self.demon_intro_state = 97
 					self:spawn_daemon_clouds()
-					set_space('main')
-					object('ui'):set_space('main')
-					object('transition'):set_space('main')
-					self:set_mode_state('daemon_appearance')
-				end,
-				on = {
-					['daemon_appearance_done'] = {
-						go = function(self)
-							object('transition'):set_space('transition')
-							service('c'):activate_current_room_daemon_fight()
-							self._seal_sequence_exit = true
-							return '/room'
-						end,
+						set_space('main')
+						object('ui'):set_space('main')
+						object('transition'):set_space('main')
+						self:set_mode_state('daemon_appearance')
+						service('c'):begin_daemon_appearance()
+					end,
+					on = {
+						['daemon_appearance_done'] = {
+								go = function(self)
+									object('transition'):set_space('transition')
+									service('c'):activate_current_room_daemon_fight()
+								self._seal_sequence_exit = true
+								return '/room'
+							end,
+						},
 					},
-				},
 				tick = function(self)
 					if self.demon_intro_state > 96 and self.demon_intro_state < 215 and (self.demon_intro_state % 8) < 2 then
 						local idx = self.daemon_smoke_next
@@ -705,11 +706,23 @@ local function define_director_fsm()
 					object('ui'):set_space('transition')
 					self:set_mode_state('death')
 					self.events:emit('transition.mask.play')
-				end,
-				on = {
-					['death_done'] = '/room',
+					end,
+					on = {
+						['death_done'] = {
+							go = function(self)
+								local castle_service = service('c')
+								local current_room = castle_service.current_room
+								if current_room.seal_sequence_active and current_room.has_active_seal then
+									castle_service:finish_seal_dissolution()
+								end
+								if castle_service:should_restart_daemon_appearance_after_death() then
+									return '/daemon_appearance'
+								end
+								return '/room'
+							end,
+						},
+					},
 				},
-			},
 		},
 	})
 end

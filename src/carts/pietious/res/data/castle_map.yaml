@@ -1310,8 +1310,6 @@
   - '################################'
   objects:
   - type: seal
-    condition:
-    - '!boss_defeated'
     x: 12
     y: 6
     text: eyndbaes

@@ -856,6 +856,9 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	if self:has_tag(state_tags.variant.dying) then
 		return false
 	end
+	if service('c'):is_current_room_boss_encounter_active() then
+		return false
+	end
 	if keep_stairs_lock then
 		self.x = self.stairs_x
 	end

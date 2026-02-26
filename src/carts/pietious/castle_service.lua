@@ -288,15 +288,21 @@ end
 
 function castle_service:refresh_current_room_customizations()
 	local seal = self.current_room.seal
+	local world_boss_defeated = self.world_boss_defeated[self.current_room.world_number]
 	if seal == nil then
 		self.current_room.has_active_seal = false
 	else
-		self.current_room.has_active_seal = progression.matches(self, seal.conditions)
+		if self.current_room.seal_broken and not world_boss_defeated then
+			self.current_room.has_active_seal = false
+		else
+			self.current_room.has_active_seal = progression.matches(self, seal.conditions)
+		end
 	end
 	self:sync_current_room_seal_instance()
 end
 
 function castle_service:begin_seal_dissolution()
+	self.world_boss_defeated[self.current_room.world_number] = false
 	self.current_room.seal_sequence_active = true
 	self.current_room.room_dissolve_step = 0
 	self.current_room.seal_dissolve_step = 0
@@ -339,7 +345,8 @@ function castle_service:set_seal_dissolve_intro_state(intro_state)
 end
 
 function castle_service:finish_seal_dissolution()
-	self.current_room.seal_sequence_active = false
+	self.current_room.seal_sequence_active = true
+	self.current_room.seal_broken = true
 	self.current_room.has_active_seal = false
 	self.current_room.daemon_fight_active = false
 	local row_patches = {}
@@ -356,16 +363,41 @@ function castle_service:finish_seal_dissolution()
 	if #row_patches > 0 then
 		self.current_room:patch_rows(row_patches)
 	end
-	progression.set(self, 'boss_defeated', true)
 	self:refresh_current_room_customizations()
 	service('en'):refresh_current_room_enemies()
 end
 
+function castle_service:begin_daemon_appearance()
+	self.current_room.seal_sequence_active = true
+end
+
+function castle_service:should_restart_daemon_appearance_after_death()
+	if self.current_room.seal == nil then
+		return false
+	end
+	if self.world_boss_defeated[self.current_room.world_number] then
+		return false
+	end
+	return self.current_room.seal_broken
+end
+
+function castle_service:is_current_room_boss_encounter_active()
+	if self.current_room.seal == nil then
+		return false
+	end
+	if self.world_boss_defeated[self.current_room.world_number] then
+		return false
+	end
+	return self.current_room.seal_sequence_active or self.current_room.daemon_fight_active or self.current_room.seal_broken
+end
+
 function castle_service:activate_current_room_daemon_fight()
+	self.current_room.seal_sequence_active = false
 	self.current_room.daemon_fight_active = true
 end
 
 function castle_service:ctor()
+	self.world_boss_defeated = {}
 	progression.mount(self, build_progression_program())
 end
 
@@ -416,6 +448,7 @@ function castle_service:initialize(initial_room_number)
 	rm.map_y = 12
 	rm.last_room_switch = nil
 	self.world_entrance_states = {}
+	self.world_boss_defeated = {}
 	self:sync_world_entrance_states_for_room(rm)
 	self:refresh_current_room_customizations()
 	service('en'):refresh_current_room_enemies(true)
@@ -586,6 +619,7 @@ local function register_castle_service_definition()
 			id = 'c',
 			current_room = nil,
 			world_entrance_states = {},
+			world_boss_defeated = {},
 			tick_enabled = true,
 		},
 	})

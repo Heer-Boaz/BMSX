@@ -431,6 +431,7 @@ local function apply_room_template(room_state, template)
 	room_state.room_subtype = template.room_subtype
 	room_state.custom = template.custom
 	room_state.has_active_seal = false
+	room_state.seal_broken = false
 	room_state.seal_sequence_active = false
 	room_state.room_dissolve_step = 0
 	room_state.seal_dissolve_step = 0

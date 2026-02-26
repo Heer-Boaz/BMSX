@@ -434,10 +434,10 @@ local function load_room_templates()
 			local links = build_links(room_number, room_def.exits)
 			local map_rows = room_def.map
 			local object_defs = room_def.objects or {}
-			templates[room_number] = {
-				room_number = room_number,
-			world_number = room_def.worldnumber,
-			room_subtype = room_def.subtype,
+				templates[room_number] = {
+					room_number = room_number,
+				world_number = room_def.worldnumber or 0, -- Normalized to prevent bugs like indexing with string world numbers for events/progression
+				room_subtype = room_def.subtype,
 			custom = room_def.custom,
 			map_rows = map_rows,
 			spawn = build_spawn(map_rows),
