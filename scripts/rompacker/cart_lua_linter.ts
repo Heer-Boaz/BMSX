@@ -4996,10 +4996,12 @@ function lintFsmRunChecksInputTransitionPattern(expression: LuaCallExpression, i
 	lintFsmRunChecksInputTransitionPatternInTable(definition, issues);
 }
 
-const FSM_LIFECYCLE_HANDLER_KEYS = new Set<string>([
+const FSM_DELEGATE_HANDLER_KEYS = new Set<string>([
 	'entering_state',
 	'exiting_state',
 	'leaving_state',
+	'tick',
+	'process_input',
 ]);
 
 function getLifecycleWrapperCallExpression(functionExpression: LuaFunctionExpression): LuaCallExpression | undefined {
@@ -5050,7 +5052,7 @@ function lintFsmLifecycleWrapperPatternInTable(expression: LuaExpression, issues
 	}
 	for (const field of expression.fields) {
 		const key = getTableFieldKey(field);
-		if (key && FSM_LIFECYCLE_HANDLER_KEYS.has(key) && field.value.kind === LuaSyntaxKind.FunctionExpression) {
+		if (key && FSM_DELEGATE_HANDLER_KEYS.has(key) && field.value.kind === LuaSyntaxKind.FunctionExpression) {
 			const callExpression = getLifecycleWrapperCallExpression(field.value);
 			if (callExpression) {
 				const methodName = getCallMethodName(callExpression) || 'handler';
@@ -5058,7 +5060,7 @@ function lintFsmLifecycleWrapperPatternInTable(expression: LuaExpression, issues
 					issues,
 					'fsm_lifecycle_wrapper_pattern',
 					field.value,
-					`FSM lifecycle wrapper for "${key}" is forbidden ("${methodName}"). Use a direct function reference (for example "<class>.${methodName}") instead of wrapper functions like "function(self) self:${methodName}(...) end".`,
+					`FSM handler wrapper for "${key}" is forbidden ("${methodName}"). Use a direct function reference (for example "<class>.${methodName}") instead of wrapper functions like "function(self) self:${methodName}(...) end".`,
 				);
 			}
 		}
