@@ -613,6 +613,41 @@ end
 local function define_castle_service_fsm()
 	define_fsm('castle_service', {
 		initial = 'active',
+		on = {
+			['castle.seal.begin'] = {
+				go = function(self)
+					self:begin_seal_dissolution()
+				end,
+			},
+			['castle.seal.step'] = {
+				go = function(self, _state, event)
+					self:set_seal_dissolve_intro_state(event.intro_state)
+				end,
+			},
+			['castle.daemon.begin'] = {
+				go = function(self)
+					self:begin_daemon_appearance()
+				end,
+			},
+			['castle.daemon.activate'] = {
+				go = function(self)
+					self:activate_current_room_daemon_fight()
+				end,
+			},
+			['castle.death.resolve'] = {
+				go = function(self)
+					local current_room = self.current_room
+					if current_room.seal_sequence_active and current_room.has_active_seal then
+						self:finish_seal_dissolution()
+					end
+					if self:should_restart_daemon_appearance_after_death() then
+						self.events:emit('castle.death.restart')
+						return
+					end
+					self.events:emit('castle.death.resume')
+				end,
+			},
+		},
 		states = {
 			active = {
 				tick = castle_service.tick,

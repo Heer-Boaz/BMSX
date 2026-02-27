@@ -97,7 +97,17 @@ action_effects.register_effect('halo', {
 		return true
 	end,
 	handler = function(context)
-		service('d'):perform_halo_teleport(context.owner)
+		local director_service = service('d')
+		local castle_service = service('c')
+		local from_world = (castle_service.current_room.world_number or 0) ~= 0
+		director_service.events:emit('halo_transition_start')
+		local switch = castle_service:halo_teleport_to_room_1()
+		if from_world then
+			director_service:expect_room_switch_banner('castle_banner', 0, nil)
+		else
+			director_service:clear_expected_room_switch_banner()
+		end
+		context.owner:apply_halo_teleport_arrival(switch)
 	end,
 })
 

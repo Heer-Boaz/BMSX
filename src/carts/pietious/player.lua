@@ -691,7 +691,6 @@ function player:reset_enter_leave_animation()
 	self.transition_step = 0
 	self.enter_leave_anim_frame = 0
 	self.to_enter_cut = 0
-	self.enter_leave_wait_started = false
 end
 
 function player:update_enter_leave_anim_frame()
@@ -869,14 +868,15 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	end
 
 	if switch.outside then
-		service('d').events:emit('world_transition_start')
-		local leave_switch = service('d'):leave_world_to_castle()
+		local director_service = service('d')
+		director_service.events:emit('world_transition_start')
+		director_service:expect_room_switch_banner('castle_banner', 0, 'castle_emerge')
+		local leave_switch = service('c'):leave_world_to_castle()
 		self:apply_spawn_position(leave_switch)
 		self:zero_motion()
 		self:reset_stairs_lock()
 		self.enter_leave_world_target = nil
 		self.enter_leave_shrine_text_lines = {}
-		self.enter_leave_wait_started = false
 		self.events:emit('leave_world_start')
 		self:emit_room_switched(leave_switch.from_room_number, leave_switch.to_room_number, 'right')
 		return true
@@ -1720,11 +1720,11 @@ function player:tick_entering_world()
 	self:update_enter_leave_cut(1)
 	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
 		self.events:emit('evt.cue.gamestart')
-		local switch = service('d'):enter_world(self.enter_leave_world_target)
+		local switch = service('c'):enter_world(self.enter_leave_world_target)
+		service('d'):expect_room_switch_banner('world_banner', switch.world_number, nil)
 		self:apply_spawn_position(switch)
 		self.enter_leave_world_target = nil
 		self.enter_leave_shrine_text_lines = {}
-		self.enter_leave_wait_started = false
 		self:emit_room_switched(switch.from_room_number, switch.to_room_number, switch.direction)
 	end
 
@@ -1742,32 +1742,8 @@ function player:tick_entering_shrine()
 	self:update_enter_leave_cut(-1)
 	if self.transition_step > constants.world_entrance.enter_world_total_steps then
 		service('d'):open_shrine(self.enter_leave_shrine_text_lines)
-		self.enter_leave_wait_started = false
 		self.events:emit('shrine_entered')
 		return
-	end
-end
-
-function player:tick_waiting_world_banner()
-	self:reset_motion_for_transition_lock()
-	local director = service('d')
-	if director.pending_banner_mode or director.overlay_mode then
-		self.enter_leave_wait_started = true
-		return
-	end
-	self.enter_leave_wait_started = false
-	self.events:emit('world_banner_done')
-end
-
-function player:tick_waiting_world_emerge()
-	self:reset_motion_for_transition_lock()
-	local director = service('d')
-	if director.pending_banner_mode or director.overlay_mode then
-		self.enter_leave_wait_started = true
-		return
-	end
-	if self.enter_leave_wait_started then
-		self.enter_leave_wait_started = false
 	end
 end
 
@@ -2591,7 +2567,7 @@ local function define_player_fsm()
 				['world_banner_done'] = '/quiet',
 			},
 			process_input = player.sample_input,
-			tick = player.tick_waiting_world_banner,
+			tick = player.reset_motion_for_transition_lock,
 		},
 		waiting_world_emerge = {
 			tags = {
@@ -2603,7 +2579,7 @@ local function define_player_fsm()
 				['world_emerge_start'] = '/emerging_world',
 			},
 			process_input = player.sample_input,
-			tick = player.tick_waiting_world_emerge,
+			tick = player.reset_motion_for_transition_lock,
 		},
 		emerging_world = {
 			tags = {
@@ -2779,15 +2755,30 @@ local function define_player_fsm()
 				state_tags.variant.uncontrolled_fall,
 			},
 		},
-		on = {
-			[player_abilities.command_ids.activate_sword] = {
-				go = function(self)
-					player_abilities.activate_sword(self)
-				end,
-			},
-			['enemy.contact_damage'] = {
-				go = function(self, _state, event)
-					self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
+			on = {
+				[player_abilities.command_ids.activate_sword] = {
+					go = function(self)
+						player_abilities.activate_sword(self)
+					end,
+				},
+				['player.world_emerge'] = {
+					go = function(self)
+						self:begin_world_emerge_from_door()
+					end,
+				},
+				['player.shrine_overlay_exit'] = {
+					go = function(self)
+						self:leave_shrine_overlay()
+					end,
+				},
+				['player.halo_trigger'] = {
+					go = function(self)
+						self.actioneffects:trigger('halo')
+					end,
+				},
+				['enemy.contact_damage'] = {
+					go = function(self, _state, event)
+						self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
 				end,
 			},
 			['hp_zero'] = '/dying',
@@ -2862,13 +2853,12 @@ local function register_player_definition()
 			hit_substate = 0,
 			hit_direction = 0,
 			hit_recovery_timer = 0,
-			death_timer = 0,
-			transition_step = 0,
-			to_enter_cut = 0,
-			enter_leave_anim_frame = 0,
-			enter_leave_wait_started = false,
-			enter_leave_world_target = nil,
-			enter_leave_shrine_text_lines = {},
+				death_timer = 0,
+				transition_step = 0,
+				to_enter_cut = 0,
+				enter_leave_anim_frame = 0,
+				enter_leave_world_target = nil,
+				enter_leave_shrine_text_lines = {},
 			inventory_items = nil,
 			secondary_weapon = nil,
 			weapon_level = 0,

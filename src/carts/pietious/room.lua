@@ -860,39 +860,155 @@ function room_object:render_room()
 	end
 end
 
+local function room_runtime_state_name(room_state)
+	local world_number = room_state.world_number or 0
+	if world_number ~= 0 then
+		if room_state.has_active_seal then
+			return 'seal'
+		end
+		if room_state.daemon_fight_active then
+			return 'daemon_fight'
+		end
+		return 'world'
+	end
+	return 'castle'
+end
+
+function room_object:next_room_state_transition(current_room_state)
+	local next_room_state = room_runtime_state_name(self)
+	if next_room_state == current_room_state then
+		return
+	end
+	return '../' .. next_room_state
+end
+
 local function define_room_fsm()
 	define_fsm('room', {
-		initial = 'active',
-		on = {
-			['seal_dissolution'] = '/seal_fx',
-			['daemon_appearance'] = '/daemon_fx',
-			['castle'] = '/active',
-			['world'] = '/active',
-			['seal'] = '/active',
-			['daemon_fight'] = '/active',
-			['transition'] = '/active',
-			['halo'] = '/active',
-			['shrine'] = '/active',
-			['item'] = '/active',
-			['lithograph'] = '/active',
-			['title'] = '/active',
-			['story'] = '/active',
-			['ending'] = '/active',
-			['victory_dance'] = '/active',
-			['death'] = '/active',
-		},
+		initial = 'mode_state',
 		states = {
-			active = {
-				entering_state = function(self)
-					self.seal_fx_active = false
-				end,
+			mode_state = {
+				initial = 'room',
+				on = {
+					['room'] = '/mode_state/room',
+					['transition'] = '/mode_state/transition',
+					['halo'] = '/mode_state/halo',
+					['shrine'] = '/mode_state/shrine',
+					['item'] = '/mode_state/item',
+					['lithograph'] = '/mode_state/lithograph',
+					['title'] = '/mode_state/title',
+					['story'] = '/mode_state/story',
+					['ending'] = '/mode_state/ending',
+					['victory_dance'] = '/mode_state/victory_dance',
+					['death'] = '/mode_state/death',
+					['seal_dissolution'] = '/mode_state/seal_dissolution',
+					['daemon_appearance'] = '/mode_state/daemon_appearance',
+				},
+				states = {
+					room = {},
+					transition = {},
+					halo = {},
+					shrine = {},
+					item = {},
+					lithograph = {},
+					title = {},
+					story = {},
+					ending = {},
+					victory_dance = {},
+					death = {},
+					seal_dissolution = {},
+					daemon_appearance = {},
+				},
 			},
-			seal_fx = {
-				entering_state = function(self)
-					self.seal_fx_active = true
-				end,
+			room_state = {
+				is_concurrent = true,
+				initial = 'unknown',
+				on = {
+					['room_state.sync'] = '/room_state/unknown',
+				},
+				states = {
+					unknown = {
+						run_checks = {
+							{
+								go = function(self)
+									return self:next_room_state_transition('unknown')
+								end,
+							},
+						},
+					},
+					castle = {
+						run_checks = {
+							{
+								go = function(self)
+									return self:next_room_state_transition('castle')
+								end,
+							},
+						},
+					},
+					world = {
+						run_checks = {
+							{
+								go = function(self)
+									return self:next_room_state_transition('world')
+								end,
+							},
+						},
+					},
+					seal = {
+						run_checks = {
+							{
+								go = function(self)
+									return self:next_room_state_transition('seal')
+								end,
+							},
+						},
+					},
+					daemon_fight = {
+						run_checks = {
+							{
+								go = function(self)
+									return self:next_room_state_transition('daemon_fight')
+								end,
+							},
+						},
+					},
+				},
 			},
-			daemon_fx = {},
+			fx_state = {
+				is_concurrent = true,
+				initial = 'active',
+				on = {
+					['seal_dissolution'] = '/fx_state/seal_fx',
+					['daemon_appearance'] = '/fx_state/daemon_fx',
+					['room'] = '/fx_state/active',
+					['transition'] = '/fx_state/active',
+					['halo'] = '/fx_state/active',
+					['shrine'] = '/fx_state/active',
+					['item'] = '/fx_state/active',
+					['lithograph'] = '/fx_state/active',
+					['title'] = '/fx_state/active',
+					['story'] = '/fx_state/active',
+					['ending'] = '/fx_state/active',
+					['victory_dance'] = '/fx_state/active',
+					['death'] = '/fx_state/active',
+				},
+				states = {
+					active = {
+						entering_state = function(self)
+							self.seal_fx_active = false
+						end,
+					},
+					seal_fx = {
+						entering_state = function(self)
+							self.seal_fx_active = true
+						end,
+					},
+					daemon_fx = {
+						entering_state = function(self)
+							self.seal_fx_active = false
+						end,
+					},
+				},
+			},
 		},
 	})
 end

@@ -45,13 +45,10 @@ end
 
 function item_screen:bind_events()
 	self.events:on({
-		event = 'director.state_changed',
+		event = 'item',
 		emitter = 'd',
 		subscriber = self,
-		handler = function(event)
-			if event.state ~= 'item' then
-				return
-			end
+		handler = function(_event)
 			self:reset_for_open()
 		end,
 	})

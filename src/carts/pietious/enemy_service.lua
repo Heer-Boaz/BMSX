@@ -141,9 +141,6 @@ function enemy_service:hide_active_enemies_for_shrine_transition()
 end
 
 function enemy_service:restore_active_enemies_after_shrine_transition()
-	if not self.enemies_hidden_for_shrine then
-		return
-	end
 	self.enemies_hidden_for_shrine = false
 	self:for_each_active_enemy_instance(function(instance)
 		instance:set_space('main')
@@ -220,10 +217,19 @@ end
 local function define_enemy_service_fsm()
 	define_fsm('enemy_service', {
 		initial = 'active',
-		states = {
-			active = {},
+		on = {
+			['shrine_transition_enter'] = '/hidden_for_shrine',
+			['shrine_transition_exit'] = '/active',
 		},
-	})
+			states = {
+				active = {
+					entering_state = enemy_service.restore_active_enemies_after_shrine_transition,
+				},
+				hidden_for_shrine = {
+					entering_state = enemy_service.hide_active_enemies_for_shrine_transition,
+				},
+			},
+		})
 end
 
 local function register_enemy_service_definition()

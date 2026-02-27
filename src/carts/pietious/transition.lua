@@ -24,10 +24,10 @@ end
 
 function transition:draw_transition_overlay()
 	local director_service = service('d')
-	if director_service.overlay_mode == nil then
+	if not director_service:has_tag('d.bt') then
 		return
 	end
-	local lines = director_service.overlay_text_lines
+	local lines = director_service.banner_text_lines
 	if #lines > 0 then
 		put_glyphs(lines, 0, constants.room.tile_origin_y + (constants.room.tile_size * 9), 341, {
 			font = self.banner_font,

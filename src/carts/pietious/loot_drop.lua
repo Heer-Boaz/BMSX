@@ -1,5 +1,6 @@
 local constants = require('constants')
 local combat_overlap = require('combat_overlap')
+local worldobject = require('worldobject')
 
 local loot_drop = {}
 loot_drop.__index = loot_drop
@@ -66,14 +67,12 @@ local function define_loot_drop_fsm()
 				on = {
 					['picked'] = '/picked',
 				},
-			},
-			picked = {
-				entering_state = function(self)
-					self:mark_for_disposal()
-				end,
-			},
-		},
-	})
+				},
+					picked = {
+						entering_state = worldobject.mark_for_disposal,
+					},
+				},
+			})
 end
 
 local function register_loot_drop_definition()
