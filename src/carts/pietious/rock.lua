@@ -30,6 +30,7 @@ end
 
 function rock:ctor()
 	self.collider:apply_collision_profile('enemy')
+	self.collider.enabled = true
 	self:gfx('stone')
 	self:bind_events()
 end
@@ -46,7 +47,6 @@ function rock:take_weapon_hit(weapon_kind)
 	self.health = self.health - 1
 	if self.health <= 0 then
 		self.health = 0
-		service('c').events:emit('foeexplosion')
 		self.events:emit('break')
 	else
 		service('c').events:emit('foedamage')
@@ -82,11 +82,6 @@ local function define_rock_fsm()
 					['break'] = '/breaking',
 					['reset'] = '/idle',
 				},
-				entering_state = function(self)
-					self:gfx('stone')
-					self.collider.enabled = true
-					self.visible = true
-				end,
 			},
 				breaking = {
 					on = {
@@ -95,9 +90,7 @@ local function define_rock_fsm()
 					entering_state = function(self)
 						self.break_steps = 0
 						self:begin_break()
-						self:gfx('stone_broken')
 						self.collider.enabled = false
-						self.visible = true
 					end,
 					tick = function(self)
 						self.break_steps = self.break_steps + 1
