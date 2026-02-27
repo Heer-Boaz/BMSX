@@ -77,6 +77,9 @@ type LuaLintIssueRule =
 	'fsm_direct_state_handler_shorthand_pattern' |
 	'fsm_event_reemit_handler_pattern' |
 	'fsm_process_input_polling_transition_pattern' |
+	'fsm_run_checks_input_transition_pattern' |
+	'fsm_lifecycle_wrapper_pattern' |
+	'fsm_tick_counter_transition_pattern' |
 	'fsm_id_label_pattern' |
 	'bt_id_label_pattern' |
 	'injected_service_id_property_pattern' |
@@ -285,6 +288,9 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'fsm_direct_state_handler_shorthand_pattern',
 	'fsm_event_reemit_handler_pattern',
 	'fsm_process_input_polling_transition_pattern',
+	'fsm_run_checks_input_transition_pattern',
+	'fsm_lifecycle_wrapper_pattern',
+	'fsm_tick_counter_transition_pattern',
 	'fsm_id_label_pattern',
 	'bt_id_label_pattern',
 	'injected_service_id_property_pattern',
@@ -329,6 +335,9 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'fsm_direct_state_handler_shorthand_pattern',
 	'fsm_event_reemit_handler_pattern',
 	'fsm_process_input_polling_transition_pattern',
+	'fsm_run_checks_input_transition_pattern',
+	'fsm_lifecycle_wrapper_pattern',
+	'fsm_tick_counter_transition_pattern',
 	'fsm_id_label_pattern',
 	'bt_id_label_pattern',
 	'injected_service_id_property_pattern',
@@ -4928,6 +4937,290 @@ function lintFsmProcessInputPollingTransitionPattern(expression: LuaCallExpressi
 	lintFsmProcessInputPollingTransitionPatternInTable(definition, issues);
 }
 
+function getRunCheckGoFunction(entryExpression: LuaExpression): LuaFunctionExpression | undefined {
+	if (entryExpression.kind === LuaSyntaxKind.FunctionExpression) {
+		return entryExpression;
+	}
+	if (entryExpression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return undefined;
+	}
+	const goField = findTableFieldByKey(entryExpression, 'go');
+	if (!goField || goField.value.kind !== LuaSyntaxKind.FunctionExpression) {
+		return undefined;
+	}
+	return goField.value;
+}
+
+function lintFsmRunChecksInputTransitionPatternInTable(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const field of expression.fields) {
+		const key = getTableFieldKey(field);
+		if (key === 'run_checks' && field.value.kind === LuaSyntaxKind.TableConstructorExpression) {
+			for (const runCheckEntry of field.value.fields) {
+				const goFunction = getRunCheckGoFunction(runCheckEntry.value);
+				if (!goFunction) {
+					continue;
+				}
+				const inputCheck = findCallExpressionInStatements(goFunction.body.body, isTickInputCheckCallExpression);
+				if (!inputCheck) {
+					continue;
+				}
+				if (!hasTransitionReturnInStatements(goFunction.body.body)) {
+					continue;
+				}
+				pushIssue(
+					issues,
+					'fsm_run_checks_input_transition_pattern',
+					inputCheck,
+					'FSM run_checks input polling with state-transition return is forbidden. Use input_event_handlers with direct state-id mappings instead of action_triggered checks in run_checks.',
+				);
+			}
+		}
+		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+			lintFsmRunChecksInputTransitionPatternInTable(field.key, issues);
+		}
+		lintFsmRunChecksInputTransitionPatternInTable(field.value, issues);
+	}
+}
+
+function lintFsmRunChecksInputTransitionPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isGlobalCall(expression, 'define_fsm')) {
+		return;
+	}
+	const definition = expression.arguments[1];
+	if (!definition) {
+		return;
+	}
+	lintFsmRunChecksInputTransitionPatternInTable(definition, issues);
+}
+
+const FSM_LIFECYCLE_HANDLER_KEYS = new Set<string>([
+	'entering_state',
+	'exiting_state',
+	'leaving_state',
+]);
+
+function getLifecycleWrapperCallExpression(functionExpression: LuaFunctionExpression): LuaCallExpression | undefined {
+	if (functionExpression.parameters.length === 0 || functionExpression.hasVararg) {
+		return undefined;
+	}
+	if (functionExpression.body.body.length !== 1) {
+		return undefined;
+	}
+	const onlyStatement = functionExpression.body.body[0];
+	let expression: LuaExpression | undefined;
+	if (onlyStatement.kind === LuaSyntaxKind.CallStatement) {
+		expression = onlyStatement.expression;
+	} else if (onlyStatement.kind === LuaSyntaxKind.ReturnStatement && onlyStatement.expressions.length === 1) {
+		expression = onlyStatement.expressions[0];
+	}
+	if (!expression || expression.kind !== LuaSyntaxKind.CallExpression) {
+		return undefined;
+	}
+	const receiver = getCallReceiverExpression(expression);
+	if (!receiver || receiver.kind !== LuaSyntaxKind.IdentifierExpression) {
+		return undefined;
+	}
+	const firstParamName = functionExpression.parameters[0].name;
+	if (receiver.name !== firstParamName) {
+		return undefined;
+	}
+	const passthroughParameterCount = functionExpression.parameters.length - 1;
+	if (expression.arguments.length > passthroughParameterCount) {
+		return undefined;
+	}
+	for (let index = 0; index < expression.arguments.length; index += 1) {
+		const argument = expression.arguments[index];
+		if (argument.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return undefined;
+		}
+		const expectedParamName = functionExpression.parameters[index + 1].name;
+		if (argument.name !== expectedParamName) {
+			return undefined;
+		}
+	}
+	return expression;
+}
+
+function lintFsmLifecycleWrapperPatternInTable(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const field of expression.fields) {
+		const key = getTableFieldKey(field);
+		if (key && FSM_LIFECYCLE_HANDLER_KEYS.has(key) && field.value.kind === LuaSyntaxKind.FunctionExpression) {
+			const callExpression = getLifecycleWrapperCallExpression(field.value);
+			if (callExpression) {
+				const methodName = getCallMethodName(callExpression) || 'handler';
+				pushIssue(
+					issues,
+					'fsm_lifecycle_wrapper_pattern',
+					field.value,
+					`FSM lifecycle wrapper for "${key}" is forbidden ("${methodName}"). Use a direct function reference (for example "<class>.${methodName}") instead of wrapper functions like "function(self) self:${methodName}(...) end".`,
+				);
+			}
+		}
+		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+			lintFsmLifecycleWrapperPatternInTable(field.key, issues);
+		}
+		lintFsmLifecycleWrapperPatternInTable(field.value, issues);
+	}
+}
+
+function lintFsmLifecycleWrapperPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isGlobalCall(expression, 'define_fsm')) {
+		return;
+	}
+	const definition = expression.arguments[1];
+	if (!definition) {
+		return;
+	}
+	lintFsmLifecycleWrapperPatternInTable(definition, issues);
+}
+
+function isSelfPropertyReferenceByName(expression: LuaExpression, propertyName: string): boolean {
+	if (expression.kind === LuaSyntaxKind.MemberExpression && isSelfExpressionRoot(expression.base)) {
+		return expression.identifier === propertyName;
+	}
+	if (expression.kind === LuaSyntaxKind.IndexExpression && isSelfExpressionRoot(expression.base)) {
+		return getExpressionKeyName(expression.index) === propertyName;
+	}
+	return false;
+}
+
+function findTickCounterMutationInAssignment(statement: LuaAssignmentStatement): LuaExpression | undefined {
+	if (statement.operator !== LuaAssignmentOperator.Assign) {
+		return undefined;
+	}
+	for (let index = 0; index < statement.left.length && index < statement.right.length; index += 1) {
+		const target = statement.left[index];
+		const propertyName = getSelfAssignedPropertyNameFromTarget(target);
+		if (!propertyName) {
+			continue;
+		}
+		const right = statement.right[index];
+		if (right.kind !== LuaSyntaxKind.BinaryExpression) {
+			continue;
+		}
+		if (right.operator !== LuaBinaryOperator.Add && right.operator !== LuaBinaryOperator.Subtract) {
+			continue;
+		}
+		const leftHasCounter = isSelfPropertyReferenceByName(right.left, propertyName);
+		const rightHasCounter = isSelfPropertyReferenceByName(right.right, propertyName);
+		if (!leftHasCounter && !rightHasCounter) {
+			continue;
+		}
+		if (leftHasCounter && rightHasCounter) {
+			continue;
+		}
+		if (!leftHasCounter && rightHasCounter && right.operator !== LuaBinaryOperator.Add) {
+			continue;
+		}
+		return right;
+	}
+	return undefined;
+}
+
+function findTickCounterMutationInStatements(statements: ReadonlyArray<LuaStatement>): LuaExpression | undefined {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.AssignmentStatement: {
+				const found = findTickCounterMutationInAssignment(statement);
+				if (found) {
+					return found;
+				}
+				break;
+			}
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					const found = findTickCounterMutationInStatements(clause.block.body);
+					if (found) {
+						return found;
+					}
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement: {
+				const found = findTickCounterMutationInStatements(statement.block.body);
+				if (found) {
+					return found;
+				}
+				break;
+			}
+			case LuaSyntaxKind.RepeatStatement: {
+				const found = findTickCounterMutationInStatements(statement.block.body);
+				if (found) {
+					return found;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ForNumericStatement: {
+				const found = findTickCounterMutationInStatements(statement.block.body);
+				if (found) {
+					return found;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ForGenericStatement: {
+				const found = findTickCounterMutationInStatements(statement.block.body);
+				if (found) {
+					return found;
+				}
+				break;
+			}
+			case LuaSyntaxKind.DoStatement: {
+				const found = findTickCounterMutationInStatements(statement.block.body);
+				if (found) {
+					return found;
+				}
+				break;
+			}
+			default:
+				break;
+		}
+	}
+	return undefined;
+}
+
+function lintFsmTickCounterTransitionPatternInTable(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const field of expression.fields) {
+		const key = getTableFieldKey(field);
+		if (key === 'tick' && field.value.kind === LuaSyntaxKind.FunctionExpression) {
+			const body = field.value.body.body;
+			if (hasTransitionReturnInStatements(body)) {
+				const mutation = findTickCounterMutationInStatements(body);
+				if (mutation) {
+					pushIssue(
+						issues,
+						'fsm_tick_counter_transition_pattern',
+						mutation,
+						'Tick-based countdown/countup transition pattern is forbidden. Model timed transitions with FSM timelines and timeline events instead of mutating self counters in tick.',
+					);
+				}
+			}
+		}
+		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+			lintFsmTickCounterTransitionPatternInTable(field.key, issues);
+		}
+		lintFsmTickCounterTransitionPatternInTable(field.value, issues);
+	}
+}
+
+function lintFsmTickCounterTransitionPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isGlobalCall(expression, 'define_fsm')) {
+		return;
+	}
+	const definition = expression.arguments[1];
+	if (!definition) {
+		return;
+	}
+	lintFsmTickCounterTransitionPatternInTable(definition, issues);
+}
+
 function lintFsmIdLabelPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
@@ -5712,6 +6005,9 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 				lintFsmDirectStateHandlerShorthandPattern(expression, issues);
 				lintFsmEventReemitHandlerPattern(expression, issues);
 				lintFsmProcessInputPollingTransitionPattern(expression, issues);
+				lintFsmRunChecksInputTransitionPattern(expression, issues);
+				lintFsmLifecycleWrapperPattern(expression, issues);
+				lintFsmTickCounterTransitionPattern(expression, issues);
 				lintFsmIdLabelPattern(expression, issues);
 				lintFsmStateNameMirrorAssignmentPattern(expression, issues);
 				lintBtIdLabelPattern(expression, issues);
