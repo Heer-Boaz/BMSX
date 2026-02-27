@@ -74,6 +74,7 @@ type LuaLintIssueRule =
 	'define_factory_space_id_pattern' |
 	'create_service_id_addon_pattern' |
 	'define_service_id_pattern' |
+	'fsm_direct_state_handler_shorthand_pattern' |
 	'fsm_id_label_pattern' |
 	'bt_id_label_pattern' |
 	'injected_service_id_property_pattern' |
@@ -279,6 +280,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'define_factory_space_id_pattern',
 	'create_service_id_addon_pattern',
 	'define_service_id_pattern',
+	'fsm_direct_state_handler_shorthand_pattern',
 	'fsm_id_label_pattern',
 	'bt_id_label_pattern',
 	'injected_service_id_property_pattern',
@@ -320,6 +322,7 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'define_service_id_pattern',
 	'define_factory_tick_enabled_pattern',
 	'define_factory_space_id_pattern',
+	'fsm_direct_state_handler_shorthand_pattern',
 	'fsm_id_label_pattern',
 	'bt_id_label_pattern',
 	'injected_service_id_property_pattern',
@@ -4746,6 +4749,67 @@ function lintDefineFactoryTickEnabledAndSpaceIdPattern(expression: LuaCallExpres
 	});
 }
 
+const FSM_STATE_HANDLER_MAP_KEYS = new Set<string>([
+	'on',
+	'input_event_handlers',
+	'events_once',
+]);
+
+function lintFsmDirectStateHandlerMapValue(mapExpression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (mapExpression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const entry of mapExpression.fields) {
+		const value = entry.value;
+		if (value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+			continue;
+		}
+		if (value.fields.length !== 1) {
+			continue;
+		}
+		const goField = findTableFieldByKey(value, 'go');
+		if (!goField || goField.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
+			continue;
+		}
+		pushIssue(
+			issues,
+			'fsm_direct_state_handler_shorthand_pattern',
+			goField.value,
+			`FSM direct state-id handlers must use shorthand. Replace "{ go = '${goField.value.value}' }" with "${goField.value.value}".`,
+		);
+	}
+}
+
+function lintFsmDirectStateHandlerShorthandPatternInTable(
+	expression: LuaExpression,
+	issues: LuaLintIssue[],
+): void {
+	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const field of expression.fields) {
+		const key = getTableFieldKey(field);
+		if (key && FSM_STATE_HANDLER_MAP_KEYS.has(key)) {
+			lintFsmDirectStateHandlerMapValue(field.value, issues);
+		}
+		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+			lintFsmDirectStateHandlerShorthandPatternInTable(field.key, issues);
+		}
+		lintFsmDirectStateHandlerShorthandPatternInTable(field.value, issues);
+	}
+}
+
+function lintFsmDirectStateHandlerShorthandPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isGlobalCall(expression, 'define_fsm')) {
+		return;
+	}
+	const definition = expression.arguments[1];
+	if (!definition) {
+		return;
+	}
+	lintFsmDirectStateHandlerShorthandPatternInTable(definition, issues);
+}
+
 function lintFsmIdLabelPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
@@ -5527,6 +5591,7 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 				lintCreateServiceIdAddonPattern(expression, issues);
 				lintDefineServiceIdPattern(expression, issues);
 				lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, issues);
+				lintFsmDirectStateHandlerShorthandPattern(expression, issues);
 				lintFsmIdLabelPattern(expression, issues);
 				lintFsmStateNameMirrorAssignmentPattern(expression, issues);
 				lintBtIdLabelPattern(expression, issues);
