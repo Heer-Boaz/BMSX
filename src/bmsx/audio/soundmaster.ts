@@ -1533,7 +1533,7 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 
 		const sync = opts.sync !== undefined ? opts.sync : 'immediate';
-		const fade_ms = opts.fade_ms !== undefined ? opts.fade_ms : 250;
+		const fade_ms = opts.fade_ms !== undefined ? opts.fade_ms : 0;
 		const crossfade_ms = opts.crossfade_ms;
 		const start_at_loop_start = opts.start_at_loop_start !== undefined ? opts.start_at_loop_start : false;
 		const start_fresh = opts.start_fresh !== undefined ? opts.start_fresh : false;

@@ -94,7 +94,7 @@ struct MusicTransitionSync {
 struct MusicTransitionRequest {
 	AssetId to;
 	MusicTransitionSync sync;
-	i32 fadeMs = 250;
+	i32 fadeMs = 0;
 	std::optional<i32> crossfadeMs;
 	bool startAtLoopStart = false;
 	bool startFresh = false;
