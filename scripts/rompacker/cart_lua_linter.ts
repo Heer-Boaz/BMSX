@@ -75,6 +75,8 @@ type LuaLintIssueRule =
 	'create_service_id_addon_pattern' |
 	'define_service_id_pattern' |
 	'fsm_direct_state_handler_shorthand_pattern' |
+	'fsm_event_reemit_handler_pattern' |
+	'fsm_process_input_polling_transition_pattern' |
 	'fsm_id_label_pattern' |
 	'bt_id_label_pattern' |
 	'injected_service_id_property_pattern' |
@@ -281,6 +283,8 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'create_service_id_addon_pattern',
 	'define_service_id_pattern',
 	'fsm_direct_state_handler_shorthand_pattern',
+	'fsm_event_reemit_handler_pattern',
+	'fsm_process_input_polling_transition_pattern',
 	'fsm_id_label_pattern',
 	'bt_id_label_pattern',
 	'injected_service_id_property_pattern',
@@ -323,6 +327,8 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'define_factory_tick_enabled_pattern',
 	'define_factory_space_id_pattern',
 	'fsm_direct_state_handler_shorthand_pattern',
+	'fsm_event_reemit_handler_pattern',
+	'fsm_process_input_polling_transition_pattern',
 	'fsm_id_label_pattern',
 	'bt_id_label_pattern',
 	'injected_service_id_property_pattern',
@@ -4810,6 +4816,118 @@ function lintFsmDirectStateHandlerShorthandPattern(expression: LuaCallExpression
 	lintFsmDirectStateHandlerShorthandPatternInTable(definition, issues);
 }
 
+function isSelfEventsEmitCallExpression(expression: LuaCallExpression): boolean {
+	if (getCallMethodName(expression) !== 'emit') {
+		return false;
+	}
+	const receiver = getCallReceiverExpression(expression);
+	if (!receiver) {
+		return false;
+	}
+	return isEventsContainerExpression(receiver) && isSelfExpressionRoot(receiver);
+}
+
+function getGoFunctionFromHandlerEntryValue(value: LuaExpression): LuaFunctionExpression | undefined {
+	if (value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return undefined;
+	}
+	const goField = findTableFieldByKey(value, 'go');
+	if (!goField || goField.value.kind !== LuaSyntaxKind.FunctionExpression) {
+		return undefined;
+	}
+	return goField.value;
+}
+
+function lintFsmEventReemitHandlerPatternInMap(mapExpression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (mapExpression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const entry of mapExpression.fields) {
+		const goFunction = getGoFunctionFromHandlerEntryValue(entry.value);
+		if (!goFunction) {
+			continue;
+		}
+		if (goFunction.body.body.length !== 1) {
+			continue;
+		}
+		const onlyStatement = goFunction.body.body[0];
+		if (onlyStatement.kind !== LuaSyntaxKind.CallStatement) {
+			continue;
+		}
+		if (!isSelfEventsEmitCallExpression(onlyStatement.expression)) {
+			continue;
+		}
+		pushIssue(
+			issues,
+			'fsm_event_reemit_handler_pattern',
+			onlyStatement.expression,
+			'FSM event handler that only re-emits another event is forbidden. Model the transition directly in FSM maps instead of event->event relay handlers.',
+		);
+	}
+}
+
+function lintFsmEventReemitHandlerPatternInTable(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const field of expression.fields) {
+		const key = getTableFieldKey(field);
+		if (key && FSM_STATE_HANDLER_MAP_KEYS.has(key)) {
+			lintFsmEventReemitHandlerPatternInMap(field.value, issues);
+		}
+		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+			lintFsmEventReemitHandlerPatternInTable(field.key, issues);
+		}
+		lintFsmEventReemitHandlerPatternInTable(field.value, issues);
+	}
+}
+
+function lintFsmEventReemitHandlerPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isGlobalCall(expression, 'define_fsm')) {
+		return;
+	}
+	const definition = expression.arguments[1];
+	if (!definition) {
+		return;
+	}
+	lintFsmEventReemitHandlerPatternInTable(definition, issues);
+}
+
+function lintFsmProcessInputPollingTransitionPatternInTable(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const field of expression.fields) {
+		const key = getTableFieldKey(field);
+		if (key === 'process_input' && field.value.kind === LuaSyntaxKind.FunctionExpression) {
+			const inputCheck = findCallExpressionInStatements(field.value.body.body, isTickInputCheckCallExpression);
+			if (inputCheck && hasTransitionReturnInStatements(field.value.body.body)) {
+				pushIssue(
+					issues,
+					'fsm_process_input_polling_transition_pattern',
+					inputCheck,
+					'FSM process_input polling that drives state transitions is forbidden. Use input_event_handlers with direct state-id mappings instead of action_triggered checks in process_input.',
+				);
+			}
+		}
+		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+			lintFsmProcessInputPollingTransitionPatternInTable(field.key, issues);
+		}
+		lintFsmProcessInputPollingTransitionPatternInTable(field.value, issues);
+	}
+}
+
+function lintFsmProcessInputPollingTransitionPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isGlobalCall(expression, 'define_fsm')) {
+		return;
+	}
+	const definition = expression.arguments[1];
+	if (!definition) {
+		return;
+	}
+	lintFsmProcessInputPollingTransitionPatternInTable(definition, issues);
+}
+
 function lintFsmIdLabelPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
 	if (!isGlobalCall(expression, 'define_fsm')) {
 		return;
@@ -5592,6 +5710,8 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 				lintDefineServiceIdPattern(expression, issues);
 				lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, issues);
 				lintFsmDirectStateHandlerShorthandPattern(expression, issues);
+				lintFsmEventReemitHandlerPattern(expression, issues);
+				lintFsmProcessInputPollingTransitionPattern(expression, issues);
 				lintFsmIdLabelPattern(expression, issues);
 				lintFsmStateNameMirrorAssignmentPattern(expression, issues);
 				lintBtIdLabelPattern(expression, issues);
