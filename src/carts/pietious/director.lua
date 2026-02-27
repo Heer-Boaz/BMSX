@@ -166,6 +166,7 @@ function director:ctor()
 	self.next_room_switch_banner_mode = nil
 	self.next_room_switch_banner_world_number = 0
 	self.next_room_switch_banner_post_action = nil
+	self.daemon_appearance_after_death = false
 	self.pending_shrine_text_lines = {}
 	self.banner_text_lines = {}
 	self.banner_post_action = nil
@@ -430,38 +431,40 @@ local function define_director_fsm()
 					['timeline.end.' .. halo_teleport_timeline_id] = '/room_switch_wait',
 				},
 				},
-						seal_dissolution = {
-							entering_state = function(self)
-								self.demon_intro_state = 1
-								self.seal_flash_on = false
-								self.events:emit('seal_breaking')
-							self.events:emit('seal_dissolution')
-								self.events:emit('seal.begin')
-						end,
-					on = {
-						['seal_dissolution_done'] = '/daemon_appearance',
-					},
+							seal_dissolution = {
+								entering_state = function(self)
+									self.demon_intro_state = 1
+									self.seal_flash_on = false
+									self.events:emit('seal_breaking')
+								self.events:emit('seal_dissolution')
+							end,
+						on = {
+							['seal_dissolution_done'] = '/daemon_appearance',
+						},
 					run_checks = {
 						{
 							go = director.runcheck_seal_dissolution,
 						},
 					},
 				},
-						daemon_appearance = {
-							entering_state = function(self)
-								self.demon_intro_state = 97
-								self.events:emit('daemon_appearance')
-								self.events:emit('daemon.begin')
-						end,
-						on = {
-							['daemon_appearance_done'] = {
-								go = function(self)
-									self:despawn_daemon_clouds()
-									self.events:emit('daemon.activate')
-									return '/room'
-								end,
+							daemon_appearance = {
+								entering_state = function(self)
+									self.demon_intro_state = 97
+									if self.daemon_appearance_after_death then
+										self.daemon_appearance_after_death = false
+										self.events:emit('daemon_appearance', { after_death = true })
+									else
+										self.events:emit('daemon_appearance')
+									end
+							end,
+							on = {
+								['daemon_appearance_done'] = {
+									go = function(self)
+										self:despawn_daemon_clouds()
+										return '/room'
+									end,
+								},
 							},
-						},
 					run_checks = {
 						{
 							go = director.runcheck_daemon_appearance,
@@ -574,18 +577,20 @@ local function define_director_fsm()
 								['death_done'] = '/death_resolve',
 							},
 						},
-				death_resolve = {
-					entering_state = function(self)
-						self.events:emit('death.resolve')
-					end,
-					on = {
-								['death.restart'] = '/daemon_appearance',
-								['death.resume'] = '/room',
-							},
-					},
-			},
-		})
-	end
+					death_resolve = {
+						entering_state = function(self)
+							local restart_daemon = service('c'):resolve_death()
+							if restart_daemon then
+								self.daemon_appearance_after_death = true
+								return '/daemon_appearance'
+							end
+							service('c'):emit_room_enter()
+							return '/room'
+						end,
+						},
+				},
+			})
+		end
 
 local function register_director_service_definition()
 	define_service({

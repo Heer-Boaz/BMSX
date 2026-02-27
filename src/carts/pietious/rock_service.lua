@@ -113,9 +113,7 @@ local function define_rock_service_fsm()
 		initial = 'active',
 		states = {
 			active = {
-				tick = function(self)
-					self:sync_room_rocks()
-				end,
+				tick = self:sync_room_rocks()
 			},
 		},
 	})

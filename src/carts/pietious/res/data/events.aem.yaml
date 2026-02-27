@@ -2,36 +2,6 @@ events:
     # --- Music routing (no room-id checks) ---
     room.enter:
         channel: music
-        max_voices: 1
-        rules:
-            - when:
-                  equals:
-                      world_number: 0
-              go:
-                  music_transition:
-                      audio_id: music_castle
-            - when:
-                  equals:
-                      daemon_fight_active: true
-              go:
-                  music_transition:
-                      audio_id: music_daemonfight
-            - when:
-                  equals:
-                      has_active_seal: true
-              go:
-                  music_transition:
-                      audio_id: music_seal_2
-                      sync:
-                          stinger: music_seal_1
-            - go:
-                  music_transition:
-                      audio_id: music_world
-
-    # Re-apply the same music rules after death/respawn without requiring a room switch.
-    death.resume:
-        channel: music
-        max_voices: 1
         rules:
             - when:
                   equals:
@@ -58,10 +28,9 @@ events:
                       audio_id: music_world
 
     # Seal breakdown -> daemon appears (music).
-    # The daemon-fight cue is scheduled later by the daemon.activate event, to avoid canceling the stinger.
+    # The daemon-fight cue is scheduled later (daemon_appearance_done), to avoid canceling the stinger.
     seal_dissolution:
         channel: music
-        max_voices: 1
         rules:
             - go:
                   music_transition:
@@ -70,19 +39,20 @@ events:
                           stinger: seal_breakdown
 
     # After death in a broken-seal room: restart the daemon-appearance music segment from the start.
-    death.restart:
+    daemon_appearance:
         channel: music
-        max_voices: 1
         rules:
-            - go:
+            - when:
+                  equals:
+                      after_death: true
+              go:
                   music_transition:
                       audio_id: music_daemonappears
                       start_fresh: true
 
     # Daemon appears -> daemon fight (wait for loop/end of current segment).
-    daemon.activate:
+    daemon_appearance_done:
         channel: music
-        max_voices: 1
         rules:
             - go:
                   music_transition:
@@ -104,29 +74,22 @@ events:
 
     hit:
         channel: sfx
-        policy: replace
         rules:
             - go:
                   audio_id: hit
-                  cooldown_ms: 40
 
     approachingdeath:
         channel: sfx
-        max_voices: 1
         rules:
             - go:
                   audio_id: approachingdeath
 
     dying:
         channel: music
-        max_voices: 1
         rules:
             - go:
                   music_transition:
-                      audio_id: music_castle
-                      sync:
-                          stinger: dying
-                          return_to_previous: true
+                      audio_id: dying
 
     enterleave:
         channel: sfx
@@ -165,15 +128,10 @@ events:
                   audio_id: pickupitem
 
     worldkey:
-        channel: music
-        max_voices: 1
+        channel: sfx
         rules:
             - go:
-                  music_transition:
-                      audio_id: music_castle
-                      sync:
-                          stinger: pickupkey
-                          return_to_previous: true
+                  audio_id: pickupkey
 
     healing:
         channel: sfx
@@ -201,18 +159,15 @@ events:
 
     foedamage:
         channel: sfx
-        policy: replace
         rules:
             - go:
                   audio_id: foedamage
-                  cooldown_ms: 30
 
     enemy.defeated:
         channel: sfx
         rules:
             - go:
                   audio_id: foeexplosion
-                  cooldown_ms: 30
 
     paperspawn:
         channel: sfx
@@ -244,14 +199,6 @@ events:
             - go:
                   audio_id: appearance
 
-    daemon_appearance:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  one_of:
-                      - daemon_spawn
-                      - daemon_spawn2
-                  pick: uniform
-                  avoid_repeat: true
+    # Intentionally no SFX hook for daemon_appearance here:
+    # In the original XNA/C++ versions, daemon appearance is driven by the music sequence
+    # (SealBreakDown -> DaemonAppears -> DaemonFight), not a separate "spawn" SFX.
