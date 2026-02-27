@@ -100,7 +100,7 @@ function director:runcheck_seal_dissolution()
 	if self.demon_intro_state == 32 then
 		self.events:emit('seal_flash_done')
 	end
-	self.events:emit('castle.seal.step', {
+	self.events:emit('seal.step', {
 		intro_state = self.demon_intro_state,
 	})
 	if self.demon_intro_state < 95 then
@@ -213,7 +213,7 @@ local function define_director_fsm()
 					input_event_handlers = {
 						['lb[jp] || rb[jp]'] = {
 							go = function(self)
-								self.events:emit('evt.cue.f1')
+								self.events:emit('f1')
 								return '/item_screen_opening'
 							end,
 						},
@@ -436,7 +436,7 @@ local function define_director_fsm()
 								self.seal_flash_on = false
 								self.events:emit('seal_breaking')
 							self.events:emit('seal_dissolution')
-							self.events:emit('castle.seal.begin')
+								self.events:emit('seal.begin')
 						end,
 					on = {
 						['seal_dissolution_done'] = '/daemon_appearance',
@@ -451,13 +451,13 @@ local function define_director_fsm()
 							entering_state = function(self)
 								self.demon_intro_state = 97
 								self.events:emit('daemon_appearance')
-								self.events:emit('castle.daemon.begin')
+								self.events:emit('daemon.begin')
 						end,
 						on = {
 							['daemon_appearance_done'] = {
 								go = function(self)
 									self:despawn_daemon_clouds()
-									self.events:emit('castle.daemon.activate')
+									self.events:emit('daemon.activate')
 									return '/room'
 								end,
 							},
@@ -576,11 +576,11 @@ local function define_director_fsm()
 						},
 				death_resolve = {
 					entering_state = function(self)
-						self.events:emit('castle.death.resolve')
+						self.events:emit('death.resolve')
 					end,
 					on = {
-								['castle.death.restart'] = '/daemon_appearance',
-								['castle.death.resume'] = '/room',
+								['death.restart'] = '/daemon_appearance',
+								['death.resume'] = '/room',
 							},
 					},
 			},

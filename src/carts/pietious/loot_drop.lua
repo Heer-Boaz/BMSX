@@ -48,9 +48,9 @@ function loot_drop:on_overlap_begin(event)
 
 	if player:collect_loot(self.loot_type, self.loot_value) then
 		if self.loot_type == 'life' then
-			player.events:emit('evt.cue.healing')
+			player.events:emit('healing')
 		else
-			player.events:emit('evt.cue.pickupitem')
+			player.events:emit('pickupitem')
 		end
 		self.events:emit('picked')
 	end

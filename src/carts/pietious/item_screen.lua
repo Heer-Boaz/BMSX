@@ -158,7 +158,7 @@ function item_screen:tick_secondary_weapon_selection()
 		end
 	end
 	if self.secondary_weapon_selection_index ~= previous_index then
-		self.events:emit('evt.cue.select')
+		self.events:emit('select')
 	end
 
 	local selected_weapon = secondary_weapon_order[self.secondary_weapon_selection_index + 1]

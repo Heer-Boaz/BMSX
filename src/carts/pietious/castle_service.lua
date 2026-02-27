@@ -130,7 +130,7 @@ local function build_progression_program()
 			},
 			{
 				op = 'emit_event',
-				event = 'evt.cue.appearance',
+				event = 'appearance',
 			},
 		},
 	}
@@ -174,7 +174,7 @@ local function build_progression_program()
 		apply = {
 			{
 				op = 'emit_event',
-				event = 'evt.cue.appearance',
+				event = 'appearance',
 			},
 		},
 	}
@@ -447,6 +447,9 @@ function castle_service:commit_room_switch(switch, map_id, map_x, map_y)
 	service('e'):sync_platform_instances(self.current_room.room_number)
 	self.events:emit('room.enter', {
 		room_number = self.current_room.room_number,
+		world_number = self.current_room.world_number,
+		has_active_seal = self.current_room.has_active_seal,
+		daemon_fight_active = self.current_room.daemon_fight_active,
 	})
 	return switch
 end
@@ -466,6 +469,9 @@ function castle_service:initialize(initial_room_number)
 	service('en'):refresh_current_room_enemies(true)
 	self.events:emit('room.enter', {
 		room_number = rm.room_number,
+		world_number = rm.world_number,
+		has_active_seal = rm.has_active_seal,
+		daemon_fight_active = rm.daemon_fight_active,
 	})
 end
 
@@ -614,37 +620,47 @@ local function define_castle_service_fsm()
 	define_fsm('castle_service', {
 		initial = 'active',
 		on = {
-			['castle.seal.begin'] = {
+			['seal.begin'] = {
 				go = function(self)
 					self:begin_seal_dissolution()
 				end,
 			},
-			['castle.seal.step'] = {
+			['seal.step'] = {
 				go = function(self, _state, event)
 					self:set_seal_dissolve_intro_state(event.intro_state)
 				end,
 			},
-			['castle.daemon.begin'] = {
+			['daemon.begin'] = {
 				go = function(self)
 					self:begin_daemon_appearance()
 				end,
 			},
-			['castle.daemon.activate'] = {
+			['daemon.activate'] = {
 				go = function(self)
 					self:activate_current_room_daemon_fight()
 				end,
 			},
-			['castle.death.resolve'] = {
+			['death.resolve'] = {
 				go = function(self)
 					local current_room = self.current_room
 					if current_room.seal_sequence_active and current_room.has_active_seal then
 						self:finish_seal_dissolution()
 					end
 					if self:should_restart_daemon_appearance_after_death() then
-						self.events:emit('castle.death.restart')
+						self.events:emit('death.restart', {
+							room_number = current_room.room_number,
+							world_number = current_room.world_number,
+							has_active_seal = current_room.has_active_seal,
+							daemon_fight_active = current_room.daemon_fight_active,
+						})
 						return
 					end
-					self.events:emit('castle.death.resume')
+					self.events:emit('death.resume', {
+						room_number = current_room.room_number,
+						world_number = current_room.world_number,
+						has_active_seal = current_room.has_active_seal,
+						daemon_fight_active = current_room.daemon_fight_active,
+					})
 				end,
 			},
 		},

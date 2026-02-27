@@ -1,112 +1,103 @@
 events:
-    director.state_changed:
+    room.enter:
         channel: music
         max_voices: 1
         rules:
             - when:
                   equals:
-                      changed_axis: room
-                      mode_state: room
-                      room_state: castle
+                      daemon_fight_active: true
               go:
                   music_transition:
-                      audio_id: music_castle
-                      fade_ms: 250
+                      audio_id: music_daemonfight
             - when:
                   equals:
-                      changed_axis: mode
-                      mode_state: room
-                      room_state: castle
-              go:
-                  music_transition:
-                      audio_id: music_castle
-                      fade_ms: 250
-            - when:
-                  equals:
-                      changed_axis: room
-                      mode_state: room
-                      room_state: world
-              go:
-                  music_transition:
-                      audio_id: music_world
-            - when:
-                  equals:
-                      changed_axis: mode
-                      mode_state: room
-                      room_state: world
-              go:
-                  music_transition:
-                      audio_id: music_world
-            - when:
-                  equals:
-                      changed_axis: room
-                      mode_state: room
-                      room_state: seal
+                      has_active_seal: true
               go:
                   music_transition:
                       audio_id: music_seal_2
-                      sync:
-                          stinger: music_seal_1
             - when:
                   equals:
-                      changed_axis: mode
-                      mode_state: room
-                      room_state: seal
+                      world_number: 0
+              go:
+                  music_transition:
+                      audio_id: music_castle
+                      fade_ms: 250
+            - when:
                   not:
-                      any_of:
-                          transition_kind:
-                              - item_close
-                              - shrine
-                              - lithograph
+                      equals:
+                          world_number: 0
               go:
+                  music_transition:
+                      audio_id: music_world
+
+    seal.begin:
+        channel: music
+        max_voices: 1
+        rules:
+            - go:
                   music_transition:
                       audio_id: music_seal_2
                       sync:
                           stinger: music_seal_1
-            - when:
-                  equals:
-                      changed_axis: mode
-                      mode_state: seal_dissolution
-              go:
+
+    seal_dissolution:
+        channel: music
+        max_voices: 1
+        rules:
+            - go:
                   music_transition:
                       audio_id: music_daemonappears
                       loop: false
                       sync:
                           stinger: seal_breakdown
+
+    death.restart:
+        channel: music
+        max_voices: 1
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_daemonappears
+                      loop: false
+
+    daemon.activate:
+        channel: music
+        max_voices: 1
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_daemonfight
+
+    death.resume:
+        channel: music
+        max_voices: 1
+        rules:
             - when:
                   equals:
-                      changed_axis: room
-                      mode_state: room
-                      room_state: daemon_fight
+                      daemon_fight_active: true
               go:
                   music_transition:
                       audio_id: music_daemonfight
             - when:
                   equals:
-                      changed_axis: mode
-                      mode_state: room
-                      room_state: daemon_fight
+                      has_active_seal: true
               go:
                   music_transition:
-                      audio_id: music_daemonfight
+                      audio_id: music_seal_2
             - when:
                   equals:
-                      changed_axis: mode
-                      mode_state: shrine
+                      world_number: 0
               go:
                   music_transition:
-                      audio_id: music_shrine_2
-                      sync:
-                          stinger: shrine1
+                      audio_id: music_castle
+                      fade_ms: 250
             - when:
-                  equals:
-                      changed_axis: mode
-                      mode_state: lithograph
+                  not:
+                      equals:
+                          world_number: 0
               go:
                   music_transition:
-                      audio_id: music_lithograph2
-                      sync:
-                          stinger: music_lithograph1
+                      audio_id: music_world
 
     enemy.defeated:
         channel: sfx
@@ -117,7 +108,7 @@ events:
                   audio_id: foeexplosion
                   priority: 10
 
-    evt.cue.foeexplosion:
+    foeexplosion:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -126,7 +117,7 @@ events:
                   audio_id: foeexplosion
                   priority: 10
 
-    evt.cue.jump:
+    jump:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -135,7 +126,7 @@ events:
                   audio_id: jump
                   priority: 3
 
-    evt.cue.fall:
+    fall:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -144,7 +135,7 @@ events:
                   audio_id: fall
                   priority: 3
 
-    evt.cue.fire_pepernoot:
+    fire_pepernoot:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -153,7 +144,7 @@ events:
                   audio_id: pepernoot
                   priority: 3
 
-    evt.cue.hit:
+    hit:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -162,7 +153,7 @@ events:
                   audio_id: hit
                   priority: 12
 
-    evt.cue.approachingdeath:
+    approachingdeath:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -171,7 +162,7 @@ events:
                   audio_id: approachingdeath
                   priority: 15
 
-    evt.cue.foedamage:
+    foedamage:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -180,7 +171,7 @@ events:
                   audio_id: foedamage
                   priority: 10
 
-    evt.cue.appearance:
+    appearance:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -189,7 +180,7 @@ events:
                   audio_id: appearance
                   priority: 105
 
-    evt.cue.paperspawn:
+    paperspawn:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -198,7 +189,7 @@ events:
                   audio_id: paperspawn
                   priority: 3
 
-    evt.cue.muzieknootspawn:
+    muzieknootspawn:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -207,7 +198,7 @@ events:
                   audio_id: muzieknootspawn
                   priority: 3
 
-    evt.cue.staffspawn:
+    staffspawn:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -216,7 +207,7 @@ events:
                   audio_id: daemonfire
                   priority: 3
 
-    evt.cue.cross:
+    cross:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -225,7 +216,7 @@ events:
                   audio_id: cross
                   priority: 3
 
-    evt.cue.crossland:
+    crossland:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -234,7 +225,7 @@ events:
                   audio_id: crossland
                   priority: 3
 
-    evt.cue.worlddooropen:
+    worlddooropen:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -243,7 +234,7 @@ events:
                   audio_id: worlddooropen
                   priority: 30
 
-    evt.cue.rotatedoor:
+    rotatedoor:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -252,7 +243,7 @@ events:
                   audio_id: rotatedoor
                   priority: 30
 
-    evt.cue.enterleave:
+    enterleave:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -261,7 +252,7 @@ events:
                   audio_id: enterleave
                   priority: 150
 
-    evt.cue.gamestart:
+    gamestart:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -270,7 +261,7 @@ events:
                   audio_id: gamestart
                   priority: 100
 
-    evt.cue.select:
+    select:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -279,7 +270,7 @@ events:
                   audio_id: select
                   priority: 100
 
-    evt.cue.f1:
+    f1:
         channel: ui
         max_voices: 1
         policy: replace
@@ -288,7 +279,7 @@ events:
                   audio_id: f1
                   priority: 100
 
-    evt.cue.pickupitem:
+    pickupitem:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -297,7 +288,7 @@ events:
                   audio_id: pickupitem
                   priority: 13
 
-    evt.cue.healing:
+    healing:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -306,7 +297,7 @@ events:
                   audio_id: healing
                   priority: 14
 
-    evt.cue.worldkey:
+    worldkey:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -315,7 +306,7 @@ events:
                   audio_id: pickupkey
                   priority: 300
 
-    evt.cue.dying:
+    dying:
         channel: sfx
         max_voices: 1
         policy: replace
@@ -324,7 +315,7 @@ events:
                   audio_id: dying
                   priority: 200
 
-    evt.cue.sword.slice:
+    sword.slice:
         channel: sfx
         max_voices: 1
         policy: replace

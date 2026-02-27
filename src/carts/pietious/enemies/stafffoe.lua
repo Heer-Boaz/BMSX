@@ -75,7 +75,7 @@ function stafffoe.bt_tick(self, blackboard)
 			},
 		})
 	end
-	service('c').events:emit('evt.cue.staffspawn')
+	service('c').events:emit('staffspawn')
 	self.staff_spawn_count = self.staff_spawn_count + 1
 	node.staff_wait_ticks = constants.enemy.staff_wait_before_spawn_steps
 	return behaviourtree.running

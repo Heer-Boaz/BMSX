@@ -67,7 +67,7 @@ action_effects.register_effect('pepernoot', {
 		})
 		owner.pepernoot_projectile_ids[#owner.pepernoot_projectile_ids + 1] = projectile_id
 		owner.weapon_level = owner.weapon_level - constants.secondary_weapon.pepernoot_weapon_level_cost
-		owner.events:emit('evt.cue.fire_pepernoot')
+		owner.events:emit('fire_pepernoot')
 	end,
 })
 
