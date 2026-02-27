@@ -1,8 +1,15 @@
 events:
+    # --- Music routing (no room-id checks) ---
     room.enter:
         channel: music
         max_voices: 1
         rules:
+            - when:
+                  equals:
+                      world_number: 0
+              go:
+                  music_transition:
+                      audio_id: music_castle
             - when:
                   equals:
                       daemon_fight_active: true
@@ -15,31 +22,43 @@ events:
               go:
                   music_transition:
                       audio_id: music_seal_2
+                      sync:
+                          stinger: music_seal_1
+            - go:
+                  music_transition:
+                      audio_id: music_world
+
+    # Re-apply the same music rules after death/respawn without requiring a room switch.
+    death.resume:
+        channel: music
+        max_voices: 1
+        rules:
             - when:
                   equals:
                       world_number: 0
               go:
                   music_transition:
                       audio_id: music_castle
-                      fade_ms: 250
             - when:
-                  not:
-                      equals:
-                          world_number: 0
+                  equals:
+                      daemon_fight_active: true
               go:
                   music_transition:
-                      audio_id: music_world
-
-    seal.begin:
-        channel: music
-        max_voices: 1
-        rules:
-            - go:
+                      audio_id: music_daemonfight
+            - when:
+                  equals:
+                      has_active_seal: true
+              go:
                   music_transition:
                       audio_id: music_seal_2
                       sync:
                           stinger: music_seal_1
+            - go:
+                  music_transition:
+                      audio_id: music_world
 
+    # Seal breakdown -> daemon appears (music).
+    # The daemon-fight cue is scheduled later by the daemon.activate event, to avoid canceling the stinger.
     seal_dissolution:
         channel: music
         max_voices: 1
@@ -47,10 +66,10 @@ events:
             - go:
                   music_transition:
                       audio_id: music_daemonappears
-                      loop: false
                       sync:
                           stinger: seal_breakdown
 
+    # After death in a broken-seal room: restart the daemon-appearance music segment from the start.
     death.restart:
         channel: music
         max_voices: 1
@@ -58,8 +77,9 @@ events:
             - go:
                   music_transition:
                       audio_id: music_daemonappears
-                      loop: false
+                      start_fresh: true
 
+    # Daemon appears -> daemon fight (wait for loop/end of current segment).
     daemon.activate:
         channel: music
         max_voices: 1
@@ -67,259 +87,171 @@ events:
             - go:
                   music_transition:
                       audio_id: music_daemonfight
+                      sync: loop
 
-    death.resume:
-        channel: music
-        max_voices: 1
-        rules:
-            - when:
-                  equals:
-                      daemon_fight_active: true
-              go:
-                  music_transition:
-                      audio_id: music_daemonfight
-            - when:
-                  equals:
-                      has_active_seal: true
-              go:
-                  music_transition:
-                      audio_id: music_seal_2
-            - when:
-                  equals:
-                      world_number: 0
-              go:
-                  music_transition:
-                      audio_id: music_castle
-                      fade_ms: 250
-            - when:
-                  not:
-                      equals:
-                          world_number: 0
-              go:
-                  music_transition:
-                      audio_id: music_world
-
-    enemy.defeated:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: foeexplosion
-                  priority: 10
-
-    foeexplosion:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: foeexplosion
-                  priority: 10
-
+    # --- SFX routing ---
     jump:
         channel: sfx
-        max_voices: 1
-        policy: replace
         rules:
             - go:
                   audio_id: jump
-                  priority: 3
 
     fall:
         channel: sfx
-        max_voices: 1
-        policy: replace
         rules:
             - go:
                   audio_id: fall
-                  priority: 3
-
-    fire_pepernoot:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: pepernoot
-                  priority: 3
 
     hit:
         channel: sfx
-        max_voices: 1
         policy: replace
         rules:
             - go:
                   audio_id: hit
-                  priority: 12
+                  cooldown_ms: 40
 
     approachingdeath:
         channel: sfx
         max_voices: 1
-        policy: replace
         rules:
             - go:
                   audio_id: approachingdeath
-                  priority: 15
+
+    dying:
+        channel: music
+        max_voices: 1
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_castle
+                      sync:
+                          stinger: dying
+                          return_to_previous: true
+
+    enterleave:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: enterleave
+
+    worlddooropen:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: worlddooropen
+
+    rotatedoor:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: rotatedoor
+
+    sword_start:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: slice
+
+    fire_pepernoot:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: pepernoot
+
+    pickupitem:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: pickupitem
+
+    worldkey:
+        channel: music
+        max_voices: 1
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_castle
+                      sync:
+                          stinger: pickupkey
+                          return_to_previous: true
+
+    healing:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: healing
+
+    f1:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: f1
+
+    select:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: select
+
+    gamestart:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: gamestart
 
     foedamage:
         channel: sfx
-        max_voices: 1
         policy: replace
         rules:
             - go:
                   audio_id: foedamage
-                  priority: 10
+                  cooldown_ms: 30
 
-    appearance:
+    enemy.defeated:
         channel: sfx
-        max_voices: 1
-        policy: replace
         rules:
             - go:
-                  audio_id: appearance
-                  priority: 105
+                  audio_id: foeexplosion
+                  cooldown_ms: 30
 
     paperspawn:
         channel: sfx
-        max_voices: 1
-        policy: replace
         rules:
             - go:
                   audio_id: paperspawn
-                  priority: 3
 
     muzieknootspawn:
         channel: sfx
-        max_voices: 1
-        policy: replace
         rules:
             - go:
                   audio_id: muzieknootspawn
-                  priority: 3
-
-    staffspawn:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: daemonfire
-                  priority: 3
 
     cross:
         channel: sfx
-        max_voices: 1
-        policy: replace
         rules:
             - go:
                   audio_id: cross
-                  priority: 3
 
     crossland:
         channel: sfx
-        max_voices: 1
-        policy: replace
         rules:
             - go:
                   audio_id: crossland
-                  priority: 3
 
-    worlddooropen:
+    appearance:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: appearance
+
+    daemon_appearance:
         channel: sfx
         max_voices: 1
         policy: replace
         rules:
             - go:
-                  audio_id: worlddooropen
-                  priority: 30
-
-    rotatedoor:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: rotatedoor
-                  priority: 30
-
-    enterleave:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: enterleave
-                  priority: 150
-
-    gamestart:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: gamestart
-                  priority: 100
-
-    select:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: select
-                  priority: 100
-
-    f1:
-        channel: ui
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: f1
-                  priority: 100
-
-    pickupitem:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: pickupitem
-                  priority: 13
-
-    healing:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: healing
-                  priority: 14
-
-    worldkey:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: pickupkey
-                  priority: 300
-
-    dying:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: dying
-                  priority: 200
-
-    sword.slice:
-        channel: sfx
-        max_voices: 1
-        policy: replace
-        rules:
-            - go:
-                  audio_id: slice
-                  priority: 3
+                  one_of:
+                      - daemon_spawn
+                      - daemon_spawn2
+                  pick: uniform
+                  avoid_repeat: true
