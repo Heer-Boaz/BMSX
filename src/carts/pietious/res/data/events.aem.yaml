@@ -27,6 +27,58 @@ events:
                   music_transition:
                       audio_id: music_world
 
+    title:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: prelude
+                      start_fresh: true
+
+    story:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_story
+                      start_fresh: true
+
+    shrine:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_shrine_2
+                      sync:
+                          stinger: music_shrine_1
+
+    lithograph:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_lithograph2
+                      sync:
+                          stinger: music_lithograph1
+
+    ending:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_epilogue
+                      sync:
+                          stinger: epilogue_start
+
+    victory_dance:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: danceofjoy
+                      sync:
+                          stinger: pickupkey
+
     # Seal breakdown -> daemon appears (music).
     # The daemon-fight cue is scheduled later (daemon_appearance_done), to avoid canceling the stinger.
     seal_dissolution:
@@ -103,12 +155,6 @@ events:
             - go:
                   audio_id: worlddooropen
 
-    rotatedoor:
-        channel: sfx
-        rules:
-            - go:
-                  audio_id: rotatedoor
-
     sword_start:
         channel: sfx
         rules:
@@ -128,10 +174,13 @@ events:
                   audio_id: pickupitem
 
     worldkey:
-        channel: sfx
+        channel: music
         rules:
             - go:
-                  audio_id: pickupkey
+                  music_transition:
+                      audio_id: music_castle
+                      sync:
+                          stinger: pickupkey
 
     healing:
         channel: sfx
@@ -198,6 +247,12 @@ events:
         rules:
             - go:
                   audio_id: appearance
+
+    staffspawn:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: daemonfire
 
     # Intentionally no SFX hook for daemon_appearance here:
     # In the original XNA/C++ versions, daemon appearance is driven by the music sequence

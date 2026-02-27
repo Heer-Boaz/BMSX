@@ -205,6 +205,8 @@ local function define_director_fsm()
 							self.events:emit('shrine_transition_exit')
 							self.events:emit('room')
 							self.events:emit('room_state.sync')
+							-- Ensure music is restored when returning from title/story/shrine/lithograph/etc.
+							service('c'):emit_room_enter()
 						end,
 					on = {
 						['room_switched'] = '/room_switch_wait',

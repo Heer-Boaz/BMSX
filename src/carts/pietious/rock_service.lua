@@ -6,7 +6,7 @@ function rock_service:sync_rock_instance(rock_def, room)
 	local id = rock_def.id
 	local instance = object(id)
 	if instance == nil then
-		instance = inst(self.rock_def_id, {
+		instance = inst('rock', {
 			id = id,
 			pos = { x = rock_def.x, y = rock_def.y, z = 140 },
 		})
@@ -108,16 +108,16 @@ function rock_service:ctor()
 	self:sync_room_rocks()
 end
 
-local function define_rock_service_fsm()
-	define_fsm('rock_service', {
-		initial = 'active',
-		states = {
-			active = {
-				tick = self:sync_room_rocks()
+	local function define_rock_service_fsm()
+		define_fsm('rock_service', {
+			initial = 'active',
+			states = {
+				active = {
+					tick = rock_service.sync_room_rocks,
+				},
 			},
-		},
-	})
-end
+		})
+	end
 
 local function register_rock_service_definition()
 	define_service({
@@ -127,7 +127,6 @@ local function register_rock_service_definition()
 		auto_activate = true,
 		defaults = {
 			id = 'r',
-				rock_def_id = 'rock',
 			rocks_by_id = {},
 			destroyed_rock_ids = {},
 			synced_room_number = 0,
