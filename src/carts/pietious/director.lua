@@ -3,6 +3,11 @@ local world_instance = require('world').instance
 local halo_teleport_timeline_id = 'director.halo.transition'
 local banner_world_timeline_id = 'director.banner.world'
 local banner_castle_timeline_id = 'director.banner.castle'
+local room_switch_wait_timeline_id = 'director.wait.room_switch'
+local item_screen_open_timeline_id = 'director.wait.item.open'
+local item_screen_close_timeline_id = 'director.wait.item.close'
+local lithograph_open_timeline_id = 'director.wait.lithograph.open'
+local lithograph_close_timeline_id = 'director.wait.lithograph.close'
 
 local director = {}
 director.__index = director
@@ -16,9 +21,8 @@ function director:activate_spaces()
 	add_space('ui')
 end
 
-function director:begin_black_wait(frames)
+function director:begin_black_wait()
 	self.banner_text_lines = {}
-	self.transition_frames_left = frames
 	set_space('transition')
 	object('ui'):set_space('transition')
 	self.events:emit('transition')
@@ -164,7 +168,6 @@ function director:ctor()
 	self.next_room_switch_banner_post_action = nil
 	self.pending_shrine_text_lines = {}
 	self.banner_text_lines = {}
-	self.transition_frames_left = 0
 	self.banner_post_action = nil
 	self.lithograph_text_lines = {}
 	self.demon_intro_state = 0
@@ -193,7 +196,6 @@ local function define_director_fsm()
 					self.banner_text_lines = {}
 					object('shrine').lines = {}
 					object('lithograph').lines = {}
-						self.transition_frames_left = 0
 						self.demon_intro_state = 0
 						self.seal_flash_on = false
 						self:despawn_daemon_clouds()
@@ -217,18 +219,29 @@ local function define_director_fsm()
 						},
 					},
 				},
-			room_switch_wait = {
-				entering_state = function(self)
-					self:begin_black_wait(constants.flow.room_switch_wait_frames)
-				end,
-				tick = function(self)
-					self.transition_frames_left = self.transition_frames_left - 1
-					if self.transition_frames_left > 0 then
-						return
-					end
-					return '/room'
-				end,
-			},
+					room_switch_wait = {
+					timelines = {
+						[room_switch_wait_timeline_id] = {
+							create = function()
+								return timeline.new({
+									id = room_switch_wait_timeline_id,
+									frames = timeline.range(constants.flow.room_switch_wait_frames),
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = {
+								rewind = true,
+								snap_to_start = true,
+							},
+						},
+					},
+						entering_state = director.begin_black_wait,
+					on = {
+						['timeline.end.' .. room_switch_wait_timeline_id] = '/room',
+					},
+				},
 				world_transition = {
 				entering_state = function(self)
 					set_space('main')
@@ -311,38 +324,41 @@ local function define_director_fsm()
 					['down[jp]'] = '/shrine_transition_exit',
 				},
 			},
-				shrine_transition_exit = {
-					entering_state = function(self)
-						self.banner_text_lines = {}
-							object('shrine').lines = {}
-							self.transition_frames_left = constants.flow.room_switch_wait_frames
-							set_space('main')
-							object('ui'):set_space('main')
-							self.events:emit('player.shrine_overlay_exit')
-						end,
-					on = {
-						['shrine_exit_done'] = '/room',
+					shrine_transition_exit = {
+						entering_state = function(self)
+							self.banner_text_lines = {}
+								object('shrine').lines = {}
+								set_space('main')
+								object('ui'):set_space('main')
+								self.events:emit('player.shrine_overlay_exit')
+							end,
+						on = {
+							['shrine_exit_done'] = '/room',
+						},
 					},
-					tick = function(self)
-						self.transition_frames_left = self.transition_frames_left - 1
-						if self.transition_frames_left > 0 then
-							return
-						end
-						return '/room'
-					end,
+					item_screen_opening = {
+					timelines = {
+						[item_screen_open_timeline_id] = {
+							create = function()
+								return timeline.new({
+									id = item_screen_open_timeline_id,
+									frames = timeline.range(constants.flow.item_screen_wait_frames),
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = {
+								rewind = true,
+								snap_to_start = true,
+							},
+						},
+					},
+						entering_state = director.begin_black_wait,
+					on = {
+						['timeline.end.' .. item_screen_open_timeline_id] = '/item_screen',
+					},
 				},
-			item_screen_opening = {
-				entering_state = function(self)
-					self:begin_black_wait(constants.flow.item_screen_wait_frames)
-				end,
-				tick = function(self)
-					self.transition_frames_left = self.transition_frames_left - 1
-					if self.transition_frames_left > 0 then
-						return
-					end
-					return '/item_screen'
-				end,
-			},
 					item_screen = {
 					entering_state = function(self)
 							set_space('item')
@@ -363,18 +379,29 @@ local function define_director_fsm()
 						return '/item_screen'
 					end,
 				},
-				item_screen_closing = {
-				entering_state = function(self)
-					self:begin_black_wait(constants.flow.item_screen_wait_frames)
-				end,
-				tick = function(self)
-					self.transition_frames_left = self.transition_frames_left - 1
-					if self.transition_frames_left > 0 then
-						return
-					end
-					return '/room'
-				end,
-			},
+					item_screen_closing = {
+					timelines = {
+						[item_screen_close_timeline_id] = {
+							create = function()
+								return timeline.new({
+									id = item_screen_close_timeline_id,
+									frames = timeline.range(constants.flow.item_screen_wait_frames),
+									playback_mode = 'once',
+								})
+							end,
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = {
+								rewind = true,
+								snap_to_start = true,
+							},
+						},
+					},
+						entering_state = director.begin_black_wait,
+					on = {
+						['timeline.end.' .. item_screen_close_timeline_id] = '/room',
+					},
+				},
 			halo_teleport = {
 				timelines = {
 					[halo_teleport_timeline_id] = {
@@ -403,12 +430,11 @@ local function define_director_fsm()
 					['timeline.end.' .. halo_teleport_timeline_id] = '/room_switch_wait',
 				},
 				},
-					seal_dissolution = {
-						entering_state = function(self)
-							self.transition_frames_left = 0
-							self.demon_intro_state = 1
-							self.seal_flash_on = false
-							self.events:emit('seal_breaking')
+						seal_dissolution = {
+							entering_state = function(self)
+								self.demon_intro_state = 1
+								self.seal_flash_on = false
+								self.events:emit('seal_breaking')
 							self.events:emit('seal_dissolution')
 							self.events:emit('castle.seal.begin')
 						end,
@@ -421,12 +447,11 @@ local function define_director_fsm()
 						},
 					},
 				},
-					daemon_appearance = {
-						entering_state = function(self)
-							self.transition_frames_left = 0
-							self.demon_intro_state = 97
-							self.events:emit('daemon_appearance')
-							self.events:emit('castle.daemon.begin')
+						daemon_appearance = {
+							entering_state = function(self)
+								self.demon_intro_state = 97
+								self.events:emit('daemon_appearance')
+								self.events:emit('castle.daemon.begin')
 						end,
 						on = {
 							['daemon_appearance_done'] = {
@@ -443,43 +468,57 @@ local function define_director_fsm()
 						},
 					},
 				},
-					lithograph_screen_open = {
-						entering_state = function(self)
-								object('lithograph').lines = self.lithograph_text_lines
-								set_space('lithograph')
-								object('ui'):set_space('lithograph')
-								self.events:emit('lithograph')
-							end,
-						run_checks = {
-							{
-								go = function(_self)
-									if action_triggered('b[p] || x[p]') then
-										return
-									end
-									return '/lithograph_screen'
+						lithograph_screen_open = {
+							timelines = {
+								[lithograph_open_timeline_id] = {
+									create = function()
+										return timeline.new({
+											id = lithograph_open_timeline_id,
+											frames = timeline.range(1),
+											playback_mode = 'once',
+										})
+									end,
+									autoplay = true,
+									stop_on_exit = true,
+								},
+							},
+							entering_state = function(self)
+									object('lithograph').lines = self.lithograph_text_lines
+									set_space('lithograph')
+									object('ui'):set_space('lithograph')
+									self.events:emit('lithograph')
 								end,
+							on = {
+								['timeline.end.' .. lithograph_open_timeline_id] = '/lithograph_screen',
 							},
 						},
-					},
 				lithograph_screen = {
 					input_event_handlers = {
 						['b[jp] || x[jp]'] = '/lithograph_screen_close',
 					},
 				},
-					lithograph_screen_close = {
-						run_checks = {
-							{
-								go = function(self)
-									if action_triggered('b[p] || x[p]') then
-										return
-									end
-									self.lithograph_text_lines = {}
-									object('lithograph').lines = {}
-									return '/room'
-								end,
+						lithograph_screen_close = {
+							timelines = {
+								[lithograph_close_timeline_id] = {
+									create = function()
+										return timeline.new({
+											id = lithograph_close_timeline_id,
+											frames = timeline.range(1),
+											playback_mode = 'once',
+										})
+									end,
+									autoplay = true,
+									stop_on_exit = true,
+								},
+							},
+							entering_state = function(self)
+								self.lithograph_text_lines = {}
+								object('lithograph').lines = {}
+							end,
+							on = {
+								['timeline.end.' .. lithograph_close_timeline_id] = '/room',
 							},
 						},
-					},
 			title_screen = {
 				entering_state = function(self)
 						set_space('transition')
@@ -554,16 +593,15 @@ local function register_director_service_definition()
 		class = director,
 		fsms = { 'director' },
 		auto_activate = true,
-		defaults = {
-			id = 'd',
-			pending_banner_world_number = 0,
-			next_room_switch_banner_world_number = 0,
-			pending_shrine_text_lines = {},
-			banner_text_lines = {},
-			transition_frames_left = 0,
-		},
-	})
-end
+			defaults = {
+				id = 'd',
+				pending_banner_world_number = 0,
+				next_room_switch_banner_world_number = 0,
+				pending_shrine_text_lines = {},
+				banner_text_lines = {},
+			},
+		})
+	end
 
 return {
 	director = director,
