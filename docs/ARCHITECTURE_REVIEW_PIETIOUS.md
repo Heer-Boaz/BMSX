@@ -471,7 +471,377 @@ These single-state FSMs serve no purpose and add noise:
 
 ---
 
-## 5. Relationship to Seal/Daemon Plan
+## 5. Engine Problems That Invite Cart-Level Anti-Patterns
+
+The cart-level problems in sections 1–4 are not purely the cart author's fault.
+The engine itself is structured in ways that invite, enable, or fail to prevent
+these anti-patterns.
+
+### 5A. `service.lua` is too thin — no ownership model
+
+`service.lua` is ~110 lines. A service is just a registry-persistent object with
+an FSM, tags, and an event port. That's it.
+
+**What's missing:**
+- No concept of **ownership** — there's no mechanism for a service to declare
+  "I own these world objects" or "these fields are mine."
+- No **interface contract** — `service('c')` returns the raw castle_service
+  object. Any other service can call any method, read any field, mutate any
+  property.
+- No **boundary enforcement** — `registry.instance:get(id)` and `service(id)`
+  return live references with full mutable access.
+
+**What this causes in cart code:**
+- Castle service reaches into room object and sets `room.seal_dissolve_step` ⟶
+  **cross-mutation (1E)**.
+- Elevator service reads `object('pietolon').x` and writes `object('pietolon').y`
+  ⟶ **unauthorized field mutation (2G)**.
+- Every service calls `service('c').current_room` because the engine gives no
+  alternative ⟶ **tight coupling (1A)**.
+
+**Engine fix:** Services should expose their intent through **events and tags**
+rather than mutable properties. The engine could provide a `service:expose()`
+or `service:command()` pattern — but more practically, the problem is that
+services are just bags of methods with no convention for "read-only observation
+vs. mutation." The engine needs to establish that events are the only cross-
+boundary communication mechanism, and enforce it by convention since Lua can't
+enforce it structurally.
+
+### 5B. `worldobject.lua` — All fields public, no mutation signaling
+
+Every field on a worldobject is directly accessible and mutable. There is no
+distinction between "I own this field" and "someone else should set this."
+
+```lua
+-- Engine provides:
+local room = object('room')
+room.seal_dissolve_step = 5    -- ✓ No objection from the engine
+room.daemon_fight_active = true -- ✓ No objection from the engine
+```
+
+The engine provides `worldobject.events:emit()` for communication, and
+`worldobject.tags` for observable state. But there's nothing that nudges cart
+authors toward using these instead of direct field mutation. The direct mutation
+is always shorter, always works, and never fails.
+
+**What this causes in cart code:**
+- 15+ boolean/numeric fields on room are mutated by castle_service ⟶ **room as
+  god object (1D)** and **cross-mutation (1E)**.
+- `player.health`, `player.weapon_level`, `player.inventory_items` mutated from
+  item_service ⟶ **ownership confusion**.
+
+**Engine fix:** The engine should provide an `object:set_state(key, value)` or
+equivalent that emits a state-change event when a property changes. This gives
+observers (UI, room renderer, etc.) a reactive signal instead of requiring
+per-frame polling. Alternatively: the engine should make tags + events the
+canonical path for cross-object communication and document that direct field
+access across object boundaries is an anti-pattern.
+
+### 5C. FSM: Three per-frame hooks create ambiguity
+
+The FSM tick pipeline runs four phases:
+```
+run_substate_machines → process_input → run_current_state (tick) → run_checks
+```
+
+This gives cart authors **three** places to put per-frame logic:
+
+| Hook | Intended purpose | What cart authors use it for |
+|---|---|---|
+| `process_input` | Sample input, emit input events | Input + any polling the author didn't know where else to put |
+| `tick` | Per-frame simulation (physics, animation) | **Everything**: counters, polling, orchestration, mini state machines |
+| `run_checks` | Condition checks → transitions | Redundant input sampling, polling boolean fields |
+
+The names don't help clarify intent:
+- `tick` sounds like "put all per-frame work here" — it becomes a dumping ground
+- `run_checks` sounds like "check conditions every frame" — a polling invitation
+- `process_input` is the only one with a clear name, but it also runs every
+  frame regardless of whether there's input
+
+**What this causes in cart code:**
+- Player has `process_input = player.sample_input` on every state AND
+  `run_checks = { runcheck_quiet_controls }` on some states. These do
+  overlapping work.
+- Room FSM has `run_checks` that polls `next_room_state_transition()` every
+  frame — the exact anti-pattern the engine's event system exists to avoid.
+
+**Engine fix:** Remove `run_checks` (see REFACTOR_PLAN). Consider renaming
+`tick` to `update` and documenting it as "per-frame physics/animation only —
+not for polling or orchestration." The engine should actively discourage
+counter-patterns in tick by providing timelines and events as alternatives.
+
+### 5D. Every object gets an FSM — even when it doesn't need one
+
+`worldobject.new()` creates a `statemachinecontroller` for every object:
+```lua
+self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, ... })
+```
+
+`service.new()` does the same:
+```lua
+self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, ... })
+```
+
+There's no "no FSM" option. Even if an object has no states, it gets an FSM
+controller that gets ticked every frame by `statemachinesystem:update()`.
+
+Cart authors see that the FSM exists and feel obligated to define at least one
+state. This produces the pervasive `active = {}` non-FSM:
+
+```lua
+define_fsm('seal', { states = { active = {} } })
+```
+
+Eight objects in pietious have this pattern: seal, lithograph, shrine,
+room_shrine, world_entrance, item_screen, ui, item_service.
+
+**What this causes:**
+- CPU waste: `statemachinesystem:update()` iterates these objects, calls
+  `sc:tick()`, which traverses the FSM tree, for zero useful work.
+- Conceptual noise: new authors see these FSMs and think "I must define states
+  even if I have nothing to put in them."
+
+**Engine fix:** Make the FSM controller **opt-in**. If an object definition
+provides no `fsms` and no `definition` with states, don't create a controller.
+`statemachinesystem:update()` should skip objects with `sc == nil`.
+
+### 5E. `objectticksystem` calls `obj:tick()` on every active object every frame
+
+```lua
+function objectticksystem:update(dt_ms)
+    for obj in world_instance:objects({ scope = "active" }) do
+        if obj.tick_enabled then
+            obj:tick(dt_ms)
+        end
+    end
+```
+
+`worldobject:tick()` is an empty virtual method. The ECS system calls it
+unconditionally for every active, tick-enabled object. This is a blank per-frame
+hook that invites cart authors to use it as a dumping ground.
+
+Combined with the FSM's own `tick` hook, an object now has **two** separate
+per-frame entry points: the FSM state's `tick` and the object's `tick()`.
+
+**What this causes:**
+- Services put polling logic in the FSM tick: `rock_service`, `castle_service`,
+  `item_service`.
+- Objects put rendering logic in `obj:tick()` (room, UI) alongside FSM ticks.
+- It's unclear which tick to use, so authors use both, creating two execution
+  paths for the same object.
+
+**Engine fix:** An object should have **one** per-frame entry point. If an
+object has an FSM, the FSM's `tick`/`update` should be the only per-frame hook.
+The bare `worldobject:tick()` should be reserved for objects without FSMs. The
+`objectticksystem` could skip objects that have an FSM controller (since
+`statemachinesystem` already ticks those).
+
+### 5F. No "room object sync" primitive — every service re-invents lifecycle
+
+The engine provides `world.spawn()` and `world.despawn()`. That's it.
+
+There's no concept of:
+- "These objects belong to the current room and should be activated/deactivated
+  on room switch"
+- "Sync instances from a room template definition"
+- "Deactivate stale instances that no longer match the template"
+
+**What this causes:**
+- Five separate services all implement the same create/sync/deactivate lifecycle
+  ⟶ **duplicated lifecycle management (1C)**.
+- Each implementation has slight variations in cleanup, staleness detection, and
+  error handling.
+
+**Engine fix:** Provide a `RoomObjectPool` or equivalent primitive:
+```lua
+pool = engine.room_object_pool({
+    type = 'rock',
+    create = function(def) return inst('rock', def) end,
+    sync = function(obj, def) obj.x = def.x; obj.y = def.y end,
+})
+pool:sync(definitions) -- creates missing, syncs existing, deactivates stale
+```
+
+### 5G. `statemachinesystem` ticks services from the registry — hidden execution
+
+```lua
+function statemachinesystem:update(dt_ms)
+    -- Tick world objects
+    for obj in world_instance:objects({ scope = "active" }) do
+        obj.sc:tick(dt_ms)
+    end
+    -- ALSO tick registry services
+    for _, entity in pairs(registry.instance:get_registered_entities()) do
+        if entity.type_name == "service" and entity.active and entity.tick_enabled then
+            entity.sc:tick(dt_ms)
+            entity.timelines:tick_active(dt_ms)
+        end
+    end
+end
+```
+
+Services are ticked inside the same ECS system as world objects, but they're not
+world objects. They live in a separate `registry` table. This is invisible:
+- You can't see services in `world_instance:objects()`.
+- Services don't appear in any ECS query.
+- But they run their FSMs in the same `moderesolution` phase.
+
+**What this causes:**
+- Services behave like hidden singletons with per-frame ticks. The ECS pipeline
+  gives the illusion of structured execution order, but services are just
+  loop-appended at the end.
+- No way to control service tick order. All services tick in registry iteration
+  order (undefined in Lua).
+
+**Engine fix:** Either make services first-class in the ECS pipeline (with
+explicit ordering) or move them out of `statemachinesystem` into their own
+system. At minimum, provide a way to declare service tick ordering.
+
+### 5H. Event emitter is untyped — no discovery, no schema
+
+Events are untyped strings:
+```lua
+self.events:emit('room.switched', { room_number = n })
+self.events:emit('seal_dissolution')
+self.events:emit('enemy.defeated', { enemy_id = id })
+```
+
+There's no event catalog, no schema, no way to discover which events exist
+or what payloads they carry. An event listener must exactly match the string:
+```lua
+self.events:on({ event = 'room.switched', handler = ... })
+```
+
+**What this causes:**
+- Cart authors don't know which events exist, so they reach into services
+  directly instead of subscribing to events ⟶ **cross-mutation (1E)**.
+- No compile-time or runtime validation of event names or payloads.
+- Events between services (like `seal_dissolution`) and events within an FSM
+  (like `timeline.end.xyz`) use the same mechanism with no distinction.
+
+**Engine fix:** This is inherent to Lua's dynamic nature. However, the engine
+could provide:
+- A convention for event name prefixes (service events vs. FSM events vs.
+  object lifecycle events).
+- A `define_event(name, schema)` registration function that at least documents
+  which events exist and validates payloads in debug mode.
+
+### 5I. `engine.define_prefab` / `engine.define_service` use method-copy, not prototypes
+
+`apply_class_addons()` copies all methods from the class table onto each
+instance:
+```lua
+local function apply_class_addons(instance, class_table)
+    for k, v in pairs(class_table) do
+        if not excluded_class_keys[k] then
+            instance[k] = v
+        end
+    end
+end
+```
+
+This means every rock instance, every enemy instance, every item instance gets
+its own copy of every method. Combined with `enemy_base.extend()` which also
+copies methods manually, this creates a flat, non-inheriting, fragile system.
+
+**What this causes:**
+- `enemy_base.extend()` must manually list every shared method ⟶ **fragile
+  mixin pattern (2E)**.
+- No prototype chain means there's no "base behavior" that subclasses inherit
+  automatically.
+- Adding a new method to `enemy_base` requires updating `extend()` — and if
+  forgotten, enemies silently miss the new method.
+
+**Engine fix:** Use Lua metatables for prototype-based inheritance:
+```lua
+local function apply_class_prototype(instance, class_table)
+    local mt = getmetatable(instance) or {}
+    local prev_index = mt.__index
+    mt.__index = function(self, key)
+        local v = class_table[key]
+        if v ~= nil then return v end
+        if type(prev_index) == "function" then return prev_index(self, key) end
+        if type(prev_index) == "table" then return prev_index[key] end
+    end
+    setmetatable(instance, mt)
+end
+```
+
+This gives automatic inheritance without method copying. `enemy_base` would be
+in the prototype chain, and new methods would automatically be available to all
+enemy types.
+
+### 5J. ECS pipeline runs empty systems every frame
+
+The default pipeline includes 23 systems. Many are stubs:
+```lua
+function tilecollisionsystem:update() end
+function physicssyncbeforestepsystem:update() end
+function physicsworldstepsystem:update() end
+function physicspostsystem:update() end
+function physicscollisioneventsystem:update() end
+function physicssyncafterworldcollisionsystem:update() end
+```
+
+Six empty systems are called every frame. On the target hardware (iPhone
+10/11/12), this is wasteful iteration overhead.
+
+**Engine fix:** Either remove empty systems from the default pipeline or provide
+a conditional registration mechanism:
+```lua
+{ ref = "tilecollision", when = function(w) return w:has_objects_with("tilecollisioncomponent") end }
+```
+
+The `when` predicate already exists in the pipeline builder but isn't used.
+
+### 5K. No convention for "read-only observation" vs. "mutation"
+
+The engine provides two communication mechanisms:
+1. **Events** — asynchronous, decoupled, no return value
+2. **Direct access** — `service('c').current_room.something` — synchronous,
+   coupled, full mutation access
+
+There's no middle ground. No "query" mechanism, no "get state without being
+able to mutate it." Tags come closest (`has_tag()` is read-only) but tags can
+only represent booleans.
+
+**What this causes:**
+- When a service needs to read numeric data from another service (e.g., room
+  number, dissolve step, player health), the only option is direct field access.
+- Direct access invites direct mutation.
+
+**Engine fix:** Extend the tag system to support key-value tags (not just
+boolean presence), or provide a `service:query(key)` that returns immutable
+values. Alternatively: adopt the convention that **tags are for booleans,
+events carry data, and direct access is never cross-boundary** — and enforce
+this through code review and documentation.
+
+---
+
+## 6. Summary: How Engine Design Drives Cart Problems
+
+| Cart Problem | Engine Root Cause |
+|---|---|
+| Cross-service mutation (1E) | No ownership model, all fields public (5A, 5B) |
+| Tick-based polling (1B) | Three per-frame hooks, blank `tick()` virtual (5C, 5E) |
+| Duplicated lifecycle (1C) | No room-object-sync primitive (5F) |
+| Pointless FSMs (P6) | Every object gets FSM by default (5D) |
+| God objects (1D) | No mutation signaling, no query primitives (5B, 5K) |
+| Fragile mixins (2E) | Method-copy instead of prototypes (5I) |
+| Hidden service execution (P3) | Services ticked from registry (5G) |
+
+The engine provides excellent primitives (timelines, events, tags, FSMs,
+progression, action effects) but doesn't guide cart authors toward using them
+correctly. Direct field mutation is always easier than events. Tick polling is
+always easier than event subscription. One-state FSMs are easier than deciding
+"does this object need an FSM?"
+
+The engine should make the right patterns the **easy** patterns and the wrong
+patterns the **hard** patterns. Currently it's the opposite.
+
+---
+
+## 7. Relationship to Seal/Daemon Plan
 
 The seal/daemon refactor plan in `REFACTOR_PLAN_SEAL_SEQUENCE_AND_ENGINE.md`
 addresses the most critical instance of several problems identified here:
