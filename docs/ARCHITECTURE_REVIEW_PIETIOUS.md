@@ -587,9 +587,80 @@ animation), not a dumping ground for arbitrary polling.
 object, even when no states are defined. This produces the pervasive
 `active = {}` non-FSM pattern across eight objects in pietious.
 
-**Engine change:** If an object definition provides no `fsms` and no states,
-don't create a `statemachinecontroller`. `statemachinesystem:update()` skips
-objects with `sc == nil`.
+**Two approaches — trade-offs:**
+
+**Option A: Nullable `self.sc` (minimal change)**
+
+If an object definition provides no `fsms` and no states, don't create a
+`statemachinecontroller`. `self.sc` stays `nil`. `statemachinesystem:update()`
+skips objects with `sc == nil`.
+
+```lua
+-- worldobject.new():
+local definition = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
+self.sc = definition and fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id }) or nil
+```
+
+Pros:
+- Trivial engine change — one conditional in `worldobject.new()`
+- Cart code unchanged: `self.sc:transition()` etc. still works for FSM objects
+- Event plumbing stays exactly as-is: FSM subscribes to `self.events`, no
+  indirection added
+
+Cons:
+- `self.sc` must be checked before use if you're not sure whether an object
+  has an FSM (but with the clean binary from 5E, you always know)
+- `statemachinesystem` still iterates all active objects and checks `sc ~= nil`
+
+**Option B: FSM as a component (`fsmcomponent`)**
+
+Turn the statemachinecontroller into a component. Objects that need an FSM
+attach it explicitly. `statemachinesystem` iterates only objects with the
+component via `objects_with_components('fsmcomponent')`.
+
+```lua
+-- Only for objects with FSM:
+local fsmc = fsmcomponent.new({ definition = definition, fsm_id = opts.fsm_id })
+self:add_component(fsmc)
+```
+
+Pros:
+- `statemachinesystem` uses `objects_with_components()` — skips non-FSM objects
+  at the query level, no wasted iteration
+- Consistent with the engine's component model (sprites, timelines, input are
+  all components)
+- Clean opt-in: `define_prefab({ components = { 'fsm' } })` or similar
+
+Cons — **event plumbing gets harder:**
+- Currently the FSM subscribes directly to `machine.target.events` (the
+  object's event emitter). The statemachinecontroller is created in
+  `worldobject.new()` *before* components are attached, and `target` is the
+  object itself. If FSM becomes a component, the wiring changes: the component
+  must reach into its parent's event emitter during `onattach`. This works
+  (components already have a `parent` reference) but adds an indirection layer.
+- Cart code currently accesses `self.sc:transition()` directly. With a
+  component, it becomes `self:get_component('fsm'):transition()` — worse
+  ergonomics. Could be mitigated by a convenience alias (`self.sc = fsmc` set
+  during `onattach`), but that leaks the abstraction.
+- FSM `on` handlers in state definitions fire through `self.events` →
+  statemachinecontroller dispatch. This chain already works. As a component,
+  the wiring is identical but the initialization order changes: the component's
+  `onattach` must call `sc:bind()` after the event emitter exists. Currently
+  this is guaranteed since `self.events` is created before `self.sc` in
+  `worldobject.new()`. With a component, you'd need to ensure attachment order.
+- Timeline component and FSM component have an implicit coupling: timelines
+  bound to FSM states. Both are components, but they need to find each other.
+  This is solvable (component cross-references) but adds complexity.
+
+**Recommendation: Option A (nullable `self.sc`).** The FSM is too deeply wired
+into the object's event emitter, tag system, and timeline component to cleanly
+separate into a standalone component without adding plumbing complexity. The
+nullable approach achieves the same goal (no FSMs for passive objects, no wasted
+ticking) with a one-line change.
+
+If `statemachinesystem` iteration cost matters (many passive objects), add a
+`has_fsm` flag or use a tagged query (`world_instance:objects({ tag = 'has_fsm' })`)
+instead of full componentization.
 
 ### 5E. Clean binary: FSM objects get `update`, non-FSM objects are passive
 
