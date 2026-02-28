@@ -81,8 +81,8 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 		return `${file}:${event ?? '<root>'}#rule${ruleIndex}`;
 	}
 
-	function checkAction(ref: AudioAction, ctx: { file: string; event?: string; ruleIndex?: number; choiceIndex?: number }): void {
-		const where = `${ctx.file}${ctx.event ? `:${ctx.event}` : ''}${ctx.ruleIndex != null ? `#rule${ctx.ruleIndex}` : ''}${ctx.choiceIndex != null ? `[${ctx.choiceIndex}]` : ''}`;
+	function checkAction(ref: AudioAction, ctx: { file: string; event?: string; ruleIndex?: number; choiceIndex?: number; sequenceIndex?: number }): void {
+		const where = `${ctx.file}${ctx.event ? `:${ctx.event}` : ''}${ctx.ruleIndex != null ? `#rule${ctx.ruleIndex}` : ''}${ctx.sequenceIndex != null ? `.sequence[${ctx.sequenceIndex}]` : ''}${ctx.choiceIndex != null ? `[${ctx.choiceIndex}]` : ''}`;
 		const ruleKey = ctx.ruleIndex != null ? makeRuleKey(ctx.file, ctx.event, ctx.ruleIndex) : undefined;
 		// audio_id: string (name) or number (id)
 		if (ref.audio_id === undefined || ref.audio_id === null) {
@@ -124,74 +124,107 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 		}
 	}
 
+	function validateActionSpec(act: any, file: string, eventName: string | undefined, ri: number, sequenceIndex?: number): void {
+		const where = `${file}${eventName ? `:${eventName}` : ''}#rule${ri}${sequenceIndex != null ? `.sequence[${sequenceIndex}]` : ''}`;
+		if (!act) {
+			errors.push(`Missing 'go' action at ${where}`);
+			return;
+		}
+		if (typeof act !== 'object') {
+			if (typeof act === 'string') {
+				checkAction({ kind: 'action', audio_id: act }, { file, event: eventName, ruleIndex: ri, sequenceIndex });
+				return;
+			}
+			errors.push(`Invalid action at ${where}`);
+			return;
+		}
+
+		// stop_music: true
+		if ((act as { stop_music?: unknown }).stop_music) {
+			return;
+		}
+
+		// sequence: AudioActionSpec[]
+		const seq = (act as { sequence?: unknown }).sequence;
+		if (Array.isArray(seq)) {
+			seq.forEach((item: any, si: number) => {
+				validateActionSpec(item, file, eventName, ri, si);
+			});
+			return;
+		}
+
+		const transition = (act as MusicTransitionSpec).music_transition;
+		if (transition) {
+			const sync = transition.sync;
+			const ruleKey = makeRuleKey(file, eventName, ri);
+			const stingerSync = sync as AudioStingerSpec;
+			if (stingerSync && (stingerSync.return_to !== undefined || stingerSync.return_to_previous)) {
+				musicTransitionsWithFallback.add(ruleKey);
+			}
+			checkAction({ kind: 'action', audio_id: transition.audio_id }, { file, event: eventName, ruleIndex: ri, sequenceIndex });
+			// Basic value checks
+			if (transition.fade_ms !== undefined && (!(typeof transition.fade_ms === 'number') || transition.fade_ms < 0)) {
+				errors.push(`Invalid fade_ms at ${where}: must be >= 0`);
+			}
+			if (transition.start_at_loop_start && transition.start_fresh) {
+				errors.push(`Ambiguous music_transition at ${where}: start_at_loop_start and start_fresh cannot both be true`);
+			}
+			if (sync && typeof sync === 'object') {
+				const stinger = (sync as AudioStingerSpec).stinger;
+				const delay_ms = (sync as AudioDelaySpec).delay_ms;
+				const hasStinger = stinger !== undefined;
+				const hasDelay = delay_ms !== undefined;
+				if (hasStinger && hasDelay) {
+					errors.push(`Ambiguous music_transition at ${where}: sync cannot specify both stinger and delay_ms`);
+				}
+				if (hasStinger) {
+					const stingerSync = sync as AudioStingerSpec;
+					checkAction({ kind: 'action', audio_id: stingerSync.stinger }, { file, event: eventName, ruleIndex: ri, sequenceIndex });
+					if (stingerSync.return_to !== undefined) checkAction({ kind: 'action', audio_id: stingerSync.return_to }, { file, event: eventName, ruleIndex: ri, sequenceIndex });
+					if (stingerSync.return_to !== undefined && stingerSync.return_to_previous) {
+						errors.push(`Ambiguous music_transition at ${where}: provide either return_to or return_to_previous, not both`);
+					}
+					if (transition.audio_id !== undefined && stingerSync.return_to !== undefined && stingerSync.return_to !== transition.audio_id) {
+						errors.push(`Ambiguous music_transition at ${where}: 'audio_id' (post-stinger target) conflicts with 'return_to' (two targets specified)`);
+					} else if (transition.audio_id !== undefined && stingerSync.return_to !== undefined) {
+						warnings.push(`Redundant music_transition at ${where}: 'audio_id' and 'return_to' both target '${transition.audio_id}'. Consider removing one.`);
+					}
+				} else if (!hasDelay) {
+					// Unknown object props in sync → error
+					errors.push(`Invalid music_transition at ${where}: unknown sync object shape`);
+				}
+			}
+			return;
+		}
+
+		const one_of = (act as AudioActionOneOfSpec).one_of;
+		if (Array.isArray(one_of)) {
+			one_of.forEach((item: any, ci: number) => {
+				if (typeof item === 'string') {
+					checkAction({ kind: 'action', audio_id: item }, { file, event: eventName, ruleIndex: ri, sequenceIndex, choiceIndex: ci });
+				} else if (item && typeof item === 'object') {
+					checkAction({ kind: 'action', audio_id: item.audio_id, modulation_preset: item.modulation_preset, priority: item.priority, cooldown_ms: item.cooldown_ms }, { file, event: eventName, ruleIndex: ri, sequenceIndex, choiceIndex: ci });
+					const weight = item.weight;
+					if (weight !== undefined && (typeof weight !== 'number' || weight < 0)) {
+						errors.push(`Invalid weight '${weight}' at ${where}[${ci}]: expected number >= 0`);
+					}
+				} else {
+					errors.push(`Invalid one_of item at ${where}[${ci}]`);
+				}
+			});
+			return;
+		}
+
+		const actObj = act as AudioAction;
+		checkAction({ kind: 'action', audio_id: actObj.audio_id, modulation_preset: actObj.modulation_preset, priority: actObj.priority, cooldown_ms: actObj.cooldown_ms }, { file, event: eventName, ruleIndex: ri, sequenceIndex });
+	}
+
 	function validateRules(rules: AudioEventRule[], file: string, eventName?: string) {
 		if (!Array.isArray(rules)) return;
 		rules.forEach((rule, ri) => {
 			if (!rule || typeof rule !== 'object') return;
 			const act = rule.go;
-			if (!act) { errors.push(`Missing 'do' action at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}`); return; }
-			const transition = (act as MusicTransitionSpec).music_transition;
-			if (transition) {
-				const sync = transition.sync;
-				const ruleKey = makeRuleKey(file, eventName, ri);
-				const stingerSync = sync as AudioStingerSpec;
-				if (stingerSync && (stingerSync.return_to !== undefined || stingerSync.return_to_previous)) {
-					musicTransitionsWithFallback.add(ruleKey);
-				}
-				checkAction({ kind: 'action', audio_id: transition.audio_id }, { file, event: eventName, ruleIndex: ri });
-				// Basic value checks
-				if (transition.fade_ms !== undefined && (!(typeof transition.fade_ms === 'number') || transition.fade_ms < 0)) {
-					errors.push(`Invalid fade_ms at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: must be >= 0`);
-				}
-				if (transition.start_at_loop_start && transition.start_fresh) {
-					errors.push(`Ambiguous music_transition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: start_at_loop_start and start_fresh cannot both be true`);
-				}
-				if (sync && typeof sync === 'object') {
-					const stinger = (sync as AudioStingerSpec).stinger;
-					const delay_ms = (sync as AudioDelaySpec).delay_ms;
-					const hasStinger = stinger !== undefined;
-					const hasDelay = delay_ms !== undefined;
-					if (hasStinger && hasDelay) {
-						errors.push(`Ambiguous music_transition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: sync cannot specify both stinger and delay_ms`);
-					}
-					if (hasStinger) {
-						const stingerSync = sync as AudioStingerSpec;
-						checkAction({ kind: 'action', audio_id: stingerSync.stinger }, { file, event: eventName, ruleIndex: ri });
-						if (stingerSync.return_to !== undefined) checkAction({ kind: 'action', audio_id: stingerSync.return_to }, { file, event: eventName, ruleIndex: ri });
-						if (stingerSync.return_to !== undefined && stingerSync.return_to_previous) {
-							errors.push(`Ambiguous music_transition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: provide either return_to or return_to_previous, not both`);
-						}
-						if (transition.audio_id !== undefined && stingerSync.return_to !== undefined && stingerSync.return_to !== transition.audio_id) {
-							errors.push(`Ambiguous music_transition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: 'audio_id' (post-stinger target) conflicts with 'return_to' (two targets specified)`);
-						} else if (transition.audio_id !== undefined && stingerSync.return_to !== undefined) {
-							warnings.push(`Redundant music_transition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: 'audio_id' and 'return_to' both target '${transition.audio_id}'. Consider removing one.`);
-						}
-					} else if (!hasDelay) {
-						// Unknown object props in sync → error
-						errors.push(`Invalid music_transition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: unknown sync object shape`);
-					}
-				}
-				return;
-			}
-			const one_of = (act as AudioActionOneOfSpec).one_of;
-			if (Array.isArray(one_of)) {
-				one_of.forEach((item: any, ci: number) => {
-					if (typeof item === 'string') {
-						checkAction({ kind: 'action', audio_id: item }, { file, event: eventName, ruleIndex: ri, choiceIndex: ci });
-					} else if (item && typeof item === 'object') {
-						checkAction({ kind: 'action', audio_id: item.audio_id, modulation_preset: item.modulation_preset, priority: item.priority, cooldown_ms: item.cooldown_ms }, { file, event: eventName, ruleIndex: ri, choiceIndex: ci });
-						const weight = item.weight;
-						if (weight !== undefined && (typeof weight !== 'number' || weight < 0)) {
-							errors.push(`Invalid weight '${weight}' at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}[${ci}]: expected number >= 0`);
-						}
-					} else {
-						errors.push(`Invalid one_of item at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}[${ci}]`);
-					}
-				});
-			} else {
-				const actObj = act as AudioAction;
-				checkAction({ kind: 'action', audio_id: actObj.audio_id, modulation_preset: actObj.modulation_preset, priority: actObj.priority, cooldown_ms: actObj.cooldown_ms }, { file, event: eventName, ruleIndex: ri });
-			}
+			validateActionSpec(act, file, eventName, ri);
 		});
 	}
 
