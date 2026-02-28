@@ -232,6 +232,26 @@ end
 local action_opts = {}
 
 local function dispatch_action(event_name, entry, action, payload)
+	if action.stop_music then
+		stop_music()
+		return
+	end
+	if action.sequence then
+		local seq = action.sequence
+		local seq_type = type(seq)
+		if seq_type ~= "table" and seq_type ~= "native" then
+			error("audio_router sequence must be a table")
+		end
+		for i = 1, #seq do
+			local item = seq[i]
+			if type(item) == "string" or type(item) == "number" then
+				dispatch_action(event_name, entry, { audio_id = item }, payload)
+			else
+				dispatch_action(event_name, entry, item, payload)
+			end
+		end
+		return
+	end
 	if action.music_transition then
 		local transition = action.music_transition
 		if transition.fade_ms ~= nil and transition.crossfade_ms ~= nil then
