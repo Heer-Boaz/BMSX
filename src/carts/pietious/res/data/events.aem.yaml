@@ -31,9 +31,7 @@ events:
         channel: music
         rules:
             - go:
-                  music_transition:
-                      audio_id: prelude
-                      start_fresh: true
+                  stop_music: true
 
     story:
         channel: music
@@ -68,16 +66,17 @@ events:
                   music_transition:
                       audio_id: music_epilogue
                       sync:
-                          stinger: epilogue_start
+                          stinger: music_epiloguestart
 
     victory_dance:
-        channel: music
+        channel: sfx
+        policy: queue
         rules:
             - go:
-                  music_transition:
-                      audio_id: danceofjoy
-                      sync:
-                          stinger: pickupkey
+                  sequence:
+                      - stop_music: true
+                      - audio_id: pickupkey
+                      - audio_id: danceofjoy
 
     # Seal breakdown -> daemon appears (music).
     # The daemon-fight cue is scheduled later (daemon_appearance_done), to avoid canceling the stinger.
@@ -137,11 +136,12 @@ events:
                   audio_id: approachingdeath
 
     dying:
-        channel: music
+        channel: sfx
         rules:
             - go:
-                  music_transition:
-                      audio_id: dying
+                  sequence:
+                      - stop_music: true
+                      - audio_id: dying
 
     enterleave:
         channel: sfx

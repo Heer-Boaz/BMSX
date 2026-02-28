@@ -2755,34 +2755,24 @@ local function define_player_fsm()
 				state_tags.variant.uncontrolled_fall,
 			},
 		},
-			on = {
-				[player_abilities.command_ids.activate_sword] = {
-					go = function(self)
+				on = {
+					[player_abilities.command_ids.activate_sword] = function(self)
 						player_abilities.activate_sword(self)
 					end,
-				},
-				['player.world_emerge'] = {
-					go = function(self)
+					['player.world_emerge'] = function(self)
 						self:begin_world_emerge_from_door()
 					end,
-				},
-				['player.shrine_overlay_exit'] = {
-					go = function(self)
+					['player.shrine_overlay_exit'] = function(self)
 						self:leave_shrine_overlay()
 					end,
-				},
-				['player.halo_trigger'] = {
-					go = function(self)
+					['player.halo_trigger'] = function(self)
 						self.actioneffects:trigger('halo')
 					end,
-				},
-				['enemy.contact_damage'] = {
-					go = function(self, _state, event)
+					['enemy.contact_damage'] = function(self, _state, event)
 						self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
-				end,
-			},
-			['hp_zero'] = '/dying',
-			['damage'] = '/hit_fall',
+					end,
+				['hp_zero'] = '/dying',
+				['damage'] = '/hit_fall',
 			['damage_on_stairs'] = '/hit_collision',
 			['stairs_lock_lost_after_room_switch'] = '/quiet',
 			['enter_world_start'] = '/entering_world',

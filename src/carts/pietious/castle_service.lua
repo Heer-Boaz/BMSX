@@ -626,32 +626,24 @@ function castle_service:halo_teleport_to_room_1()
 end
 
 local function define_castle_service_fsm()
-	define_fsm('castle_service', {
-		initial = 'active',
-		on = {
-			['seal_dissolution'] = {
-				go = function(self)
+		define_fsm('castle_service', {
+			initial = 'active',
+			on = {
+				['seal_dissolution'] = function(self)
 					self:begin_seal_dissolution()
 				end,
-			},
-			['seal.step'] = {
-				go = function(self, _state, event)
+				['seal.step'] = function(self, _state, event)
 					self:set_seal_dissolve_intro_state(event.intro_state)
 				end,
-			},
-			['daemon_appearance'] = {
-				go = function(self)
+				['daemon_appearance'] = function(self)
 					self:begin_daemon_appearance()
 				end,
-			},
-			['daemon_appearance_done'] = {
-				go = function(self)
+				['daemon_appearance_done'] = function(self)
 					self:activate_current_room_daemon_fight()
 				end,
 			},
-		},
-		states = {
-			active = {
+			states = {
+				active = {
 				tick = castle_service.tick,
 			},
 		},

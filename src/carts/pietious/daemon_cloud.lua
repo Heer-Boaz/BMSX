@@ -39,20 +39,16 @@ local function define_daemon_cloud_fsm()
 					self.visible = true
 					self:gfx('daemon_smoke_small')
 				end,
-				on = {
-					['timeline.frame.' .. anim_timeline_id] = {
-						go = function(self)
+					on = {
+						['timeline.frame.' .. anim_timeline_id] = function(self)
 							self:gfx(self:get_timeline(anim_timeline_id):value())
 						end,
-					},
-					['timeline.end.' .. anim_timeline_id] = {
-						go = function(self)
+						['timeline.end.' .. anim_timeline_id] = function(self)
 							self:mark_for_disposal()
 						end,
 					},
 				},
 			},
-		},
 	})
 end
 
