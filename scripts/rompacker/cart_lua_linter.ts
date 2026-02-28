@@ -4783,14 +4783,32 @@ function lintFsmDirectStateHandlerMapValue(mapExpression: LuaExpression, issues:
 			continue;
 		}
 		const goField = findTableFieldByKey(value, 'go');
-		if (!goField || goField.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		if (!goField) {
+			continue;
+		}
+		if (
+			goField.value.kind !== LuaSyntaxKind.StringLiteralExpression &&
+			goField.value.kind !== LuaSyntaxKind.FunctionExpression &&
+			goField.value.kind !== LuaSyntaxKind.IdentifierExpression &&
+			goField.value.kind !== LuaSyntaxKind.MemberExpression &&
+			goField.value.kind !== LuaSyntaxKind.IndexExpression
+		) {
+			continue;
+		}
+		if (goField.value.kind === LuaSyntaxKind.StringLiteralExpression) {
+			pushIssue(
+				issues,
+				'fsm_direct_state_handler_shorthand_pattern',
+				goField.value,
+				`FSM direct state-id handlers must use shorthand. Replace "{ go = '${goField.value.value}' }" with "${goField.value.value}".`,
+			);
 			continue;
 		}
 		pushIssue(
 			issues,
 			'fsm_direct_state_handler_shorthand_pattern',
 			goField.value,
-			`FSM direct state-id handlers must use shorthand. Replace "{ go = '${goField.value.value}' }" with "${goField.value.value}".`,
+			'FSM direct handler shorthand is required. Replace "{ go = <handler> }" with "<handler>".',
 		);
 	}
 }
