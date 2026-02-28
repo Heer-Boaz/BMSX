@@ -612,9 +612,24 @@ If an object needs periodic behavior, it **must** have an FSM. This is the clean
 binary: FSM = active per-frame participation, no FSM = event-driven only. No
 gray area, no confusion about which tick runs when.
 
-Objects that currently use `obj:tick()` for rendering (room, UI) should either:
-- Get a proper FSM with an `update` state that handles rendering, or
-- Move rendering to a component that gets updated by its own ECS system.
+**What replaces per-object tick:** Nothing new — the existing ECS rendering
+systems already handle it. The engine already has `spriterendersystem`,
+`textrendersystem`, `meshrendersystem`, and `rendersubmitsystem` (which flushes
+`customvisualcomponent`) in the presentation phase. These systems already tick
+their respective components every frame. The rule is: **objects don't tick,
+systems tick components — and the rendering systems already exist.**
+
+| Current `obj:tick()` usage | Migration |
+|---|---|
+| Room rendering (`render_tiles`, `render_room`) | Already uses `customvisualcomponent` → `rendersubmitsystem` flushes it. Move render logic fully into the component's `flush()`. No new system needed |
+| UI health/weapon bar interpolation | Use `customvisualcomponent` or `spritecomponent` for display; target set via events, interpolation runs inside the component or a small dedicated system |
+| Misc glue (sync flags, poll fields) | Events + tag subscriptions; no per-frame work needed |
+
+The infrastructure is already there. Objects that currently funnel rendering
+through `obj:tick()` just need to move that logic into their **existing
+component** (sprite, text, mesh, or customvisual). The ECS presentation systems
+already tick those components. No new systems, no new abstractions — just use
+what's there instead of bypassing it with a bare `obj:tick()`.
 
 ### 5F. No "room object sync" primitive — every service re-invents lifecycle
 
@@ -707,6 +722,21 @@ This gives discoverability without boilerplate. Cart authors can look up the
 catalog to see what events are available. The engine handles the standard events
 automatically; cart authors only need `define_event` for their own custom events.
 
+**Extra wins — tooling and grep-ability:**
+
+- **`dump_event_catalog()`** — callable from the debug console / dev overlay.
+  Returns all registered event names as a sorted list. Instant answer to "what
+  events can I subscribe to?" without reading source.
+- **Grep-ability** — `define_event('room.switched')` is a greppable anchor.
+  Renaming or removing an event means searching for the `define_event` call and
+  all `emit` / `on` references. Without the catalog, event strings are
+  scattered across emit/subscribe sites with no single source of truth.
+- **Stable cart API** — registered event names are the cart's public event
+  contract. Engine-emitted events (lifecycle, timeline, abilities) are
+  auto-registered and stable; cart-defined events are explicitly declared.
+  This distinction makes it safe to refactor internal events without breaking
+  cart subscriptions.
+
 ### 5I. `engine.define_prefab` uses method-copy, not prototypes
 
 `apply_class_addons()` copies all methods from the class table onto each
@@ -733,24 +763,42 @@ copies methods manually, this creates a flat, non-inheriting, fragile system.
 - Adding a new method to `enemy_base` requires updating `extend()` — and if
   forgotten, enemies silently miss the new method.
 
-**Engine change:** Use Lua metatables for prototype-based inheritance:
+**Engine change:** Use Lua metatables for prototype-based inheritance.
+
+**Performance note:** Use `__index = class_table` (table, not function) wherever
+possible. Table-based `__index` is a single hash lookup — as cheap as direct
+field access in practice. Function-based `__index` adds a function call per
+miss, which is measurable in hot paths on target hardware (iPhone 10/11/12).
+Only use a function-based `__index` when you must chain multiple fallback
+tables.
+
+Preferred (single inheritance — covers most cases):
 ```lua
 local function apply_class_prototype(instance, class_table)
     local mt = getmetatable(instance) or {}
-    local prev_index = mt.__index
-    mt.__index = function(self, key)
-        local v = class_table[key]
-        if v ~= nil then return v end
-        if type(prev_index) == "function" then return prev_index(self, key) end
-        if type(prev_index) == "table" then return prev_index[key] end
-    end
+    mt.__index = class_table  -- table lookup, not function
+    setmetatable(instance, mt)
+end
+```
+
+Multi-level fallback (only when needed, e.g., enemy_base → enemy_type):
+```lua
+local function apply_class_chain(instance, class_table, base_table)
+    -- chain: instance → class_table → base_table
+    local class_mt = getmetatable(class_table) or {}
+    class_mt.__index = base_table
+    setmetatable(class_table, class_mt)
+
+    local mt = getmetatable(instance) or {}
+    mt.__index = class_table
     setmetatable(instance, mt)
 end
 ```
 
 This gives automatic inheritance without method copying. `enemy_base` would be
 in the prototype chain, and new methods would automatically be available to all
-enemy types.
+enemy types. The table-based `__index` keeps lookup cost on-brand with the
+fantasy console performance target.
 
 ### 5J. ECS pipeline runs empty systems every frame
 
