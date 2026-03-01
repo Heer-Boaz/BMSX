@@ -14,12 +14,9 @@ import type { LuaBuiltinDescriptor } from './types';
 export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> = [
 	{ name: 'define_fsm', params: ['id', 'blueprint'], signature: 'define_fsm(id, blueprint)' },
 	{ name: 'define_prefab', params: ['definition'], signature: 'define_prefab(definition)' },
-	{ name: 'define_service', params: ['definition'], signature: 'define_service(definition)' },
 	{ name: 'define_component', params: ['definition'], signature: 'define_component(definition)' },
 	{ name: 'define_effect', params: ['definition', 'opts?'], signature: 'define_effect(definition [, opts])' },
 	{ name: 'inst', params: ['definition_id', 'addons?'], signature: 'inst(definition_id [, addons])' },
-	{ name: 'create_service', params: ['definition_id', 'addons?'], signature: 'create_service(definition_id [, addons])' },
-	{ name: 'service', params: ['id'], signature: 'service(id)' },
 	{ name: 'object', params: ['id'], signature: 'object(id)' },
 	{ name: 'add_space', params: ['space_id'], signature: 'add_space(space_id)' },
 	{ name: 'set_space', params: ['space_id'], signature: 'set_space(space_id)' },
