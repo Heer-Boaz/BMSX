@@ -2,8 +2,6 @@
 -- built-in ecs systems for lua engine
 
 local ecs = require("ecs")
-local action_effects = require("action_effects")
-local registry = require("registry")
 local collision2d = require("collision2d")
 local world_instance = require("world").instance
 
@@ -88,14 +86,6 @@ function statemachinesystem:update(dt_ms)
 		obj.sc:tick(dt_ms)
 		::continue::
 	end
-	for _, entity in pairs(registry.instance:get_registered_entities()) do
-		if entity.type_name == "service" and not entity.dispose_flag and entity.active and entity.tick_enabled then
-			entity.sc:tick(dt_ms)
-			if entity.timelines.enabled then
-				entity.timelines:tick_active(dt_ms)
-			end
-		end
-	end
 end
 
 local objectticksystem = {}
@@ -109,9 +99,6 @@ end
 
 function objectticksystem:update(dt_ms)
 	for obj in world_instance:objects({ scope = "active" }) do
-		if obj.tick_enabled then
-			obj:tick(dt_ms)
-		end
 		for i = 1, #obj.components do
 			local comp = obj.components[i]
 			if comp.enabled then
@@ -335,6 +322,7 @@ end
 function overlap2dsystem.new(priority)
 	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 42), overlap2dsystem)
 	self.prev_pairs = {}
+	self.prev_collider_lookup = {}
 	self.grid_cell_size = 64
 	return self
 end
@@ -361,6 +349,7 @@ function overlap2dsystem:update()
 
 	if #event_colliders == 0 then
 		self.prev_pairs = {}
+		self.prev_collider_lookup = {}
 		return
 	end
 
@@ -429,9 +418,17 @@ function overlap2dsystem:update()
 		end
 	end
 
+	local prev_collider_lookup = self.prev_collider_lookup
+
 	local function resolve_pair(a_id, b_id)
-		local a = collider_lookup[a_id] or registry.instance:get(a_id)
-		local b = collider_lookup[b_id] or registry.instance:get(b_id)
+		local a = collider_lookup[a_id] or prev_collider_lookup[a_id]
+		local b = collider_lookup[b_id] or prev_collider_lookup[b_id]
+		if a == nil or b == nil then
+			return nil, nil
+		end
+		if a.parent == nil or b.parent == nil then
+			return nil, nil
+		end
 		return a, b
 	end
 
@@ -479,6 +476,7 @@ function overlap2dsystem:update()
 	end
 
 	self.prev_pairs = new_pairs
+	self.prev_collider_lookup = collider_lookup
 end
 
 local transformsystem = {}

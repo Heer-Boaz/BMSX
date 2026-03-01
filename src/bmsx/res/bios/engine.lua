@@ -3,7 +3,7 @@
 --
 -- NOTE FOR CART AUTHORS:
 -- Do not `require("engine")` from cart code and do not call `engine.*`.
--- Carts must use cart-facing globals/helpers (`object`, `service`, `inst`,
+-- Carts must use cart-facing globals/helpers (`object`, `inst`,
 -- `update`, `reset`, `add_space`, `set_space`, `get_space`, `define_fsm`, `define_effect`,
 -- etc.) that are injected by the runtime.
 -- Keep cart identifier strings compact. Redundant long prefixes in tags/events/effects/
@@ -22,7 +22,6 @@ local textobject = require("textobject")
 local fsmlibrary = require("fsmlibrary")
 local action_effects = require("action_effects")
 local components = require("components")
-local service = require("service")
 local registry = require("registry")
 local eventemitter_module = require("eventemitter")
 local eventemitter = eventemitter_module.eventemitter
@@ -47,7 +46,6 @@ local progression = require("progression")
 local world_instance = world_module.instance
 
 local definitions = {}
-local service_definitions = {}
 local component_definitions = {}
 local vdp_load_job_seq = 0
 local vdp_load_queue = {}
@@ -91,6 +89,30 @@ local function apply_class_addons(instance, class_table)
 			instance[k] = v
 		end
 	end
+end
+
+local function apply_class_prototype(instance, class_table)
+	if class_table == nil then
+		return
+	end
+	local instance_mt = getmetatable(instance)
+	if instance_mt == nil then
+		error("apply_class_prototype: instance is missing a metatable.")
+	end
+	local base_index = instance_mt.__index
+	if base_index == nil then
+		error("apply_class_prototype: instance metatable is missing __index.")
+	end
+	local class_mt = getmetatable(class_table)
+	if class_mt == nil then
+		class_mt = { __index = base_index }
+		setmetatable(class_table, class_mt)
+	elseif class_mt.__index == nil then
+		class_mt.__index = base_index
+		setmetatable(class_table, class_mt)
+	end
+	instance_mt.__index = class_table
+	setmetatable(instance, instance_mt)
 end
 
 local function apply_addons(instance, addons, skip_keys)
@@ -225,7 +247,7 @@ local function apply_definition(instance, def, addons, skip_key)
 	local class_table = def and def.class
 	if def then
 		apply_defaults(instance, def.defaults, skip_key)
-		apply_class_addons(instance, class_table)
+		apply_class_prototype(instance, class_table)
 		attach_components(instance, def.components)
 		attach_fsms(instance, def.fsms)
 		attach_effects(instance, def.effects)
@@ -265,13 +287,6 @@ function engine.define_prefab(definition)
 		error("define_prefab: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
 	end
 	definitions[definition.def_id] = definition
-end
-
-function engine.define_service(definition)
-	if type(definition.class) ~= "table" then
-		error("define_service: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
-	end
-	service_definitions[definition.def_id] = definition
 end
 
 function engine.define_component(definition)
@@ -411,23 +426,6 @@ function engine.inst(definition_id, addons)
 	apply_definition(instance, def, addons)
 	world_instance:spawn(instance, addons and addons.pos)
 	return instance
-end
-
-function engine.create_service(definition_id, addons)
-	local def = service_definitions[definition_id]
-	local class_table = def and def.class
-	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
-	local instance = service.new({ id = instance_id })
-	apply_definition(instance, def, addons)
-	registry.instance:register(instance)
-	if def and def.auto_activate then
-		instance:activate()
-	end
-	return instance
-end
-
-function engine.service(id)
-	return registry.instance:get(id)
 end
 
 -- Runtime binds global `object(id)` to this function.

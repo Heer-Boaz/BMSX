@@ -1,5 +1,5 @@
 -- progression.lua
--- singleton event-driven progression service
+-- singleton event-driven progression state router
 
 local eventemitter = require('eventemitter').eventemitter
 local event_matcher = require('event_matcher')

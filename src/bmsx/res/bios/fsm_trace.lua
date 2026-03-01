@@ -129,26 +129,10 @@ function fsm_trace.create_input_context(pattern, player_index)
 	}
 end
 
-function fsm_trace.create_process_input_context()
+function fsm_trace.create_update_context(handler_name)
 	return {
-		trigger = "process-input",
-		description = "process_input",
-		timestamp = $.platform.clock.now(),
-	}
-end
-
-function fsm_trace.create_tick_context(handler_name)
-	return {
-		trigger = "tick",
-		description = "tick:" .. handler_name,
-		timestamp = $.platform.clock.now(),
-	}
-end
-
-function fsm_trace.create_run_check_context(index)
-	return {
-		trigger = "run-check",
-		description = "run_check#" .. tostring(index),
+		trigger = "update",
+		description = "update:" .. handler_name,
 		timestamp = $.platform.clock.now(),
 	}
 end

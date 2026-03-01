@@ -177,21 +177,6 @@ local function validate_transition_spec_map(def_id, field_name, map)
 	end
 end
 
-local function validate_run_checks(def_id, checks)
-	if checks == nil then
-		return
-	end
-	if type(checks) ~= "table" then
-		error(
-			"state definition '" .. tostring(def_id)
-				.. "' field 'run_checks' must be an array, but got " .. type(checks) .. "."
-		)
-	end
-	for i = 1, #checks do
-		validate_transition_spec(def_id, "run_checks[" .. tostring(i) .. "]", checks[i])
-	end
-end
-
 function statedefinition.new(id, def, root, parent)
 	local self = setmetatable({}, statedefinition)
 	self.__is_state_definition = true
@@ -203,12 +188,19 @@ function statedefinition.new(id, def, root, parent)
 	self.states = {}
 	self.initial = def and def.initial
 	self.on = def and def.on or {}
-	self.tick = def and def.tick
+	if def and def.tick ~= nil then
+		error("state definition '" .. tostring(self.def_id) .. "' field 'tick' is not supported. Use 'update'.")
+	end
+	if def and def.process_input ~= nil then
+		error("state definition '" .. tostring(self.def_id) .. "' field 'process_input' is not supported.")
+	end
+	if def and def.run_checks ~= nil then
+		error("state definition '" .. tostring(self.def_id) .. "' field 'run_checks' is not supported.")
+	end
+	self.update = def and def.update
 	self.entering_state = def and def.entering_state
 	self.exiting_state = def and (def.exiting_state or def.leaving_state)
-	self.run_checks = def and def.run_checks
 	self.input_event_handlers = def and def.input_event_handlers or {}
-	self.process_input = def and def.process_input
 	self.is_concurrent = def and def.is_concurrent or false
 	self.input_eval = def and def.input_eval
 	if self.input_eval ~= nil and not input_eval_modes[self.input_eval] then
@@ -218,13 +210,11 @@ function statedefinition.new(id, def, root, parent)
 				.. "'. expected 'first' or 'all', but got " .. type(self.input_eval) .. "."
 		)
 	end
-	validate_optional_state_function(self.def_id, "tick", self.tick)
+	validate_optional_state_function(self.def_id, "update", self.update)
 	validate_optional_state_function(self.def_id, "entering_state", self.entering_state)
 	validate_optional_state_function(self.def_id, "exiting_state", self.exiting_state)
-	validate_optional_state_function(self.def_id, "process_input", self.process_input)
 	validate_transition_spec_map(self.def_id, "on", self.on)
 	validate_transition_spec_map(self.def_id, "input_event_handlers", self.input_event_handlers)
-	validate_run_checks(self.def_id, self.run_checks)
 	self.event_list = def and def.event_list
 	self.timelines = def and def.timelines
 	self.transition_guards = def and def.transition_guards
@@ -1758,47 +1748,23 @@ function state:process_input_events()
 	end
 end
 
-function state:process_input()
-	self:process_input_events()
-	local process_input = self.definition.process_input
-	if not process_input then
-		return
-	end
-	local next_state
-	if should_trace_transitions() then
-		next_state = self:run_with_transition_context(
-			function()
-				local ctx = fsm_trace.create_process_input_context()
-				ctx.handler_name = "<anonymous>"
-				return ctx
-			end,
-			function()
-				return process_input(self.target, self, empty_game_event)
-			end
-		)
-	else
-		next_state = process_input(self.target, self, empty_game_event)
-	end
-	self:transition_to_next_state_if_provided(next_state)
-end
-
 function state:run_current_state()
-	local tick_handler = self.definition.tick
-	if not tick_handler then
+	local update_handler = self.definition.update
+	if not update_handler then
 		return
 	end
 	local next_state
 	if should_trace_transitions() then
 		next_state = self:run_with_transition_context(
 			function()
-				return fsm_trace.create_tick_context("<anonymous>")
+				return fsm_trace.create_update_context("<anonymous>")
 			end,
 			function()
-				return tick_handler(self.target, self, empty_game_event)
+				return update_handler(self.target, self, empty_game_event)
 			end
 		)
 	else
-		next_state = tick_handler(self.target, self, empty_game_event)
+		next_state = update_handler(self.target, self, empty_game_event)
 	end
 	self:transition_to_next_state_if_provided(next_state)
 end
@@ -1820,34 +1786,6 @@ function state:run_substate_machines()
 	end
 end
 
-function state:run_checks_for_current_state()
-	local checks = self.definition.run_checks
-	if not checks then
-		return
-	end
-	local trace_transitions = should_trace_transitions()
-	for i = 1, #checks do
-		local rc = checks[i]
-		local handled
-		if trace_transitions then
-			handled = self:run_with_transition_context(
-				function()
-					return fsm_trace.create_run_check_context(i - 1)
-				end,
-				function(ctx)
-					ctx.handler_name = fsm_trace.describe_action_handler(rc)
-					return self:handle_state_transition(rc)
-				end
-			)
-		else
-			handled = self:handle_state_transition(rc)
-		end
-		if handled then
-			break
-		end
-	end
-end
-
 function state:tick()
 	if self.paused then
 		return
@@ -1856,9 +1794,8 @@ function state:tick()
 	self:with_critical_section(function()
 		self.in_tick = true
 		self:run_substate_machines()
-		self:process_input()
+		self:process_input_events()
 		self:run_current_state()
-		self:run_checks_for_current_state()
 		self.in_tick = false
 	end)
 end

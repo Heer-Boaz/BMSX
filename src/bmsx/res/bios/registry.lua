@@ -1,5 +1,5 @@
 -- registry.lua
--- lightweight registry for lua engine objects/services
+-- lightweight registry for lua engine entities
 
 local registry = {}
 registry.__index = registry
