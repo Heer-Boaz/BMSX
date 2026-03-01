@@ -7,6 +7,7 @@ item_screen.__index = item_screen
 local item_offset_x = 11
 local item_offset_y = 6
 local selector_blink_frames = 5
+local selector_blink_timeline_id = 'item_screen.blink'
 local map_title_x = 49
 
 local secondary_weapon_order = {
@@ -36,6 +37,21 @@ local item_position_offsets = {
 	greenvase = { x = 3, y = 2 },
 }
 
+local item_screen_mode_exit_events = {
+	'room',
+	'transition',
+	'halo',
+	'shrine',
+	'lithograph',
+	'title',
+	'story',
+	'ending',
+	'victory_dance',
+	'death',
+	'seal_dissolution',
+	'daemon_appearance',
+}
+
 function item_screen:bind_visual()
 	local rc = self:get_component('customvisualcomponent')
 	rc.producer = function(_ctx)
@@ -50,23 +66,53 @@ function item_screen:bind_events()
 		subscriber = self,
 		handler = function(_event)
 			self:reset_for_open()
+			self:play_timeline(selector_blink_timeline_id, { rewind = true, snap_to_start = true })
 		end,
 	})
+	self.events:on({
+		event = 'item_screen.blink_toggle',
+		subscriber = self,
+		handler = function(_event)
+			if get_space() ~= 'item' then
+				return
+			end
+			self.selector_hidden = not self.selector_hidden
+			self.map_highlight = not self.map_highlight
+		end,
+	})
+	for i = 1, #item_screen_mode_exit_events do
+		local event_name = item_screen_mode_exit_events[i]
+		self.events:on({
+			event = event_name,
+			emitter = 'd',
+			subscriber = self,
+			handler = function(_event)
+				self:stop_timeline(selector_blink_timeline_id)
+			end,
+		})
+	end
 end
 
 function item_screen:ctor()
 	self:bind_visual()
-	self:bind_events()
+	self:define_timeline(timeline.new({
+		id = selector_blink_timeline_id,
+		frames = timeline.range(selector_blink_frames),
+		playback_mode = 'loop',
+		markers = {
+			{ frame = selector_blink_frames - 1, event = 'item_screen.blink_toggle' },
+		},
+	}))
 	self.secondary_weapon_selection_index = 0
 	self.selector_hidden = false
-	self.selector_blink_counter = 0
 	self.map_highlight = true
+	self:bind_events()
 end
 
 function item_screen:reset_for_open()
 	self.selector_hidden = false
-	self.selector_blink_counter = 0
 	self.map_highlight = true
+	self:apply_selected_secondary_weapon()
 end
 
 function item_screen:item_position_px(item_type)
@@ -78,7 +124,7 @@ end
 
 function item_screen:draw_inventory_items()
 	local player = object('pietolon')
-	local world_number = service('c').current_room.world_number
+	local world_number = object('c').current_room.world_number
 	for i = 1, #inventory_item_order do
 		local item_type = inventory_item_order[i]
 		if player.inventory_items[item_type] then
@@ -101,7 +147,7 @@ end
 
 function item_screen:draw_map()
 	local player = object('pietolon')
-	local room = service('c').current_room
+	local room = object('c').current_room
 	local world_number = room.world_number
 	if world_number <= 0 then
 		return
@@ -130,26 +176,25 @@ function item_screen:draw_map()
 	end
 end
 
-function item_screen:tick_selector_blink()
-	self.selector_blink_counter = self.selector_blink_counter + 1
-	if self.selector_blink_counter >= selector_blink_frames then
-		self.selector_blink_counter = 0
-		self.selector_hidden = not self.selector_hidden
-		self.map_highlight = not self.map_highlight
+function item_screen:apply_selected_secondary_weapon()
+	local player = object('pietolon')
+	local selected_weapon = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
+	if selected_weapon ~= nil and player.inventory_items[selected_weapon] then
+		player:equip_subweapon(selected_weapon)
 	end
 end
 
-function item_screen:tick_secondary_weapon_selection()
+function item_screen:shift_secondary_weapon_selection(direction)
 	local player = object('pietolon')
 	local previous_index = self.secondary_weapon_selection_index
-	if action_triggered('right[jp]') then
+	if direction > 0 then
 		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do
 			if player.inventory_items[secondary_weapon_order[i]] then
 				self.secondary_weapon_selection_index = i - 1
 				break
 			end
 		end
-	elseif action_triggered('left[jp]') then
+	elseif direction < 0 then
 		for i = self.secondary_weapon_selection_index, 1, -1 do
 			if player.inventory_items[secondary_weapon_order[i]] then
 				self.secondary_weapon_selection_index = i - 1
@@ -160,16 +205,7 @@ function item_screen:tick_secondary_weapon_selection()
 	if self.secondary_weapon_selection_index ~= previous_index then
 		self.events:emit('select')
 	end
-
-	local selected_weapon = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
-	if selected_weapon ~= nil and player.inventory_items[selected_weapon] then
-		player:equip_subweapon(selected_weapon)
-	end
-end
-
-function item_screen:tick()
-	self:tick_selector_blink()
-	self:tick_secondary_weapon_selection()
+	self:apply_selected_secondary_weapon()
 end
 
 function item_screen:draw_screen()
@@ -183,24 +219,38 @@ local function define_item_screen_fsm()
 	define_fsm('item_screen', {
 		initial = 'active',
 		states = {
-			active = {},
+			active = {
+				input_event_handlers = {
+					['right[jp]'] = function(self)
+						if get_space() ~= 'item' then
+							return
+						end
+						self:shift_secondary_weapon_selection(1)
+					end,
+					['left[jp]'] = function(self)
+						if get_space() ~= 'item' then
+							return
+						end
+						self:shift_secondary_weapon_selection(-1)
+					end,
+				},
+			},
 		},
 	})
 end
 
 local function register_item_screen_definition()
-		define_prefab({
-			def_id = 'item_screen',
-			class = item_screen,
-			fsms = { 'item_screen' },
-			components = { 'customvisualcomponent' },
-			defaults = {
-				secondary_weapon_selection_index = 0,
-				selector_hidden = false,
-				selector_blink_counter = 0,
-				map_highlight = true,
-			},
-		})
+	define_prefab({
+		def_id = 'item_screen',
+		class = item_screen,
+		fsms = { 'item_screen' },
+		components = { 'customvisualcomponent' },
+		defaults = {
+			secondary_weapon_selection_index = 0,
+			selector_hidden = false,
+			map_highlight = true,
+		},
+	})
 end
 
 return {

@@ -51,7 +51,7 @@ action_effects.register_effect('pepernoot', {
 	handler = function(context)
 		local owner = context.owner
 		owner:refresh_active_pepernoot_projectiles()
-		local room = service('c').current_room
+		local room = object('c').current_room
 		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 		local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
 		local spawn_x = owner.x + (owner.facing < 0 and -constants.secondary_weapon.pepernoot_spawn_offset_x or constants.secondary_weapon.pepernoot_spawn_offset_x)
@@ -67,6 +67,7 @@ action_effects.register_effect('pepernoot', {
 		})
 		owner.pepernoot_projectile_ids[#owner.pepernoot_projectile_ids + 1] = projectile_id
 		owner.weapon_level = owner.weapon_level - constants.secondary_weapon.pepernoot_weapon_level_cost
+		owner:emit_weapon_changed()
 		owner.events:emit('fire_pepernoot')
 	end,
 })
@@ -91,14 +92,14 @@ action_effects.register_effect('halo', {
 		if not context.owner.inventory_items.halo then
 			return false
 		end
-		if service('c').current_room.daemon_fight_active then
+		if object('c').current_room.daemon_fight_active then
 			return false
 		end
 		return true
 	end,
 	handler = function(context)
-		local director_service = service('d')
-		local castle_service = service('c')
+		local director_service = object('d')
+		local castle_service = object('c')
 		local from_world = (castle_service.current_room.world_number or 0) ~= 0
 		director_service.events:emit('halo_transition_start')
 		local switch = castle_service:halo_teleport_to_room_1()

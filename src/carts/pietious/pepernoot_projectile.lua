@@ -14,7 +14,7 @@ function pepernoot_projectile:ctor()
 end
 
 function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
-	local room = service('c').current_room
+	local room = object('c').current_room
 	local snapped_x, snapped_y = room:snap_world_to_tile(self.x, self.y)
 	self.sprite_component.offset.x = snapped_x - self.x
 	self.sprite_component.offset.y = snapped_y - self.y
@@ -56,7 +56,7 @@ function pepernoot_projectile:tick()
 	if self:has_tag(state_tags.frozen) then
 		return
 	end
-	local room = service('c').current_room
+	local room = object('c').current_room
 	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
 	self:refresh_tile_aligned_sprite_offset()
 
@@ -77,16 +77,18 @@ local function define_pepernoot_projectile_fsm()
 			['seal_breaking'] = '/freeze',
 		},
 		states = {
-			active = {},
-				freeze = {
-					tags = { state_tags.frozen },
-					on = {
-						['seal_flash_done'] = function(_self, state)
-							state:pop_and_transition()
-						end,
-					},
+			active = {
+				update = pepernoot_projectile.tick,
+			},
+			freeze = {
+				tags = { state_tags.frozen },
+				on = {
+					['seal_flash_done'] = function(_self, state)
+						state:pop_and_transition()
+					end,
 				},
 			},
+		},
 	})
 end
 

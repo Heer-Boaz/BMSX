@@ -65,7 +65,7 @@ function elevator_service:sync_platform_instances(current_room_number)
 end
 
 function elevator_service:ctor()
-	self:sync_platform_instances(service('c').current_room.room_number)
+	self:sync_platform_instances(object('c').current_room.room_number)
 end
 
 local function move_elevator_vertical(elevator, target, vertical, character_over, player)
@@ -104,7 +104,7 @@ function elevator_service:tick()
 	local player = object('pietolon')
 	player.on_vertical_elevator = false
 
-	local current_room = service('c').current_room
+	local current_room = object('c').current_room
 	local current_room_number = current_room.room_number
 	if player.last_dy >= 0 then
 		player:try_snap_to_elevator_platform(player.x)
@@ -171,7 +171,7 @@ local function define_elevator_service_fsm()
 		initial = 'active',
 		states = {
 			active = {
-				tick = elevator_service.tick,
+				update = elevator_service.tick,
 			},
 		},
 	})
@@ -187,7 +187,7 @@ local function register_elevator_service_definition()
 		},
 	})
 
-	define_service({
+	define_prefab({
 		def_id = 'elevator',
 		class = elevator_service,
 		fsms = { 'elevator_service' },

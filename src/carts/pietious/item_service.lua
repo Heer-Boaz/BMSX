@@ -1,5 +1,6 @@
 local constants = require('constants')
 local progression = require('progression')
+local room_object_pool = require('room_object_pool')
 local item_service = {}
 item_service.__index = item_service
 
@@ -11,6 +12,7 @@ end
 
 local function pickup_keyworld1(player, _item_type)
 	player.health = player.max_health
+	player:emit_health_changed()
 	player.inventory_items.keyworld1 = true
 	player.events:emit('worldkey')
 	return true
@@ -62,94 +64,64 @@ function item_service:item_should_spawn(item_def, room_number, player)
 	return progression.matches(self, item_def.conditions)
 end
 
-function item_service:sync_item_instance(item_def, room)
-	local id = item_def.id
-	local instance = object(id)
-	if instance == nil then
-		instance = inst(self.world_item_def_id, {
-			id = id,
-			pos = { x = item_def.x, y = item_def.y, z = 140 },
-			item_id = item_def.id,
-			room_number = room.room_number,
-			item_type = item_def.item_type,
-		})
-		self.items_by_id[id] = instance
-		return instance
-	end
-	instance:set_space('main')
-
-	self.items_by_id[id] = instance
-	if not instance.active then
-		instance:activate()
-	end
-	instance.visible = true
-	instance:configure_from_room_def(item_def, room, self.id)
-	return instance
-end
-
-function item_service:deactivate_unused_items(active_ids)
-	for id, instance in pairs(self.items_by_id) do
-		local live_instance = object(id)
-		if live_instance == nil then
-			self.items_by_id[id] = nil
-			goto continue
-		end
-
-		instance = live_instance
-		self.items_by_id[id] = instance
-		if not active_ids[id] then
-			instance.visible = false
-			if instance.active then
-				instance:deactivate()
-			end
-		end
-		::continue::
-	end
-end
-
-function item_service:refresh_current_room_items()
-	local room = service('c').current_room
-	local room_number = room.room_number
-	self.synced_room_number = room_number
-
-	local player = object('pietolon')
-	progression.unmount(self)
-	progression.mount(self, self.empty_progression_program)
+function item_service:sync_progression_flags(room_number, player)
+	local desired_flags = {}
 	for item_type, has_item in pairs(player.inventory_items) do
 		if has_item then
-			progression.set(self, item_type, true)
+			desired_flags[item_type] = true
 		end
 	end
 	local room_flags = self.condition_flags_by_room[room_number]
 	if room_flags ~= nil then
 		for condition, is_set in pairs(room_flags) do
 			if is_set then
-				progression.set(self, condition, true)
+				desired_flags[condition] = true
 			end
 		end
 	end
-	local active_ids = {}
+
+	local progression_flags = self.progression_flags
+	for key in pairs(progression_flags) do
+		if not desired_flags[key] then
+			progression.set(self, key, false)
+			progression_flags[key] = nil
+		end
+	end
+	for key in pairs(desired_flags) do
+		if not progression_flags[key] then
+			progression.set(self, key, true)
+			progression_flags[key] = true
+		end
+	end
+end
+
+function item_service:refresh_current_room_items()
+	local room = object('c').current_room
+	local room_number = room.room_number
+	self.synced_room_number = room_number
+
+	local player = object('pietolon')
+	self:sync_progression_flags(room_number, player)
+	self.item_pool:begin_cycle()
 
 	local room_item_defs = room.items
 	for i = 1, #room_item_defs do
 		local item_def = room_item_defs[i]
 		if self:item_should_spawn(item_def, room_number, player) then
-			self:sync_item_instance(item_def, room)
-			active_ids[item_def.id] = true
+			self.item_pool:use(item_def, room)
 		end
 	end
 
 	local event_defs = self.event_item_defs_by_room[room_number]
 	if event_defs ~= nil then
-		for item_id, item_def in pairs(event_defs) do
+		for _, item_def in pairs(event_defs) do
 			if self:item_should_spawn(item_def, room_number, player) then
-				self:sync_item_instance(item_def, room)
-				active_ids[item_id] = true
+				self.item_pool:use(item_def, room)
 			end
 		end
 	end
 
-	self:deactivate_unused_items(active_ids)
+	self.item_pool:end_cycle()
 end
 
 function item_service:set_room_condition(room_number, condition)
@@ -258,34 +230,42 @@ end
 
 function item_service:ctor()
 	self.items_by_id = {}
+	self.active_item_ids_scratch = {}
 	self.event_item_defs_by_room = {}
 	self.picked_item_ids = {}
 	self.condition_flags_by_room = {}
-	self.empty_progression_program = progression.compile_program({ rules = {} })
+	self.progression_flags = {}
 	self.synced_room_number = 0
+	self.item_pool = room_object_pool.new({
+		instances_by_id = self.items_by_id,
+		active_ids = self.active_item_ids_scratch,
+		create_instance = function(definition, room_state)
+			return inst(self.world_item_def_id, {
+				id = definition.id,
+				pos = { x = definition.x, y = definition.y, z = 140 },
+				item_id = definition.id,
+				room_number = room_state.room_number,
+				item_type = definition.item_type,
+			})
+		end,
+		sync_instance = function(instance, definition, room_state)
+			instance:configure_from_room_def(definition, room_state, self.id)
+		end,
+	})
+	progression.mount(self, progression.compile_program({ rules = {} }))
 	self:bind_events()
 	self:refresh_current_room_items()
 end
 
-local function define_item_service_fsm()
-	define_fsm('item_service', {
-		initial = 'active',
-		states = {
-			active = {},
-		},
-	})
-end
-
 local function register_item_service_definition()
-	define_service({
+	define_prefab({
 		def_id = 'item',
 		class = item_service,
-		fsms = { 'item_service' },
-		auto_activate = true,
 		defaults = {
 			id = 'i',
-				world_item_def_id = 'world_item',
+			world_item_def_id = 'world_item',
 			items_by_id = {},
+			active_item_ids_scratch = {},
 			event_item_defs_by_room = {},
 			picked_item_ids = {},
 			condition_flags_by_room = {},
@@ -296,6 +276,5 @@ end
 
 return {
 	item_service = item_service,
-	define_item_service_fsm = define_item_service_fsm,
 	register_item_service_definition = register_item_service_definition,
 }

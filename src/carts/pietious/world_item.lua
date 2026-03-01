@@ -30,8 +30,8 @@ function world_item:on_overlap(event)
 		return
 	end
 
-	local room = service('c').current_room
-	if service('i'):try_pick_item(self.item_id, room.room_number, self.item_type) then
+	local room = object('c').current_room
+	if object('i'):try_pick_item(self.item_id, room.room_number, self.item_type) then
 		self.events:emit('picked')
 	end
 end

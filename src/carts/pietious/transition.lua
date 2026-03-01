@@ -23,7 +23,7 @@ function transition:bind_events()
 end
 
 function transition:draw_transition_overlay()
-	local director_service = service('d')
+	local director_service = object('d')
 	if not director_service:has_tag('d.bt') then
 		return
 	end

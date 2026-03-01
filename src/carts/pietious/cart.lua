@@ -16,7 +16,6 @@ local loot_drop_module = require('loot_drop')
 local world_item_module = require('world_item')
 local item_service_module = require('item_service')
 local rock_module = require('rock')
-local rock_service_module = require('rock_service')
 local pepernoot_projectile_module = require('pepernoot_projectile')
 local enemy_explosion_module = require('enemy_explosion')
 local enemy_service_module = require('enemy_service')
@@ -66,7 +65,8 @@ local function grant_starting_loadout()
 	player.inventory_items['pepernoot'] = true
 	player:equip_subweapon('pepernoot')
 	object('pietolon').weapon_level = constants.hud.weapon_level
-	local castle_service = service('c')
+	object('pietolon'):emit_weapon_changed()
+	local castle_service = object('c')
 	progression.set(castle_service, 'staff1destroyed', true)
 	progression.set(castle_service, 'staff2destroyed', true)
 	progression.set(castle_service, 'staff3destroyed', true)
@@ -87,24 +87,15 @@ function init()
 	room_module.define_room_fsm()
 	draaideur_module.define_draaideur_fsm()
 	transition_module.define_transition_fsm()
-	shrine_module.define_shrine_fsm()
-	shrine_module.define_room_shrine_fsm()
-	seal_module.define_seal_fsm()
-	lithograph_module.define_lithograph_fsm()
 	lithograph_screen_module.define_lithograph_screen_fsm()
 	item_screen_module.define_item_screen_fsm()
 	ui_module.define_ui_fsm()
 	loot_drop_module.define_loot_drop_fsm()
 	world_item_module.define_world_item_fsm()
-	item_service_module.define_item_service_fsm()
 	rock_module.define_rock_fsm()
-	rock_service_module.define_rock_service_fsm()
 	pepernoot_projectile_module.define_pepernoot_projectile_fsm()
 	enemy_explosion_module.define_enemy_explosion_fsm()
-	enemy_service_module.define_enemy_service_fsm()
-	castle_service_module.define_castle_service_fsm()
 	elevator_service_module.define_elevator_service_fsm()
-	world_entrance_module.define_world_entrance_fsm()
 	daemon_cloud_module.define_daemon_cloud_fsm()
 	director_module.define_director_fsm()
 	player_module.register_player_definition()
@@ -122,7 +113,6 @@ function init()
 	world_item_module.register_world_item_definition()
 	item_service_module.register_item_service_definition()
 	rock_module.register_rock_definition()
-	rock_service_module.register_rock_service_definition()
 	pepernoot_projectile_module.register_pepernoot_projectile_definition()
 	enemy_explosion_module.register_enemy_explosion_definition()
 	enemy_service_module.register_enemy_service_definition()
@@ -130,7 +120,7 @@ function init()
 	elevator_service_module.register_elevator_service_definition()
 	world_entrance_module.register_world_entrance_definition()
 	daemon_cloud_module.register_daemon_cloud_definition()
-	director_module.register_director_service_definition()
+	director_module.register_director_definition()
 	register_collision_profiles()
 	vdp_load_slot(0, 0)
 	vdp_map_slot(0, 0)
@@ -146,8 +136,12 @@ function new_game()
 	add_space('ui')
 	set_space('main')
 
-	create_service('enemy')
-	local castle_service = create_service('castle')
+	inst('enemy', {
+		id = 'en',
+	})
+	local castle_service = inst('castle', {
+		id = 'c',
+	})
 
 	inst('room', {
 		id = 'room',
@@ -191,14 +185,18 @@ function new_game()
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	create_service('director')
+	inst('director', {
+		id = 'd',
+	})
 
-	create_service('item')
+	inst('item', {
+		id = 'i',
+	})
 
-	local elevator_service = create_service('elevator')
-	elevator_service:activate()
+	inst('elevator', {
+		id = 'e',
+	})
 
-	create_service('rock')
 end
 
 while true do

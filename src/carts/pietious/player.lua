@@ -117,13 +117,36 @@ function player:clear_input_state()
 	self.right_held = false
 	self.up_held = false
 	self.down_held = false
-	self.up_pressed = false
-	self.up_released = false
-	self.down_pressed = false
-	self.down_released = false
 	self.attack_held = false
-	self.attack_pressed = false
-	self.attack_released = false
+	self.up_input_sources = 0
+end
+
+function player:sync_input_state_from_runtime()
+	self.left_held = action_triggered('left[p]')
+	self.right_held = action_triggered('right[p]')
+	self.down_held = action_triggered('down[p]')
+	self.attack_held = action_triggered('?(x[p])')
+	local up_primary_held = action_triggered('up[p]')
+	local up_alt_held = action_triggered('a[p]')
+	local up_sources = 0
+	if up_primary_held then
+		up_sources = up_sources + 1
+	end
+	if up_alt_held then
+		up_sources = up_sources + 1
+	end
+	self.up_input_sources = up_sources
+	self.up_held = up_sources > 0
+end
+
+function player:on_up_input_pressed()
+	self.up_input_sources = self.up_input_sources + 1
+	self.up_held = self.up_input_sources > 0
+end
+
+function player:on_up_input_released()
+	self.up_input_sources = clamp_int(self.up_input_sources - 1, 0, 2)
+	self.up_held = self.up_input_sources > 0
 end
 
 function player:zero_motion()
@@ -286,6 +309,8 @@ function player:ctor()
 	self:force_seek_timeline('p.seq.s', 0)
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
+	self:clear_input_state()
+	self:sync_input_state_from_runtime()
 
 	self.sprite_component.scale.x = 1
 	self.sprite_component.scale.y = 1
@@ -435,30 +460,11 @@ function player:apply_presentation_state()
 end
 
 function player:respawn()
-	service('d').events:emit('death_done')
+	object('d').events:emit('death_done')
 	self:force_seek_timeline('p.seq.s', 0)
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
 	self.events:emit('respawn')
-end
-
-function player:sample_input()
-	-- Keep edge detection derived from held-state here.
-	-- Using [jp]/[jr] directly was causing inconsistent jump edges when multiple systems queried input in the same tick.
-	local was_up_held = self.up_held
-	local was_down_held = self.down_held
-	local was_attack_held = self.attack_held
-	self.left_held = action_triggered('left[p]')
-	self.right_held = action_triggered('right[p]')
-	self.up_held = action_triggered('up[p] || a[p]')
-	self.down_held = action_triggered('down[p]')
-	self.attack_held = action_triggered('?(x[p])')
-	self.up_pressed = self.up_held and (not was_up_held)
-	self.up_released = (not self.up_held) and was_up_held
-	self.down_pressed = self.down_held and (not was_down_held)
-	self.down_released = (not self.down_held) and was_down_held
-	self.attack_pressed = self.attack_held and (not was_attack_held)
-	self.attack_released = (not self.attack_held) and was_attack_held
 end
 
 function player:update_facing_from_horizontal_input()
@@ -548,7 +554,7 @@ function player:start_dying()
 	if self:has_tag(state_tags.variant.dying) then
 		return
 	end
-	service('d').events:emit('death_start')
+	object('d').events:emit('death_start')
 	self.events:emit('dying')
 	self:force_seek_timeline('p.seq.s', 0)
 	self.hit_direction = 0
@@ -561,6 +567,20 @@ function player:start_dying()
 	self.events:emit('hp_zero')
 end
 
+function player:emit_health_changed()
+	self.events:emit('player.health_changed', {
+		value = self.health,
+		max_value = self.max_health,
+	})
+end
+
+function player:emit_weapon_changed()
+	self.events:emit('player.weapon_changed', {
+		value = self.weapon_level,
+		max_value = constants.hud.weapon_level,
+	})
+end
+
 function player:take_hit(amount, source_x, source_y, reason)
 	if not self:is_hittable() then
 		return false
@@ -570,6 +590,7 @@ function player:take_hit(amount, source_x, source_y, reason)
 	if self.health < 0 then
 		self.health = 0
 	end
+	self:emit_health_changed()
 	if self.health <= 8 then
 		self.events:emit('approachingdeath')
 	else
@@ -617,6 +638,7 @@ function player:collect_loot(loot_type, loot_value)
 		if self.health > self.max_health then
 			self.health = self.max_health
 		end
+		self:emit_health_changed()
 		return true
 	end
 	if loot_type == 'ammo' then
@@ -624,13 +646,14 @@ function player:collect_loot(loot_type, loot_value)
 		if self.weapon_level > constants.hud.weapon_level then
 			self.weapon_level = constants.hud.weapon_level
 		end
+		self:emit_weapon_changed()
 		return true
 	end
 	error('pietious player invalid loot_type=' .. tostring(loot_type))
 end
 
 function player:find_near_shrine()
-	local shrines = service('c').current_room.shrines
+	local shrines = object('c').current_room.shrines
 	local player_left = self.x
 	local player_top = self.y
 	local player_right = self.x + self.width
@@ -651,8 +674,8 @@ function player:find_near_shrine()
 end
 
 function player:find_world_entrance_for_unlock()
-	local world_entrances = service('c').current_room.world_entrances
-	local castle_service = service('c')
+	local world_entrances = object('c').current_room.world_entrances
+	local castle_service = object('c')
 	for i = 1, #world_entrances do
 		local world_entrance = world_entrances[i]
 		local entrance_state = castle_service.world_entrance_states[world_entrance.target].state
@@ -669,8 +692,8 @@ function player:find_world_entrance_for_unlock()
 end
 
 function player:find_near_open_world_entrance()
-	local world_entrances = service('c').current_room.world_entrances
-	local castle_service = service('c')
+	local world_entrances = object('c').current_room.world_entrances
+	local castle_service = object('c')
 	for i = 1, #world_entrances do
 		local world_entrance = world_entrances[i]
 		local entrance_state = castle_service.world_entrance_states[world_entrance.target].state
@@ -740,7 +763,7 @@ function player:begin_entering_world(world_entrance)
 	self.enter_leave_shrine_text_lines = {}
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
-	service('d').events:emit('world_transition_start')
+	object('d').events:emit('world_transition_start')
 	self.events:emit('enterleave')
 	self.events:emit('enter_world_start')
 end
@@ -753,7 +776,7 @@ function player:begin_entering_shrine(shrine)
 	self.enter_leave_shrine_text_lines = shrine.text_lines
 	self.x = shrine.x
 	self:reset_enter_leave_animation()
-	service('d').events:emit('shrine_transition_start')
+	object('d').events:emit('shrine_transition_start')
 	stop_music()
 	self.events:emit('enterleave')
 	self.events:emit('enter_shrine_start')
@@ -805,7 +828,7 @@ function player:try_open_world_entrance_with_key()
 		return false
 	end
 
-	local opened = service('c'):begin_open_world_entrance(world_entrance.target)
+	local opened = object('c'):begin_open_world_entrance(world_entrance.target)
 	if not opened then
 		return false
 	end
@@ -815,7 +838,7 @@ function player:try_open_world_entrance_with_key()
 end
 
 function player:try_start_world_or_shrine_interaction_from_down()
-	if not self.down_pressed then
+	if not action_triggered('down[jp]') then
 		return false
 	end
 
@@ -831,9 +854,9 @@ function player:try_start_world_or_shrine_interaction_from_down()
 		return true
 	end
 
-	local current_room = service('c').current_room
+	local current_room = object('c').current_room
 	if current_room.has_active_seal and not current_room.seal_sequence_active then
-		service('d').events:emit('seal_dissolution_start')
+		object('d').events:emit('seal_dissolution_start')
 		return true
 	end
 
@@ -855,23 +878,23 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	if self:has_tag(state_tags.variant.dying) then
 		return false
 	end
-	if service('c'):is_current_room_boss_encounter_active() then
+	if object('c'):is_current_room_boss_encounter_active() then
 		return false
 	end
 	if keep_stairs_lock then
 		self.x = self.stairs_x
 	end
 
-	local switch = service('c'):switch_room(direction, self.y, self.y + self.height)
+	local switch = object('c'):switch_room(direction, self.y, self.y + self.height)
 	if switch == nil then
 		return false
 	end
 
 	if switch.outside then
-		local director_service = service('d')
+		local director_service = object('d')
 		director_service.events:emit('world_transition_start')
 		director_service:expect_room_switch_banner('castle_banner', 0, 'castle_emerge')
-		local leave_switch = service('c'):leave_world_to_castle()
+		local leave_switch = object('c'):leave_world_to_castle()
 		self:apply_spawn_position(leave_switch)
 		self:zero_motion()
 		self:reset_stairs_lock()
@@ -882,13 +905,13 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		return true
 	end
 	if direction == 'left' then
-		self.x = service('c').current_room.world_width - self.width
+		self.x = object('c').current_room.world_width - self.width
 	elseif direction == 'right' then
-		self.x = service('c').current_room.tile_size
+		self.x = object('c').current_room.tile_size
 	elseif direction == 'up' then
-		self.y = service('c').current_room.world_height - self.height - service('c').current_room.tile_size
+		self.y = object('c').current_room.world_height - self.height - object('c').current_room.tile_size
 	else
-		self.y = service('c').current_room.world_top - service('c').current_room.tile_size
+		self.y = object('c').current_room.world_top - object('c').current_room.tile_size
 	end
 
 	if keep_stairs_lock then
@@ -906,8 +929,8 @@ function player:try_switch_room(direction, keep_stairs_lock)
 end
 
 function player:try_side_room_switch_from_position()
-	local max_x = service('c').current_room.world_width - self.width
-	if self.x < service('c').current_room.tile_size then
+	local max_x = object('c').current_room.world_width - self.width
+	if self.x < object('c').current_room.tile_size then
 		return self:try_switch_room('left', false)
 	end
 	if self.x > max_x then
@@ -924,18 +947,18 @@ function player:can_switch_up_from_state()
 end
 
 function player:nearing_room_exit()
-	local max_x = service('c').current_room.world_width - self.width
+	local max_x = object('c').current_room.world_width - self.width
 	if self.x < 0 then
 		return 'left'
 	end
 	if self.x > max_x then
 		return 'right'
 	end
-	local up_exit_threshold = service('c').current_room.world_top - service('c').current_room.tile_size
+	local up_exit_threshold = object('c').current_room.world_top - object('c').current_room.tile_size
 	if self.y < up_exit_threshold then
 		return 'up'
 	end
-	local down_exit_threshold = service('c').current_room.world_height - self.height
+	local down_exit_threshold = object('c').current_room.world_height - self.height
 	if self.y > down_exit_threshold then
 		return 'down'
 	end
@@ -946,7 +969,7 @@ function player:try_vertical_room_switch_from_position()
 	local direction = self:nearing_room_exit()
 	if direction and vertical_exit_directions[direction] then
 		if direction == 'up' and (not self:can_switch_up_from_state()) then
-			local up_limit = service('c').current_room.world_top - service('c').current_room.tile_size
+			local up_limit = object('c').current_room.world_top - object('c').current_room.tile_size
 			if self.y < up_limit then
 				self.y = up_limit
 			end
@@ -956,13 +979,13 @@ function player:try_vertical_room_switch_from_position()
 		local keep_stairs_lock = self:has_tag(state_tags.group.stairs) or self.hit_stairs_lock
 		if not self:try_switch_room(direction, keep_stairs_lock) then
 			if direction == 'up' then
-				local up_limit = service('c').current_room.world_top - service('c').current_room.tile_size
+				local up_limit = object('c').current_room.world_top - object('c').current_room.tile_size
 				if self.y < up_limit then
 					self.y = up_limit
 				end
 				self.previous_y_collision = true
 			else
-				local down_limit = service('c').current_room.world_height - self.height
+				local down_limit = object('c').current_room.world_height - self.height
 				if self.y > down_limit then
 					self.y = down_limit
 				end
@@ -984,6 +1007,12 @@ function player:try_room_switches_from_position()
 	if self:has_tag(state_tags.group.transition_lock) then
 		return false
 	end
+	if self:has_tag(state_tags.group.stairs) or self.hit_stairs_lock then
+		if self:try_vertical_room_switch_from_position() then
+			return true
+		end
+		return self:try_side_room_switch_from_position()
+	end
 	if self:try_side_room_switch_from_position() then
 		return true
 	end
@@ -1001,7 +1030,7 @@ function player:get_jump_inertia(default_inertia)
 end
 
 function player:pick_entry_stairs(direction)
-	local stairs = service('c').current_room.stairs
+	local stairs = object('c').current_room.stairs
 	local best = nil
 	local best_dx = 0
 
@@ -1030,7 +1059,7 @@ function player:pick_entry_stairs(direction)
 end
 
 function player:search_stairs_at_locked_x(x, y_probe)
-	local stairs = service('c').current_room.stairs
+	local stairs = object('c').current_room.stairs
 	local y_bottom = y_probe + self.height
 	for i = 1, #stairs do
 		local stair = stairs[i]
@@ -1052,7 +1081,7 @@ end
 function player:sync_stairs_after_vertical_room_switch(direction)
 	local probe_y = self.y
 	if direction == 'up' then
-		probe_y = probe_y + service('c').current_room.tile_size
+		probe_y = probe_y + object('c').current_room.tile_size
 	end
 	local stair = self:search_stairs_at_locked_x(self.stairs_x, probe_y)
 	if stair == nil then
@@ -1107,7 +1136,7 @@ function player:try_step_off_stairs()
 		return false
 	end
 
-	local current_room = service('c').current_room
+	local current_room = object('c').current_room
 	local tx = math.modf((self.x - current_room.tile_origin_x) / constants.room.tile_size)
 	local ty = math.modf((self.y - current_room.tile_origin_y) / constants.room.tile_size)
 	local dty = (self.y - current_room.tile_origin_y) - (ty * constants.room.tile_size)
@@ -1208,8 +1237,8 @@ end
 -- bmsx-lint:enable
 
 function player:try_snap_to_elevator_platform(next_x)
-	local current_room_number = service('c').current_room.room_number
-	local elevator_routes = service('e').elevator_routes
+	local current_room_number = object('c').current_room.room_number
+	local elevator_routes = object('e').elevator_routes
 	for i = 1, #elevator_routes do
 		local elevator = elevator_routes[i]
 		if elevator.current_room_number ~= current_room_number then
@@ -1308,7 +1337,7 @@ function player:apply_move(dx, dy, include_elevator_collision)
 	local next_y = old_y + dy
 	local test_x_col
 	local found
-	local room = service('c').current_room
+	local room = object('c').current_room
 
 	if self:collides_at(next_x, next_y, include_elevator_collision) then
 		if next_y ~= old_y then
@@ -1510,11 +1539,7 @@ function player:advance_walk_animation(distance_px)
 end
 
 function player:runcheck_quiet_controls()
-	if not self:has_tag(state_tags.variant.quiet) then -- ???
-		return
-	end
-
-	if self.up_pressed then
+	if action_triggered('up[jp] || a[jp]') then
 		local stair = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -1524,7 +1549,7 @@ function player:runcheck_quiet_controls()
 	if self:try_start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if self.down_pressed then
+	if action_triggered('down[jp]') then
 		local stair = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
@@ -1532,7 +1557,7 @@ function player:runcheck_quiet_controls()
 		end
 	end
 
-	if self.up_pressed then
+	if action_triggered('up[jp] || a[jp]') then
 		local inertia
 		if self.left_held and not self.right_held then
 			inertia = -1
@@ -1566,15 +1591,11 @@ function player:runcheck_quiet_controls()
 end
 
 function player:runcheck_walking_right_controls()
-	if not self:has_tag(state_tags.variant.walking_right) then
-		return
-	end
-
 	if self.right_held and not self.left_held then
 		self.walk_state = 0
 	end
 
-	if self.up_pressed then
+	if action_triggered('up[jp] || a[jp]') then
 		local stair = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -1587,7 +1608,7 @@ function player:runcheck_walking_right_controls()
 	if self:try_start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if self.down_pressed then
+	if action_triggered('down[jp]') then
 		local stair = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
@@ -1611,15 +1632,11 @@ function player:runcheck_walking_right_controls()
 end
 
 function player:runcheck_walking_left_controls()
-	if not self:has_tag(state_tags.variant.walking_left) then
-		return
-	end
-
 	if self.left_held and not self.right_held then
 		self.walk_state = 1
 	end
 
-	if self.up_pressed then
+	if action_triggered('up[jp] || a[jp]') then
 		local stair = self:pick_entry_stairs(-1)
 		if stair ~= nil then
 			self:start_stairs(-1, stair, 'stairs_up')
@@ -1632,7 +1649,7 @@ function player:runcheck_walking_left_controls()
 	if self:try_start_world_or_shrine_interaction_from_down() then
 		return
 	end
-	if self.down_pressed then
+	if action_triggered('down[jp]') then
 		local stair = self:pick_entry_stairs(1)
 		if stair ~= nil then
 			self:start_stairs(1, stair, 'stairs_down')
@@ -1656,10 +1673,6 @@ function player:runcheck_walking_left_controls()
 end
 
 function player:runcheck_quiet_stairs_controls()
-	if not self:has_tag(state_tags.variant.quiet_stairs) then
-		return
-	end
-
 	if self.down_held then
 		local was_at_or_below_bottom = self.y >= self.stairs_bottom_y
 		self.stairs_direction = 1
@@ -1713,15 +1726,15 @@ function player:reset_motion_for_transition_lock()
 	self.walk_move_collided_x = false
 end
 
-function player:tick_entering_world()
+function player:update_entering_world()
 	self:reset_motion_for_transition_lock()
 	self.transition_step = self.transition_step + 1
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(1)
 	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
 		self.events:emit('gamestart')
-		local switch = service('c'):enter_world(self.enter_leave_world_target)
-		service('d'):expect_room_switch_banner('world_banner', switch.world_number, nil)
+		local switch = object('c'):enter_world(self.enter_leave_world_target)
+		object('d'):expect_room_switch_banner('world_banner', switch.world_number, nil)
 		self:apply_spawn_position(switch)
 		self.enter_leave_world_target = nil
 		self.enter_leave_shrine_text_lines = {}
@@ -1735,31 +1748,31 @@ function player:tick_entering_world()
 	end
 end
 
-function player:tick_entering_shrine()
+function player:update_entering_shrine()
 	self:reset_motion_for_transition_lock()
 	self.transition_step = self.transition_step + 1
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(-1)
 	if self.transition_step > constants.world_entrance.enter_world_total_steps then
-		service('d'):open_shrine(self.enter_leave_shrine_text_lines)
+		object('d'):open_shrine(self.enter_leave_shrine_text_lines)
 		self.events:emit('shrine_entered')
 		return
 	end
 end
 
-function player:tick_emerging_world()
+function player:update_emerging_world()
 	self:reset_motion_for_transition_lock()
 	self.transition_step = self.transition_step + 1
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(-1)
 	if self.transition_step > constants.world_entrance.enter_world_total_steps then
 		self.to_enter_cut = 0
-		service('d').events:emit('world_transition_done')
+		object('d').events:emit('world_transition_done')
 		self.events:emit('world_emerge_done')
 	end
 end
 
-function player:tick_leaving_shrine()
+function player:update_leaving_shrine()
 	self:reset_motion_for_transition_lock()
 	self.transition_step = self.transition_step + 1
 	if self.transition_step > constants.flow.room_switch_wait_frames then
@@ -1767,7 +1780,7 @@ function player:tick_leaving_shrine()
 	end
 end
 
-function player:tick_quiet()
+function player:update_quiet()
 	self:zero_motion()
 
 	if not self:is_ground_below_at(self.x, self.y, true) then
@@ -1776,9 +1789,10 @@ function player:tick_quiet()
 		return
 	end
 	self.stairs_landing_sound_pending = false
+	self:runcheck_quiet_controls()
 end
 
-function player:tick_walking_right()
+function player:update_walking_right()
 	self.facing = 1
 	local walk_dx = self:get_walk_dx()
 	self.walk_move_dx = walk_dx
@@ -1794,9 +1808,10 @@ function player:tick_walking_right()
 	local move_result = self:apply_move(walk_dx, 0, true)
 	self.walk_move_collided_x = move_result.collided_x
 	self:advance_walk_animation(walk_dx)
+	self:runcheck_walking_right_controls()
 end
 
-function player:tick_walking_left()
+function player:update_walking_left()
 	self.facing = -1
 	local walk_dx = self:get_walk_dx()
 	self.walk_move_dx = -walk_dx
@@ -1812,9 +1827,10 @@ function player:tick_walking_left()
 	local move_result = self:apply_move(-walk_dx, 0, true)
 	self.walk_move_collided_x = move_result.collided_x
 	self:advance_walk_animation(walk_dx)
+	self:runcheck_walking_left_controls()
 end
 
-function player:tick_slowdoorpass()
+function player:update_slowdoorpass()
 
 	if self.slow_doorpass_substate <= 24 then
 		if self.facing > 0 then
@@ -1839,7 +1855,7 @@ function player:tick_slowdoorpass()
 	self.slow_doorpass_substate = self.slow_doorpass_substate + 1
 end
 
-function player:tick_jump_motion()
+function player:update_jump_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
@@ -1897,7 +1913,7 @@ function player:tick_jump_motion()
 	end
 end
 
-function player:tick_stopped_jump_motion()
+function player:update_stopped_jump_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
@@ -1918,7 +1934,7 @@ function player:tick_stopped_jump_motion()
 	end
 end
 
-function player:tick_controlled_fall_motion()
+function player:update_controlled_fall_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
@@ -1948,7 +1964,7 @@ function player:tick_controlled_fall_motion()
 	self:advance_fall_substate_sequence()
 end
 
-function player:tick_uncontrolled_fall_motion()
+function player:update_uncontrolled_fall_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
@@ -1976,7 +1992,7 @@ function player:tick_uncontrolled_fall_motion()
 	self:advance_fall_substate_sequence()
 end
 
-function player:tick_quiet_sword()
+function player:update_quiet_sword()
 	self:advance_sword_sequence()
 	self:zero_motion()
 
@@ -1988,7 +2004,7 @@ function player:tick_quiet_sword()
 	self.stairs_landing_sound_pending = false
 end
 
-function player:tick_up_stairs()
+function player:update_up_stairs()
 	self:zero_motion()
 	self.x = self.stairs_x
 
@@ -2041,13 +2057,13 @@ function player:tick_up_stairs()
 	end
 end
 
-function player:tick_down_stairs()
+function player:update_down_stairs()
 	self:zero_motion()
 	self.x = self.stairs_x
 
 	local moved
 	local next_y
-	local down_exit_threshold = service('c').current_room.world_height - self.height
+	local down_exit_threshold = object('c').current_room.world_height - self.height
 	local stairs_reaches_room_exit = self.stairs_bottom_y >= down_exit_threshold
 
 	if self.down_held and not self.up_held then
@@ -2096,13 +2112,14 @@ function player:tick_down_stairs()
 	end
 end
 
-function player:tick_quiet_stairs()
+function player:update_quiet_stairs()
 	self:zero_motion()
 	self.x = self.stairs_x
 	self.stairs_direction = 0
+	self:runcheck_quiet_stairs_controls()
 end
 
-function player:tick_sword_stairs()
+function player:update_sword_stairs()
 	self:advance_sword_sequence()
 	self:zero_motion()
 	self.x = self.stairs_x
@@ -2149,7 +2166,7 @@ function player:advance_hit_stairs_fall(dy)
 	return self:is_ground_below_for_hit_on_stairs()
 end
 
-function player:tick_hit_fall()
+function player:update_hit_fall()
 
 	local dx = self.hit_direction * constants.damage.knockback_dx
 	local dy
@@ -2197,7 +2214,7 @@ function player:tick_hit_fall()
 	end
 end
 
-function player:tick_hit_collision()
+function player:update_hit_collision()
 
 	local dy
 	if self.hit_substate >= 4 then
@@ -2249,7 +2266,7 @@ function player:tick_hit_collision()
 	self.hit_substate = self.hit_substate + 1
 end
 
-function player:tick_hit_recovery()
+function player:update_hit_recovery()
 	self:zero_motion()
 	self.hit_recovery_timer = self.hit_recovery_timer + 1
 
@@ -2263,7 +2280,7 @@ function player:tick_hit_recovery()
 	self.events:emit('hit_recovered')
 end
 
-function player:tick_dying()
+function player:update_dying()
 	self:zero_motion()
 	self.death_timer = self.death_timer + 1
 	if self.death_timer < constants.damage.death_frames then
@@ -2272,7 +2289,7 @@ function player:tick_dying()
 	self:respawn()
 end
 
-function player:tick()
+function player:update_common_frame()
 	self:update_collision_state()
 
 	if self:has_tag(state_tags.group.transition_lock) then
@@ -2298,6 +2315,52 @@ function player:tick()
 end
 
 local function define_player_fsm()
+	local input_event_handlers = {
+		['left[jp]'] = function(self)
+			self.left_held = true
+		end,
+		['left[jr]'] = function(self)
+			self.left_held = false
+		end,
+		['right[jp]'] = function(self)
+			self.right_held = true
+		end,
+		['right[jr]'] = function(self)
+			self.right_held = false
+		end,
+		['down[jp]'] = function(self)
+			self.down_held = true
+		end,
+		['down[jr]'] = function(self)
+			self.down_held = false
+		end,
+		['up[jp]'] = function(self)
+			self:on_up_input_pressed()
+		end,
+		['up[jr]'] = function(self)
+			self:on_up_input_released()
+		end,
+		['a[jp]'] = function(self)
+			self:on_up_input_pressed()
+		end,
+		['a[jr]'] = function(self)
+			self:on_up_input_released()
+		end,
+		['?(x[jp])'] = function(self)
+			self.attack_held = true
+		end,
+		['?(x[jr])'] = function(self)
+			self.attack_held = false
+		end,
+	}
+	local function wrap_state_update(update_handler)
+		return function(self, state, event)
+			local next_state = update_handler(self, state, event)
+			self:update_common_frame()
+			return next_state
+		end
+	end
+
 	local states = {
 		quiet = {
 			tags = { state_tags.variant.quiet },
@@ -2310,15 +2373,7 @@ local function define_player_fsm()
 				['stairs_down'] = '/down_stairs',
 				['sword_start'] = '/quiet_sword',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_quiet,
-			run_checks = {
-				{
-					go = function(self)
-						self:runcheck_quiet_controls()
-					end,
-				},
-			},
+			update = player.update_quiet,
 		},
 		walking_right = {
 			tags = { state_tags.variant.walking_right },
@@ -2336,15 +2391,7 @@ local function define_player_fsm()
 			entering_state = function(self)
 				self:reset_walk_animation()
 			end,
-			process_input = player.sample_input,
-			tick = player.tick_walking_right,
-			run_checks = {
-				{
-					go = function(self)
-						self:runcheck_walking_right_controls()
-					end,
-				},
-			},
+			update = player.update_walking_right,
 		},
 		walking_left = {
 			tags = { state_tags.variant.walking_left },
@@ -2362,15 +2409,7 @@ local function define_player_fsm()
 			entering_state = function(self)
 				self:reset_walk_animation()
 			end,
-			process_input = player.sample_input,
-			tick = player.tick_walking_left,
-			run_checks = {
-				{
-					go = function(self)
-						self:runcheck_walking_left_controls()
-					end,
-				},
-			},
+			update = player.update_walking_left,
 		},
 		slowdoorpass = {
 			tags = { state_tags.variant.slowdoorpass, state_tags.group.damage_lock },
@@ -2381,8 +2420,7 @@ local function define_player_fsm()
 				self.slow_doorpass_substate = 0
 				self.walk_frame = 0
 			end,
-			process_input = player.sample_input,
-			tick = player.tick_slowdoorpass,
+			update = player.update_slowdoorpass,
 		},
 		jumping = {
 			tags = { state_tags.variant.jumping },
@@ -2391,8 +2429,7 @@ local function define_player_fsm()
 				['jump_apex_to_controlled_fall'] = '/controlled_fall',
 				['sword_start'] = '/jumping_sword',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_jump_motion,
+			update = player.update_jump_motion,
 		},
 		stopped_jumping = {
 			tags = { state_tags.variant.stopped_jumping },
@@ -2400,8 +2437,7 @@ local function define_player_fsm()
 				['stopped_to_fall_to_controlled_fall'] = '/controlled_fall',
 				['sword_start'] = '/sj_sword',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_stopped_jump_motion,
+			update = player.update_stopped_jump_motion,
 		},
 		controlled_fall = {
 			tags = { state_tags.variant.controlled_fall },
@@ -2409,8 +2445,7 @@ local function define_player_fsm()
 				['landed_to_quiet'] = '/quiet',
 				['sword_start'] = '/c_fall_sword',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_controlled_fall_motion,
+			update = player.update_controlled_fall_motion,
 		},
 		uncontrolled_fall = {
 			tags = { state_tags.variant.uncontrolled_fall },
@@ -2418,8 +2453,7 @@ local function define_player_fsm()
 				['landed_to_quiet'] = '/quiet',
 				['sword_start'] = '/uc_fall_sword',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_uncontrolled_fall_motion,
+			update = player.update_uncontrolled_fall_motion,
 		},
 		quiet_sword = {
 			tags = {
@@ -2431,8 +2465,7 @@ local function define_player_fsm()
 				[player_sword_end_event] = '/quiet',
 				['falling'] = '/uc_fall_sword',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_quiet_sword,
+			update = player.update_quiet_sword,
 		},
 		uc_fall_sword = {
 			tags = {
@@ -2444,8 +2477,7 @@ local function define_player_fsm()
 				[player_sword_end_event] = '/uncontrolled_fall',
 				['landed_to_quiet_sword'] = '/quiet_sword',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_uncontrolled_fall_motion,
+			update = player.update_uncontrolled_fall_motion,
 		},
 		c_fall_sword = {
 			tags = {
@@ -2457,8 +2489,7 @@ local function define_player_fsm()
 				[player_sword_end_event] = '/controlled_fall',
 				['landed_to_quiet_sword'] = '/quiet_sword',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_controlled_fall_motion,
+			update = player.update_controlled_fall_motion,
 		},
 		jumping_sword = {
 			tags = {
@@ -2471,8 +2502,7 @@ local function define_player_fsm()
 				['ceiling_to_sj_sword'] = '/sj_sword',
 				['jump_apex_to_c_fall_sword'] = '/c_fall_sword',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_jump_motion,
+			update = player.update_jump_motion,
 		},
 		sj_sword = {
 			tags = {
@@ -2484,8 +2514,7 @@ local function define_player_fsm()
 				[player_sword_end_event] = '/stopped_jumping',
 				['stopped_to_fall_to_c_fall_sword'] = '/c_fall_sword',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_stopped_jump_motion,
+			update = player.update_stopped_jump_motion,
 		},
 		up_stairs = {
 			tags = { state_tags.variant.up_stairs, state_tags.group.stairs },
@@ -2496,8 +2525,7 @@ local function define_player_fsm()
 				['stairs_quiet_left'] = '/quiet_stairs',
 				['stairs_quiet_right'] = '/quiet_stairs',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_up_stairs,
+			update = player.update_up_stairs,
 		},
 		down_stairs = {
 			tags = { state_tags.variant.down_stairs, state_tags.group.stairs },
@@ -2508,8 +2536,7 @@ local function define_player_fsm()
 				['stairs_quiet_left'] = '/quiet_stairs',
 				['stairs_quiet_right'] = '/quiet_stairs',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_down_stairs,
+			update = player.update_down_stairs,
 		},
 		quiet_stairs = {
 			tags = { state_tags.variant.quiet_stairs, state_tags.group.stairs },
@@ -2522,15 +2549,7 @@ local function define_player_fsm()
 				['stairs_step_off_right'] = '/quiet',
 				['sword_start'] = '/sword_stairs',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_quiet_stairs,
-			run_checks = {
-				{
-					go = function(self)
-						self:runcheck_quiet_stairs_controls()
-					end,
-				},
-			},
+			update = player.update_quiet_stairs,
 		},
 		sword_stairs = {
 			tags = {
@@ -2542,8 +2561,7 @@ local function define_player_fsm()
 			on = {
 				[player_sword_end_event] = '/quiet_stairs',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_sword_stairs,
+			update = player.update_sword_stairs,
 		},
 		entering_world = {
 			tags = {
@@ -2554,8 +2572,7 @@ local function define_player_fsm()
 			on = {
 				['world_entered'] = '/waiting_world_banner',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_entering_world,
+			update = player.update_entering_world,
 		},
 		waiting_world_banner = {
 			tags = {
@@ -2566,8 +2583,7 @@ local function define_player_fsm()
 			on = {
 				['world_banner_done'] = '/quiet',
 			},
-			process_input = player.sample_input,
-			tick = player.reset_motion_for_transition_lock,
+			update = player.reset_motion_for_transition_lock,
 		},
 		waiting_world_emerge = {
 			tags = {
@@ -2578,8 +2594,7 @@ local function define_player_fsm()
 			on = {
 				['world_emerge_start'] = '/emerging_world',
 			},
-			process_input = player.sample_input,
-			tick = player.reset_motion_for_transition_lock,
+			update = player.reset_motion_for_transition_lock,
 		},
 		emerging_world = {
 			tags = {
@@ -2590,8 +2605,7 @@ local function define_player_fsm()
 			on = {
 				['world_emerge_done'] = '/quiet',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_emerging_world,
+			update = player.update_emerging_world,
 		},
 		entering_shrine = {
 			tags = {
@@ -2602,8 +2616,7 @@ local function define_player_fsm()
 			on = {
 				['shrine_entered'] = '/waiting_shrine',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_entering_shrine,
+			update = player.update_entering_shrine,
 		},
 		waiting_shrine = {
 			tags = {
@@ -2614,8 +2627,7 @@ local function define_player_fsm()
 			on = {
 				['leave_shrine_overlay'] = '/leaving_shrine',
 			},
-			process_input = player.sample_input,
-			tick = player.reset_motion_for_transition_lock,
+			update = player.reset_motion_for_transition_lock,
 		},
 			leaving_shrine = {
 				tags = {
@@ -2633,10 +2645,9 @@ local function define_player_fsm()
 				end,
 				leaving_state = function(self)
 					self.to_enter_cut = 0
-					service('d').events:emit('shrine_exit_done')
+					object('d').events:emit('shrine_exit_done')
 				end,
-				process_input = player.sample_input,
-				tick = player.tick_leaving_shrine,
+				update = player.update_leaving_shrine,
 			},
 		freeze = {
 			on = {
@@ -2653,34 +2664,39 @@ local function define_player_fsm()
 				['hit_ground'] = '/hit_recovery',
 				['hit_wall'] = '/hit_collision',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_hit_fall,
+			update = player.update_hit_fall,
 		},
 		hit_collision = {
 			tags = { state_tags.variant.hit_collision, state_tags.group.damage_lock },
 			on = {
 				['hit_ground'] = '/hit_recovery',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_hit_collision,
+			update = player.update_hit_collision,
 		},
 		hit_recovery = {
 			tags = { state_tags.variant.hit_recovery, state_tags.group.damage_lock },
 			on = {
 				['hit_recovered'] = '/quiet',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_hit_recovery,
+			update = player.update_hit_recovery,
 		},
 		dying = {
 			tags = { state_tags.variant.dying, state_tags.group.damage_lock },
 			on = {
 				['respawn'] = '/quiet',
 			},
-			process_input = player.sample_input,
-			tick = player.tick_dying,
+			update = player.update_dying,
 		},
 	}
+	for _, state in pairs(states) do
+		local update_handler = state.update
+		if update_handler == nil then
+			update_handler = function()
+			end
+		end
+		state.update = wrap_state_update(update_handler)
+		state.input_event_handlers = input_event_handlers
+	end
 
 	define_fsm('player', {
 		initial = 'quiet',
@@ -2755,7 +2771,7 @@ local function define_player_fsm()
 				state_tags.variant.uncontrolled_fall,
 			},
 		},
-				on = {
+		on = {
 					[player_abilities.command_ids.activate_sword] = function(self)
 						player_abilities.activate_sword(self)
 					end,
@@ -2808,13 +2824,8 @@ local function register_player_definition()
 			right_held = false,
 			up_held = false,
 			down_held = false,
-			up_pressed = false,
-			up_released = false,
-			down_pressed = false,
-			down_released = false,
+			up_input_sources = 0,
 			attack_held = false,
-			attack_pressed = false,
-			attack_released = false,
 			last_dx = 0,
 			last_dy = 0,
 			previous_x_collision = false,

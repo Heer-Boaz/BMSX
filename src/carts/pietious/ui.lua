@@ -33,8 +33,36 @@ function ui:bind_visual()
 	end
 end
 
+function ui:set_health_target(value)
+	self.hud_health_target = clamp_int(math.modf(value), 0, constants.damage.max_health)
+end
+
+function ui:set_weapon_target(value)
+	self.hud_weapon_target = clamp_int(math.modf(value), 0, constants.hud.weapon_level)
+end
+
+function ui:bind_events()
+	self.events:on({
+		event = 'player.health_changed',
+		emitter = 'pietolon',
+		subscriber = self,
+		handler = function(event)
+			self:set_health_target(event.value)
+		end,
+	})
+	self.events:on({
+		event = 'player.weapon_changed',
+		emitter = 'pietolon',
+		subscriber = self,
+		handler = function(event)
+			self:set_weapon_target(event.value)
+		end,
+	})
+end
+
 function ui:ctor()
 	self:bind_visual()
+	self:bind_events()
 	local player = object('pietolon')
 	local health = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
 	local weapon = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
@@ -47,10 +75,6 @@ function ui:ctor()
 end
 
 function ui:tick()
-	local player = object('pietolon')
-	self.hud_health_target = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
-	self.hud_weapon_target = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
-
 	if self.hud_health_level ~= self.hud_health_target then
 		self.hud_health_anim_ticks = self.hud_health_anim_ticks + 1
 		if self.hud_health_anim_ticks >= constants.hud.health_anim_step_frames then
@@ -91,9 +115,11 @@ end
 
 local function define_ui_fsm()
 	define_fsm('ui', {
-		initial = 'playing',
+		initial = 'active',
 		states = {
-			playing = {},
+			active = {
+				update = ui.tick,
+			},
 		},
 	})
 end

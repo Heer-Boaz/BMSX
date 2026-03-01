@@ -1,51 +1,36 @@
-local boekfoe_module = require('enemies/boekfoe')
-local breakablewall_module = require('enemies/breakablewall')
-local cloud_module = require('enemies/cloud')
-local crossfoe_module = require('enemies/crossfoe')
-local disappearingwall_module = require('enemies/disappearingwall')
-local marspeinenaardappel_module = require('enemies/marspeinenaardappel')
-local mijterfoe_module = require('enemies/mijterfoe')
-local muziekfoe_module = require('enemies/muziekfoe')
-local nootfoe_module = require('enemies/nootfoe')
-local paperfoe_module = require('enemies/paperfoe')
-local stafffoe_module = require('enemies/stafffoe')
-local staffspawn_module = require('enemies/staffspawn')
-local vlokfoe_module = require('enemies/vlokfoe')
-local vlokspawner_module = require('enemies/vlokspawner')
-local zakfoe_module = require('enemies/zakfoe')
+local enemy_modules_without_bt = {
+	require('enemies/breakablewall'),
+	require('enemies/disappearingwall'),
+}
+
+local enemy_modules_with_bt = {
+	{ module = require('enemies/boekfoe'), bt_id = 'enemy_boekfoe' },
+	{ module = require('enemies/cloud'), bt_id = 'enemy_cloud' },
+	{ module = require('enemies/crossfoe'), bt_id = 'enemy_crossfoe' },
+	{ module = require('enemies/marspeinenaardappel'), bt_id = 'enemy_marspeinenaardappel' },
+	{ module = require('enemies/mijterfoe'), bt_id = 'enemy_mijterfoe' },
+	{ module = require('enemies/muziekfoe'), bt_id = 'enemy_muziekfoe' },
+	{ module = require('enemies/nootfoe'), bt_id = 'enemy_nootfoe' },
+	{ module = require('enemies/paperfoe'), bt_id = 'enemy_paperfoe' },
+	{ module = require('enemies/stafffoe'), bt_id = 'enemy_stafffoe' },
+	{ module = require('enemies/staffspawn'), bt_id = 'enemy_staffspawn' },
+	{ module = require('enemies/vlokfoe'), bt_id = 'enemy_vlokfoe' },
+	{ module = require('enemies/vlokspawner'), bt_id = 'enemy_vlokspawner' },
+	{ module = require('enemies/zakfoe'), bt_id = 'enemy_zakfoe' },
+}
 
 local enemy_registry = {}
 
 function enemy_registry.register_all()
-	breakablewall_module.register_enemy_definition()
-	disappearingwall_module.register_enemy_definition()
-	boekfoe_module.register_behaviour_tree('enemy_boekfoe')
-	cloud_module.register_behaviour_tree('enemy_cloud')
-	crossfoe_module.register_behaviour_tree('enemy_crossfoe')
-	marspeinenaardappel_module.register_behaviour_tree('enemy_marspeinenaardappel')
-	mijterfoe_module.register_behaviour_tree('enemy_mijterfoe')
-	muziekfoe_module.register_behaviour_tree('enemy_muziekfoe')
-	nootfoe_module.register_behaviour_tree('enemy_nootfoe')
-	paperfoe_module.register_behaviour_tree('enemy_paperfoe')
-	stafffoe_module.register_behaviour_tree('enemy_stafffoe')
-	staffspawn_module.register_behaviour_tree('enemy_staffspawn')
-	vlokfoe_module.register_behaviour_tree('enemy_vlokfoe')
-	vlokspawner_module.register_behaviour_tree('enemy_vlokspawner')
-	zakfoe_module.register_behaviour_tree('enemy_zakfoe')
+	for i = 1, #enemy_modules_without_bt do
+		enemy_modules_without_bt[i].register_enemy_definition()
+	end
 
-	boekfoe_module.register_enemy_definition()
-	cloud_module.register_enemy_definition()
-	crossfoe_module.register_enemy_definition()
-	marspeinenaardappel_module.register_enemy_definition()
-	mijterfoe_module.register_enemy_definition()
-	muziekfoe_module.register_enemy_definition()
-	nootfoe_module.register_enemy_definition()
-	paperfoe_module.register_enemy_definition()
-	stafffoe_module.register_enemy_definition()
-	staffspawn_module.register_enemy_definition()
-	vlokfoe_module.register_enemy_definition()
-	vlokspawner_module.register_enemy_definition()
-	zakfoe_module.register_enemy_definition()
+	for i = 1, #enemy_modules_with_bt do
+		local entry = enemy_modules_with_bt[i]
+		entry.module.register_behaviour_tree(entry.bt_id)
+		entry.module.register_enemy_definition()
+	end
 end
 
 return enemy_registry

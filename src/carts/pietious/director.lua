@@ -8,9 +8,54 @@ local item_screen_open_timeline_id = 'director.wait.item.open'
 local item_screen_close_timeline_id = 'director.wait.item.close'
 local lithograph_open_timeline_id = 'director.wait.lithograph.open'
 local lithograph_close_timeline_id = 'director.wait.lithograph.close'
+local seal_timeline_id = 'director.seal'
+local daemon_timeline_id = 'director.daemon'
 
 local director = {}
 director.__index = director
+
+local function build_seal_timeline_markers()
+	local markers = {
+		{ frame = 0, event = 'seal.phase', payload = { phase = 'flash' } },
+		{ frame = 32, event = 'seal.phase', payload = { phase = 'room_dissolve' } },
+		{ frame = 64, event = 'seal.phase', payload = { phase = 'seal_dissolve' } },
+		{ frame = 96, event = 'seal.phase', payload = { phase = 'smoke' } },
+		{ frame = 32, event = 'seal_flash_done' },
+	}
+	for frame = 0, 31 do
+		if (frame % 4) == 2 then
+			markers[#markers + 1] = {
+				frame = frame,
+				event = 'seal.flash.on',
+				add_tags = { 'd.seal.flash' },
+			}
+		end
+		if frame > 0 and (frame % 4) == 0 then
+			markers[#markers + 1] = {
+				frame = frame,
+				event = 'seal.flash.off',
+				remove_tags = { 'd.seal.flash' },
+			}
+		end
+	end
+	markers[#markers + 1] = {
+		frame = 32,
+		event = 'seal.flash.off',
+		remove_tags = { 'd.seal.flash' },
+	}
+	return markers
+end
+
+local function build_daemon_timeline_markers()
+	local markers = {}
+	for frame = 0, 124, 8 do
+		markers[#markers + 1] = {
+			frame = frame,
+			event = 'daemon.cloud.spawn',
+		}
+	end
+	return markers
+end
 
 function director:activate_spaces()
 	add_space('main')
@@ -95,33 +140,6 @@ function director:despawn_daemon_clouds()
 	end
 end
 
-function director:tick_seal_dissolution()
-	self.seal_flash_on = self.demon_intro_state < 32 and (self.demon_intro_state % 4) >= 2
-	if self.demon_intro_state == 32 then
-		self.events:emit('seal_flash_done')
-	end
-	self.events:emit('seal.step', {
-		intro_state = self.demon_intro_state,
-	})
-	if self.demon_intro_state < 95 then
-		self.demon_intro_state = self.demon_intro_state + 1
-		return
-	end
-	self.seal_flash_on = false
-	self.events:emit('seal_dissolution_done')
-end
-
-function director:tick_daemon_appearance()
-	if self.demon_intro_state > 96 and self.demon_intro_state < 215 and (self.demon_intro_state % 8) == 0 then
-		self:spawn_daemon_cloud()
-	end
-	if self.demon_intro_state < 222 then
-		self.demon_intro_state = self.demon_intro_state + 1
-		return
-	end
-	self.events:emit('daemon_appearance_done')
-end
-
 function director:finish_banner_transition()
 	self.banner_text_lines = {}
 	if self.banner_post_action == 'castle_emerge' then
@@ -135,7 +153,7 @@ function director:finish_banner_transition()
 end
 
 function director:go_room_resume_music()
-	service('c'):emit_room_enter()
+	object('c'):emit_room_enter()
 	return '/room'
 end
 
@@ -176,8 +194,6 @@ function director:ctor()
 	self.banner_text_lines = {}
 	self.banner_post_action = nil
 	self.lithograph_text_lines = {}
-	self.demon_intro_state = 0
-	self.seal_flash_on = false
 	self:activate_spaces()
 	self:bind_events()
 end
@@ -202,8 +218,6 @@ local function define_director_fsm()
 					self.banner_text_lines = {}
 					object('shrine').lines = {}
 					object('lithograph').lines = {}
-					self.demon_intro_state = 0
-					self.seal_flash_on = false
 					self:despawn_daemon_clouds()
 					set_space('main')
 					object('ui'):set_space('main')
@@ -431,20 +445,78 @@ local function define_director_fsm()
 				},
 			},
 			seal_dissolution = {
+				timelines = {
+					[seal_timeline_id] = {
+						create = function()
+							return timeline.new({
+								id = seal_timeline_id,
+								frames = timeline.range(160),
+								playback_mode = 'once',
+								markers = build_seal_timeline_markers(),
+								windows = {
+									{
+										name = 'dissolve',
+										tag = 'd.seal.dissolve',
+										start = { frame = 32 },
+										['end'] = { frame = 95 },
+									},
+									{
+										name = 'smoke',
+										tag = 'd.seal.smoke',
+										start = { frame = 96 },
+										['end'] = { frame = 159 },
+									},
+								},
+							})
+						end,
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = {
+							rewind = true,
+							snap_to_start = true,
+						},
+					},
+				},
+				tags = { 'd.seal' },
 				entering_state = function(self)
-					self.demon_intro_state = 1
-					self.seal_flash_on = false
 					self.events:emit('seal_breaking')
 					self.events:emit('seal_dissolution')
 				end,
-				tick = director.tick_seal_dissolution,
 				on = {
-					['seal_dissolution_done'] = '/daemon_appearance',
+					['timeline.end.' .. seal_timeline_id] = function(self)
+						self.events:emit('seal_dissolution_done')
+						return '/daemon_appearance'
+					end,
 				},
 			},
 			daemon_appearance = {
+				timelines = {
+					[daemon_timeline_id] = {
+						create = function()
+							return timeline.new({
+								id = daemon_timeline_id,
+								frames = timeline.range(125),
+								playback_mode = 'once',
+								markers = build_daemon_timeline_markers(),
+								windows = {
+									{
+										name = 'clouds',
+										tag = 'd.daemon.clouds',
+										start = { frame = 0 },
+										['end'] = { frame = 124 },
+									},
+								},
+							})
+						end,
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = {
+							rewind = true,
+							snap_to_start = true,
+						},
+					},
+				},
 				entering_state = function(self)
-					self.demon_intro_state = 97
 					if self.daemon_appearance_after_death then
 						self.daemon_appearance_after_death = false
 						self.events:emit('daemon_appearance', { after_death = true })
@@ -452,10 +524,13 @@ local function define_director_fsm()
 						self.events:emit('daemon_appearance')
 					end
 				end,
-				tick = director.tick_daemon_appearance,
 				on = {
-					['daemon_appearance_done'] = function(self)
+					['daemon.cloud.spawn'] = function(self)
+						self:spawn_daemon_cloud()
+					end,
+					['timeline.end.' .. daemon_timeline_id] = function(self)
 						self:despawn_daemon_clouds()
+						self.events:emit('daemon_appearance_done')
 						return '/room'
 					end,
 				},
@@ -568,12 +643,12 @@ local function define_director_fsm()
 			},
 			death_resolve = {
 				entering_state = function(self)
-					local restart_daemon = service('c'):resolve_death()
+					local restart_daemon = object('c'):resolve_death()
 					if restart_daemon then
 						self.daemon_appearance_after_death = true
 						return '/daemon_appearance'
 					end
-					service('c'):emit_room_enter()
+					object('c'):emit_room_enter()
 					return '/room'
 				end,
 			},
@@ -581,12 +656,11 @@ local function define_director_fsm()
 	})
 end
 
-local function register_director_service_definition()
-	define_service({
+local function register_director_definition()
+	define_prefab({
 		def_id = 'director',
 		class = director,
 		fsms = { 'director' },
-		auto_activate = true,
 		defaults = {
 			id = 'd',
 			pending_banner_world_number = 0,
@@ -600,5 +674,5 @@ end
 return {
 	director = director,
 	define_director_fsm = define_director_fsm,
-	register_director_service_definition = register_director_service_definition,
+	register_director_definition = register_director_definition,
 }

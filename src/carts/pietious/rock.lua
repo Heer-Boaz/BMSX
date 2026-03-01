@@ -49,15 +49,15 @@ function rock:take_weapon_hit(weapon_kind)
 		self.health = 0
 		self.events:emit('break')
 	else
-		service('c').events:emit('foedamage')
+		object('c').events:emit('foedamage')
 	end
 	return true
 end
 
 function rock:begin_break()
 	local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
-	local room = service('c').current_room
-	service('r'):on_rock_break_started(self.id, room.room_number, self.item_type, self.x, drop_y)
+	local room = object('c').current_room
+	object('room'):on_rock_break_started(self.id, room.room_number, self.item_type, self.x, drop_y)
 end
 
 function rock:on_overlap(event)
@@ -69,7 +69,7 @@ function rock:on_overlap(event)
 end
 
 function rock:finish_break()
-	service('r'):on_rock_destroyed(self.id)
+	object('room'):on_rock_destroyed(self.id)
 	self:mark_for_disposal()
 end
 
@@ -92,7 +92,7 @@ local function define_rock_fsm()
 						self:begin_break()
 						self.collider.enabled = false
 					end,
-					tick = function(self)
+					update = function(self)
 						self.break_steps = self.break_steps + 1
 						if self.break_steps >= constants.rock.break_steps then
 							self:finish_break()

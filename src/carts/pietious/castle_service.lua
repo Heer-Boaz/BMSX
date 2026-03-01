@@ -12,11 +12,8 @@ local persistent_room_object_ids = {
 }
 
 local world1_stairs_open_row = '#............................-=#'
-local world_entrance_opening_states = {
-	opening_1 = true,
-	opening_2 = true,
-}
 local halo_destination_room_number = 1
+local director_seal_frame_event = 'timeline.frame.director.seal'
 
 local function build_progression_program()
 	local rules = {}
@@ -195,7 +192,7 @@ local function build_progression_program()
 			refresh_current_room_enemies = function(ctx, command, event)
 				if event.room_number == ctx.current_room.room_number then
 					ctx:refresh_current_room_customizations()
-					service('en'):refresh_current_room_enemies()
+					object('en'):refresh_current_room_enemies()
 				end
 			end,
 			apply_room_condition = function(ctx, command, event)
@@ -203,7 +200,7 @@ local function build_progression_program()
 					return
 				end
 				ctx:refresh_current_room_customizations()
-				service('en'):refresh_current_room_enemies()
+				object('en'):refresh_current_room_enemies()
 			end,
 			emit_event = function(ctx, command)
 				local payload = {}
@@ -286,6 +283,16 @@ function castle_service:sync_current_room_seal_instance()
 	seal_instance:gfx(sprite_id)
 end
 
+function castle_service:emit_room_state_changed()
+	local room = self.current_room
+	self.events:emit('room_state.changed', {
+		room_number = room.room_number,
+		world_number = room.world_number,
+		has_active_seal = room.has_active_seal,
+		daemon_fight_active = room.daemon_fight_active,
+	})
+end
+
 function castle_service:refresh_current_room_customizations()
 	local seal = self.current_room.seal
 	local world_boss_defeated = self.world_boss_defeated[self.current_room.world_number]
@@ -299,15 +306,60 @@ function castle_service:refresh_current_room_customizations()
 		end
 	end
 	self:sync_current_room_seal_instance()
+	self:emit_room_state_changed()
 end
 
 function castle_service:bind_events()
+	self.events:on({
+		event = 'seal_dissolution',
+		subscriber = self,
+		handler = function()
+			self:begin_seal_dissolution()
+		end,
+	})
+	self.events:on({
+		event = 'daemon_appearance',
+		subscriber = self,
+		handler = function()
+			self:begin_daemon_appearance()
+		end,
+	})
+	self.events:on({
+		event = 'daemon_appearance_done',
+		subscriber = self,
+		handler = function()
+			self:activate_current_room_daemon_fight()
+		end,
+	})
+
 	self.events:on({
 		event = 'seal_dissolution_done',
 		emitter = 'd',
 		subscriber = self,
 		handler = function()
 			self:finish_seal_dissolution()
+		end,
+	})
+	self.events:on({
+		event = director_seal_frame_event,
+		emitter = 'd',
+		subscriber = self,
+		handler = function(event)
+			self:apply_seal_timeline_frame(event.frame_value)
+		end,
+	})
+	self.events:on({
+		event = 'world_entrance.opening_2',
+		subscriber = self,
+		handler = function(event)
+			self.world_entrance_states[event.target].state = 'opening_2'
+		end,
+	})
+	self.events:on({
+		event = 'world_entrance.opened',
+		subscriber = self,
+		handler = function(event)
+			self.world_entrance_states[event.target].state = 'open'
 		end,
 	})
 end
@@ -318,23 +370,24 @@ function castle_service:begin_seal_dissolution()
 	self.current_room.room_dissolve_step = 0
 	self.current_room.seal_dissolve_step = 0
 	self.current_room.daemon_fight_active = false
-	self:set_seal_dissolve_intro_state(1)
+	self:apply_seal_timeline_frame(0)
+	self:emit_room_state_changed()
 	self:sync_current_room_seal_instance()
 end
 
-function castle_service:set_seal_dissolve_intro_state(intro_state)
+function castle_service:apply_seal_timeline_frame(frame)
 	local room_dissolve_step = 0
 	local seal_dissolve_step = 0
-	if intro_state >= 32 then
-		if intro_state < 64 then
-			local progress = intro_state - 32
+	if frame >= 32 then
+		if frame < 64 then
+			local progress = frame - 32
 			room_dissolve_step = math.modf((progress * constants.flow.seal_room_dissolve_steps) / 32) + 1
 		else
 			room_dissolve_step = constants.flow.seal_room_dissolve_steps
 		end
 	end
-	if intro_state >= 64 then
-		local progress = intro_state - 64
+	if frame >= 64 then
+		local progress = frame - 64
 		if progress > 31 then
 			progress = 31
 		end
@@ -375,12 +428,13 @@ function castle_service:finish_seal_dissolution()
 		self.current_room:patch_rows(row_patches)
 	end
 	self:refresh_current_room_customizations()
-	service('en'):refresh_current_room_enemies()
+	object('en'):refresh_current_room_enemies()
 end
 
 function castle_service:begin_daemon_appearance()
 	self.current_room.seal_sequence_active = true
 	self.current_room.daemon_fight_active = false
+	self:emit_room_state_changed()
 end
 
 function castle_service:should_restart_daemon_appearance_after_death()
@@ -414,6 +468,7 @@ end
 function castle_service:activate_current_room_daemon_fight()
 	self.current_room.seal_sequence_active = false
 	self.current_room.daemon_fight_active = true
+	self:emit_room_state_changed()
 end
 
 function castle_service:ctor()
@@ -428,7 +483,7 @@ function castle_service:despawn_room_runtime_objects()
 			obj:mark_for_disposal()
 		end
 	end
-	service('en'):clear_enemy_state()
+	object('en'):clear_enemy_state()
 end
 
 function castle_service:sync_world_entrance_states_for_room(room_state)
@@ -438,7 +493,6 @@ function castle_service:sync_world_entrance_states_for_room(room_state)
 		if self.world_entrance_states[target] == nil then
 			self.world_entrance_states[target] = {
 				state = 'closed',
-				open_step = 0,
 			}
 		end
 	end
@@ -462,8 +516,9 @@ function castle_service:commit_room_switch(switch, map_id, map_x, map_y)
 	self.current_room.last_room_switch = switch
 	self:sync_world_entrance_states_for_room(self.current_room)
 	self:refresh_current_room_customizations()
-	service('en'):refresh_current_room_enemies(true)
-	service('e'):sync_platform_instances(self.current_room.room_number)
+	object('en'):refresh_current_room_enemies(true)
+	object('e'):sync_platform_instances(self.current_room.room_number)
+	self.current_room:sync_room_runtime_instances()
 	self:emit_room_enter()
 	return switch
 end
@@ -480,7 +535,8 @@ function castle_service:initialize(initial_room_number)
 	self.world_boss_defeated = {}
 	self:sync_world_entrance_states_for_room(rm)
 	self:refresh_current_room_customizations()
-	service('en'):refresh_current_room_enemies(true)
+	rm:sync_room_runtime_instances()
+	object('en'):refresh_current_room_enemies(true)
 	self:emit_room_enter()
 end
 
@@ -489,44 +545,10 @@ function castle_service:begin_open_world_entrance(target)
 		return false
 	end
 	self.world_entrance_states[target].state = 'opening_1'
-	self.world_entrance_states[target].open_step = 0
+	self.events:emit('world_entrance.open.request', {
+		target = target,
+	})
 	return true
-end
-
-function castle_service:sync_world_entrance_visuals()
-	local world_entrances = self.current_room.world_entrances
-	for i = 1, #world_entrances do
-		local we_def = world_entrances[i]
-		local entrance = object(we_def.id)
-		if entrance ~= nil then
-			entrance:set_entrance_state(self.world_entrance_states[we_def.target].state)
-		end
-	end
-end
-
-function castle_service:tick()
-	local visuals_dirty = false
-
-	for _, entrance_state in pairs(self.world_entrance_states) do
-		if world_entrance_opening_states[entrance_state.state] then
-			entrance_state.open_step = entrance_state.open_step + 1
-			if entrance_state.open_step < constants.world_entrance.open_step_frames then
-				goto continue
-			end
-			entrance_state.open_step = 0
-			if entrance_state.state == 'opening_1' then
-				entrance_state.state = 'opening_2'
-			else
-				entrance_state.state = 'open'
-			end
-			visuals_dirty = true
-		end
-		::continue::
-	end
-
-	if visuals_dirty then
-		self:sync_world_entrance_visuals()
-	end
 end
 
 function castle_service:switch_room(direction, player_top, player_bottom)
@@ -558,7 +580,7 @@ end
 function castle_service:enter_world(target)
 	local transition = castle_map.world_transitions[target]
 	local from_room_number = self.current_room.room_number
-	service('en'):despawn_active_enemies()
+	object('en'):despawn_active_enemies()
 
 	self.current_room:load_room(transition.world_room_number)
 	local switch = create_room_switch(from_room_number, self.current_room.room_number, 'down')
@@ -625,37 +647,10 @@ function castle_service:halo_teleport_to_room_1()
 	}
 end
 
-local function define_castle_service_fsm()
-		define_fsm('castle_service', {
-			initial = 'active',
-			on = {
-				['seal_dissolution'] = function(self)
-					self:begin_seal_dissolution()
-				end,
-				['seal.step'] = function(self, _state, event)
-					self:set_seal_dissolve_intro_state(event.intro_state)
-				end,
-				['daemon_appearance'] = function(self)
-					self:begin_daemon_appearance()
-				end,
-				['daemon_appearance_done'] = function(self)
-					self:activate_current_room_daemon_fight()
-				end,
-			},
-			states = {
-				active = {
-				tick = castle_service.tick,
-			},
-		},
-	})
-end
-
 local function register_castle_service_definition()
-	define_service({
+	define_prefab({
 		def_id = 'castle',
 		class = castle_service,
-		fsms = { 'castle_service' },
-		auto_activate = true,
 		defaults = {
 			id = 'c',
 			current_room = nil,
@@ -667,6 +662,5 @@ end
 
 return {
 	castle_service = castle_service,
-	define_castle_service_fsm = define_castle_service_fsm,
 	register_castle_service_definition = register_castle_service_definition,
 }

@@ -107,7 +107,7 @@ function draaideur:try_begin_open(player, walking_left, walking_right)
 	else
 		self.state2 = 0
 	end
-	service('c').events:emit('rotatedoor')
+	object('c').events:emit('rotatedoor')
 	player:start_slow_doorpass()
 end
 
@@ -174,7 +174,7 @@ local function define_draaideur_fsm()
 		initial = 'active',
 		states = {
 			active = {
-				tick = draaideur.tick_active,
+				update = draaideur.tick_active,
 			},
 		},
 	})

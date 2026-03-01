@@ -1,5 +1,6 @@
 local constants = require('constants')
 local castle_map = require('castle_map')
+local room_object_pool = require('room_object_pool')
 
 local room = {}
 local solid_tiles = {
@@ -573,7 +574,7 @@ function room_object:overlaps_active_rock(x, y, w, h)
 		return false
 	end
 
-	local destroyed_rock_ids = service('r').destroyed_rock_ids
+	local destroyed_rock_ids = self.destroyed_rock_ids
 	for i = 1, #rocks do
 		local rock = rocks[i]
 		if not destroyed_rock_ids[rock.id] then
@@ -632,7 +633,7 @@ function room_object:overlaps_active_elevator(player, x, y)
 	-- Floor-from-above only: mirrors C++ parity where elevators act as floors, never walls or ceilings.
 	-- Vertical: player bottom (y + height) must cross elevator.y (= top surface), player top must be above it.
 	-- Horizontal: uses the same bounds as try_snap_to_elevator_platform so snap and collision are always in sync.
-	local elevator_routes = service('e').elevator_routes
+	local elevator_routes = object('e').elevator_routes
 	for i = 1, #elevator_routes do
 		local elevator = elevator_routes[i]
 		if elevator.current_room_number == self.room_number
@@ -680,50 +681,27 @@ function room_object:is_solid_at_world(world_x, world_y)
 	return self:is_solid_at_tile(tx, ty)
 end
 
-function room_object:sync_lithograph_instances()
-	local lithograph_defs = self.lithographs
-	for i = 1, #lithograph_defs do
-		local lithograph_def = lithograph_defs[i]
-		if object(lithograph_def.id) == nil then
-			inst('lithograph', {
-				id = lithograph_def.id,
-				pos = { x = lithograph_def.x, y = lithograph_def.y, z = 10 },
-				text = lithograph_def.text,
-				room_number = self.room_number,
-			})
-		end
-	end
+function room_object:sync_room_rocks()
+	self.rock_pool:sync_array(self.rocks, function(definition)
+		return not self.destroyed_rock_ids[definition.id]
+	end, self)
 end
 
-function room_object:sync_shrine_instances()
-	local shrine_defs = self.shrines
-	for i = 1, #shrine_defs do
-		local shrine_def = shrine_defs[i]
-		if object(shrine_def.id) == nil then
-			inst('room_shrine', {
-				id = shrine_def.id,
-				pos = { x = shrine_def.x, y = shrine_def.y, z = 22 },
-			})
-		end
+function room_object:on_rock_break_started(rock_id, room_number, item_type, x, y)
+	if self.destroyed_rock_ids[rock_id] then
+		return
 	end
+	self.destroyed_rock_ids[rock_id] = true
+	object('i'):add_item_drop_from_rock(rock_id, room_number, item_type, x, y)
 end
 
-function room_object:sync_draaideur_instances()
-	local draaideur_defs = self.draaideuren
-	for i = 1, #draaideur_defs do
-		local draaideur_def = draaideur_defs[i]
-		if object(draaideur_def.id) == nil then
-			inst('draaideur', {
-				id = draaideur_def.id,
-				pos = { x = draaideur_def.x, y = draaideur_def.y, z = 22 },
-				kind = draaideur_def.kind,
-			})
-		end
-	end
+function room_object:on_rock_destroyed(rock_id)
+	self.destroyed_rock_ids[rock_id] = true
+	self.rock_pool:deactivate_id(rock_id)
 end
 
 function room_object:find_near_lithograph(player)
-	self:sync_lithograph_instances()
+	self.lithograph_pool:sync_array(self.lithographs, nil, self)
 	local lithograph_defs = self.lithographs
 	local player_left = player.x
 	local player_top = player.y
@@ -783,16 +761,105 @@ function room_object:bind_events()
 		subscriber = self,
 		handler = function()
 			self:set_space('main')
-			self:sync_world_entrance_instances()
-			self:sync_lithograph_instances()
-			self:sync_shrine_instances()
-			self:sync_draaideur_instances()
+			self:sync_room_runtime_instances()
 		end,
 	})
 end
 
 function room_object:ctor()
-	self.seal_fx_active = false
+	self.rocks_by_id = {}
+	self.active_rock_ids_scratch = {}
+	self.destroyed_rock_ids = {}
+	self.lithograph_instances_by_id = {}
+	self.active_lithograph_ids_scratch = {}
+	self.shrine_instances_by_id = {}
+	self.active_shrine_ids_scratch = {}
+	self.draaideur_instances_by_id = {}
+	self.active_draaideur_ids_scratch = {}
+	self.world_entrance_instances_by_id = {}
+	self.active_world_entrance_ids_scratch = {}
+	self.rock_pool = room_object_pool.new({
+		instances_by_id = self.rocks_by_id,
+		active_ids = self.active_rock_ids_scratch,
+		create_instance = function(definition)
+			return inst('rock', {
+				id = definition.id,
+				pos = { x = definition.x, y = definition.y, z = 140 },
+			})
+		end,
+		sync_instance = function(instance, definition, room_state)
+			instance:configure_from_room_def(definition, room_state)
+		end,
+	})
+	self.lithograph_pool = room_object_pool.new({
+		instances_by_id = self.lithograph_instances_by_id,
+		active_ids = self.active_lithograph_ids_scratch,
+		create_instance = function(definition, room_state)
+			return inst('lithograph', {
+				id = definition.id,
+				pos = { x = definition.x, y = definition.y, z = 10 },
+				text = definition.text,
+				room_number = room_state.room_number,
+			})
+		end,
+		sync_instance = function(instance, definition, room_state)
+			instance.text = definition.text
+			instance.room_number = room_state.room_number
+			instance.x = definition.x
+			instance.y = definition.y
+			instance.z = 10
+		end,
+	})
+	self.shrine_pool = room_object_pool.new({
+		instances_by_id = self.shrine_instances_by_id,
+		active_ids = self.active_shrine_ids_scratch,
+		create_instance = function(definition)
+			return inst('room_shrine', {
+				id = definition.id,
+				pos = { x = definition.x, y = definition.y, z = 22 },
+			})
+		end,
+		sync_instance = function(instance, definition)
+			instance.x = definition.x
+			instance.y = definition.y
+			instance.z = 22
+		end,
+	})
+	self.draaideur_pool = room_object_pool.new({
+		instances_by_id = self.draaideur_instances_by_id,
+		active_ids = self.active_draaideur_ids_scratch,
+		create_instance = function(definition)
+			return inst('draaideur', {
+				id = definition.id,
+				pos = { x = definition.x, y = definition.y, z = 22 },
+				kind = definition.kind,
+			})
+		end,
+		sync_instance = function(instance, definition)
+			instance.kind = definition.kind
+			instance.x = definition.x
+			instance.y = definition.y
+			instance.z = 22
+		end,
+	})
+	self.world_entrance_pool = room_object_pool.new({
+		instances_by_id = self.world_entrance_instances_by_id,
+		active_ids = self.active_world_entrance_ids_scratch,
+		create_instance = function(definition)
+			return inst('world_entrance', {
+				id = definition.id,
+				pos = { x = definition.x, y = definition.y, z = 22 },
+				target = definition.target,
+			})
+		end,
+		sync_instance = function(instance, definition, castle)
+			instance.target = definition.target
+			instance.x = definition.x
+			instance.y = definition.y
+			instance.z = 22
+			instance:set_entrance_state(castle.world_entrance_states[definition.target].state)
+		end,
+	})
 	self:bind_visual()
 	self:bind_events()
 end
@@ -836,28 +903,28 @@ function room_object:render_tiles()
 end
 
 function room_object:sync_world_entrance_instances()
-	local world_entrances = self.world_entrances
-	local castle = service('c')
-	for i = 1, #world_entrances do
-		local we_def = world_entrances[i]
-		local entrance = object(we_def.id)
-		if entrance == nil then
-			entrance = inst('world_entrance', {
-				id = we_def.id,
-				pos = { x = we_def.x, y = we_def.y, z = 22 },
-				target = we_def.target,
-			})
-		end
-		entrance:set_entrance_state(castle.world_entrance_states[we_def.target].state)
-	end
+	local castle = object('c')
+	self.world_entrance_pool:sync_array(self.world_entrances, nil, castle)
+end
+
+function room_object:sync_room_runtime_instances()
+	self:sync_world_entrance_instances()
+	self.lithograph_pool:sync_array(self.lithographs, nil, self)
+	self.shrine_pool:sync_array(self.shrines, nil, self)
+	self.draaideur_pool:sync_array(self.draaideuren, nil, self)
+	self:sync_room_rocks()
 end
 
 function room_object:render_room()
 	self:render_tiles()
-	local director_service = service('d')
-	if self.seal_fx_active and director_service.seal_flash_on then
-		put_rectfillcolor(0, constants.room.tile_origin_y, display_width(), display_height(), 342, { r = 1, g = 1, b = 1, a = 0.5 })
+	if not self:has_tag('r.seal_fx') then
+		return
 	end
+	local director_service = object('d')
+	if not director_service:has_tag('d.seal.flash') then
+		return
+	end
+	put_rectfillcolor(0, constants.room.tile_origin_y, display_width(), display_height(), 342, { r = 1, g = 1, b = 1, a = 0.5 })
 end
 
 local function room_runtime_state_name(room_state)
@@ -872,14 +939,6 @@ local function room_runtime_state_name(room_state)
 		return 'world'
 	end
 	return 'castle'
-end
-
-function room_object:next_room_state_transition(current_room_state)
-	local next_room_state = room_runtime_state_name(self)
-	if next_room_state == current_room_state then
-		return
-	end
-	return '../' .. next_room_state
 end
 
 local function define_room_fsm()
@@ -923,54 +982,19 @@ local function define_room_fsm()
 				is_concurrent = true,
 				initial = 'unknown',
 				on = {
-					['room_state.sync'] = '/room_state/unknown',
+					['room_state.sync'] = function(self)
+						return '/room_state/' .. room_runtime_state_name(self)
+					end,
+					['room_state.changed'] = function(self)
+						return '/room_state/' .. room_runtime_state_name(self)
+					end,
 				},
 				states = {
-					unknown = {
-						run_checks = {
-							{
-								go = function(self)
-									return self:next_room_state_transition('unknown')
-								end,
-							},
-						},
-					},
-					castle = {
-						run_checks = {
-							{
-								go = function(self)
-									return self:next_room_state_transition('castle')
-								end,
-							},
-						},
-					},
-					world = {
-						run_checks = {
-							{
-								go = function(self)
-									return self:next_room_state_transition('world')
-								end,
-							},
-						},
-					},
-					seal = {
-						run_checks = {
-							{
-								go = function(self)
-									return self:next_room_state_transition('seal')
-								end,
-							},
-						},
-					},
-					daemon_fight = {
-						run_checks = {
-							{
-								go = function(self)
-									return self:next_room_state_transition('daemon_fight')
-								end,
-							},
-						},
-					},
+					unknown = {},
+					castle = {},
+					world = {},
+					seal = {},
+					daemon_fight = {},
 				},
 			},
 			fx_state = {
@@ -992,21 +1016,11 @@ local function define_room_fsm()
 					['death'] = '/fx_state/active',
 				},
 				states = {
-					active = {
-						entering_state = function(self)
-							self.seal_fx_active = false
-						end,
-					},
+					active = {},
 					seal_fx = {
-						entering_state = function(self)
-							self.seal_fx_active = true
-						end,
+						tags = { 'r.seal_fx' },
 					},
-					daemon_fx = {
-						entering_state = function(self)
-							self.seal_fx_active = false
-						end,
-					},
+					daemon_fx = {},
 				},
 			},
 		},
