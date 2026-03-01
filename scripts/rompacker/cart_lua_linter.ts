@@ -76,6 +76,7 @@ type LuaLintIssueRule =
 	'define_service_id_pattern' |
 	'fsm_direct_state_handler_shorthand_pattern' |
 	'fsm_event_reemit_handler_pattern' |
+	'fsm_forbidden_legacy_fields_pattern' |
 	'fsm_process_input_polling_transition_pattern' |
 	'fsm_run_checks_input_transition_pattern' |
 	'fsm_lifecycle_wrapper_pattern' |
@@ -287,6 +288,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'define_service_id_pattern',
 	'fsm_direct_state_handler_shorthand_pattern',
 	'fsm_event_reemit_handler_pattern',
+	'fsm_forbidden_legacy_fields_pattern',
 	'fsm_process_input_polling_transition_pattern',
 	'fsm_run_checks_input_transition_pattern',
 	'fsm_lifecycle_wrapper_pattern',
@@ -4920,6 +4922,44 @@ function lintFsmEventReemitHandlerPattern(expression: LuaCallExpression, issues:
 	lintFsmEventReemitHandlerPatternInTable(definition, issues);
 }
 
+const FORBIDDEN_FSM_LEGACY_FIELDS = new Set<string>([
+	'tick',
+	'process_input',
+	'run_checks',
+]);
+
+function lintFsmForbiddenLegacyFieldsInTable(expression: LuaExpression, issues: LuaLintIssue[]): void {
+	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return;
+	}
+	for (const field of expression.fields) {
+		const key = getTableFieldKey(field);
+		if (key && FORBIDDEN_FSM_LEGACY_FIELDS.has(key)) {
+			pushIssue(
+				issues,
+				'fsm_forbidden_legacy_fields_pattern',
+				field.value,
+				`FSM field "${key}" is forbidden. Use state "update" and "input_event_handlers" only.`,
+			);
+		}
+		if (field.kind === LuaTableFieldKind.ExpressionKey) {
+			lintFsmForbiddenLegacyFieldsInTable(field.key, issues);
+		}
+		lintFsmForbiddenLegacyFieldsInTable(field.value, issues);
+	}
+}
+
+function lintFsmForbiddenLegacyFieldsPattern(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (!isGlobalCall(expression, 'define_fsm')) {
+		return;
+	}
+	const definition = expression.arguments[1];
+	if (!definition) {
+		return;
+	}
+	lintFsmForbiddenLegacyFieldsInTable(definition, issues);
+}
+
 function lintFsmProcessInputPollingTransitionPatternInTable(expression: LuaExpression, issues: LuaLintIssue[]): void {
 	if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
 		return;
@@ -6024,6 +6064,7 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 				lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, issues);
 				lintFsmDirectStateHandlerShorthandPattern(expression, issues);
 				lintFsmEventReemitHandlerPattern(expression, issues);
+				lintFsmForbiddenLegacyFieldsPattern(expression, issues);
 				lintFsmProcessInputPollingTransitionPattern(expression, issues);
 				lintFsmRunChecksInputTransitionPattern(expression, issues);
 				lintFsmLifecycleWrapperPattern(expression, issues);
