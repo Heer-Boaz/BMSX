@@ -1281,7 +1281,10 @@ void SoundMaster::finalizeVoiceEnd(AudioType type, const VoiceRecord& record) {
 		record.startOffset,
 		record.meta,
 	};
-	for (const auto& entry : m_endedListenersByType[idx]) {
+	// Dispatch against a snapshot so listener callbacks can safely unsubscribe
+	// themselves (or other listeners) without invalidating this iteration.
+	const auto listeners = m_endedListenersByType[idx];
+	for (const auto& entry : listeners) {
 		entry.second(info);
 	}
 }
