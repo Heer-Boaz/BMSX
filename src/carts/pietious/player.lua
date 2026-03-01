@@ -2342,6 +2342,8 @@ function player:update_common_frame()
 
 	self:try_open_world_entrance_with_key()
 	self:update_hit_stairs_lock()
+	self:try_side_room_switch_from_position()
+	self:try_vertical_room_switch_from_position()
 	if self:has_tag(state_tags.group.hit_overlap_states) then
 		self:resolve_hit_overlap_if_needed()
 	end

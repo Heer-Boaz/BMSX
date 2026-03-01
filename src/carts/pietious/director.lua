@@ -1,5 +1,4 @@
 local constants = require('constants')
-local world_instance = require('world').instance
 local halo_teleport_timeline_id = 'director.halo.transition'
 local banner_world_timeline_id = 'director.banner.world'
 local banner_castle_timeline_id = 'director.banner.castle'
@@ -14,49 +13,6 @@ local daemon_timeline_id = 'director.daemon'
 local director = {}
 director.__index = director
 
-local function build_seal_timeline_markers()
-	local markers = {
-		{ frame = 0, event = 'seal.phase', payload = { phase = 'flash' } },
-		{ frame = 32, event = 'seal.phase', payload = { phase = 'room_dissolve' } },
-		{ frame = 64, event = 'seal.phase', payload = { phase = 'seal_dissolve' } },
-		{ frame = 96, event = 'seal.phase', payload = { phase = 'smoke' } },
-		{ frame = 32, event = 'seal_flash_done' },
-	}
-	for frame = 0, 31 do
-		if (frame % 4) == 2 then
-			markers[#markers + 1] = {
-				frame = frame,
-				event = 'seal.flash.on',
-				add_tags = { 'd.seal.flash' },
-			}
-		end
-		if frame > 0 and (frame % 4) == 0 then
-			markers[#markers + 1] = {
-				frame = frame,
-				event = 'seal.flash.off',
-				remove_tags = { 'd.seal.flash' },
-			}
-		end
-	end
-	markers[#markers + 1] = {
-		frame = 32,
-		event = 'seal.flash.off',
-		remove_tags = { 'd.seal.flash' },
-	}
-	return markers
-end
-
-local function build_daemon_timeline_markers()
-	local markers = {}
-	for frame = 0, 124, 8 do
-		markers[#markers + 1] = {
-			frame = frame,
-			event = 'daemon.cloud.spawn',
-		}
-	end
-	return markers
-end
-
 function director:activate_spaces()
 	add_space('main')
 	add_space('transition')
@@ -66,10 +22,15 @@ function director:activate_spaces()
 	add_space('ui')
 end
 
+function director:set_active_space(space_id)
+	set_space(space_id)
+	self:set_space(space_id)
+	object('ui'):set_space(space_id)
+end
+
 function director:begin_black_wait()
 	self.banner_text_lines = {}
-	set_space('transition')
-	object('ui'):set_space('transition')
+	self:set_active_space('transition')
 	self.events:emit('transition')
 	self.events:emit('transition.mask.play')
 end
@@ -122,20 +83,38 @@ function director:open_shrine(text_lines)
 	self.events:emit('shrine_overlay_requested')
 end
 
+function director:ensure_daemon_cloud_pool()
+	for i = 1, constants.flow.daemon_cloud_max do
+		local cloud_id = 'dc.' .. tostring(i)
+		local cloud = object(cloud_id)
+		if cloud == nil then
+			cloud = inst('daemon_cloud', {
+				id = cloud_id,
+				space_id = 'main',
+				pos = { x = 0, y = 0, z = 23 },
+			})
+		end
+		cloud:stop_and_hide()
+	end
+end
+
 function director:spawn_daemon_cloud()
-	inst('daemon_cloud', {
-		pos = {
-			x = constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size),
-			y = constants.room.tile_origin_y + (math.random(constants.flow.daemon_cloud_spawn_y_min, constants.flow.daemon_cloud_spawn_y_max) * constants.room.tile_size),
-			z = 23,
-		},
-	})
+	local cloud = object('dc.' .. tostring(self.daemon_smoke_next))
+	cloud:play_once_at(
+		constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size),
+		constants.room.tile_origin_y + (math.random(constants.flow.daemon_cloud_spawn_y_min, constants.flow.daemon_cloud_spawn_y_max) * constants.room.tile_size)
+	)
+	self.daemon_smoke_next = self.daemon_smoke_next + 1
+	if self.daemon_smoke_next > constants.flow.daemon_cloud_max then
+		self.daemon_smoke_next = 1
+	end
 end
 
 function director:despawn_daemon_clouds()
-	for cloud in world_instance:objects({ scope = 'all', reverse = true }) do
-		if cloud.daemon_cloud_fx then
-			world_instance:despawn(cloud)
+	for i = 1, constants.flow.daemon_cloud_max do
+		local cloud = object('dc.' .. tostring(i))
+		if cloud ~= nil then
+			cloud:stop_and_hide()
 		end
 	end
 end
@@ -190,11 +169,13 @@ function director:ctor()
 	self.next_room_switch_banner_world_number = 0
 	self.next_room_switch_banner_post_action = nil
 	self.daemon_appearance_after_death = false
+	self.daemon_smoke_next = 1
 	self.pending_shrine_text_lines = {}
 	self.banner_text_lines = {}
 	self.banner_post_action = nil
 	self.lithograph_text_lines = {}
 	self:activate_spaces()
+	self:ensure_daemon_cloud_pool()
 	self:bind_events()
 end
 
@@ -213,18 +194,17 @@ local function define_director_fsm()
 			['death_start'] = '/death',
 		},
 		states = {
-			room = {
-				entering_state = function(self)
-					self.banner_text_lines = {}
-					object('shrine').lines = {}
-					object('lithograph').lines = {}
-					self:despawn_daemon_clouds()
-					set_space('main')
-					object('ui'):set_space('main')
-					self.events:emit('shrine_transition_exit')
-					self.events:emit('room')
-					self.events:emit('room_state.sync')
-				end,
+				room = {
+					entering_state = function(self)
+						self.banner_text_lines = {}
+						object('shrine').lines = {}
+						object('lithograph').lines = {}
+						self:despawn_daemon_clouds()
+						self:set_active_space('main')
+						self.events:emit('shrine_transition_exit')
+						self.events:emit('room')
+						self.events:emit('room_state.sync')
+					end,
 				on = {
 					['room_switched'] = '/room_switch_wait',
 					['lithograph_requested'] = '/lithograph_screen_open',
@@ -260,26 +240,24 @@ local function define_director_fsm()
 					['timeline.end.' .. room_switch_wait_timeline_id] = '/room',
 				},
 			},
-			world_transition = {
-				entering_state = function(self)
-					set_space('main')
-					object('ui'):set_space('main')
-				end,
-				on = {
-					['world_transition_done'] = '/room_switch_wait',
-					['banner_requested'] = '/banner_transition',
+				world_transition = {
+					entering_state = function(self)
+						self:set_active_space('main')
+					end,
+					on = {
+						['world_transition_done'] = '/room_switch_wait',
+						['banner_requested'] = '/banner_transition',
+					},
 				},
-			},
-			shrine_transition_enter = {
-				entering_state = function(self)
-					self.events:emit('shrine_transition_enter')
-					set_space('main')
-					object('ui'):set_space('main')
-				end,
-				on = {
-					['shrine_overlay_requested'] = '/shrine_overlay',
+				shrine_transition_enter = {
+					entering_state = function(self)
+						self.events:emit('shrine_transition_enter')
+						self:set_active_space('main')
+					end,
+					on = {
+						['shrine_overlay_requested'] = '/shrine_overlay',
+					},
 				},
-			},
 			banner_transition = {
 				timelines = {
 					[banner_world_timeline_id] = {
@@ -309,16 +287,15 @@ local function define_director_fsm()
 				entering_state = function(self)
 					local banner_mode = self.pending_banner_mode
 					self.banner_text_lines = self:banner_lines()
-					self.banner_post_action = self.pending_banner_post_action
-					self.pending_banner_mode = nil
-					self.pending_banner_world_number = 0
-					self.pending_banner_post_action = nil
-					set_space('transition')
-					object('ui'):set_space('transition')
-					self.events:emit('transition')
-					self.events:emit('transition.mask.play')
-					local timeline_id = banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
-					self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
+						self.banner_post_action = self.pending_banner_post_action
+						self.pending_banner_mode = nil
+						self.pending_banner_world_number = 0
+						self.pending_banner_post_action = nil
+						self:set_active_space('transition')
+						self.events:emit('transition')
+						self.events:emit('transition.mask.play')
+						local timeline_id = banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
+						self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
 				end,
 				on = {
 					['timeline.end.' .. banner_world_timeline_id] = director.finish_banner_transition,
@@ -326,26 +303,24 @@ local function define_director_fsm()
 				},
 			},
 			shrine_overlay = {
-				entering_state = function(self)
-					object('shrine').lines = self.pending_shrine_text_lines
-					self.banner_text_lines = {}
-					self.pending_shrine_text_lines = {}
-					set_space('shrine')
-					object('ui'):set_space('shrine')
-					self.events:emit('shrine')
-				end,
+					entering_state = function(self)
+						object('shrine').lines = self.pending_shrine_text_lines
+						self.banner_text_lines = {}
+						self.pending_shrine_text_lines = {}
+						self:set_active_space('shrine')
+						self.events:emit('shrine')
+					end,
 				input_event_handlers = {
 					['down[jp]'] = '/shrine_transition_exit',
 				},
 			},
-			shrine_transition_exit = {
-				entering_state = function(self)
-					self.banner_text_lines = {}
-					object('shrine').lines = {}
-					set_space('main')
-					object('ui'):set_space('main')
-					self.events:emit('player.shrine_overlay_exit')
-				end,
+				shrine_transition_exit = {
+					entering_state = function(self)
+						self.banner_text_lines = {}
+						object('shrine').lines = {}
+						self:set_active_space('main')
+						self.events:emit('player.shrine_overlay_exit')
+					end,
 				on = {
 					['shrine_exit_done'] = director.go_room_resume_music,
 				},
@@ -373,12 +348,11 @@ local function define_director_fsm()
 					['timeline.end.' .. item_screen_open_timeline_id] = '/item_screen',
 				},
 			},
-			item_screen = {
-				entering_state = function(self)
-					set_space('item')
-					object('ui'):set_space('item')
-					self.events:emit('item')
-				end,
+				item_screen = {
+					entering_state = function(self)
+						self:set_active_space('item')
+						self.events:emit('item')
+					end,
 				input_event_handlers = {
 					['start[jp]'] = '/item_screen_halo',
 					['lb[jp] || rb[jp]'] = '/item_screen_closing',
@@ -416,7 +390,7 @@ local function define_director_fsm()
 					['timeline.end.' .. item_screen_close_timeline_id] = '/room',
 				},
 			},
-			halo_teleport = {
+				halo_teleport = {
 				timelines = {
 					[halo_teleport_timeline_id] = {
 						create = function()
@@ -434,41 +408,44 @@ local function define_director_fsm()
 						},
 					},
 				},
-				entering_state = function(self)
-					set_space('transition')
-					object('ui'):set_space('transition')
-					self.events:emit('halo')
-					self.events:emit('transition.mask.play')
-				end,
+					entering_state = function(self)
+						self:set_active_space('transition')
+						self.events:emit('halo')
+						self.events:emit('transition.mask.play')
+					end,
 				on = {
 					['timeline.end.' .. halo_teleport_timeline_id] = '/room_switch_wait',
 				},
 			},
-			seal_dissolution = {
-				timelines = {
-					[seal_timeline_id] = {
-						create = function()
-							return timeline.new({
-								id = seal_timeline_id,
-								frames = timeline.range(160),
-								playback_mode = 'once',
-								markers = build_seal_timeline_markers(),
-								windows = {
-									{
-										name = 'dissolve',
-										tag = 'd.seal.dissolve',
-										start = { frame = 32 },
-										['end'] = { frame = 95 },
+				seal_dissolution = {
+					timelines = {
+						[seal_timeline_id] = {
+							create = function()
+								return timeline.new({
+									id = seal_timeline_id,
+									frames = timeline.range(95),
+									playback_mode = 'once',
+									markers = {
+										{ frame = 0, event = 'seal.phase', payload = { phase = 'flash' } },
+										{ frame = 31, event = 'seal.phase', payload = { phase = 'room_dissolve' } },
+										{ frame = 63, event = 'seal.phase', payload = { phase = 'seal_dissolve' } },
 									},
-									{
-										name = 'smoke',
-										tag = 'd.seal.smoke',
-										start = { frame = 96 },
-										['end'] = { frame = 159 },
+									windows = {
+										{
+											name = 'dissolve',
+											tag = 'd.seal.dissolve',
+											start = { frame = 31 },
+											['end'] = { frame = 94 },
+										},
+										{
+											name = 'smoke',
+											tag = 'd.seal.smoke',
+											start = { frame = 63 },
+											['end'] = { frame = 94 },
+										},
 									},
-								},
-							})
-						end,
+								})
+							end,
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -476,38 +453,61 @@ local function define_director_fsm()
 							snap_to_start = true,
 						},
 					},
-				},
-				tags = { 'd.seal' },
-				entering_state = function(self)
-					self.events:emit('seal_breaking')
-					self.events:emit('seal_dissolution')
-				end,
-				on = {
-					['timeline.end.' .. seal_timeline_id] = function(self)
-						self.events:emit('seal_dissolution_done')
-						return '/daemon_appearance'
+					},
+					tags = { 'd.seal' },
+					entering_state = function(self)
+						self:set_active_space('main')
+						self:remove_tag('d.seal.flash')
+						self.events:emit('seal_breaking')
+						self.events:emit('seal_dissolution')
 					end,
-				},
-			},
-			daemon_appearance = {
-				timelines = {
-					[daemon_timeline_id] = {
-						create = function()
-							return timeline.new({
-								id = daemon_timeline_id,
-								frames = timeline.range(125),
-								playback_mode = 'once',
-								markers = build_daemon_timeline_markers(),
-								windows = {
-									{
-										name = 'clouds',
-										tag = 'd.daemon.clouds',
-										start = { frame = 0 },
-										['end'] = { frame = 124 },
-									},
-								},
-							})
+					on = {
+						['timeline.frame.' .. seal_timeline_id] = function(self, _state, event)
+							local intro_state = event.frame_value + 1
+							if intro_state < 32 and (intro_state % 4) >= 2 then
+								self:add_tag('d.seal.flash')
+							else
+								self:remove_tag('d.seal.flash')
+							end
+							if intro_state == 32 then
+								self.events:emit('seal_flash_done')
+							end
 						end,
+						['timeline.end.' .. seal_timeline_id] = function(self)
+							self:remove_tag('d.seal.flash')
+							self.events:emit('seal_dissolution_done')
+							return '/daemon_appearance'
+						end,
+					},
+				},
+				daemon_appearance = {
+				timelines = {
+						[daemon_timeline_id] = {
+							create = function()
+								local markers = {}
+								for frame = 0, 63 do
+									if (frame % 8) < 2 then
+										markers[#markers + 1] = {
+											frame = frame,
+											event = 'daemon.cloud.spawn',
+										}
+									end
+								end
+								return timeline.new({
+									id = daemon_timeline_id,
+									frames = timeline.range(64),
+									playback_mode = 'once',
+									markers = markers,
+									windows = {
+										{
+											name = 'clouds',
+											tag = 'd.daemon.clouds',
+											start = { frame = 0 },
+											['end'] = { frame = 63 },
+										},
+									},
+								})
+							end,
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -515,13 +515,16 @@ local function define_director_fsm()
 							snap_to_start = true,
 						},
 					},
-				},
-				entering_state = function(self)
-					if self.daemon_appearance_after_death then
-						self.daemon_appearance_after_death = false
-						self.events:emit('daemon_appearance', { after_death = true })
-					else
-						self.events:emit('daemon_appearance')
+					},
+					entering_state = function(self)
+						self:set_active_space('main')
+						self:ensure_daemon_cloud_pool()
+						self.daemon_smoke_next = 1
+						if self.daemon_appearance_after_death then
+							self.daemon_appearance_after_death = false
+							self.events:emit('daemon_appearance', { after_death = true })
+						else
+							self.events:emit('daemon_appearance')
 					end
 				end,
 				on = {
@@ -535,7 +538,7 @@ local function define_director_fsm()
 					end,
 				},
 			},
-			lithograph_screen_open = {
+				lithograph_screen_open = {
 				timelines = {
 					[lithograph_open_timeline_id] = {
 						create = function()
@@ -549,12 +552,11 @@ local function define_director_fsm()
 						stop_on_exit = true,
 					},
 				},
-				entering_state = function(self)
-					object('lithograph').lines = self.lithograph_text_lines
-					set_space('lithograph')
-					object('ui'):set_space('lithograph')
-					self.events:emit('lithograph')
-				end,
+					entering_state = function(self)
+						object('lithograph').lines = self.lithograph_text_lines
+						self:set_active_space('lithograph')
+						self.events:emit('lithograph')
+					end,
 				on = {
 					['timeline.end.' .. lithograph_open_timeline_id] = '/lithograph_screen',
 				},
@@ -586,57 +588,52 @@ local function define_director_fsm()
 					['timeline.end.' .. lithograph_close_timeline_id] = director.go_room_resume_music,
 				},
 			},
-			title_screen = {
-				entering_state = function(self)
-					set_space('transition')
-					object('ui'):set_space('transition')
-					self.events:emit('title')
-					self.events:emit('transition.mask.play')
-				end,
+				title_screen = {
+					entering_state = function(self)
+						self:set_active_space('transition')
+						self.events:emit('title')
+						self.events:emit('transition.mask.play')
+					end,
 				on = {
 					['title_screen_done'] = director.go_room_resume_music,
 				},
 			},
-			story = {
-				entering_state = function(self)
-					set_space('transition')
-					object('ui'):set_space('transition')
-					self.events:emit('story')
-					self.events:emit('transition.mask.play')
-				end,
+				story = {
+					entering_state = function(self)
+						self:set_active_space('transition')
+						self.events:emit('story')
+						self.events:emit('transition.mask.play')
+					end,
 				on = {
 					['story_done'] = director.go_room_resume_music,
 				},
 			},
-			ending = {
-				entering_state = function(self)
-					set_space('transition')
-					object('ui'):set_space('transition')
-					self.events:emit('ending')
-					self.events:emit('transition.mask.play')
-				end,
+				ending = {
+					entering_state = function(self)
+						self:set_active_space('transition')
+						self.events:emit('ending')
+						self.events:emit('transition.mask.play')
+					end,
 				on = {
 					['ending_done'] = director.go_room_resume_music,
 				},
 			},
-			victory_dance = {
-				entering_state = function(self)
-					set_space('transition')
-					object('ui'):set_space('transition')
-					self.events:emit('victory_dance')
-					self.events:emit('transition.mask.play')
-				end,
+				victory_dance = {
+					entering_state = function(self)
+						self:set_active_space('transition')
+						self.events:emit('victory_dance')
+						self.events:emit('transition.mask.play')
+					end,
 				on = {
 					['victory_dance_done'] = director.go_room_resume_music,
 				},
 			},
-			death = {
-				entering_state = function(self)
-					set_space('transition')
-					object('ui'):set_space('transition')
-					self.events:emit('death')
-					self.events:emit('transition.mask.play')
-				end,
+				death = {
+					entering_state = function(self)
+						self:set_active_space('transition')
+						self.events:emit('death')
+						self.events:emit('transition.mask.play')
+					end,
 				on = {
 					['death_done'] = '/death_resolve',
 				},

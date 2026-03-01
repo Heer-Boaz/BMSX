@@ -7,8 +7,14 @@ local world_instance = require('world').instance
 local castle = {}
 
 local persistent_room_object_ids = {
+	c = true,
+	d = true,
 	pietolon = true,
 	room = true,
+	transition = true,
+	shrine = true,
+	lithograph = true,
+	item_screen = true,
 	ui = true,
 }
 
@@ -411,7 +417,7 @@ function castle:bind_events()
 		emitter = 'd',
 		subscriber = self,
 		handler = function(event)
-			self:apply_seal_timeline_frame(event.frame_value)
+			self:apply_seal_timeline_frame(event.frame_value + 1)
 		end,
 	})
 	self.events:on({
@@ -437,7 +443,7 @@ function castle:begin_seal_dissolution()
 	self.current_room.room_dissolve_step = 0
 	self.current_room.seal_dissolve_step = 0
 	set_tag_flag(self, castle_tags.daemon_fight, false)
-	self:apply_seal_timeline_frame(0)
+	self:apply_seal_timeline_frame(1)
 	self:emit_room_state_changed()
 	self:sync_current_room_seal_instance()
 end

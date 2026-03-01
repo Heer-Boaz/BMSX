@@ -6,49 +6,56 @@ daemon_cloud.__index = daemon_cloud
 local anim_timeline_id = 'daemon_cloud.anim'
 
 function daemon_cloud:ctor()
+	self.visible = false
+end
+
+function daemon_cloud:play_once_at(x, y)
+	self.x = x
+	self.y = y
+	self.z = 23
+	self.visible = true
+	self:gfx('daemon_smoke_small')
+	self:play_timeline(anim_timeline_id, { rewind = true, snap_to_start = true })
+end
+
+function daemon_cloud:stop_and_hide()
+	self:stop_timeline(anim_timeline_id)
+	self.visible = false
 end
 
 local function define_daemon_cloud_fsm()
 	define_fsm('daemon_cloud', {
-		initial = 'playing',
+		initial = 'active',
 		states = {
-			playing = {
+			active = {
 				timelines = {
 					[anim_timeline_id] = {
 						create = function()
 							return timeline.new({
 								id = anim_timeline_id,
 								frames = timeline.build_frame_sequence({
-								{ value = 'daemon_smoke_small', hold = 16 },
-								{ value = 'daemon_smoke_large', hold = 16 },
-								{ value = 'daemon_smoke_small', hold = 16 },
-								{ value = 'daemon_smoke_large', hold = 16 },
+									{ value = 'daemon_smoke_small', hold = 8 },
+									{ value = 'daemon_smoke_large', hold = 8 },
+									{ value = 'daemon_smoke_small', hold = 8 },
+									{ value = 'daemon_smoke_large', hold = 8 },
 								}),
 								playback_mode = 'once',
 							})
 						end,
-						autoplay = true,
+						autoplay = false,
 						stop_on_exit = true,
-						play_options = {
-							rewind = true,
-							snap_to_start = true,
-						},
 					},
 				},
-				entering_state = function(self)
-					self.visible = true
-					self:gfx('daemon_smoke_small')
-				end,
-					on = {
-						['timeline.frame.' .. anim_timeline_id] = function(self)
-							self:gfx(self:get_timeline(anim_timeline_id):value())
-						end,
-						['timeline.end.' .. anim_timeline_id] = function(self)
-							self:mark_for_disposal()
-						end,
-					},
+				on = {
+					['timeline.frame.' .. anim_timeline_id] = function(self)
+						self:gfx(self:get_timeline(anim_timeline_id):value())
+					end,
+					['timeline.end.' .. anim_timeline_id] = function(self)
+						self.visible = false
+					end,
 				},
 			},
+		},
 	})
 end
 
