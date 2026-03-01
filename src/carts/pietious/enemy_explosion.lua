@@ -31,7 +31,7 @@ end
 
 function enemy_explosion:bind_events()
 	self.events:on({
-		event_name = explosion_timeline_frame_event,
+		event = explosion_timeline_frame_event,
 		subscriber = self,
 		handler = function(event)
 			self:sync_explosion_sprite(event.frame_value)
@@ -39,7 +39,7 @@ function enemy_explosion:bind_events()
 	})
 
 	self.events:on({
-		event_name = explosion_timeline_end_event,
+		event = explosion_timeline_end_event,
 		subscriber = self,
 		handler = function()
 			self:spawn_loot()

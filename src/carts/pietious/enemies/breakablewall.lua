@@ -35,7 +35,7 @@ function breakablewall:ctor()
 		end
 	end
 	self.events:on({
-		event_name = 'overlap.begin',
+		event = 'overlap.begin',
 		subscriber = self,
 		handler = function(event)
 			local contact_kind = combat_overlap.classify_player_contact(event)

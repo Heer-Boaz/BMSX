@@ -18,15 +18,6 @@ local closed_offset_x = 0
 local draaideur = {}
 draaideur.__index = draaideur
 
-function draaideur:configure_from_room_def(def, _room)
-	self.x = def.x
-	self.y = def.y
-	self.kind = def.kind
-	self.state = 0
-	self.player_was_right = false
-	self:sync_sprite()
-end
-
 function draaideur:touches_player(player, walking_left, walking_right)
 	if walking_left then
 		if rect_overlaps(

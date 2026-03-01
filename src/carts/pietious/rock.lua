@@ -20,7 +20,7 @@ end
 
 function rock:bind_events()
 	self.events:on({
-		event_name = 'overlap.begin',
+		event = 'overlap.begin',
 		subscriber = self,
 		handler = function(event)
 			self:on_overlap(event)
@@ -35,14 +35,6 @@ function rock:ctor()
 	self:bind_events()
 end
 
-function rock:configure_from_room_def(def, room)
-	self.item_type = def.item_type
-	self.max_health = constants.rock.max_health
-	self.health = self.max_health
-	self.break_steps = 0
-	self.events:emit('reset')
-end
-
 function rock:take_weapon_hit(weapon_kind)
 	self.health = self.health - 1
 	if self.health <= 0 then
@@ -55,9 +47,19 @@ function rock:take_weapon_hit(weapon_kind)
 end
 
 function rock:begin_break()
+	local room = object('room')
+	room.destroyed_rock_ids[self.id] = true
+	if self.item_type == nil then
+		return
+	end
 	local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
-	local room = object('c').current_room
-	object('room'):on_rock_break_started(self.id, room.room_number, self.item_type, self.x, drop_y)
+	inst('world_item', {
+		id = 'drop.' .. self.id,
+		space_id = 'main',
+		pos = { x = self.x, y = drop_y, z = 130 },
+		item_id = 'drop.' .. self.id,
+		item_type = self.item_type,
+	})
 end
 
 function rock:on_overlap(event)
@@ -66,11 +68,6 @@ function rock:on_overlap(event)
 		return
 	end
 	self:take_weapon_hit(contact_kind)
-end
-
-function rock:finish_break()
-	object('room'):on_rock_destroyed(self.id)
-	self:mark_for_disposal()
 end
 
 local function define_rock_fsm()
@@ -95,7 +92,7 @@ local function define_rock_fsm()
 					update = function(self)
 						self.break_steps = self.break_steps + 1
 						if self.break_steps >= constants.rock.break_steps then
-							self:finish_break()
+							self:mark_for_disposal()
 						end
 					end,
 				},

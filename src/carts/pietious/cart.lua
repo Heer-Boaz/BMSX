@@ -14,13 +14,11 @@ local item_screen_module = require('item_screen')
 local ui_module = require('ui')
 local loot_drop_module = require('loot_drop')
 local world_item_module = require('world_item')
-local item_runtime_module = require('item_runtime')
 local rock_module = require('rock')
 local pepernoot_projectile_module = require('pepernoot_projectile')
 local enemy_explosion_module = require('enemy_explosion')
-local enemy_runtime_module = require('enemy_runtime')
+local elevator_module = require('elevator')
 local castle_module = require('castle')
-local elevator_runtime_module = require('elevator_runtime')
 local world_entrance_module = require('world_entrance')
 local daemon_cloud_module = require('daemon_cloud')
 local director_module = require('director')
@@ -95,10 +93,11 @@ function init()
 	rock_module.define_rock_fsm()
 	pepernoot_projectile_module.define_pepernoot_projectile_fsm()
 	enemy_explosion_module.define_enemy_explosion_fsm()
-	elevator_runtime_module.define_elevator_runtime_fsm()
 	daemon_cloud_module.define_daemon_cloud_fsm()
 	director_module.define_director_fsm()
+	elevator_module.define_elevator_fsm()
 	player_module.register_player_definition()
+	elevator_module.register_elevator_definition()
 	room_module.register_room_definition()
 	draaideur_module.register_draaideur_definition()
 	transition_module.register_transition_definition()
@@ -111,13 +110,10 @@ function init()
 	ui_module.register_ui_definition()
 	loot_drop_module.register_loot_drop_definition()
 	world_item_module.register_world_item_definition()
-	item_runtime_module.register_item_runtime_definition()
 	rock_module.register_rock_definition()
 	pepernoot_projectile_module.register_pepernoot_projectile_definition()
 	enemy_explosion_module.register_enemy_explosion_definition()
-	enemy_runtime_module.register_enemy_runtime_definition()
 	castle_module.register_castle_definition()
-	elevator_runtime_module.register_elevator_runtime_definition()
 	world_entrance_module.register_world_entrance_definition()
 	daemon_cloud_module.register_daemon_cloud_definition()
 	director_module.register_director_definition()
@@ -136,10 +132,7 @@ function new_game()
 	add_space('ui')
 	set_space('main')
 
-	inst('enemy', {
-		id = 'en',
-	})
-	local castle = inst('castle', {
+	inst('castle', {
 		id = 'c',
 	})
 
@@ -148,13 +141,12 @@ function new_game()
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	castle:initialize(castle_map.start_room_number)
-
 	inst('player', {
 		id = 'pietolon',
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
 	})
 	grant_starting_loadout()
+	object('c'):initialize(castle_map.start_room_number)
 
 	inst('transition', {
 		id = 'transition',
@@ -187,14 +179,6 @@ function new_game()
 
 	inst('director', {
 		id = 'd',
-	})
-
-	inst('item', {
-		id = 'i',
-	})
-
-	inst('elevator', {
-		id = 'e',
 	})
 
 end

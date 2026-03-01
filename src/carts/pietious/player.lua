@@ -1,4 +1,5 @@
 local constants = require('constants')
+
 local components = require('components')
 local player_abilities = require('player_abilities')
 
@@ -108,6 +109,23 @@ function player:bind_events()
 		subscriber = self,
 		handler = function()
 			self:set_space('main')
+		end,
+	})
+	self.events:on({
+		event = 'elevator.platform_push',
+		subscriber = self,
+		handler = function(event)
+			if event.player_id ~= self.id then
+				return
+			end
+
+			local dx = event.dx
+			local dy = event.dy
+			self.on_vertical_elevator = dy ~= 0
+			self.x = self.x + dx
+			self.y = self.y + dy
+			self.last_dx = self.last_dx + dx
+			self.last_dy = self.last_dy + dy
 		end,
 	})
 end
@@ -1240,25 +1258,40 @@ end
 -- bmsx-lint:enable
 
 function player:try_snap_to_elevator_platform(next_x)
-	local current_room_number = object('c').current_room.room_number
-	local elevator_routes = object('e').elevator_routes
-	for i = 1, #elevator_routes do
-		local elevator = elevator_routes[i]
-		if elevator.current_room_number ~= current_room_number then
+	local count = object('c').elevator_count
+	for i = 1, count do
+		local platform = object('e.p' .. tostring(i))
+		if not platform.visible then
 			goto continue
 		end
-		if self.y >= (elevator.y - constants.room.tile_size2)
-		and self.y < elevator.y
-		and self.x > (elevator.x - (constants.room.tile_size2 - (constants.room.tile_unit * 4)))
-		and self.x < ((elevator.x + constants.room.tile_size4) - (constants.room.tile_unit * 3))
+		if self.y >= (platform.y - constants.room.tile_size2)
+		and self.y < platform.y
+		and self.x > (platform.x - (constants.room.tile_size2 - (constants.room.tile_unit * 4)))
+		and self.x < ((platform.x + constants.room.tile_size4) - (constants.room.tile_unit * 3))
 		then
-			self.y = elevator.y - self.height
+			self.y = platform.y - self.height
 			self.x = next_x
 			return true
 		end
 		::continue::
 	end
 
+	return false
+end
+
+function player:overlaps_visible_elevator(x, y)
+	local count = object('c').elevator_count
+	for i = 1, count do
+		local platform = object('e.p' .. tostring(i))
+		if platform.visible
+		and y < platform.y
+		and y + self.height > platform.y
+		and x > (platform.x - (constants.room.tile_size2 - constants.room.tile_unit * 4))
+		and x < (platform.x + constants.room.tile_size4 - constants.room.tile_unit * 3)
+		then
+			return true
+		end
+	end
 	return false
 end
 
@@ -1282,7 +1315,7 @@ function player:collides_at(x, y, include_elevator)
 		return true
 	end
 
-	if include_elevator and rm:overlaps_active_elevator(self, x, y) then
+	if include_elevator and self:overlaps_visible_elevator(x, y) then
 		return true
 	end
 
@@ -2293,6 +2326,7 @@ function player:update_dying()
 end
 
 function player:update_common_frame()
+	self.on_vertical_elevator = false
 	self:update_collision_state()
 
 	if self:has_tag(state_tags.group.transition_lock) then

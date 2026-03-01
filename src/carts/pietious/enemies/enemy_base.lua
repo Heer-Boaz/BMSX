@@ -21,7 +21,7 @@ end
 
 function enemy_base.bind_overlap_events(self)
 	self.events:on({
-		event_name = 'overlap.begin',
+		event = 'overlap.begin',
 		subscriber = self,
 		handler = function(event)
 			self:on_overlap(event)
@@ -29,7 +29,7 @@ function enemy_base.bind_overlap_events(self)
 	})
 
 	self.events:on({
-		event_name = 'weapon_hit',
+		event = 'weapon_hit',
 		subscriber = self,
 		handler = function(event)
 			self:take_weapon_hit(event.weapon_kind)
@@ -46,6 +46,21 @@ function enemy_base.bind_overlap_events(self)
 			end,
 		})
 	end
+
+	self.events:on({
+		event = 'shrine_transition_enter',
+		subscriber = self,
+		handler = function()
+			self:set_space('transition')
+		end,
+	})
+	self.events:on({
+		event = 'shrine_transition_exit',
+		subscriber = self,
+		handler = function()
+			self:set_space('main')
+		end,
+	})
 end
 
 function enemy_base.projectile_is_out_of_bounds(self)
@@ -89,12 +104,19 @@ function enemy_base.take_weapon_hit(self, weapon_kind)
 		self.health = 0
 		self.dangerous = false
 		self:spawn_death_effect()
-		object('en').events:emit('enemy.defeated', {
+		local room_number = object('c').current_room.room_number
+		object('c').events:emit('enemy.defeated', {
 			enemy_id = self.id,
-			room_number = object('c').current_room.room_number,
+			room_number = room_number,
 			kind = self.enemy_kind,
 			trigger = self.trigger,
 		})
+		if self.trigger ~= nil then
+			object('c').events:emit('room.condition_set', {
+				room_number = room_number,
+				condition = self.trigger,
+			})
+		end
 		self:mark_for_disposal()
 	else
 		object('c').events:emit('foedamage')

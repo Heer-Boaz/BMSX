@@ -1,6 +1,5 @@
 local constants = require('constants')
 local castle_map = require('castle_map')
-local room_object_pool = require('room_object_pool')
 
 local room = {}
 local solid_tiles = {
@@ -29,12 +28,6 @@ local world_dissolve_prefix_by_tile_id = {
 	backworld_dr = 'backworld_dr_dissolve_',
 	backworld_dr_dark = 'backworld_dr_dissolve_',
 }
-
-local function append_definition_ids(target, defs)
-	for i = 1, #defs do
-		target[defs[i].id] = true
-	end
-end
 
 local background_themes = {
 	castleblue = {
@@ -457,19 +450,6 @@ local function apply_room_template(room_state, template)
 	room_state.draaideuren = template.draaideuren
 	room_state.links = template.links
 	room_state.edge_gates = template.edge_gates
-
-	local runtime_object_ids = room_state.runtime_object_ids or {}
-	clear_map(runtime_object_ids)
-	room_state.runtime_object_ids = runtime_object_ids
-	append_definition_ids(runtime_object_ids, room_state.enemies)
-	append_definition_ids(runtime_object_ids, room_state.rocks)
-	append_definition_ids(runtime_object_ids, room_state.items)
-	append_definition_ids(runtime_object_ids, room_state.lithographs)
-	append_definition_ids(runtime_object_ids, room_state.shrines)
-	if room_state.seal ~= nil then
-		runtime_object_ids[room_state.seal.id] = true
-	end
-	append_definition_ids(runtime_object_ids, room_state.draaideuren)
 end
 
 local room_object = {}
@@ -623,25 +603,6 @@ function room_object:overlaps_active_draaideur(x, y, w, h)
 	return false
 end
 
-function room_object:overlaps_active_elevator(player, x, y)
-	-- Floor-from-above only: mirrors C++ parity where elevators act as floors, never walls or ceilings.
-	-- Vertical: player bottom (y + height) must cross elevator.y (= top surface), player top must be above it.
-	-- Horizontal: uses the same bounds as try_snap_to_elevator_platform so snap and collision are always in sync.
-	local elevator_routes = object('e').elevator_routes
-	for i = 1, #elevator_routes do
-		local elevator = elevator_routes[i]
-		if elevator.current_room_number == self.room_number
-		and y < elevator.y
-		and y + player.height > elevator.y
-		and x > (elevator.x - (constants.room.tile_size2 - constants.room.tile_unit * 4))
-		and x < (elevator.x + constants.room.tile_size4 - constants.room.tile_unit * 3)
-		then
-			return true
-		end
-	end
-	return false
-end
-
 function room_object:is_active_draaideur_at_tile(tx, ty)
 	if ty < 1 or ty > self.tile_rows then
 		return false
@@ -675,27 +636,7 @@ function room_object:is_solid_at_world(world_x, world_y)
 	return self:is_solid_at_tile(tx, ty)
 end
 
-function room_object:sync_room_rocks()
-	self.rock_pool:sync_array(self.rocks, function(definition)
-		return not self.destroyed_rock_ids[definition.id]
-	end, self)
-end
-
-function room_object:on_rock_break_started(rock_id, room_number, item_type, x, y)
-	if self.destroyed_rock_ids[rock_id] then
-		return
-	end
-	self.destroyed_rock_ids[rock_id] = true
-	object('i'):add_item_drop_from_rock(rock_id, room_number, item_type, x, y)
-end
-
-function room_object:on_rock_destroyed(rock_id)
-	self.destroyed_rock_ids[rock_id] = true
-	self.rock_pool:deactivate_id(rock_id)
-end
-
 function room_object:find_near_lithograph(player)
-	self.lithograph_pool:sync_array(self.lithographs, nil, self)
 	local lithograph_defs = self.lithographs
 	local player_left = player.x
 	local player_top = player.y
@@ -755,105 +696,12 @@ function room_object:bind_events()
 		subscriber = self,
 		handler = function()
 			self:set_space('main')
-			self:sync_room_runtime_instances()
 		end,
 	})
 end
 
 function room_object:ctor()
-	self.rocks_by_id = {}
-	self.active_rock_ids_scratch = {}
 	self.destroyed_rock_ids = {}
-	self.lithograph_instances_by_id = {}
-	self.active_lithograph_ids_scratch = {}
-	self.shrine_instances_by_id = {}
-	self.active_shrine_ids_scratch = {}
-	self.draaideur_instances_by_id = {}
-	self.active_draaideur_ids_scratch = {}
-	self.world_entrance_instances_by_id = {}
-	self.active_world_entrance_ids_scratch = {}
-	self.rock_pool = room_object_pool.new({
-		instances_by_id = self.rocks_by_id,
-		active_ids = self.active_rock_ids_scratch,
-		create_instance = function(definition)
-			return inst('rock', {
-				id = definition.id,
-				pos = { x = definition.x, y = definition.y, z = 140 },
-			})
-		end,
-		sync_instance = function(instance, definition, room_state)
-			instance:configure_from_room_def(definition, room_state)
-		end,
-	})
-	self.lithograph_pool = room_object_pool.new({
-		instances_by_id = self.lithograph_instances_by_id,
-		active_ids = self.active_lithograph_ids_scratch,
-		create_instance = function(definition, room_state)
-			return inst('lithograph', {
-				id = definition.id,
-				pos = { x = definition.x, y = definition.y, z = 10 },
-				text = definition.text,
-				room_number = room_state.room_number,
-			})
-		end,
-		sync_instance = function(instance, definition, room_state)
-			instance.text = definition.text
-			instance.room_number = room_state.room_number
-			instance.x = definition.x
-			instance.y = definition.y
-			instance.z = 10
-		end,
-	})
-	self.shrine_pool = room_object_pool.new({
-		instances_by_id = self.shrine_instances_by_id,
-		active_ids = self.active_shrine_ids_scratch,
-		create_instance = function(definition)
-			return inst('room_shrine', {
-				id = definition.id,
-				pos = { x = definition.x, y = definition.y, z = 22 },
-			})
-		end,
-		sync_instance = function(instance, definition)
-			instance.x = definition.x
-			instance.y = definition.y
-			instance.z = 22
-		end,
-	})
-	self.draaideur_pool = room_object_pool.new({
-		instances_by_id = self.draaideur_instances_by_id,
-		active_ids = self.active_draaideur_ids_scratch,
-		create_instance = function(definition)
-			return inst('draaideur', {
-				id = definition.id,
-				pos = { x = definition.x, y = definition.y, z = 22 },
-				kind = definition.kind,
-			})
-		end,
-		sync_instance = function(instance, definition)
-			instance.kind = definition.kind
-			instance.x = definition.x
-			instance.y = definition.y
-			instance.z = 22
-		end,
-	})
-	self.world_entrance_pool = room_object_pool.new({
-		instances_by_id = self.world_entrance_instances_by_id,
-		active_ids = self.active_world_entrance_ids_scratch,
-		create_instance = function(definition)
-			return inst('world_entrance', {
-				id = definition.id,
-				pos = { x = definition.x, y = definition.y, z = 22 },
-				target = definition.target,
-			})
-		end,
-		sync_instance = function(instance, definition, castle)
-			instance.target = definition.target
-			instance.x = definition.x
-			instance.y = definition.y
-			instance.z = 22
-			instance:set_entrance_state(castle.world_entrance_states[definition.target].state)
-		end,
-	})
 	self:bind_visual()
 	self:bind_events()
 end
@@ -894,19 +742,6 @@ function room_object:render_tiles()
 			::continue::
 		end
 	end
-end
-
-function room_object:sync_world_entrance_instances()
-	local castle = object('c')
-	self.world_entrance_pool:sync_array(self.world_entrances, nil, castle)
-end
-
-function room_object:sync_room_runtime_instances()
-	self:sync_world_entrance_instances()
-	self.lithograph_pool:sync_array(self.lithographs, nil, self)
-	self.shrine_pool:sync_array(self.shrines, nil, self)
-	self.draaideur_pool:sync_array(self.draaideuren, nil, self)
-	self:sync_room_rocks()
 end
 
 function room_object:render_room()

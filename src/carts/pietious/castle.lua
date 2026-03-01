@@ -1,6 +1,7 @@
 local constants = require('constants')
 local castle_map = require('castle_map')
 local progression = require('progression')
+local room_spawner = require('room_spawner')
 local world_instance = require('world').instance
 
 local castle = {}
@@ -206,7 +207,7 @@ local function build_progression_program()
 			refresh_current_room_enemies = function(ctx, command, event)
 				if event.room_number == ctx.current_room.room_number then
 					ctx:refresh_current_room_customizations()
-					object('en'):refresh_current_room_enemies()
+					room_spawner.spawn_all_for_room(ctx.current_room)
 				end
 			end,
 			apply_room_condition = function(ctx, command, event)
@@ -214,7 +215,7 @@ local function build_progression_program()
 					return
 				end
 				ctx:refresh_current_room_customizations()
-				object('en'):refresh_current_room_enemies()
+				room_spawner.spawn_all_for_room(ctx.current_room)
 			end,
 			emit_event = function(ctx, command)
 				local payload = {}
@@ -241,10 +242,34 @@ local function should_dispose_runtime_room_object(obj)
 	if persistent_room_object_ids[obj.id] then
 		return false
 	end
+	if obj.id:sub(1, 3) == 'e.p' then
+		return false
+	end
 	if obj.space_id == 'main' then
 		return true
 	end
 	return false
+end
+
+function castle:spawn_global_elevators()
+	local routes = castle_map.elevator_routes
+	self.elevator_count = #routes
+	for i = 1, #routes do
+		local route = routes[i]
+		local elevator_id = 'e.p' .. tostring(i)
+		if object(elevator_id) == nil then
+			local start = route.path[1]
+			inst('elevator_platform', {
+				id = elevator_id,
+				space_id = 'main',
+				pos = { x = start.x, y = start.y, z = 21 },
+				path = route.path,
+				vertical_to_point = route.vertical_to_point,
+				going_to = route.going_to,
+				current_room_number = start.room_number,
+			})
+		end
+	end
 end
 
 function castle:sync_current_room_seal_instance()
@@ -470,7 +495,7 @@ function castle:finish_seal_dissolution()
 		self.current_room:patch_rows(row_patches)
 	end
 	self:refresh_current_room_customizations()
-	object('en'):refresh_current_room_enemies()
+	room_spawner.spawn_all_for_room(self.current_room)
 end
 
 function castle:begin_daemon_appearance()
@@ -539,7 +564,6 @@ function castle:despawn_room_runtime_objects()
 			obj:mark_for_disposal()
 		end
 	end
-	object('en'):clear_enemy_state()
 end
 
 function castle:sync_world_entrance_states_for_room(room_state)
@@ -582,9 +606,7 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y)
 	self:reset_room_encounter_tags()
 	self:sync_world_entrance_states_for_room(self.current_room)
 	self:refresh_current_room_customizations()
-	object('en'):refresh_current_room_enemies(true)
-	object('e'):sync_platform_instances(self.current_room.room_number)
-	self.current_room:sync_room_runtime_instances()
+	room_spawner.spawn_all_for_room(self.current_room)
 	self:emit_room_enter()
 	return switch
 end
@@ -602,8 +624,8 @@ function castle:initialize(initial_room_number)
 	self:reset_room_encounter_tags()
 	self:sync_world_entrance_states_for_room(rm)
 	self:refresh_current_room_customizations()
-	rm:sync_room_runtime_instances()
-	object('en'):refresh_current_room_enemies(true)
+	self:spawn_global_elevators()
+	room_spawner.spawn_all_for_room(rm)
 	self:emit_room_enter()
 end
 
@@ -647,7 +669,6 @@ end
 function castle:enter_world(target)
 	local transition = castle_map.world_transitions[target]
 	local from_room_number = self.current_room.room_number
-	object('en'):despawn_active_enemies()
 
 	self.current_room:load_room(transition.world_room_number)
 	local switch = create_room_switch(from_room_number, self.current_room.room_number, 'down')

@@ -28,7 +28,7 @@ end
 
 function pepernoot_projectile:bind_events()
 	self.events:on({
-		event_name = 'overlap.begin',
+		event = 'overlap.begin',
 		subscriber = self,
 		handler = function(event)
 			self:on_overlap_begin(event)
