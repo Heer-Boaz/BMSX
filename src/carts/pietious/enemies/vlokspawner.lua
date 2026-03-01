@@ -21,7 +21,7 @@ function vlokspawner.bt_tick(self, blackboard)
 		return behaviourtree.running
 	end
 
-	local room = service('c').current_room
+	local room = object('c').current_room
 	local random_x = math.random(-5, 4)
 	inst('enemy.vlokfoe', {
 		despawn_on_room_switch = true,

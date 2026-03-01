@@ -28,7 +28,7 @@ end
 
 function muziekfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
-	local room = service('c').current_room
+	local room = object('c').current_room
 	local dir_modifier = self.direction == 'left' and -1 or 1
 	local move_accum = node.muziek_move_accum
 	if move_accum == nil then

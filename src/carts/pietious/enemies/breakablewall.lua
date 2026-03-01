@@ -7,16 +7,16 @@ breakablewall.__index = breakablewall
 function breakablewall:take_weapon_hit()
 	self.health = self.health - 1
 	if self.health > 0 then
-		service('c').events:emit('foedamage')
+		object('c').events:emit('foedamage')
 		return
 	end
 	self.health = 0
-	local room_number = service('c').current_room.room_number
-	service('c').events:emit('room.condition_set', {
+	local room_number = object('c').current_room.room_number
+	object('c').events:emit('room.condition_set', {
 		room_number = room_number,
 		condition = self.trigger,
 	})
-	service('c').events:emit('appearance')
+	object('c').events:emit('appearance')
 	self:mark_for_disposal()
 end
 

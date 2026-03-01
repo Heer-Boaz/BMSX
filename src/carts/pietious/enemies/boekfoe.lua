@@ -13,7 +13,7 @@ end
 
 function boekfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
-	local room = service('c').current_room
+	local room = object('c').current_room
 
 	if self.boek_state == 'closed' then
 		local closed_ticks = node.boek_state_ticks
@@ -47,7 +47,7 @@ function boekfoe.bt_tick(self, blackboard)
 
 	if spawn_ticks <= 0 then
 		local y_speed_num = math.random(-5, 4)
-		service('c').events:emit('paperspawn')
+		object('c').events:emit('paperspawn')
 		inst('enemy.paperfoe', {
 			despawn_on_room_switch = true,
 			direction = self.direction == 'left' and 'left' or 'right',

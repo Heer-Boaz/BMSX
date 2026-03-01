@@ -18,7 +18,7 @@ function nootfoe:ctor()
 	self.noot_color = noot_colors[math.random(1, #noot_colors)]
 	self:gfx('muzieknootfoe')
 	self.sprite_component.colorize = self.noot_color
-	service('c').events:emit('muzieknootspawn')
+	object('c').events:emit('muzieknootspawn')
 end
 
 function nootfoe.bt_tick(self, _blackboard)

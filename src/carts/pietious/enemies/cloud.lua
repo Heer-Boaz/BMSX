@@ -14,7 +14,7 @@ end
 
 function cloud.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
-	local room = service('c').current_room
+	local room = object('c').current_room
 	if self.cloud_anim_frame == 2 then
 		self:gfx('cloud_2')
 	else
@@ -71,7 +71,7 @@ function cloud.bt_tick(self, blackboard)
 			self.direction = 'right'
 		end
 	else
-		if self.x + 22 >= service('c').current_room.world_width then
+		if self.x + 22 >= object('c').current_room.world_width then
 			self.direction = 'left'
 		end
 	end

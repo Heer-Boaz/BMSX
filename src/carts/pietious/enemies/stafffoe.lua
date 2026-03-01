@@ -20,7 +20,7 @@ end
 
 function stafffoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
-	local room = service('c').current_room
+	local room = object('c').current_room
 	if self.staff_state == 'default' then
 		local wait_ticks = node.staff_wait_ticks
 		if wait_ticks == nil then
@@ -75,7 +75,7 @@ function stafffoe.bt_tick(self, blackboard)
 			},
 		})
 	end
-	service('c').events:emit('staffspawn')
+	object('c').events:emit('staffspawn')
 	self.staff_spawn_count = self.staff_spawn_count + 1
 	node.staff_wait_ticks = constants.enemy.staff_wait_before_spawn_steps
 	return behaviourtree.running
