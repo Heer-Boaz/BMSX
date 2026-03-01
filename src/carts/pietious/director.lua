@@ -13,6 +13,24 @@ local daemon_timeline_id = 'director.daemon'
 local director = {}
 director.__index = director
 
+function director:bind_visual()
+	local rc = self:get_component('customvisualcomponent')
+	rc.producer = function(_ctx)
+		if not self.seal_flash_on then
+			return
+		end
+		put_rectfillcolor(
+			0,
+			constants.room.tile_origin_y,
+			display_width(),
+			display_height(),
+			500,
+			{ r = 1, g = 1, b = 1, a = 0.7 },
+			{ layer = 'ui' }
+		)
+	end
+end
+
 function director:activate_spaces()
 	add_space('main')
 	add_space('transition')
@@ -170,11 +188,13 @@ function director:ctor()
 	self.next_room_switch_banner_post_action = nil
 	self.daemon_appearance_after_death = false
 	self.daemon_smoke_next = 1
+	self.seal_flash_on = false
 	self.pending_shrine_text_lines = {}
 	self.banner_text_lines = {}
 	self.banner_post_action = nil
 	self.lithograph_text_lines = {}
 	self:activate_spaces()
+	self:bind_visual()
 	self:ensure_daemon_cloud_pool()
 	self:bind_events()
 end
@@ -457,6 +477,7 @@ local function define_director_fsm()
 					tags = { 'd.seal' },
 					entering_state = function(self)
 						self:set_active_space('main')
+						self.seal_flash_on = false
 						self:remove_tag('d.seal.flash')
 						self.events:emit('seal_breaking')
 						self.events:emit('seal_dissolution')
@@ -464,7 +485,8 @@ local function define_director_fsm()
 					on = {
 						['timeline.frame.' .. seal_timeline_id] = function(self, _state, event)
 							local intro_state = event.frame_value + 1
-							if intro_state < 32 and (intro_state % 4) >= 2 then
+							self.seal_flash_on = intro_state < 32 and (intro_state % 4) >= 2
+							if self.seal_flash_on then
 								self:add_tag('d.seal.flash')
 							else
 								self:remove_tag('d.seal.flash')
@@ -474,6 +496,7 @@ local function define_director_fsm()
 							end
 						end,
 						['timeline.end.' .. seal_timeline_id] = function(self)
+							self.seal_flash_on = false
 							self:remove_tag('d.seal.flash')
 							self.events:emit('seal_dissolution_done')
 							return '/daemon_appearance'
@@ -485,13 +508,11 @@ local function define_director_fsm()
 						[daemon_timeline_id] = {
 							create = function()
 								local markers = {}
-								for frame = 0, 63 do
-									if (frame % 8) < 2 then
-										markers[#markers + 1] = {
-											frame = frame,
-											event = 'daemon.cloud.spawn',
-										}
-									end
+								for frame = 0, 56, 8 do
+									markers[#markers + 1] = {
+										frame = frame,
+										event = 'daemon.cloud.spawn',
+									}
 								end
 								return timeline.new({
 									id = daemon_timeline_id,
@@ -658,6 +679,7 @@ local function register_director_definition()
 		def_id = 'director',
 		class = director,
 		fsms = { 'director' },
+		components = { 'customvisualcomponent' },
 		defaults = {
 			id = 'd',
 			pending_banner_world_number = 0,
