@@ -1,8 +1,8 @@
 local constants = require('constants')
 local progression = require('progression')
 local room_object_pool = require('room_object_pool')
-local item_service = {}
-item_service.__index = item_service
+local item_runtime = {}
+item_runtime.__index = item_runtime
 
 local function pickup_inventory_item(player, item_type)
 	player.inventory_items[item_type] = true
@@ -49,7 +49,7 @@ local pickup_handlers = {
 	greenvase = pickup_inventory_item,
 }
 
-function item_service:item_should_spawn(item_def, room_number, player)
+function item_runtime:item_should_spawn(item_def, room_number, player)
 	local item_type = item_def.item_type
 	if item_type == nil then
 		return false
@@ -64,7 +64,7 @@ function item_service:item_should_spawn(item_def, room_number, player)
 	return progression.matches(self, item_def.conditions)
 end
 
-function item_service:sync_progression_flags(room_number, player)
+function item_runtime:sync_progression_flags(room_number, player)
 	local desired_flags = {}
 	for item_type, has_item in pairs(player.inventory_items) do
 		if has_item then
@@ -95,7 +95,7 @@ function item_service:sync_progression_flags(room_number, player)
 	end
 end
 
-function item_service:refresh_current_room_items()
+function item_runtime:refresh_current_room_items()
 	local room = object('c').current_room
 	local room_number = room.room_number
 	self.synced_room_number = room_number
@@ -124,7 +124,7 @@ function item_service:refresh_current_room_items()
 	self.item_pool:end_cycle()
 end
 
-function item_service:set_room_condition(room_number, condition)
+function item_runtime:set_room_condition(room_number, condition)
 	local room_flags = self.condition_flags_by_room[room_number]
 	if room_flags == nil then
 		room_flags = {}
@@ -133,7 +133,7 @@ function item_service:set_room_condition(room_number, condition)
 	room_flags[condition] = true
 end
 
-function item_service:add_item_drop_from_rock(rock_id, room_number, item_type, x, y)
+function item_runtime:add_item_drop_from_rock(rock_id, room_number, item_type, x, y)
 	if item_type == nil then
 		return
 	end
@@ -168,7 +168,7 @@ function item_service:add_item_drop_from_rock(rock_id, room_number, item_type, x
 	end
 end
 
-function item_service:try_pick_item(item_id, room_number, item_type)
+function item_runtime:try_pick_item(item_id, room_number, item_type)
 	local player = object('pietolon')
 	if player.health <= 0 then
 		return false
@@ -180,7 +180,7 @@ function item_service:try_pick_item(item_id, room_number, item_type)
 	return true
 end
 
-function item_service:on_item_picked(item_id, room_number, _item_type)
+function item_runtime:on_item_picked(item_id, room_number, _item_type)
 	self.picked_item_ids[item_id] = true
 	local event_defs = self.event_item_defs_by_room[room_number]
 	if event_defs ~= nil then
@@ -191,7 +191,7 @@ function item_service:on_item_picked(item_id, room_number, _item_type)
 	end
 end
 
-function item_service:bind_events()
+function item_runtime:bind_events()
 	self.events:on({
 		event = 'room.switched',
 		emitter = 'pietolon',
@@ -228,7 +228,7 @@ function item_service:bind_events()
 	})
 end
 
-function item_service:ctor()
+function item_runtime:ctor()
 	self.items_by_id = {}
 	self.active_item_ids_scratch = {}
 	self.event_item_defs_by_room = {}
@@ -257,10 +257,10 @@ function item_service:ctor()
 	self:refresh_current_room_items()
 end
 
-local function register_item_service_definition()
+local function register_item_runtime_definition()
 	define_prefab({
 		def_id = 'item',
-		class = item_service,
+		class = item_runtime,
 		defaults = {
 			id = 'i',
 			world_item_def_id = 'world_item',
@@ -275,6 +275,6 @@ local function register_item_service_definition()
 end
 
 return {
-	item_service = item_service,
-	register_item_service_definition = register_item_service_definition,
+	item_runtime = item_runtime,
+	register_item_runtime_definition = register_item_runtime_definition,
 }

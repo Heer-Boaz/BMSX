@@ -92,21 +92,21 @@ action_effects.register_effect('halo', {
 		if not context.owner.inventory_items.halo then
 			return false
 		end
-		if object('c').current_room.daemon_fight_active then
+		if object('c'):has_tag('c.daemon.fight') then
 			return false
 		end
 		return true
 	end,
 	handler = function(context)
-		local director_service = object('d')
-		local castle_service = object('c')
-		local from_world = (castle_service.current_room.world_number or 0) ~= 0
-		director_service.events:emit('halo_transition_start')
-		local switch = castle_service:halo_teleport_to_room_1()
+		local director = object('d')
+		local castle = object('c')
+		local from_world = (castle.current_room.world_number or 0) ~= 0
+		director.events:emit('halo_transition_start')
+		local switch = castle:halo_teleport_to_room_1()
 		if from_world then
-			director_service:expect_room_switch_banner('castle_banner', 0, nil)
+			director:expect_room_switch_banner('castle_banner', 0, nil)
 		else
-			director_service:clear_expected_room_switch_banner()
+			director:clear_expected_room_switch_banner()
 		end
 		context.owner:apply_halo_teleport_arrival(switch)
 	end,

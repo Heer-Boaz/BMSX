@@ -52,7 +52,7 @@ function pepernoot_projectile:on_overlap_begin(event)
 	self:mark_for_disposal()
 end
 
-function pepernoot_projectile:tick()
+function pepernoot_projectile:update_motion()
 	if self:has_tag(state_tags.frozen) then
 		return
 	end
@@ -78,7 +78,7 @@ local function define_pepernoot_projectile_fsm()
 		},
 		states = {
 			active = {
-				update = pepernoot_projectile.tick,
+				update = pepernoot_projectile.update_motion,
 			},
 			freeze = {
 				tags = { state_tags.frozen },

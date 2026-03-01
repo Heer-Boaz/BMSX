@@ -14,13 +14,13 @@ local item_screen_module = require('item_screen')
 local ui_module = require('ui')
 local loot_drop_module = require('loot_drop')
 local world_item_module = require('world_item')
-local item_service_module = require('item_service')
+local item_runtime_module = require('item_runtime')
 local rock_module = require('rock')
 local pepernoot_projectile_module = require('pepernoot_projectile')
 local enemy_explosion_module = require('enemy_explosion')
-local enemy_service_module = require('enemy_service')
-local castle_service_module = require('castle_service')
-local elevator_service_module = require('elevator_service')
+local enemy_runtime_module = require('enemy_runtime')
+local castle_module = require('castle')
+local elevator_runtime_module = require('elevator_runtime')
 local world_entrance_module = require('world_entrance')
 local daemon_cloud_module = require('daemon_cloud')
 local director_module = require('director')
@@ -46,7 +46,7 @@ local function register_collision_profiles()
 	})
 end
 
-local function service_irqs()
+local function dispatch_irqs()
 	local flags = peek(sys_irq_flags)
 	if flags ~= 0 then
 		irq(flags)
@@ -66,10 +66,10 @@ local function grant_starting_loadout()
 	player:equip_subweapon('pepernoot')
 	object('pietolon').weapon_level = constants.hud.weapon_level
 	object('pietolon'):emit_weapon_changed()
-	local castle_service = object('c')
-	progression.set(castle_service, 'staff1destroyed', true)
-	progression.set(castle_service, 'staff2destroyed', true)
-	progression.set(castle_service, 'staff3destroyed', true)
+	local castle = object('c')
+	progression.set(castle, 'staff1destroyed', true)
+	progression.set(castle, 'staff2destroyed', true)
+	progression.set(castle, 'staff3destroyed', true)
 end
 
 function init()
@@ -95,7 +95,7 @@ function init()
 	rock_module.define_rock_fsm()
 	pepernoot_projectile_module.define_pepernoot_projectile_fsm()
 	enemy_explosion_module.define_enemy_explosion_fsm()
-	elevator_service_module.define_elevator_service_fsm()
+	elevator_runtime_module.define_elevator_runtime_fsm()
 	daemon_cloud_module.define_daemon_cloud_fsm()
 	director_module.define_director_fsm()
 	player_module.register_player_definition()
@@ -111,13 +111,13 @@ function init()
 	ui_module.register_ui_definition()
 	loot_drop_module.register_loot_drop_definition()
 	world_item_module.register_world_item_definition()
-	item_service_module.register_item_service_definition()
+	item_runtime_module.register_item_runtime_definition()
 	rock_module.register_rock_definition()
 	pepernoot_projectile_module.register_pepernoot_projectile_definition()
 	enemy_explosion_module.register_enemy_explosion_definition()
-	enemy_service_module.register_enemy_service_definition()
-	castle_service_module.register_castle_service_definition()
-	elevator_service_module.register_elevator_service_definition()
+	enemy_runtime_module.register_enemy_runtime_definition()
+	castle_module.register_castle_definition()
+	elevator_runtime_module.register_elevator_runtime_definition()
 	world_entrance_module.register_world_entrance_definition()
 	daemon_cloud_module.register_daemon_cloud_definition()
 	director_module.register_director_definition()
@@ -139,7 +139,7 @@ function new_game()
 	inst('enemy', {
 		id = 'en',
 	})
-	local castle_service = inst('castle', {
+	local castle = inst('castle', {
 		id = 'c',
 	})
 
@@ -148,7 +148,7 @@ function new_game()
 		pos = { x = 0, y = 0, z = 0 },
 	})
 
-	castle_service:initialize(castle_map.start_room_number)
+	castle:initialize(castle_map.start_room_number)
 
 	inst('player', {
 		id = 'pietolon',
@@ -201,6 +201,6 @@ end
 
 while true do
 	wait_vblank()
-	service_irqs()
+	dispatch_irqs()
 	update()
 end

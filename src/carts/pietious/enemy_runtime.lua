@@ -3,29 +3,29 @@ local progression = require('progression')
 local room_object_pool = require('room_object_pool')
 local world_instance = require('world').instance
 
-local enemy_service = {}
+local enemy_runtime = {}
 
-function enemy_service:sync_enemy_instance(enemy_def, force_reset_from_room_template)
+function enemy_runtime:sync_enemy_instance(enemy_def, force_reset_from_room_template)
 	return self.enemy_pool:use(enemy_def, {
 		force_reset_from_room_template = force_reset_from_room_template,
 	})
 end
 
-function enemy_service:clear_enemy_state()
+function enemy_runtime:clear_enemy_state()
 	clear_map(self.enemies_by_id)
 	clear_map(self.active_enemy_ids)
 	clear_map(self.active_enemy_ids_scratch)
 	self.enemies_hidden_for_shrine = false
 end
 
-function enemy_service:despawn_active_enemies()
+function enemy_runtime:despawn_active_enemies()
 	self:for_each_active_enemy_instance(function(instance)
 		world_instance:despawn(instance)
 	end)
 	self:clear_enemy_state()
 end
 
-function enemy_service:commit_active_enemy_ids(next_active_ids)
+function enemy_runtime:commit_active_enemy_ids(next_active_ids)
 	local previous_active_ids = self.active_enemy_ids
 	self.active_enemy_ids = next_active_ids
 	self.active_enemy_ids_scratch = previous_active_ids
@@ -33,27 +33,27 @@ function enemy_service:commit_active_enemy_ids(next_active_ids)
 	clear_map(previous_active_ids)
 end
 
-function enemy_service:for_each_active_enemy_instance(visitor)
+function enemy_runtime:for_each_active_enemy_instance(visitor)
 	for id in pairs(self.active_enemy_ids) do
 		visitor(self.enemies_by_id[id], id)
 	end
 end
 
-function enemy_service:hide_active_enemies_for_shrine_transition()
+function enemy_runtime:hide_active_enemies_for_shrine_transition()
 	self.enemies_hidden_for_shrine = true
 	self:for_each_active_enemy_instance(function(instance)
 		instance:set_space('transition')
 	end)
 end
 
-function enemy_service:restore_active_enemies_after_shrine_transition()
+function enemy_runtime:restore_active_enemies_after_shrine_transition()
 	self.enemies_hidden_for_shrine = false
 	self:for_each_active_enemy_instance(function(instance)
 		instance:set_space('main')
 	end)
 end
 
-function enemy_service:refresh_current_room_enemies(force_reset_from_room_template)
+function enemy_runtime:refresh_current_room_enemies(force_reset_from_room_template)
 	local castle = object('c')
 	local room = castle.current_room
 	local enemy_defs = room.enemies
@@ -84,7 +84,7 @@ function enemy_service:refresh_current_room_enemies(force_reset_from_room_templa
 	self:commit_active_enemy_ids(next_active_ids)
 end
 
-function enemy_service:bind_enemy_events()
+function enemy_runtime:bind_enemy_events()
 	self.events:on({
 		event = 'shrine_transition_enter',
 		subscriber = self,
@@ -120,7 +120,7 @@ function enemy_service:bind_enemy_events()
 	})
 end
 
-function enemy_service:ctor()
+function enemy_runtime:ctor()
 	self.enemies_by_id = {}
 	self.active_enemy_ids = {}
 	self.active_enemy_ids_scratch = {}
@@ -186,10 +186,10 @@ function enemy_service:ctor()
 	self:bind_enemy_events()
 end
 
-local function register_enemy_service_definition()
+local function register_enemy_runtime_definition()
 	define_prefab({
 		def_id = 'enemy',
-		class = enemy_service,
+		class = enemy_runtime,
 		defaults = {
 			id = 'en',
 			enemies_by_id = {},
@@ -201,5 +201,5 @@ local function register_enemy_service_definition()
 end
 
 return {
-	register_enemy_service_definition = register_enemy_service_definition,
+	register_enemy_runtime_definition = register_enemy_runtime_definition,
 }

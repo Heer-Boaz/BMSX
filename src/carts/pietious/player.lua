@@ -675,10 +675,10 @@ end
 
 function player:find_world_entrance_for_unlock()
 	local world_entrances = object('c').current_room.world_entrances
-	local castle_service = object('c')
+	local castle = object('c')
 	for i = 1, #world_entrances do
 		local world_entrance = world_entrances[i]
-		local entrance_state = castle_service.world_entrance_states[world_entrance.target].state
+		local entrance_state = castle.world_entrance_states[world_entrance.target].state
 		if entrance_state == 'closed' then
 			local within_x = self.x >= world_entrance.x and self.x <= (world_entrance.x + constants.room.tile_size2)
 			local on_trigger_y = self.y == world_entrance.stair_y
@@ -693,10 +693,10 @@ end
 
 function player:find_near_open_world_entrance()
 	local world_entrances = object('c').current_room.world_entrances
-	local castle_service = object('c')
+	local castle = object('c')
 	for i = 1, #world_entrances do
 		local world_entrance = world_entrances[i]
-		local entrance_state = castle_service.world_entrance_states[world_entrance.target].state
+		local entrance_state = castle.world_entrance_states[world_entrance.target].state
 		if entrance_state == 'open' then
 			local within_x = self.x >= (world_entrance.stair_x - constants.world_entrance.trigger_half_width)
 			and self.x <= (world_entrance.stair_x + constants.world_entrance.trigger_half_width)
@@ -854,8 +854,11 @@ function player:try_start_world_or_shrine_interaction_from_down()
 		return true
 	end
 
-	local current_room = object('c').current_room
-	if current_room.has_active_seal and not current_room.seal_sequence_active then
+	local castle = object('c')
+	if castle:has_tag('c.seal.active') then
+		if castle:has_tag('c.seal.sequence') then
+			return false
+		end
 		object('d').events:emit('seal_dissolution_start')
 		return true
 	end
@@ -891,9 +894,9 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	end
 
 	if switch.outside then
-		local director_service = object('d')
-		director_service.events:emit('world_transition_start')
-		director_service:expect_room_switch_banner('castle_banner', 0, 'castle_emerge')
+		local director = object('d')
+		director.events:emit('world_transition_start')
+		director:expect_room_switch_banner('castle_banner', 0, 'castle_emerge')
 		local leave_switch = object('c'):leave_world_to_castle()
 		self:apply_spawn_position(leave_switch)
 		self:zero_motion()

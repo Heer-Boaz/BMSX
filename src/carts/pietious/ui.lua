@@ -74,7 +74,7 @@ function ui:ctor()
 	self.hud_weapon_anim_ticks = 0
 end
 
-function ui:tick()
+function ui:update_hud_animation()
 	if self.hud_health_level ~= self.hud_health_target then
 		self.hud_health_anim_ticks = self.hud_health_anim_ticks + 1
 		if self.hud_health_anim_ticks >= constants.hud.health_anim_step_frames then
@@ -118,7 +118,7 @@ local function define_ui_fsm()
 		initial = 'active',
 		states = {
 			active = {
-				update = ui.tick,
+				update = ui.update_hud_animation,
 			},
 		},
 	})

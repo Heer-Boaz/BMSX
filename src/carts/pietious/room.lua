@@ -431,14 +431,8 @@ local function apply_room_template(room_state, template)
 	room_state.world_number = template.world_number
 	room_state.room_subtype = template.room_subtype
 	room_state.custom = template.custom
-	room_state.has_active_seal = false
-	room_state.seal_broken = false
-	room_state.seal_sequence_active = false
 	room_state.room_dissolve_step = 0
 	room_state.seal_dissolve_step = 0
-	room_state.seal_sequence_frame = 0
-	room_state.seal_dissolve_timer = 0
-	room_state.daemon_fight_active = false
 	room_state.world_width = constants.room.width
 	room_state.world_height = constants.room.height
 	room_state.world_top = constants.room.hud_height
@@ -920,8 +914,8 @@ function room_object:render_room()
 	if not self:has_tag('r.seal_fx') then
 		return
 	end
-	local director_service = object('d')
-	if not director_service:has_tag('d.seal.flash') then
+	local director = object('d')
+	if not director:has_tag('d.seal.flash') then
 		return
 	end
 	put_rectfillcolor(0, constants.room.tile_origin_y, display_width(), display_height(), 342, { r = 1, g = 1, b = 1, a = 0.5 })
@@ -930,11 +924,15 @@ end
 local function room_runtime_state_name(room_state)
 	local world_number = room_state.world_number or 0
 	if world_number ~= 0 then
-		if room_state.has_active_seal then
+		local castle = object('c')
+		if castle:has_tag('c.daemon.fight') then
+			return 'daemon_fight'
+		end
+		if castle:has_tag('c.seal.active') then
 			return 'seal'
 		end
-		if room_state.daemon_fight_active then
-			return 'daemon_fight'
+		if castle:has_tag('c.seal.sequence') then
+			return 'seal'
 		end
 		return 'world'
 	end

@@ -2,7 +2,7 @@ local constants = require('constants')
 local castle_map = require('castle_map')
 local world_instance = require('world').instance
 
-local elevator_service = {}
+local elevator_runtime = {}
 local elevator_platform = {}
 elevator_platform.__index = elevator_platform
 
@@ -42,7 +42,7 @@ local function build_elevator_routes()
 	return routes
 end
 
-function elevator_service:sync_platform_instances(current_room_number)
+function elevator_runtime:sync_platform_instances(current_room_number)
 	for i = 1, #self.elevator_routes do
 		local elevator = self.elevator_routes[i]
 		local in_current_room = elevator.current_room_number == current_room_number
@@ -64,7 +64,7 @@ function elevator_service:sync_platform_instances(current_room_number)
 	end
 end
 
-function elevator_service:ctor()
+function elevator_runtime:ctor()
 	self:sync_platform_instances(object('c').current_room.room_number)
 end
 
@@ -100,7 +100,7 @@ local function move_elevator_vertical(elevator, target, vertical, character_over
 	end
 end
 
-function elevator_service:tick()
+function elevator_runtime:update_motion()
 	local player = object('pietolon')
 	player.on_vertical_elevator = false
 
@@ -166,18 +166,18 @@ function elevator_service:tick()
 	player:try_room_switches_from_position()
 end
 
-local function define_elevator_service_fsm()
-	define_fsm('elevator_service', {
+local function define_elevator_runtime_fsm()
+	define_fsm('elevator_runtime', {
 		initial = 'active',
 		states = {
 			active = {
-				update = elevator_service.tick,
+				update = elevator_runtime.update_motion,
 			},
 		},
 	})
 end
 
-local function register_elevator_service_definition()
+local function register_elevator_runtime_definition()
 	local elevator_routes = build_elevator_routes()
 	define_prefab({
 		def_id = 'elevator_platform_obj',
@@ -189,8 +189,8 @@ local function register_elevator_service_definition()
 
 	define_prefab({
 		def_id = 'elevator',
-		class = elevator_service,
-		fsms = { 'elevator_service' },
+		class = elevator_runtime,
+		fsms = { 'elevator_runtime' },
 		defaults = {
 			id = 'e',
 			platform_def_id = 'elevator_platform_obj',
@@ -200,6 +200,6 @@ local function register_elevator_service_definition()
 end
 
 return {
-	define_elevator_service_fsm = define_elevator_service_fsm,
-	register_elevator_service_definition = register_elevator_service_definition,
+	define_elevator_runtime_fsm = define_elevator_runtime_fsm,
+	register_elevator_runtime_definition = register_elevator_runtime_definition,
 }

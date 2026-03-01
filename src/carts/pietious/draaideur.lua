@@ -23,7 +23,7 @@ function draaideur:configure_from_room_def(def, _room)
 	self.y = def.y
 	self.kind = def.kind
 	self.state = 0
-	self.state2 = 0
+	self.player_was_right = false
 	self:sync_sprite()
 end
 
@@ -103,15 +103,15 @@ function draaideur:try_begin_open(player, walking_left, walking_right)
 
 	self.state = -24
 	if player.x > self.x then
-		self.state2 = 1
+		self.player_was_right = true
 	else
-		self.state2 = 0
+		self.player_was_right = false
 	end
 	object('c').events:emit('rotatedoor')
 	player:start_slow_doorpass()
 end
 
-function draaideur:tick_active()
+function draaideur:update_active()
 	if self.state < 0 then
 		self.state = self.state + 1
 		self:sync_sprite()
@@ -142,7 +142,7 @@ function draaideur:sync_sprite()
 	end
 
 	if self.state < -16 then
-		local sprite_id = self.state2 == 0 and sprite_set.open_1 or sprite_set.open_3
+		local sprite_id = self.player_was_right and sprite_set.open_3 or sprite_set.open_1
 		self:gfx(sprite_id)
 		self.sprite_component.offset.x = -constants.room.tile_half
 		return
@@ -154,7 +154,7 @@ function draaideur:sync_sprite()
 		return
 	end
 
-	if self.state2 == 0 then
+	if not self.player_was_right then
 		self:gfx(sprite_set.open_3)
 		self.sprite_component.offset.x = -constants.room.tile_half
 		return
@@ -174,7 +174,7 @@ local function define_draaideur_fsm()
 		initial = 'active',
 		states = {
 			active = {
-				update = draaideur.tick_active,
+				update = draaideur.update_active,
 			},
 		},
 	})
@@ -189,7 +189,7 @@ local function register_draaideur_definition()
 		defaults = {
 			kind = 1,
 			state = 0,
-			state2 = 0,
+			player_was_right = false,
 		},
 	})
 end
