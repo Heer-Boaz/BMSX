@@ -1,5 +1,49 @@
 -- progression.lua
 -- singleton event-driven progression state router
+--
+-- DESIGN PRINCIPLES — progression state rules
+--
+-- 1. WHAT IS progression?
+--    A rules engine that listens to ALL global events and updates one or more
+--    "state programs" (key/value maps) based on declarative rules.  It is used
+--    to track persistent world state that evolves as gameplay events fire
+--    (e.g. "has_sword", "room_2_cleared", counter values).
+--
+-- 2. USAGE PATTERN.
+--
+--    STEP 1 — define a program (rule list) and mount it onto a context:
+--      local prog = progression.mount(castle, {
+--          { on = 'enemy.defeated', set = {{ key = 'kills', value = true }} },
+--          { on = 'item.collected', when_all = {{ key = 'kills' }},
+--            set = {{ key = 'bonus_active', value = true }} },
+--      })
+--
+--    STEP 2 — events flow through automatically (no manual dispatch needed
+--    for events emitted to the global eventemitter; progression intercepts all).
+--
+--    STEP 3 — query state:
+--      if progression.get(castle, 'bonus_active') then ... end
+--      progression.matches(castle, {{ key = 'kills' }})  -- condition check
+--
+-- 3. RULE ANATOMY.
+--    Each rule is a table with these fields:
+--      on          — event name (required); the event that can fire this rule
+--      when_all    — array of conditions ({key, op='==', value=true}) that must
+--                    all be true on the state for the rule to fire
+--      when_event  — event-matcher spec (see event_matcher.lua) filtering event
+--                    payload fields
+--      set         — array of {key, value} assignments applied when fired
+--      apply       — array of custom commands forwarded to program.handlers
+--      apply_once  — if true, this rule will only fire once per mounted runtime
+--
+-- 4. CONDITIONS.
+--    Short forms: 'key_name' (key==true), '!key_name' (key==false).
+--    Full form: { key='k', op='>=', value=5 } — operators: ==, !=, <, <=, >, >=
+--
+-- 5. DO NOT USE progression FOR FRAME-BY-FRAME GAME LOGIC.
+--    Progression is for persistent cross-room, cross-session state transitions
+--    driven by named gameplay events.  Transient per-frame state belongs in the
+--    object FSM or in worldobject fields directly.
 
 local eventemitter = require('eventemitter').eventemitter
 local event_matcher = require('event_matcher')
@@ -243,6 +287,10 @@ local function compile_set_actions(state_program, actions)
 	return actions
 end
 
+-- progression.compile_program(program_spec)
+--   Pre-compiles a rule list into an optimised program table.  Called
+--   automatically by progression.mount(); only call directly when you need to
+--   share one compiled program across multiple mount() calls.
 function progression.compile_program(program_spec)
 	if program_spec ~= nil and program_spec.state_program ~= nil and program_spec.rules_by_event ~= nil then
 		return program_spec
@@ -364,6 +412,11 @@ local function dispatch_event_now(event)
 	end
 end
 
+-- progression.dispatch_event(event)
+--   Feeds an event into all mounted runtimes immediately.  In practice you do
+--   NOT need to call this manually — progression.init() registers an on_any
+--   listener on the global eventemitter so every global event is forwarded
+--   automatically.  Only call directly if you have a non-global event source.
 function progression.dispatch_event(event)
 	local tail = progression._event_tail + 1
 	progression._event_tail = tail
@@ -396,6 +449,14 @@ function progression.init()
 	progression._bound = true
 end
 
+-- progression.mount(ctx, program_or_rule_defs)
+--   Attaches a progression runtime to ctx (typically a worldobject).
+--   ctx.id is used as the runtime key; it must be unique.
+--   program_or_rule_defs may be:
+--     • a pre-compiled program from progression.compile_program()
+--     • a plain rule-definition array
+--     • a table with { rules=[], handlers={}, keys=[] }
+--   Returns the runtime object (rarely needed; use progression.get/set/matches).
 function progression.mount(ctx, program_or_rule_defs)
 	local program = progression.compile_program(program_or_rule_defs)
 	local state = progression_state.new(program.state_program)
@@ -411,6 +472,9 @@ function progression.mount(ctx, program_or_rule_defs)
 	return rt
 end
 
+-- progression.unmount(ctx): detaches the progression runtime for ctx.
+--   Call this in ondespawn() or when the context is no longer needed, otherwise
+--   the runtime leaks and keeps responding to global events.
 function progression.unmount(ctx)
 	local rt = progression._runtime_by_ctx[ctx]
 	if rt == nil then
@@ -420,15 +484,22 @@ function progression.unmount(ctx)
 	progression._runtime_by_service_id[ctx.id] = nil
 end
 
+-- progression.matches(ctx, filter): returns true if all filter conditions
+--   are currently true in ctx's progression state.  filter follows the same
+--   format as rule.when_all.
 function progression.matches(ctx, filter)
 	return progression._runtime_by_ctx[ctx].state:matches_filter(filter)
 end
 
+-- progression.set(ctx, key, value): directly sets a state key on ctx's runtime.
+--   Use only for initialisation or testing; prefer rule-driven set actions.
 function progression.set(ctx, key, value)
 	local rt = progression._runtime_by_ctx[ctx]
 	return rt.state:set(key, value)
 end
 
+-- progression.get(ctx, key): reads a state key from ctx's progression runtime.
+--   Returns nil if the key has never been set.
 function progression.get(ctx, key)
 	return progression._runtime_by_ctx[ctx].state:get(key)
 end

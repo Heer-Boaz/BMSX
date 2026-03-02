@@ -1,5 +1,39 @@
 -- action_effects.lua
 -- action effect registry + runtime component
+--
+-- DESIGN PRINCIPLES — action effects
+--
+-- 1. WHAT IS AN ACTION EFFECT?
+--    An action effect is a named, reusable behaviour that can be granted to an
+--    object at runtime (think: abilities, power-ups, attacks).  An object can
+--    only trigger an effect if that effect has been granted to it.  Cooldown,
+--    tag/condition gating, and event emission after execution are all built in.
+--
+-- 2. TWO-STEP FLOW: register globally, then grant to objects.
+--
+--    STEP 1 — register the effect definition once at load time:
+--      actioneffects.register_effect({
+--          id = 'sword_swing',
+--          cooldown_ms = 400,
+--          handler = function(ctx)
+--              ctx.owner:play_timeline('swing')
+--          end,
+--      })
+--
+--    STEP 2 — grant the effect to an object's actioneffectcomponent:
+--      player.abilities:grant_effect('sword_swing')
+--
+--    STEP 3 — trigger the effect from any input/event handler:
+--      local result = player.abilities:trigger('sword_swing')
+--      -- result: "ok" | "blocked" | "on_cooldown" | "failed"
+--
+-- 3. EFFECTS FIRE via emit_gameplay_fact(), NOT direct emits.
+--    After a successful trigger, the effect automatically calls
+--    owner:emit_gameplay_fact(event) if the definition specifies an event name.
+--    Do not emit manually inside the handler.
+--
+-- 4. CONTEXT: handler receives { owner, target, payload, args }.
+--    target defaults to owner but can be overridden for targeted effects.
 
 local eventemitter = require("eventemitter")
 local components = require("components")
@@ -24,6 +58,13 @@ local registry = {
 	validators = {},
 }
 
+-- actioneffects.register_effect(definition_or_id, opts?)
+--   Registers a named effect definition.  Two call forms:
+--     register_effect({ id='name', handler=fn, cooldown_ms=N, event='name', … })
+--     register_effect('name', fn)   -- shorthand: handler only, no opts
+--   opts (optional second arg) may include:
+--     schema   — validate payload before execution
+--     validate — extra validation function
 function actioneffects.register_effect(definition, opts)
 	if type(definition) == "string" then
 		local id = definition
@@ -66,6 +107,9 @@ function actioneffects.validate(id, payload)
 	end
 end
 
+-- actioneffects.execute(id, context, ...): runs the effect handler directly,
+--   bypassing cooldown / tag / grant checks.  Rarely needed in cart code;
+--   prefer actioneffectcomponent:trigger() for normal gameplay use.
 function actioneffects.execute(id, context, ...)
 	local def = registry.definitions[id]
 	return def.handler(context, ...)
@@ -166,6 +210,9 @@ local actioneffectcomponent = {}
 actioneffectcomponent.__index = actioneffectcomponent
 setmetatable(actioneffectcomponent, { __index = component })
 
+-- actioneffectcomponent.new(opts): creates the abilities/effects component.
+--   Attach once per object; it manages a set of granted effects + their cooldowns.
+--   The component is unique (only one per object allowed).
 function actioneffectcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = "actioneffectcomponent"
@@ -186,11 +233,15 @@ function actioneffectcomponent:tick(dt_ms)
 	end
 end
 
+-- actioneffectcomponent:grant_effect(id): gives the object access to the
+--   named registered effect.  Call when an ability is unlocked or equipped.
 function actioneffectcomponent:grant_effect(id)
 	local definition = registry.definitions[id]
 	self.definitions[definition.id] = definition
 end
 
+-- actioneffectcomponent:revoke_effect(id): removes the effect and its cooldown.
+--   Call when an ability is lost or unequipped.
 function actioneffectcomponent:revoke_effect(id)
 	self.definitions[id] = nil
 	self.cooldown_until[id] = nil
@@ -200,6 +251,15 @@ function actioneffectcomponent:has_effect(id)
 	return self.definitions[id] ~= nil
 end
 
+-- actioneffectcomponent:trigger(id, opts?)
+--   Attempts to activate the named effect on this object.
+--   opts.payload — passed to the effect handler as context.payload
+--   opts.args    — array of extra arguments forwarded to the handler
+--   Returns a string result:
+--     "ok"          — effect executed successfully
+--     "on_cooldown" — effect is cooling down; try again later
+--     "blocked"     — effect conditions / tag requirements not met
+--     "failed"      — effect id is not granted to this component
 function actioneffectcomponent:trigger(id, opts)
 	local definition = self.definitions[id]
 	if not definition then
@@ -235,6 +295,8 @@ function actioneffectcomponent:trigger(id, opts)
 	return "ok"
 end
 
+-- actioneffectcomponent:cooldown_remaining(id)
+--   Returns remaining cooldown in ms, or nil if the effect is ready.
 function actioneffectcomponent:cooldown_remaining(id)
 	local until_time = self.cooldown_until[id]
 	if until_time == nil then

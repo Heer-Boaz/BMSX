@@ -44,6 +44,19 @@
 --    other objects to mutate their state at bind()-time.  Emit an event and
 --    let the other object respond, or use the FSM entering_state for
 --    initialisation that must happen on activate.
+--
+-- 4. DESTROY VIA mark_for_disposal(), NEVER via world:despawn() from update/events.
+--    world:despawn() is only safe to call outside of the world's update loop
+--    (e.g. during a room transition that stops the world first).  From inside
+--    an object's update() or any event handler, always use:
+--      self:mark_for_disposal()
+--    This deactivates the object immediately and defers the actual world removal
+--    to the end-of-frame cleanup pass, which is safe.
+--
+-- 5. set_space() IS NOT despawn. Use it only to temporarily hide/show objects.
+--    Moving an object to a non-active space hides it from gameplay queries
+--    without destroying it (components, subscriptions, and FSM persist).
+--    Pattern: move enemies to 'transition' during screen transitions, not despawn.
 local eventemitter = require("eventemitter")
 local fsm = require("fsm")
 local fsmlibrary = require("fsmlibrary")
@@ -125,12 +138,27 @@ function worldobject:generate_id()
 	return result
 end
 
+-- set_pos(x, y, z?): sets world position. Each component falls back to the
+-- current value when nil, so set_pos(x, y) preserves the current z.
 function worldobject:set_pos(x, y, z)
 	self.x = x or self.x
 	self.y = y or self.y
 	self.z = z or self.z
 end
 
+-- set_space(space_id): moves this object into the named world space.
+--   Useful for temporarily hiding an object from the active space (e.g. moving
+--   enemies to a 'transition' space during a screen-transition animation and
+--   back to 'main' on exit).  The object stays alive and subscribed; it is
+--   simply excluded from scope="active" queries.
+--
+--   PATTERN (enemies during shrine transition):
+--     self.events:on('shrine_transition_enter', function()
+--       self:set_space('transition')
+--     end)
+--     self.events:on('shrine_transition_exit', function()
+--       self:set_space('main')
+--     end)
 function worldobject:set_space(space_id)
 	return world_instance:set_object_space(self, space_id)
 end
@@ -381,6 +409,10 @@ function worldobject:unbind()
 	eventemitter.eventemitter.instance:remove_subscriber(self)
 end
 
+-- deactivate(): stops the object's FSM, tick, and timeline playback without
+-- removing it from the world.  The object stays registered; its components and
+-- event subscriptions are preserved.  Called automatically by mark_for_disposal()
+-- and ondespawn().  Do not override; instead react to the 'despawn' event.
 function worldobject:deactivate()
 	self.active = false
 	self.tick_enabled = false
@@ -410,6 +442,17 @@ function worldobject:ondespawn()
 	self.events:emit("despawn")
 end
 
+-- mark_for_disposal(): schedules the object for removal at end-of-frame.
+--   This is the CORRECT way to destroy an object from inside its own update()
+--   or an event handler (where calling world:despawn() directly is unsafe).
+--   Sets dispose_flag=true and deactivates the object immediately; the world
+--   cleans it up after the current frame finishes.
+--
+--   WRONG — despawning inside update() or an event handler:
+--     world_instance:despawn(self)   -- mutates the object list mid-iteration!
+--
+--   RIGHT:
+--     self:mark_for_disposal()       -- safe, deferred cleanup
 function worldobject:mark_for_disposal()
 	self.dispose_flag = true
 	self:deactivate()
