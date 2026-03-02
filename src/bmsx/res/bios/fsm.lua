@@ -56,6 +56,27 @@
 --      (root) timelines = { [id] = { def = { frames = ..., playback_mode = 'once' }, autoplay = false } }
 --      state_a = { timelines = { [id] = { autoplay = true, stop_on_exit = true } } }
 --      state_b = { timelines = { [id] = { autoplay = true, stop_on_exit = true, on_end = '/other' } } }
+--
+-- 4. on_end AND on_frame CALLBACKS IN TIMELINE CONFIG.
+--    Declare timeline end/frame callbacks directly inside the state's timeline
+--    config using on_end / on_frame.  Do NOT register them manually under
+--    'on' using the internal 'timeline.end.<id>' / 'timeline.frame.<id>' keys
+--    — those are implementation details.  The runtime maps on_end/on_frame to
+--    the correct 'on' keys automatically.
+--
+--    WRONG — manual internal event key:
+--      on = { ['timeline.end.my_id'] = function(self) return '/next' end }
+--    RIGHT — on_end directly in the timeline binding:
+--      timelines = { [my_id] = { ..., on_end = '/next' } }
+--      timelines = { [my_id] = { ..., on_end = function(self) ... end } }
+--      timelines = { [my_id] = { ..., on_frame = function(self, _s, e) ... end } }
+--
+-- 5. FORBIDDEN LEGACY FIELDS.
+--    The following field names are rejected at runtime (and caught by the
+--    Lua linter) and must never appear in FSM state definitions:
+--      'tick'   — use 'update'  (the FSM calls update(), not tick())
+--    Using these names silently does nothing on older runtimes and errors on
+--    current ones.  Keep state definitions clean.
 
 local fsm_trace = require("fsm_trace")
 local clear_map = require("clear_map")
@@ -2006,6 +2027,9 @@ function statemachinecontroller:auto_dispatch(event)
 	self:dispatch(event)
 end
 
+-- statemachinecontroller:start(): start all managed FSMs from their initial
+-- state.  Called automatically by worldobject:activate(); do not call
+-- manually in normal cart code.
 function statemachinecontroller:start()
 	if self._started then
 		return
@@ -2027,6 +2051,11 @@ function statemachinecontroller:update()
 	end
 end
 
+-- statemachinecontroller:dispatch(event_or_name, payload): deliver an event
+-- to all FSMs managed by this controller.  The active state's `on` table and
+-- `input_event_handlers` are consulted.  Returns true if any state handled it.
+-- In cart code, call self.sc:dispatch() (via self:dispatch_state_event()) or
+-- use the FSM `on` table instead of raw dispatch where possible.
 function statemachinecontroller:dispatch(event_or_name, payload)
 	local event_name
 	local data
@@ -2046,6 +2075,13 @@ function statemachinecontroller:dispatch(event_or_name, payload)
 	return handled
 end
 
+-- statemachinecontroller:transition_to(path): directly navigate to a state
+-- by absolute path, bypassing guard conditions and without requiring an event.
+-- In cart code, prefer returning a path string from an `on`-handler or
+-- `entering_state`; only call transition_to() for imperative external control
+-- (e.g. a debug command or test harness).
+-- Path format: 'machine_id:/state/substate' or just '/state' for the default
+-- machine.
 function statemachinecontroller:transition_to(path)
 	local machine_id, state_path = string.match(path, "^(.-):/(.+)$")
 	if not machine_id then
@@ -2059,6 +2095,11 @@ function statemachinecontroller:transition_to(path)
 	machine:transition_to(state_path)
 end
 
+-- statemachinecontroller:matches_state_path(path): returns true if ANY managed
+-- FSM is currently at the given path.  Useful for conditional logic outside
+-- the FSM (e.g. an ECS system that changes behaviour based on active state).
+-- Use tag-based queries (matches_state_tag) when possible — they are cheaper
+-- and do not depend on internal state naming.
 function statemachinecontroller:matches_state_path(path)
 	local machine_id, state_path = string.match(path, "^(.-):/(.+)$")
 	if machine_id then
@@ -2076,6 +2117,10 @@ function statemachinecontroller:matches_state_path(path)
 	return false
 end
 
+-- statemachinecontroller:matches_state_tag(tag): returns true if the target
+-- object currently carries the given tag.  Prefer this over matches_state_path
+-- for feature queries — tags are maintained automatically by FSM `tags`
+-- declarations and timeline windows, and are cheaper to test than path strings.
 function statemachinecontroller:matches_state_tag(tag)
 	return self.target:has_tag(tag)
 end
@@ -2166,6 +2211,10 @@ function statemachinecontroller:resume_all_statemachines()
 	end
 end
 
+-- statemachinecontroller:pause() / resume(): suspend / resume FSM updates
+-- (entering_state, update, on-handlers still fire but the update loop stops).
+-- Called by worldobject:deactivate() / activate().  Use pause_statemachine(id)
+-- to pause a single named machine while leaving others running.
 function statemachinecontroller:pause()
 	self.update_enabled = false
 end

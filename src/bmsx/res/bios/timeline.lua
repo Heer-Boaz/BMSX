@@ -1,5 +1,36 @@
 -- timeline.lua
 -- timeline runtime for system rom
+--
+-- DESIGN PRINCIPLES — timeline authoring
+--
+-- 1. ALWAYS USE A PLAIN def TABLE; NEVER CALL timeline.new() IN CART CODE.
+--    When declaring a timeline inside an FSM state's `timelines` block, pass
+--    a plain Lua table to the `def` field.  The FSM runtime calls
+--    timeline.new(def) internally.  The `id` field inside `def` is optional
+--    and defaults to the timeline's dictionary key in the `timelines` table.
+--
+--    WRONG — manual timeline object construction in cart code:
+--      local tl = timeline.new({ id = 'my_tl', frames = timeline.range(10),
+--                                playback_mode = 'once' })
+--      timelines = { my_tl = { def = tl, ... } }  -- passing object, not table
+--    RIGHT — plain table; id defaults to key:
+--      timelines = { my_tl = { def = { frames = timeline.range(10),
+--                                      playback_mode = 'once' }, ... } }
+--
+-- 2. USE timeline.range() FOR SEQUENTIAL FRAME RANGES.
+--    timeline.range(n) is a convenience that returns a frame list
+--    [0, 1, 2, …, n-1].  Use it instead of spelling out the list manually
+--    for simple single-sprite or timer-only timelines.
+--
+-- 3. PLAYBACK MODES.
+--      'once'      — plays from start to end once, stops at the last frame.
+--      'loop'      — loops back to frame 0 after the last frame.
+--      'pingpong'  — reverses direction at each end.
+--
+-- 4. MARKERS AND WINDOWS.
+--    Markers fire events at specific frames.  Windows are marker pairs that
+--    also add/remove tags for their duration; declare them in `windows` to
+--    avoid writing the start/end markers manually.
 
 local timeline_start_index = -1
 
@@ -139,6 +170,9 @@ local function build_pingpong_frames(frames, include_endpoints)
 	return out
 end
 
+-- timeline.range(n): returns a sequential frame list [0, 1, 2, …, n-1].
+-- Use for simple timer or single-row sprite timelines instead of writing
+-- out the list manually.  Example: timeline.range(30) = 30-frame once timer.
 local function range(frame_count)
 	local frames = {}
 	for i = 0, frame_count - 1 do
@@ -147,6 +181,11 @@ local function range(frame_count)
 	return frames
 end
 
+-- timeline.new(def): construct a timeline object from a definition table.
+-- In cart code this is called automatically by the FSM runtime when a state's
+-- `timelines` block contains a `def` table.  Do NOT call timeline.new()
+-- directly in cart code — pass a plain table to `def` and let the FSM handle
+-- construction.  See DESIGN PRINCIPLES rule 1 at the top of this file.
 function timeline.new(def)
 	local self = setmetatable({}, timeline)
 	self.def = def
@@ -262,6 +301,9 @@ function timeline:advance()
 	return self:advance_internal("advance")
 end
 
+-- timeline:seek(frame): move the playhead to an absolute frame index.
+-- Does NOT fire frame markers for skipped frames.  Use force_seek() if you
+-- need markers to fire (e.g. to sync tag state after a manual jump).
 function timeline:seek(frame)
 	return self:apply_frame(frame, "seek")
 end

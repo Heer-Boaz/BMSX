@@ -1,3 +1,49 @@
+-- worldobject.lua
+-- base class for all world objects (game entities)
+--
+-- DESIGN PRINCIPLES — object lifecycle and event subscription
+--
+-- 1. OBJECT LIFECYCLE ORDER.
+--    new()        — allocates the object and its components; no event
+--                   subscriptions here; the object is not yet active.
+--    onspawn()    — called by the world when the object is placed; sets
+--                   position from opts and calls activate().
+--    activate()   — sets active = true, calls bind(), then starts the FSM.
+--    bind()       — override this in subclasses to subscribe to events.
+--                   Called exactly once per activation.
+--    ondespawn()  — called when removed from the world; deactivates the object.
+--    dispose()    — final teardown; calls unbind() which removes all event
+--                   subscriptions whose `subscriber` field is this object.
+--
+-- 2. bind() / unbind() — event subscription lifecycle.
+--    All external event subscriptions must be registered inside bind(), not
+--    in ctor / new().  Every subscription must set `subscriber = self` so
+--    that the default unbind() can clean them up automatically via
+--    remove_subscriber(self).
+--
+--    WRONG — subscribing in ctor (fires before object is active/ready):
+--      function myobj:ctor()
+--          self.events:on({ event = 'something', handler = function() ... end })
+--      end
+--    RIGHT — subscribing in bind():
+--      function myobj:bind()
+--          self.events:on({ event = 'something', emitter = 'src',
+--              subscriber = self, handler = function() ... end })
+--      end
+--
+--    Override unbind() only when you need extra cleanup beyond event
+--    unsubscription (e.g. releasing external resources).  Always call
+--    super's unbind via remove_subscriber if you do override it:
+--      function myobj:unbind()
+--          eventemitter.eventemitter.instance:remove_subscriber(self)  -- base
+--          -- additional cleanup ...
+--      end
+--
+-- 3. NEVER CALL METHODS ON OTHER OBJECTS DIRECTLY FROM bind().
+--    Subscriptions in bind() establish reactive wiring.  Do not reach into
+--    other objects to mutate their state at bind()-time.  Emit an event and
+--    let the other object respond, or use the FSM entering_state for
+--    initialisation that must happen on activate.
 local eventemitter = require("eventemitter")
 local fsm = require("fsm")
 local fsmlibrary = require("fsmlibrary")
@@ -95,6 +141,10 @@ function worldobject:move_by(dx, dy, dz)
 	self.z = self.z + (dz or 0)
 end
 
+-- add_component(comp): attach a component to this object.
+-- comp.bind() is called immediately; comp.on_attach() fires after binding.
+-- Returns the component for chaining.  Components are updated by ECS systems,
+-- not by the object's own update() method.
 function worldobject:add_component(comp)
 	comp.parent = self
 	local key = component_key(comp.type_name or comp)
@@ -243,6 +293,9 @@ function worldobject:iterate_components()
 	return ipairs(self.components)
 end
 
+-- has_tag(tag): returns true if this object currently carries the given tag.
+-- Tags are plain-string keys set on self.tags.  The FSM also manages tags
+-- automatically through state `tags` declarations and timeline windows.
 function worldobject:has_tag(tag)
 	return (self.tags[tag])
 end
@@ -259,16 +312,29 @@ function worldobject:toggle_tag(tag)
 	self.tags[tag] = not self.tags[tag]
 end
 
--- Forwards an event to the FSM, which can be used for state transitions or as a general-purpose event bus for the worldobject's internal logic. The event can be a string (event type) or a table (event object). If it's a string, it will be wrapped in a table with the type and emitter fields.
+-- dispatch_state_event(event_or_name, payload): deliver an event to this
+-- object's FSM.  The FSM routes it to the current state's `on` handlers and
+-- `input_event_handlers`.  Use this to push external facts into the FSM;
+-- do NOT use it to command another object's FSM from the outside — emit a
+-- broadcast event instead and let the target subscribe in its own bind().
 function worldobject:dispatch_state_event(event_or_name, payload)
 	return self.sc:dispatch(event_or_name, payload)
 end
 
--- Useless alias for dispatch_state_event, but provided for semantic clarity in some cases, so that Codex can recognize the intent as dispatching a command rather than a gameplay fact.
+-- dispatch_command(event_or_name, payload): identical to dispatch_state_event.
+-- Use this name when the intent is to send a direct command to this object's
+-- own FSM from within the same object (e.g. from a child component or timer
+-- callback).  Still forbidden for cross-object calls — see dispatch_state_event.
 function worldobject:dispatch_command(event_or_name, payload)
 	return self.sc:dispatch(event_or_name, payload)
 end
 
+-- emit_gameplay_fact(event_or_name, payload): emit an event on the global bus
+-- AND dispatch it into this object's own FSM in one call.  Use this for facts
+-- that are both externally observable (other objects may subscribe) and
+-- relevant to this object's own state machine (e.g. a 'hit' that triggers both
+-- a visual reaction and a health-state transition).  Fields in payload are
+-- merged into the event table; emitter is set to self automatically.
 function worldobject:emit_gameplay_fact(event_or_name, payload)
 	local event
 	if type(event_or_name) ~= "table" then
@@ -291,6 +357,9 @@ function worldobject:emit_gameplay_fact(event_or_name, payload)
 	return event
 end
 
+-- activate(): called internally by onspawn().  Sets active = true, calls
+-- bind(), then starts the FSM.  Do not call directly; spawn the object
+-- through the world instead.
 function worldobject:activate()
 	self.active = true
 	self.tick_enabled = true
@@ -299,9 +368,15 @@ function worldobject:activate()
 	self.sc:start()
 end
 
+-- bind(): override in subclasses to register event subscriptions.
+-- Called once by activate() before the FSM starts.  Always set
+-- `subscriber = self` on every subscription so unbind() cleans them up.
 function worldobject:bind()
 end
 
+-- unbind(): removes all event subscriptions whose subscriber == self.
+-- Called by dispose().  Override only if you need extra teardown beyond
+-- event unsubscription; in that case call the base implementation first.
 function worldobject:unbind()
 	eventemitter.eventemitter.instance:remove_subscriber(self)
 end
@@ -313,6 +388,9 @@ function worldobject:deactivate()
 	self.sc:pause()
 end
 
+-- onspawn(pos): called by the world when the object is placed.  Sets initial
+-- position from `pos` and calls activate().  Override for spawn-time setup
+-- that needs the position to already be set; always call the supermethod.
 function worldobject:onspawn(pos)
 	if pos then
 		self.x = pos.x or self.x
@@ -323,6 +401,9 @@ function worldobject:onspawn(pos)
 	self.events:emit("spawn", { pos = pos })
 end
 
+-- ondespawn(): called when the object is removed from the world.  Deactivates
+-- and emits 'despawn'.  Override for despawn-specific cleanup; always call
+-- the supermethod so that the FSM pause and 'despawn' emission still happen.
 function worldobject:ondespawn()
 	self.active = false
 	self.fsm_dispatch_enabled = false
@@ -347,14 +428,26 @@ end
 function worldobject:draw()
 end
 
+-- define_timeline(def): register a pre-built timeline object on this object.
+-- Prefer declaring timelines inside the FSM state's `timelines` block using a
+-- plain `def` table — the FSM calls define_timeline() automatically.  Only
+-- call this manually for timelines that exist outside any FSM state.
 function worldobject:define_timeline(def)
 	self.timelines:define(def)
 end
 
+-- play_timeline(id, opts): start playback of a previously defined timeline.
+-- Prefer setting `autoplay = true` in the FSM timeline binding rather than
+-- calling this manually.  Use it directly only when play options are computed
+-- at runtime (e.g. a dynamic target index).
+-- opts fields: rewind (bool), snap_to_start (bool).
 function worldobject:play_timeline(id, opts)
 	self.timelines:play(id, opts)
 end
 
+-- stop_timeline(id): halt a playing timeline.  Prefer setting
+-- `stop_on_exit = true` in the FSM binding.  Call directly only for
+-- imperative early-stop logic outside an FSM state transition.
 function worldobject:stop_timeline(id)
 	self.timelines:stop(id)
 end

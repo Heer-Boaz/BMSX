@@ -1,5 +1,47 @@
 -- ecs.lua
 -- ecs core types and system manager for lua engine
+--
+-- DESIGN PRINCIPLES — ECS systems vs per-object logic
+--
+-- 1. TICK GROUPS (execution order within each frame).
+--    Systems are assigned to a tick group; all systems in a lower-numbered
+--    group run before those in a higher-numbered group.
+--
+--      input          (10) — read player/AI input, dispatch FSM input events
+--      actioneffect   (20) — process queued action effects
+--      moderesolution (30) — resolve mode / space switches
+--      physics        (40) — movement, collision, position integration
+--      animation      (50) — advance timelines, sprite frame selection
+--      presentation   (60) — build draw calls / render all objects
+--      eventflush     (70) — flush deferred events after all updates
+--
+-- 2. USE ECS SYSTEMS FOR SHARED PER-FRAME WORK.
+--    Logic that runs the same way for every object of a given type (e.g.
+--    sprite rendering, collision, timeline ticking) belongs in an ecsystem,
+--    not in each object's update() method.  The system iterates all active
+--    objects in one pass, which is cheaper than N separate update() calls
+--    and avoids duplicating the iteration + filter logic.
+--
+--    WRONG — per-object rendering inside update():
+--      function my_object:update()
+--          put_sprite(self.x, self.y, self.sprite_id)  -- runs per-object
+--      end
+--    RIGHT — register a render system in the presentation group:
+--      local mysystem = ecsystem.new(tickgroup.presentation, priority)
+--      function mysystem:update()
+--          for obj in world_instance:objects({ scope = 'active' }) do
+--              if obj.components['spritecomponent'] then
+--                  put_sprite(obj.x, obj.y, obj.sprite_id)
+--              end
+--          end
+--      end
+--
+-- 3. OBJECT update() IS FOR OBJECT-SPECIFIC LOGIC ONLY.
+--    An object's update() method is called by the FSM (as the current state's
+--    `update` function) or directly if tick_enabled = true.  Restrict it to
+--    logic that is meaningfully different per object instance (e.g. custom AI,
+--    state-specific physics).  Never put generic rendering or component
+--    processing there.
 
 local tickgroup = {
 	input = 10,

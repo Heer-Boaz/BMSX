@@ -98,6 +98,15 @@ function eventemitter:events_of(emitter)
 	return port
 end
 
+-- eventemitter:on(spec): register a listener.
+-- spec fields:
+--   event / event_name  (string)  — required; event type to listen for.
+--   handler             (function)— required; called with the event table.
+--   subscriber          (object)  — strongly recommended; used by
+--                                    remove_subscriber() for cleanup.
+--   emitter             (string|object) — filter; only fire for this emitter.
+--                                    Always supply for non-unique event names.
+--   persistent          (bool)    — if true, survives clear() calls.
 function eventemitter:on(spec)
 	local name = spec.event_name or spec.event
 	local list = self.listeners[name]
@@ -113,6 +122,9 @@ function eventemitter:on(spec)
 	}
 end
 
+-- eventemitter:off(event_name, handler, emitter): remove a specific listener
+-- by exact handler reference + emitter.  Prefer remove_subscriber() for bulk
+-- cleanup of all subscriptions owned by a subscriber.
 function eventemitter:off(event_name, handler, emitter)
 	local list = self.listeners[event_name]
 	if not list then
@@ -126,6 +138,9 @@ function eventemitter:off(event_name, handler, emitter)
 	end
 end
 
+-- eventemitter:on_any(handler, persistent, subscriber): listen to ALL events
+-- regardless of type.  Use sparingly (e.g. debugging, event logging).  For
+-- normal game logic always subscribe to a specific event name via on().
 function eventemitter:on_any(handler, persistent, subscriber)
 	self.any_listeners[#self.any_listeners + 1] = { handler = handler, persistent = persistent, subscriber = subscriber }
 end
@@ -139,6 +154,13 @@ function eventemitter:off_any(handler, force_persistent)
 	end
 end
 
+-- eventemitter:emit(arg0, emitter, payload): fire an event.
+-- Three calling conventions:
+--   emit(event_table)            — fire a pre-built event table directly.
+--   emit(type, emitter, payload_table) — payload fields merged into event.
+--   emit(type, emitter, scalar)  — scalar stored as event.payload.
+-- In cart code, use eventport:emit() instead — the emitter is filled in
+-- automatically from the port, so you cannot accidentally omit it.
 function eventemitter:emit(arg0, emitter, payload)
 	local event
 	if type(arg0) == "table" then
@@ -185,6 +207,10 @@ function eventemitter:emit(arg0, emitter, payload)
 	end
 end
 
+-- eventemitter:remove_subscriber(subscriber, force_persistent): remove all
+-- listeners whose `subscriber` field equals the given object.  This is the
+-- standard cleanup path called from worldobject:unbind().  Pass
+-- force_persistent = true to also remove persistent subscriptions.
 function eventemitter:remove_subscriber(subscriber, force_persistent)
 	for _, list in pairs(self.listeners) do
 		for i = #list, 1, -1 do
@@ -217,6 +243,10 @@ function eventemitter:clear()
 	end
 end
 
+-- eventport:on(spec): preferred cart API for subscribing to events.
+-- Identical to eventemitter:on() but automatically sets spec.emitter to the
+-- port's owner if not supplied.  Returns a function that unsubscribes when
+-- called.  Always supply subscriber = <owning_object> for lifecycle cleanup.
 function eventport:on(spec)
 	spec.emitter = spec.emitter or self.emitter.id or self.emitter
 	eventemitter.instance:on(spec)
@@ -226,10 +256,17 @@ function eventport:on(spec)
 	end
 end
 
+-- eventport:emit(event_name, payload): preferred cart API for emitting events.
+-- Automatically sets the emitter to the port's owner object.  payload may be
+-- a table of extra fields merged into the event, or omitted.
 function eventport:emit(event_name, payload)
 	eventemitter.instance:emit(event_name, self.emitter, payload)
 end
 
+-- eventport:emit_event(event): emit a pre-built event table, setting the
+-- emitter to the port's owner if not already set.  Returns the event table.
+-- Use when you need to capture and re-use the event object (e.g. to read back
+-- the timestamp or pass it to another system after emission).
 function eventport:emit_event(event)
 	event.emitter = event.emitter or self.emitter
 	eventemitter.instance:emit(event)
