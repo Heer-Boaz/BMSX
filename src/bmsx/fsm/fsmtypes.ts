@@ -58,6 +58,10 @@ export type StateTimelineConfig<T = any> = {
 	stop_on_exit?: boolean;
 	/** Optional play options used when autoplay starts the timeline. */
 	play_options?: TimelinePlayOptions;
+	/** Shorthand for an `on` handler for `timeline.end.<id>`. Synthesized into `on` by the FSM engine. */
+	on_end?: StateActionSpec | StateEventHandler | string;
+	/** Shorthand for an `on` handler for `timeline.frame.<id>`. Synthesized into `on` by the FSM engine. */
+	on_frame?: StateActionSpec | StateEventHandler | string;
 };
 
 export type StateTimelineMap = Record<string, StateTimelineConfig>;

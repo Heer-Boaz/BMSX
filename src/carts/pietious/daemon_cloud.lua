@@ -44,15 +44,13 @@ local function define_daemon_cloud_fsm()
 						end,
 						autoplay = false,
 						stop_on_exit = true,
+						on_frame = function(self)
+							self:gfx(self:get_timeline(anim_timeline_id):value())
+						end,
+						on_end = function(self)
+							self.visible = false
+						end,
 					},
-				},
-				on = {
-					['timeline.frame.' .. anim_timeline_id] = function(self)
-						self:gfx(self:get_timeline(anim_timeline_id):value())
-					end,
-					['timeline.end.' .. anim_timeline_id] = function(self)
-						self.visible = false
-					end,
 				},
 			},
 		},

@@ -256,12 +256,10 @@ local function define_director_fsm()
 							rewind = true,
 							snap_to_start = true,
 						},
+						on_end = '/room',
 					},
 				},
 				entering_state = director.begin_black_wait,
-				on = {
-					['timeline.end.' .. room_switch_wait_timeline_id] = '/room',
-				},
 			},
 				world_transition = {
 					entering_state = function(self)
@@ -293,6 +291,7 @@ local function define_director_fsm()
 						end,
 						autoplay = false,
 						stop_on_exit = true,
+						on_end = director.finish_banner_transition,
 					},
 					[banner_castle_timeline_id] = {
 						create = function()
@@ -304,6 +303,7 @@ local function define_director_fsm()
 						end,
 						autoplay = false,
 						stop_on_exit = true,
+						on_end = director.finish_banner_transition,
 					},
 				},
 				tags = { 'd.bt' },
@@ -320,10 +320,6 @@ local function define_director_fsm()
 					local timeline_id = banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
 					self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
 				end,
-				on = {
-					['timeline.end.' .. banner_world_timeline_id] = director.finish_banner_transition,
-					['timeline.end.' .. banner_castle_timeline_id] = director.finish_banner_transition,
-				},
 			},
 			shrine_overlay = {
 					entering_state = function(self)
@@ -362,12 +358,10 @@ local function define_director_fsm()
 							rewind = true,
 							snap_to_start = true,
 						},
+						on_end = '/item_screen',
 					},
 				},
 				entering_state = director.begin_black_wait,
-				on = {
-					['timeline.end.' .. item_screen_open_timeline_id] = '/item_screen',
-				},
 			},
 				item_screen = {
 					entering_state = function(self)
@@ -404,12 +398,10 @@ local function define_director_fsm()
 							rewind = true,
 							snap_to_start = true,
 						},
+						on_end = '/room',
 					},
 				},
 				entering_state = director.begin_black_wait,
-				on = {
-					['timeline.end.' .. item_screen_close_timeline_id] = '/room',
-				},
 			},
 				halo_teleport = {
 				timelines = {
@@ -427,6 +419,7 @@ local function define_director_fsm()
 							rewind = true,
 							snap_to_start = true,
 						},
+						on_end = '/room_switch_wait',
 					},
 				},
 					entering_state = function(self)
@@ -434,9 +427,6 @@ local function define_director_fsm()
 						self.events:emit('halo')
 						self.events:emit('transition.mask.play')
 					end,
-				on = {
-					['timeline.end.' .. halo_teleport_timeline_id] = '/room_switch_wait',
-				},
 			},
 				seal_dissolution = {
 					timelines = {
@@ -473,18 +463,7 @@ local function define_director_fsm()
 							rewind = true,
 							snap_to_start = true,
 						},
-					},
-					},
-					tags = { 'd.seal' },
-					entering_state = function(self)
-						self:set_active_space('main')
-						self.seal_flash_on = false
-						self:remove_tag('d.seal.flash')
-						self.events:emit('seal_breaking')
-						self.events:emit('seal_dissolution')
-					end,
-					on = {
-						['timeline.frame.' .. seal_timeline_id] = function(self, _state, event)
+						on_frame = function(self, _state, event)
 							local intro_state = event.frame_value + 1
 							self.seal_flash_on = intro_state < 32 and (intro_state % 4) >= 2
 							if self.seal_flash_on then
@@ -496,13 +475,22 @@ local function define_director_fsm()
 								self.events:emit('seal_flash_done')
 							end
 						end,
-						['timeline.end.' .. seal_timeline_id] = function(self)
+						on_end = function(self)
 							self.seal_flash_on = false
 							self:remove_tag('d.seal.flash')
 							self.events:emit('seal_dissolution_done')
 							return '/daemon_appearance'
 						end,
 					},
+					},
+					tags = { 'd.seal' },
+					entering_state = function(self)
+						self:set_active_space('main')
+						self.seal_flash_on = false
+						self:remove_tag('d.seal.flash')
+						self.events:emit('seal_breaking')
+						self.events:emit('seal_dissolution')
+					end,
 				},
 				daemon_appearance = {
 				timelines = {
@@ -579,6 +567,7 @@ local function define_director_fsm()
 						end,
 						autoplay = true,
 						stop_on_exit = true,
+						on_end = '/lithograph_screen',
 					},
 				},
 					entering_state = function(self)
@@ -587,9 +576,6 @@ local function define_director_fsm()
 						self:set_active_space('lithograph')
 						self.events:emit('lithograph')
 					end,
-				on = {
-					['timeline.end.' .. lithograph_open_timeline_id] = '/lithograph_screen',
-				},
 			},
 			lithograph_screen = {
 				input_event_handlers = {
@@ -608,14 +594,12 @@ local function define_director_fsm()
 						end,
 						autoplay = true,
 						stop_on_exit = true,
+						on_end = director.go_room_resume_music,
 					},
 				},
 				entering_state = function(self)
 					self.events:emit('lithograph.clear')
 				end,
-				on = {
-					['timeline.end.' .. lithograph_close_timeline_id] = director.go_room_resume_music,
-				},
 			},
 				title_screen = {
 					entering_state = function(self)

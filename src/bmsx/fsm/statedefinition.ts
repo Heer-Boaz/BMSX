@@ -89,6 +89,22 @@ export class StateDefinition {
 		const timelines = partialdef?.timelines;
 		partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
 		this.timelines = timelines ? { ...timelines } : undefined;
+		if (timelines) {
+			this.on ??= {};
+			for (const [tl_id, tl_def] of Object.entries(timelines)) {
+				const effectiveId = (tl_def.id ?? tl_id) as string;
+				if (tl_def.on_end !== undefined) {
+					const key = `timeline.end.${effectiveId}`;
+					if (this.on[key] !== undefined) throw new Error(`State '${this.def_id}': 'on_end' for timeline '${tl_id}' conflicts with an existing 'on' entry`);
+					this.on[key] = tl_def.on_end as StateActionSpec;
+				}
+				if (tl_def.on_frame !== undefined) {
+					const key = `timeline.frame.${effectiveId}`;
+					if (this.on[key] !== undefined) throw new Error(`State '${this.def_id}': 'on_frame' for timeline '${tl_id}' conflicts with an existing 'on' entry`);
+					this.on[key] = tl_def.on_frame as StateActionSpec;
+				}
+			}
+		}
 		this.data ??= {}; // Unless already defined, data is an empty object
 		this.root = root ?? this; // The root state machine is either the provided root or this state machine
 		this.parent = parent; // The parent state machine is either the provided parent or null (for root machines)

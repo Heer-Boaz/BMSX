@@ -444,6 +444,11 @@ function combat.define_fsm()
 				autoplay = true,
 				stop_on_exit = true,
 				play_options = { rewind = true, snap_to_start = true },
+				on_end = {
+					go = function(self)
+						return finish_combat_fade_in(self)
+					end,
+				},
 			},
 		},
 		entering_state = function(self)
@@ -457,13 +462,6 @@ function combat.define_fsm()
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
-				go = function(self)
-					return finish_combat_fade_in(self)
-				end,
-			},
-		},
-		on = {
-			['timeline.end.' .. combat_fade_timeline_id] = {
 				go = function(self)
 					return finish_combat_fade_in(self)
 				end,
@@ -491,6 +489,11 @@ function combat.define_fsm()
 				autoplay = true,
 				stop_on_exit = true,
 				play_options = { rewind = true, snap_to_start = true },
+				on_end = {
+					go = function(self)
+						return finish_combat_fade_out(self)
+					end,
+				},
 			},
 		},
 		entering_state = function(self)
@@ -499,13 +502,6 @@ function combat.define_fsm()
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
-				go = function(self)
-					return finish_combat_fade_out(self)
-				end,
-			},
-		},
-		on = {
-			['timeline.end.' .. combat_fade_timeline_id] = {
 				go = function(self)
 					return finish_combat_fade_out(self)
 				end,
@@ -792,6 +788,11 @@ function combat.define_fsm()
 				end,
 				autoplay = false,
 				stop_on_exit = true,
+				on_end = {
+					go = function(self)
+						return finish_combat_dodge(self)
+					end,
+				},
 			},
 		},
 			entering_state = function(self)
@@ -813,13 +814,6 @@ function combat.define_fsm()
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
-				go = function(self)
-					return finish_combat_dodge(self)
-				end,
-			},
-		},
-		on = {
-			['timeline.end.' .. combat_dodge_timeline_id] = {
 				go = function(self)
 					return finish_combat_dodge(self)
 				end,
@@ -1093,6 +1087,11 @@ function combat.define_fsm()
 				end,
 				autoplay = false,
 				stop_on_exit = true,
+				on_end = {
+					go = function(self)
+						return finish_combat_all_out(self)
+					end,
+				},
 			},
 		},
 		entering_state = function(self)
@@ -1146,13 +1145,6 @@ function combat.define_fsm()
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
-				go = function(self)
-					return finish_combat_all_out(self)
-				end,
-			},
-		},
-		on = {
-			['timeline.end.' .. combat_all_out_timeline_id] = {
 				go = function(self)
 					return finish_combat_all_out(self)
 				end,
@@ -1288,6 +1280,11 @@ function combat.define_fsm()
 		end,
 				autoplay = false,
 				stop_on_exit = true,
+				on_end = {
+					go = function(self)
+						return finish_combat_results_fade_in(self)
+					end,
+				},
 			},
 		},
 		entering_state = function(self)
@@ -1310,13 +1307,6 @@ function combat.define_fsm()
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
-				go = function(self)
-					return finish_combat_results_fade_in(self)
-				end,
-			},
-		},
-		on = {
-			['timeline.end.' .. combat_results_fade_in_timeline_id] = {
 				go = function(self)
 					return finish_combat_results_fade_in(self)
 				end,
@@ -1357,6 +1347,11 @@ function combat.define_fsm()
 				autoplay = true,
 				stop_on_exit = true,
 				play_options = { rewind = true, snap_to_start = true },
+				on_end = {
+					go = function(self)
+						return finish_combat_results_fade_out(self)
+					end,
+				},
 			},
 		},
 		entering_state = function(self)
@@ -1365,13 +1360,6 @@ function combat.define_fsm()
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
-				go = function(self)
-					return finish_combat_results_fade_out(self)
-				end,
-			},
-		},
-		on = {
-			['timeline.end.' .. combat_results_fade_out_timeline_id] = {
 				go = function(self)
 					return finish_combat_results_fade_out(self)
 				end,
@@ -1395,6 +1383,11 @@ function combat.define_fsm()
 				autoplay = true,
 				stop_on_exit = true,
 				play_options = { rewind = true, snap_to_start = true },
+				on_end = {
+					go = function(self)
+						return finish_combat_exit_fade_in(self)
+					end,
+				},
 			},
 		},
 		entering_state = function(self)
@@ -1406,13 +1399,6 @@ function combat.define_fsm()
 		input_eval = 'first',
 		input_event_handlers = {
 			['b[jp]'] = {
-				go = function(self)
-					return finish_combat_exit_fade_in(self)
-				end,
-			},
-		},
-		on = {
-			['timeline.end.' .. combat_exit_fade_in_timeline_id] = {
 				go = function(self)
 					return finish_combat_exit_fade_in(self)
 				end,

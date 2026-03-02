@@ -187,7 +187,30 @@ function statedefinition.new(id, def, root, parent)
 	self.data = def and def.data or {}
 	self.states = {}
 	self.initial = def and def.initial
-	self.on = def and def.on or {}
+	self.on = {}
+	if def and def.on then
+		for k, v in pairs(def.on) do
+			self.on[k] = v
+		end
+	end
+	if def and def.timelines then
+		for tl_id, tl_def in pairs(def.timelines) do
+			if tl_def.on_end ~= nil then
+				local key = 'timeline.end.' .. tl_id
+				if self.on[key] ~= nil then
+					error("state '" .. tostring(self.def_id) .. "': 'on_end' for timeline '" .. tl_id .. "' conflicts with an existing 'on' entry")
+				end
+				self.on[key] = tl_def.on_end
+			end
+			if tl_def.on_frame ~= nil then
+				local key = 'timeline.frame.' .. tl_id
+				if self.on[key] ~= nil then
+					error("state '" .. tostring(self.def_id) .. "': 'on_frame' for timeline '" .. tl_id .. "' conflicts with an existing 'on' entry")
+				end
+				self.on[key] = tl_def.on_frame
+			end
+		end
+	end
 	if def and def.tick ~= nil then
 		error("state definition '" .. tostring(self.def_id) .. "' field 'tick' is not supported. Use 'update'.")
 	end

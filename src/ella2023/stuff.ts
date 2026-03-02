@@ -164,6 +164,12 @@ export class TitleScreen extends SpriteObject {
 							ticks_per_frame: 20,
 							playback_mode: 'loop',
 							autoplay: true,
+							on_frame: {
+								scope: 'self',
+								go(this: TitleScreen, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<boolean>>) {
+									this.handleBlinkFrame(event.frame_value === true);
+								},
+							},
 						},
 					},
 					entering_state(this: TitleScreen) {
@@ -173,12 +179,6 @@ export class TitleScreen extends SpriteObject {
 						reset: {
 							go(this: TitleScreen) {
 								this.resetMenu();
-							},
-						},
-						[`timeline.frame.${TitleScreen.BLINK_TIMELINE_ID}`]: {
-							scope: 'self',
-							go(this: TitleScreen, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<boolean>>) {
-								this.handleBlinkFrame(event.frame_value === true);
 							},
 						},
 					},
@@ -304,6 +304,19 @@ export class Gordijn extends WorldObject {
 									ticks_per_frame: 2,
 									repetitions: 256 / 8,
 									autoplay: false,
+									on_frame: {
+										scope: 'self',
+										go(this: Gordijn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
+											this.width += event.frame_value;
+										},
+									},
+									on_end: {
+										scope: 'self',
+										go(this: Gordijn, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
+											$.emit('curtained', this);
+											return '../idle';
+										},
+									},
 								},
 							},
 							entering_state(this: Gordijn) {
@@ -311,19 +324,6 @@ export class Gordijn extends WorldObject {
 								this.play_timeline(Gordijn.TIMELINE_ID, { rewind: true, snap_to_start: true });
 							},
 							on: {
-								[`timeline.frame.${Gordijn.TIMELINE_ID}`]: {
-									scope: 'self',
-									go(this: Gordijn, _state: State, event: GameEvent<'timeline.frame', TimelineFrameEventPayload<number>>) {
-										this.width += event.frame_value;
-									},
-								},
-					[`timeline.end.${Gordijn.TIMELINE_ID}`]: {
-									scope: 'self',
-									go(this: Gordijn, _state: State, _event: GameEvent<'timeline.end', TimelineEndEventPayload>) {
-										$.emit('curtained', this);
-										return '../idle';
-									},
-								},
 								reset: '../idle',
 							},
 						},
