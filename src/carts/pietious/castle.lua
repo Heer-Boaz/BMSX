@@ -2,21 +2,8 @@ local constants = require('constants')
 local castle_map = require('castle_map')
 local progression = require('progression')
 local room_spawner = require('room_spawner')
-local world_instance = require('world').instance
 
 local castle = {}
-
-local persistent_room_object_ids = {
-	c = true,
-	d = true,
-	pietolon = true,
-	room = true,
-	transition = true,
-	shrine = true,
-	lithograph = true,
-	item_screen = true,
-	ui = true,
-}
 
 local world1_stairs_open_row = '#............................-=#'
 local halo_destination_room_number = 1
@@ -244,19 +231,6 @@ local function create_room_switch(from_room_number, to_room_number, direction)
 	}
 end
 
-local function should_dispose_runtime_room_object(obj)
-	if persistent_room_object_ids[obj.id] then
-		return false
-	end
-	if obj.id:sub(1, 3) == 'e.p' then
-		return false
-	end
-	if obj.space_id == 'main' then
-		return true
-	end
-	return false
-end
-
 function castle:spawn_global_elevators()
 	local routes = castle_map.elevator_routes
 	self.elevator_count = #routes
@@ -295,7 +269,7 @@ function castle:sync_current_room_seal_instance()
 	end
 	if not keep_seal_instance then
 		if seal_instance ~= nil then
-			world_instance:despawn(seal_instance)
+			seal_instance:mark_for_disposal()
 		end
 		return
 	end
@@ -303,7 +277,7 @@ function castle:sync_current_room_seal_instance()
 	local dissolve_step = self.current_room.seal_dissolve_step
 	if dissolve_step >= 6 then
 		if seal_instance ~= nil then
-			world_instance:despawn(seal_instance)
+			seal_instance:mark_for_disposal()
 		end
 		return
 	end
@@ -564,14 +538,6 @@ function castle:ctor()
 	progression.mount(self, build_progression_program())
 end
 
-function castle:despawn_room_runtime_objects()
-	for obj in world_instance:objects({ scope = 'all' }) do
-		if should_dispose_runtime_room_object(obj) then
-			obj:mark_for_disposal()
-		end
-	end
-end
-
 function castle:sync_world_entrance_states_for_room(room_state)
 	local world_entrances = room_state.world_entrances
 	for i = 1, #world_entrances do
@@ -604,7 +570,6 @@ function castle:emit_room_enter()
 end
 
 function castle:commit_room_switch(switch, map_id, map_x, map_y)
-	self:despawn_room_runtime_objects()
 	self.current_room.map_id = map_id
 	self.current_room.map_x = map_x
 	self.current_room.map_y = map_y

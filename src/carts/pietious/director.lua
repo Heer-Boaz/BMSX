@@ -102,25 +102,25 @@ function director:open_shrine(text_lines)
 end
 
 function director:ensure_daemon_cloud_pool()
+	local clouds = self.daemon_clouds
 	for i = 1, constants.flow.daemon_cloud_max do
-		local cloud_id = 'dc.' .. tostring(i)
-		local cloud = object(cloud_id)
-		if cloud == nil then
-			cloud = inst('daemon_cloud', {
-				id = cloud_id,
+		if clouds[i] == nil then
+			clouds[i] = inst('daemon_cloud', {
+				id = 'dc.' .. tostring(i),
 				space_id = 'main',
 				pos = { x = 0, y = 0, z = 23 },
 			})
 		end
-		cloud:stop_and_hide()
+		clouds[i]:stop_and_hide()
 	end
 end
 
 function director:spawn_daemon_cloud()
+	local clouds = self.daemon_clouds
 	local start_index = self.daemon_smoke_next
 	for i = 0, constants.flow.daemon_cloud_max - 1 do
 		local index = ((start_index - 1 + i) % constants.flow.daemon_cloud_max) + 1
-		local cloud = object('dc.' .. tostring(index))
+		local cloud = clouds[index]
 		if not cloud.visible then
 			cloud:play_once_at(
 				constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size),
@@ -136,11 +136,9 @@ function director:spawn_daemon_cloud()
 end
 
 function director:despawn_daemon_clouds()
-	for i = 1, constants.flow.daemon_cloud_max do
-		local cloud = object('dc.' .. tostring(i))
-		if cloud ~= nil then
-			cloud:stop_and_hide()
-		end
+	local clouds = self.daemon_clouds
+	for i = 1, #clouds do
+		clouds[i]:stop_and_hide()
 	end
 end
 
@@ -195,6 +193,7 @@ function director:ctor()
 	self.next_room_switch_banner_post_action = nil
 	self.daemon_appearance_after_death = false
 	self.daemon_smoke_next = 1
+	self.daemon_clouds = {}
 	self.seal_flash_on = false
 	self.pending_shrine_text_lines = {}
 	self.banner_text_lines = {}
@@ -524,6 +523,10 @@ local function define_director_fsm()
 										}
 									end
 								end
+								markers[#markers + 1] = {
+									frame = 124,
+									event = 'daemon.appearance.done',
+								}
 								return timeline.new({
 									id = daemon_timeline_id,
 									frames = timeline.range(126),
@@ -562,7 +565,7 @@ local function define_director_fsm()
 					['daemon.cloud.spawn'] = function(self)
 						self:spawn_daemon_cloud()
 					end,
-					['timeline.end.' .. daemon_timeline_id] = function(self)
+					['daemon.appearance.done'] = function(self)
 						self:despawn_daemon_clouds()
 						self.events:emit('daemon_appearance_done')
 						return '/room'

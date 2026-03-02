@@ -36,16 +36,14 @@ function enemy_base.bind_overlap_events(self)
 		end,
 	})
 
-	if self.despawn_on_room_switch then
-		self.events:on({
-			event = 'room.switched',
-			emitter = 'pietolon',
-			subscriber = self,
-			handler = function(_event)
-				self:mark_for_disposal()
-			end,
-		})
-	end
+	self.events:on({
+		event = 'room.switched',
+		emitter = 'pietolon',
+		subscriber = self,
+		handler = function(_event)
+			self:mark_for_disposal()
+		end,
+	})
 
 	self.events:on({
 		event = 'shrine_transition_enter',

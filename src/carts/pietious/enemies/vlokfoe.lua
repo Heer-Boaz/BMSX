@@ -52,7 +52,6 @@ function vlokfoe.register_enemy_definition()
 			speed_accum_x = 0,
 			speed_accum_y = 0,
 			direction = 'right',
-			despawn_on_room_switch = true,
 			enemy_kind = 'vlokfoe',
 		},
 	})

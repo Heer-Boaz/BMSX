@@ -59,7 +59,6 @@ function disappearingwall.register_enemy_definition()
 			height_tiles = 1,
 			tiletype = 'frontworld_l',
 			enemy_kind = 'disappearingwall',
-			despawn_on_room_switch = true,
 		},
 	})
 end

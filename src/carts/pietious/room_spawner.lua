@@ -1,22 +1,33 @@
 local progression = require('progression')
 
 local room_spawner = {}
+local spawned_ids = {}
+
+local function track(id)
+	spawned_ids[#spawned_ids + 1] = id
+end
+
+function room_spawner.despawn_previous()
+	for i = 1, #spawned_ids do
+		local obj = object(spawned_ids[i])
+		if obj then
+			obj:mark_for_disposal()
+		end
+	end
+	spawned_ids = {}
+end
 
 local function spawn_rocks(room)
 	for i = 1, #room.rocks do
 		local def = room.rocks[i]
-		local instance = object(def.id)
-		if room.destroyed_rock_ids[def.id] then
-			if instance ~= nil then
-				instance:mark_for_disposal()
-			end
-		elseif instance == nil then
+		if not room.destroyed_rock_ids[def.id] then
 			inst('rock', {
 				id = def.id,
 				space_id = 'main',
 				pos = { x = def.x, y = def.y, z = 140 },
 				item_type = def.item_type,
 			})
+			track(def.id)
 		end
 	end
 end
@@ -24,42 +35,39 @@ end
 local function spawn_lithographs(room)
 	for i = 1, #room.lithographs do
 		local def = room.lithographs[i]
-		if object(def.id) == nil then
-			inst('lithograph', {
-				id = def.id,
-				space_id = 'main',
-				pos = { x = def.x, y = def.y, z = 10 },
-				text = def.text,
-				room_number = room.room_number,
-			})
-		end
+		inst('lithograph', {
+			id = def.id,
+			space_id = 'main',
+			pos = { x = def.x, y = def.y, z = 10 },
+			text = def.text,
+			room_number = room.room_number,
+		})
+		track(def.id)
 	end
 end
 
 local function spawn_shrines(room)
 	for i = 1, #room.shrines do
 		local def = room.shrines[i]
-		if object(def.id) == nil then
-			inst('room_shrine', {
-				id = def.id,
-				space_id = 'main',
-				pos = { x = def.x, y = def.y, z = 22 },
-			})
-		end
+		inst('room_shrine', {
+			id = def.id,
+			space_id = 'main',
+			pos = { x = def.x, y = def.y, z = 22 },
+		})
+		track(def.id)
 	end
 end
 
 local function spawn_draaideuren(room)
 	for i = 1, #room.draaideuren do
 		local def = room.draaideuren[i]
-		if object(def.id) == nil then
-			inst('draaideur', {
-				id = def.id,
-				space_id = 'main',
-				pos = { x = def.x, y = def.y, z = 22 },
-				kind = def.kind,
-			})
-		end
+		inst('draaideur', {
+			id = def.id,
+			space_id = 'main',
+			pos = { x = def.x, y = def.y, z = 22 },
+			kind = def.kind,
+		})
+		track(def.id)
 	end
 end
 
@@ -67,16 +75,14 @@ local function spawn_world_entrances(room)
 	local castle = object('c')
 	for i = 1, #room.world_entrances do
 		local def = room.world_entrances[i]
-		local entrance = object(def.id)
-		if entrance == nil then
-			entrance = inst('world_entrance', {
-				id = def.id,
-				space_id = 'main',
-				pos = { x = def.x, y = def.y, z = 22 },
-				target = def.target,
-			})
-		end
+		local entrance = inst('world_entrance', {
+			id = def.id,
+			space_id = 'main',
+			pos = { x = def.x, y = def.y, z = 22 },
+			target = def.target,
+		})
 		entrance:set_entrance_state(castle.world_entrance_states[def.target].state)
+		track(def.id)
 	end
 end
 
@@ -88,12 +94,7 @@ local function spawn_items(room)
 		local picked = progression.get(castle, 'item_picked_' .. def.id)
 		local matches_conditions = progression.matches(castle, def.conditions)
 		local already_owned = player.inventory_items[def.item_type]
-		local instance = object(def.id)
-		if picked or not matches_conditions or already_owned then
-			if instance ~= nil then
-				instance:mark_for_disposal()
-			end
-		elseif instance == nil then
+		if not picked and matches_conditions and not already_owned then
 			inst('world_item', {
 				id = def.id,
 				space_id = 'main',
@@ -101,6 +102,7 @@ local function spawn_items(room)
 				item_id = def.id,
 				item_type = def.item_type,
 			})
+			track(def.id)
 		end
 	end
 end
@@ -111,12 +113,7 @@ local function spawn_enemies(room)
 		local def = room.enemies[i]
 		local defeated = progression.get(castle, def.id)
 		local matches_conditions = progression.matches(castle, def.conditions)
-		local instance = object(def.id)
-		if defeated or not matches_conditions then
-			if instance ~= nil then
-				instance:mark_for_disposal()
-			end
-		elseif instance == nil then
+		if not defeated and matches_conditions then
 			inst('enemy.' .. def.kind, {
 				id = def.id,
 				space_id = 'main',
@@ -133,11 +130,13 @@ local function spawn_enemies(room)
 				height_tiles = def.height_tiles,
 				tiletype = def.tiletype,
 			})
+			track(def.id)
 		end
 	end
 end
 
 function room_spawner.spawn_all_for_room(room)
+	room_spawner.despawn_previous()
 	spawn_rocks(room)
 	spawn_lithographs(room)
 	spawn_shrines(room)

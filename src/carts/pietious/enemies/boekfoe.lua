@@ -49,7 +49,6 @@ function boekfoe.bt_tick(self, blackboard)
 		local y_speed_num = math.random(-5, 4)
 		object('c').events:emit('paperspawn')
 		inst('enemy.paperfoe', {
-			despawn_on_room_switch = true,
 			direction = self.direction == 'left' and 'left' or 'right',
 			speed_x_num = (self.direction == 'left' and -constants.enemy.paper_speed_x or constants.enemy.paper_speed_x) * 5,
 			speed_y_num = y_speed_num,
@@ -119,7 +118,6 @@ function boekfoe.register_enemy_definition()
 			speed_accum_x = 0,
 			speed_accum_y = 0,
 			direction = 'right',
-			despawn_on_room_switch = false,
 			enemy_kind = 'boekfoe',
 		},
 	})
