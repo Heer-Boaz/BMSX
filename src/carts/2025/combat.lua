@@ -83,8 +83,6 @@ local function build_all_out_screen_shake_frames(params)
 	return frames
 end
 
-local combat_fade_frames = timeline_builders.build_combat_fade_frames()
-
 local combat_director = {}
 combat_director.__index = combat_director
 
@@ -204,87 +202,11 @@ function combat_director:skip_typing()
 	return false
 end
 
-function combat.setup_timelines(self)
-	self:define_timeline(timeline.new({
-		id = combat_hover_timeline_id,
-		playback_mode = 'loop',
-		tracks = {
-			{
-				kind = 'wave',
-				path = { 'y' },
-				base = 'base_y',
-				amp = combat_monster_hover_amp,
-				period = combat_monster_hover_period_seconds,
-				phase = 0.25,
-				wave = 'pingpong',
-				ease = easing.smoothstep,
-			},
-		},
-	}))
-	self:define_timeline(timeline.new({
-		id = combat_parallax_timeline_id,
-		playback_mode = 'once',
-		duration_seconds = combat_parallax_impact_duration_seconds,
-		tracks = {
-			{
-				kind = 'sprite_parallax_rig',
-			},
-		},
-	}))
-	self:define_timeline(timeline.new({
-		id = combat_focus_timeline_id,
-		frames = timeline_builders.build_combat_focus_frames,
-		ticks_per_frame = combat_focus_ticks_per_frame,
-		playback_mode = 'once',
-		apply = true,
-		markers = {
-			{ frame = 0, event = 'combat_focus.snap' },
-			{ u = 1, event = 'combat_focus.done' },
-		},
-	}))
-	self:define_timeline(timeline.new({
-		id = combat_intro_timeline_id,
-		frames = timeline_builders.build_combat_intro_frames,
-		ticks_per_frame = combat_intro_ticks_per_frame,
-		playback_mode = 'once',
-		apply = true,
-	}))
-	self:define_timeline(timeline.new({
-		id = combat_hit_timeline_id,
-		frames = timeline_builders.build_combat_hit_frames,
-		ticks_per_frame = combat_hit_ticks_per_frame,
-		playback_mode = 'once',
-		apply = true,
-	}))
-	self:define_timeline(timeline.new({
-		id = combat_exchange_hit_timeline_id,
-		frames = timeline_builders.build_combat_exchange_frames,
-		ticks_per_frame = combat_exchange_hit_ticks_per_frame,
-		playback_mode = 'once',
-		apply = true,
-	}))
-	self:define_timeline(timeline.new({
-		id = combat_exchange_miss_timeline_id,
-		frames = timeline_builders.build_combat_exchange_frames,
-		ticks_per_frame = combat_exchange_miss_ticks_per_frame,
-		playback_mode = 'once',
-		apply = true,
-	}))
-	self:define_timeline(timeline.new({
-		id = combat_all_out_prompt_timeline_id,
-		frames = build_all_out_prompt_portrait_frames,
-		ticks_per_frame = 16,
-		playback_mode = 'once',
-		apply = true,
-	}))
-end
-
 function combat.define_fsm()
 	local states = {}
 
 	states.boot = {
 		entering_state = function(self)
-			combat.setup_timelines(self)
 			self.combat_hit_slash_frame = {
 				slash_active = false,
 				slash_points = { 0, 0, 0, 0 },
@@ -431,19 +353,8 @@ function combat.define_fsm()
 	states.combat_fade_in = {
 		timelines = {
 			[combat_fade_timeline_id] = {
-				create = function()
-					return timeline.new({
-						id = combat_fade_timeline_id,
-						frames = combat_fade_frames,
-						ticks_per_frame = combat_fade_ticks_per_frame,
-						playback_mode = 'once',
-						target = object(bg_id),
-						apply = true,
-					})
-				end,
-				autoplay = true,
+				autoplay = false,
 				stop_on_exit = true,
-				play_options = { rewind = true, snap_to_start = true },
 				on_end = {
 					go = function(self)
 						return finish_combat_fade_in(self)
@@ -458,6 +369,7 @@ function combat.define_fsm()
 			local bg = object(bg_id)
 			bg.visible = true
 			bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
+			self:play_timeline(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = bg })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -476,19 +388,8 @@ function combat.define_fsm()
 	states.combat_fade_out = {
 		timelines = {
 			[combat_fade_timeline_id] = {
-				create = function()
-					return timeline.new({
-						id = combat_fade_timeline_id,
-						frames = combat_fade_frames,
-						ticks_per_frame = combat_fade_ticks_per_frame,
-						playback_mode = 'once',
-						target = object(bg_id),
-						apply = true,
-					})
-				end,
-				autoplay = true,
+				autoplay = false,
 				stop_on_exit = true,
-				play_options = { rewind = true, snap_to_start = true },
 				on_end = {
 					go = function(self)
 						return finish_combat_fade_out(self)
@@ -498,6 +399,7 @@ function combat.define_fsm()
 		},
 		entering_state = function(self)
 			clear_texts(text_ids_core)
+			self:play_timeline(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = object(bg_id) })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -783,15 +685,6 @@ function combat.define_fsm()
 	states.combat_dodge = {
 		timelines = {
 			[combat_dodge_timeline_id] = {
-				create = function()
-					return timeline.new({
-						id = combat_dodge_timeline_id,
-						frames = timeline_builders.build_combat_dodge_frames,
-						ticks_per_frame = combat_dodge_ticks_per_frame,
-						playback_mode = 'once',
-						apply = true,
-					})
-				end,
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -1088,15 +981,6 @@ function combat.define_fsm()
 	states.combat_all_out = {
 		timelines = {
 			[combat_all_out_timeline_id] = {
-				create = function()
-					return timeline.new({
-						id = combat_all_out_timeline_id,
-						frames = build_all_out_screen_shake_frames,
-						ticks_per_frame = combat_all_out_ticks_per_frame,
-						playback_mode = 'once',
-						apply = true,
-					})
-				end,
 				autoplay = false,
 				stop_on_exit = true,
 				on_end = {
@@ -1342,23 +1226,8 @@ function combat.define_fsm()
 	states.combat_results_fade_out = {
 		timelines = {
 			[combat_results_fade_out_timeline_id] = {
-				create = function()
-			return timeline.new({
-				id = combat_results_fade_out_timeline_id,
-					frames = timeline_builders.build_combat_results_fade_out_frames(),
-						ticks_per_frame = combat_results_fade_out_ticks_per_frame,
-						playback_mode = 'once',
-						target = {
-							bg = object(bg_id),
-							maya_b = object(combat_maya_b_id),
-							results = object(text_results_id),
-						},
-						apply = true,
-					})
-				end,
-				autoplay = true,
+				autoplay = false,
 				stop_on_exit = true,
-				play_options = { rewind = true, snap_to_start = true },
 				on_end = {
 					go = function(self)
 						return finish_combat_results_fade_out(self)
@@ -1368,6 +1237,15 @@ function combat.define_fsm()
 		},
 		entering_state = function(self)
 			clear_texts(text_ids_core)
+			self:play_timeline(combat_results_fade_out_timeline_id, {
+				rewind = true,
+				snap_to_start = true,
+				target = {
+					bg = object(bg_id),
+					maya_b = object(combat_maya_b_id),
+					results = object(text_results_id),
+				},
+			})
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -1382,19 +1260,8 @@ function combat.define_fsm()
 	states.combat_exit_fade_in = {
 		timelines = {
 			[combat_exit_fade_in_timeline_id] = {
-				create = function()
-			return timeline.new({
-				id = combat_exit_fade_in_timeline_id,
-					frames = timeline_builders.build_combat_exit_fade_in_frames(),
-						ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
-						playback_mode = 'once',
-						target = object(bg_id),
-						apply = true,
-					})
-				end,
-				autoplay = true,
+				autoplay = false,
 				stop_on_exit = true,
-				play_options = { rewind = true, snap_to_start = true },
 				on_end = {
 					go = function(self)
 						return finish_combat_exit_fade_in(self)
@@ -1407,6 +1274,7 @@ function combat.define_fsm()
 			apply_background(self.combat_exit_target_bg)
 			bg.visible = true
 			bg.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 1 }
+			self:play_timeline(combat_exit_fade_in_timeline_id, { rewind = true, snap_to_start = true, target = bg })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -1422,8 +1290,172 @@ function combat.define_fsm()
 		end,
 	}
 
+	-- ARCHITECTURE: Engineering guidelines for FSM states that use timelines.
+	--
+	-- DEFINING timelines
+	--   All timelines are declared once here, at the FSM root, using `def = { ... }`.
+	--   The engine calls timeline.new(def) internally — no timeline.new() call needed
+	--   in cart code. The `id` field in `def` is optional; it defaults to the key.
+	--   autoplay = false at root level: registration only, no automatic playback.
+	--
+	-- PER-STATE BEHAVIOUR (in individual state `timelines` blocks, no `def`)
+	--   autoplay = true   — play automatically on state enter (no runtime target/params).
+	--   autoplay = false  — play manually via self:play_timeline(id, opts) in
+	--                       entering_state. Required when `target` or `params` depend
+	--                       on runtime values (e.g. self.combat_monster_base_x).
+	--   stop_on_exit = true  — stop the timeline automatically on state exit.
+	--   on_end  — transition or action when the timeline finishes.
+	--   on_frame  — action fired on every timeline frame tick.
 	define_fsm(combat_director_fsm_id, {
 		initial = 'boot',
+		timelines = {
+			-- Track-driven timelines (no frames, driven by wave/parallax tracks)
+			[combat_hover_timeline_id] = {
+				def = {
+					playback_mode = 'loop',
+					tracks = {
+						{
+							kind = 'wave',
+							path = { 'y' },
+							base = 'base_y',
+							amp = combat_monster_hover_amp,
+							period = combat_monster_hover_period_seconds,
+							phase = 0.25,
+							wave = 'pingpong',
+							ease = easing.smoothstep,
+						},
+					},
+				},
+				autoplay = false,
+			},
+			[combat_parallax_timeline_id] = {
+				def = {
+					playback_mode = 'once',
+					duration_seconds = combat_parallax_impact_duration_seconds,
+					tracks = {
+						{ kind = 'sprite_parallax_rig' },
+					},
+				},
+				autoplay = false,
+			},
+			-- Frame-driven applied animation timelines (frames built by builder fns)
+			-- These require a `target` and optional `params` at play time, so
+			-- individual states use autoplay = false + entering_state play calls.
+			[combat_focus_timeline_id] = {
+				def = {
+					frames = timeline_builders.build_combat_focus_frames,
+					ticks_per_frame = combat_focus_ticks_per_frame,
+					playback_mode = 'once',
+					apply = true,
+					markers = {
+						{ frame = 0, event = 'combat_focus.snap' },
+						{ u = 1, event = 'combat_focus.done' },
+					},
+				},
+				autoplay = false,
+			},
+			[combat_intro_timeline_id] = {
+				def = {
+					frames = timeline_builders.build_combat_intro_frames,
+					ticks_per_frame = combat_intro_ticks_per_frame,
+					playback_mode = 'once',
+					apply = true,
+				},
+				autoplay = false,
+			},
+			[combat_hit_timeline_id] = {
+				def = {
+					frames = timeline_builders.build_combat_hit_frames,
+					ticks_per_frame = combat_hit_ticks_per_frame,
+					playback_mode = 'once',
+					apply = true,
+				},
+				autoplay = false,
+			},
+			[combat_exchange_hit_timeline_id] = {
+				def = {
+					frames = timeline_builders.build_combat_exchange_frames,
+					ticks_per_frame = combat_exchange_hit_ticks_per_frame,
+					playback_mode = 'once',
+					apply = true,
+				},
+				autoplay = false,
+			},
+			[combat_exchange_miss_timeline_id] = {
+				def = {
+					frames = timeline_builders.build_combat_exchange_frames,
+					ticks_per_frame = combat_exchange_miss_ticks_per_frame,
+					playback_mode = 'once',
+					apply = true,
+				},
+				autoplay = false,
+			},
+			[combat_all_out_prompt_timeline_id] = {
+				def = {
+					frames = build_all_out_prompt_portrait_frames,
+					ticks_per_frame = 16,
+					playback_mode = 'once',
+					apply = true,
+				},
+				autoplay = false,
+			},
+			[combat_dodge_timeline_id] = {
+				def = {
+					frames = timeline_builders.build_combat_dodge_frames,
+					ticks_per_frame = combat_dodge_ticks_per_frame,
+					playback_mode = 'once',
+					apply = true,
+				},
+				autoplay = false,
+			},
+			[combat_all_out_timeline_id] = {
+				def = {
+					frames = build_all_out_screen_shake_frames,
+					ticks_per_frame = combat_all_out_ticks_per_frame,
+					playback_mode = 'once',
+					apply = true,
+				},
+				autoplay = false,
+			},
+			-- Fade timelines. These use a fixed target (bg_id / etc.) that is only
+			-- valid at runtime, so individual states call play_timeline manually.
+			[combat_fade_timeline_id] = {
+				def = {
+					frames = timeline_builders.build_combat_fade_frames(),
+					ticks_per_frame = combat_fade_ticks_per_frame,
+					playback_mode = 'once',
+					apply = true,
+				},
+				autoplay = false,
+			},
+			[combat_results_fade_in_timeline_id] = {
+				def = {
+					frames = timeline_builders.build_combat_results_fade_in_frames,
+					ticks_per_frame = combat_results_fade_in_ticks_per_frame,
+					playback_mode = 'once',
+					apply = true,
+				},
+				autoplay = false,
+			},
+			[combat_results_fade_out_timeline_id] = {
+				def = {
+					frames = timeline_builders.build_combat_results_fade_out_frames(),
+					ticks_per_frame = combat_results_fade_out_ticks_per_frame,
+					playback_mode = 'once',
+					apply = true,
+				},
+				autoplay = false,
+			},
+			[combat_exit_fade_in_timeline_id] = {
+				def = {
+					frames = timeline_builders.build_combat_exit_fade_in_frames(),
+					ticks_per_frame = combat_exit_fade_in_ticks_per_frame,
+					playback_mode = 'once',
+					apply = true,
+				},
+				autoplay = false,
+			},
+		},
 		states = states,
 	})
 end

@@ -3,6 +3,7 @@
 
 local fsm_trace = require("fsm_trace")
 local clear_map = require("clear_map")
+local timeline_module = require("timeline")
 
 local statedefinition = {}
 statedefinition.__index = statedefinition
@@ -561,21 +562,8 @@ function state:timeline(id)
 end
 
 function state:create_timeline_binding(key, config)
-	if config.__is_timeline then
-		return {
-			id = config.id or key,
-			def = config,
-			autoplay = true,
-			stop_on_exit = true,
-			play_options = nil,
-			defined = false,
-		}
-	end
-	if config.create ~= nil and type(config.create) ~= "function" then
-		error("timeline '" .. tostring(key) .. "' has an invalid create() factory.")
-	end
-	if config.def ~= nil and not config.def.__is_timeline then
-		error("timeline '" .. tostring(key) .. "' has an invalid def (must be a timeline object).")
+	if config.def ~= nil and type(config.def) ~= "table" then
+		error("timeline '" .. tostring(key) .. "' field 'def' must be a table.")
 	end
 	local autoplay
 	if config.autoplay ~= nil then
@@ -592,7 +580,6 @@ function state:create_timeline_binding(key, config)
 	return {
 		id = config.id or key,
 		def = config.def,
-		create = config.create,
 		autoplay = autoplay,
 		stop_on_exit = stop_on_exit,
 		play_options = config.play_options,
@@ -614,16 +601,11 @@ function state:ensure_timeline_definitions()
 		local binding = bindings[i]
 		if not binding.defined then
 			if binding.def then
-				self.target:define_timeline(binding.def)
-			elseif binding.create then
-				local timeline = binding.create()
-				if not timeline then
-					error("timeline factory for '" .. tostring(binding.id) .. "' returned no timeline.")
+				local def = binding.def
+				if def.id == nil then
+					def.id = binding.id
 				end
-				if timeline.id ~= binding.id then
-					error("timeline factory for '" .. tostring(binding.id) .. "' returned '" .. tostring(timeline.id) .. "'.")
-				end
-				self.target:define_timeline(timeline)
+				self.target:define_timeline(timeline_module.new(def))
 			end
 			binding.defined = true
 		end

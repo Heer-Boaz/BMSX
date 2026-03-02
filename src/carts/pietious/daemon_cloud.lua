@@ -30,18 +30,15 @@ local function define_daemon_cloud_fsm()
 			active = {
 				timelines = {
 					[anim_timeline_id] = {
-						create = function()
-							return timeline.new({
-								id = anim_timeline_id,
-								frames = timeline.build_frame_sequence({
-									{ value = 'daemon_smoke_small', hold = 16 },
-									{ value = 'daemon_smoke_large', hold = 16 },
-									{ value = 'daemon_smoke_small', hold = 16 },
-									{ value = 'daemon_smoke_large', hold = 16 },
-								}),
-								playback_mode = 'once',
-							})
-						end,
+						def = {
+							frames = timeline.build_frame_sequence({
+								{ value = 'daemon_smoke_small', hold = 16 },
+								{ value = 'daemon_smoke_large', hold = 16 },
+								{ value = 'daemon_smoke_small', hold = 16 },
+								{ value = 'daemon_smoke_large', hold = 16 },
+							}),
+							playback_mode = 'once',
+						},
 						autoplay = false,
 						stop_on_exit = true,
 						on_frame = function(self)

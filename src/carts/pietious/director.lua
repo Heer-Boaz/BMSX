@@ -202,6 +202,23 @@ function director:ctor()
 	self:ensure_daemon_cloud_pool()
 end
 
+-- ARCHITECTURE: Engineering guidelines for FSM states that use timelines.
+--
+-- DEFINING timelines
+--   Declare them in the `timelines` block of the state that owns them, using
+--   `def = { ... }` with a plain configuration table. The engine calls
+--   timeline.new(def) internally — no timeline.new() call needed in cart code.
+--   The `id` field in `def` is optional; it defaults to the dictionary key.
+--
+-- PER-STATE BEHAVIOUR
+--   autoplay = true   — the FSM plays the timeline automatically on state enter.
+--                       Use this when no runtime `target` or `params` are needed.
+--   autoplay = false  — play manually with self:play_timeline(id, opts) in
+--                       entering_state. Required when `target` or `params` are
+--                       only known at enter time (e.g. they depend on self.x).
+--   stop_on_exit = true  — the FSM stops the timeline automatically on exit.
+--   on_end            — transition or action when the timeline finishes.
+--   on_frame          — action fired on every timeline frame tick.
 local function define_director_fsm()
 	define_fsm('director', {
 		initial = 'room',
@@ -243,13 +260,10 @@ local function define_director_fsm()
 			room_switch_wait = {
 				timelines = {
 					[room_switch_wait_timeline_id] = {
-						create = function()
-							return timeline.new({
-								id = room_switch_wait_timeline_id,
-								frames = timeline.range(constants.flow.room_switch_wait_frames),
-								playback_mode = 'once',
-							})
-						end,
+						def = {
+							frames = timeline.range(constants.flow.room_switch_wait_frames),
+							playback_mode = 'once',
+						},
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -282,25 +296,19 @@ local function define_director_fsm()
 			banner_transition = {
 				timelines = {
 					[banner_world_timeline_id] = {
-						create = function()
-							return timeline.new({
-								id = banner_world_timeline_id,
-								frames = timeline.range(constants.flow.world_banner_frames),
-								playback_mode = 'once',
-							})
-						end,
+						def = {
+							frames = timeline.range(constants.flow.world_banner_frames),
+							playback_mode = 'once',
+						},
 						autoplay = false,
 						stop_on_exit = true,
 						on_end = director.finish_banner_transition,
 					},
 					[banner_castle_timeline_id] = {
-						create = function()
-							return timeline.new({
-								id = banner_castle_timeline_id,
-								frames = timeline.range(constants.flow.castle_banner_frames),
-								playback_mode = 'once',
-							})
-						end,
+						def = {
+							frames = timeline.range(constants.flow.castle_banner_frames),
+							playback_mode = 'once',
+						},
 						autoplay = false,
 						stop_on_exit = true,
 						on_end = director.finish_banner_transition,
@@ -345,13 +353,10 @@ local function define_director_fsm()
 			item_screen_opening = {
 				timelines = {
 					[item_screen_open_timeline_id] = {
-						create = function()
-							return timeline.new({
-								id = item_screen_open_timeline_id,
-								frames = timeline.range(constants.flow.item_screen_wait_frames),
-								playback_mode = 'once',
-							})
-						end,
+						def = {
+							frames = timeline.range(constants.flow.item_screen_wait_frames),
+							playback_mode = 'once',
+						},
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -385,13 +390,10 @@ local function define_director_fsm()
 			item_screen_closing = {
 				timelines = {
 					[item_screen_close_timeline_id] = {
-						create = function()
-							return timeline.new({
-								id = item_screen_close_timeline_id,
-								frames = timeline.range(constants.flow.item_screen_wait_frames),
-								playback_mode = 'once',
-							})
-						end,
+						def = {
+							frames = timeline.range(constants.flow.item_screen_wait_frames),
+							playback_mode = 'once',
+						},
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -406,13 +408,10 @@ local function define_director_fsm()
 				halo_teleport = {
 				timelines = {
 					[halo_teleport_timeline_id] = {
-						create = function()
-							return timeline.new({
-								id = halo_teleport_timeline_id,
-								frames = timeline.range(1),
-								playback_mode = 'once',
-							})
-						end,
+						def = {
+							frames = timeline.range(1),
+							playback_mode = 'once',
+						},
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -431,32 +430,29 @@ local function define_director_fsm()
 				seal_dissolution = {
 					timelines = {
 						[seal_timeline_id] = {
-							create = function()
-								return timeline.new({
-									id = seal_timeline_id,
-									frames = timeline.range(95),
-									playback_mode = 'once',
-									markers = {
-										{ frame = 0, event = 'seal.phase', payload = { phase = 'flash' } },
-										{ frame = 31, event = 'seal.phase', payload = { phase = 'room_dissolve' } },
-										{ frame = 63, event = 'seal.phase', payload = { phase = 'seal_dissolve' } },
+							def = {
+								frames = timeline.range(95),
+								playback_mode = 'once',
+								markers = {
+									{ frame = 0, event = 'seal.phase', payload = { phase = 'flash' } },
+									{ frame = 31, event = 'seal.phase', payload = { phase = 'room_dissolve' } },
+									{ frame = 63, event = 'seal.phase', payload = { phase = 'seal_dissolve' } },
+								},
+								windows = {
+									{
+										name = 'dissolve',
+										tag = 'd.seal.dissolve',
+										start = { frame = 31 },
+										['end'] = { frame = 94 },
 									},
-									windows = {
-										{
-											name = 'dissolve',
-											tag = 'd.seal.dissolve',
-											start = { frame = 31 },
-											['end'] = { frame = 94 },
-										},
-										{
-											name = 'smoke',
-											tag = 'd.seal.smoke',
-											start = { frame = 63 },
-											['end'] = { frame = 94 },
-										},
+									{
+										name = 'smoke',
+										tag = 'd.seal.smoke',
+										start = { frame = 63 },
+										['end'] = { frame = 94 },
 									},
-								})
-							end,
+								},
+							},
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -495,36 +491,29 @@ local function define_director_fsm()
 				daemon_appearance = {
 				timelines = {
 						[daemon_timeline_id] = {
-							create = function()
+							def = {
+								frames = timeline.range(126),
+								playback_mode = 'once',
+								markers = (function()
 								local markers = {}
 								for frame_value = 0, 125 do
 									local intro_state = math.modf(frame_value / 2) + 97
 									if (frame_value % 2) == 0 and intro_state > 96 and intro_state < 160 and (intro_state % 8) < 4 then
-										markers[#markers + 1] = {
-											frame = frame_value,
-											event = 'daemon.cloud.spawn',
-										}
+										markers[#markers + 1] = { frame = frame_value, event = 'daemon.cloud.spawn' }
 									end
 								end
-								markers[#markers + 1] = {
-									frame = 124,
-									event = 'daemon.appearance.done',
-								}
-								return timeline.new({
-									id = daemon_timeline_id,
-									frames = timeline.range(126),
-									playback_mode = 'once',
-									markers = markers,
-									windows = {
-										{
-											name = 'clouds',
-											tag = 'd.daemon.clouds',
-											start = { frame = 0 },
-											['end'] = { frame = 125 },
-										},
+								markers[#markers + 1] = { frame = 124, event = 'daemon.appearance.done' }
+								return markers
+							end)(),
+								windows = {
+									{
+										name = 'clouds',
+										tag = 'd.daemon.clouds',
+										start = { frame = 0 },
+										['end'] = { frame = 125 },
 									},
-								})
-							end,
+								},
+							},
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
@@ -558,13 +547,10 @@ local function define_director_fsm()
 				lithograph_screen_open = {
 				timelines = {
 					[lithograph_open_timeline_id] = {
-						create = function()
-							return timeline.new({
-								id = lithograph_open_timeline_id,
-								frames = timeline.range(1),
-								playback_mode = 'once',
-							})
-						end,
+						def = {
+							frames = timeline.range(1),
+							playback_mode = 'once',
+						},
 						autoplay = true,
 						stop_on_exit = true,
 						on_end = '/lithograph_screen',
@@ -585,13 +571,10 @@ local function define_director_fsm()
 			lithograph_screen_close = {
 				timelines = {
 					[lithograph_close_timeline_id] = {
-						create = function()
-							return timeline.new({
-								id = lithograph_close_timeline_id,
-								frames = timeline.range(1),
-								playback_mode = 'once',
-							})
-						end,
+						def = {
+							frames = timeline.range(1),
+							playback_mode = 'once',
+						},
 						autoplay = true,
 						stop_on_exit = true,
 						on_end = director.go_room_resume_music,

@@ -4,7 +4,7 @@ import type { StateMachineController } from "./fsmcontroller";
 import type { State } from './state';
 import type { StateDefinition } from './statedefinition';
 import type { EventPayload, GameEvent } from '../core/game_event';
-import type { Timeline } from '../timeline/timeline';
+import type { TimelineDefinition } from '../timeline/timeline';
 import type { TimelinePlayOptions } from '../component/timeline_component';
 
 /**
@@ -50,10 +50,11 @@ export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
 export type StateTimelineConfig<T = any> = {
 	/** Optional id override; falls back to the dictionary key. */
 	id?: string;
-	/** Factory that builds and registers the timeline. Mutually exclusive with `def`. */
-	create?: () => Timeline<T>;
-	/** Pre-built timeline object to register. Mutually exclusive with `create`. */
-	def?: Timeline<T>;
+	/**
+	 * Inline timeline definition. The `id` field is optional and defaults to the dictionary key.
+	 * The FSM engine calls `timeline.new(def)` internally — no `timeline.new` call needed in cart code.
+	 */
+	def?: Omit<TimelineDefinition<T>, 'id'> & { id?: string };
 	/** Automatically plays the timeline when the state enters. Defaults to true. */
 	autoplay?: boolean;
 	/** Automatically stops the timeline when the state exits. Defaults to true. */
@@ -66,13 +67,7 @@ export type StateTimelineConfig<T = any> = {
 	on_frame?: StateActionSpec | StateEventHandler | string;
 };
 
-/**
- * A timeline entry in a state's `timelines` map. Can be a full config object or a pre-built
- * `Timeline` instance (shorthand for `{ def: timeline, autoplay: true, stop_on_exit: true }`).
- */
-export type StateTimelineEntry<T = any> = StateTimelineConfig<T> | Timeline<T>;
-
-export type StateTimelineMap = Record<string, StateTimelineEntry>;
+export type StateTimelineMap = Record<string, StateTimelineConfig>;
 
 // export type StateIdentifierStart = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm' | 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M' | 'N' | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z';
 // export type StatePathPart = `${StateIdentifierStart}${Identifier}`;
