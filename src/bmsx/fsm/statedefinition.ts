@@ -2,6 +2,7 @@ import { type Identifier } from '../rompack/rompack';
 import { excludepropfromsavegame } from '../serializer/serializationhooks';
 import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type TickCheckDefinition, type id2partial_sdef, type StateTimelineMap, type listed_sdef_event } from './fsmtypes';
 import { State } from './state';
+import { Timeline } from '../timeline/timeline';
 
 function looksLikeStatePath(value: string): boolean {
 	if (!value) return false;
@@ -92,6 +93,7 @@ export class StateDefinition {
 		if (timelines) {
 			this.on ??= {};
 			for (const [tl_id, tl_def] of Object.entries(timelines)) {
+				if (tl_def instanceof Timeline) continue; // raw Timeline shorthand — no on_end/on_frame config
 				const effectiveId = (tl_def.id ?? tl_id) as string;
 				if (tl_def.on_end !== undefined) {
 					const key = `timeline.end.${effectiveId}`;

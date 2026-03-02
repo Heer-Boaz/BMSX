@@ -50,8 +50,10 @@ export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
 export type StateTimelineConfig<T = any> = {
 	/** Optional id override; falls back to the dictionary key. */
 	id?: string;
-	/** Factory that builds the timeline instance for this state. */
-	create: () => Timeline<T>;
+	/** Factory that builds and registers the timeline. Mutually exclusive with `def`. */
+	create?: () => Timeline<T>;
+	/** Pre-built timeline object to register. Mutually exclusive with `create`. */
+	def?: Timeline<T>;
 	/** Automatically plays the timeline when the state enters. Defaults to true. */
 	autoplay?: boolean;
 	/** Automatically stops the timeline when the state exits. Defaults to true. */
@@ -64,7 +66,13 @@ export type StateTimelineConfig<T = any> = {
 	on_frame?: StateActionSpec | StateEventHandler | string;
 };
 
-export type StateTimelineMap = Record<string, StateTimelineConfig>;
+/**
+ * A timeline entry in a state's `timelines` map. Can be a full config object or a pre-built
+ * `Timeline` instance (shorthand for `{ def: timeline, autoplay: true, stop_on_exit: true }`).
+ */
+export type StateTimelineEntry<T = any> = StateTimelineConfig<T> | Timeline<T>;
+
+export type StateTimelineMap = Record<string, StateTimelineEntry>;
 
 // export type StateIdentifierStart = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm' | 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M' | 'N' | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z';
 // export type StatePathPart = `${StateIdentifierStart}${Identifier}`;

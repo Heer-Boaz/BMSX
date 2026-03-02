@@ -561,8 +561,21 @@ function state:timeline(id)
 end
 
 function state:create_timeline_binding(key, config)
-	if type(config.create) ~= "function" then
-		error("timeline '" .. tostring(key) .. "' is missing a create() factory.")
+	if config.__is_timeline then
+		return {
+			id = config.id or key,
+			def = config,
+			autoplay = true,
+			stop_on_exit = true,
+			play_options = nil,
+			defined = false,
+		}
+	end
+	if config.create ~= nil and type(config.create) ~= "function" then
+		error("timeline '" .. tostring(key) .. "' has an invalid create() factory.")
+	end
+	if config.def ~= nil and not config.def.__is_timeline then
+		error("timeline '" .. tostring(key) .. "' has an invalid def (must be a timeline object).")
 	end
 	local autoplay
 	if config.autoplay ~= nil then
@@ -578,6 +591,7 @@ function state:create_timeline_binding(key, config)
 	end
 	return {
 		id = config.id or key,
+		def = config.def,
 		create = config.create,
 		autoplay = autoplay,
 		stop_on_exit = stop_on_exit,
@@ -599,14 +613,18 @@ function state:ensure_timeline_definitions()
 	for i = 1, #bindings do
 		local binding = bindings[i]
 		if not binding.defined then
-			local timeline = binding.create()
-			if not timeline then
-				error("timeline factory for '" .. tostring(binding.id) .. "' returned no timeline.")
+			if binding.def then
+				self.target:define_timeline(binding.def)
+			elseif binding.create then
+				local timeline = binding.create()
+				if not timeline then
+					error("timeline factory for '" .. tostring(binding.id) .. "' returned no timeline.")
+				end
+				if timeline.id ~= binding.id then
+					error("timeline factory for '" .. tostring(binding.id) .. "' returned '" .. tostring(timeline.id) .. "'.")
+				end
+				self.target:define_timeline(timeline)
 			end
-			if timeline.id ~= binding.id then
-				error("timeline factory for '" .. tostring(binding.id) .. "' returned '" .. tostring(timeline.id) .. "'.")
-			end
-			self.target:define_timeline(timeline)
 			binding.defined = true
 		end
 	end

@@ -576,6 +576,17 @@ function combat.define_fsm()
 	}
 
 	states.combat_intro = {
+		timelines = {
+			[combat_intro_timeline_id] = {
+				autoplay = false,
+				stop_on_exit = true,
+				on_end = {
+					go = function(self)
+						return finish_combat_intro(self)
+					end,
+				},
+			},
+		},
 		entering_state = function(self)
 			local monster = object(combat_monster_id)
 			local maya_a = object(combat_maya_a_id)
@@ -621,15 +632,7 @@ function combat.define_fsm()
 				end,
 			},
 		},
-		on = {
-			['timeline.end.' .. combat_intro_timeline_id] = {
-				go = function(self)
-					return finish_combat_intro(self)
-				end,
-			},
-		},
 		leaving_state = function(self)
-			self:stop_timeline(combat_intro_timeline_id)
 			local monster = object(combat_monster_id)
 			monster.sprite_component.scale = { x = 1, y = 1 }
 			monster.x = self.combat_monster_base_x
@@ -729,6 +732,17 @@ function combat.define_fsm()
 	}
 
 	states.combat_hit = {
+		timelines = {
+			[combat_hit_timeline_id] = {
+				autoplay = false,
+				stop_on_exit = true,
+				on_end = {
+					go = function(self)
+						return finish_combat_hit(self)
+					end,
+				},
+			},
+		},
 		entering_state = function(self)
 			clear_texts(text_ids_choice_prompt)
 			set_text_lines(text_main_id, { 'RAAK!' }, false)
@@ -761,15 +775,7 @@ function combat.define_fsm()
 				end,
 			},
 		},
-		on = {
-			['timeline.end.' .. combat_hit_timeline_id] = {
-				go = function(self)
-					return finish_combat_hit(self)
-				end,
-			},
-		},
 		leaving_state = function(self)
-			self:stop_timeline(combat_hit_timeline_id)
 			self.combat_hit_slash_frame.slash_active = false
 		end,
 	}
@@ -822,6 +828,17 @@ function combat.define_fsm()
 	}
 
 	states.combat_exchange_hit = {
+		timelines = {
+			[combat_exchange_hit_timeline_id] = {
+				autoplay = false,
+				stop_on_exit = true,
+				on_end = {
+					go = function(self)
+						return finish_combat_exchange(self)
+					end,
+				},
+			},
+		},
 		entering_state = function(self)
 			local monster = object(combat_monster_id)
 			local maya_a = object(combat_maya_a_id)
@@ -888,15 +905,7 @@ function combat.define_fsm()
 				end,
 			},
 		},
-		on = {
-			['timeline.end.' .. combat_exchange_hit_timeline_id] = {
-				go = function(self)
-					return finish_combat_exchange(self)
-				end,
-			},
-		},
 		leaving_state = function(self)
-			self:stop_timeline(combat_exchange_hit_timeline_id)
 			local monster = object(combat_monster_id)
 			local maya_a = object(combat_maya_a_id)
 			local overlay = object(transition_overlay_id)
@@ -914,6 +923,17 @@ function combat.define_fsm()
 	}
 
 	states.combat_exchange_miss = {
+		timelines = {
+			[combat_exchange_miss_timeline_id] = {
+				autoplay = false,
+				stop_on_exit = true,
+				on_end = {
+					go = function(self)
+						return finish_combat_exchange(self)
+					end,
+				},
+			},
+		},
 		entering_state = function(self)
 			local monster = object(combat_monster_id)
 			local maya_a = object(combat_maya_a_id)
@@ -979,15 +999,7 @@ function combat.define_fsm()
 				end,
 			},
 		},
-		on = {
-			['timeline.end.' .. combat_exchange_miss_timeline_id] = {
-				go = function(self)
-					return finish_combat_exchange(self)
-				end,
-			},
-		},
 		leaving_state = function(self)
-			self:stop_timeline(combat_exchange_miss_timeline_id)
 			local monster = object(combat_monster_id)
 			local maya_a = object(combat_maya_a_id)
 			local overlay = object(transition_overlay_id)
