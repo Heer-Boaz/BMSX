@@ -689,7 +689,7 @@ function room_object:bind_visual()
 	end
 end
 
-function room_object:bind_events()
+function room_object:bind()
 	self.events:on({
 		event = 'room.switched',
 		emitter = 'pietolon',
@@ -703,7 +703,6 @@ end
 function room_object:ctor()
 	self.destroyed_rock_ids = {}
 	self:bind_visual()
-	self:bind_events()
 end
 
 function room_object:render_tiles()

@@ -11,7 +11,7 @@ function shrine:bind_visual()
 	end
 end
 
-function shrine:bind_events()
+function shrine:bind()
 	self.events:on({
 		event = 'shrine.open',
 		emitter = 'd',
@@ -34,7 +34,6 @@ function shrine:ctor()
 	self.text_font = font.get('pietious')
 	self.lines = {}
 	self:bind_visual()
-	self:bind_events()
 end
 
 function shrine:render()

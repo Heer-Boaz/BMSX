@@ -15,7 +15,7 @@ local function sprite_for_loot_type(loot_type)
 	error('pietious loot_drop invalid loot_type=' .. tostring(loot_type))
 end
 
-function loot_drop:bind_events()
+function loot_drop:bind()
 	self.events:on({
 		event = 'overlap.begin',
 		subscriber = self,
@@ -37,7 +37,6 @@ end
 function loot_drop:ctor()
 	self.collider:apply_collision_profile('pickup')
 	self:gfx('item_health')
-	self:bind_events()
 end
 
 function loot_drop:on_overlap_begin(event)

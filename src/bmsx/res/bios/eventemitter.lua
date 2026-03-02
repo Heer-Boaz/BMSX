@@ -119,22 +119,15 @@ function eventemitter:emit(arg0, emitter, payload)
 	if list then
 		for i = 1, #list do
 			local entry = list[i]
-			if entry.subscriber and entry.subscriber.dispose_flag then
-				goto continue_listener
-			end
 			local filter = entry.emitter
 			if filter == nil or filter == event.emitter or filter == (event.emitter and event.emitter.id) then
 				entry.handler(event)
 			end
-			::continue_listener::
 		end
 	end
 
 	for i = 1, #self.any_listeners do
-		local entry = self.any_listeners[i]
-		if not (entry.subscriber and entry.subscriber.dispose_flag) then
-			entry.handler(event)
-		end
+		self.any_listeners[i].handler(event)
 	end
 end
 

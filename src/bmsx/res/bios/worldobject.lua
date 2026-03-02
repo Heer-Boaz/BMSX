@@ -42,7 +42,7 @@ function worldobject.new(opts)
 	end
 	self.active = false
 	self.tick_enabled = false
-	self.eventhandling_enabled = false
+	self.fsm_dispatch_enabled = false
 	self.player_index = opts.player_index
 	self.tags = opts.tags or {}
 	self.components = {}
@@ -294,14 +294,22 @@ end
 function worldobject:activate()
 	self.active = true
 	self.tick_enabled = true
-	self.eventhandling_enabled = true
+	self.fsm_dispatch_enabled = true
+	self:bind()
 	self.sc:start()
+end
+
+function worldobject:bind()
+end
+
+function worldobject:unbind()
+	eventemitter.eventemitter.instance:remove_subscriber(self)
 end
 
 function worldobject:deactivate()
 	self.active = false
 	self.tick_enabled = false
-	self.eventhandling_enabled = false
+	self.fsm_dispatch_enabled = false
 	self.sc:pause()
 end
 
@@ -317,7 +325,7 @@ end
 
 function worldobject:ondespawn()
 	self.active = false
-	self.eventhandling_enabled = false
+	self.fsm_dispatch_enabled = false
 	self.events:emit("despawn")
 end
 
@@ -330,7 +338,7 @@ function worldobject:dispose()
 	self:deactivate()
 	self:remove_all_components()
 	self.sc:dispose()
-	eventemitter.eventemitter.instance:remove_subscriber(self)
+	self:unbind()
 end
 
 function worldobject:tick()

@@ -17,10 +17,7 @@ function zakfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
 
 	if self.zak_state == 'prepare' then
-		local prepare_ticks = node.zak_prepare_ticks
-		if prepare_ticks == nil then
-			prepare_ticks = constants.enemy.zak_prepare_jump_steps
-		end
+		local prepare_ticks = node.zak_prepare_ticks or constants.enemy.zak_prepare_jump_steps
 		prepare_ticks = prepare_ticks - 1
 		if prepare_ticks > 0 then
 			node.zak_prepare_ticks = prepare_ticks
@@ -37,10 +34,7 @@ function zakfoe.bt_tick(self, blackboard)
 	end
 
 	if self.zak_state == 'jump' then
-		local jump_ticks = node.zak_jump_ticks
-		if jump_ticks == nil then
-			jump_ticks = constants.enemy.zak_jump_steps
-		end
+		local jump_ticks = node.zak_jump_ticks or constants.enemy.zak_jump_steps
 
 		local direction_mod = self.direction == 'right' and 1 or -1
 		self.x = self.x + (constants.enemy.zak_horizontal_speed_px * direction_mod)
@@ -79,10 +73,7 @@ function zakfoe.bt_tick(self, blackboard)
 		return behaviourtree.running
 	end
 
-	local recovery_ticks = node.zak_recovery_ticks
-	if recovery_ticks == nil then
-		recovery_ticks = constants.enemy.zak_recovery_steps
-	end
+	local recovery_ticks = node.zak_recovery_ticks or constants.enemy.zak_recovery_steps
 	recovery_ticks = recovery_ticks - 1
 	if recovery_ticks > 0 then
 		node.zak_recovery_ticks = recovery_ticks

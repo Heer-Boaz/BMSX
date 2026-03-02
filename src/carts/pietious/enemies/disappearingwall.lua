@@ -21,7 +21,7 @@ function disappearingwall:bind_visual()
 	end
 end
 
-function disappearingwall:bind_events()
+function disappearingwall:bind()
 	self.events:on({
 		event = 'room.condition_set',
 		subscriber = self,
@@ -38,7 +38,6 @@ function disappearingwall:ctor()
 	self:get_component('collider2dcomponent'):apply_collision_profile('enemy')
 	self:update_wall_size()
 	self:bind_visual()
-	self:bind_events()
 end
 
 function disappearingwall.register_enemy_definition()

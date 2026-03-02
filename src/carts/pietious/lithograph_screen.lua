@@ -24,7 +24,7 @@ function lithograph_screen:draw_screen()
 	end
 end
 
-function lithograph_screen:bind_events()
+function lithograph_screen:bind()
 	self.events:on({
 		event = 'lithograph.open',
 		emitter = 'd',
@@ -47,7 +47,6 @@ function lithograph_screen:ctor()
 	self.text_font = font.get('pietious')
 	self.lines = {}
 	self:bind_visual()
-	self:bind_events()
 end
 
 local function define_lithograph_screen_fsm()

@@ -22,10 +22,7 @@ function stafffoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
 	local room = object('c').current_room
 	if self.staff_state == 'default' then
-		local wait_ticks = node.staff_wait_ticks
-		if wait_ticks == nil then
-			wait_ticks = constants.enemy.staff_wait_before_spawn_state_steps
-		end
+		local wait_ticks = node.staff_wait_ticks or constants.enemy.staff_wait_before_spawn_state_steps
 		wait_ticks = wait_ticks - 1
 		if wait_ticks > 0 then
 			node.staff_wait_ticks = wait_ticks
@@ -43,10 +40,7 @@ function stafffoe.bt_tick(self, blackboard)
 		return behaviourtree.running
 	end
 
-	local spawn_wait = node.staff_wait_ticks
-	if spawn_wait == nil then
-		spawn_wait = constants.enemy.staff_wait_before_spawn_steps
-	end
+	local spawn_wait = node.staff_wait_ticks or constants.enemy.staff_wait_before_spawn_steps
 	spawn_wait = spawn_wait - 1
 	if spawn_wait > 0 then
 		node.staff_wait_ticks = spawn_wait

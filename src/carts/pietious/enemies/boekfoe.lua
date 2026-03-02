@@ -16,10 +16,7 @@ function boekfoe.bt_tick(self, blackboard)
 	local room = object('c').current_room
 
 	if self.boek_state == 'closed' then
-		local closed_ticks = node.boek_state_ticks
-		if closed_ticks == nil then
-			closed_ticks = constants.enemy.boek_wait_open_steps
-		end
+		local closed_ticks = node.boek_state_ticks or constants.enemy.boek_wait_open_steps
 		closed_ticks = closed_ticks - 1
 		if closed_ticks > 0 then
 			node.boek_state_ticks = closed_ticks
@@ -33,16 +30,10 @@ function boekfoe.bt_tick(self, blackboard)
 		return behaviourtree.running
 	end
 
-	local open_ticks = node.boek_state_ticks
-	if open_ticks == nil then
-		open_ticks = constants.enemy.boek_wait_close_steps
-	end
+	local open_ticks = node.boek_state_ticks or constants.enemy.boek_wait_close_steps
 	open_ticks = open_ticks - 1
 
-	local spawn_ticks = node.boek_spawn_ticks
-	if spawn_ticks == nil then
-		spawn_ticks = constants.enemy.boek_spawn_paper_steps
-	end
+	local spawn_ticks = node.boek_spawn_ticks or constants.enemy.boek_spawn_paper_steps
 	spawn_ticks = spawn_ticks - 1
 
 	if spawn_ticks <= 0 then

@@ -52,10 +52,9 @@ local pickup_handlers = {
 function world_item:ctor()
 	self.collider:apply_collision_profile('pickup')
 	self:gfx(constants.world_item.sprite[self.item_type])
-	self:bind_events()
 end
 
-function world_item:bind_events()
+function world_item:bind()
 	self.events:on({
 		event = 'overlap',
 		subscriber = self,

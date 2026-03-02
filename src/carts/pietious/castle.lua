@@ -355,7 +355,7 @@ function castle:refresh_current_room_customizations()
 	self:emit_room_state_changed()
 end
 
-function castle:bind_events()
+function castle:bind()
 	self.events:on({
 		event = 'seal_dissolution',
 		subscriber = self,
@@ -534,7 +534,6 @@ end
 function castle:ctor()
 	self.world_boss_defeated = {}
 	self:reset_room_encounter_tags()
-	self:bind_events()
 	progression.mount(self, build_progression_program())
 end
 

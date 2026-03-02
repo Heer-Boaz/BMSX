@@ -18,7 +18,7 @@ local function drop_offset_y_for_item_type(item_type)
 	return 0
 end
 
-function rock:bind_events()
+function rock:bind()
 	self.events:on({
 		event = 'overlap.begin',
 		subscriber = self,
@@ -32,7 +32,6 @@ function rock:ctor()
 	self.collider:apply_collision_profile('enemy')
 	self.collider.enabled = true
 	self:gfx('stone')
-	self:bind_events()
 end
 
 function rock:take_weapon_hit(weapon_kind)

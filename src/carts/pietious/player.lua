@@ -103,7 +103,7 @@ local function build_shrine_exit_transition_frames()
 	return frames
 end
 
-function player:bind_events()
+function player:bind()
 	self.events:on({
 		event = 'room.switched',
 		subscriber = self,
@@ -281,7 +281,6 @@ function player:define_runtime_timelines()
 end
 
 function player:ctor()
-	self:bind_events()
 	self:add_component(components.new_component('actioneffectcomponent', {
 		parent = self,
 	}))

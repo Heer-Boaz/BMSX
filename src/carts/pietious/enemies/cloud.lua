@@ -21,10 +21,7 @@ function cloud.bt_tick(self, blackboard)
 		self:gfx('cloud_1')
 	end
 
-	local anim_ticks = node.cloud_anim_ticks
-	if anim_ticks == nil then
-		anim_ticks = constants.enemy.cloud_anim_switch_steps
-	end
+	local anim_ticks = node.cloud_anim_ticks or constants.enemy.cloud_anim_switch_steps
 	anim_ticks = anim_ticks - 1
 	if anim_ticks <= 0 then
 		if self.cloud_anim_frame == 1 then
@@ -37,10 +34,7 @@ function cloud.bt_tick(self, blackboard)
 	node.cloud_anim_ticks = anim_ticks
 
 	local dir_modifier = self.direction == 'left' and -1 or 1
-	local move_accum = node.cloud_move_accum
-	if move_accum == nil then
-		move_accum = 0
-	end
+	local move_accum = node.cloud_move_accum or 0
 	move_accum = move_accum + constants.enemy.cloud_horizontal_speed_num
 	while move_accum >= constants.enemy.cloud_horizontal_speed_den do
 		self.x = self.x + dir_modifier
@@ -48,14 +42,8 @@ function cloud.bt_tick(self, blackboard)
 	end
 	node.cloud_move_accum = move_accum
 
-	local wave_accum = node.cloud_wave_accum
-	if wave_accum == nil then
-		wave_accum = 0
-	end
-	local wave_phase = node.cloud_wave_phase_millirad
-	if wave_phase == nil then
-		wave_phase = 0
-	end
+	local wave_accum = node.cloud_wave_accum or 0
+	local wave_phase = node.cloud_wave_phase_millirad or 0
 	local wave_speed_num = round_to_nearest(math.sin(wave_phase / constants.enemy.cloud_wave_phase_denominator) * constants.enemy.cloud_wave_speed_num)
 	local wave_dy, next_wave_accum = consume_axis_accum(wave_accum, wave_speed_num, constants.enemy.cloud_wave_speed_den)
 	self.y = self.y + wave_dy
@@ -76,10 +64,7 @@ function cloud.bt_tick(self, blackboard)
 		end
 	end
 
-	local vlok_ticks = node.cloud_vlok_ticks
-	if vlok_ticks == nil then
-		vlok_ticks = constants.enemy.cloud_spawn_vlok_steps
-	end
+	local vlok_ticks = node.cloud_vlok_ticks or constants.enemy.cloud_spawn_vlok_steps
 	vlok_ticks = vlok_ticks - 1
 	if vlok_ticks <= 0 then
 		for i = 1, 3 do

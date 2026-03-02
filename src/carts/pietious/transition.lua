@@ -11,7 +11,7 @@ function transition:bind_visual()
 	end
 end
 
-function transition:bind_events()
+function transition:bind()
 	self.events:on({
 		event = 'transition.mask.play',
 		emitter = 'd',
@@ -52,7 +52,6 @@ function transition:ctor()
 		frames = timeline.range(constants.flow.room_transition_frames),
 		playback_mode = 'once',
 	}))
-	self:bind_events()
 end
 
 local function define_transition_fsm()

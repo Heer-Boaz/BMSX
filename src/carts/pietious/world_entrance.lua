@@ -35,7 +35,7 @@ function world_entrance:sync_opening_frame(frame_value)
 	})
 end
 
-function world_entrance:bind_events()
+function world_entrance:bind()
 	self.events:on({
 		event = 'world_entrance.open.request',
 		emitter = 'c',
@@ -73,7 +73,6 @@ function world_entrance:ctor()
 		frames = timeline.range(constants.world_entrance.open_step_frames * 2),
 		playback_mode = 'once',
 	}))
-	self:bind_events()
 end
 
 local function register_world_entrance_definition()

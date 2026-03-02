@@ -30,10 +30,7 @@ function muziekfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
 	local room = object('c').current_room
 	local dir_modifier = self.direction == 'left' and -1 or 1
-	local move_accum = node.muziek_move_accum
-	if move_accum == nil then
-		move_accum = 0
-	end
+	local move_accum = node.muziek_move_accum or 0
 	move_accum = move_accum + constants.enemy.muziek_horizontal_speed_num
 	while move_accum >= constants.enemy.muziek_horizontal_speed_den do
 		self.x = self.x + dir_modifier
@@ -53,10 +50,7 @@ function muziekfoe.bt_tick(self, blackboard)
 		end
 	end
 
-	local noot_ticks = node.muziek_noot_ticks
-	if noot_ticks == nil then
-		noot_ticks = constants.enemy.muziek_spawn_noot_steps
-	end
+	local noot_ticks = node.muziek_noot_ticks or constants.enemy.muziek_spawn_noot_steps
 	noot_ticks = noot_ticks - 1
 	if noot_ticks <= 0 then
 		local player = object('pietolon')

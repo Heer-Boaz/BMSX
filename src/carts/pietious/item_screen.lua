@@ -59,7 +59,7 @@ function item_screen:bind_visual()
 	end
 end
 
-function item_screen:bind_events()
+function item_screen:bind()
 	self.events:on({
 		event = 'item',
 		emitter = 'd',
@@ -106,7 +106,6 @@ function item_screen:ctor()
 	self.secondary_weapon_selection_index = 0
 	self.selector_hidden = false
 	self.map_highlight = true
-	self:bind_events()
 end
 
 function item_screen:reset_for_open()

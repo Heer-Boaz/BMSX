@@ -29,7 +29,7 @@ local function loot_value_for_type(loot_type)
 	error('pietious enemy_explosion invalid loot_type=' .. tostring(loot_type))
 end
 
-function enemy_explosion:bind_events()
+function enemy_explosion:bind()
 	self.events:on({
 		event = explosion_timeline_frame_event,
 		subscriber = self,
@@ -85,7 +85,6 @@ function enemy_explosion:ctor()
 		ticks_per_frame = constants.enemy.explosion_frame_steps,
 		playback_mode = 'once',
 	}))
-	self:bind_events()
 	self:sync_explosion_sprite(explosion_frames[1])
 end
 

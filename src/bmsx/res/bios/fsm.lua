@@ -1961,11 +1961,7 @@ function statemachinecontroller:unsubscribe_events_for(machine, event_names)
 end
 
 function statemachinecontroller:auto_dispatch(event)
-	local eventhandling_enabled = self.target.eventhandling_enabled
-	if eventhandling_enabled == nil then
-		eventhandling_enabled = true
-	end
-	if not eventhandling_enabled then
+	if not self.target.fsm_dispatch_enabled then
 		return
 	end
 	if not event.emitter then

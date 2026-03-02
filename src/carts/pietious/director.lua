@@ -158,7 +158,7 @@ function director:go_room_resume_music()
 	return '/room'
 end
 
-function director:bind_events()
+function director:bind()
 	self.events:on({
 		event = 'room.switched',
 		emitter = 'pietolon',
@@ -200,7 +200,6 @@ function director:ctor()
 	self:activate_spaces()
 	self:bind_visual()
 	self:ensure_daemon_cloud_pool()
-	self:bind_events()
 end
 
 local function define_director_fsm()

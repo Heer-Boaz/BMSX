@@ -42,10 +42,7 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	local player = object('pietolon')
 	local node = blackboard.nodedata
 	apply_spin_visual(self)
-	local wait_ticks = node.cross_wait_ticks
-	if wait_ticks == nil then
-		wait_ticks = constants.enemy.cross_wait_before_fly_steps
-	end
+	local wait_ticks = node.cross_wait_ticks or constants.enemy.cross_wait_before_fly_steps
 	wait_ticks = wait_ticks - 1
 	if wait_ticks > 0 then
 		node.cross_wait_ticks = wait_ticks
@@ -92,10 +89,7 @@ function crossfoe.bt_tick_flying(self, blackboard)
 
 	self.x = self.x + (constants.enemy.cross_horizontal_speed_px * direction_mod)
 
-	local turn_ticks = node.cross_turn_ticks
-	if turn_ticks == nil then
-		turn_ticks = constants.enemy.cross_turn_steps
-	end
+	local turn_ticks = node.cross_turn_ticks or constants.enemy.cross_turn_steps
 	turn_ticks = turn_ticks - 1
 	if turn_ticks > 0 then
 		node.cross_turn_ticks = turn_ticks

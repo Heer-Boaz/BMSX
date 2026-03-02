@@ -41,7 +41,7 @@ function ui:set_weapon_target(value)
 	self.hud_weapon_target = clamp_int(math.modf(value), 0, constants.hud.weapon_level)
 end
 
-function ui:bind_events()
+function ui:bind()
 	self.events:on({
 		event = 'player.health_changed',
 		emitter = 'pietolon',
@@ -62,7 +62,6 @@ end
 
 function ui:ctor()
 	self:bind_visual()
-	self:bind_events()
 	local player = object('pietolon')
 	local health = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
 	local weapon = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)

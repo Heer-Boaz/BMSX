@@ -10,7 +10,6 @@ local state_tags = {
 function pepernoot_projectile:ctor()
 	self.collider:apply_collision_profile('projectile')
 	self:gfx('pepernoot_16')
-	self:bind_events()
 end
 
 function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
@@ -26,7 +25,7 @@ function pepernoot_projectile:onspawn(pos)
 	self:refresh_tile_aligned_sprite_offset()
 end
 
-function pepernoot_projectile:bind_events()
+function pepernoot_projectile:bind()
 	self.events:on({
 		event = 'overlap.begin',
 		subscriber = self,

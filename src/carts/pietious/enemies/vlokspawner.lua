@@ -11,10 +11,7 @@ function vlokspawner:ctor()
 end
 
 function vlokspawner.bt_tick(self, blackboard)
-	local spawn_ticks = blackboard.nodedata.vlok_spawn_ticks
-	if spawn_ticks == nil then
-		spawn_ticks = constants.enemy.vlokspawner_spawn_steps
-	end
+	local spawn_ticks = blackboard.nodedata.vlok_spawn_ticks or constants.enemy.vlokspawner_spawn_steps
 	spawn_ticks = spawn_ticks - 1
 	if spawn_ticks > 0 then
 		blackboard.nodedata.vlok_spawn_ticks = spawn_ticks
