@@ -795,7 +795,11 @@ local function define_room_fsm()
 					['daemon_appearance'] = '/mode_state/daemon_appearance',
 				},
 				states = {
-					room = {},
+					room = {
+						entering_state = function(self)
+							self.events:emit('room_state.sync')
+						end,
+					},
 					transition = {},
 					halo = {},
 					shrine = {},

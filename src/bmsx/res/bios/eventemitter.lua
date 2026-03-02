@@ -1,5 +1,59 @@
 -- eventemitter.lua
 -- lightweight event emitter + per-emitter event port
+--
+-- DESIGN PRINCIPLES — event usage contracts
+--
+-- 1. EVENTS ARE ANNOUNCEMENTS, NOT COMMANDS.
+--    An event says "this happened", not "do this".  The emitter does not know
+--    who listens and does not care.  If the only subscriber is one named object
+--    and the event name implies an imperative action on that object, it is a
+--    disguised method call.  Delete the event and either call the method
+--    directly, or — better — invert the dependency: let the target subscribe
+--    to a meaningful broadcast instead of being commanded.
+--
+--    WRONG — command event (only widget_a listens; thinly-veiled widget_a:reset()):
+--      self.events:emit('widget_a.reset')
+--    RIGHT — broadcast + self-managing subscriber:
+--      -- coordinator announces a state change once:
+--      self.events:emit('level_entered')
+--      -- each subsystem that needs to reset subscribes in its own bind():
+--      self.events:on({ event = 'level_entered', emitter = 'coordinator',
+--          subscriber = self,
+--          handler = function() self:reset() end })
+--
+-- 2. REQUEST / REPLY PATTERN.
+--    When object A needs a result from object B but must not call B directly:
+--    A emits a namespaced request event; B subscribes, does work, and emits a
+--    reply event; A (or A's FSM on-handler) reacts to the reply.
+--
+--      -- A emits the request (e.g. from an FSM entering_state):
+--      self.events:emit('subsystem.query_result')
+--      -- B subscribes in its bind():
+--      self.events:on({ event = 'subsystem.query_result', emitter = 'a',
+--          subscriber = self,
+--          handler = function() self:compute_and_reply() end })
+--      -- B emits the answer with a payload:
+--      self.events:emit('subsystem.result', { value = computed_value })
+--      -- A reacts in its FSM on-handler:
+--      on = { ['subsystem.result'] = function(self, _s, e)
+--          return e.value and '/state_yes' or '/state_no'
+--      end }
+--
+-- 3. EMITTER FILTER.
+--    The `emitter` field in on() filters by emitter id (string) or object
+--    reference.  Always supply it when the event name is not globally unique
+--    (e.g. short names such as 'ready', 'done', 'update') to avoid reacting
+--    to unrelated emitters of the same event name.
+--
+-- 4. SUBSCRIBER FIELD.
+--    `subscriber` in on() is used exclusively by remove_subscriber(); it plays
+--    no role in dispatch filtering.  Always populate it so that subscriptions
+--    are cleaned up when the subscriber object is removed.
+--
+-- 5. PERSISTENT FLAG.
+--    persistent = true keeps the subscription alive across clear() calls.
+--    Use only for long-lived system-level listeners that must outlive normal
+--    object lifecycle resets.
 
 local eventemitter = {}
 eventemitter.__index = eventemitter

@@ -28,6 +28,14 @@ function shrine:bind()
 			self.lines = {}
 		end,
 	})
+	self.events:on({
+		event = 'room',
+		emitter = 'd',
+		subscriber = self,
+		handler = function()
+			self.lines = {}
+		end,
+	})
 end
 
 function shrine:ctor()

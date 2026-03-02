@@ -1,5 +1,61 @@
 -- fsm.lua
 -- finite state machine runtime for system rom
+--
+-- DESIGN PRINCIPLES — FSM authoring rules
+--
+-- 1. NO CROSS-STATE FLAGS ON SELF.
+--    Fields on self persist across state transitions.  A boolean set in one
+--    state's entering_state and read in a different state invisibly couples
+--    states that should be independent, hides the real control flow, and is a
+--    subtle bug waiting to happen.
+--    Instead: create two distinct FSM states and navigate to the correct one
+--    from the decision point.  Share setup logic in a method on the object.
+--
+--    WRONG — cross-state boolean flag:
+--      state_a = { entering_state = function(self) self.mode_flag = true end }
+--      state_b = { entering_state = function(self)
+--          if self.mode_flag then ... end  -- invisible cross-state coupling!
+--      end }
+--    RIGHT — two explicit states, shared helper method:
+--      variant_normal   = { entering_state = function(self) self:setup(false) end }
+--      variant_extended = { entering_state = function(self) self:setup(true)  end }
+--      -- decision state navigates to the right variant:
+--      on = { ['result'] = function(self, _s, e)
+--          return e.extended and '/variant_extended' or '/variant_normal'
+--      end }
+--
+-- 2. REQUEST / REPLY WITHIN STATES.
+--    A state starts an async operation by emitting a request event in
+--    entering_state, then waits for the reply purely via on = { ... }.
+--    No polling, no pending flag, no sub-state boolean — the FSM state IS
+--    the waiting mechanism.
+--
+--      waiting_for_answer = {
+--        entering_state = function(self)
+--            self.events:emit('query.requested')
+--        end,
+--        on = { ['query.answered'] = function(self, _s, e)
+--            return e.success and '/state_success' or '/state_failure'
+--        end },
+--      }
+--
+-- 3. SHARED TIMELINE DEFINITIONS.
+--    Timeline private to one state: declare inside that state's `timelines`
+--    block using a `def` sub-table.  The runtime calls timeline.new(def)
+--    automatically — no manual timeline.new() call is needed in cart code.
+--
+--    Timeline shared by multiple states: declare once in the root-level
+--    `timelines` block of the FSM (before `states`) with `autoplay = false`
+--    (registration only).  Each state adds only the behaviour config
+--    (autoplay, stop_on_exit, on_end, …) without repeating `def`.
+--
+--    WRONG — duplicate def copied into every state that uses the timeline:
+--      state_a = { timelines = { [id] = { def = { frames = ..., playback_mode = 'once' }, autoplay = true } } }
+--      state_b = { timelines = { [id] = { def = { frames = ..., playback_mode = 'once' }, autoplay = true } } }
+--    RIGHT — def at FSM root once, behaviour-only config in each state:
+--      (root) timelines = { [id] = { def = { frames = ..., playback_mode = 'once' }, autoplay = false } }
+--      state_a = { timelines = { [id] = { autoplay = true, stop_on_exit = true } } }
+--      state_b = { timelines = { [id] = { autoplay = true, stop_on_exit = true, on_end = '/other' } } }
 
 local fsm_trace = require("fsm_trace")
 local clear_map = require("clear_map")

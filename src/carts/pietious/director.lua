@@ -237,22 +237,53 @@ end
 --   on_end / on_frame — transition or action callbacks.
 --
 -- CROSS-OBJECT COMMUNICATION
---   The director must never call methods on other objects directly.
---   All signals to other objects go through the shared event bus.
+--   The director must never call methods on other objects directly, and must
+--   never emit "command" events that are thinly disguised method calls on a
+--   specific object.  A command event is any event whose sole consumer is one
+--   named object and whose only effect is to mutate that object's state.
 --
---   Fire-and-forget: director emits 'player.room_enter'
---     → castle subscribes, assembles the payload and emits 'room.enter'.
+--   WRONG — director demands shrine reset itself:
+--     self.events:emit('shrine.clear')   -- shrine is the only subscriber; this
+--                                        -- is just shrine:clear() in disguise.
+--   RIGHT — each subsystem owns its own reset trigger:
+--     shrine subscribes to 'room' in its own bind() and clears itself there.
 --
---   Request/reply:   director emits 'player.death_resolve' and enters a waiting state.
+--   BROADCAST events emitted by director:
+--     'room'            — director has entered room state; all subsystems that
+--                         need to reset on room entry subscribe to this in their
+--                         own bind().  castle also emits 'room.enter' here.
+--     'transition'      — director has entered transition sub-state.
+--     'seal_dissolution', 'daemon_appearance', 'halo', 'shrine', 'item',
+--     'lithograph', 'title', 'story', 'ending', 'victory_dance', 'death' —
+--                         broadcast mode switches; room FSM and renders subscribe.
+--
+--   REQUEST/REPLY:
+--     director emits 'player.death_resolve' and enters a waiting state.
 --     → castle handles the event, does its internal bookkeeping, and
 --       emits 'death_resolved' with a payload { restart_daemon = bool }.
---     → director reacts via on = { ['death_resolved'] = function(self, _s, event) ... }
+--     → director reacts via on = { ['death_resolved'] = function(self, _s, e) … }
 --
 -- FSM STATE SUB-VARIANTS
 --   When two states differ only by a boolean context value (e.g. after_death), do not
 --   store a cross-state flag on self.  Instead create two distinct FSM states
 --   (daemon_appearance / daemon_appearance_post_death) and navigate to the right one
 --   from the decision state (death_resolve).  Shared logic lives in a method.
+--
+-- STAGING FIELDS (pending_*)
+--   The only legitimate 'cross-state' data on self are staging fields (pending_*)
+--   that are populated synchronously in one breath with the FSM event that
+--   triggers the transition, and consumed immediately in the next state's
+--   entering_state.  They must be cleared in entering_state after reading.
+--   PREFERRED: pass the data directly in the event payload so that the FSM
+--   state receives it via the event argument and no self field is needed at all.
+--
+--   WRONG — staging field (known pre-existing violation: pending_lithograph_lines):
+--     self.pending_lithograph_lines = { event.text_line }  -- set here
+--     self.events:emit('lithograph_requested')             -- then transition
+--     -- lithograph_screen_open.entering_state reads self.pending_lithograph_lines
+--   RIGHT — payload in the event:
+--     self.events:emit('lithograph_requested', { lines = { event.text_line } })
+--     -- lithograph_screen_open.entering_state receives lines via event.lines
 local function define_director_fsm()
 	-- Shared on-handlers for both daemon appearance variants (avoid duplication).
 	local function on_daemon_cloud_spawn(self)
@@ -311,16 +342,11 @@ local function define_director_fsm()
 		states = {
 			room = {
 				entering_state = function(self)
-					self.events:emit('transition.banner', { lines = {} })
-					self.events:emit('shrine.clear')
-					self.events:emit('lithograph.clear')
 					self:despawn_daemon_clouds()
 					self:set_active_space('main')
-					self.events:emit('shrine_transition_exit')
+					-- 'room' drives: castle emit_room_enter, room FSM mode+room_state sync,
+					-- transition banner clear, shrine clear, lithograph clear.
 					self.events:emit('room')
-					self.events:emit('room_state.sync')
-					-- Signals castle to assemble and emit 'room.enter' with room payload.
-					self.events:emit('player.room_enter')
 				end,
 				on = {
 					['room_switched'] = '/room_switch_wait',

@@ -408,10 +408,10 @@ function castle:bind()
 			self.world_entrance_states[event.target].state = 'open'
 		end,
 	})
-	-- director emits this when entering the room state; castle responds by
-	-- assembling the room payload and emitting 'room.enter' to all subscribers.
+	-- director emits 'room' when the room state becomes active; castle
+	-- responds by assembling and emitting 'room.enter' with the room payload.
 	self.events:on({
-		event = 'player.room_enter',
+		event = 'room',
 		emitter = 'd',
 		subscriber = self,
 		handler = function()

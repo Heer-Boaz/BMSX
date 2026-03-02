@@ -28,6 +28,14 @@ function transition:bind()
 			self.banner_lines = event.lines
 		end,
 	})
+	self.events:on({
+		event = 'room',
+		emitter = 'd',
+		subscriber = self,
+		handler = function()
+			self.banner_lines = {}
+		end,
+	})
 end
 
 function transition:draw_transition_overlay()
