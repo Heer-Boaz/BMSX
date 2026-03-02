@@ -138,7 +138,6 @@ function new_game()
 
 	inst('room', {
 		id = 'room',
-		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	inst('player', {
@@ -151,30 +150,25 @@ function new_game()
 	inst('transition', {
 		id = 'transition',
 		space_id = 'transition',
-		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	inst('shrine', {
 		id = 'shrine',
 		space_id = 'shrine',
-		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	inst('lithograph_screen', {
 		id = 'lithograph',
 		space_id = 'lithograph',
-		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	inst('item_screen', {
 		id = 'item_screen',
 		space_id = 'item',
-		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	inst('ui', {
 		id = 'ui',
-		pos = { x = 0, y = 0, z = 0 },
 	})
 
 	inst('director', {
