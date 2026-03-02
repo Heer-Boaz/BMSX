@@ -153,9 +153,26 @@ function director:finish_banner_transition()
 	return '/room_switch_wait'
 end
 
-function director:go_room_resume_music()
-	object('c'):emit_room_enter()
-	return '/room'
+-- All states that switch to transition space + emit a named event + play the mask follow
+-- the exact same three-line pattern. Extract it so every entering_state is a single call.
+function director:enter_transition(event_name)
+	self:set_active_space('transition')
+	self.events:emit(event_name)
+	self.events:emit('transition.mask.play')
+end
+
+-- Both daemon appearance variants share the same setup; only the after_death flag differs.
+-- Use a single helper and navigate to the correct FSM state (daemon_appearance vs
+-- daemon_appearance_post_death) instead of storing a cross-state flag on self.
+function director:start_daemon_appearance(after_death)
+	self:set_active_space('main')
+	self:ensure_daemon_cloud_pool()
+	self.daemon_smoke_next = 1
+	if after_death then
+		self.events:emit('daemon_appearance', { after_death = true })
+	else
+		self.events:emit('daemon_appearance')
+	end
 end
 
 function director:bind()
@@ -190,7 +207,6 @@ function director:ctor()
 	self.next_room_switch_banner_mode = nil
 	self.next_room_switch_banner_world_number = 0
 	self.next_room_switch_banner_post_action = nil
-	self.daemon_appearance_after_death = false
 	self.daemon_smoke_next = 1
 	self.daemon_clouds = {}
 	self.seal_flash_on = false
@@ -202,25 +218,84 @@ function director:ctor()
 	self:ensure_daemon_cloud_pool()
 end
 
--- ARCHITECTURE: Engineering guidelines for FSM states that use timelines.
+-- ARCHITECTURE: Engineering guidelines for this FSM.
 --
--- DEFINING timelines
---   Declare them in the `timelines` block of the state that owns them, using
---   `def = { ... }` with a plain configuration table. The engine calls
---   timeline.new(def) internally — no timeline.new() call needed in cart code.
+-- TIMELINE DEFINITION
+--   Timelines that belong to a single state are declared inside that state's
+--   `timelines` block using `def = { ... }`.  The engine calls timeline.new(def)
+--   internally — no timeline.new() call is needed in cart code.
 --   The `id` field in `def` is optional; it defaults to the dictionary key.
+--   Timelines shared between multiple states are declared in the root `timelines`
+--   block of the FSM (before `states`) with `autoplay = false`, then each state
+--   that uses them declares only the behaviour (autoplay, stop_on_exit, on_end …).
 --
--- PER-STATE BEHAVIOUR
---   autoplay = true   — the FSM plays the timeline automatically on state enter.
---                       Use this when no runtime `target` or `params` are needed.
+-- PER-STATE TIMELINE BEHAVIOUR
+--   autoplay = true   — FSM plays the timeline automatically on state enter.
 --   autoplay = false  — play manually with self:play_timeline(id, opts) in
---                       entering_state. Required when `target` or `params` are
---                       only known at enter time (e.g. they depend on self.x).
---   stop_on_exit = true  — the FSM stops the timeline automatically on exit.
---   on_end            — transition or action when the timeline finishes.
---   on_frame          — action fired on every timeline frame tick.
+--                       entering_state (needed when target/params are runtime).
+--   stop_on_exit = true  — FSM stops the timeline automatically on exit.
+--   on_end / on_frame — transition or action callbacks.
+--
+-- CROSS-OBJECT COMMUNICATION
+--   The director must never call methods on other objects directly.
+--   All signals to other objects go through the shared event bus.
+--
+--   Fire-and-forget: director emits 'player.room_enter'
+--     → castle subscribes, assembles the payload and emits 'room.enter'.
+--
+--   Request/reply:   director emits 'player.death_resolve' and enters a waiting state.
+--     → castle handles the event, does its internal bookkeeping, and
+--       emits 'death_resolved' with a payload { restart_daemon = bool }.
+--     → director reacts via on = { ['death_resolved'] = function(self, _s, event) ... }
+--
+-- FSM STATE SUB-VARIANTS
+--   When two states differ only by a boolean context value (e.g. after_death), do not
+--   store a cross-state flag on self.  Instead create two distinct FSM states
+--   (daemon_appearance / daemon_appearance_post_death) and navigate to the right one
+--   from the decision state (death_resolve).  Shared logic lives in a method.
 local function define_director_fsm()
+	-- Shared on-handlers for both daemon appearance variants (avoid duplication).
+	local function on_daemon_cloud_spawn(self)
+		self:spawn_daemon_cloud()
+	end
+	local function on_daemon_appearance_done(self)
+		self:despawn_daemon_clouds()
+		self.events:emit('daemon_appearance_done')
+		return '/room'
+	end
+
 	define_fsm('director', {
+		-- daemon_timeline_id is shared between daemon_appearance and
+		-- daemon_appearance_post_death, so it is registered here at FSM root
+		-- (autoplay = false = registration only).  Each state configures behaviour.
+		timelines = {
+			[daemon_timeline_id] = {
+				def = {
+					frames = timeline.range(126),
+					playback_mode = 'once',
+					markers = (function()
+						local markers = {}
+						for frame_value = 0, 125 do
+							local intro_state = math.modf(frame_value / 2) + 97
+							if (frame_value % 2) == 0 and intro_state > 96 and intro_state < 160 and (intro_state % 8) < 4 then
+								markers[#markers + 1] = { frame = frame_value, event = 'daemon.cloud.spawn' }
+							end
+						end
+						markers[#markers + 1] = { frame = 124, event = 'daemon.appearance.done' }
+						return markers
+					end)(),
+					windows = {
+						{
+							name = 'clouds',
+							tag = 'd.daemon.clouds',
+							start = { frame = 0 },
+							['end'] = { frame = 125 },
+						},
+					},
+				},
+				autoplay = false,
+			},
+		},
 		initial = 'room',
 		on = {
 			['world_transition_start'] = '/world_transition',
@@ -244,6 +319,8 @@ local function define_director_fsm()
 					self.events:emit('shrine_transition_exit')
 					self.events:emit('room')
 					self.events:emit('room_state.sync')
+					-- Signals castle to assemble and emit 'room.enter' with room payload.
+					self.events:emit('player.room_enter')
 				end,
 				on = {
 					['room_switched'] = '/room_switch_wait',
@@ -322,9 +399,7 @@ local function define_director_fsm()
 					self.pending_banner_mode = nil
 					self.pending_banner_world_number = 0
 					self.pending_banner_post_action = nil
-					self:set_active_space('transition')
-					self.events:emit('transition')
-					self.events:emit('transition.mask.play')
+					self:enter_transition('transition')
 					local timeline_id = banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
 					self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
 				end,
@@ -347,7 +422,7 @@ local function define_director_fsm()
 						self.events:emit('player.shrine_overlay_exit')
 					end,
 				on = {
-					['shrine_exit_done'] = director.go_room_resume_music,
+					['shrine_exit_done'] = '/room',
 				},
 			},
 			item_screen_opening = {
@@ -422,9 +497,7 @@ local function define_director_fsm()
 					},
 				},
 					entering_state = function(self)
-						self:set_active_space('transition')
-						self.events:emit('halo')
-						self.events:emit('transition.mask.play')
+						self:enter_transition('halo')
 					end,
 			},
 				seal_dissolution = {
@@ -488,60 +561,39 @@ local function define_director_fsm()
 						self.events:emit('seal_dissolution')
 					end,
 				},
-				daemon_appearance = {
+			-- Timeline def is at FSM root (shared with daemon_appearance_post_death).
+			daemon_appearance = {
 				timelines = {
-						[daemon_timeline_id] = {
-							def = {
-								frames = timeline.range(126),
-								playback_mode = 'once',
-								markers = (function()
-								local markers = {}
-								for frame_value = 0, 125 do
-									local intro_state = math.modf(frame_value / 2) + 97
-									if (frame_value % 2) == 0 and intro_state > 96 and intro_state < 160 and (intro_state % 8) < 4 then
-										markers[#markers + 1] = { frame = frame_value, event = 'daemon.cloud.spawn' }
-									end
-								end
-								markers[#markers + 1] = { frame = 124, event = 'daemon.appearance.done' }
-								return markers
-							end)(),
-								windows = {
-									{
-										name = 'clouds',
-										tag = 'd.daemon.clouds',
-										start = { frame = 0 },
-										['end'] = { frame = 125 },
-									},
-								},
-							},
+					[daemon_timeline_id] = {
 						autoplay = true,
 						stop_on_exit = true,
-						play_options = {
-							rewind = true,
-							snap_to_start = true,
-						},
+						play_options = { rewind = true, snap_to_start = true },
 					},
-					},
-					entering_state = function(self)
-						self:set_active_space('main')
-						self:ensure_daemon_cloud_pool()
-						self.daemon_smoke_next = 1
-						if self.daemon_appearance_after_death then
-							self.daemon_appearance_after_death = false
-							self.events:emit('daemon_appearance', { after_death = true })
-						else
-							self.events:emit('daemon_appearance')
-					end
+				},
+				entering_state = function(self)
+					self:start_daemon_appearance(false)
 				end,
 				on = {
-					['daemon.cloud.spawn'] = function(self)
-						self:spawn_daemon_cloud()
-					end,
-					['daemon.appearance.done'] = function(self)
-						self:despawn_daemon_clouds()
-						self.events:emit('daemon_appearance_done')
-						return '/room'
-					end,
+					['daemon.cloud.spawn'] = on_daemon_cloud_spawn,
+					['daemon.appearance.done'] = on_daemon_appearance_done,
+				},
+			},
+			-- Same as daemon_appearance but emits after_death=true in the payload.
+			-- Navigated to from death_resolve when restart_daemon is true.
+			daemon_appearance_post_death = {
+				timelines = {
+					[daemon_timeline_id] = {
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = { rewind = true, snap_to_start = true },
+					},
+				},
+				entering_state = function(self)
+					self:start_daemon_appearance(true)
+				end,
+				on = {
+					['daemon.cloud.spawn'] = on_daemon_cloud_spawn,
+					['daemon.appearance.done'] = on_daemon_appearance_done,
 				},
 			},
 				lithograph_screen_open = {
@@ -577,7 +629,7 @@ local function define_director_fsm()
 						},
 						autoplay = true,
 						stop_on_exit = true,
-						on_end = director.go_room_resume_music,
+						on_end = '/room',
 					},
 				},
 				entering_state = function(self)
@@ -585,66 +637,41 @@ local function define_director_fsm()
 				end,
 			},
 				title_screen = {
-					entering_state = function(self)
-						self:set_active_space('transition')
-						self.events:emit('title')
-						self.events:emit('transition.mask.play')
-					end,
-				on = {
-					['title_screen_done'] = director.go_room_resume_music,
+					entering_state = function(self) self:enter_transition('title') end,
+					on = { ['title_screen_done'] = '/room' },
 				},
-			},
 				story = {
-					entering_state = function(self)
-						self:set_active_space('transition')
-						self.events:emit('story')
-						self.events:emit('transition.mask.play')
-					end,
-				on = {
-					['story_done'] = director.go_room_resume_music,
+					entering_state = function(self) self:enter_transition('story') end,
+					on = { ['story_done'] = '/room' },
 				},
-			},
 				ending = {
-					entering_state = function(self)
-						self:set_active_space('transition')
-						self.events:emit('ending')
-						self.events:emit('transition.mask.play')
-					end,
-				on = {
-					['ending_done'] = director.go_room_resume_music,
+					entering_state = function(self) self:enter_transition('ending') end,
+					on = { ['ending_done'] = '/room' },
 				},
-			},
 				victory_dance = {
-					entering_state = function(self)
-						self:set_active_space('transition')
-						self.events:emit('victory_dance')
-						self.events:emit('transition.mask.play')
-					end,
-				on = {
-					['victory_dance_done'] = director.go_room_resume_music,
+					entering_state = function(self) self:enter_transition('victory_dance') end,
+					on = { ['victory_dance_done'] = '/room' },
 				},
-			},
 				death = {
-					entering_state = function(self)
-						self:set_active_space('transition')
-						self.events:emit('death')
-						self.events:emit('transition.mask.play')
-					end,
-				on = {
-					['death_done'] = '/death_resolve',
+					entering_state = function(self) self:enter_transition('death') end,
+					on = { ['death_done'] = '/death_resolve' },
 				},
-			},
-			death_resolve = {
-				entering_state = function(self)
-					local restart_daemon = object('c'):resolve_death()
-					if restart_daemon then
-						self.daemon_appearance_after_death = true
-						return '/daemon_appearance'
-					end
-					object('c'):emit_room_enter()
-					return '/room'
-				end,
-			},
+				-- Emit a request event; castle handles it (updates tags, evaluates
+				-- should_restart_daemon) and replies with 'death_resolved' carrying
+				-- { restart_daemon = bool }. No direct object() calls here.
+				death_resolve = {
+					entering_state = function(self)
+						self.events:emit('player.death_resolve')
+					end,
+					on = {
+						['death_resolved'] = function(self, _state, event)
+							if event.restart_daemon then
+								return '/daemon_appearance_post_death'
+							end
+							return '/room'
+						end,
+					},
+				},
 		},
 	})
 end

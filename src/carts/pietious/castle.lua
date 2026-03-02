@@ -408,6 +408,26 @@ function castle:bind()
 			self.world_entrance_states[event.target].state = 'open'
 		end,
 	})
+	-- director emits this when entering the room state; castle responds by
+	-- assembling the room payload and emitting 'room.enter' to all subscribers.
+	self.events:on({
+		event = 'player.room_enter',
+		emitter = 'd',
+		subscriber = self,
+		handler = function()
+			self:emit_room_enter()
+		end,
+	})
+	-- director emits this when the player has died; castle resolves internal
+	-- state (seal tags) and replies with 'death_resolved' { restart_daemon = bool }.
+	self.events:on({
+		event = 'player.death_resolve',
+		emitter = 'd',
+		subscriber = self,
+		handler = function()
+			self:resolve_death()
+		end,
+	})
 end
 
 function castle:begin_seal_dissolution()
@@ -503,7 +523,7 @@ function castle:resolve_death()
 			self:finish_seal_dissolution()
 		end
 	end
-	return self:should_restart_daemon_appearance_after_death()
+	self.events:emit('death_resolved', { restart_daemon = self:should_restart_daemon_appearance_after_death() })
 end
 
 function castle:is_current_room_boss_encounter_active()
