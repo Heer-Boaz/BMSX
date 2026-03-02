@@ -286,10 +286,48 @@ function spritecomponent:tick(_dt)
 end
 
 -- collider2dcomponent: holds hit areas / polys
+--
+-- DESIGN PRINCIPLES — collider setup
+--
+-- 1. SHAPE PRIORITY: circle > polys > AABB.
+--    If _local_circle is set, it is used. Otherwise _local_polys (polygon array).
+--    Otherwise the collider uses the owning object's AABB (sx/sy). Always prefer
+--    polygon shapes when pixel-accurate hit detection matters.
+--
+-- 2. POLYGON SOURCE: use @cx / @cc image-filename suffixes, not manual polys.
+--    When a sprite is loaded via spriteobject:gfx("enemy@cx"), rombuilder bakes
+--    the convex hull at pack-time and stores it in imgmeta.hitpolygons.
+--    spritecomponent.sync_collider() then copies those polys into _local_polys
+--    automatically — no cart code required.
+--    @cx  = convex hull  (one polygon, fast)
+--    @cc  = concave hull (multiple polygons, exact)
+--    none = AABB only    (rectangle, fastest)
+--
+-- 3. LAYER / MASK: use collision_profiles, not raw numbers.
+--    Default layer = 1, mask = 0xffffffff (hits everything on layer 1).
+--    Call collider:apply_collision_profile("enemy") rather than setting
+--    layer/mask directly so profiles can be changed in one place.
+--
+-- 4. NEVER POLL colliders in update().
+--    Subscribe to 'overlap.begin', 'overlap.stay', 'overlap.end' in bind()
+--    (see ecs_systems.lua for event payload fields).
 local collider2dcomponent = {}
 collider2dcomponent.__index = collider2dcomponent
 setmetatable(collider2dcomponent, { __index = component })
 
+-- collider2dcomponent.new(opts)
+--   opts fields:
+--     hittable    (bool, default true)  — false = always ignored by overlap2dsystem
+--     layer       (int, default 1)      — bitmask: which layer this collider is on
+--     mask        (int, default 0xffffffff) — bitmask: which layers it detects
+--     istrigger   (bool, default true)  — true = trigger, false = solid
+--     spaceevents (string, default "current") — scope for event emission:
+--                   "current" | "all" | "ui" | "both"
+--     _local_area   — table {x,y,w,h} : explicit AABB override (rarely needed)
+--     _local_polys  — array of polygon tables : set automatically by sync_collider()
+--     _local_circle — {x,y,r} : circle shape (highest shape priority)
+--     _shape_offset_x / _shape_offset_y — world-space offset added to all shapes
+--   For polygon shapes, prefer the @cx/@cc image suffix over setting _local_polys manually.
 function collider2dcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = "collider2dcomponent"
@@ -402,6 +440,10 @@ function collider2dcomponent:get_world_circle()
 	}
 end
 
+-- collider2dcomponent:apply_collision_profile(profile_name)
+--   Applies a named collision profile (layer + mask preset) defined via
+--   collision_profiles.define(). Prefer this over setting .layer/.mask directly.
+--   Returns self for method chaining.
 function collider2dcomponent:apply_collision_profile(profile_name)
 	collision_profiles.apply(self, profile_name)
 	return self

@@ -1,5 +1,53 @@
 -- ecs_systems.lua
 -- built-in ecs systems for lua engine
+--
+-- DESIGN PRINCIPLES — collision handling via overlap2dsystem
+--
+-- 1. NEVER WRITE CUSTOM COLLISION LOOPS IN CART CODE.
+--    overlap2dsystem runs automatically every frame (tickgroup.physics, priority 42).
+--    It detects all overlapping collider pairs in the active world space and emits
+--    three events on BOTH owner objects' event ports:
+--
+--      overlap.begin  — first frame two colliders touch (phase = "begin")
+--      overlap.stay   — every subsequent frame they remain touching (phase = "stay")
+--      overlap.end    — first frame they separate (phase = "end", contact = nil)
+--
+--    Subscribe in bind(), not in update():
+--
+--      WRONG — manual loop every frame:
+--        function hero:update(dt)
+--          for _, enemy in ipairs(world_instance:objects({tag="enemy"})) do
+--            if collision2d.collides(self.collider, enemy.collider) then ...
+--
+--      RIGHT — reactive subscription:
+--        function hero:bind()
+--          self:on("overlap.begin", function(e)
+--            if e.other_layer == LAYER_ENEMY then
+--              self:take_damage()
+--            end
+--          end)
+--        end
+--
+-- 2. OVERLAP EVENT PAYLOAD FIELDS
+--    Every overlap event carries a table with the following fields:
+--
+--      e.other_id              — world ID of the other object
+--      e.other_collider_id     — component handle of the other collider
+--      e.other_collider_local_id — local slot index of the other collider
+--      e.other_layer           — layer bitmask of the other collider
+--      e.other_mask            — mask bitmask of the other collider
+--      e.collider_id           — component handle of this object's collider
+--      e.collider_local_id     — local slot index of this object's collider
+--      e.collider_layer        — layer bitmask of this object's collider
+--      e.collider_mask         — mask bitmask of this object's collider
+--      e.contact               — { normal={x,y}, depth, point={x,y} } or nil (overlap.end)
+--      e.phase                 — "begin" | "stay" | "end"
+--
+-- 3. LAYER / MASK FILTERING
+--    A pair is only tested when (a.layer & b.mask) != 0 OR (b.layer & a.mask) != 0.
+--    Both colliders must also have hittable=true.
+--    Use collision_profiles to assign named layer+mask presets rather than
+--    setting layer/mask directly.
 
 local ecs = require("ecs")
 local collision2d = require("collision2d")
@@ -319,6 +367,12 @@ function overlap2dsystem:space_match(scope, owner_space, other_space)
 	error("[overlap2dsystem] unknown spaceevents scope '" .. tostring(scope) .. "'")
 end
 
+-- overlap2dsystem.new(priority?)
+--   Creates the system. Priority defaults to 42 inside tickgroup.physics.
+--   Instantiated once by the engine; cart code should not create a second instance.
+--   The system iterates every active object's collider2dcomponents, builds a
+--   broadphase grid, tests exact shapes with collision2d, and fires the three
+--   overlap events described in the file header.
 function overlap2dsystem.new(priority)
 	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 42), overlap2dsystem)
 	self.prev_pairs = {}

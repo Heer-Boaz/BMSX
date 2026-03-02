@@ -1,5 +1,46 @@
 -- collision2d.lua
 -- 2D collision helpers + broadphase index
+--
+-- DESIGN PRINCIPLES — collision detection
+--
+-- 1. DO NOT WRITE CUSTOM COLLISION LOOPS IN CART CODE.
+--    The overlap2dsystem (ecs_systems.lua) runs every frame and automatically
+--    detects all overlapping collider pairs using a broadphase grid + exact
+--    shape test.  It emits 'overlap.begin', 'overlap.stay', and 'overlap.end'
+--    events directly on the owner objects' event ports.  Subscribe to those
+--    events in bind() instead of iterating objects yourself.
+--
+--    WRONG — manual collision loop in update():
+--      function enemy:update()
+--          for obj in world_instance:objects({ scope = 'active' }) do
+--              if collision2d.collides(self.collider, obj.collider) then
+--                  self:take_damage()
+--              end
+--          end
+--      end
+--    RIGHT — reactive subscription in bind():
+--      function enemy:bind()
+--          self.events:on({ event = 'overlap.begin', subscriber = self,
+--              handler = function(e)
+--                  if e.other_collider_local_id == 'bullet' then
+--                      self:take_damage() end end })
+--      end
+--
+-- 2. WHEN TO CALL collision2d DIRECTLY.
+--    Use collision2d.collides() or collision2d.query_aabb() only for cases
+--    that genuinely fall outside the per-frame ECS pipeline:
+--      a) One-shot hit-scan / ray queries that happen at an arbitrary moment
+--         (e.g. "is there anything at this point right now?").
+--      b) Custom broadphase queries in a specialised ECS system you are
+--         writing (not in an ordinary object's update()).
+--    In all other cases, rely on overlap2dsystem events.
+--
+-- 3. COLLISION SHAPE PRIORITY (per collider, highest wins).
+--    circle (set_local_circle)  > polys (set_local_poly)  > AABB (default).
+--    The AABB is computed automatically from parent.sx / parent.sy when no
+--    explicit shape is set.  Sprite objects populate polys automatically from
+--    the image's imgmeta.hitpolygons (baked at pack-time by the rombuilder).
+--    See the @cx / @cc filename suffix notes in sprite.lua.
 
 local collision2d = {}
 local world_instance = require("world").instance
@@ -412,6 +453,11 @@ local function contact_poly_poly(a_shape, b_shape)
 	return best
 end
 
+-- collision2d.collides(a, b): exact shape test between two collider2dcomponents.
+-- Performs broadphase AABB check first, then exact shape intersection.
+-- Respects `enabled`, `hittable`, layer/mask filters.
+-- Prefer overlap2dsystem events over calling this directly — see DESIGN
+-- PRINCIPLES rule 1 at the top of this file.
 function collision2d.collides(a, b)
 	if not a.enabled or not b.enabled then
 		return false
@@ -429,6 +475,12 @@ function collision2d.collides(a, b)
 	return shape_intersects(shape_a, shape_b)
 end
 
+-- collision2d.get_contact2d(a, b)
+--   Returns contact data { normal={x,y}, depth, point={x,y} } when a and b
+--   overlap, or nil when they do not.
+--   Called automatically by overlap2dsystem when building 'overlap.begin' and
+--   'overlap.stay' event payloads; only call directly for one-shot queries or
+--   inside custom ECS systems that need contact normals.
 function collision2d.get_contact2d(a, b)
 	local area_a = get_world_area(a)
 	local area_b = get_world_area(b)
@@ -562,6 +614,12 @@ function collision2d.rebuild_index(cell_size)
 	end
 end
 
+-- collision2d.query_aabb(area): returns all colliders in the broadphase grid
+-- that overlap the given AABB `area` table { left, top, right, bottom }.
+-- Results are broadphase candidates only — always follow up with
+-- collision2d.collides() for exact filtering.
+-- The broadphase index is rebuilt each frame by overlap2dsystem; calling this
+-- outside of an ECS system update may yield stale results for that frame.
 function collision2d.query_aabb(area)
 	local index = collision2d.ensure_index()
 	return index:query_aabb(area)
