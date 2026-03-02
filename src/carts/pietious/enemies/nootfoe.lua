@@ -19,6 +19,7 @@ function nootfoe:ctor()
 	self:gfx('muzieknootfoe')
 	self.sprite_component.colorize = self.noot_color
 	object('c').events:emit('muzieknootspawn')
+	enemy_base.setup_projectile_boundary(self)
 end
 
 function nootfoe.bt_tick(self, _blackboard)

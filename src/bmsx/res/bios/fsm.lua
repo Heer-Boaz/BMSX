@@ -1011,6 +1011,15 @@ function state:handle_state_transition(action, event)
 	if t ~= "table" then
 		return false
 	end
+	-- Optional emitter filter: { emitter = 'some_id', go = handler_or_path }
+	-- When set, the handler only fires when the event came from an emitter
+	-- whose ID matches action.emitter.  Any other emitter leaves the event
+	-- unhandled (returns false), allowing it to bubble normally.
+	if action.emitter then
+		if resolve_emitter_id(event, nil) ~= action.emitter then
+			return false
+		end
+	end
 	local do_handler = action.go
 	if not do_handler then
 		return false

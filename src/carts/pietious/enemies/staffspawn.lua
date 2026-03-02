@@ -7,6 +7,7 @@ staffspawn.__index = staffspawn
 function staffspawn:ctor()
 	self:gfx('staffspawn')
 	self.sprite_component.flip.flip_h = self.speed_x_num < 0
+	enemy_base.setup_projectile_boundary(self)
 end
 
 function staffspawn.bt_tick(self, _blackboard)

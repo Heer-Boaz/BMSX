@@ -13,6 +13,12 @@ function enemy_base.ctor(self)
 	self.collider.spaceevents = 'current'
 	self.collider:set_shape_offset(0, 0)
 	self.sprite_component.offset.z = 110
+end
+
+-- Attaches a screenboundarycomponent with room bounds and subscribes to
+-- screen.leave so the projectile auto-disposes when it exits the room.
+-- Call from the ctor of projectile-type enemies only (vlokfoe, nootfoe, etc.).
+function enemy_base.setup_projectile_boundary(self)
 	self:add_component(components.screenboundarycomponent.new({
 		bounds = {
 			left = 0,
@@ -21,6 +27,13 @@ function enemy_base.ctor(self)
 			bottom = constants.room.height,
 		},
 	}))
+	self.events:on({
+		event = 'screen.leave',
+		subscriber = self,
+		handler = function(_event)
+			self:mark_for_disposal()
+		end,
+	})
 end
 
 function enemy_base.onspawn(self, pos)
@@ -66,14 +79,6 @@ function enemy_base.bind_overlap_events(self)
 		subscriber = self,
 		handler = function()
 			self:set_space('main')
-		end,
-	})
-
-	self.events:on({
-		event = 'screen.leave',
-		subscriber = self,
-		handler = function(_event)
-			self:mark_for_disposal()
 		end,
 	})
 end

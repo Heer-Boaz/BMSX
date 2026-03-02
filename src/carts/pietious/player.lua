@@ -2820,8 +2820,11 @@ local function define_player_fsm()
 						self:leave_shrine_overlay()
 					end,
 					['player.halo_trigger'] = function(self)
-						self.actioneffects:trigger('halo')
-					end,
+						local result = self.actioneffects:trigger('halo')
+						if result ~= 'ok' then
+							self.events:emit('halo_trigger_cancelled')
+						end
+					 end,
 					['enemy.contact_damage'] = function(self, _state, event)
 						self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
 					end,

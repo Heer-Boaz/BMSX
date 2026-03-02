@@ -489,8 +489,10 @@ local function define_director_fsm()
 			item_screen_halo = {
 				entering_state = function(self)
 					self.events:emit('player.halo_trigger')
-					return '/item_screen'
 				end,
+				on = {
+					['halo_trigger_cancelled'] = '/item_screen',
+				},
 			},
 			item_screen_closing = {
 				timelines = {
