@@ -8,7 +8,7 @@ export class CameraController extends WorldObject {
 		return {
 			states: {
 				_default: {
-					tick(this: CameraController) {
+					update(this: CameraController) {
 						this.stuff();
 					},
 				},

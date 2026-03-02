@@ -9,7 +9,7 @@ export class testrom_world_fsm extends World {
 				_game_start: {
 					entering_state(this: testrom_world_fsm) {
 					},
-					tick(this: testrom_world_fsm) {
+					update(this: testrom_world_fsm) {
 						return '/default';
 					}
 				},

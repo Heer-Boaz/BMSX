@@ -139,7 +139,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 						this.abilitysystem.remove_tags('state.attacking', 'state.idle');
 						$.emit('animate_walk', this);
 					},
-					tick(this: Fighter) {
+					update(this: Fighter) {
 						this.walkTick();
 					},
 					on: {
@@ -237,7 +237,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 							entering_state(this: Fighter) {
 								this.timelines.play(TIMELINE_IDS.jumpAscending);
 							},
-							tick(this: Fighter, state: State) {
+							update(this: Fighter, state: State) {
 								this.jumpAscendingTick(state);
 							},
 							on: {
@@ -252,7 +252,7 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 							entering_state(this: Fighter) {
 								this.timelines.play(TIMELINE_IDS.jumpDescending);
 							},
-							tick(this: Fighter, state: State) {
+							update(this: Fighter, state: State) {
 								this.jumpDescendingTick(state);
 							},
 							on: {

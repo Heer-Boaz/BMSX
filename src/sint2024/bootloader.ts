@@ -75,7 +75,7 @@ export class SintWorldFSM { // export to prevent potential tree-shaking (not hap
 	 * The blueprint contains the following states:
 	 * - `#game_start`: The initial state of the game.
 	 *   - `entering_state`: A function that is called when entering the `#game_start` state.
-	 *   - `tick`: A function that is called to run the `#game_start` state. Returns the next state as 'default'.
+	 *   - `update`: A function that is called to run the `#game_start` state. Returns the next state as 'default'.
 	 *
 	 * - `default`: The default state of the game.
 	 *   - `entering_state`: A function that is called when entering the `default` state. It spawns a new quiz and a new sint.
@@ -86,7 +86,7 @@ export class SintWorldFSM { // export to prevent potential tree-shaking (not hap
 				'#game_start': {
 					entering_state(this: World) {
 					},
-					tick(this: World, _s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+					update(this: World, _s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
 						return '/default';
 					}
 				},

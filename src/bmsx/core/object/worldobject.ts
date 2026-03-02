@@ -652,7 +652,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful, Native {
 
 		this.eventhandling_enabled = true; // Now active for event handling
 		this.tick_enabled = true;
-		this.sc.tickEnabled = true;
+		this.sc.updateEnabled = true;
 		this.active = true;
 		// Start the object's state machines on fresh spawn
 		// (Revive path skips onspawn, so revived machines are not reset.)

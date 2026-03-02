@@ -11,7 +11,7 @@ export class MuzzleFlash extends PooledWorldObject {
 		return {
 			states: {
 				_default: {
-					tick(this: MuzzleFlash) { this.run(); },
+					update(this: MuzzleFlash) { this.run(); },
 				},
 			},
 		};
@@ -39,7 +39,7 @@ export class ImpactBurst extends PooledWorldObject {
 		return {
 			states: {
 				_default: {
-					tick(this: ImpactBurst) { this.run(); },
+					update(this: ImpactBurst) { this.run(); },
 				},
 			},
 		};
@@ -65,7 +65,7 @@ export class ExplosionEmitter extends PooledWorldObject {
 		return {
 			states: {
 				_default: {
-					tick(this: ExplosionEmitter) { this.run(); },
+					update(this: ExplosionEmitter) { this.run(); },
 				},
 			},
 		};
@@ -92,7 +92,7 @@ export class DamageNumberManager extends WorldObject {
 		return {
 			states: {
 				_default: {
-					tick(this: DamageNumberManager) { this.run(); },
+					update(this: DamageNumberManager) { this.run(); },
 				},
 			},
 		};

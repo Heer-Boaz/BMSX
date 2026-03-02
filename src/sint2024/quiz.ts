@@ -141,7 +141,7 @@ export class quiz extends TextObject {
 						this.maximum_characters_per_line = maximum_characters_per_line_question;
 						this.set_text(['Beste Eli,', 'Welkom bij deze quiz,', 'Een speelse uitdaging,dat is wat dit is.', 'Met vragen over films,sport en spel,', 'Ben je klaar?', 'Dan beginnen we snel!']);
 					},
-					tick(this: quiz, _state: State) {
+					update(this: quiz, _state: State) {
 						this.type_next();
 					},
 					input_event_handlers: {
@@ -159,7 +159,7 @@ export class quiz extends TextObject {
 					entering_state(this: quiz) {
 						this.presentQuestion();
 					},
-					tick(this: quiz, _state: State) {
+					update(this: quiz, _state: State) {
 						this.type_next();
 					},
 					input_event_handlers: {
@@ -205,7 +205,7 @@ export class quiz extends TextObject {
 							this.set_text([currentQ.reactionB]);
 						}
 					},
-					tick(this: quiz, _state: State) {
+					update(this: quiz, _state: State) {
 						this.type_next();
 					},
 					input_event_handlers: {
@@ -240,7 +240,7 @@ export class quiz extends TextObject {
 							'Het was weer een grote eer,\nen zien je graag terug,een volgende keer!'
 						]);
 					},
-					tick(this: quiz, _state: State) {
+					update(this: quiz, _state: State) {
 						this.type_next();
 					}
 				}

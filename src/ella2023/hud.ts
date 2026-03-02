@@ -9,7 +9,7 @@ export class Hud extends SpriteObject {
 		return {
 			states: {
 				_default: {
-					tick(this: Hud) {
+					update(this: Hud) {
 					}
 				}
 			}

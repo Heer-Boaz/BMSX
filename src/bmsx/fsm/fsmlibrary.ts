@@ -548,8 +548,8 @@ function hoistGuardCanExit(
 }
 
 // StateDefinition handlers
-function hoistStateTick(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
-	hoistSlot(ownerDef as Record<string, any>, 'tick', id);
+function hoistStateUpdate(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
+	hoistSlot(ownerDef as Record<string, any>, 'update', id);
 }
 
 function hoistStateEntering(_machineName: string, _path: string[], ownerDef: StateDefinition, id: string) {
@@ -600,7 +600,7 @@ function walkAndHoist(
 	path: string[] = [],
 ) {
 	// direct slots — aligned with StateDefinition handler properties
-	if (typeof sdef.tick !== 'undefined') hoistStateTick(machineName, path, sdef, makeId([machineName, ...path, 'tick']));
+	if (typeof sdef.update !== 'undefined') hoistStateUpdate(machineName, path, sdef, makeId([machineName, ...path, 'update']));
 	if (typeof sdef.entering_state !== 'undefined') hoistStateEntering(machineName, path, sdef, makeId([machineName, ...path, 'entering_state']));
 	if (typeof sdef.exiting_state !== 'undefined') hoistStateExiting(machineName, path, sdef, makeId([machineName, ...path, 'exiting_state']));
 	if (typeof sdef.process_input !== 'undefined') hoistStateProcessInput(machineName, path, sdef, makeId([machineName, ...path, 'process_input']));

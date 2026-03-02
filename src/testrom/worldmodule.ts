@@ -18,7 +18,7 @@ class RailDemoDriver extends WorldObject {
 			initial: 'default',
 			states: {
 				default: {
-					tick(this: RailDemoDriver) { this.run(); }
+					update(this: RailDemoDriver) { this.run(); }
 				},
 			},
 		};

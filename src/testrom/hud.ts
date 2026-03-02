@@ -18,7 +18,7 @@ export class RailShooterHUD extends WorldObject {
 		return {
 			states: {
 				_default: {
-					tick(this: RailShooterHUD) { this.run(); },
+					update(this: RailShooterHUD) { this.run(); },
 				},
 			},
 		};

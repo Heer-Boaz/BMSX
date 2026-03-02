@@ -14,7 +14,7 @@ export class EilaModelFSM {
 		return {
 			states: {
 				_game_start: {
-					tick(this: World) {
+					update(this: World) {
 						return '/titlescreen';
 					}
 				},
@@ -39,7 +39,7 @@ export class EilaModelFSM {
 									},
 								},
 							},
-							tick(this: World, state: State) {
+							update(this: World, state: State) {
 								const data = state.data as { waitTicks?: number };
 								data.waitTicks = (data.waitTicks ?? 0) + 1;
 							},
@@ -55,7 +55,7 @@ export class EilaModelFSM {
 								this.spawn(new Hud(), new_vec3(0, 0, 100));
 								$.playaudio(AudioId.trainen);
 							},
-							tick(this: World): string | void {
+							update(this: World): string | void {
 								const player = this.getWorldObject<Fighter>('player');
 								if (player?.x < 16) {
 									return '../ffwachten2';
@@ -68,7 +68,7 @@ export class EilaModelFSM {
 								const data = state.data as { waitTicks?: number };
 								data.waitTicks = 0;
 							},
-							tick(this: World, state: State) {
+							update(this: World, state: State) {
 								const data = state.data as { waitTicks?: number };
 								data.waitTicks = (data.waitTicks ?? 0) + 1;
 								if (data.waitTicks >= 50) return '../knokken';

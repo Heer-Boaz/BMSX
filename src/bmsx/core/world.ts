@@ -522,7 +522,7 @@ export class World implements Stateful, RegisterablePersistent {
 
 			// Phase 3: ModeGraph resolution (FSMs own tag writes)
 			this._currentPhase = TickGroup.ModeResolution;
-			this.sc.tick();
+			this.sc.update();
 			this.systems.updatePhase(this, TickGroup.ModeResolution);
 
 			// Phase 4: Physics/collision resolution

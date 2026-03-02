@@ -263,7 +263,7 @@ state.diagnostics = {
 }
 
 local bst_max_history = 10
-local max_transitions_per_tick = 1000
+local max_transitions_per_update = 1000
 local empty_game_event = { type = "__fsm.synthetic__", emitter = nil, timestamp = 0 }
 local target_state_tag_refs = setmetatable({}, { __mode = "k" })
 
@@ -446,8 +446,8 @@ function state.new(definition, target, parent)
 	self._hist = {}
 	self._hist_head = 0
 	self._hist_size = 0
-	self.in_tick = false
-	self._transitions_this_tick = 0
+	self.in_update = false
+	self._transitions_this_update = 0
 	self.paused = false
 	self.tag_lookup = build_state_tag_lookup(definition.tags)
 	self._applied_state_tags = nil
@@ -1037,9 +1037,9 @@ function state:check_state_guard_conditions(target_state_id)
 end
 
 function state:transition_to_state(state_id)
-	if self.in_tick then
-		self._transitions_this_tick = self._transitions_this_tick + 1
-		if self._transitions_this_tick > max_transitions_per_tick then
+	if self.in_update then
+		self._transitions_this_update = self._transitions_this_update + 1
+		if self._transitions_this_update > max_transitions_per_update then
 			error("transition limit exceeded in one tick for '" .. tostring(self.id) .. "'.")
 		end
 	end
@@ -1662,49 +1662,6 @@ function state:dispatch_event(event_or_name, payload)
 	return false
 end
 
-function state:dispatch_input_event(event_or_name, payload)
-	if self.paused then
-		return false
-	end
-	local event_name
-	local data
-	if type(event_or_name) == "table" then
-		event_name = event_or_name.type
-		data = event_or_name
-	else
-		event_name = event_or_name
-		data = payload
-	end
-	if self.states and next(self.states) ~= nil and self.current_id then
-		local child = self.states[self.current_id]
-		if not child then
-			error("current child '" .. tostring(self.current_id) .. "' not found in '" .. tostring(self.id) .. "'.")
-		end
-		local handled = child:dispatch_input_event(event_name, data)
-		for _, concurrent in pairs(self.states) do
-			if concurrent.definition.is_concurrent and concurrent ~= child then
-				handled = concurrent:dispatch_input_event(event_name, data) or handled
-			end
-		end
-		if handled then
-			return true
-		end
-	end
-
-	local current = self
-	while current do
-		local handlers = current.definition.input_event_handlers
-		if handlers then
-			local spec = handlers[event_name]
-			if current:handle_state_transition(spec, data) then
-				return true
-			end
-		end
-		current = current.parent
-	end
-	return false
-end
-
 function state:resolve_input_eval_mode()
 	local node = self
 	while node do
@@ -1778,25 +1735,25 @@ function state:run_substate_machines()
 	if not cur then
 		error("current state '" .. tostring(self.current_id) .. "' not found in '" .. tostring(self.id) .. "'.")
 	end
-	cur:tick()
+	cur:update()
 	for id, s in pairs(states) do
 		if id ~= self.current_id and s.definition.is_concurrent then
-			s:tick()
+			s:update()
 		end
 	end
 end
 
-function state:tick()
+function state:update()
 	if self.paused then
 		return
 	end
-	self._transitions_this_tick = 0
+	self._transitions_this_update = 0
 	self:with_critical_section(function()
-		self.in_tick = true
+		self.in_update = true
 		self:run_substate_machines()
 		self:process_input_events()
 		self:run_current_state()
-		self.in_tick = false
+		self.in_update = false
 	end)
 end
 
@@ -1885,9 +1842,9 @@ function statemachinecontroller.new(opts)
 	opts = opts or {}
 	self.target = opts.target
 	self.statemachines = {}
-	self.tick_enabled = true
-	if opts.tick_enabled ~= nil then
-		self.tick_enabled = opts.tick_enabled
+	self.update_enabled = true
+	if opts.update_enabled ~= nil then
+		self.update_enabled = opts.update_enabled
 	end
 	self._started = false
 	self._event_subscriptions = {}
@@ -1982,12 +1939,12 @@ function statemachinecontroller:start()
 	self:resume()
 end
 
-function statemachinecontroller:tick()
-	if not self.tick_enabled then
+function statemachinecontroller:update()
+	if not self.update_enabled then
 		return
 	end
 	for _, machine in pairs(self.statemachines) do
-		machine:tick()
+		machine:update()
 	end
 end
 
@@ -2004,25 +1961,6 @@ function statemachinecontroller:dispatch(event_or_name, payload)
 	local handled
 	for _, machine in pairs(self.statemachines) do
 		if machine:dispatch_event(event_name, data) then
-			handled = true
-		end
-	end
-	return handled
-end
-
-function statemachinecontroller:dispatch_input(event_or_name, payload)
-	local event_name
-	local data
-	if type(event_or_name) == "table" then
-		event_name = event_or_name.type
-		data = event_or_name
-	else
-		event_name = event_or_name
-		data = payload
-	end
-	local handled
-	for _, machine in pairs(self.statemachines) do
-		if machine:dispatch_input_event(event_name, data) then
 			handled = true
 		end
 	end
@@ -2068,7 +2006,7 @@ function statemachinecontroller:run_statemachine(id)
 	if not machine then
 		error("no machine with id '" .. tostring(id) .. "'")
 	end
-	machine:tick()
+	machine:update()
 end
 
 function statemachinecontroller:run_all_statemachines()
@@ -2150,11 +2088,11 @@ function statemachinecontroller:resume_all_statemachines()
 end
 
 function statemachinecontroller:pause()
-	self.tick_enabled = false
+	self.update_enabled = false
 end
 
 function statemachinecontroller:resume()
-	self.tick_enabled = true
+	self.update_enabled = true
 end
 
 function statemachinecontroller:dispose()

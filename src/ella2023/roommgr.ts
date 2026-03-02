@@ -56,7 +56,7 @@ export class Room extends SpriteObject {
 		return {
 			states: {
 				_default: {
-					tick: defaultrun,
+					update: defaultrun,
 				},
 			}
 		};

@@ -83,7 +83,7 @@ function statemachinesystem:update(dt_ms)
 		if not (obj.tick_enabled) then
 			goto continue
 		end
-		obj.sc:tick(dt_ms)
+		obj.sc:update(dt_ms)
 		::continue::
 	end
 end

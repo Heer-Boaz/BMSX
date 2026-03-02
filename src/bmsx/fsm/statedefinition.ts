@@ -124,7 +124,7 @@ export class StateDefinition {
 		}
 	}
 
-	public tick?: StateEventHandler | string | StateActionSpec;
+	public update?: StateEventHandler | string | StateActionSpec;
 	public entering_state?: StateExitHandler | string | StateActionSpec;
 	public exiting_state?: StateExitHandler | string | StateActionSpec;
 	public process_input?: StateEventHandler | string | StateActionSpec;
@@ -280,7 +280,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 				}
 			}
 
-			const handlers = [stateDef.tick, stateDef.entering_state, stateDef.exiting_state, stateDef.process_input];
+			const handlers = [stateDef.update, stateDef.entering_state, stateDef.exiting_state, stateDef.process_input];
 			const handlerNames = ['run', 'enter', 'exit', 'next', 'end', 'process_input'];
 			handlers.forEach((h, idx) => {
 				if (typeof h === 'string' && !h.includes('.handlers.') && !looksLikeStatePath(h)) {

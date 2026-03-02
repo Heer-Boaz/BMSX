@@ -18,11 +18,11 @@ export class bclass extends SpriteObject {
 		return {
 			states: {
 				ani1: {
-					tick: () => { },
+					update: () => { },
 					entering_state(this: bclass) { this.imgid = BitmapId.b; },
 				},
 				'#ani2': {
-					tick: () => { },
+					update: () => { },
 					entering_state(this: bclass) { this.imgid = BitmapId.b2; },
 				},
 			}
@@ -35,21 +35,21 @@ export class bclass extends SpriteObject {
 			is_concurrent: true,
 			states: {
 				'#meuk1': {
-					tick: () => { },
+					update: () => { },
 					entering_state(this: bclass) { this.x += 10; },
 					states: {
 						'#blupperblop1': {
-							tick(this: bclass) { },
+							update(this: bclass) { },
 							entering_state(this: bclass) { }, //runtime.log('enter blupperblop1'); },
 						},
 						blupperblop2: {
-							tick(this: bclass) { },
+							update(this: bclass) { },
 							entering_state(this: bclass) { }, //runtime.log('enter blupperblop2'); },
 						},
 					},
 				},
 				meuk2: {
-					tick: () => { },
+					update: () => { },
 					entering_state(this: bclass) { }, // this.y += 10; },
 				},
 			}
@@ -101,10 +101,10 @@ export class bclass extends SpriteObject {
 							}
 						},
 					},
-					tick: blarun,
+					update: blarun,
 				},
 				'#blap': {
-					tick: blarun,
+					update: blarun,
 				},
 			}
 		};

@@ -138,15 +138,15 @@ export class StateMachineSystem extends ECSystem {
 			if (o.active === false) continue;
 			if (o.tick_enabled === false) continue;
 			const sc = o.sc;
-			if (!sc.tickEnabled) continue;
-			sc.tick();
+			if (!sc.updateEnabled) continue;
+			sc.update();
 		}
 
 		// Tick all service's state machines
 		for (const ent of Registry.instance.getRegisteredEntities()) {
 			if (ent instanceof Service) {
 				if (ent.active && ent.tickEnabled) {
-					ent.sc.tick();
+					ent.sc.update();
 				}
 			}
 		}

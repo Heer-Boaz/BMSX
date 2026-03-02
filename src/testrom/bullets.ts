@@ -11,7 +11,7 @@ export class BulletManager extends WorldObject {
 		return {
 			states: {
 				_default: {
-					tick(this: BulletManager) { this.run(); },
+					update(this: BulletManager) { this.run(); },
 				},
 			},
 		};

@@ -63,7 +63,7 @@ export class SparkEmitter extends WorldObject {
 		return {
 			states: {
 				_default: {
-					tick(this: SparkEmitter) { this.run(); },
+					update(this: SparkEmitter) { this.run(); },
 				},
 			},
 		};

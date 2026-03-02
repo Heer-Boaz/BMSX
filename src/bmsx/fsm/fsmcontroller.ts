@@ -34,7 +34,7 @@ export class StateMachineController {
 	 */
 	statemachines: Record<Identifier, State>;
 	/** If true, controller will be advanced by systems. */
-	public tickEnabled: boolean = true;
+	public updateEnabled: boolean = true;
 	/** True after a successful start(); prevents double-start. */
 	@excludepropfromsavegame
 	private _started: boolean = false;
@@ -162,9 +162,9 @@ export class StateMachineController {
 	}
 
 	/** Resume ticking without reinitializing state. */
-	public resume(): void { this.tickEnabled = true; }
+	public resume(): void { this.updateEnabled = true; }
 	/** Pause ticking (machines retain state). */
-	public pause(): void { this.tickEnabled = false; }
+	public pause(): void { this.updateEnabled = false; }
 
 	/** Wire all event subscriptions declared in machine definitions. */
 	public bind(): void {
@@ -210,17 +210,17 @@ export class StateMachineController {
 	 * Runs the current state of the current state machine.
 	 * Also runs all state machines that have 'parallel' set to true.
 	 */
-	tick(): void {
-		if (!this.tickEnabled) return; // If ticking is disabled or there is no current machine, do nothing. Some objects may not have a machine, so this is fine
+	update(): void {
+		if (!this.updateEnabled) return; // If ticking is disabled or there is no current machine, do nothing. Some objects may not have a machine, so this is fine
 		// Runs the current state of the current state machine
-		// this.current_machine.tick();
+		// this.current_machine.update();
 
 		// Run all state machines. The machine itself handles the `paused` flag or lack of any definition
 		for (let id in this.statemachines) {
 			// Skip the current machine, as it has already been run
 			// if (id === this.current_machine_id) continue;
-			// if (this.statemachines[id].is_concurrent) this.statemachines[id].tick();
-			this.statemachines[id].tick(); // Run all non-paused machines, even if they are not concurrent. This allows for event-driven state changes in non-concurrent machines and it makes sense to regard all distinct machines as "parallel".
+			// if (this.statemachines[id].is_concurrent) this.statemachines[id].update();
+			this.statemachines[id].update(); // Run all non-paused machines, even if they are not concurrent. This allows for event-driven state changes in non-concurrent machines and it makes sense to regard all distinct machines as "parallel".
 		}
 	}
 
@@ -363,7 +363,7 @@ export class StateMachineController {
 	 * @param id - The ID of the state machine.
 	 */
 	run_statemachine(id: Identifier): void {
-		this.statemachines[id].tick();
+		this.statemachines[id].update();
 	}
 
 	/**

@@ -13,7 +13,7 @@ import type { TimelinePlayOptions } from '../component/timeline_component';
 
 type TransitionExecutionMode = 'manual' | 'queued' | 'deferred';
 
-type TransitionTrigger = 'manual' | 'event' | 'input' | 'run-check' | 'process-input' | 'tick' | 'enter' | 'queue-drain';
+type TransitionTrigger = 'manual' | 'event' | 'input' | 'run-check' | 'process-input' | 'update' | 'enter' | 'queue-drain';
 
 interface TransitionOutcomeSnapshot {
 	from?: Identifier;
@@ -475,10 +475,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		};
 	}
 
-	private createTickContext(handlerName: string): TransitionDiagContext {
+	private createUpdateContext(handlerName: string): TransitionDiagContext {
 		return {
-			trigger: 'tick',
-			description: `tick:${handlerName}`,
+			trigger: 'update',
+			description: `update:${handlerName}`,
 			timestamp: $.platform.clock.now(),
 		};
 	}
@@ -1002,12 +1002,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * Calls the process_input function of the current state, if it exists, with the state_event_type.None event type.
 	 * Calls the run function of the current state, if it exists, with the state_event_type.Run event type.
 	 */
-	tick(): void {
+	update(): void {
 		if (!this.definition || this.paused) return;
 
-		this._transitionsThisTick = 0;
+		this._transitionsThisUpdate = 0;
 		this.withCriticalSection(() => {
-			this.in_tick = true;
+			this.in_update = true;
 			// Run states first
 			this.runSubstateMachines();
 			// Process input for the current state
@@ -1016,7 +1016,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			this.runCurrentState();
 			// Execute run checks
 			this.doRunChecks();
-			this.in_tick = false;
+			this.in_update = false;
 		});
 	}
 
@@ -1089,11 +1089,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * If the `run` function does not return a next state and `auto_tick` is enabled in the state definition, it increments the `ticks` counter.
 	 */
 	private runCurrentState(): void {
-		const tickHandler = this.definition.tick;
-		const next_state = typeof tickHandler === 'function'
+		const updateHandler = this.definition.update;
+		const next_state = typeof updateHandler === 'function'
 			? this.runWithTransitionContext(
-				() => this.createTickContext(tickHandler.name || '<anonymous>'),
-					() => tickHandler.call(this.target, this, EMPTY_GAME_EVENT),
+				() => this.createUpdateContext(updateHandler.name || '<anonymous>'),
+					() => updateHandler.call(this.target, this, EMPTY_GAME_EVENT),
 			)
 			: undefined;
 		if (next_state) {
@@ -1112,12 +1112,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (!cur) {
 			throw new Error(`[State] Current state '${this.currentid}' not found in '${this.id}'.`);
 		}
-		cur.tick();
+		cur.update();
 		// Parallel states run alongside the focused branch without stealing
 		// `currentid`, providing the same behaviour as controller-level concurrent
 		// machines.
 		for (const [id, s] of Object.entries(states)) {
-			if (id !== this.currentid && s.is_concurrent) s.tick();
+			if (id !== this.currentid && s.is_concurrent) s.update();
 		}
 	}
 
@@ -1453,13 +1453,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param args - Optional arguments to pass to the state's enter and exit actions.
 	 * @throws Error - If the state with the specified ID doesn't exist or if the target state is parallel.
 	 */
-	private _transitionsThisTick = 0;
-	private in_tick = false;
-	private static readonly MAX_TRANSITIONS_PER_TICK = 1000;
+	private _transitionsThisUpdate = 0;
+	private in_update = false;
+	private static readonly MAX_TRANSITIONS_PER_UPDATE = 1000;
 
 	private transitionToState(state_id: Identifier): void {
-		if (this.in_tick) {
-			if (++this._transitionsThisTick > State.MAX_TRANSITIONS_PER_TICK) {
+		if (this.in_update) {
+			if (++this._transitionsThisUpdate > State.MAX_TRANSITIONS_PER_UPDATE) {
 				throw new Error(`Transition limit exceeded in one tick for '${this.id}'.`);
 			}
 		}
