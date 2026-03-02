@@ -11,9 +11,6 @@ end
 
 function vlokfoe.bt_tick(self, _blackboard)
 	move_with_velocity(self)
-	if self:projectile_is_out_of_bounds() then
-		self:mark_for_disposal()
-	end
 	return behaviourtree.running
 end
 

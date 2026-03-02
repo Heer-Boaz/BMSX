@@ -1,5 +1,6 @@
 local worldobject = require('worldobject')
 local combat_overlap = require('combat_overlap')
+local constants = require('constants')
 
 local enemy_base = {}
 local damaging_contact_kinds = {
@@ -12,6 +13,14 @@ function enemy_base.ctor(self)
 	self.collider.spaceevents = 'current'
 	self.collider:set_shape_offset(0, 0)
 	self.sprite_component.offset.z = 110
+	self:add_component(components.screenboundarycomponent.new({
+		bounds = {
+			left = 0,
+			top = constants.room.hud_height,
+			right = constants.room.width,
+			bottom = constants.room.height,
+		},
+	}))
 end
 
 function enemy_base.onspawn(self, pos)
@@ -59,32 +68,14 @@ function enemy_base.bind_overlap_events(self)
 			self:set_space('main')
 		end,
 	})
-end
 
-function enemy_base.projectile_is_out_of_bounds(self)
-	local room = object('c').current_room
-	local bound_right = self.projectile_bound_right
-	if bound_right <= 0 then
-		bound_right = self.sx
-	end
-	local bound_bottom = self.projectile_bound_bottom
-	if bound_bottom <= 0 then
-		bound_bottom = self.sy
-	end
-
-	if self.x + bound_right < 0 then
-		return true
-	end
-	if self.x > room.world_width then
-		return true
-	end
-	if self.y + bound_bottom < room.world_top then
-		return true
-	end
-	if self.y > room.world_height then
-		return true
-	end
-	return false
+	self.events:on({
+		event = 'screen.leave',
+		subscriber = self,
+		handler = function(_event)
+			self:mark_for_disposal()
+		end,
+	})
 end
 
 function enemy_base.spawn_death_effect(self)
@@ -153,7 +144,6 @@ function enemy_base.extend(enemy_class, enemy_kind)
 	enemy_class.enemy_kind = enemy_kind
 	enemy_class.onspawn = enemy_base.onspawn
 	enemy_class.bind_overlap_events = enemy_base.bind_overlap_events
-	enemy_class.projectile_is_out_of_bounds = enemy_base.projectile_is_out_of_bounds
 	enemy_class.spawn_death_effect = enemy_base.spawn_death_effect
 	enemy_class.take_weapon_hit = enemy_base.take_weapon_hit
 	enemy_class.on_overlap = enemy_base.on_overlap

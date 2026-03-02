@@ -3,18 +3,14 @@ local progression = require('progression')
 local room_spawner = {}
 local spawned_ids = {}
 
-local function track(id)
-	spawned_ids[#spawned_ids + 1] = id
-end
-
 function room_spawner.despawn_previous()
 	for i = 1, #spawned_ids do
 		local obj = object(spawned_ids[i])
 		if obj then
 			obj:mark_for_disposal()
 		end
+		spawned_ids[i] = nil
 	end
-	spawned_ids = {}
 end
 
 local function spawn_rocks(room)
@@ -27,7 +23,7 @@ local function spawn_rocks(room)
 				pos = { x = def.x, y = def.y, z = 140 },
 				item_type = def.item_type,
 			})
-			track(def.id)
+			spawned_ids[#spawned_ids + 1] = def.id
 		end
 	end
 end
@@ -42,7 +38,7 @@ local function spawn_lithographs(room)
 			text = def.text,
 			room_number = room.room_number,
 		})
-		track(def.id)
+		spawned_ids[#spawned_ids + 1] = def.id
 	end
 end
 
@@ -54,7 +50,7 @@ local function spawn_shrines(room)
 			space_id = 'main',
 			pos = { x = def.x, y = def.y, z = 22 },
 		})
-		track(def.id)
+		spawned_ids[#spawned_ids + 1] = def.id
 	end
 end
 
@@ -67,7 +63,7 @@ local function spawn_draaideuren(room)
 			pos = { x = def.x, y = def.y, z = 22 },
 			kind = def.kind,
 		})
-		track(def.id)
+		spawned_ids[#spawned_ids + 1] = def.id
 	end
 end
 
@@ -82,7 +78,7 @@ local function spawn_world_entrances(room)
 			target = def.target,
 		})
 		entrance:set_entrance_state(castle.world_entrance_states[def.target].state)
-		track(def.id)
+		spawned_ids[#spawned_ids + 1] = def.id
 	end
 end
 
@@ -102,7 +98,7 @@ local function spawn_items(room)
 				item_id = def.id,
 				item_type = def.item_type,
 			})
-			track(def.id)
+			spawned_ids[#spawned_ids + 1] = def.id
 		end
 	end
 end
@@ -130,7 +126,7 @@ local function spawn_enemies(room)
 				height_tiles = def.height_tiles,
 				tiletype = def.tiletype,
 			})
-			track(def.id)
+			spawned_ids[#spawned_ids + 1] = def.id
 		end
 	end
 end

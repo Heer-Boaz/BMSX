@@ -194,8 +194,7 @@ function director:bind()
 		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(event)
-			self.pending_lithograph_lines = { event.text_line }
-			self.events:emit('lithograph_requested')
+			self.events:emit('lithograph_requested', { lines = { event.text_line } })
 		end,
 	})
 end
@@ -212,7 +211,7 @@ function director:ctor()
 	self.seal_flash_on = false
 	self.banner_post_action = nil
 	self.pending_shrine_text_lines = {}
-	self.pending_lithograph_lines = {}
+
 	self:activate_spaces()
 	self:bind_visual()
 	self:ensure_daemon_cloud_pool()
@@ -350,7 +349,12 @@ local function define_director_fsm()
 				end,
 				on = {
 					['room_switched'] = '/room_switch_wait',
-					['lithograph_requested'] = '/lithograph_screen_open',
+					['lithograph_requested'] = function(self, _state, event)
+						self.events:emit('lithograph.open', { lines = event.lines })
+						self:set_active_space('lithograph')
+						self.events:emit('lithograph')
+						return '/lithograph_screen_open'
+					end,
 					['banner_requested'] = '/banner_transition',
 				},
 				input_event_handlers = {
@@ -634,12 +638,6 @@ local function define_director_fsm()
 						on_end = '/lithograph_screen',
 					},
 				},
-					entering_state = function(self)
-						self.events:emit('lithograph.open', { lines = self.pending_lithograph_lines })
-						self.pending_lithograph_lines = {}
-						self:set_active_space('lithograph')
-						self.events:emit('lithograph')
-					end,
 			},
 			lithograph_screen = {
 				input_event_handlers = {
@@ -713,7 +711,6 @@ local function register_director_definition()
 			pending_banner_world_number = 0,
 			next_room_switch_banner_world_number = 0,
 			pending_shrine_text_lines = {},
-			pending_lithograph_lines = {},
 		},
 	})
 end

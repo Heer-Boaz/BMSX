@@ -1009,6 +1009,15 @@ local screenboundarycomponent = {}
 screenboundarycomponent.__index = screenboundarycomponent
 setmetatable(screenboundarycomponent, { __index = positionupdateaxiscomponent })
 
+-- Create a new screenboundarycomponent.
+-- opts.stick_to_edge (bool, default true): whether prohibitleavingscreencomponent snaps to edge.
+-- opts.bounds (table, optional): custom boundary rect {left, top, right, bottom}.
+--   When set, the boundarysystem uses these values instead of the viewport dimensions.
+--   This is used to express e.g. a room with a HUD strip at the top:
+--     bounds = { left=0, top=32, right=256, bottom=224 }
+--   Any field omitted falls back to the viewport edge for that side.
+--   Boundary values are resolved once at construction and stored as boundary_left/top/right/bottom,
+--   so the boundarysystem hot loop has no per-frame table lookups or conditionals.
 function screenboundarycomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = "screenboundarycomponent"
@@ -1018,6 +1027,11 @@ function screenboundarycomponent.new(opts)
 	if opts.stick_to_edge ~= nil then
 		self.stick_to_edge = opts.stick_to_edge
 	end
+	local bounds = opts.bounds
+	self.boundary_left = bounds and bounds.left or 0
+	self.boundary_top = bounds and bounds.top or 0
+	self.boundary_right = bounds and bounds.right or $.viewportsize.x
+	self.boundary_bottom = bounds and bounds.bottom or $.viewportsize.y
 	return self
 end
 
@@ -1048,16 +1062,14 @@ end
 function prohibitleavingscreencomponent:bind()
 	self.parent.events:on({ event_name = "screen.leaving", handler = function(event)
 		local p = self.parent
-		local w = $.viewportsize.x
-		local h = $.viewportsize.y
 		if event.d == "left" then
-			p.x = self.stick_to_edge and 0 or event.old_x_or_y
+			p.x = self.stick_to_edge and self.boundary_left or event.old_x_or_y
 		elseif event.d == "right" then
-			p.x = self.stick_to_edge and (w - p.sx) or event.old_x_or_y
+			p.x = self.stick_to_edge and (self.boundary_right - p.sx) or event.old_x_or_y
 		elseif event.d == "up" then
-			p.y = self.stick_to_edge and 0 or event.old_x_or_y
+			p.y = self.stick_to_edge and self.boundary_top or event.old_x_or_y
 		elseif event.d == "down" then
-			p.y = self.stick_to_edge and (h - p.sy) or event.old_x_or_y
+			p.y = self.stick_to_edge and (self.boundary_bottom - p.sy) or event.old_x_or_y
 		end
 	end, subscriber = self })
 end

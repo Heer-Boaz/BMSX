@@ -183,12 +183,14 @@ function boundarysystem.new(priority)
 end
 
 function boundarysystem:update()
-	local width = world_instance.gamewidth
-	local height = world_instance.gameheight
 	for obj, component in world_instance:objects_with_components(screenboundarycomponent, { scope = "active" }) do
 		if not component.enabled then
 			goto continue
 		end
+		local left = component.boundary_left
+		local top = component.boundary_top
+		local right = component.boundary_right
+		local bottom = component.boundary_bottom
 		local oldx = component.old_pos.x
 		local oldy = component.old_pos.y
 		local newx = obj.x
@@ -196,28 +198,28 @@ function boundarysystem:update()
 		local sx = obj.sx or 0
 		local sy = obj.sy or 0
 		if newx < oldx then
-			if newx + sx < 0 then
+			if newx + sx < left then
 				obj.events:emit("screen.leave", { d = "left", old_x_or_y = oldx })
-			elseif newx < 0 then
+			elseif newx < left then
 				obj.events:emit("screen.leaving", { d = "left", old_x_or_y = oldx })
 			end
 		elseif newx > oldx then
-			if newx >= width then
+			if newx >= right then
 				obj.events:emit("screen.leave", { d = "right", old_x_or_y = oldx })
-			elseif newx + sx > width then
+			elseif newx + sx > right then
 				obj.events:emit("screen.leaving", { d = "right", old_x_or_y = oldx })
 			end
 		end
 		if newy < oldy then
-			if newy + sy < 0 then
+			if newy + sy < top then
 				obj.events:emit("screen.leave", { d = "up", old_x_or_y = oldy })
-			elseif newy < 0 then
+			elseif newy < top then
 				obj.events:emit("screen.leaving", { d = "up", old_x_or_y = oldy })
 			end
 		elseif newy > oldy then
-			if newy >= height then
+			if newy >= bottom then
 				obj.events:emit("screen.leave", { d = "down", old_x_or_y = oldy })
-			elseif newy + sy > height then
+			elseif newy + sy > bottom then
 				obj.events:emit("screen.leaving", { d = "down", old_x_or_y = oldy })
 			end
 		end
