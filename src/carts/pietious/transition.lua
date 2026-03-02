@@ -20,24 +20,32 @@ function transition:bind_events()
 			self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
 		end,
 	})
+	self.events:on({
+		event = 'transition.banner',
+		emitter = 'd',
+		subscriber = self,
+		handler = function(event)
+			self.banner_lines = event.lines
+		end,
+	})
 end
 
 function transition:draw_transition_overlay()
-	local director = object('d')
-	if not director:has_tag('d.bt') then
+	if not object('d'):has_tag('d.bt') then
 		return
 	end
-	local lines = director.banner_text_lines
+	local lines = self.banner_lines
 	if #lines > 0 then
 		put_glyphs(lines, 0, constants.room.tile_origin_y + (constants.room.tile_size * 9), 341, {
-			font = self.banner_font,
-			center_block_width = display_width(),
+				font = self.banner_font,
+				center_block_width = display_width(),
 		})
 	end
 end
 
 function transition:ctor()
 	self.banner_font = font.get('pietious')
+	self.banner_lines = {}
 	self:bind_visual()
 	self:define_timeline(timeline.new({
 		id = 'transition.timeline',

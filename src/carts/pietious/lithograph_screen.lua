@@ -24,10 +24,30 @@ function lithograph_screen:draw_screen()
 	end
 end
 
+function lithograph_screen:bind_events()
+	self.events:on({
+		event = 'lithograph.open',
+		emitter = 'd',
+		subscriber = self,
+		handler = function(event)
+			self.lines = event.lines
+		end,
+	})
+	self.events:on({
+		event = 'lithograph.clear',
+		emitter = 'd',
+		subscriber = self,
+		handler = function()
+			self.lines = {}
+		end,
+	})
+end
+
 function lithograph_screen:ctor()
 	self.text_font = font.get('pietious')
 	self.lines = {}
 	self:bind_visual()
+	self:bind_events()
 end
 
 local function define_lithograph_screen_fsm()

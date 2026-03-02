@@ -47,14 +47,13 @@ function director:set_active_space(space_id)
 end
 
 function director:begin_black_wait()
-	self.banner_text_lines = {}
 	self:set_active_space('transition')
 	self.events:emit('transition')
 	self.events:emit('transition.mask.play')
 end
 
-function director:banner_lines()
-	if self.pending_banner_mode == 'world_banner' then
+function director:banner_lines(mode)
+	if mode == 'world_banner' then
 		return {
 			'WORLD ' .. tostring(self.pending_banner_world_number) .. ' !',
 		}
@@ -143,7 +142,7 @@ function director:despawn_daemon_clouds()
 end
 
 function director:finish_banner_transition()
-	self.banner_text_lines = {}
+	self.events:emit('transition.banner', { lines = {} })
 	if self.banner_post_action == 'castle_emerge' then
 		self.banner_post_action = nil
 		self.events:emit('player.world_emerge')
@@ -178,7 +177,7 @@ function director:bind_events()
 		emitter = 'pietolon',
 		subscriber = self,
 		handler = function(event)
-			self.lithograph_text_lines = { event.text_line }
+			self.pending_lithograph_lines = { event.text_line }
 			self.events:emit('lithograph_requested')
 		end,
 	})
@@ -195,10 +194,9 @@ function director:ctor()
 	self.daemon_smoke_next = 1
 	self.daemon_clouds = {}
 	self.seal_flash_on = false
-	self.pending_shrine_text_lines = {}
-	self.banner_text_lines = {}
 	self.banner_post_action = nil
-	self.lithograph_text_lines = {}
+	self.pending_shrine_text_lines = {}
+	self.pending_lithograph_lines = {}
 	self:activate_spaces()
 	self:bind_visual()
 	self:ensure_daemon_cloud_pool()
@@ -220,17 +218,17 @@ local function define_director_fsm()
 			['death_start'] = '/death',
 		},
 		states = {
-				room = {
-					entering_state = function(self)
-						self.banner_text_lines = {}
-						object('shrine').lines = {}
-						object('lithograph').lines = {}
-						self:despawn_daemon_clouds()
-						self:set_active_space('main')
-						self.events:emit('shrine_transition_exit')
-						self.events:emit('room')
-						self.events:emit('room_state.sync')
-					end,
+			room = {
+				entering_state = function(self)
+					self.events:emit('transition.banner', { lines = {} })
+					self.events:emit('shrine.clear')
+					self.events:emit('lithograph.clear')
+					self:despawn_daemon_clouds()
+					self:set_active_space('main')
+					self.events:emit('shrine_transition_exit')
+					self.events:emit('room')
+					self.events:emit('room_state.sync')
+				end,
 				on = {
 					['room_switched'] = '/room_switch_wait',
 					['lithograph_requested'] = '/lithograph_screen_open',
@@ -312,16 +310,16 @@ local function define_director_fsm()
 				tags = { 'd.bt' },
 				entering_state = function(self)
 					local banner_mode = self.pending_banner_mode
-					self.banner_text_lines = self:banner_lines()
-						self.banner_post_action = self.pending_banner_post_action
-						self.pending_banner_mode = nil
-						self.pending_banner_world_number = 0
-						self.pending_banner_post_action = nil
-						self:set_active_space('transition')
-						self.events:emit('transition')
-						self.events:emit('transition.mask.play')
-						local timeline_id = banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
-						self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
+					self.events:emit('transition.banner', { lines = self:banner_lines(banner_mode) })
+					self.banner_post_action = self.pending_banner_post_action
+					self.pending_banner_mode = nil
+					self.pending_banner_world_number = 0
+					self.pending_banner_post_action = nil
+					self:set_active_space('transition')
+					self.events:emit('transition')
+					self.events:emit('transition.mask.play')
+					local timeline_id = banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
+					self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
 				end,
 				on = {
 					['timeline.end.' .. banner_world_timeline_id] = director.finish_banner_transition,
@@ -330,8 +328,7 @@ local function define_director_fsm()
 			},
 			shrine_overlay = {
 					entering_state = function(self)
-						object('shrine').lines = self.pending_shrine_text_lines
-						self.banner_text_lines = {}
+							self.events:emit('shrine.open', { lines = self.pending_shrine_text_lines })
 						self.pending_shrine_text_lines = {}
 						self:set_active_space('shrine')
 						self.events:emit('shrine')
@@ -342,8 +339,7 @@ local function define_director_fsm()
 			},
 				shrine_transition_exit = {
 					entering_state = function(self)
-						self.banner_text_lines = {}
-						object('shrine').lines = {}
+							self.events:emit('shrine.clear')
 						self:set_active_space('main')
 						self.events:emit('player.shrine_overlay_exit')
 					end,
@@ -587,7 +583,8 @@ local function define_director_fsm()
 					},
 				},
 					entering_state = function(self)
-						object('lithograph').lines = self.lithograph_text_lines
+						self.events:emit('lithograph.open', { lines = self.pending_lithograph_lines })
+						self.pending_lithograph_lines = {}
 						self:set_active_space('lithograph')
 						self.events:emit('lithograph')
 					end,
@@ -615,8 +612,7 @@ local function define_director_fsm()
 					},
 				},
 				entering_state = function(self)
-					self.lithograph_text_lines = {}
-					object('lithograph').lines = {}
+					self.events:emit('lithograph.clear')
 				end,
 				on = {
 					['timeline.end.' .. lithograph_close_timeline_id] = director.go_room_resume_music,
@@ -698,7 +694,7 @@ local function register_director_definition()
 			pending_banner_world_number = 0,
 			next_room_switch_banner_world_number = 0,
 			pending_shrine_text_lines = {},
-			banner_text_lines = {},
+			pending_lithograph_lines = {},
 		},
 	})
 end
