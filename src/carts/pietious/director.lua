@@ -117,14 +117,21 @@ function director:ensure_daemon_cloud_pool()
 end
 
 function director:spawn_daemon_cloud()
-	local cloud = object('dc.' .. tostring(self.daemon_smoke_next))
-	cloud:play_once_at(
-		constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size),
-		constants.room.tile_origin_y + (math.random(constants.flow.daemon_cloud_spawn_y_min, constants.flow.daemon_cloud_spawn_y_max) * constants.room.tile_size)
-	)
-	self.daemon_smoke_next = self.daemon_smoke_next + 1
-	if self.daemon_smoke_next > constants.flow.daemon_cloud_max then
-		self.daemon_smoke_next = 1
+	local start_index = self.daemon_smoke_next
+	for i = 0, constants.flow.daemon_cloud_max - 1 do
+		local index = ((start_index - 1 + i) % constants.flow.daemon_cloud_max) + 1
+		local cloud = object('dc.' .. tostring(index))
+		if not cloud.visible then
+			cloud:play_once_at(
+				constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size),
+				constants.room.tile_origin_y + (math.random(constants.flow.daemon_cloud_spawn_y_min, constants.flow.daemon_cloud_spawn_y_max) * constants.room.tile_size)
+			)
+			self.daemon_smoke_next = index + 1
+			if self.daemon_smoke_next > constants.flow.daemon_cloud_max then
+				self.daemon_smoke_next = 1
+			end
+			return
+		end
 	end
 end
 
@@ -508,15 +515,18 @@ local function define_director_fsm()
 						[daemon_timeline_id] = {
 							create = function()
 								local markers = {}
-								for frame = 0, 56, 8 do
-									markers[#markers + 1] = {
-										frame = frame,
-										event = 'daemon.cloud.spawn',
-									}
+								for frame_value = 0, 125 do
+									local intro_state = math.modf(frame_value / 2) + 97
+									if (frame_value % 2) == 0 and intro_state > 96 and intro_state < 160 and (intro_state % 8) < 4 then
+										markers[#markers + 1] = {
+											frame = frame_value,
+											event = 'daemon.cloud.spawn',
+										}
+									end
 								end
 								return timeline.new({
 									id = daemon_timeline_id,
-									frames = timeline.range(64),
+									frames = timeline.range(126),
 									playback_mode = 'once',
 									markers = markers,
 									windows = {
@@ -524,7 +534,7 @@ local function define_director_fsm()
 											name = 'clouds',
 											tag = 'd.daemon.clouds',
 											start = { frame = 0 },
-											['end'] = { frame = 63 },
+											['end'] = { frame = 125 },
 										},
 									},
 								})
