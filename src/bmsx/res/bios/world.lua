@@ -1,3 +1,33 @@
+-- world.lua
+-- central world: owns all objects, spaces, and the ECS system manager
+--
+-- DESIGN PRINCIPLES
+--
+-- 1. SPACES partition the world into independently-updated subsets.
+--    There is always a "main" space. Add more with world:add_space(id).
+--    The "active" space is set with world:set_space(id); only objects in the
+--    active space are returned by world:objects({scope="active"}).
+--    Use spaces for: UI layer, background layer, loading screens, etc.
+--    Objects default to the active space at spawn unless they set .space_id.
+--
+-- 2. SPAWN / DESPAWN IS THE ONLY WAY TO ADD OR REMOVE OBJECTS.
+--    Never add objects to the internal tables directly.
+--    world:spawn(obj)         — calls obj:onspawn(), adds to active space
+--    world:despawn(id_or_obj) — calls obj:ondespawn() + obj:dispose()
+--
+-- 3. SCOPE PARAMETER IN objects() / objects_with_components()
+--    "all"    — every object regardless of active space or active state
+--    "active" — only objects in the current active space that are active
+--    Always pass scope="active" for gameplay logic; use "all" only for
+--    serialization or global queries.
+--
+-- 4. world_instance IS THE GLOBAL SINGLETON.
+--    Access via  require("world").instance. Do not create extra world.new().
+--
+-- 5. NEVER ITERATE AND MUTATE at the same time.
+--    Do not spawn/despawn while iterating world:objects(). If you need to
+--    defer a spawn/despawn, use a queue and process it after the loop.
+
 local ecs = require("ecs")
 
 local tickgroup = ecs.tickgroup
@@ -196,6 +226,9 @@ function world_class.new()
 	return self
 end
 
+-- world:add_space(space_id)
+--   Registers a new named space. Returns false if the space already exists.
+--   Must be called before any object is spawned into that space.
 function world_class:add_space(space_id)
 	if type(space_id) ~= "string" then
 		error("world.add_space expects a non-empty space id")
@@ -212,6 +245,10 @@ function world_class:add_space(space_id)
 	return true
 end
 
+-- world:set_space(space_id): makes space_id the active space.
+--   Objects subsequently spawned without an explicit .space_id go here.
+--   Affects the "active" scope in objects() / objects_with_components().
+--   Errors if space_id is not registered.
 function world_class:set_space(space_id)
 	if self._spaces[space_id] == nil then
 		error("world.set_space unknown space id '" .. tostring(space_id) .. "'.")
@@ -279,6 +316,10 @@ function world_class:_object_in_scope(obj, scope)
 	return true
 end
 
+-- world:spawn(obj, pos?)
+--   Registers obj in the world (and in the active space unless obj.space_id is
+--   pre-set) then calls obj:onspawn(pos).
+--   obj.id must be unique. Returns obj.
 function world_class:spawn(obj, pos)
 	local space_id = obj.space_id
 	if space_id == nil then
@@ -291,6 +332,10 @@ function world_class:spawn(obj, pos)
 	return obj
 end
 
+-- world:despawn(id_or_obj)
+--   Removes the object from the world and its space, then calls
+--   obj:ondespawn() and obj:dispose(). Does nothing if obj is nil.
+--   Do not call during an objects() iteration loop.
 function world_class:despawn(id_or_obj)
 	local obj
 	if type(id_or_obj) ~= "table" then
@@ -325,6 +370,8 @@ function world_class:despawn(id_or_obj)
 	end
 end
 
+-- world:get(id): returns the live object with this id, or nil.
+--   Returns nil if the object is pending disposal (dispose_flag=true).
 function world_class:get(id)
 	local obj = self._by_id[id]
 	if obj == nil then
@@ -336,6 +383,12 @@ function world_class:get(id)
 	return obj
 end
 
+-- world:objects(opts?)
+--   Iterator over all objects matching opts:
+--     opts.scope   — "all" (default) or "active" (current space + active flag)
+--     opts.reverse — iterate in reverse order when true
+--   Usage:  for obj in world_instance:objects({scope="active"}) do … end
+--   Do NOT spawn or despawn inside this loop.
 function world_class:objects(opts)
 	local scope = opts and opts.scope or "all"
 	local reverse = opts and opts.reverse or false
@@ -344,6 +397,10 @@ function world_class:objects(opts)
 	return iter_objects, { world = self, list = self._objects, scope = scope, step = step, index = start }, nil
 end
 
+-- world:objects_with_components(type_name, opts?)
+--   Iterator that yields (obj, component_handle) for every component of the
+--   given type on every matching object. opts.scope follows the same rules as
+--   world:objects(). Used by ECS systems; rarely needed in cart code.
 function world_class:objects_with_components(type_name, opts)
 	local scope = opts and opts.scope or "all"
 	return iter_objects_with_components,

@@ -1,5 +1,26 @@
 -- registry.lua
 -- lightweight registry for lua engine entities
+--
+-- DESIGN PRINCIPLES
+--
+-- 1. registrypersistent = true MEANS "survives world.clear()".
+--    Objects with this flag are NOT removed on clear() and NOT serialized as
+--    part of the savegame snapshot. Use it for global singletons that must
+--    persist across room/level transitions (HUD, audio managers, etc.).
+--
+--      WRONG — marking a per-room enemy as persistent:
+--        enemy.registrypersistent = true   -- it will leak across reloads
+--
+--      RIGHT — only mark long-lived singletons:
+--        hud.registrypersistent = true
+--
+-- 2. DO NOT STORE REFERENCES OUTSIDE the registry.
+--    Always look up entities via registry:get(id) or iterate(). Never cache
+--    a reference across frames — the entity may have been deregistered.
+--
+-- 3. registry.instance IS THE GLOBAL SINGLETON.
+--    Access it via  require("registry").instance — do not create additional
+--    registry.new() instances unless you have an explicit separate scope.
 
 local registry = {}
 registry.__index = registry
@@ -10,18 +31,26 @@ function registry.new()
 	return self
 end
 
+-- registry:get(id): returns entity or nil (does not error on missing ids).
 function registry:get(id)
 	return self._registry[id]
 end
 
+-- registry:has(id): returns true if an entity with this id is currently registered.
 function registry:has(id)
 	return self._registry[id] ~= nil
 end
 
+-- registry:register(entity): adds entity to the registry keyed by entity.id.
+--   entity.id must be set before calling this.
 function registry:register(entity)
 	self._registry[entity.id] = entity
 end
 
+-- registry:deregister(id_or_entity, remove_persistent?)
+--   Removes the entity. If the entity has registrypersistent=true, removal is
+--   a no-op unless remove_persistent is explicitly true. Returns false when
+--   removal was blocked, true otherwise.
 function registry:deregister(id_or_entity, remove_persistent)
 	local id = type(id_or_entity) == "string" and id_or_entity or id_or_entity.id
 	local entity = self._registry[id]
@@ -42,6 +71,9 @@ function registry:get_persistent_entities()
 	return out
 end
 
+-- registry:clear(): removes all non-persistent entities from the registry.
+--   Persistent entities (registrypersistent=true) are left untouched.
+--   Called automatically on world.clear() / room transitions.
 function registry:clear()
 	for id, entity in pairs(self._registry) do
 		if not entity.registrypersistent then
@@ -68,6 +100,10 @@ local function iter_registry(state, key)
 	return nil
 end
 
+-- registry:iterate(type_name?, persistent_only?): returns an iterator over
+--   registered entities. Both arguments are optional filters.
+--     type_name      — only yield entities whose .type_name matches
+--     persistent_only — when true, only yield persistent entities
 function registry:iterate(type_name, persistent_only)
 	return iter_registry, { registry = self, type_name = type_name, persistent_only = persistent_only }, nil
 end
