@@ -99,10 +99,13 @@ local function make_def_id(id, parent)
 end
 
 local function collect_event_list(def, list, seen)
-	for name, action in pairs(def.on) do
+	for name, action in pairs(def.on or {}) do
 		local emitter = nil
 		if type(action) == "table" and action.emitter ~= nil then
-			emitter = resolve_emitter_id({ emitter = action.emitter }, nil)
+			emitter = action.emitter
+			if type(emitter) == "table" and emitter.id ~= nil then
+				emitter = emitter.id
+			end
 		end
 		local key = name .. ":" .. tostring(emitter)
 		if not seen[key] then
@@ -110,7 +113,7 @@ local function collect_event_list(def, list, seen)
 			seen[key] = true
 		end
 	end
-	for _, child in pairs(def.states) do
+	for _, child in pairs(def.states or {}) do
 		collect_event_list(child, list, seen)
 	end
 end
@@ -772,11 +775,8 @@ end
 
 function state:with_critical_section(fn)
 	self:enter_critical_section()
-	local ok, r1, r2, r3, r4, r5, r6, r7, r8 = pcall(fn)
+	local r1, r2, r3, r4, r5, r6, r7, r8 = fn()
 	self:leave_critical_section()
-	if not ok then
-		error(r1)
-	end
 	return r1, r2, r3, r4, r5, r6, r7, r8
 end
 
