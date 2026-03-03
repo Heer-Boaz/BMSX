@@ -4,6 +4,7 @@ import * as constants from './constants';
 import { DEFAULT_LUA_BUILTIN_NAMES } from '../lua_builtins';
 import { LuaLexer } from '../../lua/lualexer';
 import { KEYWORDS } from '../../lua/luatoken';
+import { clamp } from '../../utils/clamp';
 
 // Lightweight Lua syntax highlighter used by the IDE.
 // Pure functions with no runtime/editor state dependencies beyond provided inputs.
@@ -466,7 +467,7 @@ function applySemanticAnnotations(
 		if (annotation.role === 'definition' && annotation.kind === 'function') {
 			continue;
 		}
-		const start = Math.max(0, Math.min(annotation.start, columnColors.length));
+		const start = clamp(annotation.start, 0, columnColors.length);
 		const rawEnd = Math.max(annotation.end, start);
 		if (start >= columnColors.length) {
 			continue;

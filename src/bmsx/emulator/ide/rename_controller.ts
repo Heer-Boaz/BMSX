@@ -72,7 +72,7 @@ export class RenameController {
 			this.host.showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 			return false;
 		}
-		const firstMatch = info.matches[Math.max(0, Math.min(initialIndex, info.matches.length - 1))];
+		const firstMatch = info.matches[clamp(initialIndex, 0, info.matches.length - 1)];
 		const activeLine = options.buffer.getLineContent(firstMatch.row);
 		const currentName = activeLine.slice(firstMatch.start, firstMatch.end);
 		if (currentName.length === 0) {

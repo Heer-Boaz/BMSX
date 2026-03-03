@@ -26,7 +26,7 @@ import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaComp
 import type { LuaSourceRecord } from '../lua_sources';
 import { Pool } from '../../utils/pool';
 import { $ } from '../../core/engine_core';
-import { KEYWORDS } from '../../lua/luatoken';
+import { KEYWORDS, LuaTokenType, type LuaToken } from '../../lua/luatoken';
 import { getTextSnapshot, splitText } from './source_text';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
@@ -1283,14 +1283,14 @@ export function extractHoverExpression(row: number, column: number): { expressio
 		return null;
 	}
 	const line = ide_state.buffer.getLineContent(row);
-	const safeColumn = clamp(column, 0, Math.max(0, line.length));
+	const safeColumn = clamp(column, 0, line.length);
 	if (isLuaCommentContext(ide_state.buffer, row, safeColumn)) {
 		return null;
 	}
 	if (line.length === 0) {
 		return null;
 	}
-	const clampedColumn = clamp(column, 0, Math.max(0, line.length - 1));
+	const clampedColumn = clamp(column, 0, line.length - 1);
 	let probe = clampedColumn;
 	if (!LuaLexer.isIdentifierPart(line.charAt(probe))) {
 		if (line.charCodeAt(probe) === 46 && probe > 0) {
@@ -1398,6 +1398,65 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	return { expression, startColumn: targetSegment.start, endColumn: targetSegment.end };
 }
 
+function isKeywordTokenType(type: LuaTokenType): boolean {
+	return type >= LuaTokenType.And && type <= LuaTokenType.While;
+}
+
+function resolveContextMenuTokenKind(type: LuaTokenType): EditorContextToken['kind'] {
+	if (type === LuaTokenType.Identifier) {
+		return 'identifier';
+	}
+	if (type === LuaTokenType.Number) {
+		return 'number';
+	}
+	if (type === LuaTokenType.String) {
+		return 'string';
+	}
+	if (isKeywordTokenType(type)) {
+		return 'keyword';
+	}
+	return 'operator';
+}
+
+function findContextMenuToken(row: number, column: number, path: string, source: string): LuaToken {
+	const tokens = getCachedLuaParse({
+		path,
+		source,
+		version: ide_state.textVersion,
+	}).parsed.tokens;
+	const targetLine = row + 1;
+	let adjacent: LuaToken = null;
+	for (let index = 0; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		if (token.type === LuaTokenType.Eof) {
+			break;
+		}
+		if (token.line < targetLine) {
+			continue;
+		}
+		if (token.line > targetLine) {
+			break;
+		}
+		const tokenLength = token.lexeme.length;
+		if (tokenLength === 0) {
+			continue;
+		}
+		const tokenStart = token.column - 1;
+		const tokenEnd = tokenStart + tokenLength;
+		if (column >= tokenStart && column < tokenEnd) {
+			return token;
+		}
+		if (column === tokenEnd) {
+			adjacent = token;
+			continue;
+		}
+		if (column < tokenStart) {
+			break;
+		}
+	}
+	return adjacent;
+}
+
 export function resolveContextMenuToken(row: number, column: number): EditorContextToken {
 	if (row < 0 || row >= ide_state.buffer.getLineCount()) {
 		return null;
@@ -1406,107 +1465,46 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 	if (line.length === 0) {
 		return null;
 	}
-	const safeColumn = clamp(column, 0, Math.max(0, line.length));
+	const safeColumn = clamp(column, 0, line.length);
 	if (isLuaCommentContext(ide_state.buffer, row, safeColumn)) {
 		return null;
 	}
 	const expression = extractHoverExpression(row, safeColumn);
 	if (expression) {
 		const segmentText = line.slice(expression.startColumn, expression.endColumn);
+		const isKeyword = KEYWORDS.has(segmentText.toLowerCase());
 		return {
-			kind: 'identifier',
+			kind: isKeyword ? 'keyword' : 'identifier',
 			text: segmentText.length > 0 ? segmentText : expression.expression,
-			expression: expression.expression,
+			expression: isKeyword ? null : expression.expression,
 			row,
 			column: safeColumn,
 			startColumn: expression.startColumn,
 			endColumn: expression.endColumn,
 		};
 	}
-	let probe = clamp(safeColumn, 0, line.length - 1);
-	if (LuaLexer.isWhitespace(line.charAt(probe))) {
-		if (probe > 0 && !LuaLexer.isWhitespace(line.charAt(probe - 1))) {
-			probe -= 1;
-		} else {
-			return null;
-		}
-	}
-	const char = line.charAt(probe);
-	if (LuaLexer.isWhitespace(char)) {
+	const context = getActiveCodeTabContext();
+	const path = context ? context.descriptor.path : '<anynomous>';
+	const source = getTextSnapshot(ide_state.buffer);
+	const token = findContextMenuToken(row, safeColumn, path, source);
+	if (!token) {
 		return null;
 	}
-	if (LuaLexer.isDigit(char)) {
-		let start = probe;
-		while (start > 0 && LuaLexer.isDigit(line.charAt(start - 1))) {
-			start -= 1;
-		}
-		let end = probe + 1;
-		while (end < line.length && LuaLexer.isDigit(line.charAt(end))) {
-			end += 1;
-		}
-		return {
-			kind: 'number',
-			text: line.slice(start, end),
-			expression: null,
-			row,
-			column: safeColumn,
-			startColumn: start,
-			endColumn: end,
-		};
+	const tokenStart = clamp(token.column - 1, 0, line.length);
+	const tokenEnd = clamp(tokenStart + token.lexeme.length, tokenStart, line.length);
+	if (tokenEnd <= tokenStart) {
+		return null;
 	}
-	if (char === '"' || char === '\'') {
-		let end = probe + 1;
-		while (end < line.length) {
-			const current = line.charAt(end);
-			if (current === '\\') {
-				end += 2;
-				continue;
-			}
-			if (current === char) {
-				end += 1;
-				break;
-			}
-			end += 1;
-		}
-		return {
-			kind: 'string',
-			text: line.slice(probe, Math.min(end, line.length)),
-			expression: null,
-			row,
-			column: safeColumn,
-			startColumn: probe,
-			endColumn: Math.min(end, line.length),
-		};
-	}
-	if (LuaLexer.isIdentifierPart(char)) {
-		let start = probe;
-		while (start > 0 && LuaLexer.isIdentifierPart(line.charAt(start - 1))) {
-			start -= 1;
-		}
-		let end = probe + 1;
-		while (end < line.length && LuaLexer.isIdentifierPart(line.charAt(end))) {
-			end += 1;
-		}
-		const tokenText = line.slice(start, end);
-		const kind = KEYWORDS.has(tokenText.toLowerCase()) ? 'keyword' : 'identifier';
-		return {
-			kind,
-			text: tokenText,
-			expression: kind === 'identifier' ? tokenText : null,
-			row,
-			column: safeColumn,
-			startColumn: start,
-			endColumn: end,
-		};
-	}
+	const tokenText = line.slice(tokenStart, tokenEnd);
+	const kind = resolveContextMenuTokenKind(token.type);
 	return {
-		kind: 'operator',
-		text: char,
-		expression: null,
+		kind,
+		text: tokenText,
+		expression: kind === 'identifier' ? tokenText : null,
 		row,
 		column: safeColumn,
-		startColumn: probe,
-		endColumn: probe + 1,
+		startColumn: tokenStart,
+		endColumn: tokenEnd,
 	};
 }
 

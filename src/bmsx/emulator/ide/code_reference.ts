@@ -368,8 +368,8 @@ function toRangeLike(range: { start: { line: number; column: number }; end: { li
 
 function buildReferenceSnippet(lines: readonly string[], match: SearchMatch): string {
 	const line = lines[match.row] ?? '';
-	const start = Math.max(0, match.start - 20);
-	const end = Math.min(line.length, match.end + 20);
+	const start = clamp(match.start - 20, 0, line.length);
+	const end = clamp(match.end + 20, start, line.length);
 	const snippet = line.slice(start, end).trim();
 	return snippet.length > 0 ? snippet : line.trim();
 }
@@ -554,15 +554,7 @@ export class ReferenceState {
 			this.activeIndex = -1;
 			return;
 		}
-		if (index < 0) {
-			this.activeIndex = 0;
-			return;
-		}
-		if (index >= this.matches.length) {
-			this.activeIndex = this.matches.length - 1;
-			return;
-		}
-		this.activeIndex = index;
+		this.activeIndex = clamp(index, 0, this.matches.length - 1);
 	}
 }
 
@@ -647,29 +639,24 @@ function rangeToSearchMatchInBuffer(range: LuaSourceRange, buffer: TextBuffer): 
 		return null;
 	}
 	const line = buffer.getLineContent(rowIndex);
-	const startColumn = Math.max(0, range.start.column - 1);
-	const endInclusive = Math.max(startColumn, range.end.column - 1);
-	const endExclusive = Math.min(line.length, endInclusive + 1);
-	const clampedStart = Math.min(startColumn, line.length);
-	const clampedEnd = Math.max(clampedStart, endExclusive);
-	if (clampedEnd <= clampedStart) {
-		return null;
-	}
-	return { row: rowIndex, start: clampedStart, end: clampedEnd };
+	return rangeToSearchMatchForLine(range, line, rowIndex);
 }
+
 function rangeToSearchMatch(range: LuaSourceRange, lines: readonly string[]): SearchMatch {
 	const rowIndex = range.start.line - 1;
 	if (rowIndex < 0 || rowIndex >= lines.length) {
 		return null;
 	}
 	const line = lines[rowIndex] ?? '';
-	const startColumn = Math.max(0, range.start.column - 1);
+	return rangeToSearchMatchForLine(range, line, rowIndex);
+}
+
+function rangeToSearchMatchForLine(range: LuaSourceRange, line: string, rowIndex: number): SearchMatch {
+	const startColumn = clamp(range.start.column - 1, 0, line.length);
 	const endInclusive = Math.max(startColumn, range.end.column - 1);
-	const endExclusive = Math.min(line.length, endInclusive + 1);
-	const clampedStart = Math.min(startColumn, line.length);
-	const clampedEnd = Math.max(clampedStart, endExclusive);
-	if (clampedEnd <= clampedStart) {
+	const endExclusive = clamp(endInclusive + 1, startColumn, line.length);
+	if (endExclusive <= startColumn) {
 		return null;
 	}
-	return { row: rowIndex, start: clampedStart, end: clampedEnd };
+	return { row: rowIndex, start: startColumn, end: endExclusive };
 }
