@@ -5,7 +5,7 @@ import { resetBlink } from './render/render_caret';
 import { activeSearchMatchCount, applySearchSelection, closeSearch, ensureSearchSelectionVisible, focusEditorFromSearch, jumpToNextMatch, jumpToPreviousMatch, onSearchQueryChanged, openSearch, searchPageSize, stepSearchSelection } from './editor_search';
 import { ide_state } from './ide_state';
 import { ESCAPE_KEY } from './constants';
-import type { MenuId, PointerSnapshot, ResourceViewerState, RuntimeErrorOverlay, TopBarButtonId } from './types';
+import type { EditorContextMenuAction, MenuId, PointerSnapshot, ResourceViewerState, RuntimeErrorOverlay, TopBarButtonId } from './types';
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp, revealCursor, setCursorPosition } from './caret';
 import { isResourceViewActive, isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, cycleTab, activateCodeTab, beginTabDrag, closeTab, endTabDrag, setActiveTab, getActiveCodeTabContext, updateTabDrag } from './editor_tabs';
 import { prepareDebuggerStepOverlay } from './ide_debugger';
@@ -17,7 +17,7 @@ import { clearHoverTooltip, updateHoverTooltip } from './intellisense';
 import * as TextEditing from './text_editing_and_selection';
 import { clamp } from '../../utils/clamp';
 import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, handleActionPromptSelection, openSymbolSearch, openResourceSearch, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, resolvePointerRow, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, handlePointerAutoScroll, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches, applyLineJump, mapScreenPointToViewport } from './cart_editor';
-import { clearGotoHoverHighlight, clearReferenceHighlights, tryGotoDefinitionAt, refreshGotoHoverHighlight } from './intellisense';
+import { clearGotoHoverHighlight, clearReferenceHighlights, tryGotoDefinitionAt, refreshGotoHoverHighlight, resolveContextMenuToken } from './intellisense';
 import { navigateToRuntimeErrorFrameTarget } from './ide_debugger';
 import { focusRuntimeErrorOverlay } from './runtime_error_navigation';
 import { toggleProblemsPanel } from './problems_panel';
@@ -31,6 +31,8 @@ import { rebuildRuntimeErrorOverlayView, buildRuntimeErrorOverlayCopyText } from
 import * as constants from './constants';
 import { RuntimeDebuggerCommandExecutor } from './ide_debugger';
 import { toggleBreakpointForEditorRow } from './ide_debugger';
+import { buildEditorContextMenuEntries } from './code_reference';
+import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from './render/render_context_menu';
 
 export const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
 export const MENU_COMMANDS = [
@@ -229,6 +231,10 @@ export class InputController {
 export function handleEscapeKey(): boolean {
 	if (ide_state.pendingActionPrompt) {
 		resetActionPromptState();
+		return true;
+	}
+	if (ide_state.contextMenu.visible) {
+		closeEditorContextMenu();
 		return true;
 	}
 	const overlay = ide_state.runtimeErrorOverlay;
@@ -1002,10 +1008,20 @@ export function handleTextEditorPointerInput(): void {
 		ide_state.symbolSearchHoverIndex = -1;
 		ide_state.resourceSearchHoverIndex = -1;
 	}
+	let pointerSecondaryJustPressed = false;
+	let pointerSecondaryPressed = false;
 	let pointerAuxJustPressed = false;
 	let pointerAuxPressed = false;
 	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
 	if (playerInput) {
+		const secondaryAction = playerInput.getActionState('pointer_secondary');
+		if (secondaryAction && secondaryAction.justpressed === true && secondaryAction.consumed !== true) {
+			pointerSecondaryJustPressed = true;
+			pointerSecondaryPressed = true;
+		} else if (secondaryAction && secondaryAction.pressed === true && secondaryAction.consumed !== true) {
+			pointerSecondaryPressed = true;
+			pointerSecondaryJustPressed = !ide_state.pointerSecondaryWasPressed;
+		}
 		const auxAction = playerInput.getActionState('pointer_aux');
 		if (auxAction && auxAction.justpressed === true && auxAction.consumed !== true) {
 			pointerAuxJustPressed = true;
@@ -1015,12 +1031,19 @@ export function handleTextEditorPointerInput(): void {
 			pointerAuxJustPressed = !ide_state.pointerAuxWasPressed;
 		}
 	}
+	ide_state.pointerSecondaryWasPressed = pointerSecondaryPressed;
 	ide_state.pointerAuxWasPressed = pointerAuxPressed;
 	const wasPressed = ide_state.pointerPrimaryWasPressed;
 	const justPressed = snapshot.primaryPressed && !wasPressed;
 	const justReleased = !snapshot.primaryPressed && wasPressed;
 	if (justReleased || (!snapshot.primaryPressed && ide_state.pointerSelecting)) {
 		ide_state.pointerSelecting = false;
+	}
+	if (handleEditorContextMenuPointer(snapshot, justPressed, pointerSecondaryJustPressed, playerInput)) {
+		ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		clearHoverTooltip();
+		clearGotoHoverHighlight();
+		return;
 	}
 	if (ide_state.tabDragState) {
 		if (!snapshot.primaryPressed) {
@@ -1492,6 +1515,15 @@ export function handleTextEditorPointerInput(): void {
 	const inGutter = insideCodeArea
 		&& snapshot.viewportX >= bounds.gutterLeft
 		&& snapshot.viewportX < bounds.gutterRight;
+	if (pointerSecondaryJustPressed) {
+		if (insideCodeArea && !inGutter && openEditorContextMenuFromPointer(snapshot, playerInput)) {
+			ide_state.pointerSelecting = false;
+			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			resetPointerClickTracking();
+			return;
+		}
+		closeEditorContextMenu();
+	}
 	if (justPressed && inGutter) {
 		const targetRow = resolvePointerRow(snapshot.viewportY);
 		if (toggleBreakpointForEditorRow(targetRow)) {
@@ -1572,6 +1604,102 @@ export function handleTextEditorPointerInput(): void {
 		clearHoverTooltip();
 	}
 	ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
+}
+
+function handleEditorContextMenuPointer(
+	snapshot: PointerSnapshot,
+	justPressed: boolean,
+	secondaryJustPressed: boolean,
+	playerInput: ReturnType<typeof $.input.getPlayerInput>
+): boolean {
+	const menu = ide_state.contextMenu;
+	if (!menu.visible) {
+		return false;
+	}
+	layoutEditorContextMenu(getCodeAreaBounds());
+	if (!snapshot.valid || !snapshot.insideViewport) {
+		menu.hoverIndex = -1;
+		return false;
+	}
+	updateEditorContextMenuHover(snapshot.viewportX, snapshot.viewportY);
+	const clickTriggered = justPressed || secondaryJustPressed;
+	if (!clickTriggered) {
+		return false;
+	}
+	const hitIndex = findEditorContextMenuEntryAt(snapshot.viewportX, snapshot.viewportY);
+	if (hitIndex < 0) {
+		closeEditorContextMenu();
+		return false;
+	}
+	const entry = menu.entries[hitIndex];
+	const token = menu.token!;
+	closeEditorContextMenu();
+	if (secondaryJustPressed) {
+		playerInput?.consumeAction('pointer_secondary');
+		return true;
+	}
+	if (!entry.enabled) {
+		return true;
+	}
+	executeEditorContextMenuAction(entry.action, token);
+	playerInput?.consumeAction('pointer_primary');
+	return true;
+}
+
+function openEditorContextMenuFromPointer(snapshot: PointerSnapshot, playerInput: ReturnType<typeof $.input.getPlayerInput>): boolean {
+	const targetRow = resolvePointerRow(snapshot.viewportY);
+	const targetColumn = resolvePointerColumn(targetRow, snapshot.viewportX);
+	const token = resolveContextMenuToken(targetRow, targetColumn);
+	if (!token) {
+		return false;
+	}
+	const entries = buildEditorContextMenuEntries(token, isEditableCodeTab());
+	if (entries.length === 0) {
+		return false;
+	}
+	openEditorContextMenu(
+		snapshot.viewportX,
+		snapshot.viewportY,
+		token,
+		entries,
+		getCodeAreaBounds()
+	);
+	updateEditorContextMenuHover(snapshot.viewportX, snapshot.viewportY);
+	playerInput?.consumeAction('pointer_secondary');
+	return true;
+}
+
+function executeEditorContextMenuAction(action: EditorContextMenuAction, token: { row: number; startColumn: number; expression: string | null; text: string }): void {
+	switch (action) {
+		case 'go_to_definition':
+			focusEditorAtContextToken(token.row, token.startColumn);
+			tryGotoDefinitionAt(token.row, token.startColumn);
+			return;
+		case 'go_to_references':
+			focusEditorAtContextToken(token.row, token.startColumn);
+			openReferenceSearchPopup();
+			return;
+		case 'rename_symbol':
+			focusEditorAtContextToken(token.row, token.startColumn);
+			openRenamePrompt();
+			return;
+		case 'copy_token':
+			void writeClipboard(token.expression ?? token.text, 'Copied token to clipboard');
+			return;
+	}
+}
+
+function focusEditorAtContextToken(row: number, column: number): void {
+	clearReferenceHighlights();
+	ide_state.resourcePanelFocused = false;
+	focusEditorFromLineJump();
+	focusEditorFromSearch();
+	focusEditorFromResourceSearch();
+	focusEditorFromSymbolSearch();
+	ide_state.completion.closeSession();
+	ide_state.selectionAnchor = { row, column };
+	setCursorPosition(row, column);
+	resetBlink();
 }
 
 export function updateTabHoverState(snapshot: PointerSnapshot): void {

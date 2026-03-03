@@ -21,7 +21,7 @@ import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTab
 import { ide_state } from './ide_state';
 import { buildLuaSemanticModel, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type FunctionSignatureInfo } from './semantic_model';
 import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
-import type { ApiCompletionMetadata, CodeTabContext, LuaCompletionItem, PointerSnapshot } from './types';
+import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaCompletionItem, PointerSnapshot } from './types';
 import type { LuaSourceRecord } from '../lua_sources';
 import { Pool } from '../../utils/pool';
 import { $ } from '../../core/engine_core';
@@ -1395,7 +1395,121 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	}
 	const targetSegment = segments[segmentIndex];
 	return { expression, startColumn: targetSegment.start, endColumn: targetSegment.end };
-} export function refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext): void {
+}
+
+export function resolveContextMenuToken(row: number, column: number): EditorContextToken {
+	if (row < 0 || row >= ide_state.buffer.getLineCount()) {
+		return null;
+	}
+	const line = ide_state.buffer.getLineContent(row);
+	if (line.length === 0) {
+		return null;
+	}
+	const safeColumn = Math.max(0, Math.min(column, Math.max(0, line.length)));
+	if (isLuaCommentContext(ide_state.buffer, row, safeColumn)) {
+		return null;
+	}
+	const expression = extractHoverExpression(row, safeColumn);
+	if (expression) {
+		const segmentText = line.slice(expression.startColumn, expression.endColumn);
+		return {
+			kind: 'identifier',
+			text: segmentText.length > 0 ? segmentText : expression.expression,
+			expression: expression.expression,
+			row,
+			column: safeColumn,
+			startColumn: expression.startColumn,
+			endColumn: expression.endColumn,
+		};
+	}
+	let probe = Math.max(0, Math.min(safeColumn, line.length - 1));
+	if (LuaLexer.isWhitespace(line.charAt(probe))) {
+		if (probe > 0 && !LuaLexer.isWhitespace(line.charAt(probe - 1))) {
+			probe -= 1;
+		} else {
+			return null;
+		}
+	}
+	const char = line.charAt(probe);
+	if (LuaLexer.isWhitespace(char)) {
+		return null;
+	}
+	if (LuaLexer.isDigit(char)) {
+		let start = probe;
+		while (start > 0 && LuaLexer.isDigit(line.charAt(start - 1))) {
+			start -= 1;
+		}
+		let end = probe + 1;
+		while (end < line.length && LuaLexer.isDigit(line.charAt(end))) {
+			end += 1;
+		}
+		return {
+			kind: 'number',
+			text: line.slice(start, end),
+			expression: null,
+			row,
+			column: safeColumn,
+			startColumn: start,
+			endColumn: end,
+		};
+	}
+	if (char === '"' || char === '\'') {
+		let end = probe + 1;
+		while (end < line.length) {
+			const current = line.charAt(end);
+			if (current === '\\') {
+				end += 2;
+				continue;
+			}
+			if (current === char) {
+				end += 1;
+				break;
+			}
+			end += 1;
+		}
+		return {
+			kind: 'string',
+			text: line.slice(probe, Math.min(end, line.length)),
+			expression: null,
+			row,
+			column: safeColumn,
+			startColumn: probe,
+			endColumn: Math.min(end, line.length),
+		};
+	}
+	if (LuaLexer.isIdentifierPart(char)) {
+		let start = probe;
+		while (start > 0 && LuaLexer.isIdentifierPart(line.charAt(start - 1))) {
+			start -= 1;
+		}
+		let end = probe + 1;
+		while (end < line.length && LuaLexer.isIdentifierPart(line.charAt(end))) {
+			end += 1;
+		}
+		const tokenText = line.slice(start, end);
+		const kind = KEYWORDS.has(tokenText.toLowerCase()) ? 'keyword' : 'identifier';
+		return {
+			kind,
+			text: tokenText,
+			expression: kind === 'identifier' ? tokenText : null,
+			row,
+			column: safeColumn,
+			startColumn: start,
+			endColumn: end,
+		};
+	}
+	return {
+		kind: 'operator',
+		text: char,
+		expression: null,
+		row,
+		column: safeColumn,
+		startColumn: probe,
+		endColumn: probe + 1,
+	};
+}
+
+export function refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext): void {
 	const token = extractHoverExpression(row, column);
 	if (!token) {
 		clearGotoHoverHighlight();

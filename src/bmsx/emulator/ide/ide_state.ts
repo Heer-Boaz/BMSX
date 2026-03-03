@@ -40,6 +40,7 @@ import type {
 	EditorTabDescriptor,
 	ResourceBrowserItem,
 	VisualLineSegment,
+	EditorContextMenuState,
 } from './types';
 import type { TextBuffer } from './text_buffer';
 import { PieceTreeBuffer } from './piece_tree_buffer';
@@ -167,6 +168,7 @@ export interface IdeState {
 	menuEntryBounds: Record<MenuId, RectBounds>;
 	menuDropdownBounds: RectBounds;
 	openMenuId: MenuId;
+	contextMenu: EditorContextMenuState;
 	debuggerControls: DebuggerControlsState;
 	breakpoints: Map<string, Set<number>>;
 	tabButtonBounds: Map<string, RectBounds>;
@@ -187,6 +189,7 @@ export interface IdeState {
 	warnNonMonospace: boolean;
 	pointerSelecting: boolean;
 	pointerPrimaryWasPressed: boolean;
+	pointerSecondaryWasPressed: boolean;
 	pointerAuxWasPressed: boolean;
 	searchField: TextField;
 	symbolSearchField: TextField;
@@ -374,6 +377,16 @@ export const ide_state: IdeState = {
 	},
 	menuDropdownBounds: null,
 	openMenuId: null,
+	contextMenu: {
+		visible: false,
+		anchorX: 0,
+		anchorY: 0,
+		token: null,
+		entries: [],
+		hoverIndex: -1,
+		bounds: null,
+		itemBounds: [],
+	},
 	debuggerControls: {
 		executionState: 'inactive',
 		sessionMetrics: null,
@@ -401,6 +414,7 @@ export const ide_state: IdeState = {
 	warnNonMonospace: false,
 	pointerSelecting: false,
 	pointerPrimaryWasPressed: false,
+	pointerSecondaryWasPressed: false,
 	pointerAuxWasPressed: false,
 	searchField: undefined!,
 	symbolSearchField: undefined!,

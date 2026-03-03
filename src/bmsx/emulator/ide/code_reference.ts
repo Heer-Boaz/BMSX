@@ -1,6 +1,6 @@
 import { clamp } from '../../utils/clamp';
 import type { LuaDefinitionLocation, LuaSymbolEntry, ResourceDescriptor } from '../types';
-import type { CodeTabContext, SearchMatch, SymbolSearchResult } from './types';
+import type { CodeTabContext, EditorContextMenuEntry, EditorContextToken, SearchMatch, SymbolSearchResult } from './types';
 import type { LuaSourceRange } from '../../lua/lua_ast';
 import { listResources } from '../workspace';
 import { Runtime } from '../runtime';
@@ -50,6 +50,54 @@ export function isLuaResourceDescriptor(descriptor: ResourceDescriptor): boolean
 	}
 	const normalizedPath = descriptor.path.toLowerCase();
 	return normalizedPath.endsWith('.lua');
+}
+
+export function buildEditorContextMenuEntries(token: EditorContextToken, editable: boolean): EditorContextMenuEntry[] {
+	if (!token) {
+		return [];
+	}
+	if (token.kind === 'identifier' && token.expression && token.expression.length > 0) {
+		const entries: EditorContextMenuEntry[] = [
+			{ action: 'go_to_definition', label: 'Go to Definition', enabled: true },
+			{ action: 'go_to_references', label: 'Go to References', enabled: true },
+		];
+		if (editable) {
+			entries.push({ action: 'rename_symbol', label: 'Rename Symbol', enabled: true });
+		}
+		entries.push({
+			action: 'copy_token',
+			label: `Copy Symbol ${formatContextTokenPreview(token.expression)}`,
+			enabled: true,
+		});
+		return entries;
+	}
+	return [{
+		action: 'copy_token',
+		label: `Copy ${describeContextTokenKind(token.kind)} ${formatContextTokenPreview(token.text)}`,
+		enabled: true,
+	}];
+}
+
+function describeContextTokenKind(kind: EditorContextToken['kind']): string {
+	switch (kind) {
+		case 'keyword':
+			return 'Keyword';
+		case 'number':
+			return 'Number';
+		case 'string':
+			return 'String';
+		case 'operator':
+			return 'Token';
+		case 'identifier':
+		default:
+			return 'Symbol';
+	}
+}
+
+function formatContextTokenPreview(text: string): string {
+	const limit = 28;
+	const clipped = text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
+	return `'${clipped}'`;
 }
 
 type FileMetadata = {

@@ -311,6 +311,37 @@ export type PendingActionPrompt = {
 	action: 'hot-reload-and-resume' | 'reboot' | 'close' | 'theme-toggle';
 };
 
+export type EditorContextTokenKind = 'identifier' | 'keyword' | 'number' | 'string' | 'operator';
+
+export type EditorContextMenuAction = 'go_to_definition' | 'go_to_references' | 'rename_symbol' | 'copy_token';
+
+export type EditorContextToken = {
+	kind: EditorContextTokenKind;
+	text: string;
+	expression: string | null;
+	row: number;
+	column: number;
+	startColumn: number;
+	endColumn: number;
+};
+
+export type EditorContextMenuEntry = {
+	action: EditorContextMenuAction;
+	label: string;
+	enabled: boolean;
+};
+
+export type EditorContextMenuState = {
+	visible: boolean;
+	anchorX: number;
+	anchorY: number;
+	token: EditorContextToken | null;
+	entries: EditorContextMenuEntry[];
+	hoverIndex: number;
+	bounds: RectBounds | null;
+	itemBounds: RectBounds[];
+};
+
 export type EditorSerializedState = {
 	active: boolean;
 	activeTab: EditorTabKind;

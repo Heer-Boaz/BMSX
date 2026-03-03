@@ -4,6 +4,7 @@ import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
 import { computeMaximumScrollColumn, drawHoverTooltip, getCodeAreaBounds, getDiagnosticsForRow, maximumLineLength, } from '../cart_editor';
 import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from './render_error_overlay';
+import { renderEditorContextMenu } from './render_context_menu';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { drawEditorColoredText } from '../text_renderer';
@@ -324,6 +325,7 @@ export function renderCodeArea(): void {
 	if (ide_state.codeHorizontalScrollbarVisible) {
 		ide_state.scrollbars.codeHorizontal.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
+	renderEditorContextMenu(bounds);
 }
 
 function drawRuntimeErrorOverlayIndicator(
