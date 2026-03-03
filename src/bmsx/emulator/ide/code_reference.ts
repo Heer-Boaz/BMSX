@@ -543,7 +543,7 @@ export class ReferenceState {
 		if (this.matches.length === 0) {
 			this.activeIndex = -1;
 		} else {
-			const clampedIndex = Math.max(0, Math.min(activeIndex, this.matches.length - 1));
+			const clampedIndex = clamp(activeIndex, 0, this.matches.length - 1);
 			this.activeIndex = clampedIndex;
 		}
 		this.expression = info.expression;

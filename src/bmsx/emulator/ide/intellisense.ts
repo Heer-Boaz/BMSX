@@ -3,6 +3,7 @@ import { LuaSyntaxKind, type LuaAssignmentStatement, type LuaCallExpression, typ
 import { LuaEnvironment } from '../../lua/luaenvironment';
 import { LuaLexer } from '../../lua/lualexer';
 import { createIdentifierCanonicalizer } from '../../utils/identifier_canonicalizer';
+import { clamp } from '../../utils/clamp';
 import type { ParsedLuaChunk } from './lua_parse';
 import type { LuaSyntaxError } from '../../lua/luaerrors';
 import { getCachedLuaParse } from './lua_analysis_cache';
@@ -1282,14 +1283,14 @@ export function extractHoverExpression(row: number, column: number): { expressio
 		return null;
 	}
 	const line = ide_state.buffer.getLineContent(row);
-	const safeColumn = Math.min(Math.max(column, 0), Math.max(0, line.length));
+	const safeColumn = clamp(column, 0, Math.max(0, line.length));
 	if (isLuaCommentContext(ide_state.buffer, row, safeColumn)) {
 		return null;
 	}
 	if (line.length === 0) {
 		return null;
 	}
-	const clampedColumn = Math.min(Math.max(column, 0), Math.max(0, line.length - 1));
+	const clampedColumn = clamp(column, 0, Math.max(0, line.length - 1));
 	let probe = clampedColumn;
 	if (!LuaLexer.isIdentifierPart(line.charAt(probe))) {
 		if (line.charCodeAt(probe) === 46 && probe > 0) {
@@ -1405,7 +1406,7 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 	if (line.length === 0) {
 		return null;
 	}
-	const safeColumn = Math.max(0, Math.min(column, Math.max(0, line.length)));
+	const safeColumn = clamp(column, 0, Math.max(0, line.length));
 	if (isLuaCommentContext(ide_state.buffer, row, safeColumn)) {
 		return null;
 	}
@@ -1422,7 +1423,7 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 			endColumn: expression.endColumn,
 		};
 	}
-	let probe = Math.max(0, Math.min(safeColumn, line.length - 1));
+	let probe = clamp(safeColumn, 0, line.length - 1);
 	if (LuaLexer.isWhitespace(line.charAt(probe))) {
 		if (probe > 0 && !LuaLexer.isWhitespace(line.charAt(probe - 1))) {
 			probe -= 1;
