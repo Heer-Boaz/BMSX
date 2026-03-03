@@ -354,10 +354,10 @@ function addEventsToDef(machine: StateMachineBlueprint): void {
 	machine.on = rewriteOnBag(machine.on);
 	const eventMap = getMachineEvents(machine);
 	eventMap?.forEach(event_entry => {
-		if (machine.event_list!.some(e => e.name === event_entry.name)) {
+		if (machine.event_list!.some(e => e.name === event_entry.name && e.emitter === event_entry.emitter)) {
 			return;
 		}
-		machine.event_list!.push({ name: event_entry.name });
+		machine.event_list!.push({ name: event_entry.name, emitter: event_entry.emitter });
 	});
 }
 
@@ -381,8 +381,8 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 	 * @param name - The name of the state event.
 	 * @param definition - The definition of the state event.
 	 */
-	function add(name: string): void {
-		addAndReplace(name);
+	function add(name: string, emitter?: Identifier | boolean | null): void {
+		addAndReplace(name, emitter);
 	}
 
 	/**
@@ -397,10 +397,11 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 	 * - If a global-scoped event (`scope: 'all'`) is already added, it prevents adding a specific-scoped event with the same name.
 	 * - If the event is not already added, it is added to the `events` set and marked in `addedEvents`.
 	 */
-	function addAndReplace(name: string): void {
-		if (addedEvents.has(name)) return;
-		events.add({ name });
-		addedEvents.set(name, true);
+	function addAndReplace(name: string, emitter?: Identifier | boolean | null): void {
+		const key = `${name}:${emitter}`;
+		if (addedEvents.has(key)) return;
+		events.add({ name, emitter });
+		addedEvents.set(key, true);
 	}
 
 	// Get the events from the machine definition
@@ -410,7 +411,9 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 	// Start with the events defined in the machine definition
 	if (machine.on) {
 		for (const name in machine.on) {
-			add(name);
+			const def = machine.on[name] as StateActionEmitSpec;
+			const emitter = typeof def === 'object' && def !== null && 'emitter' in def ? def.emitter : null;
+			add(name, emitter);
 		}
 	}
 
@@ -424,7 +427,9 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 		if (state_def.on) {
 			state_def.on = rewriteOnBag(state_def.on);
 			for (const name in state_def.on) {
-				add(name);
+				const def = state_def.on[name] as StateActionEmitSpec;
+				const emitter = typeof def === 'object' && def !== null && 'emitter' in def ? def.emitter : null;
+				add(name, emitter);
 			}
 		}
 

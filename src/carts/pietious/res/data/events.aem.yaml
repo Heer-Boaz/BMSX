@@ -5,12 +5,6 @@ events:
         rules:
             - when:
                   equals:
-                      world_number: 0
-              go:
-                  music_transition:
-                      audio_id: music_castle
-            - when:
-                  equals:
                       daemon_fight_active: true
               go:
                   music_transition:
@@ -23,6 +17,12 @@ events:
                       audio_id: music_seal_2
                       sync:
                           stinger: music_seal_1
+            - when:
+                  equals:
+                      world_number: 0
+              go:
+                  music_transition:
+                      audio_id: music_castle
             - go:
                   music_transition:
                       audio_id: music_world

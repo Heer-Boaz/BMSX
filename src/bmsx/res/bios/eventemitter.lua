@@ -248,7 +248,11 @@ end
 -- port's owner if not supplied.  Returns a function that unsubscribes when
 -- called.  Always supply subscriber = <owning_object> for lifecycle cleanup.
 function eventport:on(spec)
-	spec.emitter = spec.emitter or self.emitter.id or self.emitter
+	if spec.emitter == nil then
+		spec.emitter = self.emitter.id or self.emitter
+	elseif not spec.emitter then
+		spec.emitter = nil
+	end
 	eventemitter.instance:on(spec)
 	local name = spec.event_name or spec.event
 	return function()

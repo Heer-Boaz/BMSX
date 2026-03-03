@@ -358,6 +358,7 @@ end
 function castle:bind()
 	self.events:on({
 		event = 'seal_dissolution',
+		emitter = 'd',
 		subscriber = self,
 		handler = function()
 			self:begin_seal_dissolution()
@@ -365,6 +366,7 @@ function castle:bind()
 	})
 	self.events:on({
 		event = 'daemon_appearance',
+		emitter = 'd',
 		subscriber = self,
 		handler = function()
 			self:begin_daemon_appearance()
@@ -372,6 +374,7 @@ function castle:bind()
 	})
 	self.events:on({
 		event = 'daemon_appearance_done',
+		emitter = 'd',
 		subscriber = self,
 		handler = function()
 			self:activate_current_room_daemon_fight()
@@ -396,6 +399,7 @@ function castle:bind()
 	})
 	self.events:on({
 		event = 'world_entrance.opening_2',
+		emitter = 'c',
 		subscriber = self,
 		handler = function(event)
 			self.world_entrance_states[event.target].state = 'opening_2'
@@ -403,9 +407,18 @@ function castle:bind()
 	})
 	self.events:on({
 		event = 'world_entrance.opened',
+		emitter = 'c',
 		subscriber = self,
 		handler = function(event)
 			self.world_entrance_states[event.target].state = 'open'
+		end,
+	})
+	self.events:on({
+		event = 'worldkey',
+		emitter = 'pietolon',
+		subscriber = self,
+		handler = function()
+			self:mark_current_world_boss_defeated()
 		end,
 	})
 	-- director emits 'room' when the room state becomes active; castle
@@ -504,6 +517,16 @@ function castle:begin_daemon_appearance()
 	self:emit_room_state_changed()
 end
 
+function castle:mark_current_world_boss_defeated()
+	local world_number = self.current_room.world_number
+	self.world_boss_defeated[world_number] = true
+	set_tag_flag(self, castle_tags.seal_sequence, false)
+	set_tag_flag(self, castle_tags.daemon_fight, false)
+	set_tag_flag(self, castle_tags.seal_active, false)
+	self:sync_current_room_seal_instance()
+	self:emit_room_state_changed()
+end
+
 function castle:should_restart_daemon_appearance_after_death()
 	if self.current_room.seal == nil then
 		return false
@@ -530,9 +553,6 @@ function castle:is_current_room_boss_encounter_active()
 	if self.current_room.seal == nil then
 		return false
 	end
-	if self.world_boss_defeated[self.current_room.world_number] then
-		return false
-	end
 	if self:has_tag(castle_tags.seal_sequence) then
 		return true
 	end
@@ -540,7 +560,7 @@ function castle:is_current_room_boss_encounter_active()
 		return true
 	end
 	if self:has_tag(castle_tags.seal_broken) then
-		return true
+		return not self.world_boss_defeated[self.current_room.world_number]
 	end
 	return false
 end

@@ -30,7 +30,7 @@ function world_entrance:sync_opening_frame(frame_value)
 		return
 	end
 	self:set_entrance_state('opening_2')
-	self.events:emit('world_entrance.opening_2', {
+	object('c').events:emit('world_entrance.opening_2', {
 		target = self.target,
 	})
 end
@@ -58,7 +58,7 @@ function world_entrance:bind()
 		subscriber = self,
 		handler = function()
 			self:set_entrance_state('open')
-			self.events:emit('world_entrance.opened', {
+			object('c').events:emit('world_entrance.opened', {
 				target = self.target,
 			})
 		end,

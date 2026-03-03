@@ -99,10 +99,15 @@ local function make_def_id(id, parent)
 end
 
 local function collect_event_list(def, list, seen)
-	for name in pairs(def.on) do
-		if not seen[name] then
-			list[#list + 1] = { name = name }
-			seen[name] = true
+	for name, action in pairs(def.on) do
+		local emitter = nil
+		if type(action) == "table" and action.emitter ~= nil then
+			emitter = resolve_emitter_id({ emitter = action.emitter }, nil)
+		end
+		local key = name .. ":" .. tostring(emitter)
+		if not seen[key] then
+			list[#list + 1] = { name = name, emitter = emitter }
+			seen[key] = true
 		end
 	end
 	for _, child in pairs(def.states) do
@@ -448,8 +453,11 @@ local function append_trace_entry(id, message)
 end
 
 local function resolve_emitter_id(event, fallback)
-	if not event or not event.emitter then
+	if not event or event.emitter == nil then
 		return fallback
+	end
+	if not event.emitter then
+		return false
 	end
 	local emitter = event.emitter
 	if type(emitter) == "table" and emitter.id ~= nil then
@@ -1984,12 +1992,13 @@ function statemachinecontroller:bind_machine(machine)
 	end
 	for i = 1, #events do
 		local event = events[i]
-		local key = machine.localdef_id .. ":" .. event.name
+		local key = machine.localdef_id .. ":" .. event.name .. ":" .. tostring(event.emitter)
 		if self._event_subscriptions[key] then
 			goto continue
 		end
 		local disposer = machine.target.events:on({
 			event = event.name,
+			emitter = event.emitter,
 			handler = function(evt)
 				self:auto_dispatch(evt)
 			end,

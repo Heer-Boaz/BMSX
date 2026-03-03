@@ -143,7 +143,7 @@ function player:sync_input_state_from_runtime()
 	self.left_held = action_triggered('left[p]')
 	self.right_held = action_triggered('right[p]')
 	self.down_held = action_triggered('down[p]')
-	self.attack_held = action_triggered('?(x[p])')
+	self.attack_held = action_triggered('x[p]')
 	local up_primary_held = action_triggered('up[p]')
 	local up_alt_held = action_triggered('a[p]')
 	local up_sources = 0
@@ -2813,18 +2813,27 @@ local function define_player_fsm()
 					[player_abilities.command_ids.activate_sword] = function(self)
 						player_abilities.activate_sword(self)
 					end,
-					['player.world_emerge'] = function(self)
-						self:begin_world_emerge_from_door()
-					end,
-					['player.shrine_overlay_exit'] = function(self)
-						self:leave_shrine_overlay()
-					end,
-					['player.halo_trigger'] = function(self)
-						local result = self.actioneffects:trigger('halo')
-						if result ~= 'ok' then
-							self.events:emit('halo_trigger_cancelled')
-						end
-					 end,
+					['player.world_emerge'] = {
+						emitter = 'd',
+						go = function(self)
+							self:begin_world_emerge_from_door()
+						end,
+					},
+					['player.shrine_overlay_exit'] = {
+						emitter = 'd',
+						go = function(self)
+							self:leave_shrine_overlay()
+						end,
+					},
+					['player.halo_trigger'] = {
+						emitter = 'd',
+						go = function(self)
+							local result = self.actioneffects:trigger('halo')
+							if result ~= 'ok' then
+								self.events:emit('halo_trigger_cancelled')
+							end
+						end,
+					},
 					['enemy.contact_damage'] = function(self, _state, event)
 						self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
 					end,

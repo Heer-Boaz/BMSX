@@ -89,10 +89,11 @@ action_effects.register_effect('spyglass', {
 action_effects.register_effect('halo', {
 	id = 'halo',
 	can_trigger = function(context)
+		local castle = object('c')
 		if not context.owner.inventory_items.halo then
 			return false
 		end
-		if object('c'):has_tag('c.daemon.fight') then
+		if castle:is_current_room_boss_encounter_active() then
 			return false
 		end
 		return true

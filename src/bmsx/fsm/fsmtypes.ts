@@ -80,7 +80,7 @@ export interface StateEventHandler<T extends Stateful = any, E extends GameEvent
 	(state: State<T>, event: E): transition_target | void;
 }
 export interface StateExitHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P): void; }
-export type listed_sdef_event = { name: string };
+export type listed_sdef_event = { name: string; emitter?: Identifier | boolean | null };
 
 
 /**
