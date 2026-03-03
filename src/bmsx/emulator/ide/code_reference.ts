@@ -31,6 +31,8 @@ export type ReferenceCatalogEntry = {
 	sourceLabel: string;
 };
 
+const NON_RENAMEABLE_CONTEXT_ROOTS = new Set<string>(['require', 'timeline']);
+
 export function computeSourceLabel(path: string, fallback: string): string {
 	if (path && path.length > 0) {
 		const normalized = path.replace(/\\/g, '/');
@@ -56,12 +58,15 @@ export function buildEditorContextMenuEntries(token: EditorContextToken, editabl
 	if (!token) {
 		return [];
 	}
+	if (token.kind === 'keyword') {
+		return [];
+	}
 	if (token.kind === 'identifier' && token.expression && token.expression.length > 0) {
 		const entries: EditorContextMenuEntry[] = [
 			{ action: 'go_to_definition', label: 'Go to Definition', enabled: true },
 			{ action: 'go_to_references', label: 'Go to References', enabled: true },
 		];
-		if (editable) {
+		if (editable && isRenameableContextExpression(token.expression)) {
 			entries.push({ action: 'rename_symbol', label: 'Rename Symbol', enabled: true });
 		}
 		entries.push({
@@ -76,6 +81,17 @@ export function buildEditorContextMenuEntries(token: EditorContextToken, editabl
 		label: `Copy ${describeContextTokenKind(token.kind)} ${formatContextTokenPreview(token.text)}`,
 		enabled: true,
 	}];
+}
+
+function isRenameableContextExpression(expression: string): boolean {
+	const root = expression.split('.', 1)[0].trim().toLowerCase();
+	if (root.length === 0) {
+		return true;
+	}
+	if (NON_RENAMEABLE_CONTEXT_ROOTS.has(root)) {
+		return false;
+	}
+	return !Runtime.instance.luaBuiltinMetadata.has(root);
 }
 
 function describeContextTokenKind(kind: EditorContextToken['kind']): string {

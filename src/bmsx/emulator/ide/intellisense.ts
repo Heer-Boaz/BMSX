@@ -1418,14 +1418,22 @@ function resolveContextMenuTokenKind(type: LuaTokenType): EditorContextToken['ki
 	return 'operator';
 }
 
-function findContextMenuToken(row: number, column: number, path: string, source: string): LuaToken {
+type ContextMenuTokenMatch = {
+	token: LuaToken;
+	index: number;
+	startColumn: number;
+	endColumn: number;
+	tokens: readonly LuaToken[];
+};
+
+function findContextMenuTokenMatch(row: number, column: number, path: string, source: string): ContextMenuTokenMatch {
 	const tokens = getCachedLuaParse({
 		path,
 		source,
 		version: ide_state.textVersion,
 	}).parsed.tokens;
 	const targetLine = row + 1;
-	let adjacent: LuaToken = null;
+	let adjacent: ContextMenuTokenMatch = null;
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
 		if (token.type === LuaTokenType.Eof) {
@@ -1444,10 +1452,22 @@ function findContextMenuToken(row: number, column: number, path: string, source:
 		const tokenStart = token.column - 1;
 		const tokenEnd = tokenStart + tokenLength;
 		if (column >= tokenStart && column < tokenEnd) {
-			return token;
+			return {
+				token,
+				index,
+				startColumn: tokenStart,
+				endColumn: tokenEnd,
+				tokens,
+			};
 		}
 		if (column === tokenEnd) {
-			adjacent = token;
+			adjacent = {
+				token,
+				index,
+				startColumn: tokenStart,
+				endColumn: tokenEnd,
+				tokens,
+			};
 			continue;
 		}
 		if (column < tokenStart) {
@@ -1455,6 +1475,45 @@ function findContextMenuToken(row: number, column: number, path: string, source:
 		}
 	}
 	return adjacent;
+}
+
+function resolveIdentifierExpressionForKeyword(row: number, match: ContextMenuTokenMatch): { expression: string; startColumn: number; endColumn: number; } {
+	if (match.token.type !== LuaTokenType.Local && match.token.type !== LuaTokenType.Function) {
+		return null;
+	}
+	const targetLine = row + 1;
+	const tokens = match.tokens;
+	for (let index = match.index + 1; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		if (token.type === LuaTokenType.Eof || token.line !== targetLine) {
+			break;
+		}
+		if (token.type !== LuaTokenType.Identifier) {
+			continue;
+		}
+		return extractHoverExpression(row, token.column - 1);
+	}
+	return null;
+}
+
+function buildContextMenuToken(
+	row: number,
+	column: number,
+	startColumn: number,
+	endColumn: number,
+	text: string,
+	kind: EditorContextToken['kind'],
+	expression: string
+): EditorContextToken {
+	return {
+		kind,
+		text,
+		expression,
+		row,
+		column,
+		startColumn,
+		endColumn,
+	};
 }
 
 export function resolveContextMenuToken(row: number, column: number): EditorContextToken {
@@ -1473,39 +1532,57 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 	if (expression) {
 		const segmentText = line.slice(expression.startColumn, expression.endColumn);
 		const isKeyword = KEYWORDS.has(segmentText.toLowerCase());
-		return {
-			kind: isKeyword ? 'keyword' : 'identifier',
-			text: segmentText.length > 0 ? segmentText : expression.expression,
-			expression: isKeyword ? null : expression.expression,
-			row,
-			column: safeColumn,
-			startColumn: expression.startColumn,
-			endColumn: expression.endColumn,
-		};
+		if (!isKeyword) {
+			return buildContextMenuToken(
+				row,
+				safeColumn,
+				expression.startColumn,
+				expression.endColumn,
+				segmentText.length > 0 ? segmentText : expression.expression,
+				'identifier',
+				expression.expression,
+			);
+		}
 	}
 	const context = getActiveCodeTabContext();
 	const path = context ? context.descriptor.path : '<anynomous>';
 	const source = getTextSnapshot(ide_state.buffer);
-	const token = findContextMenuToken(row, safeColumn, path, source);
-	if (!token) {
+	const match = findContextMenuTokenMatch(row, safeColumn, path, source);
+	if (!match) {
 		return null;
 	}
-	const tokenStart = clamp(token.column - 1, 0, line.length);
-	const tokenEnd = clamp(tokenStart + token.lexeme.length, tokenStart, line.length);
+	const keywordExpression = resolveIdentifierExpressionForKeyword(row, match);
+	if (keywordExpression) {
+		const keywordText = line.slice(keywordExpression.startColumn, keywordExpression.endColumn);
+		return buildContextMenuToken(
+			row,
+			safeColumn,
+			keywordExpression.startColumn,
+			keywordExpression.endColumn,
+			keywordText.length > 0 ? keywordText : keywordExpression.expression,
+			'identifier',
+			keywordExpression.expression,
+		);
+	}
+	const tokenStart = clamp(match.startColumn, 0, line.length);
+	const tokenEnd = clamp(match.endColumn, tokenStart, line.length);
 	if (tokenEnd <= tokenStart) {
 		return null;
 	}
 	const tokenText = line.slice(tokenStart, tokenEnd);
-	const kind = resolveContextMenuTokenKind(token.type);
-	return {
-		kind,
-		text: tokenText,
-		expression: kind === 'identifier' ? tokenText : null,
+	const kind = resolveContextMenuTokenKind(match.token.type);
+	if (kind === 'keyword') {
+		return null;
+	}
+	return buildContextMenuToken(
 		row,
-		column: safeColumn,
-		startColumn: tokenStart,
-		endColumn: tokenEnd,
-	};
+		safeColumn,
+		tokenStart,
+		tokenEnd,
+		tokenText,
+		kind,
+		kind === 'identifier' ? tokenText : null,
+	);
 }
 
 export function refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext): void {
