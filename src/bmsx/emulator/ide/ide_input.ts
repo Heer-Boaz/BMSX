@@ -33,6 +33,7 @@ import { RuntimeDebuggerCommandExecutor } from './ide_debugger';
 import { toggleBreakpointForEditorRow } from './ide_debugger';
 import { buildEditorContextMenuEntries, buildIncomingCallHierarchyView } from './code_reference';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from './render/render_context_menu';
+import { listResources } from '../workspace';
 
 export const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
 export const MENU_COMMANDS = [
@@ -1705,10 +1706,29 @@ function executeEditorContextMenuAction(action: EditorContextMenuAction, token: 
 				return;
 			}
 			const expression = extractHoverExpression(token.row, token.startColumn)?.expression ?? token.expression ?? token.text;
+			const descriptors = listResources();
+			let rootReadOnly = false;
+			for (let index = 0; index < descriptors.length; index += 1) {
+				const descriptor = descriptors[index];
+				if (descriptor.path === path) {
+					rootReadOnly = descriptor.readOnly === true;
+					break;
+				}
+			}
+			const allowedPaths = new Set<string>();
+			for (let index = 0; index < descriptors.length; index += 1) {
+				const descriptor = descriptors[index];
+				const descriptorReadOnly = descriptor.readOnly === true;
+				if (descriptorReadOnly === rootReadOnly) {
+					allowedPaths.add(descriptor.path);
+				}
+			}
+			allowedPaths.add(path);
 			const view = buildIncomingCallHierarchyView({
 				workspace: ide_state.semanticWorkspace,
 				rootSymbolId: resolution.id,
 				rootExpression: expression,
+				allowedPaths,
 			});
 			if (!view) {
 				ide_state.showMessage(`No calls found for ${token.expression ?? token.text}`, constants.COLOR_STATUS_WARNING, 1.8);

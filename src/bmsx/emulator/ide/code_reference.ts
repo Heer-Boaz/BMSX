@@ -102,6 +102,7 @@ type BuildIncomingCallHierarchyCatalogOptions = {
 	rootSymbolId: SymbolID;
 	rootExpression: string;
 	maxDepth?: number;
+	allowedPaths?: ReadonlySet<string>;
 };
 
 export type CallHierarchyViewNodeKind = 'root' | 'caller' | 'call';
@@ -216,35 +217,42 @@ function resolveCallerDeclaration(functionDecls: readonly Decl[], line: number, 
 	return best;
 }
 
+function callExpressionMatchesReference(call: LuaCallExpression, ref: Ref): boolean {
+	if (call.methodName) {
+		if (ref.name !== call.methodName) {
+			return false;
+		}
+		return rangeContainsPosition(call.range, ref.range.start.line, ref.range.start.column);
+	}
+	if (call.callee.kind === LuaSyntaxKind.MemberExpression) {
+		const member = call.callee as LuaMemberExpression;
+		return ref.name === member.identifier
+			&& ref.range.start.line === member.range.end.line
+			&& ref.range.start.column === member.range.end.column;
+	}
+	if (call.callee.kind === LuaSyntaxKind.IdentifierExpression) {
+		return ref.name === call.callee.name
+			&& ref.range.start.line === call.callee.range.start.line
+			&& ref.range.start.column === call.callee.range.start.column;
+	}
+	return rangeContainsPosition(call.callee.range, ref.range.start.line, ref.range.start.column);
+}
+
 function resolveCallExpressionForReference(ref: Ref, calls: readonly LuaCallExpression[]): LuaCallExpression {
 	if (ref.isWrite) {
 		return null;
 	}
+	let best: LuaCallExpression = null;
 	for (let index = 0; index < calls.length; index += 1) {
 		const call = calls[index];
-		if (call.methodName) {
-			if (ref.name !== call.methodName) {
-				continue;
-			}
-			if (rangeContainsPosition(call.range, ref.range.start.line, ref.range.start.column)) {
-				return call;
-			}
+		if (!callExpressionMatchesReference(call, ref)) {
 			continue;
 		}
-		if (!rangeContainsPosition(call.callee.range, ref.range.start.line, ref.range.start.column)) {
-			continue;
+		if (!best || isRangeInside(call.range, best.range)) {
+			best = call;
 		}
-		if (call.callee.kind === LuaSyntaxKind.MemberExpression) {
-			const member = call.callee as LuaMemberExpression;
-			const expectedLine = member.range.end.line;
-			const expectedColumn = member.range.end.column - member.identifier.length + 1;
-			if (ref.range.start.line !== expectedLine || ref.range.start.column !== expectedColumn) {
-				continue;
-			}
-		}
-		return call;
 	}
-	return null;
+	return best;
 }
 
 function callHierarchyIndexForPath(
@@ -332,7 +340,8 @@ function compareCallerScope(a: CallerScope, b: CallerScope): number {
 function collectIncomingCallerGroups(
 	symbolId: SymbolID,
 	workspace: LuaSemanticWorkspace,
-	pathCache: Map<string, CallHierarchyPathIndex>
+	pathCache: Map<string, CallHierarchyPathIndex>,
+	allowedPaths: ReadonlySet<string> | null
 ): IncomingCallerGroup[] {
 	const grouped = new Map<string, { caller: CallerScope; calls: Ref[] }>();
 	const references = workspace.getReferences(symbolId);
@@ -340,6 +349,9 @@ function collectIncomingCallerGroups(
 		const reference = references[index];
 		const path = reference.file;
 		if (!path || reference.isWrite) {
+			continue;
+		}
+		if (allowedPaths && !allowedPaths.has(path)) {
 			continue;
 		}
 		const hierarchyIndex = callHierarchyIndexForPath(path, workspace, pathCache);
@@ -375,12 +387,13 @@ function buildIncomingCallHierarchyNodes(
 	pathCache: Map<string, CallHierarchyPathIndex>,
 	visited: Set<SymbolID>,
 	depth: number,
-	maxDepth: number
+	maxDepth: number,
+	allowedPaths: ReadonlySet<string> | null
 ): IncomingCallHierarchyNode[] {
 	if (depth >= maxDepth) {
 		return [];
 	}
-	const groups = collectIncomingCallerGroups(symbolId, workspace, pathCache);
+	const groups = collectIncomingCallerGroups(symbolId, workspace, pathCache, allowedPaths);
 	const nodes: IncomingCallHierarchyNode[] = [];
 	for (let index = 0; index < groups.length; index += 1) {
 		const group = groups[index];
@@ -388,7 +401,7 @@ function buildIncomingCallHierarchyNodes(
 		const callerSymbolId = group.caller.symbolId;
 		if (callerSymbolId && !visited.has(callerSymbolId)) {
 			visited.add(callerSymbolId);
-			children = buildIncomingCallHierarchyNodes(callerSymbolId, workspace, pathCache, visited, depth + 1, maxDepth);
+			children = buildIncomingCallHierarchyNodes(callerSymbolId, workspace, pathCache, visited, depth + 1, maxDepth, allowedPaths);
 			visited.delete(callerSymbolId);
 		}
 		nodes.push({
@@ -478,15 +491,16 @@ function convertIncomingNodeToView(
 }
 
 export function buildIncomingCallHierarchyView(options: BuildIncomingCallHierarchyCatalogOptions): CallHierarchyView {
-	const { workspace, rootSymbolId, rootExpression } = options;
+	const { workspace, rootSymbolId, rootExpression, allowedPaths } = options;
 	const maxDepth = options.maxDepth ?? 8;
 	const rootDecl = workspace.getDecl(rootSymbolId);
 	if (!rootDecl) {
 		return null;
 	}
+	const resolvedAllowedPaths = allowedPaths ?? null;
 	const pathCache = new Map<string, CallHierarchyPathIndex>();
 	const visited = new Set<SymbolID>([rootSymbolId]);
-	const nodes = buildIncomingCallHierarchyNodes(rootSymbolId, workspace, pathCache, visited, 0, maxDepth);
+	const nodes = buildIncomingCallHierarchyNodes(rootSymbolId, workspace, pathCache, visited, 0, maxDepth, resolvedAllowedPaths);
 	if (nodes.length === 0) {
 		return null;
 	}
