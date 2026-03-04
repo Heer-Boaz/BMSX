@@ -1290,6 +1290,13 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	if (line.length === 0) {
 		return null;
 	}
+	const context = getActiveCodeTabContext();
+	const path = context ? context.descriptor.path : '<anynomous>';
+	const source = getTextSnapshot(ide_state.buffer);
+	const tokenMatch = findContextMenuTokenMatch(row, safeColumn, path, source);
+	if (tokenMatch && tokenMatch.token.type === LuaTokenType.String) {
+		return null;
+	}
 	const clampedColumn = clamp(column, 0, line.length - 1);
 	let probe = clampedColumn;
 	if (!LuaLexer.isIdentifierPart(line.charAt(probe))) {

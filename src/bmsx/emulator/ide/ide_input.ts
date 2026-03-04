@@ -31,7 +31,7 @@ import { rebuildRuntimeErrorOverlayView, buildRuntimeErrorOverlayCopyText } from
 import * as constants from './constants';
 import { RuntimeDebuggerCommandExecutor } from './ide_debugger';
 import { toggleBreakpointForEditorRow } from './ide_debugger';
-import { buildEditorContextMenuEntries, filterReferenceCatalogToCallHierarchy } from './code_reference';
+import { buildEditorContextMenuEntries, buildIncomingCallHierarchyCatalog } from './code_reference';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from './render/render_context_menu';
 
 export const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
@@ -1685,7 +1685,17 @@ function executeEditorContextMenuAction(action: EditorContextMenuAction, token: 
 			if (!ide_state.symbolSearchVisible || ide_state.symbolSearchMode !== 'references') {
 				return;
 			}
-			ide_state.referenceCatalog = filterReferenceCatalogToCallHierarchy(ide_state.referenceCatalog, ide_state.semanticWorkspace);
+			const definitionKey = ide_state.referenceState.getDefinitionKey();
+			if (!definitionKey) {
+				closeSymbolSearch(false);
+				ide_state.showMessage(`Definition not found for ${token.expression ?? token.text}`, constants.COLOR_STATUS_WARNING, 1.8);
+				return;
+			}
+			ide_state.referenceCatalog = buildIncomingCallHierarchyCatalog({
+				workspace: ide_state.semanticWorkspace,
+				rootSymbolId: definitionKey,
+				rootExpression: token.expression ?? token.text,
+			});
 			if (ide_state.referenceCatalog.length === 0) {
 				closeSymbolSearch(false);
 				ide_state.showMessage(`No calls found for ${token.expression ?? token.text}`, constants.COLOR_STATUS_WARNING, 1.8);

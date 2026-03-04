@@ -1,40 +1,19 @@
 import { clamp } from '../../utils/clamp';
-import type { LuaDefinitionLocation, LuaSymbolEntry, ResourceDescriptor } from '../types';
+import type { LuaDefinitionLocation, LuaSymbolEntry } from '../types';
 import type { CodeTabContext, EditorContextMenuEntry, EditorContextToken, SearchMatch, SymbolSearchResult } from './types';
 import {
 	LuaSyntaxKind,
-	LuaTableFieldKind,
-	type LuaAssignmentStatement,
-	type LuaBinaryExpression,
-	type LuaBlock,
 	type LuaCallExpression,
-	type LuaDoStatement,
-	type LuaExpression,
-	type LuaForGenericStatement,
-	type LuaForNumericStatement,
-	type LuaFunctionDeclarationStatement,
-	type LuaFunctionExpression,
-	type LuaIfStatement,
-	type LuaIndexExpression,
-	type LuaLocalAssignmentStatement,
-	type LuaLocalFunctionStatement,
 	type LuaMemberExpression,
-	type LuaRepeatStatement,
-	type LuaReturnStatement,
 	type LuaSourceRange,
-	type LuaStatement,
-	type LuaTableConstructorExpression,
-	type LuaUnaryExpression,
-	type LuaWhileStatement,
 } from '../../lua/lua_ast';
 import { listResources } from '../workspace';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { CodeLayout } from './code_layout';
-import { LuaSemanticWorkspace, Decl, type Ref } from './semantic_model';
+import { LuaSemanticWorkspace, Decl, type Ref, type SymbolID } from './semantic_model';
 import type { TextBuffer } from './text_buffer';
 import { getTextSnapshot, splitText } from './source_text';
-import { getCachedLuaParse } from './lua_analysis_cache';
 
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext;
@@ -70,21 +49,17 @@ export function computeSourceLabel(path: string, fallback: string): string {
 }
 
 export function buildEditorContextMenuEntries(token: EditorContextToken, editable: boolean): EditorContextMenuEntry[] {
-	let entries: EditorContextMenuEntry[] = [];
-	if (!token) {
-		return entries;
+	if (!token || token.kind !== 'identifier' || !token.expression || token.expression.length === 0) {
+		return [];
 	}
-	switch (token.kind) {
-		case 'identifier':
-			if (!isBuiltinContextExpression(token.expression)) {
-				entries.push(
-					{ action: 'go_to_definition', label: 'Go to Definition', enabled: true },
-					{ action: 'go_to_references', label: 'Go to References', enabled: true },
-					{ action: 'call_hierarchy', label: 'Show Call Hierarchy', enabled: true },
-				);
-			}
-			break;
+	if (isBuiltinContextExpression(token.expression)) {
+		return [];
 	}
+	const entries: EditorContextMenuEntry[] = [
+		{ action: 'go_to_definition', label: 'Go to Definition', enabled: true },
+		{ action: 'go_to_references', label: 'Go to References', enabled: true },
+		{ action: 'call_hierarchy', label: 'Show Call Hierarchy', enabled: true },
+	];
 	if (editable) {
 		entries.push({ action: 'rename_symbol', label: 'Rename Symbol', enabled: true });
 	}
@@ -102,13 +77,31 @@ function isBuiltinContextExpression(expression: string): boolean {
 type CallerScope = {
 	key: string;
 	label: string;
-	range: LuaSourceRange;
 	location: LuaDefinitionLocation;
+	symbolId: SymbolID;
 };
 
 type CallHierarchyPathIndex = {
-	positions: Set<string>;
+	callByPosition: Map<string, LuaCallExpression>;
 	callerByPosition: Map<string, CallerScope>;
+};
+
+type IncomingCallerGroup = {
+	caller: CallerScope;
+	calls: Ref[];
+};
+
+type IncomingCallHierarchyNode = {
+	caller: CallerScope;
+	calls: Ref[];
+	children: IncomingCallHierarchyNode[];
+};
+
+type BuildIncomingCallHierarchyCatalogOptions = {
+	workspace: LuaSemanticWorkspace;
+	rootSymbolId: SymbolID;
+	rootExpression: string;
+	maxDepth?: number;
 };
 
 function rangeContainsPosition(range: LuaSourceRange, line: number, column: number): boolean {
@@ -164,211 +157,35 @@ function buildChunkCallerScope(path: string): CallerScope {
 		end: { line: 1, column: 1 },
 	};
 	return {
-		key: '<chunk>@1:1',
+		key: `chunk:${path}`,
 		label: '<chunk>',
-		range: fallbackRange,
 		location: toDefinitionLocation(fallbackRange),
+		symbolId: null,
 	};
 }
 
-function buildFunctionDeclarationLabel(statement: LuaFunctionDeclarationStatement): string {
-	const identifiers = statement.name.identifiers.slice();
-	if (statement.name.methodName && statement.name.methodName.length > 0) {
-		identifiers.push(statement.name.methodName);
-	}
-	if (identifiers.length === 0) {
-		return `<function ${statement.range.start.line}:${statement.range.start.column}>`;
-	}
-	return identifiers.join('.');
+function buildDeclCallerScope(decl: Decl): CallerScope {
+	const label = decl.namePath.length > 0 ? decl.namePath.join('.') : decl.name;
+	return {
+		key: `decl:${decl.id}`,
+		label,
+		location: toDefinitionLocation(decl.range),
+		symbolId: decl.id,
+	};
 }
 
-function collectCallerScopes(path: string, source: string): CallerScope[] {
-	const chunk = getCachedLuaParse({ path, source }).parsed.chunk;
-	if (!chunk) {
-		return [];
+function resolveCallerDeclaration(functionDecls: readonly Decl[], line: number, column: number): Decl {
+	let best: Decl = null;
+	for (let index = 0; index < functionDecls.length; index += 1) {
+		const decl = functionDecls[index];
+		if (!rangeContainsPosition(decl.scope, line, column)) {
+			continue;
+		}
+		if (!best || isRangeInside(decl.scope, best.scope)) {
+			best = decl;
+		}
 	}
-	const scopes: CallerScope[] = [];
-	const registerScope = (label: string, range: LuaSourceRange, locationRange?: LuaSourceRange): void => {
-		const location = toDefinitionLocation(locationRange ?? range);
-		scopes.push({
-			key: `${label}@${location.range.startLine}:${location.range.startColumn}`,
-			label,
-			range,
-			location,
-		});
-	};
-	const visitBlock = (block: LuaBlock): void => {
-		const statements = block.body;
-		for (let index = 0; index < statements.length; index += 1) {
-			visitStatement(statements[index]);
-		}
-	};
-	const visitExpression = (expression: LuaExpression): void => {
-		switch (expression.kind) {
-			case LuaSyntaxKind.TableConstructorExpression: {
-				const table = expression as LuaTableConstructorExpression;
-				for (let index = 0; index < table.fields.length; index += 1) {
-					const field = table.fields[index];
-					switch (field.kind) {
-						case LuaTableFieldKind.Array:
-							visitExpression(field.value);
-							break;
-						case LuaTableFieldKind.IdentifierKey:
-							visitExpression(field.value);
-							break;
-						case LuaTableFieldKind.ExpressionKey:
-							visitExpression(field.key);
-							visitExpression(field.value);
-							break;
-					}
-				}
-				return;
-			}
-			case LuaSyntaxKind.FunctionExpression: {
-				const fn = expression as LuaFunctionExpression;
-				const label = `<function ${fn.range.start.line}:${fn.range.start.column}>`;
-				registerScope(label, fn.range, fn.range);
-				visitBlock(fn.body);
-				return;
-			}
-			case LuaSyntaxKind.BinaryExpression: {
-				const binary = expression as LuaBinaryExpression;
-				visitExpression(binary.left);
-				visitExpression(binary.right);
-				return;
-			}
-			case LuaSyntaxKind.UnaryExpression: {
-				const unary = expression as LuaUnaryExpression;
-				visitExpression(unary.operand);
-				return;
-			}
-			case LuaSyntaxKind.CallExpression: {
-				const call = expression as LuaCallExpression;
-				visitExpression(call.callee);
-				for (let index = 0; index < call.arguments.length; index += 1) {
-					visitExpression(call.arguments[index]);
-				}
-				return;
-			}
-			case LuaSyntaxKind.MemberExpression: {
-				const member = expression as LuaMemberExpression;
-				visitExpression(member.base);
-				return;
-			}
-			case LuaSyntaxKind.IndexExpression: {
-				const indexExpr = expression as LuaIndexExpression;
-				visitExpression(indexExpr.base);
-				visitExpression(indexExpr.index);
-				return;
-			}
-			default:
-				return;
-		}
-	};
-	const visitStatement = (statement: LuaStatement): void => {
-		switch (statement.kind) {
-			case LuaSyntaxKind.LocalFunctionStatement: {
-				const localFunction = statement as LuaLocalFunctionStatement;
-				registerScope(localFunction.name.name, localFunction.functionExpression.range, localFunction.name.range);
-				visitBlock(localFunction.functionExpression.body);
-				return;
-			}
-			case LuaSyntaxKind.FunctionDeclarationStatement: {
-				const declaration = statement as LuaFunctionDeclarationStatement;
-				registerScope(buildFunctionDeclarationLabel(declaration), declaration.functionExpression.range, declaration.range);
-				visitBlock(declaration.functionExpression.body);
-				return;
-			}
-			case LuaSyntaxKind.AssignmentStatement: {
-				const assignment = statement as LuaAssignmentStatement;
-				for (let index = 0; index < assignment.left.length; index += 1) {
-					const target = assignment.left[index];
-					switch (target.kind) {
-						case LuaSyntaxKind.MemberExpression:
-							visitExpression((target as LuaMemberExpression).base);
-							break;
-						case LuaSyntaxKind.IndexExpression: {
-							const indexExpr = target as LuaIndexExpression;
-							visitExpression(indexExpr.base);
-							visitExpression(indexExpr.index);
-							break;
-						}
-						default:
-							break;
-					}
-				}
-				for (let index = 0; index < assignment.right.length; index += 1) {
-					visitExpression(assignment.right[index]);
-				}
-				return;
-			}
-			case LuaSyntaxKind.LocalAssignmentStatement: {
-				const assignment = statement as LuaLocalAssignmentStatement;
-				for (let index = 0; index < assignment.values.length; index += 1) {
-					visitExpression(assignment.values[index]);
-				}
-				return;
-			}
-			case LuaSyntaxKind.ReturnStatement: {
-				const returnStatement = statement as LuaReturnStatement;
-				for (let index = 0; index < returnStatement.expressions.length; index += 1) {
-					visitExpression(returnStatement.expressions[index]);
-				}
-				return;
-			}
-			case LuaSyntaxKind.IfStatement: {
-				const ifStatement = statement as LuaIfStatement;
-				for (let index = 0; index < ifStatement.clauses.length; index += 1) {
-					const clause = ifStatement.clauses[index];
-					visitExpression(clause.condition);
-					visitBlock(clause.block);
-				}
-				return;
-			}
-			case LuaSyntaxKind.WhileStatement: {
-				const whileStatement = statement as LuaWhileStatement;
-				visitExpression(whileStatement.condition);
-				visitBlock(whileStatement.block);
-				return;
-			}
-			case LuaSyntaxKind.RepeatStatement: {
-				const repeatStatement = statement as LuaRepeatStatement;
-				visitBlock(repeatStatement.block);
-				visitExpression(repeatStatement.condition);
-				return;
-			}
-			case LuaSyntaxKind.ForNumericStatement: {
-				const forNumeric = statement as LuaForNumericStatement;
-				visitExpression(forNumeric.start);
-				visitExpression(forNumeric.limit);
-				visitExpression(forNumeric.step);
-				visitBlock(forNumeric.block);
-				return;
-			}
-			case LuaSyntaxKind.ForGenericStatement: {
-				const forGeneric = statement as LuaForGenericStatement;
-				for (let index = 0; index < forGeneric.iterators.length; index += 1) {
-					visitExpression(forGeneric.iterators[index]);
-				}
-				visitBlock(forGeneric.block);
-				return;
-			}
-			case LuaSyntaxKind.DoStatement: {
-				const doStatement = statement as LuaDoStatement;
-				visitBlock(doStatement.block);
-				return;
-			}
-			case LuaSyntaxKind.CallStatement:
-				visitExpression((statement as { expression: LuaCallExpression }).expression);
-				return;
-			default:
-				return;
-		}
-	};
-	for (let index = 0; index < chunk.body.length; index += 1) {
-		visitStatement(chunk.body[index]);
-	}
-	return scopes;
+	return best;
 }
 
 function resolveCallExpressionForReference(ref: Ref, calls: readonly LuaCallExpression[]): LuaCallExpression {
@@ -402,20 +219,6 @@ function resolveCallExpressionForReference(ref: Ref, calls: readonly LuaCallExpr
 	return null;
 }
 
-function resolveCallerScope(scopes: readonly CallerScope[], line: number, column: number): CallerScope {
-	let best: CallerScope = null;
-	for (let index = 0; index < scopes.length; index += 1) {
-		const scope = scopes[index];
-		if (!rangeContainsPosition(scope.range, line, column)) {
-			continue;
-		}
-		if (!best || isRangeInside(scope.range, best.range)) {
-			best = scope;
-		}
-	}
-	return best;
-}
-
 function callHierarchyIndexForPath(
 	path: string,
 	workspace: LuaSemanticWorkspace,
@@ -426,7 +229,7 @@ function callHierarchyIndexForPath(
 		return cached;
 	}
 	const index: CallHierarchyPathIndex = {
-		positions: new Set<string>(),
+		callByPosition: new Map<string, LuaCallExpression>(),
 		callerByPosition: new Map<string, CallerScope>(),
 	};
 	const data = workspace.getFileData(path);
@@ -434,7 +237,13 @@ function callHierarchyIndexForPath(
 		cache.set(path, index);
 		return index;
 	}
-	const scopes = collectCallerScopes(path, data.source);
+	const functionDecls: Decl[] = [];
+	for (let indexDecl = 0; indexDecl < data.decls.length; indexDecl += 1) {
+		const decl = data.decls[indexDecl];
+		if (decl.kind === 'function') {
+			functionDecls.push(decl);
+		}
+	}
 	const refs = data.refs;
 	const calls = data.callExpressions;
 	for (let indexRef = 0; indexRef < refs.length; indexRef += 1) {
@@ -444,109 +253,273 @@ function callHierarchyIndexForPath(
 			continue;
 		}
 		const key = positionKey(ref.range.start.line, ref.range.start.column);
-		index.positions.add(key);
+		index.callByPosition.set(key, call);
 		if (index.callerByPosition.has(key)) {
 			continue;
 		}
-		const caller = resolveCallerScope(scopes, call.range.start.line, call.range.start.column) ?? buildChunkCallerScope(path);
+		const callerDecl = resolveCallerDeclaration(functionDecls, call.range.start.line, call.range.start.column);
+		const caller = callerDecl ? buildDeclCallerScope(callerDecl) : buildChunkCallerScope(path);
 		index.callerByPosition.set(key, caller);
 	}
 	cache.set(path, index);
 	return index;
 }
 
-function createCallHierarchyParentEntry(caller: CallerScope, child: ReferenceCatalogEntry): ReferenceCatalogEntry {
-	const childSymbol = child.symbol;
-	const parentSymbol: ReferenceSymbolEntry = {
-		...childSymbol,
+function createCallHierarchyCallerEntry(caller: CallerScope, depth: number, referenceIndex: number): ReferenceCatalogEntry {
+	const range = caller.location.range;
+	const startRow = Math.max(0, range.startLine - 1);
+	const startColumn = Math.max(0, range.startColumn - 1);
+	const endColumn = Math.max(startColumn + 1, range.endColumn);
+	const symbol: ReferenceSymbolEntry = {
 		name: caller.label,
 		location: caller.location,
+		path: computeSourceLabel(caller.location.path, caller.location.path),
+		kind: 'assignment',
+		__referenceMatch: { row: startRow, start: startColumn, end: endColumn },
+		__referenceIndex: referenceIndex,
+		__referenceColumn: range.startColumn,
 	};
-	const sourceLabel = computeSourceLabel(caller.location.path, child.sourceLabel);
+	const sourceLabel = computeSourceLabel(caller.location.path, caller.location.path);
+	const indent = depth > 0 ? '  '.repeat(depth) : '';
 	return {
-		symbol: parentSymbol,
-		displayName: caller.label,
+		symbol,
+		displayName: `${indent}${caller.label}`,
 		searchKey: `${caller.label.toLowerCase()} ${sourceLabel.toLowerCase()}`.trim(),
-		line: caller.location.range.startLine,
+		line: range.startLine,
 		kindLabel: 'CALLER',
 		sourceLabel,
 	};
 }
 
-export function filterReferenceCatalogToCallHierarchy(
-	catalog: readonly ReferenceCatalogEntry[],
-	workspace: LuaSemanticWorkspace
-): ReferenceCatalogEntry[] {
-	const cache = new Map<string, CallHierarchyPathIndex>();
-	const grouped = new Map<string, { caller: CallerScope; entries: ReferenceCatalogEntry[] }>();
-	const orderedKeys: string[] = [];
-	for (let index = 0; index < catalog.length; index += 1) {
-		const entry = catalog[index];
-		const location = entry.symbol.location;
-		const path = location.path;
-		if (!path) {
+function createCallHierarchyRootEntry(decl: Decl, expression: string): ReferenceCatalogEntry {
+	const location = toDefinitionLocation(decl.range);
+	const sourceLabel = computeSourceLabel(location.path, location.path);
+	const startRow = Math.max(0, location.range.startLine - 1);
+	const startColumn = Math.max(0, location.range.startColumn - 1);
+	const endColumn = Math.max(startColumn + 1, location.range.endColumn);
+	const label = `Incoming Call Hierarchy: ${expression}`;
+	const symbol: ReferenceSymbolEntry = {
+		name: expression,
+		location,
+		path: sourceLabel,
+		kind: 'assignment',
+		__referenceMatch: { row: startRow, start: startColumn, end: endColumn },
+		__referenceIndex: 0,
+		__referenceColumn: location.range.startColumn,
+	};
+	return {
+		symbol,
+		displayName: label,
+		searchKey: `${expression.toLowerCase()} ${sourceLabel.toLowerCase()} incoming call hierarchy`.trim(),
+		line: location.range.startLine,
+		kindLabel: 'ROOT',
+		sourceLabel,
+	};
+}
+
+function ensureWorkspaceFileMetadata(path: string, workspace: LuaSemanticWorkspace, metadata: Map<string, FileMetadata>): FileMetadata {
+	const existing = metadata.get(path);
+	if (existing) {
+		return existing;
+	}
+	const data = workspace.getFileData(path);
+	if (!data) {
+		return null;
+	}
+	const meta: FileMetadata = {
+		path,
+		lines: data.lines,
+		sourceLabel: computeSourceLabel(path, path),
+	};
+	metadata.set(path, meta);
+	return meta;
+}
+
+function createCallHierarchyCallEntry(
+	workspace: LuaSemanticWorkspace,
+	metadata: Map<string, FileMetadata>,
+	reference: Ref,
+	expression: string,
+	referenceIndex: number
+): ReferenceCatalogEntry {
+	const meta = ensureWorkspaceFileMetadata(reference.file, workspace, metadata);
+	if (!meta) {
+		return null;
+	}
+	const match = rangeToSearchMatch(reference.range, meta.lines);
+	if (!match) {
+		return null;
+	}
+	return createCatalogEntry({
+		meta,
+		match,
+		range: toRangeLike(reference.range),
+		expression,
+		referenceIndex,
+	});
+}
+
+function compareCallerScope(a: CallerScope, b: CallerScope): number {
+	const pathA = a.location.path;
+	const pathB = b.location.path;
+	const pathDiff = pathA.localeCompare(pathB);
+	if (pathDiff !== 0) {
+		return pathDiff;
+	}
+	const lineDiff = a.location.range.startLine - b.location.range.startLine;
+	if (lineDiff !== 0) {
+		return lineDiff;
+	}
+	const columnDiff = a.location.range.startColumn - b.location.range.startColumn;
+	if (columnDiff !== 0) {
+		return columnDiff;
+	}
+	return a.label.localeCompare(b.label);
+}
+
+function collectIncomingCallerGroups(
+	symbolId: SymbolID,
+	workspace: LuaSemanticWorkspace,
+	pathCache: Map<string, CallHierarchyPathIndex>
+): IncomingCallerGroup[] {
+	const grouped = new Map<string, { caller: CallerScope; calls: Ref[] }>();
+	const references = workspace.getReferences(symbolId);
+	for (let index = 0; index < references.length; index += 1) {
+		const reference = references[index];
+		const path = reference.file;
+		if (!path || reference.isWrite) {
 			continue;
 		}
-		const hierarchyIndex = callHierarchyIndexForPath(path, workspace, cache);
-		const callKey = positionKey(location.range.startLine, location.range.startColumn);
-		if (!hierarchyIndex.positions.has(callKey)) {
+		const hierarchyIndex = callHierarchyIndexForPath(path, workspace, pathCache);
+		const callKey = positionKey(reference.range.start.line, reference.range.start.column);
+		if (!hierarchyIndex.callByPosition.has(callKey)) {
 			continue;
 		}
 		const caller = hierarchyIndex.callerByPosition.get(callKey) ?? buildChunkCallerScope(path);
 		const bucketKey = `${path}|${caller.key}`;
 		let bucket = grouped.get(bucketKey);
 		if (!bucket) {
-			bucket = { caller, entries: [] };
+			bucket = { caller, calls: [] };
 			grouped.set(bucketKey, bucket);
-			orderedKeys.push(bucketKey);
 		}
-		bucket.entries.push(entry);
+		bucket.calls.push(reference);
 	}
-	const hierarchy: ReferenceCatalogEntry[] = [];
-	for (let index = 0; index < orderedKeys.length; index += 1) {
-		const bucket = grouped.get(orderedKeys[index])!;
-		bucket.entries.sort((a, b) => {
-			if (a.line !== b.line) {
-				return a.line - b.line;
-			}
-			const colA = (a.symbol as ReferenceSymbolEntry).__referenceColumn;
-			const colB = (b.symbol as ReferenceSymbolEntry).__referenceColumn;
-			return colA - colB;
+	const groups: IncomingCallerGroup[] = [];
+	for (const bucket of grouped.values()) {
+		const calls = bucket.calls;
+		calls.sort((a, b) => comparePositions(a.range.start.line, a.range.start.column, b.range.start.line, b.range.start.column));
+		groups.push({ caller: bucket.caller, calls });
+	}
+	groups.sort((a, b) => compareCallerScope(a.caller, b.caller));
+	return groups;
+}
+
+function buildIncomingCallHierarchyNodes(
+	symbolId: SymbolID,
+	workspace: LuaSemanticWorkspace,
+	pathCache: Map<string, CallHierarchyPathIndex>,
+	visited: Set<SymbolID>,
+	depth: number,
+	maxDepth: number
+): IncomingCallHierarchyNode[] {
+	if (depth >= maxDepth) {
+		return [];
+	}
+	const groups = collectIncomingCallerGroups(symbolId, workspace, pathCache);
+	const nodes: IncomingCallHierarchyNode[] = [];
+	for (let index = 0; index < groups.length; index += 1) {
+		const group = groups[index];
+		let children: IncomingCallHierarchyNode[] = [];
+		const callerSymbolId = group.caller.symbolId;
+		if (callerSymbolId && !visited.has(callerSymbolId)) {
+			visited.add(callerSymbolId);
+			children = buildIncomingCallHierarchyNodes(callerSymbolId, workspace, pathCache, visited, depth + 1, maxDepth);
+			visited.delete(callerSymbolId);
+		}
+		nodes.push({
+			caller: group.caller,
+			calls: group.calls,
+			children,
 		});
-		const parent = createCallHierarchyParentEntry(bucket.caller, bucket.entries[0]);
-		hierarchy.push(parent);
-		for (let entryIndex = 0; entryIndex < bucket.entries.length; entryIndex += 1) {
-			const child = bucket.entries[entryIndex];
-			hierarchy.push({
-				...child,
-				displayName: `  ${child.displayName}`,
+	}
+	return nodes;
+}
+
+function appendHierarchyNodesToCatalog(options: {
+	nodes: readonly IncomingCallHierarchyNode[];
+	workspace: LuaSemanticWorkspace;
+	metadata: Map<string, FileMetadata>;
+	entries: ReferenceCatalogEntry[];
+	rootExpression: string;
+	depth: number;
+	nextReferenceIndex: { value: number };
+}): void {
+	const { nodes, workspace, metadata, entries, rootExpression, depth, nextReferenceIndex } = options;
+	for (let index = 0; index < nodes.length; index += 1) {
+		const node = nodes[index];
+		entries.push(createCallHierarchyCallerEntry(node.caller, depth, nextReferenceIndex.value));
+		nextReferenceIndex.value += 1;
+		for (let callIndex = 0; callIndex < node.calls.length; callIndex += 1) {
+			const call = node.calls[callIndex];
+			const callEntry = createCallHierarchyCallEntry(
+				workspace,
+				metadata,
+				call,
+				rootExpression,
+				nextReferenceIndex.value
+			);
+			if (!callEntry) {
+				continue;
+			}
+			const indent = '  '.repeat(depth + 1);
+			entries.push({
+				...callEntry,
+				displayName: `${indent}${callEntry.displayName}`,
+				searchKey: `${callEntry.searchKey} ${node.caller.label.toLowerCase()}`.trim(),
 				kindLabel: 'CALL',
+			});
+			nextReferenceIndex.value += 1;
+		}
+		if (node.children.length > 0) {
+			appendHierarchyNodesToCatalog({
+				nodes: node.children,
+				workspace,
+				metadata,
+				entries,
+				rootExpression,
+				depth: depth + 1,
+				nextReferenceIndex,
 			});
 		}
 	}
-	return hierarchy;
 }
 
-function describeContextTokenKind(kind: EditorContextToken['kind']): string {
-	switch (kind) {
-		case 'keyword':
-			return 'Keyword';
-		case 'number':
-			return 'Number';
-		case 'string':
-			return 'String';
-		case 'operator':
-			return 'Token';
-		case 'identifier':
-		default:
-			return 'Symbol';
+export function buildIncomingCallHierarchyCatalog(options: BuildIncomingCallHierarchyCatalogOptions): ReferenceCatalogEntry[] {
+	const { workspace, rootSymbolId, rootExpression } = options;
+	const maxDepth = options.maxDepth ?? 8;
+	const rootDecl = workspace.getDecl(rootSymbolId);
+	if (!rootDecl) {
+		return [];
 	}
-}
-
-function formatContextTokenPreview(text: string): string {
-	const limit = 28;
-	const clipped = text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
-	return `'${clipped}'`;
+	const pathCache = new Map<string, CallHierarchyPathIndex>();
+	const visited = new Set<SymbolID>([rootSymbolId]);
+	const nodes = buildIncomingCallHierarchyNodes(rootSymbolId, workspace, pathCache, visited, 0, maxDepth);
+	if (nodes.length === 0) {
+		return [];
+	}
+	const entries: ReferenceCatalogEntry[] = [createCallHierarchyRootEntry(rootDecl, rootExpression)];
+	const metadata = new Map<string, FileMetadata>();
+	const nextReferenceIndex = { value: 1 };
+	appendHierarchyNodesToCatalog({
+		nodes,
+		workspace,
+		metadata,
+		entries,
+		rootExpression,
+		depth: 0,
+		nextReferenceIndex,
+	});
+	return entries;
 }
 
 type FileMetadata = {
@@ -968,11 +941,13 @@ export class ReferenceState {
 	private matches: SearchMatch[] = [];
 	private activeIndex = -1;
 	private expression: string = null;
+	private definitionKey: string = null;
 
 	public clear(): void {
 		this.matches = [];
 		this.activeIndex = -1;
 		this.expression = null;
+		this.definitionKey = null;
 	}
 
 	public getMatches(): readonly SearchMatch[] {
@@ -987,6 +962,10 @@ export class ReferenceState {
 		return this.expression;
 	}
 
+	public getDefinitionKey(): string {
+		return this.definitionKey;
+	}
+
 	public apply(info: ReferenceMatchInfo, activeIndex: number): void {
 		this.matches = info.matches.slice();
 		if (this.matches.length === 0) {
@@ -996,6 +975,7 @@ export class ReferenceState {
 			this.activeIndex = clampedIndex;
 		}
 		this.expression = info.expression;
+		this.definitionKey = info.definitionKey;
 	}
 
 	public setActiveIndex(index: number): void {
