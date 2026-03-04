@@ -8,8 +8,9 @@ import type { RectBounds } from '../../rompack/rompack';
 import type { ResourceDescriptor } from '../types';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 import { ide_state } from './ide_state';
-import { bottomMargin, codeViewportTop, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab, openResourceViewerTab } from './cart_editor';
+import { applyDefinitionSelection, bottomMargin, codeViewportTop, focusChunkSource, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab, openResourceViewerTab } from './cart_editor';
 import { measureText } from './text_utils';
+import type { CallHierarchyView, CallHierarchyViewNode } from './code_reference';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: Scrollbar;
@@ -21,6 +22,7 @@ export class ResourcePanelController {
 	public focused = false;
 	private widthRatio: number;
 	private filterMode: 'lua_only' | 'all' = 'lua_only';
+	private mode: 'resources' | 'call_hierarchy' = 'resources';
 	public lineHeight: number;
 	private charAdvance: number;
 
@@ -32,6 +34,8 @@ export class ResourcePanelController {
 	public hoverIndex = -1;
 	public maxLineWidth = 0;
 	private pendingSelectionAssetId: string = null;
+	private callHierarchyView: CallHierarchyView = null;
+	private readonly callHierarchyExpandedNodeIds = new Set<string>();
 
 	// Scrollbars for the panel
 	public readonly resourceVertical: Scrollbar;
@@ -60,6 +64,7 @@ export class ResourcePanelController {
 	isFocused(): boolean { return this.focused; }
 	setFocused(focused: boolean): void { this.focused = focused; }
 	getFilterMode(): 'lua_only' | 'all' { return this.filterMode; }
+	getMode(): 'resources' | 'call_hierarchy' { return this.mode; }
 
 	togglePanel(): void { this.visible ? this.hide() : this.show(); }
 
@@ -74,8 +79,30 @@ export class ResourcePanelController {
 			return;
 		}
 		this.widthRatio = clamped;
+		this.mode = 'resources';
 		this.visible = true;
 		this.focused = true;
+		this.refreshContents();
+	}
+
+	showCallHierarchy(view: CallHierarchyView): void {
+		const desiredRatio = this.widthRatio;
+		const clamped = this.clampRatio(desiredRatio);
+		const widthPx = this.computePixelWidth(clamped);
+		const top = codeViewportTop();
+		const bottom = ide_state.viewportHeight - bottomMargin();
+		if (clamped <= 0 || widthPx <= 0 || bottom <= top) {
+			ide_state.showMessage('Viewport too small for call hierarchy panel.', constants.COLOR_STATUS_WARNING, 3.0);
+			return;
+		}
+		this.widthRatio = clamped;
+		this.mode = 'call_hierarchy';
+		this.visible = true;
+		this.focused = true;
+		this.callHierarchyView = view;
+		this.callHierarchyExpandedNodeIds.clear();
+		this.callHierarchyExpandedNodeIds.add(view.root.id);
+		this.expandAllCallerNodes(view.root);
 		this.refreshContents();
 	}
 
@@ -83,9 +110,16 @@ export class ResourcePanelController {
 		this.visible = false;
 		this.focused = false;
 		this.resetState();
+		this.mode = 'resources';
+		this.callHierarchyView = null;
+		this.callHierarchyExpandedNodeIds.clear();
 	}
 
 	toggleFilterMode(): void {
+		if (this.mode !== 'resources') {
+			ide_state.showMessage('Filter is unavailable in call hierarchy view.', constants.COLOR_STATUS_WARNING, 2.4);
+			return;
+		}
 		this.filterMode = this.filterMode === 'lua_only' ? 'all' : 'lua_only';
 		if (this.visible) this.refreshContents();
 		const modeLabel = this.filterMode === 'lua_only' ? 'Lua resources' : 'all resources';
@@ -124,18 +158,31 @@ export class ResourcePanelController {
 			return;
 		}
 
-		// Horizontal scroll with ArrowLeft/Right
-		const horizontalStep = this.charAdvance * 4;
-		const horizontalMoves: Array<{ key: string; predicate: boolean; delta: number }> = [
-			{ key: 'ArrowLeft', predicate: isKeyJustPressed('ArrowLeft'), delta: -horizontalStep },
-			{ key: 'ArrowRight', predicate: isKeyJustPressed('ArrowRight'), delta: horizontalStep },
-		];
-		for (const entry of horizontalMoves) {
-			if (entry.predicate) {
-				consumeIdeKey(entry.key);
-				this.scrollHorizontal(entry.delta);
-				this.ensureSelectionVisible();
+		if (this.mode === 'call_hierarchy') {
+			if (isKeyJustPressed('ArrowLeft')) {
+				consumeIdeKey('ArrowLeft');
+				this.collapseSelectedCallHierarchyNode();
 				return;
+			}
+			if (isKeyJustPressed('ArrowRight')) {
+				consumeIdeKey('ArrowRight');
+				this.expandSelectedCallHierarchyNode();
+				return;
+			}
+		} else {
+			// Horizontal scroll with ArrowLeft/Right
+			const horizontalStep = this.charAdvance * 4;
+			const horizontalMoves: Array<{ key: string; predicate: boolean; delta: number }> = [
+				{ key: 'ArrowLeft', predicate: isKeyJustPressed('ArrowLeft'), delta: -horizontalStep },
+				{ key: 'ArrowRight', predicate: isKeyJustPressed('ArrowRight'), delta: horizontalStep },
+			];
+			for (const entry of horizontalMoves) {
+				if (entry.predicate) {
+					consumeIdeKey(entry.key);
+					this.scrollHorizontal(entry.delta);
+					this.ensureSelectionVisible();
+					return;
+				}
 			}
 		}
 		if (isKeyJustPressed('Enter')) {
@@ -238,6 +285,10 @@ export class ResourcePanelController {
 	}
 
 	private refreshContents(): void {
+		if (this.mode === 'call_hierarchy') {
+			this.refreshCallHierarchyContents();
+			return;
+		}
 		this.hoverIndex = -1;
 		const previous = {
 			descriptor: (this.selectionIndex >= 0 && this.selectionIndex < this.items.length) ? this.items[this.selectionIndex].descriptor : null,
@@ -281,6 +332,66 @@ export class ResourcePanelController {
 		this.scroll = clamp(previous.scroll, 0, maxScroll);
 		this.ensureSelectionVisible();
 		this.applyPendingSelection();
+	}
+
+	private refreshCallHierarchyContents(): void {
+		this.hoverIndex = -1;
+		const previousNodeId = this.selectionIndex >= 0 && this.selectionIndex < this.items.length
+			? this.items[this.selectionIndex].callHierarchyNodeId
+			: null;
+		const previousScroll = this.scroll;
+		this.items = this.buildCallHierarchyItems();
+		this.updateMetrics();
+		let selectionIndex = -1;
+		if (previousNodeId) {
+			selectionIndex = this.findIndexByCallHierarchyNodeId(previousNodeId);
+		}
+		if (selectionIndex === -1 && this.items.length > 0) {
+			selectionIndex = 0;
+		}
+		this.selectionIndex = selectionIndex;
+		const capacity = this.lineCapacity();
+		const maxScroll = Math.max(0, this.items.length - capacity);
+		this.scroll = clamp(previousScroll, 0, maxScroll);
+		this.ensureSelectionVisible();
+	}
+
+	private buildCallHierarchyItems(): ResourceBrowserItem[] {
+		const view = this.callHierarchyView;
+		if (!view) {
+			return [{
+				line: '<no call hierarchy>',
+				contentStartColumn: 0,
+				descriptor: null,
+			}];
+		}
+		const items: ResourceBrowserItem[] = [];
+		const indentUnit = '  ';
+		const appendNode = (node: CallHierarchyViewNode, depth: number): void => {
+			const expandable = node.children.length > 0;
+			const expanded = expandable && this.callHierarchyExpandedNodeIds.has(node.id);
+			const marker = expandable ? (expanded ? '▾ ' : '▸ ') : '  ';
+			const indent = indentUnit.repeat(depth);
+			const line = `${indent}${marker}${node.label}`;
+			items.push({
+				line,
+				contentStartColumn: indent.length + marker.length,
+				descriptor: null,
+				location: node.location,
+				callHierarchyNodeId: node.id,
+				callHierarchyNodeKind: node.kind,
+				callHierarchyExpandable: expandable,
+				callHierarchyExpanded: expanded,
+			});
+			if (!expandable || !expanded) {
+				return;
+			}
+			for (let index = 0; index < node.children.length; index += 1) {
+				appendNode(node.children[index], depth + 1);
+			}
+		};
+		appendNode(view.root, 0);
+		return items;
 	}
 
 	private matchesFilter(descriptor: ResourceDescriptor): boolean {
@@ -371,6 +482,24 @@ export class ResourcePanelController {
 		return -1;
 	}
 
+	private findIndexByCallHierarchyNodeId(nodeId: string): number {
+		for (let index = 0; index < this.items.length; index += 1) {
+			if (this.items[index].callHierarchyNodeId === nodeId) {
+				return index;
+			}
+		}
+		return -1;
+	}
+
+	private expandAllCallerNodes(node: CallHierarchyViewNode): void {
+		if (node.kind === 'root' || node.kind === 'caller') {
+			this.callHierarchyExpandedNodeIds.add(node.id);
+		}
+		for (let index = 0; index < node.children.length; index += 1) {
+			this.expandAllCallerNodes(node.children[index]);
+		}
+	}
+
 	private applyPendingSelection(): void {
 		const asset_id = this.pendingSelectionAssetId;
 		if (!asset_id) return;
@@ -382,6 +511,10 @@ export class ResourcePanelController {
 	}
 
 	private openSelectedInternal(): void {
+		if (this.mode === 'call_hierarchy') {
+			this.openSelectedCallHierarchy();
+			return;
+		}
 		const item = this.items[this.selectionIndex];
 		if (!item.descriptor) return;
 		const d = item.descriptor;
@@ -391,6 +524,32 @@ export class ResourcePanelController {
 			return;
 		}
 		if (d.type === 'lua') openLuaCodeTab(d); else openResourceViewerTab(d);
+		focusEditorFromResourcePanel();
+	}
+
+	private openSelectedCallHierarchy(): void {
+		const item = this.items[this.selectionIndex];
+		if (!item) {
+			return;
+		}
+		if (item.callHierarchyExpandable && item.callHierarchyNodeId) {
+			if (this.callHierarchyExpandedNodeIds.has(item.callHierarchyNodeId)) {
+				this.callHierarchyExpandedNodeIds.delete(item.callHierarchyNodeId);
+			} else {
+				this.callHierarchyExpandedNodeIds.add(item.callHierarchyNodeId);
+			}
+			this.refreshCallHierarchyContents();
+			const index = this.findIndexByCallHierarchyNodeId(item.callHierarchyNodeId);
+			if (index >= 0) {
+				this.selectionIndex = index;
+			}
+			return;
+		}
+		if (!item.location) {
+			return;
+		}
+		focusChunkSource(item.location.path);
+		applyDefinitionSelection(item.location.range);
 		focusEditorFromResourcePanel();
 	}
 
@@ -414,6 +573,44 @@ export class ResourcePanelController {
 		if (next === this.hscroll) return;
 		this.hscroll = next;
 		this.clampHScroll();
+	}
+
+	private expandSelectedCallHierarchyNode(): void {
+		if (this.mode !== 'call_hierarchy') {
+			return;
+		}
+		const item = this.items[this.selectionIndex];
+		if (!item || !item.callHierarchyExpandable || !item.callHierarchyNodeId) {
+			return;
+		}
+		if (this.callHierarchyExpandedNodeIds.has(item.callHierarchyNodeId)) {
+			return;
+		}
+		this.callHierarchyExpandedNodeIds.add(item.callHierarchyNodeId);
+		this.refreshCallHierarchyContents();
+		const index = this.findIndexByCallHierarchyNodeId(item.callHierarchyNodeId);
+		if (index >= 0) {
+			this.selectionIndex = index;
+		}
+	}
+
+	private collapseSelectedCallHierarchyNode(): void {
+		if (this.mode !== 'call_hierarchy') {
+			return;
+		}
+		const item = this.items[this.selectionIndex];
+		if (!item || !item.callHierarchyExpandable || !item.callHierarchyNodeId) {
+			return;
+		}
+		if (!this.callHierarchyExpandedNodeIds.has(item.callHierarchyNodeId)) {
+			return;
+		}
+		this.callHierarchyExpandedNodeIds.delete(item.callHierarchyNodeId);
+		this.refreshCallHierarchyContents();
+		const index = this.findIndexByCallHierarchyNodeId(item.callHierarchyNodeId);
+		if (index >= 0) {
+			this.selectionIndex = index;
+		}
 	}
 
 	public ensureSelectionVisible(): void {

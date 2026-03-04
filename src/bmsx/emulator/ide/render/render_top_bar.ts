@@ -143,6 +143,8 @@ function renderMenuDropdown(menu: MenuEntry, anchor: RectBounds, itemHeight: num
 
 function buildMenuEntries(): MenuEntry[] {
 	const resourcePanelActive = ide_state.resourcePanelVisible;
+	const resourcePanelMode = ide_state.resourcePanel.getMode();
+	const resourceFilesMode = resourcePanelMode === 'resources';
 	const filterMode = ide_state.resourcePanel.getFilterMode();
 	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
 	const resolutionActive = Runtime.instance!.overlayResolutionMode === 'viewport';
@@ -192,7 +194,7 @@ function buildMenuEntries(): MenuEntry[] {
 					command: 'filter',
 					label: filterActive ? 'Lua Files Only' : 'All Resources',
 					active: filterActive,
-					disabled: !resourcePanelActive,
+					disabled: !resourcePanelActive || !resourceFilesMode,
 				},
 			],
 		},

@@ -104,6 +104,21 @@ type BuildIncomingCallHierarchyCatalogOptions = {
 	maxDepth?: number;
 };
 
+export type CallHierarchyViewNodeKind = 'root' | 'caller' | 'call';
+
+export type CallHierarchyViewNode = {
+	id: string;
+	kind: CallHierarchyViewNodeKind;
+	label: string;
+	location: LuaDefinitionLocation;
+	children: CallHierarchyViewNode[];
+};
+
+export type CallHierarchyView = {
+	title: string;
+	root: CallHierarchyViewNode;
+};
+
 function rangeContainsPosition(range: LuaSourceRange, line: number, column: number): boolean {
 	if (line < range.start.line || line > range.end.line) {
 		return false;
@@ -265,58 +280,6 @@ function callHierarchyIndexForPath(
 	return index;
 }
 
-function createCallHierarchyCallerEntry(caller: CallerScope, depth: number, referenceIndex: number): ReferenceCatalogEntry {
-	const range = caller.location.range;
-	const startRow = Math.max(0, range.startLine - 1);
-	const startColumn = Math.max(0, range.startColumn - 1);
-	const endColumn = Math.max(startColumn + 1, range.endColumn);
-	const symbol: ReferenceSymbolEntry = {
-		name: caller.label,
-		location: caller.location,
-		path: computeSourceLabel(caller.location.path, caller.location.path),
-		kind: 'assignment',
-		__referenceMatch: { row: startRow, start: startColumn, end: endColumn },
-		__referenceIndex: referenceIndex,
-		__referenceColumn: range.startColumn,
-	};
-	const sourceLabel = computeSourceLabel(caller.location.path, caller.location.path);
-	const indent = depth > 0 ? '  '.repeat(depth) : '';
-	return {
-		symbol,
-		displayName: `${indent}${caller.label}`,
-		searchKey: `${caller.label.toLowerCase()} ${sourceLabel.toLowerCase()}`.trim(),
-		line: range.startLine,
-		kindLabel: 'CALLER',
-		sourceLabel,
-	};
-}
-
-function createCallHierarchyRootEntry(decl: Decl, expression: string): ReferenceCatalogEntry {
-	const location = toDefinitionLocation(decl.range);
-	const sourceLabel = computeSourceLabel(location.path, location.path);
-	const startRow = Math.max(0, location.range.startLine - 1);
-	const startColumn = Math.max(0, location.range.startColumn - 1);
-	const endColumn = Math.max(startColumn + 1, location.range.endColumn);
-	const label = `Incoming Call Hierarchy: ${expression}`;
-	const symbol: ReferenceSymbolEntry = {
-		name: expression,
-		location,
-		path: sourceLabel,
-		kind: 'assignment',
-		__referenceMatch: { row: startRow, start: startColumn, end: endColumn },
-		__referenceIndex: 0,
-		__referenceColumn: location.range.startColumn,
-	};
-	return {
-		symbol,
-		displayName: label,
-		searchKey: `${expression.toLowerCase()} ${sourceLabel.toLowerCase()} incoming call hierarchy`.trim(),
-		line: location.range.startLine,
-		kindLabel: 'ROOT',
-		sourceLabel,
-	};
-}
-
 function ensureWorkspaceFileMetadata(path: string, workspace: LuaSemanticWorkspace, metadata: Map<string, FileMetadata>): FileMetadata {
 	const existing = metadata.get(path);
 	if (existing) {
@@ -333,30 +296,6 @@ function ensureWorkspaceFileMetadata(path: string, workspace: LuaSemanticWorkspa
 	};
 	metadata.set(path, meta);
 	return meta;
-}
-
-function createCallHierarchyCallEntry(
-	workspace: LuaSemanticWorkspace,
-	metadata: Map<string, FileMetadata>,
-	reference: Ref,
-	expression: string,
-	referenceIndex: number
-): ReferenceCatalogEntry {
-	const meta = ensureWorkspaceFileMetadata(reference.file, workspace, metadata);
-	if (!meta) {
-		return null;
-	}
-	const match = rangeToSearchMatch(reference.range, meta.lines);
-	if (!match) {
-		return null;
-	}
-	return createCatalogEntry({
-		meta,
-		match,
-		range: toRangeLike(reference.range),
-		expression,
-		referenceIndex,
-	});
 }
 
 function compareCallerScope(a: CallerScope, b: CallerScope): number {
@@ -445,81 +384,87 @@ function buildIncomingCallHierarchyNodes(
 	return nodes;
 }
 
-function appendHierarchyNodesToCatalog(options: {
-	nodes: readonly IncomingCallHierarchyNode[];
-	workspace: LuaSemanticWorkspace;
-	metadata: Map<string, FileMetadata>;
-	entries: ReferenceCatalogEntry[];
-	rootExpression: string;
-	depth: number;
-	nextReferenceIndex: { value: number };
-}): void {
-	const { nodes, workspace, metadata, entries, rootExpression, depth, nextReferenceIndex } = options;
-	for (let index = 0; index < nodes.length; index += 1) {
-		const node = nodes[index];
-		entries.push(createCallHierarchyCallerEntry(node.caller, depth, nextReferenceIndex.value));
-		nextReferenceIndex.value += 1;
-		for (let callIndex = 0; callIndex < node.calls.length; callIndex += 1) {
-			const call = node.calls[callIndex];
-			const callEntry = createCallHierarchyCallEntry(
-				workspace,
-				metadata,
-				call,
-				rootExpression,
-				nextReferenceIndex.value
-			);
-			if (!callEntry) {
-				continue;
-			}
-			const indent = '  '.repeat(depth + 1);
-			entries.push({
-				...callEntry,
-				displayName: `${indent}${callEntry.displayName}`,
-				searchKey: `${callEntry.searchKey} ${node.caller.label.toLowerCase()}`.trim(),
-				kindLabel: 'CALL',
-			});
-			nextReferenceIndex.value += 1;
-		}
-		if (node.children.length > 0) {
-			appendHierarchyNodesToCatalog({
-				nodes: node.children,
-				workspace,
-				metadata,
-				entries,
-				rootExpression,
-				depth: depth + 1,
-				nextReferenceIndex,
-			});
-		}
-	}
+
+function createCallerViewNodeId(caller: CallerScope): string {
+	const location = caller.location.range;
+	return `caller:${caller.location.path}:${location.startLine}:${location.startColumn}:${caller.label}`;
 }
 
-export function buildIncomingCallHierarchyCatalog(options: BuildIncomingCallHierarchyCatalogOptions): ReferenceCatalogEntry[] {
+function createCallViewNodeId(reference: Ref): string {
+	const range = reference.range;
+	return `call:${reference.file}:${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
+}
+
+function buildCallHierarchyCallLabel(reference: Ref, workspace: LuaSemanticWorkspace, metadata: Map<string, FileMetadata>): string {
+	const meta = ensureWorkspaceFileMetadata(reference.file, workspace, metadata);
+	if (!meta) {
+		return reference.name;
+	}
+	const match = rangeToSearchMatch(reference.range, meta.lines);
+	if (!match) {
+		return reference.name;
+	}
+	return buildReferenceSnippet(meta.lines, match);
+}
+
+function convertIncomingNodeToView(
+	node: IncomingCallHierarchyNode,
+	workspace: LuaSemanticWorkspace,
+	metadata: Map<string, FileMetadata>
+): CallHierarchyViewNode {
+	const children: CallHierarchyViewNode[] = [];
+	for (let callIndex = 0; callIndex < node.calls.length; callIndex += 1) {
+		const call = node.calls[callIndex];
+		children.push({
+			id: createCallViewNodeId(call),
+			kind: 'call',
+			label: buildCallHierarchyCallLabel(call, workspace, metadata),
+			location: toDefinitionLocation(call.range),
+			children: [],
+		});
+	}
+	for (let childIndex = 0; childIndex < node.children.length; childIndex += 1) {
+		children.push(convertIncomingNodeToView(node.children[childIndex], workspace, metadata));
+	}
+	return {
+		id: createCallerViewNodeId(node.caller),
+		kind: 'caller',
+		label: node.caller.label,
+		location: node.caller.location,
+		children,
+	};
+}
+
+export function buildIncomingCallHierarchyView(options: BuildIncomingCallHierarchyCatalogOptions): CallHierarchyView {
 	const { workspace, rootSymbolId, rootExpression } = options;
 	const maxDepth = options.maxDepth ?? 8;
 	const rootDecl = workspace.getDecl(rootSymbolId);
 	if (!rootDecl) {
-		return [];
+		return null;
 	}
 	const pathCache = new Map<string, CallHierarchyPathIndex>();
 	const visited = new Set<SymbolID>([rootSymbolId]);
 	const nodes = buildIncomingCallHierarchyNodes(rootSymbolId, workspace, pathCache, visited, 0, maxDepth);
 	if (nodes.length === 0) {
-		return [];
+		return null;
 	}
-	const entries: ReferenceCatalogEntry[] = [createCallHierarchyRootEntry(rootDecl, rootExpression)];
 	const metadata = new Map<string, FileMetadata>();
-	const nextReferenceIndex = { value: 1 };
-	appendHierarchyNodesToCatalog({
-		nodes,
-		workspace,
-		metadata,
-		entries,
-		rootExpression,
-		depth: 0,
-		nextReferenceIndex,
-	});
-	return entries;
+	const rootLocation = toDefinitionLocation(rootDecl.range);
+	const rootChildren: CallHierarchyViewNode[] = [];
+	for (let index = 0; index < nodes.length; index += 1) {
+		rootChildren.push(convertIncomingNodeToView(nodes[index], workspace, metadata));
+	}
+	const root: CallHierarchyViewNode = {
+		id: `root:${rootDecl.id}`,
+		kind: 'root',
+		label: rootExpression,
+		location: rootLocation,
+		children: rootChildren,
+	};
+	return {
+		title: `Call Hierarchy: ${rootExpression}`,
+		root,
+	};
 }
 
 type FileMetadata = {

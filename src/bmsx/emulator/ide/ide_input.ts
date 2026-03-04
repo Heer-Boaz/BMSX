@@ -17,7 +17,7 @@ import { clearHoverTooltip, updateHoverTooltip } from './intellisense';
 import * as TextEditing from './text_editing_and_selection';
 import { clamp } from '../../utils/clamp';
 import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, handleActionPromptSelection, openSymbolSearch, openResourceSearch, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openDebugPanelTab, performAction, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, resolvePointerRow, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, handlePointerAutoScroll, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches, applyLineJump, mapScreenPointToViewport } from './cart_editor';
-import { clearGotoHoverHighlight, clearReferenceHighlights, tryGotoDefinitionAt, refreshGotoHoverHighlight, resolveContextMenuToken } from './intellisense';
+import { clearGotoHoverHighlight, clearReferenceHighlights, tryGotoDefinitionAt, refreshGotoHoverHighlight, resolveContextMenuToken, extractHoverExpression } from './intellisense';
 import { navigateToRuntimeErrorFrameTarget } from './ide_debugger';
 import { focusRuntimeErrorOverlay } from './runtime_error_navigation';
 import { toggleProblemsPanel } from './problems_panel';
@@ -31,7 +31,7 @@ import { rebuildRuntimeErrorOverlayView, buildRuntimeErrorOverlayCopyText } from
 import * as constants from './constants';
 import { RuntimeDebuggerCommandExecutor } from './ide_debugger';
 import { toggleBreakpointForEditorRow } from './ide_debugger';
-import { buildEditorContextMenuEntries, buildIncomingCallHierarchyCatalog } from './code_reference';
+import { buildEditorContextMenuEntries, buildIncomingCallHierarchyView } from './code_reference';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from './render/render_context_menu';
 
 export const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
@@ -1182,7 +1182,7 @@ export function handleTextEditorPointerInput(): void {
 			if (hoverIndex !== ide_state.resourceBrowserSelectionIndex) {
 				ide_state.resourcePanel.setSelectionIndex(hoverIndex);
 			}
-			if (justPressed) {
+			if (justPressed && ide_state.resourcePanel.getMode() === 'resources') {
 				ide_state.resourcePanel.openSelected();
 				ide_state.resourcePanel.setFocused(false);
 			}
@@ -1681,29 +1681,38 @@ function executeEditorContextMenuAction(action: EditorContextMenuAction, token: 
 			return;
 		case 'call_hierarchy':
 			focusEditorAtContextToken(token.row, token.startColumn);
-			openReferenceSearchPopup();
-			if (!ide_state.symbolSearchVisible || ide_state.symbolSearchMode !== 'references') {
+			const context = getActiveCodeTabContext();
+			if (!context) {
 				return;
 			}
-			const definitionKey = ide_state.referenceState.getDefinitionKey();
-			if (!definitionKey) {
-				closeSymbolSearch(false);
+			const path = context.descriptor.path;
+			const model = ide_state.layout.getSemanticModel(ide_state.buffer, ide_state.textVersion, path);
+			if (!model) {
+				ide_state.showMessage('References unavailable', constants.COLOR_STATUS_WARNING, 1.6);
+				return;
+			}
+			const resolution = ide_state.semanticWorkspace.findReferencesByPosition(path, token.row + 1, token.startColumn + 1);
+			if (!resolution) {
 				ide_state.showMessage(`Definition not found for ${token.expression ?? token.text}`, constants.COLOR_STATUS_WARNING, 1.8);
 				return;
 			}
-			ide_state.referenceCatalog = buildIncomingCallHierarchyCatalog({
+			const expression = extractHoverExpression(token.row, token.startColumn)?.expression ?? token.expression ?? token.text;
+			const view = buildIncomingCallHierarchyView({
 				workspace: ide_state.semanticWorkspace,
-				rootSymbolId: definitionKey,
-				rootExpression: token.expression ?? token.text,
+				rootSymbolId: resolution.id,
+				rootExpression: expression,
 			});
-			if (ide_state.referenceCatalog.length === 0) {
-				closeSymbolSearch(false);
+			if (!view) {
 				ide_state.showMessage(`No calls found for ${token.expression ?? token.text}`, constants.COLOR_STATUS_WARNING, 1.8);
 				return;
 			}
-			updateSymbolSearchMatches();
-			ensureSymbolSearchSelectionVisible();
-			ide_state.showMessage(`Call hierarchy for ${token.expression ?? token.text}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+			closeSymbolSearch(false);
+			ide_state.resourcePanel.showCallHierarchy(view);
+			const panelState = ide_state.resourcePanel.getStateForRender();
+			ide_state.resourcePanelFocused = panelState.focused;
+			ide_state.resourceBrowserSelectionIndex = panelState.selectionIndex;
+			ide_state.resourcePanelVisible = panelState.visible;
+			ide_state.showMessage(view.title, constants.COLOR_STATUS_SUCCESS, 1.6);
 			return;
 		case 'rename_symbol':
 			focusEditorAtContextToken(token.row, token.startColumn);

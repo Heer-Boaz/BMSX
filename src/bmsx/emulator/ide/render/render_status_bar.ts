@@ -55,6 +55,13 @@ export function renderStatusBar(): void {
 	}
 
 	if (ide_state.resourcePanelVisible) {
+		if (ide_state.resourcePanel.getMode() === 'call_hierarchy') {
+			const info = 'CALL HIERARCHY';
+			const hint = 'ENTER toggle/open • LEFT/RIGHT collapse/expand';
+			drawEditorText(ide_state.font, info, 4, statusTop + 2, undefined, statusTextColor);
+			drawEditorText(ide_state.font, hint, ide_state.viewportWidth - measureText(hint) - 4, statusTop + 2, undefined, statusTextColor);
+			return;
+		}
 		const filterLabel = ide_state.resourcePanel.getFilterMode() === 'lua_only' ? 'LUA' : 'ALL';
 		const fileInfo = `FILES ${ide_state.resourcePanel.getFilterMode()} (${filterLabel})`;
 		const hint = 'CTRL+SHIFT+L TOGGLE FILTER';

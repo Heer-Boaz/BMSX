@@ -1,6 +1,7 @@
 import type {
 	LuaHoverScope,
 	LuaHoverValueState,
+	LuaDefinitionLocation,
 	LuaSymbolEntry,
 	ResourceDescriptor,
 } from '../types';
@@ -280,6 +281,11 @@ export type ResourceBrowserItem = {
 	line: string;
 	contentStartColumn: number;
 	descriptor: ResourceDescriptor;
+	location?: LuaDefinitionLocation;
+	callHierarchyNodeId?: string;
+	callHierarchyNodeKind?: 'root' | 'caller' | 'call';
+	callHierarchyExpandable?: boolean;
+	callHierarchyExpanded?: boolean;
 };
 
 export type CodeTabContext = {
