@@ -313,7 +313,7 @@ export type PendingActionPrompt = {
 
 export type EditorContextTokenKind = 'identifier' | 'keyword' | 'number' | 'string' | 'operator';
 
-export type EditorContextMenuAction = 'go_to_definition' | 'go_to_references' | 'rename_symbol' | 'copy_token';
+export type EditorContextMenuAction = 'go_to_definition' | 'go_to_references' | 'call_hierarchy' | 'rename_symbol' | 'copy_token';
 
 export type EditorContextToken = {
 	kind: EditorContextTokenKind;

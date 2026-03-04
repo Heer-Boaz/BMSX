@@ -142,6 +142,10 @@ type FrameState = {
 	cycleCarryGranted: number;
 };
 
+type EditorViewOptionsSnapshot = {
+	crtPostprocessingEnabled: boolean;
+};
+
 type ProgramSource = 'engine' | 'cart';
 type WaitForVblankSignal = { readonly kind: 'wait_vblank' };
 
@@ -712,6 +716,7 @@ export class Runtime {
 	private readonly imageMetaByHandle = new Map<number, ImgMeta>();
 	private readonly audioMetaByHandle = new Map<number, AudioMeta>();
 	public readonly vdp: VDP;
+	private editorViewOptionsSnapshot: EditorViewOptionsSnapshot = null;
 	public readonly dmaController: DmaController;
 	public readonly imgDecController: ImgDecController;
 	private engineCanonicalization: CanonicalizationType = null;
@@ -1591,6 +1596,25 @@ export class Runtime {
 
 	public setVdpDitherType(value: number): void {
 		this.vdp.setDitherType(value);
+	}
+
+	public disableCrtPostprocessingForEditor(): void {
+		if (this.editorViewOptionsSnapshot !== null) {
+			return;
+		}
+		this.editorViewOptionsSnapshot = {
+			crtPostprocessingEnabled: $.view.crt_postprocessing_enabled,
+		};
+		$.view.crt_postprocessing_enabled = false;
+	}
+
+	public restoreCrtPostprocessingFromEditor(): void {
+		const snapshot = this.editorViewOptionsSnapshot;
+		if (snapshot === null) {
+			return;
+		}
+		$.view.crt_postprocessing_enabled = snapshot.crtPostprocessingEnabled;
+		this.editorViewOptionsSnapshot = null;
 	}
 
 	public isEngineProgramActive(): boolean {

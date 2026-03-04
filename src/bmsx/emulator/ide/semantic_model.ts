@@ -829,6 +829,7 @@ class SemanticBuilder {
 	private readonly refs: Ref[] = [];
 	private readonly callExpressions: LuaCallExpression[] = [];
 	private readonly functionSignatures: Map<string, FunctionSignatureInfo> = new Map();
+	private readonly methodSelfPathStack: (readonly string[] | null)[] = [];
 	private nextScopeId = 1;
 
 	constructor(options: {
@@ -933,7 +934,8 @@ class SemanticBuilder {
 					? (basePath.length > 0 ? `${basePath}:${methodName}` : methodName)
 					: basePath;
 				this.recordFunctionSignature(declarationPath, functionDeclaration.functionExpression, methodName ? 'method' : 'function');
-				this.visitFunctionExpression(functionDeclaration.functionExpression);
+				const methodSelfPath = methodName ? functionDeclaration.name.identifiers.slice() : null;
+				this.visitFunctionExpression(functionDeclaration.functionExpression, methodSelfPath);
 				break;
 			}
 			case LuaSyntaxKind.AssignmentStatement: {
@@ -1134,15 +1136,26 @@ class SemanticBuilder {
 		}
 	}
 
-	private visitFunctionExpression(expression: LuaFunctionExpression): void {
+	private visitFunctionExpression(expression: LuaFunctionExpression, methodSelfPath: readonly string[] = null): void {
 		const block = expression.body;
 		const scopeRange = block.range;
 		this.enterScope(scopeRange, 'function');
+		const inheritedMethodSelfPath = this.currentMethodSelfPath();
+		const effectiveMethodSelfPath = methodSelfPath ?? inheritedMethodSelfPath;
+		this.methodSelfPathStack.push(effectiveMethodSelfPath ? effectiveMethodSelfPath.slice() : null);
 		for (let index = 0; index < expression.parameters.length; index += 1) {
 			this.declareParameter(expression.parameters[index]);
 		}
 		this.visitBlock(block);
+		this.methodSelfPathStack.pop();
 		this.leaveScope();
+	}
+
+	private currentMethodSelfPath(): readonly string[] {
+		if (this.methodSelfPathStack.length === 0) {
+			return null;
+		}
+		return this.methodSelfPathStack[this.methodSelfPathStack.length - 1];
 	}
 
 	private handleAssignmentTarget(target: LuaAssignableExpression): AssignmentTargetInfo {
@@ -1215,7 +1228,16 @@ class SemanticBuilder {
 	}
 
 	private recordMethodReference(callExpression: LuaCallExpression, calleeInfo: ResolvedNamePath): void {
-		const basePath = calleeInfo ? calleeInfo.namePath : extractNamePath(callExpression.callee);
+		let basePath = calleeInfo ? calleeInfo.namePath : extractNamePath(callExpression.callee);
+		if (basePath
+			&& basePath.length === 1
+			&& basePath[0] === 'self'
+			&& (!calleeInfo || !calleeInfo.decl)) {
+			const methodSelfPath = this.currentMethodSelfPath();
+			if (methodSelfPath && methodSelfPath.length > 0) {
+				basePath = methodSelfPath.slice();
+			}
+		}
 		if (!basePath) {
 			return;
 		}
@@ -1741,7 +1763,9 @@ function registerFunctionFromExpression(
 
 function findFunctionNameToken(statement: LuaFunctionDeclarationStatement, tokens: readonly LuaToken[], tokenMap: Map<string, TokenInfo>): TokenInfo {
 	const identifiers = statement.name.identifiers;
-	const target = identifiers.length > 0 ? identifiers[identifiers.length - 1] : statement.name.methodName;
+	const target = statement.name.methodName && statement.name.methodName.length > 0
+		? statement.name.methodName
+		: (identifiers.length > 0 ? identifiers[identifiers.length - 1] : null);
 	if (!target) {
 		return null;
 	}

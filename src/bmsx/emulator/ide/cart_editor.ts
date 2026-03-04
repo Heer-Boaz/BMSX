@@ -1398,6 +1398,9 @@ export function shutdown(): void {
 	clearExecutionStopHighlights();
 	storeActiveCodeTabContext();
 	ide_state.input.applyOverrides(false, captureKeys);
+	if (ide_state.dimCrtInEditor) {
+		Runtime.instance.restoreCrtPostprocessingFromEditor();
+	}
 	ide_state.active = false;
 	if (ide_state.workspaceAutosaveEnabled) {
 		stopWorkspaceAutosaveLoop();
@@ -1485,7 +1488,7 @@ export function activate(): void {
 	}
 	ide_state.deferredMessageDuration = null;
 	if (ide_state.dimCrtInEditor) {
-		applyEditorCrtDimming();
+		Runtime.instance.disableCrtPostprocessingForEditor();
 	}
 	if (Runtime.instance.hasRuntimeFailed) {
 		const rendered = renderRuntimeFaultOverlay({
@@ -1498,21 +1501,11 @@ export function activate(): void {
 	}
 }
 
-export function applyEditorCrtDimming(): void {
-	// $.view.crt_postprocessing_enabled = false;
-	// Runtime.instance.setVdpDitherType(0);
-}
-
-export function restoreCrtOptions(): void {
-	// $.view.crt_postprocessing_enabled = true;
-	// Runtime.instance.setVdpDitherType(2);
-}
-
 export function deactivate(): void {
 	storeActiveCodeTabContext();
 	ide_state.active = false;
 	if (ide_state.dimCrtInEditor) {
-		restoreCrtOptions();
+		Runtime.instance.restoreCrtPostprocessingFromEditor();
 	}
 	ide_state.completion.closeSession();
 	ide_state.input.applyOverrides(false, captureKeys);

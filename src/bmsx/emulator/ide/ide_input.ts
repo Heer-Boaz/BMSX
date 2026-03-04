@@ -31,7 +31,7 @@ import { rebuildRuntimeErrorOverlayView, buildRuntimeErrorOverlayCopyText } from
 import * as constants from './constants';
 import { RuntimeDebuggerCommandExecutor } from './ide_debugger';
 import { toggleBreakpointForEditorRow } from './ide_debugger';
-import { buildEditorContextMenuEntries } from './code_reference';
+import { buildEditorContextMenuEntries, filterReferenceCatalogToCallHierarchy } from './code_reference';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from './render/render_context_menu';
 
 export const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
@@ -1678,6 +1678,22 @@ function executeEditorContextMenuAction(action: EditorContextMenuAction, token: 
 		case 'go_to_references':
 			focusEditorAtContextToken(token.row, token.startColumn);
 			openReferenceSearchPopup();
+			return;
+		case 'call_hierarchy':
+			focusEditorAtContextToken(token.row, token.startColumn);
+			openReferenceSearchPopup();
+			if (!ide_state.symbolSearchVisible || ide_state.symbolSearchMode !== 'references') {
+				return;
+			}
+			ide_state.referenceCatalog = filterReferenceCatalogToCallHierarchy(ide_state.referenceCatalog, ide_state.semanticWorkspace);
+			if (ide_state.referenceCatalog.length === 0) {
+				closeSymbolSearch(false);
+				ide_state.showMessage(`No calls found for ${token.expression ?? token.text}`, constants.COLOR_STATUS_WARNING, 1.8);
+				return;
+			}
+			updateSymbolSearchMatches();
+			ensureSymbolSearchSelectionVisible();
+			ide_state.showMessage(`Call hierarchy for ${token.expression ?? token.text}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 			return;
 		case 'rename_symbol':
 			focusEditorAtContextToken(token.row, token.startColumn);
