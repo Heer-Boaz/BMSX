@@ -102,7 +102,6 @@ export class ResourcePanelController {
 		this.callHierarchyView = view;
 		this.callHierarchyExpandedNodeIds.clear();
 		this.callHierarchyExpandedNodeIds.add(view.root.id);
-		this.expandAllCallerNodes(view.root);
 		this.refreshContents();
 	}
 
@@ -231,6 +230,20 @@ export class ResourcePanelController {
 		this.hoverIndex = index;
 	}
 
+	isCallHierarchyMarkerHit(index: number, viewportX: number): boolean {
+		const item = this.items[index];
+		if (!item || !item.callHierarchyExpandable) {
+			return false;
+		}
+		const markerEndColumn = item.contentStartColumn;
+		const markerStartColumn = markerEndColumn - 2;
+		const bounds = this.getBounds();
+		const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
+		const markerLeft = contentLeft - this.hscroll + measureText(item.line.slice(0, markerStartColumn));
+		const markerRight = contentLeft - this.hscroll + measureText(item.line.slice(0, markerEndColumn));
+		return viewportX >= markerLeft && viewportX < markerRight;
+	}
+
 	setScroll(scroll: number): void {
 		const capacity = this.lineCapacity();
 		const maxScroll = Math.max(0, this.items.length - capacity);
@@ -253,6 +266,17 @@ export class ResourcePanelController {
 
 	openSelected(): void {
 		this.openSelectedInternal();
+	}
+
+	openSelectedCallHierarchyLocation(): void {
+		if (this.mode !== 'call_hierarchy') {
+			return;
+		}
+		const item = this.items[this.selectionIndex];
+		if (!item) {
+			return;
+		}
+		this.openCallHierarchyItemLocation(item);
 	}
 
 	setRatioFromViewportX(viewportX: number, viewportWidth: number): boolean {
@@ -370,7 +394,7 @@ export class ResourcePanelController {
 		const appendNode = (node: CallHierarchyViewNode, depth: number): void => {
 			const expandable = node.children.length > 0;
 			const expanded = expandable && this.callHierarchyExpandedNodeIds.has(node.id);
-			const marker = expandable ? (expanded ? '▾ ' : '▸ ') : '  ';
+			const marker = expandable ? (expanded ? '- ' : '+ ') : '  ';
 			const indent = indentUnit.repeat(depth);
 			const line = `${indent}${marker}${node.label}`;
 			items.push({
@@ -491,15 +515,6 @@ export class ResourcePanelController {
 		return -1;
 	}
 
-	private expandAllCallerNodes(node: CallHierarchyViewNode): void {
-		if (node.kind === 'root' || node.kind === 'caller') {
-			this.callHierarchyExpandedNodeIds.add(node.id);
-		}
-		for (let index = 0; index < node.children.length; index += 1) {
-			this.expandAllCallerNodes(node.children[index]);
-		}
-	}
-
 	private applyPendingSelection(): void {
 		const asset_id = this.pendingSelectionAssetId;
 		if (!asset_id) return;
@@ -545,6 +560,10 @@ export class ResourcePanelController {
 			}
 			return;
 		}
+		this.openCallHierarchyItemLocation(item);
+	}
+
+	private openCallHierarchyItemLocation(item: ResourceBrowserItem): void {
 		if (!item.location) {
 			return;
 		}

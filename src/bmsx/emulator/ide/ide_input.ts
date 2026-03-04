@@ -1182,9 +1182,17 @@ export function handleTextEditorPointerInput(): void {
 			if (hoverIndex !== ide_state.resourceBrowserSelectionIndex) {
 				ide_state.resourcePanel.setSelectionIndex(hoverIndex);
 			}
-			if (justPressed && ide_state.resourcePanel.getMode() === 'resources') {
-				ide_state.resourcePanel.openSelected();
-				ide_state.resourcePanel.setFocused(false);
+			if (justPressed) {
+				if (ide_state.resourcePanel.getMode() === 'call_hierarchy') {
+					if (ide_state.resourcePanel.isCallHierarchyMarkerHit(hoverIndex, snapshot.viewportX)) {
+						ide_state.resourcePanel.openSelected();
+					} else {
+						ide_state.resourcePanel.openSelectedCallHierarchyLocation();
+					}
+				} else {
+					ide_state.resourcePanel.openSelected();
+					ide_state.resourcePanel.setFocused(false);
+				}
 			}
 		}
 		if (!snapshot.primaryPressed && hoverIndex === -1) {
