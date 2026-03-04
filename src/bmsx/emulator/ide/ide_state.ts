@@ -359,7 +359,6 @@ export const ide_state: IdeState = {
 		resources: { left: 0, top: 0, right: 0, bottom: 0 },
 		problems: { left: 0, top: 0, right: 0, bottom: 0 },
 		filter: { left: 0, top: 0, right: 0, bottom: 0 },
-		resolution: { left: 0, top: 0, right: 0, bottom: 0 },
 		wrap: { left: 0, top: 0, right: 0, bottom: 0 },
 		debugContinue: { left: 0, top: 0, right: 0, bottom: 0 },
 		debugStepOver: { left: 0, top: 0, right: 0, bottom: 0 },

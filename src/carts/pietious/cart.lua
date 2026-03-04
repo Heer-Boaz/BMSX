@@ -132,48 +132,23 @@ function new_game()
 	add_space('ui')
 	set_space('main')
 
-	inst('castle', {
-		id = 'c',
-	})
+	local c = inst('castle', { id = 'c', })
 
-	inst('room', {
-		id = 'room',
-	})
+	inst('room', { id = 'room', })
 
 	inst('player', {
 		id = 'pietolon',
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
 	})
 	grant_starting_loadout()
-	object('c'):initialize(castle_map.start_room_number)
+	c:initialize(castle_map.start_room_number)
 
-	inst('transition', {
-		id = 'transition',
-		space_id = 'transition',
-	})
-
-	inst('shrine', {
-		id = 'shrine',
-		space_id = 'shrine',
-	})
-
-	inst('lithograph_screen', {
-		id = 'lithograph',
-		space_id = 'lithograph',
-	})
-
-	inst('item_screen', {
-		id = 'item_screen',
-		space_id = 'item',
-	})
-
-	inst('ui', {
-		id = 'ui',
-	})
-
-	inst('director', {
-		id = 'd',
-	})
+	inst('transition', { id = 'transition', space_id = 'transition', })
+	inst('shrine', { id = 'shrine', space_id = 'shrine', })
+	inst('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
+	inst('item_screen', { id = 'item_screen', space_id = 'item', })
+	inst('ui', { id = 'ui', })
+	inst('director', { id = 'd', })
 
 end
 

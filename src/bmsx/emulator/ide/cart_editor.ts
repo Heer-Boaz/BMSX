@@ -760,7 +760,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 
 export function focusChunkSource(path: string): void {
 	if (!ide_state.active) {
-		activate();
+		runtimeIde.activateEditor(Runtime.instance);
 	}
 	closeSymbolSearch(true);
 	closeResourceSearch(true);
@@ -4127,7 +4127,7 @@ export function hasPendingRuntimeReload(): boolean {
 export function handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
 	const errormsg = error instanceof Error ? error.message : String(error);
 	$.paused = true;
-	activate();
+	runtimeIde.activateEditor(Runtime.instance);
 	const message = `${fallbackMessage}: ${errormsg}`;
 	Runtime.instance.terminal.appendStderr(message);
 	ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 2.0);

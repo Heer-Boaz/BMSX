@@ -1751,6 +1751,7 @@ export class Runtime {
 	public dispose(): void {
 		runtimeIde.disposeShortcutHandlers(this);
 		this.terminal.deactivate();
+		runtimeIde.deactivateEditor(this);
 		this.luaInitialized = false;
 		if (this.editor) {
 			this.editor.shutdown();

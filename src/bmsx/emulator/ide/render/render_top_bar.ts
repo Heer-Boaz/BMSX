@@ -5,7 +5,7 @@ import { isDebugPanelActive } from '../cart_editor';
 import { measureText } from '../text_utils';
 import { drawEditorText } from '../text_renderer';
 import { MenuId, TopBarButtonId } from '../types';
-import { api, Runtime } from '../../runtime';
+import { api } from '../../runtime';
 import { MENU_COMMANDS, MENU_IDS } from '../ide_input';
 
 type MenuSeparator = { type: 'separator' };
@@ -147,7 +147,6 @@ function buildMenuEntries(): MenuEntry[] {
 	const resourceFilesMode = resourcePanelMode === 'resources';
 	const filterMode = ide_state.resourcePanel.getFilterMode();
 	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
-	const resolutionActive = Runtime.instance!.overlayResolutionMode === 'viewport';
 	const problemsActive = ide_state.problemsPanel.isVisible;
 	const debugObjectsActive = isDebugPanelActive('objects');
 	const debugEventsActive = isDebugPanelActive('events');
@@ -182,13 +181,6 @@ function buildMenuEntries(): MenuEntry[] {
 			items: [
 				{ type: 'command', command: 'problems', label: 'Problems Panel', active: problemsActive, disabled: false },
 				{ type: 'command', command: 'wrap', label: 'Word Wrap', active: ide_state.wordWrapEnabled, disabled: false },
-				{
-					type: 'command',
-					command: 'resolution',
-					label: 'Viewport Resolution',
-					active: resolutionActive,
-					disabled: false,
-				},
 				{
 					type: 'command',
 					command: 'filter',

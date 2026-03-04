@@ -354,9 +354,6 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 			setFontVariant(payload.fontVariant);
 		}
 	}
-	if (payload.overlayResolutionMode && runtime) {
-		runtime.overlayResolutionMode = payload.overlayResolutionMode;
-	}
 	await hydrateDirtyFiles(payload.dirtyFiles);
 	restoreBreakpointsFromPayload(payload.breakpoints );
 }
