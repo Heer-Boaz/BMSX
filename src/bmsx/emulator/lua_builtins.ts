@@ -196,6 +196,8 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'irq_img_done', params: [], signature: 'irq_img_done', description: 'IRQ flag for IMGDEC completion.' },
 	{ name: 'irq_img_error', params: [], signature: 'irq_img_error', description: 'IRQ flag for IMGDEC error.' },
 	{ name: 'irq_vblank', params: [], signature: 'irq_vblank', description: 'IRQ flag for VBLANK entry.' },
+	{ name: 'irq_reinit', params: [], signature: 'irq_reinit', description: 'IRQ flag for cart reinitialization events.' },
+	{ name: 'irq_newgame', params: [], signature: 'irq_newgame', description: 'IRQ flag for new-game start events.' },
 	{ name: 'dma_ctrl_start', params: [], signature: 'dma_ctrl_start', description: 'DMA control bit: start transfer.' },
 	{ name: 'dma_ctrl_strict', params: [], signature: 'dma_ctrl_strict', description: 'DMA control bit: strict overflow handling.' },
 	{ name: 'dma_status_busy', params: [], signature: 'dma_status_busy', description: 'DMA status bit: busy.' },

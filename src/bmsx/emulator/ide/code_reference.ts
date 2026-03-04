@@ -193,10 +193,23 @@ function resolveCallerDeclaration(functionDecls: readonly Decl[], line: number, 
 	let best: Decl = null;
 	for (let index = 0; index < functionDecls.length; index += 1) {
 		const decl = functionDecls[index];
+		if (comparePositions(decl.range.start.line, decl.range.start.column, line, column) > 0) {
+			continue;
+		}
 		if (!rangeContainsPosition(decl.scope, line, column)) {
 			continue;
 		}
-		if (!best || isRangeInside(decl.scope, best.scope)) {
+		if (!best) {
+			best = decl;
+			continue;
+		}
+		const startDiff = comparePositions(
+			decl.range.start.line,
+			decl.range.start.column,
+			best.range.start.line,
+			best.range.start.column
+		);
+		if (startDiff > 0 || (startDiff === 0 && isRangeInside(decl.scope, best.scope))) {
 			best = decl;
 		}
 	}
@@ -335,6 +348,9 @@ function collectIncomingCallerGroups(
 			continue;
 		}
 		const caller = hierarchyIndex.callerByPosition.get(callKey) ?? buildChunkCallerScope(path);
+		if (caller.symbolId === symbolId) {
+			continue;
+		}
 		const bucketKey = `${path}|${caller.key}`;
 		let bucket = grouped.get(bucketKey);
 		if (!bucket) {
