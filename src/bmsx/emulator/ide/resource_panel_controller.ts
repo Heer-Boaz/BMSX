@@ -186,6 +186,15 @@ export class ResourcePanelController {
 		}
 		if (isKeyJustPressed('Enter')) {
 			consumeIdeKey('Enter');
+			if (this.mode === 'call_hierarchy') {
+				this.openSelectedCallHierarchyLocation();
+			} else {
+				this.openSelected();
+			}
+			return;
+		}
+		if (this.mode === 'call_hierarchy' && isKeyJustPressed('Space')) {
+			consumeIdeKey('Space');
 			this.openSelected();
 			return;
 		}
@@ -210,6 +219,9 @@ export class ResourcePanelController {
 	// === Public helpers used by editor pointer logic ===
 	indexAtPosition(_x: number, y: number): number {
 		const bounds = this.getBounds();
+		if (!bounds) {
+			return -1;
+		}
 		const contentTop = bounds.top + 2;
 		const relativeY = y - contentTop;
 		if (relativeY < 0) return -1;
@@ -238,6 +250,9 @@ export class ResourcePanelController {
 		const markerEndColumn = item.contentStartColumn;
 		const markerStartColumn = markerEndColumn - 2;
 		const bounds = this.getBounds();
+		if (!bounds) {
+			return false;
+		}
 		const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
 		const markerLeft = contentLeft - this.hscroll + measureText(item.line.slice(0, markerStartColumn));
 		const markerRight = contentLeft - this.hscroll + measureText(item.line.slice(0, markerEndColumn));
@@ -646,6 +661,9 @@ export class ResourcePanelController {
 
 	public lineCapacity(): number {
 		const bounds = this.getBounds();
+		if (!bounds) {
+			return 1;
+		}
 		const overlayTop = bounds.top;
 		const overlayBottom = bounds.bottom;
 		let contentHeight = Math.max(0, overlayBottom - overlayTop);
@@ -683,6 +701,9 @@ export class ResourcePanelController {
 
 	public computeMaxHScroll(): number {
 		const bounds = this.getBounds();
+		if (!bounds) {
+			return 0;
+		}
 		const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
 		const capacity = this.lineCapacity();
 		const needsScrollbar = this.items.length > capacity;

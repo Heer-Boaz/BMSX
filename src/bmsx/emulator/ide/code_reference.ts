@@ -395,16 +395,42 @@ function createCallViewNodeId(reference: Ref): string {
 	return `call:${reference.file}:${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
 }
 
+function buildCallHierarchyLocationLabel(
+	location: LuaDefinitionLocation,
+	workspace: LuaSemanticWorkspace,
+	metadata: Map<string, FileMetadata>
+): string {
+	const path = location.path;
+	const line = location.range.startLine;
+	if (!path || path.length === 0) {
+		return `${line}`;
+	}
+	const meta = ensureWorkspaceFileMetadata(path, workspace, metadata);
+	const sourceLabel = meta ? meta.sourceLabel : computeSourceLabel(path, path);
+	return `${sourceLabel}:${line}`;
+}
+
+function buildCallHierarchyCallerLabel(
+	caller: CallerScope,
+	workspace: LuaSemanticWorkspace,
+	metadata: Map<string, FileMetadata>
+): string {
+	const locationLabel = buildCallHierarchyLocationLabel(caller.location, workspace, metadata);
+	return `${caller.label} (${locationLabel})`;
+}
+
 function buildCallHierarchyCallLabel(reference: Ref, workspace: LuaSemanticWorkspace, metadata: Map<string, FileMetadata>): string {
 	const meta = ensureWorkspaceFileMetadata(reference.file, workspace, metadata);
+	const locationLabel = `${meta ? meta.sourceLabel : computeSourceLabel(reference.file, reference.file)}:${reference.range.start.line}`;
+	let snippet = reference.name;
 	if (!meta) {
-		return reference.name;
+		return `${snippet} (${locationLabel})`;
 	}
 	const match = rangeToSearchMatch(reference.range, meta.lines);
-	if (!match) {
-		return reference.name;
+	if (match) {
+		snippet = buildReferenceSnippet(meta.lines, match);
 	}
-	return buildReferenceSnippet(meta.lines, match);
+	return `${snippet} (${locationLabel})`;
 }
 
 function convertIncomingNodeToView(
@@ -429,7 +455,7 @@ function convertIncomingNodeToView(
 	return {
 		id: createCallerViewNodeId(node.caller),
 		kind: 'caller',
-		label: node.caller.label,
+		label: buildCallHierarchyCallerLabel(node.caller, workspace, metadata),
 		location: node.caller.location,
 		children,
 	};
@@ -450,6 +476,7 @@ export function buildIncomingCallHierarchyView(options: BuildIncomingCallHierarc
 	}
 	const metadata = new Map<string, FileMetadata>();
 	const rootLocation = toDefinitionLocation(rootDecl.range);
+	const rootLocationLabel = buildCallHierarchyLocationLabel(rootLocation, workspace, metadata);
 	const rootChildren: CallHierarchyViewNode[] = [];
 	for (let index = 0; index < nodes.length; index += 1) {
 		rootChildren.push(convertIncomingNodeToView(nodes[index], workspace, metadata));
@@ -457,7 +484,7 @@ export function buildIncomingCallHierarchyView(options: BuildIncomingCallHierarc
 	const root: CallHierarchyViewNode = {
 		id: `root:${rootDecl.id}`,
 		kind: 'root',
-		label: rootExpression,
+		label: `${rootExpression} (${rootLocationLabel})`,
 		location: rootLocation,
 		children: rootChildren,
 	};
