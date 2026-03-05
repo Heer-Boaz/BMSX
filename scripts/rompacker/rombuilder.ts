@@ -1449,7 +1449,6 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 					buffer,
 					compiled_buffer,
 					source_path: normalizedPath,
-					normalized_source_path: normalizedPath,
 					update_timestamp: res.update_timestamp,
 				});
 				break;
@@ -1592,11 +1591,11 @@ export function appendProgramAsset(
 	if (extraLuaAssets.length > 0) {
 		const seenPaths = new Set<string>();
 		for (const asset of baseLuaAssets) {
-			const path = asset.normalized_source_path;
+			const path = asset.source_path;
 			seenPaths.add(path);
 		}
 		for (const asset of extraLuaAssets) {
-			const path = asset.normalized_source_path;
+			const path = asset.source_path;
 			if (seenPaths.has(path)) {
 				continue;
 			}
@@ -1629,10 +1628,10 @@ export function appendProgramAsset(
 		} catch (error) {
 			const bufferPreview = Buffer.from(asset.compiled_buffer).subarray(0, 24);
 			const previewHex = Array.from(bufferPreview, byte => byte.toString(16).padStart(2, '0')).join(' ');
-			const pathLabel = asset.normalized_source_path ?? asset.source_path ?? asset.resid;
+			const pathLabel = asset.source_path ?? asset.resid;
 			throw new Error(`[RomPacker] Failed to decode compiled Lua chunk for "${pathLabel}". First bytes: ${previewHex}. ${error?.message ?? error}`);
 		}
-		const path = asset.normalized_source_path;
+		const path = asset.source_path;
 		chunksByPath.set(path, decoded);
 		modulePaths.push(path);
 		if (asset === entryAsset) {
@@ -1645,7 +1644,7 @@ export function appendProgramAsset(
 		if (asset === entryAsset) {
 			continue;
 		}
-		const path = asset.normalized_source_path ?? asset.source_path;
+		const path = asset.source_path;
 		const chunk = chunksByPath.get(path);
 		modules.push({ path, chunk });
 	}

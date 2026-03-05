@@ -20,6 +20,27 @@ ProgramAsset::ConstRelocKind parseConstRelocKind(const std::string& kind) {
 	throw BMSX_RUNTIME_ERROR("ProgramLoader: unknown const reloc kind '" + kind + "'.");
 }
 
+SourceRange parseSourceRange(const BinValue& rangeVal) {
+	SourceRange range;
+	range.path = rangeVal.require("path").asString();
+	const auto& startObj = rangeVal.require("start");
+	const auto& endObj = rangeVal.require("end");
+	range.startLine = startObj.require("line").toI32();
+	range.startColumn = startObj.require("column").toI32();
+	range.endLine = endObj.require("line").toI32();
+	range.endColumn = endObj.require("column").toI32();
+	return range;
+}
+
+LocalSlotDebug parseLocalSlotDebug(const BinValue& slotVal) {
+	LocalSlotDebug slot;
+	slot.name = slotVal.require("name").asString();
+	slot.reg = slotVal.require("register").toI32();
+	slot.definition = parseSourceRange(slotVal.require("definition"));
+	slot.scope = parseSourceRange(slotVal.require("scope"));
+	return slot;
+}
+
 } // namespace
 
 /**
@@ -92,15 +113,25 @@ std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadata
 			metadata->debugRanges.push_back(std::nullopt);
 			continue;
 		}
-		SourceRange range;
-		range.path = rangeVal.require("path").asString();
-		const auto& startObj = rangeVal.require("start");
-		const auto& endObj = rangeVal.require("end");
-		range.startLine = startObj.require("line").toI32();
-		range.startColumn = startObj.require("column").toI32();
-		range.endLine = endObj.require("line").toI32();
-		range.endColumn = endObj.require("column").toI32();
-		metadata->debugRanges.push_back(range);
+		metadata->debugRanges.push_back(parseSourceRange(rangeVal));
+	}
+
+	if (metadataObj.has("localSlotsByProto")) {
+		const auto& slotsByProtoArr = metadataObj.require("localSlotsByProto").asArray();
+		metadata->localSlotsByProto.resize(slotsByProtoArr.size());
+		for (size_t protoIndex = 0; protoIndex < slotsByProtoArr.size(); ++protoIndex) {
+			const auto& protoSlotsArr = slotsByProtoArr[protoIndex].asArray();
+			auto& slots = metadata->localSlotsByProto[protoIndex];
+			slots.reserve(protoSlotsArr.size());
+			for (const auto& slotVal : protoSlotsArr) {
+				slots.push_back(parseLocalSlotDebug(slotVal));
+			}
+		}
+	} else {
+		metadata->localSlotsByProto.assign(metadata->protoIds.size(), {});
+	}
+	if (metadata->localSlotsByProto.size() != metadata->protoIds.size()) {
+		throw BMSX_RUNTIME_ERROR("ProgramLoader: localSlotsByProto length does not match protoIds length.");
 	}
 	return metadata;
 }

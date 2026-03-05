@@ -544,18 +544,59 @@ export class CompletionController {
 		if (probe >= 0) {
 			const operator = line.charAt(probe);
 			if (operator === '.' || operator === ':') {
-				let objectEnd = probe;
-				let objectProbe = objectEnd - 1;
-				while (objectProbe >= 0 && LuaLexer.isWhitespace(line.charAt(objectProbe))) objectProbe -= 1;
-				if (objectProbe < 0) return null;
-				let objectStart = objectProbe;
-				while (objectStart >= 0 && LuaLexer.isIdentifierPart(line.charAt(objectStart))) objectStart -= 1;
-				const objectName = line.slice(objectStart + 1, objectProbe + 1);
-				if (objectName.length === 0) return null;
+				const objectName = this.readMemberObjectExpression(line, probe - 1);
+				if (objectName === null) return null;
 				return { kind: 'member', objectName, operator: operator as '.' | ':', prefix, row, replaceFromColumn, replaceToColumn };
 			}
 		}
 		return { kind: 'global', prefix, row, replaceFromColumn, replaceToColumn };
+	}
+
+	private readMemberObjectExpression(line: string, fromIndex: number): string | null {
+		let scan = fromIndex;
+		while (scan >= 0 && LuaLexer.isWhitespace(line.charAt(scan))) scan -= 1;
+		if (scan < 0) {
+			return null;
+		}
+		const segments: string[] = [];
+		const separators: Array<'.' | ':'> = [];
+		while (scan >= 0) {
+			const segmentEnd = scan;
+			while (scan >= 0 && LuaLexer.isIdentifierPart(line.charAt(scan))) {
+				scan -= 1;
+			}
+			const segmentStart = scan + 1;
+			if (segmentStart > segmentEnd) {
+				return null;
+			}
+			const segment = line.slice(segmentStart, segmentEnd + 1);
+			if (!LuaLexer.isIdentifierStart(segment.charAt(0))) {
+				return null;
+			}
+			segments.unshift(segment);
+			while (scan >= 0 && LuaLexer.isWhitespace(line.charAt(scan))) scan -= 1;
+			if (scan < 0) {
+				break;
+			}
+			const separator = line.charAt(scan);
+			if (separator !== '.' && separator !== ':') {
+				break;
+			}
+			separators.unshift(separator as '.' | ':');
+			scan -= 1;
+			while (scan >= 0 && LuaLexer.isWhitespace(line.charAt(scan))) scan -= 1;
+			if (scan < 0) {
+				return null;
+			}
+		}
+		if (segments.length === 0) {
+			return null;
+		}
+		let expression = segments[0];
+		for (let index = 0; index < separators.length; index += 1) {
+			expression += `${separators[index]}${segments[index + 1]}`;
+		}
+		return expression;
 	}
 
 	private getSharedCompletionEntries(): { list: LuaCompletionItem[]; map: Map<string, LuaCompletionItem> } {

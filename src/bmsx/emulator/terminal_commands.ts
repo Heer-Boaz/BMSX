@@ -176,7 +176,7 @@ export class TerminalCommandDispatcher {
 			this.runtime.terminal.appendStderr(ERROR_FILE_NOT_FOUND);
 			return;
 		}
-		focusChunkSource(asset.normalized_source_path);
+		focusChunkSource(asset.source_path);
 	}
 
 	private printHelp(): void {
@@ -402,11 +402,11 @@ export class TerminalCommandDispatcher {
 			this.runtime.terminal.appendStderr(ERROR_FILE_NOT_FOUND);
 			return;
 		}
-		const dirtyPath = buildWorkspaceDirtyEntryPath(root, asset.normalized_source_path);
+		const dirtyPath = buildWorkspaceDirtyEntryPath(root, asset.source_path);
 		const dirtyKey = buildWorkspaceStorageKey(root, dirtyPath);
 		const dirtyRaw = storage.getItem(dirtyKey);
 		const dirtyEntry = this.parseWorkspaceStoredEntry(dirtyRaw);
-		const savedKey = buildWorkspaceStorageKey(root, asset.normalized_source_path);
+		const savedKey = buildWorkspaceStorageKey(root, asset.source_path);
 		const savedRaw = storage.getItem(savedKey);
 		const savedEntry = this.parseWorkspaceStoredEntry(savedRaw);
 		const cartUpdatedAt = asset.update_timestamp ?? 0;
@@ -532,7 +532,7 @@ export class TerminalCommandDispatcher {
 		const unsavedPaths = this.collectUnsavedPaths(root);
 		for (let index = 0; index < luaAssets.length; index += 1) {
 			const asset = luaAssets[index];
-			const cartPath = asset.normalized_source_path;
+			const cartPath = asset.source_path;
 			const normalizedPath = cartPath.startsWith('/') ? cartPath : `/${cartPath}`;
 			const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 			const dirtyKey = buildWorkspaceStorageKey(root, dirtyPath);

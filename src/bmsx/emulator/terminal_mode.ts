@@ -711,9 +711,6 @@ export class TerminalMode {
 	}
 
 	private isSymbolCompletionBoundary(ch: string): boolean {
-		if (ch === '.' || ch === ':') {
-			return true;
-		}
 		return !this.isSymbolQueryChar(ch);
 	}
 
@@ -728,7 +725,7 @@ export class TerminalMode {
 		if (code >= 97 && code <= 122) {
 			return true;
 		}
-		return ch === '_';
+		return ch === '_' || ch === '.' || ch === ':';
 	}
 
 	private openSymbolPanel(
@@ -1005,14 +1002,70 @@ export class TerminalMode {
 			return entries.slice();
 		}
 		const needle = prefix.toLowerCase();
+		const needleSegments = this.splitSymbolQuerySegments(needle);
 		const filtered: SymbolEntry[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			if (entry.name.toLowerCase().startsWith(needle)) {
+			const nameLower = entry.name.toLowerCase();
+			if (nameLower.startsWith(needle)) {
+				filtered.push(entry);
+				continue;
+			}
+			if (this.matchesSymbolSegmentChain(nameLower, needleSegments)) {
+				filtered.push(entry);
+				continue;
+			}
+			if (this.matchesAnySymbolSegment(nameLower, needleSegments)) {
 				filtered.push(entry);
 			}
 		}
 		return filtered;
+	}
+
+	private splitSymbolQuerySegments(value: string): string[] {
+		const rawSegments = value.split(/[.:]/);
+		const segments: string[] = [];
+		for (let index = 0; index < rawSegments.length; index += 1) {
+			const segment = rawSegments[index];
+			if (segment.length > 0) {
+				segments.push(segment);
+			}
+		}
+		return segments;
+	}
+
+	private matchesSymbolSegmentChain(nameLower: string, needleSegments: string[]): boolean {
+		if (needleSegments.length <= 1) {
+			return false;
+		}
+		const nameSegments = this.splitSymbolQuerySegments(nameLower);
+		if (needleSegments.length > nameSegments.length) {
+			return false;
+		}
+		for (let index = 0; index < needleSegments.length; index += 1) {
+			if (!nameSegments[index].startsWith(needleSegments[index])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private matchesAnySymbolSegment(nameLower: string, needleSegments: string[]): boolean {
+		if (needleSegments.length === 0) {
+			return false;
+		}
+		const tailNeedle = needleSegments[needleSegments.length - 1];
+		if (tailNeedle.length === 0) {
+			return false;
+		}
+		const nameSegments = this.splitSymbolQuerySegments(nameLower);
+		for (let index = 0; index < nameSegments.length; index += 1) {
+			const segment = nameSegments[index];
+			if (segment.startsWith(tailNeedle) || segment.includes(tailNeedle)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private resolveSymbolSelectionIndex(entries: SymbolEntry[], preferredName: string): number {

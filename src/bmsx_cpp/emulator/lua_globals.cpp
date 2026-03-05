@@ -3157,9 +3157,6 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		if (info.sourcePath) {
 			table->set(key("source_path"), str(*info.sourcePath));
 		}
-		if (info.normalizedSourcePath) {
-			table->set(key("normalized_source_path"), str(*info.normalizedSourcePath));
-		}
 		if (info.updateTimestamp) {
 			table->set(key("update_timestamp"), valueNumber(static_cast<double>(*info.updateTimestamp)));
 		}

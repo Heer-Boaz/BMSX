@@ -38,9 +38,6 @@ export class AssetSourceStack implements RawAssetSource {
 					continue;
 				}
 				map.set(asset.source_path, asset);
-				if (asset.normalized_source_path && asset.normalized_source_path !== asset.source_path) {
-					map.set(asset.normalized_source_path, asset);
-				}
 			}
 			return map;
 		});

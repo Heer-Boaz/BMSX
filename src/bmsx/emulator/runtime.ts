@@ -44,6 +44,7 @@ import { beginMeshQueue, beginParticleQueue, beginSpriteQueue, clearBackQueues }
 import { clearHardwareCamera } from '../render/shared/hardware_camera';
 import type { CartEditor } from './ide/cart_editor';
 import { type FaultSnapshot } from './ide/render/render_error_overlay';
+import { type CpuFrameSnapshot } from './cpu';
 import { type LuaSemanticModel, type FileSemanticData } from './ide/semantic_model';
 import { registerApiBuiltins } from './lua_builtins';
 import { LuaFunctionRedirectCache } from './lua_handler_registry';
@@ -696,6 +697,7 @@ export class Runtime {
 	private readonly assetMemoryGate = taskGate.group('asset:ram');
 	public handledLuaErrors = new WeakSet<any>();
 	public lastLuaCallStack: StackTraceFrame[] = [];
+	public lastCpuFaultSnapshot: CpuFrameSnapshot[] = [];
 	public faultSnapshot: FaultSnapshot = null;
 	public faultOverlayNeedsFlush = false;
 	public get doesFaultOverlayNeedFlush(): boolean {

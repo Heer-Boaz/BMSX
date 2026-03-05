@@ -1,4 +1,4 @@
-import { OpCode, type ProgramMetadata, type Proto, type SourceRange } from './cpu';
+import { OpCode, type ProgramMetadata, type Proto, type SourceRange, type LocalSlotDebug } from './cpu';
 import {
 	EXT_BX_BITS,
 	EXT_B_BITS,
@@ -230,6 +230,32 @@ const cloneProto = (proto: Proto, entryOffset: number): Proto => {
 	};
 };
 
+const cloneSourceRange = (range: SourceRange): SourceRange => ({
+	path: range.path,
+	start: { line: range.start.line, column: range.start.column },
+	end: { line: range.end.line, column: range.end.column },
+});
+
+const cloneLocalSlot = (slot: LocalSlotDebug): LocalSlotDebug => ({
+	name: slot.name,
+	register: slot.register,
+	definition: cloneSourceRange(slot.definition),
+	scope: cloneSourceRange(slot.scope),
+});
+
+const cloneLocalSlotsByProto = (
+	metadata: ProgramMetadata,
+	protoCount: number,
+): LocalSlotDebug[][] => {
+	const source = metadata.localSlotsByProto;
+	const out: LocalSlotDebug[][] = new Array(protoCount);
+	for (let index = 0; index < protoCount; index += 1) {
+		const slots = source && source[index] ? source[index] : [];
+		out[index] = slots.map(cloneLocalSlot);
+	}
+	return out;
+};
+
 const mergeMetadata = (
 	engine: ProgramMetadata | null,
 	cart: ProgramMetadata | null,
@@ -263,9 +289,12 @@ const mergeMetadata = (
 	for (let index = 0; index < cartInstructionCount; index += 1) {
 		debugRanges[cartBaseWord + index] = cart.debugRanges[index];
 	}
+	const localSlotsByProto = cloneLocalSlotsByProto(engine, engine.protoIds.length)
+		.concat(cloneLocalSlotsByProto(cart, cart.protoIds.length));
 	return {
 		debugRanges,
 		protoIds: engine.protoIds.concat(cart.protoIds),
+		localSlotsByProto,
 	};
 };
 

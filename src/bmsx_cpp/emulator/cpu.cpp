@@ -918,6 +918,17 @@ std::vector<std::pair<int, int>> CPU::getCallStack() const {
 	return stack;
 }
 
+Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
+	if (frameIndex < 0 || frameIndex >= static_cast<int>(m_frames.size())) {
+		throw BMSX_RUNTIME_ERROR("[CPU] Frame index out of range: " + std::to_string(frameIndex) + ".");
+	}
+	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
+	if (registerIndex < 0 || registerIndex >= static_cast<int>(frame.registers.size())) {
+		throw BMSX_RUNTIME_ERROR("[CPU] Register index out of range: " + std::to_string(registerIndex) + ".");
+	}
+	return frame.registers[static_cast<size_t>(registerIndex)];
+}
+
 void CPU::skipNextInstruction(CallFrame& frame) {
 	int pc = frame.pc;
 	int wordIndex = pc / INSTRUCTION_BYTES;

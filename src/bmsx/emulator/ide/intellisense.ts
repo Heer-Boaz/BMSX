@@ -11,8 +11,11 @@ import { LuaInterpreter } from '../../lua/luaruntime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/luavalue';
 import { Api } from '../api';
 import { API_METHOD_METADATA } from '../api_metadata';
+import { Table, type LocalSlotDebug, type SourceRange, type Value } from '../cpu';
+import { buildMarshalContext, toNativeValue } from '../lua_js_bridge';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
+import { isStringValue, stringValueToString } from '../string_pool';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry, LuaSymbolKind } from '../types';
 import { ScratchBatchPooled } from '../../utils/scratchbatch';
 import { resolveDefinitionLocationForExpression, type ProjectReferenceEnvironment } from './code_reference';
@@ -1088,7 +1091,7 @@ export function shouldAutoTriggerCompletions(): boolean {
 		clearHoverTooltip();
 		return;
 	}
-	if (inspection.isFunction && (inspection.isLocalFunction || inspection.isBuiltin)) {
+	if (inspection.isFunction && (inspection.isLocalFunction || inspection.isBuiltin) && inspection.state !== 'value') {
 		clearHoverTooltip();
 		return;
 	}
@@ -1730,7 +1733,7 @@ export function inspectLuaExpression(request: LuaHoverRequest): LuaHoverResult {
 	}
 	const usageRow = Number.isFinite(request.row) ? Math.max(1, Math.floor(request.row)) : null;
 	const usageColumn = Number.isFinite(request.column) ? Math.max(1, Math.floor(request.column)) : null;
-	const resolved = resolveLuaChainValue(chain, request.path);
+	const resolved = resolveLuaChainValue(chain, request.path, usageRow, usageColumn);
 	const staticDefinition = findStaticDefinitionLocation(chain, usageRow, usageColumn, request.path);
 	if (!resolved) {
 		if (!staticDefinition) {
@@ -1794,7 +1797,7 @@ export function listLuaObjectMembers(request: LuaMemberCompletionRequest): LuaMe
 	if (!chain) {
 		return [];
 	}
-	const resolved = resolveLuaChainValue(chain, request.path);
+	const resolved = resolveLuaChainValue(chain, request.path, null, null);
 	if (!resolved || resolved.kind !== 'value') {
 		return [];
 	}
@@ -2084,7 +2087,7 @@ export function getStaticDefinitions(preferredChunk: string): { definitions: Rea
 	const matchingChunks: Array<{ path: string; info: { asset_id: string; path?: string } }> = [];
 	for (const asset of Object.values($.lua_sources.path2lua) as LuaSourceRecord[]) {
 		const path = asset.source_path;
-		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.normalized_source_path };
+		const info: { asset_id: string; path?: string } = { asset_id: asset.resid, path: asset.source_path };
 		const matchesPath = preferredChunk !== null && info.path === preferredChunk;
 		const matchesChunk = preferredChunk !== null && path === preferredChunk;
 		if (!matchesPath && !matchesChunk) {
@@ -2189,107 +2192,364 @@ export function positionWithinRange(row: number, column: number, range: LuaSourc
 	return true;
 }
 
+function positionAfterOrEqual(
+	row: number,
+	column: number,
+	start: { line: number; column: number },
+): boolean {
+	if (row > start.line) {
+		return true;
+	}
+	if (row < start.line) {
+		return false;
+	}
+	if (column === null) {
+		return true;
+	}
+	return column >= start.column;
+}
+
+function rangeArea(range: SourceRange): number {
+	const lineSpan = Math.max(0, range.end.line - range.start.line);
+	const columnSpan = Math.max(0, range.end.column - range.start.column);
+	return (lineSpan * 100000) + columnSpan;
+}
+
 export function parseLuaIdentifierChain(expression: string): string[] {
 	if (!expression) {
 		return null;
 	}
-	const parts = expression.split('.');
-	if (parts.length === 0) {
+	const parts: string[] = [];
+	let segmentStart = 0;
+	for (let index = 0; index < expression.length; index += 1) {
+		const ch = expression.charAt(index);
+		if (ch !== '.' && ch !== ':') {
+			continue;
+		}
+		const segment = expression.slice(segmentStart, index);
+		if (!isValidIdentifierSegment(segment)) {
+			return null;
+		}
+		parts.push(segment);
+		segmentStart = index + 1;
+	}
+	const tailSegment = expression.slice(segmentStart);
+	if (!isValidIdentifierSegment(tailSegment)) {
 		return null;
 	}
-	for (let i = 0; i < parts.length; i += 1) {
-		const part = parts[i];
-		if (part.length === 0) {
-			return null;
-		}
-		if (!LuaLexer.isIdentifierStart(part.charAt(0))) {
-			return null;
-		}
-		for (let j = 1; j < part.length; j += 1) {
-			if (!LuaLexer.isIdentifierPart(part.charAt(j))) {
-				return null;
-			}
-		}
-	}
+	parts.push(tailSegment);
 	return parts;
 }
 
-export function resolveLuaChainValue(parts: string[], path: string): ({ kind: 'value'; value: LuaValue; scope: LuaHoverScope; definitionRange: LuaSourceRange } | { kind: 'not_defined'; scope: LuaHoverScope }) {
+function isValidIdentifierSegment(value: string): boolean {
+	if (value.length === 0) {
+		return false;
+	}
+	if (!LuaLexer.isIdentifierStart(value.charAt(0))) {
+		return false;
+	}
+	for (let index = 1; index < value.length; index += 1) {
+		if (!LuaLexer.isIdentifierPart(value.charAt(index))) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function resolveTableChainMemberValue(table: LuaTable, key: string): LuaValue {
+	const chain = resolveTableChain(table);
+	for (let index = 0; index < chain.length; index += 1) {
+		const value = chain[index].get(key);
+		if (value !== null) {
+			return value;
+		}
+	}
+	return null;
+}
+
+function resolveNativePropertyNameForIntellisense(target: object | Function, propertyName: string): string | null {
+	if (propertyName in target) {
+		return propertyName;
+	}
+	const upper = propertyName.toUpperCase();
+	let prototype: object = target;
+	while (prototype && prototype !== Object.prototype) {
+		const propertyNames = Object.getOwnPropertyNames(prototype);
+		for (let index = 0; index < propertyNames.length; index += 1) {
+			const candidate = propertyNames[index];
+			if (candidate === propertyName) {
+				return candidate;
+			}
+			if (candidate.toUpperCase() === upper) {
+				return candidate;
+			}
+		}
+		prototype = Object.getPrototypeOf(prototype);
+	}
+	return null;
+}
+
+function wrapHostValueForIntellisense(value: unknown): LuaValue {
+	if (value === null || value === undefined) {
+		return null;
+	}
+	if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+		return value;
+	}
+	if (isLuaTable(value) || isLuaFunctionValue(value) || value instanceof LuaNativeValue) {
+		return value;
+	}
+	if (typeof value === 'object' || typeof value === 'function') {
+		const native = value as object | Function;
+		const runtime = Runtime.instance;
+		return runtime.interpreter.getOrCreateNativeValue(native, resolveNativeTypeName(native));
+	}
+	return null;
+}
+
+function wrapRuntimeValueForIntellisense(value: Value): LuaValue {
+	if (value === null || typeof value === 'boolean' || typeof value === 'number') {
+		return value as LuaValue;
+	}
+	if (isStringValue(value)) {
+		return stringValueToString(value);
+	}
+	const runtime = Runtime.instance;
+	const marshalContext = buildMarshalContext(runtime);
+	const native = toNativeValue(runtime, value, marshalContext, new WeakMap<Table, unknown>());
+	return wrapHostValueForIntellisense(native);
+}
+
+function walkValueChain(root: LuaValue, parts: ReadonlyArray<string>, startIndex: number): LuaValue | null {
+	let current: LuaValue = root;
+	for (let index = startIndex; index < parts.length; index += 1) {
+		const part = parts[index];
+		if (isLuaTable(current)) {
+			current = resolveTableChainMemberValue(current, part);
+		} else if (current instanceof LuaNativeValue) {
+			current = resolveNativeChainMemberValue(current, part);
+		} else {
+			return null;
+		}
+		if (current === null) {
+			return null;
+		}
+	}
+	return current;
+}
+
+function resolveRuntimeLocalChainValue(
+	parts: ReadonlyArray<string>,
+	path: string,
+	usageRow: number,
+	usageColumn: number,
+): ({ kind: 'value'; value: LuaValue; definitionRange: LuaSourceRange } | { kind: 'not_defined' }) | null {
+	if (parts.length === 0 || !path || usageRow === null) {
+		return null;
+	}
+	const runtime = Runtime.instance;
+	const metadata = runtime.programMetadata;
+	if (!metadata?.localSlotsByProto) {
+		return null;
+	}
+	const requestedRecord = runtimeLuaPipeline.resolveLuaSourceRecord(runtime, path);
+	const requestedPath = requestedRecord ? requestedRecord.source_path : path;
+	// Use the fault snapshot when the fault overlay is active — by hover time, the crash
+	// frame has been popped from the live CPU stack, so we must use the saved registers.
+	const faultSnapshot = runtime.faultSnapshot ? runtime.lastCpuFaultSnapshot : null;
+	const callStack = faultSnapshot ?? runtime.cpu.getCallStack();
+	if (callStack.length === 0) {
+		return null;
+	}
+	const canonicalRoot = runtime.canonicalizeIdentifier(parts[0]);
+	let selectedFrameIndex = -1;
+	let selectedSlot: LocalSlotDebug = null;
+	for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
+		const frame = callStack[frameIndex];
+		const frameRange = runtime.cpu.getDebugRange(frame.pc);
+		if (!frameRange || frameRange.path !== requestedPath) {
+			continue;
+		}
+		const slots = metadata.localSlotsByProto[frame.protoIndex];
+		if (!slots || slots.length === 0) {
+			continue;
+		}
+		let frameBest: LocalSlotDebug = null;
+		for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
+			const slot = slots[slotIndex];
+			if (slot.name !== canonicalRoot) {
+				continue;
+			}
+			const slotScope = slot.scope as unknown as LuaSourceRange;
+			const frameRow = frameRange.start.line;
+			const frameColumn = frameRange.start.column;
+			const usageInScope = positionWithinRange(usageRow, usageColumn, slotScope);
+			const usageAfterDef = positionAfterOrEqual(usageRow, usageColumn, slot.definition.start);
+			const frameInScope = positionWithinRange(frameRow, frameColumn, slotScope);
+			const isTopFrame = frameIndex === callStack.length - 1;
+			const frameAfterDef = positionAfterOrEqual(frameRow, frameColumn, slot.definition.start);
+			if (!usageInScope || !usageAfterDef || !frameInScope || (isTopFrame && !frameAfterDef)) {
+				continue;
+			}
+			if (!frameBest || rangeArea(slot.scope) < rangeArea(frameBest.scope)) {
+				frameBest = slot;
+			}
+		}
+		if (frameBest) {
+			selectedFrameIndex = frameIndex;
+			selectedSlot = frameBest;
+			break;
+		}
+	}
+	if (selectedFrameIndex < 0 || !selectedSlot) {
+		const upvalueNamesByProto = metadata.upvalueNamesByProto;
+		if (upvalueNamesByProto) {
+			for (let frameIndex = callStack.length - 1; frameIndex >= 0; frameIndex -= 1) {
+				const frame = callStack[frameIndex];
+				const frameRange = runtime.cpu.getDebugRange(frame.pc);
+				if (!frameRange || frameRange.path !== requestedPath) {
+					continue;
+				}
+				const frameUpvalueNames = upvalueNamesByProto[frame.protoIndex];
+				if (!frameUpvalueNames) {
+					continue;
+				}
+				const upvalueIndex = frameUpvalueNames.indexOf(canonicalRoot);
+				if (upvalueIndex === -1) {
+					continue;
+				}
+				const chained = walkValueChain(wrapRuntimeValueForIntellisense(runtime.cpu.readFrameUpvalue(frameIndex, upvalueIndex)), parts, 1);
+				if (chained === null) {
+					return { kind: 'not_defined' };
+				}
+				return { kind: 'value', value: chained, definitionRange: null };
+			}
+		}
+		return null;
+	}
+	const rawRegValue = faultSnapshot
+		? faultSnapshot[selectedFrameIndex].registers[selectedSlot.register]
+		: runtime.cpu.readFrameRegister(selectedFrameIndex, selectedSlot.register);
+	const chained = walkValueChain(wrapRuntimeValueForIntellisense(rawRegValue), parts, 1);
+	if (chained === null) {
+		return { kind: 'not_defined' };
+	}
+	return {
+		kind: 'value',
+		value: chained,
+		definitionRange: selectedSlot.definition as unknown as LuaSourceRange,
+	};
+}
+
+function resolveRuntimeGlobalChainValue(parts: ReadonlyArray<string>): ({ kind: 'value'; value: LuaValue } | { kind: 'not_defined' }) | null {
+	const runtime = Runtime.instance;
+	const rootRaw = runtime.cpu.globals.get(runtime.canonicalKey(parts[0]));
+	if (rootRaw === null) {
+		return null;
+	}
+	const chained = walkValueChain(wrapRuntimeValueForIntellisense(rootRaw), parts, 1);
+	if (chained === null) {
+		return { kind: 'not_defined' };
+	}
+	return { kind: 'value', value: chained };
+}
+
+function resolveNativeChainMemberValue(target: LuaNativeValue, key: string): LuaValue {
+	const metatable = target.metatable;
+	if (metatable) {
+		const indexHandler = metatable.get('__index');
+		if (isLuaTable(indexHandler)) {
+			const tableValue = resolveTableChainMemberValue(indexHandler, key);
+			if (tableValue !== null) {
+				return tableValue;
+			}
+		}
+	}
+	const resolvedName = resolveNativePropertyNameForIntellisense(target.native, key);
+	if (!resolvedName) {
+		return null;
+	}
+	return wrapHostValueForIntellisense(Reflect.get(target.native, resolvedName));
+}
+
+export function resolveLuaChainValue(
+	parts: string[],
+	path: string,
+	usageRow: number,
+	usageColumn: number,
+): ({ kind: 'value'; value: LuaValue; scope: LuaHoverScope; definitionRange: LuaSourceRange } | { kind: 'not_defined'; scope: LuaHoverScope }) {
 	if (!parts || parts.length === 0) {
 		return null;
 	}
 	const runtime = Runtime.instance;
 	const interpreter = runtime.interpreter;
 	const root = parts[0];
-	let value: LuaValue = null;
-	let scope: LuaHoverScope = 'global';
-	let found = false;
-	let definitionEnv: LuaEnvironment = null;
-	let definitionRange: LuaSourceRange = null;
 	const globalEnv = interpreter.globalEnvironment;
 
+	// Priority 1: CPU local slots (bytecode CPU execution / fault)
+	const localResult = resolveRuntimeLocalChainValue(parts, path, usageRow, usageColumn);
+	if (localResult) {
+		if (localResult.kind === 'not_defined') {
+			return { kind: 'not_defined', scope: 'path' };
+		}
+		return { kind: 'value', value: localResult.value, scope: 'path', definitionRange: localResult.definitionRange };
+	}
+
+	// Priority 2: CPU globals table
+	const globalResult = resolveRuntimeGlobalChainValue(parts);
+	if (globalResult) {
+		if (globalResult.kind === 'not_defined') {
+			return { kind: 'not_defined', scope: 'global' };
+		}
+		return { kind: 'value', value: globalResult.value, scope: 'global', definitionRange: null };
+	}
+
+	// Priority 3: Interpreter fault environment (tree-walker)
 	const frameEnv = interpreter.lastFaultEnvironment;
 	if (frameEnv) {
 		const resolved = resolveIdentifierThroughChain(frameEnv, root, interpreter);
 		if (resolved) {
-			value = resolved.value;
-			scope = resolved.scope;
-			found = true;
-			definitionEnv = resolved.environment;
-		}
-	}
-	if (!found && path) {
-		const env = runtime.luaChunkEnvironmentsByPath.get(path) ?? runtime.luaChunkEnvironmentsByPath.get(path);
-		if (env && env.hasLocal(root)) {
-			value = env.get(root);
-			scope = env === globalEnv ? 'global' : 'path';
-			found = true;
-			definitionEnv = env;
-		}
-	}
-	if (!found) {
-		const path = runtime.currentPath;
-		if (path) {
-			const envByChunk = runtime.luaChunkEnvironmentsByPath.get(path);
-			if (envByChunk && envByChunk.hasLocal(root)) {
-				value = envByChunk.get(root);
-				scope = envByChunk === globalEnv ? 'global' : 'path';
-				found = true;
-				definitionEnv = envByChunk;
+			const chained = walkValueChain(resolved.value, parts, 1);
+			if (chained === null) {
+				return { kind: 'not_defined', scope: resolved.scope };
 			}
+			return {
+				kind: 'value',
+				value: chained,
+				scope: resolved.scope,
+				definitionRange: resolved.environment.getDefinition(root),
+			};
 		}
 	}
-	if (!found) {
-		if (globalEnv.hasLocal(root)) {
-			value = globalEnv.get(root);
-			scope = 'global';
-			found = true;
-			definitionEnv = globalEnv;
+
+	// Priority 4: Interpreter chunk environments
+	const envsToSearch: LuaEnvironment[] = [];
+	if (path) {
+		const env = runtime.luaChunkEnvironmentsByPath.get(path);
+		if (env) {
+			envsToSearch.push(env);
 		}
 	}
-	if (!found) {
-		return null;
+	const currentPathEnv = runtime.currentPath ? runtime.luaChunkEnvironmentsByPath.get(runtime.currentPath) : null;
+	if (currentPathEnv && !envsToSearch.includes(currentPathEnv)) {
+		envsToSearch.push(currentPathEnv);
 	}
-	if (definitionEnv) {
-		definitionRange = definitionEnv.getDefinition(root);
+	if (!envsToSearch.includes(globalEnv)) {
+		envsToSearch.push(globalEnv);
 	}
-	if (value === undefined) {
-		return null;
-	}
-	let current: LuaValue = value;
-	for (let index = 1; index < parts.length; index += 1) {
-		const part = parts[index];
-		if (!(isLuaTable(current))) {
+	for (const env of envsToSearch) {
+		if (!env.hasLocal(root)) {
+			continue;
+		}
+		const scope: LuaHoverScope = env === globalEnv ? 'global' : 'path';
+		const chained = walkValueChain(env.get(root) as LuaValue, parts, 1);
+		if (chained === null) {
 			return { kind: 'not_defined', scope };
 		}
-		const nextValue = current.get(part);
-		if (nextValue === null) {
-			return { kind: 'not_defined', scope };
-		}
-		current = nextValue;
-		definitionRange = null;
+		return { kind: 'value', value: chained, scope, definitionRange: env.getDefinition(root) };
 	}
-	return { kind: 'value', value: current, scope, definitionRange };
+
+	return null;
 }
 
 export function resolveIdentifierThroughChain(environment: LuaEnvironment, name: string, interpreter: LuaInterpreter): { environment: LuaEnvironment; value: LuaValue; scope: LuaHoverScope } {
@@ -2345,12 +2605,12 @@ export function describeLuaValueForInspector(value: LuaValue): { lines: string[]
 	}
 	if (isLuaTable(value)) {
 		const tableName = resolveTableTypeName(value);
-		const preview = valueToString(value);
+		const preview = formatLuaValuePreview(value);
 		const lines = tableName ? [`<table ${tableName}>`] : ['<table>'];
 		lines.push(preview);
 		return { lines, valueType: tableName ?? 'table', isFunction: false };
 	}
-	const summary = valueToString(value);
+	const summary = formatLuaValuePreview(value);
 	return { lines: [summary], valueType: 'unknown', isFunction: false };
 }
 
@@ -2632,7 +2892,7 @@ export function describeLuaTable(table: LuaTable, depth: number, visited: Set<un
 			stringEntries.push({ key, value: entryValue });
 			continue;
 		}
-		otherEntries.push({ key: valueToString(key as LuaValue, depth + 1, visited), value: entryValue });
+			otherEntries.push({ key: formatLuaValuePreview(key as LuaValue, depth + 1, visited), value: entryValue });
 	}
 	const sequentialValues: LuaValue[] = [];
 	let seqIndex = 1;
@@ -2651,7 +2911,7 @@ export function describeLuaTable(table: LuaTable, depth: number, visited: Set<un
 		if (consumed >= limit) {
 			return;
 		}
-		parts.push(`${label} = ${valueToString(entryValue, depth + 1, visited)}`);
+			parts.push(`${label} = ${formatLuaValuePreview(entryValue, depth + 1, visited)}`);
 		consumed += 1;
 	};
 	stringEntries.sort((a, b) => a.key.localeCompare(b.key));
@@ -2738,7 +2998,7 @@ export function formatValueList(values: LuaValue[], depth: number, visited: Set<
 	const parts: string[] = [];
 	const limit = Math.min(values.length, PREVIEW_MAX_ENTRIES);
 	for (let i = 0; i < limit; i += 1) {
-		parts.push(valueToString(values[i], depth + 1, visited));
+		parts.push(formatLuaValuePreview(values[i], depth + 1, visited));
 	}
 	return parts.join(', ');
 }
@@ -2794,7 +3054,7 @@ export function formatJsValue(value: unknown, depth: number, visited: Set<unknow
 	return String(value);
 }
 
-export function valueToString(value: LuaValue, depth = 0, visited: Set<unknown> = new Set()): string {
+function formatLuaValuePreview(value: LuaValue, depth = 0, visited: Set<unknown> = new Set()): string {
 	if (value === null) {
 		return 'nil';
 	}

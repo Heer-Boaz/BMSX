@@ -295,6 +295,12 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 	if (static_cast<int>(cart->debugRanges.size()) != cartInstructionCount) {
 		throw std::runtime_error("[ProgramLinker] Cart debug range length mismatch.");
 	}
+	if (engine->localSlotsByProto.size() != engine->protoIds.size()) {
+		throw std::runtime_error("[ProgramLinker] Engine local slot metadata length mismatch.");
+	}
+	if (cart->localSlotsByProto.size() != cart->protoIds.size()) {
+		throw std::runtime_error("[ProgramLinker] Cart local slot metadata length mismatch.");
+	}
 	const int engineBaseWord = layout.engineBasePc / INSTRUCTION_BYTES;
 	const int cartBaseWord = layout.cartBasePc / INSTRUCTION_BYTES;
 	const int totalInstructionCount = std::max(engineBaseWord + engineInstructionCount, cartBaseWord + cartInstructionCount);
@@ -308,6 +314,12 @@ std::unique_ptr<ProgramMetadata> mergeMetadata(
 	}
 	merged->protoIds = engine->protoIds;
 	merged->protoIds.insert(merged->protoIds.end(), cart->protoIds.begin(), cart->protoIds.end());
+	merged->localSlotsByProto = engine->localSlotsByProto;
+	merged->localSlotsByProto.insert(
+		merged->localSlotsByProto.end(),
+		cart->localSlotsByProto.begin(),
+		cart->localSlotsByProto.end()
+	);
 	return merged;
 }
 

@@ -450,9 +450,17 @@ struct Program {
 	bool constPoolCanonicalized = false;
 };
 
+struct LocalSlotDebug {
+	std::string name;
+	int reg = 0;
+	SourceRange definition;
+	SourceRange scope;
+};
+
 struct ProgramMetadata {
 	std::vector<std::optional<SourceRange>> debugRanges;
 	std::vector<std::string> protoIds;
+	std::vector<std::vector<LocalSlotDebug>> localSlotsByProto;
 };
 
 constexpr int INSTRUCTION_BYTES = 4;
@@ -683,6 +691,7 @@ public:
 	bool hasFrames() const { return !m_frames.empty(); }
 	std::optional<SourceRange> getDebugRange(int pc) const;
 	std::vector<std::pair<int, int>> getCallStack() const;
+	Value readFrameRegister(int frameIndex, int registerIndex) const;
 
 	int instructionBudgetRemaining = 0;
 	std::vector<Value> lastReturnValues;

@@ -1,4 +1,4 @@
-import { OpCode, type Program, type ProgramMetadata, type Proto, type SourceRange } from './cpu';
+import { OpCode, type Program, type ProgramMetadata, type Proto, type SourceRange, type LocalSlotDebug } from './cpu';
 import { EXT_BX_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_BX, MAX_LOW_BX, readInstructionWord, writeInstruction } from './instruction_format';
 
 const buildProtoIdIndex = (metadata: ProgramMetadata): Map<string, number> => {
@@ -23,6 +23,35 @@ const cloneProto = (proto: Proto): Proto => {
 		maxStack: proto.maxStack,
 		upvalueDescs,
 	};
+};
+
+const cloneSourceRange = (range: SourceRange): SourceRange => ({
+	path: range.path,
+	start: { line: range.start.line, column: range.start.column },
+	end: { line: range.end.line, column: range.end.column },
+});
+
+const cloneLocalSlot = (slot: LocalSlotDebug): LocalSlotDebug => ({
+	name: slot.name,
+	register: slot.register,
+	definition: cloneSourceRange(slot.definition),
+	scope: cloneSourceRange(slot.scope),
+});
+
+const cloneLocalSlotsByProto = (
+	metadata: ProgramMetadata,
+	order: ReadonlyArray<string>,
+	idToIndex: Map<string, number>,
+): LocalSlotDebug[][] => {
+	const source = metadata.localSlotsByProto;
+	const out: LocalSlotDebug[][] = new Array(order.length);
+	for (let index = 0; index < order.length; index += 1) {
+		const protoId = order[index];
+		const oldIndex = idToIndex.get(protoId);
+		const slots = source && oldIndex !== undefined && source[oldIndex] ? source[oldIndex] : [];
+		out[index] = slots.map(cloneLocalSlot);
+	}
+	return out;
 };
 
 const rewriteClosureIndices = (code: Uint8Array, indexMap: ReadonlyArray<number>): void => {
@@ -130,6 +159,7 @@ const rebuildProgram = (
 		metadata: {
 			debugRanges,
 			protoIds: Array.from(order),
+			localSlotsByProto: cloneLocalSlotsByProto(metadata, order, idToIndex),
 		},
 	};
 };

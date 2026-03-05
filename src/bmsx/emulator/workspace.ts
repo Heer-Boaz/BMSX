@@ -21,13 +21,12 @@ type WorkspaceWinnerKind = 'override' | 'canonical' | 'rom';
 export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
 	const cart = $.lua_sources;
 	const asset = cart.path2lua[path];
-	const absPath = asset.source_path;
-	await persistLuaSourceToFilesystem(absPath, source);
+	const sourcePath = asset.source_path;
+	await persistLuaSourceToFilesystem(sourcePath, source);
 	asset.src = source;
 	asset.update_timestamp = $.platform.clock.dateNow();
-	cart.path2lua![path] = asset;
-	cart.path2lua![absPath] = asset;
-	runtimeLuaPipeline.markSourceChunkAsDirty(Runtime.instance, path);
+	cart.path2lua![sourcePath] = asset;
+	runtimeLuaPipeline.markSourceChunkAsDirty(Runtime.instance, sourcePath);
 }
 
 export async function createLuaResource(request: LuaResourceCreationRequest): Promise<ResourceDescriptor> {
@@ -43,12 +42,10 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 		src: contents,
 		base_src: contents,
 		source_path: path,
-		normalized_source_path: path,
 		update_timestamp: $.platform.clock.dateNow(),
 	};
 	const registerAsset = (cart: LuaSourceRegistry): void => {
 		cart.path2lua![asset.source_path] = asset;
-		cart.path2lua![asset.normalized_source_path] = asset;
 	};
 	registerAsset($.lua_sources);
 	runtimeLuaPipeline.invalidateModuleAliases(Runtime.instance);
@@ -126,7 +123,7 @@ export function collectWorkspaceOverrides(params: { cart: LuaSourceRegistry; pro
 	const root = rootRaw;
 	const storage = params.storage;
 	for (const asset of Object.values(params.cart.path2lua)) {
-		const cartPath = asset.normalized_source_path;
+		const cartPath = asset.source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		let bestSource: string = null;
 		let bestUpdatedAt = asset.update_timestamp ?? 0;
@@ -389,7 +386,7 @@ export async function fetchWorkspaceDirtyLuaOverrides(cart: LuaSourceRegistry, r
 	// Fetching dirty files from backend is best-effort. Missing files do NOT mean we should
 	// discard in-memory dirty edits; they simply yield no extra overrides.
 	for (const asset of Object.values(cart.path2lua)) {
-		const filePath = asset.normalized_source_path;
+		const filePath = asset.source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, filePath);
 		tasks.push(fetchWorkspaceFile(dirtyPath).then((result) => {
 			if (result === null) {
@@ -416,7 +413,7 @@ export async function fetchWorkspaceDirtyLuaOverrides(cart: LuaSourceRegistry, r
 async function fetchWorkspaceCanonicalLua(cart: LuaSourceRegistry, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 	const tasks: Array<Promise<WorkspaceOverrideRecord>> = [];
 	for (const asset of Object.values(cart.path2lua)) {
-		const canonicalPath = resolveWorkspacePathForIo(asset.normalized_source_path, root);
+		const canonicalPath = resolveWorkspacePathForIo(asset.source_path, root);
 		tasks.push(fetchWorkspaceFile(canonicalPath).then((result) => {
 			if (!result) {
 				return null;
@@ -427,8 +424,8 @@ async function fetchWorkspaceCanonicalLua(cart: LuaSourceRegistry, root: string)
 			const updatedAt = typeof result.updatedAt === 'number' ? result.updatedAt : asset.update_timestamp ?? 0;
 			return {
 				source: result.contents,
-				path: asset.normalized_source_path,
-				cartPath: asset.normalized_source_path,
+				path: asset.source_path,
+				cartPath: asset.source_path,
 				updatedAt,
 			};
 		}));
@@ -639,7 +636,7 @@ export async function applyWorkspaceOverridesToCart(params: { cart: LuaSourceReg
 	const canonicalOverrides = includeServer ? await fetchWorkspaceCanonicalLua(cart, root) : new Map<string, WorkspaceOverrideRecord>();
 
 	for (const asset of Object.values(cart.path2lua)) {
-		const filePath = asset.normalized_source_path;
+		const filePath = asset.source_path;
 		const romTimestamp = asset.update_timestamp ?? 0;
 		const localDirty = localOverrides.get(filePath);
 		const serverDirty = serverOverrides.get(filePath);
@@ -717,7 +714,7 @@ export async function applyWorkspaceOverridesToCart(params: { cart: LuaSourceReg
 export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
 	const root = $.assets.project_root_path;
 	for (const asset of Object.values(cart.path2lua)) {
-		const cartPath = asset.normalized_source_path;
+		const cartPath = asset.source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 		storage.removeItem(storageKey);
@@ -733,7 +730,7 @@ async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: Storag
 	const root = $.assets.project_root_path;
 	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 	for (const asset of Object.values(cart.path2lua)) {
-		const cartPath = asset.normalized_source_path;
+		const cartPath = asset.source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
 		const storageKey = buildWorkspaceStorageKey(root, dirtyPath);
 		storage.removeItem(storageKey);
@@ -765,7 +762,7 @@ export function listResources(): ResourceDescriptor[] {
 		const registry = entry.registry;
 		const readOnly = entry.readOnly;
 		for (const asset of Object.values(registry.path2lua)) {
-			const path = asset.normalized_source_path;
+			const path = asset.source_path;
 			if (descriptorsByPath.has(path)) {
 				continue;
 			}

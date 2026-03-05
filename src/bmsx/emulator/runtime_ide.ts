@@ -474,6 +474,7 @@ export function clearEditorErrorOverlaysIfNoFault(runtime: Runtime): void {
 
 export function clearFaultSnapshot(runtime: Runtime): void {
 	runtime.faultSnapshot = null;
+	runtime.lastCpuFaultSnapshot = [];
 	runtime.faultOverlayNeedsFlush = false;
 }
 
@@ -574,6 +575,7 @@ export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 		return;
 	}
 	runtimeLuaPipeline.logDebugState(runtime);
+	runtime.lastCpuFaultSnapshot = runtime.cpu.snapshotCallStack();
 	runtime.lastLuaCallStack = buildLuaStackFrames(runtime);
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
 	const { line, column, path } = extractErrorLocation(runtime, error);

@@ -16,6 +16,13 @@ export type SourceRange = {
 	end: SourcePosition;
 };
 
+export type LocalSlotDebug = {
+	name: string;
+	register: number;
+	definition: SourceRange;
+	scope: SourceRange;
+};
+
 const NATIVE_FUNCTION_KIND = 'native_function';
 const NATIVE_OBJECT_KIND = 'native_object';
 
@@ -94,6 +101,14 @@ export function isNativeObject(value: Value): value is NativeObject {
 export type ProgramMetadata = {
 	debugRanges: ReadonlyArray<SourceRange | null>;
 	protoIds: string[];
+	localSlotsByProto?: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;
+	upvalueNamesByProto?: ReadonlyArray<ReadonlyArray<string>>;
+};
+
+export type CpuFrameSnapshot = {
+	protoIndex: number;
+	pc: number;
+	registers: Value[];
 };
 
 export type Program = {
@@ -1268,6 +1283,43 @@ export class CPU {
 			stack.push({ protoIndex: frame.protoIndex, pc });
 		}
 		return stack;
+	}
+
+	public snapshotCallStack(): CpuFrameSnapshot[] {
+		const frames = this.frames;
+		const topIndex = frames.length - 1;
+		const result: CpuFrameSnapshot[] = [];
+		for (let index = 0; index < frames.length; index += 1) {
+			const frame = frames[index];
+			const pc = index === topIndex ? this.lastPc : frame.callSitePc;
+			const proto = this.program.protos[frame.protoIndex];
+			const registers: Value[] = new Array(proto.maxStack);
+			for (let r = 0; r < proto.maxStack; r += 1) {
+				registers[r] = frame.registers.get(r);
+			}
+			result.push({ protoIndex: frame.protoIndex, pc, registers });
+		}
+		return result;
+	}
+
+	public readFrameRegister(frameIndex: number, registerIndex: number): Value {
+		const frame = this.frames[frameIndex];
+		if (!frame) {
+			throw new Error(`[CPU] Frame index out of range: ${frameIndex}.`);
+		}
+		return frame.registers.get(registerIndex);
+	}
+
+	public readFrameUpvalue(frameIndex: number, upvalueIndex: number): Value {
+		const frame = this.frames[frameIndex];
+		if (!frame) {
+			throw new Error(`[CPU] Frame index out of range: ${frameIndex}.`);
+		}
+		const upvalue = frame.closure.upvalues[upvalueIndex];
+		if (upvalue.open) {
+			return upvalue.frame.registers.get(upvalue.index);
+		}
+		return upvalue.value;
 	}
 
 	public getConst(index: number): Value {

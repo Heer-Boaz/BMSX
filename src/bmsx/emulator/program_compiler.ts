@@ -27,7 +27,7 @@ import {
 	type LuaGotoStatement,
 } from '../lua/lua_ast';
 import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
-import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange } from './cpu';
+import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from './cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './program_optimizer';
 import type { ProgramConstReloc } from './program_asset';
 import { StringPool, StringValue, isStringValue } from './string_pool';
@@ -85,6 +85,11 @@ type LoopContext = {
 	breakJumps: number[];
 };
 
+type ScopeFrame = {
+	names: string[];
+	range: SourceRange;
+};
+
 const RK_B = 1;
 const RK_C = 2;
 
@@ -103,6 +108,8 @@ class ProgramBuilder {
 	public readonly protoCode: Uint8Array[] = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
 	public readonly protoConstRelocs: ReadonlyArray<ProgramConstReloc>[] = [];
+	public readonly protoLocalSlots: ReadonlyArray<LocalSlotDebug>[] = [];
+	public readonly protoUpvalueNames: ReadonlyArray<string>[] = [];
 	public readonly protoInstructionSets: Array<InstructionSet | null> = [];
 	public readonly protoIds: string[] = [];
 	private readonly protoIdMap: Map<string, number> = new Map();
@@ -150,6 +157,8 @@ class ProgramBuilder {
 		code: Uint8Array,
 		ranges: ReadonlyArray<SourceRange | null>,
 		constRelocs: ReadonlyArray<ProgramConstReloc>,
+		localSlots: ReadonlyArray<LocalSlotDebug>,
+		upvalueNames: ReadonlyArray<string>,
 		protoId: string,
 		instructionSet: InstructionSet | null,
 	): number {
@@ -163,6 +172,8 @@ class ProgramBuilder {
 			this.protoCode[existing] = code;
 			this.protoRanges[existing] = ranges;
 			this.protoConstRelocs[existing] = constRelocs;
+			this.protoLocalSlots[existing] = localSlots.map(cloneLocalSlotDebug);
+			this.protoUpvalueNames[existing] = Array.from(upvalueNames);
 			this.protoInstructionSets[existing] = instructionSet;
 			this.protoIds[existing] = protoId;
 			return existing;
@@ -172,6 +183,8 @@ class ProgramBuilder {
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
 		this.protoConstRelocs.push(constRelocs);
+		this.protoLocalSlots.push(localSlots.map(cloneLocalSlotDebug));
+		this.protoUpvalueNames.push(Array.from(upvalueNames));
 		this.protoInstructionSets.push(instructionSet);
 		this.protoIds.push(protoId);
 		this.protoIdMap.set(protoId, index);
@@ -183,6 +196,8 @@ class ProgramBuilder {
 		code: Uint8Array,
 		ranges: ReadonlyArray<SourceRange | null>,
 		constRelocs: ReadonlyArray<ProgramConstReloc>,
+		localSlots: ReadonlyArray<LocalSlotDebug>,
+		upvalueNames: ReadonlyArray<string>,
 		protoId: string,
 	): void {
 		const index = this.protos.length;
@@ -190,6 +205,8 @@ class ProgramBuilder {
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
 		this.protoConstRelocs.push(constRelocs);
+		this.protoLocalSlots.push(localSlots.map(cloneLocalSlotDebug));
+		this.protoUpvalueNames.push(Array.from(upvalueNames));
 		this.protoInstructionSets.push(null);
 		this.protoIds.push(protoId);
 		this.protoIdMap.set(protoId, index);
@@ -233,6 +250,8 @@ class ProgramBuilder {
 		const metadata: ProgramMetadata = {
 			debugRanges: fullRanges,
 			protoIds: this.protoIds,
+			localSlotsByProto: this.protoLocalSlots,
+			upvalueNamesByProto: this.protoUpvalueNames,
 		};
 		return {
 			program: {
@@ -327,6 +346,25 @@ const buildProtoId = (parentId: string, hint: string): string => {
 	return `${parentId}/${hint}`;
 }
 
+const cloneSourceRange = (range: LuaSourceRange | SourceRange): SourceRange => ({
+	path: range.path,
+	start: {
+		line: range.start.line,
+		column: range.start.column,
+	},
+	end: {
+		line: range.end.line,
+		column: range.end.column,
+	},
+});
+
+const cloneLocalSlotDebug = (slot: LocalSlotDebug): LocalSlotDebug => ({
+	name: slot.name,
+	register: slot.register,
+	definition: cloneSourceRange(slot.definition),
+	scope: cloneSourceRange(slot.scope),
+});
+
 class FunctionBuilder {
 	private readonly program: ProgramBuilder;
 	private readonly parent: FunctionBuilder | null;
@@ -339,8 +377,10 @@ class FunctionBuilder {
 	private finalizedRanges: Array<SourceRange | null> | null = null;
 	private finalizedConstRelocs: ProgramConstReloc[] | null = null;
 	private readonly localStacks = new Map<string, number[]>();
-	private readonly scopeStack: string[][] = [];
+	private readonly scopeStack: ScopeFrame[] = [];
+	private readonly localDebugSlots: LocalSlotDebug[] = [];
 	private readonly upvalueDescs: UpvalueDesc[] = [];
+	private readonly upvalueNames: string[] = [];
 	private readonly upvalueMap = new Map<string, number>();
 	private readonly loopStack: LoopContext[] = [];
 	private readonly labelPositions = new Map<string, number>();
@@ -360,7 +400,7 @@ class FunctionBuilder {
 	}
 
 	public compileChunk(chunk: LuaChunk): void {
-		this.pushScope();
+		this.pushScope(chunk.range);
 		for (let i = 0; i < chunk.body.length; i += 1) {
 			this.compileStatement(chunk.body[i]);
 			this.resetTemps();
@@ -371,12 +411,12 @@ class FunctionBuilder {
 	}
 
 	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean): void {
-		this.pushScope();
+		this.pushScope(expression.body.range);
 		if (implicitSelf) {
-			this.declareLocal('self');
+			this.declareLocal('self', expression.range);
 		}
 		for (let i = 0; i < expression.parameters.length; i += 1) {
-			this.declareLocal(expression.parameters[i].name);
+			this.declareLocal(expression.parameters[i].name, expression.parameters[i].range);
 		}
 		for (let i = 0; i < expression.body.body.length; i += 1) {
 			this.compileStatement(expression.body.body[i]);
@@ -602,18 +642,29 @@ class FunctionBuilder {
 		return this.upvalueDescs;
 	}
 
+	public getUpvalueNames(): ReadonlyArray<string> {
+		return this.upvalueNames;
+	}
+
+	public getLocalDebugSlots(): ReadonlyArray<LocalSlotDebug> {
+		return this.localDebugSlots;
+	}
+
 	public getMaxStack(): number {
 		return this.maxStack;
 	}
 
-	private pushScope(): void {
-		this.scopeStack.push([]);
+	private pushScope(range: LuaSourceRange): void {
+		this.scopeStack.push({
+			names: [],
+			range: cloneSourceRange(range),
+		});
 	}
 
 	private popScope(): void {
 		const scope = this.scopeStack.pop()!;
-		for (let i = scope.length - 1; i >= 0; i -= 1) {
-			const name = scope[i];
+		for (let i = scope.names.length - 1; i >= 0; i -= 1) {
+			const name = scope.names[i];
 			const stack = this.localStacks.get(name);
 			stack.pop();
 			if (stack.length === 0) {
@@ -638,7 +689,7 @@ class FunctionBuilder {
 		throw new Error(`Missing label(s): ${labels.join(', ')}`);
 	}
 
-	private declareLocal(name: string): number {
+	private declareLocal(name: string, definitionRange: LuaSourceRange): number {
 		const canonicalName = this.canonicalizeName(name);
 		const reg = this.localCount;
 		this.localCount += 1;
@@ -655,7 +706,13 @@ class FunctionBuilder {
 		}
 		stack.push(reg);
 		const scope = this.scopeStack[this.scopeStack.length - 1];
-		scope.push(canonicalName);
+		scope.names.push(canonicalName);
+		this.localDebugSlots.push({
+			name: canonicalName,
+			register: reg,
+			definition: cloneSourceRange(definitionRange),
+			scope: scope.range,
+		});
 		return reg;
 	}
 
@@ -681,6 +738,7 @@ class FunctionBuilder {
 		if (parentLocal !== null) {
 			const index = this.upvalueDescs.length;
 			this.upvalueDescs.push({ inStack: true, index: parentLocal });
+			this.upvalueNames.push(canonicalName);
 			this.upvalueMap.set(canonicalName, index);
 			return index;
 		}
@@ -688,6 +746,7 @@ class FunctionBuilder {
 		if (parentUpvalue !== null) {
 			const index = this.upvalueDescs.length;
 			this.upvalueDescs.push({ inStack: false, index: parentUpvalue });
+			this.upvalueNames.push(canonicalName);
 			this.upvalueMap.set(canonicalName, index);
 			return index;
 		}
@@ -851,7 +910,7 @@ class FunctionBuilder {
 					this.compileForGeneric(statement as LuaForGenericStatement);
 					return;
 				case LuaSyntaxKind.DoStatement:
-					this.pushScope();
+					this.pushScope(statement.block.range);
 					for (let i = 0; i < statement.block.body.length; i += 1) {
 						this.compileStatement(statement.block.body[i]);
 						this.resetTemps();
@@ -916,7 +975,7 @@ class FunctionBuilder {
 		}
 		for (let i = 0; i < names.length; i += 1) {
 			const name = this.canonicalizeName(names[i].name);
-			const target = this.declareLocal(name);
+			const target = this.declareLocal(name, names[i].range);
 			const valueReg = valueRegs[i];
 			if (valueReg !== undefined) {
 				this.emitABC(OpCode.MOV, target, valueReg, 0);
@@ -1108,7 +1167,7 @@ class FunctionBuilder {
 				const condReg = this.allocTemp();
 				this.compileExpressionInto(clause.condition, condReg, 1);
 				const jumpToNext = this.emitJumpPlaceholder(OpCode.JMPIFNOT, condReg);
-				this.pushScope();
+				this.pushScope(clause.block.range);
 				for (let j = 0; j < clause.block.body.length; j += 1) {
 					this.compileStatement(clause.block.body[j]);
 					this.resetTemps();
@@ -1118,7 +1177,7 @@ class FunctionBuilder {
 				this.patchJump(jumpToNext, this.code.length);
 				continue;
 			}
-			this.pushScope();
+			this.pushScope(clause.block.range);
 			for (let j = 0; j < clause.block.body.length; j += 1) {
 				this.compileStatement(clause.block.body[j]);
 				this.resetTemps();
@@ -1138,7 +1197,7 @@ class FunctionBuilder {
 		const jumpOut = this.emitJumpPlaceholder(OpCode.JMPIFNOT, condReg);
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
-		this.pushScope();
+		this.pushScope(statement.block.range);
 		for (let i = 0; i < statement.block.body.length; i += 1) {
 			this.compileStatement(statement.block.body[i]);
 			this.resetTemps();
@@ -1156,7 +1215,7 @@ class FunctionBuilder {
 		const loopStart = this.code.length;
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
-		this.pushScope();
+		this.pushScope(statement.block.range);
 		for (let i = 0; i < statement.block.body.length; i += 1) {
 			this.compileStatement(statement.block.body[i]);
 			this.resetTemps();
@@ -1172,8 +1231,8 @@ class FunctionBuilder {
 	}
 
 	private compileForNumeric(statement: any): void {
-		this.pushScope();
-		const indexReg = this.declareLocal(statement.variable.name);
+		this.pushScope(statement.block.range);
+		const indexReg = this.declareLocal(statement.variable.name, statement.variable.range);
 		this.compileExpressionInto(statement.start, indexReg, 1);
 		const limitReg = this.allocLocal();
 		this.compileExpressionInto(statement.limit, limitReg, 1);
@@ -1213,7 +1272,7 @@ class FunctionBuilder {
 	}
 
 	private compileForGeneric(statement: LuaForGenericStatement): void {
-		this.pushScope();
+		this.pushScope(statement.block.range);
 		const valueTargets: Array<ReadonlyArray<string> | null> = new Array(statement.iterators.length).fill(null);
 		const iteratorValues = this.compileAssignmentValues(statement.iterators, 3, valueTargets);
 		const iteratorReg = this.allocLocal();
@@ -1232,7 +1291,7 @@ class FunctionBuilder {
 
 		const loopVars: number[] = [];
 		for (let i = 0; i < statement.variables.length; i += 1) {
-			loopVars.push(this.declareLocal(statement.variables[i].name));
+			loopVars.push(this.declareLocal(statement.variables[i].name, statement.variables[i].range));
 		}
 
 		const resultCount = loopVars.length;
@@ -1313,7 +1372,7 @@ class FunctionBuilder {
 
 	private compileLocalFunction(statement: any): void {
 		const name = this.canonicalizeName(statement.name.name);
-		const reg = this.declareLocal(name);
+		const reg = this.declareLocal(name, statement.name.range);
 		const hint = this.createLocalFunctionHint(name);
 		const protoId = this.createChildProtoId(hint);
 		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, this.moduleId);
@@ -1926,6 +1985,7 @@ function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunct
 	const ranges = builder.getRanges();
 	const constRelocs = builder.getConstRelocs();
 	const instructionSet = builder.getInstructionSet();
+	const localSlots = builder.getLocalDebugSlots();
 	const protoIndex = program.addProto({
 		entryPC: 0,
 		codeLen: ranges.length * INSTRUCTION_BYTES,
@@ -1933,7 +1993,7 @@ function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunct
 		isVararg: expression.hasVararg,
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: builder.getUpvalueDescs(),
-	}, code, ranges, constRelocs, protoId, instructionSet);
+	}, code, ranges, constRelocs, localSlots, builder.getUpvalueNames(), protoId, instructionSet);
 	return protoIndex;
 }
 
@@ -1972,7 +2032,12 @@ function createProgramBuilderFromProgram(
 		const startWord = Math.floor(start / INSTRUCTION_BYTES);
 		const endWord = Math.floor(end / INSTRUCTION_BYTES);
 		const ranges = metadata.debugRanges.slice(startWord, endWord);
-		builder.seedProto(cloneProto(proto), code, ranges, [], protoIds[index]);
+		const localSlotsByProto = metadata.localSlotsByProto;
+		const localSlots = localSlotsByProto && localSlotsByProto[index]
+			? localSlotsByProto[index]
+			: [];
+		const upvalueNames = metadata.upvalueNamesByProto?.[index] ?? [];
+		builder.seedProto(cloneProto(proto), code, ranges, [], localSlots, upvalueNames, protoIds[index]);
 	}
 	return builder;
 }
@@ -1999,6 +2064,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		const entryCode = entryBuilder.getCode();
 		const entryRanges = entryBuilder.getRanges();
 		const entryConstRelocs = entryBuilder.getConstRelocs();
+		const entryLocalSlots = entryBuilder.getLocalDebugSlots();
 		const entryInstructionSet = entryBuilder.getInstructionSet();
 		entryProtoIndex = programBuilder.addProto({
 			entryPC: 0,
@@ -2007,7 +2073,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			isVararg: false,
 			maxStack: entryBuilder.getMaxStack(),
 			upvalueDescs: entryBuilder.getUpvalueDescs(),
-		}, entryCode, entryRanges, entryConstRelocs, entryProtoId, entryInstructionSet);
+		}, entryCode, entryRanges, entryConstRelocs, entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
 	} catch (error) {
 		compileErrors.push({
 			path: chunk.range.path,
@@ -2025,6 +2091,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			const code = builder.getCode();
 			const ranges = builder.getRanges();
 			const constRelocs = builder.getConstRelocs();
+			const localSlots = builder.getLocalDebugSlots();
 			const instructionSet = builder.getInstructionSet();
 			const protoIndex = programBuilder.addProto({
 				entryPC: 0,
@@ -2033,7 +2100,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 				isVararg: false,
 				maxStack: builder.getMaxStack(),
 				upvalueDescs: builder.getUpvalueDescs(),
-			}, code, ranges, constRelocs, moduleProtoId, instructionSet);
+			}, code, ranges, constRelocs, localSlots, builder.getUpvalueNames(), moduleProtoId, instructionSet);
 			moduleProtoMap.set(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push({
@@ -2064,6 +2131,7 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 		const entryCode = entryBuilder.getCode();
 		const entryRanges = entryBuilder.getRanges();
 		const entryConstRelocs = entryBuilder.getConstRelocs();
+		const entryLocalSlots = entryBuilder.getLocalDebugSlots();
 		const entryInstructionSet = entryBuilder.getInstructionSet();
 		entryProtoIndex = programBuilder.addProto({
 			entryPC: 0,
@@ -2072,7 +2140,7 @@ export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata
 			isVararg: false,
 			maxStack: entryBuilder.getMaxStack(),
 			upvalueDescs: entryBuilder.getUpvalueDescs(),
-		}, entryCode, entryRanges, entryConstRelocs, entryProtoId, entryInstructionSet);
+		}, entryCode, entryRanges, entryConstRelocs, entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
 	} catch (error) {
 		compileErrors.push({
 			path: chunk.range.path,

@@ -60,10 +60,9 @@ export function buildLuaModuleAliases(sources: LuaSourceRegistry): Map<string, L
 		if (!asset || asset.type !== 'lua') {
 			continue;
 		}
-		const normalizedPath = asset.normalized_source_path;
-		const canonicalPath = stripLuaExtension(normalizedPath);
-		const packageKey = asset.source_path;
-		const path = asset.normalized_source_path;
+		const path = asset.source_path;
+		const canonicalPath = stripLuaExtension(path);
+		const packageKey = path;
 		const record: LuaRequireModuleRecord = {
 			packageKey,
 			canonicalKey: canonicalPath,

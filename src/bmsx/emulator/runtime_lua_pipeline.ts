@@ -836,7 +836,7 @@ export function loadProgramAssets(runtime: Runtime): { program: ProgramAsset; sy
 
 export function buildModuleChunks(runtime: Runtime, entryPath: string, registries?: LuaSourceRegistry[]): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
 	const entryAsset = resolveLuaSourceRecord(runtime, entryPath);
-	const entryKey = entryAsset ? (entryAsset.normalized_source_path ?? entryAsset.source_path ?? entryPath) : entryPath;
+	const entryKey = entryAsset ? entryAsset.source_path : entryPath;
 	const modules: Array<{ path: string; chunk: LuaChunk }> = [];
 	const modulePaths: string[] = [];
 	const seen = new Set<string>();
@@ -850,7 +850,7 @@ export function buildModuleChunks(runtime: Runtime, entryPath: string, registrie
 			if (!asset || asset.type !== 'lua') {
 				continue;
 			}
-			const key = asset.normalized_source_path ?? asset.source_path;
+			const key = asset.source_path;
 			if (!key || seen.has(key)) {
 				continue;
 			}
@@ -859,8 +859,8 @@ export function buildModuleChunks(runtime: Runtime, entryPath: string, registrie
 			if (key === entryKey) {
 				continue;
 			}
-			const source = resourceSourceForChunk(runtime, asset.source_path);
-			const chunk = runtime.interpreter.compileChunk(source, asset.source_path);
+			const source = resourceSourceForChunk(runtime, key);
+			const chunk = runtime.interpreter.compileChunk(source, key);
 			modules.push({ path: key, chunk });
 		}
 	}
@@ -874,7 +874,7 @@ export function buildModuleChunksForInterpreter(
 	registries?: LuaSourceRegistry[],
 ): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
 	const entryAsset = resolveLuaSourceRecord(runtime, entryPath);
-	const entryKey = entryAsset ? (entryAsset.normalized_source_path ?? entryAsset.source_path ?? entryPath) : entryPath;
+	const entryKey = entryAsset ? entryAsset.source_path : entryPath;
 	const modules: Array<{ path: string; chunk: LuaChunk }> = [];
 	const modulePaths: string[] = [];
 	const seen = new Set<string>();
@@ -888,7 +888,7 @@ export function buildModuleChunksForInterpreter(
 			if (!asset || asset.type !== 'lua') {
 				continue;
 			}
-			const key = asset.normalized_source_path ?? asset.source_path;
+			const key = asset.source_path;
 			if (!key || seen.has(key)) {
 				continue;
 			}
@@ -897,8 +897,8 @@ export function buildModuleChunksForInterpreter(
 			if (key === entryKey) {
 				continue;
 			}
-			const source = resourceSourceForChunk(runtime, asset.source_path);
-			const chunk = interpreter.compileChunk(source, asset.source_path);
+			const source = resourceSourceForChunk(runtime, key);
+			const chunk = interpreter.compileChunk(source, key);
 			modules.push({ path: key, chunk });
 		}
 	}
@@ -1151,7 +1151,7 @@ export function resourceSourceForChunk(runtime: Runtime, path: string): string {
 	if (!binding) {
 		return null;
 	}
-	const cached = getWorkspaceCachedSource(binding.normalized_source_path);
+	const cached = getWorkspaceCachedSource(binding.source_path);
 	if (cached !== null) {
 		return cached;
 	}
@@ -1255,10 +1255,12 @@ export function buildConsoleMetadata(baseProgram: Program): ProgramMetadata {
 		debugRanges[index] = null;
 	}
 	const protoIds = new Array<string>(baseProgram.protos.length);
+	const localSlotsByProto: Array<NonNullable<ProgramMetadata['localSlotsByProto']>[number]> = new Array(baseProgram.protos.length);
 	for (let index = 0; index < protoIds.length; index += 1) {
 		protoIds[index] = `proto:${index}`;
+		localSlotsByProto[index] = [];
 	}
-	return { debugRanges, protoIds };
+	return { debugRanges, protoIds, localSlotsByProto };
 }
 
 export function runConsoleChunk(runtime: Runtime, source: string): Value[] {

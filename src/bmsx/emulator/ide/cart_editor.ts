@@ -251,8 +251,8 @@ export function getSourceForChunk(path: string): string {
 		}
 		return getTextSnapshot(context.buffer);
 	}
-	const dirtyPath = buildDirtyFilePath(asset.normalized_source_path);
-	const cached = getWorkspaceCachedSource(asset.normalized_source_path) ?? getWorkspaceCachedSource(dirtyPath);
+	const dirtyPath = buildDirtyFilePath(asset.source_path);
+	const cached = getWorkspaceCachedSource(asset.source_path) ?? getWorkspaceCachedSource(dirtyPath);
 	if (cached !== null) {
 		return cached;
 	}
@@ -1926,7 +1926,7 @@ export function findResourceDescriptorForChunk(path: string): ResourceDescriptor
 	for (const entry of registries) {
 		const asset = entry.registry.path2lua[path];
 		if (asset) {
-			return { asset_id: asset.resid, path: asset.normalized_source_path, type: asset.type, readOnly: entry.readOnly };
+			return { asset_id: asset.resid, path: asset.source_path, type: asset.type, readOnly: entry.readOnly };
 		}
 	}
 	return null;

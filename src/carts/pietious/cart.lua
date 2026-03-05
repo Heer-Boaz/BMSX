@@ -141,7 +141,7 @@ function new_game()
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
 	})
 	grant_starting_loadout()
-	c:initialize(castle_map.start_room_number)
+	c2:initialize(castle_map.start_room_number)
 
 	inst('transition', { id = 'transition', space_id = 'transition', })
 	inst('shrine', { id = 'shrine', space_id = 'shrine', })
@@ -149,7 +149,6 @@ function new_game()
 	inst('item_screen', { id = 'item_screen', space_id = 'item', })
 	inst('ui', { id = 'ui', })
 	inst('director', { id = 'd', })
-
 end
 
 while true do

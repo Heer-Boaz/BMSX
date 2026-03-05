@@ -40,7 +40,6 @@ export function buildLuaSources(params: { cartSource: RawAssetSource; assetSourc
 			update_timestamp: activeEntry.update_timestamp,
 		};
 		registry.path2lua[luaAsset.source_path] = luaAsset;
-		registry.path2lua[luaAsset.normalized_source_path] = luaAsset;
 	}
 
 	if (Object.keys(registry.path2lua).length === 0) {
@@ -53,11 +52,9 @@ export function buildLuaSources(params: { cartSource: RawAssetSource; assetSourc
 				src: '',
 				base_src: '',
 				source_path: entryPath,
-				normalized_source_path: entryPath,
 				update_timestamp: 0,
 			};
 			registry.path2lua[stub.source_path] = stub;
-			registry.path2lua[stub.normalized_source_path] = stub;
 		}
 	}
 

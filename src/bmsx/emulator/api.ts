@@ -713,9 +713,9 @@ export class Api {
 
 	public get_lua_resource_source(path: string): string {
 		const record = runtimeLuaPipeline.resolveLuaSourceRecord(this._runtime, path);
-		const canonical = record.normalized_source_path;
-		const dirtyPath = buildDirtyFilePath(canonical);
-		const cached = getWorkspaceCachedSource(canonical) ?? getWorkspaceCachedSource(dirtyPath);
+		const sourcePath = record.source_path;
+		const dirtyPath = buildDirtyFilePath(sourcePath);
+		const cached = getWorkspaceCachedSource(sourcePath) ?? getWorkspaceCachedSource(dirtyPath);
 		return cached ?? record.src;
 	}
 
