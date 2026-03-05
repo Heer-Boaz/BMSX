@@ -4011,7 +4011,7 @@ export function openDebugOverviewTab(): void {
 }
 
 export function openObjectInspectorTab(): void {
-	openDebugPanelTab('objects');
+	ide_state.resourcePanel.showWorldInspector();
 }
 
 export function openEventInspectorTab(): void {

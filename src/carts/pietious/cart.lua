@@ -141,7 +141,7 @@ function new_game()
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
 	})
 	grant_starting_loadout()
-	c2:initialize(castle_map.start_room_number)
+	c:initialize(castle_map.start_room_number)
 
 	inst('transition', { id = 'transition', space_id = 'transition', })
 	inst('shrine', { id = 'shrine', space_id = 'shrine', })
