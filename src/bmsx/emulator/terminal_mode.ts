@@ -28,7 +28,7 @@ import {
 	isAltDown
 } from './ide/ide_input';
 import { CompletionController } from './ide/completion_controller';
-import { collectLuaModuleAliases, listLuaObjectMembers } from './ide/intellisense';
+import { collectLuaModuleAliases, listLuaObjectMembers, resolveSnapshotExpression, describeLuaValueForInspector } from './ide/intellisense';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
 import type { Viewport } from '../rompack/rompack';
 import { Runtime } from './runtime';
@@ -519,12 +519,26 @@ export class TerminalMode {
 		this.executeTerminalCommand(trimmed);
 	}
 
+	private static readonly SIMPLE_CHAIN = /^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$/;
+
 	private executeTerminalCommand(command: string): void {
 		const source = this.prepareTerminalChunk(command);
 		if (source.length === 0) {
 			return;
 		}
-
+		if (this.runtime.faultSnapshot && source.startsWith('return ')) {
+			const expr = source.slice(7).trim();
+			if (TerminalMode.SIMPLE_CHAIN.test(expr)) {
+				const resolved = resolveSnapshotExpression(expr);
+				if (resolved !== null) {
+					const { lines } = describeLuaValueForInspector(resolved);
+					for (let i = 0; i < lines.length; i += 1) {
+						this.appendStdout(lines[i]);
+					}
+					return;
+				}
+			}
+		}
 		try {
 			const results: Value[] = runtimeLuaPipeline.runConsoleChunk(this.runtime, source);
 			if (results.length > 0) {

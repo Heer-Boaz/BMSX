@@ -11,7 +11,7 @@ import { LuaInterpreter } from '../../lua/luaruntime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/luavalue';
 import { Api } from '../api';
 import { API_METHOD_METADATA } from '../api_metadata';
-import { Table, type LocalSlotDebug, type SourceRange, type Value } from '../cpu';
+import { Table, type CpuFrameSnapshot, type LocalSlotDebug, type SourceRange, type Value } from '../cpu';
 import { buildMarshalContext, toNativeValue } from '../lua_js_bridge';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
@@ -2318,6 +2318,78 @@ function wrapRuntimeValueForIntellisense(value: Value): LuaValue {
 	const marshalContext = buildMarshalContext(runtime);
 	const native = toNativeValue(runtime, value, marshalContext, new WeakMap<Table, unknown>());
 	return wrapHostValueForIntellisense(native);
+}
+
+export type FrameLocal = {
+	name: string;
+	value: LuaValue;
+};
+
+export function collectFrameLocals(snapshot: CpuFrameSnapshot[], cpuFrameIndex: number): FrameLocal[] {
+	const runtime = Runtime.instance;
+	const metadata = runtime.programMetadata;
+	if (!metadata?.localSlotsByProto) {
+		return [];
+	}
+	const frame = snapshot[cpuFrameIndex];
+	const frameRange = runtime.cpu.getDebugRange(frame.pc);
+	if (!frameRange) {
+		return [];
+	}
+	const slots = metadata.localSlotsByProto[frame.protoIndex];
+	if (!slots || slots.length === 0) {
+		return [];
+	}
+	const byName = new Map<string, LocalSlotDebug>();
+	for (let i = 0; i < slots.length; i += 1) {
+		const slot = slots[i];
+		if (!positionWithinRange(frameRange.start.line, frameRange.start.column, slot.scope as unknown as LuaSourceRange)) {
+			continue;
+		}
+		const existing = byName.get(slot.name);
+		if (!existing || rangeArea(slot.scope) < rangeArea(existing.scope)) {
+			byName.set(slot.name, slot);
+		}
+	}
+	const result: FrameLocal[] = [];
+	for (const [name, slot] of byName) {
+		result.push({ name, value: wrapRuntimeValueForIntellisense(frame.registers[slot.register]) });
+	}
+	result.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+	return result;
+}
+
+export function resolveSnapshotExpression(expression: string): LuaValue | null {
+	const parts = expression.split('.');
+	if (parts.length === 0 || parts.some(p => p.length === 0)) {
+		return null;
+	}
+	const runtime = Runtime.instance;
+	const snapshot = runtime.lastCpuFaultSnapshot;
+	if (snapshot.length === 0) {
+		return null;
+	}
+	const rootName = parts[0];
+	for (let i = snapshot.length - 1; i >= 0; i -= 1) {
+		const locals = collectFrameLocals(snapshot, i);
+		for (let li = 0; li < locals.length; li += 1) {
+			if (locals[li].name !== rootName) {
+				continue;
+			}
+			if (parts.length === 1) {
+				return locals[li].value;
+			}
+			const chained = walkValueChain(locals[li].value, parts, 1);
+			if (chained !== null) {
+				return chained;
+			}
+		}
+	}
+	const globalResult = resolveRuntimeGlobalChainValue(parts);
+	if (globalResult && globalResult.kind === 'value') {
+		return globalResult.value;
+	}
+	return null;
 }
 
 function walkValueChain(root: LuaValue, parts: ReadonlyArray<string>, startIndex: number): LuaValue | null {
