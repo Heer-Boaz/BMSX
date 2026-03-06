@@ -108,6 +108,56 @@ function registry:iterate(type_name, persistent_only)
 	return iter_registry, { registry = self, type_name = type_name, persistent_only = persistent_only }, nil
 end
 
+local function iter_by_tag(state, key)
+	local reg = state.registry
+	local tag = state.tag
+	local next_key, entity = next(reg._registry, key)
+	while next_key do
+		local tags = entity.tags
+		if tags and tags[tag] then
+			return next_key, entity
+		end
+		next_key, entity = next(reg._registry, next_key)
+	end
+	return nil
+end
+
+-- registry:iterate_by_tag(tag): returns an iterator over registered entities
+--   that carry the given tag in their .tags set (entity.tags[tag] == true).
+function registry:iterate_by_tag(tag)
+	return iter_by_tag, { registry = self, tag = tag }, nil
+end
+
+local function iter_by_tags(state, key)
+	local reg = state.registry
+	local wanted = state.tags
+	local wanted_n = state.tags_n
+	local next_key, entity = next(reg._registry, key)
+	while next_key do
+		local tags = entity.tags
+		if tags then
+			local match = true
+			for i = 1, wanted_n do
+				if not tags[wanted[i]] then
+					match = false
+					break
+				end
+			end
+			if match then
+				return next_key, entity
+			end
+		end
+		next_key, entity = next(reg._registry, next_key)
+	end
+	return nil
+end
+
+-- registry:iterate_by_tags(tags): returns an iterator over registered entities
+--   that carry ALL of the given tags. tags is an array of tag strings.
+function registry:iterate_by_tags(tags)
+	return iter_by_tags, { registry = self, tags = tags, tags_n = #tags }, nil
+end
+
 return {
 	registry = registry,
 	instance = registry.new(),

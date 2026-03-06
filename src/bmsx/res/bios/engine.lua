@@ -400,6 +400,7 @@ function engine.inst(definition_id, addons)
 		local class_table = def and def.class
 		local instance_id = (addons and addons.id) or (class_table and class_table.id)
 		local instance = spriteobject.new({ id = instance_id })
+		instance.type_name = definition_id
 		apply_definition(instance, def, addons, "imgid")
 		local imgid = (addons and addons.imgid) or (def and def.defaults and def.defaults.imgid)
 		if imgid then
@@ -412,6 +413,7 @@ function engine.inst(definition_id, addons)
 		local class_table = def and def.class
 		local instance_id = (addons and addons.id) or (class_table and class_table.id)
 		local instance = textobject.new({ id = instance_id })
+		instance.type_name = definition_id
 		apply_definition(instance, def, addons, "dimensions")
 		local dimensions = (addons and addons.dimensions) or (def and def.defaults and def.defaults.dimensions)
 		if dimensions then
@@ -423,6 +425,7 @@ function engine.inst(definition_id, addons)
 	local class_table = def and def.class
 	local instance_id = (addons and addons.id) or (class_table and class_table.id)
 	local instance = worldobject.new({ id = instance_id })
+	instance.type_name = definition_id
 	apply_definition(instance, def, addons)
 	world_instance:spawn(instance, addons and addons.pos)
 	return instance
@@ -597,6 +600,22 @@ function engine.delist(id)
 	registry.instance:deregister(id)
 end
 
+function engine.get_definitions()
+	return definitions
+end
+
+function engine.get_definition(def_id)
+	return definitions[def_id]
+end
+
+function engine.get_component_definitions()
+	return component_definitions
+end
+
+function engine.get_component_definition(def_id)
+	return component_definitions[def_id]
+end
+
 function engine.grant_effect(object_id, effect_id)
 	local obj = world_instance:get(object_id)
 	local component = obj:get_component("actioneffectcomponent")
@@ -649,6 +668,22 @@ end
 
 audio_router.init()
 progression.init()
+
+-- Register BIOS singletons as persistent registry entries.
+-- This mirrors the TS engine where all subsystems (PhysicsWorld, SoundMaster,
+-- Input, Services, etc.) are registered so they are discoverable and inspectable.
+local registry_instance = registry.instance
+local function register_singleton(obj, id, tn)
+	obj.id = id
+	obj.type_name = tn
+	obj.registrypersistent = true
+	registry_instance:register(obj)
+end
+register_singleton(ecs_pipeline.defaultecspipelineregistry, "ecspipeline", "ecspipeline")
+register_singleton(fsmlibrary, "fsmlibrary", "fsmlibrary")
+register_singleton(progression, "progression", "progression")
+register_singleton(audio_router, "audiorouter", "audiorouter")
+register_singleton(action_effects, "actioneffects", "actioneffects")
 
 if not world_instance._ecs_pipeline_built then
 	world_instance._ecs_pipeline_built = true
