@@ -88,7 +88,7 @@ export class World implements Stateful, RegisterablePersistent {
 			initial: 'game',
 			states: {
 				game: {
-					tick(this: World): void {
+					update(this: World): void {
 						// No-op; default worlds remain in the game state.
 					},
 				},

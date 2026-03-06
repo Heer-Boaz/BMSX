@@ -344,6 +344,13 @@ function createMachine(machine_name: Identifier, machine_definition: StateMachin
 	return new StateDefinition(machine_name, machine_definition, null);
 }
 
+function getEventEmitterFilter(definition: string | StateEventDefinition | undefined): Identifier | boolean | null {
+	if (!definition || typeof definition === 'string') {
+		return null;
+	}
+	return (definition as StateEventDefinition & { emitter?: Identifier | boolean | null }).emitter ?? null;
+}
+
 /**
  * Adds events to the machine definition.
  * If the machine has events defined, this function adds them to the event list of the machine definition.
@@ -411,8 +418,7 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 	// Start with the events defined in the machine definition
 	if (machine.on) {
 		for (const name in machine.on) {
-			const def = machine.on[name] as StateActionEmitSpec;
-			const emitter = typeof def === 'object' && def !== null && 'emitter' in def ? def.emitter : null;
+			const emitter = getEventEmitterFilter(machine.on[name]);
 			add(name, emitter);
 		}
 	}
@@ -427,8 +433,7 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 		if (state_def.on) {
 			state_def.on = rewriteOnBag(state_def.on);
 			for (const name in state_def.on) {
-				const def = state_def.on[name] as StateActionEmitSpec;
-				const emitter = typeof def === 'object' && def !== null && 'emitter' in def ? def.emitter : null;
+				const emitter = getEventEmitterFilter(state_def.on[name]);
 				add(name, emitter);
 			}
 		}

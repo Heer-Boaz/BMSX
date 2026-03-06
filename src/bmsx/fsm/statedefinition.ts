@@ -8,6 +8,15 @@ function looksLikeStatePath(value: string): boolean {
 	return value.startsWith('./') || value.startsWith('../') || value.startsWith('/') || value.startsWith('root:/') || value.startsWith('parent:/') || value.includes('/');
 }
 
+function normalizeSyntheticEventHandler(
+	spec: StateActionSpec | StateEventHandler | string,
+): Identifier | StateEventDefinition {
+	if (typeof spec === 'string') {
+		return spec;
+	}
+	return { go: spec };
+}
+
 /**
  * Represents the definition of a state in a behavior finite state machine (BFSM).
  *
@@ -86,6 +95,10 @@ export class StateDefinition {
 	 */
 	public constructor(id: Identifier, partialdef?: Partial<StateDefinition>, root: StateDefinition = null, parent: StateDefinition = null) {
 		this.id = id;
+		const legacyTick = (partialdef as Partial<StateDefinition> & { tick?: unknown })?.tick;
+		if (legacyTick !== undefined) {
+			throw new Error(`State definition '${id}' field 'tick' is not supported. Use 'update'.`);
+		}
 		const timelines = partialdef?.timelines;
 		partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
 		this.timelines = timelines ? { ...timelines } : undefined;
@@ -96,12 +109,12 @@ export class StateDefinition {
 				if (tl_def.on_end !== undefined) {
 					const key = `timeline.end.${effectiveId}`;
 					if (this.on[key] !== undefined) throw new Error(`State '${this.def_id}': 'on_end' for timeline '${tl_id}' conflicts with an existing 'on' entry`);
-					this.on[key] = tl_def.on_end as StateActionSpec;
+					this.on[key] = normalizeSyntheticEventHandler(tl_def.on_end);
 				}
 				if (tl_def.on_frame !== undefined) {
 					const key = `timeline.frame.${effectiveId}`;
 					if (this.on[key] !== undefined) throw new Error(`State '${this.def_id}': 'on_frame' for timeline '${tl_id}' conflicts with an existing 'on' entry`);
-					this.on[key] = tl_def.on_frame as StateActionSpec;
+					this.on[key] = normalizeSyntheticEventHandler(tl_def.on_frame);
 				}
 			}
 		}

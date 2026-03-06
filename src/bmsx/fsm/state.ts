@@ -8,7 +8,7 @@ import { StateDefinitions } from './fsmlibrary';
 import { type id2sstate, type Stateful, type StateEventDefinition, type TickCheckDefinition, type transition_target, type StateTimelineConfig } from './fsmtypes';
 import { StateDefinition } from './statedefinition';
 import { EventPayload, GameEvent } from '../core/game_event';
-import type { Timeline, TimelineDefinition } from '../timeline/timeline';
+import { Timeline, type TimelineDefinition } from '../timeline/timeline';
 import type { TimelinePlayOptions } from '../component/timeline_component';
 
 type TransitionExecutionMode = 'manual' | 'queued' | 'deferred';
@@ -71,7 +71,7 @@ type TimelineHost = Stateful & {
 
 type StateTimelineBinding = {
 	id: Identifier;
-	create: () => Timeline;
+	def?: NonNullable<StateTimelineConfig['def']>;
 	autoplay: boolean;
 	stopOnExit: boolean;
 	playOptions?: TimelinePlayOptions;
@@ -668,27 +668,30 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const host = this.timelineHost();
 		for (const binding of this.timelineBindings) {
 			if (binding.defined) continue;
-			const timeline = binding.create();
-			if (!timeline) {
-				throw new Error(`[State] Timeline factory for '${binding.id}' returned no timeline.`);
+			if (binding.def) {
+				host.define_timeline(new Timeline({
+					...binding.def,
+					id: binding.def.id ?? binding.id,
+					frames: [...binding.def.frames],
+				}));
 			}
-			if (timeline.id !== binding.id) {
-				throw new Error(`[State] Timeline factory for '${binding.id}' returned timeline '${timeline.id}'.`);
-			}
-			host.define_timeline(timeline);
 			binding.defined = true;
 		}
 		return this.timelineBindings;
 	}
 
 	private createTimelineBinding(key: string, config: StateTimelineConfig): StateTimelineBinding {
-		const { autoplay = true, stop_on_exit = true, play_options, id } = config;
-		if (typeof config.create !== 'function') {
-			throw new Error(`[State] Timeline '${key}' is missing a create() factory.`);
+		const legacyCreate = (config as StateTimelineConfig & { create?: unknown }).create;
+		if (legacyCreate !== undefined) {
+			throw new Error(`[State] Timeline '${key}' uses legacy create(). Use def instead.`);
 		}
+		if (config.def !== undefined && typeof config.def !== 'object') {
+			throw new Error(`[State] Timeline '${key}' field 'def' must be a timeline definition object.`);
+		}
+		const { autoplay = true, stop_on_exit = true, play_options, id, def } = config;
 		return {
 			id: (id ?? key) as Identifier,
-			create: config.create,
+			def,
 			autoplay,
 			stopOnExit: stop_on_exit,
 			playOptions: play_options,
