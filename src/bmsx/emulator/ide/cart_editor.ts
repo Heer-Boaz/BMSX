@@ -11,8 +11,6 @@ import { EditorFont } from '../editor_font';
 import { FontVariant } from '../font';
 import { drawEditorText } from './text_renderer';
 import { Msx1Colors } from '../../systems/msx';
-import { EventEmitter, type ListenerSet } from '../../core/eventemitter';
-import { Registry } from '../../core/registry';
 import { renderCodeArea } from './render/render_code_area';
 import { clamp } from '../../utils/clamp';
 import { tokenKeyFromId } from '../../util/asset_tokens';
@@ -75,7 +73,6 @@ import type {
 	ResourceViewerState,
 	RuntimeErrorOverlay,
 	SymbolSearchResult,
-	DebugPanelKind,
 } from './types';
 import { resolveReferenceLookup, type ReferenceMatchInfo } from './code_reference';
 import {
@@ -3822,192 +3819,8 @@ export function appendResourceViewerLines(target: string[], additions: Iterable<
 	}
 }
 
-const DEBUG_PANEL_TITLES: Record<DebugPanelKind, string> = {
-	objects: 'Objects',
-	events: 'Events',
-	registry: 'Registry',
-};
-
-export function debugPanelTabId(kind: DebugPanelKind): string {
-	return `debug:${kind}`;
-}
-
-export function buildDebugPanelLines(kind: DebugPanelKind): string[] {
-	const lines: string[] = [`${DEBUG_PANEL_TITLES[kind]} Overview`, ''];
-	switch (kind) {
-		case 'objects':
-			appendResourceViewerLines(lines, collectWorldObjectLines());
-			break;
-		case 'events':
-			appendResourceViewerLines(lines, collectEventEmitterLines());
-			break;
-		case 'registry':
-			appendResourceViewerLines(lines, collectRegistryLines());
-			break;
-	}
-	if (lines.length === 0) {
-		lines.push('<empty>');
-	}
-	return lines;
-}
-
-export function collectWorldObjectLines(): string[] {
-	const entries = $.world.allObjectsFromSpaces;
-	if (entries.length === 0) return ['<no world objects>'];
-	const lines: string[] = [`Total Objects: ${entries.length}`, ''];
-	for (let index = 0; index < entries.length; index += 1) {
-		const obj = entries[index]!;
-		const className = obj.constructor.name;
-		const id = obj.id ?? '<unnamed>';
-		const posX = obj.x;
-		const posY = obj.y;
-		const posZ = obj.z;
-		const active = obj.active;
-		lines.push(`${index + 1}. ${id} [${className}] pos=(${posX}, ${posY}, ${posZ}) ${active}`);
-	}
-	return lines;
-}
-
-export function describeListenerSet(set: ListenerSet): string {
-	const names: string[] = [];
-	for (const entry of set) {
-		const subscriber = entry.subscriber as { id?: string; constructor?: { name?: string } };
-		const name = subscriber?.id ?? subscriber?.constructor?.name ?? '<anonymous>';
-		if (!names.includes(name)) names.push(name);
-		if (names.length >= 5) break;
-	}
-	const base = `${set.size} listener${set.size === 1 ? '' : 's'}`;
-	if (names.length === 0) return base;
-	const suffix = names.length < set.size ? `${names.join(', ')}, …` : names.join(', ');
-	return `${base} (${suffix})`;
-}
-
-export function collectEventEmitterLines(): string[] {
-	const emitter = EventEmitter.instance;
-	const lines: string[] = [];
-	const globalEntries = Object.entries(emitter.globalScopeListeners ?? {});
-	lines.push('Global Listeners:');
-	if (globalEntries.length === 0) {
-		lines.push('  <none>');
-	} else {
-		for (const [eventName, set] of globalEntries.sort(([a], [b]) => a.localeCompare(b))) {
-			lines.push(`  ${eventName}: ${describeListenerSet(set)}`);
-		}
-	}
-	lines.push('');
-	lines.push('Scoped Listeners:');
-	const scopedEntries = Object.entries(emitter.emitterScopeListeners ?? {});
-	if (scopedEntries.length === 0) {
-		lines.push('  <none>');
-	} else {
-		for (const [eventName, scopes] of scopedEntries.sort(([a], [b]) => a.localeCompare(b))) {
-			lines.push(`  ${eventName}:`);
-			const scopeEntries = Object.entries(scopes);
-			for (const [scopeId, set] of scopeEntries.sort(([a], [b]) => a.localeCompare(b))) {
-				lines.push(`    [${scopeId}] ${describeListenerSet(set)}`);
-			}
-		}
-	}
-	return lines;
-}
-
-export function collectRegistryLines(): string[] {
-	const registry = Registry.instance;
-	const entities = registry.getRegisteredEntities();
-	const lines: string[] = [`Registered Entities: ${entities.length}`, ''];
-	if (entities.length === 0) {
-		lines.push('<registry empty>');
-		return lines;
-	}
-	entities.sort((a, b) => String(a.id).localeCompare(String(b.id)));
-	for (const entity of entities) {
-		const ctor = entity.constructor?.name ?? 'Unknown';
-		const persistent = entity.registrypersistent ? 'persistent' : 'ephemeral';
-		lines.push(`${entity.id} [${ctor}] ${persistent}`);
-	}
-	return lines;
-}
-
-export function openDebugPanelTab(kind: DebugPanelKind): void {
-	const tabId = debugPanelTabId(kind);
-	const title = DEBUG_PANEL_TITLES[kind];
-	const source = buildDebugPanelLines(kind).join('\n');
-	const wasActive = ide_state.activeTabId === tabId;
-	let context = ide_state.codeTabContexts.get(tabId);
-	if (!context) {
-		const buffer = new PieceTreeBuffer(source);
-		context = {
-			id: tabId,
-			title,
-			descriptor: { path: `debug/${kind}`, type: 'lua', readOnly: true },
-			buffer,
-			cursorRow: 0,
-			cursorColumn: 0,
-			scrollRow: 0,
-			scrollColumn: 0,
-			selectionAnchor: null,
-			lastSavedSource: '',
-			saveGeneration: 0,
-			appliedGeneration: 0,
-			undoStack: [],
-			redoStack: [],
-			lastHistoryKey: null,
-			lastHistoryTimestamp: 0,
-			savePointDepth: 0,
-			dirty: false,
-			runtimeErrorOverlay: null,
-			executionStopRow: null,
-			readOnly: true,
-			textVersion: buffer.version,
-		};
-		ide_state.codeTabContexts.set(tabId, context);
-	} else {
-		context.title = title;
-		context.readOnly = true;
-		context.buffer.replace(0, context.buffer.length, source);
-		context.textVersion = context.buffer.version;
-		context.cursorRow = 0;
-		context.cursorColumn = 0;
-		context.scrollRow = 0;
-		context.scrollColumn = 0;
-		context.selectionAnchor = null;
-		context.undoStack.length = 0;
-		context.redoStack.length = 0;
-		context.lastHistoryKey = null;
-		context.lastHistoryTimestamp = 0;
-		context.savePointDepth = 0;
-		context.dirty = false;
-	}
-	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
-	if (!tab) {
-		tab = {
-			id: tabId,
-			kind: 'lua_editor',
-			title,
-			closable: true,
-			dirty: false,
-		};
-		ide_state.tabs.push(tab);
-	} else {
-		tab.title = title;
-		tab.dirty = false;
-	}
-	setTabDirty(tabId, false);
-	setActiveTab(tabId);
-	if (wasActive) {
-		ide_state.textVersion = ide_state.buffer.version;
-		ide_state.maxLineLengthDirty = true;
-		ide_state.layout.invalidateHighlightsFromRow(0);
-		ide_state.layout.markVisualLinesDirty();
-	}
-}
-
-export function isDebugPanelActive(kind: DebugPanelKind): boolean {
-	return ide_state.activeTabId === debugPanelTabId(kind);
-}
-
 export function openDebugOverviewTab(): void {
-	openDebugPanelTab('registry');
+	ide_state.resourcePanel.showRegistryInspector();
 }
 
 export function openObjectInspectorTab(): void {
@@ -4015,7 +3828,11 @@ export function openObjectInspectorTab(): void {
 }
 
 export function openEventInspectorTab(): void {
-	openDebugPanelTab('events');
+	ide_state.resourcePanel.showEventInspector();
+}
+
+export function openRegistryInspectorTab(): void {
+	ide_state.resourcePanel.showRegistryInspector();
 }
 
 export function computePanelRatioBounds(): { min: number; max: number } {

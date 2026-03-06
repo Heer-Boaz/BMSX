@@ -12,6 +12,8 @@ import { applyDefinitionSelection, bottomMargin, codeViewportTop, focusChunkSour
 import { measureText } from './text_utils';
 import type { CallHierarchyView, CallHierarchyViewNode } from './code_reference';
 import { buildWorldInspectorItems } from './world_inspector';
+import { buildEventInspectorItems } from './event_inspector';
+import { buildRegistryInspectorItems } from './registry_inspector';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: Scrollbar;
@@ -23,7 +25,7 @@ export class ResourcePanelController {
 	public focused = false;
 	private widthRatio: number;
 	private filterMode: 'lua_only' | 'all' = 'lua_only';
-	private mode: 'resources' | 'call_hierarchy' | 'world_inspector' = 'resources';
+	private mode: 'resources' | 'call_hierarchy' | 'world_inspector' | 'event_inspector' | 'registry_inspector' = 'resources';
 	public lineHeight: number;
 	private charAdvance: number;
 
@@ -38,6 +40,8 @@ export class ResourcePanelController {
 	private callHierarchyView: CallHierarchyView = null;
 	private readonly callHierarchyExpandedNodeIds = new Set<string>();
 	private readonly worldInspectorExpandedIds = new Set<string>();
+	private readonly eventInspectorExpandedIds = new Set<string>();
+	private readonly registryInspectorExpandedIds = new Set<string>();
 
 	// Scrollbars for the panel
 	public readonly resourceVertical: Scrollbar;
@@ -66,7 +70,7 @@ export class ResourcePanelController {
 	isFocused(): boolean { return this.focused; }
 	setFocused(focused: boolean): void { this.focused = focused; }
 	getFilterMode(): 'lua_only' | 'all' { return this.filterMode; }
-	getMode(): 'resources' | 'call_hierarchy' | 'world_inspector' { return this.mode; }
+	getMode(): 'resources' | 'call_hierarchy' | 'world_inspector' | 'event_inspector' | 'registry_inspector' { return this.mode; }
 
 	togglePanel(): void { this.visible ? this.hide() : this.show(); }
 
@@ -123,6 +127,38 @@ export class ResourcePanelController {
 		this.refreshContents();
 	}
 
+	showEventInspector(): void {
+		const clamped = this.clampRatio(this.widthRatio);
+		const widthPx = this.computePixelWidth(clamped);
+		const top = codeViewportTop();
+		const bottom = ide_state.viewportHeight - bottomMargin();
+		if (clamped <= 0 || widthPx <= 0 || bottom <= top) {
+			ide_state.showMessage('Viewport too small for event inspector.', constants.COLOR_STATUS_WARNING, 3.0);
+			return;
+		}
+		this.widthRatio = clamped;
+		this.mode = 'event_inspector';
+		this.visible = true;
+		this.focused = true;
+		this.refreshContents();
+	}
+
+	showRegistryInspector(): void {
+		const clamped = this.clampRatio(this.widthRatio);
+		const widthPx = this.computePixelWidth(clamped);
+		const top = codeViewportTop();
+		const bottom = ide_state.viewportHeight - bottomMargin();
+		if (clamped <= 0 || widthPx <= 0 || bottom <= top) {
+			ide_state.showMessage('Viewport too small for registry inspector.', constants.COLOR_STATUS_WARNING, 3.0);
+			return;
+		}
+		this.widthRatio = clamped;
+		this.mode = 'registry_inspector';
+		this.visible = true;
+		this.focused = true;
+		this.refreshContents();
+	}
+
 	hide(): void {
 		this.visible = false;
 		this.focused = false;
@@ -131,6 +167,8 @@ export class ResourcePanelController {
 		this.callHierarchyView = null;
 		this.callHierarchyExpandedNodeIds.clear();
 		this.worldInspectorExpandedIds.clear();
+		this.eventInspectorExpandedIds.clear();
+		this.registryInspectorExpandedIds.clear();
 	}
 
 	toggleFilterMode(): void {
@@ -176,7 +214,7 @@ export class ResourcePanelController {
 			return;
 		}
 
-		if (this.mode === 'call_hierarchy' || this.mode === 'world_inspector') {
+		if (this.mode !== 'resources') {
 			if (isKeyJustPressed('ArrowLeft')) {
 				consumeIdeKey('ArrowLeft');
 				this.collapseTreeNode();
@@ -212,7 +250,7 @@ export class ResourcePanelController {
 			}
 			return;
 		}
-		if ((this.mode === 'call_hierarchy' || this.mode === 'world_inspector') && isKeyJustPressed('Space')) {
+		if (this.mode !== 'resources' && isKeyJustPressed('Space')) {
 			consumeIdeKey('Space');
 			this.openSelected();
 			return;
@@ -349,6 +387,14 @@ export class ResourcePanelController {
 		}
 		if (this.mode === 'world_inspector') {
 			this.refreshTreeContents(buildWorldInspectorItems(this.worldInspectorExpandedIds));
+			return;
+		}
+		if (this.mode === 'event_inspector') {
+			this.refreshTreeContents(buildEventInspectorItems(this.eventInspectorExpandedIds));
+			return;
+		}
+		if (this.mode === 'registry_inspector') {
+			this.refreshTreeContents(buildRegistryInspectorItems(this.registryInspectorExpandedIds));
 			return;
 		}
 		this.hoverIndex = -1;
@@ -568,8 +614,9 @@ export class ResourcePanelController {
 			this.openSelectedCallHierarchy();
 			return;
 		}
-		if (this.mode === 'world_inspector') {
-			this.toggleTreeNode(this.worldInspectorExpandedIds, () => this.refreshTreeContents(buildWorldInspectorItems(this.worldInspectorExpandedIds)));
+		if (this.mode !== 'resources') {
+			const ids = this.expandedIdsForMode();
+			this.toggleTreeNode(ids, () => this.refreshContents());
 			return;
 		}
 		const item = this.items[this.selectionIndex];
@@ -789,10 +836,19 @@ export class ResourcePanelController {
 		refresh();
 	}
 
+	private expandedIdsForMode(): Set<string> {
+		switch (this.mode) {
+			case 'world_inspector': return this.worldInspectorExpandedIds;
+			case 'event_inspector': return this.eventInspectorExpandedIds;
+			case 'registry_inspector': return this.registryInspectorExpandedIds;
+			default: return this.callHierarchyExpandedNodeIds;
+		}
+	}
+
 	private expandTreeNode(): void {
 		const item = this.items[this.selectionIndex];
 		if (!item?.callHierarchyExpandable || !item.callHierarchyNodeId) return;
-		const ids = this.mode === 'world_inspector' ? this.worldInspectorExpandedIds : this.callHierarchyExpandedNodeIds;
+		const ids = this.expandedIdsForMode();
 		if (ids.has(item.callHierarchyNodeId)) return;
 		ids.add(item.callHierarchyNodeId);
 		this.refreshContents();
@@ -803,7 +859,7 @@ export class ResourcePanelController {
 	private collapseTreeNode(): void {
 		const item = this.items[this.selectionIndex];
 		if (!item?.callHierarchyExpandable || !item.callHierarchyNodeId) return;
-		const ids = this.mode === 'world_inspector' ? this.worldInspectorExpandedIds : this.callHierarchyExpandedNodeIds;
+		const ids = this.expandedIdsForMode();
 		if (!ids.has(item.callHierarchyNodeId)) return;
 		ids.delete(item.callHierarchyNodeId);
 		this.refreshContents();

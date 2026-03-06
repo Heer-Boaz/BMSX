@@ -1,7 +1,6 @@
 import * as constants from '../constants';
 import type { RectBounds } from '../../../rompack/rompack';
 import { ide_state } from '../ide_state';
-import { isDebugPanelActive } from '../cart_editor';
 import { measureText } from '../text_utils';
 import { drawEditorText } from '../text_renderer';
 import { MenuId, TopBarButtonId } from '../types';
@@ -148,9 +147,9 @@ function buildMenuEntries(): MenuEntry[] {
 	const filterMode = ide_state.resourcePanel.getFilterMode();
 	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
 	const problemsActive = ide_state.problemsPanel.isVisible;
-	const debugObjectsActive = isDebugPanelActive('objects');
-	const debugEventsActive = isDebugPanelActive('events');
-	const debugRegistryActive = isDebugPanelActive('registry');
+	const debugObjectsActive = resourcePanelActive && resourcePanelMode === 'world_inspector';
+	const debugEventsActive = resourcePanelActive && resourcePanelMode === 'event_inspector';
+	const debugRegistryActive = resourcePanelActive && resourcePanelMode === 'registry_inspector';
 	const filterActive = filterMode === 'lua_only';
 	return [
 		{

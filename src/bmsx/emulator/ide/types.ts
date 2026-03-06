@@ -215,9 +215,7 @@ export type VisualLineSegment = {
 export type TopBarButtonId = typeof MENU_COMMANDS[number];
 export type MenuId = 'file' | 'run' | 'view' | 'debug';
 
-export type DebugPanelKind = 'objects' | 'events' | 'registry';
-
-export type EditorTabId = `resource:${string}` | `lua:${string}` | `debug:${string}`;
+export type EditorTabId = `resource:${string}` | `lua:${string}`;
 export type EditorTabKind = 'resource_view' | 'lua_editor';
 
 export type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
