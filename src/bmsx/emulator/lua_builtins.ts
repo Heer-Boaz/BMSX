@@ -48,6 +48,10 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> =
 	{ name: 'round_to_nearest', params: ['value'], signature: 'round_to_nearest(value)' },
 	{ name: 'rol8', params: ['value'], signature: 'rol8(value)' },
 	{ name: 'swap_remove', params: ['array', 'index'], signature: 'swap_remove(array, index)' },
+	{ name: 'objects_by_type', params: ['type_name', 'opts?'], signature: 'objects_by_type(type_name [, opts])', description: 'Returns an iterator over all world objects whose type_name matches.' },
+	{ name: 'objects_by_tag', params: ['tag', 'opts?'], signature: 'objects_by_tag(tag [, opts])', description: 'Returns an iterator over all world objects carrying the given tag.' },
+	{ name: 'find_by_type', params: ['type_name', 'opts?'], signature: 'find_by_type(type_name [, opts])', description: 'Returns the first world object matching type_name, or nil.' },
+	{ name: 'find_by_tag', params: ['tag', 'opts?'], signature: 'find_by_tag(tag [, opts])', description: 'Returns the first world object carrying the given tag, or nil.' },
 ];
 
 export const ENGINE_LUA_BUILTIN_GLOBALS: ReadonlyArray<LuaBuiltinDescriptor> = [

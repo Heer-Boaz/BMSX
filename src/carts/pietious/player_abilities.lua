@@ -35,8 +35,8 @@ action_effects.register_effect('pepernoot', {
 			end
 		end
 		local live_count = 0
-		for i = 1, #owner.pepernoot_projectile_ids do
-			if object(owner.pepernoot_projectile_ids[i]) ~= nil then
+		for _, proj in objects_by_type('pepernoot_projectile') do
+			if proj.owner_id == owner.id then
 				live_count = live_count + 1
 			end
 		end
@@ -50,7 +50,6 @@ action_effects.register_effect('pepernoot', {
 	end,
 	handler = function(context)
 		local owner = context.owner
-		owner:refresh_active_pepernoot_projectiles()
 		local room = object('c').current_room
 		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 		local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
@@ -65,7 +64,6 @@ action_effects.register_effect('pepernoot', {
 			direction = owner.facing,
 			pos = { x = spawn_x, y = spawn_y, z = 113 },
 		})
-		owner.pepernoot_projectile_ids[#owner.pepernoot_projectile_ids + 1] = projectile_id
 		owner.weapon_level = owner.weapon_level - constants.secondary_weapon.pepernoot_weapon_level_cost
 		owner:emit_weapon_changed()
 		owner.events:emit('fire_pepernoot')
@@ -161,19 +159,6 @@ function player_abilities.build_input_action_effect_program()
 end
 
 function player_abilities.attach_player_methods(player)
-	function player:refresh_active_pepernoot_projectiles()
-		local write_index = 1
-		for i = 1, #self.pepernoot_projectile_ids do
-			if object(self.pepernoot_projectile_ids[i]) ~= nil then
-				self.pepernoot_projectile_ids[write_index] = self.pepernoot_projectile_ids[i]
-				write_index = write_index + 1
-			end
-		end
-		for i = write_index, #self.pepernoot_projectile_ids do
-			self.pepernoot_projectile_ids[i] = nil
-		end
-	end
-
 	function player:equip_subweapon(id)
 		local next_id = id
 		self:remove_tag(player_abilities.equip_tags.pepernoot)

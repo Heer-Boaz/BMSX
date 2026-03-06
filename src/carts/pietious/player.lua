@@ -2914,7 +2914,6 @@ local function register_player_definition()
 			secondary_weapon = nil,
 			weapon_level = 0,
 			pepernoot_projectile_sequence = 0,
-			pepernoot_projectile_ids = {},
 		},
 	})
 end

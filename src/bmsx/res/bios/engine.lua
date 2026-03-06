@@ -449,6 +449,22 @@ function engine.get_space()
 	return world_instance:get_space()
 end
 
+function engine.objects_by_type(type_name, opts)
+	return world_instance:objects_by_type(type_name, opts)
+end
+
+function engine.objects_by_tag(tag, opts)
+	return world_instance:objects_by_tag(tag, opts)
+end
+
+function engine.find_by_type(type_name, opts)
+	return world_instance:find_by_type(type_name, opts)
+end
+
+function engine.find_by_tag(tag, opts)
+	return world_instance:find_by_tag(tag, opts)
+end
+
 function engine.attach_component(object_or_id, component_or_type)
 	local obj = type(object_or_id) == "string" and world_instance:get(object_or_id) or object_or_id
 	if type(component_or_type) == "table" and component_or_type.type_name then
