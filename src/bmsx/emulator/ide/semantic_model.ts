@@ -850,6 +850,7 @@ class SemanticBuilder {
 		for (let index = 0; index < this.chunk.body.length; index += 1) {
 			this.visitStatement(this.chunk.body[index]);
 		}
+		this.resolveDeferredPathReferences();
 		this.leaveScope();
 		return {
 			decls: this.decls,
@@ -928,6 +929,7 @@ class SemanticBuilder {
 						this.globalsByKey.set(symbolKey, decl);
 					}
 				}
+				this.recordFunctionNameReferences(functionDeclaration);
 				const basePath = functionDeclaration.name.identifiers.join('.');
 				const methodName = functionDeclaration.name.methodName;
 				const declarationPath = methodName
@@ -1463,6 +1465,53 @@ class SemanticBuilder {
 		this.annotate(ref.range, ref.name.length, kind, 'usage');
 	}
 
+	private recordFunctionNameReferences(statement: LuaFunctionDeclarationStatement): void {
+		const identifiers = statement.name.methodName
+			? statement.name.identifiers
+			: statement.name.identifiers.slice(0, Math.max(statement.name.identifiers.length - 1, 0));
+		if (identifiers.length === 0) {
+			return;
+		}
+		const tokenInfos = findFunctionNameIdentifierTokens(statement, identifiers, this.tokens, this.tokenMap);
+		if (tokenInfos.length === 0) {
+			return;
+		}
+		const namePath: string[] = [];
+		for (let index = 0; index < tokenInfos.length; index += 1) {
+			const identifier = identifiers[index];
+			const tokenInfo = tokenInfos[index];
+			namePath.push(identifier);
+			const range = buildRangeFromToken(tokenInfo, this.path);
+			let targetDecl: InternalDecl = null;
+			if (namePath.length === 1) {
+				targetDecl = this.resolveName(identifier) ?? this.globalsByKey.get(identifier) ?? null;
+			} else {
+				targetDecl = this.tableFields.get(joinNamePath(namePath)) ?? null;
+			}
+			this.recordReference({
+				namePath,
+				name: identifier,
+				range,
+				target: targetDecl ? targetDecl.id : null,
+				isWrite: false,
+			});
+		}
+	}
+
+	private resolveDeferredPathReferences(): void {
+		for (let index = 0; index < this.refs.length; index += 1) {
+			const ref = this.refs[index];
+			if (ref.target || ref.namePath.length <= 1) {
+				continue;
+			}
+			const targetDecl = this.tableFields.get(ref.symbolKey);
+			if (!targetDecl) {
+				continue;
+			}
+			ref.target = targetDecl.id;
+		}
+	}
+
 	private annotate(range: LuaSourceRange, length: number, kind: SymbolKind, role: SemanticRole): void {
 		const rowIndex = range.start.line - 1;
 		if (rowIndex < 0 || rowIndex >= this.annotations.length) {
@@ -1789,6 +1838,43 @@ function findFunctionNameToken(statement: LuaFunctionDeclarationStatement, token
 		}
 	}
 	return candidate;
+}
+
+function findFunctionNameIdentifierTokens(
+	statement: LuaFunctionDeclarationStatement,
+	identifiers: readonly string[],
+	tokens: readonly LuaToken[],
+	tokenMap: Map<string, TokenInfo>,
+): TokenInfo[] {
+	if (identifiers.length === 0) {
+		return [];
+	}
+	const startLine = statement.range.start.line;
+	const endLine = statement.functionExpression.range.start.line;
+	const results: TokenInfo[] = [];
+	let nextIdentifierIndex = 0;
+	for (let index = 0; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		if (token.line < startLine || token.line > endLine) {
+			continue;
+		}
+		if (token.type !== LuaTokenType.Identifier) {
+			continue;
+		}
+		if (token.lexeme !== identifiers[nextIdentifierIndex]) {
+			continue;
+		}
+		const info = tokenMap.get(tokenKey(token.line, token.column));
+		if (!info) {
+			continue;
+		}
+		results.push(info);
+		nextIdentifierIndex += 1;
+		if (nextIdentifierIndex >= identifiers.length) {
+			break;
+		}
+	}
+	return results;
 }
 
 function findMethodToken(callExpression: LuaCallExpression, tokens: readonly LuaToken[], tokenMap: Map<string, TokenInfo>): TokenInfo {

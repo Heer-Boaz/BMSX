@@ -1995,6 +1995,16 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 	if (chain.length === 0) {
 		return null;
 	}
+	if (preferredChunk && usageRow !== null && usageColumn !== null) {
+		const activeModel = ide_state.layout.getSemanticModel(ide_state.buffer, ide_state.textVersion, preferredChunk);
+		if (activeModel) {
+			const semanticDefinition = activeModel.lookupIdentifier(usageRow, usageColumn, chain)
+				?? findDefinitionAtPosition(activeModel.definitions, usageRow, usageColumn, chain);
+			if (semanticDefinition) {
+				return buildDefinitionLocationFromRange(semanticDefinition.definition);
+			}
+		}
+	}
 	const bundle = getStaticDefinitions(preferredChunk);
 	if (!bundle || bundle.definitions.length === 0) {
 		return null;
