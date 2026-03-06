@@ -7,26 +7,41 @@ import type { ResourceBrowserItem } from './types';
 
 const INDENT = '  ';
 
-// Lua snippet that traverses the registry and returns a structured snapshot.
+// Lua snippet that reads from both the Lua registry and the world's _by_id,
+// returning a combined snapshot of all known Lua-side entities.
 const REGISTRY_SNAPSHOT_LUA = `
-local reg = require('registry').instance
 local r = {}
-local entries = {}
-local ei = 0
+
+-- 1. Explicit registry entries (from enlist() calls)
+local reg = require('registry').instance
+local reg_entries = {}
+local ri = 0
 for id, entity in pairs(reg._registry) do
-	ei = ei + 1
-	local info = { id = tostring(id) }
-	if entity.type_name then
-		info.type_name = entity.type_name
-	end
-	if entity.registrypersistent then
-		info.persistent = true
-	end
-	entries[ei] = info
+	ri = ri + 1
+	local info = { id = tostring(id), source = 'registry' }
+	if entity.type_name then info.type_name = entity.type_name end
+	if entity.registrypersistent then info.persistent = true end
+	reg_entries[ri] = info
 end
-table.sort(entries, function(a, b) return a.id < b.id end)
-r.count = ei
-r.entries = entries
+
+-- 2. World objects (from world._by_id)
+local w = require('world').instance
+local world_entries = {}
+local wi = 0
+for id, obj in pairs(w._by_id) do
+	wi = wi + 1
+	local info = { id = tostring(id), source = 'world' }
+	if obj.type_name then info.type_name = obj.type_name end
+	if obj.registrypersistent then info.persistent = true end
+	if obj.active ~= nil then info.active = obj.active end
+	if obj.space_id then info.space_id = obj.space_id end
+	world_entries[wi] = info
+end
+
+r.registry_count = ri
+r.registry_entries = reg_entries
+r.world_count = wi
+r.world_entries = world_entries
 return r
 `;
 
@@ -50,6 +65,144 @@ function tableArrayToList(t: Table): Value[] {
 	return indexed.map(e => e.value);
 }
 
+type EntityInfo = {
+	id: string;
+	typeName: string | null;
+	persistent: boolean;
+	active: boolean | null;
+	spaceId: string | null;
+	source: string;
+};
+
+function parseEntries(entriesTable: Value): EntityInfo[] {
+	if (!(entriesTable instanceof Table)) return [];
+	const list = tableArrayToList(entriesTable);
+	const result: EntityInfo[] = [];
+	for (let i = 0; i < list.length; i++) {
+		const entry = list[i] as Table;
+		if (!(entry instanceof Table)) continue;
+		const id = valueToString(tableField(entry, 'id'));
+		const typeName = tableField(entry, 'type_name');
+		const persistent = tableField(entry, 'persistent') === true;
+		const activeVal = tableField(entry, 'active');
+		const spaceIdVal = tableField(entry, 'space_id');
+		const sourceVal = tableField(entry, 'source');
+		result.push({
+			id,
+			typeName: typeName !== null ? valueToString(typeName) : null,
+			persistent,
+			active: typeof activeVal === 'boolean' ? activeVal : null,
+			spaceId: spaceIdVal !== null ? valueToString(spaceIdVal) : null,
+			source: sourceVal !== null ? valueToString(sourceVal) : 'unknown',
+		});
+	}
+	return result;
+}
+
+function buildGroupedItems(
+	sectionLabel: string,
+	entities: EntityInfo[],
+	expandedIds: Set<string>,
+	prefix: string,
+	items: ResourceBrowserItem[],
+): void {
+	if (entities.length === 0) return;
+
+	// Group by type_name
+	const grouped = new Map<string, EntityInfo[]>();
+	const ungrouped: EntityInfo[] = [];
+
+	for (const entity of entities) {
+		if (entity.typeName && entity.typeName !== 'nil') {
+			let group = grouped.get(entity.typeName);
+			if (!group) {
+				group = [];
+				grouped.set(entity.typeName, group);
+			}
+			group.push(entity);
+		} else {
+			ungrouped.push(entity);
+		}
+	}
+
+	// Section header
+	const sectionNodeId = `${prefix}:section`;
+	const sectionExpandable = true;
+	const sectionExpanded = expandedIds.has(sectionNodeId);
+	const sectionMarker = sectionExpanded ? '- ' : '+ ';
+	items.push({
+		line: `${sectionMarker}${sectionLabel} (${entities.length})`,
+		contentStartColumn: sectionMarker.length,
+		descriptor: null,
+		callHierarchyNodeId: sectionNodeId,
+		callHierarchyExpandable: sectionExpandable,
+		callHierarchyExpanded: sectionExpanded,
+	});
+
+	if (!sectionExpanded) return;
+
+	// Sort type groups
+	const sortedTypes = Array.from(grouped.keys()).sort();
+
+	for (const typeName of sortedTypes) {
+		const group = grouped.get(typeName)!;
+		const nodeId = `${prefix}:${typeName}`;
+		const expanded = expandedIds.has(nodeId);
+		const marker = expanded ? '- ' : '+ ';
+
+		items.push({
+			line: `${INDENT}${marker}${typeName} (${group.length})`,
+			contentStartColumn: INDENT.length + marker.length,
+			descriptor: null,
+			callHierarchyNodeId: nodeId,
+			callHierarchyExpandable: true,
+			callHierarchyExpanded: expanded,
+		});
+
+		if (!expanded) continue;
+
+		for (const entity of group) {
+			const tags: string[] = [];
+			if (entity.persistent) tags.push('persistent');
+			if (entity.active === false) tags.push('inactive');
+			if (entity.spaceId) tags.push(entity.spaceId);
+			const suffix = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
+			items.push({
+				line: `${INDENT}${INDENT}  ${entity.id}${suffix}`,
+				contentStartColumn: INDENT.length * 2 + 2,
+				descriptor: null,
+			});
+		}
+	}
+
+	if (ungrouped.length > 0) {
+		const nodeId = `${prefix}:<untyped>`;
+		const expanded = expandedIds.has(nodeId);
+		const marker = expanded ? '- ' : '+ ';
+		items.push({
+			line: `${INDENT}${marker}<untyped> (${ungrouped.length})`,
+			contentStartColumn: INDENT.length + marker.length,
+			descriptor: null,
+			callHierarchyNodeId: nodeId,
+			callHierarchyExpandable: true,
+			callHierarchyExpanded: expanded,
+		});
+		if (expanded) {
+			for (const entity of ungrouped) {
+				const tags: string[] = [];
+				if (entity.persistent) tags.push('persistent');
+				if (entity.active === false) tags.push('inactive');
+				const suffix = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
+				items.push({
+					line: `${INDENT}${INDENT}  ${entity.id}${suffix}`,
+					contentStartColumn: INDENT.length * 2 + 2,
+					descriptor: null,
+				});
+			}
+		}
+	}
+}
+
 export function buildRegistryInspectorItems(expandedIds: Set<string>): ResourceBrowserItem[] {
 	const runtime = Runtime.instance;
 	const results = runConsoleChunk(runtime, REGISTRY_SNAPSHOT_LUA);
@@ -58,112 +211,29 @@ export function buildRegistryInspectorItems(expandedIds: Set<string>): ResourceB
 		return [{ line: '<registry not available>', contentStartColumn: 0, descriptor: null }];
 	}
 
-	const totalCount = tableField(snapshot, 'count');
-	const entriesArray = tableField(snapshot, 'entries') as Table;
-	if (!(entriesArray instanceof Table)) {
-		return [{ line: '<registry empty>', contentStartColumn: 0, descriptor: null }];
-	}
-
-	const entries = tableArrayToList(entriesArray);
 	const items: ResourceBrowserItem[] = [];
 
-	// Group by type_name
-	const grouped = new Map<string, Array<{ id: string; persistent: boolean; table: Table }>>();
-	const ungrouped: Array<{ id: string; persistent: boolean; table: Table }> = [];
+	// World objects section
+	const worldEntries = parseEntries(tableField(snapshot, 'world_entries'));
+	const worldCount = tableField(snapshot, 'world_count');
+	buildGroupedItems(
+		`World Objects (${typeof worldCount === 'number' ? worldCount : worldEntries.length})`,
+		worldEntries, expandedIds, 'rw', items,
+	);
 
-	for (let i = 0; i < entries.length; i++) {
-		const entry = entries[i] as Table;
-		if (!(entry instanceof Table)) continue;
-		const id = valueToString(tableField(entry, 'id'));
-		const typeName = tableField(entry, 'type_name');
-		const persistent = tableField(entry, 'persistent') === true;
-		const typeStr = typeName !== null ? valueToString(typeName) : null;
-
-		const info = { id, persistent, table: entry };
-		if (typeStr && typeStr !== 'nil') {
-			let group = grouped.get(typeStr);
-			if (!group) {
-				group = [];
-				grouped.set(typeStr, group);
-			}
-			group.push(info);
-		} else {
-			ungrouped.push(info);
-		}
-	}
-
-	// Sort type groups
-	const sortedTypes = Array.from(grouped.keys()).sort();
-
-	// Render grouped entries
-	for (const typeName of sortedTypes) {
-		const group = grouped.get(typeName)!;
-		const nodeId = `rg:${typeName}`;
-		const expandable = group.length > 0;
-		const expanded = expandable && expandedIds.has(nodeId);
-		const marker = expandable ? (expanded ? '- ' : '+ ') : '  ';
-
-		items.push({
-			line: `${marker}${typeName} (${group.length})`,
-			contentStartColumn: marker.length,
-			descriptor: null,
-			callHierarchyNodeId: nodeId,
-			callHierarchyExpandable: expandable,
-			callHierarchyExpanded: expanded,
-		});
-
-		if (!expanded) continue;
-
-		for (let gi = 0; gi < group.length; gi++) {
-			const { id, persistent } = group[gi];
-			const tag = persistent ? ' [persistent]' : '';
-			items.push({
-				line: `${INDENT}  ${id}${tag}`,
-				contentStartColumn: INDENT.length + 2,
-				descriptor: null,
-			});
-		}
-	}
-
-	// Render ungrouped entries
-	if (ungrouped.length > 0) {
-		const nodeId = 'rg:<untyped>';
-		const expandable = ungrouped.length > 0;
-		const expanded = expandable && expandedIds.has(nodeId);
-		const marker = expandable ? (expanded ? '- ' : '+ ') : '  ';
-
-		items.push({
-			line: `${marker}<untyped> (${ungrouped.length})`,
-			contentStartColumn: marker.length,
-			descriptor: null,
-			callHierarchyNodeId: nodeId,
-			callHierarchyExpandable: expandable,
-			callHierarchyExpanded: expanded,
-		});
-
-		if (expanded) {
-			for (let ui = 0; ui < ungrouped.length; ui++) {
-				const { id, persistent } = ungrouped[ui];
-				const tag = persistent ? ' [persistent]' : '';
-				items.push({
-					line: `${INDENT}  ${id}${tag}`,
-					contentStartColumn: INDENT.length + 2,
-					descriptor: null,
-				});
-			}
-		}
+	// Explicit registry section
+	const regEntries = parseEntries(tableField(snapshot, 'registry_entries'));
+	const regCount = tableField(snapshot, 'registry_count');
+	if (typeof regCount === 'number' && regCount > 0) {
+		buildGroupedItems(
+			`Registry (${regCount})`,
+			regEntries, expandedIds, 'rg', items,
+		);
 	}
 
 	if (items.length === 0) {
-		items.push({ line: '<registry empty>', contentStartColumn: 0, descriptor: null });
+		items.push({ line: '<no entities>', contentStartColumn: 0, descriptor: null });
 	}
-
-	// Prepend total count
-	items.unshift({
-		line: `Total: ${typeof totalCount === 'number' ? totalCount : entries.length}`,
-		contentStartColumn: 0,
-		descriptor: null,
-	});
 
 	return items;
 }

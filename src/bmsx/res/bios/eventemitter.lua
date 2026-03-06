@@ -74,6 +74,10 @@ function eventemitter.new()
 end
 
 eventemitter.instance = eventemitter.new()
+eventemitter.instance.id = "eventemitter"
+eventemitter.instance.type_name = "eventemitter"
+eventemitter.instance.registrypersistent = true
+require("registry").instance:register(eventemitter.instance)
 
 function eventemitter:create_gameevent(spec)
 	local event = {

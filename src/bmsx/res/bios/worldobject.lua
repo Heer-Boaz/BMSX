@@ -63,6 +63,7 @@ local fsmlibrary = require("fsmlibrary")
 local components = require("components")
 local behaviourtree = require("behaviourtree")
 local world_instance = require("world").instance
+local registry_instance = require("registry").instance
 
 local worldobject = {}
 worldobject.__index = worldobject
@@ -188,6 +189,7 @@ function worldobject:add_component(comp)
 	bucket[#bucket + 1] = comp
 	comp:bind()
 	comp:on_attach()
+	registry_instance:register(comp)
 	if comp.type_name == "timelinecomponent" then
 		self.timelines = comp
 	end
@@ -308,6 +310,7 @@ function worldobject:remove_component_instance(comp)
 	end
 	comp:on_detach()
 	comp:unbind()
+	registry_instance:deregister(comp, true)
 	comp.parent = nil
 end
 

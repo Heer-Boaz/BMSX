@@ -29,6 +29,7 @@
 --    defer a spawn/despawn, use a queue and process it after the loop.
 
 local ecs = require("ecs")
+local registry = require("registry")
 
 local tickgroup = ecs.tickgroup
 local world_instance
@@ -328,6 +329,7 @@ function world_class:spawn(obj, pos)
 	self._by_id[obj.id] = obj
 	self._objects[#self._objects + 1] = obj
 	self:set_object_space(obj, space_id)
+	registry.instance:register(obj)
 	obj:onspawn(pos)
 	return obj
 end
@@ -359,6 +361,7 @@ function world_class:despawn(id_or_obj)
 		self._obj_to_space[object_id] = nil
 	end
 
+	registry.instance:deregister(object_id, true)
 	obj:ondespawn()
 	obj:dispose()
 	self._by_id[object_id] = nil
@@ -480,10 +483,14 @@ function world_class:clear()
 	self._spaces = {}
 	self._space_order = {}
 	self._obj_to_space = {}
+	registry.instance:clear()
 	self:add_space("main")
 	self.active_space_id = "main"
 end
 world_instance = world_class.new()
+world_instance.id = "world"
+world_instance.registrypersistent = true
+registry.instance:register(world_instance)
 
 return {
 	world = world_class,
