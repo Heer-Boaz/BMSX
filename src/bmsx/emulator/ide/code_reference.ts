@@ -11,6 +11,7 @@ import { listResources } from '../workspace';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { CodeLayout } from './code_layout';
+import { parseLuaIdentifierChain, resolveLuaIdentifierChainRoot } from './lua_identifier_chain';
 import { LuaSemanticWorkspace, Decl, type Ref, type SymbolID } from './semantic_model';
 import type { TextBuffer } from './text_buffer';
 import { getTextSnapshot, splitText } from './source_text';
@@ -67,11 +68,11 @@ export function buildEditorContextMenuEntries(token: EditorContextToken, editabl
 }
 
 function isBuiltinContextExpression(expression: string): boolean {
-	const root = expression.split('.', 1)[0].trim().toLowerCase();
-	if (root.length === 0) {
+	const root = resolveLuaIdentifierChainRoot(expression);
+	if (!root || root.length === 0) {
 		return false;
 	}
-	return Runtime.instance.luaBuiltinMetadata.has(root);
+	return Runtime.instance.luaBuiltinMetadata.has(root.trim().toLowerCase());
 }
 
 type CallerScope = {
@@ -621,8 +622,8 @@ export function buildReferenceCatalogForExpression(options: BuildReferenceCatalo
 
 export function resolveDefinitionLocationForExpression(options: ResolveDefinitionLocationOptions): LuaDefinitionLocation {
 	const { expression, environment, workspace, currentPath, currentLines } = options;
-	const namePath = expression.split('.').filter(part => part.length > 0);
-	if (namePath.length === 0) {
+	const namePath = parseLuaIdentifierChain(expression);
+	if (!namePath || namePath.length === 0) {
 		return null;
 	}
 	const metadata = collectFileMetadata({

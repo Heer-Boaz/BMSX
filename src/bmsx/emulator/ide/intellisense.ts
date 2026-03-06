@@ -23,6 +23,7 @@ import { applyDefinitionSelection, beginNavigationCapture, completeNavigation, f
 import * as constants from './constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
 import { ide_state } from './ide_state';
+import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from './lua_identifier_chain';
 import { buildLuaSemanticModel, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type FunctionSignatureInfo } from './semantic_model';
 import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaCompletionItem, PointerSnapshot } from './types';
@@ -1215,8 +1216,8 @@ export function resolveSemanticDefinitionLocation(
 	if (!expression) {
 		return null;
 	}
-	const namePath = expression.split('.');
-	if (namePath.length === 0) {
+	const namePath = parseLuaIdentifierChain(expression);
+	if (!namePath || namePath.length === 0) {
 		return null;
 	}
 	const activeContext = getActiveCodeTabContext();
@@ -1303,7 +1304,7 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	const clampedColumn = clamp(column, 0, line.length - 1);
 	let probe = clampedColumn;
 	if (!LuaLexer.isIdentifierPart(line.charAt(probe))) {
-		if (line.charCodeAt(probe) === 46 && probe > 0) {
+		if (isIdentifierChainSeparator(line.charCodeAt(probe)) && probe > 0) {
 			probe -= 1;
 		}
 		else if (probe > 0 && LuaLexer.isIdentifierPart(line.charAt(probe - 1))) {
@@ -1327,16 +1328,16 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	// extend to include preceding segments (left of initial segment)
 	let left = expressionStart;
 	while (left > 0) {
-		const dotIndex = left - 1;
-		if (line.charCodeAt(dotIndex) !== 46) {
+		const separatorIndex = left - 1;
+		if (!isIdentifierChainSeparator(line.charCodeAt(separatorIndex))) {
 			break;
 		}
-		let segmentStart = dotIndex - 1;
+		let segmentStart = separatorIndex - 1;
 		while (segmentStart >= 0 && LuaLexer.isIdentifierPart(line.charAt(segmentStart))) {
 			segmentStart -= 1;
 		}
 		segmentStart += 1;
-		if (segmentStart >= dotIndex) {
+		if (segmentStart >= separatorIndex) {
 			break;
 		}
 		if (!LuaLexer.isIdentifierStart(line.charAt(segmentStart))) {
@@ -1347,7 +1348,7 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	expressionStart = left;
 	let right = expressionEnd;
 	while (right < line.length) {
-		if (line.charCodeAt(right) !== 46) {
+		if (!isIdentifierChainSeparator(line.charCodeAt(right))) {
 			break;
 		}
 		const identifierStart = right + 1;
@@ -1371,7 +1372,7 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	let segmentStart = expressionStart;
 	while (segmentStart < expressionEnd) {
 		let segmentEnd = segmentStart;
-		while (segmentEnd < expressionEnd && line.charCodeAt(segmentEnd) !== 46) {
+		while (segmentEnd < expressionEnd && !isIdentifierChainSeparator(line.charCodeAt(segmentEnd))) {
 			segmentEnd += 1;
 		}
 		if (segmentEnd > segmentStart) {
@@ -1386,7 +1387,7 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	if (pointerColumn < expressionStart) {
 		pointerColumn = expressionStart;
 	}
-	if (line.charCodeAt(pointerColumn) === 46 && pointerColumn > expressionStart) {
+	if (isIdentifierChainSeparator(line.charCodeAt(pointerColumn)) && pointerColumn > expressionStart) {
 		pointerColumn -= 1;
 	}
 	let segmentIndex = -1;
@@ -1400,12 +1401,16 @@ export function extractHoverExpression(row: number, column: number): { expressio
 	if (segmentIndex === -1) {
 		segmentIndex = segments.length - 1;
 	}
-	const expression = segments.slice(0, segmentIndex + 1).map(segment => segment.text).join('.');
+	const targetSegment = segments[segmentIndex];
+	const expression = line.slice(expressionStart, targetSegment.end);
 	if (expression.length === 0) {
 		return null;
 	}
-	const targetSegment = segments[segmentIndex];
 	return { expression, startColumn: targetSegment.start, endColumn: targetSegment.end };
+}
+
+function isIdentifierChainSeparator(value: number): boolean {
+	return value === 46 || value === 58;
 }
 
 function isKeywordTokenType(type: LuaTokenType): boolean {
@@ -2216,44 +2221,7 @@ function rangeArea(range: SourceRange): number {
 }
 
 export function parseLuaIdentifierChain(expression: string): string[] {
-	if (!expression) {
-		return null;
-	}
-	const parts: string[] = [];
-	let segmentStart = 0;
-	for (let index = 0; index < expression.length; index += 1) {
-		const ch = expression.charAt(index);
-		if (ch !== '.' && ch !== ':') {
-			continue;
-		}
-		const segment = expression.slice(segmentStart, index);
-		if (!isValidIdentifierSegment(segment)) {
-			return null;
-		}
-		parts.push(segment);
-		segmentStart = index + 1;
-	}
-	const tailSegment = expression.slice(segmentStart);
-	if (!isValidIdentifierSegment(tailSegment)) {
-		return null;
-	}
-	parts.push(tailSegment);
-	return parts;
-}
-
-function isValidIdentifierSegment(value: string): boolean {
-	if (value.length === 0) {
-		return false;
-	}
-	if (!LuaLexer.isIdentifierStart(value.charAt(0))) {
-		return false;
-	}
-	for (let index = 1; index < value.length; index += 1) {
-		if (!LuaLexer.isIdentifierPart(value.charAt(index))) {
-			return false;
-		}
-	}
-	return true;
+	return parseLuaIdentifierChainShared(expression);
 }
 
 function resolveTableChainMemberValue(table: LuaTable, key: string): LuaValue {
@@ -2360,8 +2328,8 @@ export function collectFrameLocals(snapshot: CpuFrameSnapshot[], cpuFrameIndex: 
 }
 
 export function resolveSnapshotExpression(expression: string): LuaValue | null {
-	const parts = expression.split('.');
-	if (parts.length === 0 || parts.some(p => p.length === 0)) {
+	const parts = parseLuaIdentifierChain(expression);
+	if (!parts || parts.length === 0) {
 		return null;
 	}
 	const runtime = Runtime.instance;

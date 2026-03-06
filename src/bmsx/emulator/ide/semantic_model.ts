@@ -1144,7 +1144,7 @@ class SemanticBuilder {
 		const effectiveMethodSelfPath = methodSelfPath ?? inheritedMethodSelfPath;
 		this.methodSelfPathStack.push(effectiveMethodSelfPath ? effectiveMethodSelfPath.slice() : null);
 		for (let index = 0; index < expression.parameters.length; index += 1) {
-			this.declareParameter(expression.parameters[index]);
+			this.declareParameter(expression.parameters[index], expression.range);
 		}
 		this.visitBlock(block);
 		this.methodSelfPathStack.pop();
@@ -1344,7 +1344,7 @@ class SemanticBuilder {
 		return decl;
 	}
 
-	private declareParameter(name: LuaIdentifierExpression): InternalDecl {
+	private declareParameter(name: LuaIdentifierExpression, scopeRange: LuaSourceRange): InternalDecl {
 		const scope = this.currentScope();
 		const range = buildIdentifierRange(name, this.tokenMap, this.path);
 		const decl = this.createDecl({
@@ -1352,7 +1352,7 @@ class SemanticBuilder {
 			name: name.name,
 			kind: 'parameter',
 			range,
-			scopeRange: scope.range,
+			scopeRange,
 			scopeRef: scope,
 			isGlobal: false,
 			active: true,

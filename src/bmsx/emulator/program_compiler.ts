@@ -413,10 +413,10 @@ class FunctionBuilder {
 	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean): void {
 		this.pushScope(expression.body.range);
 		if (implicitSelf) {
-			this.declareLocal('self', expression.range);
+			this.declareLocal('self', expression.range, expression.range);
 		}
 		for (let i = 0; i < expression.parameters.length; i += 1) {
-			this.declareLocal(expression.parameters[i].name, expression.parameters[i].range);
+			this.declareLocal(expression.parameters[i].name, expression.parameters[i].range, expression.range);
 		}
 		for (let i = 0; i < expression.body.body.length; i += 1) {
 			this.compileStatement(expression.body.body[i]);
@@ -689,7 +689,7 @@ class FunctionBuilder {
 		throw new Error(`Missing label(s): ${labels.join(', ')}`);
 	}
 
-	private declareLocal(name: string, definitionRange: LuaSourceRange): number {
+	private declareLocal(name: string, definitionRange: LuaSourceRange, scopeRange?: LuaSourceRange): number {
 		const canonicalName = this.canonicalizeName(name);
 		const reg = this.localCount;
 		this.localCount += 1;
@@ -707,11 +707,12 @@ class FunctionBuilder {
 		stack.push(reg);
 		const scope = this.scopeStack[this.scopeStack.length - 1];
 		scope.names.push(canonicalName);
+		const effectiveScopeRange = scopeRange ?? scope.range;
 		this.localDebugSlots.push({
 			name: canonicalName,
 			register: reg,
 			definition: cloneSourceRange(definitionRange),
-			scope: scope.range,
+			scope: cloneSourceRange(effectiveScopeRange),
 		});
 		return reg;
 	}
