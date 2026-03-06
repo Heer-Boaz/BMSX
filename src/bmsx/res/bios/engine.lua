@@ -616,6 +616,14 @@ function engine.get_component_definition(def_id)
 	return component_definitions[def_id]
 end
 
+function engine.get_fsm_definitions()
+	return fsmlibrary.definitions()
+end
+
+function engine.get_fsm_definition(fsm_id)
+	return fsmlibrary.get(fsm_id)
+end
+
 function engine.grant_effect(object_id, effect_id)
 	local obj = world_instance:get(object_id)
 	local component = obj:get_component("actioneffectcomponent")

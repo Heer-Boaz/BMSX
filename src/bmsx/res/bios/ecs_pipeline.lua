@@ -2,6 +2,7 @@
 -- ecs pipeline registry and builder for lua engine
 
 local ecs = require("ecs")
+local registry = require("registry")
 
 local ecspipelineregistry = {}
 ecspipelineregistry.__index = ecspipelineregistry
@@ -78,12 +79,23 @@ function ecspipelineregistry:build(world_instance, nodes)
 		local d = self._descs[r.ref]
 		local sys = d.create(r.priority)
 		sys.__ecs_id = r.ref
+		sys.id = "ecs:" .. r.ref
+		sys.type_name = "ecsystem"
 		systems[#systems + 1] = sys
+	end
+
+	-- Deregister previous ECS system instances from the registry.
+	for i = 1, #world_instance.systems.systems do
+		local old = world_instance.systems.systems[i]
+		if old.id then
+			registry.instance:deregister(old.id, true)
+		end
 	end
 
 	world_instance.systems:clear()
 	for i = 1, #systems do
 		world_instance.systems:register(systems[i])
+		registry.instance:register(systems[i])
 	end
 
 	local t1 = $.platform.clock.perf_now()

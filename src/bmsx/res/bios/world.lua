@@ -411,6 +411,61 @@ function world_class:objects_with_components(type_name, opts)
 		nil
 end
 
+-- world:objects_by_type(type_name, opts?)
+--   Iterator over objects whose type_name matches. Leverages the registry for
+--   type-based lookups. opts.scope follows the same rules as world:objects().
+--   Like UE5 GetAllActorsOfClass — returns all objects spawned from a given
+--   define_prefab definition_id.
+function world_class:objects_by_type(obj_type_name, opts)
+	local scope = opts and opts.scope or "all"
+	local results = {}
+	for _, entity in registry.instance:iterate(obj_type_name) do
+		if entity.type_name == obj_type_name and self._by_id[entity.id] and self:_object_in_scope(entity, scope) then
+			results[#results + 1] = entity
+		end
+	end
+	return ipairs(results)
+end
+
+-- world:objects_by_tag(tag, opts?)
+--   Iterator over objects carrying the given tag. Leverages the registry's
+--   tag-based queries. opts.scope follows the same rules as world:objects().
+--   Like UE5 GetAllActorsWithTag.
+function world_class:objects_by_tag(tag, opts)
+	local scope = opts and opts.scope or "all"
+	local results = {}
+	for _, entity in registry.instance:iterate_by_tag(tag) do
+		if self._by_id[entity.id] and self:_object_in_scope(entity, scope) then
+			results[#results + 1] = entity
+		end
+	end
+	return ipairs(results)
+end
+
+-- world:find_by_type(type_name, opts?)
+--   Returns the first object matching type_name (or nil). Like UE5 GetActorOfClass.
+function world_class:find_by_type(obj_type_name, opts)
+	local scope = opts and opts.scope or "all"
+	for _, entity in registry.instance:iterate(obj_type_name) do
+		if entity.type_name == obj_type_name and self._by_id[entity.id] and self:_object_in_scope(entity, scope) then
+			return entity
+		end
+	end
+	return nil
+end
+
+-- world:find_by_tag(tag, opts?)
+--   Returns the first object carrying the given tag (or nil). Like UE5 GetActorWithTag.
+function world_class:find_by_tag(tag, opts)
+	local scope = opts and opts.scope or "all"
+	for _, entity in registry.instance:iterate_by_tag(tag) do
+		if self._by_id[entity.id] and self:_object_in_scope(entity, scope) then
+			return entity
+		end
+	end
+	return nil
+end
+
 function world_class:update()
 	self.systems:begin_frame()
 	-- perf.last_stat_index = 1
