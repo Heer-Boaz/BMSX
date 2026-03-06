@@ -44,6 +44,7 @@
 
 local collision2d = {}
 local world_instance = require("world").instance
+local active_scope = { scope = "active" }
 
 local eps = 1e-8
 local eps_parallel = 1e-12
@@ -603,13 +604,9 @@ end
 function collision2d.rebuild_index(cell_size)
 	local index = collision2d.ensure_index(cell_size)
 	index:clear()
-	for obj in world_instance:objects({ scope = "active" }) do
-		local colliders = obj:get_components("collider2dcomponent")
-		for i = 1, #colliders do
-			local collider = colliders[i]
-			if collider.enabled then
-				index:add_or_update(collider)
-			end
+	for _, collider in world_instance:objects_with_components("collider2dcomponent", active_scope) do
+		if collider.enabled then
+			index:add_or_update(collider)
 		end
 	end
 end

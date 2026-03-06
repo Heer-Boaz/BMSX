@@ -67,6 +67,9 @@ local positionupdateaxiscomponent = "positionupdateaxiscomponent"
 local screenboundarycomponent = "screenboundarycomponent"
 local actioneffectcomponent = "actioneffectcomponent"
 
+-- Shared opts table to avoid per-frame allocation.
+local active_scope = { scope = "active" }
+
 local behaviortreesystem = {}
 behaviortreesystem.__index = behaviortreesystem
 setmetatable(behaviortreesystem, { __index = ecsystem })
@@ -90,7 +93,7 @@ function audioroutersystem:update()
 end
 
 function behaviortreesystem:update()
-	for obj in world_instance:objects({ scope = "active" }) do
+	for obj in world_instance:objects(active_scope) do
 		if not (obj.tick_enabled) then
 			goto continue
 		end
@@ -112,7 +115,7 @@ function actioneffectruntimesystem.new(priority)
 end
 
 function actioneffectruntimesystem:update(dt_ms)
-	for _, component in world_instance:objects_with_components(actioneffectcomponent, { scope = "active" }) do
+	for _, component in world_instance:objects_with_components(actioneffectcomponent, active_scope) do
 		component:tick(dt_ms)
 	end
 end
@@ -127,7 +130,7 @@ function statemachinesystem.new(priority)
 end
 
 function statemachinesystem:update(dt_ms)
-	for obj in world_instance:objects({ scope = "active" }) do
+	for obj in world_instance:objects(active_scope) do
 		if not (obj.tick_enabled) then
 			goto continue
 		end
@@ -146,7 +149,7 @@ function objectticksystem.new(priority)
 end
 
 function objectticksystem:update(dt_ms)
-	for obj in world_instance:objects({ scope = "active" }) do
+	for obj in world_instance:objects(active_scope) do
 		for i = 1, #obj.components do
 			local comp = obj.components[i]
 			if comp.enabled then
@@ -166,7 +169,7 @@ function prepositionsystem.new(priority)
 end
 
 function prepositionsystem:update()
-	for _, component in world_instance:objects_with_components(positionupdateaxiscomponent, { scope = "active" }) do
+	for _, component in world_instance:objects_with_components(positionupdateaxiscomponent, active_scope) do
 		if component.enabled then
 			component:preprocess_update()
 		end
@@ -183,7 +186,7 @@ function boundarysystem.new(priority)
 end
 
 function boundarysystem:update()
-	for obj, component in world_instance:objects_with_components(screenboundarycomponent, { scope = "active" }) do
+	for obj, component in world_instance:objects_with_components(screenboundarycomponent, active_scope) do
 		if not component.enabled then
 			goto continue
 		end
@@ -391,15 +394,11 @@ function overlap2dsystem:update()
 	broadphase:clear()
 
 	local event_colliders = {}
-	for obj in world_instance:objects({ scope = "active" }) do
-		local colliders = obj:get_components(collider2dcomponent)
-		for i = 1, #colliders do
-			local collider = colliders[i]
-			if collider.enabled and not obj.dispose_flag then
-				broadphase:add_or_update(collider)
-				collider_lookup[collider.id] = collider
-				event_colliders[#event_colliders + 1] = collider
-			end
+	for obj, collider in world_instance:objects_with_components(collider2dcomponent, active_scope) do
+		if collider.enabled and not obj.dispose_flag then
+			broadphase:add_or_update(collider)
+			collider_lookup[collider.id] = collider
+			event_colliders[#event_colliders + 1] = collider
 		end
 	end
 
@@ -545,7 +544,7 @@ function transformsystem.new(priority)
 end
 
 function transformsystem:update()
-	for _, component in world_instance:objects_with_components(transformcomponent, { scope = "active" }) do
+	for _, component in world_instance:objects_with_components(transformcomponent, active_scope) do
 		if component.enabled then
 			component:post_update()
 		end
@@ -562,7 +561,7 @@ function timelinesystem.new(priority)
 end
 
 function timelinesystem:update(dt_ms)
-	for _, component in world_instance:objects_with_components(timelinecomponent, { scope = "active" }) do
+	for _, component in world_instance:objects_with_components(timelinecomponent, active_scope) do
 		if component.enabled then
 			component:tick_active(dt_ms)
 		end
@@ -579,7 +578,7 @@ function meshanimationsystem.new(priority)
 end
 
 function meshanimationsystem:update(dt_ms)
-	for _, component in world_instance:objects_with_components(meshcomponent, { scope = "active" }) do
+	for _, component in world_instance:objects_with_components(meshcomponent, active_scope) do
 		if component.enabled then
 			component:update_animation(dt_ms)
 		end
@@ -596,7 +595,7 @@ function textrendersystem.new(priority)
 end
 
 function textrendersystem:update()
-	for obj, tc in world_instance:objects_with_components(textcomponent, { scope = "active" }) do
+	for obj, tc in world_instance:objects_with_components(textcomponent, active_scope) do
 		if not tc.enabled then
 			goto continue
 		end
@@ -638,7 +637,7 @@ function spriterendersystem.new(priority)
 end
 
 function spriterendersystem:update()
-	for obj, sc in world_instance:objects_with_components(spritecomponent, { scope = "active" }) do
+	for obj, sc in world_instance:objects_with_components(spritecomponent, active_scope) do
 		if not obj.visible or not sc.enabled then
 			goto continue
 		end
@@ -677,7 +676,7 @@ function meshrendersystem.new(priority)
 end
 
 function meshrendersystem:update()
-	for obj, mc in world_instance:objects_with_components(meshcomponent, { scope = "active" }) do
+	for obj, mc in world_instance:objects_with_components(meshcomponent, active_scope) do
 		if not obj.visible or not mc.enabled then
 			goto continue
 		end
@@ -700,7 +699,7 @@ function rendersubmitsystem.new(priority)
 end
 
 function rendersubmitsystem:update()
-	for obj, rc in world_instance:objects_with_components(customvisualcomponent, { scope = "active" }) do
+	for obj, rc in world_instance:objects_with_components(customvisualcomponent, active_scope) do
 		if not obj.visible or not rc.enabled then
 			goto continue
 		end

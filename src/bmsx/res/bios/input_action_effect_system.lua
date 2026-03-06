@@ -11,6 +11,7 @@ local inputintentcomponent = "inputintentcomponent"
 local inputactioneffectcomponent = "inputactioneffectcomponent"
 local actioneffectcomponentid = "actioneffectcomponent"
 local assigned_value_edges = { ['hold'] = true, ['press'] = true }
+local active_scope = { scope = "active" }
 
 local asset_programs_validated = false
 
@@ -59,7 +60,7 @@ function inputactioneffectsystem:update()
 end
 
 function inputactioneffectsystem:process_input_intents()
-	for obj, component in world_instance:objects_with_components(inputintentcomponent, { scope = "active" }) do
+	for obj, component in world_instance:objects_with_components(inputintentcomponent, active_scope) do
 		if not (obj.tick_enabled) then
 			goto continue
 		end
@@ -75,7 +76,7 @@ function inputactioneffectsystem:process_input_intents()
 end
 
 function inputactioneffectsystem:process_input_action_programs()
-	for obj, component in world_instance:objects_with_components(inputactioneffectcomponent, { scope = "active" }) do
+	for obj, component in world_instance:objects_with_components(inputactioneffectcomponent, active_scope) do
 		if not (obj.tick_enabled) then
 			goto continue
 		end
