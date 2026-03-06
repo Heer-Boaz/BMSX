@@ -411,6 +411,42 @@ function world_class:objects_with_components(type_name, opts)
 		nil
 end
 
+-- Stateless iterator functions for world queries.
+-- These traverse the registry directly without allocating a results table.
+
+local function iter_world_by_type(state, key)
+	local reg_table = state.reg
+	local type_name = state.type_name
+	local by_id = state.by_id
+	local world = state.world
+	local scope = state.scope
+	local next_key, entity = next(reg_table, key)
+	while next_key do
+		if entity.type_name == type_name and by_id[entity.id] and world:_object_in_scope(entity, scope) then
+			return next_key, entity
+		end
+		next_key, entity = next(reg_table, next_key)
+	end
+	return nil
+end
+
+local function iter_world_by_tag(state, key)
+	local reg_table = state.reg
+	local tag = state.tag
+	local by_id = state.by_id
+	local world = state.world
+	local scope = state.scope
+	local next_key, entity = next(reg_table, key)
+	while next_key do
+		local tags = entity.tags
+		if tags and tags[tag] and by_id[entity.id] and world:_object_in_scope(entity, scope) then
+			return next_key, entity
+		end
+		next_key, entity = next(reg_table, next_key)
+	end
+	return nil
+end
+
 -- world:objects_by_type(type_name, opts?)
 --   Iterator over objects whose type_name matches. Leverages the registry for
 --   type-based lookups. opts.scope follows the same rules as world:objects().
@@ -418,13 +454,7 @@ end
 --   define_prefab definition_id.
 function world_class:objects_by_type(obj_type_name, opts)
 	local scope = opts and opts.scope or "all"
-	local results = {}
-	for _, entity in registry.instance:iterate(obj_type_name) do
-		if entity.type_name == obj_type_name and self._by_id[entity.id] and self:_object_in_scope(entity, scope) then
-			results[#results + 1] = entity
-		end
-	end
-	return ipairs(results)
+	return iter_world_by_type, { reg = registry.instance._registry, type_name = obj_type_name, by_id = self._by_id, world = self, scope = scope }, nil
 end
 
 -- world:objects_by_tag(tag, opts?)
@@ -433,23 +463,15 @@ end
 --   Like UE5 GetAllActorsWithTag.
 function world_class:objects_by_tag(tag, opts)
 	local scope = opts and opts.scope or "all"
-	local results = {}
-	for _, entity in registry.instance:iterate_by_tag(tag) do
-		if self._by_id[entity.id] and self:_object_in_scope(entity, scope) then
-			results[#results + 1] = entity
-		end
-	end
-	return ipairs(results)
+	return iter_world_by_tag, { reg = registry.instance._registry, tag = tag, by_id = self._by_id, world = self, scope = scope }, nil
 end
 
 -- world:find_by_type(type_name, opts?)
 --   Returns the first object matching type_name (or nil). Like UE5 GetActorOfClass.
 function world_class:find_by_type(obj_type_name, opts)
 	local scope = opts and opts.scope or "all"
-	for _, entity in registry.instance:iterate(obj_type_name) do
-		if entity.type_name == obj_type_name and self._by_id[entity.id] and self:_object_in_scope(entity, scope) then
-			return entity
-		end
+	for _, entity in iter_world_by_type, { reg = registry.instance._registry, type_name = obj_type_name, by_id = self._by_id, world = self, scope = scope }, nil do
+		return entity
 	end
 	return nil
 end
@@ -458,10 +480,8 @@ end
 --   Returns the first object carrying the given tag (or nil). Like UE5 GetActorWithTag.
 function world_class:find_by_tag(tag, opts)
 	local scope = opts and opts.scope or "all"
-	for _, entity in registry.instance:iterate_by_tag(tag) do
-		if self._by_id[entity.id] and self:_object_in_scope(entity, scope) then
-			return entity
-		end
+	for _, entity in iter_world_by_tag, { reg = registry.instance._registry, tag = tag, by_id = self._by_id, world = self, scope = scope }, nil do
+		return entity
 	end
 	return nil
 end
