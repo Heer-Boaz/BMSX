@@ -1,11 +1,13 @@
 import { Table, type Value } from '../cpu';
-import { Runtime } from '../runtime';
-import { runConsoleChunk } from '../runtime_lua_pipeline';
-import { valueToString } from '../lua_globals';
-import { isStringValue, stringValueToString } from '../string_pool';
+import {
+	appendInspectorLeaf,
+	appendInspectorNode,
+	runInspectorSnapshot,
+	tableArrayToList,
+	tableField,
+	tableFieldString,
+} from './inspector_utils';
 import type { ResourceBrowserItem } from './types';
-
-const INDENT = '  ';
 
 // Lua snippet that reads from both the Lua registry and the world's _by_id,
 // returning a combined snapshot of all known Lua-side entities.
@@ -45,26 +47,6 @@ r.world_entries = world_entries
 return r
 `;
 
-function tableField(t: Table, name: string): Value {
-	const entries = t.entriesArray();
-	for (let i = 0; i < entries.length; i++) {
-		const [k, v] = entries[i];
-		if (isStringValue(k) && stringValueToString(k) === name) return v;
-	}
-	return null;
-}
-
-function tableArrayToList(t: Table): Value[] {
-	const entries = t.entriesArray();
-	const indexed: Array<{ index: number; value: Value }> = [];
-	for (let i = 0; i < entries.length; i++) {
-		const [k, v] = entries[i];
-		if (typeof k === 'number' && v !== null) indexed.push({ index: k, value: v });
-	}
-	indexed.sort((a, b) => a.index - b.index);
-	return indexed.map(e => e.value);
-}
-
 type EntityInfo = {
 	id: string;
 	typeName: string | null;
@@ -81,19 +63,16 @@ function parseEntries(entriesTable: Value): EntityInfo[] {
 	for (let i = 0; i < list.length; i++) {
 		const entry = list[i] as Table;
 		if (!(entry instanceof Table)) continue;
-		const id = valueToString(tableField(entry, 'id'));
-		const typeName = tableField(entry, 'type_name');
+		const id = tableFieldString(entry, 'id');
 		const persistent = tableField(entry, 'persistent') === true;
 		const activeVal = tableField(entry, 'active');
-		const spaceIdVal = tableField(entry, 'space_id');
-		const sourceVal = tableField(entry, 'source');
 		result.push({
-			id,
-			typeName: typeName !== null ? valueToString(typeName) : null,
+			id: id === null ? 'nil' : id,
+			typeName: tableFieldString(entry, 'type_name'),
 			persistent,
 			active: typeof activeVal === 'boolean' ? activeVal : null,
-			spaceId: spaceIdVal !== null ? valueToString(spaceIdVal) : null,
-			source: sourceVal !== null ? valueToString(sourceVal) : 'unknown',
+			spaceId: tableFieldString(entry, 'space_id'),
+			source: tableFieldString(entry, 'source') ?? 'unknown',
 		});
 	}
 	return result;
@@ -101,6 +80,7 @@ function parseEntries(entriesTable: Value): EntityInfo[] {
 
 function buildGroupedItems(
 	sectionLabel: string,
+	sectionCount: number,
 	entities: EntityInfo[],
 	expandedIds: Set<string>,
 	prefix: string,
@@ -125,39 +105,24 @@ function buildGroupedItems(
 		}
 	}
 
-	// Section header
 	const sectionNodeId = `${prefix}:section`;
-	const sectionExpandable = true;
-	const sectionExpanded = expandedIds.has(sectionNodeId);
-	const sectionMarker = sectionExpanded ? '- ' : '+ ';
-	items.push({
-		line: `${sectionMarker}${sectionLabel} (${entities.length})`,
-		contentStartColumn: sectionMarker.length,
-		descriptor: null,
-		callHierarchyNodeId: sectionNodeId,
-		callHierarchyExpandable: sectionExpandable,
-		callHierarchyExpanded: sectionExpanded,
-	});
+	const sectionExpanded = appendInspectorNode(
+		items,
+		expandedIds,
+		0,
+		`${sectionLabel} (${sectionCount})`,
+		sectionNodeId,
+		true,
+	);
 
 	if (!sectionExpanded) return;
 
-	// Sort type groups
 	const sortedTypes = Array.from(grouped.keys()).sort();
 
 	for (const typeName of sortedTypes) {
 		const group = grouped.get(typeName)!;
 		const nodeId = `${prefix}:${typeName}`;
-		const expanded = expandedIds.has(nodeId);
-		const marker = expanded ? '- ' : '+ ';
-
-		items.push({
-			line: `${INDENT}${marker}${typeName} (${group.length})`,
-			contentStartColumn: INDENT.length + marker.length,
-			descriptor: null,
-			callHierarchyNodeId: nodeId,
-			callHierarchyExpandable: true,
-			callHierarchyExpanded: expanded,
-		});
+		const expanded = appendInspectorNode(items, expandedIds, 1, `${typeName} (${group.length})`, nodeId, true);
 
 		if (!expanded) continue;
 
@@ -167,47 +132,29 @@ function buildGroupedItems(
 			if (entity.active === false) tags.push('inactive');
 			if (entity.spaceId) tags.push(entity.spaceId);
 			const suffix = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
-			items.push({
-				line: `${INDENT}${INDENT}  ${entity.id}${suffix}`,
-				contentStartColumn: INDENT.length * 2 + 2,
-				descriptor: null,
-			});
+			appendInspectorLeaf(items, 2, `${entity.id}${suffix}`, '  ');
 		}
 	}
 
 	if (ungrouped.length > 0) {
 		const nodeId = `${prefix}:<untyped>`;
-		const expanded = expandedIds.has(nodeId);
-		const marker = expanded ? '- ' : '+ ';
-		items.push({
-			line: `${INDENT}${marker}<untyped> (${ungrouped.length})`,
-			contentStartColumn: INDENT.length + marker.length,
-			descriptor: null,
-			callHierarchyNodeId: nodeId,
-			callHierarchyExpandable: true,
-			callHierarchyExpanded: expanded,
-		});
+		const expanded = appendInspectorNode(items, expandedIds, 1, `<untyped> (${ungrouped.length})`, nodeId, true);
 		if (expanded) {
 			for (const entity of ungrouped) {
 				const tags: string[] = [];
 				if (entity.persistent) tags.push('persistent');
 				if (entity.active === false) tags.push('inactive');
+				if (entity.spaceId) tags.push(entity.spaceId);
 				const suffix = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
-				items.push({
-					line: `${INDENT}${INDENT}  ${entity.id}${suffix}`,
-					contentStartColumn: INDENT.length * 2 + 2,
-					descriptor: null,
-				});
+				appendInspectorLeaf(items, 2, `${entity.id}${suffix}`, '  ');
 			}
 		}
 	}
 }
 
 export function buildRegistryInspectorItems(expandedIds: Set<string>): ResourceBrowserItem[] {
-	const runtime = Runtime.instance;
-	const results = runConsoleChunk(runtime, REGISTRY_SNAPSHOT_LUA);
-	const snapshot = results.length > 0 ? results[0] : null;
-	if (!(snapshot instanceof Table)) {
+	const snapshot = runInspectorSnapshot(REGISTRY_SNAPSHOT_LUA);
+	if (snapshot === null) {
 		return [{ line: '<registry not available>', contentStartColumn: 0, descriptor: null }];
 	}
 
@@ -217,17 +164,24 @@ export function buildRegistryInspectorItems(expandedIds: Set<string>): ResourceB
 	const worldEntries = parseEntries(tableField(snapshot, 'world_entries'));
 	const worldCount = tableField(snapshot, 'world_count');
 	buildGroupedItems(
-		`World Objects (${typeof worldCount === 'number' ? worldCount : worldEntries.length})`,
-		worldEntries, expandedIds, 'rw', items,
+		'World Objects',
+		typeof worldCount === 'number' ? worldCount : worldEntries.length,
+		worldEntries,
+		expandedIds,
+		'rw',
+		items,
 	);
 
-	// Explicit registry section
 	const regEntries = parseEntries(tableField(snapshot, 'registry_entries'));
 	const regCount = tableField(snapshot, 'registry_count');
 	if (typeof regCount === 'number' && regCount > 0) {
 		buildGroupedItems(
-			`Registry (${regCount})`,
-			regEntries, expandedIds, 'rg', items,
+			'Registry',
+			regCount,
+			regEntries,
+			expandedIds,
+			'rg',
+			items,
 		);
 	}
 

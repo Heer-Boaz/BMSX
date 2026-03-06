@@ -1,11 +1,15 @@
-import { Table, type Value } from '../cpu';
-import { Runtime } from '../runtime';
-import { runConsoleChunk } from '../runtime_lua_pipeline';
+import { Table } from '../cpu';
 import { valueToString } from '../lua_globals';
-import { isStringValue, stringValueToString } from '../string_pool';
+import {
+	appendInspectorDetail,
+	appendInspectorLeaf,
+	appendInspectorNode,
+	runInspectorSnapshot,
+	tableArrayToList,
+	tableField,
+	tableFieldString,
+} from './inspector_utils';
 import type { ResourceBrowserItem } from './types';
-
-const INDENT = '  ';
 
 // Lua snippet that traverses the world and returns a structured result table.
 // Uses normal Lua semantics (ipairs, field access) so __index etc. work correctly.
@@ -63,35 +67,13 @@ end
 return r
 `;
 
-function tableField(t: Table, name: string): Value {
-	const entries = t.entriesArray();
-	for (let i = 0; i < entries.length; i++) {
-		const [k, v] = entries[i];
-		if (isStringValue(k) && stringValueToString(k) === name) return v;
-	}
-	return null;
-}
-
-function tableArrayToList(t: Table): Value[] {
-	const entries = t.entriesArray();
-	const indexed: Array<{ index: number; value: Value }> = [];
-	for (let i = 0; i < entries.length; i++) {
-		const [k, v] = entries[i];
-		if (typeof k === 'number' && v !== null) indexed.push({ index: k, value: v });
-	}
-	indexed.sort((a, b) => a.index - b.index);
-	return indexed.map(e => e.value);
-}
-
 export function buildWorldInspectorItems(expandedIds: Set<string>): ResourceBrowserItem[] {
-	const runtime = Runtime.instance;
-	const results = runConsoleChunk(runtime, WORLD_SNAPSHOT_LUA);
-	const snapshot = results.length > 0 ? results[0] : null;
-	if (!(snapshot instanceof Table)) {
+	const snapshot = runInspectorSnapshot(WORLD_SNAPSHOT_LUA);
+	if (snapshot === null) {
 		return [{ line: '<world not available>', contentStartColumn: 0, descriptor: null }];
 	}
 
-	const activeSpaceId = valueToString(tableField(snapshot, 'active_space_id'));
+	const activeSpaceId = tableFieldString(snapshot, 'active_space_id');
 	const spacesArray = tableField(snapshot, 'spaces') as Table;
 	if (!(spacesArray instanceof Table)) {
 		return [{ line: '<no spaces>', contentStartColumn: 0, descriptor: null }];
@@ -108,19 +90,15 @@ export function buildWorldInspectorItems(expandedIds: Set<string>): ResourceBrow
 		const objects = objectsArray instanceof Table ? tableArrayToList(objectsArray) : [];
 		const objectCount = objects.length;
 		const spaceNodeId = `s:${spaceId}`;
-		const expandable = objectCount > 0;
-		const expanded = expandable && expandedIds.has(spaceNodeId);
-		const marker = expandable ? (expanded ? '- ' : '+ ') : '  ';
 		const activeTag = spaceId === activeSpaceId ? ' *' : '';
-
-		items.push({
-			line: `${marker}${spaceId}${activeTag} (${objectCount})`,
-			contentStartColumn: marker.length,
-			descriptor: null,
-			callHierarchyNodeId: spaceNodeId,
-			callHierarchyExpandable: expandable,
-			callHierarchyExpanded: expanded,
-		});
+		const expanded = appendInspectorNode(
+			items,
+			expandedIds,
+			0,
+			`${spaceId}${activeTag} (${objectCount})`,
+			spaceNodeId,
+			objectCount > 0,
+		);
 
 		if (!expanded) continue;
 
@@ -132,117 +110,87 @@ export function buildWorldInspectorItems(expandedIds: Set<string>): ResourceBrow
 			const typeName = valueToString(tableField(obj, 'type_name'));
 			const active = tableField(obj, 'active');
 			const objNodeId = `o:${spaceId}:${objId}`;
-			const objExpanded = expandedIds.has(objNodeId);
-			const objMarker = objExpanded ? '- ' : '+ ';
 			const activeStr = active === false ? ' [inactive]' : '';
-
-			items.push({
-				line: `${INDENT}${objMarker}${objId} (${typeName})${activeStr}`,
-				contentStartColumn: INDENT.length + objMarker.length,
-				descriptor: null,
-				callHierarchyNodeId: objNodeId,
-				callHierarchyExpandable: true,
-				callHierarchyExpanded: objExpanded,
-			});
+			const objExpanded = appendInspectorNode(
+				items,
+				expandedIds,
+				1,
+				`${objId} (${typeName})${activeStr}`,
+				objNodeId,
+				true,
+			);
 
 			if (!objExpanded) continue;
 
-			const propIndent = INDENT.repeat(2);
-			const addProp = (label: string, value: string): void => {
-				items.push({
-					line: `${propIndent}  ${label}: ${value}`,
-					contentStartColumn: propIndent.length + 2,
-					descriptor: null,
-				});
-			};
-
-			addProp('pos', `(${valueToString(tableField(obj, 'x'))}, ${valueToString(tableField(obj, 'y'))}, ${valueToString(tableField(obj, 'z'))})`);
-			addProp('active', valueToString(active));
-			addProp('tick', valueToString(tableField(obj, 'tick_enabled')));
+			appendInspectorDetail(items, 2, 'pos', `(${valueToString(tableField(obj, 'x'))}, ${valueToString(tableField(obj, 'y'))}, ${valueToString(tableField(obj, 'z'))})`);
+			appendInspectorDetail(items, 2, 'active', valueToString(active));
+			appendInspectorDetail(items, 2, 'tick', valueToString(tableField(obj, 'tick_enabled')));
 
 			const playerIndex = tableField(obj, 'player_index');
-			if (playerIndex !== null) addProp('player', valueToString(playerIndex));
+			if (playerIndex !== null) appendInspectorDetail(items, 2, 'player', valueToString(playerIndex));
 
 			const disposeFlag = tableField(obj, 'dispose_flag');
-			if (disposeFlag === true) addProp('dispose_flag', 'true');
+			if (disposeFlag === true) appendInspectorDetail(items, 2, 'dispose_flag', 'true');
 
-			// FSM state
 			const fsmState = tableField(obj, 'fsm_state');
-			if (fsmState !== null) addProp('state', valueToString(fsmState));
+			if (fsmState !== null) appendInspectorDetail(items, 2, 'state', valueToString(fsmState));
 
-			// Tags
 			const tagList = tableField(obj, 'tag_list') as Table;
 			if (tagList instanceof Table) {
 				const tags = tableArrayToList(tagList).map(valueToString);
-				if (tags.length > 0) addProp('tags', tags.join(', '));
+				if (tags.length > 0) appendInspectorDetail(items, 2, 'tags', tags.join(', '));
 			}
 
-			// Components
 			const compList = tableField(obj, 'comp_list') as Table;
 			if (compList instanceof Table) {
 				const comps = tableArrayToList(compList);
 				if (comps.length > 0) {
 					const compNodeId = `c:${spaceId}:${objId}`;
-					const compExpanded = expandedIds.has(compNodeId);
-					const compMarker = compExpanded ? '- ' : '+ ';
-
-					items.push({
-						line: `${propIndent}  ${compMarker}components (${comps.length})`,
-						contentStartColumn: propIndent.length + 2 + compMarker.length,
-						descriptor: null,
-						callHierarchyNodeId: compNodeId,
-						callHierarchyExpandable: true,
-						callHierarchyExpanded: compExpanded,
-					});
+					const compExpanded = appendInspectorNode(
+						items,
+						expandedIds,
+						2,
+						`components (${comps.length})`,
+						compNodeId,
+						true,
+						'  ',
+					);
 
 					if (compExpanded) {
-						const compBodyIndent = INDENT.repeat(3) + '  ';
 						for (let ci = 0; ci < comps.length; ci++) {
 							const comp = comps[ci] as Table;
 							if (!(comp instanceof Table)) continue;
 							const compType = valueToString(tableField(comp, 'type_name'));
 							const compLocalId = tableField(comp, 'id_local');
 							const localIdStr = compLocalId !== null ? ` (${valueToString(compLocalId)})` : '';
-							items.push({
-								line: `${compBodyIndent}${compType}${localIdStr}`,
-								contentStartColumn: compBodyIndent.length,
-								descriptor: null,
-							});
+							appendInspectorLeaf(items, 3, `${compType}${localIdStr}`, '  ');
 						}
 					}
 				}
 			}
 
-			// Extra fields
 			const extras = tableField(obj, 'extras') as Table;
 			if (extras instanceof Table) {
 				const extraEntries = tableArrayToList(extras);
 				if (extraEntries.length > 0) {
 					const extrasNodeId = `x:${spaceId}:${objId}`;
-					const extrasExpanded = expandedIds.has(extrasNodeId);
-					const extrasMarker = extrasExpanded ? '- ' : '+ ';
-
-					items.push({
-						line: `${propIndent}  ${extrasMarker}fields (${extraEntries.length})`,
-						contentStartColumn: propIndent.length + 2 + extrasMarker.length,
-						descriptor: null,
-						callHierarchyNodeId: extrasNodeId,
-						callHierarchyExpandable: true,
-						callHierarchyExpanded: extrasExpanded,
-					});
+					const extrasExpanded = appendInspectorNode(
+						items,
+						expandedIds,
+						2,
+						`fields (${extraEntries.length})`,
+						extrasNodeId,
+						true,
+						'  ',
+					);
 
 					if (extrasExpanded) {
-						const extraIndent = INDENT.repeat(3) + '  ';
 						for (let ei = 0; ei < extraEntries.length; ei++) {
 							const entry = extraEntries[ei] as Table;
 							if (!(entry instanceof Table)) continue;
 							const fieldName = valueToString(tableField(entry, 'k'));
 							const fieldValue = valueToString(tableField(entry, 'v'));
-							items.push({
-								line: `${extraIndent}${fieldName}: ${fieldValue}`,
-								contentStartColumn: extraIndent.length,
-								descriptor: null,
-							});
+							appendInspectorLeaf(items, 3, `${fieldName}: ${fieldValue}`, '  ');
 						}
 					}
 				}

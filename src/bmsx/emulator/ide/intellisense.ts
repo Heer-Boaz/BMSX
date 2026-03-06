@@ -1213,40 +1213,20 @@ export function resolveSemanticDefinitionLocation(
 	usageRow: number,
 	usageColumn: number,
 ): LuaDefinitionLocation {
-	if (!expression) {
-		return null;
-	}
-	const namePath = parseLuaIdentifierChain(expression);
-	if (!namePath || namePath.length === 0) {
-		return null;
-	}
 	const activeContext = getActiveCodeTabContext();
 	const hoverPath = activeContext?.descriptor?.path;
-	const model = ide_state.layout.getSemanticModel(ide_state.buffer, ide_state.textVersion, hoverPath);
-	if (!model) {
+	if (!hoverPath) {
 		return null;
 	}
-	let definition = model.lookupIdentifier(usageRow, usageColumn, namePath);
-	if (!definition) {
-		definition = findDefinitionAtPosition(model.definitions, usageRow, usageColumn, namePath);
-	}
-	if (!definition) {
+	const workspaceSymbol = ide_state.semanticWorkspace.symbolAt(hoverPath, usageRow, usageColumn);
+	if (!workspaceSymbol) {
 		return null;
 	}
-	const descriptorPath = context?.descriptor?.path;
-	const location: LuaDefinitionLocation = {
-		path: descriptorPath,
-		range: {
-			startLine: definition.definition.start.line,
-			startColumn: definition.definition.start.column,
-			endLine: definition.definition.end.line,
-			endColumn: definition.definition.end.column,
-		},
-	};
-	if (descriptorPath) {
-		location.path = descriptorPath;
-	}
-	return location;
+	return buildDefinitionLocationFromRange({
+		path: workspaceSymbol.decl.file,
+		start: workspaceSymbol.decl.range.start,
+		end: workspaceSymbol.decl.range.end,
+	});
 }
 
 export function findDefinitionAtPosition(
@@ -1996,14 +1976,15 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 		return null;
 	}
 	if (preferredChunk && usageRow !== null && usageColumn !== null) {
-		const activeModel = ide_state.layout.getSemanticModel(ide_state.buffer, ide_state.textVersion, preferredChunk);
-		if (activeModel) {
-			const semanticDefinition = activeModel.lookupIdentifier(usageRow, usageColumn, chain)
-				?? findDefinitionAtPosition(activeModel.definitions, usageRow, usageColumn, chain);
-			if (semanticDefinition) {
-				return buildDefinitionLocationFromRange(semanticDefinition.definition);
-			}
+		const workspaceSymbol = ide_state.semanticWorkspace.symbolAt(preferredChunk, usageRow, usageColumn);
+		if (workspaceSymbol) {
+			return buildDefinitionLocationFromRange({
+				path: workspaceSymbol.decl.file,
+				start: workspaceSymbol.decl.range.start,
+				end: workspaceSymbol.decl.range.end,
+			});
 		}
+		return null;
 	}
 	const bundle = getStaticDefinitions(preferredChunk);
 	if (!bundle || bundle.definitions.length === 0) {

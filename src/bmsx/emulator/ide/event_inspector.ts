@@ -1,11 +1,14 @@
-import { Table, type Value } from '../cpu';
-import { Runtime } from '../runtime';
-import { runConsoleChunk } from '../runtime_lua_pipeline';
+import { Table } from '../cpu';
 import { valueToString } from '../lua_globals';
-import { isStringValue, stringValueToString } from '../string_pool';
+import {
+	appendInspectorLeaf,
+	appendInspectorNode,
+	runInspectorSnapshot,
+	tableArrayToList,
+	tableField,
+	tableFieldString,
+} from './inspector_utils';
 import type { ResourceBrowserItem } from './types';
-
-const INDENT = '  ';
 
 // Lua snippet that traverses the event emitter and returns a structured snapshot.
 const EVENT_SNAPSHOT_LUA = `
@@ -42,31 +45,9 @@ end
 return r
 `;
 
-function tableField(t: Table, name: string): Value {
-	const entries = t.entriesArray();
-	for (let i = 0; i < entries.length; i++) {
-		const [k, v] = entries[i];
-		if (isStringValue(k) && stringValueToString(k) === name) return v;
-	}
-	return null;
-}
-
-function tableArrayToList(t: Table): Value[] {
-	const entries = t.entriesArray();
-	const indexed: Array<{ index: number; value: Value }> = [];
-	for (let i = 0; i < entries.length; i++) {
-		const [k, v] = entries[i];
-		if (typeof k === 'number' && v !== null) indexed.push({ index: k, value: v });
-	}
-	indexed.sort((a, b) => a.index - b.index);
-	return indexed.map(e => e.value);
-}
-
 export function buildEventInspectorItems(expandedIds: Set<string>): ResourceBrowserItem[] {
-	const runtime = Runtime.instance;
-	const results = runConsoleChunk(runtime, EVENT_SNAPSHOT_LUA);
-	const snapshot = results.length > 0 ? results[0] : null;
-	if (!(snapshot instanceof Table)) {
+	const snapshot = runInspectorSnapshot(EVENT_SNAPSHOT_LUA);
+	if (snapshot === null) {
 		return [{ line: '<event emitter not available>', contentStartColumn: 0, descriptor: null }];
 	}
 
@@ -92,37 +73,22 @@ export function buildEventInspectorItems(expandedIds: Set<string>): ResourceBrow
 			const listeners = listenersArray instanceof Table ? tableArrayToList(listenersArray) : [];
 			const count = listeners.length;
 			const nodeId = `ev:${name}`;
-			const expandable = count > 0;
-			const expanded = expandable && expandedIds.has(nodeId);
-			const marker = expandable ? (expanded ? '- ' : '+ ') : '  ';
-
-			items.push({
-				line: `${marker}${name} (${count})`,
-				contentStartColumn: marker.length,
-				descriptor: null,
-				callHierarchyNodeId: nodeId,
-				callHierarchyExpandable: expandable,
-				callHierarchyExpanded: expanded,
-			});
+			const expanded = appendInspectorNode(items, expandedIds, 0, `${name} (${count})`, nodeId, count > 0);
 
 			if (!expanded) continue;
 
 			for (let li = 0; li < listeners.length; li++) {
 				const listener = listeners[li] as Table;
 				if (!(listener instanceof Table)) continue;
-				const subscriberId = valueToString(tableField(listener, 'subscriber_id'));
-				const emitterId = tableField(listener, 'emitter_id');
+				const subscriberId = tableFieldString(listener, 'subscriber_id');
+				const emitterId = tableFieldString(listener, 'emitter_id');
 				const persistent = tableField(listener, 'persistent');
 				const parts: string[] = [];
-				if (subscriberId !== 'nil') parts.push(`sub=${subscriberId}`);
-				if (emitterId !== null) parts.push(`emit=${valueToString(emitterId)}`);
+				if (subscriberId !== null) parts.push(`sub=${subscriberId}`);
+				if (emitterId !== null) parts.push(`emit=${emitterId}`);
 				if (persistent === true) parts.push('persistent');
 				const detail = parts.length > 0 ? ` [${parts.join(', ')}]` : '';
-				items.push({
-					line: `${INDENT}  listener ${li + 1}${detail}`,
-					contentStartColumn: INDENT.length + 2,
-					descriptor: null,
-				});
+				appendInspectorLeaf(items, 1, `listener ${li + 1}${detail}`, '  ');
 			}
 		}
 	}
@@ -131,17 +97,7 @@ export function buildEventInspectorItems(expandedIds: Set<string>): ResourceBrow
 	const anyCount = tableField(snapshot, 'any_count');
 	if (typeof anyCount === 'number' && anyCount > 0) {
 		const anyNodeId = 'ev:*';
-		const anyExpanded = expandedIds.has(anyNodeId);
-		const anyMarker = anyExpanded ? '- ' : '+ ';
-
-		items.push({
-			line: `${anyMarker}* (wildcard) (${anyCount})`,
-			contentStartColumn: anyMarker.length,
-			descriptor: null,
-			callHierarchyNodeId: anyNodeId,
-			callHierarchyExpandable: true,
-			callHierarchyExpanded: anyExpanded,
-		});
+		const anyExpanded = appendInspectorNode(items, expandedIds, 0, `* (wildcard) (${anyCount})`, anyNodeId, true);
 
 		if (anyExpanded) {
 			const anyArray = tableField(snapshot, 'any_listeners') as Table;
@@ -152,11 +108,7 @@ export function buildEventInspectorItems(expandedIds: Set<string>): ResourceBrow
 					if (!(entry instanceof Table)) continue;
 					const persistent = tableField(entry, 'persistent');
 					const tag = persistent === true ? ' [persistent]' : '';
-					items.push({
-						line: `${INDENT}  listener ${ai + 1}${tag}`,
-						contentStartColumn: INDENT.length + 2,
-						descriptor: null,
-					});
+					appendInspectorLeaf(items, 1, `listener ${ai + 1}${tag}`, '  ');
 				}
 			}
 		}
