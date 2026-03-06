@@ -176,36 +176,24 @@ local function iter_objects(state, _)
 end
 
 local function iter_objects_with_components(state, _)
-	local objects = state.list
-	while true do
-		local comp_list = state.comp_list
-		if comp_list then
-			local comp_index = state.comp_index + 1
-			local comp = comp_list[comp_index]
-			if comp then
-				state.comp_index = comp_index
-				return state.current_obj, comp
-			end
-			state.comp_list = nil
-			state.current_obj = nil
-			state.comp_index = 0
-		end
-
-		local obj_index = state.obj_index + 1
-		local obj = objects[obj_index]
-		if not obj then
-			return nil
-		end
-		state.obj_index = obj_index
-		if state.world:_object_in_scope(obj, state.scope) then
-			local list = obj:get_components(state.type_name)
-			if #list > 0 then
-				state.current_obj = obj
-				state.comp_list = list
-				state.comp_index = 0
+	local reg_table = state.reg
+	local type_name = state.type_name
+	local by_id = state.by_id
+	local world = state.world
+	local scope = state.scope
+	local next_key, entity = next(reg_table, state.reg_key)
+	while next_key do
+		if entity.type_name == type_name then
+			local parent = entity.parent
+			if parent and by_id[parent.id] and world:_object_in_scope(parent, scope) then
+				state.reg_key = next_key
+				return parent, entity
 			end
 		end
+		next_key, entity = next(reg_table, next_key)
 	end
+	state.reg_key = nil
+	return nil
 end
 
 function world_class.new()
@@ -407,7 +395,7 @@ end
 function world_class:objects_with_components(type_name, opts)
 	local scope = opts and opts.scope or "all"
 	return iter_objects_with_components,
-		{ world = self, list = self._objects, type_name = type_name, scope = scope, obj_index = 0, comp_index = 0, comp_list = nil, current_obj = nil },
+		{ world = self, reg = registry.instance._registry, by_id = self._by_id, type_name = type_name, scope = scope, reg_key = nil },
 		nil
 end
 
