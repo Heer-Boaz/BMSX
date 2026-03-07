@@ -12,8 +12,8 @@ import {
 } from '../lua/luavalue';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clamp_fallback } from '../utils/clamp';
-import { EDITOR_TOGGLE_KEY, TERMINAL_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
-import { setExecutionStopHighlight, clearExecutionStopHighlights } from './ide/cart_editor';
+import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
+import { createCartEditor, setExecutionStopHighlight, clearExecutionStopHighlights } from './ide/cart_editor';
 import { ide_state } from './ide/ide_state';
 import type { RuntimeErrorDetails } from './ide/types';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
@@ -76,9 +76,10 @@ export function createPauseCoordinator(): DebugPauseCoordinator {
 	return new DebugPauseCoordinator();
 }
 
-export function initializeIdeFeatures(runtime: Runtime, _options: RuntimeOptions): void {
+export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions): void {
 	ide_state.playerIndex = runtime.playerIndex;
 	runtime.terminal = new TerminalMode(runtime);
+	runtime.editor = createCartEditor(options.viewport);
 	runtime.overlayResolutionMode = 'viewport';
 	Input.instance.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	seedDefaultLuaBuiltins();
@@ -95,6 +96,7 @@ export function applyCanonicalization(canonicalization: boolean): void {
 export function setActiveIdeFontVariant(runtime: Runtime, variant: Runtime['activeIdeFontVariant']): void {
 	runtime._activeIdeFontVariant = variant;
 	runtime.terminal.setFontVariant(variant);
+	runtime.editor!.setFontVariant(variant);
 }
 
 export function updateGamePipelineExts(runtime: Runtime): void {
@@ -153,22 +155,44 @@ export function isOverlayActive(runtime: Runtime): boolean {
 }
 
 export function toggleEditor(runtime: Runtime): void {
-	void runtime;
+	if (runtime.editor!.isActive) {
+		deactivateEditor(runtime);
+		return;
+	}
+	activateEditor(runtime);
 }
 
 export function activateEditor(runtime: Runtime): void {
-	void runtime;
+	const overlayWasActive = isOverlayActive(runtime);
+	if (!overlayWasActive) {
+		runtime.preservedRenderQueue = runtime.overlayRenderBackend.captureCurrentFrameRenderQueue();
+	}
+	if (runtime.terminal.isActive) {
+		runtime.terminal.deactivate();
+	}
+	if (!runtime.editor!.isActive) {
+		runtime.editor!.activate();
+	}
+	updateGamePipelineExts(runtime);
 }
 
 export function deactivateEditor(runtime: Runtime): void {
-	void runtime;
+	if (runtime.editor!.isActive === true) {
+		runtime.editor!.deactivate();
+	}
+	updateGamePipelineExts(runtime);
 }
 
 export function registerRuntimeShortcuts(runtime: Runtime): void {
 	disposeShortcutHandlers(runtime);
 	const registry = Input.instance.getGlobalShortcutRegistry();
 	const disposers: Array<() => void> = [];
+	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, EDITOR_TOGGLE_KEY, () => {
+		$.consume_button(runtime.playerIndex, EDITOR_TOGGLE_KEY, 'keyboard');
+		toggleEditor(runtime);
+	}));
 	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode(runtime)));
+	disposers.push(registry.registerGamepadChord(runtime.playerIndex, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => toggleEditor(runtime)));
 	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, GAME_PAUSE_KEY, () => $.toggleDebuggerControls()));
 	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, 'KeyT', () => {
 		$.consume_button(runtime.playerIndex, 'KeyT', 'keyboard');
