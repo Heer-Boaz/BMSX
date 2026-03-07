@@ -4,7 +4,6 @@ import * as runtimeIde from './runtime_ide';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { clearWorkspaceSessionState } from './ide/workspace_storage';
 import { ide_state } from './ide/ide_state';
-import { focusChunkSource } from './ide/cart_editor';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
 import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from './runtime_error_util';
 import type { LuaSourceRecord } from './lua_sources';
@@ -48,7 +47,7 @@ const HELP_TEXT = [
 	' CD .. / CD..     Go up one directory level',
 	' CD /             Go to root directory',
 	' CD               List current directory',
-	' EDIT [file.lua]  Open editor, optionally at file',
+	' EDIT [file.lua]  Temporarily unavailable',
 	'',
 	' WORKSPACE COMMANDS:',
 	' WS RESET         Discard unsaved edits (dirty > saved)',
@@ -64,6 +63,7 @@ const ERROR_SYNTAX_ERROR = 'Syntax error';
 const ERROR_FOLDER_NOT_FOUND = 'Folder not found';
 const ERROR_FILE_NOT_FOUND = 'File not found';
 const ERROR_ILLEGAL_FUNCTION_CALL = 'Illegal function call';
+const ERROR_LUA_IDE_DISABLED = 'Lua IDE terminal activation is disabled for now';
 
 export class TerminalCommandDispatcher {
 	private cwd = '/';
@@ -103,7 +103,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'IDE') {
-			runtimeIde.activateEditor(this.runtime);
+			this.runtime.terminal.appendStderr(ERROR_LUA_IDE_DISABLED);
 			return true;
 		}
 		if (tokens.length >= 1 && tokens[0].toUpperCase() === 'EDIT') {
@@ -166,17 +166,7 @@ export class TerminalCommandDispatcher {
 			this.runtime.terminal.appendStderr(ERROR_SYNTAX_ERROR);
 			return;
 		}
-		runtimeIde.activateEditor(this.runtime);
-		if (tokens.length === 1) {
-			return;
-		}
-		const normalizedPath = this.resolvePathArg(tokens[1]);
-		const asset = this.getLuaAssetByPath(normalizedPath);
-		if (!asset) {
-			this.runtime.terminal.appendStderr(ERROR_FILE_NOT_FOUND);
-			return;
-		}
-		focusChunkSource(asset.source_path);
+		this.runtime.terminal.appendStderr(ERROR_LUA_IDE_DISABLED);
 	}
 
 	private printHelp(): void {

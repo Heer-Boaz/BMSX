@@ -56,26 +56,26 @@ end
 local function split_source_lines(source)
 	local lines = {}
 	local start_index = 1
-	local write = 1
+	local write_index = 1
 	local index = 1
 	local length = #source
 	while index <= length do
 		local code = string.byte(source, index)
 		if code == 13 then
-			lines[write] = string.sub(source, start_index, index - 1)
-			write = write + 1
+			lines[write_index] = string.sub(source, start_index, index - 1)
+			write_index = write_index + 1
 			if index < length and string.byte(source, index + 1) == 10 then
 				index = index + 1
 			end
 			start_index = index + 1
 		elseif code == 10 then
-			lines[write] = string.sub(source, start_index, index - 1)
-			write = write + 1
+			lines[write_index] = string.sub(source, start_index, index - 1)
+			write_index = write_index + 1
 			start_index = index + 1
 		end
 		index = index + 1
 	end
-	lines[write] = string.sub(source, start_index, length)
+	lines[write_index] = string.sub(source, start_index, length)
 	return lines
 end
 

@@ -111,7 +111,7 @@ function code_layout:get_cached_highlight(buffer, row)
 	end
 
 	local source = buffer:get_line_content(row)
-	local highlight = syntax_highlight.highlight_text_line(source, self.builtin_lookup)
+	local highlight = syntax_highlight.highlight_text_line(source, nil, self.builtin_lookup)
 	local display_len = #highlight.text
 	local display_to_column = {}
 	for i = 0, display_len do

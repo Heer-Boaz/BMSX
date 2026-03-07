@@ -12,8 +12,8 @@ import {
 } from '../lua/luavalue';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clamp_fallback } from '../utils/clamp';
-import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
-import { createCartEditor, setExecutionStopHighlight, clearExecutionStopHighlights } from './ide/cart_editor';
+import { TERMINAL_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
+import { setExecutionStopHighlight, clearExecutionStopHighlights } from './ide/cart_editor';
 import { ide_state } from './ide/ide_state';
 import type { RuntimeErrorDetails } from './ide/types';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
@@ -32,6 +32,7 @@ import { TerminalMode } from './terminal_mode';
 import type { Runtime } from './runtime';
 import type { RuntimeOptions } from './types';
 import { shallowcopy } from '../utils/shallowcopy';
+import { createLuaNativeEditor } from './lua_native_editor';
 
 class DebugPauseCoordinator {
 	private suspension: LuaDebuggerPauseSignal = null;
@@ -159,7 +160,8 @@ export function createPauseCoordinator(): DebugPauseCoordinator {
 
 export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions): void {
 	runtime.terminal = new TerminalMode(runtime);
-	runtime.editor = createCartEditor(options.viewport);
+	runtime.editor = createLuaNativeEditor(runtime);
+	runtime.editor.updateViewport(options.viewport);
 	runtime.overlayResolutionMode = 'viewport';
 	seedDefaultLuaBuiltins();
 	flushLuaWarnings(runtime);
@@ -284,9 +286,7 @@ export function registerRuntimeShortcuts(runtime: Runtime): void {
 	disposeShortcutHandlers(runtime);
 	const registry = Input.instance.getGlobalShortcutRegistry();
 	const disposers: Array<() => void> = [];
-	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, EDITOR_TOGGLE_KEY, () => toggleEditor(runtime)));
 	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode(runtime)));
-	disposers.push(registry.registerGamepadChord(runtime.playerIndex, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => toggleEditor(runtime)));
 	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, GAME_PAUSE_KEY, () => $.toggleDebuggerControls()));
 	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, 'KeyT', () => {
 		$.consume_button(runtime.playerIndex, 'KeyT', 'keyboard');

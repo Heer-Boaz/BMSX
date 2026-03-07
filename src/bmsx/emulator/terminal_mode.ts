@@ -2,7 +2,7 @@ import type { color } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { EditorFont } from './editor_font';
 import type { FontVariant } from './font';
-import { invalidateLuaCommentContextFromRow, wrapOverlayLine, applyCaseOutsideStrings } from './ide/text_utils';
+import { invalidateLuaCommentContextFromRow, applyCaseOutsideStrings } from './ide/text_utils';
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,
@@ -1726,7 +1726,40 @@ export class TerminalMode {
 		}
 		const uppercaseDisplay = this.useUppercaseDisplay();
 		const normalized = this.toDisplayText(text, uppercaseDisplay);
-		return wrapOverlayLine(normalized, Math.max(8, maxWidth));
+		const limit = Math.max(8, maxWidth);
+		const measure = (value: string): number => this.font.measure(value.replace(/\t/g, ' '.repeat(TAB_SPACES)));
+		const segments: string[] = [];
+		let segmentStart = 0;
+		let lastBreak = -1;
+		for (let index = 0; index < normalized.length; index += 1) {
+			const ch = normalized.charAt(index);
+			if (ch === ' ' || ch === '\t') {
+				lastBreak = index;
+			}
+			const candidateWidth = measure(normalized.slice(segmentStart, index + 1));
+			if (candidateWidth <= limit) {
+				continue;
+			}
+			if (lastBreak >= segmentStart) {
+				segments.push(normalized.slice(segmentStart, lastBreak));
+				segmentStart = lastBreak + 1;
+				lastBreak = -1;
+				index = segmentStart - 1;
+				continue;
+			}
+			if (index == segmentStart) {
+				segments.push(normalized.charAt(index));
+				segmentStart = index + 1;
+			} else {
+				segments.push(normalized.slice(segmentStart, index));
+				segmentStart = index;
+			}
+			lastBreak = -1;
+		}
+		if (segmentStart < normalized.length) {
+			segments.push(normalized.slice(segmentStart));
+		}
+		return segments.length > 0 ? segments : [''];
 	}
 
 	private shouldRepeatKey(code: string): boolean {

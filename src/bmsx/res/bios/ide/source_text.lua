@@ -13,16 +13,16 @@ end
 function source_text.split_text(text)
 	local lines = {}
 	local start_index = 1
-	local write = 1
+	local write_index = 1
 	local length = #text
 	for index = 1, length do
 		if string.byte(text, index) == 10 then
-			lines[write] = string.sub(text, start_index, index - 1)
-			write = write + 1
+			lines[write_index] = string.sub(text, start_index, index - 1)
+			write_index = write_index + 1
 			start_index = index + 1
 		end
 	end
-	lines[write] = string.sub(text, start_index, length)
+	lines[write_index] = string.sub(text, start_index, length)
 	return lines
 end
 

@@ -88,6 +88,8 @@ local symbol_kind_colors = {
 	keyword = constants.color_syntax.keyword,
 }
 
+local empty_builtin_lookup = { __builtin_lookup = true }
+
 local function byte_at(line, index)
 	return string.byte(line, index + 1)
 end
@@ -567,31 +569,10 @@ local function apply_builtin_lookup(names)
 	return lookup
 end
 
-local function resolve_highlight_args(line_annotations_or_builtin_lookup, builtin_identifiers)
-	local annotations = nil
-	local builtin_lookup = nil
-	if builtin_identifiers ~= nil then
-		annotations = line_annotations_or_builtin_lookup
-		if builtin_identifiers and builtin_identifiers.__builtin_lookup then
-			builtin_lookup = builtin_identifiers
-		else
-			builtin_lookup = apply_builtin_lookup(builtin_identifiers)
-		end
-	elseif line_annotations_or_builtin_lookup and line_annotations_or_builtin_lookup.__builtin_lookup then
-		builtin_lookup = line_annotations_or_builtin_lookup
-	elseif line_annotations_or_builtin_lookup and type(line_annotations_or_builtin_lookup) == "table" and line_annotations_or_builtin_lookup[1] and type(line_annotations_or_builtin_lookup[1]) == "table" and line_annotations_or_builtin_lookup[1].start ~= nil then
-		annotations = line_annotations_or_builtin_lookup
-		builtin_lookup = apply_builtin_lookup(nil)
-	elseif line_annotations_or_builtin_lookup ~= nil then
-		builtin_lookup = apply_builtin_lookup(line_annotations_or_builtin_lookup)
-	else
-		builtin_lookup = apply_builtin_lookup(nil)
+local function highlight_text_line(line, line_annotations, builtin_lookup)
+	if builtin_lookup == nil then
+		builtin_lookup = empty_builtin_lookup
 	end
-	return annotations, builtin_lookup
-end
-
-local function highlight_text_line(line, line_annotations_or_builtin_lookup, builtin_identifiers)
-	local annotations, builtin_lookup = resolve_highlight_args(line_annotations_or_builtin_lookup, builtin_identifiers)
 	local length = #line
 	local column_colors = {}
 	for i = 0, length - 1 do
@@ -699,8 +680,8 @@ local function highlight_text_line(line, line_annotations_or_builtin_lookup, bui
 		end
 	end
 
-	if annotations then
-		apply_semantic_annotations(line, column_colors, length, annotations, builtin_lookup)
+	if line_annotations then
+		apply_semantic_annotations(line, column_colors, length, line_annotations, builtin_lookup)
 	end
 
 	local colors = {}
@@ -758,34 +739,13 @@ local function highlight_text_line(line, line_annotations_or_builtin_lookup, bui
 	}
 end
 
-local function highlight_line(source, row_or_semantics, maybe_semantics, builtin_identifiers)
-	local lines
-	local row = 0
-	local annotations = nil
-	local builtin_collection = builtin_identifiers
+local function highlight_line(source, row, annotations, builtin_lookup)
 	if type(source) == "string" then
-		lines = { source }
-	else
-		lines = source
-		if type(row_or_semantics) == "number" then
-			row = row_or_semantics
-			annotations = maybe_semantics
-		else
-			annotations = row_or_semantics
-			if builtin_identifiers == nil and maybe_semantics ~= nil then
-				builtin_collection = maybe_semantics
-			end
-		end
+		return highlight_text_line(source, nil, builtin_lookup)
 	end
-	if builtin_identifiers ~= nil then
-		builtin_collection = builtin_identifiers
-	end
-	local line = ""
-	if row >= 0 and row + 1 <= #lines then
-		line = lines[row + 1]
-	end
+	local line = source[row + 1]
 	local line_annotations = annotations and annotations[row + 1]
-	return highlight_text_line(line, line_annotations, builtin_collection)
+	return highlight_text_line(line, line_annotations, builtin_lookup)
 end
 
 return {
