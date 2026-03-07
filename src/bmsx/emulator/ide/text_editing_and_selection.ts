@@ -55,19 +55,6 @@ function editorAllowsMutation(): boolean {
 // ============================================================================
 
 /**
- * Sets the selection anchor position.
- * The anchor is one end of the selection range; the cursor is the other end.
- * @param position The position to set as the anchor, or null to clear
- */
-export function setSelectionAnchorPosition(position: Position): void {
-	if (!position) {
-		ide_state.selectionAnchor = null;
-		return;
-	}
-	ide_state.selectionAnchor = { row: position.row, column: position.column };
-}
-
-/**
  * Clears the current selection by removing the anchor.
  */
 export function clearSelection(): void {
@@ -118,18 +105,18 @@ export function getSelectionRange(): { start: Position; end: Position } {
  * Gets the text content of the current selection.
  * @returns The selected text, or null if no selection
  */
-	export function getSelectionText(): string {
-		const range = getSelectionRange();
-		if (!range) {
-			return null;
-		}
-		const buffer = ide_state.buffer;
-		const start = range.start;
-		const end = range.end;
-		const startOffset = buffer.offsetAt(start.row, start.column);
-		const endOffset = buffer.offsetAt(end.row, end.column);
-		return buffer.getTextRange(startOffset, endOffset);
+export function getSelectionText(): string {
+	const range = getSelectionRange();
+	if (!range) {
+		return null;
 	}
+	const buffer = ide_state.buffer;
+	const start = range.start;
+	const end = range.end;
+	const startOffset = buffer.offsetAt(start.row, start.column);
+	const endOffset = buffer.offsetAt(end.row, end.column);
+	return buffer.getTextRange(startOffset, endOffset);
+}
 
 /**
  * Ensures that a selection anchor exists at the specified position.
@@ -166,24 +153,24 @@ export function collapseSelectionTo(target: 'start' | 'end'): void {
  * @param row The row containing the word
  * @param column The column within the word
  */
-	export function selectWordAtPosition(row: number, column: number): void {
-		const buffer = ide_state.buffer;
-		const lineCount = buffer.getLineCount();
-		let targetRow = row;
-		if (targetRow < 0) {
-			targetRow = 0;
-		} else if (targetRow >= lineCount) {
-			targetRow = lineCount - 1;
-		}
-		const line = buffer.getLineContent(targetRow);
-		if (line.length === 0) {
-			ide_state.selectionAnchor = null;
-			ide_state.cursorRow = targetRow;
-			ide_state.cursorColumn = 0;
-			updateDesiredColumn();
-			resetBlink();
-			revealCursor();
-			return;
+export function selectWordAtPosition(row: number, column: number): void {
+	const buffer = ide_state.buffer;
+	const lineCount = buffer.getLineCount();
+	let targetRow = row;
+	if (targetRow < 0) {
+		targetRow = 0;
+	} else if (targetRow >= lineCount) {
+		targetRow = lineCount - 1;
+	}
+	const line = buffer.getLineContent(targetRow);
+	if (line.length === 0) {
+		ide_state.selectionAnchor = null;
+		ide_state.cursorRow = targetRow;
+		ide_state.cursorColumn = 0;
+		updateDesiredColumn();
+		resetBlink();
+		revealCursor();
+		return;
 	}
 	let index = column;
 	if (index >= line.length) {
@@ -225,43 +212,43 @@ export function collapseSelectionTo(target: 'start' | 'end'): void {
 			end += 1;
 		}
 	}
-		if (end < start) {
-			end = start;
-		}
-		ide_state.selectionAnchor = { row: targetRow, column: start };
-		ide_state.cursorRow = targetRow;
-		ide_state.cursorColumn = end;
-		updateDesiredColumn();
-		resetBlink();
-		revealCursor();
+	if (end < start) {
+		end = start;
 	}
+	ide_state.selectionAnchor = { row: targetRow, column: start };
+	ide_state.cursorRow = targetRow;
+	ide_state.cursorColumn = end;
+	updateDesiredColumn();
+	resetBlink();
+	revealCursor();
+}
 
 /**
  * Clamps a position to valid document bounds.
  * @param position The position to clamp, or null
  * @returns The clamped position, or null if input was null
  */
-	export function clampSelectionPosition(position: Position): Position {
-		if (!position) {
-			return null;
-		}
-		const buffer = ide_state.buffer;
-		const lineCount = buffer.getLineCount();
-		let row = position.row;
-		if (row < 0) {
-			row = 0;
-		} else if (row >= lineCount) {
-			row = lineCount - 1;
-		}
-		const lineLength = buffer.getLineEndOffset(row) - buffer.getLineStartOffset(row);
-		let column = position.column;
-		if (column < 0) {
-			column = 0;
-		} else if (column > lineLength) {
-			column = lineLength;
-		}
-		return { row, column };
+export function clampSelectionPosition(position: Position): Position {
+	if (!position) {
+		return null;
 	}
+	const buffer = ide_state.buffer;
+	const lineCount = buffer.getLineCount();
+	let row = position.row;
+	if (row < 0) {
+		row = 0;
+	} else if (row >= lineCount) {
+		row = lineCount - 1;
+	}
+	const lineLength = buffer.getLineEndOffset(row) - buffer.getLineStartOffset(row);
+	let column = position.column;
+	if (column < 0) {
+		column = 0;
+	} else if (column > lineLength) {
+		column = lineLength;
+	}
+	return { row, column };
+}
 
 // ============================================================================
 // POSITION NAVIGATION HELPERS
@@ -273,18 +260,18 @@ export function collapseSelectionTo(target: 'start' | 'end'): void {
  * @param column Current column
  * @returns The new position, or null if at the start of the document
  */
-	export function stepLeft(row: number, column: number): { row: number; column: number } {
-		if (column > 0) {
-			return { row, column: column - 1 };
-		}
-		if (row > 0) {
-			const previousRow = row - 1;
-			const buffer = ide_state.buffer;
-			const length = buffer.getLineEndOffset(previousRow) - buffer.getLineStartOffset(previousRow);
-			return { row: previousRow, column: length };
-		}
-		return null;
+export function stepLeft(row: number, column: number): { row: number; column: number } {
+	if (column > 0) {
+		return { row, column: column - 1 };
 	}
+	if (row > 0) {
+		const previousRow = row - 1;
+		const buffer = ide_state.buffer;
+		const length = buffer.getLineEndOffset(previousRow) - buffer.getLineStartOffset(previousRow);
+		return { row: previousRow, column: length };
+	}
+	return null;
+}
 
 /**
  * Moves one position to the right in the document.
@@ -292,17 +279,17 @@ export function collapseSelectionTo(target: 'start' | 'end'): void {
  * @param column Current column
  * @returns The new position, or null if at the end of the document
  */
-	export function stepRight(row: number, column: number): { row: number; column: number } {
-		const buffer = ide_state.buffer;
-		const length = buffer.getLineEndOffset(row) - buffer.getLineStartOffset(row);
-		if (column < length) {
-			return { row, column: column + 1 };
-		}
-		if (row < buffer.getLineCount() - 1) {
-			return { row: row + 1, column: 0 };
-		}
-		return null;
+export function stepRight(row: number, column: number): { row: number; column: number } {
+	const buffer = ide_state.buffer;
+	const length = buffer.getLineEndOffset(row) - buffer.getLineStartOffset(row);
+	if (column < length) {
+		return { row, column: column + 1 };
 	}
+	if (row < buffer.getLineCount() - 1) {
+		return { row: row + 1, column: 0 };
+	}
+	return null;
+}
 
 /**
  * Gets the character at the specified position.
@@ -310,21 +297,21 @@ export function collapseSelectionTo(target: 'start' | 'end'): void {
  * @param column Column index
  * @returns The character, or empty string if position is out of bounds
  */
-	export function charAt(row: number, column: number): string {
-		const buffer = ide_state.buffer;
-		const lineCount = buffer.getLineCount();
-		if (row < 0 || row >= lineCount) {
-			return '';
-		}
-		const lineStart = buffer.getLineStartOffset(row);
-		const lineEnd = buffer.getLineEndOffset(row);
-		const length = lineEnd - lineStart;
-		if (column < 0 || column >= length) {
-			return '';
-		}
-		const offset = lineStart + column;
-		return bufferCharAtOffset(buffer, offset);
+export function charAt(row: number, column: number): string {
+	const buffer = ide_state.buffer;
+	const lineCount = buffer.getLineCount();
+	if (row < 0 || row >= lineCount) {
+		return '';
 	}
+	const lineStart = buffer.getLineStartOffset(row);
+	const lineEnd = buffer.getLineEndOffset(row);
+	const length = lineEnd - lineStart;
+	if (column < 0 || column >= length) {
+		return '';
+	}
+	const offset = lineStart + column;
+	return bufferCharAtOffset(buffer, offset);
+}
 
 /**
  * Finds the start of the word to the left of the cursor.
