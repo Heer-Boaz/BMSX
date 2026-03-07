@@ -1006,6 +1006,27 @@ const BinValue* RuntimeAssets::getData(const AssetId& id) const {
 	return fallback ? fallback->getData(id) : nullptr;
 }
 
+LuaSourceAsset* RuntimeAssets::getLua(const AssetId& path) {
+	const AssetToken token = hashAssetToken(path);
+	auto it = lua.find(token);
+	if (it != lua.end()) {
+		return &it->second;
+	}
+	if (fallback) {
+		return const_cast<LuaSourceAsset*>(fallback->getLua(path));
+	}
+	return nullptr;
+}
+
+const LuaSourceAsset* RuntimeAssets::getLua(const AssetId& path) const {
+	const AssetToken token = hashAssetToken(path);
+	auto it = lua.find(token);
+	if (it != lua.end()) {
+		return &it->second;
+	}
+	return fallback ? fallback->getLua(path) : nullptr;
+}
+
 const BinValue* RuntimeAssets::getAudioEvent(const AssetId& id) const {
 	const AssetToken token = hashAssetToken(id);
 	auto it = audioevents.find(token);
@@ -1031,6 +1052,10 @@ bool RuntimeAssets::hasData(const AssetId& id) const {
 	return getData(id) != nullptr;
 }
 
+bool RuntimeAssets::hasLua(const AssetId& path) const {
+	return getLua(path) != nullptr;
+}
+
 bool RuntimeAssets::hasAudioEvent(const AssetId& id) const {
 	return getAudioEvent(id) != nullptr;
 }
@@ -1040,6 +1065,7 @@ void RuntimeAssets::clear() {
 	audio.clear();
 	model.clear();
 	data.clear();
+	lua.clear();
 	audioevents.clear();
 	atlasTextures.clear();
 	programAsset.reset();
@@ -1627,6 +1653,20 @@ bool loadAssetsFromRom(const u8* buffer,
 			audioEventAsset.rom = romInfo;
 			audioEventAsset.value = std::move(audioEvents);
 			assets.audioevents[assetToken] = std::move(audioEventAsset);
+		}
+		else if (assetType == "lua") {
+			if (!romInfo.sourcePath.has_value()) {
+				throw BMSX_RUNTIME_ERROR("Lua asset missing source path: " + assetId);
+			}
+			if (bufStart < 0 || bufEnd <= bufStart) {
+				throw BMSX_RUNTIME_ERROR("Lua asset missing source payload: " + assetId);
+			}
+			LuaSourceAsset luaAsset;
+			luaAsset.id = assetId;
+			luaAsset.path = *romInfo.sourcePath;
+			luaAsset.rom = romInfo;
+			luaAsset.source.assign(reinterpret_cast<const char*>(romData + bufStart), static_cast<size_t>(bufEnd - bufStart));
+			assets.lua[hashAssetToken(luaAsset.path)] = std::move(luaAsset);
 		}
 		else if (assetType == "data") {
 			std::cerr << "[BMSX] Data asset found: id='" << assetId << "' bufStart=" << bufStart << " bufEnd=" << bufEnd << std::endl;

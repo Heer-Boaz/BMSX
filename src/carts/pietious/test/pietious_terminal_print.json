@@ -1,0 +1,282 @@
+[
+	{
+		"description": "open_terminal_press",
+		"frame": 180,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "F2",
+			"down": true,
+			"value": 1,
+			"timestamp": 3600,
+			"pressId": 1,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "open_terminal_release",
+		"frame": 183,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "F2",
+			"down": false,
+			"value": 0,
+			"timestamp": 3660,
+			"pressId": 1,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_print_p_press",
+		"frame": 190,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyP",
+			"down": true,
+			"value": 1,
+			"timestamp": 3800,
+			"pressId": 2,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_print_p_release",
+		"frame": 192,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyP",
+			"down": false,
+			"value": 0,
+			"timestamp": 3840,
+			"pressId": 2,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_print_r_press",
+		"frame": 196,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyR",
+			"down": true,
+			"value": 1,
+			"timestamp": 3920,
+			"pressId": 3,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_print_r_release",
+		"frame": 198,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyR",
+			"down": false,
+			"value": 0,
+			"timestamp": 3960,
+			"pressId": 3,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_print_i_press",
+		"frame": 202,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyI",
+			"down": true,
+			"value": 1,
+			"timestamp": 4040,
+			"pressId": 4,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_print_i_release",
+		"frame": 204,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyI",
+			"down": false,
+			"value": 0,
+			"timestamp": 4080,
+			"pressId": 4,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_print_n_press",
+		"frame": 208,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyN",
+			"down": true,
+			"value": 1,
+			"timestamp": 4160,
+			"pressId": 5,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_print_n_release",
+		"frame": 210,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyN",
+			"down": false,
+			"value": 0,
+			"timestamp": 4200,
+			"pressId": 5,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_print_t_press",
+		"frame": 214,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyT",
+			"down": true,
+			"value": 1,
+			"timestamp": 4280,
+			"pressId": 6,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_print_t_release",
+		"frame": 216,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "KeyT",
+			"down": false,
+			"value": 0,
+			"timestamp": 4320,
+			"pressId": 6,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_quote_open_press",
+		"frame": 220,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Quote",
+			"down": true,
+			"value": 1,
+			"timestamp": 4400,
+			"pressId": 7,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_quote_open_release",
+		"frame": 222,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Quote",
+			"down": false,
+			"value": 0,
+			"timestamp": 4440,
+			"pressId": 7,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_one_press",
+		"frame": 226,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Digit1",
+			"down": true,
+			"value": 1,
+			"timestamp": 4520,
+			"pressId": 8,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_one_release",
+		"frame": 228,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Digit1",
+			"down": false,
+			"value": 0,
+			"timestamp": 4560,
+			"pressId": 8,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_quote_close_press",
+		"frame": 232,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Quote",
+			"down": true,
+			"value": 1,
+			"timestamp": 4640,
+			"pressId": 9,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "type_quote_close_release",
+		"frame": 234,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Quote",
+			"down": false,
+			"value": 0,
+			"timestamp": 4680,
+			"pressId": 9,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "submit_print_press",
+		"frame": 240,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Enter",
+			"down": true,
+			"value": 1,
+			"timestamp": 4800,
+			"pressId": 10,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	},
+	{
+		"description": "submit_print_release",
+		"frame": 242,
+		"event": {
+			"type": "button",
+			"deviceId": "keyboard:0",
+			"code": "Enter",
+			"down": false,
+			"value": 0,
+			"timestamp": 4840,
+			"pressId": 10,
+			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
+		}
+	}
+]

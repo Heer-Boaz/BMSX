@@ -357,14 +357,14 @@ i64 hzToScaledHz(f64 hz) {
 	return static_cast<i64>(std::llround(hz * static_cast<f64>(HZ_SCALE)));
 }
 
+} // namespace
+
 int calcCyclesPerFrame(i64 cpuHz, i64 refreshHzScaled) {
 	const i64 wholeCycles = (cpuHz / refreshHzScaled) * HZ_SCALE;
 	const i64 remainderCycles = ((cpuHz % refreshHzScaled) * HZ_SCALE) / refreshHzScaled;
 	const i64 cyclesPerFrame = wholeCycles + remainderCycles;
 	return static_cast<int>(cyclesPerFrame);
 }
-
-} // namespace
 
 EngineCore* EngineCore::s_instance = nullptr;
 
@@ -935,6 +935,9 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	}
 	for (auto& entry : cartAssets.data) {
 		m_assets.data[entry.first] = std::move(entry.second);
+	}
+	for (auto& entry : cartAssets.lua) {
+		m_assets.lua[entry.first] = std::move(entry.second);
 	}
 	for (auto& entry : cartAssets.audioevents) {
 		m_assets.audioevents[entry.first] = std::move(entry.second);

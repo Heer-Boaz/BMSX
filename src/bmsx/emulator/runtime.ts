@@ -342,7 +342,7 @@ export class Runtime {
 	public _activeIdeFontVariant: FontVariant = EDITOR_FONT_VARIANT;
 	public playerIndex: number;
 	public tickEnabled: boolean = true;
-	public editor!: CartEditor;
+	public editor: CartEditor | null = null;
 	public readonly overlayRenderBackend = new RenderFacade();
 	public terminal!: TerminalMode;
 	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
@@ -356,7 +356,9 @@ export class Runtime {
 	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
 		this._overlayResolutionMode = value;
 		this.overlayRenderBackend.setRenderingViewportType(value);
-		this.editor.updateViewport(this.overlayRenderBackend.viewportSize);
+		if (this.editor !== null) {
+			this.editor.updateViewport(this.overlayRenderBackend.viewportSize);
+		}
 	}
 
 	public get overlayResolutionMode() {
@@ -1239,7 +1241,9 @@ export class Runtime {
 			this.luaChunkEnvironmentsByPath.clear();
 			this.luaChunkEnvironmentsByPath.clear();
 			this.luaGenericChunksExecuted.clear();
-			this.editor.clearRuntimeErrorOverlay();
+				if (this.editor !== null) {
+					this.editor.clearRuntimeErrorOverlay();
+				}
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
 				await $.reset_to_fresh_world();
 				await $.refresh_audio_assets();

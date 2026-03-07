@@ -28,6 +28,16 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 
 constexpr uint32_t CART_ROM_MAGIC = 0x58534D42u;
 
+std::string formatNonFunctionCallError(Value callee, const CPU& cpu) {
+	std::string message = "Attempted to call a non-function value.";
+	message += " callee=" + std::string(valueTypeName(callee)) + "(" + valueToString(callee, cpu.stringPool()) + ")";
+	auto range = cpu.getDebugRange(cpu.lastPc);
+	if (range.has_value()) {
+		message += " at " + range->path + ":" + std::to_string(range->startLine) + ":" + std::to_string(range->startColumn);
+	}
+	return message;
+}
+
 size_t utf8_next_index(const std::string& text, size_t index) {
 	unsigned char c0 = static_cast<unsigned char>(text[index]);
 	if (c0 < 0x80) {
@@ -1121,7 +1131,7 @@ void Runtime::setupBuiltins() {
 			out.insert(out.end(), results.begin(), results.end());
 			return;
 		}
-		throw BMSX_RUNTIME_ERROR("Attempted to call a non-function value.");
+		throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(callee, m_cpu));
 	};
 	auto key = [this](std::string_view name) {
 		return canonicalizeIdentifier(name);

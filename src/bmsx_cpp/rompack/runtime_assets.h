@@ -201,6 +201,13 @@ struct DataAsset {
 	BinValue value;
 };
 
+struct LuaSourceAsset {
+	AssetId id;
+	std::string path;
+	RomAssetInfo rom;
+	std::string source;
+};
+
 /* ============================================================================
  * Audio event asset
  * ============================================================================ */
@@ -373,6 +380,7 @@ public:
 	std::unordered_map<AssetToken, AudioAsset> audio;
 	std::unordered_map<AssetToken, ModelAsset> model;
 	std::unordered_map<AssetToken, DataAsset> data;  // Generic decoded data assets
+	std::unordered_map<AssetToken, LuaSourceAsset> lua;
 	std::unordered_map<AssetToken, AudioEventAsset> audioevents;
 
 	// Atlas textures (atlasid -> ImgAsset with full texture data)
@@ -401,6 +409,9 @@ public:
 
 	const BinValue* getData(const AssetId& id) const;
 
+	LuaSourceAsset* getLua(const AssetId& path);
+	const LuaSourceAsset* getLua(const AssetId& path) const;
+
 	const BinValue* getAudioEvent(const AssetId& id) const;
 
 	// Clear all assets
@@ -411,6 +422,7 @@ public:
 	bool hasAudio(const AssetId& id) const;
 	bool hasModel(const AssetId& id) const;
 	bool hasData(const AssetId& id) const;
+	bool hasLua(const AssetId& path) const;
 	bool hasAudioEvent(const AssetId& id) const;
 	bool hasProgram() const { return programAsset != nullptr || (fallback && fallback->hasProgram()); }
 	bool hasAnyImg() const { return !img.empty() || (fallback && fallback->hasAnyImg()); }

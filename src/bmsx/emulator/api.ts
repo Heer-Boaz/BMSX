@@ -1,4 +1,4 @@
-import { $, runGate } from '../core/engine_core';
+import { $, runGate, calcCyclesPerFrameScaled } from '../core/engine_core';
 import { Input } from '../input/input';
 import type { PlayerInput } from '../input/playerinput';
 import type {
@@ -25,7 +25,7 @@ import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { setHardwareCamera } from '../render/shared/hardware_camera';
 import { listResources } from './workspace';
 import { getWorkspaceCachedSource } from './workspace_cache';
-import { buildDirtyFilePath } from './ide/workspace_storage';
+import { buildDirtyFilePath, hasWorkspaceStorage } from './ide/workspace_storage';
 import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtins';
 import { createLuaTable, type LuaTable } from '../lua/luavalue';
 import { ActionState } from 'bmsx/input/inputtypes';
@@ -360,6 +360,84 @@ export class Api {
 			throw new Error(`Player input handler for index ${playerindex ?? this.playerindex} is not initialised.`);
 		}
 		return playerInput;
+	}
+
+	private pointerButtonCode(button: number): string {
+		switch (button) {
+			case 0: return 'pointer_primary';
+			case 1: return 'pointer_secondary';
+			case 2: return 'pointer_aux';
+			case 3: return 'pointer_back';
+			case 4: return 'pointer_forward';
+			default:
+				throw new Error(`Unsupported pointer button index ${button}.`);
+		}
+	}
+
+	public mousebtn(button: number): boolean {
+		return this.get_player_input().getButtonState(this.pointerButtonCode(button), 'pointer').pressed === true;
+	}
+
+	public mousebtnp(button: number): boolean {
+		return this.get_player_input().getButtonState(this.pointerButtonCode(button), 'pointer').justpressed === true;
+	}
+
+	public mousebtnr(button: number): boolean {
+		return this.get_player_input().getButtonState(this.pointerButtonCode(button), 'pointer').justreleased === true;
+	}
+
+	public pointer_screen_position(): { x: number; y: number; valid: boolean } {
+		const state = this.get_player_input().getButtonState('pointer_position', 'pointer');
+		const value = state.value2d;
+		if (!value) {
+			return { x: 0, y: 0, valid: false };
+		}
+		return { x: value[0], y: value[1], valid: true };
+	}
+
+	public pointer_delta(): { x: number; y: number; valid: boolean } {
+		const state = this.get_player_input().getButtonState('pointer_delta', 'pointer');
+		const value = state.value2d;
+		if (!value) {
+			return { x: 0, y: 0, valid: false };
+		}
+		return { x: value[0], y: value[1], valid: true };
+	}
+
+	public pointer_viewport_position(): { x: number; y: number; valid: boolean; inside: boolean } {
+		const position = this.pointer_screen_position();
+		if (!position.valid) {
+			return { x: 0, y: 0, valid: false, inside: false };
+		}
+		const view = $.view;
+		const rect = view.surface.measureDisplay();
+		const width = rect.width;
+		const height = rect.height;
+		if (width <= 0 || height <= 0) {
+			return { x: 0, y: 0, valid: false, inside: false };
+		}
+		const relativeX = position.x - rect.left;
+		const relativeY = position.y - rect.top;
+		const inside = relativeX >= 0 && relativeX < width && relativeY >= 0 && relativeY < height;
+		const viewport = view.viewportSize;
+		return {
+			x: (relativeX / width) * viewport.x,
+			y: (relativeY / height) * viewport.y,
+			valid: true,
+			inside,
+		};
+	}
+
+	public mousepos(): { x: number; y: number; valid: boolean; inside: boolean } {
+		return this.pointer_viewport_position();
+	}
+
+	public mousewheel(): { value: number; valid: boolean } {
+		const state = this.get_player_input().getButtonState('pointer_wheel', 'pointer');
+		if (state.value === null || state.value === undefined) {
+			return { value: 0, valid: false };
+		}
+		return { value: state.value, valid: true };
 	}
 
 	public stat(index: number): number {
@@ -708,15 +786,38 @@ export class Api {
 	}
 
 	public get_lua_entry_path(): string {
-		return runtimeLuaPipeline.listLuaSourceRegistries(this._runtime)[0].registry.entry_path;
+		const registry = runtimeLuaPipeline.listLuaSourceRegistries(this._runtime)[0].registry;
+		const record = registry.path2lua[registry.entry_path];
+		const value = record ? record.source_path : registry.entry_path;
+		if (typeof value !== 'string') {
+			throw new Error(`[api.get_lua_entry_path] Expected string entry path, got ${Object.prototype.toString.call(value)}.`);
+		}
+		return value;
 	}
 
 	public get_lua_resource_source(path: string): string {
 		const record = runtimeLuaPipeline.resolveLuaSourceRecord(this._runtime, path);
+		if (!record) {
+			const registries = runtimeLuaPipeline.listLuaSourceRegistries(this._runtime);
+			const available = registries.flatMap(entry => Object.keys(entry.registry.path2lua)).slice(0, 16);
+			throw new Error(`[api.get_lua_resource_source] Missing Lua resource for path '${path}'. Available: ${available.join(', ')}`);
+		}
 		const sourcePath = record.source_path;
-		const dirtyPath = buildDirtyFilePath(sourcePath);
-		const cached = getWorkspaceCachedSource(sourcePath) ?? getWorkspaceCachedSource(dirtyPath);
+		const dirtyPath = hasWorkspaceStorage() ? buildDirtyFilePath(sourcePath) : null;
+		const cached = getWorkspaceCachedSource(sourcePath) ?? (dirtyPath ? getWorkspaceCachedSource(dirtyPath) : null);
 		return cached ?? record.src;
+	}
+
+	public get_cpu_freq_hz(): number {
+		return this._runtime.cpuHz;
+	}
+
+	public set_cpu_freq_hz(cpuHz: number): void {
+		if (!Number.isSafeInteger(cpuHz) || cpuHz <= 0) {
+			throw new Error('[api.set_cpu_freq_hz] cpuHz must be a positive safe integer.');
+		}
+		this._runtime.setCpuHz(cpuHz);
+		this._runtime.setCycleBudgetPerFrame(calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled));
 	}
 
 	public list_lua_builtins(): LuaTable {

@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cmath>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 namespace bmsx {
@@ -34,6 +35,75 @@ static const std::array<Color, 16> MSX1_PALETTE = {
 
 static const Color& paletteColor(int index) {
 	return MSX1_PALETTE[static_cast<size_t>(index)];
+}
+
+static bool matchesLuaPathAlias(const std::string& path, const std::string& alias) {
+	if (path == alias) {
+		return true;
+	}
+	if (path.size() <= alias.size()) {
+		return false;
+	}
+	const size_t offset = path.size() - alias.size();
+	return path.compare(offset, alias.size(), alias) == 0 && path[offset - 1] == '/';
+}
+
+template<typename Fn>
+void forEachLuaSource(const RuntimeAssets& assets, Fn&& fn) {
+	for (const auto& entry : assets.lua) {
+		fn(entry.second);
+	}
+	if (assets.fallback) {
+		forEachLuaSource(*assets.fallback, std::forward<Fn>(fn));
+	}
+}
+
+const LuaSourceAsset* resolveLuaSourceByPath(const RuntimeAssets& assets, const std::string& path) {
+	const LuaSourceAsset* direct = assets.getLua(path);
+	if (direct) {
+		return direct;
+	}
+	const LuaSourceAsset* resolved = nullptr;
+	forEachLuaSource(assets, [&](const LuaSourceAsset& asset) {
+		if (!matchesLuaPathAlias(asset.path, path)) {
+			return;
+		}
+		if (resolved && resolved->path != asset.path) {
+			throw BMSX_RUNTIME_ERROR("Ambiguous lua path '" + path + "'.");
+		}
+		resolved = &asset;
+	});
+	return resolved;
+}
+
+std::string summarizeLuaPaths(const RuntimeAssets& assets, size_t limit) {
+	std::vector<std::string> values;
+	values.reserve(limit);
+	std::unordered_set<std::string> seen;
+	forEachLuaSource(assets, [&](const LuaSourceAsset& asset) {
+		if (values.size() >= limit) {
+			return;
+		}
+		if (!seen.insert(asset.path).second) {
+			return;
+		}
+		values.push_back(asset.path);
+	});
+	std::string out;
+	for (size_t i = 0; i < values.size(); ++i) {
+		if (i > 0) {
+			out += ", ";
+		}
+		out += values[i];
+	}
+	return out;
+}
+
+InputSource parseInputSource(const std::string& source) {
+	if (source == "keyboard") return InputSource::Keyboard;
+	if (source == "gamepad") return InputSource::Gamepad;
+	if (source == "pointer") return InputSource::Pointer;
+	throw BMSX_RUNTIME_ERROR("Unknown input source '" + source + "'.");
 }
 
 struct ParsedAudioOptions {
@@ -531,6 +601,206 @@ Api::Api(Runtime& runtime)
 
 Api::~Api() = default;
 
+void Api::markRoots(GcHeap& heap) {
+	for (Value handle : m_playerInputHandles) {
+		if (!isNil(handle)) {
+			heap.markValue(handle);
+		}
+	}
+}
+
+Value Api::get_player_input(std::optional<int> playerIndex) {
+	const int index = playerIndex.has_value() ? playerIndex.value() : m_runtime.playerIndex();
+	if (index < 1 || index > PLAYERS_MAX) {
+		throw BMSX_RUNTIME_ERROR("Player index out of range.");
+	}
+	return get_player_input_handle(index);
+}
+
+std::string Api::pointer_button_code(int button) const {
+	switch (button) {
+		case 0: return "pointer_primary";
+		case 1: return "pointer_secondary";
+		case 2: return "pointer_aux";
+		case 3: return "pointer_back";
+		case 4: return "pointer_forward";
+		default:
+			throw BMSX_RUNTIME_ERROR("Unsupported pointer button index " + std::to_string(button) + ".");
+	}
+}
+
+bool Api::mousebtn(int button) const {
+	const ButtonState state = Input::instance().getPlayerInput(m_runtime.playerIndex())->getButtonState(pointer_button_code(button), InputSource::Pointer);
+	return state.pressed;
+}
+
+bool Api::mousebtnp(int button) const {
+	const ButtonState state = Input::instance().getPlayerInput(m_runtime.playerIndex())->getButtonState(pointer_button_code(button), InputSource::Pointer);
+	return state.justpressed;
+}
+
+bool Api::mousebtnr(int button) const {
+	const ButtonState state = Input::instance().getPlayerInput(m_runtime.playerIndex())->getButtonState(pointer_button_code(button), InputSource::Pointer);
+	return state.justreleased;
+}
+
+std::string Api::get_lua_entry_path() const {
+	const RuntimeAssets& assets = EngineCore::instance().assets();
+	const std::string& entryPath = assets.manifest.entryPoint;
+	if (entryPath.empty()) {
+		throw BMSX_RUNTIME_ERROR("[api.get_lua_entry_path] Lua entry path is empty.");
+	}
+	const LuaSourceAsset* source = resolveLuaSourceByPath(assets, entryPath);
+	if (!source) {
+		throw BMSX_RUNTIME_ERROR("[api.get_lua_entry_path] Missing Lua entry '" + entryPath + "'. Available: " + summarizeLuaPaths(assets, 16));
+	}
+	return source->path;
+}
+
+std::string Api::get_lua_resource_source(const std::string& path) const {
+	const RuntimeAssets& assets = EngineCore::instance().assets();
+	const LuaSourceAsset* source = resolveLuaSourceByPath(assets, path);
+	if (!source) {
+		throw BMSX_RUNTIME_ERROR("[api.get_lua_resource_source] Missing Lua resource for path '" + path + "'. Available: " + summarizeLuaPaths(assets, 16));
+	}
+	return source->source;
+}
+
+double Api::get_cpu_freq_hz() const {
+	return static_cast<double>(m_runtime.cpuHz());
+}
+
+void Api::set_cpu_freq_hz(double cpuHz) {
+	if (!std::isfinite(cpuHz) || cpuHz <= 0.0 || std::floor(cpuHz) != cpuHz) {
+		throw BMSX_RUNTIME_ERROR("[api.set_cpu_freq_hz] cpuHz must be a positive integer.");
+	}
+	const i64 normalizedCpuHz = static_cast<i64>(cpuHz);
+	const int cycleBudget = calcCyclesPerFrame(normalizedCpuHz, EngineCore::instance().ufpsScaled());
+	m_runtime.setCpuHz(normalizedCpuHz);
+	m_runtime.setCycleBudgetPerFrame(cycleBudget);
+}
+
+Value Api::get_player_input_handle(int playerIndex) {
+	const int index = playerIndex - 1;
+	Value cached = m_playerInputHandles[static_cast<size_t>(index)];
+	if (!isNil(cached)) {
+		return cached;
+	}
+
+	auto key = [this](std::string_view name) {
+		return m_runtime.canonicalizeIdentifier(name);
+	};
+	auto exactString = [this](std::string_view text) {
+		return valueString(m_runtime.cpu().internString(text));
+	};
+	auto makeButtonStateTable = [this, key](const ButtonState& state, bool repeatPressed, int repeatCount) -> Value {
+		Table* table = m_runtime.cpu().createTable(0, 13);
+		table->set(key("pressed"), valueBool(state.pressed));
+		table->set(key("justpressed"), valueBool(state.justpressed));
+		table->set(key("justreleased"), valueBool(state.justreleased));
+		table->set(key("waspressed"), valueBool(state.waspressed));
+		table->set(key("wasreleased"), valueBool(state.wasreleased));
+		table->set(key("repeatpressed"), valueBool(repeatPressed));
+		table->set(key("repeatcount"), valueNumber(static_cast<double>(repeatCount)));
+		table->set(key("consumed"), valueBool(state.consumed));
+		table->set(key("value"), valueNumber(static_cast<double>(state.value)));
+		if (state.presstime.has_value()) {
+			table->set(key("presstime"), valueNumber(state.presstime.value()));
+		}
+		if (state.timestamp.has_value()) {
+			table->set(key("timestamp"), valueNumber(state.timestamp.value()));
+		}
+		if (state.pressedAtMs.has_value()) {
+			table->set(key("pressedAtMs"), valueNumber(state.pressedAtMs.value()));
+		}
+		if (state.releasedAtMs.has_value()) {
+			table->set(key("releasedAtMs"), valueNumber(state.releasedAtMs.value()));
+		}
+		if (state.pressId.has_value()) {
+			table->set(key("pressId"), valueNumber(static_cast<double>(state.pressId.value())));
+		}
+		if (state.value2d.has_value()) {
+			Table* value2d = m_runtime.cpu().createTable(0, 2);
+			value2d->set(key("x"), valueNumber(static_cast<double>(state.value2d->x)));
+			value2d->set(key("y"), valueNumber(static_cast<double>(state.value2d->y)));
+			table->set(key("value2d"), valueTable(value2d));
+		}
+		return valueTable(table);
+	};
+	auto makeModifierStateTable = [this, key](const PlayerInput::ModifierState& state) -> Value {
+		Table* table = m_runtime.cpu().createTable(0, 4);
+		table->set(key("shift"), valueBool(state.shift));
+		table->set(key("ctrl"), valueBool(state.ctrl));
+		table->set(key("alt"), valueBool(state.alt));
+		table->set(key("meta"), valueBool(state.meta));
+		return valueTable(table);
+	};
+
+	const Value getModifiersStateFn = m_runtime.cpu().createNativeFunction("player_input.getModifiersState", [this, playerIndex, makeModifierStateTable](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
+		out.push_back(makeModifierStateTable(input->getModifiersState()));
+	});
+	const Value getButtonStateFn = m_runtime.cpu().createNativeFunction("player_input.getButtonState", [this, playerIndex, makeButtonStateTable](const std::vector<Value>& args, std::vector<Value>& out) {
+		const size_t offset = args.size() >= 3 ? 1 : 0;
+		const std::string& button = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset)));
+		const std::string& source = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset + 1)));
+		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
+		const ButtonState state = input->getButtonState(button, parseInputSource(source));
+		out.push_back(makeButtonStateTable(state, false, 0));
+	});
+	const Value getButtonRepeatStateFn = m_runtime.cpu().createNativeFunction("player_input.getButtonRepeatState", [this, playerIndex, makeButtonStateTable](const std::vector<Value>& args, std::vector<Value>& out) {
+		const size_t offset = args.size() >= 3 ? 1 : 0;
+		const std::string& button = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset)));
+		const std::string& source = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset + 1)));
+		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
+		const ActionState state = input->getButtonRepeatState(button, parseInputSource(source));
+		out.push_back(makeButtonStateTable(state, state.repeatpressed.value_or(false), state.repeatcount.value_or(0)));
+	});
+	const Value consumeButtonFn = m_runtime.cpu().createNativeFunction("player_input.consumeButton", [this, playerIndex](const std::vector<Value>& args, std::vector<Value>& out) {
+		const size_t offset = args.size() >= 3 ? 1 : 0;
+		const std::string& button = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset)));
+		const std::string& source = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset + 1)));
+		Input::instance().getPlayerInput(playerIndex)->consumeButton(button, parseInputSource(source));
+		(void)out;
+	});
+	const Value getModifiersStateKey = exactString("getModifiersState");
+	const Value getButtonStateKey = exactString("getButtonState");
+	const Value getButtonRepeatStateKey = exactString("getButtonRepeatState");
+	const Value consumeButtonKey = exactString("consumeButton");
+	const Value getModifiersStateIdentifierKey = key("getModifiersState");
+	const Value getButtonStateIdentifierKey = key("getButtonState");
+	const Value getButtonRepeatStateIdentifierKey = key("getButtonRepeatState");
+	const Value consumeButtonIdentifierKey = key("consumeButton");
+
+	const Value handle = m_runtime.cpu().createNativeObject(
+		nullptr,
+		[this, getModifiersStateKey, getButtonStateKey, getButtonRepeatStateKey, consumeButtonKey, getModifiersStateIdentifierKey, getButtonStateIdentifierKey, getButtonRepeatStateIdentifierKey, consumeButtonIdentifierKey, getModifiersStateFn, getButtonStateFn, getButtonRepeatStateFn, consumeButtonFn](const Value& keyValue) -> Value {
+			if (!valueIsString(keyValue)) {
+				throw BMSX_RUNTIME_ERROR("Player input methods require a string key.");
+			}
+			if (keyValue == getModifiersStateKey || keyValue == getModifiersStateIdentifierKey) return getModifiersStateFn;
+			if (keyValue == getButtonStateKey || keyValue == getButtonStateIdentifierKey) return getButtonStateFn;
+			if (keyValue == getButtonRepeatStateKey || keyValue == getButtonRepeatStateIdentifierKey) return getButtonRepeatStateFn;
+			if (keyValue == consumeButtonKey || keyValue == consumeButtonIdentifierKey) return consumeButtonFn;
+			throw BMSX_RUNTIME_ERROR("Unknown player input method '" + m_runtime.cpu().stringPool().toString(asStringId(keyValue)) + "'.");
+		},
+		[](const Value&, const Value&) {
+			throw BMSX_RUNTIME_ERROR("Player input handle is read-only.");
+		},
+		nullptr,
+		nullptr,
+		[getModifiersStateFn, getButtonStateFn, getButtonRepeatStateFn, consumeButtonFn](GcHeap& heap) {
+			heap.markValue(getModifiersStateFn);
+			heap.markValue(getButtonStateFn);
+			heap.markValue(getButtonRepeatStateFn);
+			heap.markValue(consumeButtonFn);
+		}
+	);
+	m_playerInputHandles[static_cast<size_t>(index)] = handle;
+	return handle;
+}
+
 void Api::registerAllFunctions() {
 	auto readOptionalInt = [](const std::vector<Value>& args, size_t index) -> std::optional<int> {
 		if (args.size() <= index || isNil(args[index])) {
@@ -553,6 +823,145 @@ m_runtime.registerNativeFunction("display_width", [this](const std::vector<Value
 m_runtime.registerNativeFunction("display_height", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
 	out.push_back(valueNumber(static_cast<double>(display_height())));
+});
+
+m_runtime.registerNativeFunction("get_player_input", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	std::optional<int> playerIndex;
+	if (!args.empty() && !isNil(args.at(0))) {
+		playerIndex = static_cast<int>(std::floor(asNumber(args.at(0))));
+	}
+	out.push_back(get_player_input(playerIndex));
+});
+
+m_runtime.registerNativeFunction("mousebtn", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const int button = static_cast<int>(std::floor(asNumber(args.at(0))));
+	out.push_back(valueBool(mousebtn(button)));
+});
+
+m_runtime.registerNativeFunction("mousebtnp", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const int button = static_cast<int>(std::floor(asNumber(args.at(0))));
+	out.push_back(valueBool(mousebtnp(button)));
+});
+
+m_runtime.registerNativeFunction("mousebtnr", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	const int button = static_cast<int>(std::floor(asNumber(args.at(0))));
+	out.push_back(valueBool(mousebtnr(button)));
+});
+
+m_runtime.registerNativeFunction("pointer_screen_position", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	PlayerInput* input = Input::instance().getPlayerInput(m_runtime.playerIndex());
+	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
+	Table* table = m_runtime.cpu().createTable(0, 3);
+	if (!state.value2d.has_value()) {
+		table->set(key("x"), valueNumber(0.0));
+		table->set(key("y"), valueNumber(0.0));
+		table->set(key("valid"), valueBool(false));
+		out.push_back(valueTable(table));
+		return;
+	}
+	table->set(key("x"), valueNumber(static_cast<double>(state.value2d->x)));
+	table->set(key("y"), valueNumber(static_cast<double>(state.value2d->y)));
+	table->set(key("valid"), valueBool(true));
+	out.push_back(valueTable(table));
+});
+
+m_runtime.registerNativeFunction("pointer_delta", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	PlayerInput* input = Input::instance().getPlayerInput(m_runtime.playerIndex());
+	const ButtonState state = input->getButtonState("pointer_delta", InputSource::Pointer);
+	Table* table = m_runtime.cpu().createTable(0, 3);
+	if (!state.value2d.has_value()) {
+		table->set(key("x"), valueNumber(0.0));
+		table->set(key("y"), valueNumber(0.0));
+		table->set(key("valid"), valueBool(false));
+		out.push_back(valueTable(table));
+		return;
+	}
+	table->set(key("x"), valueNumber(static_cast<double>(state.value2d->x)));
+	table->set(key("y"), valueNumber(static_cast<double>(state.value2d->y)));
+	table->set(key("valid"), valueBool(true));
+	out.push_back(valueTable(table));
+});
+
+m_runtime.registerNativeFunction("pointer_viewport_position", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	PlayerInput* input = Input::instance().getPlayerInput(m_runtime.playerIndex());
+	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
+	Table* table = m_runtime.cpu().createTable(0, 4);
+	if (!state.value2d.has_value()) {
+		table->set(key("x"), valueNumber(0.0));
+		table->set(key("y"), valueNumber(0.0));
+		table->set(key("valid"), valueBool(false));
+		table->set(key("inside"), valueBool(false));
+		out.push_back(valueTable(table));
+		return;
+	}
+	const double x = static_cast<double>(state.value2d->x);
+	const double y = static_cast<double>(state.value2d->y);
+	const double width = EngineCore::instance().view()->viewportSize.x;
+	const double height = EngineCore::instance().view()->viewportSize.y;
+	const bool inside = x >= 0.0 && x < width && y >= 0.0 && y < height;
+	table->set(key("x"), valueNumber(x));
+	table->set(key("y"), valueNumber(y));
+	table->set(key("valid"), valueBool(true));
+	table->set(key("inside"), valueBool(inside));
+	out.push_back(valueTable(table));
+});
+
+m_runtime.registerNativeFunction("mousepos", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	PlayerInput* input = Input::instance().getPlayerInput(m_runtime.playerIndex());
+	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
+	Table* table = m_runtime.cpu().createTable(0, 4);
+	if (!state.value2d.has_value()) {
+		table->set(key("x"), valueNumber(0.0));
+		table->set(key("y"), valueNumber(0.0));
+		table->set(key("valid"), valueBool(false));
+		table->set(key("inside"), valueBool(false));
+		out.push_back(valueTable(table));
+		return;
+	}
+	const double x = static_cast<double>(state.value2d->x);
+	const double y = static_cast<double>(state.value2d->y);
+	const double width = EngineCore::instance().view()->viewportSize.x;
+	const double height = EngineCore::instance().view()->viewportSize.y;
+	const bool inside = x >= 0.0 && x < width && y >= 0.0 && y < height;
+	table->set(key("x"), valueNumber(x));
+	table->set(key("y"), valueNumber(y));
+	table->set(key("valid"), valueBool(true));
+	table->set(key("inside"), valueBool(inside));
+	out.push_back(valueTable(table));
+});
+
+m_runtime.registerNativeFunction("mousewheel", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	PlayerInput* input = Input::instance().getPlayerInput(m_runtime.playerIndex());
+	const ButtonState state = input->getButtonState("pointer_wheel", InputSource::Pointer);
+	Table* table = m_runtime.cpu().createTable(0, 2);
+	table->set(key("value"), valueNumber(static_cast<double>(state.value)));
+	table->set(key("valid"), valueBool(state.value != 0.0f));
+	out.push_back(valueTable(table));
+});
+
+m_runtime.registerNativeFunction("get_lua_entry_path", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	out.push_back(valueString(m_runtime.cpu().internString(get_lua_entry_path())));
+});
+
+m_runtime.registerNativeFunction("get_lua_resource_source", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
+	const std::string& path = asText(args.at(0));
+	out.push_back(valueString(m_runtime.cpu().internString(get_lua_resource_source(path))));
+});
+
+m_runtime.registerNativeFunction("get_cpu_freq_hz", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	(void)args;
+	out.push_back(valueNumber(get_cpu_freq_hz()));
+});
+
+m_runtime.registerNativeFunction("set_cpu_freq_hz", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	set_cpu_freq_hz(asNumber(args.at(0)));
+	(void)out;
 });
 
 m_runtime.registerNativeFunction("stat", [this](const std::vector<Value>& args, std::vector<Value>& out) {

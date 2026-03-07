@@ -1,11 +1,3 @@
--- ide_editor.lua
--- Write buffer changes back to the active Lua resource
--- Every edit now stops at the local piece_tree_buffer: this helper mutates state.buffer, repaints the UI, and marks the editor dirty, but nothing in this module pushes the updated source back into the runtime/workspace source tables. As a result, typing appears to work inside the BIOS editor, yet reloading the cart, reopening the editor, or executing the Lua file still uses the original source and silently discards the user's edits.
-
-
--- Allow AltGr-generated characters through the text input path
--- This early return blocks printable-key handling whenever alt is pressed. On keyboard layouts that use AltGr, the browser/input layer reports AltGr as an Alt/Ctrl modifier combination, and this editor synthesizes characters from a fixed US scan-code map instead of consuming text input, so tokens such as @, {, }, |, and ~ become impossible to type. That makes normal Lua editing fail for non-US layouts.
-
 local constants = require("ide_constants")
 local piece_tree_buffer = require("piece_tree_buffer")
 local code_layout = require("code_layout")
@@ -17,6 +9,7 @@ local editor = {}
 
 local undo_coalesce_interval_ms = 400
 local toggle_editor_key = "F1"
+local editor_cpu_hz = 800000000
 
 local character_map = {
 	["KeyA"] = { normal = "a", shift = "A" },
@@ -112,6 +105,7 @@ local state = {
 	analysis_entry = nil,
 	analysis_version = -1,
 	dirty = false,
+	cpu_hz_before_open = nil,
 }
 
 local tmp_position = { row = 0, column = 0 }
@@ -1644,6 +1638,9 @@ local function draw_status()
 end
 
 function editor.init(path)
+	if type(path) ~= "string" then
+		path = nil
+	end
 	state.font = get_default_font()
 	state.line_height = state.font.lineheight
 	state.char_advance = state.font:advance("M")
@@ -1681,6 +1678,7 @@ function editor.init(path)
 	state.analysis_entry = nil
 	state.analysis_version = -1
 	state.dirty = false
+	state.cpu_hz_before_open = nil
 	state.initialized = true
 	update_desired_track()
 	ensure_cursor_visible()
@@ -1688,13 +1686,23 @@ end
 
 function editor.open()
 	if not state.initialized then
-		editor.init()
+		editor.init(nil)
 	end
+	if state.open then
+		return
+	end
+	state.cpu_hz_before_open = get_cpu_freq_hz()
+	set_cpu_freq_hz(math.max(state.cpu_hz_before_open, editor_cpu_hz))
 	state.open = true
 end
 
 function editor.close()
+	if not state.open then
+		return
+	end
 	state.pointer_selecting = false
+	set_cpu_freq_hz(state.cpu_hz_before_open)
+	state.cpu_hz_before_open = nil
 	state.open = false
 end
 

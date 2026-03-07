@@ -38,6 +38,8 @@ static retro_usec_t g_pending_frame_time_usec = 0;
 static bool g_has_pending_frame_time = false;
 
 extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec);
+extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down);
+extern "C" RETRO_API void bmsx_keyboard_reset(void);
 
 static void frame_time_cb(retro_usec_t usec) {
 	if (usec == 0) {
@@ -45,6 +47,7 @@ static void frame_time_cb(retro_usec_t usec) {
 	}
 	bmsx_set_frame_time_usec(usec);
 }
+
 static retro_hw_render_callback g_hw_render;
 static bool g_hw_render_supported = false;
 static bool g_hw_render_requested = false;
@@ -84,6 +87,20 @@ static std::string sanitizeSystemDir(std::string_view path) {
 static bmsx::LibretroPlatform* g_platform = nullptr;
 static retro_system_av_info g_cached_av_info{};
 static bool g_cached_av_info_valid = false;
+
+extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down) {
+	if (!g_platform || !code || !code[0]) {
+		return;
+	}
+	g_platform->postKeyboardEvent(code, down);
+}
+
+extern "C" RETRO_API void bmsx_keyboard_reset(void) {
+	if (!g_platform) {
+		return;
+	}
+	g_platform->clearKeyboardState();
+}
 
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";
 static constexpr const char* kRenderBackendSoftware = "software";
@@ -1044,6 +1061,13 @@ void retro_set_environment(retro_environment_t cb) {
 	cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &no_game);
 
 	// Set input descriptors
+	static constexpr unsigned kRetroMouseIdLeft = 2;
+	static constexpr unsigned kRetroMouseIdRight = 3;
+	static constexpr unsigned kRetroMouseIdMiddle = 6;
+	static constexpr unsigned kRetroMouseIdButton4 = 9;
+	static constexpr unsigned kRetroMouseIdButton5 = 10;
+	static constexpr unsigned kRetroPointerIdX = 0;
+	static constexpr unsigned kRetroPointerIdY = 1;
 	static const struct retro_input_descriptor input_desc[] = {
 		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up"},
 		{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down"},
@@ -1064,6 +1088,13 @@ void retro_set_environment(retro_environment_t cb) {
 		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right (P2)"},
 		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A (P2)"},
 		{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B (P2)"},
+		{0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdLeft, "Pointer Primary"},
+		{0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdRight, "Pointer Secondary"},
+		{0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdMiddle, "Pointer Aux"},
+		{0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdButton4, "Pointer Back"},
+		{0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdButton5, "Pointer Forward"},
+		{0, RETRO_DEVICE_POINTER, 0, kRetroPointerIdX, "Pointer X"},
+		{0, RETRO_DEVICE_POINTER, 0, kRetroPointerIdY, "Pointer Y"},
 		{0, 0, 0, 0, nullptr}};
 	cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)input_desc);
 

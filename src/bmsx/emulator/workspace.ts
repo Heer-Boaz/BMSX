@@ -739,13 +739,11 @@ async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: Storag
 export async function resetWorkspaceDirtyBuffersAndStorage(): Promise<void> {
 	const runtime = Runtime.instance;
 	await clearWorkspaceDirtyFiles($.lua_sources, runtime.storageService);
-	runtime.editor.clearWorkspaceDirtyBuffers();
 }
 
 export async function nukeWorkspaceState(): Promise<void> {
 	const runtime = Runtime.instance;
 	await clearWorkspaceArtifacts($.lua_sources, runtime.storageService);
-	runtime.editor.clearWorkspaceDirtyBuffers();
 }
 
 export function listResources(): ResourceDescriptor[] {

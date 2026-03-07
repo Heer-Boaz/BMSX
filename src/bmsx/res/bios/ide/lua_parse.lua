@@ -1,9 +1,6 @@
--- lua_parse.lua
--- Restore the nil-guard before invoking `load`
--- In the BIOS runtime we ship today, load is not one of the registered Lua builtins, which is why this module previously cached it and degraded to a synthetic syntax error when it was -- unavailable. Calling load(...) directly here means update_analysis_if_needed() now throws attempt to call a nil value (global 'load') on the first editor update instead of reporting parser diagnostics, so the new editor path crashes immediately in the environment this file runs in.
-
 local lua_formatter = require("lua_formatter")
 local source_text = require("source_text")
+local load_lua_chunk = load
 
 local lua_parse = {}
 
@@ -61,9 +58,24 @@ function lua_parse.parse_lua_chunk(source, path, lines)
 end
 
 function lua_parse.parse_lua_chunk_with_recovery(source, path, lines)
+	if load_lua_chunk == nil then
+		return {
+			chunk = nil,
+			tokens = {},
+			syntax_error = {
+				name = "Syntax Error",
+				message = "load() is unavailable in this runtime.",
+				path = path,
+				line = 1,
+				column = 1,
+				raw_message = "load unavailable",
+				source = source,
+			},
+		}
+	end
 	local resolved_lines = lines or source_text.split_text(source)
 	local tokens = lua_formatter.scan_tokens(source)
-	local chunk, error_message = load(source, "@" .. path, "t")
+	local chunk, error_message = load_lua_chunk(source, "@" .. path, "t")
 	if chunk then
 		return {
 			chunk = chunk,

@@ -150,6 +150,9 @@ public:
 	
 	// Handle pointer move event
 	void handlePointerMoveEvent(const std::string& deviceId, f32 x, f32 y);
+
+	// Handle pointer wheel event
+	void handlePointerWheelEvent(const std::string& deviceId, f32 value);
 	
 private:
 	// ─────────────────────────────────────────────────────────────────────────

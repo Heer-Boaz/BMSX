@@ -151,6 +151,9 @@ Runtime::Runtime(const RuntimeOptions& options)
 			heap.markValue(entry.second);
 		}
 		heap.markValue(m_ipairsIterator);
+		if (m_api) {
+			m_api->markRoots(heap);
+		}
 	});
 
 	// Create API instance
@@ -574,16 +577,12 @@ void Runtime::tickDraw() {
 }
 
 void Runtime::tickIdeInput() {
-	// IDE input handling - stub for now
 }
 
 void Runtime::tickIDE() {
-	// IDE update - stub for now
-	flushAssetEdits();
 }
 
 void Runtime::tickIDEDraw() {
-	// IDE draw - stub for now
 }
 
 void Runtime::tickTerminalInput() {

@@ -42,8 +42,24 @@ export function buildLuaSources(params: { cartSource: RawAssetSource; assetSourc
 		registry.path2lua[luaAsset.source_path] = luaAsset;
 	}
 
+	const entryPath = registry.entry_path;
+	if (entryPath.length > 0 && !registry.path2lua[entryPath]) {
+		let entryAsset: LuaSourceRecord = null;
+		for (const asset of Object.values(registry.path2lua)) {
+			if (asset.source_path !== entryPath && !asset.source_path.endsWith(`/${entryPath}`)) {
+				continue;
+			}
+			if (entryAsset !== null && entryAsset.source_path !== asset.source_path) {
+				throw new Error(`[LuaSources] Ambiguous lua.entry_path '${entryPath}'.`);
+			}
+			entryAsset = asset;
+		}
+		if (entryAsset !== null) {
+			registry.path2lua[entryPath] = entryAsset;
+		}
+	}
+
 	if (Object.keys(registry.path2lua).length === 0) {
-		const entryPath = index.manifest.lua.entry_path;
 		const hasProgramAsset = index.assets.some(asset => asset.resid === PROGRAM_ASSET_ID);
 		if (hasProgramAsset) {
 			const stub: LuaSourceRecord = {

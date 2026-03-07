@@ -16,6 +16,10 @@ local function clamp(value, min_value, max_value)
 	return value
 end
 
+local function get_line_length(buffer, row)
+	return buffer:get_line_end_offset(row) - buffer:get_line_start_offset(row)
+end
+
 function code_layout.new(font, options)
 	local self = setmetatable({}, code_layout)
 	self.font = font
@@ -236,6 +240,26 @@ function code_layout:rebuild_all_visual_lines(buffer, word_wrap_enabled, wrap_wi
 	local visual_count = 0
 	local row_index_lookup = {}
 	local counts = {}
+	if not word_wrap_enabled then
+		for row = 0, line_count - 1 do
+			row_index_lookup[row] = visual_count
+			local line_length = get_line_length(buffer, row)
+			segments[visual_count + 1] = { row = row, start_column = 0, end_column = line_length }
+			visual_count = visual_count + 1
+			counts[row] = 1
+		end
+		if visual_count == 0 then
+			segments[1] = { row = 0, start_column = 0, end_column = 0 }
+			visual_count = 1
+		end
+		self.visual_lines = segments
+		self.visual_count = visual_count
+		self.row_to_first_visual_line = row_index_lookup
+		self.row_to_first_visual_line_len = line_count
+		self.row_visual_line_counts = counts
+		self.row_visual_line_counts_len = line_count
+		return
+	end
 	local effective_wrap = word_wrap_enabled and wrap_width or math.huge
 	local approx_wrap_columns = (not word_wrap_enabled or wrap_width == math.huge)
 		and math.huge
@@ -288,6 +312,25 @@ function code_layout:rebuild_row_range(buffer, word_wrap_enabled, wrap_width, st
 		return
 	end
 	local line_count = buffer:get_line_count()
+	if not word_wrap_enabled then
+		for row = start_row, end_row do
+			local start_index = self.row_to_first_visual_line[row]
+			local old_count = self.row_visual_line_counts[row] or 0
+			local row_segments = {
+				{ row = row, start_column = 0, end_column = get_line_length(buffer, row) }
+			}
+			self:splice_visual_lines(start_index, old_count, row_segments, 1)
+			self.row_visual_line_counts[row] = 1
+			self.row_to_first_visual_line[row] = start_index
+			local delta = 1 - old_count
+			if delta ~= 0 then
+				for adjust = row + 1, line_count - 1 do
+					self.row_to_first_visual_line[adjust] = (self.row_to_first_visual_line[adjust] or 0) + delta
+				end
+			end
+		end
+		return
+	end
 	local effective_wrap = word_wrap_enabled and wrap_width or math.huge
 	local approx_wrap_columns = (not word_wrap_enabled or wrap_width == math.huge)
 		and math.huge

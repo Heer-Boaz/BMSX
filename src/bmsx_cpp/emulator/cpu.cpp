@@ -70,6 +70,16 @@ static inline int ceilDiv16(int value) {
 	return (value + 15) >> 4;
 }
 
+static std::string formatNonFunctionCallError(Value callee, const StringPool& stringPool,
+												 const std::optional<SourceRange>& range) {
+	std::string message = "Attempted to call a non-function value.";
+	message += " callee=" + std::string(valueTypeName(callee)) + "(" + valueToString(callee, stringPool) + ")";
+	if (range.has_value()) {
+		message += " at " + range->path + ":" + std::to_string(range->startLine) + ":" + std::to_string(range->startColumn);
+	}
+	return message;
+}
+
 static constexpr void setCycle(std::array<uint8_t, 64>& table, OpCode op, uint8_t cost) {
 	table[static_cast<size_t>(op)] = cost;
 }
@@ -1475,7 +1485,11 @@ void CPU::executeInstruction(
 				releaseArgScratch(std::move(args));
 				return;
 			}
-			throw BMSX_RUNTIME_ERROR("Attempted to call a non-function value.");
+			throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(
+				callee,
+				m_stringPool,
+				getDebugRange(frame.pc - INSTRUCTION_BYTES)
+			));
 		}
 
 		case OpCode::RET: {

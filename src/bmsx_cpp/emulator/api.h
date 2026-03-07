@@ -2,6 +2,7 @@
 
 #include "cpu.h"
 #include "font.h"
+#include "../input/inputtypes.h"
 #include "../core/types.h"
 #include "../render/shared/render_types.h"
 #include <array>
@@ -20,9 +21,18 @@ public:
 	~Api();
 
 	void registerAllFunctions();
+	void markRoots(GcHeap& heap);
 
 	int display_width() const;
 	int display_height() const;
+	Value get_player_input(std::optional<int> playerIndex);
+	bool mousebtn(int button) const;
+	bool mousebtnp(int button) const;
+	bool mousebtnr(int button) const;
+	std::string get_lua_entry_path() const;
+	std::string get_lua_resource_source(const std::string& path) const;
+	double get_cpu_freq_hz() const;
+	void set_cpu_freq_hz(double cpuHz);
 	double stat(int index) const;
 	bool isFrameCaptureActive() const;
 	void beginFrameCapture();
@@ -96,15 +106,24 @@ private:
 	void advance_print_cursor(int lineHeight);
 	void reset_print_cursor();
 	Value make_font_handle(BFont* font);
+	Value get_player_input_handle(int playerIndex);
 	BFont* resolve_font(const Value& value);
 	BFont* create_font(const Value& definition);
 
+	std::string pointer_button_code(int button) const;
 	Color palette_color(int index) const;
 	Color resolve_color(const Value& value);
 	RenderLayer resolve_layer(const Value& value);
 	std::vector<f32> read_polygon(const Value& value);
 	Vec3 read_vec3(const Value& value);
 	std::array<f32, 16> read_matrix(const Value& value);
+
+	std::array<Value, PLAYERS_MAX> m_playerInputHandles = {
+		valueNil(),
+		valueNil(),
+		valueNil(),
+		valueNil(),
+	};
 };
 
 } // namespace bmsx

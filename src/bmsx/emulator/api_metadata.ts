@@ -33,6 +33,19 @@ export const API_METHOD_METADATA = {
 		returnType: 'number',
 		returnDescription: 'Viewport height in pixels.',
 	},
+	get_cpu_freq_hz: {
+		description: 'Returns the current runtime CPU frequency in hertz.',
+		parameters: [],
+		returnType: 'number',
+		returnDescription: 'The active runtime CPU frequency in hertz.',
+	},
+	set_cpu_freq_hz: {
+		description: 'Sets the runtime CPU frequency in hertz and immediately updates the per-frame cycle budget.',
+		parameters: [
+			{ name: 'cpuHz', description: 'Positive safe integer CPU frequency in hertz.' },
+		],
+		returnType: 'void',
+	},
 	mousebtn: {
 		description: 'Checks whether a pointer button is currently pressed.',
 		parameters: [

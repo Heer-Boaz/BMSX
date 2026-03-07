@@ -94,7 +94,7 @@ void Runtime::handleLuaError(const std::string& message) {
 
 void Runtime::runEngineBuiltinPrelude() {
 	std::cout << "[Runtime] prelude: binding engine builtins" << std::endl;
-	static const std::array<const char*, 38> engineBuiltins = {
+	static const std::array<const char*, 42> engineBuiltins = {
 		"define_fsm",
 		"define_prefab",
 		"define_component",
@@ -132,6 +132,10 @@ void Runtime::runEngineBuiltinPrelude() {
 		"round_to_nearest",
 		"rol8",
 		"swap_remove",
+		"objects_by_type",
+		"objects_by_tag",
+		"find_by_type",
+		"find_by_tag",
 		"eventemitter",
 	};
 	// Keep this in sync with TS Runtime.LUA_OVERRIDEABLE_GLOBALS.

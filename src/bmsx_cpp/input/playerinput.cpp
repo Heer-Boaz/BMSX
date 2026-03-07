@@ -414,11 +414,16 @@ bool PlayerInput::checkActionTriggered(const std::string& actionDef) {
 
 ButtonState PlayerInput::getButtonState(const std::string& button, InputSource source) {
 	auto* handler = m_handlers[sourceIndex(source)];
-	if (!handler) return ButtonState{};
+	if (!handler) {
+		if (source == InputSource::Pointer) {
+			return m_stateManager.getButtonState(button);
+		}
+		return ButtonState{};
+	}
 	return handler->getButtonState(button);
 }
 
-ButtonState PlayerInput::getButtonRepeatState(const std::string& button, InputSource source) {
+ActionState PlayerInput::getButtonRepeatState(const std::string& button, InputSource source) {
 	auto state = getButtonState(button, source);
 	std::string repeatKey = std::to_string(static_cast<int>(source)) + ":" + button;
 	ActionState actionState(repeatKey, state);
@@ -550,7 +555,12 @@ void PlayerInput::consumeAction(const ActionState& action) {
 
 void PlayerInput::consumeButton(const std::string& button, InputSource source) {
 	auto* handler = m_handlers[sourceIndex(source)];
-	if (!handler) return;
+	if (!handler) {
+		if (source == InputSource::Pointer) {
+			m_stateManager.consumeBufferedEvent(button, std::nullopt);
+		}
+		return;
+	}
 	auto state = handler->getButtonState(button);
 	handler->consumeButton(button);
 	m_stateManager.consumeBufferedEvent(button, state.pressId);

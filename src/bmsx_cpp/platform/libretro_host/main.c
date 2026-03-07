@@ -68,6 +68,8 @@ typedef struct LibretroCore {
 
 	void (*bmsx_set_frame_time_usec)(retro_usec_t);
 	int64_t (*bmsx_get_ufps)(void);
+	void (*bmsx_keyboard_event)(const char* code, bool down);
+	void (*bmsx_keyboard_reset)(void);
 } LibretroCore;
 
 typedef struct FbDev {
@@ -408,6 +410,41 @@ static char g_input_paths[kMaxInputDevs][64];
 static size_t g_input_dev_count = 0;
 static uint16_t g_pad_state_raw = 0;
 static uint16_t g_pad_state_port0 = 0;
+enum {
+	kRetroMouseIdX = 0,
+	kRetroMouseIdY = 1,
+	kRetroMouseIdLeft = 2,
+	kRetroMouseIdRight = 3,
+	kRetroMouseIdWheelUp = 4,
+	kRetroMouseIdWheelDown = 5,
+	kRetroMouseIdMiddle = 6,
+	kRetroMouseIdButton4 = 9,
+	kRetroMouseIdButton5 = 10,
+	kRetroPointerIdX = 0,
+	kRetroPointerIdY = 1,
+	kRetroPointerIdPressed = 2,
+	kMouseButtonPrimary = 1 << 0,
+	kMouseButtonSecondary = 1 << 1,
+	kMouseButtonAux = 1 << 2,
+	kMouseButtonBack = 1 << 3,
+	kMouseButtonForward = 1 << 4,
+};
+static int32_t g_mouse_abs_x = 0;
+static int32_t g_mouse_abs_y = 0;
+static int32_t g_mouse_delta_x = 0;
+static int32_t g_mouse_delta_y = 0;
+static int32_t g_mouse_wheel_y = 0;
+static uint8_t g_mouse_buttons = 0;
+static bool g_mouse_position_valid = false;
+static const char* map_ev_key_to_dom_code(uint16_t code);
+static void core_keyboard_event(const char* code, bool down);
+static void core_keyboard_reset(void);
+#ifdef BMSX_LIBRETRO_HOST_SDL
+static const char* map_sdl_scancode_to_dom_code(SDL_Scancode scancode);
+static uint8_t map_sdl_mouse_buttons(uint32_t buttons);
+#endif
+static void clamp_mouse_position_to_framebuffer(void);
+static void set_mouse_absolute_position(int x, int y, bool update_delta);
 static char g_audio_device[64] = "/dev/snd/pcmC0D0p";
 enum { kAudioSampleBufferFrames = 512 };
 static int g_audio_fd = -1;
@@ -2554,6 +2591,7 @@ static void sdl_resize(unsigned width, unsigned height) {
 	}
 	g_fb.width = (int)width;
 	g_fb.height = (int)height;
+	clamp_mouse_position_to_framebuffer();
 	g_fb.bpp = 32;
 	g_fb.stride = (int)(width * 4u);
 	if (g_sdl_use_gl) {
@@ -2581,6 +2619,36 @@ static void sdl_resize(unsigned width, unsigned height) {
 	fps_mark_dirty();
 	msg_mark_dirty();
 	menu_mark_dirty();
+}
+
+static void sdl_update_mouse_position(void) {
+	int window_x = 0;
+	int window_y = 0;
+	const uint32_t mouse_state = SDL_GetMouseState(&window_x, &window_y);
+	g_mouse_buttons = map_sdl_mouse_buttons(mouse_state);
+	if (!g_sdl_window || g_fb.width <= 0 || g_fb.height <= 0) {
+		return;
+	}
+	if (g_sdl_renderer) {
+		SDL_Rect viewport;
+		SDL_RenderGetViewport(g_sdl_renderer, &viewport);
+		if (viewport.w <= 0 || viewport.h <= 0) {
+			return;
+		}
+		const int mapped_x = (int)floor(((double)(window_x - viewport.x) * (double)g_fb.width) / (double)viewport.w);
+		const int mapped_y = (int)floor(((double)(window_y - viewport.y) * (double)g_fb.height) / (double)viewport.h);
+		set_mouse_absolute_position(mapped_x, mapped_y, true);
+		return;
+	}
+	int window_w = 0;
+	int window_h = 0;
+	SDL_GetWindowSize(g_sdl_window, &window_w, &window_h);
+	if (window_w <= 0 || window_h <= 0) {
+		return;
+	}
+	const int mapped_x = (int)floor(((double)window_x * (double)g_fb.width) / (double)window_w);
+	const int mapped_y = (int)floor(((double)window_y * (double)g_fb.height) / (double)window_h);
+	set_mouse_absolute_position(mapped_x, mapped_y, true);
 }
 
 static void sdl_init(void) {
@@ -3588,6 +3656,173 @@ static size_t audio_batch_cb(const int16_t* data, size_t frames) {
 	return frames;
 }
 
+static int clamp_int(int value, int min_value, int max_value) {
+	if (value < min_value) return min_value;
+	if (value > max_value) return max_value;
+	return value;
+}
+
+static void reset_mouse_frame_state(void) {
+	g_mouse_delta_x = 0;
+	g_mouse_delta_y = 0;
+	g_mouse_wheel_y = 0;
+}
+
+static void clamp_mouse_position_to_framebuffer(void) {
+	if (g_fb.width <= 0 || g_fb.height <= 0) {
+		g_mouse_abs_x = 0;
+		g_mouse_abs_y = 0;
+		g_mouse_position_valid = false;
+		return;
+	}
+	g_mouse_abs_x = clamp_int(g_mouse_abs_x, 0, g_fb.width - 1);
+	g_mouse_abs_y = clamp_int(g_mouse_abs_y, 0, g_fb.height - 1);
+}
+
+static void set_mouse_absolute_position(int x, int y, bool update_delta) {
+	const bool had_prev = g_mouse_position_valid;
+	const int prev_x = g_mouse_abs_x;
+	const int prev_y = g_mouse_abs_y;
+	g_mouse_abs_x = x;
+	g_mouse_abs_y = y;
+	g_mouse_position_valid = true;
+	clamp_mouse_position_to_framebuffer();
+	if (update_delta && had_prev) {
+		g_mouse_delta_x = g_mouse_abs_x - prev_x;
+		g_mouse_delta_y = g_mouse_abs_y - prev_y;
+	}
+}
+
+static void add_mouse_relative_delta(int dx, int dy) {
+	g_mouse_delta_x += dx;
+	g_mouse_delta_y += dy;
+	if (!g_mouse_position_valid) {
+		g_mouse_abs_x = 0;
+		g_mouse_abs_y = 0;
+		g_mouse_position_valid = true;
+	}
+	g_mouse_abs_x += dx;
+	g_mouse_abs_y += dy;
+	clamp_mouse_position_to_framebuffer();
+}
+
+static int16_t encode_pointer_axis(int position, int extent) {
+	if (!g_mouse_position_valid || extent <= 1) {
+		return 0;
+	}
+	const int clamped = clamp_int(position, 0, extent - 1);
+	const double normalized = (double)clamped / (double)(extent - 1);
+	return (int16_t)lrint(normalized * 65534.0 - 32767.0);
+}
+
+static uint8_t map_ev_key_to_mouse(uint16_t code) {
+	switch (code) {
+		case BTN_LEFT:
+			return kMouseButtonPrimary;
+		case BTN_RIGHT:
+			return kMouseButtonSecondary;
+		case BTN_MIDDLE:
+			return kMouseButtonAux;
+		case BTN_SIDE:
+			return kMouseButtonBack;
+		case BTN_EXTRA:
+			return kMouseButtonForward;
+		default:
+			return 0;
+	}
+}
+
+static const char* map_ev_key_to_dom_code(uint16_t code) {
+	switch (code) {
+		case KEY_F1: return "F1";
+		case KEY_F2: return "F2";
+		case KEY_F3: return "F3";
+		case KEY_F4: return "F4";
+		case KEY_F5: return "F5";
+		case KEY_F6: return "F6";
+		case KEY_F7: return "F7";
+		case KEY_F8: return "F8";
+		case KEY_F9: return "F9";
+		case KEY_F10: return "F10";
+		case KEY_F11: return "F11";
+		case KEY_F12: return "F12";
+		case KEY_UP: return "ArrowUp";
+		case KEY_DOWN: return "ArrowDown";
+		case KEY_LEFT: return "ArrowLeft";
+		case KEY_RIGHT: return "ArrowRight";
+		case KEY_PAGEUP: return "PageUp";
+		case KEY_PAGEDOWN: return "PageDown";
+		case KEY_HOME: return "Home";
+		case KEY_END: return "End";
+		case KEY_INSERT: return "Insert";
+		case KEY_DELETE: return "Delete";
+		case KEY_BACKSPACE: return "Backspace";
+		case KEY_ENTER:
+		case KEY_KPENTER:
+			return "Enter";
+		case KEY_TAB: return "Tab";
+		case KEY_ESC: return "Escape";
+		case KEY_SPACE: return "Space";
+		case KEY_LEFTSHIFT: return "ShiftLeft";
+		case KEY_RIGHTSHIFT: return "ShiftRight";
+		case KEY_LEFTCTRL: return "ControlLeft";
+		case KEY_RIGHTCTRL: return "ControlRight";
+		case KEY_LEFTALT: return "AltLeft";
+		case KEY_RIGHTALT: return "AltRight";
+		case KEY_LEFTMETA: return "MetaLeft";
+		case KEY_RIGHTMETA: return "MetaRight";
+		case KEY_A: return "KeyA";
+		case KEY_B: return "KeyB";
+		case KEY_C: return "KeyC";
+		case KEY_D: return "KeyD";
+		case KEY_E: return "KeyE";
+		case KEY_F: return "KeyF";
+		case KEY_G: return "KeyG";
+		case KEY_H: return "KeyH";
+		case KEY_I: return "KeyI";
+		case KEY_J: return "KeyJ";
+		case KEY_K: return "KeyK";
+		case KEY_L: return "KeyL";
+		case KEY_M: return "KeyM";
+		case KEY_N: return "KeyN";
+		case KEY_O: return "KeyO";
+		case KEY_P: return "KeyP";
+		case KEY_Q: return "KeyQ";
+		case KEY_R: return "KeyR";
+		case KEY_S: return "KeyS";
+		case KEY_T: return "KeyT";
+		case KEY_U: return "KeyU";
+		case KEY_V: return "KeyV";
+		case KEY_W: return "KeyW";
+		case KEY_X: return "KeyX";
+		case KEY_Y: return "KeyY";
+		case KEY_Z: return "KeyZ";
+		case KEY_0: return "Digit0";
+		case KEY_1: return "Digit1";
+		case KEY_2: return "Digit2";
+		case KEY_3: return "Digit3";
+		case KEY_4: return "Digit4";
+		case KEY_5: return "Digit5";
+		case KEY_6: return "Digit6";
+		case KEY_7: return "Digit7";
+		case KEY_8: return "Digit8";
+		case KEY_9: return "Digit9";
+		case KEY_MINUS: return "Minus";
+		case KEY_EQUAL: return "Equal";
+		case KEY_LEFTBRACE: return "BracketLeft";
+		case KEY_RIGHTBRACE: return "BracketRight";
+		case KEY_BACKSLASH: return "Backslash";
+		case KEY_SEMICOLON: return "Semicolon";
+		case KEY_APOSTROPHE: return "Quote";
+		case KEY_COMMA: return "Comma";
+		case KEY_DOT: return "Period";
+		case KEY_SLASH: return "Slash";
+		case KEY_GRAVE: return "Backquote";
+		default:
+			return NULL;
+	}
+}
+
 static uint16_t map_ev_key_to_pad(uint16_t code) {
 	switch (code) {
 		case KEY_UP:
@@ -3674,6 +3909,97 @@ static uint16_t map_ev_key_to_pad(uint16_t code) {
 }
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
+static const char* map_sdl_scancode_to_dom_code(SDL_Scancode scancode) {
+	switch (scancode) {
+		case SDL_SCANCODE_F1: return "F1";
+		case SDL_SCANCODE_F2: return "F2";
+		case SDL_SCANCODE_F3: return "F3";
+		case SDL_SCANCODE_F4: return "F4";
+		case SDL_SCANCODE_F5: return "F5";
+		case SDL_SCANCODE_F6: return "F6";
+		case SDL_SCANCODE_F7: return "F7";
+		case SDL_SCANCODE_F8: return "F8";
+		case SDL_SCANCODE_F9: return "F9";
+		case SDL_SCANCODE_F10: return "F10";
+		case SDL_SCANCODE_F11: return "F11";
+		case SDL_SCANCODE_F12: return "F12";
+		case SDL_SCANCODE_UP: return "ArrowUp";
+		case SDL_SCANCODE_DOWN: return "ArrowDown";
+		case SDL_SCANCODE_LEFT: return "ArrowLeft";
+		case SDL_SCANCODE_RIGHT: return "ArrowRight";
+		case SDL_SCANCODE_PAGEUP: return "PageUp";
+		case SDL_SCANCODE_PAGEDOWN: return "PageDown";
+		case SDL_SCANCODE_HOME: return "Home";
+		case SDL_SCANCODE_END: return "End";
+		case SDL_SCANCODE_INSERT: return "Insert";
+		case SDL_SCANCODE_DELETE: return "Delete";
+		case SDL_SCANCODE_BACKSPACE: return "Backspace";
+		case SDL_SCANCODE_RETURN:
+		case SDL_SCANCODE_KP_ENTER:
+			return "Enter";
+		case SDL_SCANCODE_TAB: return "Tab";
+		case SDL_SCANCODE_ESCAPE: return "Escape";
+		case SDL_SCANCODE_SPACE: return "Space";
+		case SDL_SCANCODE_LSHIFT: return "ShiftLeft";
+		case SDL_SCANCODE_RSHIFT: return "ShiftRight";
+		case SDL_SCANCODE_LCTRL: return "ControlLeft";
+		case SDL_SCANCODE_RCTRL: return "ControlRight";
+		case SDL_SCANCODE_LALT: return "AltLeft";
+		case SDL_SCANCODE_RALT: return "AltRight";
+		case SDL_SCANCODE_LGUI: return "MetaLeft";
+		case SDL_SCANCODE_RGUI: return "MetaRight";
+		case SDL_SCANCODE_A: return "KeyA";
+		case SDL_SCANCODE_B: return "KeyB";
+		case SDL_SCANCODE_C: return "KeyC";
+		case SDL_SCANCODE_D: return "KeyD";
+		case SDL_SCANCODE_E: return "KeyE";
+		case SDL_SCANCODE_F: return "KeyF";
+		case SDL_SCANCODE_G: return "KeyG";
+		case SDL_SCANCODE_H: return "KeyH";
+		case SDL_SCANCODE_I: return "KeyI";
+		case SDL_SCANCODE_J: return "KeyJ";
+		case SDL_SCANCODE_K: return "KeyK";
+		case SDL_SCANCODE_L: return "KeyL";
+		case SDL_SCANCODE_M: return "KeyM";
+		case SDL_SCANCODE_N: return "KeyN";
+		case SDL_SCANCODE_O: return "KeyO";
+		case SDL_SCANCODE_P: return "KeyP";
+		case SDL_SCANCODE_Q: return "KeyQ";
+		case SDL_SCANCODE_R: return "KeyR";
+		case SDL_SCANCODE_S: return "KeyS";
+		case SDL_SCANCODE_T: return "KeyT";
+		case SDL_SCANCODE_U: return "KeyU";
+		case SDL_SCANCODE_V: return "KeyV";
+		case SDL_SCANCODE_W: return "KeyW";
+		case SDL_SCANCODE_X: return "KeyX";
+		case SDL_SCANCODE_Y: return "KeyY";
+		case SDL_SCANCODE_Z: return "KeyZ";
+		case SDL_SCANCODE_0: return "Digit0";
+		case SDL_SCANCODE_1: return "Digit1";
+		case SDL_SCANCODE_2: return "Digit2";
+		case SDL_SCANCODE_3: return "Digit3";
+		case SDL_SCANCODE_4: return "Digit4";
+		case SDL_SCANCODE_5: return "Digit5";
+		case SDL_SCANCODE_6: return "Digit6";
+		case SDL_SCANCODE_7: return "Digit7";
+		case SDL_SCANCODE_8: return "Digit8";
+		case SDL_SCANCODE_9: return "Digit9";
+		case SDL_SCANCODE_MINUS: return "Minus";
+		case SDL_SCANCODE_EQUALS: return "Equal";
+		case SDL_SCANCODE_LEFTBRACKET: return "BracketLeft";
+		case SDL_SCANCODE_RIGHTBRACKET: return "BracketRight";
+		case SDL_SCANCODE_BACKSLASH: return "Backslash";
+		case SDL_SCANCODE_SEMICOLON: return "Semicolon";
+		case SDL_SCANCODE_APOSTROPHE: return "Quote";
+		case SDL_SCANCODE_COMMA: return "Comma";
+		case SDL_SCANCODE_PERIOD: return "Period";
+		case SDL_SCANCODE_SLASH: return "Slash";
+		case SDL_SCANCODE_GRAVE: return "Backquote";
+		default:
+			return NULL;
+	}
+}
+
 static uint16_t map_sdl_key_to_pad(SDL_Keycode code) {
 	switch (code) {
 		case SDLK_UP:
@@ -3755,7 +4081,31 @@ static uint16_t map_sdl_button_to_pad(uint8_t button) {
 			return 0;
 	}
 }
+
+static uint8_t map_sdl_mouse_buttons(uint32_t buttons) {
+	uint8_t mapped = 0;
+	if (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) mapped |= kMouseButtonPrimary;
+	if (buttons & SDL_BUTTON(SDL_BUTTON_RIGHT)) mapped |= kMouseButtonSecondary;
+	if (buttons & SDL_BUTTON(SDL_BUTTON_MIDDLE)) mapped |= kMouseButtonAux;
+	if (buttons & SDL_BUTTON(SDL_BUTTON_X1)) mapped |= kMouseButtonBack;
+	if (buttons & SDL_BUTTON(SDL_BUTTON_X2)) mapped |= kMouseButtonForward;
+	return mapped;
+}
 #endif
+
+static void core_keyboard_event(const char* code, bool down) {
+	if (!code || !g_core || !g_core->bmsx_keyboard_event) {
+		return;
+	}
+	g_core->bmsx_keyboard_event(code, down);
+}
+
+static void core_keyboard_reset(void) {
+	if (!g_core || !g_core->bmsx_keyboard_reset) {
+		return;
+	}
+	g_core->bmsx_keyboard_reset();
+}
 
 static bool input_init_abs_axis(InputDev* dev, unsigned code, int32_t* min_out, int32_t* max_out, bool* has_axis) {
 	struct input_absinfo absinfo;
@@ -3970,6 +4320,7 @@ static void input_finalize(uint16_t merged) {
 
 static void poll_input_devices(void) {
 	uint16_t merged = 0;
+	reset_mouse_frame_state();
 	for (size_t i = 0; i < g_input_dev_count; ++i) {
 		InputDev* dev = &g_input_devs[i];
 		struct input_event ev;
@@ -3989,6 +4340,18 @@ static void poll_input_devices(void) {
 			}
 
 			if (ev.type == EV_KEY) {
+				const char* keyboard_code = map_ev_key_to_dom_code(ev.code);
+				if (keyboard_code && (ev.value == 0 || ev.value == 1)) {
+					core_keyboard_event(keyboard_code, ev.value != 0);
+				}
+				const uint8_t mouse_button = map_ev_key_to_mouse(ev.code);
+				if (mouse_button) {
+					if (ev.value) {
+						g_mouse_buttons |= mouse_button;
+					} else {
+						g_mouse_buttons &= (uint8_t)~mouse_button;
+					}
+				}
 				const uint16_t bit = map_ev_key_to_pad(ev.code);
 				if (bit) {
 					if (ev.value) {
@@ -4010,6 +4373,14 @@ static void poll_input_devices(void) {
 				} else if (ev.code == ABS_Y) {
 					dev->abs_y = ev.value;
 					dev->has_abs_xy = true;
+				}
+			} else if (ev.type == EV_REL) {
+				if (ev.code == REL_X) {
+					add_mouse_relative_delta(ev.value, 0);
+				} else if (ev.code == REL_Y) {
+					add_mouse_relative_delta(0, ev.value);
+				} else if (ev.code == REL_WHEEL) {
+					g_mouse_wheel_y -= ev.value;
 				}
 			}
 		}
@@ -4062,6 +4433,7 @@ static void poll_input_devices_sdl(void) {
 	SDL_Event ev;
 	SDL_PumpEvents();
 	uint16_t pad_state = 0;
+	reset_mouse_frame_state();
 	const Uint8* keystate = SDL_GetKeyboardState(NULL);
 	if (keystate) {
 		static const SDL_Keycode keys[] = {
@@ -4119,6 +4491,22 @@ static void poll_input_devices_sdl(void) {
 			case SDL_QUIT:
 				g_should_quit = 1;
 				break;
+			case SDL_KEYDOWN:
+			case SDL_KEYUP: {
+				if (ev.key.repeat) {
+					break;
+				}
+				const char* keyboard_code = map_sdl_scancode_to_dom_code(ev.key.keysym.scancode);
+				if (keyboard_code) {
+					core_keyboard_event(keyboard_code, ev.type == SDL_KEYDOWN);
+				}
+				break;
+			}
+			case SDL_WINDOWEVENT:
+				if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+					core_keyboard_reset();
+				}
+				break;
 			case SDL_CONTROLLERDEVICEADDED:
 				if (!g_sdl_gamepad && SDL_IsGameController(ev.cdevice.which)) {
 					g_sdl_gamepad = SDL_GameControllerOpen(ev.cdevice.which);
@@ -4137,10 +4525,19 @@ static void poll_input_devices_sdl(void) {
 					g_sdl_pad_state = 0;
 				}
 				break;
+			case SDL_MOUSEWHEEL: {
+				int wheel_y = ev.wheel.y;
+				if (ev.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
+					wheel_y = -wheel_y;
+				}
+				g_mouse_wheel_y -= wheel_y;
+				break;
+			}
 			default:
 				break;
 		}
 	}
+	sdl_update_mouse_position();
 	g_sdl_pad_state = pad_state;
 	input_finalize(g_sdl_pad_state);
 }
@@ -4185,11 +4582,49 @@ static int16_t input_state_cb(unsigned port, unsigned device, unsigned index, un
 	if (port != 0) {
 		return 0;
 	}
-	if (device != RETRO_DEVICE_JOYPAD) {
+	if (g_menu_active) {
 		return 0;
 	}
-	int16_t v = (g_pad_state_port0 & (uint16_t)(1u << id)) ? 1 : 0;
-	return v;
+	if (device == RETRO_DEVICE_JOYPAD) {
+		return (g_pad_state_port0 & (uint16_t)(1u << id)) ? 1 : 0;
+	}
+	if (device == RETRO_DEVICE_MOUSE) {
+		switch (id) {
+			case kRetroMouseIdX:
+				return (int16_t)g_mouse_delta_x;
+			case kRetroMouseIdY:
+				return (int16_t)g_mouse_delta_y;
+			case kRetroMouseIdLeft:
+				return (g_mouse_buttons & kMouseButtonPrimary) ? 1 : 0;
+			case kRetroMouseIdRight:
+				return (g_mouse_buttons & kMouseButtonSecondary) ? 1 : 0;
+			case kRetroMouseIdWheelUp:
+				return g_mouse_wheel_y < 0 ? (int16_t)(-g_mouse_wheel_y) : 0;
+			case kRetroMouseIdWheelDown:
+				return g_mouse_wheel_y > 0 ? (int16_t)g_mouse_wheel_y : 0;
+			case kRetroMouseIdMiddle:
+				return (g_mouse_buttons & kMouseButtonAux) ? 1 : 0;
+			case kRetroMouseIdButton4:
+				return (g_mouse_buttons & kMouseButtonBack) ? 1 : 0;
+			case kRetroMouseIdButton5:
+				return (g_mouse_buttons & kMouseButtonForward) ? 1 : 0;
+			default:
+				return 0;
+		}
+	}
+	if (device == RETRO_DEVICE_POINTER) {
+		switch (id) {
+			case kRetroPointerIdX:
+				return encode_pointer_axis(g_mouse_abs_x, g_fb.width);
+			case kRetroPointerIdY:
+				return encode_pointer_axis(g_mouse_abs_y, g_fb.height);
+			case kRetroPointerIdPressed:
+				return (g_mouse_buttons & kMouseButtonPrimary) ? 1 : 0;
+			default:
+				return 0;
+		}
+	}
+	return 0;
 }
 
 static void* read_file(const char* path, size_t* out_size) {
@@ -4266,6 +4701,8 @@ static void load_core(LibretroCore* core, const char* path) {
 	load_symbol(core->handle, "retro_cheat_set", &core->retro_cheat_set);
 	load_symbol(core->handle, "bmsx_set_frame_time_usec", &core->bmsx_set_frame_time_usec);
 	load_symbol(core->handle, "bmsx_get_ufps", &core->bmsx_get_ufps);
+	load_symbol(core->handle, "bmsx_keyboard_event", &core->bmsx_keyboard_event);
+	load_symbol(core->handle, "bmsx_keyboard_reset", &core->bmsx_keyboard_reset);
 }
 
 static void usage(const char* argv0) {

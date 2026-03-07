@@ -125,6 +125,7 @@ import { Viewport } from '../../rompack/rompack';
 export const editorFacade = {
 	activate,
 	deactivate,
+	blocksRuntimePipeline: true,
 	get isActive(): boolean { return ide_state.active; },
 	get exists(): boolean { return ide_state.initialized; },
 	tickInput,

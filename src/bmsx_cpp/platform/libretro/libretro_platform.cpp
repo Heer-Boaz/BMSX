@@ -7,6 +7,7 @@
 #include "../../input/input.h"
 #include "../../input/gamepadinput.h"
 #include "../../input/keyboardinput.h"
+#include "../../input/pointerinput.h"
 #include "../../render/backend/renderpasslib.h"
 #include "../../render/texturemanager.h"
 #include "../../utils/mem_snapshot.h"
@@ -111,6 +112,8 @@ LibretroPlatform::LibretroPlatform(BackendType backend_type)
 
 	m_keyboard_input = std::make_unique<KeyboardInput>("keyboard:0");
 	Input::instance().registerKeyboard("keyboard:0", m_keyboard_input.get());
+	m_pointer_input = std::make_unique<PointerInput>("pointer:0");
+	Input::instance().registerPointer("pointer:0", m_pointer_input.get());
 
 	for (size_t i = 0; i < InputState::MAX_PLAYERS; i++) {
 		std::string deviceId = "gamepad:" + std::to_string(i);
@@ -144,6 +147,14 @@ void LibretroPlatform::setInputPollCallback(retro_input_poll_t cb) {
 void LibretroPlatform::setInputStateCallback(retro_input_state_t cb) {
 	m_input_state_cb = cb;
 	static_cast<LibretroInputHub*>(m_input_hub.get())->setInputStateCallback(cb);
+}
+
+void LibretroPlatform::postKeyboardEvent(std::string_view code, bool down) {
+	static_cast<LibretroInputHub*>(m_input_hub.get())->postKeyboardEvent(code, down);
+}
+
+void LibretroPlatform::clearKeyboardState() {
+	static_cast<LibretroInputHub*>(m_input_hub.get())->clearKeyboardState();
 }
 
 void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer) {
@@ -818,8 +829,39 @@ constexpr std::array<const char*, InputState::BUTTONS_PER_PLAYER> kLibretroButto
 	"rs"      // RETRO_DEVICE_ID_JOYPAD_R3
 };
 
+constexpr std::array<const char*, 5> kLibretroPointerButtonIds = {
+	"pointer_primary",
+	"pointer_secondary",
+	"pointer_aux",
+	"pointer_back",
+	"pointer_forward",
+};
+
+constexpr unsigned kRetroMouseIdX = 0;
+constexpr unsigned kRetroMouseIdY = 1;
+constexpr unsigned kRetroMouseIdLeft = 2;
+constexpr unsigned kRetroMouseIdRight = 3;
+constexpr unsigned kRetroMouseIdWheelUp = 4;
+constexpr unsigned kRetroMouseIdWheelDown = 5;
+constexpr unsigned kRetroMouseIdMiddle = 6;
+constexpr unsigned kRetroMouseIdButton4 = 9;
+constexpr unsigned kRetroMouseIdButton5 = 10;
+
+constexpr unsigned kRetroPointerIdX = 0;
+constexpr unsigned kRetroPointerIdY = 1;
+constexpr unsigned kRetroPointerIdPressed = 2;
+
 f32 normalizeAxis(i16 value) {
 	return static_cast<f32>(value) / 32767.0f;
+}
+
+i32 pointerAxisToViewport(i16 value, i32 extent) {
+	if (extent <= 1) {
+		return 0;
+	}
+	const i32 clamped = std::clamp(static_cast<i32>(value), -32767, 32767);
+	const f32 normalized = (static_cast<f32>(clamped) + 32767.0f) / 65534.0f;
+	return static_cast<i32>(std::round(normalized * static_cast<f32>(extent - 1)));
 }
 
 } // namespace
@@ -906,7 +948,132 @@ void LibretroInputHub::poll() {
 		}
 	}
 
+	const char* pointerDeviceId = "pointer:0";
+	auto emitPointerEvent = [this](const InputEvt& evt) {
+		m_event_queue.push_back(evt);
+		for (const auto& handler : m_handlers) {
+			handler(evt);
+		}
+	};
+
+	const i16 mouseDeltaX = m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdX);
+	const i16 mouseDeltaY = m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdY);
+	const i16 mouseWheelUp = m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdWheelUp);
+	const i16 mouseWheelDown = m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdWheelDown);
+	const i16 pointerRawX = m_input_state_cb(0, RETRO_DEVICE_POINTER, 0, kRetroPointerIdX);
+	const i16 pointerRawY = m_input_state_cb(0, RETRO_DEVICE_POINTER, 0, kRetroPointerIdY);
+	const bool pointerPressed = m_input_state_cb(0, RETRO_DEVICE_POINTER, 0, kRetroPointerIdPressed) != 0;
+
+	const std::array<bool, 5> pointerButtons = {
+		m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdLeft) != 0 || pointerPressed,
+		m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdRight) != 0,
+		m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdMiddle) != 0,
+		m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdButton4) != 0,
+		m_input_state_cb(0, RETRO_DEVICE_MOUSE, 0, kRetroMouseIdButton5) != 0,
+	};
+
+	for (size_t i = 0; i < pointerButtons.size(); ++i) {
+		if (pointerButtons[i] == m_prev_pointer_buttons[i]) {
+			continue;
+		}
+		InputEvt evt;
+		evt.type = pointerButtons[i] ? InputEvtType::PointerDown : InputEvtType::PointerUp;
+		evt.deviceId = pointerDeviceId;
+		evt.code = kLibretroPointerButtonIds[i];
+		evt.value = pointerButtons[i] ? 1.0f : 0.0f;
+		emitPointerEvent(evt);
+	}
+
+	const bool hasAbsolutePointer = pointerRawX != 0 || pointerRawY != 0 || pointerPressed;
+	i32 pointerX = m_prev_pointer_x;
+	i32 pointerY = m_prev_pointer_y;
+	bool pointerPositionValid = m_prev_pointer_position_valid;
+	const i32 viewportWidth = static_cast<i32>(m_platform->getFramebuffer().width);
+	const i32 viewportHeight = static_cast<i32>(m_platform->getFramebuffer().height);
+
+	if (hasAbsolutePointer) {
+		pointerX = pointerAxisToViewport(pointerRawX, viewportWidth);
+		pointerY = pointerAxisToViewport(pointerRawY, viewportHeight);
+		pointerPositionValid = true;
+	} else if (mouseDeltaX != 0 || mouseDeltaY != 0) {
+		if (!pointerPositionValid) {
+			pointerX = 0;
+			pointerY = 0;
+			pointerPositionValid = true;
+		}
+		pointerX = std::clamp(pointerX + static_cast<i32>(mouseDeltaX), 0, std::max(0, viewportWidth - 1));
+		pointerY = std::clamp(pointerY + static_cast<i32>(mouseDeltaY), 0, std::max(0, viewportHeight - 1));
+	}
+
+	if (pointerPositionValid &&
+		(!m_prev_pointer_position_valid || pointerX != m_prev_pointer_x || pointerY != m_prev_pointer_y)) {
+		InputEvt evt;
+		evt.type = InputEvtType::PointerMove;
+		evt.deviceId = pointerDeviceId;
+		evt.code = "pointer_position";
+		evt.x = static_cast<f32>(pointerX);
+		evt.y = static_cast<f32>(pointerY);
+		emitPointerEvent(evt);
+	}
+
+	const i32 wheelDelta = static_cast<i32>(mouseWheelDown) - static_cast<i32>(mouseWheelUp);
+	if (wheelDelta != 0) {
+		InputEvt evt;
+		evt.type = InputEvtType::PointerWheel;
+		evt.deviceId = pointerDeviceId;
+		evt.code = "pointer_wheel";
+		evt.value = static_cast<f32>(wheelDelta);
+		emitPointerEvent(evt);
+	}
+
 	m_prev_state = new_state;
+	m_prev_pointer_buttons = pointerButtons;
+	m_prev_pointer_x = pointerX;
+	m_prev_pointer_y = pointerY;
+	m_prev_pointer_position_valid = pointerPositionValid;
+}
+
+void LibretroInputHub::postKeyboardEvent(std::string_view code, bool down) {
+	std::string key(code);
+	const bool isPressed = m_pressed_keyboard_codes.find(key) != m_pressed_keyboard_codes.end();
+	if (down == isPressed) {
+		return;
+	}
+	if (down) {
+		m_pressed_keyboard_codes.insert(key);
+	} else {
+		m_pressed_keyboard_codes.erase(key);
+	}
+	InputEvt evt;
+	evt.type = down ? InputEvtType::KeyDown : InputEvtType::KeyUp;
+	evt.deviceId = "keyboard:0";
+	evt.code = std::move(key);
+	m_event_queue.push_back(evt);
+	for (const auto& handler : m_handlers) {
+		handler(evt);
+	}
+}
+
+void LibretroInputHub::clearKeyboardState() {
+	if (m_pressed_keyboard_codes.empty()) {
+		return;
+	}
+	std::vector<std::string> pressedCodes;
+	pressedCodes.reserve(m_pressed_keyboard_codes.size());
+	for (const std::string& code : m_pressed_keyboard_codes) {
+		pressedCodes.push_back(code);
+	}
+	m_pressed_keyboard_codes.clear();
+	for (const std::string& code : pressedCodes) {
+		InputEvt evt;
+		evt.type = InputEvtType::KeyUp;
+		evt.deviceId = "keyboard:0";
+		evt.code = code;
+		m_event_queue.push_back(evt);
+		for (const auto& handler : m_handlers) {
+			handler(evt);
+		}
+	}
 }
 
 SubscriptionHandle LibretroInputHub::subscribe(std::function<void(const InputEvt&)> handler) {

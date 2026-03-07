@@ -12,7 +12,7 @@ import {
 } from '../lua/luavalue';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clamp_fallback } from '../utils/clamp';
-import { TERMINAL_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
+import { EDITOR_TOGGLE_KEY, TERMINAL_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
 import { setExecutionStopHighlight, clearExecutionStopHighlights } from './ide/cart_editor';
 import { ide_state } from './ide/ide_state';
 import type { RuntimeErrorDetails } from './ide/types';
@@ -31,8 +31,6 @@ import { getBasePipelineSpecOverrideForIdeOrTerminal, ideExtSpec, terminalExtSpe
 import { TerminalMode } from './terminal_mode';
 import type { Runtime } from './runtime';
 import type { RuntimeOptions } from './types';
-import { shallowcopy } from '../utils/shallowcopy';
-import { createLuaNativeEditor } from './lua_native_editor';
 
 class DebugPauseCoordinator {
 	private suspension: LuaDebuggerPauseSignal = null;
@@ -62,107 +60,27 @@ class DebugPauseCoordinator {
 }
 
 type DebuggerStepOrigin = { path: string; line: number; depth: number };
-type RenderTargetVec2 = { x: number; y: number };
-type RenderTargetSnapshot = {
-	viewportSize: RenderTargetVec2;
-	canvasSize: RenderTargetVec2;
-	offscreenSize: RenderTargetVec2;
-};
-type TargetOwner = 'editor';
-type RenderTargetState = {
-	baseline?: RenderTargetSnapshot;
-	stack: TargetOwner[];
-};
 
-const EDITOR_TARGET: RenderTargetVec2 = { x: 384, y: 288 };
-// const EDITOR_TARGET: RenderTargetVec2 = { x: 768, y: 576 };
-// const EDITOR_TARGET: RenderTargetVec2 = { x: 640, y: 512 };
-const RT_STATE = new WeakMap<Runtime, RenderTargetState>();
-
-function getState(runtime: Runtime): RenderTargetState {
-	let state = RT_STATE.get(runtime);
-	if (!state) {
-		state = { stack: [] };
-		RT_STATE.set(runtime, state);
-	}
-	return state;
+function editorBlocksRuntimePipeline(runtime: Runtime): boolean {
+	return runtime.editor !== null && runtime.editor.blocksRuntimePipeline === true;
 }
 
-function captureCurrentTargets(): RenderTargetSnapshot {
-	const view = $.view;
-	return {
-		viewportSize: shallowcopy(view.viewportSize),
-		canvasSize: shallowcopy(view.canvasSize),
-		offscreenSize: shallowcopy(view.offscreenCanvasSize),
-	};
-}
-
-function applyFixedEditorTargets(runtime: Runtime): void {
-	$.view.configureRenderTargets({
-		viewportSize: EDITOR_TARGET,
-		canvasSize: EDITOR_TARGET,
-		offscreenSize: EDITOR_TARGET,
-	});
-	runtime.overlayResolutionMode = 'viewport';
-}
-
-function restoreTargets(runtime: Runtime, snapshot: RenderTargetSnapshot): void {
-	$.view.configureRenderTargets({
-		viewportSize: snapshot.viewportSize,
-		canvasSize: snapshot.canvasSize,
-		offscreenSize: snapshot.offscreenSize,
-	});
-	runtime.overlayResolutionMode = 'viewport';
-}
-
-function pushRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
-	const state = getState(runtime);
-	if (!state.baseline) {
-		state.baseline = captureCurrentTargets();
+function isManagedOverlayEditorActive(runtime: Runtime): boolean {
+	if (!editorBlocksRuntimePipeline(runtime)) {
+		return false;
 	}
-	if (state.stack.includes(owner)) {
-		return;
-	}
-	state.stack.push(owner);
-	switch (owner) {
-		case 'editor':
-			applyFixedEditorTargets(runtime);
-			return;
-	}
-}
-
-function popRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
-	const state = RT_STATE.get(runtime);
-	if (!state) {
-		return;
-	}
-	for (let i = state.stack.length - 1; i >= 0; i -= 1) {
-		if (state.stack[i] === owner) {
-			state.stack.splice(i, 1);
-		}
-	}
-	if (state.stack.length === 0) {
-		restoreTargets(runtime, state.baseline!);
-		RT_STATE.delete(runtime);
-		return;
-	}
-	const top = state.stack[state.stack.length - 1];
-	switch (top) {
-		case 'editor':
-			applyFixedEditorTargets(runtime);
-			return;
-	}
+	return runtime.editor!.isActive;
 }
 
 export function createPauseCoordinator(): DebugPauseCoordinator {
 	return new DebugPauseCoordinator();
 }
 
-export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions): void {
+export function initializeIdeFeatures(runtime: Runtime, _options: RuntimeOptions): void {
+	ide_state.playerIndex = runtime.playerIndex;
 	runtime.terminal = new TerminalMode(runtime);
-	runtime.editor = createLuaNativeEditor(runtime);
-	runtime.editor.updateViewport(options.viewport);
 	runtime.overlayResolutionMode = 'viewport';
+	Input.instance.setKeyboardCapture(EDITOR_TOGGLE_KEY, true);
 	seedDefaultLuaBuiltins();
 	flushLuaWarnings(runtime);
 	registerRuntimeShortcuts(runtime);
@@ -177,14 +95,13 @@ export function applyCanonicalization(canonicalization: boolean): void {
 export function setActiveIdeFontVariant(runtime: Runtime, variant: Runtime['activeIdeFontVariant']): void {
 	runtime._activeIdeFontVariant = variant;
 	runtime.terminal.setFontVariant(variant);
-	runtime.editor.setFontVariant(variant);
 }
 
 export function updateGamePipelineExts(runtime: Runtime): void {
 	if (runtime.terminal.isActive) {
 		$.pipeline_spec_override = getBasePipelineSpecOverrideForIdeOrTerminal();
 		$.pipeline_ext = terminalExtSpec;
-	} else if (runtime.editor.isActive) {
+	} else if (isManagedOverlayEditorActive(runtime)) {
 		$.pipeline_spec_override = getBasePipelineSpecOverrideForIdeOrTerminal();
 		$.pipeline_ext = ideExtSpec;
 	} else {
@@ -232,54 +149,19 @@ export function deactivateTerminalMode(runtime: Runtime): void {
 }
 
 export function isOverlayActive(runtime: Runtime): boolean {
-	return runtime.editor.isActive || runtime.terminal.isActive;
+	return runtime.terminal.isActive || isManagedOverlayEditorActive(runtime);
 }
 
 export function toggleEditor(runtime: Runtime): void {
-	if (runtime.editor.isActive) {
-		deactivateEditor(runtime);
-		return;
-	}
-	activateEditor(runtime);
+	void runtime;
 }
 
 export function activateEditor(runtime: Runtime): void {
-	if (!runtime.hasProgramSymbols) {
-		return;
-	}
-	const overlayWasActive = isOverlayActive(runtime);
-	if (!overlayWasActive) {
-		runtime.preservedRenderQueue = runtime.overlayRenderBackend.captureCurrentFrameRenderQueue();
-	}
-	if (runtime.terminal.isActive) {
-		runtime.terminal.deactivate();
-	}
-	const wasActive = runtime.editor.isActive;
-	if (!wasActive) {
-		pushRenderTargetOwner(runtime, 'editor');
-	}
-	try {
-		if (!runtime.editor.isActive) {
-			runtime.editor.activate();
-		}
-	} catch (error) {
-		if (!wasActive) {
-			popRenderTargetOwner(runtime, 'editor');
-		}
-		throw error;
-	}
-	if (!runtime.editor.isActive && !wasActive) {
-		popRenderTargetOwner(runtime, 'editor');
-	}
-	updateGamePipelineExts(runtime);
+	void runtime;
 }
 
 export function deactivateEditor(runtime: Runtime): void {
-	if (runtime.editor.isActive === true) {
-		runtime.editor.deactivate();
-	}
-	popRenderTargetOwner(runtime, 'editor');
-	updateGamePipelineExts(runtime);
+	void runtime;
 }
 
 export function registerRuntimeShortcuts(runtime: Runtime): void {
@@ -324,12 +206,15 @@ export function toggleOverlayResolutionMode(runtime: Runtime): 'offscreen' | 'vi
 }
 
 export function tickIdeInput(runtime: Runtime): void {
+	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor!.isActive) {
+		return;
+	}
 	const pollFrame = $.input.getPlayerInput(runtime.playerIndex).pollFrame;
 	if (pollFrame === runtime.lastIdeInputFrame) {
 		return;
 	}
 	runtime.lastIdeInputFrame = pollFrame;
-	runtime.editor.tickInput();
+	runtime.editor!.tickInput();
 }
 
 export function tickTerminalInput(runtime: Runtime): void {
@@ -377,7 +262,7 @@ export function applyDebuggerStopLocation(signal: LuaDebuggerPauseSignal): void 
 }
 
 export function onLuaDebuggerPause(runtime: Runtime, signal: LuaDebuggerPauseSignal): void {
-	if (signal.reason === 'exception' && !runtime.editor.isActive) {
+	if (signal.reason === 'exception' && !isManagedOverlayEditorActive(runtime)) {
 		runtime.interpreter.markFaultEnvironment();
 		handleLuaError(runtime, signal.exception);
 		return;
@@ -391,9 +276,9 @@ export function onLuaDebuggerPause(runtime: Runtime, signal: LuaDebuggerPauseSig
 	applyDebuggerStopLocation(signal);
 	if (signal.reason === 'exception') {
 		recordDebuggerExceptionFault(runtime, signal);
-		if (runtime.programMetadata && runtime.editor.isActive) {
+		if (runtime.programMetadata && isManagedOverlayEditorActive(runtime)) {
 			const message = runtime.faultSnapshot.message;
-			runtime.editor.showRuntimeErrorInChunk(runtime.faultSnapshot.path, runtime.faultSnapshot.line, runtime.faultSnapshot.column, message);
+			runtime.editor!.showRuntimeErrorInChunk(runtime.faultSnapshot.path, runtime.faultSnapshot.line, runtime.faultSnapshot.column, message);
 		}
 	}
 }
@@ -404,7 +289,9 @@ export function clearActiveDebuggerPause(runtime: Runtime): void {
 	setDebuggerPaused(runtime, false);
 	clearRuntimeFault(runtime);
 	runtime.debuggerController.clearPauseContext();
-	runtime.editor.clearRuntimeErrorOverlay();
+	if (runtime.editor !== null) {
+		runtime.editor.clearRuntimeErrorOverlay();
+	}
 }
 
 export function handleDebuggerResumeResult(runtime: Runtime, result: ExecutionSignal): void {
@@ -468,7 +355,9 @@ export function ignoreLuaException(runtime: Runtime): void {
 
 export function clearEditorErrorOverlaysIfNoFault(runtime: Runtime): void {
 	if (runtime.luaRuntimeFailed) return;
-	runtime.editor.clearRuntimeErrorOverlay();
+	if (runtime.editor !== null) {
+		runtime.editor.clearRuntimeErrorOverlay();
+	}
 	publishOverlayFrame(null);
 }
 
@@ -744,6 +633,9 @@ export function tickTerminalModeDraw(runtime: Runtime): void {
 }
 
 export function tickIDE(runtime: Runtime): void {
+	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor!.isActive) {
+		return;
+	}
 	if (!runtime.tickEnabled) {
 		return;
 	}
@@ -752,13 +644,16 @@ export function tickIDE(runtime: Runtime): void {
 	}
 	const state = runtime.beginFrameState();
 	const deltaSeconds = runtime.frameDeltaMs / 1000;
-	runtime.editor.update(deltaSeconds);
+	runtime.editor!.update(deltaSeconds);
 	runtime.vdp.flushAssetEdits();
 	runtime.drawFrameState = state;
 	runtime.abandonFrameState();
 }
 
 export function tickIDEDraw(runtime: Runtime): void {
+	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor!.isActive) {
+		return;
+	}
 	if (!runtime.tickEnabled) {
 		return;
 	}
@@ -780,7 +675,7 @@ export function drawIde(runtime: Runtime): void {
 	try {
 		runtime.overlayRenderBackend.beginFrame();
 		runtime.overlayRenderBackend.setDefaultLayer('ide');
-		runtime.editor.draw();
+		runtime.editor!.draw();
 	} catch (error) {
 		if (isLuaDebuggerPauseSignal(error)) {
 			onLuaDebuggerPause(runtime, error);

@@ -139,6 +139,10 @@ export function buildDirtyFilePath(resourcePath: string): string {
 	return buildWorkspaceDirtyEntryPath(storagePaths.projectRootPath, resourcePath);
 }
 
+export function hasWorkspaceStorage(): boolean {
+	return storagePaths !== null;
+}
+
 export async function readWorkspaceStateFile(): Promise<string> {
 	if (!storagePaths) {
 		return null;

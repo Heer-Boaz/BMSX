@@ -16,11 +16,13 @@
 #include <vector>
 #include <array>
 #include <memory>
+#include <unordered_set>
 
 namespace bmsx {
 
 class GamepadInput;
 class KeyboardInput;
+class PointerInput;
 class LibretroInputHub;
 
 /* ============================================================================
@@ -148,6 +150,8 @@ public:
 	void setAudioBatchCallback(retro_audio_sample_batch_t cb) { m_audio_batch_cb = cb; }
 	void setInputPollCallback(retro_input_poll_t cb);
 	void setInputStateCallback(retro_input_state_t cb);
+	void postKeyboardEvent(std::string_view code, bool down);
+	void clearKeyboardState();
 	void setLogCallback(void (*cb)(enum retro_log_level, const char*, ...)) { m_log_cb = cb; }
 	void setSystemDirectory(std::string_view path) { m_system_dir = std::string(path); }
 	void setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer);
@@ -271,6 +275,7 @@ private:
 	std::unique_ptr<MicrotaskQueue> m_microtask_queue;
 
 	std::unique_ptr<KeyboardInput> m_keyboard_input;
+	std::unique_ptr<PointerInput> m_pointer_input;
 	std::array<std::unique_ptr<GamepadInput>, InputState::MAX_PLAYERS> m_gamepad_inputs;
 
 	// Save RAM
@@ -294,6 +299,8 @@ public:
 	void poll();
 	void setInputPollCallback(retro_input_poll_t cb) { m_input_poll_cb = cb; }
 	void setInputStateCallback(retro_input_state_t cb) { m_input_state_cb = cb; }
+	void postKeyboardEvent(std::string_view code, bool down);
+	void clearKeyboardState();
 
 	// InputHub interface
 	SubscriptionHandle subscribe(std::function<void(const InputEvt&)> handler) override;
@@ -310,6 +317,11 @@ private:
 
 	// Previous state for edge detection
 	InputState m_prev_state;
+	std::array<bool, 5> m_prev_pointer_buttons{};
+	i32 m_prev_pointer_x = 0;
+	i32 m_prev_pointer_y = 0;
+	bool m_prev_pointer_position_valid = false;
+	std::unordered_set<std::string> m_pressed_keyboard_codes;
 };
 
 /* ============================================================================

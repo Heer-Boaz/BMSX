@@ -211,7 +211,6 @@ export function restoreFromStateSnapshot(runtime: Runtime, snapshot: RuntimeStat
 	if (snapshot.storage !== undefined) {
 		runtime.storage.restore(snapshot.storage);
 	}
-	runtime.editor.clearRuntimeErrorOverlay();
 
 	runtime.luaRuntimeFailed = false;
 	applyAssetMemorySnapshot(runtime, snapshot);
@@ -252,7 +251,6 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState):
 		throw new Error('[Runtime] Cannot resume from invalid state snapshot.');
 	}
 	const snapshot: RuntimeState = { ...state, luaRuntimeFailed: false };
-	runtime.editor.clearRuntimeErrorOverlay();
 	runtime.interpreter.clearLastFaultEnvironment();
 	runtimeIde.clearFaultSnapshot(runtime);
 
@@ -1028,9 +1026,6 @@ export function bootActiveProgram(runtime: Runtime, options?: { preserveState?: 
 	const ok = shouldBootLuaProgramFromSources(runtime)
 		? bootLuaProgram(runtime, { preserveState: options?.preserveState })
 		: bootProgramAsset(runtime, options);
-	if (!runtime.programMetadata && runtime.editor.isActive) {
-		runtimeIde.deactivateEditor(runtime);
-	}
 	return ok;
 }
 
@@ -1124,9 +1119,6 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 				}
 			} else {
 				bootProgramAsset(runtime, { preserveState: true, runInit: options?.runInit });
-				if (!runtime.programMetadata && runtime.editor.isActive) {
-					runtimeIde.deactivateEditor(runtime);
-				}
 			}
 		} catch (error) {
 			runtimeIde.handleLuaError(runtime, error);

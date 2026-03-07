@@ -7,6 +7,7 @@
 #include "input.h"
 #include "gamepadinput.h"
 #include "keyboardinput.h"
+#include "pointerinput.h"
 #include "../core/engine_core.h"
 
 namespace bmsx {
@@ -225,6 +226,15 @@ InputMap Input::getDefaultInputMapping() {
 	InputMap map;
 	
 	// Keyboard mappings
+	map.pointer["pointer_primary"] = {PointerBinding{"pointer_primary"}};
+	map.pointer["pointer_secondary"] = {PointerBinding{"pointer_secondary"}};
+	map.pointer["pointer_aux"] = {PointerBinding{"pointer_aux"}};
+	map.pointer["pointer_back"] = {PointerBinding{"pointer_back"}};
+	map.pointer["pointer_forward"] = {PointerBinding{"pointer_forward"}};
+	map.pointer["pointer_delta"] = {PointerBinding{"pointer_delta"}};
+	map.pointer["pointer_position"] = {PointerBinding{"pointer_position"}};
+	map.pointer["pointer_wheel"] = {PointerBinding{"pointer_wheel"}};
+
 	map.keyboard["a"] = {KeyboardBinding{"KeyX", std::nullopt}};
 	map.keyboard["b"] = {KeyboardBinding{"KeyC", std::nullopt}};
 	map.keyboard["x"] = {KeyboardBinding{"KeyZ", std::nullopt}};
@@ -311,6 +321,9 @@ void Input::pollInput() {
 			case InputEvtType::PointerMove:
 				handlePointerMoveEvent(input.deviceId, input.x, input.y);
 				break;
+			case InputEvtType::PointerWheel:
+				handlePointerWheelEvent(input.deviceId, input.value);
+				break;
 		}
 		evt = hub->nextEvt();
 	}
@@ -368,14 +381,24 @@ void Input::handleGamepadAxisEvent(const std::string& deviceId, const std::strin
 
 void Input::handlePointerButtonEvent(const std::string& deviceId, const std::string& button, bool down) {
 	auto* binding = getDeviceBinding(deviceId);
+	auto* handler = static_cast<PointerInput*>(binding->handler);
 	i32 pressId = assignPressId(deviceId, button, down);
+	handler->ingestButton(button, down, down ? 1.0f : 0.0f, m_currentTimeMs, pressId);
 	enqueueButtonEvent(binding->assignedPlayer.value(), button,
 						down ? InputEvent::Type::Press : InputEvent::Type::Release,
 						m_currentTimeMs, pressId);
 }
 
-void Input::handlePointerMoveEvent(const std::string& /*deviceId*/, f32 /*x*/, f32 /*y*/) {
-	// Pointer move events are handled by the pointer handler internally
+void Input::handlePointerMoveEvent(const std::string& deviceId, f32 x, f32 y) {
+	auto* binding = getDeviceBinding(deviceId);
+	auto* handler = static_cast<PointerInput*>(binding->handler);
+	handler->ingestAxis2("pointer_position", x, y, m_currentTimeMs);
+}
+
+void Input::handlePointerWheelEvent(const std::string& deviceId, f32 value) {
+	auto* binding = getDeviceBinding(deviceId);
+	auto* handler = static_cast<PointerInput*>(binding->handler);
+	handler->ingestAxis1("pointer_wheel", value, m_currentTimeMs);
 }
 
 /* ============================================================================

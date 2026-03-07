@@ -31,7 +31,8 @@ enum class InputEvtType {
 	KeyUp,
 	PointerDown,
 	PointerUp,
-	PointerMove
+	PointerMove,
+	PointerWheel
 };
 
 struct InputEvt {

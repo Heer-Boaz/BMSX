@@ -111,6 +111,7 @@ add_library(bmsx_core STATIC
 	input/input.cpp
 	input/keyboardinput.cpp
 	input/gamepadinput.cpp
+	input/pointerinput.cpp
 
 	# Render systems
 	render/backend/backend.cpp

@@ -105,7 +105,7 @@ public:
 	ButtonState getButtonState(const std::string& button, InputSource source);
 	
 	// Get button state with repeat handling
-	ButtonState getButtonRepeatState(const std::string& button, InputSource source);
+	ActionState getButtonRepeatState(const std::string& button, InputSource source);
 	
 	// Get key state with modifier requirements
 	ButtonState getKeyState(const std::string& key, KeyModifier modifiers);
