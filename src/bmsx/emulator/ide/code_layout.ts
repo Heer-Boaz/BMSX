@@ -8,6 +8,7 @@ import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types'
 import { scheduleIdeOnce } from './background_tasks';
 import { EditorFont } from '../editor_font';
 import { getTextSnapshot, splitText } from './source_text';
+import { syncSemanticWorkspacePath } from './semantic_workspace_sync';
 import type { TextBuffer } from './text_buffer';
 
 interface VisualLinesContext {
@@ -650,7 +651,12 @@ export class CodeLayout {
 		let errorMessage: string = null;
 		try {
 			const source = this.materializeSemanticSource(pending);
-			model = this.workspace.updateFile(pending.path, source, pending.lines, null, pending.version);
+			model = syncSemanticWorkspacePath({
+				path: pending.path,
+				source,
+				lines: pending.lines,
+				version: pending.version,
+			}, this.workspace).model;
 		} catch (error) {
 			model = null;
 			errorMessage = error instanceof Error ? error.message : String(error);

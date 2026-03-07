@@ -12,6 +12,7 @@ import { LuaLexer } from '../../lua/lualexer';
 import { findCodeTabContext } from './editor_tabs';
 import { findResourceDescriptorForChunk } from './cart_editor';
 import { getTextSnapshot, splitText } from './source_text';
+import { syncSemanticWorkspacePath } from './semantic_workspace_sync';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];
@@ -307,18 +308,23 @@ export class CrossFileRenameManager {
 			}
 			return a.start - b.start;
 		});
-		const edits = planRenameLineEdits(lines, matches, newName);
-		if (edits.length === 0) {
-			return 0;
+			const edits = planRenameLineEdits(lines, matches, newName);
+			if (edits.length === 0) {
+				return 0;
+			}
+			for (let index = 0; index < edits.length; index += 1) {
+				const edit = edits[index];
+				lines[edit.row] = edit.text;
+			}
+			this.applyLinesToContextSnapshot(context, lines);
+			syncSemanticWorkspacePath({
+				path,
+				source: lines.join('\n'),
+				lines,
+				version: context.textVersion,
+			}, this.workspace);
+			return matches.length;
 		}
-		for (let index = 0; index < edits.length; index += 1) {
-			const edit = edits[index];
-			lines[edit.row] = edit.text;
-		}
-		this.applyLinesToContextSnapshot(context, lines);
-		this.workspace.updateFile(path, lines.join('\n'), lines, null, context.textVersion);
-		return matches.length;
-	}
 
 	private getContextLinesForRename(context: CodeTabContext): string[] {
 		return splitText(getTextSnapshot(context.buffer));

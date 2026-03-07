@@ -1,14 +1,12 @@
-import type { LuaBuiltinDescriptor, LuaSymbolEntry, ResourceDescriptor } from '../types';
+import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../types';
 import type { EditorDiagnostic } from './types';
-import { Runtime } from '../runtime';
 import { computeLuaDiagnostics, getApiCompletionData } from './intellisense';
 import { getCachedLuaParse } from './lua_analysis_cache';
 import { ide_state, diagnosticsDebounceMs } from './ide_state';
+import { cacheSemanticParseState } from './semantic_workspace_sync';
 
 export type DiagnosticContextInput = {
 	id: string;
-	title: string;
-	descriptor: ResourceDescriptor;
 	path: string;
 	source: string;
 	lines?: readonly string[];
@@ -33,9 +31,8 @@ export function computeAggregatedEditorDiagnostics(
 	const aggregated: EditorDiagnostic[] = [];
 	for (let i = 0; i < contexts.length; i += 1) {
 		const ctx = contexts[i];
-		const path = resolvePath(ctx);
-		const source = ctx.source ?? '';
-		if (source.length === 0) continue;
+		const path = ctx.path;
+		const source = ctx.source;
 		const parseEntry = getCachedLuaParse({
 			path,
 			source,
@@ -44,18 +41,7 @@ export function computeAggregatedEditorDiagnostics(
 		});
 		const baseLines = parseEntry.lines;
 		const parsed = parseEntry.parsed;
-		if (path) {
-			const cacheEntry = Runtime.instance.pathSemanticCache.get(path);
-			const model = cacheEntry ? cacheEntry.model : null;
-			const definitions = cacheEntry ? cacheEntry.definitions : [];
-			Runtime.instance.pathSemanticCache.set(path, {
-				source,
-				model,
-				definitions,
-				parsed,
-				lines: baseLines,
-			});
-		}
+		cacheSemanticParseState(path, source, baseLines, parsed);
 		const localSymbols = providers.listLocalSymbols(path);
 		const luaDiagnostics = computeLuaDiagnostics({
 			source,
@@ -66,7 +52,7 @@ export function computeAggregatedEditorDiagnostics(
 			apiSignatures: apiData.signatures,
 			version: ctx.version,
 			lines: baseLines,
-			parsed: parsed ?? undefined,
+			parsed,
 		});
 		for (let j = 0; j < luaDiagnostics.length; j += 1) {
 			const d = luaDiagnostics[j];
@@ -87,22 +73,20 @@ export function computeAggregatedEditorDiagnostics(
 	return aggregated;
 }
 
-function resolvePath(ctx: DiagnosticContextInput): string {
-	const candidate = ctx.path && ctx.path.length > 0 ? ctx.path : null;
-	if (candidate) return candidate;
-	const descriptor = ctx.descriptor;
-	if (descriptor) {
-		if (descriptor.path && descriptor.path.length > 0) return descriptor.path;
-	}
-	return ctx.title;
+export function markDiagnosticsDirty(contextId: string): void {
+	ide_state.diagnosticsDirty = true;
+	ide_state.dirtyDiagnosticContexts.add(contextId);
+	ide_state.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
 }
 
-export function markDiagnosticsDirty(contextId?: string): void {
-	const targetId = contextId ?? ide_state.activeCodeTabContextId;
-	if (!targetId) {
+export function markAllDiagnosticsDirty(): void {
+	const contexts = ide_state.codeTabContexts;
+	if (contexts.size === 0) {
 		return;
 	}
 	ide_state.diagnosticsDirty = true;
-	ide_state.dirtyDiagnosticContexts.add(targetId);
+	for (const contextId of contexts.keys()) {
+		ide_state.dirtyDiagnosticContexts.add(contextId);
+	}
 	ide_state.diagnosticsDueAtMs = ide_state.clockNow() + diagnosticsDebounceMs;
 }

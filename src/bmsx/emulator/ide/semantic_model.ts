@@ -21,16 +21,9 @@ import {
 } from '../../lua/lua_ast';
 import type { LuaToken } from '../../lua/luatoken';
 import { LuaTokenType } from '../../lua/luatoken';
-import { ide_state } from './ide_state';
 import type { LuaSymbolEntry } from '../types';
-import { computeSourceLabel } from './code_reference';
-import { symbolCatalogDedupKey } from './cart_editor';
 import type { ParsedLuaChunk } from './lua_parse';
 import { getCachedLuaParse } from './lua_analysis_cache';
-import * as constants from './constants';
-import { getActiveCodeTabContext } from './editor_tabs';
-import { listGlobalLuaSymbols, listLuaSymbols } from './intellisense';
-import { extractErrorMessage } from '../../lua/luavalue';
 
 export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
 
@@ -705,14 +698,13 @@ export class LuaProjectIndex {
 				let targetId = null;
 				if (ref.symbolKey.length > 0) {
 					targetId = declByFileAndKey.get(fileSymbolKey(file, ref.symbolKey))
-						?? this.globalsByKey.get(ref.symbolKey)
-						?? null;
+						?? this.globalsByKey.get(ref.symbolKey);
 				}
 				if (!targetId) {
 					const receiverPathHintKey = resolveReferenceReceiverPathHintKey(ref, file, declByFileAndKey, declHints, prefabClasses, objectClasses, this.globalsByKey);
 					if (receiverPathHintKey) {
 						const targetKey = appendSymbolKey(getPathHintSymbolKey(receiverPathHintKey), ref.name);
-						targetId = declByFileAndKey.get(fileSymbolKey(getPathHintFile(receiverPathHintKey), targetKey)) ?? null;
+						targetId = declByFileAndKey.get(fileSymbolKey(getPathHintFile(receiverPathHintKey), targetKey));
 					}
 				}
 				ref.target = targetId;
@@ -1310,7 +1302,7 @@ class SemanticBuilder {
 
 	private assignMember(member: LuaMemberExpression): AssignmentTargetInfo {
 		const baseInfo = this.visitExpression(member.base, { tableBaseDecl: null, tableBasePath: null });
-		const basePath = baseInfo ? baseInfo.namePath : extractNamePath(member.base);
+		const basePath = resolveReferencedBasePath(baseInfo, member.base);
 		const baseDecl = baseInfo ? baseInfo.decl : null;
 		const namePath = basePath ? appendToNamePath(basePath, member.identifier) : [member.identifier];
 		const range = buildPropertyRange(member, this.tokenMap, this.path);
@@ -1328,7 +1320,7 @@ class SemanticBuilder {
 	private assignIndex(indexExpression: LuaIndexExpression): AssignmentTargetInfo {
 		const baseInfo = this.visitExpression(indexExpression.base, { tableBaseDecl: null, tableBasePath: null });
 		this.visitExpression(indexExpression.index, { tableBaseDecl: null, tableBasePath: null });
-		const namePath = baseInfo ? baseInfo.namePath : extractNamePath(indexExpression.base);
+		const namePath = resolveReferencedBasePath(baseInfo, indexExpression.base);
 		return {
 			decl: baseInfo ? baseInfo.decl : null,
 			namePath,
@@ -1337,9 +1329,7 @@ class SemanticBuilder {
 	}
 
 	private recordMethodReference(callExpression: LuaCallExpression, calleeInfo: ResolvedNamePath): void {
-		let basePath = calleeInfo?.hintKey && isPathHintKey(calleeInfo.hintKey)
-			? getPathHintSymbolKeyParts(calleeInfo.hintKey)
-			: (calleeInfo ? calleeInfo.namePath : extractNamePath(callExpression.callee));
+		let basePath = resolveReferencedBasePath(calleeInfo, callExpression.callee);
 		if (basePath
 			&& basePath.length === 1
 			&& basePath[0] === 'self'
@@ -1352,7 +1342,7 @@ class SemanticBuilder {
 		const receiverSymbolKey = calleeInfo?.decl
 			? calleeInfo.decl.symbolKey
 			: (calleeInfo?.namePath ? joinNamePath(calleeInfo.namePath) : null);
-		const receiverHintKey = calleeInfo?.hintKey ?? null;
+		const receiverHintKey = calleeInfo ? calleeInfo.hintKey : null;
 		const namePath = basePath ? appendToNamePath(basePath, callExpression.methodName!) : [callExpression.methodName!];
 		const tokenInfo = findMethodToken(callExpression, this.tokens, this.tokenMap);
 		const range = tokenInfo ? buildRangeFromToken(tokenInfo, this.path) : callExpression.range;
@@ -1431,9 +1421,7 @@ class SemanticBuilder {
 
 	private handleMemberExpression(member: LuaMemberExpression, context: ExpressionContext, isWrite: boolean): ResolvedNamePath {
 		const baseInfo = this.visitExpression(member.base, context);
-		const basePath = baseInfo?.hintKey && isPathHintKey(baseInfo.hintKey)
-			? getPathHintSymbolKeyParts(baseInfo.hintKey)
-			: (baseInfo ? baseInfo.namePath : extractNamePath(member.base));
+		const basePath = resolveReferencedBasePath(baseInfo, member.base);
 		const namePath = basePath ? appendToNamePath(basePath, member.identifier) : [member.identifier];
 		const range = buildPropertyRange(member, this.tokenMap, this.path);
 		const key = joinNamePath(namePath);
@@ -1448,7 +1436,7 @@ class SemanticBuilder {
 			target: targetId,
 			isWrite,
 			receiverSymbolKey: baseInfo?.decl ? baseInfo.decl.symbolKey : (baseInfo?.namePath ? joinNamePath(baseInfo.namePath) : null),
-			receiverHintKey: baseInfo?.hintKey ?? null,
+			receiverHintKey: baseInfo ? baseInfo.hintKey : null,
 		});
 		return { namePath, decl, hintKey: decl ? this.getDeclValueHint(decl) : null };
 	}
@@ -1593,8 +1581,8 @@ class SemanticBuilder {
 			range: options.range,
 			target: options.target,
 			isWrite: options.isWrite,
-			receiverSymbolKey: options.receiverSymbolKey ?? null,
-			receiverHintKey: options.receiverHintKey ?? null,
+			receiverSymbolKey: options.receiverSymbolKey,
+			receiverHintKey: options.receiverHintKey,
 		};
 		this.refs.push(ref);
 		const targetDecl = options.target ? this.declById.get(options.target)  : null;
@@ -1621,9 +1609,9 @@ class SemanticBuilder {
 			const range = buildRangeFromToken(tokenInfo, this.path);
 			let targetDecl: InternalDecl = null;
 			if (namePath.length === 1) {
-				targetDecl = this.resolveName(identifier) ?? this.globalsByKey.get(identifier) ?? null;
+				targetDecl = this.resolveName(identifier) ?? this.globalsByKey.get(identifier);
 			} else {
-				targetDecl = this.tableFields.get(joinNamePath(namePath)) ?? null;
+				targetDecl = this.tableFields.get(joinNamePath(namePath));
 			}
 			this.recordReference({
 				namePath,
@@ -1640,7 +1628,8 @@ class SemanticBuilder {
 	}
 
 	private getDeclValueHint(decl: InternalDecl): SemanticHintKey {
-		return this.declValueHints.get(decl.id) ?? null;
+		const hintKey = this.declValueHints.get(decl.id);
+		return hintKey ? hintKey : null;
 	}
 
 	private resolveCallHintKey(callExpression: LuaCallExpression): SemanticHintKey {
@@ -1917,10 +1906,12 @@ function resolveHintKeyToPathHintKey(
 		return hintKey;
 	}
 	if (isPrefabHintKey(hintKey)) {
-		return prefabClasses.get(getHintPayload(hintKey)) ?? null;
+		const pathHintKey = prefabClasses.get(getHintPayload(hintKey));
+		return pathHintKey ? pathHintKey : null;
 	}
 	if (isObjectHintKey(hintKey)) {
-		return objectClasses.get(getHintPayload(hintKey)) ?? null;
+		const pathHintKey = objectClasses.get(getHintPayload(hintKey));
+		return pathHintKey ? pathHintKey : null;
 	}
 	return null;
 }
@@ -1954,7 +1945,8 @@ function resolveReferenceReceiverPathHintKey(
 	if (!globalDeclId) {
 		return null;
 	}
-	return declHints.get(globalDeclId) ?? null;
+	const hintKey = declHints.get(globalDeclId);
+	return hintKey ? hintKey : null;
 }
 
 function definitionLookupKey(range: LuaSourceRange, namePath: readonly string[]): string {
@@ -2031,6 +2023,16 @@ function extractNamePath(expression: LuaExpression): string[] {
 		default:
 			return null;
 	}
+}
+
+function resolveReferencedBasePath(baseInfo: ResolvedNamePath, expression: LuaExpression): string[] {
+	if (baseInfo?.hintKey && isPathHintKey(baseInfo.hintKey)) {
+		return getPathHintSymbolKeyParts(baseInfo.hintKey);
+	}
+	if (baseInfo) {
+		return baseInfo.namePath;
+	}
+	return extractNamePath(expression);
 }
 
 function resolveDirectCallName(expression: LuaExpression): string {
@@ -2333,85 +2335,4 @@ export function symbolKindLabel(kind: LuaSymbolEntry['kind']): string {
 		default:
 			return 'SET';
 	}
-}
-
-export function symbolSourceLabel(entry: LuaSymbolEntry): string {
-	const path = entry.location.path;
-	if (!path) {
-		return null;
-	}
-	return computeSourceLabel(path, entry.location.path ?? '<anynomous>');
-}
-
-export function refreshSymbolCatalog(force: boolean): void {
-	const scope: 'local' | 'global' = ide_state.symbolSearchGlobal ? 'global' : 'local';
-	let path: string = null;
-	if (scope === 'local') {
-		const context = getActiveCodeTabContext();
-		path = context.descriptor?.path;
-	}
-	const existing = ide_state.symbolCatalogContext;
-	const unchanged = existing !== null
-		&& existing.scope === scope
-		&& (scope === 'global'
-			|| existing.path === path);
-	if (!force && unchanged) {
-		return;
-	}
-	let entries: LuaSymbolEntry[] = [];
-	try {
-		if (scope === 'global') {
-			entries = listGlobalLuaSymbols();
-		} else {
-			entries = listLuaSymbols(path);
-		}
-	} catch (error) {
-		const message = extractErrorMessage(error);
-		ide_state.symbolCatalog = [];
-		ide_state.symbolSearchMatches = [];
-		ide_state.symbolSearchSelectionIndex = -1;
-		ide_state.symbolSearchDisplayOffset = 0;
-		ide_state.symbolSearchHoverIndex = -1;
-		ide_state.showMessage(`Failed to list symbols: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
-		return;
-	}
-	ide_state.symbolCatalogContext = { scope, path };
-	const deduped: LuaSymbolEntry[] = [];
-	const seen = new Set<string>();
-	for (let index = 0; index < entries.length; index += 1) {
-		const entry = entries[index];
-		const key = symbolCatalogDedupKey(entry);
-		if (seen.has(key)) {
-			continue;
-		}
-		seen.add(key);
-		deduped.push(entry);
-	}
-	entries = deduped;
-	const catalogEntries = entries.map((entry) => {
-		const display = entry.path && entry.path.length > 0 ? entry.path : entry.name;
-		const sourceLabel = scope === 'global' ? symbolSourceLabel(entry) : null;
-		const combinedKey = sourceLabel
-			? `${display} ${sourceLabel}`.toLowerCase()
-			: display.toLowerCase();
-		return {
-			symbol: entry,
-			displayName: display,
-			searchKey: combinedKey,
-			line: entry.location.range.startLine,
-			kindLabel: symbolKindLabel(entry.kind),
-			sourceLabel,
-		};
-	}).sort((a, b) => {
-		if (a.line !== b.line) {
-			return a.line - b.line;
-		}
-		if (a.displayName !== b.displayName) {
-			return a.displayName.localeCompare(b.displayName);
-		}
-		const aSource = a.sourceLabel ?? '';
-		const bSource = b.sourceLabel ?? '';
-		return aSource.localeCompare(bSource);
-	});
-	ide_state.symbolCatalog = catalogEntries;
 }

@@ -7,7 +7,7 @@ import * as constants from './constants';
 import { ide_state } from './ide_state';
 import { api } from '../runtime';
 import { drawEditorText } from './text_renderer';
-import { markDiagnosticsDirty } from './diagnostics';
+import { markAllDiagnosticsDirty } from './diagnostics';
 import { resetBlink } from './render/render_caret';
 
 type PanelLayout = {
@@ -513,7 +513,7 @@ export function toggleProblemsPanel(): void {
 
 export function showProblemsPanel(): void {
 	ide_state.problemsPanel.show();
-	markDiagnosticsDirty();
+	markAllDiagnosticsDirty();
 	// ide_state.problemsPanel.setFocused(true);
 }
 

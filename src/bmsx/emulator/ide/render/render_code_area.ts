@@ -99,7 +99,7 @@ export function renderCodeArea(): void {
 	const gotoVisualIndex = activeGotoHighlight
 		? ide_state.layout.positionToVisualIndex(ide_state.buffer, activeGotoHighlight.row, activeGotoHighlight.startColumn)
 		: null;
-	const activePath = getActiveCodeTabContext()?.descriptor?.path;
+	const activePath = getActiveCodeTabContext().descriptor.path;
 	const breakpointsForChunk = getBreakpointsForChunk(activePath);
 	const cursorVisualIndex = ide_state.layout.positionToVisualIndex(ide_state.buffer, ide_state.cursorRow, ide_state.cursorColumn);
 	const inlineCompletionPreview = ide_state.completion.getInlineCompletionPreview();

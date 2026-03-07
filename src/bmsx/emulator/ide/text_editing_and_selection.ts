@@ -15,6 +15,7 @@ import { $ } from '../../core/engine_core';
 import { clamp } from '../../utils/clamp';
 import { ide_state } from './ide_state';
 import type { EditContext, Position } from './types';
+import { getActiveCodeTabContext } from './editor_tabs';
 import {
 	revealCursor,
 	clampCursorColumn,
@@ -1233,7 +1234,7 @@ export function applyDocumentFormatting(): void {
 		updateDesiredColumn();
 		resetBlink();
 		revealCursor();
-		markDiagnosticsDirty();
+		markDiagnosticsDirty(getActiveCodeTabContext().id);
 		markTextMutated();
 		ide_state.showMessage('Document formatted', constants.COLOR_STATUS_SUCCESS, 1.6);
 	} catch (error) {

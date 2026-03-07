@@ -4,7 +4,6 @@ import type {
 	LuaDefinitionLocation,
 	LuaHoverRequest,
 	LuaHoverResult,
-	LuaSymbolEntry,
 	ResourceDescriptor,
 } from '../types';
 import { EditorFont } from '../editor_font';
@@ -16,7 +15,7 @@ import { clamp } from '../../utils/clamp';
 import { tokenKeyFromId } from '../../util/asset_tokens';
 import { CompletionController } from './completion_controller';
 import { drawProblemsPanel, ProblemsPanelController } from './problems_panel';
-import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
+import { computeAggregatedEditorDiagnostics, markAllDiagnosticsDirty, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
 import {
 	createEntryTabContext,
 	createLuaCodeTabContext,
@@ -118,7 +117,8 @@ import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRu
 import { point_in_rect } from '../../utils/rect_operations';
 import { lower_bound } from '../../utils/lower_bound';
 import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
-import { LuaSemanticWorkspace, refreshSymbolCatalog, symbolPriority } from './semantic_model';
+import { LuaSemanticWorkspace, symbolPriority } from './semantic_model';
+import { refreshSymbolCatalog } from './symbol_catalog';
 import { extractErrorMessage } from '../../lua/luavalue';
 import { Viewport } from '../../rompack/rompack';
 
@@ -163,7 +163,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 	applyViewportSize(viewport);
 	ide_state.clockNow = $.platform.clock.now;
 	ide_state.semanticWorkspace = new LuaSemanticWorkspace();
-	setFontVariant(ide_state.fontVariant);
+	configureFontVariant(ide_state.fontVariant);
 	ide_state.searchField = createInlineTextField();
 	ide_state.symbolSearchField = createInlineTextField();
 	ide_state.resourceSearchField = createInlineTextField();
@@ -203,7 +203,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 		characterAdvance: (char) => ide_state.font.advance(char),
 		get lineHeight(): number { return ide_state.font.lineHeight; },
 		getActiveCodeTabContext: () => getActiveCodeTabContext(),
-		resolveHoverPath: (ctx: CodeTabContext) => (ctx ? ctx.descriptor.path : '<anynomous>'), // TODO: Still needed?
+		resolveHoverPath: (ctx: CodeTabContext) => ctx.descriptor.path,
 		getSemanticDefinitions: () => getActiveSemanticDefinitions(),
 		getLuaModuleAliases: (path) => getLuaModuleAliases(path),
 		getMemberCompletionItems: (request) => buildMemberCompletionItems(request),
@@ -650,20 +650,6 @@ export function symbolSearchVisibleResultCount(): number {
 	const remaining = Math.max(0, ide_state.symbolSearchMatches.length - ide_state.symbolSearchDisplayOffset);
 	const maxResults = symbolSearchPageSize();
 	return Math.min(remaining, maxResults);
-}
-
-export function symbolCatalogDedupKey(entry: LuaSymbolEntry): string {
-	const { location, kind, name } = entry;
-	const path = location.path ?? '';
-	const normalizedPath = location.path ?? '';
-	const locationKey = normalizedPath.length > 0
-		? normalizedPath
-		: (path.length > 0 ? path : '');
-	const startLine = location.range.startLine;
-	const startColumn = location.range.startColumn;
-	const endLine = location.range.endLine;
-	const endColumn = location.range.endColumn;
-	return `${kind}|${name}|${locationKey}|${startLine}:${startColumn}|${endLine}:${endColumn}`;
 }
 
 export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: number): void {
@@ -1159,7 +1145,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
-		const path = context.descriptor?.path;
+		const path = context.descriptor.path;
 		const isActive = activeId && contextId === activeId;
 		const cached = ide_state.diagnosticsCache.get(contextId);
 		const buffer = isActive ? ide_state.buffer : context.buffer;
@@ -1169,15 +1155,8 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			continue;
 		}
 		const source = getTextSnapshot(buffer);
-		if (source.length === 0) {
-			ide_state.diagnosticsCache.delete(contextId);
-			ide_state.dirtyDiagnosticContexts.delete(contextId);
-			continue;
-		}
 		const input: DiagnosticContextInput = {
 			id: context.id,
-			title: context.title,
-			descriptor: context.descriptor,
 			path,
 			source,
 			lines: splitText(source),
@@ -1287,13 +1266,13 @@ export function markDiagnosticsDirtyForChunk(path: string): void {
 
 export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] {
 	const context = getActiveCodeTabContext();
-	const path = context.descriptor?.path ?? '<anynomous>';
+	const path = context.descriptor.path;
 	return ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, path);
 }
 
 export function getLuaModuleAliases(path: string): Map<string, string> {
 	const activeContext = getActiveCodeTabContext();
-	const targetChunk = path ?? activeContext.descriptor?.path ?? '<anynomous>';
+	const targetChunk = path || activeContext.descriptor.path;
 	ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, targetChunk);
 	const data = ide_state.semanticWorkspace.getFileData(targetChunk);
 	if (!data || data.moduleAliases.length === 0) {
@@ -1317,7 +1296,7 @@ export function findContextByChunk(path: string): CodeTabContext {
 		if (descriptor) {
 			continue;
 		}
-		const aliases: string[] = ['__entry__', '<anynomous>'];
+		const aliases: string[] = ['__entry__'];
 		for (let index = 0; index < aliases.length; index += 1) {
 			const alias = aliases[index];
 			if (alias === path) {
@@ -1596,13 +1575,13 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	if (ide_state.createResourceWorking) {
 		return;
 	}
-	let normalizedPath: string;
+	let resourcePath: string;
 	let directory: string;
 	try {
-		const result = normalizeCreateResourceRequest(ide_state.createResourcePath);
-		normalizedPath = result.path;
+		const result = parseCreateResourceRequest(ide_state.createResourcePath);
+		resourcePath = result.path;
 		directory = result.directory;
-		applyCreateResourceFieldText(normalizedPath, true);
+		applyCreateResourceFieldText(resourcePath, true);
 		ide_state.createResourceError = null;
 	} catch (error) {
 		const message = extractErrorMessage(error);
@@ -1615,7 +1594,7 @@ export async function confirmCreateResourcePrompt(): Promise<void> {
 	resetBlink();
 	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
-		const descriptor = await createLuaResource({ path: normalizedPath, contents });
+		const descriptor = await createLuaResource({ path: resourcePath, contents });
 		ide_state.lastCreateResourceDirectory = directory;
 		ide_state.pendingResourceSelectionAssetId = descriptor.asset_id;
 		if (ide_state.resourcePanelVisible) {
@@ -1652,7 +1631,7 @@ export function isValidCreateResourceCharacter(value: string): boolean {
 	return value === '_' || value === '-' || value === '.' || value === '/';
 }
 
-export function normalizeCreateResourceRequest(rawPath: string): { path: string; asset_id: string; directory: string } {
+export function parseCreateResourceRequest(rawPath: string): { path: string; asset_id: string; directory: string } {
 	const candidate = rawPath;
 	const slashIndex = candidate.lastIndexOf('/');
 	const directory = slashIndex === -1 ? '' : candidate.slice(0, slashIndex + 1);
@@ -1781,7 +1760,6 @@ export function openReferenceSearchPopup(): void {
 	ide_state.renameController.cancel();
 	const referenceContext = buildProjectReferenceContext(context);
 	const result = resolveReferenceLookup({
-		layout: ide_state.layout,
 		workspace: ide_state.semanticWorkspace,
 		buffer: ide_state.buffer,
 		textVersion: ide_state.textVersion,
@@ -1827,7 +1805,6 @@ export function openRenamePrompt(): void {
 	const context = getActiveCodeTabContext();
 	const referenceContext = buildProjectReferenceContext(context);
 	const started = ide_state.renameController.begin({
-		layout: ide_state.layout,
 		workspace: ide_state.semanticWorkspace,
 		buffer: ide_state.buffer,
 		textVersion: ide_state.textVersion,
@@ -1984,9 +1961,7 @@ export function focusEditorFromRename(): void {
 }
 
 export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext): ReferenceCatalogEntry[] {
-	const descriptor = context ? context.descriptor : null;
-	const normalizedPath = descriptor && descriptor.path ? descriptor.path : null;
-	const path = descriptor?.path ?? normalizedPath ?? '<anynomous>';
+	const path = context.descriptor.path;
 	const activeLines = splitText(getTextSnapshot(ide_state.buffer));
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: getActiveCodeTabContext(),
@@ -2184,8 +2159,7 @@ export function refreshResourceCatalog(): void {
 	}
 	descriptors = augmented;
 	const entries: ResourceCatalogEntry[] = descriptors.map((descriptor) => {
-		const normalizedPath = descriptor.path.replace(/\\/g, '/');
-		const displayPathSource = normalizedPath.length > 0 ? normalizedPath : (descriptor.asset_id ?? '');
+		const displayPathSource = descriptor.path.length > 0 ? descriptor.path : (descriptor.asset_id ?? '');
 		const displayPath = displayPathSource.length > 0 ? displayPathSource : '<unnamed>';
 		const typeLabel = descriptor.type ? descriptor.type.toUpperCase() : '';
 		const assetLabel = descriptor.asset_id && descriptor.asset_id !== displayPath ? descriptor.asset_id : null;
@@ -2547,7 +2521,7 @@ export function createNavigationEntry(): NavigationHistoryEntry {
 	if (!context) {
 		return null;
 	}
-	const path = context.descriptor?.path;
+	const path = context.descriptor.path;
 	const maxRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
 	const row = clamp(ide_state.cursorRow, 0, maxRowIndex);
 	const lineLen = ide_state.buffer.getLineEndOffset(row) - ide_state.buffer.getLineStartOffset(row);
@@ -3161,21 +3135,11 @@ export function updateDesiredColumn(): void {
 
 export async function save(): Promise<void> {
 	const context = getActiveCodeTabContext();
-	if (!context) {
-		return;
-	}
 	const source = getTextSnapshot(ide_state.buffer);
-	const descriptor = context.descriptor;
-	let targetPath = descriptor?.path;
-	if (!targetPath) {
-		openCreateResourcePrompt();
-		return;
-	}
+	const targetPath = context.descriptor.path;
 	try {
-		if (targetPath) {
-			await saveLuaResourceSource(targetPath, source);
-			setWorkspaceCachedSources([targetPath, buildDirtyFilePath(targetPath)], source);
-		}
+		await saveLuaResourceSource(targetPath, source);
+		setWorkspaceCachedSources([targetPath, buildDirtyFilePath(targetPath)], source);
 		ide_state.dirty = false;
 		ide_state.savePointDepth = ide_state.undoStack.length;
 		context.savePointDepth = ide_state.savePointDepth;
@@ -3441,7 +3405,7 @@ export function updateViewport(viewport: Viewport): void {
 	rewrapRuntimeErrorOverlays();
 }
 
-export function setFontVariant(variant: FontVariant): void {
+function configureFontVariant(variant: FontVariant): void {
 	ide_state.fontVariant = variant;
 	ide_state.font = new EditorFont(variant);
 	ide_state.lineHeight = ide_state.font.lineHeight;
@@ -3468,12 +3432,16 @@ export function setFontVariant(variant: FontVariant): void {
 	}
 	ide_state.layout.invalidateAllHighlights();
 	ide_state.layout.markVisualLinesDirty();
+}
+
+export function setFontVariant(variant: FontVariant): void {
+	configureFontVariant(variant);
 	ensureVisualLines();
 	ide_state.cursorRevealSuspended = false;
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
 	requestSemanticRefresh();
-	markDiagnosticsDirty();
+	markDiagnosticsDirty(getActiveCodeTabContext().id);
 }
 
 export function toggleWordWrap(): void {
@@ -3590,7 +3558,7 @@ export function closeActiveTab(): void {
 export function resetEditorContent(): void {
 	ide_state.buffer = new PieceTreeBuffer('');
 	ide_state.layout.markVisualLinesDirty();
-	markDiagnosticsDirty();
+	markAllDiagnosticsDirty();
 	ide_state.cursorRow = 0;
 	ide_state.cursorColumn = 0;
 	ide_state.scrollRow = 0;

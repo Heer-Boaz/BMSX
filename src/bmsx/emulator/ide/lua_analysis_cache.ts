@@ -6,7 +6,7 @@ import { splitText } from './source_text';
 export type LuaAnalysisEntry = {
 	path: string;
 	source: string;
-	version: number | null;
+	version?: number;
 	lines: readonly string[];
 	parsed: ParsedLuaChunk;
 	syntaxError?: LuaSyntaxError | null;
@@ -25,10 +25,10 @@ export function getCachedLuaParse(options: {
 	withSyntaxError?: boolean;
 }): LuaAnalysisEntry {
 	const cacheKey = options.path;
-	const version = options.version ?? null;
+	const version = options.version;
 	const cached = analysisCache.get(cacheKey);
 	if (cached) {
-		const versionMatches = version !== null && cached.version === version;
+		const versionMatches = version !== undefined && cached.version === version;
 		if (versionMatches || cached.source === options.source) {
 			cached.lastAccessMs = Date.now();
 			return cached;

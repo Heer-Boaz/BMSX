@@ -564,7 +564,7 @@ export function showRuntimeError(
 	revealCursor();
 	resetBlink();
 	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
-	const locationLabel = formatRuntimeErrorLocation(path ?? null, processedLine, normalizedColumn);
+	const locationLabel = formatRuntimeErrorLocation(path, processedLine, normalizedColumn);
 	const overlayMessage = locationLabel
 		? `${locationLabel}: ${normalizedMessage}`
 		: (processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage);

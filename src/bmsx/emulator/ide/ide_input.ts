@@ -32,6 +32,8 @@ import { toggleBreakpointForEditorRow } from './ide_debugger';
 import { buildEditorContextMenuEntries, buildIncomingCallHierarchyView } from './code_reference';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from './render/render_context_menu';
 import { listResources } from '../workspace';
+import { prepareSemanticWorkspaceForEditorBuffer } from './semantic_workspace_sync';
+import { getTextSnapshot, splitText } from './source_text';
 
 export const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
 export const MENU_COMMANDS = [
@@ -1692,11 +1694,13 @@ function executeEditorContextMenuAction(action: EditorContextMenuAction, token: 
 				return;
 			}
 			const path = context.descriptor.path;
-			const model = ide_state.layout.getSemanticModel(ide_state.buffer, ide_state.textVersion, path);
-			if (!model) {
-				ide_state.showMessage('References unavailable', constants.COLOR_STATUS_WARNING, 1.6);
-				return;
-			}
+			const source = getTextSnapshot(ide_state.buffer);
+			prepareSemanticWorkspaceForEditorBuffer({
+				path,
+				source,
+				lines: splitText(source),
+				version: ide_state.textVersion,
+			});
 			const resolution = ide_state.semanticWorkspace.findReferencesByPosition(path, token.row + 1, token.startColumn + 1);
 			if (!resolution) {
 				ide_state.showMessage(`Definition not found for ${token.expression ?? token.text}`, constants.COLOR_STATUS_WARNING, 1.8);

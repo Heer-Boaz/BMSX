@@ -551,7 +551,7 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 
 export function ensureVisualLines(): void {
 	const activeContext = getActiveCodeTabContext();
-	const path = activeContext?.descriptor?.path ?? '<anynomous>';
+	const path = activeContext.descriptor.path;
 	ide_state.scrollRow = ide_state.layout.ensureVisualLines({
 		buffer: ide_state.buffer,
 		wordWrapEnabled: ide_state.wordWrapEnabled,
@@ -695,7 +695,7 @@ export function markTextMutated(): void {
 		context.saveGeneration = ide_state.saveGeneration;
 	}
 	ide_state.maxLineLengthDirty = true;
-	markDiagnosticsDirty();
+	markDiagnosticsDirty(getActiveCodeTabContext().id);
 	bumpTextVersion();
 	clearReferenceHighlights();
 	updateActiveContextDirtyFlag();

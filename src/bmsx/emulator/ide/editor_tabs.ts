@@ -126,7 +126,7 @@ export function activateCodeEditorTab(tabId: string): void {
 
 	const cached = ide_state.diagnosticsCache.get(context.id);
 	const cachedVersion = cached?.version ?? -1;
-	const cachedChunk = cached?.path ?? null;
+	const cachedChunk = cached?.path;
 	const path = resolvePath(context.descriptor);
 	if (!cached || cachedVersion !== ide_state.textVersion || cachedChunk !== path) {
 		markDiagnosticsDirty(context.id);

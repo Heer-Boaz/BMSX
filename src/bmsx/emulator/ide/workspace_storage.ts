@@ -16,7 +16,6 @@ import {
 	buildWorkspaceDirtyDir,
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceMetadataPath,
-	buildWorkspaceScratchDirtyPath,
 	buildWorkspaceStateFilePath,
 	buildWorkspaceStorageKey,
 	joinWorkspacePaths,
@@ -138,13 +137,6 @@ export function buildDirtyFilePath(resourcePath: string): string {
 		throw new Error('[WorkspaceStorage] Workspace storage not configured.');
 	}
 	return buildWorkspaceDirtyEntryPath(storagePaths.projectRootPath, resourcePath);
-}
-
-export function buildScratchDirtyFilePath(contextId: string): string {
-	if (!storagePaths) {
-		throw new Error('[WorkspaceStorage] Workspace storage not configured.');
-	}
-	return buildWorkspaceScratchDirtyPath(storagePaths.projectRootPath, contextId);
 }
 
 export async function readWorkspaceStateFile(): Promise<string> {
@@ -359,40 +351,33 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 }
 
 export function serializeDescriptor(descriptor: ResourceDescriptor): SerializedDescriptor {
-	return descriptor ? {
+	return {
 		path: descriptor.path,
 		type: descriptor.type,
-	} : null;
+	};
 }
 
 export function resolveSerializedDescriptor(serialized: SerializedDescriptor): ResourceDescriptor {
-	if (!serialized) {
-		return null;
-	}
-	const asset = $.lua_sources.path2lua[serialized.path];
-	return asset ? { path: serialized.path, type: serialized.type } : null;
+	return { path: serialized.path, type: serialized.type };
 }
 
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {
 	for (const entry of entries) {
 		const descriptor = resolveSerializedDescriptor(entry.descriptor);
 		let context = ide_state.codeTabContexts.get(entry.contextId);
-		if (!context && descriptor) {
+		if (!context) {
 			openLuaCodeTab(descriptor);
 			context = ide_state.codeTabContexts.get(entry.contextId);
-		}
-		if (!context) {
-			continue;
 		}
 		const contents = await readDirtyBuffer(entry.dirtyPath);
 		if (contents === null) {
 			continue;
 		}
-		const saved = descriptor ? await fetchWorkspaceFile(descriptor.path) : null;
+		const saved = await fetchWorkspaceFile(descriptor.path);
 		const savedContents = saved?.contents;
 		if (savedContents !== null && savedContents !== contents) {
 			await deleteDirtyBuffer(entry.dirtyPath);
-			deleteWorkspaceCachedSources([entry.dirtyPath, descriptor?.path]);
+			deleteWorkspaceCachedSources([entry.dirtyPath, descriptor.path]);
 			applySourceToContext(context, savedContents, entry);
 			context.lastSavedSource = savedContents;
 			context.dirty = false;
@@ -406,7 +391,7 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 			}
 			continue;
 		}
-		setWorkspaceCachedSources([entry.dirtyPath, descriptor?.path], contents);
+		setWorkspaceCachedSources([entry.dirtyPath, descriptor.path], contents);
 		applySourceToContext(context, contents, entry);
 		context.dirty = true;
 		context.savePointDepth = -1;
@@ -563,19 +548,11 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 		if (!context.dirty) {
 			continue;
 		}
-		const descriptor = serializeDescriptor(context.descriptor );
+		const descriptor = serializeDescriptor(context.descriptor);
 		const metadata = captureContextSnapshotMetadata(context);
-		let dirtyPath: string;
-		try {
-			dirtyPath = descriptor
-				? buildDirtyFilePath(descriptor.path)
-				: buildScratchDirtyFilePath(context.id);
-		} catch (error) {
-			console.info(`[WorkspaceStorage] Failed to build dirty file path for context ${context.id}: ${error}`);
-			continue;
-		}
+		const dirtyPath = buildDirtyFilePath(descriptor.path);
 		const text = captureContextText(context);
-		setWorkspaceCachedSources([dirtyPath, descriptor?.path], text);
+		setWorkspaceCachedSources([dirtyPath, descriptor.path], text);
 		entries.set(dirtyPath, {
 			contextId: context.id,
 			descriptor,
@@ -650,7 +627,7 @@ function buildWorkspaceAutosaveSignature(payload: WorkspaceAutosavePayload): str
 	const dirtyParts = payload.dirtyFiles
 		.map((dirty) => {
 			const selection = dirty.selectionAnchor ? `${dirty.selectionAnchor.row}:${dirty.selectionAnchor.column}` : '';
-			const descriptorKey = dirty.descriptor ? `${dirty.descriptor.path}:${dirty.descriptor.type}` : '';
+			const descriptorKey = `${dirty.descriptor.path}:${dirty.descriptor.type}`;
 			return [
 				dirty.dirtyPath,
 				descriptorKey,
@@ -684,7 +661,7 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 			continue;
 		}
 		await writeDirtyBuffer(dirtyPath, entry.text);
-		setWorkspaceCachedSources([dirtyPath, entry.descriptor?.path], entry.text);
+		setWorkspaceCachedSources([dirtyPath, entry.descriptor.path], entry.text);
 	}
 	for (const cachedPath of Array.from(listWorkspaceCachedPaths())) {
 		const isDirtyPath = cachedPath.includes(`/${WORKSPACE_DIRTY_DIR}/`);

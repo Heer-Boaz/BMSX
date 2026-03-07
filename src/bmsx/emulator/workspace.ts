@@ -99,13 +99,6 @@ export function buildWorkspaceDirtyEntryPath(projectRootPath: string, resourcePa
 	return joinWorkspacePaths(buildWorkspaceDirtyDir(projectRootPath), ...segments);
 }
 
-export function buildWorkspaceScratchDirtyPath(projectRootPath: string, contextId: string): string {
-	const sanitized = sanitizeWorkspaceFilenameSegment(contextId);
-	const baseName = sanitized.endsWith('.lua') ? sanitized : `${sanitized}.lua`;
-	const tempName = baseName.startsWith('~') ? baseName : `~${baseName}`;
-	return joinWorkspacePaths(buildWorkspaceDirtyDir(projectRootPath), '__scratch__', tempName);
-}
-
 export function buildWorkspaceStateFilePath(projectRootPath: string): string {
 	return joinWorkspacePaths(buildWorkspaceMetadataPath(projectRootPath), WORKSPACE_STATE_FILE);
 }

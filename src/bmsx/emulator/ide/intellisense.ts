@@ -25,6 +25,7 @@ import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTab
 import { ide_state } from './ide_state';
 import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from './lua_identifier_chain';
 import { buildLuaSemanticModel, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type FunctionSignatureInfo } from './semantic_model';
+import { cacheSemanticWorkspaceAnalysis, getOrCreateSemanticWorkspace, prepareSemanticWorkspaceForEditorBuffer, primeSemanticWorkspaceProjectSources, syncSemanticWorkspacePath } from './semantic_workspace_sync';
 import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaCompletionItem, PointerSnapshot } from './types';
 import type { LuaSourceRecord } from '../lua_sources';
@@ -451,13 +452,7 @@ const luaDiagnosticPoolAccessor = Pool.createLazy<MutableLuaDiagnostic>({
 const luaDiagnosticBatch = new ScratchBatchPooled<MutableLuaDiagnostic>(luaDiagnosticPoolAccessor.get());
 
 function getSemanticWorkspace(): LuaSemanticWorkspace {
-	const existing = ide_state.semanticWorkspace;
-	if (existing) {
-		return existing;
-	}
-	const workspace = new LuaSemanticWorkspace();
-	ide_state.semanticWorkspace = workspace;
-	return workspace;
+	return getOrCreateSemanticWorkspace();
 }
 
 type SemanticResolutionInput = {
@@ -515,18 +510,14 @@ function resolveSemanticDataForDiagnostics(input: SemanticResolutionInput): File
 			return workspaceData;
 		}
 	}
-	const workspace = getSemanticWorkspace();
-	workspace.updateFile(pathKey, input.source, input.lines, input.parsed, input.version);
-	const data = workspace.getFileData(pathKey);
+	const data = syncSemanticWorkspacePath({
+		path: pathKey,
+		source: input.source,
+		lines: input.lines,
+		parsed: input.parsed,
+		version: input.version,
+	}, getSemanticWorkspace());
 	if (data) {
-		runtime.pathSemanticCache.set(pathKey, {
-			source: input.source,
-			model: data.model,
-			definitions: data.model.definitions,
-			parsed: input.parsed,
-			lines: input.lines,
-			analysis: data,
-		});
 		return data;
 	}
 	return null;
@@ -1078,7 +1069,7 @@ export function shouldAutoTriggerCompletions(): boolean {
 		clearHoverTooltip();
 		return;
 	}
-	const path = context.descriptor?.path;
+	const path = context.descriptor.path;
 	const request: LuaHoverRequest = {
 		expression: token.expression,
 		path,
@@ -1204,20 +1195,22 @@ export function describeMetadataValue(value: unknown): string {
 }
 export function requestSemanticRefresh(context?: CodeTabContext): void {
 	const activeContext = context ?? getActiveCodeTabContext();
-	const path = activeContext?.descriptor?.path ?? '<anynomous>';
+	const path = activeContext.descriptor.path;
 	ide_state.layout.requestSemanticUpdate(ide_state.buffer, ide_state.textVersion, path);
 }
 export function resolveSemanticDefinitionLocation(
 	context: CodeTabContext,
-	expression: string,
 	usageRow: number,
 	usageColumn: number,
 ): LuaDefinitionLocation {
-	const activeContext = getActiveCodeTabContext();
-	const hoverPath = activeContext?.descriptor?.path;
-	if (!hoverPath) {
-		return null;
-	}
+	const hoverPath = context.descriptor.path;
+	const source = getTextSnapshot(ide_state.buffer);
+	prepareSemanticWorkspaceForEditorBuffer({
+		path: hoverPath,
+		source,
+		lines: splitText(source),
+		version: ide_state.textVersion,
+	});
 	const workspaceSymbol = ide_state.semanticWorkspace.symbolAt(hoverPath, usageRow, usageColumn);
 	if (!workspaceSymbol) {
 		return null;
@@ -1275,7 +1268,7 @@ export function extractHoverExpression(row: number, column: number): { expressio
 		return null;
 	}
 	const context = getActiveCodeTabContext();
-	const path = context ? context.descriptor.path : '<anynomous>';
+	const path = context.descriptor.path;
 	const source = getTextSnapshot(ide_state.buffer);
 	const tokenMatch = findContextMenuTokenMatch(row, safeColumn, path, source);
 	if (tokenMatch && tokenMatch.token.type === LuaTokenType.String) {
@@ -1540,7 +1533,7 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 		}
 	}
 	const context = getActiveCodeTabContext();
-	const path = context ? context.descriptor.path : '<anynomous>';
+	const path = context.descriptor.path;
 	const source = getTextSnapshot(ide_state.buffer);
 	const match = findContextMenuTokenMatch(row, safeColumn, path, source);
 	if (!match) {
@@ -1594,8 +1587,8 @@ export function refreshGotoHoverHighlight(row: number, column: number, context: 
 		&& existing.expression === token.expression) {
 		return;
 	}
-	const path = context?.descriptor?.path;
-	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1);
+	const path = context.descriptor.path;
+	let definition = resolveSemanticDefinitionLocation(context, row + 1, token.startColumn + 1);
 	if (!definition) {
 		const inspection = safeInspectLuaExpression({
 			expression: token.expression,
@@ -1627,14 +1620,13 @@ export function clearReferenceHighlights(): void {
 
 export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	const context = getActiveCodeTabContext();
-	const descriptor = context ? context.descriptor : null;
 	const token = extractHoverExpression(row, column);
 	if (!token) {
 		ide_state.showMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
 		return false;
 	}
-	const path = descriptor?.path;
-	let definition = resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1);
+	const path = context.descriptor.path;
+	let definition = resolveSemanticDefinitionLocation(context, row + 1, token.startColumn + 1);
 	if (!definition) {
 		const inspection = safeInspectLuaExpression({
 			expression: token.expression,
@@ -1645,7 +1637,6 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 		definition = inspection?.definition;
 	}
 	if (!definition) {
-			const resolvedPath = path ?? '<anynomous>';
 			const activeLines = splitText(getTextSnapshot(ide_state.buffer));
 			const environment: ProjectReferenceEnvironment = {
 				activeContext: context,
@@ -1656,7 +1647,7 @@ export function tryGotoDefinitionAt(row: number, column: number): boolean {
 				expression: token.expression,
 				environment,
 				workspace: ide_state.semanticWorkspace,
-				currentPath: resolvedPath,
+				currentPath: path,
 				currentLines: activeLines,
 			});
 		if (projectDefinition) {
@@ -1896,31 +1887,6 @@ export function listLuaBuiltinFunctions(): LuaBuiltinDescriptor[] {
 	return result;
 }
 
-function primeWorkspaceGlobalIndex(workspace: LuaSemanticWorkspace): void {
-	const runtime = Runtime.instance;
-	for (const [path] of Object.entries($.lua_sources.path2lua) as Array<[string, LuaSourceRecord]>) {
-		if (workspace.getFileData(path)) {
-			continue;
-		}
-		const cacheEntry = runtime.pathSemanticCache.get(path);
-		const source = cacheEntry ? cacheEntry.source : runtimeLuaPipeline.resourceSourceForChunk(runtime, path);
-		const lines = cacheEntry?.lines ?? splitText(source);
-		const parsed = cacheEntry ? cacheEntry.parsed : undefined;
-		workspace.updateFile(path, source, lines, parsed, null);
-		const data = workspace.getFileData(path);
-		if (data) {
-			runtime.pathSemanticCache.set(path, {
-				source,
-				model: data.model,
-				definitions: data.model.definitions,
-				parsed: parsed ?? cacheEntry?.parsed,
-				lines: data.lines,
-				analysis: data,
-			});
-		}
-	}
-}
-
 function symbolKindToLuaKind(kind: Decl['kind']): LuaSymbolKind {
 	switch (kind) {
 		case 'tableField':
@@ -1936,7 +1902,7 @@ function symbolKindToLuaKind(kind: Decl['kind']): LuaSymbolKind {
 
 export function listGlobalLuaSymbols(): LuaSymbolEntry[] {
 	const workspace = getSemanticWorkspace();
-	primeWorkspaceGlobalIndex(workspace);
+	primeSemanticWorkspaceProjectSources(workspace);
 	const version = workspace.version;
 	if (globalSymbolsCache.version === version) {
 		return globalSymbolsCache.entries;
@@ -1976,6 +1942,18 @@ export function findStaticDefinitionLocation(chain: ReadonlyArray<string>, usage
 		return null;
 	}
 	if (preferredChunk && usageRow !== null && usageColumn !== null) {
+		const activeContext = getActiveCodeTabContext();
+		if (activeContext.descriptor.path === preferredChunk) {
+			const source = getTextSnapshot(ide_state.buffer);
+			prepareSemanticWorkspaceForEditorBuffer({
+				path: preferredChunk,
+				source,
+				lines: splitText(source),
+				version: ide_state.textVersion,
+			});
+		} else {
+			primeSemanticWorkspaceProjectSources(getSemanticWorkspace());
+		}
 		const workspaceSymbol = ide_state.semanticWorkspace.symbolAt(preferredChunk, usageRow, usageColumn);
 		if (workspaceSymbol) {
 			return buildDefinitionLocationFromRange({
@@ -2146,30 +2124,25 @@ export function buildSemanticModelForChunk(path: string): LuaSemanticModel {
 	const workspace = getSemanticWorkspace();
 	const workspaceData = workspace.getFileData(path);
 	if (workspaceData && workspaceData.source === source) {
-		runtime.pathSemanticCache.set(path, {
-			source,
-			model: workspaceData.model,
-			definitions: workspaceData.model.definitions,
-			parsed: cachedMatch?.parsed,
-			lines: workspaceData.lines,
-			analysis: workspaceData,
-		});
+		cacheSemanticWorkspaceAnalysis(path, source, workspaceData, cachedMatch?.parsed);
 		return workspaceData.model;
 	}
 	const parseEntry = getCachedLuaParse({
 		path,
 		source,
 		lines: cachedMatch?.lines,
-		version: null,
 		withSyntaxError: false,
 		parsed: cachedMatch?.parsed,
 	});
 	const baseLines = parseEntry.lines;
 	const parsed = parseEntry.parsed;
-	workspace.updateFile(path, parseEntry.source, baseLines, parsed, null);
-	const data = workspace.getFileData(path);
+	const data = syncSemanticWorkspacePath({
+		path,
+		source: parseEntry.source,
+		lines: baseLines,
+		parsed,
+	}, workspace);
 	if (data) {
-		runtime.pathSemanticCache.set(path, { source, model: data.model, definitions: data.model.definitions, parsed, lines: baseLines, analysis: data });
 		return data.model;
 	}
 	return null;

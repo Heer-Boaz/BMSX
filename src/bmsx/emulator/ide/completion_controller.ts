@@ -689,7 +689,7 @@ export class CompletionController {
 			return [];
 		}
 		const activeCodeContext = this.host.getActiveCodeTabContext();
-		const path = cached.path ?? this.host.resolveHoverPath(activeCodeContext) ?? '<anynomous>';
+		const path = cached.path || this.host.resolveHoverPath(activeCodeContext);
 		return this.buildLocalCompletionItems(filtered, path );
 	}
 
@@ -697,7 +697,7 @@ export class CompletionController {
 		const key = this.activeCompletionCacheKey();
 		if (!key) return null;
 		const activeCodeContext = this.host.getActiveCodeTabContext();
-		const path = this.host.resolveHoverPath(activeCodeContext) ?? '<anynomous>';
+		const path = this.host.resolveHoverPath(activeCodeContext);
 		const currentVersion = this.host.getTextVersion();
 		const cached = this.localCompletionCache.get(key);
 		if (cached && cached.path === path && cached.parsedVersion === currentVersion) {
@@ -1508,6 +1508,6 @@ export class CompletionController {
 
 	private activeCompletionCacheKey(): string {
 		const context = this.host.getActiveCodeTabContext();
-		return this.host.resolveHoverPath(context) ?? '<anynomous>';
+		return this.host.resolveHoverPath(context);
 	}
 }

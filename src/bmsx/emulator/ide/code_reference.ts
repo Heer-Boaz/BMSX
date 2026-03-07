@@ -10,9 +10,9 @@ import {
 import { listResources } from '../workspace';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
-import { CodeLayout } from './code_layout';
 import { parseLuaIdentifierChain, resolveLuaIdentifierChainRoot } from './lua_identifier_chain';
 import { LuaSemanticWorkspace, Decl, type Ref, type SymbolID } from './semantic_model';
+import { prepareSemanticWorkspaceForEditorBuffer, syncSemanticWorkspacePath } from './semantic_workspace_sync';
 import type { TextBuffer } from './text_buffer';
 import { getTextSnapshot, splitText } from './source_text';
 
@@ -37,16 +37,12 @@ export type ReferenceCatalogEntry = {
 	sourceLabel: string;
 };
 
-export function computeSourceLabel(path: string, fallback: string): string {
-	if (path && path.length > 0) {
-		const normalized = path.replace(/\\/g, '/');
-		const lastSlash = normalized.lastIndexOf('/');
-		if (lastSlash !== -1 && lastSlash + 1 < normalized.length) {
-			return normalized.slice(lastSlash + 1);
-		}
-		return normalized;
+export function computeSourceLabel(path: string): string {
+	const lastSlash = path.lastIndexOf('/');
+	if (lastSlash !== -1 && lastSlash + 1 < path.length) {
+		return path.slice(lastSlash + 1);
 	}
-	return fallback;
+	return path;
 }
 
 export function buildEditorContextMenuEntries(token: EditorContextToken, editable: boolean): EditorContextMenuEntry[] {
@@ -314,7 +310,7 @@ function ensureWorkspaceFileMetadata(path: string, workspace: LuaSemanticWorkspa
 	const meta: FileMetadata = {
 		path,
 		lines: data.lines,
-		sourceLabel: computeSourceLabel(path, path),
+		sourceLabel: computeSourceLabel(path),
 	};
 	metadata.set(path, meta);
 	return meta;
@@ -436,7 +432,7 @@ function buildCallHierarchyLocationLabel(
 		return `${line}`;
 	}
 	const meta = ensureWorkspaceFileMetadata(path, workspace, metadata);
-	const sourceLabel = meta ? meta.sourceLabel : computeSourceLabel(path, path);
+	const sourceLabel = meta ? meta.sourceLabel : computeSourceLabel(path);
 	return `${sourceLabel}:${line}`;
 }
 
@@ -451,7 +447,7 @@ function buildCallHierarchyCallerLabel(
 
 function buildCallHierarchyCallLabel(reference: Ref, workspace: LuaSemanticWorkspace, metadata: Map<string, FileMetadata>): string {
 	const meta = ensureWorkspaceFileMetadata(reference.file, workspace, metadata);
-	const locationLabel = `${meta ? meta.sourceLabel : computeSourceLabel(reference.file, reference.file)}:${reference.range.start.line}`;
+	const locationLabel = `${meta ? meta.sourceLabel : computeSourceLabel(reference.file)}:${reference.range.start.line}`;
 	let snippet = reference.name;
 	if (!meta) {
 		return `${snippet} (${locationLabel})`;
@@ -498,10 +494,9 @@ export function buildIncomingCallHierarchyView(options: BuildIncomingCallHierarc
 	if (!rootDecl) {
 		return null;
 	}
-	const resolvedAllowedPaths = allowedPaths ?? null;
 	const pathCache = new Map<string, CallHierarchyPathIndex>();
 	const visited = new Set<SymbolID>([rootSymbolId]);
-	const nodes = buildIncomingCallHierarchyNodes(rootSymbolId, workspace, pathCache, visited, 0, maxDepth, resolvedAllowedPaths);
+	const nodes = buildIncomingCallHierarchyNodes(rootSymbolId, workspace, pathCache, visited, 0, maxDepth, allowedPaths);
 	if (nodes.length === 0) {
 		return null;
 	}
@@ -672,8 +667,6 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 	};
 	if (bestMeta.path) {
 		location.path = bestMeta.path;
-	} else if (bestMeta.path && bestMeta.path !== '<anynomous>') {
-		location.path = bestMeta.path;
 	}
 	return location;
 }
@@ -681,7 +674,7 @@ export function resolveDefinitionLocationForExpression(options: ResolveDefinitio
 export function referenceEntryKey(entry: ReferenceCatalogEntry): string {
 	const location = entry.symbol.location;
 	const range = location.range;
-	const path = location.path ?? '<anynomous>';
+	const path = location.path;
 	return `${path}:${range.startLine}:${range.startColumn}`;
 }
 
@@ -728,19 +721,24 @@ export function filterReferenceCatalog(options: { catalog: readonly ReferenceCat
 function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileMetadata> {
 	const { workspace, environment, currentPath, currentLines } = options;
 	const metadata: Map<string, FileMetadata> = new Map();
-	const register = (path: string, lines: readonly string[], labelHint: string, version?: number): void => {
+	const register = (path: string, lines: readonly string[], version?: number): void => {
 		if (metadata.has(path)) {
 			return;
 		}
-		const sourceLabel = computeSourceLabel(labelHint ?? path ?? path, path);
-		workspace.updateFile(path, lines.join('\n'), lines, null, version);
+		const sourceLabel = computeSourceLabel(path);
+		syncSemanticWorkspacePath({
+			path,
+			source: lines.join('\n'),
+			lines,
+			version,
+		}, workspace);
 		metadata.set(path, {
 			path,
 			lines,
 			sourceLabel,
 		});
 	};
-	register(currentPath, currentLines, null, environment.activeContext.textVersion);
+	register(currentPath, currentLines, environment.activeContext.textVersion);
 	const activeContext = environment.activeContext;
 	const contexts = Array.from(environment.codeTabContexts);
 	for (let index = 0; index < contexts.length; index += 1) {
@@ -760,7 +758,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (!lines || lines.length === 0) {
 			continue;
 		}
-		register(path, lines, null, context.textVersion);
+			register(path, lines, context.textVersion);
 	}
 	const descriptors = listResources();
 	for (let index = 0; index < descriptors.length; index += 1) {
@@ -777,7 +775,7 @@ function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileM
 		if (!lines || lines.length === 0) {
 			continue;
 		}
-		register(path, lines, null, null);
+			register(path, lines, null);
 	}
 	return metadata;
 }
@@ -920,7 +918,6 @@ function matchToRange(match: SearchMatch): LuaSourceRangeLike {
 export type ExtractIdentifierExpression = (row: number, column: number) => { expression: string; startColumn: number; endColumn: number; };
 
 export type ReferenceLookupOptions = {
-	layout: CodeLayout;
 	workspace: LuaSemanticWorkspace;
 	buffer: TextBuffer;
 	textVersion: number;
@@ -992,12 +989,15 @@ export class ReferenceState {
 
 export function resolveReferenceLookup(options: ReferenceLookupOptions): ReferenceLookupResult {
 	const {
-		layout, workspace, buffer, textVersion, cursorRow, cursorColumn, extractExpression, path,
+		workspace, buffer, textVersion, cursorRow, cursorColumn, extractExpression, path,
 	} = options;
-	const model = layout.getSemanticModel(buffer, textVersion, path);
-	if (!model) {
-		return { kind: 'error', message: 'References unavailable', duration: 1.6 };
-	}
+	const source = getTextSnapshot(buffer);
+	prepareSemanticWorkspaceForEditorBuffer({
+		path,
+		source,
+		lines: splitText(source),
+		version: textVersion,
+	});
 	const identifier = extractExpression(cursorRow, cursorColumn);
 	if (!identifier) {
 		return { kind: 'error', message: 'No identifier at cursor', duration: 1.6 };

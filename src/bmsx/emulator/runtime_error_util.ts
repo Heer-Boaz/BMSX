@@ -249,7 +249,7 @@ export function parseJsStackLine(line: string): StackTraceFrame {
 }
 
 
-export function formatRuntimeErrorLocation(path: string, line: number, column: number): string {
+export function formatRuntimeErrorLocation(path?: string | null, line?: number | null, column?: number | null): string {
 	let label = path && path.length > 0 ? ensureDotSlashPrefix(path) : '';
 	if (line !== null && line !== undefined) {
 		const suffix = column !== null && column !== undefined ? `${line}:${column}` : `${line}`;

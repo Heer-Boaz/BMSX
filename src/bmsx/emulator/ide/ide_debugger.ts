@@ -247,7 +247,7 @@ export function syncRuntimeBreakpoints(): void {
 
 export function getActiveBreakpointPath(): string {
 	const context = getActiveCodeTabContext();
-	return context.descriptor?.path;
+	return context.descriptor.path;
 }
 
 export function toggleBreakpointForEditorRow(row: number = ide_state.cursorRow): boolean {

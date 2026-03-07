@@ -518,11 +518,9 @@ export class ResourcePanelController {
 		const root: Dir = { name: '.', children: new Map(), files: [] };
 		for (const entry of entries) {
 			const rawPath = entry.path;
-			const normalized = rawPath.replace(/\\/g, '/');
-			const parts = normalized.split('/').filter(part => part.length > 0 && part !== '.');
-			const fallbackName = rawPath;
+			const parts = rawPath.split('/').filter(part => part.length > 0 && part !== '.');
 			if (parts.length === 0) {
-				root.files.push({ name: fallbackName, descriptor: entry });
+				root.files.push({ name: rawPath, descriptor: entry });
 				continue;
 			}
 			let current = root;
