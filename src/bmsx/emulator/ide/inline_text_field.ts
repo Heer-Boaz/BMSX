@@ -5,8 +5,8 @@ import { ide_state } from './ide_state';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
 import type { InlineInputOptions, Position, TextField } from './types';
 import { clamp } from '../../utils/clamp';
-import { LuaLexer } from '../../lua/lualexer';
-import { splitText, textFromLines } from './source_text';
+import { LuaLexer } from '../../lua/syntax/lualexer';
+import { splitText, textFromLines } from './text/source_text';
 
 export type InlineFieldMetrics = {
 	measureText: (text: string) => number;

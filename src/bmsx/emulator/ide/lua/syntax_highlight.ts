@@ -1,10 +1,10 @@
-import type { SemanticAnnotations, SymbolKind } from './semantic_model';
-import type { HighlightLine } from './types';
-import * as constants from './constants';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../lua_builtins';
-import { LuaLexer } from '../../lua/lualexer';
-import { KEYWORDS } from '../../lua/luatoken';
-import { clamp } from '../../utils/clamp';
+import type { SemanticAnnotations, SymbolKind } from '../semantic_model';
+import type { HighlightLine } from '../types';
+import * as constants from '../constants';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../lua_builtins';
+import { LuaLexer } from '../../../lua/syntax/lualexer';
+import { KEYWORDS } from '../../../lua/syntax/luatoken';
+import { clamp } from '../../../utils/clamp';
 
 // Lightweight Lua syntax highlighter used by the IDE.
 // Pure functions with no runtime/editor state dependencies beyond provided inputs.

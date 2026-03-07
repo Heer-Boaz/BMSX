@@ -16,7 +16,7 @@ import * as constants from '../constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay';
 import { resetBlink } from './render_caret';
 import { formatRuntimeErrorLocation } from '../../runtime_error_util';
-import { splitText } from '../source_text';
+import { splitText } from '../text/source_text';
 
 export interface ErrorOverlayBounds {
 	left: number;

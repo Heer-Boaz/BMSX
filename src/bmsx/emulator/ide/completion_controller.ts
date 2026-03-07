@@ -1,6 +1,6 @@
 import { clamp } from '../../utils/clamp';
 import { getApiCompletionData, getKeywordCompletions, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaModuleSymbols, type LuaScopedSymbol } from './intellisense';
-import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/lua_ast';
+import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/syntax/lua_ast';
 import {
 	CompletionContext,
 	CompletionSession,
@@ -17,8 +17,8 @@ import { isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shoul
 import { isLuaCommentContext, wrapTextDynamic } from './text_utils';
 import { consumeIdeKey } from './ide_input';
 import { point_in_rect } from '../../utils/rect_operations';
-import { LuaLexer } from '../../lua/lualexer';
-import type { TextBuffer } from './text_buffer';
+import { LuaLexer } from '../../lua/syntax/lualexer';
+import type { TextBuffer } from './text/text_buffer';
 
 export interface CompletionHost {
 	// Editor state accessors

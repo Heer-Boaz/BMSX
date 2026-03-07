@@ -1,7 +1,7 @@
-import type { LuaSyntaxError } from '../../lua/luaerrors';
+import type { LuaSyntaxError } from '../../../lua/luaerrors';
 import type { ParsedLuaChunk } from './lua_parse';
 import { parseLuaChunkWithRecovery } from './lua_parse';
-import { splitText } from './source_text';
+import { splitText } from '../text/source_text';
 
 export type LuaAnalysisEntry = {
 	path: string;

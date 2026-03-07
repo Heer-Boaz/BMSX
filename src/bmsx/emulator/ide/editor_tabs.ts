@@ -26,7 +26,7 @@ import { resetBlink } from './render/render_caret';
 import { listResources } from '../workspace';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
-import { PieceTreeBuffer } from './piece_tree_buffer';
+import { PieceTreeBuffer } from './text/piece_tree_buffer';
 
 function resolvePath(descriptor: ResourceDescriptor): string {
 	return descriptor.path;

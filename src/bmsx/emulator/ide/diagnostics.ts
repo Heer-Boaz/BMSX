@@ -1,7 +1,7 @@
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../types';
 import type { EditorDiagnostic } from './types';
 import { computeLuaDiagnostics, getApiCompletionData } from './intellisense';
-import { getCachedLuaParse } from './lua_analysis_cache';
+import { getCachedLuaParse } from './lua/lua_analysis_cache';
 import { ide_state, diagnosticsDebounceMs } from './ide_state';
 import { cacheSemanticParseState } from './semantic_workspace_sync';
 

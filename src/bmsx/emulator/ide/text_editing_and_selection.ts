@@ -33,11 +33,11 @@ import { markTextMutated } from './text_utils';
 import { capturePreMutationSource } from './text_utils';
 import { resetBlink } from './render/render_caret';
 import * as constants from './constants';
-import { formatLuaDocument } from './lua_formatter';
+import { formatLuaDocument } from './lua/lua_formatter';
 import { extractErrorMessage } from '../../lua/luavalue';
-import { LuaLexer } from '../../lua/lualexer';
-import { getTextSnapshot } from './source_text';
-import type { MutableTextPosition, TextBuffer } from './text_buffer';
+import { LuaLexer } from '../../lua/syntax/lualexer';
+import { getTextSnapshot } from './text/source_text';
+import type { MutableTextPosition, TextBuffer } from './text/text_buffer';
 
 const tmpPosition: MutableTextPosition = { row: 0, column: 0 };
 

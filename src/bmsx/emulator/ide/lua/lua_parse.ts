@@ -1,10 +1,10 @@
-import type { LuaChunk } from '../../lua/lua_ast';
-import { LuaSyntaxError } from '../../lua/luaerrors';
-import { LuaLexer } from '../../lua/lualexer';
-import { LuaParser } from '../../lua/luaparser';
-import type { LuaToken } from '../../lua/luatoken';
-import { ide_state } from './ide_state';
-import { splitText } from './source_text';
+import type { LuaChunk } from '../../../lua/syntax/lua_ast';
+import { LuaSyntaxError } from '../../../lua/luaerrors';
+import { LuaLexer } from '../../../lua/syntax/lualexer';
+import { LuaParser } from '../../../lua/syntax/luaparser';
+import type { LuaToken } from '../../../lua/syntax/luatoken';
+import { ide_state } from '../ide_state';
+import { splitText } from '../text/source_text';
 
 export type ParsedLuaChunk = {
 	chunk: LuaChunk | null;

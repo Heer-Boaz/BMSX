@@ -1,4 +1,4 @@
-import { LuaSyntaxError } from './luaerrors';
+import { LuaSyntaxError } from '../luaerrors';
 import type { LuaToken } from './luatoken';
 import { LuaTokenType } from './luatoken';
 import {

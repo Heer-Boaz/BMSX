@@ -1,15 +1,15 @@
 import type { TimerHandle } from '../../platform/platform';
 import { clamp } from '../../utils/clamp';
-import { highlightTextLine as highlightTextLineExternal } from './syntax_highlight';
+import { highlightTextLine as highlightTextLineExternal } from './lua/syntax_highlight';
 import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from './semantic_model';
 import { LuaSemanticWorkspace } from './semantic_model';
-import type { LuaDefinitionInfo } from '../../lua/lua_ast';
+import type { LuaDefinitionInfo } from '../../lua/syntax/lua_ast';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
 import { scheduleIdeOnce } from './background_tasks';
 import { EditorFont } from '../editor_font';
-import { getTextSnapshot, splitText } from './source_text';
+import { getTextSnapshot, splitText } from './text/source_text';
 import { syncSemanticWorkspacePath } from './semantic_workspace_sync';
-import type { TextBuffer } from './text_buffer';
+import type { TextBuffer } from './text/text_buffer';
 
 interface VisualLinesContext {
 	buffer: TextBuffer;

@@ -53,9 +53,9 @@ import { ResourcePanelController } from './resource_panel_controller';
 import { handleActionPromptInput, handleEditorInput, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, resourceViewerClampScroll, shouldRepeatKeyFromPlayer, toggleThemeMode } from './ide_input';
 import { consumeIdeKey } from './ide_input';
 import { CodeLayout } from './code_layout';
-import { getTextSnapshot, splitText } from './source_text';
-import { EditorUndoRecord, TextUndoOp } from './editor_undo';
-import { PieceTreeBuffer } from './piece_tree_buffer';
+import { getTextSnapshot, splitText } from './text/source_text';
+import { EditorUndoRecord, TextUndoOp } from './text/editor_undo';
+import { PieceTreeBuffer } from './text/piece_tree_buffer';
 import type {
 	CodeHoverTooltip,
 	CodeTabContext,
@@ -85,7 +85,7 @@ import { clearBackgroundTasks, enqueueBackgroundTask, scheduleIdeOnce, scheduleR
 
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_controller';
-import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/lua_ast';
+import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/syntax/lua_ast';
 // Search logic moved to editor_search
 import { closeSearch, focusEditorFromSearch, computeSearchPageStats, startSearchJob, cancelGlobalSearchJob } from './editor_search';
 import * as constants from './constants';

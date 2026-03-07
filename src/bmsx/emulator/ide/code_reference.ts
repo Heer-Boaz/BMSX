@@ -6,15 +6,15 @@ import {
 	type LuaCallExpression,
 	type LuaMemberExpression,
 	type LuaSourceRange,
-} from '../../lua/lua_ast';
+} from '../../lua/syntax/lua_ast';
 import { listResources } from '../workspace';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
-import { parseLuaIdentifierChain, resolveLuaIdentifierChainRoot } from './lua_identifier_chain';
+import { parseLuaIdentifierChain, resolveLuaIdentifierChainRoot } from './lua/lua_identifier_chain';
 import { LuaSemanticWorkspace, Decl, type Ref, type SymbolID } from './semantic_model';
 import { prepareSemanticWorkspaceForEditorBuffer, syncSemanticWorkspacePath } from './semantic_workspace_sync';
-import type { TextBuffer } from './text_buffer';
-import { getTextSnapshot, splitText } from './source_text';
+import type { TextBuffer } from './text/text_buffer';
+import { getTextSnapshot, splitText } from './text/source_text';
 
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext;

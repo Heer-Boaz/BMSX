@@ -1,5 +1,5 @@
 import { $ } from '../core/engine_core';
-import { LuaSourceRange } from '../lua/lua_ast';
+import { LuaSourceRange } from '../lua/syntax/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaHandlerCache, isLuaHandlerFunction } from '../lua/luahandler_cache';
 import { LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, resolveNativeTypeName, isLuaNativeMemberHandle, LuaFunctionValue } from '../lua/luavalue';

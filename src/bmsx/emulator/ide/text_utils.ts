@@ -10,8 +10,8 @@ import { handlePostEditMutation } from './text_editing_and_selection';
 import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
 import { markDiagnosticsDirty } from './diagnostics';
 import { requestSemanticRefresh, clearReferenceHighlights } from './intellisense';
-import { getTextSnapshot, splitText } from './source_text';
-import type { TextBuffer } from './text_buffer';
+import { getTextSnapshot, splitText } from './text/source_text';
+import type { TextBuffer } from './text/text_buffer';
 import { clamp } from '../../utils/clamp';
 
 export function expandTabs(source: string): string {

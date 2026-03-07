@@ -25,7 +25,7 @@ import {
 import { openLuaCodeTab, restoreSnapshot, setFontVariant } from './cart_editor';
 import { initializeTabs, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { FontVariant } from '../font';
-import { getTextSnapshot } from './source_text';
+import { getTextSnapshot } from './text/source_text';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../workspace_cache';
 
 export type WorkspaceStoragePaths = {

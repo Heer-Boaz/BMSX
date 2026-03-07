@@ -1,17 +1,17 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
 
-import { LuaLexer } from '../../src/bmsx/lua/lualexer';
-import { LuaParser } from '../../src/bmsx/lua/luaparser';
-import type { LuaToken } from '../../src/bmsx/lua/luatoken';
-import { LuaTokenType } from '../../src/bmsx/lua/luatoken';
+import { LuaLexer } from '../../src/bmsx/lua/syntax/lualexer';
+import { LuaParser } from '../../src/bmsx/lua/syntax/luaparser';
+import type { LuaToken } from '../../src/bmsx/lua/syntax/luatoken';
+import { LuaTokenType } from '../../src/bmsx/lua/syntax/luatoken';
 import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	LuaUnaryOperator,
-} from '../../src/bmsx/lua/lua_ast';
+} from '../../src/bmsx/lua/syntax/lua_ast';
 import type {
 	LuaAssignmentStatement,
 	LuaCallExpression,
@@ -24,7 +24,7 @@ import type {
 	LuaLocalFunctionStatement,
 	LuaStatement,
 	LuaTableField,
-} from '../../src/bmsx/lua/lua_ast';
+} from '../../src/bmsx/lua/syntax/lua_ast';
 
 type LuaLintIssueRule =
 	'uppercase_code_pattern' |

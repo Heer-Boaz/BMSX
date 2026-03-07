@@ -18,12 +18,12 @@ import {
 	type LuaFunctionDeclarationStatement,
 	type LuaDefinitionInfo,
 	type LuaSourceRange,
-} from '../../lua/lua_ast';
-import type { LuaToken } from '../../lua/luatoken';
-import { LuaTokenType } from '../../lua/luatoken';
+} from '../../lua/syntax/lua_ast';
+import type { LuaToken } from '../../lua/syntax/luatoken';
+import { LuaTokenType } from '../../lua/syntax/luatoken';
 import type { LuaSymbolEntry } from '../types';
-import type { ParsedLuaChunk } from './lua_parse';
-import { getCachedLuaParse } from './lua_analysis_cache';
+import type { ParsedLuaChunk } from './lua/lua_parse';
+import { getCachedLuaParse } from './lua/lua_analysis_cache';
 
 export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
 

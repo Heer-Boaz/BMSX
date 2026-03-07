@@ -4,14 +4,14 @@ import { createInlineTextField, getFieldText, setFieldText } from './inline_text
 import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
 import * as constants from './constants';
 import { consumeIdeKey } from './ide_input';
-import type { LuaSourceRange } from '../../lua/lua_ast';
+import type { LuaSourceRange } from '../../lua/syntax/lua_ast';
 import { clamp } from '../../utils/clamp';
 import type { ResourceDescriptor } from '../types';
 import type { LuaSemanticWorkspace } from './semantic_model';
-import { LuaLexer } from '../../lua/lualexer';
+import { LuaLexer } from '../../lua/syntax/lualexer';
 import { findCodeTabContext } from './editor_tabs';
 import { findResourceDescriptorForChunk } from './cart_editor';
-import { getTextSnapshot, splitText } from './source_text';
+import { getTextSnapshot, splitText } from './text/source_text';
 import { syncSemanticWorkspacePath } from './semantic_workspace_sync';
 
 export type RenameCommitPayload = {

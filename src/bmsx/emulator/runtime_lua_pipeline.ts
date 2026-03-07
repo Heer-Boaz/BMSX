@@ -1,5 +1,5 @@
 import { $, calcCyclesPerFrameScaled } from '../core/engine_core';
-import type { LuaChunk } from '../lua/lua_ast';
+import type { LuaChunk } from '../lua/syntax/lua_ast';
 import { LuaInterpreter } from '../lua/luaruntime';
 import type { LuaValue } from '../lua/luavalue';
 import { convertToError, isLuaFunctionValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/luavalue';

@@ -8,8 +8,8 @@ import type {
 import type { StackTraceFrame } from '../../lua/luavalue';
 import { MENU_COMMANDS } from './ide_input';
 import { RectBounds } from '../../rompack/rompack';
-import type { TextBuffer } from './text_buffer';
-import type { EditorUndoRecord } from './editor_undo';
+import type { TextBuffer } from './text/text_buffer';
+import type { EditorUndoRecord } from './text/editor_undo';
 
 export type Position = { row: number; column: number };
 

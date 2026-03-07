@@ -1,4 +1,4 @@
-import { LuaSourceLocation } from './lua_ast';
+import { LuaSourceLocation } from './syntax/lua_ast';
 import type { LuaCallFrame } from './luaruntime';
 import type { LuaDebuggerPauseSignal } from './luavalue';
 

@@ -5,7 +5,7 @@ import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompa
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
 import { hashAssetId } from '../../src/bmsx/util/asset_tokens';
-import type { LuaChunk } from '../../src/bmsx/lua/lua_ast';
+import type { LuaChunk } from '../../src/bmsx/lua/syntax/lua_ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
@@ -32,9 +32,9 @@ const { finished } = require('stream/promises');
 // @ts-ignore
 const { encodeBinary, decodeBinary } = require('../../src/bmsx/serializer/binencoder');
 // @ts-ignore
-const { LuaLexer } = require('../../src/bmsx/lua/lualexer');
+const { LuaLexer } = require('../../src/bmsx/lua/syntax/lualexer');
 // @ts-ignore
-const { LuaParser } = require('../../src/bmsx/lua/luaparser');
+const { LuaParser } = require('../../src/bmsx/lua/syntax/luaparser');
 // @ts-ignore
 const { compileLuaChunkToProgram, formatLuaCompileError, isLuaCompileError } = require('../../src/bmsx/emulator/program_compiler');
 // @ts-ignore

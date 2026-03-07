@@ -2,7 +2,7 @@ import { $, calcCyclesPerFrameScaled } from '../core/engine_core';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import type { InputMap } from '../input/inputtypes';
-import type { LuaDefinitionInfo } from '../lua/lua_ast';
+import type { LuaDefinitionInfo } from '../lua/syntax/lua_ast';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaRuntimeError } from '../lua/luaerrors';
 import { LuaHandlerCache } from '../lua/luahandler_cache';
@@ -32,7 +32,7 @@ import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
 import { decodeBinary } from '../serializer/binencoder';
 import { tokenKeyFromAsset, tokenKeyFromId } from '../util/asset_tokens';
-import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
+import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
 import { Api } from './api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from './cpu';
 import { StringPool, StringValue } from './string_pool';
@@ -57,7 +57,7 @@ import * as runtimeIde from './runtime_ide';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { registerAudioAssets as registerAudioAssetsFromSource } from './runtime_assets';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
-import type { ParsedLuaChunk } from './ide/lua_parse';
+import type { ParsedLuaChunk } from './ide/lua/lua_parse';
 import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 import {
 	IO_DMA_CTRL,

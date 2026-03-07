@@ -38,7 +38,7 @@ import { extractErrorMessage } from '../lua/luavalue';
 import { valueToString } from './lua_globals';
 import type { Value } from './cpu';
 import { LuaMemberCompletionRequest, SymbolEntry } from './types';
-import type { MutableTextPosition, TextBuffer } from './ide/text_buffer';
+import type { MutableTextPosition, TextBuffer } from './ide/text/text_buffer';
 import { clamp } from '../utils/clamp';
 
 type TerminalOutputKind =

@@ -1,6 +1,6 @@
-import { CanonicalizationType } from '../rompack/rompack';
-import { LuaSyntaxError } from './luaerrors';
-import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
+import { CanonicalizationType } from '../../rompack/rompack';
+import { LuaSyntaxError } from '../luaerrors';
+import { createIdentifierCanonicalizer } from './identifier_canonicalizer';
 import type { LuaToken, LuaTokenLiteral } from './luatoken';
 import { LuaTokenType, resolveKeyword } from './luatoken';
 

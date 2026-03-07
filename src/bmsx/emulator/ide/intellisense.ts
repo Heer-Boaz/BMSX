@@ -1,12 +1,12 @@
-import type { LuaDefinitionInfo, LuaDefinitionKind, LuaMemberExpression, LuaSourceRange, LuaStringLiteralExpression } from '../../lua/lua_ast';
-import { LuaSyntaxKind, type LuaAssignmentStatement, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaIndexExpression, type LuaLocalAssignmentStatement, type LuaStatement } from '../../lua/lua_ast';
+import type { LuaDefinitionInfo, LuaDefinitionKind, LuaMemberExpression, LuaSourceRange, LuaStringLiteralExpression } from '../../lua/syntax/lua_ast';
+import { LuaSyntaxKind, type LuaAssignmentStatement, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaIndexExpression, type LuaLocalAssignmentStatement, type LuaStatement } from '../../lua/syntax/lua_ast';
 import { LuaEnvironment } from '../../lua/luaenvironment';
-import { LuaLexer } from '../../lua/lualexer';
-import { createIdentifierCanonicalizer } from '../../utils/identifier_canonicalizer';
+import { LuaLexer } from '../../lua/syntax/lualexer';
+import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
 import { clamp } from '../../utils/clamp';
-import type { ParsedLuaChunk } from './lua_parse';
+import type { ParsedLuaChunk } from './lua/lua_parse';
 import type { LuaSyntaxError } from '../../lua/luaerrors';
-import { getCachedLuaParse } from './lua_analysis_cache';
+import { getCachedLuaParse } from './lua/lua_analysis_cache';
 import { LuaInterpreter } from '../../lua/luaruntime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/luavalue';
 import { Api } from '../api';
@@ -23,7 +23,7 @@ import { applyDefinitionSelection, beginNavigationCapture, completeNavigation, f
 import * as constants from './constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
 import { ide_state } from './ide_state';
-import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from './lua_identifier_chain';
+import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from './lua/lua_identifier_chain';
 import { buildLuaSemanticModel, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type FunctionSignatureInfo } from './semantic_model';
 import { cacheSemanticWorkspaceAnalysis, getOrCreateSemanticWorkspace, prepareSemanticWorkspaceForEditorBuffer, primeSemanticWorkspaceProjectSources, syncSemanticWorkspacePath } from './semantic_workspace_sync';
 import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
@@ -31,8 +31,8 @@ import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaComp
 import type { LuaSourceRecord } from '../lua_sources';
 import { Pool } from '../../utils/pool';
 import { $ } from '../../core/engine_core';
-import { KEYWORDS, LuaTokenType, type LuaToken } from '../../lua/luatoken';
-import { getTextSnapshot, splitText } from './source_text';
+import { KEYWORDS, LuaTokenType, type LuaToken } from '../../lua/syntax/luatoken';
+import { getTextSnapshot, splitText } from './text/source_text';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
 

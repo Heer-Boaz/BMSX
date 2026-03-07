@@ -1,10 +1,10 @@
-import type { ParsedLuaChunk } from './lua_parse';
-import { getCachedLuaParse } from './lua_analysis_cache';
+import type { ParsedLuaChunk } from './lua/lua_parse';
+import { getCachedLuaParse } from './lua/lua_analysis_cache';
 import { ide_state } from './ide_state';
 import { LuaSemanticWorkspace, type FileSemanticData } from './semantic_model';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
-import { splitText } from './source_text';
+import { splitText } from './text/source_text';
 import { $ } from '../../core/engine_core';
 
 export type SemanticWorkspacePathInput = {

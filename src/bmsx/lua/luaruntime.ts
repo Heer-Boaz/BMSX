@@ -4,7 +4,7 @@ import {
 	LuaUnaryOperator,
 	LuaTableFieldKind,
 	LuaAssignmentOperator,
-} from './lua_ast';
+} from './syntax/lua_ast';
 import type {
 	LuaAssignableExpression,
 	LuaAssignmentStatement,
@@ -34,13 +34,13 @@ import type {
 	LuaWhileStatement,
 	LuaSourceRange,
 	LuaDefinitionInfo,
-} from './lua_ast';
+} from './syntax/lua_ast';
 import { LuaEnvironment } from './luaenvironment';
 import { LuaRuntimeError, LuaSyntaxError } from './luaerrors';
-import { LuaLexer } from './lualexer';
+import { LuaLexer } from './syntax/lualexer';
 import { type CanonicalizationType } from '../rompack/rompack';
-import { LuaParser } from './luaparser';
-import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
+import { LuaParser } from './syntax/luaparser';
+import { createIdentifierCanonicalizer } from './syntax/identifier_canonicalizer';
 import { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './luavalue';
 import {
 	createLuaNativeMemberHandle,

@@ -33,7 +33,7 @@ import { buildEditorContextMenuEntries, buildIncomingCallHierarchyView } from '.
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from './render/render_context_menu';
 import { listResources } from '../workspace';
 import { prepareSemanticWorkspaceForEditorBuffer } from './semantic_workspace_sync';
-import { getTextSnapshot, splitText } from './source_text';
+import { getTextSnapshot, splitText } from './text/source_text';
 
 export const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
 export const MENU_COMMANDS = [

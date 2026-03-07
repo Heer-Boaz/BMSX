@@ -1,4 +1,4 @@
-import { LuaLexer } from '../../lua/lualexer';
+import { LuaLexer } from '../../../lua/syntax/lualexer';
 
 export function parseLuaIdentifierChain(expression: string): string[] {
 	if (!expression) {

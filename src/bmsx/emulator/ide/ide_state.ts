@@ -42,9 +42,9 @@ import type {
 	VisualLineSegment,
 	EditorContextMenuState,
 } from './types';
-import type { TextBuffer } from './text_buffer';
-import { PieceTreeBuffer } from './piece_tree_buffer';
-import type { EditorUndoRecord } from './editor_undo';
+import type { TextBuffer } from './text/text_buffer';
+import { PieceTreeBuffer } from './text/piece_tree_buffer';
+import type { EditorUndoRecord } from './text/editor_undo';
 import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
 import type { ReferenceCatalogEntry } from './code_reference';
 import { CodeLayout } from './code_layout';

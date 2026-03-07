@@ -25,8 +25,8 @@ import {
 	type LuaTableConstructorExpression,
 	type LuaWhileStatement,
 	type LuaGotoStatement,
-} from '../lua/lua_ast';
-import { createIdentifierCanonicalizer } from '../utils/identifier_canonicalizer';
+} from '../lua/syntax/lua_ast';
+import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from './cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './program_optimizer';
 import type { ProgramConstReloc } from './program_asset';
