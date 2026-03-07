@@ -178,6 +178,39 @@ function piece_tree_buffer:char_code_at(offset)
 	error("[piece_tree_buffer] char_code_at traversal failed")
 end
 
+function piece_tree_buffer:get_node_count()
+	local root = self.root
+	return root and root.sum_nodes or 0
+end
+
+function piece_tree_buffer:get_buffer_count()
+	return self.buffers_len
+end
+
+function piece_tree_buffer:compact()
+	local old_root = self.root
+	local text = self:get_text()
+	self.root = nil
+	self.buffers = {}
+	self.buffers_len = 0
+	self:release_subtree(old_root)
+
+	self.original = new_buffer_block(text)
+	self.added = new_added_buffer()
+	self.buffers[0] = self.original
+	self.buffers[1] = self.added
+	self.buffers_len = 2
+	self.added_index = 1
+	if #text > 0 then
+		local node = self:alloc_node()
+		local lf = self.original.line_starts_len - 1
+		set_piece(node, 0, 0, #text, 0, lf, self:next_prio())
+		self:recalc(node)
+		self.root = node
+	end
+	self.version = self.version + 1
+end
+
 function piece_tree_buffer:insert(offset, text)
 	if #text == 0 then
 		return
@@ -218,6 +251,10 @@ end
 function piece_tree_buffer:replace(offset, length, text)
 	local deleted = self:replace_to_subtree(offset, length, text)
 	self:release_subtree(deleted)
+end
+
+function piece_tree_buffer:release_detached_subtree(subtree)
+	self:release_subtree(subtree)
 end
 
 function piece_tree_buffer:delete_to_subtree(offset, length)

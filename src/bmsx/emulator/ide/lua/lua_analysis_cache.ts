@@ -51,10 +51,6 @@ export function getCachedLuaParse(options: {
 	return entry;
 }
 
-export function invalidateLuaAnalysis(path: string): void {
-	analysisCache.delete(path);
-}
-
 function evictIfNeeded(): void {
 	if (analysisCache.size <= MAX_ANALYSIS_CACHE_ENTRIES) {
 		return;

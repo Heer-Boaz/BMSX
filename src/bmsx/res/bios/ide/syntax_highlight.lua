@@ -76,6 +76,18 @@ local string_delimiters = {
 
 local comment_annotations = { "TODO", "FIXME", "BUG", "HACK", "NOTE", "WARNING" }
 
+local symbol_kind_colors = {
+	parameter = constants.color_syntax.parameter,
+	["local"] = constants.color_syntax.local_function,
+	["function"] = constants.color_syntax.function_handle,
+	global = constants.color_syntax.global_variable,
+	["tableField"] = constants.color_syntax.local_table_field,
+	module = constants.color_syntax.module,
+	type = constants.color_syntax.type,
+	label = constants.color_syntax.label,
+	keyword = constants.color_syntax.keyword,
+}
+
 local function byte_at(line, index)
 	return string.byte(line, index + 1)
 end
@@ -90,6 +102,10 @@ end
 
 local function starts_with(line, index, prefix)
 	return slice(line, index, index + #prefix) == prefix
+end
+
+local function trim(value)
+	return string.gsub(string.gsub(value, "^%s+", ""), "%s+$", "")
 end
 
 local function is_digit_code(code)
@@ -237,6 +253,88 @@ local function long_bracket_close_length_at(line, index, level, length)
 	return 0
 end
 
+local function read_identifier_path(line, start_index, length)
+	local segments = {}
+	local delimiters = {}
+	local seg_count = 0
+	local delim_count = 0
+	local index = start_index
+	while index < length and is_identifier_start_code(byte_at(line, index)) do
+		local segment_start = index
+		index = read_identifier(line, index, length)
+		seg_count = seg_count + 1
+		segments[seg_count] = { start = segment_start, ["end"] = index }
+		if index >= length then
+			break
+		end
+		local separator = char_at(line, index)
+		if identifier_path_separators[separator] ~= nil and index + 1 < length and is_identifier_start_code(byte_at(line, index + 1)) then
+			delim_count = delim_count + 1
+			delimiters[delim_count] = index
+			index = index + 1
+		else
+			break
+		end
+	end
+	return { segments = segments, segment_count = seg_count, delimiters = delimiters, delimiter_count = delim_count, ["end"] = index }
+end
+
+local function builtin_has(builtin_lookup, word)
+	if not builtin_lookup or type(word) ~= "string" or #word == 0 then
+		return false
+	end
+	return builtin_lookup[string.lower(word)]
+end
+
+local function resolve_identifier_path_at(line, column)
+	if column < 0 or column >= #line then
+		return nil
+	end
+	local start = column
+	while start > 0 do
+		local previous = char_at(line, start - 1)
+		if is_identifier_part_code(string.byte(previous)) or previous == "." or previous == ":" then
+			start = start - 1
+		else
+			break
+		end
+	end
+	while start < #line and not is_identifier_start_code(byte_at(line, start)) do
+		if start >= column then
+			return nil
+		end
+		start = start + 1
+	end
+	if not is_identifier_start_code(byte_at(line, start)) then
+		return nil
+	end
+	local path = read_identifier_path(line, start, #line)
+	if path.segment_count == 0 then
+		return nil
+	end
+	local inside = false
+	for i = 1, path.segment_count do
+		local segment = path.segments[i]
+		if column >= segment.start and column < segment["end"] then
+			inside = true
+			break
+		end
+	end
+	if not inside then
+		return nil
+	end
+	local names = {}
+	for i = 1, path.segment_count do
+		local segment = path.segments[i]
+		names[i] = slice(line, segment.start, segment["end"])
+	end
+	return table.concat(names, ".")
+end
+
+local function resolve_color_for_symbol_kind(kind)
+	return symbol_kind_colors[kind] or constants.color_syntax.code_text
+end
+
 local function highlight_comment_annotations(line, start_index, end_index, column_colors)
 	local upper = string.upper(line)
 	for i = 1, #comment_annotations do
@@ -291,32 +389,6 @@ local function highlight_comment(line, start_index, length, column_colors)
 	return length
 end
 
-local function read_identifier_path(line, start_index, length)
-	local segments = {}
-	local delimiters = {}
-	local seg_count = 0
-	local delim_count = 0
-	local index = start_index
-	while index < length and is_identifier_start_code(byte_at(line, index)) do
-		local segment_start = index
-		index = read_identifier(line, index, length)
-		seg_count = seg_count + 1
-		segments[seg_count] = { start = segment_start, ["end"] = index }
-		if index >= length then
-			break
-		end
-			local separator = char_at(line, index)
-			if (identifier_path_separators[separator] ~= nil) and index + 1 < length and is_identifier_start_code(byte_at(line, index + 1)) then
-			delim_count = delim_count + 1
-			delimiters[delim_count] = index
-			index = index + 1
-		else
-			break
-		end
-	end
-	return { segments = segments, segment_count = seg_count, delimiters = delimiters, delimiter_count = delim_count, ["end"] = index }
-end
-
 local function highlight_scoped_label(line, start_index, length, column_colors)
 	if not starts_with(line, start_index, "::") then
 		return start_index
@@ -348,7 +420,7 @@ local function highlight_function_name_path(line, start_index, length, column_co
 		segments[seg_count] = { start = segment_start, ["end"] = index }
 		if index < length then
 			local separator = char_at(line, index)
-				if identifier_path_separators[separator] ~= nil then
+			if identifier_path_separators[separator] ~= nil then
 				column_colors[index] = constants.color_syntax.operator
 				index = index + 1
 			else
@@ -427,7 +499,7 @@ local function highlight_builtin_identifier_path(line, path, builtin_lookup, col
 	end
 	for length = path.segment_count, 1, -1 do
 		local candidate = table.concat(names, ".", 1, length)
-		if builtin_lookup[candidate] then
+		if builtin_has(builtin_lookup, candidate) then
 			for seg_index = 1, length do
 				local segment = path.segments[seg_index]
 				for column = segment.start, segment["end"] - 1 do
@@ -441,7 +513,7 @@ local function highlight_builtin_identifier_path(line, path, builtin_lookup, col
 			return path.segments[length]["end"]
 		end
 	end
-	if path.segment_count > 1 and builtin_lookup[names[1]] then
+	if path.segment_count > 1 and builtin_has(builtin_lookup, names[1]) then
 		for seg_index = 1, path.segment_count do
 			local segment = path.segments[seg_index]
 			for column = segment.start, segment["end"] - 1 do
@@ -456,27 +528,75 @@ local function highlight_builtin_identifier_path(line, path, builtin_lookup, col
 	return nil
 end
 
+local function apply_semantic_annotations(line, column_colors, line_length, annotations, builtin_lookup)
+	if not annotations then
+		return
+	end
+	for index = 1, #annotations do
+		local annotation = annotations[index]
+		if not (annotation.role == "definition" and annotation.kind == "function") then
+			local start = math.max(0, math.min(annotation.start or 0, line_length))
+			local raw_end = math.max(annotation["end"] or start, start)
+			if start < line_length then
+				local ending = math.min(raw_end, line_length)
+				local path = resolve_identifier_path_at(line, start)
+				local token_text = trim(slice(line, start, math.min(raw_end, #line)))
+				local is_builtin = builtin_has(builtin_lookup, path) or builtin_has(builtin_lookup, token_text)
+				local color = is_builtin and constants.color_syntax.builtin or resolve_color_for_symbol_kind(annotation.kind)
+				for column = start, ending - 1 do
+					column_colors[column] = color
+				end
+			end
+		end
+	end
+end
+
 local function apply_builtin_lookup(names)
-	local lookup = {}
+	local lookup = { __builtin_lookup = true }
+	if not names then
+		return lookup
+	end
 	for _, name in pairs(names) do
 		if type(name) == "string" then
-			lookup[string.lower(name)] = true
+			local normalized = trim(name)
+			if #normalized > 0 then
+				lookup[string.lower(normalized)] = true
+			end
 		end
 	end
 	return lookup
 end
 
-local function build_column_colors(length, color)
-	local colors = {}
-	for i = 0, length - 1 do
-		colors[i] = color
+local function resolve_highlight_args(line_annotations_or_builtin_lookup, builtin_identifiers)
+	local annotations = nil
+	local builtin_lookup = nil
+	if builtin_identifiers ~= nil then
+		annotations = line_annotations_or_builtin_lookup
+		if builtin_identifiers and builtin_identifiers.__builtin_lookup then
+			builtin_lookup = builtin_identifiers
+		else
+			builtin_lookup = apply_builtin_lookup(builtin_identifiers)
+		end
+	elseif line_annotations_or_builtin_lookup and line_annotations_or_builtin_lookup.__builtin_lookup then
+		builtin_lookup = line_annotations_or_builtin_lookup
+	elseif line_annotations_or_builtin_lookup and type(line_annotations_or_builtin_lookup) == "table" and line_annotations_or_builtin_lookup[1] and type(line_annotations_or_builtin_lookup[1]) == "table" and line_annotations_or_builtin_lookup[1].start ~= nil then
+		annotations = line_annotations_or_builtin_lookup
+		builtin_lookup = apply_builtin_lookup(nil)
+	elseif line_annotations_or_builtin_lookup ~= nil then
+		builtin_lookup = apply_builtin_lookup(line_annotations_or_builtin_lookup)
+	else
+		builtin_lookup = apply_builtin_lookup(nil)
 	end
-	return colors
+	return annotations, builtin_lookup
 end
 
-local function highlight_text_line(line, builtin_lookup)
+local function highlight_text_line(line, line_annotations_or_builtin_lookup, builtin_identifiers)
+	local annotations, builtin_lookup = resolve_highlight_args(line_annotations_or_builtin_lookup, builtin_identifiers)
 	local length = #line
-	local column_colors = build_column_colors(length, constants.color_syntax.code_text)
+	local column_colors = {}
+	for i = 0, length - 1 do
+		column_colors[i] = constants.color_syntax.code_text
+	end
 	local i = 0
 	while i < length do
 		if i == 0 and starts_with(line, i, "#!") then
@@ -513,7 +633,7 @@ local function highlight_text_line(line, builtin_lookup)
 					i = end_index
 				else
 					local ch = char_at(line, i)
-						if string_delimiters[ch] ~= nil then
+					if string_delimiters[ch] ~= nil then
 						local delimiter = ch
 						column_colors[i] = constants.color_syntax.string
 						i = i + 1
@@ -564,8 +684,6 @@ local function highlight_text_line(line, builtin_lookup)
 								i = highlight_function_signature(line, first["end"], length, column_colors)
 							elseif lower_word == "goto" then
 								i = highlight_goto_label(line, first["end"], length, column_colors)
-							elseif lower_word == "::" then
-								i = highlight_scoped_label(line, first["end"], length, column_colors)
 							else
 								i = first["end"]
 							end
@@ -579,6 +697,10 @@ local function highlight_text_line(line, builtin_lookup)
 				end
 			end
 		end
+	end
+
+	if annotations then
+		apply_semantic_annotations(line, column_colors, length, annotations, builtin_lookup)
 	end
 
 	local colors = {}
@@ -636,7 +758,39 @@ local function highlight_text_line(line, builtin_lookup)
 	}
 end
 
+local function highlight_line(source, row_or_semantics, maybe_semantics, builtin_identifiers)
+	local lines
+	local row = 0
+	local annotations = nil
+	local builtin_collection = builtin_identifiers
+	if type(source) == "string" then
+		lines = { source }
+	else
+		lines = source
+		if type(row_or_semantics) == "number" then
+			row = row_or_semantics
+			annotations = maybe_semantics
+		else
+			annotations = row_or_semantics
+			if builtin_identifiers == nil and maybe_semantics ~= nil then
+				builtin_collection = maybe_semantics
+			end
+		end
+	end
+	if builtin_identifiers ~= nil then
+		builtin_collection = builtin_identifiers
+	end
+	local line = ""
+	if row >= 0 and row + 1 <= #lines then
+		line = lines[row + 1]
+	end
+	local line_annotations = annotations and annotations[row + 1]
+	return highlight_text_line(line, line_annotations, builtin_collection)
+end
+
 return {
 	apply_builtin_lookup = apply_builtin_lookup,
+	resolve_identifier_path_at = resolve_identifier_path_at,
+	highlight_line = highlight_line,
 	highlight_text_line = highlight_text_line,
 }
