@@ -19,8 +19,7 @@ export function runBackgroundTasks(): void {
 	if (backgroundTasks.length === 0) {
 		return;
 	}
-	const clock = $.platform.clock;
-	const deadline = clock.now() + backgroundTaskBudgetMs;
+	const deadline = $.platform.clock.now() + backgroundTaskBudgetMs;
 	const iterationsLimit = backgroundTasks.length * 2;
 	let iterations = 0;
 	while (backgroundTasks.length > 0) {
@@ -30,7 +29,7 @@ export function runBackgroundTasks(): void {
 			backgroundTasks.push(task);
 		}
 		iterations += 1;
-		if (clock.now() >= deadline || iterations >= iterationsLimit) {
+		if ($.platform.clock.now() >= deadline || iterations >= iterationsLimit) {
 			break;
 		}
 	}
@@ -48,8 +47,7 @@ export function clearBackgroundTasks(): void {
 }
 
 export function scheduleIdeOnce(delayMs: number, cb: () => void): TimerHandle {
-	const clock = $.platform.clock;
-	return clock.scheduleOnce(delayMs, () => cb());
+	return $.platform.clock.scheduleOnce(delayMs, () => cb());
 }
 
 export function scheduleRuntimeTask(task: () => void | Promise<void>, onError: (error: unknown) => void): void {
