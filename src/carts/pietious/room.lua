@@ -659,7 +659,7 @@ end
 
 function room_object:switch_room(direction)
 	local target_room_number = self.links[direction]
-	if not target_room_number then -- TODO: force a single exit room value (either nil or 0) instead of allowing both
+	if not target_room_number then
 		return nil
 	end
 
