@@ -31,7 +31,7 @@ local function spawn_lithographs(room)
 			space_id = 'main',
 			pos = { x = def.x, y = def.y, z = 10 },
 			text = def.text,
-			room_number = room.room_number,
+			room_number = object('c').current_room_number,
 		})
 		obj:add_tag('rs')
 	end

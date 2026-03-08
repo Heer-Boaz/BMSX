@@ -35,7 +35,7 @@ end
 
 function elevator:update_motion()
 	local player = object('pietolon')
-	local current_room_number = object('room').room_number
+	local current_room_number = object('c').current_room_number
 	self.visible = self.current_room_number == current_room_number
 	self.collider.enabled = self.visible
 

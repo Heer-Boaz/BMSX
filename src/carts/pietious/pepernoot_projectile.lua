@@ -13,7 +13,7 @@ function pepernoot_projectile:ctor()
 end
 
 function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
-	local room = object('c').current_room
+	local room = object('room')
 	local snapped_x, snapped_y = room:snap_world_to_tile(self.x, self.y)
 	self.sprite_component.offset.x = snapped_x - self.x
 	self.sprite_component.offset.y = snapped_y - self.y
@@ -55,7 +55,7 @@ function pepernoot_projectile:update_motion()
 	if self:has_tag(state_tags.frozen) then
 		return
 	end
-	local room = object('c').current_room
+	local room = object('room')
 	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
 	self:refresh_tile_aligned_sprite_offset()
 
@@ -73,6 +73,15 @@ local function define_pepernoot_projectile_fsm()
 	define_fsm('pepernoot_projectile', {
 		initial = 'active',
 		on = {
+			-- ['overlap.begin'] = function(_self, event)
+			-- 	if event.other_layer ~= constants.collision.enemy_layer then
+			-- 		return
+			-- 	end
+			-- 	self:mark_for_disposal()
+			-- end,
+			-- ['room.switched'] = function(_self, fsm)
+			-- 	self:mark_for_disposal()
+			-- end,
 			['seal_breaking'] = '/freeze',
 		},
 		states = {

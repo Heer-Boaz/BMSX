@@ -11,7 +11,7 @@ function breakablewall:take_weapon_hit()
 		return
 	end
 	self.health = 0
-	local room_number = object('c').current_room.room_number
+	local room_number = object('c').current_room_number
 	object('c').events:emit('room.condition_set', {
 		room_number = room_number,
 		condition = self.trigger,

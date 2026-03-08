@@ -13,8 +13,6 @@ end
 
 function boekfoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
-	local room = object('c').current_room
-
 	if self.boek_state == 'closed' then
 		local closed_ticks = node.boek_state_ticks or constants.enemy.boek_wait_open_steps
 		closed_ticks = closed_ticks - 1

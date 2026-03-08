@@ -670,7 +670,7 @@ function player:collect_loot(loot_type, loot_value)
 end
 
 function player:find_near_shrine()
-	local shrines = object('c').current_room.shrines
+	local shrines = object('room').shrines
 	local player_left = self.x
 	local player_top = self.y
 	local player_right = self.x + self.width
@@ -691,7 +691,7 @@ function player:find_near_shrine()
 end
 
 function player:find_world_entrance_for_unlock()
-	local world_entrances = object('c').current_room.world_entrances
+	local world_entrances = object('room').world_entrances
 	local castle = object('c')
 	for i = 1, #world_entrances do
 		local world_entrance = world_entrances[i]
@@ -709,7 +709,7 @@ function player:find_world_entrance_for_unlock()
 end
 
 function player:find_near_open_world_entrance()
-	local world_entrances = object('c').current_room.world_entrances
+	local world_entrances = object('room').world_entrances
 	local castle = object('c')
 	for i = 1, #world_entrances do
 		local world_entrance = world_entrances[i]
@@ -906,10 +906,6 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	end
 
 	local switch = object('c'):switch_room(direction, self.y, self.y + self.height)
-	if switch == nil then
-		return false
-	end
-
 	if switch.outside then
 		local director = object('d')
 		director.events:emit('world_transition_start')
@@ -924,14 +920,15 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self:emit_room_switched(leave_switch.from_room_number, leave_switch.to_room_number, 'right')
 		return true
 	end
+	local room = object('room')
 	if direction == 'left' then
-		self.x = object('c').current_room.world_width - self.width
+		self.x = room.world_width - self.width
 	elseif direction == 'right' then
-		self.x = object('c').current_room.tile_size
+		self.x = room.tile_size
 	elseif direction == 'up' then
-		self.y = object('c').current_room.world_height - self.height - object('c').current_room.tile_size
+		self.y = room.world_height - self.height - room.tile_size
 	else
-		self.y = object('c').current_room.world_top - object('c').current_room.tile_size
+		self.y = room.world_top - room.tile_size
 	end
 
 	if keep_stairs_lock then
@@ -949,11 +946,20 @@ function player:try_switch_room(direction, keep_stairs_lock)
 end
 
 function player:try_side_room_switch_from_position()
-	local max_x = object('c').current_room.world_width - self.width
-	if self.x < object('c').current_room.tile_size then
+	local room = object('room')
+	local max_x = room.world_width - self.width
+	if self.x < room.tile_size then
+		if room.room_links.left == 0 then
+			self.x = room.tile_size
+			return false
+		end
 		return self:try_switch_room('left', false)
 	end
 	if self.x > max_x then
+		if room.room_links.right == 0 then
+			self.x = max_x
+			return false
+		end
 		return self:try_switch_room('right', false)
 	end
 	return false
@@ -967,49 +973,56 @@ function player:can_switch_up_from_state()
 end
 
 function player:nearing_room_exit()
-	local max_x = object('c').current_room.world_width - self.width
+	local room = object('room')
+	local max_x = room.world_width - self.width
 	if self.x < 0 then
 		return 'left'
 	end
 	if self.x > max_x then
 		return 'right'
 	end
-	local up_exit_threshold = object('c').current_room.world_top - object('c').current_room.tile_size
+	local up_exit_threshold = room.world_top - room.tile_size
 	if self.y < up_exit_threshold then
 		return 'up'
 	end
-	local down_exit_threshold = object('c').current_room.world_height - self.height
+	local down_exit_threshold = room.world_height - self.height
 	if self.y > down_exit_threshold then
 		return 'down'
 	end
 	return nil
 end
 
+function player:clamp_blocked_vertical_room_exit(direction)
+	if direction == 'up' then
+		local room = object('room')
+		local up_limit = room.world_top - room.tile_size
+		if self.y < up_limit then
+			self.y = up_limit
+		end
+		self.previous_y_collision = true
+		return
+	end
+
+	local down_limit = object('room').world_height - self.height
+	if self.y > down_limit then
+		self.y = down_limit
+	end
+end
+
 function player:try_vertical_room_switch_from_position()
 	local direction = self:nearing_room_exit()
 	if direction and vertical_exit_directions[direction] then
 		if direction == 'up' and (not self:can_switch_up_from_state()) then
-			local up_limit = object('c').current_room.world_top - object('c').current_room.tile_size
-			if self.y < up_limit then
-				self.y = up_limit
-			end
-			self.previous_y_collision = true
+			self:clamp_blocked_vertical_room_exit(direction)
+			return false
+		end
+		if object('room').room_links[direction] == 0 then
+			self:clamp_blocked_vertical_room_exit(direction)
 			return false
 		end
 		local keep_stairs_lock = self:has_tag(state_tags.group.stairs) or self.hit_stairs_lock
 		if not self:try_switch_room(direction, keep_stairs_lock) then
-			if direction == 'up' then
-				local up_limit = object('c').current_room.world_top - object('c').current_room.tile_size
-				if self.y < up_limit then
-					self.y = up_limit
-				end
-				self.previous_y_collision = true
-			else
-				local down_limit = object('c').current_room.world_height - self.height
-				if self.y > down_limit then
-					self.y = down_limit
-				end
-			end
+			self:clamp_blocked_vertical_room_exit(direction)
 			return false
 		end
 		if keep_stairs_lock and (not self:sync_stairs_after_vertical_room_switch(direction)) then
@@ -1050,7 +1063,7 @@ function player:get_jump_inertia(default_inertia)
 end
 
 function player:pick_entry_stairs(direction)
-	local stairs = object('c').current_room.stairs
+	local stairs = object('room').stairs
 	local best = nil
 	local best_dx = 0
 
@@ -1079,7 +1092,7 @@ function player:pick_entry_stairs(direction)
 end
 
 function player:search_stairs_at_locked_x(x, y_probe)
-	local stairs = object('c').current_room.stairs
+	local stairs = object('room').stairs
 	local y_bottom = y_probe + self.height
 	for i = 1, #stairs do
 		local stair = stairs[i]
@@ -1101,7 +1114,7 @@ end
 function player:sync_stairs_after_vertical_room_switch(direction)
 	local probe_y = self.y
 	if direction == 'up' then
-		probe_y = probe_y + object('c').current_room.tile_size
+		probe_y = probe_y + object('room').tile_size
 	end
 	local stair = self:search_stairs_at_locked_x(self.stairs_x, probe_y)
 	if stair == nil then
@@ -1156,7 +1169,7 @@ function player:try_step_off_stairs()
 		return false
 	end
 
-	local current_room = object('c').current_room
+	local current_room = object('room')
 	local tx = math.modf((self.x - current_room.tile_origin_x) / constants.room.tile_size)
 	local ty = math.modf((self.y - current_room.tile_origin_y) / constants.room.tile_size)
 	local dty = (self.y - current_room.tile_origin_y) - (ty * constants.room.tile_size)
@@ -1372,7 +1385,7 @@ function player:apply_move(dx, dy, include_elevator_collision)
 	local next_y = old_y + dy
 	local test_x_col
 	local found
-	local room = object('c').current_room
+	local room = object('room')
 
 	if self:collides_at(next_x, next_y, include_elevator_collision) then
 		if next_y ~= old_y then
@@ -1457,21 +1470,22 @@ function player:apply_move(dx, dy, include_elevator_collision)
 	end
 
 	local max_x = room.world_width - self.width
+	local room_links = room.room_links
 	if self.x < room.tile_size then
-		if room.links.left <= 0 then
+		if room_links.left <= 0 then
 			self.x = room.tile_size
 			collided_x = true
 		end
 	end
 	if self.x > max_x then
-		if room.links.right <= 0 then
+		if room_links.right <= 0 then
 			self.x = max_x
 			collided_x = true
 		end
 	end
 
 	local max_y = room.world_height - self.height
-	if self.y > max_y and room.links.down <= 0 then
+	if self.y > max_y and room_links.down <= 0 then
 		self.y = max_y
 		landed = true
 		collided_y = true
@@ -2098,7 +2112,7 @@ function player:update_down_stairs()
 
 	local moved
 	local next_y
-	local down_exit_threshold = object('c').current_room.world_height - self.height
+	local down_exit_threshold = object('room').world_height - self.height
 	local stairs_reaches_room_exit = self.stairs_bottom_y >= down_exit_threshold
 
 	if self.down_held and not self.up_held then

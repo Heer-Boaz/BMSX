@@ -146,15 +146,15 @@ local function build_edge_gate(map_rows, border_x)
 	}
 end
 
-local function build_edge_gates(map_rows, links)
+local function build_edge_gates(map_rows, room_links)
 	local edge_gates = {}
 	local row_width = #map_rows[1]
 
-	if links.left > 0 then
+	if room_links.left > 0 then
 		edge_gates.left = build_edge_gate(map_rows, 1)
 	end
 
-	if links.right > 0 then
+	if room_links.right > 0 then
 		edge_gates.right = build_edge_gate(map_rows, row_width)
 	end
 
@@ -432,7 +432,7 @@ local function load_room_templates()
 	for raw_room_number, room_def in pairs(data) do
 		if type(room_def) == 'table' and room_def.map ~= nil then
 			local room_number = tonumber(raw_room_number)
-			local links = build_links(room_number, room_def.exits)
+			local room_links = build_links(room_number, room_def.exits)
 			local map_rows = room_def.map
 			local object_defs = room_def.objects or {}
 				templates[room_number] = {
@@ -442,8 +442,8 @@ local function load_room_templates()
 			custom = room_def.custom,
 			map_rows = map_rows,
 			spawn = build_spawn(map_rows),
-			links = links,
-			edge_gates = build_edge_gates(map_rows, links),
+			room_links = room_links,
+			edge_gates = build_edge_gates(map_rows, room_links),
 			enemies = build_enemies(room_number, room_def.subtype, object_defs),
 			rocks = build_rocks(room_number, object_defs),
 			items = build_items(room_number, object_defs),

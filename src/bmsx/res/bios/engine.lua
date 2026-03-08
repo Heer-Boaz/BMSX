@@ -96,11 +96,11 @@ local function apply_class_prototype(instance, class_table)
 	if class_table == nil then
 		return
 	end
-	local instance_mt = getmetatable(instance)
-	if instance_mt == nil then
+	local shared_mt = getmetatable(instance)
+	if shared_mt == nil then
 		error("apply_class_prototype: instance is missing a metatable.")
 	end
-	local base_index = instance_mt.__index
+	local base_index = shared_mt.__index
 	if base_index == nil then
 		error("apply_class_prototype: instance metatable is missing __index.")
 	end
@@ -112,7 +112,12 @@ local function apply_class_prototype(instance, class_table)
 		class_mt.__index = base_index
 		setmetatable(class_table, class_mt)
 	end
-	instance_mt.__index = class_table
+	local instance_mt = { __index = class_table }
+	for key, value in pairs(shared_mt) do
+		if key ~= "__index" and type(key) == "string" and key:sub(1, 2) == "__" then
+			instance_mt[key] = value
+		end
+	end
 	setmetatable(instance, instance_mt)
 end
 

@@ -50,7 +50,7 @@ action_effects.register_effect('pepernoot', {
 	end,
 	handler = function(context)
 		local owner = context.owner
-		local room = object('c').current_room
+		local room = object('room')
 		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 		local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
 		local spawn_x = owner.x + (owner.facing < 0 and -constants.secondary_weapon.pepernoot_spawn_offset_x or constants.secondary_weapon.pepernoot_spawn_offset_x)
@@ -59,7 +59,7 @@ action_effects.register_effect('pepernoot', {
 		inst('pepernoot_projectile', {
 			id = projectile_id,
 			room = room,
-			room_number = room.room_number,
+			room_number = object('c').current_room_number,
 			owner_id = owner.id,
 			direction = owner.facing,
 			pos = { x = spawn_x, y = spawn_y, z = 113 },
@@ -99,7 +99,7 @@ action_effects.register_effect('halo', {
 	handler = function(context)
 		local director = object('d')
 		local castle = object('c')
-		local from_world = (castle.current_room.world_number or 0) ~= 0
+		local from_world = (object('room').world_number or 0) ~= 0
 		director.events:emit('halo_transition_start')
 		local switch = castle:halo_teleport_to_room_1()
 		if from_world then

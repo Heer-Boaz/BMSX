@@ -448,7 +448,7 @@ local function apply_room_template(room_state, template)
 	room_state.seal = template.seal
 	room_state.world_entrances = template.world_entrances
 	room_state.draaideuren = template.draaideuren
-	room_state.links = template.links
+	room_state.room_links = template.room_links
 	room_state.edge_gates = template.edge_gates
 end
 
@@ -478,7 +478,7 @@ function room_object:patch_rows(rows)
 end
 
 function room_object:apply_progression_command(command)
-	if command.room_number ~= nil and command.room_number ~= self.room_number then
+	if command.room_number ~= nil and command.room_number ~= object('c').current_room_number then
 		return false
 	end
 	if command.op == 'room.patch_rows' then
@@ -658,12 +658,8 @@ function room_object:find_near_lithograph(player)
 end
 
 function room_object:switch_room(direction)
-	local target_room_number = self.links[direction]
-	if not target_room_number then
-		return nil
-	end
-
-	local from_room_number = self.room_number
+	local from_room_number = object('c').current_room_number
+	local target_room_number = self.room_links[direction]
 
 	if target_room_number < 0 then
 		return {
@@ -677,7 +673,7 @@ function room_object:switch_room(direction)
 	apply_room_template(self, castle_map.room_templates[target_room_number])
 	return {
 		from_room_number = from_room_number,
-		to_room_number = self.room_number,
+		to_room_number = target_room_number,
 		direction = direction,
 	}
 end

@@ -18,7 +18,7 @@ function vlokspawner.bt_tick(self, blackboard)
 		return behaviourtree.running
 	end
 
-	local room = object('c').current_room
+	local room = object('room')
 	local random_x = math.random(-5, 4)
 	inst('enemy.vlokfoe', {
 		direction = random_x < 0 and 'left' or 'right',

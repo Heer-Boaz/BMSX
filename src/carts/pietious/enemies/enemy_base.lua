@@ -84,9 +84,9 @@ function enemy_base.bind_overlap_events(self)
 end
 
 function enemy_base.spawn_death_effect(self)
-	local room = object('c').current_room
+	local room = object('room')
 	inst('enemy_explosion', {
-		room_number = room.room_number,
+		room_number = object('c').current_room_number,
 		loot_type = self:choose_drop_type(),
 		pos = { x = self.x, y = self.y, z = 114 },
 	})
@@ -98,7 +98,7 @@ function enemy_base.take_weapon_hit(self, weapon_kind)
 		self.health = 0
 		self.dangerous = false
 		self:spawn_death_effect()
-		local room_number = object('c').current_room.room_number
+		local room_number = object('c').current_room_number
 		object('c').events:emit('enemy.defeated', {
 			enemy_id = self.id,
 			room_number = room_number,

@@ -20,7 +20,6 @@ end
 
 function stafffoe.bt_tick(self, blackboard)
 	local node = blackboard.nodedata
-	local room = object('c').current_room
 	if self.staff_state == 'default' then
 		local wait_ticks = node.staff_wait_ticks or constants.enemy.staff_wait_before_spawn_state_steps
 		wait_ticks = wait_ticks - 1

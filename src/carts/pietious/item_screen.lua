@@ -123,7 +123,7 @@ end
 
 function item_screen:draw_inventory_items()
 	local player = object('pietolon')
-	local world_number = object('c').current_room.world_number
+	local world_number = object('room').world_number
 	for i = 1, #inventory_item_order do
 		local item_type = inventory_item_order[i]
 		if player.inventory_items[item_type] then
@@ -146,7 +146,7 @@ end
 
 function item_screen:draw_map()
 	local player = object('pietolon')
-	local room = object('c').current_room
+	local room = object('room')
 	local world_number = room.world_number
 	if world_number <= 0 then
 		return
@@ -162,7 +162,7 @@ function item_screen:draw_map()
 	for i = 1, #map_proxies do
 		local proxy = map_proxies[i]
 		local sprite_id
-		if self.map_highlight and proxy.room_number == room.room_number then
+		if self.map_highlight and proxy.room_number == object('c').current_room_number then
 			sprite_id = 'room_proxy_red'
 		elseif self.map_highlight and proxy.is_boss_room and player.inventory_items['lamp'] then
 			sprite_id = 'room_proxy_blue'
