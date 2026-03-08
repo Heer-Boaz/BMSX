@@ -48,7 +48,7 @@ function elevator:update_motion()
 		and player.y >= (self.y - constants.room.tile_size2)
 		and player.y < (self.y + constants.room.tile_size2)
 	then
-		local standing_on_top = player.y == (self.y - constants.player.height)
+		local standing_on_top = player.y == (self.y - constants.player.height + constants.room.tile_size)
 		if player.x > (self.x - constants.room.tile_size2)
 			and player.x < (self.x + constants.room.tile_size4)
 			and (player:has_tag('g.et') or standing_on_top)

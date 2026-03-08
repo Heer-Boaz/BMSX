@@ -12,17 +12,13 @@ function pepernoot_projectile:ctor()
 	self:gfx('pepernoot_16')
 end
 
-function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
+
+
+function pepernoot_projectile:onspawn(pos)
 	local room = object('room')
 	local snapped_x, snapped_y = room:snap_world_to_tile(self.x, self.y)
 	self.sprite_component.offset.x = snapped_x - self.x
 	self.sprite_component.offset.y = snapped_y - self.y
-end
-
-function pepernoot_projectile:onspawn(pos)
-	getmetatable(self).onspawn(self, pos)
-	self.sprite_component.flip.flip_h = self.direction < 0
-	self:refresh_tile_aligned_sprite_offset()
 end
 
 function pepernoot_projectile:bind()
@@ -49,6 +45,13 @@ function pepernoot_projectile:on_overlap_begin(event)
 		return
 	end
 	self:mark_for_disposal()
+end
+
+function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
+	local room = object('room')
+	local snapped_x, snapped_y = room:snap_world_to_tile(self.x, self.y)
+	self.sprite_component.offset.x = snapped_x - self.x
+	self.sprite_component.offset.y = snapped_y - self.y
 end
 
 function pepernoot_projectile:update_motion()

@@ -281,14 +281,11 @@ function player:define_runtime_timelines()
 end
 
 function player:ctor()
-	self:add_component(components.new_component('actioneffectcomponent', {
-		parent = self,
-	}))
+	self:add_component(components.new_component('actioneffectcomponent', {}))
 	self.actioneffects:grant_effect('halo')
 	self.actioneffects:grant_effect('pepernoot')
 	self.actioneffects:grant_effect('spyglass')
 	self:add_component(components.inputactioneffectcomponent.new({
-		parent = self,
 		program = player_abilities.build_input_action_effect_program(),
 	}))
 	self:gfx('pietolon_stand_r')
@@ -299,7 +296,6 @@ function player:ctor()
 	self.collider:apply_collision_profile('player')
 
 	self.sword_collider = components.collider2dcomponent.new({
-		parent = self,
 		id_local = 'sword',
 		spaceevents = 'current',
 	})
@@ -308,7 +304,6 @@ function player:ctor()
 	self:add_component(self.sword_collider)
 
 	self.sword_sprite = components.spritecomponent.new({
-		parent = self,
 		id_local = 'sword',
 		imgid = 'sword_r',
 		offset = { x = 0, y = 0, z = 111 },
@@ -505,6 +500,7 @@ function player:advance_sword_sequence()
 			-- 	self.x = self.x + 2
 			-- end
 		end
+		self.sword_cooldown = 1
 		self.events:emit(player_sword_end_event)
 		return
 	end
@@ -1281,7 +1277,7 @@ function player:try_snap_to_elevator_platform(next_x)
 		and self.x > (platform.x - (constants.room.tile_size2 - (constants.room.tile_unit * 4)))
 		and self.x < ((platform.x + constants.room.tile_size4) - (constants.room.tile_unit * 3))
 		then
-			self.y = platform.y - self.height
+			self.y = (platform.y - self.height) + constants.room.tile_size
 			self.x = next_x
 			return true
 		end
@@ -2339,6 +2335,9 @@ function player:update_dying()
 end
 
 function player:update_common_frame()
+	if self.sword_cooldown > 0 then
+		self.sword_cooldown = self.sword_cooldown - 1
+	end
 	self.on_vertical_elevator = false
 	self:update_collision_state()
 
@@ -2928,6 +2927,7 @@ local function register_player_definition()
 			secondary_weapon = nil,
 			weapon_level = 0,
 			pepernoot_projectile_sequence = 0,
+			sword_cooldown = 0,
 		},
 	})
 end

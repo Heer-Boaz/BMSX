@@ -19,6 +19,9 @@ function player_abilities.activate_sword(owner)
 	if owner:has_tag('g.sw') then
 		return false
 	end
+	if owner.sword_cooldown > 0 then
+		return false
+	end
 	owner:force_seek_timeline('p.seq.s', 0)
 	owner.events:emit('sword_start')
 	return true

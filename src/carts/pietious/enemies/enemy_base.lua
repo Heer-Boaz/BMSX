@@ -1,6 +1,7 @@
 local worldobject = require('worldobject')
 local combat_overlap = require('combat_overlap')
 local constants = require('constants')
+local components = require('components')
 
 local enemy_base = {}
 local damaging_contact_kinds = {
@@ -58,15 +59,7 @@ function enemy_base.bind_overlap_events(self)
 		end,
 	})
 
-	self.events:on({
-		event = 'room.switched',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function(_event)
-			self:mark_for_disposal()
-		end,
-	})
-
+	
 	self.events:on({
 		event = 'shrine_transition_enter',
 		subscriber = self,
