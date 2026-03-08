@@ -6,6 +6,8 @@ import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import * as runtimeIde from './runtime_ide';
 import { $ } from '../core/engine_core';
 import { LuaResourceCreationRequest, ResourceDescriptor } from './types';
+import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './workspace_path';
+export { joinWorkspacePaths } from './workspace_path';
 
 export const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 export const WORKSPACE_STORAGE_PREFIX = 'bmsx.workspace';
@@ -54,26 +56,6 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 	runtimeLuaPipeline.markSourceChunkAsDirty(Runtime.instance, asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
-}
-
-export function joinWorkspacePaths(...segments: string[]): string {
-	return segments
-		.filter(segment => segment.length > 0)
-		.join('/')
-		.replace(/\/+/g, '/');
-}
-
-function stripProjectRootPrefix(resourcePath: string, projectRootPath: string): string {
-	const normalizedRoot = projectRootPath ? projectRootPath.replace(/^\.?\//, '') : '';
-	const normalizedPath = resourcePath.replace(/^\.?\//, '');
-	if (normalizedRoot.length === 0) {
-		return normalizedPath;
-	}
-	if (normalizedPath.startsWith(normalizedRoot)) {
-		const sliced = normalizedPath.slice(normalizedRoot.length);
-		return sliced.startsWith('/') ? sliced.slice(1) : sliced;
-	}
-	return normalizedPath;
 }
 
 export function sanitizeWorkspaceFilenameSegment(value: string): string {
@@ -165,25 +147,6 @@ function resolveOverrideUpdatedAt(record: WorkspaceOverrideRecord, fallback: num
 	return typeof record.updatedAt === 'number' ? record.updatedAt : fallback;
 }
 
-function resolveWorkspacePathForIo(path: string, projectRootPath?: string): string {
-	const root = projectRootPath ?? $.assets.project_root_path;
-	const normalizedPath = path.replace(/^\.?\//, '');
-	if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
-		return path;
-	}
-	if (normalizedPath.startsWith('src/')) {
-		return normalizedPath;
-	}
-	if (!root) {
-		return path;
-	}
-	const normalizedRoot = root.replace(/^\.?\//, '');
-	if (normalizedPath.startsWith(normalizedRoot)) {
-		return normalizedPath;
-	}
-	return joinWorkspacePaths(root, path);
-}
-
 export async function persistLuaSourceToFilesystem(path: string, source: string): Promise<void> {
 	if (typeof fetch !== 'function') {
 		throw new Error('[Runtime] Fetch API unavailable; cannot persist Lua source.');
@@ -193,7 +156,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 		response = await fetch(WORKSPACE_FILE_ENDPOINT, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ path: resolveWorkspacePathForIo(path), contents: source }),
+			body: JSON.stringify({ path: resolveWorkspacePath(path), contents: source }),
 		});
 	} catch (error) {
 		handleLuaPersistenceFailure('persist', `[Runtime] Failed to reach Lua save endpoint for '${path}': ${error}`);
@@ -238,7 +201,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 		return null;
 	}
 	let response: HttpResponse;
-	const resolvedPath = resolveWorkspacePathForIo(path);
+	const resolvedPath = resolveWorkspacePath(path);
 	const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(resolvedPath)}`;
 	try {
 		response = await fetch(url, { method: 'GET', cache: 'no-store' });
@@ -406,7 +369,7 @@ export async function fetchWorkspaceDirtyLuaOverrides(cart: LuaSourceRegistry, r
 async function fetchWorkspaceCanonicalLua(cart: LuaSourceRegistry, root: string): Promise<Map<string, WorkspaceOverrideRecord>> {
 	const tasks: Array<Promise<WorkspaceOverrideRecord>> = [];
 	for (const asset of Object.values(cart.path2lua)) {
-		const canonicalPath = resolveWorkspacePathForIo(asset.source_path, root);
+		const canonicalPath = resolveWorkspacePath(asset.source_path, root);
 		tasks.push(fetchWorkspaceFile(canonicalPath).then((result) => {
 			if (!result) {
 				return null;
@@ -582,7 +545,7 @@ async function persistWorkspaceFileToServer(root: string, path: string, source: 
 	if (typeof fetch !== 'function') {
 		return;
 	}
-	const resolvedPath = resolveWorkspacePathForIo(path, root);
+	const resolvedPath = resolveWorkspacePath(path, root);
 	try {
 		const response = await fetch(WORKSPACE_FILE_ENDPOINT, {
 			method: 'POST',

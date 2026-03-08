@@ -36,7 +36,7 @@ const { LuaLexer } = require('../../src/bmsx/lua/syntax/lualexer');
 // @ts-ignore
 const { LuaParser } = require('../../src/bmsx/lua/syntax/luaparser');
 // @ts-ignore
-const { compileLuaChunkToProgram, formatLuaCompileError, isLuaCompileError } = require('../../src/bmsx/emulator/program_compiler');
+const { compileLuaChunkToProgram, isLuaCompileError } = require('../../src/bmsx/emulator/program_compiler');
 // @ts-ignore
 const { PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID, buildModuleAliasesFromPaths, encodeProgram, encodeProgramAsset, encodeProgramSymbolsAsset } = require('../../src/bmsx/emulator/program_asset');
 // @ts-ignore
@@ -695,6 +695,14 @@ export function zip(content: Buffer): Uint8Array {
 function normalizeLineEndings(input: string): string {
 	// Normalize line endings to LF (handles CRLF and lone CR)
 	return input.replace(/\r\n|\r/g, '\n');
+}
+
+function formatLuaCompileError(error: { path: string; message: string; line: number; column: number }, source: string): string {
+	const lines = normalizeLineEndings(source).split('\n');
+	const sourceLine = lines[error.line - 1];
+	const gutter = `${error.line} | `;
+	const caret = Math.max(0, error.column - 1);
+	return `${error.path}:${error.line}:${error.column}: ${error.message}\n${gutter}${sourceLine}\n${' '.repeat(gutter.length + caret)}^`;
 }
 
 function compileLuaChunkBuffer(source: string, path: string): Buffer {

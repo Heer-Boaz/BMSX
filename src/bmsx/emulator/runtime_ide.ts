@@ -31,6 +31,7 @@ import { getBasePipelineSpecOverrideForIdeOrTerminal, ideExtSpec, terminalExtSpe
 import { TerminalMode } from './terminal_mode';
 import type { Runtime } from './runtime';
 import type { RuntimeOptions } from './types';
+import { resolveWorkspacePath } from './workspace_path';
 
 class DebugPauseCoordinator {
 	private suspension: LuaDebuggerPauseSignal = null;
@@ -590,22 +591,13 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 	const projectRootPath = runtime.isEngineProgramActive()
 		? $.engine_layer.index.projectRootPath
 		: $.assets.project_root_path;
-	const normalizedRoot = projectRootPath && projectRootPath.length > 0
-		? projectRootPath.replace(/^\.?\//, '')
-		: '';
 	if (luaFrames.length > 0) {
 		for (const frame of luaFrames) {
 			const source = frame.source;
 			if (!source || source.length === 0) {
 				continue;
 			}
-			const normalizedSource = source.replace(/^\.?\//, '');
-			const workspaceRelative = normalizedSource.startsWith('src/')
-				? normalizedSource
-				: (normalizedRoot.length > 0 && normalizedSource.startsWith(`${normalizedRoot}/`))
-					? normalizedSource
-					: (normalizedRoot.length > 0 ? `${normalizedRoot}/${normalizedSource}` : normalizedSource);
-			frame.pathPath = workspaceRelative;
+			frame.pathPath = resolveWorkspacePath(source, projectRootPath);
 		}
 	}
 	let stackText: string = null;

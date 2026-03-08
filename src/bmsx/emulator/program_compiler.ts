@@ -61,18 +61,8 @@ export type ProgramModule = {
 	chunk: LuaChunk;
 };
 
-const normalizeSource = (source: string): string => source.replace(/\r\n|\r/g, '\n');
-
 export const isLuaCompileError = (value: unknown): value is LuaCompileError =>
 	value instanceof LuaSyntaxError;
-
-export const formatLuaCompileError = (error: LuaCompileError, source: string): string => {
-	const lines = normalizeSource(source).split('\n');
-	const sourceLine = lines[error.line - 1];
-	const gutter = `${error.line} | `;
-	const caret = Math.max(0, error.column - 1);
-	return `${error.path}:${error.line}:${error.column}: ${error.message}\n${gutter}${sourceLine}\n${' '.repeat(gutter.length + caret)}^`;
-};
 
 type CompileOptions = {
 	baseProgram?: Program;

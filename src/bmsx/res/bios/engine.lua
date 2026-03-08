@@ -481,10 +481,12 @@ function engine.attach_component(object_or_id, component_or_type)
 end
 
 function engine.update()
-	ide_editor.update()
-	if ide_editor.is_open() then
-		ide_editor.draw()
-		return
+	if ide_editor.is_enabled() then
+		ide_editor.update()
+		if ide_editor.is_open() then
+			ide_editor.draw()
+			return
+		end
 	end
 	quickmenu.update()
 	if not quickmenu.is_open() then

@@ -10,6 +10,7 @@ local editor = {}
 local undo_coalesce_interval_ms = 400
 local toggle_editor_key = "F1"
 local editor_cpu_hz = 800000000
+local editor_enabled = false
 
 local character_map = {
 	["KeyA"] = { normal = "a", shift = "A" },
@@ -1684,7 +1685,18 @@ function editor.init(path)
 	ensure_cursor_visible()
 end
 
+function editor.is_enabled()
+	return editor_enabled
+end
+
+function editor.set_enabled(enabled)
+	editor_enabled = enabled
+end
+
 function editor.open()
+	if not editor_enabled then
+		error("ide_editor is disabled")
+	end
 	if not state.initialized then
 		editor.init(nil)
 	end
@@ -1707,6 +1719,9 @@ function editor.close()
 end
 
 function editor.toggle()
+	if not editor_enabled then
+		error("ide_editor is disabled")
+	end
 	if state.open then
 		editor.close()
 		return
@@ -1719,11 +1734,17 @@ function editor.is_open()
 end
 
 function editor.open_path(path)
+	if not editor_enabled then
+		error("ide_editor is disabled")
+	end
 	editor.init(path)
 	editor.open()
 end
 
 function editor.update()
+	if not editor_enabled then
+		return
+	end
 	local player_input = get_player_input()
 	if is_key_just_pressed(player_input, toggle_editor_key) then
 		consume_key(player_input, toggle_editor_key)
