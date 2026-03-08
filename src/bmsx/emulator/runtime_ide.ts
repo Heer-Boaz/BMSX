@@ -32,6 +32,7 @@ import { TerminalMode } from './terminal_mode';
 import type { Runtime } from './runtime';
 import type { RuntimeOptions } from './types';
 import { resolveWorkspacePath } from './workspace_path';
+import { shallowcopy } from '../utils/shallowcopy';
 
 class DebugPauseCoordinator {
 	private suspension: LuaDebuggerPauseSignal = null;
@@ -61,6 +62,95 @@ class DebugPauseCoordinator {
 }
 
 type DebuggerStepOrigin = { path: string; line: number; depth: number };
+type RenderTargetVec2 = { x: number; y: number };
+type RenderTargetSnapshot = {
+	viewportSize: RenderTargetVec2;
+	canvasSize: RenderTargetVec2;
+	offscreenSize: RenderTargetVec2;
+};
+type TargetOwner = 'editor';
+type RenderTargetState = {
+	baseline?: RenderTargetSnapshot;
+	stack: TargetOwner[];
+};
+
+const EDITOR_TARGET: RenderTargetVec2 = { x: 384, y: 288 };
+const RT_STATE = new WeakMap<Runtime, RenderTargetState>();
+
+function getRenderTargetState(runtime: Runtime): RenderTargetState {
+	let state = RT_STATE.get(runtime);
+	if (!state) {
+		state = { stack: [] };
+		RT_STATE.set(runtime, state);
+	}
+	return state;
+}
+
+function captureCurrentTargets(): RenderTargetSnapshot {
+	const view = $.view;
+	return {
+		viewportSize: shallowcopy(view.viewportSize),
+		canvasSize: shallowcopy(view.canvasSize),
+		offscreenSize: shallowcopy(view.offscreenCanvasSize),
+	};
+}
+
+function applyFixedEditorTargets(runtime: Runtime): void {
+	$.view.configureRenderTargets({
+		viewportSize: EDITOR_TARGET,
+		canvasSize: EDITOR_TARGET,
+		offscreenSize: EDITOR_TARGET,
+	});
+	runtime.overlayResolutionMode = 'viewport';
+}
+
+function restoreTargets(runtime: Runtime, snapshot: RenderTargetSnapshot): void {
+	$.view.configureRenderTargets({
+		viewportSize: snapshot.viewportSize,
+		canvasSize: snapshot.canvasSize,
+		offscreenSize: snapshot.offscreenSize,
+	});
+	runtime.overlayResolutionMode = 'viewport';
+}
+
+function pushRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
+	const state = getRenderTargetState(runtime);
+	if (!state.baseline) {
+		state.baseline = captureCurrentTargets();
+	}
+	if (state.stack.includes(owner)) {
+		return;
+	}
+	state.stack.push(owner);
+	switch (owner) {
+		case 'editor':
+			applyFixedEditorTargets(runtime);
+			return;
+	}
+}
+
+function popRenderTargetOwner(runtime: Runtime, owner: TargetOwner): void {
+	const state = RT_STATE.get(runtime);
+	if (!state) {
+		return;
+	}
+	for (let i = state.stack.length - 1; i >= 0; i -= 1) {
+		if (state.stack[i] === owner) {
+			state.stack.splice(i, 1);
+		}
+	}
+	if (state.stack.length === 0) {
+		restoreTargets(runtime, state.baseline!);
+		RT_STATE.delete(runtime);
+		return;
+	}
+	const top = state.stack[state.stack.length - 1];
+	switch (top) {
+		case 'editor':
+			applyFixedEditorTargets(runtime);
+			return;
+	}
+}
 
 function editorBlocksRuntimePipeline(runtime: Runtime): boolean {
 	return runtime.editor !== null && runtime.editor.blocksRuntimePipeline === true;
@@ -164,6 +254,9 @@ export function toggleEditor(runtime: Runtime): void {
 }
 
 export function activateEditor(runtime: Runtime): void {
+	if (!runtime.hasProgramSymbols) {
+		return;
+	}
 	const overlayWasActive = isOverlayActive(runtime);
 	if (!overlayWasActive) {
 		runtime.preservedRenderQueue = runtime.overlayRenderBackend.captureCurrentFrameRenderQueue();
@@ -171,8 +264,22 @@ export function activateEditor(runtime: Runtime): void {
 	if (runtime.terminal.isActive) {
 		runtime.terminal.deactivate();
 	}
-	if (!runtime.editor!.isActive) {
-		runtime.editor!.activate();
+	const wasActive = runtime.editor!.isActive;
+	if (!wasActive) {
+		pushRenderTargetOwner(runtime, 'editor');
+	}
+	try {
+		if (!runtime.editor!.isActive) {
+			runtime.editor!.activate();
+		}
+	} catch (error) {
+		if (!wasActive) {
+			popRenderTargetOwner(runtime, 'editor');
+		}
+		throw error;
+	}
+	if (!runtime.editor!.isActive && !wasActive) {
+		popRenderTargetOwner(runtime, 'editor');
 	}
 	updateGamePipelineExts(runtime);
 }
@@ -181,6 +288,7 @@ export function deactivateEditor(runtime: Runtime): void {
 	if (runtime.editor!.isActive === true) {
 		runtime.editor!.deactivate();
 	}
+	popRenderTargetOwner(runtime, 'editor');
 	updateGamePipelineExts(runtime);
 }
 
