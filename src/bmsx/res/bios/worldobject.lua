@@ -114,7 +114,7 @@ function worldobject.new(opts)
 	self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
 	self.btreecontexts = {}
 
-	self.timelines = components.timelinecomponent.new({ parent = self })
+	self.timelines = components.timelinecomponent.new({})
 	self:add_component(self.timelines)
 	return self
 end
@@ -176,6 +176,9 @@ end
 -- not by the object's own update() method.
 function worldobject:add_component(comp)
 	comp.parent = self
+	if not comp.id then
+		comp.id = components.component.generate_id(comp)
+	end
 	local key = component_key(comp.type_name or comp)
 	local bucket = self.component_map[key]
 	if not bucket then

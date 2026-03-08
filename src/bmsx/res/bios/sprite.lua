@@ -60,8 +60,8 @@ function spriteobject.new(opts)
 	self.flip_v = false
 	self.imgid = "none"
 
-	self.sprite_component = components.spritecomponent.new({ parent = self, imgid = self.imgid, id_local = spriteobject.base_sprite_id })
-	self.collider = components.collider2dcomponent.new({ parent = self, id_local = spriteobject.primary_collider_id })
+	self.sprite_component = components.spritecomponent.new({ imgid = self.imgid, id_local = spriteobject.base_sprite_id })
+	self.collider = components.collider2dcomponent.new({ id_local = spriteobject.primary_collider_id })
 
 	self:add_component(self.sprite_component)
 	self:add_component(self.collider)

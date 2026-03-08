@@ -141,7 +141,6 @@ function textobject.new(opts)
 	self.line_height = opts.line_height or default_line_height
 	self:set_dimensions(self.dimensions)
 	self.custom_visual = components.customvisualcomponent.new({
-		parent = self,
 		producer = function()
 			self:draw()
 		end,

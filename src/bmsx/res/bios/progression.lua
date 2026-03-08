@@ -269,7 +269,7 @@ function progression_state:matches_filter(filter)
 		cached = compile_predicates(self.program, filter)
 		self.filter_cache[filter] = cached
 	end
-	return eval_predicates(self.values, cached)
+	local r = eval_predicates(self.values, cached); if not r then print("failed filter:") for i=1, #filter do print("  ", filter[i].key, filter[i].equals) end end return r
 end
 
 local function compile_set_actions(state_program, actions)

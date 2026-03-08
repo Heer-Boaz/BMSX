@@ -121,11 +121,11 @@ function component.new(opts)
 	self.parent = opts.parent
 	self.type_name = opts.type_name or "component"
 	self.id_local = opts.id_local
-	local generated_id = self.parent.id .. "_" .. self.type_name
-	if self.id_local ~= nil then
-		generated_id = generated_id .. "_" .. self.id_local
+	if opts.id then
+		self.id = opts.id
+	elseif self.parent then
+		self.id = component.generate_id(self)
 	end
-	self.id = opts.id or generated_id
 	self.enabled = true
 	if opts.enabled ~= nil then
 		self.enabled = opts.enabled
@@ -133,6 +133,14 @@ function component.new(opts)
 	self.tags = opts.tags or {}
 	self.unique = opts.unique or false
 	return self
+end
+
+function component.generate_id(comp)
+	local generated_id = comp.parent.id .. "_" .. comp.type_name
+	if comp.id_local ~= nil then
+		generated_id = generated_id .. "_" .. comp.id_local
+	end
+	return generated_id
 end
 
 function component:attach(new_parent)
