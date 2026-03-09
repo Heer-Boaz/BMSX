@@ -307,7 +307,8 @@ end
 
 -- world:spawn(obj, pos?)
 --   Registers obj in the world (and in the active space unless obj.space_id is
---   pre-set) then calls obj:onspawn(pos).
+--   pre-set), sets position from pos, calls obj:onspawn(pos), then activates
+--   the object and emits the 'spawn' event.
 --   obj.id must be unique. Returns obj.
 function world_class:spawn(obj, pos)
 	local space_id = obj.space_id
@@ -318,7 +319,14 @@ function world_class:spawn(obj, pos)
 	self._objects[#self._objects + 1] = obj
 	self:set_object_space(obj, space_id)
 	registry.instance:register(obj)
+	if pos then
+		obj.x = pos.x or obj.x
+		obj.y = pos.y or obj.y
+		obj.z = pos.z or obj.z
+	end
 	obj:onspawn(pos)
+	obj:activate()
+	obj.events:emit("spawn", { pos = pos })
 	return obj
 end
 

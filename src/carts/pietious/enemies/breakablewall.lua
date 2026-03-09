@@ -5,13 +5,18 @@ local breakablewall = {}
 breakablewall.__index = breakablewall
 
 function breakablewall:take_weapon_hit()
+	local room_number = object('c').current_room_number
 	self.health = self.health - 1
 	if self.health > 0 then
-		object('c').events:emit('foedamage')
+		self.events:emit('combat.target_damaged', {
+			target_id = self.id,
+			target_kind = self.enemy_kind,
+			room_number = room_number,
+			weapon_kind = 'sword',
+		})
 		return
 	end
 	self.health = 0
-	local room_number = object('c').current_room_number
 	object('c').events:emit('room.condition_set', {
 		room_number = room_number,
 		condition = self.trigger,

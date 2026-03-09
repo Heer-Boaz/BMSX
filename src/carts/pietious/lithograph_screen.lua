@@ -24,33 +24,6 @@ function lithograph_screen:draw_screen()
 	end
 end
 
-function lithograph_screen:bind()
-	self.events:on({
-		event = 'lithograph.open',
-		emitter = 'd',
-		subscriber = self,
-		handler = function(event)
-			self.lines = event.lines
-		end,
-	})
-	self.events:on({
-		event = 'lithograph.clear',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self.lines = {}
-		end,
-	})
-	self.events:on({
-		event = 'room',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self.lines = {}
-		end,
-	})
-end
-
 function lithograph_screen:ctor()
 	self.text_font = font.get('pietious')
 	self.lines = {}
@@ -60,6 +33,26 @@ end
 local function define_lithograph_screen_fsm()
 	define_fsm('lithograph_screen', {
 		initial = 'active',
+		on = {
+			['lithograph.open'] = {
+				emitter = 'd',
+				go = function(self, _state, event)
+					self.lines = event.lines
+				end,
+			},
+			['lithograph.clear'] = {
+				emitter = 'd',
+				go = function(self)
+					self.lines = {}
+				end,
+			},
+			['room'] = {
+				emitter = 'd',
+				go = function(self)
+					self.lines = {}
+				end,
+			},
+		},
 		states = {
 			active = {},
 		},

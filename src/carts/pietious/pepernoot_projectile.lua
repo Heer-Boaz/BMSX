@@ -1,4 +1,5 @@
 local constants = require('constants')
+local worldobject = require('worldobject')
 
 local pepernoot_projectile = {}
 pepernoot_projectile.__index = pepernoot_projectile
@@ -12,39 +13,11 @@ function pepernoot_projectile:ctor()
 	self:gfx('pepernoot_16')
 end
 
-
-
 function pepernoot_projectile:onspawn(pos)
 	local room = object('room')
 	local snapped_x, snapped_y = room:snap_world_to_tile(self.x, self.y)
 	self.sprite_component.offset.x = snapped_x - self.x
 	self.sprite_component.offset.y = snapped_y - self.y
-end
-
-function pepernoot_projectile:bind()
-	self.events:on({
-		event = 'overlap.begin',
-		subscriber = self,
-		handler = function(event)
-			self:on_overlap_begin(event)
-		end,
-	})
-
-	self.events:on({
-		event = 'room.switched',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function(_event)
-			self:mark_for_disposal()
-		end,
-	})
-end
-
-function pepernoot_projectile:on_overlap_begin(event)
-	if event.other_layer ~= constants.collision.enemy_layer then
-		return
-	end
-	self:mark_for_disposal()
 end
 
 function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
@@ -76,15 +49,16 @@ local function define_pepernoot_projectile_fsm()
 	define_fsm('pepernoot_projectile', {
 		initial = 'active',
 		on = {
-			-- ['overlap.begin'] = function(_self, event)
-			-- 	if event.other_layer ~= constants.collision.enemy_layer then
-			-- 		return
-			-- 	end
-			-- 	self:mark_for_disposal()
-			-- end,
-			-- ['room.switched'] = function(_self, fsm)
-			-- 	self:mark_for_disposal()
-			-- end,
+			['overlap.begin'] = function(self, _state, event)
+				if event.other_layer ~= constants.collision.enemy_layer then
+					return
+				end
+				self:mark_for_disposal()
+			end,
+			['room.switched'] = {
+				emitter = 'pietolon',
+				go = worldobject.mark_for_disposal,
+			},
 			['seal_breaking'] = '/freeze',
 		},
 		states = {

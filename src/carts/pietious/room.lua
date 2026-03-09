@@ -685,17 +685,6 @@ function room_object:bind_visual()
 	end
 end
 
-function room_object:bind()
-	self.events:on({
-		event = 'room.switched',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function()
-			self:set_space('main')
-		end,
-	})
-end
-
 function room_object:ctor()
 	self.destroyed_rock_ids = {}
 	self:bind_visual()
@@ -772,6 +761,14 @@ end
 local function define_room_fsm()
 	define_fsm('room', {
 		initial = 'mode_state',
+		on = {
+			['room.switched'] = {
+				emitter = 'pietolon',
+				go = function(self)
+					self:set_space('main')
+				end,
+			},
+		},
 		states = {
 			mode_state = {
 				initial = 'room',

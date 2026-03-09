@@ -103,33 +103,6 @@ local function build_shrine_exit_transition_frames()
 	return frames
 end
 
-function player:bind()
-	self.events:on({
-		event = 'room.switched',
-		subscriber = self,
-		handler = function()
-			self:set_space('main')
-		end,
-	})
-	self.events:on({
-		event = 'elevator.platform_push',
-		subscriber = self,
-		handler = function(event)
-			if event.player_id ~= self.id then
-				return
-			end
-
-			local dx = event.dx
-			local dy = event.dy
-			self.on_vertical_elevator = dy ~= 0
-			self.x = self.x + dx
-			self.y = self.y + dy
-			self.last_dx = self.last_dx + dx
-			self.last_dy = self.last_dy + dy
-		end,
-	})
-end
-
 function player:clear_input_state()
 	self.left_held = false
 	self.right_held = false
@@ -2335,9 +2308,6 @@ function player:update_dying()
 end
 
 function player:update_common_frame()
-	if self.sword_cooldown > 0 then
-		self.sword_cooldown = self.sword_cooldown - 1
-	end
 	self.on_vertical_elevator = false
 	self:update_collision_state()
 
@@ -2406,6 +2376,9 @@ local function define_player_fsm()
 	}
 	local function wrap_state_update(update_handler)
 		return function(self, state, event)
+			if self.sword_cooldown > 0 then
+				self.sword_cooldown = self.sword_cooldown - 1
+			end
 			local next_state = update_handler(self, state, event)
 			self:update_common_frame()
 			return next_state
@@ -2849,6 +2822,21 @@ local function define_player_fsm()
 					},
 					['enemy.contact_damage'] = function(self, _state, event)
 						self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
+					end,
+					['room.switched'] = function(self)
+						self:set_space('main')
+					end,
+					['elevator.platform_push'] = function(self, _state, event)
+						if event.player_id ~= self.id then
+							return
+						end
+						local dx = event.dx
+						local dy = event.dy
+						self.on_vertical_elevator = dy ~= 0
+						self.x = self.x + dx
+						self.y = self.y + dy
+						self.last_dx = self.last_dx + dx
+						self.last_dy = self.last_dy + dy
 					end,
 				['hp_zero'] = '/dying',
 				['damage'] = '/hit_fall',

@@ -1,4 +1,5 @@
 local constants = require('constants')
+local worldobject = require('worldobject')
 
 local enemy_explosion = {}
 enemy_explosion.__index = enemy_explosion
@@ -27,34 +28,6 @@ local function loot_value_for_type(loot_type)
 		return constants.enemy.loot_ammo_regen
 	end
 	error('pietious enemy_explosion invalid loot_type=' .. tostring(loot_type))
-end
-
-function enemy_explosion:bind()
-	self.events:on({
-		event = explosion_timeline_frame_event,
-		subscriber = self,
-		handler = function(event)
-			self:sync_explosion_sprite(event.frame_value)
-		end,
-	})
-
-	self.events:on({
-		event = explosion_timeline_end_event,
-		subscriber = self,
-		handler = function()
-			self:spawn_loot()
-			self:mark_for_disposal()
-		end,
-	})
-
-	self.events:on({
-		event = 'room.switched',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function(_event)
-			self:mark_for_disposal()
-		end,
-	})
 end
 
 function enemy_explosion:sync_explosion_sprite(imgid)
@@ -91,14 +64,27 @@ end
 local function define_enemy_explosion_fsm()
 	define_fsm('enemy_explosion', {
 		initial = 'animating',
-			states = {
-				animating = {
-					entering_state = function(self)
-						self:play_timeline(explosion_timeline_id, { rewind = true, snap_to_start = true })
-					end,
-				},
+		on = {
+			[explosion_timeline_frame_event] = function(self, _state, event)
+				self:sync_explosion_sprite(event.frame_value)
+			end,
+			[explosion_timeline_end_event] = function(self)
+				self:spawn_loot()
+				self:mark_for_disposal()
+			end,
+			['room.switched'] = {
+				emitter = 'pietolon',
+				go = worldobject.mark_for_disposal,
 			},
-		})
+		},
+		states = {
+			animating = {
+				entering_state = function(self)
+					self:play_timeline(explosion_timeline_id, { rewind = true, snap_to_start = true })
+				end,
+			},
+		},
+	})
 end
 
 local function register_enemy_explosion_definition()

@@ -1,4 +1,3 @@
-local worldobject = require('worldobject')
 local combat_overlap = require('combat_overlap')
 local constants = require('constants')
 local components = require('components')
@@ -37,25 +36,12 @@ function enemy_base.setup_projectile_boundary(self)
 	})
 end
 
-function enemy_base.onspawn(self, pos)
-	worldobject.onspawn(self, pos)
-	self:bind_overlap_events()
-end
-
-function enemy_base.bind_overlap_events(self)
+function enemy_base.bind(self)
 	self.events:on({
 		event = 'overlap.begin',
 		subscriber = self,
 		handler = function(event)
 			self:on_overlap(event)
-		end,
-	})
-
-	self.events:on({
-		event = 'weapon_hit',
-		subscriber = self,
-		handler = function(event)
-			self:take_weapon_hit(event.weapon_kind)
 		end,
 	})
 
@@ -86,13 +72,13 @@ function enemy_base.spawn_death_effect(self)
 end
 
 function enemy_base.take_weapon_hit(self, weapon_kind)
+	local room_number = object('c').current_room_number
 	self.health = self.health - 1
 	if self.health <= 0 then
 		self.health = 0
 		self.dangerous = false
 		self:spawn_death_effect()
-		local room_number = object('c').current_room_number
-		object('c').events:emit('enemy.defeated', {
+		self.events:emit('enemy.defeated', {
 			enemy_id = self.id,
 			room_number = room_number,
 			kind = self.enemy_kind,
@@ -106,7 +92,12 @@ function enemy_base.take_weapon_hit(self, weapon_kind)
 		end
 		self:mark_for_disposal()
 	else
-		object('c').events:emit('foedamage')
+		self.events:emit('combat.target_damaged', {
+			target_id = self.id,
+			target_kind = self.enemy_kind,
+			room_number = room_number,
+			weapon_kind = weapon_kind,
+		})
 	end
 	return true
 end
@@ -118,12 +109,7 @@ function enemy_base.on_overlap(self, event)
 		return
 	end
 	if damaging_contact_kinds[contact_kind] then
-		self.events:emit('weapon_hit', {
-			weapon_kind = contact_kind,
-			contact_kind = contact_kind,
-			source_id = event.other_id,
-			source_collider_local_id = event.other_collider_local_id,
-		})
+		self:take_weapon_hit(contact_kind)
 	end
 	if contact_kind == 'body' and self.dangerous then
 		player.events:emit('enemy.contact_damage', {
@@ -140,8 +126,7 @@ end
 function enemy_base.extend(enemy_class, enemy_kind)
 	local original_ctor = enemy_class.ctor
 	enemy_class.enemy_kind = enemy_kind
-	enemy_class.onspawn = enemy_base.onspawn
-	enemy_class.bind_overlap_events = enemy_base.bind_overlap_events
+	enemy_class.bind = enemy_base.bind
 	enemy_class.spawn_death_effect = enemy_base.spawn_death_effect
 	enemy_class.take_weapon_hit = enemy_base.take_weapon_hit
 	enemy_class.on_overlap = enemy_base.on_overlap

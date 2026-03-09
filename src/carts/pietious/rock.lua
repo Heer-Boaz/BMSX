@@ -18,16 +18,6 @@ local function drop_offset_y_for_item_type(item_type)
         return 0
 end
 
-function rock:bind()
-        self.events:on({
-                event = 'overlap.begin',
-                subscriber = self,
-                handler = function(event)
-                        self:on_overlap(event)
-                end,
-        })
-end
-
 function rock:ctor()
         self.collider:apply_collision_profile('enemy')
         self.collider.enabled = true
@@ -35,15 +25,26 @@ function rock:ctor()
 end
 
 function rock:take_weapon_hit(weapon_kind)
+        local room_number = object('c').current_room_number
         self.health = self.health - 1
-        if self.health <= 0 then
-                self.health = 0
-                object('c').events:emit('enemy.defeated')
-                self.events:emit('break')
-        else
-                object('c').events:emit('foedamage')
-        end
-        return true
+	if self.health <= 0 then
+	        self.health = 0
+	        self.events:emit('breakable.destroyed', {
+	                target_id = self.id,
+	                target_kind = 'rock',
+	                room_number = room_number,
+	                weapon_kind = weapon_kind,
+	        })
+	        self.events:emit('break')
+	else
+	        self.events:emit('combat.target_damaged', {
+	                target_id = self.id,
+	                target_kind = 'rock',
+	                room_number = room_number,
+	                weapon_kind = weapon_kind,
+	        })
+	end
+	return true
 end
 
 function rock:begin_break()
@@ -66,17 +67,18 @@ function rock:begin_break()
         })
 end
 
-function rock:on_overlap(event)
-        local contact_kind = combat_overlap.classify_player_contact(event)
-        if contact_kind ~= 'sword' and contact_kind ~= 'projectile' then
-                return
-        end
-        self:take_weapon_hit(contact_kind)
-end
-
 local function define_rock_fsm()
         define_fsm('rock', {
                 initial = 'idle',
+                on = {
+                        ['overlap.begin'] = function(self, _state, event)
+                                local contact_kind = combat_overlap.classify_player_contact(event)
+                                if contact_kind ~= 'sword' and contact_kind ~= 'projectile' then
+                                        return
+                                end
+                                self:take_weapon_hit(contact_kind)
+                        end,
+                },
                 states = {
                         idle = {
                                 on = {

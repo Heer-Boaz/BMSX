@@ -6,9 +6,10 @@
 -- 1. OBJECT LIFECYCLE ORDER.
 --    new()        — allocates the object and its components; no event
 --                   subscriptions here; the object is not yet active.
---    onspawn()    — called by the world when the object is placed; sets
---                   position from opts and calls activate().
---    activate()   — sets active = true, calls bind(), then starts the FSM.
+--    onspawn()    — called by world:spawn() after position is set from pos.
+--                   Override for spawn-time setup.  No super call needed.
+--    activate()   — called by world:spawn() after onspawn().  Sets
+--                   active = true, calls bind(), then starts the FSM.
 --    bind()       — override this in subclasses to subscribe to events.
 --                   Called exactly once per activation.
 --    ondespawn()  — called when removed from the world; deactivates the object.
@@ -391,8 +392,8 @@ function worldobject:emit_gameplay_fact(event_or_name, payload)
 	return event
 end
 
--- activate(): called internally by onspawn().  Sets active = true, calls
--- bind(), then starts the FSM.  Do not call directly; spawn the object
+-- activate(): called by world:spawn() after onspawn().  Sets active = true,
+-- calls bind(), then starts the FSM.  Do not call directly; spawn the object
 -- through the world instead.
 function worldobject:activate()
 	self.active = true
@@ -426,17 +427,11 @@ function worldobject:deactivate()
 	self.sc:pause()
 end
 
--- onspawn(pos): called by the world when the object is placed.  Sets initial
--- position from `pos` and calls activate().  Override for spawn-time setup
--- that needs the position to already be set; always call the supermethod.
+-- onspawn(pos): called by world:spawn() after position is set from pos.
+-- Override for spawn-time setup.  Position (x, y, z) is already applied.
+-- activate(), bind(), FSM start, and the 'spawn' event are handled
+-- automatically by world:spawn() after this returns — no super call needed.
 function worldobject:onspawn(pos)
-	if pos then
-		self.x = pos.x or self.x
-		self.y = pos.y or self.y
-		self.z = pos.z or self.z
-	end
-	self:activate()
-	self.events:emit("spawn", { pos = pos })
 end
 
 -- ondespawn(): called when the object is removed from the world.  Deactivates

@@ -11,33 +11,6 @@ function transition:bind_visual()
 	end
 end
 
-function transition:bind()
-	self.events:on({
-		event = 'transition.mask.play',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
-		end,
-	})
-	self.events:on({
-		event = 'transition.banner',
-		emitter = 'd',
-		subscriber = self,
-		handler = function(event)
-			self.banner_lines = event.lines
-		end,
-	})
-	self.events:on({
-		event = 'room',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self.banner_lines = {}
-		end,
-	})
-end
-
 function transition:draw_transition_overlay()
 	if not object('d'):has_tag('d.bt') then
 		return
@@ -65,6 +38,26 @@ end
 local function define_transition_fsm()
 	define_fsm('transition', {
 		initial = 'active',
+		on = {
+			['transition.mask.play'] = {
+				emitter = 'd',
+				go = function(self)
+					self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
+				end,
+			},
+			['transition.banner'] = {
+				emitter = 'd',
+				go = function(self, _state, event)
+					self.banner_lines = event.lines
+				end,
+			},
+			['room'] = {
+				emitter = 'd',
+				go = function(self)
+					self.banner_lines = {}
+				end,
+			},
+		},
 		states = {
 			active = {},
 		},

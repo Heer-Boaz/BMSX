@@ -41,25 +41,6 @@ function ui:set_weapon_target(value)
 	self.hud_weapon_target = clamp_int(math.modf(value), 0, constants.hud.weapon_level)
 end
 
-function ui:bind()
-	self.events:on({
-		event = 'player.health_changed',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function(event)
-			self:set_health_target(event.value)
-		end,
-	})
-	self.events:on({
-		event = 'player.weapon_changed',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function(event)
-			self:set_weapon_target(event.value)
-		end,
-	})
-end
-
 function ui:ctor()
 	self:bind_visual()
 	local player = object('pietolon')
@@ -115,6 +96,20 @@ end
 local function define_ui_fsm()
 	define_fsm('ui', {
 		initial = 'active',
+		on = {
+			['player.health_changed'] = {
+				emitter = 'pietolon',
+				go = function(self, _state, event)
+					self:set_health_target(event.value)
+				end,
+			},
+			['player.weapon_changed'] = {
+				emitter = 'pietolon',
+				go = function(self, _state, event)
+					self:set_weapon_target(event.value)
+				end,
+			},
+		},
 		states = {
 			active = {
 				update = ui.update_hud_animation,

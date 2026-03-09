@@ -15,63 +15,45 @@ local function sprite_for_loot_type(loot_type)
 	error('pietious loot_drop invalid loot_type=' .. tostring(loot_type))
 end
 
-function loot_drop:bind()
-	self.events:on({
-		event = 'overlap.begin',
-		subscriber = self,
-		handler = function(event)
-			self:on_overlap_begin(event)
-		end,
-	})
-
-	self.events:on({
-		event = 'room.switched',
-		emitter = 'pietolon',
-		subscriber = self,
-		handler = function(_event)
-			self:mark_for_disposal()
-		end,
-	})
-end
-
 function loot_drop:ctor()
 	self.collider:apply_collision_profile('pickup')
-	self:gfx('item_health')
-end
-
-function loot_drop:on_overlap_begin(event)
-	if combat_overlap.classify_player_contact(event) ~= 'body' then
-		return
-	end
-	local player = object(event.other_id)
-
-	if player:collect_loot(self.loot_type, self.loot_value) then
-		if self.loot_type == 'life' then
-			player.events:emit('healing')
-		else
-			player.events:emit('pickupitem')
-		end
-		self.events:emit('picked')
-	end
+	self:gfx(sprite_for_loot_type(self.loot_type))
 end
 
 local function define_loot_drop_fsm()
 	define_fsm('loot_drop', {
 		initial = 'active',
+		on = {
+			['overlap.begin'] = function(self, _state, event)
+				if combat_overlap.classify_player_contact(event) ~= 'body' then
+					return
+				end
+				local player = object(event.other_id)
+				if player:collect_loot(self.loot_type, self.loot_value) then
+					if self.loot_type == 'life' then
+						player.events:emit('healing')
+					else
+						player.events:emit('pickupitem')
+					end
+					self.events:emit('picked')
+				end
+			end,
+			['room.switched'] = {
+				emitter = 'pietolon',
+				go = worldobject.mark_for_disposal,
+			},
+		},
 		states = {
 			active = {
-				entering_state = function(self)
-					self:gfx(sprite_for_loot_type(self.loot_type))
-				end,
 				on = {
 					['picked'] = '/picked',
 				},
-				},
-					picked = {
-						entering_state = worldobject.mark_for_disposal,
-					},
-				},
-			})
+			},
+			picked = {
+				entering_state = worldobject.mark_for_disposal,
+			},
+		},
+	})
 end
 
 local function register_loot_drop_definition()

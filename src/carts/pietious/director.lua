@@ -284,11 +284,15 @@ end
 --     self.events:emit('lithograph_requested', { lines = { event.text_line } })
 --     -- lithograph_screen_open.entering_state receives lines via event.lines
 local function define_director_fsm()
-	-- Shared on-handlers for both daemon appearance variants (avoid duplication).
-	local function on_daemon_cloud_spawn(self)
-		self:spawn_daemon_cloud()
+	-- Shared timeline callbacks for both daemon appearance variants (avoid duplication).
+	local function on_daemon_frame(self, _state, event)
+		local frame_value = event.frame_value
+		local intro_state = math.modf(frame_value / 2) + 97
+		if (frame_value % 2) == 0 and intro_state > 96 and intro_state < 160 and (intro_state % 8) < 4 then
+			self:spawn_daemon_cloud()
+		end
 	end
-	local function on_daemon_appearance_done(self)
+	local function on_daemon_end(self)
 		self:despawn_daemon_clouds()
 		self.events:emit('daemon_appearance_done')
 		return '/room'
@@ -297,23 +301,13 @@ local function define_director_fsm()
 	define_fsm('director', {
 		-- daemon_timeline_id is shared between daemon_appearance and
 		-- daemon_appearance_post_death, so it is registered here at FSM root
-		-- (autoplay = false = registration only).  Each state configures behaviour.
+		-- (autoplay = false = registration only).  Each state configures behaviour
+		-- via on_frame (cloud spawning) and on_end (completion + transition).
 		timelines = {
 			[daemon_timeline_id] = {
 				def = {
 					frames = timeline.range(126),
 					playback_mode = 'once',
-					markers = (function()
-						local markers = {}
-						for frame_value = 0, 125 do
-							local intro_state = math.modf(frame_value / 2) + 97
-							if (frame_value % 2) == 0 and intro_state > 96 and intro_state < 160 and (intro_state % 8) < 4 then
-								markers[#markers + 1] = { frame = frame_value, event = 'daemon.cloud.spawn' }
-							end
-						end
-						markers[#markers + 1] = { frame = 124, event = 'daemon.appearance.done' }
-						return markers
-					end)(),
 					windows = {
 						{
 							name = 'clouds',
@@ -594,21 +588,20 @@ local function define_director_fsm()
 					end,
 				},
 			-- Timeline def is at FSM root (shared with daemon_appearance_post_death).
+			-- Cloud spawning and completion are handled by timeline on_frame/on_end.
 			daemon_appearance = {
 				timelines = {
 					[daemon_timeline_id] = {
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
+						on_frame = on_daemon_frame,
+						on_end = on_daemon_end,
 					},
 				},
 				entering_state = function(self)
 					self:start_daemon_appearance(false)
 				end,
-				on = {
-					['daemon.cloud.spawn'] = on_daemon_cloud_spawn,
-					['daemon.appearance.done'] = on_daemon_appearance_done,
-				},
 			},
 			-- Same as daemon_appearance but emits after_death=true in the payload.
 			-- Navigated to from death_resolve when restart_daemon is true.
@@ -618,15 +611,13 @@ local function define_director_fsm()
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = { rewind = true, snap_to_start = true },
+						on_frame = on_daemon_frame,
+						on_end = on_daemon_end,
 					},
 				},
 				entering_state = function(self)
 					self:start_daemon_appearance(true)
 				end,
-				on = {
-					['daemon.cloud.spawn'] = on_daemon_cloud_spawn,
-					['daemon.appearance.done'] = on_daemon_appearance_done,
-				},
 			},
 				lithograph_screen_open = {
 				timelines = {
