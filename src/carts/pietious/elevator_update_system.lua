@@ -14,6 +14,7 @@ local pipeline_registered = false
 local pipeline_ref = 'pt.eup'
 
 function elevator_update_system:update()
+	object('pietolon').on_vertical_elevator = false
 	for elevator in world_instance:objects_by_type('elevator_platform', { scope = 'active' }) do
 		elevator:update_motion()
 	end

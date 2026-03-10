@@ -2279,7 +2279,6 @@ function player:update_dying()
 end
 
 function player:update_common_frame()
-	self.on_vertical_elevator = false
 	self:update_collision_state()
 
 	if self:has_tag(state_tags.group.transition_lock) then
@@ -2797,13 +2796,16 @@ local function define_player_fsm()
 						if event.player_id ~= self.id then
 							return
 						end
-						local dx = event.dx
-						local dy = event.dy
-						self.on_vertical_elevator = event.on_vertical_elevator
-						self.x = self.x + dx
-						self.y = self.y + dy
-						self.last_dx = self.last_dx + dx
-						self.last_dy = self.last_dy + dy
+						local old_x = self.x
+						local old_y = self.y
+						self.x = self.x + event.dx
+						if event.on_vertical_elevator and event.standing_on_top then
+							self.y = event.platform_y - self.height
+						else
+							self.y = self.y + event.dy
+						end
+						self.last_dx = self.last_dx + (self.x - old_x)
+						self.last_dy = self.last_dy + (self.y - old_y)
 					end,
 				['hp_zero'] = '/dying',
 				['damage'] = '/hit_fall',

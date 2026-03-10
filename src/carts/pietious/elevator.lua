@@ -72,6 +72,9 @@ function elevator:update_motion()
 		delta_x = -2
 	end
 	local delta_y = move_vertical(self, target, vertical)
+	if character_over and delta_y ~= 0 then
+		player.on_vertical_elevator = true
+	end
 
 	if character_over and (delta_x ~= 0 or delta_y ~= 0) then
 		self.events:emit('elevator.platform_push', {
@@ -80,6 +83,8 @@ function elevator:update_motion()
 			dx = delta_x,
 			dy = standing_on_top and delta_y or 0,
 			on_vertical_elevator = delta_y ~= 0,
+			standing_on_top = standing_on_top,
+			platform_y = self.y,
 		})
 	end
 
