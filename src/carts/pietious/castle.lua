@@ -40,10 +40,11 @@ local function build_progression_program()
 			local enemy_def = enemies[i]
 			rules[#rules + 1] = {
 				id = enemy_def.id,
-				on = 'enemy.defeated',
+				on = 'damage.resolved',
 				when_event = {
 					equals = {
-						enemy_id = enemy_def.id,
+						target_id = enemy_def.id,
+						destroyed = true,
 					},
 				},
 				set = {
@@ -86,10 +87,11 @@ local function build_progression_program()
 
 	rules[#rules + 1] = {
 		id = 'cloud_1_destroyed',
-		on = 'enemy.defeated',
+		on = 'damage.resolved',
 		when_event = {
 			equals = {
-				kind = 'cloud',
+				target_kind = 'cloud',
+				destroyed = true,
 			},
 		},
 		set = {
@@ -105,7 +107,12 @@ local function build_progression_program()
 	}
 	rules[#rules + 1] = {
 		id = 'r109.stairs.set',
-		on = 'enemy.defeated',
+		on = 'damage.resolved',
+		when_event = {
+			equals = {
+				destroyed = true,
+			},
+		},
 		when_all = stairs_latch_conditions,
 		set = {
 			{ key = 'r109.stairs', value = true },
@@ -123,7 +130,12 @@ local function build_progression_program()
 	end
 	rules[#rules + 1] = {
 		id = 'r106.wall.set',
-		on = 'enemy.defeated',
+		on = 'damage.resolved',
+		when_event = {
+			equals = {
+				destroyed = true,
+			},
+		},
 		when_all = world1_wall_conditions,
 		set = {
 			{ key = 'r106.wall', value = true },
@@ -188,8 +200,13 @@ local function build_progression_program()
 		},
 	}
 	rules[#rules + 1] = {
-		id = 'enemy.defeated.refresh',
-		on = 'enemy.defeated',
+		id = 'damage.resolved.refresh',
+		on = 'damage.resolved',
+		when_event = {
+			equals = {
+				destroyed = true,
+			},
+		},
 		apply = {
 			{ op = 'refresh_current_room_enemies' },
 		},

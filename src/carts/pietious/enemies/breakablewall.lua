@@ -1,28 +1,35 @@
 local constants = require('constants')
 local combat_overlap = require('combat_overlap')
+local combat_damage = require('combat_damage')
 
 local breakablewall = {}
 breakablewall.__index = breakablewall
 
-function breakablewall:take_weapon_hit()
-	local room_number = object('c').current_room_number
+function breakablewall:apply_damage(request)
+	if request.weapon_kind ~= 'sword' then
+		return combat_damage.build_rejected_result(request, 'wrong_weapon')
+	end
 	self.health = self.health - 1
 	if self.health > 0 then
-		self.events:emit('combat.target_damaged', {
-			target_id = self.id,
-			target_kind = self.enemy_kind,
-			room_number = room_number,
-			weapon_kind = 'sword',
-		})
-		return
+		return combat_damage.build_applied_result(request, 1, false, 'damaged')
 	end
 	self.health = 0
-	object('c').events:emit('room.condition_set', {
-		room_number = room_number,
-		condition = self.trigger,
-	})
-	object('c').events:emit('appearance')
-	self:mark_for_disposal()
+	return combat_damage.build_applied_result(request, 1, true, 'destroyed')
+end
+
+function breakablewall:process_damage_result(result)
+	if result.status == 'rejected' then
+		return
+	end
+	if result.destroyed then
+		object('c').events:emit('room.condition_set', {
+			room_number = result.room_number,
+			condition = self.trigger,
+		})
+		object('c').events:emit('appearance')
+		self:mark_for_disposal()
+		return
+	end
 end
 
 function breakablewall:ctor()
@@ -44,10 +51,11 @@ function breakablewall:ctor()
 		subscriber = self,
 		handler = function(event)
 			local contact_kind = combat_overlap.classify_player_contact(event)
-			if contact_kind ~= 'sword' then
+			if contact_kind == nil then
 				return
 			end
-			self:take_weapon_hit()
+			local result = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, contact_kind))
+			self:process_damage_result(result)
 		end,
 	})
 end

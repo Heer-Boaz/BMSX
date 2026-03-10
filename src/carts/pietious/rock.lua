@@ -1,5 +1,6 @@
 local constants = require('constants')
 local combat_overlap = require('combat_overlap')
+local combat_damage = require('combat_damage')
 local rock = {}
 rock.__index = rock
 
@@ -24,27 +25,23 @@ function rock:ctor()
         self:gfx('stone')
 end
 
-function rock:take_weapon_hit(weapon_kind)
-        local room_number = object('c').current_room_number
+function rock:apply_damage(request)
         self.health = self.health - 1
 	if self.health <= 0 then
 	        self.health = 0
-	        self.events:emit('breakable.destroyed', {
-	                target_id = self.id,
-	                target_kind = 'rock',
-	                room_number = room_number,
-	                weapon_kind = weapon_kind,
-	        })
-	        self.events:emit('break')
-	else
-	        self.events:emit('combat.target_damaged', {
-	                target_id = self.id,
-	                target_kind = 'rock',
-	                room_number = room_number,
-	                weapon_kind = weapon_kind,
-	        })
+	        return combat_damage.build_applied_result(request, 1, true, 'destroyed')
 	end
-	return true
+	return combat_damage.build_applied_result(request, 1, false, 'damaged')
+end
+
+function rock:process_damage_result(result)
+        if result.status == 'rejected' then
+                return
+        end
+        if result.destroyed then
+                self.events:emit('break')
+                return
+        end
 end
 
 function rock:begin_break()
@@ -73,10 +70,11 @@ local function define_rock_fsm()
                 on = {
                         ['overlap.begin'] = function(self, _state, event)
                                 local contact_kind = combat_overlap.classify_player_contact(event)
-                                if contact_kind ~= 'sword' and contact_kind ~= 'projectile' then
+                                if contact_kind == nil then
                                         return
                                 end
-                                self:take_weapon_hit(contact_kind)
+                                local result = combat_damage.resolve(self, combat_damage.build_weapon_request(self, 'rock', event, contact_kind))
+                                self:process_damage_result(result)
                         end,
                 },
                 states = {

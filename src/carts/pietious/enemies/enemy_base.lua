@@ -1,4 +1,5 @@
 local combat_overlap = require('combat_overlap')
+local combat_damage = require('combat_damage')
 local constants = require('constants')
 local components = require('components')
 
@@ -71,35 +72,31 @@ function enemy_base.spawn_death_effect(self)
 	})
 end
 
-function enemy_base.take_weapon_hit(self, weapon_kind)
-	local room_number = object('c').current_room_number
+function enemy_base.apply_damage(self, request)
 	self.health = self.health - 1
 	if self.health <= 0 then
 		self.health = 0
 		self.dangerous = false
+		return combat_damage.build_applied_result(request, 1, true, 'destroyed')
+	end
+	return combat_damage.build_applied_result(request, 1, false, 'damaged')
+end
+
+function enemy_base.process_damage_result(self, result)
+	if result.status == 'rejected' then
+		return
+	end
+	if result.destroyed then
 		self:spawn_death_effect()
-		self.events:emit('enemy.defeated', {
-			enemy_id = self.id,
-			room_number = room_number,
-			kind = self.enemy_kind,
-			trigger = self.trigger,
-		})
 		if self.trigger ~= nil then
 			object('c').events:emit('room.condition_set', {
-				room_number = room_number,
+				room_number = result.room_number,
 				condition = self.trigger,
 			})
 		end
 		self:mark_for_disposal()
-	else
-		self.events:emit('combat.target_damaged', {
-			target_id = self.id,
-			target_kind = self.enemy_kind,
-			room_number = room_number,
-			weapon_kind = weapon_kind,
-		})
+		return
 	end
-	return true
 end
 
 function enemy_base.on_overlap(self, event)
@@ -109,7 +106,8 @@ function enemy_base.on_overlap(self, event)
 		return
 	end
 	if damaging_contact_kinds[contact_kind] then
-		self:take_weapon_hit(contact_kind)
+		local result = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, contact_kind))
+		self:process_damage_result(result)
 	end
 	if contact_kind == 'body' and self.dangerous then
 		player.events:emit('enemy.contact_damage', {
@@ -128,7 +126,8 @@ function enemy_base.extend(enemy_class, enemy_kind)
 	enemy_class.enemy_kind = enemy_kind
 	enemy_class.bind = enemy_base.bind
 	enemy_class.spawn_death_effect = enemy_base.spawn_death_effect
-	enemy_class.take_weapon_hit = enemy_base.take_weapon_hit
+	enemy_class.apply_damage = enemy_base.apply_damage
+	enemy_class.process_damage_result = enemy_base.process_damage_result
 	enemy_class.on_overlap = enemy_base.on_overlap
 	enemy_class.ctor = function(self, ...)
 		enemy_base.ctor(self)

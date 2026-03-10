@@ -206,23 +206,27 @@ events:
             - go:
                   audio_id: gamestart
 
-    combat.target_damaged:
+    damage.resolved:
         channel: sfx
         rules:
-            - go:
+            - when:
+                  and:
+                      - equals:
+                            status: applied
+                            destroyed: true
+                      - not:
+                            in:
+                                target_kind:
+                                    - breakablewall
+                                    - disappearingwall
+              go:
+                  audio_id: foeexplosion
+            - when:
+                  equals:
+                      status: applied
+                      destroyed: false
+              go:
                   audio_id: foedamage
-
-    enemy.defeated:
-        channel: sfx
-        rules:
-            - go:
-                  audio_id: foeexplosion
-
-    breakable.destroyed:
-        channel: sfx
-        rules:
-            - go:
-                  audio_id: foeexplosion
 
     paperspawn:
         channel: sfx
