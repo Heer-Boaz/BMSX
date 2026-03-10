@@ -1232,11 +1232,16 @@ function player:start_stairs(direction, stair, event_name)
 	self.events:emit(event_name)
 end
 
--- bmsx-lint:disable
 function player:is_ground_below_at(x, y, include_elevator)
-	return self:collides_at(x, y + 1, include_elevator)
+	local support_y = y + self.height + 1
+	local right_x = x + self.width
+	for probe_x = x, right_x, constants.room.tile_unit do
+		if self:collides_at_probe(probe_x, support_y, include_elevator) then
+			return true
+		end
+	end
+	return false
 end
--- bmsx-lint:enable
 
 function player:try_snap_to_elevator_platform(next_x)
 	local count = object('c').elevator_count
@@ -1303,9 +1308,43 @@ function player:collides_at(x, y, include_elevator)
 	return false
 end
 
+function player:collides_at_probe(x, y, include_elevator)
+	local rm = object('room')
+	if rm:is_solid_at_world(x, y) then
+		return true
+	end
+	if rm:overlaps_active_rock(x, y, 1, 1) then
+		return true
+	end
+	if rm:overlaps_active_breakable_wall(x, y, 1, 1) then
+		return true
+	end
+	if rm:overlaps_active_draaideur(x, y, 1, 1) then
+		return true
+	end
+
+	if include_elevator then
+		local count = object('c').elevator_count
+		for i = 1, count do
+			local platform = object('e.p' .. tostring(i))
+			if platform.visible
+			and y < platform.y
+			and y + 1 > platform.y
+			and x > (platform.x - (constants.room.tile_size2 - constants.room.tile_unit * 4))
+			and x < (platform.x + constants.room.tile_size4 - constants.room.tile_unit * 3)
+			then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
 function player:collides_at_jump_ceiling_profile(x, y, include_elevator)
-	for x_offset = -constants.room.tile_half, constants.room.tile_half, 1 do
-		if not self:collides_at(x + x_offset, y, include_elevator) then
+	local right_x = x + self.width
+	for probe_x = x, right_x, constants.room.tile_unit do
+		if not self:collides_at_probe(probe_x, y, include_elevator) then
 			return false
 		end
 	end
@@ -1313,13 +1352,13 @@ function player:collides_at_jump_ceiling_profile(x, y, include_elevator)
 end
 
 function player:collides_at_jump_sword_ceiling_profile(x, y, include_elevator)
-	if not self:collides_at(x, y, include_elevator) then
+	if not self:collides_at_probe(x, y, include_elevator) then
 		return false
 	end
-	if not self:collides_at(x + constants.room.tile_half, y, include_elevator) then
+	if not self:collides_at_probe(x + constants.room.tile_size, y, include_elevator) then
 		return false
 	end
-	if not self:collides_at(x - constants.room.tile_half, y, include_elevator) then
+	if not self:collides_at_probe(x + self.width, y, include_elevator) then
 		return false
 	end
 	return true
@@ -1962,9 +2001,9 @@ function player:update_controlled_fall_motion()
 	end
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
-	local should_land = (not self:collides_at(self.x, self.y, true)) and self:collides_at(self.x, self.y + dy, true)
+	local should_land = (not self:is_ground_below_at(self.x, self.y, true)) and self:is_ground_below_at(self.x, self.y + dy, true)
 	local move_result = self:apply_move(dx, dy, true)
-	if move_result.landed then
+	if move_result.landed and self:is_ground_below_at(self.x, self.y, true) then
 		should_land = true
 	end
 
@@ -1987,9 +2026,9 @@ function player:update_uncontrolled_fall_motion()
 		self:advance_sword_sequence()
 	end
 	local dy = self:get_uncontrolled_fall_dy()
-	local should_land = self:collides_at(self.x, self.y + dy, true)
+	local should_land = (not self:is_ground_below_at(self.x, self.y, true)) and self:is_ground_below_at(self.x, self.y + dy, true)
 	local move_result = self:apply_move(0, dy, true)
-	if move_result.landed then
+	if move_result.landed and self:is_ground_below_at(self.x, self.y, true) then
 		should_land = true
 	end
 
