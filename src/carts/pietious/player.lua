@@ -1234,8 +1234,9 @@ end
 
 function player:is_ground_below_at(x, y, include_elevator)
 	local support_y = y + self.height + 1
-	local right_x = x + self.width
-	for probe_x = x, right_x, constants.room.tile_unit do
+	local left_x = x + constants.room.tile_unit
+	local right_x = x + self.width - constants.room.tile_unit
+	for probe_x = left_x, right_x, constants.room.tile_unit do
 		if self:collides_at_probe(probe_x, support_y, include_elevator) then
 			return true
 		end
@@ -2002,10 +2003,7 @@ function player:update_controlled_fall_motion()
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
 	local should_land = (not self:is_ground_below_at(self.x, self.y, true)) and self:is_ground_below_at(self.x, self.y + dy, true)
-	local move_result = self:apply_move(dx, dy, true)
-	if move_result.landed and self:is_ground_below_at(self.x, self.y, true) then
-		should_land = true
-	end
+	self:apply_move(dx, dy, true)
 
 	if should_land then
 		self.stairs_landing_sound_pending = false
@@ -2027,10 +2025,7 @@ function player:update_uncontrolled_fall_motion()
 	end
 	local dy = self:get_uncontrolled_fall_dy()
 	local should_land = (not self:is_ground_below_at(self.x, self.y, true)) and self:is_ground_below_at(self.x, self.y + dy, true)
-	local move_result = self:apply_move(0, dy, true)
-	if move_result.landed and self:is_ground_below_at(self.x, self.y, true) then
-		should_land = true
-	end
+	self:apply_move(0, dy, true)
 
 	if should_land then
 		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then
