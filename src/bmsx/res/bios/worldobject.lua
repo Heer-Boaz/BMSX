@@ -187,7 +187,7 @@ function worldobject:add_component(comp)
 		self.component_map[key] = bucket
 	end
 	if comp.unique and #bucket > 0 then
-		error('component '' .. (comp.type_name or key) .. '' is unique and already attached to '' .. self.id .. ''')
+		error('component "' .. (comp.type_name or key) .. '" is unique and already attached to "' .. self.id .. '"')
 	end
 	table.insert(self.components, comp)
 	bucket[#bucket + 1] = comp
@@ -224,7 +224,7 @@ function worldobject:get_unique_component(type_name)
 		return nil
 	end
 	if #list > 1 then
-		error('multiple '' .. component_key(type_name) .. '' components attached to '' .. self.id .. ''')
+		error('multiple "' .. component_key(type_name) .. '" components attached to "' .. self.id .. '"')
 	end
 	return list[1]
 end
@@ -416,7 +416,7 @@ function worldobject:unbind()
 	eventemitter.eventemitter.instance:remove_subscriber(self)
 end
 
--- deactivate(): stops the object's FSM, tick, and timeline playback without
+-- deactivate(): stops the object's FSM, update, and timeline playback without
 -- removing it from the world.  The object stays registered; its components and
 -- event subscriptions are preserved.  Called automatically by mark_for_disposal()
 -- and ondespawn().  Do not override; instead react to the 'despawn' event.
@@ -424,7 +424,6 @@ function worldobject:deactivate()
 	self.active = false
 	self.tick_enabled = false
 	self.fsm_dispatch_enabled = false
-	self.sc:pause()
 end
 
 -- onspawn(pos): called by world:spawn() after position is set from pos.
@@ -464,12 +463,6 @@ function worldobject:dispose()
 	self:remove_all_components()
 	self.sc:dispose()
 	self:unbind()
-end
-
-function worldobject:tick()
-end
-
-function worldobject:draw()
 end
 
 -- define_timeline(def): register a pre-built timeline object on this object.
@@ -528,18 +521,18 @@ end
 function worldobject:tick_tree(bt_id)
 	local context = self.btreecontexts[bt_id]
 	if not context then
-		error('behavior tree context '' .. bt_id .. '' does not exist.')
+		error('behavior tree context "' .. bt_id .. '" does not exist.')
 	end
 	if not context.running then
 		return
 	end
-	context.root:tick(self, context.blackboard)
+	context.root:update(self, context.blackboard)
 end
 
 function worldobject:reset_tree(bt_id)
 	local context = self.btreecontexts[bt_id]
 	if not context then
-		error('behavior tree context '' .. bt_id .. '' does not exist.')
+		error('behavior tree context "' .. bt_id .. '" does not exist.')
 	end
 	context.blackboard:clear_node_data()
 end

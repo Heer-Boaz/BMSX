@@ -654,7 +654,7 @@ function fighter:draw()
 	end
 end
 
-function fighter:tick()
+function fighter:update()
 	self.step = self.step + 1
 	if self.state == state.defeat then
 		return

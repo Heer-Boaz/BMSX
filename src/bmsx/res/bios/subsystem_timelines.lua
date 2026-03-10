@@ -1,11 +1,11 @@
-local eventemitter_module = require('eventemitter')
-local timeline_module = require('timeline')
+local eventemitter_module = require("eventemitter")
+local timeline_module = require("timeline")
 
 local eventemitter = eventemitter_module.eventemitter
 
 local function apply_frame(target, frame)
 	for k, v in pairs(frame) do
-		if type(v) == 'table' then
+		if type(v) == "table" then
 			apply_frame(target[k], v)
 		else
 			target[k] = v
@@ -24,12 +24,12 @@ end
 local function eval_wave(track, time_seconds)
 	local u = (time_seconds / track.period) + (track.phase or 0)
 	local w
-	if track.wave == 'pingpong' then
+	if track.wave == "pingpong" then
 		w = easing.pingpong01(u)
-	elseif track.wave == 'sin' then
+	elseif track.wave == "sin" then
 		w = (math.sin(u * (math.pi * 2)) + 1) * 0.5
 	else
-		error('[subsystemtimelines] unknown wave '' .. tostring(track.wave) .. ''.')
+		error("[subsystemtimelines] unknown wave '" .. tostring(track.wave) .. "'.")
 	end
 	local ease = track.ease
 	if ease ~= nil then
@@ -39,20 +39,20 @@ local function eval_wave(track, time_seconds)
 end
 
 local function apply_track(target, track, params, event)
-	if type(track) == 'function' then
+	if type(track) == "function" then
 		track(target, params, event)
 		return
 	end
 	local kind = track.kind
-	if kind == 'wave' then
+	if kind == "wave" then
 		local base = track.base
-		local base_value = type(base) == 'string' and params[base] or base
+		local base_value = type(base) == "string" and params[base] or base
 		local w = eval_wave(track, event.time_seconds)
 		local value = base_value + ((w - 0.5) * 2 * track.amp)
 		set_path(target, track.path, value)
 		return
 	end
-	if kind == 'sprite_parallax_rig' then
+	if kind == "sprite_parallax_rig" then
 		set_sprite_parallax_rig(
 			params.vy,
 			params.scale,
@@ -66,7 +66,7 @@ local function apply_track(target, track, params, event)
 		)
 		return
 	end
-	error('[subsystemtimelines] unknown track kind '' .. tostring(kind) .. ''.')
+	error("[subsystemtimelines] unknown track kind '" .. tostring(kind) .. "'.")
 end
 
 local function apply_tracks(target, tracks, params, event)
@@ -89,7 +89,7 @@ end
 function subsystemtimelines:define(definition)
 	local id = definition.id
 	if id == nil then
-		error('[subsystemtimelines] timeline definition is missing id for '' .. tostring(self.owner.id) .. ''.')
+		error("[subsystemtimelines] timeline definition is missing id for '" .. tostring(self.owner.id) .. "'.")
 	end
 	if self.registry[id] ~= nil then
 		return self.registry[id].instance
@@ -116,7 +116,7 @@ end
 function subsystemtimelines:seek(id, frame)
 	local entry = self.registry[id]
 	if not entry then
-		error('[subsystemtimelines] unknown timeline '' .. id .. '' on '' .. self.owner.id .. ''')
+		error("[subsystemtimelines] unknown timeline '" .. id .. "' on '" .. self.owner.id .. "'")
 	end
 	entry.instance:force_seek(frame)
 	return entry.instance
@@ -129,7 +129,7 @@ end
 function subsystemtimelines:advance(id)
 	local entry = self.registry[id]
 	if not entry then
-		error('[subsystemtimelines] unknown timeline '' .. id .. '' on '' .. self.owner.id .. ''')
+		error("[subsystemtimelines] unknown timeline '" .. id .. "' on '" .. self.owner.id .. "'")
 	end
 	local events = entry.instance:advance()
 	if #events > 0 then
@@ -141,7 +141,7 @@ end
 function subsystemtimelines:play(id, opts)
 	local entry = self.registry[id]
 	if not entry then
-		error('[subsystemtimelines] unknown timeline '' .. id .. '' on '' .. self.owner.id .. ''')
+		error("[subsystemtimelines] unknown timeline '" .. id .. "' on '" .. self.owner.id .. "'")
 	end
 	local instance = entry.instance
 	local owner = self.owner
@@ -207,7 +207,7 @@ function subsystemtimelines:stop(id)
 	self.active[id] = nil
 end
 
-function subsystemtimelines:update(dt_ms)
+function subsystemtimelines:tick(dt_ms)
 	for id in pairs(self.active) do
 		local entry = self.registry[id]
 		local events = entry.instance:tick(dt_ms)
@@ -225,7 +225,7 @@ function subsystemtimelines:process_events(entry, events, dt_ms)
 	local time_seconds = time_ms / 1000
 	for i = 1, #events do
 		local evt = events[i]
-		if evt.kind == 'frame' then
+		if evt.kind == "frame" then
 			local payload = {
 				timeline_id = entry.instance.id,
 				frame_index = evt.current,
@@ -244,7 +244,7 @@ function subsystemtimelines:process_events(entry, events, dt_ms)
 				apply_tracks(target, tracks, entry.params, payload)
 			end
 			if entry.apply then
-				if type(entry.apply) == 'function' then
+				if type(entry.apply) == "function" then
 					entry.apply(target, payload.frame_value, entry.params, payload)
 				else
 					apply_frame(target, payload.frame_value)
@@ -258,7 +258,7 @@ function subsystemtimelines:process_events(entry, events, dt_ms)
 				wrapped = evt.wrapped,
 			}
 			self:emit_end_event(owner, payload)
-			if evt.mode == 'once' then
+			if evt.mode == "once" then
 				self.active[entry.instance.id] = nil
 			end
 		end
@@ -289,7 +289,7 @@ function subsystemtimelines:apply_markers(entry, event)
 		local payload = marker.payload
 		local spec = { type = marker.event, emitter = owner }
 		if payload ~= nil then
-			if type(payload) == 'table' and payload.type == nil then
+			if type(payload) == "table" and payload.type == nil then
 				for k, v in pairs(payload) do
 					spec[k] = v
 				end
@@ -304,11 +304,11 @@ function subsystemtimelines:apply_markers(entry, event)
 end
 
 function subsystemtimelines:emit_frame_event(owner, payload)
-	self:dispatch_timeline_events(owner, 'timeline.frame', payload)
+	self:dispatch_timeline_events(owner, "timeline.frame", payload)
 end
 
 function subsystemtimelines:emit_end_event(owner, payload)
-	self:dispatch_timeline_events(owner, 'timeline.end', payload)
+	self:dispatch_timeline_events(owner, "timeline.end", payload)
 end
 
 function subsystemtimelines:dispatch_timeline_events(owner, base_type, payload)
@@ -326,7 +326,7 @@ function subsystemtimelines:dispatch_timeline_events(owner, base_type, payload)
 	})
 	owner.events:emit_event(base_event)
 	owner.sc:dispatch(base_event)
-	local scoped_type = base_type .. '.' .. payload.timeline_id
+	local scoped_type = base_type .. "." .. payload.timeline_id
 	local scoped_event = eventemitter:create_gameevent({
 		type = scoped_type,
 		emitter = owner,

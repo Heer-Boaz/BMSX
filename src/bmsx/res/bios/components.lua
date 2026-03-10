@@ -194,7 +194,7 @@ function component:toggle_tag(tag)
 	self.tags[tag] = not self.tags[tag]
 end
 
-function component:tick(_dt)
+function component:update(_dt)
 end
 
 function component:draw()
@@ -289,7 +289,7 @@ function spritecomponent:sync_collider()
 	end
 end
 
-function spritecomponent:tick(_dt)
+function spritecomponent:update(_dt)
 	self:sync_collider()
 end
 
@@ -588,7 +588,7 @@ end
 function timelinecomponent:tick_active(dt_ms)
 	for id in pairs(self.active) do
 		local entry = self.registry[id]
-		local events = entry.instance:tick(dt_ms)
+		local events = entry.instance:update(dt_ms)
 		if #events > 0 then
 			self:process_events(entry, events, dt_ms)
 		end

@@ -100,7 +100,7 @@ function dialogue.register_states(states)
 			self:show_dialogue_page(node.typed)
 			self:update_dialogue_prompt()
 		end,
-		tick = function(self)
+		update = function(self)
 			if self.stagger_blocked then
 				return
 			end
@@ -188,7 +188,7 @@ function dialogue.register_states(states)
 			self.page_index = 1
 			self:show_dialogue_page(node.typed)
 		end,
-		tick = function(self)
+		update = function(self)
 			if self.stagger_blocked then
 				return
 			end
@@ -234,7 +234,7 @@ function dialogue.register_states(states)
 			reset_text_colors()
 			self:setup_choice_menu(node)
 		end,
-		tick = function(self)
+		update = function(self)
 			if self.stagger_blocked then
 				return
 			end

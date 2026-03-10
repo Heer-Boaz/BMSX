@@ -9158,10 +9158,10 @@ function player:sample_input()
 end
 
 -- ============================================================================
--- main tick loop
+-- main update loop
 -- ============================================================================
 
-function player:tick(dt)
+function player:update(dt)
 	-- increment frame counter (code_bfb2c7 area)
 	self.zp_28 = self.zp_28 + 1
 	self.debug_frame = self.zp_28
@@ -9253,8 +9253,8 @@ local function define_player_fsm()
 		initial = 'active',
 		states = {
 			active = {
-				tick = function(self, dt)
-					self:tick(dt)
+				update = function(self, dt)
+					self:update(dt)
 				end,
 			},
 		},

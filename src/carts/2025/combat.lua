@@ -577,7 +577,7 @@ function combat.define_fsm()
 				params = { base_y = self.combat_monster_base_y },
 			})
 		end,
-		tick = function(self)
+		update = function(self)
 			if self.stagger_blocked then
 				return
 			end
@@ -947,7 +947,7 @@ function combat.define_fsm()
 				params = { base_y = self.combat_monster_base_y },
 			})
 		end,
-		tick = function(self)
+		update = function(self)
 			local main = object(text_main_id)
 			if main.is_typing then
 				main:type_next()
@@ -1305,7 +1305,7 @@ function combat.define_fsm()
 	--                       on runtime values (e.g. self.combat_monster_base_x).
 	--   stop_on_exit = true  — stop the timeline automatically on state exit.
 	--   on_end  — transition or action when the timeline finishes.
-	--   on_frame  — action fired on every timeline frame tick.
+	--   on_frame  — action fired on every timeline frame update.
 	define_fsm(combat_director_fsm_id, {
 		initial = 'boot',
 		timelines = {

@@ -46,7 +46,7 @@ end
 function registry:register(entity)
 	local existing = self._registry[entity.id]
 	if existing ~= nil and existing ~= entity then
-		error('registry.register duplicate id '' .. entity.id .. ''')
+		error('registry.register duplicate id "' .. entity.id .. '"')
 	end
 	self._registry[entity.id] = entity
 end

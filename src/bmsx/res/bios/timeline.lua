@@ -265,7 +265,7 @@ function timeline:rewind()
 	self.direction = 1
 end
 
-function timeline:tick(dt)
+function timeline:update(dt)
 	if not self.auto_tick or self.length == 0 then
 		return {}
 	end
@@ -279,7 +279,7 @@ function timeline:tick(dt)
 		if head < 0 then
 			head = 0
 		end
-		local events = self:apply_frame(head, 'tick')
+		local events = self:apply_frame(head, 'update')
 		if self.duration_ms and self.time_ms >= self.duration_ms then
 			self.ended = true
 			events[#events + 1] = {

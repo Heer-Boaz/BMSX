@@ -224,7 +224,7 @@ function actioneffectcomponent.new(opts)
 	return self
 end
 
-function actioneffectcomponent:tick(dt_ms)
+function actioneffectcomponent:update(dt_ms)
 	self.time_ms = self.time_ms + dt_ms
 	for id, until_time in pairs(self.cooldown_until) do
 		if self.time_ms >= until_time then

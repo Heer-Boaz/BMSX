@@ -369,7 +369,7 @@ function director:update_stomp_targets(player)
 	end
 end
 
-function director:tick(dt)
+function director:update(dt)
 	local player = object(self.player_id)
 	self.player_ref = player
 
