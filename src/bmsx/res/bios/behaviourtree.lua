@@ -2,9 +2,9 @@
 -- behaviour tree runtime + definition registry
 
 local behaviourtree = {}
-behaviourtree.success = "success"
-behaviourtree.failure = "failed"
-behaviourtree.running = "running"
+behaviourtree.success = 'success'
+behaviourtree.failure = 'failed'
+behaviourtree.running = 'running'
 
 local blackboard = {}
 blackboard.__index = blackboard
@@ -25,13 +25,13 @@ btnode.__index = btnode
 
 function btnode.new(id, priority)
 	local self = setmetatable({}, btnode)
-	self.id = id or "node"
+	self.id = id or 'node'
 	self.priority = priority or 0
 	return self
 end
 
 function btnode:tick(_target, _blackboard)
-	error("behaviour tree node '" .. tostring(self.id) .. "' must implement tick().")
+	error('behaviour tree node '' .. tostring(self.id) .. '' must implement tick().')
 end
 
 local parametrizednode = {}
@@ -91,7 +91,7 @@ setmetatable(parallel, { __index = btnode })
 function parallel.new(id, children, success_policy, priority)
 	local self = setmetatable(btnode.new(id, priority), parallel)
 	self.children = children or {}
-	self.success_policy = success_policy or "all"
+	self.success_policy = success_policy or 'all'
 	return self
 end
 
@@ -104,14 +104,14 @@ function parallel:tick(target, blackboard)
 			any_running = true
 		elseif status == behaviourtree.success then
 			success_count = success_count + 1
-			if self.success_policy == "one" then
+			if self.success_policy == 'one' then
 				return behaviourtree.success
 			end
-		elseif status == behaviourtree.failure and self.success_policy == "all" then
+		elseif status == behaviourtree.failure and self.success_policy == 'all' then
 			return behaviourtree.failure
 		end
 	end
-	if self.success_policy == "all" and success_count == #self.children then
+	if self.success_policy == 'all' and success_count == #self.children then
 		return behaviourtree.success
 	end
 	return any_running and behaviourtree.running or behaviourtree.failure
@@ -146,7 +146,7 @@ end
 
 function condition:tick(target, blackboard)
 	local result = self.condition(target, blackboard, self.parameters)
-	if self.modifier == "not" then
+	if self.modifier == 'not' then
 		result = not result
 	end
 	return result and behaviourtree.success or behaviourtree.failure
@@ -159,15 +159,15 @@ setmetatable(compositecondition, { __index = parametrizednode })
 function compositecondition.new(id, conditions, modifier, priority, parameters)
 	local self = setmetatable(parametrizednode.new(id, priority, parameters), compositecondition)
 	self.conditions = conditions or {}
-	self.modifier = modifier or "and"
+	self.modifier = modifier or 'and'
 	return self
 end
 
 function compositecondition:tick(target, blackboard)
-	local combined = (self.modifier == "and")
+	local combined = (self.modifier == 'and')
 	for i = 1, #self.conditions do
 		local result = self.conditions[i](target, blackboard, self.parameters)
-		if self.modifier == "and" then
+		if self.modifier == 'and' then
 			combined = combined and result
 		else
 			combined = combined or result
@@ -314,11 +314,11 @@ local behaviourtreedefinitions = {}
 
 local function build_node(spec, id)
 	if type(spec) ~= 'table' then
-		error("behavior tree '" .. tostring(id) .. "' has invalid node spec: expected table.")
+		error('behavior tree '' .. tostring(id) .. '' has invalid node spec: expected table.')
 	end
 	local node_type = spec.type or spec.kind or spec.node
 	if node_type == nil then
-		error("behavior tree '" .. tostring(id) .. "' node is missing required type/kind/node.")
+		error('behavior tree '' .. tostring(id) .. '' node is missing required type/kind/node.')
 	end
 	if node_type == 'selector' then
 		local children = {}
@@ -382,7 +382,7 @@ local function build_node(spec, id)
 		end
 		return compositeaction.new(id, actions, spec.priority, spec.parameters)
 	end
-	error("behavior tree '" .. tostring(id) .. "' has unsupported node type '" .. tostring(node_type) .. "'.")
+	error('behavior tree '' .. tostring(id) .. '' has unsupported node type '' .. tostring(node_type) .. ''.')
 end
 
 function behaviourtree.register_definition(id, definition)
@@ -390,10 +390,10 @@ function behaviourtree.register_definition(id, definition)
 		error('behavior tree definition id must be a non-empty string.')
 	end
 	if behaviourtreedefinitions[id] ~= nil then
-		error("behavior tree '" .. id .. "' is already registered.")
+		error('behavior tree '' .. id .. '' is already registered.')
 	end
 	if type(definition) ~= 'table' then
-		error("behavior tree '" .. id .. "' definition must be a table.")
+		error('behavior tree '' .. id .. '' definition must be a table.')
 	end
 	local root = definition.root or definition
 	build_node(root, id)
@@ -403,7 +403,7 @@ end
 function behaviourtree.instantiate(id)
 	local def = behaviourtreedefinitions[id]
 	if def == nil then
-		error("behavior tree '" .. tostring(id) .. "' is not registered.")
+		error('behavior tree '' .. tostring(id) .. '' is not registered.')
 	end
 	local root = def.root or def
 	return build_node(root, id)

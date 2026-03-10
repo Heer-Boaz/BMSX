@@ -27,6 +27,7 @@ import type {
 } from '../../src/bmsx/lua/syntax/lua_ast';
 
 type LuaLintIssueRule =
+	'syntax_error_pattern' |
 	'uppercase_code_pattern' |
 	'comparison_wrapper_getter_pattern' |
 	'visual_update_pattern' |
@@ -239,6 +240,7 @@ const LINT_SUPPRESSION_OPEN_MARKER = '-- bmsx-lint:disable';
 const LINT_SUPPRESSION_CLOSE_MARKER = '-- bmsx-lint:enable';
 const suppressedLineRangesByPath = new Map<string, ReadonlyArray<LuaLintSuppressionRange>>();
 const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
+	'syntax_error_pattern',
 	'uppercase_code_pattern',
 	'comparison_wrapper_getter_pattern',
 	'visual_update_pattern',
@@ -6226,6 +6228,20 @@ function formatIssues(issues: LuaLintIssue[], profile: LuaLintProfile): string {
 	return `[${profileLabel}] ${sorted.length} violation(s):\n${lines.join('\n')}`;
 }
 
+function pushSyntaxErrorIssue(
+	issues: LuaLintIssue[],
+	error: { readonly path: string; readonly line: number; readonly column: number; readonly message: string; },
+): void {
+	pushIssueAt(
+		issues,
+		'syntax_error_pattern',
+		error.path,
+		error.line,
+		error.column,
+		error.message,
+	);
+}
+
 export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<void> {
 	const profile = options.profile ?? 'cart';
 	activeLintRules = resolveEnabledRules(profile);
@@ -6244,36 +6260,44 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			const workspacePath = toWorkspaceRelativePath(absolutePath);
 			suppressedLineRangesByPath.set(workspacePath, collectSuppressedLineRanges(source));
 			const lexer = new LuaLexer(source, workspacePath, { canonicalizeIdentifiers: 'none' });
-			const tokens = lexer.scanTokens();
+			const lexed = lexer.scanTokensWithRecovery();
+			const tokens = lexed.tokens;
 			lintUppercaseCode(workspacePath, tokens, issues);
+			if (lexed.syntaxError) {
+				pushSyntaxErrorIssue(issues, lexed.syntaxError);
+				continue;
+			}
 			const parser = new LuaParser(tokens, workspacePath, source);
 			let parsed: ReturnType<LuaParser['parseChunkWithRecovery']>;
 			try {
 				parsed = parser.parseChunkWithRecovery();
 			} catch (error) {
-				// If parser errors occur here, treat the file as non-lintable for AST-based checks.
-				// Syntax-related validation happens in the compilation pipeline.
 				if ((error as { name?: string } | null)?.name === 'Syntax Error') {
+					pushSyntaxErrorIssue(
+						issues,
+						error as { readonly path: string; readonly line: number; readonly column: number; readonly message: string; },
+					);
 					continue;
 				}
 				throw error;
 			}
-				if (parsed.syntaxError) {
-					continue;
-				}
-				const chunk = parsed.path;
-				topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
-				lintSplitLocalTableInitPattern(chunk.body, issues);
-				lintDuplicateInitializerPattern(chunk.body, issues);
-					lintStagedExportLocalCallPattern(chunk.body, issues);
-					lintStagedExportLocalTablePattern(chunk.body, issues);
-					lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
-					lintForeignObjectInternalMutationPattern(chunk.body, issues);
-					lintStatements(chunk.body, issues);
-					lintSingleUseHasTagPattern(chunk.body, issues);
-				lintSingleUseLocalPattern(chunk.body, issues);
+			if (parsed.syntaxError) {
+				pushSyntaxErrorIssue(issues, parsed.syntaxError);
+				continue;
 			}
-			lintCrossFileLocalGlobalConstantPattern(topLevelLocalStringConstants, issues);
+			const chunk = parsed.path;
+			topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
+			lintSplitLocalTableInitPattern(chunk.body, issues);
+			lintDuplicateInitializerPattern(chunk.body, issues);
+			lintStagedExportLocalCallPattern(chunk.body, issues);
+			lintStagedExportLocalTablePattern(chunk.body, issues);
+			lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
+			lintForeignObjectInternalMutationPattern(chunk.body, issues);
+			lintStatements(chunk.body, issues);
+			lintSingleUseHasTagPattern(chunk.body, issues);
+			lintSingleUseLocalPattern(chunk.body, issues);
+		}
+		lintCrossFileLocalGlobalConstantPattern(topLevelLocalStringConstants, issues);
 		} finally {
 		activeLintRules = new Set(ALL_LUA_LINT_RULES);
 		suppressedLineRangesByPath.clear();

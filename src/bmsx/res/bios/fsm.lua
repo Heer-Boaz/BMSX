@@ -78,36 +78,36 @@
 --    Using these names silently does nothing on older runtimes and errors on
 --    current ones.  Keep state definitions clean.
 
-local fsm_trace = require("fsm_trace")
-local clear_map = require("clear_map")
-local timeline_module = require("timeline")
+local fsm_trace = require('fsm_trace')
+local clear_map = require('clear_map')
+local timeline_module = require('timeline')
 
 local statedefinition = {}
 statedefinition.__index = statedefinition
 
-local start_state_prefixes = { ["_"] = true, ["#"] = true }
-local no_op_aliases = { ["no-op"] = true, ["noop"] = true, ["no_op"] = true }
-local ignored_relative_segments = { [""] = true, ["."] = true }
-local input_eval_modes = { ["first"] = true, ["all"] = true }
+local start_state_prefixes = { ['_'] = true, ['#'] = true }
+local no_op_aliases = { ['no-op'] = true, ['noop'] = true, ['no_op'] = true }
+local ignored_relative_segments = { [''] = true, ['.'] = true }
+local input_eval_modes = { ['first'] = true, ['all'] = true }
 
 local function make_def_id(id, parent)
 	if not parent then
 		return id
 	end
-	local separator = parent.parent and "/" or ":/"
+	local separator = parent.parent and '/' or ':/'
 	return parent.def_id .. separator .. id
 end
 
 local function collect_event_list(def, list, seen)
 	for name, action in pairs(def.on or {}) do
 		local emitter = nil
-		if type(action) == "table" and action.emitter ~= nil then
+		if type(action) == 'table' and action.emitter ~= nil then
 			emitter = action.emitter
-			if type(emitter) == "table" and emitter.id ~= nil then
+			if type(emitter) == 'table' and emitter.id ~= nil then
 				emitter = emitter.id
 			end
 		end
-		local key = name .. ":" .. tostring(emitter)
+		local key = name .. ':' .. tostring(emitter)
 		if not seen[key] then
 			list[#list + 1] = { name = name, emitter = emitter }
 			seen[key] = true
@@ -119,17 +119,17 @@ local function collect_event_list(def, list, seen)
 end
 
 local function validate_tag_list(values, owner_tag, field_name)
-	if type(values) ~= "table" then
-		error("tag derivation '" .. tostring(owner_tag) .. "' field '" .. tostring(field_name) .. "' must be an array of tags.")
+	if type(values) ~= 'table' then
+		error('tag derivation "' .. tostring(owner_tag) .. '" field "' .. tostring(field_name) .. '" must be an array of tags.')
 	end
 	for i = 1, #values do
 		local source_tag = values[i]
-		if type(source_tag) ~= "string" then
-			error("tag derivation '" .. tostring(owner_tag) .. "' field '" .. tostring(field_name) .. "' contains non-string value at index " .. tostring(i) .. ".")
+		if type(source_tag) ~= 'string' then
+			error('tag derivation "' .. tostring(owner_tag) .. '" field "' .. tostring(field_name) .. '" contains non-string value at index ' .. tostring(i) .. '.')
 		end
 	end
 	if #values == 0 then
-		error("tag derivation '" .. tostring(owner_tag) .. "' field '" .. tostring(field_name) .. "' cannot be empty.")
+		error('tag derivation "' .. tostring(owner_tag) .. '" field "' .. tostring(field_name) .. '" cannot be empty.')
 	end
 	return values
 end
@@ -138,8 +138,8 @@ local function compile_tag_derivations(raw)
 	if raw == nil then
 		return nil
 	end
-	if type(raw) ~= "table" then
-		error("fsm.tag_derivations must be a table.")
+	if type(raw) ~= 'table' then
+		error('fsm.tag_derivations must be a table.')
 	end
 	local derived_tags = {}
 	for derived_tag in pairs(raw) do
@@ -152,8 +152,8 @@ local function compile_tag_derivations(raw)
 	local compiled = {}
 	for i = 1, #derived_tags do
 		local derived_tag = derived_tags[i]
-		if type(derived_tag) ~= "string" then
-			error("fsm.tag_derivations contains non-string derived tag key.")
+		if type(derived_tag) ~= 'string' then
+			error('fsm.tag_derivations contains non-string derived tag key.')
 		end
 		local spec = raw[derived_tag]
 		local rule = {
@@ -161,21 +161,21 @@ local function compile_tag_derivations(raw)
 			any = nil,
 			all = nil,
 		}
-		if type(spec) ~= "table" then
-			error("tag derivation '" .. tostring(derived_tag) .. "' must be an array or table.")
+		if type(spec) ~= 'table' then
+			error('tag derivation "' .. tostring(derived_tag) .. '" must be an array or table.')
 		end
 		if spec[1] ~= nil then
-			rule.any = validate_tag_list(spec, derived_tag, "any")
+			rule.any = validate_tag_list(spec, derived_tag, 'any')
 		else
 			if spec.any ~= nil then
-				rule.any = validate_tag_list(spec.any, derived_tag, "any")
+				rule.any = validate_tag_list(spec.any, derived_tag, 'any')
 			end
 			if spec.all ~= nil then
-				rule.all = validate_tag_list(spec.all, derived_tag, "all")
+				rule.all = validate_tag_list(spec.all, derived_tag, 'all')
 			end
 		end
 		if rule.any == nil and rule.all == nil then
-			error("tag derivation '" .. tostring(derived_tag) .. "' must define an array, or an 'any'/'all' array.")
+			error('tag derivation "' .. tostring(derived_tag) .. '" must define an array, or an "any"/"all" array.')
 		end
 		compiled[#compiled + 1] = rule
 	end
@@ -183,17 +183,17 @@ local function compile_tag_derivations(raw)
 end
 
 local function validate_optional_state_function(def_id, field_name, value)
-	if value ~= nil and type(value) ~= "function" then
+	if value ~= nil and type(value) ~= 'function' then
 		error(
-			"state definition '" .. tostring(def_id)
-				.. "' field '" .. tostring(field_name)
-				.. "' must be a function, but got " .. type(value) .. "."
+			'state definition "' .. tostring(def_id)
+				.. '" field "' .. tostring(field_name)
+				.. '" must be a function, but got ' .. type(value) .. '.'
 		)
 	end
 end
 
 local function validate_no_op_alias_value(def_id, field_name, value)
-	if type(value) ~= "string" then
+	if type(value) ~= 'string' then
 		return
 	end
 	if no_op_aliases[value] then
@@ -202,10 +202,10 @@ local function validate_no_op_alias_value(def_id, field_name, value)
 	local lowered = string.lower(value)
 	if no_op_aliases[lowered] then
 		error(
-			"state definition '" .. tostring(def_id)
-				.. "' field '" .. tostring(field_name)
-				.. "' uses invalid no-op alias '" .. tostring(value)
-				.. "'. use lowercase '" .. lowered .. "'."
+			'state definition "' .. tostring(def_id)
+				.. '" field "' .. tostring(field_name)
+				.. '" uses invalid no-op alias "' .. tostring(value)
+				.. '". use lowercase "' .. lowered .. '".'
 		)
 	end
 end
@@ -215,18 +215,18 @@ local function validate_transition_spec(def_id, field_name, spec)
 		return
 	end
 	local kind = type(spec)
-	if kind == "string" then
+	if kind == 'string' then
 		validate_no_op_alias_value(def_id, field_name, spec)
 		return
 	end
-	if kind == "function" then
+	if kind == 'function' then
 		return
 	end
-	if kind ~= "table" then
+	if kind ~= 'table' then
 		error(
-			"state definition '" .. tostring(def_id)
-				.. "' field '" .. tostring(field_name)
-				.. "' must be a string, function, or transition table, but got " .. kind .. "."
+			'state definition "' .. tostring(def_id)
+				.. '" field "' .. tostring(field_name)
+				.. '" must be a string, function, or transition table, but got ' .. kind .. '.'
 		)
 	end
 	local go = spec.go
@@ -234,15 +234,15 @@ local function validate_transition_spec(def_id, field_name, spec)
 		return
 	end
 	local go_kind = type(go)
-	if go_kind == "string" then
-		validate_no_op_alias_value(def_id, field_name .. ".go", go)
+	if go_kind == 'string' then
+		validate_no_op_alias_value(def_id, field_name .. '.go', go)
 		return
 	end
-	if go_kind ~= "function" then
+	if go_kind ~= 'function' then
 		error(
-			"state definition '" .. tostring(def_id)
-				.. "' field '" .. tostring(field_name)
-				.. ".go' must be a string or function, but got " .. go_kind .. "."
+			'state definition "' .. tostring(def_id)
+				.. '" field "' .. tostring(field_name)
+				.. '.go" must be a string or function, but got ' .. go_kind .. '.'
 		)
 	end
 end
@@ -251,15 +251,15 @@ local function validate_transition_spec_map(def_id, field_name, map)
 	if map == nil then
 		return
 	end
-	if type(map) ~= "table" then
+	if type(map) ~= 'table' then
 		error(
-			"state definition '" .. tostring(def_id)
-				.. "' field '" .. tostring(field_name)
-				.. "' must be a table, but got " .. type(map) .. "."
+			'state definition "' .. tostring(def_id)
+				.. '" field "' .. tostring(field_name)
+				.. '" must be a table, but got ' .. type(map) .. '.'
 		)
 	end
 	for key, spec in pairs(map) do
-		validate_transition_spec(def_id, field_name .. "[" .. tostring(key) .. "]", spec)
+		validate_transition_spec(def_id, field_name .. '[' .. tostring(key) .. ']', spec)
 	end
 end
 
@@ -284,27 +284,27 @@ function statedefinition.new(id, def, root, parent)
 			if tl_def.on_end ~= nil then
 				local key = 'timeline.end.' .. tl_id
 				if self.on[key] ~= nil then
-					error("state '" .. tostring(self.def_id) .. "': 'on_end' for timeline '" .. tl_id .. "' conflicts with an existing 'on' entry")
+					error('state "' .. tostring(self.def_id) .. '": "on_end" for timeline "' .. tl_id .. '" conflicts with an existing "on" entry')
 				end
 				self.on[key] = tl_def.on_end
 			end
 			if tl_def.on_frame ~= nil then
 				local key = 'timeline.frame.' .. tl_id
 				if self.on[key] ~= nil then
-					error("state '" .. tostring(self.def_id) .. "': 'on_frame' for timeline '" .. tl_id .. "' conflicts with an existing 'on' entry")
+					error('state "' .. tostring(self.def_id) .. '": "on_frame" for timeline "' .. tl_id .. '" conflicts with an existing "on" entry')
 				end
 				self.on[key] = tl_def.on_frame
 			end
 		end
 	end
 	if def and def.tick ~= nil then
-		error("state definition '" .. tostring(self.def_id) .. "' field 'tick' is not supported. Use 'update'.")
+		error('state definition "' .. tostring(self.def_id) .. '" field "tick" is not supported. Use "update".')
 	end
 	if def and def.process_input ~= nil then
-		error("state definition '" .. tostring(self.def_id) .. "' field 'process_input' is not supported.")
+		error('state definition "' .. tostring(self.def_id) .. '" field "process_input" is not supported.')
 	end
 	if def and def.run_checks ~= nil then
-		error("state definition '" .. tostring(self.def_id) .. "' field 'run_checks' is not supported.")
+		error('state definition "' .. tostring(self.def_id) .. '" field "run_checks" is not supported.')
 	end
 	self.update = def and def.update
 	self.entering_state = def and def.entering_state
@@ -314,16 +314,16 @@ function statedefinition.new(id, def, root, parent)
 	self.input_eval = def and def.input_eval
 	if self.input_eval ~= nil and not input_eval_modes[self.input_eval] then
 		error(
-			"state definition '" .. tostring(self.def_id)
-				.. "' has invalid input_eval '" .. tostring(self.input_eval)
-				.. "'. expected 'first' or 'all', but got " .. type(self.input_eval) .. "."
+			'state definition "' .. tostring(self.def_id)
+				.. '" has invalid input_eval "' .. tostring(self.input_eval)
+				.. '". expected "first" or "all", but got ' .. type(self.input_eval) .. '.'
 		)
 	end
-	validate_optional_state_function(self.def_id, "update", self.update)
-	validate_optional_state_function(self.def_id, "entering_state", self.entering_state)
-	validate_optional_state_function(self.def_id, "exiting_state", self.exiting_state)
-	validate_transition_spec_map(self.def_id, "on", self.on)
-	validate_transition_spec_map(self.def_id, "input_event_handlers", self.input_event_handlers)
+	validate_optional_state_function(self.def_id, 'update', self.update)
+	validate_optional_state_function(self.def_id, 'entering_state', self.entering_state)
+	validate_optional_state_function(self.def_id, 'exiting_state', self.exiting_state)
+	validate_transition_spec_map(self.def_id, 'on', self.on)
+	validate_transition_spec_map(self.def_id, 'input_event_handlers', self.input_event_handlers)
 	self.event_list = def and def.event_list
 	self.timelines = def and def.timelines
 	self.transition_guards = def and def.transition_guards
@@ -373,8 +373,8 @@ state.diagnostics = {
 
 local bst_max_history = 10
 local max_transitions_per_update = 1000
-local empty_game_event = { type = "__fsm.synthetic__", emitter = nil, timestamp = 0 }
-local target_state_tag_refs = setmetatable({}, { __mode = "k" })
+local empty_game_event = { type = '__fsm.synthetic__', emitter = nil, timestamp = 0 }
+local target_state_tag_refs = setmetatable({}, { __mode = 'k' })
 
 local function get_target_state_tag_refs(target)
 	local refs = target_state_tag_refs[target]
@@ -400,11 +400,11 @@ end
 local function decrement_target_state_tag_ref(target, tag)
 	local refs = target_state_tag_refs[target]
 	if not refs then
-		error("missing state-tag reference map for target while removing '" .. tostring(tag) .. "'.")
+		error('missing state-tag reference map for target while removing "' .. tostring(tag) .. '".')
 	end
 	local count = refs[tag]
 	if not count then
-		error("missing state-tag reference for '" .. tostring(tag) .. "'.")
+		error('missing state-tag reference for "' .. tostring(tag) .. '".')
 	end
 	if count == 1 then
 		refs[tag] = nil
@@ -463,7 +463,7 @@ local function resolve_emitter_id(event, fallback)
 		return false
 	end
 	local emitter = event.emitter
-	if type(emitter) == "table" and emitter.id ~= nil then
+	if type(emitter) == 'table' and emitter.id ~= nil then
 		return emitter.id
 	end
 	return emitter
@@ -475,7 +475,7 @@ local function resolve_event_payload(event)
 	end
 	local payload = nil
 	for k, v in pairs(event) do
-		if k ~= "type" and k ~= "emitter" and k ~= "timestamp" and k ~= "timestamp" and k ~= "target" then
+		if k ~= 'type' and k ~= 'emitter' and k ~= 'timestamp' and k ~= 'timestamp' and k ~= 'target' then
 			if not payload then
 				payload = {}
 			end
@@ -486,22 +486,22 @@ local function resolve_event_payload(event)
 end
 
 local function is_no_op_string(value)
-	return type(value) == "string" and no_op_aliases[value] ~= nil
+	return type(value) == 'string' and no_op_aliases[value] ~= nil
 end
 
 local function resolve_state_key(definition, state_id)
 	local states = definition.states
 	if not states then
-		error("state '" .. definition.id .. "' does not define substates.")
+		error('state "' .. definition.id .. '" does not define substates.')
 	end
 	if states[state_id] then
 		return state_id
 	end
-	local underscore = "_" .. state_id
+	local underscore = '_' .. state_id
 	if states[underscore] then
 		return underscore
 	end
-	local hash = "#" .. state_id
+	local hash = '#' .. state_id
 	if states[hash] then
 		return hash
 	end
@@ -513,12 +513,12 @@ local function resolve_state_instance(parent, state_id)
 	if child then
 		return child, state_id
 	end
-	local underscore = "_" .. state_id
+	local underscore = '_' .. state_id
 	child = parent.states[underscore]
 	if child then
 		return child, underscore
 	end
-	local hash = "#" .. state_id
+	local hash = '#' .. state_id
 	child = parent.states[hash]
 	if child then
 		return child, hash
@@ -576,16 +576,16 @@ end
 
 function state:make_id()
 	if self:is_root() then
-		return self.target_id .. "." .. self.localdef_id
+		return self.target_id .. '.' .. self.localdef_id
 	end
-	local separator = self.parent.parent and "/" or ":/"
+	local separator = self.parent.parent and '/' or ':/'
 	return self.parent.id .. separator .. self.localdef_id
 end
 
 function state:definition_or_throw()
 	local def = self.definition
 	if not def then
-		error("state '" .. tostring(self.localdef_id) .. "' missing definition.")
+		error('state "' .. tostring(self.localdef_id) .. '" missing definition.')
 	end
 	return def
 end
@@ -593,11 +593,11 @@ end
 function state:child_definition_or_throw(child_id)
 	local def = self:definition_or_throw()
 	if not def.states then
-		error("definition '" .. tostring(def.def_id) .. "' has no substates while resolving '" .. child_id .. "'.")
+		error('definition "' .. tostring(def.def_id) .. '" has no substates while resolving "' .. child_id .. '".')
 	end
 	local key = resolve_state_key(def, child_id)
 	if not key then
-		error("definition '" .. tostring(def.def_id) .. "' is missing child '" .. child_id .. "'.")
+		error('definition "' .. tostring(def.def_id) .. '" is missing child "' .. child_id .. '".')
 	end
 	return def.states[key], key
 end
@@ -605,7 +605,7 @@ end
 function state:states_or_throw(ctx)
 	local container = ctx or self
 	if not container.states or next(container.states) == nil then
-		error("state '" .. tostring(container.id) .. "' does not define substates.")
+		error('state "' .. tostring(container.id) .. '" does not define substates.')
 	end
 	return container.states
 end
@@ -613,7 +613,7 @@ end
 function state:current_state_definition()
 	local current = self.states and self.states[self.current_id]
 	if not current then
-		error("current state '" .. tostring(self.current_id) .. "' not found in '" .. tostring(self.id) .. "'.")
+		error('current state "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 	end
 	return current.definition
 end
@@ -627,15 +627,15 @@ function state:ensure_child(ctx, seg)
 	local child, key = self:find_child(ctx, seg)
 	if not child then
 		if not ctx.states then
-			error("state '" .. tostring(ctx.id) .. "' does not define substates.")
+			error('state "' .. tostring(ctx.id) .. '" does not define substates.')
 		end
 		local children = {}
 		for id in pairs(ctx.states) do
 			children[#children + 1] = id
 		end
-		error("no state '" .. seg .. "' under '" .. tostring(ctx.id) .. "'. children: " .. table.concat(children, ", "))
-		if type(child) ~= "table" then
-			error("state '" .. tostring(ctx.id) .. "' has non-state child '" .. tostring(seg) .. "' (type " .. type(child) .. ").")
+		error('no state "' .. seg .. '" under "' .. tostring(ctx.id) .. '". children: ' .. table.concat(children, ', '))
+		if type(child) ~= 'table' then
+			error('state "' .. tostring(ctx.id) .. '" has non-state child "' .. tostring(seg) .. '" (type ' .. type(child) .. ').')
 		end
 	end
 	return child, key
@@ -644,14 +644,14 @@ end
 function state:timeline(id)
 	local timeline = self.target:get_timeline(id)
 	if not timeline then
-		error("timeline '" .. tostring(id) .. "' not found for target '" .. tostring(self.target_id) .. "'.")
+		error('timeline "' .. tostring(id) .. '" not found for target "' .. tostring(self.target_id) .. '".')
 	end
 	return timeline
 end
 
 function state:create_timeline_binding(key, config)
-	if config.def ~= nil and type(config.def) ~= "table" then
-		error("timeline '" .. tostring(key) .. "' field 'def' must be a table.")
+	if config.def ~= nil and type(config.def) ~= 'table' then
+		error('timeline "' .. tostring(key) .. '" field "def" must be a table.')
 	end
 	local autoplay
 	if config.autoplay ~= nil then
@@ -731,16 +731,16 @@ function state:start()
 		if not self.states or next(self.states) == nil then
 			return
 		end
-		error("no start state defined for state machine '" .. tostring(self.id) .. "'.")
+		error('no start state defined for state machine "' .. tostring(self.id) .. '".')
 	end
 
 	local states = self.states
 	if not states then
-		error("start(): state '" .. tostring(self.id) .. "' has no instantiated substates.")
+		error('start(): state "' .. tostring(self.id) .. '" has no instantiated substates.')
 	end
 	local start_instance = states[start_state_id]
 	if not start_instance then
-		error("start(): start state '" .. tostring(start_state_id) .. "' not found in state machine '" .. tostring(self.id) .. "'.")
+		error('start(): start state "' .. tostring(start_state_id) .. '" not found in state machine "' .. tostring(self.id) .. '".')
 	end
 	local start_state_def = start_instance.definition
 
@@ -769,7 +769,7 @@ function state:leave_critical_section()
 			self:process_transition_queue()
 		end
 	elseif self.critical_section_counter < 0 then
-		error("critical section counter was lower than 0, which is a bug. state: '" .. tostring(self.id) .. "'.")
+		error('critical section counter was lower than 0, which is a bug. state: "' .. tostring(self.id) .. '".')
 	end
 end
 
@@ -792,7 +792,7 @@ end
 				if should_trace_transitions() then
 					self:run_with_transition_context(
 						function()
-							return self:hydrate_context(t.diag, "queue-drain", "queued-execution")
+							return self:hydrate_context(t.diag, 'queue-drain', 'queued-execution')
 						end,
 						function()
 							self:transition_to(t.path)
@@ -970,7 +970,7 @@ function state:emit_event_dispatch_trace(event_name, emitter, detail, handled, b
 	if not should_trace_dispatch() then
 		return
 	end
-	local ctx = context or self:create_fallback_snapshot("event", "event:" .. event_name, detail)
+	local ctx = context or self:create_fallback_snapshot('event', 'event:' .. event_name, detail)
 	local message = fsm_trace.compose_event_dispatch_trace_message({
 		event_name = event_name,
 		emitter = emitter,
@@ -996,19 +996,19 @@ function state:handle_state_transition(action, event)
 		return false
 	end
 	local t = type(action)
-	if t == "string" then
+	if t == 'string' then
 		if is_no_op_string(action) then
 			return true
 		end
 		self:transition_to(action)
 		return true
 	end
-	if t == "function" then
+	if t == 'function' then
 		local handler_event = event or empty_game_event
 		local next_state = action(self.target, self, handler_event)
-		local detail = "do:<anonymous>"
+		local detail = 'do:<anonymous>'
 		if next_state then
-			detail = detail .. "->" .. tostring(next_state)
+			detail = detail .. '->' .. tostring(next_state)
 		end
 		self:append_action_evaluation(detail)
 		if next_state and not is_no_op_string(next_state) then
@@ -1016,7 +1016,7 @@ function state:handle_state_transition(action, event)
 		end
 		return true
 	end
-	if t ~= "table" then
+	if t ~= 'table' then
 		return false
 	end
 	-- Optional emitter filter: { emitter = 'some_id', go = handler_or_path }
@@ -1033,20 +1033,20 @@ function state:handle_state_transition(action, event)
 		return false
 	end
 	local dt = type(do_handler)
-	if dt == "string" then
+	if dt == 'string' then
 		if is_no_op_string(do_handler) then
 			return true
 		end
-		self:append_action_evaluation("do:string=" .. do_handler)
+		self:append_action_evaluation('do:string=' .. do_handler)
 		self:transition_to(do_handler)
 		return true
 	end
-	if dt == "function" then
+	if dt == 'function' then
 		local handler_event = event or empty_game_event
 		local next_state = do_handler(self.target, self, handler_event)
-		local detail = "do:<anonymous>"
+		local detail = 'do:<anonymous>'
 		if next_state then
-			detail = detail .. "->" .. tostring(next_state)
+			detail = detail .. '->' .. tostring(next_state)
 		end
 		self:append_action_evaluation(detail)
 		if next_state and not is_no_op_string(next_state) then
@@ -1064,15 +1064,15 @@ function state:check_state_guard_conditions(target_state_id)
 	local cur_def = self:current_state_definition()
 	local exit_guard_def = cur_def.transition_guards
 	local exit_guard = exit_guard_def and exit_guard_def.can_exit
-	if type(exit_guard) == "function" then
+	if type(exit_guard) == 'function' then
 		local passed = exit_guard(self.target, self)
 		local evaluation = {
-			side = "exit",
-			descriptor = "<anonymous>",
+			side = 'exit',
+			descriptor = '<anonymous>',
 			passed = passed,
 			defined = true,
-			type = "function",
-			reason = passed and nil or "exit guard returned false",
+			type = 'function',
+			reason = passed and nil or 'exit guard returned false',
 		}
 		self:append_guard_evaluation(evaluation)
 		evaluations[#evaluations + 1] = evaluation
@@ -1080,15 +1080,15 @@ function state:check_state_guard_conditions(target_state_id)
 	else
 		local evaluation
 		if exit_guard == nil then
-			evaluation = { side = "exit", descriptor = "<none>", passed = true, defined = false, type = "missing" }
+			evaluation = { side = 'exit', descriptor = '<none>', passed = true, defined = false, type = 'missing' }
 		else
 			evaluation = {
-				side = "exit",
+				side = 'exit',
 				descriptor = tostring(exit_guard),
 				passed = true,
 				defined = true,
-				type = type(exit_guard) == "string" and "string" or "other",
-				reason = "non-callable guard ignored",
+				type = type(exit_guard) == 'string' and 'string' or 'other',
+				reason = 'non-callable guard ignored',
 			}
 		end
 		self:append_guard_evaluation(evaluation)
@@ -1098,12 +1098,12 @@ function state:check_state_guard_conditions(target_state_id)
 
 	if not allowed then
 		local evaluation = {
-			side = "enter",
-			descriptor = "<not-evaluated>",
+			side = 'enter',
+			descriptor = '<not-evaluated>',
 			passed = false,
 			defined = false,
-			type = "missing",
-			reason = "enter guard skipped due to exit guard failure",
+			type = 'missing',
+			reason = 'enter guard skipped due to exit guard failure',
 		}
 		self:append_guard_evaluation(evaluation)
 		evaluations[#evaluations + 1] = evaluation
@@ -1113,19 +1113,19 @@ function state:check_state_guard_conditions(target_state_id)
 	local states = self:states_or_throw()
 	local tgt = states[target_state_id]
 	if not tgt then
-		error("target state '" .. tostring(target_state_id) .. "' not found under '" .. tostring(self.id) .. "'.")
+		error('target state "' .. tostring(target_state_id) .. '" not found under "' .. tostring(self.id) .. '".')
 	end
 	local enter_guard_def = self:child_definition_or_throw(target_state_id).transition_guards
 	local enter_guard = enter_guard_def and enter_guard_def.can_enter
-	if type(enter_guard) == "function" then
+	if type(enter_guard) == 'function' then
 		local passed = enter_guard(self.target, tgt)
 		local evaluation = {
-			side = "enter",
-			descriptor = "<anonymous>",
+			side = 'enter',
+			descriptor = '<anonymous>',
 			passed = passed,
 			defined = true,
-			type = "function",
-			reason = passed and nil or "enter guard returned false",
+			type = 'function',
+			reason = passed and nil or 'enter guard returned false',
 		}
 		self:append_guard_evaluation(evaluation)
 		evaluations[#evaluations + 1] = evaluation
@@ -1135,15 +1135,15 @@ function state:check_state_guard_conditions(target_state_id)
 	else
 		local evaluation
 		if enter_guard == nil then
-			evaluation = { side = "enter", descriptor = "<none>", passed = true, defined = false, type = "missing" }
+			evaluation = { side = 'enter', descriptor = '<none>', passed = true, defined = false, type = 'missing' }
 		else
 			evaluation = {
-				side = "enter",
+				side = 'enter',
 				descriptor = tostring(enter_guard),
 				passed = true,
 				defined = true,
-				type = type(enter_guard) == "string" and "string" or "other",
-				reason = "non-callable guard ignored",
+				type = type(enter_guard) == 'string' and 'string' or 'other',
+				reason = 'non-callable guard ignored',
 			}
 		end
 		self:append_guard_evaluation(evaluation)
@@ -1157,26 +1157,26 @@ function state:transition_to_state(state_id)
 	if self.in_update then
 		self._transitions_this_update = self._transitions_this_update + 1
 		if self._transitions_this_update > max_transitions_per_update then
-			error("transition limit exceeded in one tick for '" .. tostring(self.id) .. "'.")
+			error('transition limit exceeded in one tick for "' .. tostring(self.id) .. '".')
 		end
 	end
 
 	local diag_enabled = should_trace_transitions()
-	local execution = self.is_processing_queue and "deferred" or "manual"
+	local execution = self.is_processing_queue and 'deferred' or 'manual'
 
 	if self.critical_section_counter > 0 then
 		if diag_enabled then
-			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot("manual", "queued-transition")
-			local outcome = { from = self.current_id, to = state_id, execution = "queued", status = "queued", reason = "critical-section" }
+			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot('manual', 'queued-transition')
+			local outcome = { from = self.current_id, to = state_id, execution = 'queued', status = 'queued', reason = 'critical-section' }
 			self:record_transition_outcome_on_context(outcome)
 			self:emit_transition_trace({
-				outcome = "queued",
-				execution = "queued",
+				outcome = 'queued',
+				execution = 'queued',
 				from = self.current_id,
 				to = state_id,
 				context = context,
 				queue_size = #self.transition_queue + 1,
-				reason = "critical-section",
+				reason = 'critical-section',
 			})
 			self.transition_queue[#self.transition_queue + 1] = { path = state_id, diag = context }
 		else
@@ -1187,21 +1187,21 @@ function state:transition_to_state(state_id)
 
 	if self.current_id == state_id then
 		if diag_enabled then
-			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == "deferred" and "queue-drain" or "manual", "noop-transition")
+			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == 'deferred' and 'queue-drain' or 'manual', 'noop-transition')
 			self:record_transition_outcome_on_context({
 				from = self.current_id,
 				to = state_id,
 				execution = execution,
-				status = "noop",
-				reason = "already-current",
+				status = 'noop',
+				reason = 'already-current',
 			})
 			self:emit_transition_trace({
-				outcome = "noop",
+				outcome = 'noop',
 				execution = execution,
 				from = self.current_id,
 				to = state_id,
 				context = context,
-				reason = "already-current",
+				reason = 'already-current',
 			})
 		end
 		return
@@ -1210,23 +1210,23 @@ function state:transition_to_state(state_id)
 	local guard_diagnostics = self:check_state_guard_conditions(state_id)
 	if not guard_diagnostics.allowed then
 		if diag_enabled then
-			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == "deferred" and "queue-drain" or "manual", "guard-blocked")
+			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == 'deferred' and 'queue-drain' or 'manual', 'guard-blocked')
 			local outcome = {
 				from = self.current_id,
 				to = state_id,
 				execution = execution,
-				status = "blocked",
+				status = 'blocked',
 				guard_summary = fsm_trace.format_guard_diagnostics(guard_diagnostics),
 			}
 			self:record_transition_outcome_on_context(outcome)
 			self:emit_transition_trace({
-				outcome = "blocked",
+				outcome = 'blocked',
 				execution = execution,
 				from = self.current_id,
 				to = state_id,
 				context = context,
 				guard = guard_diagnostics,
-				reason = "guard",
+				reason = 'guard',
 			})
 		end
 		return
@@ -1238,11 +1238,11 @@ function state:transition_to_state(state_id)
 		local prev_states = self:states_or_throw()
 		local prev_instance = prev_states[prev_id]
 		if not prev_instance then
-			error("previous state '" .. tostring(prev_id) .. "' not found in '" .. tostring(self.id) .. "'.")
+			error('previous state '' .. tostring(prev_id) .. '' not found in '' .. tostring(self.id) .. ''.')
 		end
 
 		local exit_handler = prev_def.exiting_state
-		if type(exit_handler) == "function" then
+		if type(exit_handler) == 'function' then
 			exit_handler(self.target, prev_instance)
 		end
 		prev_instance:deactivate_timelines()
@@ -1251,11 +1251,11 @@ function state:transition_to_state(state_id)
 		self.current_id = state_id
 		local cur = self.states[state_id]
 		if not cur then
-			error("state '" .. tostring(self.id) .. "' transitioned to '" .. tostring(state_id) .. "' but the instance was not created.")
+			error('state "' .. tostring(self.id) .. '" transitioned to "' .. tostring(state_id) .. '" but the instance was not created.')
 		end
 		local cur_def = self:current_state_definition()
 		if cur_def.is_concurrent then
-			error("cannot transition to parallel state '" .. tostring(state_id) .. "'.")
+			error('cannot transition to parallel state "' .. tostring(state_id) .. '".')
 		end
 
 		cur:activate_timelines()
@@ -1266,7 +1266,7 @@ function state:transition_to_state(state_id)
 				next_state = self:run_with_transition_context(
 					function()
 						local ctx = fsm_trace.create_enter_context(state_id)
-						ctx.handler_name = "<anonymous>"
+						ctx.handler_name = '<anonymous>'
 						return ctx
 					end,
 					function()
@@ -1284,12 +1284,12 @@ function state:transition_to_state(state_id)
 				from = prev_id,
 				to = state_id,
 				execution = execution,
-				status = "success",
+				status = 'success',
 				guard_summary = fsm_trace.format_guard_diagnostics(guard_diagnostics),
 			}
 			self:record_transition_outcome_on_context(outcome)
 			self:emit_transition_trace({
-				outcome = "success",
+				outcome = 'success',
 				execution = execution,
 				from = prev_id,
 				to = state_id,
@@ -1335,9 +1335,9 @@ function state:get_history_snapshot()
 end
 
 function state:transition_to_path(path)
-	if type(path) == "table" then
+	if type(path) == 'table' then
 		if #path == 0 then
-			error("empty path is invalid.")
+			error('empty path is invalid.')
 		end
 		local ctx = self
 		for i = 1, #path do
@@ -1353,12 +1353,12 @@ function state:transition_to_path(path)
 
 	local spec = state.parse_fs_path(path)
 	if not spec.abs and spec.up == 0 and #spec.segs == 0 then
-		error("empty path is invalid.")
+		error('empty path is invalid.')
 	end
 	local ctx = spec.abs and self.root or self
 	for i = 1, spec.up do
 		if not ctx.parent then
-			error("path '" .. path .. "' attempts to go above root.")
+			error('path '' .. path .. '' attempts to go above root.')
 		end
 		ctx = ctx.parent
 	end
@@ -1379,7 +1379,7 @@ end
 
 function state:path()
 	if self:is_root() then
-		return "/"
+		return '/'
 	end
 	local segments = {}
 	local node = self
@@ -1391,7 +1391,7 @@ function state:path()
 	for i = #segments, 1, -1 do
 		path[#path + 1] = segments[i]
 	end
-	return "/" .. table.concat(path, "/")
+	return '/' .. table.concat(path, '/')
 end
 
 state._path_cache = {}
@@ -1409,15 +1409,15 @@ function state.parse_fs_path(input)
 	if len == 0 then
 		return { abs = false, up = 0, segs = {} }
 	end
-	if string.sub(input, i, i) == "/" then
+	if string.sub(input, i, i) == '/' then
 		abs = true
 		i = i + 1
 	end
 	if not abs then
-		if string.sub(input, i, i + 1) == "./" then
+		if string.sub(input, i, i + 1) == './' then
 			i = i + 2
 		else
-			while string.sub(input, i, i + 2) == "../" do
+			while string.sub(input, i, i + 2) == '../' do
 				up = up + 1
 				i = i + 3
 			end
@@ -1428,7 +1428,7 @@ function state.parse_fs_path(input)
 		if ignored_relative_segments[seg] then
 			return
 		end
-		if seg == ".." then
+		if seg == '..' then
 			if #segs > 0 then
 				table.remove(segs)
 			else
@@ -1441,46 +1441,46 @@ function state.parse_fs_path(input)
 
 	while i <= len do
 		local c = string.sub(input, i, i)
-		if c == "/" then
+		if c == '/' then
 			i = i + 1
-		elseif c == "[" and string.sub(input, i + 1, i + 1) == "\"" then
+		elseif c == '[' and string.sub(input, i + 1, i + 1) == '\'' then
 			i = i + 2
-			local seg = ""
+			local seg = ''
 			local closed
 			while i <= len do
 				local ch = string.sub(input, i, i)
 				i = i + 1
-				if ch == "\\" then
+				if ch == '\\' then
 					if i <= len then
 						local esc = string.sub(input, i, i)
 						i = i + 1
-						if esc == "\"" then
-							seg = seg .. "\""
-						elseif esc == "/" then
-							seg = seg .. "/"
+						if esc == '\'' then
+							seg = seg .. '\''
+						elseif esc == '/' then
+							seg = seg .. '/'
 						else
 							seg = seg .. esc
 						end
 					end
-				elseif ch == "\"" then
-					if string.sub(input, i, i) == "]" then
+				elseif ch == '\'' then
+					if string.sub(input, i, i) == ']' then
 						i = i + 1
 						closed = true
 						break
 					else
-						error("unterminated quoted segment in path '" .. input .. "'.")
+						error('unterminated quoted segment in path '' .. input .. ''.')
 					end
 				else
 					seg = seg .. ch
 				end
 			end
 			if not closed then
-				error("unterminated quoted segment in path '" .. input .. "'.")
+				error('unterminated quoted segment in path '' .. input .. ''.')
 			end
 			push_seg(seg)
 		else
 			local start = i
-			while i <= len and string.sub(input, i, i) ~= "/" do
+			while i <= len and string.sub(input, i, i) ~= '/' do
 				i = i + 1
 			end
 			push_seg(string.sub(input, start, i - 1))
@@ -1526,7 +1526,7 @@ function state:matches_state_path(path)
 		return false
 	end
 
-	if type(path) == "table" then
+	if type(path) == 'table' then
 		return match_segments(self, path)
 	end
 
@@ -1550,7 +1550,7 @@ function state:matches_state_tag(tag)
 	if self.current_id then
 		local child = self.states[self.current_id]
 		if not child then
-			error("current child '" .. tostring(self.current_id) .. "' not found in '" .. tostring(self.id) .. "'.")
+			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 		end
 		if child:matches_state_tag(tag) then
 			return true
@@ -1576,7 +1576,7 @@ function state:collect_active_state_tags(out)
 	if self.current_id then
 		local child = self.states[self.current_id]
 		if not child then
-			error("current child '" .. tostring(self.current_id) .. "' not found in '" .. tostring(self.id) .. "'.")
+			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 		end
 		child:collect_active_state_tags(out)
 		for id, concurrent in pairs(self.states) do
@@ -1730,7 +1730,7 @@ function state:dispatch_event(event_or_name, payload)
 	end
 	local event_name
 	local data
-	if type(event_or_name) == "table" then
+	if type(event_or_name) == 'table' then
 		event_name = event_or_name.type
 		data = event_or_name
 	else
@@ -1751,7 +1751,7 @@ function state:dispatch_event(event_or_name, payload)
 	if self.states and next(self.states) ~= nil and self.current_id then
 		local child = self.states[self.current_id]
 		if not child then
-			error("current child '" .. tostring(self.current_id) .. "' not found in '" .. tostring(self.id) .. "'.")
+			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 		end
 		local handled = child:dispatch_event(event_name, data)
 		for _, concurrent in pairs(self.states) do
@@ -1788,7 +1788,7 @@ function state:resolve_input_eval_mode()
 		end
 		node = node.parent
 	end
-	return "all"
+	return 'all'
 end
 
 function state:process_input_events()
@@ -1815,7 +1815,7 @@ function state:process_input_events()
 			else
 				handled = self:handle_state_transition(handler)
 			end
-			if handled and eval_mode == "first" then
+			if handled and eval_mode == 'first' then
 				return
 			end
 		end
@@ -1831,7 +1831,7 @@ function state:run_current_state()
 	if should_trace_transitions() then
 		next_state = self:run_with_transition_context(
 			function()
-				return fsm_trace.create_update_context("<anonymous>")
+				return fsm_trace.create_update_context('<anonymous>')
 			end,
 			function()
 				return update_handler(self.target, self, empty_game_event)
@@ -1850,7 +1850,7 @@ function state:run_substate_machines()
 	local states = self.states
 	local cur = states[self.current_id]
 	if not cur then
-		error("current state '" .. tostring(self.current_id) .. "' not found in '" .. tostring(self.id) .. "'.")
+		error('current state "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 	end
 	cur:update()
 	for id, s in pairs(states) do
@@ -1967,7 +1967,7 @@ function statemachinecontroller.new(opts)
 	self._event_subscriptions = {}
 	if opts.definition then
 		local def = opts.definition
-		local id = def.id or opts.fsm_id or "master"
+		local id = def.id or opts.fsm_id or 'master'
 		self:add_statemachine(id, def)
 	end
 	return self
@@ -1992,7 +1992,7 @@ function statemachinecontroller:bind_machine(machine)
 	end
 	for i = 1, #events do
 		local event = events[i]
-		local key = machine.localdef_id .. ":" .. event.name .. ":" .. tostring(event.emitter)
+		local key = machine.localdef_id .. ':' .. event.name .. ':' .. tostring(event.emitter)
 		if self._event_subscriptions[key] then
 			goto continue
 		end
@@ -2026,7 +2026,7 @@ end
 function statemachinecontroller:unsubscribe_events_for(machine, event_names)
 	for i = 1, #event_names do
 		local name = event_names[i]
-		local key = machine.localdef_id .. ":" .. name
+		local key = machine.localdef_id .. ':' .. name
 		local disposer = self._event_subscriptions[key]
 		if disposer then
 			disposer()
@@ -2077,7 +2077,7 @@ end
 function statemachinecontroller:dispatch(event_or_name, payload)
 	local event_name
 	local data
-	if type(event_or_name) == "table" then
+	if type(event_or_name) == 'table' then
 		event_name = event_or_name.type
 		data = event_or_name
 	else
@@ -2101,14 +2101,14 @@ end
 -- Path format: 'machine_id:/state/substate' or just '/state' for the default
 -- machine.
 function statemachinecontroller:transition_to(path)
-	local machine_id, state_path = string.match(path, "^(.-):/(.+)$")
+	local machine_id, state_path = string.match(path, '^(.-):/(.+)$')
 	if not machine_id then
 		machine_id = path
 		state_path = path
 	end
 	local machine = self.statemachines[machine_id]
 	if not machine then
-		error("no machine with id '" .. tostring(machine_id) .. "'")
+		error('no machine with id "' .. tostring(machine_id) .. '"')
 	end
 	machine:transition_to(state_path)
 end
@@ -2119,7 +2119,7 @@ end
 -- Use tag-based queries (matches_state_tag) when possible — they are cheaper
 -- and do not depend on internal state naming.
 function statemachinecontroller:matches_state_path(path)
-	local machine_id, state_path = string.match(path, "^(.-):/(.+)$")
+	local machine_id, state_path = string.match(path, '^(.-):/(.+)$')
 	if machine_id then
 		local machine = self.statemachines[machine_id]
 		if not machine then
@@ -2146,7 +2146,7 @@ end
 function statemachinecontroller:run_statemachine(id)
 	local machine = self.statemachines[id]
 	if not machine then
-		error("no machine with id '" .. tostring(id) .. "'")
+		error('no machine with id "' .. tostring(id) .. '"')
 	end
 	machine:update()
 end
@@ -2160,7 +2160,7 @@ end
 function statemachinecontroller:reset_statemachine(id)
 	local machine = self.statemachines[id]
 	if not machine then
-		error("no machine with id '" .. tostring(id) .. "'")
+		error('no machine with id "' .. tostring(id) .. '"')
 	end
 	machine:reset()
 end
@@ -2174,7 +2174,7 @@ end
 function statemachinecontroller:pop_statemachine(id)
 	local machine = self.statemachines[id]
 	if not machine then
-		error("no machine with id '" .. tostring(id) .. "'")
+		error('no machine with id "' .. tostring(id) .. '"')
 	end
 	machine:pop_and_transition()
 end
@@ -2188,7 +2188,7 @@ end
 function statemachinecontroller:switch_state(id, path)
 	local machine = self.statemachines[id]
 	if not machine then
-		error("no machine with id '" .. tostring(id) .. "'")
+		error('no machine with id "' .. tostring(id) .. '"')
 	end
 	machine:transition_to(path)
 end
@@ -2196,7 +2196,7 @@ end
 function statemachinecontroller:pause_statemachine(id)
 	local machine = self.statemachines[id]
 	if not machine then
-		error("no machine with id '" .. tostring(id) .. "'")
+		error('no machine with id "' .. tostring(id) .. '"')
 	end
 	machine.paused = true
 end
@@ -2204,7 +2204,7 @@ end
 function statemachinecontroller:resume_statemachine(id)
 	local machine = self.statemachines[id]
 	if not machine then
-		error("no machine with id '" .. tostring(id) .. "'")
+		error('no machine with id "' .. tostring(id) .. '"')
 	end
 	machine.paused = false
 end

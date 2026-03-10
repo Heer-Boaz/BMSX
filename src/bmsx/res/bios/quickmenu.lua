@@ -35,7 +35,7 @@ end
 
 local function make_toggle(label, key)
 	return {
-		kind = "toggle",
+		kind = 'toggle',
 		label = label,
 		get = function()
 			return $.view[key]
@@ -48,7 +48,7 @@ end
 
 local function make_enum(label, key, values)
 	return {
-		kind = "enum",
+		kind = 'enum',
 		label = label,
 		get = function()
 			return $.view[key]
@@ -62,7 +62,7 @@ end
 
 local function make_vdp_enum(label, register, values)
 	return {
-		kind = "enum",
+		kind = 'enum',
 		label = label,
 		get = function()
 			return peek(register)
@@ -76,36 +76,36 @@ end
 
 local function make_action(label, action)
 	return {
-		kind = "action",
+		kind = 'action',
 		label = label,
 		action = action,
 	}
 end
 
 local entries = {
-	make_toggle("CRT POST", "crt_postprocessing_enabled"),
-	make_toggle("NOISE", "enable_noise"),
-	make_toggle("COLOR BLEED", "enable_colorbleed"),
-	make_toggle("SCANLINES", "enable_scanlines"),
-	make_toggle("BLUR", "enable_blur"),
-	make_toggle("GLOW", "enable_glow"),
-	make_toggle("FRINGING", "enable_fringing"),
-	make_toggle("APERTURE", "enable_aperture"),
-	make_vdp_enum("DITHER", sys_vdp_dither, {
-		{ value = 0, label = "OFF" },
-		{ value = 1, label = "PSX" },
-		{ value = 2, label = "RGB777 OUT" },
-		{ value = 3, label = "MSX10" },
+	make_toggle('CRT POST', 'crt_postprocessing_enabled'),
+	make_toggle('NOISE', 'enable_noise'),
+	make_toggle('COLOR BLEED', 'enable_colorbleed'),
+	make_toggle('SCANLINES', 'enable_scanlines'),
+	make_toggle('BLUR', 'enable_blur'),
+	make_toggle('GLOW', 'enable_glow'),
+	make_toggle('FRINGING', 'enable_fringing'),
+	make_toggle('APERTURE', 'enable_aperture'),
+	make_vdp_enum('DITHER', sys_vdp_dither, {
+		{ value = 0, label = 'OFF' },
+		{ value = 1, label = 'PSX' },
+		{ value = 2, label = 'RGB777 OUT' },
+		{ value = 3, label = 'MSX10' },
 	}),
-	make_action("REBOOT", reboot),
+	make_action('REBOOT', reboot),
 }
 
 local function entry_value_label(entry)
-	if entry.kind == "action" then
-		return ""
+	if entry.kind == 'action' then
+		return ''
 	end
-	if entry.kind == "toggle" then
-		return entry.get() and "ON" or "OFF"
+	if entry.kind == 'toggle' then
+		return entry.get() and 'ON' or 'OFF'
 	end
 	local value = entry.get()
 	for i = 1, #entry.values do
@@ -114,7 +114,7 @@ local function entry_value_label(entry)
 			return v.label
 		end
 	end
-	error("quickmenu: enum value missing for " .. entry.label)
+	error('quickmenu: enum value missing for ' .. entry.label)
 end
 
 local function entry_value_index(entry)
@@ -124,18 +124,18 @@ local function entry_value_index(entry)
 			return i
 		end
 	end
-	error("quickmenu: enum index missing for " .. entry.label)
+	error('quickmenu: enum index missing for ' .. entry.label)
 end
 
 local function entry_cycle(entry, dir)
-	if entry.kind == "action" then
+	if entry.kind == 'action' then
 		return
 		-- if dir ~= 0 then
 		-- 	entry.action()
 		-- end
 		-- return
 	end
-	if entry.kind == "toggle" then
+	if entry.kind == 'toggle' then
 		entry.set(not entry.get())
 		return
 	end
@@ -183,7 +183,7 @@ function menu.update()
 	end
 	if action_triggered('a[jp]') then
 		consume_action('a')
-		if entries[state.selected].kind == "action" then
+		if entries[state.selected].kind == 'action' then
 			entries[state.selected].action()
 		end	
 	end
@@ -195,7 +195,7 @@ function menu.draw()
 	end
 	local w = display_width()
 	local h = display_height()
-	local title = "BMSX OPTIONS"
+	local title = 'BMSX OPTIONS'
 	local font_w = 6
 	local font_h = 8
 	local scale = 2
@@ -210,8 +210,8 @@ function menu.draw()
 		local entry = entries[i]
 		local value = entry_value_label(entry)
 		local line = entry.label
-		if value ~= "-" and (value) then
-			line = line .. ": " .. value
+		if value ~= '-' and (value) then
+			line = line .. ': ' .. value
 		end
 		if #line > max_chars then max_chars = #line end
 	end
@@ -250,8 +250,8 @@ function menu.draw()
 		end
 		local value = entry_value_label(entry)
 		local line = entry.label
-		if value ~= "-" and (value) then
-			line = line .. ": " .. value
+		if value ~= '-' and (value) then
+			line = line .. ': ' .. value
 		end
 		write(line, x + padding, row_y, z, colors.text, { layer = 'ui' })
 		row_y = row_y + line_h

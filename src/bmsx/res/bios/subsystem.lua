@@ -1,9 +1,9 @@
-local eventemitter = require("eventemitter")
-local fsm = require("fsm")
-local fsmlibrary = require("fsmlibrary")
-local ecs = require("ecs")
-local subsystem_timeline_module = require("subsystem_timelines")
-local world_instance = require("world").instance
+local eventemitter = require('eventemitter')
+local fsm = require('fsm')
+local fsmlibrary = require('fsmlibrary')
+local ecs = require('ecs')
+local subsystem_timeline_module = require('subsystem_timelines')
+local world_instance = require('world').instance
 
 local tickgroup = ecs.tickgroup
 local ecsystem = ecs.ecsystem
@@ -20,19 +20,19 @@ end
 local subsystem_id_max = 2147483647
 
 local function generate_subsystem_id(type_name)
-	local baseid = type_name or "subsystem"
+	local baseid = type_name or 'subsystem'
 	local uniquenumber = world_instance.idcounter + 1
 	if uniquenumber >= subsystem_id_max then
 		uniquenumber = 1
 	end
 
-	local result = baseid .. "_" .. tostring(uniquenumber)
+	local result = baseid .. '_' .. tostring(uniquenumber)
 	while world_instance._by_id[result] ~= nil or world_instance._subsystems_by_id[result] ~= nil do
 		uniquenumber = uniquenumber + 1
 		if uniquenumber >= subsystem_id_max then
 			uniquenumber = 1
 		end
-		result = baseid .. "_" .. tostring(uniquenumber)
+		result = baseid .. '_' .. tostring(uniquenumber)
 	end
 
 	world_instance.idcounter = uniquenumber
@@ -47,13 +47,13 @@ local function resolve_update_group(owner)
 	if subsystem_group_lookup[group] then
 		return group
 	end
-	error("[subsystem] invalid update_group '" .. tostring(group) .. "' on subsystem '" .. tostring(owner.id) .. "'.")
+	error('[subsystem] invalid update_group '' .. tostring(group) .. '' on subsystem '' .. tostring(owner.id) .. ''.')
 end
 
 function subsystem.new(opts)
 	opts = opts or {}
 	local self = setmetatable({}, subsystem)
-	self.type_name = opts.type_name or "subsystem"
+	self.type_name = opts.type_name or 'subsystem'
 	self.id = opts.id or generate_subsystem_id(self.type_name)
 	self.active = false
 	self.update_enabled = false
@@ -107,10 +107,10 @@ end
 
 function subsystem:emit_gameplay_fact(event_or_name, payload)
 	local event
-	if type(event_or_name) ~= "table" then
+	if type(event_or_name) ~= 'table' then
 		local spec = { type = event_or_name, emitter = self }
 		if payload ~= nil then
-			if type(payload) == "table" and payload.type == nil then
+			if type(payload) == 'table' and payload.type == nil then
 				for k, v in pairs(payload) do
 					spec[k] = v
 				end
@@ -157,7 +157,7 @@ end
 
 function subsystem:onderegister()
 	self:deactivate()
-	self.events:emit("despawn")
+	self.events:emit('despawn')
 end
 
 function subsystem:mark_for_disposal()
@@ -247,10 +247,10 @@ setmetatable(subsystemupdatesystem, { __index = ecsystem })
 function subsystemupdatesystem.new(owner)
 	local self = setmetatable(ecsystem.new(resolve_update_group(owner), owner.update_priority or 0), subsystemupdatesystem)
 	self.owner = owner
-	self.__ecs_id = "subsystem_update:" .. owner.id
-	self.name = "subsystem_update:" .. owner.id
-	self.id = "ecs:subsystem_update:" .. owner.id
-	self.type_name = "ecsystem"
+	self.__ecs_id = 'subsystem_update:' .. owner.id
+	self.name = 'subsystem_update:' .. owner.id
+	self.id = 'ecs:subsystem_update:' .. owner.id
+	self.type_name = 'ecsystem'
 	return self
 end
 
@@ -273,10 +273,10 @@ function subsystemanimationsystem.new(owner)
 	end
 	local self = setmetatable(ecsystem.new(tickgroup.animation, priority), subsystemanimationsystem)
 	self.owner = owner
-	self.__ecs_id = "subsystem_animation:" .. owner.id
-	self.name = "subsystem_animation:" .. owner.id
-	self.id = "ecs:subsystem_animation:" .. owner.id
-	self.type_name = "ecsystem"
+	self.__ecs_id = 'subsystem_animation:' .. owner.id
+	self.name = 'subsystem_animation:' .. owner.id
+	self.id = 'ecs:subsystem_animation:' .. owner.id
+	self.type_name = 'ecsystem'
 	return self
 end
 
@@ -295,10 +295,10 @@ setmetatable(subsystempresentationsystem, { __index = ecsystem })
 function subsystempresentationsystem.new(owner)
 	local self = setmetatable(ecsystem.new(tickgroup.presentation, owner.presentation_priority or 0), subsystempresentationsystem)
 	self.owner = owner
-	self.__ecs_id = "subsystem_presentation:" .. owner.id
-	self.name = "subsystem_presentation:" .. owner.id
-	self.id = "ecs:subsystem_presentation:" .. owner.id
-	self.type_name = "ecsystem"
+	self.__ecs_id = 'subsystem_presentation:' .. owner.id
+	self.name = 'subsystem_presentation:' .. owner.id
+	self.id = 'ecs:subsystem_presentation:' .. owner.id
+	self.type_name = 'ecsystem'
 	return self
 end
 

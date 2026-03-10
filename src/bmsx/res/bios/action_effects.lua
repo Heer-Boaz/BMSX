@@ -25,7 +25,7 @@
 --
 --    STEP 3 — trigger the effect from any input/event handler:
 --      local result = player.abilities:trigger('sword_swing')
---      -- result: "ok" | "blocked" | "on_cooldown" | "failed"
+--      -- result: 'ok' | 'blocked' | 'on_cooldown' | 'failed'
 --
 -- 3. EFFECTS FIRE via emit_gameplay_fact(), NOT direct emits.
 --    After a successful trigger, the effect automatically calls
@@ -35,21 +35,21 @@
 -- 4. CONTEXT: handler receives { owner, target, payload, args }.
 --    target defaults to owner but can be overridden for targeted effects.
 
-local eventemitter = require("eventemitter")
-local components = require("components")
+local eventemitter = require('eventemitter')
+local components = require('components')
 local component = components.component
 
 local actioneffects = {}
 
 actioneffects.effecttype = {
-	spawn = "spawn",
-	despawn = "despawn",
-	damage = "damage",
-	heal = "heal",
-	move = "move",
-	play_sound = "play_sound",
-	play_animation = "play_animation",
-	emit_event = "emit_event",
+	spawn = 'spawn',
+	despawn = 'despawn',
+	damage = 'damage',
+	heal = 'heal',
+	move = 'move',
+	play_sound = 'play_sound',
+	play_animation = 'play_animation',
+	emit_event = 'emit_event',
 }
 
 local registry = {
@@ -66,9 +66,9 @@ local registry = {
 --     schema   — validate payload before execution
 --     validate — extra validation function
 function actioneffects.register_effect(definition, opts)
-	if type(definition) == "string" then
+	if type(definition) == 'string' then
 		local id = definition
-		if type(opts) == "table" then
+		if type(opts) == 'table' then
 			definition = opts
 			definition.id = definition.id or id
 		else
@@ -99,7 +99,7 @@ end
 function actioneffects.validate(id, payload)
 	local schema = registry.schemas[id]
 	if schema and not schema.validate(payload) then
-		error("actioneffect payload failed schema for '" .. id .. "'")
+		error('actioneffect payload failed schema for '' .. id .. ''')
 	end
 	local validator = registry.validators[id]
 	if validator then
@@ -179,7 +179,7 @@ end
 local function create_owner_event(owner, event_type, payload)
 	local base = { type = event_type, emitter = owner }
 	if payload ~= nil then
-		if type(payload) == "table" and payload.type == nil then
+		if type(payload) == 'table' and payload.type == nil then
 			for k, v in pairs(payload) do
 				base[k] = v
 			end
@@ -215,7 +215,7 @@ setmetatable(actioneffectcomponent, { __index = component })
 --   The component is unique (only one per object allowed).
 function actioneffectcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "actioneffectcomponent"
+	opts.type_name = 'actioneffectcomponent'
 	opts.unique = true
 	local self = setmetatable(component.new(opts), actioneffectcomponent)
 	self.definitions = {}
@@ -256,14 +256,14 @@ end
 --   opts.payload — passed to the effect handler as context.payload
 --   opts.args    — array of extra arguments forwarded to the handler
 --   Returns a string result:
---     "ok"          — effect executed successfully
---     "on_cooldown" — effect is cooling down; try again later
---     "blocked"     — effect conditions / tag requirements not met
---     "failed"      — effect id is not granted to this component
+--     'ok'          — effect executed successfully
+--     'on_cooldown' — effect is cooling down; try again later
+--     'blocked'     — effect conditions / tag requirements not met
+--     'failed'      — effect id is not granted to this component
 function actioneffectcomponent:trigger(id, opts)
 	local definition = self.definitions[id]
 	if not definition then
-		return "failed"
+		return 'failed'
 	end
 	local payload = opts and opts.payload
 	local args = opts and opts.args or {}
@@ -272,13 +272,13 @@ function actioneffectcomponent:trigger(id, opts)
 	local now = self.time_ms
 	local until_time = self.cooldown_until[id]
 	if until_time ~= nil and now < until_time then
-		return "on_cooldown"
+		return 'on_cooldown'
 	end
 
 	local owner = self.parent
 	local context = create_context(owner, payload, args)
 	if not can_trigger(definition, context, args) then
-		return "blocked"
+		return 'blocked'
 	end
 
 	local outcome = invoke_handler(definition, context, args)
@@ -292,7 +292,7 @@ function actioneffectcomponent:trigger(id, opts)
 	if definition.cooldown_ms and definition.cooldown_ms > 0 then
 		self.cooldown_until[id] = now + definition.cooldown_ms
 	end
-	return "ok"
+	return 'ok'
 end
 
 -- actioneffectcomponent:cooldown_remaining(id)
@@ -310,6 +310,6 @@ function actioneffectcomponent:cooldown_remaining(id)
 end
 
 actioneffects.actioneffectcomponent = actioneffectcomponent
-components.register_component("actioneffectcomponent", actioneffectcomponent)
+components.register_component('actioneffectcomponent', actioneffectcomponent)
 
 return actioneffects

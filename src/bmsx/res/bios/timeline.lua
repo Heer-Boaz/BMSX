@@ -51,20 +51,20 @@ local function expand_timeline_windows(markers, windows)
 	for i = 1, #windows do
 		local window_def = windows[i]
 		local name = window_def.name
-		local tag = window_def.tag or ("timeline.window." .. name)
+		local tag = window_def.tag or ('timeline.window.' .. name)
 		local start_at = window_def.start
 		local start = {
 			frame = start_at.frame,
 			u = start_at.u,
-			event = "window." .. name .. ".start",
+			event = 'window.' .. name .. '.start',
 			payload = window_def.payloadstart,
 			add_tags = { tag },
 		}
-		local end_at = window_def["end"]
+		local end_at = window_def['end']
 		local finish = {
 			frame = end_at.frame,
 			u = end_at.u,
-			event = "window." .. name .. ".end",
+			event = 'window.' .. name .. '.end',
 			payload = window_def.payloadend,
 			remove_tags = { tag },
 		}
@@ -200,24 +200,24 @@ function timeline.new(def)
 		self.built = true
 	end
 	local source_type = type(frame_source)
-	if source_type == "function" then
+	if source_type == 'function' then
 		self.frame_builder = frame_source
 		self.frames = {}
 		self.length = 0
 		self.built = false
-	elseif source_type == "table" then
+	elseif source_type == 'table' then
 		self.frames = expand_frames(frame_source, self.repetitions)
 		self.length = #self.frames
 		self.built = true
 	elseif frame_source ~= nil then
-		error("[timeline] timeline '" .. tostring(def.id) .. "' requires a frames table or builder function.")
+		error('[timeline] timeline '' .. tostring(def.id) .. '' requires a frames table or builder function.')
 	end
 	if def.ticks_per_frame ~= nil then
 		self.ticks_per_frame = def.ticks_per_frame
 	else
 		self.ticks_per_frame = 1
 	end
-	self.playback_mode = def.playback_mode or "once"
+	self.playback_mode = def.playback_mode or 'once'
 	if continuous == nil and frame_source == nil and self.tracks ~= nil then
 		continuous = true
 	end
@@ -238,11 +238,11 @@ end
 
 function timeline:build(params)
 	if not self.frame_builder then
-		error("[timeline] timeline '" .. tostring(self.id) .. "' has no frame builder.")
+		error('[timeline] timeline '' .. tostring(self.id) .. '' has no frame builder.')
 	end
 	local frames = self.frame_builder(params)
-	if type(frames) ~= "table" then
-		error("[timeline] timeline '" .. tostring(self.id) .. "' frame builder must return a table.")
+	if type(frames) ~= 'table' then
+		error('[timeline] timeline '' .. tostring(self.id) .. '' frame builder must return a table.')
 	end
 	self.frames = expand_frames(frames, self.repetitions)
 	self.length = #self.frames
@@ -279,11 +279,11 @@ function timeline:tick(dt)
 		if head < 0 then
 			head = 0
 		end
-		local events = self:apply_frame(head, "tick")
+		local events = self:apply_frame(head, 'tick')
 		if self.duration_ms and self.time_ms >= self.duration_ms then
 			self.ended = true
 			events[#events + 1] = {
-				kind = "end",
+				kind = 'end',
 				frame = self.head,
 				mode = self.playback_mode,
 				wrapped = false,
@@ -292,24 +292,24 @@ function timeline:tick(dt)
 		return events
 	end
 	if self.ticks_per_frame <= 0 or self.ticks >= self.ticks_per_frame then
-		return self:advance_internal("advance")
+		return self:advance_internal('advance')
 	end
 	return {}
 end
 
 function timeline:advance()
-	return self:advance_internal("advance")
+	return self:advance_internal('advance')
 end
 
 -- timeline:seek(frame): move the playhead to an absolute frame index.
 -- Does NOT fire frame markers for skipped frames.  Use force_seek() if you
 -- need markers to fire (e.g. to sync tag state after a manual jump).
 function timeline:seek(frame)
-	return self:apply_frame(frame, "seek")
+	return self:apply_frame(frame, 'seek')
 end
 
 function timeline:snap_to_start()
-	return self:apply_frame(0, "snap")
+	return self:apply_frame(0, 'snap')
 end
 
 function timeline:force_seek(frame)
@@ -322,7 +322,7 @@ function timeline:force_seek(frame)
 	local clamped = math.min(math.max(frame, timeline_start_index), self.length - 1)
 	self.head = clamped
 	self.ticks = 0
-	if self.playback_mode ~= "pingpong" then
+	if self.playback_mode ~= 'pingpong' then
 		self.direction = 1
 	elseif clamped <= 0 then
 		self.direction = 1
@@ -333,7 +333,7 @@ function timeline:advance_internal(reason)
 	if self.length == 0 then
 		return {}
 	end
-	local delta = self.playback_mode == "pingpong" and self.direction or 1
+	local delta = self.playback_mode == 'pingpong' and self.direction or 1
 	local target = self.head + (self.head == timeline_start_index and 1 or delta)
 	return self:apply_frame(target, reason)
 end
@@ -351,7 +351,7 @@ function timeline:apply_frame(target, reason)
 	local emit_end
 	local wrapped
 
-	if reason == "seek" then
+	if reason == 'seek' then
 		self.direction = 1
 	end
 
@@ -360,13 +360,13 @@ function timeline:apply_frame(target, reason)
 		self.direction = 1
 		emit_end = true
 	elseif next > last_index then
-		if self.playback_mode == "loop" then
+		if self.playback_mode == 'loop' then
 			next = 0
 			rewound = true
 			emit_end = true
 			wrapped = true
 			self.direction = 1
-		elseif self.playback_mode == "pingpong" then
+		elseif self.playback_mode == 'pingpong' then
 			next = last_index
 			if last_index > 0 then
 				self.direction = -1
@@ -385,7 +385,7 @@ function timeline:apply_frame(target, reason)
 		end
 	end
 
-	if previous == next and not rewound and not emit_end and reason == "advance" then
+	if previous == next and not rewound and not emit_end and reason == 'advance' then
 		return events
 	end
 
@@ -398,7 +398,7 @@ function timeline:apply_frame(target, reason)
 
 	if emit_frame then
 		events[#events + 1] = {
-			kind = "frame",
+			kind = 'frame',
 			previous = previous,
 			current = next,
 			value = self.frames[next + 1],
@@ -410,7 +410,7 @@ function timeline:apply_frame(target, reason)
 
 	if emit_end then
 		events[#events + 1] = {
-			kind = "end",
+			kind = 'end',
 			frame = self.head,
 			mode = self.playback_mode,
 			wrapped = wrapped,

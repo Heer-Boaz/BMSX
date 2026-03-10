@@ -1,13 +1,13 @@
 -- audio_router.lua
 -- routes Lua events to native audio commands using audioevents assets
 
-local eventemitter = require("eventemitter").eventemitter
-local compile_matcher = require("event_matcher").compile
+local eventemitter = require('eventemitter').eventemitter
+local compile_matcher = require('event_matcher').compile
 
 local router = { _inited = false, _bound = false, _events = nil }
 local last_random_pick_by_rule = {}
 local last_played_at = {}
-local mergeable_entry_types = { ["table"] = true, ["native"] = true }
+local mergeable_entry_types = { ['table'] = true, ['native'] = true }
 local handle_event
 
 local function compile_rules(rules)
@@ -25,12 +25,12 @@ local function compile_rules(rules)
 			local has_weights
 			for j = 1, #spec.one_of do
 				local item = spec.one_of[j]
-				if type(item) == "string" or type(item) == "number" then
+				if type(item) == 'string' or type(item) == 'number' then
 					actions[#actions + 1] = { audio_id = item }
 					weights[#weights + 1] = 1
 				else
 					if not item.audio_id then
-						error("audio_router one_of item missing audio_id")
+						error('audio_router one_of item missing audio_id')
 					end
 					actions[#actions + 1] = item
 					local weight = item.weight or 1
@@ -105,17 +105,17 @@ local function resolve_action_spec(event_name, rule_index, rule, payload)
 	local pick_mode = spec.pick
 	if not pick_mode then
 		if rule.__oneof_has_weights then
-			pick_mode = "weighted"
+			pick_mode = 'weighted'
 		else
-			pick_mode = "uniform"
+			pick_mode = 'uniform'
 		end
 	end
-	local actor_key = payload['actorId'] or "global"
-	local rule_key = event_name .. "#" .. rule_index .. "#" .. actor_key
+	local actor_key = payload['actorId'] or 'global'
+	local rule_key = event_name .. '#' .. rule_index .. '#' .. actor_key
 	local last_index = last_random_pick_by_rule[rule_key]
 		local avoid = spec.avoid_repeat and last_index
 	local idx
-	if pick_mode == "weighted" then
+	if pick_mode == 'weighted' then
 		idx = pick_weighted_index(weights, avoid)
 	else
 		idx = pick_uniform_index(#actions, avoid)
@@ -133,14 +133,14 @@ local function merge_events(map)
 
 	local function add_or_merge(event_name, entry)
 		if event_name == nil then
-			error("audio_router event name is missing")
+			error('audio_router event name is missing')
 		end
 		local cur = merged[event_name]
 		local compiled_rules = compile_rules(entry.rules)
 		if not cur then
 			local out = {}
 			for k, v in pairs(entry) do
-				if k ~= "rules" then
+				if k ~= 'rules' then
 					out[k] = v
 				end
 			end
@@ -151,12 +151,12 @@ local function merge_events(map)
 		end
 		local out = {}
 		for k, v in pairs(cur) do
-			if k ~= "rules" then
+			if k ~= 'rules' then
 				out[k] = v
 			end
 		end
 		for k, v in pairs(entry) do
-			if k ~= "rules" then
+			if k ~= 'rules' then
 				out[k] = v
 			end
 		end
@@ -174,15 +174,15 @@ local function merge_events(map)
 
 	for asset_id, value in pairs(map) do
 		local value_type = type(value)
-		if value_type ~= "table" and value_type ~= "native" then
-			error("audio_router asset '" .. tostring(asset_id) .. "' must be a table")
+		if value_type ~= 'table' and value_type ~= 'native' then
+			error('audio_router asset '' .. tostring(asset_id) .. '' must be a table')
 		end
 
 		local events = value.events
 		if events ~= nil then
 			local events_type = type(events)
-			if events_type ~= "table" and events_type ~= "native" then
-				error("audio_router asset '" .. tostring(asset_id) .. "' has invalid events")
+			if events_type ~= 'table' and events_type ~= 'native' then
+				error('audio_router asset '' .. tostring(asset_id) .. '' has invalid events')
 			end
 			for event_name, entry in pairs(events) do
 				add_or_merge(event_name, entry)
@@ -190,7 +190,7 @@ local function merge_events(map)
 		else
 			local found_direct
 			for key, entry in pairs(value) do
-				if key ~= "$type" and key ~= "events" and key ~= "name" and key ~= "channel" and key ~= "max_voices" and key ~= "policy" and key ~= "rules" then
+				if key ~= '$type' and key ~= 'events' and key ~= 'name' and key ~= 'channel' and key ~= 'max_voices' and key ~= 'policy' and key ~= 'rules' then
 					local entry_type = type(entry)
 					if mergeable_entry_types[entry_type] then
 						if entry.rules ~= nil then
@@ -202,8 +202,8 @@ local function merge_events(map)
 			end
 			if not found_direct and value.rules ~= nil then
 				local event_name = value.name
-				if type(event_name) ~= "string" then
-					error("audio_router event entry is missing name")
+				if type(event_name) ~= 'string' then
+					error('audio_router event entry is missing name')
 				end
 				add_or_merge(event_name, value)
 			end
@@ -218,8 +218,8 @@ local function apply_cooldown(event_name, action, payload)
 	if not cooldown_ms or cooldown_ms <= 0 then
 		return true
 	end
-	local actor_key = payload['actorId'] or "global"
-	local key = event_name .. ":" .. actor_key .. ":" .. tostring(action.audio_id)
+	local actor_key = payload['actorId'] or 'global'
+	local key = event_name .. ':' .. actor_key .. ':' .. tostring(action.audio_id)
 	local now = os.clock() * 1000
 	local last = last_played_at[key] or 0
 	if (now - last) < cooldown_ms then
@@ -239,12 +239,12 @@ local function dispatch_action(event_name, entry, action, payload)
 	if action.sequence then
 		local seq = action.sequence
 		local seq_type = type(seq)
-		if seq_type ~= "table" and seq_type ~= "native" then
-			error("audio_router sequence must be a table")
+		if seq_type ~= 'table' and seq_type ~= 'native' then
+			error('audio_router sequence must be a table')
 		end
 		for i = 1, #seq do
 			local item = seq[i]
-			if type(item) == "string" or type(item) == "number" then
+			if type(item) == 'string' or type(item) == 'number' then
 				dispatch_action(event_name, entry, { audio_id = item }, payload)
 			else
 				dispatch_action(event_name, entry, item, payload)
@@ -255,13 +255,13 @@ local function dispatch_action(event_name, entry, action, payload)
 	if action.music_transition then
 		local transition = action.music_transition
 		if transition.fade_ms ~= nil and transition.crossfade_ms ~= nil then
-			error("audio_router music_transition cannot specify both fade_ms and crossfade_ms")
+			error('audio_router music_transition cannot specify both fade_ms and crossfade_ms')
 		end
 		music(transition.audio_id, transition)
 		return
 	end
 	if not action.audio_id then
-		error("audio_router action missing audio_id")
+		error('audio_router action missing audio_id')
 	end
 	if not apply_cooldown(event_name, action, payload) then
 		return
@@ -272,7 +272,7 @@ local function dispatch_action(event_name, entry, action, payload)
 	action_opts.policy = entry.policy
 	action_opts.max_voices = entry.max_voices
 	action_opts.channel = entry.channel
-	if entry.channel == "music" then
+	if entry.channel == 'music' then
 		music(action.audio_id, action_opts)
 	else
 		sfx(action.audio_id, action_opts)

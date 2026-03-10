@@ -58,13 +58,13 @@
 --    Moving an object to a non-active space hides it from gameplay queries
 --    without destroying it (components, subscriptions, and FSM persist).
 --    Pattern: move enemies to 'transition' during screen transitions, not despawn.
-local eventemitter = require("eventemitter")
-local fsm = require("fsm")
-local fsmlibrary = require("fsmlibrary")
-local components = require("components")
-local behaviourtree = require("behaviourtree")
-local world_instance = require("world").instance
-local registry_instance = require("registry").instance
+local eventemitter = require('eventemitter')
+local fsm = require('fsm')
+local fsmlibrary = require('fsmlibrary')
+local components = require('components')
+local behaviourtree = require('behaviourtree')
+local world_instance = require('world').instance
+local registry_instance = require('registry').instance
 
 local worldobject = {}
 worldobject.__index = worldobject
@@ -73,13 +73,13 @@ local world_id_max = 2147483647
 
 local function component_key(type_or_name)
 	local t = type(type_or_name)
-	if t == "string" then
+	if t == 'string' then
 		return string.lower(type_or_name)
 	end
-	if t == "table" then
+	if t == 'table' then
 		local name = type_or_name.type_name or type_or_name.typename or type_or_name.name
 		if name == nil then
-			error("worldobject component key table is missing type name")
+			error('worldobject component key table is missing type name')
 		end
 		return string.lower(name)
 	end
@@ -127,13 +127,13 @@ function worldobject:generate_id()
 		uniquenumber = 1
 	end
 
-	local result = baseid .. "_" .. tostring(uniquenumber)
+	local result = baseid .. '_' .. tostring(uniquenumber)
 	while world_instance._by_id[result] ~= nil or world_instance._subsystems_by_id[result] ~= nil do
 		uniquenumber = uniquenumber + 1
 		if uniquenumber >= world_id_max then
 			uniquenumber = 1
 		end
-		result = baseid .. "_" .. tostring(uniquenumber)
+		result = baseid .. '_' .. tostring(uniquenumber)
 	end
 
 	world_instance.idcounter = uniquenumber
@@ -152,7 +152,7 @@ end
 --   Useful for temporarily hiding an object from the active space (e.g. moving
 --   enemies to a 'transition' space during a screen-transition animation and
 --   back to 'main' on exit).  The object stays alive and subscribed; it is
---   simply excluded from scope="active" queries.
+--   simply excluded from scope='active' queries.
 --
 --   PATTERN (enemies during shrine transition):
 --     self.events:on('shrine_transition_enter', function()
@@ -187,20 +187,20 @@ function worldobject:add_component(comp)
 		self.component_map[key] = bucket
 	end
 	if comp.unique and #bucket > 0 then
-		error("component '" .. (comp.type_name or key) .. "' is unique and already attached to '" .. self.id .. "'")
+		error('component '' .. (comp.type_name or key) .. '' is unique and already attached to '' .. self.id .. ''')
 	end
 	table.insert(self.components, comp)
 	bucket[#bucket + 1] = comp
 	comp:bind()
 	comp:on_attach()
 	registry_instance:register(comp)
-	if comp.type_name == "timelinecomponent" then
+	if comp.type_name == 'timelinecomponent' then
 		self.timelines = comp
 	end
-	if comp.type_name == "actioneffectcomponent" then
+	if comp.type_name == 'actioneffectcomponent' then
 		self.actioneffects = comp
 	end
-	if comp.type_name == "abilitiescomponent" then
+	if comp.type_name == 'abilitiescomponent' then
 		self.abilities = comp
 	end
 
@@ -224,7 +224,7 @@ function worldobject:get_unique_component(type_name)
 		return nil
 	end
 	if #list > 1 then
-		error("multiple '" .. component_key(type_name) .. "' components attached to '" .. self.id .. "'")
+		error('multiple '' .. component_key(type_name) .. '' components attached to '' .. self.id .. ''')
 	end
 	return list[1]
 end
@@ -372,10 +372,10 @@ end
 -- merged into the event table; emitter is set to self automatically.
 function worldobject:emit_gameplay_fact(event_or_name, payload)
 	local event
-	if type(event_or_name) ~= "table" then
+	if type(event_or_name) ~= 'table' then
 		local spec = { type = event_or_name, emitter = self }
 		if payload ~= nil then
-			if type(payload) == "table" and payload.type == nil then
+			if type(payload) == 'table' and payload.type == nil then
 				for k, v in pairs(payload) do
 					spec[k] = v
 				end
@@ -440,7 +440,7 @@ end
 function worldobject:ondespawn()
 	self.active = false
 	self.fsm_dispatch_enabled = false
-	self.events:emit("despawn")
+	self.events:emit('despawn')
 end
 
 -- mark_for_disposal(): schedules the object for removal at end-of-frame.
@@ -528,7 +528,7 @@ end
 function worldobject:tick_tree(bt_id)
 	local context = self.btreecontexts[bt_id]
 	if not context then
-		error("behavior tree context '" .. bt_id .. "' does not exist.")
+		error('behavior tree context '' .. bt_id .. '' does not exist.')
 	end
 	if not context.running then
 		return
@@ -539,7 +539,7 @@ end
 function worldobject:reset_tree(bt_id)
 	local context = self.btreecontexts[bt_id]
 	if not context then
-		error("behavior tree context '" .. bt_id .. "' does not exist.")
+		error('behavior tree context '' .. bt_id .. '' does not exist.')
 	end
 	context.blackboard:clear_node_data()
 end

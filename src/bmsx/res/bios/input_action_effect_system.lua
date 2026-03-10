@@ -1,17 +1,17 @@
 -- input_action_effect_system.lua
 -- input intent + input action effect ecs system
 
-local ecs = require("ecs")
-local action_effects = require("action_effects")
-local compiler = require("input_action_effect_compiler")
-local dsl = require("input_action_effect_dsl")
-local romdir = require("romdir")
-local world_instance = require("world").instance
-local inputintentcomponent = "inputintentcomponent"
-local inputactioneffectcomponent = "inputactioneffectcomponent"
-local actioneffectcomponentid = "actioneffectcomponent"
+local ecs = require('ecs')
+local action_effects = require('action_effects')
+local compiler = require('input_action_effect_compiler')
+local dsl = require('input_action_effect_dsl')
+local romdir = require('romdir')
+local world_instance = require('world').instance
+local inputintentcomponent = 'inputintentcomponent'
+local inputactioneffectcomponent = 'inputactioneffectcomponent'
+local actioneffectcomponentid = 'actioneffectcomponent'
 local assigned_value_edges = { ['hold'] = true, ['press'] = true }
-local active_scope = { scope = "active" }
+local active_scope = { scope = 'active' }
 
 local asset_programs_validated = false
 
@@ -34,8 +34,8 @@ setmetatable(inputactioneffectsystem, { __index = ecs.ecsystem })
 function inputactioneffectsystem.new(priority)
 	local self = setmetatable(ecs.ecsystem.new(ecs.tickgroup.input, priority or 0), inputactioneffectsystem)
 	self.compiled_by_id = {}
-	self.inline_compiled = setmetatable({}, { __mode = "k" })
-	self.validated_inline = setmetatable({}, { __mode = "k" })
+	self.inline_compiled = setmetatable({}, { __mode = 'k' })
+	self.validated_inline = setmetatable({}, { __mode = 'k' })
 	self.resolved_programs = {}
 	self.missing_program_ids = {}
 	self.pattern_cache = {}
@@ -43,7 +43,7 @@ function inputactioneffectsystem.new(priority)
 	self.custom_match_scratch = {}
 	self.binding_latch = {}
 	self.frame_latch_touched = {}
-	self.__ecs_id = "inputactioneffectsystem"
+	self.__ecs_id = 'inputactioneffectsystem'
 	validate_primary_assets_on_boot()
 	return self
 end
@@ -86,7 +86,7 @@ function inputactioneffectsystem:process_input_action_programs()
 		local player_index = obj.player_index or 1
 		local effects = obj:get_component(actioneffectcomponentid)
 		if (not effects) and program.uses_effect_triggers then
-			error("[inputactioneffectsystem] program '" .. program_key .. "' triggers effects but object '" .. obj.id .. "' has no actioneffectcomponent.")
+			error('[inputactioneffectsystem] program '' .. program_key .. '' triggers effects but object '' .. obj.id .. '' has no actioneffectcomponent.')
 		end
 
 		local owner_id = effects and effects.parent.id or obj.id
@@ -121,19 +121,19 @@ function inputactioneffectsystem:evaluate_intent_binding(owner, player_index, bi
 	end
 	local state = $.get_action_state(player_index, action)
 	if state.justpressed and binding.press then
-		self:run_intent_assignments(owner, player_index, binding, "press", binding.press)
+		self:run_intent_assignments(owner, player_index, binding, 'press', binding.press)
 	end
 	if state.pressed and binding.hold then
-		self:run_intent_assignments(owner, player_index, binding, "hold", binding.hold)
+		self:run_intent_assignments(owner, player_index, binding, 'hold', binding.hold)
 	end
 	if state.justreleased and binding.release then
-		self:run_intent_assignments(owner, player_index, binding, "release", binding.release)
+		self:run_intent_assignments(owner, player_index, binding, 'release', binding.release)
 	end
 end
 
 function inputactioneffectsystem:run_intent_assignments(owner, player_index, binding, edge, spec)
 	local assignments
-	if type(spec) ~= "table" or spec.path then
+	if type(spec) ~= 'table' or spec.path then
 		assignments = { spec }
 	else
 		assignments = spec
@@ -141,7 +141,7 @@ function inputactioneffectsystem:run_intent_assignments(owner, player_index, bin
 	for i = 1, #assignments do
 		local assignment = assignments[i]
 		local path = assignment.path
-		local should_clear = assignment.clear or (assignment.value == nil and edge == "release")
+		local should_clear = assignment.clear or (assignment.value == nil and edge == 'release')
 			local resolved_value = should_clear and nil or (assignment.value == nil and assigned_value_edges[edge] or assignment.value)
 		self:assign_owner_path(owner, path, resolved_value, should_clear)
 		if (assignment.consume) then
@@ -152,14 +152,14 @@ end
 
 function inputactioneffectsystem:assign_owner_path(owner, path, value, clear)
 	local segments = {}
-	for part in string.gmatch(path, "[^%.]+") do
+	for part in string.gmatch(path, '[^%.]+') do
 		segments[#segments + 1] = part
 	end
 	local target = owner
 	for i = 1, #segments - 1 do
 		local key = segments[i]
 		local next_table = target[key]
-		if type(next_table) ~= "table" then
+		if type(next_table) ~= 'table' then
 			next_table = {}
 			target[key] = next_table
 		end
@@ -178,7 +178,7 @@ function inputactioneffectsystem:resolve_intent_player_index(component, owner)
 	local fallback = owner.player_index or 0
 	local resolved = explicit > 0 and explicit or fallback
 	if resolved <= 0 then
-		error("[inputactioneffectsystem] unable to resolve player index for object '" .. (owner.id or "<unknown>") .. "'.")
+		error('[inputactioneffectsystem] unable to resolve player index for object '' .. (owner.id or '<unknown>') .. ''.')
 	end
 	return resolved
 end
@@ -187,13 +187,13 @@ function inputactioneffectsystem:resolve_program_key(component, owner)
 	if component.program_id then
 		return component.program_id
 	end
-	return "inline:" .. owner.id
+	return 'inline:' .. owner.id
 end
 
 function inputactioneffectsystem:describe_inline_program(component)
-	local owner_id = component.parent and component.parent.id or "<unattached>"
-	local component_id = component.id or component.id_local or component.type_name or "component"
-	return "inline:" .. owner_id .. ":" .. component_id
+	local owner_id = component.parent and component.parent.id or '<unattached>'
+	local component_id = component.id or component.id_local or component.type_name or 'component'
+	return 'inline:' .. owner_id .. ':' .. component_id
 end
 
 function inputactioneffectsystem:evaluate_program(program, env, program_key)
@@ -274,7 +274,7 @@ function inputactioneffectsystem:evaluate_program(program, env, program_key)
 			end
 		end
 
-		if matched and program.eval_mode == "first" then
+		if matched and program.eval_mode == 'first' then
 			return
 		end
 
@@ -283,8 +283,8 @@ function inputactioneffectsystem:evaluate_program(program, env, program_key)
 end
 
 function inputactioneffectsystem:make_binding_key(owner_id, program_key, player_index, binding, index)
-	local name = binding.name or ("#" .. index)
-	return owner_id .. "|" .. program_key .. "|p" .. player_index .. "|" .. name .. "|" .. index
+	local name = binding.name or ('#' .. index)
+	return owner_id .. '|' .. program_key .. '|p' .. player_index .. '|' .. name .. '|' .. index
 end
 
 function inputactioneffectsystem:ensure_scratch(size)
@@ -314,7 +314,7 @@ function inputactioneffectsystem:resolve_compiled_program(component)
 
 	local program_id = component.program_id
 	if not program_id then
-		error("[inputactioneffectsystem] component on '" .. (component.parent and component.parent.id or "<unknown>") .. "' is missing program_id.")
+		error('[inputactioneffectsystem] component on '' .. (component.parent and component.parent.id or '<unknown>') .. '' is missing program_id.')
 	end
 
 	local compiled = self.compiled_by_id[program_id]
@@ -335,12 +335,12 @@ function inputactioneffectsystem:resolve_program_by_id(program_id)
 		return self.resolved_programs[program_id]
 	end
 	if self.missing_program_ids[program_id] then
-		error("[inputactioneffectsystem] program '" .. program_id .. "' is marked as missing.")
+		error('[inputactioneffectsystem] program '' .. program_id .. '' is marked as missing.')
 	end
 	local data = assets.data[romdir.token(program_id)]
 	if not dsl.is_input_action_effect_program(data) then
 		self.missing_program_ids[program_id] = true
-		error("[inputactioneffectsystem] program '" .. program_id .. "' not found or invalid.")
+		error('[inputactioneffectsystem] program '' .. program_id .. '' not found or invalid.')
 	end
 	self.resolved_programs[program_id] = data
 	return data

@@ -1,8 +1,8 @@
 -- ecs_pipeline.lua
 -- ecs pipeline registry and builder for lua engine
 
-local ecs = require("ecs")
-local registry = require("registry")
+local ecs = require('ecs')
+local registry = require('registry')
 
 local ecspipelineregistry = {}
 ecspipelineregistry.__index = ecspipelineregistry
@@ -16,7 +16,7 @@ end
 
 function ecspipelineregistry:register(desc)
 	if self._descs[desc.id] then
-		error("ecspipelineregistry: duplicate id '" .. desc.id .. "'")
+		error('ecspipelineregistry: duplicate id '' .. desc.id .. ''')
 	end
 	self._descs[desc.id] = desc
 end
@@ -46,7 +46,7 @@ function ecspipelineregistry:build(world_instance, nodes)
 		local n = filtered[i]
 		local d = self._descs[n.ref]
 		if not d then
-			error("ecspipelineregistry: unknown system ref '" .. n.ref .. "'")
+			error('ecspipelineregistry: unknown system ref '' .. n.ref .. ''')
 		end
 		resolved[#resolved + 1] = {
 			ref = n.ref,
@@ -79,8 +79,8 @@ function ecspipelineregistry:build(world_instance, nodes)
 		local d = self._descs[r.ref]
 		local sys = d.create(r.priority)
 		sys.__ecs_id = r.ref
-		sys.id = "ecs:" .. r.ref
-		sys.type_name = "ecsystem"
+		sys.id = 'ecs:' .. r.ref
+		sys.type_name = 'ecsystem'
 		systems[#systems + 1] = sys
 	end
 

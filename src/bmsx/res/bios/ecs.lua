@@ -114,7 +114,7 @@ function ecsystemmanager:get_stats()
 end
 
 function ecsystemmanager:record_stat(sys, t0, t1)
-	local id = sys.__ecs_id or sys.id or "system"
+	local id = sys.__ecs_id or sys.id or 'system'
 	self.stats[#self.stats + 1] = {
 		id = id,
 		name = sys.name or id,

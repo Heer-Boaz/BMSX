@@ -2,11 +2,11 @@
 -- input action effect program schema helpers
 
 local function is_input_action_effect_program(value)
-	return type(value) == "table" and type(value.bindings) == "table"
+	return type(value) == 'table' and type(value.bindings) == 'table'
 end
 
 local function is_dispatch_command_effect(value)
-	return type(value) == "table" and value["dispatch.command"] ~= nil
+	return type(value) == 'table' and value['dispatch.command'] ~= nil
 end
 
 return {

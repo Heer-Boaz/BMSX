@@ -30,7 +30,7 @@
 --    Use collision2d.collides() or collision2d.query_aabb() only for cases
 --    that genuinely fall outside the per-frame ECS pipeline:
 --      a) One-shot hit-scan / ray queries that happen at an arbitrary moment
---         (e.g. "is there anything at this point right now?").
+--         (e.g. 'is there anything at this point right now?').
 --      b) Custom broadphase queries in a specialised ECS system you are
 --         writing (not in an ordinary object's update()).
 --    In all other cases, rely on overlap2dsystem events.
@@ -43,8 +43,8 @@
 --    See the @cx / @cc filename suffix notes in sprite.lua.
 
 local collision2d = {}
-local world_instance = require("world").instance
-local active_scope = { scope = "active" }
+local world_instance = require('world').instance
+local active_scope = { scope = 'active' }
 
 local eps = 1e-8
 local eps_parallel = 1e-12
@@ -86,13 +86,13 @@ end
 local function get_shape(collider)
 	local world_circle = get_world_circle(collider)
 	if world_circle ~= nil then
-		return { kind = "circle", c = world_circle }
+		return { kind = 'circle', c = world_circle }
 	end
 	local world_polys = get_world_polys(collider)
 	if world_polys ~= nil and #world_polys > 0 then
-		return { kind = "poly", polys = world_polys }
+		return { kind = 'poly', polys = world_polys }
 	end
-	return { kind = "poly", polys = { area_to_poly(get_world_area(collider)) } }
+	return { kind = 'poly', polys = { area_to_poly(get_world_area(collider)) } }
 end
 
 local function point_in_poly(px, py, poly)
@@ -258,16 +258,16 @@ local function circle_poly_overlap(circle, polys)
 end
 
 local function shape_intersects(a, b)
-	if a.kind == "circle" and b.kind == "circle" then
+	if a.kind == 'circle' and b.kind == 'circle' then
 		return circle_circle_overlap(a.c, b.c)
 	end
-	if a.kind == "circle" and b.kind == "poly" then
+	if a.kind == 'circle' and b.kind == 'poly' then
 		return circle_poly_overlap(a.c, b.polys)
 	end
-	if a.kind == "poly" and b.kind == "circle" then
+	if a.kind == 'poly' and b.kind == 'circle' then
 		return circle_poly_overlap(b.c, a.polys)
 	end
-	if a.kind == "poly" and b.kind == "poly" then
+	if a.kind == 'poly' and b.kind == 'poly' then
 		return polygons_intersect(a.polys, b.polys)
 	end
 	return false
@@ -490,13 +490,13 @@ function collision2d.get_contact2d(a, b)
 	end
 	local shape_a = get_shape(a)
 	local shape_b = get_shape(b)
-	if shape_a.kind == "circle" and shape_b.kind == "circle" then
+	if shape_a.kind == 'circle' and shape_b.kind == 'circle' then
 		return contact_circle_circle(shape_a.c, shape_b.c)
 	end
-	if shape_a.kind == "circle" and shape_b.kind == "poly" then
+	if shape_a.kind == 'circle' and shape_b.kind == 'poly' then
 		return contact_circle_poly(shape_a.c, shape_b)
 	end
-	if shape_a.kind == "poly" and shape_b.kind == "circle" then
+	if shape_a.kind == 'poly' and shape_b.kind == 'circle' then
 		local contact = contact_circle_poly(shape_b.c, shape_a)
 		if contact ~= nil and contact.normal ~= nil then
 			contact.normal = { x = -contact.normal.x, y = -contact.normal.y }
@@ -513,12 +513,12 @@ function broadphase_index.new(cell_size)
 	local self = setmetatable({}, broadphase_index)
 	self.cell_size = cell_size or 64
 	self.cells = {}
-	self.collider_keys = setmetatable({}, { __mode = "k" })
+	self.collider_keys = setmetatable({}, { __mode = 'k' })
 	return self
 end
 
 function broadphase_index:key(cx, cy)
-	return tostring(cx) .. "," .. tostring(cy)
+	return tostring(cx) .. ',' .. tostring(cy)
 end
 
 function broadphase_index:cell_coords_for_area(area)
@@ -533,7 +533,7 @@ end
 
 function broadphase_index:clear()
 	self.cells = {}
-	self.collider_keys = setmetatable({}, { __mode = "k" })
+	self.collider_keys = setmetatable({}, { __mode = 'k' })
 end
 
 function broadphase_index:add_or_update(collider)
@@ -604,7 +604,7 @@ end
 function collision2d.rebuild_index(cell_size)
 	local index = collision2d.ensure_index(cell_size)
 	index:clear()
-	for _, collider in world_instance:objects_with_components("collider2dcomponent", active_scope) do
+	for _, collider in world_instance:objects_with_components('collider2dcomponent', active_scope) do
 		if collider.enabled then
 			index:add_or_update(collider)
 		end

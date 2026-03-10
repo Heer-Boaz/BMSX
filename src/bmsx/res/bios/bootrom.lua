@@ -1,7 +1,7 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
-local textflow = require("textflow")
+local textflow = require('textflow')
 
 local boot_delay = 2.0
 local font_width = 6
@@ -737,34 +737,34 @@ local function format_bytes(value)
 	if value >= mb then
 		local scaled = value / mb
 		if scaled == math.floor(scaled) then
-			return string.format("%d MB", scaled)
+			return string.format('%d MB', scaled)
 		end
-		return string.format("%.1f MB", scaled)
+		return string.format('%.1f MB', scaled)
 	end
 	if value >= kb then
 		local scaled = value / kb
 		if scaled == math.floor(scaled) then
-			return string.format("%d KB", scaled)
+			return string.format('%d KB', scaled)
 		end
-		return string.format("%.1f KB", scaled)
+		return string.format('%.1f KB', scaled)
 	end
-	return tostring(value) .. " B"
+	return tostring(value) .. ' B'
 end
 
 local function format_bignumbers(value)
 	if value >= 1000000 then
 		local scaled = value / 1000000
 		if scaled == math.floor(scaled) then
-			return string.format("%dM", scaled)
+			return string.format('%dM', scaled)
 		end
-		return string.format("%.1fM", scaled)
+		return string.format('%.1fM', scaled)
 	end
 	if value >= 1000 then
 		local scaled = value / 1000
 		if scaled == math.floor(scaled) then
-			return string.format("%dK", scaled)
+			return string.format('%dK', scaled)
 		end
-		return string.format("%.1fK", scaled)
+		return string.format('%.1fK', scaled)
 	end
 	return tostring(value)
 end
@@ -881,7 +881,7 @@ local function append_wrapped_line(lines, value, color, line_slots, first_prefix
 end
 
 local function append_kv_wrapped(lines, label, value, color, label_width, line_slots)
-	local first_prefix = string.format("%-" .. label_width .. "s : ", label)
+	local first_prefix = string.format('%-' .. label_width .. 's : ', label)
 	local next_prefix = string.rep(' ', label_width) .. '   '
 	local wrapped = textflow.wrap_prefixed(value, line_slots, first_prefix, next_prefix)
 	for i = 1, #wrapped do

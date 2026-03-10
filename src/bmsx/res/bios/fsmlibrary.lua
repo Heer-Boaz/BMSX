@@ -4,7 +4,7 @@
 -- DESIGN PRINCIPLES — FSM registration and instantiation
 --
 -- 1. REGISTER ONCE, INSTANTIATE MANY TIMES.
---    A "machine_name" maps to a single compiled statedefinition.  Register the
+--    A 'machine_name' maps to a single compiled statedefinition.  Register the
 --    blueprint once at module load time with fsmlibrary.register() or
 --    fsmlibrary.build(), then call fsmlibrary.instantiate(name, target) for
 --    each object that needs its own running FSM instance.
@@ -23,7 +23,7 @@
 --    It returns all live state machine instances for a given type.  Do not
 --    iterate it in gameplay code; reach objects through the world instead.
 
-local fsm = require("fsm")
+local fsm = require('fsm')
 
 local statedefinitions = {}
 local activemachines = {}
@@ -61,7 +61,7 @@ end
 --   Prefer the @assign_fsm decorator over calling this directly.
 function fsmlibrary.instantiate(machine_name, target)
 	local definition = statedefinitions[machine_name]
-	assert(definition, "fsm '" .. machine_name .. "' not registered")
+	assert(definition, 'fsm '' .. machine_name .. '' not registered')
 	local controller = fsm.statemachinecontroller.new({ target = target, definition = definition, fsm_id = machine_name })
 	local list = activemachines[machine_name]
 	if not list then

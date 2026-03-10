@@ -8,20 +8,20 @@
 --    It detects all overlapping collider pairs in the active world space and emits
 --    three events on BOTH owner objects' event ports:
 --
---      overlap.begin  — first frame two colliders touch (phase = "begin")
---      overlap.stay   — every subsequent frame they remain touching (phase = "stay")
---      overlap.end    — first frame they separate (phase = "end", contact = nil)
+--      overlap.begin  — first frame two colliders touch (phase = 'begin')
+--      overlap.stay   — every subsequent frame they remain touching (phase = 'stay')
+--      overlap.end    — first frame they separate (phase = 'end', contact = nil)
 --
 --    Subscribe in bind(), not in update():
 --
 --      WRONG — manual loop every frame:
 --        function hero:update(dt)
---          for _, enemy in ipairs(world_instance:objects({tag="enemy"})) do
+--          for _, enemy in ipairs(world_instance:objects({tag='enemy'})) do
 --            if collision2d.collides(self.collider, enemy.collider) then ...
 --
 --      RIGHT — reactive subscription:
 --        function hero:bind()
---          self:on("overlap.begin", function(e)
+--          self:on('overlap.begin', function(e)
 --            if e.other_layer == LAYER_ENEMY then
 --              self:take_damage()
 --            end
@@ -41,7 +41,7 @@
 --      e.collider_layer        — layer bitmask of this object's collider
 --      e.collider_mask         — mask bitmask of this object's collider
 --      e.contact               — { normal={x,y}, depth, point={x,y} } or nil (overlap.end)
---      e.phase                 — "begin" | "stay" | "end"
+--      e.phase                 — 'begin' | 'stay' | 'end'
 --
 -- 3. LAYER / MASK FILTERING
 --    A pair is only tested when (a.layer & b.mask) != 0 OR (b.layer & a.mask) != 0.
@@ -49,26 +49,26 @@
 --    Use collision_profiles to assign named layer+mask presets rather than
 --    setting layer/mask directly.
 
-local ecs = require("ecs")
-local collision2d = require("collision2d")
-local world_instance = require("world").instance
+local ecs = require('ecs')
+local collision2d = require('collision2d')
+local world_instance = require('world').instance
 
 local tickgroup = ecs.tickgroup
 local ecsystem = ecs.ecsystem
 
-local spritecomponent = "spritecomponent"
-local timelinecomponent = "timelinecomponent"
-local transformcomponent = "transformcomponent"
-local textcomponent = "textcomponent"
-local meshcomponent = "meshcomponent"
-local customvisualcomponent = "customvisualcomponent"
-local collider2dcomponent = "collider2dcomponent"
-local positionupdateaxiscomponent = "positionupdateaxiscomponent"
-local screenboundarycomponent = "screenboundarycomponent"
-local actioneffectcomponent = "actioneffectcomponent"
+local spritecomponent = 'spritecomponent'
+local timelinecomponent = 'timelinecomponent'
+local transformcomponent = 'transformcomponent'
+local textcomponent = 'textcomponent'
+local meshcomponent = 'meshcomponent'
+local customvisualcomponent = 'customvisualcomponent'
+local collider2dcomponent = 'collider2dcomponent'
+local positionupdateaxiscomponent = 'positionupdateaxiscomponent'
+local screenboundarycomponent = 'screenboundarycomponent'
+local actioneffectcomponent = 'actioneffectcomponent'
 
 -- Shared opts table to avoid per-frame allocation.
-local active_scope = { scope = "active" }
+local active_scope = { scope = 'active' }
 
 local behaviortreesystem = {}
 behaviortreesystem.__index = behaviortreesystem
@@ -85,7 +85,7 @@ setmetatable(audioroutersystem, { __index = ecsystem })
 
 function audioroutersystem.new(priority)
 	local self = setmetatable(ecsystem.new(tickgroup.input, priority or 5), audioroutersystem)
-	self.__ecs_id = "audioroutersystem"
+	self.__ecs_id = 'audioroutersystem'
 	return self
 end
 
@@ -154,7 +154,7 @@ local function resolve_object_tick_order(obj)
 	if object_tick_order_lookup[order] then
 		return order
 	end
-	error("[objectticksystem] unknown tick_order '" .. tostring(order) .. "' on '" .. tostring(obj.id) .. "'.")
+	error('[objectticksystem] unknown tick_order '' .. tostring(order) .. '' on '' .. tostring(obj.id) .. ''.')
 end
 
 function objectticksystem.new(priority)
@@ -221,28 +221,28 @@ function boundarysystem:update()
 		local sy = obj.sy or 0
 		if newx < oldx then
 			if newx + sx < left then
-				obj.events:emit("screen.leave", { d = "left", old_x_or_y = oldx })
+				obj.events:emit('screen.leave', { d = 'left', old_x_or_y = oldx })
 			elseif newx < left then
-				obj.events:emit("screen.leaving", { d = "left", old_x_or_y = oldx })
+				obj.events:emit('screen.leaving', { d = 'left', old_x_or_y = oldx })
 			end
 		elseif newx > oldx then
 			if newx >= right then
-				obj.events:emit("screen.leave", { d = "right", old_x_or_y = oldx })
+				obj.events:emit('screen.leave', { d = 'right', old_x_or_y = oldx })
 			elseif newx + sx > right then
-				obj.events:emit("screen.leaving", { d = "right", old_x_or_y = oldx })
+				obj.events:emit('screen.leaving', { d = 'right', old_x_or_y = oldx })
 			end
 		end
 		if newy < oldy then
 			if newy + sy < top then
-				obj.events:emit("screen.leave", { d = "up", old_x_or_y = oldy })
+				obj.events:emit('screen.leave', { d = 'up', old_x_or_y = oldy })
 			elseif newy < top then
-				obj.events:emit("screen.leaving", { d = "up", old_x_or_y = oldy })
+				obj.events:emit('screen.leaving', { d = 'up', old_x_or_y = oldy })
 			end
 		elseif newy > oldy then
 			if newy >= bottom then
-				obj.events:emit("screen.leave", { d = "down", old_x_or_y = oldy })
+				obj.events:emit('screen.leave', { d = 'down', old_x_or_y = oldy })
 			elseif newy + sy > bottom then
-				obj.events:emit("screen.leaving", { d = "down", old_x_or_y = oldy })
+				obj.events:emit('screen.leaving', { d = 'down', old_x_or_y = oldy })
 			end
 		end
 		::continue::
@@ -375,20 +375,20 @@ local function contact_with_flipped_normal(contact)
 end
 
 function overlap2dsystem:space_match(scope, owner_space, other_space)
-	if scope == "all" then
+	if scope == 'all' then
 		return true
 	end
 	local current = world_instance.active_space_id
-	if scope == "current" or scope == nil then
+	if scope == 'current' or scope == nil then
 		return other_space == owner_space and other_space == current
 	end
-	if scope == "ui" then
-		return other_space == "ui"
+	if scope == 'ui' then
+		return other_space == 'ui'
 	end
-	if scope == "both" then
-		return (other_space == owner_space and other_space == current) or other_space == "ui"
+	if scope == 'both' then
+		return (other_space == owner_space and other_space == current) or other_space == 'ui'
 	end
-	error("[overlap2dsystem] unknown spaceevents scope '" .. tostring(scope) .. "'")
+	error('[overlap2dsystem] unknown spaceevents scope '' .. tostring(scope) .. ''')
 end
 
 -- overlap2dsystem.new(priority?)
@@ -431,7 +431,7 @@ function overlap2dsystem:update()
 		local collider = event_colliders[i]
 		local owner = collider.parent
 		-- if owner == nil then
-		-- 	error("[overlap2dsystem] collider '" .. tostring(collider.id) .. "' has no parent")
+		-- 	error('[overlap2dsystem] collider '' .. tostring(collider.id) .. '' has no parent')
 		-- end
 		if owner.dispose_flag or not owner.active then
 			goto continue_event_collider
@@ -443,7 +443,7 @@ function overlap2dsystem:update()
 			if other ~= collider then
 				local other_owner = other.parent
 				-- if other_owner == nil then
-				-- 	error("[overlap2dsystem] collider '" .. tostring(other.id) .. "' has no parent")
+				-- 	error('[overlap2dsystem] collider '' .. tostring(other.id) .. '' has no parent')
 				-- end
 				if other_owner.dispose_flag or not other_owner.active then
 					goto continue_candidate
@@ -510,7 +510,7 @@ function overlap2dsystem:update()
 		local owner_a = col_a.parent
 		local owner_b = col_b.parent
 		if owner_a == nil or owner_b == nil then
-			error("[overlap2dsystem] attempted to emit overlap event without collider parents")
+			error('[overlap2dsystem] attempted to emit overlap event without collider parents')
 		end
 		if owner_a.dispose_flag or owner_b.dispose_flag then
 			return
@@ -519,7 +519,7 @@ function overlap2dsystem:update()
 			return
 		end
 		local resolved_contact = contact
-		if resolved_contact == nil and event_name ~= "overlap.end" then
+		if resolved_contact == nil and event_name ~= 'overlap.end' then
 			resolved_contact = collision2d.get_contact2d(col_a, col_b)
 		end
 		owner_a.events:emit(event_name, build_overlap_payload(col_a, col_b, owner_b, resolved_contact, phase))
@@ -530,22 +530,22 @@ function overlap2dsystem:update()
 		local a, b = resolve_pair(begins[i], begins[i + 1])
 		if a ~= nil and b ~= nil then
 			local contact = collision2d.get_contact2d(a, b)
-			emit_pair("overlap.begin", a, b, contact, "begin")
-			emit_pair("overlap", a, b, contact, "begin")
+			emit_pair('overlap.begin', a, b, contact, 'begin')
+			emit_pair('overlap', a, b, contact, 'begin')
 		end
 	end
 	for i = 1, #stays, 2 do
 		local a, b = resolve_pair(stays[i], stays[i + 1])
 		if a ~= nil and b ~= nil then
 			local contact = collision2d.get_contact2d(a, b)
-			emit_pair("overlap.stay", a, b, contact, "stay")
-			emit_pair("overlap", a, b, contact, "stay")
+			emit_pair('overlap.stay', a, b, contact, 'stay')
+			emit_pair('overlap', a, b, contact, 'stay')
 		end
 	end
 	for i = 1, #ends, 2 do
 		local a, b = resolve_pair(ends[i], ends[i + 1])
 		if a ~= nil and b ~= nil then
-			emit_pair("overlap.end", a, b, nil, "end")
+			emit_pair('overlap.end', a, b, nil, 'end')
 		end
 	end
 
@@ -664,7 +664,7 @@ function spriterendersystem:update()
 		local x
 		local y
 		local z
-		local t = obj:get_component("transformcomponent")
+		local t = obj:get_component('transformcomponent')
 		if t then
 			x = t.position.x + offset.x
 			y = t.position.y + offset.y

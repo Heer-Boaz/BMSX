@@ -2,7 +2,7 @@
 -- lua engine facade for system rom
 --
 -- NOTE FOR CART AUTHORS:
--- Do not `require("engine")` from cart code and do not call `engine.*`.
+-- Do not `require('engine')` from cart code and do not call `engine.*`.
 -- Carts must use cart-facing globals/helpers (`object`, `inst`,
 -- `update`, `reset`, `add_space`, `set_space`, `get_space`, `define_fsm`, `define_effect`,
 -- etc.) that are injected by the runtime.
@@ -13,37 +13,37 @@
 -- `local p = constants.physics`): read constants directly from their source table/global.
 -- This module is BIOS/runtime plumbing.
 
-local world_module = require("world")
-local ecs_builtin = require("ecs_builtin")
-local ecs_pipeline = require("ecs_pipeline")
-local worldobject = require("worldobject")
-local subsystem = require("subsystem")
-local spriteobject = require("sprite")
-local textobject = require("textobject")
-local fsmlibrary = require("fsmlibrary")
-local action_effects = require("action_effects")
-local components = require("components")
-local registry = require("registry")
-local eventemitter_module = require("eventemitter")
+local world_module = require('world')
+local ecs_builtin = require('ecs_builtin')
+local ecs_pipeline = require('ecs_pipeline')
+local worldobject = require('worldobject')
+local subsystem = require('subsystem')
+local spriteobject = require('sprite')
+local textobject = require('textobject')
+local fsmlibrary = require('fsmlibrary')
+local action_effects = require('action_effects')
+local components = require('components')
+local registry = require('registry')
+local eventemitter_module = require('eventemitter')
 local eventemitter = eventemitter_module.eventemitter
 eventemitter_module.eventemitter = eventemitter
 eventemitter_module.instance = eventemitter.instance
-local quickmenu = require("quickmenu")
-local ide_editor = require("ide_editor")
-local romdir = require("romdir")
-local bool01 = require("bool01")
-local deep_clone = require("deep_clone")
-local velocity = require("velocity")
-local rect_overlaps = require("rect_overlaps")
-local clamp_int = require("clamp_int")
-local clear_map = require("clear_map")
-local div_toward_zero = require("div_toward_zero")
-local round_to_nearest = require("round_to_nearest")
-local rol8 = require("rol8")
-local swap_remove = require("swap_remove")
-local timeline = require("timeline")
-local audio_router = require("audio_router")
-local progression = require("progression")
+local quickmenu = require('quickmenu')
+local ide_editor = require('ide_editor')
+local romdir = require('romdir')
+local bool01 = require('bool01')
+local deep_clone = require('deep_clone')
+local velocity = require('velocity')
+local rect_overlaps = require('rect_overlaps')
+local clamp_int = require('clamp_int')
+local clear_map = require('clear_map')
+local div_toward_zero = require('div_toward_zero')
+local round_to_nearest = require('round_to_nearest')
+local rol8 = require('rol8')
+local swap_remove = require('swap_remove')
+local timeline = require('timeline')
+local audio_router = require('audio_router')
+local progression = require('progression')
 
 local world_instance = world_module.instance
 
@@ -100,11 +100,11 @@ local function apply_class_prototype(instance, class_table)
 	end
 	local shared_mt = getmetatable(instance)
 	if shared_mt == nil then
-		error("apply_class_prototype: instance is missing a metatable.")
+		error('apply_class_prototype: instance is missing a metatable.')
 	end
 	local base_index = shared_mt.__index
 	if base_index == nil then
-		error("apply_class_prototype: instance metatable is missing __index.")
+		error('apply_class_prototype: instance metatable is missing __index.')
 	end
 	local class_mt = getmetatable(class_table)
 	if class_mt == nil then
@@ -116,7 +116,7 @@ local function apply_class_prototype(instance, class_table)
 	end
 	local instance_mt = { __index = class_table }
 	for key, value in pairs(shared_mt) do
-		if key ~= "__index" and type(key) == "string" and key:sub(1, 2) == "__" then
+		if key ~= '__index' and type(key) == 'string' and key:sub(1, 2) == '__' then
 			instance_mt[key] = value
 		end
 	end
@@ -209,10 +209,10 @@ local function attach_components(instance, list)
 	end
 	for i = 1, #list do
 		local entry = list[i]
-		if type(entry) == "string" then
+		if type(entry) == 'string' then
 			local comp = components.new_component(entry, { parent = instance })
 			instance:add_component(comp)
-		elseif type(entry) == "table" and entry.type_name then
+		elseif type(entry) == 'table' and entry.type_name then
 			local comp = entry
 			comp.parent = instance
 			instance:add_component(comp)
@@ -304,31 +304,31 @@ function engine.define_fsm(id, blueprint)
 end
 
 function engine.define_prefab(definition)
-	if type(definition.class) ~= "table" then
-		error("define_prefab: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
+	if type(definition.class) ~= 'table' then
+		error('define_prefab: definition.class must be a table for '' .. tostring(definition.def_id) .. ''.')
 	end
 	definitions[definition.def_id] = definition
 end
 
 function engine.define_subsystem(definition)
-	if type(definition.class) ~= "table" then
-		error("define_subsystem: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
+	if type(definition.class) ~= 'table' then
+		error('define_subsystem: definition.class must be a table for '' .. tostring(definition.def_id) .. ''.')
 	end
 	if definition.components ~= nil then
-		error("define_subsystem: subsystem '" .. tostring(definition.def_id) .. "' cannot declare components.")
+		error('define_subsystem: subsystem '' .. tostring(definition.def_id) .. '' cannot declare components.')
 	end
 	if definition.effects ~= nil then
-		error("define_subsystem: subsystem '" .. tostring(definition.def_id) .. "' cannot declare effects.")
+		error('define_subsystem: subsystem '' .. tostring(definition.def_id) .. '' cannot declare effects.')
 	end
 	if definition.bts ~= nil then
-		error("define_subsystem: subsystem '" .. tostring(definition.def_id) .. "' cannot declare behaviour trees.")
+		error('define_subsystem: subsystem '' .. tostring(definition.def_id) .. '' cannot declare behaviour trees.')
 	end
 	subsystem_definitions[definition.def_id] = definition
 end
 
 function engine.define_component(definition)
-	if type(definition.class) ~= "table" then
-		error("define_component: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
+	if type(definition.class) ~= 'table' then
+		error('define_component: definition.class must be a table for '' .. tostring(definition.def_id) .. ''.')
 	end
 	component_definitions[definition.def_id] = definition
 	ensure_component_type(definition.def_id, definition)
@@ -350,7 +350,7 @@ function engine.vdp_map_slot(slot, atlas_id)
 		poke(sys_vdp_secondary_atlas_id, atlas_id)
 		return
 	end
-	error("vdp_map_slot: invalid slot " .. tostring(slot))
+	error('vdp_map_slot: invalid slot ' .. tostring(slot))
 end
 
 function engine.vdp_load_slot(slot, atlas_id)
@@ -358,15 +358,15 @@ function engine.vdp_load_slot(slot, atlas_id)
 		vdp_load_queue_head = 1
 		vdp_load_queue_tail = 0
 	end
-	local atlas_name = string.format("_atlas_%02d", atlas_id)
+	local atlas_name = string.format('_atlas_%02d', atlas_id)
 	local entry = romdir.cart(atlas_name)
 	if entry == nil then
-		error("vdp_load_slot: atlas asset missing")
+		error('vdp_load_slot: atlas asset missing')
 	end
 	local start = entry.start
-	local finish = entry["end"]
+	local finish = entry['end']
 	if start == nil or finish == nil then
-		error("vdp_load_slot: atlas asset missing ROM range")
+		error('vdp_load_slot: atlas asset missing ROM range')
 	end
 	local src = entry.rom_base + start
 	local len = finish - start
@@ -379,7 +379,7 @@ function engine.vdp_load_slot(slot, atlas_id)
 		dst = sys_vram_secondary_atlas_base
 		cap = sys_vram_secondary_atlas_size
 	else
-		error("vdp_load_slot: invalid slot " .. tostring(slot))
+		error('vdp_load_slot: invalid slot ' .. tostring(slot))
 	end
 	vdp_load_job_seq = vdp_load_job_seq + 1
 	vdp_load_queue_tail = vdp_load_queue_tail + 1
@@ -402,15 +402,15 @@ function engine.vdp_load_sys_atlas()
 		vdp_load_queue_head = 1
 		vdp_load_queue_tail = 0
 	end
-	local atlas_name = string.format("_atlas_%02d", sys_atlas_id)
+	local atlas_name = string.format('_atlas_%02d', sys_atlas_id)
 	local entry = romdir.sys(atlas_name)
 	if entry == nil then
-		error("vdp_load_sys_atlas: system atlas asset missing")
+		error('vdp_load_sys_atlas: system atlas asset missing')
 	end
 	local start = entry.start
-	local finish = entry["end"]
+	local finish = entry['end']
 	if start == nil or finish == nil then
-		error("vdp_load_sys_atlas: system atlas missing ROM range")
+		error('vdp_load_sys_atlas: system atlas missing ROM range')
 	end
 	local src = entry.rom_base + start
 	local len = finish - start
@@ -438,7 +438,7 @@ function engine.inst(definition_id, addons)
 		local instance_id = (addons and addons.id) or (class_table and class_table.id)
 		local instance = spriteobject.new({ id = instance_id })
 		instance.type_name = definition_id
-		apply_definition(instance, def, addons, "imgid")
+		apply_definition(instance, def, addons, 'imgid')
 		local imgid = (addons and addons.imgid) or (def and def.defaults and def.defaults.imgid)
 		if imgid then
 			instance:gfx(imgid)
@@ -451,7 +451,7 @@ function engine.inst(definition_id, addons)
 		local instance_id = (addons and addons.id) or (class_table and class_table.id)
 		local instance = textobject.new({ id = instance_id })
 		instance.type_name = definition_id
-		apply_definition(instance, def, addons, "dimensions")
+		apply_definition(instance, def, addons, 'dimensions')
 		local dimensions = (addons and addons.dimensions) or (def and def.defaults and def.defaults.dimensions)
 		if dimensions then
 			instance:set_dimensions(dimensions)
@@ -517,17 +517,17 @@ function engine.find_by_tag(tag, opts)
 end
 
 function engine.attach_component(object_or_id, component_or_type)
-	local obj = type(object_or_id) == "string" and world_instance:get(object_or_id) or object_or_id
-	if type(component_or_type) == "table" and component_or_type.type_name then
+	local obj = type(object_or_id) == 'string' and world_instance:get(object_or_id) or object_or_id
+	if type(component_or_type) == 'table' and component_or_type.type_name then
 		obj:add_component(component_or_type)
 		return component_or_type
 	end
-	if type(component_or_type) == "string" then
+	if type(component_or_type) == 'string' then
 		local comp = components.new_component(component_or_type, { parent = obj })
 		obj:add_component(comp)
 		return comp
 	end
-	error("attach_component expects a component instance or type name")
+	error('attach_component expects a component instance or type name')
 end
 
 function engine.update()
@@ -554,7 +554,7 @@ function engine.irq(flags)
 	if (flags & irq_img_done) ~= 0 then
 		ack = ack | irq_img_done
 		if vdp_active_job == nil then
-			fatal = "irq: img_DONE without pending atlas load"
+			fatal = 'irq: img_DONE without pending atlas load'
 		else
 			local skip_map
 			local allow_handler = vdp_active_job.allow_handler
@@ -562,7 +562,7 @@ function engine.irq(flags)
 				allow_handler = true
 			end
 			if allow_handler and vdp_load_handler ~= nil then
-				local should_skip = vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, "done")
+				local should_skip = vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'done')
 				if should_skip then
 					skip_map = true
 				end
@@ -577,17 +577,17 @@ function engine.irq(flags)
 	if (flags & irq_img_error) ~= 0 then
 		ack = ack | irq_img_error
 		if vdp_active_job == nil then
-			fatal = "irq: img_ERROR without pending atlas load"
+			fatal = 'irq: img_ERROR without pending atlas load'
 		else
 			local allow_handler = vdp_active_job.allow_handler
 			if allow_handler == nil then
 				allow_handler = true
 			end
 			if allow_handler and vdp_load_handler ~= nil then
-				vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, "error")
+				vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'error')
 			end
 			vdp_active_job = nil
-			fatal = "irq: IMGDEC failed while loading atlas"
+			fatal = 'irq: IMGDEC failed while loading atlas'
 		end
 	end
 	ack = ack | (flags & ~(irq_img_done | irq_img_error))
@@ -617,14 +617,14 @@ function engine.irq(flags)
 end
 
 function engine.on_irq(mask_or_handler, handler)
-	if type(mask_or_handler) == "number" then
+	if type(mask_or_handler) == 'number' then
 		local mask = mask_or_handler
 		if handler == nil then
 			cart_irq_handlers[mask] = nil
 			return
 		end
-		if type(handler) ~= "function" then
-			error("on_irq: handler must be a function")
+		if type(handler) ~= 'function' then
+			error('on_irq: handler must be a function')
 		end
 		cart_irq_handlers[mask] = handler
 		return
@@ -633,8 +633,8 @@ function engine.on_irq(mask_or_handler, handler)
 		cart_irq_handler = nil
 		return
 	end
-	if type(mask_or_handler) ~= "function" then
-		error("on_irq: handler must be a function")
+	if type(mask_or_handler) ~= 'function' then
+		error('on_irq: handler must be a function')
 	end
 	cart_irq_handler = mask_or_handler
 end
@@ -644,8 +644,8 @@ function engine.on_vdp_load(handler)
 		vdp_load_handler = nil
 		return
 	end
-	if type(handler) ~= "function" then
-		error("on_vdp_load: handler must be a function")
+	if type(handler) ~= 'function' then
+		error('on_vdp_load: handler must be a function')
 	end
 	vdp_load_handler = handler
 end
@@ -708,18 +708,18 @@ end
 
 function engine.grant_effect(object_id, effect_id)
 	local obj = world_instance:get(object_id)
-	local component = obj:get_component("actioneffectcomponent")
+	local component = obj:get_component('actioneffectcomponent')
 	if not component then
-		error("world object '" .. object_id .. "' does not have an actioneffectcomponent.")
+		error('world object '' .. object_id .. '' does not have an actioneffectcomponent.')
 	end
 	component:grant_effect(effect_id)
 end
 
 function engine.trigger_effect(object_id, effect_id, options)
 	local obj = world_instance:get(object_id)
-	local component = obj:get_component("actioneffectcomponent")
+	local component = obj:get_component('actioneffectcomponent')
 	if not component then
-		error("world object '" .. object_id .. "' does not have an actioneffectcomponent.")
+		error('world object '' .. object_id .. '' does not have an actioneffectcomponent.')
 	end
 	local payload = options and options.payload
 	if payload ~= nil then
@@ -729,25 +729,25 @@ function engine.trigger_effect(object_id, effect_id, options)
 end
 
 function $.emit(name_or_event, emitter, payload, ...)
-	if type(name_or_event) == "native" and name_or_event.type == nil then
+	if type(name_or_event) == 'native' and name_or_event.type == nil then
 		name_or_event, emitter, payload = emitter, payload, select(1, ...)
 	end
 	local kind = type(name_or_event)
-	if kind == "table" then
+	if kind == 'table' then
 		if name_or_event.type == nil then
-			error("engine.emit: event is missing type")
+			error('engine.emit: event is missing type')
 		end
 		return eventemitter.instance:emit(name_or_event)
 	end
-	if kind == "native" then
+	if kind == 'native' then
 		local event_type = name_or_event.type
 		if event_type == nil then
-			error("engine.emit: event is missing type")
+			error('engine.emit: event is missing type')
 		end
 		local event = {}
 		event.type = tostring(event_type)
 		for k, v in pairs(name_or_event) do
-			if k ~= "type" then
+			if k ~= 'type' then
 				event[k] = v
 			end
 		end
@@ -769,11 +769,11 @@ local function register_singleton(obj, id, tn)
 	obj.registrypersistent = true
 	registry_instance:register(obj)
 end
-register_singleton(ecs_pipeline.defaultecspipelineregistry, "ecspipeline", "ecspipeline")
-register_singleton(fsmlibrary, "fsmlibrary", "fsmlibrary")
-register_singleton(progression, "progression", "progression")
-register_singleton(audio_router, "audiorouter", "audiorouter")
-register_singleton(action_effects, "actioneffects", "actioneffects")
+register_singleton(ecs_pipeline.defaultecspipelineregistry, 'ecspipeline', 'ecspipeline')
+register_singleton(fsmlibrary, 'fsmlibrary', 'fsmlibrary')
+register_singleton(progression, 'progression', 'progression')
+register_singleton(audio_router, 'audiorouter', 'audiorouter')
+register_singleton(action_effects, 'actioneffects', 'actioneffects')
 
 if not world_instance._ecs_pipeline_built then
 	world_instance._ecs_pipeline_built = true

@@ -4,7 +4,7 @@
 -- DESIGN PRINCIPLES — event usage contracts
 --
 -- 1. EVENTS ARE ANNOUNCEMENTS, NOT COMMANDS.
---    An event says "this happened", not "do this".  The emitter does not know
+--    An event says 'this happened', not 'do this'.  The emitter does not know
 --    who listens and does not care.  If the only subscriber is one named object
 --    and the event name implies an imperative action on that object, it is a
 --    disguised method call.  Delete the event and either call the method
@@ -61,10 +61,10 @@ eventemitter.__index = eventemitter
 local eventport = {}
 eventport.__index = eventport
 
-local port_cache = setmetatable({}, { __mode = "k" })
-local payload_event_marker = setmetatable({}, { __mode = "k" })
-local payload_emitter_owned = setmetatable({}, { __mode = "k" })
-local payload_timestamp_owned = setmetatable({}, { __mode = "k" })
+local port_cache = setmetatable({}, { __mode = 'k' })
+local payload_event_marker = setmetatable({}, { __mode = 'k' })
+local payload_emitter_owned = setmetatable({}, { __mode = 'k' })
+local payload_timestamp_owned = setmetatable({}, { __mode = 'k' })
 
 function eventemitter.new()
 	return setmetatable({
@@ -74,10 +74,10 @@ function eventemitter.new()
 end
 
 eventemitter.instance = eventemitter.new()
-eventemitter.instance.id = "eventemitter"
-eventemitter.instance.type_name = "eventemitter"
+eventemitter.instance.id = 'eventemitter'
+eventemitter.instance.type_name = 'eventemitter'
 eventemitter.instance.registrypersistent = true
-require("registry").instance:register(eventemitter.instance)
+require('registry').instance:register(eventemitter.instance)
 
 function eventemitter:create_gameevent(spec)
 	local event = {
@@ -86,7 +86,7 @@ function eventemitter:create_gameevent(spec)
 		timestamp = spec.timestamp or (os.clock() * 1000),
 	}
 	for k, v in pairs(spec) do
-		if k ~= "type" and k ~= "emitter" and k ~= "timestamp" then
+		if k ~= 'type' and k ~= 'emitter' and k ~= 'timestamp' then
 			event[k] = v
 		end
 	end
@@ -167,10 +167,10 @@ end
 -- automatically from the port, so you cannot accidentally omit it.
 function eventemitter:emit(arg0, emitter, payload)
 	local event
-	if type(arg0) == "table" then
+	if type(arg0) == 'table' then
 		event = arg0
 	else
-		if payload ~= nil and type(payload) == "table" and (payload.type == nil or payload_event_marker[payload]) then
+		if payload ~= nil and type(payload) == 'table' and (payload.type == nil or payload_event_marker[payload]) then
 			event = payload
 			payload_event_marker[payload] = true
 			event.type = arg0

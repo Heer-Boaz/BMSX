@@ -3,7 +3,7 @@
 --
 -- DESIGN PRINCIPLES
 --
--- 1. registrypersistent = true MEANS "survives world.clear()".
+-- 1. registrypersistent = true MEANS 'survives world.clear()'.
 --    Objects with this flag are NOT removed on clear() and NOT serialized as
 --    part of the savegame snapshot. Use it for global singletons that must
 --    persist across room/level transitions (HUD, audio managers, etc.).
@@ -19,7 +19,7 @@
 --    a reference across frames — the entity may have been deregistered.
 --
 -- 3. registry.instance IS THE GLOBAL SINGLETON.
---    Access it via  require("registry").instance — do not create additional
+--    Access it via  require('registry').instance — do not create additional
 --    registry.new() instances unless you have an explicit separate scope.
 
 local registry = {}
@@ -46,7 +46,7 @@ end
 function registry:register(entity)
 	local existing = self._registry[entity.id]
 	if existing ~= nil and existing ~= entity then
-		error("registry.register duplicate id '" .. entity.id .. "'")
+		error('registry.register duplicate id '' .. entity.id .. ''')
 	end
 	self._registry[entity.id] = entity
 end
@@ -56,7 +56,7 @@ end
 --   a no-op unless remove_persistent is explicitly true. Returns false when
 --   removal was blocked, true otherwise.
 function registry:deregister(id_or_entity, remove_persistent)
-	local id = type(id_or_entity) == "string" and id_or_entity or id_or_entity.id
+	local id = type(id_or_entity) == 'string' and id_or_entity or id_or_entity.id
 	local entity = self._registry[id]
 	if entity and entity.registrypersistent and not remove_persistent then
 		return false

@@ -1,8 +1,8 @@
 -- textobject.lua
 -- text object with typewriter effect for system rom
 
-local worldobject = require("worldobject")
-local components = require("components")
+local worldobject = require('worldobject')
+local components = require('components')
 
 local textobject = {}
 textobject.__index = textobject
@@ -20,7 +20,7 @@ local inline_whitespace_chars = { [' '] = true, ['\t'] = true, ['\r'] = true, ['
 local wrap_break_chars = { ['\n'] = true, [' '] = true, ['\t'] = true, ['\r'] = true, ['\f'] = true, ['\v'] = true }
 
 local function trim(text)
-	return string.gsub(text, "^%s*(.-)%s*$", "%1")
+	return string.gsub(text, '^%s*(.-)%s*$', '%1')
 end
 
 local function wrap_glyphs(text, max_line_length)
@@ -37,11 +37,11 @@ local function wrap_glyphs(text, max_line_length)
 
 	while i <= #text do
 		local ch = string.sub(text, i, i)
-		if ch == "\n" then
+		if ch == '\n' then
 			if current_line then
 				push_line(trim(current_line))
 			else
-				push_line("")
+				push_line('')
 			end
 			current_line = nil
 			logical_line_index = logical_line_index + 1
@@ -58,7 +58,7 @@ local function wrap_glyphs(text, max_line_length)
 				j = j + 1
 			end
 			local word = string.sub(text, i, j - 1)
-				local tentative = current_line and (current_line .. " " .. word) or word
+				local tentative = current_line and (current_line .. ' ' .. word) or word
 			if #tentative <= max_line_length then
 				current_line = tentative
 			else
@@ -110,11 +110,11 @@ end
 
 function textobject.new(opts)
 	opts = opts or {}
-	opts.type_name = "textobject"
+	opts.type_name = 'textobject'
 	local self = setmetatable(worldobject.new(opts), textobject)
-	self.text = { "" }
-	self.full_text_lines = { "" }
-	self.displayed_lines = { "" }
+	self.text = { '' }
+	self.full_text_lines = { '' }
+	self.displayed_lines = { '' }
 	self.current_line_index = 0
 	self.current_char_index = 0
 	self.maximum_characters_per_line = 0
@@ -291,10 +291,10 @@ function textobject:set_text(text_or_lines, opts)
 	if typed == nil then
 		typed = true
 	end
-	if type(text_or_lines) == "string" then
+	if type(text_or_lines) == 'string' then
 		self.full_text_lines, self.wrapped_line_to_logical_line = wrap_glyphs(text_or_lines, self.maximum_characters_per_line)
 	else
-		local joined = table.concat(text_or_lines, "\n")
+		local joined = table.concat(text_or_lines, '\n')
 		self.full_text_lines, self.wrapped_line_to_logical_line = wrap_glyphs(joined, self.maximum_characters_per_line)
 	end
 	self:recenter_text_block()
@@ -329,7 +329,7 @@ function textobject:type_next()
 	end
 	if self.current_line_index >= #self.full_text_lines then
 		self.is_typing = false
-		self.events:emit("text.typing.done", { totallines = #self.full_text_lines })
+		self.events:emit('text.typing.done', { totallines = #self.full_text_lines })
 		return
 	end
 	local line_index = self.current_line_index + 1
@@ -340,14 +340,14 @@ function textobject:type_next()
 		self.displayed_lines[line_index] = self.displayed_lines[line_index] .. char
 		self.current_char_index = self.current_char_index + 1
 		self:update_displayed_text()
-		self.events:emit("text.typing.char", { char = char, lineindex = self.current_line_index, charindex = self.current_char_index - 1 })
+		self.events:emit('text.typing.char', { char = char, lineindex = self.current_line_index, charindex = self.current_char_index - 1 })
 		return
 	end
 	self.current_line_index = self.current_line_index + 1
 	self.current_char_index = 0
 	if self.current_line_index >= #self.full_text_lines then
 		self.is_typing = false
-		self.events:emit("text.typing.done", { totallines = #self.full_text_lines })
+		self.events:emit('text.typing.done', { totallines = #self.full_text_lines })
 	end
 	self:update_displayed_text()
 end

@@ -5,9 +5,9 @@
 --
 -- 1. WHAT IS progression?
 --    A rules engine that listens to ALL global events and updates one or more
---    "state programs" (key/value maps) based on declarative rules.  It is used
+--    'state programs' (key/value maps) based on declarative rules.  It is used
 --    to track persistent world state that evolves as gameplay events fire
---    (e.g. "has_sword", "room_2_cleared", counter values).
+--    (e.g. 'has_sword', 'room_2_cleared', counter values).
 --
 -- 2. USAGE PATTERN.
 --
@@ -157,7 +157,7 @@ local function normalize_condition(spec)
 	local op_text = spec.op or spec[2] or '=='
 	local op = op_by_text[op_text]
 	if op == nil then
-		error("progression condition has unknown operator '" .. tostring(op_text) .. "'.")
+		error('progression condition has unknown operator '' .. tostring(op_text) .. ''.')
 	end
 
 	local value = spec.equals
@@ -172,7 +172,7 @@ local function normalize_condition(spec)
 	end
 
 	if (op == op_lt or op == op_lte or op == op_gt or op == op_gte) and type(value) ~= 'number' then
-		error("progression condition '" .. key .. "' expects numeric value for operator '" .. tostring(op_text) .. "'.")
+		error('progression condition '' .. key .. '' expects numeric value for operator '' .. tostring(op_text) .. ''.')
 	end
 
 	return key, op, value
@@ -269,7 +269,7 @@ function progression_state:matches_filter(filter)
 		cached = compile_predicates(self.program, filter)
 		self.filter_cache[filter] = cached
 	end
-	local r = eval_predicates(self.values, cached); if not r then print("failed filter:") for i=1, #filter do print("  ", filter[i].key, filter[i].equals) end end return r
+	local r = eval_predicates(self.values, cached); if not r then print('failed filter:') for i=1, #filter do print('  ', filter[i].key, filter[i].equals) end end return r
 end
 
 local function compile_set_actions(state_program, actions)
@@ -280,7 +280,7 @@ local function compile_set_actions(state_program, actions)
 		local action = actions[i]
 		local key = action.key
 		if type(key) ~= 'string' then
-			error("progression set action at index " .. i .. " must define a string key.")
+			error('progression set action at index ' .. i .. ' must define a string key.')
 		end
 		intern_key(state_program, key)
 	end

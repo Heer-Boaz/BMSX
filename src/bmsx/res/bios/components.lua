@@ -1,16 +1,16 @@
 -- components.lua
 -- base component primitives for system rom
 
-local eventemitter = require("eventemitter")
-local timeline_module = require("timeline")
-local romdir = require("romdir")
-local collision_profiles = require("collision_profiles")
+local eventemitter = require('eventemitter')
+local timeline_module = require('timeline')
+local romdir = require('romdir')
+local collision_profiles = require('collision_profiles')
 local eventemitter = eventemitter.eventemitter
 local timeline = timeline_module.timeline
 
 local function apply_frame(target, frame)
 	for k, v in pairs(frame) do
-		if type(v) == "table" then
+		if type(v) == 'table' then
 			apply_frame(target[k], v)
 		else
 			target[k] = v
@@ -61,12 +61,12 @@ end
 local function eval_wave(track, time_seconds)
 	local u = (time_seconds / track.period) + (track.phase or 0)
 	local w
-	if track.wave == "pingpong" then
+	if track.wave == 'pingpong' then
 		w = easing.pingpong01(u)
-	elseif track.wave == "sin" then
+	elseif track.wave == 'sin' then
 		w = (math.sin(u * (math.pi * 2)) + 1) * 0.5
 	else
-		error("[timelinecomponent] unknown wave '" .. tostring(track.wave) .. "'.")
+		error('[timelinecomponent] unknown wave '' .. tostring(track.wave) .. ''.')
 	end
 	local ease = track.ease
 	if ease ~= nil then
@@ -76,20 +76,20 @@ local function eval_wave(track, time_seconds)
 end
 
 local function apply_track(target, track, params, event)
-	if type(track) == "function" then
+	if type(track) == 'function' then
 		track(target, params, event)
 		return
 	end
 	local kind = track.kind
-	if kind == "wave" then
+	if kind == 'wave' then
 		local base = track.base
-		local base_value = type(base) == "string" and params[base] or base
+		local base_value = type(base) == 'string' and params[base] or base
 		local w = eval_wave(track, event.time_seconds)
 		local value = base_value + ((w - 0.5) * 2 * track.amp)
 		set_path(target, track.path, value)
 		return
 	end
-	if kind == "sprite_parallax_rig" then
+	if kind == 'sprite_parallax_rig' then
 		set_sprite_parallax_rig(
 			params.vy,
 			params.scale,
@@ -103,7 +103,7 @@ local function apply_track(target, track, params, event)
 		)
 		return
 	end
-	error("[timelinecomponent] unknown track kind '" .. tostring(kind) .. "'.")
+	error('[timelinecomponent] unknown track kind '' .. tostring(kind) .. ''.')
 end
 
 local function apply_tracks(target, tracks, params, event)
@@ -119,7 +119,7 @@ function component.new(opts)
 	local self = setmetatable({}, component)
 	opts = opts or {}
 	self.parent = opts.parent
-	self.type_name = opts.type_name or "component"
+	self.type_name = opts.type_name or 'component'
 	self.id_local = opts.id_local
 	if opts.id then
 		self.id = opts.id
@@ -136,9 +136,9 @@ function component.new(opts)
 end
 
 function component.generate_id(comp)
-	local generated_id = comp.parent.id .. "_" .. comp.type_name
+	local generated_id = comp.parent.id .. '_' .. comp.type_name
 	if comp.id_local ~= nil then
-		generated_id = generated_id .. "_" .. comp.id_local
+		generated_id = generated_id .. '_' .. comp.id_local
 	end
 	return generated_id
 end
@@ -148,7 +148,7 @@ function component:attach(new_parent)
 		self.parent = new_parent
 	end
 	if self.unique and self.parent:has_component(self.type_name) then
-		error("component '" .. self.type_name .. "' is unique and already attached to '" .. self.parent.id .. "'")
+		error('component '' .. self.type_name .. '' is unique and already attached to '' .. self.parent.id .. ''')
 	end
 	self.parent:add_component(self)
 	self:bind()
@@ -207,9 +207,9 @@ setmetatable(spritecomponent, { __index = component })
 
 function spritecomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "spritecomponent"
+	opts.type_name = 'spritecomponent'
 	local self = setmetatable(component.new(opts), spritecomponent)
-	self.imgid = opts and opts.imgid or "none"
+	self.imgid = opts and opts.imgid or 'none'
 	self.flip = { flip_h = false, flip_v = false }
 	self.colorize = opts and opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
 	self.scale = opts and opts.scale or { x = 1, y = 1 }
@@ -225,14 +225,14 @@ function spritecomponent:resolve_collider()
 	local owner = self.parent
 	local explicit_local_id = self.collider_local_id
 	if explicit_local_id ~= nil then
-		return owner:get_component_by_local_id("collider2dcomponent", explicit_local_id)
+		return owner:get_component_by_local_id('collider2dcomponent', explicit_local_id)
 	end
-	local primary_sprite = owner:get_component("spritecomponent")
+	local primary_sprite = owner:get_component('spritecomponent')
 	if primary_sprite == self then
 		if owner.collider ~= nil then
 			return owner.collider
 		end
-		return owner:get_component("collider2dcomponent")
+		return owner:get_component('collider2dcomponent')
 	end
 	return nil
 end
@@ -251,10 +251,10 @@ function spritecomponent:sync_collider()
 	local offset = self.offset or { x = 0, y = 0 }
 	local offset_x = offset.x or 0
 	local offset_y = offset.y or 0
-	local geometry_token = string.format("%s|%d|%d", tostring(id), flip_h and 1 or 0, flip_v and 1 or 0)
-	local offset_token = string.format("%s|%s", tostring(offset_x), tostring(offset_y))
+	local geometry_token = string.format('%s|%d|%d', tostring(id), flip_h and 1 or 0, flip_v and 1 or 0)
+	local offset_token = string.format('%s|%s', tostring(offset_x), tostring(offset_y))
 
-	if id == "none" then
+	if id == 'none' then
 		if self.collider_geometry_token ~= geometry_token then
 			collider:set_local_area(nil)
 			collider:set_local_poly(nil)
@@ -272,7 +272,7 @@ function spritecomponent:sync_collider()
 	if self.collider_geometry_token ~= geometry_token then
 		local image_asset = assets.img[romdir.token(id)]
 		if image_asset == nil or image_asset.imgmeta == nil then
-			error("[spritecomponent] image metadata missing for '" .. tostring(id) .. "'")
+			error('[spritecomponent] image metadata missing for '' .. tostring(id) .. ''')
 		end
 		local imgmeta = image_asset.imgmeta
 		local box = select_bounding_box(flip_h, flip_v, imgmeta.boundingbox)
@@ -303,7 +303,7 @@ end
 --    polygon shapes when pixel-accurate hit detection matters.
 --
 -- 2. POLYGON SOURCE: use @cx / @cc image-filename suffixes, not manual polys.
---    When a sprite is loaded via spriteobject:gfx("enemy@cx"), rombuilder bakes
+--    When a sprite is loaded via spriteobject:gfx('enemy@cx'), rombuilder bakes
 --    the convex hull at pack-time and stores it in imgmeta.hitpolygons.
 --    spritecomponent.sync_collider() then copies those polys into _local_polys
 --    automatically — no cart code required.
@@ -313,7 +313,7 @@ end
 --
 -- 3. LAYER / MASK: use collision_profiles, not raw numbers.
 --    Default layer = 1, mask = 0xffffffff (hits everything on layer 1).
---    Call collider:apply_collision_profile("enemy") rather than setting
+--    Call collider:apply_collision_profile('enemy') rather than setting
 --    layer/mask directly so profiles can be changed in one place.
 --
 -- 4. NEVER POLL colliders in update().
@@ -329,8 +329,8 @@ setmetatable(collider2dcomponent, { __index = component })
 --     layer       (int, default 1)      — bitmask: which layer this collider is on
 --     mask        (int, default 0xffffffff) — bitmask: which layers it detects
 --     istrigger   (bool, default true)  — true = trigger, false = solid
---     spaceevents (string, default "current") — scope for event emission:
---                   "current" | "all" | "ui" | "both"
+--     spaceevents (string, default 'current') — scope for event emission:
+--                   'current' | 'all' | 'ui' | 'both'
 --     _local_area   — table {x,y,w,h} : explicit AABB override (rarely needed)
 --     _local_polys  — array of polygon tables : set automatically by sync_collider()
 --     _local_circle — {x,y,r} : circle shape (highest shape priority)
@@ -338,7 +338,7 @@ setmetatable(collider2dcomponent, { __index = component })
 --   For polygon shapes, prefer the @cx/@cc image suffix over setting _local_polys manually.
 function collider2dcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "collider2dcomponent"
+	opts.type_name = 'collider2dcomponent'
 	local self = setmetatable(component.new(opts), collider2dcomponent)
 	self.hittable = true
 	if opts.hittable ~= nil then
@@ -350,7 +350,7 @@ function collider2dcomponent.new(opts)
 	if opts.istrigger ~= nil then
 		self.istrigger = opts.istrigger
 	end
-	self.spaceevents = opts.spaceevents or "current"
+	self.spaceevents = opts.spaceevents or 'current'
 	self._local_area = nil
 	self._local_polys = nil
 	self._local_circle = nil
@@ -464,7 +464,7 @@ setmetatable(timelinecomponent, { __index = component })
 
 function timelinecomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "timelinecomponent"
+	opts.type_name = 'timelinecomponent'
 	opts.unique = true
 	local self = setmetatable(component.new(opts), timelinecomponent)
 	self.registry = {}
@@ -494,7 +494,7 @@ end
 function timelinecomponent:seek(id, frame)
 	local entry = self.registry[id]
 	if not entry then
-		error("[timelinecomponent] unknown timeline '" .. id .. "' on '" .. self.parent.id .. "'")
+		error('[timelinecomponent] unknown timeline '' .. id .. '' on '' .. self.parent.id .. ''')
 	end
 	entry.instance:force_seek(frame)
 	return entry.instance
@@ -507,7 +507,7 @@ end
 function timelinecomponent:advance(id)
 	local entry = self.registry[id]
 	if not entry then
-		error("[timelinecomponent] unknown timeline '" .. id .. "' on '" .. self.parent.id .. "'")
+		error('[timelinecomponent] unknown timeline '' .. id .. '' on '' .. self.parent.id .. ''')
 	end
 	local events = entry.instance:advance()
 	if #events > 0 then
@@ -519,7 +519,7 @@ end
 function timelinecomponent:play(id, opts)
 	local entry = self.registry[id]
 	if not entry then
-		error("[timelinecomponent] unknown timeline '" .. id .. "' on '" .. self.parent.id .. "'")
+		error('[timelinecomponent] unknown timeline '' .. id .. '' on '' .. self.parent.id .. ''')
 	end
 	local instance = entry.instance
 	local owner = self.parent
@@ -603,7 +603,7 @@ function timelinecomponent:process_events(entry, events, dt_ms)
 	local time_seconds = time_ms / 1000
 	for i = 1, #events do
 		local evt = events[i]
-		if evt.kind == "frame" then
+		if evt.kind == 'frame' then
 			local payload = {
 				timeline_id = entry.instance.id,
 				frame_index = evt.current,
@@ -636,7 +636,7 @@ function timelinecomponent:process_events(entry, events, dt_ms)
 				wrapped = evt.wrapped,
 			}
 			self:emit_endevent(owner, payload)
-			if evt.mode == "once" then
+			if evt.mode == 'once' then
 				self.active[entry.instance.id] = nil
 			end
 		end
@@ -667,7 +667,7 @@ function timelinecomponent:apply_markers(entry, event)
 		local payload = marker.payload
 		local spec = { type = marker.event, emitter = owner }
 		if payload ~= nil then
-			if type(payload) == "table" and payload.type == nil then
+			if type(payload) == 'table' and payload.type == nil then
 				for k, v in pairs(payload) do
 					spec[k] = v
 				end
@@ -682,18 +682,18 @@ function timelinecomponent:apply_markers(entry, event)
 end
 
 function timelinecomponent:emit_frameevent(owner, payload)
-	self:dispatch_timeline_events(owner, "timeline.frame", payload)
+	self:dispatch_timeline_events(owner, 'timeline.frame', payload)
 end
 
 function timelinecomponent:emit_endevent(owner, payload)
-	self:dispatch_timeline_events(owner, "timeline.end", payload)
+	self:dispatch_timeline_events(owner, 'timeline.end', payload)
 end
 
 	function timelinecomponent:dispatch_timeline_events(owner, base_type, payload)
 		local base_event = eventemitter:create_gameevent({ type = base_type, emitter = owner, timeline_id = payload.timeline_id, frame_index = payload.frame_index, frame_value = payload.frame_value, rewound = payload.rewound, reason = payload.reason, direction = payload.direction, mode = payload.mode, wrapped = payload.wrapped })
 		owner.events:emit_event(base_event)
 		owner.sc:dispatch(base_event)
-		local scoped_type = base_type .. "." .. payload.timeline_id
+		local scoped_type = base_type .. '.' .. payload.timeline_id
 		local scoped_event = eventemitter:create_gameevent({ type = scoped_type, emitter = owner, timeline_id = payload.timeline_id, frame_index = payload.frame_index, frame_value = payload.frame_value, rewound = payload.rewound, reason = payload.reason, direction = payload.direction, mode = payload.mode, wrapped = payload.wrapped })
 		owner.events:emit_event(scoped_event)
 		owner.sc:dispatch(scoped_event)
@@ -706,7 +706,7 @@ setmetatable(transformcomponent, { __index = component })
 
 function transformcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "transformcomponent"
+	opts.type_name = 'transformcomponent'
 	opts.unique = true
 	local self = setmetatable(component.new(opts), transformcomponent)
 	local p = self.parent
@@ -730,7 +730,7 @@ setmetatable(textcomponent, { __index = component })
 
 function textcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "textcomponent"
+	opts.type_name = 'textcomponent'
 	local self = setmetatable(component.new(opts), textcomponent)
 	self.text = (opts.text)
 	self.font = opts.font
@@ -741,7 +741,7 @@ function textcomponent.new(opts)
 	self.align = opts.align
 	self.baseline = opts.baseline
 	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
-	self.layer = opts.layer or "world"
+	self.layer = opts.layer or 'world'
 	return self
 end
 
@@ -752,14 +752,14 @@ setmetatable(meshcomponent, { __index = component })
 
 function meshcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "meshcomponent"
+	opts.type_name = 'meshcomponent'
 	local self = setmetatable(component.new(opts), meshcomponent)
 	self.mesh = opts.mesh
 	self.matrix = opts.matrix
 	self.joint_matrices = opts.joint_matrices
 	self.morph_weights = opts.morph_weights
 	self.receive_shadow = opts.receive_shadow
-	self.layer = opts.layer or "world"
+	self.layer = opts.layer or 'world'
 	return self
 end
 
@@ -773,7 +773,7 @@ setmetatable(customvisualcomponent, { __index = component })
 
 function customvisualcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "customvisualcomponent"
+	opts.type_name = 'customvisualcomponent'
 	local self = setmetatable(component.new(opts), customvisualcomponent)
 	self.producer = opts.producer
 	return self
@@ -797,7 +797,7 @@ end
 
 function customvisualcomponent:flush()
 	if not self.producer then
-		error("customvisualcomponent: no producer for '" .. self.parent.id .. "'")
+		error('customvisualcomponent: no producer for '' .. self.parent.id .. ''')
 	end
 	self.producer({ parent = self.parent, rc = self })
 end
@@ -817,13 +817,13 @@ end
 function customvisualcomponent:submit_rect(desc)
 	local area = desc.area
 	local color = desc.color
-	if desc.kind == "stroke" then
-		if type(color) == "table" then
-			error("customvisualcomponent: stroke rectangle requires palette color index")
+	if desc.kind == 'stroke' then
+		if type(color) == 'table' then
+			error('customvisualcomponent: stroke rectangle requires palette color index')
 		end
 		put_rect(area.left, area.top, area.right, area.bottom, area.z, color)
 	else
-		if type(color) == "table" then
+		if type(color) == 'table' then
 			put_rectfillcolor(area.left, area.top, area.right, area.bottom, area.z, color)
 		else
 			put_rectfill(area.left, area.top, area.right, area.bottom, area.z, color)
@@ -874,7 +874,7 @@ setmetatable(inputintentcomponent, { __index = component })
 
 function inputintentcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "inputintentcomponent"
+	opts.type_name = 'inputintentcomponent'
 	opts.unique = true
 	local self = setmetatable(component.new(opts), inputintentcomponent)
 	self.player_index = opts.player_index or 1
@@ -889,7 +889,7 @@ setmetatable(inputactioneffectcomponent, { __index = component })
 
 function inputactioneffectcomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "inputactioneffectcomponent"
+	opts.type_name = 'inputactioneffectcomponent'
 	opts.unique = true
 	local self = setmetatable(component.new(opts), inputactioneffectcomponent)
 	self.program_id = opts.program_id
@@ -901,7 +901,7 @@ local function merge_ability_payload(base, payload)
 	if payload == nil then
 		return base
 	end
-	if type(payload) == "table" then
+	if type(payload) == 'table' then
 		for k, v in pairs(payload) do
 			base[k] = v
 		end
@@ -918,7 +918,7 @@ setmetatable(abilitiescomponent, { __index = component })
 
 function abilitiescomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "abilitiescomponent"
+	opts.type_name = 'abilitiescomponent'
 	opts.unique = true
 	local self = setmetatable(component.new(opts), abilitiescomponent)
 	self.registered = {}
@@ -929,11 +929,11 @@ function abilitiescomponent.new(opts)
 end
 
 function abilitiescomponent:register_ability(id, definition)
-	if type(id) ~= "string" or not (id) then
-		error("[abilitiescomponent] ability id must be a non-empty string.")
+	if type(id) ~= 'string' or not (id) then
+		error('[abilitiescomponent] ability id must be a non-empty string.')
 	end
-	if type(definition) ~= "table" then
-		error("[abilitiescomponent] ability definition must be a table for '" .. id .. "'.")
+	if type(definition) ~= 'table' then
+		error('[abilitiescomponent] ability definition must be a table for '' .. id .. ''.')
 	end
 	self.registered[id] = definition
 end
@@ -941,7 +941,7 @@ end
 function abilitiescomponent:activate(id, payload)
 	local definition = self.registered[id]
 	if definition == nil then
-		error("[abilitiescomponent] unknown ability '" .. tostring(id) .. "' on '" .. self.parent.id .. "'")
+		error('[abilitiescomponent] unknown ability '' .. tostring(id) .. '' on '' .. self.parent.id .. ''')
 	end
 	local activate = definition.activate
 	if activate == nil then
@@ -971,7 +971,7 @@ function abilitiescomponent:begin(id, payload)
 		ability = id,
 		ability_instance_seq = next_seq,
 	}, payload)
-	self.parent:emit_gameplay_fact("evt.ability.start." .. id, event_payload)
+	self.parent:emit_gameplay_fact('evt.ability.start.' .. id, event_payload)
 	return next_seq
 end
 
@@ -990,7 +990,7 @@ function abilitiescomponent:end_once(id, reason, payload)
 		ability_instance_seq = active_seq,
 		reason = reason,
 	}, payload)
-	self.parent:emit_gameplay_fact("evt.ability.end." .. id, event_payload)
+	self.parent:emit_gameplay_fact('evt.ability.end.' .. id, event_payload)
 	return true
 end
 
@@ -1001,7 +1001,7 @@ setmetatable(positionupdateaxiscomponent, { __index = component })
 
 function positionupdateaxiscomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "positionupdateaxiscomponent"
+	opts.type_name = 'positionupdateaxiscomponent'
 	local self = setmetatable(component.new(opts), positionupdateaxiscomponent)
 	self.old_pos = { x = 0, y = 0 }
 	return self
@@ -1028,7 +1028,7 @@ setmetatable(screenboundarycomponent, { __index = positionupdateaxiscomponent })
 --   so the boundarysystem hot loop has no per-frame table lookups or conditionals.
 function screenboundarycomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "screenboundarycomponent"
+	opts.type_name = 'screenboundarycomponent'
 	opts.unique = true
 	local self = setmetatable(positionupdateaxiscomponent.new(opts), screenboundarycomponent)
 	self.stick_to_edge = true
@@ -1049,7 +1049,7 @@ setmetatable(tilecollisioncomponent, { __index = positionupdateaxiscomponent })
 
 function tilecollisioncomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "tilecollisioncomponent"
+	opts.type_name = 'tilecollisioncomponent'
 	opts.unique = true
 	local self = setmetatable(positionupdateaxiscomponent.new(opts), tilecollisioncomponent)
 	return self
@@ -1061,22 +1061,22 @@ setmetatable(prohibitleavingscreencomponent, { __index = screenboundarycomponent
 
 function prohibitleavingscreencomponent.new(opts)
 	opts = opts or {}
-	opts.type_name = "prohibitleavingscreencomponent"
+	opts.type_name = 'prohibitleavingscreencomponent'
 	opts.unique = true
 	local self = setmetatable(screenboundarycomponent.new(opts), prohibitleavingscreencomponent)
 	return self
 end
 
 function prohibitleavingscreencomponent:bind()
-	self.parent.events:on({ event_name = "screen.leaving", handler = function(event)
+	self.parent.events:on({ event_name = 'screen.leaving', handler = function(event)
 		local p = self.parent
-		if event.d == "left" then
+		if event.d == 'left' then
 			p.x = self.stick_to_edge and self.boundary_left or event.old_x_or_y
-		elseif event.d == "right" then
+		elseif event.d == 'right' then
 			p.x = self.stick_to_edge and (self.boundary_right - p.sx) or event.old_x_or_y
-		elseif event.d == "up" then
+		elseif event.d == 'up' then
 			p.y = self.stick_to_edge and self.boundary_top or event.old_x_or_y
-		elseif event.d == "down" then
+		elseif event.d == 'down' then
 			p.y = self.stick_to_edge and (self.boundary_bottom - p.sy) or event.old_x_or_y
 		end
 	end, subscriber = self })
@@ -1107,7 +1107,7 @@ end
 local function new_component(type_name, opts)
 	local ctor = componentregistry[type_name]
 	if not ctor then
-		error("component '" .. type_name .. "' is not registered.")
+		error('component '' .. type_name .. '' is not registered.')
 	end
 	return ctor.new(opts)
 end

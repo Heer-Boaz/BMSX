@@ -34,23 +34,23 @@ local function read_btoc_header(rom_base, cart_header)
 	local toc_base = rom_base + cart_header.toc_off
 	local toc_len = cart_header.toc_len
 	if toc_len < btoc_header_size then
-		error("BTOC header exceeds TOC length.")
+		error('BTOC header exceeds TOC length.')
 	end
 	if read_u32(toc_base) ~= btoc_magic then
-		error("BTOC magic mismatch.")
+		error('BTOC magic mismatch.')
 	end
 	local header_size = read_u32(toc_base + 4)
 	if header_size ~= btoc_header_size then
-		error("BTOC header size mismatch.")
+		error('BTOC header size mismatch.')
 	end
 	local entry_size = read_u32(toc_base + 8)
 	if entry_size ~= btoc_entry_size then
-		error("BTOC entry size mismatch.")
+		error('BTOC entry size mismatch.')
 	end
 	local entry_count = read_u32(toc_base + 12)
 	local entry_offset = read_u32(toc_base + 16)
 	if entry_offset ~= btoc_header_size then
-		error("BTOC entry offset mismatch.")
+		error('BTOC entry offset mismatch.')
 	end
 	local string_table_offset = read_u32(toc_base + 20)
 	local string_table_length = read_u32(toc_base + 24)
@@ -59,13 +59,13 @@ local function read_btoc_header(rom_base, cart_header)
 	local entries_bytes = entry_count * entry_size
 	local expected_string_offset = entry_offset + entries_bytes
 	if string_table_offset ~= expected_string_offset then
-		error("BTOC string table offset mismatch.")
+		error('BTOC string table offset mismatch.')
 	end
 	if entry_offset + entries_bytes > toc_len then
-		error("BTOC entries exceed TOC length.")
+		error('BTOC entries exceed TOC length.')
 	end
 	if string_table_offset + string_table_length > toc_len then
-		error("BTOC string table exceeds TOC length.")
+		error('BTOC string table exceeds TOC length.')
 	end
 	return {
 		rom_base = rom_base,
@@ -83,11 +83,11 @@ end
 
 local function canonicalize_id(id)
 	if id == nil then
-		return ""
+		return ''
 	end
-	local normalized = string.gsub(id, "\\\\", "/")
+	local normalized = string.gsub(id, '\\\\', '/')
 	local start
-	if string.sub(normalized, 1, 2) == "./" then
+	if string.sub(normalized, 1, 2) == './' then
 		start = 3
 	else
 		start = 1
@@ -96,7 +96,7 @@ local function canonicalize_id(id)
 	local prev_slash = false
 	for i = start, #normalized do
 		local ch = string.sub(normalized, i, i)
-		if ch == "/" then
+		if ch == '/' then
 			if not prev_slash then
 				out[#out + 1] = ch
 			end
@@ -134,7 +134,7 @@ local function hash_id(id)
 end
 
 local function token_key(lo, hi)
-	return string.format("%08x%08x", hi, lo)
+	return string.format('%08x%08x', hi, lo)
 end
 
 local function normalize_u32(value)
@@ -158,7 +158,7 @@ local function read_entry(header, entry_base)
 		normalized_offset = read_u32(entry_base + 32),
 		normalized_length = read_u32(entry_base + 36),
 		start = normalize_u32(read_u32(entry_base + 40)),
-		["end"] = normalize_u32(read_u32(entry_base + 44)),
+		['end'] = normalize_u32(read_u32(entry_base + 44)),
 		compiled_start = normalize_u32(read_u32(entry_base + 48)),
 		compiled_end = normalize_u32(read_u32(entry_base + 52)),
 		metabuffer_start = normalize_u32(read_u32(entry_base + 56)),

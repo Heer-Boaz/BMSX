@@ -11,14 +11,14 @@
 --
 --    Examples:
 --      player.png          → AABB collision only
---      player@cx.png       → convex polygon; asset loads as "player"
---      player@cc.png       → concave polygons; asset loads as "player"
+--      player@cx.png       → convex polygon; asset loads as 'player'
+--      player@cc.png       → concave polygons; asset loads as 'player'
 --
 --    WRONG — no suffix, expecting polygon collision:
---      self:gfx("enemy")           -- AABB only, regardless of sprite shape!
+--      self:gfx('enemy')           -- AABB only, regardless of sprite shape!
 --
 --    RIGHT — convex hull suffix:
---      self:gfx("enemy")           -- image file is "enemy@cx.png" at pack-time
+--      self:gfx('enemy')           -- image file is 'enemy@cx.png' at pack-time
 --
 -- 2. COLLISION IS SYNCED AUTOMATICALLY BY spritecomponent.sync_collider().
 --    When gfx(id) is called, imgmeta.hitpolygons (baked by rombuilder) is read
@@ -32,19 +32,19 @@
 --    by the engine and exists only for backward compat.
 --
 -- 4. COLLISION PROFILES: after gfx(), call apply_collision_profile().
---      self:gfx("enemy")
---      self.collider:apply_collision_profile("enemy")  -- sets layer/mask
+--      self:gfx('enemy')
+--      self.collider:apply_collision_profile('enemy')  -- sets layer/mask
 
-local worldobject = require("worldobject")
-local components = require("components")
-local romdir = require("romdir")
+local worldobject = require('worldobject')
+local components = require('components')
+local romdir = require('romdir')
 
 local spriteobject = {}
 spriteobject.__index = spriteobject
 setmetatable(spriteobject, { __index = worldobject })
 
-spriteobject.base_sprite_id = "base_sprite"
-spriteobject.primary_collider_id = "primary"
+spriteobject.base_sprite_id = 'base_sprite'
+spriteobject.primary_collider_id = 'primary'
 
 local function apply_image_metadata(self, id)
 	local meta = assets.img[romdir.token(id)].imgmeta
@@ -54,11 +54,11 @@ end
 
 function spriteobject.new(opts)
 	opts = opts or {}
-	opts.type_name = "spriteobject"
+	opts.type_name = 'spriteobject'
 	local self = setmetatable(worldobject.new(opts), spriteobject)
 	self.flip_h = false
 	self.flip_v = false
-	self.imgid = "none"
+	self.imgid = 'none'
 
 	self.sprite_component = components.spritecomponent.new({ imgid = self.imgid, id_local = spriteobject.base_sprite_id })
 	self.collider = components.collider2dcomponent.new({ id_local = spriteobject.primary_collider_id })
@@ -79,7 +79,7 @@ end
 function spriteobject:gfx(id, meta)
 	self.imgid = id
 	self.sprite_component.imgid = id
-	if id == "none" then
+	if id == 'none' then
 		return
 	end
 	if meta then
@@ -95,7 +95,7 @@ function spriteobject:draw()
 		return
 	end
 	local sc = self.sprite_component
-	if sc.imgid == "none" then
+	if sc.imgid == 'none' then
 		return
 	end
 	local offset = sc.offset

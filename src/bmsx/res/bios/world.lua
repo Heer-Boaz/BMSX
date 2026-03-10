@@ -4,9 +4,9 @@
 -- DESIGN PRINCIPLES
 --
 -- 1. SPACES partition the world into independently-updated subsets.
---    There is always a "main" space. Add more with world:add_space(id).
---    The "active" space is set with world:set_space(id); only objects in the
---    active space are returned by world:objects({scope="active"}).
+--    There is always a 'main' space. Add more with world:add_space(id).
+--    The 'active' space is set with world:set_space(id); only objects in the
+--    active space are returned by world:objects({scope='active'}).
 --    Use spaces for: UI layer, background layer, loading screens, etc.
 --    Objects default to the active space at spawn unless they set .space_id.
 --
@@ -16,20 +16,20 @@
 --    world:despawn(id_or_obj) — calls obj:ondespawn() + obj:dispose()
 --
 -- 3. SCOPE PARAMETER IN objects() / objects_with_components()
---    "all"    — every object regardless of active space or active state
---    "active" — only objects in the current active space that are active
---    Always pass scope="active" for gameplay logic; use "all" only for
+--    'all'    — every object regardless of active space or active state
+--    'active' — only objects in the current active space that are active
+--    Always pass scope='active' for gameplay logic; use 'all' only for
 --    serialization or global queries.
 --
 -- 4. world_instance IS THE GLOBAL SINGLETON.
---    Access via  require("world").instance. Do not create extra world.new().
+--    Access via  require('world').instance. Do not create extra world.new().
 --
 -- 5. NEVER ITERATE AND MUTATE at the same time.
 --    Do not spawn/despawn while iterating world:objects(). If you need to
 --    defer a spawn/despawn, use a queue and process it after the loop.
 
-local ecs = require("ecs")
-local registry = require("registry")
+local ecs = require('ecs')
+local registry = require('registry')
 
 local tickgroup = ecs.tickgroup
 local world_instance
@@ -110,7 +110,7 @@ local phase_order = {
 -- 	local inv_frames = 1 / p.acc_frames
 -- 	local avg_dt = p.acc_sim_ms * inv_frames
 	-- print(string.format(
-	-- 	"[World] perf avg dt=%.2fms update=%.2f draw=%.2f cleanup=%.2f frames=%d",
+	-- 	'[World] perf avg dt=%.2fms update=%.2f draw=%.2f cleanup=%.2f frames=%d',
 	-- 	avg_dt,
 	-- 	p.acc_update_ms * inv_frames,
 	-- 	p.acc_draw_ms * inv_frames,
@@ -122,9 +122,9 @@ local phase_order = {
 	-- for i = 1, #phase_order do
 	-- 	local group = phase_order[i]
 	-- 	local name = tickgroup_names[group] or tostring(group)
-	-- 	phase_parts[#phase_parts + 1] = string.format("%s=%.2f", name, p.phase_ms[group] * inv_frames)
+	-- 	phase_parts[#phase_parts + 1] = string.format('%s=%.2f', name, p.phase_ms[group] * inv_frames)
 	-- end
-	-- print("[World] phases avg " .. table.concat(phase_parts, " "))
+	-- print('[World] phases avg ' .. table.concat(phase_parts, ' '))
 
 -- 	local top = {}
 -- 	for id, ms in pairs(p.system_ms) do
@@ -151,9 +151,9 @@ local phase_order = {
 -- 			local name = p.system_name[entry.id] or entry.id
 -- 			local group = p.system_group[entry.id]
 -- 			local group_name = tickgroup_names[group] or tostring(group)
--- 			out[#out + 1] = string.format("%s(%s)=%.2f", name, group_name, entry.ms * inv_frames)
+-- 			out[#out + 1] = string.format('%s(%s)=%.2f', name, group_name, entry.ms * inv_frames)
 -- 		end
--- 		-- print("[World] top systems avg " .. table.concat(out, " "))
+-- 		-- print('[World] top systems avg ' .. table.concat(out, ' '))
 -- 	end
 -- 	reset_perf_accumulators(p)
 -- end
@@ -222,7 +222,7 @@ function world_class.new()
 	self._spaces = {}
 	self._space_order = {}
 	self._obj_to_space = {}
-	self.active_space_id = "main"
+	self.active_space_id = 'main'
 	self.systems = ecs.ecsystemmanager.new()
 	self.current_phase = nil
 	self.paused = false
@@ -230,7 +230,7 @@ function world_class.new()
 	self.gameheight = display_height()
 	-- id counter for unique id generation
 	self.idcounter = 0
-	self:add_space("main")
+	self:add_space('main')
 	return self
 end
 
@@ -238,8 +238,8 @@ end
 --   Registers a new named space. Returns false if the space already exists.
 --   Must be called before any object is spawned into that space.
 function world_class:add_space(space_id)
-	if type(space_id) ~= "string" then
-		error("world.add_space expects a non-empty space id")
+	if type(space_id) ~= 'string' then
+		error('world.add_space expects a non-empty space id')
 	end
 	if self._spaces[space_id] ~= nil then
 		return false
@@ -255,11 +255,11 @@ end
 
 -- world:set_space(space_id): makes space_id the active space.
 --   Objects subsequently spawned without an explicit .space_id go here.
---   Affects the "active" scope in objects() / objects_with_components().
+--   Affects the 'active' scope in objects() / objects_with_components().
 --   Errors if space_id is not registered.
 function world_class:set_space(space_id)
 	if self._spaces[space_id] == nil then
-		error("world.set_space unknown space id '" .. tostring(space_id) .. "'.")
+		error('world.set_space unknown space id '' .. tostring(space_id) .. ''.')
 	end
 	self.active_space_id = space_id
 	return self.active_space_id
@@ -276,7 +276,7 @@ end
 function world_class:set_object_space(obj, space_id)
 	local target_space = self._spaces[space_id]
 	if target_space == nil then
-		error("world.set_object_space unknown space id '" .. tostring(space_id) .. "'.")
+		error('world.set_object_space unknown space id '' .. tostring(space_id) .. ''.')
 	end
 
 	local object_id = obj.id
@@ -315,7 +315,7 @@ function world_class:_object_in_scope(obj, scope)
 	if obj.dispose_flag then
 		return false
 	end
-	if scope == "active" then
+	if scope == 'active' then
 		if not obj.active then
 			return false
 		end
@@ -328,7 +328,7 @@ function world_class:_subsystem_in_scope(subsys, scope)
 	if subsys.dispose_flag then
 		return false
 	end
-	if scope == "active" then
+	if scope == 'active' then
 		return subsys.active
 	end
 	return true
@@ -354,7 +354,7 @@ function world_class:rebind_subsystem_systems(subsys)
 	if self._subsystems_by_id[subsys.id] ~= subsys or subsys.dispose_flag then
 		return
 	end
-	local subsystem_module = require("subsystem")
+	local subsystem_module = require('subsystem')
 	local systems = {
 		subsystem_module.create_update_system(subsys),
 		subsystem_module.create_animation_system(subsys),
@@ -386,7 +386,7 @@ end
 function world_class:spawn(obj, pos)
 	local existing = self._by_id[obj.id]
 	if existing ~= nil and existing ~= obj then
-		error("world.spawn duplicate id '" .. obj.id .. "'")
+		error('world.spawn duplicate id '' .. obj.id .. ''')
 	end
 	local space_id = obj.space_id
 	if space_id == nil then
@@ -403,14 +403,14 @@ function world_class:spawn(obj, pos)
 	end
 	obj:onspawn(pos)
 	obj:activate()
-	obj.events:emit("spawn", { pos = pos })
+	obj.events:emit('spawn', { pos = pos })
 	return obj
 end
 
 function world_class:spawn_subsystem(subsys)
 	local existing = self._subsystems_by_id[subsys.id]
 	if existing ~= nil and existing ~= subsys then
-		error("world.spawn_subsystem duplicate id '" .. subsys.id .. "'")
+		error('world.spawn_subsystem duplicate id '' .. subsys.id .. ''')
 	end
 	self._subsystems_by_id[subsys.id] = subsys
 	self._subsystems[#self._subsystems + 1] = subsys
@@ -418,7 +418,7 @@ function world_class:spawn_subsystem(subsys)
 	self:rebind_subsystem_systems(subsys)
 	subsys:onregister()
 	subsys:activate()
-	subsys.events:emit("spawn")
+	subsys.events:emit('spawn')
 	return subsys
 end
 
@@ -428,7 +428,7 @@ end
 --   Do not call during an objects() iteration loop.
 function world_class:despawn(id_or_obj)
 	local obj
-	if type(id_or_obj) ~= "table" then
+	if type(id_or_obj) ~= 'table' then
 		obj = self._by_id[id_or_obj]
 	else
 		obj = id_or_obj
@@ -487,12 +487,12 @@ end
 
 -- world:objects(opts?)
 --   Iterator over all objects matching opts:
---     opts.scope   — "all" (default) or "active" (current space + active flag)
+--     opts.scope   — 'all' (default) or 'active' (current space + active flag)
 --     opts.reverse — iterate in reverse order when true
---   Usage:  for obj in world_instance:objects({scope="active"}) do … end
+--   Usage:  for obj in world_instance:objects({scope='active'}) do … end
 --   Do NOT spawn or despawn inside this loop.
 function world_class:objects(opts)
-	local scope = opts and opts.scope or "all"
+	local scope = opts and opts.scope or 'all'
 	local reverse = opts and opts.reverse or false
 	local step = reverse and -1 or 1
 	local start = reverse and (#self._objects + 1) or 0
@@ -500,7 +500,7 @@ function world_class:objects(opts)
 end
 
 function world_class:subsystems(opts)
-	local scope = opts and opts.scope or "all"
+	local scope = opts and opts.scope or 'all'
 	local reverse = opts and opts.reverse or false
 	local step = reverse and -1 or 1
 	local start = reverse and (#self._subsystems + 1) or 0
@@ -512,7 +512,7 @@ end
 --   given type on every matching object. opts.scope follows the same rules as
 --   world:objects(). Used by ECS systems; rarely needed in cart code.
 function world_class:objects_with_components(type_name, opts)
-	local scope = opts and opts.scope or "all"
+	local scope = opts and opts.scope or 'all'
 	return iter_objects_with_components,
 		{ world = self, reg = registry.instance._registry, by_id = self._by_id, type_name = type_name, scope = scope, reg_key = nil },
 			nil
@@ -564,7 +564,7 @@ end
 --   Like UE5 GetAllActorsOfClass — returns all objects spawned from a given
 --   define_prefab definition_id.
 function world_class:objects_by_type(obj_type_name, opts)
-	local scope = opts and opts.scope or "all"
+	local scope = opts and opts.scope or 'all'
 	return iter_world_by_type, { reg = registry.instance._registry, type_name = obj_type_name, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil
 end
 
@@ -573,14 +573,14 @@ end
 --   tag-based queries. opts.scope follows the same rules as world:objects().
 --   Like UE5 GetAllActorsWithTag.
 function world_class:objects_by_tag(tag, opts)
-	local scope = opts and opts.scope or "all"
+	local scope = opts and opts.scope or 'all'
 	return iter_world_by_tag, { reg = registry.instance._registry, tag = tag, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil
 end
 
 -- world:find_by_type(type_name, opts?)
 --   Returns the first object matching type_name (or nil). Like UE5 GetActorOfClass.
 function world_class:find_by_type(obj_type_name, opts)
-	local scope = opts and opts.scope or "all"
+	local scope = opts and opts.scope or 'all'
 	for entity in iter_world_by_type, { reg = registry.instance._registry, type_name = obj_type_name, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil do
 		return entity
 	end
@@ -590,7 +590,7 @@ end
 -- world:find_by_tag(tag, opts?)
 --   Returns the first object carrying the given tag (or nil). Like UE5 GetActorWithTag.
 function world_class:find_by_tag(tag, opts)
-	local scope = opts and opts.scope or "all"
+	local scope = opts and opts.scope or 'all'
 	for entity in iter_world_by_tag, { reg = registry.instance._registry, tag = tag, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil do
 		return entity
 	end
@@ -691,11 +691,11 @@ function world_class:clear()
 	self._space_order = {}
 	self._obj_to_space = {}
 	registry.instance:clear()
-	self:add_space("main")
-	self.active_space_id = "main"
+	self:add_space('main')
+	self.active_space_id = 'main'
 end
 world_instance = world_class.new()
-world_instance.id = "world"
+world_instance.id = 'world'
 world_instance.registrypersistent = true
 registry.instance:register(world_instance)
 
