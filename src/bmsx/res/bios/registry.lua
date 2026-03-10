@@ -44,6 +44,10 @@ end
 -- registry:register(entity): adds entity to the registry keyed by entity.id.
 --   entity.id must be set before calling this.
 function registry:register(entity)
+	local existing = self._registry[entity.id]
+	if existing ~= nil and existing ~= entity then
+		error("registry.register duplicate id '" .. entity.id .. "'")
+	end
 	self._registry[entity.id] = entity
 end
 
