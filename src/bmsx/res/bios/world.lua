@@ -311,6 +311,10 @@ end
 --   the object and emits the 'spawn' event.
 --   obj.id must be unique. Returns obj.
 function world_class:spawn(obj, pos)
+	local existing = self._by_id[obj.id]
+	if existing ~= nil and existing ~= obj then
+		error("world.spawn duplicate id '" .. obj.id .. "'")
+	end
 	local space_id = obj.space_id
 	if space_id == nil then
 		space_id = self.active_space_id
@@ -416,13 +420,15 @@ local function iter_world_by_type(state, key)
 	local by_id = state.by_id
 	local world = state.world
 	local scope = state.scope
-	local next_key, entity = next(reg_table, key)
+	local next_key, entity = next(reg_table, state.reg_key)
 	while next_key do
 		if entity.type_name == type_name and by_id[entity.id] and world:_object_in_scope(entity, scope) then
-			return next_key, entity
+			state.reg_key = next_key
+			return entity
 		end
 		next_key, entity = next(reg_table, next_key)
 	end
+	state.reg_key = nil
 	return nil
 end
 
@@ -432,14 +438,16 @@ local function iter_world_by_tag(state, key)
 	local by_id = state.by_id
 	local world = state.world
 	local scope = state.scope
-	local next_key, entity = next(reg_table, key)
+	local next_key, entity = next(reg_table, state.reg_key)
 	while next_key do
 		local tags = entity.tags
 		if tags and tags[tag] and by_id[entity.id] and world:_object_in_scope(entity, scope) then
-			return next_key, entity
+			state.reg_key = next_key
+			return entity
 		end
 		next_key, entity = next(reg_table, next_key)
 	end
+	state.reg_key = nil
 	return nil
 end
 
@@ -450,7 +458,7 @@ end
 --   define_prefab definition_id.
 function world_class:objects_by_type(obj_type_name, opts)
 	local scope = opts and opts.scope or "all"
-	return iter_world_by_type, { reg = registry.instance._registry, type_name = obj_type_name, by_id = self._by_id, world = self, scope = scope }, nil
+	return iter_world_by_type, { reg = registry.instance._registry, type_name = obj_type_name, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil
 end
 
 -- world:objects_by_tag(tag, opts?)
@@ -459,14 +467,14 @@ end
 --   Like UE5 GetAllActorsWithTag.
 function world_class:objects_by_tag(tag, opts)
 	local scope = opts and opts.scope or "all"
-	return iter_world_by_tag, { reg = registry.instance._registry, tag = tag, by_id = self._by_id, world = self, scope = scope }, nil
+	return iter_world_by_tag, { reg = registry.instance._registry, tag = tag, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil
 end
 
 -- world:find_by_type(type_name, opts?)
 --   Returns the first object matching type_name (or nil). Like UE5 GetActorOfClass.
 function world_class:find_by_type(obj_type_name, opts)
 	local scope = opts and opts.scope or "all"
-	for _, entity in iter_world_by_type, { reg = registry.instance._registry, type_name = obj_type_name, by_id = self._by_id, world = self, scope = scope }, nil do
+	for entity in iter_world_by_type, { reg = registry.instance._registry, type_name = obj_type_name, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil do
 		return entity
 	end
 	return nil
@@ -476,7 +484,7 @@ end
 --   Returns the first object carrying the given tag (or nil). Like UE5 GetActorWithTag.
 function world_class:find_by_tag(tag, opts)
 	local scope = opts and opts.scope or "all"
-	for _, entity in iter_world_by_tag, { reg = registry.instance._registry, tag = tag, by_id = self._by_id, world = self, scope = scope }, nil do
+	for entity in iter_world_by_tag, { reg = registry.instance._registry, tag = tag, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil do
 		return entity
 	end
 	return nil
