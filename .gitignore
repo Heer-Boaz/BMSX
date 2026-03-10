@@ -96,5 +96,7 @@ tools/retroarch-gles2
 !src/carts/esther/res/_ignore/Routine_Macros_DKC1.asm
 
 src/carts/pietious/res/_ignore/**
-!src/carts/pietious/res/_ignore/**.py
+!src/carts/pietious/res/_ignore/
+!src/carts/pietious/res/_ignore/c++/
 !src/carts/pietious/res/_ignore/c++/ingamecycle.cpp
+# !src/carts/pietious/res/_ignore/**.py
