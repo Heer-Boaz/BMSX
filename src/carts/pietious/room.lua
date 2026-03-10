@@ -504,42 +504,30 @@ function room_object:snap_world_to_tile(world_x, world_y)
 	return self:tile_to_world(tx, ty)
 end
 
-function room_object:is_wall_at_tile(tx, ty)
+function room_object:collision_flags_at_tile(tx, ty)
 	if ty < 1 or ty > self.tile_rows then
-		return false
+		return constants.collision_flags.none
 	end
 	if tx < 1 or tx > self.tile_columns then
-		return false
+		return constants.collision_flags.none
 	end
+	local collision = 0
 	if self.collision_map[ty][tx] ~= 0 then
-		return true
+		collision = collision | constants.collision_flags.wall
 	end
 	if self:is_active_rock_at_tile(tx, ty) then
-		return true
+		collision = collision | constants.collision_flags.wall
+	end
+	if self:is_active_elevator_at_tile(tx, ty) then
+		collision = collision | constants.collision_flags.elevator
 	end
 	if self:is_active_draaideur_at_tile(tx, ty) then
-		return true
+		collision = collision | constants.collision_flags.wall
 	end
-	return self:is_active_breakable_wall_at_tile(tx, ty)
-end
-
-function room_object:is_solid_at_tile(tx, ty)
-	if ty < 1 or ty > self.tile_rows then
-		return false
+	if self:is_active_breakable_wall_at_tile(tx, ty) then
+		collision = collision | constants.collision_flags.wall
 	end
-	if tx < 1 or tx > self.tile_columns then
-		return false
-	end
-	if self.collision_map[ty][tx] ~= 0 then
-		return true
-	end
-	if self:is_active_rock_at_tile(tx, ty) then
-		return true
-	end
-	if self:is_active_draaideur_at_tile(tx, ty) then
-		return true
-	end
-	return self:is_active_breakable_wall_at_tile(tx, ty)
+	return collision
 end
 
 function room_object:overlaps_active_rock(x, y, w, h)
@@ -563,6 +551,24 @@ end
 function room_object:is_active_rock_at_tile(tx, ty)
 	local world_x, world_y = self:tile_to_world(tx, ty)
 	return self:overlaps_active_rock(world_x, world_y, self.tile_size, self.tile_size)
+end
+
+function room_object:overlaps_active_elevator(x, y, w, h)
+	local elevator_count = object('c').elevator_count
+	for i = 1, elevator_count do
+		local platform = object('e.p' .. tostring(i))
+		if platform.current_room_number == self.room_number
+			and rect_overlaps(x, y, w, h, platform.x, platform.y, constants.room.tile_size4, constants.room.tile_size2)
+		then
+			return true
+		end
+	end
+	return false
+end
+
+function room_object:is_active_elevator_at_tile(tx, ty)
+	local world_x, world_y = self:tile_to_world(tx, ty)
+	return self:overlaps_active_elevator(world_x, world_y, self.tile_size, self.tile_size)
 end
 
 function room_object:overlaps_active_breakable_wall(x, y, w, h)
@@ -631,9 +637,37 @@ function room_object:is_active_breakable_wall_at_tile(tx, ty)
 	return self:overlaps_active_breakable_wall(world_x, world_y, self.tile_size, self.tile_size)
 end
 
-function room_object:is_solid_at_world(world_x, world_y)
+function room_object:has_collision_flags_at_tile(tx, ty, mask)
+	return (self:collision_flags_at_tile(tx, ty) & mask) ~= 0
+end
+
+function room_object:collision_flags_at_world(world_x, world_y)
 	local tx, ty = self:world_to_tile(world_x, world_y)
-	return self:is_solid_at_tile(tx, ty)
+	return self:collision_flags_at_tile(tx, ty)
+end
+
+function room_object:has_collision_flags_at_world(world_x, world_y, mask)
+	return (self:collision_flags_at_world(world_x, world_y) & mask) ~= 0
+end
+
+function room_object:overlaps_solid_rect(x, y, w, h)
+	local solids = self.solids
+	for i = 1, #solids do
+		local solid = solids[i]
+		if rect_overlaps(x, y, w, h, solid.x, solid.y, solid.w, solid.h) then
+			return true
+		end
+	end
+	if self:overlaps_active_rock(x, y, w, h) then
+		return true
+	end
+	if self:overlaps_active_elevator(x, y, w, h) then
+		return true
+	end
+	if self:overlaps_active_draaideur(x, y, w, h) then
+		return true
+	end
+	return self:overlaps_active_breakable_wall(x, y, w, h)
 end
 
 function room_object:find_near_lithograph(player)

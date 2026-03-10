@@ -19,13 +19,13 @@ function marspeinenaardappel.bt_tick(self, _blackboard)
 
 	if speed_x < 0 then
 		local test_x = self.x + speed_x
-		if test_x <= 0 or rm:is_solid_at_world(test_x, self.y) then
+		if test_x <= 0 or rm:has_collision_flags_at_world(test_x, self.y, constants.collision_flags.solid_mask) then
 			self.speed_x_num = -speed_x
 			self.x = self.x + (self.speed_x_num * 2)
 		end
 	elseif speed_x > 0 then
 		local test_x = self.x + self.sx + speed_x
-		if test_x >= rm.world_width or rm:is_solid_at_world(test_x, self.y) then
+		if test_x >= rm.world_width or rm:has_collision_flags_at_world(test_x, self.y, constants.collision_flags.solid_mask) then
 			self.speed_x_num = -speed_x
 			self.x = self.x + (self.speed_x_num * 2)
 		end
@@ -33,13 +33,13 @@ function marspeinenaardappel.bt_tick(self, _blackboard)
 
 	if speed_y < 0 then
 		local test_y = self.y + speed_y
-		if test_y <= rm.world_top or rm:is_solid_at_world(self.x, test_y) then
+		if test_y <= rm.world_top or rm:has_collision_flags_at_world(self.x, test_y, constants.collision_flags.solid_mask) then
 			self.speed_y_num = -speed_y
 			self.y = self.y + (self.speed_y_num * 2)
 		end
 	elseif speed_y > 0 then
 		local test_y = self.y + self.sy + speed_y
-		if test_y >= rm.world_height or rm:is_solid_at_world(self.x, test_y) then
+		if test_y >= rm.world_height or rm:has_collision_flags_at_world(self.x, test_y, constants.collision_flags.solid_mask) then
 			self.speed_y_num = -speed_y
 			self.y = self.y + (self.speed_y_num * 2)
 		end

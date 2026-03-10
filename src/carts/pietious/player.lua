@@ -1158,7 +1158,10 @@ function player:try_step_off_stairs()
 	end
 
 	local can_bottom_step
-	if dty > constants.room.tile_half and current_room:is_wall_at_tile(wall_tx, wall_ty) and not self:collides_at(self.x + probe_dx, self.y, true) then
+	if dty > constants.room.tile_half
+		and current_room:has_collision_flags_at_tile(wall_tx, wall_ty, constants.collision_flags.solid_mask)
+		and not self:collides_at(self.x + probe_dx, self.y, true)
+	then
 		can_bottom_step = true
 	else
 		can_bottom_step = false
@@ -1251,12 +1254,12 @@ function player:try_snap_to_elevator_platform(next_x)
 		if not platform.visible then
 			goto continue
 		end
-		if self.y >= (platform.y - constants.room.tile_size2)
+		if self.y >= (platform.y - self.height)
 		and self.y < platform.y
 		and self.x > (platform.x - (constants.room.tile_size2 - (constants.room.tile_unit * 4)))
 		and self.x < ((platform.x + constants.room.tile_size4) - (constants.room.tile_unit * 3))
 		then
-			self.y = (platform.y - self.height) + constants.room.tile_size
+			self.y = platform.y - self.height
 			self.x = next_x
 			return true
 		end
@@ -1266,80 +1269,14 @@ function player:try_snap_to_elevator_platform(next_x)
 	return false
 end
 
-function player:overlaps_visible_elevator(x, y)
-	local count = object('c').elevator_count
-	for i = 1, count do
-		local platform = object('e.p' .. tostring(i))
-		if platform.visible
-		and y < platform.y
-		and y + self.height > platform.y
-		and x > (platform.x - (constants.room.tile_size2 - constants.room.tile_unit * 4))
-		and x < (platform.x + constants.room.tile_size4 - constants.room.tile_unit * 3)
-		then
-			return true
-		end
-	end
-	return false
-end
-
 function player:collides_at(x, y, include_elevator)
 	local rm = object('room')
-	local solids = rm.solids
-	for i = 1, #solids do
-		local solid = solids[i]
-		if x < (solid.x + solid.w) and (x + self.width) > solid.x and y < (solid.y + solid.h) and (y + self.height) > solid.y then
-			return true
-		end
-	end
-
-	if rm:overlaps_active_rock(x, y, self.width, self.height) then
-		return true
-	end
-	if rm:overlaps_active_breakable_wall(x, y, self.width, self.height) then
-		return true
-	end
-	if rm:overlaps_active_draaideur(x, y, self.width, self.height) then
-		return true
-	end
-
-	if include_elevator and self:overlaps_visible_elevator(x, y) then
-		return true
-	end
-
-	return false
+	return rm:overlaps_solid_rect(x, y, self.width, self.height)
 end
 
 function player:collides_at_probe(x, y, include_elevator)
 	local rm = object('room')
-	if rm:is_solid_at_world(x, y) then
-		return true
-	end
-	if rm:overlaps_active_rock(x, y, 1, 1) then
-		return true
-	end
-	if rm:overlaps_active_breakable_wall(x, y, 1, 1) then
-		return true
-	end
-	if rm:overlaps_active_draaideur(x, y, 1, 1) then
-		return true
-	end
-
-	if include_elevator then
-		local count = object('c').elevator_count
-		for i = 1, count do
-			local platform = object('e.p' .. tostring(i))
-			if platform.visible
-			and y < platform.y
-			and y + 1 > platform.y
-			and x > (platform.x - (constants.room.tile_size2 - constants.room.tile_unit * 4))
-			and x < (platform.x + constants.room.tile_size4 - constants.room.tile_unit * 3)
-			then
-				return true
-			end
-		end
-	end
-
-	return false
+	return rm:has_collision_flags_at_world(x, y, constants.collision_flags.solid_mask)
 end
 
 function player:collides_at_jump_ceiling_profile(x, y, include_elevator)
@@ -1448,7 +1385,7 @@ function player:apply_move(dx, dy, include_elevator_collision)
 		end
 	else
 			if next_y >= old_y then
-				if include_elevator_collision and self:try_snap_to_elevator_platform(next_x) then
+				if self:try_snap_to_elevator_platform(next_x) then
 					-- Keep `found` false/nil here so the x-collision pass still runs.
 					-- This mirrors the original C++ flow where snap-on-elevator still
 					-- proceeds through horizontal collision resolution.
@@ -2820,10 +2757,6 @@ local function define_player_fsm()
 				state_tags.variant.walking_right,
 				state_tags.variant.walking_left,
 				state_tags.variant.quiet_sword,
-				state_tags.variant.jumping_sword,
-				state_tags.variant.sj_sword,
-				state_tags.variant.c_fall_sword,
-				state_tags.variant.uc_fall_sword,
 				state_tags.variant.hit_recovery,
 				state_tags.variant.controlled_fall,
 				state_tags.variant.uncontrolled_fall,
@@ -2866,7 +2799,7 @@ local function define_player_fsm()
 						end
 						local dx = event.dx
 						local dy = event.dy
-						self.on_vertical_elevator = dy ~= 0
+						self.on_vertical_elevator = event.on_vertical_elevator
 						self.x = self.x + dx
 						self.y = self.y + dy
 						self.last_dx = self.last_dx + dx

@@ -39,19 +39,16 @@ function elevator:update_motion()
 	self.visible = self.current_room_number == current_room_number
 	self.collider.enabled = self.visible
 
-	if self.visible and player.last_dy >= 0 then
-		player:try_snap_to_elevator_platform(player.x)
-	end
-
 	local character_over = false
+	local standing_on_top = false
 	if self.visible
 		and player.y >= (self.y - constants.room.tile_size2)
 		and player.y < (self.y + constants.room.tile_size2)
 	then
-		local standing_on_top = player.y == (self.y - constants.player.height + constants.room.tile_size)
+		standing_on_top = player.y == (self.y - constants.player.height)
 		if player.x > (self.x - constants.room.tile_size2)
 			and player.x < (self.x + constants.room.tile_size4)
-			and (player:has_tag('g.et') or standing_on_top)
+			and player:has_tag('g.et')
 		then
 			character_over = true
 		end
@@ -81,7 +78,8 @@ function elevator:update_motion()
 			player_id = player.id,
 			platform_id = self.id,
 			dx = delta_x,
-			dy = delta_y,
+			dy = standing_on_top and delta_y or 0,
+			on_vertical_elevator = delta_y ~= 0,
 		})
 	end
 

@@ -44,16 +44,16 @@ function zakfoe.bt_tick(self, blackboard)
 		if self.direction == 'left' then
 			local rm = object('room')
 			if self.x < 0
-				or rm:is_solid_at_world(self.x + 2, self.y + 2)
-				or not rm:is_solid_at_world(self.x + 2 - constants.room.tile_half, self.y + 14 + constants.room.tile_size)
+				or rm:has_collision_flags_at_world(self.x + 2, self.y + 2, constants.collision_flags.solid_mask)
+				or not rm:has_collision_flags_at_world(self.x + 2 - constants.room.tile_half, self.y + 14 + constants.room.tile_size, constants.collision_flags.solid_mask)
 			then
 				self.direction = 'right'
 			end
 		else
 			local rm = object('room')
 			if self.x + 14 >= rm.world_width
-				or rm:is_solid_at_world(self.x + 14, self.y + 2)
-				or not rm:is_solid_at_world(self.x + 14 + constants.room.tile_half, self.y + 14 + constants.room.tile_size)
+				or rm:has_collision_flags_at_world(self.x + 14, self.y + 2, constants.collision_flags.solid_mask)
+				or not rm:has_collision_flags_at_world(self.x + 14 + constants.room.tile_half, self.y + 14 + constants.room.tile_size, constants.collision_flags.solid_mask)
 			then
 				self.direction = 'left'
 			end

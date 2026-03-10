@@ -40,7 +40,11 @@ function pepernoot_projectile:update_motion()
 		return
 	end
 	local overlaps_rock = room:overlaps_active_rock(self.x, self.y, self.sx, self.sy)
-	if room:is_solid_at_world(self.x, self.y) and not overlaps_rock then
+	local collision_flags = room:collision_flags_at_world(self.x, self.y)
+	if collision_flags ~= constants.collision_flags.none
+		and collision_flags ~= constants.collision_flags.elevator
+		and not overlaps_rock
+	then
 		self:mark_for_disposal()
 	end
 end

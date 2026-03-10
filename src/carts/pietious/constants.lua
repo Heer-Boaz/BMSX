@@ -166,6 +166,20 @@ constants.collision = {
 	pickup_mask = 4,
 }
 
+constants.collision_flags = {
+	none = 0,
+	wall = 1,
+	water = 2,
+	ladder_wall = 4,
+	door_wall = 8,
+	player = 16,
+	weapon = 32,
+	enemy = 64,
+	lava = 128,
+}
+constants.collision_flags.elevator = constants.collision_flags.wall | constants.collision_flags.ladder_wall
+constants.collision_flags.solid_mask = constants.collision_flags.wall | constants.collision_flags.ladder_wall | constants.collision_flags.door_wall
+
 constants.stairs = {
 	speed_px = 1,
 	down_start_push_px = 2,

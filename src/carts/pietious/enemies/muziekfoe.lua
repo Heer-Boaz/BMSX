@@ -39,12 +39,12 @@ function muziekfoe.bt_tick(self, blackboard)
 
 	if self.direction == 'left' then
 		local rm = object('room')
-		if self.x < 0 or rm:is_solid_at_world(self.x, self.y) then
+		if self.x < 0 or rm:has_collision_flags_at_world(self.x, self.y, constants.collision_flags.solid_mask) then
 			self.direction = 'right'
 		end
 	else
 		local rm = object('room')
-		if self.x + 24 >= rm.world_width or rm:is_solid_at_world(self.x + 24, self.y + 16) then
+		if self.x + 24 >= rm.world_width or rm:has_collision_flags_at_world(self.x + 24, self.y + 16, constants.collision_flags.solid_mask) then
 			self.direction = 'left'
 		end
 	end
