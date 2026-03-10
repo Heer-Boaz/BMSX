@@ -128,7 +128,7 @@ function worldobject:generate_id()
 	end
 
 	local result = baseid .. "_" .. tostring(uniquenumber)
-	while world_instance._by_id[result] ~= nil do
+	while world_instance._by_id[result] ~= nil or world_instance._subsystems_by_id[result] ~= nil do
 		uniquenumber = uniquenumber + 1
 		if uniquenumber >= world_id_max then
 			uniquenumber = 1

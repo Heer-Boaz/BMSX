@@ -143,17 +143,36 @@ local objectticksystem = {}
 objectticksystem.__index = objectticksystem
 setmetatable(objectticksystem, { __index = ecsystem })
 
+local object_tick_orders = { 'early', 'normal', 'late' }
+local object_tick_order_lookup = { early = true, normal = true, late = true }
+
+local function resolve_object_tick_order(obj)
+	local order = obj.tick_order
+	if order == nil then
+		return 'normal'
+	end
+	if object_tick_order_lookup[order] then
+		return order
+	end
+	error("[objectticksystem] unknown tick_order '" .. tostring(order) .. "' on '" .. tostring(obj.id) .. "'.")
+end
+
 function objectticksystem.new(priority)
 	local self = setmetatable(ecsystem.new(tickgroup.moderesolution, priority or 10), objectticksystem)
 	return self
 end
 
 function objectticksystem:update(dt_ms)
-	for obj in world_instance:objects(active_scope) do
-		for i = 1, #obj.components do
-			local comp = obj.components[i]
-			if comp.enabled then
-				comp:tick(dt_ms)
+	for order_index = 1, #object_tick_orders do
+		local tick_order = object_tick_orders[order_index]
+		for obj in world_instance:objects(active_scope) do
+			if resolve_object_tick_order(obj) == tick_order then
+				for i = 1, #obj.components do
+					local comp = obj.components[i]
+					if comp.enabled then
+						comp:tick(dt_ms)
+					end
+				end
 			end
 		end
 	end

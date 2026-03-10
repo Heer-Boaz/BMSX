@@ -196,10 +196,29 @@ local function iter_objects_with_components(state, _)
 	return nil
 end
 
+local function iter_subsystems(state, _)
+	local list = state.list
+	local scope = state.scope
+	local index = state.index + state.step
+	while true do
+		local subsys = list[index]
+		if not subsys then
+			return nil
+		end
+		if state.world:_subsystem_in_scope(subsys, scope) then
+			state.index = index
+			return subsys
+		end
+		index = index + state.step
+	end
+end
+
 function world_class.new()
 	local self = setmetatable({}, world_class)
 	self._objects = {}
 	self._by_id = {}
+	self._subsystems = {}
+	self._subsystems_by_id = {}
 	self._spaces = {}
 	self._space_order = {}
 	self._obj_to_space = {}
@@ -305,6 +324,60 @@ function world_class:_object_in_scope(obj, scope)
 	return true
 end
 
+function world_class:_subsystem_in_scope(subsys, scope)
+	if subsys.dispose_flag then
+		return false
+	end
+	if scope == "active" then
+		return subsys.active
+	end
+	return true
+end
+
+function world_class:_remove_subsystem_systems(subsys)
+	local systems = subsys.__subsystem_systems
+	if systems == nil then
+		return
+	end
+	for i = 1, #systems do
+		local sys = systems[i]
+		self.systems:unregister(sys)
+		if sys.id then
+			registry.instance:deregister(sys.id, true)
+		end
+	end
+	subsys.__subsystem_systems = nil
+end
+
+function world_class:rebind_subsystem_systems(subsys)
+	self:_remove_subsystem_systems(subsys)
+	if self._subsystems_by_id[subsys.id] ~= subsys or subsys.dispose_flag then
+		return
+	end
+	local subsystem_module = require("subsystem")
+	local systems = {
+		subsystem_module.create_update_system(subsys),
+		subsystem_module.create_animation_system(subsys),
+		subsystem_module.create_presentation_system(subsys),
+	}
+	local registered = {}
+	for i = 1, #systems do
+		local sys = systems[i]
+		if sys ~= nil then
+			self.systems:register(sys)
+			registry.instance:register(sys)
+			registered[#registered + 1] = sys
+		end
+	end
+	subsys.__subsystem_systems = registered
+end
+
+function world_class:rebind_subsystem_systems_all()
+	for i = 1, #self._subsystems do
+		self:rebind_subsystem_systems(self._subsystems[i])
+	end
+end
+
 -- world:spawn(obj, pos?)
 --   Registers obj in the world (and in the active space unless obj.space_id is
 --   pre-set), sets position from pos, calls obj:onspawn(pos), then activates
@@ -332,6 +405,21 @@ function world_class:spawn(obj, pos)
 	obj:activate()
 	obj.events:emit("spawn", { pos = pos })
 	return obj
+end
+
+function world_class:spawn_subsystem(subsys)
+	local existing = self._subsystems_by_id[subsys.id]
+	if existing ~= nil and existing ~= subsys then
+		error("world.spawn_subsystem duplicate id '" .. subsys.id .. "'")
+	end
+	self._subsystems_by_id[subsys.id] = subsys
+	self._subsystems[#self._subsystems + 1] = subsys
+	registry.instance:register(subsys)
+	self:rebind_subsystem_systems(subsys)
+	subsys:onregister()
+	subsys:activate()
+	subsys.events:emit("spawn")
+	return subsys
 end
 
 -- world:despawn(id_or_obj)
@@ -386,6 +474,17 @@ function world_class:get(id)
 	return obj
 end
 
+function world_class:get_subsystem(id)
+	local subsys = self._subsystems_by_id[id]
+	if subsys == nil then
+		return nil
+	end
+	if subsys.dispose_flag then
+		return nil
+	end
+	return subsys
+end
+
 -- world:objects(opts?)
 --   Iterator over all objects matching opts:
 --     opts.scope   — "all" (default) or "active" (current space + active flag)
@@ -400,6 +499,14 @@ function world_class:objects(opts)
 	return iter_objects, { world = self, list = self._objects, scope = scope, step = step, index = start }, nil
 end
 
+function world_class:subsystems(opts)
+	local scope = opts and opts.scope or "all"
+	local reverse = opts and opts.reverse or false
+	local step = reverse and -1 or 1
+	local start = reverse and (#self._subsystems + 1) or 0
+	return iter_subsystems, { world = self, list = self._subsystems, scope = scope, step = step, index = start }, nil
+end
+
 -- world:objects_with_components(type_name, opts?)
 --   Iterator that yields (obj, component_handle) for every component of the
 --   given type on every matching object. opts.scope follows the same rules as
@@ -408,7 +515,7 @@ function world_class:objects_with_components(type_name, opts)
 	local scope = opts and opts.scope or "all"
 	return iter_objects_with_components,
 		{ world = self, reg = registry.instance._registry, by_id = self._by_id, type_name = type_name, scope = scope, reg_key = nil },
-		nil
+			nil
 end
 
 -- Stateless iterator functions for world queries.
@@ -511,8 +618,8 @@ function world_class:update()
 	self.current_phase = nil
 
 	-- local cleanup_start = $.platform.clock.perf_now()
-	for i = #self._objects, 1, -1 do
-		local obj = self._objects[i]
+		for i = #self._objects, 1, -1 do
+			local obj = self._objects[i]
 		if obj.dispose_flag then
 			local object_id = obj.id
 			local space_id = self._obj_to_space[object_id]
@@ -531,10 +638,22 @@ function world_class:update()
 			self._by_id[object_id] = nil
 			obj:ondespawn()
 			obj:dispose()
-			table.remove(self._objects, i)
+				table.remove(self._objects, i)
+			end
 		end
-	end
-	-- local cleanup_end = $.platform.clock.perf_now()
+		for i = #self._subsystems, 1, -1 do
+			local subsys = self._subsystems[i]
+			if subsys.dispose_flag then
+				local subsys_id = subsys.id
+				self:_remove_subsystem_systems(subsys)
+				registry.instance:deregister(subsys_id, true)
+				subsys:onderegister()
+				subsys:dispose()
+				self._subsystems_by_id[subsys_id] = nil
+				table.remove(self._subsystems, i)
+			end
+		end
+		-- local cleanup_end = $.platform.clock.perf_now()
 	-- perf.acc_cleanup_ms = perf.acc_cleanup_ms + (cleanup_end - cleanup_start)
 	-- perf.acc_sim_ms = perf.acc_sim_ms + dt
 	-- perf.acc_frames = perf.acc_frames + 1
@@ -557,8 +676,17 @@ function world_class:clear()
 	for i = #self._objects, 1, -1 do
 		self._objects[i]:dispose()
 	end
+	for i = #self._subsystems, 1, -1 do
+		local subsys = self._subsystems[i]
+		self:_remove_subsystem_systems(subsys)
+		registry.instance:deregister(subsys.id, true)
+		subsys:onderegister()
+		subsys:dispose()
+	end
 	self._objects = {}
 	self._by_id = {}
+	self._subsystems = {}
+	self._subsystems_by_id = {}
 	self._spaces = {}
 	self._space_order = {}
 	self._obj_to_space = {}

@@ -17,6 +17,7 @@ local world_module = require("world")
 local ecs_builtin = require("ecs_builtin")
 local ecs_pipeline = require("ecs_pipeline")
 local worldobject = require("worldobject")
+local subsystem = require("subsystem")
 local spriteobject = require("sprite")
 local textobject = require("textobject")
 local fsmlibrary = require("fsmlibrary")
@@ -47,6 +48,7 @@ local progression = require("progression")
 local world_instance = world_module.instance
 
 local definitions = {}
+local subsystem_definitions = {}
 local component_definitions = {}
 local vdp_load_job_seq = 0
 local vdp_load_queue = {}
@@ -269,6 +271,19 @@ local function apply_definition(instance, def, addons, skip_key)
 	end
 end
 
+local function apply_subsystem_definition(instance, def, addons)
+	local class_table = def and def.class
+	if def then
+		apply_defaults(instance, def.defaults)
+		apply_class_prototype(instance, class_table)
+		attach_fsms(instance, def.fsms)
+	end
+	apply_addons(instance, addons, {})
+	if class_table then
+		apply_ctor(instance, class_table, addons, def and def.def_id)
+	end
+end
+
 local engine = {}
 engine.bool01 = bool01
 engine.clear_map = clear_map
@@ -293,6 +308,22 @@ function engine.define_prefab(definition)
 		error("define_prefab: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
 	end
 	definitions[definition.def_id] = definition
+end
+
+function engine.define_subsystem(definition)
+	if type(definition.class) ~= "table" then
+		error("define_subsystem: definition.class must be a table for '" .. tostring(definition.def_id) .. "'.")
+	end
+	if definition.components ~= nil then
+		error("define_subsystem: subsystem '" .. tostring(definition.def_id) .. "' cannot declare components.")
+	end
+	if definition.effects ~= nil then
+		error("define_subsystem: subsystem '" .. tostring(definition.def_id) .. "' cannot declare effects.")
+	end
+	if definition.bts ~= nil then
+		error("define_subsystem: subsystem '" .. tostring(definition.def_id) .. "' cannot declare behaviour trees.")
+	end
+	subsystem_definitions[definition.def_id] = definition
 end
 
 function engine.define_component(definition)
@@ -437,10 +468,24 @@ function engine.inst(definition_id, addons)
 	return instance
 end
 
+function engine.inst_subsystem(definition_id, addons)
+	local def = subsystem_definitions[definition_id]
+	local class_table = def and def.class
+	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
+	local instance = subsystem.subsystem.new({ id = instance_id, type_name = definition_id })
+	apply_subsystem_definition(instance, def, addons)
+	world_instance:spawn_subsystem(instance)
+	return instance
+end
+
 -- Runtime binds global `object(id)` to this function.
 -- Cart code must call `object(id)` and must not call `engine.object(id)` directly.
 function engine.object(id)
 	return world_instance:get(id)
+end
+
+function engine.subsystem(id)
+	return world_instance:get_subsystem(id)
 end
 
 function engine.add_space(space_id)
@@ -635,6 +680,14 @@ end
 
 function engine.get_definition(def_id)
 	return definitions[def_id]
+end
+
+function engine.get_subsystem_definitions()
+	return subsystem_definitions
+end
+
+function engine.get_subsystem_definition(def_id)
+	return subsystem_definitions[def_id]
 end
 
 function engine.get_component_definitions()

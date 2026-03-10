@@ -436,29 +436,29 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	define_prefab: {
-		description: 'Registers a prefab descriptor that can be spawned later.',
-		parameters: [
-			{ name: 'descriptor', description: 'Prefab descriptor (def_id, class/defaults, optional fsms/components/effects/bts).' },
-		],
-		returnType: 'void',
-	},
-	define_service: {
-		description: 'Registers a service descriptor that can be instantiated later.',
-		parameters: [
-			{ name: 'descriptor', description: 'Service descriptor (def_id, class/defaults, optional fsms/components/effects/bts).' },
-		],
-		returnType: 'void',
-	},
-	create_service: {
-		description: 'Creates a Service instance from a previously registered service descriptor.',
-		parameters: [
-			{ name: 'definition_id', description: 'Id of the service definition registered via define_service.' },
-			{ name: 'defer_bind', optional: true, description: 'Optional flag to defer service binding.' },
-		],
-		returnType: 'Service',
-		returnDescription: 'The created Service instance.',
-	},
+		define_prefab: {
+			description: 'Registers a prefab descriptor that can be spawned later.',
+			parameters: [
+				{ name: 'descriptor', description: 'Prefab descriptor (def_id, class/defaults, optional fsms/components/effects/bts).' },
+			],
+			returnType: 'void',
+		},
+		define_subsystem: {
+			description: 'Registers a world-owned subsystem descriptor that can be instantiated later.',
+			parameters: [
+				{ name: 'descriptor', description: 'Subsystem descriptor (def_id, class/defaults, optional fsms). Subsystems do not declare components, effects, or behaviour trees.' },
+			],
+			returnType: 'void',
+		},
+		inst_subsystem: {
+			description: 'Creates a subsystem instance from a previously registered subsystem descriptor.',
+			parameters: [
+				{ name: 'definition_id', description: 'Id of the subsystem definition registered via define_subsystem.' },
+				{ name: 'overrides', optional: true, description: 'Optional overrides applied after the descriptor defaults/overrides.' },
+			],
+			returnType: 'Subsystem',
+			returnDescription: 'The created subsystem instance.',
+		},
 	attach_component: {
 		description: 'Attaches a component instance or component type (by id) to a world object.',
 		parameters: [
@@ -515,14 +515,14 @@ export const API_METHOD_METADATA = {
 		returnType: 'Registerable | nil',
 		returnDescription: 'Registered object, or nil when not found.',
 	},
-	service: {
-		description: 'Fetches a registered service by id.',
-		parameters: [
-			{ name: 'id', description: 'Service identifier.' },
-		],
-		returnType: 'Service | nil',
-		returnDescription: 'Service instance, or nil when not found.',
-	},
+		subsystem: {
+			description: 'Fetches a registered subsystem by id.',
+			parameters: [
+				{ name: 'id', description: 'Subsystem identifier.' },
+			],
+			returnType: 'Subsystem | nil',
+			returnDescription: 'Subsystem instance, or nil when not found.',
+		},
 	emit: {
 		description: 'Broadcasts an engine event via the global event bus.',
 		parameters: [

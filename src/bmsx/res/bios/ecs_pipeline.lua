@@ -97,6 +97,7 @@ function ecspipelineregistry:build(world_instance, nodes)
 		world_instance.systems:register(systems[i])
 		registry.instance:register(systems[i])
 	end
+	world_instance:rebind_subsystem_systems_all()
 
 	local t1 = $.platform.clock.perf_now()
 	local diag = {

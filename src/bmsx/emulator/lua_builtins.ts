@@ -14,10 +14,13 @@ import type { LuaBuiltinDescriptor } from './types';
 export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> = [
 	{ name: 'define_fsm', params: ['id', 'blueprint'], signature: 'define_fsm(id, blueprint)' },
 	{ name: 'define_prefab', params: ['definition'], signature: 'define_prefab(definition)' },
+	{ name: 'define_subsystem', params: ['definition'], signature: 'define_subsystem(definition)' },
 	{ name: 'define_component', params: ['definition'], signature: 'define_component(definition)' },
 	{ name: 'define_effect', params: ['definition', 'opts?'], signature: 'define_effect(definition [, opts])' },
 	{ name: 'inst', params: ['definition_id', 'addons?'], signature: 'inst(definition_id [, addons])' },
+	{ name: 'inst_subsystem', params: ['definition_id', 'addons?'], signature: 'inst_subsystem(definition_id [, addons])' },
 	{ name: 'object', params: ['id'], signature: 'object(id)' },
+	{ name: 'subsystem', params: ['id'], signature: 'subsystem(id)' },
 	{ name: 'add_space', params: ['space_id'], signature: 'add_space(space_id)' },
 	{ name: 'set_space', params: ['space_id'], signature: 'set_space(space_id)' },
 	{ name: 'get_space', params: [], signature: 'get_space()' },
