@@ -103,9 +103,7 @@ local function define_elevator_fsm()
 	define_fsm('elevator_platform', {
 		initial = 'active',
 		states = {
-			active = {
-				update = elevator.update_motion,
-			},
+			active = {},
 		},
 	})
 end
@@ -126,6 +124,7 @@ local function register_elevator_definition()
 end
 
 return {
+	elevator = elevator,
 	define_elevator_fsm = define_elevator_fsm,
 	register_elevator_definition = register_elevator_definition,
 }
