@@ -37,6 +37,7 @@ import type { NodeSpec } from "../ecs/pipeline";
 import { collectEcsPipelineExtensionsFromWorldModules, } from "../ecs/extensions";
 import { gameplaySpec } from './pipelines/gameplay_pipeline';
 import { Runtime } from '../emulator/runtime';
+import { IRQ_NEWGAME } from '../emulator/io';
 import * as runtimeIde from '../emulator/runtime_ide';
 import * as runtimeLuaPipeline from '../emulator/runtime_lua_pipeline';
 import { createEmulatorModule } from '../emulator/module';
@@ -368,6 +369,18 @@ export class EngineCore {
 
 	public get_frame_delta_ms(): number {
 		return Runtime.instance.frameDeltaMs;
+	}
+
+	public is_cart_program_active(): boolean {
+		return Runtime.hasInstance() && !Runtime.instance.isEngineProgramActive();
+	}
+
+	public request_new_game(): void {
+		Runtime.instance.raiseEngineIrq(IRQ_NEWGAME);
+	}
+
+	public evaluate_lua(source: string): unknown[] {
+		return Runtime.instance.runConsoleChunkToNative(source);
 	}
 
 	public consume_button(playerIndex: number, buttonCode: string, source: InputSource) {

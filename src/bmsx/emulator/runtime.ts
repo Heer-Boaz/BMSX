@@ -895,6 +895,10 @@ export class Runtime {
 		return Runtime._instance!;
 	}
 
+	public static hasInstance(): boolean {
+		return Runtime._instance !== null;
+	}
+
 	public static destroy(): void {
 		// No defense against multiple calls; let it throw if misused.
 		Runtime._instance.dispose();
@@ -1837,6 +1841,16 @@ export class Runtime {
 		const baseCtx = { moduleId, path: [] };
 		for (let i = 0; i < results.length; i += 1) {
 			output.push(this.luaJsBridge.convertFromLua(results[i], extendMarshalContext(baseCtx, `ret${i}`)));
+		}
+		return output;
+	}
+
+	public runConsoleChunkToNative(source: string): unknown[] {
+		const results = runtimeLuaPipeline.runConsoleChunk(this, source);
+		const baseCtx = buildMarshalContext(this);
+		const output: unknown[] = [];
+		for (let i = 0; i < results.length; i += 1) {
+			output.push(toNativeValue(this, results[i], extendMarshalContext(baseCtx, `ret${i}`), new WeakMap()));
 		}
 		return output;
 	}
