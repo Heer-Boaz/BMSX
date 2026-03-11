@@ -1,5 +1,6 @@
 local constants = require('constants')
 local components = require('components')
+local collision2d = require('collision2d')
 local player_abilities = require('player_abilities')
 
 local player = {}
@@ -1234,15 +1235,44 @@ function player:start_stairs(direction, stair, event_name)
 	self.events:emit(event_name)
 end
 
-function player:is_ground_below_at(x, y, include_elevator)
-	local support_y = y + self.height + 1
-	local left_x = x + constants.room.tile_unit
-	local right_x = x + self.width - constants.room.tile_unit
-	for probe_x = left_x, right_x, constants.room.tile_unit do
-		if self:collides_at_probe(probe_x, support_y, include_elevator) then
+function player:collides_with_elevator_probe(x, y)
+	local count = object('c').elevator_count
+	local current_room_number = object('c').current_room_number
+	for i = 1, count do
+		local platform = object('e.p' .. tostring(i))
+		if platform.current_room_number == current_room_number
+			and x >= platform.x
+			and x < (platform.x + constants.room.tile_size4)
+			and y >= platform.y
+			and y < (platform.y + constants.room.tile_size2)
+		then
 			return true
 		end
 	end
+
+	return false
+end
+
+function player:collides_with_elevator_at(x, y)
+	local old_x = self.x
+	local old_y = self.y
+	local count = object('c').elevator_count
+	local current_room_number = object('c').current_room_number
+	self.x = x
+	self.y = y
+	for i = 1, count do
+		local platform = object('e.p' .. tostring(i))
+		if platform.current_room_number == current_room_number
+			and collision2d.collides(self.collider, platform.collider)
+		then
+			self.x = old_x
+			self.y = old_y
+			return true
+		end
+	end
+	self.x = old_x
+	self.y = old_y
+
 	return false
 end
 
@@ -1273,12 +1303,24 @@ end
 
 function player:collides_at(x, y, include_elevator)
 	local rm = object('room')
-	return rm:has_collision_flags_in_rect(x, y, self.width, self.height, constants.collision_flags.solid_mask, include_elevator)
+	if rm:has_collision_flags_in_rect(x, y, self.width, self.height, constants.collision_flags.solid_mask, false) then
+		return true
+	end
+	if include_elevator then
+		return self:collides_with_elevator_at(x, y)
+	end
+	return false
 end
 
 function player:collides_at_probe(x, y, include_elevator)
 	local rm = object('room')
-	return rm:has_collision_flags_at_world(x, y, constants.collision_flags.solid_mask, include_elevator)
+	if rm:has_collision_flags_at_world(x, y, constants.collision_flags.solid_mask, false) then
+		return true
+	end
+	if include_elevator then
+		return self:collides_with_elevator_probe(x, y)
+	end
+	return false
 end
 
 function player:collides_at_jump_ceiling_profile(x, y, include_elevator)
@@ -1334,14 +1376,8 @@ function player:apply_move(dx, dy, include_elevator_collision)
 	local test_x_col
 	local found
 	local room = object('room')
-	local snapped_to_elevator = false
 
-	if next_y >= old_y and self:try_snap_to_elevator_platform(next_x, next_y) then
-		landed = true
-		snapped_to_elevator = true
-	end
-
-	if not snapped_to_elevator and self:collides_at(next_x, next_y, include_elevator_collision) then
+	if self:collides_at(next_x, next_y, include_elevator_collision) then
 		if next_y ~= old_y then
 			collided_y = true
 		end
@@ -1391,11 +1427,15 @@ function player:apply_move(dx, dy, include_elevator_collision)
 				upward_block = true
 			end
 		end
-	elseif not snapped_to_elevator then
-			if next_y >= old_y then
+	else
+		if next_y >= old_y then
+			if self:try_snap_to_elevator_platform(next_x, next_y) then
+				landed = true
+			else
 				self.y = next_y
 				test_x_col = true
 				found = true
+			end
 		else
 			self.y = next_y
 			test_x_col = true
@@ -1779,7 +1819,7 @@ end
 function player:update_quiet()
 	self:zero_motion()
 
-	if not self:is_ground_below_at(self.x, self.y, true) then
+	if not self:collides_at(self.x, self.y + 1, true) then
 		self:reset_fall_substate_sequence()
 		self.events:emit('falling')
 		return
@@ -1794,7 +1834,7 @@ function player:update_walking_right()
 	self.walk_move_dx = walk_dx
 	self.walk_move_collided_x = false
 
-	if not self:is_ground_below_at(self.x, self.y, true) then
+	if not self:collides_at(self.x, self.y + 1, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
 		self.events:emit('falling')
@@ -1813,7 +1853,7 @@ function player:update_walking_left()
 	self.walk_move_dx = -walk_dx
 	self.walk_move_collided_x = false
 
-	if not self:is_ground_below_at(self.x, self.y, true) then
+	if not self:collides_at(self.x, self.y + 1, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
 		self.events:emit('falling')
@@ -1934,23 +1974,13 @@ function player:update_controlled_fall_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
-	if self:is_ground_below_at(self.x, self.y, true) then
-		self.stairs_landing_sound_pending = false
-		self:reset_fall_substate_sequence()
-		if self:has_tag(state_tags.group.sword) then
-			self.events:emit('landed_to_quiet_sword')
-		else
-			self.events:emit('landed_to_quiet')
-		end
-		return
-	end
 	self:update_facing_from_horizontal_input()
 	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
-	local should_land = (not self:is_ground_below_at(self.x, self.y, true)) and self:is_ground_below_at(self.x, self.y + dy, true)
+	local should_land = (not self:collides_at(self.x, self.y, true)) and self:collides_at(self.x, self.y + dy, true)
 	self:apply_move(dx, dy, true)
 
 	if should_land then
@@ -1971,23 +2001,9 @@ function player:update_uncontrolled_fall_motion()
 	if self:has_tag(state_tags.group.sword) then
 		self:advance_sword_sequence()
 	end
-	if self:is_ground_below_at(self.x, self.y, true) then
-		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then
-			self.events:emit('fall')
-		end
-		self.stairs_landing_sound_pending = false
-		self:reset_fall_substate_sequence()
-		if self:has_tag(state_tags.group.sword) then
-			self.events:emit('landed_to_quiet_sword')
-		else
-			self.events:emit('landed_to_quiet')
-		end
-		return
-	end
 	local dy = self:get_uncontrolled_fall_dy()
-	local should_land = (not self:is_ground_below_at(self.x, self.y, true)) and self:is_ground_below_at(self.x, self.y + dy, true)
+	local should_land = self:collides_at(self.x, self.y + dy, true)
 	self:apply_move(0, dy, true)
-
 	if should_land then
 		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then
 			self.events:emit('fall')
@@ -2009,7 +2025,7 @@ function player:update_quiet_sword()
 	self:advance_sword_sequence()
 	self:zero_motion()
 
-	if not self:is_ground_below_at(self.x, self.y, true) then
+	if not self:collides_at(self.x, self.y + 1, true) then
 		self:reset_fall_substate_sequence()
 		self.events:emit('falling')
 		return
@@ -2320,7 +2336,7 @@ function player:update_common_frame()
 		self:resolve_hit_overlap_if_needed()
 	end
 
-	self.grounded = self:is_ground_below_at(self.x, self.y, true)
+	self.grounded = self:collides_at(self.x, self.y + 1, true)
 	self:apply_presentation_state()
 	self:update_hit_invulnerability()
 end

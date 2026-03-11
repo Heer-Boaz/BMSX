@@ -94,6 +94,9 @@ function elevator:update_motion()
 		end
 	end
 
+	self.visible = self.current_room_number == current_room_number
+	self.collider.enabled = self.visible
+
 	if self.visible then
 		player:try_room_switches_from_position()
 	end
