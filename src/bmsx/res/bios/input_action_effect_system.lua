@@ -94,14 +94,14 @@ function inputactioneffectsystem:process_input_action_programs()
 		end
 
 		local owner_id = effects and effects.parent.id or obj.id
-		local runtime = self:resolve_component_runtime(component)
-		local env = runtime.env
+		local component_runtime = self:resolve_component_runtime(component)
+		local env = component_runtime.env
 		env.owner = obj
 		env.owner_id = owner_id
 		env.player_index = player_index
 		env.effects = effects
 
-		self:evaluate_program(program, env, program_key, runtime)
+		self:evaluate_program(program, env, program_key, component_runtime)
 		local queued_commands = env.queued_commands
 		for i = 1, #queued_commands do
 			local command = queued_commands[i]
@@ -178,7 +178,7 @@ function inputactioneffectsystem:assign_owner_path(owner, path, value, clear)
 end
 
 function inputactioneffectsystem:resolve_intent_player_index(component, owner)
-	local resolved = component.player_index or explicit or owner.player_index
+	local resolved = component.player_index or owner.player_index
 	if not resolved then
 		error('[inputactioneffectsystem] unable to resolve player index for object "' .. (owner.id or '<unknown>') .. '".')
 	end
@@ -199,13 +199,13 @@ function inputactioneffectsystem:describe_inline_program(component)
 end
 
 function inputactioneffectsystem:resolve_component_runtime(component)
-	local runtime = self.runtime_by_component[component]
-	if runtime then
-		return runtime
+	local component_runtime = self.runtime_by_component[component]
+	if component_runtime then
+		return component_runtime
 	end
 	local queued_commands = {}
 	local queued_events = {}
-	runtime = {
+	component_runtime = {
 		binding_latch = {},
 		binding_touched = {},
 		binding_count = 0,
@@ -217,14 +217,14 @@ function inputactioneffectsystem:resolve_component_runtime(component)
 			queued_events = queued_events,
 		},
 	}
-	self.runtime_by_component[component] = runtime
-	return runtime
+	self.runtime_by_component[component] = component_runtime
+	return component_runtime
 end
 
-function inputactioneffectsystem:reset_component_runtime(runtime, binding_count)
-	local latch = runtime.binding_latch
-	local touched = runtime.binding_touched
-	local clear_count = runtime.binding_count
+function inputactioneffectsystem:reset_component_runtime(component_runtime, binding_count)
+	local latch = component_runtime.binding_latch
+	local touched = component_runtime.binding_touched
+	local clear_count = component_runtime.binding_count
 	if clear_count < binding_count then
 		clear_count = binding_count
 	end
@@ -232,33 +232,33 @@ function inputactioneffectsystem:reset_component_runtime(runtime, binding_count)
 		latch[i] = false
 		touched[i] = 0
 	end
-	runtime.binding_count = binding_count
+	component_runtime.binding_count = binding_count
 end
 
-function inputactioneffectsystem:prepare_component_runtime(runtime, program, program_key, env)
+function inputactioneffectsystem:prepare_component_runtime(component_runtime, program, program_key, env)
 	local binding_count = #program.bindings
-	if runtime.last_frame ~= self.frame_serial - 1
-		or runtime.program ~= program
-		or runtime.program_key ~= program_key
-		or runtime.owner_id ~= env.owner_id
-		or runtime.player_index ~= env.player_index
-		or runtime.binding_count ~= binding_count then
-		self:reset_component_runtime(runtime, binding_count)
+	if component_runtime.last_frame ~= self.frame_serial - 1
+		or component_runtime.program ~= program
+		or component_runtime.program_key ~= program_key
+		or component_runtime.owner_id ~= env.owner_id
+		or component_runtime.player_index ~= env.player_index
+		or component_runtime.binding_count ~= binding_count then
+		self:reset_component_runtime(component_runtime, binding_count)
 	end
-	runtime.last_frame = self.frame_serial
-	runtime.program = program
-	runtime.program_key = program_key
-	runtime.owner_id = env.owner_id
-	runtime.player_index = env.player_index
-	runtime.binding_count = binding_count
+	component_runtime.last_frame = self.frame_serial
+	component_runtime.program = program
+	component_runtime.program_key = program_key
+	component_runtime.owner_id = env.owner_id
+	component_runtime.player_index = env.player_index
+	component_runtime.binding_count = binding_count
 end
 
-function inputactioneffectsystem:evaluate_program(program, env, program_key, runtime)
-	self:prepare_component_runtime(runtime, program, program_key, env)
+function inputactioneffectsystem:evaluate_program(program, env, program_key, component_runtime)
+	self:prepare_component_runtime(component_runtime, program, program_key, env)
 	local bindings = program.bindings
 	local frame = self.frame_serial
-	local latch = runtime.binding_latch
-	local touched = runtime.binding_touched
+	local latch = component_runtime.binding_latch
+	local touched = component_runtime.binding_touched
 	for i = 1, #bindings do
 		local binding = bindings[i]
 		if not binding.predicate(env) then
@@ -334,7 +334,7 @@ function inputactioneffectsystem:evaluate_program(program, env, program_key, run
 
 		::continue::
 	end
-	for i = 1, runtime.binding_count do
+	for i = 1, component_runtime.binding_count do
 		if latch[i] and touched[i] ~= frame then
 			latch[i] = false
 		end

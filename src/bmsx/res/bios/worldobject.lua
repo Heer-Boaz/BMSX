@@ -457,8 +457,8 @@ end
 
 function worldobject:dispose()
 	self:deactivate()
-	self:remove_all_components()
 	self.sc:dispose()
+	self:remove_all_components()
 	self:unbind()
 	registry_instance:deregister(self, true)
 end

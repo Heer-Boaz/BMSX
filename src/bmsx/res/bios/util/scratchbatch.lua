@@ -6,8 +6,10 @@ scratchbatch.__index = scratchbatch
 
 function scratchbatch.new(initial_capacity, fill_value)
 	local items = {}
-	initial_capacity = initial_capacity or 0
-	for i = 1, initial_capacity do
+	local count = initial_capacity or 0
+	local i = 0
+	while i < count do
+		i = i + 1
 		items[i] = fill_value
 	end
 	return setmetatable({
