@@ -1301,6 +1301,21 @@ function player:try_snap_to_elevator_platform(next_x, next_y)
 	return false
 end
 
+function player:resolve_overlap_with_elevator(platform, previous_platform_y)
+	if platform.current_room_number ~= object('c').current_room_number then
+		return false
+	end
+	if not collision2d.collides(self.collider, platform.collider) then
+		return false
+	end
+	if self.y <= previous_platform_y then
+		self.y = platform.y - self.height
+		return true
+	end
+	self.y = platform.y + constants.room.tile_size2
+	return true
+end
+
 function player:collides_at(x, y, include_elevator)
 	local rm = object('room')
 	if rm:has_collision_flags_in_rect(x, y, self.width, self.height, constants.collision_flags.solid_mask, false) then

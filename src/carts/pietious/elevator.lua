@@ -38,6 +38,7 @@ function elevator:update_motion()
 	local current_room_number = object('c').current_room_number
 	self.visible = self.current_room_number == current_room_number
 	self.collider.enabled = self.visible
+	local previous_y = self.y
 
 	local character_over = false
 	local standing_on_top = false
@@ -81,6 +82,9 @@ function elevator:update_motion()
 		if standing_on_top then
 			player.y = player.y + delta_y
 		end
+	end
+	if self.visible and delta_y ~= 0 then
+		player:resolve_overlap_with_elevator(self, previous_y)
 	end
 
 	if self.x == target.x
