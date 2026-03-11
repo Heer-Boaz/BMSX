@@ -504,7 +504,7 @@ function room_object:snap_world_to_tile(world_x, world_y)
 	return self:tile_to_world(tx, ty)
 end
 
-function room_object:collision_flags_at_tile(tx, ty)
+function room_object:base_collision_flags_at_tile(tx, ty)
 	if ty < 1 or ty > self.tile_rows then
 		return constants.collision_flags.none
 	end
@@ -518,14 +518,23 @@ function room_object:collision_flags_at_tile(tx, ty)
 	if self:is_active_rock_at_tile(tx, ty) then
 		collision = collision | constants.collision_flags.wall
 	end
-	if self:is_active_elevator_at_tile(tx, ty) then
-		collision = collision | constants.collision_flags.elevator
-	end
 	if self:is_active_draaideur_at_tile(tx, ty) then
 		collision = collision | constants.collision_flags.wall
 	end
 	if self:is_active_breakable_wall_at_tile(tx, ty) then
 		collision = collision | constants.collision_flags.wall
+	end
+	return collision
+end
+
+function room_object:collision_flags_at_tile(tx, ty, include_elevator)
+	local collision = self:base_collision_flags_at_tile(tx, ty)
+	local use_elevator = include_elevator
+	if use_elevator == nil then
+		use_elevator = true
+	end
+	if use_elevator and self:is_active_elevator_at_tile(tx, ty) then
+		collision = collision | constants.collision_flags.elevator
 	end
 	return collision
 end
@@ -641,13 +650,34 @@ function room_object:has_collision_flags_at_tile(tx, ty, mask)
 	return (self:collision_flags_at_tile(tx, ty) & mask) ~= 0
 end
 
-function room_object:collision_flags_at_world(world_x, world_y)
+function room_object:collision_flags_at_world(world_x, world_y, include_elevator)
 	local tx, ty = self:world_to_tile(world_x, world_y)
-	return self:collision_flags_at_tile(tx, ty)
+	return self:collision_flags_at_tile(tx, ty, include_elevator)
 end
 
-function room_object:has_collision_flags_at_world(world_x, world_y, mask)
-	return (self:collision_flags_at_world(world_x, world_y) & mask) ~= 0
+function room_object:has_collision_flags_at_world(world_x, world_y, mask, include_elevator)
+	return (self:collision_flags_at_world(world_x, world_y, include_elevator) & mask) ~= 0
+end
+
+function room_object:has_collision_flags_in_rect(x, y, w, h, mask, include_elevator)
+	local tx0, ty0 = self:world_to_tile(x, y)
+	local tx1, ty1 = self:world_to_tile(x + w - 1, y + h - 1)
+	if tx1 < tx0 then
+		tx0, tx1 = tx1, tx0
+	end
+	if ty1 < ty0 then
+		ty0, ty1 = ty1, ty0
+	end
+
+	for ty = ty0, ty1 do
+		for tx = tx0, tx1 do
+			if (self:collision_flags_at_tile(tx, ty, include_elevator) & mask) ~= 0 then
+				return true
+			end
+		end
+	end
+
+	return false
 end
 
 function room_object:overlaps_solid_rect(x, y, w, h)

@@ -38,7 +38,7 @@
 --
 -- 3. OBJECT update() IS FOR OBJECT-SPECIFIC LOGIC ONLY.
 --    An object's update() method is called by the FSM (as the current state's
---    `update` function) or directly if tick_enabled = true.  Restrict it to
+--    `update` function) or directly if active = true.  Restrict it to
 --    logic that is meaningfully different per object instance (e.g. custom AI,
 --    state-specific physics).  Never put generic rendering or component
 --    processing there.

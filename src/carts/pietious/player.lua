@@ -1,4 +1,5 @@
 local constants = require('constants')
+local collision2d = require('collision2d')
 
 local components = require('components')
 local player_abilities = require('player_abilities')
@@ -1249,9 +1250,10 @@ end
 
 function player:try_snap_to_elevator_platform(next_x)
 	local count = object('c').elevator_count
+	local current_room_number = object('c').current_room_number
 	for i = 1, count do
 		local platform = object('e.p' .. tostring(i))
-		if not platform.visible then
+		if platform.current_room_number ~= current_room_number then
 			goto continue
 		end
 		if self.y >= (platform.y - self.height)
@@ -1269,14 +1271,105 @@ function player:try_snap_to_elevator_platform(next_x)
 	return false
 end
 
+local function projected_collider(source, x, y)
+	return setmetatable({
+		enabled = source.enabled,
+		hittable = source.hittable,
+		parent = {
+			x = x,
+			y = y,
+			sx = source.parent.sx,
+			sy = source.parent.sy,
+		},
+		_local_area = source._local_area,
+		_local_polys = source._local_polys,
+		_local_circle = source._local_circle,
+		_shape_offset_x = source._shape_offset_x,
+		_shape_offset_y = source._shape_offset_y,
+	}, { __index = source })
+end
+
+local function projected_probe_collider(source, x, y)
+	return setmetatable({
+		enabled = true,
+		hittable = true,
+		parent = {
+			x = x,
+			y = y,
+			sx = 0,
+			sy = 0,
+		},
+		_local_area = nil,
+		_local_polys = nil,
+		_local_circle = { x = 0, y = 0, r = 1 },
+		_shape_offset_x = 0,
+		_shape_offset_y = 0,
+	}, { __index = source })
+end
+
+function player:collides_with_active_elevator_at(x, y)
+	local current_room_number = object('c').current_room_number
+	local projected = projected_collider(self.collider, x, y)
+	local candidates = collision2d.query_aabb(projected:get_world_area())
+	for i = 1, #candidates do
+		local other = candidates[i]
+		local platform = other.parent
+		if other ~= self.collider
+			and platform ~= nil
+			and platform.type_name == 'elevator_platform'
+			and platform.current_room_number == current_room_number
+			and collision2d.collides(projected, other)
+		then
+			return true
+		end
+	end
+	return false
+end
+
+function player:probe_hits_active_elevator(x, y)
+	local current_room_number = object('c').current_room_number
+	local probe = projected_probe_collider(self.collider, x, y)
+	local candidates = collision2d.query_aabb({
+		left = x - 1,
+		top = y - 1,
+		right = x + 1,
+		bottom = y + 1,
+	})
+	for i = 1, #candidates do
+		local other = candidates[i]
+		local platform = other.parent
+		if other ~= self.collider
+			and platform ~= nil
+			and platform.type_name == 'elevator_platform'
+			and platform.current_room_number == current_room_number
+			and collision2d.collides(probe, other)
+		then
+			return true
+		end
+	end
+	return false
+end
+
 function player:collides_at(x, y, include_elevator)
 	local rm = object('room')
-	return rm:overlaps_solid_rect(x, y, self.width, self.height)
+	if rm:has_collision_flags_in_rect(x, y, self.width, self.height, constants.collision_flags.solid_mask, false) then
+		return true
+	end
+	if include_elevator then
+		return self:collides_with_active_elevator_at(x, y)
+	end
+	return false
 end
 
 function player:collides_at_probe(x, y, include_elevator)
 	local rm = object('room')
-	return rm:has_collision_flags_at_world(x, y, constants.collision_flags.solid_mask)
+	if rm:has_collision_flags_at_world(x, y, constants.collision_flags.solid_mask, false) then
+		return true
+	end
+	if include_elevator then
+		return self:probe_hits_active_elevator(x, y)
+	end
+	return false
 end
 
 function player:collides_at_jump_ceiling_profile(x, y, include_elevator)
@@ -1332,8 +1425,14 @@ function player:apply_move(dx, dy, include_elevator_collision)
 	local test_x_col
 	local found
 	local room = object('room')
+	local snapped_to_elevator = false
 
-	if self:collides_at(next_x, next_y, include_elevator_collision) then
+	if next_y >= old_y and self:try_snap_to_elevator_platform(next_x) then
+		landed = true
+		snapped_to_elevator = true
+	end
+
+	if not snapped_to_elevator and self:collides_at(next_x, next_y, include_elevator_collision) then
 		if next_y ~= old_y then
 			collided_y = true
 		end
@@ -1383,18 +1482,11 @@ function player:apply_move(dx, dy, include_elevator_collision)
 				upward_block = true
 			end
 		end
-	else
+	elseif not snapped_to_elevator then
 			if next_y >= old_y then
-				if self:try_snap_to_elevator_platform(next_x) then
-					-- Keep `found` false/nil here so the x-collision pass still runs.
-					-- This mirrors the original C++ flow where snap-on-elevator still
-					-- proceeds through horizontal collision resolution.
-					landed = true
-				else
-					self.y = next_y
-					test_x_col = true
-					found = true
-				end
+				self.y = next_y
+				test_x_col = true
+				found = true
 		else
 			self.y = next_y
 			test_x_col = true

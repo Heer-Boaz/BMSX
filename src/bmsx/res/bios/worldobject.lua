@@ -48,8 +48,8 @@
 --
 -- 4. DESTROY VIA mark_for_disposal(), NEVER via world:despawn() from update/events.
 --    world:despawn() is only safe to call outside of the world's update loop
---    (e.g. during a room transition that stops the world first).  From inside
---    an object's update() or any event handler, always use:
+--    (e.g. during a room transition that stops the world first). From inside
+--    an object's event handler, always use:
 --      self:mark_for_disposal()
 --    This deactivates the object immediately and defers the actual world removal
 --    to the end-of-frame cleanup pass, which is safe.
@@ -102,7 +102,6 @@ function worldobject.new(opts)
 		self.visible = opts.visible
 	end
 	self.active = false
-	self.tick_enabled = false
 	self.fsm_dispatch_enabled = false
 	self.player_index = opts.player_index
 	self.tags = opts.tags or {}
@@ -174,7 +173,7 @@ end
 -- add_component(comp): attach a component to this object.
 -- comp.bind() is called immediately; comp.on_attach() fires after binding.
 -- Returns the component for chaining.  Components are updated by ECS systems,
--- not by the object's own update() method.
+-- as the object lacks its own update() method.
 function worldobject:add_component(comp)
 	comp.parent = self
 	if not comp.id then
@@ -397,7 +396,6 @@ end
 -- through the world instead.
 function worldobject:activate()
 	self.active = true
-	self.tick_enabled = true
 	self.fsm_dispatch_enabled = true
 	self:bind()
 	self.sc:start()
@@ -422,7 +420,6 @@ end
 -- and ondespawn().  Do not override; instead react to the 'despawn' event.
 function worldobject:deactivate()
 	self.active = false
-	self.tick_enabled = false
 	self.fsm_dispatch_enabled = false
 end
 
@@ -526,7 +523,7 @@ function worldobject:tick_tree(bt_id)
 	if not context.running then
 		return
 	end
-	context.root:update(self, context.blackboard)
+	context.root:tick(self, context.blackboard)
 end
 
 function worldobject:reset_tree(bt_id)

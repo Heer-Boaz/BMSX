@@ -61,7 +61,7 @@ end
 
 function inputactioneffectsystem:process_input_intents()
 	for obj, component in world_instance:objects_with_components(inputintentcomponent, active_scope) do
-		if not (obj.tick_enabled) then
+		if not (obj.active) then
 			goto continue
 		end
 		if not component.bindings or #component.bindings == 0 then
@@ -77,7 +77,7 @@ end
 
 function inputactioneffectsystem:process_input_action_programs()
 	for obj, component in world_instance:objects_with_components(inputactioneffectcomponent, active_scope) do
-		if not (obj.tick_enabled) then
+		if not (obj.active) then
 			goto continue
 		end
 		local program = self:resolve_compiled_program(component)

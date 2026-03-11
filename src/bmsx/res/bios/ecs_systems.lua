@@ -94,7 +94,7 @@ end
 
 function behaviortreesystem:update()
 	for obj in world_instance:objects(active_scope) do
-		if not (obj.tick_enabled) then
+		if not (obj.active) then
 			goto continue
 		end
 		local bts = obj.btreecontexts
@@ -116,7 +116,7 @@ end
 
 function actioneffectruntimesystem:update(dt_ms)
 	for _, component in world_instance:objects_with_components(actioneffectcomponent, active_scope) do
-		component:tick(dt_ms)
+		component:update(dt_ms)
 	end
 end
 
@@ -131,7 +131,7 @@ end
 
 function statemachinesystem:update(dt_ms)
 	for obj in world_instance:objects(active_scope) do
-		if not (obj.tick_enabled) then
+		if not (obj.active) then
 			goto continue
 		end
 		obj.sc:update(dt_ms)
@@ -170,7 +170,7 @@ function objectticksystem:update(dt_ms)
 				for i = 1, #obj.components do
 					local comp = obj.components[i]
 					if comp.enabled then
-						comp:tick(dt_ms)
+						comp:update(dt_ms)
 					end
 				end
 			end
