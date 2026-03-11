@@ -169,6 +169,7 @@ function subsystem:dispose()
 	self:deactivate()
 	self.timelines:dispose()
 	self.sc:dispose()
+	registry.instance:deregister(self, true)
 	self:unbind()
 end
 

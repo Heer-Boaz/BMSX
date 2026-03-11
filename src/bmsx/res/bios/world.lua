@@ -636,17 +636,17 @@ function world_class:update()
 				self._obj_to_space[object_id] = nil
 			end
 			self._by_id[object_id] = nil
+
 			obj:ondespawn()
-			obj:dispose()
-				table.remove(self._objects, i)
-			end
+			obj:dispose() -- Also removes from registry, but we need to do the above cleanup first to avoid iterating over a half-destroyed object in the registry's tables.
+			table.remove(self._objects, i)
+		end
 		end
 		for i = #self._subsystems, 1, -1 do
 			local subsys = self._subsystems[i]
 			if subsys.dispose_flag then
 				local subsys_id = subsys.id
 				self:_remove_subsystem_systems(subsys)
-				registry.instance:deregister(subsys_id, true)
 				subsys:onderegister()
 				subsys:dispose()
 				self._subsystems_by_id[subsys_id] = nil

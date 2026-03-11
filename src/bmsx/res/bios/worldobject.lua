@@ -460,6 +460,7 @@ function worldobject:dispose()
 	self:remove_all_components()
 	self.sc:dispose()
 	self:unbind()
+	registry_instance:deregister(self, true)
 end
 
 -- define_timeline(def): register a pre-built timeline object on this object.
