@@ -1302,9 +1302,9 @@ function player:try_snap_to_elevator_platform(next_x, next_y)
 end
 
 function player:resolve_overlap_with_elevator(platform, previous_platform_y)
-	if platform.current_room_number ~= object('c').current_room_number then
-		return false
-	end
+	-- if platform.current_room_number ~= object('c').current_room_number then
+	-- 	return false
+	-- end
 	if not collision2d.collides(self.collider, platform.collider) then
 		return false
 	end
@@ -1314,6 +1314,17 @@ function player:resolve_overlap_with_elevator(platform, previous_platform_y)
 	end
 	self.y = platform.y + constants.room.tile_size2
 	return true
+end
+
+function player:is_support_below_at(x, y, include_elevator)
+	local probe_y = y + self.height
+	if self:collides_at_probe(x + constants.room.tile_half, probe_y, include_elevator) then
+		return true
+	end
+	if self:collides_at_probe(x + (self.width / 2), probe_y, include_elevator) then
+		return true
+	end
+	return self:collides_at_probe((x + self.width) - constants.room.tile_half, probe_y, include_elevator)
 end
 
 function player:collides_at(x, y, include_elevator)
@@ -1834,7 +1845,7 @@ end
 function player:update_quiet()
 	self:zero_motion()
 
-	if not self:collides_at(self.x, self.y + 1, true) then
+	if not self:is_support_below_at(self.x, self.y, true) then
 		self:reset_fall_substate_sequence()
 		self.events:emit('falling')
 		return
@@ -1849,7 +1860,7 @@ function player:update_walking_right()
 	self.walk_move_dx = walk_dx
 	self.walk_move_collided_x = false
 
-	if not self:collides_at(self.x, self.y + 1, true) then
+	if not self:is_support_below_at(self.x, self.y, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
 		self.events:emit('falling')
@@ -1868,7 +1879,7 @@ function player:update_walking_left()
 	self.walk_move_dx = -walk_dx
 	self.walk_move_collided_x = false
 
-	if not self:collides_at(self.x, self.y + 1, true) then
+	if not self:is_support_below_at(self.x, self.y, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
 		self.events:emit('falling')
@@ -1995,7 +2006,8 @@ function player:update_controlled_fall_motion()
 	end
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
-	local should_land = (not self:collides_at(self.x, self.y, true)) and self:collides_at(self.x, self.y + dy, true)
+	local should_land = (not self:is_support_below_at(self.x, self.y, true))
+		and self:is_support_below_at(self.x, self.y + dy, true)
 	self:apply_move(dx, dy, true)
 
 	if should_land then
@@ -2017,7 +2029,7 @@ function player:update_uncontrolled_fall_motion()
 		self:advance_sword_sequence()
 	end
 	local dy = self:get_uncontrolled_fall_dy()
-	local should_land = self:collides_at(self.x, self.y + dy, true)
+	local should_land = self:is_support_below_at(self.x, self.y + dy, true)
 	self:apply_move(0, dy, true)
 	if should_land then
 		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then
@@ -2040,7 +2052,7 @@ function player:update_quiet_sword()
 	self:advance_sword_sequence()
 	self:zero_motion()
 
-	if not self:collides_at(self.x, self.y + 1, true) then
+	if not self:is_support_below_at(self.x, self.y, true) then
 		self:reset_fall_substate_sequence()
 		self.events:emit('falling')
 		return
@@ -2351,7 +2363,7 @@ function player:update_common_frame()
 		self:resolve_hit_overlap_if_needed()
 	end
 
-	self.grounded = self:collides_at(self.x, self.y + 1, true)
+	self.grounded = self:is_support_below_at(self.x, self.y, true)
 	self:apply_presentation_state()
 	self:update_hit_invulnerability()
 end
