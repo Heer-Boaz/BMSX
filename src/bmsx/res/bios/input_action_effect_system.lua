@@ -86,7 +86,7 @@ function inputactioneffectsystem:process_input_action_programs()
 		local player_index = obj.player_index or 1
 		local effects = obj:get_component(actioneffectcomponentid)
 		if (not effects) and program.uses_effect_triggers then
-			error('[inputactioneffectsystem] program '' .. program_key .. '' triggers effects but object '' .. obj.id .. '' has no actioneffectcomponent.')
+			error('[inputactioneffectsystem] program "' .. program_key .. '" triggers effects but object "' .. obj.id .. '" has no actioneffectcomponent.')
 		end
 
 		local owner_id = effects and effects.parent.id or obj.id
@@ -174,11 +174,9 @@ function inputactioneffectsystem:assign_owner_path(owner, path, value, clear)
 end
 
 function inputactioneffectsystem:resolve_intent_player_index(component, owner)
-	local explicit = component.player_index or 0
-	local fallback = owner.player_index or 0
-	local resolved = explicit > 0 and explicit or fallback
-	if resolved <= 0 then
-		error('[inputactioneffectsystem] unable to resolve player index for object '' .. (owner.id or '<unknown>') .. ''.')
+	local resolved = component.player_index or explicit or owner.player_index
+	if not resolved then
+		error('[inputactioneffectsystem] unable to resolve player index for object "' .. (owner.id or '<unknown>') .. '".')
 	end
 	return resolved
 end
@@ -198,7 +196,7 @@ end
 
 function inputactioneffectsystem:evaluate_program(program, env, program_key)
 	local bindings = program.bindings
-	for i = 1, #bindings do
+	for i = 1, #bindings do1
 		local binding = bindings[i]
 		if not binding.predicate(env) then
 			goto continue
@@ -314,7 +312,7 @@ function inputactioneffectsystem:resolve_compiled_program(component)
 
 	local program_id = component.program_id
 	if not program_id then
-		error('[inputactioneffectsystem] component on '' .. (component.parent and component.parent.id or '<unknown>') .. '' is missing program_id.')
+		error('[inputactioneffectsystem] component on "' .. (component.parent and component.parent.id or '<unknown>') .. '" is missing program_id.')
 	end
 
 	local compiled = self.compiled_by_id[program_id]
@@ -335,12 +333,12 @@ function inputactioneffectsystem:resolve_program_by_id(program_id)
 		return self.resolved_programs[program_id]
 	end
 	if self.missing_program_ids[program_id] then
-		error('[inputactioneffectsystem] program '' .. program_id .. '' is marked as missing.')
+		error('[inputactioneffectsystem] program "' .. program_id .. '" is marked as missing.')
 	end
 	local data = assets.data[romdir.token(program_id)]
 	if not dsl.is_input_action_effect_program(data) then
 		self.missing_program_ids[program_id] = true
-		error('[inputactioneffectsystem] program '' .. program_id .. '' not found or invalid.')
+		error('[inputactioneffectsystem] program "' .. program_id .. '" not found or invalid.')
 	end
 	self.resolved_programs[program_id] = data
 	return data

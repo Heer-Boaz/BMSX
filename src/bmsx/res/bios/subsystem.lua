@@ -47,7 +47,7 @@ local function resolve_update_group(owner)
 	if subsystem_group_lookup[group] then
 		return group
 	end
-	error('[subsystem] invalid update_group '' .. tostring(group) .. '' on subsystem '' .. tostring(owner.id) .. ''.')
+	error('[subsystem] invalid update_group "' .. tostring(group) .. '" on subsystem "' .. tostring(owner.id) .. '".')
 end
 
 function subsystem.new(opts)
@@ -171,9 +171,6 @@ function subsystem:dispose()
 	self.sc:dispose()
 	registry.instance:deregister(self, true)
 	self:unbind()
-end
-
-function subsystem:draw()
 end
 
 function subsystem:define_timeline(definition)
