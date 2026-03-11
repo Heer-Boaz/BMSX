@@ -60,6 +60,8 @@ export const ENGINE_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> =
 export const ENGINE_LUA_BUILTIN_GLOBALS: ReadonlyArray<LuaBuiltinDescriptor> = [
 	{ name: 'timeline', params: [], signature: 'timeline', description: 'Timeline module table (timeline.new, timeline.range, timeline.expand_frames, timeline.build_frame_sequence, timeline.build_pingpong_frames).' },
 	{ name: 'eventemitter', params: [], signature: 'eventemitter', description: 'Event emitter module table (eventemitter, events_of).' },
+	{ name: 'scratchbatch', params: [], signature: 'scratchbatch', description: 'Scratch batch module table (scratchbatch.new; batches support clear, push, get, reserve, for_each, iter).' },
+	{ name: 'sorted_scratchbatch', params: [], signature: 'sorted_scratchbatch', description: 'Sorted scratch batch module table (sorted_scratchbatch.new; batches support clear, push, get, reserve, for_each, iter, set_compare, sort).' },
 ];
 
 // Keep this list in sync with runtime builtins (TS/C++) so editor metadata matches actual runtime behavior.

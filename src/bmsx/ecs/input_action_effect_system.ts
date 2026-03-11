@@ -9,7 +9,6 @@ import {
 	compileProgram,
 	validateProgramEffects,
 	type CompiledProgram,
-	type CompiledBinding,
 	type BindingExecutionEnv,
 	type PatternPredicate,
 	type EffectExecutor,
@@ -20,6 +19,18 @@ import { deep_clone } from '../utils/deep_clone';
 import { tokenKeyFromAsset, tokenKeyFromId } from '../util/asset_tokens';
 
 type IntentEdge = 'press' | 'hold' | 'release';
+
+type BindingRuntime = {
+	bindingLatch: boolean[];
+	bindingTouchedFrame: number[];
+	bindingCount: number;
+	lastFrame: number;
+	program?: CompiledProgram;
+	programKey?: string;
+	ownerId?: string;
+	playerIndex?: number;
+	env: BindingExecutionEnv;
+};
 
 let assetProgramsValidated = false;
 
@@ -37,6 +48,12 @@ function validatePrimaryAssetsOnBoot(): void {
 	assetProgramsValidated = true;
 }
 
+function runEffect(effect: EffectExecutor | undefined, env: BindingExecutionEnv): boolean {
+	if (!effect) return false;
+	effect(env);
+	return true;
+}
+
 export class InputActionEffectSystem extends ECSystem {
 	private readonly compiledById = new Map<string, CompiledProgram>();
 	private readonly inlineCompiled = new WeakMap<InputActionEffectProgram, CompiledProgram>();
@@ -46,8 +63,8 @@ export class InputActionEffectSystem extends ECSystem {
 	private readonly patternCache = new Map<string, PatternPredicate>();
 	private readonly patternCacheMax = 256;
 	private readonly customMatchScratch: boolean[] = [];
-	private readonly bindingLatch = new Map<string, boolean>();
-	private readonly frameLatchTouched = new Set<string>();
+	private readonly runtimeByComponent = new WeakMap<InputActionEffectComponent, BindingRuntime>();
+	private frameSerial = 0;
 
 	constructor(priority = 0) {
 		super(TickGroup.Input, priority);
@@ -56,15 +73,10 @@ export class InputActionEffectSystem extends ECSystem {
 	}
 
 	public override update(): void {
-		this.frameLatchTouched.clear();
+		this.frameSerial++;
 		this.processInputIntents();
 		// InputActionEffect programs run early (TickGroup.Input) so FSM/input checks see consumed events and effect triggers immediately.
 		this.processInputActionPrograms();
-		const latchedKeys = Array.from(this.bindingLatch.keys());
-		for (let idx = 0; idx < latchedKeys.length; idx++) {
-			const key = latchedKeys[idx]!;
-			if (!this.frameLatchTouched.has(key)) this.bindingLatch.delete(key);
-		}
 	}
 
 	private processInputIntents(): void {
@@ -96,28 +108,27 @@ export class InputActionEffectSystem extends ECSystem {
 			}
 
 			const ownerId = effects ? (effects.parent.id ?? obj.id) : obj.id;
+			const runtime = this.resolveRuntime(component);
+			const env = runtime.env;
+			env.owner = obj;
+			env.ownerId = ownerId;
+			env.playerIndex = playerIndex;
+			env.input = input;
+			env.effects = effects;
 
-			const env: BindingExecutionEnv = {
-				owner: obj,
-				ownerId,
-				playerIndex,
-				input,
-				effects,
-				queuedCommands: [],
-				queuedEvents: [],
-			};
-
-			this.evaluateProgram(program, env, programKey);
+			this.evaluateProgram(program, env, programKey, runtime);
 			const queuedCommands = env.queuedCommands;
 			for (let idx = 0; idx < queuedCommands.length; idx++) {
 				const cmd = queuedCommands[idx]!;
 				obj.dispatch_command(cmd.event, cmd.payload);
 			}
+			queuedCommands.length = 0;
 			const queuedEvents = env.queuedEvents;
 			for (let idx = 0; idx < queuedEvents.length; idx++) {
 				const evt = queuedEvents[idx]!;
 				obj.emit_gameplay_fact(evt);
 			}
+			queuedEvents.length = 0;
 		}
 	}
 
@@ -236,20 +247,78 @@ export class InputActionEffectSystem extends ECSystem {
 		return true;
 	}
 
+	private resolveRuntime(component: InputActionEffectComponent): BindingRuntime {
+		let runtime = this.runtimeByComponent.get(component);
+		if (runtime) return runtime;
+		const queuedCommands: BindingExecutionEnv['queuedCommands'] = [];
+		const queuedEvents: BindingExecutionEnv['queuedEvents'] = [];
+		const env = {
+			owner: null as unknown as WorldObject,
+			ownerId: '',
+			playerIndex: 0,
+			input: null as unknown as PlayerInput,
+			effects: undefined,
+			queuedCommands,
+			queuedEvents,
+		} satisfies BindingExecutionEnv;
+		runtime = {
+			bindingLatch: [],
+			bindingTouchedFrame: [],
+			bindingCount: 0,
+			lastFrame: 0,
+			env,
+		};
+		this.runtimeByComponent.set(component, runtime);
+		return runtime;
+	}
+
+	private resetRuntime(runtime: BindingRuntime, bindingCount: number): void {
+		const clearCount = runtime.bindingCount > bindingCount ? runtime.bindingCount : bindingCount;
+		for (let i = 0; i < clearCount; i++) {
+			runtime.bindingLatch[i] = false;
+			runtime.bindingTouchedFrame[i] = 0;
+		}
+		runtime.bindingCount = bindingCount;
+	}
+
+	private prepareRuntime(runtime: BindingRuntime, program: CompiledProgram, programKey: string, env: BindingExecutionEnv): void {
+		const bindingCount = program.bindings.length;
+		if (
+			runtime.lastFrame !== this.frameSerial - 1
+			|| runtime.program !== program
+			|| runtime.programKey !== programKey
+			|| runtime.ownerId !== env.ownerId
+			|| runtime.playerIndex !== env.playerIndex
+			|| runtime.bindingCount !== bindingCount
+		) {
+			this.resetRuntime(runtime, bindingCount);
+		}
+		runtime.lastFrame = this.frameSerial;
+		runtime.program = program;
+		runtime.programKey = programKey;
+		runtime.ownerId = env.ownerId;
+		runtime.playerIndex = env.playerIndex;
+		runtime.bindingCount = bindingCount;
+	}
+
 	private evaluateProgram(
 		program: CompiledProgram,
 		env: BindingExecutionEnv,
 		programKey: string,
+		runtime: BindingRuntime,
 	): void {
+		this.prepareRuntime(runtime, program, programKey, env);
 		const { input } = env;
 		const bindings = program.bindings;
+		const frame = this.frameSerial;
+		const bindingLatch = runtime.bindingLatch;
+		const bindingTouchedFrame = runtime.bindingTouchedFrame;
 		for (let i = 0; i < bindings.length; i++) {
 			const binding = bindings[i]!;
 			if (!binding.predicate(env)) continue;
 
-			const bindingKey = this.makeBindingKey(env.ownerId, programKey, env.playerIndex, binding, i);
-			const armed = this.bindingLatch.get(bindingKey) === true;
-			if (armed) this.frameLatchTouched.add(bindingKey);
+			const armed = bindingLatch[i] === true;
+			if (armed) bindingTouchedFrame[i] = frame;
 
 			const pressMatched = binding.press ? binding.press(input) : false;
 			const holdMatched = binding.hold ? binding.hold(input) : false;
@@ -263,56 +332,52 @@ export class InputActionEffectSystem extends ECSystem {
 			}
 
 			let matched = false;
-			const runEffect = (effect: EffectExecutor): boolean => {
-				if (!effect) return false;
-				effect(env);
-				return true;
-			};
 
 			if (pressMatched) {
 				matched = true;
 				if (binding.pressEffect) {
-					if (runEffect(binding.pressEffect)) {
-						this.bindingLatch.set(bindingKey, true);
-						this.frameLatchTouched.add(bindingKey);
+					if (runEffect(binding.pressEffect, env)) {
+						bindingLatch[i] = true;
+						bindingTouchedFrame[i] = frame;
 					}
 				} else {
-					this.bindingLatch.set(bindingKey, true);
-					this.frameLatchTouched.add(bindingKey);
+					bindingLatch[i] = true;
+					bindingTouchedFrame[i] = frame;
 				}
 			}
 			if (holdMatched) {
 				matched = true;
-				if (binding.holdEffect) runEffect(binding.holdEffect);
-				this.bindingLatch.set(bindingKey, true);
-				this.frameLatchTouched.add(bindingKey);
+				if (binding.holdEffect) runEffect(binding.holdEffect, env);
+				bindingLatch[i] = true;
+				bindingTouchedFrame[i] = frame;
 			}
 			if (releaseMatched && armed) {
-				if (binding.releaseEffect && runEffect(binding.releaseEffect)) {
+				if (binding.releaseEffect && runEffect(binding.releaseEffect, env)) {
 					matched = true;
 				} else if (binding.releaseEffect === undefined) {
 					matched = true;
 				}
-				this.bindingLatch.delete(bindingKey);
+				bindingLatch[i] = false;
+				bindingTouchedFrame[i] = 0;
 			}
 
 			for (let j = 0; j < customEdges.length; j++) {
 				if (!scratch[j]) continue;
 				const effect = customEdges[j]!.effect;
 				if (effect) {
-					if (runEffect(effect)) matched = true;
+					if (runEffect(effect, env)) matched = true;
 				} else {
 					matched = true;
 				}
 			}
 
-			if (matched && program.evalMode === 'first') return;
+			if (matched && program.evalMode === 'first') break;
 		}
-	}
-
-	private makeBindingKey(ownerId: string, programKey: string, playerIndex: number, binding: CompiledBinding, index: number): string {
-		const name = binding.name ?? `#${index}`;
-		return `${ownerId}|${programKey}|p${playerIndex}|${name}|${index}`;
+		for (let i = 0; i < runtime.bindingCount; i++) {
+			if (bindingLatch[i] === true && bindingTouchedFrame[i] !== frame) {
+				bindingLatch[i] = false;
+			}
+		}
 	}
 
 	private ensureScratch(size: number): boolean[] {

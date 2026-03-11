@@ -6,6 +6,7 @@ local action_effects = require('action_effects')
 local compiler = require('input_action_effect_compiler')
 local dsl = require('input_action_effect_dsl')
 local romdir = require('romdir')
+local scratchbatch = require('scratchbatch')
 local world_instance = require('world').instance
 local inputintentcomponent = 'inputintentcomponent'
 local inputactioneffectcomponent = 'inputactioneffectcomponent'
@@ -14,6 +15,14 @@ local assigned_value_edges = { ['hold'] = true, ['press'] = true }
 local active_scope = { scope = 'active' }
 
 local asset_programs_validated = false
+
+local function run_effect(effect, env)
+	if not effect then
+		return false
+	end
+	effect(env)
+	return true
+end
 
 local function validate_primary_assets_on_boot()
 	if asset_programs_validated then
@@ -40,23 +49,18 @@ function inputactioneffectsystem.new(priority)
 	self.missing_program_ids = {}
 	self.pattern_cache = {}
 	self.pattern_cache_max = 256
-	self.custom_match_scratch = {}
-	self.binding_latch = {}
-	self.frame_latch_touched = {}
+	self.custom_match_scratch = scratchbatch.new()
+	self.runtime_by_component = setmetatable({}, { __mode = 'k' })
+	self.frame_serial = 0
 	self.__ecs_id = 'inputactioneffectsystem'
 	validate_primary_assets_on_boot()
 	return self
 end
 
 function inputactioneffectsystem:update()
-	self.frame_latch_touched = {}
+	self.frame_serial = self.frame_serial + 1
 	self:process_input_intents()
 	self:process_input_action_programs()
-	for key in pairs(self.binding_latch) do
-		if not self.frame_latch_touched[key] then
-			self.binding_latch[key] = nil
-		end
-	end
 end
 
 function inputactioneffectsystem:process_input_intents()
@@ -90,25 +94,25 @@ function inputactioneffectsystem:process_input_action_programs()
 		end
 
 		local owner_id = effects and effects.parent.id or obj.id
-		local env = {
-			owner = obj,
-			owner_id = owner_id,
-			player_index = player_index,
-			effects = effects,
-			queued_commands = {},
-			queued_events = {},
-		}
+		local runtime = self:resolve_component_runtime(component)
+		local env = runtime.env
+		env.owner = obj
+		env.owner_id = owner_id
+		env.player_index = player_index
+		env.effects = effects
 
-		self:evaluate_program(program, env, program_key)
+		self:evaluate_program(program, env, program_key, runtime)
 		local queued_commands = env.queued_commands
 		for i = 1, #queued_commands do
 			local command = queued_commands[i]
 			obj:dispatch_command(command.event, command.payload)
+			queued_commands[i] = nil
 		end
 		local queued = env.queued_events
 		for i = 1, #queued do
 			local evt = queued[i]
 			obj:emit_gameplay_fact(evt)
+			queued[i] = nil
 		end
 		::continue::
 	end
@@ -194,18 +198,76 @@ function inputactioneffectsystem:describe_inline_program(component)
 	return 'inline:' .. owner_id .. ':' .. component_id
 end
 
-function inputactioneffectsystem:evaluate_program(program, env, program_key)
+function inputactioneffectsystem:resolve_component_runtime(component)
+	local runtime = self.runtime_by_component[component]
+	if runtime then
+		return runtime
+	end
+	local queued_commands = {}
+	local queued_events = {}
+	runtime = {
+		binding_latch = {},
+		binding_touched = {},
+		binding_count = 0,
+		last_frame = 0,
+		queued_commands = queued_commands,
+		queued_events = queued_events,
+		env = {
+			queued_commands = queued_commands,
+			queued_events = queued_events,
+		},
+	}
+	self.runtime_by_component[component] = runtime
+	return runtime
+end
+
+function inputactioneffectsystem:reset_component_runtime(runtime, binding_count)
+	local latch = runtime.binding_latch
+	local touched = runtime.binding_touched
+	local clear_count = runtime.binding_count
+	if clear_count < binding_count then
+		clear_count = binding_count
+	end
+	for i = 1, clear_count do
+		latch[i] = false
+		touched[i] = 0
+	end
+	runtime.binding_count = binding_count
+end
+
+function inputactioneffectsystem:prepare_component_runtime(runtime, program, program_key, env)
+	local binding_count = #program.bindings
+	if runtime.last_frame ~= self.frame_serial - 1
+		or runtime.program ~= program
+		or runtime.program_key ~= program_key
+		or runtime.owner_id ~= env.owner_id
+		or runtime.player_index ~= env.player_index
+		or runtime.binding_count ~= binding_count then
+		self:reset_component_runtime(runtime, binding_count)
+	end
+	runtime.last_frame = self.frame_serial
+	runtime.program = program
+	runtime.program_key = program_key
+	runtime.owner_id = env.owner_id
+	runtime.player_index = env.player_index
+	runtime.binding_count = binding_count
+end
+
+function inputactioneffectsystem:evaluate_program(program, env, program_key, runtime)
+	self:prepare_component_runtime(runtime, program, program_key, env)
 	local bindings = program.bindings
-	for i = 1, #bindings do1
+	local frame = self.frame_serial
+	local latch = runtime.binding_latch
+	local touched = runtime.binding_touched
+	for i = 1, #bindings do
 		local binding = bindings[i]
 		if not binding.predicate(env) then
 			goto continue
 		end
 
-		local binding_key = self:make_binding_key(env.owner_id, program_key, env.player_index, binding, i)
-		local armed = (self.binding_latch[binding_key])
+		local armed = latch[i]
 		if armed then
-			self.frame_latch_touched[binding_key] = true
+			touched[i] = frame
 		end
 
 		local press_matched = binding.press and binding.press(env) or false
@@ -216,54 +278,48 @@ function inputactioneffectsystem:evaluate_program(program, env, program_key)
 			goto continue
 		end
 
-		local scratch = self:ensure_scratch(#custom_edges)
+		local scratch = self.custom_match_scratch:reserve(#custom_edges, false)
 		for j = 1, #custom_edges do
 			scratch[j] = custom_edges[j].match(env)
 		end
 
 		local matched
-		local function run_effect(effect)
-			if not effect then
-				return false
-			end
-			effect(env)
-			return true
-		end
 
 		if press_matched then
 			matched = true
 			if binding.press_effect then
-				if run_effect(binding.press_effect) then
-					self.binding_latch[binding_key] = true
-					self.frame_latch_touched[binding_key] = true
+				if run_effect(binding.press_effect, env) then
+					latch[i] = true
+					touched[i] = frame
 				end
 			else
-				self.binding_latch[binding_key] = true
-				self.frame_latch_touched[binding_key] = true
+				latch[i] = true
+				touched[i] = frame
 			end
 		end
 		if hold_matched then
 			matched = true
 			if binding.hold_effect then
-				run_effect(binding.hold_effect)
+				run_effect(binding.hold_effect, env)
 			end
-			self.binding_latch[binding_key] = true
-			self.frame_latch_touched[binding_key] = true
+			latch[i] = true
+			touched[i] = frame
 		end
 		if release_matched and armed then
-			if binding.release_effect and run_effect(binding.release_effect) then
+			if binding.release_effect and run_effect(binding.release_effect, env) then
 				matched = true
 			elseif binding.release_effect == nil then
 				matched = true
 			end
-			self.binding_latch[binding_key] = nil
+			latch[i] = false
+			touched[i] = 0
 		end
 
 		for j = 1, #custom_edges do
 			if scratch[j] then
 				local effect = custom_edges[j].effect
 				if effect then
-					if run_effect(effect) then
+					if run_effect(effect, env) then
 						matched = true
 					end
 				else
@@ -273,24 +329,16 @@ function inputactioneffectsystem:evaluate_program(program, env, program_key)
 		end
 
 		if matched and program.eval_mode == 'first' then
-			return
+			break
 		end
 
 		::continue::
 	end
-end
-
-function inputactioneffectsystem:make_binding_key(owner_id, program_key, player_index, binding, index)
-	local name = binding.name or ('#' .. index)
-	return owner_id .. '|' .. program_key .. '|p' .. player_index .. '|' .. name .. '|' .. index
-end
-
-function inputactioneffectsystem:ensure_scratch(size)
-	local scratch = self.custom_match_scratch
-	while #scratch < size do
-		scratch[#scratch + 1] = false
+	for i = 1, runtime.binding_count do
+		if latch[i] and touched[i] ~= frame then
+			latch[i] = false
+		end
 	end
-	return scratch
 end
 
 function inputactioneffectsystem:resolve_compiled_program(component)

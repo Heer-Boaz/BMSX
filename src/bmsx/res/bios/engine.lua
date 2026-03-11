@@ -37,6 +37,8 @@ local velocity = require('velocity')
 local rect_overlaps = require('rect_overlaps')
 local clamp_int = require('clamp_int')
 local clear_map = require('clear_map')
+local scratchbatch = require('scratchbatch')
+local sorted_scratchbatch = require('sorted_scratchbatch')
 local div_toward_zero = require('div_toward_zero')
 local round_to_nearest = require('round_to_nearest')
 local rol8 = require('rol8')
@@ -287,6 +289,8 @@ end
 local engine = {}
 engine.bool01 = bool01
 engine.clear_map = clear_map
+engine.scratchbatch = scratchbatch
+engine.sorted_scratchbatch = sorted_scratchbatch
 engine.consume_axis_accum = velocity.consume_axis_accum
 engine.deep_clone = deep_clone
 engine.set_velocity = velocity.set_velocity
