@@ -1717,9 +1717,7 @@ export function buildImgMeta(res: ImageResource): ImgMeta {
 	} = undefined;
 	switch (res.collisionType) {
 		case 'concave':
-			extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img);//, { thicken: 1, closeGaps: true });
-			// Decompose to convex pieces (triangles) at pack time
-			extracted_hitpolygon = BoundingBoxExtractor.decomposeConcaveToConvex(extracted_hitpolygon, res);
+			extracted_hitpolygon = BoundingBoxExtractor.extractDetailedConvexPieces(img);
 			hitpolygons = {
 				original: extracted_hitpolygon,
 				fliph: null,

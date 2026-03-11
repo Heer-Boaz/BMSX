@@ -56,28 +56,7 @@ export class BoundingBoxExtractor {
 		image: Image,
 		opts?: { alphaThreshold?: number; thicken?: number; closeGaps?: boolean }
 	): Polygon[] {
-		const width = image.width;
-		const height = image.height;
-		const canvas = createCanvas(width, height);
-		const context = canvas.getContext('2d');
-		context.drawImage(image, 0, 0);
-		const data = context.getImageData(0, 0, width, height).data;
-		const ALPHA_T = opts?.alphaThreshold ?? this.DEFAULT_ALPHA_T;
-
-	let mask = new Uint8Array(width * height);
-		for (let i = 0, p = 3; i < mask.length; i++, p += 4) {
-			mask[i] = data[p] >= ALPHA_T ? 1 : 0;
-		}
-
-		const thicken = Math.max(0, opts?.thicken ?? 0) | 0;
-		// @ts-ignore
-		if (thicken > 0) mask = this.dilate(mask, width, height, thicken);
-		if (opts?.closeGaps) {
-			// @ts-ignore
-			mask = this.dilate(mask, width, height, 1);
-			// @ts-ignore
-			mask = this.erode(mask, width, height, 1);
-		}
+		const { width, height, mask } = this.extractMask(image, opts);
 
 		const index = (x: number, y: number) => y * width + x;
 		const on = (x: number, y: number) => x >= 0 && y >= 0 && x < width && y < height && mask[index(x, y)] === 1;
@@ -162,6 +141,86 @@ export class BoundingBoxExtractor {
 		return polygons;
 	}
 
+	static extractDetailedConvexPieces(
+		image: Image,
+		opts?: { alphaThreshold?: number; thicken?: number; closeGaps?: boolean }
+	): Polygon[] {
+		const { width, height, mask } = this.extractMask(image, opts);
+		const index = (x: number, y: number) => y * width + x;
+		let active = new Map<string, { x0: number; x1: number; y0: number; y1: number }>();
+		const pieces: Polygon[] = [];
+
+		for (let y = 0; y < height; y++) {
+			const next = new Map<string, { x0: number; x1: number; y0: number; y1: number }>();
+			let x = 0;
+			while (x < width) {
+				while (x < width && mask[index(x, y)] === 0) {
+					x++;
+				}
+				if (x >= width) {
+					break;
+				}
+				const x0 = x;
+				while (x < width && mask[index(x, y)] === 1) {
+					x++;
+				}
+				const x1 = x - 1;
+				const key = `${x0}:${x1}`;
+				const rect = active.get(key);
+				if (rect) {
+					rect.y1 = y;
+					next.set(key, rect);
+					active.delete(key);
+				} else {
+					next.set(key, { x0, x1, y0: y, y1: y });
+				}
+			}
+			for (const rect of active.values()) {
+				pieces.push(this.rectToPolygon(rect.x0, rect.x1, rect.y0, rect.y1));
+			}
+			active = next;
+		}
+		for (const rect of active.values()) {
+			pieces.push(this.rectToPolygon(rect.x0, rect.x1, rect.y0, rect.y1));
+		}
+		return pieces;
+	}
+
+	private static extractMask(
+		image: Image,
+		opts?: { alphaThreshold?: number; thicken?: number; closeGaps?: boolean }
+	): { width: number; height: number; mask: Uint8Array } {
+		const width = image.width;
+		const height = image.height;
+		const canvas = createCanvas(width, height);
+		const context = canvas.getContext('2d');
+		context.drawImage(image, 0, 0);
+		const data = context.getImageData(0, 0, width, height).data;
+		const alphaThreshold = opts?.alphaThreshold ?? this.DEFAULT_ALPHA_T;
+
+		let mask = new Uint8Array(width * height);
+		for (let i = 0, p = 3; i < mask.length; i++, p += 4) {
+			mask[i] = data[p] >= alphaThreshold ? 1 : 0;
+		}
+		const thicken = Math.max(0, opts?.thicken ?? 0) | 0;
+		if (thicken > 0) {
+			mask = this.dilate(mask, width, height, thicken);
+		}
+		if (opts?.closeGaps) {
+			mask = this.dilate(mask, width, height, 1);
+			mask = this.erode(mask, width, height, 1);
+		}
+		return { width, height, mask };
+	}
+
+	private static rectToPolygon(x0: number, x1: number, y0: number, y1: number): Polygon {
+		const left = x0 - 0.5;
+		const right = x1 + 0.5;
+		const top = y0 - 0.5;
+		const bottom = y1 + 0.5;
+		return [left, top, right, top, right, bottom, left, bottom];
+	}
+
 	private static dilate(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
 		let src = mask.slice();
 		let dst = new Uint8Array(width * height);
@@ -220,21 +279,7 @@ export class BoundingBoxExtractor {
 			k?: number;
 		}
 	): Polygon {
-		const { width: w, height: h } = image;
-		const canvas = createCanvas(w, h);
-		const context = canvas.getContext('2d');
-		context.drawImage(image, 0, 0);
-		const data = context.getImageData(0, 0, w, h).data;
-		const ALPHA_T = opts?.alphaThreshold ?? this.DEFAULT_ALPHA_T;
-
-		let mask = new Uint8Array(w * h) as Uint8Array<ArrayBufferLike>;
-		for (let i = 0, p = 3; i < mask.length; i++, p += 4) mask[i] = data[p] >= ALPHA_T ? 1 : 0;
-		const thicken = Math.max(0, opts?.thicken ?? 0) | 0;
-		if (thicken > 0) mask = this.dilate(mask, w, h, thicken);
-		if (opts?.closeGaps) {
-			mask = this.dilate(mask, w, h, 1);
-			mask = this.erode(mask, w, h, 1);
-		}
+		const { width: w, height: h, mask } = this.extractMask(image, opts);
 
 		const index = (x: number, y: number) => y * w + x;
 		const on = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && mask[index(x, y)] === 1;
@@ -693,6 +738,7 @@ export class BoundingBoxExtractor {
 			let bestArea = Infinity;
 			for (let j = 0; j < rings.length; j++) {
 				if (i === j) continue;
+				if (areaAbs[j] <= areaAbs[i]) continue;
 				if (this.pointInPolyInclusive(px, py, rings[j]) && areaAbs[j] < bestArea) {
 					best = j;
 					bestArea = areaAbs[j];
