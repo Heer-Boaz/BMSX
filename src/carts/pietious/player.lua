@@ -1256,16 +1256,11 @@ function player:try_snap_to_elevator_platform(next_x, next_y)
 		end
 		local landing_left = platform.x - (constants.room.tile_size2 - (constants.room.tile_unit * 4))
 		local landing_right = (platform.x + constants.room.tile_size4) - (constants.room.tile_unit * 3)
-		local in_cpp_landing_band = self.y >= (platform.y - self.height)
+		local in_cpp_transport_band = self.y >= (platform.y - self.height)
 			and self.y < platform.y
 			and self.x > landing_left
 			and self.x < landing_right
-		local hits_platform_from_above = next_y > self.y
-			and self.y <= platform.y
-			and next_x > landing_left
-			and next_x < landing_right
-			and rect_overlaps(next_x, next_y, self.width, self.height, platform.x, platform.y, constants.room.tile_size4, constants.room.tile_size2)
-		if in_cpp_landing_band or hits_platform_from_above then
+		if in_cpp_transport_band then
 			self.y = platform.y - self.height
 			self.x = next_x
 			return true
