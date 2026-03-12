@@ -15,15 +15,9 @@ local state_tags = {
 		stopped_jumping = 'v.sj',
 		controlled_fall = 'v.cf',
 		uncontrolled_fall = 'v.uf',
-		quiet_sword = 'v.qs',
-		uc_fall_sword = 'v.ufs',
-		c_fall_sword = 'v.cfs',
-		jumping_sword = 'v.js',
-		sj_sword = 'v.sjs',
 		up_stairs = 'v.us',
 		down_stairs = 'v.ds',
 		quiet_stairs = 'v.qst',
-		sword_stairs = 'v.ss',
 		entering_world = 'v.ew',
 		waiting_world_banner = 'v.wwb',
 		waiting_world_emerge = 'v.wwe',
@@ -77,6 +71,8 @@ local vertical_exit_directions = {
 local stairs_landing_events = {
 	stairs_end_top = true,
 	stairs_end_bottom = true,
+	stairs_step_off_left = true,
+	stairs_step_off_right = true,
 }
 
 local function build_shrine_exit_transition_frames()
@@ -446,7 +442,7 @@ end
 
 function player:respawn()
 	object('d').events:emit('death_done')
-	self:force_seek_timeline('p.seq.s', 0)
+	self:cancel_sword()
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
 	self.events:emit('respawn')
@@ -462,17 +458,14 @@ function player:update_facing_from_horizontal_input()
 	end
 end
 
+function player:cancel_sword()
+	self:force_seek_timeline('p.seq.s', 0)
+	self.events:emit('sword_cancel')
+end
+
 function player:advance_sword_sequence()
 	local sword_sequence = self:get_timeline('p.seq.s')
 	if sword_sequence:value() >= constants.sword.duration_frames then
-		if self:has_tag(state_tags.variant.c_fall_sword) then
-			-- FORBIDDEN! WILL MAKE PIETOLON MOVE BACKWARDS WHILE SWORDING AND FALLING!!!!!!
-			-- if self.facing > 0 then
-			-- 	self.x = self.x - 2
-			-- else
-			-- 	self.x = self.x + 2
-			-- end
-		end
 		self.sword_cooldown = 1
 		self.events:emit(player_sword_end_event)
 		return
@@ -542,7 +535,7 @@ function player:start_dying()
 	end
 	object('d').events:emit('death_start')
 	self.events:emit('dying')
-	self:force_seek_timeline('p.seq.s', 0)
+	self:cancel_sword()
 	self.hit_direction = 0
 	self.hit_substate = 0
 	self.hit_recovery_timer = 0
@@ -594,7 +587,7 @@ function player:take_hit(amount, source_x, source_y, reason)
 		damage_event = 'damage'
 	end
 
-	self:force_seek_timeline('p.seq.s', 0)
+	self:cancel_sword()
 	self.hit_stairs_lock = hit_on_stairs
 	self.hit_direction = hit_direction
 	self.hit_substate = 0
@@ -742,7 +735,7 @@ function player:update_enter_leave_cut(direction)
 end
 
 function player:begin_entering_world(world_entrance)
-	self:force_seek_timeline('p.seq.s', 0)
+	self:cancel_sword()
 	self:clear_input_state()
 	self:reset_stairs_lock()
 	self.enter_leave_world_target = world_entrance.target
@@ -755,7 +748,7 @@ function player:begin_entering_world(world_entrance)
 end
 
 function player:begin_entering_shrine(shrine)
-	self:force_seek_timeline('p.seq.s', 0)
+	self:cancel_sword()
 	self:clear_input_state()
 	self:reset_stairs_lock()
 	self.enter_leave_world_target = nil
@@ -769,7 +762,7 @@ function player:begin_entering_shrine(shrine)
 end
 
 function player:begin_world_emerge_from_door()
-	self:force_seek_timeline('p.seq.s', 0)
+	self:cancel_sword()
 	self:clear_input_state()
 	self:reset_enter_leave_animation()
 	self.enter_leave_world_target = nil
@@ -778,7 +771,7 @@ function player:begin_world_emerge_from_door()
 end
 
 function player:start_slow_doorpass()
-	self:force_seek_timeline('p.seq.s', 0)
+	self:cancel_sword()
 	self.slow_doorpass_substate = 0
 	self.events:emit('slowdoorpass_start')
 end
@@ -790,7 +783,7 @@ function player:apply_halo_teleport_arrival(switch)
 	self:reset_enter_leave_animation()
 	self.enter_leave_world_target = nil
 	self.enter_leave_shrine_text_lines = {}
-	self:force_seek_timeline('p.seq.s', 0)
+	self:cancel_sword()
 	self:reset_fall_substate_sequence()
 	self.events:emit('stairs_lock_lost_after_room_switch')
 	self:emit_room_switched(switch.from_room_number, switch.to_room_number, switch.direction)
@@ -883,6 +876,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self:apply_spawn_position(leave_switch)
 		self:zero_motion()
 		self:reset_stairs_lock()
+		self:cancel_sword()
 		self.enter_leave_world_target = nil
 		self.enter_leave_shrine_text_lines = {}
 		self.events:emit('leave_world_start')
@@ -1915,7 +1909,9 @@ function player:update_quiet()
 		return
 	end
 	self.stairs_landing_sound_pending = false
-	self:runcheck_quiet_controls()
+	if not self:has_tag(state_tags.group.sword) then
+		self:runcheck_quiet_controls()
+	end
 end
 
 function player:update_walking_right()
@@ -1982,11 +1978,8 @@ function player:update_slowdoorpass()
 end
 
 function player:update_jump_motion()
-	if self:has_tag(state_tags.group.sword) then
-		self:advance_sword_sequence()
-	end
-	local sword_jump = self:has_tag(state_tags.variant.jumping_sword)
-	if (not sword_jump) and self.previous_x_collision then
+	local has_sword = self:has_tag(state_tags.group.sword)
+	if (not has_sword) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
 	if not self.up_held and self.jump_substate < constants.physics.jump_release_cut_substate then
@@ -1999,12 +1992,12 @@ function player:update_jump_motion()
 	else
 		dy = 0
 	end
-	if (not sword_jump) and self.previous_y_collision then
+	if (not has_sword) and self.previous_y_collision then
 		dy = 0
 	end
-	local hit_ceiling = (not sword_jump) and self.previous_y_collision
+	local hit_ceiling = (not has_sword) and self.previous_y_collision
 	if (not hit_ceiling) and dy < 0 then
-		if sword_jump then
+		if has_sword then
 			hit_ceiling = self:collides_at_jump_sword_ceiling_profile(self.x, self.y + dy, true)
 		else
 			hit_ceiling = self:collides_at_jump_ceiling_profile(self.x, self.y + dy, true)
@@ -2022,28 +2015,16 @@ function player:update_jump_motion()
 	if reached_fall then
 		self:reset_fall_substate_sequence()
 	end
-	local sword_state = self:has_tag(state_tags.group.sword)
 	if hit_ceiling then
-		if sword_state then
-			self.events:emit('ceiling_to_sj_sword')
-		else
-			self.events:emit('ceiling_to_stopped_jumping')
-		end
+		self.events:emit('ceiling_to_stopped_jumping')
 	end
 	if reached_fall then
-		if sword_state then
-			self.events:emit('jump_apex_to_c_fall_sword')
-		else
-			self.events:emit('jump_apex_to_controlled_fall')
-		end
+		self.events:emit('jump_apex_to_controlled_fall')
 	end
 end
 
 function player:update_stopped_jump_motion()
-	if self:has_tag(state_tags.group.sword) then
-		self:advance_sword_sequence()
-	end
-	if (not self:has_tag(state_tags.variant.sj_sword)) and self.previous_x_collision then
+	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
@@ -2052,18 +2033,11 @@ function player:update_stopped_jump_motion()
 	self.jump_substate = self.jump_substate + 1
 	if self.jump_substate >= constants.physics.jump_to_fall_substate then
 		self:reset_fall_substate_sequence()
-		if self:has_tag(state_tags.group.sword) then
-			self.events:emit('stopped_to_fall_to_c_fall_sword')
-		else
-			self.events:emit('stopped_to_fall_to_controlled_fall')
-		end
+		self.events:emit('stopped_to_fall_to_controlled_fall')
 	end
 end
 
 function player:update_controlled_fall_motion()
-	if self:has_tag(state_tags.group.sword) then
-		self:advance_sword_sequence()
-	end
 	self:update_facing_from_horizontal_input()
 	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
 		self.jump_inertia = 0
@@ -2079,11 +2053,7 @@ function player:update_controlled_fall_motion()
 	if should_land and has_support then
 		self.stairs_landing_sound_pending = false
 		self:reset_fall_substate_sequence()
-		if self:has_tag(state_tags.group.sword) then
-			self.events:emit('landed_to_quiet_sword')
-		else
-			self.events:emit('landed_to_quiet')
-		end
+		self.events:emit('landed_to_quiet')
 		return
 	end
 
@@ -2091,9 +2061,6 @@ function player:update_controlled_fall_motion()
 end
 
 function player:update_uncontrolled_fall_motion()
-	if self:has_tag(state_tags.group.sword) then
-		self:advance_sword_sequence()
-	end
 	local dy = self:get_uncontrolled_fall_dy()
 	local next_y = self.y + dy
 	local should_land = self:collides_at(self.x, next_y, true)
@@ -2106,27 +2073,11 @@ function player:update_uncontrolled_fall_motion()
 		end
 		self.stairs_landing_sound_pending = false
 		self:reset_fall_substate_sequence()
-		if self:has_tag(state_tags.group.sword) then
-			self.events:emit('landed_to_quiet_sword')
-		else
-			self.events:emit('landed_to_quiet')
-		end
+		self.events:emit('landed_to_quiet')
 		return
 	end
 
 	self:advance_fall_substate_sequence()
-end
-
-function player:update_quiet_sword()
-	self:advance_sword_sequence()
-	self:zero_motion()
-
-	if not self:is_support_below_at(self.x, self.y, true) then
-		self:reset_fall_substate_sequence()
-		self.events:emit('falling')
-		return
-	end
-	self.stairs_landing_sound_pending = false
 end
 
 function player:update_up_stairs()
@@ -2241,14 +2192,9 @@ function player:update_quiet_stairs()
 	self:zero_motion()
 	self.x = self.stairs_x
 	self.stairs_direction = 0
-	self:runcheck_quiet_stairs_controls()
-end
-
-function player:update_sword_stairs()
-	self:advance_sword_sequence()
-	self:zero_motion()
-	self.x = self.stairs_x
-	self.stairs_direction = 0
+	if not self:has_tag(state_tags.group.sword) then
+		self:runcheck_quiet_stairs_controls()
+	end
 end
 
 function player:resolve_hit_overlap_if_needed()
@@ -2500,7 +2446,6 @@ local function define_player_fsm()
 				['falling'] = '/uncontrolled_fall',
 				['stairs_up'] = '/up_stairs',
 				['stairs_down'] = '/down_stairs',
-				['sword_start'] = '/quiet_sword',
 			},
 			update = player.update_quiet,
 		},
@@ -2515,7 +2460,7 @@ local function define_player_fsm()
 				['falling'] = '/uncontrolled_fall',
 				['stairs_up'] = '/up_stairs',
 				['stairs_down'] = '/down_stairs',
-				['sword_start'] = '/quiet_sword',
+				['sword_start'] = '/quiet',
 			},
 			entering_state = function(self)
 				self:reset_walk_animation()
@@ -2533,7 +2478,7 @@ local function define_player_fsm()
 				['falling'] = '/uncontrolled_fall',
 				['stairs_up'] = '/up_stairs',
 				['stairs_down'] = '/down_stairs',
-				['sword_start'] = '/quiet_sword',
+				['sword_start'] = '/quiet',
 			},
 			entering_state = function(self)
 				self:reset_walk_animation()
@@ -2556,7 +2501,6 @@ local function define_player_fsm()
 			on = {
 				['ceiling_to_stopped_jumping'] = '/stopped_jumping',
 				['jump_apex_to_controlled_fall'] = '/controlled_fall',
-				['sword_start'] = '/jumping_sword',
 			},
 			update = player.update_jump_motion,
 		},
@@ -2564,7 +2508,6 @@ local function define_player_fsm()
 			tags = { state_tags.variant.stopped_jumping },
 			on = {
 				['stopped_to_fall_to_controlled_fall'] = '/controlled_fall',
-				['sword_start'] = '/sj_sword',
 			},
 			update = player.update_stopped_jump_motion,
 		},
@@ -2572,7 +2515,6 @@ local function define_player_fsm()
 			tags = { state_tags.variant.controlled_fall },
 			on = {
 				['landed_to_quiet'] = '/quiet',
-				['sword_start'] = '/c_fall_sword',
 			},
 			update = player.update_controlled_fall_motion,
 		},
@@ -2580,70 +2522,8 @@ local function define_player_fsm()
 			tags = { state_tags.variant.uncontrolled_fall },
 			on = {
 				['landed_to_quiet'] = '/quiet',
-				['sword_start'] = '/uc_fall_sword',
 			},
 			update = player.update_uncontrolled_fall_motion,
-		},
-		quiet_sword = {
-			tags = {
-				state_tags.variant.quiet_sword,
-				state_tags.group.sword,
-				state_tags.visual.ground_sword,
-			},
-			on = {
-				[player_sword_end_event] = '/quiet',
-				['falling'] = '/uc_fall_sword',
-			},
-			update = player.update_quiet_sword,
-		},
-		uc_fall_sword = {
-			tags = {
-				state_tags.variant.uc_fall_sword,
-				state_tags.group.sword,
-				state_tags.visual.jump_sword,
-			},
-			on = {
-				[player_sword_end_event] = '/uncontrolled_fall',
-				['landed_to_quiet_sword'] = '/quiet_sword',
-			},
-			update = player.update_uncontrolled_fall_motion,
-		},
-		c_fall_sword = {
-			tags = {
-				state_tags.variant.c_fall_sword,
-				state_tags.group.sword,
-				state_tags.visual.jump_sword,
-			},
-			on = {
-				[player_sword_end_event] = '/controlled_fall',
-				['landed_to_quiet_sword'] = '/quiet_sword',
-			},
-			update = player.update_controlled_fall_motion,
-		},
-		jumping_sword = {
-			tags = {
-				state_tags.variant.jumping_sword,
-				state_tags.group.sword,
-				state_tags.visual.jump_sword,
-			},
-			on = {
-				[player_sword_end_event] = '/jumping',
-				['ceiling_to_sj_sword'] = '/sj_sword',
-				['jump_apex_to_c_fall_sword'] = '/c_fall_sword',
-			},
-			update = player.update_jump_motion,
-		},
-		sj_sword = {
-			tags = {
-				state_tags.variant.sj_sword,
-				state_tags.group.sword,
-				state_tags.visual.jump_sword,
-			},
-			on = {
-				[player_sword_end_event] = '/stopped_jumping',
-				['stopped_to_fall_to_c_fall_sword'] = '/c_fall_sword',
-			},
-			update = player.update_stopped_jump_motion,
 		},
 		up_stairs = {
 			tags = { state_tags.variant.up_stairs, state_tags.group.stairs },
@@ -2676,21 +2556,8 @@ local function define_player_fsm()
 				['stairs_end_bottom'] = '/quiet',
 				['stairs_step_off_left'] = '/quiet',
 				['stairs_step_off_right'] = '/quiet',
-				['sword_start'] = '/sword_stairs',
 			},
 			update = player.update_quiet_stairs,
-		},
-		sword_stairs = {
-			tags = {
-				state_tags.variant.sword_stairs,
-				state_tags.group.stairs,
-				state_tags.group.sword,
-				state_tags.visual.stairs_sword,
-			},
-			on = {
-				[player_sword_end_event] = '/quiet_stairs',
-			},
-			update = player.update_sword_stairs,
 		},
 		entering_world = {
 			tags = {
@@ -2779,6 +2646,9 @@ local function define_player_fsm()
 				update = player.update_leaving_shrine,
 			},
 		freeze = {
+			entering_state = function(self)
+				self:cancel_sword()
+			end,
 			on = {
 				['seal_flash_done'] = {
 					go = function(_self, state)
@@ -2826,6 +2696,28 @@ local function define_player_fsm()
 		state.update = wrap_state_update(update_handler)
 		state.input_event_handlers = input_event_handlers
 	end
+
+	states.sword = {
+		is_concurrent = true,
+		initial = 'inactive',
+		states = {
+			inactive = {
+				on = {
+					['sword_start'] = '/sword/active',
+				},
+			},
+			active = {
+				tags = { state_tags.group.sword },
+				on = {
+					[player_sword_end_event] = '/sword/inactive',
+					['sword_cancel'] = '/sword/inactive',
+				},
+				update = function(self)
+					self:advance_sword_sequence()
+				end,
+			},
+		},
+	}
 
 	define_fsm('player', {
 		initial = 'quiet',
@@ -2890,10 +2782,24 @@ local function define_player_fsm()
 				state_tags.variant.quiet,
 				state_tags.variant.walking_right,
 				state_tags.variant.walking_left,
-				state_tags.variant.quiet_sword,
 				state_tags.variant.hit_recovery,
 				state_tags.variant.controlled_fall,
 				state_tags.variant.uncontrolled_fall,
+			},
+			[state_tags.visual.jump_sword] = {
+				all = { state_tags.group.sword },
+				any = {
+					state_tags.variant.jumping,
+					state_tags.variant.stopped_jumping,
+					state_tags.variant.controlled_fall,
+					state_tags.variant.uncontrolled_fall,
+				},
+			},
+			[state_tags.visual.ground_sword] = {
+				all = { state_tags.group.sword, state_tags.variant.quiet },
+			},
+			[state_tags.visual.stairs_sword] = {
+				all = { state_tags.group.sword, state_tags.variant.quiet_stairs },
 			},
 		},
 		on = {
