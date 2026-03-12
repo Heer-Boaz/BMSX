@@ -1,3 +1,79 @@
+-- player.lua
+-- player character FSM, physics, and presentation.
+--
+-- ARCHITECTURE OVERVIEW
+--
+-- 1. FLAT STATES + CONCURRENT SWORD REGION.
+--    The player FSM is flat by design — all movement/damage states live at the
+--    same level (quiet, walking_right, jumping, hit_fall, freeze, …).  Walking
+--    and jumping are separate states, not substates of a "moving" compound,
+--    because each has distinct collision/input rules and shares no common
+--    entering_state/exiting_state logic.
+--
+--    The sword is an orthogonal concern: you can swing your sword in any
+--    movement state.  A concurrent region (`states.sword`) with two states
+--    (inactive / active) runs in parallel with the main movement state.
+--    This avoids doubling the state count with "quiet_with_sword" etc.
+--
+-- 2. TAG DERIVATIONS — REPLACING BOOLEAN CHECKS.
+--    Instead of `if state == 'quiet' or state == 'walking_right' or …`, the
+--    FSM uses tag derivations.  Each state declares its own tag (e.g.
+--    `v.q` for quiet).  Tag derivation rules at the FSM root combine these
+--    into group tags (e.g. `g.mw` = movement_walk, `g.st` = stairs).
+--
+--    Operators:
+--      SIMPLE ARRAY (any-of):  [tag1, tag2, tag3] — derived tag is true when
+--        ANY listed source tag is active.
+--      { all = [...] }:  derived tag is true when ALL listed tags are active.
+--      { any = [...], all = [...] }:  all + at least one of any.
+--      { none = [...] }:  derived tag is true when NONE of the listed tags
+--        are active (NOT operator).
+--
+--    Derivations can chain: a derivation can reference another derived tag.
+--    The runtime resolves them in a fixed-point loop.
+--
+--    VISUAL SWORD TAGS use compound derivations to express "sword is active
+--    AND player is in a specific movement context":
+--      vis.js (jump_sword)   = { all = { g.sw }, any = { v.j, v.sj, v.cf, v.uf } }
+--      vis.gs (ground_sword) = { all = { g.sw, v.q } }
+--      vis.ss (stairs_sword) = { all = { g.sw, v.qst } }
+--    These are used by apply_presentation_state() to pick the correct sprite.
+--
+-- 3. STATE_TAGS TABLE — SHORT STRING IDS.
+--    Tag strings are intentionally short (v.q, g.mw, vis.js) to minimize
+--    per-frame string comparison cost and memory.  The state_tags table maps
+--    human-readable names to these short IDs so code remains readable.
+--    Categories: variant (per-state), group (derived unions), visual
+--    (compound derived tags for sprite selection).
+--
+-- 4. FREEZE / UNFREEZE VIA SEAL_DISSOLUTION.
+--    When the director emits 'seal_dissolution', the player's root FSM `on`
+--    handler transitions to /freeze (which cancels any active sword).
+--    On 'seal_flash_done', freeze does `pop_and_transition()` to restore
+--    the previous state from the FSM history stack.  This pattern is shared
+--    with pepernoot_projectile.
+--
+-- 5. wrap_state_update() — COMMON FRAME LOGIC.
+--    Every state's update handler is wrapped by wrap_state_update(), which
+--    runs common-frame housekeeping (collision state, room switches, hit
+--    overlap, presentation, invulnerability) after the state-specific logic.
+--    input_event_handlers are also attached to every state via the loop.
+--
+-- 6. NO bind() — EVENTS VIA FSM `on` BLOCK.
+--    The player does not have a bind() function.  All event subscriptions are
+--    declared in the FSM definition's root `on` block with emitter filters
+--    (e.g. `{ emitter = 'd', go = … }` for director-sourced events).  This
+--    keeps the event wiring co-located with the FSM structure.
+--
+-- 7. REQUEST/REPLY — DIRECTOR-INITIATED INTERACTIONS.
+--    Several director events use the request pattern:
+--      'player.world_emerge'        — director requests emergence animation.
+--      'player.shrine_overlay_exit' — director requests shrine exit.
+--      'player.halo_trigger'        — director requests halo teleport.
+--    The player handles these in its root `on` block, performs the action,
+--    and (for shrine exit) emits a reply event ('shrine_exit_done') from
+--    leaving_shrine's leaving_state callback.
+
 local constants = require('constants')
 local components = require('components')
 local collision2d = require('collision2d')
@@ -6,6 +82,14 @@ local player_abilities = require('player_abilities')
 local player = {}
 player.__index = player
 
+-- STATE_TAGS — short string tag identifiers.
+-- variant: one per FSM state, exactly one active at a time (excluding the
+--   concurrent sword region).
+-- group: derived tags; true when ANY of their source variant tags is active.
+--   Used by has_tag() queries in update/collision code instead of multi-state
+--   equality checks.
+-- visual: compound derived tags combining group + variant, used exclusively
+--   by apply_presentation_state() for sprite selection.
 local state_tags = {
 	variant = {
 		quiet = 'v.q',
@@ -2422,6 +2506,11 @@ local function define_player_fsm()
 			self.attack_held = false
 		end,
 	}
+	-- wrap_state_update: wraps every state's update handler with common per-frame
+	-- logic (collision state, room switching, hit overlap resolution, presentation,
+	-- invulnerability updates).  This avoids duplicating the same trailing calls
+	-- in every update function.  The wrapper also handles elevator-on-jump reset
+	-- and sword cooldown decrement.
 	local function wrap_state_update(update_handler)
 		return function(self, state, event)
 			if not self:has_tag(state_tags.variant.jumping) then
@@ -2645,6 +2734,10 @@ local function define_player_fsm()
 				end,
 				update = player.update_leaving_shrine,
 			},
+		-- FREEZE — entered on 'seal_dissolution' from root on handler.
+		-- Cancels any active sword swing, then waits for 'seal_flash_done'.
+		-- On unfreeze: pop_and_transition() restores the previous state from
+		-- the FSM history stack, so the player resumes exactly where they were.
 		freeze = {
 			entering_state = function(self)
 				self:cancel_sword()
@@ -2697,6 +2790,13 @@ local function define_player_fsm()
 		state.input_event_handlers = input_event_handlers
 	end
 
+	-- SWORD CONCURRENT REGION.
+	-- is_concurrent = true means this state machine runs in parallel with the
+	-- main movement states.  Sword activation/deactivation is orthogonal to
+	-- movement — the player can swing while walking, jumping, standing, etc.
+	-- The 'active' state adds the g.sw (sword) tag, which tag derivations
+	-- combine with movement variant tags to produce visual sword tags
+	-- (vis.js, vis.gs, vis.ss) for sprite selection.
 	states.sword = {
 		is_concurrent = true,
 		initial = 'inactive',
@@ -2721,6 +2821,15 @@ local function define_player_fsm()
 
 	define_fsm('player', {
 		initial = 'quiet',
+		-- TAG DERIVATIONS — define group and visual tags from state variant tags.
+		--
+		-- Simple array = ANY-OF: group tag is active when any listed variant is active.
+		-- { all = [...] }         : active when ALL listed tags are active.
+		-- { any = [...], all = [...] }: ALL must hold, plus at least one of ANY.
+		-- { none = [...] }        : active when NONE of the listed tags are active.
+		--
+		-- These derivations replace scattered `if state == 'x' or state == 'y'`
+		-- checks throughout the codebase.  Code instead uses has_tag(group_tag).
 		tag_derivations = {
 			[state_tags.group.world_transition_waiting] = {
 				state_tags.variant.waiting_world_banner,
@@ -2802,6 +2911,14 @@ local function define_player_fsm()
 				all = { state_tags.group.sword, state_tags.variant.quiet_stairs },
 			},
 		},
+		-- ROOT ON HANDLERS — catch-all event subscriptions.
+		-- These fire regardless of which movement state is active.
+		--
+		-- Entries with { emitter = 'd', go = … } filter by director emitter,
+		-- preventing accidental reactions to same-named events from other sources.
+		--
+		-- 'seal_dissolution' → /freeze: entered on seal break, restores via
+		-- pop_and_transition() on 'seal_flash_done' (see freeze state above).
 		on = {
 					[player_abilities.command_ids.activate_sword] = function(self)
 						player_abilities.activate_sword(self)
@@ -2840,7 +2957,7 @@ local function define_player_fsm()
 			['enter_world_start'] = '/entering_world',
 			['leave_world_start'] = '/waiting_world_emerge',
 			['enter_shrine_start'] = '/entering_shrine',
-			['seal_breaking'] = '/freeze',
+			['seal_dissolution'] = '/freeze',
 		},
 		states = states,
 	})

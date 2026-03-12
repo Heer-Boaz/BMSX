@@ -1,3 +1,17 @@
+-- shrine.lua
+-- shrine overlay renderer — displays text on the shrine screen.
+--
+-- SELF-MANAGING SUBSCRIBER PATTERN:
+-- Subscribes to two director broadcasts in bind():
+--   'shrine' (from 'd') — sets self.lines from event.lines payload.
+--   'room'   (from 'd') — clears self.lines (self-clear on mode change).
+-- No separate 'shrine.open' or 'shrine.clear' events exist.  The shrine
+-- manages its own state entirely through broadcast subscriptions.
+--
+-- This is the canonical example of how subsystems should consume mode
+-- broadcasts: subscribe in bind(), read payload data from the event, and
+-- self-clear when the mode returns to 'room'.
+
 local constants = require('constants')
 local font = require('font')
 
@@ -13,19 +27,11 @@ end
 
 function shrine:bind()
 	self.events:on({
-		event = 'shrine.open',
+		event = 'shrine',
 		emitter = 'd',
 		subscriber = self,
 		handler = function(event)
 			self.lines = event.lines
-		end,
-	})
-	self.events:on({
-		event = 'shrine.clear',
-		emitter = 'd',
-		subscriber = self,
-		handler = function()
-			self.lines = {}
 		end,
 	})
 	self.events:on({

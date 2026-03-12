@@ -77,6 +77,57 @@
 --      'tick'   — use 'update'  (the FSM calls update(), not tick())
 --    Using these names silently does nothing on older runtimes and errors on
 --    current ones.  Keep state definitions clean.
+--
+-- RUNTIME MECHANICS — how the FSM runtime works under the hood.
+--
+-- 6. COMPOUND STATE AUTO-ENTRY (enter_initial_substate_chain).
+--    When a state with substates is entered (either on transition or on
+--    machine start), the runtime calls enter_initial_substate_chain() which
+--    recursively descends into the initial substate, activating timelines and
+--    calling entering_state at each level.  This ensures that entering a
+--    compound state like /shrine always also enters /shrine/entering without
+--    the caller needing to know the internal structure.
+--
+-- 7. CONCURRENT REGIONS (is_concurrent = true).
+--    A state marked is_concurrent runs in parallel with the main (non-concurrent)
+--    substate.  It has its own state machine lifecycle (update, event dispatch)
+--    but shares the same target object.  During dispatch_event, the current
+--    main child is dispatched first, then all concurrent siblings.  During
+--    update(), the main child runs first, then concurrent siblings.
+--    Example: player's sword region runs alongside the movement states.
+--
+-- 8. TAG DERIVATIONS.
+--    Tag derivations declared in the FSM root definition are evaluated after
+--    every state transition via sync_target_state_tags().  The runtime:
+--    (a) collects all active state tags from the current state tree (including
+--        concurrent regions, recursively), then
+--    (b) runs the derivation rules to compute derived tags, and
+--    (c) diffs against previously applied tags to add/remove tags on the
+--        target object via add_tag/remove_tag.
+--    Derivation rules support: any (array = any-of), all, and none operators.
+--    Rules can chain — derived tags can reference other derived tags.
+--
+-- 9. CRITICAL SECTIONS AND TRANSITION QUEUES.
+--    During entering_state and exiting_state callbacks, the FSM is in a
+--    critical section.  Any transition request during a critical section is
+--    queued and processed after the section ends.  This prevents re-entrant
+--    state changes that would corrupt the state tree.
+--
+-- 10. POP_AND_TRANSITION (history stack).
+--     Each state maintains a bounded history stack (max 10 entries).  When a
+--     state transitions away, the previous state_id is pushed.  Calling
+--     pop_and_transition() restores the most recent state — used for temporary
+--     interruptions like player freeze (seal dissolution → pop back to
+--     previous movement state).  If the local stack is empty, it delegates
+--     to the parent state.
+--
+-- 11. EVENT DISPATCH AND BUBBLING.
+--     dispatch_event() delivers an event depth-first: current child first,
+--     then concurrent siblings.  If no child handles it, the event bubbles
+--     up to the parent, then grandparent, etc.  Root-level `on` handlers
+--     catch events that no substate claimed.  The `emitter` field in `on`
+--     entries provides per-handler emitter filtering, so a handler can
+--     restrict to events from a specific source object.
 
 local fsm_trace = require('fsm_trace')
 local clear_map = require('clear_map')
@@ -134,6 +185,16 @@ local function validate_tag_list(values, owner_tag, field_name)
 	return values
 end
 
+-- compile_tag_derivations: parses the raw tag_derivations table from the FSM
+-- definition into an ordered array of compiled rules.  Each rule has:
+--   derived_tag (string): the tag to add/remove on the target.
+--   any (array|nil): derived_tag is true if ANY of these source tags is active.
+--   all (array|nil): derived_tag requires ALL of these to be active.
+--   none (array|nil): derived_tag requires NONE of these to be active.
+-- Short-form: if spec is a plain array, it is treated as an any-of rule.
+-- Full-form: spec is { any = [...], all = [...], none = [...] }.
+-- Rules are sorted by derived_tag name for deterministic evaluation order.
+-- The runtime evaluates rules in a fixed-point loop to resolve chains.
 local function compile_tag_derivations(raw)
 	if raw == nil then
 		return nil
@@ -733,6 +794,12 @@ function state:start()
 	self:enter_initial_substate_chain()
 end
 
+-- enter_initial_substate_chain: recursively enters the initial substate
+-- after a compound state is entered.  Called from start() (machine boot) and
+-- transition_to_state() (on transition into a state that has substates).
+-- Runs each level's entering_state in a critical section to queue any
+-- transitions triggered by the callback.  After the entering_state callback,
+-- descends into the next initial substate.  Finally syncs target state tags.
 function state:enter_initial_substate_chain()
 	local start_state_id = self.definition.initial
 	if not start_state_id then
@@ -1159,6 +1226,12 @@ function state:check_state_guard_conditions(target_state_id)
 	return { allowed = allowed, evaluations = evaluations }
 end
 
+-- transition_to_state: the core state transition operation.
+-- If in a critical section, the transition is queued (see CRITICAL SECTIONS
+-- in the header).  Guards are evaluated before transitioning.
+-- Sequence: exit current state → deactivate timelines → push history →
+-- set new current_id → activate timelines → call entering_state →
+-- if entered state has substates, reset_submachine + enter_initial_substate_chain.
 function state:transition_to_state(state_id)
 	if self.in_update then
 		self._transitions_this_update = self._transitions_this_update + 1
@@ -1322,6 +1395,10 @@ function state:push_history(to_push)
 	end
 end
 
+-- pop_and_transition: pops the most recent state_id from the bounded history
+-- stack and transitions to it.  Used for temporary states like /freeze that
+-- should return to wherever the FSM was before.  If the local stack is empty,
+-- delegates to the parent state (allowing bubbling up the hierarchy).
 function state:pop_and_transition()
 	if self._hist_size <= 0 then
 		if self.parent ~= nil then
@@ -1578,6 +1655,8 @@ function state:matches_state_tag(tag)
 	return false
 end
 
+-- collect_active_state_tags: walk the current state tree (including concurrent
+-- regions) and collect all tags from active states into the output table.
 function state:collect_active_state_tags(out)
 	local tags = self.tag_lookup
 	if tags then
@@ -1599,6 +1678,10 @@ function state:collect_active_state_tags(out)
 	end
 end
 
+-- matches_tag_derivation_rule: evaluate a single derivation rule against the
+-- current set of active tags.  all → every listed tag must be present.
+-- none → no listed tag may be present.  any → at least one listed tag must
+-- be present (returns false if none match, even when all/none pass).
 local function matches_tag_derivation_rule(rule, tags)
 	local all = rule.all
 	if all then
@@ -1628,6 +1711,9 @@ local function matches_tag_derivation_rule(rule, tags)
 	return true
 end
 
+-- collect_derived_state_tags: evaluate tag derivation rules against currently
+-- active tags.  Uses a fixed-point loop to resolve chains (derived tags that
+-- reference other derived tags).
 function state:collect_derived_state_tags(out)
 	local root = self:is_root() and self or self.root
 	local derivations = root.definition.tag_derivations
@@ -1652,6 +1738,9 @@ function state:collect_derived_state_tags(out)
 	end
 end
 
+-- sync_target_state_tags: diffs active state tags (including derived tags)
+-- against previously applied tags on the target object.  Adds new tags and
+-- removes stale ones via add_tag/remove_tag.  Called after every transition.
 function state:sync_target_state_tags()
 	local root = self:is_root() and self or self.root
 	local target = root.target
@@ -1744,6 +1833,10 @@ function state:handle_event(event_name, emitter_id, detail, event)
 	return { handled = handled, context = captured_context }
 end
 
+-- dispatch_event: delivers an event through the state hierarchy.
+-- Dispatch order: current child (depth-first) → concurrent siblings →
+-- if unhandled, bubble to parent → grandparent → root.  Root-level `on`
+-- handlers are the catch-all.  Returns true if any handler consumed the event.
 function state:dispatch_event(event_or_name, payload)
 	if self.paused then
 		return false

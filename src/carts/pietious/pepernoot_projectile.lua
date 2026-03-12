@@ -1,3 +1,15 @@
+-- pepernoot_projectile.lua
+-- player thrown projectile (pepernoot) — fires horizontally, disposes on
+-- collision with terrain, room bounds, or enemies.
+--
+-- FREEZE/UNFREEZE PATTERN (shared with player.lua):
+-- Root FSM `on` subscribes to 'seal_dissolution' → transitions to /freeze.
+-- The freeze state tags the projectile with 'v.fz' so update_motion() can
+-- skip movement (checked via has_tag).  On 'seal_flash_done', freeze does
+-- pop_and_transition() to restore the previous state from the history stack.
+-- This is the same pattern the player uses — temporary interruption with
+-- automatic state restoration.
+
 local constants = require('constants')
 local worldobject = require('worldobject')
 
@@ -63,7 +75,7 @@ local function define_pepernoot_projectile_fsm()
 				emitter = 'pietolon',
 				go = worldobject.mark_for_disposal,
 			},
-			['seal_breaking'] = '/freeze',
+			['seal_dissolution'] = '/freeze',
 		},
 		states = {
 			active = {

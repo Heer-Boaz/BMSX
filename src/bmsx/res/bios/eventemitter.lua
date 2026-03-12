@@ -21,7 +21,24 @@
 --          subscriber = self,
 --          handler = function() self:reset() end })
 --
--- 2. REQUEST / REPLY PATTERN.
+-- 2. BROADCAST WITH PAYLOAD — DATA IN THE EVENT, NOT SEPARATE EVENTS.
+--    When a subsystem needs data alongside a mode switch, carry it as a
+--    payload on the mode broadcast.  Do NOT emit a separate "data" event
+--    followed by a "mode" event — this creates fragile ordering dependencies
+--    and disguised method calls.
+--
+--    WRONG — two events (data + mode):
+--      self.events:emit('shrine.open', { lines = lines })
+--      self.events:emit('shrine')
+--    RIGHT — single broadcast with payload:
+--      self.events:emit('shrine', { lines = lines })
+--    The subscriber reads event.lines in its handler.
+--
+--    Subsystems that need to reset when a new mode starts subscribe to the
+--    appropriate mode broadcast (e.g. 'room') in their own bind() and
+--    self-clear.  No separate 'X.clear' events are needed.
+--
+-- 3. REQUEST / REPLY PATTERN.
 --    When object A needs a result from object B but must not call B directly:
 --    A emits a namespaced request event; B subscribes, does work, and emits a
 --    reply event; A (or A's FSM on-handler) reacts to the reply.
@@ -39,21 +56,28 @@
 --          return e.value and '/state_yes' or '/state_no'
 --      end }
 --
--- 3. EMITTER FILTER.
+-- 4. EMITTER FILTER.
 --    The `emitter` field in on() filters by emitter id (string) or object
 --    reference.  Always supply it when the event name is not globally unique
 --    (e.g. short names such as 'ready', 'done', 'update') to avoid reacting
 --    to unrelated emitters of the same event name.
 --
--- 4. SUBSCRIBER FIELD.
+-- 5. SUBSCRIBER FIELD.
 --    `subscriber` in on() is used exclusively by remove_subscriber(); it plays
 --    no role in dispatch filtering.  Always populate it so that subscriptions
 --    are cleaned up when the subscriber object is removed.
 --
--- 5. PERSISTENT FLAG.
+-- 6. PERSISTENT FLAG.
 --    persistent = true keeps the subscription alive across clear() calls.
 --    Use only for long-lived system-level listeners that must outlive normal
 --    object lifecycle resets.
+--
+-- 7. EVENTPORT VS EVENTEMITTER.
+--    Cart code should use eventport (self.events) not eventemitter directly.
+--    eventport:on() auto-fills the emitter filter from the port owner.
+--    eventport:emit() auto-fills the emitter identity.
+--    This prevents accidentally omitting the emitter and creating
+--    subscriptions that fire for unrelated sources.
 
 local eventemitter = {}
 eventemitter.__index = eventemitter

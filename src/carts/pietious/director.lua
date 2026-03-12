@@ -1,3 +1,60 @@
+-- director.lua
+-- game flow orchestrator — owns the master FSM that governs which mode the
+-- game is in (room, shrine, lithograph, item screen, death, etc.) and
+-- coordinates transitions between modes via broadcast events.
+--
+-- KEY DESIGN DECISIONS
+--
+-- 1. SINGLE BROADCAST PER MODE SWITCH.
+--    When the director enters a mode (e.g. shrine, lithograph), it emits ONE
+--    broadcast event whose name matches the mode.  Any data that a specific
+--    subsystem needs is carried as a payload on that broadcast.  There is no
+--    second "open" or "clear" event — subsystems self-clear when they hear the
+--    next mode broadcast (typically 'room').
+--
+--    Example:  entering shrine/overlay emits `shrine { lines = … }`.
+--    The shrine overlay reads the lines from the payload in its own handler.
+--    When the director later re-enters 'room', shrine hears the 'room'
+--    broadcast and clears its lines — no explicit 'shrine.clear' event.
+--
+-- 2. enter_transition() HELPER.
+--    All mode switches that require the transition overlay (fade mask) follow
+--    the same three-step pattern: (a) switch to transition space, (b) emit
+--    the mode broadcast (optionally with payload), (c) emit
+--    'transition.mask.play' to tell the transition overlay to play its fade
+--    timeline. The enter_transition() helper captures this so entering_state
+--    callbacks are one-liners.
+--
+--    'transition.mask.play' is cross-cutting: emitted for ALL mode switches
+--    (halo, title, story, death, etc.), not just the 'transition' mode.  The
+--    transition overlay subscribes to it independently of any specific mode.
+--
+-- 3. NO DISGUISED METHOD CALLS.
+--    The director never calls methods on other objects directly and never emits
+--    "command" events that are thinly disguised method calls targeting a single
+--    object.  If a subsystem needs to act on a mode change, it subscribes to
+--    the mode broadcast in its own bind().
+--
+-- 4. FSM STATE SUB-VARIANTS INSTEAD OF CROSS-STATE FLAGS.
+--    When two states differ only by a boolean context value (e.g. after_death
+--    in daemon_appearance), two distinct FSM states exist and the decision
+--    point navigates to the correct one.  Shared setup lives in a helper
+--    method (start_daemon_appearance).  No boolean flags are stored on self.
+--
+-- 5. STAGING FIELDS (pending_*).
+--    The only legitimate cross-state data on self are staging fields populated
+--    synchronously in one breath with the FSM event that triggers the
+--    transition.  They are consumed and cleared immediately in the next
+--    state's entering_state.  Prefer passing data in the event payload so no
+--    staging field is needed at all (e.g. lithograph_requested.lines).
+--
+-- 6. REQUEST / REPLY.
+--    For interactions that require a round-trip (player death → castle
+--    evaluates restart_daemon → reply), director emits a request event
+--    (e.g. 'player.death_resolve') and waits via `on` for the reply
+--    (e.g. 'death_resolved').  No polling, no pending flag — the FSM state
+--    IS the waiting mechanism.
+
 local constants = require('constants')
 local halo_teleport_timeline_id = 'director.halo.transition'
 local banner_world_timeline_id = 'director.banner.world'
@@ -47,9 +104,7 @@ function director:set_active_space(space_id)
 end
 
 function director:begin_black_wait()
-	self:set_active_space('transition')
-	self.events:emit('transition')
-	self.events:emit('transition.mask.play')
+	self:enter_transition('transition')
 end
 
 function director:banner_lines(mode)
@@ -142,7 +197,6 @@ function director:despawn_daemon_clouds()
 end
 
 function director:finish_banner_transition()
-	self.events:emit('transition.banner', { lines = {} })
 	if self.banner_post_action == 'castle_emerge' then
 		self.banner_post_action = nil
 		self.events:emit('player.world_emerge')
@@ -155,9 +209,9 @@ end
 
 -- All states that switch to transition space + emit a named event + play the mask follow
 -- the exact same three-line pattern. Extract it so every entering_state is a single call.
-function director:enter_transition(event_name)
+function director:enter_transition(event_name, payload)
 	self:set_active_space('transition')
-	self.events:emit(event_name)
+	self.events:emit(event_name, payload)
 	self.events:emit('transition.mask.play')
 end
 
@@ -217,74 +271,42 @@ function director:ctor()
 	self:ensure_daemon_cloud_pool()
 end
 
--- ARCHITECTURE: Engineering guidelines for this FSM.
+-- BROADCAST EVENT CATALOGUE — authoritative list of events emitted by director.
 --
--- TIMELINE DEFINITION
---   Timelines that belong to a single state are declared inside that state's
---   `timelines` block using `def = { ... }`.  The engine calls timeline.new(def)
---   internally — no timeline.new() call is needed in cart code.
---   The `id` field in `def` is optional; it defaults to the dictionary key.
---   Timelines shared between multiple states are declared in the root `timelines`
---   block of the FSM (before `states`) with `autoplay = false`, then each state
---   that uses them declares only the behaviour (autoplay, stop_on_exit, on_end …).
+--   'room'                  — director entered room state. Subsystems (shrine,
+--                             lithograph, transition) subscribe and self-clear.
+--   'transition'            — director entered transition sub-state. Optional
+--                             { lines = { ... } } payload for banner text.
+--   'transition.mask.play'  — cross-cutting: transition overlay plays its fade
+--                             mask timeline. Emitted for ALL mode switches so
+--                             the overlay does not need to know the mode name.
+--   'seal_dissolution'      — starts seal dissolution. Player + projectiles
+--                             subscribe to enter /freeze state; they unfreeze
+--                             on 'seal_flash_done' (emitted mid-timeline at
+--                             frame 32).
+--   'seal_flash_done'       — flash phase done; objects may resume.
+--   'seal_dissolution_done' — entire dissolution timeline finished.
+--   'daemon_appearance'     — optional { after_death = true } payload.
+--   'daemon_appearance_done'— daemon cloud timeline ended.
+--   'shrine'                — { lines = { ... } } payload.
+--   'lithograph'            — { lines = { ... } } payload.
+--   'item'                  — item screen mode.
+--   'halo'                  — halo teleport mode.
+--   'title', 'story', 'ending', 'victory_dance', 'death' — modal modes.
+--   'f1'                    — item screen opened (audio-only).
 --
--- PER-STATE TIMELINE BEHAVIOUR
---   autoplay = true   — FSM plays the timeline automatically on state enter.
---   autoplay = false  — play manually with self:play_timeline(id, opts) in
---                       entering_state (needed when target/params are runtime).
---   stop_on_exit = true  — FSM stops the timeline automatically on exit.
---   on_end / on_frame — transition or action callbacks.
---
--- CROSS-OBJECT COMMUNICATION
---   The director must never call methods on other objects directly, and must
---   never emit "command" events that are thinly disguised method calls on a
---   specific object.  A command event is any event whose sole consumer is one
---   named object and whose only effect is to mutate that object's state.
---
---   WRONG — director demands shrine reset itself:
---     self.events:emit('shrine.clear')   -- shrine is the only subscriber; this
---                                        -- is just shrine:clear() in disguise.
---   RIGHT — each subsystem owns its own reset trigger:
---     shrine subscribes to 'room' in its own bind() and clears itself there.
---
---   BROADCAST events emitted by director:
---     'room'            — director has entered room state; all subsystems that
---                         need to reset on room entry subscribe to this in their
---                         own bind().  castle also emits 'room.enter' here.
---     'transition'      — director has entered transition sub-state.
---     'seal_dissolution', 'daemon_appearance', 'halo', 'shrine', 'item',
---     'lithograph', 'title', 'story', 'ending', 'victory_dance', 'death' —
---                         broadcast mode switches; room FSM and renders subscribe.
---
---   REQUEST/REPLY:
---     director emits 'player.death_resolve' and enters a waiting state.
---     → castle handles the event, does its internal bookkeeping, and
---       emits 'death_resolved' with a payload { restart_daemon = bool }.
---     → director reacts via on = { ['death_resolved'] = function(self, _s, e) … }
---
--- FSM STATE SUB-VARIANTS
---   When two states differ only by a boolean context value (e.g. after_death), do not
---   store a cross-state flag on self.  Instead create two distinct FSM states
---   (daemon_appearance / daemon_appearance_post_death) and navigate to the right one
---   from the decision state (death_resolve).  Shared logic lives in a method.
---
--- STAGING FIELDS (pending_*)
---   The only legitimate 'cross-state' data on self are staging fields (pending_*)
---   that are populated synchronously in one breath with the FSM event that
---   triggers the transition, and consumed immediately in the next state's
---   entering_state.  They must be cleared in entering_state after reading.
---   PREFERRED: pass the data directly in the event payload so that the FSM
---   state receives it via the event argument and no self field is needed at all.
---
---   WRONG — staging field (known pre-existing violation: pending_lithograph_lines):
---     self.pending_lithograph_lines = { event.text_line }  -- set here
---     self.events:emit('lithograph_requested')             -- then transition
---     -- lithograph_screen_open.entering_state reads self.pending_lithograph_lines
---   RIGHT — payload in the event:
---     self.events:emit('lithograph_requested', { lines = { event.text_line } })
---     -- lithograph_screen_open.entering_state receives lines via event.lines
+-- REQUEST/REPLY:
+--   'player.death_resolve'         → castle → reply 'death_resolved'
+--   'player.shrine_overlay_exit'   → player → reply 'shrine_exit_done'
+--   'player.halo_trigger'          → player → reply 'halo_trigger_cancelled'
+--   'player.world_emerge'          → player (begins emergence animation)
 local function define_director_fsm()
-	-- Shared timeline callbacks for both daemon appearance variants (avoid duplication).
+	-- Shared timeline callbacks for both daemon appearance variants.
+	-- Two FSM states (daemon_appearance / daemon_appearance_post_death) share
+	-- the same cloud-spawning on_frame and completion on_end.  Defining them
+	-- as local functions here avoids duplication without creating cross-state
+	-- flags — the two states navigate from different decision points but run
+	-- identical timeline behaviour.
 	local function on_daemon_frame(self, _state, event)
 		local frame_value = event.frame_value
 		local intro_state = math.modf(frame_value / 2) + 97
@@ -321,6 +343,10 @@ local function define_director_fsm()
 			},
 		},
 		initial = 'room',
+		-- ROOT ON HANDLERS — global mode-switch triggers.
+		-- These fire regardless of which sub-state the director is in, which is
+		-- exactly how mode transitions work: any game system can request a mode
+		-- change at any time, and the director unconditionally obeys.
 		on = {
 			['world_transition_start'] = '/world_transition',
 			['shrine_transition_start'] = '/shrine',
@@ -333,20 +359,24 @@ local function define_director_fsm()
 			['death_start'] = '/death',
 		},
 		states = {
+			-- ROOM — default mode. Player is moving around in a room.
+			-- entering_state emits 'room' which acts as the universal "return
+			-- to gameplay" signal: shrine clears its text, lithograph resets,
+			-- transition overlay clears its banner, etc.
 			room = {
 				entering_state = function(self)
 					self:despawn_daemon_clouds()
 					self:set_active_space('main')
-					-- 'room' drives: castle emit_room_enter, room FSM mode+room_state sync,
-					-- transition banner clear, shrine clear, lithograph clear.
 					self.events:emit('room')
 				end,
 				on = {
-					['room_switched'] = '/room_switch_wait',
+					-- LITHOGRAPH — room-local. Handled here (not on root) because
+					-- lithographs are only reachable from the room state via
+					-- a tile interaction in 'pietolon'.
 					['lithograph_requested'] = function(self, _state, event)
-						self.events:emit('lithograph.open', { lines = event.lines })
 						self:set_active_space('lithograph')
-						self.events:emit('lithograph')
+						-- Single broadcast with payload (lines). No separate 'lithograph.open'.
+						self.events:emit('lithograph', { lines = event.lines })
 						return '/lithograph'
 					end,
 					['banner_requested'] = '/banner_transition',
@@ -385,6 +415,10 @@ local function define_director_fsm()
 						['banner_requested'] = '/banner_transition',
 					},
 				},
+				-- SHRINE — three-phase compound state (entering → overlay → exiting).
+				-- The shrine transition begins in 'main' space (player walks in),
+				-- switches to 'shrine' space for the overlay text, then back to
+				-- 'main' for the exit animation before returning to room.
 				shrine = {
 					initial = 'entering',
 					states = {
@@ -398,11 +432,13 @@ local function define_director_fsm()
 							},
 						},
 						overlay = {
+							-- Single 'shrine' broadcast carries text lines as payload.
+							-- The shrine overlay reads event.lines in its own handler.
 							entering_state = function(self)
-								self.events:emit('shrine.open', { lines = self.pending_shrine_text_lines })
+								local lines = self.pending_shrine_text_lines
 								self.pending_shrine_text_lines = {}
 								self:set_active_space('shrine')
-								self.events:emit('shrine')
+								self.events:emit('shrine', { lines = lines })
 							end,
 							input_event_handlers = {
 								['down[jp]'] = '/shrine/exiting',
@@ -410,7 +446,6 @@ local function define_director_fsm()
 						},
 						exiting = {
 							entering_state = function(self)
-								self.events:emit('shrine.clear')
 								self:set_active_space('main')
 								self.events:emit('player.shrine_overlay_exit')
 							end,
@@ -444,12 +479,11 @@ local function define_director_fsm()
 				tags = { 'd.bt' },
 				entering_state = function(self)
 					local banner_mode = self.pending_banner_mode
-					self.events:emit('transition.banner', { lines = self:banner_lines(banner_mode) })
 					self.banner_post_action = self.pending_banner_post_action
 					self.pending_banner_mode = nil
 					self.pending_banner_world_number = 0
 					self.pending_banner_post_action = nil
-					self:enter_transition('transition')
+					self:enter_transition('transition', { lines = self:banner_lines(banner_mode) })
 					local timeline_id = banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
 					self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
 				end,
@@ -536,17 +570,23 @@ local function define_director_fsm()
 						self:enter_transition('halo')
 					end,
 			},
+			-- SEAL DISSOLUTION — runs a 95-frame timeline that:
+				--   frames 0–31: screen flash phase (white overlay toggles).
+				--     On frame 32: emits 'seal_flash_done' → player + projectiles
+				--     unfreeze (they entered /freeze on 'seal_dissolution').
+				--   frames 31–94: dissolve window (tagged d.seal.dissolve).
+				--   frames 63–94: smoke window (tagged d.seal.smoke).
+				--   on_end: emits 'seal_dissolution_done' → transitions to daemon_appearance.
+				--
+				-- On entering_state: emits 'seal_dissolution' which is both the
+				-- mode broadcast for renderers and the freeze trigger for player +
+				-- projectiles.  No separate 'seal_breaking' event.
 				seal_dissolution = {
 					timelines = {
 						[seal_timeline_id] = {
 							def = {
 								frames = timeline.range(95),
 								playback_mode = 'once',
-								markers = {
-									{ frame = 0, event = 'seal.phase', payload = { phase = 'flash' } },
-									{ frame = 31, event = 'seal.phase', payload = { phase = 'room_dissolve' } },
-									{ frame = 63, event = 'seal.phase', payload = { phase = 'seal_dissolve' } },
-								},
 								windows = {
 									{
 										name = 'dissolve',
@@ -593,7 +633,6 @@ local function define_director_fsm()
 						self:set_active_space('main')
 						self.seal_flash_on = false
 						self:remove_tag('d.seal.flash')
-						self.events:emit('seal_breaking')
 						self.events:emit('seal_dissolution')
 					end,
 				},
@@ -662,9 +701,6 @@ local function define_director_fsm()
 								on_end = '/room',
 							},
 						},
-						entering_state = function(self)
-							self.events:emit('lithograph.clear')
-						end,
 					},
 				},
 			},
@@ -688,9 +724,11 @@ local function define_director_fsm()
 					entering_state = function(self) self:enter_transition('death') end,
 					on = { ['death_done'] = '/death_resolve' },
 				},
-				-- Emit a request event; castle handles it (updates tags, evaluates
-				-- should_restart_daemon) and replies with 'death_resolved' carrying
-				-- { restart_daemon = bool }. No direct object() calls here.
+				-- REQUEST/REPLY pattern: emit 'player.death_resolve' → castle
+				-- subscribes, evaluates game state, replies with 'death_resolved'
+				-- carrying { restart_daemon = bool }.  Director WAITS in this FSM
+				-- state — the state IS the waiting mechanism.  No polling needed.
+				-- On reply: navigate to daemon_appearance_post_death or /room.
 				death_resolve = {
 					entering_state = function(self)
 						self.events:emit('player.death_resolve')

@@ -1,3 +1,14 @@
+-- lithograph_screen.lua
+-- lithograph screen overlay — displays collected lithograph text.
+--
+-- SELF-MANAGING SUBSCRIBER PATTERN:
+-- Uses an FSM with root `on` handlers (not bind()) for event subscriptions:
+--   'lithograph' (from 'd') — sets self.lines from event.lines payload.
+--   'room'       (from 'd') — clears self.lines (self-clear on mode change).
+-- Same pattern as shrine.lua, just expressed via FSM `on` block instead
+-- of bind().  Both approaches are equivalent — FSM `on` is preferred when
+-- the object already has an FSM.
+
 local constants = require('constants')
 local font = require('font')
 
@@ -34,16 +45,10 @@ local function define_lithograph_screen_fsm()
 	define_fsm('lithograph_screen', {
 		initial = 'active',
 		on = {
-			['lithograph.open'] = {
+			['lithograph'] = {
 				emitter = 'd',
 				go = function(self, _state, event)
 					self.lines = event.lines
-				end,
-			},
-			['lithograph.clear'] = {
-				emitter = 'd',
-				go = function(self)
-					self.lines = {}
 				end,
 			},
 			['room'] = {

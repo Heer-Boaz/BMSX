@@ -1,3 +1,20 @@
+-- transition.lua
+-- transition overlay — renders the fade mask and optional banner text.
+--
+-- CROSS-CUTTING SUBSCRIBER PATTERN:
+-- Subscribes to three director broadcasts via FSM root `on`:
+--   'transition'       (from 'd') — stores optional banner_lines from payload.
+--   'transition.mask.play' (from 'd') — plays the fade mask timeline.  This
+--     event is cross-cutting: the director emits it for ALL mode switches
+--     (halo, title, story, death, etc.), not just 'transition'.  The overlay
+--     does not need to know which mode is active — it just plays the mask.
+--   'room'             (from 'd') — clears banner_lines (self-clear).
+--
+-- The banner text is only shown when the director tag 'd.bt' is active
+-- (set by the banner_transition state).  draw_transition_overlay() checks
+-- this tag before rendering, so the transition overlay can exist and play
+-- its mask timeline without showing any text.
+
 local constants = require('constants')
 local font = require('font')
 
@@ -39,16 +56,16 @@ local function define_transition_fsm()
 	define_fsm('transition', {
 		initial = 'active',
 		on = {
+			['transition'] = {
+				emitter = 'd',
+				go = function(self, _state, event)
+					self.banner_lines = event and event.lines or {}
+				end,
+			},
 			['transition.mask.play'] = {
 				emitter = 'd',
 				go = function(self)
 					self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
-				end,
-			},
-			['transition.banner'] = {
-				emitter = 'd',
-				go = function(self, _state, event)
-					self.banner_lines = event.lines
 				end,
 			},
 			['room'] = {
