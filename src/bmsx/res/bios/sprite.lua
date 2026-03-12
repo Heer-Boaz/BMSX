@@ -6,7 +6,7 @@
 --    rombuilder strips it from the final asset name but processes it at pack-time:
 --
 --      @cx  — bakes a CONVEX hull polygon (one polygon; fast, recommended default)
---      @cc  — bakes a CONCAVE hull (multiple polygons; exact but slower)
+--      @cc  — bakes a tighter multi-piece convex fit (multiple polygons; slower)
 --      none — AABB only (a rectangle from the image's sx/sy; cheapest)
 --
 --    Examples:

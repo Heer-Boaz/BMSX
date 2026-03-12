@@ -308,7 +308,7 @@ end
 --    spritecomponent.sync_collider() then copies those polys into _local_polys
 --    automatically — no cart code required.
 --    @cx  = convex hull  (one polygon, fast)
---    @cc  = concave hull (multiple polygons, exact)
+--    @cc  = tighter multi-piece convex fit (multiple polygons, slower)
 --    none = AABB only    (rectangle, fastest)
 --
 -- 3. LAYER / MASK: use collision_profiles, not raw numbers.

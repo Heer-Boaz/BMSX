@@ -5,11 +5,30 @@ import type { RectBounds, Polygon, vec2arr } from '../../src/bmsx/rompack/rompac
 import type { ImageResource } from './rompacker.rompack';
 import earcut from 'earcut';
 
+type ConvexPiece = {
+	points: vec2arr[];
+	poly: Polygon;
+	emptyCount: number;
+	emptyRatio: number;
+};
+
+type ConvexPieceSplit = {
+	left: ConvexPiece;
+	right: ConvexPiece;
+	gain: number;
+	childWorstEmptyRatio: number;
+	balance: number;
+};
+
 /**
  * Dedicated class for extracting bounding boxes and related operations from images.
  */
 export class BoundingBoxExtractor {
 	private static readonly DEFAULT_ALPHA_T = 32;
+	private static readonly DEFAULT_CC_MAX_PIECES_PER_COMPONENT = 4;
+	private static readonly DEFAULT_CC_MAX_EMPTY_RATIO = 0.22;
+	private static readonly DEFAULT_CC_MIN_SPLIT_GAIN = 2;
+	private static readonly DEFAULT_CC_MIN_COMPONENT_PIXELS = 8;
 
 	/**
 	 * Extracts the tightest bounding box around non-transparent pixels in an image.
@@ -143,45 +162,30 @@ export class BoundingBoxExtractor {
 
 	static extractDetailedConvexPieces(
 		image: Image,
-		opts?: { alphaThreshold?: number; thicken?: number; closeGaps?: boolean }
+		opts?: {
+			alphaThreshold?: number;
+			thicken?: number;
+			closeGaps?: boolean;
+			maxPiecesPerComponent?: number;
+			maxEmptyRatio?: number;
+			minSplitGain?: number;
+			minComponentPixels?: number;
+		}
 	): Polygon[] {
 		const { width, height, mask } = this.extractMask(image, opts);
-		const index = (x: number, y: number) => y * width + x;
-		let active = new Map<string, { x0: number; x1: number; y0: number; y1: number }>();
+		const maxPiecesPerComponent = Math.max(1, opts?.maxPiecesPerComponent ?? this.DEFAULT_CC_MAX_PIECES_PER_COMPONENT) | 0;
+		const maxEmptyRatio = opts?.maxEmptyRatio ?? this.DEFAULT_CC_MAX_EMPTY_RATIO;
+		const minSplitGain = Math.max(1, opts?.minSplitGain ?? this.DEFAULT_CC_MIN_SPLIT_GAIN) | 0;
+		const minComponentPixels = Math.max(1, opts?.minComponentPixels ?? this.DEFAULT_CC_MIN_COMPONENT_PIXELS) | 0;
 		const pieces: Polygon[] = [];
 
-		for (let y = 0; y < height; y++) {
-			const next = new Map<string, { x0: number; x1: number; y0: number; y1: number }>();
-			let x = 0;
-			while (x < width) {
-				while (x < width && mask[index(x, y)] === 0) {
-					x++;
-				}
-				if (x >= width) {
-					break;
-				}
-				const x0 = x;
-				while (x < width && mask[index(x, y)] === 1) {
-					x++;
-				}
-				const x1 = x - 1;
-				const key = `${x0}:${x1}`;
-				const rect = active.get(key);
-				if (rect) {
-					rect.y1 = y;
-					next.set(key, rect);
-					active.delete(key);
-				} else {
-					next.set(key, { x0, x1, y0: y, y1: y });
-				}
-			}
-			for (const rect of active.values()) {
-				pieces.push(this.rectToPolygon(rect.x0, rect.x1, rect.y0, rect.y1));
-			}
-			active = next;
-		}
-		for (const rect of active.values()) {
-			pieces.push(this.rectToPolygon(rect.x0, rect.x1, rect.y0, rect.y1));
+		for (const points of this.extractConnectedComponents(mask, width, height)) {
+			pieces.push(...this.approximateConvexComponent(points, width, height, {
+				maxPiecesPerComponent,
+				maxEmptyRatio,
+				minSplitGain,
+				minComponentPixels,
+			}));
 		}
 		return pieces;
 	}
@@ -213,11 +217,269 @@ export class BoundingBoxExtractor {
 		return { width, height, mask };
 	}
 
-	private static rectToPolygon(x0: number, x1: number, y0: number, y1: number): Polygon {
-		const left = x0 - 0.5;
-		const right = x1 + 0.5;
-		const top = y0 - 0.5;
-		const bottom = y1 + 0.5;
+	private static extractConnectedComponents(mask: Uint8Array, width: number, height: number): vec2arr[][] {
+		const components: vec2arr[][] = [];
+		const visited = new Uint8Array(width * height);
+		const queueX = new Int32Array(width * height);
+		const queueY = new Int32Array(width * height);
+		const index = (x: number, y: number) => y * width + x;
+
+		for (let y = 0; y < height; y++) {
+			for (let x = 0; x < width; x++) {
+				const start = index(x, y);
+				if (mask[start] === 0 || visited[start] === 1) {
+					continue;
+				}
+				let head = 0;
+				let tail = 0;
+				visited[start] = 1;
+				queueX[tail] = x;
+				queueY[tail] = y;
+				tail++;
+				const points: vec2arr[] = [];
+				while (head < tail) {
+					const px = queueX[head];
+					const py = queueY[head];
+					head++;
+					points.push([px, py]);
+					for (let dy = -1; dy <= 1; dy++) {
+						for (let dx = -1; dx <= 1; dx++) {
+							if (dx === 0 && dy === 0) {
+								continue;
+							}
+							const nx = px + dx;
+							const ny = py + dy;
+							if (nx < 0 || ny < 0 || nx >= width || ny >= height) {
+								continue;
+							}
+							const next = index(nx, ny);
+							if (mask[next] === 0 || visited[next] === 1) {
+								continue;
+							}
+							visited[next] = 1;
+							queueX[tail] = nx;
+							queueY[tail] = ny;
+							tail++;
+						}
+					}
+				}
+				components.push(points);
+			}
+		}
+		return components;
+	}
+
+	private static approximateConvexComponent(
+		points: vec2arr[],
+		width: number,
+		height: number,
+		opts: {
+			maxPiecesPerComponent: number;
+			maxEmptyRatio: number;
+			minSplitGain: number;
+			minComponentPixels: number;
+		}
+	): Polygon[] {
+		const pieces: ConvexPiece[] = [this.describeConvexPiece(points, width, height)];
+		while (pieces.length < opts.maxPiecesPerComponent) {
+			let bestIndex = -1;
+			let bestSplit: ConvexPieceSplit | null = null;
+			for (let i = 0; i < pieces.length; i++) {
+				const piece = pieces[i];
+				if (piece.emptyRatio <= opts.maxEmptyRatio) {
+					continue;
+				}
+				const split = this.findBestPieceSplit(piece, width, height, opts.minSplitGain, opts.minComponentPixels);
+				if (!split) {
+					continue;
+				}
+				if (
+					!bestSplit ||
+					split.gain > bestSplit.gain ||
+					(split.gain === bestSplit.gain && split.childWorstEmptyRatio < bestSplit.childWorstEmptyRatio) ||
+					(split.gain === bestSplit.gain && split.childWorstEmptyRatio === bestSplit.childWorstEmptyRatio && split.balance < bestSplit.balance)
+				) {
+					bestSplit = split;
+					bestIndex = i;
+				}
+			}
+			if (!bestSplit) {
+				break;
+			}
+			pieces.splice(bestIndex, 1, bestSplit.left, bestSplit.right);
+		}
+		return pieces.map(piece => piece.poly);
+	}
+
+	private static describeConvexPiece(points: vec2arr[], width: number, height: number): ConvexPiece {
+		const hull = this.computeConvexPolygon(points);
+		if (hull.length < 3) {
+			return {
+				points,
+				poly: this.expandTinyComponent(points, width, height),
+				emptyCount: 0,
+				emptyRatio: 0,
+			};
+		}
+		const poly = this.flattenPolygon(hull);
+		const { insideCount, emptyCount } = this.measurePolygonCoverage(poly, points);
+		return {
+			points,
+			poly,
+			emptyCount,
+			emptyRatio: emptyCount / Math.max(1, insideCount),
+		};
+	}
+
+	private static findBestPieceSplit(
+		piece: ConvexPiece,
+		width: number,
+		height: number,
+		minSplitGain: number,
+		minComponentPixels: number
+	): ConvexPieceSplit | null {
+		if (piece.points.length < minComponentPixels || piece.emptyCount === 0) {
+			return null;
+		}
+		let minx = Infinity;
+		let miny = Infinity;
+		let maxx = -Infinity;
+		let maxy = -Infinity;
+		for (const [x, y] of piece.points) {
+			if (x < minx) minx = x;
+			if (y < miny) miny = y;
+			if (x > maxx) maxx = x;
+			if (y > maxy) maxy = y;
+		}
+
+		let best: ConvexPieceSplit | null = null;
+		for (let cut = minx; cut < maxx; cut++) {
+			const split = this.tryPieceSplit(piece, width, height, minSplitGain, 'x', cut);
+			if (
+				split &&
+				(
+					!best ||
+					split.gain > best.gain ||
+					(split.gain === best.gain && split.childWorstEmptyRatio < best.childWorstEmptyRatio) ||
+					(split.gain === best.gain && split.childWorstEmptyRatio === best.childWorstEmptyRatio && split.balance < best.balance)
+				)
+			) {
+				best = split;
+			}
+		}
+		for (let cut = miny; cut < maxy; cut++) {
+			const split = this.tryPieceSplit(piece, width, height, minSplitGain, 'y', cut);
+			if (
+				split &&
+				(
+					!best ||
+					split.gain > best.gain ||
+					(split.gain === best.gain && split.childWorstEmptyRatio < best.childWorstEmptyRatio) ||
+					(split.gain === best.gain && split.childWorstEmptyRatio === best.childWorstEmptyRatio && split.balance < best.balance)
+				)
+			) {
+				best = split;
+			}
+		}
+		return best;
+	}
+
+	private static tryPieceSplit(
+		piece: ConvexPiece,
+		width: number,
+		height: number,
+		minSplitGain: number,
+		axis: 'x' | 'y',
+		cut: number
+	): ConvexPieceSplit | null {
+		const leftPoints: vec2arr[] = [];
+		const rightPoints: vec2arr[] = [];
+		for (const point of piece.points) {
+			if ((axis === 'x' ? point[0] : point[1]) <= cut) {
+				leftPoints.push(point);
+			} else {
+				rightPoints.push(point);
+			}
+		}
+		if (leftPoints.length === 0 || rightPoints.length === 0) {
+			return null;
+		}
+		const left = this.describeConvexPiece(leftPoints, width, height);
+		const right = this.describeConvexPiece(rightPoints, width, height);
+		const gain = piece.emptyCount - (left.emptyCount + right.emptyCount);
+		if (gain < minSplitGain) {
+			return null;
+		}
+		return {
+			left,
+			right,
+			gain,
+			childWorstEmptyRatio: Math.max(left.emptyRatio, right.emptyRatio),
+			balance: Math.abs(leftPoints.length - rightPoints.length),
+		};
+	}
+
+	private static flattenPolygon(points: vec2arr[]): Polygon {
+		const poly = new Array<number>(points.length * 2);
+		for (let i = 0; i < points.length; i++) {
+			poly[i * 2] = points[i][0];
+			poly[i * 2 + 1] = points[i][1];
+		}
+		return poly;
+	}
+
+	private static measurePolygonCoverage(poly: Polygon, points: vec2arr[]): { insideCount: number; emptyCount: number } {
+		let minx = Infinity;
+		let miny = Infinity;
+		let maxx = -Infinity;
+		let maxy = -Infinity;
+		for (let i = 0; i < poly.length; i += 2) {
+			const x = poly[i];
+			const y = poly[i + 1];
+			if (x < minx) minx = x;
+			if (y < miny) miny = y;
+			if (x > maxx) maxx = x;
+			if (y > maxy) maxy = y;
+		}
+		const occupied = new Set<string>();
+		for (const [x, y] of points) {
+			occupied.add(`${x}|${y}`);
+		}
+		let insideCount = 0;
+		let emptyCount = 0;
+		for (let y = miny; y <= maxy; y++) {
+			for (let x = minx; x <= maxx; x++) {
+				if (!this.pointInPolyInclusive(x, y, poly)) {
+					continue;
+				}
+				insideCount++;
+				if (!occupied.has(`${x}|${y}`)) {
+					emptyCount++;
+				}
+			}
+		}
+		return { insideCount, emptyCount };
+	}
+
+	private static expandTinyComponent(points: vec2arr[], width: number, height: number): Polygon {
+		let left = Infinity;
+		let top = Infinity;
+		let right = -Infinity;
+		let bottom = -Infinity;
+		for (const [x, y] of points) {
+			if (x < left) left = x;
+			if (y < top) top = y;
+			if (x > right) right = x;
+			if (y > bottom) bottom = y;
+		}
+		if (left === right) {
+			if (right + 1 < width) right++;
+			else if (left > 0) left--;
+		}
+		if (top === bottom) {
+			if (bottom + 1 < height) bottom++;
+			else if (top > 0) top--;
+		}
 		return [left, top, right, top, right, bottom, left, bottom];
 	}
 
