@@ -323,7 +323,7 @@ local function define_director_fsm()
 		initial = 'room',
 		on = {
 			['world_transition_start'] = '/world_transition',
-			['shrine_transition_start'] = '/shrine_transition_enter',
+			['shrine_transition_start'] = '/shrine',
 			['halo_transition_start'] = '/halo_teleport',
 			['seal_dissolution_start'] = '/seal_dissolution',
 			['title_screen_start'] = '/title_screen',
@@ -347,14 +347,14 @@ local function define_director_fsm()
 						self.events:emit('lithograph.open', { lines = event.lines })
 						self:set_active_space('lithograph')
 						self.events:emit('lithograph')
-						return '/lithograph_screen_open'
+						return '/lithograph'
 					end,
 					['banner_requested'] = '/banner_transition',
 				},
 				input_event_handlers = {
 					['lb[jp] || rb[jp]'] = function(self)
 						self.events:emit('f1')
-						return '/item_screen_opening'
+						return '/item_screen'
 					end,
 				},
 			},
@@ -385,13 +385,39 @@ local function define_director_fsm()
 						['banner_requested'] = '/banner_transition',
 					},
 				},
-				shrine_transition_enter = {
-					entering_state = function(self)
-						self.events:emit('shrine_transition_enter')
-						self:set_active_space('main')
-					end,
-					on = {
-						['shrine_overlay_requested'] = '/shrine_overlay',
+				shrine = {
+					initial = 'entering',
+					states = {
+						entering = {
+							entering_state = function(self)
+								self.events:emit('shrine_transition_enter')
+								self:set_active_space('main')
+							end,
+							on = {
+								['shrine_overlay_requested'] = '/shrine/overlay',
+							},
+						},
+						overlay = {
+							entering_state = function(self)
+								self.events:emit('shrine.open', { lines = self.pending_shrine_text_lines })
+								self.pending_shrine_text_lines = {}
+								self:set_active_space('shrine')
+								self.events:emit('shrine')
+							end,
+							input_event_handlers = {
+								['down[jp]'] = '/shrine/exiting',
+							},
+						},
+						exiting = {
+							entering_state = function(self)
+								self.events:emit('shrine.clear')
+								self:set_active_space('main')
+								self.events:emit('player.shrine_overlay_exit')
+							end,
+							on = {
+								['shrine_exit_done'] = '/room',
+							},
+						},
 					},
 				},
 			banner_transition = {
@@ -428,83 +454,67 @@ local function define_director_fsm()
 					self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
 				end,
 			},
-			shrine_overlay = {
-					entering_state = function(self)
-							self.events:emit('shrine.open', { lines = self.pending_shrine_text_lines })
-						self.pending_shrine_text_lines = {}
-						self:set_active_space('shrine')
-						self.events:emit('shrine')
-					end,
-				input_event_handlers = {
-					['down[jp]'] = '/shrine_transition_exit',
-				},
-			},
-				shrine_transition_exit = {
-					entering_state = function(self)
-							self.events:emit('shrine.clear')
-						self:set_active_space('main')
-						self.events:emit('player.shrine_overlay_exit')
-					end,
-				on = {
-					['shrine_exit_done'] = '/room',
-				},
-			},
-			item_screen_opening = {
-				timelines = {
-					[item_screen_open_timeline_id] = {
-						def = {
-							frames = timeline.range(constants.flow.item_screen_wait_frames),
-							playback_mode = 'once',
+			item_screen = {
+				initial = 'opening',
+				states = {
+					opening = {
+						timelines = {
+							[item_screen_open_timeline_id] = {
+								def = {
+									frames = timeline.range(constants.flow.item_screen_wait_frames),
+									playback_mode = 'once',
+								},
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+								on_end = '/item_screen/active',
+							},
 						},
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = {
-							rewind = true,
-							snap_to_start = true,
+						entering_state = director.begin_black_wait,
+					},
+					active = {
+						entering_state = function(self)
+							self:set_active_space('item')
+							self.events:emit('item')
+						end,
+						input_event_handlers = {
+							['start[jp]'] = '/item_screen/halo',
+							['lb[jp] || rb[jp]'] = '/item_screen/closing',
 						},
-						on_end = '/item_screen',
+						on = {
+							['banner_requested'] = '/banner_transition',
+						},
+					},
+					halo = {
+						entering_state = function(self)
+							self.events:emit('player.halo_trigger')
+						end,
+						on = {
+							['halo_trigger_cancelled'] = '/item_screen/active',
+						},
+					},
+					closing = {
+						timelines = {
+							[item_screen_close_timeline_id] = {
+								def = {
+									frames = timeline.range(constants.flow.item_screen_wait_frames),
+									playback_mode = 'once',
+								},
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+								on_end = '/room',
+							},
+						},
+						entering_state = director.begin_black_wait,
 					},
 				},
-				entering_state = director.begin_black_wait,
-			},
-				item_screen = {
-					entering_state = function(self)
-						self:set_active_space('item')
-						self.events:emit('item')
-					end,
-				input_event_handlers = {
-					['start[jp]'] = '/item_screen_halo',
-					['lb[jp] || rb[jp]'] = '/item_screen_closing',
-				},
-				on = {
-					['banner_requested'] = '/banner_transition',
-				},
-			},
-			item_screen_halo = {
-				entering_state = function(self)
-					self.events:emit('player.halo_trigger')
-				end,
-				on = {
-					['halo_trigger_cancelled'] = '/item_screen',
-				},
-			},
-			item_screen_closing = {
-				timelines = {
-					[item_screen_close_timeline_id] = {
-						def = {
-							frames = timeline.range(constants.flow.item_screen_wait_frames),
-							playback_mode = 'once',
-						},
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = {
-							rewind = true,
-							snap_to_start = true,
-						},
-						on_end = '/room',
-					},
-				},
-				entering_state = director.begin_black_wait,
 			},
 				halo_teleport = {
 				timelines = {
@@ -619,39 +629,44 @@ local function define_director_fsm()
 					self:start_daemon_appearance(true)
 				end,
 			},
-				lithograph_screen_open = {
-				timelines = {
-					[lithograph_open_timeline_id] = {
-						def = {
-							frames = timeline.range(1),
-							playback_mode = 'once',
+			lithograph = {
+				initial = 'opening',
+				states = {
+					opening = {
+						timelines = {
+							[lithograph_open_timeline_id] = {
+								def = {
+									frames = timeline.range(1),
+									playback_mode = 'once',
+								},
+								autoplay = true,
+								stop_on_exit = true,
+								on_end = '/lithograph/viewing',
+							},
 						},
-						autoplay = true,
-						stop_on_exit = true,
-						on_end = '/lithograph_screen',
+					},
+					viewing = {
+						input_event_handlers = {
+							['b[jp] || x[jp]'] = '/lithograph/closing',
+						},
+					},
+					closing = {
+						timelines = {
+							[lithograph_close_timeline_id] = {
+								def = {
+									frames = timeline.range(1),
+									playback_mode = 'once',
+								},
+								autoplay = true,
+								stop_on_exit = true,
+								on_end = '/room',
+							},
+						},
+						entering_state = function(self)
+							self.events:emit('lithograph.clear')
+						end,
 					},
 				},
-			},
-			lithograph_screen = {
-				input_event_handlers = {
-					['b[jp] || x[jp]'] = '/lithograph_screen_close',
-				},
-			},
-			lithograph_screen_close = {
-				timelines = {
-					[lithograph_close_timeline_id] = {
-						def = {
-							frames = timeline.range(1),
-							playback_mode = 'once',
-						},
-						autoplay = true,
-						stop_on_exit = true,
-						on_end = '/room',
-					},
-				},
-				entering_state = function(self)
-					self.events:emit('lithograph.clear')
-				end,
 			},
 				title_screen = {
 					entering_state = function(self) self:enter_transition('title') end,
