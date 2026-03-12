@@ -1301,10 +1301,33 @@ function player:try_snap_to_elevator_platform(next_x, next_y)
 	return false
 end
 
+function player:is_in_elevator_transport_band_at(x, y)
+	local count = object('c').elevator_count
+	local current_room_number = object('c').current_room_number
+	for i = 1, count do
+		local platform = object('e.p' .. tostring(i))
+		if platform.current_room_number ~= current_room_number then
+			goto continue
+		end
+		local landing_left = platform.x - (constants.room.tile_size2 - (constants.room.tile_unit * 4))
+		local landing_right = (platform.x + constants.room.tile_size4) - (constants.room.tile_unit * 3)
+		if y >= (platform.y - self.height)
+			and y < platform.y
+			and x > landing_left
+			and x < landing_right
+		then
+			return true
+		end
+		::continue::
+	end
+
+	return false
+end
+
 function player:resolve_overlap_with_elevator(platform, previous_platform_y)
-	-- if platform.current_room_number ~= object('c').current_room_number then
-	-- 	return false
-	-- end
+	if platform.current_room_number ~= object('c').current_room_number then
+		return false
+	end
 	if not collision2d.collides(self.collider, platform.collider) then
 		return false
 	end
@@ -1317,14 +1340,38 @@ function player:resolve_overlap_with_elevator(platform, previous_platform_y)
 end
 
 function player:is_support_below_at(x, y, include_elevator)
-	local probe_y = y + self.height
-	if self:collides_at_probe(x + constants.room.tile_half, probe_y, include_elevator) then
+	local rm = object('room')
+	if rm:has_collision_flags_in_rect(x, y + 1, self.width, self.height, constants.collision_flags.solid_mask, false) then
 		return true
 	end
-	if self:collides_at_probe(x + (self.width / 2), probe_y, include_elevator) then
-		return true
+	if not include_elevator then
+		return false
 	end
-	return self:collides_at_probe((x + self.width) - constants.room.tile_half, probe_y, include_elevator)
+
+	local count = object('c').elevator_count
+	local current_room_number = object('c').current_room_number
+	local player_bottom = y + self.height
+	local support_bottom = player_bottom + 1
+	local left_foot_x = x + constants.room.tile_half
+	local mid_foot_x = x + (self.width / 2)
+	local right_foot_x = (x + self.width) - constants.room.tile_half
+	for i = 1, count do
+		local platform = object('e.p' .. tostring(i))
+		if platform.current_room_number == current_room_number then
+			if player_bottom <= platform.y
+				and support_bottom > platform.y
+				and (
+					(left_foot_x >= platform.x and left_foot_x < (platform.x + constants.room.tile_size4))
+					or (mid_foot_x >= platform.x and mid_foot_x < (platform.x + constants.room.tile_size4))
+					or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
+				)
+			then
+				return true
+			end
+		end
+	end
+
+	return false
 end
 
 function player:collides_at(x, y, include_elevator)
@@ -2006,8 +2053,9 @@ function player:update_controlled_fall_motion()
 	end
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
-	local should_land = (not self:is_support_below_at(self.x, self.y, true))
-		and self:is_support_below_at(self.x, self.y + dy, true)
+	local next_y = self.y + dy
+	local should_land = (not self:collides_at(self.x, self.y, true))
+		and (self:collides_at(self.x, next_y, true) or self:is_in_elevator_transport_band_at(self.x, self.y))
 	self:apply_move(dx, dy, true)
 
 	if should_land then
@@ -2029,7 +2077,9 @@ function player:update_uncontrolled_fall_motion()
 		self:advance_sword_sequence()
 	end
 	local dy = self:get_uncontrolled_fall_dy()
-	local should_land = self:is_support_below_at(self.x, self.y + dy, true)
+	local next_y = self.y + dy
+	local should_land = self:collides_at(self.x, next_y, true)
+		or self:is_in_elevator_transport_band_at(self.x, self.y)
 	self:apply_move(0, dy, true)
 	if should_land then
 		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then

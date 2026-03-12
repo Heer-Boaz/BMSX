@@ -152,6 +152,30 @@ function setupCeilingScenario(engine, logger) {
 	};
 }
 
+function setupStepOffScenario(engine, logger) {
+	prepareElevatorRoom(engine);
+	const [state] = evalLua(engine, `
+		local player = object('pietolon')
+		local elevator = object('e.p1')
+		player.x = elevator.x + 12
+		player.y = elevator.y - player.height
+		return {
+			player_x = player.x,
+			player_y = player.y,
+			elevator_x = elevator.x,
+			elevator_y = elevator.y,
+		}
+	`);
+	logger(`[assert] stepoff setup player=(${state.player_x},${state.player_y}) elevator=(${state.elevator_x},${state.elevator_y})`);
+	return {
+		name: 'stepoff',
+		frames: 0,
+		walkFrames: 0,
+		lastElevatorY: state.elevator_y,
+		observedMoves: 0,
+	};
+}
+
 function updateCarryScenario(engine, scenario, logger) {
 	const state = getLuaState(engine);
 	const expectedPlayerY = state.elevator_y - 16;
@@ -209,9 +233,33 @@ function updateCeilingScenario(engine, scenario, logger) {
 	scenario.frames += 1;
 	if (scenario.observedMoves >= 8) {
 		logger('[assert] ceiling ok');
-		return { name: 'done' };
+		return setupStepOffScenario(engine, logger);
 	}
 	assert(scenario.frames < 80, `ceiling scenario did not observe enough elevator movement within ${scenario.frames} frames`);
+	return scenario;
+}
+
+function updateStepOffScenario(engine, scenario, logger) {
+	if (scenario.walkFrames < 8) {
+		evalLua(engine, `
+			local player = object('pietolon')
+			player.x = player.x + 2
+		`);
+		scenario.walkFrames += 1;
+	}
+	const state = getLuaState(engine);
+	assert(!state.player_overlap_elevator, `stepoff overlapped elevator: player.y=${state.player_y} elevator.y=${state.elevator_y}`);
+	if (state.elevator_y !== scenario.lastElevatorY) {
+		scenario.lastElevatorY = state.elevator_y;
+		scenario.observedMoves += 1;
+	}
+	scenario.frames += 1;
+	if (scenario.observedMoves >= 12) {
+		assert(!state.player_quiet, `stepoff stayed quiet on elevator edge: player.y=${state.player_y} elevator.y=${state.elevator_y}`);
+		logger('[assert] stepoff ok');
+		return { name: 'done' };
+	}
+	assert(scenario.frames < 80, `stepoff scenario did not observe enough elevator movement within ${scenario.frames} frames`);
 	return scenario;
 }
 
@@ -287,6 +335,10 @@ export default function schedule({ logger }) {
 		}
 		if (scenario.name === 'ceiling') {
 			scenario = updateCeilingScenario(engine, scenario, logger);
+			return;
+		}
+		if (scenario.name === 'stepoff') {
+			scenario = updateStepOffScenario(engine, scenario, logger);
 			return;
 		}
 		if (scenario.name === 'done') {
