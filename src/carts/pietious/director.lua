@@ -370,6 +370,7 @@ local function define_director_fsm()
 					self.events:emit('room')
 				end,
 				on = {
+					['room_switched'] = '/room_switch_wait',
 					-- LITHOGRAPH — room-local. Handled here (not on root) because
 					-- lithographs are only reachable from the room state via
 					-- a tile interaction in 'pietolon'.
