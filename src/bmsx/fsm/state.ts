@@ -969,21 +969,19 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	public start(): void {
 		this.activateStateTimelines();
-		const startStateId = this.start_state_id;
-		if (!startStateId) {
-			if (!this.states) return; // If there are no states defined, there is no start state to start the state machine with and we can return early
-			throw new Error(`No start state defined for state machine '${this.id}', while the state machine has states defined.'`); // If there are states defined, but no start state, throw an error as we can't start the state machine
-		}
+		this.enterInitialSubstateChain();
+	}
 
-		const states = this.states;
-		if (!states) {
-			throw new Error(`[State] start(): State '${this.id}' has no instantiated substates.`);
-		}
-		const startInstance = states[startStateId];
-		if (!startInstance) throw new Error(`[State] start(): Start state '${startStateId}' not found in state machine '${this.id}'.`);
+	public enterInitialSubstateChain(): void {
+		const startStateId = this.start_state_id;
+		if (!startStateId) return;
+		if (!this.states) return;
+		if (this.currentid !== startStateId) return;
+
+		const startInstance = this.states[startStateId];
+		if (!startInstance) throw new Error(`[State] enterInitialSubstateChain(): Start state '${startStateId}' not found in state machine '${this.id}'.`);
 		const startStateDef = startInstance.definition;
 
-		// Trigger the enter event for the start state. Note that there is no definition for the none-state, so we don't trigger the enter event for that state.
 		this.withCriticalSection(() => {
 			startInstance.activateStateTimelines();
 			const enterStart = startStateDef.entering_state;
@@ -994,8 +992,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			startInstance.transitionToNextStateIfProvided(startNext);
 		});
 
-		// Start the state machine for the current active state recursively
-		startInstance.start();
+		startInstance.enterInitialSubstateChain();
 		this.root.syncTargetStateTags();
 	}
 
@@ -1547,6 +1544,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 				this.emitTransitionTrace({ outcome: 'success', execution, from: prevId, to: state_id, guard: guardDiagnostics });
 			}
 		});
+
+		const entered = this.states![state_id];
+		if (entered.definition.initial) {
+			entered.resetSubmachine(true);
+			entered.enterInitialSubstateChain();
+		}
 	}
 
 	/**
