@@ -160,6 +160,7 @@ local function compile_tag_derivations(raw)
 			derived_tag = derived_tag,
 			any = nil,
 			all = nil,
+			none = nil,
 		}
 		if type(spec) ~= 'table' then
 			error('tag derivation "' .. tostring(derived_tag) .. '" must be an array or table.')
@@ -173,9 +174,12 @@ local function compile_tag_derivations(raw)
 			if spec.all ~= nil then
 				rule.all = validate_tag_list(spec.all, derived_tag, 'all')
 			end
+			if spec.none ~= nil then
+				rule.none = validate_tag_list(spec.none, derived_tag, 'none')
+			end
 		end
-		if rule.any == nil and rule.all == nil then
-			error('tag derivation "' .. tostring(derived_tag) .. '" must define an array, or an "any"/"all" array.')
+		if rule.any == nil and rule.all == nil and rule.none == nil then
+			error('tag derivation "' .. tostring(derived_tag) .. '" must define an array, or an "any"/"all"/"none" array.')
 		end
 		compiled[#compiled + 1] = rule
 	end
@@ -726,21 +730,23 @@ end
 
 function state:start()
 	self:activate_timelines()
+	self:enter_initial_substate_chain()
+end
+
+function state:enter_initial_substate_chain()
 	local start_state_id = self.definition.initial
 	if not start_state_id then
-		if not self.states or next(self.states) == nil then
-			return
-		end
-		error('no start state defined for state machine "' .. tostring(self.id) .. '".')
+		return
 	end
-
-	local states = self.states
-	if not states then
-		error('start(): state "' .. tostring(self.id) .. '" has no instantiated substates.')
+	if not self.states or next(self.states) == nil then
+		return
 	end
-	local start_instance = states[start_state_id]
+	if self.current_id ~= start_state_id then
+		return
+	end
+	local start_instance = self.states[start_state_id]
 	if not start_instance then
-		error('start(): start state "' .. tostring(start_state_id) .. '" not found in state machine "' .. tostring(self.id) .. '".')
+		error('enter_initial_substate_chain(): start state "' .. tostring(start_state_id) .. '" not found in state machine "' .. tostring(self.id) .. '".')
 	end
 	local start_state_def = start_instance.definition
 
@@ -754,7 +760,7 @@ function state:start()
 		start_instance:transition_to_next_state_if_provided(start_next)
 	end)
 
-	start_instance:start()
+	start_instance:enter_initial_substate_chain()
 	self.root:sync_target_state_tags()
 end
 
@@ -1297,6 +1303,12 @@ function state:transition_to_state(state_id)
 			})
 		end
 	end)
+
+	local entered = self.states[state_id]
+	if entered.definition.initial then
+		entered:reset_submachine(true)
+		entered:enter_initial_substate_chain()
+	end
 end
 
 function state:push_history(to_push)
@@ -1592,6 +1604,14 @@ local function matches_tag_derivation_rule(rule, tags)
 	if all then
 		for i = 1, #all do
 			if not tags[all[i]] then
+				return false
+			end
+		end
+	end
+	local none = rule.none
+	if none then
+		for i = 1, #none do
+			if tags[none[i]] then
 				return false
 			end
 		end
