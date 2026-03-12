@@ -201,7 +201,8 @@ function setupStepOffScenario(engine, logger) {
 		player.x = elevator.x + 12
 		player.y = elevator.y - player.height
 		player.facing = 1
-		player.events:emit('right[jp]')
+		player.right_held = true
+		player.events:emit('right_down')
 		return {
 			player_x = player.x,
 			player_y = player.y,

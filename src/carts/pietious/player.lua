@@ -1331,9 +1331,26 @@ function player:resolve_overlap_with_elevator(platform, previous_platform_y)
 	if not collision2d.collides(self.collider, platform.collider) then
 		return false
 	end
-	if self.y <= previous_platform_y then
+	local left_foot_x = self.x + constants.room.tile_half
+	local mid_foot_x = self.x + (self.width / 2)
+	local right_foot_x = (self.x + self.width) - constants.room.tile_half
+	local feet_over_platform_top =
+		(left_foot_x >= platform.x and left_foot_x < (platform.x + constants.room.tile_size4))
+		or (mid_foot_x >= platform.x and mid_foot_x < (platform.x + constants.room.tile_size4))
+		or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
+	if self.y <= previous_platform_y and feet_over_platform_top then
 		self.y = platform.y - self.height
 		return true
+	end
+	local resolved_x = self:find_clear_x_with_probe(self.x, self.y, true)
+	if resolved_x ~= nil then
+		self.x = resolved_x
+		if not collision2d.collides(self.collider, platform.collider) then
+			return true
+		end
+	end
+	if self.y <= previous_platform_y then
+		return false
 	end
 	self.y = platform.y + constants.room.tile_size2
 	return true
@@ -2057,8 +2074,9 @@ function player:update_controlled_fall_motion()
 	local should_land = (not self:collides_at(self.x, self.y, true))
 		and (self:collides_at(self.x, next_y, true) or self:is_in_elevator_transport_band_at(self.x, self.y))
 	self:apply_move(dx, dy, true)
+	local has_support = self:is_support_below_at(self.x, self.y, true)
 
-	if should_land then
+	if should_land and has_support then
 		self.stairs_landing_sound_pending = false
 		self:reset_fall_substate_sequence()
 		if self:has_tag(state_tags.group.sword) then
@@ -2081,7 +2099,8 @@ function player:update_uncontrolled_fall_motion()
 	local should_land = self:collides_at(self.x, next_y, true)
 		or self:is_in_elevator_transport_band_at(self.x, self.y)
 	self:apply_move(0, dy, true)
-	if should_land then
+	local has_support = self:is_support_below_at(self.x, self.y, true)
+	if should_land and has_support then
 		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then
 			self.events:emit('fall')
 		end
