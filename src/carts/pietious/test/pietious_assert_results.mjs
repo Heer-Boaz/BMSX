@@ -1,4 +1,5 @@
 const ELEVATOR_ROOM_NUMBER = 13;
+const ELEVATOR_LOWER_ROOM_NUMBER = 6;
 const POLL_MS = 20;
 const TIMEOUT_MS = 15000;
 const CART_SETTLE_MS = 500;
@@ -20,10 +21,20 @@ function evalLua(engine, source) {
 function getLuaState(engine) {
 	const [state] = evalLua(engine, `
 		local collision2d = require('collision2d')
+		local constants = require('constants')
 		local castle = object('c')
 		local room = object('room')
 		local player = object('pietolon')
 		local elevator = object('e.p1')
+		local expected_floor_y = -1
+		if room ~= nil and player ~= nil then
+			for test_y = player.y, constants.room.height - player.height do
+				if room:has_collision_flags_in_rect(player.x, test_y, player.width, player.height, constants.collision_flags.solid_mask, false) then
+					expected_floor_y = test_y - 1
+					break
+				end
+			end
+		end
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -42,7 +53,10 @@ function getLuaState(engine) {
 			player_controlled_fall = player and player:has_tag('v.cf') or false,
 			player_jumping = player and player:has_tag('v.j') or false,
 			player_stopped_jump = player and player:has_tag('v.sj') or false,
+			player_walking_right = player and player:has_tag('v.wr') or false,
+			player_grounded = player and player.grounded or false,
 			player_overlap_elevator = player and elevator and collision2d.collides(player.collider, elevator.collider) or false,
+			expected_floor_y = expected_floor_y,
 		}
 	`);
 	return state;
@@ -68,6 +82,33 @@ function prepareElevatorRoom(engine) {
 		elevator.y = start.y
 		elevator.current_room_number = start.room_number
 		elevator.going_to = 2
+		elevator.visible = true
+		elevator.collider.enabled = true
+		player:clear_input_state()
+		player:zero_motion()
+		player:reset_fall_substate_sequence()
+		player.events:emit('landed_to_quiet')
+		player.jump_substate = 0
+		player.jump_inertia = 0
+		player.on_vertical_elevator = false
+		player.jumping_from_elevator = false
+		player.stairs_landing_sound_pending = false
+	`);
+}
+
+function prepareLowerElevatorRoom(engine) {
+	evalLua(engine, `
+		local castle = object('c')
+		local room = object('room')
+		local player = object('pietolon')
+		local elevator = object('e.p1')
+		castle.current_room_number = ${ELEVATOR_LOWER_ROOM_NUMBER}
+		room:load_room(${ELEVATOR_LOWER_ROOM_NUMBER})
+		local start = elevator.path[2]
+		elevator.x = start.x
+		elevator.y = start.y
+		elevator.current_room_number = start.room_number
+		elevator.going_to = 1
 		elevator.visible = true
 		elevator.collider.enabled = true
 		player:clear_input_state()
@@ -153,12 +194,14 @@ function setupCeilingScenario(engine, logger) {
 }
 
 function setupStepOffScenario(engine, logger) {
-	prepareElevatorRoom(engine);
+	prepareLowerElevatorRoom(engine);
 	const [state] = evalLua(engine, `
 		local player = object('pietolon')
 		local elevator = object('e.p1')
 		player.x = elevator.x + 12
 		player.y = elevator.y - player.height
+		player.facing = 1
+		player.events:emit('right[jp]')
 		return {
 			player_x = player.x,
 			player_y = player.y,
@@ -170,9 +213,9 @@ function setupStepOffScenario(engine, logger) {
 	return {
 		name: 'stepoff',
 		frames: 0,
-		walkFrames: 0,
-		lastElevatorY: state.elevator_y,
-		observedMoves: 0,
+		saw_walking: false,
+		saw_fall: false,
+		released_right: false,
 	};
 }
 
@@ -240,26 +283,33 @@ function updateCeilingScenario(engine, scenario, logger) {
 }
 
 function updateStepOffScenario(engine, scenario, logger) {
-	if (scenario.walkFrames < 8) {
+	const state = getLuaState(engine);
+	if (state.player_walking_right) {
+		scenario.saw_walking = true;
+	}
+	if (state.player_uncontrolled_fall || state.player_controlled_fall) {
+		scenario.saw_fall = true;
+	}
+	if (scenario.saw_fall && !scenario.released_right) {
 		evalLua(engine, `
 			local player = object('pietolon')
-			player.x = player.x + 2
+			player.events:emit('right[jr]')
 		`);
-		scenario.walkFrames += 1;
+		scenario.released_right = true;
 	}
-	const state = getLuaState(engine);
 	assert(!state.player_overlap_elevator, `stepoff overlapped elevator: player.y=${state.player_y} elevator.y=${state.elevator_y}`);
-	if (state.elevator_y !== scenario.lastElevatorY) {
-		scenario.lastElevatorY = state.elevator_y;
-		scenario.observedMoves += 1;
-	}
 	scenario.frames += 1;
-	if (scenario.observedMoves >= 12) {
-		assert(!state.player_quiet, `stepoff stayed quiet on elevator edge: player.y=${state.player_y} elevator.y=${state.elevator_y}`);
-		logger('[assert] stepoff ok');
+	if (state.player_quiet && scenario.saw_walking && scenario.saw_fall) {
+		assert(state.player_grounded, `stepoff landed quiet without grounded support: player.y=${state.player_y}`);
+		assert(state.player_y === state.expected_floor_y, `stepoff landed at wrong floor y: player.y=${state.player_y} expected=${state.expected_floor_y}`);
+		assert(state.player_y > state.elevator_y - 16, `stepoff never fell below elevator top: player.y=${state.player_y} elevator.y=${state.elevator_y}`);
+		logger('[assert] stepoff floor landing ok');
 		return { name: 'done' };
 	}
-	assert(scenario.frames < 80, `stepoff scenario did not observe enough elevator movement within ${scenario.frames} frames`);
+	assert(
+		scenario.frames < 120,
+		`stepoff failed within ${scenario.frames} frames: walking=${scenario.saw_walking} fall=${scenario.saw_fall} released=${scenario.released_right} player=(${state.player_x},${state.player_y}) quiet=${state.player_quiet} grounded=${state.player_grounded} expectedFloorY=${state.expected_floor_y} elevator=(${state.elevator_x},${state.elevator_y})`
+	);
 	return scenario;
 }
 
