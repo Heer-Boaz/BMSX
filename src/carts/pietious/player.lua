@@ -2668,8 +2668,10 @@ local function define_player_fsm()
 				state_tags.group.damage_lock,
 			},
 			on = {
-				['world_banner_done'] = '/quiet',
-				['room'] = '/quiet',
+				['world_banner_done'] = {
+					emitter = 'd',
+					go = '/quiet',
+				},
 			},
 			update = player.reset_motion_for_transition_lock,
 		},
