@@ -829,6 +829,7 @@ function player:begin_entering_world(world_entrance)
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
 	object('d').events:emit('world_transition_start')
+	stop_music()
 	self.events:emit('enterleave')
 	self.events:emit('enter_world_start')
 end
@@ -1940,16 +1941,13 @@ function player:update_entering_world()
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(1)
 	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
-		self.events:emit('gamestart')
 		local switch = object('c'):enter_world(self.enter_leave_world_target)
+		self.events:emit('gamestart')
 		object('d'):expect_room_switch_banner('world_banner', switch.world_number, nil)
 		self:apply_spawn_position(switch)
 		self.enter_leave_world_target = nil
 		self.enter_leave_shrine_text_lines = {}
 		self:emit_room_switched(switch.from_room_number, switch.to_room_number, switch.direction)
-	end
-
-	if self.transition_step > constants.world_entrance.enter_world_total_steps then
 		self.to_enter_cut = 0
 		self.events:emit('world_entered')
 		return
@@ -2671,6 +2669,7 @@ local function define_player_fsm()
 			},
 			on = {
 				['world_banner_done'] = '/quiet',
+				['room'] = '/quiet',
 			},
 			update = player.reset_motion_for_transition_lock,
 		},

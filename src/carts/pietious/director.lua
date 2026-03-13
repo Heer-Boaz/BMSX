@@ -60,6 +60,10 @@ local halo_teleport_timeline_id = 'director.halo.transition'
 local banner_world_timeline_id = 'director.banner.world'
 local banner_castle_timeline_id = 'director.banner.castle'
 local room_switch_wait_timeline_id = 'director.wait.room_switch'
+local immediate_room_banner_modes = {
+	world_banner = true,
+	castle_banner = true,
+}
 local item_screen_open_timeline_id = 'director.wait.item.open'
 local item_screen_close_timeline_id = 'director.wait.item.close'
 local lithograph_open_timeline_id = 'director.wait.lithograph.open'
@@ -107,10 +111,10 @@ function director:begin_black_wait()
 	self:enter_transition('transition')
 end
 
-function director:banner_lines(mode)
+function director:banner_lines(mode, world_number)
 	if mode == 'world_banner' then
 		return {
-			'WORLD ' .. tostring(self.pending_banner_world_number) .. ' !',
+			'WORLD ' .. tostring(world_number) .. ' !',
 		}
 	end
 	return {
@@ -197,6 +201,8 @@ function director:despawn_daemon_clouds()
 end
 
 function director:finish_banner_transition()
+	local banner_mode = self.banner_mode
+	self.banner_mode = nil
 	if self.banner_post_action == 'castle_emerge' then
 		self.banner_post_action = nil
 		self.events:emit('player.world_emerge')
@@ -204,6 +210,9 @@ function director:finish_banner_transition()
 	end
 	self.banner_post_action = nil
 	self.events:emit('world_banner_done')
+	if immediate_room_banner_modes[banner_mode] then
+		return '/room'
+	end
 	return '/room_switch_wait'
 end
 
@@ -263,6 +272,7 @@ function director:ctor()
 	self.daemon_smoke_next = 1
 	self.daemon_clouds = {}
 	self.seal_flash_on = false
+	self.banner_mode = nil
 	self.banner_post_action = nil
 	self.pending_shrine_text_lines = {}
 
@@ -480,11 +490,13 @@ local function define_director_fsm()
 				tags = { 'd.bt' },
 				entering_state = function(self)
 					local banner_mode = self.pending_banner_mode
+					local banner_world_number = self.pending_banner_world_number
+					self.banner_mode = banner_mode
 					self.banner_post_action = self.pending_banner_post_action
 					self.pending_banner_mode = nil
 					self.pending_banner_world_number = 0
 					self.pending_banner_post_action = nil
-					self:enter_transition('transition', { lines = self:banner_lines(banner_mode) })
+					self:enter_transition('transition', { lines = self:banner_lines(banner_mode, banner_world_number) })
 					local timeline_id = banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
 					self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
 				end,

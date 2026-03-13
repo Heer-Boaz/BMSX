@@ -642,7 +642,7 @@ function castle:emit_room_enter()
 	self.events:emit('room.enter', payload)
 end
 
-function castle:commit_room_switch(switch, map_id, map_x, map_y)
+function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter_now)
 	local room = current_room()
 	self.current_room_number = switch.to_room_number
 	room.map_id = map_id
@@ -653,7 +653,9 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y)
 	self:sync_world_entrance_states_for_room(room)
 	self:refresh_current_room_customizations()
 	room_spawner.spawn_all_for_room(room)
-	self:emit_room_enter()
+	if emit_room_enter_now == nil or emit_room_enter_now then
+		self:emit_room_enter()
+	end
 	return switch
 end
 
@@ -723,7 +725,8 @@ function castle:enter_world(target)
 		switch,
 		transition.world_number,
 		transition.world_map_x,
-		transition.world_map_y
+		transition.world_map_y,
+		false
 	)
 
 	return {
