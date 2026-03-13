@@ -713,31 +713,30 @@ function castle:switch_room(direction, player_top, player_bottom)
 	return switch
 end
 
-function castle:enter_world(target)
+function castle:prepare_enter_world(target)
 	local transition = castle_map.world_transitions[target]
-	local room = current_room()
 	local from_room_number = self.current_room_number
+	local switch = create_room_switch(from_room_number, transition.world_room_number, 'down')
+	switch.world_number = transition.world_number
+	switch.map_id = transition.world_number
+	switch.map_x = transition.world_map_x
+	switch.map_y = transition.world_map_y
+	switch.spawn_x = transition.world_spawn_x
+	switch.spawn_y = transition.world_spawn_y
+	switch.spawn_facing = transition.world_spawn_facing
+	return switch
+end
 
-	room:load_room(transition.world_room_number)
-	self.current_room_number = transition.world_room_number
-	local switch = create_room_switch(from_room_number, self.current_room_number, 'down')
+function castle:commit_enter_world(switch)
+	current_room():load_room(switch.to_room_number)
 	self:commit_room_switch(
 		switch,
-		transition.world_number,
-		transition.world_map_x,
-		transition.world_map_y,
+		switch.map_id,
+		switch.map_x,
+		switch.map_y,
 		false
 	)
-
-	return {
-		from_room_number = switch.from_room_number,
-		to_room_number = switch.to_room_number,
-		direction = switch.direction,
-		world_number = transition.world_number,
-		spawn_x = transition.world_spawn_x,
-		spawn_y = transition.world_spawn_y,
-		spawn_facing = transition.world_spawn_facing,
-	}
+	return switch
 end
 
 function castle:leave_world_to_castle()

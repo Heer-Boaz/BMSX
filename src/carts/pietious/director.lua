@@ -244,8 +244,11 @@ function director:bind()
 		event = 'room.switched',
 		emitter = 'pietolon',
 		subscriber = self,
-		handler = function(_event)
+		handler = function(event)
 			self.events:emit('room_state.sync')
+			if event.dir == 'world_enter' then
+				return
+			end
 			if self:queue_expected_room_switch_banner_if_any() then
 				return
 			end

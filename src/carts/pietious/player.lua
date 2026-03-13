@@ -825,6 +825,7 @@ function player:begin_entering_world(world_entrance)
 	self:clear_input_state()
 	self:reset_stairs_lock()
 	self.enter_leave_world_target = world_entrance.target
+	self.pending_world_entry_switch = nil
 	self.enter_leave_shrine_text_lines = {}
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
@@ -855,6 +856,18 @@ function player:begin_world_emerge_from_door()
 	self.enter_leave_world_target = nil
 	self.enter_leave_shrine_text_lines = {}
 	self.events:emit('world_emerge_start')
+end
+
+function player:complete_enter_world_after_banner()
+	local switch = object('c'):commit_enter_world(self.pending_world_entry_switch)
+	self:apply_spawn_position(switch)
+	self:zero_motion()
+	self:reset_stairs_lock()
+	self:reset_enter_leave_animation()
+	self.enter_leave_world_target = nil
+	self.enter_leave_shrine_text_lines = {}
+	self.pending_world_entry_switch = nil
+	self:emit_room_switched(switch.from_room_number, switch.to_room_number, 'world_enter')
 end
 
 function player:start_slow_doorpass()
@@ -1941,12 +1954,9 @@ function player:update_entering_world()
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(1)
 	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
-		local switch = object('c'):enter_world(self.enter_leave_world_target)
-		object('d'):expect_room_switch_banner('world_banner', switch.world_number, nil)
-		self:apply_spawn_position(switch)
-		self.enter_leave_world_target = nil
-		self.enter_leave_shrine_text_lines = {}
-		self:emit_room_switched(switch.from_room_number, switch.to_room_number, switch.direction)
+		local switch = object('c'):prepare_enter_world(self.enter_leave_world_target)
+		self.pending_world_entry_switch = switch
+		object('d'):queue_banner_transition('world_banner', switch.world_number, nil)
 		self.to_enter_cut = 0
 		self.events:emit('world_entered')
 		return
@@ -2669,7 +2679,10 @@ local function define_player_fsm()
 			on = {
 				['world_banner_done'] = {
 					emitter = 'd',
-					go = '/quiet',
+					go = function(self)
+						self:complete_enter_world_after_banner()
+						return '/quiet'
+					end,
 				},
 			},
 			update = player.reset_motion_for_transition_lock,
@@ -3048,6 +3061,7 @@ local function register_player_definition()
 				to_enter_cut = 0,
 				enter_leave_anim_frame = 0,
 				enter_leave_world_target = nil,
+				pending_world_entry_switch = nil,
 				enter_leave_shrine_text_lines = {},
 			inventory_items = nil,
 			secondary_weapon = nil,
