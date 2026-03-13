@@ -64,6 +64,10 @@ local banner_pre_delay_timeline_id = 'director.banner.prewait'
 local banner_prewait_cue_event = 'd.bp.c'
 local banner_world_show_event = 'd.bw.s'
 local banner_castle_show_event = 'd.bc.s'
+local room_switch_passthrough_dirs = {
+	world_enter = true,
+	halo = true,
+}
 local room_switch_wait_timeline_id = 'director.wait.room_switch'
 local item_screen_open_timeline_id = 'director.wait.item.open'
 local item_screen_close_timeline_id = 'director.wait.item.close'
@@ -187,6 +191,7 @@ end
 
 function director:finish_castle_halo_banner_transition()
 	self.banner_world_number = 0
+	self.events:emit('halo_banner_done')
 	return '/room'
 end
 
@@ -225,7 +230,7 @@ function director:bind()
 		subscriber = self,
 		handler = function(event)
 			self.events:emit('room_state.sync')
-			if event.dir == 'world_enter' then
+			if room_switch_passthrough_dirs[event.dir] then
 				return
 			end
 			self.events:emit('room_switched')
@@ -621,32 +626,32 @@ local function define_director_fsm()
 							['start[jp]'] = '/item_screen/halo',
 							['lb[jp] || rb[jp]'] = '/item_screen/closing',
 						},
-					},
-					halo = {
-						timelines = {
-							[item_screen_halo_request_timeline_id] = {
-								def = {
-									frames = timeline.range(1),
-									playback_mode = 'once',
-									markers = {
-										{ frame = 0, event = item_screen_halo_request_event },
+						},
+						halo = {
+							timelines = {
+								[item_screen_halo_request_timeline_id] = {
+									def = {
+										frames = timeline.range(2),
+										playback_mode = 'once',
+										markers = {
+											{ frame = 1, event = item_screen_halo_request_event },
+										},
+									},
+									autoplay = true,
+									stop_on_exit = true,
+									play_options = {
+										rewind = true,
+										snap_to_start = true,
 									},
 								},
-								autoplay = true,
-								stop_on_exit = true,
-								play_options = {
-									rewind = true,
-									snap_to_start = true,
-								},
 							},
-						},
-						on = {
-							[item_screen_halo_request_event] = function(self)
-								self.events:emit('player.halo_trigger')
-							end,
-							['halo_resolved_in_castle'] = {
-								emitter = 'pietolon',
-								go = '/halo_teleport',
+							on = {
+								[item_screen_halo_request_event] = function(self)
+									self.events:emit('player.halo_trigger')
+								end,
+								['halo_resolved_in_castle'] = {
+									emitter = 'pietolon',
+									go = '/halo_teleport',
 							},
 							['halo_resolved_from_world'] = {
 								emitter = 'pietolon',

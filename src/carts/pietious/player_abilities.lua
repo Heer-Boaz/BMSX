@@ -89,6 +89,7 @@ action_effects.register_effect('spyglass', {
 
 action_effects.register_effect('halo', {
 	id = 'halo',
+	blocked_tags = { 'g.tr' },
 	can_trigger = function(context)
 		local castle = object('c')
 		if not context.owner.inventory_items.halo then
@@ -102,12 +103,14 @@ action_effects.register_effect('halo', {
 	handler = function(context)
 		local castle = object('c')
 		local from_world = (object('room').world_number or 0) ~= 0
-		local switch = castle:halo_teleport_to_room_1(not from_world)
-		context.owner:apply_halo_teleport_arrival(switch)
 		if from_world then
+			castle:halo_teleport_to_room_1(false)
+			context.owner:begin_waiting_halo_banner()
 			context.owner:emit_gameplay_fact('halo_resolved_from_world')
 			return
 		end
+		local switch = castle:halo_teleport_to_room_1(true)
+		context.owner:apply_halo_teleport_arrival(switch)
 		context.owner:emit_gameplay_fact('halo_resolved_in_castle')
 	end,
 })

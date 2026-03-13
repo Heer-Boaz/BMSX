@@ -2,6 +2,19 @@ const POLL_MS = 20;
 const TIMEOUT_MS = 12000;
 const CART_SETTLE_MS = 500;
 
+function buttonEvent(code, down, pressId, timeMs) {
+	return {
+		type: 'button',
+		deviceId: 'keyboard:0',
+		code,
+		down,
+		value: down ? 1 : 0,
+		timestamp: timeMs,
+		pressId,
+		modifiers: { ctrl: false, shift: false, alt: false, meta: false },
+	};
+}
+
 function fail(message) {
 	throw new Error(`[assert] ${message}`);
 }
@@ -61,23 +74,25 @@ function getScenarioState(engine) {
 				active_enemy_count = active_enemy_count + 1
 			end
 		end
-		return {
-			active_space = get_space(),
-			room_number = castle.current_room_number,
-			room_world_number = room.world_number,
-			player_quiet = player:has_tag('v.q'),
-			director_banner_active = director:has_tag('d.bt'),
-			transition_banner_line = transition.banner_lines[1],
-			castle_banner_head = castle_banner_head,
-			room_enter_count = castle._test_room_enter_count,
-			halo_teleport_count = castle._test_halo_teleport_count,
-			active_enemy_count = active_enemy_count,
-		}
-	`);
+			return {
+				active_space = get_space(),
+				room_number = castle.current_room_number,
+				room_world_number = room.world_number,
+				player_quiet = player:has_tag('v.q'),
+				player_waiting_halo_banner = player:has_tag('v.whb'),
+				director_banner_active = director:has_tag('d.bt'),
+				transition_banner_line = transition.banner_lines[1],
+					castle_banner_head = castle_banner_head,
+				room_enter_count = castle._test_room_enter_count,
+				halo_teleport_count = castle._test_halo_teleport_count,
+				trace = castle._test_trace_text,
+				active_enemy_count = active_enemy_count,
+			}
+		`);
 	return state;
 }
 
-function setupScenario(engine, logger) {
+function setupScenario(engine, logger, scheduleInput, frameIntervalMs) {
 	const [state] = evalLua(engine, `
 		local castle_map = require('castle_map')
 		local constants = require('constants')
@@ -108,31 +123,62 @@ function setupScenario(engine, logger) {
 		player.facing = transition.world_spawn_facing
 		player.events:emit('landed_to_quiet')
 
-		local original_emit_room_enter = castle.emit_room_enter
-		castle._test_room_enter_count = 0
-		castle.emit_room_enter = function(self)
-			self._test_room_enter_count = self._test_room_enter_count + 1
-			return original_emit_room_enter(self)
-		end
-		local original_halo_teleport_to_room_1 = castle.halo_teleport_to_room_1
-		castle._test_halo_teleport_count = 0
-		castle.halo_teleport_to_room_1 = function(self, emit_room_enter_now)
-			self._test_halo_teleport_count = self._test_halo_teleport_count + 1
-			return original_halo_teleport_to_room_1(self, emit_room_enter_now)
-		end
-		local director = object('d')
-		local ok, err = pcall(function()
-			director.sc:switch_state('director', '/item_screen/halo')
-		end)
-		if not ok then
-			error('halo director switch failed: ' .. tostring(err))
-		end
+			local original_emit_room_enter = castle.emit_room_enter
+			castle._test_room_enter_count = 0
+			castle._test_trace = {}
+			local function push_trace(label)
+				local director = object('d')
+				local director_state = 'other'
+				if director.sc:matches_state_path('director:/item_screen/halo') then
+					director_state = 'item.halo'
+				elseif director.sc:matches_state_path('director:/item_screen/active') then
+					director_state = 'item.active'
+				elseif director.sc:matches_state_path('director:/castle_halo_banner') then
+					director_state = 'castle.halo_banner'
+				elseif director.sc:matches_state_path('director:/halo_teleport') then
+					director_state = 'halo.teleport'
+				elseif director.sc:matches_state_path('director:/room') then
+					director_state = 'room'
+				end
+				castle._test_trace[#castle._test_trace + 1] = label .. '@w' .. tostring(room.world_number) .. ':r' .. tostring(castle.current_room_number) .. ':s' .. tostring(get_space()) .. ':d' .. director_state
+				castle._test_trace_text = table.concat(castle._test_trace, '|')
+			end
+			castle.emit_room_enter = function(self)
+				self._test_room_enter_count = self._test_room_enter_count + 1
+				push_trace('room.enter')
+				return original_emit_room_enter(self)
+			end
+			local original_halo_teleport_to_room_1 = castle.halo_teleport_to_room_1
+			castle._test_halo_teleport_count = 0
+			castle.halo_teleport_to_room_1 = function(self, emit_room_enter_now)
+				self._test_halo_teleport_count = self._test_halo_teleport_count + 1
+				push_trace('halo.tp.' .. tostring(emit_room_enter_now))
+				return original_halo_teleport_to_room_1(self, emit_room_enter_now)
+			end
+			local original_emit_gameplay_fact = player.emit_gameplay_fact
+			player.emit_gameplay_fact = function(self, event_or_name, payload)
+				local name = event_or_name
+				if type(event_or_name) == 'table' then
+					name = event_or_name.type
+				end
+				if string.find(tostring(name), 'halo') ~= nil then
+					push_trace('fact.' .. tostring(name))
+				end
+				return original_emit_gameplay_fact(self, event_or_name, payload)
+			end
 
-		return {
-			world_room_number = transition.world_room_number,
+			return {
+				world_room_number = transition.world_room_number,
 			expected_banner_last_head = constants.flow.castle_banner_frames - 1,
 		}
 	`);
+	const nowMs = Math.round((engine.view?.renderFrameIndex ?? 0) * frameIntervalMs);
+	scheduleInput([
+		{ description: 'open_item_screen_press', timeMs: nowMs + 40, event: buttonEvent('ShiftLeft', true, 1, nowMs + 40) },
+		{ description: 'open_item_screen_release', timeMs: nowMs + 80, event: buttonEvent('ShiftLeft', false, 1, nowMs + 80) },
+		{ description: 'halo_press', timeMs: nowMs + 520, event: buttonEvent('Enter', true, 2, nowMs + 520) },
+		{ description: 'halo_release', timeMs: nowMs + 540, event: buttonEvent('Enter', false, 2, nowMs + 540) },
+	]);
 	logger(`[assert] halo setup worldRoom=${state.world_room_number}`);
 	return {
 		name: 'halo_world_to_castle',
@@ -152,14 +198,14 @@ function updateScenario(engine, scenario, logger) {
 		scenario.max_banner_head = state.castle_banner_head;
 	}
 	if (!scenario.saw_banner && state.director_banner_active) {
-		scenario.saw_banner = true;
-		assert(state.active_space === 'transition', `halo banner active_space=${state.active_space}`);
-		assert(state.room_world_number === 0, `halo banner room world_number=${state.room_world_number}`);
-		assert(state.transition_banner_line === 'CASTLE !', `halo banner line was "${state.transition_banner_line}"`);
-		assert(state.room_enter_count === 0, `halo room.enter fired before banner count=${state.room_enter_count}`);
-		assert(state.active_enemy_count === 0, `halo active enemies during banner=${state.active_enemy_count}`);
-		logger('[assert] halo castle banner ok');
-	}
+			scenario.saw_banner = true;
+			assert(state.active_space === 'transition', `halo banner active_space=${state.active_space}`);
+			assert(state.room_world_number === 0, `halo banner room world_number=${state.room_world_number}`);
+			assert(state.transition_banner_line === 'CASTLE !', `halo banner line was "${state.transition_banner_line}"`);
+			assert(state.room_enter_count === 0, `halo room.enter fired before banner count=${state.room_enter_count} trace=${state.trace}`);
+			assert(state.active_enemy_count === 0, `halo active enemies during banner=${state.active_enemy_count}`);
+			logger('[assert] halo castle banner ok');
+		}
 
 	if (scenario.saw_banner && !state.director_banner_active && state.active_space === 'main') {
 		assert(state.room_world_number === 0, `halo ended in wrong world_number=${state.room_world_number}`);
@@ -172,12 +218,12 @@ function updateScenario(engine, scenario, logger) {
 	scenario.frames += 1;
 	assert(
 		scenario.frames < 300,
-		`halo timed out sawBanner=${scenario.saw_banner} activeSpace=${state.active_space} world=${state.room_world_number} bannerActive=${state.director_banner_active} banner="${state.transition_banner_line}" roomEnterCount=${state.room_enter_count} bannerHead=${state.castle_banner_head} maxBannerHead=${scenario.max_banner_head} haloTeleportCount=${state.halo_teleport_count}`
-	);
-	return scenario;
+			`halo timed out sawBanner=${scenario.saw_banner} activeSpace=${state.active_space} world=${state.room_world_number} quiet=${state.player_quiet} waiting=${state.player_waiting_halo_banner} bannerActive=${state.director_banner_active} banner="${state.transition_banner_line}" roomEnterCount=${state.room_enter_count} bannerHead=${state.castle_banner_head} maxBannerHead=${scenario.max_banner_head} haloTeleportCount=${state.halo_teleport_count} trace=${state.trace}`
+		);
+		return scenario;
 }
 
-export default function schedule({ logger }) {
+export default function schedule({ logger, schedule: scheduleInput, frameIntervalMs }) {
 	let requestedNewGame = false;
 	let cartActiveAt = 0;
 	let gameplayReadyAt = 0;
@@ -222,19 +268,19 @@ export default function schedule({ logger }) {
 			return;
 		}
 
-		if (Date.now() - gameplayReadyAt < CART_SETTLE_MS) {
-			return;
-		}
+			if (Date.now() - gameplayReadyAt < CART_SETTLE_MS) {
+				return;
+			}
 
-		if (scenario.name === 'boot') {
-			scenario = setupScenario(engine, logger);
-			return;
-		}
+			if (scenario.name === 'boot') {
+				scenario = setupScenario(engine, logger, scheduleInput, frameIntervalMs);
+				return;
+			}
 
-		if (scenario.name === 'halo_world_to_castle') {
-			const state = getScenarioState(engine);
-			lastStateSummary = `space=${state.active_space} world=${state.room_world_number} bannerActive=${state.director_banner_active} banner=${state.transition_banner_line} roomEnter=${state.room_enter_count} bannerHead=${state.castle_banner_head} haloTeleportCount=${state.halo_teleport_count}`;
-		}
+			if (scenario.name === 'halo_world_to_castle') {
+				const state = getScenarioState(engine);
+				lastStateSummary = `space=${state.active_space} world=${state.room_world_number} quiet=${state.player_quiet} waiting=${state.player_waiting_halo_banner} bannerActive=${state.director_banner_active} banner=${state.transition_banner_line} roomEnter=${state.room_enter_count} bannerHead=${state.castle_banner_head} haloTeleportCount=${state.halo_teleport_count} trace=${state.trace}`;
+			}
 
 		if (scenario.name === 'done') {
 			clearInterval(poll);

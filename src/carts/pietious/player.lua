@@ -105,6 +105,7 @@ local state_tags = {
 		quiet_stairs = 'v.qst',
 		entering_world = 'v.ew',
 		waiting_world_banner = 'v.wwb',
+		waiting_halo_banner = 'v.whb',
 		waiting_world_emerge = 'v.wwe',
 		emerging_world = 'v.ewd',
 		slowdoorpass = 'v.sdp',
@@ -887,6 +888,23 @@ function player:apply_halo_teleport_arrival(switch)
 	self:reset_fall_substate_sequence()
 	self.events:emit('stairs_lock_lost_after_room_switch')
 	self:emit_room_switched(switch.from_room_number, switch.to_room_number, switch.direction)
+end
+
+function player:begin_waiting_halo_banner()
+	self:cancel_sword()
+	self:clear_input_state()
+	self:zero_motion()
+	self:reset_stairs_lock()
+	self:reset_enter_leave_animation()
+	self.enter_leave_world_target = nil
+	self.enter_leave_shrine_text_lines = {}
+	self:reset_fall_substate_sequence()
+	self.events:emit('halo_wait_start')
+end
+
+function player:complete_halo_return_after_banner()
+	local switch = object('room').last_room_switch
+	self:apply_halo_teleport_arrival(switch)
 end
 
 function player:leave_shrine_overlay()
@@ -2671,27 +2689,44 @@ local function define_player_fsm()
 			},
 			update = player.update_entering_world,
 		},
-		waiting_world_banner = {
-			tags = {
-				state_tags.variant.waiting_world_banner,
-				state_tags.group.transition_lock,
-				state_tags.group.damage_lock,
-			},
-			on = {
-				['world_banner_done'] = {
-					emitter = 'd',
-					go = function(self)
-						self:complete_enter_world_after_banner()
-						return '/quiet'
-					end,
+			waiting_world_banner = {
+				tags = {
+					state_tags.variant.waiting_world_banner,
+					state_tags.group.transition_lock,
+					state_tags.group.damage_lock,
 				},
+				on = {
+					['world_banner_done'] = {
+						emitter = 'd',
+						go = function(self)
+							self:complete_enter_world_after_banner()
+							return '/quiet'
+						end,
+					},
+				},
+				update = player.reset_motion_for_transition_lock,
 			},
-			update = player.reset_motion_for_transition_lock,
-		},
-		waiting_world_emerge = {
-			tags = {
-				state_tags.variant.waiting_world_emerge,
-				state_tags.group.transition_lock,
+			waiting_halo_banner = {
+				tags = {
+					state_tags.variant.waiting_halo_banner,
+					state_tags.group.transition_lock,
+					state_tags.group.damage_lock,
+				},
+				on = {
+					['halo_banner_done'] = {
+						emitter = 'd',
+						go = function(self)
+							self:complete_halo_return_after_banner()
+							return '/quiet'
+						end,
+					},
+				},
+				update = player.reset_motion_for_transition_lock,
+			},
+			waiting_world_emerge = {
+				tags = {
+					state_tags.variant.waiting_world_emerge,
+					state_tags.group.transition_lock,
 				state_tags.group.damage_lock,
 			},
 			on = {
@@ -2849,11 +2884,12 @@ local function define_player_fsm()
 		-- These derivations replace scattered `if state == 'x' or state == 'y'`
 		-- checks throughout the codebase.  Code instead uses has_tag(group_tag).
 		tag_derivations = {
-			[state_tags.group.world_transition_waiting] = {
-				state_tags.variant.waiting_world_banner,
-				state_tags.variant.waiting_world_emerge,
-				state_tags.variant.waiting_shrine,
-			},
+				[state_tags.group.world_transition_waiting] = {
+					state_tags.variant.waiting_world_banner,
+					state_tags.variant.waiting_halo_banner,
+					state_tags.variant.waiting_world_emerge,
+					state_tags.variant.waiting_shrine,
+				},
 			[state_tags.group.world_transition] = {
 				state_tags.variant.entering_world,
 				state_tags.variant.emerging_world,
@@ -2993,10 +3029,11 @@ local function define_player_fsm()
 				['hp_zero'] = '/dying',
 				['damage'] = '/hit_fall',
 			['damage_on_stairs'] = '/hit_collision',
-			['stairs_lock_lost_after_room_switch'] = '/quiet',
-			['enter_world_start'] = '/entering_world',
-			['leave_world_start'] = '/waiting_world_emerge',
-			['enter_shrine_start'] = '/entering_shrine',
+				['stairs_lock_lost_after_room_switch'] = '/quiet',
+				['enter_world_start'] = '/entering_world',
+				['halo_wait_start'] = '/waiting_halo_banner',
+				['leave_world_start'] = '/waiting_world_emerge',
+				['enter_shrine_start'] = '/entering_shrine',
 			['seal_dissolution'] = '/freeze',
 		},
 		states = states,
