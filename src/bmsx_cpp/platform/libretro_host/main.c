@@ -125,7 +125,12 @@ static const uint64_t kExitComboHoldMs = 2000;
 static const unsigned kAudioPeriodFrames = 1024;
 static const unsigned kAudioPeriodCount = 4;
 static const unsigned kAudioPrimePeriods = 4;
-static const unsigned kSdlAudioBufferFrames = 2048;
+static const unsigned kSdlAudioBufferFrames = 1024;
+static const double kAudioMixOverheadSec = 0.006;
+static const unsigned kAudioRefillMarginFrames = 128;
+static const unsigned kAudioRequestAheadFrames = 256;
+static const unsigned kAudioTargetMinFrames = 384;
+static const unsigned kAudioTargetMaxFrames = 4096;
 static const int kAudioThreadPriority = 20;
 static const unsigned kAudioRecoverMaxAttempts = 8;
 static const uint64_t kAudioRecoverSleepNs = 1000000ull;
@@ -3406,24 +3411,48 @@ static void* audio_thread_main(void* arg) {
 	return NULL;
 }
 
+static unsigned audio_compute_sdl_queue_cap_frames(void) {
+	if (g_audio_sample_rate <= 0 || g_frame_usec == 0) {
+		return g_audio_buffer_frames;
+	}
+	const double frame_time_sec = (double)g_frame_usec / 1000000.0;
+	const unsigned frames_per_frame = (unsigned)ceil((double)g_audio_sample_rate * frame_time_sec);
+	const unsigned requested = (unsigned)ceil((double)g_audio_sample_rate * (frame_time_sec + kAudioMixOverheadSec))
+		+ kAudioRequestAheadFrames
+		+ kAudioRefillMarginFrames;
+	unsigned browser_target_frames = requested;
+	if (browser_target_frames < kAudioTargetMinFrames) {
+		browser_target_frames = kAudioTargetMinFrames;
+	} else if (browser_target_frames > kAudioTargetMaxFrames) {
+		browser_target_frames = kAudioTargetMaxFrames;
+	}
+	const unsigned chunk_guard_frames = browser_target_frames + frames_per_frame;
+	return chunk_guard_frames > g_audio_buffer_frames ? chunk_guard_frames : g_audio_buffer_frames;
+}
+
 static void audio_push_frames(const int16_t* data, size_t frames) {
 	if (frames == 0) {
 		return;
 	}
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	if (g_use_sdl) {
-		if (frames > g_audio_buffer_frames) {
-			const size_t drop = frames - g_audio_buffer_frames;
-			data += drop * g_audio_channels;
-			frames = g_audio_buffer_frames;
+		const size_t max_frames = audio_compute_sdl_queue_cap_frames();
+		if (frames > max_frames) {
+			const size_t drop = frames - max_frames;
+			frames = max_frames;
 			g_audio_overruns += (unsigned)drop;
 		}
 		const Uint32 bytes_per_frame = (Uint32)(g_audio_channels * sizeof(int16_t));
-		const Uint32 max_queued_bytes = (Uint32)(g_audio_buffer_frames * g_audio_channels * sizeof(int16_t));
 		const Uint32 queued_bytes = SDL_GetQueuedAudioSize(g_sdl_audio_device);
-		if (queued_bytes + (Uint32)(frames * g_audio_channels * sizeof(int16_t)) > max_queued_bytes) {
-			g_audio_overruns += queued_bytes / bytes_per_frame;
-			SDL_ClearQueuedAudio(g_sdl_audio_device);
+		const size_t queued_frames = queued_bytes / bytes_per_frame;
+		if (queued_frames >= max_frames) {
+			g_audio_overruns += (unsigned)frames;
+			return;
+		}
+		const size_t free_frames = max_frames - queued_frames;
+		if (frames > free_frames) {
+			g_audio_overruns += (unsigned)(frames - free_frames);
+			frames = free_frames;
 		}
 		if (SDL_QueueAudio(g_sdl_audio_device, data,
 				(Uint32)(frames * g_audio_channels * sizeof(int16_t))) != 0) {
@@ -3536,7 +3565,7 @@ static void audio_init_sdl(int sample_rate) {
 	g_audio_buffer_frames = have.samples;
 	g_audio_sample_buf_frames = 0;
 	fprintf(stderr, "[libretro-host] audio: sdl rate=%d ch=%u samples=%u queue_cap=%u\n",
-			have.freq, have.channels, have.samples, g_audio_buffer_frames);
+			have.freq, have.channels, have.samples, audio_compute_sdl_queue_cap_frames());
 }
 
 static void audio_shutdown_sdl(void) {

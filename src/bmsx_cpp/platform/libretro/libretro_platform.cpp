@@ -34,6 +34,11 @@
 namespace bmsx {
 namespace {
 constexpr double kFrameSpikeMultiplier = 1.2;
+constexpr double kAudioMixOverheadSec = 0.006;
+constexpr size_t kAudioRefillMarginFrames = 128;
+constexpr size_t kAudioRequestAheadFrames = 256;
+constexpr size_t kAudioTargetMinFrames = 384;
+constexpr size_t kAudioTargetMaxFrames = 4096;
 
 std::string buildEngineAssetsPath(const std::string& directory) {
 	if (directory.empty()) {
@@ -1127,14 +1132,31 @@ void LibretroAudioService::setTiming(double sampleRate, double fps) {
 	m_sample_rate = sampleRate;
 	m_nominal_frame_time_sec = 1.0 / fps;
 	m_sample_accumulator = 0.0;
+	m_queue_start_samples = 0;
+	m_queue_samples = 0;
+	m_sample_queue.clear();
+	refreshTargetBufferFrames();
 }
 
 void LibretroAudioService::setFrameTimeSec(double seconds) {
 	m_nominal_frame_time_sec = seconds;
+	refreshTargetBufferFrames();
 }
 
 void LibretroAudioService::resetQueue() {
 	m_sample_accumulator = 0.0;
+	m_queue_start_samples = 0;
+	m_queue_samples = 0;
+	m_sample_queue.clear();
+}
+
+void LibretroAudioService::refreshTargetBufferFrames() {
+	const size_t framesPerFrame = static_cast<size_t>(std::ceil(m_sample_rate * m_nominal_frame_time_sec));
+	const size_t requested = static_cast<size_t>(std::ceil(m_sample_rate * (m_nominal_frame_time_sec + kAudioMixOverheadSec)))
+		+ kAudioRequestAheadFrames
+		+ kAudioRefillMarginFrames;
+	const size_t targetFillFrames = std::clamp(requested, kAudioTargetMinFrames, kAudioTargetMaxFrames);
+	m_target_buffer_frames = targetFillFrames > framesPerFrame ? targetFillFrames - framesPerFrame : 0;
 }
 
 void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
@@ -1147,12 +1169,35 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
 	}
 	m_sample_accumulator -= frames;
 
-	const size_t totalSamples = frames * 2;
-	if (m_mix_buffer.size() < totalSamples) {
-		m_mix_buffer.resize(totalSamples);
+	const size_t queuedFrames = m_queue_samples / 2;
+	const size_t targetFrames = frames + m_target_buffer_frames;
+	if (queuedFrames < targetFrames) {
+		const size_t renderFrames = targetFrames - queuedFrames;
+		const size_t renderSamples = renderFrames * 2;
+		if (m_mix_buffer.size() < renderSamples) {
+			m_mix_buffer.resize(renderSamples);
+		}
+		m_platform->engine()->soundMaster()->renderSamples(m_mix_buffer.data(), renderFrames, static_cast<i32>(m_sample_rate));
+
+		size_t neededSamples = m_queue_start_samples + m_queue_samples + renderSamples;
+		if (m_queue_start_samples > 0 && neededSamples > m_sample_queue.size()) {
+			std::memmove(m_sample_queue.data(), m_sample_queue.data() + m_queue_start_samples, m_queue_samples * sizeof(int16_t));
+			m_queue_start_samples = 0;
+			neededSamples = m_queue_samples + renderSamples;
+		}
+		if (m_sample_queue.size() < neededSamples) {
+			m_sample_queue.resize(neededSamples);
+		}
+		std::memcpy(m_sample_queue.data() + m_queue_start_samples + m_queue_samples, m_mix_buffer.data(), renderSamples * sizeof(int16_t));
+		m_queue_samples += renderSamples;
 	}
-	m_platform->engine()->soundMaster()->renderSamples(m_mix_buffer.data(), frames, static_cast<i32>(m_sample_rate));
-	buffer.write(m_mix_buffer.data(), frames);
+
+	buffer.write(m_sample_queue.data() + m_queue_start_samples, frames);
+	m_queue_start_samples += frames * 2;
+	m_queue_samples -= frames * 2;
+	if (m_queue_samples == 0) {
+		m_queue_start_samples = 0;
+	}
 }
 
 Voice* LibretroAudioService::createVoice() {

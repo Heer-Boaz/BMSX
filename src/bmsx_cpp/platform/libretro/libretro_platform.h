@@ -343,6 +343,7 @@ public:
 	void setTiming(double sampleRate, double fps);
 	void setFrameTimeSec(double seconds);
 	void resetQueue();
+	void refreshTargetBufferFrames();
 
 	// Collect audio samples from all voices
 	void collectSamples(AudioBuffer& buffer);
@@ -361,6 +362,10 @@ private:
 	double m_sample_rate = 48000.0;
 	double m_nominal_frame_time_sec = 1.0 / 50.0;
 	double m_sample_accumulator = 0.0;
+	std::vector<int16_t> m_sample_queue;
+	size_t m_queue_start_samples = 0;
+	size_t m_queue_samples = 0;
+	size_t m_target_buffer_frames = 0;
 
 	class LibretroMasterVolume : public MasterVolume {
 	public:
