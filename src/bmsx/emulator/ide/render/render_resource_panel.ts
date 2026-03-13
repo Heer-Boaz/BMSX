@@ -2,9 +2,10 @@ import type { RectBounds } from '../../../rompack/rompack';
 import type { ResourcePanelController } from '../resource_panel_controller';
 import { Msx1Colors } from '../../../systems/msx';
 import { clamp } from '../../../utils/clamp';
-import { getActiveResourceViewer, getCodeAreaBounds, resourceViewerTextCapacity, resourceViewerImageLayout } from '../cart_editor';
+import { getCodeAreaBounds } from '../cart_editor';
 import { resourceViewerClampScroll } from '../ide_input';
 import { ide_state } from '../ide_state';
+import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity } from '../resource_viewer';
 import { drawEditorText, drawEditorColoredText } from '../text_renderer';
 import { api } from '../../runtime';
 import { measureText, wrapOverlayLine } from '../text_utils';
@@ -147,7 +148,7 @@ export function drawResourceViewer(): void {
 	resourceViewerClampScroll(viewer);
 	const bounds = getCodeAreaBounds();
 	const contentLeft = bounds.codeLeft + constants.RESOURCE_PANEL_PADDING_X;
-	const capacity = resourceViewerTextCapacity(viewer);
+	const capacity = resourceViewerTextCapacity(viewer, bounds, ide_state.lineHeight);
 	const totalLines = viewer.lines.length;
 	const verticalScrollbar = ide_state.scrollbars.viewerVertical;
 	const verticalTrack: RectBounds = {
@@ -163,7 +164,7 @@ export function drawResourceViewer(): void {
 	api.put_rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 
 	const contentTop = bounds.codeTop + 2;
-	const layout = resourceViewerImageLayout(viewer);
+	const layout = resourceViewerImageLayout(viewer, bounds, ide_state.lineHeight);
 	let textTop = contentTop;
 	if (layout && viewer.image) {
 		// ensureResourceViewerSprite(viewer.image.asset_id, { left: layout.left, top: layout.top, scale: layout.scale });

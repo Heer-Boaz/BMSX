@@ -12,11 +12,12 @@ import { prepareDebuggerStepOverlay } from './ide_debugger';
 import { computeRuntimeErrorOverlayMaxWidth } from './text_utils';
 import { drawProblemsPanel, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from './problems_panel';
 import { measureText } from './text_utils';
+import { getActiveResourceViewer, resourceViewerTextCapacity } from './resource_viewer';
 import { applyScrollbarScroll } from './scrollbar';
 import { clearHoverTooltip, updateHoverTooltip } from './intellisense';
 import * as TextEditing from './text_editing_and_selection';
 import { clamp } from '../../utils/clamp';
-import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, handleActionPromptSelection, openSymbolSearch, openResourceSearch, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openObjectInspectorTab, openEventInspectorTab, openRegistryInspectorTab, performAction, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, resolvePointerRow, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, handlePointerAutoScroll, getActiveResourceViewer, resourceViewerTextCapacity, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches, applyLineJump, mapScreenPointToViewport } from './cart_editor';
+import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, handleActionPromptSelection, openSymbolSearch, openResourceSearch, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, notifyReadOnlyEdit, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, openObjectInspectorTab, openEventInspectorTab, openRegistryInspectorTab, performAction, getTabBarTotalHeight, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, getResourceSearchBarBounds, moveResourceSearchSelection, scrollResourceBrowser, getCodeAreaBounds, scrollRows, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, processInlineFieldPointer, resourceSearchEntryHeight, resourceSearchVisibleResultCount, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, resolvePointerRow, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, resolvePointerColumn, handlePointerAutoScroll, moveSymbolSearchSelection, symbolSearchPageSize, updateSymbolSearchMatches, applyLineJumpFieldText, resourceSearchWindowCapacity, updateResourceSearchMatches, applyLineJump, mapScreenPointToViewport } from './cart_editor';
 import { clearGotoHoverHighlight, clearReferenceHighlights, tryGotoDefinitionAt, refreshGotoHoverHighlight, resolveContextMenuToken, extractHoverExpression } from './intellisense';
 import { navigateToRuntimeErrorFrameTarget } from './ide_debugger';
 import { focusRuntimeErrorOverlay } from './runtime_error_navigation';
@@ -1805,13 +1806,13 @@ export function handleResourceViewerInput(): void {
 	}
 	if (shouldRepeatKeyFromPlayer('PageUp')) {
 		consumeIdeKey('PageUp');
-		const capacity = resourceViewerTextCapacity(viewer);
+		const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
 		scrollResourceViewer(-Math.max(1, capacity));
 		return;
 	}
 	if (shouldRepeatKeyFromPlayer('PageDown')) {
 		consumeIdeKey('PageDown');
-		const capacity = resourceViewerTextCapacity(viewer);
+		const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
 		scrollResourceViewer(Math.max(1, capacity));
 		return;
 	}
@@ -1827,7 +1828,7 @@ export function scrollResourceViewer(amount: number): void {
 	if (!viewer) {
 		return;
 	}
-	const capacity = resourceViewerTextCapacity(viewer);
+	const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
 	if (capacity <= 0) {
 		viewer.scroll = 0;
 		return;
@@ -1837,7 +1838,7 @@ export function scrollResourceViewer(amount: number): void {
 	resourceViewerClampScroll(viewer);
 }
 export function resourceViewerClampScroll(viewer: ResourceViewerState): void {
-	const capacity = resourceViewerTextCapacity(viewer);
+	const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
 	if (capacity <= 0) {
 		viewer.scroll = 0;
 		return;

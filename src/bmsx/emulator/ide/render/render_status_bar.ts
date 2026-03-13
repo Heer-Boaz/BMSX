@@ -1,7 +1,8 @@
 import * as constants from '../constants';
-import { statusAreaHeight, getStatusMessageLines, getActiveSymbolSearchMatch, getActiveResourceViewer } from '../cart_editor';
+import { statusAreaHeight, getStatusMessageLines, getActiveSymbolSearchMatch } from '../cart_editor';
 import { isResourceViewActive } from '../editor_tabs';
 import { ide_state } from '../ide_state';
+import { getActiveResourceViewer } from '../resource_viewer';
 import { drawEditorText } from '../text_renderer';
 import { measureText, truncateTextToWidth } from '../text_utils';
 import { api, Runtime } from '../../runtime';

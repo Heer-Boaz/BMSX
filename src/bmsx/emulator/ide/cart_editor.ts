@@ -66,7 +66,6 @@ import type {
 	PendingActionPrompt,
 	PointerSnapshot,
 	Position,
-	ResourceViewerState,
 	RuntimeErrorOverlay,
 	SymbolSearchResult,
 } from './types';
@@ -117,16 +116,7 @@ import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
 import { LuaSemanticWorkspace, symbolPriority } from './semantic_model';
 import { refreshSymbolCatalog } from './symbol_catalog';
 import { extractErrorMessage } from '../../lua/luavalue';
-import {
-	appendResourceViewerLines as appendEditorResourceViewerLines,
-	buildResourceCatalog,
-	buildResourceViewerState as buildEditorResourceViewerState,
-	computeResourcePanelRatioBounds as computeEditorResourcePanelRatioBounds,
-	computeDefaultResourcePanelRatio,
-	computeResourceSearchResults,
-	computeResourceViewerImageLayout as computeEditorResourceViewerImageLayout,
-	computeResourceViewerTextCapacity as computeEditorResourceViewerTextCapacity,
-} from './editor_resources';
+import { openResourceViewerTab } from './resource_viewer';
 import { Viewport } from '../../rompack/rompack';
 
 export const editorFacade = {
@@ -1367,17 +1357,6 @@ export function draw(): void {
 	}
 }
 
-export function getActiveResourceViewer(): ResourceViewerState {
-	const tab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeTabId);
-	if (!tab) {
-		return null;
-	}
-	if (tab.kind !== 'resource_view' || !tab.resource) {
-		return null;
-	}
-	return tab.resource;
-}
-
 export function shutdown(): void {
 	clearExecutionStopHighlights();
 	storeActiveCodeTabContext();
@@ -2137,7 +2116,40 @@ export function applySymbolSearchSelection(index: number): void {
 
 export function refreshResourceCatalog(): void {
 	try {
-		ide_state.resourceCatalog = buildResourceCatalog(listResourcesStrict());
+		const descriptors = listResourcesStrict();
+		const augmented = descriptors.slice();
+		const imgAssets = Object.values($.assets.img);
+		for (const asset of imgAssets) {
+			if (asset.type !== 'atlas') {
+				continue;
+			}
+			const key = asset.resid;
+			if (key !== '_atlas_primary' && !key.startsWith('atlas') && !key.startsWith('_atlas_')) {
+				continue;
+			}
+			if (augmented.some(entry => entry.asset_id === key)) {
+				continue;
+			}
+			augmented.push({ path: `atlas/${key}`, type: 'atlas', asset_id: key });
+		}
+		ide_state.resourceCatalog = augmented.map((descriptor) => {
+			const displayPathSource = descriptor.path.length > 0 ? descriptor.path : (descriptor.asset_id ?? '');
+			const displayPath = displayPathSource.length > 0 ? displayPathSource : '<unnamed>';
+			const typeLabel = descriptor.type ? descriptor.type.toUpperCase() : '';
+			const assetLabel = descriptor.asset_id && descriptor.asset_id !== displayPath ? descriptor.asset_id : null;
+			const searchKey = [displayPath, descriptor.asset_id ?? '', descriptor.type ?? '']
+				.filter(part => part.length > 0)
+				.map(part => part.toLowerCase())
+				.join(' ');
+			return {
+				descriptor,
+				displayPath,
+				searchKey,
+				typeLabel,
+				assetLabel,
+			};
+		});
+		ide_state.resourceCatalog.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		ide_state.resourceCatalog = [];
@@ -2158,9 +2170,45 @@ export function updateResourceSearchMatches(): void {
 	if (ide_state.resourceCatalog.length === 0) {
 		return;
 	}
-	const { matches, selectionIndex } = computeResourceSearchResults(ide_state.resourceCatalog, ide_state.resourceSearchQuery);
+	const query = ide_state.resourceSearchQuery.trim().toLowerCase();
+	if (query.length === 0) {
+		ide_state.resourceSearchMatches = ide_state.resourceCatalog.map(entry => ({ entry, matchIndex: 0 }));
+		return;
+	}
+	const tokens = query.split(/\s+/).filter(token => token.length > 0);
+	const matches = ide_state.resourceCatalog
+		.filter((entry) => {
+			for (const token of tokens) {
+				if (entry.searchKey.indexOf(token) === -1) {
+					return false;
+				}
+			}
+			return true;
+		})
+		.map((entry) => {
+			let matchIndex = Number.POSITIVE_INFINITY;
+			for (const token of tokens) {
+				const index = entry.searchKey.indexOf(token);
+				if (index < matchIndex) {
+					matchIndex = index;
+				}
+			}
+			return { entry, matchIndex };
+		});
+	if (matches.length === 0) {
+		return;
+	}
+	matches.sort((a, b) => {
+		if (a.matchIndex !== b.matchIndex) {
+			return a.matchIndex - b.matchIndex;
+		}
+		if (a.entry.displayPath.length !== b.entry.displayPath.length) {
+			return a.entry.displayPath.length - b.entry.displayPath.length;
+		}
+		return a.entry.displayPath.localeCompare(b.entry.displayPath);
+	});
 	ide_state.resourceSearchMatches = matches;
-	ide_state.resourceSearchSelectionIndex = selectionIndex;
+	ide_state.resourceSearchSelectionIndex = 0;
 }
 
 export function ensureResourceSearchSelectionVisible(): void {
@@ -3456,30 +3504,6 @@ export function openLuaCodeTab(descriptor: ResourceDescriptor): void {
 	completeNavigation(navigationCheckpoint);
 }
 
-export function openResourceViewerTab(descriptor: ResourceDescriptor): void {
-	const tabId: EditorTabId = `resource:${descriptor.path}`;
-	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
-	const state = buildResourceViewerState(descriptor);
-	resourceViewerClampScroll(state);
-	if (tab) {
-		tab.title = state.title;
-		tab.resource = state;
-		tab.dirty = false;
-		setActiveTab(tabId);
-		return;
-	}
-	tab = {
-		id: tabId,
-		kind: 'resource_view',
-		title: state.title,
-		closable: true,
-		dirty: false,
-		resource: state,
-	};
-	ide_state.tabs.push(tab);
-	setActiveTab(tabId);
-}
-
 export function closeActiveTab(): void {
 	if (!ide_state.activeTabId) {
 		return;
@@ -3580,16 +3604,6 @@ export function findResourcePanelIndexByasset_id(asset_id: string): number {
 	return -1;
 }
 
-export function buildResourceViewerState(descriptor: ResourceDescriptor): ResourceViewerState {
-	const state = buildEditorResourceViewerState(descriptor);
-	state.title = computeResourceTabTitle(descriptor);
-	return state;
-}
-
-export function appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
-	appendEditorResourceViewerLines(target, additions);
-}
-
 export function openDebugOverviewTab(): void {
 	ide_state.resourcePanel.showRegistryInspector();
 }
@@ -3606,13 +3620,15 @@ export function openRegistryInspectorTab(): void {
 	ide_state.resourcePanel.showRegistryInspector();
 }
 
-export function computePanelRatioBounds(): { min: number; max: number } {
-	return computeEditorResourcePanelRatioBounds();
-}
-
 export function defaultResourcePanelRatio(): number {
 	const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
-	return computeDefaultResourcePanelRatio(metrics.windowInner.width, metrics.screen.width);
+	const relative = Math.min(1, metrics.windowInner.width / metrics.screen.width);
+	const responsiveness = 1 - relative;
+	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
+	const maxRatio = Math.max(minRatio, Math.min(constants.RESOURCE_PANEL_MAX_RATIO, 1 - constants.RESOURCE_PANEL_MIN_EDITOR_RATIO));
+	const ratio = constants.RESOURCE_PANEL_DEFAULT_RATIO
+		+ responsiveness * (constants.RESOURCE_PANEL_MAX_RATIO - constants.RESOURCE_PANEL_DEFAULT_RATIO) * 0.6;
+	return clamp(ratio, minRatio, maxRatio);
 }
 
 export function getResourcePanelWidth(): number {
@@ -3625,14 +3641,6 @@ export function scrollResourceBrowser(amount: number): void {
 	if (!ide_state.resourcePanelVisible) return;
 	ide_state.resourcePanel.scrollBy(amount);
 	// controller owns scroll; no local mirror required
-}
-
-export function resourceViewerImageLayout(viewer: ResourceViewerState): { left: number; top: number; width: number; height: number; bottom: number; scale: number } {
-	return computeEditorResourceViewerImageLayout(viewer, getCodeAreaBounds(), ide_state.lineHeight);
-}
-
-export function resourceViewerTextCapacity(viewer: ResourceViewerState): number {
-	return computeEditorResourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {

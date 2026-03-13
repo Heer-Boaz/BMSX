@@ -2,10 +2,11 @@ import { clamp } from '../../utils/clamp';
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from './constants';
 import type { ScrollbarKind } from './types';
 import type { RectBounds } from '../../rompack/rompack';
-import { computeMaximumScrollColumn, getActiveResourceViewer, resourceViewerTextCapacity } from './cart_editor';
+import { computeMaximumScrollColumn, getCodeAreaBounds } from './cart_editor';
 import { ensureVisualLines, getVisualLineCount } from './text_utils';
 import { ide_state } from './ide_state';
 import { api } from '../runtime';
+import { getActiveResourceViewer, resourceViewerTextCapacity } from './resource_viewer';
 
 export class Scrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';
@@ -264,11 +265,10 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 			if (!viewer) {
 				break;
 			}
-			const capacity = resourceViewerTextCapacity(viewer);
+			const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
 			const maxScroll = Math.max(0, viewer.lines.length - capacity);
 			viewer.scroll = clamp(scroll, 0, maxScroll);
 			break;
 		}
 	}
 }
-

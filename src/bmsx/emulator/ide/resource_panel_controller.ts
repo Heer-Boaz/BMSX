@@ -8,8 +8,8 @@ import type { RectBounds } from '../../rompack/rompack';
 import type { ResourceDescriptor } from '../types';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 import { ide_state } from './ide_state';
-import { applyDefinitionSelection, bottomMargin, codeViewportTop, focusChunkSource, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab, openResourceViewerTab } from './cart_editor';
-import { clampResourcePanelRatio, computeDefaultResourcePanelRatio, computeResourcePanelPixelWidth } from './editor_resources';
+import { applyDefinitionSelection, bottomMargin, codeViewportTop, defaultResourcePanelRatio, focusChunkSource, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab } from './cart_editor';
+import { openResourceViewerTab } from './resource_viewer';
 import { measureText } from './text_utils';
 import type { CallHierarchyView, CallHierarchyViewNode } from './code_reference';
 import { buildWorldInspectorItems } from './world_inspector';
@@ -755,16 +755,20 @@ export class ResourcePanelController {
 	}
 
 	private defaultRatio(): number {
-		const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
-		return computeDefaultResourcePanelRatio(metrics.windowInner.width, metrics.screen.width);
+		return defaultResourcePanelRatio();
 	}
 
 	private clampRatio(ratio: number): number {
-		return clampResourcePanelRatio(ratio);
+		const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
+		const maxRatio = Math.max(
+			minRatio,
+			Math.min(constants.RESOURCE_PANEL_MAX_RATIO, 1 - constants.RESOURCE_PANEL_MIN_EDITOR_RATIO),
+		);
+		return clamp(ratio, minRatio, maxRatio);
 	}
 
 	private computePixelWidth(ratio: number): number {
-		return computeResourcePanelPixelWidth(ide_state.viewportWidth, ratio);
+		return Math.floor(ide_state.viewportWidth * this.clampRatio(ratio));
 	}
 
 	// Expose snapshot for editor sync
