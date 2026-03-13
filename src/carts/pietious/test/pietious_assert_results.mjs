@@ -359,6 +359,55 @@ function setupLadderSwordScenario(engine, logger) {
 	};
 }
 
+function setupRoomSwitchInputSyncScenario(engine, logger) {
+	const [state] = evalLua(engine, `
+		local castle_map = require('castle_map')
+		local castle = object('c')
+		local room = object('room')
+		local player = object('pietolon')
+		local room_numbers = {}
+		local source_room_number = -1
+
+		for key in pairs(castle_map.room_templates) do
+			room_numbers[#room_numbers + 1] = key
+		end
+		table.sort(room_numbers)
+
+		for i = 1, #room_numbers do
+			local candidate_room_number = room_numbers[i]
+			local template = castle_map.room_templates[candidate_room_number]
+			if template.room_links.up > 0 then
+				source_room_number = candidate_room_number
+				break
+			end
+		end
+
+		if source_room_number < 0 then
+			error('no upward room switch found for input sync assert')
+		end
+
+		castle.current_room_number = source_room_number
+		room:load_room(source_room_number)
+		player:clear_input_state()
+		player.up_input_sources = 1
+		player.up_held = true
+		local switched = player:try_switch_room('up', false)
+
+		return {
+			source_room_number = source_room_number,
+			switched = switched,
+			target_room_number = castle.current_room_number,
+			up_input_sources = player.up_input_sources,
+			up_held = player.up_held,
+		}
+	`);
+	logger(`[assert] room switch input sync setup room=${state.source_room_number}`);
+	return {
+		name: 'room_switch_input_sync',
+		state,
+	};
+}
+
 function updateCarryScenario(engine, scenario, logger) {
 	const state = getLuaState(engine);
 	const expectedPlayerY = state.elevator_y - 16;
@@ -497,6 +546,16 @@ function updateLadderSwordScenario(_engine, scenario, logger) {
 	assert(state.quiet_left_allowed === true, `ladder sword failed while facing left: room=${state.room_number}`);
 	assert(state.quiet_right_allowed === true, `ladder sword failed while facing right: room=${state.room_number}`);
 	logger('[assert] ladder sword ok');
+	return setupRoomSwitchInputSyncScenario(_engine, logger);
+}
+
+function updateRoomSwitchInputSyncScenario(_engine, scenario, logger) {
+	const state = scenario.state;
+	assert(state.switched === true, `room switch input sync did not switch: room=${state.source_room_number}`);
+	assert(state.source_room_number !== state.target_room_number, `room switch input sync stayed in same room: room=${state.source_room_number}`);
+	assert(state.up_input_sources === 0, `room switch left stale up_input_sources=${state.up_input_sources}`);
+	assert(state.up_held === false, `room switch left stale up_held=true`);
+	logger('[assert] room switch input sync ok');
 	return { name: 'done' };
 }
 
@@ -580,6 +639,10 @@ export default function schedule({ logger }) {
 		}
 		if (scenario.name === 'ladder_sword') {
 			scenario = updateLadderSwordScenario(engine, scenario, logger);
+			return;
+		}
+		if (scenario.name === 'room_switch_input_sync') {
+			scenario = updateRoomSwitchInputSyncScenario(engine, scenario, logger);
 			return;
 		}
 		if (scenario.name === 'done') {
