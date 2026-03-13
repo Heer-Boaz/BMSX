@@ -3,6 +3,11 @@ local action_effects = require('action_effects')
 
 local player_abilities = {}
 
+player_abilities.tags = {
+	sword_activation_allowed = 'g.sa',
+	stairs_action_allowed = 'g.saa',
+}
+
 player_abilities.equip_tags = {
 	pepernoot = 'eq.pn',
 	spyglass = 'eq.spy',
@@ -13,10 +18,7 @@ player_abilities.command_ids = {
 }
 
 function player_abilities.activate_sword(owner)
-	if owner:has_tag('g.dl') then
-		return false
-	end
-	if owner:has_tag('g.sw') then
+	if not owner:has_tag(player_abilities.tags.sword_activation_allowed) then
 		return false
 	end
 	if owner.sword_cooldown > 0 then
@@ -32,10 +34,8 @@ action_effects.register_effect('pepernoot', {
 	blocked_tags = { 'g.dl' },
 	can_trigger = function(context)
 		local owner = context.owner
-		if owner:has_tag('g.st') then
-			if not owner:has_tag('v.qst') then
-				return false
-			end
+		if not owner:has_tag(player_abilities.tags.stairs_action_allowed) then
+			return false
 		end
 		local live_count = 0
 		for proj in objects_by_type('pepernoot_projectile') do

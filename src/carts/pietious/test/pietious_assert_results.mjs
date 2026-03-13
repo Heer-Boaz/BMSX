@@ -269,6 +269,96 @@ function setupStepOffScenario(engine, logger, variantIndex = 0) {
 	};
 }
 
+function setupLadderSwordScenario(engine, logger) {
+	const [state] = evalLua(engine, `
+		local constants = require('constants')
+		local abilities = require('player_abilities')
+		local castle_map = require('castle_map')
+		local castle = object('c')
+		local room = object('room')
+		local player = object('pietolon')
+		local stair = nil
+		local room_number = -1
+
+		local room_numbers = {}
+		for key in pairs(castle_map.room_templates) do
+			room_numbers[#room_numbers + 1] = key
+		end
+		table.sort(room_numbers)
+
+		for i = 1, #room_numbers do
+			local candidate_room_number = room_numbers[i]
+			castle.current_room_number = candidate_room_number
+			room:load_room(candidate_room_number)
+			if #room.stairs > 0 then
+				stair = room.stairs[1]
+				room_number = candidate_room_number
+				break
+			end
+		end
+
+		if stair == nil then
+			error('no stairs room found for ladder sword assert')
+		end
+
+		local middle_y = math.floor((stair.top_y + stair.bottom_y) / 2)
+
+		local function reset_player()
+			player:clear_input_state()
+			player:zero_motion()
+			player:reset_fall_substate_sequence()
+			player:cancel_sword()
+			player.sword_cooldown = 0
+			player.jump_substate = 0
+			player.jump_inertia = 0
+			player.on_vertical_elevator = false
+			player.jumping_from_elevator = false
+			player.stairs_landing_sound_pending = false
+			player.x = stair.x
+			player.y = middle_y
+			player.facing = 1
+			player.events:emit('landed_to_quiet')
+		end
+
+		reset_player()
+		player:start_stairs(-1, stair, 'stairs_up')
+		local up_activated = abilities.activate_sword(player)
+
+		reset_player()
+		player:start_stairs(1, stair, 'stairs_down')
+		local down_activated = abilities.activate_sword(player)
+
+		reset_player()
+		player:start_stairs(-1, stair, 'stairs_up')
+		player.events:emit('stairs_quiet_left')
+		local quiet_left_allowed = abilities.activate_sword(player)
+		local quiet_left_state = player:has_tag('v.qst')
+		player:cancel_sword()
+		player.sword_cooldown = 0
+
+		reset_player()
+		player:start_stairs(-1, stair, 'stairs_up')
+		player.events:emit('stairs_quiet_right')
+		local quiet_right_allowed = abilities.activate_sword(player)
+		local quiet_right_state = player:has_tag('v.qst')
+
+		return {
+			room_number = room_number,
+			up_activated = up_activated,
+			down_activated = down_activated,
+			quiet_left_allowed = quiet_left_allowed,
+			quiet_left_state = quiet_left_state,
+			quiet_right_allowed = quiet_right_allowed,
+			quiet_right_state = quiet_right_state,
+		}
+	`);
+	logger(`[assert] ladder sword setup room=${state.room_number}`);
+	return {
+		name: 'ladder_sword',
+		state,
+	};
+}
+
 function updateCarryScenario(engine, scenario, logger) {
 	const state = getLuaState(engine);
 	const expectedPlayerY = state.elevator_y - 16;
@@ -366,7 +456,7 @@ function updateStepOffScenario(engine, scenario, logger) {
 				logger(`[assert] stepoff variant=${scenario.variantIndex} ok`);
 				if (scenario.variantIndex + 1 >= STEPOFF_VARIANTS.length) {
 					logger('[assert] stepoff floor landing ok');
-					return { name: 'done' };
+					return setupLadderSwordScenario(engine, logger);
 				}
 				return setupStepOffScenario(engine, logger, scenario.variantIndex + 1);
 			}
@@ -396,6 +486,18 @@ function updateStepOffScenario(engine, scenario, logger) {
 		`stepoff variant=${scenario.variantIndex} delay=${scenario.variant.delayFrames} xOffset=${scenario.variant.xOffset} failed within ${scenario.frames} frames: walkStarted=${scenario.walk_started} walking=${scenario.saw_walking} fall=${scenario.saw_fall} released=${scenario.released_right} player=(${state.player_x},${state.player_y}) quiet=${state.player_quiet} wr=${state.player_walking_right} wl=${state.player_walking_left} uf=${state.player_uncontrolled_fall} cf=${state.player_controlled_fall} grounded=${state.player_grounded} heldR=${state.player_right_held} heldL=${state.player_left_held} facing=${state.player_facing} last=(${state.player_last_dx},${state.player_last_dy}) expectedFloorY=${state.expected_floor_y} elevator=(${state.elevator_x},${state.elevator_y})`
 	);
 	return scenario;
+}
+
+function updateLadderSwordScenario(_engine, scenario, logger) {
+	const state = scenario.state;
+	assert(state.up_activated === false, `ladder sword activated while moving up: room=${state.room_number}`);
+	assert(state.down_activated === false, `ladder sword activated while moving down: room=${state.room_number}`);
+	assert(state.quiet_left_state === true, `ladder quiet-left state missing: room=${state.room_number}`);
+	assert(state.quiet_right_state === true, `ladder quiet-right state missing: room=${state.room_number}`);
+	assert(state.quiet_left_allowed === true, `ladder sword failed while facing left: room=${state.room_number}`);
+	assert(state.quiet_right_allowed === true, `ladder sword failed while facing right: room=${state.room_number}`);
+	logger('[assert] ladder sword ok');
+	return { name: 'done' };
 }
 
 export default function schedule({ logger }) {
@@ -474,6 +576,10 @@ export default function schedule({ logger }) {
 		}
 		if (scenario.name === 'stepoff') {
 			scenario = updateStepOffScenario(engine, scenario, logger);
+			return;
+		}
+		if (scenario.name === 'ladder_sword') {
+			scenario = updateLadderSwordScenario(engine, scenario, logger);
 			return;
 		}
 		if (scenario.name === 'done') {

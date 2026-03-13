@@ -11,6 +11,7 @@ local director_seal_frame_event = 'timeline.frame.director.seal'
 local castle_tags = {
 	seal_active = 'c.seal.active',
 	seal_sequence = 'c.seal.sequence',
+	seal_dissolving = 'c.seal.diss',
 	seal_broken = 'c.seal.broken',
 	daemon_fight = 'c.daemon.fight',
 }
@@ -355,6 +356,7 @@ end
 function castle:reset_room_encounter_tags()
 	set_tag_flag(self, castle_tags.seal_active, false)
 	set_tag_flag(self, castle_tags.seal_sequence, false)
+	set_tag_flag(self, castle_tags.seal_dissolving, false)
 	set_tag_flag(self, castle_tags.seal_broken, false)
 	set_tag_flag(self, castle_tags.daemon_fight, false)
 end
@@ -472,6 +474,7 @@ function castle:begin_seal_dissolution()
 	local room = current_room()
 	self.world_boss_defeated[room.world_number] = false
 	set_tag_flag(self, castle_tags.seal_sequence, true)
+	set_tag_flag(self, castle_tags.seal_dissolving, true)
 	set_tag_flag(self, castle_tags.seal_broken, false)
 	room.room_dissolve_step = 0
 	room.seal_dissolve_step = 0
@@ -518,6 +521,7 @@ end
 function castle:finish_seal_dissolution()
 	local room = current_room()
 	set_tag_flag(self, castle_tags.seal_sequence, true)
+	set_tag_flag(self, castle_tags.seal_dissolving, false)
 	set_tag_flag(self, castle_tags.seal_broken, true)
 	set_tag_flag(self, castle_tags.seal_active, false)
 	set_tag_flag(self, castle_tags.daemon_fight, false)
@@ -541,6 +545,7 @@ end
 
 function castle:begin_daemon_appearance()
 	set_tag_flag(self, castle_tags.seal_sequence, true)
+	set_tag_flag(self, castle_tags.seal_dissolving, false)
 	set_tag_flag(self, castle_tags.daemon_fight, false)
 	self:emit_room_state_changed()
 end
@@ -549,6 +554,7 @@ function castle:mark_current_world_boss_defeated()
 	local world_number = current_room().world_number
 	self.world_boss_defeated[world_number] = true
 	set_tag_flag(self, castle_tags.seal_sequence, false)
+	set_tag_flag(self, castle_tags.seal_dissolving, false)
 	set_tag_flag(self, castle_tags.daemon_fight, false)
 	set_tag_flag(self, castle_tags.seal_active, false)
 	self:sync_current_room_seal_instance()
@@ -570,10 +576,8 @@ function castle:should_restart_daemon_appearance_after_death()
 end
 
 function castle:resolve_death()
-	if self:has_tag(castle_tags.seal_sequence) then
-		if self:has_tag(castle_tags.seal_active) then
-			self:finish_seal_dissolution()
-		end
+	if self:has_tag(castle_tags.seal_dissolving) then
+		self:finish_seal_dissolution()
 	end
 	self.events:emit('death_resolved', { restart_daemon = self:should_restart_daemon_appearance_after_death() })
 end

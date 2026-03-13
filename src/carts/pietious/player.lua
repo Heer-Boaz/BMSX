@@ -118,6 +118,8 @@ local state_tags = {
 	group = {
 		stairs = 'g.st',
 		sword = 'g.sw',
+		sword_activation_allowed = player_abilities.tags.sword_activation_allowed,
+		stairs_action_allowed = player_abilities.tags.stairs_action_allowed,
 		damage_lock = 'g.dl',
 		elevator_transport = 'g.et',
 		transition_lock = 'g.tr',
@@ -2894,6 +2896,28 @@ local function define_player_fsm()
 				state_tags.variant.hit_recovery,
 				state_tags.variant.controlled_fall,
 				state_tags.variant.uncontrolled_fall,
+			},
+			[state_tags.group.sword_activation_allowed] = {
+				any = {
+					state_tags.variant.quiet,
+					state_tags.variant.walking_right,
+					state_tags.variant.walking_left,
+					state_tags.variant.uncontrolled_fall,
+					state_tags.variant.controlled_fall,
+					state_tags.variant.jumping,
+					state_tags.variant.stopped_jumping,
+					state_tags.variant.quiet_stairs,
+				},
+				none = {
+					state_tags.group.damage_lock,
+					state_tags.group.sword,
+				},
+			},
+			[state_tags.group.stairs_action_allowed] = {
+				none = {
+					state_tags.variant.up_stairs,
+					state_tags.variant.down_stairs,
+				},
 			},
 			[state_tags.visual.jump_sword] = {
 				all = { state_tags.group.sword },
