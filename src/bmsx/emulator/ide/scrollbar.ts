@@ -2,7 +2,7 @@ import { clamp } from '../../utils/clamp';
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from './constants';
 import type { ScrollbarKind } from './types';
 import type { RectBounds } from '../../rompack/rompack';
-import { computeMaximumScrollColumn, getCodeAreaBounds } from './cart_editor';
+import { computeMaximumScrollColumn, getCodeAreaBounds } from './editor_view';
 import { ensureVisualLines, getVisualLineCount } from './text_utils';
 import { ide_state } from './ide_state';
 import { api } from '../runtime';

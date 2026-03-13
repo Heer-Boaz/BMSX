@@ -6,7 +6,7 @@ import { ide_state } from '../ide_state';
 import { caretX, getFieldText, measureRange, selectionRange } from '../inline_text_field';
 import { api } from '../../runtime';
 import { drawEditorText } from '../text_renderer';
-import { getCreateResourceBarHeight, getResourceSearchBarHeight, getSearchBarHeight, isResourceSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../cart_editor';
+import { getCreateResourceBarHeight, getResourceSearchBarHeight, getSearchBarHeight, isResourceSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../editor_view';
 import { measureText } from '../text_utils';
 
 type InlineResultListOptions<T> = {

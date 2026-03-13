@@ -1,6 +1,6 @@
 import { Api } from '../../api';
 import { api } from '../../runtime';
-import { getTabBarTotalHeight, getCreateResourceBarHeight, getSearchBarHeight, getResourceSearchBarHeight, getSymbolSearchBarHeight, getRenameBarHeight, getLineJumpBarHeight, searchVisibleResultCount, searchResultEntryHeight, symbolSearchVisibleResultCount, symbolSearchEntryHeight, isSymbolSearchCompactMode } from '../cart_editor';
+import { getTabBarTotalHeight, getCreateResourceBarHeight, getSearchBarHeight, getResourceSearchBarHeight, getSymbolSearchBarHeight, getRenameBarHeight, getLineJumpBarHeight, searchVisibleResultCount, searchResultEntryHeight, symbolSearchVisibleResultCount, symbolSearchEntryHeight, isSymbolSearchCompactMode } from '../editor_view';
 import { drawCreateResourceErrorDialog } from './render_resource_panel';
 import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../editor_search';
 import { ide_state } from '../ide_state';
@@ -254,4 +254,3 @@ export function drawCreateResourceBar(): void {
 	};
 	renderCreateResourceBar(api, host);
 }
-

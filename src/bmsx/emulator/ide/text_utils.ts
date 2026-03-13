@@ -1,4 +1,4 @@
-import { getResourcePanelWidth } from './cart_editor';
+import { getResourcePanelWidth } from './editor_view';
 import * as constants from './constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
 import { startSearchJob } from './editor_search';

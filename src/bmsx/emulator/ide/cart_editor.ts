@@ -9,23 +9,19 @@ import type {
 import { EditorFont } from '../editor_font';
 import { FontVariant } from '../font';
 import { drawEditorText } from './text_renderer';
-import { Msx1Colors } from '../../systems/msx';
-import { renderCodeArea } from './render/render_code_area';
 import { clamp } from '../../utils/clamp';
 import { CompletionController } from './completion_controller';
-import { drawProblemsPanel, ProblemsPanelController } from './problems_panel';
+import { ProblemsPanelController } from './problems_panel';
 import { computeAggregatedEditorDiagnostics, markAllDiagnosticsDirty, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
 import {
 	createEntryTabContext,
 	createLuaCodeTabContext,
 	getActiveCodeTabContext,
-	storeActiveCodeTabContext,
 	initializeTabs,
 	setTabDirty,
 	updateActiveContextDirtyFlag,
 	isCodeTabActive,
 	isEditableCodeTab,
-	isResourceViewActive,
 	setActiveTab,
 	activateCodeTab,
 	closeTab,
@@ -33,23 +29,19 @@ import {
 	findCodeTabContext,
 } from './editor_tabs';
 
-import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, invalidateLuaCommentContextFromRow, markTextMutated, measureText, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment, wrapOverlayLine } from './text_utils';
+import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, invalidateLuaCommentContextFromRow, markTextMutated, measureText, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
 	createInlineTextField,
 	getFieldText,
 	setFieldText,
-	updateBlink,
 } from './inline_text_field';
-import { buildMemberCompletionItems, clearGotoHoverHighlight, clearReferenceHighlights, extractHoverExpression, inspectLuaExpression, intellisenseUiReady, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaSymbols, navigateToLuaDefinition, requestSemanticRefresh, shouldAutoTriggerCompletions } from './intellisense';
+import { buildMemberCompletionItems, clearReferenceHighlights, extractHoverExpression, inspectLuaExpression, intellisenseUiReady, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaSymbols, navigateToLuaDefinition, requestSemanticRefresh, shouldAutoTriggerCompletions } from './intellisense';
 import { Scrollbar, ScrollbarController } from './scrollbar';
-import { renderTopBar, renderTopBarDropdown } from './render/render_top_bar';
-import { renderTabBar } from './render/render_tab_bar';
-import { renderStatusBar } from './render/render_status_bar';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
-import { handleActionPromptInput, handleEditorInput, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, shouldRepeatKeyFromPlayer, toggleThemeMode } from './ide_input';
+import { InputController, isKeyJustPressed, shouldRepeatKeyFromPlayer, toggleThemeMode } from './ide_input';
 import { consumeIdeKey } from './ide_input';
 import { CodeLayout } from './code_layout';
 import { getTextSnapshot, splitText } from './text/source_text';
@@ -76,25 +68,23 @@ import {
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
 } from './code_reference';
-import { clearBackgroundTasks, enqueueBackgroundTask, scheduleIdeOnce, scheduleRuntimeTask } from './background_tasks';
+import { enqueueBackgroundTask, scheduleIdeOnce, scheduleRuntimeTask } from './background_tasks';
 
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_controller';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/syntax/lua_ast';
 // Search logic moved to editor_search
-import { closeSearch, focusEditorFromSearch, computeSearchPageStats, startSearchJob, cancelGlobalSearchJob } from './editor_search';
+import { closeSearch, focusEditorFromSearch } from './editor_search';
 import * as constants from './constants';
-import { ide_state, type NavigationHistoryEntry, captureKeys, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, caretNavigation } from './ide_state';
+import { ide_state, type NavigationHistoryEntry, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, caretNavigation } from './ide_state';
 import { initializeDebuggerUiState } from './ide_debugger';
 import { clampCursorColumn, ensureCursorVisible, revealCursor, setCursorPosition } from './caret';
 import {
-	runWorkspaceAutosaveTick,
 	initializeWorkspaceStorage,
-	stopWorkspaceAutosaveLoop,
 	clearWorkspaceDirtyBuffers,
 	buildDirtyFilePath,
 } from './workspace_storage';
-import { clearWorkspaceCachedSources, getWorkspaceCachedSource, setWorkspaceCachedSources } from '../workspace_cache';
+import { getWorkspaceCachedSource, setWorkspaceCachedSources } from '../workspace_cache';
 import { applyWorkspaceOverridesToCart, createLuaResource, listResources, saveLuaResourceSource } from '../workspace';
 
 import * as TextEditing from './text_editing_and_selection';
@@ -102,21 +92,93 @@ import { resetBlink } from './render/render_caret';
 import { api, Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import * as runtimeIde from '../runtime_ide';
-import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
-import { drawCreateResourceBar } from './render/render_input_bars';
-import { drawActionPromptOverlay } from './render/render_prompt';
-import { drawLineJumpBar, drawRenameBar, drawSearchBar, drawSymbolSearchBar } from './render/render_input_bars';
-import { renderResourceSearchBar } from './render/render_inline_bars';
 import { rewrapRuntimeErrorOverlays } from './text_utils';
 import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './render/render_error_overlay';
 import { point_in_rect } from '../../utils/rect_operations';
-import { lower_bound } from '../../utils/lower_bound';
-import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
 import { LuaSemanticWorkspace, symbolPriority } from './semantic_model';
 import { refreshSymbolCatalog } from './symbol_catalog';
 import { extractErrorMessage } from '../../lua/luavalue';
+import {
+	activateRuntimeEditor as activate,
+	deactivateRuntimeEditor as deactivate,
+	draw,
+	shutdownRuntimeEditor as shutdown,
+	tickInput,
+	update,
+} from './editor_runtime';
+import {
+	applyViewportSize,
+	computeMaximumScrollColumn,
+	getCodeAreaBounds,
+	hideResourcePanel,
+	notifyReadOnlyEdit,
+	refreshResourcePanelContents,
+	resetResourcePanelState,
+	resolvePointerColumn,
+	resolvePointerRow,
+	resourceSearchWindowCapacity,
+	selectResourceInPanel,
+	symbolSearchPageSize,
+} from './editor_view';
 import { openResourceViewerTab } from './resource_viewer';
 import { Viewport } from '../../rompack/rompack';
+
+export { activate, deactivate, draw, shutdown, tickInput, update };
+export {
+	applyPendingResourceSelection,
+	applyViewportSize,
+	bottomMargin,
+	codeViewportTop,
+	computeMaximumScrollColumn,
+	findResourcePanelIndexByasset_id,
+	getCodeAreaBounds,
+	getCreateResourceBarBounds,
+	getCreateResourceBarHeight,
+	getLineJumpBarBounds,
+	getLineJumpBarHeight,
+	getRenameBarBounds,
+	getRenameBarHeight,
+	getResourcePanelWidth,
+	getResourceSearchBarBounds,
+	getResourceSearchBarHeight,
+	getSearchBarBounds,
+	getSearchBarHeight,
+	getStatusMessageLines,
+	getSymbolSearchBarBounds,
+	getSymbolSearchBarHeight,
+	getTabBarTotalHeight,
+	getVisibleProblemsPanelHeight,
+	hideResourcePanel,
+	isResourceSearchCompactMode,
+	isSymbolSearchCompactMode,
+	mapScreenPointToViewport,
+	maximumLineLength,
+	notifyReadOnlyEdit,
+	openDebugOverviewTab,
+	openEventInspectorTab,
+	openObjectInspectorTab,
+	openRegistryInspectorTab,
+	refreshResourcePanelContents,
+	resetPointerClickTracking,
+	resetResourcePanelState,
+	resolvePointerColumn,
+	resolvePointerRow,
+	resourceSearchEntryHeight,
+	resourceSearchPageSize,
+	resourceSearchVisibleResultCount,
+	resourceSearchWindowCapacity,
+	scrollResourceBrowser,
+	scrollRows,
+	searchResultEntryHeight,
+	searchVisibleResultCount,
+	selectResourceInPanel,
+	statusAreaHeight,
+	symbolSearchEntryHeight,
+	symbolSearchPageSize,
+	symbolSearchVisibleResultCount,
+	topMargin,
+	handlePointerAutoScroll,
+} from './editor_view';
 
 export const editorFacade = {
 	activate,
@@ -262,36 +324,6 @@ export function invalidateLineRange(startRow: number, endRow: number): void {
 	for (let row = from; row <= to; row += 1) {
 		ide_state.layout.invalidateLine(row);
 	}
-}
-
-export function maximumLineLength(): number {
-	if (!ide_state.maxLineLengthDirty) {
-		return ide_state.maxLineLength;
-	}
-	let maxLength = 0;
-	let maxRow = 0;
-	const lineCount = ide_state.buffer.getLineCount();
-	for (let i = 0; i < lineCount; i += 1) {
-		const length = ide_state.buffer.getLineEndOffset(i) - ide_state.buffer.getLineStartOffset(i);
-		if (length > maxLength) {
-			maxLength = length;
-			maxRow = i;
-		}
-	}
-	ide_state.maxLineLength = maxLength;
-	ide_state.maxLineLengthRow = maxRow;
-	ide_state.maxLineLengthDirty = false;
-	return maxLength;
-}
-
-export function computeMaximumScrollColumn(): number {
-	const maxLength = maximumLineLength();
-	const visible = visibleColumnCount();
-	const limit = maxLength - visible;
-	if (limit <= 0) {
-		return 0;
-	}
-	return limit;
 }
 
 export function getLineRangeForMovement(): { startRow: number; endRow: number } {
@@ -583,72 +615,6 @@ export function breakUndoSequence(): void {
 	ide_state.lastHistoryTimestamp = 0;
 }
 
-export function searchVisibleResultCount(): number {
-	return computeSearchPageStats().visible;
-}
-
-export function searchResultEntryHeight(): number {
-	return ide_state.lineHeight * 2;
-}
-
-export function isResourceSearchCompactMode(): boolean {
-	return ide_state.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
-}
-
-export function resourceSearchEntryHeight(): number {
-	return isResourceSearchCompactMode() ? ide_state.lineHeight * 2 : ide_state.lineHeight;
-}
-
-export function resourceSearchPageSize(): number {
-	return isResourceSearchCompactMode() ? constants.QUICK_OPEN_COMPACT_MAX_RESULTS : constants.QUICK_OPEN_MAX_RESULTS;
-}
-
-export function resourceSearchWindowCapacity(): number {
-	return ide_state.resourceSearchVisible ? resourceSearchPageSize() : 0;
-}
-
-export function resourceSearchVisibleResultCount(): number {
-	if (!ide_state.resourceSearchVisible) {
-		return 0;
-	}
-	const remaining = Math.max(0, ide_state.resourceSearchMatches.length - ide_state.resourceSearchDisplayOffset);
-	const capacity = resourceSearchWindowCapacity();
-	if (capacity <= 0) {
-		return remaining;
-	}
-	return Math.min(remaining, capacity);
-}
-
-export function isSymbolSearchCompactMode(): boolean {
-	return ide_state.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
-}
-
-export function symbolSearchEntryHeight(): number {
-	if (ide_state.symbolSearchMode === 'references') {
-		return ide_state.lineHeight * 2;
-	}
-	return ide_state.symbolSearchGlobal && isSymbolSearchCompactMode() ? ide_state.lineHeight * 2 : ide_state.lineHeight;
-}
-
-export function symbolSearchPageSize(): number {
-	if (ide_state.symbolSearchMode === 'references') {
-		return constants.REFERENCE_SEARCH_MAX_RESULTS;
-	}
-	if (!ide_state.symbolSearchGlobal) {
-		return constants.SYMBOL_SEARCH_MAX_RESULTS;
-	}
-	return isSymbolSearchCompactMode() ? constants.SYMBOL_SEARCH_COMPACT_MAX_RESULTS : constants.SYMBOL_SEARCH_MAX_RESULTS;
-}
-
-export function symbolSearchVisibleResultCount(): number {
-	if (!ide_state.symbolSearchVisible) {
-		return 0;
-	}
-	const remaining = Math.max(0, ide_state.symbolSearchMatches.length - ide_state.symbolSearchDisplayOffset);
-	const maxResults = symbolSearchPageSize();
-	return Math.min(remaining, maxResults);
-}
-
 export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: number): void {
 	const tooltip = ide_state.hoverTooltip;
 	if (!tooltip) {
@@ -868,59 +834,6 @@ export function getBuiltinIdentifierSet(): ReadonlySet<string> {
 	return getBuiltinIdentifiersSnapshot().ids;
 }
 
-export function getTabBarTotalHeight(): number {
-	return ide_state.tabBarHeight * Math.max(1, ide_state.tabBarRowCount);
-}
-
-export function topMargin(): number {
-	return ide_state.headerHeight + getTabBarTotalHeight() + 2;
-}
-
-export function statusAreaHeight(): number {
-	if (!ide_state.message.visible) {
-		return ide_state.baseBottomMargin;
-	}
-	const segments = getStatusMessageLines();
-	const lineCount = Math.max(1, segments.length);
-	return ide_state.baseBottomMargin + lineCount * ide_state.lineHeight + 4;
-}
-
-export function bottomMargin(): number {
-	return statusAreaHeight() + getVisibleProblemsPanelHeight();
-}
-
-export function getVisibleProblemsPanelHeight(): number {
-	if (!ide_state.problemsPanel?.isVisible) {
-		return 0;
-	}
-	const planned = ide_state.problemsPanel.visibleHeight;
-	if (planned <= 0) {
-		return 0;
-	}
-	const statusHeight = statusAreaHeight();
-	const maxAvailable = Math.max(0, ide_state.viewportHeight - statusHeight - (ide_state.headerHeight + getTabBarTotalHeight()));
-	if (maxAvailable <= 0) {
-		return 0;
-	}
-	return Math.min(planned, maxAvailable);
-}
-
-export function getStatusMessageLines(): string[] {
-	if (!ide_state.message.visible) {
-		return [];
-	}
-	const rawLines = splitText(ide_state.message.text);
-	const maxWidth = Math.max(ide_state.viewportWidth - 8, ide_state.charAdvance);
-	const localLines: string[] = [];
-	for (let i = 0; i < rawLines.length; i += 1) {
-		const wrapped = wrapOverlayLine(rawLines[i], maxWidth);
-		for (let j = 0; j < wrapped.length; j += 1) {
-			localLines.push(wrapped[j]);
-		}
-	}
-	return localLines.length > 0 ? localLines : [''];
-}
-
 export function tryShowLuaErrorOverlay(error: unknown): boolean {
 	let candidate: { line?: unknown; column?: unknown; path?: unknown; message?: unknown };
 	if (typeof error === 'string') {
@@ -963,36 +876,6 @@ export function safeInspectLuaExpression(request: LuaHoverRequest): LuaHoverResu
 		}
 		return null;
 	}
-}
-
-export function tickInput(): void {
-	handlePointerWheel();
-	handleTextEditorPointerInput();
-	if (ide_state.pendingActionPrompt) {
-		handleActionPromptInput();
-		return;
-	}
-	handleEditorInput();
-}
-
-export function update(deltaSeconds: number): void {
-	updateBlink(deltaSeconds);
-	ide_state.updateMessage(deltaSeconds);
-	updateRuntimeErrorOverlay(deltaSeconds);
-	ide_state.completion.processPending(deltaSeconds);
-	const semanticError = ide_state.layout.getLastSemanticError();
-	if (semanticError && semanticError !== ide_state.lastReportedSemanticError) {
-		ide_state.showMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
-		ide_state.lastReportedSemanticError = semanticError;
-	} else if (!semanticError && ide_state.lastReportedSemanticError !== null) {
-		ide_state.lastReportedSemanticError = null;
-	}
-	if (ide_state.diagnosticsDirty) {
-		processDiagnosticsQueue(ide_state.clockNow());
-	}
-	// if (isCodeTabActive() && !ide_state.cursorRevealSuspended) {
-	// 	ensureCursorVisible();
-	// }
 }
 
 const diagnosticsMinIntervalMs = 600;
@@ -1311,190 +1194,6 @@ export function getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
 
 export function isActive(): boolean {
 	return ide_state.active;
-}
-
-export function draw(): void {
-	ide_state.codeVerticalScrollbarVisible = false;
-	ide_state.codeHorizontalScrollbarVisible = false;
-	const frameColor = Msx1Colors[constants.COLOR_FRAME];
-	api.put_rectfillcolor(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, undefined, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
-
-	renderTopBar();
-
-	ide_state.tabBarRowCount = renderTabBar(api, {
-		viewportWidth: ide_state.viewportWidth,
-		headerHeight: ide_state.headerHeight,
-		rowHeight: ide_state.tabBarHeight,
-		lineHeight: ide_state.lineHeight,
-		tabs: ide_state.tabs,
-		activeTabId: ide_state.activeTabId,
-		tabHoverId: ide_state.tabHoverId,
-		measureText: (text: string) => measureText(text),
-		drawText: (text, x, y, color) => drawEditorText(ide_state.font, text, x, y, undefined, color),
-		getDirtyMarkerMetrics: () => constants.TAB_DIRTY_MARKER_METRICS,
-		tabButtonBounds: ide_state.tabButtonBounds,
-		tabCloseButtonBounds: ide_state.tabCloseButtonBounds,
-	});
-	drawResourcePanel();
-	if (isResourceViewActive()) {
-		drawResourceViewer();
-	} else {
-		// hideResourceViewerSprite();
-		drawCreateResourceBar();
-		drawSearchBar();
-		renderResourceSearchBar();
-		drawSymbolSearchBar();
-		drawRenameBar();
-		drawLineJumpBar();
-		renderCodeArea();
-	}
-	drawProblemsPanel();
-	renderStatusBar();
-	renderTopBarDropdown();
-	if (ide_state.pendingActionPrompt) {
-		drawActionPromptOverlay();
-	}
-}
-
-export function shutdown(): void {
-	clearExecutionStopHighlights();
-	storeActiveCodeTabContext();
-	ide_state.input.applyOverrides(false, captureKeys);
-	if (ide_state.dimCrtInEditor) {
-		Runtime.instance.restoreCrtPostprocessingFromEditor();
-	}
-	ide_state.active = false;
-	if (ide_state.workspaceAutosaveEnabled) {
-		stopWorkspaceAutosaveLoop();
-		void runWorkspaceAutosaveTick();
-	}
-	ide_state.workspaceAutosaveEnabled = false;
-	clearWorkspaceCachedSources();
-	ide_state.workspaceAutosaveSignature = null;
-	initializeWorkspaceStorage(null);
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = false;
-	ide_state.pointerAuxWasPressed = false;
-	clearGotoHoverHighlight();
-	ide_state.cursorRevealSuspended = false;
-	ide_state.searchActive = false;
-	ide_state.searchVisible = false;
-	cancelSearchJob();
-	cancelGlobalSearchJob();
-	ide_state.searchMatches = [];
-	ide_state.globalSearchMatches = [];
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchScope = 'local';
-	ide_state.searchCurrentIndex = -1;
-	applySearchFieldText('', true);
-	ide_state.lineJumpActive = false;
-	ide_state.lineJumpVisible = false;
-	applyLineJumpFieldText('', true);
-	ide_state.createResourceActive = false;
-	ide_state.createResourceVisible = false;
-	applyCreateResourceFieldText('', true);
-	ide_state.createResourceError = null;
-	ide_state.createResourceWorking = false;
-	resetActionPromptState();
-	hideResourcePanel();
-	activateCodeTab();
-}
-
-export function activate(): void {
-	if (!Runtime.instance.hasProgramSymbols) {
-		return;
-	}
-	ide_state.input.applyOverrides(true, captureKeys);
-	if (ide_state.activeCodeTabContextId) {
-		const existingTab = ide_state.tabs.find(candidate => candidate.id === ide_state.activeCodeTabContextId);
-		if (existingTab) {
-			setActiveTab(ide_state.activeCodeTabContextId);
-		} else {
-			activateCodeTab();
-		}
-	} else {
-		activateCodeTab();
-	}
-	bumpTextVersion();
-	ide_state.cursorVisible = true;
-	ide_state.blinkTimer = 0;
-	ide_state.active = true;
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = false;
-	ide_state.cursorRevealSuspended = false;
-	updateDesiredColumn();
-	ide_state.selectionAnchor = null;
-	ide_state.searchActive = false;
-	ide_state.searchVisible = false;
-	ide_state.lineJumpActive = false;
-	ide_state.lineJumpVisible = false;
-	ide_state.lineJumpValue = '';
-	syncRuntimeErrorOverlayFromContext(getActiveCodeTabContext());
-	resetActionPromptState();
-	cancelSearchJob();
-	cancelGlobalSearchJob();
-	ide_state.globalSearchMatches = [];
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchScope = 'local';
-	if (ide_state.searchQuery.length === 0) {
-		ide_state.searchMatches = [];
-		ide_state.searchCurrentIndex = -1;
-	} else {
-		startSearchJob();
-	}
-	ensureCursorVisible();
-	if (ide_state.message.visible && !Number.isFinite(ide_state.message.timer) && ide_state.deferredMessageDuration !== null) {
-		ide_state.message.timer = ide_state.deferredMessageDuration;
-	}
-	ide_state.deferredMessageDuration = null;
-	if (ide_state.dimCrtInEditor) {
-		Runtime.instance.disableCrtPostprocessingForEditor();
-	}
-	if (Runtime.instance.hasRuntimeFailed) {
-		const rendered = renderRuntimeFaultOverlay({
-			snapshot: Runtime.instance.faultSnapshot,
-			luaRuntimeFailed: Runtime.instance.hasRuntimeFailed,
-			needsFlush: Runtime.instance.doesFaultOverlayNeedFlush,
-			force: false,
-		});
-		if (rendered) Runtime.instance.flushedFaultOverlay();
-	}
-}
-
-export function deactivate(): void {
-	storeActiveCodeTabContext();
-	ide_state.active = false;
-	if (ide_state.dimCrtInEditor) {
-		Runtime.instance.restoreCrtPostprocessingFromEditor();
-	}
-	ide_state.completion.closeSession();
-	ide_state.input.applyOverrides(false, captureKeys);
-	ide_state.selectionAnchor = null;
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = false;
-	ide_state.pointerAuxWasPressed = false;
-	ide_state.tabDragState = null;
-	clearGotoHoverHighlight();
-	ide_state.scrollbarController.cancel();
-	ide_state.cursorRevealSuspended = false;
-	ide_state.searchActive = false;
-	ide_state.searchVisible = false;
-	ide_state.lineJumpActive = false;
-	ide_state.lineJumpVisible = false;
-	resetActionPromptState();
-	closeCreateResourcePrompt(false);
-	hideResourcePanel();
-	cancelSearchJob();
-	cancelGlobalSearchJob();
-	ide_state.globalSearchMatches = [];
-	ide_state.searchDisplayOffset = 0;
-	ide_state.searchHoverIndex = -1;
-	ide_state.searchScope = 'local';
-	clearBackgroundTasks();
-	ide_state.diagnosticsTaskPending = false;
-	ide_state.lastReportedSemanticError = null;
 }
 
 export function handleCreateResourceInput(): void {
@@ -2845,203 +2544,6 @@ export function shiftPositionsForRemoval(row: number, column: number, length: nu
 	}
 }
 
-export function applyViewportSize(viewport: Viewport): void {
-	ide_state.viewportWidth = viewport.width;
-	ide_state.viewportHeight = viewport.height;
-	ide_state.lastPointerRowResolution = null;
-}
-
-export function mapScreenPointToViewport(screenX: number, screenY: number): { x: number; y: number; inside: boolean; valid: boolean } {
-	const view = $.view;
-	if (!view) {
-		return { x: 0, y: 0, inside: false, valid: false };
-	}
-	const rect = view.surface.measureDisplay();
-	const width = rect.width;
-	const height = rect.height;
-	if (width <= 0 || height <= 0) {
-		return { x: 0, y: 0, inside: false, valid: false };
-	}
-	const relativeX = screenX - rect.left;
-	const relativeY = screenY - rect.top;
-	const inside = relativeX >= 0 && relativeX < width && relativeY >= 0 && relativeY < height;
-	const viewportX = (relativeX / width) * ide_state.viewportWidth;
-	const viewportY = (relativeY / height) * ide_state.viewportHeight;
-	return { x: viewportX, y: viewportY, inside, valid: true };
-}
-
-export function getCodeAreaBounds(): { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number; } {
-	const codeTop = codeViewportTop();
-	const codeBottom = ide_state.viewportHeight - bottomMargin();
-	const codeLeft = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
-	const codeRight = ide_state.viewportWidth;
-	const gutterLeft = codeLeft;
-	const gutterRight = gutterLeft + ide_state.gutterWidth;
-	const textLeft = gutterRight + 2;
-	return { codeTop, codeBottom, codeLeft, codeRight, gutterLeft, gutterRight, textLeft };
-}
-
-export function resolvePointerRow(viewportY: number): number {
-	ensureVisualLines();
-	const bounds = getCodeAreaBounds();
-	const relativeY = viewportY - bounds.codeTop;
-	const lineOffset = Math.floor(relativeY / ide_state.lineHeight);
-	let visualIndex = ide_state.scrollRow + lineOffset;
-	const visualCount = getVisualLineCount();
-	if (visualIndex < 0) {
-		visualIndex = 0;
-	}
-	if (visualCount > 0 && visualIndex > visualCount - 1) {
-		visualIndex = visualCount - 1;
-	}
-	const segment = visualIndexToSegment(visualIndex);
-	if (!segment) {
-		ide_state.lastPointerRowResolution = null;
-		return clamp(visualIndex, 0, Math.max(0, ide_state.buffer.getLineCount() - 1));
-	}
-	ide_state.lastPointerRowResolution = { visualIndex, segment };
-	return segment.row;
-}
-
-export function resolvePointerColumn(row: number, viewportX: number): number {
-	const bounds = getCodeAreaBounds();
-	const textLeft = bounds.textLeft;
-	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, row);
-	const line = entry.src;
-	if (line.length === 0) {
-		return 0;
-	}
-	const highlight = entry.hi;
-	let segmentStartColumn = ide_state.scrollColumn;
-	let segmentEndColumn = line.length;
-	const resolvedSegment = ide_state.lastPointerRowResolution?.segment;
-	if (ide_state.wordWrapEnabled && resolvedSegment && resolvedSegment.row === row) {
-		segmentStartColumn = resolvedSegment.startColumn;
-		segmentEndColumn = resolvedSegment.endColumn;
-	}
-	if (ide_state.wordWrapEnabled) {
-		if (segmentStartColumn < 0) {
-			segmentStartColumn = 0;
-		}
-		if (segmentEndColumn < segmentStartColumn) {
-			segmentEndColumn = segmentStartColumn;
-		}
-	} else {
-		segmentStartColumn = Math.min(segmentStartColumn, line.length);
-		segmentEndColumn = line.length;
-	}
-	const effectiveStartColumn = clamp(segmentStartColumn, 0, line.length);
-	const startDisplay = ide_state.layout.columnToDisplay(highlight, effectiveStartColumn);
-	const offset = viewportX - textLeft;
-	if (offset <= 0) {
-		return effectiveStartColumn;
-	}
-	const baseAdvance = entry.advancePrefix[startDisplay] ?? 0;
-	const target = baseAdvance + offset;
-	const lower = lower_bound(entry.advancePrefix, target, startDisplay + 1, entry.advancePrefix.length);
-	let displayIndex = lower - 1;
-	if (displayIndex < startDisplay) {
-		displayIndex = startDisplay;
-	}
-	if (displayIndex >= highlight.text.length) {
-		return ide_state.wordWrapEnabled ? Math.min(segmentEndColumn, line.length) : line.length;
-	}
-	const left = entry.advancePrefix[displayIndex];
-	const right = entry.advancePrefix[displayIndex + 1];
-	const midpoint = left + (right - left) * 0.5;
-	let column = entry.displayToColumn[displayIndex];
-	if (column === undefined) {
-		column = line.length;
-	}
-	if (target >= midpoint) {
-		column += 1;
-	}
-	if (ide_state.wordWrapEnabled) {
-		if (column > segmentEndColumn) {
-			column = segmentEndColumn;
-		}
-		if (column < segmentStartColumn) {
-			column = segmentStartColumn;
-		}
-	} else if (column > line.length) {
-		column = line.length;
-	}
-	if (column < 0) {
-		column = 0;
-	}
-	if (column < effectiveStartColumn) {
-		column = effectiveStartColumn;
-	}
-	return column;
-}
-
-export function handlePointerAutoScroll(viewportX: number, viewportY: number): void {
-	if (!ide_state.pointerSelecting) {
-		return;
-	}
-	const bounds = getCodeAreaBounds();
-	ensureVisualLines();
-	if (viewportY < bounds.codeTop) {
-		if (ide_state.scrollRow > 0) {
-			ide_state.scrollRow -= 1;
-		}
-	}
-	else if (viewportY >= bounds.codeBottom) {
-		const lastRow = getVisualLineCount() - 1;
-		if (ide_state.scrollRow < lastRow) {
-			ide_state.scrollRow += 1;
-		}
-	}
-	const maxScrollColumn = computeMaximumScrollColumn();
-	if (viewportX < bounds.gutterLeft) {
-		return;
-	}
-	if (!ide_state.wordWrapEnabled) {
-		if (viewportX < bounds.textLeft) {
-			if (ide_state.scrollColumn > 0) {
-				ide_state.scrollColumn -= 1;
-			}
-		}
-		else if (viewportX >= bounds.codeRight) {
-			if (ide_state.scrollColumn < maxScrollColumn) {
-				ide_state.scrollColumn += 1;
-			}
-		}
-	}
-	if (ide_state.scrollRow < 0) {
-		ide_state.scrollRow = 0;
-	}
-	if (ide_state.scrollColumn < 0) {
-		ide_state.scrollColumn = 0;
-	}
-	if (ide_state.wordWrapEnabled) {
-		ide_state.scrollColumn = 0;
-	}
-	const maxScrollRow = Math.max(0, getVisualLineCount() - visibleRowCount());
-	if (ide_state.scrollRow > maxScrollRow) {
-		ide_state.scrollRow = maxScrollRow;
-	}
-	if (!ide_state.wordWrapEnabled && ide_state.scrollColumn > maxScrollColumn) {
-		ide_state.scrollColumn = maxScrollColumn;
-	}
-}
-
-export function resetPointerClickTracking(): void {
-	ide_state.lastPointerClickTimeMs = 0;
-	ide_state.lastPointerClickRow = -1;
-	ide_state.lastPointerClickColumn = -1;
-}
-
-export function scrollRows(deltaRows: number): void {
-	if (deltaRows === 0) {
-		return;
-	}
-	ensureVisualLines();
-	const maxScrollRow = Math.max(0, getVisualLineCount() - visibleRowCount());
-	const targetRow = clamp(ide_state.scrollRow + deltaRows, 0, maxScrollRow);
-	ide_state.scrollRow = targetRow;
-}
-
 export function applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
 	ide_state.searchQuery = value;
 	setFieldText(ide_state.searchField, value, moveCursorToEnd);
@@ -3178,169 +2680,6 @@ export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnaps
 	requestSemanticRefresh();
 }
 
-export function codeViewportTop(): number {
-	return topMargin()
-		+ getCreateResourceBarHeight()
-		+ getSearchBarHeight()
-		+ getResourceSearchBarHeight()
-		+ getSymbolSearchBarHeight()
-		+ getRenameBarHeight()
-		+ getLineJumpBarHeight();
-}
-
-export function getCreateResourceBarHeight(): number {
-	if (!ide_state.createResourceVisible) {
-		return 0;
-	}
-	return ide_state.lineHeight + constants.CREATE_RESOURCE_BAR_MARGIN_Y * 2;
-}
-
-export function getSearchBarHeight(): number {
-	if (!ide_state.searchVisible) {
-		return 0;
-	}
-	const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
-	const visible = searchVisibleResultCount();
-	if (visible <= 0) {
-		return baseHeight;
-	}
-	return baseHeight + constants.SEARCH_RESULT_SPACING + visible * searchResultEntryHeight();
-}
-
-export function getResourceSearchBarHeight(): number {
-	if (!ide_state.resourceSearchVisible) {
-		return 0;
-	}
-	const baseHeight = ide_state.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
-	const visible = resourceSearchVisibleResultCount();
-	if (visible <= 0) {
-		return baseHeight;
-	}
-	return baseHeight + constants.QUICK_OPEN_RESULT_SPACING + visible * resourceSearchEntryHeight();
-}
-
-export function getSymbolSearchBarHeight(): number {
-	if (!ide_state.symbolSearchVisible) {
-		return 0;
-	}
-	const baseHeight = ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
-	const visible = symbolSearchVisibleResultCount();
-	if (visible <= 0) {
-		return baseHeight;
-	}
-	return baseHeight + constants.SYMBOL_SEARCH_RESULT_SPACING + visible * symbolSearchEntryHeight();
-}
-
-export function getRenameBarHeight(): number {
-	if (!ide_state.renameController?.isVisible()) {
-		return 0;
-	}
-	return ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
-}
-
-export function getLineJumpBarHeight(): number {
-	if (!ide_state.lineJumpVisible) {
-		return 0;
-	}
-	return ide_state.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
-}
-
-export function getCreateResourceBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getCreateResourceBarHeight();
-	if (height <= 0) {
-		return null;
-	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
-}
-
-export function getSearchBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getSearchBarHeight();
-	if (height <= 0) {
-		return null;
-	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight() + getCreateResourceBarHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
-}
-
-export function getResourceSearchBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getResourceSearchBarHeight();
-	if (height <= 0) {
-		return null;
-	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight() + getCreateResourceBarHeight() + getSearchBarHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
-}
-
-export function getLineJumpBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getLineJumpBarHeight();
-	if (height <= 0) {
-		return null;
-	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight()
-		+ getCreateResourceBarHeight()
-		+ getSearchBarHeight()
-		+ getResourceSearchBarHeight()
-		+ getSymbolSearchBarHeight()
-		+ getRenameBarHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
-}
-
-export function getSymbolSearchBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getSymbolSearchBarHeight();
-	if (height <= 0) {
-		return null;
-	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight()
-		+ getCreateResourceBarHeight()
-		+ getSearchBarHeight()
-		+ getResourceSearchBarHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
-}
-
-export function getRenameBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getRenameBarHeight();
-	if (height <= 0) {
-		return null;
-	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight()
-		+ getCreateResourceBarHeight()
-		+ getSearchBarHeight()
-		+ getResourceSearchBarHeight()
-		+ getSymbolSearchBarHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
-}
-
 export function findFunctionDefinitionRowInActiveFile(functionName: string): number {
 	if (typeof functionName !== 'string' || functionName.length === 0) {
 		return null;
@@ -3361,10 +2700,6 @@ export function findFunctionDefinitionRowInActiveFile(functionName: string): num
 		}
 	}
 	return null;
-}
-
-export function notifyReadOnlyEdit(): void {
-	ide_state.showMessage('Tab is read-only', constants.COLOR_STATUS_WARNING, 1.5);
 }
 
 export function updateViewport(viewport: Viewport): void {
@@ -3464,14 +2799,6 @@ export function toggleWordWrap(): void {
 	ide_state.showMessage(message, constants.COLOR_STATUS_TEXT, 2.5);
 }
 
-export function hideResourcePanel(): void {
-	// Forward to controller; it resets its internal state
-	ide_state.resourcePanel.hide();
-	ide_state.resourcePanelFocused = false;
-	ide_state.resourcePanelResizing = false;
-	resetResourcePanelState();
-}
-
 export function openLuaCodeTab(descriptor: ResourceDescriptor): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	const tabId: EditorTabId = `lua:${descriptor.path}`;
@@ -3534,89 +2861,6 @@ export function resetEditorContent(): void {
 	resetBlink();
 	ensureCursorVisible();
 	requestSemanticRefresh();
-}
-
-export function resetResourcePanelState(): void {
-	ide_state.resourceBrowserItems = [];
-	ide_state.resourceBrowserSelectionIndex = -1;
-	// max line width handled by controller
-	ide_state.pendingResourceSelectionAssetId = null;
-	ide_state.resourcePanelResizing = false;
-}
-
-export function refreshResourcePanelContents(): void {
-	// New path owned by ResourcePanelController
-	ide_state.resourcePanel.refresh();
-	const s = ide_state.resourcePanel.getStateForRender();
-	ide_state.resourcePanelResourceCount = s.items.length;
-	ide_state.resourceBrowserItems = s.items;
-	ide_state.resourceBrowserSelectionIndex = s.selectionIndex;
-}
-
-export function selectResourceInPanel(descriptor: ResourceDescriptor): void {
-	if (!descriptor.asset_id || descriptor.asset_id.length === 0) {
-		return;
-	}
-	ide_state.pendingResourceSelectionAssetId = descriptor.asset_id;
-	if (!ide_state.resourcePanelVisible) {
-		return;
-	}
-	applyPendingResourceSelection();
-}
-
-export function applyPendingResourceSelection(): void {
-	if (!ide_state.resourcePanelVisible) {
-		return;
-	}
-	const asset_id = ide_state.pendingResourceSelectionAssetId;
-	if (!asset_id) {
-		return;
-	}
-	const index = findResourcePanelIndexByasset_id(asset_id);
-	if (index === -1) {
-		return;
-	}
-	ide_state.resourceBrowserSelectionIndex = index;
-	ide_state.resourcePanel.ensureSelectionVisible();
-	ide_state.pendingResourceSelectionAssetId = null;
-}
-
-export function findResourcePanelIndexByasset_id(asset_id: string): number {
-	for (let i = 0; i < ide_state.resourceBrowserItems.length; i++) {
-		const descriptor = ide_state.resourceBrowserItems[i].descriptor;
-		if (descriptor && descriptor.asset_id === asset_id) {
-			return i;
-		}
-	}
-	return -1;
-}
-
-export function openDebugOverviewTab(): void {
-	ide_state.resourcePanel.showRegistryInspector();
-}
-
-export function openObjectInspectorTab(): void {
-	ide_state.resourcePanel.showWorldInspector();
-}
-
-export function openEventInspectorTab(): void {
-	ide_state.resourcePanel.showEventInspector();
-}
-
-export function openRegistryInspectorTab(): void {
-	ide_state.resourcePanel.showRegistryInspector();
-}
-
-export function getResourcePanelWidth(): number {
-	if (!ide_state.resourcePanelVisible) return 0;
-	const bounds = ide_state.resourcePanel.getBounds();
-	return bounds ? Math.max(0, bounds.right - bounds.left) : 0;
-}
-
-export function scrollResourceBrowser(amount: number): void {
-	if (!ide_state.resourcePanelVisible) return;
-	ide_state.resourcePanel.scrollBy(amount);
-	// controller owns scroll; no local mirror required
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {

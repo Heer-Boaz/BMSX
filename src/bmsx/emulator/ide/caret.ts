@@ -1,5 +1,6 @@
 import { clamp } from '../../utils/clamp';
-import { getCodeAreaBounds, maximumLineLength, updateDesiredColumn, breakUndoSequence, currentLine } from './cart_editor';
+import { getCodeAreaBounds, maximumLineLength } from './editor_view';
+import { updateDesiredColumn, breakUndoSequence, currentLine } from './cart_editor';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from './text_utils';
 import { caretNavigation, ide_state } from './ide_state';
 import { isShiftDown, isCtrlDown } from './ide_input';

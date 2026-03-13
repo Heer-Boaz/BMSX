@@ -15,11 +15,8 @@ import {
 	completeNavigation,
 	closeLineJump,
 	closeSymbolSearch,
-	getCodeAreaBounds,
-	hideResourcePanel,
-	getTabBarTotalHeight,
-	resetPointerClickTracking,
 } from './cart_editor';
+import { getCodeAreaBounds, hideResourcePanel, getTabBarTotalHeight, resetPointerClickTracking } from './editor_view';
 import { markDiagnosticsDirty } from './diagnostics';
 import { closeSearch } from './editor_search';
 import { clampResourceViewerScroll } from './resource_viewer';

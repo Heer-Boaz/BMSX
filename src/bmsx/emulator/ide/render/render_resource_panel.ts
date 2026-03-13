@@ -2,7 +2,7 @@ import type { RectBounds } from '../../../rompack/rompack';
 import type { ResourcePanelController } from '../resource_panel_controller';
 import { Msx1Colors } from '../../../systems/msx';
 import { clamp } from '../../../utils/clamp';
-import { getCodeAreaBounds } from '../cart_editor';
+import { getCodeAreaBounds } from '../editor_view';
 import { resourceViewerClampScroll } from '../ide_input';
 import { ide_state } from '../ide_state';
 import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity } from '../resource_viewer';
