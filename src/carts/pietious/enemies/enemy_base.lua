@@ -54,7 +54,7 @@ function enemy_base.bind(self)
 		end,
 	})
 	self.events:on({
-		event = 'world_transition_start',
+		event = 'world_transition',
 		emitter = 'd',
 		subscriber = self,
 		handler = function()

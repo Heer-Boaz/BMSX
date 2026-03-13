@@ -830,9 +830,7 @@ function player:begin_entering_world(world_entrance)
 	self.enter_leave_shrine_text_lines = {}
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
-	object('d').events:emit('world_transition_start')
 	object('d').events:emit('world_enter_transition_start')
-	stop_music()
 	self.events:emit('enterleave')
 	self.events:emit('enter_world_start')
 end
@@ -846,7 +844,6 @@ function player:begin_entering_shrine(shrine)
 	self.x = shrine.x
 	self:reset_enter_leave_animation()
 	object('d').events:emit('shrine_transition_start')
-	stop_music()
 	self.events:emit('enterleave')
 	self.events:emit('enter_shrine_start')
 end
@@ -910,7 +907,6 @@ end
 function player:leave_shrine_overlay()
 	self:reset_enter_leave_animation()
 	self.enter_leave_shrine_text_lines = {}
-	stop_music()
 	self.events:emit('enterleave')
 	self.events:emit('leave_shrine_overlay')
 end
@@ -988,7 +984,6 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	local switch = object('c'):switch_room(direction, self.y, self.y + self.height)
 	if switch.outside then
 		local director = object('d')
-		director.events:emit('world_transition_start')
 		director.events:emit('world_leave_transition_start')
 		local leave_switch = object('c'):leave_world_to_castle()
 		self:apply_spawn_position(leave_switch)

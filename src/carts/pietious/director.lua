@@ -195,6 +195,11 @@ function director:finish_castle_halo_banner_transition()
 	return '/room'
 end
 
+function director:begin_world_transition()
+	self:set_active_space('main')
+	self.events:emit('world_transition')
+end
+
 function director:finish_castle_emerge_banner_transition()
 	self.banner_world_number = 0
 	self.events:emit('player.world_emerge')
@@ -425,9 +430,7 @@ local function define_director_fsm()
 				entering_state = director.begin_black_wait,
 			},
 			world_transition_enter = {
-				entering_state = function(self)
-					self:set_active_space('main')
-				end,
+				entering_state = director.begin_world_transition,
 				on = {
 					['world_banner_requested'] = function(self, _state, event)
 						self.banner_world_number = event.world_number
@@ -436,9 +439,7 @@ local function define_director_fsm()
 				},
 			},
 			world_transition_leave = {
-				entering_state = function(self)
-					self:set_active_space('main')
-				end,
+				entering_state = director.begin_world_transition,
 				on = {
 					['room_switched'] = '/banner_transition/castle_emerge_prewait',
 				},
