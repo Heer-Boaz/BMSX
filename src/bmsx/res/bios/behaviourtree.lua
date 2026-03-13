@@ -389,9 +389,6 @@ function behaviourtree.register_definition(id, definition)
 	if type(id) ~= 'string' or #id == 0 then
 		error('behavior tree definition id must be a non-empty string.')
 	end
-	-- if behaviourtreedefinitions[id] ~= nil then
-	-- 	error('behavior tree '' .. id .. '' is already registered.')
-	-- end
 	if type(definition) ~= 'table' then
 		error('behavior tree "' .. id .. '" definition must be a table.')
 	end
