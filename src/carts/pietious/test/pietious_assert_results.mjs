@@ -1,8 +1,16 @@
 const ELEVATOR_ROOM_NUMBER = 13;
 const ELEVATOR_LOWER_ROOM_NUMBER = 6;
 const POLL_MS = 20;
-const TIMEOUT_MS = 15000;
+const TIMEOUT_MS = 45000;
 const CART_SETTLE_MS = 500;
+const STEPOFF_MAX_FRAMES = 90;
+const STEPOFF_VARIANTS = [
+	{ delayFrames: 0, xOffset: 10 },
+	{ delayFrames: 0, xOffset: 12 },
+	{ delayFrames: 0, xOffset: 13 },
+	{ delayFrames: 1, xOffset: 13 },
+	{ delayFrames: 2, xOffset: 13 },
+];
 
 function fail(message) {
 	throw new Error(`[assert] ${message}`);
@@ -27,12 +35,38 @@ function getLuaState(engine) {
 		local player = object('pietolon')
 		local elevator = object('e.p1')
 		local expected_floor_y = -1
+		local character_over = false
+		local standing_on_top = false
 		if room ~= nil and player ~= nil then
 			for test_y = player.y, constants.room.height - player.height do
 				if room:has_collision_flags_in_rect(player.x, test_y, player.width, player.height, constants.collision_flags.solid_mask, false) then
 					expected_floor_y = test_y - 1
 					break
 				end
+			end
+		end
+		if player ~= nil and elevator ~= nil and elevator.current_room_number == (castle and castle.current_room_number or -1)
+			and player.y >= (elevator.y - constants.room.tile_size2)
+			and player.y < (elevator.y + constants.room.tile_size2)
+		then
+			local left_foot_x = player.x + constants.room.tile_half
+			local mid_foot_x = player.x + (player.width / 2)
+			local right_foot_x = (player.x + player.width) - constants.room.tile_half
+			local feet_over_platform_top =
+				(left_foot_x >= elevator.x and left_foot_x < (elevator.x + constants.room.tile_size4))
+				or (mid_foot_x >= elevator.x and mid_foot_x < (elevator.x + constants.room.tile_size4))
+				or (right_foot_x >= elevator.x and right_foot_x < (elevator.x + constants.room.tile_size4))
+			standing_on_top = player.y == (elevator.y - player.height) and feet_over_platform_top
+			if player.x > (elevator.x - constants.room.tile_size2)
+				and player.x < (elevator.x + constants.room.tile_size4)
+				and player:has_tag('g.et')
+			then
+				character_over = true
+			end
+			if player.x > (elevator.x - (constants.room.tile_size2 - (constants.room.tile_unit * 5)))
+				and player.x < ((elevator.x + constants.room.tile_size4) - (constants.room.tile_unit * 4))
+			then
+				character_over = true
 			end
 		end
 		return {
@@ -54,8 +88,18 @@ function getLuaState(engine) {
 			player_jumping = player and player:has_tag('v.j') or false,
 			player_stopped_jump = player and player:has_tag('v.sj') or false,
 			player_walking_right = player and player:has_tag('v.wr') or false,
+			player_walking_left = player and player:has_tag('v.wl') or false,
 			player_grounded = player and player.grounded or false,
+			player_right_held = player and player.right_held or false,
+			player_left_held = player and player.left_held or false,
+			player_last_dx = player and player.last_dx or 0,
+			player_last_dy = player and player.last_dy or 0,
+			player_facing = player and player.facing or 0,
+			player_on_vertical_elevator = player and player.on_vertical_elevator or false,
+			player_jumping_from_elevator = player and player.jumping_from_elevator or false,
 			player_overlap_elevator = player and elevator and collision2d.collides(player.collider, elevator.collider) or false,
+			elevator_character_over = character_over,
+			elevator_standing_on_top = standing_on_top,
 			expected_floor_y = expected_floor_y,
 		}
 	`);
@@ -193,16 +237,16 @@ function setupCeilingScenario(engine, logger) {
 	};
 }
 
-function setupStepOffScenario(engine, logger) {
+function setupStepOffScenario(engine, logger, variantIndex = 0) {
 	prepareLowerElevatorRoom(engine);
+	const variant = STEPOFF_VARIANTS[variantIndex];
 	const [state] = evalLua(engine, `
 		local player = object('pietolon')
 		local elevator = object('e.p1')
-		player.x = elevator.x + 12
+		player.x = elevator.x + ${variant.xOffset}
 		player.y = elevator.y - player.height
 		player.facing = 1
-		player.right_held = true
-		player.events:emit('right_down')
+		player.right_held = false
 		return {
 			player_x = player.x,
 			player_y = player.y,
@@ -210,13 +254,18 @@ function setupStepOffScenario(engine, logger) {
 			elevator_y = elevator.y,
 		}
 	`);
-	logger(`[assert] stepoff setup player=(${state.player_x},${state.player_y}) elevator=(${state.elevator_x},${state.elevator_y})`);
+	logger(`[assert] stepoff setup variant=${variantIndex} delay=${variant.delayFrames} xOffset=${variant.xOffset} player=(${state.player_x},${state.player_y}) elevator=(${state.elevator_x},${state.elevator_y})`);
 	return {
 		name: 'stepoff',
+		variantIndex,
+		variant,
 		frames: 0,
+		walk_started: false,
 		saw_walking: false,
 		saw_fall: false,
 		released_right: false,
+		probe_controls: false,
+		probe_frames: 0,
 	};
 }
 
@@ -284,6 +333,14 @@ function updateCeilingScenario(engine, scenario, logger) {
 }
 
 function updateStepOffScenario(engine, scenario, logger) {
+	if (!scenario.walk_started && scenario.frames >= scenario.variant.delayFrames) {
+		evalLua(engine, `
+			local player = object('pietolon')
+			player.right_held = true
+			player.events:emit('right_down')
+		`);
+		scenario.walk_started = true;
+	}
 	const state = getLuaState(engine);
 	if (state.player_walking_right) {
 		scenario.saw_walking = true;
@@ -300,16 +357,43 @@ function updateStepOffScenario(engine, scenario, logger) {
 	}
 	assert(!state.player_overlap_elevator, `stepoff overlapped elevator: player.y=${state.player_y} elevator.y=${state.elevator_y}`);
 	scenario.frames += 1;
-	if (state.player_quiet && scenario.saw_walking && scenario.saw_fall) {
+	const landed_on_floor = state.player_grounded
+		&& state.player_y === state.expected_floor_y
+		&& state.player_y > state.elevator_y - 16;
+	if (landed_on_floor && scenario.saw_walking && scenario.saw_fall) {
+		if (scenario.probe_controls) {
+			if (state.player_walking_right) {
+				logger(`[assert] stepoff variant=${scenario.variantIndex} ok`);
+				if (scenario.variantIndex + 1 >= STEPOFF_VARIANTS.length) {
+					logger('[assert] stepoff floor landing ok');
+					return { name: 'done' };
+				}
+				return setupStepOffScenario(engine, logger, scenario.variantIndex + 1);
+			}
+			scenario.probe_frames += 1;
+			assert(
+				scenario.probe_frames < 8,
+				`stepoff controls stayed dead after landing: player=(${state.player_x},${state.player_y}) quiet=${state.player_quiet} wr=${state.player_walking_right} wl=${state.player_walking_left} uf=${state.player_uncontrolled_fall} cf=${state.player_controlled_fall} grounded=${state.player_grounded} heldR=${state.player_right_held} heldL=${state.player_left_held} facing=${state.player_facing} last=(${state.player_last_dx},${state.player_last_dy}) probeFrames=${scenario.probe_frames}`
+			);
+			return scenario;
+		}
 		assert(state.player_grounded, `stepoff landed quiet without grounded support: player.y=${state.player_y}`);
 		assert(state.player_y === state.expected_floor_y, `stepoff landed at wrong floor y: player.y=${state.player_y} expected=${state.expected_floor_y}`);
 		assert(state.player_y > state.elevator_y - 16, `stepoff never fell below elevator top: player.y=${state.player_y} elevator.y=${state.elevator_y}`);
-		logger('[assert] stepoff floor landing ok');
-		return { name: 'done' };
+		if (!scenario.probe_controls) {
+			evalLua(engine, `
+				local player = object('pietolon')
+				player.right_held = true
+				player.events:emit('right_down')
+			`);
+			scenario.probe_controls = true;
+			scenario.probe_frames = 0;
+			return scenario;
+		}
 	}
 	assert(
-		scenario.frames < 120,
-		`stepoff failed within ${scenario.frames} frames: walking=${scenario.saw_walking} fall=${scenario.saw_fall} released=${scenario.released_right} player=(${state.player_x},${state.player_y}) quiet=${state.player_quiet} grounded=${state.player_grounded} expectedFloorY=${state.expected_floor_y} elevator=(${state.elevator_x},${state.elevator_y})`
+		scenario.frames < STEPOFF_MAX_FRAMES,
+		`stepoff variant=${scenario.variantIndex} delay=${scenario.variant.delayFrames} xOffset=${scenario.variant.xOffset} failed within ${scenario.frames} frames: walkStarted=${scenario.walk_started} walking=${scenario.saw_walking} fall=${scenario.saw_fall} released=${scenario.released_right} player=(${state.player_x},${state.player_y}) quiet=${state.player_quiet} wr=${state.player_walking_right} wl=${state.player_walking_left} uf=${state.player_uncontrolled_fall} cf=${state.player_controlled_fall} grounded=${state.player_grounded} heldR=${state.player_right_held} heldL=${state.player_left_held} facing=${state.player_facing} last=(${state.player_last_dx},${state.player_last_dy}) expectedFloorY=${state.expected_floor_y} elevator=(${state.elevator_x},${state.elevator_y})`
 	);
 	return scenario;
 }
