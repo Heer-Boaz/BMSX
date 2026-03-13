@@ -1,6 +1,7 @@
 import { ide_state } from './ide_state';
 import type {
 	CodeTabContext,
+	EditorTabId,
 	EditorTabDescriptor,
 	EditorTabKind,
 } from './types';
@@ -247,6 +248,34 @@ export function setActiveTab(tabId: string): void {
 export function activateCodeTab(): void {
 	const codeTab = ide_state.tabs.find(candidate => candidate.kind === 'lua_editor')!;
 	setActiveTab(codeTab.id);
+}
+
+export function openLuaCodeTab(descriptor: ResourceDescriptor): void {
+	const navigationCheckpoint = beginNavigationCapture();
+	const tabId: EditorTabId = `lua:${descriptor.path}`;
+	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
+	if (!ide_state.codeTabContexts.has(tabId)) {
+		const context = createLuaCodeTabContext(descriptor);
+		ide_state.codeTabContexts.set(tabId, context);
+	}
+	const context = ide_state.codeTabContexts.get(tabId)!;
+	context.readOnly = descriptor.readOnly === true;
+	if (!tab) {
+		tab = {
+			id: tabId,
+			kind: 'lua_editor',
+			title: computeResourceTabTitle(descriptor),
+			closable: true,
+			dirty: context.dirty,
+			resource: undefined,
+		};
+		ide_state.tabs.push(tab);
+	} else {
+		tab.title = computeResourceTabTitle(descriptor);
+		tab.dirty = context.dirty;
+	}
+	setActiveTab(tabId);
+	completeNavigation(navigationCheckpoint);
 }
 
 export function closeTab(tabId: string): void {

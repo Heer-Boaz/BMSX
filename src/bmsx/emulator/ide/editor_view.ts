@@ -1,20 +1,30 @@
 import { $ } from '../../core/engine_core';
 import { clamp } from '../../utils/clamp';
 import { lower_bound } from '../../utils/lower_bound';
+import { EditorFont } from '../editor_font';
+import type { FontVariant } from '../font';
 import type { Viewport } from '../../rompack/rompack';
 import type { ResourceDescriptor } from '../types';
 import * as constants from './constants';
+import { CodeLayout } from './code_layout';
+import { markDiagnosticsDirty } from './diagnostics';
 import { computeSearchPageStats } from './editor_search';
 import { ide_state } from './ide_state';
+import { requestSemanticRefresh } from './intellisense';
+import { ensureCursorVisible } from './caret';
 import { splitText } from './text/source_text';
 import {
 	ensureVisualLines,
 	getVisualLineCount,
+	measureText,
+	positionToVisualIndex,
+	rewrapRuntimeErrorOverlays,
 	visibleColumnCount,
 	visibleRowCount,
 	visualIndexToSegment,
 	wrapOverlayLine,
 } from './text_utils';
+import { getBuiltinIdentifiersSnapshot, updateDesiredColumn } from './cart_editor';
 
 export function maximumLineLength(): number {
 	if (!ide_state.maxLineLengthDirty) {
@@ -163,6 +173,23 @@ export function applyViewportSize(viewport: Viewport): void {
 	ide_state.viewportWidth = viewport.width;
 	ide_state.viewportHeight = viewport.height;
 	ide_state.lastPointerRowResolution = null;
+}
+
+export function updateViewport(viewport: Viewport): void {
+	applyViewportSize(viewport);
+	if (ide_state.resourcePanel.visible) {
+		const bounds = ide_state.resourcePanel.getBounds();
+		if (!bounds) {
+			hideResourcePanel();
+		} else {
+			ide_state.resourcePanel.clampHScroll();
+			ide_state.resourcePanel.ensureSelectionVisible();
+		}
+	}
+	ide_state.layout.markVisualLinesDirty();
+	ide_state.cursorRevealSuspended = false;
+	ensureCursorVisible();
+	rewrapRuntimeErrorOverlays();
 }
 
 export function mapScreenPointToViewport(screenX: number, screenY: number): { x: number; y: number; inside: boolean; valid: boolean } {
@@ -489,6 +516,82 @@ export function getLineJumpBarBounds(): { top: number; bottom: number; left: num
 		left: 0,
 		right: ide_state.viewportWidth,
 	};
+}
+
+export function configureFontVariant(variant: FontVariant): void {
+	ide_state.fontVariant = variant;
+	ide_state.font = new EditorFont(variant);
+	ide_state.lineHeight = ide_state.font.lineHeight;
+	ide_state.charAdvance = ide_state.font.advance('M');
+	ide_state.spaceAdvance = ide_state.font.advance(' ');
+	ide_state.inlineFieldMetricsRef = {
+		measureText: (text: string) => measureText(text),
+		advanceChar: (ch: string) => ide_state.font.advance(ch),
+		spaceAdvance: ide_state.spaceAdvance,
+		tabSpaces: constants.TAB_SPACES,
+	};
+	ide_state.gutterWidth = 2;
+	ide_state.headerHeight = ide_state.lineHeight + 4;
+	ide_state.tabBarHeight = ide_state.lineHeight + 3;
+	ide_state.baseBottomMargin = ide_state.lineHeight + 6;
+	ide_state.layout = new CodeLayout(ide_state.font, ide_state.semanticWorkspace, {
+		maxHighlightCache: 512,
+		semanticDebounceMs: 200,
+		clockNow: ide_state.clockNow,
+		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(),
+	});
+	if (ide_state.resourcePanel) {
+		ide_state.resourcePanel.setFontMetrics(ide_state.lineHeight, ide_state.charAdvance);
+	}
+	ide_state.layout.invalidateAllHighlights();
+	ide_state.layout.markVisualLinesDirty();
+}
+
+export function setFontVariant(variant: FontVariant): void {
+	configureFontVariant(variant);
+	ensureVisualLines();
+	ide_state.cursorRevealSuspended = false;
+	ensureCursorVisible();
+	rewrapRuntimeErrorOverlays();
+	requestSemanticRefresh();
+	markDiagnosticsDirty(ide_state.activeCodeTabContextId);
+}
+
+export function toggleWordWrap(): void {
+	ensureVisualLines();
+	const previousWrap = ide_state.wordWrapEnabled;
+	const previousTopIndex = clamp(ide_state.scrollRow, 0, Math.max(0, getVisualLineCount() - 1));
+	const previousTopSegment = visualIndexToSegment(previousTopIndex);
+	const anchorRow = previousTopSegment ? previousTopSegment.row : ide_state.cursorRow;
+	const anchorColumnForWrap = previousTopSegment ? previousTopSegment.startColumn : 0;
+	const anchorColumnForUnwrap = previousTopSegment
+		? (previousWrap ? previousTopSegment.startColumn : ide_state.scrollColumn)
+		: ide_state.scrollColumn;
+	const previousCursorRow = ide_state.cursorRow;
+	const previousCursorColumn = ide_state.cursorColumn;
+	const previousDesiredColumn = ide_state.desiredColumn;
+
+	ide_state.wordWrapEnabled = !previousWrap;
+	ide_state.cursorRevealSuspended = false;
+	ide_state.layout.markVisualLinesDirty();
+	ensureVisualLines();
+
+	ide_state.cursorRow = clamp(previousCursorRow, 0, Math.max(0, ide_state.buffer.getLineCount() - 1));
+	const currentLine = ide_state.buffer.getLineContent(ide_state.cursorRow);
+	ide_state.cursorColumn = clamp(previousCursorColumn, 0, currentLine.length);
+	ide_state.desiredColumn = previousDesiredColumn;
+
+	if (ide_state.wordWrapEnabled) {
+		ide_state.scrollColumn = 0;
+		ide_state.scrollRow = clamp(positionToVisualIndex(anchorRow, anchorColumnForWrap), 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
+	} else {
+		ide_state.scrollColumn = clamp(anchorColumnForUnwrap, 0, computeMaximumScrollColumn());
+		ide_state.scrollRow = clamp(positionToVisualIndex(anchorRow, ide_state.scrollColumn), 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
+	}
+	ide_state.lastPointerRowResolution = null;
+	ensureCursorVisible();
+	updateDesiredColumn();
+	ide_state.showMessage(ide_state.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled', constants.COLOR_STATUS_TEXT, 2.5);
 }
 
 export function notifyReadOnlyEdit(): void {

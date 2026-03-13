@@ -6,18 +6,13 @@ import type {
 	LuaHoverResult,
 	ResourceDescriptor,
 } from '../types';
-import { EditorFont } from '../editor_font';
-import { FontVariant } from '../font';
 import { drawEditorText } from './text_renderer';
 import { clamp } from '../../utils/clamp';
-import { CompletionController } from './completion_controller';
-import { ProblemsPanelController } from './problems_panel';
 import { computeAggregatedEditorDiagnostics, markAllDiagnosticsDirty, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
 import {
 	createEntryTabContext,
 	createLuaCodeTabContext,
 	getActiveCodeTabContext,
-	initializeTabs,
 	setTabDirty,
 	updateActiveContextDirtyFlag,
 	isCodeTabActive,
@@ -25,25 +20,20 @@ import {
 	setActiveTab,
 	activateCodeTab,
 	closeTab,
-	computeResourceTabTitle,
 	findCodeTabContext,
+	openLuaCodeTab,
 } from './editor_tabs';
 
-import { assertMonospace, bumpTextVersion, capturePreMutationSource, ensureVisualLines, getVisualLineCount, invalidateLuaCommentContextFromRow, markTextMutated, measureText, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment } from './text_utils';
+import { bumpTextVersion, capturePreMutationSource, ensureVisualLines, invalidateLuaCommentContextFromRow, markTextMutated, measureText, positionToVisualIndex, visibleColumnCount, visibleRowCount, visualIndexToSegment } from './text_utils';
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
-	createInlineTextField,
 	getFieldText,
 	setFieldText,
 } from './inline_text_field';
-import { buildMemberCompletionItems, clearReferenceHighlights, extractHoverExpression, inspectLuaExpression, intellisenseUiReady, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaSymbols, navigateToLuaDefinition, requestSemanticRefresh, shouldAutoTriggerCompletions } from './intellisense';
-import { Scrollbar, ScrollbarController } from './scrollbar';
-// Resource panel rendering is handled via ResourcePanelController
-import { ResourcePanelController } from './resource_panel_controller';
-import { InputController, isKeyJustPressed, shouldRepeatKeyFromPlayer, toggleThemeMode } from './ide_input';
+import { clearReferenceHighlights, extractHoverExpression, inspectLuaExpression, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaSymbols, navigateToLuaDefinition, requestSemanticRefresh } from './intellisense';
+import { isKeyJustPressed, toggleThemeMode } from './ide_input';
 import { consumeIdeKey } from './ide_input';
-import { CodeLayout } from './code_layout';
 import { getTextSnapshot, splitText } from './text/source_text';
 import { EditorUndoRecord, TextUndoOp } from './text/editor_undo';
 import { PieceTreeBuffer } from './text/piece_tree_buffer';
@@ -51,7 +41,6 @@ import type {
 	CodeHoverTooltip,
 	CodeTabContext,
 	EditorSnapshot,
-	EditorTabId,
 	EditorDiagnostic,
 	TextField,
 	PendingActionPrompt,
@@ -70,17 +59,15 @@ import {
 } from './code_reference';
 import { enqueueBackgroundTask, scheduleIdeOnce, scheduleRuntimeTask } from './background_tasks';
 
-import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
+import type { RenameCommitPayload, RenameCommitResult } from './rename_controller';
 import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_controller';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/syntax/lua_ast';
 // Search logic moved to editor_search
 import { closeSearch, focusEditorFromSearch } from './editor_search';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, caretNavigation } from './ide_state';
-import { initializeDebuggerUiState } from './ide_debugger';
 import { clampCursorColumn, ensureCursorVisible, revealCursor, setCursorPosition } from './caret';
 import {
-	initializeWorkspaceStorage,
 	clearWorkspaceDirtyBuffers,
 	buildDirtyFilePath,
 } from './workspace_storage';
@@ -92,10 +79,9 @@ import { resetBlink } from './render/render_caret';
 import { api, Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import * as runtimeIde from '../runtime_ide';
-import { rewrapRuntimeErrorOverlays } from './text_utils';
 import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './render/render_error_overlay';
 import { point_in_rect } from '../../utils/rect_operations';
-import { LuaSemanticWorkspace, symbolPriority } from './semantic_model';
+import { symbolPriority } from './semantic_model';
 import { refreshSymbolCatalog } from './symbol_catalog';
 import { extractErrorMessage } from '../../lua/luavalue';
 import {
@@ -106,24 +92,24 @@ import {
 	tickInput,
 	update,
 } from './editor_runtime';
+import { initializeCartEditor } from './editor_bootstrap';
 import {
-	applyViewportSize,
-	computeMaximumScrollColumn,
 	getCodeAreaBounds,
-	hideResourcePanel,
 	notifyReadOnlyEdit,
 	refreshResourcePanelContents,
-	resetResourcePanelState,
 	resolvePointerColumn,
 	resolvePointerRow,
 	resourceSearchWindowCapacity,
 	selectResourceInPanel,
+	setFontVariant,
 	symbolSearchPageSize,
+	updateViewport,
 } from './editor_view';
 import { openResourceViewerTab } from './resource_viewer';
 import { Viewport } from '../../rompack/rompack';
 
 export { activate, deactivate, draw, shutdown, tickInput, update };
+export { openLuaCodeTab } from './editor_tabs';
 export {
 	applyPendingResourceSelection,
 	applyViewportSize,
@@ -172,12 +158,15 @@ export {
 	searchResultEntryHeight,
 	searchVisibleResultCount,
 	selectResourceInPanel,
+	setFontVariant,
 	statusAreaHeight,
 	symbolSearchEntryHeight,
 	symbolSearchPageSize,
 	symbolSearchVisibleResultCount,
+	toggleWordWrap,
 	topMargin,
 	handlePointerAutoScroll,
+	updateViewport,
 } from './editor_view';
 
 export const editorFacade = {
@@ -207,95 +196,6 @@ export type CartEditor = typeof editorFacade;
 export function createCartEditor(viewport: Viewport): CartEditor {
 	initializeCartEditor(viewport);
 	return editorFacade;
-}
-
-export function initializeCartEditor(viewport: Viewport): void {
-	initializeDebuggerUiState();
-	const runtime = Runtime.instance;
-	ide_state.playerIndex = runtime.playerIndex;
-	ide_state.fontVariant = runtime.activeIdeFontVariant;
-	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
-	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
-	ide_state.canonicalization = $.assets.canonicalization;
-	ide_state.caseInsensitive = ide_state.canonicalization !== 'none';
-	ide_state.preMutationSource = null;
-	applyViewportSize(viewport);
-	ide_state.clockNow = $.platform.clock.now;
-	ide_state.semanticWorkspace = new LuaSemanticWorkspace();
-	configureFontVariant(ide_state.fontVariant);
-	ide_state.searchField = createInlineTextField();
-	ide_state.symbolSearchField = createInlineTextField();
-	ide_state.resourceSearchField = createInlineTextField();
-	ide_state.lineJumpField = createInlineTextField();
-	ide_state.createResourceField = createInlineTextField();
-	initializeWorkspaceStorage($.assets.project_root_path);
-	applySearchFieldText(ide_state.searchQuery, true);
-	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
-	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);
-	applyLineJumpFieldText(ide_state.lineJumpValue, true);
-	applyCreateResourceFieldText(ide_state.createResourcePath, true);
-	ide_state.scrollbars = {
-		codeVertical: new Scrollbar('codeVertical', 'vertical'),
-		codeHorizontal: new Scrollbar('codeHorizontal', 'horizontal'),
-		resourceVertical: new Scrollbar('resourceVertical', 'vertical'),
-		resourceHorizontal: new Scrollbar('resourceHorizontal', 'horizontal'),
-		viewerVertical: new Scrollbar('viewerVertical', 'vertical'),
-	};
-	ide_state.scrollbarController = new ScrollbarController(ide_state.scrollbars);
-	ide_state.resourcePanel = new ResourcePanelController({ resourceVertical: ide_state.scrollbars.resourceVertical, resourceHorizontal: ide_state.scrollbars.resourceHorizontal });
-	ide_state.completion = new CompletionController({
-		isCodeTabActive: () => isCodeTabActive(),
-		getBuffer: () => ide_state.buffer,
-		getCursorRow: () => ide_state.cursorRow,
-		getCursorColumn: () => ide_state.cursorColumn,
-		setCursorPosition: (row, column) => { ide_state.cursorRow = row; ide_state.cursorColumn = column; },
-		setSelectionAnchor: (row, column) => { ide_state.selectionAnchor = { row, column }; },
-		replaceSelectionWith: (text) => TextEditing.replaceSelectionWith(text),
-		updateDesiredColumn: () => updateDesiredColumn(),
-		resetBlink: () => resetBlink(),
-		revealCursor: () => revealCursor(),
-		measureText: (text) => measureText(text),
-		drawText: (text, x, y, color) => drawEditorText(ide_state.font, text, x, y, undefined, color),
-		fillRect: (left, top, right, bottom, color) => api.put_rectfill(left, top, right, bottom, undefined, color),
-		strokeRect: (left, top, right, bottom, color) => api.put_rect(left, top, right, bottom, undefined, color),
-		getCursorScreenInfo: () => ide_state.cursorScreenInfo,
-		characterAdvance: (char) => ide_state.font.advance(char),
-		get lineHeight(): number { return ide_state.font.lineHeight; },
-		getActiveCodeTabContext: () => getActiveCodeTabContext(),
-		resolveHoverPath: (ctx: CodeTabContext) => ctx.descriptor.path,
-		getSemanticDefinitions: () => getActiveSemanticDefinitions(),
-		getLuaModuleAliases: (path) => getLuaModuleAliases(path),
-		getMemberCompletionItems: (request) => buildMemberCompletionItems(request),
-		charAt: (r, c) => TextEditing.charAt(r, c),
-		getTextVersion: () => ide_state.textVersion,
-		shouldFireRepeat: (code) => shouldRepeatKeyFromPlayer(code),
-		shouldAutoTriggerCompletions: () => shouldAutoTriggerCompletions(),
-		shouldShowParameterHints: () => intellisenseUiReady(),
-	});
-	ide_state.completion.enterCommitsCompletion = false;
-	ide_state.input = new InputController();
-	ide_state.problemsPanel = new ProblemsPanelController();
-	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
-	ide_state.renameController = new RenameController({
-		processFieldEdit: (field, options) => applyInlineFieldEditing(field, options),
-		shouldFireRepeat: (code) => shouldRepeatKeyFromPlayer(code),
-		undo: () => undo(),
-		redo: () => redo(),
-		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
-		commitRename: (payload) => commitRename(payload),
-		onRenameSessionClosed: () => focusEditorFromRename(),
-	}, ide_state.referenceState);
-	ide_state.codeVerticalScrollbarVisible = false;
-	ide_state.codeHorizontalScrollbarVisible = false;
-	ide_state.cachedVisibleRowCount = 1;
-	ide_state.cachedVisibleColumnCount = 1;
-	initializeTabs(createEntryTabContext());
-	resetResourcePanelState();
-	ide_state.desiredColumn = ide_state.cursorColumn;
-	assertMonospace();
-	ide_state.lastSavedSource = '';
-	ide_state.navigationHistory.current = createNavigationEntry();
-	ide_state.initialized = true;
 }
 
 export function getSourceForChunk(path: string): string {
@@ -2700,134 +2600,6 @@ export function findFunctionDefinitionRowInActiveFile(functionName: string): num
 		}
 	}
 	return null;
-}
-
-export function updateViewport(viewport: Viewport): void {
-	applyViewportSize(viewport);
-	if (ide_state.resourcePanel.visible) {
-		const bounds = ide_state.resourcePanel.getBounds();
-		if (!bounds) {
-			hideResourcePanel();
-		} else {
-			ide_state.resourcePanel.clampHScroll();
-			ide_state.resourcePanel.ensureSelectionVisible();
-		}
-	}
-	ide_state.layout.markVisualLinesDirty();
-	ide_state.cursorRevealSuspended = false;
-	ensureCursorVisible();
-	rewrapRuntimeErrorOverlays();
-}
-
-function configureFontVariant(variant: FontVariant): void {
-	ide_state.fontVariant = variant;
-	ide_state.font = new EditorFont(variant);
-	ide_state.lineHeight = ide_state.font.lineHeight;
-	ide_state.charAdvance = ide_state.font.advance('M');
-	ide_state.spaceAdvance = ide_state.font.advance(' ');
-	ide_state.inlineFieldMetricsRef = {
-		measureText: (text: string) => measureText(text),
-		advanceChar: (ch: string) => ide_state.font.advance(ch),
-		spaceAdvance: ide_state.spaceAdvance,
-		tabSpaces: constants.TAB_SPACES,
-	};
-	ide_state.gutterWidth = 2;
-	ide_state.headerHeight = ide_state.lineHeight + 4;
-	ide_state.tabBarHeight = ide_state.lineHeight + 3;
-	ide_state.baseBottomMargin = ide_state.lineHeight + 6;
-	ide_state.layout = new CodeLayout(ide_state.font, ide_state.semanticWorkspace, {
-		maxHighlightCache: 512,
-		semanticDebounceMs: 200,
-		clockNow: ide_state.clockNow,
-		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(),
-	});
-	if (ide_state.resourcePanel) {
-		ide_state.resourcePanel.setFontMetrics(ide_state.lineHeight, ide_state.charAdvance);
-	}
-	ide_state.layout.invalidateAllHighlights();
-	ide_state.layout.markVisualLinesDirty();
-}
-
-export function setFontVariant(variant: FontVariant): void {
-	configureFontVariant(variant);
-	ensureVisualLines();
-	ide_state.cursorRevealSuspended = false;
-	ensureCursorVisible();
-	rewrapRuntimeErrorOverlays();
-	requestSemanticRefresh();
-	markDiagnosticsDirty(getActiveCodeTabContext().id);
-}
-
-export function toggleWordWrap(): void {
-	ensureVisualLines();
-	const previousWrap = ide_state.wordWrapEnabled;
-	const visualLineCount = getVisualLineCount();
-	const previousTopIndex = clamp(ide_state.scrollRow, 0, visualLineCount > 0 ? visualLineCount - 1 : 0);
-	const previousTopSegment = visualIndexToSegment(previousTopIndex);
-	const anchorRow = previousTopSegment ? previousTopSegment.row : ide_state.cursorRow;
-	const anchorColumnForWrap = previousTopSegment ? previousTopSegment.startColumn : 0;
-	const anchorColumnForUnwrap = previousTopSegment
-		? (previousWrap ? previousTopSegment.startColumn : ide_state.scrollColumn)
-		: ide_state.scrollColumn;
-	const previousCursorRow = ide_state.cursorRow;
-	const previousCursorColumn = ide_state.cursorColumn;
-	const previousDesiredColumn = ide_state.desiredColumn;
-
-	ide_state.wordWrapEnabled = !previousWrap;
-	ide_state.cursorRevealSuspended = false;
-	ide_state.layout.markVisualLinesDirty();
-	ensureVisualLines();
-
-	ide_state.cursorRow = clamp(previousCursorRow, 0, Math.max(0, ide_state.buffer.getLineCount() - 1));
-	const currentLine = ide_state.buffer.getLineContent(ide_state.cursorRow);
-	ide_state.cursorColumn = clamp(previousCursorColumn, 0, currentLine.length);
-	ide_state.desiredColumn = previousDesiredColumn;
-
-	if (ide_state.wordWrapEnabled) {
-		ide_state.scrollColumn = 0;
-		const anchorVisualIndex = positionToVisualIndex(anchorRow, anchorColumnForWrap);
-		ide_state.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
-	} else {
-		ide_state.scrollColumn = clamp(anchorColumnForUnwrap, 0, computeMaximumScrollColumn());
-		const anchorVisualIndex = positionToVisualIndex(anchorRow, ide_state.scrollColumn);
-		ide_state.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
-	}
-	ide_state.lastPointerRowResolution = null;
-	ensureCursorVisible();
-	updateDesiredColumn();
-	const message = ide_state.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled';
-	ide_state.showMessage(message, constants.COLOR_STATUS_TEXT, 2.5);
-}
-
-export function openLuaCodeTab(descriptor: ResourceDescriptor): void {
-	const navigationCheckpoint = beginNavigationCapture();
-	const tabId: EditorTabId = `lua:${descriptor.path}`;
-	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
-	if (!ide_state.codeTabContexts.has(tabId)) {
-		const context = createLuaCodeTabContext(descriptor);
-		ide_state.codeTabContexts.set(tabId, context);
-	}
-	const context = ide_state.codeTabContexts.get(tabId);
-	context.readOnly = descriptor.readOnly === true;
-	if (!tab) {
-		const dirty = context ? context.dirty : false;
-		tab = {
-			id: tabId,
-			kind: 'lua_editor',
-			title: computeResourceTabTitle(descriptor),
-			closable: true,
-			dirty,
-			resource: undefined,
-		};
-		ide_state.tabs.push(tab);
-	} else {
-		tab.title = computeResourceTabTitle(descriptor);
-		if (context) {
-			tab.dirty = context.dirty;
-		}
-	}
-	setActiveTab(tabId);
-	completeNavigation(navigationCheckpoint);
 }
 
 export function closeActiveTab(): void {
