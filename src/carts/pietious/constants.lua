@@ -2,8 +2,8 @@ local constants = {}
 
 constants.flow = {
 	room_transition_frames = 8,
-	world_banner_frames = 30,
-	castle_banner_frames = 30,
+	world_banner_frames = 31,
+	castle_banner_frames = 31,
 	room_switch_wait_frames = 6,
 	item_screen_wait_frames = 6,
 	seal_room_dissolve_steps = 7,

@@ -1942,7 +1942,6 @@ function player:update_entering_world()
 	self:update_enter_leave_cut(1)
 	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
 		local switch = object('c'):enter_world(self.enter_leave_world_target)
-		self.events:emit('gamestart')
 		object('d'):expect_room_switch_banner('world_banner', switch.world_number, nil)
 		self:apply_spawn_position(switch)
 		self.enter_leave_world_target = nil

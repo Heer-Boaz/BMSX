@@ -59,6 +59,7 @@ local constants = require('constants')
 local halo_teleport_timeline_id = 'director.halo.transition'
 local banner_world_timeline_id = 'director.banner.world'
 local banner_castle_timeline_id = 'director.banner.castle'
+local banner_pre_delay_timeline_id = 'director.banner.prewait'
 local room_switch_wait_timeline_id = 'director.wait.room_switch'
 local immediate_room_banner_modes = {
 	world_banner = true,
@@ -273,6 +274,7 @@ function director:ctor()
 	self.daemon_clouds = {}
 	self.seal_flash_on = false
 	self.banner_mode = nil
+	self.banner_world_number = 0
 	self.banner_post_action = nil
 	self.pending_shrine_text_lines = {}
 
@@ -467,39 +469,68 @@ local function define_director_fsm()
 					},
 				},
 			banner_transition = {
-				timelines = {
-					[banner_world_timeline_id] = {
-						def = {
-							frames = timeline.range(constants.flow.world_banner_frames),
-							playback_mode = 'once',
+				initial = 'prewait',
+				states = {
+					prewait = {
+						timelines = {
+							[banner_pre_delay_timeline_id] = {
+								def = {
+									frames = timeline.range(constants.flow.room_transition_frames),
+									playback_mode = 'once',
+								},
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+								on_end = '/banner_transition/showing',
+							},
 						},
-						autoplay = false,
-						stop_on_exit = true,
-						on_end = director.finish_banner_transition,
+						entering_state = function(self)
+							self.banner_mode = self.pending_banner_mode
+							self.banner_world_number = self.pending_banner_world_number
+							self.banner_post_action = self.pending_banner_post_action
+							self.pending_banner_mode = nil
+							self.pending_banner_world_number = 0
+							self.pending_banner_post_action = nil
+							self:enter_transition('transition')
+							self.events:emit('appearance')
+						end,
 					},
-					[banner_castle_timeline_id] = {
-						def = {
-							frames = timeline.range(constants.flow.castle_banner_frames),
-							playback_mode = 'once',
+					showing = {
+						timelines = {
+							[banner_world_timeline_id] = {
+								def = {
+									frames = timeline.range(constants.flow.world_banner_frames),
+									playback_mode = 'once',
+								},
+								autoplay = false,
+								stop_on_exit = true,
+								on_end = director.finish_banner_transition,
+							},
+							[banner_castle_timeline_id] = {
+								def = {
+									frames = timeline.range(constants.flow.castle_banner_frames),
+									playback_mode = 'once',
+								},
+								autoplay = false,
+								stop_on_exit = true,
+								on_end = director.finish_banner_transition,
+							},
 						},
-						autoplay = false,
-						stop_on_exit = true,
-						on_end = director.finish_banner_transition,
+						tags = { 'd.bt' },
+						entering_state = function(self)
+							self:set_active_space('transition')
+							if self.banner_mode == 'world_banner' then
+								self.events:emit('gamestart')
+							end
+							self.events:emit('transition', { lines = self:banner_lines(self.banner_mode, self.banner_world_number) })
+							local timeline_id = self.banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
+							self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
+						end,
 					},
 				},
-				tags = { 'd.bt' },
-				entering_state = function(self)
-					local banner_mode = self.pending_banner_mode
-					local banner_world_number = self.pending_banner_world_number
-					self.banner_mode = banner_mode
-					self.banner_post_action = self.pending_banner_post_action
-					self.pending_banner_mode = nil
-					self.pending_banner_world_number = 0
-					self.pending_banner_post_action = nil
-					self:enter_transition('transition', { lines = self:banner_lines(banner_mode, banner_world_number) })
-					local timeline_id = banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
-					self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
-				end,
 			},
 			item_screen = {
 				initial = 'opening',
