@@ -713,7 +713,7 @@ function castle:switch_room(direction, player_top, player_bottom)
 	return switch
 end
 
-function castle:prepare_enter_world(target)
+function castle:enter_world(target)
 	local transition = castle_map.world_transitions[target]
 	local from_room_number = self.current_room_number
 	local switch = create_room_switch(from_room_number, transition.world_room_number, 'down')
@@ -724,10 +724,6 @@ function castle:prepare_enter_world(target)
 	switch.spawn_x = transition.world_spawn_x
 	switch.spawn_y = transition.world_spawn_y
 	switch.spawn_facing = transition.world_spawn_facing
-	return switch
-end
-
-function castle:commit_enter_world(switch)
 	current_room():load_room(switch.to_room_number)
 	self:commit_room_switch(
 		switch,

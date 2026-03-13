@@ -75,6 +75,7 @@
 --    leaving_shrine's leaving_state callback.
 
 local constants = require('constants')
+local castle_map = require('castle_map')
 local components = require('components')
 local collision2d = require('collision2d')
 local player_abilities = require('player_abilities')
@@ -825,7 +826,6 @@ function player:begin_entering_world(world_entrance)
 	self:clear_input_state()
 	self:reset_stairs_lock()
 	self.enter_leave_world_target = world_entrance.target
-	self.pending_world_entry_switch = nil
 	self.enter_leave_shrine_text_lines = {}
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
@@ -859,14 +859,13 @@ function player:begin_world_emerge_from_door()
 end
 
 function player:complete_enter_world_after_banner()
-	local switch = object('c'):commit_enter_world(self.pending_world_entry_switch)
+	local switch = object('c'):enter_world(self.enter_leave_world_target)
 	self:apply_spawn_position(switch)
 	self:zero_motion()
 	self:reset_stairs_lock()
 	self:reset_enter_leave_animation()
 	self.enter_leave_world_target = nil
 	self.enter_leave_shrine_text_lines = {}
-	self.pending_world_entry_switch = nil
 	self:emit_room_switched(switch.from_room_number, switch.to_room_number, 'world_enter')
 end
 
@@ -1954,9 +1953,11 @@ function player:update_entering_world()
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(1)
 	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
-		local switch = object('c'):prepare_enter_world(self.enter_leave_world_target)
-		self.pending_world_entry_switch = switch
-		object('d'):queue_banner_transition('world_banner', switch.world_number, nil)
+		object('d'):queue_banner_transition(
+			'world_banner',
+			castle_map.world_transitions[self.enter_leave_world_target].world_number,
+			nil
+		)
 		self.to_enter_cut = 0
 		self.events:emit('world_entered')
 		return
@@ -3061,7 +3062,6 @@ local function register_player_definition()
 				to_enter_cut = 0,
 				enter_leave_anim_frame = 0,
 				enter_leave_world_target = nil,
-				pending_world_entry_switch = nil,
 				enter_leave_shrine_text_lines = {},
 			inventory_items = nil,
 			secondary_weapon = nil,
