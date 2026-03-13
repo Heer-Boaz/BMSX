@@ -57,6 +57,7 @@ type LuaLintIssueRule =
 	'event_handler_dispatch_pattern' |
 	'event_handler_state_dispatch_pattern' |
 	'event_handler_flag_proxy_pattern' |
+	'contiguous_multi_emit_pattern' |
 	'dispatch_fanout_loop_pattern' |
 	'tick_flag_polling_pattern' |
 	'tick_input_check_pattern' |
@@ -270,6 +271,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'event_handler_dispatch_pattern',
 	'event_handler_state_dispatch_pattern',
 	'event_handler_flag_proxy_pattern',
+	'contiguous_multi_emit_pattern',
 	'dispatch_fanout_loop_pattern',
 	'tick_flag_polling_pattern',
 	'tick_input_check_pattern',
@@ -318,6 +320,7 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'event_handler_dispatch_pattern',
 	'event_handler_state_dispatch_pattern',
 	'event_handler_flag_proxy_pattern',
+	'contiguous_multi_emit_pattern',
 	'dispatch_fanout_loop_pattern',
 	'tick_flag_polling_pattern',
 	'tick_input_check_pattern',
@@ -1169,6 +1172,39 @@ function lintSplitNestedIfHasTagPattern(statement: LuaIfStatement, issues: LuaLi
 	);
 }
 
+function lintContiguousMultiEmitPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	let firstEmitCall: LuaCallExpression | undefined;
+	let emitCount = 0;
+
+	const flush = (): void => {
+		if (!firstEmitCall || emitCount <= 1) {
+			firstEmitCall = undefined;
+			emitCount = 0;
+			return;
+		}
+		pushIssue(
+			issues,
+			'contiguous_multi_emit_pattern',
+			firstEmitCall,
+			`${emitCount} consecutive events:emit(...) calls in one straight-line block are forbidden. Emit one canonical event and let other systems react to it instead of alias/fanout event chains.`,
+		);
+		firstEmitCall = undefined;
+		emitCount = 0;
+	};
+
+	for (const statement of statements) {
+		if (statement.kind === LuaSyntaxKind.CallStatement && isEventsEmitCallExpression(statement.expression)) {
+			if (!firstEmitCall) {
+				firstEmitCall = statement.expression;
+			}
+			emitCount += 1;
+			continue;
+		}
+		flush();
+	}
+	flush();
+}
+
 function isSelfExpressionRoot(expression: LuaExpression): boolean {
 	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
 		return expression.name === 'self';
@@ -1921,6 +1957,20 @@ function isEventsOnCallExpression(expression: LuaCallExpression): boolean {
 	} else if (expression.callee.kind === LuaSyntaxKind.MemberExpression) {
 		receiver = expression.callee.base;
 	} else {
+		return false;
+	}
+	return isEventsContainerExpression(receiver);
+}
+
+function isEventsEmitCallExpression(expression: LuaExpression): expression is LuaCallExpression {
+	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+		return false;
+	}
+	if (getCallMethodName(expression) !== 'emit') {
+		return false;
+	}
+	const receiver = getCallReceiverExpression(expression);
+	if (!receiver) {
 		return false;
 	}
 	return isEventsContainerExpression(receiver);
@@ -6363,6 +6413,7 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 
 function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
 	lintBranchUninitializedLocalPattern(statements, issues);
+	lintContiguousMultiEmitPattern(statements, issues);
 	const functionUsageInfo = collectFunctionUsageCounts(statements);
 	for (const statement of statements) {
 		switch (statement.kind) {
