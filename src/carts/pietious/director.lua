@@ -41,12 +41,13 @@
 --    point navigates to the correct one.  Shared setup lives in a helper
 --    method (start_daemon_appearance).  No boolean flags are stored on self.
 --
--- 5. STAGING FIELDS (pending_*).
---    The only legitimate cross-state data on self are staging fields populated
---    synchronously in one breath with the FSM event that triggers the
---    transition.  They are consumed and cleared immediately in the next
---    state's entering_state.  Prefer passing data in the event payload so no
---    staging field is needed at all (e.g. lithograph_requested.lines).
+-- 5. SUBSTATES OVER SWITCH FIELDS.
+--    State-shaping distinctions belong in the FSM, not in pending mode flags
+--    or post-action switches.  World enter/leave, halo return from a world,
+--    world banner, castle banner, and castle-emerge banner are modeled as
+--    explicit state paths.  Only true payload data that must cross a state
+--    boundary (for example shrine text lines or the world number shown on a
+--    banner) is stored on self.
 --
 -- 6. REQUEST / REPLY.
 --    For interactions that require a round-trip (player death → castle
@@ -60,11 +61,10 @@ local halo_teleport_timeline_id = 'director.halo.transition'
 local banner_world_timeline_id = 'director.banner.world'
 local banner_castle_timeline_id = 'director.banner.castle'
 local banner_pre_delay_timeline_id = 'director.banner.prewait'
+local banner_prewait_cue_event = 'd.bp.c'
+local banner_world_show_event = 'd.bw.s'
+local banner_castle_show_event = 'd.bc.s'
 local room_switch_wait_timeline_id = 'director.wait.room_switch'
-local immediate_room_banner_modes = {
-	world_banner = true,
-	castle_banner = true,
-}
 local item_screen_open_timeline_id = 'director.wait.item.open'
 local item_screen_close_timeline_id = 'director.wait.item.close'
 local lithograph_open_timeline_id = 'director.wait.lithograph.open'
@@ -123,41 +123,12 @@ function director:banner_lines(mode, world_number)
 	}
 end
 
-function director:queue_banner_transition(mode, world_number, post_action)
-	self.pending_banner_mode = mode
-	self.pending_banner_world_number = world_number
-	self.pending_banner_post_action = post_action
-	self.events:emit('banner_requested')
-end
-
-function director:expect_room_switch_banner(mode, world_number, post_action)
-	self.next_room_switch_banner_mode = mode
-	self.next_room_switch_banner_world_number = world_number
-	self.next_room_switch_banner_post_action = post_action
-end
-
-function director:clear_expected_room_switch_banner()
-	self.next_room_switch_banner_mode = nil
-	self.next_room_switch_banner_world_number = 0
-	self.next_room_switch_banner_post_action = nil
-end
-
-function director:queue_expected_room_switch_banner_if_any()
-	if self.next_room_switch_banner_mode == nil then
-		return false
-	end
-	self:queue_banner_transition(
-	self.next_room_switch_banner_mode,
-	self.next_room_switch_banner_world_number,
-	self.next_room_switch_banner_post_action
-	)
-	self:clear_expected_room_switch_banner()
-	return true
+function director:queue_world_banner_transition(world_number)
+	self.events:emit('world_banner_requested', { world_number = world_number })
 end
 
 function director:open_shrine(text_lines)
-	self.pending_shrine_text_lines = text_lines
-	self.events:emit('shrine_overlay_requested')
+	self.events:emit('shrine_overlay_requested', { lines = text_lines })
 end
 
 function director:ensure_daemon_cloud_pool()
@@ -201,20 +172,21 @@ function director:despawn_daemon_clouds()
 	end
 end
 
-function director:finish_banner_transition()
-	local banner_mode = self.banner_mode
-	self.banner_mode = nil
-	if self.banner_post_action == 'castle_emerge' then
-		self.banner_post_action = nil
-		self.events:emit('player.world_emerge')
-		return '/world_transition'
-	end
-	self.banner_post_action = nil
+function director:finish_world_banner_transition()
+	self.banner_world_number = 0
 	self.events:emit('world_banner_done')
-	if immediate_room_banner_modes[banner_mode] then
-		return '/room'
-	end
+	return '/room'
+end
+
+function director:finish_castle_banner_transition()
+	self.banner_world_number = 0
 	return '/room_switch_wait'
+end
+
+function director:finish_castle_emerge_banner_transition()
+	self.banner_world_number = 0
+	self.events:emit('player.world_emerge')
+	return '/world_transition_emerge'
 end
 
 -- All states that switch to transition space + emit a named event + play the mask follow
@@ -249,9 +221,6 @@ function director:bind()
 			if event.dir == 'world_enter' then
 				return
 			end
-			if self:queue_expected_room_switch_banner_if_any() then
-				return
-			end
 			self.events:emit('room_switched')
 		end,
 	})
@@ -267,19 +236,11 @@ function director:bind()
 end
 
 function director:ctor()
-	self.pending_banner_mode = nil
-	self.pending_banner_world_number = 0
-	self.pending_banner_post_action = nil
-	self.next_room_switch_banner_mode = nil
-	self.next_room_switch_banner_world_number = 0
-	self.next_room_switch_banner_post_action = nil
 	self.daemon_smoke_next = 1
 	self.daemon_clouds = {}
 	self.seal_flash_on = false
-	self.banner_mode = nil
 	self.banner_world_number = 0
-	self.banner_post_action = nil
-	self.pending_shrine_text_lines = {}
+	self.shrine_text_lines = {}
 
 	self:activate_spaces()
 	self:bind_visual()
@@ -341,6 +302,36 @@ local function define_director_fsm()
 		-- (autoplay = false = registration only).  Each state configures behaviour
 		-- via on_frame (cloud spawning) and on_end (completion + transition).
 		timelines = {
+			[banner_pre_delay_timeline_id] = {
+				def = {
+					frames = timeline.range(constants.flow.banner_prewait_frames),
+					playback_mode = 'once',
+					markers = {
+						{ frame = 0, event = banner_prewait_cue_event },
+					},
+				},
+				autoplay = false,
+			},
+			[banner_world_timeline_id] = {
+				def = {
+					frames = timeline.range(constants.flow.world_banner_frames),
+					playback_mode = 'once',
+					markers = {
+						{ frame = 0, event = banner_world_show_event },
+					},
+				},
+				autoplay = false,
+			},
+			[banner_castle_timeline_id] = {
+				def = {
+					frames = timeline.range(constants.flow.castle_banner_frames),
+					playback_mode = 'once',
+					markers = {
+						{ frame = 0, event = banner_castle_show_event },
+					},
+				},
+				autoplay = false,
+			},
 			[daemon_timeline_id] = {
 				def = {
 					frames = timeline.range(126),
@@ -363,9 +354,11 @@ local function define_director_fsm()
 		-- exactly how mode transitions work: any game system can request a mode
 		-- change at any time, and the director unconditionally obeys.
 		on = {
-			['world_transition_start'] = '/world_transition',
+			['world_enter_transition_start'] = '/world_transition_enter',
+			['world_leave_transition_start'] = '/world_transition_leave',
 			['shrine_transition_start'] = '/shrine',
 			['halo_transition_start'] = '/halo_teleport',
+			['halo_transition_start_from_world'] = '/halo_teleport_from_world',
 			['seal_dissolution_start'] = '/seal_dissolution',
 			['title_screen_start'] = '/title_screen',
 			['story_start'] = '/story',
@@ -395,7 +388,6 @@ local function define_director_fsm()
 						self.events:emit('lithograph', { lines = event.lines })
 						return '/lithograph'
 					end,
-					['banner_requested'] = '/banner_transition',
 				},
 				input_event_handlers = {
 					['lb[jp] || rb[jp]'] = function(self)
@@ -422,15 +414,33 @@ local function define_director_fsm()
 				},
 				entering_state = director.begin_black_wait,
 			},
-				world_transition = {
-					entering_state = function(self)
-						self:set_active_space('main')
+			world_transition_enter = {
+				entering_state = function(self)
+					self:set_active_space('main')
+				end,
+				on = {
+					['world_banner_requested'] = function(self, _state, event)
+						self.banner_world_number = event.world_number
+						return '/banner_transition/world_prewait'
 					end,
-					on = {
-						['world_transition_done'] = '/room_switch_wait',
-						['banner_requested'] = '/banner_transition',
-					},
 				},
+			},
+			world_transition_leave = {
+				entering_state = function(self)
+					self:set_active_space('main')
+				end,
+				on = {
+					['room_switched'] = '/banner_transition/castle_emerge_prewait',
+				},
+			},
+			world_transition_emerge = {
+				entering_state = function(self)
+					self:set_active_space('main')
+				end,
+				on = {
+					['world_transition_done'] = '/room_switch_wait',
+				},
+			},
 				-- SHRINE — three-phase compound state (entering → overlay → exiting).
 				-- The shrine transition begins in 'main' space (player walks in),
 				-- switches to 'shrine' space for the overlay text, then back to
@@ -444,15 +454,18 @@ local function define_director_fsm()
 								self:set_active_space('main')
 							end,
 							on = {
-								['shrine_overlay_requested'] = '/shrine/overlay',
+								['shrine_overlay_requested'] = function(self, _state, event)
+									self.shrine_text_lines = event.lines
+									return '/shrine/overlay'
+								end,
 							},
 						},
 						overlay = {
 							-- Single 'shrine' broadcast carries text lines as payload.
 							-- The shrine overlay reads event.lines in its own handler.
 							entering_state = function(self)
-								local lines = self.pending_shrine_text_lines
-								self.pending_shrine_text_lines = {}
+								local lines = self.shrine_text_lines
+								self.shrine_text_lines = {}
 								self:set_active_space('shrine')
 								self.events:emit('shrine', { lines = lines })
 							end,
@@ -472,64 +485,103 @@ local function define_director_fsm()
 					},
 				},
 			banner_transition = {
-				initial = 'prewait',
+				initial = 'world_prewait',
 				states = {
-					prewait = {
+					world_prewait = {
 						timelines = {
 							[banner_pre_delay_timeline_id] = {
-								def = {
-									frames = timeline.range(constants.flow.banner_prewait_frames),
-									playback_mode = 'once',
-								},
 								autoplay = true,
 								stop_on_exit = true,
 								play_options = {
 									rewind = true,
 									snap_to_start = true,
 								},
-								on_end = '/banner_transition/showing',
+								on_end = '/banner_transition/world_showing',
 							},
 						},
-						entering_state = function(self)
-							self.banner_mode = self.pending_banner_mode
-							self.banner_world_number = self.pending_banner_world_number
-							self.banner_post_action = self.pending_banner_post_action
-							self.pending_banner_mode = nil
-							self.pending_banner_world_number = 0
-							self.pending_banner_post_action = nil
-							self.events:emit('appearance')
-						end,
 					},
-					showing = {
+					world_showing = {
+						on = {
+							[banner_world_show_event] = function(self)
+								self:enter_transition('transition', { lines = self:banner_lines('world_banner', self.banner_world_number) })
+							end,
+						},
 						timelines = {
 							[banner_world_timeline_id] = {
-								def = {
-									frames = timeline.range(constants.flow.world_banner_frames),
-									playback_mode = 'once',
-								},
-								autoplay = false,
+								autoplay = true,
 								stop_on_exit = true,
-								on_end = director.finish_banner_transition,
-							},
-							[banner_castle_timeline_id] = {
-								def = {
-									frames = timeline.range(constants.flow.castle_banner_frames),
-									playback_mode = 'once',
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
 								},
-								autoplay = false,
-								stop_on_exit = true,
-								on_end = director.finish_banner_transition,
+								on_end = director.finish_world_banner_transition,
 							},
 						},
 						tags = { 'd.bt' },
-						entering_state = function(self)
-							if self.banner_mode == 'world_banner' then
-								self.events:emit('gamestart')
-							end
-							self:enter_transition('transition', { lines = self:banner_lines(self.banner_mode, self.banner_world_number) })
-							local timeline_id = self.banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
-							self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
-						end,
+					},
+					castle_prewait = {
+						timelines = {
+							[banner_pre_delay_timeline_id] = {
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+								on_end = '/banner_transition/castle_showing',
+							},
+						},
+					},
+					castle_showing = {
+						on = {
+							[banner_castle_show_event] = function(self)
+								self:enter_transition('transition', { lines = self:banner_lines('castle_banner', 0) })
+							end,
+						},
+						timelines = {
+							[banner_castle_timeline_id] = {
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+								on_end = director.finish_castle_banner_transition,
+							},
+						},
+						tags = { 'd.bt' },
+					},
+					castle_emerge_prewait = {
+						timelines = {
+							[banner_pre_delay_timeline_id] = {
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+								on_end = '/banner_transition/castle_emerge_showing',
+							},
+						},
+					},
+					castle_emerge_showing = {
+						on = {
+							[banner_castle_show_event] = function(self)
+								self:enter_transition('transition', { lines = self:banner_lines('castle_banner', 0) })
+							end,
+						},
+						timelines = {
+							[banner_castle_timeline_id] = {
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+								on_end = director.finish_castle_emerge_banner_transition,
+							},
+						},
+						tags = { 'd.bt' },
 					},
 				},
 			},
@@ -563,9 +615,6 @@ local function define_director_fsm()
 							['start[jp]'] = '/item_screen/halo',
 							['lb[jp] || rb[jp]'] = '/item_screen/closing',
 						},
-						on = {
-							['banner_requested'] = '/banner_transition',
-						},
 					},
 					halo = {
 						entering_state = function(self)
@@ -595,7 +644,7 @@ local function define_director_fsm()
 					},
 				},
 			},
-				halo_teleport = {
+			halo_teleport = {
 				timelines = {
 					[halo_teleport_timeline_id] = {
 						def = {
@@ -614,6 +663,26 @@ local function define_director_fsm()
 					entering_state = function(self)
 						self:enter_transition('halo')
 					end,
+			},
+			halo_teleport_from_world = {
+				timelines = {
+					[halo_teleport_timeline_id] = {
+						def = {
+							frames = timeline.range(1),
+							playback_mode = 'once',
+						},
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = {
+							rewind = true,
+							snap_to_start = true,
+						},
+						on_end = '/banner_transition/castle_prewait',
+					},
+				},
+				entering_state = function(self)
+					self:enter_transition('halo')
+				end,
 			},
 			-- SEAL DISSOLUTION — runs a 95-frame timeline that:
 				--   frames 0–31: screen flash phase (white overlay toggles).
@@ -799,9 +868,6 @@ local function register_director_definition()
 		components = { 'customvisualcomponent' },
 		defaults = {
 			id = 'd',
-			pending_banner_world_number = 0,
-			next_room_switch_banner_world_number = 0,
-			pending_shrine_text_lines = {},
 		},
 	})
 end

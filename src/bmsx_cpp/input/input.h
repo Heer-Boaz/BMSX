@@ -11,6 +11,7 @@
 
 #include "inputtypes.h"
 #include "playerinput.h"
+#include "../subscription.h"
 #include <array>
 #include <memory>
 #include <unordered_map>
@@ -183,11 +184,13 @@ private:
 
 	i32 m_nextPressId = 1;
 	std::unordered_map<std::string, i32> m_activePressIds;
+	SubscriptionHandle m_focusChangeSub;
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Helpers
 	// ─────────────────────────────────────────────────────────────────────────
 	
+	void handleFocusChange(bool focused);
 	void enqueueButtonEvent(i32 playerIndex, const std::string& code, 
 							InputEvent::Type type, f64 timestamp, 
 							std::optional<i32> pressId);

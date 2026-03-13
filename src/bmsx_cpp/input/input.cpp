@@ -71,12 +71,19 @@ void Input::initialize() {
 	// Set up default input mapping for keyboard player
 	auto defaultMapping = getDefaultInputMapping();
 	m_playerInputs[toInternalPlayerIndex(DEFAULT_KEYBOARD_PLAYER_INDEX)]->setInputMap(defaultMapping);
+	m_focusChangeSub = EngineCore::instance().platform()->gameviewHost()->onFocusChange([this](bool focused) {
+		handleFocusChange(focused);
+	});
 	
 	m_initialized = true;
 }
 
 void Input::shutdown() {
 	if (!m_initialized) return;
+
+	if (m_focusChangeSub.active) {
+		m_focusChangeSub.unsubscribe();
+	}
 	
 	// Clear device bindings
 	m_deviceBindings.clear();
@@ -173,6 +180,23 @@ DeviceBinding* Input::getDeviceBinding(const std::string& deviceId) {
 	auto it = m_deviceBindings.find(deviceId);
 	if (it == m_deviceBindings.end()) return nullptr;
 	return &it->second;
+}
+
+void Input::handleFocusChange(bool /*focused*/) {
+	m_activePressIds.clear();
+
+	for (auto& player : m_playerInputs) {
+		if (player) {
+			player->reset();
+		}
+	}
+
+	for (auto& [deviceId, binding] : m_deviceBindings) {
+		(void)deviceId;
+		if (!binding.assignedPlayer.has_value()) {
+			binding.handler->reset();
+		}
+	}
 }
 
 /* ============================================================================

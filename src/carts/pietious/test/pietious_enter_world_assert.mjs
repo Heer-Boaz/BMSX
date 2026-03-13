@@ -60,7 +60,14 @@ function getScenarioState(engine) {
 		if world_banner_timeline ~= nil then
 			world_banner_head = world_banner_timeline.head
 		end
+		local active_enemy_count = 0
+		for obj in objects_by_tag('rs') do
+			if obj.enemy_kind ~= nil and obj.space_id == get_space() and not obj.dispose_flag then
+				active_enemy_count = active_enemy_count + 1
+			end
+		end
 		return {
+			active_space = get_space(),
 			room_number = castle.current_room_number,
 			room_world_number = room.world_number,
 			player_entering_world = player:has_tag('v.ew'),
@@ -73,9 +80,8 @@ function getScenarioState(engine) {
 			transition_banner_line = transition.banner_lines[1],
 			prewait_head = prewait_head,
 			world_banner_head = world_banner_head,
-			appearance_count = director._test_appearance_count,
-			gamestart_count = director._test_gamestart_count,
 			room_enter_count = castle._test_room_enter_count,
+			active_enemy_count = active_enemy_count,
 		}
 	`);
 	return state;
@@ -127,22 +133,10 @@ function setupScenario(engine, logger) {
 		player.events:emit('landed_to_quiet')
 
 		local original_emit_room_enter = castle.emit_room_enter
-		local original_emit = director.events.emit
 		castle._test_room_enter_count = 0
-		director._test_appearance_count = 0
-		director._test_gamestart_count = 0
 		castle.emit_room_enter = function(self)
 			self._test_room_enter_count = self._test_room_enter_count + 1
 			return original_emit_room_enter(self)
-		end
-		director.events.emit = function(events, event_name, payload)
-			if event_name == 'appearance' then
-				director._test_appearance_count = director._test_appearance_count + 1
-			end
-			if event_name == 'gamestart' then
-				director._test_gamestart_count = director._test_gamestart_count + 1
-			end
-			return original_emit(events, event_name, payload)
 		end
 
 		player:begin_entering_world(entrance)
@@ -150,13 +144,14 @@ function setupScenario(engine, logger) {
 		return {
 			castle_room_number = spec.castle_room_number,
 			world_room_number = spec.world_room_number,
-			expected_prewait_last_head = constants.flow.room_transition_frames - 1,
+			expected_prewait_last_head = constants.flow.banner_prewait_frames - 1,
 			expected_banner_last_head = constants.flow.world_banner_frames - 1,
 		}
 	`);
 	logger(`[assert] enter-world setup castleRoom=${state.castle_room_number} worldRoom=${state.world_room_number}`);
 	return {
 		name: 'enter_world',
+		saw_entering_hide: false,
 		saw_pause: false,
 		saw_waiting_banner: false,
 		max_prewait_head: -1,
@@ -169,6 +164,11 @@ function setupScenario(engine, logger) {
 
 function updateScenario(engine, scenario, logger) {
 	const state = getScenarioState(engine);
+	if (!scenario.saw_entering_hide && state.player_entering_world) {
+		scenario.saw_entering_hide = true;
+		assert(state.active_enemy_count === 0, `enter-world active enemies during entering=${state.active_enemy_count}`);
+		logger('[assert] enter-world enemies hidden ok');
+	}
 	if (state.player_waiting_world_banner && !state.director_banner_active && state.prewait_head !== null && state.prewait_head > scenario.max_prewait_head) {
 		scenario.max_prewait_head = state.prewait_head;
 	}
@@ -177,20 +177,20 @@ function updateScenario(engine, scenario, logger) {
 	}
 	if (!scenario.saw_pause && state.player_waiting_world_banner && !state.director_banner_active) {
 		scenario.saw_pause = true;
-		assert(state.room_world_number === 1, `enter-world pre-banner switched to wrong world_number=${state.room_world_number}`);
+		assert(state.active_space === 'main', `enter-world pre-banner active_space=${state.active_space}`);
+		assert(state.room_world_number === 0, `enter-world pre-banner switched too early world_number=${state.room_world_number}`);
 		assert(state.transition_banner_has_line === false, `enter-world pre-banner line was "${state.transition_banner_line}"`);
 		assert(state.room_enter_count === 0, `room.enter fired during pre-banner count=${state.room_enter_count}`);
-		assert(state.appearance_count === 1, `appearance cue count during pre-banner=${state.appearance_count}`);
-		assert(state.gamestart_count === 0, `gamestart cue count during pre-banner=${state.gamestart_count}`);
+		assert(state.active_enemy_count === 0, `enter-world active enemies during pre-banner=${state.active_enemy_count}`);
 		logger('[assert] enter-world pre-banner pause ok');
 	}
 	if (!scenario.saw_waiting_banner && state.player_waiting_world_banner && state.director_banner_active) {
 		scenario.saw_waiting_banner = true;
-		assert(state.room_world_number === 1, `enter-world switched to wrong world_number=${state.room_world_number}`);
+		assert(state.active_space === 'transition', `enter-world banner active_space=${state.active_space}`);
+		assert(state.room_world_number === 0, `enter-world switched too early world_number=${state.room_world_number}`);
 		assert(state.transition_banner_line === 'WORLD 1 !', `enter-world banner line was "${state.transition_banner_line}"`);
 		assert(state.room_enter_count === 0, `room.enter fired too early count=${state.room_enter_count}`);
-		assert(state.appearance_count === 1, `appearance cue count at banner=${state.appearance_count}`);
-		assert(state.gamestart_count === 1, `gamestart cue count at banner=${state.gamestart_count}`);
+		assert(state.active_enemy_count === 0, `enter-world active enemies at banner=${state.active_enemy_count}`);
 		logger('[assert] enter-world banner ok');
 	}
 
@@ -206,7 +206,7 @@ function updateScenario(engine, scenario, logger) {
 	scenario.frames += 1;
 	assert(
 		scenario.frames < 400,
-		`enter-world timed out pause=${scenario.saw_pause} waiting=${scenario.saw_waiting_banner} room=${state.room_number} world=${state.room_world_number} entering=${state.player_entering_world} waiting=${state.player_waiting_world_banner} quiet=${state.player_quiet} bannerActive=${state.director_banner_active} banner="${state.transition_banner_line}" appearance=${state.appearance_count} gamestart=${state.gamestart_count} roomEnterCount=${state.room_enter_count} prewaitHead=${state.prewait_head} bannerHead=${state.world_banner_head} maxPrewaitHead=${scenario.max_prewait_head} maxBannerHead=${scenario.max_banner_head} step=${state.player_transition_step} cut=${state.player_to_enter_cut}`
+		`enter-world timed out pause=${scenario.saw_pause} waiting=${scenario.saw_waiting_banner} room=${state.room_number} world=${state.room_world_number} entering=${state.player_entering_world} waiting=${state.player_waiting_world_banner} quiet=${state.player_quiet} bannerActive=${state.director_banner_active} banner="${state.transition_banner_line}" roomEnterCount=${state.room_enter_count} prewaitHead=${state.prewait_head} bannerHead=${state.world_banner_head} maxPrewaitHead=${scenario.max_prewait_head} maxBannerHead=${scenario.max_banner_head} step=${state.player_transition_step} cut=${state.player_to_enter_cut}`
 	);
 	return scenario;
 }

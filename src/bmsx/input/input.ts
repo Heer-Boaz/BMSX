@@ -169,7 +169,7 @@ export class InputStateManager {
 	 * Cleans up old events from the input buffer used for windowed queries.
 	 */
 	update(currentTime: number): void {
-		this.inputBuffer = this.inputBuffer.filter(event => currentTime - event.timestamp <= this.bufferframeDuration * $.timestep_ms);
+		this.inputBuffer = this.inputBuffer.filter(event => currentTime - event.timestamp <= this.bufferframeDuration);
 	}
 
 	/**
@@ -230,7 +230,7 @@ export class InputStateManager {
 	getButtonState(identifier: ButtonId, framewindow?: number): ButtonState {
 		const window = framewindow != null
 			? framewindow * $.timestep_ms
-			: this.bufferframeDuration * $.timestep_ms;
+			: this.bufferframeDuration;
 		const currentTime = $.platform.clock.now();
 		const baseState = this.buttonStates.get(identifier);
 
@@ -296,12 +296,31 @@ export class InputStateManager {
 		return false;
 	}
 
+	private getLatestUnconsumedEdgeId(
+		identifier: ButtonId,
+		eventType: 'press' | 'release'
+	): number | null {
+		const windowMs = 2 * $.timestep_ms;
+		const currentTime = $.platform.clock.now();
+		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
+			const event = this.inputBuffer[i];
+			if (currentTime - event.timestamp > windowMs) {
+				break;
+			}
+			if (event.identifier !== identifier || event.eventType !== eventType || event.consumed === true || event.pressId == null) {
+				continue;
+			}
+			return event.pressId;
+		}
+		return null;
+	}
+
 	public getLatestUnconsumedPressId(identifier: ButtonId): number | null | undefined {
-		return this.latestUnconsumedPressIdByButton.get(identifier) ?? null;
+		return this.getLatestUnconsumedEdgeId(identifier, 'press');
 	}
 
 	public getLatestUnconsumedReleaseId(identifier: ButtonId): number | null {
-		return this.latestUnconsumedReleaseIdByButton.get(identifier) ?? null;
+		return this.getLatestUnconsumedEdgeId(identifier, 'release');
 	}
 
 	/**
@@ -439,8 +458,22 @@ export class Input implements RegisterablePersistent {
 	// Spawn-once guard for UI controller
 	private uiControllerSpawned = false;
 	private platformInputUnsubscribe: SubscriptionHandle = null;
+	private focusChangeUnsubscribe: SubscriptionHandle = null;
 	private readonly platformInputListener = (event: InputEvt): void => {
 		this.handleInputEvent(event);
+	};
+	private readonly handleFocusChange = (_focused: boolean): void => {
+		for (let i = 0; i < this.playerInputs.length; i++) {
+			const player = this.playerInputs[i];
+			if (!player) continue;
+			player.reset();
+		}
+		const iterator = this.deviceBindings.values();
+		for (let current = iterator.next(); !current.done; current = iterator.next()) {
+			const binding = current.value;
+			if (binding.assignedPlayer !== null) continue;
+			binding.handler.reset();
+		}
 	};
 
 	private debugHotkeysEnabled = false;
@@ -695,6 +728,7 @@ export class Input implements RegisterablePersistent {
 		this.deviceBindings.set('pointer:0', { handler: pointer, source: 'pointer', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device: null });
 		$.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
 		this.attachToPlatformInput();
+		this.focusChangeUnsubscribe = $.platform.gameviewHost.onFocusChange(this.handleFocusChange);
 	}
 
 	public refreshBindings(): void {
@@ -872,6 +906,11 @@ export class Input implements RegisterablePersistent {
 		// Deregister the input system
 		Registry.instance.deregister(this);
 		this.detachFromPlatformInput();
+		if (this.focusChangeUnsubscribe) {
+			const unsubscribe = this.focusChangeUnsubscribe;
+			this.focusChangeUnsubscribe = null;
+			unsubscribe.unsubscribe();
+		}
 	}
 
 	/**

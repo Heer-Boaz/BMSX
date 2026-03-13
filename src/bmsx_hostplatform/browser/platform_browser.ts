@@ -595,6 +595,8 @@ class BrowserInputHub implements InputHub {
 
 		window.addEventListener('keydown', this.onKeyDown, { passive: false, capture: true });
 		window.addEventListener('keyup', this.onKeyUp, { passive: false, capture: true });
+		window.addEventListener('blur', this.onWindowFocusChange, { passive: true });
+		window.addEventListener('focus', this.onWindowFocusChange, { passive: true });
 		surface.addEventListener('pointerdown', this.onPointerDown, { passive: false });
 		surface.addEventListener('pointerup', this.onPointerUp, { passive: false });
 		surface.addEventListener('pointermove', this.onPointerMove, { passive: false });
@@ -663,6 +665,11 @@ class BrowserInputHub implements InputHub {
 		}
 		this.activeKeyPressIds.delete(event.code);
 		this.post({ type: 'button', deviceId: 'keyboard:0', code: event.code, down: false, value: 0, timestamp: now, pressId });
+	};
+
+	private onWindowFocusChange = () => {
+		this.activeKeyPressIds.clear();
+		this.activePointerPressIds.clear();
 	};
 
 	private onPointerDown = (event: PointerEvent) => {

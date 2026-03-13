@@ -294,6 +294,9 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 		anyJustPressed = true;
 		m_actionBufferedPressFrameRecords[action] = { m_frameCounter, bufferedPressId.value() };
 	}
+	if (anyJustPressed && bufferedPressId.has_value() && (!latestPressId.has_value() || bufferedPressId.value() > latestPressId.value())) {
+		latestPressId = bufferedPressId;
+	}
 	
 	// Parity with TS: Prefer bufferPressId over latestPressId (bufferPressId ?? latestPressId)
 	if (anyJustPressed) {

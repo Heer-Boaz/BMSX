@@ -10,7 +10,6 @@
 		"src/sint2024"
 	],
 	"dependencies": {
-		"@openai/codex": "^0.98.0",
 		"blob": "*",
 		"node-fetch": "*",
 		"npm": "*",

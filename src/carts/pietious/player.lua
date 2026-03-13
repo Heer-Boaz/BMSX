@@ -830,6 +830,7 @@ function player:begin_entering_world(world_entrance)
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
 	object('d').events:emit('world_transition_start')
+	object('d').events:emit('world_enter_transition_start')
 	stop_music()
 	self.events:emit('enterleave')
 	self.events:emit('enter_world_start')
@@ -970,7 +971,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	if switch.outside then
 		local director = object('d')
 		director.events:emit('world_transition_start')
-		director:expect_room_switch_banner('castle_banner', 0, 'castle_emerge')
+		director.events:emit('world_leave_transition_start')
 		local leave_switch = object('c'):leave_world_to_castle()
 		self:apply_spawn_position(leave_switch)
 		self:zero_motion()
@@ -1953,11 +1954,7 @@ function player:update_entering_world()
 	self:update_enter_leave_anim_frame()
 	self:update_enter_leave_cut(1)
 	if self.transition_step == constants.world_entrance.enter_world_midpoint_step then
-		object('d'):queue_banner_transition(
-			'world_banner',
-			castle_map.world_transitions[self.enter_leave_world_target].world_number,
-			nil
-		)
+		object('d'):queue_world_banner_transition(castle_map.world_transitions[self.enter_leave_world_target].world_number)
 		self.to_enter_cut = 0
 		self.events:emit('world_entered')
 		return

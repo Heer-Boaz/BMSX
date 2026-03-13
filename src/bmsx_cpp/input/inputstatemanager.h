@@ -59,7 +59,7 @@ public:
 	// Check if button was released within window
 	bool wasReleasedInWindow(const std::string& button, f64 windowMs) const;
 
-	// Return latest unconsumed press/release pressId for a button
+	// Return latest unconsumed press/release pressId for a button while the event still exists in the retained buffer.
 	std::optional<i32> getLatestUnconsumedPressId(const std::string& button) const;
 	std::optional<i32> getLatestUnconsumedReleaseId(const std::string& button) const;
 	
@@ -91,13 +91,14 @@ private:
 	// Current frame timestamp
 	f64 m_currentTimeMs = 0.0;
 	
-	// Buffer retention time (oldest events to keep)
+	// Buffer retention time in milliseconds (oldest events to keep)
 	static constexpr f64 BUFFER_FRAME_RETENTION = 150.0;
-	
+
 	// ─────────────────────────────────────────────────────────────────────────
 	// Helpers
 	// ─────────────────────────────────────────────────────────────────────────
 	
+	std::optional<i32> getLatestUnconsumedEdgeId(const std::string& button, InputEvent::Type eventType) const;
 	void pruneOldEvents();
 };
 

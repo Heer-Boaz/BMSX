@@ -40,6 +40,7 @@ static bool g_has_pending_frame_time = false;
 extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec);
 extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down);
 extern "C" RETRO_API void bmsx_keyboard_reset(void);
+extern "C" RETRO_API void bmsx_focus_changed(bool focused);
 
 static void frame_time_cb(retro_usec_t usec) {
 	if (usec == 0) {
@@ -100,6 +101,13 @@ extern "C" RETRO_API void bmsx_keyboard_reset(void) {
 		return;
 	}
 	g_platform->clearKeyboardState();
+}
+
+extern "C" RETRO_API void bmsx_focus_changed(bool focused) {
+	if (!g_platform) {
+		return;
+	}
+	g_platform->notifyFocusChange(focused);
 }
 
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";

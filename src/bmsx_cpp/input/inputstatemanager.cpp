@@ -127,9 +127,7 @@ ButtonState InputStateManager::getButtonState(const std::string& button, std::op
 	
 	ButtonState state = it->second;
 	
-	// Parity with TS: windowed checks use bufferframeDuration * timestep_ms.
-	const f64 timestepMs = EngineCore::instance().deltaTime() * 1000.0;
-	f64 effectiveWindow = windowMs.value_or(BUFFER_FRAME_RETENTION * timestepMs);
+	f64 effectiveWindow = windowMs.value_or(BUFFER_FRAME_RETENTION);
 	state.waspressed = state.pressed || wasPressedInWindow(button, effectiveWindow);
 	state.wasreleased = state.justreleased || wasReleasedInWindow(button, effectiveWindow);
 	if (!state.consumed) {
@@ -176,19 +174,11 @@ bool InputStateManager::wasReleasedInWindow(const std::string& button, f64 windo
 }
 
 std::optional<i32> InputStateManager::getLatestUnconsumedPressId(const std::string& button) const {
-	auto it = m_latestUnconsumedPressIdByButton.find(button);
-	if (it != m_latestUnconsumedPressIdByButton.end()) {
-		return it->second;
-	}
-	return std::nullopt;
+	return getLatestUnconsumedEdgeId(button, InputEvent::Type::Press);
 }
 
 std::optional<i32> InputStateManager::getLatestUnconsumedReleaseId(const std::string& button) const {
-	auto it = m_latestUnconsumedReleaseIdByButton.find(button);
-	if (it != m_latestUnconsumedReleaseIdByButton.end()) {
-		return it->second;
-	}
-	return std::nullopt;
+	return getLatestUnconsumedEdgeId(button, InputEvent::Type::Release);
 }
 
 /* ============================================================================
@@ -221,10 +211,29 @@ void InputStateManager::clear() {
  * Helpers
  * ============================================================================ */
 
-void InputStateManager::pruneOldEvents() {
-	// Parity with TS: Use timestep_ms for window calculation.
+std::optional<i32> InputStateManager::getLatestUnconsumedEdgeId(const std::string& button, InputEvent::Type eventType) const {
+	constexpr f64 EDGE_ID_WINDOW_FRAMES = 2.0;
 	const f64 timestepMs = EngineCore::instance().deltaTime() * 1000.0;
-	f64 cutoff = m_currentTimeMs - (BUFFER_FRAME_RETENTION * timestepMs);
+	const f64 windowMs = EDGE_ID_WINDOW_FRAMES * timestepMs;
+	const f64 cutoff = m_currentTimeMs - windowMs;
+	for (auto it = m_inputBuffer.rbegin(); it != m_inputBuffer.rend(); ++it) {
+		const InputEvent& evt = *it;
+		if (evt.timestamp < cutoff) {
+			break;
+		}
+		if (evt.identifier != button ||
+			evt.eventType != eventType ||
+			evt.consumed ||
+			!evt.pressId.has_value()) {
+			continue;
+		}
+		return evt.pressId;
+	}
+	return std::nullopt;
+}
+
+void InputStateManager::pruneOldEvents() {
+	f64 cutoff = m_currentTimeMs - BUFFER_FRAME_RETENTION;
 	
 	while (!m_inputBuffer.empty() && m_inputBuffer.front().timestamp < cutoff) {
 		m_inputBuffer.pop_front();

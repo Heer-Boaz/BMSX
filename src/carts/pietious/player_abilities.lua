@@ -103,13 +103,12 @@ action_effects.register_effect('halo', {
 		local director = object('d')
 		local castle = object('c')
 		local from_world = (object('room').world_number or 0) ~= 0
-		director.events:emit('halo_transition_start')
-		local switch = castle:halo_teleport_to_room_1()
 		if from_world then
-			director:expect_room_switch_banner('castle_banner', 0, nil)
+			director.events:emit('halo_transition_start_from_world')
 		else
-			director:clear_expected_room_switch_banner()
+			director.events:emit('halo_transition_start')
 		end
+		local switch = castle:halo_teleport_to_room_1()
 		context.owner:apply_halo_teleport_arrival(switch)
 	end,
 })

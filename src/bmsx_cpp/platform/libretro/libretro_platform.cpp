@@ -33,7 +33,6 @@
 
 namespace bmsx {
 namespace {
-constexpr double kAudioLeadFrames = 1.5;
 constexpr double kFrameSpikeMultiplier = 1.2;
 
 std::string buildEngineAssetsPath(const std::string& directory) {
@@ -155,6 +154,15 @@ void LibretroPlatform::postKeyboardEvent(std::string_view code, bool down) {
 
 void LibretroPlatform::clearKeyboardState() {
 	static_cast<LibretroInputHub*>(m_input_hub.get())->clearKeyboardState();
+}
+
+void LibretroPlatform::resetFocusState() {
+	static_cast<LibretroInputHub*>(m_input_hub.get())->resetFocusState();
+}
+
+void LibretroPlatform::notifyFocusChange(bool focused) {
+	resetFocusState();
+	static_cast<LibretroGameViewHost*>(m_gameview_host.get())->notifyFocusChange(focused);
 }
 
 void LibretroPlatform::setHwRenderCallbacks(retro_hw_get_current_framebuffer_t get_current_framebuffer) {
@@ -330,9 +338,6 @@ void LibretroPlatform::setFrameTimeUsec(retro_usec_t usec) {
 	}
 	const double nextFrameTimeSec = static_cast<double>(usec) / 1000000.0;
 	m_frame_time_sec = nextFrameTimeSec;
-	if (auto* audioService = dynamic_cast<LibretroAudioService*>(m_audio_service.get())) {
-		audioService->setFrameTimeSec(m_frame_time_sec);
-	}
 }
 
 void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
@@ -1076,6 +1081,16 @@ void LibretroInputHub::clearKeyboardState() {
 	}
 }
 
+void LibretroInputHub::resetFocusState() {
+	m_prev_state.clear();
+	m_prev_pointer_buttons.fill(false);
+	m_prev_pointer_x = 0;
+	m_prev_pointer_y = 0;
+	m_prev_pointer_position_valid = false;
+	m_pressed_keyboard_codes.clear();
+	clearEvtQ();
+}
+
 SubscriptionHandle LibretroInputHub::subscribe(std::function<void(const InputEvt&)> handler) {
 	m_handlers.push_back(handler);
 	size_t idx = m_handlers.size() - 1;
@@ -1110,31 +1125,20 @@ LibretroAudioService::LibretroAudioService(LibretroPlatform* platform)
 
 void LibretroAudioService::setTiming(double sampleRate, double fps) {
 	m_sample_rate = sampleRate;
-	m_frame_time_sec = 1.0 / fps;
+	m_nominal_frame_time_sec = 1.0 / fps;
 	m_sample_accumulator = 0.0;
-	m_queue_start_samples = 0;
-	m_queue_samples = 0;
-	m_sample_queue.clear();
-	const double framesPerFrame = m_sample_rate * m_frame_time_sec;
-	m_target_buffer_frames = static_cast<size_t>(std::ceil(framesPerFrame * kAudioLeadFrames));
 }
 
 void LibretroAudioService::setFrameTimeSec(double seconds) {
-	m_frame_time_sec = seconds;
-	const double framesPerFrame = m_sample_rate * m_frame_time_sec;
-	m_target_buffer_frames = static_cast<size_t>(std::ceil(framesPerFrame * kAudioLeadFrames));
+	m_nominal_frame_time_sec = seconds;
 }
 
 void LibretroAudioService::resetQueue() {
 	m_sample_accumulator = 0.0;
-	m_queue_start_samples = 0;
-	m_queue_samples = 0;
-	m_sample_queue.clear();
 }
 
 void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
-	// Drive sample count from frame timing and buffer a small lead to smooth jitter.
-	const double samplesPerFrame = m_sample_rate * m_frame_time_sec;
+	const double samplesPerFrame = m_sample_rate * m_nominal_frame_time_sec;
 	m_sample_accumulator += samplesPerFrame;
 	const size_t frames = static_cast<size_t>(m_sample_accumulator);
 	if (frames == 0) {
@@ -1143,35 +1147,12 @@ void LibretroAudioService::collectSamples(AudioBuffer& buffer) {
 	}
 	m_sample_accumulator -= frames;
 
-	const size_t queuedFrames = m_queue_samples / 2;
-	const size_t targetFrames = frames + m_target_buffer_frames;
-	if (queuedFrames < targetFrames) {
-		const size_t renderFrames = targetFrames - queuedFrames;
-		const size_t renderSamples = renderFrames * 2;
-		if (m_mix_buffer.size() < renderSamples) {
-			m_mix_buffer.resize(renderSamples);
-		}
-		m_platform->engine()->soundMaster()->renderSamples(m_mix_buffer.data(), renderFrames, static_cast<i32>(m_sample_rate));
-
-		size_t neededSamples = m_queue_start_samples + m_queue_samples + renderSamples;
-		if (m_queue_start_samples > 0 && neededSamples > m_sample_queue.size()) {
-			std::memmove(m_sample_queue.data(), m_sample_queue.data() + m_queue_start_samples, m_queue_samples * sizeof(int16_t));
-			m_queue_start_samples = 0;
-			neededSamples = m_queue_samples + renderSamples;
-		}
-		if (m_sample_queue.size() < neededSamples) {
-			m_sample_queue.resize(neededSamples);
-		}
-		std::memcpy(m_sample_queue.data() + m_queue_start_samples + m_queue_samples, m_mix_buffer.data(), renderSamples * sizeof(int16_t));
-		m_queue_samples += renderSamples;
+	const size_t totalSamples = frames * 2;
+	if (m_mix_buffer.size() < totalSamples) {
+		m_mix_buffer.resize(totalSamples);
 	}
-
-	buffer.write(m_sample_queue.data() + m_queue_start_samples, frames);
-	m_queue_start_samples += frames * 2;
-	m_queue_samples -= frames * 2;
-	if (m_queue_samples == 0) {
-		m_queue_start_samples = 0;
-	}
+	m_platform->engine()->soundMaster()->renderSamples(m_mix_buffer.data(), frames, static_cast<i32>(m_sample_rate));
+	buffer.write(m_mix_buffer.data(), frames);
 }
 
 Voice* LibretroAudioService::createVoice() {
@@ -1295,9 +1276,23 @@ SubscriptionHandle LibretroGameViewHost::onResize(std::function<void(const Viewp
 }
 
 SubscriptionHandle LibretroGameViewHost::onFocusChange(std::function<void(bool)> handler) {
-	// Libretro handles focus at frontend level
-	(void)handler;
-	return SubscriptionHandle::create([](){});
+	const uint32_t id = m_next_focus_handler_id++;
+	m_focus_handlers.emplace(id, std::move(handler));
+	return SubscriptionHandle::create([this, id]() {
+		m_focus_handlers.erase(id);
+	});
+}
+
+void LibretroGameViewHost::notifyFocusChange(bool focused) {
+	std::vector<std::function<void(bool)>> handlers;
+	handlers.reserve(m_focus_handlers.size());
+	for (const auto& [id, handler] : m_focus_handlers) {
+		(void)id;
+		handlers.push_back(handler);
+	}
+	for (const auto& handler : handlers) {
+		handler(focused);
+	}
 }
 
 } // namespace bmsx

@@ -70,6 +70,7 @@ typedef struct LibretroCore {
 	int64_t (*bmsx_get_ufps)(void);
 	void (*bmsx_keyboard_event)(const char* code, bool down);
 	void (*bmsx_keyboard_reset)(void);
+	void (*bmsx_focus_changed)(bool focused);
 } LibretroCore;
 
 typedef struct FbDev {
@@ -438,7 +439,7 @@ static uint8_t g_mouse_buttons = 0;
 static bool g_mouse_position_valid = false;
 static const char* map_ev_key_to_dom_code(uint16_t code);
 static void core_keyboard_event(const char* code, bool down);
-static void core_keyboard_reset(void);
+static void core_focus_changed(bool focused);
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static const char* map_sdl_scancode_to_dom_code(SDL_Scancode scancode);
 static uint8_t map_sdl_mouse_buttons(uint32_t buttons);
@@ -3411,6 +3412,19 @@ static void audio_push_frames(const int16_t* data, size_t frames) {
 	}
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	if (g_use_sdl) {
+		if (frames > g_audio_buffer_frames) {
+			const size_t drop = frames - g_audio_buffer_frames;
+			data += drop * g_audio_channels;
+			frames = g_audio_buffer_frames;
+			g_audio_overruns += (unsigned)drop;
+		}
+		const Uint32 bytes_per_frame = (Uint32)(g_audio_channels * sizeof(int16_t));
+		const Uint32 max_queued_bytes = (Uint32)(g_audio_buffer_frames * g_audio_channels * sizeof(int16_t));
+		const Uint32 queued_bytes = SDL_GetQueuedAudioSize(g_sdl_audio_device);
+		if (queued_bytes + (Uint32)(frames * g_audio_channels * sizeof(int16_t)) > max_queued_bytes) {
+			g_audio_overruns += queued_bytes / bytes_per_frame;
+			SDL_ClearQueuedAudio(g_sdl_audio_device);
+		}
 		if (SDL_QueueAudio(g_sdl_audio_device, data,
 				(Uint32)(frames * g_audio_channels * sizeof(int16_t))) != 0) {
 			die("SDL_QueueAudio failed: %s", SDL_GetError());
@@ -3500,26 +3514,36 @@ static void audio_set_sw_params(void) {
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static void audio_init_sdl(int sample_rate) {
 	SDL_AudioSpec want;
+	SDL_AudioSpec have;
 	memset(&want, 0, sizeof(want));
+	memset(&have, 0, sizeof(have));
 	want.freq = sample_rate;
 	want.format = AUDIO_S16SYS;
 	want.channels = (Uint8)g_audio_channels;
 	want.samples = (Uint16)kSdlAudioBufferFrames;
-	g_sdl_audio_device = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
+	g_sdl_audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
 	if (!g_sdl_audio_device) {
 		die("SDL_OpenAudioDevice failed: %s", SDL_GetError());
 	}
+	if (have.freq != sample_rate) {
+		die("SDL audio rate mismatch: requested %d got %d", sample_rate, have.freq);
+	}
+	if (have.channels != g_audio_channels) {
+		die("SDL audio channel mismatch: requested %u got %u", g_audio_channels, have.channels);
+	}
 	SDL_PauseAudioDevice(g_sdl_audio_device, 0);
-	g_audio_sample_rate = sample_rate;
+	g_audio_sample_rate = have.freq;
+	g_audio_buffer_frames = have.samples;
 	g_audio_sample_buf_frames = 0;
-	fprintf(stderr, "[libretro-host] audio: sdl rate=%d ch=%u samples=%u\n",
-			sample_rate, g_audio_channels, want.samples);
+	fprintf(stderr, "[libretro-host] audio: sdl rate=%d ch=%u samples=%u queue_cap=%u\n",
+			have.freq, have.channels, have.samples, g_audio_buffer_frames);
 }
 
 static void audio_shutdown_sdl(void) {
 	SDL_CloseAudioDevice(g_sdl_audio_device);
 	g_sdl_audio_device = 0;
 	g_audio_sample_rate = 0;
+	g_audio_buffer_frames = 0;
 	g_audio_sample_buf_frames = 0;
 	g_audio_underruns = 0;
 	g_audio_overruns = 0;
@@ -4100,11 +4124,11 @@ static void core_keyboard_event(const char* code, bool down) {
 	g_core->bmsx_keyboard_event(code, down);
 }
 
-static void core_keyboard_reset(void) {
-	if (!g_core || !g_core->bmsx_keyboard_reset) {
+static void core_focus_changed(bool focused) {
+	if (!g_core || !g_core->bmsx_focus_changed) {
 		return;
 	}
-	g_core->bmsx_keyboard_reset();
+	g_core->bmsx_focus_changed(focused);
 }
 
 static bool input_init_abs_axis(InputDev* dev, unsigned code, int32_t* min_out, int32_t* max_out, bool* has_axis) {
@@ -4504,7 +4528,9 @@ static void poll_input_devices_sdl(void) {
 			}
 			case SDL_WINDOWEVENT:
 				if (ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
-					core_keyboard_reset();
+					core_focus_changed(false);
+				} else if (ev.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+					core_focus_changed(true);
 				}
 				break;
 			case SDL_CONTROLLERDEVICEADDED:
@@ -4703,6 +4729,7 @@ static void load_core(LibretroCore* core, const char* path) {
 	load_symbol(core->handle, "bmsx_get_ufps", &core->bmsx_get_ufps);
 	load_symbol(core->handle, "bmsx_keyboard_event", &core->bmsx_keyboard_event);
 	load_symbol(core->handle, "bmsx_keyboard_reset", &core->bmsx_keyboard_reset);
+	load_symbol(core->handle, "bmsx_focus_changed", &core->bmsx_focus_changed);
 }
 
 static void usage(const char* argv0) {

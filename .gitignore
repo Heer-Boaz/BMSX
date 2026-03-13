@@ -98,6 +98,6 @@ tools/retroarch-gles2
 src/carts/pietious/res/_ignore/**
 !src/carts/pietious/res/_ignore/
 !src/carts/pietious/res/_ignore/c++/
-!src/carts/pietious/res/_ignore/c++/ingamecycle.cpp
-!src/carts/pietious/res/_ignore/c++/gameinteractions.cpp
+# !src/carts/pietious/res/_ignore/c++/**.cpp
+# !src/carts/pietious/res/_ignore/c++/gameinteractions.cpp
 # !src/carts/pietious/res/_ignore/**.py
