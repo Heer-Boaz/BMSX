@@ -12,7 +12,7 @@ import { prepareDebuggerStepOverlay } from './ide_debugger';
 import { computeRuntimeErrorOverlayMaxWidth } from './text_utils';
 import { drawProblemsPanel, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from './problems_panel';
 import { measureText } from './text_utils';
-import { getActiveResourceViewer, resourceViewerTextCapacity } from './resource_viewer';
+import { clampResourceViewerScroll, getActiveResourceViewer, resourceViewerTextCapacity } from './resource_viewer';
 import { applyScrollbarScroll } from './scrollbar';
 import { clearHoverTooltip, updateHoverTooltip } from './intellisense';
 import * as TextEditing from './text_editing_and_selection';
@@ -1838,19 +1838,7 @@ export function scrollResourceViewer(amount: number): void {
 	resourceViewerClampScroll(viewer);
 }
 export function resourceViewerClampScroll(viewer: ResourceViewerState): void {
-	const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
-	if (capacity <= 0) {
-		viewer.scroll = 0;
-		return;
-	}
-	const maxScroll = Math.max(0, viewer.lines.length - capacity);
-	if (!Number.isFinite(viewer.scroll) || viewer.scroll < 0) {
-		viewer.scroll = 0;
-		return;
-	}
-	if (viewer.scroll > maxScroll) {
-		viewer.scroll = maxScroll;
-	}
+	clampResourceViewerScroll(viewer, getCodeAreaBounds(), ide_state.lineHeight);
 }
 export function isPointerOverResourcePanelDivider(x: number, y: number): boolean {
 	if (!ide_state.resourcePanelVisible) {

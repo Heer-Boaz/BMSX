@@ -49,7 +49,7 @@ import { renderTabBar } from './render/render_tab_bar';
 import { renderStatusBar } from './render/render_status_bar';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
-import { handleActionPromptInput, handleEditorInput, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, resourceViewerClampScroll, shouldRepeatKeyFromPlayer, toggleThemeMode } from './ide_input';
+import { handleActionPromptInput, handleEditorInput, handlePointerWheel, handleTextEditorPointerInput, InputController, isKeyJustPressed, shouldRepeatKeyFromPlayer, toggleThemeMode } from './ide_input';
 import { consumeIdeKey } from './ide_input';
 import { CodeLayout } from './code_layout';
 import { getTextSnapshot, splitText } from './text/source_text';
@@ -59,7 +59,6 @@ import type {
 	CodeHoverTooltip,
 	CodeTabContext,
 	EditorSnapshot,
-	EditorTabDescriptor,
 	EditorTabId,
 	EditorDiagnostic,
 	TextField,
@@ -3554,18 +3553,6 @@ export function refreshResourcePanelContents(): void {
 	ide_state.resourceBrowserSelectionIndex = s.selectionIndex;
 }
 
-export function enterResourceViewer(tab: EditorTabDescriptor): void {
-	closeSearch(false, true);
-	closeLineJump(false);
-	ide_state.cursorRevealSuspended = false;
-	tab.dirty = false;
-	// hover state handled by controller; no-op here
-	if (!tab.resource) {
-		return;
-	}
-	resourceViewerClampScroll(tab.resource);
-}
-
 export function selectResourceInPanel(descriptor: ResourceDescriptor): void {
 	if (!descriptor.asset_id || descriptor.asset_id.length === 0) {
 		return;
@@ -3618,17 +3605,6 @@ export function openEventInspectorTab(): void {
 
 export function openRegistryInspectorTab(): void {
 	ide_state.resourcePanel.showRegistryInspector();
-}
-
-export function defaultResourcePanelRatio(): number {
-	const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
-	const relative = Math.min(1, metrics.windowInner.width / metrics.screen.width);
-	const responsiveness = 1 - relative;
-	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
-	const maxRatio = Math.max(minRatio, Math.min(constants.RESOURCE_PANEL_MAX_RATIO, 1 - constants.RESOURCE_PANEL_MIN_EDITOR_RATIO));
-	const ratio = constants.RESOURCE_PANEL_DEFAULT_RATIO
-		+ responsiveness * (constants.RESOURCE_PANEL_MAX_RATIO - constants.RESOURCE_PANEL_DEFAULT_RATIO) * 0.6;
-	return clamp(ratio, minRatio, maxRatio);
 }
 
 export function getResourcePanelWidth(): number {

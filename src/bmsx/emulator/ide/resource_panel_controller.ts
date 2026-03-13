@@ -8,7 +8,7 @@ import type { RectBounds } from '../../rompack/rompack';
 import type { ResourceDescriptor } from '../types';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 import { ide_state } from './ide_state';
-import { applyDefinitionSelection, bottomMargin, codeViewportTop, defaultResourcePanelRatio, focusChunkSource, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab } from './cart_editor';
+import { applyDefinitionSelection, bottomMargin, codeViewportTop, focusChunkSource, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab } from './cart_editor';
 import { openResourceViewerTab } from './resource_viewer';
 import { measureText } from './text_utils';
 import type { CallHierarchyView, CallHierarchyViewNode } from './code_reference';
@@ -755,7 +755,14 @@ export class ResourcePanelController {
 	}
 
 	private defaultRatio(): number {
-		return defaultResourcePanelRatio();
+		const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
+		const relative = Math.min(1, metrics.windowInner.width / metrics.screen.width);
+		const responsiveness = 1 - relative;
+		const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
+		const maxRatio = Math.max(minRatio, Math.min(constants.RESOURCE_PANEL_MAX_RATIO, 1 - constants.RESOURCE_PANEL_MIN_EDITOR_RATIO));
+		const ratio = constants.RESOURCE_PANEL_DEFAULT_RATIO
+			+ responsiveness * (constants.RESOURCE_PANEL_MAX_RATIO - constants.RESOURCE_PANEL_DEFAULT_RATIO) * 0.6;
+		return clamp(ratio, minRatio, maxRatio);
 	}
 
 	private clampRatio(ratio: number): number {

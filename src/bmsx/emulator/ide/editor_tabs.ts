@@ -13,13 +13,16 @@ import {
 	refreshActiveDiagnostics,
 	beginNavigationCapture,
 	completeNavigation,
+	closeLineJump,
 	closeSymbolSearch,
+	getCodeAreaBounds,
 	hideResourcePanel,
-	enterResourceViewer,
 	getTabBarTotalHeight,
 	resetPointerClickTracking,
 } from './cart_editor';
 import { markDiagnosticsDirty } from './diagnostics';
+import { closeSearch } from './editor_search';
+import { clampResourceViewerScroll } from './resource_viewer';
 import { measureText } from './text_utils';
 import { requestSemanticRefresh } from './intellisense';
 import { resetBlink } from './render/render_caret';
@@ -36,6 +39,17 @@ function resolveSource(descriptor: ResourceDescriptor): string {
 	const runtime = Runtime.instance;
 	const path = resolvePath(descriptor);
 	return runtimeLuaPipeline.resourceSourceForChunk(runtime, path);
+}
+
+function activateResourceViewerTab(tab: EditorTabDescriptor): void {
+	closeSearch(false, true);
+	closeLineJump(false);
+	ide_state.cursorRevealSuspended = false;
+	tab.dirty = false;
+	if (!tab.resource) {
+		return;
+	}
+	clampResourceViewerScroll(tab.resource, getCodeAreaBounds(), ide_state.lineHeight);
 }
 
 export function createEntryTabContext(): CodeTabContext {
@@ -212,7 +226,7 @@ export function setActiveTab(tabId: string): void {
 	if (isSameTab) {
 		if (tab.kind === 'resource_view') {
 			ide_state.activeContextReadOnly = false;
-			enterResourceViewer(tab);
+			activateResourceViewerTab(tab);
 			ide_state.runtimeErrorOverlay = null;
 		}
 		return;
@@ -220,7 +234,7 @@ export function setActiveTab(tabId: string): void {
 	ide_state.activeTabId = tabId;
 	if (tab.kind === 'resource_view') {
 		ide_state.activeContextReadOnly = false;
-		enterResourceViewer(tab);
+		activateResourceViewerTab(tab);
 		ide_state.runtimeErrorOverlay = null;
 		return;
 	}

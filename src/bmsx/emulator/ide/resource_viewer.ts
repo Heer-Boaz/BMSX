@@ -207,6 +207,22 @@ export function resourceViewerTextCapacity(viewer: ResourceViewerState, bounds: 
 	return Math.max(0, Math.floor((bounds.codeBottom - textTop) / lineHeight));
 }
 
+export function clampResourceViewerScroll(viewer: ResourceViewerState, bounds: ResourceViewerBounds, lineHeight: number): void {
+	const capacity = resourceViewerTextCapacity(viewer, bounds, lineHeight);
+	if (capacity <= 0) {
+		viewer.scroll = 0;
+		return;
+	}
+	const maxScroll = Math.max(0, viewer.lines.length - capacity);
+	if (!Number.isFinite(viewer.scroll) || viewer.scroll < 0) {
+		viewer.scroll = 0;
+		return;
+	}
+	if (viewer.scroll > maxScroll) {
+		viewer.scroll = maxScroll;
+	}
+}
+
 function appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
 	for (const entry of additions) {
 		target.push(...splitText(entry));

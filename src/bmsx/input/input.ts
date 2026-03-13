@@ -114,6 +114,10 @@ export function makeActionState(actionname: string, partialState?: Partial<Actio
 	};
 }
 
+type BufferedInputEvent = InputEvent & {
+	frame: number;
+};
+
 type DeviceBinding = {
 	handler: InputHandler;
 	source: InputSource;
@@ -134,15 +138,16 @@ export class InputStateManager {
 	 * Represents the input buffer used for processing input data.
 	 * @type {InputBuffer}
 	 */
-	private inputBuffer: InputEvent[];
+	private inputBuffer: BufferedInputEvent[];
 	private readonly buttonStates = new Map<ButtonId, ButtonState>();
 	private readonly latestUnconsumedPressIdByButton = new Map<ButtonId, number>();
 	private readonly latestUnconsumedReleaseIdByButton = new Map<ButtonId, number>();
+	private currentFrame = 0;
 
 	/**
 	 * Constructs an instance of the InputStateManager.
 	 *
-	 * @param bufferframeDuration - The duration in milliseconds for which input events are buffered.
+	 * @param bufferframeDuration - The number of simulation frames for which input events are buffered.
 	 * This value determines how long input events are retained in the buffer before being cleaned up.
 	 */
 	constructor(public bufferframeDuration: number = 150) {
@@ -151,6 +156,7 @@ export class InputStateManager {
 
 	/** Prepare per-button edge flags for a new frame. */
 	beginFrame(currentTime: number): void {
+		this.currentFrame += 1;
 		for (const state of this.buttonStates.values()) {
 			state.justpressed = false;
 			state.justreleased = false;
@@ -168,8 +174,8 @@ export class InputStateManager {
 	 * Updates the input state based on the current time.
 	 * Cleans up old events from the input buffer used for windowed queries.
 	 */
-	update(currentTime: number): void {
-		this.inputBuffer = this.inputBuffer.filter(event => currentTime - event.timestamp <= this.bufferframeDuration);
+	update(_currentTime: number): void {
+		this.inputBuffer = this.inputBuffer.filter(event => this.isBufferedEventInWindow(event, this.bufferframeDuration));
 	}
 
 	/**
@@ -178,44 +184,48 @@ export class InputStateManager {
 	 * @param event - The input event to be added.
 	 */
 	addInputEvent(event: InputEvent): void {
-		let state = this.buttonStates.get(event.identifier);
+		const bufferedEvent: BufferedInputEvent = {
+			...event,
+			frame: this.currentFrame + 1,
+		};
+		let state = this.buttonStates.get(bufferedEvent.identifier);
 		if (!state) {
 			state = makeButtonState();
-			this.buttonStates.set(event.identifier, state);
+			this.buttonStates.set(bufferedEvent.identifier, state);
 		}
-		if (event.eventType === 'press') {
+		if (bufferedEvent.eventType === 'press') {
 			if (state.pressed === true) {
 				// Ignore duplicate press edge, but track latest timestamp for bookkeeping.
-				state.timestamp = event.timestamp;
+				state.timestamp = bufferedEvent.timestamp;
 				return;
 			}
-			this.inputBuffer.push(event);
+			this.inputBuffer.push(bufferedEvent);
 			state.pressed = true;
 			state.justpressed = true;
 			state.justreleased = false;
-			state.pressedAtMs = event.timestamp;
+			state.pressedAtMs = bufferedEvent.timestamp;
 			state.presstime = 0;
-			state.timestamp = event.timestamp;
+			state.timestamp = bufferedEvent.timestamp;
 			state.releasedAtMs = state.releasedAtMs;
-			state.pressId = event.pressId ?? state.pressId;
+			state.pressId = bufferedEvent.pressId ?? state.pressId;
 			state.value = state.value ?? 1;
-			state.consumed = event.consumed ?? false;
-			if (event.consumed !== true && event.pressId != null) {
-				this.latestUnconsumedPressIdByButton.set(event.identifier, event.pressId);
+			state.consumed = bufferedEvent.consumed ?? false;
+			if (bufferedEvent.consumed !== true && bufferedEvent.pressId != null) {
+				this.latestUnconsumedPressIdByButton.set(bufferedEvent.identifier, bufferedEvent.pressId);
 			}
 		} else {
-			this.inputBuffer.push(event);
+			this.inputBuffer.push(bufferedEvent);
 			state.pressed = false;
 			state.justpressed = false;
 			state.justreleased = true;
 			state.presstime = null;
-			state.timestamp = event.timestamp;
-			state.releasedAtMs = event.timestamp;
-			state.pressId = event.pressId ?? state.pressId;
+			state.timestamp = bufferedEvent.timestamp;
+			state.releasedAtMs = bufferedEvent.timestamp;
+			state.pressId = bufferedEvent.pressId ?? state.pressId;
 			state.value = 0;
-			state.consumed = event.consumed ?? false;
-			if (event.consumed !== true && event.pressId != null) {
-				this.latestUnconsumedReleaseIdByButton.set(event.identifier, event.pressId);
+			state.consumed = bufferedEvent.consumed ?? false;
+			if (bufferedEvent.consumed !== true && bufferedEvent.pressId != null) {
+				this.latestUnconsumedReleaseIdByButton.set(bufferedEvent.identifier, bufferedEvent.pressId);
 			}
 		}
 	}
@@ -229,7 +239,7 @@ export class InputStateManager {
 	 */
 	getButtonState(identifier: ButtonId, framewindow?: number): ButtonState {
 		const window = framewindow != null
-			? framewindow * $.timestep_ms
+			? framewindow
 			: this.bufferframeDuration;
 		const currentTime = $.platform.clock.now();
 		const baseState = this.buttonStates.get(identifier);
@@ -246,7 +256,7 @@ export class InputStateManager {
 		const value = baseState?.value ?? (pressed ? 1 : 0);
 		const value2d = baseState?.value2d;
 
-		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && (currentTime - event.timestamp <= window));
+		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && this.isBufferedEventInWindow(event, window));
 		let waspressed = pressed;
 		let wasreleased = justreleased;
 		for (let i = 0; i < inputEvents.length; ++i) {
@@ -279,11 +289,9 @@ export class InputStateManager {
 
 	/** Returns true if an unconsumed press edge happened recently. */
 	hasUnconsumedPress(identifier: ButtonId, windowFrames: number = 2): boolean {
-		const windowMs = windowFrames * $.timestep_ms;
-		const currentTime = $.platform.clock.now();
 		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
 			const event = this.inputBuffer[i];
-			if (currentTime - event.timestamp > windowMs) {
+			if (!this.isBufferedEventInWindow(event, windowFrames)) {
 				break;
 			}
 			if (event.identifier !== identifier) {
@@ -300,11 +308,9 @@ export class InputStateManager {
 		identifier: ButtonId,
 		eventType: 'press' | 'release'
 	): number | null {
-		const windowMs = 2 * $.timestep_ms;
-		const currentTime = $.platform.clock.now();
 		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
 			const event = this.inputBuffer[i];
-			if (currentTime - event.timestamp > windowMs) {
+			if (!this.isBufferedEventInWindow(event, 2)) {
 				break;
 			}
 			if (event.identifier !== identifier || event.eventType !== eventType || event.consumed === true || event.pressId == null) {
@@ -313,6 +319,13 @@ export class InputStateManager {
 			return event.pressId;
 		}
 		return null;
+	}
+
+	private isBufferedEventInWindow(event: BufferedInputEvent, windowFrames: number): boolean {
+		if (windowFrames <= 0) {
+			return false;
+		}
+		return this.currentFrame - event.frame < windowFrames;
 	}
 
 	public getLatestUnconsumedPressId(identifier: ButtonId): number | null | undefined {
@@ -371,6 +384,7 @@ export class InputStateManager {
 		this.inputBuffer = [];
 		this.latestUnconsumedPressIdByButton.clear();
 		this.latestUnconsumedReleaseIdByButton.clear();
+		this.currentFrame = 0;
 	}
 }
 
