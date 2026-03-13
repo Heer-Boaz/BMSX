@@ -12,7 +12,6 @@ import { drawEditorText } from './text_renderer';
 import { Msx1Colors } from '../../systems/msx';
 import { renderCodeArea } from './render/render_code_area';
 import { clamp } from '../../utils/clamp';
-import { tokenKeyFromId } from '../../util/asset_tokens';
 import { CompletionController } from './completion_controller';
 import { drawProblemsPanel, ProblemsPanelController } from './problems_panel';
 import { computeAggregatedEditorDiagnostics, markAllDiagnosticsDirty, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
@@ -43,7 +42,7 @@ import {
 	setFieldText,
 	updateBlink,
 } from './inline_text_field';
-import { buildMemberCompletionItems, clearGotoHoverHighlight, clearReferenceHighlights, describeMetadataValue, extractHoverExpression, inspectLuaExpression, intellisenseUiReady, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaSymbols, navigateToLuaDefinition, requestSemanticRefresh, safeJsonStringify, shouldAutoTriggerCompletions } from './intellisense';
+import { buildMemberCompletionItems, clearGotoHoverHighlight, clearReferenceHighlights, extractHoverExpression, inspectLuaExpression, intellisenseUiReady, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaSymbols, navigateToLuaDefinition, requestSemanticRefresh, shouldAutoTriggerCompletions } from './intellisense';
 import { Scrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar, renderTopBarDropdown } from './render/render_top_bar';
 import { renderTabBar } from './render/render_tab_bar';
@@ -67,8 +66,6 @@ import type {
 	PendingActionPrompt,
 	PointerSnapshot,
 	Position,
-	ResourceCatalogEntry,
-	ResourceSearchResult,
 	ResourceViewerState,
 	RuntimeErrorOverlay,
 	SymbolSearchResult,
@@ -120,6 +117,16 @@ import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
 import { LuaSemanticWorkspace, symbolPriority } from './semantic_model';
 import { refreshSymbolCatalog } from './symbol_catalog';
 import { extractErrorMessage } from '../../lua/luavalue';
+import {
+	appendResourceViewerLines as appendEditorResourceViewerLines,
+	buildResourceCatalog,
+	buildResourceViewerState as buildEditorResourceViewerState,
+	computeResourcePanelRatioBounds as computeEditorResourcePanelRatioBounds,
+	computeDefaultResourcePanelRatio,
+	computeResourceSearchResults,
+	computeResourceViewerImageLayout as computeEditorResourceViewerImageLayout,
+	computeResourceViewerTextCapacity as computeEditorResourceViewerTextCapacity,
+} from './editor_resources';
 import { Viewport } from '../../rompack/rompack';
 
 export const editorFacade = {
@@ -2129,9 +2136,8 @@ export function applySymbolSearchSelection(index: number): void {
 }
 
 export function refreshResourceCatalog(): void {
-	let descriptors: ResourceDescriptor[];
 	try {
-		descriptors = listResourcesStrict();
+		ide_state.resourceCatalog = buildResourceCatalog(listResourcesStrict());
 	} catch (error) {
 		const message = extractErrorMessage(error);
 		ide_state.resourceCatalog = [];
@@ -2142,43 +2148,6 @@ export function refreshResourceCatalog(): void {
 		ide_state.showMessage(`Failed to list resources: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
 		return;
 	}
-	const augmented = descriptors.slice();
-	const assets = $.assets;
-	const imgAssets = Object.values(assets.img);
-	for (const asset of imgAssets) {
-		if (asset.type !== 'atlas') {
-			continue;
-		}
-		const key = asset.resid;
-		if (key !== '_atlas_primary' && !key.startsWith('atlas') && !key.startsWith('_atlas_')) {
-			continue;
-		}
-		if (augmented.some(entry => entry.asset_id === key)) {
-			continue;
-		}
-		augmented.push({ path: `atlas/${key}`, type: 'atlas', asset_id: key });
-	}
-	descriptors = augmented;
-	const entries: ResourceCatalogEntry[] = descriptors.map((descriptor) => {
-		const displayPathSource = descriptor.path.length > 0 ? descriptor.path : (descriptor.asset_id ?? '');
-		const displayPath = displayPathSource.length > 0 ? displayPathSource : '<unnamed>';
-		const typeLabel = descriptor.type ? descriptor.type.toUpperCase() : '';
-		const assetLabel = descriptor.asset_id && descriptor.asset_id !== displayPath ? descriptor.asset_id : null;
-		const searchKeyParts = [displayPath, descriptor.asset_id ?? '', descriptor.type ?? ''];
-		const searchKey = searchKeyParts
-			.filter(part => part.length > 0)
-			.map(part => part.toLowerCase())
-			.join(' ');
-		return {
-			descriptor,
-			displayPath,
-			searchKey,
-			typeLabel,
-			assetLabel,
-		};
-	});
-	entries.sort((a, b) => a.displayPath.localeCompare(b.displayPath));
-	ide_state.resourceCatalog = entries;
 }
 
 export function updateResourceSearchMatches(): void {
@@ -2189,47 +2158,9 @@ export function updateResourceSearchMatches(): void {
 	if (ide_state.resourceCatalog.length === 0) {
 		return;
 	}
-	const query = ide_state.resourceSearchQuery.trim().toLowerCase();
-	if (query.length === 0) {
-		ide_state.resourceSearchMatches = ide_state.resourceCatalog.map(entry => ({ entry, matchIndex: 0 }));
-		ide_state.resourceSearchSelectionIndex = -1;
-		return;
-	}
-	const tokens = query.split(/\s+/).filter(token => token.length > 0);
-	const matches: ResourceSearchResult[] = [];
-	for (const entry of ide_state.resourceCatalog) {
-		let bestIndex = Number.POSITIVE_INFINITY;
-		let valid = true;
-		for (const token of tokens) {
-			const idx = entry.searchKey.indexOf(token);
-			if (idx === -1) {
-				valid = false;
-				break;
-			}
-			if (idx < bestIndex) {
-				bestIndex = idx;
-			}
-		}
-		if (!valid) {
-			continue;
-		}
-		matches.push({ entry, matchIndex: bestIndex });
-	}
-	if (matches.length === 0) {
-		ide_state.resourceSearchMatches = [];
-		return;
-	}
-	matches.sort((a, b) => {
-		if (a.matchIndex !== b.matchIndex) {
-			return a.matchIndex - b.matchIndex;
-		}
-		if (a.entry.displayPath.length !== b.entry.displayPath.length) {
-			return a.entry.displayPath.length - b.entry.displayPath.length;
-		}
-		return a.entry.displayPath.localeCompare(b.entry.displayPath);
-	});
+	const { matches, selectionIndex } = computeResourceSearchResults(ide_state.resourceCatalog, ide_state.resourceSearchQuery);
 	ide_state.resourceSearchMatches = matches;
-	ide_state.resourceSearchSelectionIndex = matches.length > 0 ? 0 : -1;
+	ide_state.resourceSearchSelectionIndex = selectionIndex;
 }
 
 export function ensureResourceSearchSelectionVisible(): void {
@@ -3650,142 +3581,13 @@ export function findResourcePanelIndexByasset_id(asset_id: string): number {
 }
 
 export function buildResourceViewerState(descriptor: ResourceDescriptor): ResourceViewerState {
-	const title = computeResourceTabTitle(descriptor);
-	const lines: string[] = [
-		`Path: ${descriptor.path || '<none>'}`,
-		`Type: ${descriptor.type}`,
-		`Asset ID: ${descriptor.asset_id || '<none>'}`,
-	];
-	const state: ResourceViewerState = {
-		descriptor,
-		lines,
-		error: null,
-		title,
-		scroll: 0,
-	};
-	let error: string = null;
-	const assets = $.assets;
-	lines.push('');
-	const data = assets.data;
-	const img = assets.img;
-	const audioTable = assets.audio;
-	const modelTable = assets.model;
-	const audioevents = assets.audioevents;
-	switch (descriptor.type) {
-		case 'lua': {
-			const path = descriptor.path ?? descriptor.asset_id;
-			const source = runtimeLuaPipeline.resourceSourceForChunk(Runtime.instance, path);
-			if (typeof source === 'string') {
-				appendResourceViewerLines(lines, ['-- Lua Source --', '']);
-				appendResourceViewerLines(lines, source.split(/\r?\n/));
-			} else {
-				error = `Lua source '${descriptor.asset_id}' unavailable.`;
-			}
-			break;
-		}
-		case 'data': {
-			const dataEntry = data?.[tokenKeyFromId(descriptor.asset_id)];
-			if (dataEntry !== undefined) {
-				const json = safeJsonStringify(dataEntry);
-				appendResourceViewerLines(lines, ['-- Data --', '']);
-				appendResourceViewerLines(lines, json.split(/\r?\n/));
-			} else {
-				error = `Data asset '${descriptor.asset_id}' not found.`;
-			}
-			break;
-		}
-		case 'image':
-		case 'atlas':
-		case 'romlabel': {
-			const image = img?.[tokenKeyFromId(descriptor.asset_id)];
-			if (!image) {
-				error = `Image asset '${descriptor.asset_id}' not found.`;
-				break;
-			}
-			const meta = image.imgmeta;
-			const width = meta.width;
-			const height = meta.height;
-			const atlasId = meta.atlasid;
-			const atlassed = meta.atlassed;
-			state.image = {
-				asset_id: descriptor.asset_id,
-				width: Math.max(1, Math.floor(width)),
-				height: Math.max(1, Math.floor(height)),
-				atlassed: Boolean(atlassed),
-				atlasId: atlasId,
-			};
-			appendResourceViewerLines(lines, ['-- Image Metadata --']);
-			appendResourceViewerLines(lines, [`Dimensions: ${width}x${height}`]);
-			appendResourceViewerLines(lines, [`Atlassed: ${atlassed ? 'yes' : 'no'}`]);
-			if (atlasId !== undefined) {
-				appendResourceViewerLines(lines, [`Atlas ID: ${atlasId}`]);
-			}
-			for (const [key, value] of Object.entries(meta)) {
-				if (['width', 'height', 'atlassed', 'atlasid'].includes(key)) {
-					continue;
-				}
-				appendResourceViewerLines(lines, [`${key}: ${describeMetadataValue(value)}`]);
-			}
-			break;
-		}
-		case 'audio': {
-			const audio = audioTable?.[tokenKeyFromId(descriptor.asset_id)];
-			if (!audio) {
-				error = `Audio asset '${descriptor.asset_id}' not found.`;
-				break;
-			}
-			const meta = audio.audiometa ?? {};
-			appendResourceViewerLines(lines, ['-- Audio Metadata --']);
-			const bufferSize = (audio.buffer as { byteLength?: number })?.byteLength;
-			if (typeof bufferSize === 'number') {
-				appendResourceViewerLines(lines, [`Buffer Size: ${bufferSize} bytes`]);
-			}
-			for (const [key, value] of Object.entries(meta)) {
-				appendResourceViewerLines(lines, [`${key}: ${describeMetadataValue(value)}`]);
-			}
-			break;
-		}
-		case 'model': {
-			const model = modelTable?.[tokenKeyFromId(descriptor.asset_id)];
-			if (!model) {
-				error = `Model asset '${descriptor.asset_id}' not found.`;
-				break;
-			}
-			const keys = Object.keys(model);
-			appendResourceViewerLines(lines, ['-- Model Metadata --', `Keys: ${keys.join(', ')}`]);
-			break;
-		}
-		case 'aem': {
-			const events = audioevents?.[tokenKeyFromId(descriptor.asset_id)];
-			if (!events) {
-				error = `Audio event map '${descriptor.asset_id}' not found.`;
-				break;
-			}
-			const json = safeJsonStringify(events);
-			appendResourceViewerLines(lines, ['-- Audio Events --', '']);
-			appendResourceViewerLines(lines, json.split(/\r?\n/));
-			break;
-		}
-		default: {
-			appendResourceViewerLines(lines, ['<no preview available for this asset type>']);
-			break;
-		}
-	}
-	if (error) {
-		lines.push('');
-		lines.push(`Error: ${error}`);
-	}
-	if (lines.length === 0) {
-		lines.push('<empty>');
-	}
-	state.error = error;
+	const state = buildEditorResourceViewerState(descriptor);
+	state.title = computeResourceTabTitle(descriptor);
 	return state;
 }
 
 export function appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
-	for (const entry of additions) {
-		target.push(...splitText(entry));
-	}
+	appendEditorResourceViewerLines(target, additions);
 }
 
 export function openDebugOverviewTab(): void {
@@ -3805,22 +3607,12 @@ export function openRegistryInspectorTab(): void {
 }
 
 export function computePanelRatioBounds(): { min: number; max: number } {
-	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
-	const minEditorRatio = constants.RESOURCE_PANEL_MIN_EDITOR_RATIO;
-	const availableForPanel = Math.max(0, 1 - minEditorRatio);
-	const maxRatio = Math.max(minRatio, Math.min(constants.RESOURCE_PANEL_MAX_RATIO, availableForPanel));
-	return { min: minRatio, max: maxRatio };
+	return computeEditorResourcePanelRatioBounds();
 }
 
 export function defaultResourcePanelRatio(): number {
 	const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
-	const viewportWidth = metrics.windowInner.width;
-	const screenWidth = metrics.screen.width;
-	const relative = Math.min(1, viewportWidth / screenWidth);
-	const responsiveness = 1 - relative;
-	const ratio = constants.RESOURCE_PANEL_DEFAULT_RATIO + responsiveness * (constants.RESOURCE_PANEL_MAX_RATIO - constants.RESOURCE_PANEL_DEFAULT_RATIO) * 0.6;
-	const bounds = computePanelRatioBounds();
-	return Math.max(bounds.min, Math.min(bounds.max, ratio));
+	return computeDefaultResourcePanelRatio(metrics.windowInner.width, metrics.screen.width);
 }
 
 export function getResourcePanelWidth(): number {
@@ -3836,53 +3628,11 @@ export function scrollResourceBrowser(amount: number): void {
 }
 
 export function resourceViewerImageLayout(viewer: ResourceViewerState): { left: number; top: number; width: number; height: number; bottom: number; scale: number } {
-	const info = viewer.image;
-	if (!info) {
-		return null;
-	}
-	const width = Math.max(1, info.width);
-	const height = Math.max(1, info.height);
-	const bounds = getCodeAreaBounds();
-	const totalHeight = Math.max(0, bounds.codeBottom - bounds.codeTop);
-	if (totalHeight <= 0) {
-		return null;
-	}
-	const paddingX = constants.RESOURCE_PANEL_PADDING_X;
-	const contentTop = bounds.codeTop + 2;
-	const availableWidth = Math.max(1, bounds.codeRight - bounds.codeLeft - paddingX * 2);
-	const estimatedTextLines = Math.max(3, Math.min(8, viewer.lines.length + (viewer.error ? 1 : 0)));
-	const reservedTextHeight = Math.min(totalHeight * 0.45, ide_state.lineHeight * estimatedTextLines);
-	const maxImageHeight = Math.max(ide_state.lineHeight * 2, totalHeight - reservedTextHeight);
-	let scale = Math.min(availableWidth / width, maxImageHeight / height);
-	if (!Number.isFinite(scale) || scale <= 0) {
-		scale = Math.min(availableWidth / width, totalHeight / height);
-		if (!Number.isFinite(scale) || scale <= 0) {
-			return null;
-		}
-	}
-	const drawWidth = width * scale;
-	const drawHeight = height * scale;
-	const leftMargin = bounds.codeLeft + paddingX;
-	const centeredOffset = Math.max(0, Math.floor((availableWidth - drawWidth) * 0.5));
-	const left = leftMargin + centeredOffset;
-	const top = contentTop;
-	const bottom = top + drawHeight;
-	return { left, top, width: drawWidth, height: drawHeight, bottom, scale };
+	return computeEditorResourceViewerImageLayout(viewer, getCodeAreaBounds(), ide_state.lineHeight);
 }
 
 export function resourceViewerTextCapacity(viewer: ResourceViewerState): number {
-	const bounds = getCodeAreaBounds();
-	const contentTop = bounds.codeTop + 2;
-	const layout = resourceViewerImageLayout(viewer);
-	let textTop = contentTop;
-	if (layout) {
-		textTop = Math.floor(layout.bottom + ide_state.lineHeight);
-	}
-	if (textTop >= bounds.codeBottom) {
-		return 0;
-	}
-	const availableHeight = Math.max(0, bounds.codeBottom - textTop);
-	return Math.max(0, Math.floor(availableHeight / ide_state.lineHeight));
+	return computeEditorResourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
 }
 
 export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {

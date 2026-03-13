@@ -9,6 +9,7 @@ import type { ResourceDescriptor } from '../types';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 import { ide_state } from './ide_state';
 import { applyDefinitionSelection, bottomMargin, codeViewportTop, focusChunkSource, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab, openResourceViewerTab } from './cart_editor';
+import { clampResourcePanelRatio, computeDefaultResourcePanelRatio, computeResourcePanelPixelWidth } from './editor_resources';
 import { measureText } from './text_utils';
 import type { CallHierarchyView, CallHierarchyViewNode } from './code_reference';
 import { buildWorldInspectorItems } from './world_inspector';
@@ -754,27 +755,16 @@ export class ResourcePanelController {
 	}
 
 	private defaultRatio(): number {
-		const viewportWidth = ide_state.viewportWidth;
-		const screenWidth = ide_state.viewportWidth;
-		const relative = Math.min(1, viewportWidth / screenWidth);
-		const responsiveness = 1 - relative;
-		const ratio = constants.RESOURCE_PANEL_DEFAULT_RATIO + responsiveness * (constants.RESOURCE_PANEL_MAX_RATIO - constants.RESOURCE_PANEL_DEFAULT_RATIO) * 0.6;
-		return this.clampRatio(ratio);
+		const metrics = $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics();
+		return computeDefaultResourcePanelRatio(metrics.windowInner.width, metrics.screen.width);
 	}
 
 	private clampRatio(ratio: number): number {
-		const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
-		const minEditorRatio = constants.RESOURCE_PANEL_MIN_EDITOR_RATIO;
-		const availableForPanel = Math.max(0, 1 - minEditorRatio);
-		const maxRatio = Math.max(minRatio, Math.min(constants.RESOURCE_PANEL_MAX_RATIO, availableForPanel));
-		let resolved = ratio;
-		if (resolved < minRatio) resolved = minRatio;
-		if (resolved > maxRatio) resolved = maxRatio;
-		return resolved;
+		return clampResourcePanelRatio(ratio);
 	}
 
 	private computePixelWidth(ratio: number): number {
-		return Math.floor(ide_state.viewportWidth * ratio);
+		return computeResourcePanelPixelWidth(ide_state.viewportWidth, ratio);
 	}
 
 	// Expose snapshot for editor sync
