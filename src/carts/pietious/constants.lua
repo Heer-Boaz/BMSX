@@ -2,8 +2,11 @@ local constants = {}
 
 constants.flow = {
 	room_transition_frames = 8,
-	world_banner_frames = 31,
-	castle_banner_frames = 31,
+	-- C++ drives GameCycle() from main.cpp/render.cpp at REDRAWING_PERIOD = 40 ms.
+	-- The Lua cart runs at 20 ms ticks, so these banner waits need the 2x scale.
+	banner_prewait_frames = 16,
+	world_banner_frames = 62,
+	castle_banner_frames = 62,
 	room_switch_wait_frames = 6,
 	item_screen_wait_frames = 6,
 	seal_room_dissolve_steps = 7,

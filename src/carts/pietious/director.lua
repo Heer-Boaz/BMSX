@@ -475,7 +475,7 @@ local function define_director_fsm()
 						timelines = {
 							[banner_pre_delay_timeline_id] = {
 								def = {
-									frames = timeline.range(constants.flow.room_transition_frames),
+									frames = timeline.range(constants.flow.banner_prewait_frames),
 									playback_mode = 'once',
 								},
 								autoplay = true,
@@ -494,7 +494,6 @@ local function define_director_fsm()
 							self.pending_banner_mode = nil
 							self.pending_banner_world_number = 0
 							self.pending_banner_post_action = nil
-							self:enter_transition('transition')
 							self.events:emit('appearance')
 						end,
 					},
@@ -521,11 +520,10 @@ local function define_director_fsm()
 						},
 						tags = { 'd.bt' },
 						entering_state = function(self)
-							self:set_active_space('transition')
 							if self.banner_mode == 'world_banner' then
 								self.events:emit('gamestart')
 							end
-							self.events:emit('transition', { lines = self:banner_lines(self.banner_mode, self.banner_world_number) })
+							self:enter_transition('transition', { lines = self:banner_lines(self.banner_mode, self.banner_world_number) })
 							local timeline_id = self.banner_mode == 'world_banner' and banner_world_timeline_id or banner_castle_timeline_id
 							self:play_timeline(timeline_id, { rewind = true, snap_to_start = true })
 						end,
