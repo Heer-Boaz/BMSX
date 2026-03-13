@@ -100,16 +100,15 @@ action_effects.register_effect('halo', {
 		return true
 	end,
 	handler = function(context)
-		local director = object('d')
 		local castle = object('c')
 		local from_world = (object('room').world_number or 0) ~= 0
-		if from_world then
-			director.events:emit('halo_transition_start_from_world')
-		else
-			director.events:emit('halo_transition_start')
-		end
-		local switch = castle:halo_teleport_to_room_1()
+		local switch = castle:halo_teleport_to_room_1(not from_world)
 		context.owner:apply_halo_teleport_arrival(switch)
+		if from_world then
+			context.owner:emit_gameplay_fact('halo_resolved_from_world')
+			return
+		end
+		context.owner:emit_gameplay_fact('halo_resolved_in_castle')
 	end,
 })
 

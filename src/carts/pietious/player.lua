@@ -2522,6 +2522,9 @@ local function define_player_fsm()
 	-- and sword cooldown decrement.
 	local function wrap_state_update(update_handler)
 		return function(self, state, event)
+			-- Held-state must follow authoritative runtime [p] state every frame.
+			-- That keeps movement stable even if a jp/jr edge is missed once.
+			self:sync_input_state_from_runtime()
 			if not self:has_tag(state_tags.variant.jumping) then
 				self.jumping_from_elevator = false
 			end

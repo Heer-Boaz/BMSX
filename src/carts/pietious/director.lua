@@ -67,6 +67,8 @@ local banner_castle_show_event = 'd.bc.s'
 local room_switch_wait_timeline_id = 'director.wait.room_switch'
 local item_screen_open_timeline_id = 'director.wait.item.open'
 local item_screen_close_timeline_id = 'director.wait.item.close'
+local item_screen_halo_request_timeline_id = 'director.item.halo.request'
+local item_screen_halo_request_event = 'd.ih.r'
 local lithograph_open_timeline_id = 'director.wait.lithograph.open'
 local lithograph_close_timeline_id = 'director.wait.lithograph.close'
 local seal_timeline_id = 'director.seal'
@@ -181,6 +183,11 @@ end
 function director:finish_castle_banner_transition()
 	self.banner_world_number = 0
 	return '/room_switch_wait'
+end
+
+function director:finish_castle_halo_banner_transition()
+	self.banner_world_number = 0
+	return '/room'
 end
 
 function director:finish_castle_emerge_banner_transition()
@@ -357,8 +364,6 @@ local function define_director_fsm()
 			['world_enter_transition_start'] = '/world_transition_enter',
 			['world_leave_transition_start'] = '/world_transition_leave',
 			['shrine_transition_start'] = '/shrine',
-			['halo_transition_start'] = '/halo_teleport',
-			['halo_transition_start_from_world'] = '/halo_teleport_from_world',
 			['seal_dissolution_start'] = '/seal_dissolution',
 			['title_screen_start'] = '/title_screen',
 			['story_start'] = '/story',
@@ -485,8 +490,9 @@ local function define_director_fsm()
 					},
 				},
 			banner_transition = {
-				initial = 'world_prewait',
+				initial = 'idle',
 				states = {
+					idle = {},
 					world_prewait = {
 						timelines = {
 							[banner_pre_delay_timeline_id] = {
@@ -617,10 +623,35 @@ local function define_director_fsm()
 						},
 					},
 					halo = {
-						entering_state = function(self)
-							self.events:emit('player.halo_trigger')
-						end,
+						timelines = {
+							[item_screen_halo_request_timeline_id] = {
+								def = {
+									frames = timeline.range(1),
+									playback_mode = 'once',
+									markers = {
+										{ frame = 0, event = item_screen_halo_request_event },
+									},
+								},
+								autoplay = true,
+								stop_on_exit = true,
+								play_options = {
+									rewind = true,
+									snap_to_start = true,
+								},
+							},
+						},
 						on = {
+							[item_screen_halo_request_event] = function(self)
+								self.events:emit('player.halo_trigger')
+							end,
+							['halo_resolved_in_castle'] = {
+								emitter = 'pietolon',
+								go = '/halo_teleport',
+							},
+							['halo_resolved_from_world'] = {
+								emitter = 'pietolon',
+								go = '/castle_halo_banner',
+							},
 							['halo_trigger_cancelled'] = '/item_screen/active',
 						},
 					},
@@ -664,25 +695,24 @@ local function define_director_fsm()
 						self:enter_transition('halo')
 					end,
 			},
-			halo_teleport_from_world = {
+			castle_halo_banner = {
+				on = {
+					[banner_castle_show_event] = function(self)
+						self:enter_transition('transition', { lines = self:banner_lines('castle_banner', 0) })
+					end,
+				},
 				timelines = {
-					[halo_teleport_timeline_id] = {
-						def = {
-							frames = timeline.range(1),
-							playback_mode = 'once',
-						},
+					[banner_castle_timeline_id] = {
 						autoplay = true,
 						stop_on_exit = true,
 						play_options = {
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_end = '/banner_transition/castle_prewait',
+						on_end = director.finish_castle_halo_banner_transition,
 					},
 				},
-				entering_state = function(self)
-					self:enter_transition('halo')
-				end,
+				tags = { 'd.bt' },
 			},
 			-- SEAL DISSOLUTION — runs a 95-frame timeline that:
 				--   frames 0–31: screen flash phase (white overlay toggles).

@@ -762,14 +762,14 @@ function castle:leave_world_to_castle()
 	}
 end
 
-function castle:halo_teleport_to_room_1()
+function castle:halo_teleport_to_room_1(emit_room_enter_now)
 	local room = current_room()
 	local from_room_number = self.current_room_number
 
 	room:load_room(halo_destination_room_number)
 	self.current_room_number = halo_destination_room_number
 	local switch = create_room_switch(from_room_number, self.current_room_number, 'halo')
-	self:commit_room_switch(switch, 0, 5, 12)
+	self:commit_room_switch(switch, 0, 5, 12, emit_room_enter_now)
 	switch.spawn_x = constants.player.start_x
 	switch.spawn_y = constants.player.start_y
 	switch.spawn_facing = 1
