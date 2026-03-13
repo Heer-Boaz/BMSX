@@ -313,8 +313,14 @@ export class InputStateManager {
 			if (!this.isBufferedEventInWindow(event, 2)) {
 				break;
 			}
-			if (event.identifier !== identifier || event.eventType !== eventType || event.consumed === true || event.pressId == null) {
+			if (event.identifier !== identifier || event.pressId == null) {
 				continue;
+			}
+			if (event.eventType !== eventType) {
+				return null;
+			}
+			if (event.consumed === true) {
+				return null;
 			}
 			return event.pressId;
 		}

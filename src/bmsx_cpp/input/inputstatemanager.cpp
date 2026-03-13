@@ -221,11 +221,14 @@ std::optional<i32> InputStateManager::getLatestUnconsumedEdgeId(const std::strin
 		if (evt.timestamp < cutoff) {
 			break;
 		}
-		if (evt.identifier != button ||
-			evt.eventType != eventType ||
-			evt.consumed ||
-			!evt.pressId.has_value()) {
+		if (evt.identifier != button || !evt.pressId.has_value()) {
 			continue;
+		}
+		if (evt.eventType != eventType) {
+			return std::nullopt;
+		}
+		if (evt.consumed) {
+			return std::nullopt;
 		}
 		return evt.pressId;
 	}
