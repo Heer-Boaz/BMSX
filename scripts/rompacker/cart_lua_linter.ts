@@ -1123,6 +1123,52 @@ function countHasTagCalls(expression: LuaExpression): number {
 	}
 }
 
+function countSplitNestedIfHasTagCalls(statement: LuaIfStatement): number {
+	let total = 0;
+	let depth = 0;
+	let current: LuaIfStatement | null = statement;
+	while (current) {
+		if (current.clauses.length !== 1) {
+			return 0;
+		}
+		const clause = current.clauses[0];
+		if (!clause.condition) {
+			return 0;
+		}
+		const conditionHasTagCount = countHasTagCalls(clause.condition);
+		if (conditionHasTagCount > 1) {
+			return 0;
+		}
+		total += conditionHasTagCount;
+		depth += 1;
+		if (clause.block.body.length !== 1) {
+			break;
+		}
+		const nested = clause.block.body[0];
+		if (nested.kind !== LuaSyntaxKind.IfStatement) {
+			break;
+		}
+		current = nested;
+	}
+	if (depth <= 1 || total <= 1) {
+		return 0;
+	}
+	return total;
+}
+
+function lintSplitNestedIfHasTagPattern(statement: LuaIfStatement, issues: LuaLintIssue[]): void {
+	const hasTagCheckCount = countSplitNestedIfHasTagCalls(statement);
+	if (hasTagCheckCount <= 1) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'multi_has_tag_pattern',
+		statement,
+		`Nested if-chain splits ${hasTagCheckCount} has_tag checks across multiple statements. This is a forbidden workaround for the multi has_tag rule. Use tag_groups, tag_derivations, or derived_tags instead.`,
+	);
+}
+
 function isSelfExpressionRoot(expression: LuaExpression): boolean {
 	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
 		return expression.name === 'self';
@@ -6386,6 +6432,7 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 						'imgid fallback initialization is forbidden. Remove nil checks for imgid defaults; use deterministic setup.',
 					);
 				}
+				lintSplitNestedIfHasTagPattern(statement, issues);
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
 						lintExpression(clause.condition, issues);
