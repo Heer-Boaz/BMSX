@@ -106,6 +106,10 @@ const MIX_TARGET_MIN_FRAMES = 384;
 const MIX_TARGET_MAX_FRAMES = 4096;
 const MIX_TARGET_MIN_FRAMES_IOS = 768;
 const MIX_TARGET_MAX_FRAMES_IOS = 4096;
+const MIX_REFILL_REARM_MARGIN_FRAMES = 128;
+const MIX_REFILL_REARM_MARGIN_FRAMES_IOS = 256;
+const MIX_REFILL_REQUEST_AHEAD_FRAMES = 256;
+const MIX_REFILL_REQUEST_AHEAD_FRAMES_IOS = 384;
 const PCM_SCALE = 1 / 32768;
 const PCM_INT16_MIN = -32768;
 const PCM_INT16_MAX = 32767;
@@ -1172,7 +1176,10 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	private computeMixTargetFrames(): number {
-		const requested = Math.ceil(this.mixTargetAheadSec * this.mixSampleRate);
+		const refillMargin = isIOSAudioTarget() ? MIX_REFILL_REARM_MARGIN_FRAMES_IOS : MIX_REFILL_REARM_MARGIN_FRAMES;
+		const requestAhead = isIOSAudioTarget() ? MIX_REFILL_REQUEST_AHEAD_FRAMES_IOS : MIX_REFILL_REQUEST_AHEAD_FRAMES;
+		// Keep the mixer at the same high-water target the browser worklet uses for rearming.
+		const requested = Math.ceil(this.mixTargetAheadSec * this.mixSampleRate) + requestAhead + refillMargin;
 		if (isIOSAudioTarget()) {
 			return clamp(requested, MIX_TARGET_MIN_FRAMES_IOS, MIX_TARGET_MAX_FRAMES_IOS);
 		}

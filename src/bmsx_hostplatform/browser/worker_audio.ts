@@ -18,6 +18,10 @@ const WORKLET_TARGET_MIN_DEFAULT = 384;
 const WORKLET_TARGET_MAX_DEFAULT = 4096;
 const WORKLET_TARGET_MIN_IOS = 768;
 const WORKLET_TARGET_MAX_IOS = 4096;
+const WORKLET_REARM_MARGIN_DEFAULT = 128;
+const WORKLET_REARM_MARGIN_IOS = 256;
+const WORKLET_REQUEST_AHEAD_DEFAULT = 256;
+const WORKLET_REQUEST_AHEAD_IOS = 384;
 const NEED_PUMP_BUDGET_FRAMES = 8192;
 
 function isIOSDevice(): boolean {
@@ -451,7 +455,10 @@ export class WorkerStreamingAudioService implements AudioService {
 	};
 
 	private computeTargetFillFramesMain(): number {
-		const requested = Math.ceil(this.ctx.sampleRate * this.frameTimeSec);
+		const refillMargin = this.preferHighLead ? WORKLET_REARM_MARGIN_IOS : WORKLET_REARM_MARGIN_DEFAULT;
+		const requestAhead = this.preferHighLead ? WORKLET_REQUEST_AHEAD_IOS : WORKLET_REQUEST_AHEAD_DEFAULT;
+		// Match the worklet's rearm threshold so refill requests can actually restore steady-state headroom.
+		const requested = Math.ceil(this.ctx.sampleRate * this.frameTimeSec) + requestAhead + refillMargin;
 		const minTarget = this.preferHighLead ? WORKLET_TARGET_MIN_IOS : WORKLET_TARGET_MIN_DEFAULT;
 		const maxTarget = this.preferHighLead ? WORKLET_TARGET_MAX_IOS : WORKLET_TARGET_MAX_DEFAULT;
 		const target = requested < minTarget ? minTarget : (requested > maxTarget ? maxTarget : requested);
