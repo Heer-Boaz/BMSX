@@ -31,7 +31,7 @@ function btnode.new(id, priority)
 end
 
 function btnode:tick(_target, _blackboard)
-	error('behaviour tree node '' .. tostring(self.id) .. '' must implement tick().')
+	error('behaviour tree node "' .. tostring(self.id) .. '" must implement tick().')
 end
 
 local parametrizednode = {}
@@ -314,11 +314,11 @@ local behaviourtreedefinitions = {}
 
 local function build_node(spec, id)
 	if type(spec) ~= 'table' then
-		error('behavior tree '' .. tostring(id) .. '' has invalid node spec: expected table.')
+		error('behavior tree "' .. tostring(id) .. '" has invalid node spec: expected table.')
 	end
 	local node_type = spec.type or spec.kind or spec.node
 	if node_type == nil then
-		error('behavior tree '' .. tostring(id) .. '' node is missing required type/kind/node.')
+		error('behavior tree "' .. tostring(id) .. '" node is missing required type/kind/node.')
 	end
 	if node_type == 'selector' then
 		local children = {}
@@ -382,18 +382,18 @@ local function build_node(spec, id)
 		end
 		return compositeaction.new(id, actions, spec.priority, spec.parameters)
 	end
-	error('behavior tree '' .. tostring(id) .. '' has unsupported node type '' .. tostring(node_type) .. ''.')
+	error('behavior tree "' .. tostring(id) .. '" has unsupported node type "' .. tostring(node_type) .. '".')
 end
 
 function behaviourtree.register_definition(id, definition)
 	if type(id) ~= 'string' or #id == 0 then
 		error('behavior tree definition id must be a non-empty string.')
 	end
-	if behaviourtreedefinitions[id] ~= nil then
-		error('behavior tree '' .. id .. '' is already registered.')
-	end
+	-- if behaviourtreedefinitions[id] ~= nil then
+	-- 	error('behavior tree '' .. id .. '' is already registered.')
+	-- end
 	if type(definition) ~= 'table' then
-		error('behavior tree '' .. id .. '' definition must be a table.')
+		error('behavior tree "' .. id .. '" definition must be a table.')
 	end
 	local root = definition.root or definition
 	build_node(root, id)
@@ -403,7 +403,7 @@ end
 function behaviourtree.instantiate(id)
 	local def = behaviourtreedefinitions[id]
 	if def == nil then
-		error('behavior tree '' .. tostring(id) .. '' is not registered.')
+		error('behavior tree "' .. tostring(id) .. '" is not registered.')
 	end
 	local root = def.root or def
 	return build_node(root, id)
