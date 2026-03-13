@@ -45,7 +45,6 @@ function enemy_base.bind(self)
 			self:on_overlap(event)
 		end,
 	})
-
 	
 	self.events:on({
 		event = 'shrine_transition_enter',
@@ -55,7 +54,16 @@ function enemy_base.bind(self)
 		end,
 	})
 	self.events:on({
-		event = 'shrine_transition_exit',
+		event = 'world_transition_start',
+		emitter = 'd',
+		subscriber = self,
+		handler = function()
+			self:mark_for_disposal()
+		end,
+	})
+	self.events:on({
+		event = 'room',
+		emitter = 'd',
 		subscriber = self,
 		handler = function()
 			self:set_space('main')
