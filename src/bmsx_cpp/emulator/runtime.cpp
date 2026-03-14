@@ -369,10 +369,11 @@ void Runtime::commitFrameOnVblankEdge() {
 	completeTickIfPending(m_frameState, m_vblankSequence);
 }
 
-void Runtime::completeTickIfPending(const FrameState& frameState, uint64_t vblankSequence) {
+void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSequence) {
 	if (m_lastCompletedVblankSequence == vblankSequence) {
 		return;
 	}
+	frameState.tickCompleted = true;
 	m_lastCompletedVblankSequence = vblankSequence;
 	m_lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 	m_lastTickCompleted = true;
@@ -485,21 +486,18 @@ void Runtime::tickUpdate() {
 		return;
 	}
 
-	const auto isUpdatePhasePending = [this]() {
-		return m_pendingCall == PendingCall::Entry;
-	};
 	const auto finalizeUpdateSlice = [this]() {
-		if (m_pendingCall != PendingCall::None) {
+		if (hasEntryContinuation() && !m_frameState.tickCompleted) {
 			return;
 		}
 		m_frameActive = false;
 	};
 
 	if (m_frameActive) {
-		if (isUpdatePhasePending()) {
+		if (hasEntryContinuation()) {
 			executeUpdateCallback();
 			flushAssetEdits();
-			m_frameState.updateExecuted = !isUpdatePhasePending();
+			m_frameState.updateExecuted = !hasEntryContinuation();
 		}
 		finalizeUpdateSlice();
 		return;
@@ -518,7 +516,7 @@ void Runtime::tickUpdate() {
 
 	const int carryBudget = m_pendingCarryBudget;
 	m_pendingCarryBudget = 0;
-	m_frameState.updateExecuted = false;
+	m_frameState = FrameState{};
 	m_frameState.cycleBudgetRemaining = m_cycleBudgetPerFrame + carryBudget;
 	m_frameState.cycleBudgetGranted = m_cycleBudgetPerFrame + carryBudget;
 	m_frameState.cycleCarryGranted = carryBudget;
@@ -567,7 +565,7 @@ void Runtime::tickUpdate() {
 	view->applyAperture = readViewBool(viewTable->get(viewApertureKey), "enable_aperture");
 
 	m_debugUpdateCountTotal += 1;
-	m_frameState.updateExecuted = !isUpdatePhasePending();
+	m_frameState.updateExecuted = !hasEntryContinuation();
 	flushAssetEdits();
 	finalizeUpdateSlice();
 }
@@ -811,8 +809,12 @@ bool Runtime::consumeLastTickCompletion(i64& outSequence, int& outRemaining) {
 }
 
 bool Runtime::isDrawPending() const {
-	return m_pendingCall == PendingCall::Entry
+	return hasEntryContinuation()
 		|| m_runtimeFailed;
+}
+
+bool Runtime::hasEntryContinuation() const {
+	return m_pendingCall == PendingCall::Entry;
 }
 
 void Runtime::refreshMemoryMap() {
@@ -966,35 +968,37 @@ void Runtime::executeUpdateCallback() {
 			if (m_waitForVblankTargetSequence == 0) {
 				m_waitingForVblank = false;
 				m_clearBackQueuesAfterWaitResume = false;
-				return;
-			}
-			if (m_vblankPendingClear && m_vblankActive && m_vblankSequence < m_waitForVblankTargetSequence) {
-				setVblankStatus(false);
-				m_vblankPendingClear = false;
-				m_vblankClearOnIrqEnd = false;
-			}
-			if (m_vblankSequence < m_waitForVblankTargetSequence) {
-				if (m_frameState.cycleBudgetRemaining > 0) {
-					const int idleCycles = m_frameState.cycleBudgetRemaining;
-					advanceHardware(idleCycles);
-					processIrqAck();
+			} else {
+				if (m_vblankPendingClear && m_vblankActive && m_vblankSequence < m_waitForVblankTargetSequence) {
+					setVblankStatus(false);
+					m_vblankPendingClear = false;
+					m_vblankClearOnIrqEnd = false;
 				}
 				if (m_vblankSequence < m_waitForVblankTargetSequence) {
+					if (m_frameState.cycleBudgetRemaining > 0) {
+						const int idleCycles = m_frameState.cycleBudgetRemaining;
+						advanceHardware(idleCycles);
+						processIrqAck();
+					}
+					if (m_vblankSequence < m_waitForVblankTargetSequence) {
+						return;
+					}
+				}
+				m_waitingForVblank = false;
+				m_waitForVblankTargetSequence = 0;
+				// Clear queues on the next runnable slice after the completed frame was presented.
+				m_clearBackQueuesAfterWaitResume = true;
+				if (m_frameState.tickCompleted) {
 					return;
 				}
 			}
-			m_waitingForVblank = false;
-			m_waitForVblankTargetSequence = 0;
-			// Defer queue reset until the next slice so the completed frame can still be presented.
-			m_clearBackQueuesAfterWaitResume = true;
-			return;
 		}
 		if (m_clearBackQueuesAfterWaitResume) {
 			RenderQueues::clearBackQueues();
 			m_clearBackQueuesAfterWaitResume = false;
 		}
 		processIrqAck();
-		if (m_pendingCall != PendingCall::Entry) {
+		if (!hasEntryContinuation()) {
 			return;
 		}
 		RunResult result = runWithBudget();

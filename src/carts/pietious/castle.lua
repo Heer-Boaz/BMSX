@@ -148,11 +148,8 @@ local function build_progression_program()
 				payload = {
 					room_number = 106,
 					condition = 'r106.wall',
+					play_appearance = true,
 				},
-			},
-			{
-				op = 'emit_event',
-				event = 'appearance',
 			},
 		},
 	}
@@ -233,6 +230,9 @@ local function build_progression_program()
 				end
 				ctx:refresh_current_room_customizations()
 				room_spawner.spawn_all_for_room(room)
+				if event.play_appearance then
+					ctx.events:emit('appearance')
+				end
 			end,
 			emit_event = function(ctx, command)
 				local payload = {}

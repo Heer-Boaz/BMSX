@@ -151,7 +151,7 @@ public:
 	// Frame lifecycle
 	// ─────────────────────────────────────────────────────────────────────────
 	
-	// Reset edge flags at start of frame (call BEFORE processing events)
+	// Advance per-simulation-frame edge state
 	void beginFrame(f64 currentTimeMs);
 
 	// Poll all input sources
@@ -203,12 +203,8 @@ private:
 	// Repeat records for repeat pulse
 	std::unordered_map<std::string, ActionRepeatRecord> m_actionRepeatRecords;
 
-	// Last press/release ids surfaced as justpressed/justreleased per action
-	std::unordered_map<std::string, i32> m_actionPressRecords;
-	std::unordered_map<std::string, i32> m_actionReleaseRecords;
-
-	// Per-frame buffered edge cache so repeated getActionState() calls in the same frame
-	// keep justpressed/justreleased stable for the same buffered edge id.
+	// Last buffered edge surfaced per action so repeated getActionState() calls in the same sim frame
+	// stay stable, while older buffered edges do not replay forever.
 	struct ActionBufferedEdgeFrameRecord {
 		i64 frame = -1;
 		i32 edgeId = -1;
@@ -216,8 +212,11 @@ private:
 	std::unordered_map<std::string, ActionBufferedEdgeFrameRecord> m_actionBufferedPressFrameRecords;
 	std::unordered_map<std::string, ActionBufferedEdgeFrameRecord> m_actionBufferedReleaseFrameRecords;
 	
-	// Frame counter
+	// Host poll frame counter
 	i64 m_frameCounter = 0;
+
+	// Simulation frame counter for buffered gameplay edges
+	i64 m_simFrameCounter = 0;
 	
 	// Last poll timestamp
 	std::optional<f64> m_lastPollTimestampMs;
@@ -250,6 +249,8 @@ private:
 	
 	// Resolve action timestamp
 	f64 resolveActionTimestamp(const ActionState& state);
+
+	ButtonState getSimButtonState(const std::string& button, InputSource source, std::optional<i32> windowFrames = std::nullopt);
 	
 	// Ensure repeat state exists
 	ActionRepeatRecord& ensureRepeatState(const std::string& action);

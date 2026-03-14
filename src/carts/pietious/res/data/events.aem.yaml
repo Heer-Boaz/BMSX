@@ -143,7 +143,23 @@ events:
                       - stop_music: true
                       - audio_id: dying
 
-    enterleave:
+    enter_world_start:
+        channel: sfx
+        rules:
+            - go:
+                  sequence:
+                      - stop_music: true
+                      - audio_id: enterleave
+
+    enter_shrine_start:
+        channel: sfx
+        rules:
+            - go:
+                  sequence:
+                      - stop_music: true
+                      - audio_id: enterleave
+
+    leave_shrine_overlay:
         channel: sfx
         rules:
             - go:

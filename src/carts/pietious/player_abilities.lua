@@ -67,7 +67,7 @@ action_effects.register_effect('pepernoot', {
 			direction = owner.facing,
 			pos = { x = spawn_x, y = spawn_y, z = 113 },
 		})
-		owner.weapon_level = owner.weapon_level - constants.secondary_weapon.pepernoot_weapon_level_cost
+		-- owner.weapon_level = owner.weapon_level - constants.secondary_weapon.pepernoot_weapon_level_cost
 		owner:emit_weapon_changed()
 		owner.events:emit('fire_pepernoot')
 	end,

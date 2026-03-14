@@ -6,7 +6,6 @@ vlokfoe.__index = vlokfoe
 
 function vlokfoe:ctor()
 	self:gfx('vlok')
-	self.collider.enabled = false -- debug
 	enemy_base.setup_projectile_boundary(self)
 end
 

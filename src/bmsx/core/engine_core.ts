@@ -95,14 +95,6 @@ export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number)
 	return Math.floor(numerator / refreshHzScaled);
 }
 
-export function calcCyclesPerFrame(cpuHz: number, refreshHz: number): number {
-	if (!Number.isFinite(refreshHz) || refreshHz <= 0) {
-		throw new Error('[EngineCore] refreshHz must be a positive number.');
-	}
-	const refreshHzScaled = Math.round(refreshHz * HZ_SCALE);
-	return calcCyclesPerFrameScaled(cpuHz, refreshHzScaled);
-}
-
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
 export const renderGate: GateGroup = taskGate.group('render:main');
@@ -132,9 +124,6 @@ export class EngineCore {
 	 * The time difference between the current frame and the previous frame.
 	 */
 	public deltatime: number = 0;
-	private debugTickReportAtMs: number = 0;
-	private debugTickHostFrames: number = 0;
-	private debugTickUpdates: number = 0;
 	private cycleCarry: number = 0;
 
 	public get timestep_ms(): number { return this.update_interval_ms; } // ms per update = 1000 / fps
@@ -723,6 +712,7 @@ export class EngineCore {
 	 */
 	public update(deltaTime: number): void {
 		let failed = false;
+		Input.instance.beginFrame();
 		// Step physics first so world object logic can react to post-collision resolved positions.
 		try {
 			$.world.run(deltaTime, false);
@@ -773,140 +763,82 @@ export class EngineCore {
 	private run = (currentTime: number): void => {
 		if (!this.running) return;
 
-		const profile = (globalThis as any).__bmsx_profile_frames;
-		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
-		if (debugTickRate) {
-			if (this.debugTickReportAtMs === 0) {
-				this.debugTickReportAtMs = currentTime;
-			}
-			this.debugTickHostFrames += 1;
-		}
-		const t0 = profile ? performance.now() : 0;
-		let tPoll = 0;
-		let tUpdate = 0;
-		let tUpdateStart = 0;
-		let tPresentTick = 0;
-		let tDraw = 0;
-		let t1 = 0;
-
 		try {
-			if (profile) t1 = performance.now();
 			Input.instance.pollInput();
-			if (profile) tPoll = performance.now() - t1;
+			const hostDeltaMs = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
+			this.last_update = currentTime;
 
-				const hostDeltaMs = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
-				this.last_update = currentTime;
-
-				if (this._paused) {
-					this.wasupdated = true;
-					this.deltatime = hostDeltaMs;
-					this.accumulated_time = 0;
-					if (profile) t1 = performance.now();
-					this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
-					if (profile) tPresentTick = performance.now() - t1;
-				if (profile) t1 = performance.now();
+			if (this._paused) {
+				this.wasupdated = true;
+				this.deltatime = hostDeltaMs;
+				this.accumulated_time = 0;
+				this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
 				this.view.drawgame();
-				if (profile) tDraw = performance.now() - t1;
-				if (profile) {
-					const total = performance.now() - t0;
-					if (total > 50) {
-						console.warn(`[BMSX][frame] slow=${total.toFixed(1)}ms poll=${tPoll.toFixed(1)}ms presentTick=${tPresentTick.toFixed(1)}ms draw=${tDraw.toFixed(1)}ms paused=true`);
-					}
-				}
 				return;
 			}
 
-				const maxAccumulated = this.timestep_ms * MAX_SUBSTEPS;
-				this.accumulated_time = clamp(this.accumulated_time + hostDeltaMs, 0, maxAccumulated);
-				this.wasupdated = false;
-				let presentQueued = false;
+			const maxAccumulated = this.timestep_ms * MAX_SUBSTEPS;
+			this.accumulated_time = clamp(this.accumulated_time + hostDeltaMs, 0, maxAccumulated);
+			this.wasupdated = false;
+			let presentQueued = false;
 
-				const runtime = Runtime.instance;
-				let ticksStarted = 0;
-				let slicesProcessed = 0;
-				if (profile) tUpdateStart = performance.now();
-				const baseBudget = this.computeCycleBudget(runtime);
-				const runTickPresentation = () => {
-					// Presentation-facing delta time should reflect host timing.
-					this.deltatime = hostDeltaMs;
-					if (profile) t1 = performance.now();
-					this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
-					if (profile) tPresentTick += performance.now() - t1;
-					presentQueued = true;
-				};
-				if (!runGate.ready || this.paused) {
-					this.accumulated_time = 0;
-				} else {
-					const slicesAvailable = Math.min(Math.floor(this.accumulated_time / this.timestep_ms), MAX_SUBSTEPS);
-					for (; slicesProcessed < slicesAvailable;) {
-						if (!runGate.ready || this.paused) {
-							this.accumulated_time = 0;
-							break;
-						}
-						const tickActive = runtime.hasActiveTick();
-						const carryBudget = tickActive ? 0 : this.cycleCarry;
-						if (carryBudget !== 0) {
-							this.cycleCarry = 0;
-						}
-						runtime.grantCycleBudget(baseBudget, carryBudget);
-						if (tickActive) {
-							runtime.tickUpdate();
-						} else {
-							this.deltatime = this.timestep_ms;
-							this.update(this.timestep_ms);
-							if (debugTickRate) {
-								this.debugTickUpdates += 1;
-							}
-							ticksStarted += 1;
-						}
-						const completion = runtime.consumeLastTickCompletion();
-						slicesProcessed += 1;
-						if (completion) {
-							this.cycleCarry = completion.remaining > baseBudget ? baseBudget : completion.remaining;
-							runTickPresentation();
-							// Keep the completed frame stable for this host present; continue next frame on the next host tick.
-							break;
-						}
-						if (runtimeIde.isOverlayActive(runtime)) {
-							runTickPresentation();
-							break;
-						}
+			const runtime = Runtime.instance;
+			let ticksStarted = 0;
+			let slicesProcessed = 0;
+			const baseBudget = this.computeCycleBudget(runtime);
+			const runTickPresentation = () => {
+				// Presentation-facing delta time should reflect host timing.
+				this.deltatime = hostDeltaMs;
+				this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
+				presentQueued = true;
+			};
+			if (!runGate.ready || this.paused) {
+				this.accumulated_time = 0;
+			} else {
+				const slicesAvailable = Math.min(Math.floor(this.accumulated_time / this.timestep_ms), MAX_SUBSTEPS);
+				for (; slicesProcessed < slicesAvailable;) {
+					if (!runGate.ready || this.paused) {
+						this.accumulated_time = 0;
+						break;
 					}
-					if (slicesProcessed > 0) {
-						const consumed = slicesProcessed * this.timestep_ms;
-						this.accumulated_time = clamp(this.accumulated_time - consumed, 0, maxAccumulated);
+					const tickActive = runtime.hasActiveTick();
+					const carryBudget = tickActive ? 0 : this.cycleCarry;
+					if (carryBudget !== 0) {
+						this.cycleCarry = 0;
+					}
+					runtime.grantCycleBudget(baseBudget, carryBudget);
+					if (tickActive) {
+						runtime.tickUpdate();
+					} else {
+						this.deltatime = this.timestep_ms;
+						this.update(this.timestep_ms);
+						ticksStarted += 1;
+					}
+					const completion = runtime.consumeLastTickCompletion();
+					slicesProcessed += 1;
+					if (completion) {
+						this.cycleCarry = completion.remaining > baseBudget ? baseBudget : completion.remaining;
+						runTickPresentation();
+						// Keep the completed frame stable for this host present; continue next frame on the next host tick.
+						break;
+					}
+					if (runtimeIde.isOverlayActive(runtime)) {
+						runTickPresentation();
+						break;
 					}
 				}
-				if (!presentQueued && runtimeIde.isOverlayActive(runtime)) {
-					runTickPresentation();
+				if (slicesProcessed > 0) {
+					const consumed = slicesProcessed * this.timestep_ms;
+					this.accumulated_time = clamp(this.accumulated_time - consumed, 0, maxAccumulated);
 				}
-				if (presentQueued) {
-					this.wasupdated = true;
-					this.sndmaster.finishFrame();
-					if (profile) t1 = performance.now();
-					this.view.drawgame();
-					if (profile) tDraw += performance.now() - t1;
-				}
-				if (debugTickRate) {
-					const elapsedMs = currentTime - this.debugTickReportAtMs;
-					if (elapsedMs >= 1000) {
-						const scale = 1000 / elapsedMs;
-						const updatesPerSec = this.debugTickUpdates * scale;
-						const hostFramesPerSec = this.debugTickHostFrames * scale;
-						const updatesPerHostFrame = this.debugTickUpdates / this.debugTickHostFrames;
-						console.info(`[BMSX][tickrate] target=${this.target_fps.toFixed(3)} ufps=${this.ufps.toFixed(3)} updates=${updatesPerSec.toFixed(3)} host=${hostFramesPerSec.toFixed(3)} updates/host=${updatesPerHostFrame.toFixed(3)}`);
-						this.debugTickReportAtMs = currentTime;
-						this.debugTickHostFrames = 0;
-						this.debugTickUpdates = 0;
-					}
-				}
-				if (profile) tUpdate = performance.now() - tUpdateStart;
-
-			if (this.wasupdated && profile) {
-				const total = performance.now() - t0;
-				if (total > 50) {
-					console.warn(`[BMSX][frame] slow=${total.toFixed(1)}ms poll=${tPoll.toFixed(1)}ms update=${tUpdate.toFixed(1)}ms presentTick=${tPresentTick.toFixed(1)}ms draw=${tDraw.toFixed(1)}ms steps?`);
-				}
+			}
+			if (!presentQueued && runtimeIde.isOverlayActive(runtime)) {
+				runTickPresentation();
+			}
+			if (presentQueued) {
+				this.wasupdated = true;
+				this.sndmaster.finishFrame();
+				this.view.drawgame();
 			}
 		} catch (error) {
 			// Surface engine/runtime errors to the in-game terminal when active

@@ -25,8 +25,8 @@ function breakablewall:process_damage_result(result)
 		object('c').events:emit('room.condition_set', {
 			room_number = result.room_number,
 			condition = self.trigger,
+			play_appearance = true,
 		})
-		object('c').events:emit('appearance')
 		self:mark_for_disposal()
 		return
 	end

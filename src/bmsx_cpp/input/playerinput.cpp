@@ -90,15 +90,6 @@ void PlayerInput::enableContext(const std::string& id, bool enabled) {
 ActionState PlayerInput::getActionState(const std::string& action, std::optional<f64> windowFrames) {
 	// Result state - aggregate from all sources
 	ActionState result(action);
-	std::optional<f64> windowMs;
-	if (windowFrames.has_value()) {
-		windowMs = windowFrames.value() * EngineCore::instance().deltaTime() * 1000.0;
-	}
-	//  else {
-	// 	// Parity with TS: If no window provided, use default retention window
-	// 	windowMs = 150.0 * EngineCore::instance().deltaTime() * 1000.0;
-	// }
-	
 	bool anyPressed = false;
 	bool anyJustPressed = false;
 	bool anyJustReleased = false;
@@ -124,6 +115,24 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			bufferedReleaseId = releaseId;
 		}
 	};
+	const auto surfaceBufferedEdge = [&](const std::optional<i32>& edgeId,
+										bool alreadyTriggered,
+										std::unordered_map<std::string, ActionBufferedEdgeFrameRecord>& records) {
+		if (!edgeId.has_value()) {
+			return alreadyTriggered;
+		}
+		auto existingIt = records.find(action);
+		const bool sameEdge = existingIt != records.end() && existingIt->second.edgeId == edgeId.value();
+		if (!alreadyTriggered) {
+			if (!sameEdge || existingIt->second.frame == m_simFrameCounter) {
+				alreadyTriggered = true;
+			}
+		}
+		if (alreadyTriggered) {
+			records[action] = { m_simFrameCounter, edgeId.value() };
+		}
+		return alreadyTriggered;
+	};
 	
 	// Check keyboard bindings
 	{
@@ -146,9 +155,11 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			}
 			
 			for (const auto& binding : bindings) {
-				ButtonState state = windowMs.has_value()
-					? m_stateManager.getButtonState(binding.id, windowMs)
-					: handler->getButtonState(binding.id);
+				ButtonState state = getSimButtonState(
+					binding.id,
+					InputSource::Keyboard,
+					windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
+				);
 				
 				if (state.pressed) anyPressed = true;
 				if (state.justpressed) anyJustPressed = true;
@@ -193,9 +204,11 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			}
 			
 			for (const auto& binding : bindings) {
-				ButtonState state = windowMs.has_value()
-					? m_stateManager.getButtonState(binding.id, windowMs)
-					: handler->getButtonState(binding.id);
+				ButtonState state = getSimButtonState(
+					binding.id,
+					InputSource::Gamepad,
+					windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
+				);
 				
 				if (state.pressed) anyPressed = true;
 				if (state.justpressed) anyJustPressed = true;
@@ -240,9 +253,11 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 			}
 			
 			for (const auto& binding : bindings) {
-				ButtonState state = windowMs.has_value()
-					? m_stateManager.getButtonState(binding.id, windowMs)
-					: handler->getButtonState(binding.id);
+				ButtonState state = getSimButtonState(
+					binding.id,
+					InputSource::Pointer,
+					windowFrames.has_value() ? std::optional<i32>(static_cast<i32>(windowFrames.value())) : std::nullopt
+				);
 				
 				if (state.pressed) anyPressed = true;
 				if (state.justpressed) anyJustPressed = true;
@@ -280,49 +295,11 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 
 	// Aggregate results
 	result.pressed = anyPressed;
-	auto lastPressIt = m_actionPressRecords.find(action);
-	const i32 lastPressId = lastPressIt == m_actionPressRecords.end() ? -1 : lastPressIt->second;
-	auto bufferedPressFrameIt = m_actionBufferedPressFrameRecords.find(action);
-	if (!anyJustPressed &&
-		bufferedPressFrameIt != m_actionBufferedPressFrameRecords.end() &&
-		bufferedPressId.has_value() &&
-		bufferedPressFrameIt->second.frame == m_frameCounter &&
-		bufferedPressFrameIt->second.edgeId == bufferedPressId.value()) {
-		anyJustPressed = true;
-	}
-	if (!anyJustPressed && bufferedPressId.has_value() && bufferedPressId.value() != lastPressId) {
-		anyJustPressed = true;
-		m_actionBufferedPressFrameRecords[action] = { m_frameCounter, bufferedPressId.value() };
-	}
+	anyJustPressed = surfaceBufferedEdge(bufferedPressId, anyJustPressed, m_actionBufferedPressFrameRecords);
 	if (anyJustPressed && bufferedPressId.has_value() && (!latestPressId.has_value() || bufferedPressId.value() > latestPressId.value())) {
 		latestPressId = bufferedPressId;
 	}
-	
-	// Parity with TS: Prefer bufferPressId over latestPressId (bufferPressId ?? latestPressId)
-	if (anyJustPressed) {
-		std::optional<i32> recordId = bufferedPressId.has_value() ? bufferedPressId : latestPressId;
-		if (recordId.has_value()) {
-			m_actionPressRecords[action] = recordId.value();
-		}
-	}
-
-	auto lastReleaseIt = m_actionReleaseRecords.find(action);
-	const i32 lastReleaseId = lastReleaseIt == m_actionReleaseRecords.end() ? -1 : lastReleaseIt->second;
-	auto bufferedReleaseFrameIt = m_actionBufferedReleaseFrameRecords.find(action);
-	if (!anyJustReleased &&
-		bufferedReleaseFrameIt != m_actionBufferedReleaseFrameRecords.end() &&
-		bufferedReleaseId.has_value() &&
-		bufferedReleaseFrameIt->second.frame == m_frameCounter &&
-		bufferedReleaseFrameIt->second.edgeId == bufferedReleaseId.value()) {
-		anyJustReleased = true;
-	}
-	if (!anyJustReleased && bufferedReleaseId.has_value() && bufferedReleaseId.value() != lastReleaseId) {
-		anyJustReleased = true;
-		m_actionBufferedReleaseFrameRecords[action] = { m_frameCounter, bufferedReleaseId.value() };
-	}
-	if (anyJustReleased && bufferedReleaseId.has_value() && bufferedReleaseId.value() != lastReleaseId) {
-		m_actionReleaseRecords[action] = bufferedReleaseId.value();
-	}
+	anyJustReleased = surfaceBufferedEdge(bufferedReleaseId, anyJustReleased, m_actionBufferedReleaseFrameRecords);
 
 	result.justpressed = anyJustPressed;
 	result.justreleased = anyJustReleased && !anyPressed;
@@ -417,13 +394,13 @@ bool PlayerInput::checkActionTriggered(const std::string& actionDef) {
 
 ButtonState PlayerInput::getButtonState(const std::string& button, InputSource source) {
 	auto* handler = m_handlers[sourceIndex(source)];
-	if (!handler) {
-		if (source == InputSource::Pointer) {
-			return m_stateManager.getButtonState(button);
-		}
-		return ButtonState{};
+	if (handler) {
+		return handler->getButtonState(button);
 	}
-	return handler->getButtonState(button);
+	if (source == InputSource::Pointer && m_stateManager.hasTrackedButton(button)) {
+		return m_stateManager.getButtonState(button);
+	}
+	return ButtonState{};
 }
 
 ActionState PlayerInput::getButtonRepeatState(const std::string& button, InputSource source) {
@@ -454,6 +431,31 @@ ButtonState PlayerInput::getKeyState(const std::string& key, KeyModifier modifie
 	}
 	
 	return state;
+}
+
+ButtonState PlayerInput::getSimButtonState(const std::string& button, InputSource source, std::optional<i32> windowFrames) {
+	auto* handler = m_handlers[sourceIndex(source)];
+	ButtonState rawState = handler ? handler->getButtonState(button) : ButtonState{};
+	if (!m_stateManager.hasTrackedButton(button)) {
+		return rawState;
+	}
+	ButtonState bufferedState = m_stateManager.getButtonState(button, windowFrames);
+	if (!handler) {
+		return bufferedState;
+	}
+	ButtonState result = rawState;
+	result.justpressed = bufferedState.justpressed;
+	result.justreleased = bufferedState.justreleased;
+	result.waspressed = bufferedState.waspressed;
+	result.wasreleased = bufferedState.wasreleased;
+	result.consumed = rawState.consumed || bufferedState.consumed;
+	result.presstime = rawState.presstime.has_value() ? rawState.presstime : bufferedState.presstime;
+	result.timestamp = rawState.timestamp.has_value() ? rawState.timestamp : bufferedState.timestamp;
+	result.pressedAtMs = rawState.pressedAtMs.has_value() ? rawState.pressedAtMs : bufferedState.pressedAtMs;
+	result.releasedAtMs = rawState.releasedAtMs.has_value() ? rawState.releasedAtMs : bufferedState.releasedAtMs;
+	result.pressId = rawState.pressId.has_value() ? rawState.pressId : bufferedState.pressId;
+	result.value2d = rawState.value2d.has_value() ? rawState.value2d : bufferedState.value2d;
+	return result;
 }
 
 /* ============================================================================
@@ -507,10 +509,9 @@ void PlayerInput::consumeAction(const std::string& action) {
 			auto it = m_inputMap.keyboard.find(action);
 			if (it != m_inputMap.keyboard.end()) {
 				for (const auto& binding : it->second) {
-					auto state = handler->getButtonState(binding.id);
+					auto state = getButtonState(binding.id, InputSource::Keyboard);
 					if (state.pressed && !state.consumed) {
-						handler->consumeButton(binding.id);
-						m_stateManager.consumeBufferedEvent(binding.id, state.pressId);
+						consumeButton(binding.id, InputSource::Keyboard);
 					}
 				}
 			}
@@ -524,10 +525,9 @@ void PlayerInput::consumeAction(const std::string& action) {
 			auto it = m_inputMap.gamepad.find(action);
 			if (it != m_inputMap.gamepad.end()) {
 				for (const auto& binding : it->second) {
-					auto state = handler->getButtonState(binding.id);
+					auto state = getButtonState(binding.id, InputSource::Gamepad);
 					if (state.pressed && !state.consumed) {
-						handler->consumeButton(binding.id);
-						m_stateManager.consumeBufferedEvent(binding.id, state.pressId);
+						consumeButton(binding.id, InputSource::Gamepad);
 					}
 				}
 			}
@@ -541,10 +541,9 @@ void PlayerInput::consumeAction(const std::string& action) {
 			auto it = m_inputMap.pointer.find(action);
 			if (it != m_inputMap.pointer.end()) {
 				for (const auto& binding : it->second) {
-					auto state = handler->getButtonState(binding.id);
+					auto state = getButtonState(binding.id, InputSource::Pointer);
 					if (state.pressed && !state.consumed) {
-						handler->consumeButton(binding.id);
-						m_stateManager.consumeBufferedEvent(binding.id, state.pressId);
+						consumeButton(binding.id, InputSource::Pointer);
 					}
 				}
 			}
@@ -564,7 +563,7 @@ void PlayerInput::consumeButton(const std::string& button, InputSource source) {
 		}
 		return;
 	}
-	auto state = handler->getButtonState(button);
+	auto state = getButtonState(button, source);
 	handler->consumeButton(button);
 	m_stateManager.consumeBufferedEvent(button, state.pressId);
 }
@@ -575,7 +574,6 @@ void PlayerInput::consumeButton(const std::string& button, InputSource source) {
 
 void PlayerInput::pollInput(f64 currentTimeMs) {
 	m_frameCounter++;
-	
 	// Update guard window based on frame timing
 	if (m_lastPollTimestampMs.has_value()) {
 		f64 delta = currentTimeMs - m_lastPollTimestampMs.value();
@@ -593,6 +591,7 @@ void PlayerInput::pollInput(f64 currentTimeMs) {
 
 
 void PlayerInput::beginFrame(f64 currentTimeMs) {
+	m_simFrameCounter++;
 	m_stateManager.beginFrame(currentTimeMs);
 }
 
@@ -615,13 +614,12 @@ void PlayerInput::reset(const std::vector<std::string>* except) {
 	
 	m_actionGuardRecords.clear();
 	m_actionRepeatRecords.clear();
-	m_actionPressRecords.clear();
-	m_actionReleaseRecords.clear();
 	m_actionBufferedPressFrameRecords.clear();
 	m_actionBufferedReleaseFrameRecords.clear();
 	m_lastPollTimestampMs.reset();
 	m_guardWindowMs = ACTION_GUARD_MIN_MS;
 	m_frameCounter = 0;
+	m_simFrameCounter = 0;
 }
 
 void PlayerInput::clearEdgeState() {

@@ -621,8 +621,6 @@ function player:start_dying()
 	if self:has_tag(state_tags.variant.dying) then
 		return
 	end
-	object('d').events:emit('death_start')
-	self.events:emit('dying')
 	self:cancel_sword()
 	self.hit_direction = 0
 	self.hit_substate = 0
@@ -631,7 +629,7 @@ function player:start_dying()
 	self.hit_stairs_lock = false
 	self:reset_hit_invulnerability_sequence()
 	self:zero_motion()
-	self.events:emit('hp_zero')
+	self.events:emit('dying')
 end
 
 function player:emit_health_changed()
@@ -830,8 +828,6 @@ function player:begin_entering_world(world_entrance)
 	self.enter_leave_shrine_text_lines = {}
 	self.x = world_entrance.stair_x
 	self:reset_enter_leave_animation()
-	object('d').events:emit('world_enter_transition_start')
-	self.events:emit('enterleave')
 	self.events:emit('enter_world_start')
 end
 
@@ -843,8 +839,6 @@ function player:begin_entering_shrine(shrine)
 	self.enter_leave_shrine_text_lines = shrine.text_lines
 	self.x = shrine.x
 	self:reset_enter_leave_animation()
-	object('d').events:emit('shrine_transition_start')
-	self.events:emit('enterleave')
 	self.events:emit('enter_shrine_start')
 end
 
@@ -907,7 +901,6 @@ end
 function player:leave_shrine_overlay()
 	self:reset_enter_leave_animation()
 	self.enter_leave_shrine_text_lines = {}
-	self.events:emit('enterleave')
 	self.events:emit('leave_shrine_overlay')
 end
 
@@ -1993,7 +1986,6 @@ function player:update_emerging_world()
 	self:update_enter_leave_cut(-1)
 	if self.transition_step > constants.world_entrance.enter_world_total_steps then
 		self.to_enter_cut = 0
-		object('d').events:emit('world_transition_done')
 		self.events:emit('world_emerge_done')
 	end
 end
@@ -3016,12 +3008,12 @@ local function define_player_fsm()
 						end,
 					},
 					['enemy.contact_damage'] = function(self, _state, event)
-						self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
+						-- self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
 					end,
 					['room.switched'] = function(self)
 						self:set_space('main')
 					end,
-				['hp_zero'] = '/dying',
+				['dying'] = '/dying',
 				['damage'] = '/hit_fall',
 			['damage_on_stairs'] = '/hit_collision',
 				['stairs_lock_lost_after_room_switch'] = '/quiet',

@@ -35,7 +35,6 @@ function crossfoe:ctor()
 	self.cross_state = 'waiting'
 	self.cross_spin_direction = 'down'
 	apply_spin_visual(self)
-	self.collider.enabled = false -- debug
 end
 
 function crossfoe.bt_tick_waiting(self, blackboard)
@@ -59,7 +58,6 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	self.cross_spin_direction = 'left'
 	apply_spin_visual(self)
 	object('c').events:emit('cross')
-	self.events:emit('takeoff')
 	return behaviourtree.running
 end
 
@@ -83,7 +81,6 @@ function crossfoe.bt_tick_flying(self, blackboard)
 		node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
 		node.cross_turn_ticks = constants.enemy.cross_turn_steps
 		object('c').events:emit('crossland')
-		self.events:emit('land')
 		return behaviourtree.running
 	end
 

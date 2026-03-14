@@ -40,6 +40,7 @@ struct FrameState {
 	bool haltGame = false;
 	bool updateExecuted = false;
 	bool luaFaulted = false;
+	bool tickCompleted = false;
 	int cycleBudgetRemaining = 0;
 	int cycleBudgetGranted = 0;
 	int cycleCarryGranted = 0;
@@ -311,7 +312,7 @@ private:
 	void setVblankStatus(bool active);
 	void enterVblank();
 	void commitFrameOnVblankEdge();
-	void completeTickIfPending(const FrameState& frameState, uint64_t vblankSequence);
+	void completeTickIfPending(FrameState& frameState, uint64_t vblankSequence);
 	void reconcileCycleBudgetAfterSignal(FrameState& frameState);
 	void requestWaitForVblank();
 	void resetTransferCarry();
@@ -334,6 +335,7 @@ private:
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	std::vector<Value> acquireValueScratch();
 	void releaseValueScratch(std::vector<Value>&& values);
+	bool hasEntryContinuation() const;
 
 	static Runtime* s_instance;
 	static constexpr size_t MAX_POOLED_RUNTIME_SCRATCH = 32;

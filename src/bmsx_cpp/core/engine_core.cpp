@@ -578,6 +578,9 @@ void EngineCore::tick(f64 deltaTime) {
 			runtime.grantCycleBudget(baseBudget, carryBudget);
 			m_lastGrantedBaseBudget = baseBudget;
 			m_delta_time = fixedDeltaSeconds;
+			if (!tickActive) {
+				Input::instance().beginFrame();
+			}
 			runtime.tickUpdate();
 			runtime.tickDraw();
 			i64 completionSequence = 0;

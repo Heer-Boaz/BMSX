@@ -19,15 +19,10 @@
 --
 -- 2. enter_transition() HELPER.
 --    All mode switches that require the transition overlay (fade mask) follow
---    the same three-step pattern: (a) switch to transition space, (b) emit
---    the mode broadcast (optionally with payload), (c) emit
---    'transition.mask.play' to tell the transition overlay to play its fade
---    timeline. The enter_transition() helper captures this so entering_state
---    callbacks are one-liners.
---
---    'transition.mask.play' is cross-cutting: emitted for ALL mode switches
---    (halo, title, story, death, etc.), not just the 'transition' mode.  The
---    transition overlay subscribes to it independently of any specific mode.
+--    the same two-step pattern: (a) switch to transition space, (b) emit ONE
+--    mode broadcast (optionally with payload). The transition overlay listens
+--    to those mode broadcasts directly and plays its fade mask from the same
+--    canonical event, so entering_state callbacks are one-liners.
 --
 -- 3. NO DISGUISED METHOD CALLS.
 --    The director never calls methods on other objects directly and never emits
@@ -206,12 +201,12 @@ function director:finish_castle_emerge_banner_transition()
 	return '/world_transition_emerge'
 end
 
--- All states that switch to transition space + emit a named event + play the mask follow
--- the exact same three-line pattern. Extract it so every entering_state is a single call.
+-- All transition-overlay states share the same two-step pattern: switch to
+-- transition space, then emit one mode broadcast. The overlay reacts to that
+-- same event and plays its mask.
 function director:enter_transition(event_name, payload)
 	self:set_active_space('transition')
 	self.events:emit(event_name, payload)
-	self.events:emit('transition.mask.play')
 end
 
 -- Both daemon appearance variants share the same setup; only the after_death flag differs.
@@ -270,9 +265,6 @@ end
 --                             lithograph, transition) subscribe and self-clear.
 --   'transition'            — director entered transition sub-state. Optional
 --                             { lines = { ... } } payload for banner text.
---   'transition.mask.play'  — cross-cutting: transition overlay plays its fade
---                             mask timeline. Emitted for ALL mode switches so
---                             the overlay does not need to know the mode name.
 --   'seal_dissolution'      — starts seal dissolution. Player + projectiles
 --                             subscribe to enter /freeze state; they unfreeze
 --                             on 'seal_flash_done' (emitted mid-timeline at
@@ -371,15 +363,24 @@ local function define_director_fsm()
 		-- exactly how mode transitions work: any game system can request a mode
 		-- change at any time, and the director unconditionally obeys.
 		on = {
-			['world_enter_transition_start'] = '/world_transition_enter',
+			['enter_world_start'] = {
+				emitter = 'pietolon',
+				go = '/world_transition_enter',
+			},
 			['world_leave_transition_start'] = '/world_transition_leave',
-			['shrine_transition_start'] = '/shrine',
+			['enter_shrine_start'] = {
+				emitter = 'pietolon',
+				go = '/shrine',
+			},
 			['seal_dissolution_start'] = '/seal_dissolution',
 			['title_screen_start'] = '/title_screen',
 			['story_start'] = '/story',
 			['ending_start'] = '/ending',
 			['victory_dance_start'] = '/victory_dance',
-			['death_start'] = '/death',
+			['dying'] = {
+				emitter = 'pietolon',
+				go = '/death',
+			},
 		},
 		states = {
 			-- ROOM — default mode. Player is moving around in a room.
@@ -449,7 +450,10 @@ local function define_director_fsm()
 					self:set_active_space('main')
 				end,
 				on = {
-					['world_transition_done'] = '/room_switch_wait',
+					['world_emerge_done'] = {
+						emitter = 'pietolon',
+						go = '/room_switch_wait',
+					},
 				},
 			},
 				-- SHRINE — three-phase compound state (entering → overlay → exiting).

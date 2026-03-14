@@ -118,6 +118,14 @@ type BufferedInputEvent = InputEvent & {
 	frame: number;
 };
 
+type BufferedEdgeRecord = {
+	edgeId: number;
+	frame: number;
+	consumed: boolean;
+};
+
+const RECENT_BUFFERED_EDGE_FRAMES = 2;
+
 type DeviceBinding = {
 	handler: InputHandler;
 	source: InputSource;
@@ -140,8 +148,8 @@ export class InputStateManager {
 	 */
 	private inputBuffer: BufferedInputEvent[];
 	private readonly buttonStates = new Map<ButtonId, ButtonState>();
-	private readonly latestUnconsumedPressIdByButton = new Map<ButtonId, number>();
-	private readonly latestUnconsumedReleaseIdByButton = new Map<ButtonId, number>();
+	private readonly bufferedPressEdges = new Map<ButtonId, BufferedEdgeRecord>();
+	private readonly bufferedReleaseEdges = new Map<ButtonId, BufferedEdgeRecord>();
 	private currentFrame = 0;
 
 	/**
@@ -176,6 +184,8 @@ export class InputStateManager {
 	 */
 	update(_currentTime: number): void {
 		this.inputBuffer = this.inputBuffer.filter(event => this.isBufferedEventInWindow(event, this.bufferframeDuration));
+		this.pruneBufferedEdges(this.bufferedPressEdges);
+		this.pruneBufferedEdges(this.bufferedReleaseEdges);
 	}
 
 	/**
@@ -210,9 +220,7 @@ export class InputStateManager {
 			state.pressId = bufferedEvent.pressId ?? state.pressId;
 			state.value = state.value ?? 1;
 			state.consumed = bufferedEvent.consumed ?? false;
-			if (bufferedEvent.consumed !== true && bufferedEvent.pressId != null) {
-				this.latestUnconsumedPressIdByButton.set(bufferedEvent.identifier, bufferedEvent.pressId);
-			}
+			this.bufferEdge(this.bufferedPressEdges, bufferedEvent);
 		} else {
 			this.inputBuffer.push(bufferedEvent);
 			state.pressed = false;
@@ -224,9 +232,7 @@ export class InputStateManager {
 			state.pressId = bufferedEvent.pressId ?? state.pressId;
 			state.value = 0;
 			state.consumed = bufferedEvent.consumed ?? false;
-			if (bufferedEvent.consumed !== true && bufferedEvent.pressId != null) {
-				this.latestUnconsumedReleaseIdByButton.set(bufferedEvent.identifier, bufferedEvent.pressId);
-			}
+			this.bufferEdge(this.bufferedReleaseEdges, bufferedEvent);
 		}
 	}
 
@@ -245,8 +251,8 @@ export class InputStateManager {
 		const baseState = this.buttonStates.get(identifier);
 
 		const pressed = baseState?.pressed ?? false;
-		const justpressed = baseState?.justpressed ?? false;
-		const justreleased = baseState?.justreleased ?? false;
+		const justpressed = this.getBufferedEdgeRecord(this.bufferedPressEdges, identifier, 1) != null;
+		const justreleased = this.getBufferedEdgeRecord(this.bufferedReleaseEdges, identifier, 1) != null;
 		let presstime = baseState?.presstime ?? (pressed && baseState?.pressedAtMs != null ? Math.max(0, currentTime - baseState.pressedAtMs) : null);
 		let consumed = baseState?.consumed ?? false;
 		const pressedAtMs = baseState?.pressedAtMs;
@@ -288,7 +294,7 @@ export class InputStateManager {
 	}
 
 	/** Returns true if an unconsumed press edge happened recently. */
-	hasUnconsumedPress(identifier: ButtonId, windowFrames: number = 2): boolean {
+	hasUnconsumedPress(identifier: ButtonId, windowFrames: number = RECENT_BUFFERED_EDGE_FRAMES): boolean {
 		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
 			const event = this.inputBuffer[i];
 			if (!this.isBufferedEventInWindow(event, windowFrames)) {
@@ -308,24 +314,68 @@ export class InputStateManager {
 		identifier: ButtonId,
 		eventType: 'press' | 'release'
 	): number | null {
-		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
-			const event = this.inputBuffer[i];
-			if (!this.isBufferedEventInWindow(event, 2)) {
-				break;
-			}
-			if (event.identifier !== identifier || event.eventType !== eventType || event.consumed === true || event.pressId == null) {
-				continue;
-			}
-			return event.pressId;
-		}
-		return null;
+		const edgeMap = eventType === 'press'
+			? this.bufferedPressEdges
+			: this.bufferedReleaseEdges;
+		return this.getBufferedEdgeRecord(edgeMap, identifier, RECENT_BUFFERED_EDGE_FRAMES)?.edgeId ?? null;
 	}
 
 	private isBufferedEventInWindow(event: BufferedInputEvent, windowFrames: number): boolean {
+		return this.isBufferedFrameInWindow(event.frame, windowFrames);
+	}
+
+	private isBufferedFrameInWindow(frame: number, windowFrames: number): boolean {
 		if (windowFrames <= 0) {
 			return false;
 		}
-		return this.currentFrame - event.frame < windowFrames;
+		return this.currentFrame - frame < windowFrames;
+	}
+
+	private bufferEdge(edgeMap: Map<ButtonId, BufferedEdgeRecord>, event: BufferedInputEvent): void {
+		if (event.pressId == null) {
+			return;
+		}
+		edgeMap.set(event.identifier, {
+			edgeId: event.pressId,
+			frame: event.frame,
+			consumed: event.consumed === true,
+		});
+	}
+
+	private getBufferedEdgeRecord(
+		edgeMap: Map<ButtonId, BufferedEdgeRecord>,
+		identifier: ButtonId,
+		windowFrames: number
+	): BufferedEdgeRecord | null {
+		const edge = edgeMap.get(identifier);
+		if (!edge) {
+			return null;
+		}
+		if (edge.consumed === true) {
+			return null;
+		}
+		if (!this.isBufferedFrameInWindow(edge.frame, windowFrames)) {
+			return null;
+		}
+		return edge;
+	}
+
+	private consumeBufferedEdge(edgeMap: Map<ButtonId, BufferedEdgeRecord>, identifier: ButtonId, pressId?: number): void {
+		const edge = edgeMap.get(identifier);
+		if (!edge) {
+			return;
+		}
+		if (pressId == null || edge.edgeId === pressId) {
+			edge.consumed = true;
+		}
+	}
+
+	private pruneBufferedEdges(edgeMap: Map<ButtonId, BufferedEdgeRecord>): void {
+		for (const [identifier, edge] of edgeMap) {
+			if (!this.isBufferedFrameInWindow(edge.frame, this.bufferframeDuration)) {
+				edgeMap.delete(identifier);
+			}
+		}
 	}
 
 	public getLatestUnconsumedPressId(identifier: ButtonId): number | null | undefined {
@@ -334,6 +384,10 @@ export class InputStateManager {
 
 	public getLatestUnconsumedReleaseId(identifier: ButtonId): number | null {
 		return this.getLatestUnconsumedEdgeId(identifier, 'release');
+	}
+
+	public hasTrackedButton(identifier: ButtonId): boolean {
+		return this.buttonStates.has(identifier);
 	}
 
 	/**
@@ -348,19 +402,8 @@ export class InputStateManager {
 				event.consumed = true;
 			}
 		}
-		if (pressId == null) {
-			this.latestUnconsumedPressIdByButton.delete(identifier);
-			this.latestUnconsumedReleaseIdByButton.delete(identifier);
-		} else {
-			const latestPressId = this.latestUnconsumedPressIdByButton.get(identifier);
-			if (latestPressId === pressId) {
-				this.latestUnconsumedPressIdByButton.delete(identifier);
-			}
-			const latestReleaseId = this.latestUnconsumedReleaseIdByButton.get(identifier);
-			if (latestReleaseId === pressId) {
-				this.latestUnconsumedReleaseIdByButton.delete(identifier);
-			}
-		}
+		this.consumeBufferedEdge(this.bufferedPressEdges, identifier, pressId);
+		this.consumeBufferedEdge(this.bufferedReleaseEdges, identifier, pressId);
 		const state = this.buttonStates.get(identifier);
 		if (state) {
 			state.consumed = true;
@@ -382,8 +425,8 @@ export class InputStateManager {
 			}
 		}
 		this.inputBuffer = [];
-		this.latestUnconsumedPressIdByButton.clear();
-		this.latestUnconsumedReleaseIdByButton.clear();
+		this.bufferedPressEdges.clear();
+		this.bufferedReleaseEdges.clear();
 		this.currentFrame = 0;
 	}
 }
@@ -960,6 +1003,13 @@ export class Input implements RegisterablePersistent {
 			}
 		});
 		this.pendingGamepadAssignments.forEach(pending => pending.run());
+	}
+
+	public beginFrame(currentTime: number = $.platform.clock.now()): void {
+		this.playerInputs.forEach(player => {
+			if (!player) return;
+			player.beginFrame(currentTime);
+		});
 	}
 
 	public getGlobalShortcutRegistry(): GlobalShortcutRegistry {

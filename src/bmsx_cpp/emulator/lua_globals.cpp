@@ -3508,18 +3508,18 @@ auto clockPerfNowFn = m_cpu.createNativeFunction("platform.clock.perf_now", [](c
 auto getActionStateFn = m_cpu.createNativeFunction("game.get_action_state", [this, makeActionStateTable](const std::vector<Value>& args, std::vector<Value>& out) {
 	int playerIndex = m_playerIndex;
 	std::string action;
-	std::optional<f64> windowMs;
+	std::optional<f64> windowFrames;
 	if (args.size() == 1) {
 			action = m_cpu.stringPool().toString(asStringId(args.at(0)));
 		} else {
 			playerIndex = static_cast<int>(std::floor(asNumber(args.at(0))));
 			action = m_cpu.stringPool().toString(asStringId(args.at(1)));
 			if (args.size() > 2 && !isNil(args.at(2))) {
-				windowMs = asNumber(args.at(2));
+				windowFrames = asNumber(args.at(2));
 			}
 	}
 	PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
-	ActionState state = input->getActionState(action, windowMs);
+	ActionState state = input->getActionState(action, windowFrames);
 	out.push_back(valueTable(makeActionStateTable(state)));
 });
 

@@ -2305,12 +2305,12 @@ export function toggleThemeMode() {
 
 export function isKeyJustPressed(code: string): boolean {
 	const player = $.input.getPlayerInput(ide_state.playerIndex);
-	return player.stateManager.hasUnconsumedPress(code);
+	return player.getButtonState(code, 'keyboard').justpressed === true;
 }
 
 export function shouldRepeatKeyFromPlayer(code: string): boolean {
 	const player = $.input.getPlayerInput(ide_state.playerIndex);
-	if (player.stateManager.hasUnconsumedPress(code)) {
+	if (player.getButtonState(code, 'keyboard').justpressed === true) {
 		return true;
 	}
 	return player.getButtonRepeatState(code, 'keyboard').repeatpressed;

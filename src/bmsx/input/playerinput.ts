@@ -73,13 +73,12 @@ export class PlayerInput {
 
 	private readonly actionGuardRecords: Map<string, ActionGuardRecord> = new Map();
 	private readonly actionRepeatRecords: Map<string, ActionRepeatRecord> = new Map();
-	private readonly actionPressRecords: Map<string, number> = new Map();
-	private readonly actionReleaseRecords: Map<string, number> = new Map();
 	private readonly actionBufferedPressFrameRecords: Map<string, ActionBufferedEdgeFrameRecord> = new Map();
 	private readonly actionBufferedReleaseFrameRecords: Map<string, ActionBufferedEdgeFrameRecord> = new Map();
 	private lastPollTimestampMs: number = null;
 	private guardWindowMs: number = ACTION_GUARD_MIN_MS;
 	private frameCounter = 0;
+	private simFrameCounter = 0;
 
 	/**
 	 * Indicates whether the player is the main player.
@@ -206,7 +205,7 @@ export class PlayerInput {
 	 * Retrieves the state of an action.
 	 *
 	 * @param action - The name of the action.
-	 * @param framewindow - An optional time window in milliseconds to consider for the action state. **Note: This doesn't really work as it should! For instance, if you press the directional button to move left, it will make the action state for 'left' always pressed, even if you release the button, until the time window expires.
+	 * @param framewindow - Optional simulation-frame window for `waspressed` / `wasreleased` style queries.
 	 * @returns The state of the action, including whether it is pressed, consumed, the press time, and the timestamp.
 	 */
 	public getActionState(action: string, framewindow: number = null): ActionState {
@@ -325,19 +324,15 @@ export class PlayerInput {
 
 		const keyboardState = getStates(
 			keyboardKeys,
-			(key: ButtonId, framewindow?: number) => framewindow !== null
-				? this._stateManager.getButtonState(key, framewindow)
-				: this.getButtonState(key, 'keyboard')
+			(key: ButtonId, framewindow?: number) => this.getSimButtonState(key, 'keyboard', framewindow)
 		);
 		const gamepadState = getStates(
 			gamepadButtons,
-			(button: ButtonId, framewindow?: number) => framewindow !== null
-				? this._stateManager.getButtonState(button, framewindow)
-				: this.getButtonState(button, 'gamepad')
+			(button: ButtonId, framewindow?: number) => this.getSimButtonState(button, 'gamepad', framewindow)
 		);
 		const pointerState = getStates(
 			pointerButtons,
-			(button: ButtonId) => this.getButtonState(button, 'pointer')
+			(button: ButtonId, framewindow?: number) => this.getSimButtonState(button, 'pointer', framewindow)
 		);
 		const deviceStates = [keyboardState, gamepadState, pointerState];
 		const pressed = deviceStates.some(state => state.anyPressed);
@@ -395,41 +390,21 @@ export class PlayerInput {
 				pressId = state.lastPressId;
 			}
 		}
-		const lastBufferedPressId = this.actionPressRecords.get(action) ?? null;
-		const bufferedPressFrameRecord = this.actionBufferedPressFrameRecords.get(action) ?? null;
-		if (!justpressed &&
-			bufferedPressFrameRecord != null &&
-			bufferedPressFrameRecord.frame === this.frameCounter &&
-			bufferedPressId != null &&
-			bufferedPressFrameRecord.edgeId === bufferedPressId) {
-			justpressed = true;
-		}
-		if (!justpressed && bufferedPressId != null && bufferedPressId !== lastBufferedPressId) {
-			justpressed = true;
-			this.actionBufferedPressFrameRecords.set(action, { frame: this.frameCounter, edgeId: bufferedPressId });
-		}
+		justpressed = this.surfaceBufferedEdge(
+			action,
+			bufferedPressId,
+			justpressed,
+			this.actionBufferedPressFrameRecords
+		);
 		if (justpressed && bufferedPressId != null && (pressId == null || bufferedPressId > pressId)) {
 			pressId = bufferedPressId;
 		}
-		if (justpressed && pressId != null) {
-			this.actionPressRecords.set(action, pressId);
-		}
-		const lastBufferedReleaseId = this.actionReleaseRecords.get(action) ?? null;
-		const bufferedReleaseFrameRecord = this.actionBufferedReleaseFrameRecords.get(action) ?? null;
-		if (!justreleased &&
-			bufferedReleaseFrameRecord != null &&
-			bufferedReleaseFrameRecord.frame === this.frameCounter &&
-			bufferedReleaseId != null &&
-			bufferedReleaseFrameRecord.edgeId === bufferedReleaseId) {
-			justreleased = true;
-		}
-		if (!justreleased && bufferedReleaseId != null && bufferedReleaseId !== lastBufferedReleaseId) {
-			justreleased = true;
-			this.actionBufferedReleaseFrameRecords.set(action, { frame: this.frameCounter, edgeId: bufferedReleaseId });
-		}
-		if (justreleased && bufferedReleaseId != null && bufferedReleaseId !== lastBufferedReleaseId) {
-			this.actionReleaseRecords.set(action, bufferedReleaseId);
-		}
+		justreleased = this.surfaceBufferedEdge(
+			action,
+			bufferedReleaseId,
+			justreleased,
+			this.actionBufferedReleaseFrameRecords
+		);
 
 		const timestamp = maxTimestamp === -Infinity ? null : maxTimestamp;
 		const result: ActionState = {
@@ -567,7 +542,7 @@ export class PlayerInput {
 	public consumeButton(button: ButtonId, source: InputSource): void {
 		const handler = this.inputHandlers[source];
 		if (!handler) return;
-		const state = handler.getButtonState(button);
+		const state = this.getButtonState(button, source);
 		handler.consumeButton(button);
 		this._stateManager.consumeBufferedEvent(button, state?.pressId);
 	}
@@ -615,12 +590,44 @@ export class PlayerInput {
 	 */
 	public getButtonState(button: ButtonId, source: InputSource): ButtonState {
 		const handler = this.inputHandlers[source];
-		if (!handler) return makeButtonState();
-		return handler.getButtonState(button);
+		if (handler) {
+			return handler.getButtonState(button);
+		}
+		if (source === 'pointer' && this._stateManager.hasTrackedButton(button)) {
+			return this._stateManager.getButtonState(button);
+		}
+		return makeButtonState();
 	}
 
 	public get pollFrame(): number {
 		return this.frameCounter;
+	}
+
+	private getSimButtonState(button: ButtonId, source: InputSource, framewindow: number = null): ButtonState {
+		const handler = this.inputHandlers[source];
+		const rawState = handler?.getButtonState(button) ?? makeButtonState();
+		if (!this._stateManager.hasTrackedButton(button)) {
+			return rawState;
+		}
+		const bufferedState = this._stateManager.getButtonState(button, framewindow);
+		if (!handler) {
+			return bufferedState;
+		}
+		return makeButtonState({
+			pressed: rawState.pressed,
+			justpressed: bufferedState.justpressed,
+			justreleased: bufferedState.justreleased,
+			waspressed: bufferedState.waspressed,
+			wasreleased: bufferedState.wasreleased,
+			consumed: rawState.consumed || bufferedState.consumed,
+			presstime: rawState.presstime ?? bufferedState.presstime,
+			timestamp: rawState.timestamp ?? bufferedState.timestamp,
+			pressedAtMs: rawState.pressedAtMs ?? bufferedState.pressedAtMs,
+			releasedAtMs: rawState.releasedAtMs ?? bufferedState.releasedAtMs,
+			pressId: rawState.pressId ?? bufferedState.pressId,
+			value: rawState.value,
+			value2d: rawState.value2d ?? bufferedState.value2d,
+		});
 	}
 
 	/** Returns repeat/edge info for a raw button using the built-in repeat cadence. */
@@ -687,14 +694,39 @@ export class PlayerInput {
 			this.guardWindowMs = clamp(delta, ACTION_GUARD_MIN_MS, ACTION_GUARD_MAX_MS);
 		}
 		this.lastPollTimestampMs = currentTime;
-
-		this._stateManager.beginFrame(currentTime);
 		for (const source of INPUT_SOURCES) {
 			const handler = this.inputHandlers[source];
 			if (!handler) continue;
 			handler.pollInput();
 		}
 		this.processPendingRebind();
+	}
+
+	public beginFrame(currentTime: number): void {
+		this.simFrameCounter += 1;
+		this._stateManager.beginFrame(currentTime);
+	}
+
+	private surfaceBufferedEdge(
+		action: string,
+		edgeId: number | null,
+		alreadyTriggered: boolean,
+		records: Map<string, ActionBufferedEdgeFrameRecord>
+	): boolean {
+		if (edgeId == null) {
+			return alreadyTriggered;
+		}
+		const existing = records.get(action) ?? null;
+		if (!alreadyTriggered) {
+			const sameEdge = existing != null && existing.edgeId === edgeId;
+			if (!sameEdge || existing.frame === this.simFrameCounter) {
+				alreadyTriggered = true;
+			}
+		}
+		if (alreadyTriggered) {
+			records.set(action, { frame: this.simFrameCounter, edgeId });
+		}
+		return alreadyTriggered;
 	}
 
 	private processPendingRebind(): void {
@@ -915,12 +947,11 @@ export class PlayerInput {
 		}
 		this.actionGuardRecords.clear();
 		this.actionRepeatRecords.clear();
-		this.actionPressRecords.clear();
-		this.actionReleaseRecords.clear();
 		this.actionBufferedPressFrameRecords.clear();
 		this.actionBufferedReleaseFrameRecords.clear();
 		this.lastPollTimestampMs = null;
 		this.guardWindowMs = ACTION_GUARD_MIN_MS;
 		this.frameCounter = 0;
+		this.simFrameCounter = 0;
 	}
 }

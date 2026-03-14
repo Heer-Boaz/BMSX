@@ -138,6 +138,7 @@ type FrameState = {
 	haltGame: boolean;
 	updateExecuted: boolean;
 	luaFaulted: boolean;
+	tickCompleted: boolean;
 	cycleBudgetRemaining: number;
 	cycleBudgetGranted: number;
 	cycleCarryGranted: number;
@@ -373,14 +374,18 @@ export class Runtime {
 	private luaInterpreter!: LuaInterpreter;
 	public pendingCall: 'entry' | null = null;
 	public get isDrawPending(): boolean {
-		return this.pendingCall === 'entry'
+		return this.hasEntryContinuation()
 			|| this.debuggerPaused
 			|| this.luaRuntimeFailed
 			|| this.faultSnapshot !== null;
 	}
 
-	private isUpdatePhasePending(): boolean {
+	private hasEntryContinuation(): boolean {
 		return this.pendingCall === 'entry';
+	}
+
+	private isUpdatePhasePending(): boolean {
+		return this.hasEntryContinuation();
 	}
 	public readonly memory: Memory;
 	public readonly cpu: CPU;
@@ -564,6 +569,7 @@ export class Runtime {
 		if (this.lastCompletedVblankSequence === vblankSequence) {
 			return;
 		}
+		frameState.tickCompleted = true;
 		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 		this.lastTickCompleted = true;
 		this.lastTickSequence += 1;
@@ -1278,6 +1284,7 @@ export class Runtime {
 			haltGame: this.debuggerPaused,
 			updateExecuted: false,
 			luaFaulted: this.luaRuntimeFailed,
+			tickCompleted: false,
 			cycleBudgetRemaining: budget,
 			cycleBudgetGranted: budget,
 			cycleCarryGranted: carryBudget,
@@ -1344,7 +1351,7 @@ export class Runtime {
 
 	private finalizeUpdateSlice(frameState: FrameState): void {
 		this.currentFrameState = frameState;
-		if (!this.isUpdatePhasePending()) {
+		if (frameState.tickCompleted || !this.hasEntryContinuation()) {
 			this.abandonFrameState();
 		}
 	}
@@ -1464,9 +1471,9 @@ export class Runtime {
 			}
 		}
 		this.clearWaitForVblank();
-		// Defer queue reset until the next slice so the completed frame can still be presented.
+		// Clear queues on the next runnable slice after the completed frame was presented.
 		this.clearBackQueuesAfterWaitResume = true;
-		return true;
+		return state.tickCompleted;
 	}
 
 	public drawIde(): void {
@@ -1747,8 +1754,13 @@ export class Runtime {
 		if (!this.luaGate.ready) {
 			return;
 		}
-		if (this.currentFrameState !== null || this.pendingCall !== null) {
+		if (this.currentFrameState !== null) {
 			runtimeLuaPipeline.resetFrameState(this);
+		}
+		if (this.pendingCall !== null) {
+			if (this.currentFrameState === null) {
+				runtimeLuaPipeline.resetFrameState(this);
+			}
 			this.pendingCall = null;
 			this.clearWaitForVblank();
 		}

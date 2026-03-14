@@ -5,8 +5,6 @@
  */
 
 #include "inputstatemanager.h"
-#include "../core/engine_core.h"
-#include <algorithm>
 
 namespace bmsx {
 
@@ -20,12 +18,9 @@ InputStateManager::InputStateManager() = default;
  * Frame lifecycle
  * ============================================================================ */
 
-/* ============================================================================
- * Frame lifecycle
- * ============================================================================ */
-
 void InputStateManager::beginFrame(f64 currentTimeMs) {
 	m_currentTimeMs = currentTimeMs;
+	m_currentFrame += 1;
 	
 	// Reset edge flags for all buttons (parity with TS)
 	for (auto& [id, state] : m_buttonStates) {
@@ -46,6 +41,8 @@ void InputStateManager::update(f64 currentTimeMs) {
 	
 	// Remove old events from buffer
 	pruneOldEvents();
+	pruneBufferedEdges(m_bufferedPressEdges);
+	pruneBufferedEdges(m_bufferedReleaseEdges);
 }
 
 /* ============================================================================
@@ -53,73 +50,91 @@ void InputStateManager::update(f64 currentTimeMs) {
  * ============================================================================ */
 
 void InputStateManager::addInputEvent(InputEvent evt) {
-	const std::string id = evt.identifier;
+	const i64 bufferedFrame = m_currentFrame + 1;
+	BufferedInputEvent bufferedEvent{
+		.event = std::move(evt),
+		.frame = bufferedFrame,
+	};
+	const InputEvent& event = bufferedEvent.event;
+	const std::string& id = event.identifier;
 	
 	// Update corresponding button state
 	auto& state = m_buttonStates[id];
 	
-	if (evt.eventType == InputEvent::Type::Press) {
-		bool wasPressed = state.pressed;
+	if (event.eventType == InputEvent::Type::Press) {
+		if (state.pressed) {
+			state.timestamp = event.timestamp;
+			return;
+		}
 		state.pressed = true;
-		state.justpressed = !wasPressed;
+		state.justpressed = true;
 		state.justreleased = false;
 		state.waspressed = true;
-		state.timestamp = evt.timestamp;
-		state.pressedAtMs = evt.timestamp;
-		state.pressId = evt.pressId;
+		state.timestamp = event.timestamp;
+		state.pressedAtMs = event.timestamp;
+		state.pressId = event.pressId.has_value() ? event.pressId : state.pressId;
 		state.value = 1.0f;
-		state.consumed = false;
-		if (!evt.consumed && evt.pressId.has_value()) {
-			m_latestUnconsumedPressIdByButton[id] = evt.pressId.value();
+		state.consumed = event.consumed;
+		if (event.pressId.has_value()) {
+			m_bufferedPressEdges[id] = BufferedEdgeRecord{
+				.edgeId = event.pressId.value(),
+				.frame = bufferedFrame,
+				.consumed = event.consumed,
+			};
 		}
 	} else {
-		bool wasPressed = state.pressed;
 		state.pressed = false;
 		state.justpressed = false;
-		state.justreleased = wasPressed;
-		state.wasreleased = state.wasreleased || wasPressed;
-		state.timestamp = evt.timestamp;
-		state.releasedAtMs = evt.timestamp;
+		state.justreleased = true;
+		state.wasreleased = true;
+		state.timestamp = event.timestamp;
+		state.releasedAtMs = event.timestamp;
 		state.presstime.reset();
+		state.pressId = event.pressId.has_value() ? event.pressId : state.pressId;
 		state.value = 0.0f;
-		state.consumed = false;
-		if (!evt.consumed && evt.pressId.has_value()) {
-			m_latestUnconsumedReleaseIdByButton[id] = evt.pressId.value();
+		state.consumed = event.consumed;
+		if (event.pressId.has_value()) {
+			m_bufferedReleaseEdges[id] = BufferedEdgeRecord{
+				.edgeId = event.pressId.value(),
+				.frame = bufferedFrame,
+				.consumed = event.consumed,
+			};
 		}
 	}
 
-	m_inputBuffer.push_back(std::move(evt));
+	m_inputBuffer.push_back(std::move(bufferedEvent));
 }
 
 void InputStateManager::consumeBufferedEvent(const std::string& identifier, std::optional<i32> pressId) {
-	for (auto& evt : m_inputBuffer) {
-		if (evt.identifier == identifier) {
-			if (!pressId.has_value() || evt.pressId == pressId) {
-				evt.consumed = true;
+	for (auto& bufferedEvent : m_inputBuffer) {
+		if (bufferedEvent.event.identifier == identifier) {
+			if (!pressId.has_value() || bufferedEvent.event.pressId == pressId) {
+				bufferedEvent.event.consumed = true;
 			}
 		}
 	}
-	if (!pressId.has_value()) {
-		m_latestUnconsumedPressIdByButton.erase(identifier);
-		m_latestUnconsumedReleaseIdByButton.erase(identifier);
-	} else {
-		auto pressIt = m_latestUnconsumedPressIdByButton.find(identifier);
-		if (pressIt != m_latestUnconsumedPressIdByButton.end() && pressIt->second == pressId.value()) {
-			m_latestUnconsumedPressIdByButton.erase(pressIt);
+	const auto consumeBufferedEdge = [&](std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap) {
+		auto it = edgeMap.find(identifier);
+		if (it == edgeMap.end()) {
+			return;
 		}
-		auto releaseIt = m_latestUnconsumedReleaseIdByButton.find(identifier);
-		if (releaseIt != m_latestUnconsumedReleaseIdByButton.end() && releaseIt->second == pressId.value()) {
-			m_latestUnconsumedReleaseIdByButton.erase(releaseIt);
+		if (!pressId.has_value() || it->second.edgeId == pressId.value()) {
+			it->second.consumed = true;
 		}
+	};
+	consumeBufferedEdge(m_bufferedPressEdges);
+	consumeBufferedEdge(m_bufferedReleaseEdges);
+	auto stateIt = m_buttonStates.find(identifier);
+	if (stateIt != m_buttonStates.end()) {
+		stateIt->second.consumed = true;
 	}
-	m_buttonStates[identifier].consumed = true;
 }
 
 /* ============================================================================
  * State queries
  * ============================================================================ */
 
-ButtonState InputStateManager::getButtonState(const std::string& button, std::optional<f64> windowMs) const {
+ButtonState InputStateManager::getButtonState(const std::string& button, std::optional<i32> windowFrames) const {
 	auto it = m_buttonStates.find(button);
 	if (it == m_buttonStates.end()) {
 		return ButtonState{};
@@ -127,13 +142,16 @@ ButtonState InputStateManager::getButtonState(const std::string& button, std::op
 	
 	ButtonState state = it->second;
 	
-	f64 effectiveWindow = windowMs.value_or(BUFFER_FRAME_RETENTION);
+	const i32 effectiveWindow = windowFrames.value_or(BUFFER_FRAME_RETENTION);
+	state.justpressed = getBufferedEdgeRecord(m_bufferedPressEdges, button, 1).has_value();
+	state.justreleased = getBufferedEdgeRecord(m_bufferedReleaseEdges, button, 1).has_value();
 	state.waspressed = state.pressed || wasPressedInWindow(button, effectiveWindow);
 	state.wasreleased = state.justreleased || wasReleasedInWindow(button, effectiveWindow);
 	if (!state.consumed) {
-		f64 cutoff = m_currentTimeMs - effectiveWindow;
-		for (const auto& evt : m_inputBuffer) {
-			if (evt.identifier == button && evt.timestamp >= cutoff && evt.consumed) {
+		for (const auto& bufferedEvent : m_inputBuffer) {
+			if (bufferedEvent.event.identifier == button &&
+				isBufferedFrameInWindow(bufferedEvent.frame, effectiveWindow) &&
+				bufferedEvent.event.consumed) {
 				state.consumed = true;
 				break;
 			}
@@ -143,14 +161,11 @@ ButtonState InputStateManager::getButtonState(const std::string& button, std::op
 	return state;
 }
 
-bool InputStateManager::wasPressedInWindow(const std::string& button, f64 windowMs) const {
-	f64 cutoff = m_currentTimeMs - windowMs;
-	
-	for (const auto& evt : m_inputBuffer) {
-		if (evt.identifier == button && 
-			evt.eventType == InputEvent::Type::Press &&
-			evt.timestamp >= cutoff &&
-			!evt.consumed) {
+bool InputStateManager::wasPressedInWindow(const std::string& button, i32 windowFrames) const {
+	for (const auto& bufferedEvent : m_inputBuffer) {
+		if (bufferedEvent.event.identifier == button &&
+			bufferedEvent.event.eventType == InputEvent::Type::Press &&
+			isBufferedFrameInWindow(bufferedEvent.frame, windowFrames)) {
 			return true;
 		}
 	}
@@ -158,14 +173,11 @@ bool InputStateManager::wasPressedInWindow(const std::string& button, f64 window
 	return false;
 }
 
-bool InputStateManager::wasReleasedInWindow(const std::string& button, f64 windowMs) const {
-	f64 cutoff = m_currentTimeMs - windowMs;
-	
-	for (const auto& evt : m_inputBuffer) {
-		if (evt.identifier == button && 
-			evt.eventType == InputEvent::Type::Release &&
-			evt.timestamp >= cutoff &&
-			!evt.consumed) {
+bool InputStateManager::wasReleasedInWindow(const std::string& button, i32 windowFrames) const {
+	for (const auto& bufferedEvent : m_inputBuffer) {
+		if (bufferedEvent.event.identifier == button &&
+			bufferedEvent.event.eventType == InputEvent::Type::Release &&
+			isBufferedFrameInWindow(bufferedEvent.frame, windowFrames)) {
 			return true;
 		}
 	}
@@ -179,6 +191,10 @@ std::optional<i32> InputStateManager::getLatestUnconsumedPressId(const std::stri
 
 std::optional<i32> InputStateManager::getLatestUnconsumedReleaseId(const std::string& button) const {
 	return getLatestUnconsumedEdgeId(button, InputEvent::Type::Release);
+}
+
+bool InputStateManager::hasTrackedButton(const std::string& button) const {
+	return m_buttonStates.find(button) != m_buttonStates.end();
 }
 
 /* ============================================================================
@@ -195,15 +211,17 @@ void InputStateManager::resetEdgeState() {
 	
 	// Clear input buffer
 	m_inputBuffer.clear();
-	m_latestUnconsumedPressIdByButton.clear();
-	m_latestUnconsumedReleaseIdByButton.clear();
+	m_bufferedPressEdges.clear();
+	m_bufferedReleaseEdges.clear();
+	m_currentFrame = 0;
 }
 
 void InputStateManager::clear() {
 	m_buttonStates.clear();
 	m_inputBuffer.clear();
-	m_latestUnconsumedPressIdByButton.clear();
-	m_latestUnconsumedReleaseIdByButton.clear();
+	m_bufferedPressEdges.clear();
+	m_bufferedReleaseEdges.clear();
+	m_currentFrame = 0;
 	m_currentTimeMs = 0.0;
 }
 
@@ -212,31 +230,52 @@ void InputStateManager::clear() {
  * ============================================================================ */
 
 std::optional<i32> InputStateManager::getLatestUnconsumedEdgeId(const std::string& button, InputEvent::Type eventType) const {
-	constexpr f64 EDGE_ID_WINDOW_FRAMES = 2.0;
-	const f64 timestepMs = EngineCore::instance().deltaTime() * 1000.0;
-	const f64 windowMs = EDGE_ID_WINDOW_FRAMES * timestepMs;
-	const f64 cutoff = m_currentTimeMs - windowMs;
-	for (auto it = m_inputBuffer.rbegin(); it != m_inputBuffer.rend(); ++it) {
-		const InputEvent& evt = *it;
-		if (evt.timestamp < cutoff) {
-			break;
-		}
-		if (evt.identifier != button ||
-			evt.eventType != eventType ||
-			evt.consumed ||
-			!evt.pressId.has_value()) {
-			continue;
-		}
-		return evt.pressId;
+	const auto& edgeMap = eventType == InputEvent::Type::Press
+		? m_bufferedPressEdges
+		: m_bufferedReleaseEdges;
+	auto edge = getBufferedEdgeRecord(edgeMap, button, RECENT_BUFFERED_EDGE_FRAMES);
+	if (!edge.has_value()) {
+		return std::nullopt;
 	}
-	return std::nullopt;
+	return edge->edgeId;
+}
+
+std::optional<InputStateManager::BufferedEdgeRecord> InputStateManager::getBufferedEdgeRecord(
+	const std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap,
+	const std::string& button,
+	i32 windowFrames
+) const {
+	auto it = edgeMap.find(button);
+	if (it == edgeMap.end()) {
+		return std::nullopt;
+	}
+	const BufferedEdgeRecord& edge = it->second;
+	if (edge.consumed || !isBufferedFrameInWindow(edge.frame, windowFrames)) {
+		return std::nullopt;
+	}
+	return edge;
+}
+
+bool InputStateManager::isBufferedFrameInWindow(i64 frame, i32 windowFrames) const {
+	if (windowFrames <= 0) {
+		return false;
+	}
+	return m_currentFrame - frame < windowFrames;
 }
 
 void InputStateManager::pruneOldEvents() {
-	f64 cutoff = m_currentTimeMs - BUFFER_FRAME_RETENTION;
-	
-	while (!m_inputBuffer.empty() && m_inputBuffer.front().timestamp < cutoff) {
+	while (!m_inputBuffer.empty() && !isBufferedFrameInWindow(m_inputBuffer.front().frame, BUFFER_FRAME_RETENTION)) {
 		m_inputBuffer.pop_front();
+	}
+}
+
+void InputStateManager::pruneBufferedEdges(std::unordered_map<std::string, BufferedEdgeRecord>& edgeMap) {
+	for (auto it = edgeMap.begin(); it != edgeMap.end();) {
+		if (!isBufferedFrameInWindow(it->second.frame, BUFFER_FRAME_RETENTION)) {
+			it = edgeMap.erase(it);
+			continue;
+		}
+		++it;
 	}
 }
 

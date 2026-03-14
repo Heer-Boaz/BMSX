@@ -2,12 +2,12 @@
 -- transition overlay — renders the fade mask and optional banner text.
 --
 -- CROSS-CUTTING SUBSCRIBER PATTERN:
--- Subscribes to three director broadcasts via FSM root `on`:
---   'transition'       (from 'd') — stores optional banner_lines from payload.
---   'transition.mask.play' (from 'd') — plays the fade mask timeline.  This
---     event is cross-cutting: the director emits it for ALL mode switches
---     (halo, title, story, death, etc.), not just 'transition'.  The overlay
---     does not need to know which mode is active — it just plays the mask.
+-- Subscribes to director broadcasts via FSM root `on`:
+--   'transition'       (from 'd') — stores optional banner_lines from payload
+--     and plays the fade mask timeline.
+--   transition-mode broadcasts ('halo', 'title', 'story', 'ending',
+--     'victory_dance', 'death') — also play the fade mask timeline. The mode
+--     broadcast itself is the canonical signal; no second relay event exists.
 --   'room'             (from 'd') — clears banner_lines (self-clear).
 --
 -- The banner text is only shown when the director tag 'd.bt' is active
@@ -20,6 +20,15 @@ local font = require('font')
 
 local transition = {}
 transition.__index = transition
+
+local transition_mode_events = {
+	'halo',
+	'title',
+	'story',
+	'ending',
+	'victory_dance',
+	'death',
+}
 
 function transition:bind_visual()
 	local rc = self:get_component('customvisualcomponent')
@@ -53,28 +62,34 @@ function transition:ctor()
 end
 
 local function define_transition_fsm()
+	local on = {
+		['transition'] = {
+			emitter = 'd',
+			go = function(self, _state, event)
+				self.banner_lines = event and event.lines or {}
+				self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
+			end,
+		},
+		['room'] = {
+			emitter = 'd',
+			go = function(self)
+				self.banner_lines = {}
+			end,
+		},
+	}
+	for i = 1, #transition_mode_events do
+		local event_name = transition_mode_events[i]
+		on[event_name] = {
+			emitter = 'd',
+			go = function(self)
+				self.banner_lines = {}
+				self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
+			end,
+		}
+	end
 	define_fsm('transition', {
 		initial = 'active',
-		on = {
-			['transition'] = {
-				emitter = 'd',
-				go = function(self, _state, event)
-					self.banner_lines = event and event.lines or {}
-				end,
-			},
-			['transition.mask.play'] = {
-				emitter = 'd',
-				go = function(self)
-					self:play_timeline('transition.timeline', { rewind = true, snap_to_start = true })
-				end,
-			},
-			['room'] = {
-				emitter = 'd',
-				go = function(self)
-					self.banner_lines = {}
-				end,
-			},
-		},
+		on = on,
 		states = {
 			active = {},
 		},

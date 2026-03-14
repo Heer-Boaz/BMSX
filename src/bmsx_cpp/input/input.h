@@ -130,6 +130,9 @@ public:
 	
 	// Poll all inputs (call once per frame)
 	void pollInput();
+
+	// Advance input edge state for one simulation frame
+	void beginFrame();
 	
 	// ─────────────────────────────────────────────────────────────────────────
 	// Button event handling (from platform)
