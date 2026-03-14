@@ -524,6 +524,31 @@ static std::optional<MusicTransitionRequest> parseMusicTransition(const Value& v
 	return request;
 }
 
+static std::optional<i32> parseStopMusicFadeMs(const Value& value) {
+	if (isNil(value)) {
+		return std::nullopt;
+	}
+	if (!valueIsTable(value)) {
+		throw BMSX_RUNTIME_ERROR("stop_music options must be a table");
+	}
+	const Table& table = *asTable(value);
+	auto key = [](std::string_view name) {
+		return Runtime::instance().canonicalizeIdentifier(name);
+	};
+	Value fadeVal = table.get(key("fade_ms"));
+	Value crossfadeVal = table.get(key("crossfade_ms"));
+	if (!isNil(fadeVal) && !valueIsNumber(fadeVal)) {
+		throw BMSX_RUNTIME_ERROR("stop_music.fade_ms must be a number");
+	}
+	if (!isNil(crossfadeVal)) {
+		throw BMSX_RUNTIME_ERROR("stop_music does not support crossfade_ms");
+	}
+	if (isNil(fadeVal)) {
+		return std::nullopt;
+	}
+	return static_cast<i32>(std::floor(valueToNumber(fadeVal)));
+}
+
 static void playWithPolicy(AudioType type, const AssetId& id, const ParsedAudioOptions& options) {
 	SoundMaster* soundMaster = EngineCore::instance().soundMaster();
 	const RuntimeAssets& assets = EngineCore::instance().assets();
@@ -1383,8 +1408,8 @@ m_runtime.registerNativeFunction("music", [this, asText](const std::vector<Value
 });
 
 m_runtime.registerNativeFunction("stop_music", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	(void)args;
-	stop_music();
+	const Value optionsValue = args.empty() ? valueNil() : args.at(0);
+	stop_music(parseStopMusicFadeMs(optionsValue));
 	(void)out;
 });
 
@@ -1780,8 +1805,8 @@ void Api::music(const std::string& id) {
 	soundMaster->play(id);
 }
 
-void Api::stop_music() {
-	EngineCore::instance().soundMaster()->stopMusic();
+void Api::stop_music(std::optional<i32> fadeMs) {
+	EngineCore::instance().soundMaster()->stopMusic(fadeMs);
 }
 
 void Api::set_master_volume(double volume) {

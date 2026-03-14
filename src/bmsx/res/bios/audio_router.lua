@@ -233,7 +233,11 @@ local action_opts = {}
 
 local function dispatch_action(event_name, entry, action, payload)
 	if action.stop_music then
-		stop_music()
+		if type(action.stop_music) == 'table' or type(action.stop_music) == 'native' then
+			stop_music(action.stop_music)
+		else
+			stop_music()
+		end
 		return
 	end
 	if action.sequence then

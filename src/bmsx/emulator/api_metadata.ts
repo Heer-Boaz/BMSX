@@ -358,7 +358,9 @@ export const API_METHOD_METADATA = {
 	},
 	stop_music: {
 		description: 'Stops background music playback.',
-		parameters: [],
+		parameters: [
+			{ name: 'options', optional: true, description: 'Optional stop options such as fade_ms.' },
+		],
 		returnType: 'void',
 	},
 	set_master_volume: {

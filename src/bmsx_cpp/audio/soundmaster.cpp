@@ -158,8 +158,24 @@ void SoundMaster::stopEffect() {
 	stop(AudioType::Sfx, AudioStopSelector::All);
 }
 
-void SoundMaster::stopMusic() {
-	stop(AudioType::Music, AudioStopSelector::All);
+void SoundMaster::stopMusic(std::optional<i32> fadeMs) {
+	cancelActiveMusicTransition();
+	const i32 fadeMsValue = fadeMs.has_value() ? fadeMs.value() : 0;
+	if (fadeMsValue <= 0) {
+		stop(AudioType::Music, AudioStopSelector::All);
+		return;
+	}
+	const f64 fadeSec = static_cast<f64>(fadeMsValue) / 1000.0;
+	const size_t musicIdx = typeIndex(AudioType::Music);
+	auto& pool = m_voicesByType[musicIdx];
+	if (pool.empty()) {
+		stop(AudioType::Music, AudioStopSelector::All);
+		return;
+	}
+	for (auto& record : pool) {
+		rampVoiceGain(record, MIN_GAIN, fadeSec);
+		record.stopAfter = fadeSec;
+	}
 }
 
 void SoundMaster::stopUI() {

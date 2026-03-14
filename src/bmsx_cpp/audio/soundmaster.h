@@ -123,7 +123,7 @@ public:
 	VoiceId play(const AssetId& id, const SoundMasterPlayRequest& request = {});
 	void stop(AudioType type, AudioStopSelector which, VoiceId voiceId = 0, const AssetId& id = {});
 	void stopEffect();
-	void stopMusic();
+	void stopMusic(std::optional<i32> fadeMs = std::nullopt);
 	void stopUI();
 
 	void pause(AudioType type);

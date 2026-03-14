@@ -901,8 +901,23 @@ export class Api {
 		playWithPolicy('music', id, parsed);
 	}
 
-	public stop_music(): void {
-		$.sndmaster.stopMusic();
+	public stop_music(options?: AudioPlayOptions): void {
+		if (options === undefined) {
+			$.sndmaster.stopMusic();
+			return;
+		}
+		if (!isObject(options)) {
+			throw new Error('stop_music options must be a table.');
+		}
+		if (options.fade_ms !== undefined && typeof options.fade_ms !== 'number') {
+			throw new Error('stop_music.fade_ms must be a number.');
+		}
+		if (options.crossfade_ms !== undefined) {
+			throw new Error('stop_music does not support crossfade_ms.');
+		}
+		$.sndmaster.stopMusic({
+			fade_ms: options.fade_ms,
+		});
 	}
 
 	public set_master_volume(volume: number): void {

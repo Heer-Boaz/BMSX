@@ -69,7 +69,7 @@ public:
 	void sfx(const std::string& id);
 	void stop_sfx();
 	void music(const std::string& id);
-	void stop_music();
+	void stop_music(std::optional<i32> fadeMs = std::nullopt);
 	void set_master_volume(double volume);
 	void set_sprite_parallax_rig(f32 vy, f32 scale, f32 impact, f32 impact_t,
 									f32 bias_px, f32 parallax_strength,

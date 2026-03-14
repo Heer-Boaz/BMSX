@@ -1375,7 +1375,13 @@ export class SoundMaster implements RegisterablePersistent {
 		this.stop('sfx', 'all');
 	}
 
-	public stopMusic(): void {
+	public stopMusic(opts?: { fade_ms?: number; }): void {
+		const transitionId = this.beginMusicTransition();
+		const fade_ms = opts?.fade_ms;
+		if (fade_ms !== undefined && fade_ms > 0) {
+			this.stopMusicAfterFadeOut(transitionId, fade_ms);
+			return;
+		}
 		this.stop('music', 'all');
 	}
 
@@ -1760,6 +1766,37 @@ export class SoundMaster implements RegisterablePersistent {
 				}
 			}
 			this.startMusicNow(target, start_at_loop_start, startAtSeconds);
+		}, fadeOutMs);
+	}
+
+	private stopMusicAfterFadeOut(transitionId: number, fade_ms: number): void {
+		const fadeOutMs = Math.max(0, Math.floor(fade_ms));
+		const oldRecords = this.voicesByType.music.slice();
+		if (oldRecords.length === 0) {
+			return;
+		}
+		if (fadeOutMs <= 0) {
+			this.stop('music', 'all');
+			return;
+		}
+		const fadeOutSec = fadeOutMs / 1000;
+		for (let i = 0; i < oldRecords.length; i++) {
+			const record = oldRecords[i];
+			if (!record.finalized) {
+				record.handle.rampGainLinear(MIN_GAIN, fadeOutSec);
+			}
+		}
+		this.musicTransitionTimer = setTimeout(() => {
+			this.musicTransitionTimer = null;
+			if (transitionId !== this.musicTransitionRequestId) {
+				return;
+			}
+			for (let i = 0; i < oldRecords.length; i++) {
+				const record = oldRecords[i];
+				if (!record.finalized) {
+					this.stopVoiceRecord('music', record);
+				}
+			}
 		}, fadeOutMs);
 	}
 

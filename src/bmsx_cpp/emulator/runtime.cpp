@@ -378,6 +378,20 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	m_lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 	m_lastTickCompleted = true;
 	m_lastTickSequence += 1;
+	if (isWaitForVblankDebugEnabled()) {
+		const auto now = std::chrono::steady_clock::now();
+		if (!m_debugWaitForVblankReportInitialized) {
+			m_debugWaitForVblankReportInitialized = true;
+			m_debugWaitForVblankReportAt = now;
+		}
+		m_debugWaitForVblankCompleteCount += 1;
+		m_debugWaitForVblankCompletionRemainingAcc += static_cast<double>(frameState.cycleBudgetRemaining);
+		m_debugWaitForVblankCompletionRemainingMax = std::max(m_debugWaitForVblankCompletionRemainingMax, static_cast<double>(frameState.cycleBudgetRemaining));
+		m_debugWaitForVblankCompletionGrantedAcc += static_cast<double>(frameState.cycleBudgetGranted);
+		m_debugWaitForVblankCompletionCarryGrantedAcc += static_cast<double>(frameState.cycleCarryGranted);
+		m_debugWaitForVblankLastCompletionSequence = vblankSequence;
+		flushWaitForVblankDebug(now);
+	}
 }
 
 void Runtime::reconcileCycleBudgetAfterSignal(FrameState& frameState) {
@@ -392,6 +406,73 @@ void Runtime::reconcileCycleBudgetAfterSignal(FrameState& frameState) {
 	}
 }
 
+bool Runtime::isWaitForVblankDebugEnabled() const {
+	static const bool enabled = []() {
+		const char* value = std::getenv("BMSX_DEBUG_WAIT_VBLANK");
+		return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+	}();
+	return enabled;
+}
+
+void Runtime::flushWaitForVblankDebug(std::chrono::steady_clock::time_point now) {
+	if (!isWaitForVblankDebugEnabled()) {
+		return;
+	}
+	if (!m_debugWaitForVblankReportInitialized) {
+		m_debugWaitForVblankReportInitialized = true;
+		m_debugWaitForVblankReportAt = now;
+		return;
+	}
+	const double elapsedMs = to_ms(now - m_debugWaitForVblankReportAt);
+	const i64 active = m_debugWaitForVblankRequestCount
+		+ m_debugWaitForVblankIdleAdvanceCount
+		+ m_debugWaitForVblankPendingCount
+		+ m_debugWaitForVblankCompleteCount;
+	if (elapsedMs < 1000.0 || active == 0) {
+		return;
+	}
+	const double idleCyclesPerAdvance = m_debugWaitForVblankIdleAdvanceCount == 0
+		? 0.0
+		: (m_debugWaitForVblankIdleAdvanceCyclesAcc / static_cast<double>(m_debugWaitForVblankIdleAdvanceCount));
+	const double remainingPerComplete = m_debugWaitForVblankCompleteCount == 0
+		? 0.0
+		: (m_debugWaitForVblankCompletionRemainingAcc / static_cast<double>(m_debugWaitForVblankCompleteCount));
+	const double grantedPerComplete = m_debugWaitForVblankCompleteCount == 0
+		? 0.0
+		: (m_debugWaitForVblankCompletionGrantedAcc / static_cast<double>(m_debugWaitForVblankCompleteCount));
+	const double carryPerComplete = m_debugWaitForVblankCompleteCount == 0
+		? 0.0
+		: (m_debugWaitForVblankCompletionCarryGrantedAcc / static_cast<double>(m_debugWaitForVblankCompleteCount));
+	std::cerr
+		<< "[BMSX][wait_vblank] req=" << m_debugWaitForVblankRequestCount
+		<< " immediate=" << m_debugWaitForVblankImmediateCount
+		<< " idleAdv=" << m_debugWaitForVblankIdleAdvanceCount
+		<< " idleCycles/adv=" << std::fixed << std::setprecision(1) << idleCyclesPerAdvance
+		<< " pending=" << m_debugWaitForVblankPendingCount
+		<< " complete=" << m_debugWaitForVblankCompleteCount
+		<< " remaining/complete=" << remainingPerComplete
+		<< " maxRemaining=" << m_debugWaitForVblankCompletionRemainingMax
+		<< " granted/complete=" << grantedPerComplete
+		<< " carryGranted/complete=" << carryPerComplete
+		<< " seq=" << m_debugWaitForVblankLastCompletionSequence
+		<< " liveSeq=" << m_vblankSequence
+		<< " target=" << m_waitForVblankTargetSequence
+		<< " pendingCarry=" << m_pendingCarryBudget
+		<< " cyclesIntoFrame=" << m_cyclesIntoFrame
+		<< std::endl;
+	m_debugWaitForVblankReportAt = now;
+	m_debugWaitForVblankRequestCount = 0;
+	m_debugWaitForVblankImmediateCount = 0;
+	m_debugWaitForVblankIdleAdvanceCount = 0;
+	m_debugWaitForVblankIdleAdvanceCyclesAcc = 0.0;
+	m_debugWaitForVblankPendingCount = 0;
+	m_debugWaitForVblankCompleteCount = 0;
+	m_debugWaitForVblankCompletionRemainingAcc = 0.0;
+	m_debugWaitForVblankCompletionRemainingMax = 0.0;
+	m_debugWaitForVblankCompletionGrantedAcc = 0.0;
+	m_debugWaitForVblankCompletionCarryGrantedAcc = 0.0;
+}
+
 void Runtime::requestWaitForVblank() {
 	processIrqAck();
 	const bool resumeOnCurrentEdge = m_vblankActive && !m_vblankPendingClear && m_vblankSequence > 0;
@@ -402,6 +483,18 @@ void Runtime::requestWaitForVblank() {
 	m_waitForVblankTargetSequence = resumeOnCurrentEdge
 		? m_vblankSequence
 		: nextVblankSequence;
+	if (isWaitForVblankDebugEnabled()) {
+		const auto now = std::chrono::steady_clock::now();
+		if (!m_debugWaitForVblankReportInitialized) {
+			m_debugWaitForVblankReportInitialized = true;
+			m_debugWaitForVblankReportAt = now;
+		}
+		m_debugWaitForVblankRequestCount += 1;
+		if (resumeOnCurrentEdge) {
+			m_debugWaitForVblankImmediateCount += 1;
+		}
+		flushWaitForVblankDebug(now);
+	}
 	if (resumeOnCurrentEdge) {
 		if (!m_frameActive) {
 			throw BMSX_RUNTIME_ERROR("[Runtime] wait_vblank resumed without an active frame state.");
@@ -977,10 +1070,29 @@ void Runtime::executeUpdateCallback() {
 				if (m_vblankSequence < m_waitForVblankTargetSequence) {
 					if (m_frameState.cycleBudgetRemaining > 0) {
 						const int idleCycles = m_frameState.cycleBudgetRemaining;
+						if (isWaitForVblankDebugEnabled()) {
+							const auto now = std::chrono::steady_clock::now();
+							if (!m_debugWaitForVblankReportInitialized) {
+								m_debugWaitForVblankReportInitialized = true;
+								m_debugWaitForVblankReportAt = now;
+							}
+							m_debugWaitForVblankIdleAdvanceCount += 1;
+							m_debugWaitForVblankIdleAdvanceCyclesAcc += static_cast<double>(idleCycles);
+							flushWaitForVblankDebug(now);
+						}
 						advanceHardware(idleCycles);
 						processIrqAck();
 					}
 					if (m_vblankSequence < m_waitForVblankTargetSequence) {
+						if (isWaitForVblankDebugEnabled()) {
+							const auto now = std::chrono::steady_clock::now();
+							if (!m_debugWaitForVblankReportInitialized) {
+								m_debugWaitForVblankReportInitialized = true;
+								m_debugWaitForVblankReportAt = now;
+							}
+							m_debugWaitForVblankPendingCount += 1;
+							flushWaitForVblankDebug(now);
+						}
 						return;
 					}
 				}

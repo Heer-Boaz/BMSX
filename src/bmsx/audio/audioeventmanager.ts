@@ -116,7 +116,14 @@ export interface MusicTransitionSpec {
 	}
 }
 
-export type AudioActionSpec = AudioAction | AudioActionOneOfSpec | MusicTransitionSpec;
+export interface StopMusicSpec {
+	kind: 'stopmusic';
+	stop_music: true | {
+		fade_ms?: number;
+	};
+}
+
+export type AudioActionSpec = AudioAction | AudioActionOneOfSpec | MusicTransitionSpec | StopMusicSpec;
 
 export interface AudioEventRule {
 	kind: 'rule';
@@ -340,6 +347,17 @@ export class AudioEventManager implements RegisterablePersistent {
 			const r = entry.rules[i];
 			if (!this.ruleMatches(r, payload)) continue;
 			const d = r.go;
+			const stopMusic = (d as StopMusicSpec).stop_music;
+			if (stopMusic) {
+				if (stopMusic === true) {
+					$.sndmaster.stopMusic();
+					return true;
+				}
+				$.sndmaster.stopMusic({
+					fade_ms: stopMusic.fade_ms,
+				});
+				return true;
+			}
 			const transition = (d as MusicTransitionSpec).music_transition;
 			if (transition) {
 				if (transition.fade_ms !== undefined && transition.crossfade_ms !== undefined) {
