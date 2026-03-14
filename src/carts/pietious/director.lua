@@ -430,6 +430,26 @@ local function define_director_fsm()
 				},
 				entering_state = director.begin_black_wait,
 			},
+			room_switch_wait_visible = {
+				timelines = {
+					[room_switch_wait_timeline_id] = {
+						def = {
+							frames = timeline.range(constants.flow.room_switch_wait_frames),
+							playback_mode = 'once',
+						},
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = {
+							rewind = true,
+							snap_to_start = true,
+						},
+						on_end = '/room',
+					},
+				},
+				entering_state = function(self)
+					self:set_active_space('main')
+				end,
+			},
 			world_transition_enter = {
 				entering_state = director.begin_world_transition,
 				on = {
@@ -452,7 +472,7 @@ local function define_director_fsm()
 				on = {
 					['world_emerge_done'] = {
 						emitter = 'pietolon',
-						go = '/room_switch_wait',
+						go = '/room_switch_wait_visible',
 					},
 				},
 			},

@@ -449,13 +449,15 @@ function castle:bind()
 		end,
 	})
 	-- director emits 'room' when the room state becomes active; castle
-	-- responds by assembling and emitting 'room.enter' with the room payload.
+	-- only flushes a deferred room.enter here for transitions that delayed it.
 	self.events:on({
 		event = 'room',
 		emitter = 'd',
 		subscriber = self,
 		handler = function()
-			self:emit_room_enter()
+			if self.room_enter_pending then
+				self:emit_room_enter()
+			end
 		end,
 	})
 	-- director emits this when the player has died; castle resolves internal
@@ -607,6 +609,7 @@ end
 
 function castle:ctor()
 	self.world_boss_defeated = {}
+	self.room_enter_pending = false
 	self:reset_room_encounter_tags()
 	progression.mount(self, build_progression_program())
 end
@@ -624,11 +627,17 @@ function castle:sync_world_entrance_states_for_room(room_state)
 end
 
 function castle:emit_room_enter()
+	self.room_enter_pending = false
 	local room = current_room()
 	local payload = {
 		room_number = self.current_room_number,
 		world_number = room.world_number,
 	}
+	if room.last_room_switch ~= nil and room.last_room_switch.direction == 'world_leave' then
+		payload.suppress_room_music = true
+	else
+		payload.suppress_room_music = false
+	end
 	if self:has_tag(castle_tags.seal_active) then
 		payload.has_active_seal = true
 	else
@@ -655,6 +664,8 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter
 	room_spawner.spawn_all_for_room(room)
 	if emit_room_enter_now == nil or emit_room_enter_now then
 		self:emit_room_enter()
+	else
+		self.room_enter_pending = true
 	end
 	return switch
 end
@@ -670,6 +681,7 @@ function castle:initialize(initial_room_number)
 	rm.last_room_switch = nil
 	self.world_entrance_states = {}
 	self.world_boss_defeated = {}
+	self.room_enter_pending = false
 	self:reset_room_encounter_tags()
 	self:sync_world_entrance_states_for_room(rm)
 	self:refresh_current_room_customizations()
@@ -744,7 +756,7 @@ function castle:leave_world_to_castle(emit_room_enter_now)
 
 	room:load_room(transition.castle_room_number)
 	self.current_room_number = transition.castle_room_number
-	local switch = create_room_switch(from_room_number, self.current_room_number, 'right')
+	local switch = create_room_switch(from_room_number, self.current_room_number, 'world_leave')
 	self:commit_room_switch(
 		switch,
 		0,
@@ -794,6 +806,7 @@ local function register_castle_definition()
 			current_room_number = 0,
 			world_entrance_states = {},
 			world_boss_defeated = {},
+			room_enter_pending = false,
 		},
 	})
 end

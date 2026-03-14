@@ -56,13 +56,13 @@ function world_item:ctor()
 end
 
 local function define_world_item_fsm()
-	define_fsm('world_item', {
-		initial = 'active',
-		on = {
-			['overlap'] = function(self, _state, event)
-				if combat_overlap.classify_player_contact(event) ~= 'body' then
-					return
-				end
+		define_fsm('world_item', {
+			initial = 'active',
+			on = {
+				['overlap.begin'] = function(self, _state, event)
+					if combat_overlap.classify_player_contact(event) ~= 'body' then
+						return
+					end
 				local player = object('pietolon')
 				if player.health <= 0 then
 					return

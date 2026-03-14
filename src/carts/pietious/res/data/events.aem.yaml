@@ -6,12 +6,14 @@ events:
             - when:
                   equals:
                       daemon_fight_active: true
+                      suppress_room_music: false
               go:
                   music_transition:
                       audio_id: music_daemonfight
             - when:
                   equals:
                       has_active_seal: true
+                      suppress_room_music: false
               go:
                   music_transition:
                       audio_id: music_seal_2
@@ -20,10 +22,14 @@ events:
             - when:
                   equals:
                       world_number: 0
+                      suppress_room_music: false
               go:
                   music_transition:
                       audio_id: music_castle
-            - go:
+            - when:
+                  equals:
+                      suppress_room_music: false
+              go:
                   music_transition:
                       audio_id: music_world
 
@@ -173,6 +179,13 @@ events:
                       - stop_music: true
                       - audio_id: enterleave
 
+    world_emerge_done:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_castle
+
     worlddooropen:
         channel: sfx
         rules:
@@ -242,8 +255,7 @@ events:
         channel: music
         rules:
             - go:
-                  music_transition:
-                      audio_id: music_castle
+                  stop_music:
                       fade_ms: 2480
 
     damage.resolved:

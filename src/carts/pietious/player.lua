@@ -989,7 +989,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self.enter_leave_world_target = nil
 		self.enter_leave_shrine_text_lines = {}
 		self.events:emit('leave_world_start')
-		self:emit_room_switched(leave_switch.from_room_number, leave_switch.to_room_number, 'right')
+		self:emit_room_switched(leave_switch.from_room_number, leave_switch.to_room_number, leave_switch.direction)
 		return true
 	end
 	local room = object('room')
