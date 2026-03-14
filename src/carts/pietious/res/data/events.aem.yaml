@@ -228,7 +228,7 @@ events:
             - go:
                   music_transition:
                       audio_id: music_castle
-                      fade_ms: 1240
+                      fade_ms: 2480
 
     damage.resolved:
         channel: sfx
