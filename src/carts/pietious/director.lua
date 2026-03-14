@@ -442,7 +442,7 @@ local function define_director_fsm()
 			world_transition_leave = {
 				entering_state = director.begin_world_transition,
 				on = {
-					['room_switched'] = '/banner_transition/castle_emerge_prewait',
+					['room_switched'] = '/banner_transition/castle_emerge_showing',
 				},
 			},
 			world_transition_emerge = {
@@ -566,19 +566,6 @@ local function define_director_fsm()
 							},
 						},
 						tags = { 'd.bt' },
-					},
-					castle_emerge_prewait = {
-						timelines = {
-							[banner_pre_delay_timeline_id] = {
-								autoplay = true,
-								stop_on_exit = true,
-								play_options = {
-									rewind = true,
-									snap_to_start = true,
-								},
-								on_end = '/banner_transition/castle_emerge_showing',
-							},
-						},
 					},
 					castle_emerge_showing = {
 						on = {

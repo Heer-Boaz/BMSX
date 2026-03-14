@@ -842,10 +842,12 @@ function player:begin_entering_shrine(shrine)
 	self.events:emit('enter_shrine_start')
 end
 
-function player:begin_world_emerge_from_door()
+function player:begin_world_emerge_from_door_midpoint()
 	self:cancel_sword()
 	self:clear_input_state()
-	self:reset_enter_leave_animation()
+	self.transition_step = constants.world_entrance.enter_world_midpoint_step
+	self:update_enter_leave_anim_frame()
+	self.to_enter_cut = constants.world_entrance.enter_world_midpoint_step
 	self.enter_leave_world_target = nil
 	self.enter_leave_shrine_text_lines = {}
 	self.events:emit('world_emerge_start')
@@ -978,7 +980,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	if switch.outside then
 		local director = object('d')
 		director.events:emit('world_leave_transition_start')
-		local leave_switch = object('c'):leave_world_to_castle()
+		local leave_switch = object('c'):leave_world_to_castle(false)
 		self:apply_spawn_position(leave_switch)
 		self:zero_motion()
 		self:reset_stairs_lock()
@@ -1651,13 +1653,13 @@ function player:apply_move(dx, dy, include_elevator_collision)
 	local max_x = room.world_width - self.width
 	local room_links = room.room_links
 	if self.x < room.tile_size then
-		if room_links.left <= 0 then
+		if room_links.left == 0 then
 			self.x = room.tile_size
 			collided_x = true
 		end
 	end
 	if self.x > max_x then
-		if room_links.right <= 0 then
+		if room_links.right == 0 then
 			self.x = max_x
 			collided_x = true
 		end
@@ -2989,7 +2991,7 @@ local function define_player_fsm()
 					['player.world_emerge'] = {
 						emitter = 'd',
 						go = function(self)
-							self:begin_world_emerge_from_door()
+							self:begin_world_emerge_from_door_midpoint()
 						end,
 					},
 					['player.shrine_overlay_exit'] = {

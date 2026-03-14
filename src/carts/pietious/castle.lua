@@ -735,7 +735,7 @@ function castle:enter_world(target)
 	return switch
 end
 
-function castle:leave_world_to_castle()
+function castle:leave_world_to_castle(emit_room_enter_now)
 	local room = current_room()
 	local world_number = room.world_number
 	local from_room_number = self.current_room_number
@@ -749,7 +749,8 @@ function castle:leave_world_to_castle()
 		switch,
 		0,
 		transition.castle_map_x,
-		transition.castle_map_y
+		transition.castle_map_y,
+		emit_room_enter_now
 	)
 
 	return {

@@ -165,6 +165,14 @@ events:
             - go:
                   audio_id: enterleave
 
+    world_emerge_start:
+        channel: sfx
+        rules:
+            - go:
+                  sequence:
+                      - stop_music: true
+                      - audio_id: enterleave
+
     worlddooropen:
         channel: sfx
         rules:
@@ -223,6 +231,14 @@ events:
                   audio_id: gamestart
 
     halo_resolved_from_world:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_castle
+                      fade_ms: 2480
+
+    world_leave_transition_start:
         channel: music
         rules:
             - go:
