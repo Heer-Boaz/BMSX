@@ -35,44 +35,55 @@ void KeyboardInput::pollInput() {
 	// Update gamepad button states from key states
 	for (auto& [keyCode, keyState] : m_keyStates) {
 		auto& prev = m_gamepadButtonStates[keyCode];
-		bool isDown = keyState.pressed;
-		bool wasDown = prev.pressed;
+		const bool isDown = keyState.pressed;
+		const bool wasDown = prev.pressed;
+		const bool justPressed = m_pendingPresses.contains(keyCode);
+		const bool justReleased = m_pendingReleases.contains(keyCode);
 		
 		i32 pressId = keyState.pressId.value_or(prev.pressId.value_or(0));
-		if (isDown && !pressId) {
+		if ((isDown || justPressed || justReleased) && !pressId) {
 			pressId = m_nextPressId++;
+			keyState.pressId = pressId;
 		}
 		
-		f64 pressedAt = wasDown 
-			? prev.pressedAtMs.value_or(prev.timestamp.value_or(m_currentTimeMs))
-			: m_currentTimeMs;
+		const std::optional<f64> pressedAt = isDown
+			? std::optional<f64>(keyState.pressedAtMs.value_or(prev.pressedAtMs.value_or(prev.timestamp.value_or(m_currentTimeMs))))
+			: std::nullopt;
 		
 		ButtonState state;
 		if (isDown) {
-			bool stickyConsumed = prev.consumed;
+			const bool stickyConsumed = prev.consumed;
 			state.pressed = true;
-			state.justpressed = !wasDown;
+			state.justpressed = justPressed;
 			state.justreleased = false;
 			state.waspressed = true;
 			state.wasreleased = prev.wasreleased;
-			state.presstime = std::max(0.0, m_currentTimeMs - pressedAt);
+			state.presstime = std::max(0.0, m_currentTimeMs - pressedAt.value());
 			state.pressedAtMs = pressedAt;
 			state.releasedAtMs = std::nullopt;
-			state.timestamp = wasDown ? prev.timestamp.value_or(pressedAt) : m_currentTimeMs;
+			state.timestamp = justPressed
+				? keyState.timestamp.value_or(m_currentTimeMs)
+				: prev.timestamp.value_or(pressedAt.value());
 			state.pressId = pressId;
 			state.value = 1.0f;
 			state.consumed = stickyConsumed;
 		} else {
 			state.pressed = false;
-			state.justpressed = false;
-			state.justreleased = wasDown;
-			state.waspressed = prev.waspressed || wasDown;
-			state.wasreleased = prev.wasreleased || wasDown;
+			state.justpressed = justPressed;
+			state.justreleased = justReleased;
+			state.waspressed = prev.waspressed || wasDown || justPressed;
+			state.wasreleased = prev.wasreleased || wasDown || justReleased;
 			state.presstime = std::nullopt;
 			state.pressedAtMs = std::nullopt;
-			state.releasedAtMs = wasDown ? m_currentTimeMs : prev.releasedAtMs;
-			state.timestamp = wasDown ? m_currentTimeMs : prev.timestamp.value_or(m_currentTimeMs);
-			state.pressId = wasDown ? prev.pressId : std::nullopt;
+			state.releasedAtMs = justReleased
+				? std::optional<f64>(keyState.releasedAtMs.value_or(keyState.timestamp.value_or(m_currentTimeMs)))
+				: prev.releasedAtMs;
+			state.timestamp = (justReleased || justPressed)
+				? keyState.timestamp.value_or(m_currentTimeMs)
+				: prev.timestamp.value_or(m_currentTimeMs);
+			state.pressId = (justPressed || justReleased || wasDown)
+				? std::optional<i32>(pressId)
+				: std::nullopt;
 			state.value = 0.0f;
 			state.consumed = false;
 		}
@@ -103,6 +114,9 @@ void KeyboardInput::pollInput() {
 				dst.value2d = state.value2d;
 			}
 		}
+
+		m_pendingPresses.erase(keyCode);
+		m_pendingReleases.erase(keyCode);
 	}
 }
 
@@ -137,9 +151,25 @@ void KeyboardInput::reset(const std::vector<std::string>* except) {
 	if (!except) {
 		m_keyStates.clear();
 		m_gamepadButtonStates.clear();
+		m_pendingPresses.clear();
+		m_pendingReleases.clear();
 	} else {
 		resetObjectMap(m_keyStates, except);
 		resetObjectMap(m_gamepadButtonStates, except);
+		for (auto it = m_pendingPresses.begin(); it != m_pendingPresses.end();) {
+			if (std::find(except->begin(), except->end(), *it) == except->end()) {
+				it = m_pendingPresses.erase(it);
+			} else {
+				++it;
+			}
+		}
+		for (auto it = m_pendingReleases.begin(); it != m_pendingReleases.end();) {
+			if (std::find(except->begin(), except->end(), *it) == except->end()) {
+				it = m_pendingReleases.erase(it);
+			} else {
+				++it;
+			}
+		}
 	}
 }
 
@@ -153,16 +183,32 @@ void KeyboardInput::dispose() {
 
 void KeyboardInput::keydown(const std::string& keyCode, i32 pressId, f64 timestamp) {
 	auto& state = m_keyStates[keyCode];
-	state.pressed = true;
-	state.justpressed = true;
-	state.presstime = 0.0;
-	state.timestamp = timestamp;
-	state.pressedAtMs = timestamp;
-	state.pressId = pressId;
+	if (!state.pressed) {
+		state.pressed = true;
+		state.timestamp = timestamp;
+		state.pressedAtMs = timestamp;
+		state.releasedAtMs = std::nullopt;
+		state.pressId = pressId != 0 ? std::optional<i32>(pressId) : std::optional<i32>(m_nextPressId++);
+		m_pendingPresses.insert(keyCode);
+	}
 }
 
-void KeyboardInput::keyup(const std::string& keyCode, i32 /*pressId*/, f64 /*timestamp*/) {
-	m_keyStates[keyCode] = ButtonState{};
+void KeyboardInput::keyup(const std::string& keyCode, i32 pressId, f64 timestamp) {
+	auto it = m_keyStates.find(keyCode);
+	if (it == m_keyStates.end()) {
+		return;
+	}
+	ButtonState& state = it->second;
+	if (!state.pressed && !m_pendingPresses.contains(keyCode)) {
+		return;
+	}
+	state.pressed = false;
+	state.timestamp = timestamp;
+	state.releasedAtMs = timestamp;
+	if (pressId != 0) {
+		state.pressId = pressId;
+	}
+	m_pendingReleases.insert(keyCode);
 }
 
 void KeyboardInput::blur() {

@@ -17,6 +17,8 @@ export class KeyboardInput implements InputHandler {
 	 * The state of each keyboard key.
 	 */
 	public keyStates: KeyOrButtonId2ButtonState = {};
+	private readonly pendingPresses = new Set<string>();
+	private readonly pendingReleases = new Set<string>();
 
 	public gamepadButtonStates: KeyOrButtonId2ButtonState = {};
 
@@ -49,10 +51,22 @@ export class KeyboardInput implements InputHandler {
 		if (!except) {
 			this.keyStates = {};
 			this.gamepadButtonStates = {};
+			this.pendingPresses.clear();
+			this.pendingReleases.clear();
 		}
 		else {
 			resetObject(this.keyStates, except);
 			resetObject(this.gamepadButtonStates, except);
+			for (const key of [...this.pendingPresses]) {
+				if (!except.includes(key)) {
+					this.pendingPresses.delete(key);
+				}
+			}
+			for (const key of [...this.pendingReleases]) {
+				if (!except.includes(key)) {
+					this.pendingReleases.delete(key);
+				}
+			}
 		}
 	}
 
@@ -98,14 +112,20 @@ export class KeyboardInput implements InputHandler {
 		// Update existing keys in place, create states on demand
 		Object.keys(this.keyStates).forEach(buttonId => {
 			const prev = this.gamepadButtonStates[buttonId] ?? makeButtonState();
-			const isDown = this.keyStates[buttonId].pressed === true;
+			const current = this.keyStates[buttonId];
+			const isDown = current.pressed === true;
 			const wasDown = prev.pressed === true;
+			const justpressed = this.pendingPresses.has(buttonId);
+			const justreleased = this.pendingReleases.has(buttonId);
 
-			let pressId = prev.pressId ;
-			if (isDown && !pressId) {
+			let pressId = current.pressId ?? prev.pressId;
+			if ((isDown || justpressed || justreleased) && !pressId) {
 				pressId = this.nextPressId++;
+				current.pressId = pressId;
 			}
-			const pressedAt = wasDown ? (prev.pressedAtMs ?? prev.timestamp ?? now) : now;
+			const pressedAt = isDown
+				? (current.pressedAtMs ?? prev.pressedAtMs ?? prev.timestamp ?? now)
+				: null;
 
 			let state: ButtonState;
 			if (isDown) {
@@ -113,14 +133,14 @@ export class KeyboardInput implements InputHandler {
 				state = {
 					...prev,
 					pressed: true,
-					justpressed: !wasDown,
+					justpressed,
 					justreleased: false,
 					waspressed: true,
 					wasreleased: prev.wasreleased,
 					presstime: Math.max(0, now - pressedAt),
 					pressedAtMs: pressedAt,
 					releasedAtMs: null,
-					timestamp: wasDown ? (prev.timestamp ?? pressedAt) : now,
+					timestamp: justpressed ? (current.timestamp ?? now) : (prev.timestamp ?? pressedAt),
 					pressId,
 					value: 1,
 					consumed: stickyConsumed,
@@ -129,15 +149,15 @@ export class KeyboardInput implements InputHandler {
 				state = {
 					...prev,
 					pressed: false,
-					justpressed: false,
-					justreleased: wasDown,
-					waspressed: prev.waspressed || wasDown,
-					wasreleased: prev.wasreleased || wasDown,
+					justpressed,
+					justreleased,
+					waspressed: prev.waspressed || wasDown || justpressed,
+					wasreleased: prev.wasreleased || wasDown || justreleased,
 					presstime: null,
 					pressedAtMs: null,
-					releasedAtMs: wasDown ? now : prev.releasedAtMs ,
-					timestamp: wasDown ? now : prev.timestamp ?? now,
-					pressId: wasDown ? (prev.pressId ?? pressId) : null,
+					releasedAtMs: justreleased ? (current.releasedAtMs ?? current.timestamp ?? now) : prev.releasedAtMs,
+					timestamp: (justreleased || justpressed) ? (current.timestamp ?? now) : (prev.timestamp ?? now),
+					pressId: (justpressed || justreleased || wasDown) ? pressId : null,
 					value: 0,
 					consumed: false,
 				};
@@ -163,6 +183,9 @@ export class KeyboardInput implements InputHandler {
 				dst.value2d = state.value2d ;
 				this.gamepadButtonStates[mapped] = dst;
 			}
+
+			this.pendingPresses.delete(buttonId);
+			this.pendingReleases.delete(buttonId);
 		});
 	}
 
@@ -173,10 +196,15 @@ export class KeyboardInput implements InputHandler {
 	 * @param key_code - The button ID or string representing the key.
 	 */
 	keydown(key_code: KeyboardButtonId | string): void {
-		if (!this.keyStates[key_code]) {
-			this.keyStates[key_code] = makeButtonState({ pressed: true, justpressed: true, presstime: 0, timestamp: $.platform.clock.now() });
-		} else {
-			this.keyStates[key_code].pressed = true;
+		const now = $.platform.clock.now();
+		const state = this.keyStates[key_code] ?? (this.keyStates[key_code] = makeButtonState());
+		if (!state.pressed) {
+			state.pressed = true;
+			state.timestamp = now;
+			state.pressedAtMs = now;
+			state.releasedAtMs = null;
+			state.pressId = this.nextPressId++;
+			this.pendingPresses.add(key_code);
 		}
 	}
 
@@ -185,8 +213,12 @@ export class KeyboardInput implements InputHandler {
 	 * @param key_code - The key identifier or name.
 	 */
 	keyup(key_code: KeyboardButtonId | string): void {
-		if (!this.keyStates[key_code]) return;
-		this.keyStates[key_code] = makeButtonState();
+		const state = this.keyStates[key_code];
+		if (!state || (!state.pressed && !this.pendingPresses.has(key_code))) return;
+		state.pressed = false;
+		state.timestamp = $.platform.clock.now();
+		state.releasedAtMs = state.timestamp;
+		this.pendingReleases.add(key_code);
 	}
 
 	/**

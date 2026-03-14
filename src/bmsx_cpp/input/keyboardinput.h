@@ -9,6 +9,7 @@
 
 #include "inputtypes.h"
 #include <unordered_map>
+#include <unordered_set>
 
 namespace bmsx {
 
@@ -68,7 +69,9 @@ private:
 	
 	// Raw key states (direct keyboard key codes)
 	std::unordered_map<std::string, ButtonState> m_keyStates;
-	
+	std::unordered_set<std::string> m_pendingPresses;
+	std::unordered_set<std::string> m_pendingReleases;
+
 	// Mapped gamepad button states (for unified handling)
 	std::unordered_map<std::string, ButtonState> m_gamepadButtonStates;
 	

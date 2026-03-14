@@ -765,6 +765,9 @@ export class EngineCore {
 
 		try {
 			Input.instance.pollInput();
+			const runtime = Runtime.instance;
+			runtimeIde.tickIdeInput(runtime);
+			runtimeIde.tickTerminalInput(runtime);
 			const hostDeltaMs = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
 			this.last_update = currentTime;
 
@@ -782,7 +785,6 @@ export class EngineCore {
 			this.wasupdated = false;
 			let presentQueued = false;
 
-			const runtime = Runtime.instance;
 			let ticksStarted = 0;
 			let slicesProcessed = 0;
 			const baseBudget = this.computeCycleBudget(runtime);
