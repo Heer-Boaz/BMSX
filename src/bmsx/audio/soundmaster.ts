@@ -464,7 +464,7 @@ export class SoundMaster implements RegisterablePersistent {
 		this.voiceRecordByHandle = new WeakMap();
 		this.mixSampleRate = 0;
 		this.mixFps = 50;
-		this.mixLatencyProfile = 'balanced';
+		this.mixLatencyProfile = 'low';
 		this.mixTargetAheadSec = 0;
 		this.mixChunk = new Int16Array(MIX_CHUNK_FRAMES * 2);
 		this.mixChunkViews = new Array<Int16Array>(MIX_CHUNK_FRAMES + 1);
@@ -478,7 +478,7 @@ export class SoundMaster implements RegisterablePersistent {
 		this.onCoreNeed = () => {
 			this.pumpCoreAudio();
 		};
-		this.setLatencyProfile(isIOSAudioTarget() ? 'safe' : 'balanced');
+		this.setLatencyProfile(isIOSAudioTarget() ? 'safe' : 'low');
 		this.bind();
 	}
 

@@ -34,7 +34,7 @@
 namespace bmsx {
 namespace {
 constexpr double kFrameSpikeMultiplier = 1.2;
-constexpr double kAudioMixOverheadSec = 0.006;
+constexpr double kAudioMixOverheadSec = 0.004;
 constexpr size_t kAudioRefillMarginFrames = 128;
 constexpr size_t kAudioRequestAheadFrames = 256;
 constexpr size_t kAudioTargetMinFrames = 384;
