@@ -48,6 +48,25 @@ type ResolvedOptions = {
 	pcBias: number;
 };
 
+type OperandField = 'a' | 'b' | 'c' | 'bx' | 'sbx';
+
+export type InstructionOperandDebugInfo = {
+	field: OperandField;
+	label: string;
+	text: string;
+	registerIndex?: number;
+};
+
+export type InstructionDebugInfo = {
+	pc: number;
+	pcText: string;
+	op: OpCode;
+	opName: string;
+	instructionText: string;
+	operands: InstructionOperandDebugInfo[];
+	sourceRange: SourceRange | null;
+};
+
 const normalizeOptions = (options: DisassemblyOptions): ResolvedOptions => {
 	const formatStyle = options.formatStyle ?? 'default';
 	const showPc = options.showPc ?? (formatStyle !== 'assembly');
@@ -86,6 +105,57 @@ const formatHexWord = (word: number, options: ResolvedOptions): string => {
 };
 
 const SOURCE_COMMENT_MAX_CHARS = 120;
+
+const getOpName = (op: OpCode): string => {
+	switch (op) {
+		case OpCode.WIDE: return 'WIDE';
+		case OpCode.MOV: return 'MOV';
+		case OpCode.LOADK: return 'LOADK';
+		case OpCode.LOADNIL: return 'LOADNIL';
+		case OpCode.LOADBOOL: return 'LOADBOOL';
+		case OpCode.GETG: return 'GETG';
+		case OpCode.SETG: return 'SETG';
+		case OpCode.GETT: return 'GETT';
+		case OpCode.SETT: return 'SETT';
+		case OpCode.NEWT: return 'NEWT';
+		case OpCode.ADD: return 'ADD';
+		case OpCode.SUB: return 'SUB';
+		case OpCode.MUL: return 'MUL';
+		case OpCode.DIV: return 'DIV';
+		case OpCode.MOD: return 'MOD';
+		case OpCode.FLOORDIV: return 'FLOORDIV';
+		case OpCode.POW: return 'POW';
+		case OpCode.BAND: return 'BAND';
+		case OpCode.BOR: return 'BOR';
+		case OpCode.BXOR: return 'BXOR';
+		case OpCode.SHL: return 'SHL';
+		case OpCode.SHR: return 'SHR';
+		case OpCode.CONCAT: return 'CONCAT';
+		case OpCode.CONCATN: return 'CONCATN';
+		case OpCode.UNM: return 'UNM';
+		case OpCode.NOT: return 'NOT';
+		case OpCode.LEN: return 'LEN';
+		case OpCode.BNOT: return 'BNOT';
+		case OpCode.EQ: return 'EQ';
+		case OpCode.LT: return 'LT';
+		case OpCode.LE: return 'LE';
+		case OpCode.TEST: return 'TEST';
+		case OpCode.TESTSET: return 'TESTSET';
+		case OpCode.JMP: return 'JMP';
+		case OpCode.JMPIF: return 'JMPIF';
+		case OpCode.JMPIFNOT: return 'JMPIFNOT';
+		case OpCode.CLOSURE: return 'CLOSURE';
+		case OpCode.GETUP: return 'GETUP';
+		case OpCode.SETUP: return 'SETUP';
+		case OpCode.VARARG: return 'VARARG';
+		case OpCode.CALL: return 'CALL';
+		case OpCode.RET: return 'RET';
+		case OpCode.LOAD_MEM: return 'LOAD_MEM';
+		case OpCode.STORE_MEM: return 'STORE_MEM';
+		default:
+			throw new Error(`[Disassembler] Unknown opcode ${op}.`);
+	}
+};
 
 const formatBool = (value: number): string => (value !== 0 ? 'true' : 'false');
 
@@ -130,12 +200,16 @@ const formatConst = (program: Program, index: number, options: ResolvedOptions):
 	return `${base}(${formatValue(program.constPool[index])})`;
 };
 
-const formatRK = (program: Program, raw: number, bits: number, options: ResolvedOptions): string => {
+const describeRK = (program: Program, raw: number, bits: number, options: ResolvedOptions): { text: string; registerIndex?: number } => {
 	const rk = signExtend(raw, bits);
 	if (rk < 0) {
-		return formatConst(program, -1 - rk, options);
+		return { text: formatConst(program, -1 - rk, options) };
 	}
-	return `r${rk}`;
+	return { text: `r${rk}`, registerIndex: rk };
+};
+
+const formatRK = (program: Program, raw: number, bits: number, options: ResolvedOptions): string => {
+	return describeRK(program, raw, bits, options).text;
 };
 
 const formatSignedOffset = (value: number, width: number, options: ResolvedOptions): string => {
@@ -204,17 +278,21 @@ const extractSourceSnippet = (range: SourceRange, lines: readonly string[]): str
 	return parts.join(' ');
 };
 
-const formatSourceComment = (range: SourceRange, options: ResolvedOptions, cache: Map<string, string[]>): string => {
-	const lines = getSourceLines(range.path, options, cache);
-	const snippet = extractSourceSnippet(range, lines);
+export const formatSourceSnippet = (range: SourceRange, sourceText: string, maxChars = SOURCE_COMMENT_MAX_CHARS): string => {
+	const snippet = extractSourceSnippet(range, sourceText.split(/\r?\n/));
 	const compact = snippet.replace(/\s+/g, ' ').trim();
 	if (compact.length === 0) {
 		return '<empty>';
 	}
-	if (compact.length <= SOURCE_COMMENT_MAX_CHARS) {
+	if (compact.length <= maxChars) {
 		return compact;
 	}
-	return compact.slice(0, SOURCE_COMMENT_MAX_CHARS - 3) + '...';
+	return compact.slice(0, maxChars - 3) + '...';
+};
+
+const formatSourceComment = (range: SourceRange, options: ResolvedOptions, cache: Map<string, string[]>): string => {
+	const lines = getSourceLines(range.path, options, cache);
+	return formatSourceSnippet(range, lines.join('\n'));
 };
 
 const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => {
@@ -300,6 +378,181 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 		rkBitsB,
 		rkBitsC,
 		rawWords: [word],
+	};
+};
+
+const decodeInstructionAtPc = (code: Uint8Array, pc: number): DecodedInstruction => {
+	if ((pc % INSTRUCTION_BYTES) !== 0) {
+		throw new Error(`[Disassembler] Instruction pc ${pc} is not aligned.`);
+	}
+	if (pc < 0 || pc >= code.length) {
+		throw new Error(`[Disassembler] Instruction pc ${pc} is out of bounds.`);
+	}
+	const wordIndex = pc / INSTRUCTION_BYTES;
+	const word = readInstructionWord(code, wordIndex);
+	const op = (word >>> 18) & 0x3f;
+	if (op === OpCode.WIDE) {
+		return decodeInstruction(code, pc);
+	}
+	if (wordIndex > 0) {
+		const previous = readInstructionWord(code, wordIndex - 1);
+		const previousOp = (previous >>> 18) & 0x3f;
+		if (previousOp === OpCode.WIDE) {
+			return decodeInstruction(code, pc - INSTRUCTION_BYTES);
+		}
+	}
+	return decodeInstruction(code, pc);
+};
+
+const registerOperand = (field: 'a' | 'b' | 'c', label: string, registerIndex: number): InstructionOperandDebugInfo => ({
+	field,
+	label,
+	text: `r${registerIndex}`,
+	registerIndex,
+});
+
+const plainOperand = (field: OperandField, label: string, text: string): InstructionOperandDebugInfo => ({
+	field,
+	label,
+	text,
+});
+
+const rkOperand = (
+	field: 'b' | 'c',
+	label: string,
+	program: Program,
+	raw: number,
+	bits: number,
+	options: ResolvedOptions,
+): InstructionOperandDebugInfo => {
+	const rk = describeRK(program, raw, bits, options);
+	return {
+		field,
+		label,
+		text: rk.text,
+		registerIndex: rk.registerIndex,
+	};
+};
+
+const formatProtoOperand = (metadata: ProgramMetadata | null, bx: number): string => {
+	if (!metadata) {
+		return `p${bx}`;
+	}
+	const protoId = metadata.protoIds[bx];
+	if (protoId === undefined) {
+		throw new Error(`[Disassembler] Missing proto id for index ${bx}.`);
+	}
+	return `p${bx} (${protoId})`;
+};
+
+const buildInstructionOperands = (
+	decoded: DecodedInstruction,
+	program: Program,
+	metadata: ProgramMetadata | null,
+	options: ResolvedOptions,
+	pcWidth: number,
+): InstructionOperandDebugInfo[] => {
+	const { op, a, b, c, bx, sbx, pc } = decoded;
+	switch (op) {
+		case OpCode.MOV:
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'src', b)];
+		case OpCode.LOADK:
+			return [registerOperand('a', 'dst', a), plainOperand('bx', 'const', formatConst(program, bx, options))];
+		case OpCode.LOADNIL:
+			return [registerOperand('a', 'base', a), plainOperand('b', 'count', b.toString())];
+		case OpCode.LOADBOOL:
+			return [registerOperand('a', 'dst', a), plainOperand('b', 'value', formatBool(b)), plainOperand('c', 'skip-next', formatBool(c))];
+		case OpCode.GETG:
+			return [registerOperand('a', 'dst', a), plainOperand('bx', 'global', formatConst(program, bx, options))];
+		case OpCode.SETG:
+			return [registerOperand('a', 'src', a), plainOperand('bx', 'global', formatConst(program, bx, options))];
+		case OpCode.GETT:
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'table', b), rkOperand('c', 'key', program, c, decoded.rkBitsC, options)];
+		case OpCode.SETT:
+			return [registerOperand('a', 'table', a), rkOperand('b', 'key', program, b, decoded.rkBitsB, options), rkOperand('c', 'value', program, c, decoded.rkBitsC, options)];
+		case OpCode.NEWT:
+			return [registerOperand('a', 'dst', a), plainOperand('b', 'array', b.toString()), plainOperand('c', 'hash', c.toString())];
+		case OpCode.ADD:
+		case OpCode.SUB:
+		case OpCode.MUL:
+		case OpCode.DIV:
+		case OpCode.MOD:
+		case OpCode.FLOORDIV:
+		case OpCode.POW:
+		case OpCode.BAND:
+		case OpCode.BOR:
+		case OpCode.BXOR:
+		case OpCode.SHL:
+		case OpCode.SHR:
+		case OpCode.CONCAT:
+			return [registerOperand('a', 'dst', a), rkOperand('b', 'left', program, b, decoded.rkBitsB, options), rkOperand('c', 'right', program, c, decoded.rkBitsC, options)];
+		case OpCode.CONCATN:
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'base', b), plainOperand('c', 'count', c.toString())];
+		case OpCode.UNM:
+		case OpCode.NOT:
+		case OpCode.LEN:
+		case OpCode.BNOT:
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'value', b)];
+		case OpCode.EQ:
+		case OpCode.LT:
+		case OpCode.LE:
+			return [plainOperand('a', 'expect', formatBool(a)), rkOperand('b', 'left', program, b, decoded.rkBitsB, options), rkOperand('c', 'right', program, c, decoded.rkBitsC, options)];
+		case OpCode.TEST:
+			return [registerOperand('a', 'value', a), plainOperand('c', 'expect', formatBool(c))];
+		case OpCode.TESTSET:
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'value', b), plainOperand('c', 'expect', formatBool(c))];
+		case OpCode.JMP:
+			return [plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options))];
+		case OpCode.JMPIF:
+		case OpCode.JMPIFNOT:
+			return [registerOperand('a', 'cond', a), plainOperand('sbx', 'jump', formatJump(pc, sbx, pcWidth, options))];
+		case OpCode.CLOSURE:
+			return [registerOperand('a', 'dst', a), plainOperand('bx', 'proto', formatProtoOperand(metadata, bx))];
+		case OpCode.GETUP:
+			return [registerOperand('a', 'dst', a), plainOperand('b', 'upvalue', `u${b}`)];
+		case OpCode.SETUP:
+			return [registerOperand('a', 'src', a), plainOperand('b', 'upvalue', `u${b}`)];
+		case OpCode.VARARG:
+			return [registerOperand('a', 'dst', a), plainOperand('b', 'count', formatCount(b))];
+		case OpCode.CALL:
+			return [registerOperand('a', 'callee', a), plainOperand('b', 'args', formatCount(b)), plainOperand('c', 'returns', formatCount(c))];
+		case OpCode.RET:
+			return [registerOperand('a', 'base', a), plainOperand('b', 'count', formatCount(b))];
+		case OpCode.LOAD_MEM:
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'addr', b)];
+		case OpCode.STORE_MEM:
+			return [registerOperand('a', 'src', a), registerOperand('b', 'addr', b)];
+		case OpCode.WIDE:
+			throw new Error(`[Disassembler] Unexpected WIDE opcode at pc ${pc}.`);
+		default:
+			throw new Error(`[Disassembler] Unknown opcode ${op} at pc ${pc}.`);
+	}
+};
+
+const getProgramPcWidth = (program: Program, options: ResolvedOptions): number => {
+	const lastPc = Math.max(0, program.code.length - INSTRUCTION_BYTES);
+	const maxPc = lastPc + options.pcBias;
+	return Math.max(1, maxPc.toString(options.pcRadix).length);
+};
+
+export const describeInstructionAtPc = (
+	program: Program,
+	pc: number,
+	metadata: ProgramMetadata | null = null,
+	options: DisassemblyOptions = {},
+): InstructionDebugInfo => {
+	const opts = normalizeOptions(options);
+	const pcWidth = getProgramPcWidth(program, opts);
+	const decoded = decodeInstructionAtPc(program.code, pc);
+	const sourceRange = metadata ? metadata.debugRanges[decoded.pc / INSTRUCTION_BYTES] : null;
+	return {
+		pc: decoded.pc,
+		pcText: formatPc(decoded.pc, pcWidth, opts),
+		op: decoded.op,
+		opName: getOpName(decoded.op),
+		instructionText: formatInstruction(decoded, program, metadata, opts, pcWidth),
+		operands: buildInstructionOperands(decoded, program, metadata, opts, pcWidth),
+		sourceRange,
 	};
 };
 

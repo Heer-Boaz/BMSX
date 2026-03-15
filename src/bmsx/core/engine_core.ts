@@ -777,6 +777,7 @@ export class EngineCore {
 				this.accumulated_time = 0;
 				this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
 				this.view.drawgame();
+				runtime.scheduleDeferredCartBootPreparation();
 				return;
 			}
 
@@ -841,6 +842,7 @@ export class EngineCore {
 				this.wasupdated = true;
 				this.sndmaster.finishFrame();
 				this.view.drawgame();
+				runtime.scheduleDeferredCartBootPreparation();
 			}
 		} catch (error) {
 			// Surface engine/runtime errors to the in-game terminal when active

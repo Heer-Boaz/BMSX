@@ -26,7 +26,7 @@ import {
 	parseJsStackFrames,
 	sanitizeLuaErrorMessage,
 } from './runtime_error_util';
-import * as runtimeLuaPipeline from './runtime_lua_pipeline';
+import { logDebugState } from './runtime_debug';
 import { getBasePipelineSpecOverrideForIdeOrTerminal, ideExtSpec, terminalExtSpec, runtimeExtSpec } from './systems';
 import { TerminalMode } from './terminal_mode';
 import type { Runtime } from './runtime';
@@ -596,7 +596,7 @@ export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 	if (runtime.handledLuaErrors.has(error)) {
 		return;
 	}
-	runtimeLuaPipeline.logDebugState(runtime);
+	logDebugState(runtime);
 	runtime.lastCpuFaultSnapshot = runtime.cpu.snapshotCallStack();
 	runtime.lastLuaCallStack = buildLuaStackFrames(runtime);
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));

@@ -691,6 +691,7 @@ public:
 	bool hasFrames() const { return !m_frames.empty(); }
 	std::optional<SourceRange> getDebugRange(int pc) const;
 	std::vector<std::pair<int, int>> getCallStack() const;
+	int getFrameRegisterCount(int frameIndex) const;
 	Value readFrameRegister(int frameIndex, int registerIndex) const;
 
 	int instructionBudgetRemaining = 0;

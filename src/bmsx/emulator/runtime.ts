@@ -462,6 +462,16 @@ export class Runtime {
 		}
 	}
 
+	private cyclesUntilNextVblankEdge(): number {
+		if (this.vblankStartCycle === 0) {
+			return this.cycleBudgetPerFrame - this.cyclesIntoFrame;
+		}
+		if (!this.vblankActive && this.cyclesIntoFrame < this.vblankStartCycle) {
+			return this.vblankStartCycle - this.cyclesIntoFrame;
+		}
+		return (this.cycleBudgetPerFrame - this.cyclesIntoFrame) + this.vblankStartCycle;
+	}
+
 	public setVblankCycles(cycles: number): void {
 		if (cycles <= 0) {
 			throw new Error('[Runtime] vblank_cycles must be greater than 0.');
@@ -740,6 +750,9 @@ export class Runtime {
 		entryPath: string;
 		canonicalization: CanonicalizationType;
 	} = null;
+	private deferredCartBootPreparationHandle: { stop(): void } = null;
+	private deferredCartBootPreparationScheduled = false;
+	private deferredCartBootPreparationCompleted = false;
 	private _canonicalization: CanonicalizationType;
 	private canonicalizeIdentifierFn: (value: string) => string;
 	public get canonicalization(): CanonicalizationType {
@@ -890,10 +903,6 @@ export class Runtime {
 		$.view.default_font = new Font();
 		await $.refresh_audio_assets();
 		await runtime.boot();
-		void runtime.prepareCartBoot().catch((error: unknown) => {
-			console.error('[Runtime] Failed to prepare cart boot:', error);
-			runtime.setCartBootReadyFlag(false);
-		});
 		$.start();
 	}
 
@@ -1108,6 +1117,7 @@ export class Runtime {
 		this.cartCanonicalization = params.cartCanonicalization ?? params.engineCanonicalization;
 		this.pendingCartBoot = false;
 		this.preparedCartProgram = null;
+		this.resetDeferredCartBootPreparation();
 		this.setCartBootReadyFlag(false);
 	}
 
@@ -1122,6 +1132,15 @@ export class Runtime {
 	private requestCartBoot(): void {
 		this.pendingCartBoot = true;
 		this.setCartBootReadyFlag(false);
+	}
+
+	private resetDeferredCartBootPreparation(): void {
+		if (this.deferredCartBootPreparationHandle !== null) {
+			this.deferredCartBootPreparationHandle.stop();
+			this.deferredCartBootPreparationHandle = null;
+		}
+		this.deferredCartBootPreparationScheduled = false;
+		this.deferredCartBootPreparationCompleted = false;
 	}
 
 	private constructor(options: RuntimeOptions) {
@@ -1462,7 +1481,9 @@ export class Runtime {
 		}
 		if (this.vblankSequence < targetSequence) {
 			if (state.cycleBudgetRemaining > 0) {
-				const idleCycles = state.cycleBudgetRemaining;
+				const cyclesToTarget = this.cyclesUntilNextVblankEdge();
+				const idleCycles = cyclesToTarget < state.cycleBudgetRemaining ? cyclesToTarget : state.cycleBudgetRemaining;
+				state.cycleBudgetRemaining -= idleCycles;
 				this.advanceHardware(idleCycles);
 				this.processIrqAck();
 			}
@@ -1665,6 +1686,32 @@ export class Runtime {
 		}
 	}
 
+	public scheduleDeferredCartBootPreparation(): void {
+		if (this.deferredCartBootPreparationCompleted || this.deferredCartBootPreparationScheduled) {
+			return;
+		}
+		if (!this.cartAssetLayer || !this.cartAssetSource || !this.cartLuaSources) {
+			return;
+		}
+		this.deferredCartBootPreparationScheduled = true;
+		const handle = $.platform.frames.start(() => {
+			handle.stop();
+			if (this.deferredCartBootPreparationHandle === handle) {
+				this.deferredCartBootPreparationHandle = null;
+			}
+			this.deferredCartBootPreparationScheduled = false;
+			if (this.deferredCartBootPreparationCompleted) {
+				return;
+			}
+			this.deferredCartBootPreparationCompleted = true;
+			void this.prepareCartBoot().catch((error: unknown) => {
+				console.error('[Runtime] Failed to prepare cart boot:', error);
+				this.setCartBootReadyFlag(false);
+			});
+		});
+		this.deferredCartBootPreparationHandle = handle;
+	}
+
 	public async buildAssetMemory(params?: { source?: RawAssetSource; assets?: RuntimeAssets; mode?: 'full' | 'cart' }): Promise<void> {
 		const token = this.assetMemoryGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		try {
@@ -1771,6 +1818,7 @@ export class Runtime {
 	}
 
 	public dispose(): void {
+		this.resetDeferredCartBootPreparation();
 		runtimeIde.disposeShortcutHandlers(this);
 		this.terminal.deactivate();
 		runtimeIde.deactivateEditor(this);

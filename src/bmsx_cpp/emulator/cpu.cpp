@@ -928,6 +928,13 @@ std::vector<std::pair<int, int>> CPU::getCallStack() const {
 	return stack;
 }
 
+int CPU::getFrameRegisterCount(int frameIndex) const {
+	if (frameIndex < 0 || frameIndex >= static_cast<int>(m_frames.size())) {
+		throw BMSX_RUNTIME_ERROR("[CPU] Frame index out of range: " + std::to_string(frameIndex) + ".");
+	}
+	return m_frames[static_cast<size_t>(frameIndex)]->top;
+}
+
 Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
 	if (frameIndex < 0 || frameIndex >= static_cast<int>(m_frames.size())) {
 		throw BMSX_RUNTIME_ERROR("[CPU] Frame index out of range: " + std::to_string(frameIndex) + ".");

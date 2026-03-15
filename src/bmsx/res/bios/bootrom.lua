@@ -31,6 +31,7 @@ local sys_atlas_ready
 local sys_atlas_failed
 local boot_scroll_state = textflow.new_scroll_state()
 local boot_screen_visible = false
+local boot_screen_presented
 local render_boot_screen
 
 local function read_cart_header(base)
@@ -170,8 +171,8 @@ local precheck_cache_key
 local precheck_errors
 local precheck_stderr_message
 local precheck_stderr_reported
-local system_const_pool_cache_key = nil
-local system_const_pool_cache = nil
+local system_program_summary_cache_key = nil
+local system_program_summary_cache = nil
 local bitcast_selftest_ok
 local bitcast_selftest_status
 local bitcast_selftest_error
@@ -180,6 +181,7 @@ local cart_start_failed_logged
 local builtin_reader_read_f32 = reader_read_f32
 local builtin_reader_read_f64 = reader_read_f64
 local read_rom_program_const_pool
+local read_rom_program_asset_summary
 
 local function clear_precheck_cache()
 	precheck_cache_key = nil
@@ -208,17 +210,17 @@ local function build_precheck_key(header)
 		.. ':' .. tostring(header.data_len)
 end
 
-local function get_cached_system_const_pool()
+local function get_cached_system_program_summary()
 	local sys_header = read_cart_header(system_rom_base)
 	if not sys_header then
 		return nil, nil
 	end
 	local key = build_precheck_key(sys_header)
-	if system_const_pool_cache_key ~= key then
-		system_const_pool_cache_key = key
-		system_const_pool_cache = read_rom_program_const_pool(system_rom_base, sys_header)
+	if system_program_summary_cache_key ~= key then
+		system_program_summary_cache_key = key
+		system_program_summary_cache = read_rom_program_asset_summary(system_rom_base, sys_header)
 	end
-	return sys_header, system_const_pool_cache
+	return sys_header, system_program_summary_cache
 end
 
 local function assert_range(offset, length, total, label)
@@ -597,8 +599,417 @@ read_rom_program_const_pool = function(rom_base, header)
 	return read_program_const_pool_payload(rom_base + payload.start, payload_size)
 end
 
+local function reader_read_number_from_tag(reader, tag, label)
+	if tag == bin_tag_int then
+		return reader_read_varint(reader, label)
+	end
+	if tag == bin_tag_f32 then
+		return reader_read_f32(reader, label)
+	end
+	if tag == bin_tag_f64 then
+		return reader_read_f64(reader, label)
+	end
+	error((label or reader.label) .. ' must be a number.')
+end
+
+local function reader_read_string_from_tag(reader, tag, label)
+	if tag ~= bin_tag_str then
+		error((label or reader.label) .. ' must be a string.')
+	end
+	return reader_read_string(reader, label)
+end
+
+local function reader_read_non_negative_integer_from_tag(reader, tag, label)
+	local value = reader_read_number_from_tag(reader, tag, label)
+	if value ~= math.floor(value) then
+		error((label or reader.label) .. ' must be an integer.')
+	end
+	if value < 0 then
+		error((label or reader.label) .. ' must be non-negative.')
+	end
+	return value
+end
+
+local function reader_read_binary_range_from_tag(reader, tag, label)
+	if tag ~= bin_tag_bin then
+		error((label or reader.label) .. ' must be binary.')
+	end
+	local length = reader_read_varuint(reader, (label or reader.label) .. ' length')
+	local start = reader.base + reader.pos
+	reader_skip_bytes(reader, length, label)
+	return {
+		start = start,
+		size = length,
+	}
+end
+
+local function reader_read_object_property_count(reader, tag, label)
+	if tag ~= bin_tag_obj then
+		error((label or reader.label) .. ' must be an object.')
+	end
+	return reader_read_varuint(reader, (label or reader.label) .. ' property count')
+end
+
+local function reader_read_array_length(reader, tag, label)
+	if tag ~= bin_tag_arr then
+		error((label or reader.label) .. ' must be an array.')
+	end
+	return reader_read_varuint(reader, (label or reader.label) .. ' count')
+end
+
+local function reader_skip_array(reader, prop_names, tag, label)
+	local count = reader_read_array_length(reader, tag, label)
+	for i = 1, count do
+		local value_tag = reader_read_u8(reader, (label or reader.label) .. ' item tag')
+		reader_skip_value_from_tag(reader, prop_names, value_tag)
+	end
+	return count
+end
+
+local function begin_program_asset_payload_reader(rom_base, header)
+	local payload = find_program_payload_range(rom_base, header)
+	local payload_size = payload['end'] - payload.start
+	local reader = new_reader(rom_base + payload.start, payload_size, 'program asset payload')
+	local version = reader_read_u8(reader, 'bin version')
+	if version ~= bin_version then
+		error('Unsupported binary payload version.')
+	end
+	local prop_count = reader_read_varuint(reader, 'property count')
+	local prop_names = {}
+	for i = 1, prop_count do
+		prop_names[i] = reader_read_string(reader, 'property name')
+	end
+	local root_tag = reader_read_u8(reader, 'root tag')
+	if root_tag ~= bin_tag_obj then
+		error('Program asset root must be an object.')
+	end
+	local root_prop_count = reader_read_varuint(reader, 'root property count')
+	return reader, prop_names, root_prop_count
+end
+
+local function read_program_asset_core_summary_from_reader(reader, prop_names, root_prop_count)
+	local summary = {
+		entry_proto_index = nil,
+		code_range = nil,
+		const_pool_count = nil,
+		proto_count = nil,
+	}
+	for i = 1, root_prop_count do
+		local key = reader_read_prop_key(reader, prop_names, 'root property id')
+		local value_tag = reader_read_u8(reader, 'root value tag')
+		if key == 'entryProtoIndex' then
+			summary.entry_proto_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.entryProtoIndex')
+		elseif key == 'program' then
+			local prop_count = reader_read_object_property_count(reader, value_tag, 'ProgramAsset.program')
+			for j = 1, prop_count do
+				local program_key = reader_read_prop_key(reader, prop_names, 'program property id')
+				local program_tag = reader_read_u8(reader, 'program value tag')
+				if program_key == 'code' then
+					summary.code_range = reader_read_binary_range_from_tag(reader, program_tag, 'ProgramAsset.program.code')
+				elseif program_key == 'constPool' then
+					summary.const_pool_count = reader_skip_array(reader, prop_names, program_tag, 'ProgramAsset.program.constPool')
+				elseif program_key == 'protos' then
+					summary.proto_count = reader_skip_array(reader, prop_names, program_tag, 'ProgramAsset.program.protos')
+				else
+					reader_skip_value_from_tag(reader, prop_names, program_tag)
+				end
+			end
+		else
+			reader_skip_value_from_tag(reader, prop_names, value_tag)
+		end
+	end
+	return summary
+end
+
+read_rom_program_asset_summary = function(rom_base, header)
+	local reader, prop_names, root_prop_count = begin_program_asset_payload_reader(rom_base, header)
+	return read_program_asset_core_summary_from_reader(reader, prop_names, root_prop_count)
+end
+
+local function make_program_precheck_failure(scope, detail, stderr)
+	return {
+		title = scope .. ' PROGRAM ASSET IS INVALID',
+		detail = detail,
+		stderr = stderr,
+	}
+end
+
+local function validate_program_asset_core(summary, scope)
+	if summary.entry_proto_index == nil then
+		return make_program_precheck_failure(scope, 'ENTRYPROTOINDEX IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing entryProtoIndex.')
+	end
+	if summary.code_range == nil then
+		return make_program_precheck_failure(scope, 'PROGRAM.CODE IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing program.code.')
+	end
+	if summary.const_pool_count == nil then
+		return make_program_precheck_failure(scope, 'PROGRAM.CONSTPOOL IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing program.constPool.')
+	end
+	if summary.proto_count == nil then
+		return make_program_precheck_failure(scope, 'PROGRAM.PROTOS IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing program.protos.')
+	end
+	if (summary.code_range.size % 4) ~= 0 then
+		return make_program_precheck_failure(scope, 'PROGRAM.CODE BYTECOUNT IS MISALIGNED', '[ProgramLinker] ' .. scope .. ' program code length is not divisible by 4.')
+	end
+	summary.instruction_count = summary.code_range.size / 4
+	if summary.entry_proto_index >= summary.proto_count then
+		return make_program_precheck_failure(
+			scope,
+			'ENTRYPROTOINDEX ' .. tostring(summary.entry_proto_index) .. ' EXCEEDS PROTO COUNT ' .. tostring(summary.proto_count),
+			'[ProgramLinker] ' .. scope .. ' entryProtoIndex exceeds proto count.'
+		)
+	end
+	return nil
+end
+
+local function read_module_proto_entry(reader, prop_names, tag)
+	local prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleProtos[]')
+	local path = nil
+	local proto_index = nil
+	for i = 1, prop_count do
+		local key = reader_read_prop_key(reader, prop_names, 'ProgramAsset.moduleProtos[] property id')
+		local value_tag = reader_read_u8(reader, 'ProgramAsset.moduleProtos[] value tag')
+		if key == 'path' then
+			path = reader_read_string_from_tag(reader, value_tag, 'ProgramAsset.moduleProtos[].path')
+		elseif key == 'protoIndex' then
+			proto_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.moduleProtos[].protoIndex')
+		else
+			reader_skip_value_from_tag(reader, prop_names, value_tag)
+		end
+	end
+	return path, proto_index
+end
+
+local function validate_module_protos_array(reader, prop_names, tag, summary, scope)
+	local count = reader_read_array_length(reader, tag, 'ProgramAsset.moduleProtos')
+	for i = 1, count do
+		local item_tag = reader_read_u8(reader, 'ProgramAsset.moduleProtos item tag')
+		local path, proto_index = read_module_proto_entry(reader, prop_names, item_tag)
+		if path == nil or #path == 0 then
+			return make_program_precheck_failure(scope, 'MODULEPROTO PATH IS MISSING', '[ProgramLinker] ' .. scope .. ' moduleProtos entry is missing path.')
+		end
+		if proto_index == nil then
+			return make_program_precheck_failure(scope, 'MODULEPROTO PROTOINDEX IS MISSING', '[ProgramLinker] ' .. scope .. ' moduleProtos entry is missing protoIndex.')
+		end
+		if proto_index >= summary.proto_count then
+			return make_program_precheck_failure(
+				scope,
+				'MODULEPROTO ' .. path .. ' TARGETS PROTO ' .. tostring(proto_index) .. ' OUT OF RANGE',
+				'[ProgramLinker] ' .. scope .. ' moduleProtos entry points outside the proto table.'
+			)
+		end
+	end
+	return nil
+end
+
+local function read_module_alias_entry(reader, prop_names, tag)
+	local prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleAliases[]')
+	local alias = nil
+	local path = nil
+	for i = 1, prop_count do
+		local key = reader_read_prop_key(reader, prop_names, 'ProgramAsset.moduleAliases[] property id')
+		local value_tag = reader_read_u8(reader, 'ProgramAsset.moduleAliases[] value tag')
+		if key == 'alias' then
+			alias = reader_read_string_from_tag(reader, value_tag, 'ProgramAsset.moduleAliases[].alias')
+		elseif key == 'path' then
+			path = reader_read_string_from_tag(reader, value_tag, 'ProgramAsset.moduleAliases[].path')
+		else
+			reader_skip_value_from_tag(reader, prop_names, value_tag)
+		end
+	end
+	return alias, path
+end
+
+local function validate_module_aliases_array(reader, prop_names, tag, summary, scope, required_alias)
+	local count = reader_read_array_length(reader, tag, 'ProgramAsset.moduleAliases')
+	local found_required_alias = required_alias == nil
+	for i = 1, count do
+		local item_tag = reader_read_u8(reader, 'ProgramAsset.moduleAliases item tag')
+		local alias, path = read_module_alias_entry(reader, prop_names, item_tag)
+		if alias == nil or #alias == 0 then
+			return make_program_precheck_failure(scope, 'MODULEALIAS ALIAS IS MISSING', '[ProgramLinker] ' .. scope .. ' moduleAliases entry is missing alias.')
+		end
+		if path == nil or #path == 0 then
+			return make_program_precheck_failure(scope, 'MODULEALIAS PATH IS MISSING', '[ProgramLinker] ' .. scope .. ' moduleAliases entry is missing path.')
+		end
+		if required_alias and alias == required_alias then
+			found_required_alias = true
+		end
+	end
+	if required_alias and not found_required_alias then
+		return {
+			title = scope .. ' PROGRAM MISSING ' .. string.upper(required_alias),
+			detail = 'ALIAS "' .. required_alias .. '" WAS NOT FOUND',
+			stderr = '[ProgramLinker] ' .. scope .. ' program asset is missing alias "' .. required_alias .. '".',
+		}
+	end
+	return nil
+end
+
+local function read_const_reloc_entry(reader, prop_names, tag)
+	local prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.link.constRelocs[]')
+	local word_index = nil
+	local kind = nil
+	local const_index = nil
+	for i = 1, prop_count do
+		local key = reader_read_prop_key(reader, prop_names, 'ProgramAsset.link.constRelocs[] property id')
+		local value_tag = reader_read_u8(reader, 'ProgramAsset.link.constRelocs[] value tag')
+		if key == 'wordIndex' then
+			word_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.link.constRelocs[].wordIndex')
+		elseif key == 'kind' then
+			kind = reader_read_string_from_tag(reader, value_tag, 'ProgramAsset.link.constRelocs[].kind')
+		elseif key == 'constIndex' then
+			const_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.link.constRelocs[].constIndex')
+		else
+			reader_skip_value_from_tag(reader, prop_names, value_tag)
+		end
+	end
+	return word_index, kind, const_index
+end
+
+local function validate_const_relocs_array(reader, prop_names, tag, summary, scope)
+	local count = reader_read_array_length(reader, tag, 'ProgramAsset.link.constRelocs')
+	for i = 1, count do
+		local item_tag = reader_read_u8(reader, 'ProgramAsset.link.constRelocs item tag')
+		local word_index, kind, const_index = read_const_reloc_entry(reader, prop_names, item_tag)
+		local reloc_id = tostring(i - 1)
+		if word_index == nil then
+			return make_program_precheck_failure(scope, 'CONSTRELOC ' .. reloc_id .. ' IS MISSING WORDINDEX', '[ProgramLinker] ' .. scope .. ' const reloc is missing wordIndex.')
+		end
+		if kind == nil then
+			return make_program_precheck_failure(scope, 'CONSTRELOC ' .. reloc_id .. ' IS MISSING KIND', '[ProgramLinker] ' .. scope .. ' const reloc is missing kind.')
+		end
+		if kind ~= 'bx' and kind ~= 'rk_b' and kind ~= 'rk_c' then
+			return make_program_precheck_failure(scope, 'CONSTRELOC ' .. reloc_id .. ' HAS INVALID KIND ' .. kind, '[ProgramLinker] ' .. scope .. ' const reloc has invalid kind "' .. kind .. '".')
+		end
+		if const_index == nil then
+			return make_program_precheck_failure(scope, 'CONSTRELOC ' .. reloc_id .. ' IS MISSING CONSTINDEX', '[ProgramLinker] ' .. scope .. ' const reloc is missing constIndex.')
+		end
+		if word_index <= 0 or word_index >= summary.instruction_count then
+			return make_program_precheck_failure(
+				scope,
+				'CONSTRELOC ' .. reloc_id .. ' TARGETS WORD ' .. tostring(word_index) .. ' OUT OF RANGE',
+				'[ProgramLinker] ' .. scope .. ' const reloc targets a word outside program.code.'
+			)
+		end
+		if const_index >= summary.const_pool_count then
+			return make_program_precheck_failure(
+				scope,
+				'CONSTRELOC ' .. reloc_id .. ' TARGETS CONST ' .. tostring(const_index) .. ' OUT OF RANGE',
+				'[ProgramLinker] ' .. scope .. ' const reloc targets a const index outside program.constPool.'
+			)
+		end
+		local wide_word = peek32le(summary.code_range.start + ((word_index - 1) * 4))
+		local wide_op = (wide_word >> 18) & 0x3f
+		if wide_op ~= 0 then
+			return make_program_precheck_failure(
+				scope,
+				'CONSTRELOC ' .. reloc_id .. ' IS MISSING WIDE PREFIX',
+				'[ProgramLinker] ' .. scope .. ' const reloc target is not preceded by WIDE.'
+			)
+		end
+	end
+	return nil
+end
+
+local function validate_program_link_object(reader, prop_names, tag, summary, scope)
+	local prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.link')
+	local saw_const_relocs = false
+	for i = 1, prop_count do
+		local key = reader_read_prop_key(reader, prop_names, 'ProgramAsset.link property id')
+		local value_tag = reader_read_u8(reader, 'ProgramAsset.link value tag')
+		if key == 'constRelocs' then
+			saw_const_relocs = true
+			local failure = validate_const_relocs_array(reader, prop_names, value_tag, summary, scope)
+			if failure then
+				return failure
+			end
+		else
+			reader_skip_value_from_tag(reader, prop_names, value_tag)
+		end
+	end
+	if not saw_const_relocs then
+		return make_program_precheck_failure(scope, 'LINK.CONSTRELOCS IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing link.constRelocs.')
+	end
+	return nil
+end
+
+local function validate_program_asset_details(rom_base, header, summary, params)
+	local scope = params.scope
+	local required_alias = params.required_alias
+	local reader, prop_names, root_prop_count = begin_program_asset_payload_reader(rom_base, header)
+	local saw_module_aliases = false
+	local saw_link = false
+	for i = 1, root_prop_count do
+		local key = reader_read_prop_key(reader, prop_names, 'root property id')
+		local value_tag = reader_read_u8(reader, 'root value tag')
+		if key == 'moduleProtos' then
+			local failure = validate_module_protos_array(reader, prop_names, value_tag, summary, scope)
+			if failure then
+				return failure
+			end
+		elseif key == 'moduleAliases' then
+			saw_module_aliases = true
+			local failure = validate_module_aliases_array(reader, prop_names, value_tag, summary, scope, required_alias)
+			if failure then
+				return failure
+			end
+		elseif key == 'link' then
+			saw_link = true
+			local failure = validate_program_link_object(reader, prop_names, value_tag, summary, scope)
+			if failure then
+				return failure
+			end
+		else
+			reader_skip_value_from_tag(reader, prop_names, value_tag)
+		end
+	end
+	if not saw_module_aliases then
+		return make_program_precheck_failure(scope, 'MODULEALIASES IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing moduleAliases.')
+	end
+	if not saw_link then
+		return make_program_precheck_failure(scope, 'LINK IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing link.')
+	end
+	return nil
+end
+
 local function compute_program_link_errors(cart_header)
-	return {}, nil
+	local errors = {}
+	local sys_header, system_summary = get_cached_system_program_summary()
+	if not sys_header then
+		errors[#errors + 1] = 'SYSTEM ROM HEADER IS INVALID'
+		return errors, '[ProgramLinker] Missing system ROM header.'
+	end
+	local failure = validate_program_asset_core(system_summary, 'SYSTEM')
+	if failure then
+		errors[#errors + 1] = failure.title
+		errors[#errors + 1] = failure.detail
+		return errors, failure.stderr
+	end
+	failure = validate_program_asset_details(system_rom_base, sys_header, system_summary, {
+		scope = 'SYSTEM',
+		required_alias = 'bios/engine',
+	})
+	if failure then
+		errors[#errors + 1] = failure.title
+		errors[#errors + 1] = failure.detail
+		return errors, failure.stderr
+	end
+	local cart_summary = read_rom_program_asset_summary(cart_rom_base, cart_header)
+	failure = validate_program_asset_core(cart_summary, 'CART')
+	if failure then
+		errors[#errors + 1] = failure.title
+		errors[#errors + 1] = failure.detail
+		return errors, failure.stderr
+	end
+	failure = validate_program_asset_details(cart_rom_base, cart_header, cart_summary, {
+		scope = 'CART',
+	})
+	if failure then
+		errors[#errors + 1] = failure.title
+		errors[#errors + 1] = failure.detail
+		return errors, failure.stderr
+	end
+	return errors, nil
 end
 
 local function report_precheck_stderr_once()
@@ -699,13 +1110,11 @@ end
 
 local function consume_boot_scroll_delta()
 	local delta = 0
-	if action_triggered('down[jp]', 1) then
+	if action_triggered('down[rp]') then
 		delta = delta + 1
-		consume_action('down')
 	end
-	if action_triggered('up[jp]', 1) then
+	if action_triggered('up[rp]') then
 		delta = delta - 1
-		consume_action('up')
 	end
 	return delta
 end
@@ -903,17 +1312,17 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 	local cart_has_errors = cart_present and info.cart_has_errors
 	local hw_specs = {
 		{ label = 'MAX CART ROM', value = info.hw_cart_max, color = color_accent },
+		{ label = 'CPU MHZ', value = info.cart_cpu_mhz, color = color_accent },
 		{ label = 'TOTAL RAM', value = info.hw_ram_total, color = color_info_total },
 		{ label = 'TOTAL VRAM', value = info.hw_vram_total, color = color_info_total },
-		{ label = 'MAX ASSETS', value = info.hw_max_assets, color = color_accent },
-		{ label = 'MAX STRING ENTRIES', value = info.hw_max_strings, color = color_accent },
-		{ label = 'MAX CYCLES/FRAME', value = info.hw_max_cycles, color = color_accent },
+		{ label = 'VIEWPORT', value = info.cart_view, color = color_info_total },
+		-- { label = 'MAX ASSETS', value = info.hw_max_assets, color = color_accent },
+		-- { label = 'MAX STRING ENTRIES', value = info.hw_max_strings, color = color_accent },
+		-- { label = 'MAX CYCLES/FRAME', value = info.hw_max_cycles, color = color_accent },
 	}
 	local cart_specs = {
-		{ label = 'CART ROM', value = info.cart_rom, color = color_accent },
+		-- { label = 'CART ROM', value = info.cart_rom, color = color_accent },
 		{ label = 'CART NAME', value = info.cart_title, color = color_ok },
-		{ label = 'VIEWPORT', value = info.cart_view, color = color_info_total },
-		{ label = 'CPU MHZ', value = info.cart_cpu_mhz, color = color_accent },
 	}
 	local label_width = 0
 	for i = 1, #hw_specs do
@@ -998,6 +1407,7 @@ function init()
 	boot_start = os.clock()
 	boot_requested = false
 	boot_screen_visible = true
+	boot_screen_presented = false
 	sys_atlas_ready = false
 	sys_atlas_failed = false
 	clear_precheck_cache()
@@ -1031,6 +1441,11 @@ function update()
 	refresh_atlas_load_state()
 	boot_screen_visible = true
 	local scroll_delta = consume_boot_scroll_delta()
+	render_boot_screen(scroll_delta)
+	if not boot_screen_presented then
+		boot_screen_presented = true
+		return
+	end
 	local cart_header = read_cart_header(cart_rom_base)
 	local cart_manifest_raw = cart_manifest
 	local cart_root_path = assets and assets.project_root_path
@@ -1055,8 +1470,6 @@ function update()
 			poke(sys_boot_cart, 1)
 		end
 	end
-
-	render_boot_screen(scroll_delta)
 end
 
 render_boot_screen = function(scroll_delta)

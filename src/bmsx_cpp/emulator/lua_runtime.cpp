@@ -88,6 +88,7 @@ void Runtime::logLuaCallStack() const {
 
 void Runtime::handleLuaError(const std::string& message) {
 	std::cout << "[Runtime] Error: " << message << std::endl;
+	logDebugState();
 	logLuaCallStack();
 	m_runtimeFailed = true;
 }

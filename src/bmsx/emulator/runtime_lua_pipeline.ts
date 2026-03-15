@@ -14,6 +14,7 @@ import { linkProgramAssets } from './program_linker';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import type { RuntimeState, SymbolEntry, SymbolKind } from './types';
 import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
+import { logDebugState } from './runtime_debug';
 import * as runtimeIde from './runtime_ide';
 import {
 	buildModuleAliasMap,
@@ -27,7 +28,7 @@ import {
 	type ProgramAsset,
 	type ProgramSymbolsAsset,
 } from './program_asset';
-import { INSTRUCTION_BYTES, readInstructionWord } from './instruction_format';
+import { INSTRUCTION_BYTES } from './instruction_format';
 import {
 	IO_BUFFER_BASE,
 	IO_COMMAND_STRIDE,
@@ -40,7 +41,7 @@ import {
 } from './io';
 import { CanonicalizationType, getMachinePerfSpecs } from '../rompack/rompack';
 import type { RawAssetSource } from '../rompack/asset_source';
-import { OpCode, Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from './cpu';
+import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from './cpu';
 import { StringValue, isStringValue, stringValueToString } from './string_pool';
 import type { Runtime } from './runtime';
 
@@ -750,39 +751,6 @@ export function processIo(runtime: Runtime): void {
 		}
 	}
 	memory.writeValue(IO_WRITE_PTR_ADDR, 0);
-}
-
-export function logDebugState(runtime: Runtime): void {
-	if (!runtime.cpu.hasFrames()) {
-		return;
-	}
-	const debug = runtime.cpu.getDebugState();
-	const instr = debug.instr;
-	const program = runtime.cpu.getProgram();
-	let wideA = 0;
-	let wideB = 0;
-	let wideC = 0;
-	const wordIndex = debug.pc / INSTRUCTION_BYTES;
-	if (wordIndex > 0) {
-		const previous = readInstructionWord(program.code, wordIndex - 1);
-		const prevOp = (previous >>> 18) & 0x3f;
-		if (prevOp === OpCode.WIDE) {
-			wideA = (previous >>> 12) & 0x3f;
-			wideB = (previous >>> 6) & 0x3f;
-			wideC = previous & 0x3f;
-		}
-	}
-	const op = (instr >>> 18) & 0x3f;
-	const aLow = (instr >>> 12) & 0x3f;
-	const bLow = (instr >>> 6) & 0x3f;
-	const cLow = instr & 0x3f;
-	const a = (wideA << 6) | aLow;
-	const b = (wideB << 6) | bLow;
-	const c = (wideC << 6) | cLow;
-	const ra = debug.registers[a];
-	const rb = debug.registers[b];
-	const rc = debug.registers[c];
-	console.info(`[Runtime] debug: pc=${debug.pc} op=${op} a=${a} b=${b} c=${c} ra=${valueToString(ra)} rb=${valueToString(rb)} rc=${valueToString(rc)}`);
 }
 
 export function resolveProgramAssetSource(runtime: Runtime): RawAssetSource {
