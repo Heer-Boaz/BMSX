@@ -1108,17 +1108,6 @@ local function get_program_precheck_status(cart_header)
 	return 'PENDING', 'PROGRAM PRECHECK NOT RUN', false
 end
 
-local function consume_boot_scroll_delta()
-	local delta = 0
-	if action_triggered('down[rp]') then
-		delta = delta + 1
-	end
-	if action_triggered('up[rp]') then
-		delta = delta - 1
-	end
-	return delta
-end
-
 local function scroll_boot_lines(lines, window_size, delta)
 	local line_count = #lines
 	if line_count ~= boot_scroll_state.last_line_count then
@@ -1142,7 +1131,7 @@ end
 
 local function format_bytes(value)
 	local kb = 1024
-	local mb = kb * 1024
+	local mb = kb * 1024645
 	if value >= mb then
 		local scaled = value / mb
 		if scaled == math.floor(scaled) then
@@ -1248,12 +1237,8 @@ local function divider(line_slots)
 end
 
 local function build_progress_bar(progress, width)
-	local clamped = progress
-	if clamped < 0 then clamped = 0 end
-	if clamped > 1 then clamped = 1 end
-	local filled = math.floor(width * clamped + 0.5)
-	if filled < 0 then filled = 0 end
-	if filled > width then filled = width end
+	local clamped = clamp_int(progress, 0, 1)
+	local filled = clamp_int(math.floor(width * clamped + 0.5), 0, width)
 	return '[' .. string.rep('#', filled) .. string.rep('-', width - filled) .. ']'
 end
 
@@ -1299,7 +1284,7 @@ local function append_kv_wrapped(lines, label, value, color, label_width, line_s
 end
 
 local function append_blank_line(lines)
-	lines[#lines + 1] = { text = '', color = color_text }
+	lines[#lines + 1] = { text = '' }
 end
 
 local function append_section(lines, title, line_slots)
@@ -1341,7 +1326,7 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 	append_section(lines, 'SYSTEM SPECS', line_slots)
 	for i = 1, #hw_specs do
 		local spec = hw_specs[i]
-		append_kv_wrapped(lines, spec.label, spec.value, spec.color or color_text, label_width, line_slots)
+		append_kv_wrapped(lines, spec.label, spec.value, spec.color, label_width, line_slots)
 	end
 
 	append_blank_line(lines)
@@ -1440,11 +1425,10 @@ end
 function update()
 	refresh_atlas_load_state()
 	boot_screen_visible = true
-	local scroll_delta = consume_boot_scroll_delta()
+	local scroll_delta = action_triggered('down[rp]') and 1 or (action_triggered('up[rp]') and -1 or 0)
 	render_boot_screen(scroll_delta)
 	if not boot_screen_presented then
 		boot_screen_presented = true
-		return
 	end
 	local cart_header = read_cart_header(cart_rom_base)
 	local cart_manifest_raw = cart_manifest
@@ -1493,7 +1477,7 @@ render_boot_screen = function(scroll_delta)
 
 	for i = 1, #visible_lines do
 		local line = visible_lines[i]
-		write(line.text, left, y, 0, line.color)
+		write(line.text, left, y, 0, line.color or color_text)
 		y = y + line_height
 	end
 
