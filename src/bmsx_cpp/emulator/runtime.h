@@ -308,6 +308,7 @@ private:
 	void executeUpdateCallback();
 	void advanceHardware(int cycles);
 	void advanceVblank(int cycles);
+	int cyclesUntilNextVblankEdge() const;
 	void resetVblankState();
 	void setVblankStatus(bool active);
 	void enterVblank();
@@ -315,8 +316,6 @@ private:
 	void completeTickIfPending(FrameState& frameState, uint64_t vblankSequence);
 	void reconcileCycleBudgetAfterSignal(FrameState& frameState);
 	void requestWaitForVblank();
-	bool isWaitForVblankDebugEnabled() const;
-	void flushWaitForVblankDebug(std::chrono::steady_clock::time_point now);
 	void resetTransferCarry();
 	void processIrqAck();
 	void raiseIrqFlags(uint32_t mask);
@@ -328,6 +327,7 @@ private:
 	std::string valueToString(const Value& value) const;
 	double nextRandom();
 	std::string formatLuaString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const;
+	void logDebugState() const;
 	void logLuaCallStack() const;
 	void refreshMemoryMapGlobals();
 	void setCartBootReadyFlag(bool value);
@@ -397,19 +397,6 @@ private:
 	double m_debugFrameYieldsAcc = 0.0;
 	double m_debugFrameGrantedAcc = 0.0;
 	double m_debugFrameCarryAcc = 0.0;
-	bool m_debugWaitForVblankReportInitialized = false;
-	std::chrono::steady_clock::time_point m_debugWaitForVblankReportAt;
-	i64 m_debugWaitForVblankRequestCount = 0;
-	i64 m_debugWaitForVblankImmediateCount = 0;
-	i64 m_debugWaitForVblankIdleAdvanceCount = 0;
-	double m_debugWaitForVblankIdleAdvanceCyclesAcc = 0.0;
-	i64 m_debugWaitForVblankPendingCount = 0;
-	i64 m_debugWaitForVblankCompleteCount = 0;
-	double m_debugWaitForVblankCompletionRemainingAcc = 0.0;
-	double m_debugWaitForVblankCompletionRemainingMax = 0.0;
-	double m_debugWaitForVblankCompletionGrantedAcc = 0.0;
-	double m_debugWaitForVblankCompletionCarryGrantedAcc = 0.0;
-	uint64_t m_debugWaitForVblankLastCompletionSequence = 0;
 		i64 m_debugTickYieldsBefore = 0;
 		i64 m_debugUpdateCountTotal = 0;
 		i64 m_lastTickSequence = 0;

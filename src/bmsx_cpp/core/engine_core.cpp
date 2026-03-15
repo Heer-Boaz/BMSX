@@ -596,10 +596,6 @@ void EngineCore::tick(f64 deltaTime) {
 		}
 		if (slicesProcessed > 0) {
 			m_accumulated_time = std::max(m_accumulated_time - static_cast<double>(slicesProcessed) * m_update_interval_ms, 0.0);
-			if (!presentQueued) {
-				// Keep host presentation alive while a runtime tick spans multiple slices.
-				presentQueued = true;
-			}
 		}
 		if (presentQueued) {
 			m_presentation_pending = true;

@@ -147,20 +147,25 @@ class BrowserClock implements Clock {
 }
 
 class BrowserFrameLoop implements FrameLoop {
-	private req = 0;
-
 	start(tick: (t: number) => void): { stop(): void } {
+		let req = 0;
 		let alive = true;
 		const loop = (t: number) => {
 			if (!alive) return;
 			tick(t);
+			if (!alive) return;
 			// window.dispatchEvent(new Event('frame'));
-			this.req = window.requestAnimationFrame(loop);
+			req = window.requestAnimationFrame(loop);
 		};
-		this.req = window.requestAnimationFrame(loop);
+		req = window.requestAnimationFrame(loop);
 		return {
 			stop: () => {
-				if (this.req !== 0) window.cancelAnimationFrame(this.req);
+				if (!alive) return;
+				alive = false;
+				if (req !== 0) {
+					window.cancelAnimationFrame(req);
+					req = 0;
+				}
 			},
 		};
 	}
