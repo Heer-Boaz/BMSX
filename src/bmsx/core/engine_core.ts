@@ -435,6 +435,7 @@ export class EngineCore {
 	}
 
 	public async refresh_audio_assets(): Promise<void> {
+		this.sndmaster.bootstrapRuntimeAudio(GameOptions.volumePercentage);
 		const resolver = this.buildModulationResolver(this._assets);
 		const runtime = Runtime.instance;
 		const resources = runtime.buildAudioResourcesForSoundMaster();
@@ -448,6 +449,10 @@ export class EngineCore {
 		if (maxVoices) {
 			SoundMaster.instance.setMaxVoicesByType(maxVoices);
 		}
+	}
+
+	public bootstrapStartupAudio(): void {
+		this.sndmaster.bootstrapRuntimeAudio(GameOptions.volumePercentage);
 	}
 
 	public set_skybox_imgs(ids: SkyboxImageIds): void {

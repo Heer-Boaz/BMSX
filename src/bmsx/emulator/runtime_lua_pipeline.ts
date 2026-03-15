@@ -7,7 +7,7 @@ import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clearNativeMemberCompletionCache } from './ide/intellisense';
 import { getSourceForChunk } from './ide/cart_editor';
 import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from './lua_builtins';
-import { seedLuaGlobals, valueToString } from './lua_globals';
+import { seedLuaGlobals } from './lua_globals';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
 import { linkProgramAssets } from './program_linker';

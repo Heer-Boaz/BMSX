@@ -816,9 +816,8 @@ export class Runtime {
 			await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
 			runtime.memory.sealEngineAssets();
 			$.view.default_font = new Font();
-			await $.refresh_audio_assets();
 			await runtime.boot();
-			$.start();
+			Runtime.startEngineWithDeferredStartupAudioRefresh();
 			return;
 		}
 
@@ -901,9 +900,8 @@ export class Runtime {
 		await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
 		runtime.memory.sealEngineAssets();
 		$.view.default_font = new Font();
-		await $.refresh_audio_assets();
 		await runtime.boot();
-		$.start();
+		Runtime.startEngineWithDeferredStartupAudioRefresh();
 	}
 
 	public static get instance(): Runtime {
@@ -931,6 +929,18 @@ export class Runtime {
 			canonicalization: base.canonicalization,
 			manifest: base.manifest,
 		};
+	}
+
+	private static startEngineWithDeferredStartupAudioRefresh(): void {
+		$.bootstrapStartupAudio();
+		$.start();
+		const firstFrameHandle = $.platform.frames.start(() => {
+			firstFrameHandle.stop();
+			const audioRefreshHandle = $.platform.frames.start(() => {
+				audioRefreshHandle.stop();
+				void $.refresh_audio_assets();
+			});
+		});
 	}
 
 	private static collectAssetEntryIds(engineSource: RawAssetSource, assetSource: RawAssetSource, assets: RuntimeAssets): Set<string> {
