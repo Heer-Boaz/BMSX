@@ -71,8 +71,8 @@
 --      'player.shrine_overlay_exit' — director requests shrine exit.
 --      'player.halo_trigger'        — director requests halo teleport.
 --    The player handles these in its root `on` block, performs the action,
---    and (for shrine exit) emits a reply event ('shrine_exit_done') from
---    leaving_shrine's leaving_state callback.
+--    and (for shrine exit) emits a reply event ('shrine_exit_done') when the
+--    exit animation timeline completes.
 
 local constants = require('constants')
 local castle_map = require('castle_map')
@@ -165,13 +165,7 @@ local stairs_landing_events = {
 
 local function build_shrine_exit_transition_frames()
 	local frames = {}
-	for transition_step = 1, constants.world_entrance.enter_world_total_steps do
-		local phase_step
-		if transition_step <= constants.world_entrance.enter_world_midpoint_step then
-			phase_step = transition_step
-		else
-			phase_step = constants.world_entrance.enter_world_total_steps - transition_step
-		end
+	for transition_step = constants.world_entrance.enter_world_midpoint_step, constants.world_entrance.enter_world_total_steps do
 		local phase
 		if constants.world_entrance.enter_leave_cycle_steps <= 0 then
 			phase = 0
@@ -181,7 +175,7 @@ local function build_shrine_exit_transition_frames()
 		frames[#frames + 1] = {
 			transition_step = transition_step,
 			enter_leave_anim_frame = phase < 4 and 0 or 1,
-			to_enter_cut = -phase_step,
+			to_enter_cut = transition_step - constants.world_entrance.enter_world_total_steps,
 		}
 	end
 	return frames
@@ -1992,14 +1986,6 @@ function player:update_emerging_world()
 	end
 end
 
-function player:update_leaving_shrine()
-	self:reset_motion_for_transition_lock()
-	self.transition_step = self.transition_step + 1
-	if self.transition_step > constants.flow.room_switch_wait_frames then
-		self.events:emit('shrine_exit_done')
-	end
-end
-
 function player:update_quiet()
 	self:zero_motion()
 
@@ -2762,19 +2748,23 @@ local function define_player_fsm()
 					state_tags.group.transition_lock,
 					state_tags.group.damage_lock,
 				},
-				on = {
-					['shrine_exit_done'] = '/quiet',
+				timelines = {
+					[player_shrine_exit_timeline_id] = {
+						autoplay = true,
+						stop_on_exit = true,
+						play_options = {
+							rewind = true,
+							snap_to_start = true,
+						},
+						on_end = function(self)
+							local castle = object('c')
+							self.to_enter_cut = 0
+							object('d').events:emit('shrine_exit_done', castle:create_room_enter_payload(false))
+							return '/quiet'
+						end,
+					},
 				},
-				entering_state = function(self)
-					self.transition_step = 0
-					self.to_enter_cut = 0
-					self.enter_leave_anim_frame = 0
-				end,
-				leaving_state = function(self)
-					self.to_enter_cut = 0
-					object('d').events:emit('shrine_exit_done')
-				end,
-				update = player.update_leaving_shrine,
+				update = player.reset_motion_for_transition_lock,
 			},
 		-- FREEZE — entered on 'seal_dissolution' from root on handler.
 		-- Cancels any active sword swing, then waits for 'seal_flash_done'.

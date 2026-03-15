@@ -626,14 +626,15 @@ function castle:sync_world_entrance_states_for_room(room_state)
 	end
 end
 
-function castle:emit_room_enter()
-	self.room_enter_pending = false
+function castle:create_room_enter_payload(suppress_room_music)
 	local room = current_room()
 	local payload = {
 		room_number = self.current_room_number,
 		world_number = room.world_number,
 	}
-	if room.last_room_switch ~= nil and room.last_room_switch.direction == 'world_leave' then
+	if suppress_room_music ~= nil then
+		payload.suppress_room_music = suppress_room_music
+	elseif room.last_room_switch ~= nil and room.last_room_switch.direction == 'world_leave' then
 		payload.suppress_room_music = true
 	else
 		payload.suppress_room_music = false
@@ -648,6 +649,12 @@ function castle:emit_room_enter()
 	else
 		payload.daemon_fight_active = false
 	end
+	return payload
+end
+
+function castle:emit_room_enter()
+	self.room_enter_pending = false
+	local payload = self:create_room_enter_payload()
 	self.events:emit('room.enter', payload)
 end
 

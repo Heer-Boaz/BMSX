@@ -2,7 +2,7 @@ events:
     # --- Music routing (no room-id checks) ---
     room.enter:
         channel: music
-        rules:
+        rules: &room_music_rules
             - when:
                   equals:
                       daemon_fight_active: true
@@ -32,6 +32,10 @@ events:
               go:
                   music_transition:
                       audio_id: music_world
+
+    shrine_exit_done:
+        channel: music
+        rules: *room_music_rules
 
     title:
         channel: music
@@ -164,6 +168,12 @@ events:
                   sequence:
                       - stop_music: true
                       - audio_id: enterleave
+
+    player.shrine_overlay_exit:
+        channel: music
+        rules:
+            - go:
+                  stop_music: true
 
     leave_shrine_overlay:
         channel: sfx
