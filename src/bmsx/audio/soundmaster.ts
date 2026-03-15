@@ -492,9 +492,19 @@ export class SoundMaster implements RegisterablePersistent {
 		return this.rng;
 	}
 
-	public async init(audioResources: id2res, startingVolume: number, resolver: ModulationPresetResolver | null, audioResolver: AudioBytesResolver) {
+	public bootstrapRuntimeAudio(startingVolume: number): void {
 		this.audio = $.platform.audio;
 		this.rng = $.platform.rng;
+		this.mixSampleRate = this.A.sampleRate();
+		if (!Number.isFinite(this.mixSampleRate) || this.mixSampleRate <= 0) {
+			throw new Error('[SoundMaster] Audio sample rate must be a positive finite value.');
+		}
+		this.setMixerFps($.target_fps);
+		this.volume = clamp01(startingVolume);
+	}
+
+	public async init(audioResources: id2res, startingVolume: number, resolver: ModulationPresetResolver | null, audioResolver: AudioBytesResolver) {
+		this.bootstrapRuntimeAudio(startingVolume);
 		this.modulationResolver = resolver;
 		this.audioResolver = audioResolver;
 		this.modulationPresetCache.clear();
@@ -507,14 +517,7 @@ export class SoundMaster implements RegisterablePersistent {
 		this.streamClips = {};
 		this.streamClipLoads = {};
 		this.resetVoiceState();
-		this.mixSampleRate = this.A.sampleRate();
-		if (!Number.isFinite(this.mixSampleRate) || this.mixSampleRate <= 0) {
-			throw new Error('[SoundMaster] Audio sample rate must be a positive finite value.');
-		}
-		this.setMixerFps($.target_fps);
 		this.startMixer();
-
-		this.volume = clamp01(startingVolume);
 	}
 
 	public setMaxVoicesByType(specs: Partial<Record<AudioType, number>>): void {
