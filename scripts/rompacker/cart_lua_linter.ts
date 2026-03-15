@@ -65,6 +65,7 @@ type LuaLintIssueRule =
 	'set_space_roundtrip_pattern' |
 	'cross_object_state_event_relay_pattern' |
 	'foreign_object_internal_mutation_pattern' |
+	'runtime_tag_table_access_pattern' |
 	'fsm_state_name_mirror_assignment_pattern' |
 	'constant_copy_pattern' |
 	'split_local_table_init_pattern' |
@@ -180,6 +181,20 @@ type ForeignObjectMutationContext = {
 	readonly scopeStack: ForeignObjectAliasScope[];
 };
 
+type RuntimeTagLookupBinding = {
+	readonly declaration: LuaIdentifierExpression;
+};
+
+type RuntimeTagLookupScope = {
+	readonly names: string[];
+};
+
+type RuntimeTagLookupContext = {
+	readonly issues: LuaLintIssue[];
+	readonly bindingStacksByName: Map<string, Array<RuntimeTagLookupBinding | null>>;
+	readonly scopeStack: RuntimeTagLookupScope[];
+};
+
 type LuaCartLintOptions = {
 	readonly roots: ReadonlyArray<string>;
 	readonly profile?: LuaLintProfile;
@@ -279,6 +294,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'set_space_roundtrip_pattern',
 	'cross_object_state_event_relay_pattern',
 	'foreign_object_internal_mutation_pattern',
+	'runtime_tag_table_access_pattern',
 	'fsm_state_name_mirror_assignment_pattern',
 	'constant_copy_pattern',
 	'split_local_table_init_pattern',
@@ -328,6 +344,7 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'set_space_roundtrip_pattern',
 	'cross_object_state_event_relay_pattern',
 	'foreign_object_internal_mutation_pattern',
+	'runtime_tag_table_access_pattern',
 	'fsm_state_name_mirror_assignment_pattern',
 	'multi_has_tag_pattern',
 	'single_use_has_tag_pattern',
@@ -1086,6 +1103,17 @@ function isHasTagCall(expression: LuaExpression): boolean {
 		return false;
 	}
 	return getCallMethodName(expression) === 'has_tag';
+}
+
+function isTagsContainerExpression(expression: LuaExpression): boolean {
+	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+		return expression.identifier === 'tags';
+	}
+	if (expression.kind !== LuaSyntaxKind.IndexExpression) {
+		return false;
+	}
+	const keyName = getExpressionKeyName(expression.index);
+	return keyName === 'tags';
 }
 
 function countHasTagCalls(expression: LuaExpression): number {
@@ -3573,6 +3601,299 @@ function lintForeignObjectInternalMutationPattern(statements: ReadonlyArray<LuaS
 		lintForeignObjectMutationInStatements(statements, context);
 	} finally {
 		leaveForeignObjectMutationScope(context);
+	}
+}
+
+function createRuntimeTagLookupContext(issues: LuaLintIssue[]): RuntimeTagLookupContext {
+	const context: RuntimeTagLookupContext = {
+		issues,
+		bindingStacksByName: new Map<string, Array<RuntimeTagLookupBinding | null>>(),
+		scopeStack: [],
+	};
+	enterRuntimeTagLookupScope(context);
+	return context;
+}
+
+function enterRuntimeTagLookupScope(context: RuntimeTagLookupContext): void {
+	context.scopeStack.push({ names: [] });
+}
+
+function leaveRuntimeTagLookupScope(context: RuntimeTagLookupContext): void {
+	const scope = context.scopeStack.pop();
+	if (!scope) {
+		return;
+	}
+	for (const name of scope.names) {
+		const stack = context.bindingStacksByName.get(name);
+		if (!stack || stack.length === 0) {
+			continue;
+		}
+		stack.pop();
+		if (stack.length === 0) {
+			context.bindingStacksByName.delete(name);
+		}
+	}
+}
+
+function declareRuntimeTagLookupBinding(
+	context: RuntimeTagLookupContext,
+	declaration: LuaIdentifierExpression,
+	binding: RuntimeTagLookupBinding | null,
+): void {
+	const scope = context.scopeStack[context.scopeStack.length - 1];
+	scope.names.push(declaration.name);
+	let stack = context.bindingStacksByName.get(declaration.name);
+	if (!stack) {
+		stack = [];
+		context.bindingStacksByName.set(declaration.name, stack);
+	}
+	stack.push(binding);
+}
+
+function resolveRuntimeTagLookupBinding(
+	context: RuntimeTagLookupContext,
+	name: string,
+): RuntimeTagLookupBinding | null | undefined {
+	const stack = context.bindingStacksByName.get(name);
+	if (!stack || stack.length === 0) {
+		return undefined;
+	}
+	return stack[stack.length - 1];
+}
+
+function setRuntimeTagLookupBinding(
+	context: RuntimeTagLookupContext,
+	name: string,
+	binding: RuntimeTagLookupBinding | null,
+): void {
+	const stack = context.bindingStacksByName.get(name);
+	if (!stack || stack.length === 0) {
+		return;
+	}
+	stack[stack.length - 1] = binding;
+}
+
+function isRuntimeTagLookupAliasInitializer(expression: LuaExpression | undefined): boolean {
+	return isObjectOrServiceResolverCallExpression(expression);
+}
+
+function getRuntimeTagLookupOwnerExpression(expression: LuaExpression): LuaExpression | undefined {
+	if (expression.kind !== LuaSyntaxKind.MemberExpression && expression.kind !== LuaSyntaxKind.IndexExpression) {
+		return undefined;
+	}
+	if (!isTagsContainerExpression(expression.base)) {
+		return undefined;
+	}
+	return expression.base.base;
+}
+
+function isRuntimeTagLookupOwnerExpression(expression: LuaExpression, context: RuntimeTagLookupContext): boolean {
+	if (isSelfExpressionRoot(expression)) {
+		return true;
+	}
+	if (isObjectOrServiceResolverCallExpression(expression)) {
+		return true;
+	}
+	if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
+		return false;
+	}
+	return !!resolveRuntimeTagLookupBinding(context, expression.name);
+}
+
+function isRuntimeTagLookupExpression(expression: LuaExpression, context: RuntimeTagLookupContext): boolean {
+	const ownerExpression = getRuntimeTagLookupOwnerExpression(expression);
+	if (!ownerExpression) {
+		return false;
+	}
+	return isRuntimeTagLookupOwnerExpression(ownerExpression, context);
+}
+
+function lintRuntimeTagLookupInExpression(
+	expression: LuaExpression | null,
+	context: RuntimeTagLookupContext,
+): void {
+	if (!expression) {
+		return;
+	}
+	if (isRuntimeTagLookupExpression(expression, context)) {
+		pushIssue(
+			context.issues,
+			'runtime_tag_table_access_pattern',
+			expression,
+			'Direct runtime .tags access is forbidden. Use :has_tag(...) and derived/group tags instead of reading internal tag tables to bypass linting.',
+		);
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.MemberExpression:
+			lintRuntimeTagLookupInExpression(expression.base, context);
+			return;
+		case LuaSyntaxKind.IndexExpression:
+			lintRuntimeTagLookupInExpression(expression.base, context);
+			lintRuntimeTagLookupInExpression(expression.index, context);
+			return;
+		case LuaSyntaxKind.BinaryExpression:
+			lintRuntimeTagLookupInExpression(expression.left, context);
+			lintRuntimeTagLookupInExpression(expression.right, context);
+			return;
+		case LuaSyntaxKind.UnaryExpression:
+			lintRuntimeTagLookupInExpression(expression.operand, context);
+			return;
+		case LuaSyntaxKind.CallExpression:
+			lintRuntimeTagLookupInExpression(expression.callee, context);
+			for (const argument of expression.arguments) {
+				lintRuntimeTagLookupInExpression(argument, context);
+			}
+			return;
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					lintRuntimeTagLookupInExpression(field.key, context);
+				}
+				lintRuntimeTagLookupInExpression(field.value, context);
+			}
+			return;
+		case LuaSyntaxKind.FunctionExpression:
+			enterRuntimeTagLookupScope(context);
+			for (const parameter of expression.parameters) {
+				declareRuntimeTagLookupBinding(context, parameter, null);
+			}
+			lintRuntimeTagLookupInStatements(expression.body.body, context);
+			leaveRuntimeTagLookupScope(context);
+			return;
+		default:
+			return;
+	}
+}
+
+function lintRuntimeTagLookupInStatements(
+	statements: ReadonlyArray<LuaStatement>,
+	context: RuntimeTagLookupContext,
+): void {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement:
+				for (const value of statement.values) {
+					lintRuntimeTagLookupInExpression(value, context);
+				}
+				for (let index = 0; index < statement.names.length; index += 1) {
+					const declaration = statement.names[index];
+					const value = index < statement.values.length ? statement.values[index] : undefined;
+					const binding = value && isRuntimeTagLookupAliasInitializer(value)
+						? { declaration }
+						: null;
+					declareRuntimeTagLookupBinding(context, declaration, binding);
+				}
+				break;
+			case LuaSyntaxKind.AssignmentStatement:
+				for (const left of statement.left) {
+					lintRuntimeTagLookupInExpression(left, context);
+				}
+				for (const right of statement.right) {
+					lintRuntimeTagLookupInExpression(right, context);
+				}
+				if (statement.operator === LuaAssignmentOperator.Assign) {
+					const pairCount = Math.min(statement.left.length, statement.right.length);
+					for (let index = 0; index < pairCount; index += 1) {
+						const left = statement.left[index];
+						if (left.kind !== LuaSyntaxKind.IdentifierExpression) {
+							continue;
+						}
+						const right = statement.right[index];
+						const binding = isRuntimeTagLookupAliasInitializer(right)
+							? { declaration: left }
+							: null;
+						setRuntimeTagLookupBinding(context, left.name, binding);
+					}
+				}
+				break;
+			case LuaSyntaxKind.LocalFunctionStatement:
+				declareRuntimeTagLookupBinding(context, statement.name, null);
+				enterRuntimeTagLookupScope(context);
+				for (const parameter of statement.functionExpression.parameters) {
+					declareRuntimeTagLookupBinding(context, parameter, null);
+				}
+				lintRuntimeTagLookupInStatements(statement.functionExpression.body.body, context);
+				leaveRuntimeTagLookupScope(context);
+				break;
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+				enterRuntimeTagLookupScope(context);
+				for (const parameter of statement.functionExpression.parameters) {
+					declareRuntimeTagLookupBinding(context, parameter, null);
+				}
+				lintRuntimeTagLookupInStatements(statement.functionExpression.body.body, context);
+				leaveRuntimeTagLookupScope(context);
+				break;
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					lintRuntimeTagLookupInExpression(expression, context);
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					if (clause.condition) {
+						lintRuntimeTagLookupInExpression(clause.condition, context);
+					}
+					enterRuntimeTagLookupScope(context);
+					lintRuntimeTagLookupInStatements(clause.block.body, context);
+					leaveRuntimeTagLookupScope(context);
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement:
+				lintRuntimeTagLookupInExpression(statement.condition, context);
+				enterRuntimeTagLookupScope(context);
+				lintRuntimeTagLookupInStatements(statement.block.body, context);
+				leaveRuntimeTagLookupScope(context);
+				break;
+			case LuaSyntaxKind.RepeatStatement:
+				enterRuntimeTagLookupScope(context);
+				lintRuntimeTagLookupInStatements(statement.block.body, context);
+				lintRuntimeTagLookupInExpression(statement.condition, context);
+				leaveRuntimeTagLookupScope(context);
+				break;
+			case LuaSyntaxKind.ForNumericStatement:
+				lintRuntimeTagLookupInExpression(statement.start, context);
+				lintRuntimeTagLookupInExpression(statement.limit, context);
+				lintRuntimeTagLookupInExpression(statement.step, context);
+				enterRuntimeTagLookupScope(context);
+				declareRuntimeTagLookupBinding(context, statement.variable, null);
+				lintRuntimeTagLookupInStatements(statement.block.body, context);
+				leaveRuntimeTagLookupScope(context);
+				break;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					lintRuntimeTagLookupInExpression(iterator, context);
+				}
+				enterRuntimeTagLookupScope(context);
+				for (const variable of statement.variables) {
+					declareRuntimeTagLookupBinding(context, variable, null);
+				}
+				lintRuntimeTagLookupInStatements(statement.block.body, context);
+				leaveRuntimeTagLookupScope(context);
+				break;
+			case LuaSyntaxKind.DoStatement:
+				enterRuntimeTagLookupScope(context);
+				lintRuntimeTagLookupInStatements(statement.block.body, context);
+				leaveRuntimeTagLookupScope(context);
+				break;
+			case LuaSyntaxKind.CallStatement:
+				lintRuntimeTagLookupInExpression(statement.expression, context);
+				break;
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+function lintRuntimeTagTableAccessPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	const context = createRuntimeTagLookupContext(issues);
+	try {
+		lintRuntimeTagLookupInStatements(statements, context);
+	} finally {
+		leaveRuntimeTagLookupScope(context);
 	}
 }
 
@@ -6606,6 +6927,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			lintStagedExportLocalTablePattern(chunk.body, issues);
 			lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
 			lintForeignObjectInternalMutationPattern(chunk.body, issues);
+			lintRuntimeTagTableAccessPattern(chunk.body, issues);
 			lintStatements(chunk.body, issues);
 			lintSingleUseHasTagPattern(chunk.body, issues);
 			lintSingleUseLocalPattern(chunk.body, issues);
