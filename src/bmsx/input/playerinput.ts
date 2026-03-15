@@ -864,6 +864,7 @@ export class PlayerInput {
 		const repeatIntervalMs = REPEAT_INTERVAL_FRAMES * frameMs;
 
 		if (justpressed) {
+			// repeatpressed fires on the initial press and on subsequent repeat pulses.
 			repeat.active = true;
 			repeat.repeatCount = 0;
 			repeat.pressStartMs = startMs;

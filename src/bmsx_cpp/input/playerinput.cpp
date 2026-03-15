@@ -696,6 +696,7 @@ PlayerInput::RepeatResult PlayerInput::evaluateActionRepeat(const std::string& a
 	f64 startMs = state.pressedAtMs.value_or(state.timestamp.value_or(now));
 	
 	if (justpressed) {
+		// repeatpressed fires on the initial press and on subsequent repeat pulses.
 		repeat.active = true;
 		repeat.repeatCount = 0;
 		repeat.pressStartMs = startMs;

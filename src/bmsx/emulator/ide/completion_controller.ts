@@ -1259,7 +1259,7 @@ export class CompletionController {
 	}
 
 	private navigationActive(code: string): boolean {
-		return isKeyJustPressed(code) || shouldRepeatKeyFromPlayer(code);
+		return shouldRepeatKeyFromPlayer(code);
 	}
 
 	private ensureCompletionSelectionVisible(session: CompletionSession): void {

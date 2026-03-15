@@ -98,9 +98,7 @@ export class InputController {
 				}
 			}
 			let movedAlt = false;
-			const altUpJustPressed = isKeyJustPressed('ArrowUp');
-			const altUpRepeat = !altUpJustPressed && shouldRepeatKeyFromPlayer('ArrowUp');
-			if (altUpJustPressed || altUpRepeat) {
+			if (shouldRepeatKeyFromPlayer('ArrowUp')) {
 				consumeIdeKey('ArrowUp');
 				if (shiftDown) {
 					TextEditing.copySelectionLines(-1);
@@ -109,9 +107,7 @@ export class InputController {
 				}
 				movedAlt = true;
 			}
-			const altDownJustPressed = isKeyJustPressed('ArrowDown');
-			const altDownRepeat = !altDownJustPressed && shouldRepeatKeyFromPlayer('ArrowDown');
-			if (altDownJustPressed || altDownRepeat) {
+			if (shouldRepeatKeyFromPlayer('ArrowDown')) {
 				consumeIdeKey('ArrowDown');
 				if (shiftDown) {
 					TextEditing.copySelectionLines(1);
@@ -2310,9 +2306,6 @@ export function isKeyJustPressed(code: string): boolean {
 
 export function shouldRepeatKeyFromPlayer(code: string): boolean {
 	const player = $.input.getPlayerInput(ide_state.playerIndex);
-	if (player.getButtonState(code, 'keyboard').justpressed === true) {
-		return true;
-	}
 	return player.getButtonRepeatState(code, 'keyboard').repeatpressed;
 }
 

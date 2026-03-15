@@ -1138,7 +1138,7 @@ end
 
 local function should_repeat_key(player_input, code)
 	local repeat_state = player_input["getButtonRepeatState"](player_input, code, "keyboard")
-	return repeat_state.justpressed or repeat_state.repeatpressed
+	return repeat_state.repeatpressed
 end
 
 local function consume_key(player_input, code)

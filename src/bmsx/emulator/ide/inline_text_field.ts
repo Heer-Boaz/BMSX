@@ -505,7 +505,7 @@ export function applyInlineFieldEditing(
 	const initialCursorColumn = field.cursorColumn;
 	const initialAnchor = field.selectionAnchor;
 
-	const shouldRepeat = (code: string): boolean => shouldRepeatKeyFromPlayer(code);
+	const shouldRepeatKey = (code: string): boolean => shouldRepeatKeyFromPlayer(code);
 
 	const readClipboard = (): string => ide_state.customClipboard ;
 	const writeClipboard = (payload: string): void => {
@@ -573,7 +573,7 @@ export function applyInlineFieldEditing(
 		consumeIdeKey('KeyV');
 	}
 
-	if (shouldRepeat('Backspace')) {
+	if (shouldRepeatKey('Backspace')) {
 		consumeIdeKey('Backspace');
 		if (useCtrl) {
 			deleteWordBackward(field);
@@ -582,7 +582,7 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeat('Delete')) {
+	if (shouldRepeatKey('Delete')) {
 		consumeIdeKey('Delete');
 		if (useCtrl) {
 			deleteWordForward(field);
@@ -591,7 +591,7 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeat('ArrowLeft')) {
+	if (shouldRepeatKey('ArrowLeft')) {
 		consumeIdeKey('ArrowLeft');
 		if (useCtrl) {
 			moveWordLeft(field, shiftDown);
@@ -600,7 +600,7 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeat('ArrowRight')) {
+	if (shouldRepeatKey('ArrowRight')) {
 		consumeIdeKey('ArrowRight');
 		if (useCtrl) {
 			moveWordRight(field, shiftDown);
@@ -609,17 +609,17 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (shouldRepeat('Home')) {
+	if (shouldRepeatKey('Home')) {
 		consumeIdeKey('Home');
 		moveToStart(field, shiftDown);
 	}
 
-	if (shouldRepeat('End')) {
+	if (shouldRepeatKey('End')) {
 		consumeIdeKey('End');
 		moveToEnd(field, shiftDown);
 	}
 
-	if (allowSpace && !useCtrl && !metaDown && !altDown && shouldRepeat('Space')) {
+	if (allowSpace && !useCtrl && !metaDown && !altDown && shouldRepeatKey('Space')) {
 		consumeIdeKey('Space');
 		const remaining = maxLength !== null
 			? Math.max(0, maxLength - (totalLength(field) - selectionLength(field)))
