@@ -360,10 +360,10 @@ void Input::pollInput() {
 }
 
 void Input::beginFrame() {
-	// Called by EngineCore when the host frame will process simulation slices.
-	// do not call this from pollInput() anymore:
-	// polling updates are host-driven and can occur on frames with no runtime progression,
-	// which previously could clear justpressed edges before they were observed.
+	// Called by EngineCore exactly when a new runtime tick starts.
+	// Do not call this from pollInput(), idle host frames, or host frames that merely
+	// continue an unfinished runtime tick: beginFrame() advances the simulation-side
+	// input window and will destroy buffered jp/jr edges if no new simframe actually began.
 	for (auto& player : m_playerInputs) {
 		if (player) {
 			player->beginFrame(m_currentTimeMs);

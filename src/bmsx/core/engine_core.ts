@@ -803,11 +803,15 @@ export class EngineCore {
 				this.accumulated_time = 0;
 			} else {
 				const slicesAvailable = Math.min(Math.floor(this.accumulated_time / this.timestep_ms), MAX_SUBSTEPS);
-				// Advance input edge state only when a new runtime tick is starting.
-				// Under heavy slowdown a single simframe can span multiple host frames while
-				// runtime.hasActiveTick() stays true. Calling beginFrame() during those
-				// continuation host frames drops jp/jr before gameplay code gets the next
-				// simframe slice to observe them.
+				// Advance input edge state only when a brand-new runtime tick starts.
+				// Do not read "slicesAvailable > 0" as "safe to move the input frame":
+				// during heavy slowdown the runtime can be resuming the same unfinished
+				// simframe across multiple host frames, and hasActiveTick() stays true.
+				// If beginFrame() runs on those continuation host frames, InputStateManager
+				// clears jp/jr before gameplay gets the next simulation slice, which makes
+				// justpressed appear to require extremely precise timing under slowdown.
+				// The invariant is:
+				// one input beginFrame() per newly-started simframe, never per host frame.
 				if (slicesAvailable > 0 && !runtime.hasActiveTick()) {
 					Input.instance.beginFrame();
 				}
