@@ -77,6 +77,7 @@ const MAX_FRAME_DELTA = 250;  // ms
 const MAX_SUBSTEPS = 5;
 const REWIND_BUFFER_ACTIVATED = true;
 const REWIND_BUFFER_WRITE_FREQUENCY = 1; // Frames
+const PARTIAL_PRESENTATION_TICK_GROUPS: ReadonlyArray<TickGroup> = [TickGroup.Presentation];
 const PRESENTATION_TICK_GROUPS: ReadonlyArray<TickGroup> = [TickGroup.Presentation, TickGroup.EventFlush];
 
 export const HZ_SCALE = PLATFORM_HZ_SCALE;
@@ -789,15 +790,21 @@ export class EngineCore {
 			this.accumulated_time = clamp(this.accumulated_time + hostDeltaMs, 0, maxAccumulated);
 			this.wasupdated = false;
 			let presentQueued = false;
+			let completedFramePresented = false;
 
-			let ticksStarted = 0;
 			let slicesProcessed = 0;
 			const baseBudget = this.computeCycleBudget(runtime);
-			const runTickPresentation = () => {
+			const runPartialPresentation = () => {
+				this.deltatime = hostDeltaMs;
+				this.world.runTickGroups(PARTIAL_PRESENTATION_TICK_GROUPS, false);
+				presentQueued = true;
+			};
+			const runCompletedPresentation = () => {
 				// Presentation-facing delta time should reflect host timing.
 				this.deltatime = hostDeltaMs;
 				this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
 				presentQueued = true;
+				completedFramePresented = true;
 			};
 			if (!runGate.ready || this.paused) {
 				this.accumulated_time = 0;
@@ -831,18 +838,17 @@ export class EngineCore {
 					} else {
 						this.deltatime = this.timestep_ms;
 						this.update(this.timestep_ms);
-						ticksStarted += 1;
 					}
 					const completion = runtime.consumeLastTickCompletion();
 					slicesProcessed += 1;
 					if (completion) {
 						this.cycleCarry = completion.remaining > baseBudget ? baseBudget : completion.remaining;
-						runTickPresentation();
-						// Keep the completed frame stable for this host present; continue next frame on the next host tick.
+						runCompletedPresentation();
+						// Present the completed frame now; any catch-up continuation resumes on the next host frame.
 						break;
 					}
 					if (runtimeIde.isOverlayActive(runtime)) {
-						runTickPresentation();
+						runCompletedPresentation();
 						break;
 					}
 				}
@@ -851,12 +857,17 @@ export class EngineCore {
 					this.accumulated_time = clamp(this.accumulated_time - consumed, 0, maxAccumulated);
 				}
 			}
+			if (!presentQueued && runtime.isDrawPending) {
+				runPartialPresentation();
+			}
 			if (!presentQueued && runtimeIde.isOverlayActive(runtime)) {
-				runTickPresentation();
+				runCompletedPresentation();
 			}
 			if (presentQueued) {
 				this.wasupdated = true;
-				this.sndmaster.finishFrame();
+				if (completedFramePresented) {
+					this.sndmaster.finishFrame();
+				}
 				this.view.drawgame();
 				runtime.scheduleDeferredCartBootPreparation();
 			}
