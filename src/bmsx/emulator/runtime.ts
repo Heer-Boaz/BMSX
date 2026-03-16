@@ -1932,6 +1932,9 @@ export class Runtime {
 		try {
 			this.cpu.callExternal(fn, args);
 			this.cpu.runUntilDepth(depth, budgetSentinel);
+		} catch (error) {
+			this.cpu.unwindToDepth(depth);
+			throw error;
 		} finally {
 			const remaining = this.cpu.instructionBudgetRemaining;
 			this.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);

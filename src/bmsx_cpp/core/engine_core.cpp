@@ -569,11 +569,12 @@ void EngineCore::tick(f64 deltaTime) {
 		auto updateStart = std::chrono::steady_clock::now();
 		const int baseBudget = calcCyclesPerFrame(runtime.cpuHz(), m_ufps_scaled);
 		const int slicesAvailable = std::min(static_cast<int>(m_accumulated_time / m_update_interval_ms), MAX_SUBSTEPS);
-		// Only advance input edge state when simulation budget is actually consumed.
-		// Advancing it on frames without runtime progress would clear justpressed too early and can make
-		// first-press events disappear or double-fire depending on host slowdown timing.
-		// Also keep it outside the inner tick loop: slicesAvailable may contain multiple sim ticks for one host frame.
-		if (slicesAvailable > 0) {
+		// Advance input edge state only when a new runtime tick is starting.
+		// Under heavy slowdown a single simframe can span multiple host frames while
+		// runtime.hasActiveTick() stays true. Calling beginFrame() during those
+		// continuation host frames drops jp/jr before gameplay code gets the next
+		// simframe slice to observe them.
+		if (slicesAvailable > 0 && !runtime.hasActiveTick()) {
 			Input::instance().beginFrame();
 		}
 		for (; slicesProcessed < slicesAvailable;) {

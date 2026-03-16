@@ -103,35 +103,12 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 	f64 latestTimestamp = 0.0;
 	std::optional<i32> latestPressId;
 	std::optional<i32> bufferedPressId;
-	std::optional<i32> bufferedReleaseId;
 
 	const auto updateBufferedIds = [&](const std::string& id) {
 		auto pressId = m_stateManager.getLatestUnconsumedPressId(id);
 		if (pressId.has_value() && (!bufferedPressId.has_value() || pressId.value() > bufferedPressId.value())) {
 			bufferedPressId = pressId;
 		}
-		auto releaseId = m_stateManager.getLatestUnconsumedReleaseId(id);
-		if (releaseId.has_value() && (!bufferedReleaseId.has_value() || releaseId.value() > bufferedReleaseId.value())) {
-			bufferedReleaseId = releaseId;
-		}
-	};
-	const auto surfaceBufferedEdge = [&](const std::optional<i32>& edgeId,
-										bool alreadyTriggered,
-										std::unordered_map<std::string, ActionBufferedEdgeFrameRecord>& records) {
-		if (!edgeId.has_value()) {
-			return alreadyTriggered;
-		}
-		auto existingIt = records.find(action);
-		const bool sameEdge = existingIt != records.end() && existingIt->second.edgeId == edgeId.value();
-		if (!alreadyTriggered) {
-			if (!sameEdge || existingIt->second.frame == m_simFrameCounter) {
-				alreadyTriggered = true;
-			}
-		}
-		if (alreadyTriggered) {
-			records[action] = { m_simFrameCounter, edgeId.value() };
-		}
-		return alreadyTriggered;
 	};
 	
 	// Check keyboard bindings
@@ -295,11 +272,11 @@ ActionState PlayerInput::getActionState(const std::string& action, std::optional
 
 	// Aggregate results
 	result.pressed = anyPressed;
-	anyJustPressed = surfaceBufferedEdge(bufferedPressId, anyJustPressed, m_actionBufferedPressFrameRecords);
+	// Keep jp/jr sourced directly from the button-level simframe buffer.
+	// Re-surfacing edges at action level lets host-side reads steal a future simframe edge during slowdown.
 	if (anyJustPressed && bufferedPressId.has_value() && (!latestPressId.has_value() || bufferedPressId.value() > latestPressId.value())) {
 		latestPressId = bufferedPressId;
 	}
-	anyJustReleased = surfaceBufferedEdge(bufferedReleaseId, anyJustReleased, m_actionBufferedReleaseFrameRecords);
 
 	result.justpressed = anyJustPressed;
 	result.justreleased = anyJustReleased && !anyPressed;
@@ -591,7 +568,6 @@ void PlayerInput::pollInput(f64 currentTimeMs) {
 
 
 void PlayerInput::beginFrame(f64 currentTimeMs) {
-	m_simFrameCounter++;
 	m_stateManager.beginFrame(currentTimeMs);
 }
 
@@ -614,18 +590,13 @@ void PlayerInput::reset(const std::vector<std::string>* except) {
 	
 	m_actionGuardRecords.clear();
 	m_actionRepeatRecords.clear();
-	m_actionBufferedPressFrameRecords.clear();
-	m_actionBufferedReleaseFrameRecords.clear();
 	m_lastPollTimestampMs.reset();
 	m_guardWindowMs = ACTION_GUARD_MIN_MS;
 	m_frameCounter = 0;
-	m_simFrameCounter = 0;
 }
 
 void PlayerInput::clearEdgeState() {
 	m_stateManager.resetEdgeState();
-	m_actionBufferedPressFrameRecords.clear();
-	m_actionBufferedReleaseFrameRecords.clear();
 }
 
 /* ============================================================================

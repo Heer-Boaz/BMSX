@@ -202,21 +202,9 @@ private:
 
 	// Repeat records for repeat pulse
 	std::unordered_map<std::string, ActionRepeatRecord> m_actionRepeatRecords;
-
-	// Last buffered edge surfaced per action so repeated getActionState() calls in the same sim frame
-	// stay stable, while older buffered edges do not replay forever.
-	struct ActionBufferedEdgeFrameRecord {
-		i64 frame = -1;
-		i32 edgeId = -1;
-	};
-	std::unordered_map<std::string, ActionBufferedEdgeFrameRecord> m_actionBufferedPressFrameRecords;
-	std::unordered_map<std::string, ActionBufferedEdgeFrameRecord> m_actionBufferedReleaseFrameRecords;
 	
 	// Host poll frame counter
 	i64 m_frameCounter = 0;
-
-	// Simulation frame counter for buffered gameplay edges
-	i64 m_simFrameCounter = 0;
 	
 	// Last poll timestamp
 	std::optional<f64> m_lastPollTimestampMs;

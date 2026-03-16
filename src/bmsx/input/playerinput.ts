@@ -29,11 +29,6 @@ type ActionRepeatRecord = {
 	lastRepeatAtMs: number;
 };
 
-type ActionBufferedEdgeFrameRecord = {
-	frame: number;
-	edgeId: number;
-};
-
 export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
 export type InputSource = typeof INPUT_SOURCES[number];
 
@@ -73,12 +68,9 @@ export class PlayerInput {
 
 	private readonly actionGuardRecords: Map<string, ActionGuardRecord> = new Map();
 	private readonly actionRepeatRecords: Map<string, ActionRepeatRecord> = new Map();
-	private readonly actionBufferedPressFrameRecords: Map<string, ActionBufferedEdgeFrameRecord> = new Map();
-	private readonly actionBufferedReleaseFrameRecords: Map<string, ActionBufferedEdgeFrameRecord> = new Map();
 	private lastPollTimestampMs: number = null;
 	private guardWindowMs: number = ACTION_GUARD_MIN_MS;
 	private frameCounter = 0;
-	private simFrameCounter = 0;
 
 	/**
 	 * Indicates whether the player is the main player.
@@ -244,7 +236,7 @@ export class PlayerInput {
 			allJustReleased: boolean; anyWasReleased: boolean; allWasReleased: boolean;
 			anyConsumed: boolean; leastPressTime: number; recentestTimestamp: number;
 			lastPressId: number; best1DVal: number; best1DAbs: number; best2DVal: [number, number]; best2DAbs: number;
-			bufferPressId: number; bufferReleaseId: number;
+			bufferPressId: number;
 		};
 		// Aggregate a single action across multiple bindings (keyboard / gamepad / pointer).
 		// Treat bindings as an OR: anyPressed drives `pressed`, while `all*` flags stay true only when every binding matches.
@@ -266,7 +258,6 @@ export class PlayerInput {
 			let recentestTimestamp: number = null;
 			let lastPressId: number = null;
 			let bufferPressId: number = null;
-			let bufferReleaseId: number = null;
 			let best1DVal: number = null; let best1DAbs = -Infinity;
 			let best2DVal: [number, number] = null; let best2DAbs = -Infinity;
 
@@ -297,10 +288,6 @@ export class PlayerInput {
 					if (bufferedPress != null && (bufferPressId == null || bufferedPress > bufferPressId)) {
 						bufferPressId = bufferedPress;
 					}
-					const bufferedRelease = this._stateManager.getLatestUnconsumedReleaseId(key);
-					if (bufferedRelease != null && (bufferReleaseId == null || bufferedRelease > bufferReleaseId)) {
-						bufferReleaseId = bufferedRelease;
-					}
 					if (typeof state?.value === 'number') {
 						const abs = Math.abs(state.value);
 						if (abs > best1DAbs) { best1DAbs = abs; best1DVal = state.value; }
@@ -319,7 +306,7 @@ export class PlayerInput {
 			// Only consider anyJustReleased if none of the buttons are pressed, because if any button is pressed then the action is not just released
 			anyJustReleased = anyJustReleased && !anyPressed;
 
-			return { allPressed, anyPressed, anyJustPressed, allJustPressed, anyWasPressed, allWasPressed, anyJustReleased, allJustReleased, anyWasReleased, allWasReleased, anyConsumed, leastPressTime, recentestTimestamp, lastPressId, best1DVal, best1DAbs, best2DVal, best2DAbs, bufferPressId, bufferReleaseId };
+			return { allPressed, anyPressed, anyJustPressed, allJustPressed, anyWasPressed, allWasPressed, anyJustReleased, allJustReleased, anyWasReleased, allWasReleased, anyConsumed, leastPressTime, recentestTimestamp, lastPressId, best1DVal, best1DAbs, best2DVal, best2DAbs, bufferPressId };
 		};
 
 		const keyboardState = getStates(
@@ -371,13 +358,9 @@ export class PlayerInput {
 		const minPresstime = minPresstimeRaw === Infinity ? null : minPresstimeRaw;
 
 		let bufferedPressId: number = null;
-		let bufferedReleaseId: number = null;
 		for (const state of deviceStates) {
 			if (state.bufferPressId != null && (bufferedPressId == null || state.bufferPressId > bufferedPressId)) {
 				bufferedPressId = state.bufferPressId;
-			}
-			if (state.bufferReleaseId != null && (bufferedReleaseId == null || state.bufferReleaseId > bufferedReleaseId)) {
-				bufferedReleaseId = state.bufferReleaseId;
 			}
 		}
 
@@ -390,21 +373,11 @@ export class PlayerInput {
 				pressId = state.lastPressId;
 			}
 		}
-		justpressed = this.surfaceBufferedEdge(
-			action,
-			bufferedPressId,
-			justpressed,
-			this.actionBufferedPressFrameRecords
-		);
+		// Keep jp/jr sourced directly from the button-level simframe buffer.
+		// Re-surfacing edges at action level lets host-side reads steal a future simframe edge during slowdown.
 		if (justpressed && bufferedPressId != null && (pressId == null || bufferedPressId > pressId)) {
 			pressId = bufferedPressId;
 		}
-		justreleased = this.surfaceBufferedEdge(
-			action,
-			bufferedReleaseId,
-			justreleased,
-			this.actionBufferedReleaseFrameRecords
-		);
 
 		const timestamp = maxTimestamp === -Infinity ? null : maxTimestamp;
 		const result: ActionState = {
@@ -703,30 +676,7 @@ export class PlayerInput {
 	}
 
 	public beginFrame(currentTime: number): void {
-		this.simFrameCounter += 1;
 		this._stateManager.beginFrame(currentTime);
-	}
-
-	private surfaceBufferedEdge(
-		action: string,
-		edgeId: number | null,
-		alreadyTriggered: boolean,
-		records: Map<string, ActionBufferedEdgeFrameRecord>
-	): boolean {
-		if (edgeId == null) {
-			return alreadyTriggered;
-		}
-		const existing = records.get(action) ?? null;
-		if (!alreadyTriggered) {
-			const sameEdge = existing != null && existing.edgeId === edgeId;
-			if (!sameEdge || existing.frame === this.simFrameCounter) {
-				alreadyTriggered = true;
-			}
-		}
-		if (alreadyTriggered) {
-			records.set(action, { frame: this.simFrameCounter, edgeId });
-		}
-		return alreadyTriggered;
 	}
 
 	private processPendingRebind(): void {
@@ -933,8 +883,6 @@ export class PlayerInput {
 	/** Clears cached transition state so edge detectors don't fire spuriously. */
 	public clearEdgeState(): void {
 		this._stateManager.resetEdgeState();
-		this.actionBufferedPressFrameRecords.clear();
-		this.actionBufferedReleaseFrameRecords.clear();
 	}
 
 	/**
@@ -948,11 +896,8 @@ export class PlayerInput {
 		}
 		this.actionGuardRecords.clear();
 		this.actionRepeatRecords.clear();
-		this.actionBufferedPressFrameRecords.clear();
-		this.actionBufferedReleaseFrameRecords.clear();
 		this.lastPollTimestampMs = null;
 		this.guardWindowMs = ACTION_GUARD_MIN_MS;
 		this.frameCounter = 0;
-		this.simFrameCounter = 0;
 	}
 }
