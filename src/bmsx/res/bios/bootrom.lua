@@ -884,7 +884,7 @@ local function validate_const_relocs_array(reader, prop_names, tag, summary, sco
 		if const_index == nil then
 			return make_program_precheck_failure(scope, 'CONSTRELOC ' .. reloc_id .. ' IS MISSING CONSTINDEX', '[ProgramLinker] ' .. scope .. ' const reloc is missing constIndex.')
 		end
-		if word_index <= 0 or word_index >= summary.instruction_count then
+		if word_index < 0 or word_index >= summary.instruction_count then
 			return make_program_precheck_failure(
 				scope,
 				'CONSTRELOC ' .. reloc_id .. ' TARGETS WORD ' .. tostring(word_index) .. ' OUT OF RANGE',
@@ -896,15 +896,6 @@ local function validate_const_relocs_array(reader, prop_names, tag, summary, sco
 				scope,
 				'CONSTRELOC ' .. reloc_id .. ' TARGETS CONST ' .. tostring(const_index) .. ' OUT OF RANGE',
 				'[ProgramLinker] ' .. scope .. ' const reloc targets a const index outside program.constPool.'
-			)
-		end
-		local wide_word = peek32le(summary.code_range.start + ((word_index - 1) * 4))
-		local wide_op = (wide_word >> 18) & 0x3f
-		if wide_op ~= 0 then
-			return make_program_precheck_failure(
-				scope,
-				'CONSTRELOC ' .. reloc_id .. ' IS MISSING WIDE PREFIX',
-				'[ProgramLinker] ' .. scope .. ' const reloc target is not preceded by WIDE.'
 			)
 		end
 	end
