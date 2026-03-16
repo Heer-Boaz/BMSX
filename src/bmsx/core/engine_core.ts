@@ -717,7 +717,6 @@ export class EngineCore {
 	 */
 	public update(deltaTime: number): void {
 		let failed = false;
-		Input.instance.beginFrame();
 		// Step physics first so world object logic can react to post-collision resolved positions.
 		try {
 			$.world.run(deltaTime, false);
@@ -804,6 +803,15 @@ export class EngineCore {
 				this.accumulated_time = 0;
 			} else {
 				const slicesAvailable = Math.min(Math.floor(this.accumulated_time / this.timestep_ms), MAX_SUBSTEPS);
+				// Only advance input edge state when the engine is actually progressing simulation time.
+				// Calling beginFrame() on host frames where no game slices are executed causes
+				// justpressed edges to be cleared too early (e.g. during virtual slowdown),
+				// which is exactly how the rp/down duplicate-trace appeared.
+				// We must also avoid calling it per simulation slice: one host frame can execute
+				// multiple slices, and beginFrame() semantically moves a single input frame window.
+				if (slicesAvailable > 0) {
+					Input.instance.beginFrame();
+				}
 				for (; slicesProcessed < slicesAvailable;) {
 					if (!runGate.ready || this.paused) {
 						this.accumulated_time = 0;

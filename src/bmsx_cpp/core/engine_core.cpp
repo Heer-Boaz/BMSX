@@ -569,6 +569,13 @@ void EngineCore::tick(f64 deltaTime) {
 		auto updateStart = std::chrono::steady_clock::now();
 		const int baseBudget = calcCyclesPerFrame(runtime.cpuHz(), m_ufps_scaled);
 		const int slicesAvailable = std::min(static_cast<int>(m_accumulated_time / m_update_interval_ms), MAX_SUBSTEPS);
+		// Only advance input edge state when simulation budget is actually consumed.
+		// Advancing it on frames without runtime progress would clear justpressed too early and can make
+		// first-press events disappear or double-fire depending on host slowdown timing.
+		// Also keep it outside the inner tick loop: slicesAvailable may contain multiple sim ticks for one host frame.
+		if (slicesAvailable > 0) {
+			Input::instance().beginFrame();
+		}
 		for (; slicesProcessed < slicesAvailable;) {
 			const bool tickActive = runtime.hasActiveTick();
 			const int carryBudget = tickActive ? 0 : (m_cycleCarry > 0 ? static_cast<int>(m_cycleCarry) : 0);
@@ -578,9 +585,6 @@ void EngineCore::tick(f64 deltaTime) {
 			runtime.grantCycleBudget(baseBudget, carryBudget);
 			m_lastGrantedBaseBudget = baseBudget;
 			m_delta_time = fixedDeltaSeconds;
-			if (!tickActive) {
-				Input::instance().beginFrame();
-			}
 			runtime.tickUpdate();
 			runtime.tickDraw();
 			i64 completionSequence = 0;

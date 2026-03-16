@@ -360,6 +360,10 @@ void Input::pollInput() {
 }
 
 void Input::beginFrame() {
+	// Called by EngineCore when the host frame will process simulation slices.
+	// do not call this from pollInput() anymore:
+	// polling updates are host-driven and can occur on frames with no runtime progression,
+	// which previously could clear justpressed edges before they were observed.
 	for (auto& player : m_playerInputs) {
 		if (player) {
 			player->beginFrame(m_currentTimeMs);

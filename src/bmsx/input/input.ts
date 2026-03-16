@@ -1006,6 +1006,10 @@ export class Input implements RegisterablePersistent {
 	}
 
 	public beginFrame(currentTime: number = $.platform.clock.now()): void {
+		// Input edge state is intentionally advanced explicitly by EngineCore, not here.
+		// beginFrame() clears justpressed/justreleased for the current host-sim frame.
+		// Calling it from poll/update paths that run without a matching runtime tick (e.g. on idle/slowdown frames)
+		// can drop valid first-press edges before the action is consumed.
 		this.playerInputs.forEach(player => {
 			if (!player) return;
 			player.beginFrame(currentTime);
