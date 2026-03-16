@@ -64,6 +64,12 @@ uint32_t encodeSignedRaw(int value, int bits) {
 	return static_cast<uint32_t>(value) & mask;
 }
 
+bool fitsSignedRaw(int value, int bits) {
+	const int min = -(1 << (bits - 1));
+	const int max = (1 << (bits - 1)) - 1;
+	return value >= min && value <= max;
+}
+
 std::string makeConstKey(const StringPool& strings, Value value) {
 	if (isNil(value)) {
 		return "nil";
@@ -223,6 +229,9 @@ void rewriteConstRelocations(
 
 		if (reloc.kind == ProgramAsset::ConstRelocKind::Bx) {
 			const uint32_t nextWide = static_cast<uint32_t>(mappedConstIndex) >> (MAX_BX_BITS + EXT_BX_BITS);
+			if (!hasWide && nextWide != 0) {
+				throw std::runtime_error("[ProgramLinker] Const reloc requires WIDE prefix.");
+			}
 			const uint8_t nextExt = static_cast<uint8_t>((static_cast<uint32_t>(mappedConstIndex) >> MAX_BX_BITS) & 0xff);
 			const uint16_t nextLow = static_cast<uint16_t>(static_cast<uint32_t>(mappedConstIndex) & MAX_LOW_BX);
 			bLow = static_cast<uint8_t>((nextLow >> 6) & 0x3f);
@@ -239,6 +248,10 @@ void rewriteConstRelocations(
 		const bool relocOnB = reloc.kind == ProgramAsset::ConstRelocKind::RkB;
 		const int rkValue = -mappedConstIndex - 1;
 		const int extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
+		const int baseBits = MAX_OPERAND_BITS + extBits;
+		if (!hasWide && !fitsSignedRaw(rkValue, baseBits)) {
+			throw std::runtime_error("[ProgramLinker] Const reloc requires WIDE prefix.");
+		}
 		const int totalBits = MAX_OPERAND_BITS + extBits + (hasWide ? MAX_OPERAND_BITS : 0);
 		const uint32_t raw = encodeSignedRaw(rkValue, totalBits);
 		const uint8_t low = static_cast<uint8_t>(raw & 0x3f);

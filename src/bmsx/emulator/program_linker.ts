@@ -86,6 +86,12 @@ const encodeSignedRaw = (value: number, bits: number): number => {
 	return value & mask;
 };
 
+const fitsSignedRaw = (value: number, bits: number): boolean => {
+	const min = -(1 << (bits - 1));
+	const max = (1 << (bits - 1)) - 1;
+	return value >= min && value <= max;
+};
+
 const rewriteConstRelocations = (
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramConstReloc>,
@@ -114,6 +120,9 @@ const rewriteConstRelocations = (
 
 		if (reloc.kind === 'bx') {
 			const nextWide = mappedConstIndex >> (MAX_BX_BITS + EXT_BX_BITS);
+			if (!hasWide && nextWide !== 0) {
+				throw new Error(`[ProgramLinker] Const reloc at word ${wordIndex} requires WIDE prefix.`);
+			}
 			const nextExt = (mappedConstIndex >> MAX_BX_BITS) & 0xff;
 			const nextLow = mappedConstIndex & MAX_LOW_BX;
 			bLow = (nextLow >>> 6) & 0x3f;
@@ -130,6 +139,10 @@ const rewriteConstRelocations = (
 		const relocOnB = reloc.kind === 'rk_b';
 		const rkValue = -mappedConstIndex - 1;
 		const extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
+		const baseBits = MAX_OPERAND_BITS + extBits;
+		if (!hasWide && !fitsSignedRaw(rkValue, baseBits)) {
+			throw new Error(`[ProgramLinker] Const reloc at word ${wordIndex} requires WIDE prefix.`);
+		}
 		const totalBits = MAX_OPERAND_BITS + extBits + (hasWide ? MAX_OPERAND_BITS : 0);
 		const raw = encodeSignedRaw(rkValue, totalBits);
 		const low = raw & 0x3f;
