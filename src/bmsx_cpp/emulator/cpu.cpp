@@ -876,6 +876,15 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	return result;
 }
 
+void CPU::unwindToDepth(int targetDepth) {
+	while (static_cast<int>(m_frames.size()) > targetDepth) {
+		auto finished = std::move(m_frames.back());
+		m_frames.pop_back();
+		closeUpvalues(*finished);
+		releaseFrame(std::move(finished));
+	}
+}
+
 void CPU::step() {
 	if (m_frames.empty()) return;
 	if (m_heap.needsCollection()) {

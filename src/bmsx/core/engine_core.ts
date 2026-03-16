@@ -803,13 +803,12 @@ export class EngineCore {
 				this.accumulated_time = 0;
 			} else {
 				const slicesAvailable = Math.min(Math.floor(this.accumulated_time / this.timestep_ms), MAX_SUBSTEPS);
-				// Only advance input edge state when the engine is actually progressing simulation time.
-				// Calling beginFrame() on host frames where no game slices are executed causes
-				// justpressed edges to be cleared too early (e.g. during virtual slowdown),
-				// which is exactly how the rp/down duplicate-trace appeared.
-				// We must also avoid calling it per simulation slice: one host frame can execute
-				// multiple slices, and beginFrame() semantically moves a single input frame window.
-				if (slicesAvailable > 0) {
+				// Advance input edge state only when a new runtime tick is starting.
+				// Under heavy slowdown a single simframe can span multiple host frames while
+				// runtime.hasActiveTick() stays true. Calling beginFrame() during those
+				// continuation host frames drops jp/jr before gameplay code gets the next
+				// simframe slice to observe them.
+				if (slicesAvailable > 0 && !runtime.hasActiveTick()) {
 					Input.instance.beginFrame();
 				}
 				for (; slicesProcessed < slicesAvailable;) {

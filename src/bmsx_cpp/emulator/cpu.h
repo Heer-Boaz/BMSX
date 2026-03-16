@@ -685,6 +685,7 @@ public:
 	void callExternal(Closure* closure, const std::vector<Value>& args = {});
 	RunResult run(int instructionBudget);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
+	void unwindToDepth(int targetDepth);
 	void step();
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }

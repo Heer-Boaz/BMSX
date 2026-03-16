@@ -1208,6 +1208,14 @@ export class CPU {
 		return RunResult.Halted;
 	}
 
+	public unwindToDepth(targetDepth: number): void {
+		while (this.frames.length > targetDepth) {
+			const frame = this.frames.pop()!;
+			this.closeUpvalues(frame);
+			this.releaseFrame(frame);
+		}
+	}
+
 	private charge(cycles: number): void {
 		this.instructionBudgetRemaining -= cycles;
 	}

@@ -135,6 +135,16 @@ export function valueToStringValue(runtime: Runtime, value: Value): StringValue 
 	return runtime.internString(valueToString(value));
 }
 
+class LuaThrownValueError extends Error {
+	public readonly value: Value;
+
+	public constructor(value: Value) {
+		super(valueToString(value));
+		this.name = 'LuaThrownValueError';
+		this.value = value;
+	}
+}
+
 export function formatLuaString(runtime: Runtime, template: string, args: ReadonlyArray<Value>, argStart: number): string {
 	let argumentIndex = argStart;
 	let output = '';
@@ -1089,10 +1099,11 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(null);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'assert', createNativeFunction('assert', (args, out) => {
+		void out;
 		const condition = args.length > 0 ? args[0] : null;
 		if (!isTruthy(condition)) {
-			const message = args.length > 1 ? valueToString(args[1]) : 'assertion failed!';
-			throw runtime.createApiRuntimeError(message);
+			const message = args.length > 1 ? args[1] : runtime.internString('assertion failed!');
+			throw new LuaThrownValueError(message);
 		}
 		for (let index = 0; index < args.length; index += 1) {
 			out.push(args[index]);
@@ -1100,8 +1111,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'error', createNativeFunction('error', (args, out) => {
 		void out;
-		const message = args.length > 0 ? valueToString(args[0]) : 'error';
-		throw runtime.createApiRuntimeError(message);
+		const message = args.length > 0 ? args[0] : runtime.internString('error');
+		throw new LuaThrownValueError(message);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'setmetatable', createNativeFunction('setmetatable', (args, out) => {
 		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
@@ -1174,7 +1185,14 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			out.unshift(true);
 		} catch (error) {
 			out.length = 0;
-			out.push(false, runtime.internString(extractErrorMessage(error)));
+			out.push(
+				false,
+				error instanceof LuaThrownValueError
+					? error.value
+					: error instanceof Error
+						? runtime.internString(extractErrorMessage(error))
+						: error as Value,
+			);
 		}
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'xpcall', createNativeFunction('xpcall', (args, out) => {
@@ -1188,7 +1206,11 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			callClosureValue(fn, callArgs, out);
 			out.unshift(true);
 		} catch (error) {
-			const handlerArgs: Value[] = [runtime.internString(extractErrorMessage(error))];
+			const handlerArgs: Value[] = [error instanceof LuaThrownValueError
+				? error.value
+				: error instanceof Error
+					? runtime.internString(extractErrorMessage(error))
+					: error as Value];
 			callClosureValue(handler, handlerArgs, out);
 			out.unshift(false);
 		}

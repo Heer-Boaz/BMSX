@@ -28,6 +28,17 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 
 constexpr uint32_t CART_ROM_MAGIC = 0x58534D42u;
 
+struct LuaPcallError final : std::exception {
+	const Value value;
+
+	explicit LuaPcallError(Value value)
+		: value(value) {}
+
+	const char* what() const noexcept override {
+		return "Lua error value";
+	}
+};
+
 std::string formatNonFunctionCallError(Value callee, const CPU& cpu) {
 	std::string message = "Attempted to call a non-function value.";
 	message += " callee=" + std::string(valueTypeName(callee)) + "(" + valueToString(callee, cpu.stringPool()) + ")";
@@ -1588,17 +1599,17 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("assert", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& condition = args.empty() ? valueNil() : args.at(0);
 		if (!isTruthy(condition)) {
-			const std::string message = args.size() > 1 ? valueToString(args.at(1)) : std::string("assertion failed!");
-			throw BMSX_RUNTIME_ERROR(message);
+			const Value message = args.size() > 1 ? args.at(1) : valueString(m_cpu.internString("assertion failed!"));
+			throw LuaPcallError(message);
 		}
 		out.insert(out.end(), args.begin(), args.end());
 	});
 
-registerNativeFunction("error", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	const std::string message = args.empty() ? std::string("error") : valueToString(args.at(0));
-	(void)out;
-	throw BMSX_RUNTIME_ERROR(message);
-});
+	registerNativeFunction("error", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		const Value message = args.empty() ? valueString(m_cpu.internString("error")) : args.at(0);
+		(void)out;
+		throw LuaPcallError(message);
+	});
 
 	registerNativeFunction("setmetatable", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		if (args.empty() || (!valueIsTable(args.at(0)) && !valueIsNativeObject(args.at(0)))) {
@@ -1682,6 +1693,10 @@ registerNativeFunction("error", [this](const std::vector<Value>& args, std::vect
 		try {
 			callClosureValue(fn, callArgs, out);
 			out.insert(out.begin(), valueBool(true));
+		} catch (const LuaPcallError& e) {
+			out.clear();
+			out.push_back(valueBool(false));
+			out.push_back(e.value);
 		} catch (const std::exception& e) {
 			logPcallError(e.what());
 			out.clear();
@@ -1705,6 +1720,12 @@ registerNativeFunction("error", [this](const std::vector<Value>& args, std::vect
 		try {
 			callClosureValue(fn, callArgs, out);
 			out.insert(out.begin(), valueBool(true));
+		} catch (const LuaPcallError& e) {
+			out.clear();
+			std::vector<Value> handlerArgs;
+			handlerArgs.push_back(e.value);
+			callClosureValue(handler, handlerArgs, out);
+			out.insert(out.begin(), valueBool(false));
 		} catch (const std::exception& e) {
 			logPcallError(e.what());
 			std::vector<Value> handlerArgs;

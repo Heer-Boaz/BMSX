@@ -32,6 +32,7 @@ std::vector<Value> Runtime::callLuaFunction(Closure* fn, const std::vector<Value
 		m_cpu.callExternal(fn, args);
 		m_cpu.runUntilDepth(depthBefore, budgetSentinel);
 	} catch (...) {
+		m_cpu.unwindToDepth(depthBefore);
 		const int remaining = m_cpu.instructionBudgetRemaining;
 		m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 		throw;

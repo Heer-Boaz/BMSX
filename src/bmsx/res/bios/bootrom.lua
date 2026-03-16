@@ -171,6 +171,26 @@ local precheck_cache_key
 local precheck_errors
 local precheck_stderr_message
 local precheck_stderr_reported
+local precheck_running
+local precheck_co_thread
+local precheck_co_target_key
+local precheck_step_budget = 16384
+local precheck_phase_order = {
+	'read_system_summary',
+	'validate_system_core',
+	'validate_system_details',
+	'read_cart_summary',
+	'validate_cart_core',
+	'validate_cart_details',
+}
+local precheck_phase_labels = {
+	read_system_summary = 'READ SYSTEM SUMMARY',
+	validate_system_core = 'VALIDATE SYSTEM CORE',
+	validate_system_details = 'VALIDATE SYSTEM DETAILS',
+	read_cart_summary = 'READ CART SUMMARY',
+	validate_cart_core = 'VALIDATE CART CORE',
+	validate_cart_details = 'VALIDATE CART DETAILS',
+}
 local system_program_summary_cache_key = nil
 local system_program_summary_cache = nil
 local bitcast_selftest_ok
@@ -178,17 +198,29 @@ local bitcast_selftest_status
 local bitcast_selftest_error
 local bitcast_selftest_logged
 local cart_start_failed_logged
-local builtin_reader_read_f32 = reader_read_f32
-local builtin_reader_read_f64 = reader_read_f64
 local read_rom_program_const_pool
 local read_rom_program_asset_summary
+local validate_program_asset_core
+local validate_program_asset_details
+local begin_program_asset_summary_step_state
+local step_program_asset_summary_step_state
+local get_program_asset_summary_step_progress
+local begin_program_asset_details_step_state
+local step_program_asset_details_step_state
+local get_program_asset_details_step_progress
+local builtin_reader_read_f32 = reader_read_f32
+local builtin_reader_read_f64 = reader_read_f64
 
 local function clear_precheck_cache()
 	precheck_cache_key = nil
 	precheck_errors = {}
 	precheck_stderr_message = nil
 	precheck_stderr_reported = false
+	precheck_co_thread = nil
+	precheck_co_target_key = nil
+	precheck_running = false
 end
+clear_precheck_cache()
 
 local function refresh_atlas_load_state()
 	local status = peek(sys_img_status)
@@ -217,10 +249,179 @@ local function get_cached_system_program_summary()
 	end
 	local key = build_precheck_key(sys_header)
 	if system_program_summary_cache_key ~= key then
+		local summary = read_rom_program_asset_summary(system_rom_base, sys_header)
 		system_program_summary_cache_key = key
-		system_program_summary_cache = read_rom_program_asset_summary(system_rom_base, sys_header)
+		system_program_summary_cache = summary
 	end
 	return sys_header, system_program_summary_cache
+end
+
+local function get_precheck_phase_index(phase)
+	for i = 1, #precheck_phase_order do
+		if precheck_phase_order[i] == phase then
+			return i
+		end
+	end
+	return 1
+end
+
+local function get_precheck_phase_label(phase)
+	return precheck_phase_labels[phase] or tostring(phase)
+end
+
+local function reset_precheck_step_budget(job)
+	job.remaining_steps = precheck_step_budget
+end
+
+local function consume_precheck_step(job)
+	if job.remaining_steps <= 0 then
+		return false
+	end
+	job.remaining_steps = job.remaining_steps - 1
+	return true
+end
+
+local function start_program_link_precheck_job(cart_header, key)
+	precheck_co_target_key = key
+	precheck_errors = {}
+	precheck_stderr_message = nil
+	precheck_stderr_reported = false
+	precheck_running = true
+	precheck_co_thread = {
+		cart_header = cart_header,
+		phase = 'read_system_summary',
+	}
+end
+
+local function finish_program_link_precheck(errors, stderr_message)
+	precheck_running = false
+	precheck_cache_key = precheck_co_target_key
+	precheck_co_thread = nil
+	precheck_co_target_key = nil
+	precheck_errors = errors
+	precheck_stderr_message = stderr_message
+end
+
+local function finish_program_link_precheck_from_failure(failure)
+	local errors = {}
+	errors[#errors + 1] = failure.title
+	errors[#errors + 1] = failure.detail
+	finish_program_link_precheck(errors, failure.stderr)
+end
+
+local function run_staged_program_link_precheck_job()
+	local job = precheck_co_thread
+	if job == nil then
+		return
+	end
+	local ok, err = pcall(function()
+		if job.phase == 'read_system_summary' then
+			local sys_header = read_cart_header(system_rom_base)
+			if not sys_header then
+				finish_program_link_precheck({
+					'SYSTEM ROM HEADER IS INVALID',
+				}, '[ProgramLinker] Missing system ROM header.')
+				return
+			end
+			job.system_header = sys_header
+			local system_key = build_precheck_key(sys_header)
+			if system_program_summary_cache_key == system_key and system_program_summary_cache ~= nil then
+				job.system_summary = system_program_summary_cache
+				job.phase = 'validate_system_core'
+				return
+			end
+			if job.system_summary_state == nil then
+				job.system_summary_state = begin_program_asset_summary_step_state(system_rom_base, sys_header)
+			end
+			local done, summary = step_program_asset_summary_step_state(job.system_summary_state, job)
+			if not done then
+				return
+			end
+			job.system_summary_state = nil
+			job.system_summary = summary
+			system_program_summary_cache_key = system_key
+			system_program_summary_cache = summary
+			job.phase = 'validate_system_core'
+		elseif job.phase == 'validate_system_core' then
+			local failure = validate_program_asset_core(job.system_summary, 'SYSTEM')
+			if failure then
+				finish_program_link_precheck_from_failure(failure)
+				return
+			end
+			job.phase = 'validate_system_details'
+		elseif job.phase == 'validate_system_details' then
+			if job.system_details_state == nil then
+				job.system_details_state = begin_program_asset_details_step_state(system_rom_base, job.system_header, job.system_summary, {
+					scope = 'SYSTEM',
+					required_alias = 'bios/engine',
+				})
+			end
+			local done, failure = step_program_asset_details_step_state(job.system_details_state, job)
+			if done == nil then
+				finish_program_link_precheck_from_failure(failure)
+				return
+			end
+			if not done then
+				return
+			end
+			job.system_details_state = nil
+			job.phase = 'read_cart_summary'
+		elseif job.phase == 'read_cart_summary' then
+			if job.cart_summary_state == nil then
+				job.cart_summary_state = begin_program_asset_summary_step_state(cart_rom_base, job.cart_header)
+			end
+			local done, summary = step_program_asset_summary_step_state(job.cart_summary_state, job)
+			if not done then
+				return
+			end
+			job.cart_summary_state = nil
+			job.cart_summary = summary
+			job.phase = 'validate_cart_core'
+		elseif job.phase == 'validate_cart_core' then
+			local failure = validate_program_asset_core(job.cart_summary, 'CART')
+			if failure then
+				finish_program_link_precheck_from_failure(failure)
+				return
+			end
+			job.phase = 'validate_cart_details'
+		elseif job.phase == 'validate_cart_details' then
+			if job.cart_details_state == nil then
+				job.cart_details_state = begin_program_asset_details_step_state(cart_rom_base, job.cart_header, job.cart_summary, {
+					scope = 'CART',
+				})
+			end
+			local done, failure = step_program_asset_details_step_state(job.cart_details_state, job)
+			if done == nil then
+				finish_program_link_precheck_from_failure(failure)
+				return
+			end
+			if not done then
+				return
+			end
+			job.cart_details_state = nil
+			finish_program_link_precheck({}, nil)
+			return
+		else
+			finish_program_link_precheck({
+				'PROGRAM PRECHECK FAILED',
+			}, '[ProgramLinker] Cart precheck entered invalid phase: ' .. tostring(job.phase))
+			return
+		end
+	end)
+	if not ok then
+		finish_program_link_precheck({
+			'PROGRAM PRECHECK FAILED',
+			tostring(err),
+		}, '[ProgramLinker] Cart precheck failed: ' .. tostring(err))
+	end
+end
+
+local function run_program_link_precheck_job()
+	if precheck_co_thread == nil then
+		return
+	end
+	reset_precheck_step_budget(precheck_co_thread)
+	run_staged_program_link_precheck_job()
 end
 
 local function assert_range(offset, length, total, label)
@@ -432,6 +633,117 @@ local function reader_skip_value_from_tag(reader, prop_names, tag)
 		return
 	end
 	error('Unsupported bin tag ' .. tostring(tag) .. '.')
+end
+
+local function new_skip_value_state(reader, prop_names, tag)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		stack = {
+			{ kind = 'value', tag = tag },
+		},
+	}
+end
+
+local function new_skip_array_items_state(reader, prop_names, count)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		stack = {
+			{ kind = 'array', remaining = count, total = count },
+		},
+	}
+end
+
+local function new_skip_object_properties_state(reader, prop_names, count)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		stack = {
+			{ kind = 'object', remaining = count, total = count },
+		},
+	}
+end
+
+local function step_skip_state(skip_state, job)
+	local reader = skip_state.reader
+	local prop_names = skip_state.prop_names
+	while consume_precheck_step(job) do
+		local stack = skip_state.stack
+		local frame = stack[#stack]
+		if frame == nil then
+			return true
+		end
+		if frame.kind == 'value' then
+			local tag = frame.tag
+			if tag == bin_tag_null or tag == bin_tag_true or tag == bin_tag_false then
+				stack[#stack] = nil
+			elseif tag == bin_tag_f64 then
+				reader_skip_bytes(reader, 8, 'f64')
+				stack[#stack] = nil
+			elseif tag == bin_tag_f32 then
+				reader_skip_bytes(reader, 4, 'f32')
+				stack[#stack] = nil
+			elseif tag == bin_tag_int then
+				reader_read_varint(reader, 'int')
+				stack[#stack] = nil
+			elseif tag == bin_tag_str then
+				local length = reader_read_varuint(reader, 'string length')
+				reader_skip_bytes(reader, length, 'string')
+				stack[#stack] = nil
+			elseif tag == bin_tag_arr or tag == bin_tag_set then
+				local count = reader_read_varuint(reader, 'array length')
+				frame.kind = 'array'
+				frame.remaining = count
+				frame.total = count
+			elseif tag == bin_tag_ref then
+				reader_read_varuint(reader, 'ref id')
+				stack[#stack] = nil
+			elseif tag == bin_tag_obj then
+				local count = reader_read_varuint(reader, 'object property count')
+				frame.kind = 'object'
+				frame.remaining = count
+				frame.total = count
+			elseif tag == bin_tag_bin then
+				local length = reader_read_varuint(reader, 'binary length')
+				reader_skip_bytes(reader, length, 'binary payload')
+				stack[#stack] = nil
+			else
+				error('Unsupported bin tag ' .. tostring(tag) .. '.')
+			end
+		elseif frame.kind == 'array' then
+			if frame.remaining <= 0 then
+				stack[#stack] = nil
+			else
+				frame.remaining = frame.remaining - 1
+				local value_tag = reader_read_u8(reader, 'array tag')
+				stack[#stack + 1] = { kind = 'value', tag = value_tag }
+			end
+		elseif frame.kind == 'object' then
+			if frame.remaining <= 0 then
+				stack[#stack] = nil
+			else
+				frame.remaining = frame.remaining - 1
+				reader_read_prop_key(reader, prop_names, 'object property id')
+				local value_tag = reader_read_u8(reader, 'object value tag')
+				stack[#stack + 1] = { kind = 'value', tag = value_tag }
+			end
+		else
+			error('Unsupported skip frame kind ' .. tostring(frame.kind) .. '.')
+		end
+	end
+	return false
+end
+
+local function get_skip_state_progress(skip_state)
+	local frame = skip_state.stack[1]
+	if frame == nil then
+		return 1
+	end
+	if frame.total == nil or frame.total <= 0 then
+		return 0
+	end
+	return (frame.total - frame.remaining) / frame.total
 end
 
 local function reader_read_const_value(reader, prop_names)
@@ -721,6 +1033,114 @@ local function read_program_asset_core_summary_from_reader(reader, prop_names, r
 	return summary
 end
 
+begin_program_asset_summary_step_state = function(rom_base, header)
+	local reader, prop_names, root_prop_count = begin_program_asset_payload_reader(rom_base, header)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		root_prop_count = root_prop_count,
+		root_index = 1,
+		program_prop_count = nil,
+		program_index = 1,
+		skip = nil,
+		skip_target = nil,
+		summary = {
+			entry_proto_index = nil,
+			code_range = nil,
+			const_pool_count = nil,
+			proto_count = nil,
+		},
+	}
+end
+
+step_program_asset_summary_step_state = function(state, job)
+	local reader = state.reader
+	local prop_names = state.prop_names
+	while true do
+		if state.skip ~= nil then
+			if not step_skip_state(state.skip, job) then
+				return false
+			end
+			state.skip = nil
+			if state.skip_target == 'program' then
+				state.program_index = state.program_index + 1
+			else
+				state.root_index = state.root_index + 1
+			end
+			state.skip_target = nil
+		elseif state.program_prop_count ~= nil then
+			if state.program_index > state.program_prop_count then
+				state.program_prop_count = nil
+				state.program_index = 1
+				state.root_index = state.root_index + 1
+			else
+				if not consume_precheck_step(job) then
+					return false
+				end
+				local program_key = reader_read_prop_key(reader, prop_names, 'program property id')
+				local program_tag = reader_read_u8(reader, 'program value tag')
+				if program_key == 'code' then
+					state.summary.code_range = reader_read_binary_range_from_tag(reader, program_tag, 'ProgramAsset.program.code')
+					state.program_index = state.program_index + 1
+				elseif program_key == 'constPool' then
+					local count = reader_read_array_length(reader, program_tag, 'ProgramAsset.program.constPool')
+					state.summary.const_pool_count = count
+					state.skip = new_skip_array_items_state(reader, prop_names, count)
+					state.skip_target = 'program'
+				elseif program_key == 'protos' then
+					local count = reader_read_array_length(reader, program_tag, 'ProgramAsset.program.protos')
+					state.summary.proto_count = count
+					state.skip = new_skip_array_items_state(reader, prop_names, count)
+					state.skip_target = 'program'
+				else
+					state.skip = new_skip_value_state(reader, prop_names, program_tag)
+					state.skip_target = 'program'
+				end
+			end
+		else
+			if state.root_index > state.root_prop_count then
+				return true, state.summary
+			end
+			if not consume_precheck_step(job) then
+				return false
+			end
+			local key = reader_read_prop_key(reader, prop_names, 'root property id')
+			local value_tag = reader_read_u8(reader, 'root value tag')
+			if key == 'entryProtoIndex' then
+				state.summary.entry_proto_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.entryProtoIndex')
+				state.root_index = state.root_index + 1
+			elseif key == 'program' then
+				state.program_prop_count = reader_read_object_property_count(reader, value_tag, 'ProgramAsset.program')
+				state.program_index = 1
+			else
+				state.skip = new_skip_value_state(reader, prop_names, value_tag)
+				state.skip_target = 'root'
+			end
+		end
+	end
+end
+
+get_program_asset_summary_step_progress = function(state)
+	if state.root_prop_count <= 0 then
+		return 1
+	end
+	local root_progress = state.root_index - 1
+	local root_scale = 1 / state.root_prop_count
+	if state.skip ~= nil then
+		local skip_progress = get_skip_state_progress(state.skip)
+		if state.skip_target == 'program' and state.program_prop_count ~= nil and state.program_prop_count > 0 then
+			local program_progress = ((state.program_index - 1) + skip_progress) / state.program_prop_count
+			return clamp_int((root_progress + program_progress) * root_scale, 0, 1)
+		end
+		return clamp_int((root_progress + skip_progress) * root_scale, 0, 1)
+	end
+	if state.program_prop_count ~= nil and state.program_prop_count > 0 then
+		local program_progress = (state.program_index - 1) / state.program_prop_count
+		return clamp_int((root_progress + program_progress) * root_scale, 0, 1)
+	end
+	return clamp_int(root_progress * root_scale, 0, 1)
+end
+
 read_rom_program_asset_summary = function(rom_base, header)
 	local reader, prop_names, root_prop_count = begin_program_asset_payload_reader(rom_base, header)
 	return read_program_asset_core_summary_from_reader(reader, prop_names, root_prop_count)
@@ -734,7 +1154,7 @@ local function make_program_precheck_failure(scope, detail, stderr)
 	}
 end
 
-local function validate_program_asset_core(summary, scope)
+validate_program_asset_core = function(summary, scope)
 	if summary.entry_proto_index == nil then
 		return make_program_precheck_failure(scope, 'ENTRYPROTOINDEX IS MISSING', '[ProgramLinker] ' .. scope .. ' program asset is missing entryProtoIndex.')
 	end
@@ -924,7 +1344,511 @@ local function validate_program_link_object(reader, prop_names, tag, summary, sc
 	return nil
 end
 
-local function validate_program_asset_details(rom_base, header, summary, params)
+local function get_object_entry_state_progress(state)
+	if state.prop_count <= 0 then
+		return 1
+	end
+	local progress = state.prop_index - 1
+	if state.skip ~= nil then
+		progress = progress + get_skip_state_progress(state.skip)
+	end
+	return clamp_int(progress / state.prop_count, 0, 1)
+end
+
+local function new_module_proto_entry_state(reader, prop_names, tag)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleProtos[]'),
+		prop_index = 1,
+		path = nil,
+		proto_index = nil,
+		skip = nil,
+	}
+end
+
+local function step_module_proto_entry_state(state, job)
+	while true do
+		if state.skip ~= nil then
+			if not step_skip_state(state.skip, job) then
+				return false
+			end
+			state.skip = nil
+			state.prop_index = state.prop_index + 1
+		else
+			if state.prop_index > state.prop_count then
+				return true
+			end
+			if not consume_precheck_step(job) then
+				return false
+			end
+			local key = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.moduleProtos[] property id')
+			local value_tag = reader_read_u8(state.reader, 'ProgramAsset.moduleProtos[] value tag')
+			if key == 'path' then
+				state.path = reader_read_string_from_tag(state.reader, value_tag, 'ProgramAsset.moduleProtos[].path')
+				state.prop_index = state.prop_index + 1
+			elseif key == 'protoIndex' then
+				state.proto_index = reader_read_non_negative_integer_from_tag(state.reader, value_tag, 'ProgramAsset.moduleProtos[].protoIndex')
+				state.prop_index = state.prop_index + 1
+			else
+				state.skip = new_skip_value_state(state.reader, state.prop_names, value_tag)
+			end
+		end
+	end
+end
+
+local function new_module_protos_array_state(reader, prop_names, tag, summary, scope)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		count = reader_read_array_length(reader, tag, 'ProgramAsset.moduleProtos'),
+		index = 1,
+		entry = nil,
+		summary = summary,
+		scope = scope,
+	}
+end
+
+local function step_module_protos_array_state(state, job)
+	while true do
+		if state.entry ~= nil then
+			local done = step_module_proto_entry_state(state.entry, job)
+			if not done then
+				return false
+			end
+			if state.entry.path == nil or #state.entry.path == 0 then
+				return nil, make_program_precheck_failure(state.scope, 'MODULEPROTO PATH IS MISSING', '[ProgramLinker] ' .. state.scope .. ' moduleProtos entry is missing path.')
+			end
+			if state.entry.proto_index == nil then
+				return nil, make_program_precheck_failure(state.scope, 'MODULEPROTO PROTOINDEX IS MISSING', '[ProgramLinker] ' .. state.scope .. ' moduleProtos entry is missing protoIndex.')
+			end
+			if state.entry.proto_index >= state.summary.proto_count then
+				return nil, make_program_precheck_failure(
+					state.scope,
+					'MODULEPROTO ' .. state.entry.path .. ' TARGETS PROTO ' .. tostring(state.entry.proto_index) .. ' OUT OF RANGE',
+					'[ProgramLinker] ' .. state.scope .. ' moduleProtos entry points outside the proto table.'
+				)
+			end
+			state.entry = nil
+			state.index = state.index + 1
+		else
+			if state.index > state.count then
+				return true
+			end
+			if not consume_precheck_step(job) then
+				return false
+			end
+			local item_tag = reader_read_u8(state.reader, 'ProgramAsset.moduleProtos item tag')
+			state.entry = new_module_proto_entry_state(state.reader, state.prop_names, item_tag)
+		end
+	end
+end
+
+local function get_module_protos_array_progress(state)
+	if state.count <= 0 then
+		return 1
+	end
+	local progress = state.index - 1
+	if state.entry ~= nil then
+		progress = progress + get_object_entry_state_progress(state.entry)
+	end
+	return clamp_int(progress / state.count, 0, 1)
+end
+
+local function new_module_alias_entry_state(reader, prop_names, tag)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleAliases[]'),
+		prop_index = 1,
+		alias = nil,
+		path = nil,
+		skip = nil,
+	}
+end
+
+local function step_module_alias_entry_state(state, job)
+	while true do
+		if state.skip ~= nil then
+			if not step_skip_state(state.skip, job) then
+				return false
+			end
+			state.skip = nil
+			state.prop_index = state.prop_index + 1
+		else
+			if state.prop_index > state.prop_count then
+				return true
+			end
+			if not consume_precheck_step(job) then
+				return false
+			end
+			local key = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.moduleAliases[] property id')
+			local value_tag = reader_read_u8(state.reader, 'ProgramAsset.moduleAliases[] value tag')
+			if key == 'alias' then
+				state.alias = reader_read_string_from_tag(state.reader, value_tag, 'ProgramAsset.moduleAliases[].alias')
+				state.prop_index = state.prop_index + 1
+			elseif key == 'path' then
+				state.path = reader_read_string_from_tag(state.reader, value_tag, 'ProgramAsset.moduleAliases[].path')
+				state.prop_index = state.prop_index + 1
+			else
+				state.skip = new_skip_value_state(state.reader, state.prop_names, value_tag)
+			end
+		end
+	end
+end
+
+local function new_module_aliases_array_state(reader, prop_names, tag, scope, required_alias)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		count = reader_read_array_length(reader, tag, 'ProgramAsset.moduleAliases'),
+		index = 1,
+		entry = nil,
+		scope = scope,
+		required_alias = required_alias,
+		found_required_alias = required_alias == nil,
+	}
+end
+
+local function step_module_aliases_array_state(state, job)
+	while true do
+		if state.entry ~= nil then
+			local done = step_module_alias_entry_state(state.entry, job)
+			if not done then
+				return false
+			end
+			if state.entry.alias == nil or #state.entry.alias == 0 then
+				return nil, make_program_precheck_failure(state.scope, 'MODULEALIAS ALIAS IS MISSING', '[ProgramLinker] ' .. state.scope .. ' moduleAliases entry is missing alias.')
+			end
+			if state.entry.path == nil or #state.entry.path == 0 then
+				return nil, make_program_precheck_failure(state.scope, 'MODULEALIAS PATH IS MISSING', '[ProgramLinker] ' .. state.scope .. ' moduleAliases entry is missing path.')
+			end
+			if state.required_alias ~= nil and state.entry.alias == state.required_alias then
+				state.found_required_alias = true
+			end
+			state.entry = nil
+			state.index = state.index + 1
+		else
+			if state.index > state.count then
+				if state.required_alias ~= nil and not state.found_required_alias then
+					return nil, {
+						title = state.scope .. ' PROGRAM MISSING ' .. string.upper(state.required_alias),
+						detail = 'ALIAS "' .. state.required_alias .. '" WAS NOT FOUND',
+						stderr = '[ProgramLinker] ' .. state.scope .. ' program asset is missing alias "' .. state.required_alias .. '".',
+					}
+				end
+				return true
+			end
+			if not consume_precheck_step(job) then
+				return false
+			end
+			local item_tag = reader_read_u8(state.reader, 'ProgramAsset.moduleAliases item tag')
+			state.entry = new_module_alias_entry_state(state.reader, state.prop_names, item_tag)
+		end
+	end
+end
+
+local function get_module_aliases_array_progress(state)
+	if state.count <= 0 then
+		return 1
+	end
+	local progress = state.index - 1
+	if state.entry ~= nil then
+		progress = progress + get_object_entry_state_progress(state.entry)
+	end
+	return clamp_int(progress / state.count, 0, 1)
+end
+
+local function new_const_reloc_entry_state(reader, prop_names, tag)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.link.constRelocs[]'),
+		prop_index = 1,
+		word_index = nil,
+		kind = nil,
+		const_index = nil,
+		skip = nil,
+	}
+end
+
+local function step_const_reloc_entry_state(state, job)
+	while true do
+		if state.skip ~= nil then
+			if not step_skip_state(state.skip, job) then
+				return false
+			end
+			state.skip = nil
+			state.prop_index = state.prop_index + 1
+		else
+			if state.prop_index > state.prop_count then
+				return true
+			end
+			if not consume_precheck_step(job) then
+				return false
+			end
+			local key = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.link.constRelocs[] property id')
+			local value_tag = reader_read_u8(state.reader, 'ProgramAsset.link.constRelocs[] value tag')
+			if key == 'wordIndex' then
+				state.word_index = reader_read_non_negative_integer_from_tag(state.reader, value_tag, 'ProgramAsset.link.constRelocs[].wordIndex')
+				state.prop_index = state.prop_index + 1
+			elseif key == 'kind' then
+				state.kind = reader_read_string_from_tag(state.reader, value_tag, 'ProgramAsset.link.constRelocs[].kind')
+				state.prop_index = state.prop_index + 1
+			elseif key == 'constIndex' then
+				state.const_index = reader_read_non_negative_integer_from_tag(state.reader, value_tag, 'ProgramAsset.link.constRelocs[].constIndex')
+				state.prop_index = state.prop_index + 1
+			else
+				state.skip = new_skip_value_state(state.reader, state.prop_names, value_tag)
+			end
+		end
+	end
+end
+
+local function new_const_relocs_array_state(reader, prop_names, tag, summary, scope)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		count = reader_read_array_length(reader, tag, 'ProgramAsset.link.constRelocs'),
+		index = 1,
+		entry = nil,
+		summary = summary,
+		scope = scope,
+	}
+end
+
+local function step_const_relocs_array_state(state, job)
+	while true do
+		if state.entry ~= nil then
+			local done = step_const_reloc_entry_state(state.entry, job)
+			if not done then
+				return false
+			end
+			local reloc_id = tostring(state.index - 1)
+			if state.entry.word_index == nil then
+				return nil, make_program_precheck_failure(state.scope, 'CONSTRELOC ' .. reloc_id .. ' IS MISSING WORDINDEX', '[ProgramLinker] ' .. state.scope .. ' const reloc is missing wordIndex.')
+			end
+			if state.entry.kind == nil then
+				return nil, make_program_precheck_failure(state.scope, 'CONSTRELOC ' .. reloc_id .. ' IS MISSING KIND', '[ProgramLinker] ' .. state.scope .. ' const reloc is missing kind.')
+			end
+			if state.entry.kind ~= 'bx' and state.entry.kind ~= 'rk_b' and state.entry.kind ~= 'rk_c' then
+				return nil, make_program_precheck_failure(state.scope, 'CONSTRELOC ' .. reloc_id .. ' HAS INVALID KIND ' .. state.entry.kind, '[ProgramLinker] ' .. state.scope .. ' const reloc has invalid kind "' .. state.entry.kind .. '".')
+			end
+			if state.entry.const_index == nil then
+				return nil, make_program_precheck_failure(state.scope, 'CONSTRELOC ' .. reloc_id .. ' IS MISSING CONSTINDEX', '[ProgramLinker] ' .. state.scope .. ' const reloc is missing constIndex.')
+			end
+			if state.entry.word_index < 0 or state.entry.word_index >= state.summary.instruction_count then
+				return nil, make_program_precheck_failure(
+					state.scope,
+					'CONSTRELOC ' .. reloc_id .. ' TARGETS WORD ' .. tostring(state.entry.word_index) .. ' OUT OF RANGE',
+					'[ProgramLinker] ' .. state.scope .. ' const reloc targets a word outside program.code.'
+				)
+			end
+			if state.entry.const_index >= state.summary.const_pool_count then
+				return nil, make_program_precheck_failure(
+					state.scope,
+					'CONSTRELOC ' .. reloc_id .. ' TARGETS CONST ' .. tostring(state.entry.const_index) .. ' OUT OF RANGE',
+					'[ProgramLinker] ' .. state.scope .. ' const reloc targets a const index outside program.constPool.'
+				)
+			end
+			state.entry = nil
+			state.index = state.index + 1
+		else
+			if state.index > state.count then
+				return true
+			end
+			if not consume_precheck_step(job) then
+				return false
+			end
+			local item_tag = reader_read_u8(state.reader, 'ProgramAsset.link.constRelocs item tag')
+			state.entry = new_const_reloc_entry_state(state.reader, state.prop_names, item_tag)
+		end
+	end
+end
+
+local function get_const_relocs_array_progress(state)
+	if state.count <= 0 then
+		return 1
+	end
+	local progress = state.index - 1
+	if state.entry ~= nil then
+		progress = progress + get_object_entry_state_progress(state.entry)
+	end
+	return clamp_int(progress / state.count, 0, 1)
+end
+
+local function new_link_object_state(reader, prop_names, tag, summary, scope)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.link'),
+		prop_index = 1,
+		saw_const_relocs = false,
+		const_relocs = nil,
+		skip = nil,
+		summary = summary,
+		scope = scope,
+	}
+end
+
+local function step_link_object_state(state, job)
+	while true do
+		if state.const_relocs ~= nil then
+			local done, failure = step_const_relocs_array_state(state.const_relocs, job)
+			if done == nil then
+				return nil, failure
+			end
+			if not done then
+				return false
+			end
+			state.const_relocs = nil
+			state.prop_index = state.prop_index + 1
+		elseif state.skip ~= nil then
+			if not step_skip_state(state.skip, job) then
+				return false
+			end
+			state.skip = nil
+			state.prop_index = state.prop_index + 1
+		else
+			if state.prop_index > state.prop_count then
+				if not state.saw_const_relocs then
+					return nil, make_program_precheck_failure(state.scope, 'LINK.CONSTRELOCS IS MISSING', '[ProgramLinker] ' .. state.scope .. ' program asset is missing link.constRelocs.')
+				end
+				return true
+			end
+			if not consume_precheck_step(job) then
+				return false
+			end
+			local key = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.link property id')
+			local value_tag = reader_read_u8(state.reader, 'ProgramAsset.link value tag')
+			if key == 'constRelocs' then
+				state.saw_const_relocs = true
+				state.const_relocs = new_const_relocs_array_state(state.reader, state.prop_names, value_tag, state.summary, state.scope)
+			else
+				state.skip = new_skip_value_state(state.reader, state.prop_names, value_tag)
+			end
+		end
+	end
+end
+
+local function get_link_object_state_progress(state)
+	if state.prop_count <= 0 then
+		return 1
+	end
+	local progress = state.prop_index - 1
+	if state.const_relocs ~= nil then
+		progress = progress + get_const_relocs_array_progress(state.const_relocs)
+	elseif state.skip ~= nil then
+		progress = progress + get_skip_state_progress(state.skip)
+	end
+	return clamp_int(progress / state.prop_count, 0, 1)
+end
+
+begin_program_asset_details_step_state = function(rom_base, header, summary, params)
+	local reader, prop_names, root_prop_count = begin_program_asset_payload_reader(rom_base, header)
+	return {
+		reader = reader,
+		prop_names = prop_names,
+		root_prop_count = root_prop_count,
+		root_index = 1,
+		summary = summary,
+		scope = params.scope,
+		required_alias = params.required_alias,
+		saw_module_aliases = false,
+		saw_link = false,
+		module_protos = nil,
+		module_aliases = nil,
+		link = nil,
+		skip = nil,
+	}
+end
+
+step_program_asset_details_step_state = function(state, job)
+	while true do
+		if state.module_protos ~= nil then
+			local done, failure = step_module_protos_array_state(state.module_protos, job)
+			if done == nil then
+				return nil, failure
+			end
+			if not done then
+				return false
+			end
+			state.module_protos = nil
+			state.root_index = state.root_index + 1
+		elseif state.module_aliases ~= nil then
+			local done, failure = step_module_aliases_array_state(state.module_aliases, job)
+			if done == nil then
+				return nil, failure
+			end
+			if not done then
+				return false
+			end
+			state.module_aliases = nil
+			state.root_index = state.root_index + 1
+		elseif state.link ~= nil then
+			local done, failure = step_link_object_state(state.link, job)
+			if done == nil then
+				return nil, failure
+			end
+			if not done then
+				return false
+			end
+			state.link = nil
+			state.root_index = state.root_index + 1
+		elseif state.skip ~= nil then
+			if not step_skip_state(state.skip, job) then
+				return false
+			end
+			state.skip = nil
+			state.root_index = state.root_index + 1
+		else
+			if state.root_index > state.root_prop_count then
+				if not state.saw_module_aliases then
+					return nil, make_program_precheck_failure(state.scope, 'MODULEALIASES IS MISSING', '[ProgramLinker] ' .. state.scope .. ' program asset is missing moduleAliases.')
+				end
+				if not state.saw_link then
+					return nil, make_program_precheck_failure(state.scope, 'LINK IS MISSING', '[ProgramLinker] ' .. state.scope .. ' program asset is missing link.')
+				end
+				return true
+			end
+			if not consume_precheck_step(job) then
+				return false
+			end
+			local key = reader_read_prop_key(state.reader, state.prop_names, 'root property id')
+			local value_tag = reader_read_u8(state.reader, 'root value tag')
+			if key == 'moduleProtos' then
+				state.module_protos = new_module_protos_array_state(state.reader, state.prop_names, value_tag, state.summary, state.scope)
+			elseif key == 'moduleAliases' then
+				state.saw_module_aliases = true
+				state.module_aliases = new_module_aliases_array_state(state.reader, state.prop_names, value_tag, state.scope, state.required_alias)
+			elseif key == 'link' then
+				state.saw_link = true
+				state.link = new_link_object_state(state.reader, state.prop_names, value_tag, state.summary, state.scope)
+			else
+				state.skip = new_skip_value_state(state.reader, state.prop_names, value_tag)
+			end
+		end
+	end
+end
+
+get_program_asset_details_step_progress = function(state)
+	if state.root_prop_count <= 0 then
+		return 1
+	end
+	local progress = state.root_index - 1
+	if state.module_protos ~= nil then
+		progress = progress + get_module_protos_array_progress(state.module_protos)
+	elseif state.module_aliases ~= nil then
+		progress = progress + get_module_aliases_array_progress(state.module_aliases)
+	elseif state.link ~= nil then
+		progress = progress + get_link_object_state_progress(state.link)
+	elseif state.skip ~= nil then
+		progress = progress + get_skip_state_progress(state.skip)
+	end
+	return clamp_int(progress / state.root_prop_count, 0, 1)
+end
+
+validate_program_asset_details = function(rom_base, header, summary, params)
 	local scope = params.scope
 	local required_alias = params.required_alias
 	local reader, prop_names, root_prop_count = begin_program_asset_payload_reader(rom_base, header)
@@ -1028,23 +1952,14 @@ local function ensure_program_link_precheck(cart_header)
 		}
 	end
 	local key = build_precheck_key(cart_header)
-	if precheck_cache_key ~= key then
-		precheck_cache_key = key
-		precheck_errors = {}
-		precheck_stderr_message = nil
-		precheck_stderr_reported = false
-		local ok, errors_or_message, stderr_message = pcall(compute_program_link_errors, cart_header)
-		if ok then
-			precheck_errors = errors_or_message
-			precheck_stderr_message = stderr_message
-		else
-			local message = tostring(errors_or_message)
-			precheck_errors = {
-				'PROGRAM PRECHECK FAILED',
-				message,
-			}
-			precheck_stderr_message = '[ProgramLinker] Cart precheck failed: ' .. message
-		end
+	if precheck_cache_key == key then
+		return precheck_errors
+	end
+	if precheck_co_target_key ~= key then
+		start_program_link_precheck_job(cart_header, key)
+	end
+	if precheck_running then
+		run_program_link_precheck_job()
 	end
 	report_precheck_stderr_once()
 	return precheck_errors
@@ -1093,10 +2008,66 @@ local function get_program_precheck_status(cart_header)
 		end
 		return 'OK', nil, true
 	end
+	if precheck_running and precheck_co_target_key == key then
+		return 'PENDING', get_precheck_phase_label(precheck_co_thread.phase), false
+	end
 	if not boot_screen_visible then
 		return 'PENDING', 'WAITING FOR BOOT SCREEN', false
 	end
 	return 'PENDING', 'PROGRAM PRECHECK NOT RUN', false
+end
+
+local function get_program_link_phase_progress(job)
+	if job == nil then
+		return 0
+	end
+	if job.phase == 'read_system_summary' then
+		if job.system_summary_state == nil then
+			return 0
+		end
+		return get_program_asset_summary_step_progress(job.system_summary_state)
+	end
+	if job.phase == 'validate_system_core' then
+		return 0
+	end
+	if job.phase == 'validate_system_details' then
+		if job.system_details_state == nil then
+			return 0
+		end
+		return get_program_asset_details_step_progress(job.system_details_state)
+	end
+	if job.phase == 'read_cart_summary' then
+		if job.cart_summary_state == nil then
+			return 0
+		end
+		return get_program_asset_summary_step_progress(job.cart_summary_state)
+	end
+	if job.phase == 'validate_cart_core' then
+		return 0
+	end
+	if job.phase == 'validate_cart_details' then
+		if job.cart_details_state == nil then
+			return 0
+		end
+		return get_program_asset_details_step_progress(job.cart_details_state)
+	end
+	return 0
+end
+
+local function get_program_precheck_progress(cart_header)
+	if not cart_header then
+		return 0, 0, #precheck_phase_order, 'NO CART'
+	end
+	local key = build_precheck_key(cart_header)
+	if precheck_cache_key == key then
+		return 1, #precheck_phase_order, #precheck_phase_order, 'DONE'
+	end
+	if precheck_running and precheck_co_target_key == key then
+		local phase_index = get_precheck_phase_index(precheck_co_thread.phase)
+		local phase_progress = get_program_link_phase_progress(precheck_co_thread)
+		return ((phase_index - 1) + phase_progress) / #precheck_phase_order, phase_index, #precheck_phase_order, get_precheck_phase_label(precheck_co_thread.phase)
+	end
+	return 0, 0, #precheck_phase_order, 'WAITING'
 end
 
 local function scroll_boot_lines(lines, window_size, delta)
@@ -1180,6 +2151,7 @@ local function build_info()
 	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest)
 	local cart_has_errors = #cart_errors > 0
 	local precheck_status, precheck_detail, precheck_done = get_program_precheck_status(cart_header)
+	local precheck_progress, precheck_phase_index, precheck_phase_total, precheck_phase_label = get_program_precheck_progress(cart_header)
 
 	local sys_title = sys_manifest and display_text(sys_manifest.title) or '--'
 	local sys_rom = sys_manifest and display_text(sys_manifest.rom_name) or '--'
@@ -1216,11 +2188,15 @@ local function build_info()
 		hw_max_cycles = format_bignumbers(sys_max_cycles_per_frame),
 		bitcast_selftest_ok = bitcast_selftest_ok,
 		bitcast_selftest_status = bitcast_selftest_status,
-		bitcast_selftest_error = bitcast_selftest_error,
-		precheck_status = precheck_status,
-		precheck_detail = precheck_detail,
-		precheck_done = precheck_done,
-	}
+			bitcast_selftest_error = bitcast_selftest_error,
+			precheck_status = precheck_status,
+			precheck_detail = precheck_detail,
+			precheck_done = precheck_done,
+			precheck_progress = precheck_progress,
+			precheck_phase_index = precheck_phase_index,
+			precheck_phase_total = precheck_phase_total,
+			precheck_phase_label = precheck_phase_label,
+		}
 end
 
 local function divider(line_slots)
@@ -1245,9 +2221,7 @@ local function compute_boot_progress(info, cart_ready, elapsed)
 	if sys_atlas_ready and not sys_atlas_failed then
 		stage_done = stage_done + 1
 	end
-	if info.precheck_done then
-		stage_done = stage_done + 1
-	end
+	stage_done = stage_done + info.precheck_progress
 	if cart_ready then
 		stage_done = stage_done + 1
 	end
@@ -1338,6 +2312,13 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 		precheck_color = color_warn
 	end
 	append_kv_wrapped(lines, 'PROGRAM PRECHECK', info.precheck_status, precheck_color, label_width, line_slots)
+	if not info.precheck_done then
+		local phase_label = tostring(info.precheck_phase_index) .. '/' .. tostring(info.precheck_phase_total) .. ' ' .. info.precheck_phase_label
+		append_kv_wrapped(lines, 'PRECHECK PHASE', phase_label, color_muted, label_width, line_slots)
+		local precheck_bar_width = line_slots - 2
+		if precheck_bar_width < 1 then precheck_bar_width = 1 end
+		append_wrapped_line(lines, build_progress_bar(info.precheck_progress, precheck_bar_width), color_muted, line_slots, '', '')
+	end
 
 	if cart_has_errors then
 		local error_lines = textflow.wrap_entries(info.cart_errors, line_slots, '- ', '  ')
