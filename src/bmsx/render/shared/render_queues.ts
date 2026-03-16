@@ -23,6 +23,7 @@ const spriteQueue = new FeatureQueue<SpriteQueueItem>(256);
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
 let spriteSubmissionCounter = 0;
+let activeQueueSource: 'front' | 'back' = 'front';
 
 type PlaybackImgSubmission = Extract<RenderSubmission, { type: 'img' }>;
 type PlaybackMeshSubmission = Extract<RenderSubmission, { type: 'mesh' }>;
@@ -230,14 +231,34 @@ export function submitSprite(options: ImgRenderSubmission): void {
 }
 
 export function beginSpriteQueue(): number {
+	if (activeQueueSource === 'back') {
+		sortSpriteBackQueueForRendering();
+		return spriteQueue.sizeBack();
+	}
+	return spriteQueue.sizeFront();
+}
+
+export function prepareCompletedRenderQueues(): void {
 	spriteSubmissionCounter = 0;
 	spriteQueue.swap();
+	meshQueue.swap();
+	particleQueue.swap();
 	const tmpPool = spriteItemPool;
 	spriteItemPool = spriteItemPoolAlt;
 	spriteItemPoolAlt = tmpPool;
 	spriteItemPoolIndex = 0;
 	sortSpriteQueueForRendering();
-	return spriteQueue.sizeFront();
+	activeQueueSource = 'front';
+}
+
+export function preparePartialRenderQueues(): void {
+	activeQueueSource = hasPendingBackQueueContent() ? 'back' : 'front';
+}
+
+export function hasPendingBackQueueContent(): boolean {
+	return spriteQueue.sizeBack() > 0
+		|| meshQueue.sizeBack() > 0
+		|| particleQueue.sizeBack() > 0;
 }
 
 export function clearBackQueues(): void {
@@ -246,6 +267,7 @@ export function clearBackQueues(): void {
 	spriteQueue.clearBack();
 	meshQueue.clearBack();
 	particleQueue.clearBack();
+	activeQueueSource = 'front';
 }
 
 function renderLayerWeight(layer?: RenderLayer): number {
@@ -266,11 +288,28 @@ function sortSpriteQueueForRendering(): void {
 	});
 }
 
+function sortSpriteBackQueueForRendering(): void {
+	spriteQueue.sortBack((a, b) => {
+		const la = renderLayerWeight(a.options.layer);
+		const lb = renderLayerWeight(b.options.layer);
+		if (la !== lb) return la - lb;
+		const za = a.options.pos.z ?? DEFAULT_ZCOORD;
+		const zb = b.options.pos.z ?? DEFAULT_ZCOORD;
+		if (za !== zb) return za - zb;
+		return a.submissionIndex - b.submissionIndex;
+	});
+}
+
+
 export function sortSpriteQueue(compare: (a: SpriteQueueItem, b: SpriteQueueItem) => number): void {
 	spriteQueue.sortFront(compare);
 }
 
 export function forEachSprite(fn: (item: SpriteQueueItem, index: number) => void): void {
+	if (activeQueueSource === 'back') {
+		spriteQueue.forEachBack(fn);
+		return;
+	}
 	spriteQueue.forEachFront(fn);
 }
 
@@ -284,16 +323,16 @@ export function spriteQueueFrontSize(): number {
 
 export function copyRenderQueueForPlayback(): RenderSubmission[] {
 	let count = 0;
-	spriteQueue.forEachFront((item) => {
+	spriteQueue.forEachBack((item) => {
 		const src = item.options;
 		setPlaybackSpriteSubmission(count, src);
 		count += 1;
 	});
-	meshQueue.forEachFront((item) => {
+	meshQueue.forEachBack((item) => {
 		setPlaybackMeshSubmission(count, item);
 		count += 1;
 	});
-	particleQueue.forEachFront((item) => {
+	particleQueue.forEachBack((item) => {
 		setPlaybackParticleSubmission(count, item);
 		count += 1;
 	});
@@ -308,11 +347,14 @@ export function submitMesh(item: MeshRenderSubmission): void {
 }
 
 export function beginMeshQueue(): number {
-	meshQueue.swap();
-	return meshQueue.sizeFront();
+	return activeQueueSource === 'back' ? meshQueue.sizeBack() : meshQueue.sizeFront();
 }
 
 export function forEachMeshQueue(fn: (item: MeshRenderSubmission, index: number) => void): void {
+	if (activeQueueSource === 'back') {
+		meshQueue.forEachBack(fn);
+		return;
+	}
 	meshQueue.forEachFront(fn);
 }
 
@@ -371,11 +413,14 @@ export function submit_particle(item: ParticleRenderSubmission): void {
 }
 
 export function beginParticleQueue(): number {
-	particleQueue.swap();
-	return particleQueue.sizeFront();
+	return activeQueueSource === 'back' ? particleQueue.sizeBack() : particleQueue.sizeFront();
 }
 
 export function forEachParticleQueue(fn: (item: ParticleRenderSubmission, index: number) => void): void {
+	if (activeQueueSource === 'back') {
+		particleQueue.forEachBack(fn);
+		return;
+	}
 	particleQueue.forEachFront(fn);
 }
 

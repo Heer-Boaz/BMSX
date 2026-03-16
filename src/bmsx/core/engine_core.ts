@@ -46,6 +46,7 @@ import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
 import { clamp } from '../utils/clamp';
+import { hasPendingBackQueueContent, prepareCompletedRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -776,14 +777,15 @@ export class EngineCore {
 			const hostDeltaMs = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
 			this.last_update = currentTime;
 
-			if (this._paused) {
-				this.wasupdated = true;
-				this.deltatime = hostDeltaMs;
-				this.accumulated_time = 0;
-				this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
-				this.view.drawgame();
-				runtime.scheduleDeferredCartBootPreparation();
-				return;
+				if (this._paused) {
+					this.wasupdated = true;
+					this.deltatime = hostDeltaMs;
+					this.accumulated_time = 0;
+					this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
+					prepareCompletedRenderQueues();
+					this.view.drawgame();
+					runtime.scheduleDeferredCartBootPreparation();
+					return;
 			}
 
 			const maxAccumulated = this.timestep_ms * MAX_SUBSTEPS;
@@ -865,6 +867,15 @@ export class EngineCore {
 			}
 			if (presentQueued) {
 				this.wasupdated = true;
+				if (completedFramePresented) {
+					if (runtime.isDrawPending && !hasPendingBackQueueContent()) {
+						preparePartialRenderQueues();
+					} else {
+						prepareCompletedRenderQueues();
+					}
+				} else {
+					preparePartialRenderQueues();
+				}
 				if (completedFramePresented) {
 					this.sndmaster.finishFrame();
 				}
