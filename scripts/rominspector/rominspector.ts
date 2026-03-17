@@ -12,7 +12,13 @@ import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseCartHeader } from '../../src/bmsx/rompack/romloader';
 import { disassembleProgram } from '../../src/bmsx/emulator/disassembler';
 import type { Program, ProgramMetadata } from '../../src/bmsx/emulator/cpu';
-import { decodeProgramAsset, decodeProgramSymbolsAsset, inflateProgram, PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/emulator/program_asset';
+import {
+	decodeProgramAsset,
+	decodeProgramSymbolsAsset,
+	inflateProgram,
+	PROGRAM_ASSET_ID,
+	PROGRAM_SYMBOLS_ASSET_ID,
+} from '../../src/bmsx/emulator/program_asset';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
 
@@ -468,7 +474,9 @@ async function main() {
 		`ROM header: header=${header.headerSize} ` +
 		`manifest=${header.manifestOffset}+${header.manifestLength} ` +
 		`toc=${header.tocOffset}+${header.tocLength} ` +
-		`data=${header.dataOffset}+${header.dataLength}`
+		`data=${header.dataOffset}+${header.dataLength} ` +
+		`boot=v${header.programBootVersion} flags=${formatNumberAsHex(header.programBootFlags, 8)} ` +
+		`entry=${header.programEntryProtoIndex} protos=${header.programProtoCount} code=${header.programCodeByteCount}`
 	);
 
 	const { metadataOffset, metadataLength, manifestOffset, manifestLength } = getTocBuffer(rombin, header);

@@ -255,6 +255,15 @@ export function preparePartialRenderQueues(): void {
 	activeQueueSource = hasPendingBackQueueContent() ? 'back' : 'front';
 }
 
+export function prepareOverlayRenderQueues(): void {
+	spriteSubmissionCounter = 0;
+	spriteItemPoolIndex = 0;
+	spriteQueue.clearBack();
+	meshQueue.clearBack();
+	particleQueue.clearBack();
+	activeQueueSource = 'back';
+}
+
 export function hasPendingBackQueueContent(): boolean {
 	return spriteQueue.sizeBack() > 0
 		|| meshQueue.sizeBack() > 0
@@ -323,19 +332,28 @@ export function spriteQueueFrontSize(): number {
 
 export function copyRenderQueueForPlayback(): RenderSubmission[] {
 	let count = 0;
-	spriteQueue.forEachBack((item) => {
+	const copySprite = (item: SpriteQueueItem) => {
 		const src = item.options;
 		setPlaybackSpriteSubmission(count, src);
 		count += 1;
-	});
-	meshQueue.forEachBack((item) => {
+	};
+	const copyMesh = (item: MeshRenderSubmission) => {
 		setPlaybackMeshSubmission(count, item);
 		count += 1;
-	});
-	particleQueue.forEachBack((item) => {
+	};
+	const copyParticle = (item: ParticleRenderSubmission) => {
 		setPlaybackParticleSubmission(count, item);
 		count += 1;
-	});
+	};
+	if (activeQueueSource === 'back') {
+		spriteQueue.forEachBack(copySprite);
+		meshQueue.forEachBack(copyMesh);
+		particleQueue.forEachBack(copyParticle);
+	} else {
+		spriteQueue.forEachFront(copySprite);
+		meshQueue.forEachFront(copyMesh);
+		particleQueue.forEachFront(copyParticle);
+	}
 	renderQueuePlaybackBuffer.length = count;
 	return renderQueuePlaybackBuffer;
 }

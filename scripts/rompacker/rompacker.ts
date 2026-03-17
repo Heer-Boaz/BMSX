@@ -635,9 +635,9 @@ async function runEngineBuild(options: ParsedOptions): Promise<void> {
 		}
 		validateAudioEventReferences(engineResources);
 		const engineRomAssets = await generateRomAssets(engineResources);
-		appendProgramAsset(engineRomAssets, engineManifest, { includeSymbols: debug, optLevel });
+		const engineProgramBoot = appendProgramAsset(engineRomAssets, engineManifest, { includeSymbols: debug, optLevel });
 		stripLuaAssets(engineRomAssets, debug);
-		await finalizeRompack(engineRomAssets, engineRomName, { projectRootPath: engineProjectRootPath, manifest: engineManifest, zipRom: false, debug });
+		await finalizeRompack(engineRomAssets, engineRomName, { projectRootPath: engineProjectRootPath, manifest: engineManifest, zipRom: false, debug, programBoot: engineProgramBoot });
 		logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}${debug ? '.debug' : ''}.rom`)}`);
 	} finally {
 		setLuaCanonicalization(previousCanonicalization);
@@ -900,7 +900,7 @@ async function main() {
 			validateAudioEventReferences(resources);
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-			appendProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, optLevel });
+			const programBoot = appendProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, optLevel });
 			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
 			if (!isEngineMode) {
@@ -913,7 +913,7 @@ async function main() {
 				await progress.taskCompleted();
 			}
 
-			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message), debug: romPackDebug, zipRom: false }));
+			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(romAssets, rom_name, { projectRootPath, manifest: romManifest, status: message => progress.setDetail(message), debug: romPackDebug, zipRom: false, programBoot }));
 			await progress.taskCompleted();
 		}
 

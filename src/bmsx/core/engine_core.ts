@@ -46,7 +46,7 @@ import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
 import { clamp } from '../utils/clamp';
-import { hasPendingBackQueueContent, prepareCompletedRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
+import { hasPendingBackQueueContent, prepareCompletedRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -782,7 +782,11 @@ export class EngineCore {
 					this.deltatime = hostDeltaMs;
 					this.accumulated_time = 0;
 					this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
-					prepareCompletedRenderQueues();
+					if (runtimeIde.isOverlayActive(runtime)) {
+						prepareOverlayRenderQueues();
+					} else {
+						prepareCompletedRenderQueues();
+					}
 					this.view.drawgame();
 					runtime.scheduleDeferredCartBootPreparation();
 					return;
@@ -867,7 +871,9 @@ export class EngineCore {
 			}
 			if (presentQueued) {
 				this.wasupdated = true;
-				if (completedFramePresented) {
+				if (runtimeIde.isOverlayActive(runtime)) {
+					prepareOverlayRenderQueues();
+				} else if (completedFramePresented) {
 					if (runtime.isDrawPending && !hasPendingBackQueueContent()) {
 						preparePartialRenderQueues();
 					} else {
@@ -889,6 +895,13 @@ export class EngineCore {
 				try {
 					runtimeIde.handleLuaError(runtime, error);
 					runtime.abandonFrameState();
+					if (runtimeIde.isOverlayActive(runtime)) {
+						this.wasupdated = true;
+						this.world.runTickGroups(PARTIAL_PRESENTATION_TICK_GROUPS, false);
+						prepareOverlayRenderQueues();
+						this.view.drawgame();
+						runtime.scheduleDeferredCartBootPreparation();
+					}
 				} catch { /* ignore secondary failures, but log them */
 					console.error(`Error while handling surfaced game error in runtime: ${error}`);
 					// Abort the remainder of this update to keep state coherent this frame.

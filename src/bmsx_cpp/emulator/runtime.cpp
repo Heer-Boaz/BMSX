@@ -39,7 +39,7 @@ public:
 	}
 };
 
-constexpr size_t CART_ROM_HEADER_SIZE = 32;
+constexpr size_t CART_ROM_HEADER_SIZE = 64;
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 }
 

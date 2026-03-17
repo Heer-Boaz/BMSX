@@ -1,5 +1,4 @@
 import { $ } from '../../core/engine_core';
-import { color_arr } from '../../rompack/rompack';
 import { registerSpritesPass_WebGL } from '../2d/sprites_pipeline';
 import { registerSpritesPass_WebGPU } from '../2d/sprites_pipeline.wgpu';
 import { AmbientLight } from '../3d/light';
@@ -283,21 +282,20 @@ export class RenderPassLibrary {
 			return deviceColorHandle;
 		};
 
-		// Clear pass: create frame color/depth and export to backbuffer
-		const DEBUG_FORCE_VISIBLE_CLEAR = false;
-		rg.addPass({
-			name: 'Clear',
-			setup: (io) => {
-				const color = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'FrameColor' });
-				const depth = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, depth: true, name: 'FrameDepth' });
-				const deviceColor = deviceColorEnabled
-					? io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'DeviceColor', transient: true })
-					: null;
-				const clearCol: color_arr = DEBUG_FORCE_VISIBLE_CLEAR ? [1, 0, 1, 1] : [0, 0, 0, 1];
-				io.writeTex(color, { clearColor: clearCol });
-				io.writeTex(depth, { clearDepth: 1.0 });
-				io.exportToBackbuffer(color);
-				frameColorHandle = color;
+			// Frame root pass: allocate the persistent color/depth targets and export the color target.
+			// We intentionally do not clear frame_color every frame so partial presents can retain prior pixels.
+			rg.addPass({
+				name: 'Clear',
+				setup: (io) => {
+					const color = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'FrameColor' });
+					const depth = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, depth: true, name: 'FrameDepth' });
+					const deviceColor = deviceColorEnabled
+						? io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'DeviceColor', transient: true })
+						: null;
+					io.writeTex(color);
+					io.writeTex(depth, { clearDepth: 1.0 });
+					io.exportToBackbuffer(color);
+					frameColorHandle = color;
 				frameDepthHandle = depth;
 				deviceColorHandle = deviceColor;
 				return null;

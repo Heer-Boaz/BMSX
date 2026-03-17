@@ -38,7 +38,15 @@ const { LuaParser } = require('../../src/bmsx/lua/syntax/luaparser');
 // @ts-ignore
 const { compileLuaChunkToProgram, isLuaCompileError } = require('../../src/bmsx/emulator/program_compiler');
 // @ts-ignore
-const { PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID, buildModuleAliasesFromPaths, encodeProgram, encodeProgramAsset, encodeProgramSymbolsAsset } = require('../../src/bmsx/emulator/program_asset');
+const {
+	PROGRAM_ASSET_ID,
+	PROGRAM_SYMBOLS_ASSET_ID,
+	buildModuleAliasesFromPaths,
+	buildProgramBootHeader,
+	encodeProgram,
+	encodeProgramAsset,
+	encodeProgramSymbolsAsset,
+} = require('../../src/bmsx/emulator/program_asset');
 // @ts-ignore
 // @ts-ignore
 const pako = require('pako');
@@ -1580,18 +1588,21 @@ export function appendProgramAsset(
 		includeSymbols?: boolean;
 		optLevel?: 0 | 1 | 2 | 3;
 	} = {},
-): void {
+): {
+	version: number;
+	flags: number;
+	entryProtoIndex: number;
+	codeByteCount: number;
+	constPoolCount: number;
+	protoCount: number;
+	moduleAliasCount: number;
+	constRelocCount: number;
+} {
 	const hasProgramAsset = assetList.some(asset => asset.resid === PROGRAM_ASSET_ID);
 	const hasSymbolsAsset = assetList.some(asset => asset.resid === PROGRAM_SYMBOLS_ASSET_ID);
 	const includeSymbols = options.includeSymbols === true;
 	if (hasProgramAsset || hasSymbolsAsset) {
-		if (hasSymbolsAsset && !hasProgramAsset) {
-			throw new Error('[RomPacker] Program symbols asset requires the program asset.');
-		}
-		if (includeSymbols && !hasSymbolsAsset) {
-			throw new Error('[RomPacker] Program asset and symbols asset must be added together in debug builds.');
-		}
-		return;
+		throw new Error('[RomPacker] appendProgramAsset() expects a fresh asset list without prebuilt program assets.');
 	}
 	const baseLuaAssets = assetList.filter(asset => asset.type === 'lua');
 	const luaAssets = baseLuaAssets.slice();
@@ -1612,7 +1623,7 @@ export function appendProgramAsset(
 		}
 	}
 	if (luaAssets.length === 0) {
-		return;
+		throw new Error('[RomPacker] Cannot build program header without Lua assets.');
 	}
 	if (!manifest || !manifest.lua || !manifest.lua.entry_path) {
 		throw new Error('[RomPacker] Manifest is missing lua.entry_path; cannot build program asset.');
@@ -1693,6 +1704,7 @@ export function appendProgramAsset(
 			source_path: PROGRAM_SYMBOLS_ASSET_ID,
 		});
 	}
+	return buildProgramBootHeader(programAsset);
 }
 
 /**
@@ -1823,7 +1835,23 @@ function encodeBiosManifest(manifest: RomManifest): Buffer {
 export async function finalizeRompack(
 	assetList: RomAsset[],
 	rom_name: string,
-	options: { projectRootPath?: string, status?: ProgressNote, manifest?: RomManifest, zipRom: boolean, debug: boolean }
+	options: {
+		projectRootPath?: string,
+		status?: ProgressNote,
+		manifest?: RomManifest,
+		zipRom: boolean,
+		debug: boolean,
+		programBoot: {
+			version: number;
+			flags: number;
+			entryProtoIndex: number;
+			codeByteCount: number;
+			constPoolCount: number;
+			protoCount: number;
+			moduleAliasCount: number;
+			constRelocCount: number;
+		},
+	}
 ) {
 	const outfileBasename = `${rom_name}${options.debug ? '.debug' : ''}.rom`;
 	const distPath = `./dist/${outfileBasename}`;
@@ -1922,6 +1950,14 @@ export async function finalizeRompack(
 		headerBuffer.writeUInt32LE(tocLength, 20);
 		headerBuffer.writeUInt32LE(dataOffset, 24);
 		headerBuffer.writeUInt32LE(dataLength, 28);
+		headerBuffer.writeUInt32LE(options.programBoot.version, 32);
+		headerBuffer.writeUInt32LE(options.programBoot.flags, 36);
+		headerBuffer.writeUInt32LE(options.programBoot.entryProtoIndex, 40);
+		headerBuffer.writeUInt32LE(options.programBoot.codeByteCount, 44);
+		headerBuffer.writeUInt32LE(options.programBoot.constPoolCount, 48);
+		headerBuffer.writeUInt32LE(options.programBoot.protoCount, 52);
+		headerBuffer.writeUInt32LE(options.programBoot.moduleAliasCount, 56);
+		headerBuffer.writeUInt32LE(options.programBoot.constRelocCount, 60);
 	} finally {
 		writer.end();
 	}

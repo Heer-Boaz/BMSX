@@ -1088,22 +1088,31 @@ struct CartRomHeader {
 	u32 tocLength = 0;
 	u32 dataOffset = 0;
 	u32 dataLength = 0;
+	u32 programBootVersion = 0;
+	u32 programBootFlags = 0;
+	u32 programEntryProtoIndex = 0;
+	u32 programCodeByteCount = 0;
+	u32 programConstPoolCount = 0;
+	u32 programProtoCount = 0;
+	u32 programModuleAliasCount = 0;
+	u32 programConstRelocCount = 0;
 };
 
 static constexpr u8 CART_ROM_MAGIC[4] = { 0x42, 0x4d, 0x53, 0x58 };
-static constexpr size_t CART_ROM_HEADER_SIZE = 32;
+static constexpr size_t CART_ROM_BASE_HEADER_SIZE = 32;
+static constexpr size_t CART_ROM_HEADER_SIZE = 64;
 
 static u32 readLE32(const u8* data);
 
 static bool hasCartHeader(const u8* data, size_t size) {
-	if (size < CART_ROM_HEADER_SIZE) {
+	if (size < CART_ROM_BASE_HEADER_SIZE) {
 		return false;
 	}
 	if (std::memcmp(data, CART_ROM_MAGIC, sizeof(CART_ROM_MAGIC)) != 0) {
 		return false;
 	}
 	const u32 headerSize = readLE32(data + 4);
-	return headerSize >= CART_ROM_HEADER_SIZE && headerSize <= size;
+	return headerSize >= CART_ROM_BASE_HEADER_SIZE && headerSize <= size;
 }
 
 static void assertSectionRange(size_t offset, size_t length, size_t total, const char* label) {
@@ -1113,7 +1122,7 @@ static void assertSectionRange(size_t offset, size_t length, size_t total, const
 }
 
 static CartRomHeader parseCartHeader(const u8* data, size_t size) {
-	if (size < CART_ROM_HEADER_SIZE) {
+	if (size < CART_ROM_BASE_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("ROM payload is too small for cart header.");
 	}
 	if (std::memcmp(data, CART_ROM_MAGIC, sizeof(CART_ROM_MAGIC)) != 0) {
@@ -1121,7 +1130,7 @@ static CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	}
 	CartRomHeader header{};
 	header.headerSize = readLE32(data + 4);
-	if (header.headerSize < CART_ROM_HEADER_SIZE) {
+	if (header.headerSize < CART_ROM_BASE_HEADER_SIZE) {
 		throw BMSX_RUNTIME_ERROR("ROM header size is too small.");
 	}
 	if (header.headerSize > size) {
@@ -1133,6 +1142,16 @@ static CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	header.tocLength = readLE32(data + 20);
 	header.dataOffset = readLE32(data + 24);
 	header.dataLength = readLE32(data + 28);
+	if (header.headerSize >= CART_ROM_HEADER_SIZE) {
+		header.programBootVersion = readLE32(data + 32);
+		header.programBootFlags = readLE32(data + 36);
+		header.programEntryProtoIndex = readLE32(data + 40);
+		header.programCodeByteCount = readLE32(data + 44);
+		header.programConstPoolCount = readLE32(data + 48);
+		header.programProtoCount = readLE32(data + 52);
+		header.programModuleAliasCount = readLE32(data + 56);
+		header.programConstRelocCount = readLE32(data + 60);
+	}
 
 	assertSectionRange(static_cast<size_t>(header.manifestOffset), static_cast<size_t>(header.manifestLength), size, "manifest");
 	assertSectionRange(static_cast<size_t>(header.tocOffset), static_cast<size_t>(header.tocLength), size, "toc");

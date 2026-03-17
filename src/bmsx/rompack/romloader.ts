@@ -15,7 +15,7 @@ import type {
 	CartRomHeader,
 } from './rompack';
 import { decodeBinary, toF32, typedArrayFromBytes } from '../serializer/binencoder';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from './rompack';
+import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from './rompack';
 import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 import { decodeRomToc } from './rom_toc';
@@ -28,7 +28,7 @@ export type RomLoadOptions = {
 };
 
 function hasCartHeader(buffer: Uint8Array): boolean {
-	if (buffer.byteLength < CART_ROM_HEADER_SIZE) {
+	if (buffer.byteLength < CART_ROM_BASE_HEADER_SIZE) {
 		return false;
 	}
 	const headerView = buffer.subarray(0, CART_ROM_MAGIC_BYTES.length);
@@ -37,9 +37,9 @@ function hasCartHeader(buffer: Uint8Array): boolean {
 			return false;
 		}
 	}
-	const dv = new DataView(buffer.buffer, buffer.byteOffset, CART_ROM_HEADER_SIZE);
+	const dv = new DataView(buffer.buffer, buffer.byteOffset, CART_ROM_BASE_HEADER_SIZE);
 	const headerSize = dv.getUint32(4, true);
-	return headerSize >= CART_ROM_HEADER_SIZE && headerSize <= buffer.byteLength;
+	return headerSize >= CART_ROM_BASE_HEADER_SIZE && headerSize <= buffer.byteLength;
 }
 
 function assertSectionRange(offset: number, length: number, total: number, label: string): void {
@@ -49,7 +49,7 @@ function assertSectionRange(offset: number, length: number, total: number, label
 }
 
 export function parseCartHeader(payload: Uint8Array): CartRomHeader {
-	if (payload.byteLength < CART_ROM_HEADER_SIZE) {
+	if (payload.byteLength < CART_ROM_BASE_HEADER_SIZE) {
 		throw new Error('ROM payload is too small for cart header.');
 	}
 	const headerView = payload.subarray(0, CART_ROM_MAGIC_BYTES.length);
@@ -58,9 +58,9 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 			throw new Error('Invalid ROM cart header.');
 		}
 	}
-	const dv = new DataView(payload.buffer, payload.byteOffset, CART_ROM_HEADER_SIZE);
+	const dv = new DataView(payload.buffer, payload.byteOffset, Math.min(payload.byteLength, CART_ROM_HEADER_SIZE));
 	const headerSize = dv.getUint32(4, true);
-	if (headerSize < CART_ROM_HEADER_SIZE) {
+	if (headerSize < CART_ROM_BASE_HEADER_SIZE) {
 		throw new Error(`ROM header size is too small: ${headerSize}.`);
 	}
 	if (headerSize > payload.byteLength) {
@@ -72,6 +72,15 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	const tocLength = dv.getUint32(20, true);
 	const dataOffset = dv.getUint32(24, true);
 	const dataLength = dv.getUint32(28, true);
+	const hasExtendedHeader = headerSize >= CART_ROM_HEADER_SIZE;
+	const programBootVersion = hasExtendedHeader ? dv.getUint32(32, true) : 0;
+	const programBootFlags = hasExtendedHeader ? dv.getUint32(36, true) : 0;
+	const programEntryProtoIndex = hasExtendedHeader ? dv.getUint32(40, true) : 0;
+	const programCodeByteCount = hasExtendedHeader ? dv.getUint32(44, true) : 0;
+	const programConstPoolCount = hasExtendedHeader ? dv.getUint32(48, true) : 0;
+	const programProtoCount = hasExtendedHeader ? dv.getUint32(52, true) : 0;
+	const programModuleAliasCount = hasExtendedHeader ? dv.getUint32(56, true) : 0;
+	const programConstRelocCount = hasExtendedHeader ? dv.getUint32(60, true) : 0;
 
 	assertSectionRange(manifestOffset, manifestLength, payload.byteLength, 'manifest');
 	assertSectionRange(tocOffset, tocLength, payload.byteLength, 'toc');
@@ -85,6 +94,14 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		tocLength,
 		dataOffset,
 		dataLength,
+		programBootVersion,
+		programBootFlags,
+		programEntryProtoIndex,
+		programCodeByteCount,
+		programConstPoolCount,
+		programProtoCount,
+		programModuleAliasCount,
+		programConstRelocCount,
 	};
 }
 

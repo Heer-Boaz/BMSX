@@ -2,6 +2,8 @@
 -- Runtime ROM directory lookup helpers (BIOS-level, no builtins)
 
 local cart_rom_magic = 0x58534d42
+local cart_rom_base_header_size = 32
+local cart_rom_header_size = 64
 local btoc_magic = 0x434f5442
 local btoc_header_size = 48
 local btoc_entry_size = 80
@@ -19,14 +21,27 @@ local function read_cart_header(base)
 	if read_u32(base) ~= cart_rom_magic then
 		return nil
 	end
+	local header_size = read_u32(base + 4)
+	if header_size < cart_rom_base_header_size then
+		return nil
+	end
+	local has_extended_header = header_size >= cart_rom_header_size
 	return {
-		header_size = read_u32(base + 4),
+		header_size = header_size,
 		manifest_off = read_u32(base + 8),
 		manifest_len = read_u32(base + 12),
 		toc_off = read_u32(base + 16),
 		toc_len = read_u32(base + 20),
 		data_off = read_u32(base + 24),
 		data_len = read_u32(base + 28),
+		program_boot_version = has_extended_header and read_u32(base + 32) or 0,
+		program_boot_flags = has_extended_header and read_u32(base + 36) or 0,
+		program_entry_proto_index = has_extended_header and read_u32(base + 40) or 0,
+		program_code_byte_count = has_extended_header and read_u32(base + 44) or 0,
+		program_const_pool_count = has_extended_header and read_u32(base + 48) or 0,
+		program_proto_count = has_extended_header and read_u32(base + 52) or 0,
+		program_module_alias_count = has_extended_header and read_u32(base + 56) or 0,
+		program_const_reloc_count = has_extended_header and read_u32(base + 60) or 0,
 	}
 end
 

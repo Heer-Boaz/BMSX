@@ -6,7 +6,9 @@ import { InputMap } from '../input/inputtypes';
 
 export const CART_ROM_MAGIC = 0x58534D42;
 export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
-export const CART_ROM_HEADER_SIZE = 32;
+export const CART_ROM_BASE_HEADER_SIZE = 32;
+export const CART_ROM_HEADER_SIZE = 64;
+export const CART_PROGRAM_BOOT_FLAG_HAS_BIOS_ENGINE_ALIAS = 1 << 0;
 
 export type CartRomHeader = {
 	headerSize: number;
@@ -16,6 +18,14 @@ export type CartRomHeader = {
 	tocLength: number;
 	dataOffset: number;
 	dataLength: number;
+	programBootVersion: number;
+	programBootFlags: number;
+	programEntryProtoIndex: number;
+	programCodeByteCount: number;
+	programConstPoolCount: number;
+	programProtoCount: number;
+	programModuleAliasCount: number;
+	programConstRelocCount: number;
 };
 
 export type CartridgeLayerId = 'system' | 'cart' | 'overlay';

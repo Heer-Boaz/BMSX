@@ -481,7 +481,8 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 	};
 	auto handles = std::make_shared<GraphHandles>();
 
-	// Clear pass
+	// Frame root pass: allocate the persistent color/depth targets and export the color target.
+	// We intentionally do not clear FrameColor every frame so partial presents can retain prior pixels.
 	{
 		RenderGraphPass pass;
 		pass.name = "Clear";
@@ -507,7 +508,7 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 				deviceDesc.transient = true;
 				handles->device = io.createTex(deviceDesc);
 			}
-			io.writeTex(handles->color, {0, 0, 0, 1});
+			io.writeTex(handles->color);
 			io.writeTex(handles->depth, 1.0f);
 			io.exportToBackbuffer(handles->color);
 			return std::any{};

@@ -161,7 +161,7 @@ void sortSpriteQueue(const std::function<bool(const SpriteQueueItem&, const Spri
 
 const std::vector<RenderSubmission>& copyRenderQueueForPlayback() {
 	size_t count = 0;
-	s_spriteQueue.forEachBack([&](const SpriteQueueItem& item, size_t) {
+	s_spriteQueue.forEachFront([&](const SpriteQueueItem& item, size_t) {
 		if (count >= s_renderQueuePlaybackBuffer.size()) {
 			s_renderQueuePlaybackBuffer.emplace_back();
 		}
@@ -182,7 +182,7 @@ const std::vector<RenderSubmission>& copyRenderQueueForPlayback() {
 		dst.parallax_weight = src.parallax_weight.value_or(0.0f);
 		count += 1;
 	});
-	s_meshQueue.forEachBack([&](const MeshRenderSubmission& item, size_t) {
+	s_meshQueue.forEachFront([&](const MeshRenderSubmission& item, size_t) {
 		if (count >= s_renderQueuePlaybackBuffer.size()) {
 			s_renderQueuePlaybackBuffer.emplace_back();
 		}
@@ -191,7 +191,7 @@ const std::vector<RenderSubmission>& copyRenderQueueForPlayback() {
 		op.mesh = item;
 		count += 1;
 	});
-	s_particleQueue.forEachBack([&](const ParticleRenderSubmission& item, size_t) {
+	s_particleQueue.forEachFront([&](const ParticleRenderSubmission& item, size_t) {
 		if (count >= s_renderQueuePlaybackBuffer.size()) {
 			s_renderQueuePlaybackBuffer.emplace_back();
 		}

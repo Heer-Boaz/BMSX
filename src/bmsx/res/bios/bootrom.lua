@@ -7,6 +7,8 @@ local boot_delay = 2.0
 local font_width = 6
 local line_height = 8
 local content_top = 32
+local cart_rom_base_header_size = 32
+local cart_rom_header_size = 64
 
 local color_bg = 4
 local color_header_bg = 7
@@ -38,14 +40,27 @@ local function read_cart_header(base)
 	if peek(base) ~= cart_rom_magic then
 		return nil
 	end
+	local header_size = peek(base + 4)
+	if header_size < cart_rom_base_header_size then
+		return nil
+	end
+	local has_extended_header = header_size >= cart_rom_header_size
 	return {
-		header_size = peek(base + 4),
+		header_size = header_size,
 		manifest_off = peek(base + 8),
 		manifest_len = peek(base + 12),
 		toc_off = peek(base + 16),
 		toc_len = peek(base + 20),
 		data_off = peek(base + 24),
 		data_len = peek(base + 28),
+		program_boot_version = has_extended_header and peek(base + 32) or 0,
+		program_boot_flags = has_extended_header and peek(base + 36) or 0,
+		program_entry_proto_index = has_extended_header and peek(base + 40) or 0,
+		program_code_byte_count = has_extended_header and peek(base + 44) or 0,
+		program_const_pool_count = has_extended_header and peek(base + 48) or 0,
+		program_proto_count = has_extended_header and peek(base + 52) or 0,
+		program_module_alias_count = has_extended_header and peek(base + 56) or 0,
+		program_const_reloc_count = has_extended_header and peek(base + 60) or 0,
 	}
 end
 
@@ -152,6 +167,8 @@ local rom_toc_entry_size = 80
 local rom_toc_invalid_u32 = 0xffffffff
 local rom_asset_type_data = 3
 local program_asset_id = '__program__'
+local program_boot_header_version = 1
+local program_boot_flag_has_bios_engine_alias = 1
 
 local bin_version = 0xa1
 local bin_tag_null = 0
@@ -202,6 +219,7 @@ local read_rom_program_const_pool
 local read_rom_program_asset_summary
 local validate_program_asset_core
 local validate_program_asset_details
+local validate_program_boot_asset
 local begin_program_asset_summary_step_state
 local step_program_asset_summary_step_state
 local get_program_asset_summary_step_progress
@@ -240,20 +258,14 @@ local function build_precheck_key(header)
 		.. ':' .. tostring(header.toc_len)
 		.. ':' .. tostring(header.data_off)
 		.. ':' .. tostring(header.data_len)
-end
-
-local function get_cached_system_program_summary()
-	local sys_header = read_cart_header(system_rom_base)
-	if not sys_header then
-		return nil, nil
-	end
-	local key = build_precheck_key(sys_header)
-	if system_program_summary_cache_key ~= key then
-		local summary = read_rom_program_asset_summary(system_rom_base, sys_header)
-		system_program_summary_cache_key = key
-		system_program_summary_cache = summary
-	end
-	return sys_header, system_program_summary_cache
+		.. ':' .. tostring(header.program_boot_version)
+		.. ':' .. tostring(header.program_boot_flags)
+		.. ':' .. tostring(header.program_entry_proto_index)
+		.. ':' .. tostring(header.program_code_byte_count)
+		.. ':' .. tostring(header.program_const_pool_count)
+		.. ':' .. tostring(header.program_proto_count)
+		.. ':' .. tostring(header.program_module_alias_count)
+		.. ':' .. tostring(header.program_const_reloc_count)
 end
 
 local function get_precheck_phase_index(phase)
@@ -849,7 +861,7 @@ local function read_toc_string(string_table_base, string_table_size, offset, len
 	return reader_read_raw_string(reader, length, 'toc string')
 end
 
-local function find_program_payload_range(rom_base, header)
+local function find_data_asset_payload_range(rom_base, header, target_asset_id)
 	if header.toc_len < rom_toc_header_size then
 		error('ROM TOC is too small.')
 	end
@@ -888,13 +900,13 @@ local function find_program_payload_range(rom_base, header)
 			local resid_offset = peek(entry + 16)
 			local resid_length = peek(entry + 20)
 			local asset_id = read_toc_string(string_table_base, string_table_length, resid_offset, resid_length)
-			if asset_id == program_asset_id then
+			if asset_id == target_asset_id then
 				local payload_start = peek(entry + 40)
 				local payload_end = peek(entry + 44)
 				if payload_start == rom_toc_invalid_u32 or payload_end == rom_toc_invalid_u32 or payload_end <= payload_start then
-					error('Program asset is missing payload range.')
+					error('Data asset "' .. target_asset_id .. '" is missing payload range.')
 				end
-				assert_range(payload_start, payload_end - payload_start, header.data_off + header.data_len, 'program payload')
+				assert_range(payload_start, payload_end - payload_start, header.data_off + header.data_len, target_asset_id .. ' payload')
 				return {
 					start = payload_start,
 					['end'] = payload_end,
@@ -902,7 +914,11 @@ local function find_program_payload_range(rom_base, header)
 			end
 		end
 	end
-	error('Program asset "__program__" was not found in ROM TOC.')
+	error('Data asset "' .. target_asset_id .. '" was not found in ROM TOC.')
+end
+
+local function find_program_payload_range(rom_base, header)
+	return find_data_asset_payload_range(rom_base, header, program_asset_id)
 end
 
 read_rom_program_const_pool = function(rom_base, header)
@@ -1177,6 +1193,34 @@ validate_program_asset_core = function(summary, scope)
 			'ENTRYPROTOINDEX ' .. tostring(summary.entry_proto_index) .. ' EXCEEDS PROTO COUNT ' .. tostring(summary.proto_count),
 			'[ProgramLinker] ' .. scope .. ' entryProtoIndex exceeds proto count.'
 		)
+	end
+	return nil
+end
+
+validate_program_boot_asset = function(summary, scope, params)
+	if summary.program_boot_version ~= program_boot_header_version then
+		return make_program_precheck_failure(
+			scope,
+			'PROGRAM.BOOT.VERSION ' .. tostring(summary.program_boot_version) .. ' IS UNSUPPORTED',
+			'[ProgramLinker] ' .. scope .. ' cart header program boot version is unsupported.'
+		)
+	end
+	if (summary.program_code_byte_count % 4) ~= 0 then
+		return make_program_precheck_failure(scope, 'PROGRAM.BOOT.CODEBYTECOUNT IS MISALIGNED', '[ProgramLinker] ' .. scope .. ' cart header program codeByteCount is not divisible by 4.')
+	end
+	if summary.program_entry_proto_index >= summary.program_proto_count then
+		return make_program_precheck_failure(
+			scope,
+			'PROGRAM.BOOT.ENTRYPROTOINDEX ' .. tostring(summary.program_entry_proto_index) .. ' EXCEEDS PROTO COUNT ' .. tostring(summary.program_proto_count),
+			'[ProgramLinker] ' .. scope .. ' cart header program entryProtoIndex exceeds proto count.'
+		)
+	end
+	if params and params.required_alias == 'bios/engine' and (summary.program_boot_flags & program_boot_flag_has_bios_engine_alias) == 0 then
+		return {
+			title = scope .. ' PROGRAM MISSING BIOS/ENGINE',
+			detail = 'ALIAS "bios/engine" WAS NOT FOUND',
+			stderr = '[ProgramLinker] ' .. scope .. ' cart header is missing alias flag for "bios/engine".',
+		}
 	end
 	return nil
 end
@@ -1889,19 +1933,12 @@ end
 
 local function compute_program_link_errors(cart_header)
 	local errors = {}
-	local sys_header, system_summary = get_cached_system_program_summary()
+	local sys_header = read_cart_header(system_rom_base)
 	if not sys_header then
 		errors[#errors + 1] = 'SYSTEM ROM HEADER IS INVALID'
 		return errors, '[ProgramLinker] Missing system ROM header.'
 	end
-	local failure = validate_program_asset_core(system_summary, 'SYSTEM')
-	if failure then
-		errors[#errors + 1] = failure.title
-		errors[#errors + 1] = failure.detail
-		return errors, failure.stderr
-	end
-	failure = validate_program_asset_details(system_rom_base, sys_header, system_summary, {
-		scope = 'SYSTEM',
+	local failure = validate_program_boot_asset(sys_header, 'SYSTEM', {
 		required_alias = 'bios/engine',
 	})
 	if failure then
@@ -1909,16 +1946,7 @@ local function compute_program_link_errors(cart_header)
 		errors[#errors + 1] = failure.detail
 		return errors, failure.stderr
 	end
-	local cart_summary = read_rom_program_asset_summary(cart_rom_base, cart_header)
-	failure = validate_program_asset_core(cart_summary, 'CART')
-	if failure then
-		errors[#errors + 1] = failure.title
-		errors[#errors + 1] = failure.detail
-		return errors, failure.stderr
-	end
-	failure = validate_program_asset_details(cart_rom_base, cart_header, cart_summary, {
-		scope = 'CART',
-	})
+	failure = validate_program_boot_asset(cart_header, 'CART', nil)
 	if failure then
 		errors[#errors + 1] = failure.title
 		errors[#errors + 1] = failure.detail
@@ -1955,11 +1983,15 @@ local function ensure_program_link_precheck(cart_header)
 	if precheck_cache_key == key then
 		return precheck_errors
 	end
-	if precheck_co_target_key ~= key then
-		start_program_link_precheck_job(cart_header, key)
-	end
-	if precheck_running then
-		run_program_link_precheck_job()
+	precheck_co_target_key = key
+	local ok, errors, stderr_message = pcall(compute_program_link_errors, cart_header)
+	if not ok then
+		finish_program_link_precheck({
+			'PROGRAM PRECHECK FAILED',
+			tostring(errors),
+		}, '[ProgramLinker] Cart precheck failed: ' .. tostring(errors))
+	else
+		finish_program_link_precheck(errors, stderr_message)
 	end
 	report_precheck_stderr_once()
 	return precheck_errors
@@ -2008,66 +2040,24 @@ local function get_program_precheck_status(cart_header)
 		end
 		return 'OK', nil, true
 	end
-	if precheck_running and precheck_co_target_key == key then
-		return 'PENDING', get_precheck_phase_label(precheck_co_thread.phase), false
-	end
 	if not boot_screen_visible then
 		return 'PENDING', 'WAITING FOR BOOT SCREEN', false
 	end
-	return 'PENDING', 'PROGRAM PRECHECK NOT RUN', false
-end
-
-local function get_program_link_phase_progress(job)
-	if job == nil then
-		return 0
-	end
-	if job.phase == 'read_system_summary' then
-		if job.system_summary_state == nil then
-			return 0
-		end
-		return get_program_asset_summary_step_progress(job.system_summary_state)
-	end
-	if job.phase == 'validate_system_core' then
-		return 0
-	end
-	if job.phase == 'validate_system_details' then
-		if job.system_details_state == nil then
-			return 0
-		end
-		return get_program_asset_details_step_progress(job.system_details_state)
-	end
-	if job.phase == 'read_cart_summary' then
-		if job.cart_summary_state == nil then
-			return 0
-		end
-		return get_program_asset_summary_step_progress(job.cart_summary_state)
-	end
-	if job.phase == 'validate_cart_core' then
-		return 0
-	end
-	if job.phase == 'validate_cart_details' then
-		if job.cart_details_state == nil then
-			return 0
-		end
-		return get_program_asset_details_step_progress(job.cart_details_state)
-	end
-	return 0
+	return 'PENDING', 'PROGRAM BOOT HEADER NOT READ', false
 end
 
 local function get_program_precheck_progress(cart_header)
 	if not cart_header then
-		return 0, 0, #precheck_phase_order, 'NO CART'
+		return 0, 0, 1, 'NO CART'
 	end
 	local key = build_precheck_key(cart_header)
 	if precheck_cache_key == key then
-		return 1, #precheck_phase_order, #precheck_phase_order, 'DONE'
+		return 1, 1, 1, 'DONE'
 	end
-	if precheck_running and precheck_co_target_key == key then
-		local phase_index = get_precheck_phase_index(precheck_co_thread.phase)
-		local phase_progress = get_program_link_phase_progress(precheck_co_thread)
-		return ((phase_index - 1) + phase_progress) / #precheck_phase_order, phase_index, #precheck_phase_order, get_precheck_phase_label(precheck_co_thread.phase)
+	if not boot_screen_visible then
+		return 0, 1, 1, 'WAITING FOR BOOT SCREEN'
 	end
-	return 0, 0, #precheck_phase_order, 'WAITING'
+	return 0, 1, 1, 'READING PROGRAM BOOT HEADER'
 end
 
 local function scroll_boot_lines(lines, window_size, delta)
@@ -2310,6 +2300,8 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 		precheck_color = color_ok
 	elseif info.precheck_status == 'FAILED' then
 		precheck_color = color_warn
+	else
+		precheck_color = color_muted
 	end
 	append_kv_wrapped(lines, 'PROGRAM PRECHECK', info.precheck_status, precheck_color, label_width, line_slots)
 	if not info.precheck_done then

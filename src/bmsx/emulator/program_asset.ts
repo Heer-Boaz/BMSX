@@ -4,6 +4,8 @@ import { StringPool, isStringValue, stringValueToString } from './string_pool';
 
 export const PROGRAM_ASSET_ID = '__program__';
 export const PROGRAM_SYMBOLS_ASSET_ID = '__program_symbols__';
+export const PROGRAM_BOOT_HEADER_VERSION = 1;
+export const PROGRAM_BOOT_FLAG_HAS_BIOS_ENGINE_ALIAS = 1 << 0;
 
 export type EncodedValue = null | boolean | number | string;
 
@@ -37,6 +39,17 @@ export type ProgramAsset = {
 
 export type ProgramSymbolsAsset = {
 	metadata: EncodedProgramMetadata;
+};
+
+export type ProgramBootHeader = {
+	version: number;
+	flags: number;
+	entryProtoIndex: number;
+	codeByteCount: number;
+	constPoolCount: number;
+	protoCount: number;
+	moduleAliasCount: number;
+	constRelocCount: number;
 };
 
 export function encodeProgram(program: Program): EncodedProgram {
@@ -86,6 +99,26 @@ export function encodeProgramSymbolsAsset(asset: ProgramSymbolsAsset): Uint8Arra
 
 export function decodeProgramSymbolsAsset(bytes: Uint8Array): ProgramSymbolsAsset {
 	return decodeBinary(bytes) as ProgramSymbolsAsset;
+}
+
+export function buildProgramBootHeader(asset: ProgramAsset): ProgramBootHeader {
+	let flags = 0;
+	for (let index = 0; index < asset.moduleAliases.length; index += 1) {
+		if (asset.moduleAliases[index].alias === 'bios/engine') {
+			flags |= PROGRAM_BOOT_FLAG_HAS_BIOS_ENGINE_ALIAS;
+			break;
+		}
+	}
+	return {
+		version: PROGRAM_BOOT_HEADER_VERSION,
+		flags,
+		entryProtoIndex: asset.entryProtoIndex,
+		codeByteCount: asset.program.code.length,
+		constPoolCount: asset.program.constPool.length,
+		protoCount: asset.program.protos.length,
+		moduleAliasCount: asset.moduleAliases.length,
+		constRelocCount: asset.link.constRelocs.length,
+	};
 }
 
 function requireNumber(value: unknown, label: string): number {
