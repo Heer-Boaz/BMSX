@@ -46,7 +46,7 @@ import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
 import { clamp } from '../utils/clamp';
-import { hasPendingBackQueueContent, prepareCompletedRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
+import { clearBackQueues, hasPendingBackQueueContent, prepareCompletedRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -781,6 +781,9 @@ export class EngineCore {
 					this.wasupdated = true;
 					this.deltatime = hostDeltaMs;
 					this.accumulated_time = 0;
+					if (runtimeIde.isOverlayActive(runtime)) {
+						clearBackQueues();
+					}
 					this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
 					if (runtimeIde.isOverlayActive(runtime)) {
 						prepareOverlayRenderQueues();
@@ -802,12 +805,18 @@ export class EngineCore {
 			const baseBudget = this.computeCycleBudget(runtime);
 			const runPartialPresentation = () => {
 				this.deltatime = hostDeltaMs;
+				if (runtimeIde.isOverlayActive(runtime)) {
+					clearBackQueues();
+				}
 				this.world.runTickGroups(PARTIAL_PRESENTATION_TICK_GROUPS, false);
 				presentQueued = true;
 			};
 			const runCompletedPresentation = () => {
 				// Presentation-facing delta time should reflect host timing.
 				this.deltatime = hostDeltaMs;
+				if (runtimeIde.isOverlayActive(runtime)) {
+					clearBackQueues();
+				}
 				this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
 				presentQueued = true;
 				completedFramePresented = true;
@@ -897,6 +906,7 @@ export class EngineCore {
 					runtime.abandonFrameState();
 					if (runtimeIde.isOverlayActive(runtime)) {
 						this.wasupdated = true;
+						clearBackQueues();
 						this.world.runTickGroups(PARTIAL_PRESENTATION_TICK_GROUPS, false);
 						prepareOverlayRenderQueues();
 						this.view.drawgame();

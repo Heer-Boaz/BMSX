@@ -86,9 +86,15 @@ local eventport = {}
 eventport.__index = eventport
 
 local port_cache = setmetatable({}, { __mode = 'k' })
-local payload_event_marker = setmetatable({}, { __mode = 'k' })
-local payload_emitter_owned = setmetatable({}, { __mode = 'k' })
-local payload_timestamp_owned = setmetatable({}, { __mode = 'k' })
+
+local function copy_event_fields(dst, src)
+	for k, v in pairs(src) do
+		if k ~= 'type' and k ~= 'emitter' and k ~= 'timestamp' then
+			dst[k] = v
+		end
+	end
+	return dst
+end
 
 function eventemitter.new()
 	return setmetatable({
@@ -104,17 +110,10 @@ eventemitter.instance.registrypersistent = true
 require('registry').instance:register(eventemitter.instance)
 
 function eventemitter:create_gameevent(spec)
-	local event = {
+	return copy_event_fields({
 		type = spec.type,
 		emitter = spec.emitter,
-		timestamp = spec.timestamp or (os.clock() * 1000),
-	}
-	for k, v in pairs(spec) do
-		if k ~= 'type' and k ~= 'emitter' and k ~= 'timestamp' then
-			event[k] = v
-		end
-	end
-	return event
+	}, spec)
 end
 
 function eventemitter:events_of(emitter)
@@ -182,38 +181,12 @@ function eventemitter:off_any(handler, force_persistent)
 	end
 end
 
--- eventemitter:emit(arg0, emitter, payload): fire an event.
--- Three calling conventions:
---   emit(event_table)            — fire a pre-built event table directly.
---   emit(type, emitter, payload_table) — payload fields merged into event.
---   emit(type, emitter, scalar)  — scalar stored as event.payload.
--- In cart code, use eventport:emit() instead — the emitter is filled in
--- automatically from the port, so you cannot accidentally omit it.
-function eventemitter:emit(arg0, emitter, payload)
-	local event
-	if type(arg0) == 'table' then
-		event = arg0
-	else
-		if payload ~= nil and type(payload) == 'table' and (payload.type == nil or payload_event_marker[payload]) then
-			event = payload
-			payload_event_marker[payload] = true
-			event.type = arg0
-			if payload_emitter_owned[payload] or event.emitter == nil then
-				event.emitter = emitter
-				payload_emitter_owned[payload] = true
-			end
-			if payload_timestamp_owned[payload] or event.timestamp == nil then
-				event.timestamp = event.timestamp or (os.clock() * 1000)
-				payload_timestamp_owned[payload] = true
-			end
-		else
-			event = {
-				type = arg0,
-				emitter = emitter,
-				timestamp = os.clock() * 1000,
-				payload = payload,
-			}
-		end
+-- eventemitter:emit(event): fire a pre-built event table directly.
+-- The global bus does not normalize or mutate caller-owned payload tables.
+-- Build canonical events at the edge (eventport:emit / emit_event / $.emit).
+function eventemitter:emit(event)
+	if type(event) ~= 'table' then
+		error('eventemitter.emit expects an event table')
 	end
 	if event.emitter and event.emitter.dispose_flag then
 		return
@@ -289,16 +262,26 @@ function eventport:on(spec)
 end
 
 -- eventport:emit(event_name, payload): preferred cart API for emitting events.
--- Automatically sets the emitter to the port's owner object.  payload may be
--- a table of extra fields merged into the event, or omitted.
+-- Automatically builds a canonical event table with emitter=self.emitter.
 function eventport:emit(event_name, payload)
-	eventemitter.instance:emit(event_name, self.emitter, payload)
+	local event = {
+		type = event_name,
+		emitter = self.emitter,
+	}
+	if payload ~= nil then
+		if type(payload) == 'table' then
+			copy_event_fields(event, payload)
+		else
+			event.payload = payload
+		end
+	end
+	eventemitter.instance:emit(event)
 end
 
 -- eventport:emit_event(event): emit a pre-built event table, setting the
 -- emitter to the port's owner if not already set.  Returns the event table.
--- Use when you need to capture and re-use the event object (e.g. to read back
--- the timestamp or pass it to another system after emission).
+-- Use when you already built the canonical event in a hot path or need to
+-- pass the same event object to another system after emission.
 function eventport:emit_event(event)
 	event.emitter = event.emitter or self.emitter
 	eventemitter.instance:emit(event)

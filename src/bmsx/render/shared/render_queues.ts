@@ -256,11 +256,6 @@ export function preparePartialRenderQueues(): void {
 }
 
 export function prepareOverlayRenderQueues(): void {
-	spriteSubmissionCounter = 0;
-	spriteItemPoolIndex = 0;
-	spriteQueue.clearBack();
-	meshQueue.clearBack();
-	particleQueue.clearBack();
 	activeQueueSource = 'back';
 }
 

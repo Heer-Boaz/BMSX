@@ -4,7 +4,8 @@
 -- DESIGN PRINCIPLES — progression state rules
 --
 -- 1. WHAT IS progression?
---    A rules engine that listens to ALL global events and updates one or more
+--    A rules engine that listens to the specific global events referenced by
+--    mounted programs and updates one or more
 --    'state programs' (key/value maps) based on declarative rules.  It is used
 --    to track persistent world state that evolves as gameplay events fire
 --    (e.g. 'has_sword', 'room_2_cleared', counter values).
@@ -19,7 +20,8 @@
 --      })
 --
 --    STEP 2 — events flow through automatically (no manual dispatch needed
---    for events emitted to the global eventemitter; progression intercepts all).
+--    for events emitted to the global eventemitter; progression subscribes to
+--    the exact event names referenced by mounted programs).
 --
 --    STEP 3 — query state:
 --      if progression.get(castle, 'bonus_active') then ... end
@@ -50,10 +52,9 @@ local event_matcher = require('event_matcher')
 
 local progression = {
 	_inited = false,
-	_bound = false,
-	_any_handler = nil,
+	_event_handler = nil,
 	_runtime_by_ctx = setmetatable({}, { __mode = 'k' }),
-	_runtime_by_service_id = {},
+	_runtimes_by_event = {},
 	_event_queue = {},
 	_event_head = 1,
 	_event_tail = 0,
@@ -269,7 +270,7 @@ function progression_state:matches_filter(filter)
 		cached = compile_predicates(self.program, filter)
 		self.filter_cache[filter] = cached
 	end
-	local r = eval_predicates(self.values, cached); if not r then print('failed filter:') for i=1, #filter do print('  ', filter[i].key, filter[i].equals) end end return r
+	return eval_predicates(self.values, cached)
 end
 
 local function compile_set_actions(state_program, actions)
@@ -404,7 +405,12 @@ end
 
 local function dispatch_event_now(event)
 	local event_type = event.type
-	for _, rt in pairs(progression._runtime_by_service_id) do
+	local runtimes = progression._runtimes_by_event[event_type]
+	if runtimes == nil then
+		return
+	end
+	for i = 1, #runtimes do
+		local rt = runtimes[i]
 		local rules = rt.program.rules_by_event[event_type]
 		if rules ~= nil then
 			dispatch_rules_to_runtime(rt, rules, event)
@@ -413,10 +419,8 @@ local function dispatch_event_now(event)
 end
 
 -- progression.dispatch_event(event)
---   Feeds an event into all mounted runtimes immediately.  In practice you do
---   NOT need to call this manually — progression.init() registers an on_any
---   listener on the global eventemitter so every global event is forwarded
---   automatically.  Only call directly if you have a non-global event source.
+--   Feeds an event into all mounted runtimes that subscribed to event.type.
+--   In practice you do NOT need to call this manually for normal global events.
 function progression.dispatch_event(event)
 	local tail = progression._event_tail + 1
 	progression._event_tail = tail
@@ -442,11 +446,41 @@ function progression.init()
 		return
 	end
 	progression._inited = true
-	progression._any_handler = function(event)
+	progression._event_handler = function(event)
 		progression.dispatch_event(event)
 	end
-	eventemitter.instance:on_any(progression._any_handler, true, progression)
-	progression._bound = true
+end
+
+local function add_runtime_subscription(rt, event_name)
+	local runtimes = progression._runtimes_by_event[event_name]
+	if runtimes == nil then
+		runtimes = {}
+		progression._runtimes_by_event[event_name] = runtimes
+		eventemitter.instance:on({
+			event = event_name,
+			handler = progression._event_handler,
+			subscriber = progression,
+			persistent = true,
+		})
+	end
+	runtimes[#runtimes + 1] = rt
+end
+
+local function remove_runtime_subscription(rt, event_name)
+	local runtimes = progression._runtimes_by_event[event_name]
+	if runtimes == nil then
+		return
+	end
+	for i = #runtimes, 1, -1 do
+		if runtimes[i] == rt then
+			table.remove(runtimes, i)
+			break
+		end
+	end
+	if #runtimes == 0 then
+		progression._runtimes_by_event[event_name] = nil
+		eventemitter.instance:off(event_name, progression._event_handler, nil)
+	end
 end
 
 -- progression.mount(ctx, program_or_rule_defs)
@@ -458,6 +492,8 @@ end
 --     • a table with { rules=[], handlers={}, keys=[] }
 --   Returns the runtime object (rarely needed; use progression.get/set/matches).
 function progression.mount(ctx, program_or_rule_defs)
+	progression.init()
+	progression.unmount(ctx)
 	local program = progression.compile_program(program_or_rule_defs)
 	local state = progression_state.new(program.state_program)
 
@@ -468,7 +504,9 @@ function progression.mount(ctx, program_or_rule_defs)
 		apply_done = {},
 	}
 	progression._runtime_by_ctx[ctx] = rt
-	progression._runtime_by_service_id[ctx.id] = rt
+	for i = 1, #program.event_names do
+		add_runtime_subscription(rt, program.event_names[i])
+	end
 	return rt
 end
 
@@ -481,7 +519,10 @@ function progression.unmount(ctx)
 		return
 	end
 	progression._runtime_by_ctx[ctx] = nil
-	progression._runtime_by_service_id[ctx.id] = nil
+	local event_names = rt.program.event_names
+	for i = 1, #event_names do
+		remove_runtime_subscription(rt, event_names[i])
+	end
 end
 
 -- progression.matches(ctx, filter): returns true if all filter conditions

@@ -748,16 +748,27 @@ function $.emit(name_or_event, emitter, payload, ...)
 		if event_type == nil then
 			error('engine.emit: event is missing type')
 		end
-		local event = {}
-		event.type = tostring(event_type)
+		local event = { type = tostring(event_type) }
 		for k, v in pairs(name_or_event) do
-			if k ~= 'type' then
+			if k ~= 'type' and k ~= 'timestamp' then
 				event[k] = v
 			end
 		end
 		return eventemitter.instance:emit(event)
 	end
-	return eventemitter.instance:emit(name_or_event, emitter, payload)
+	local spec = { type = name_or_event, emitter = emitter }
+	if payload ~= nil then
+		if type(payload) == 'table' then
+			for k, v in pairs(payload) do
+				if k ~= 'type' and k ~= 'emitter' and k ~= 'timestamp' then
+					spec[k] = v
+				end
+			end
+		else
+			spec.payload = payload
+		end
+	end
+	return eventemitter.instance:emit(eventemitter.instance:create_gameevent(spec))
 end
 
 audio_router.init()

@@ -337,8 +337,10 @@ local function add_pair(set, a, b)
 	row[b] = true
 end
 
-local function build_overlap_payload(self_col, other_col, other_owner, contact, phase)
+local function build_overlap_event(event_name, owner, self_col, other_col, other_owner, contact, phase)
 	return {
+		type = event_name,
+		emitter = owner,
 		other_id = other_owner.id,
 		other_collider_id = other_col.id,
 		other_collider_local_id = other_col.id_local,
@@ -522,8 +524,8 @@ function overlap2dsystem:update()
 		if resolved_contact == nil and event_name ~= 'overlap.end' then
 			resolved_contact = collision2d.get_contact2d(col_a, col_b)
 		end
-		owner_a.events:emit(event_name, build_overlap_payload(col_a, col_b, owner_b, resolved_contact, phase))
-		owner_b.events:emit(event_name, build_overlap_payload(col_b, col_a, owner_a, contact_with_flipped_normal(resolved_contact), phase))
+		owner_a.events:emit_event(build_overlap_event(event_name, owner_a, col_a, col_b, owner_b, resolved_contact, phase))
+		owner_b.events:emit_event(build_overlap_event(event_name, owner_b, col_b, col_a, owner_a, contact_with_flipped_normal(resolved_contact), phase))
 	end
 
 	for i = 1, #begins, 2 do
