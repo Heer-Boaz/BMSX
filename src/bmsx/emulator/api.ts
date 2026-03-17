@@ -1,4 +1,4 @@
-import { $, runGate, calcCyclesPerFrameScaled } from '../core/engine_core';
+import { $, runGate } from '../core/engine_core';
 import { Input } from '../input/input';
 import type { PlayerInput } from '../input/playerinput';
 import type {
@@ -816,8 +816,7 @@ export class Api {
 		if (!Number.isSafeInteger(cpuHz) || cpuHz <= 0) {
 			throw new Error('[api.set_cpu_freq_hz] cpuHz must be a positive safe integer.');
 		}
-		this._runtime.setCpuHz(cpuHz);
-		this._runtime.setCycleBudgetPerFrame(calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled));
+		this._runtime.applyActiveMachineTiming(cpuHz);
 	}
 
 	public list_lua_builtins(): LuaTable {

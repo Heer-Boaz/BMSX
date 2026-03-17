@@ -264,6 +264,7 @@ public:
 
 	void setCanonicalization(CanonicalizationType canonicalization);
 	void setCpuHz(i64 hz);
+	void applyActiveMachineTiming(i64 cpuHz);
 	void setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk);
 	i64 cpuHz() const { return m_cpuHz; }
 	void setVblankCycles(int cycles);

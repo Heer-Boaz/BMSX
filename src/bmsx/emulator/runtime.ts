@@ -412,6 +412,14 @@ export class Runtime {
 		this._cpuHz = value;
 		this.resetTransferCarry();
 	}
+	public applyActiveMachineTiming(cpuHz: number): void {
+		const perfSpecs = getMachinePerfSpecs($.assets.manifest.machine);
+		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
+		const vblankCycles = Runtime.resolveVblankCycles(perfSpecs.vblank_cycles, cycleBudgetPerFrame);
+		this.setCpuHz(cpuHz);
+		this.setCycleBudgetPerFrame(cycleBudgetPerFrame);
+		this.setVblankCycles(vblankCycles);
+	}
 	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number }): void {
 		this.imgDecBytesPerSec = Runtime.resolveBytesPerSec(specs.imgdec_bytes_per_sec, 'machine.specs.cpu.imgdec_bytes_per_sec');
 		this.dmaBytesPerSecIso = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_iso, 'machine.specs.dma.dma_bytes_per_sec_iso');
@@ -530,10 +538,15 @@ export class Runtime {
 	public requestWaitForVblank(): void {
 		this.processIrqAck();
 		this.waitingForVblank = true;
-		const resumeOnCurrentEdge = this.vblankActive && !this.vblankPendingClear && this.vblankSequence > 0;
+		const resumeOnCurrentEdge =
+			this.vblankActive
+			&& !this.vblankPendingClear
+			&& this.vblankSequence > 0
+			&& this.lastCompletedVblankSequence !== this.vblankSequence;
 		const nextVblankSequence = this.vblankSequence + 1;
-		// If the call arrives while VBLANK is already active, resume on the current
-		// edge instead of waiting for a new edge that may be blocked by deferred clear.
+		// Only reuse the current VBLANK edge when this tick has not already completed
+		// on that same edge. Otherwise fast carts can "re-wait" the current VBLANK and
+		// effectively skip the next frame boundary.
 		this.waitForVblankTargetSequence = resumeOnCurrentEdge
 			? this.vblankSequence
 			: nextVblankSequence;
@@ -1787,8 +1800,7 @@ export class Runtime {
 		const perfSpecs = getMachinePerfSpecs($.assets.manifest.machine);
 		Runtime.applyUfpsScaled(perfSpecs.ufps);
 		const cpuHz = Runtime.resolveCpuHz(perfSpecs.cpu_freq_hz);
-		this.setCpuHz(cpuHz);
-		this.setCycleBudgetPerFrame(calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled));
+		this.applyActiveMachineTiming(cpuHz);
 		this.setTransferRatesFromManifest(perfSpecs);
 	}
 

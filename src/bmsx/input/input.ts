@@ -262,7 +262,7 @@ export class InputStateManager {
 		const value = baseState?.value ?? (pressed ? 1 : 0);
 		const value2d = baseState?.value2d;
 
-		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && this.isBufferedEventInWindow(event, window));
+		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && event.frame <= this.currentFrame && this.isBufferedEventInWindow(event, window));
 		let waspressed = pressed;
 		let wasreleased = justreleased;
 		for (let i = 0; i < inputEvents.length; ++i) {
@@ -297,6 +297,9 @@ export class InputStateManager {
 	hasUnconsumedPress(identifier: ButtonId, windowFrames: number = RECENT_BUFFERED_EDGE_FRAMES): boolean {
 		for (let i = this.inputBuffer.length - 1; i >= 0; i -= 1) {
 			const event = this.inputBuffer[i];
+			if (event.frame > this.currentFrame) {
+				continue;
+			}
 			if (!this.isBufferedEventInWindow(event, windowFrames)) {
 				break;
 			}
@@ -352,6 +355,9 @@ export class InputStateManager {
 			return null;
 		}
 		if (edge.consumed === true) {
+			return null;
+		}
+		if (edge.frame > this.currentFrame) {
 			return null;
 		}
 		if (!this.isBufferedFrameInWindow(edge.frame, windowFrames)) {

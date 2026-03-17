@@ -150,6 +150,7 @@ ButtonState InputStateManager::getButtonState(const std::string& button, std::op
 	if (!state.consumed) {
 		for (const auto& bufferedEvent : m_inputBuffer) {
 			if (bufferedEvent.event.identifier == button &&
+				bufferedEvent.frame <= m_currentFrame &&
 				isBufferedFrameInWindow(bufferedEvent.frame, effectiveWindow) &&
 				bufferedEvent.event.consumed) {
 				state.consumed = true;
@@ -165,6 +166,7 @@ bool InputStateManager::wasPressedInWindow(const std::string& button, i32 window
 	for (const auto& bufferedEvent : m_inputBuffer) {
 		if (bufferedEvent.event.identifier == button &&
 			bufferedEvent.event.eventType == InputEvent::Type::Press &&
+			bufferedEvent.frame <= m_currentFrame &&
 			isBufferedFrameInWindow(bufferedEvent.frame, windowFrames)) {
 			return true;
 		}
@@ -177,6 +179,7 @@ bool InputStateManager::wasReleasedInWindow(const std::string& button, i32 windo
 	for (const auto& bufferedEvent : m_inputBuffer) {
 		if (bufferedEvent.event.identifier == button &&
 			bufferedEvent.event.eventType == InputEvent::Type::Release &&
+			bufferedEvent.frame <= m_currentFrame &&
 			isBufferedFrameInWindow(bufferedEvent.frame, windowFrames)) {
 			return true;
 		}
@@ -250,7 +253,7 @@ std::optional<InputStateManager::BufferedEdgeRecord> InputStateManager::getBuffe
 		return std::nullopt;
 	}
 	const BufferedEdgeRecord& edge = it->second;
-	if (edge.consumed || !isBufferedFrameInWindow(edge.frame, windowFrames)) {
+	if (edge.consumed || edge.frame > m_currentFrame || !isBufferedFrameInWindow(edge.frame, windowFrames)) {
 		return std::nullopt;
 	}
 	return edge;

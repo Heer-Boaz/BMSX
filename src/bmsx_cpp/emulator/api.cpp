@@ -700,9 +700,7 @@ void Api::set_cpu_freq_hz(double cpuHz) {
 		throw BMSX_RUNTIME_ERROR("[api.set_cpu_freq_hz] cpuHz must be a positive integer.");
 	}
 	const i64 normalizedCpuHz = static_cast<i64>(cpuHz);
-	const int cycleBudget = calcCyclesPerFrame(normalizedCpuHz, EngineCore::instance().ufpsScaled());
-	m_runtime.setCpuHz(normalizedCpuHz);
-	m_runtime.setCycleBudgetPerFrame(cycleBudget);
+	m_runtime.applyActiveMachineTiming(normalizedCpuHz);
 }
 
 Value Api::get_player_input_handle(int playerIndex) {

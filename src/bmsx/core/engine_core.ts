@@ -857,7 +857,9 @@ export class EngineCore {
 					const completion = runtime.consumeLastTickCompletion();
 					slicesProcessed += 1;
 					if (completion) {
-						this.cycleCarry = completion.remaining > baseBudget ? baseBudget : completion.remaining;
+						// A completed tick reached its frame boundary; leftover budget after
+						// wait_vblank belongs to that frame and must not spill into the next one.
+						this.cycleCarry = 0;
 						runCompletedPresentation();
 						// Present the completed frame now; any catch-up continuation resumes on the next host frame.
 						break;

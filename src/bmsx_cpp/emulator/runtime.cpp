@@ -404,11 +404,16 @@ void Runtime::reconcileCycleBudgetAfterSignal(FrameState& frameState) {
 
 void Runtime::requestWaitForVblank() {
 	processIrqAck();
-	const bool resumeOnCurrentEdge = m_vblankActive && !m_vblankPendingClear && m_vblankSequence > 0;
+	const bool resumeOnCurrentEdge =
+		m_vblankActive
+		&& !m_vblankPendingClear
+		&& m_vblankSequence > 0
+		&& m_lastCompletedVblankSequence != m_vblankSequence;
 	m_waitingForVblank = true;
 	const uint64_t nextVblankSequence = m_vblankSequence + 1;
-	// If wait starts while VBLANK is already active, resume on the current edge so
-	// we don't stall behind a deferred-clear phase.
+	// Only reuse the current VBLANK edge when this tick has not already completed
+	// on that same edge. Otherwise fast carts can "re-wait" the current VBLANK and
+	// effectively skip the next frame boundary.
 	m_waitForVblankTargetSequence = resumeOnCurrentEdge
 		? m_vblankSequence
 		: nextVblankSequence;
@@ -732,6 +737,24 @@ void Runtime::setCanonicalization(CanonicalizationType canonicalization) {
 void Runtime::setCpuHz(i64 hz) {
 	m_cpuHz = hz;
 	resetTransferCarry();
+}
+
+void Runtime::applyActiveMachineTiming(i64 cpuHz) {
+	const RomManifest& manifest = EngineCore::instance().assets().manifest;
+	if (!manifest.vblankCycles.has_value()) {
+		throw BMSX_RUNTIME_ERROR("[Runtime] machine.specs.vdp.vblank_cycles is required.");
+	}
+	const int cycleBudget = calcCyclesPerFrame(cpuHz, EngineCore::instance().ufpsScaled());
+	const i64 vblankCycles = *manifest.vblankCycles;
+	if (vblankCycles <= 0) {
+		throw BMSX_RUNTIME_ERROR("[Runtime] machine.specs.vdp.vblank_cycles must be a positive integer.");
+	}
+	if (vblankCycles > cycleBudget) {
+		throw BMSX_RUNTIME_ERROR("[Runtime] machine.specs.vdp.vblank_cycles must be less than or equal to cycles_per_frame.");
+	}
+	setCpuHz(cpuHz);
+	setCycleBudgetPerFrame(cycleBudget);
+	setVblankCycles(static_cast<int>(vblankCycles));
 }
 
 void Runtime::setVblankCycles(int cycles) {

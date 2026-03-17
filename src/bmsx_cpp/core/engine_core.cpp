@@ -597,7 +597,8 @@ void EngineCore::tick(f64 deltaTime) {
 			slicesProcessed += 1;
 			if (runtime.consumeLastTickCompletion(completionSequence, remaining)) {
 				(void)completionSequence;
-				m_cycleCarry = remaining > baseBudget ? baseBudget : remaining;
+				(void)remaining;
+				m_cycleCarry = 0;
 				presentQueued = true;
 				// Keep the completed frame stable for this host present; continue next frame on the next host tick.
 				break;
