@@ -10,6 +10,7 @@ local idle_timeline_id = 'title_screen.idle'
 local start_timeline_id = 'title_screen.start'
 
 local title_exit_events = {
+	'title_wait',
 	'room',
 	'transition',
 	'halo',

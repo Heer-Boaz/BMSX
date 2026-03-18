@@ -2776,6 +2776,13 @@ local function define_player_fsm()
 			end,
 			on = {
 				['seal_flash_done'] = {
+					emitter = 'd',
+					go = function(_self, state)
+						state:pop_and_transition()
+					end,
+				},
+				['title_wait_done'] = {
+					emitter = 'd',
 					go = function(_self, state)
 						state:pop_and_transition()
 					end,
@@ -3013,6 +3020,10 @@ local function define_player_fsm()
 				['halo_wait_start'] = '/waiting_halo_banner',
 				['leave_world_start'] = '/waiting_world_emerge',
 				['enter_shrine_start'] = '/entering_shrine',
+			['title_wait'] = {
+				emitter = 'd',
+				go = '/freeze',
+			},
 			['seal_dissolution'] = '/freeze',
 		},
 		states = states,

@@ -40,9 +40,12 @@ function getTitleState(engine) {
 		local director = object('d')
 		local transition = object('transition')
 		local title = object('title_screen')
+		local ui = object('ui')
 		local director_state = 'other'
 		if director.sc:matches_state_path('director:/title_screen') then
 			director_state = 'title_screen'
+		elseif director.sc:matches_state_path('director:/title_start_wait') then
+			director_state = 'title_start_wait'
 		elseif director.sc:matches_state_path('director:/room') then
 			director_state = 'room'
 		end
@@ -60,6 +63,12 @@ function getTitleState(engine) {
 		elseif title.sc:matches_state_path('title_screen:/starting') then
 			title_state = 'starting'
 		end
+		local ui_state = 'other'
+		if ui.sc:matches_state_path('ui:/active') then
+			ui_state = 'active'
+		elseif ui.sc:matches_state_path('ui:/hidden') then
+			ui_state = 'hidden'
+		end
 		local title_timeline = title:get_timeline('title_screen.start')
 		local title_timeline_head = nil
 		if title_timeline ~= nil then
@@ -72,11 +81,14 @@ function getTitleState(engine) {
 			has_director = director ~= nil,
 			has_transition = transition ~= nil,
 			has_title = title ~= nil,
+			has_ui = ui ~= nil,
 			active_space = get_space(),
 			director_state = director_state,
 			director_boot_mode = director.boot_mode,
 			room_mode = room_mode,
 			title_state = title_state,
+			ui_state = ui_state,
+			hud_visible = ui.hud_visible,
 			title_space = title.space_id,
 			title_visible = title.visible,
 			title_imgid = title.imgid,
@@ -98,6 +110,7 @@ function getTitleState(engine) {
 				+ constants.flow.title_start_blink_phase_frames
 				+ constants.flow.title_start_blink_tail_frames
 			) - 1,
+			expected_title_wait_frames = constants.flow.title_start_wait_frames,
 			expected_first_blink_head = constants.flow.title_start_blink_phase_frames,
 			expected_first_play_after_blink_head = constants.flow.title_start_blink_phase_frames * 2,
 		}
@@ -118,7 +131,9 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 	let maxTitleHead = -1;
 	let firstBlinkHead = -1;
 	let firstPlayAfterBlinkHead = -1;
+	let startWaitFrame = -1;
 	let expectedTitleLastHead = -1;
+	let expectedTitleWaitFrames = -1;
 	let expectedFirstBlinkHead = -1;
 	let expectedFirstPlayAfterBlinkHead = -1;
 	let baselineRoomNumber = -1;
@@ -166,6 +181,7 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 		assert(state.has_director, 'title boot missing director');
 		assert(state.has_transition, 'title boot missing transition');
 		assert(state.has_title, 'title boot missing title screen');
+		assert(state.has_ui, 'title boot missing ui');
 
 		if (scenario === 'boot') {
 			if (titleReadyAt === 0) {
@@ -182,6 +198,7 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 					baselinePlayerX = state.player_x;
 					baselinePlayerY = state.player_y;
 					expectedTitleLastHead = state.expected_title_last_head;
+					expectedTitleWaitFrames = state.expected_title_wait_frames;
 					expectedFirstBlinkHead = state.expected_first_blink_head;
 					expectedFirstPlayAfterBlinkHead = state.expected_first_play_after_blink_head;
 					logger('[assert] title idle boot ok');
@@ -246,7 +263,7 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 		}
 
 		if (scenario === 'starting') {
-				assert(state.active_space === 'transition' || state.active_space === 'main', `title start active_space=${state.active_space}`);
+			assert(state.active_space === 'transition' || state.active_space === 'main', `title start active_space=${state.active_space}`);
 			if (state.director_state === 'title_screen') {
 				assert(state.title_visible === true, `title start invisible titleState=${state.title_state} imgid=${state.title_imgid}`);
 				assert(state.current_music === null, `title start music leaked current=${state.current_music}`);
@@ -269,11 +286,25 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 				}
 				return;
 			}
+			if (state.director_state === 'title_start_wait') {
+				if (startWaitFrame < 0) {
+					startWaitFrame = engine.view?.renderFrameIndex ?? 0;
+				}
+				assert(state.active_space === 'main', `title wait active_space=${state.active_space}`);
+				assert(state.title_state === 'hidden', `title wait title_state=${state.title_state}`);
+				assert(state.title_space === 'ui', `title wait title_space=${state.title_space}`);
+				assert(state.ui_state === 'hidden', `title wait ui_state=${state.ui_state}`);
+				assert(state.hud_visible === false, `title wait hud_visible=${state.hud_visible}`);
+				return;
+			}
 
 			assert(state.director_state === 'room', `title start ended in director=${state.director_state}`);
 			assert(state.active_space === 'main', `title start ended in active_space=${state.active_space}`);
 			assert(state.title_state === 'hidden', `title start left title_state=${state.title_state}`);
 			assert(state.title_space === 'ui', `title start left title_space=${state.title_space}`);
+			assert(startWaitFrame >= 0, 'title start never entered title_start_wait');
+			assert(state.ui_state === 'active', `title start ended in ui_state=${state.ui_state}`);
+			assert(state.hud_visible === true, `title start ended in hud_visible=${state.hud_visible}`);
 			if (state.current_music !== 'music_castle') {
 				return;
 			}
@@ -281,6 +312,9 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 			assert(firstBlinkHead >= expectedFirstBlinkHead, `title start blink began too early head=${firstBlinkHead} expectedAtLeast=${expectedFirstBlinkHead}`);
 			assert(firstPlayAfterBlinkHead >= expectedFirstPlayAfterBlinkHead, `title start play frame returned too early head=${firstPlayAfterBlinkHead} expectedAtLeast=${expectedFirstPlayAfterBlinkHead}`);
 			assert(startPressFrame >= 0, 'title start never began timeline playback');
+			const roomFrame = engine.view?.renderFrameIndex ?? 0;
+			const titleWaitFrames = roomFrame - startWaitFrame;
+			assert(titleWaitFrames >= expectedTitleWaitFrames, `title wait finished too early elapsedFrames=${titleWaitFrames} expectedAtLeast=${expectedTitleWaitFrames}`);
 			const endFrame = engine.view?.renderFrameIndex ?? 0;
 			const elapsedFrames = endFrame - startPressFrame;
 			assert(elapsedFrames >= expectedTitleLastHead, `title start finished too early elapsedFrames=${elapsedFrames} expectedAtLeast=${expectedTitleLastHead}`);

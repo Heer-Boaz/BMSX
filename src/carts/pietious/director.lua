@@ -64,6 +64,7 @@ local room_switch_passthrough_dirs = {
 	halo = true,
 }
 local room_switch_wait_timeline_id = 'director.wait.room_switch'
+local title_start_wait_timeline_id = 'director.wait.title_start'
 local item_screen_open_timeline_id = 'director.wait.item.open'
 local item_screen_close_timeline_id = 'director.wait.item.close'
 local item_screen_halo_request_timeline_id = 'director.item.halo.request'
@@ -273,6 +274,9 @@ end
 --   'seal_dissolution_done' — entire dissolution timeline finished.
 --   'daemon_appearance'     — optional { after_death = true } payload.
 --   'daemon_appearance_done'— daemon cloud timeline ended.
+--   'title_wait'            — post-title MSX startup hold: room visible,
+--                             HUD hidden, gameplay still frozen.
+--   'title_wait_done'       — startup hold ended; temporary freezes may resume.
 --   'shrine'                — { lines = { ... } } payload.
 --   'lithograph'            — { lines = { ... } } payload.
 --   'item'                  — item screen mode.
@@ -338,6 +342,13 @@ local function define_director_fsm()
 					markers = {
 						{ frame = 0, event = banner_castle_show_event },
 					},
+				},
+				autoplay = false,
+			},
+			[title_start_wait_timeline_id] = {
+				def = {
+					frames = timeline.range(constants.flow.title_start_wait_frames),
+					playback_mode = 'once',
 				},
 				autoplay = false,
 			},
@@ -877,9 +888,29 @@ local function define_director_fsm()
 					on = {
 						['title_screen_done'] = {
 							emitter = 'title_screen',
-							go = '/room',
+							go = '/title_start_wait',
 						},
 					},
+				},
+				title_start_wait = {
+					timelines = {
+						[title_start_wait_timeline_id] = {
+							autoplay = true,
+							stop_on_exit = true,
+							play_options = {
+								rewind = true,
+								snap_to_start = true,
+							},
+							on_end = function(self)
+								self.events:emit('title_wait_done')
+								return '/room'
+							end,
+						},
+					},
+					entering_state = function(self)
+						self:set_active_space('main')
+						self.events:emit('title_wait')
+					end,
 				},
 				story = {
 					entering_state = function(self) self:enter_transition('story') end,

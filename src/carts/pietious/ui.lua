@@ -46,12 +46,21 @@ function ui:ctor()
 	local player = object('pietolon')
 	local health = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
 	local weapon = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
+	self.hud_visible = true
 	self.hud_health_level = health
 	self.hud_health_target = health
 	self.hud_health_anim_ticks = 0
 	self.hud_weapon_level = weapon
 	self.hud_weapon_target = weapon
 	self.hud_weapon_anim_ticks = 0
+end
+
+function ui:show_hud()
+	self.hud_visible = true
+end
+
+function ui:hide_hud()
+	self.hud_visible = false
 end
 
 function ui:update_hud_animation()
@@ -77,6 +86,9 @@ function ui:update_hud_animation()
 end
 
 function ui:draw_ui()
+	if not self.hud_visible then
+		return
+	end
 	local player = object('pietolon')
 	put_sprite('game_header', 0, 0, 200)
 	local equipped_sprite_id = secondary_weapon_sprite_id(player.secondary_weapon)
@@ -97,6 +109,18 @@ local function define_ui_fsm()
 	define_fsm('ui', {
 		initial = 'active',
 		on = {
+			['room'] = {
+				emitter = 'd',
+				go = '/active',
+			},
+			['title'] = {
+				emitter = 'd',
+				go = '/hidden',
+			},
+			['title_wait'] = {
+				emitter = 'd',
+				go = '/hidden',
+			},
 			['player.health_changed'] = {
 				emitter = 'pietolon',
 				go = function(self, _state, event)
@@ -112,7 +136,11 @@ local function define_ui_fsm()
 		},
 		states = {
 			active = {
+				entering_state = ui.show_hud,
 				update = ui.update_hud_animation,
+			},
+			hidden = {
+				entering_state = ui.hide_hud,
 			},
 		},
 	})
