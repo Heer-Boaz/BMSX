@@ -93,6 +93,7 @@ function getTitleState(engine) {
 			title_visible = title.visible,
 			title_imgid = title.imgid,
 			title_timeline_head = title_timeline_head,
+			sparkle_active = title.sparkle_active,
 			sparkle_phase = title.sparkle_phase,
 			sparkle_visible = title.sparkle_visible,
 			sparkle_visible_count = title.sparkle_visible_count,
@@ -140,6 +141,7 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 	let baselinePlayerX = 0;
 	let baselinePlayerY = 0;
 	let sparkleSeen = false;
+	let sparkleCompleted = false;
 	const sparkleFramesSeen = new Set();
 	const sparklePhasesSeen = new Set();
 	let sparkleMinX = Number.POSITIVE_INFINITY;
@@ -247,6 +249,13 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 			assert(sparkleFramesSeen.has('tsf8'), `title sparkle missed tsf8 frames=${Array.from(sparkleFramesSeen).join(',')}`);
 			assert(sparkleFramesSeen.has('tsf_pair'), `title sparkle missed tsf_pair frames=${Array.from(sparkleFramesSeen).join(',')}`);
 			assert(sparkleMaxX > sparkleMinX, `title sparkle did not move sparkleMinX=${sparkleMinX} sparkleMaxX=${sparkleMaxX}`);
+			if (!sparkleCompleted) {
+				if (state.sparkle_active !== false && Date.now() - titleReadyAt < TITLE_IDLE_SETTLE_MS) {
+					return;
+				}
+				assert(state.sparkle_active === false, `title sparkle never finished sparkleActive=${state.sparkle_active} phase=${state.sparkle_phase}`);
+				sparkleCompleted = true;
+			}
 			if (!startScheduled) {
 				const scheduledAtMs = Math.round(engine.platform.clock.now());
 				scheduleInput([

@@ -25,7 +25,10 @@ local title_exit_events = {
 	'daemon_appearance',
 }
 
-local sparkle_static = { sprite_id = 'tsf_static', x = 88, y = 31 }
+local sparkle_fixed_sprites = {
+	{ sprite_id = 'tsf_left', x = 88, y = 39 },
+	{ sprite_id = 'tsf_right', x = 152, y = 31 },
+}
 
 local sparkle_sweep_sprite_ids = {
 	'tsf4',
@@ -189,8 +192,9 @@ function title_screen:disable_sparkle()
 	self:hide_dynamic_sparkle()
 end
 
--- The title sword-flash is absent in the SDL/C++ port source. These phases and
--- sprite attrs come from the original MSX ROM page 0x0E routine at T6251h.
+-- The title sword-flash is absent in the SDL/C++ port source. The fixed
+-- left/right reflections come from T6215h (0x93E7 -> EC80), and the moving
+-- sweep/burst attrs come from T6251h in the original MSX ROM page 0x0E.
 function title_screen:reset_sparkle()
 	self.sparkle_active = true
 	self.sparkle_phase = 'delay'
@@ -221,7 +225,10 @@ function title_screen:render_sparkle()
 	if not self.visible or not self.sparkle_active then
 		return
 	end
-	put_sprite(sparkle_static.sprite_id, sparkle_static.x, sparkle_static.y, self.z + 1)
+	for i = 1, #sparkle_fixed_sprites do
+		local sprite = sparkle_fixed_sprites[i]
+		put_sprite(sprite.sprite_id, sprite.x, sprite.y, self.z + 1)
+	end
 	if self.sparkle_visible_count >= 1 then
 		put_sprite(self.sparkle_sprite_id, self.sparkle_x, self.sparkle_y, self.z + 1)
 	end
@@ -305,7 +312,7 @@ local function define_title_screen_fsm()
 					[sparkle_timeline_id] = {
 						def = {
 							frames = build_title_sparkle_frames(),
-							playback_mode = 'loop',
+							playback_mode = 'once',
 						},
 						autoplay = true,
 						stop_on_exit = true,
@@ -315,6 +322,9 @@ local function define_title_screen_fsm()
 						},
 						on_frame = function(self)
 							self:apply_sparkle_frame(self:get_timeline(sparkle_timeline_id):value())
+						end,
+						on_end = function(self)
+							self:disable_sparkle()
 						end,
 					},
 				},
