@@ -2,7 +2,7 @@ const POLL_MS = 5;
 const TIMEOUT_MS = 45000;
 const MAX_ENGINE_MS = 10000;
 const CART_SETTLE_MS = 400;
-const TITLE_IDLE_SETTLE_MS = 4400;
+const TITLE_IDLE_SETTLE_MS = 5200;
 
 function buttonEvent(code, down, pressId, timeMs) {
 	return {
@@ -74,6 +74,11 @@ function getTitleState(engine) {
 		if title_timeline ~= nil then
 			title_timeline_head = title_timeline.head
 		end
+		local sparkle_timeline = title:get_timeline('title_screen.sparkle')
+		local sparkle_timeline_head = nil
+		if sparkle_timeline ~= nil then
+			sparkle_timeline_head = sparkle_timeline.head
+		end
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -93,6 +98,7 @@ function getTitleState(engine) {
 			title_visible = title.visible,
 			title_imgid = title.imgid,
 			title_timeline_head = title_timeline_head,
+			sparkle_timeline_head = sparkle_timeline_head,
 			sparkle_phase = title.sparkle_phase,
 			sparkle_visible = title.sparkle_visible,
 			sparkle_visible_count = title.sparkle_visible_count,
@@ -144,7 +150,7 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 	const sparklePhasesSeen = new Set();
 	let sparkleMinX = Number.POSITIVE_INFINITY;
 	let sparkleMaxX = Number.NEGATIVE_INFINITY;
-	let sparkleSweepPairSeen = false;
+	let maxSparkleTimelineHead = -1;
 
 	const timeout = setTimeout(() => {
 		fail(`timeout while waiting for scenario=${scenario} state=${lastStateSummary}`);
@@ -209,44 +215,45 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 			assert(state.player_y === baselinePlayerY, `title idle player.y changed y=${state.player_y} baseline=${baselinePlayerY}`);
 			assert(state.current_music === null, `title idle music leaked current=${state.current_music}`);
 			sparklePhasesSeen.add(state.sparkle_phase);
-			if (state.sparkle_phase === 'delay' || state.sparkle_phase === 'burst_gap' || state.sparkle_phase === 'tail') {
+			if (state.sparkle_timeline_head !== null && state.sparkle_timeline_head !== undefined && state.sparkle_timeline_head > maxSparkleTimelineHead) {
+				maxSparkleTimelineHead = state.sparkle_timeline_head;
+			}
+			if (state.sparkle_phase === 'delay' || state.sparkle_phase === 'tail') {
 				assert(state.sparkle_visible === false, `title sparkle visible leak phase=${state.sparkle_phase} visible=${state.sparkle_visible}`);
 			}
 			if (state.sparkle_visible) {
 				sparkleSeen = true;
-				if (/^tsf[4-8]$/.test(state.sparkle_sprite_id) || state.sparkle_sprite_id === 'tsf_pair') {
+				if (/^tsf[4-7]$/.test(state.sparkle_sprite_id) || state.sparkle_sprite_id === 'tsf_pair' || state.sparkle_sprite_id === 'tsf_burst_single') {
 					sparkleFramesSeen.add(state.sparkle_sprite_id);
 				}
-				if (/^tsf[4-8]$/.test(state.sparkle_secondary_id) || state.sparkle_secondary_id === 'tsf_pair') {
+				if (/^tsf[4-7]$/.test(state.sparkle_secondary_id) || state.sparkle_secondary_id === 'tsf_pair' || state.sparkle_secondary_id === 'tsf_burst_single') {
 					sparkleFramesSeen.add(state.sparkle_secondary_id);
 				}
-				if (state.sparkle_phase === 'tip') {
-					assert(state.sparkle_visible_count === 1, `title sparkle tip visibleCount=${state.sparkle_visible_count}`);
-					assert(state.sparkle_sprite_id === 'tsf8', `title sparkle tip sprite=${state.sparkle_sprite_id}`);
-				}
 				if (state.sparkle_phase === 'sweep') {
-					assert(state.sparkle_visible_count === 2, `title sparkle sweep visibleCount=${state.sparkle_visible_count}`);
-					assert(state.sparkle_secondary_id === 'tsf8', `title sparkle sweep secondary=${state.sparkle_secondary_id}`);
-					sparkleSweepPairSeen = true;
+					assert(state.sparkle_visible_count === 1, `title sparkle sweep visibleCount=${state.sparkle_visible_count}`);
 					sparkleMinX = Math.min(sparkleMinX, state.sparkle_x);
 					sparkleMaxX = Math.max(sparkleMaxX, state.sparkle_x);
 				}
-				if (state.sparkle_phase === 'burst') {
+				if (state.sparkle_phase === 'burst_single' || state.sparkle_phase === 'burst_return') {
 					assert(state.sparkle_visible_count === 1, `title sparkle burst visibleCount=${state.sparkle_visible_count}`);
-					assert(state.sparkle_sprite_id === 'tsf_pair', `title sparkle burst sprite=${state.sparkle_sprite_id}`);
+					assert(state.sparkle_sprite_id === 'tsf_burst_single', `title sparkle burst sprite=${state.sparkle_sprite_id}`);
+				}
+				if (state.sparkle_phase === 'burst_pair') {
+					assert(state.sparkle_visible_count === 1, `title sparkle burstPair visibleCount=${state.sparkle_visible_count}`);
+					assert(state.sparkle_sprite_id === 'tsf_pair', `title sparkle burstPair sprite=${state.sparkle_sprite_id}`);
 				}
 			}
 			const sparkleReady = (
 				sparkleSeen === true
-				&& sparklePhasesSeen.has('tip')
 				&& sparklePhasesSeen.has('sweep')
-				&& sparklePhasesSeen.has('burst')
-				&& sparkleSweepPairSeen === true
+				&& sparklePhasesSeen.has('burst_single')
+				&& sparklePhasesSeen.has('burst_pair')
+				&& maxSparkleTimelineHead >= 124
 				&& sparkleFramesSeen.has('tsf4')
 				&& sparkleFramesSeen.has('tsf5')
 				&& sparkleFramesSeen.has('tsf6')
 				&& sparkleFramesSeen.has('tsf7')
-				&& sparkleFramesSeen.has('tsf8')
+				&& sparkleFramesSeen.has('tsf_burst_single')
 				&& sparkleFramesSeen.has('tsf_pair')
 				&& sparkleMaxX > sparkleMinX
 			);
@@ -254,15 +261,15 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 				return;
 			}
 			assert(sparkleSeen === true, 'title sparkle never became visible');
-			assert(sparklePhasesSeen.has('tip'), `title sparkle never entered tip phase phases=${Array.from(sparklePhasesSeen).join(',')}`);
 			assert(sparklePhasesSeen.has('sweep'), `title sparkle never entered sweep phase phases=${Array.from(sparklePhasesSeen).join(',')}`);
-			assert(sparklePhasesSeen.has('burst'), `title sparkle never entered burst phase phases=${Array.from(sparklePhasesSeen).join(',')}`);
-			assert(sparkleSweepPairSeen === true, 'title sparkle never showed the sweep pair');
+			assert(sparklePhasesSeen.has('burst_single'), `title sparkle never entered burst_single phase phases=${Array.from(sparklePhasesSeen).join(',')}`);
+			assert(sparklePhasesSeen.has('burst_pair'), `title sparkle never entered burst_pair phase phases=${Array.from(sparklePhasesSeen).join(',')}`);
+			assert(maxSparkleTimelineHead >= 124, `title sparkle never advanced into burst_return range maxHead=${maxSparkleTimelineHead}`);
 			assert(sparkleFramesSeen.has('tsf4'), `title sparkle missed tsf4 frames=${Array.from(sparkleFramesSeen).join(',')}`);
 			assert(sparkleFramesSeen.has('tsf5'), `title sparkle missed tsf5 frames=${Array.from(sparkleFramesSeen).join(',')}`);
 			assert(sparkleFramesSeen.has('tsf6'), `title sparkle missed tsf6 frames=${Array.from(sparkleFramesSeen).join(',')}`);
 			assert(sparkleFramesSeen.has('tsf7'), `title sparkle missed tsf7 frames=${Array.from(sparkleFramesSeen).join(',')}`);
-			assert(sparkleFramesSeen.has('tsf8'), `title sparkle missed tsf8 frames=${Array.from(sparkleFramesSeen).join(',')}`);
+			assert(sparkleFramesSeen.has('tsf_burst_single'), `title sparkle missed tsf_burst_single frames=${Array.from(sparkleFramesSeen).join(',')}`);
 			assert(sparkleFramesSeen.has('tsf_pair'), `title sparkle missed tsf_pair frames=${Array.from(sparkleFramesSeen).join(',')}`);
 			assert(sparkleMaxX > sparkleMinX, `title sparkle did not move sparkleMinX=${sparkleMinX} sparkleMaxX=${sparkleMaxX}`);
 			if (!startScheduled) {

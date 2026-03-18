@@ -32,18 +32,18 @@ local sparkle_sweep_sprite_ids = {
 	'tsf7',
 }
 
-local sparkle_tip = { sprite_id = 'tsf8', x = 167, y = 67 }
 local sparkle_sweep_start_x = 96
 local sparkle_sweep_y = 71
 local sparkle_sweep_stage_frames = 7
 local sparkle_sweep_step_x = 2
-local sparkle_burst = { sprite_id = 'tsf_pair', x = 158, y = 63 }
+local sparkle_burst_single = { sprite_id = 'tsf_burst_single', x = 160, y = 63 }
+local sparkle_burst_pair = { sprite_id = 'tsf_pair', x = 158, y = 63 }
 
-local sparkle_delay_frames = 24
-local sparkle_tip_frames = 1
-local sparkle_gap_frames = 1
-local sparkle_burst_frames = 1
-local sparkle_tail_frames = 60
+local sparkle_delay_frames = 48
+local sparkle_burst_single_frames = 16
+local sparkle_burst_pair_frames = 32
+local sparkle_burst_return_frames = 16
+local sparkle_tail_frames = 120
 
 local function build_title_sparkle_frames()
 	local frames = {}
@@ -69,44 +69,17 @@ local function build_title_sparkle_frames()
 			hold = hold,
 		}
 	end
-	local function add_pair_frame(phase, primary_id, primary_x, primary_y, secondary_id, secondary_x, secondary_y, hold)
-		frames[#frames + 1] = {
-			value = {
-				phase = phase,
-				visible = true,
-				count = 2,
-				primary_id = primary_id,
-				primary_x = primary_x,
-				primary_y = primary_y,
-				secondary_id = secondary_id,
-				secondary_x = secondary_x,
-				secondary_y = secondary_y,
-			},
-			hold = hold,
-		}
-	end
 	add_hidden_frame('delay', sparkle_delay_frames)
-	add_single_frame('tip', sparkle_tip.sprite_id, sparkle_tip.x, sparkle_tip.y, sparkle_tip_frames)
 	for i = 1, #sparkle_sweep_sprite_ids do
 		local x = sparkle_sweep_start_x + ((i - 1) * sparkle_sweep_stage_frames * sparkle_sweep_step_x)
 		for _ = 1, sparkle_sweep_stage_frames do
-			add_pair_frame(
-				'sweep',
-				sparkle_sweep_sprite_ids[i],
-				x,
-				sparkle_sweep_y,
-				sparkle_tip.sprite_id,
-				sparkle_tip.x,
-				sparkle_tip.y,
-				1
-			)
+			add_single_frame('sweep', sparkle_sweep_sprite_ids[i], x, sparkle_sweep_y, 1)
 			x = x + sparkle_sweep_step_x
 		end
 	end
-	add_single_frame('tip', sparkle_tip.sprite_id, sparkle_tip.x, sparkle_tip.y, sparkle_tip_frames)
-	add_hidden_frame('burst_gap', sparkle_gap_frames)
-	add_single_frame('burst', sparkle_burst.sprite_id, sparkle_burst.x, sparkle_burst.y, sparkle_burst_frames)
-	add_hidden_frame('burst_gap', sparkle_gap_frames)
+	add_single_frame('burst_single', sparkle_burst_single.sprite_id, sparkle_burst_single.x, sparkle_burst_single.y, sparkle_burst_single_frames)
+	add_single_frame('burst_pair', sparkle_burst_pair.sprite_id, sparkle_burst_pair.x, sparkle_burst_pair.y, sparkle_burst_pair_frames)
+	add_single_frame('burst_return', sparkle_burst_single.sprite_id, sparkle_burst_single.x, sparkle_burst_single.y, sparkle_burst_return_frames)
 	add_hidden_frame('tail', sparkle_tail_frames)
 	return timeline.build_frame_sequence(frames)
 end
@@ -162,25 +135,14 @@ function title_screen:set_dynamic_sparkle_single(sprite_id, x, y)
 	self.sparkle_secondary_y = 0
 end
 
-function title_screen:set_dynamic_sparkle_pair(primary_id, primary_x, primary_y, secondary_id, secondary_x, secondary_y)
-	self.sparkle_visible = true
-	self.sparkle_visible_count = 2
-	self.sparkle_sprite_id = primary_id
-	self.sparkle_x = primary_x
-	self.sparkle_y = primary_y
-	self.sparkle_secondary_id = secondary_id
-	self.sparkle_secondary_x = secondary_x
-	self.sparkle_secondary_y = secondary_y
-end
-
 function title_screen:disable_sparkle()
 	self.sparkle_active = false
 	self.sparkle_phase = 'off'
 	self:hide_dynamic_sparkle()
 end
 
--- The MSX title sparkle is a one-shot sequence: a fixed tip sparkle on the
--- sword, a four-shape sweep across the blade, then a final burst.
+-- The MSX title sparkle cadence comes from T62DA/T6267/T6298/T628E:
+-- 48-frame delay, 28-frame sweep, 16+32+16 burst, then a 120-frame tail.
 function title_screen:reset_sparkle()
 	self.sparkle_active = true
 	self.sparkle_phase = 'delay'
@@ -193,17 +155,6 @@ function title_screen:apply_sparkle_frame(frame)
 		self:hide_dynamic_sparkle()
 		return
 	end
-	if frame.count == 2 then
-		self:set_dynamic_sparkle_pair(
-			frame.primary_id,
-			frame.primary_x,
-			frame.primary_y,
-			frame.secondary_id,
-			frame.secondary_x,
-			frame.secondary_y
-		)
-		return
-	end
 	self:set_dynamic_sparkle_single(frame.primary_id, frame.primary_x, frame.primary_y)
 end
 
@@ -213,9 +164,6 @@ function title_screen:render_sparkle()
 	end
 	if self.sparkle_visible_count >= 1 then
 		put_sprite(self.sparkle_sprite_id, self.sparkle_x, self.sparkle_y, self.z + 1)
-	end
-	if self.sparkle_visible_count >= 2 then
-		put_sprite(self.sparkle_secondary_id, self.sparkle_secondary_x, self.sparkle_secondary_y, self.z + 1)
 	end
 end
 
