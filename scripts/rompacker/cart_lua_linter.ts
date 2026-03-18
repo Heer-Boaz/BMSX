@@ -77,6 +77,7 @@ type LuaLintIssueRule =
 	'define_factory_space_id_pattern' |
 	'create_service_id_addon_pattern' |
 	'define_service_id_pattern' |
+	'fsm_entering_state_visual_setup_pattern' |
 	'fsm_direct_state_handler_shorthand_pattern' |
 	'fsm_event_reemit_handler_pattern' |
 	'fsm_forbidden_legacy_fields_pattern' |
@@ -306,6 +307,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'define_factory_space_id_pattern',
 	'create_service_id_addon_pattern',
 	'define_service_id_pattern',
+	'fsm_entering_state_visual_setup_pattern',
 	'fsm_direct_state_handler_shorthand_pattern',
 	'fsm_event_reemit_handler_pattern',
 	'fsm_forbidden_legacy_fields_pattern',
@@ -356,6 +358,7 @@ const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'define_service_id_pattern',
 	'define_factory_tick_enabled_pattern',
 	'define_factory_space_id_pattern',
+	'fsm_entering_state_visual_setup_pattern',
 	'fsm_direct_state_handler_shorthand_pattern',
 	'fsm_event_reemit_handler_pattern',
 	'fsm_process_input_polling_transition_pattern',
@@ -2119,6 +2122,53 @@ function findCallExpressionInExpression(
 	}
 }
 
+function visitCallExpressionsInExpression(
+	expression: LuaExpression | null,
+	visitor: (expression: LuaCallExpression) => void,
+): void {
+	if (!expression) {
+		return;
+	}
+	if (expression.kind === LuaSyntaxKind.CallExpression) {
+		visitor(expression);
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.MemberExpression:
+			visitCallExpressionsInExpression(expression.base, visitor);
+			return;
+		case LuaSyntaxKind.IndexExpression:
+			visitCallExpressionsInExpression(expression.base, visitor);
+			visitCallExpressionsInExpression(expression.index, visitor);
+			return;
+		case LuaSyntaxKind.BinaryExpression:
+			visitCallExpressionsInExpression(expression.left, visitor);
+			visitCallExpressionsInExpression(expression.right, visitor);
+			return;
+		case LuaSyntaxKind.UnaryExpression:
+			visitCallExpressionsInExpression(expression.operand, visitor);
+			return;
+		case LuaSyntaxKind.CallExpression:
+			visitCallExpressionsInExpression(expression.callee, visitor);
+			for (const argument of expression.arguments) {
+				visitCallExpressionsInExpression(argument, visitor);
+			}
+			return;
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					visitCallExpressionsInExpression(field.key, visitor);
+				}
+				visitCallExpressionsInExpression(field.value, visitor);
+			}
+			return;
+		case LuaSyntaxKind.FunctionExpression:
+			visitCallExpressionsInStatements(expression.body.body, visitor);
+			return;
+		default:
+			return;
+	}
+}
+
 function findCallExpressionInStatements(
 	statements: ReadonlyArray<LuaStatement>,
 	predicate: (expression: LuaCallExpression) => boolean,
@@ -2259,6 +2309,78 @@ function findCallExpressionInStatements(
 		}
 	}
 	return undefined;
+}
+
+function visitCallExpressionsInStatements(
+	statements: ReadonlyArray<LuaStatement>,
+	visitor: (expression: LuaCallExpression) => void,
+): void {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement:
+				for (const value of statement.values) {
+					visitCallExpressionsInExpression(value, visitor);
+				}
+				break;
+			case LuaSyntaxKind.AssignmentStatement:
+				for (const left of statement.left) {
+					visitCallExpressionsInExpression(left, visitor);
+				}
+				for (const right of statement.right) {
+					visitCallExpressionsInExpression(right, visitor);
+				}
+				break;
+			case LuaSyntaxKind.LocalFunctionStatement:
+				visitCallExpressionsInStatements(statement.functionExpression.body.body, visitor);
+				break;
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+				visitCallExpressionsInStatements(statement.functionExpression.body.body, visitor);
+				break;
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					visitCallExpressionsInExpression(expression, visitor);
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					visitCallExpressionsInExpression(clause.condition, visitor);
+					visitCallExpressionsInStatements(clause.block.body, visitor);
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement:
+				visitCallExpressionsInExpression(statement.condition, visitor);
+				visitCallExpressionsInStatements(statement.block.body, visitor);
+				break;
+			case LuaSyntaxKind.RepeatStatement:
+				visitCallExpressionsInStatements(statement.block.body, visitor);
+				visitCallExpressionsInExpression(statement.condition, visitor);
+				break;
+			case LuaSyntaxKind.ForNumericStatement:
+				visitCallExpressionsInExpression(statement.start, visitor);
+				visitCallExpressionsInExpression(statement.limit, visitor);
+				visitCallExpressionsInExpression(statement.step, visitor);
+				visitCallExpressionsInStatements(statement.block.body, visitor);
+				break;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					visitCallExpressionsInExpression(iterator, visitor);
+				}
+				visitCallExpressionsInStatements(statement.block.body, visitor);
+				break;
+			case LuaSyntaxKind.DoStatement:
+				visitCallExpressionsInStatements(statement.block.body, visitor);
+				break;
+			case LuaSyntaxKind.CallStatement:
+				visitCallExpressionsInExpression(statement.expression, visitor);
+				break;
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
+		}
+	}
 }
 
 function isGetSpaceCallExpression(expression: LuaExpression | null): boolean {
@@ -5218,6 +5340,22 @@ function readStringFieldValueFromTable(expression: LuaExpression | undefined, fi
 	return undefined;
 }
 
+function readBooleanFieldValueFromTable(expression: LuaExpression | undefined, fieldName: string): boolean | undefined {
+	if (!expression || expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return undefined;
+	}
+	for (const field of expression.fields) {
+		if (getTableFieldKey(field) !== fieldName) {
+			continue;
+		}
+		if (field.value.kind !== LuaSyntaxKind.BooleanLiteralExpression) {
+			return undefined;
+		}
+		return field.value.value;
+	}
+	return undefined;
+}
+
 function findTableFieldByKey(expression: LuaExpression | undefined, fieldName: string): LuaTableField | undefined {
 	if (!expression || expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
 		return undefined;
@@ -5390,6 +5528,229 @@ function lintDefineFactoryTickEnabledAndSpaceIdPattern(expression: LuaCallExpres
 			field.value,
 			`${factoryName}: space_id is forbidden. Services must not carry space_id, and prefab/object space must be assigned at inst(..., { space_id = ... }).`,
 		);
+	});
+}
+
+type FsmVisualPrefabDefaults = {
+	readonly imgid?: string;
+	readonly visible?: boolean;
+};
+
+function isSelfGfxCallExpression(expression: LuaCallExpression): boolean {
+	if (getCallMethodName(expression) !== 'gfx') {
+		return false;
+	}
+	const receiver = getCallReceiverExpression(expression);
+	return !!receiver && isSelfExpressionRoot(receiver);
+}
+
+function getSelfGfxStringLiteralArgument(expression: LuaCallExpression): string | undefined {
+	if (!isSelfGfxCallExpression(expression) || expression.arguments.length !== 1) {
+		return undefined;
+	}
+	const argument = expression.arguments[0];
+	if (argument.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return undefined;
+	}
+	return argument.value;
+}
+
+type SelfBooleanPropertyAssignmentMatch = {
+	readonly propertyName: string;
+	readonly target: LuaExpression;
+	readonly value: LuaExpression;
+};
+
+function findSelfBooleanPropertyAssignmentInStatements(
+	statements: ReadonlyArray<LuaStatement>,
+	propertyName: string,
+): SelfBooleanPropertyAssignmentMatch | undefined {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.AssignmentStatement:
+				if (statement.operator !== LuaAssignmentOperator.Assign) {
+					break;
+				}
+				for (let index = 0; index < statement.left.length && index < statement.right.length; index += 1) {
+					const target = statement.left[index];
+					const assignedPropertyName = getSelfAssignedPropertyNameFromTarget(target);
+					if (assignedPropertyName !== propertyName) {
+						continue;
+					}
+					const value = statement.right[index];
+					if (value.kind !== LuaSyntaxKind.BooleanLiteralExpression) {
+						continue;
+					}
+					return {
+						propertyName: assignedPropertyName,
+						target,
+						value,
+					};
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					const nested = findSelfBooleanPropertyAssignmentInStatements(clause.block.body, propertyName);
+					if (nested) {
+						return nested;
+					}
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement: {
+				const nested = findSelfBooleanPropertyAssignmentInStatements(statement.block.body, propertyName);
+				if (nested) {
+					return nested;
+				}
+				break;
+			}
+			case LuaSyntaxKind.RepeatStatement: {
+				const nested = findSelfBooleanPropertyAssignmentInStatements(statement.block.body, propertyName);
+				if (nested) {
+					return nested;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ForNumericStatement: {
+				const nested = findSelfBooleanPropertyAssignmentInStatements(statement.block.body, propertyName);
+				if (nested) {
+					return nested;
+				}
+				break;
+			}
+			case LuaSyntaxKind.ForGenericStatement: {
+				const nested = findSelfBooleanPropertyAssignmentInStatements(statement.block.body, propertyName);
+				if (nested) {
+					return nested;
+				}
+				break;
+			}
+			case LuaSyntaxKind.DoStatement: {
+				const nested = findSelfBooleanPropertyAssignmentInStatements(statement.block.body, propertyName);
+				if (nested) {
+					return nested;
+				}
+				break;
+			}
+			case LuaSyntaxKind.LocalAssignmentStatement:
+			case LuaSyntaxKind.LocalFunctionStatement:
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+			case LuaSyntaxKind.ReturnStatement:
+			case LuaSyntaxKind.CallStatement:
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
+		}
+	}
+	return undefined;
+}
+
+function stateTimelinesDriveSelfGfx(stateExpression: LuaExpression): boolean {
+	const timelinesField = findTableFieldByKey(stateExpression, 'timelines');
+	if (!timelinesField || timelinesField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return false;
+	}
+	for (const timelineField of timelinesField.value.fields) {
+		if (timelineField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+			continue;
+		}
+		const onFrameField = findTableFieldByKey(timelineField.value, 'on_frame');
+		if (!onFrameField || onFrameField.value.kind !== LuaSyntaxKind.FunctionExpression) {
+			continue;
+		}
+		if (findCallExpressionInStatements(onFrameField.value.body.body, isSelfGfxCallExpression)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function collectPrefabVisualDefaultsById(statements: ReadonlyArray<LuaStatement>): ReadonlyMap<string, FsmVisualPrefabDefaults> {
+	const prefabs = new Map<string, FsmVisualPrefabDefaults>();
+	visitCallExpressionsInStatements(statements, (expression) => {
+		if (!isGlobalCall(expression, 'define_prefab')) {
+			return;
+		}
+		const definition = expression.arguments[0];
+		const defId = readStringFieldValueFromTable(definition, 'def_id');
+		if (!defId) {
+			return;
+		}
+		const defaultsField = findTableFieldByKey(definition, 'defaults');
+		const defaults = defaultsField?.value;
+		prefabs.set(defId, {
+			imgid: readStringFieldValueFromTable(defaults, 'imgid'),
+			visible: readBooleanFieldValueFromTable(defaults, 'visible'),
+		});
+	});
+	return prefabs;
+}
+
+function lintFsmEnteringStateVisualSetupPattern(
+	statements: ReadonlyArray<LuaStatement>,
+	issues: LuaLintIssue[],
+): void {
+	const prefabDefaultsById = collectPrefabVisualDefaultsById(statements);
+	visitCallExpressionsInStatements(statements, (expression) => {
+		if (!isGlobalCall(expression, 'define_fsm')) {
+			return;
+		}
+		const fsmIdArgument = expression.arguments[0];
+		if (!fsmIdArgument || fsmIdArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
+			return;
+		}
+		const definition = expression.arguments[1];
+		const statesField = findTableFieldByKey(definition, 'states');
+		if (!statesField || statesField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+			return;
+		}
+		const prefabDefaults = prefabDefaultsById.get(fsmIdArgument.value);
+		for (const stateField of statesField.value.fields) {
+			const stateName = getStateNameFromStateField(stateField);
+			if (!stateName || stateField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
+				continue;
+			}
+			const enteringStateField = findTableFieldByKey(stateField.value, 'entering_state');
+			if (!enteringStateField || enteringStateField.value.kind !== LuaSyntaxKind.FunctionExpression) {
+				continue;
+			}
+			const body = enteringStateField.value.body.body;
+			const visibleAssignment = findSelfBooleanPropertyAssignmentInStatements(body, 'visible');
+			const gfxCall = findCallExpressionInStatements(body, isSelfGfxCallExpression);
+			if (visibleAssignment) {
+				pushIssue(
+					issues,
+					'fsm_entering_state_visual_setup_pattern',
+					visibleAssignment.target,
+					`FSM state "${stateName}" must not set self.visible in entering_state. Move the object between spaces instead of hiding/showing it via visible; keep visual setup out of entering_state${gfxCall ? ', including self:gfx(...)' : ''}.`,
+				);
+				continue;
+			}
+			if (!gfxCall) {
+				continue;
+			}
+			const gfxLiteral = getSelfGfxStringLiteralArgument(gfxCall);
+			if (gfxLiteral && prefabDefaults?.imgid === gfxLiteral) {
+				pushIssue(
+					issues,
+					'fsm_entering_state_visual_setup_pattern',
+					gfxCall,
+					`FSM state "${stateName}" must not call self:gfx('${gfxLiteral}') in entering_state when define_prefab already sets imgid='${gfxLiteral}'. Keep the default sprite in define_prefab defaults instead of reapplying it on state entry.`,
+				);
+				continue;
+			}
+			if (!stateTimelinesDriveSelfGfx(stateField.value)) {
+				continue;
+			}
+			pushIssue(
+				issues,
+				'fsm_entering_state_visual_setup_pattern',
+				gfxCall,
+				`FSM state "${stateName}" must not seed self:gfx(...) in entering_state when the same state's timeline already drives gfx in on_frame. Let the timeline produce the visual frame instead of pre-setting gfx on entry.`,
+			);
+		}
 	});
 }
 
@@ -6928,6 +7289,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
 			lintForeignObjectInternalMutationPattern(chunk.body, issues);
 			lintRuntimeTagTableAccessPattern(chunk.body, issues);
+			lintFsmEnteringStateVisualSetupPattern(chunk.body, issues);
 			lintStatements(chunk.body, issues);
 			lintSingleUseHasTagPattern(chunk.body, issues);
 			lintSingleUseLocalPattern(chunk.body, issues);
