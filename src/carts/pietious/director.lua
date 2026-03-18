@@ -357,7 +357,7 @@ local function define_director_fsm()
 				autoplay = false,
 			},
 		},
-		initial = 'room',
+		initial = 'boot',
 		-- ROOT ON HANDLERS — global mode-switch triggers.
 		-- These fire regardless of which sub-state the director is in, which is
 		-- exactly how mode transitions work: any game system can request a mode
@@ -373,7 +373,6 @@ local function define_director_fsm()
 				go = '/shrine',
 			},
 			['seal_dissolution_start'] = '/seal_dissolution',
-			['title_screen_start'] = '/title_screen',
 			['story_start'] = '/story',
 			['ending_start'] = '/ending',
 			['victory_dance_start'] = '/victory_dance',
@@ -383,6 +382,14 @@ local function define_director_fsm()
 			},
 		},
 		states = {
+			boot = {
+				entering_state = function(self)
+					if self.boot_mode == 'title_screen' then
+						return '/title_screen'
+					end
+					return '/room'
+				end,
+			},
 			-- ROOM — default mode. Player is moving around in a room.
 			-- entering_state emits 'room' which acts as the universal "return
 			-- to gameplay" signal: shrine clears its text, lithograph resets,
@@ -867,7 +874,12 @@ local function define_director_fsm()
 			},
 				title_screen = {
 					entering_state = function(self) self:enter_transition('title') end,
-					on = { ['title_screen_done'] = '/room' },
+					on = {
+						['title_screen_done'] = {
+							emitter = 'title_screen',
+							go = '/room',
+						},
+					},
 				},
 				story = {
 					entering_state = function(self) self:enter_transition('story') end,

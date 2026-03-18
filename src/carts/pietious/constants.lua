@@ -7,6 +7,11 @@ constants.flow = {
 	banner_prewait_frames = 32,
 	world_banner_frames = 62,
 	castle_banner_frames = 62,
+	-- C++ title-start blink alternates every 2 ticks and ends on a final hidden
+	-- frame. Keep the same real-time pacing at 2x FPS by doubling those holds.
+	title_start_blink_phase_frames = 4,
+	title_start_blink_cycles = 7,
+	title_start_blink_tail_frames = 2,
 	room_switch_wait_frames = 6,
 	item_screen_wait_frames = 6,
 	seal_room_dissolve_steps = 7,

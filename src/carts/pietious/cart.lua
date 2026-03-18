@@ -23,8 +23,14 @@ local castle_module = require('castle')
 local world_entrance_module = require('world_entrance')
 local daemon_cloud_module = require('daemon_cloud')
 local director_module = require('director')
+local title_screen_module = require('title_screen')
 local collision_profiles = require('collision_profiles')
 local castle_map = require('castle_map')
+
+local create_world
+local start_title_screen
+local init_epoch = 0
+local pending_title_boot_epoch = -1
 
 local function register_collision_profiles()
 	collision_profiles.define('player', {
@@ -95,6 +101,7 @@ function init()
 	pepernoot_projectile_module.define_pepernoot_projectile_fsm()
 	enemy_explosion_module.define_enemy_explosion_fsm()
 	daemon_cloud_module.define_daemon_cloud_fsm()
+	title_screen_module.define_title_screen_fsm()
 	director_module.define_director_fsm()
 	elevator_module.define_elevator_fsm()
 	elevator_update_system_module.register_pipeline()
@@ -118,13 +125,16 @@ function init()
 	castle_module.register_castle_definition()
 	world_entrance_module.register_world_entrance_definition()
 	daemon_cloud_module.register_daemon_cloud_definition()
+	title_screen_module.register_title_screen_definition()
 	director_module.register_director_definition()
 	register_collision_profiles()
 	vdp_load_slot(0, 0)
 	vdp_map_slot(0, 0)
+	init_epoch = init_epoch + 1
+	pending_title_boot_epoch = init_epoch
 end
 
-function new_game()
+create_world = function(director_boot_mode)
 	reset()
 	elevator_update_system_module.apply_pipeline()
 	add_space('main')
@@ -144,14 +154,28 @@ function new_game()
 		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
 	})
 	grant_starting_loadout()
-	c:initialize(castle_map.start_room_number)
+	c:initialize(castle_map.start_room_number, director_boot_mode ~= 'title_screen')
 
 	inst('transition', { id = 'transition', space_id = 'transition', })
 	inst('shrine', { id = 'shrine', space_id = 'shrine', })
 	inst('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
 	inst('item_screen', { id = 'item_screen', space_id = 'item', })
 	inst('ui', { id = 'ui', })
-	inst('director', { id = 'd', })
+	inst('title_screen', { id = 'title_screen', space_id = 'transition', })
+	inst('director', { id = 'd', boot_mode = director_boot_mode, })
+end
+
+start_title_screen = function()
+	create_world('title_screen')
+end
+
+function new_game()
+	if pending_title_boot_epoch == init_epoch then
+		pending_title_boot_epoch = init_epoch - 1
+		start_title_screen()
+		return
+	end
+	create_world('room')
 end
 
 while true do

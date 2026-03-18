@@ -677,7 +677,7 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter
 	return switch
 end
 
-function castle:initialize(initial_room_number)
+function castle:initialize(initial_room_number, emit_room_enter_now)
 	local rm = object('room')
 	local room_number = initial_room_number or castle_map.start_room_number
 	self.current_room_number = room_number
@@ -694,7 +694,11 @@ function castle:initialize(initial_room_number)
 	self:refresh_current_room_customizations()
 	self:spawn_global_elevators()
 	room_spawner.spawn_all_for_room(rm)
-	self:emit_room_enter()
+	if emit_room_enter_now == nil or emit_room_enter_now then
+		self:emit_room_enter()
+	else
+		self.room_enter_pending = true
+	end
 end
 
 function castle:begin_open_world_entrance(target)
