@@ -161,7 +161,7 @@ create_world = function(director_boot_mode)
 	inst('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
 	inst('item_screen', { id = 'item_screen', space_id = 'item', })
 	inst('ui', { id = 'ui', })
-	inst('title_screen', { id = 'title_screen', space_id = 'transition', })
+	inst('title_screen', { id = 'title_screen', space_id = 'ui', })
 	inst('director', { id = 'd', boot_mode = director_boot_mode, })
 end
 

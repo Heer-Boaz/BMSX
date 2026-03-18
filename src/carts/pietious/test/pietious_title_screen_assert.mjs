@@ -98,6 +98,8 @@ function getTitleState(engine) {
 				+ constants.flow.title_start_blink_phase_frames
 				+ constants.flow.title_start_blink_tail_frames
 			) - 1,
+			expected_first_blink_head = constants.flow.title_start_blink_phase_frames,
+			expected_first_play_after_blink_head = constants.flow.title_start_blink_phase_frames * 2,
 		}
 	`);
 	return {
@@ -117,6 +119,8 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 	let firstBlinkHead = -1;
 	let firstPlayAfterBlinkHead = -1;
 	let expectedTitleLastHead = -1;
+	let expectedFirstBlinkHead = -1;
+	let expectedFirstPlayAfterBlinkHead = -1;
 	let baselineRoomNumber = -1;
 	let baselinePlayerX = 0;
 	let baselinePlayerY = 0;
@@ -174,12 +178,14 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 			assert(state.current_music === null, `title boot music leaked current=${state.current_music}`);
 			if (titleReadyAt === 0) {
 				titleReadyAt = Date.now();
-				baselineRoomNumber = state.room_number;
-				baselinePlayerX = state.player_x;
-				baselinePlayerY = state.player_y;
-				expectedTitleLastHead = state.expected_title_last_head;
-				logger('[assert] title idle boot ok');
-				return;
+					baselineRoomNumber = state.room_number;
+					baselinePlayerX = state.player_x;
+					baselinePlayerY = state.player_y;
+					expectedTitleLastHead = state.expected_title_last_head;
+					expectedFirstBlinkHead = state.expected_first_blink_head;
+					expectedFirstPlayAfterBlinkHead = state.expected_first_play_after_blink_head;
+					logger('[assert] title idle boot ok');
+					return;
 			}
 			assert(state.room_number === baselineRoomNumber, `title idle room changed room=${state.room_number} baseline=${baselineRoomNumber}`);
 			assert(state.player_x === baselinePlayerX, `title idle player.x changed x=${state.player_x} baseline=${baselinePlayerX}`);
@@ -272,8 +278,8 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 				return;
 			}
 			assert(maxTitleHead === expectedTitleLastHead, `title start max_head=${maxTitleHead} expected=${expectedTitleLastHead}`);
-			assert(firstBlinkHead >= 4, `title start blink began too early head=${firstBlinkHead}`);
-			assert(firstPlayAfterBlinkHead >= 8, `title start play frame returned too early head=${firstPlayAfterBlinkHead}`);
+			assert(firstBlinkHead >= expectedFirstBlinkHead, `title start blink began too early head=${firstBlinkHead} expectedAtLeast=${expectedFirstBlinkHead}`);
+			assert(firstPlayAfterBlinkHead >= expectedFirstPlayAfterBlinkHead, `title start play frame returned too early head=${firstPlayAfterBlinkHead} expectedAtLeast=${expectedFirstPlayAfterBlinkHead}`);
 			assert(startPressFrame >= 0, 'title start never began timeline playback');
 			const endFrame = engine.view?.renderFrameIndex ?? 0;
 			const elapsedFrames = endFrame - startPressFrame;
