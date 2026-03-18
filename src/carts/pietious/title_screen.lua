@@ -25,11 +25,6 @@ local title_exit_events = {
 	'daemon_appearance',
 }
 
-local sparkle_fixed_sprites = {
-	{ sprite_id = 'tsf_left', x = 88, y = 39 },
-	{ sprite_id = 'tsf_right', x = 152, y = 31 },
-}
-
 local sparkle_sweep_sprite_ids = {
 	'tsf4',
 	'tsf5',
@@ -37,90 +32,82 @@ local sparkle_sweep_sprite_ids = {
 	'tsf7',
 }
 
-local sparkle_sweep_frame_x = {
-	110,
-	124,
-	138,
-}
-
+local sparkle_tip = { sprite_id = 'tsf8', x = 167, y = 67 }
 local sparkle_sweep_start_x = 96
 local sparkle_sweep_y = 71
-local sparkle_burst_single = { sprite_id = 'tsf8', x = 160, y = 63 }
-local sparkle_burst_pair = { sprite_id = 'tsf_pair', x = 156, y = 63 }
+local sparkle_sweep_stage_frames = 7
+local sparkle_sweep_step_x = 2
+local sparkle_burst = { sprite_id = 'tsf_pair', x = 158, y = 63 }
 
 local sparkle_delay_frames = 24
-local sparkle_burst_single_frames = 8
-local sparkle_burst_pair_frames = 16
-local sparkle_burst_return_frames = 8
+local sparkle_tip_frames = 1
+local sparkle_gap_frames = 1
+local sparkle_burst_frames = 1
 local sparkle_tail_frames = 60
 
 local function build_title_sparkle_frames()
-	local frames = {
-		{
-			value = {
-				phase = 'delay',
-				visible = false,
-			},
-			hold = sparkle_delay_frames,
-		},
-	}
-	local sweep_frame = 1
-	for x = sparkle_sweep_start_x, 150, 2 do
-		if x == sparkle_sweep_frame_x[sweep_frame] then
-			sweep_frame = sweep_frame + 1
-		end
+	local frames = {}
+	local function add_hidden_frame(phase, hold)
 		frames[#frames + 1] = {
 			value = {
-				phase = 'sweep',
-				visible = true,
-				count = 1,
-				primary_id = sparkle_sweep_sprite_ids[sweep_frame],
-				primary_x = x,
-				primary_y = sparkle_sweep_y,
+				phase = phase,
+				visible = false,
 			},
-			hold = 1,
+			hold = hold,
 		}
 	end
-	frames[#frames + 1] = {
-		value = {
-			phase = 'burst_single',
-			visible = true,
-			count = 1,
-			primary_id = sparkle_burst_single.sprite_id,
-			primary_x = sparkle_burst_single.x,
-			primary_y = sparkle_burst_single.y,
-		},
-		hold = sparkle_burst_single_frames,
-	}
-	frames[#frames + 1] = {
-		value = {
-			phase = 'burst_pair',
-			visible = true,
-			count = 1,
-			primary_id = sparkle_burst_pair.sprite_id,
-			primary_x = sparkle_burst_pair.x,
-			primary_y = sparkle_burst_pair.y,
-		},
-		hold = sparkle_burst_pair_frames,
-	}
-	frames[#frames + 1] = {
-		value = {
-			phase = 'burst_return',
-			visible = true,
-			count = 1,
-			primary_id = sparkle_burst_single.sprite_id,
-			primary_x = sparkle_burst_single.x,
-			primary_y = sparkle_burst_single.y,
-		},
-		hold = sparkle_burst_return_frames,
-	}
-	frames[#frames + 1] = {
-		value = {
-			phase = 'tail',
-			visible = false,
-		},
-		hold = sparkle_tail_frames,
-	}
+	local function add_single_frame(phase, sprite_id, x, y, hold)
+		frames[#frames + 1] = {
+			value = {
+				phase = phase,
+				visible = true,
+				count = 1,
+				primary_id = sprite_id,
+				primary_x = x,
+				primary_y = y,
+			},
+			hold = hold,
+		}
+	end
+	local function add_pair_frame(phase, primary_id, primary_x, primary_y, secondary_id, secondary_x, secondary_y, hold)
+		frames[#frames + 1] = {
+			value = {
+				phase = phase,
+				visible = true,
+				count = 2,
+				primary_id = primary_id,
+				primary_x = primary_x,
+				primary_y = primary_y,
+				secondary_id = secondary_id,
+				secondary_x = secondary_x,
+				secondary_y = secondary_y,
+			},
+			hold = hold,
+		}
+	end
+	add_hidden_frame('delay', sparkle_delay_frames)
+	add_single_frame('tip', sparkle_tip.sprite_id, sparkle_tip.x, sparkle_tip.y, sparkle_tip_frames)
+	for i = 1, #sparkle_sweep_sprite_ids do
+		local x = sparkle_sweep_start_x + ((i - 1) * sparkle_sweep_stage_frames * sparkle_sweep_step_x)
+		for _ = 1, sparkle_sweep_stage_frames do
+			add_pair_frame(
+				'sweep',
+				sparkle_sweep_sprite_ids[i],
+				x,
+				sparkle_sweep_y,
+				sparkle_tip.sprite_id,
+				sparkle_tip.x,
+				sparkle_tip.y,
+				1
+			)
+			x = x + sparkle_sweep_step_x
+		end
+	end
+	add_single_frame('tip', sparkle_tip.sprite_id, sparkle_tip.x, sparkle_tip.y, sparkle_tip_frames)
+	add_hidden_frame('burst_gap', sparkle_gap_frames)
+	add_single_frame('burst', sparkle_burst.sprite_id, sparkle_burst.x, sparkle_burst.y, sparkle_burst_frames)
+	add_hidden_frame('burst_gap', sparkle_gap_frames)
+	add_hidden_frame('tail', sparkle_tail_frames)
 	return timeline.build_frame_sequence(frames)
 end
 
@@ -192,9 +179,8 @@ function title_screen:disable_sparkle()
 	self:hide_dynamic_sparkle()
 end
 
--- The title sword-flash is absent in the SDL/C++ port source. The fixed
--- left/right reflections come from T6215h (0x93E7 -> EC80), and the moving
--- sweep/burst attrs come from T6251h in the original MSX ROM page 0x0E.
+-- The MSX title sparkle is a one-shot sequence: a fixed tip sparkle on the
+-- sword, a four-shape sweep across the blade, then a final burst.
 function title_screen:reset_sparkle()
 	self.sparkle_active = true
 	self.sparkle_phase = 'delay'
@@ -224,10 +210,6 @@ end
 function title_screen:render_sparkle()
 	if not self.visible or not self.sparkle_active then
 		return
-	end
-	for i = 1, #sparkle_fixed_sprites do
-		local sprite = sparkle_fixed_sprites[i]
-		put_sprite(sprite.sprite_id, sprite.x, sprite.y, self.z + 1)
 	end
 	if self.sparkle_visible_count >= 1 then
 		put_sprite(self.sparkle_sprite_id, self.sparkle_x, self.sparkle_y, self.z + 1)
