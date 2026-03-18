@@ -1,6 +1,6 @@
 /// <reference types="@webgpu/types" />
 import { color_arr, type TextureSource } from '../../../rompack/rompack';
-import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle, TextureParams } from '../pipeline_interfaces';
+import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureFormat, TextureHandle, TextureParams } from '../pipeline_interfaces';
 
 export type WebGPUPassEncoder = PassEncoder & { encoder: GPURenderPassEncoder };
 
@@ -273,25 +273,45 @@ export class WebGPUBackend implements GPUBackend {
 		(handle as GPUTexture).destroy();
 	}
 
-	createColorTexture(desc: { width: number; height: number; format?: number }): TextureHandle {
-		let format: GPUTextureFormat = 'bgra8unorm';
-		if (desc.format) {
-			// Map WebGL format numbers to WebGPU formats
-			switch (desc.format) {
-				case 6408: // WebGL2RenderingContext.RGBA
-					format = 'rgba8unorm';
-					break;
-				// Add more mappings as needed based on your usage
-				default:
-					format = 'bgra8unorm';
-					break;
-			}
+	copyTexture(source: TextureHandle, destination: TextureHandle, width: number, height: number): void {
+		const commandEncoder = this.device.createCommandEncoder();
+		commandEncoder.copyTextureToTexture(
+			{ texture: source as GPUTexture },
+			{ texture: destination as GPUTexture },
+			{ width, height, depthOrArrayLayers: 1 },
+		);
+		this.device.queue.submit([commandEncoder.finish()]);
+	}
+
+	createColorTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle {
+		let format: GPUTextureFormat;
+		switch (desc.format) {
+			case undefined:
+				format = 'bgra8unorm';
+				break;
+			case 6408:
+			case 32856:
+			case 'rgba8unorm':
+				format = 'rgba8unorm';
+				break;
+			case 'bgra8unorm':
+				format = 'bgra8unorm';
+				break;
+			default:
+				throw new Error(`[WebGPUBackend] Unsupported color texture format: ${String(desc.format)}.`);
 		}
-		return this.device.createTexture({
+		const texture = this.device.createTexture({
 			size: { width: desc.width, height: desc.height },
 			format,
 			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
 		});
+		this.device.queue.writeTexture(
+			{ texture },
+			new Uint8Array(desc.width * desc.height * 4),
+			{ bytesPerRow: desc.width * 4 },
+			{ width: desc.width, height: desc.height, depthOrArrayLayers: 1 },
+		);
+		return texture;
 	}
 
 	createDepthTexture(desc: { width: number; height: number }): TextureHandle {

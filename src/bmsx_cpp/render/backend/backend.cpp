@@ -246,6 +246,14 @@ void SoftwareBackend::destroyTexture(TextureHandle handle) {
 	}
 }
 
+void SoftwareBackend::copyTexture(TextureHandle source, TextureHandle destination, i32 width, i32 height) {
+	(void)width;
+	(void)height;
+	auto* src = static_cast<SoftwareTexture*>(source);
+	auto* dst = static_cast<SoftwareTexture*>(destination);
+	dst->data = src->data;
+}
+
 void SoftwareBackend::clear(const Color* color, const f32* depth) {
 	if (color && m_framebuffer) {
 		u32 packed = color->toARGB32();

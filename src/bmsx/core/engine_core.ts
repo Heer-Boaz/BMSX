@@ -772,6 +772,9 @@ export class EngineCore {
 		try {
 			Input.instance.pollInput();
 			const runtime = Runtime.instance;
+			const configurePresentation = (mode: 'partial' | 'completed', commitFrame: boolean) => {
+				this.view.configurePresentation(mode, commitFrame);
+			};
 			runtimeIde.tickIdeInput(runtime);
 			runtimeIde.tickTerminalInput(runtime);
 			const hostDeltaMs = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
@@ -790,6 +793,7 @@ export class EngineCore {
 					} else {
 						prepareCompletedRenderQueues();
 					}
+					configurePresentation('completed', false);
 					this.view.drawgame();
 					runtime.scheduleDeferredCartBootPreparation();
 					return;
@@ -882,7 +886,9 @@ export class EngineCore {
 			}
 			if (presentQueued) {
 				this.wasupdated = true;
-				if (runtimeIde.isOverlayActive(runtime)) {
+				const overlayActive = runtimeIde.isOverlayActive(runtime);
+				configurePresentation(completedFramePresented ? 'completed' : 'partial', completedFramePresented && !overlayActive);
+				if (overlayActive) {
 					prepareOverlayRenderQueues();
 				} else if (completedFramePresented) {
 					if (runtime.isDrawPending && !hasPendingBackQueueContent()) {
@@ -908,6 +914,7 @@ export class EngineCore {
 					runtime.abandonFrameState();
 					if (runtimeIde.isOverlayActive(runtime)) {
 						this.wasupdated = true;
+						this.view.configurePresentation('completed', false);
 						clearBackQueues();
 						this.world.runTickGroups(PARTIAL_PRESENTATION_TICK_GROUPS, false);
 						prepareOverlayRenderQueues();

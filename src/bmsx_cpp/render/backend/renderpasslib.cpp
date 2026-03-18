@@ -481,11 +481,10 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 	};
 	auto handles = std::make_shared<GraphHandles>();
 
-	// Frame root pass: allocate the persistent color/depth targets and export the color target.
-	// We intentionally do not clear FrameColor every frame so partial presents can retain prior pixels.
+	// Frame root pass: allocate the working targets and export the working color target.
 	{
 		RenderGraphPass pass;
-		pass.name = "Clear";
+		pass.name = "FrameTargets";
 		pass.setup = [view, handles, deviceColorEnabled](RenderGraphIO& io, FrameData*) -> std::any {
 			TexDesc colorDesc;
 			colorDesc.width = static_cast<i32>(view->offscreenCanvasSize.x);
@@ -508,12 +507,35 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 				deviceDesc.transient = true;
 				handles->device = io.createTex(deviceDesc);
 			}
-			io.writeTex(handles->color);
-			io.writeTex(handles->depth, 1.0f);
 			io.exportToBackbuffer(handles->color);
 			return std::any{};
 		};
 		pass.execute = [](RenderGraphContext&, FrameData*, const std::any&) {};
+		rg->addPass(pass);
+	}
+
+	{
+		RenderGraphPass pass;
+		pass.name = "FrameClear";
+		pass.alwaysExecute = true;
+		pass.setup = [handles](RenderGraphIO& io, FrameData*) -> std::any {
+			io.writeTex(handles->color);
+			io.writeTex(handles->depth);
+			return std::any{};
+		};
+		pass.execute = [view, handles](RenderGraphContext& ctx, FrameData*, const std::any&) {
+			RenderPassDesc clearDesc;
+			ColorAttachmentSpec colorSpec;
+			colorSpec.tex = ctx.getTexture(handles->color);
+			colorSpec.clear = Color{ 0.0f, 0.0f, 0.0f, 1.0f };
+			clearDesc.color = colorSpec;
+			DepthAttachmentSpec depthSpec;
+			depthSpec.tex = ctx.getTexture(handles->depth);
+			depthSpec.clearDepth = 1.0f;
+			clearDesc.depth = depthSpec;
+			auto clearPass = view->backend()->beginRenderPass(clearDesc);
+			view->backend()->endRenderPass(clearPass);
+		};
 		rg->addPass(pass);
 	}
 
@@ -575,6 +597,8 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 		auto getHandle = [handles](RenderPassDef::RenderGraphSlot slot) -> RenderGraphTexHandle {
 			if (slot == RenderPassDef::RenderGraphSlot::FrameColor) return handles->color;
 			if (slot == RenderPassDef::RenderGraphSlot::FrameDepth) return handles->depth;
+			if (slot == RenderPassDef::RenderGraphSlot::FrameHistoryA) return -1;
+			if (slot == RenderPassDef::RenderGraphSlot::FrameHistoryB) return -1;
 			return handles->device;
 		};
 

@@ -549,6 +549,8 @@ void EngineCore::tick(f64 deltaTime) {
 	m_last_tick_timing.runtimeUpdateMs = 0.0;
 	m_last_tick_timing.runtimeIdeMs = 0.0;
 	m_last_tick_timing.runtimeTerminalMs = 0.0;
+	m_presentation_mode = GameView::PresentationMode::Completed;
+	m_commit_presented_frame = false;
 	// TODO: THIS IS UGLY AS SHIT BECAUSE IT DOESN'T USE THE TS-VERSION'S ECSYSTEMS!!
 	if (Runtime::hasInstance()) {
 		Runtime& runtime = Runtime::instance();
@@ -600,12 +602,18 @@ void EngineCore::tick(f64 deltaTime) {
 				(void)remaining;
 				m_cycleCarry = 0;
 				presentQueued = true;
+				m_presentation_mode = GameView::PresentationMode::Completed;
+				m_commit_presented_frame = true;
 				// Keep the completed frame stable for this host present; continue next frame on the next host tick.
 				break;
 			}
 		}
 		if (slicesProcessed > 0) {
 			m_accumulated_time = std::max(m_accumulated_time - static_cast<double>(slicesProcessed) * m_update_interval_ms, 0.0);
+		}
+		if (!presentQueued && runtime.isDrawPending()) {
+			m_presentation_mode = GameView::PresentationMode::Partial;
+			m_commit_presented_frame = false;
 		}
 		if (presentQueued || runtime.isDrawPending()) {
 			m_presentation_pending = true;
@@ -643,6 +651,8 @@ void EngineCore::tick(f64 deltaTime) {
 
 	if (!Runtime::hasInstance()) {
 		m_presentation_pending = true;
+		m_presentation_mode = GameView::PresentationMode::Completed;
+		m_commit_presented_frame = false;
 	}
 	m_last_tick_timing.totalMs = to_ms(std::chrono::steady_clock::now() - tickStart);
 	// PERF LOGS DISABLED
@@ -669,6 +679,8 @@ void EngineCore::render() {
 
 	// Render through GameView
 	if (m_view) {
+		const bool pausedPresent = m_state == EngineState::Paused;
+		m_view->configurePresentation(pausedPresent ? GameView::PresentationMode::Completed : m_presentation_mode, pausedPresent ? false : m_commit_presented_frame);
 		const auto beginStart = std::chrono::steady_clock::now();
 		m_view->beginFrame();
 		const auto beginEnd = std::chrono::steady_clock::now();
@@ -712,6 +724,7 @@ void EngineCore::render() {
 	}
 
 	m_presentation_pending = false;
+	m_commit_presented_frame = false;
 	m_last_render_timing.totalMs = to_ms(std::chrono::steady_clock::now() - renderStart);
 }
 

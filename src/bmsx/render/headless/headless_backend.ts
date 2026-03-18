@@ -301,6 +301,23 @@ export class HeadlessGPUBackend implements GPUBackend {
 		this.textures.delete(id);
 	}
 
+	copyTexture(source: TextureHandle, destination: TextureHandle, width: number, height: number): void {
+		// Headless is a debug backend; keep explicit validation here so render-graph
+		// contract mistakes fail loudly during headless runs instead of getting masked.
+		const srcRecord = this.getTextureRecord(source);
+		const dstRecord = this.getTextureRecord(destination);
+		if (srcRecord.cubemapFaces || dstRecord.cubemapFaces) {
+			throw new Error('[HeadlessBackend] copyTexture only supports 2D textures.');
+		}
+		if (srcRecord.width !== width || srcRecord.height !== height) {
+			throw new Error(`[HeadlessBackend] Source copy size mismatch: expected ${srcRecord.width}x${srcRecord.height}, got ${width}x${height}.`);
+		}
+		if (dstRecord.width !== width || dstRecord.height !== height) {
+			throw new Error(`[HeadlessBackend] Destination copy size mismatch: expected ${dstRecord.width}x${dstRecord.height}, got ${width}x${height}.`);
+		}
+		dstRecord.pixels = new Uint8Array(this.ensureTexturePixels(srcRecord));
+	}
+
 	createColorTexture(desc: { width: number; height: number; format?: unknown }): TextureHandle {
 		return this.createTextureRecord('color', desc.width, desc.height, new Uint8Array(textureByteLength(desc.width, desc.height)), null);
 	}

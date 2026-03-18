@@ -48,6 +48,7 @@ export type RenderPassId =
 	| 'axis_gizmo';
 
 export interface BackendCaps { maxColorAttachments: number; }
+export type PresentationMode = 'partial' | 'completed';
 
 // Optional shader resource layout description (for WebGPU or future WebGL wrappers)
 export interface GraphicsPipelineBindingLayout {
@@ -57,7 +58,7 @@ export interface GraphicsPipelineBindingLayout {
 	buffers?: { name: string; size: number; usage: 'uniform' | 'storage' }[];
 }
 
-export type RenderGraphSlot = 'frame_color' | 'frame_depth' | 'device_color';
+export type RenderGraphSlot = 'frame_color' | 'frame_depth' | 'frame_history_a' | 'frame_history_b' | 'device_color';
 
 export interface RenderGraphPassContext {
 	view: RenderContext;
@@ -155,6 +156,7 @@ export interface GPUBackend {
 	createCubemapEmpty(size: number, desc: TextureParams): TextureHandle;
 	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void;
 	destroyTexture(handle: TextureHandle): void;
+	copyTexture(source: TextureHandle, destination: TextureHandle, width: number, height: number): void;
 	createColorTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): RenderTargetHandle;
@@ -223,6 +225,10 @@ export interface RenderContext {
 	backendType: 'webgl2' | 'webgpu' | 'headless';
 	offscreenCanvasSize: { x: number; y: number; };
 	backend: GPUBackend;
+	presentationMode: PresentationMode;
+	commitPresentationFrame: boolean;
+	presentationHistorySourceIndex: 0 | 1;
+	presentationHistoryDestinationIndex: 0 | 1;
 	activeTexUnit: number;
 	bind2DTex(tex: TextureHandle): void;
 	bindCubemapTex(tex: TextureHandle): void;

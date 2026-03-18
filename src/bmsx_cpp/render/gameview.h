@@ -54,6 +54,10 @@ struct AtmosphereParams {
 
 class GameView : public Registerable {
 public:
+	enum class PresentationMode : i32 {
+		Partial = 0,
+		Completed = 1,
+	};
 	enum class DitherType : i32 {
 		None = 0,
 		PSX = 1,
@@ -103,6 +107,8 @@ public:
 	void beginFrame();
 	void drawGame();
 	void endFrame();
+	void configurePresentation(PresentationMode mode, bool commitFrame);
+	u8 presentationHistoryDestinationIndex() const { return presentationHistorySourceIndex == 0 ? 1 : 0; }
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Render submission (mirrors TypeScript renderer.submit)
@@ -174,6 +180,9 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	bool spriteAmbientEnabledDefault = false;
 	f32 spriteAmbientFactorDefault = 1.0f;
+	PresentationMode presentationMode = PresentationMode::Completed;
+	bool commitPresentationFrame = false;
+	u8 presentationHistorySourceIndex = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Viewport type for IDE (mirrors TypeScript viewportTypeIde)
@@ -236,6 +245,8 @@ public:
 
 private:
 	void initializeRenderer();
+	void finalizePresentation();
+	void resetPresentationHistory();
 
 	GameViewHost* m_host;
 	std::unique_ptr<GPUBackend> m_backend;

@@ -6,7 +6,7 @@ import { shallowcopy } from '../utils/shallowcopy';
 import type { vec2 } from '../rompack/rompack';
 import { type RegisterablePersistent } from '../rompack/rompack';
 import * as render_queues from './shared/render_queues';
-import type { AtmosphereParams, BackendContext, GPUBackend, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/pipeline_interfaces';
+import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/pipeline_interfaces';
 import { RenderPassLibrary } from './backend/renderpasslib';
 import { CRTDitherType as DitherType, type RenderPassToken } from './backend/pipeline_interfaces';
 import { RenderGraphRuntime, buildFrameData, updateExternalFrameTiming } from './graph/rendergraph';
@@ -134,6 +134,9 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public spriteAmbientEnabledDefault = false;
 	public spriteAmbientFactorDefault = 1.0;
 	public viewportTypeIde: 'viewport' | 'offscreen' = 'viewport';
+	public presentationMode: PresentationMode = 'completed';
+	public commitPresentationFrame = false;
+	public presentationHistorySourceIndex: 0 | 1 = 0;
 	private renderFrameIndex = 0;
 	private lastRenderTimeSeconds = 0;
 
@@ -244,6 +247,28 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.applyPresentationPassState();
 	}
 
+	public get presentationHistoryDestinationIndex(): 0 | 1 {
+		return this.presentationHistorySourceIndex === 0 ? 1 : 0;
+	}
+
+	public configurePresentation(mode: PresentationMode, commitFrame: boolean): void {
+		this.presentationMode = mode;
+		this.commitPresentationFrame = commitFrame;
+	}
+
+	private resetPresentationHistory(): void {
+		this.presentationMode = 'completed';
+		this.commitPresentationFrame = false;
+		this.presentationHistorySourceIndex = 0;
+	}
+
+	private finalizePresentation(): void {
+		if (!this.commitPresentationFrame) {
+			return;
+		}
+		this.presentationHistorySourceIndex = this.presentationHistoryDestinationIndex;
+	}
+
 	constructor(opts: GameViewOpts) {
 		if (!opts || !opts.host) {
 			throw new Error('[GameView] Missing GameViewHost dependency.');
@@ -344,6 +369,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			return;
 		}
 
+		this.resetPresentationHistory();
 		if (canvasChanged) {
 			this.surface.setRenderTargetSize(this.canvasSize.x, this.canvasSize.y);
 		}
@@ -387,6 +413,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			this.lastRenderTimeSeconds = nowSeconds;
 			const frame = buildFrameData(this);
 			renderGraph.execute(frame);
+			this.finalizePresentation();
 		} finally {
 			$.emit('frameend', this, token);
 			backend.endFrame();
@@ -574,6 +601,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			renderGate.end(token);
 			throw new Error('[GameView] PipelineRegistry not configured before rebuildGraph.');
 		}
+		this.resetPresentationHistory();
 		// GameView implements RenderContext directly
 		this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
 		renderGate.end(token);

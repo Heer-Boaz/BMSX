@@ -156,6 +156,8 @@ struct RenderPassDef {
 	enum class RenderGraphSlot {
 		FrameColor,
 		FrameDepth,
+		FrameHistoryA,
+		FrameHistoryB,
 		DeviceColor,
 	};
 

@@ -279,28 +279,48 @@ export class RenderPassLibrary {
 		const getHandle = (slot: RenderGraphSlot): number => {
 			if (slot === 'frame_color') return frameColorHandle;
 			if (slot === 'frame_depth') return frameDepthHandle;
+			if (slot === 'frame_history_a' || slot === 'frame_history_b') return null;
 			return deviceColorHandle;
 		};
 
-			// Frame root pass: allocate the persistent color/depth targets and export the color target.
-			// We intentionally do not clear frame_color every frame so partial presents can retain prior pixels.
-			rg.addPass({
-				name: 'Clear',
-				setup: (io) => {
-					const color = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'FrameColor' });
-					const depth = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, depth: true, name: 'FrameDepth' });
-					const deviceColor = deviceColorEnabled
-						? io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'DeviceColor', transient: true })
-						: null;
-					io.writeTex(color);
-					io.writeTex(depth, { clearDepth: 1.0 });
-					io.exportToBackbuffer(color);
-					frameColorHandle = color;
+		rg.addPass({
+			name: 'FrameTargets',
+			setup: (io) => {
+				const color = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'FrameColor' });
+				const depth = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, depth: true, name: 'FrameDepth' });
+				const deviceColor = deviceColorEnabled
+					? io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'DeviceColor', transient: true })
+					: null;
+				io.exportToBackbuffer(color);
+				frameColorHandle = color;
 				frameDepthHandle = depth;
 				deviceColorHandle = deviceColor;
 				return null;
 			},
 			execute: () => { },
+		});
+
+		rg.addPass({
+			name: 'FrameClear',
+			alwaysExecute: true,
+			setup: (io) => {
+				if (frameColorHandle != null) io.writeTex(frameColorHandle);
+				if (frameDepthHandle != null) io.writeTex(frameDepthHandle);
+				return null;
+			},
+			execute: (ctx) => {
+				if (frameColorHandle == null) {
+					return;
+				}
+				const clearDesc: RenderPassDesc = {
+					color: { tex: ctx.getTex(frameColorHandle), clear: [0, 0, 0, 1] },
+				};
+				if (frameDepthHandle != null) {
+					clearDesc.depth = { tex: ctx.getTex(frameDepthHandle), clearDepth: 1.0 };
+				}
+				const clearPass = view.backend.beginRenderPass(clearDesc);
+				view.backend.endRenderPass(clearPass);
+			},
 		});
 
 		// Ensure the frame UBO is uploaded/bound before any draw pass.
@@ -464,10 +484,10 @@ export class RenderPassLibrary {
 			const frameColor = frameColorHandle != null ? texInfo.find(t => t.index === frameColorHandle) : texInfo.find(t => t.present);
 			if (frameColor) {
 				const writerNames = frameColor.writers.map(i => rg.getPassNames()[i]);
-				const contentWriters = writerNames.filter(n => n !== 'Clear');
+				const contentWriters = writerNames.filter(n => n !== 'FrameTargets' && n !== 'FrameBaselineRestore');
 				const hasPotentialWriters = this.getPipelinePasses().some(p => !p.stateOnly && !p.present);
 				if (contentWriters.length === 0 && hasPotentialWriters) {
-					console.warn('Framegraph validation: Only Clear pass wrote to frame color.');
+					console.warn('Framegraph validation: Only baseline setup wrote to frame color.');
 				}
 			}
 			// Pass registry validation: unique IDs and shader availability for non-state passes

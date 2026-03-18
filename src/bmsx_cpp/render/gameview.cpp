@@ -132,6 +132,7 @@ void GameView::configureRenderTargets(const Vec2* viewport, const Vec2* canvas, 
 		return;
 	}
 
+	resetPresentationHistory();
 	rebuildGraph();
 }
 
@@ -180,6 +181,24 @@ void GameView::beginFrame() {
 	m_backend->beginFrame();
 }
 
+void GameView::configurePresentation(PresentationMode mode, bool commitFrame) {
+	presentationMode = mode;
+	commitPresentationFrame = commitFrame;
+}
+
+void GameView::resetPresentationHistory() {
+	presentationMode = PresentationMode::Completed;
+	commitPresentationFrame = false;
+	presentationHistorySourceIndex = 0;
+}
+
+void GameView::finalizePresentation() {
+	if (!commitPresentationFrame) {
+		return;
+	}
+	presentationHistorySourceIndex = presentationHistoryDestinationIndex();
+}
+
 /**
  * Main render loop - executes the render graph.
  *
@@ -198,6 +217,7 @@ void GameView::drawGame() {
 	frame.time = EngineCore::instance().totalTime();
 	frame.delta = EngineCore::instance().deltaTime();
 	m_renderGraph->execute(&frame);
+	finalizePresentation();
 }
 
 void GameView::endFrame() {
@@ -316,6 +336,7 @@ void GameView::rebuildGraph() {
 		// No pipeline registry yet - this is OK during early init
 		return;
 	}
+	resetPresentationHistory();
 	m_renderGraph = m_pipelineRegistry->buildRenderGraph(this, nullptr);
 }
 

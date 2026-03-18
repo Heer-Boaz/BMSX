@@ -196,6 +196,8 @@ private:
 	i64 m_cycleCarry = 0;
 	int m_lastGrantedBaseBudget = 0;
 	bool m_presentation_pending = false;
+	GameView::PresentationMode m_presentation_mode = GameView::PresentationMode::Completed;
+	bool m_commit_presented_frame = false;
 
 	bool m_rom_loaded = false;
 	bool m_engine_assets_loaded = false;

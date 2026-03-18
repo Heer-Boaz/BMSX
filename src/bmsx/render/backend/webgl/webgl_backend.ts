@@ -44,6 +44,7 @@ export class WebGLBackend implements GPUBackend {
 	public get context(): WebGL2RenderingContext { return this._context; }
 	constructor(public gl: WebGL2RenderingContext) {
 		this._context = gl;
+		this.readbackFbo = gl.createFramebuffer()!;
 	}
 
 	createTexture(src: TextureSource | Promise<TextureSource>, desc: TextureParams): WebGLTexture {
@@ -135,12 +136,6 @@ export class WebGLBackend implements GPUBackend {
 		const size = this.texSizes.get(handle);
 		if (!size) {
 			throw new Error('[WebGLBackend] Texture size not tracked for readback.');
-		}
-		if (!this.readbackFbo) {
-			this.readbackFbo = gl.createFramebuffer();
-			if (!this.readbackFbo) {
-				throw new Error('[WebGLBackend] Failed to create readback framebuffer.');
-			}
 		}
 		const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
 		gl.bindFramebuffer(gl.FRAMEBUFFER, this.readbackFbo);
@@ -247,14 +242,34 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
 	}
 	destroyTexture(handle: WebGLTexture): void { this.gl.deleteTexture(handle); }
+	copyTexture(source: WebGLTexture, destination: WebGLTexture, width: number, height: number): void {
+		const gl = this.gl;
+		const prevFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
+		const prevActiveUnit = this.currentActiveTexUnit;
+		const prevTexture = this.boundTex2D[TEXTURE_UNIT_UPLOAD] ?? null;
+		gl.bindFramebuffer(gl.FRAMEBUFFER, this.readbackFbo);
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, source, 0);
+		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
+		gl.bindTexture(gl.TEXTURE_2D, destination);
+		this.currentActiveTexUnit = TEXTURE_UNIT_UPLOAD;
+		this.boundTex2D[TEXTURE_UNIT_UPLOAD] = destination;
+		gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+		gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
+		gl.bindTexture(gl.TEXTURE_2D, prevTexture);
+		this.boundTex2D[TEXTURE_UNIT_UPLOAD] = prevTexture;
+		if (prevActiveUnit != null) {
+			gl.activeTexture(gl.TEXTURE0 + prevActiveUnit);
+		}
+		this.currentActiveTexUnit = prevActiveUnit;
+	}
 	createColorTexture(desc: { width: number; height: number; format?: GLenum }): WebGLTexture {
 		const gl = this.gl;
 		const tex = gl.createTexture()!;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		gl.bindTexture(gl.TEXTURE_2D, tex);
-		// Use RGBA8 for guaranteed color-renderable texture in WebGL2
-		const internal = (typeof desc.format === 'number' ? desc.format : gl.RGBA8) as GLenum;
-		gl.texImage2D(gl.TEXTURE_2D, 0, internal, desc.width, desc.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+		// Use RGBA8 when no explicit format was requested; invalid explicit formats must fail in GL.
+		const internal = (desc.format === undefined ? gl.RGBA8 : desc.format) as GLenum;
+		gl.texImage2D(gl.TEXTURE_2D, 0, internal, desc.width, desc.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(desc.width * desc.height * 4));
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);

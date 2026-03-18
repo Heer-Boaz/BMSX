@@ -1,4 +1,5 @@
 local constants = require('constants')
+local components = require('components')
 
 local title_screen = {}
 title_screen.__index = title_screen
@@ -6,7 +7,6 @@ title_screen.__index = title_screen
 local hidden_space_id = 'ui'
 local title_space_id = 'transition'
 local sparkle_timeline_id = 'title_screen.sparkle'
-local idle_timeline_id = 'title_screen.idle'
 local start_timeline_id = 'title_screen.start'
 
 local title_exit_events = {
@@ -51,7 +51,9 @@ local function build_title_sparkle_frames()
 		frames[#frames + 1] = {
 			value = {
 				phase = phase,
-				visible = false,
+				sparkle_sprite = {
+					enabled = false,
+				},
 			},
 			hold = hold,
 		}
@@ -60,11 +62,14 @@ local function build_title_sparkle_frames()
 		frames[#frames + 1] = {
 			value = {
 				phase = phase,
-				visible = true,
-				count = 1,
-				primary_id = sprite_id,
-				primary_x = x,
-				primary_y = y,
+				sparkle_sprite = {
+					enabled = true,
+					imgid = sprite_id,
+					offset = {
+						x = x,
+						y = y,
+					},
+				},
 			},
 			hold = hold,
 		}
@@ -107,93 +112,17 @@ local function build_title_start_frames()
 	return timeline.build_frame_sequence(frames)
 end
 
-function title_screen:bind_visual()
-	self:get_component('customvisualcomponent').producer = function()
-		self:render_sparkle()
-	end
-end
-
-function title_screen:hide_dynamic_sparkle()
-	self.sparkle_visible = false
-	self.sparkle_visible_count = 0
-	self.sparkle_sprite_id = 'none'
-	self.sparkle_x = 0
-	self.sparkle_y = 0
-	self.sparkle_secondary_id = 'none'
-	self.sparkle_secondary_x = 0
-	self.sparkle_secondary_y = 0
-end
-
-function title_screen:set_dynamic_sparkle_single(sprite_id, x, y)
-	self.sparkle_visible = true
-	self.sparkle_visible_count = 1
-	self.sparkle_sprite_id = sprite_id
-	self.sparkle_x = x
-	self.sparkle_y = y
-	self.sparkle_secondary_id = 'none'
-	self.sparkle_secondary_x = 0
-	self.sparkle_secondary_y = 0
-end
-
-function title_screen:disable_sparkle()
-	self.sparkle_active = false
-	self.sparkle_phase = 'off'
-	self:hide_dynamic_sparkle()
-end
-
--- The MSX title sparkle cadence comes from T62DA/T6267/T6298/T628E:
--- 48-frame delay, 28-frame sweep, 16+32+16 burst, then a 120-frame tail.
-function title_screen:reset_sparkle()
-	self.sparkle_active = true
-	self.sparkle_phase = 'delay'
-	self:hide_dynamic_sparkle()
-end
-
-function title_screen:apply_sparkle_frame(frame)
-	self.sparkle_phase = frame.phase
-	if not frame.visible then
-		self:hide_dynamic_sparkle()
-		return
-	end
-	self:set_dynamic_sparkle_single(frame.primary_id, frame.primary_x, frame.primary_y)
-end
-
-function title_screen:render_sparkle()
-	if not self.visible or not self.sparkle_active then
-		return
-	end
-	if self.sparkle_visible_count >= 1 then
-		put_sprite(self.sparkle_sprite_id, self.sparkle_x, self.sparkle_y, self.z + 1)
-	end
-end
-
 function title_screen:ctor()
 	self.collider.enabled = false
-	self:disable_sparkle()
-	self:bind_visual()
-end
-
-function title_screen:enter_hidden()
-	self:set_space(hidden_space_id)
-	self:disable_sparkle()
-end
-
-function title_screen:enter_idle()
-	self:set_space(title_space_id)
-	self:reset_sparkle()
-end
-
-function title_screen:enter_starting()
-	self:set_space(title_space_id)
-	self:disable_sparkle()
-end
-
-function title_screen:show_idle_title()
 	self:gfx('title_screen')
-end
-
-function title_screen:sync_start_sprite()
-	self:gfx(self:get_timeline(start_timeline_id):value().sprite_id)
+	self.z = 350
+	self.sparkle_sprite = components.spritecomponent.new({
+		id_local = 'sparkle',
+		imgid = 'none',
+		offset = { x = 0, y = 0, z = 1 },
+	})
+	self:add_component(self.sparkle_sprite)
+	self.sparkle_sprite.enabled = false
 end
 
 local function build_title_root_on(show_path)
@@ -219,30 +148,22 @@ local function define_title_screen_fsm()
 		on = build_title_root_on('/idle'),
 		states = {
 			hidden = {
-				entering_state = title_screen.enter_hidden,
+				entering_state = function(self)
+					self:set_space(hidden_space_id)
+					self.sparkle_sprite.enabled = false
+				end,
 			},
 			idle = {
-				entering_state = title_screen.enter_idle,
+				entering_state = function(self)
+					self:set_space(title_space_id)
+					self:gfx('title_screen')
+				end,
 				timelines = {
-					[idle_timeline_id] = {
-						def = {
-							frames = {
-								{ sprite_id = 'title_screen' },
-							},
-							playback_mode = 'once',
-						},
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = {
-							rewind = true,
-							snap_to_start = true,
-						},
-						on_frame = title_screen.show_idle_title,
-					},
 					[sparkle_timeline_id] = {
 						def = {
 							frames = build_title_sparkle_frames(),
 							playback_mode = 'once',
+							apply = true,
 						},
 						autoplay = true,
 						stop_on_exit = true,
@@ -250,23 +171,17 @@ local function define_title_screen_fsm()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_frame = function(self)
-							self:apply_sparkle_frame(self:get_timeline(sparkle_timeline_id):value())
-						end,
-						on_end = function(self)
-							self:disable_sparkle()
-						end,
 					},
 				},
 				input_event_handlers = {
 					['start[jp] || a[jp]'] = function(self)
+						self.sparkle_sprite.enabled = false
 						self.events:emit('title_start')
 						return '/starting'
 					end,
 				},
 			},
 			starting = {
-				entering_state = title_screen.enter_starting,
 				timelines = {
 					[start_timeline_id] = {
 						def = {
@@ -279,7 +194,9 @@ local function define_title_screen_fsm()
 							rewind = true,
 							snap_to_start = true,
 						},
-						on_frame = title_screen.sync_start_sprite,
+						on_frame = function(self)
+							self:gfx(self:get_timeline(start_timeline_id):value().sprite_id)
+						end,
 						on_end = function(self)
 							self.events:emit('title_screen_done')
 							return '/hidden'
@@ -296,13 +213,7 @@ local function register_title_screen_definition()
 		def_id = 'title_screen',
 		class = title_screen,
 		type = 'sprite',
-		components = { 'customvisualcomponent' },
 		fsms = { 'title_screen' },
-		defaults = {
-			imgid = 'title_screen',
-			visible = true,
-			z = 350,
-		},
 	})
 end
 

@@ -36,6 +36,7 @@ public:
 	void readTextureRegion(TextureHandle handle, u8* out, i32 width, i32 height, i32 x, i32 y, const TextureParams& params) override;
 	TextureHandle createSolidTexture2D(i32 width, i32 height, const Color& color) override;
 	void destroyTexture(TextureHandle handle) override;
+	void copyTexture(TextureHandle source, TextureHandle destination, i32 width, i32 height) override;
 
 	void clear(const Color* color, const f32* depth) override;
 	PassEncoder beginRenderPass(const RenderPassDesc& desc) override;

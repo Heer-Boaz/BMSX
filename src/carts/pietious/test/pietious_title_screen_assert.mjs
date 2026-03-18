@@ -76,9 +76,15 @@ function getTitleState(engine) {
 		end
 		local sparkle_timeline = title:get_timeline('title_screen.sparkle')
 		local sparkle_timeline_head = nil
+		local sparkle_phase = 'off'
 		if sparkle_timeline ~= nil then
 			sparkle_timeline_head = sparkle_timeline.head
+			local sparkle_frame = sparkle_timeline:value()
+			if sparkle_frame ~= nil then
+				sparkle_phase = sparkle_frame.phase
+			end
 		end
+		local sparkle_sprite = title:get_component_by_local_id('spritecomponent', 'sparkle')
 		return {
 			has_castle = castle ~= nil,
 			has_room = room ~= nil,
@@ -99,15 +105,11 @@ function getTitleState(engine) {
 			title_imgid = title.imgid,
 			title_timeline_head = title_timeline_head,
 			sparkle_timeline_head = sparkle_timeline_head,
-			sparkle_phase = title.sparkle_phase,
-			sparkle_visible = title.sparkle_visible,
-			sparkle_visible_count = title.sparkle_visible_count,
-			sparkle_sprite_id = title.sparkle_sprite_id,
-			sparkle_x = title.sparkle_x,
-			sparkle_y = title.sparkle_y,
-			sparkle_secondary_id = title.sparkle_secondary_id,
-			sparkle_secondary_x = title.sparkle_secondary_x,
-			sparkle_secondary_y = title.sparkle_secondary_y,
+			sparkle_phase = sparkle_phase,
+			sparkle_visible = sparkle_sprite.enabled,
+			sparkle_sprite_id = sparkle_sprite.imgid,
+			sparkle_x = sparkle_sprite.offset.x,
+			sparkle_y = sparkle_sprite.offset.y,
 			room_number = castle.current_room_number,
 			player_x = player.x,
 			player_y = player.y,
@@ -176,7 +178,7 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 
 		const state = getTitleState(engine);
 		const engineElapsedMs = Math.round((engine.view?.renderFrameIndex ?? 0) * frameIntervalMs);
-		lastStateSummary = `space=${state.active_space} director=${state.director_state} roomMode=${state.room_mode} titleState=${state.title_state} titleSpace=${state.title_space} visible=${state.title_visible} imgid=${state.title_imgid} head=${state.title_timeline_head} sparklePhase=${state.sparkle_phase} sparkleVisible=${state.sparkle_visible} sparkleCount=${state.sparkle_visible_count} music=${state.current_music}`;
+		lastStateSummary = `space=${state.active_space} director=${state.director_state} roomMode=${state.room_mode} titleState=${state.title_state} titleSpace=${state.title_space} visible=${state.title_visible} imgid=${state.title_imgid} head=${state.title_timeline_head} sparklePhase=${state.sparkle_phase} sparkleVisible=${state.sparkle_visible} music=${state.current_music}`;
 		if (engineElapsedMs > MAX_ENGINE_MS) {
 			fail(`engine timeout at ${engineElapsedMs}ms while waiting for scenario=${scenario} state=${lastStateSummary}`);
 		}
@@ -226,20 +228,14 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 				if (/^tsf[4-7]$/.test(state.sparkle_sprite_id) || state.sparkle_sprite_id === 'tsf_pair' || state.sparkle_sprite_id === 'tsf_burst_single') {
 					sparkleFramesSeen.add(state.sparkle_sprite_id);
 				}
-				if (/^tsf[4-7]$/.test(state.sparkle_secondary_id) || state.sparkle_secondary_id === 'tsf_pair' || state.sparkle_secondary_id === 'tsf_burst_single') {
-					sparkleFramesSeen.add(state.sparkle_secondary_id);
-				}
 				if (state.sparkle_phase === 'sweep') {
-					assert(state.sparkle_visible_count === 1, `title sparkle sweep visibleCount=${state.sparkle_visible_count}`);
 					sparkleMinX = Math.min(sparkleMinX, state.sparkle_x);
 					sparkleMaxX = Math.max(sparkleMaxX, state.sparkle_x);
 				}
 				if (state.sparkle_phase === 'burst_single' || state.sparkle_phase === 'burst_return') {
-					assert(state.sparkle_visible_count === 1, `title sparkle burst visibleCount=${state.sparkle_visible_count}`);
 					assert(state.sparkle_sprite_id === 'tsf_burst_single', `title sparkle burst sprite=${state.sparkle_sprite_id}`);
 				}
 				if (state.sparkle_phase === 'burst_pair') {
-					assert(state.sparkle_visible_count === 1, `title sparkle burstPair visibleCount=${state.sparkle_visible_count}`);
 					assert(state.sparkle_sprite_id === 'tsf_pair', `title sparkle burstPair sprite=${state.sparkle_sprite_id}`);
 				}
 			}
