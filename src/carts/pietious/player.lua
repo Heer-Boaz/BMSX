@@ -161,6 +161,10 @@ local stairs_landing_events = {
 	stairs_step_off_left = true,
 	stairs_step_off_right = true,
 }
+local stairs_vertical_exit_events = {
+	stairs_end_top = true,
+	stairs_end_bottom = true,
+}
 
 local function build_shrine_exit_transition_frames()
 	local frames = {}
@@ -247,6 +251,7 @@ function player:emit_room_switched(from_room, to_room, direction)
 end
 
 function player:land_from_hit()
+	self:snap_feet_y_to_floor_grid()
 	self.events:emit('fall')
 	self.hit_substate = 0
 	self.hit_recovery_timer = 0
@@ -1208,6 +1213,11 @@ end
 function player:leave_stairs(event_name)
 	self.stairs_direction = 0
 	self.stairs_x = -1
+	if stairs_vertical_exit_events[event_name] then
+		local old_y = self.y
+		self:snap_feet_y_to_floor_grid()
+		self.last_dy = self.last_dy + (self.y - old_y)
+	end
 	if stairs_landing_events[event_name] then
 		self.stairs_landing_sound_pending = true
 	else
@@ -1429,22 +1439,30 @@ end
 
 function player:collides_at_right_wall_profile(x, y, include_elevator)
 	local wall_x = x + self.width
-	local bottom_y = (y + self.height) - 1
-	return self:collides_at_probe(wall_x, y, include_elevator)
-		or self:collides_at_probe(wall_x, bottom_y, include_elevator)
+	local first_probe_y = (y + self.height) - constants.room.tile_size
+	local second_probe_y = first_probe_y - 1
+	return self:collides_at_probe(wall_x, first_probe_y, include_elevator)
+		or self:collides_at_probe(wall_x, second_probe_y, include_elevator)
 end
 
 function player:collides_at_left_wall_primary_profile(x, y, include_elevator)
-	local bottom_y = (y + self.height) - 1
-	return self:collides_at_probe(x, y, include_elevator)
-		or self:collides_at_probe(x, bottom_y, include_elevator)
+	local first_probe_y = (y + self.height) - constants.room.tile_size
+	local second_probe_y = first_probe_y - 1
+	return self:collides_at_probe(x, first_probe_y, include_elevator)
+		or self:collides_at_probe(x, second_probe_y, include_elevator)
 end
 
 function player:collides_at_left_wall_secondary_profile(x, y, include_elevator)
 	local wall_x = x - 1
-	local bottom_y = (y + self.height) - 1
-	return self:collides_at_probe(wall_x, y, include_elevator)
-		or self:collides_at_probe(wall_x, bottom_y, include_elevator)
+	local first_probe_y = (y + self.height) - constants.room.tile_size
+	local second_probe_y = first_probe_y - 1
+	return self:collides_at_probe(wall_x, first_probe_y, include_elevator)
+		or self:collides_at_probe(wall_x, second_probe_y, include_elevator)
+end
+
+function player:snap_feet_y_to_floor_grid()
+	local feet_y = self.y + self.height
+	self.y = (math.modf(feet_y / constants.room.tile_size) * constants.room.tile_size) - self.height
 end
 
 function player:apply_side_probe_horizontal_move(dx)
@@ -1993,7 +2011,11 @@ function player:update_controlled_fall_motion()
 	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
-	if self:is_support_below_at(self.x, self.y, true) then
+	local tile_support = self:collides_at_support_profile(self.x, self.y, false)
+	if tile_support or self:is_support_below_at(self.x, self.y, true) then
+		if tile_support then
+			self:snap_feet_y_to_floor_grid()
+		end
 		self.stairs_landing_sound_pending = false
 		self:reset_fall_substate_sequence()
 		self.events:emit('landed_to_quiet')
@@ -2006,7 +2028,11 @@ function player:update_controlled_fall_motion()
 end
 
 function player:update_uncontrolled_fall_motion()
-	if self:is_support_below_at(self.x, self.y, true) then
+	local tile_support = self:collides_at_support_profile(self.x, self.y, false)
+	if tile_support or self:is_support_below_at(self.x, self.y, true) then
+		if tile_support then
+			self:snap_feet_y_to_floor_grid()
+		end
 		if self:has_tag(state_tags.group.sword) or self.fall_substate >= 2 or self.stairs_landing_sound_pending then
 			self.events:emit('fall')
 		end
