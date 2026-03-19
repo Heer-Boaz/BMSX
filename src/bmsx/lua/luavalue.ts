@@ -1,6 +1,5 @@
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from './luaerrors';
 import type { ExecutionSignal } from './luaruntime';
-import { insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
 export type LuaValue = null | boolean | number | string | LuaTable | LuaFunctionValue | LuaNativeValue;
 
@@ -19,14 +18,13 @@ export class LuaNativeValue {
 	}
 }
 
-@insavegame
 export class LuaNativeMemberHandle implements LuaFunctionValue {
 	public readonly name: string;
 	public readonly target: object | Function;
 	public readonly path: ReadonlyArray<string>;
 	private readonly callImpl: (args: ReadonlyArray<LuaValue>) => LuaValue[];
 
-	constructor(params: RevivableObjectArgs & { name?: string; target?: object | Function; path?: ReadonlyArray<string>; callImpl?: (args: ReadonlyArray<LuaValue>) => LuaValue[] }) {
+	constructor(params: { name?: string; target?: object | Function; path?: ReadonlyArray<string>; callImpl?: (args: ReadonlyArray<LuaValue>) => LuaValue[] }) {
 		this.name = (params as { name?: string }).name ?? 'native_member_handle';
 		this.target = (params as { target: object | Function }).target;
 		this.path = Array.from((params as { path?: ReadonlyArray<string> }).path ?? []);

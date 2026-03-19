@@ -2,11 +2,12 @@
 import type { BootArgs } from '../../src/bmsx/rompack/rompack';
 import { constructPlatformFromViewHostHandle } from '../../src/bmsx_hostplatform/platform';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
-import type * as _BMSX from '../../src/bmsx/index';
 
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
 const initialStartingGamepadIndex: number = null;
-type BMSX = typeof _BMSX;
+type BMSX = {
+	startCart: typeof import('../../src/bmsx/emulator/start_cart').startCart;
+};
 
 declare global {
 	interface Window {

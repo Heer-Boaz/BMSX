@@ -28,7 +28,9 @@ interface BootGlobals {
 	bmsx?: EngineNamespace;
 }
 
-type EngineNamespace = typeof import('../../../src/bmsx/index');
+type EngineNamespace = {
+	startCart: typeof import('../../../src/bmsx/emulator/start_cart').startCart;
+};
 
 interface InputTimelineEntry {
 	frame?: number;

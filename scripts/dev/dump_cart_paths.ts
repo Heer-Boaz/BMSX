@@ -1,4 +1,4 @@
-import { loadAssetList } from 'bmsx';
+import { getZippedRomAndRomLabelFromBlob, loadAssetList } from '../../src/bmsx/rompack/romloader';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 

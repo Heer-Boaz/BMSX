@@ -4,7 +4,6 @@ import { DEFAULT_VERTEX_COLOR } from '../backend/webgl/webgl.constants';
 import type { TextureKey } from '../../render/texturemanager';
 import type { color } from '../shared/render_types';
 import type { vec3arr } from '../../rompack/rompack';
-import { excludeclassfromsavegame } from '../../serializer/serializationhooks';
 
 interface MeshOptions {
 	positions?: Float32Array;
@@ -26,7 +25,6 @@ interface MeshOptions {
 	meshname?: string;
 }
 
-@excludeclassfromsavegame
 export class Mesh {
 	public positions: Float32Array;
 	public texcoords: Float32Array;

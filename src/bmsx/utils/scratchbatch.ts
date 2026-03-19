@@ -1,4 +1,3 @@
-import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import type { Pool } from './pool';
 
 // Lightweight, reusable scratch collections for per-frame batching.
@@ -8,7 +7,6 @@ import type { Pool } from './pool';
 // - Offer a simple, consistent API across systems.
 // - Optional pooling for item reuse via Pool<T>.
 // - Excluded from savegame serialization.
-@excludeclassfromsavegame
 export class ScratchBatch<T> implements Iterable<T> {
 	private items: T[] = [];
 	private _size = 0;
@@ -54,7 +52,6 @@ export class ScratchBatch<T> implements Iterable<T> {
 }
 
 // Optional pooled variant: acquires item slots from a Pool<T> to avoid per-frame object creation.
-@excludeclassfromsavegame
 export class ScratchBatchPooled<T> implements Iterable<T> {
 	private list = new ScratchBatch<T>();
 

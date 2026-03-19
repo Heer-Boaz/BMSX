@@ -1,7 +1,42 @@
-import type { AudioAction, AudioActionOneOfSpec, AudioDelaySpec, AudioEventRule, AudioStingerSpec, MusicTransitionSpec } from '../../src/bmsx';
 import type { Resource } from './rompacker.rompack';
 // @ts-ignore
 const yaml = require('js-yaml');
+
+type AudioAction = {
+	kind?: string;
+	audio_id?: string;
+	modulation_preset?: string;
+	priority?: number;
+	cooldown_ms?: number;
+};
+
+type AudioActionOneOfSpec = {
+	one_of?: Array<string | (AudioAction & { weight?: number })>;
+};
+
+type AudioDelaySpec = {
+	delay_ms?: number;
+};
+
+type AudioStingerSpec = {
+	stinger?: string;
+	return_to?: string;
+	return_to_previous?: boolean;
+};
+
+type MusicTransitionSpec = {
+	music_transition?: {
+		audio_id?: string;
+		sync?: string | AudioDelaySpec | AudioStingerSpec;
+		fade_ms?: number;
+		start_at_loop_start?: boolean;
+		start_fresh?: boolean;
+	};
+};
+
+type AudioEventRule = {
+	go?: unknown;
+};
 
 const VALID_CHANNELS = new Set(['sfx', 'music', 'ui']);
 const VALID_POLICIES = new Set(['replace', 'ignore', 'queue', 'stop', 'pause']);

@@ -1,4 +1,3 @@
-import { insavegame } from '../../serializer/serializationhooks';
 import type { TextureKey } from '../texturemanager';
 import type { color_arr } from '../../rompack/rompack';
 
@@ -39,7 +38,6 @@ export interface MaterialOptions {
 	unlit?: boolean;
 }
 
-@insavegame
 export class Material {
 	public textures: MaterialTextures;
 	public gpuTextures: MaterialGPUTextures = {};

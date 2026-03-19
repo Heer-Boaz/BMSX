@@ -1,5 +1,4 @@
 import { Oriented, vec3 } from '../../rompack/rompack';
-import { excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from '../../serializer/serializationhooks';
 import { clamp } from '../../utils/clamp';
 import { extractFrustumPlanesInto, M4, Mat4Float32, Q, quat, sphereInFrustumPacked, V3 } from './math3d';
 
@@ -17,16 +16,12 @@ import { extractFrustumPlanesInto, M4, Mat4Float32, Q, quat, sphereInFrustumPack
 // +-------------------------------------------------------------------------------------------------------------------------------------------------------------+
 export type CameraProjectionType = 'perspective' | 'orthographic' | 'fisheye' | 'panorama' | 'oblique' | 'asymmetricFrustum' | 'isometric' | 'infinitePerspective' | 'viewFromBasis';
 
-@insavegame
 export class Camera implements Oriented {
 	position: vec3 = V3.of(0, 0, 0);
 
 	// Bewaar deze voor UI/serialisatie; intern sturen we met _q
-	@excludepropfromsavegame
 	yaw = 0;
-	@excludepropfromsavegame
 	pitch = 0;
-	@excludepropfromsavegame
 	roll = 0;
 	static readonly MAX_PITCH = Math.PI / 2 - 1e-3;
 
@@ -34,30 +29,18 @@ export class Camera implements Oriented {
 	_projectionType: CameraProjectionType = 'perspective';
 
 	private _q: quat = Q.ident();       // <-- bron van waarheid
-	@excludepropfromsavegame
 	private _view: Mat4Float32 = new Float32Array(16);
-	@excludepropfromsavegame
 	private _proj: Mat4Float32 = new Float32Array(16);
-	@excludepropfromsavegame
 	private _vp: Mat4Float32 = new Float32Array(16);
-	@excludepropfromsavegame
 	private _planesPacked: Float32Array = new Float32Array(24);
-	@excludepropfromsavegame
 	private _skyboxView: Mat4Float32 = new Float32Array(16);
-	@excludepropfromsavegame
 	private _tmpLookAt: Mat4Float32 = new Float32Array(16);
-	@excludepropfromsavegame
 	private _invView: Mat4Float32 = new Float32Array(16);
-	@excludepropfromsavegame
 	private _invProj: Mat4Float32 = new Float32Array(16);
-	@excludepropfromsavegame
 	private _invVP: Mat4Float32 = new Float32Array(16);
-	@excludepropfromsavegame
 	private _dirty = true;
 
-	constructor(_opts?: RevivableObjectArgs) {
-		// Touch decorator-attached methods to satisfy noUnusedLocals without changing behavior
-		this.__keepForDecorators();
+	constructor() {
 		// Initialize matrices to identity
 		M4.setIdentity(this._view);
 		M4.setIdentity(this._proj);
@@ -94,20 +77,6 @@ export class Camera implements Oriented {
 		M4.mulInto(this._invVP, this._invProj, this._invView);
 		extractFrustumPlanesInto(this._planesPacked, this._vp);
 		this._dirty = false;
-	}
-
-	@onload
-	private onLoad(): void {
-		// yaw/pitch/roll consistent afleiden uit _q voor UI
-		this.updateEulerFromQuat();
-
-		this._dirty = true;
-		this.rebuild();
-	}
-
-	@onsave
-	private onSave(): void {
-		this.updateEulerFromQuat();
 	}
 
 	// --- basis zonder direct Euler te gebruiken (exposed for read-only access)
@@ -283,23 +252,6 @@ export class Camera implements Oriented {
 
 	// ====== Euler <-> Quat sync (optioneel voor UI/serialisatie) ======
 
-	/** Init _q vanuit huidige yaw/pitch/roll (gebruik bij constructie/reset). */
-	private syncEulerToQuat(): void {
-		// volgorde: yaw (world-ish), pitch (rond lokale X), roll (rond forward)
-		// We bouwen hem via basis-assen:
-		let q = Q.ident();
-		// start met yaw om Y-wereld (redelijk voor init)
-		q = Q.mul(Q.fromAxisAngle(V3.of(0, 1, 0), this.yaw), q);
-		// pitch om lokale right
-		const r1 = Q.basis(q).r;
-		q = Q.mul(Q.fromAxisAngle(r1, this.pitch), q);
-		// roll om forward
-		const f1 = Q.basis(q).f;
-		q = Q.mul(Q.fromAxisAngle(f1, this.roll), q);
-		this._q = Q.norm(q);
-		this._dirty = true;
-	}
-
 	/** Werk yaw/pitch/roll bij uit _q, consistent met syncEulerToQuat orde. */
 	private updateEulerFromQuat(): void {
 		// Huidige basis uit _q
@@ -333,10 +285,6 @@ export class Camera implements Oriented {
 
 		this.roll = unwrapAngle(this.roll, newRoll);
 	}
-
-	// Internal no-op to mark decorator methods as referenced for TS's unused checks
-	private __keepForDecorators(): void { void (this.onLoad, this.onSave, this.syncEulerToQuat); }
-
 }
 
 function unwrapAngle(prev: number, now: number): number {

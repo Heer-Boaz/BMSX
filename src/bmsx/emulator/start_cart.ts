@@ -1,4 +1,5 @@
-import { type BootArgs, $ } from '../index';
+import { $ } from '../core/engine_core';
+import type { BootArgs } from '../rompack/rompack';
 
 export const DEFAULT_FONT_VARIANT = 'msx';
 

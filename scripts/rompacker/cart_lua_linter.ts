@@ -462,30 +462,13 @@ function toWorkspaceRelativePath(absolutePath: string): string {
 	return normalizeWorkspacePath(rel.split(sep).join('/'));
 }
 
-function isSameOrDescendantPath(path: string, root: string): boolean {
-	return path === root || path.startsWith(`${root}/`);
-}
-
-function shouldSkipPath(path: string): boolean {
-	return false;
-}
-
 async function collectLuaFilesFromRoot(rootPath: string, output: string[]): Promise<void> {
-	const workspaceRoot = toWorkspaceRelativePath(rootPath);
-	if (shouldSkipPath(workspaceRoot)) {
-		return;
-	}
-
 	const entries = await readdir(rootPath, { withFileTypes: true });
 	for (const entry of entries) {
 		if (SKIPPED_DIRECTORY_NAMES.has(entry.name)) {
 			continue;
 		}
 		const absolutePath = resolve(join(rootPath, entry.name));
-		const workspacePath = toWorkspaceRelativePath(absolutePath);
-		if (shouldSkipPath(workspacePath)) {
-			continue;
-		}
 		if (entry.isDirectory()) {
 			await collectLuaFilesFromRoot(absolutePath, output);
 			continue;

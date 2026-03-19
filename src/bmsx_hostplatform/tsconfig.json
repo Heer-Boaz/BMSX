@@ -5,7 +5,6 @@
 	"composite": false,
 	"baseUrl": "./",
 	"paths": {
-		"bmsx": ["../bmsx/index.ts"],
 		"bmsx/*": ["../bmsx/*"]
 	}
 	},

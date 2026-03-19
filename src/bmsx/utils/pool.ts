@@ -1,5 +1,3 @@
-import { excludeclassfromsavegame } from '../serializer/serializationhooks';
-
 /**
  * Generic object pool utility.
  *
@@ -153,7 +151,6 @@ export interface IPool<T> {
 	reset(): void;
 }
 
-@excludeclassfromsavegame // This class is excluded from savegame serialization
 // Growable pool for Float32Array buffers, which avoids frequent allocations and deallocations.
 export class Float32ArrayPool implements IPool<Float32Array> {
 	private pool: Float32Array[] = [];
