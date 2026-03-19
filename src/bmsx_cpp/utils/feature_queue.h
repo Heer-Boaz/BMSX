@@ -60,6 +60,7 @@ public:
 	void forEachBack(const std::function<void(const T&, size_t)>& fn) const { m_back.forEach(fn); }
 
 	void sortFront(const std::function<bool(const T&, const T&)>& compare) { m_front.sort(compare); }
+	void sortBack(const std::function<bool(const T&, const T&)>& compare) { m_back.sort(compare); }
 
 	// Direct access to front buffer for iteration
 	ScratchBatch<T>& front() { return m_front; }

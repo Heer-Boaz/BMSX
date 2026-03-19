@@ -780,9 +780,7 @@ void Runtime::resetHardwareState() {
 
 void Runtime::resetRenderBuffers() {
 	RenderQueues::clearBackQueues();
-	RenderQueues::beginSpriteQueue();
-	RenderQueues::beginMeshQueue();
-	RenderQueues::beginParticleQueue();
+	RenderQueues::prepareCompletedRenderQueues();
 }
 
 void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk) {

@@ -23,6 +23,11 @@ static FeatureQueue<SpriteQueueItem> s_spriteQueue(256);
 static FeatureQueue<MeshRenderSubmission> s_meshQueue(256);
 static FeatureQueue<ParticleRenderSubmission> s_particleQueue(1024);
 static i32 s_spriteSubmissionCounter = 0;
+enum class QueueSource : u8 {
+	Front = 0,
+	Back = 1,
+};
+static QueueSource s_activeQueueSource = QueueSource::Front;
 
 i32 particleAmbientModeDefault = 0;
 f32 particleAmbientFactorDefault = 1.0f;
@@ -82,6 +87,26 @@ static void sortSpriteQueueForRendering() {
 	});
 }
 
+static void sortSpriteBackQueueForRendering() {
+	s_spriteQueue.sortBack([](const SpriteQueueItem& a, const SpriteQueueItem& b) {
+		i32 la = renderLayerWeight(a.options.layer);
+		i32 lb = renderLayerWeight(b.options.layer);
+		if (la != lb) return la < lb;
+
+		f32 za = a.options.pos.z;
+		f32 zb = b.options.pos.z;
+		if (za != zb) return za < zb;
+
+		return a.submissionIndex < b.submissionIndex;
+	});
+}
+
+static bool hasCommittedFrontQueueContent() {
+	return s_spriteQueue.sizeFront() > 0
+		|| s_meshQueue.sizeFront() > 0
+		|| s_particleQueue.sizeFront() > 0;
+}
+
 // --- Sprite queue API ---
 
 void submitSprite(const ImgRenderSubmission& options) {
@@ -128,13 +153,38 @@ void submitSprite(const ImgRenderSubmission& options) {
 	s_spriteQueue.submit(pooled);
 }
 
-i32 beginSpriteQueue() {
+void prepareCompletedRenderQueues() {
 	s_spriteSubmissionCounter = 0;
 	s_spriteQueue.swap();
-	// Swap pools.
+	s_meshQueue.swap();
+	s_particleQueue.swap();
 	std::swap(s_spriteItemPool, s_spriteItemPoolAlt);
 	s_spriteItemPoolIndex = 0;
 	sortSpriteQueueForRendering();
+	s_activeQueueSource = QueueSource::Front;
+}
+
+void preparePartialRenderQueues() {
+	s_activeQueueSource = hasCommittedFrontQueueContent()
+		? QueueSource::Front
+		: (hasPendingBackQueueContent() ? QueueSource::Back : QueueSource::Front);
+}
+
+void prepareOverlayRenderQueues() {
+	s_activeQueueSource = QueueSource::Back;
+}
+
+bool hasPendingBackQueueContent() {
+	return s_spriteQueue.sizeBack() > 0
+		|| s_meshQueue.sizeBack() > 0
+		|| s_particleQueue.sizeBack() > 0;
+}
+
+i32 beginSpriteQueue() {
+	if (s_activeQueueSource == QueueSource::Back) {
+		sortSpriteBackQueueForRendering();
+		return static_cast<i32>(s_spriteQueue.sizeBack());
+	}
 	return static_cast<i32>(s_spriteQueue.sizeFront());
 }
 
@@ -144,9 +194,16 @@ void clearBackQueues() {
 	s_spriteQueue.clearBack();
 	s_meshQueue.clearBack();
 	s_particleQueue.clearBack();
+	s_activeQueueSource = QueueSource::Front;
 }
 
 void forEachSprite(const std::function<void(const SpriteQueueItem&, size_t)>& fn) {
+	if (s_activeQueueSource == QueueSource::Back) {
+		s_spriteQueue.forEachBack([&fn](const SpriteQueueItem& item, size_t index) {
+			fn(item, index);
+		});
+		return;
+	}
 	s_spriteQueue.forEachFront([&fn](const SpriteQueueItem& item, size_t index) {
 		fn(item, index);
 	});
@@ -161,7 +218,7 @@ void sortSpriteQueue(const std::function<bool(const SpriteQueueItem&, const Spri
 
 const std::vector<RenderSubmission>& copyRenderQueueForPlayback() {
 	size_t count = 0;
-	s_spriteQueue.forEachFront([&](const SpriteQueueItem& item, size_t) {
+	const auto copySprite = [&](const SpriteQueueItem& item, size_t) {
 		if (count >= s_renderQueuePlaybackBuffer.size()) {
 			s_renderQueuePlaybackBuffer.emplace_back();
 		}
@@ -181,8 +238,8 @@ const std::vector<RenderSubmission>& copyRenderQueueForPlayback() {
 		dst.colorize = src.colorize;
 		dst.parallax_weight = src.parallax_weight.value_or(0.0f);
 		count += 1;
-	});
-	s_meshQueue.forEachFront([&](const MeshRenderSubmission& item, size_t) {
+	};
+	const auto copyMesh = [&](const MeshRenderSubmission& item, size_t) {
 		if (count >= s_renderQueuePlaybackBuffer.size()) {
 			s_renderQueuePlaybackBuffer.emplace_back();
 		}
@@ -190,8 +247,8 @@ const std::vector<RenderSubmission>& copyRenderQueueForPlayback() {
 		op.type = RenderSubmissionType::Mesh;
 		op.mesh = item;
 		count += 1;
-	});
-	s_particleQueue.forEachFront([&](const ParticleRenderSubmission& item, size_t) {
+	};
+	const auto copyParticle = [&](const ParticleRenderSubmission& item, size_t) {
 		if (count >= s_renderQueuePlaybackBuffer.size()) {
 			s_renderQueuePlaybackBuffer.emplace_back();
 		}
@@ -199,7 +256,16 @@ const std::vector<RenderSubmission>& copyRenderQueueForPlayback() {
 		op.type = RenderSubmissionType::Particle;
 		op.particle = item;
 		count += 1;
-	});
+	};
+	if (s_activeQueueSource == QueueSource::Back) {
+		s_spriteQueue.forEachBack(copySprite);
+		s_meshQueue.forEachBack(copyMesh);
+		s_particleQueue.forEachBack(copyParticle);
+	} else {
+		s_spriteQueue.forEachFront(copySprite);
+		s_meshQueue.forEachFront(copyMesh);
+		s_particleQueue.forEachFront(copyParticle);
+	}
 	s_renderQueuePlaybackBuffer.resize(count);
 	return s_renderQueuePlaybackBuffer;
 }
@@ -372,11 +438,16 @@ void submitMesh(const MeshRenderSubmission& item) {
 }
 
 i32 beginMeshQueue() {
-	s_meshQueue.swap();
-	return static_cast<i32>(s_meshQueue.sizeFront());
+	return static_cast<i32>(s_activeQueueSource == QueueSource::Back ? s_meshQueue.sizeBack() : s_meshQueue.sizeFront());
 }
 
 void forEachMeshQueue(const std::function<void(const MeshRenderSubmission&, size_t)>& fn) {
+	if (s_activeQueueSource == QueueSource::Back) {
+		s_meshQueue.forEachBack([&fn](const MeshRenderSubmission& item, size_t index) {
+			fn(item, index);
+		});
+		return;
+	}
 	s_meshQueue.forEachFront([&fn](const MeshRenderSubmission& item, size_t index) {
 		fn(item, index);
 	});
@@ -392,11 +463,16 @@ void submit_particle(const ParticleRenderSubmission& item) {
 }
 
 i32 beginParticleQueue() {
-	s_particleQueue.swap();
-	return static_cast<i32>(s_particleQueue.sizeFront());
+	return static_cast<i32>(s_activeQueueSource == QueueSource::Back ? s_particleQueue.sizeBack() : s_particleQueue.sizeFront());
 }
 
 void forEachParticleQueue(const std::function<void(const ParticleRenderSubmission&, size_t)>& fn) {
+	if (s_activeQueueSource == QueueSource::Back) {
+		s_particleQueue.forEachBack([&fn](const ParticleRenderSubmission& item, size_t index) {
+			fn(item, index);
+		});
+		return;
+	}
 	s_particleQueue.forEachFront([&fn](const ParticleRenderSubmission& item, size_t index) {
 		fn(item, index);
 	});

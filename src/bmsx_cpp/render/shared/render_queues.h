@@ -78,16 +78,34 @@ void submitGlyphs(const GlyphRenderSubmission& options);
 void correctAreaStartEnd(f32& x, f32& y, f32& ex, f32& ey);
 
 /**
- * Begin sprite queue processing:
- * - Swaps back to front
- * - Resets submission counter
- * - Sorts front queue
- * Returns the number of sprites in the front queue.
+ * Prepare completed-frame render queues by committing back -> front.
+ */
+void prepareCompletedRenderQueues();
+
+/**
+ * Prepare partial-frame rendering. Prefer the last committed front queue; only
+ * fall back to the live back queue before the first completed frame exists.
+ */
+void preparePartialRenderQueues();
+
+/**
+ * Force live back-queue rendering. Reserved for overlay/live-debug paths.
+ */
+void prepareOverlayRenderQueues();
+
+/**
+ * Returns whether the back queues contain pending submissions.
+ */
+bool hasPendingBackQueueContent();
+
+/**
+ * Begin sprite queue processing using the currently selected queue source.
+ * Returns the number of sprites in the active queue.
  */
 i32 beginSpriteQueue();
 
 /**
- * Iterate over all sprites in the front queue.
+ * Iterate over all sprites in the active queue.
  */
 void forEachSprite(const std::function<void(const SpriteQueueItem&, size_t)>& fn);
 

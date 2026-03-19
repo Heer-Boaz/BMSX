@@ -10,6 +10,7 @@
 #include "../emulator/font.h"
 #include "../rompack/rompack.h"
 #include "../emulator/memory_map.h"
+#include "../render/shared/render_queues.h"
 #include "../utils/clamp.h"
 #include <cstdio>
 #include <chrono>
@@ -681,6 +682,11 @@ void EngineCore::render() {
 	if (m_view) {
 		const bool pausedPresent = m_state == EngineState::Paused;
 		m_view->configurePresentation(pausedPresent ? GameView::PresentationMode::Completed : m_presentation_mode, pausedPresent ? false : m_commit_presented_frame);
+		if (pausedPresent || m_presentation_mode == GameView::PresentationMode::Completed) {
+			RenderQueues::prepareCompletedRenderQueues();
+		} else {
+			RenderQueues::preparePartialRenderQueues();
+		}
 		const auto beginStart = std::chrono::steady_clock::now();
 		m_view->beginFrame();
 		const auto beginEnd = std::chrono::steady_clock::now();

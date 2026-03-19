@@ -251,8 +251,16 @@ export function prepareCompletedRenderQueues(): void {
 	activeQueueSource = 'front';
 }
 
+function hasCommittedFrontQueueContent(): boolean {
+	return spriteQueue.sizeFront() > 0
+		|| meshQueue.sizeFront() > 0
+		|| particleQueue.sizeFront() > 0;
+}
+
 export function preparePartialRenderQueues(): void {
-	activeQueueSource = hasPendingBackQueueContent() ? 'back' : 'front';
+	activeQueueSource = hasCommittedFrontQueueContent()
+		? 'front'
+		: (hasPendingBackQueueContent() ? 'back' : 'front');
 }
 
 export function prepareOverlayRenderQueues(): void {
