@@ -46,7 +46,7 @@ import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
 import { clamp } from '../utils/clamp';
-import { clearBackQueues, hasPendingBackQueueContent, prepareCompletedRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
+import { clearBackQueues, prepareCompletedRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
@@ -891,11 +891,7 @@ export class EngineCore {
 				if (overlayActive) {
 					prepareOverlayRenderQueues();
 				} else if (completedFramePresented) {
-					if (runtime.isDrawPending && !hasPendingBackQueueContent()) {
-						preparePartialRenderQueues();
-					} else {
-						prepareCompletedRenderQueues();
-					}
+					prepareCompletedRenderQueues();
 				} else {
 					preparePartialRenderQueues();
 				}
