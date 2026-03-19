@@ -1,5 +1,5 @@
 import { Runtime, api } from '../runtime';
-import { Msx1Colors } from '../../systems/msx';
+import { BmsxColors } from '../vdp';
 import * as constants from './constants';
 import { activateCodeTab, getActiveCodeTabContext, isResourceViewActive, setActiveTab, storeActiveCodeTabContext } from './editor_tabs';
 import { cancelGlobalSearchJob, startSearchJob } from './editor_search';
@@ -68,7 +68,7 @@ export function update(deltaSeconds: number): void {
 export function draw(): void {
 	ide_state.codeVerticalScrollbarVisible = false;
 	ide_state.codeHorizontalScrollbarVisible = false;
-	const frameColor = Msx1Colors[constants.COLOR_FRAME];
+	const frameColor = BmsxColors[constants.COLOR_FRAME];
 	api.put_rectfillcolor(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, undefined, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
 
 	renderTopBar();

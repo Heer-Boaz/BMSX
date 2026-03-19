@@ -1,7 +1,6 @@
 import { AssetBarrier } from '../core/assetbarrier';
-import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
-import { color_arr, GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, type RomImgAsset, type TextureSource } from '../rompack/rompack';
+import { color_arr, GLTFModel, Index2GpuTexture, type RomImgAsset, type TextureSource } from '../rompack/rompack';
 import { GPUBackend, TextureHandle, TextureParams } from './backend/pipeline_interfaces';
 
 export interface ModelTextureIdentifier {
@@ -25,10 +24,7 @@ interface GPUCacheEntry {
 	barrier?: AssetBarrier<TextureHandle>;
 }
 
-export class TextureManager implements RegisterablePersistent {
-	get registrypersistent(): true { return true; }
-	public get id(): Identifier { return 'texmgr'; }
-
+export class TextureManager {
 	static _instance: TextureManager;
 	static get instance(): TextureManager { return this._instance; } // constructed elsewhere
 
@@ -39,11 +35,7 @@ export class TextureManager implements RegisterablePersistent {
 	constructor(private backend: GPUBackend, private defaultGroup: GateGroup = taskGate.group('texture:default')) {
 		this.textureBarrier = new AssetBarrier<TextureHandle>(this.defaultGroup);
 		TextureManager._instance = this;
-		this.bind();
 	}
-
-	public bind(): void { Registry.instance.register(this); }
-	public unbind(): void { Registry.instance.deregister(this); }
 	public setBackend(backend: GPUBackend): void { this.backend = backend; }
 
 	private makeKey(uri: string, desc: TextureParams): TextureKey {
@@ -552,6 +544,5 @@ export class TextureManager implements RegisterablePersistent {
 
 	public dispose(): void {
 		this.clear();
-		Registry.instance.deregister(this, false);
 	}
 }

@@ -40,9 +40,9 @@ import {
 import { WorkerStreamingAudioService } from './worker_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
 import { type vec2 } from 'bmsx/rompack/rompack';
-import { GameOptions } from 'bmsx/core/gameoptions';
 
 declare const $: any; // avoid circular dependency issues
+const ONSCREEN_LAYOUT_MODE: 'canvas' | 'gamepad' = 'canvas';
 
 /**
  * Platform wiring for the web-hosted runtime.
@@ -1459,7 +1459,7 @@ export class BrowserGameViewHost implements GameViewHost {
 		let adjustedWidth = effectiveWidth;
 		const onscreenGamepadEnabled = $.input?.isOnscreenGamepadEnabled;
 		if (onscreenGamepadEnabled
-			&& GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'
+			&& ONSCREEN_LAYOUT_MODE === 'canvas'
 			&& viewportIsLandscape) {
 			const handles = this.resolveOnscreenGamepadHandles();
 			if (handles) {
@@ -1543,7 +1543,7 @@ export class BrowserGameViewHost implements GameViewHost {
 
 				const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
 					let newScale = referenceDimension * 0.20 / 100;
-					if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
+					if (isLandscape && ONSCREEN_LAYOUT_MODE === 'gamepad') {
 						let maxControlWidth: number;
 						if (isRightSide) {
 							maxControlWidth = viewportWidth - (canvasRect.left + canvasRect.width);

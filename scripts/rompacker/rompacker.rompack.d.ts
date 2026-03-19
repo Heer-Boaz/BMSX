@@ -19,17 +19,14 @@ export interface RomPackerOptions {
 	buildreslist: boolean;
 	useTextureAtlas: boolean;
 	platform: RomPackerTarget;
-	/** Optional path to a directory of bmsx declarations to use for type-checking games. */
-	enginedts?: string;
-	/** When true, instruct rompacker to use per-game tsconfig.pkg.json for bundling/type-checking. */
-	usePkgTsconfig?: boolean;
-	/** When true, skip type-checking for the game. */
+	/** Accepted for CLI parity; rompack mode no longer type-checks TypeScript games. */
 	skipTypecheck?: boolean;
 	/** When true (default), rompacker folds Lua identifiers to lowercase for case-insensitive mode. */
 	canonicalization: CanonicalizationType;
 	/** VM optimizer level. */
 	optLevel: 0 | 1 | 2 | 3;
 	mode: RomPackerMode;
+	/** Always false on this branch; carts are Lua/data only. */
 	shouldBundleCartCode: boolean;
 	extraLuaRoots: string[];
 }
@@ -87,10 +84,6 @@ export interface AemResource extends BaseResource<'aem'> {
 	datatype: datatype;
 }
 
-export interface CodeResource extends BaseResource<'code'> {
-	id: number;
-}
-
 export interface ModelResource extends BaseResource<'model'> {
 	id: number;
 	datatype: datatype;
@@ -111,7 +104,6 @@ export type Resource =
 	| AudioResource
 	| DataResource
 	| AemResource
-	| CodeResource
 	| ModelResource
 	| LuaResource
 	| RomLabelResource;

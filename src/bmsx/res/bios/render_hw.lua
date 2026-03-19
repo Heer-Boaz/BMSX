@@ -19,4 +19,16 @@ function render_hw.skybox(posx, negx, posy, negy, posz, negz)
 	skybox(posx, negx, posy, negy, posz, negz)
 end
 
+function render_hw.put_ambient_light(id, color, intensity)
+	put_ambient_light(id, color, intensity)
+end
+
+function render_hw.put_directional_light(id, orientation, color, intensity)
+	put_directional_light(id, orientation, color, intensity)
+end
+
+function render_hw.put_point_light(id, position, color, range, intensity)
+	put_point_light(id, position, color, range, intensity)
+end
+
 return render_hw

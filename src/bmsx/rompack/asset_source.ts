@@ -1,5 +1,5 @@
 import type { asset_id, asset_type, CartridgeIndex, CartridgeLayerId, RomAsset } from './rompack';
-import { tokenKeyFromAsset, tokenKeyFromId } from '../util/asset_tokens';
+import { tokenKeyFromAsset, tokenKeyFromId } from './asset_tokens';
 
 export type AssetSourceLayer = {
 	id: CartridgeLayerId;

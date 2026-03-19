@@ -16,7 +16,7 @@ import {
 import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/render_types';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
-import { tokenKeyFromId } from '../../util/asset_tokens';
+import { tokenKeyFromId } from '../../rompack/asset_tokens';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { VRAM_ATLAS_SLOT_SIZE, VRAM_SKYBOX_FACE_BYTES, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../emulator/memory_map';
 import type { Mesh } from '../3d/mesh';

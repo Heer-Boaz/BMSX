@@ -19,7 +19,7 @@ import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES }
 import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 import { decodeRomToc } from './rom_toc';
-import { tokenKeyFromAsset } from '../util/asset_tokens';
+import { tokenKeyFromAsset } from './asset_tokens';
 
 export type RomLoadOptions = {
 	loadAudioFromBuffer?: (buffer: Uint8Array) => Promise<any>;

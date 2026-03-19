@@ -147,9 +147,6 @@ function buildMenuEntries(): MenuEntry[] {
 	const filterMode = ide_state.resourcePanel.getFilterMode();
 	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
 	const problemsActive = ide_state.problemsPanel.isVisible;
-	const debugObjectsActive = resourcePanelActive && resourcePanelMode === 'world_inspector';
-	const debugEventsActive = resourcePanelActive && resourcePanelMode === 'event_inspector';
-	const debugRegistryActive = resourcePanelActive && resourcePanelMode === 'registry_inspector';
 	const filterActive = filterMode === 'lua_only';
 	return [
 		{
@@ -197,10 +194,6 @@ function buildMenuEntries(): MenuEntry[] {
 				{ type: 'command', command: 'debugStepOver', label: 'Step Over', active: false, disabled: !debuggerPaused },
 				{ type: 'command', command: 'debugStepInto', label: 'Step Into', active: false, disabled: !debuggerPaused },
 				{ type: 'command', command: 'debugStepOut', label: 'Step Out', active: false, disabled: !debuggerPaused },
-				{ type: 'separator' },
-				{ type: 'command', command: 'debugObjects', label: 'Inspect Objects', active: debugObjectsActive, disabled: false },
-				{ type: 'command', command: 'debugEvents', label: 'Inspect Events', active: debugEventsActive, disabled: false },
-				{ type: 'command', command: 'debugRegistry', label: 'Inspect Registry', active: debugRegistryActive, disabled: false },
 			],
 		},
 	];

@@ -12,44 +12,24 @@ import type {
 	RenderLayer
 } from '../render/shared/render_types';
 import { wrapGlyphs } from '../render/shared/render_queues';
-import { Msx1Colors } from '../systems/msx';
 import { Font } from './font';
-import { BFont, GlyphMap } from '../core/font';
+import { BFont, GlyphMap } from '../render/shared/bitmap_font';
 import { RuntimeStorage } from './storage';
-import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
-import type { Polygon, vec3arr, asset_id, AudioType } from '../rompack/rompack';
+import type { AudioPlayOptions } from '../audio/soundmaster';
+import type { Polygon, vec3arr } from '../rompack/rompack';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { RenderFacade } from './render_facade';
 import { Runtime } from './runtime';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { setHardwareCamera } from '../render/shared/hardware_camera';
+import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../render/shared/hardware_lighting';
 import { listResources } from './workspace';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { buildDirtyFilePath, hasWorkspaceStorage } from './ide/workspace_storage';
 import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtins';
 import { createLuaTable, type LuaTable } from '../lua/luavalue';
 import { ActionState } from 'bmsx/input/inputtypes';
-
-type AudioPlaybackMode = 'replace' | 'ignore' | 'queue' | 'stop' | 'pause';
-type MusicTransitionSync = 'immediate' | 'loop'
-	| { delay_ms: number }
-	| { stinger: asset_id; return_to?: asset_id; return_to_previous?: boolean };
-type AudioRouterOptions = {
-	modulation_params?: RandomModulationParams | ModulationParams;
-	params?: RandomModulationParams | ModulationParams;
-	modulation_preset?: asset_id;
-	priority?: number;
-	policy?: AudioPlaybackMode;
-	max_voices?: number;
-	channel?: AudioType;
-	audio_id?: asset_id;
-	sync?: MusicTransitionSync;
-	fade_ms?: number;
-	crossfade_ms?: number;
-	start_at_loop_start?: boolean;
-	start_fresh?: boolean;
-};
-type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | AudioRouterOptions;
+import { BmsxColors } from './vdp';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;
@@ -60,255 +40,6 @@ const TAB_SPACES = 2;
 type FontDefinition = {
 	glyphs: Record<string, string>;
 	advance_padding?: number;
-};
-
-type ParsedAudioOptions = {
-	request: SoundMasterPlayRequest;
-	policy?: AudioPlaybackMode;
-	maxVoices?: number;
-	channel?: AudioType;
-};
-
-type AudioQueueItem = {
-	id: asset_id;
-	request: SoundMasterPlayRequest;
-	maxVoices: number;
-};
-
-const audioQueueByType: Record<AudioType, AudioQueueItem[]> = { sfx: [], music: [], ui: [] };
-const resumeOnNextEndByType: Record<AudioType, boolean> = { sfx: false, music: false, ui: false };
-let audioPolicyListenersReady = false;
-
-const ensureAudioPolicyListeners = (): void => {
-	if (audioPolicyListenersReady) {
-		return;
-	}
-	audioPolicyListenersReady = true;
-	$.sndmaster.addEndedListener('sfx', () => onAudioChannelEnded('sfx'));
-	$.sndmaster.addEndedListener('music', () => onAudioChannelEnded('music'));
-	$.sndmaster.addEndedListener('ui', () => onAudioChannelEnded('ui'));
-};
-
-const onAudioChannelEnded = (channel: AudioType): void => {
-	if (resumeOnNextEndByType[channel]) {
-		resumeOnNextEndByType[channel] = false;
-		const paused = $.sndmaster.drainPausedSnapshots(channel);
-		for (let i = 0; i < paused.length; i += 1) {
-			const snapshot = paused[i];
-			const params: ModulationParams = { ...snapshot.params, offset: snapshot.offset };
-			void $.sndmaster.play(snapshot.id, { params, priority: snapshot.priority });
-		}
-		return;
-	}
-	const queue = audioQueueByType[channel];
-	while (queue.length > 0) {
-		const item = queue[0];
-		if ($.sndmaster.activeCountByType(channel) >= item.maxVoices) {
-			return;
-		}
-		queue.shift();
-		void $.sndmaster.play(item.id, item.request);
-	}
-};
-
-const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
-
-const parseAudioChannel = (value: unknown): AudioType => {
-	if (value === 'sfx' || value === 'music' || value === 'ui') {
-		return value;
-	}
-	throw new Error(`Unknown audio channel "${String(value)}".`);
-};
-
-const parsePlaybackMode = (value: unknown): AudioPlaybackMode => {
-	if (value === 'replace' || value === 'ignore' || value === 'queue' || value === 'stop' || value === 'pause') {
-		return value;
-	}
-	throw new Error(`Unknown audio policy "${String(value)}".`);
-};
-
-const hasModulationFields = (value: Record<string, unknown>): boolean => (
-	value.pitchDelta !== undefined
-	|| value.volumeDelta !== undefined
-	|| value.offset !== undefined
-	|| value.playbackRate !== undefined
-	|| value.pitchRange !== undefined
-	|| value.volumeRange !== undefined
-	|| value.offsetRange !== undefined
-	|| value.playbackRateRange !== undefined
-	|| value.filter !== undefined
-);
-
-const parseAudioOptions = (options?: AudioPlayOptions): ParsedAudioOptions => {
-	const out: ParsedAudioOptions = { request: {} };
-	if (options === null || options === undefined) {
-		return out;
-	}
-	if (!isObject(options)) {
-		throw new Error('audio options must be a table.');
-	}
-
-	if (options.channel !== undefined) {
-		out.channel = parseAudioChannel(options.channel);
-	}
-	if (options.policy !== undefined) {
-		out.policy = parsePlaybackMode(options.policy);
-	}
-	if (options.max_voices !== undefined) {
-		if (typeof options.max_voices !== 'number') {
-			throw new Error('max_voices must be a number.');
-		}
-		out.maxVoices = Math.floor(options.max_voices);
-	}
-	if (options.priority !== undefined) {
-		if (typeof options.priority !== 'number') {
-			throw new Error('priority must be a number.');
-		}
-		out.request.priority = Math.floor(options.priority);
-	}
-
-	if (options.modulation_params !== undefined) {
-		if (!isObject(options.modulation_params)) {
-			throw new Error('modulation_params must be a table.');
-		}
-		out.request.params = options.modulation_params as RandomModulationParams | ModulationParams;
-	} else if (options.params !== undefined) {
-		if (!isObject(options.params)) {
-			throw new Error('params must be a table.');
-		}
-		out.request.params = options.params as RandomModulationParams | ModulationParams;
-	} else if (hasModulationFields(options)) {
-		out.request.params = options as RandomModulationParams | ModulationParams;
-	}
-
-	if (!out.request.params && options.modulation_preset !== undefined) {
-		if (typeof options.modulation_preset !== 'string') {
-			throw new Error('modulation_preset must be a string.');
-		}
-		out.request.modulation_preset = options.modulation_preset;
-	}
-
-	return out;
-};
-
-const resolveMusicTransition = (options: AudioPlayOptions | undefined, id?: asset_id): {
-	request?: {
-		to: asset_id;
-		sync?: MusicTransitionSync;
-		fade_ms?: number;
-		crossfade_ms?: number;
-		start_at_loop_start?: boolean;
-		start_fresh?: boolean;
-	};
-} => {
-	if (!options) {
-		return {};
-	}
-	if (!isObject(options)) {
-		throw new Error('music options must be a table.');
-	}
-	const hasTransition = options.sync !== undefined
-		|| options.fade_ms !== undefined
-		|| options.crossfade_ms !== undefined
-		|| options.start_at_loop_start !== undefined
-		|| options.start_fresh !== undefined
-		|| options.audio_id !== undefined;
-	if (!hasTransition) {
-		return {};
-	}
-	const target = (id && id.length > 0) ? id : options.audio_id;
-	if (!target || typeof target !== 'string') {
-		throw new Error('music_transition.audio_id must be a string.');
-	}
-	if (options.fade_ms !== undefined && typeof options.fade_ms !== 'number') {
-		throw new Error('music_transition.fade_ms must be a number.');
-	}
-	if (options.crossfade_ms !== undefined && typeof options.crossfade_ms !== 'number') {
-		throw new Error('music_transition.crossfade_ms must be a number.');
-	}
-	if (options.fade_ms !== undefined && options.crossfade_ms !== undefined) {
-		throw new Error('music_transition cannot specify both fade_ms and crossfade_ms.');
-	}
-	if (options.start_at_loop_start !== undefined && typeof options.start_at_loop_start !== 'boolean') {
-		throw new Error('music_transition.start_at_loop_start must be a boolean.');
-	}
-	if (options.start_fresh !== undefined && typeof options.start_fresh !== 'boolean') {
-		throw new Error('music_transition.start_fresh must be a boolean.');
-	}
-	if (options.sync !== undefined && typeof options.sync !== 'string' && !isObject(options.sync)) {
-		throw new Error('music_transition.sync must be a string or table.');
-	}
-	const sync = options.sync as MusicTransitionSync | undefined;
-	return {
-		request: {
-			to: target,
-			sync: sync,
-			fade_ms: options.fade_ms,
-			crossfade_ms: options.crossfade_ms,
-			start_at_loop_start: options.start_at_loop_start,
-			start_fresh: options.start_fresh,
-		},
-	};
-};
-
-const playWithPolicy = (channel: AudioType, id: asset_id, options: ParsedAudioOptions): void => {
-	const runtime = Runtime.instance;
-	const entry = runtime.getAssetEntry(id);
-	if (entry.type !== 'audio') {
-		throw new Error(`Asset '${id}' is not an audio resource.`);
-	}
-	const audioMeta = runtime.getAudioMeta(id);
-	const fallbackPriority = audioMeta.priority;
-	const priority = options.request.priority ?? fallbackPriority;
-	options.request.priority = priority;
-	const policy = options.policy ?? 'replace';
-	const maxVoices = options.maxVoices ?? 1;
-	if (maxVoices < 1) {
-		throw new Error('max_voices must be at least 1.');
-	}
-	if (policy === 'stop') {
-		$.sndmaster.stop(channel, 'all');
-		audioQueueByType[channel] = [];
-		return;
-	}
-	const active = $.sndmaster.activeCountByType(channel);
-	if (active >= maxVoices) {
-		if (policy === 'ignore') {
-			return;
-		}
-		if (policy === 'replace') {
-			const infos = $.sndmaster.getActiveVoiceInfosByType(channel);
-			if (infos.length === 0) {
-				throw new Error('No active voices returned for audio channel.');
-			}
-			let minIdx = 0;
-			let minPr = infos[0].priority;
-			let oldest = infos[0].startedAt;
-			for (let i = 1; i < infos.length; i += 1) {
-				const info = infos[i];
-				if (info.priority < minPr || (info.priority === minPr && info.startedAt < oldest)) {
-					minIdx = i;
-					minPr = info.priority;
-					oldest = info.startedAt;
-				}
-			}
-			if (priority < minPr) {
-				return;
-			}
-			$.sndmaster.stop(channel, 'byvoice', infos[minIdx].voiceId);
-		}
-		if (policy === 'pause') {
-			ensureAudioPolicyListeners();
-			$.sndmaster.pause(channel);
-			resumeOnNextEndByType[channel] = true;
-		}
-		if (policy === 'queue') {
-			ensureAudioPolicyListeners();
-			audioQueueByType[channel].push({ id, request: options.request, maxVoices });
-			return;
-		}
-	}
-	void $.sndmaster.play(id, options.request);
 };
 
 export class Api {
@@ -324,6 +55,8 @@ export class Api {
 	private readonly cameraViewScratch = new Float32Array(16);
 	private readonly cameraProjScratch = new Float32Array(16);
 	private readonly cameraEyeScratch: vec3arr = [0, 0, 0];
+	private readonly lightColorScratch: vec3arr = [0, 0, 0];
+	private readonly lightVecScratch: vec3arr = [0, 0, 0];
 	private _runtime: Runtime;
 
 	constructor(options: ApiOptions) {
@@ -655,6 +388,59 @@ export class Api {
 		this.runtime.setSkyboxImages({ posx, negx, posy, negy, posz, negz });
 	}
 
+	public put_ambient_light(id: string, colorvalue: number | color | vec3arr | number[], intensity: number): void {
+		if (typeof id !== 'string' || id.length === 0) {
+			throw new Error('put_ambient_light id must be a non-empty string.');
+		}
+		if (!Number.isFinite(intensity)) {
+			throw new Error('put_ambient_light intensity must be a finite number.');
+		}
+		const colorVec = this.coerceLightColor(colorvalue, this.lightColorScratch, 'put_ambient_light color');
+		putHardwareAmbientLight(id, {
+			type: 'ambient',
+			color: [colorVec[0], colorVec[1], colorVec[2]],
+			intensity,
+		});
+	}
+
+	public put_directional_light(id: string, orientation: vec3arr | number[] | { x: number; y: number; z: number }, colorvalue: number | color | vec3arr | number[], intensity: number): void {
+		if (typeof id !== 'string' || id.length === 0) {
+			throw new Error('put_directional_light id must be a non-empty string.');
+		}
+		if (!Number.isFinite(intensity)) {
+			throw new Error('put_directional_light intensity must be a finite number.');
+		}
+		const direction = this.coerceVec3(orientation, this.lightVecScratch, 'directional_light orientation');
+		const colorVec = this.coerceLightColor(colorvalue, this.lightColorScratch, 'put_directional_light color');
+		putHardwareDirectionalLight(id, {
+			type: 'directional',
+			orientation: [direction[0], direction[1], direction[2]],
+			color: [colorVec[0], colorVec[1], colorVec[2]],
+			intensity,
+		});
+	}
+
+	public put_point_light(id: string, position: vec3arr | number[] | { x: number; y: number; z: number }, colorvalue: number | color | vec3arr | number[], range: number, intensity: number): void {
+		if (typeof id !== 'string' || id.length === 0) {
+			throw new Error('put_point_light id must be a non-empty string.');
+		}
+		if (!Number.isFinite(range) || range <= 0) {
+			throw new Error('put_point_light range must be a positive finite number.');
+		}
+		if (!Number.isFinite(intensity)) {
+			throw new Error('put_point_light intensity must be a finite number.');
+		}
+		const point = this.coerceVec3(position, this.lightVecScratch, 'point_light position');
+		const colorVec = this.coerceLightColor(colorvalue, this.lightColorScratch, 'put_point_light color');
+		putHardwarePointLight(id, {
+			type: 'point',
+			pos: [point[0], point[1], point[2]],
+			color: [colorVec[0], colorVec[1], colorVec[2]],
+			range,
+			intensity,
+		});
+	}
+
 	public write(
 		text: string,
 		x?: number,
@@ -743,7 +529,7 @@ export class Api {
 			x,
 			y,
 			z,
-			color: Msx1Colors[colorindex],
+			color: BmsxColors[colorindex],
 			font: renderFont,
 		};
 		this.renderBackend.glyphs(glyphs);
@@ -758,7 +544,7 @@ export class Api {
 			x,
 			y,
 			z,
-			color: Msx1Colors[colorindex],
+			color: BmsxColors[colorindex],
 			font: renderFont,
 		};
 		this.renderBackend.glyphs(glyphs);
@@ -871,12 +657,7 @@ export class Api {
 	}
 
 	public sfx(id: string, options?: AudioPlayOptions): void {
-		const parsed = parseAudioOptions(options);
-		const channel = parsed.channel ?? 'sfx';
-		if (channel === 'music') {
-			throw new Error('sfx does not support music channel.');
-		}
-		playWithPolicy(channel, id, parsed);
+		$.sndmaster.playSfx(id, options);
 	}
 
 	public stop_sfx(): void {
@@ -884,39 +665,11 @@ export class Api {
 	}
 
 	public music(id: string, options?: AudioPlayOptions): void {
-		const transition = resolveMusicTransition(options, id);
-		if (transition.request) {
-			$.sndmaster.requestMusicTransition(transition.request);
-			return;
-		}
-		if (!id) {
-			$.sndmaster.stopMusic();
-			return;
-		}
-		const parsed = parseAudioOptions(options);
-		if (parsed.channel && parsed.channel !== 'music') {
-			throw new Error('music does not support non-music channel.');
-		}
-		playWithPolicy('music', id, parsed);
+		$.sndmaster.playMusic(id, options);
 	}
 
 	public stop_music(options?: AudioPlayOptions): void {
-		if (options === undefined) {
-			$.sndmaster.stopMusic();
-			return;
-		}
-		if (!isObject(options)) {
-			throw new Error('stop_music options must be a table.');
-		}
-		if (options.fade_ms !== undefined && typeof options.fade_ms !== 'number') {
-			throw new Error('stop_music.fade_ms must be a number.');
-		}
-		if (options.crossfade_ms !== undefined) {
-			throw new Error('stop_music does not support crossfade_ms.');
-		}
-		$.sndmaster.stopMusic({
-			fade_ms: options.fade_ms,
-		});
+		$.sndmaster.stopMusicWithOptions(options);
 	}
 
 	public set_master_volume(volume: number): void {
@@ -978,14 +731,51 @@ export class Api {
 		if (!Number.isInteger(index)) {
 			throw new Error('Color index must be an integer.');
 		}
-		if (index < 0 || index >= Msx1Colors.length) {
-			throw new Error(`Color index ${index} outside palette range 0-${Msx1Colors.length - 1}.`);
+		if (index < 0 || index >= BmsxColors.length) {
+			throw new Error(`Color index ${index} outside palette range 0-${BmsxColors.length - 1}.`);
 		}
-		return Msx1Colors[index];
+		return BmsxColors[index];
 	}
 
 	private resolve_color(value: number | color): color {
 		return typeof value === 'number' ? this.palette_color(value) : value;
+	}
+
+	private coerceLightColor(value: number | color | vec3arr | number[], out: vec3arr, label: string): vec3arr {
+		if (typeof value === 'number') {
+			const resolved = this.palette_color(value);
+			out[0] = resolved.r;
+			out[1] = resolved.g;
+			out[2] = resolved.b;
+			return out;
+		}
+		if (Array.isArray(value) || ArrayBuffer.isView(value)) {
+			const arr = value as ArrayLike<number>;
+			if (arr.length < 3) {
+				throw new Error(`${label} must have 3 elements.`);
+			}
+			const r = arr[0];
+			const g = arr[1];
+			const b = arr[2];
+			if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
+				throw new Error(`${label} must contain finite numbers.`);
+			}
+			out[0] = r;
+			out[1] = g;
+			out[2] = b;
+			return out;
+		}
+		if (value && typeof value === 'object' && 'r' in value && 'g' in value && 'b' in value) {
+			const colorValue = value as color;
+			if (!Number.isFinite(colorValue.r) || !Number.isFinite(colorValue.g) || !Number.isFinite(colorValue.b)) {
+				throw new Error(`${label} must contain finite numbers.`);
+			}
+			out[0] = colorValue.r;
+			out[1] = colorValue.g;
+			out[2] = colorValue.b;
+			return out;
+		}
+		throw new Error(`${label} must be a palette index, color object, or vec3 array.`);
 	}
 
 	private coerceMat4(value: Float32Array | number[], out: Float32Array, label: string): Float32Array {
@@ -1019,19 +809,28 @@ export class Api {
 		throw new Error(`set_camera ${label} matrix must be a Float32Array or number[] with 16 elements.`);
 	}
 
-	private coerceVec3(value: vec3arr | number[], out: vec3arr, label: string): vec3arr {
-		if (!Array.isArray(value) && !ArrayBuffer.isView(value)) {
-			throw new Error(`set_camera ${label} must be a vec3 array.`);
+	private coerceVec3(value: vec3arr | number[] | { x: number; y: number; z: number }, out: vec3arr, label: string): vec3arr {
+		let x: number;
+		let y: number;
+		let z: number;
+		if (Array.isArray(value) || ArrayBuffer.isView(value)) {
+			const arr = value as ArrayLike<number>;
+			if (arr.length < 3) {
+				throw new Error(`${label} must have 3 elements.`);
+			}
+			x = arr[0];
+			y = arr[1];
+			z = arr[2];
+		} else if (value && typeof value === 'object' && 'x' in value && 'y' in value && 'z' in value) {
+			const vec = value as { x: number; y: number; z: number };
+			x = vec.x;
+			y = vec.y;
+			z = vec.z;
+		} else {
+			throw new Error(`${label} must be a vec3 array or xyz object.`);
 		}
-		const arr = value as ArrayLike<number>;
-		if (arr.length < 3) {
-			throw new Error(`set_camera ${label} must have 3 elements.`);
-		}
-		const x = arr[0];
-		const y = arr[1];
-		const z = arr[2];
 		if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
-			throw new Error(`set_camera ${label} must contain finite numbers.`);
+			throw new Error(`${label} must contain finite numbers.`);
 		}
 		out[0] = x;
 		out[1] = y;

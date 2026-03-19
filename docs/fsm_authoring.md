@@ -34,8 +34,8 @@ Deze notitie bundelt observaties van de huidige FSM‑architectuur, pijnpunten v
 
 ## Observaties uit voorbeelden
 
-- `ella2023/eila.ts`: scheiding besturing vs animatie; `@assign_fsm('player_animation')`; transities met `#this.*`/`#root.*`; timeline voor animaties, parallelle subtrees.
-- `sint2024/quiz.ts`: UI‑flow met `on_input` DSL (bijv. `'? (a[j!c], b[j!c])'`), timeline over vragen, guarded end‑state.
+- `src/carts/pietious/player.lua`: gameplay-flow, state toggles en eventgedreven updates in een Lua cart.
+- `src/carts/2025/story.lua`: narratieve flow en cart-side sequentielogica.
 
 ## Pijnpunten voor AI‑assistenten
 

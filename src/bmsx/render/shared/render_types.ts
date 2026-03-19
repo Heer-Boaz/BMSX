@@ -1,4 +1,4 @@
-import type { BFont } from '../../core/font';
+import type { BFont } from './bitmap_font';
 import type { Mesh } from '../3d/mesh';
 import type { RectBounds, Polygon, vec2, vec2arr, vec3arr, asset_id } from '../../rompack/rompack';
 

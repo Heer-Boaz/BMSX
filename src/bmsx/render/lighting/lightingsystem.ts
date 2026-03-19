@@ -1,11 +1,28 @@
 import { Float32ArrayPool } from '../../utils/pool';
-import { $ } from '../../core/engine_core';
-import type { AmbientLight, DirectionalLight, PointLight } from '../3d/light';
-import { DirectionalLightObject, PointLightObject } from '../../core/object/lightobject';
+import type { AmbientLight } from '../3d/light';
 import * as MeshPipeline from '../3d/mesh_pipeline';
+import {
+	consumeHardwareLightingDirty,
+	getHardwareDirectionalLights,
+	getHardwarePointLights,
+	resolveHardwareAmbientLight,
+} from '../shared/hardware_lighting';
 // Avoid backend-specific imports here; use conservative defaults for pooled arrays
 const DEFAULT_MAX_DIR_LIGHTS = 4;
 const DEFAULT_MAX_POINT_LIGHTS = 4;
+
+function ambientLightsEqual(left: AmbientLight | null, right: AmbientLight | null): boolean {
+	if (left === right) {
+		return true;
+	}
+	if (!left || !right) {
+		return false;
+	}
+	return left.intensity === right.intensity
+		&& left.color[0] === right.color[0]
+		&& left.color[1] === right.color[1]
+		&& left.color[2] === right.color[2];
+}
 
 export interface LightingFrameState {
 	ambient: AmbientLight;
@@ -21,35 +38,37 @@ export class LightingSystem {
 
 	constructor() { }
 
-	update(_ambient: AmbientLight): LightingFrameState {
-		// Renderer-pulled: rebuild light lists from model indexes each frame
-		const active = $.world.activeLights;
-		MeshPipeline.clearLights();
-		const activeAmbient = $.world.activeAmbientLight;
-		let ambient: AmbientLight = activeAmbient ? (activeAmbient.light as AmbientLight) : null;
-		for (const lo of active) {
-			if (lo instanceof DirectionalLightObject) MeshPipeline.addDirectionalLight(lo.id, lo.light as DirectionalLight);
-			else if (lo instanceof PointLightObject) MeshPipeline.addPointLight(lo.id, lo.light as PointLight);
+	update(): LightingFrameState {
+		const hardwareDirty = consumeHardwareLightingDirty();
+		const ambient = resolveHardwareAmbientLight();
+		const directionalLights = getHardwareDirectionalLights();
+		const pointLights = getHardwarePointLights();
+		const dirCount = directionalLights.size;
+		const pointCount = pointLights.size;
+
+		if (hardwareDirty) {
+			MeshPipeline.clearLights();
+			for (const [id, light] of directionalLights) {
+				MeshPipeline.addDirectionalLight(id, light);
+			}
+			for (const [id, light] of pointLights) {
+				MeshPipeline.addPointLight(id, light);
+			}
 		}
-		const lightsMutated = MeshPipeline.consumeLightsDirty();
-		let ambientChanged = false;
-		if (ambient !== this._lastAmbient) {
-			this._lastAmbient = ambient;
-			ambientChanged = true;
-		}
-		const dirCount = MeshPipeline.getDirectionalLightCount();
-		const pointCount = MeshPipeline.getPointLightCount();
-		const dirty = lightsMutated || ambientChanged;
-		// Only rebuild frame state object if something changed to reduce churn
-		if (dirty || this._frameState.dirCount !== dirCount || this._frameState.pointCount !== pointCount || this._frameState.ambient !== this._lastAmbient) {
+
+		const dirty = hardwareDirty
+			|| this._frameState.dirCount !== dirCount
+			|| this._frameState.pointCount !== pointCount
+			|| !ambientLightsEqual(this._lastAmbient, ambient);
+		this._lastAmbient = ambient;
+		if (dirty) {
 			this._frameState = {
-				ambient: this._lastAmbient,
+				ambient,
 				dirCount,
 				pointCount,
 				dirty,
 			};
 		} else {
-			// ensure dirty cleared if no changes
 			this._frameState.dirty = false;
 		}
 		return this._frameState;

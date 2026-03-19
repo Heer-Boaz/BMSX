@@ -39,7 +39,7 @@ UI flow, combat ability gating, cutscenes, dialogue trees, and more.
    inline handlers.
 2. **ROM data (JSON/YAML)** – ship FSM blueprints with your ROM. These are read
    at boot, validated, hoisted, and hot‑swappable at runtime. This is the
-   approach used by `ella2023` to author `player_animation.fsm.yaml`.
+   preferred authoring style for Lua carts on this branch.
 3. **Hybrid** – fetch a definition from data but still reference class
    handlers. Because handlers are hoisted through the registry, YAML/JSON can
    safely reference `game.handlers.MyClass.method` without leaking implementation
@@ -82,10 +82,8 @@ FSMs double as a light-weight animation graph system:
 - Concurrency lets you run gameplay logic and animation machines in parallel.
 - Events such as `animationEnd` can fan out to other systems (e.g. AI or combat).
 
-See `src/ella2023/res/data/player_animation.fsm.yaml` for a real example. The
-YAML file describes all of Eila’s animation states, their transitions, and the
-events they raise; the TypeScript class no longer needs bespoke animation
-handlers.
+Lua carts on this branch typically keep animation/gameplay flow in cart-authored
+Lua modules plus ROM data under `src/carts/<name>/res/data/`.
 
 If you still need handcrafted logic—for instance blending sprite metadata,
 performing physics responses, or sequencing effects—you can attach handlers via
@@ -117,6 +115,6 @@ performing physics responses, or sequencing effects—you can attach handlers vi
 
 For concrete usage examples browse:
 
-- `src/ella2023/res/data/player_animation.fsm.yaml` – animation state machine.
-- `src/ella2023/fighter.ts` – combat/AI machines driving gameplay.
+- `src/carts/2025/story.lua` – cart-side flow scripting.
+- `src/carts/pietious/player.lua` – gameplay/state handling in a Lua cart.
 - `docs/decorators.md` – reference for FSM decorators.

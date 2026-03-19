@@ -27,7 +27,6 @@ import {
 	sanitizeLuaErrorMessage,
 } from './runtime_error_util';
 import { logDebugState } from './runtime_debug';
-import { getBasePipelineSpecOverrideForIdeOrTerminal, ideExtSpec, terminalExtSpec, runtimeExtSpec } from './systems';
 import { TerminalMode } from './terminal_mode';
 import type { Runtime } from './runtime';
 import type { RuntimeOptions } from './types';
@@ -177,7 +176,7 @@ export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions)
 	flushLuaWarnings(runtime);
 	registerRuntimeShortcuts(runtime);
 	setDebuggerBreakpoints(runtime, ide_state.breakpoints);
-	$.pipeline_ext = runtimeExtSpec;
+	updateOverlayAudioSuspension(runtime);
 }
 
 export function applyCanonicalization(canonicalization: boolean): void {
@@ -191,16 +190,6 @@ export function setActiveIdeFontVariant(runtime: Runtime, variant: Runtime['acti
 }
 
 export function updateGamePipelineExts(runtime: Runtime): void {
-	if (runtime.terminal.isActive) {
-		$.pipeline_spec_override = getBasePipelineSpecOverrideForIdeOrTerminal();
-		$.pipeline_ext = terminalExtSpec;
-	} else if (isManagedOverlayEditorActive(runtime)) {
-		$.pipeline_spec_override = getBasePipelineSpecOverrideForIdeOrTerminal();
-		$.pipeline_ext = ideExtSpec;
-	} else {
-		$.pipeline_spec_override = null;
-		$.pipeline_ext = runtimeExtSpec;
-	}
 	updateOverlayAudioSuspension(runtime);
 }
 

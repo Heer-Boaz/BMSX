@@ -1,4 +1,3 @@
-import { $ } from '../core/engine_core';
 import { GamepadInput } from './gamepad';
 import { Input } from './input';
 import type { BGamepadButton, InputHandler } from './inputtypes';
@@ -28,21 +27,12 @@ export class PendingAssignmentProcessor {
 		return gamepadInput.getButtonState(button).pressed && !gamepadInput.getButtonState(button).consumed;
 	}
 
-	private notifyUIProposed(gamepadIndex: number, proposedPlayerIndex: number): void {
-		$.emit('controller_assignment_proposed', Input.instance, { gamepadIndex, proposedPlayerIndex });
-	}
-
-	private notifyUIAssignmentStart(gamepadIndex: number, proposedPlayerIndex: number): void {
-		$.emit('controller_assignment_start', Input.instance, { gamepadIndex, proposedPlayerIndex });
-	}
-
 	private lastNotified: { proposed: number; positionIndex: number } = null;
-	private maybeNotify(gamepadIndex: number, proposedPlayerIndex: number): void {
+	private maybeNotify(proposedPlayerIndex: number): void {
 		const pos = this.pendingIndex;
 		const prev = this.lastNotified;
 		if (!prev || prev.proposed !== proposedPlayerIndex || prev.positionIndex !== pos) {
 			this.lastNotified = { proposed: proposedPlayerIndex, positionIndex: pos };
-			this.notifyUIProposed(gamepadIndex, proposedPlayerIndex);
 		}
 	}
 
@@ -71,7 +61,7 @@ export class PendingAssignmentProcessor {
 
 			if (newProposedPlayerIndex !== null) {
 				this.proposedPlayerIndex = newProposedPlayerIndex;
-				this.maybeNotify((this.inputHandler).gamepadIndex ?? 0, this.proposedPlayerIndex);
+				this.maybeNotify(this.proposedPlayerIndex);
 			}
 			else {
 				// No new player index available for gamepad assignment found => don't do anything!
@@ -112,13 +102,12 @@ export class PendingAssignmentProcessor {
 
 				if (proposedPlayerIndex !== null) {
 					this.proposedPlayerIndex = proposedPlayerIndex;
-					this.notifyUIAssignmentStart(gamepadInput.gamepadIndex, this.proposedPlayerIndex);
 					console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${proposedPlayerIndex}.`);
 				}
 			}
 		}
 		else {
-			this.maybeNotify(gamepadInput.gamepadIndex, this.proposedPlayerIndex);
+			this.maybeNotify(this.proposedPlayerIndex);
 			if (this.checkNonConsumedPressed('a', gamepadInput)) {
 				// Assign gamepad to player and remove the joystick icon
 				gamepadInput.consumeButton('a');
@@ -128,14 +117,11 @@ export class PendingAssignmentProcessor {
 				// Reset states so the confirming button does not leak into gameplay
 				gamepadInput.reset();
 				inputMaestro.removePendingGamepadAssignment(this.inputHandler.gamepadIndex);
-				// Broadcast for UI and other listeners
-				$.emit('controller_assigned', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex, gamepadIndex: gamepadInput.gamepadIndex });
 			}
 			else if (this.checkNonConsumedPressed('b', gamepadInput)) {
 				// Cancel assignment process for this gamepad and remove the joystick icon
 				gamepadInput.consumeButton('b');
 				this.proposedPlayerIndex = null; // Set proposed player index to null to indicate that the gamepad is no longer proposed to be assigned to a player. Note that we keep the pending gamepad assignment object around, so that the gamepad can be assigned to a player again later.
-				$.emit('controller_assignment_cancelled', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex, gamepadIndex: gamepadInput.gamepadIndex });
 			}
 			else {
 				// Handle joystick icon movement to change the proposed player index

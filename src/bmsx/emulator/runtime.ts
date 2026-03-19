@@ -31,7 +31,7 @@ import {
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { applyRuntimeAssetLayer, buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
 import { decodeBinary } from '../serializer/binencoder';
-import { tokenKeyFromAsset, tokenKeyFromId } from '../util/asset_tokens';
+import { tokenKeyFromAsset, tokenKeyFromId } from '../rompack/asset_tokens';
 import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
 import { Api } from './api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from './cpu';
@@ -42,6 +42,7 @@ import { RenderFacade } from './render_facade';
 import { Font, type FontVariant } from './font';
 import { beginMeshQueue, beginParticleQueue, beginSpriteQueue, clearBackQueues } from '../render/shared/render_queues';
 import { clearHardwareCamera } from '../render/shared/hardware_camera';
+import { clearHardwareLighting } from '../render/shared/hardware_lighting';
 import type { CartEditor } from './ide/cart_editor';
 import { type FaultSnapshot } from './ide/render/render_error_overlay';
 import { type CpuFrameSnapshot } from './cpu';
@@ -508,6 +509,7 @@ export class Runtime {
 
 	public resetRenderBuffers(): void {
 		clearHardwareCamera();
+		clearHardwareLighting();
 		clearBackQueues();
 		beginSpriteQueue();
 		beginMeshQueue();
@@ -1296,8 +1298,8 @@ export class Runtime {
 				if (this.editor !== null) {
 					this.editor.clearRuntimeErrorOverlay();
 				}
-			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset to fresh world
-				await $.reset_to_fresh_world();
+			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset the runtime state
+				await $.resetRuntime();
 				await $.refresh_audio_assets();
 			}
 			api.cartdata($.lua_sources.namespace);
@@ -1318,6 +1320,7 @@ export class Runtime {
 		if (this.currentFrameState) {
 			throw new Error('[Runtime] Attempted to begin a new frame while another frame is active.');
 		}
+		clearHardwareLighting();
 		this.frameDeltaMs = $.deltatime;
 		const carryBudget = this.pendingCarryBudget;
 		this.pendingCarryBudget = 0;

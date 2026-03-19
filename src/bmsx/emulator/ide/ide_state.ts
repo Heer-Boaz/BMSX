@@ -364,9 +364,6 @@ export const ide_state: IdeState = {
 		debugStepOver: { left: 0, top: 0, right: 0, bottom: 0 },
 		debugStepInto: { left: 0, top: 0, right: 0, bottom: 0 },
 		debugStepOut: { left: 0, top: 0, right: 0, bottom: 0 },
-		debugObjects: { left: 0, top: 0, right: 0, bottom: 0 },
-		debugEvents: { left: 0, top: 0, right: 0, bottom: 0 },
-		debugRegistry: { left: 0, top: 0, right: 0, bottom: 0 },
 	},
 	menuEntryBounds: {
 		file: { left: 0, top: 0, right: 0, bottom: 0 },

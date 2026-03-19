@@ -18,7 +18,7 @@ import { clearHoverTooltip, updateHoverTooltip } from './intellisense';
 import * as TextEditing from './text_editing_and_selection';
 import { clamp } from '../../utils/clamp';
 import { goBackwardInNavigationHistory, goForwardInNavigationHistory, resetActionPromptState, closeCreateResourcePrompt, closeSymbolSearch, closeResourceSearch, closeLineJump, handleActionPromptSelection, openSymbolSearch, openResourceSearch, openGlobalSymbolSearch, handleCreateResourceInput, openCreateResourcePrompt, openReferenceSearchPopup, openRenamePrompt, updateDesiredColumn, openLineJump, redo, undo, closeActiveTab, save, toggleLineComments, toggleWordWrap, performAction, isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll, moveResourceSearchSelection, processInlineFieldPointer, ensureResourceSearchSelectionVisible, applyResourceSearchSelection, ensureSymbolSearchSelectionVisible, applySymbolSearchSelection, focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch, moveSymbolSearchSelection, updateSymbolSearchMatches, applyLineJumpFieldText, updateResourceSearchMatches, applyLineJump } from './cart_editor';
-import { notifyReadOnlyEdit, openObjectInspectorTab, openEventInspectorTab, openRegistryInspectorTab, getTabBarTotalHeight, getResourceSearchBarBounds, scrollResourceBrowser, getCodeAreaBounds, scrollRows, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, resourceSearchEntryHeight, resourceSearchVisibleResultCount, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, resolvePointerRow, resolvePointerColumn, handlePointerAutoScroll, symbolSearchPageSize, resourceSearchWindowCapacity, mapScreenPointToViewport } from './editor_view';
+import { notifyReadOnlyEdit, getTabBarTotalHeight, getResourceSearchBarBounds, scrollResourceBrowser, getCodeAreaBounds, scrollRows, bottomMargin, hideResourcePanel, resetPointerClickTracking, getResourcePanelWidth, getCreateResourceBarBounds, resourceSearchEntryHeight, resourceSearchVisibleResultCount, getSymbolSearchBarBounds, symbolSearchVisibleResultCount, symbolSearchEntryHeight, getRenameBarBounds, getLineJumpBarBounds, getSearchBarBounds, searchVisibleResultCount, searchResultEntryHeight, resolvePointerRow, resolvePointerColumn, handlePointerAutoScroll, symbolSearchPageSize, resourceSearchWindowCapacity, mapScreenPointToViewport } from './editor_view';
 import { clearGotoHoverHighlight, clearReferenceHighlights, tryGotoDefinitionAt, refreshGotoHoverHighlight, resolveContextMenuToken, extractHoverExpression } from './intellisense';
 import { navigateToRuntimeErrorFrameTarget } from './ide_debugger';
 import { focusRuntimeErrorOverlay } from './runtime_error_navigation';
@@ -50,9 +50,6 @@ export const MENU_COMMANDS = [
 	'debugStepOver',
 	'debugStepInto',
 	'debugStepOut',
-	'debugObjects',
-	'debugEvents',
-	'debugRegistry',
 ] as const;
 
 export class InputController {
@@ -695,15 +692,6 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 			if (ide_state.dirty) {
 				void save();
 			}
-			return;
-		case 'debugObjects':
-			openObjectInspectorTab();
-			return;
-		case 'debugEvents':
-			openEventInspectorTab();
-			return;
-		case 'debugRegistry':
-			openRegistryInspectorTab();
 			return;
 		case 'hot-reload-and-resume':
 		case 'reboot':

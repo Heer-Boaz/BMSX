@@ -1,4 +1,3 @@
-import { $ } from '../../core/engine_core';
 import { Camera } from '../3d/camera3d';
 
 const hardwareCamera = new Camera();
@@ -17,5 +16,5 @@ export function resolveActiveCamera3D(): Camera | null {
 	if (hardwareCameraActive) {
 		return hardwareCamera;
 	}
-	return $.world.activeCamera3D;
+	return null;
 }

@@ -437,19 +437,13 @@ function resolveRomPath(options: LaunchOptions, debugFlag: boolean): string {
 }
 
 async function resolveCartRoot(romFolder: string): Promise<string> {
-	const candidates = [
-		path.resolve('src', 'carts', romFolder),
-		path.resolve('src', romFolder),
-	];
-	for (const candidate of candidates) {
-		try {
-			await fs.access(candidate);
-			return candidate;
-		} catch {
-			// continue
-		}
+	const candidate = path.resolve('src', 'carts', romFolder);
+	try {
+		await fs.access(candidate);
+		return candidate;
+	} catch {
+		throw new Error(`Cart folder "${romFolder}" not found under src/carts.`);
 	}
-	throw new Error(`Cart folder "${romFolder}" not found under src/carts or src.`);
 }
 
 async function fileExists(filePath: string): Promise<boolean> {

@@ -4,7 +4,7 @@ register('./glsl-loader.mjs', import.meta.url);
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLuaInterpreter, type ExecutionSignal } from '../../src/bmsx/lua/runtime';
-import { LuaDebuggerController } from '../../src/bmsx/lua/debugger';
+import { LuaDebuggerController } from '../../src/bmsx/lua/luadebugger';
 
 function expectPause(result: ExecutionSignal | LuaDebuggerPauseSignal): LuaDebuggerPauseSignal {
 	assert.equal(result.kind, 'pause');

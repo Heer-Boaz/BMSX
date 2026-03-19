@@ -1,5 +1,5 @@
 import { $ } from '../../core/engine_core';
-import { tokenKeyFromId } from '../../util/asset_tokens';
+import { tokenKeyFromId } from '../../rompack/asset_tokens';
 import { clamp } from '../../utils/clamp';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';

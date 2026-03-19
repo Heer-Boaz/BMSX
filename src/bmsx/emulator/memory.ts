@@ -26,7 +26,7 @@ import {
 	VRAM_STAGING_SIZE,
 } from './memory_map';
 import { IO_SLOT_COUNT, IO_VDP_RD_DATA, IO_VDP_RD_STATUS } from './io';
-import { hashAssetId, tokenKey } from '../util/asset_tokens';
+import { hashAssetId, tokenKey } from '../rompack/asset_tokens';
 
 export type AssetType = 'image' | 'audio';
 

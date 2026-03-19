@@ -1,27 +1,15 @@
-﻿import { EventEmitter, EventPort, eventsOf } from '../core/eventemitter';
-import type { GameEvent } from '../core/game_event';
-import { $ } from '../core/engine_core';
-import { Registry } from '../core/registry';
-import { toggleRenderHUD } from '../debugger/renderhud';
-import { toggleECSHUD } from '../debugger/ecshud';
-import { toggleInputHUD } from '../debugger/inputhud';
-import { openDebugOverviewTab, openEventInspectorTab, openObjectInspectorTab } from '../emulator/ide/cart_editor';
+﻿import { $ } from '../core/engine_core';
 import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
-import { controllerUnassignedToast } from '../ui/ui_toast';
 import type { ActionState, ButtonId, ButtonState, GamepadInputMapping, InputEvent, InputHandler, InputMap, KeyboardInputMapping, KeyOrButtonId2ButtonState, PointerInputMapping } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import { GlobalShortcutRegistry } from './global_shortcut_registry';
-import { excludepropfromsavegame } from '../serializer/serializationhooks';
 
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
-import { ControllerAssignmentUI } from '../ui/controller_assignment_ui';
 import { PlayerInput, InputSource } from './playerinput';
 import { PointerInput } from './pointerinput';
 import type { DeviceKind, InputDevice, InputEvt, SubscriptionHandle, GameViewCanvas } from '../platform';
-
-const DEBUG_HUD_TOGGLE_KEY = 'F10';
 /**
  * Resets the properties of an object by deleting all keys except for the ones specified in the `except` array.
  * If no `except` array is provided, all keys will be deleted.
@@ -451,9 +439,6 @@ export class Input implements RegisterablePersistent {
 	 */
 	private static _instance: Input;
 
-	@excludepropfromsavegame
-	public readonly events: EventPort;
-
 	/**
 	 * The maximum number of players allowed.
 	 */
@@ -518,8 +503,6 @@ export class Input implements RegisterablePersistent {
 	 */
 	private onscreenGamepad: OnscreenGamepad = null;
 
-	// Spawn-once guard for UI controller
-	private uiControllerSpawned = false;
 	private platformInputUnsubscribe: SubscriptionHandle = null;
 	private focusChangeUnsubscribe: SubscriptionHandle = null;
 	private readonly platformInputListener = (event: InputEvt): void => {
@@ -543,13 +526,6 @@ export class Input implements RegisterablePersistent {
 	public debugHotkeysPaused = false;
 	private readonly additionalCaptureKeys: Set<string> = new Set();
 	private readonly globalShortcuts = new GlobalShortcutRegistry();
-
-	private readonly handleSpaceChanged = (_event: GameEvent): void => {
-		for (const player of this.playerInputs) {
-			if (!player) continue;
-			player.clearEdgeState();
-		}
-	};
 
 	/**
 	 * Retrieves the player input for the specified player index.
@@ -689,7 +665,7 @@ export class Input implements RegisterablePersistent {
 		pointer: Input.DEFAULT_POINTER_INPUT_MAPPING,
 	});
 
-	private static readonly DEBUG_CAPTURE_KEYS = new Set([DEBUG_HUD_TOGGLE_KEY, 'F6', 'F7', 'F11']);
+	private static readonly DEBUG_CAPTURE_KEYS = new Set(['F11']);
 
 	/**
 	 * Prevents the default action of a UI event based on the key pressed, except for certain keys when the game is running or not paused.
@@ -708,9 +684,8 @@ export class Input implements RegisterablePersistent {
 	 * @param debug Whether to enable debug mode. Default is true.
 	 */
 	constructor(startingGamepadIndex?: number) {
-		this.events = eventsOf(this);
 		this.startupGamepadIndex = typeof startingGamepadIndex === 'number' ? startingGamepadIndex : null;
-		// this.bind(); // Bind is called explicitly in Game.initialize after the world is created
+		// this.bind(); // Bind is called explicitly by engine startup.
 	}
 
 	/**
@@ -779,9 +754,6 @@ export class Input implements RegisterablePersistent {
 	}
 
 	public bind(): void {
-		Registry.instance.register(this);
-		$.world.events.on({ event_name: 'spaceChanged', handler: this.handleSpaceChanged, subscriber: this, persistent: true });
-
 		const player = this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX);
 		const keyboard = new KeyboardInput('keyboard:0');
 		const pointer = new PointerInput('pointer:0');
@@ -945,7 +917,6 @@ export class Input implements RegisterablePersistent {
 			if (binding.assignedPlayer !== null) {
 				const player = this.getPlayerInput(binding.assignedPlayer);
 				player.clearGamepad(handler);
-				controllerUnassignedToast();
 			} else {
 				this.removePendingGamepadAssignment(handler.gamepadIndex);
 			}
@@ -963,11 +934,6 @@ export class Input implements RegisterablePersistent {
 	}
 
 	public unbind(): void {
-		// Remove all event subscriptions
-		EventEmitter.instance.removeSubscriber(this);
-
-		// Deregister the input system
-		Registry.instance.deregister(this);
 		this.detachFromPlatformInput();
 		if (this.focusChangeUnsubscribe) {
 			const unsubscribe = this.focusChangeUnsubscribe;
@@ -982,15 +948,6 @@ export class Input implements RegisterablePersistent {
 	public pollInput(): void {
 		this.pollPlatformDevices();
 		const now = $.platform.clock.now();
-		// Ensure UI controller exists once spaces are ready
-		if (!this.uiControllerSpawned) {
-			const ui = $.world.getSpace('ui');
-			if (ui) {
-				const existing = $.world.getWorldObject('controller_assignment_ui');
-				if (!existing) ui.spawn(new ControllerAssignmentUI());
-				this.uiControllerSpawned = true;
-			}
-		}
 		this.playerInputs.forEach(player => {
 			if (!player) return;
 			this.processDebugHotkeys(player);
@@ -1004,7 +961,6 @@ export class Input implements RegisterablePersistent {
 					gamepadInput.reset();
 					player.inputHandlers['gamepad'] = null;
 					this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(gamepadInput, null));
-					controllerUnassignedToast();
 				}
 			}
 		});
@@ -1101,32 +1057,6 @@ export class Input implements RegisterablePersistent {
 
 		const allowGlobalHotkeys = $.running || !$.paused;
 		if (allowGlobalHotkeys) {
-			const hudToggle = player.getButtonState(DEBUG_HUD_TOGGLE_KEY, 'keyboard');
-			if (hudToggle?.justpressed) {
-				toggleRenderHUD();
-				toggleECSHUD();
-				toggleInputHUD();
-				keyboardHandler.consumeButton(DEBUG_HUD_TOGGLE_KEY);
-			}
-
-			const debugMenu = player.getButtonState('F6', 'keyboard');
-			if (debugMenu?.justpressed) {
-				openDebugOverviewTab();
-				keyboardHandler.consumeButton('F6');
-			}
-
-			const objectMenu = player.getButtonState('F7', 'keyboard');
-			if (objectMenu?.justpressed) {
-				openObjectInspectorTab();
-				keyboardHandler.consumeButton('F7');
-			}
-
-			const eventMenu = player.getButtonState('F8', 'keyboard');
-			if (eventMenu?.justpressed) {
-				openEventInspectorTab();
-				keyboardHandler.consumeButton('F8');
-			}
-
 			const fullscreenToggle = player.getButtonState('F11', 'keyboard');
 			if (fullscreenToggle?.justpressed) {
 				if ($.view.fullscreen) {
@@ -1180,6 +1110,5 @@ export class Input implements RegisterablePersistent {
 		if (binding) {
 			binding.assignedPlayer = playerIndex;
 		}
-		this.events.emit('playerjoin', { playerIndex });
 	}
 }

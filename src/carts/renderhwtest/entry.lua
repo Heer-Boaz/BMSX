@@ -4,7 +4,9 @@ local render_hw = require("render_hw")
 local put_mesh = render_hw.put_mesh
 local put_particle = render_hw.put_particle
 local set_camera = render_hw.set_camera
-local skybox = render_hw.skybox
+local put_ambient_light = render_hw.put_ambient_light
+local put_directional_light = render_hw.put_directional_light
+local put_point_light = render_hw.put_point_light
 
 local function normalize(x, y, z)
 	local len = math.sqrt(x * x + y * y + z * z)
@@ -66,7 +68,6 @@ end
 
 function init()
 	mesh = mesh_from_model('cube', 0)
-	skybox('skybox', 'skybox', 'skybox', 'skybox', 'skybox', 'skybox')
 end
 
 function new_game()
@@ -84,6 +85,9 @@ function draw()
 	local view = look_at(eye, target, up)
 	local proj = perspective(60, aspect, 0.1, 50)
 	set_camera(view, proj, eye)
+	put_ambient_light('amb', { r = 0.35, g = 0.4, b = 0.55 }, 0.18)
+	put_directional_light('sun', { x = -0.6, y = -1.0, z = -0.35 }, { r = 1.0, g = 0.95, b = 0.82 }, 1.1)
+	put_point_light('lamp', { x = math.cos(t * 1.2) * 1.4, y = 1.6, z = math.sin(t * 1.2) * 1.4 }, { r = 0.35, g = 0.7, b = 1.0 }, 4.5, 1.35)
 
 	local model = rotate_y(t * 0.7)
 	put_mesh(mesh, model, { receive_shadow = false })

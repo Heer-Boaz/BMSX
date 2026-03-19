@@ -766,6 +766,48 @@ end
 function meshcomponent:update_animation(_dt)
 end
 
+local ambientlightcomponent = {}
+ambientlightcomponent.__index = ambientlightcomponent
+setmetatable(ambientlightcomponent, { __index = component })
+
+function ambientlightcomponent.new(opts)
+	opts = opts or {}
+	opts.type_name = 'ambientlightcomponent'
+	local self = setmetatable(component.new(opts), ambientlightcomponent)
+	self.color = opts.color or { r = 1, g = 1, b = 1 }
+	self.intensity = opts.intensity or 1
+	return self
+end
+
+local directionallightcomponent = {}
+directionallightcomponent.__index = directionallightcomponent
+setmetatable(directionallightcomponent, { __index = component })
+
+function directionallightcomponent.new(opts)
+	opts = opts or {}
+	opts.type_name = 'directionallightcomponent'
+	local self = setmetatable(component.new(opts), directionallightcomponent)
+	self.orientation = opts.orientation or { x = 0, y = -1, z = 0 }
+	self.color = opts.color or { r = 1, g = 1, b = 1 }
+	self.intensity = opts.intensity or 1
+	return self
+end
+
+local pointlightcomponent = {}
+pointlightcomponent.__index = pointlightcomponent
+setmetatable(pointlightcomponent, { __index = component })
+
+function pointlightcomponent.new(opts)
+	opts = opts or {}
+	opts.type_name = 'pointlightcomponent'
+	local self = setmetatable(component.new(opts), pointlightcomponent)
+	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
+	self.color = opts.color or { r = 1, g = 1, b = 1 }
+	self.range = opts.range or 6
+	self.intensity = opts.intensity or 1
+	return self
+end
+
 -- customvisualcomponent: scripted render producer
 local customvisualcomponent = {}
 customvisualcomponent.__index = customvisualcomponent
@@ -1090,6 +1132,9 @@ local componentregistry = {
 	transformcomponent = transformcomponent,
 	textcomponent = textcomponent,
 	meshcomponent = meshcomponent,
+	ambientlightcomponent = ambientlightcomponent,
+	directionallightcomponent = directionallightcomponent,
+	pointlightcomponent = pointlightcomponent,
 	customvisualcomponent = customvisualcomponent,
 	inputintentcomponent = inputintentcomponent,
 	inputactioneffectcomponent = inputactioneffectcomponent,
@@ -1120,6 +1165,9 @@ return {
 	transformcomponent = transformcomponent,
 	textcomponent = textcomponent,
 	meshcomponent = meshcomponent,
+	ambientlightcomponent = ambientlightcomponent,
+	directionallightcomponent = directionallightcomponent,
+	pointlightcomponent = pointlightcomponent,
 	customvisualcomponent = customvisualcomponent,
 	inputintentcomponent = inputintentcomponent,
 	inputactioneffectcomponent = inputactioneffectcomponent,

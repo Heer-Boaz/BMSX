@@ -1,4 +1,3 @@
-import type { AudioEventMapEntry } from '../audio/audioeventmanager';
 import type { quat } from '../render/3d/math3d';
 import type { TextureKey } from '../render/texturemanager';
 import type { GameViewHost, Platform } from '../platform';
@@ -91,6 +90,7 @@ export type id2imgres = Record<asset_token_key, RomImgAsset>;
 export type id2model = Record<asset_token_key, GLTFModel>;
 export type id2data = Record<asset_token_key, any>;
 export type id2lua = Record<asset_token_key, RomLuaAsset>;
+export type AudioEventMapEntry = Record<string, unknown>;
 export type id2audioevent = Record<asset_token_key, AudioEventMapEntry>;
 
 export type BitmapId = asset_id;

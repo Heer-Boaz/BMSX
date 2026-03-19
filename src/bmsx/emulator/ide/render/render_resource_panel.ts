@@ -1,6 +1,5 @@
 import type { RectBounds } from '../../../rompack/rompack';
 import type { ResourcePanelController } from '../resource_panel_controller';
-import { Msx1Colors } from '../../../systems/msx';
 import { clamp } from '../../../utils/clamp';
 import { getCodeAreaBounds } from '../editor_view';
 import { resourceViewerClampScroll } from '../ide_input';
@@ -10,6 +9,7 @@ import { drawEditorText, drawEditorColoredText } from '../text_renderer';
 import { api } from '../../runtime';
 import { measureText, wrapOverlayLine } from '../text_utils';
 import * as constants from '../constants';
+import { BmsxColors } from '../../vdp';
 import { renderErrorOverlayText } from './render_error_overlay';
 import { drawRectOutlineColor } from './render_caret';
 
@@ -69,7 +69,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	const highlightIndex = controller.hoverIndex >= 0 ? controller.hoverIndex : controller.selectionIndex;
 	const panelActive = controller.focused;
 	const scrollX = controller.hscroll;
-	const highlightColor = Msx1Colors[constants.COLOR_RESOURCE_PANEL_HIGHLIGHT];
+	const highlightColor = BmsxColors[constants.COLOR_RESOURCE_PANEL_HIGHLIGHT];
 
 	for (let itemIndex = scrollStart, drawIndex = 0; itemIndex < scrollEnd; itemIndex += 1, drawIndex += 1) {
 		const item = controller.items[itemIndex];

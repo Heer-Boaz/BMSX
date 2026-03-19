@@ -1,7 +1,6 @@
 import { $ } from '../../core/engine_core';
 import { registerSpritesPass_WebGL } from '../2d/sprites_pipeline';
 import { registerSpritesPass_WebGPU } from '../2d/sprites_pipeline.wgpu';
-import { AmbientLight } from '../3d/light';
 import * as MeshPipeline from '../3d/mesh_pipeline';
 import { registerMeshBatchPass_WebGL } from '../3d/mesh_pipeline';
 import { registerMeshBatchPass_WebGPU } from '../3d/mesh_pipeline.wgpu';
@@ -79,10 +78,6 @@ export class RenderPassLibrary {
 					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
 				});
-				// Ambient now resides in the Frame UBO
-				const ambientEntry = $.world.activeAmbientLight;
-				const amb = ambientEntry ? ambientEntry.light : null;
-				updateAndBindFrameUniforms(backend, { offscreen: { x: 0, y: 0 }, logical: { x: 0, y: 0 }, ambient: amb ? { color: amb.color, intensity: amb.intensity } : undefined });
 			},
 		});
 		// Removed: standalone fog pass. Fog state is produced in FrameSharedState.
@@ -110,13 +105,6 @@ export class RenderPassLibrary {
 				updateAndBindFrameUniforms(backend, {
 					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
-				});
-				const ambientEntry = $.world.activeAmbientLight;
-				const amb = ambientEntry ? ambientEntry.light : null;
-				updateAndBindFrameUniforms(backend, {
-					offscreen: { x: 0, y: 0 },
-					logical: { x: 0, y: 0 },
-					ambient: amb ? { color: amb.color, intensity: amb.intensity } : undefined,
 				});
 			},
 		});
@@ -356,9 +344,7 @@ export class RenderPassLibrary {
 				});
 				const camState = resolveCameraState(); if (!camState) return;
 				const viewState = { camPos: camState.camPos, viewProj: camState.viewProj, skyboxView: camState.skyboxView, proj: camState.proj };
-				const activeAmbient = $.world.activeAmbientLight;
-				const ambientLight = activeAmbient ? (activeAmbient.light as AmbientLight) : null;
-				const lighting = lightingSystem.update(ambientLight);
+				const lighting = lightingSystem.update();
 				// Build fog state alongside frame-shared so consumers can rely on it
 				const fog: FogUniforms = {
 					fogD50: gv.atmosphere.fogD50,

@@ -9,7 +9,6 @@ import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, pos
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../types';
 import type { StackTraceFrame } from '../../../lua/luavalue';
 import type { RectBounds } from '../../../rompack/rompack';
-import { Msx1Colors } from '../../../systems/msx';
 import { point_in_rect } from '../../../utils/rect_operations';
 import { api, Runtime } from '../../runtime';
 import { clampCursorColumn, centerCursorVertically, revealCursor } from '../caret';
@@ -18,6 +17,7 @@ import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../run
 import { resetBlink } from './render_caret';
 import { formatRuntimeErrorLocation } from '../../runtime_error_util';
 import { splitText } from '../text/source_text';
+import { BmsxColors } from '../../vdp';
 
 export interface ErrorOverlayBounds {
 	left: number;
@@ -443,7 +443,7 @@ export function renderRuntimeErrorOverlayBubble(
 	api.put_rect(layout.copyButtonRect.left, layout.copyButtonRect.top, layout.copyButtonRect.right, layout.copyButtonRect.bottom, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
 	const iconX = layout.copyButtonRect.left + (layout.copyButtonRect.right - layout.copyButtonRect.left - COPY_ICON_WIDTH) / 2;
 	const iconY = layout.copyButtonRect.top + (layout.copyButtonRect.bottom - layout.copyButtonRect.top - COPY_ICON_HEIGHT) / 2;
-	api.put_sprite(COPY_ICON_ID, iconX, iconY, undefined, { colorize: Msx1Colors[constants.ERROR_OVERLAY_TEXT_COLOR] });
+	api.put_sprite(COPY_ICON_ID, iconX, iconY, undefined, { colorize: BmsxColors[constants.ERROR_OVERLAY_TEXT_COLOR] });
 }
 
 export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverlay, x: number, y: number): number {

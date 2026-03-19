@@ -652,22 +652,6 @@ export function findResourcePanelIndexByasset_id(asset_id: string): number {
 	return -1;
 }
 
-export function openDebugOverviewTab(): void {
-	ide_state.resourcePanel.showRegistryInspector();
-}
-
-export function openObjectInspectorTab(): void {
-	ide_state.resourcePanel.showWorldInspector();
-}
-
-export function openEventInspectorTab(): void {
-	ide_state.resourcePanel.showEventInspector();
-}
-
-export function openRegistryInspectorTab(): void {
-	ide_state.resourcePanel.showRegistryInspector();
-}
-
 export function getResourcePanelWidth(): number {
 	if (!ide_state.resourcePanelVisible) {
 		return 0;

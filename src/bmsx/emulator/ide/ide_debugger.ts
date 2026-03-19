@@ -1,5 +1,3 @@
-import { RegisterablePersistent } from '../../rompack/rompack';
-import { Registry } from '../../core/registry';
 import { Runtime } from '../runtime';
 import * as runtimeIde from '../runtime_ide';
 import { type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
@@ -18,7 +16,7 @@ type DebuggerResumeCommand = 'continue' | 'step_over' | 'step_into' | 'step_out'
 
 const DEBUGGER_LOG_PREFIX = '[Debugger]';
 
-export class RuntimeDebuggerCommandExecutor implements RegisterablePersistent {
+export class RuntimeDebuggerCommandExecutor {
 	private static _instance: RuntimeDebuggerCommandExecutor = null;
 
 	public static get instance(): RuntimeDebuggerCommandExecutor {
@@ -28,25 +26,10 @@ export class RuntimeDebuggerCommandExecutor implements RegisterablePersistent {
 		return RuntimeDebuggerCommandExecutor._instance;
 	}
 
-	get registrypersistent(): true {
-		return true;
-	}
-
-	public get id(): 'dce' { return 'dce'; }
-
 	public dispose(): void {
-		this.unbind();
 		if (RuntimeDebuggerCommandExecutor._instance === this) {
 			RuntimeDebuggerCommandExecutor._instance = null;
 		}
-	}
-
-	public bind(): void {
-		Registry.instance.register(this);
-	}
-
-	public unbind(): void {
-		Registry.instance.deregister(this);
 	}
 
 	private hasActiveSuspension = getLastDebuggerPauseEvent() !== null;

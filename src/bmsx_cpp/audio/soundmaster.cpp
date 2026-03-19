@@ -80,6 +80,8 @@ void SoundMaster::setMaxVoicesByType(std::optional<int> sfx, std::optional<int> 
 void SoundMaster::resetPlaybackState() {
 	for (auto& pool : m_voicesByType) pool.clear();
 	for (auto& pool : m_pausedByType) pool.clear();
+	for (auto& queue : m_audioQueueByType) queue.clear();
+	m_resumeOnNextEndByType = {false, false, false};
 	for (auto& list : m_endedListenersByType) list.clear();
 	m_currentVoiceIdByType = {0, 0, 0};
 	m_currentAudioIdByType = {"", "", ""};
@@ -112,6 +114,64 @@ VoiceId SoundMaster::play(const AssetId& id, const SoundMasterPlayRequest& reque
 	const i32 priority = request.priority.has_value() ? request.priority.value() : asset.meta.priority;
 	const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
 	return startVoice(asset.meta.type, id, asset, params, priority, initialGain);
+}
+
+void SoundMaster::playWithPolicy(AudioType type, const AssetId& id, const SoundMasterPlayRequest& request, std::optional<AudioPlaybackMode> policy, std::optional<int> maxVoices) {
+	const AudioAsset& asset = getAudioOrThrow(id);
+	SoundMasterPlayRequest resolvedRequest = request;
+	const i32 priority = resolvedRequest.priority.has_value() ? resolvedRequest.priority.value() : asset.meta.priority;
+	resolvedRequest.priority = priority;
+
+	const AudioPlaybackMode resolvedPolicy = policy.value_or(AudioPlaybackMode::Replace);
+	const int resolvedMaxVoices = maxVoices.value_or(1);
+	if (resolvedMaxVoices < 1) {
+		throw std::runtime_error("max_voices must be at least 1");
+	}
+
+	const size_t typeIdx = typeIndex(type);
+	if (resolvedPolicy == AudioPlaybackMode::Stop) {
+		stop(type, AudioStopSelector::All);
+		m_audioQueueByType[typeIdx].clear();
+		return;
+	}
+
+	const size_t active = activeCountByType(type);
+	if (active >= static_cast<size_t>(resolvedMaxVoices)) {
+		if (resolvedPolicy == AudioPlaybackMode::Ignore) {
+			return;
+		}
+		if (resolvedPolicy == AudioPlaybackMode::Replace) {
+			const std::vector<ActiveVoiceInfo> infos = getActiveVoiceInfosByType(type);
+			if (infos.empty()) {
+				throw std::runtime_error("No active voices returned for audio channel");
+			}
+			size_t minIdx = 0;
+			i32 minPr = infos[0].priority;
+			f64 oldestStart = infos[0].startedAt;
+			for (size_t i = 1; i < infos.size(); ++i) {
+				const auto& info = infos[i];
+				if (info.priority < minPr || (info.priority == minPr && info.startedAt < oldestStart)) {
+					minPr = info.priority;
+					minIdx = i;
+					oldestStart = info.startedAt;
+				}
+			}
+			if (priority < minPr) {
+				return;
+			}
+			stop(type, AudioStopSelector::ByVoice, infos[minIdx].voiceId);
+		}
+		if (resolvedPolicy == AudioPlaybackMode::Pause) {
+			pause(type);
+			m_resumeOnNextEndByType[typeIdx] = true;
+		}
+		if (resolvedPolicy == AudioPlaybackMode::Queue) {
+			m_audioQueueByType[typeIdx].push_back(AudioQueueItem{id, resolvedRequest, resolvedMaxVoices});
+			return;
+		}
+	}
+
+	play(id, resolvedRequest);
 }
 
 void SoundMaster::stop(AudioType type, AudioStopSelector which, VoiceId voiceId, const AssetId& id) {
@@ -216,6 +276,24 @@ void SoundMaster::resumeType(AudioType type) {
 		const AudioAsset& asset = getAudioOrThrow(snapshot.id);
 		const f32 initialGain = clampVolume(std::pow(10.0f, params.volumeDelta / 20.0f));
 		startVoice(asset.meta.type, snapshot.id, asset, params, snapshot.priority, initialGain);
+	}
+}
+
+void SoundMaster::onAudioChannelEnded(AudioType type) {
+	const size_t idx = typeIndex(type);
+	if (m_resumeOnNextEndByType[idx]) {
+		m_resumeOnNextEndByType[idx] = false;
+		resumeType(type);
+		return;
+	}
+	auto& queue = m_audioQueueByType[idx];
+	while (!queue.empty()) {
+		const AudioQueueItem item = queue.front();
+		if (activeCountByType(type) >= static_cast<size_t>(item.maxVoices)) {
+			return;
+		}
+		queue.erase(queue.begin());
+		play(item.id, item.request);
 	}
 }
 
@@ -1287,6 +1365,7 @@ void SoundMaster::removeVoice(AudioType type, size_t index) {
 
 void SoundMaster::finalizeVoiceEnd(AudioType type, const VoiceRecord& record) {
 	const size_t idx = typeIndex(type);
+	onAudioChannelEnded(type);
 	if (m_endedListenersByType[idx].empty()) return;
 	ActiveVoiceInfo info{
 		record.voiceId,

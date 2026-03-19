@@ -1,10 +1,7 @@
-﻿import { PSG } from "../audio/psg";
 import { ModulationParams, ModulationPresetResolver, RandomModulationParams, SoundMaster, SoundMasterPlayRequest } from "../audio/soundmaster";
-import { showRewindDialog } from "../debugger/rewindui";
 import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
-import { PhysicsWorld } from '../physics/physicsworld';
 import { GameView } from "../render/gameview";
 import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
@@ -12,42 +9,20 @@ import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_f
 import type { SkyboxImageIds } from "../render/shared/render_types";
 import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
-import { asset_id, getMachineMaxVoices, Identifiable, Identifier, Registerable, RuntimeAssets, type vec3, type vec2 } from "../rompack/rompack";
-import { tokenKeyFromId } from '../util/asset_tokens';
+import { asset_id, getMachineMaxVoices, RuntimeAssets, type vec2 } from "../rompack/rompack";
+import { tokenKeyFromId } from '../rompack/asset_tokens';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { buildRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/romloader';
 import type { LuaSourceRegistry } from '../emulator/lua_sources';
-import { BinaryCompressor } from "../serializer/bincompressor";
-import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
-import { Service } from "./service";
-import { RewindBuffer, RewindFrame } from "../serializer/rewind";
-import { World, WorldConfiguration, type SpawnReason } from "./world";
-import { EventEmitter } from "./eventemitter";
-import { create_gameevent, EventPayload, GameEvent } from "./game_event";
-import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
-import { WorldObject } from "./object/worldobject";
-import { GameOptions } from './gameoptions';
-import { Registry } from "./registry";
 import { GateGroup, taskGate } from './taskgate';
-// Choose and apply an ECS pipeline here (gameplay/headless)
-import { DefaultECSPipelineRegistry } from "../ecs/pipeline";
-import { TickGroup } from '../ecs/ecsystem';
-import { registerBuiltinECS } from "../ecs/builtin_pipeline";
-import type { NodeSpec } from "../ecs/pipeline";
-import { collectEcsPipelineExtensionsFromWorldModules, } from "../ecs/extensions";
-import { gameplaySpec } from './pipelines/gameplay_pipeline';
 import { Runtime } from '../emulator/runtime';
 import { IRQ_NEWGAME } from '../emulator/io';
 import * as runtimeIde from '../emulator/runtime_ide';
-import * as runtimeLuaPipeline from '../emulator/runtime_lua_pipeline';
-import { createEmulatorModule } from '../emulator/module';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
-import { ActionEffectRegistry } from '../action_effects/effect_registry';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
 import { clamp } from '../utils/clamp';
 import { clearBackQueues, prepareCompletedRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
-// No direct space helpers needed here; Spaces are revived as part of the world.
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
@@ -60,26 +35,18 @@ export interface EngineStartupOptions {
 	engineRom: Uint8Array;
 	cartridge?: Uint8Array;
 	workspaceOverlay?: Uint8Array;
-	worldConfig?: WorldConfiguration;
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
 	debug?: boolean;
 	startingGamepadIndex?: number;
 	enableOnscreenGamepad?: boolean;
-	/**
-	 * ECS pipeline selection. Provide a spec or a pipeline id. Defaults to the platform's default pipeline.
-	 */
-	ecsPipeline?: NodeSpec[];
 	platform: Platform;
 	viewHost?: GameViewHost;
 }
 
 const MAX_FRAME_DELTA = 250;  // ms
 const MAX_SUBSTEPS = 5;
-const REWIND_BUFFER_ACTIVATED = true;
-const REWIND_BUFFER_WRITE_FREQUENCY = 1; // Frames
-const PARTIAL_PRESENTATION_TICK_GROUPS: ReadonlyArray<TickGroup> = [TickGroup.Presentation];
-const PRESENTATION_TICK_GROUPS: ReadonlyArray<TickGroup> = [TickGroup.Presentation, TickGroup.EventFlush];
+const DEFAULT_MASTER_VOLUME = 1;
 
 export const HZ_SCALE = PLATFORM_HZ_SCALE;
 
@@ -159,8 +126,6 @@ export class EngineCore {
 	private _lua_sources: LuaSourceRegistry = null;
 	private _engine_layer: RuntimeAssetLayer = null;
 	private _workspace_overlay: Uint8Array = null;
-	private _sndcontext: AudioContext = null;
-	private _gainnode: GainNode = null;
 
 	/**
 	 * The accumulated time in milliseconds.
@@ -218,14 +183,11 @@ export class EngineCore {
 	private showDebuggerControls(): void {
 		this._debuggerControlsVisible = true;
 		$.view.showPauseOverlay();
-		showRewindDialog();
 	}
 
 	private hideDebuggerControls(): void {
 		this._debuggerControlsVisible = false;
 		$.view.showResumeOverlay();
-		let rewindOverlay = document.getElementById('rewind-overlay');
-		if (rewindOverlay) rewindOverlay.remove();
 	}
 
 	/**
@@ -240,10 +202,6 @@ export class EngineCore {
 	public debug_runSingleFrameAndPause!: boolean;
 
 	private removeWillExit: SubscriptionHandle = null;
-	private _pipelineSpec: NodeSpec[] = []; // Note that the base spec already includes extensions, and is already a clone
-	private _pipelineOverride: NodeSpec[] = []; // These nodes override the base spec when set during runtime. So they really replace the base spec until cleared.
-	private _pipelineExt: NodeSpec[] = null; // These nodes override the base spec when set during runtime. Note that these are not extended with module nodes, as the modules are already included in the base spec at init time.
-	private initialWorldConfigSnapshot: WorldConfiguration = null;
 
 	public get assets(): RuntimeAssets { return this._assets; }
 	public get asset_source(): RawAssetSource { return this._asset_source; }
@@ -257,61 +215,12 @@ export class EngineCore {
 		this._asset_source = source;
 	}
 
-	public get world(): World { return this.registry.get<World>('world')!; }
-
 	public get view(): GameView { return this._view; }
-
-	public get event_emitter(): EventEmitter { return EventEmitter.instance!; }
-	public get events(): EventEmitter { return EventEmitter.instance!; }
 
 	public get input(): Input { return Input.instance!; }
 	public get texmanager(): TextureManager { return TextureManager.instance!; }
-	public get registry(): Registry { return Registry.instance!; }
-	public get sndmaster(): SoundMaster { return this.registry.get<SoundMaster>('sm')!; }
-	public get ae_registry(): ActionEffectRegistry { return ActionEffectRegistry.instance; }
+	public get sndmaster(): SoundMaster { return SoundMaster.instance; }
 	public get platform(): Platform { return this._platform!; }
-
-
-	public emit(event: GameEvent): void;
-	public emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void;
-	public emit(arg0: GameEvent | string, emitter?: Identifiable, payload: EventPayload = {}): void {
-		const e = typeof arg0 === 'string' ? create_gameevent({ type: arg0, emitter: emitter, ...payload }) : arg0;
-		GameplayEventRecorder.instance.record(e);
-		this.event_emitter.emit(e);
-	}
-
-	public get<T extends Registerable>(id: Identifier): T {
-		return this.registry.get<T>(id);
-	}
-
-	public get_worldobject<T extends WorldObject>(id: Identifier): T {
-		return this.world.getWorldObject<T>(id);
-	}
-
-	public resolve_ref_or_id<T extends Registerable>(ref_or_id: T | Identifier): T {
-		if (typeof ref_or_id === 'string') {
-			return this.registry.get<T>(ref_or_id);
-		}
-		return ref_or_id;
-	}
-
-	public has(id: Identifier): boolean {
-		return this.registry.has(id);
-	}
-
-	public register(value: Registerable): void {
-		this.registry.register(value);
-	}
-
-	public deregister(id: Identifier | Registerable): void {
-		this.registry.deregister(id);
-	}
-
-	public spawn(o: WorldObject, pos?: vec3, opts?: { ignoreSpawnhandler?: boolean, reason?: SpawnReason }): void {
-		this.world.spawn(o, pos, opts);
-	}
-
-	public exile(o: WorldObject): void { this.world.despawnFromAllSpaces(o); }
 
 	public playaudio(id: asset_id, options?: RandomModulationParams | ModulationParams | string | SoundMasterPlayRequest): void {
 		if (typeof options === 'string') {
@@ -391,9 +300,6 @@ export class EngineCore {
 		return this.view.viewportSize;
 	}
 
-	private rewindBuffer: RewindBuffer;
-	private readonly REWINDBUFFER_LENGTH_SECONDS: number = 60; // Length of the rewind buffer in seconds
-
 	/**
 	 * Constructs a new instance of the BMSX class.
 	 */
@@ -403,7 +309,6 @@ export class EngineCore {
 
 	private recomputeTimingCaches(): void {
 		this.update_interval_ms = 1000 / this.target_fps;
-		this.rewindBuffer = new RewindBuffer(this.target_fps, this.REWINDBUFFER_LENGTH_SECONDS);
 	}
 
 	private buildModulationResolver(assets: RuntimeAssets): ModulationPresetResolver {
@@ -437,13 +342,13 @@ export class EngineCore {
 	}
 
 	public async refresh_audio_assets(): Promise<void> {
-		this.sndmaster.bootstrapRuntimeAudio(GameOptions.volumePercentage);
+		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
 		const resolver = this.buildModulationResolver(this._assets);
 		const runtime = Runtime.instance;
 		const resources = runtime.buildAudioResourcesForSoundMaster();
 		await SoundMaster.instance.init(
 			resources,
-			GameOptions.volumePercentage,
+			DEFAULT_MASTER_VOLUME,
 			resolver,
 			(id) => runtime.getAudioBytesById(id)
 		);
@@ -454,7 +359,7 @@ export class EngineCore {
 	}
 
 	public bootstrapStartupAudio(): void {
-		this.sndmaster.bootstrapRuntimeAudio(GameOptions.volumePercentage);
+		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
 	}
 
 	public set_skybox_imgs(ids: SkyboxImageIds): void {
@@ -466,12 +371,10 @@ export class EngineCore {
 	 * @param rom - The ROM pack containing game assets.
 	 * @param model - The model object that manages the game state.
 	 * @param view - The view object that manages the game display.
-	 * @param sndcontext - The audio context used for playing sounds.
-	 * @param gainnode - The gain node used for controlling the volume of sounds.
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: EngineStartupOptions): Promise<EngineCore> {
-		const { engineRom, cartridge, workspaceOverlay, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, platform, viewHost } = init;
+		const { engineRom, cartridge, workspaceOverlay, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, platform, viewHost } = init;
 		if (!platform) {
 			throw new Error('[Game] Platform services not provided. Pass a Platform instance in GameInitArgs.');
 		}
@@ -479,8 +382,6 @@ export class EngineCore {
 		if (!resolvedViewHost) {
 			throw new Error('[Game] Platform did not expose a GameViewHost. Provide one in GameInitArgs.');
 		}
-		this._sndcontext = sndcontext;
-		this._gainnode = gainnode;
 		const engineLayer = await buildRuntimeAssetLayer({ blob: engineRom, id: 'system' });
 		this._engine_layer = engineLayer;
 		this._workspace_overlay = workspaceOverlay;
@@ -498,8 +399,8 @@ export class EngineCore {
 		this._debug = debug ?? this._debug;
 		$debug = this._debug;
 
-		EventEmitter.instance; // Init event emitter
 		Input.initialize(startingGamepadIndex); // Init input module
+		Input.instance.bind();
 		if (enableOnscreenGamepad || this.input.isOnscreenGamepadEnabled) {
 			this.input.enableOnscreenGamepad();
 		}
@@ -507,20 +408,13 @@ export class EngineCore {
 		if (typeof document !== 'undefined') {
 			ensureBrowserBackendFactory();
 		}
-		let resolvedWorldConfig = worldConfig;
-		if (!resolvedWorldConfig) {
-			let viewport = engineLayer.index.manifest.machine.viewport;
-			if (cartridge) {
-				const cartNormalized = normalizeCartridgeBlob(cartridge);
-				const cartIndex = await parseCartridgeIndex(cartNormalized.payload);
-				viewport = cartIndex.manifest.machine.viewport;
-			}
-			resolvedWorldConfig = {
-				viewportSize: shallowcopy(viewport),
-				modules: [createEmulatorModule()],
-			};
+		let viewport = engineLayer.index.manifest.machine.viewport;
+		if (cartridge) {
+			const cartNormalized = normalizeCartridgeBlob(cartridge);
+			const cartIndex = await parseCartridgeIndex(cartNormalized.payload);
+			viewport = cartIndex.manifest.machine.viewport;
 		}
-		const viewportInput = resolvedWorldConfig.viewportSize as { width?: number; height?: number; x?: number; y?: number };
+		const viewportInput = shallowcopy(viewport) as { width?: number; height?: number; x?: number; y?: number };
 		const viewportSize = { x: (viewportInput.width ?? viewportInput.x)!, y: (viewportInput.height ?? viewportInput.y)! }; // Ugly and needs to be refactored in the GameView
 		const gview = new GameView({
 			viewportSize,
@@ -552,42 +446,8 @@ export class EngineCore {
 
 		await gview.initializeDefaultTextures();
 
-		if (this._sndcontext) {
-			try {
-				await PSG.init(this._sndcontext, GameOptions.volumePercentage, this._gainnode);
-			} catch (error) {
-				console.error("Failed to initialize PSG:", error);
-			}
-		}
-
-		// Init the model to populate states (and do other init stuff) and
-		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
-		if (!resolvedWorldConfig) throw new Error('World configuration not passed to game init!');
-		this.initialWorldConfigSnapshot = resolvedWorldConfig;
-		new World(resolvedWorldConfig);
-		Input.instance.bind();
-		// Register built-in ECS systems; allow modules to register extensions on boot
-		registerBuiltinECS();
-		// Initialize world (spaces, FSM/BT libraries, modules onBoot)
-		await this.world.init_on_boot();
-		// Compose pipeline spec from profile/custom and module extensions
-		const baseSpec: NodeSpec[] = ecsPipeline ? shallowcopy(ecsPipeline) : gameplaySpec();
-		const extensions = collectEcsPipelineExtensionsFromWorldModules({ world: this.world, registry: DefaultECSPipelineRegistry });
-		for (const node of extensions) {
-			baseSpec.push(shallowcopy(node));
-		}
-		this._pipelineSpec = baseSpec; // Note that the base spec already includes extensions, and is already a clone
-		this._pipelineOverride = null;
-		this.rebuildPipeline();
-
-		// Activation: services begin play here (objects already activated in onspawn)
-		this.registry.getRegisteredEntitiesByType(Service).forEach(service => service.activate());
-
-		// Register / create physics world (MVP). Exposed via registry for components/game objects.
-		new PhysicsWorld().bind();
-
 		if (this.debug) {
-			Input.instance.enableDebugMode(this.view.surface); // Do this after the world is initialized to prevent race conditions
+			Input.instance.enableDebugMode(this.view.surface);
 		}
 		else {
 			// Prevent the user from accidentally closing the game window if not in debug mode
@@ -604,78 +464,32 @@ export class EngineCore {
 		e.setReturnMessage('Are you sure you want to exit this awesome game?');
 	};
 
-	private rebuildPipeline(): void {
-		if (!this.world) {
-			throw new Error('[Game] Cannot rebuild pipeline before world initialization.');
-		}
-		if (this._pipelineSpec.length === 0 && !this._pipelineOverride) {
-			throw new Error('[Game] Gameplay pipeline spec has not been initialized and no override is available.');
-		}
-
-		const base = this._pipelineOverride ?? this._pipelineSpec;
-		const combinedSpec = base.map(node => shallowcopy(node));
-		const nonModuleExtensions = this._pipelineExt ?? [];
-		for (const node of nonModuleExtensions) {
-			combinedSpec.push(shallowcopy(node));
-		}
-		DefaultECSPipelineRegistry.build(this.world, combinedSpec);
-	}
-
-	public get pipeline_spec() {
-		return this._pipelineSpec;
-	}
-
-	public set pipeline_spec_override(spec: NodeSpec[]) {
-		this._pipelineOverride = spec;
-		this.rebuildPipeline();
-	}
-
-	public set pipeline_ext(spec: NodeSpec[]) {
-		this._pipelineExt = spec;
-		this.rebuildPipeline();
-	}
-
-	public async reset_to_fresh_world(options?: { preserve_textures?: boolean }): Promise<void> {
+	public async resetRuntime(options?: { preserve_textures?: boolean }): Promise<void> {
 		if (!this.initialized) {
-			throw new Error('[Game] Cannot reset world before initialization.');
+			throw new Error('[EngineCore] Cannot reset runtime before initialization.');
 		}
 		const preserveTextures = options?.preserve_textures === true;
-		const gateToken = renderGate.begin({ blocking: true, tag: 'world-reset' });
-		const runToken = runGate.begin({ blocking: true, tag: 'world-reset' });
+		const gateToken = renderGate.begin({ blocking: true, tag: 'runtime-reset' });
+		const runToken = runGate.begin({ blocking: true, tag: 'runtime-reset' });
 		try {
 			this.sndmaster.resetPlaybackState();
-			// if (this.psgEnabled) {
-			// 	PSG.stopAll();
-			// }
+			this.accumulated_time = 0;
+			this.cycleCarry = 0;
+			this.debug_runSingleFrameAndPause = false;
+			clearBackQueues();
 
-			if (this.world) {
-				this.world.clearAllSpaces();
-				this.world.dispose();
+			const runtime = Runtime.instance;
+			if (runtime) {
+				runtime.abandonFrameState();
+				runtime.drawFrameState = null;
+				runtime.clearWaitForVblank();
+				runtime.resetVblankState();
+				runtime.preservedRenderQueue = [];
 			}
 
-			this.ae_registry.clear();
-			this.event_emitter.clear();
-			this.registry.clear();
 			if (!preserveTextures) {
 				this.texmanager.clear();
 				this.view.reset();
-			}
-
-			const world = new World(this.initialWorldConfigSnapshot);
-			await world.init_on_boot();
-
-			this.rebuildPipeline();
-
-			const services = this.registry.getRegisteredEntitiesByType(Service);
-			for (const service of services) {
-				service.bind();
-				if (!service.active) {
-					service.activate();
-				}
-			}
-
-			PhysicsWorld.rebuild();
-			if (!preserveTextures) {
 				await this.view.initializeDefaultTextures();
 			}
 		}
@@ -718,36 +532,16 @@ export class EngineCore {
 	 * @returns void
 	 */
 	public update(deltaTime: number): void {
-		let failed = false;
-		// Step physics first so world object logic can react to post-collision resolved positions.
 		try {
-			$.world.run(deltaTime, false);
+			this.deltatime = deltaTime;
+			Runtime.instance.tickUpdate();
 		} catch (error) {
-			failed = true;
-			// Surface engine/runtime errors to the in-game terminal when active
 			const runtime = Runtime.instance;
-			if (runtime) {
-				try {
-					runtimeIde.handleLuaError(runtime, error);
-					runtime.abandonFrameState(); // ensure we abandon the frame state to prevent freezing
-				} catch (error) { /* ignore secondary failures, but log them */
-					console.error(`Error while handling surfaced game error in runtime: ${error?.message ?? '<unknown error>'}`);
-					// ignore secondary failures, but log them
-				}
-				failed = true;
-			}
-		}
-
-		if (!failed) { // Only store a rewind snapshot if the update succeeded to avoid corrupt states
-			if (REWIND_BUFFER_ACTIVATED && ($._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {
-				// --- Rewind snapshot logic ---
-				try {
-					const snapshot = $.save(false);
-					const compressedSnapshot = BinaryCompressor.compressBinary(snapshot, { disableLZ77: false, disableRLE: false });
-					this.rewindBuffer.push(this.turnCounter, compressedSnapshot);
-				} catch (e) {
-					console.warn('Rewind snapshot failed:', e);
-				}
+			try {
+				runtimeIde.handleLuaError(runtime, error);
+				runtime.abandonFrameState();
+			} catch (secondaryError) {
+				console.error(`Error while handling surfaced runtime error: ${secondaryError?.message ?? '<unknown error>'}`);
 			}
 		}
 		if ($.debug_runSingleFrameAndPause) {
@@ -761,6 +555,36 @@ export class EngineCore {
 		return calcCyclesPerFrameScaled(runtime.cpuHz, this.ufps_scaled);
 	}
 
+	private runOverlayModeUpdate(runtime: Runtime): void {
+		runtimeIde.tickIDE(runtime);
+		runtimeIde.tickTerminalMode(runtime);
+	}
+
+	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: 'partial' | 'completed'): void {
+		this.deltatime = hostDeltaMs;
+		const overlayActive = runtimeIde.isOverlayActive(runtime);
+		if (overlayActive) {
+			clearBackQueues();
+		}
+		runtime.tickDraw();
+		runtimeIde.tickIDEDraw(runtime);
+		runtimeIde.tickTerminalModeDraw(runtime);
+		this.wasupdated = true;
+		this.view.configurePresentation(mode, mode === 'completed' && !overlayActive);
+		if (overlayActive) {
+			prepareOverlayRenderQueues();
+		} else if (mode === 'completed') {
+			prepareCompletedRenderQueues();
+		} else {
+			preparePartialRenderQueues();
+		}
+		if (mode === 'completed') {
+			this.sndmaster.finishFrame();
+		}
+		this.view.drawgame();
+		runtime.scheduleDeferredCartBootPreparation();
+	}
+
 	/**
 	 * Runs the game loop and updates the game state.
 	 * @param currentTime - The current time in milliseconds`
@@ -768,62 +592,37 @@ export class EngineCore {
 	 */
 	private run = (currentTime: number): void => {
 		if (!this.running) return;
+		let hostDeltaMs = 0;
 
 		try {
 			Input.instance.pollInput();
 			const runtime = Runtime.instance;
-			const configurePresentation = (mode: 'partial' | 'completed', commitFrame: boolean) => {
-				this.view.configurePresentation(mode, commitFrame);
-			};
 			runtimeIde.tickIdeInput(runtime);
 			runtimeIde.tickTerminalInput(runtime);
-			const hostDeltaMs = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
+			hostDeltaMs = Math.min(currentTime - this.last_update, MAX_FRAME_DELTA);
 			this.last_update = currentTime;
 
-				if (this._paused) {
-					this.wasupdated = true;
-					this.deltatime = hostDeltaMs;
-					this.accumulated_time = 0;
-					if (runtimeIde.isOverlayActive(runtime)) {
-						clearBackQueues();
-					}
-					this.world.runTickGroups(PRESENTATION_TICK_GROUPS);
-					if (runtimeIde.isOverlayActive(runtime)) {
-						prepareOverlayRenderQueues();
-					} else {
-						prepareCompletedRenderQueues();
-					}
-					configurePresentation('completed', false);
-					this.view.drawgame();
-					runtime.scheduleDeferredCartBootPreparation();
-					return;
+			if (this._paused) {
+				this.accumulated_time = 0;
+				this.runOverlayModeUpdate(runtime);
+				this.presentFrame(runtime, hostDeltaMs, 'completed');
+				return;
 			}
 
 			const maxAccumulated = this.timestep_ms * MAX_SUBSTEPS;
 			this.accumulated_time = clamp(this.accumulated_time + hostDeltaMs, 0, maxAccumulated);
 			this.wasupdated = false;
 			let presentQueued = false;
-			let completedFramePresented = false;
 
 			let slicesProcessed = 0;
 			const baseBudget = this.computeCycleBudget(runtime);
 			const runPartialPresentation = () => {
-				this.deltatime = hostDeltaMs;
-				if (runtimeIde.isOverlayActive(runtime)) {
-					clearBackQueues();
-				}
-				this.world.runTickGroups(PARTIAL_PRESENTATION_TICK_GROUPS, false);
 				presentQueued = true;
+				this.presentFrame(runtime, hostDeltaMs, 'partial');
 			};
 			const runCompletedPresentation = () => {
-				// Presentation-facing delta time should reflect host timing.
-				this.deltatime = hostDeltaMs;
-				if (runtimeIde.isOverlayActive(runtime)) {
-					clearBackQueues();
-				}
-				this.world.runTickGroups(PRESENTATION_TICK_GROUPS, false);
 				presentQueued = true;
-				completedFramePresented = true;
+				this.presentFrame(runtime, hostDeltaMs, 'completed');
 			};
 			if (!runGate.ready || this.paused) {
 				this.accumulated_time = 0;
@@ -860,18 +659,19 @@ export class EngineCore {
 					}
 					const completion = runtime.consumeLastTickCompletion();
 					slicesProcessed += 1;
-					if (completion) {
-						// A completed tick reached its frame boundary; leftover budget after
-						// wait_vblank belongs to that frame and must not spill into the next one.
-						this.cycleCarry = 0;
-						runCompletedPresentation();
+						if (completion) {
+							// A completed tick reached its frame boundary; leftover budget after
+							// wait_vblank belongs to that frame and must not spill into the next one.
+							this.cycleCarry = 0;
+							runCompletedPresentation();
 						// Present the completed frame now; any catch-up continuation resumes on the next host frame.
 						break;
-					}
-					if (runtimeIde.isOverlayActive(runtime)) {
-						runCompletedPresentation();
-						break;
-					}
+						}
+						if (runtimeIde.isOverlayActive(runtime)) {
+							this.runOverlayModeUpdate(runtime);
+							runCompletedPresentation();
+							break;
+						}
 				}
 				if (slicesProcessed > 0) {
 					const consumed = slicesProcessed * this.timestep_ms;
@@ -882,24 +682,8 @@ export class EngineCore {
 				runPartialPresentation();
 			}
 			if (!presentQueued && runtimeIde.isOverlayActive(runtime)) {
+				this.runOverlayModeUpdate(runtime);
 				runCompletedPresentation();
-			}
-			if (presentQueued) {
-				this.wasupdated = true;
-				const overlayActive = runtimeIde.isOverlayActive(runtime);
-				configurePresentation(completedFramePresented ? 'completed' : 'partial', completedFramePresented && !overlayActive);
-				if (overlayActive) {
-					prepareOverlayRenderQueues();
-				} else if (completedFramePresented) {
-					prepareCompletedRenderQueues();
-				} else {
-					preparePartialRenderQueues();
-				}
-				if (completedFramePresented) {
-					this.sndmaster.finishFrame();
-				}
-				this.view.drawgame();
-				runtime.scheduleDeferredCartBootPreparation();
 			}
 		} catch (error) {
 			// Surface engine/runtime errors to the in-game terminal when active
@@ -909,13 +693,8 @@ export class EngineCore {
 					runtimeIde.handleLuaError(runtime, error);
 					runtime.abandonFrameState();
 					if (runtimeIde.isOverlayActive(runtime)) {
-						this.wasupdated = true;
-						this.view.configurePresentation('completed', false);
-						clearBackQueues();
-						this.world.runTickGroups(PARTIAL_PRESENTATION_TICK_GROUPS, false);
-						prepareOverlayRenderQueues();
-						this.view.drawgame();
-						runtime.scheduleDeferredCartBootPreparation();
+						this.runOverlayModeUpdate(runtime);
+						this.presentFrame(runtime, hostDeltaMs, 'completed');
 					}
 				} catch { /* ignore secondary failures, but log them */
 					console.error(`Error while handling surfaced game error in runtime: ${error}`);
@@ -947,130 +726,6 @@ export class EngineCore {
 			this.removeWillExit.unsubscribe();
 			this.removeWillExit = null;
 		}
-	}
-
-	/** Serialize the full game state: world + selected services. */
-	public save(compress: boolean = true): Uint8Array {
-		// Assemble Savegame DTO using the same rules as World.save but orchestrated here
-		const worldAny = this.world as Record<string, any>;
-		const keys = Object.keys(worldAny);
-		const data: Record<string, unknown> = {};
-		const worldCtor: any = this.world.constructor;
-		for (let i = 0; i < keys.length; ++i) {
-			const k = keys[i];
-			// Respect World.keys_to_exclude_from_save and dynamic excludes
-			if (Serializer.excludedProperties[worldCtor.name]?.[k]) continue;
-			const v = worldAny[k]; if (v !== null && v !== undefined) data[k] = v;
-		}
-		const sg = new Savegame();
-		sg.modelprops = data;
-		sg.spaces = this.world.spaces; // Spaces and their contained objects are serialized directly via references.
-
-		sg.machineState = Runtime.instance ? runtimeLuaPipeline.captureCurrentState(Runtime.instance) : null;
-		const serialized = Serializer.serialize(sg) as Uint8Array;
-		return compress ? BinaryCompressor.compressBinary(serialized) : serialized;
-	}
-
-	/** Load a game save: restores world, services, and engine state. */
-	public load(serialized: Uint8Array, compressed: boolean = true): void {
-		const gateToken = renderGate.begin({ blocking: true, tag: 'load' });
-		const runToken = runGate.begin({ blocking: true, tag: 'load' });
-		try {
-			const buf = compressed ? BinaryCompressor.decompressBinary(serialized) : serialized;
-
-			// World hydration (ported from World.load)
-			this.world.clearAllSpaces();
-			this.world.disposeAndRemoveAllSpaces();
-
-			// Clear event listeners
-			this.event_emitter.clear();
-			// Reset registries except persistent entities
-			this.registry.clear();
-			// Purge textures and reset view
-			this.texmanager.clear();
-			this.view.reset();
-
-			const sg = Reviver.deserialize(buf) as Savegame;
-			// Apply plain world props back to world
-			for (const [k, v] of Object.entries(sg.modelprops as Record<string, unknown>)) {
-				if (typeof v !== 'function') (this.world as { [key: string]: any })[k] = v;
-			}
-
-			// Module load hooks
-			for (const p of this.world.modules ?? []) p.onLoad?.(this.world);
-
-			// Do not override revived flags or controller state; onspawn('revive') and @onload hooks handled wiring.
-
-			// Restore service state (opt-in)
-			if (sg.machineState) {
-				runtimeLuaPipeline.applyState(Runtime.instance, sg.machineState).then(() => {
-					this.wasupdated = true;
-					renderGate.end(gateToken);
-					runGate.end(runToken);
-				}).catch((e) => {
-					console.error(`Error loading game state: ${e}`);
-					this.wasupdated = true;
-					renderGate.end(gateToken);
-					runGate.end(runToken);
-				});
-			}
-		} catch (e) {
-			console.error(`Error loading game state: ${e}`);
-		} finally {
-			this.wasupdated = true;
-			renderGate.end(gateToken);
-			runGate.end(runToken);
-		}
-	}
-
-	// --- Rewind API ---
-	public canRewind() { return this.rewindBuffer.canRewind()!; }
-	public canForward() { return this.rewindBuffer.canForward()!; }
-
-	private loadRewindFrame(frame: RewindFrame): void {
-		this.load(frame.state, true);
-	}
-
-	public rewindFrame(): boolean {
-		const frame = this.rewindBuffer.rewind();
-		if (frame) {
-			this.loadRewindFrame(frame);
-			return true;
-		}
-		return false;
-	}
-
-	public forwardFrame(): boolean {
-		const frame = this.rewindBuffer.forward();
-		if (frame) {
-			this.loadRewindFrame(frame);
-			return true;
-		}
-		return false;
-	}
-
-	public jumpToFrame(idx: number): boolean {
-		const frame = this.rewindBuffer.jumpTo(idx);
-		if (frame) {
-			this.loadRewindFrame(frame);
-			return true;
-		}
-		return false;
-	}
-
-	public getRewindFrames(): RewindFrame[] {
-		return this.rewindBuffer.getFrames()!;
-	}
-
-	public resetRewind() {
-		this.rewindBuffer.reset();
-	}
-
-	public getCurrentRewindFrameIndex(): number {
-		const frames = this.rewindBuffer.getFrames();
-		const idx = this.rewindBuffer.getCurrentIdx();
-		if (idx === -1) return frames.length - 1;
-		return frames.length - 1 - idx;
 	}
 
 	public request_shutdown(): void {

@@ -1,5 +1,5 @@
 import type { asset_type, RomAsset } from './rompack';
-import { hashAssetId } from '../util/asset_tokens';
+import { hashAssetId } from './asset_tokens';
 
 export const ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
 export const ROM_TOC_HEADER_SIZE = 48;

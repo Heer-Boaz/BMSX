@@ -1,5 +1,5 @@
 import type { color } from '../../../render/shared/render_types';
-import { Msx1Colors, resolvePaletteIndex, invertColorIndex } from '../../../systems/msx';
+import { BmsxColors, resolvePaletteIndex, invertColorIndex } from '../../vdp';
 import type { Api } from '../../api';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
@@ -71,8 +71,8 @@ export function drawInlineCaret(
 	const caretIndex = resolvePaletteIndex(caretColor);
 	const caretColorIndex = caretIndex ?? baseTextColor;
 	const inverseColorIndex = invertColorIndex(caretColorIndex);
-	const caretValue = Msx1Colors[caretColorIndex];
-	const inverseColor = Msx1Colors[inverseColorIndex];
+	const caretValue = BmsxColors[caretColorIndex];
+	const inverseColor = BmsxColors[inverseColorIndex];
 	renderInlineCaret({
 		fillRect: (x0, y0, x1, y1, col) => api.put_rectfillcolor(x0, y0, x1, y1, undefined, col),
 		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(x0, y0, x1, y1, undefined, col),
@@ -99,13 +99,13 @@ export function drawCursor(info: CursorScreenInfo, textX: number): void {
 	const caretBottom = caretTop + info.height;
 	const problemsPanelHasFocus = ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused;
 	const active = !(ide_state.searchActive || ide_state.lineJumpActive || ide_state.resourcePanelFocused || ide_state.createResourceActive || problemsPanelHasFocus);
-	const glyphColor = Msx1Colors[1];
+	const glyphColor = BmsxColors[1];
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
 	renderInlineCaret({
 		fillRect: (x0, y0, x1, y1, col) => api.put_rectfillcolor(x0, y0, x1, y1, undefined,col),
 		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(x0, y0, x1, y1, undefined, col),
 		drawGlyph: (text, x, y, col) => drawEditorText(ide_state.font, text, x, y, undefined, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
-	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, Msx1Colors[constants.CARET_COLOR], caretGlyph, glyphColor);
+	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, BmsxColors[constants.CARET_COLOR], caretGlyph, glyphColor);
 }
 
 export function resetBlink(): void {
@@ -117,7 +117,7 @@ export function drawRectOutlineColor(left: number, top: number, right: number, b
 	if (right <= left || bottom <= top) {
 		return;
 	}
-	const resolved = typeof color === 'number' ? Msx1Colors[color] : color;
+	const resolved = typeof color === 'number' ? BmsxColors[color] : color;
 	api.put_rectfillcolor(left, top, right, top + 1, z, resolved);
 	api.put_rectfillcolor(left, bottom - 1, right, bottom, z, resolved);
 	api.put_rectfillcolor(left, top, left + 1, bottom, z, resolved);

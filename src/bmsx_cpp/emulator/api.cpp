@@ -14,14 +14,6 @@
 namespace bmsx {
 namespace {
 
-enum class AudioPlaybackMode {
-	Replace,
-	Ignore,
-	Queue,
-	Stop,
-	Pause,
-};
-
 static const std::array<Color, 16> MSX1_PALETTE = {
 	Color::fromRGBA8(0, 0, 0, 0),         Color::fromRGBA8(0, 0, 0, 255),
 	Color::fromRGBA8(0, 241, 20, 255),    Color::fromRGBA8(68, 249, 86, 255),
@@ -112,53 +104,6 @@ struct ParsedAudioOptions {
 	std::optional<int> maxVoices;
 	std::optional<AudioType> channel;
 };
-
-struct AudioQueueItem {
-	AssetId id;
-	SoundMasterPlayRequest request;
-	int maxVoices = 1;
-};
-
-static std::array<std::vector<AudioQueueItem>, 3> s_audioQueueByType;
-static std::array<bool, 3> s_resumeOnNextEndByType{false, false, false};
-static std::array<SubscriptionHandle, 3> s_audioPolicySubscriptions;
-static bool s_audioPolicyListenersReady = false;
-
-static size_t audioTypeIndex(AudioType type) {
-	return static_cast<size_t>(type);
-}
-
-static void onAudioChannelEnded(AudioType type) {
-	SoundMaster* soundMaster = EngineCore::instance().soundMaster();
-	const size_t idx = audioTypeIndex(type);
-	if (s_resumeOnNextEndByType[idx]) {
-		s_resumeOnNextEndByType[idx] = false;
-		soundMaster->resumeType(type);
-		return;
-	}
-	auto& queue = s_audioQueueByType[idx];
-	while (!queue.empty()) {
-		AudioQueueItem item = queue.front();
-		if (soundMaster->activeCountByType(type) >= static_cast<size_t>(item.maxVoices)) {
-			return;
-		}
-		queue.erase(queue.begin());
-		soundMaster->play(item.id, item.request);
-	}
-}
-
-static void ensureAudioPolicyListeners(SoundMaster* soundMaster) {
-	if (s_audioPolicyListenersReady) {
-		return;
-	}
-	s_audioPolicyListenersReady = true;
-	s_audioPolicySubscriptions[static_cast<size_t>(AudioType::Sfx)] =
-		soundMaster->addEndedListener(AudioType::Sfx, [](const ActiveVoiceInfo&) { onAudioChannelEnded(AudioType::Sfx); });
-	s_audioPolicySubscriptions[static_cast<size_t>(AudioType::Music)] =
-		soundMaster->addEndedListener(AudioType::Music, [](const ActiveVoiceInfo&) { onAudioChannelEnded(AudioType::Music); });
-	s_audioPolicySubscriptions[static_cast<size_t>(AudioType::Ui)] =
-		soundMaster->addEndedListener(AudioType::Ui, [](const ActiveVoiceInfo&) { onAudioChannelEnded(AudioType::Ui); });
-}
 
 static AudioPlaybackMode parsePlaybackMode(const std::string& value) {
 	if (value == "replace") return AudioPlaybackMode::Replace;
@@ -547,71 +492,6 @@ static std::optional<i32> parseStopMusicFadeMs(const Value& value) {
 		return std::nullopt;
 	}
 	return static_cast<i32>(std::floor(valueToNumber(fadeVal)));
-}
-
-static void playWithPolicy(AudioType type, const AssetId& id, const ParsedAudioOptions& options) {
-	SoundMaster* soundMaster = EngineCore::instance().soundMaster();
-	const RuntimeAssets& assets = EngineCore::instance().assets();
-	const AudioAsset* asset = assets.getAudio(id);
-	if (!asset) {
-		throw BMSX_RUNTIME_ERROR("Audio asset '" + id + "' not found.");
-	}
-	SoundMasterPlayRequest request = options.request;
-	const i32 priority = request.priority.has_value() ? request.priority.value() : asset->meta.priority;
-	request.priority = priority;
-
-	const AudioPlaybackMode policy = options.policy.value_or(AudioPlaybackMode::Replace);
-	const int maxVoices = options.maxVoices.value_or(1);
-	if (maxVoices < 1) {
-		throw BMSX_RUNTIME_ERROR("max_voices must be at least 1");
-	}
-
-	if (policy == AudioPlaybackMode::Stop) {
-		soundMaster->stop(type, AudioStopSelector::All);
-		s_audioQueueByType[audioTypeIndex(type)].clear();
-		return;
-	}
-
-	const size_t active = soundMaster->activeCountByType(type);
-	if (active >= static_cast<size_t>(maxVoices)) {
-		if (policy == AudioPlaybackMode::Ignore) {
-			return;
-		}
-		if (policy == AudioPlaybackMode::Replace) {
-			const std::vector<ActiveVoiceInfo> infos = soundMaster->getActiveVoiceInfosByType(type);
-			if (infos.empty()) {
-				throw BMSX_RUNTIME_ERROR("No active voices returned for audio channel");
-			}
-			size_t minIdx = 0;
-			i32 minPr = infos[0].priority;
-			f64 oldestStart = infos[0].startedAt;
-			for (size_t i = 1; i < infos.size(); ++i) {
-				const auto& info = infos[i];
-				if (info.priority < minPr || (info.priority == minPr && info.startedAt < oldestStart)) {
-					minPr = info.priority;
-					minIdx = i;
-					oldestStart = info.startedAt;
-				}
-			}
-			if (priority < minPr) {
-				return;
-			}
-			const auto& victim = infos[minIdx];
-			soundMaster->stop(type, AudioStopSelector::ByVoice, victim.voiceId);
-		}
-		if (policy == AudioPlaybackMode::Pause) {
-			ensureAudioPolicyListeners(soundMaster);
-			soundMaster->pause(type);
-			s_resumeOnNextEndByType[audioTypeIndex(type)] = true;
-		}
-		if (policy == AudioPlaybackMode::Queue) {
-			ensureAudioPolicyListeners(soundMaster);
-			s_audioQueueByType[audioTypeIndex(type)].push_back(AudioQueueItem{ id, request, maxVoices });
-			return;
-		}
-	}
-
-	soundMaster->play(id, request);
 }
 
 } // namespace
@@ -1370,7 +1250,7 @@ m_runtime.registerNativeFunction("sfx", [this, asText](const std::vector<Value>&
 	if (channel == AudioType::Music) {
 		throw BMSX_RUNTIME_ERROR("sfx does not support music channel");
 	}
-	playWithPolicy(channel, id, options);
+	EngineCore::instance().soundMaster()->playWithPolicy(channel, id, options.request, options.policy, options.maxVoices);
 	(void)out;
 });
 
@@ -1401,7 +1281,7 @@ m_runtime.registerNativeFunction("music", [this, asText](const std::vector<Value
 	if (options.channel.has_value() && options.channel.value() != AudioType::Music) {
 		throw BMSX_RUNTIME_ERROR("music does not support non-music channel");
 	}
-	playWithPolicy(AudioType::Music, id, options);
+	EngineCore::instance().soundMaster()->playWithPolicy(AudioType::Music, id, options.request, options.policy, options.maxVoices);
 	(void)out;
 });
 

@@ -1,10 +1,8 @@
-import { BFont } from '../core/font';
+import { BFont } from './shared/bitmap_font';
 import { $ } from '../core/engine_core';
-import { Registry } from '../core/registry';
 import { multiply_vec2 } from '../utils/vector_operations';
 import { shallowcopy } from '../utils/shallowcopy';
 import type { vec2 } from '../rompack/rompack';
-import { type RegisterablePersistent } from '../rompack/rompack';
 import * as render_queues from './shared/render_queues';
 import type { AtmosphereParams, BackendContext, GPUBackend, PresentationMode, RenderContext, RenderSubmission, RenderSubmitQueue, TextureHandle } from './backend/pipeline_interfaces';
 import { RenderPassLibrary } from './backend/renderpasslib';
@@ -42,24 +40,8 @@ interface GameViewOpts {
 	offscreenSize?: vec2; // Optional offscreen render resolution; defaults to 2x viewport
 }
 
-export class GameView implements RegisterablePersistent, RenderContext {
-	get registrypersistent(): true {
-		return true;
-	}
-
-	public get id(): 'view' { return 'view'; }
+export class GameView implements RenderContext {
 	public dispose(): void {
-		this.unbind();
-	}
-
-	public bind(): void {
-		// Bind the view to the registry
-		Registry.instance.register(this);
-	}
-
-	public unbind(): void {
-		// Unbind the view from the registry
-		Registry.instance.deregister(this);
 		this.disposeReactiveSubscriptions();
 	}
 
@@ -276,7 +258,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (!opts.host.surface) {
 			throw new Error('[GameView] GameViewHost did not provide a render surface.');
 		}
-		Registry.instance.register(this);
 		this.host = opts.host;
 		this.surface = this.host.surface;
 		this.viewportSize = shallowcopy(opts.viewportSize) as vec2;
@@ -415,7 +396,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			renderGraph.execute(frame);
 			this.finalizePresentation();
 		} finally {
-			$.emit('frameend', this, token);
 			backend.endFrame();
 			renderGate.end(token);
 		}

@@ -1074,7 +1074,7 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 		if (reloadPlan.sealSystemAssets) {
 			runtime.memory.sealEngineAssets();
 		}
-		await $.reset_to_fresh_world(reloadPlan.resetFreshWorldOptions);
+		await $.resetRuntime(reloadPlan.resetFreshWorldOptions);
 		await $.refresh_audio_assets();
 		try {
 			resetRuntimeState(runtime);

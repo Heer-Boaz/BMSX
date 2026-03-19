@@ -28,7 +28,7 @@ type ParsedDeployOptions = {
 	debug: boolean;
 	force: boolean;
 	rom_name: string;
-	title?: string;
+	title: string;
 	respath: string;
 	canonicalization: CanonicalizationType;
 };
@@ -63,13 +63,12 @@ function parseOptions(args: string[]): ParsedDeployOptions {
 	}
 
 	const normalizedRomName = rom_name.replace(/^[./\\]+/, '').replace(/\\/g, '/');
-	const romSegments = normalizedRomName.split('/').filter(Boolean);
-	const romLeaf = romSegments.length > 0 ? romSegments[romSegments.length - 1] : normalizedRomName;
+	const cartFolder = normalizedRomName.startsWith('carts/') ? normalizedRomName.slice('carts/'.length) : normalizedRomName;
+	const romSegments = cartFolder.split('/').filter(Boolean);
+	const romLeaf = romSegments.length > 0 ? romSegments[romSegments.length - 1] : cartFolder;
 	const resCandidates: Array<string> = [
 		respathRaw,
-		normalizedRomName ? `./src/${normalizedRomName}/res` : undefined,
-		normalizedRomName && romLeaf && romLeaf !== normalizedRomName ? `./src/${romLeaf}/res` : undefined,
-		normalizedRomName && !normalizedRomName.startsWith('carts/') ? `./src/carts/${normalizedRomName}/res` : undefined,
+		cartFolder ? `./src/carts/${cartFolder}/res` : undefined,
 		romLeaf ? `./src/carts/${romLeaf}/res` : undefined,
 	];
 	const resolvedResPath = findExistingDirectory(resCandidates);
@@ -95,8 +94,8 @@ function parseOptions(args: string[]): ParsedDeployOptions {
 		platform: 'browser',
 		debug,
 		force,
-		rom_name,
-		title: title || undefined,
+		rom_name: cartFolder,
+		title,
 		respath: normalizePathKey(resolvedResPath),
 		canonicalization,
 	};

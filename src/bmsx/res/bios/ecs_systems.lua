@@ -61,6 +61,9 @@ local timelinecomponent = 'timelinecomponent'
 local transformcomponent = 'transformcomponent'
 local textcomponent = 'textcomponent'
 local meshcomponent = 'meshcomponent'
+local ambientlightcomponent = 'ambientlightcomponent'
+local directionallightcomponent = 'directionallightcomponent'
+local pointlightcomponent = 'pointlightcomponent'
 local customvisualcomponent = 'customvisualcomponent'
 local collider2dcomponent = 'collider2dcomponent'
 local positionupdateaxiscomponent = 'positionupdateaxiscomponent'
@@ -687,6 +690,59 @@ function spriterendersystem:update()
 	end
 end
 
+local function resolve_world_position(obj, offset)
+	local x
+	local y
+	local z
+	local t = obj:get_component(transformcomponent)
+	if t then
+		x = t.position.x + offset.x
+		y = t.position.y + offset.y
+		z = t.position.z + offset.z
+	else
+		x = obj.x + offset.x
+		y = obj.y + offset.y
+		z = obj.z + offset.z
+	end
+	return x, y, z
+end
+
+local lightrendersystem = {}
+lightrendersystem.__index = lightrendersystem
+setmetatable(lightrendersystem, { __index = ecsystem })
+
+function lightrendersystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.presentation, priority or 8.5), lightrendersystem)
+	return self
+end
+
+function lightrendersystem:update()
+	for obj, lc in world_instance:objects_with_components(ambientlightcomponent, active_scope) do
+		if not obj.visible or not lc.enabled then
+			goto continue_ambient
+		end
+		put_ambient_light(lc.id, lc.color, lc.intensity)
+		::continue_ambient::
+	end
+
+	for obj, lc in world_instance:objects_with_components(directionallightcomponent, active_scope) do
+		if not obj.visible or not lc.enabled then
+			goto continue_directional
+		end
+		put_directional_light(lc.id, lc.orientation, lc.color, lc.intensity)
+		::continue_directional::
+	end
+
+	for obj, lc in world_instance:objects_with_components(pointlightcomponent, active_scope) do
+		if not obj.visible or not lc.enabled then
+			goto continue_point
+		end
+		local x, y, z = resolve_world_position(obj, lc.offset)
+		put_point_light(lc.id, { x = x, y = y, z = z }, lc.color, lc.range, lc.intensity)
+		::continue_point::
+	end
+end
+
 local meshrendersystem = {}
 meshrendersystem.__index = meshrendersystem
 setmetatable(meshrendersystem, { __index = ecsystem })
@@ -761,6 +817,7 @@ return {
 	meshanimationsystem = meshanimationsystem,
 	textrendersystem = textrendersystem,
 	spriterendersystem = spriterendersystem,
+	lightrendersystem = lightrendersystem,
 	meshrendersystem = meshrendersystem,
 	rendersubmitsystem = rendersubmitsystem,
 	eventflushsystem = eventflushsystem,

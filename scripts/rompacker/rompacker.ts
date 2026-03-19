@@ -3,10 +3,10 @@
 import pc from 'picocolors';
 import { Presets, SingleBar } from 'cli-progress';
 
-import { createCliUi, findExistingDirectory, getParamOrEnv, isDirectoryPath, normalizePathKey, parseArgsVector } from './cli_shared';
+import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli_shared';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartLuaSources } from './cart_lua_linter';
-import { appendProgramAsset, buildResourceList, commonResPath, createAtlasses, ENGINE_ATLAS_INDEX, esbuild, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization, typecheckBeforeBuild, typecheckGameWithDts } from './rombuilder';
+import { appendProgramAsset, buildResourceList, commonResPath, createAtlasses, ENGINE_ATLAS_INDEX, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization } from './rombuilder';
 import type { AtlasResource, Resource, RomPackerOptions } from './rompacker.rompack';
 import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { LuaError } from '../../src/bmsx/lua/luaerrors';
@@ -17,7 +17,7 @@ import { existsSync, readFileSync } from 'node:fs';
 // CASE_INSENSITIVE_LUA and its setter are declared earlier in the file to avoid
 // temporal-dead-zone issues when they are used during module initialization.
 
-type ParsedOptions = RomPackerOptions & { bootloaderFallbackPath?: string; };
+type ParsedOptions = RomPackerOptions;
 const ui = createCliUi({ bannerTitle: 'BMSX BUILDER', labelWidth: 14 });
 const writeOut = ui.writeOut;
 const printBanner = ui.printBanner;
@@ -37,8 +37,6 @@ const KNOWN_FLAGS = new Set<string>([
 	'--buildreslist',
 	'--textureatlas',
 	'--skiptypecheck',
-	'--enginedts',
-	'--usepkgtsconfig',
 	'--mode',
 	'--preserve-lua-case',
 	'-h',
@@ -51,15 +49,12 @@ const FLAGS_WITH_VALUES = new Set<string>([
 	'-bootloaderpath',
 	'-respath',
 	'--textureatlas',
-	'--enginedts',
 ]);
 const OPT_LEVEL_RE = /^-O([0-3])$/;
 
 const TASK = {
 	REBUILD_CHECK: 'Checken of rebuild nodig is',
 	MANIFEST_SCAN: 'Rom manifest zoekeren en parseren',
-	GAME_TYPECHECK: 'Game type-checkeren',
-	GAME_BUNDLE: 'Game compileren+bundleren',
 	CART_LUA_LINT: 'Cart Lua linten',
 	RESOURCE_LIST: 'Resource lijst bouwen',
 	RESOURCE_LOAD: 'Resources laden en metadata genereren',
@@ -74,8 +69,6 @@ type TaskName = typeof TASK[keyof typeof TASK];
 const taskList: TaskName[] = [
 	TASK.REBUILD_CHECK,
 	TASK.MANIFEST_SCAN,
-	TASK.GAME_TYPECHECK,
-	TASK.GAME_BUNDLE,
 	TASK.RESOURCE_LIST,
 	TASK.RESOURCE_LOAD,
 	TASK.ATLAS_BUILD,
@@ -128,37 +121,6 @@ const romBuildTasks: TaskName[] = taskList.slice(1, -1);
 
 const rebuildCheckTasks: TaskName[] = [TASK.REBUILD_CHECK];
 
-const typecheckTasks: TaskName[] = [TASK.GAME_TYPECHECK];
-
-const bundlerTasks: TaskName[] = [TASK.GAME_BUNDLE];
-
-// engine split task removed
-
-function removeTaskNamesFromList(target: TaskName[], tasks: TaskName[]): void {
-	for (const task of tasks) {
-		const index = target.indexOf(task);
-		if (index !== -1) {
-			target.splice(index, 1);
-		}
-	}
-}
-
-function collectExistingDirectories(candidates: Array<string>): string[] {
-	const visited = new Set<string>();
-	const results: string[] = [];
-	for (const candidate of candidates) {
-		if (!candidate) continue;
-		const normalized = normalizePathKey(candidate);
-		if (visited.has(normalized)) continue;
-		visited.add(normalized);
-		if (existsSync(normalized) && isDirectoryPath(normalized)) {
-			results.push(normalized);
-		}
-	}
-	return results;
-}
-
-
 function getOptionalParam(args: string[], flag: string, envVar: string): string {
 	const value = getParamOrEnv(args, flag, envVar, '', KNOWN_FLAGS);
 	return value.length > 0 ? value : undefined;
@@ -174,18 +136,48 @@ function parseOptLevel(args: string[]): 0 | 1 | 2 | 3 {
 	return optLevel;
 }
 
-function findBootloaderDirectory(candidates: Array<string>): string {
-	const visited = new Set<string>();
-	for (const candidate of candidates) {
-		if (!candidate) continue;
-		const normalized = normalizePathKey(candidate);
-		if (visited.has(normalized)) continue;
-		visited.add(normalized);
-		if (existsSync(join(normalized, 'bootloader.ts'))) {
-			return normalized;
-		}
+function normalizeCartFolderName(input: string): string {
+	const normalized = input.replace(/^[./\\]+/, '').replace(/\\/g, '/');
+	if (normalized.startsWith('carts/')) {
+		return normalized.slice('carts/'.length);
 	}
-	return undefined;
+	return normalized;
+}
+
+function resolveCartRoot(romName: string): string {
+	const normalizedRomName = normalizeCartFolderName(romName);
+	const romSegments = normalizedRomName.split('/').filter(Boolean);
+	const romLeaf = romSegments.length > 0 ? romSegments[romSegments.length - 1] : normalizedRomName;
+	const cartCandidates = [
+		normalizedRomName ? `./src/carts/${normalizedRomName}` : undefined,
+		romLeaf && romLeaf !== normalizedRomName ? `./src/carts/${romLeaf}` : undefined,
+	];
+	const cartRoot = findExistingDirectory(cartCandidates);
+	if (!cartRoot) {
+		const attempted = cartCandidates.filter(Boolean).map(normalizePathKey).join(', ');
+		throw new Error(`Cart folder "${romName}" not found under src/carts. Tried: ${attempted || '<none>'}.`);
+	}
+	return normalizePathKey(cartRoot);
+}
+
+function resolveCartResPath(romName: string, respathOverride?: string): { cartRoot: string; respath: string } {
+	if (respathOverride) {
+		const resolvedResPath = findExistingDirectory([respathOverride]);
+		if (!resolvedResPath) {
+			throw new Error(`Resource path "${respathOverride}" does not exist.`);
+		}
+		const respath = normalizePathKey(resolvedResPath);
+		return {
+			cartRoot: normalizePathKey(join(respath, '..')),
+			respath,
+		};
+	}
+	const cartRoot = resolveCartRoot(romName);
+	const respath = normalizePathKey(join(cartRoot, 'res'));
+	if (!existsSync(respath)) {
+		throw new Error(`Cart "${romName}" is missing its resource directory at ${respath}.`);
+	}
+	return { cartRoot, respath };
 }
 
 function parseOptions(args: string[]): ParsedOptions {
@@ -198,19 +190,17 @@ function parseOptions(args: string[]): ParsedOptions {
 	if (seenFlags.has('-h') || seenFlags.has('--help')) {
 		writeOut(`Usage: <command> [options]\n`, 'warning');
 		writeOut(`Options:\n`, 'warning');
-		writeOut(`  -romname <name>        Name of the ROM\n`, 'warning');
-		writeOut(`  -title <title>         Title of the ROM\n`, 'warning');
-		writeOut(`  -bootloaderpath <path> Path to the bootloader\n`, 'warning');
-		writeOut(`  -respath <path>        Resource path\n`, 'warning');
-		writeOut(`  --debug                Build debug artifacts\n`, 'warning');
-		writeOut(`  --force                Force the compilation and build of the rompack\n`, 'warning');
-		writeOut(`  --buildreslist         Build resource list\n`, 'warning');
+		writeOut(`  -romname <name>          Cart folder under src/carts (required for rompack mode)\n`, 'warning');
+		writeOut(`  -title <title>           Title override\n`, 'warning');
+		writeOut(`  -bootloaderpath <path>   Engine-only bootloader path override\n`, 'warning');
+		writeOut(`  -respath <path>          Resource path override\n`, 'warning');
+		writeOut(`  --debug                  Build debug artifacts\n`, 'warning');
+		writeOut(`  --force                  Force the compilation and build of the rompack\n`, 'warning');
+		writeOut(`  --buildreslist           Build resource list\n`, 'warning');
 		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)\n`, 'warning');
 		writeOut(`  --preserve-lua-case      Disable Lua case folding (default: enabled)\n`, 'warning');
-		writeOut(`  --enginedts <dir>        Use engine declarations from <dir> to type-check the game\n`, 'warning');
-		writeOut(`  --usepkgtsconfig         Use per-game tsconfig.pkg.json for bundling/type-checking\n`, 'warning');
 		writeOut(`  --mode <rompack|engine>  What to build (default: rompack)\n`, 'warning');
-		writeOut(`  -O0|-O1|-O2|-O3         Bytecode optimizer level (default: -O3)\n`, 'warning');
+		writeOut(`  -O0|-O1|-O2|-O3          Bytecode optimizer level (default: -O3)\n`, 'warning');
 		process.exit(0);
 	}
 
@@ -233,8 +223,6 @@ function parseOptions(args: string[]): ParsedOptions {
 	const debug = seenFlags.has('--debug');
 	const buildreslist = seenFlags.has('--buildreslist');
 	const skipTypecheck = seenFlags.has('--skiptypecheck');
-	const enginedts = getOptionalParam(args, '--enginedts', 'ROM_ENGINE_DTS');
-	const usePkgTsconfig = seenFlags.has('--usepkgtsconfig');
 
 	const modeRaw = getParamOrEnv(args, '--mode', 'ROM_MODE', 'rompack', KNOWN_FLAGS);
 	const modeStr = modeRaw.toLowerCase();
@@ -249,14 +237,10 @@ function parseOptions(args: string[]): ParsedOptions {
 
 	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', '', KNOWN_FLAGS);
 	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name, KNOWN_FLAGS);
-	const defaultBootloaderPath = mode === 'engine'
-		? './src/bmsx/emulator/default_cart'
-		: (rom_name ? `./src/${rom_name}` : '');
+	const defaultBootloaderPath = './src/bmsx/emulator/default_cart';
 	let bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', defaultBootloaderPath, KNOWN_FLAGS);
-	const defaultResPath = mode === 'engine'
-		? './src/bmsx/res'
-		: (rom_name ? `${defaultBootloaderPath}/res` : '');
-	let respath = getParamOrEnv(args, '-respath', 'RES_PATH', defaultResPath, KNOWN_FLAGS);
+	const respathOverride = getOptionalParam(args, '-respath', 'RES_PATH');
+	let respath = mode === 'engine' ? './src/bmsx/res' : '';
 
 	const preserveLuaCase = seenFlags.has('--preserve-lua-case');
 	const canonicalizationEnv = process.env.ROM_LUA_CANONICALIZATION;
@@ -272,61 +256,23 @@ function parseOptions(args: string[]): ParsedOptions {
 		canonicalization = 'none';
 	}
 
-	const normalizedRomName = rom_name.replace(/^[./\\]+/, '').replace(/\\/g, '/');
-	const romSegments = normalizedRomName.split('/').filter(Boolean);
-	const romLeaf = romSegments.length > 0 ? romSegments[romSegments.length - 1] : normalizedRomName;
-
-	const bootloaderCandidates: Array<string> = [
-		bootloader_path,
-		normalizedRomName ? `./src/${normalizedRomName}` : undefined,
-		normalizedRomName && romLeaf && romLeaf !== normalizedRomName ? `./src/${romLeaf}` : undefined,
-		normalizedRomName ? `./src/carts/${normalizedRomName}` : undefined,
-		romLeaf ? `./src/carts/${romLeaf}` : undefined,
-	];
-
-	const resolvedBootloaderDir = findBootloaderDirectory(bootloaderCandidates);
-	let cartBootloaderFound = false;
-	if (resolvedBootloaderDir) {
-		bootloader_path = normalizePathKey(resolvedBootloaderDir);
-		cartBootloaderFound = true;
+	let extraLuaRoots: string[] = [];
+	if (mode === 'engine') {
+		respath = getParamOrEnv(args, '-respath', 'RES_PATH', './src/bmsx/res', KNOWN_FLAGS);
+		bootloader_path = normalizePathKey(bootloader_path);
+		respath = normalizePathKey(respath);
+	} else {
+		if (!rom_name && !buildreslist && !respathOverride) {
+			throw new Error('Rompack mode requires -romname <cart-folder> or -respath <cart-respath>.');
+		}
+		if (seenFlags.has('-bootloaderpath')) {
+			throw new Error('Rompack mode no longer supports -bootloaderpath. Carts always boot through src/bmsx/emulator/default_cart.');
+		}
+		const resolvedCart = resolveCartResPath(rom_name, respathOverride);
+		bootloader_path = normalizePathKey(defaultBootloaderPath);
+		respath = resolvedCart.respath;
+		extraLuaRoots = [resolvedCart.cartRoot];
 	}
-
-	const engineDefaultBootloaderPath = normalizePathKey('./src/bmsx/emulator/default_cart');
-	const bootloaderFile = join(normalizePathKey(bootloader_path), 'bootloader.ts');
-	let bootloaderFallbackApplied = false;
-	if (!existsSync(bootloaderFile)) {
-		bootloader_path = engineDefaultBootloaderPath;
-		bootloaderFallbackApplied = true;
-	}
-	const bootloaderFallbackPath = bootloaderFallbackApplied ? engineDefaultBootloaderPath : undefined;
-
-	const resCandidates: Array<string> = [
-		respath,
-		normalizedRomName ? `./src/${normalizedRomName}/res` : undefined,
-		normalizedRomName && romLeaf && romLeaf !== normalizedRomName ? `./src/${romLeaf}/res` : undefined,
-		normalizedRomName && !normalizedRomName.startsWith('carts/') ? `./src/carts/${normalizedRomName}/res` : undefined,
-		romLeaf ? `./src/carts/${romLeaf}/res` : undefined,
-	];
-	const resolvedResPath = findExistingDirectory(resCandidates);
-	if (!resolvedResPath) {
-		const attempted = resCandidates.filter(Boolean).map(normalizePathKey).join(', ');
-		throw new Error(`Resource path "${respath}" does not exist. Tried: ${attempted || '<none>'}.`);
-	}
-	respath = normalizePathKey(resolvedResPath);
-	const derivedCartRoot = normalizePathKey(join(respath, '..'));
-
-	const isEngineMode = (mode === 'engine');
-	let shouldBundleCartCode = !isEngineMode && cartBootloaderFound;
-
-	const cartRootCandidates: Array<string> = [
-		bootloader_path,
-		derivedCartRoot,
-		normalizedRomName ? `./src/${normalizedRomName}` : undefined,
-		normalizedRomName && romLeaf && romLeaf !== normalizedRomName ? `./src/${romLeaf}` : undefined,
-		normalizedRomName && !normalizedRomName.startsWith('carts/') ? `./src/carts/${normalizedRomName}` : undefined,
-		romLeaf ? `./src/carts/${romLeaf}` : undefined,
-	];
-	const extraLuaRoots = collectExistingDirectories(cartRootCandidates);
 
 	return {
 		rom_name,
@@ -337,16 +283,13 @@ function parseOptions(args: string[]): ParsedOptions {
 		debug,
 		buildreslist,
 		useTextureAtlas,
-		enginedts,
-		usePkgTsconfig,
 		skipTypecheck,
 		platform: 'browser',
 		canonicalization,
 		optLevel,
 		mode,
-		shouldBundleCartCode,
+		shouldBundleCartCode: false,
 		extraLuaRoots,
-		bootloaderFallbackPath,
 	};
 }
 
@@ -603,7 +546,6 @@ async function runEngineBuild(options: ParsedOptions): Promise<void> {
 	logBullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
 
 	const assetsNeedRebuild = force || await isRebuildRequired(engineRomName, bootloader_path, engineResPath, {
-		includeCode: false,
 		extraLuaPaths: [],
 		resolveAtlasIndex: false,
 		debug,
@@ -623,7 +565,6 @@ async function runEngineBuild(options: ParsedOptions): Promise<void> {
 		await lintCartLuaSources({ roots: biosLuaRoots, profile: 'bios' });
 
 		const engineResMetaList = await getResMetaList([engineResPath], engineRomName, {
-			includeCode: false,
 			extraLuaPaths: [],
 			virtualRoot: engineVirtualRoot,
 			resolveAtlasIndex: true,
@@ -649,19 +590,13 @@ async function main() {
 	let romOutputPath = '';
 	let luaErrorVirtualRoots: string[] = [];
 	const bufferedLogs: string[] = [];
-	const captureLog = (text: string) => {
-		if (!text) return;
-		const trimmed = text.trimEnd();
-		if (trimmed.length === 0) return;
-		bufferedLogs.push(trimmed);
-	};
 	try {
 		printBanner();
 
 		const args = process.argv.slice(2);
 		const options = parseOptions(args);
 
-		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, canonicalization, optLevel, mode, shouldBundleCartCode, extraLuaRoots, bootloaderFallbackPath } = options;
+		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, useTextureAtlas, canonicalization, optLevel, mode, extraLuaRoots } = options;
 
 		if (mode === 'engine' && !buildreslist) {
 			await runEngineBuild(options);
@@ -670,10 +605,6 @@ async function main() {
 		}
 
 		progress = new ProgressReporter(taskList);
-		if (!shouldBundleCartCode && mode !== 'engine') {
-			progress.removeTasks(bundlerTasks);
-			removeTaskNamesFromList(romBuildTasks, bundlerTasks);
-		}
 		const isEngineMode = mode === 'engine';
 		const romPackDebug = debug;
 		const normalizedBootloader = normalizePathKey(bootloader_path);
@@ -695,14 +626,11 @@ async function main() {
 		if (buildreslist) {
 			const primaryResPath = respath || commonResPath;
 			if (!primaryResPath) {
-				throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
+				throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/carts/2025/res'.");
 			}
 			resourceRoots = isEngineMode
 				? [primaryResPath]
 				: [primaryResPath, commonResPath];
-			if (!isEngineMode) {
-				extraLuaPathSet.add(normalizePathKey(bootloader_path));
-			}
 			logDivider('Resource list');
 			logInfo(`Building from ${resourceRoots.map(r => pc.white(`"${r}"`)).join(pc.dim(' and '))}`);
 			logWarn('ROM packing and deployment are skipped');
@@ -711,7 +639,6 @@ async function main() {
 			}
 			await buildResourceList(resourceRoots, rom_name || undefined, {
 				extraLuaPaths: Array.from(extraLuaPathSet),
-				includeCode: shouldBundleCartCode,
 				virtualRoot,
 				resolveAtlasIndex: false,
 			});
@@ -725,7 +652,7 @@ async function main() {
 
 			if (rom_name) {
 				if (rom_name.includes('.')) {
-					throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': 'testrom'.`);
+					throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': '2025'.`);
 				}
 				rom_name = rom_name.toLowerCase();
 			}
@@ -735,9 +662,6 @@ async function main() {
 		resourceRoots = isEngineMode
 			? [respath || commonResPath]
 			: [respath || commonResPath, commonResPath];
-		if (!isEngineMode && shouldBundleCartCode) {
-			extraLuaPathSet.add(normalizePathKey(bootloader_path));
-		}
 		let romManifest = await getRomManifest(respath);
 		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
 		rom_name = romManifest.rom_name ?? rom_name;
@@ -752,48 +676,13 @@ async function main() {
 		logBullet('Resources', resourceRoots.length === 1
 			? pc.white(resourceRoots[0])
 			: `${pc.white(resourceRoots[0])} ${pc.dim('+ common ' + resourceRoots[1])}`);
-		if (bootloaderFallbackPath && !isEngineMode) {
-			logWarn(`Bootloader not found for ROM "${rom_name}". Using default cart bootloader at ${pc.white(bootloaderFallbackPath)}.`);
-		}
-		let pkgTsconfigPath: string;
-		if (usePkgTsconfig) {
-			logBullet('tsconfig', pc.white('tsconfig.pkg.json (per-game)'));
-			const path = require('path');
-			const fs = require('fs');
-			const candidates = [
-				path.join(path.resolve(bootloader_path), 'node_modules', 'bmsx', 'package.json'),
-				path.join(process.cwd(), 'node_modules', 'bmsx', 'package.json'),
-			];
-			let found = false;
-			for (const p of candidates) {
-				try { fs.accessSync(p); found = true; break; } catch { /* try next */ }
-			}
-			if (!found) {
-				writeOut(
-					`ERROR: package "bmsx" not found in node_modules for this game.\n` +
-					`Run "npm install" at the repo root (workspaces) or pin a tarball in the game's package.json, then try again.\n` +
-					`Cannot proceed with --usepkgtsconfig.\n`,
-					'error'
-				);
-				throw new Error('Missing package "bmsx" for --usepkgtsconfig');
-			}
-			const candidatePkgTsconfig = normalizePathKey(join(bootloader_path, 'tsconfig.pkg.json'));
-			if (existsSync(candidatePkgTsconfig)) {
-				pkgTsconfigPath = candidatePkgTsconfig;
-			} else {
-				logWarn(`tsconfig.pkg.json not found at ${candidatePkgTsconfig}; falling back to default tsconfig.json`);
-			}
-		}
 
 		logDivider('Options');
 		logBullet('Rebuild', force ? pc.yellow('force') : pc.green('auto (mtime check)'));
 		logBullet('Atlas', useTextureAtlas ? pc.green('enabled') : pc.red('disabled'));
 		logBullet('Lua case', canonicalization !== 'none' ? pc.green(`fold ${canonicalization}`) : pc.yellow('preserve case'));
-		logBullet('Typecheck', skipTypecheck ? pc.red('skipped') : pc.green('enabled'));
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
-
-		const includeCode = shouldBundleCartCode;
 		if (!isEngineMode && mode === 'rompack') {
 			const engineResPath = commonResPath;
 			const engineManifest = await getRomManifest(engineResPath);
@@ -814,28 +703,22 @@ async function main() {
 		else {
 			logInfo('Rebuild only if inputs are newer than outputs');
 		}
-		if (skipTypecheck) {
-			progress.removeTasks(typecheckTasks);
-			removeTaskNamesFromList(romBuildTasks, typecheckTasks);
-		}
-		// split-engine removed
 		logDivider('Pipeline');
-		let typeCheckError: Error = null;
 		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
 
 		if (!force) {
-			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false, debug }));
+			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, bootloader_path, respath, { extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: false, debug }));
 			if (!rebuildRequired && resourceRoots.length > 1) {
 				for (let i = 1; i < resourceRoots.length; i++) {
 					const candidate = resourceRoots[i];
 					if (!candidate || candidate === respath) continue;
-					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { includeCode, extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: true, debug }));
+					const needs = await progress.runWithDetail('Check timestamps (shared)', () => isRebuildRequired(rom_name, bootloader_path, candidate, { extraLuaPaths: Array.from(extraLuaPathSet), resolveAtlasIndex: true, debug }));
 					rebuildRequired = rebuildRequired || needs;
 					if (rebuildRequired) break;
 				}
 			}
 			if (!rebuildRequired) {
-				logInfo('Rebuild skipped: game rom is newer than code/assets (use --force to override)');
+				logInfo('Rebuild skipped: cart rom is newer than sources/assets (use --force to override)');
 			}
 			progress.skipTasks(rebuildCheckTasks.length);
 		} else rebuildRequired = true;
@@ -848,40 +731,7 @@ async function main() {
 		romOutputPath = `dist/${rom_name}${romPackDebug ? '.debug' : ''}.rom`;
 
 		if (rebuildRequired) {
-			// Type-check engine and game prior to bundling unless skipped
-			if (!skipTypecheck) {
-				const tsProject = pkgTsconfigPath;
-				const stepLogs: string[] = [];
-				const push = (text: string) => text && stepLogs.push(text);
-				try {
-					await progress.runWithOutput('Type-check', async () => {
-						if (enginedts) typecheckGameWithDts(bootloader_path, enginedts, push, tsProject);
-						else typecheckBeforeBuild(bootloader_path, push, tsProject);
-					});
-					// Capture type-check output even if it didn't throw
-					stepLogs.forEach(captureLog);
-				} catch (err) {
-					stepLogs.forEach(captureLog);
-					throw err;
-				}
-
-				// Ensure tasks are removed
-				await progress.taskCompleted();
-			}
-			const tsProject = pkgTsconfigPath;
-			if (shouldBundleCartCode) {
-				const stepLogs: string[] = [];
-				try {
-					await progress.runWithOutput('Bundle cart code', () => esbuild(rom_name, bootloader_path, debug, tsProject));
-				} catch (err) {
-					stepLogs.push(...formatEsbuildErrors(err));
-					stepLogs.forEach(captureLog);
-					throw err;
-				}
-				await progress.taskCompleted();
-			}
 			const romResMetaList = await progress.runWithDetail('Scan resources', () => getResMetaList(resourceRoots, rom_name, {
-				includeCode,
 				extraLuaPaths: Array.from(extraLuaPathSet),
 				virtualRoot,
 				resolveAtlasIndex: true,
@@ -921,10 +771,6 @@ async function main() {
 		const romOutput = romOutputPath.length > 0 ? pc.white(romOutputPath) : pc.white('dist/<rom>.rom');
 		logOk(`ROM packing complete → ${romOutput}`);
 		writeOut(`\n`);
-		if (typeCheckError) {
-			writeOut(`\n${pc.red('⚠ Build completed with type-check errors')}\n`, 'error');
-			throw typeCheckError;
-		}
 	} catch (e) {
 		const message = e instanceof Error ? e.message : String(e);
 		const isCompilationFailureReport = typeof message === 'string'

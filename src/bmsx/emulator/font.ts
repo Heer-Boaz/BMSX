@@ -1,4 +1,4 @@
-import { BFont, GlyphMap } from '../core/font';
+import { BFont, GlyphMap } from '../render/shared/bitmap_font';
 import { DEFAULT_FONT_VARIANT } from './start_cart';
 
 export type FontVariant = 'msx' | 'tiny';

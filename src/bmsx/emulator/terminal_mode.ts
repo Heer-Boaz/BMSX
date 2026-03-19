@@ -1,5 +1,5 @@
 import type { color } from '../render/shared/render_types';
-import { Msx1Colors } from '../systems/msx';
+import { BmsxColors } from './vdp';
 import { EditorFont } from './editor_font';
 import type { FontVariant } from './font';
 import { invalidateLuaCommentContextFromRow, applyCaseOutsideStrings } from './ide/text_utils';
@@ -238,8 +238,8 @@ export class TerminalMode {
 	private readonly uppercaseDisplayOverride: boolean;
 	private readonly maxEntries: number;
 	private readonly characterBackgroundColor = { r: 0, g: 0, b: 0, a: CHARACTER_TILE_ALPHA } as color;
-	private readonly caretColor = Msx1Colors[15];
-	private readonly selectionColor = Msx1Colors[11];
+	private readonly caretColor = BmsxColors[15];
+	private readonly selectionColor = BmsxColors[11];
 	private readonly field: TextField = createInlineTextField();
 	private readonly output: TerminalOutputEntry[] = [];
 	private readonly history: string[] = [];
@@ -315,20 +315,20 @@ export class TerminalMode {
 			drawText: (text, x, y, color) => {
 				const uppercaseDisplay = terminal.useUppercaseDisplay();
 				const display = terminal.toDisplayText(text, uppercaseDisplay).replace(/\t/g, ' '.repeat(TAB_SPACES));
-				terminal.currentRenderer.glyphs({ glyphs: display, x, y, z: 0, color: Msx1Colors[color], font: terminal.font.renderFont() });
+				terminal.currentRenderer.glyphs({ glyphs: display, x, y, z: 0, color: BmsxColors[color], font: terminal.font.renderFont() });
 			},
 			fillRect: (left, top, right, bottom, color) => {
 				terminal.currentRenderer.rect({
 					kind: 'fill',
 					area: { left, top, right, bottom },
-					color: Msx1Colors[color],
+					color: BmsxColors[color],
 				});
 			},
 			strokeRect: (left, top, right, bottom, color) => {
 				terminal.currentRenderer.rect({
 					kind: 'rect',
 					area: { left, top, right, bottom },
-					color: Msx1Colors[color],
+					color: BmsxColors[color],
 				});
 			},
 			getCursorScreenInfo: () => this.cursorScreenInfo,
@@ -1129,12 +1129,12 @@ export class TerminalMode {
 		this.currentRenderer.rect({
 			kind: 'fill',
 			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: Msx1Colors[COLOR_COMPLETION_BACKGROUND],
+			color: BmsxColors[COLOR_COMPLETION_BACKGROUND],
 		});
 		this.currentRenderer.rect({
 			kind: 'rect',
 			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: Msx1Colors[COLOR_COMPLETION_BORDER],
+			color: BmsxColors[COLOR_COMPLETION_BORDER],
 		});
 
 		const charWidth = this.font.advance(' ');
@@ -1143,7 +1143,7 @@ export class TerminalMode {
 		const cellWidthPx = layout.cellWidth * charWidth;
 		const gapWidthPx = layout.gap * charWidth;
 		const strideX = cellWidthPx + gapWidthPx;
-		const textColor = Msx1Colors[COLOR_COMPLETION_TEXT];
+		const textColor = BmsxColors[COLOR_COMPLETION_TEXT];
 
 		if (panel.filtered.length === 0) {
 			const message = panel.filter.length > 0 ? 'No matches' : 'No symbols';
@@ -1174,10 +1174,10 @@ export class TerminalMode {
 							right: cellX + cellWidthPx + 1,
 							bottom: cellY + lineHeight + 1,
 						},
-						color: Msx1Colors[COLOR_COMPLETION_HIGHLIGHT],
+						color: BmsxColors[COLOR_COMPLETION_HIGHLIGHT],
 					});
 				}
-				const color = isSelected ? Msx1Colors[COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
+				const color = isSelected ? BmsxColors[COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
 				this.drawGlyphRun(this.currentRenderer, label, cellX, cellY, color, uppercaseDisplay);
 			}
 		}
@@ -1203,12 +1203,12 @@ export class TerminalMode {
 		this.currentRenderer.rect({
 			kind: 'fill',
 			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: Msx1Colors[COLOR_COMPLETION_BACKGROUND],
+			color: BmsxColors[COLOR_COMPLETION_BACKGROUND],
 		});
 		this.currentRenderer.rect({
 			kind: 'rect',
 			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: Msx1Colors[COLOR_COMPLETION_BORDER],
+			color: BmsxColors[COLOR_COMPLETION_BORDER],
 		});
 
 		const charWidth = this.font.advance(' ');
@@ -1217,7 +1217,7 @@ export class TerminalMode {
 		const cellWidthPx = layout.cellWidth * charWidth;
 		const gapWidthPx = layout.gap * charWidth;
 		const strideX = cellWidthPx + gapWidthPx;
-		const textColor = Msx1Colors[COLOR_COMPLETION_TEXT];
+		const textColor = BmsxColors[COLOR_COMPLETION_TEXT];
 
 		if (panel.filtered.length === 0) {
 			const message = panel.filter.length > 0 ? 'No matches' : 'No completions';
@@ -1248,10 +1248,10 @@ export class TerminalMode {
 							right: cellX + cellWidthPx + 1,
 							bottom: cellY + lineHeight + 1,
 						},
-						color: Msx1Colors[COLOR_COMPLETION_HIGHLIGHT],
+						color: BmsxColors[COLOR_COMPLETION_HIGHLIGHT],
 					});
 				}
-				const color = isSelected ? Msx1Colors[COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
+				const color = isSelected ? BmsxColors[COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
 				this.drawGlyphRun(this.currentRenderer, label, cellX, cellY, color, uppercaseDisplay);
 			}
 		}
@@ -1569,7 +1569,7 @@ export class TerminalMode {
 			for (const line of visibleLines) {
 				const color = line.color;
 				this.drawGlyphBackgrounds(renderer, line.text, PADDING_X, y, uppercaseDisplay);
-				this.drawGlyphRun(renderer, line.text, PADDING_X, y, Msx1Colors[color], uppercaseDisplay);
+				this.drawGlyphRun(renderer, line.text, PADDING_X, y, BmsxColors[color], uppercaseDisplay);
 				y += lineHeight;
 			}
 
@@ -1596,7 +1596,7 @@ export class TerminalMode {
 			}
 
 			// draw prompt at the first input line then draw wrapped input lines (first segment after prompt)
-			const promptColor = Msx1Colors[OUTPUT_COLORS.prompt];
+			const promptColor = BmsxColors[OUTPUT_COLORS.prompt];
 			this.drawGlyphBackgrounds(renderer, this.promptPrefix, PADDING_X, inputStartY, uppercaseDisplay);
 			this.drawGlyphRun(renderer, this.promptPrefix, PADDING_X, inputStartY, promptColor, uppercaseDisplay);
 
@@ -1957,7 +1957,7 @@ export class TerminalMode {
 			color: this.characterBackgroundColor,
 		});
 		this.drawGlyphBackgrounds(renderer, text, PADDING_X, y, uppercaseDisplay);
-		this.drawGlyphRun(renderer, text, PADDING_X, y, Msx1Colors[OUTPUT_COLORS.system], uppercaseDisplay);
+		this.drawGlyphRun(renderer, text, PADDING_X, y, BmsxColors[OUTPUT_COLORS.system], uppercaseDisplay);
 	}
 
 	private getLinesSnapshot(): string[] {
@@ -2196,7 +2196,7 @@ export class TerminalMode {
 
 	// Replace single-line drawInputField with multi-line aware renderer
 	private drawMultilineInput(renderer: RenderFacade, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
-		const inputColor = Msx1Colors[OUTPUT_COLORS.stdout];
+		const inputColor = BmsxColors[OUTPUT_COLORS.stdout];
 		const sel = selectionRange(this.field);
 		const cursorIndex = this.cursorOffset();
 		const uppercaseDisplay = this.useUppercaseDisplay();
@@ -2238,7 +2238,7 @@ export class TerminalMode {
 
 				// draw glyph runs (ghost inserted at caret)
 				this.drawGlyphRun(renderer, prefixText, x, y, inputColor, uppercaseDisplay);
-				this.drawGlyphRun(renderer, inlinePreview.suffix, x + prefixWidth, y, Msx1Colors[COLOR_COMPLETION_PREVIEW_TEXT], uppercaseDisplay);
+				this.drawGlyphRun(renderer, inlinePreview.suffix, x + prefixWidth, y, BmsxColors[COLOR_COMPLETION_PREVIEW_TEXT], uppercaseDisplay);
 				this.drawGlyphRun(renderer, suffixText, x + prefixWidth + ghostWidth, y, inputColor, uppercaseDisplay);
 			} else {
 				// draw glyph backgrounds before overlays/text so selection remains visible

@@ -4,7 +4,7 @@ import type { Stats } from 'fs';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
-import { hashAssetId } from '../../src/bmsx/util/asset_tokens';
+import { hashAssetId } from '../../src/bmsx/rompack/asset_tokens';
 import type { LuaChunk } from '../../src/bmsx/lua/syntax/lua_ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
@@ -13,8 +13,6 @@ import { loadGLTFModel } from './gltfloader';
 import type { AtlasResource, ImageResource, Resource, resourcetype, RomPackerTarget } from './rompacker.rompack';
 // @ts-ignore
 const { build } = require('esbuild');
-// @ts-ignore
-const { spawnSync } = require('child_process');
 // @ts-ignore
 const { join, parse, relative, resolve, sep } = require('path');
 
@@ -250,92 +248,6 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
 	else return null;
 }
 
-/**
- * Builds and bundles the source code for a ROM using esbuild.
- * @param {string} romname - The name of the ROM.
- * @param {string} bootloader_path - The path to the bootloader file.
- * @returns {Promise<any>} A promise that resolves when the ROM source code has been built and bundled.
- */
-export async function esbuild(romname: string, bootloader_path: string, debug: boolean, tsconfigProjectOverride?: string): Promise<void> {
-	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
-	// Prefer the game's tsconfig.json if present to ensure path mappings (e.g. "bmsx") resolve correctly
-	const tsconfigPath = (() => {
-		const fs = require('fs');
-		try {
-			if (tsconfigProjectOverride) {
-				const p0 = tsconfigProjectOverride.startsWith('.') || tsconfigProjectOverride.startsWith('src/')
-					? join(process.cwd(), tsconfigProjectOverride)
-					: tsconfigProjectOverride;
-				fs.accessSync(p0);
-				return p0;
-			}
-			const p = join(process.cwd(), bootloader_path, 'tsconfig.json');
-			fs.accessSync(p);
-			// If the tsconfig extends another file, make sure that file exists to avoid esbuild errors
-			const raw = fs.readFileSync(p, 'utf8');
-			try {
-				const json = JSON.parse(raw);
-				if (typeof json.extends === 'string') {
-					const base = json.extends.startsWith('.') || json.extends.startsWith('..')
-						? join(process.cwd(), bootloader_path, json.extends)
-						: json.extends;
-					try { fs.accessSync(base); } catch { return undefined; }
-				}
-			} catch { /* ignore JSON parse errors; let esbuild decide */ }
-			return p;
-		} catch { return undefined; }
-	})();
-	const define = {
-		'process.env.NODE_ENV': debug ? '"development"' : '"production"',
-	};
-	if (debug) {
-		await build({
-			entryPoints: [bootloader_ts_path], // Entry point for the rompack
-			bundle: true, // Bundle all dependencies into a single file
-			sourcemap: 'inline', // Include inline source maps for debugging
-			sourcesContent: true,
-			footer: {
-				js: `\n//# sourceURL=${romname}.debug.rom`,
-			},
-			outfile: `./rom/${romname}.js`, // Output file for the bundled code
-			platform: 'browser', // Target platform for the bundle
-			target: 'es2024', // Specify the ECMAScript version to target
-			// Specify the ECMAScript version to target
-			loader: { '.glsl': 'text' }, // Handles GLSL files as text
-			plugins: [glsl({ minify: true })],
-			tsconfig: tsconfigPath,
-			define,
-			minify: false,
-			keepNames: true,
-			external: ['ts-key-enum'],
-			treeShaking: true,
-			logLevel: 'silent',
-		});
-	}
-	else {
-		await build({
-			entryPoints: [bootloader_ts_path], // Entry point for the rompack
-			bundle: true, // Bundle all dependencies into a single file
-			sourcemap: false,
-			sourcesContent: false,
-			outfile: `./rom/${romname}.js`, // Output file for the bundled code
-			platform: 'browser', // Target platform for the bundle
-			target: 'es2024', // Specify the ECMAScript version to target
-			// Specify the ECMAScript version to target
-			loader: { '.glsl': 'text' }, // Handles GLSL files as text
-			plugins: [glsl({ minify: true })],
-			tsconfig: tsconfigPath,
-			define,
-			minify: true,
-			keepNames: true,
-			external: ['ts-key-enum'],
-			treeShaking: true,
-			logLevel: 'silent',
-		});
-	}
-	return null;
-}
-
 export async function buildEngineRuntime(options: { debug: boolean }): Promise<void> {
 	const { debug } = options;
 	await mkdir('./rom', { recursive: true });
@@ -378,106 +290,6 @@ export async function buildEngineRuntime(options: { debug: boolean }): Promise<v
 		await copyFile('./rom/engine.debug.js', './dist/engine.debug.js');
 	} else {
 		await copyFile('./rom/engine.js', './dist/engine.js');
-	}
-}
-
-/**
- * Type-check the engine and the selected game without emitting files.
- * Aborts on first error.
- */
-export function typecheckBeforeBuild(
-	bootloader_path: string,
-	emitOutput: (text: string) => void,
-	gameProjectOverride?: string,
-): void {
-	// Resolve local TypeScript CLI entry
-	let tscBin: string;
-	try {
-		// @ts-ignore
-		tscBin = require.resolve('typescript/bin/tsc');
-	} catch {
-		throw new Error('TypeScript is not installed locally. Install it with: npm i -D typescript');
-	}
-
-	const run = (projectPath: string, label: string) => {
-		const args = [tscBin, '-p', projectPath, '--noEmit'];
-		const res = spawnSync(process.execPath, args, { stdio: 'pipe', encoding: 'utf8' });
-		emitOutput(res.stdout ?? res.stderr); // Emit either stdout or stderr. Also note that `emitOutput` already handles undefined strings
-		if (res.status !== 0) {
-			throw new Error(`Type-check failed for ${label} (project: ${projectPath}).`);
-		}
-	};
-
-	const fs = require('fs');
-	const engineProject = 'src/bmsx/tsconfig.json';
-	fs.accessSync(engineProject);
-	run(engineProject, 'engine');
-
-	const gameTsconfig = gameProjectOverride
-		? (gameProjectOverride.startsWith('.') || gameProjectOverride.startsWith('src/')
-			? join(process.cwd(), gameProjectOverride)
-			: gameProjectOverride)
-		: join(process.cwd(), bootloader_path, 'tsconfig.json');
-	try {
-		fs.accessSync(gameTsconfig);
-	} catch {
-		// No per-game tsconfig.json; skip
-		return;
-	}
-	run(gameTsconfig, 'game');
-}
-
-/** Type-check the game against a provided directory of engine declaration files. */
-export function typecheckGameWithDts(
-	bootloader_path: string,
-	dtsDir: string,
-	emitOutput: (text: string) => void,
-	baseProjectOverride?: string
-): void {
-	let tscBin: string;
-	try { tscBin = require.resolve('typescript/bin/tsc'); }
-	catch { throw new Error('TypeScript is not installed locally. Install it with: npm i -D typescript'); }
-
-	const fs = require('fs');
-	const path = require('path'); // Prefer the game's tsconfig.json if present to ensure path mappings (e.g. "bmsx") resolve correctly
-
-	const gameTsconfig = (() => { // Try to locate the game's tsconfig.json if present (cart games don't always have one)
-		try {
-			const p = path.join(process.cwd(), bootloader_path, 'tsconfig.json');
-			fs.accessSync(p);
-			return p;
-		} catch { return undefined; }
-	})();
-
-	const bootloaderIdRaw = bootloader_path ? path.basename(bootloader_path) : 'game';
-	const bootloaderId = bootloaderIdRaw.replace(/[^a-zA-Z0-9_-]/g, '_') || 'game';
-	const tmpCfg = path.join(process.cwd(), 'rom', '_ignore', `tsconfig.game.with.dts.${bootloaderId}.json`);
-	const extendsPath = (baseProjectOverride
-		? ((baseProjectOverride.startsWith('.') || baseProjectOverride.startsWith('src/'))
-			? path.join(process.cwd(), baseProjectOverride)
-			: baseProjectOverride)
-		: gameTsconfig) ?? path.join(process.cwd(), 'tsconfig.base.json');
-	const cfg = {
-		extends: path.relative(path.dirname(tmpCfg), extendsPath),
-		compilerOptions: {
-			noEmit: true,
-			baseUrl: '.',
-			paths: {
-				bmsx: [path.relative(path.dirname(tmpCfg), path.join(dtsDir, 'index.d.ts'))],
-				'bmsx/*': [path.relative(path.dirname(tmpCfg), path.join(dtsDir, '*'))]
-			}
-		},
-		include: [path.join(bootloader_path, '**/*.ts')]
-	};
-	const dir = path.dirname(tmpCfg);
-	if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-	fs.writeFileSync(tmpCfg, JSON.stringify(cfg, null, 2));
-
-	const res = spawnSync(process.execPath, [tscBin, '-p', tmpCfg], { stdio: 'pipe', encoding: 'utf8' });
-	emitOutput(res.stdout ?? res.stderr); // Emit either stdout or stderr. Also note that `emitOutput` already handles undefined strings
-	if (res.status !== 0) {
-		const reason = 'Type-check with engine declarations failed.';
-		throw new Error(reason);
 	}
 }
 
@@ -758,9 +570,6 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 		case '.adp':
 			type = 'audio';
 			break;
-		case '.js':
-			type = 'code';
-			break;
 		case '.atlas': // `.atlas`-files don't exist. We use this to add the atlas to the resource list
 			type = 'atlas';
 			break;
@@ -806,13 +615,11 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
  * @returns An array of resources with basic metadata.
  */
 export type ResourceScanOptions = {
-	includeCode?: boolean;
 	extraLuaPaths?: string[];
 	virtualRoot?: string;
 	resolveAtlasIndex?: boolean;
 	/**
 	 * When set, rebuild checks use the debug ROM output (`dist/<romname>.debug.rom`).
-	 * Note: the JS bundle output path does not change with debug/non-debug builds.
 	 */
 	debug?: boolean;
 	/**
@@ -820,11 +627,6 @@ export type ResourceScanOptions = {
 	 * Defaults to `dist/<romname>[.debug].rom` (based on `debug`).
 	 */
 	romFilePath?: string;
-	/**
-	 * Optional override for the expected JS bundle output path used by rebuild checks.
-	 * Defaults to `rom/<romname>.js`.
-	 */
-	minifiedJsFilePath?: string;
 	/**
 	 * Optional override for the engine BIOS ROM path used by cart rebuild checks.
 	 * Defaults to `dist/bmsx-bios[.debug].rom` (based on `debug`).
@@ -836,7 +638,7 @@ function isWorkspaceStateDirectory(name: string): boolean {
 	return name.toLowerCase() === WORKSPACE_STATE_DIR_NAME;
 }
 
-export async function getResMetaList(respaths: string[], romname?: string, options: ResourceScanOptions = {}): Promise<Resource[]> {
+export async function getResMetaList(respaths: string[], _romname?: string, options: ResourceScanOptions = {}): Promise<Resource[]> {
 	const EXTRA_LUA_SCAN_SKIP = new Set<string>([
 		'.git',
 		'.svn',
@@ -854,7 +656,6 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 	const arrayOfFiles: string[] = [];
 	const virtualRoot = normalizeVirtualRootPath(options.virtualRoot);
 	const cartProject = isCartPath(virtualRoot) || respaths.some(isCartPath);
-	const includeCode = options.includeCode !== false && !cartProject;
 	const scanRoots = cartProject
 		? respaths.filter(path => !isEngineResPath(path))
 		: respaths;
@@ -897,12 +698,6 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 		if (!luaRoot || luaRoot.length === 0) continue;
 		await appendLuaFilesFromRoot(luaRoot);
 	}
-
-	const megarom_filename = `${romname}.js`;
-	// Note that romname can be undefined when building the resource enum file, so we only add the file if romname is defined
-	if (romname && includeCode) {
-		pushFile(`./rom/${megarom_filename}`);
-	}
 	arrayOfFiles.sort((a, b) => a.localeCompare(b));
 
 	const result: Array<Resource> = [];
@@ -914,15 +709,11 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 	let dataid = 1;
 	let modelid = 1;
 	let luaid = 1;
-	let codeFileCount = 0;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
 		const filepath = arrayOfFiles[i];
 		const meta = getResMetaByFilename(filepath);
 
 		const type = meta.type;
-		if (type === 'code' && !includeCode) {
-			continue;
-		}
 		let name = meta.name;
 		const ext = meta.ext;
 		const virtualSourcePath = resolveVirtualSourcePath(filepath, virtualRoot);
@@ -982,10 +773,6 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 			case 'romlabel':
 				result.push({ filepath, name, ext, type, id: undefined, sourcePath });
 				break;
-			case 'code':
-				result.push({ filepath, name, ext, type, id: 1, sourcePath });
-				codeFileCount += 1;
-				break;
 			case 'data':
 			case 'aem': // AEM files are added to the data asset list
 				// For data files, we use the name as is
@@ -1016,10 +803,6 @@ export async function getResMetaList(respaths: string[], romname?: string, optio
 	for (const id of Array.from(targetAtlasIdSet).sort((a, b) => a - b)) {
 		const name = generateAtlasName(id);
 		result.push({ filepath: undefined, name, ext: '.atlas', type: 'atlas', id: imgid++, atlasid: id });
-	}
-
-	if (codeFileCount > 1) {
-		throw new Error(`Expected a single ROM source bundle, but found ${codeFileCount}. Ensure only one generated "${romname}.js" exists.`);
 	}
 
 	result.sort((left, right) => {
@@ -1438,10 +1221,6 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				romAssets.push({ resid, type, audiometa, buffer: encoded.buffer, source_path: sourcePath });
 				break;
 			}
-			case 'code':
-				resid = resid.replace('.min', '');
-				romAssets.push({ resid, type, buffer, source_path: sourcePath });
-				break;
 			case 'lua': {
 				if (!res.filepath || res.filepath.length === 0) {
 					throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
@@ -2145,18 +1924,13 @@ export const shouldCheckFile = (filename: string, checkCodeFiles: boolean, check
  */
 export async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string, options: ResourceScanOptions = {}): Promise<boolean> {
 	const romFilePath = options.romFilePath ?? `./dist/${romname}${options.debug ? '.debug' : ''}.rom`;
-	const minifiedJsFilePath = options.minifiedJsFilePath ?? `./rom/${romname}.js`;
 	const biosRomFilePath = options.biosRomFilePath ?? `./dist/bmsx-bios${options.debug ? '.debug' : ''}.rom`;
 	const extraLuaRoots = options.extraLuaPaths ?? [];
 	const cartProject = isCartPath(resPath) || isCartPath(bootloaderPath) || isDefaultCartBootloader(bootloaderPath);
-	const includeCode = options.includeCode !== false && !cartProject;
 
 	async function checkPaths() {
 		try {
 			await access(romFilePath);
-			if (includeCode) {
-				await access(minifiedJsFilePath);
-			}
 			return false;
 		} catch {
 			return true;
@@ -2219,8 +1993,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 		return false;
 	};
 
-	const shouldCheckCodeFiles = (dir: string) => includeCode && dir.startsWith(bootloaderPath);
-	const shouldCheckAssets = (dir: string) => dir.startsWith(resPath) || (cartProject && dir.startsWith(bootloaderPath));
+	const shouldCheckAssets = (dir: string) => dir.startsWith(resPath);
 
 	const extraChecks: Array<Promise<boolean>> = [];
 	const normalizedBoot = resolve(bootloaderPath);
@@ -2234,10 +2007,8 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 
 	const extraNeedsRebuild = extraChecks.length > 0 ? await Promise.all(extraChecks).then(results => results.some(Boolean)) : false;
 
-	const bootloaderNeedsRebuild = (includeCode || cartProject)
-		? await shouldRebuild(bootloaderPath, shouldCheckCodeFiles(bootloaderPath), shouldCheckAssets(bootloaderPath))
-		: false;
-	const resNeedsRebuild = await shouldRebuild(resPath, shouldCheckCodeFiles(resPath), shouldCheckAssets(resPath));
+	const bootloaderNeedsRebuild = cartProject ? false : await shouldRebuild(bootloaderPath, true, false);
+	const resNeedsRebuild = await shouldRebuild(resPath, false, shouldCheckAssets(resPath));
 	const engineNeedsRebuild = cartProject ? false : await shouldRebuild('src/bmsx', true, false);
 
 	return extraNeedsRebuild ||

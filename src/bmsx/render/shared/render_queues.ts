@@ -8,7 +8,7 @@ import { Runtime } from '../../emulator/runtime';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { new_vec3, new_vec2 } from '../../utils/vector_operations';
 import { clamp } from '../../utils/clamp';
-import { BFont } from '../../core/font';
+import { BFont } from './bitmap_font';
 import { $ } from '../../core/engine_core';
 
 export interface SpriteQueueItem {

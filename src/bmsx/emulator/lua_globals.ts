@@ -712,10 +712,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 
 	const exposeObjects = (): void => {
 		const entries: Array<[string, object]> = [
-			['world', $.world],
 			['game', $],
 			['$', $],
-			['registry', $.registry],
 		];
 		for (const [name, object] of entries) {
 			runtimeLuaPipeline.registerGlobal(runtime, name, getOrCreateNativeObject(runtime, object));

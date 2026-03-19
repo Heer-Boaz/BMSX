@@ -220,6 +220,36 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
+	put_ambient_light: {
+		description: 'Submits an ambient light contribution for the current frame.',
+		parameters: [
+			{ name: 'id', description: 'Stable light identifier for this frame.' },
+			{ name: 'colorvalue', description: 'Palette index, color object, or vec3 RGB array.' },
+			{ name: 'intensity', description: 'Ambient light intensity scalar.' },
+		],
+		returnType: 'void',
+	},
+	put_directional_light: {
+		description: 'Submits a directional light for the current frame.',
+		parameters: [
+			{ name: 'id', description: 'Stable light identifier for this frame.' },
+			{ name: 'orientation', description: 'Light direction as a vec3 array or { x, y, z } object.' },
+			{ name: 'colorvalue', description: 'Palette index, color object, or vec3 RGB array.' },
+			{ name: 'intensity', description: 'Directional light intensity scalar.' },
+		],
+		returnType: 'void',
+	},
+	put_point_light: {
+		description: 'Submits a point light for the current frame.',
+		parameters: [
+			{ name: 'id', description: 'Stable light identifier for this frame.' },
+			{ name: 'position', description: 'Light position as a vec3 array or { x, y, z } object.' },
+			{ name: 'colorvalue', description: 'Palette index, color object, or vec3 RGB array.' },
+			{ name: 'range', description: 'Point light range in world units.' },
+			{ name: 'intensity', description: 'Point light intensity scalar.' },
+		],
+		returnType: 'void',
+	},
 	write: {
 		description: 'Writes text to the screen. If x/y are omitted, uses the current text cursor and auto-advances.',
 		parameters: [
