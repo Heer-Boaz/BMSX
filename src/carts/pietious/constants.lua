@@ -212,6 +212,7 @@ constants.physics = {
 	fall_dx_neutral = 2,
 	fall_dx_with_inertia = 3,
 	fall_dx_against_inertia = 1,
+	jump_ceiling_cut_substate = 10,
 	jump_release_cut_substate = 11,
 	jump_to_fall_substate = 13,
 	popolon_jump_dy_by_substate = {
