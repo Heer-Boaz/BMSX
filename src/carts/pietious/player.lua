@@ -1415,27 +1415,23 @@ function player:resolve_overlap_with_elevator(platform, previous_platform_y)
 end
 
 function player:is_support_below_at(x, y, include_elevator)
-	local rm = object('room')
-	local player_bottom = y + self.height
-	local support_y = player_bottom + 1
-	local left_foot_x = x + constants.room.tile_half
-	local right_foot_x = (x + self.width) - constants.room.tile_half
-	if rm:has_collision_flags_at_world(left_foot_x, support_y, constants.collision_flags.solid_mask, false)
-		or rm:has_collision_flags_at_world(right_foot_x, support_y, constants.collision_flags.solid_mask, false)
-	then
+	if self:collides_at_support_profile(x, y, false) then
 		return true
 	end
 	if not include_elevator then
 		return false
 	end
 
+	local player_bottom = y + self.height
+	local left_foot_x = x + constants.room.tile_half
+	local right_foot_x = (x + self.width) - constants.room.tile_half
 	local count = object('c').elevator_count
 	local current_room_number = object('c').current_room_number
 	for i = 1, count do
 		local platform = object('e.p' .. tostring(i))
 		if platform.current_room_number == current_room_number then
-			if player_bottom <= platform.y
-				and support_y > platform.y
+			if player_bottom >= platform.y
+				and player_bottom <= (platform.y + 1)
 				and (
 					(left_foot_x >= platform.x and left_foot_x < (platform.x + constants.room.tile_size4))
 					or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
@@ -1471,11 +1467,39 @@ function player:collides_at_probe(x, y, include_elevator)
 	return false
 end
 
+function player:collides_at_support_profile(x, y, include_elevator)
+	local feet_y = y + self.height
+	local left_foot_x = x + constants.room.tile_half
+	local right_foot_x = (x + self.width) - constants.room.tile_half
+	return self:collides_at_probe(left_foot_x, feet_y, include_elevator)
+		or self:collides_at_probe(right_foot_x, feet_y, include_elevator)
+end
+
 function player:collides_at_jump_ceiling_profile(x, y, include_elevator)
 	local left_probe_x = x + constants.room.tile_half
 	local right_probe_x = (x + self.width) - constants.room.tile_half
 	return self:collides_at_probe(left_probe_x, y, include_elevator)
 		or self:collides_at_probe(right_probe_x, y, include_elevator)
+end
+
+function player:collides_at_right_wall_profile(x, y, include_elevator)
+	local wall_x = x + self.width
+	local bottom_y = (y + self.height) - 1
+	return self:collides_at_probe(wall_x, y, include_elevator)
+		or self:collides_at_probe(wall_x, bottom_y, include_elevator)
+end
+
+function player:collides_at_left_wall_primary_profile(x, y, include_elevator)
+	local bottom_y = (y + self.height) - 1
+	return self:collides_at_probe(x, y, include_elevator)
+		or self:collides_at_probe(x, bottom_y, include_elevator)
+end
+
+function player:collides_at_left_wall_secondary_profile(x, y, include_elevator)
+	local wall_x = x - 1
+	local bottom_y = (y + self.height) - 1
+	return self:collides_at_probe(wall_x, y, include_elevator)
+		or self:collides_at_probe(wall_x, bottom_y, include_elevator)
 end
 
 function player:find_clear_x_with_probe(next_x, y, include_elevator)
@@ -2258,23 +2282,57 @@ function player:update_quiet_stairs()
 	end
 end
 
-function player:resolve_hit_overlap_if_needed()
+function player:resolve_solid_overlap_if_needed()
 	if not self:collides_at(self.x, self.y, false) then
 		return
 	end
-	local left_col = self:collides_at(self.x - 1, self.y, false)
-	local right_col = self:collides_at(self.x + 1, self.y, false)
-	local up_col = self:collides_at(self.x, self.y - 1, false)
-	local down_col = self:collides_at(self.x, self.y + 1, false)
-	if left_col and (not right_col) then
-		self.x = self.x + 1
-	elseif (not left_col) and right_col then
-		self.x = self.x - 1
+
+	local right_wall = self:collides_at_right_wall_profile(self.x, self.y, false)
+	local left_wall_primary = self:collides_at_left_wall_primary_profile(self.x, self.y, false)
+	local left_wall_secondary = self:collides_at_left_wall_secondary_profile(self.x, self.y, false)
+	local left_wall = left_wall_primary or left_wall_secondary
+	local center_x = self.x + constants.room.tile_size
+
+	if right_wall and ((not left_wall) or self.last_dx > 0) then
+		self.x = (math.modf(center_x / constants.room.tile_size) * constants.room.tile_size) - constants.room.tile_size
+	elseif left_wall then
+		local snapped_center_x = math.modf(center_x / constants.room.tile_size) * constants.room.tile_size
+		if left_wall_secondary and not left_wall_primary then
+			snapped_center_x = math.modf((center_x + constants.room.tile_size) / constants.room.tile_size) * constants.room.tile_size
+		end
+		self.x = snapped_center_x - constants.room.tile_size
 	end
-	if up_col and (not down_col) then
-		self.y = self.y + 1
-	elseif (not up_col) and down_col then
-		self.y = self.y - 1
+
+	if self:collides_at(self.x, self.y, false) then
+		if self.last_dy > 0 or self:collides_at_support_profile(self.x, self.y, false) then
+			for _ = 1, constants.room.tile_size do
+				self.y = self.y - 1
+				if not self:collides_at(self.x, self.y, false) then
+					break
+				end
+			end
+		elseif self.last_dy < 0 or self:collides_at_jump_ceiling_profile(self.x, self.y, false) then
+			for _ = 1, constants.room.tile_size do
+				self.y = self.y + 1
+				if not self:collides_at(self.x, self.y, false) then
+					break
+				end
+			end
+		elseif self.last_dx > 0 or right_wall then
+			for _ = 1, constants.room.tile_size do
+				self.x = self.x - 1
+				if not self:collides_at(self.x, self.y, false) then
+					break
+				end
+			end
+		else
+			for _ = 1, constants.room.tile_size do
+				self.x = self.x + 1
+				if not self:collides_at(self.x, self.y, false) then
+					break
+				end
+			end
+		end
 	end
 end
 
@@ -2427,6 +2485,7 @@ function player:update_common_frame()
 	if self:has_tag(state_tags.group.transition_lock) then
 		self:reset_motion_for_transition_lock()
 		self.grounded = false
+		self.solid_overlap_pending = false
 		self:apply_presentation_state()
 		return
 	end
@@ -2436,8 +2495,9 @@ function player:update_common_frame()
 	self:try_side_room_switch_from_position()
 	self:try_vertical_room_switch_from_position()
 	if self:has_tag(state_tags.group.hit_overlap_states) then
-		self:resolve_hit_overlap_if_needed()
+		self:resolve_solid_overlap_if_needed()
 	end
+	self.solid_overlap_pending = self:collides_at(self.x, self.y, false)
 
 	self.grounded = self:is_support_below_at(self.x, self.y, true)
 	self:apply_presentation_state()
@@ -2493,6 +2553,10 @@ local function define_player_fsm()
 			-- Held-state must follow authoritative runtime [p] state every frame.
 			-- That keeps movement stable even if a jp/jr edge is missed once.
 			self:sync_input_state_from_runtime()
+			if self.solid_overlap_pending then
+				self:resolve_solid_overlap_if_needed()
+				self.solid_overlap_pending = self:collides_at(self.x, self.y, false)
+			end
 			if not self:has_tag(state_tags.variant.jumping) then
 				self.jumping_from_elevator = false
 			end
@@ -3035,6 +3099,7 @@ local function register_player_definition()
 			last_dy = 0,
 			previous_x_collision = false,
 			previous_y_collision = false,
+			solid_overlap_pending = false,
 			on_vertical_elevator = false,
 			jumping_from_elevator = false,
 			walk_frame = 0,
