@@ -4,8 +4,6 @@ local components = require('components')
 local title_screen = {}
 title_screen.__index = title_screen
 
-local hidden_space_id = 'ui'
-local title_space_id = 'transition'
 local sparkle_timeline_id = 'title_screen.sparkle'
 local start_timeline_id = 'title_screen.start'
 
@@ -147,15 +145,9 @@ local function define_title_screen_fsm()
 		initial = 'hidden',
 		on = build_title_root_on('/idle'),
 		states = {
-			hidden = {
-				entering_state = function(self)
-					self:set_space(hidden_space_id)
-					self.sparkle_sprite.enabled = false
-				end,
-			},
+			hidden = {},
 			idle = {
 				entering_state = function(self)
-					self:set_space(title_space_id)
 					self:gfx('title_screen')
 				end,
 				timelines = {

@@ -69,6 +69,10 @@ function getTitleState(engine) {
 		elseif ui.sc:matches_state_path('ui:/hidden') then
 			ui_state = 'hidden'
 		end
+		local player_state = 'other'
+		if player ~= nil and player.sc ~= nil and player.sc:matches_state_path('player:/freeze') then
+			player_state = 'freeze'
+		end
 		local title_timeline = title:get_timeline('title_screen.start')
 		local title_timeline_head = nil
 		if title_timeline ~= nil then
@@ -97,6 +101,7 @@ function getTitleState(engine) {
 			director_state = director_state,
 			director_boot_mode = director.boot_mode,
 			room_mode = room_mode,
+			player_state = player_state,
 			title_state = title_state,
 			ui_state = ui_state,
 			hud_visible = ui.hud_visible,
@@ -195,7 +200,7 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 			if (titleReadyAt === 0) {
 				logger(`[assert] title boot state space=${state.active_space} director=${state.director_state} bootMode=${state.director_boot_mode} roomMode=${state.room_mode} titleState=${state.title_state} visible=${state.title_visible} imgid=${state.title_imgid} music=${state.current_music}`);
 			}
-			assert(state.active_space === 'transition', `title boot active_space=${state.active_space}`);
+			assert(state.active_space === 'title', `title boot active_space=${state.active_space}`);
 			assert(state.director_state === 'title_screen', `title boot director=${state.director_state}`);
 			assert(state.title_visible === true, `title boot visible=${state.title_visible}`);
 			assert(state.title_imgid === 'title_screen', `title idle imgid=${state.title_imgid}`);
@@ -284,7 +289,7 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 		}
 
 		if (scenario === 'starting') {
-			assert(state.active_space === 'transition' || state.active_space === 'main', `title start active_space=${state.active_space}`);
+			assert(state.active_space === 'title' || state.active_space === 'transition' || state.active_space === 'main', `title start active_space=${state.active_space}`);
 			if (state.director_state === 'title_screen') {
 				assert(state.title_visible === true, `title start invisible titleState=${state.title_state} imgid=${state.title_imgid}`);
 				assert(state.current_music === null, `title start music leaked current=${state.current_music}`);
@@ -311,18 +316,22 @@ export default function schedule({ logger, schedule: scheduleInput, frameInterva
 				if (startWaitFrame < 0) {
 					startWaitFrame = engine.view?.renderFrameIndex ?? 0;
 				}
-				assert(state.active_space === 'main', `title wait active_space=${state.active_space}`);
+				assert(state.active_space === 'transition', `title wait active_space=${state.active_space}`);
 				assert(state.title_state === 'hidden', `title wait title_state=${state.title_state}`);
-				assert(state.title_space === 'ui', `title wait title_space=${state.title_space}`);
+				assert(state.title_space === 'title', `title wait title_space=${state.title_space}`);
 				assert(state.ui_state === 'hidden', `title wait ui_state=${state.ui_state}`);
 				assert(state.hud_visible === false, `title wait hud_visible=${state.hud_visible}`);
+				assert(state.player_state === 'freeze', `title wait player_state=${state.player_state}`);
+				assert(state.room_number === baselineRoomNumber, `title wait room changed room=${state.room_number} baseline=${baselineRoomNumber}`);
+				assert(state.player_x === baselinePlayerX, `title wait player.x changed x=${state.player_x} baseline=${baselinePlayerX}`);
+				assert(state.player_y === baselinePlayerY, `title wait player.y changed y=${state.player_y} baseline=${baselinePlayerY}`);
 				return;
 			}
 
 			assert(state.director_state === 'room', `title start ended in director=${state.director_state}`);
 			assert(state.active_space === 'main', `title start ended in active_space=${state.active_space}`);
 			assert(state.title_state === 'hidden', `title start left title_state=${state.title_state}`);
-			assert(state.title_space === 'ui', `title start left title_space=${state.title_space}`);
+			assert(state.title_space === 'title', `title start left title_space=${state.title_space}`);
 			assert(startWaitFrame >= 0, 'title start never entered title_start_wait');
 			assert(state.ui_state === 'active', `title start ended in ui_state=${state.ui_state}`);
 			assert(state.hud_visible === true, `title start ended in hud_visible=${state.hud_visible}`);

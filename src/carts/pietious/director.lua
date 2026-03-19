@@ -97,6 +97,7 @@ end
 
 function director:activate_spaces()
 	add_space('main')
+	add_space('title')
 	add_space('transition')
 	add_space('shrine')
 	add_space('lithograph')
@@ -274,8 +275,8 @@ end
 --   'seal_dissolution_done' — entire dissolution timeline finished.
 --   'daemon_appearance'     — optional { after_death = true } payload.
 --   'daemon_appearance_done'— daemon cloud timeline ended.
---   'title_wait'            — post-title MSX startup hold: room visible,
---                             HUD hidden, gameplay still frozen.
+--   'title_wait'            — post-title MSX startup hold: gameplay space
+--                             still hidden, HUD hidden, gameplay frozen.
 --   'title_wait_done'       — startup hold ended; temporary freezes may resume.
 --   'shrine'                — { lines = { ... } } payload.
 --   'lithograph'            — { lines = { ... } } payload.
@@ -884,7 +885,10 @@ local function define_director_fsm()
 				},
 			},
 				title_screen = {
-					entering_state = function(self) self:enter_transition('title') end,
+					entering_state = function(self)
+						self:set_active_space('title')
+						self.events:emit('title')
+					end,
 					on = {
 						['title_screen_done'] = {
 							emitter = 'title_screen',
@@ -908,7 +912,7 @@ local function define_director_fsm()
 						},
 					},
 					entering_state = function(self)
-						self:set_active_space('main')
+						self:set_active_space('transition')
 						self.events:emit('title_wait')
 					end,
 				},
