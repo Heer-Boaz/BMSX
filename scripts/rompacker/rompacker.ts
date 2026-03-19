@@ -89,15 +89,15 @@ function stripLuaAssets(assets: RomAsset[], debug: boolean): void {
 	}
 }
 
-function applyEngineAtlasLimit(manifest: RomManifest, resources: Resource[]): void {
+function applyBIOSAtlasLimit(manifest: RomManifest, resources: Resource[]): void {
 	const atlas = resources.find((res): res is AtlasResource => res.type === 'atlas' && res.atlasid === ENGINE_ATLAS_INDEX);
 	if (!atlas || !atlas.img) {
-		throw new Error('[RomPacker] Engine atlas missing; cannot compute system_atlas_slot_bytes.');
+		throw new Error('[RomPacker] BIOS atlas missing; cannot compute system_atlas_slot_bytes.');
 	}
 	const width = atlas.img.width;
 	const height = atlas.img.height;
 	if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-		throw new Error('[RomPacker] Engine atlas dimensions are invalid; cannot compute system_atlas_slot_bytes.');
+		throw new Error('[RomPacker] BIOS atlas dimensions are invalid; cannot compute system_atlas_slot_bytes.');
 	}
 	const bytes = Math.floor(width) * Math.floor(height) * 4;
 	let vramSpecs = manifest.machine.specs.vram;
@@ -192,14 +192,14 @@ function parseOptions(args: string[]): ParsedOptions {
 		writeOut(`Options:\n`, 'warning');
 		writeOut(`  -romname <name>          Cart folder under src/carts (required for rompack mode)\n`, 'warning');
 		writeOut(`  -title <title>           Title override\n`, 'warning');
-		writeOut(`  -bootloaderpath <path>   Engine-only bootloader path override\n`, 'warning');
+		writeOut(`  -bootloaderpath <path>   BIOS-only bootloader path override\n`, 'warning');
 		writeOut(`  -respath <path>          Resource path override\n`, 'warning');
 		writeOut(`  --debug                  Build debug artifacts\n`, 'warning');
 		writeOut(`  --force                  Force the compilation and build of the rompack\n`, 'warning');
 		writeOut(`  --buildreslist           Build resource list\n`, 'warning');
 		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)\n`, 'warning');
 		writeOut(`  --preserve-lua-case      Disable Lua case folding (default: enabled)\n`, 'warning');
-		writeOut(`  --mode <rompack|engine>  What to build (default: rompack)\n`, 'warning');
+		writeOut(`  --mode <rompack|bios>  What to build (default: rompack)\n`, 'warning');
 		writeOut(`  -O0|-O1|-O2|-O3          Bytecode optimizer level (default: -O3)\n`, 'warning');
 		process.exit(0);
 	}
@@ -226,13 +226,13 @@ function parseOptions(args: string[]): ParsedOptions {
 
 	const modeRaw = getParamOrEnv(args, '--mode', 'ROM_MODE', 'rompack', KNOWN_FLAGS);
 	const modeStr = modeRaw.toLowerCase();
-	let mode: 'rompack' | 'engine';
+	let mode: 'rompack' | 'bios';
 	if (modeStr === 'rompack') {
 		mode = 'rompack';
-	} else if (modeStr === 'engine') {
-		mode = 'engine';
+	} else if (modeStr === 'bios') {
+		mode = 'bios';
 	} else {
-		throw new Error(`Unsupported --mode "${modeRaw}". Expected one of: rompack, engine.`);
+		throw new Error(`Unsupported --mode "${modeRaw}". Expected one of: rompack, bios.`);
 	}
 
 	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', '', KNOWN_FLAGS);
@@ -240,7 +240,7 @@ function parseOptions(args: string[]): ParsedOptions {
 	const defaultBootloaderPath = './src/bmsx/emulator/default_cart';
 	let bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', defaultBootloaderPath, KNOWN_FLAGS);
 	const respathOverride = getOptionalParam(args, '-respath', 'RES_PATH');
-	let respath = mode === 'engine' ? './src/bmsx/res' : '';
+	let respath = mode === 'bios' ? './src/bmsx/res' : '';
 
 	const preserveLuaCase = seenFlags.has('--preserve-lua-case');
 	const canonicalizationEnv = process.env.ROM_LUA_CANONICALIZATION;
@@ -257,7 +257,7 @@ function parseOptions(args: string[]): ParsedOptions {
 	}
 
 	let extraLuaRoots: string[] = [];
-	if (mode === 'engine') {
+	if (mode === 'bios') {
 		respath = getParamOrEnv(args, '-respath', 'RES_PATH', './src/bmsx/res', KNOWN_FLAGS);
 		bootloader_path = normalizePathKey(bootloader_path);
 		respath = normalizePathKey(respath);
@@ -521,65 +521,65 @@ class ProgressReporter {
 	}
 }
 
-async function runEngineBuild(options: ParsedOptions): Promise<void> {
+async function runBIOSBuild(options: ParsedOptions): Promise<void> {
 	const { respath, bootloader_path, force, debug, optLevel, canonicalization, useTextureAtlas } = options;
 
 	setAtlasFlag(useTextureAtlas);
 	setLuaCanonicalization(canonicalization);
 
-	const engineResPath = respath || commonResPath;
-	if (!engineResPath) {
-		throw new Error('Missing engine respath (expected ./src/bmsx/res).');
+	const BIOSResPath = respath || commonResPath;
+	if (!BIOSResPath) {
+		throw new Error('Missing BIOS respath (expected ./src/bmsx/res).');
 	}
-	const engineManifest = await getRomManifest(engineResPath);
-	if (!engineManifest) {
-		throw new Error(`Rom manifest not found at "${engineResPath}"!`);
+	const BIOSManifest = await getRomManifest(BIOSResPath);
+	if (!BIOSManifest) {
+		throw new Error(`Rom manifest not found at "${BIOSResPath}"!`);
 	}
-	const engineRomName = engineManifest.rom_name ?? 'bmsx-bios';
+	const BIOSRomName = BIOSManifest.rom_name ?? 'bmsx-bios';
 
-	const engineProjectRoot = normalizePathKey(join(engineResPath, '..'));
-	const engineProjectRootPath = engineProjectRoot.replace(/^\.\//, '');
-	const engineVirtualRoot = engineProjectRootPath;
+	const BIOSProjectRoot = normalizePathKey(join(BIOSResPath, '..'));
+	const BIOSProjectRootPath = BIOSProjectRoot.replace(/^\.\//, '');
+	const BIOSVirtualRoot = BIOSProjectRootPath;
 
-	logDivider('Engine');
-	logBullet('ROM', pc.bold(pc.white(engineRomName)));
+	logDivider('bios');
+	logBullet('ROM', pc.bold(pc.white(BIOSRomName)));
 	logBullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
 
-	const assetsNeedRebuild = force || await isRebuildRequired(engineRomName, bootloader_path, engineResPath, {
+	const assetsNeedRebuild = force || await isRebuildRequired(BIOSRomName, bootloader_path, BIOSResPath, {
 		extraLuaPaths: [],
 		resolveAtlasIndex: false,
 		debug,
 	});
 	if (!assetsNeedRebuild) {
-		logInfo('Engine assets up-to-date (use --force to rebuild)');
+		logInfo('BIOS assets up-to-date (use --force to rebuild)');
 		return;
 	}
 
-	logInfo(`Build engine assets (${engineRomName})`);
+	logInfo(`Build BIOS assets (${BIOSRomName})`);
 	const previousCanonicalization = LUA_CANONICALIZATION;
-	const engineCanonicalization = engineManifest.machine.canonicalization ?? previousCanonicalization;
-	setLuaCanonicalization(engineCanonicalization);
+	const BIOSCanonicalization = BIOSManifest.machine.canonicalization ?? previousCanonicalization;
+	setLuaCanonicalization(BIOSCanonicalization);
 	try {
-		const biosLuaRoots = [normalizePathKey(engineResPath)];
+		const biosLuaRoots = [normalizePathKey(BIOSResPath)];
 		logInfo('Lint BIOS Lua');
 		await lintCartLuaSources({ roots: biosLuaRoots, profile: 'bios' });
 
-		const engineResMetaList = await getResMetaList([engineResPath], engineRomName, {
+		const BIOSResMetaList = await getResMetaList([BIOSResPath], BIOSRomName, {
 			extraLuaPaths: [],
-			virtualRoot: engineVirtualRoot,
+			virtualRoot: BIOSVirtualRoot,
 			resolveAtlasIndex: true,
 		});
-		const engineResources = await getResourcesList(engineResMetaList);
+		const BIOSResources = await getResourcesList(BIOSResMetaList);
 		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-			await createAtlasses(engineResources);
-			applyEngineAtlasLimit(engineManifest, engineResources);
+			await createAtlasses(BIOSResources);
+			applyBIOSAtlasLimit(BIOSManifest, BIOSResources);
 		}
-		validateAudioEventReferences(engineResources);
-		const engineRomAssets = await generateRomAssets(engineResources);
-		const engineProgramBoot = appendProgramAsset(engineRomAssets, engineManifest, { includeSymbols: debug, optLevel });
-		stripLuaAssets(engineRomAssets, debug);
-		await finalizeRompack(engineRomAssets, engineRomName, { projectRootPath: engineProjectRootPath, manifest: engineManifest, zipRom: false, debug, programBoot: engineProgramBoot });
-		logOk(`Engine assets ready → ${pc.white(`dist/${engineRomName}${debug ? '.debug' : ''}.rom`)}`);
+		validateAudioEventReferences(BIOSResources);
+		const BIOSRomAssets = await generateRomAssets(BIOSResources);
+		const BIOSProgramBoot = appendProgramAsset(BIOSRomAssets, BIOSManifest, { includeSymbols: debug, optLevel });
+		stripLuaAssets(BIOSRomAssets, debug);
+		await finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: BIOSProjectRootPath, manifest: BIOSManifest, zipRom: false, debug, programBoot: BIOSProgramBoot });
+		logOk(`BIOS assets ready → ${pc.white(`dist/${BIOSRomName}${debug ? '.debug' : ''}.rom`)}`);
 	} finally {
 		setLuaCanonicalization(previousCanonicalization);
 	}
@@ -598,14 +598,14 @@ async function main() {
 
 		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, useTextureAtlas, canonicalization, optLevel, mode, extraLuaRoots } = options;
 
-		if (mode === 'engine' && !buildreslist) {
-			await runEngineBuild(options);
+		if (mode === 'bios' && !buildreslist) {
+			await runBIOSBuild(options);
 			writeOut('\n');
 			return;
 		}
 
 		progress = new ProgressReporter(taskList);
-		const isEngineMode = mode === 'engine';
+		const isBIOSMode = mode === 'bios';
 		const romPackDebug = debug;
 		const normalizedBootloader = normalizePathKey(bootloader_path);
 		const cartRootFromRes = respath ? normalizePathKey(join(respath, '..')) : null;
@@ -628,7 +628,7 @@ async function main() {
 			if (!primaryResPath) {
 				throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/carts/2025/res'.");
 			}
-			resourceRoots = isEngineMode
+			resourceRoots = isBIOSMode
 				? [primaryResPath]
 				: [primaryResPath, commonResPath];
 			logDivider('Resource list');
@@ -646,7 +646,7 @@ async function main() {
 			return;
 		} else {
 			// Check for required arguments
-			if (!rom_name && !isEngineMode) {
+			if (!rom_name && !isBIOSMode) {
 				throw new Error('Missing required argument: --romname or ROM_NAME environment variable, or --buildreslist (to build resource list only).');
 			}
 
@@ -658,8 +658,8 @@ async function main() {
 			}
 		}
 
-		if (!title && !isEngineMode) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
-		resourceRoots = isEngineMode
+		if (!title && !isBIOSMode) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
+		resourceRoots = isBIOSMode
 			? [respath || commonResPath]
 			: [respath || commonResPath, commonResPath];
 		let romManifest = await getRomManifest(respath);
@@ -683,16 +683,16 @@ async function main() {
 		logBullet('Lua case', canonicalization !== 'none' ? pc.green(`fold ${canonicalization}`) : pc.yellow('preserve case'));
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
-		if (!isEngineMode && mode === 'rompack') {
-			const engineResPath = commonResPath;
-			const engineManifest = await getRomManifest(engineResPath);
-			if (!engineManifest) {
-				throw new Error(`Engine manifest not found at "${engineResPath}".`);
+		if (!isBIOSMode && mode === 'rompack') {
+			const BIOSResPath = commonResPath;
+			const BIOSManifest = await getRomManifest(BIOSResPath);
+			if (!BIOSManifest) {
+				throw new Error(`BIOS manifest not found at "${BIOSResPath}".`);
 			}
-			const engineRomName = engineManifest.rom_name ?? 'bmsx-bios';
-			const engineRomPath = join(process.cwd(), 'dist', `${engineRomName}${romPackDebug ? '.debug' : ''}.rom`);
-			if (!existsSync(engineRomPath)) {
-				throw new Error(`Engine ROM not found at "${engineRomPath}". Build the engine ROM first.`);
+			const BIOSRomName = BIOSManifest.rom_name ?? 'bmsx-bios';
+			const BIOSRomPath = join(process.cwd(), 'dist', `${BIOSRomName}${romPackDebug ? '.debug' : ''}.rom`);
+			if (!existsSync(BIOSRomPath)) {
+				throw new Error(`BIOS ROM not found at "${BIOSRomPath}". Build the bios ROM first.`);
 			}
 		}
 
@@ -753,7 +753,7 @@ async function main() {
 			const programBoot = appendProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, optLevel });
 			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
-			if (!isEngineMode) {
+			if (!isBIOSMode) {
 				const cartLuaRoots = Array.from(extraLuaPathSet);
 				const biosLuaRoots = [normalizePathKey(commonResPath)];
 				await progress.runWithDetail('Lint cart + BIOS Lua', async () => {

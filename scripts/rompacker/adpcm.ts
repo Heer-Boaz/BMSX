@@ -190,7 +190,7 @@ async function decodeOggToPcm(bytes: Uint8Array): Promise<PcmData> {
 async function decodeSourceToPcm(input: Buffer): Promise<PcmData> {
 	const bytes = new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
 	if (isWavBuffer(bytes)) {
-		const buffer = input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength);
+		const buffer = input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength) as ArrayBuffer;
 		const decoded = decodeWavToPcm(buffer);
 		return {
 			samples: decoded.samples,

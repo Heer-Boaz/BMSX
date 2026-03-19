@@ -14,15 +14,20 @@ import {
 } from '../../src/bmsx/lua/syntax/lua_ast';
 import type {
 	LuaAssignmentStatement,
+	LuaBooleanLiteralExpression,
 	LuaCallExpression,
 	LuaExpression,
 	LuaFunctionDeclarationStatement,
 	LuaFunctionExpression,
 	LuaIdentifierExpression,
 	LuaIfStatement,
+	LuaIndexExpression,
 	LuaLocalAssignmentStatement,
 	LuaLocalFunctionStatement,
+	LuaMemberExpression,
+	LuaNumericLiteralExpression,
 	LuaStatement,
+	LuaStringLiteralExpression,
 	LuaTableField,
 } from '../../src/bmsx/lua/syntax/lua_ast';
 
@@ -673,15 +678,15 @@ function expressionsEquivalentForLint(left: LuaExpression, right: LuaExpression)
 		case LuaSyntaxKind.IdentifierExpression:
 			return left.name === (right as LuaIdentifierExpression).name;
 		case LuaSyntaxKind.MemberExpression:
-			return left.identifier === right.identifier && expressionsEquivalentForLint(left.base, right.base);
+			return (left as LuaMemberExpression).identifier === (right as LuaMemberExpression).identifier && expressionsEquivalentForLint((left as LuaMemberExpression).base, (right as LuaMemberExpression).base);
 		case LuaSyntaxKind.IndexExpression:
-			return expressionsEquivalentForLint(left.base, right.base) && expressionsEquivalentForLint(left.index, right.index);
+			return expressionsEquivalentForLint((left as LuaIndexExpression).base, (right as LuaIndexExpression).base) && expressionsEquivalentForLint((left as LuaIndexExpression).index, (right as LuaIndexExpression).index);
 		case LuaSyntaxKind.StringLiteralExpression:
-			return left.value === right.value;
+			return (left as LuaStringLiteralExpression).value === (right as LuaStringLiteralExpression).value;
 		case LuaSyntaxKind.NumericLiteralExpression:
-			return left.value === right.value;
+			return (left as LuaNumericLiteralExpression).value === (right as LuaNumericLiteralExpression).value;
 		case LuaSyntaxKind.BooleanLiteralExpression:
-			return left.value === right.value;
+			return (left as LuaBooleanLiteralExpression).value === (right as LuaBooleanLiteralExpression).value;
 		case LuaSyntaxKind.NilLiteralExpression:
 			return true;
 		default:
@@ -3789,7 +3794,11 @@ function getRuntimeTagLookupOwnerExpression(expression: LuaExpression): LuaExpre
 	if (!isTagsContainerExpression(expression.base)) {
 		return undefined;
 	}
-	return expression.base.base;
+	const tagsContainer = expression.base;
+	if (tagsContainer.kind !== LuaSyntaxKind.MemberExpression && tagsContainer.kind !== LuaSyntaxKind.IndexExpression) {
+		return undefined;
+	}
+	return tagsContainer.base;
 }
 
 function isRuntimeTagLookupOwnerExpression(expression: LuaExpression, context: RuntimeTagLookupContext): boolean {

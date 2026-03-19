@@ -7,7 +7,7 @@ import type { asset_type } from '../../src/bmsx/rompack/rompack';
 import type { CanonicalizationType } from '../../src/bmsx/rompack/rompack';
 
 export type RomPackerTarget = 'browser' | 'cli' | 'headless' | 'libretro-wsl' | 'libretro-win' | 'libretro-snesmini';
-export type RomPackerMode = 'rompack' | 'engine';
+export type RomPackerMode = 'rompack' | 'bios';
 
 export interface RomPackerOptions {
 	rom_name: string;

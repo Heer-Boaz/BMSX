@@ -1011,6 +1011,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 
 	// Parallelize buffer and image loading
 	const resourcePromises = resMetaList.map(async (meta): Promise<Resource> => {
+		const metaObject = meta as unknown as Record<string, unknown>;
 		const buffer = meta.filepath ? await readFile(meta.filepath) : undefined;
 		switch (meta.type) {
 			case 'image': {
@@ -1019,10 +1020,10 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 				}
 				const img = await getImageFromBuffer(buffer);
 				return {
-					...meta,
+					...metaObject,
 					buffer,
 					img,
-				};
+				} as Resource;
 			}
 			case 'audio':
 			case 'data':
@@ -1031,33 +1032,33 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 			case 'romlabel':
 			case 'atlas':
 				return {
-					...meta,
+					...metaObject,
 					buffer,
-				};
+				} as Resource;
 			case 'lua': {
 				if (!buffer) {
 					throw new Error(`[RomPacker] Lua resource "${meta.name}" is missing its source file payload.`);
 				}
 				if (!LUA_CANONICALIZATION) {
 					return {
-						...meta,
+						...metaObject,
 						buffer,
-					};
+					} as Resource;
 				}
 				const source = buffer.toString('utf8');
 				const normalizedSource = normalizeLineEndings(source);
 				const uppercased = changeCasingLuaSourceExceptStrings(normalizedSource);
 				const upperBuffer = Buffer.from(uppercased, 'utf8');
 				return {
-					...meta,
+					...metaObject,
 					buffer: upperBuffer,
-				};
+				} as Resource;
 			}
 			default:
 				return {
-					...meta,
+					...metaObject,
 					buffer,
-				};
+				} as Resource;
 		}
 	});
 

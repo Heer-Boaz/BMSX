@@ -202,7 +202,7 @@ export class BoundingBoxExtractor {
 		const data = context.getImageData(0, 0, width, height).data;
 		const alphaThreshold = opts?.alphaThreshold ?? this.DEFAULT_ALPHA_T;
 
-		let mask = new Uint8Array(width * height);
+		let mask: Uint8Array<ArrayBufferLike> = new Uint8Array(width * height);
 		for (let i = 0, p = 3; i < mask.length; i++, p += 4) {
 			mask[i] = data[p] >= alphaThreshold ? 1 : 0;
 		}
