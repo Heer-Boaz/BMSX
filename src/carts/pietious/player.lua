@@ -1336,18 +1336,19 @@ end
 function player:try_snap_to_elevator_platform(next_x, next_y)
 	local count = object('c').elevator_count
 	local current_room_number = object('c').current_room_number
+	local tile_support = self:collides_at_support_profile(self.x, self.y, false)
 	for i = 1, count do
 		local platform = object('e.p' .. tostring(i))
 		if platform.current_room_number ~= current_room_number then
 			goto continue
 		end
-		local landing_left = platform.x - (constants.room.tile_size2 - (constants.room.tile_unit * 4))
-		local landing_right = (platform.x + constants.room.tile_size4) - (constants.room.tile_unit * 3)
-		local in_cpp_transport_band = self.y >= (platform.y - self.height)
-			and self.y < platform.y
-			and self.x > landing_left
-			and self.x < landing_right
-		if in_cpp_transport_band then
+		local relative_x = (next_x + 2) - platform.x
+		if platform.transport_switch_cooldown_steps == 0
+			and relative_x >= 0
+			and relative_x < constants.elevator.transport_width
+			and (next_y + self.height) < (platform.y + constants.elevator.top_attach_feet_y)
+			and (platform.transport_active or not tile_support)
+		then
 			self.y = platform.y - self.height
 			self.x = next_x
 			return true
@@ -1356,61 +1357,6 @@ function player:try_snap_to_elevator_platform(next_x, next_y)
 	end
 
 	return false
-end
-
-function player:is_in_elevator_transport_band_at(x, y)
-	local count = object('c').elevator_count
-	local current_room_number = object('c').current_room_number
-	for i = 1, count do
-		local platform = object('e.p' .. tostring(i))
-		if platform.current_room_number ~= current_room_number then
-			goto continue
-		end
-		local landing_left = platform.x - (constants.room.tile_size2 - (constants.room.tile_unit * 4))
-		local landing_right = (platform.x + constants.room.tile_size4) - (constants.room.tile_unit * 3)
-		if y >= (platform.y - self.height)
-			and y < platform.y
-			and x > landing_left
-			and x < landing_right
-		then
-			return true
-		end
-		::continue::
-	end
-
-	return false
-end
-
-function player:resolve_overlap_with_elevator(platform, previous_platform_y)
-	if platform.current_room_number ~= object('c').current_room_number then
-		return false
-	end
-	if not collision2d.collides(self.collider, platform.collider) then
-		return false
-	end
-	local left_foot_x = self.x + constants.room.tile_half
-	local mid_foot_x = self.x + (self.width / 2)
-	local right_foot_x = (self.x + self.width) - constants.room.tile_half
-	local feet_over_platform_top =
-		(left_foot_x >= platform.x and left_foot_x < (platform.x + constants.room.tile_size4))
-		or (mid_foot_x >= platform.x and mid_foot_x < (platform.x + constants.room.tile_size4))
-		or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
-	if self.y <= previous_platform_y and feet_over_platform_top then
-		self.y = platform.y - self.height
-		return true
-	end
-	local resolved_x = self:find_clear_x_with_probe(self.x, self.y, true)
-	if resolved_x ~= nil then
-		self.x = resolved_x
-		if not collision2d.collides(self.collider, platform.collider) then
-			return true
-		end
-	end
-	if self.y <= previous_platform_y then
-		return false
-	end
-	self.y = platform.y + constants.room.tile_size2
-	return true
 end
 
 function player:is_support_below_at(x, y, include_elevator)
@@ -1546,22 +1492,6 @@ function player:snap_x_to_current_wall_grid()
 		end
 		self.x = snapped_center_x - constants.room.tile_size
 	end
-end
-
-function player:find_clear_x_with_probe(next_x, y, include_elevator)
-	for x_offset = 0, constants.room.tile_half do
-		local right_x = next_x + x_offset
-		if not self:collides_at(right_x, y, include_elevator) then
-			return right_x
-		end
-		if x_offset > 0 then
-			local left_x = next_x - x_offset
-			if not self:collides_at(left_x, y, include_elevator) then
-				return left_x
-			end
-		end
-	end
-	return nil
 end
 
 function player:apply_air_move(dx, dy, include_elevator_collision)

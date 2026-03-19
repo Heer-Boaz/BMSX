@@ -12,6 +12,19 @@ const STEPOFF_VARIANTS = [
 	{ delayFrames: 2, xOffset: 13 },
 ];
 
+function buttonEvent(code, down, pressId, timeMs) {
+	return {
+		type: 'button',
+		deviceId: 'keyboard:0',
+		code,
+		down,
+		value: down ? 1 : 0,
+		timestamp: timeMs,
+		pressId,
+		modifiers: { ctrl: false, shift: false, alt: false, meta: false },
+	};
+}
+
 function fail(message) {
 	throw new Error(`[assert] ${message}`);
 }
@@ -37,10 +50,10 @@ function getLuaState(engine) {
 		local expected_floor_y = -1
 		local character_over = false
 		local standing_on_top = false
-		if room ~= nil and player ~= nil then
+		if player ~= nil then
 			for test_y = player.y, constants.room.height - player.height do
-				if room:has_collision_flags_in_rect(player.x, test_y, player.width, player.height, constants.collision_flags.solid_mask, false) then
-					expected_floor_y = test_y - 1
+				if player:collides_at_support_profile(player.x, test_y, false) then
+					expected_floor_y = test_y
 					break
 				end
 			end
@@ -128,6 +141,8 @@ function prepareElevatorRoom(engine) {
 		elevator.going_to = 2
 		elevator.visible = true
 		elevator.collider.enabled = true
+		elevator.transport_active = false
+		elevator.transport_switch_cooldown_steps = 0
 		player:clear_input_state()
 		player:zero_motion()
 		player:reset_fall_substate_sequence()
@@ -155,6 +170,8 @@ function prepareLowerElevatorRoom(engine) {
 		elevator.going_to = 1
 		elevator.visible = true
 		elevator.collider.enabled = true
+		elevator.transport_active = false
+		elevator.transport_switch_cooldown_steps = 0
 		player:clear_input_state()
 		player:zero_motion()
 		player:reset_fall_substate_sequence()
@@ -471,13 +488,16 @@ function updateCeilingScenario(engine, scenario, logger) {
 	return scenario;
 }
 
-function updateStepOffScenario(engine, scenario, logger) {
+function updateStepOffScenario(engine, scenario, logger, scheduleInput) {
 	if (!scenario.walk_started && scenario.frames >= scenario.variant.delayFrames) {
-		evalLua(engine, `
-			local player = object('pietolon')
-			player.right_held = true
-			player.events:emit('right_down')
-		`);
+		const scheduledAtMs = Math.round(engine.platform.clock.now());
+		scheduleInput([
+			{
+				description: `stepoff_variant_${scenario.variantIndex}_press_right`,
+				delayMs: 10,
+				event: buttonEvent('ArrowRight', true, (scenario.variantIndex * 4) + 1, scheduledAtMs + 10),
+			},
+		]);
 		scenario.walk_started = true;
 	}
 	const state = getLuaState(engine);
@@ -488,10 +508,14 @@ function updateStepOffScenario(engine, scenario, logger) {
 		scenario.saw_fall = true;
 	}
 	if (scenario.saw_fall && !scenario.released_right) {
-		evalLua(engine, `
-			local player = object('pietolon')
-			player.events:emit('right[jr]')
-		`);
+		const scheduledAtMs = Math.round(engine.platform.clock.now());
+		scheduleInput([
+			{
+				description: `stepoff_variant_${scenario.variantIndex}_release_right`,
+				delayMs: 10,
+				event: buttonEvent('ArrowRight', false, (scenario.variantIndex * 4) + 1, scheduledAtMs + 10),
+			},
+		]);
 		scenario.released_right = true;
 	}
 	assert(!state.player_overlap_elevator, `stepoff overlapped elevator: player.y=${state.player_y} elevator.y=${state.elevator_y}`);
@@ -520,11 +544,14 @@ function updateStepOffScenario(engine, scenario, logger) {
 		assert(state.player_y === state.expected_floor_y, `stepoff landed at wrong floor y: player.y=${state.player_y} expected=${state.expected_floor_y}`);
 		assert(state.player_y > state.elevator_y - 16, `stepoff never fell below elevator top: player.y=${state.player_y} elevator.y=${state.elevator_y}`);
 		if (!scenario.probe_controls) {
-			evalLua(engine, `
-				local player = object('pietolon')
-				player.right_held = true
-				player.events:emit('right_down')
-			`);
+			const scheduledAtMs = Math.round(engine.platform.clock.now());
+			scheduleInput([
+				{
+					description: `stepoff_variant_${scenario.variantIndex}_probe_press_right`,
+					delayMs: 10,
+					event: buttonEvent('ArrowRight', true, (scenario.variantIndex * 4) + 2, scheduledAtMs + 10),
+				},
+			]);
 			scenario.probe_controls = true;
 			scenario.probe_frames = 0;
 			return scenario;
@@ -559,7 +586,7 @@ function updateRoomSwitchInputSyncScenario(_engine, scenario, logger) {
 	return { name: 'done' };
 }
 
-export default function schedule({ logger }) {
+export default function schedule({ logger, schedule: scheduleInput }) {
 	let requestedNewGame = false;
 	let cartActiveAt = 0;
 	let lastWaitingLogAt = 0;
@@ -634,7 +661,7 @@ export default function schedule({ logger }) {
 			return;
 		}
 		if (scenario.name === 'stepoff') {
-			scenario = updateStepOffScenario(engine, scenario, logger);
+			scenario = updateStepOffScenario(engine, scenario, logger, scheduleInput);
 			return;
 		}
 		if (scenario.name === 'ladder_sword') {

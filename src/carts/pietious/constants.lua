@@ -204,6 +204,20 @@ constants.stairs = {
 	step_off_left_x = -9,
 }
 
+constants.elevator = {
+	transport_switch_cooldown_steps = 7,
+	top_attach_feet_y = 8,
+	bottom_push_feet_y = 24,
+	bottom_push_height = 8,
+	side_snap_y = 31,
+	left_snap_x = -8,
+	left_snap_width = 4,
+	right_snap_x = 37,
+	right_snap_width = 4,
+	transport_min_x = -2,
+	transport_width = 37,
+}
+
 constants.physics = {
 	walk_dx = 2,
 	walk_dx_schoentjes_num = 5,
