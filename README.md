@@ -1,12 +1,8 @@
 # BMSX
 
-BMSX is now a fantasy console focused on Lua carts.
+BMSX is a fantasy console focused on Lua carts.
 
-The TypeScript runtime remains the browser/headless/CLI host for the console, and the C++ runtime remains the libretro/RetroArch host. Standalone TypeScript game projects have been removed from this branch.
-
-The last complete branch that still contains the old TypeScript full game engine lives at:
-
-- `archive/ts-full-engine`
+The TypeScript runtime is the browser/headless/CLI host for the console, and the C++ runtime is  the libretro/RetroArch host.
 
 ## Setup
 
@@ -27,19 +23,19 @@ There is no longer support for standalone TypeScript game folders under `src/<ga
 Build BIOS:
 
 ```bash
-npm run build:bios -- --force
+npm run build:bios -- --debug --force
 ```
 
 Build a cart ROM:
 
 ```bash
-npm run build:game -- 2025 --force
+npm run build:game -- pietious --debug --force
 ```
 
 Build browser platform artifacts:
 
 ```bash
-npm run build:platform:browser
+npm run build:platform:browser -- --debug --force
 ```
 
 Build headless platform artifacts:
@@ -51,32 +47,32 @@ npm run build:platform:headless -- --debug --force
 Force-build headless + BIOS + cart and run:
 
 ```bash
-npm run headless:forcebuildallrun -- 2025
+npm run headless:forcebuildallrun -- pietious
 ```
 
 Run an already-built cart in headless mode:
 
 ```bash
-npm run headless:game -- 2025
+npm run headless:game -- pietious
 ```
 
 Build libretro WSL artifacts:
 
 ```bash
-npm run build:platform:libretro-wsl -- 2025
+npm run build:platform:libretro-wsl -- pietious
 ```
 
 Run libretro host on WSL:
 
 ```bash
-npm run run:libretro-host:wsl:sdl -- ./dist/2025.rom
+npm run run:libretro-host:wsl:sdl -- ./dist/pietious.rom
 ```
 
-Deploy browser artifacts for a cart:
+<!-- Deploy browser artifacts for a cart:
 
 ```bash
-npm run deploy:browser -- -romname 2025
-```
+npm run deploy:browser -- -romname pietious
+``` -->
 
 ## Project Layout
 
@@ -90,6 +86,6 @@ npm run deploy:browser -- -romname 2025
 
 ## Notes
 
-- `build:game` now means “build a Lua cart ROM”.
-- Cart folder resolution is `src/carts/<name>` only.
-- Old TypeScript game projects were removed instead of being kept as deprecated paths or compatibility fallbacks.
+- `build:game` means “build a Lua cart ROM”.
+- Cart folder resolution is `src/carts/<name>`.
+> N.B. Old TypeScript game projects were removed instead of being kept as deprecated paths or compatibility fallbacks. The last complete branch that still contains the old TypeScript full game engine lives at: `archive/ts-full-engine`
