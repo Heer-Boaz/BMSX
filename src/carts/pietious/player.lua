@@ -135,7 +135,6 @@ local state_tags = {
 		world_transition_down = 'g.wtd',
 		can_switch_up = 'g.csu',
 		hit_lock_states = 'g.hls',
-		hit_overlap_states = 'g.hos',
 	},
 	visual = {
 		jump_sword = 'vis.js',
@@ -259,6 +258,10 @@ end
 function player:update_collision_state()
 	self.collider.enabled = true
 	self.sword_collider.enabled = self:has_tag(state_tags.group.sword)
+	self.left_wall_collision_primary = self:collides_at_left_wall_primary_profile(self.x, self.y, false)
+	self.left_wall_collision_secondary = self:collides_at_left_wall_secondary_profile(self.x, self.y, false)
+	self.left_wall_collision = self.left_wall_collision_primary or self.left_wall_collision_secondary
+	self.right_wall_collision = self:collides_at_right_wall_profile(self.x, self.y, false)
 end
 
 function player:apply_colorize(r, g, b, a)
@@ -676,12 +679,6 @@ function player:take_hit(amount, source_x, source_y, reason)
 
 	if hit_direction ~= 0 then
 		self.facing = -hit_direction
-	end
-
-	if damage_event == 'damage' then
-		if constants.damage.knockup_px > 0 then
-			self:apply_move(0, -constants.damage.knockup_px, true)
-		end
 	end
 
 	self.events:emit(damage_event, { reason = reason })
@@ -1228,25 +1225,28 @@ function player:try_step_off_stairs()
 	local event_name
 	local step_x
 	local support_probe_x
+	local blocked_by_wall
 	if self.left_held and not self.right_held then
 		dir = -1
 		event_name = 'stairs_step_off_left'
 		step_x = constants.stairs.step_off_left_x
 		support_probe_x = self.x + constants.stairs.step_off_left_probe_offset_x
+		blocked_by_wall = self.left_wall_collision
 	elseif self.right_held and not self.left_held then
 		dir = 1
 		event_name = 'stairs_step_off_right'
 		step_x = constants.stairs.step_off_right_x
 		support_probe_x = self.x + constants.stairs.step_off_right_probe_offset_x
+		blocked_by_wall = self.right_wall_collision
 	else
 		return false
 	end
 
 	self.facing = dir
-	local support_probe_y = self.y + self.height + constants.stairs.step_off_probe_extra_y
-	if self:collides_at(self.x + step_x, self.y, true) then
+	if blocked_by_wall then
 		return false
 	end
+	local support_probe_y = self.y + self.height + constants.stairs.step_off_probe_extra_y
 	if not object('room'):has_collision_flags_at_world(
 		support_probe_x,
 		support_probe_y,
@@ -1260,7 +1260,6 @@ function player:try_step_off_stairs()
 	self.x = self.x + step_x
 	self.last_dx = self.x - old_x
 	self.last_dy = 0
-	self.stairs_direction = 0
 	self:leave_stairs(event_name)
 	return true
 end
@@ -1502,6 +1501,53 @@ function player:collides_at_left_wall_secondary_profile(x, y, include_elevator)
 		or self:collides_at_probe(wall_x, bottom_y, include_elevator)
 end
 
+function player:apply_side_probe_horizontal_move(dx)
+	local old_x = self.x
+	local collided_x = false
+	if dx < 0 then
+		collided_x = self.left_wall_collision
+	elseif dx > 0 then
+		collided_x = self.right_wall_collision
+	end
+
+	if not collided_x then
+		self.x = self.x + dx
+	end
+
+	local room = object('room')
+	local max_x = room.world_width - self.width
+	local room_links = room.room_links
+	if self.x < room.tile_size then
+		if room_links.left == 0 then
+			self.x = room.tile_size
+			collided_x = true
+		end
+	end
+	if self.x > max_x then
+		if room_links.right == 0 then
+			self.x = max_x
+			collided_x = true
+		end
+	end
+
+	return self.x - old_x, collided_x
+end
+
+function player:snap_x_to_current_wall_grid()
+	local center_x = self.x + constants.room.tile_size
+	if self.right_wall_collision and (not self.left_wall_collision) then
+		self.x = (math.modf(center_x / constants.room.tile_size) * constants.room.tile_size) - constants.room.tile_size
+		return
+	end
+	if self.left_wall_collision then
+		local snapped_center_x = math.modf(center_x / constants.room.tile_size) * constants.room.tile_size
+		if self.left_wall_collision_secondary and not self.left_wall_collision_primary then
+			snapped_center_x = math.modf((center_x + constants.room.tile_size) / constants.room.tile_size) * constants.room.tile_size
+		end
+		self.x = snapped_center_x - constants.room.tile_size
+	end
+end
+
 function player:find_clear_x_with_probe(next_x, y, include_elevator)
 	for x_offset = 0, constants.room.tile_half do
 		local right_x = next_x + x_offset
@@ -1521,19 +1567,8 @@ end
 function player:apply_air_move(dx, dy, include_elevator_collision)
 	local old_x = self.x
 	local old_y = self.y
-	local next_x = old_x + dx
 	local room = object('room')
-	local collided_x = false
-
-	if self:collides_at(next_x, old_y, include_elevator_collision) then
-		collided_x = true
-		local resolved_x = self:find_clear_x_with_probe(next_x, old_y, include_elevator_collision)
-		if resolved_x ~= nil then
-			self.x = resolved_x
-		end
-	else
-		self.x = next_x
-	end
+	local moved_x, collided_x = self:apply_side_probe_horizontal_move(dx)
 
 	local next_y = old_y + dy
 	if dy > 0 and self:try_snap_to_elevator_platform(self.x, next_y) then
@@ -1565,137 +1600,6 @@ function player:apply_air_move(dx, dy, include_elevator_collision)
 	self.last_dy = self.y - old_y
 	self.previous_x_collision = collided_x
 	self.previous_y_collision = dy < 0 and self:collides_at_jump_ceiling_profile(self.x, self.y, include_elevator_collision)
-end
-
-function player:apply_move(dx, dy, include_elevator_collision)
-	local old_x = self.x
-	local old_y = self.y
-	local collided_x = self.previous_x_collision
-	local collided_y
-	local landed
-	local hit_ceiling
-	local upward_block = false
-
-	local next_x = old_x + dx
-	local next_y = old_y + dy
-	local test_x_col
-	local found
-	local room = object('room')
-
-	if self:collides_at(next_x, next_y, include_elevator_collision) then
-		if next_y ~= old_y then
-			collided_y = true
-		end
-		local inc = next_y > old_y and -1 or 1
-		if next_y > old_y then
-			if self:collides_at(old_x, old_y, include_elevator_collision) then
-				local resolved_x = self:find_clear_x_with_probe(next_x, next_y, include_elevator_collision)
-				if resolved_x ~= nil then
-					self.x = resolved_x
-					self.y = next_y
-					found = true
-				end
-			end
-			local y_probe = next_y + inc
-			while (not found) and y_probe ~= old_y do
-				if not self:collides_at(old_x, y_probe, include_elevator_collision) then
-					self.y = y_probe
-					test_x_col = true
-					found = true
-				else
-					y_probe = y_probe + inc
-				end
-			end
-			if not found then
-				landed = true
-			end
-		elseif next_y < old_y then
-			local y_probe = next_y
-			while (not found) and y_probe ~= old_y do
-				if not self:collides_at(next_x, y_probe, include_elevator_collision) then
-					self.x = next_x
-					self.y = y_probe
-					found = true
-				else
-					local resolved_x = self:find_clear_x_with_probe(next_x, y_probe, include_elevator_collision)
-					if resolved_x ~= nil then
-						self.x = resolved_x
-						self.y = y_probe
-						found = true
-					else
-						y_probe = y_probe + inc
-					end
-				end
-			end
-			if not found then
-				hit_ceiling = true
-				upward_block = true
-			end
-		end
-	else
-		if next_y >= old_y then
-			if self:try_snap_to_elevator_platform(next_x, next_y) then
-				landed = true
-			else
-				self.y = next_y
-				test_x_col = true
-				found = true
-			end
-		else
-			self.y = next_y
-			test_x_col = true
-			found = true
-		end
-	end
-
-	if test_x_col or (not found) then
-		if self:collides_at(next_x, self.y, include_elevator_collision) then
-			collided_x = true
-			local resolved_x = self:find_clear_x_with_probe(next_x, self.y, include_elevator_collision)
-			if resolved_x ~= nil then
-				self.x = resolved_x
-			end
-		else
-			collided_x = false
-			self.x = next_x
-		end
-	end
-
-	local max_x = room.world_width - self.width
-	local room_links = room.room_links
-	if self.x < room.tile_size then
-		if room_links.left == 0 then
-			self.x = room.tile_size
-			collided_x = true
-		end
-	end
-	if self.x > max_x then
-		if room_links.right == 0 then
-			self.x = max_x
-			collided_x = true
-		end
-	end
-
-	local max_y = room.world_height - self.height
-	if self.y > max_y and room_links.down <= 0 then
-		self.y = max_y
-		landed = true
-		collided_y = true
-	end
-
-	local moved_x = self.x - old_x
-	local moved_y = self.y - old_y
-	self.last_dx = moved_x
-	self.last_dy = moved_y
-	self.previous_x_collision = collided_x
-	self.previous_y_collision = upward_block
-
-	return {
-		collided_x = collided_x,
-		collided_y = collided_y,
-		landed = landed,
-		hit_ceiling = hit_ceiling,
-	}
 end
 
 function player:start_jump(inertia)
@@ -2030,8 +1934,12 @@ function player:update_walking_right()
 		return
 	end
 
-	local move_result = self:apply_move(walk_dx, 0, true)
-	self.walk_move_collided_x = move_result.collided_x
+	local moved_x, collided_x = self:apply_side_probe_horizontal_move(walk_dx)
+	self.last_dx = moved_x
+	self.last_dy = 0
+	self.previous_x_collision = collided_x
+	self.previous_y_collision = false
+	self.walk_move_collided_x = collided_x
 	self:advance_walk_animation(walk_dx)
 	self:runcheck_walking_right_controls()
 end
@@ -2049,20 +1957,34 @@ function player:update_walking_left()
 		return
 	end
 
-	local move_result = self:apply_move(-walk_dx, 0, true)
-	self.walk_move_collided_x = move_result.collided_x
+	local moved_x, collided_x = self:apply_side_probe_horizontal_move(-walk_dx)
+	self.last_dx = moved_x
+	self.last_dy = 0
+	self.previous_x_collision = collided_x
+	self.previous_y_collision = false
+	self.walk_move_collided_x = collided_x
 	self:advance_walk_animation(walk_dx)
 	self:runcheck_walking_left_controls()
 end
 
 function player:update_slowdoorpass()
-
 	if self.slow_doorpass_substate <= 24 then
+		local collided_x = false
 		if self.facing > 0 then
-			self:apply_move(1, 0, true)
+			collided_x = self.right_wall_collision
+			if not collided_x then
+				self.x = self.x + 1
+			end
 		else
-			self:apply_move(-1, 0, true)
+			collided_x = self.left_wall_collision
+			if not collided_x then
+				self.x = self.x - 1
+			end
 		end
+		self.last_dx = collided_x and 0 or self.facing
+		self.last_dy = 0
+		self.previous_x_collision = collided_x
+		self.previous_y_collision = false
 		if (math.modf(self.slow_doorpass_substate / 4) % 2) == 0 then
 			self.walk_frame = 1
 		else
@@ -2123,7 +2045,11 @@ function player:update_stopped_jump_motion()
 		self.jump_inertia = 0
 	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
-	self:apply_move(dx, 0, true)
+	local moved_x, collided_x = self:apply_side_probe_horizontal_move(dx)
+	self.last_dx = moved_x
+	self.last_dy = 0
+	self.previous_x_collision = collided_x
+	self.previous_y_collision = false
 
 	self.jump_substate = self.jump_substate + 1
 	if self.jump_substate >= constants.physics.jump_to_fall_substate then
@@ -2282,60 +2208,6 @@ function player:update_quiet_stairs()
 	end
 end
 
-function player:resolve_solid_overlap_if_needed()
-	if not self:collides_at(self.x, self.y, false) then
-		return
-	end
-
-	local right_wall = self:collides_at_right_wall_profile(self.x, self.y, false)
-	local left_wall_primary = self:collides_at_left_wall_primary_profile(self.x, self.y, false)
-	local left_wall_secondary = self:collides_at_left_wall_secondary_profile(self.x, self.y, false)
-	local left_wall = left_wall_primary or left_wall_secondary
-	local center_x = self.x + constants.room.tile_size
-
-	if right_wall and ((not left_wall) or self.last_dx > 0) then
-		self.x = (math.modf(center_x / constants.room.tile_size) * constants.room.tile_size) - constants.room.tile_size
-	elseif left_wall then
-		local snapped_center_x = math.modf(center_x / constants.room.tile_size) * constants.room.tile_size
-		if left_wall_secondary and not left_wall_primary then
-			snapped_center_x = math.modf((center_x + constants.room.tile_size) / constants.room.tile_size) * constants.room.tile_size
-		end
-		self.x = snapped_center_x - constants.room.tile_size
-	end
-
-	if self:collides_at(self.x, self.y, false) then
-		if self.last_dy > 0 or self:collides_at_support_profile(self.x, self.y, false) then
-			for _ = 1, constants.room.tile_size do
-				self.y = self.y - 1
-				if not self:collides_at(self.x, self.y, false) then
-					break
-				end
-			end
-		elseif self.last_dy < 0 or self:collides_at_jump_ceiling_profile(self.x, self.y, false) then
-			for _ = 1, constants.room.tile_size do
-				self.y = self.y + 1
-				if not self:collides_at(self.x, self.y, false) then
-					break
-				end
-			end
-		elseif self.last_dx > 0 or right_wall then
-			for _ = 1, constants.room.tile_size do
-				self.x = self.x - 1
-				if not self:collides_at(self.x, self.y, false) then
-					break
-				end
-			end
-		else
-			for _ = 1, constants.room.tile_size do
-				self.x = self.x + 1
-				if not self:collides_at(self.x, self.y, false) then
-					break
-				end
-			end
-		end
-	end
-end
-
 function player:is_ground_below_for_hit_on_stairs()
 	return (not self:collides_at(self.x, self.y, false)) and self:collides_at(self.x, self.y + 1, false)
 end
@@ -2357,7 +2229,6 @@ function player:advance_hit_stairs_fall(dy)
 end
 
 function player:update_hit_fall()
-
 	local dx = self.hit_direction * constants.damage.knockback_dx
 	local dy
 	if self.hit_substate >= 4 then
@@ -2369,33 +2240,40 @@ function player:update_hit_fall()
 		dy = 0
 	end
 
-	local next_x = self.x + dx
-	local hit_wall = self:collides_at(next_x, self.y, false) and (not self:collides_at(self.x, self.y, false))
-	if hit_wall then
-		next_x = self.x
-		dx = 0
-	end
-
-	local hit_ground
 	if self.hit_substate >= 4 then
-		hit_ground = (not self:collides_at(next_x, self.y, false)) and self:collides_at(next_x, self.y + dy, false)
-	end
-
-	local move_result = self:apply_move(dx, dy, false)
-	if dx ~= 0 and move_result.collided_x then
-		hit_wall = true
-		self.hit_direction = 0
-	end
-
-	if self.hit_substate >= 4 then
-		if self.health <= 0 then
-			self:start_dying()
-			return
-		end
-		if hit_ground then
+		if self:collides_at_support_profile(self.x, self.y, false) then
+			if self.health <= 0 then
+				self:start_dying()
+				return
+			end
 			self:land_from_hit()
 			return
 		end
+	end
+
+	local old_x = self.x
+	local old_y = self.y
+	local hit_wall = false
+	if dx > 0 then
+		hit_wall = self.right_wall_collision
+	elseif dx < 0 then
+		hit_wall = self.left_wall_collision
+	end
+	if hit_wall then
+		self:snap_x_to_current_wall_grid()
+		self.hit_direction = 0
+	else
+		self.x = self.x + dx
+	end
+	self.y = self.y + dy
+	self.last_dx = self.x - old_x
+	self.last_dy = self.y - old_y
+	self.previous_x_collision = hit_wall
+	self.previous_y_collision = false
+
+	if self.hit_substate >= 4 and self.health <= 0 then
+		self:start_dying()
+		return
 	end
 
 	self.hit_substate = self.hit_substate + 1
@@ -2405,7 +2283,6 @@ function player:update_hit_fall()
 end
 
 function player:update_hit_collision()
-
 	local dy
 	if self.hit_substate >= 4 then
 		dy = self.hit_substate - 4
@@ -2435,22 +2312,27 @@ function player:update_hit_collision()
 		return
 	end
 
-	local hit_ground
 	if self.hit_substate >= 4 then
-		hit_ground = (not self:collides_at(self.x, self.y, false)) and self:collides_at(self.x, self.y + dy, false)
-	end
-
-	self:apply_move(0, dy, false)
-
-	if self.hit_substate >= 4 then
-		if self.health <= 0 then
-			self:start_dying()
-			return
-		end
-		if hit_ground then
+		if self:collides_at_support_profile(self.x, self.y, false) then
+			if self.health <= 0 then
+				self:start_dying()
+				return
+			end
 			self:land_from_hit()
 			return
 		end
+	end
+
+	local old_y = self.y
+	self.y = self.y + dy
+	self.last_dx = 0
+	self.last_dy = self.y - old_y
+	self.previous_x_collision = false
+	self.previous_y_collision = false
+
+	if self.hit_substate >= 4 and self.health <= 0 then
+		self:start_dying()
+		return
 	end
 
 	self.hit_substate = self.hit_substate + 1
@@ -2485,7 +2367,6 @@ function player:update_common_frame()
 	if self:has_tag(state_tags.group.transition_lock) then
 		self:reset_motion_for_transition_lock()
 		self.grounded = false
-		self.solid_overlap_pending = false
 		self:apply_presentation_state()
 		return
 	end
@@ -2494,10 +2375,6 @@ function player:update_common_frame()
 	self:update_hit_stairs_lock()
 	self:try_side_room_switch_from_position()
 	self:try_vertical_room_switch_from_position()
-	if self:has_tag(state_tags.group.hit_overlap_states) then
-		self:resolve_solid_overlap_if_needed()
-	end
-	self.solid_overlap_pending = self:collides_at(self.x, self.y, false)
 
 	self.grounded = self:is_support_below_at(self.x, self.y, true)
 	self:apply_presentation_state()
@@ -2544,7 +2421,7 @@ local function define_player_fsm()
 		end,
 	}
 	-- wrap_state_update: wraps every state's update handler with common per-frame
-	-- logic (collision state, room switching, hit overlap resolution, presentation,
+		-- logic (collision state, room switching, presentation,
 	-- invulnerability updates).  This avoids duplicating the same trailing calls
 	-- in every update function.  The wrapper also handles elevator-on-jump reset
 	-- and sword cooldown decrement.
@@ -2553,10 +2430,7 @@ local function define_player_fsm()
 			-- Held-state must follow authoritative runtime [p] state every frame.
 			-- That keeps movement stable even if a jp/jr edge is missed once.
 			self:sync_input_state_from_runtime()
-			if self.solid_overlap_pending then
-				self:resolve_solid_overlap_if_needed()
-				self.solid_overlap_pending = self:collides_at(self.x, self.y, false)
-			end
+			self:update_collision_state()
 			if not self:has_tag(state_tags.variant.jumping) then
 				self.jumping_from_elevator = false
 			end
@@ -2955,12 +2829,6 @@ local function define_player_fsm()
 				state_tags.variant.hit_fall,
 				state_tags.variant.hit_collision,
 			},
-			[state_tags.group.hit_overlap_states] = {
-				state_tags.variant.quiet,
-				state_tags.variant.hit_fall,
-				state_tags.variant.hit_collision,
-				state_tags.variant.hit_recovery,
-			},
 			[state_tags.group.hit_blink] = {
 				state_tags.variant.hit_fall,
 				state_tags.variant.hit_collision,
@@ -3099,7 +2967,10 @@ local function register_player_definition()
 			last_dy = 0,
 			previous_x_collision = false,
 			previous_y_collision = false,
-			solid_overlap_pending = false,
+			left_wall_collision_primary = false,
+			left_wall_collision_secondary = false,
+			left_wall_collision = false,
+			right_wall_collision = false,
 			on_vertical_elevator = false,
 			jumping_from_elevator = false,
 			walk_frame = 0,
