@@ -340,6 +340,9 @@ export function tickIdeInput(runtime: Runtime): void {
 }
 
 export function tickTerminalInput(runtime: Runtime): void {
+	if (!runtime.terminal.isActive) {
+		return;
+	}
 	const pollFrame = $.input.getPlayerInput(runtime.playerIndex).pollFrame;
 	if (pollFrame === runtime.lastTerminalInputFrame) {
 		return;
@@ -713,6 +716,9 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 }
 
 export function tickTerminalMode(runtime: Runtime): void {
+	if (!runtime.terminal.isActive) {
+		return;
+	}
 	if (!runtime.tickEnabled) {
 		return;
 	}
@@ -728,6 +734,9 @@ export function tickTerminalMode(runtime: Runtime): void {
 }
 
 export function tickTerminalModeDraw(runtime: Runtime): void {
+	if (!runtime.terminal.isActive) {
+		return;
+	}
 	if (!runtime.tickEnabled) {
 		return;
 	}
