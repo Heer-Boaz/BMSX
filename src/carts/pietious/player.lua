@@ -1241,6 +1241,31 @@ function player:leave_stairs(event_name)
 	self.events:emit(event_name)
 end
 
+function player:collides_at_right_wall_stairs_step_off_profile(x, y)
+	local wall_x = x + self.width
+	local center_x = x + constants.room.tile_half
+	local upper_probe_y = (y + self.height) - constants.room.tile_size - 1
+	local lower_probe_y = (y + self.height) - 1
+	return self:collides_at_probe(center_x, upper_probe_y, false)
+		or self:collides_at_probe(center_x, lower_probe_y, false)
+		or self:collides_at_probe(wall_x, upper_probe_y, false)
+		or self:collides_at_probe(wall_x, lower_probe_y, false)
+end
+
+function player:collides_at_left_wall_stairs_step_off_profile(x, y)
+	local wall_x = x
+	local wall_x_secondary = wall_x - 1
+	local center_x = x + constants.room.tile_half
+	local upper_probe_y = (y + self.height) - constants.room.tile_size - 1
+	local lower_probe_y = (y + self.height) - 1
+	return self:collides_at_probe(center_x, upper_probe_y, false)
+		or self:collides_at_probe(center_x, lower_probe_y, false)
+		or self:collides_at_probe(wall_x, upper_probe_y, false)
+		or self:collides_at_probe(wall_x, lower_probe_y, false)
+		or self:collides_at_probe(wall_x_secondary, upper_probe_y, false)
+		or self:collides_at_probe(wall_x_secondary, lower_probe_y, false)
+end
+
 function player:try_step_off_stairs()
 	if self.up_held or self.down_held then
 		return false
@@ -1256,13 +1281,13 @@ function player:try_step_off_stairs()
 		event_name = 'stairs_step_off_left'
 		step_x = constants.stairs.step_off_left_x
 		support_probe_x = self.x + constants.stairs.step_off_left_probe_offset_x
-		blocked_by_wall = self.left_wall_collision
+		blocked_by_wall = self:collides_at_left_wall_stairs_step_off_profile(self.x, self.y)
 	elseif self.right_held and not self.left_held then
 		dir = 1
 		event_name = 'stairs_step_off_right'
 		step_x = constants.stairs.step_off_right_x
 		support_probe_x = self.x + constants.stairs.step_off_right_probe_offset_x
-		blocked_by_wall = self.right_wall_collision
+		blocked_by_wall = self:collides_at_right_wall_stairs_step_off_profile(self.x, self.y)
 	else
 		return false
 	end
