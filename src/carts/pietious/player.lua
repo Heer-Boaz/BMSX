@@ -1032,6 +1032,16 @@ function player:consume_aphrodite_water_vertical_dy()
 	return dy
 end
 
+function player:consume_water_controlled_fall_dx(dx)
+	if self.water_state == constants.water.none then
+		self.water_controlled_fall_dx_accum = 0
+		return dx
+	end
+	local scaled_dx, next_accum = consume_axis_accum(self.water_controlled_fall_dx_accum, dx, 4)
+	self.water_controlled_fall_dx_accum = next_accum
+	return scaled_dx
+end
+
 function player:try_switch_room(direction, keep_stairs_lock)
 	if self:has_tag(state_tags.variant.dying) then
 		return false
@@ -1679,6 +1689,7 @@ end
 
 function player:reset_fall_substate_sequence()
 	self.fall_substate = 0
+	self.water_controlled_fall_dx_accum = 0
 	self:get_timeline('p.seq.f'):force_seek(0)
 end
 
@@ -2171,6 +2182,9 @@ function player:update_controlled_fall_motion()
 		return
 	end
 	local dx = self:get_controlled_fall_dx()
+	if self.water_state ~= constants.water.none then
+		dx = self:consume_water_controlled_fall_dx(dx)
+	end
 	local dy
 	local fall_substate_advanced = true
 	if self.water_state ~= constants.water.none then
@@ -3128,6 +3142,7 @@ local function register_player_definition()
 			vertical_motion_substate = 0,
 			vertical_motion_tick = 0,
 			vertical_motion_dy_accum = 0,
+			water_controlled_fall_dx_accum = 0,
 			hit_stairs_lock = false,
 			stairs_landing_sound_pending = false,
 			slow_doorpass_substate = 0,
