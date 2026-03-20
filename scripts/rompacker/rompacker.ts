@@ -6,7 +6,7 @@ import { Presets, SingleBar } from 'cli-progress';
 import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli_shared';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartLuaSources } from './cart_lua_linter';
-import { appendProgramAsset, buildResourceList, commonResPath, createAtlasses, ENGINE_ATLAS_INDEX, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization } from './rombuilder';
+import { appendProgramAsset, commonResPath, createAtlasses, ENGINE_ATLAS_INDEX, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization } from './rombuilder';
 import type { AtlasResource, Resource, RomPackerOptions } from './rompacker.rompack';
 import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { LuaError } from '../../src/bmsx/lua/luaerrors';
@@ -34,7 +34,6 @@ const KNOWN_FLAGS = new Set<string>([
 	'-respath',
 	'--debug',
 	'--force',
-	'--buildreslist',
 	'--textureatlas',
 	'--skiptypecheck',
 	'--mode',
@@ -56,7 +55,7 @@ const TASK = {
 	REBUILD_CHECK: 'Checken of rebuild nodig is',
 	MANIFEST_SCAN: 'Rom manifest zoekeren en parseren',
 	CART_LUA_LINT: 'Cart Lua linten',
-	RESOURCE_LIST: 'Resource lijst bouwen',
+	RESOURCE_LIST: 'Resources scannen',
 	RESOURCE_LOAD: 'Resources laden en metadata genereren',
 	ATLAS_BUILD: 'Atlassen puzellen (indien nodig)',
 	ROM_ASSETS: 'Rom-assets genereren',
@@ -196,7 +195,6 @@ function parseOptions(args: string[]): ParsedOptions {
 		writeOut(`  -respath <path>          Resource path override\n`, 'warning');
 		writeOut(`  --debug                  Build debug artifacts\n`, 'warning');
 		writeOut(`  --force                  Force the compilation and build of the rompack\n`, 'warning');
-		writeOut(`  --buildreslist           Build resource list\n`, 'warning');
 		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)\n`, 'warning');
 		writeOut(`  --preserve-lua-case      Disable Lua case folding (default: enabled)\n`, 'warning');
 		writeOut(`  --mode <rompack|bios>  What to build (default: rompack)\n`, 'warning');
@@ -221,7 +219,6 @@ function parseOptions(args: string[]): ParsedOptions {
 
 	const force = seenFlags.has('--force');
 	const debug = seenFlags.has('--debug');
-	const buildreslist = seenFlags.has('--buildreslist');
 	const skipTypecheck = seenFlags.has('--skiptypecheck');
 
 	const modeRaw = getParamOrEnv(args, '--mode', 'ROM_MODE', 'rompack', KNOWN_FLAGS);
@@ -262,7 +259,7 @@ function parseOptions(args: string[]): ParsedOptions {
 		bootloader_path = normalizePathKey(bootloader_path);
 		respath = normalizePathKey(respath);
 	} else {
-		if (!rom_name && !buildreslist && !respathOverride) {
+		if (!rom_name && !respathOverride) {
 			throw new Error('Rompack mode requires -romname <cart-folder> or -respath <cart-respath>.');
 		}
 		if (seenFlags.has('-bootloaderpath')) {
@@ -281,7 +278,6 @@ function parseOptions(args: string[]): ParsedOptions {
 		respath,
 		force,
 		debug,
-		buildreslist,
 		useTextureAtlas,
 		skipTypecheck,
 		platform: 'browser',
@@ -596,9 +592,9 @@ async function main() {
 		const args = process.argv.slice(2);
 		const options = parseOptions(args);
 
-		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, useTextureAtlas, canonicalization, optLevel, mode, extraLuaRoots } = options;
+		let { title, rom_name, bootloader_path, respath, force, debug, useTextureAtlas, canonicalization, optLevel, mode, extraLuaRoots } = options;
 
-		if (mode === 'bios' && !buildreslist) {
+		if (mode === 'bios') {
 			await runBIOSBuild(options);
 			writeOut('\n');
 			return;
@@ -620,48 +616,23 @@ async function main() {
 		setAtlasFlag(useTextureAtlas);
 		setLuaCanonicalization(canonicalization);
 
-		let resourceRoots: string[] = [];
+		const resourceRoots = isBIOSMode
+			? [respath || commonResPath]
+			: [respath || commonResPath, commonResPath];
 		const extraLuaPathSet = new Set<string>(extraLuaRoots.map(normalizePathKey));
 
-		if (buildreslist) {
-			const primaryResPath = respath || commonResPath;
-			if (!primaryResPath) {
-				throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/carts/2025/res'.");
-			}
-			resourceRoots = isBIOSMode
-				? [primaryResPath]
-				: [primaryResPath, commonResPath];
-			logDivider('Resource list');
-			logInfo(`Building from ${resourceRoots.map(r => pc.white(`"${r}"`)).join(pc.dim(' and '))}`);
-			logWarn('ROM packing and deployment are skipped');
-			if (rom_name) {
-				logInfo(`ROM name set to ${pc.bold(`"${rom_name}"`)} (not used for list building)`);
-			}
-			await buildResourceList(resourceRoots, rom_name || undefined, {
-				extraLuaPaths: Array.from(extraLuaPathSet),
-				virtualRoot,
-				resolveAtlasIndex: false,
-			});
-			writeOut(`\n${pc.bold(pc.white('[Resource list bouwen ge-DONUT]'))} \n`);
-			return;
-		} else {
-			// Check for required arguments
-			if (!rom_name && !isBIOSMode) {
-				throw new Error('Missing required argument: --romname or ROM_NAME environment variable, or --buildreslist (to build resource list only).');
-			}
+		if (!rom_name && !isBIOSMode) {
+			throw new Error('Missing required argument: --romname or ROM_NAME environment variable.');
+		}
 
-			if (rom_name) {
-				if (rom_name.includes('.')) {
-					throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': '2025'.`);
-				}
-				rom_name = rom_name.toLowerCase();
+		if (rom_name) {
+			if (rom_name.includes('.')) {
+				throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': '2025'.`);
 			}
+			rom_name = rom_name.toLowerCase();
 		}
 
 		if (!title && !isBIOSMode) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
-		resourceRoots = isBIOSMode
-			? [respath || commonResPath]
-			: [respath || commonResPath, commonResPath];
 		let romManifest = await getRomManifest(respath);
 		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
 		rom_name = romManifest.rom_name ?? rom_name;
@@ -683,7 +654,7 @@ async function main() {
 		logBullet('Lua case', canonicalization !== 'none' ? pc.green(`fold ${canonicalization}`) : pc.yellow('preserve case'));
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
-		if (!isBIOSMode && mode === 'rompack') {
+		if (!isBIOSMode) {
 			const BIOSResPath = commonResPath;
 			const BIOSManifest = await getRomManifest(BIOSResPath);
 			if (!BIOSManifest) {

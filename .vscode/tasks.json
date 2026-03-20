@@ -3,11 +3,11 @@
 	"tasks": [
 		{
 			"label": "BUILD BROWSER + LIBRETRO WSL + BIOS",
-				"dependsOn": [
-					"PLATFORM BUILD: browser",
-					"BIOS: build",
-					"LIBRETRO BUILD: WSL",
-				],
+			"dependsOn": [
+				"PLATFORM BUILD: browser",
+				"BIOS: build",
+				"LIBRETRO BUILD: WSL"
+			],
 			"type": "shell",
 			"problemMatcher": [],
 			"group": {
@@ -18,17 +18,16 @@
 				"id": "layers",
 				"color": "terminal.ansiRed"
 			},
-				"presentation": {
-					"echo": false,
-					"reveal": "always",
-					"focus": false,
-					"panel": "shared",
-					"showReuseMessage": false,
-					"clear": true,
-					"revealProblems": "onProblem",
-					"group": "FULL BUILD"
-				}
-			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "FULL BUILD"
+			}
 		},
 		{
 			"label": "PLATFORM BUILD: browser",
@@ -177,36 +176,6 @@
 			"dependsOn": [
 				"BIOS: build (debug)"
 			]
-		},
-		{
-			"label": "GAME RESOURCES: build resource list (resourceids.ts)",
-			"type": "shell",
-			"command": "npm",
-			"args": [
-				"run",
-				"build:game",
-				"--",
-				"${input:romtobuild}",
-				"--buildreslist"
-			],
-			"problemMatcher": [
-				"$tsc"
-			],
-			"group": "build",
-			"icon": {
-				"id": "folder-library",
-				"color": "terminal.ansiGreen"
-			},
-			"presentation": {
-				"echo": false,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"clear": true,
-				"revealProblems": "onProblem",
-				"group": "GAME BUILD"
-			}
 		},
 		{
 			"label": "PLATFORM BUILD: headless (debug)",

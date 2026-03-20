@@ -4,7 +4,6 @@ import type { Stats } from 'fs';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
-import { hashAssetId } from '../../src/bmsx/rompack/asset_tokens';
 import type { LuaChunk } from '../../src/bmsx/lua/syntax/lua_ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { atlasIndexResolver, createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
@@ -81,21 +80,6 @@ export function getNodeLauncherFilename(platform: RomPackerTarget, debug: boolea
 			throw new Error(`Unsupported platform "${platform}" for Node launcher filename resolution.`);
 	}
 }
-
-const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
-	none = 'none',`; // Note: cannot use const enums here, because BFont uses BitmapId as a type (and const enums are not available at runtime)
-
-const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
-	none = 'none',`;
-
-const BOILERPLATE_RESOURCE_ID_DATA = `export enum DataId {
-	none = 'none',`;
-
-const BOILERPLATE_RESOURCE_ID_MODEL = `export enum ModelId {
-	none = 'none',`;
-
-const BOILERPLATE_RESOURCE_ID_LUA = `export enum LuaId {
-	none = 'none',`;
 
 declare global {
 	var __dirname: string;
@@ -1065,95 +1049,6 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 	resources = await Promise.all(resourcePromises);
 
 	return resources;
-}
-
-/**
- * Builds a list of resources located at `respaths` for the specified `romname`.
- * @param respaths An array of the paths to the resources to include in the list.
- * @param rom_name The name of the ROM pack to build the list for.
- */
-export async function buildResourceList(respaths: string[], rom_name?: string, options?: ResourceScanOptions): Promise<void> {
-	const tsimgout = new Array<string>();
-	const tssndout = new Array<string>();
-	const tsdataout = new Array<string>();
-	const tsmodelout = new Array<string>();
-	const tsluaout = new Array<string>();
-	const tsimgtokens = new Array<string>();
-	const tssndtokens = new Array<string>();
-	const tsdatatokens = new Array<string>();
-	const tsmodeltokens = new Array<string>();
-	const tsluatokens = new Array<string>();
-	const tokenHex = (value: number) => value.toString(16).padStart(8, '0');
-
-	const metalist: Resource[] = await getResMetaList(respaths, rom_name, options);
-
-	tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
-	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
-	tsdataout.push(BOILERPLATE_RESOURCE_ID_DATA);
-	tsmodelout.push(BOILERPLATE_RESOURCE_ID_MODEL);
-	tsluaout.push(BOILERPLATE_RESOURCE_ID_LUA);
-	tsimgtokens.push('export const BitmapTokens = {');
-	tssndtokens.push('export const AudioTokens = {');
-	tsdatatokens.push('export const DataTokens = {');
-	tsmodeltokens.push('export const ModelTokens = {');
-	tsluatokens.push('export const LuaTokens = {');
-
-	for (let i = 0; i < metalist.length; i++) {
-		const current = metalist[i];
-
-		const type = current.type;
-		const name = current.name;
-		const token = hashAssetId(name);
-		const tokenEntry = `\t${name}: { lo: 0x${tokenHex(token.lo)}, hi: 0x${tokenHex(token.hi)} },`;
-		const enum_member_to_add = `\t${name} = '${name}', `;
-		switch (type) {
-			case 'image':
-			case 'atlas': // Atlas is also an image and thus is added to the image enum
-				tsimgout.push(`${enum_member_to_add} `);
-				tsimgtokens.push(tokenEntry);
-				break;
-			case 'audio':
-				tssndout.push(`${enum_member_to_add} `);
-				tssndtokens.push(tokenEntry);
-				break;
-			case 'data':
-				tsdataout.push(`${enum_member_to_add} `);
-				tsdatatokens.push(tokenEntry);
-				break;
-			case 'lua':
-				tsluaout.push(`${enum_member_to_add} `);
-				tsluatokens.push(tokenEntry);
-				break;
-			case 'model':
-				tsmodelout.push(`${enum_member_to_add} `);
-				tsmodeltokens.push(tokenEntry);
-				break;
-			case 'romlabel':
-				// Ignore this part
-				break;
-			default:
-				// Ignore unknown resource types
-				break;
-		}
-	}
-
-	tsimgout.push("}\n");
-	tssndout.push("}\n");
-	tsdataout.push("}\n");
-	tsmodelout.push("}\n");
-	tsluaout.push("}\n");
-	tsimgtokens.push("} as const;\n");
-	tssndtokens.push("} as const;\n");
-	tsdatatokens.push("} as const;\n");
-	tsmodeltokens.push("} as const;\n");
-	tsluatokens.push("} as const;\n");
-
-	const total_output: string = tsimgout
-		.concat(tsimgtokens, tssndout, tssndtokens, tsdataout, tsdatatokens, tsmodelout, tsmodeltokens, tsluaout, tsluatokens)
-		.join('\n');
-
-	const targetPath = respaths[0].replace('/res', '/resourceids.ts');
-	await writeFile(targetPath, total_output);
 }
 
 /**

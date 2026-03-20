@@ -16,7 +16,6 @@ export interface RomPackerOptions {
 	respath: string;
 	force: boolean;
 	debug: boolean;
-	buildreslist: boolean;
 	useTextureAtlas: boolean;
 	platform: RomPackerTarget;
 	/** Accepted for CLI parity; rompack mode no longer type-checks TypeScript games. */
