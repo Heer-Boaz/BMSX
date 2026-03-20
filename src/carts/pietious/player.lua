@@ -226,10 +226,6 @@ function player:zero_motion()
 	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = 0
-	self.water_jump_dx_accum = 0
-	self.water_jump_dy_accum = 0
-	self.water_fall_dx_accum = 0
-	self.water_fall_dy_accum = 0
 end
 
 function player:reset_stairs_lock()
@@ -970,16 +966,16 @@ function player:try_start_world_or_shrine_interaction_from_down()
 end
 
 function player:get_walk_dx()
+	if self.water_state ~= constants.water.none then
+		self.walk_speed_accum = self.walk_speed_accum + 1
+		local walk_dx = math.floor(self.walk_speed_accum / 2)
+		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * 2)
+		return walk_dx
+	end
 	if self.inventory_items['schoentjes'] then
 		self.walk_speed_accum = self.walk_speed_accum + constants.physics.walk_dx_schoentjes_num
 		local walk_dx = math.modf(self.walk_speed_accum / constants.physics.walk_dx_schoentjes_den)
 		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * constants.physics.walk_dx_schoentjes_den)
-		return walk_dx
-	end
-	if self.water_state ~= constants.water.none then
-		self.walk_speed_accum = self.walk_speed_accum + constants.water.walk_dx_num
-		local walk_dx = math.modf(self.walk_speed_accum / constants.water.walk_dx_den)
-		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * constants.water.walk_dx_den)
 		return walk_dx
 	end
 	self.walk_speed_accum = 0
@@ -987,29 +983,53 @@ function player:get_walk_dx()
 end
 
 function player:update_water_state()
+	self.previous_water_state = self.water_state
 	local water_kind = object('room'):water_kind_at_world(self.x + constants.room.tile_half, self.y + self.height)
 	self.water_state = water_kind
-	if water_kind == constants.water.none then
-		self.water_damage_counter = 0
-		self.water_jump_dx_accum = 0
-		self.water_jump_dy_accum = 0
-		self.water_fall_dx_accum = 0
-		self.water_fall_dy_accum = 0
+	if self.previous_water_state ~= self.water_state then
+		self.events:emit('water_transition', {
+			previous_state = self.previous_water_state,
+			water_state = self.water_state,
+		})
+		return true
 	end
+	return false
 end
 
-function player:consume_water_scaled_axis(accum_key, speed_num)
-	if self.water_state == constants.water.none then
-		self[accum_key] = 0
-		return speed_num
+function player:reset_vertical_motion_for_jump()
+	self.vertical_motion_substate = 0
+	self.vertical_motion_tick = 0
+	self.vertical_motion_dy_accum = 0
+end
+
+function player:reset_vertical_motion_for_fall()
+	self.vertical_motion_substate = constants.physics.aphrodite_water_fall_start_substate
+	self.vertical_motion_tick = 0
+	self.vertical_motion_dy_accum = 0
+end
+
+function player:advance_aphrodite_water_vertical_motion()
+	self.vertical_motion_tick = self.vertical_motion_tick + 1
+	if (self.vertical_motion_tick % constants.physics.aphrodite_water_vertical_tick_period) ~= 0 then
+		return false
 	end
-	if speed_num == 0 then
-		self[accum_key] = 0
+	if self.vertical_motion_substate < constants.physics.aphrodite_water_vertical_substate_cap then
+		self.vertical_motion_substate = self.vertical_motion_substate + 1
+	end
+	return true
+end
+
+function player:consume_aphrodite_water_vertical_dy()
+	if self.vertical_motion_substate == 0 then
 		return 0
 	end
-	local delta, next_accum = consume_axis_accum(self[accum_key], speed_num, constants.water.surface_speed_den)
-	self[accum_key] = next_accum
-	return delta
+	local dy, next_accum = consume_axis_accum(
+		self.vertical_motion_dy_accum,
+		constants.physics.aphrodite_water_vertical_dy_by_substate[self.vertical_motion_substate - 1],
+		constants.physics.aphrodite_water_vertical_scale_den
+	)
+	self.vertical_motion_dy_accum = next_accum
+	return dy
 end
 
 function player:try_switch_room(direction, keep_stairs_lock)
@@ -1646,9 +1666,8 @@ end
 function player:start_jump(inertia)
 	self.jump_substate = 0
 	self:reset_fall_substate_sequence()
+	self:reset_vertical_motion_for_jump()
 	self.jump_inertia = inertia
-	self.water_jump_dx_accum = 0
-	self.water_jump_dy_accum = 0
 	self.jumping_from_elevator = self.on_vertical_elevator
 	self.events:emit('jump')
 	if inertia < 0 then
@@ -1954,6 +1973,7 @@ function player:update_quiet()
 	self:zero_motion()
 	if not self:is_support_below_at(self.x, self.y, true) then
 		self:reset_fall_substate_sequence()
+		self:reset_vertical_motion_for_fall()
 		self.events:emit('falling')
 		return
 	end
@@ -1972,6 +1992,7 @@ function player:update_walking_right()
 	if not self:is_support_below_at(self.x, self.y, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
+		self:reset_vertical_motion_for_fall()
 		self.events:emit('falling')
 		return
 	end
@@ -1995,6 +2016,7 @@ function player:update_walking_left()
 	if not self:is_support_below_at(self.x, self.y, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
+		self:reset_vertical_motion_for_fall()
 		self.events:emit('falling')
 		return
 	end
@@ -2048,12 +2070,24 @@ function player:update_jump_motion()
 	if self.previous_x_collision then
 		self.jump_inertia = 0
 	end
+	local water_jump = self.water_state ~= constants.water.none
 	if not self.up_held and self.jump_substate < constants.physics.jump_release_cut_substate then
-		self.jump_substate = constants.physics.jump_release_cut_substate
+		if water_jump then
+			self.jump_substate = constants.physics.aphrodite_water_jump_release_cut_substate
+		else
+			self.jump_substate = constants.physics.jump_release_cut_substate
+		end
+		if water_jump and self.vertical_motion_substate < constants.physics.aphrodite_water_jump_release_cut_substate then
+			self.vertical_motion_substate = constants.physics.aphrodite_water_jump_release_cut_substate
+		end
 	end
 
 	local dy
-	if constants.physics.popolon_jump_dy_by_substate[self.jump_substate] ~= nil then
+	local jump_substate_advanced = true
+	if water_jump then
+		jump_substate_advanced = self:advance_aphrodite_water_vertical_motion()
+		dy = self:consume_aphrodite_water_vertical_dy()
+	elseif constants.physics.popolon_jump_dy_by_substate[self.jump_substate] ~= nil then
 		dy = constants.physics.popolon_jump_dy_by_substate[self.jump_substate]
 	else
 		dy = 0
@@ -2063,15 +2097,23 @@ function player:update_jump_motion()
 	end
 	local hit_ceiling = self.previous_y_collision
 	local dx = self.jump_inertia * constants.physics.jump_dx
-	dx = self:consume_water_scaled_axis('water_jump_dx_accum', dx)
-	dy = self:consume_water_scaled_axis('water_jump_dy_accum', dy)
 	self:apply_air_move(dx, dy, true)
 
 	if hit_ceiling then
 		self.jump_substate = constants.physics.jump_ceiling_cut_substate
+		if water_jump and self.vertical_motion_substate < constants.physics.jump_ceiling_cut_substate then
+			self.vertical_motion_substate = constants.physics.jump_ceiling_cut_substate
+		end
 	end
 
-	self.jump_substate = self.jump_substate + 1
+	if water_jump then
+		if jump_substate_advanced then
+			self.jump_substate = self.jump_substate + 1
+		end
+	else
+		self.jump_substate = self.jump_substate + 1
+		self.vertical_motion_substate = self.jump_substate
+	end
 	local reached_fall = self.jump_substate >= constants.physics.jump_to_fall_substate
 	if reached_fall then
 		self:reset_fall_substate_sequence()
@@ -2089,14 +2131,20 @@ function player:update_stopped_jump_motion()
 		self.jump_inertia = 0
 	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
-	dx = self:consume_water_scaled_axis('water_jump_dx_accum', dx)
 	local moved_x, collided_x = self:apply_side_probe_horizontal_move(dx)
 	self.last_dx = moved_x
 	self.last_dy = 0
 	self.previous_x_collision = collided_x
 	self.previous_y_collision = false
 
-	self.jump_substate = self.jump_substate + 1
+	if self.water_state ~= constants.water.none then
+		if self:advance_aphrodite_water_vertical_motion() then
+			self.jump_substate = self.jump_substate + 1
+		end
+	else
+		self.jump_substate = self.jump_substate + 1
+		self.vertical_motion_substate = self.jump_substate
+	end
 	if self.jump_substate >= constants.physics.jump_to_fall_substate then
 		self:reset_fall_substate_sequence()
 		self.events:emit('landed_to_quiet')
@@ -2123,11 +2171,23 @@ function player:update_controlled_fall_motion()
 		return
 	end
 	local dx = self:get_controlled_fall_dx()
-	local dy = self:get_controlled_fall_dy()
-	dx = self:consume_water_scaled_axis('water_fall_dx_accum', dx)
-	dy = self:consume_water_scaled_axis('water_fall_dy_accum', dy)
+	local dy
+	local fall_substate_advanced = true
+	if self.water_state ~= constants.water.none then
+		fall_substate_advanced = self:advance_aphrodite_water_vertical_motion()
+		dy = self:consume_aphrodite_water_vertical_dy()
+	else
+		dy = self:get_controlled_fall_dy()
+	end
 	self:apply_air_move(dx, dy, true)
-	self:advance_fall_substate_sequence()
+	if self.water_state ~= constants.water.none then
+		if fall_substate_advanced then
+			self:advance_fall_substate_sequence()
+		end
+	else
+		self:advance_fall_substate_sequence()
+		self.vertical_motion_substate = constants.physics.jump_to_fall_substate + self.fall_substate
+	end
 end
 
 function player:update_uncontrolled_fall_motion()
@@ -2145,10 +2205,23 @@ function player:update_uncontrolled_fall_motion()
 		return
 	end
 
-	local dy = self:get_uncontrolled_fall_dy()
-	dy = self:consume_water_scaled_axis('water_fall_dy_accum', dy)
+	local dy
+	local fall_substate_advanced = true
+	if self.water_state ~= constants.water.none then
+		fall_substate_advanced = self:advance_aphrodite_water_vertical_motion()
+		dy = self:consume_aphrodite_water_vertical_dy()
+	else
+		dy = self:get_uncontrolled_fall_dy()
+	end
 	self:apply_air_move(0, dy, true)
-	self:advance_fall_substate_sequence()
+	if self.water_state ~= constants.water.none then
+		if fall_substate_advanced then
+			self:advance_fall_substate_sequence()
+		end
+	else
+		self:advance_fall_substate_sequence()
+		self.vertical_motion_substate = constants.physics.jump_to_fall_substate + self.fall_substate
+	end
 end
 
 function player:update_up_stairs()
@@ -3050,13 +3123,11 @@ local function register_player_definition()
 			stairs_bottom_y = constants.player.start_y,
 			stairs_anim_frame = 0,
 			stairs_anim_distance = 0,
+			previous_water_state = constants.water.none,
 			water_state = constants.water.none,
-			water_persona = constants.water.persona_aphrodite,
-			water_damage_counter = 0,
-			water_jump_dx_accum = 0,
-			water_jump_dy_accum = 0,
-			water_fall_dx_accum = 0,
-			water_fall_dy_accum = 0,
+			vertical_motion_substate = 0,
+			vertical_motion_tick = 0,
+			vertical_motion_dy_accum = 0,
 			hit_stairs_lock = false,
 			stairs_landing_sound_pending = false,
 			slow_doorpass_substate = 0,

@@ -545,9 +545,6 @@ function room_object:base_collision_flags_at_tile(tx, ty)
 	if self:is_active_breakable_wall_at_tile(tx, ty) then
 		collision = collision | constants.collision_flags.wall
 	end
-	if water_kind_at_tile(self, tx, ty) ~= constants.water.none then
-		collision = collision | constants.collision_flags.water
-	end
 	return collision
 end
 
@@ -833,30 +830,16 @@ function room_object:render_water()
 		return
 	end
 
-	local tile_size = self.tile_size
-	local origin_x = self.tile_origin_x
-	local origin_y = self.tile_origin_y
 	for y = self.water.surface_row, self.tile_rows do
-		local run_start = 0
-		local run_kind = 0
-		for x = 1, self.tile_columns + 1 do
-			local kind = 0
-			if x <= self.tile_columns then
-				kind = water_kind_at_tile(self, x, y)
-			end
-			if kind ~= run_kind then
-				if run_kind ~= 0 then
-					put_rectfillcolor(
-						origin_x + ((run_start - 1) * tile_size),
-						origin_y + ((y - 1) * tile_size),
-						origin_x + ((x - 1) * tile_size),
-						origin_y + (y * tile_size),
-						0,
-						run_kind == constants.water.surface and constants.water.surface_color or constants.water.body_color
-					)
+		for x = 1, self.tile_columns do
+			local kind = water_kind_at_tile(self, x, y)
+			if kind ~= constants.water.none then
+				local draw_x, draw_y = self:tile_to_world(x, y)
+				if kind == constants.water.surface then
+					put_sprite('water_surface_msx', draw_x, draw_y, 0)
+				else
+					put_sprite('water_body_msx', draw_x, draw_y, 0)
 				end
-				run_start = x
-				run_kind = kind
 			end
 		end
 	end
