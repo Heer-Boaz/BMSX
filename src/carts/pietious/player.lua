@@ -1038,7 +1038,7 @@ function player:can_switch_up_from_state()
 	if self:has_tag(state_tags.group.can_switch_up) then
 		return true
 	end
-	return self.jumping_from_elevator and self:has_tag(state_tags.variant.jumping)
+	return self.jumping_from_elevator and self:has_tag(state_tags.group.movement_jump)
 end
 
 function player:nearing_room_exit()
@@ -2387,7 +2387,7 @@ local function define_player_fsm()
 			-- That keeps movement stable even if a jp/jr edge is missed once.
 			self:sync_input_state_from_runtime()
 			self:update_collision_state()
-			if not self:has_tag(state_tags.variant.jumping) then
+			if not self:has_tag(state_tags.group.movement_jump) then
 				self.jumping_from_elevator = false
 			end
 			if self.sword_cooldown > 0 then
