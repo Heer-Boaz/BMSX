@@ -451,7 +451,7 @@
   - '#..ar...-=................-=####'
   - '################################'
   water:
-    surface_row: 12
+    surface_row: 17
   objects:
   - type: boekfoe
     condition:
