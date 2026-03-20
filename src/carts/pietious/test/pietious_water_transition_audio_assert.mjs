@@ -46,6 +46,7 @@ function setupScenario(engine, logger) {
 			player:zero_motion()
 			player:reset_fall_substate_sequence()
 			player:cancel_sword()
+			player.sword_cooldown = 0
 			player.jump_substate = 0
 			player.jump_inertia = 0
 			player.on_vertical_elevator = false
@@ -63,18 +64,32 @@ function setupScenario(engine, logger) {
 
 		local dry_probe = nil
 		local wet_probe = nil
+		local runtime_probe = nil
 
 		for ty = 1, room.tile_rows do
 			for tx = 1, room.tile_columns do
-				local player_x = room.tile_origin_x + ((tx - 1) * room.tile_size) - constants.room.tile_half
-				local player_y = room.tile_origin_y + ((ty - 1) * room.tile_size) - player.height
-				if not room:has_collision_flags_in_rect(player_x, player_y, player.width, player.height, constants.collision_flags.solid_mask, false) then
-					local water_kind = room:player_water_kind_at_world(player_x + constants.room.tile_half, player_y + player.height)
+				local x = room.tile_origin_x + ((tx - 1) * room.tile_size) - constants.room.tile_half
+				local y = room.tile_origin_y + ((ty - 1) * room.tile_size) - player.height
+				if not room:has_collision_flags_in_rect(x, y, player.width, player.height, constants.collision_flags.solid_mask, false) then
+					local water_kind = room:player_water_kind_at_world(x + constants.room.tile_half, y + player.height)
 					if dry_probe == nil and water_kind == constants.water.none then
-						dry_probe = { x = player_x, y = player_y }
+						dry_probe = { x = x, y = y }
 					end
 					if wet_probe == nil and water_kind ~= constants.water.none then
-						wet_probe = { x = player_x, y = player_y }
+						wet_probe = { x = x, y = y }
+					end
+					if runtime_probe == nil and water_kind == constants.water.none then
+						for dy = 1, 48 do
+							local next_y = y + dy
+							if room:player_water_kind_at_world(x + constants.room.tile_half, next_y + player.height) ~= constants.water.none
+								and not room:has_collision_flags_in_rect(x, y, player.width, player.height + dy, constants.collision_flags.solid_mask, false) then
+								runtime_probe = {
+									x = x,
+									y = y,
+								}
+								break
+							end
+						end
 					end
 				end
 			end
@@ -82,6 +97,7 @@ function setupScenario(engine, logger) {
 
 		assert(dry_probe ~= nil, 'no dry probe found in room 8')
 		assert(wet_probe ~= nil, 'no wet probe found in room 8')
+		assert(runtime_probe ~= nil, 'no dry-to-wet runtime probe found in room 8')
 
 		local original_emit = player.events.emit
 		player._test_water_transition_count = 0
@@ -97,29 +113,33 @@ function setupScenario(engine, logger) {
 			return original_emit(port, event_name, payload)
 		end
 
-		reset_player(dry_probe.x, dry_probe.y)
+		reset_player(runtime_probe.x, runtime_probe.y)
+		player.facing = 1
+		player.walk_state = 0
+		player.sc:transition_to('player:/uncontrolled_fall')
+		player._test_water_transition_count = 0
+		player._test_water_transition_trace = {}
 
 		return {
 			dry_x = dry_probe.x,
 			dry_y = dry_probe.y,
 			wet_x = wet_probe.x,
 			wet_y = wet_probe.y,
+			runtime_x = runtime_probe.x,
+			runtime_y = runtime_probe.y,
 			initial_water_state = player.water_state,
 			initial_transition_count = player._test_water_transition_count,
 		}
 	`);
 
-	logger(`[assert] water-transition setup dry=(${state.dry_x},${state.dry_y}) wet=(${state.wet_x},${state.wet_y})`);
+	logger(`[assert] water-transition setup dry=(${state.dry_x},${state.dry_y}) wet=(${state.wet_x},${state.wet_y}) runtime=(${state.runtime_x},${state.runtime_y})`);
 	assert(state.initial_water_state === 0, `expected dry initial water_state=0 got ${state.initial_water_state}`);
 	assert(state.initial_transition_count === 0, `expected initial transition count 0 got ${state.initial_transition_count}`);
 
 	return {
-		name: 'enter',
+		name: 'runtime_enter',
 		dryX: state.dry_x,
 		dryY: state.dry_y,
-		wetX: state.wet_x,
-		wetY: state.wet_y,
-		enterCount: 0,
 	};
 }
 
@@ -154,15 +174,20 @@ function getScenarioState(engine) {
 function updateScenario(engine, scenario, logger) {
 	const state = getScenarioState(engine);
 
-	if (scenario.name === 'enter') {
-		teleportPlayer(engine, scenario.wetX, scenario.wetY);
-		return { ...scenario, name: 'check_enter' };
+	if (scenario.name === 'runtime_enter') {
+		if (state.water_state === 0) {
+			return scenario;
+		}
+		logger('[assert] runtime water enter observed');
+		return { ...scenario, name: 'check_enter', enterCount: state.transition_count };
 	}
 
 	if (scenario.name === 'check_enter') {
-		assert(state.transition_count >= 1, `expected enter water_transition count >= 1 got ${state.transition_count}`);
+		assert(state.transition_count === 1, `expected enter water_transition count 1 got ${state.transition_count}`);
 		assert(state.first_previous_state === 0, `expected enter previous_state=0 got ${state.first_previous_state}`);
 		assert(state.first_water_state !== 0, `expected enter water_state != 0 got ${state.first_water_state}`);
+		assert(state.second_previous_state == null, `unexpected second previous_state=${state.second_previous_state}`);
+		assert(state.second_water_state == null, `unexpected second water_state=${state.second_water_state}`);
 		assert(state.active_sfx.includes('watersplash'), `expected watersplash active on enter got ${state.active_sfx.join(',')}`);
 		logger('[assert] water-transition enter ok');
 		return { ...scenario, name: 'leave', enterCount: state.transition_count };
@@ -174,8 +199,10 @@ function updateScenario(engine, scenario, logger) {
 	}
 
 	if (scenario.name === 'check_leave') {
-		assert(state.transition_count > scenario.enterCount, `expected leave transition count > ${scenario.enterCount} got ${state.transition_count}`);
+		assert(state.transition_count === scenario.enterCount + 1, `expected leave transition count ${scenario.enterCount + 1} got ${state.transition_count}`);
 		assert(state.water_state === 0, `expected dry water_state=0 after leave got ${state.water_state}`);
+		assert(state.second_previous_state !== 0, `expected leave previous_state != 0 got ${state.second_previous_state}`);
+		assert(state.second_water_state === 0, `expected leave water_state=0 got ${state.second_water_state}`);
 		assert(state.active_sfx.includes('watersplash'), `expected watersplash active on leave got ${state.active_sfx.join(',')}`);
 		logger('[assert] water-transition leave ok');
 		return { ...scenario, name: 'done' };

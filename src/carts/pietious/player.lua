@@ -150,6 +150,9 @@ local player_hit_fall_frames = {
 }
 local player_sword_end_event = 'sword.end'
 local player_shrine_exit_timeline_id = 'p.tl.sx'
+local player_water_transition_suppress_tag = 'p.wts'
+local player_water_presence_dry = 0
+local player_water_presence_wet = 1
 local hit_blink_colorize = { r = 1, g = 0.35, b = 0.35, a = 1 }
 local vertical_exit_directions = {
 	up = true,
@@ -985,14 +988,20 @@ function player:update_water_state()
 	self.previous_water_state = self.water_state
 	local water_kind = object('room'):player_water_kind_at_world(self.x + constants.room.tile_half, self.y + self.height)
 	self.water_state = water_kind
-	if self.previous_water_state ~= self.water_state then
+	local water_changed = self.previous_water_state ~= self.water_state
+	local next_water_presence_substate = player_water_presence_dry
+	if water_kind == constants.water.surface or water_kind == constants.water.body then
+		next_water_presence_substate = player_water_presence_wet
+	end
+	local water_presence_changed = self.water_presence_substate ~= next_water_presence_substate
+	self.water_presence_substate = next_water_presence_substate
+	if water_presence_changed and (not self:has_tag(player_water_transition_suppress_tag)) then
 		self.events:emit('water_transition', {
 			previous_state = self.previous_water_state,
 			water_state = self.water_state,
 		})
-		return true
 	end
-	return false
+	return water_changed
 end
 
 function player:reset_vertical_motion_for_jump()
@@ -2592,7 +2601,9 @@ local function define_player_fsm()
 			-- That keeps movement stable even if a jp/jr edge is missed once.
 			self:sync_input_state_from_runtime()
 			self:update_collision_state()
+			self:add_tag(player_water_transition_suppress_tag)
 			self:update_water_state()
+			self:remove_tag(player_water_transition_suppress_tag)
 			if not self:has_tag(state_tags.group.movement_jump) then
 				self.jumping_from_elevator = false
 			end
@@ -3152,6 +3163,7 @@ local function register_player_definition()
 			stairs_anim_distance = 0,
 			previous_water_state = constants.water.none,
 			water_state = constants.water.none,
+			water_presence_substate = player_water_presence_dry,
 			vertical_motion_substate = 0,
 			vertical_motion_tick = 0,
 			vertical_motion_dy_accum = 0,

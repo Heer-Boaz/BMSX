@@ -308,8 +308,6 @@ function runAssert(engine, logger) {
 			transition_count = #transition_trace,
 			first_transition_previous_state = transition_trace[1].previous_state,
 			first_transition_water_state = transition_trace[1].water_state,
-			second_transition_previous_state = transition_trace[2].previous_state,
-			second_transition_water_state = transition_trace[2].water_state,
 			water_walk_dx_1 = water_walk_dx_1,
 			water_walk_dx_2 = water_walk_dx_2,
 			water_walk_dx_3 = water_walk_dx_3,
@@ -349,7 +347,7 @@ function runAssert(engine, logger) {
 	`);
 
 	logger(
-		`[assert] room8 water states dry=${state.dry_state} surface=${state.surface_state} body=${state.body_state} transitions=${state.first_transition_previous_state}->${state.first_transition_water_state},${state.second_transition_previous_state}->${state.second_transition_water_state} walk4=${state.water_walk_dx_1},${state.water_walk_dx_2},${state.water_walk_dx_3},${state.water_walk_dx_4} floorwalk4=${state.floor_walk_dx_1},${state.floor_walk_dx_2},${state.floor_walk_dx_3},${state.floor_walk_dx_4} jump12=${state.water_jump_dy_1},${state.water_jump_dy_2},${state.water_jump_dy_3},${state.water_jump_dy_4},${state.water_jump_dy_5},${state.water_jump_dy_6},${state.water_jump_dy_7},${state.water_jump_dy_8},${state.water_jump_dy_9},${state.water_jump_dy_10},${state.water_jump_dy_11},${state.water_jump_dy_12} jumpx4=${state.water_jump_dx_1},${state.water_jump_dx_2},${state.water_jump_dx_3},${state.water_jump_dx_4} cfall4=${state.water_controlled_fall_dx_1},${state.water_controlled_fall_dx_2},${state.water_controlled_fall_dx_3},${state.water_controlled_fall_dx_4}`,
+		`[assert] room8 water states dry=${state.dry_state} surface=${state.surface_state} body=${state.body_state} transitions=${state.first_transition_previous_state}->${state.first_transition_water_state} walk4=${state.water_walk_dx_1},${state.water_walk_dx_2},${state.water_walk_dx_3},${state.water_walk_dx_4} floorwalk4=${state.floor_walk_dx_1},${state.floor_walk_dx_2},${state.floor_walk_dx_3},${state.floor_walk_dx_4} jump12=${state.water_jump_dy_1},${state.water_jump_dy_2},${state.water_jump_dy_3},${state.water_jump_dy_4},${state.water_jump_dy_5},${state.water_jump_dy_6},${state.water_jump_dy_7},${state.water_jump_dy_8},${state.water_jump_dy_9},${state.water_jump_dy_10},${state.water_jump_dy_11},${state.water_jump_dy_12} jumpx4=${state.water_jump_dx_1},${state.water_jump_dx_2},${state.water_jump_dx_3},${state.water_jump_dx_4} cfall4=${state.water_controlled_fall_dx_1},${state.water_controlled_fall_dx_2},${state.water_controlled_fall_dx_3},${state.water_controlled_fall_dx_4}`,
 	);
 	assert(state.dry_state === 0, `expected dry_state=0, got ${state.dry_state}`);
 	assert(state.surface_state === 1, `expected surface_state=1, got ${state.surface_state}`);
@@ -358,11 +356,9 @@ function runAssert(engine, logger) {
 	assert(state.surface_previous_state === 0, `expected surface previous_water_state=0, got ${state.surface_previous_state}`);
 	assert(state.surface_to_body_changed === true, 'expected surface->body transition to report changed=true');
 	assert(state.body_previous_state === 1, `expected body previous_water_state=1, got ${state.body_previous_state}`);
-	assert(state.transition_count === 2, `expected 2 water_transition events, got ${state.transition_count}`);
+	assert(state.transition_count === 1, `expected 1 water_transition event, got ${state.transition_count}`);
 	assert(state.first_transition_previous_state === 0, `expected first water_transition previous_state=0, got ${state.first_transition_previous_state}`);
 	assert(state.first_transition_water_state === 1, `expected first water_transition water_state=1, got ${state.first_transition_water_state}`);
-	assert(state.second_transition_previous_state === 1, `expected second water_transition previous_state=1, got ${state.second_transition_previous_state}`);
-	assert(state.second_transition_water_state === 2, `expected second water_transition water_state=2, got ${state.second_transition_water_state}`);
 	assert(state.water_walk_dx_1 === 0, `expected underwater walk dx frame1=0, got ${state.water_walk_dx_1}`);
 	assert(state.water_walk_dx_2 === 1, `expected underwater walk dx frame2=1, got ${state.water_walk_dx_2}`);
 	assert(state.water_walk_dx_3 === 0, `expected underwater walk dx frame3=0, got ${state.water_walk_dx_3}`);
