@@ -35,6 +35,14 @@ function enemy_base.setup_projectile_boundary(self)
 			self:mark_for_disposal()
 		end,
 	})
+	self.events:on({
+		event = 'room.switched',
+		emitter = 'pietolon',
+		subscriber = self,
+		handler = function()
+			self:mark_for_disposal()
+		end,
+	})
 end
 
 function enemy_base.bind(self)

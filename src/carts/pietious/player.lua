@@ -150,9 +150,13 @@ local player_hit_fall_frames = {
 }
 local player_sword_end_event = 'sword.end'
 local player_shrine_exit_timeline_id = 'p.tl.sx'
-local player_water_transition_suppress_tag = 'p.wts'
-local player_water_presence_dry = 0
-local player_water_presence_wet = 1
+local player_tags = {
+	in_water = 'p.w',
+}
+local player_in_water_by_state = {
+	[constants.water.surface] = true,
+	[constants.water.body] = true,
+}
 local hit_blink_colorize = { r = 1, g = 0.35, b = 0.35, a = 1 }
 local vertical_exit_directions = {
 	up = true,
@@ -168,6 +172,14 @@ local stairs_vertical_exit_events = {
 	stairs_end_top = true,
 	stairs_end_bottom = true,
 }
+
+local function set_tag_flag(owner, tag, enabled)
+	if enabled then
+		owner:add_tag(tag)
+		return
+	end
+	owner:remove_tag(tag)
+end
 
 local function build_shrine_exit_transition_frames()
 	local frames = {}
@@ -969,7 +981,7 @@ function player:try_start_world_or_shrine_interaction_from_down()
 end
 
 function player:get_walk_dx()
-	if self.water_state ~= constants.water.none then
+	if self:has_tag(player_tags.in_water) then
 		local walk_dx, next_accum = consume_axis_accum(self.walk_speed_accum, 1, 2)
 		self.walk_speed_accum = next_accum
 		return walk_dx
@@ -984,24 +996,21 @@ function player:get_walk_dx()
 	return constants.physics.walk_dx
 end
 
-function player:update_water_state()
+function player:sync_water_state()
 	self.previous_water_state = self.water_state
-	local water_kind = object('room'):player_water_kind_at_world(self.x + constants.room.tile_half, self.y + self.height)
-	self.water_state = water_kind
-	local water_changed = self.previous_water_state ~= self.water_state
-	local next_water_presence_substate = player_water_presence_dry
-	if water_kind == constants.water.surface or water_kind == constants.water.body then
-		next_water_presence_substate = player_water_presence_wet
-	end
-	local water_presence_changed = self.water_presence_substate ~= next_water_presence_substate
-	self.water_presence_substate = next_water_presence_substate
-	if water_presence_changed and (not self:has_tag(player_water_transition_suppress_tag)) then
+	local next_water_state = object('room'):player_water_kind_at_world(self.x + constants.room.tile_half, self.y + self.height)
+	self.water_state = next_water_state
+	set_tag_flag(self, player_tags.in_water, player_in_water_by_state[next_water_state])
+end
+
+function player:update_water_state()
+	self:sync_water_state()
+	if player_in_water_by_state[self.previous_water_state] ~= self:has_tag(player_tags.in_water) then
 		self.events:emit('water_transition', {
 			previous_state = self.previous_water_state,
 			water_state = self.water_state,
 		})
 	end
-	return water_changed
 end
 
 function player:reset_vertical_motion_for_jump()
@@ -1041,7 +1050,7 @@ function player:consume_aphrodite_water_vertical_dy()
 end
 
 function player:consume_water_controlled_fall_dx(dx)
-	if self.water_state == constants.water.none then
+	if not self:has_tag(player_tags.in_water) then
 		self.water_controlled_fall_dx_accum = 0
 		return dx
 	end
@@ -1051,7 +1060,7 @@ function player:consume_water_controlled_fall_dx(dx)
 end
 
 function player:consume_water_jump_dx(dx)
-	if self.water_state == constants.water.none then
+	if not self:has_tag(player_tags.in_water) then
 		self.water_jump_dx_accum = 0
 		return dx
 	end
@@ -2100,7 +2109,7 @@ function player:update_jump_motion()
 	if self.previous_x_collision then
 		self.jump_inertia = 0
 	end
-	local water_jump = self.water_state ~= constants.water.none
+	local water_jump = self:has_tag(player_tags.in_water)
 	if not self.up_held and self.jump_substate < constants.physics.jump_release_cut_substate then
 		if water_jump then
 			self.jump_substate = constants.physics.aphrodite_water_jump_release_cut_substate
@@ -2170,7 +2179,7 @@ function player:update_stopped_jump_motion()
 	self.previous_x_collision = collided_x
 	self.previous_y_collision = false
 
-	if self.water_state ~= constants.water.none then
+	if self:has_tag(player_tags.in_water) then
 		if self:advance_aphrodite_water_vertical_motion() then
 			self.jump_substate = self.jump_substate + 1
 		end
@@ -2204,19 +2213,19 @@ function player:update_controlled_fall_motion()
 		return
 	end
 	local dx = self:get_controlled_fall_dx()
-	if self.water_state ~= constants.water.none then
+	if self:has_tag(player_tags.in_water) then
 		dx = self:consume_water_controlled_fall_dx(dx)
 	end
 	local dy
 	local fall_substate_advanced = true
-	if self.water_state ~= constants.water.none then
+	if self:has_tag(player_tags.in_water) then
 		fall_substate_advanced = self:advance_aphrodite_water_vertical_motion()
 		dy = self:consume_aphrodite_water_vertical_dy()
 	else
 		dy = self:get_controlled_fall_dy()
 	end
 	self:apply_air_move(dx, dy, true)
-	if self.water_state ~= constants.water.none then
+	if self:has_tag(player_tags.in_water) then
 		if fall_substate_advanced then
 			self:advance_fall_substate_sequence()
 		end
@@ -2243,14 +2252,14 @@ function player:update_uncontrolled_fall_motion()
 
 	local dy
 	local fall_substate_advanced = true
-	if self.water_state ~= constants.water.none then
+	if self:has_tag(player_tags.in_water) then
 		fall_substate_advanced = self:advance_aphrodite_water_vertical_motion()
 		dy = self:consume_aphrodite_water_vertical_dy()
 	else
 		dy = self:get_uncontrolled_fall_dy()
 	end
 	self:apply_air_move(0, dy, true)
-	if self.water_state ~= constants.water.none then
+	if self:has_tag(player_tags.in_water) then
 		if fall_substate_advanced then
 			self:advance_fall_substate_sequence()
 		end
@@ -2601,9 +2610,7 @@ local function define_player_fsm()
 			-- That keeps movement stable even if a jp/jr edge is missed once.
 			self:sync_input_state_from_runtime()
 			self:update_collision_state()
-			self:add_tag(player_water_transition_suppress_tag)
-			self:update_water_state()
-			self:remove_tag(player_water_transition_suppress_tag)
+			self:sync_water_state()
 			if not self:has_tag(state_tags.group.movement_jump) then
 				self.jumping_from_elevator = false
 			end
@@ -3163,7 +3170,6 @@ local function register_player_definition()
 			stairs_anim_distance = 0,
 			previous_water_state = constants.water.none,
 			water_state = constants.water.none,
-			water_presence_substate = player_water_presence_dry,
 			vertical_motion_substate = 0,
 			vertical_motion_tick = 0,
 			vertical_motion_dy_accum = 0,
