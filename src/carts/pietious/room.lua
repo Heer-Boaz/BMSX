@@ -420,6 +420,23 @@ local function water_kind_at_tile(room_state, tx, ty)
 	return constants.water.body
 end
 
+local function player_water_kind_at_tile(room_state, tx, ty)
+	local water = room_state.water
+	if water == nil then
+		return constants.water.none
+	end
+	if ty < water.surface_row or ty > room_state.tile_rows then
+		return constants.water.none
+	end
+	if tx < 1 or tx > room_state.tile_columns then
+		return constants.water.none
+	end
+	if ty == water.surface_row then
+		return constants.water.surface
+	end
+	return constants.water.body
+end
+
 local function refresh_room_geometry(room_state)
 	local map_rows = room_state.map_rows
 	local collision_map = build_collision_map(map_rows)
@@ -551,6 +568,11 @@ end
 function room_object:water_kind_at_world(world_x, world_y)
 	local tx, ty = self:world_to_tile(world_x, world_y)
 	return water_kind_at_tile(self, tx, ty)
+end
+
+function room_object:player_water_kind_at_world(world_x, world_y)
+	local tx, ty = self:world_to_tile(world_x, world_y)
+	return player_water_kind_at_tile(self, tx, ty)
 end
 
 function room_object:collision_flags_at_tile(tx, ty, include_elevator)

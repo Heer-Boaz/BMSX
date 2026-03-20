@@ -967,9 +967,8 @@ end
 
 function player:get_walk_dx()
 	if self.water_state ~= constants.water.none then
-		self.walk_speed_accum = self.walk_speed_accum + 1
-		local walk_dx = math.floor(self.walk_speed_accum / 2)
-		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * 2)
+		local walk_dx, next_accum = consume_axis_accum(self.walk_speed_accum, 1, 2)
+		self.walk_speed_accum = next_accum
 		return walk_dx
 	end
 	if self.inventory_items['schoentjes'] then
@@ -984,7 +983,7 @@ end
 
 function player:update_water_state()
 	self.previous_water_state = self.water_state
-	local water_kind = object('room'):water_kind_at_world(self.x + constants.room.tile_half, self.y + self.height)
+	local water_kind = object('room'):player_water_kind_at_world(self.x + constants.room.tile_half, self.y + self.height)
 	self.water_state = water_kind
 	if self.previous_water_state ~= self.water_state then
 		self.events:emit('water_transition', {
@@ -1039,6 +1038,16 @@ function player:consume_water_controlled_fall_dx(dx)
 	end
 	local scaled_dx, next_accum = consume_axis_accum(self.water_controlled_fall_dx_accum, dx, 4)
 	self.water_controlled_fall_dx_accum = next_accum
+	return scaled_dx
+end
+
+function player:consume_water_jump_dx(dx)
+	if self.water_state == constants.water.none then
+		self.water_jump_dx_accum = 0
+		return dx
+	end
+	local scaled_dx, next_accum = consume_axis_accum(self.water_jump_dx_accum, dx, 4)
+	self.water_jump_dx_accum = next_accum
 	return scaled_dx
 end
 
@@ -1677,6 +1686,7 @@ function player:start_jump(inertia)
 	self.jump_substate = 0
 	self:reset_fall_substate_sequence()
 	self:reset_vertical_motion_for_jump()
+	self.water_jump_dx_accum = 0
 	self.jump_inertia = inertia
 	self.jumping_from_elevator = self.on_vertical_elevator
 	self.events:emit('jump')
@@ -2108,6 +2118,9 @@ function player:update_jump_motion()
 	end
 	local hit_ceiling = self.previous_y_collision
 	local dx = self.jump_inertia * constants.physics.jump_dx
+	if water_jump then
+		dx = self:consume_water_jump_dx(dx)
+	end
 	self:apply_air_move(dx, dy, true)
 
 	if hit_ceiling then
@@ -3142,6 +3155,7 @@ local function register_player_definition()
 			vertical_motion_substate = 0,
 			vertical_motion_tick = 0,
 			vertical_motion_dy_accum = 0,
+			water_jump_dx_accum = 0,
 			water_controlled_fall_dx_accum = 0,
 			hit_stairs_lock = false,
 			stairs_landing_sound_pending = false,

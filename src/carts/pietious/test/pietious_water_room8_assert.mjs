@@ -79,6 +79,8 @@ function runAssert(engine, logger) {
 		local surface_probe = nil
 		local body_probe = nil
 		local jump_probe = nil
+		local jump_dx_probe = nil
+		local floor_probe = nil
 		local fall_probe = nil
 
 		for tx = 1, room.tile_columns do
@@ -117,6 +119,34 @@ function runAssert(engine, logger) {
 					end
 				end
 			end
+			if jump_dx_probe == nil then
+				for ty = room.tile_rows, 1, -1 do
+					local player_y = room.tile_origin_y + ((ty - 1) * room.tile_size) - player.height
+					if room:water_kind_at_world(player_x + constants.room.tile_half, player_y + player.height) == constants.water.body
+						and not room:has_collision_flags_in_rect(player_x, player_y, player.width + 16, player.height, constants.collision_flags.solid_mask, false)
+						and not room:has_collision_flags_in_rect(player_x, player_y - 48, player.width + 16, 48, constants.collision_flags.solid_mask, false) then
+						jump_dx_probe = {
+							x = player_x,
+							y = player_y,
+						}
+						break
+					end
+				end
+			end
+			if floor_probe == nil then
+				for ty = 13, room.tile_rows do
+					local player_y = room.tile_origin_y + ((ty - 1) * room.tile_size) - player.height
+					if room:player_water_kind_at_world(player_x + constants.room.tile_half, player_y + player.height) == constants.water.body
+						and not room:has_collision_flags_in_rect(player_x, player_y, player.width + 16, player.height, constants.collision_flags.solid_mask, false)
+						and player:is_support_below_at(player_x, player_y, true) then
+						floor_probe = {
+							x = player_x,
+							y = player_y,
+						}
+						break
+					end
+				end
+			end
 			if fall_probe == nil then
 				for ty = 13, room.tile_rows do
 					local player_y = room.tile_origin_y + ((ty - 1) * room.tile_size) - player.height
@@ -138,6 +168,8 @@ function runAssert(engine, logger) {
 		assert(surface_probe ~= nil, 'no water surface probe found in room 8')
 		assert(body_probe ~= nil, 'no water body probe found in room 8')
 		assert(jump_probe ~= nil, 'no submerged jump probe found in room 8')
+		assert(jump_dx_probe ~= nil, 'no submerged jump dx probe found in room 8')
+		assert(floor_probe ~= nil, 'no submerged floor probe found in room 8')
 		assert(fall_probe ~= nil, 'no submerged controlled fall probe found in room 8')
 
 		reset_player(dry_probe.x, dry_probe.y)
@@ -167,6 +199,25 @@ function runAssert(engine, logger) {
 		local water_walk_dx_3 = player:get_walk_dx()
 		local water_walk_dx_4 = player:get_walk_dx()
 		local water_walk_dx_total = water_walk_dx_1 + water_walk_dx_2 + water_walk_dx_3 + water_walk_dx_4
+
+		reset_player(floor_probe.x, floor_probe.y)
+		player.right_held = true
+		player.left_held = false
+		local floor_water_state = player.water_state
+		local floor_walk_dx_1
+		local floor_walk_dx_2
+		local floor_walk_dx_3
+		local floor_walk_dx_4
+		for frame = 1, 4 do
+			player:update_collision_state()
+			player:update_water_state()
+			player:update_walking_right()
+			if frame == 1 then floor_walk_dx_1 = player.last_dx end
+			if frame == 2 then floor_walk_dx_2 = player.last_dx end
+			if frame == 3 then floor_walk_dx_3 = player.last_dx end
+			if frame == 4 then floor_walk_dx_4 = player.last_dx end
+		end
+		local floor_walk_dx_total = floor_walk_dx_1 + floor_walk_dx_2 + floor_walk_dx_3 + floor_walk_dx_4
 
 		reset_player(jump_probe.x, jump_probe.y)
 		player.up_held = true
@@ -205,6 +256,26 @@ function runAssert(engine, logger) {
 		water_jump_substate = player.jump_substate
 		water_vertical_motion_substate = player.vertical_motion_substate
 
+		reset_player(jump_dx_probe.x, jump_dx_probe.y)
+		player.up_held = true
+		player.right_held = true
+		player.left_held = false
+		player:start_jump(1)
+		local water_jump_dx_1
+		local water_jump_dx_2
+		local water_jump_dx_3
+		local water_jump_dx_4
+		for frame = 1, 4 do
+			player:update_collision_state()
+			player:update_water_state()
+			player:update_jump_motion()
+			if frame == 1 then water_jump_dx_1 = player.last_dx end
+			if frame == 2 then water_jump_dx_2 = player.last_dx end
+			if frame == 3 then water_jump_dx_3 = player.last_dx end
+			if frame == 4 then water_jump_dx_4 = player.last_dx end
+		end
+		local water_jump_dx_total = water_jump_dx_1 + water_jump_dx_2 + water_jump_dx_3 + water_jump_dx_4
+
 		reset_player(fall_probe.x, fall_probe.y)
 		player.right_held = true
 		player.left_held = false
@@ -239,7 +310,17 @@ function runAssert(engine, logger) {
 			first_transition_water_state = transition_trace[1].water_state,
 			second_transition_previous_state = transition_trace[2].previous_state,
 			second_transition_water_state = transition_trace[2].water_state,
+			water_walk_dx_1 = water_walk_dx_1,
+			water_walk_dx_2 = water_walk_dx_2,
+			water_walk_dx_3 = water_walk_dx_3,
+			water_walk_dx_4 = water_walk_dx_4,
 			water_walk_dx_total = water_walk_dx_total,
+			floor_water_state = floor_water_state,
+			floor_walk_dx_1 = floor_walk_dx_1,
+			floor_walk_dx_2 = floor_walk_dx_2,
+			floor_walk_dx_3 = floor_walk_dx_3,
+			floor_walk_dx_4 = floor_walk_dx_4,
+			floor_walk_dx_total = floor_walk_dx_total,
 			water_jump_dy_1 = water_jump_dy_1,
 			water_jump_dy_2 = water_jump_dy_2,
 			water_jump_dy_3 = water_jump_dy_3,
@@ -254,6 +335,11 @@ function runAssert(engine, logger) {
 			water_jump_dy_12 = water_jump_dy_12,
 			water_jump_substate = water_jump_substate,
 			water_vertical_motion_substate = water_vertical_motion_substate,
+			water_jump_dx_1 = water_jump_dx_1,
+			water_jump_dx_2 = water_jump_dx_2,
+			water_jump_dx_3 = water_jump_dx_3,
+			water_jump_dx_4 = water_jump_dx_4,
+			water_jump_dx_total = water_jump_dx_total,
 			water_controlled_fall_dx_1 = water_controlled_fall_dx_1,
 			water_controlled_fall_dx_2 = water_controlled_fall_dx_2,
 			water_controlled_fall_dx_3 = water_controlled_fall_dx_3,
@@ -263,7 +349,7 @@ function runAssert(engine, logger) {
 	`);
 
 	logger(
-		`[assert] room8 water states dry=${state.dry_state} surface=${state.surface_state} body=${state.body_state} transitions=${state.first_transition_previous_state}->${state.first_transition_water_state},${state.second_transition_previous_state}->${state.second_transition_water_state} walk4=${state.water_walk_dx_total} jump12=${state.water_jump_dy_1},${state.water_jump_dy_2},${state.water_jump_dy_3},${state.water_jump_dy_4},${state.water_jump_dy_5},${state.water_jump_dy_6},${state.water_jump_dy_7},${state.water_jump_dy_8},${state.water_jump_dy_9},${state.water_jump_dy_10},${state.water_jump_dy_11},${state.water_jump_dy_12} cfall4=${state.water_controlled_fall_dx_1},${state.water_controlled_fall_dx_2},${state.water_controlled_fall_dx_3},${state.water_controlled_fall_dx_4}`,
+		`[assert] room8 water states dry=${state.dry_state} surface=${state.surface_state} body=${state.body_state} transitions=${state.first_transition_previous_state}->${state.first_transition_water_state},${state.second_transition_previous_state}->${state.second_transition_water_state} walk4=${state.water_walk_dx_1},${state.water_walk_dx_2},${state.water_walk_dx_3},${state.water_walk_dx_4} floorwalk4=${state.floor_walk_dx_1},${state.floor_walk_dx_2},${state.floor_walk_dx_3},${state.floor_walk_dx_4} jump12=${state.water_jump_dy_1},${state.water_jump_dy_2},${state.water_jump_dy_3},${state.water_jump_dy_4},${state.water_jump_dy_5},${state.water_jump_dy_6},${state.water_jump_dy_7},${state.water_jump_dy_8},${state.water_jump_dy_9},${state.water_jump_dy_10},${state.water_jump_dy_11},${state.water_jump_dy_12} jumpx4=${state.water_jump_dx_1},${state.water_jump_dx_2},${state.water_jump_dx_3},${state.water_jump_dx_4} cfall4=${state.water_controlled_fall_dx_1},${state.water_controlled_fall_dx_2},${state.water_controlled_fall_dx_3},${state.water_controlled_fall_dx_4}`,
 	);
 	assert(state.dry_state === 0, `expected dry_state=0, got ${state.dry_state}`);
 	assert(state.surface_state === 1, `expected surface_state=1, got ${state.surface_state}`);
@@ -277,7 +363,17 @@ function runAssert(engine, logger) {
 	assert(state.first_transition_water_state === 1, `expected first water_transition water_state=1, got ${state.first_transition_water_state}`);
 	assert(state.second_transition_previous_state === 1, `expected second water_transition previous_state=1, got ${state.second_transition_previous_state}`);
 	assert(state.second_transition_water_state === 2, `expected second water_transition water_state=2, got ${state.second_transition_water_state}`);
+	assert(state.water_walk_dx_1 === 0, `expected underwater walk dx frame1=0, got ${state.water_walk_dx_1}`);
+	assert(state.water_walk_dx_2 === 1, `expected underwater walk dx frame2=1, got ${state.water_walk_dx_2}`);
+	assert(state.water_walk_dx_3 === 0, `expected underwater walk dx frame3=0, got ${state.water_walk_dx_3}`);
+	assert(state.water_walk_dx_4 === 1, `expected underwater walk dx frame4=1, got ${state.water_walk_dx_4}`);
 	assert(state.water_walk_dx_total === 2, `expected underwater walk total 2 over 4 frames, got ${state.water_walk_dx_total}`);
+	assert(state.floor_water_state === 2, `expected floor water_state=2, got ${state.floor_water_state}`);
+	assert(state.floor_walk_dx_1 === 0, `expected floor walk dx frame1=0, got ${state.floor_walk_dx_1}`);
+	assert(state.floor_walk_dx_2 === 1, `expected floor walk dx frame2=1, got ${state.floor_walk_dx_2}`);
+	assert(state.floor_walk_dx_3 === 0, `expected floor walk dx frame3=0, got ${state.floor_walk_dx_3}`);
+	assert(state.floor_walk_dx_4 === 1, `expected floor walk dx frame4=1, got ${state.floor_walk_dx_4}`);
+	assert(state.floor_walk_dx_total === 2, `expected floor walk total 2 over 4 frames, got ${state.floor_walk_dx_total}`);
 	assert(state.water_jump_dy_1 === 0, `expected underwater jump dy frame1=0, got ${state.water_jump_dy_1}`);
 	assert(state.water_jump_dy_2 === 0, `expected underwater jump dy frame2=0, got ${state.water_jump_dy_2}`);
 	assert(state.water_jump_dy_3 === 0, `expected underwater jump dy frame3=0, got ${state.water_jump_dy_3}`);
@@ -292,6 +388,11 @@ function runAssert(engine, logger) {
 	assert(state.water_jump_dy_12 === -1, `expected underwater jump dy frame12=-1, got ${state.water_jump_dy_12}`);
 	assert(state.water_jump_substate === 3, `expected underwater jump_substate=3 after 12 frames, got ${state.water_jump_substate}`);
 	assert(state.water_vertical_motion_substate === 3, `expected underwater vertical_motion_substate=3 after 12 frames, got ${state.water_vertical_motion_substate}`);
+	assert(state.water_jump_dx_1 === 0, `expected underwater jump dx frame1=0, got ${state.water_jump_dx_1}`);
+	assert(state.water_jump_dx_2 === 1, `expected underwater jump dx frame2=1, got ${state.water_jump_dx_2}`);
+	assert(state.water_jump_dx_3 === 0, `expected underwater jump dx frame3=0, got ${state.water_jump_dx_3}`);
+	assert(state.water_jump_dx_4 === 1, `expected underwater jump dx frame4=1, got ${state.water_jump_dx_4}`);
+	assert(state.water_jump_dx_total === 2, `expected underwater jump dx total 2 over 4 frames, got ${state.water_jump_dx_total}`);
 	assert(state.water_controlled_fall_dx_1 === 0, `expected underwater controlled fall dx frame1=0, got ${state.water_controlled_fall_dx_1}`);
 	assert(state.water_controlled_fall_dx_2 === 1, `expected underwater controlled fall dx frame2=1, got ${state.water_controlled_fall_dx_2}`);
 	assert(state.water_controlled_fall_dx_3 === 1, `expected underwater controlled fall dx frame3=1, got ${state.water_controlled_fall_dx_3}`);
