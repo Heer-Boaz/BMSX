@@ -400,6 +400,26 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 	return stairs
 end
 
+local function water_kind_at_tile(room_state, tx, ty)
+	local water = room_state.water
+	if water == nil then
+		return constants.water.none
+	end
+	if ty < water.surface_row or ty > room_state.tile_rows then
+		return constants.water.none
+	end
+	if tx < 1 or tx > room_state.tile_columns then
+		return constants.water.none
+	end
+	if room_state.collision_map[ty][tx] ~= 0 then
+		return constants.water.none
+	end
+	if ty == water.surface_row then
+		return constants.water.surface
+	end
+	return constants.water.body
+end
+
 local function refresh_room_geometry(room_state)
 	local map_rows = room_state.map_rows
 	local collision_map = build_collision_map(map_rows)
@@ -438,6 +458,7 @@ local function apply_room_template(room_state, template)
 	room_state.map_rows = map_rows
 	room_state.collision_map = collision_map
 	room_state.tiles = tiles
+	room_state.water = template.water
 	room_state.solids = build_solids(collision_map, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
 	room_state.stairs = build_stairs(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y, constants.player.height)
 	room_state.enemies = template.enemies
@@ -524,7 +545,15 @@ function room_object:base_collision_flags_at_tile(tx, ty)
 	if self:is_active_breakable_wall_at_tile(tx, ty) then
 		collision = collision | constants.collision_flags.wall
 	end
+	if water_kind_at_tile(self, tx, ty) ~= constants.water.none then
+		collision = collision | constants.collision_flags.water
+	end
 	return collision
+end
+
+function room_object:water_kind_at_world(world_x, world_y)
+	local tx, ty = self:world_to_tile(world_x, world_y)
+	return water_kind_at_tile(self, tx, ty)
 end
 
 function room_object:collision_flags_at_tile(tx, ty, include_elevator)
@@ -799,8 +828,43 @@ function room_object:render_tiles()
 	end
 end
 
+function room_object:render_water()
+	if self.water == nil then
+		return
+	end
+
+	local tile_size = self.tile_size
+	local origin_x = self.tile_origin_x
+	local origin_y = self.tile_origin_y
+	for y = self.water.surface_row, self.tile_rows do
+		local run_start = 0
+		local run_kind = 0
+		for x = 1, self.tile_columns + 1 do
+			local kind = 0
+			if x <= self.tile_columns then
+				kind = water_kind_at_tile(self, x, y)
+			end
+			if kind ~= run_kind then
+				if run_kind ~= 0 then
+					put_rectfillcolor(
+						origin_x + ((run_start - 1) * tile_size),
+						origin_y + ((y - 1) * tile_size),
+						origin_x + ((x - 1) * tile_size),
+						origin_y + (y * tile_size),
+						0,
+						run_kind == constants.water.surface and constants.water.surface_color or constants.water.body_color
+					)
+				end
+				run_start = x
+				run_kind = kind
+			end
+		end
+	end
+end
+
 function room_object:render_room()
 	self:render_tiles()
+	self:render_water()
 	if not self:has_tag('r.seal_fx') then
 		return
 	end

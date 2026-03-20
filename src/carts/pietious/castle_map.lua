@@ -124,6 +124,17 @@ local function build_links(room_number, exits)
 	return { up = up, right = right, down = down, left = left, }
 end
 
+local function build_water_spec(room_number, water_def)
+	if water_def == nil then
+		return nil
+	end
+	local surface_row = tonumber(water_def.surface_row)
+	assert(surface_row ~= nil, 'pietious castle_map room ' .. tostring(room_number) .. ' has invalid water.surface_row')
+	return {
+		surface_row = surface_row,
+	}
+end
+
 local function build_edge_gate(map_rows, border_x)
 	local first_open_row
 	local last_open_row
@@ -435,11 +446,12 @@ local function load_room_templates()
 			local room_links = build_links(room_number, room_def.exits)
 			local map_rows = room_def.map
 			local object_defs = room_def.objects or {}
-				templates[room_number] = {
+			templates[room_number] = {
 					room_number = room_number,
 				world_number = room_def.worldnumber or 0, -- Normalized to prevent bugs like indexing with string world numbers for events/progression
 				room_subtype = room_def.subtype,
 			custom = room_def.custom,
+			water = build_water_spec(room_number, room_def.water),
 			map_rows = map_rows,
 			spawn = build_spawn(map_rows),
 			room_links = room_links,

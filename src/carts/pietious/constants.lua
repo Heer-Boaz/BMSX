@@ -190,6 +190,47 @@ constants.collision_flags = {
 constants.collision_flags.elevator = constants.collision_flags.wall | constants.collision_flags.ladder_wall
 constants.collision_flags.solid_mask = constants.collision_flags.wall | constants.collision_flags.ladder_wall | constants.collision_flags.door_wall
 
+constants.water = {
+	none = 0,
+	surface = 1,
+	body = 2,
+	persona_aphrodite = 0,
+	persona_popolon = 1,
+	damage_threshold_surface_aphrodite = 254,
+	damage_threshold_body = 3,
+	aphrodite_fall_raw_by_substate = {
+		[0] = -6,
+		[1] = -6,
+		[2] = -5,
+		[3] = -4,
+		[4] = -4,
+		[5] = -3,
+		[6] = -2,
+		[7] = -1,
+		[8] = 0,
+		[9] = 0,
+		[10] = 0,
+		[11] = 0,
+		[12] = 1,
+		[13] = 2,
+		[14] = 3,
+		[15] = 4,
+		[16] = 4,
+		[17] = 5,
+		[18] = 5,
+		[19] = 6,
+		[20] = 6,
+		[21] = 6,
+		[22] = 6,
+		[23] = 6,
+	},
+	surface_speed_den = 4,
+	walk_dx_num = 1,
+	walk_dx_den = 2,
+	surface_color = { r = 0.18, g = 0.48, b = 0.82, a = 0.75 },
+	body_color = { r = 0.08, g = 0.24, b = 0.56, a = 0.72 },
+}
+
 constants.stairs = {
 	speed_px = 1,
 	down_start_push_px = 2,

@@ -226,6 +226,10 @@ function player:zero_motion()
 	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = 0
+	self.water_jump_dx_accum = 0
+	self.water_jump_dy_accum = 0
+	self.water_fall_dx_accum = 0
+	self.water_fall_dy_accum = 0
 end
 
 function player:reset_stairs_lock()
@@ -972,8 +976,40 @@ function player:get_walk_dx()
 		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * constants.physics.walk_dx_schoentjes_den)
 		return walk_dx
 	end
+	if self.water_state ~= constants.water.none then
+		self.walk_speed_accum = self.walk_speed_accum + constants.water.walk_dx_num
+		local walk_dx = math.modf(self.walk_speed_accum / constants.water.walk_dx_den)
+		self.walk_speed_accum = self.walk_speed_accum - (walk_dx * constants.water.walk_dx_den)
+		return walk_dx
+	end
 	self.walk_speed_accum = 0
 	return constants.physics.walk_dx
+end
+
+function player:update_water_state()
+	local water_kind = object('room'):water_kind_at_world(self.x + constants.room.tile_half, self.y + self.height)
+	self.water_state = water_kind
+	if water_kind == constants.water.none then
+		self.water_damage_counter = 0
+		self.water_jump_dx_accum = 0
+		self.water_jump_dy_accum = 0
+		self.water_fall_dx_accum = 0
+		self.water_fall_dy_accum = 0
+	end
+end
+
+function player:consume_water_scaled_axis(accum_key, speed_num)
+	if self.water_state == constants.water.none then
+		self[accum_key] = 0
+		return speed_num
+	end
+	if speed_num == 0 then
+		self[accum_key] = 0
+		return 0
+	end
+	local delta, next_accum = consume_axis_accum(self[accum_key], speed_num, constants.water.surface_speed_den)
+	self[accum_key] = next_accum
+	return delta
 end
 
 function player:try_switch_room(direction, keep_stairs_lock)
@@ -1611,6 +1647,8 @@ function player:start_jump(inertia)
 	self.jump_substate = 0
 	self:reset_fall_substate_sequence()
 	self.jump_inertia = inertia
+	self.water_jump_dx_accum = 0
+	self.water_jump_dy_accum = 0
 	self.jumping_from_elevator = self.on_vertical_elevator
 	self.events:emit('jump')
 	if inertia < 0 then
@@ -2025,6 +2063,8 @@ function player:update_jump_motion()
 	end
 	local hit_ceiling = self.previous_y_collision
 	local dx = self.jump_inertia * constants.physics.jump_dx
+	dx = self:consume_water_scaled_axis('water_jump_dx_accum', dx)
+	dy = self:consume_water_scaled_axis('water_jump_dy_accum', dy)
 	self:apply_air_move(dx, dy, true)
 
 	if hit_ceiling then
@@ -2049,6 +2089,7 @@ function player:update_stopped_jump_motion()
 		self.jump_inertia = 0
 	end
 	local dx = self.jump_inertia * constants.physics.jump_dx
+	dx = self:consume_water_scaled_axis('water_jump_dx_accum', dx)
 	local moved_x, collided_x = self:apply_side_probe_horizontal_move(dx)
 	self.last_dx = moved_x
 	self.last_dy = 0
@@ -2083,6 +2124,8 @@ function player:update_controlled_fall_motion()
 	end
 	local dx = self:get_controlled_fall_dx()
 	local dy = self:get_controlled_fall_dy()
+	dx = self:consume_water_scaled_axis('water_fall_dx_accum', dx)
+	dy = self:consume_water_scaled_axis('water_fall_dy_accum', dy)
 	self:apply_air_move(dx, dy, true)
 	self:advance_fall_substate_sequence()
 end
@@ -2103,6 +2146,7 @@ function player:update_uncontrolled_fall_motion()
 	end
 
 	local dy = self:get_uncontrolled_fall_dy()
+	dy = self:consume_water_scaled_axis('water_fall_dy_accum', dy)
 	self:apply_air_move(0, dy, true)
 	self:advance_fall_substate_sequence()
 end
@@ -2379,6 +2423,7 @@ end
 
 function player:update_common_frame()
 	self:update_collision_state()
+	self:update_water_state()
 
 	if self:has_tag(state_tags.group.transition_lock) then
 		self:reset_motion_for_transition_lock()
@@ -2447,6 +2492,7 @@ local function define_player_fsm()
 			-- That keeps movement stable even if a jp/jr edge is missed once.
 			self:sync_input_state_from_runtime()
 			self:update_collision_state()
+			self:update_water_state()
 			if not self:has_tag(state_tags.group.movement_jump) then
 				self.jumping_from_elevator = false
 			end
@@ -3004,6 +3050,13 @@ local function register_player_definition()
 			stairs_bottom_y = constants.player.start_y,
 			stairs_anim_frame = 0,
 			stairs_anim_distance = 0,
+			water_state = constants.water.none,
+			water_persona = constants.water.persona_aphrodite,
+			water_damage_counter = 0,
+			water_jump_dx_accum = 0,
+			water_jump_dy_accum = 0,
+			water_fall_dx_accum = 0,
+			water_fall_dy_accum = 0,
 			hit_stairs_lock = false,
 			stairs_landing_sound_pending = false,
 			slow_doorpass_substate = 0,
