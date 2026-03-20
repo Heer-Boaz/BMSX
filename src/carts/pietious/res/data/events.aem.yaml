@@ -133,6 +133,12 @@ events:
             - go:
                   audio_id: fall
 
+    water_transition:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: watersplash
+
     hit:
         channel: sfx
         rules:
