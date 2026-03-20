@@ -1,5 +1,4 @@
 local constants = require('constants')
-local combat_overlap = require('combat_overlap')
 local combat_damage = require('combat_damage')
 local rock = {}
 rock.__index = rock
@@ -20,8 +19,7 @@ local function drop_offset_y_for_item_type(item_type)
 end
 
 function rock:ctor()
-        self.collider:apply_collision_profile('enemy')
-        self.collider.enabled = true
+        self.collider.enabled = false
         self:gfx('stone')
 end
 
@@ -42,6 +40,20 @@ function rock:process_damage_result(result)
                 self.events:emit('break')
                 return
         end
+end
+
+function rock:process_weapon_hit(source_id, weapon_kind)
+	local result = combat_damage.resolve(self, {
+		source_id = source_id,
+		source_kind = weapon_kind,
+		target_id = self.id,
+		target_kind = 'rock',
+		damage_kind = 'weapon',
+		weapon_kind = weapon_kind,
+		amount = 1,
+		room_number = object('c').current_room_number,
+	})
+	self:process_damage_result(result)
 end
 
 function rock:begin_break()
@@ -67,16 +79,6 @@ end
 local function define_rock_fsm()
         define_fsm('rock', {
                 initial = 'idle',
-                on = {
-                        ['overlap.begin'] = function(self, _state, event)
-                                local contact_kind = combat_overlap.classify_player_contact(event)
-                                if contact_kind == nil then
-                                        return
-                                end
-                                local result = combat_damage.resolve(self, combat_damage.build_weapon_request(self, 'rock', event, contact_kind))
-                                self:process_damage_result(result)
-                        end,
-                },
                 states = {
                         idle = {
                                 on = {

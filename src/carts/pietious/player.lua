@@ -553,6 +553,21 @@ function player:cancel_sword()
 	self.events:emit('sword_cancel')
 end
 
+function player:try_hit_rock_with_sword()
+	local room = object('room')
+	local area = self.sword_collider:get_world_area()
+	local rock_def = room:find_active_rock_overlapping_rect(
+		area.left,
+		area.top,
+		area.right - area.left,
+		area.bottom - area.top
+	)
+	if rock_def == nil then
+		return
+	end
+	object(rock_def.id):process_weapon_hit(self.id, 'sword')
+end
+
 function player:advance_sword_sequence()
 	local sword_sequence = self:get_timeline('p.seq.s')
 	if sword_sequence:value() >= constants.sword.duration_frames then
@@ -1474,7 +1489,9 @@ function player:apply_side_probe_horizontal_move(dx)
 		collided_x = self.right_wall_collision
 	end
 
-	if not collided_x then
+	if collided_x then
+		self:snap_x_to_current_wall_grid()
+	else
 		self.x = self.x + dx
 	end
 
@@ -1498,17 +1515,18 @@ function player:apply_side_probe_horizontal_move(dx)
 end
 
 function player:snap_x_to_current_wall_grid()
-	local center_x = self.x + constants.room.tile_size
-	if self.right_wall_collision and (not self.left_wall_collision) then
-		self.x = (math.modf(center_x / constants.room.tile_size) * constants.room.tile_size) - constants.room.tile_size
+	local msx_x = self.x + constants.room.tile_size
+	if self.right_wall_collision then
+		msx_x = math.modf(msx_x / constants.room.tile_size) * constants.room.tile_size
+		self.x = msx_x - constants.room.tile_size
 		return
 	end
 	if self.left_wall_collision then
-		local snapped_center_x = math.modf(center_x / constants.room.tile_size) * constants.room.tile_size
 		if self.left_wall_collision_secondary and not self.left_wall_collision_primary then
-			snapped_center_x = math.modf((center_x + constants.room.tile_size) / constants.room.tile_size) * constants.room.tile_size
+			msx_x = msx_x + constants.room.tile_size
 		end
-		self.x = snapped_center_x - constants.room.tile_size
+		msx_x = math.modf(msx_x / constants.room.tile_size) * constants.room.tile_size
+		self.x = msx_x - constants.room.tile_size
 	end
 end
 
@@ -1857,7 +1875,6 @@ end
 
 function player:update_quiet()
 	self:zero_motion()
-
 	if not self:is_support_below_at(self.x, self.y, true) then
 		self:reset_fall_substate_sequence()
 		self.events:emit('falling')
@@ -2002,8 +2019,12 @@ function player:update_stopped_jump_motion()
 	self.jump_substate = self.jump_substate + 1
 	if self.jump_substate >= constants.physics.jump_to_fall_substate then
 		self:reset_fall_substate_sequence()
-		self.events:emit('stopped_to_fall_to_controlled_fall')
+		self.events:emit('landed_to_quiet')
+		return
 	end
+
+	self:advance_fall_substate_sequence()
+	self.events:emit('stopped_to_fall_to_controlled_fall')
 end
 
 function player:update_controlled_fall_motion()
@@ -2847,6 +2868,9 @@ local function define_player_fsm()
 		on = {
 					[player_abilities.command_ids.activate_sword] = function(self)
 						player_abilities.activate_sword(self)
+					end,
+					['sword.slice'] = function(self)
+						self:try_hit_rock_with_sword()
 					end,
 					['player.world_emerge'] = {
 						emitter = 'd',

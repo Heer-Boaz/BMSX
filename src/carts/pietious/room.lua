@@ -539,10 +539,10 @@ function room_object:collision_flags_at_tile(tx, ty, include_elevator)
 	return collision
 end
 
-function room_object:overlaps_active_rock(x, y, w, h)
+function room_object:find_active_rock_overlapping_rect(x, y, w, h)
 	local rocks = self.rocks
 	if #rocks == 0 then
-		return false
+		return nil
 	end
 
 	local destroyed_rock_ids = self.destroyed_rock_ids
@@ -550,9 +550,16 @@ function room_object:overlaps_active_rock(x, y, w, h)
 		local rock = rocks[i]
 		if not destroyed_rock_ids[rock.id] then
 			if rect_overlaps(x, y, w, h, rock.x, rock.y, constants.rock.width, constants.rock.height) then
-				return true
+				return rock
 			end
 		end
+	end
+	return nil
+end
+
+function room_object:overlaps_active_rock(x, y, w, h)
+	if self:find_active_rock_overlapping_rect(x, y, w, h) ~= nil then
+		return true
 	end
 	return false
 end

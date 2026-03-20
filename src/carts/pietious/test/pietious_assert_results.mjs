@@ -425,6 +425,123 @@ function setupRoomSwitchInputSyncScenario(engine, logger) {
 	};
 }
 
+function setupWallSnapScenario(engine, logger) {
+	const [state] = evalLua(engine, `
+		local constants = require('constants')
+		local castle_map = require('castle_map')
+		local castle = object('c')
+		local room = object('room')
+		local player = object('pietolon')
+		local room_numbers = {}
+		local candidate = nil
+
+		for key in pairs(castle_map.room_templates) do
+			room_numbers[#room_numbers + 1] = key
+		end
+		table.sort(room_numbers)
+
+			for i = 1, #room_numbers do
+				local room_number = room_numbers[i]
+				castle.current_room_number = room_number
+				room:load_room(room_number)
+				for test_y = constants.room.tile_origin_y, constants.room.height - player.height do
+					for test_x = constants.room.tile_size + 1, constants.room.width - player.width do
+						player.x = test_x
+						player.y = test_y
+						player:update_collision_state()
+						local snapped_x = test_x
+						local resolved = false
+						if player.right_wall_collision then
+							player:snap_x_to_current_wall_grid()
+							snapped_x = player.x
+							player:update_collision_state()
+							resolved = not player.right_wall_collision
+						end
+						if player:collides_at_support_profile(test_x, test_y, false)
+							and player.right_wall_collision
+							and snapped_x < test_x
+							and resolved
+							and not player:collides_at_jump_ceiling_profile(test_x, test_y, false)
+						then
+							candidate = {
+								room_number = room_number,
+								x = test_x,
+							y = test_y,
+						}
+						break
+					end
+				end
+				if candidate ~= nil then
+					break
+				end
+			end
+			if candidate ~= nil then
+				break
+			end
+		end
+
+		if candidate == nil then
+			error('no wall-overlap candidate found for wall snap assert')
+		end
+
+		local function reset_player(x, y)
+			player:clear_input_state()
+			player:zero_motion()
+			player:reset_fall_substate_sequence()
+			player:cancel_sword()
+			player.jump_substate = 0
+			player.jump_inertia = 0
+			player.on_vertical_elevator = false
+			player.jumping_from_elevator = false
+			player.stairs_landing_sound_pending = false
+			player.x = x
+			player.y = y
+			player.events:emit('landed_to_quiet')
+			player:update_collision_state()
+		end
+
+			reset_player(candidate.x, candidate.y)
+			local quiet_before_x = player.x
+			local quiet_before_right_wall = player.right_wall_collision
+			player:update_quiet()
+			player:update_collision_state()
+			local quiet_after_x = player.x
+			local quiet_after_right_wall = player.right_wall_collision
+			local quiet_expected_x = (math.modf((candidate.x + constants.room.tile_size) / constants.room.tile_size) * constants.room.tile_size) - constants.room.tile_size
+
+			reset_player(candidate.x, candidate.y)
+			player.right_held = true
+			player.sc:transition_to('player:/walking_right')
+			player:update_collision_state()
+			local walking_before_x = player.x
+			local walking_before_right_wall = player.right_wall_collision
+			player:update_walking_right()
+			player:update_collision_state()
+			local walking_after_x = player.x
+			local walking_after_right_wall = player.right_wall_collision
+			local walking_expected_x = (math.modf((candidate.x + constants.room.tile_size) / constants.room.tile_size) * constants.room.tile_size) - constants.room.tile_size
+
+			return {
+				room_number = candidate.room_number,
+				quiet_before_x = quiet_before_x,
+				quiet_before_right_wall = quiet_before_right_wall,
+				quiet_after_x = quiet_after_x,
+				quiet_after_right_wall = quiet_after_right_wall,
+				quiet_expected_x = quiet_expected_x,
+				walking_before_x = walking_before_x,
+				walking_before_right_wall = walking_before_right_wall,
+				walking_after_x = walking_after_x,
+				walking_after_right_wall = walking_after_right_wall,
+				walking_expected_x = walking_expected_x,
+			}
+		`);
+	logger(`[assert] wall snap setup room=${state.room_number} quiet=(${state.quiet_before_x}->${state.quiet_after_x}) walk=(${state.walking_before_x}->${state.walking_after_x})`);
+	return {
+		name: 'wall_snap',
+		state,
+	};
+}
+
 function updateCarryScenario(engine, scenario, logger) {
 	const state = getLuaState(engine);
 	const expectedPlayerY = state.elevator_y - 16;
@@ -583,6 +700,20 @@ function updateRoomSwitchInputSyncScenario(_engine, scenario, logger) {
 	assert(state.up_input_sources === 0, `room switch left stale up_input_sources=${state.up_input_sources}`);
 	assert(state.up_held === false, `room switch left stale up_held=true`);
 	logger('[assert] room switch input sync ok');
+	return setupWallSnapScenario(_engine, logger);
+}
+
+function updateWallSnapScenario(_engine, scenario, logger) {
+	const state = scenario.state;
+	assert(state.quiet_before_right_wall === true, `wall snap quiet setup missed right wall: room=${state.room_number}`);
+	assert(state.quiet_after_x < state.quiet_before_x, `wall snap quiet did not move left: before=${state.quiet_before_x} after=${state.quiet_after_x}`);
+	assert(state.quiet_after_x === state.quiet_expected_x, `wall snap quiet wrong grid snap: expected=${state.quiet_expected_x} actual=${state.quiet_after_x}`);
+	assert(state.quiet_after_right_wall === false, `wall snap quiet remained in wall: room=${state.room_number} x=${state.quiet_after_x}`);
+	assert(state.walking_before_right_wall === true, `wall snap walking setup missed right wall: room=${state.room_number}`);
+	assert(state.walking_after_x < state.walking_before_x, `wall snap walking did not move left: before=${state.walking_before_x} after=${state.walking_after_x}`);
+	assert(state.walking_after_x === state.walking_expected_x, `wall snap walking wrong grid snap: expected=${state.walking_expected_x} actual=${state.walking_after_x}`);
+	assert(state.walking_after_right_wall === false, `wall snap walking remained in wall: room=${state.room_number} x=${state.walking_after_x}`);
+	logger('[assert] wall snap ok');
 	return { name: 'done' };
 }
 
@@ -670,6 +801,10 @@ export default function schedule({ logger, schedule: scheduleInput }) {
 		}
 		if (scenario.name === 'room_switch_input_sync') {
 			scenario = updateRoomSwitchInputSyncScenario(engine, scenario, logger);
+			return;
+		}
+		if (scenario.name === 'wall_snap') {
+			scenario = updateWallSnapScenario(engine, scenario, logger);
 			return;
 		}
 		if (scenario.name === 'done') {

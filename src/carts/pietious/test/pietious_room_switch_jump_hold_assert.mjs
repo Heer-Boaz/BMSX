@@ -80,19 +80,51 @@ function runAssert(engine, logger) {
 		local switched = player:try_switch_room('up', false)
 		player:start_jump(0)
 		player:update_jump_motion()
+		local room_switch_jump_substate = player.jump_substate
+		local room_switch_up_input_sources = player.up_input_sources
+		local room_switch_up_held = player.up_held
+		local room_switch_jumping_from_elevator = player.jumping_from_elevator
+
+		local saved_support_checker = player.is_support_below_at
+		player.is_support_below_at = function()
+			return false
+		end
+		player:clear_input_state()
+		player.right_held = true
+		player:zero_motion()
+		player.jump_inertia = 1
+		player.jump_substate = constants.physics.jump_ceiling_cut_substate + 1
+		player.fall_substate = 0
+		player:get_timeline('p.seq.f'):force_seek(0)
+		player.support_collision = false
+		player.left_wall_collision_primary = false
+		player.left_wall_collision_secondary = false
+		player.left_wall_collision = false
+		player.right_wall_collision = false
+		player.sc:transition_to('player:/stopped_jumping')
+		player:update_stopped_jump_motion()
+		local ceiling_cut_controlled_fall = player.sc:matches_state_path('player:/controlled_fall')
+		local ceiling_cut_fall_substate = player.fall_substate
+		local ceiling_cut_last_dx = player.last_dx
+		local ceiling_cut_last_dy = player.last_dy
+		player.is_support_below_at = saved_support_checker
 
 		return {
 			source_room_number = source_room_number,
 			target_room_number = castle.current_room_number,
 			switched = switched,
-			up_input_sources = player.up_input_sources,
-			up_held = player.up_held,
-			jump_substate = player.jump_substate,
+			up_input_sources = room_switch_up_input_sources,
+			up_held = room_switch_up_held,
+			jump_substate = room_switch_jump_substate,
 			expected_jump_substate = constants.physics.jump_release_cut_substate + 1,
-			jumping_from_elevator = player.jumping_from_elevator,
+			jumping_from_elevator = room_switch_jumping_from_elevator,
+			ceiling_cut_controlled_fall = ceiling_cut_controlled_fall,
+			ceiling_cut_fall_substate = ceiling_cut_fall_substate,
+			ceiling_cut_last_dx = ceiling_cut_last_dx,
+			ceiling_cut_last_dy = ceiling_cut_last_dy,
 		}
 	`);
-	logger(`[assert] room-switch jump-hold state source=${state.source_room_number} target=${state.target_room_number} switched=${state.switched} upHeld=${state.up_held} upSources=${state.up_input_sources} jumpSubstate=${state.jump_substate} expected=${state.expected_jump_substate} fromElevator=${state.jumping_from_elevator}`);
+	logger(`[assert] room-switch jump-hold state source=${state.source_room_number} target=${state.target_room_number} switched=${state.switched} upHeld=${state.up_held} upSources=${state.up_input_sources} jumpSubstate=${state.jump_substate} expected=${state.expected_jump_substate} fromElevator=${state.jumping_from_elevator} ceilingCutCF=${state.ceiling_cut_controlled_fall} ceilingCutFallSub=${state.ceiling_cut_fall_substate} ceilingCutDx=${state.ceiling_cut_last_dx} ceilingCutDy=${state.ceiling_cut_last_dy}`);
 	assert(state.switched === true, `room switch failed from room=${state.source_room_number}`);
 	assert(state.source_room_number !== state.target_room_number, `room switch stayed in same room=${state.source_room_number}`);
 	assert(state.up_input_sources === 0, `stale up_input_sources remained=${state.up_input_sources}`);
@@ -101,6 +133,10 @@ function runAssert(engine, logger) {
 		state.jump_substate === state.expected_jump_substate,
 		`jump cut failed after room switch: jump_substate=${state.jump_substate} expected=${state.expected_jump_substate}`
 	);
+	assert(state.ceiling_cut_controlled_fall === true, 'ceiling cut did not enter controlled_fall on the next frame');
+	assert(state.ceiling_cut_fall_substate === 1, `ceiling cut advanced wrong fall_substate=${state.ceiling_cut_fall_substate}`);
+	assert(state.ceiling_cut_last_dx === 2, `ceiling cut used wrong horizontal carry dx=${state.ceiling_cut_last_dx}`);
+	assert(state.ceiling_cut_last_dy === 0, `ceiling cut used wrong vertical carry dy=${state.ceiling_cut_last_dy}`);
 	logger('[assert] room-switch jump-hold ok');
 }
 
