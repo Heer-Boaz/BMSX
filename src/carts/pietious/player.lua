@@ -1484,7 +1484,22 @@ function player:apply_side_probe_horizontal_move(dx)
 	local old_x = self.x
 	local collided_x = false
 	if dx < 0 then
-		collided_x = self.left_wall_collision
+		if self.left_wall_collision then
+			self.right_wall_collision = false
+			collided_x = true
+		else
+			local next_x = self.x + dx
+			local next_left_wall_collision_primary = self:collides_at_left_wall_primary_profile(next_x, self.y, false)
+			local next_left_wall_collision_secondary = self:collides_at_left_wall_secondary_profile(next_x, self.y, false)
+			if next_left_wall_collision_primary or next_left_wall_collision_secondary then
+				self.x = next_x
+				self.left_wall_collision_primary = next_left_wall_collision_primary
+				self.left_wall_collision_secondary = next_left_wall_collision_secondary
+				self.left_wall_collision = true
+				self.right_wall_collision = false
+				collided_x = true
+			end
+		end
 	elseif dx > 0 then
 		collided_x = self.right_wall_collision
 	end
@@ -1522,11 +1537,10 @@ function player:snap_x_to_current_wall_grid()
 		return
 	end
 	if self.left_wall_collision then
-		if self.left_wall_collision_secondary and not self.left_wall_collision_primary then
-			msx_x = msx_x + constants.room.tile_size
+		self.x = math.modf((self.x + constants.room.tile_size - 1) / constants.room.tile_size) * constants.room.tile_size
+		if self.left_wall_collision_primary and (self.x % constants.room.tile_size) == 0 and self:collides_at_left_wall_primary_profile(self.x, self.y, false) then
+			self.x = self.x + constants.room.tile_size
 		end
-		msx_x = math.modf(msx_x / constants.room.tile_size) * constants.room.tile_size
-		self.x = msx_x - constants.room.tile_size
 	end
 end
 
