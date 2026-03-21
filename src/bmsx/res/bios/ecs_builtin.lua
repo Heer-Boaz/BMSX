@@ -14,13 +14,13 @@ local function register_builtin_ecs()
 	end
 	local r = ecs_pipeline.defaultecspipelineregistry
 	r:register_many({
+		{ id = 'preposition', group = ecs.tickgroup.input, create = function(p) return ecs_systems.prepositionsystem.new(p) end },
 		{ id = 'behaviortrees', group = ecs.tickgroup.input, create = function(p) return ecs_systems.behaviortreesystem.new(p) end },
 		{ id = 'audiorouter', group = ecs.tickgroup.input, default_priority = 5, create = function(p) return ecs_systems.audioroutersystem.new(p) end },
 		{ id = 'inputactioneffects', group = ecs.tickgroup.input, default_priority = 10, create = function(p) return input_action_effect_system.inputactioneffectsystem.new(p) end },
 		{ id = 'actioneffectruntime', group = ecs.tickgroup.actioneffect, create = function(p) return ecs_systems.actioneffectruntimesystem.new(p) end },
 		{ id = 'objectfsm', group = ecs.tickgroup.moderesolution, create = function(p) return ecs_systems.statemachinesystem.new(p) end },
 		{ id = 'objecttick', group = ecs.tickgroup.moderesolution, default_priority = 10, create = function(p) return ecs_systems.objectticksystem.new(p) end },
-		{ id = 'preposition', group = ecs.tickgroup.physics, create = function(p) return ecs_systems.prepositionsystem.new(p) end },
 		{ id = 'physicssyncbefore', group = ecs.tickgroup.physics, create = function(p) return ecs_systems.physicssyncbeforestepsystem.new(p) end },
 		{ id = 'physicsstep', group = ecs.tickgroup.physics, create = function(p) return ecs_systems.physicsworldstepsystem.new(p) end },
 		{ id = 'physicspost', group = ecs.tickgroup.physics, create = function(p) return ecs_systems.physicspostsystem.new(p) end },
@@ -44,13 +44,13 @@ end
 
 local function default_pipeline_spec()
 	return {
+		{ ref = 'preposition' },
 		{ ref = 'behaviortrees' },
 		{ ref = 'audiorouter' },
 		{ ref = 'inputactioneffects' },
 		{ ref = 'actioneffectruntime' },
 		{ ref = 'objectfsm' },
 		{ ref = 'objecttick' },
-		{ ref = 'preposition' },
 		{ ref = 'physicssyncbefore' },
 		{ ref = 'physicsstep' },
 		{ ref = 'physicspost' },

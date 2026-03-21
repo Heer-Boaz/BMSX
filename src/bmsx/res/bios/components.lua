@@ -256,9 +256,7 @@ function spritecomponent:sync_collider()
 
 	if id == 'none' then
 		if self.collider_geometry_token ~= geometry_token then
-			collider:set_local_area(nil)
-			collider:set_local_poly(nil)
-			collider:set_local_circle(nil)
+			collider:set_local_shape(nil, nil, nil)
 			collider.sync_token = geometry_token
 			self.collider_geometry_token = geometry_token
 		end
@@ -277,9 +275,7 @@ function spritecomponent:sync_collider()
 		local imgmeta = image_asset.imgmeta
 		local box = select_bounding_box(flip_h, flip_v, imgmeta.boundingbox)
 		local polys = select_hit_polygons(flip_h, flip_v, imgmeta.hitpolygons)
-		collider:set_local_area(box)
-		collider:set_local_poly(polys)
-		collider:set_local_circle(nil)
+		collider:set_local_shape(box, polys, nil)
 		collider.sync_token = geometry_token
 		self.collider_geometry_token = geometry_token
 	end
@@ -298,14 +294,14 @@ end
 -- DESIGN PRINCIPLES — collider setup
 --
 -- 1. SHAPE PRIORITY: circle > polys > AABB.
---    If _local_circle is set, it is used. Otherwise _local_polys (polygon array).
+--    If local_circle is set, it is used. Otherwise local_polys (polygon array).
 --    Otherwise the collider uses the owning object's AABB (sx/sy). Always prefer
 --    polygon shapes when pixel-accurate hit detection matters.
 --
 -- 2. POLYGON SOURCE: use @cx / @cc image-filename suffixes, not manual polys.
 --    When a sprite is loaded via spriteobject:gfx('enemy@cx'), rombuilder bakes
 --    the convex hull at pack-time and stores it in imgmeta.hitpolygons.
---    spritecomponent.sync_collider() then copies those polys into _local_polys
+--    spritecomponent.sync_collider() then copies those polys into local_polys
 --    automatically — no cart code required.
 --    @cx  = convex hull  (one polygon, fast)
 --    @cc  = tighter multi-piece convex fit (multiple polygons, slower)
@@ -323,6 +319,47 @@ local collider2dcomponent = {}
 collider2dcomponent.__index = collider2dcomponent
 setmetatable(collider2dcomponent, { __index = component })
 
+local function invalidate_collider_world_cache(collider)
+	collider._world_polys_cache = nil
+	collider._world_polys_cache_source = nil
+	collider._world_polys_cache_x = nil
+	collider._world_polys_cache_y = nil
+	collider._world_circle_cache_source = nil
+	collider._world_circle_cache_x = nil
+	collider._world_circle_cache_y = nil
+end
+
+local function update_world_area_cache(collider)
+	local parent = collider.parent
+	local shape_offset_x = collider.shape_offset_x
+	local shape_offset_y = collider.shape_offset_y
+	local local_area = collider.local_area
+	local area = collider._world_area_cache
+	if local_area == nil then
+		local sx = parent.sx or 0
+		local sy = parent.sy or 0
+		area.left = parent.x + shape_offset_x
+		area.top = parent.y + shape_offset_y
+		area.right = area.left + sx
+		area.bottom = area.top + sy
+	else
+		area.left = parent.x + shape_offset_x + local_area.left
+		area.top = parent.y + shape_offset_y + local_area.top
+		area.right = parent.x + shape_offset_x + local_area.right
+		area.bottom = parent.y + shape_offset_y + local_area.bottom
+	end
+	local area_poly = collider._world_area_poly_cache
+	area_poly[1] = area.left
+	area_poly[2] = area.top
+	area_poly[3] = area.right
+	area_poly[4] = area.top
+	area_poly[5] = area.right
+	area_poly[6] = area.bottom
+	area_poly[7] = area.left
+	area_poly[8] = area.bottom
+	return area
+end
+
 -- collider2dcomponent.new(opts)
 --   opts fields:
 --     hittable    (bool, default true)  — false = always ignored by overlap2dsystem
@@ -331,11 +368,11 @@ setmetatable(collider2dcomponent, { __index = component })
 --     istrigger   (bool, default true)  — true = trigger, false = solid
 --     spaceevents (string, default 'current') — scope for event emission:
 --                   'current' | 'all' | 'ui' | 'both'
---     _local_area   — table {x,y,w,h} : explicit AABB override (rarely needed)
---     _local_polys  — array of polygon tables : set automatically by sync_collider()
---     _local_circle — {x,y,r} : circle shape (highest shape priority)
---     _shape_offset_x / _shape_offset_y — world-space offset added to all shapes
---   For polygon shapes, prefer the @cx/@cc image suffix over setting _local_polys manually.
+--     local_area   — table {left,top,right,bottom} : explicit AABB override
+--     local_polys  — array of polygon tables : set automatically by sync_collider()
+--     local_circle — {x,y,r} : circle shape (highest shape priority)
+--     shape_offset_x / shape_offset_y — world-space offset added to all shapes
+--   For polygon shapes, prefer the @cx/@cc image suffix over setting local_polys manually.
 function collider2dcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'collider2dcomponent'
@@ -351,101 +388,139 @@ function collider2dcomponent.new(opts)
 		self.istrigger = opts.istrigger
 	end
 	self.spaceevents = opts.spaceevents or 'current'
-	self._local_area = nil
-	self._local_polys = nil
-	self._local_circle = nil
-	self._shape_offset_x = opts.shape_offset_x or 0
-	self._shape_offset_y = opts.shape_offset_y or 0
+	self.local_area = opts.local_area
+	self.local_polys = opts.local_polys
+	self.local_circle = opts.local_circle
+	self.shape_offset_x = opts.shape_offset_x or 0
+	self.shape_offset_y = opts.shape_offset_y or 0
 	self.sync_token = opts.sync_token
-	self.local_area = nil
-	self.local_poly = nil
+	self._world_area_cache = {
+		left = 0,
+		top = 0,
+		right = 0,
+		bottom = 0,
+	}
+	self._world_area_poly_cache = { 0, 0, 0, 0, 0, 0, 0, 0 }
+	self._world_area_polys_cache = { self._world_area_poly_cache }
+	self._world_circle_cache = { x = 0, y = 0, r = 0 }
+	self._world_circle_cache_source = nil
+	self._world_circle_cache_x = nil
+	self._world_circle_cache_y = nil
+	self._world_polys_cache = nil
+	self._world_polys_cache_source = nil
+	self._world_polys_cache_x = nil
+	self._world_polys_cache_y = nil
 	return self
 end
 
-function collider2dcomponent:set_local_area(area)
-	self._local_area = area
+function collider2dcomponent:set_local_shape(area, polys, circle)
 	self.local_area = area
+	self.local_polys = polys
+	self.local_circle = circle
+	invalidate_collider_world_cache(self)
+end
+
+function collider2dcomponent:set_local_area(area)
+	self.local_area = area
+	invalidate_collider_world_cache(self)
 end
 
 function collider2dcomponent:set_local_poly(poly)
-	self._local_polys = poly
-	self.local_poly = poly
+	self.local_polys = poly
+	invalidate_collider_world_cache(self)
 end
 
 function collider2dcomponent:set_local_circle(circle)
-	self._local_circle = circle
+	self.local_circle = circle
+	invalidate_collider_world_cache(self)
 end
 
 function collider2dcomponent:set_shape_offset(offset_x, offset_y)
-	self._shape_offset_x = offset_x or 0
-	self._shape_offset_y = offset_y or 0
-end
-
-function collider2dcomponent:get_local_area()
-	return self._local_area
-end
-
-function collider2dcomponent:get_local_polys()
-	return self._local_polys
-end
-
-function collider2dcomponent:get_local_circle()
-	return self._local_circle
+	self.shape_offset_x = offset_x
+	self.shape_offset_y = offset_y
+	invalidate_collider_world_cache(self)
 end
 
 function collider2dcomponent:get_world_area()
-	local parent = self.parent
-	local shape_offset_x = self._shape_offset_x
-	local shape_offset_y = self._shape_offset_y
-	local local_area = self._local_area
-	if local_area == nil then
-		local sx = parent.sx or 0
-		local sy = parent.sy or 0
-		return {
-			left = parent.x + shape_offset_x,
-			top = parent.y + shape_offset_y,
-			right = parent.x + shape_offset_x + sx,
-			bottom = parent.y + shape_offset_y + sy,
-		}
+	return update_world_area_cache(self)
+end
+
+function collider2dcomponent:get_world_area_poly()
+	update_world_area_cache(self)
+	return self._world_area_poly_cache
+end
+
+function collider2dcomponent:get_world_area_polys()
+	update_world_area_cache(self)
+	return self._world_area_polys_cache
+end
+
+function collider2dcomponent:get_shape_kind()
+	if self.local_circle ~= nil then
+		return 'circle'
 	end
-	return {
-		left = parent.x + shape_offset_x + local_area.left,
-		top = parent.y + shape_offset_y + local_area.top,
-		right = parent.x + shape_offset_x + local_area.right,
-		bottom = parent.y + shape_offset_y + local_area.bottom,
-	}
+	local local_polys = self.local_polys
+	if local_polys ~= nil and #local_polys > 0 then
+		return 'poly'
+	end
+	return 'aabb'
 end
 
 function collider2dcomponent:get_world_polys()
-	local local_polys = self._local_polys
+	local local_polys = self.local_polys
 	if local_polys == nil or #local_polys == 0 then
 		return nil
 	end
-	local px = self.parent.x + self._shape_offset_x
-	local py = self.parent.y + self._shape_offset_y
-	local out = {}
+	local px = self.parent.x + self.shape_offset_x
+	local py = self.parent.y + self.shape_offset_y
+	if self._world_polys_cache ~= nil and self._world_polys_cache_source == local_polys and self._world_polys_cache_x == px and self._world_polys_cache_y == py then
+		return self._world_polys_cache
+	end
+	local out = self._world_polys_cache
+	if out == nil or self._world_polys_cache_source ~= local_polys then
+		out = {}
+		for i = 1, #local_polys do
+			local poly = local_polys[i]
+			local out_poly = {}
+			for j = 1, #poly do
+				out_poly[j] = 0
+			end
+			out[i] = out_poly
+		end
+		self._world_polys_cache = out
+		self._world_polys_cache_source = local_polys
+	end
 	for i = 1, #local_polys do
 		local poly = local_polys[i]
-		local out_poly = {}
+		local out_poly = out[i]
 		for j = 1, #poly, 2 do
-			out_poly[#out_poly + 1] = poly[j] + px
-			out_poly[#out_poly + 1] = poly[j + 1] + py
+			out_poly[j] = poly[j] + px
+			out_poly[j + 1] = poly[j + 1] + py
 		end
-		out[#out + 1] = out_poly
 	end
+	self._world_polys_cache_x = px
+	self._world_polys_cache_y = py
 	return out
 end
 
 function collider2dcomponent:get_world_circle()
-	local circle = self._local_circle
+	local circle = self.local_circle
 	if circle == nil then
 		return nil
 	end
-	return {
-		x = self.parent.x + self._shape_offset_x + circle.x,
-		y = self.parent.y + self._shape_offset_y + circle.y,
-		r = circle.r,
-	}
+	local px = self.parent.x + self.shape_offset_x
+	local py = self.parent.y + self.shape_offset_y
+	if self._world_circle_cache_source == circle and self._world_circle_cache_x == px and self._world_circle_cache_y == py then
+		return self._world_circle_cache
+	end
+	local out = self._world_circle_cache
+	out.x = px + circle.x
+	out.y = py + circle.y
+	out.r = circle.r
+	self._world_circle_cache_source = circle
+	self._world_circle_cache_x = px
+	self._world_circle_cache_y = py
+	return out
 end
 
 -- collider2dcomponent:apply_collision_profile(profile_name)
@@ -1041,12 +1116,32 @@ local positionupdateaxiscomponent = {}
 positionupdateaxiscomponent.__index = positionupdateaxiscomponent
 setmetatable(positionupdateaxiscomponent, { __index = component })
 
-function positionupdateaxiscomponent.new(opts)
+-- ECS component queries match exact type_name, not Lua inheritance.
+-- Derived constructors must therefore stamp their own type_name up front.
+local function new_typed_component_instance(component_class, type_name, opts, unique)
 	opts = opts or {}
-	opts.type_name = 'positionupdateaxiscomponent'
-	local self = setmetatable(component.new(opts), positionupdateaxiscomponent)
+	return setmetatable(component.new({
+		parent = opts.parent,
+		type_name = type_name,
+		id_local = opts.id_local,
+		id = opts.id,
+		enabled = opts.enabled,
+		tags = opts.tags,
+		unique = unique == nil and opts.unique or unique,
+	}), component_class)
+end
+
+local function init_positionupdateaxis_fields(self)
 	self.old_pos = { x = 0, y = 0 }
 	return self
+end
+
+function positionupdateaxiscomponent.new(opts)
+	return init_positionupdateaxis_fields(new_typed_component_instance(
+		positionupdateaxiscomponent,
+		'positionupdateaxiscomponent',
+		opts
+	))
 end
 
 function positionupdateaxiscomponent:preprocess_update()
@@ -1068,11 +1163,8 @@ setmetatable(screenboundarycomponent, { __index = positionupdateaxiscomponent })
 --   Any field omitted falls back to the viewport edge for that side.
 --   Boundary values are resolved once at construction and stored as boundary_left/top/right/bottom,
 --   so the boundarysystem hot loop has no per-frame table lookups or conditionals.
-function screenboundarycomponent.new(opts)
+local function init_screenboundary_fields(self, opts)
 	opts = opts or {}
-	opts.type_name = 'screenboundarycomponent'
-	opts.unique = true
-	local self = setmetatable(positionupdateaxiscomponent.new(opts), screenboundarycomponent)
 	self.stick_to_edge = true
 	if opts.stick_to_edge ~= nil then
 		self.stick_to_edge = opts.stick_to_edge
@@ -1085,16 +1177,23 @@ function screenboundarycomponent.new(opts)
 	return self
 end
 
+function screenboundarycomponent.new(opts)
+	local self = new_typed_component_instance(screenboundarycomponent, 'screenboundarycomponent', opts, true)
+	init_positionupdateaxis_fields(self)
+	return init_screenboundary_fields(self, opts)
+end
+
 local tilecollisioncomponent = {}
 tilecollisioncomponent.__index = tilecollisioncomponent
 setmetatable(tilecollisioncomponent, { __index = positionupdateaxiscomponent })
 
 function tilecollisioncomponent.new(opts)
-	opts = opts or {}
-	opts.type_name = 'tilecollisioncomponent'
-	opts.unique = true
-	local self = setmetatable(positionupdateaxiscomponent.new(opts), tilecollisioncomponent)
-	return self
+	return init_positionupdateaxis_fields(new_typed_component_instance(
+		tilecollisioncomponent,
+		'tilecollisioncomponent',
+		opts,
+		true
+	))
 end
 
 local prohibitleavingscreencomponent = {}
@@ -1102,11 +1201,9 @@ prohibitleavingscreencomponent.__index = prohibitleavingscreencomponent
 setmetatable(prohibitleavingscreencomponent, { __index = screenboundarycomponent })
 
 function prohibitleavingscreencomponent.new(opts)
-	opts = opts or {}
-	opts.type_name = 'prohibitleavingscreencomponent'
-	opts.unique = true
-	local self = setmetatable(screenboundarycomponent.new(opts), prohibitleavingscreencomponent)
-	return self
+	local self = new_typed_component_instance(prohibitleavingscreencomponent, 'prohibitleavingscreencomponent', opts, true)
+	init_positionupdateaxis_fields(self)
+	return init_screenboundary_fields(self, opts)
 end
 
 function prohibitleavingscreencomponent:bind()

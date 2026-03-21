@@ -22,7 +22,7 @@
 --
 -- 2. COLLISION IS SYNCED AUTOMATICALLY BY spritecomponent.sync_collider().
 --    When gfx(id) is called, imgmeta.hitpolygons (baked by rombuilder) is read
---    and copied into the linked collider2dcomponent._local_polys.
+--    and copied into the linked collider2dcomponent.local_polys.
 --    No extra setup is needed in cart code — just ensure a collider2dcomponent
 --    exists on the object before gfx() is called.
 --

@@ -50,6 +50,7 @@
 --    setting layer/mask directly.
 
 local ecs = require('ecs')
+local clear_map = require('clear_map')
 local collision2d = require('collision2d')
 local world_instance = require('world').instance
 
@@ -68,6 +69,7 @@ local customvisualcomponent = 'customvisualcomponent'
 local collider2dcomponent = 'collider2dcomponent'
 local positionupdateaxiscomponent = 'positionupdateaxiscomponent'
 local screenboundarycomponent = 'screenboundarycomponent'
+local prohibitleavingscreencomponent = 'prohibitleavingscreencomponent'
 local actioneffectcomponent = 'actioneffectcomponent'
 
 -- Shared opts table to avoid per-frame allocation.
@@ -98,13 +100,13 @@ end
 function behaviortreesystem:update()
 	for obj in world_instance:objects(active_scope) do
 		if not (obj.active) then
-			goto continue
+			goto continue_behavior_tree
 		end
 		local bts = obj.btreecontexts
 		for id in pairs(bts) do
 			obj:tick_tree(id)
 		end
-		::continue::
+		::continue_behavior_tree::
 	end
 end
 
@@ -135,10 +137,10 @@ end
 function statemachinesystem:update(dt_ms)
 	for obj in world_instance:objects(active_scope) do
 		if not (obj.active) then
-			goto continue
+			goto continue_state_machine
 		end
 		obj.sc:update(dt_ms)
-		::continue::
+		::continue_state_machine::
 	end
 end
 
@@ -185,17 +187,24 @@ local prepositionsystem = {}
 prepositionsystem.__index = prepositionsystem
 setmetatable(prepositionsystem, { __index = ecsystem })
 
-function prepositionsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), prepositionsystem)
-	return self
-end
-
-function prepositionsystem:update()
-	for _, component in world_instance:objects_with_components(positionupdateaxiscomponent, active_scope) do
+local function preprocess_positionupdate_components(type_name)
+	for _, component in world_instance:objects_with_components(type_name, active_scope) do
 		if component.enabled then
 			component:preprocess_update()
 		end
 	end
+end
+
+function prepositionsystem.new(priority)
+	local self = setmetatable(ecsystem.new(tickgroup.input, priority or -100), prepositionsystem)
+	return self
+end
+
+function prepositionsystem:update()
+	preprocess_positionupdate_components(positionupdateaxiscomponent)
+	preprocess_positionupdate_components(screenboundarycomponent)
+	preprocess_positionupdate_components(tilecollisioncomponent)
+	preprocess_positionupdate_components(prohibitleavingscreencomponent)
 end
 
 local boundarysystem = {}
@@ -207,48 +216,54 @@ function boundarysystem.new(priority)
 	return self
 end
 
+local function emit_boundary_events(obj, component)
+	if not component.enabled then
+		return
+	end
+	local left = component.boundary_left
+	local top = component.boundary_top
+	local right = component.boundary_right
+	local bottom = component.boundary_bottom
+	local oldx = component.old_pos.x
+	local oldy = component.old_pos.y
+	local newx = obj.x
+	local newy = obj.y
+	local sx = obj.sx or 0
+	local sy = obj.sy or 0
+	if newx < oldx then
+		if newx + sx < left then
+			obj.events:emit('screen.leave', { d = 'left', old_x_or_y = oldx })
+		elseif newx < left then
+			obj.events:emit('screen.leaving', { d = 'left', old_x_or_y = oldx })
+		end
+	elseif newx > oldx then
+		if newx >= right then
+			obj.events:emit('screen.leave', { d = 'right', old_x_or_y = oldx })
+		elseif newx + sx > right then
+			obj.events:emit('screen.leaving', { d = 'right', old_x_or_y = oldx })
+		end
+	end
+	if newy < oldy then
+		if newy + sy < top then
+			obj.events:emit('screen.leave', { d = 'up', old_x_or_y = oldy })
+		elseif newy < top then
+			obj.events:emit('screen.leaving', { d = 'up', old_x_or_y = oldy })
+		end
+	elseif newy > oldy then
+		if newy >= bottom then
+			obj.events:emit('screen.leave', { d = 'down', old_x_or_y = oldy })
+		elseif newy + sy > bottom then
+			obj.events:emit('screen.leaving', { d = 'down', old_x_or_y = oldy })
+		end
+	end
+end
+
 function boundarysystem:update()
 	for obj, component in world_instance:objects_with_components(screenboundarycomponent, active_scope) do
-		if not component.enabled then
-			goto continue
-		end
-		local left = component.boundary_left
-		local top = component.boundary_top
-		local right = component.boundary_right
-		local bottom = component.boundary_bottom
-		local oldx = component.old_pos.x
-		local oldy = component.old_pos.y
-		local newx = obj.x
-		local newy = obj.y
-		local sx = obj.sx or 0
-		local sy = obj.sy or 0
-		if newx < oldx then
-			if newx + sx < left then
-				obj.events:emit('screen.leave', { d = 'left', old_x_or_y = oldx })
-			elseif newx < left then
-				obj.events:emit('screen.leaving', { d = 'left', old_x_or_y = oldx })
-			end
-		elseif newx > oldx then
-			if newx >= right then
-				obj.events:emit('screen.leave', { d = 'right', old_x_or_y = oldx })
-			elseif newx + sx > right then
-				obj.events:emit('screen.leaving', { d = 'right', old_x_or_y = oldx })
-			end
-		end
-		if newy < oldy then
-			if newy + sy < top then
-				obj.events:emit('screen.leave', { d = 'up', old_x_or_y = oldy })
-			elseif newy < top then
-				obj.events:emit('screen.leaving', { d = 'up', old_x_or_y = oldy })
-			end
-		elseif newy > oldy then
-			if newy >= bottom then
-				obj.events:emit('screen.leave', { d = 'down', old_x_or_y = oldy })
-			elseif newy + sy > bottom then
-				obj.events:emit('screen.leaving', { d = 'down', old_x_or_y = oldy })
-			end
-		end
-		::continue::
+		emit_boundary_events(obj, component)
+	end
+	for obj, component in world_instance:objects_with_components(prohibitleavingscreencomponent, active_scope) do
+		emit_boundary_events(obj, component)
 	end
 end
 
@@ -328,16 +343,35 @@ local overlap2dsystem = {}
 overlap2dsystem.__index = overlap2dsystem
 setmetatable(overlap2dsystem, { __index = ecsystem })
 
-local function add_pair(set, a, b)
+local function add_pair(set, row_pool, a, b)
 	if b < a then
 		a, b = b, a
 	end
 	local row = set[a]
 	if row == nil then
-		row = {}
+		row = row_pool[#row_pool]
+		if row == nil then
+			row = {}
+		else
+			row_pool[#row_pool] = nil
+		end
 		set[a] = row
 	end
 	row[b] = true
+end
+
+local function clear_array(array)
+	for i = #array, 1, -1 do
+		array[i] = nil
+	end
+end
+
+local function clear_pair_set(set, row_pool)
+	for key, row in pairs(set) do
+		clear_map(row)
+		row_pool[#row_pool + 1] = row
+		set[key] = nil
+	end
 end
 
 local function build_overlap_event(event_name, owner, self_col, other_col, other_owner, contact, phase)
@@ -405,19 +439,36 @@ end
 function overlap2dsystem.new(priority)
 	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 42), overlap2dsystem)
 	self.prev_pairs = {}
+	self.next_pairs = {}
 	self.prev_collider_lookup = {}
+	self.next_collider_lookup = {}
+	self.event_colliders = {}
+	self.candidate_colliders = {}
+	self.candidate_seen = {}
+	self.pair_row_pool = {}
+	self.begins = {}
+	self.stays = {}
+	self.ends = {}
 	self.grid_cell_size = 64
+	self.broadphase = collision2d.world_index
 	return self
 end
 
 function overlap2dsystem:update()
-	local new_pairs = {}
-	local collider_lookup = {}
+	local prev_pairs = self.prev_pairs
+	local new_pairs = self.next_pairs
+	local prev_collider_lookup = self.prev_collider_lookup
+	local collider_lookup = self.next_collider_lookup
+	local pair_row_pool = self.pair_row_pool
+	clear_pair_set(new_pairs, pair_row_pool)
+	clear_map(collider_lookup)
 
-	local broadphase = collision2d.ensure_index(self.grid_cell_size)
+	local broadphase = self.broadphase
+	broadphase.cell_size = self.grid_cell_size
 	broadphase:clear()
 
-	local event_colliders = {}
+	local event_colliders = self.event_colliders
+	clear_array(event_colliders)
 	for obj, collider in world_instance:objects_with_components(collider2dcomponent, active_scope) do
 		if collider.enabled and not obj.dispose_flag then
 			broadphase:add_or_update(collider)
@@ -427,8 +478,8 @@ function overlap2dsystem:update()
 	end
 
 	if #event_colliders == 0 then
-		self.prev_pairs = {}
-		self.prev_collider_lookup = {}
+		clear_pair_set(prev_pairs, pair_row_pool)
+		clear_map(prev_collider_lookup)
 		return
 	end
 
@@ -442,7 +493,7 @@ function overlap2dsystem:update()
 			goto continue_event_collider
 		end
 		local owner_space = owner.space_id
-		local candidates = broadphase:query_aabb(collider:get_world_area())
+		local candidates = broadphase:query_aabb(collider:get_world_area(), self.candidate_colliders, self.candidate_seen)
 		for j = 1, #candidates do
 			local other = candidates[j]
 			if other ~= collider then
@@ -453,18 +504,17 @@ function overlap2dsystem:update()
 				if other_owner.dispose_flag or not other_owner.active then
 					goto continue_candidate
 				end
-				collider_lookup[other.id] = other
 				local a_hits_b = (collider.mask & other.layer) ~= 0
 				local b_hits_a = (other.mask & collider.layer) ~= 0
 				if a_hits_b and b_hits_a then
-					local other_space = other_owner.space_id
-					if self:space_match(collider.spaceevents, owner_space, other_space) then
-						if not (other.id < collider.id) then
-							if collision2d.collides(collider, other) then
-								add_pair(new_pairs, collider.id, other.id)
+						local other_space = other_owner.space_id
+						if self:space_match(collider.spaceevents, owner_space, other_space) then
+							if not (other.id < collider.id) then
+								if collision2d.collides(collider, other) then
+									add_pair(new_pairs, pair_row_pool, collider.id, other.id)
+								end
 							end
 						end
-					end
 				end
 			end
 			::continue_candidate::
@@ -472,11 +522,14 @@ function overlap2dsystem:update()
 		::continue_event_collider::
 	end
 
-	local begins = {}
-	local stays = {}
-	local ends = {}
+	local begins = self.begins
+	local stays = self.stays
+	local ends = self.ends
+	clear_array(begins)
+	clear_array(stays)
+	clear_array(ends)
 	for a_id, row in pairs(new_pairs) do
-		local prev_row = self.prev_pairs[a_id]
+		local prev_row = prev_pairs[a_id]
 		for b_id in pairs(row) do
 			if prev_row ~= nil and prev_row[b_id] then
 				stays[#stays + 1] = a_id
@@ -487,7 +540,7 @@ function overlap2dsystem:update()
 			end
 		end
 	end
-	for a_id, row in pairs(self.prev_pairs) do
+	for a_id, row in pairs(prev_pairs) do
 		local new_row = new_pairs[a_id]
 		for b_id in pairs(row) do
 			if not (new_row ~= nil and new_row[b_id]) then
@@ -496,8 +549,6 @@ function overlap2dsystem:update()
 			end
 		end
 	end
-
-	local prev_collider_lookup = self.prev_collider_lookup
 
 	local function resolve_pair(a_id, b_id)
 		local a = collider_lookup[a_id] or prev_collider_lookup[a_id]
@@ -521,7 +572,7 @@ function overlap2dsystem:update()
 			return
 		end
 		if not owner_a.active or not owner_b.active then
-			return
+			return contact
 		end
 		local resolved_contact = contact
 		if resolved_contact == nil and event_name ~= 'overlap.end' then
@@ -529,6 +580,7 @@ function overlap2dsystem:update()
 		end
 		owner_a.events:emit_event(build_overlap_event(event_name, owner_a, col_a, col_b, owner_b, resolved_contact, phase))
 		owner_b.events:emit_event(build_overlap_event(event_name, owner_b, col_b, col_a, owner_a, contact_with_flipped_normal(resolved_contact), phase))
+		return resolved_contact
 	end
 
 	for i = 1, #begins, 2 do
@@ -555,7 +607,9 @@ function overlap2dsystem:update()
 	end
 
 	self.prev_pairs = new_pairs
+	self.next_pairs = prev_pairs
 	self.prev_collider_lookup = collider_lookup
+	self.next_collider_lookup = prev_collider_lookup
 end
 
 local transformsystem = {}
@@ -621,7 +675,7 @@ end
 function textrendersystem:update()
 	for obj, tc in world_instance:objects_with_components(textcomponent, active_scope) do
 		if not tc.enabled then
-			goto continue
+			goto continue_text_render
 		end
 		local offset = tc.offset
 		local x
@@ -647,7 +701,7 @@ function textrendersystem:update()
 			baseline = tc.baseline,
 			layer = tc.layer,
 		})
-		::continue::
+		::continue_text_render::
 	end
 end
 
@@ -663,7 +717,7 @@ end
 function spriterendersystem:update()
 	for obj, sc in world_instance:objects_with_components(spritecomponent, active_scope) do
 		if not obj.visible or not sc.enabled then
-			goto continue
+			goto continue_sprite_render
 		end
 		local offset = sc.offset
 		local x
@@ -686,7 +740,7 @@ function spriterendersystem:update()
 			colorize = sc.colorize,
 			parallax_weight = sc.parallax_weight,
 		})
-		::continue::
+		::continue_sprite_render::
 	end
 end
 
@@ -755,14 +809,14 @@ end
 function meshrendersystem:update()
 	for obj, mc in world_instance:objects_with_components(meshcomponent, active_scope) do
 		if not obj.visible or not mc.enabled then
-			goto continue
+			goto continue_mesh_render
 		end
 		put_mesh(mc.mesh, mc.matrix, {
 			joint_matrices = mc.joint_matrices,
 			morph_weights = mc.morph_weights,
 			receive_shadow = mc.receive_shadow,
 		})
-		::continue::
+		::continue_mesh_render::
 	end
 end
 
@@ -778,10 +832,10 @@ end
 function rendersubmitsystem:update()
 	for obj, rc in world_instance:objects_with_components(customvisualcomponent, active_scope) do
 		if not obj.visible or not rc.enabled then
-			goto continue
+			goto continue_render_submit
 		end
 		rc:flush()
-		::continue::
+		::continue_render_submit::
 	end
 end
 
