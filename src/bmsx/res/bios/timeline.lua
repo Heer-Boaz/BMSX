@@ -106,19 +106,6 @@ local function clamp_marker_frame(at, length)
 	return math.min(math.max(math.floor(normalized * (length - 1)), 0), length - 1)
 end
 
-local function collect_marker_payload_keys(payload)
-	local keys = {}
-	for key in pairs(payload) do
-		if key ~= 'type' and key ~= 'emitter' and key ~= 'timestamp' then
-			keys[#keys + 1] = key
-		end
-	end
-	if #keys == 0 then
-		return nil
-	end
-	return keys
-end
-
 local function compile_timeline_markers(def, length)
 	local cache = { by_frame = {}, controlled_tags = {} }
 	local markers = expand_timeline_windows(def.markers or {}, def.windows or {})
@@ -140,11 +127,6 @@ local function compile_timeline_markers(def, length)
 		if length > 0 then
 			local frame = clamp_marker_frame(marker, length)
 			local bucket = cache.by_frame[frame]
-			local payload = marker.payload
-			local payload_keys
-			if type(payload) == 'table' and payload.type == nil then
-				payload_keys = collect_marker_payload_keys(payload)
-			end
 			if not bucket then
 				bucket = {}
 				cache.by_frame[frame] = bucket
@@ -152,8 +134,7 @@ local function compile_timeline_markers(def, length)
 			bucket[#bucket + 1] = {
 				frame = frame,
 				event = marker.event,
-				payload = payload,
-				payload_keys = payload_keys,
+				payload = marker.payload,
 				add_tags = marker.add_tags,
 				remove_tags = marker.remove_tags,
 			}

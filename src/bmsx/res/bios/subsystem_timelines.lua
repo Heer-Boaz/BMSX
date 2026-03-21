@@ -1,4 +1,5 @@
 local timeline_module = require("timeline")
+local timeline_dispatch = require("timeline_dispatch")
 
 local function apply_frame(target, frame)
 	for k, v in pairs(frame) do
@@ -75,46 +76,20 @@ end
 local subsystemtimelines = {}
 subsystemtimelines.__index = subsystemtimelines
 
-local function build_marker_event(entry, marker)
-	local event = entry.marker_event
-	local last_keys = entry.marker_event_keys
-	if last_keys ~= nil then
-		for i = 1, #last_keys do
-			event[last_keys[i]] = nil
+local function process_subsystem_frame_payload(_, entry, owner, payload)
+	local target = entry.target or owner
+	local tracks = entry.tracks
+	if tracks ~= nil then
+		apply_tracks(target, tracks, entry.params, payload)
+	end
+	local apply = entry.apply
+	if apply ~= nil then
+		if type(apply) == "function" then
+			apply(target, payload.frame_value, entry.params, payload)
+		else
+			apply_frame(target, payload.frame_value)
 		end
-		entry.marker_event_keys = nil
 	end
-	event.payload = nil
-	event.type = marker.event
-	local payload = marker.payload
-	if payload == nil then
-		return event
-	end
-	local keys = marker.payload_keys
-	if keys ~= nil then
-		for i = 1, #keys do
-			local key = keys[i]
-			event[key] = payload[key]
-		end
-		entry.marker_event_keys = keys
-		return event
-	end
-	event.payload = payload
-	return event
-end
-
-local function init_timeline_dispatch_cache(owner, entry)
-	if entry.frame_payload ~= nil then
-		return
-	end
-	local id = entry.instance.id
-	entry.frame_payload = { timeline_id = id }
-	entry.end_payload = { timeline_id = id }
-	entry.base_frame_event = { type = "timeline.frame", emitter = owner, timeline_id = id }
-	entry.scoped_frame_event = { type = "timeline.frame." .. id, emitter = owner, timeline_id = id }
-	entry.base_end_event = { type = "timeline.end", emitter = owner, timeline_id = id }
-	entry.scoped_end_event = { type = "timeline.end." .. id, emitter = owner, timeline_id = id }
-	entry.marker_event = { emitter = owner }
 end
 
 function subsystemtimelines.new(owner)
@@ -141,8 +116,7 @@ function subsystemtimelines:define(definition)
 		target = self.owner,
 		markers = timeline_module.compile_timeline_markers(definition.def, definition.length),
 	}
-	local entry = self.registry[id]
-	init_timeline_dispatch_cache(self.owner, entry)
+	timeline_dispatch.init_entry(self.registry[id], self.owner)
 	return definition
 end
 
@@ -174,7 +148,9 @@ function subsystemtimelines:advance(id)
 	end
 	local instance = entry.instance
 	if instance:advance() ~= nil then
-		self:process_instance_events(entry, 0)
+		if timeline_dispatch.process_instance_events(entry, self.owner, 0, process_subsystem_frame_payload) then
+			self.active[instance.id] = nil
+		end
 	end
 	return instance
 end
@@ -222,6 +198,7 @@ function subsystemtimelines:play(id, opts)
 		instance:build(params)
 		entry.markers = timeline_module.compile_timeline_markers(instance.def, instance.length)
 	end
+	timeline_dispatch.init_entry(entry, owner)
 	if rewind then
 		local controlled = entry.markers.controlled_tags
 		for i = 1, #controlled do
@@ -231,7 +208,9 @@ function subsystemtimelines:play(id, opts)
 	end
 	if snap and instance.length > 0 then
 		if instance:snap_to_start() ~= nil then
-			self:process_instance_events(entry, 0)
+			if timeline_dispatch.process_instance_events(entry, owner, 0, process_subsystem_frame_payload) then
+				self.active[id] = nil
+			end
 		end
 	end
 	self.active[id] = true
@@ -254,111 +233,9 @@ function subsystemtimelines:update(dt_ms)
 	for id in pairs(self.active) do
 		local entry = self.registry[id]
 		if entry.instance:update(dt_ms) ~= nil then
-			self:process_instance_events(entry, dt_ms)
-		end
-	end
-end
-
-function subsystemtimelines:process_instance_events(entry, dt_ms)
-	local instance = entry.instance
-	if instance.step_has_frame_event then
-		self:process_frame_event(entry, instance.step_frame_event, dt_ms)
-	end
-	if instance.step_has_end_event then
-		self:process_end_event(entry, instance.step_end_event)
-	end
-end
-
-function subsystemtimelines:process_frame_event(entry, evt, dt_ms)
-	local owner = self.owner
-	local target = entry.target or owner
-	local payload = entry.frame_payload
-	local dt_seconds = dt_ms / 1000
-	local time_ms = entry.instance.time_ms
-	payload.frame_index = evt.current
-	payload.frame_value = evt.value
-	payload.rewound = evt.rewound
-	payload.reason = evt.reason
-	payload.direction = evt.direction
-	payload.dt = dt_ms
-	payload.dt_seconds = dt_seconds
-	payload.time_ms = time_ms
-	payload.time_seconds = time_ms / 1000
-	self:apply_markers(entry, evt.current)
-	local tracks = entry.tracks
-	if tracks ~= nil then
-		apply_tracks(target, tracks, entry.params, payload)
-	end
-	if entry.apply then
-		if type(entry.apply) == "function" then
-			entry.apply(target, payload.frame_value, entry.params, payload)
-		else
-			apply_frame(target, payload.frame_value)
-		end
-	end
-	local base_event = entry.base_frame_event
-	base_event.frame_index = payload.frame_index
-	base_event.frame_value = payload.frame_value
-	base_event.rewound = payload.rewound
-	base_event.reason = payload.reason
-	base_event.direction = payload.direction
-	owner.events:emit_event(base_event)
-	owner.sc:dispatch(base_event)
-	local scoped_event = entry.scoped_frame_event
-	scoped_event.frame_index = payload.frame_index
-	scoped_event.frame_value = payload.frame_value
-	scoped_event.rewound = payload.rewound
-	scoped_event.reason = payload.reason
-	scoped_event.direction = payload.direction
-	owner.events:emit_event(scoped_event)
-	owner.sc:dispatch(scoped_event)
-end
-
-function subsystemtimelines:process_end_event(entry, evt)
-	local owner = self.owner
-	local payload = entry.end_payload
-	payload.mode = evt.mode
-	payload.wrapped = evt.wrapped
-	local base_event = entry.base_end_event
-	base_event.mode = payload.mode
-	base_event.wrapped = payload.wrapped
-	owner.events:emit_event(base_event)
-	owner.sc:dispatch(base_event)
-	local scoped_event = entry.scoped_end_event
-	scoped_event.mode = payload.mode
-	scoped_event.wrapped = payload.wrapped
-	owner.events:emit_event(scoped_event)
-	owner.sc:dispatch(scoped_event)
-	if evt.mode == "once" then
-		self.active[entry.instance.id] = nil
-	end
-end
-
-function subsystemtimelines:apply_markers(entry, frame_index)
-	local compiled = entry.markers
-	local bucket = compiled.by_frame[frame_index]
-	if not bucket then
-		return
-	end
-	local owner = self.owner
-	for i = 1, #bucket do
-		local marker = bucket[i]
-		local add_tags = marker.add_tags
-		if add_tags then
-			for j = 1, #add_tags do
-				owner:add_tag(add_tags[j])
+			if timeline_dispatch.process_instance_events(entry, self.owner, dt_ms, process_subsystem_frame_payload) then
+				self.active[id] = nil
 			end
-		end
-		local remove_tags = marker.remove_tags
-		if remove_tags then
-			for j = 1, #remove_tags do
-				owner:remove_tag(remove_tags[j])
-			end
-		end
-		if marker.event ~= nil then
-			local game_event = build_marker_event(entry, marker)
-			owner.events:emit_event(game_event)
-			owner.sc:dispatch(game_event)
 		end
 	end
 end
