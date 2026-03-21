@@ -176,21 +176,18 @@ local function iter_objects(state, _)
 end
 
 local function iter_objects_with_components(state, _)
-	local reg_table = state.reg
-	local type_name = state.type_name
+	local bucket = state.bucket
 	local by_id = state.by_id
 	local world = state.world
 	local scope = state.scope
-	local next_key, entity = next(reg_table, state.reg_key)
+	local next_key, entity = next(bucket, state.reg_key)
 	while next_key do
-		if entity.type_name == type_name then
-			local parent = entity.parent
-			if parent and by_id[parent.id] and world:_object_in_scope(parent, scope) then
-				state.reg_key = next_key
-				return parent, entity
-			end
+		local parent = entity.parent
+		if parent and by_id[parent.id] and world:_object_in_scope(parent, scope) then
+			state.reg_key = next_key
+			return parent, entity
 		end
-		next_key, entity = next(reg_table, next_key)
+		next_key, entity = next(bucket, next_key)
 	end
 	state.reg_key = nil
 	return nil
@@ -514,7 +511,7 @@ end
 function world_class:objects_with_components(type_name, opts)
 	local scope = opts and opts.scope or 'all'
 	return iter_objects_with_components,
-		{ world = self, reg = registry.instance._registry, by_id = self._by_id, type_name = type_name, scope = scope, reg_key = nil },
+		{ world = self, bucket = registry.instance:get_registered_entities_by_type(type_name), by_id = self._by_id, scope = scope, reg_key = nil },
 			nil
 end
 
@@ -522,18 +519,17 @@ end
 -- These traverse the registry directly without allocating a results table.
 
 local function iter_world_by_type(state, key)
-	local reg_table = state.reg
-	local type_name = state.type_name
+	local bucket = state.bucket
 	local by_id = state.by_id
 	local world = state.world
 	local scope = state.scope
-	local next_key, entity = next(reg_table, state.reg_key)
+	local next_key, entity = next(bucket, state.reg_key)
 	while next_key do
-		if entity.type_name == type_name and by_id[entity.id] and world:_object_in_scope(entity, scope) then
+		if by_id[entity.id] and world:_object_in_scope(entity, scope) then
 			state.reg_key = next_key
 			return entity
 		end
-		next_key, entity = next(reg_table, next_key)
+		next_key, entity = next(bucket, next_key)
 	end
 	state.reg_key = nil
 	return nil
@@ -565,7 +561,7 @@ end
 --   define_prefab definition_id.
 function world_class:objects_by_type(obj_type_name, opts)
 	local scope = opts and opts.scope or 'all'
-	return iter_world_by_type, { reg = registry.instance._registry, type_name = obj_type_name, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil
+	return iter_world_by_type, { bucket = registry.instance:get_registered_entities_by_type(obj_type_name), by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil
 end
 
 -- world:objects_by_tag(tag, opts?)
@@ -581,7 +577,7 @@ end
 --   Returns the first object matching type_name (or nil). Like UE5 GetActorOfClass.
 function world_class:find_by_type(obj_type_name, opts)
 	local scope = opts and opts.scope or 'all'
-	for entity in iter_world_by_type, { reg = registry.instance._registry, type_name = obj_type_name, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil do
+	for entity in iter_world_by_type, { bucket = registry.instance:get_registered_entities_by_type(obj_type_name), by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil do
 		return entity
 	end
 	return nil

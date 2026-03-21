@@ -25,9 +25,40 @@
 local registry = {}
 registry.__index = registry
 
+local empty_bucket = {}
+
+local function add_to_type_bucket(self, entity)
+	local type_name = entity.type_name
+	if type_name == nil then
+		return
+	end
+	local bucket = self._by_type[type_name]
+	if bucket == nil then
+		bucket = {}
+		self._by_type[type_name] = bucket
+	end
+	bucket[entity.id] = entity
+end
+
+local function remove_from_type_bucket(self, entity)
+	local type_name = entity.type_name
+	if type_name == nil then
+		return
+	end
+	local bucket = self._by_type[type_name]
+	if bucket == nil then
+		return
+	end
+	bucket[entity.id] = nil
+	if next(bucket) == nil then
+		self._by_type[type_name] = nil
+	end
+end
+
 function registry.new()
 	local self = setmetatable({}, registry)
 	self._registry = {}
+	self._by_type = {}
 	return self
 end
 
@@ -49,6 +80,7 @@ function registry:register(entity)
 		error('registry.register duplicate id "' .. entity.id .. '"')
 	end
 	self._registry[entity.id] = entity
+	add_to_type_bucket(self, entity)
 end
 
 -- registry:deregister(id_or_entity, remove_persistent?)
@@ -60,6 +92,9 @@ function registry:deregister(id_or_entity, remove_persistent)
 	local entity = self._registry[id]
 	if entity and entity.registrypersistent and not remove_persistent then
 		return false
+	end
+	if entity ~= nil then
+		remove_from_type_bucket(self, entity)
 	end
 	self._registry[id] = nil
 	return true
@@ -81,6 +116,7 @@ end
 function registry:clear()
 	for id, entity in pairs(self._registry) do
 		if not entity.registrypersistent then
+			remove_from_type_bucket(self, entity)
 			self._registry[id] = nil
 		end
 	end
@@ -90,16 +126,19 @@ function registry:get_registered_entities()
 	return self._registry
 end
 
+function registry:get_registered_entities_by_type(type_name)
+	return self._by_type[type_name] or empty_bucket
+end
+
 local function iter_registry(state, key)
-	local reg = state.registry
-	local type_name = state.type_name
+	local entries = state.entries
 	local persistent_only = state.persistent_only
-	local next_key, entity = next(reg._registry, key)
+	local next_key, entity = next(entries, key)
 	while next_key do
-		if (not persistent_only or entity.registrypersistent) and (not type_name or entity.type_name == type_name) then
+		if not persistent_only or entity.registrypersistent then
 			return next_key, entity
 		end
-		next_key, entity = next(reg._registry, next_key)
+		next_key, entity = next(entries, next_key)
 	end
 	return nil
 end
@@ -109,7 +148,8 @@ end
 --     type_name      — only yield entities whose .type_name matches
 --     persistent_only — when true, only yield persistent entities
 function registry:iterate(type_name, persistent_only)
-	return iter_registry, { registry = self, type_name = type_name, persistent_only = persistent_only }, nil
+	local entries = type_name and self:get_registered_entities_by_type(type_name) or self._registry
+	return iter_registry, { entries = entries, persistent_only = persistent_only }, nil
 end
 
 local function iter_by_tag(state, key)
