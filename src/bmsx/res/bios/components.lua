@@ -5,6 +5,7 @@ local eventemitter = require('eventemitter')
 local timeline_module = require('timeline')
 local romdir = require('romdir')
 local collision_profiles = require('collision_profiles')
+local scratchrecordbatch = require('scratchrecordbatch')
 local eventemitter = eventemitter.eventemitter
 local timeline = timeline_module.timeline
 
@@ -854,6 +855,11 @@ end
 local customvisualcomponent = {}
 customvisualcomponent.__index = customvisualcomponent
 setmetatable(customvisualcomponent, { __index = component })
+local customvisual_scratch_items = scratchrecordbatch.new(4):reserve(4)
+local customvisual_sprite_options = customvisual_scratch_items[1]
+local customvisual_mesh_options = customvisual_scratch_items[2]
+local customvisual_particle_options = customvisual_scratch_items[3]
+local customvisual_glyph_options = customvisual_scratch_items[4]
 
 function customvisualcomponent.new(opts)
 	opts = opts or {}
@@ -888,14 +894,18 @@ end
 
 function customvisualcomponent:submit_sprite(desc)
 	local pos = desc.pos or desc.position
-	local flip = desc.flip or {}
-	put_sprite(desc.imgid, pos.x, pos.y, pos.z, {
-		scale = desc.scale,
-		flip_h = flip.flip_h,
-		flip_v = flip.flip_v,
-		colorize = desc.colorize,
-		parallax_weight = desc.parallax_weight,
-	})
+	local flip = desc.flip
+	customvisual_sprite_options.scale = desc.scale
+	if flip ~= nil then
+		customvisual_sprite_options.flip_h = flip.flip_h
+		customvisual_sprite_options.flip_v = flip.flip_v
+	else
+		customvisual_sprite_options.flip_h = nil
+		customvisual_sprite_options.flip_v = nil
+	end
+	customvisual_sprite_options.colorize = desc.colorize
+	customvisual_sprite_options.parallax_weight = desc.parallax_weight
+	put_sprite(desc.imgid, pos.x, pos.y, pos.z, customvisual_sprite_options)
 end
 
 function customvisualcomponent:submit_rect(desc)
@@ -921,34 +931,31 @@ function customvisualcomponent:submit_poly(desc)
 end
 
 function customvisualcomponent:submit_mesh(desc)
-	put_mesh(desc.mesh, desc.matrix, {
-		joint_matrices = desc.joint_matrices,
-		morph_weights = desc.morph_weights,
-		receive_shadow = desc.receive_shadow,
-	})
+	customvisual_mesh_options.joint_matrices = desc.joint_matrices
+	customvisual_mesh_options.morph_weights = desc.morph_weights
+	customvisual_mesh_options.receive_shadow = desc.receive_shadow
+	put_mesh(desc.mesh, desc.matrix, customvisual_mesh_options)
 end
 
 function customvisualcomponent:submit_particle(desc)
-	put_particle(desc.position, desc.size, desc.color, {
-		texture = desc.texture,
-		ambient_mode = desc.ambient_mode,
-		ambient_factor = desc.ambient_factor,
-	})
+	customvisual_particle_options.texture = desc.texture
+	customvisual_particle_options.ambient_mode = desc.ambient_mode
+	customvisual_particle_options.ambient_factor = desc.ambient_factor
+	put_particle(desc.position, desc.size, desc.color, customvisual_particle_options)
 end
 
 function customvisualcomponent:submit_glyphs(desc)
-	put_glyphs(desc.glyphs, desc.x, desc.y, desc.z, {
-		font = desc.font,
-		color = desc.color,
-		background_color = desc.background_color,
-		wrap_chars = desc.wrap_chars,
-		center_block_width = desc.center_block_width,
-		glyph_start = desc.glyph_start,
-		glyph_end = desc.glyph_end,
-		align = desc.align,
-		baseline = desc.baseline,
-		layer = desc.layer,
-	})
+	customvisual_glyph_options.font = desc.font
+	customvisual_glyph_options.color = desc.color
+	customvisual_glyph_options.background_color = desc.background_color
+	customvisual_glyph_options.wrap_chars = desc.wrap_chars
+	customvisual_glyph_options.center_block_width = desc.center_block_width
+	customvisual_glyph_options.glyph_start = desc.glyph_start
+	customvisual_glyph_options.glyph_end = desc.glyph_end
+	customvisual_glyph_options.align = desc.align
+	customvisual_glyph_options.baseline = desc.baseline
+	customvisual_glyph_options.layer = desc.layer
+	put_glyphs(desc.glyphs, desc.x, desc.y, desc.z, customvisual_glyph_options)
 end
 
 -- inputintentcomponent: declarative input -> state bindings

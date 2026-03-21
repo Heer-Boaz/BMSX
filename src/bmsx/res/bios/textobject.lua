@@ -3,10 +3,16 @@
 
 local worldobject = require('worldobject')
 local components = require('components')
+local scratchrecordbatch = require('scratchrecordbatch')
 
 local textobject = {}
 textobject.__index = textobject
 setmetatable(textobject, { __index = worldobject })
+local textobject_draw_scratch_items = scratchrecordbatch.new(4):reserve(4)
+local normal_bg_color = textobject_draw_scratch_items[1]
+local highlight_bg_color = textobject_draw_scratch_items[2]
+local highlight_rect_options = textobject_draw_scratch_items[3]
+local glyph_draw_options = textobject_draw_scratch_items[4]
 
 local default_char_width = 6
 local default_line_height = 16
@@ -362,8 +368,14 @@ function textobject:draw()
 	local highlight = self.highlight_color
 	local line_height = self.line_height
 	local bg_alpha = text_color.a
-	local normal_bg_color = { r = 0, g = 0, b = 0, a = bg_alpha }
-	local highlight_bg_color = { r = highlight.r, g = highlight.g, b = highlight.b, a = highlight.a * bg_alpha }
+	normal_bg_color.r = 0
+	normal_bg_color.g = 0
+	normal_bg_color.b = 0
+	normal_bg_color.a = bg_alpha
+	highlight_bg_color.r = highlight.r
+	highlight_bg_color.g = highlight.g
+	highlight_bg_color.b = highlight.b
+	highlight_bg_color.a = highlight.a * bg_alpha
 	local highlighted_logical_line = self.highlighted_line_index
 	if highlighted_logical_line ~= nil and self.highlight_anim_y ~= nil then
 		local margin = self.char_width / 2
@@ -371,26 +383,24 @@ function textobject:draw()
 		local offset_x = self.highlight_jitter_enabled and self.highlight_vibe_offset_x or 0
 		local offset_y = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
 		local padded = margin * scale
+		highlight_rect_options.layer = self.layer
 		put_rectfillcolor(
 			dims.left - padded + offset_x,
 			self.highlight_anim_y - padded + offset_y,
 			dims.right + padded + offset_x,
 			self.highlight_anim_y + self.highlight_anim_h - padded + offset_y,
 			self.z,
-			{
-				r = highlight_bg_color.r,
-				g = highlight_bg_color.g,
-				b = highlight_bg_color.b,
-				a = highlight_bg_color.a,
-			},
-			{ layer = self.layer }
+			highlight_bg_color,
+			highlight_rect_options
 		)
 	end
+	glyph_draw_options.color = text_color
+	glyph_draw_options.background_color = normal_bg_color
+	glyph_draw_options.layer = self.layer
 	for i = 1, #self.text do
 		local line = self.text[i]
 		local y = dims.top + line_height * (i - 1)
-		local bg = normal_bg_color
-		put_glyphs(line, self.centered_block_x, y, self.z, { color = text_color, background_color = bg, layer = self.layer })
+		put_glyphs(line, self.centered_block_x, y, self.z, glyph_draw_options)
 	end
 end
 

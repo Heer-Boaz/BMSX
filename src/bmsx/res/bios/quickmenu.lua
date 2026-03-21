@@ -1,7 +1,10 @@
 -- quickmenu.lua
 -- system quick menu (select+start)
 
+local scratchrecordbatch = require('scratchrecordbatch')
+
 local menu = {}
+local quickmenu_ui_options = scratchrecordbatch.new(1):get(1)
 
 local colors = {
 	panel = 1,
@@ -239,21 +242,22 @@ function menu.draw()
 	if y < 0 then y = 0 end
 	local z = 10000
 
-	put_rectfillcolor(x, y + box_y, x + menu_w, y + box_y + box_h, z, colors.panel, { layer = 'ui' })
-	write(title, x + padding, y, z, colors.title, { layer = 'ui' })
+	quickmenu_ui_options.layer = 'ui'
+	put_rectfillcolor(x, y + box_y, x + menu_w, y + box_y + box_h, z, colors.panel, quickmenu_ui_options)
+	write(title, x + padding, y, z, colors.title, quickmenu_ui_options)
 
 	local row_y = y + box_y + padding
 	for i = 1, #entries do
 		local entry = entries[i]
 		if i == state.selected then
-			put_rectfillcolor(x, row_y - 2, x + menu_w, row_y + line_h, z, colors.highlight, { layer = 'ui' })
+			put_rectfillcolor(x, row_y - 2, x + menu_w, row_y + line_h, z, colors.highlight, quickmenu_ui_options)
 		end
 		local value = entry_value_label(entry)
 		local line = entry.label
 		if value ~= '-' and (value) then
 			line = line .. ': ' .. value
 		end
-		write(line, x + padding, row_y, z, colors.text, { layer = 'ui' })
+		write(line, x + padding, row_y, z, colors.text, quickmenu_ui_options)
 		row_y = row_y + line_h
 	end
 

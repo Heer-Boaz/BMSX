@@ -39,10 +39,12 @@
 local worldobject = require('worldobject')
 local components = require('components')
 local romdir = require('romdir')
+local scratchrecordbatch = require('scratchrecordbatch')
 
 local spriteobject = {}
 spriteobject.__index = spriteobject
 setmetatable(spriteobject, { __index = worldobject })
+local sprite_draw_options = scratchrecordbatch.new(1):get(1)
 
 spriteobject.base_sprite_id = 'base_sprite'
 spriteobject.primary_collider_id = 'primary'
@@ -100,13 +102,12 @@ function spriteobject:draw()
 		return
 	end
 	local offset = sc.offset
-	put_sprite(sc.imgid, self.x + offset.x, self.y + offset.y, self.z + offset.z, {
-		scale = sc.scale,
-		flip_h = sc.flip.flip_h,
-		flip_v = sc.flip.flip_v,
-		colorize = sc.colorize,
-		parallax_weight = sc.parallax_weight,
-	})
+	sprite_draw_options.scale = sc.scale
+	sprite_draw_options.flip_h = sc.flip.flip_h
+	sprite_draw_options.flip_v = sc.flip.flip_v
+	sprite_draw_options.colorize = sc.colorize
+	sprite_draw_options.parallax_weight = sc.parallax_weight
+	put_sprite(sc.imgid, self.x + offset.x, self.y + offset.y, self.z + offset.z, sprite_draw_options)
 end
 
 return spriteobject

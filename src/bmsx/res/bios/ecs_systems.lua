@@ -52,6 +52,7 @@
 local ecs = require('ecs')
 local clear_map = require('clear_map')
 local collision2d = require('collision2d')
+local scratchrecordbatch = require('scratchrecordbatch')
 local world_instance = require('world').instance
 
 local tickgroup = ecs.tickgroup
@@ -75,6 +76,11 @@ local actioneffectcomponent = 'actioneffectcomponent'
 
 -- Shared opts table to avoid per-frame allocation.
 local active_scope = { scope = 'active' }
+local render_scratch_items = scratchrecordbatch.new(4):reserve(4)
+local text_render_options = render_scratch_items[1]
+local sprite_render_options = render_scratch_items[2]
+local mesh_render_options = render_scratch_items[3]
+local point_light_position = render_scratch_items[4]
 
 local behaviortreesystem = {}
 behaviortreesystem.__index = behaviortreesystem
@@ -692,16 +698,15 @@ function textrendersystem:update()
 			y = obj.y + offset.y
 			z = obj.z + offset.z
 		end
-		put_glyphs(tc.text, x, y, z, {
-			font = tc.font,
-			color = tc.color,
-			background_color = tc.background_color,
-			wrap_chars = tc.wrap_chars,
-			center_block_width = tc.center_block_width,
-			align = tc.align,
-			baseline = tc.baseline,
-			layer = tc.layer,
-		})
+		text_render_options.font = tc.font
+		text_render_options.color = tc.color
+		text_render_options.background_color = tc.background_color
+		text_render_options.wrap_chars = tc.wrap_chars
+		text_render_options.center_block_width = tc.center_block_width
+		text_render_options.align = tc.align
+		text_render_options.baseline = tc.baseline
+		text_render_options.layer = tc.layer
+		put_glyphs(tc.text, x, y, z, text_render_options)
 		::continue_text_render::
 	end
 end
@@ -724,7 +729,7 @@ function spriterendersystem:update()
 		local x
 		local y
 		local z
-		local t = obj:get_component('transformcomponent')
+		local t = obj:get_component(transformcomponent)
 		if t then
 			x = t.position.x + offset.x
 			y = t.position.y + offset.y
@@ -734,13 +739,12 @@ function spriterendersystem:update()
 			y = obj.y + offset.y
 			z = obj.z + offset.z
 		end
-		put_sprite(sc.imgid, x, y, z, {
-			scale = sc.scale,
-			flip_h = sc.flip.flip_h,
-			flip_v = sc.flip.flip_v,
-			colorize = sc.colorize,
-			parallax_weight = sc.parallax_weight,
-		})
+		sprite_render_options.scale = sc.scale
+		sprite_render_options.flip_h = sc.flip.flip_h
+		sprite_render_options.flip_v = sc.flip.flip_v
+		sprite_render_options.colorize = sc.colorize
+		sprite_render_options.parallax_weight = sc.parallax_weight
+		put_sprite(sc.imgid, x, y, z, sprite_render_options)
 		::continue_sprite_render::
 	end
 end
@@ -793,7 +797,10 @@ function lightrendersystem:update()
 			goto continue_point
 		end
 		local x, y, z = resolve_world_position(obj, lc.offset)
-		put_point_light(lc.id, { x = x, y = y, z = z }, lc.color, lc.range, lc.intensity)
+		point_light_position.x = x
+		point_light_position.y = y
+		point_light_position.z = z
+		put_point_light(lc.id, point_light_position, lc.color, lc.range, lc.intensity)
 		::continue_point::
 	end
 end
@@ -812,11 +819,10 @@ function meshrendersystem:update()
 		if not obj.visible or not mc.enabled then
 			goto continue_mesh_render
 		end
-		put_mesh(mc.mesh, mc.matrix, {
-			joint_matrices = mc.joint_matrices,
-			morph_weights = mc.morph_weights,
-			receive_shadow = mc.receive_shadow,
-		})
+		mesh_render_options.joint_matrices = mc.joint_matrices
+		mesh_render_options.morph_weights = mc.morph_weights
+		mesh_render_options.receive_shadow = mc.receive_shadow
+		put_mesh(mc.mesh, mc.matrix, mesh_render_options)
 		::continue_mesh_render::
 	end
 end
