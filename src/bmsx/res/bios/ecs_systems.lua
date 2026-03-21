@@ -69,6 +69,7 @@ local customvisualcomponent = 'customvisualcomponent'
 local collider2dcomponent = 'collider2dcomponent'
 local positionupdateaxiscomponent = 'positionupdateaxiscomponent'
 local screenboundarycomponent = 'screenboundarycomponent'
+local tilecollisioncomponent = 'tilecollisioncomponent'
 local prohibitleavingscreencomponent = 'prohibitleavingscreencomponent'
 local actioneffectcomponent = 'actioneffectcomponent'
 
