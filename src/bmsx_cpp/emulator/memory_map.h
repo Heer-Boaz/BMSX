@@ -23,19 +23,19 @@ constexpr uint32_t DEFAULT_RAM_SIZE = 0x08000000u; // 128 MB
 constexpr uint32_t IO_WORD_SIZE = 4;
 constexpr uint32_t IO_REGION_SIZE = 0x00004000u; // 16 KB
 
-constexpr uint32_t DEFAULT_STRING_HANDLE_COUNT = 0x40000u; // 256k handles
-constexpr uint32_t STRING_HANDLE_ENTRY_SIZE = 16;
-constexpr uint32_t DEFAULT_STRING_HEAP_SIZE = 0x02000000u; // 32 MB
+constexpr uint32_t DEFAULT_OBJECT_HANDLE_COUNT = 0x40000u; // 256k handles (slot 0 reserved)
+constexpr uint32_t OBJECT_HANDLE_ENTRY_SIZE = 20;
+constexpr uint32_t DEFAULT_GC_HEAP_SIZE = 0x02000000u; // 32 MB
 constexpr uint32_t DEFAULT_ASSET_TABLE_SIZE = 0x00100000u; // 1 MB
 
 extern uint32_t RAM_SIZE;
-extern uint32_t STRING_HANDLE_COUNT;
-extern uint32_t STRING_HANDLE_TABLE_SIZE;
-extern uint32_t STRING_HEAP_SIZE;
+extern uint32_t OBJECT_HANDLE_COUNT;
+extern uint32_t OBJECT_HANDLE_TABLE_SIZE;
+extern uint32_t GC_HEAP_SIZE;
 
 constexpr uint32_t IO_BASE = RAM_BASE;
-extern uint32_t STRING_HANDLE_TABLE_BASE;
-extern uint32_t STRING_HEAP_BASE;
+extern uint32_t OBJECT_HANDLE_TABLE_BASE;
+extern uint32_t GC_HEAP_BASE;
 extern uint32_t ASSET_RAM_BASE;
 extern uint32_t ASSET_RAM_SIZE;
 extern uint32_t ASSET_TABLE_BASE;
@@ -67,8 +67,8 @@ extern uint32_t RAM_USED_END;
 
 struct MemoryMapConfig {
 	uint32_t ramBytes = DEFAULT_RAM_SIZE;
-	uint32_t stringHandleCount = DEFAULT_STRING_HANDLE_COUNT;
-	uint32_t stringHeapBytes = DEFAULT_STRING_HEAP_SIZE;
+	uint32_t objectHandleCount = DEFAULT_OBJECT_HANDLE_COUNT;
+	uint32_t gcHeapBytes = DEFAULT_GC_HEAP_SIZE;
 	uint32_t assetTableBytes = DEFAULT_ASSET_TABLE_SIZE;
 	uint32_t assetDataBytes = 0;
 	uint32_t atlasSlotBytes = DEFAULT_VRAM_ATLAS_SLOT_SIZE;

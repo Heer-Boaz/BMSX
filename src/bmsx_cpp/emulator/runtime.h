@@ -72,6 +72,7 @@ struct RuntimeOptions {
 struct RuntimeState {
 	std::vector<Value> ioMemory;
 	std::vector<std::pair<Value, Value>> globals; // key-value pairs
+	ObjectHandleTableState objectMemoryState;
 	std::vector<u8> assetMemory;
 	std::array<i32, 2> atlasSlots{{-1, -1}};
 	std::optional<SkyboxImageIds> skyboxFaceIds;
@@ -346,7 +347,7 @@ private:
 	// Runtime core
 	Memory m_memory;
 	VDP m_vdp;
-	StringHandleTable m_stringHandles;
+	ObjectHandleTable m_objectHandles;
 	CPU m_cpu;
 	DmaController m_dmaController;
 	ImgDecController m_imgDecController;

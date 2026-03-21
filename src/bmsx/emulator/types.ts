@@ -116,10 +116,10 @@ export type RuntimeState = {
 	luaRuntimeFailed: boolean;
 	luaPath: string;
 	storage?: { namespace: string; entries: Array<{ index: number; value: number; }>; };
-	luaGlobals?: LuaEntrySnapshot;
-	luaLocals?: LuaEntrySnapshot;
-	luaRandomSeed?: number;
-	luaProgramCounter?: number;
+	luaGlobals: LuaEntrySnapshot | null;
+	luaLocals: LuaEntrySnapshot | null;
+	luaRandomSeed: number;
+	luaProgramCounter: number;
 	assetMemory?: Uint8Array;
 	atlasSlots?: { primary: number | null; secondary: number | null };
 	skyboxFaceIds?: SkyboxImageIds | null;

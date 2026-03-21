@@ -1389,7 +1389,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_cart_rom_size", valueNumber(static_cast<double>(CART_ROM_SIZE)));
 	setGlobal("sys_ram_size", valueNumber(static_cast<double>(RAM_SIZE)));
 	setGlobal("sys_max_assets", valueNumber(static_cast<double>(maxAssets)));
-	setGlobal("sys_string_handle_count", valueNumber(static_cast<double>(STRING_HANDLE_COUNT)));
+	setGlobal("sys_string_handle_count", valueNumber(static_cast<double>(OBJECT_HANDLE_COUNT - 1)));
 	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(m_cycleBudgetPerFrame)));
 	setGlobal("sys_vdp_dither", valueNumber(static_cast<double>(IO_VDP_DITHER)));
 	setGlobal("sys_vdp_primary_atlas_id", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
@@ -1611,7 +1611,7 @@ void Runtime::setupBuiltins() {
 		throw LuaPcallError(message);
 	});
 
-	registerNativeFunction("setmetatable", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	registerNativeFunction("setmetatable", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		if (args.empty() || (!valueIsTable(args.at(0)) && !valueIsNativeObject(args.at(0)))) {
 			throw BMSX_RUNTIME_ERROR("setmetatable expects a table or native value as the first argument.");
 		}
@@ -1631,7 +1631,7 @@ void Runtime::setupBuiltins() {
 		}
 
 		auto* native = asNativeObject(target);
-		native->metatable = metatable;
+		m_cpu.setNativeObjectMetatable(native, metatable);
 		out.push_back(target);
 	});
 
@@ -1645,7 +1645,7 @@ void Runtime::setupBuiltins() {
 			out.push_back(mt ? valueTable(mt) : valueNil());
 			return;
 		}
-		auto* mt = asNativeObject(target)->metatable;
+		auto* mt = asNativeObject(target)->getMetatable();
 		out.push_back(mt ? valueTable(mt) : valueNil());
 	});
 
@@ -3016,7 +3016,7 @@ auto nextFn = m_cpu.createNativeFunction("next", [this](const std::vector<Value>
 	}
 	if (valueIsNativeObject(target)) {
 		auto* obj = asNativeObject(target);
-		if (!obj->nextEntry) {
+		if (!obj->hasNextEntry()) {
 			throw BMSX_RUNTIME_ERROR("next expects a native object with iteration.");
 		}
 		auto entry = obj->nextEntry(key);

@@ -1,9 +1,51 @@
-import { StringPool, StringValue, isStringValue, stringValueHash32, stringValueToString, stringValuesEqual } from './string_pool';
+import { RuntimeStringPool, StringValue, isStringValue, stringValueHash32, stringValueToString, stringValuesEqual, type StringPool } from './string_pool';
 import type { Memory } from './memory';
 import { formatNumber } from './number_format';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
+import {
+	ARRAY_STORE_OBJECT_CAPACITY_OFFSET,
+	ARRAY_STORE_OBJECT_DATA_OFFSET,
+	CLOSURE_OBJECT_PROTO_INDEX_OFFSET,
+	CLOSURE_OBJECT_UPVALUE_COUNT_OFFSET,
+	CLOSURE_OBJECT_UPVALUE_IDS_OFFSET,
+	HASH_STORE_OBJECT_CAPACITY_OFFSET,
+	HASH_STORE_OBJECT_DATA_OFFSET,
+	HASH_STORE_OBJECT_FREE_OFFSET,
+	HASH_NODE_KEY_OFFSET,
+	HASH_NODE_NEXT_OFFSET,
+	HASH_NODE_SIZE,
+	HASH_NODE_VALUE_OFFSET,
+	HEAP_OBJECT_HEADER_SIZE,
+	HeapObjectType,
+	NATIVE_OBJECT_HEADER_SIZE,
+	NATIVE_OBJECT_METATABLE_ID_OFFSET,
+	TAGGED_VALUE_SLOT_TAG_OFFSET,
+	TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET,
+	TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET,
+	TAGGED_VALUE_SLOT_SIZE,
+	TaggedValueTag,
+	type ObjectHandleTable,
+	type ObjectHandleTableState,
+	TABLE_OBJECT_ARRAY_LENGTH_OFFSET,
+	TABLE_OBJECT_ARRAY_STORE_ID_OFFSET,
+	TABLE_OBJECT_HEADER_SIZE,
+	TABLE_OBJECT_HASH_STORE_ID_OFFSET,
+	TABLE_OBJECT_METATABLE_ID_OFFSET,
+	UPVALUE_OBJECT_CLOSED_VALUE_OFFSET,
+	UPVALUE_OBJECT_FRAME_DEPTH_OFFSET,
+	UPVALUE_OBJECT_HEADER_SIZE,
+	UPVALUE_OBJECT_REGISTER_INDEX_OFFSET,
+	UPVALUE_OBJECT_STATE_CLOSED,
+	UPVALUE_OBJECT_STATE_OFFSET,
+	UPVALUE_OBJECT_STATE_OPEN,
+} from './object_memory';
 
 export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
+
+type RuntimeObjectHandle = {
+	objectId: number;
+	objectAddr: number;
+};
 
 export type SourcePosition = {
 	line: number;
@@ -32,14 +74,14 @@ export type NativeFnCost = {
 	perRet: number;
 };
 
-export type NativeFunction = {
+export type NativeFunction = RuntimeObjectHandle & {
 	readonly kind: typeof NATIVE_FUNCTION_KIND;
 	readonly name: string;
 	invoke(args: ReadonlyArray<Value>, out: Value[]): void;
 	cost?: NativeFnCost;
 };
 
-export type NativeObject = {
+export type NativeObject = RuntimeObjectHandle & {
 	readonly kind: typeof NATIVE_OBJECT_KIND;
 	readonly raw: object;
 	get(key: Value): Value;
@@ -67,6 +109,8 @@ export function createNativeFunction(
 	cost: NativeFnCost = DEFAULT_NATIVE_COST,
 ): NativeFunction {
 	return {
+		objectId: 0,
+		objectAddr: 0,
 		kind: NATIVE_FUNCTION_KIND,
 		name,
 		cost,
@@ -87,7 +131,7 @@ export function createNativeFunction(
 }
 
 export function createNativeObject(raw: object, handlers: { get: (key: Value) => Value; set: (key: Value, value: Value) => void; len?: () => number }): NativeObject {
-	return { kind: NATIVE_OBJECT_KIND, raw, get: handlers.get, set: handlers.set, len: handlers.len, metatable: null };
+	return { objectId: 0, objectAddr: 0, kind: NATIVE_OBJECT_KIND, raw, get: handlers.get, set: handlers.set, len: handlers.len, metatable: null };
 }
 
 export function isNativeFunction(value: Value): value is NativeFunction {
@@ -146,7 +190,7 @@ export function valuesEqual(left: Value, right: Value): boolean {
 	return left === right;
 }
 
-export type Closure = {
+export type Closure = RuntimeObjectHandle & {
 	protoIndex: number;
 	upvalues: Upvalue[];
 };
@@ -275,15 +319,18 @@ const BASE_CYCLES: Uint8Array = (() => {
 })();
 
 type Upvalue = {
+	objectId: number;
+	objectAddr: number;
 	open: boolean;
 	index: number;
-	frame: CallFrame;
+	frameDepth: number;
 	value: Value;
 };
 
 type CallFrame = {
 	protoIndex: number;
 	pc: number;
+	depth: number;
 	registers: RegisterFile;
 	varargs: Value[];
 	closure: Closure;
@@ -301,28 +348,136 @@ type HashNode = {
 	next: number;
 };
 
+class ArrayStoreView {
+	private values: Value[];
+
+	constructor(size: number) {
+		this.values = new Array<Value>(size);
+		this.values.fill(null);
+	}
+
+	public get capacity(): number {
+		return this.values.length;
+	}
+
+	public read(index: number): Value {
+		const value = this.values[index];
+		return value === undefined ? null : value;
+	}
+
+	public write(index: number, value: Value): void {
+		this.values[index] = value;
+	}
+
+	public has(index: number): boolean {
+		const value = this.values[index];
+		return value !== null && value !== undefined;
+	}
+
+	public resize(size: number): void {
+		this.values = new Array<Value>(size);
+		this.values.fill(null);
+	}
+
+	public clear(): void {
+		this.values.length = 0;
+	}
+
+	public forEachPresent(fn: (index: number, value: Value) => void): void {
+		for (let index = 0; index < this.values.length; index += 1) {
+			const value = this.values[index];
+			if (value === null || value === undefined) {
+				continue;
+			}
+			fn(index, value);
+		}
+	}
+}
+
+class HashStoreView {
+	private nodes: HashNode[];
+	private free = -1;
+
+	constructor(size: number) {
+		this.nodes = new Array<HashNode>(size);
+		for (let index = 0; index < size; index += 1) {
+			this.nodes[index] = { key: null, value: null, next: -1 };
+		}
+		this.free = size > 0 ? size - 1 : -1;
+	}
+
+	public get capacity(): number {
+		return this.nodes.length;
+	}
+
+	public get freeIndex(): number {
+		return this.free;
+	}
+
+	public set freeIndex(value: number) {
+		this.free = value;
+	}
+
+	public node(index: number): HashNode {
+		return this.nodes[index];
+	}
+
+	public resize(size: number): void {
+		this.nodes = new Array<HashNode>(size);
+		for (let index = 0; index < size; index += 1) {
+			this.nodes[index] = { key: null, value: null, next: -1 };
+		}
+		this.free = size > 0 ? size - 1 : -1;
+	}
+
+	public clear(): void {
+		this.nodes.length = 0;
+		this.free = -1;
+	}
+
+	public forEachPresent(fn: (index: number, node: HashNode) => void): void {
+		for (let index = 0; index < this.nodes.length; index += 1) {
+			const node = this.nodes[index];
+			if (node.key === null) {
+				continue;
+			}
+			fn(index, node);
+		}
+	}
+}
+
 export class Table {
-	private array: Value[];
+	private arrayStore: ArrayStoreView;
 	private arrayLength = 0;
-	private hash: HashNode[];
-	private hashFree = -1;
+	private hashStore: HashStoreView;
 	private metatable: Table | null = null;
+	public readonly objectId: number;
+	private readonly objectAddr: number;
+	private readonly objectHandles: ObjectHandleTable;
+	private arrayStoreId = 0;
+	private arrayStoreAddr = 0;
+	private hashStoreId = 0;
+	private hashStoreAddr = 0;
 
 	private static readonly numberBuffer = new ArrayBuffer(8);
 	private static readonly float64View = new Float64Array(Table.numberBuffer);
 	private static readonly uint32View = new Uint32Array(Table.numberBuffer);
 	private static readonly objectIds = new WeakMap<object, number>();
+	private static readonly objectsById = new Map<number, object>();
 	private static nextObjectId = 1;
+	private static readonly numberEncoder = new DataView(new ArrayBuffer(8));
 
-	constructor(arraySize: number, hashSize: number) {
-		this.array = new Array<Value>(arraySize);
-		this.array.fill(null);
+	constructor(arraySize: number, hashSize: number, objectHandles: ObjectHandleTable) {
+		this.objectHandles = objectHandles;
 		const size = hashSize > 0 ? Table.nextPowerOfTwo(hashSize) : 0;
-		this.hash = new Array<HashNode>(size);
-		for (let i = 0; i < size; i += 1) {
-			this.hash[i] = { key: null, value: null, next: -1 };
-		}
-		this.hashFree = size > 0 ? size - 1 : -1;
+		this.arrayStore = new ArrayStoreView(arraySize);
+		this.hashStore = new HashStoreView(size);
+		const tableAllocation = this.objectHandles.allocateObject(HeapObjectType.Table, TABLE_OBJECT_HEADER_SIZE);
+		this.objectId = tableAllocation.id;
+		this.objectAddr = tableAllocation.addr;
+		Table.registerObjectId(this, this.objectId);
+		this.allocateStoreObjects(arraySize, size);
+		this.syncObjectState();
 	}
 
 	public get(key: Value): Value {
@@ -330,13 +485,12 @@ export class Table {
 			throw new Error('Table index is nil.');
 		}
 		const index = this.tryGetArrayIndex(key);
-		if (index !== null && index < this.array.length) {
-			const value = this.array[index];
-			return value === undefined ? null : value;
+		if (index !== null && index < this.arrayStore.capacity) {
+			return this.arrayStore.read(index);
 		}
 		const nodeIndex = this.findNodeIndex(key);
 		if (nodeIndex >= 0) {
-			return this.hash[nodeIndex].value;
+			return this.hashStore.node(nodeIndex).value;
 		}
 		return null;
 	}
@@ -345,53 +499,57 @@ export class Table {
 		if (key === null) {
 			throw new Error('Table index is nil.');
 		}
-		const index = this.tryGetArrayIndex(key);
-		if (index !== null) {
-			if (index < this.array.length) {
+		try {
+			const index = this.tryGetArrayIndex(key);
+			if (index !== null) {
+				if (index < this.arrayStore.capacity) {
+					if (value === null) {
+						this.arrayStore.write(index, value);
+						if (index < this.arrayLength) {
+							this.arrayLength = index;
+						}
+						return;
+					}
+					this.arrayStore.write(index, value);
+					if (index === this.arrayLength) {
+						this.updateArrayLengthFrom(this.arrayLength);
+					}
+					return;
+				}
 				if (value === null) {
-					this.array[index] = value;
+					this.removeFromHash(key);
 					if (index < this.arrayLength) {
 						this.arrayLength = index;
 					}
 					return;
 				}
-				this.array[index] = value;
-				if (index === this.arrayLength) {
-					this.updateArrayLengthFrom(this.arrayLength);
+				const nodeIndex = this.findNodeIndex(key);
+				if (nodeIndex >= 0) {
+					this.hashStore.node(nodeIndex).value = value;
+					return;
 				}
+				if (this.hashStore.capacity === 0 || this.hashStore.freeIndex < 0) {
+					this.rehash(key);
+				}
+				this.rawSet(key, value);
 				return;
 			}
 			if (value === null) {
 				this.removeFromHash(key);
-				if (index < this.arrayLength) {
-					this.arrayLength = index;
-				}
 				return;
 			}
 			const nodeIndex = this.findNodeIndex(key);
 			if (nodeIndex >= 0) {
-				this.hash[nodeIndex].value = value;
+				this.hashStore.node(nodeIndex).value = value;
 				return;
 			}
-			if (this.hash.length === 0 || this.hashFree < 0) {
+			if (this.hashStore.capacity === 0 || this.hashStore.freeIndex < 0) {
 				this.rehash(key);
 			}
 			this.rawSet(key, value);
-			return;
+		} finally {
+			this.syncObjectState();
 		}
-		if (value === null) {
-			this.removeFromHash(key);
-			return;
-		}
-		const nodeIndex = this.findNodeIndex(key);
-		if (nodeIndex >= 0) {
-			this.hash[nodeIndex].value = value;
-			return;
-		}
-		if (this.hash.length === 0 || this.hashFree < 0) {
-			this.rehash(key);
-		}
-		this.rawSet(key, value);
 	}
 
 	public length(): number {
@@ -399,27 +557,20 @@ export class Table {
 	}
 
 	public clear(): void {
-		this.array.length = 0;
+		this.arrayStore.clear();
 		this.arrayLength = 0;
-		this.hash.length = 0;
-		this.hashFree = -1;
+		this.hashStore.clear();
+		this.syncObjectState();
 	}
 
 	public entriesArray(): ReadonlyArray<[Value, Value]> {
 		const entries: Array<[Value, Value]> = [];
-		for (let index = 0; index < this.array.length; index += 1) {
-			const value = this.array[index];
-			if (value === null || value === undefined) {
-				continue;
-			}
+		this.arrayStore.forEachPresent((index, value) => {
 			entries.push([index + 1, value]);
-		}
-		for (let index = 0; index < this.hash.length; index += 1) {
-			const node = this.hash[index];
-			if (node.key !== null) {
-				entries.push([node.key, node.value]);
-			}
-		}
+		});
+		this.hashStore.forEachPresent((_index, node) => {
+			entries.push([node.key, node.value]);
+		});
 		return entries;
 	}
 
@@ -432,18 +583,19 @@ export class Table {
 			throw new Error('setmetatable expects a table or nil as the second argument.');
 		}
 		this.metatable = metatable;
+		this.syncTableMetadata();
 	}
 
 	public nextEntry(after: Value): [Value, Value] | null {
 		if (after === null) {
-			for (let index = 0; index < this.array.length; index += 1) {
-				const value = this.array[index];
-				if (value !== null && value !== undefined) {
+			for (let index = 0; index < this.arrayStore.capacity; index += 1) {
+				const value = this.arrayStore.read(index);
+				if (value !== null) {
 					return [index + 1, value];
 				}
 			}
-			for (let index = 0; index < this.hash.length; index += 1) {
-				const node = this.hash[index];
+			for (let index = 0; index < this.hashStore.capacity; index += 1) {
+				const node = this.hashStore.node(index);
 				if (node.key !== null) {
 					return [node.key, node.value];
 				}
@@ -451,18 +603,18 @@ export class Table {
 			return null;
 		}
 		const index = this.tryGetArrayIndex(after);
-		if (index !== null && index < this.array.length) {
-			if (this.array[index] === null) {
+		if (index !== null && index < this.arrayStore.capacity) {
+			if (this.arrayStore.read(index) === null) {
 				return null;
 			}
-			for (let cursor = index + 1; cursor < this.array.length; cursor += 1) {
-				const value = this.array[cursor];
-				if (value !== null && value !== undefined) {
+			for (let cursor = index + 1; cursor < this.arrayStore.capacity; cursor += 1) {
+				const value = this.arrayStore.read(cursor);
+				if (value !== null) {
 					return [cursor + 1, value];
 				}
 			}
-			for (let i = 0; i < this.hash.length; i += 1) {
-				const node = this.hash[i];
+			for (let i = 0; i < this.hashStore.capacity; i += 1) {
+				const node = this.hashStore.node(i);
 				if (node.key !== null) {
 					return [node.key, node.value];
 				}
@@ -473,13 +625,94 @@ export class Table {
 		if (nodeIndex < 0) {
 			return null;
 		}
-		for (let i = nodeIndex + 1; i < this.hash.length; i += 1) {
-			const node = this.hash[i];
+		for (let i = nodeIndex + 1; i < this.hashStore.capacity; i += 1) {
+			const node = this.hashStore.node(i);
 			if (node.key !== null) {
 				return [node.key, node.value];
 			}
 		}
 		return null;
+	}
+
+	public rehydrateStoreViews(stringPool: StringPool): void {
+		this.arrayStoreId = this.objectHandles.readU32(this.objectAddr + TABLE_OBJECT_ARRAY_STORE_ID_OFFSET);
+		this.hashStoreId = this.objectHandles.readU32(this.objectAddr + TABLE_OBJECT_HASH_STORE_ID_OFFSET);
+		this.arrayLength = this.objectHandles.readU32(this.objectAddr + TABLE_OBJECT_ARRAY_LENGTH_OFFSET);
+		const metatableId = this.objectHandles.readU32(this.objectAddr + TABLE_OBJECT_METATABLE_ID_OFFSET);
+		this.metatable = metatableId === 0 ? null : Table.resolveObjectId<Table>(metatableId);
+		const arrayStoreEntry = this.objectHandles.readEntry(this.arrayStoreId);
+		const hashStoreEntry = this.objectHandles.readEntry(this.hashStoreId);
+		this.arrayStoreAddr = arrayStoreEntry.addr;
+		this.hashStoreAddr = hashStoreEntry.addr;
+		const arrayCapacity = this.objectHandles.readU32(this.arrayStoreAddr + ARRAY_STORE_OBJECT_CAPACITY_OFFSET);
+		const hashCapacity = this.objectHandles.readU32(this.hashStoreAddr + HASH_STORE_OBJECT_CAPACITY_OFFSET);
+		this.arrayStore = new ArrayStoreView(arrayCapacity);
+		this.hashStore = new HashStoreView(hashCapacity);
+		this.hashStore.freeIndex = this.objectHandles.readU32(this.hashStoreAddr + HASH_STORE_OBJECT_FREE_OFFSET) | 0;
+		for (let index = 0; index < arrayCapacity; index += 1) {
+			const slotAddr = this.arrayStoreAddr + ARRAY_STORE_OBJECT_DATA_OFFSET + (index * TAGGED_VALUE_SLOT_SIZE);
+			this.arrayStore.write(index, this.readTaggedValue(slotAddr, stringPool));
+		}
+		for (let index = 0; index < hashCapacity; index += 1) {
+			const node = this.hashStore.node(index);
+			const nodeAddr = this.hashStoreAddr + HASH_STORE_OBJECT_DATA_OFFSET + (index * HASH_NODE_SIZE);
+			node.key = this.readTaggedValue(nodeAddr + HASH_NODE_KEY_OFFSET, stringPool);
+			node.value = this.readTaggedValue(nodeAddr + HASH_NODE_VALUE_OFFSET, stringPool);
+			node.next = this.objectHandles.readU32(nodeAddr + HASH_NODE_NEXT_OFFSET) | 0;
+		}
+	}
+
+	public static rehydrateRuntimeObjects(objectHandles: ObjectHandleTable, stringPool: RuntimeStringPool): void {
+		for (const [id, value] of Table.objectsById.entries()) {
+			const entry = objectHandles.readEntry(id);
+			if (entry.type === 0) {
+				const runtimeObject = value as RuntimeObjectHandle;
+				runtimeObject.objectId = 0;
+				runtimeObject.objectAddr = 0;
+				Table.objectIds.delete(value);
+				Table.objectsById.delete(id);
+				continue;
+			}
+			const runtimeObject = value as RuntimeObjectHandle;
+			runtimeObject.objectId = id;
+			runtimeObject.objectAddr = entry.addr;
+			switch (entry.type) {
+				case HeapObjectType.Table:
+					(value as Table).rehydrateStoreViews(stringPool);
+					break;
+				case HeapObjectType.NativeFunction:
+					break;
+				case HeapObjectType.NativeObject: {
+					const native = value as NativeObject;
+					const metatableId = objectHandles.readU32(entry.addr + NATIVE_OBJECT_METATABLE_ID_OFFSET);
+					native.metatable = metatableId === 0 ? null : Table.resolveObjectId<Table>(metatableId);
+					break;
+				}
+				case HeapObjectType.Closure: {
+					const closure = value as Closure;
+					const upvalueCount = objectHandles.readU32(entry.addr + CLOSURE_OBJECT_UPVALUE_COUNT_OFFSET);
+					closure.protoIndex = objectHandles.readU32(entry.addr + CLOSURE_OBJECT_PROTO_INDEX_OFFSET);
+					closure.upvalues = new Array<Upvalue>(upvalueCount);
+					for (let index = 0; index < upvalueCount; index += 1) {
+						const upvalueId = objectHandles.readU32(entry.addr + CLOSURE_OBJECT_UPVALUE_IDS_OFFSET + (index * 4));
+						closure.upvalues[index] = Table.resolveObjectId<Upvalue>(upvalueId);
+					}
+					break;
+				}
+				case HeapObjectType.Upvalue: {
+					const upvalue = value as Upvalue;
+					upvalue.open = objectHandles.readU32(entry.addr + UPVALUE_OBJECT_STATE_OFFSET) === UPVALUE_OBJECT_STATE_OPEN;
+					upvalue.frameDepth = upvalue.open
+						? (objectHandles.readU32(entry.addr + UPVALUE_OBJECT_FRAME_DEPTH_OFFSET) | 0)
+						: -1;
+					upvalue.index = objectHandles.readU32(entry.addr + UPVALUE_OBJECT_REGISTER_INDEX_OFFSET) | 0;
+					upvalue.value = Table.readTaggedValueFromHandles(objectHandles, entry.addr + UPVALUE_OBJECT_CLOSED_VALUE_OFFSET, stringPool);
+					break;
+				}
+				default:
+					throw new Error(`[Table] Unsupported runtime heap object type ${entry.type} for ${id}.`);
+			}
+		}
 	}
 
 	private static nextPowerOfTwo(value: number): number {
@@ -503,15 +736,98 @@ export class Table {
 		return log;
 	}
 
-	private static getObjectId(value: object): number {
+	public static ensureValueObjectId(value: Table | Closure | NativeFunction | NativeObject, objectHandles: ObjectHandleTable): number {
+		if (value instanceof Table) {
+			return Table.ensureObjectId(value, objectHandles, HeapObjectType.Table, TABLE_OBJECT_HEADER_SIZE);
+		}
+		if (isNativeFunction(value)) {
+			return Table.ensureObjectId(value, objectHandles, HeapObjectType.NativeFunction, HEAP_OBJECT_HEADER_SIZE);
+		}
+		if (isNativeObject(value)) {
+			const id = Table.ensureObjectId(value, objectHandles, HeapObjectType.NativeObject, NATIVE_OBJECT_HEADER_SIZE);
+			Table.syncNativeObjectState(value, objectHandles);
+			return id;
+		}
+		const id = Table.ensureObjectId(
+			value,
+			objectHandles,
+			HeapObjectType.Closure,
+			CLOSURE_OBJECT_UPVALUE_IDS_OFFSET + (value.upvalues.length * 4),
+		);
+		Table.syncClosureState(value, objectHandles);
+		return id;
+	}
+
+	public static ensureUpvalueObjectId(value: Upvalue, objectHandles: ObjectHandleTable): number {
+		const id = Table.ensureObjectId(value, objectHandles, HeapObjectType.Upvalue, UPVALUE_OBJECT_HEADER_SIZE);
+		Table.syncUpvalueState(value, objectHandles);
+		return id;
+	}
+
+	public static ensureObjectId(value: object, objectHandles: ObjectHandleTable, type: HeapObjectType, sizeBytes: number): number {
+		const runtimeObject = value as RuntimeObjectHandle;
+		if (runtimeObject.objectId !== 0 && runtimeObject.objectAddr !== 0) {
+			Table.registerObjectId(value, runtimeObject.objectId);
+			return runtimeObject.objectId;
+		}
 		const existing = Table.objectIds.get(value);
 		if (existing !== undefined) {
-			return existing;
+			if (runtimeObject.objectAddr !== 0) {
+				return existing;
+			}
+			Table.objectsById.delete(existing);
 		}
-		const id = Table.nextObjectId;
-		Table.nextObjectId += 1;
+		const allocation = objectHandles.allocateObject(type, sizeBytes);
+		runtimeObject.objectId = allocation.id;
+		runtimeObject.objectAddr = allocation.addr;
+		Table.registerObjectId(value, allocation.id);
+		return allocation.id;
+	}
+
+	public static syncNativeObjectState(native: NativeObject, objectHandles: ObjectHandleTable): void {
+		const entry = objectHandles.readEntry(native.objectId);
+		const metatableId = native.metatable ? Table.ensureValueObjectId(native.metatable, objectHandles) : 0;
+		objectHandles.writeU32(entry.addr + NATIVE_OBJECT_METATABLE_ID_OFFSET, metatableId >>> 0);
+	}
+
+	public static syncClosureState(closure: Closure, objectHandles: ObjectHandleTable): void {
+		const entry = objectHandles.readEntry(closure.objectId);
+		objectHandles.writeU32(entry.addr + CLOSURE_OBJECT_PROTO_INDEX_OFFSET, closure.protoIndex >>> 0);
+		objectHandles.writeU32(entry.addr + CLOSURE_OBJECT_UPVALUE_COUNT_OFFSET, closure.upvalues.length >>> 0);
+		for (let index = 0; index < closure.upvalues.length; index += 1) {
+			const upvalueId = Table.ensureUpvalueObjectId(closure.upvalues[index], objectHandles);
+			objectHandles.writeU32(
+				entry.addr + CLOSURE_OBJECT_UPVALUE_IDS_OFFSET + (index * 4),
+				upvalueId >>> 0,
+			);
+		}
+	}
+
+	public static syncUpvalueState(upvalue: Upvalue, objectHandles: ObjectHandleTable): void {
+		const entry = objectHandles.readEntry(upvalue.objectId);
+		objectHandles.writeU32(
+			entry.addr + UPVALUE_OBJECT_STATE_OFFSET,
+			(upvalue.open ? UPVALUE_OBJECT_STATE_OPEN : UPVALUE_OBJECT_STATE_CLOSED) >>> 0,
+		);
+		objectHandles.writeU32(entry.addr + UPVALUE_OBJECT_FRAME_DEPTH_OFFSET, upvalue.frameDepth >>> 0);
+		objectHandles.writeU32(entry.addr + UPVALUE_OBJECT_REGISTER_INDEX_OFFSET, upvalue.index >>> 0);
+		Table.writeTaggedValueToHandles(objectHandles, entry.addr + UPVALUE_OBJECT_CLOSED_VALUE_OFFSET, upvalue.value);
+	}
+
+	private static registerObjectId(value: object, id: number): void {
 		Table.objectIds.set(value, id);
-		return id;
+		Table.objectsById.set(id, value);
+		if (id >= Table.nextObjectId) {
+			Table.nextObjectId = id + 1;
+		}
+	}
+
+	private static resolveObjectId<T extends object>(id: number): T {
+		const value = Table.objectsById.get(id);
+		if (!value) {
+			throw new Error(`[Table] Unknown object id ${id}.`);
+		}
+		return value as T;
 	}
 
 	private hashValue(key: Value): number {
@@ -529,7 +845,7 @@ export class Table {
 		if (isStringValue(key)) {
 			return stringValueHash32(key);
 		}
-		return (Table.getObjectId(key as object) * 2654435761) >>> 0;
+		return (Table.ensureValueObjectId(key as Table | Closure | NativeFunction | NativeObject, this.objectHandles) * 2654435761) >>> 0;
 	}
 
 	private keyEquals(a: Value, b: Value): boolean {
@@ -537,13 +853,13 @@ export class Table {
 	}
 
 	private findNodeIndex(key: Value): number {
-		if (this.hash.length === 0) {
+		if (this.hashStore.capacity === 0) {
 			return -1;
 		}
-		const mask = this.hash.length - 1;
+		const mask = this.hashStore.capacity - 1;
 		let index = (this.hashValue(key) & mask) >>> 0;
 		while (index >= 0) {
-			const node = this.hash[index];
+			const node = this.hashStore.node(index);
 			if (node.key !== null && this.keyEquals(node.key, key)) {
 				return index;
 			}
@@ -553,14 +869,14 @@ export class Table {
 	}
 
 	private getFreeIndex(): number {
-		const start = this.hashFree >= 0 ? this.hashFree : this.hash.length - 1;
+		const start = this.hashStore.freeIndex >= 0 ? this.hashStore.freeIndex : this.hashStore.capacity - 1;
 		for (let i = start; i >= 0; i -= 1) {
-			if (this.hash[i].key === null) {
-				this.hashFree = i - 1;
+			if (this.hashStore.node(i).key === null) {
+				this.hashStore.freeIndex = i - 1;
 				return i;
 			}
 		}
-		this.hashFree = -1;
+		this.hashStore.freeIndex = -1;
 		return -1;
 	}
 
@@ -576,14 +892,14 @@ export class Table {
 			counts[log] += 1;
 		};
 
-		for (let i = 0; i < this.array.length; i += 1) {
-			if (this.array[i] !== null) {
+		for (let i = 0; i < this.arrayStore.capacity; i += 1) {
+			if (this.arrayStore.has(i)) {
 				totalKeys += 1;
 				countIntegerKey(i + 1);
 			}
 		}
-		for (let i = 0; i < this.hash.length; i += 1) {
-			const node = this.hash[i];
+		for (let i = 0; i < this.hashStore.capacity; i += 1) {
+			const node = this.hashStore.node(i);
 			if (node.key !== null) {
 				totalKeys += 1;
 				const index = this.tryGetArrayIndex(node.key);
@@ -619,35 +935,40 @@ export class Table {
 	}
 
 	private resize(newArraySize: number, newHashSize: number): void {
-		const oldArray = this.array;
-		const oldHash = this.hash;
+		const oldArray = this.arrayStore;
+		const oldHash = this.hashStore;
 
-		this.array = new Array<Value>(newArraySize);
-		this.array.fill(null);
+		this.arrayStore = new ArrayStoreView(newArraySize);
 		this.arrayLength = 0;
-		this.hash = new Array<HashNode>(newHashSize);
-		for (let i = 0; i < newHashSize; i += 1) {
-			this.hash[i] = { key: null, value: null, next: -1 };
-		}
-		this.hashFree = newHashSize > 0 ? newHashSize - 1 : -1;
+		this.hashStore = new HashStoreView(newHashSize);
+		this.allocateStoreObjects(newArraySize, newHashSize);
 
-		for (let i = 0; i < oldArray.length; i += 1) {
-			if (oldArray[i] !== null) {
-				this.rawSet(i + 1, oldArray[i]);
-			}
-		}
-		for (let i = 0; i < oldHash.length; i += 1) {
-			const node = oldHash[i];
-			if (node.key !== null) {
-				this.rawSet(node.key, node.value);
-			}
-		}
+		oldArray.forEachPresent((index, value) => {
+			this.rawSet(index + 1, value);
+		});
+		oldHash.forEachPresent((_index, node) => {
+			this.rawSet(node.key, node.value);
+		});
+		this.syncObjectState();
+	}
+
+	private allocateStoreObjects(arraySize: number, hashSize: number): void {
+		const arrayStoreAllocation = this.objectHandles.allocateObject(
+			HeapObjectType.ArrayStore,
+			ARRAY_STORE_OBJECT_DATA_OFFSET + (arraySize * TAGGED_VALUE_SLOT_SIZE));
+		const hashStoreAllocation = this.objectHandles.allocateObject(
+			HeapObjectType.HashStore,
+			HASH_STORE_OBJECT_DATA_OFFSET + (hashSize * HASH_NODE_SIZE));
+		this.arrayStoreId = arrayStoreAllocation.id;
+		this.arrayStoreAddr = arrayStoreAllocation.addr;
+		this.hashStoreId = hashStoreAllocation.id;
+		this.hashStoreAddr = hashStoreAllocation.addr;
 	}
 
 	private rawSet(key: Value, value: Value): void {
 		const index = this.tryGetArrayIndex(key);
-		if (index !== null && index < this.array.length) {
-			this.array[index] = value;
+		if (index !== null && index < this.arrayStore.capacity) {
+			this.arrayStore.write(index, value);
 			if (value === null) {
 				if (index < this.arrayLength) {
 					this.arrayLength = index;
@@ -664,14 +985,14 @@ export class Table {
 	}
 
 	private insertHash(key: Value, value: Value): void {
-		if (this.hash.length === 0) {
+		if (this.hashStore.capacity === 0) {
 			this.rehash(key);
 			this.rawSet(key, value);
 			return;
 		}
-		const mask = this.hash.length - 1;
+		const mask = this.hashStore.capacity - 1;
 		const mainIndex = (this.hashValue(key) & mask) >>> 0;
-		const mainNode = this.hash[mainIndex];
+		const mainNode = this.hashStore.node(mainIndex);
 		if (mainNode.key === null) {
 			mainNode.key = key;
 			mainNode.value = value;
@@ -684,17 +1005,17 @@ export class Table {
 			this.rawSet(key, value);
 			return;
 		}
-		const freeNode = this.hash[freeIndex];
+		const freeNode = this.hashStore.node(freeIndex);
 		const mainIndexOfOccupied = (this.hashValue(mainNode.key) & mask) >>> 0;
 		if (mainIndexOfOccupied !== mainIndex) {
 			freeNode.key = mainNode.key;
 			freeNode.value = mainNode.value;
 			freeNode.next = mainNode.next;
 			let prev = mainIndexOfOccupied;
-			while (this.hash[prev].next !== mainIndex) {
-				prev = this.hash[prev].next;
+			while (this.hashStore.node(prev).next !== mainIndex) {
+				prev = this.hashStore.node(prev).next;
 			}
-			this.hash[prev].next = freeIndex;
+			this.hashStore.node(prev).next = freeIndex;
 			mainNode.key = key;
 			mainNode.value = value;
 			mainNode.next = -1;
@@ -707,45 +1028,45 @@ export class Table {
 	}
 
 	private removeFromHash(key: Value): void {
-		if (this.hash.length === 0) {
+		if (this.hashStore.capacity === 0) {
 			return;
 		}
-		const mask = this.hash.length - 1;
+		const mask = this.hashStore.capacity - 1;
 		const mainIndex = (this.hashValue(key) & mask) >>> 0;
 		let prev = -1;
 		let index = mainIndex;
 		while (index >= 0) {
-			const node = this.hash[index];
+			const node = this.hashStore.node(index);
 			if (node.key !== null && this.keyEquals(node.key, key)) {
 				const next = node.next;
 				if (prev >= 0) {
-					this.hash[prev].next = next;
+					this.hashStore.node(prev).next = next;
 					node.key = null;
 					node.value = null;
 					node.next = -1;
-					if (index > this.hashFree) {
-						this.hashFree = index;
+					if (index > this.hashStore.freeIndex) {
+						this.hashStore.freeIndex = index;
 					}
 					return;
 				}
 				if (next >= 0) {
-					const nextNode = this.hash[next];
+					const nextNode = this.hashStore.node(next);
 					node.key = nextNode.key;
 					node.value = nextNode.value;
 					node.next = nextNode.next;
 					nextNode.key = null;
 					nextNode.value = null;
 					nextNode.next = -1;
-					if (next > this.hashFree) {
-						this.hashFree = next;
+					if (next > this.hashStore.freeIndex) {
+						this.hashStore.freeIndex = next;
 					}
 					return;
 				}
 				node.key = null;
 				node.value = null;
 				node.next = -1;
-				if (index > this.hashFree) {
-					this.hashFree = index;
+				if (index > this.hashStore.freeIndex) {
+					this.hashStore.freeIndex = index;
 				}
 				return;
 			}
@@ -771,9 +1092,8 @@ export class Table {
 	}
 
 	private hasArrayIndex(index: number): boolean {
-		if (index < this.array.length) {
-			const value = this.array[index];
-			return value !== null && value !== undefined;
+		if (index < this.arrayStore.capacity) {
+			return this.arrayStore.has(index);
 		}
 		const key = index + 1;
 		return this.findNodeIndex(key) >= 0;
@@ -785,6 +1105,134 @@ export class Table {
 			newLength += 1;
 		}
 		this.arrayLength = newLength;
+	}
+
+	private syncObjectState(): void {
+		this.syncTableMetadata();
+		this.syncStoreMetadata();
+	}
+
+	private syncTableMetadata(): void {
+		const metatableId = this.metatable ? this.metatable.objectId : 0;
+		this.objectHandles.writeU32(this.objectAddr + TABLE_OBJECT_METATABLE_ID_OFFSET, metatableId >>> 0);
+		this.objectHandles.writeU32(this.objectAddr + TABLE_OBJECT_ARRAY_STORE_ID_OFFSET, this.arrayStoreId >>> 0);
+		this.objectHandles.writeU32(this.objectAddr + TABLE_OBJECT_HASH_STORE_ID_OFFSET, this.hashStoreId >>> 0);
+		this.objectHandles.writeU32(this.objectAddr + TABLE_OBJECT_ARRAY_LENGTH_OFFSET, this.arrayLength >>> 0);
+	}
+
+	private syncStoreMetadata(): void {
+		this.objectHandles.writeU32(this.arrayStoreAddr + ARRAY_STORE_OBJECT_CAPACITY_OFFSET, this.arrayStore.capacity >>> 0);
+		this.objectHandles.writeU32(this.hashStoreAddr + HASH_STORE_OBJECT_CAPACITY_OFFSET, this.hashStore.capacity >>> 0);
+		this.objectHandles.writeU32(this.hashStoreAddr + HASH_STORE_OBJECT_FREE_OFFSET, this.hashStore.freeIndex >>> 0);
+		for (let index = 0; index < this.arrayStore.capacity; index += 1) {
+			this.writeArraySlot(index);
+		}
+		for (let index = 0; index < this.hashStore.capacity; index += 1) {
+			this.writeHashNode(index);
+		}
+	}
+
+	private writeArraySlot(index: number): void {
+		const slotAddr = this.arrayStoreAddr + ARRAY_STORE_OBJECT_DATA_OFFSET + (index * TAGGED_VALUE_SLOT_SIZE);
+		this.writeTaggedValue(slotAddr, this.arrayStore.read(index));
+	}
+
+	private writeHashNode(index: number): void {
+		const node = this.hashStore.node(index);
+		const nodeAddr = this.hashStoreAddr + HASH_STORE_OBJECT_DATA_OFFSET + (index * HASH_NODE_SIZE);
+		this.writeTaggedValue(nodeAddr + HASH_NODE_KEY_OFFSET, node.key);
+		this.writeTaggedValue(nodeAddr + HASH_NODE_VALUE_OFFSET, node.value);
+		this.objectHandles.writeU32(nodeAddr + HASH_NODE_NEXT_OFFSET, node.next >>> 0);
+	}
+
+	private writeTaggedValue(addr: number, value: Value | undefined): void {
+		Table.writeTaggedValueToHandles(this.objectHandles, addr, value);
+	}
+
+	private readTaggedValue(addr: number, stringPool: StringPool): Value {
+		return Table.readTaggedValueFromHandles(this.objectHandles, addr, stringPool);
+	}
+
+	public static writeTaggedValueToHandles(objectHandles: ObjectHandleTable, addr: number, value: Value | undefined): void {
+		if (value === undefined || value === null) {
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, TaggedValueTag.Nil);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, 0);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+			return;
+		}
+		if (value === false) {
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, TaggedValueTag.False);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, 0);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+			return;
+		}
+		if (value === true) {
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, TaggedValueTag.True);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, 0);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+			return;
+		}
+		if (typeof value === 'number') {
+			Table.numberEncoder.setFloat64(0, value, true);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, TaggedValueTag.Number);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, Table.numberEncoder.getUint32(0, true));
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, Table.numberEncoder.getUint32(4, true));
+			return;
+		}
+		if (isStringValue(value)) {
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, TaggedValueTag.String);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, value.id >>> 0);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+			return;
+		}
+		if (value instanceof Table) {
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, TaggedValueTag.Table);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, Table.ensureValueObjectId(value, objectHandles) >>> 0);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+			return;
+		}
+		if (isNativeFunction(value)) {
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, TaggedValueTag.NativeFunction);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, Table.ensureValueObjectId(value, objectHandles) >>> 0);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+			return;
+		}
+		if (isNativeObject(value)) {
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, TaggedValueTag.NativeObject);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, Table.ensureValueObjectId(value, objectHandles) >>> 0);
+			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+			return;
+		}
+		objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, TaggedValueTag.Closure);
+		objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, Table.ensureValueObjectId(value, objectHandles) >>> 0);
+		objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+	}
+
+	public static readTaggedValueFromHandles(objectHandles: ObjectHandleTable, addr: number, stringPool: StringPool): Value {
+		const tag = objectHandles.readU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET);
+		const payloadLo = objectHandles.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET);
+		const payloadHi = objectHandles.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET);
+		switch (tag) {
+			case TaggedValueTag.Nil:
+				return null;
+			case TaggedValueTag.False:
+				return false;
+			case TaggedValueTag.True:
+				return true;
+			case TaggedValueTag.Number:
+				Table.numberEncoder.setUint32(0, payloadLo, true);
+				Table.numberEncoder.setUint32(4, payloadHi, true);
+				return Table.numberEncoder.getFloat64(0, true);
+			case TaggedValueTag.String:
+				return stringPool.getById(payloadLo);
+			case TaggedValueTag.Table:
+			case TaggedValueTag.Closure:
+			case TaggedValueTag.NativeFunction:
+			case TaggedValueTag.NativeObject:
+				return Table.resolveObjectId<Value & object>(payloadLo) as Value;
+			default:
+				throw new Error(`[Table] Unsupported tagged value tag ${tag}.`);
+		}
 	}
 }
 
@@ -952,6 +1400,20 @@ class RegisterFile {
 		}
 		this.setClosure(index, value);
 	}
+
+	public rehydrateValues(fn: (value: Value) => Value): void {
+		for (let index = 0; index < this.tags.length; index += 1) {
+			switch (this.tags[index]) {
+				case RegisterTag.String:
+				case RegisterTag.Table:
+				case RegisterTag.Closure:
+				case RegisterTag.NativeFunction:
+				case RegisterTag.NativeObject:
+					this.refs[index] = fn(this.refs[index]);
+					break;
+			}
+		}
+	}
 }
 
 // Pool constants for frame/register reuse
@@ -974,7 +1436,8 @@ export class CPU {
 
 	private program: Program = null;
 	private metadata: ProgramMetadata | null = null;
-	private readonly stringPool: StringPool;
+	private readonly runtimeConstPool: Value[] = [];
+	private readonly stringPool: RuntimeStringPool;
 	private indexKey: StringValue = null;
 	private readonly frames: CallFrame[] = [];
 	private readonly valueScratch: Value[] = [];
@@ -994,12 +1457,60 @@ export class CPU {
 
 	// Register array pooling: keyed by size bucket (power of 2)
 	private readonly registerPool: Map<number, RegisterFile[]> = new Map();
+	private readonly objectHandles: ObjectHandleTable;
 
-	constructor(memory: Memory, stringPool: StringPool | null = null) {
+	constructor(memory: Memory, stringPool: RuntimeStringPool, objectHandles: ObjectHandleTable) {
 		this.memory = memory;
-		this.stringPool = stringPool ?? new StringPool();
-		this.globals = new Table(0, 0);
+		this.stringPool = stringPool;
+		this.objectHandles = objectHandles;
+		this.globals = this.createTable(0, 0);
 		this.indexKey = this.stringPool.intern('__index');
+	}
+
+	public createTable(arraySize: number = 0, hashSize: number = 0): Table {
+		return new Table(arraySize, hashSize, this.objectHandles);
+	}
+
+	public setNativeObjectMetatable(native: NativeObject, metatable: Table | null): void {
+		native.metatable = metatable;
+		Table.ensureValueObjectId(native, this.objectHandles);
+	}
+
+	public captureObjectMemoryState(): ObjectHandleTableState {
+		return this.objectHandles.captureState();
+	}
+
+	public restoreObjectMemoryState(state: ObjectHandleTableState): void {
+		this.objectHandles.restoreState(state);
+		this.stringPool.clearRuntimeCache();
+		Table.rehydrateRuntimeObjects(this.objectHandles, this.stringPool);
+		if (this.stringIndexTable !== null && this.stringIndexTable.objectId === 0) {
+			this.stringIndexTable = null;
+		}
+		this.indexKey = this.stringPool.getById(this.indexKey.id);
+		this.rehydrateValueArray(this.runtimeConstPool);
+		this.rehydrateValueArray(this.lastReturnValues);
+		this.rehydrateValueArray(this.valueScratch);
+		this.rehydrateValueArray(this.returnScratch);
+		this.rehydrateValueArray(this.debugRegistersScratch);
+		for (let index = 0; index < this.frames.length; index += 1) {
+			const frame = this.frames[index];
+			frame.registers.rehydrateValues((value) => this.rehydrateValue(value));
+			this.rehydrateValueArray(frame.varargs);
+		}
+	}
+
+	private rehydrateValue(value: Value): Value {
+		if (isStringValue(value)) {
+			return this.stringPool.getById(value.id);
+		}
+		return value;
+	}
+
+	private rehydrateValueArray(values: Value[]): void {
+		for (let index = 0; index < values.length; index += 1) {
+			values[index] = this.rehydrateValue(values[index]);
+		}
 	}
 
 	// Acquire a register array of at least `size` slots, reusing pooled arrays when possible
@@ -1084,6 +1595,7 @@ export class CPU {
 		return {
 			protoIndex: 0,
 			pc: 0,
+			depth: 0,
 			registers: null!,
 			varargs: [],
 			closure: null!,
@@ -1113,23 +1625,14 @@ export class CPU {
 	public setProgram(program: Program, metadata: ProgramMetadata | null = null): void {
 		this.program = program;
 		this.metadata = metadata;
-		if (program.constPoolStringPool !== this.stringPool) {
-			const constPool = program.constPool;
-			const remapped = new Map<number, StringValue>();
-			for (let index = 0; index < constPool.length; index += 1) {
-				const value = constPool[index];
-				if (!isStringValue(value)) {
-					continue;
-				}
-				let mapped = remapped.get(value.id);
-				if (mapped === undefined) {
-					mapped = this.stringPool.intern(stringValueToString(value));
-					remapped.set(value.id, mapped);
-				}
-				constPool[index] = mapped;
-			}
+		const constPool = program.constPool;
+		this.runtimeConstPool.length = constPool.length;
+		for (let index = 0; index < constPool.length; index += 1) {
+			const value = constPool[index];
+			this.runtimeConstPool[index] = isStringValue(value)
+				? this.stringPool.intern(stringValueToString(value))
+				: value;
 		}
-		program.constPoolStringPool = this.stringPool;
 		this.decodeProgram(program);
 	}
 
@@ -1173,7 +1676,7 @@ export class CPU {
 
 	public start(entryProtoIndex: number, args: Value[] = []): void {
 		this.frames.length = 0;
-		const closure: Closure = { protoIndex: entryProtoIndex, upvalues: [] };
+		const closure = this.createRootClosure(entryProtoIndex);
 		this.pushFrame(closure, args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
 	}
 
@@ -1337,13 +1840,13 @@ export class CPU {
 		}
 		const upvalue = frame.closure.upvalues[upvalueIndex];
 		if (upvalue.open) {
-			return upvalue.frame.registers.get(upvalue.index);
+			return this.frames[upvalue.frameDepth].registers.get(upvalue.index);
 		}
 		return upvalue.value;
 	}
 
 	public getConst(index: number): Value {
-		return this.program.constPool[index];
+		return this.runtimeConstPool[index];
 	}
 
 	private skipNextInstruction(frame: CallFrame): void {
@@ -1404,7 +1907,7 @@ export class CPU {
 				this.copyRegister(frame, a, b);
 				return;
 			case OpCode.LOADK: {
-				this.setRegister(frame, a, this.program.constPool[bx]);
+				this.setRegister(frame, a, this.runtimeConstPool[bx]);
 				return;
 			}
 			case OpCode.LOADNIL:
@@ -1421,12 +1924,12 @@ export class CPU {
 				}
 				return;
 			case OpCode.GETG: {
-				const key = this.program.constPool[bx];
+				const key = this.runtimeConstPool[bx];
 				this.setRegister(frame, a, this.globals.get(key));
 				return;
 			}
 			case OpCode.SETG: {
-				const key = this.program.constPool[bx];
+				const key = this.runtimeConstPool[bx];
 				this.globals.set(key, frame.registers.get(a));
 				return;
 			}
@@ -1481,7 +1984,7 @@ export class CPU {
 			}
 			case OpCode.NEWT:
 				this.charge(CEIL_DIV4(b) + CEIL_DIV4(c));
-				this.setRegisterTable(frame, a, new Table(b, c));
+				this.setRegisterTable(frame, a, this.createTable(b, c));
 				return;
 			case OpCode.ADD: {
 				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
@@ -1806,10 +2309,12 @@ export class CPU {
 	}
 
 	private pushFrame(closure: Closure, args: Value[], returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): void {
+		Table.ensureValueObjectId(closure, this.objectHandles);
 		const proto = this.program.protos[closure.protoIndex];
 		const frame = this.acquireFrame();
 		frame.protoIndex = closure.protoIndex;
 		frame.pc = proto.entryPC;
+		frame.depth = this.frames.length;
 		frame.registers = this.acquireRegisters(proto.maxStack);
 		frame.closure = closure;
 		frame.returnBase = returnBase;
@@ -1835,6 +2340,17 @@ export class CPU {
 		this.frames.push(frame);
 	}
 
+	private createRootClosure(protoIndex: number): Closure {
+		const closure: Closure = {
+			objectId: 0,
+			objectAddr: 0,
+			protoIndex,
+			upvalues: [],
+		};
+		Table.ensureValueObjectId(closure, this.objectHandles);
+		return closure;
+	}
+
 	private createClosure(frame: CallFrame, protoIndex: number): Closure {
 		const proto = this.program.protos[protoIndex];
 		const upvalues = new Array<Upvalue>(proto.upvalueDescs.length);
@@ -1843,7 +2359,15 @@ export class CPU {
 			if (desc.inStack) {
 				let upvalue = frame.openUpvalues.get(desc.index);
 				if (!upvalue) {
-					upvalue = { open: true, index: desc.index, frame, value: null };
+					upvalue = {
+						objectId: 0,
+						objectAddr: 0,
+						open: true,
+						index: desc.index,
+						frameDepth: frame.depth,
+						value: null,
+					};
+					Table.ensureUpvalueObjectId(upvalue, this.objectHandles);
 					frame.openUpvalues.set(desc.index, upvalue);
 				}
 				upvalues[index] = upvalue;
@@ -1851,31 +2375,40 @@ export class CPU {
 			}
 			upvalues[index] = frame.closure.upvalues[desc.index];
 		}
-		return { protoIndex, upvalues };
+		const closure: Closure = {
+			objectId: 0,
+			objectAddr: 0,
+			protoIndex,
+			upvalues,
+		};
+		Table.ensureValueObjectId(closure, this.objectHandles);
+		return closure;
 	}
 
 	private closeUpvalues(frame: CallFrame): void {
 		for (const upvalue of frame.openUpvalues.values()) {
 			upvalue.value = frame.registers.get(upvalue.index);
 			upvalue.open = false;
-			upvalue.frame = null;
+			upvalue.frameDepth = -1;
+			Table.syncUpvalueState(upvalue, this.objectHandles);
 		}
 		frame.openUpvalues.clear();
 	}
 
 	private readUpvalue(upvalue: Upvalue): Value {
 		if (upvalue.open) {
-			return upvalue.frame.registers.get(upvalue.index);
+			return this.frames[upvalue.frameDepth].registers.get(upvalue.index);
 		}
 		return upvalue.value;
 	}
 
 	private writeUpvalue(upvalue: Upvalue, value: Value): void {
 		if (upvalue.open) {
-			upvalue.frame.registers.set(upvalue.index, value);
+			this.frames[upvalue.frameDepth].registers.set(upvalue.index, value);
 			return;
 		}
 		upvalue.value = value;
+		Table.syncUpvalueState(upvalue, this.objectHandles);
 	}
 
 	private writeReturnValues(frame: CallFrame, base: number, count: number, values: Value[]): void {
@@ -1975,7 +2508,7 @@ export class CPU {
 		const rk = signExtend(raw, bits);
 		if (rk < 0) {
 			const index = -1 - rk;
-			return this.program.constPool[index] as number;
+			return this.runtimeConstPool[index] as number;
 		}
 		return this.readRegisterNumber(frame, rk);
 	}
@@ -1984,7 +2517,7 @@ export class CPU {
 		const rk = signExtend(raw, bits);
 		if (rk < 0) {
 			const index = -1 - rk;
-			return this.program.constPool[index];
+			return this.runtimeConstPool[index];
 		}
 		return frame.registers.get(rk);
 	}

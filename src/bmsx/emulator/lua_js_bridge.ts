@@ -1025,14 +1025,14 @@ export function toRuntimeValue(runtime: Runtime, value: unknown): Value {
 		return getOrCreateNativeFunction(runtime, value);
 	}
 	if (isPlainObject(value)) {
-		const table = new Table(0, 0);
+		const table = runtime.cpu.createTable(0, 0);
 		for (const [prop, entry] of Object.entries(value)) {
 			table.set(runtime.internString(prop), toRuntimeValue(runtime, entry));
 		}
 		return table;
 	}
 	if (value instanceof Map) {
-		const table = new Table(0, 0);
+		const table = runtime.cpu.createTable(0, 0);
 		for (const [key, entry] of value.entries()) {
 			table.set(toRuntimeValue(runtime, key), toRuntimeValue(runtime, entry));
 		}

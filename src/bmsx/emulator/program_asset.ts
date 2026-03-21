@@ -1,6 +1,6 @@
 import { decodeBinary, encodeBinary, requireObject, requireObjectKey } from '../serializer/binencoder';
 import type { Program, ProgramMetadata, Proto, Value } from './cpu';
-import { StringPool, isStringValue, stringValueToString } from './string_pool';
+import { CompileTimeStringPool, isStringValue, stringValueToString } from './string_pool';
 
 export const PROGRAM_ASSET_ID = '__program__';
 export const PROGRAM_SYMBOLS_ASSET_ID = '__program_symbols__';
@@ -204,7 +204,7 @@ function decodeProgramLink(value: unknown): ProgramLink {
 }
 
 export function inflateProgram(encoded: EncodedProgram): Program {
-	const stringPool = new StringPool();
+	const stringPool = new CompileTimeStringPool();
 	const constPool: Value[] = new Array(encoded.constPool.length);
 	for (let index = 0; index < encoded.constPool.length; index += 1) {
 		const value = encoded.constPool[index];

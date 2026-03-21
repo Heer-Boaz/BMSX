@@ -70,10 +70,34 @@ static inline int ceilDiv16(int value) {
 	return (value + 15) >> 4;
 }
 
-static std::string formatNonFunctionCallError(Value callee, const StringPool& stringPool,
+template <typename TStringPool>
+static std::string valueToStringWithPool(const Value& v, const TStringPool& stringPool) {
+	if (isNil(v)) return "nil";
+	if (valueIsTagged(v)) {
+		switch (valueTag(v)) {
+			case ValueTag::False: return "false";
+			case ValueTag::True: return "true";
+			case ValueTag::String: return stringPool.toString(asStringId(v));
+			case ValueTag::Table: return "table";
+			case ValueTag::Closure: return "function";
+			case ValueTag::NativeFunction: return "function";
+			case ValueTag::NativeObject: return "native";
+			case ValueTag::Upvalue: return "upvalue";
+			case ValueTag::Nil: return "nil";
+			default: return "unknown";
+		}
+	}
+	double num = valueToNumber(v);
+	if (!std::isfinite(num)) {
+		return std::isnan(num) ? "nan" : (num < 0 ? "-inf" : "inf");
+	}
+	return formatNumber(num);
+}
+
+static std::string formatNonFunctionCallError(Value callee, const RuntimeStringPool& stringPool,
 												 const std::optional<SourceRange>& range) {
 	std::string message = "Attempted to call a non-function value.";
-	message += " callee=" + std::string(valueTypeName(callee)) + "(" + valueToString(callee, stringPool) + ")";
+	message += " callee=" + std::string(valueTypeName(callee)) + "(" + valueToStringWithPool(callee, stringPool) + ")";
 	if (range.has_value()) {
 		message += " at " + range->path + ":" + std::to_string(range->startLine) + ":" + std::to_string(range->startColumn);
 	}
@@ -150,46 +174,290 @@ static constexpr std::array<uint8_t, 64> makeBaseCycles() {
 
 static constexpr std::array<uint8_t, 64> kBaseCycles = makeBaseCycles();
 
+static std::unordered_map<uint32_t, GCObject*>& objectRefRegistry() {
+	static std::unordered_map<uint32_t, GCObject*> registry;
+	return registry;
+}
+
+struct NativeFunctionBridge {
+	NativeFunctionInvoke invoke;
+};
+
+struct NativeObjectBridge {
+	void* raw = nullptr;
+	std::function<Value(const Value&)> get;
+	std::function<void(const Value&, const Value&)> set;
+	std::function<int()> len;
+	std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry;
+	std::function<void(GcHeap&)> mark;
+};
+
+static std::unordered_map<uint32_t, NativeFunctionBridge>& nativeFunctionBridgeRegistry() {
+	static std::unordered_map<uint32_t, NativeFunctionBridge> registry;
+	return registry;
+}
+
+static std::unordered_map<uint32_t, NativeObjectBridge>& nativeObjectBridgeRegistry() {
+	static std::unordered_map<uint32_t, NativeObjectBridge> registry;
+	return registry;
+}
+
+static NativeFunctionBridge& resolveNativeFunctionBridge(uint32_t bridgeId) {
+	auto it = nativeFunctionBridgeRegistry().find(bridgeId);
+	if (it == nativeFunctionBridgeRegistry().end()) {
+		throw std::runtime_error("[CPU] Unknown native function bridge id.");
+	}
+	return it->second;
+}
+
+static NativeObjectBridge& resolveNativeObjectBridge(uint32_t bridgeId) {
+	auto it = nativeObjectBridgeRegistry().find(bridgeId);
+	if (it == nativeObjectBridgeRegistry().end()) {
+		throw std::runtime_error("[CPU] Unknown native object bridge id.");
+	}
+	return it->second;
+}
+
 } // namespace
 
+void registerRuntimeObjectRef(uint32_t objectRefId, GCObject* object) {
+	objectRefRegistry()[objectRefId] = object;
+}
+
+void unregisterRuntimeObjectRef(uint32_t objectRefId) {
+	objectRefRegistry().erase(objectRefId);
+}
+
+GCObject* resolveRuntimeObjectRef(uint32_t objectRefId) {
+	auto it = objectRefRegistry().find(objectRefId);
+	if (it == objectRefRegistry().end()) {
+		throw std::runtime_error("[CPU] Unknown object ref id.");
+	}
+	return it->second;
+}
+
 std::string valueToString(const Value& v, const StringPool& stringPool) {
-	if (isNil(v)) return "nil";
-	if (valueIsTagged(v)) {
-		switch (valueTag(v)) {
-			case ValueTag::False: return "false";
-			case ValueTag::True: return "true";
-			case ValueTag::String: return stringPool.toString(asStringId(v));
-			case ValueTag::Table: return "table";
-			case ValueTag::Closure: return "function";
-			case ValueTag::NativeFunction: return "function";
-			case ValueTag::NativeObject: return "native";
-			case ValueTag::Upvalue: return "upvalue";
-			case ValueTag::Nil: return "nil";
-			default: return "unknown";
-		}
-	}
-	double num = valueToNumber(v);
-	if (!std::isfinite(num)) {
-		return std::isnan(num) ? "nan" : (num < 0 ? "-inf" : "inf");
-	}
-	return formatNumber(num);
+	return valueToStringWithPool(v, stringPool);
+}
+
+std::string valueToString(const Value& v, const RuntimeStringPool& stringPool) {
+	return valueToStringWithPool(v, stringPool);
 }
 
 const char* valueTypeName(Value v) {
 	return valueTypeNameInline(v);
 }
 
-Table::Table(const StringPool* stringPool, int arraySize, int hashSize)
-	: m_stringPool(stringPool) {
+Value valueTable(Table* table) {
+	return valueFromTag(ValueTag::Table, table->runtimeRefId);
+}
+
+Value valueClosure(Closure* closure) {
+	return valueFromTag(ValueTag::Closure, closure->runtimeRefId);
+}
+
+Value valueNativeFunction(NativeFunction* fn) {
+	return valueFromTag(ValueTag::NativeFunction, fn->runtimeRefId);
+}
+
+Value valueNativeObject(NativeObject* obj) {
+	return valueFromTag(ValueTag::NativeObject, obj->runtimeRefId);
+}
+
+Value valueUpvalue(Upvalue* upvalue) {
+	return valueFromTag(ValueTag::Upvalue, upvalue->runtimeRefId);
+}
+
+Table* asTable(Value v) {
+	return static_cast<Table*>(resolveRuntimeObjectRef(static_cast<uint32_t>(valuePayload(v))));
+}
+
+Closure* asClosure(Value v) {
+	return static_cast<Closure*>(resolveRuntimeObjectRef(static_cast<uint32_t>(valuePayload(v))));
+}
+
+NativeFunction* asNativeFunction(Value v) {
+	return static_cast<NativeFunction*>(resolveRuntimeObjectRef(static_cast<uint32_t>(valuePayload(v))));
+}
+
+NativeObject* asNativeObject(Value v) {
+	return static_cast<NativeObject*>(resolveRuntimeObjectRef(static_cast<uint32_t>(valuePayload(v))));
+}
+
+Upvalue* asUpvalue(Value v) {
+	return static_cast<Upvalue*>(resolveRuntimeObjectRef(static_cast<uint32_t>(valuePayload(v))));
+}
+
+void NativeFunction::invoke(const std::vector<Value>& args, std::vector<Value>& out) const {
+	resolveNativeFunctionBridge(runtimeRefId).invoke(args, out);
+}
+
+Value NativeObject::get(const Value& key) const {
+	const auto& bridge = resolveNativeObjectBridge(runtimeRefId);
+	if (!bridge.get) {
+		return valueNil();
+	}
+	return bridge.get(key);
+}
+
+void NativeObject::set(const Value& key, const Value& value) const {
+	resolveNativeObjectBridge(runtimeRefId).set(key, value);
+}
+
+bool NativeObject::hasLen() const {
+	return static_cast<bool>(resolveNativeObjectBridge(runtimeRefId).len);
+}
+
+int NativeObject::len() const {
+	return resolveNativeObjectBridge(runtimeRefId).len();
+}
+
+bool NativeObject::hasNextEntry() const {
+	return static_cast<bool>(resolveNativeObjectBridge(runtimeRefId).nextEntry);
+}
+
+std::optional<std::pair<Value, Value>> NativeObject::nextEntry(const Value& after) const {
+	const auto& bridge = resolveNativeObjectBridge(runtimeRefId);
+	if (!bridge.nextEntry) {
+		return std::nullopt;
+	}
+	return bridge.nextEntry(after);
+}
+
+void NativeObject::mark(GcHeap& heap) const {
+	const auto& bridge = resolveNativeObjectBridge(runtimeRefId);
+	if (bridge.mark) {
+		bridge.mark(heap);
+	}
+}
+
+void* NativeObject::raw() const {
+	return resolveNativeObjectBridge(runtimeRefId).raw;
+}
+
+Table* NativeObject::getMetatable() const {
+	return metatableRefId == 0 ? nullptr : static_cast<Table*>(resolveRuntimeObjectRef(metatableRefId));
+}
+
+void NativeObject::setMetatable(Table* metatable) {
+	metatableRefId = metatable ? metatable->runtimeRefId : 0;
+}
+
+static void writeTaggedValueToHandle(ObjectHandleTable& handleTable, uint32_t addr, const Value& value) {
+	if (isNil(value)) {
+		handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::Nil));
+		handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, 0);
+		handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+		return;
+	}
+	if (valueIsTagged(value)) {
+		switch (valueTag(value)) {
+			case ValueTag::False:
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::False));
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, 0);
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+				return;
+			case ValueTag::True:
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::True));
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, 0);
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+				return;
+			case ValueTag::String:
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::String));
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asStringId(value));
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+				return;
+			case ValueTag::Table:
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::Table));
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asTable(value)->runtimeRefId);
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+				return;
+			case ValueTag::Closure:
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::Closure));
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asClosure(value)->runtimeRefId);
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+				return;
+			case ValueTag::NativeFunction:
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::NativeFunction));
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asNativeFunction(value)->runtimeRefId);
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+				return;
+			case ValueTag::NativeObject:
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::NativeObject));
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asNativeObject(value)->runtimeRefId);
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+				return;
+			case ValueTag::Upvalue:
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::Upvalue));
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asUpvalue(value)->runtimeRefId);
+				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
+				return;
+			case ValueTag::Nil:
+				break;
+		}
+	}
+	uint64_t bits = 0;
+	const double number = valueToNumber(value);
+	std::memcpy(&bits, &number, sizeof(double));
+	handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::Number));
+	handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, static_cast<uint32_t>(bits & 0xffffffffULL));
+	handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, static_cast<uint32_t>(bits >> 32));
+}
+
+static Value readTaggedValueFromHandle(const ObjectHandleTable& handleTable, const GcHeap& gcHeap, uint32_t addr) {
+	const uint32_t tag = handleTable.readU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET);
+	const uint32_t payloadLo = handleTable.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET);
+	const uint32_t payloadHi = handleTable.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET);
+	switch (static_cast<TaggedValueTag>(tag)) {
+		case TaggedValueTag::Nil:
+			return valueNil();
+		case TaggedValueTag::False:
+			return valueBool(false);
+		case TaggedValueTag::True:
+			return valueBool(true);
+		case TaggedValueTag::Number: {
+			uint64_t bits = static_cast<uint64_t>(payloadLo) | (static_cast<uint64_t>(payloadHi) << 32);
+			double number = 0.0;
+			std::memcpy(&number, &bits, sizeof(double));
+			return valueNumber(number);
+		}
+		case TaggedValueTag::String:
+			return valueString(payloadLo);
+		case TaggedValueTag::Table:
+			return valueTable(static_cast<Table*>(resolveRuntimeObjectRef(payloadLo)));
+		case TaggedValueTag::Closure:
+			return valueClosure(static_cast<Closure*>(gcHeap.resolveRuntimeRef(payloadLo)));
+		case TaggedValueTag::NativeFunction:
+			return valueNativeFunction(static_cast<NativeFunction*>(gcHeap.resolveRuntimeRef(payloadLo)));
+		case TaggedValueTag::NativeObject:
+			return valueNativeObject(static_cast<NativeObject*>(gcHeap.resolveRuntimeRef(payloadLo)));
+		case TaggedValueTag::Upvalue:
+			return valueUpvalue(static_cast<Upvalue*>(gcHeap.resolveRuntimeRef(payloadLo)));
+	}
+	throw std::runtime_error("[Table] Unsupported tagged value tag.");
+}
+
+Table::Table(GcHeap& gcHeap, ObjectHandleTable& handleTable, const RuntimeStringPool& stringPool, int arraySize, int hashSize)
+	: m_gcHeap(gcHeap)
+	, m_handleTable(handleTable)
+	, m_stringPool(stringPool) {
 	if (arraySize > 0) {
-		m_array.resize(static_cast<size_t>(arraySize), valueNil());
+		m_arrayStore.resize(static_cast<size_t>(arraySize));
 	}
 	if (hashSize > 0) {
 		size_t size = nextPowerOfTwo(static_cast<size_t>(hashSize));
-		m_hash.assign(size, HashNode{});
-		m_hashFree = static_cast<int>(size) - 1;
+		m_hashStore.resize(size);
 	}
+	const ObjectAllocation allocation = m_handleTable.allocateObject(
+		static_cast<uint32_t>(HeapObjectType::Table),
+		TABLE_OBJECT_HEADER_SIZE);
+	m_objectId = allocation.id;
+	m_objectAddr = allocation.addr;
+	allocateStoreObjects(static_cast<size_t>(arraySize), m_hashStore.capacity());
+	syncObjectState();
 }
+
+Table::~Table() {}
 
 bool Table::tryGetArrayIndex(const Value& key, int& outIndex) const {
 	if (!valueIsNumber(key)) {
@@ -214,10 +482,10 @@ bool Table::tryGetArrayIndex(const Value& key, int& outIndex) const {
 }
 
 bool Table::hasArrayIndex(size_t index) const {
-	if (index < m_array.size()) {
-		return !isNil(m_array[index]);
+	if (index < m_arrayStore.capacity()) {
+		return m_arrayStore.has(index);
 	}
-	if (m_hash.empty()) {
+	if (m_hashStore.capacity() == 0) {
 		return false;
 	}
 	Value key = valueNumber(static_cast<double>(index + 1));
@@ -232,6 +500,82 @@ void Table::updateArrayLengthFrom(size_t startIndex) {
 	m_arrayLength = newLength;
 }
 
+void Table::syncObjectState() {
+	syncTableMetadata();
+	syncStoreMetadata();
+}
+
+void Table::syncTableMetadata() {
+	const uint32_t metatableId = m_metatable ? m_metatable->runtimeRefId : 0;
+	m_handleTable.writeU32(m_objectAddr + TABLE_OBJECT_METATABLE_ID_OFFSET, metatableId);
+	m_handleTable.writeU32(m_objectAddr + TABLE_OBJECT_ARRAY_STORE_ID_OFFSET, m_arrayStoreId);
+	m_handleTable.writeU32(m_objectAddr + TABLE_OBJECT_HASH_STORE_ID_OFFSET, m_hashStoreId);
+	m_handleTable.writeU32(m_objectAddr + TABLE_OBJECT_ARRAY_LENGTH_OFFSET, static_cast<uint32_t>(m_arrayLength));
+}
+
+void Table::syncStoreMetadata() {
+	m_handleTable.writeU32(m_arrayStoreAddr + ARRAY_STORE_OBJECT_CAPACITY_OFFSET, static_cast<uint32_t>(m_arrayStore.capacity()));
+	m_handleTable.writeU32(m_hashStoreAddr + HASH_STORE_OBJECT_CAPACITY_OFFSET, static_cast<uint32_t>(m_hashStore.capacity()));
+	m_handleTable.writeU32(m_hashStoreAddr + HASH_STORE_OBJECT_FREE_OFFSET, static_cast<uint32_t>(m_hashStore.free));
+	for (size_t index = 0; index < m_arrayStore.capacity(); ++index) {
+		writeArraySlot(index);
+	}
+	for (size_t index = 0; index < m_hashStore.capacity(); ++index) {
+		writeHashNode(index);
+	}
+}
+
+void Table::writeArraySlot(size_t index) {
+	const uint32_t addr = m_arrayStoreAddr + ARRAY_STORE_OBJECT_DATA_OFFSET + (static_cast<uint32_t>(index) * TAGGED_VALUE_SLOT_SIZE);
+	writeTaggedValue(addr, m_arrayStore.read(index));
+}
+
+void Table::writeHashNode(size_t index) {
+	const HashNode& node = m_hashStore.node(index);
+	const uint32_t addr = m_hashStoreAddr + HASH_STORE_OBJECT_DATA_OFFSET + (static_cast<uint32_t>(index) * HASH_NODE_SIZE);
+	writeTaggedValue(addr + HASH_NODE_KEY_OFFSET, node.key);
+	writeTaggedValue(addr + HASH_NODE_VALUE_OFFSET, node.value);
+	m_handleTable.writeU32(addr + HASH_NODE_NEXT_OFFSET, static_cast<uint32_t>(node.next));
+}
+
+void Table::writeTaggedValue(uint32_t addr, const Value& value) {
+	writeTaggedValueToHandle(m_handleTable, addr, value);
+}
+
+Value Table::readTaggedValue(uint32_t addr) const {
+	return readTaggedValueFromHandle(m_handleTable, m_gcHeap, addr);
+}
+
+void Table::rehydrateStoreViews() {
+	const ObjectHandleEntry tableEntry = m_handleTable.readEntry(m_objectId);
+	m_objectAddr = tableEntry.addr;
+	m_arrayStoreId = m_handleTable.readU32(m_objectAddr + TABLE_OBJECT_ARRAY_STORE_ID_OFFSET);
+	m_hashStoreId = m_handleTable.readU32(m_objectAddr + TABLE_OBJECT_HASH_STORE_ID_OFFSET);
+	m_arrayLength = static_cast<size_t>(m_handleTable.readU32(m_objectAddr + TABLE_OBJECT_ARRAY_LENGTH_OFFSET));
+	const uint32_t metatableId = m_handleTable.readU32(m_objectAddr + TABLE_OBJECT_METATABLE_ID_OFFSET);
+	m_metatable = metatableId == 0 ? nullptr : static_cast<Table*>(resolveRuntimeObjectRef(metatableId));
+	const ObjectHandleEntry arrayStoreEntry = m_handleTable.readEntry(m_arrayStoreId);
+	const ObjectHandleEntry hashStoreEntry = m_handleTable.readEntry(m_hashStoreId);
+	m_arrayStoreAddr = arrayStoreEntry.addr;
+	m_hashStoreAddr = hashStoreEntry.addr;
+	const size_t arrayCapacity = static_cast<size_t>(m_handleTable.readU32(m_arrayStoreAddr + ARRAY_STORE_OBJECT_CAPACITY_OFFSET));
+	const size_t hashCapacity = static_cast<size_t>(m_handleTable.readU32(m_hashStoreAddr + HASH_STORE_OBJECT_CAPACITY_OFFSET));
+	m_arrayStore.resize(arrayCapacity);
+	m_hashStore.resize(hashCapacity);
+	m_hashStore.free = static_cast<int>(m_handleTable.readU32(m_hashStoreAddr + HASH_STORE_OBJECT_FREE_OFFSET));
+	for (size_t index = 0; index < arrayCapacity; ++index) {
+		const uint32_t slotAddr = m_arrayStoreAddr + ARRAY_STORE_OBJECT_DATA_OFFSET + (static_cast<uint32_t>(index) * TAGGED_VALUE_SLOT_SIZE);
+		m_arrayStore.slot(index) = readTaggedValue(slotAddr);
+	}
+	for (size_t index = 0; index < hashCapacity; ++index) {
+		HashNode& node = m_hashStore.node(index);
+		const uint32_t nodeAddr = m_hashStoreAddr + HASH_STORE_OBJECT_DATA_OFFSET + (static_cast<uint32_t>(index) * HASH_NODE_SIZE);
+		node.key = readTaggedValue(nodeAddr + HASH_NODE_KEY_OFFSET);
+		node.value = readTaggedValue(nodeAddr + HASH_NODE_VALUE_OFFSET);
+		node.next = static_cast<int>(m_handleTable.readU32(nodeAddr + HASH_NODE_NEXT_OFFSET));
+	}
+}
+
 size_t Table::hashValue(const Value& key) const {
 	return ValueHash{ m_stringPool }(key);
 }
@@ -241,13 +585,13 @@ bool Table::keyEquals(const Value& a, const Value& b) const {
 }
 
 int Table::findNodeIndex(const Value& key) const {
-	if (m_hash.empty()) {
+	if (m_hashStore.capacity() == 0) {
 		return -1;
 	}
-	size_t mask = m_hash.size() - 1;
+	size_t mask = m_hashStore.capacity() - 1;
 	int index = static_cast<int>(hashValue(key) & mask);
 	while (index >= 0) {
-		const HashNode& node = m_hash[static_cast<size_t>(index)];
+		const HashNode& node = m_hashStore.node(static_cast<size_t>(index));
 		if (!isNil(node.key) && keyEquals(node.key, key)) {
 			return index;
 		}
@@ -261,27 +605,27 @@ Table::HashNode* Table::getNode(const Value& key) {
 	if (index < 0) {
 		return nullptr;
 	}
-	return &m_hash[static_cast<size_t>(index)];
+	return &m_hashStore.node(static_cast<size_t>(index));
 }
 
 Table::HashNode* Table::getMainNode(const Value& key) {
-	if (m_hash.empty()) {
+	if (m_hashStore.capacity() == 0) {
 		return nullptr;
 	}
-	size_t mask = m_hash.size() - 1;
+	size_t mask = m_hashStore.capacity() - 1;
 	size_t index = hashValue(key) & mask;
-	return &m_hash[index];
+	return &m_hashStore.node(index);
 }
 
 int Table::getFreeIndex() {
-	int start = m_hashFree >= 0 ? m_hashFree : static_cast<int>(m_hash.size()) - 1;
+	int start = m_hashStore.free >= 0 ? m_hashStore.free : static_cast<int>(m_hashStore.capacity()) - 1;
 	for (int i = start; i >= 0; --i) {
-		if (isNil(m_hash[static_cast<size_t>(i)].key)) {
-			m_hashFree = i - 1;
+		if (isNil(m_hashStore.node(static_cast<size_t>(i)).key)) {
+			m_hashStore.free = i - 1;
 			return i;
 		}
 	}
-	m_hashFree = -1;
+	m_hashStore.free = -1;
 	return -1;
 }
 
@@ -297,21 +641,19 @@ void Table::rehash(const Value& key) {
 		counts[log] += 1;
 	};
 
-	for (size_t i = 0; i < m_array.size(); ++i) {
-		if (!isNil(m_array[i])) {
+	m_arrayStore.forEachPresent([&](size_t index, Value value) {
+		(void)value;
 			totalKeys += 1;
-			countIntegerKey(i + 1);
-		}
-	}
-	for (const auto& node : m_hash) {
-		if (!isNil(node.key)) {
+			countIntegerKey(index + 1);
+	});
+	m_hashStore.forEachPresent([&](size_t _index, const HashNode& node) {
+		(void)_index;
 			totalKeys += 1;
 			int index = 0;
 			if (tryGetArrayIndex(node.key, index)) {
 				countIntegerKey(static_cast<size_t>(index) + 1);
 			}
-		}
-	}
+	});
 	if (!isNil(key)) {
 		totalKeys += 1;
 		int index = 0;
@@ -339,24 +681,34 @@ void Table::rehash(const Value& key) {
 }
 
 void Table::resize(size_t newArraySize, size_t newHashSize) {
-	std::vector<Value> oldArray = std::move(m_array);
-	std::vector<HashNode> oldHash = std::move(m_hash);
+	ArrayStoreView oldArray = std::move(m_arrayStore);
+	HashStoreView oldHash = std::move(m_hashStore);
 
-	m_array.assign(newArraySize, valueNil());
+	m_arrayStore.resize(newArraySize);
 	m_arrayLength = 0;
-	m_hash.assign(newHashSize, HashNode{});
-	m_hashFree = newHashSize > 0 ? static_cast<int>(newHashSize) - 1 : -1;
+	m_hashStore.resize(newHashSize);
+	allocateStoreObjects(newArraySize, newHashSize);
 
-	for (size_t i = 0; i < oldArray.size(); ++i) {
-		if (!isNil(oldArray[i])) {
-			rawSet(valueNumber(static_cast<double>(i + 1)), oldArray[i]);
-		}
-	}
-	for (const auto& node : oldHash) {
-		if (!isNil(node.key)) {
-			rawSet(node.key, node.value);
-		}
-	}
+	oldArray.forEachPresent([&](size_t index, Value value) {
+		rawSet(valueNumber(static_cast<double>(index + 1)), value);
+	});
+	oldHash.forEachPresent([&](size_t _index, const HashNode& node) {
+		(void)_index;
+		rawSet(node.key, node.value);
+	});
+}
+
+void Table::allocateStoreObjects(size_t arraySize, size_t hashSize) {
+	const ObjectAllocation arrayStoreAllocation = m_handleTable.allocateObject(
+		static_cast<uint32_t>(HeapObjectType::ArrayStore),
+		ARRAY_STORE_OBJECT_DATA_OFFSET + (static_cast<uint32_t>(arraySize) * TAGGED_VALUE_SLOT_SIZE));
+	const ObjectAllocation hashStoreAllocation = m_handleTable.allocateObject(
+		static_cast<uint32_t>(HeapObjectType::HashStore),
+		HASH_STORE_OBJECT_DATA_OFFSET + (static_cast<uint32_t>(hashSize) * HASH_NODE_SIZE));
+	m_arrayStoreId = arrayStoreAllocation.id;
+	m_arrayStoreAddr = arrayStoreAllocation.addr;
+	m_hashStoreId = hashStoreAllocation.id;
+	m_hashStoreAddr = hashStoreAllocation.addr;
 }
 
 void Table::rawSet(const Value& key, const Value& value) {
@@ -364,15 +716,15 @@ void Table::rawSet(const Value& key, const Value& value) {
 	bool isArrayKey = tryGetArrayIndex(key, index);
 	if (isArrayKey) {
 		size_t idx = static_cast<size_t>(index);
-		if (idx < m_array.size()) {
-			m_array[idx] = value;
+		if (idx < m_arrayStore.capacity()) {
+			m_arrayStore.slot(idx) = value;
 			if (isNil(value)) {
 				if (idx < m_arrayLength) {
 					m_arrayLength = idx;
 				}
 			} else if (idx == m_arrayLength) {
 				size_t newLength = m_arrayLength;
-				while (newLength < m_array.size() && !isNil(m_array[newLength])) {
+				while (newLength < m_arrayStore.capacity() && !isNil(m_arrayStore.read(newLength))) {
 					++newLength;
 				}
 				m_arrayLength = newLength;
@@ -387,14 +739,14 @@ void Table::rawSet(const Value& key, const Value& value) {
 }
 
 void Table::insertHash(const Value& key, const Value& value) {
-	if (m_hash.empty()) {
+	if (m_hashStore.capacity() == 0) {
 		rehash(key);
 		rawSet(key, value);
 		return;
 	}
-	size_t mask = m_hash.size() - 1;
+	size_t mask = m_hashStore.capacity() - 1;
 	int mainIndex = static_cast<int>(hashValue(key) & mask);
-	HashNode& mainNode = m_hash[static_cast<size_t>(mainIndex)];
+	HashNode& mainNode = m_hashStore.node(static_cast<size_t>(mainIndex));
 	if (isNil(mainNode.key)) {
 		mainNode.key = key;
 		mainNode.value = value;
@@ -407,15 +759,15 @@ void Table::insertHash(const Value& key, const Value& value) {
 		rawSet(key, value);
 		return;
 	}
-	HashNode& freeNode = m_hash[static_cast<size_t>(freeIndex)];
+	HashNode& freeNode = m_hashStore.node(static_cast<size_t>(freeIndex));
 	int mainIndexOfOccupied = static_cast<int>(hashValue(mainNode.key) & mask);
 	if (mainIndexOfOccupied != mainIndex) {
 		freeNode = mainNode;
 		int prev = mainIndexOfOccupied;
-		while (m_hash[static_cast<size_t>(prev)].next != mainIndex) {
-			prev = m_hash[static_cast<size_t>(prev)].next;
+		while (m_hashStore.node(static_cast<size_t>(prev)).next != mainIndex) {
+			prev = m_hashStore.node(static_cast<size_t>(prev)).next;
 		}
-		m_hash[static_cast<size_t>(prev)].next = freeIndex;
+		m_hashStore.node(static_cast<size_t>(prev)).next = freeIndex;
 		mainNode.key = key;
 		mainNode.value = value;
 		mainNode.next = -1;
@@ -428,43 +780,43 @@ void Table::insertHash(const Value& key, const Value& value) {
 }
 
 void Table::removeFromHash(const Value& key) {
-	if (m_hash.empty()) {
+	if (m_hashStore.capacity() == 0) {
 		return;
 	}
-	size_t mask = m_hash.size() - 1;
+	size_t mask = m_hashStore.capacity() - 1;
 	int mainIndex = static_cast<int>(hashValue(key) & mask);
 	int prev = -1;
 	int index = mainIndex;
 	while (index >= 0) {
-		HashNode& node = m_hash[static_cast<size_t>(index)];
+		HashNode& node = m_hashStore.node(static_cast<size_t>(index));
 		if (!isNil(node.key) && keyEquals(node.key, key)) {
 			int next = node.next;
 			if (prev >= 0) {
-				m_hash[static_cast<size_t>(prev)].next = next;
+				m_hashStore.node(static_cast<size_t>(prev)).next = next;
 				node.key = valueNil();
 				node.value = valueNil();
 				node.next = -1;
-				if (index > m_hashFree) {
-					m_hashFree = index;
+				if (index > m_hashStore.free) {
+					m_hashStore.free = index;
 				}
 				return;
 			}
 			if (next >= 0) {
-				HashNode& nextNode = m_hash[static_cast<size_t>(next)];
+				HashNode& nextNode = m_hashStore.node(static_cast<size_t>(next));
 				node = nextNode;
 				nextNode.key = valueNil();
 				nextNode.value = valueNil();
 				nextNode.next = -1;
-				if (next > m_hashFree) {
-					m_hashFree = next;
+				if (next > m_hashStore.free) {
+					m_hashStore.free = next;
 				}
 				return;
 			}
 			node.key = valueNil();
 			node.value = valueNil();
 			node.next = -1;
-			if (index > m_hashFree) {
-				m_hashFree = index;
+			if (index > m_hashStore.free) {
+				m_hashStore.free = index;
 			}
 			return;
 		}
@@ -479,14 +831,14 @@ Value Table::get(const Value& key) const {
 	}
 	int index = 0;
 	if (tryGetArrayIndex(key, index)) {
-		if (index < static_cast<int>(m_array.size())) {
-			return m_array[static_cast<size_t>(index)];
+		if (index < static_cast<int>(m_arrayStore.capacity())) {
+			return m_arrayStore.read(static_cast<size_t>(index));
 		}
 	}
 
 	int nodeIndex = findNodeIndex(key);
 	if (nodeIndex >= 0) {
-		return m_hash[static_cast<size_t>(nodeIndex)].value;
+		return m_hashStore.node(static_cast<size_t>(nodeIndex)).value;
 	}
 	return valueNil();
 }
@@ -496,46 +848,52 @@ void Table::set(const Value& key, const Value& value) {
 		throw BMSX_RUNTIME_ERROR("Table index is nil.");
 	}
 	int index = 0;
-	bool isArrayKey = tryGetArrayIndex(key, index);
-	if (isArrayKey) {
-		const size_t idx = static_cast<size_t>(index);
-		if (isNil(value)) {
-			if (idx < m_array.size()) {
-				m_array[idx] = value;
-				if (idx < m_arrayLength) {
-					m_arrayLength = idx;
+	try {
+		bool isArrayKey = tryGetArrayIndex(key, index);
+		if (isArrayKey) {
+			const size_t idx = static_cast<size_t>(index);
+			if (isNil(value)) {
+				if (idx < m_arrayStore.capacity()) {
+					m_arrayStore.slot(idx) = value;
+					if (idx < m_arrayLength) {
+						m_arrayLength = idx;
+					}
+					return;
+				}
+			} else if (idx < m_arrayStore.capacity()) {
+				m_arrayStore.slot(idx) = value;
+				if (idx == m_arrayLength) {
+					size_t newLength = m_arrayLength;
+					while (newLength < m_arrayStore.capacity() && !isNil(m_arrayStore.read(newLength))) {
+						++newLength;
+					}
+					m_arrayLength = newLength;
 				}
 				return;
 			}
-		} else if (idx < m_array.size()) {
-			m_array[idx] = value;
-			if (idx == m_arrayLength) {
-				size_t newLength = m_arrayLength;
-				while (newLength < m_array.size() && !isNil(m_array[newLength])) {
-					++newLength;
-				}
-				m_arrayLength = newLength;
+		}
+
+		if (isNil(value)) {
+			removeFromHash(key);
+			if (isArrayKey && static_cast<size_t>(index) < m_arrayLength) {
+				m_arrayLength = static_cast<size_t>(index);
 			}
 			return;
 		}
-	}
-
-	if (isNil(value)) {
-		removeFromHash(key);
-		if (isArrayKey && static_cast<size_t>(index) < m_arrayLength) {
-			m_arrayLength = static_cast<size_t>(index);
+		int nodeIndex = findNodeIndex(key);
+		if (nodeIndex >= 0) {
+			m_hashStore.node(static_cast<size_t>(nodeIndex)).value = value;
+			return;
 		}
-		return;
+		if (m_hashStore.capacity() == 0 || m_hashStore.free < 0) {
+			rehash(key);
+		}
+		rawSet(key, value);
+	} catch (...) {
+		syncObjectState();
+		throw;
 	}
-	int nodeIndex = findNodeIndex(key);
-	if (nodeIndex >= 0) {
-		m_hash[static_cast<size_t>(nodeIndex)].value = value;
-		return;
-	}
-	if (m_hash.empty() || m_hashFree < 0) {
-		rehash(key);
-	}
-	rawSet(key, value);
+	syncObjectState();
 }
 
 int Table::length() const {
@@ -543,10 +901,10 @@ int Table::length() const {
 }
 
 void Table::clear() {
-	m_array.clear();
+	m_arrayStore.clear();
 	m_arrayLength = 0;
-	m_hash.clear();
-	m_hashFree = -1;
+	m_hashStore.clear();
+	syncObjectState();
 }
 
 std::vector<std::pair<Value, Value>> Table::entries() const {
@@ -559,12 +917,13 @@ std::vector<std::pair<Value, Value>> Table::entries() const {
 
 std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) const {
 	if (isNil(after)) {
-		for (size_t i = 0; i < m_array.size(); ++i) {
-			if (!isNil(m_array[i])) {
-				return std::make_pair(valueNumber(static_cast<double>(i + 1)), m_array[i]);
+		for (size_t i = 0; i < m_arrayStore.capacity(); ++i) {
+			if (!isNil(m_arrayStore.read(i))) {
+				return std::make_pair(valueNumber(static_cast<double>(i + 1)), m_arrayStore.read(i));
 			}
 		}
-		for (const auto& node : m_hash) {
+		for (size_t i = 0; i < m_hashStore.capacity(); ++i) {
+			const auto& node = m_hashStore.node(i);
 			if (!isNil(node.key)) {
 				return std::make_pair(node.key, node.value);
 			}
@@ -573,17 +932,18 @@ std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) cons
 	}
 	int index = 0;
 	if (tryGetArrayIndex(after, index)) {
-		if (index < static_cast<int>(m_array.size())) {
-			if (isNil(m_array[static_cast<size_t>(index)])) {
+		if (index < static_cast<int>(m_arrayStore.capacity())) {
+			if (isNil(m_arrayStore.read(static_cast<size_t>(index)))) {
 				return std::nullopt;
 			}
 			int startIndex = index + 1;
-			for (int i = startIndex; i < static_cast<int>(m_array.size()); ++i) {
-				if (!isNil(m_array[static_cast<size_t>(i)])) {
-					return std::make_pair(valueNumber(static_cast<double>(i + 1)), m_array[static_cast<size_t>(i)]);
+			for (int i = startIndex; i < static_cast<int>(m_arrayStore.capacity()); ++i) {
+				if (!isNil(m_arrayStore.read(static_cast<size_t>(i)))) {
+					return std::make_pair(valueNumber(static_cast<double>(i + 1)), m_arrayStore.read(static_cast<size_t>(i)));
 				}
 			}
-			for (const auto& node : m_hash) {
+			for (size_t i = 0; i < m_hashStore.capacity(); ++i) {
+				const auto& node = m_hashStore.node(i);
 				if (!isNil(node.key)) {
 					return std::make_pair(node.key, node.value);
 				}
@@ -595,8 +955,8 @@ std::optional<std::pair<Value, Value>> Table::nextEntry(const Value& after) cons
 	if (nodeIndex < 0) {
 		return std::nullopt;
 	}
-	for (size_t i = static_cast<size_t>(nodeIndex + 1); i < m_hash.size(); ++i) {
-		const auto& node = m_hash[i];
+	for (size_t i = static_cast<size_t>(nodeIndex + 1); i < m_hashStore.capacity(); ++i) {
+		const auto& node = m_hashStore.node(i);
 		if (!isNil(node.key)) {
 			return std::make_pair(node.key, node.value);
 		}
@@ -637,6 +997,14 @@ void GcHeap::markObject(GCObject* obj) {
 	m_grayStack.push_back(obj);
 }
 
+GCObject* GcHeap::resolveRuntimeRef(uint32_t runtimeRefId) const {
+	auto it = m_runtimeRefs.find(runtimeRefId);
+	if (it == m_runtimeRefs.end()) {
+		throw std::runtime_error("[GcHeap] Unknown runtime ref id.");
+	}
+	return it->second;
+}
+
 void GcHeap::trace() {
 	while (!m_grayStack.empty()) {
 		GCObject* obj = m_grayStack.back();
@@ -655,8 +1023,8 @@ void GcHeap::trace() {
 			}
 			case ObjType::Closure: {
 				auto* closure = static_cast<Closure*>(obj);
-				for (auto* upvalue : closure->upvalues) {
-					markObject(upvalue);
+				for (uint32_t upvalueRefId : closure->upvalueRefIds) {
+					markObject(static_cast<Upvalue*>(resolveRuntimeObjectRef(upvalueRefId)));
 				}
 				break;
 			}
@@ -664,12 +1032,10 @@ void GcHeap::trace() {
 				break;
 			case ObjType::NativeObject: {
 				auto* native = static_cast<NativeObject*>(obj);
-				if (native->metatable) {
-					markObject(native->metatable);
+				if (native->getMetatable()) {
+					markObject(native->getMetatable());
 				}
-				if (native->mark) {
-					native->mark(*this);
-				}
+				native->mark(*this);
 				break;
 			}
 			case ObjType::Upvalue: {
@@ -693,29 +1059,49 @@ void GcHeap::sweep() {
 			continue;
 		}
 		GCObject* next = obj->next;
-		switch (obj->type) {
-			case ObjType::Table:
-				m_bytesAllocated -= sizeof(Table);
-				delete static_cast<Table*>(obj);
-				break;
-			case ObjType::Closure:
-				m_bytesAllocated -= sizeof(Closure);
-				delete static_cast<Closure*>(obj);
-				break;
-			case ObjType::NativeFunction:
-				m_bytesAllocated -= sizeof(NativeFunction);
-				delete static_cast<NativeFunction*>(obj);
-				break;
-			case ObjType::NativeObject:
-				m_bytesAllocated -= sizeof(NativeObject);
-				delete static_cast<NativeObject*>(obj);
-				break;
-			case ObjType::Upvalue:
-				m_bytesAllocated -= sizeof(Upvalue);
-				delete static_cast<Upvalue*>(obj);
-				break;
-		}
+		destroyObject(obj);
 		*current = next;
+	}
+}
+
+GcHeap::~GcHeap() {
+	GCObject* current = m_objects;
+	while (current) {
+		GCObject* next = current->next;
+		destroyObject(current);
+		current = next;
+	}
+	m_objects = nullptr;
+	m_grayStack.clear();
+	m_runtimeRefs.clear();
+}
+
+void GcHeap::destroyObject(GCObject* obj) {
+	m_runtimeRefs.erase(obj->runtimeRefId);
+	unregisterRuntimeObjectRef(obj->runtimeRefId);
+	switch (obj->type) {
+		case ObjType::Table:
+			m_bytesAllocated -= sizeof(Table);
+			delete static_cast<Table*>(obj);
+			break;
+		case ObjType::Closure:
+			m_bytesAllocated -= sizeof(Closure);
+			delete static_cast<Closure*>(obj);
+			break;
+		case ObjType::NativeFunction:
+			nativeFunctionBridgeRegistry().erase(obj->runtimeRefId);
+			m_bytesAllocated -= sizeof(NativeFunction);
+			delete static_cast<NativeFunction*>(obj);
+			break;
+		case ObjType::NativeObject:
+			nativeObjectBridgeRegistry().erase(obj->runtimeRefId);
+			m_bytesAllocated -= sizeof(NativeObject);
+			delete static_cast<NativeObject*>(obj);
+			break;
+		case ObjType::Upvalue:
+			m_bytesAllocated -= sizeof(Upvalue);
+			delete static_cast<Upvalue*>(obj);
+			break;
 	}
 }
 
@@ -732,21 +1118,25 @@ void GcHeap::collect() {
 	m_nextGC = m_bytesAllocated * 2;
 }
 
-CPU::CPU(Memory& memory, StringHandleTable* handleTable)
+CPU::CPU(Memory& memory, ObjectHandleTable& handleTable)
 	: m_memory(memory)
-	, m_stringPool(handleTable) {
+	, m_handleTable(handleTable)
+	, m_stringPool(handleTable)
+	, m_heap(handleTable) {
 	m_heap.setRootMarker([this](GcHeap& heap) { markRoots(heap); });
 	m_externalRootMarker = [](GcHeap&) {};
-	globals = m_heap.allocate<Table>(ObjType::Table, &m_stringPool, 0, 0);
+	globals = m_heap.allocate<Table>(ObjType::Table, m_heap, m_handleTable, m_stringPool, 0, 0);
 	m_indexKey = valueString(m_stringPool.intern("__index"));
 }
 
 Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn) {
 	auto* native = m_heap.allocate<NativeFunction>(ObjType::NativeFunction);
 	native->name = std::string(name);
-	native->invoke = [invoke = std::move(fn)](const std::vector<Value>& args, std::vector<Value>& out) {
+	nativeFunctionBridgeRegistry()[native->runtimeRefId] = NativeFunctionBridge{
+		[invoke = std::move(fn)](const std::vector<Value>& args, std::vector<Value>& out) {
 		out.clear();
 		invoke(args, out);
+		},
 	};
 	return valueNativeFunction(native);
 }
@@ -759,61 +1149,136 @@ Value CPU::createNativeObject(
 	std::function<std::optional<std::pair<Value, Value>>(const Value&)> nextEntry,
 	std::function<void(GcHeap&)> mark
 ) {
-	auto* native = m_heap.allocate<NativeObject>(ObjType::NativeObject);
-	native->raw = raw;
-	native->get = std::move(get);
-	native->set = std::move(set);
-	native->len = std::move(len);
-	native->nextEntry = std::move(nextEntry);
-	native->mark = std::move(mark);
+	auto* native = m_heap.allocateWithRamSize<NativeObject>(ObjType::NativeObject, NATIVE_OBJECT_HEADER_SIZE);
+	nativeObjectBridgeRegistry()[native->runtimeRefId] = NativeObjectBridge{
+		raw,
+		std::move(get),
+		std::move(set),
+		std::move(len),
+		std::move(nextEntry),
+		std::move(mark),
+	};
+	syncNativeObjectState(native);
 	return valueNativeObject(native);
 }
 
+void CPU::setNativeObjectMetatable(NativeObject* native, Table* metatable) {
+	native->setMetatable(metatable);
+	syncNativeObjectState(native);
+}
+
 Table* CPU::createTable(int arraySize, int hashSize) {
-	return m_heap.allocate<Table>(ObjType::Table, &m_stringPool, arraySize, hashSize);
+	return m_heap.allocate<Table>(ObjType::Table, m_heap, m_handleTable, m_stringPool, arraySize, hashSize);
 }
 
 Closure* CPU::createRootClosure(int protoIndex) {
-	auto* closure = m_heap.allocate<Closure>(ObjType::Closure);
+	auto* closure = m_heap.allocateWithRamSize<Closure>(ObjType::Closure, CLOSURE_OBJECT_HEADER_SIZE);
 	closure->protoIndex = protoIndex;
-	closure->upvalues.clear();
+	closure->upvalueRefIds.clear();
+	syncClosureObjectState(closure);
 	return closure;
+}
+
+void CPU::syncNativeObjectState(NativeObject* native) {
+	const ObjectHandleEntry entry = m_handleTable.readEntry(native->runtimeRefId);
+	m_handleTable.writeU32(entry.addr + NATIVE_OBJECT_METATABLE_ID_OFFSET, native->metatableRefId);
+}
+
+void CPU::syncClosureObjectState(Closure* closure) {
+	const ObjectHandleEntry entry = m_handleTable.readEntry(closure->runtimeRefId);
+	m_handleTable.writeU32(entry.addr + CLOSURE_OBJECT_PROTO_INDEX_OFFSET, static_cast<uint32_t>(closure->protoIndex));
+	m_handleTable.writeU32(entry.addr + CLOSURE_OBJECT_UPVALUE_COUNT_OFFSET, static_cast<uint32_t>(closure->upvalueRefIds.size()));
+	for (size_t index = 0; index < closure->upvalueRefIds.size(); ++index) {
+		m_handleTable.writeU32(
+			entry.addr + CLOSURE_OBJECT_UPVALUE_IDS_OFFSET + (static_cast<uint32_t>(index) * 4),
+			closure->upvalueRefIds[index]
+		);
+	}
+}
+
+void CPU::syncUpvalueObjectState(Upvalue* upvalue) {
+	const ObjectHandleEntry entry = m_handleTable.readEntry(upvalue->runtimeRefId);
+	m_handleTable.writeU32(
+		entry.addr + UPVALUE_OBJECT_STATE_OFFSET,
+		upvalue->open ? UPVALUE_OBJECT_STATE_OPEN : UPVALUE_OBJECT_STATE_CLOSED
+	);
+	m_handleTable.writeU32(entry.addr + UPVALUE_OBJECT_FRAME_DEPTH_OFFSET, static_cast<uint32_t>(upvalue->frameDepth));
+	m_handleTable.writeU32(entry.addr + UPVALUE_OBJECT_REGISTER_INDEX_OFFSET, static_cast<uint32_t>(upvalue->index));
+	writeTaggedValueToHandle(m_handleTable, entry.addr + UPVALUE_OBJECT_CLOSED_VALUE_OFFSET, upvalue->value);
 }
 
 void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 	m_program = program;
 	m_metadata = metadata;
 	if (!m_program) {
+		m_runtimeConstPool.clear();
 		m_decoded.clear();
 		return;
 	}
-	if (m_program->constPoolStringPool != &m_stringPool) {
-		const StringPool& programPool = *m_program->constPoolStringPool;
-		auto& constPool = m_program->constPool;
-		std::unordered_map<StringId, StringId> remappedIds;
-		for (size_t index = 0; index < constPool.size(); ++index) {
-			Value value = constPool[index];
-			if (valueIsString(value)) {
-				StringId oldId = asStringId(value);
-				auto remapped = remappedIds.find(oldId);
-				StringId newId = 0;
-				if (remapped != remappedIds.end()) {
-					newId = remapped->second;
-				} else {
-					newId = m_stringPool.intern(programPool.toString(oldId));
-					remappedIds.emplace(oldId, newId);
-				}
-				constPool[index] = valueString(newId);
-			}
+	const StringPool& programPool = *m_program->constPoolStringPool;
+	m_runtimeConstPool.resize(m_program->constPool.size());
+	for (size_t index = 0; index < m_program->constPool.size(); ++index) {
+		Value value = m_program->constPool[index];
+		if (valueIsString(value)) {
+			value = valueString(m_stringPool.intern(programPool.toString(asStringId(value))));
 		}
-		m_program->constPoolCanonicalized = true;
-		m_program->constPoolStringPool = &m_stringPool;
+		m_runtimeConstPool[index] = value;
 	}
 	decodeProgram();
 }
 
 void CPU::reserveStringHandles(StringId minHandle) {
 	m_stringPool.reserveHandles(minHandle);
+}
+
+void CPU::restoreObjectMemoryState(const ObjectHandleTableState& state) {
+	m_handleTable.restoreState(state);
+	m_stringPool.clearRuntimeCache();
+	rehydrateRuntimeObjects();
+	if (m_stringIndexTable && m_handleTable.readEntry(m_stringIndexTable->runtimeRefId).type == 0) {
+		m_stringIndexTable = nullptr;
+	}
+}
+
+void CPU::rehydrateRuntimeObjects() {
+	m_heap.forEachRuntimeRef([this](uint32_t runtimeRefId, GCObject* object) {
+		const ObjectHandleEntry entry = m_handleTable.readEntry(runtimeRefId);
+		if (entry.type == 0) {
+			return;
+		}
+		switch (object->type) {
+			case ObjType::Table:
+				static_cast<Table*>(object)->rehydrateStoreViews();
+				break;
+			case ObjType::NativeFunction:
+				break;
+			case ObjType::NativeObject:
+				static_cast<NativeObject*>(object)->metatableRefId = m_handleTable.readU32(entry.addr + NATIVE_OBJECT_METATABLE_ID_OFFSET);
+				break;
+			case ObjType::Closure: {
+				auto* closure = static_cast<Closure*>(object);
+				const uint32_t upvalueCount = m_handleTable.readU32(entry.addr + CLOSURE_OBJECT_UPVALUE_COUNT_OFFSET);
+				closure->protoIndex = static_cast<int>(m_handleTable.readU32(entry.addr + CLOSURE_OBJECT_PROTO_INDEX_OFFSET));
+				closure->upvalueRefIds.resize(upvalueCount);
+				for (uint32_t index = 0; index < upvalueCount; ++index) {
+					closure->upvalueRefIds[index] = m_handleTable.readU32(
+						entry.addr + CLOSURE_OBJECT_UPVALUE_IDS_OFFSET + (index * 4)
+					);
+				}
+				break;
+			}
+			case ObjType::Upvalue: {
+				auto* upvalue = static_cast<Upvalue*>(object);
+				upvalue->open = m_handleTable.readU32(entry.addr + UPVALUE_OBJECT_STATE_OFFSET) == UPVALUE_OBJECT_STATE_OPEN;
+				upvalue->frameDepth = upvalue->open
+					? static_cast<int>(m_handleTable.readU32(entry.addr + UPVALUE_OBJECT_FRAME_DEPTH_OFFSET))
+					: -1;
+				upvalue->index = static_cast<int>(m_handleTable.readU32(entry.addr + UPVALUE_OBJECT_REGISTER_INDEX_OFFSET));
+				upvalue->value = readTaggedValueFromHandle(m_handleTable, m_heap, entry.addr + UPVALUE_OBJECT_CLOSED_VALUE_OFFSET);
+				break;
+			}
+		}
+	});
 }
 
 void CPU::decodeProgram() {
@@ -1029,7 +1494,7 @@ void CPU::executeInstruction(
 			return;
 
 		case OpCode::LOADK:
-			setRegister(frame, a, m_program->constPool[bx]);
+			setRegister(frame, a, m_runtimeConstPool[bx]);
 			return;
 
 		case OpCode::LOADNIL:
@@ -1048,13 +1513,13 @@ void CPU::executeInstruction(
 			return;
 
 		case OpCode::GETG: {
-			const Value& key = m_program->constPool[bx];
+			const Value& key = m_runtimeConstPool[bx];
 			setRegister(frame, a, globals->get(key));
 			return;
 		}
 
 		case OpCode::SETG: {
-			const Value& key = m_program->constPool[bx];
+			const Value& key = m_runtimeConstPool[bx];
 			globals->set(key, frame.registers[a]);
 			return;
 		}
@@ -1076,12 +1541,12 @@ void CPU::executeInstruction(
 			}
 			if (valueIsNativeObject(tableValue)) {
 				auto* native = asNativeObject(tableValue);
-				Value nativeResult = native->get ? native->get(key) : valueNil();
+				Value nativeResult = native->get(key);
 				if (!isNil(nativeResult)) {
 					setRegister(frame, a, nativeResult);
 					return;
 				}
-				Table* metatable = native->metatable;
+				Table* metatable = native->getMetatable();
 				if (metatable) {
 					Value indexerValue = metatable->get(m_indexKey);
 					if (valueIsTable(indexerValue)) {
@@ -1127,7 +1592,7 @@ void CPU::executeInstruction(
 
 		case OpCode::NEWT: {
 			CYCLES_ADD(ceilDiv4(b) + ceilDiv4(c));
-			auto* table = m_heap.allocate<Table>(ObjType::Table, &m_stringPool, b, c);
+			auto* table = m_heap.allocate<Table>(ObjType::Table, m_heap, m_handleTable, m_stringPool, b, c);
 			setRegister(frame, a, valueTable(table));
 			return;
 		}
@@ -1267,7 +1732,7 @@ void CPU::executeInstruction(
 			}
 			if (valueIsNativeObject(val)) {
 				auto* obj = asNativeObject(val);
-				if (!obj->len) {
+				if (!obj->hasLen()) {
 					std::string stack;
 					auto callStack = getCallStack();
 					for (auto it = callStack.rbegin(); it != callStack.rend(); ++it) {
@@ -1315,7 +1780,7 @@ void CPU::executeInstruction(
 		case OpCode::EQ: {
 			const Value& left = readRK(frame, rkRawB, rkBitsB);
 			const Value& right = readRK(frame, rkRawC, rkBitsC);
-			const bool eq = ValueEq{ &m_stringPool }(left, right);
+			const bool eq = ValueEq{ m_stringPool }(left, right);
 			if (eq != (a != 0)) {
 				CYCLES_ADD(1);
 				skipNextInstruction(frame);
@@ -1448,13 +1913,13 @@ void CPU::executeInstruction(
 			return;
 
 		case OpCode::GETUP: {
-			Upvalue* upvalue = frame.closure->upvalues[b];
+			Upvalue* upvalue = static_cast<Upvalue*>(resolveRuntimeObjectRef(frame.closure->upvalueRefIds[b]));
 			setRegister(frame, a, readUpvalue(upvalue));
 			return;
 		}
 
 		case OpCode::SETUP: {
-			Upvalue* upvalue = frame.closure->upvalues[b];
+			Upvalue* upvalue = static_cast<Upvalue*>(resolveRuntimeObjectRef(frame.closure->upvalueRefIds[b]));
 			writeUpvalue(upvalue, frame.registers[a]);
 			return;
 		}
@@ -1555,9 +2020,12 @@ void CPU::executeInstruction(
 
 Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
 	const Proto& proto = m_program->protos[protoIndex];
-	auto* closure = m_heap.allocate<Closure>(ObjType::Closure);
+	auto* closure = m_heap.allocateWithRamSize<Closure>(
+		ObjType::Closure,
+		CLOSURE_OBJECT_UPVALUE_IDS_OFFSET + (static_cast<uint32_t>(proto.upvalues.size()) * 4)
+	);
 	closure->protoIndex = protoIndex;
-	closure->upvalues.resize(proto.upvalues.size());
+	closure->upvalueRefIds.resize(proto.upvalues.size());
 	for (size_t i = 0; i < proto.upvalues.size(); ++i) {
 		const UpvalueDesc& uv = proto.upvalues[i];
 		if (uv.isLocal) {
@@ -1566,17 +2034,19 @@ Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
 			if (it != frame.openUpvalues.end()) {
 				upvalue = it->second;
 			} else {
-				upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
+				upvalue = m_heap.allocateWithRamSize<Upvalue>(ObjType::Upvalue, UPVALUE_OBJECT_HEADER_SIZE);
 				upvalue->open = true;
 				upvalue->index = uv.index;
-				upvalue->frame = &frame;
+				upvalue->frameDepth = frame.depth;
 				frame.openUpvalues.emplace(uv.index, upvalue);
+				syncUpvalueObjectState(upvalue);
 			}
-			closure->upvalues[i] = upvalue;
+			closure->upvalueRefIds[i] = upvalue->runtimeRefId;
 		} else {
-			closure->upvalues[i] = frame.closure->upvalues[uv.index];
+			closure->upvalueRefIds[i] = frame.closure->upvalueRefIds[uv.index];
 		}
 	}
+	syncClosureObjectState(closure);
 	return closure;
 }
 
@@ -1585,24 +2055,26 @@ void CPU::closeUpvalues(CallFrame& frame) {
 		Upvalue* upvalue = entry.second;
 		upvalue->value = frame.registers[upvalue->index];
 		upvalue->open = false;
-		upvalue->frame = nullptr;
+		upvalue->frameDepth = -1;
+		syncUpvalueObjectState(upvalue);
 	}
 	frame.openUpvalues.clear();
 }
 
 const Value& CPU::readUpvalue(Upvalue* upvalue) {
 	if (upvalue->open) {
-		return upvalue->frame->registers[upvalue->index];
+		return m_frames[static_cast<size_t>(upvalue->frameDepth)]->registers[static_cast<size_t>(upvalue->index)];
 	}
 	return upvalue->value;
 }
 
 void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
 	if (upvalue->open) {
-		upvalue->frame->registers[upvalue->index] = value;
+		m_frames[static_cast<size_t>(upvalue->frameDepth)]->registers[static_cast<size_t>(upvalue->index)] = value;
 		return;
 	}
 	upvalue->value = value;
+	syncUpvalueObjectState(upvalue);
 }
 
 void CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
@@ -1611,6 +2083,7 @@ void CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	auto frame = acquireFrame();
 	frame->protoIndex = closure->protoIndex;
 	frame->pc = proto.entryPC;
+	frame->depth = static_cast<int>(m_frames.size());
 	frame->closure = closure;
 	frame->returnBase = returnBase;
 	frame->returnCount = returnCount;
@@ -1667,7 +2140,7 @@ const Value& CPU::readRK(CallFrame& frame, uint32_t raw, int bits) {
 	int rk = signExtend(raw, bits);
 	if (rk < 0) {
 		int index = -1 - rk;
-		return m_program->constPool[static_cast<size_t>(index)];
+		return m_runtimeConstPool[static_cast<size_t>(index)];
 	}
 	return frame.registers[static_cast<size_t>(rk)];
 }
@@ -1787,10 +2260,8 @@ void CPU::markRoots(GcHeap& heap) {
 	for (const auto& value : m_returnScratch) {
 		heap.markValue(value);
 	}
-	if (m_program) {
-		for (const auto& value : m_program->constPool) {
-			heap.markValue(value);
-		}
+	for (const auto& value : m_runtimeConstPool) {
+		heap.markValue(value);
 	}
 	for (const auto& framePtr : m_frames) {
 		CallFrame* frame = framePtr.get();

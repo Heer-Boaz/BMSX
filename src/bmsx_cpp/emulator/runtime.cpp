@@ -100,8 +100,8 @@ void Runtime::destroy() {
 Runtime::Runtime(const RuntimeOptions& options)
 	: m_memory()
 	, m_vdp(m_memory)
-	, m_stringHandles(m_memory)
-	, m_cpu(m_memory, &m_stringHandles)
+	, m_objectHandles(m_memory)
+	, m_cpu(m_memory, m_objectHandles)
 	, m_dmaController(m_memory, [this](uint32_t mask) { raiseIrqFlags(mask); })
 	, m_imgDecController(m_memory, m_dmaController, [this](uint32_t mask) { raiseIrqFlags(mask); })
 	, m_playerIndex(options.playerIndex)
@@ -666,6 +666,7 @@ RuntimeState Runtime::captureCurrentState() const {
 	RuntimeState state;
 	state.ioMemory = m_memory.ioSlots();
 	state.globals = m_cpu.globals->entries();
+	state.objectMemoryState = m_cpu.captureObjectMemoryState();
 	state.assetMemory = m_memory.dumpAssetMemory();
 	state.atlasSlots = m_vdp.atlasSlots();
 	state.skyboxFaceIds = m_vdp.skyboxFaceIds();
@@ -686,6 +687,7 @@ void Runtime::applyState(const RuntimeState& state) {
 		|| m_vblankPendingClear
 		|| (m_cyclesIntoFrame >= m_vblankStartCycle);
 	setVblankStatus(vblankActive);
+	m_cpu.restoreObjectMemoryState(state.objectMemoryState);
 	if (!state.assetMemory.empty()) {
 		m_memory.restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
 	}

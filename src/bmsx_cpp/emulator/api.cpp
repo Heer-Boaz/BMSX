@@ -1825,12 +1825,12 @@ BFont* Api::resolve_font(const Value& value) {
 		throw BMSX_RUNTIME_ERROR("Font must be a native font handle.");
 	}
 	NativeObject* obj = asNativeObject(value);
-	if (obj->raw == m_font.get()) {
+	if (obj->raw() == m_font.get()) {
 		return m_font.get();
 	}
 	for (size_t index = 0; index < m_runtime_fonts.size(); index += 1) {
 		BFont* font = m_runtime_fonts[index].get();
-		if (obj->raw == font) {
+		if (obj->raw() == font) {
 			return font;
 		}
 	}

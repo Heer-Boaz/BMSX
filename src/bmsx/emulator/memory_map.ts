@@ -19,26 +19,26 @@ export const DEFAULT_RAM_SIZE = 0x08000000; // 128 MB
 export const IO_WORD_SIZE = 4;
 export const IO_REGION_SIZE = 0x00004000; // 16 KB
 
-export const DEFAULT_STRING_HANDLE_COUNT = 0x40000; // 256k handles
-export const STRING_HANDLE_ENTRY_SIZE = 16;
-export const DEFAULT_STRING_HEAP_SIZE = 0x02000000; // 32 MB
+export const DEFAULT_OBJECT_HANDLE_COUNT = 0x40000; // 256k handles (slot 0 reserved)
+export const OBJECT_HANDLE_ENTRY_SIZE = 20;
+export const DEFAULT_GC_HEAP_SIZE = 0x02000000; // 32 MB
 export const DEFAULT_ASSET_TABLE_SIZE = 0x00100000; // 1 MB
 export const DEFAULT_VRAM_ATLAS_SLOT_SIZE = 0x01000000; // 16 MB
 export const DEFAULT_VRAM_STAGING_SIZE = 0x00400000; // 4 MB
 
 export let RAM_SIZE = DEFAULT_RAM_SIZE;
-export let STRING_HANDLE_COUNT = DEFAULT_STRING_HANDLE_COUNT;
-export let STRING_HANDLE_TABLE_SIZE = STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
-export let STRING_HEAP_SIZE = DEFAULT_STRING_HEAP_SIZE;
+export let OBJECT_HANDLE_COUNT = DEFAULT_OBJECT_HANDLE_COUNT;
+export let OBJECT_HANDLE_TABLE_SIZE = OBJECT_HANDLE_COUNT * OBJECT_HANDLE_ENTRY_SIZE;
+export let GC_HEAP_SIZE = DEFAULT_GC_HEAP_SIZE;
 export let ASSET_TABLE_SIZE = DEFAULT_ASSET_TABLE_SIZE;
 export let VRAM_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 export let VRAM_SYSTEM_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 export let VRAM_STAGING_SIZE = DEFAULT_VRAM_STAGING_SIZE;
 
 export let IO_BASE = RAM_BASE;
-export let STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
-export let STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
-export let ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
+export let OBJECT_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
+export let GC_HEAP_BASE = OBJECT_HANDLE_TABLE_BASE + OBJECT_HANDLE_TABLE_SIZE;
+export let ASSET_RAM_BASE = GC_HEAP_BASE + GC_HEAP_SIZE;
 export let ASSET_TABLE_BASE = ASSET_RAM_BASE;
 export let ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
 export let ASSET_RAM_SIZE = RAM_SIZE - (ASSET_RAM_BASE - RAM_BASE);
@@ -99,8 +99,8 @@ function resolveNonNegativeInteger(value: number, label: string): number {
 
 function recomputeMemoryLayout(config: {
 	ramBytes: number;
-	stringHandleCount: number;
-	stringHeapBytes: number;
+	objectHandleCount: number;
+	gcHeapBytes: number;
 	assetTableBytes: number;
 	assetDataBytes: number;
 	atlasSlotBytes: number;
@@ -109,18 +109,18 @@ function recomputeMemoryLayout(config: {
 	skyboxFaceBytes: number;
 }): void {
 	RAM_SIZE = config.ramBytes;
-	STRING_HANDLE_COUNT = config.stringHandleCount;
-	STRING_HANDLE_TABLE_SIZE = STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
-	STRING_HEAP_SIZE = config.stringHeapBytes;
+	OBJECT_HANDLE_COUNT = config.objectHandleCount;
+	OBJECT_HANDLE_TABLE_SIZE = OBJECT_HANDLE_COUNT * OBJECT_HANDLE_ENTRY_SIZE;
+	GC_HEAP_SIZE = config.gcHeapBytes;
 	ASSET_TABLE_SIZE = config.assetTableBytes;
 	VRAM_ATLAS_SLOT_SIZE = config.atlasSlotBytes;
 	VRAM_SYSTEM_ATLAS_SLOT_SIZE = config.engineAtlasSlotBytes;
 	VRAM_STAGING_SIZE = config.stagingBytes;
 
 	IO_BASE = RAM_BASE;
-	STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
-	STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
-	ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
+	OBJECT_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
+	GC_HEAP_BASE = OBJECT_HANDLE_TABLE_BASE + OBJECT_HANDLE_TABLE_SIZE;
+	ASSET_RAM_BASE = GC_HEAP_BASE + GC_HEAP_SIZE;
 	ASSET_TABLE_BASE = ASSET_RAM_BASE;
 	ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
 	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes;
@@ -147,8 +147,8 @@ function recomputeMemoryLayout(config: {
 }
 
 export function configureMemoryMap(specs?: MemoryMapSpecs): void {
-	const stringHandleCount = resolvePositiveInteger(specs?.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT, 'string_handle_count');
-	const stringHeapBytes = resolvePositiveInteger(specs?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE, 'string_heap_bytes');
+	const objectHandleCount = resolvePositiveInteger(specs?.string_handle_count ?? DEFAULT_OBJECT_HANDLE_COUNT, 'string_handle_count');
+	const gcHeapBytes = resolvePositiveInteger(specs?.string_heap_bytes ?? DEFAULT_GC_HEAP_SIZE, 'string_heap_bytes');
 	const assetTableBytes = resolvePositiveInteger(specs?.asset_table_bytes ?? DEFAULT_ASSET_TABLE_SIZE, 'asset_table_bytes');
 	const atlasSlotBytes = resolvePositiveInteger(specs?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE, 'atlas_slot_bytes');
 	const engineAtlasSlotBytes = resolvePositiveInteger(specs?.system_atlas_slot_bytes ?? atlasSlotBytes, 'system_atlas_slot_bytes');
@@ -159,13 +159,13 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 			const skyboxFaceSize = resolvePositiveInteger(specs?.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE, 'skybox_face_size');
 			return skyboxFaceSize * skyboxFaceSize * 4;
 		})();
-	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
+	const objectHandleTableBytes = objectHandleCount * OBJECT_HANDLE_ENTRY_SIZE;
 	const defaultAssetDataBytes = DEFAULT_RAM_SIZE
-		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes);
+		- (IO_REGION_SIZE + objectHandleTableBytes + gcHeapBytes + assetTableBytes);
 	const assetDataBytes = resolveNonNegativeInteger(specs?.asset_data_bytes ?? defaultAssetDataBytes, 'asset_data_bytes');
 	const computedRamBytes = IO_REGION_SIZE
-		+ stringHandleTableBytes
-		+ stringHeapBytes
+		+ objectHandleTableBytes
+		+ gcHeapBytes
 		+ assetTableBytes
 		+ assetDataBytes;
 	if (specs?.ram_bytes !== undefined) {
@@ -175,8 +175,8 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 		}
 		recomputeMemoryLayout({
 			ramBytes,
-			stringHandleCount,
-			stringHeapBytes,
+			objectHandleCount,
+			gcHeapBytes,
 			assetTableBytes,
 			assetDataBytes,
 			atlasSlotBytes,
@@ -188,8 +188,8 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 	}
 	recomputeMemoryLayout({
 		ramBytes: computedRamBytes,
-		stringHandleCount,
-		stringHeapBytes,
+		objectHandleCount,
+		gcHeapBytes,
 		assetTableBytes,
 		assetDataBytes,
 		atlasSlotBytes,

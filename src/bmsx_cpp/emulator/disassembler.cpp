@@ -126,7 +126,7 @@ std::string formatCountLiteral(int value) {
 }
 
 std::string formatConstValue(const Program& program, int index) {
-	const StringPool& stringPool = program.constPoolStringPool ? *program.constPoolStringPool : program.stringPool;
+	const StringPool& stringPool = *program.constPoolStringPool;
 	return "k" + std::to_string(index) + "(" + valueToString(program.constPool.at(static_cast<size_t>(index)), stringPool) + ")";
 }
 

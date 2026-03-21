@@ -6,13 +6,13 @@
 namespace bmsx {
 
 uint32_t RAM_SIZE = DEFAULT_RAM_SIZE;
-uint32_t STRING_HANDLE_COUNT = DEFAULT_STRING_HANDLE_COUNT;
-uint32_t STRING_HANDLE_TABLE_SIZE = DEFAULT_STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
-uint32_t STRING_HEAP_SIZE = DEFAULT_STRING_HEAP_SIZE;
+uint32_t OBJECT_HANDLE_COUNT = DEFAULT_OBJECT_HANDLE_COUNT;
+uint32_t OBJECT_HANDLE_TABLE_SIZE = DEFAULT_OBJECT_HANDLE_COUNT * OBJECT_HANDLE_ENTRY_SIZE;
+uint32_t GC_HEAP_SIZE = DEFAULT_GC_HEAP_SIZE;
 uint32_t ASSET_TABLE_SIZE = DEFAULT_ASSET_TABLE_SIZE;
-uint32_t STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
-uint32_t STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
-uint32_t ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
+uint32_t OBJECT_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
+uint32_t GC_HEAP_BASE = OBJECT_HANDLE_TABLE_BASE + OBJECT_HANDLE_TABLE_SIZE;
+uint32_t ASSET_RAM_BASE = GC_HEAP_BASE + GC_HEAP_SIZE;
 uint32_t ASSET_RAM_SIZE = RAM_SIZE - (ASSET_RAM_BASE - RAM_BASE);
 uint32_t ASSET_TABLE_BASE = ASSET_RAM_BASE;
 uint32_t ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
@@ -40,16 +40,16 @@ uint32_t RAM_USED_END = RAM_BASE + DEFAULT_RAM_SIZE;
 
 static void recomputeMemoryLayout(const MemoryMapConfig& config) {
 	RAM_SIZE = config.ramBytes;
-	STRING_HANDLE_COUNT = config.stringHandleCount;
-	STRING_HANDLE_TABLE_SIZE = STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
-	STRING_HEAP_SIZE = config.stringHeapBytes;
+	OBJECT_HANDLE_COUNT = config.objectHandleCount;
+	OBJECT_HANDLE_TABLE_SIZE = OBJECT_HANDLE_COUNT * OBJECT_HANDLE_ENTRY_SIZE;
+	GC_HEAP_SIZE = config.gcHeapBytes;
 	ASSET_TABLE_SIZE = config.assetTableBytes;
 	VRAM_ATLAS_SLOT_SIZE = config.atlasSlotBytes;
 	VRAM_STAGING_SIZE = config.stagingBytes;
 
-	STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
-	STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
-	ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
+	OBJECT_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
+	GC_HEAP_BASE = OBJECT_HANDLE_TABLE_BASE + OBJECT_HANDLE_TABLE_SIZE;
+	ASSET_RAM_BASE = GC_HEAP_BASE + GC_HEAP_SIZE;
 	ASSET_TABLE_BASE = ASSET_RAM_BASE;
 	ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
 	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes;
@@ -79,10 +79,10 @@ void configureMemoryMap(const MemoryMapConfig& config) {
 	if (config.ramBytes == 0) {
 		throw std::runtime_error("[MemoryMap] ram_bytes must be greater than 0.");
 	}
-	if (config.stringHandleCount == 0) {
+	if (config.objectHandleCount == 0) {
 		throw std::runtime_error("[MemoryMap] string_handle_count must be greater than 0.");
 	}
-	if (config.stringHeapBytes == 0) {
+	if (config.gcHeapBytes == 0) {
 		throw std::runtime_error("[MemoryMap] string_heap_bytes must be greater than 0.");
 	}
 	if (config.assetTableBytes == 0) {
@@ -106,9 +106,9 @@ void configureMemoryMap(const MemoryMapConfig& config) {
 struct MemoryMapInitializer {
 	MemoryMapInitializer() {
 		MemoryMapConfig config;
-		const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
+		const uint32_t objectHandleTableBytes = config.objectHandleCount * OBJECT_HANDLE_ENTRY_SIZE;
 		const uint32_t assetDataBytes = DEFAULT_RAM_SIZE
-			- (IO_REGION_SIZE + stringHandleTableBytes + DEFAULT_STRING_HEAP_SIZE + DEFAULT_ASSET_TABLE_SIZE);
+			- (IO_REGION_SIZE + objectHandleTableBytes + DEFAULT_GC_HEAP_SIZE + DEFAULT_ASSET_TABLE_SIZE);
 		const uint32_t skyboxFaceBytes = static_cast<uint32_t>(SKYBOX_FACE_DEFAULT_SIZE)
 			* static_cast<uint32_t>(SKYBOX_FACE_DEFAULT_SIZE)
 			* 4u;

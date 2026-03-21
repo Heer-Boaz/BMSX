@@ -161,6 +161,10 @@ export function captureCurrentState(runtime: Runtime): RuntimeState {
 	const state: RuntimeState = {
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
 		luaPath: runtime.currentPath,
+		luaGlobals: stateSnapshot.globals,
+		luaLocals: stateSnapshot.locals,
+		luaRandomSeed: stateSnapshot.randomSeed,
+		luaProgramCounter: stateSnapshot.programCounter,
 		storage,
 		atlasSlots,
 		skyboxFaceIds,
@@ -169,26 +173,11 @@ export function captureCurrentState(runtime: Runtime): RuntimeState {
 		vblankPendingClear: vblankState.vblankPendingClear,
 		vblankClearOnIrqEnd: vblankState.vblankClearOnIrqEnd,
 	};
-	if (stateSnapshot) {
-		if (stateSnapshot.globals) {
-			state.luaGlobals = stateSnapshot.globals;
-		}
-		if (stateSnapshot.locals) {
-			state.luaLocals = stateSnapshot.locals;
-		}
-		if (stateSnapshot.randomSeed !== undefined) {
-			state.luaRandomSeed = stateSnapshot.randomSeed;
-		}
-		if (stateSnapshot.programCounter !== undefined) {
-			state.luaProgramCounter = stateSnapshot.programCounter;
-		}
-	}
 	return state;
 }
 
 export async function applyState(runtime: Runtime, state: RuntimeState) {
-	if (!state) await resetRuntimeToFreshState(runtime);
-	else restoreFromStateSnapshot(runtime, state);
+	restoreFromStateSnapshot(runtime, state);
 }
 
 export async function resetRuntimeToFreshState(runtime: Runtime) {
@@ -247,10 +236,6 @@ export function applyAssetMemorySnapshot(runtime: Runtime, snapshot: RuntimeStat
 
 export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState): Promise<void> {
 	runtimeIde.clearActiveDebuggerPause(runtime);
-	if (!state) {
-		runtime.luaRuntimeFailed = false;
-		throw new Error('[Runtime] Cannot resume from invalid state snapshot.');
-	}
 	const snapshot: RuntimeState = { ...state, luaRuntimeFailed: false };
 	runtime.interpreter.clearLastFaultEnvironment();
 	runtimeIde.clearFaultSnapshot(runtime);
@@ -465,7 +450,7 @@ export function markSourceChunkAsDirty(runtime: Runtime, path: string): void {
 	runtime.luaGenericChunksExecuted.delete(path);
 }
 
-export function captureRuntimeState(runtime: Runtime): { globals?: LuaEntrySnapshot; locals?: LuaEntrySnapshot; randomSeed?: number; programCounter?: number } {
+export function captureRuntimeState(runtime: Runtime): { globals: LuaEntrySnapshot | null; locals: LuaEntrySnapshot | null; randomSeed: number; programCounter: number } {
 	const interpreter = runtime.interpreter;
 	const globals = captureLuaEntryCollection(runtime, interpreter.enumerateGlobalEntries());
 	const locals = captureLuaEntryCollection(runtime, interpreter.enumerateChunkEntries());
@@ -479,8 +464,8 @@ export function captureRuntimeState(runtime: Runtime): { globals?: LuaEntrySnaps
 	};
 }
 
-export function captureLuaEntryCollection(runtime: Runtime, entries: ReadonlyArray<[string, LuaValue]>): LuaEntrySnapshot {
-	if (!entries || entries.length === 0) {
+export function captureLuaEntryCollection(runtime: Runtime, entries: ReadonlyArray<[string, LuaValue]>): LuaEntrySnapshot | null {
+	if (entries.length === 0) {
 		return null;
 	}
 	const ctx = runtime.luaJsBridge.createLuaSnapshotContext();
@@ -503,7 +488,7 @@ export function captureLuaEntryCollection(runtime: Runtime, entries: ReadonlyArr
 }
 
 export function shouldSkipLuaSnapshotEntry(runtime: Runtime, name: string, value: LuaValue): boolean {
-	if (!name || runtime.apiFunctionNames.has(name)) {
+	if (runtime.apiFunctionNames.has(name)) {
 		return true;
 	}
 	if (LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
@@ -517,12 +502,8 @@ export function shouldSkipLuaSnapshotEntry(runtime: Runtime, name: string, value
 
 export function restoreRuntimeState(runtime: Runtime, snapshot: RuntimeState): void {
 	const interpreter = runtime.interpreter;
-	if (snapshot.luaRandomSeed !== undefined) {
-		interpreter.randomSeed = snapshot.luaRandomSeed;
-	}
-	if (snapshot.luaProgramCounter !== undefined) {
-		interpreter.programCounter = snapshot.luaProgramCounter;
-	}
+	interpreter.randomSeed = snapshot.luaRandomSeed;
+	interpreter.programCounter = snapshot.luaProgramCounter;
 	if (snapshot.luaGlobals) {
 		restoreLuaGlobals(runtime, snapshot.luaGlobals);
 	}
@@ -535,7 +516,7 @@ export function restoreLuaGlobals(runtime: Runtime, globals: LuaEntrySnapshot): 
 	const interpreter = runtime.interpreter;
 	const entries = runtime.luaJsBridge.materializeLuaEntrySnapshot(globals);
 	for (const [name, value] of entries) {
-		if (!name || runtime.apiFunctionNames.has(name) || LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
+		if (runtime.apiFunctionNames.has(name) || LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
 			continue;
 		}
 		const existing = interpreter.getGlobal(name);
@@ -558,7 +539,7 @@ export function restoreLuaLocals(runtime: Runtime, locals: LuaEntrySnapshot): vo
 	const interpreter = runtime.interpreter;
 	const entries = runtime.luaJsBridge.materializeLuaEntrySnapshot(locals);
 	for (const [name, value] of entries) {
-		if (!name || !interpreter.hasChunkBinding(name)) {
+		if (!interpreter.hasChunkBinding(name)) {
 			continue;
 		}
 		const env = interpreter.pathEnvironment;
@@ -650,7 +631,7 @@ export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, meta
 	});
 	runtime.cpu.setProgram(compiled.program, compiled.metadata);
 	runtime.programMetadata = compiled.metadata;
-	runtime.callClosure({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
+	runtime.callClosure({ objectId: 0, objectAddr: 0, protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
 	processIo(runtime);
 	return { program: compiled.program, metadata: compiled.metadata };
 }
@@ -1196,7 +1177,7 @@ export function requireModule(runtime: Runtime, moduleName: string): Value {
 		throw runtime.createApiRuntimeError(`require('${moduleName}') failed: module not compiled.`);
 	}
 	runtime.moduleCache.set(path, true);
-	const results = runtime.callClosure({ protoIndex, upvalues: [] }, []);
+	const results = runtime.callClosure({ objectId: 0, objectAddr: 0, protoIndex, upvalues: [] }, []);
 	const value = results.length > 0 ? results[0] : null;
 	const cachedValue = value === null ? true : value;
 	runtime.moduleCache.set(path, cachedValue);
@@ -1237,7 +1218,7 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	} else {
 		runtime.consoleMetadata = compiled.metadata;
 	}
-	const results = runtime.callClosure({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
+	const results = runtime.callClosure({ objectId: 0, objectAddr: 0, protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
 	processIo(runtime);
 	return results;
 }

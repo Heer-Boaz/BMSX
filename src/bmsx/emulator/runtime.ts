@@ -35,8 +35,8 @@ import { tokenKeyFromAsset, tokenKeyFromId } from '../rompack/asset_tokens';
 import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
 import { Api } from './api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from './cpu';
-import { StringPool, StringValue } from './string_pool';
-import { StringHandleTable } from './string_memory';
+import { RuntimeStringPool, StringValue } from './string_pool';
+import { ObjectHandleTable } from './object_memory';
 import type { TerminalMode } from './terminal_mode';
 import { RenderFacade } from './render_facade';
 import { Font, type FontVariant } from './font';
@@ -98,12 +98,12 @@ import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntr
 import { DmaController } from './devices/dma_controller';
 import { ImgDecController } from './devices/imgdec_controller';
 import {
-	DEFAULT_STRING_HANDLE_COUNT,
-	DEFAULT_STRING_HEAP_SIZE,
+	DEFAULT_OBJECT_HANDLE_COUNT,
+	DEFAULT_GC_HEAP_SIZE,
 	DEFAULT_VRAM_ATLAS_SLOT_SIZE,
 	DEFAULT_VRAM_STAGING_SIZE,
 	IO_REGION_SIZE,
-	STRING_HANDLE_ENTRY_SIZE,
+	OBJECT_HANDLE_ENTRY_SIZE,
 	configureMemoryMap,
 	type MemoryMapSpecs as MemoryMapSpecs,
 } from './memory_map';
@@ -390,8 +390,8 @@ export class Runtime {
 	}
 	public readonly memory: Memory;
 	public readonly cpu: CPU;
-	private readonly stringHandles: StringHandleTable;
-	private readonly runtimeStringPool: StringPool;
+	private readonly objectHandles: ObjectHandleTable;
+	private readonly runtimeStringPool: RuntimeStringPool;
 	public programMetadata: ProgramMetadata | null = null;
 	public consoleMetadata: ProgramMetadata | null = null;
 	public _luaPath: string = null;
@@ -1054,8 +1054,8 @@ export class Runtime {
 		const engineMachine = params.engineManifest.machine;
 		const memorySpecs = getMachineMemorySpecs(machineConfig);
 		const engineMemorySpecs = getMachineMemorySpecs(engineMachine);
-		const stringHandleCount = memorySpecs.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT;
-		const stringHeapBytes = memorySpecs.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE;
+		const objectHandleCount = memorySpecs.string_handle_count ?? DEFAULT_OBJECT_HANDLE_COUNT;
+		const gcHeapBytes = memorySpecs.string_heap_bytes ?? DEFAULT_GC_HEAP_SIZE;
 		const atlasSlotBytes = memorySpecs.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 		const engineAtlasSlotBytes = engineMemorySpecs.system_atlas_slot_bytes;
 		if (engineAtlasSlotBytes === undefined) {
@@ -1090,8 +1090,8 @@ export class Runtime {
 			throw new Error(`[Runtime] machine.specs.ram.asset_data_bytes (${assetDataBytes}) must be at least required size ${requiredAssetDataBytes}.`);
 		}
 		const computedRamBytes = IO_REGION_SIZE
-			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
-			+ stringHeapBytes
+			+ (objectHandleCount * OBJECT_HANDLE_ENTRY_SIZE)
+			+ gcHeapBytes
 			+ assetTableBytes
 			+ assetDataBytes;
 		const ramBytes = memorySpecs.ram_bytes ?? computedRamBytes;
@@ -1101,15 +1101,15 @@ export class Runtime {
 		const footprintMiB = (ramBytes / (1024 * 1024)).toFixed(2);
 		console.info(
 			`[Runtime] memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
-			+ `(io=${IO_REGION_SIZE}, string_handles=${stringHandleCount}, string_heap=${stringHeapBytes}, `
+			+ `(io=${IO_REGION_SIZE}, object_handles=${objectHandleCount - 1}, gc_heap=${gcHeapBytes}, `
 			+ `asset_table=${assetTableBytes} (${assetTableInfo.entryCount} entries, ${assetTableInfo.stringBytes} string bytes), `
 			+ `asset_data=${assetDataBytes}, vram_staging=${stagingBytes}, `
 			+ `engine_atlas_slot=${engineAtlasSlotBytes}, atlas_slot=${atlasSlotBytes}x2=${atlasSlotBytes * 2}).`,
 		);
 		return {
 			ram_bytes: ramBytes,
-			string_handle_count: stringHandleCount,
-			string_heap_bytes: stringHeapBytes,
+			string_handle_count: objectHandleCount,
+			string_heap_bytes: gcHeapBytes,
 			asset_table_bytes: assetTableBytes,
 			asset_data_bytes: assetDataBytes,
 			atlas_slot_bytes: atlasSlotBytes,
@@ -1182,8 +1182,8 @@ export class Runtime {
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.memory = options.memory;
 		this.vdp = new VDP(this.memory);
-		this.stringHandles = new StringHandleTable(this.memory);
-		this.runtimeStringPool = new StringPool(this.stringHandles);
+		this.objectHandles = new ObjectHandleTable(this.memory);
+		this.runtimeStringPool = new RuntimeStringPool(this.objectHandles);
 		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
@@ -1214,7 +1214,7 @@ export class Runtime {
 		this.dmaController = new DmaController(this.memory, (mask) => this.raiseIrqFlags(mask));
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, (mask) => this.raiseIrqFlags(mask));
 		this.vdp.attachImgDecController(this.imgDecController);
-		this.cpu = new CPU(this.memory, this.runtimeStringPool);
+		this.cpu = new CPU(this.memory, this.runtimeStringPool, this.objectHandles);
 		this.setCpuHz(options.cpuHz);
 		this.randomSeedValue = $.platform.clock.now();
 

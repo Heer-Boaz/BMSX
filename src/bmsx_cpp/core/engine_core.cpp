@@ -139,14 +139,14 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] string_handle_count must be greater than 0.");
 		}
-		config.stringHandleCount = static_cast<uint32_t>(value);
+		config.objectHandleCount = static_cast<uint32_t>(value);
 	}
 	if (manifest.stringHeapBytes) {
 		const i32 value = *manifest.stringHeapBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] string_heap_bytes must be greater than 0.");
 		}
-		config.stringHeapBytes = static_cast<uint32_t>(value);
+		config.gcHeapBytes = static_cast<uint32_t>(value);
 	}
 	if (manifest.atlasSlotBytes) {
 		const i32 value = *manifest.atlasSlotBytes;
@@ -202,7 +202,7 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 		config.assetTableBytes = requiredAssetTableBytes;
 	}
 
-	const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
+	const uint32_t objectHandleTableBytes = config.objectHandleCount * OBJECT_HANDLE_ENTRY_SIZE;
 	const uint32_t requiredAssetDataBytes = computeRequiredAssetDataBytes(engineAssets, assets);
 	if (manifest.assetDataBytes) {
 		const i32 value = *manifest.assetDataBytes;
@@ -219,8 +219,8 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 	}
 
 	const uint64_t computedRamBytes = static_cast<uint64_t>(IO_REGION_SIZE)
-		+ static_cast<uint64_t>(stringHandleTableBytes)
-		+ static_cast<uint64_t>(config.stringHeapBytes)
+		+ static_cast<uint64_t>(objectHandleTableBytes)
+		+ static_cast<uint64_t>(config.gcHeapBytes)
 		+ static_cast<uint64_t>(config.assetTableBytes)
 		+ static_cast<uint64_t>(config.assetDataBytes);
 	if (computedRamBytes > std::numeric_limits<uint32_t>::max()) {
@@ -245,8 +245,8 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 		<< "[EngineCore] memory footprint: ram=" << config.ramBytes << " bytes ("
 		<< std::fixed << std::setprecision(2) << ramMiB << " MiB) "
 		<< "(io=" << IO_REGION_SIZE
-		<< ", string_handles=" << config.stringHandleCount
-		<< ", string_heap=" << config.stringHeapBytes
+		<< ", object_handles=" << (config.objectHandleCount - 1)
+		<< ", gc_heap=" << config.gcHeapBytes
 		<< ", asset_table=" << config.assetTableBytes
 		<< ", asset_data=" << config.assetDataBytes
 		<< ", vram_staging=" << config.stagingBytes

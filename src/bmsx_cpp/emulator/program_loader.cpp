@@ -60,7 +60,6 @@ Value binValueToRuntimeValue(const BinValue& bv, StringPool& stringPool) {
  */
 std::unique_ptr<Program> extractProgram(const BinValue& programObj) {
 	auto program = std::make_unique<Program>();
-	program->constPoolStringPool = &program->stringPool;
 
 	// Extract code (Uint8Array stored as binary)
 	const auto& codeBytes = programObj.require("code").asBinary();

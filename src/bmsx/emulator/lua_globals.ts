@@ -16,9 +16,9 @@ import {
 	CART_ROM_BASE,
 	CART_ROM_MAGIC_ADDR,
 	CART_ROM_SIZE,
+	OBJECT_HANDLE_COUNT,
 	OVERLAY_ROM_BASE,
 	RAM_SIZE,
-	STRING_HANDLE_COUNT,
 	SYSTEM_ROM_BASE,
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_PRIMARY_ATLAS_SIZE,
@@ -524,6 +524,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	const setKey = (table: Table, name: string, value: Value): void => {
 		table.set(key(name), value);
 	};
+	const createTable = (arraySize: number = 0, hashSize: number = 0): Table => runtime.cpu.createTable(arraySize, hashSize);
 	const smoothstep01 = (value: number): number => {
 		const x = clamp01(value);
 		return x * x * (3 - (2 * x));
@@ -723,7 +724,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		runtimeLuaPipeline.registerGlobal(runtime, 'sys_manifest', toRuntimeValue(runtime, $.engine_layer.index.manifest));
 	};
 
-	const mathTable = new Table(0, 0);
+	const mathTable = createTable(0, 0);
 	setKey(mathTable, 'abs', createNativeFunction('math.abs', (args, out) => {
 		const value = args[0] as number;
 		out.push(Math.abs(value));
@@ -878,7 +879,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	setKey(mathTable, 'mininteger', -maxSafeInteger);
 	setKey(mathTable, 'pi', Math.PI);
 
-	const easingTable = new Table(0, 0);
+	const easingTable = createTable(0, 0);
 	setKey(easingTable, 'linear', createNativeFunction('easing.linear', (args, out) => {
 		out.push(clamp01(args[0] as number));
 	}));
@@ -930,7 +931,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_ram_size', RAM_SIZE);
 	const maxAssets = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_assets', maxAssets);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_string_handle_count', STRING_HANDLE_COUNT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_string_handle_count', OBJECT_HANDLE_COUNT - 1);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.cycleBudgetPerFrame);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_dither', IO_VDP_DITHER);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_primary_atlas_id', IO_VDP_PRIMARY_ATLAS_ID);
@@ -1129,7 +1130,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			out.push(target);
 			return;
 		}
-		target.metatable = metatable;
+		runtime.cpu.setNativeObjectMetatable(target, metatable);
 		out.push(target);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'getmetatable', createNativeFunction('getmetatable', (args, out) => {
@@ -1266,7 +1267,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		return unitIndex;
 	};
 
-	const stringTable = new Table(0, 0);
+	const stringTable = createTable(0, 0);
 	setKey(stringTable, 'len', createNativeFunction('string.len', (args, out) => {
 		const value = args[0] as StringValue;
 		out.push(runtime.cpu.getStringPool().codepointCount(value));
@@ -1594,7 +1595,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtime.cpu.setStringIndexTable(stringTable);
 	runtimeLuaPipeline.registerGlobal(runtime, 'string', stringTable);
 
-	const tableLibrary = new Table(0, 0);
+	const tableLibrary = createTable(0, 0);
 	setKey(tableLibrary, 'insert', createNativeFunction('table.insert', (args, out) => {
 		const target = args[0] as Table;
 		let position: number;
@@ -1658,7 +1659,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 	}));
 	setKey(tableLibrary, 'pack', createNativeFunction('table.pack', (args, out) => {
-		const target = new Table(args.length, 1);
+		const target = createTable(args.length, 1);
 		for (let index = 0; index < args.length; index += 1) {
 			target.set(index + 1, args[index]);
 		}
@@ -1733,7 +1734,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'table', tableLibrary);
 
-	const osTable = new Table(0, 0);
+	const osTable = createTable(0, 0);
 	const formatOsDate = (format: string, date: Date): string => {
 		const pad = (value: number, size: number): string => {
 			let text = Math.floor(value).toString();
@@ -1849,7 +1850,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const jan = new Date(year, 0, 1);
 		const jul = new Date(year, 6, 1);
 		const isDst = date.getTimezoneOffset() < Math.max(jan.getTimezoneOffset(), jul.getTimezoneOffset());
-		const table = new Table(0, 9);
+		const table = createTable(0, 9);
 		setKey(table, 'year', year);
 		setKey(table, 'month', date.getMonth() + 1);
 		setKey(table, 'day', date.getDate());

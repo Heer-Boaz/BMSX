@@ -138,7 +138,7 @@ add_library(bmsx_core STATIC
 	emulator/memory.cpp
 	emulator/memory_map.cpp
 	emulator/vdp.cpp
-	emulator/string_memory.cpp
+	emulator/object_memory.cpp
 	emulator/program_loader.cpp
 	emulator/program_linker.cpp
 )

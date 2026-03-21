@@ -30,7 +30,7 @@ import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonica
 import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from './cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './program_optimizer';
 import type { ProgramConstReloc } from './program_asset';
-import { StringPool, StringValue, isStringValue } from './string_pool';
+import { CompileTimeStringPool, StringValue, isStringValue, type StringPool } from './string_pool';
 import type { CanonicalizationType } from '../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_OPERAND_BITS, writeInstruction } from './instruction_format';
 import { LuaSyntaxError } from '../lua/luaerrors';
@@ -113,7 +113,7 @@ class ProgramBuilder {
 	) {
 		this.constPool = baseConstPool ? Array.from(baseConstPool) : [];
 		this.canonicalizeIdentifier = createIdentifierCanonicalizer(canonicalization);
-		this.stringPool = stringPool ?? new StringPool();
+		this.stringPool = stringPool ?? new CompileTimeStringPool();
 		this.optLevel = optLevel;
 		this.constMap = new Map<string, number>();
 		for (let index = 0; index < this.constPool.length; index += 1) {

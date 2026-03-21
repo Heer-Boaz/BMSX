@@ -359,7 +359,6 @@ LinkedProgramAsset linkProgramAssets(
 	rewriteClosureIndices(cartCode, static_cast<int>(engineProgram.protos.size()));
 
 	auto linkedProgram = std::make_unique<Program>();
-	linkedProgram->constPoolStringPool = &linkedProgram->stringPool;
 	MergedConstPool merged = mergeConstPools(engineProgram, cartProgram, linkedProgram->stringPool);
 	rewriteConstRelocations(cartCode, cartAsset.link.constRelocs, merged.cartRemap);
 	linkedProgram->constPool = std::move(merged.values);
@@ -376,7 +375,6 @@ LinkedProgramAsset linkProgramAssets(
 	linkedProgram->code.assign(static_cast<size_t>(totalBytes), 0);
 	std::copy(engineProgram.code.begin(), engineProgram.code.end(), linkedProgram->code.begin() + layout.engineBasePc);
 	std::copy(cartCode.begin(), cartCode.end(), linkedProgram->code.begin() + layout.cartBasePc);
-	linkedProgram->constPoolCanonicalized = false;
 
 	auto linkedAsset = std::make_unique<ProgramAsset>();
 	linkedAsset->entryProtoIndex = cartAsset.entryProtoIndex + static_cast<int>(engineProgram.protos.size());
