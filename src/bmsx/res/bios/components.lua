@@ -66,7 +66,7 @@ local function eval_wave(track, time_seconds)
 	elseif track.wave == 'sin' then
 		w = (math.sin(u * (math.pi * 2)) + 1) * 0.5
 	else
-		error('[timelinecomponent] unknown wave '' .. tostring(track.wave) .. ''.')
+		error('[timelinecomponent] unknown wave "' .. tostring(track.wave) .. '".')
 	end
 	local ease = track.ease
 	if ease ~= nil then
@@ -148,7 +148,7 @@ function component:attach(new_parent)
 		self.parent = new_parent
 	end
 	if self.unique and self.parent:has_component(self.type_name) then
-		error('component '' .. self.type_name .. '' is unique and already attached to '' .. self.parent.id .. ''')
+		error('component "' .. self.type_name .. '" is unique and already attached to "' .. self.parent.id .. '"')
 	end
 	self.parent:add_component(self)
 	self:bind()
@@ -216,77 +216,7 @@ function spritecomponent.new(opts)
 	self.offset = opts and opts.offset or { x = 0, y = 0, z = 0 }
 	self.parallax_weight = opts and opts.parallax_weight or 0
 	self.collider_local_id = opts and opts.collider_local_id
-	self.collider_geometry_token = nil
-	self.collider_offset_token = nil
 	return self
-end
-
-function spritecomponent:resolve_collider()
-	local owner = self.parent
-	local explicit_local_id = self.collider_local_id
-	if explicit_local_id ~= nil then
-		return owner:get_component_by_local_id('collider2dcomponent', explicit_local_id)
-	end
-	local primary_sprite = owner:get_component('spritecomponent')
-	if primary_sprite == self then
-		if owner.collider ~= nil then
-			return owner.collider
-		end
-		return owner:get_component('collider2dcomponent')
-	end
-	return nil
-end
-
-function spritecomponent:sync_collider()
-	local collider = self:resolve_collider()
-	if collider == nil then
-		self.collider_geometry_token = nil
-		self.collider_offset_token = nil
-		return
-	end
-
-	local id = self.imgid
-	local flip_h = (self.flip.flip_h)
-	local flip_v = (self.flip.flip_v)
-	local offset = self.offset or { x = 0, y = 0 }
-	local offset_x = offset.x or 0
-	local offset_y = offset.y or 0
-	local geometry_token = string.format('%s|%d|%d', tostring(id), flip_h and 1 or 0, flip_v and 1 or 0)
-	local offset_token = string.format('%s|%s', tostring(offset_x), tostring(offset_y))
-
-	if id == 'none' then
-		if self.collider_geometry_token ~= geometry_token then
-			collider:set_local_shape(nil, nil, nil)
-			collider.sync_token = geometry_token
-			self.collider_geometry_token = geometry_token
-		end
-		if self.collider_offset_token ~= offset_token then
-			collider:set_shape_offset(offset_x, offset_y)
-			self.collider_offset_token = offset_token
-		end
-		return
-	end
-
-	if self.collider_geometry_token ~= geometry_token then
-		local image_asset = assets.img[romdir.token(id)]
-		if image_asset == nil or image_asset.imgmeta == nil then
-			error('[spritecomponent] image metadata missing for '' .. tostring(id) .. ''')
-		end
-		local imgmeta = image_asset.imgmeta
-		local box = select_bounding_box(flip_h, flip_v, imgmeta.boundingbox)
-		local polys = select_hit_polygons(flip_h, flip_v, imgmeta.hitpolygons)
-		collider:set_local_shape(box, polys, nil)
-		collider.sync_token = geometry_token
-		self.collider_geometry_token = geometry_token
-	end
-	if self.collider_offset_token ~= offset_token then
-		collider:set_shape_offset(offset_x, offset_y)
-		self.collider_offset_token = offset_token
-	end
-end
-
-function spritecomponent:update(_dt)
-	self:sync_collider()
 end
 
 -- collider2dcomponent: holds hit areas / polys
@@ -301,7 +231,7 @@ end
 -- 2. POLYGON SOURCE: use @cx / @cc image-filename suffixes, not manual polys.
 --    When a sprite is loaded via spriteobject:gfx('enemy@cx'), rombuilder bakes
 --    the convex hull at pack-time and stores it in imgmeta.hitpolygons.
---    spritecomponent.sync_collider() then copies those polys into local_polys
+--    collider2dcomponent then reads those polys lazily from the sprite metadata
 --    automatically — no cart code required.
 --    @cx  = convex hull  (one polygon, fast)
 --    @cc  = tighter multi-piece convex fit (multiple polygons, slower)
@@ -319,21 +249,56 @@ local collider2dcomponent = {}
 collider2dcomponent.__index = collider2dcomponent
 setmetatable(collider2dcomponent, { __index = component })
 
-local function invalidate_collider_world_cache(collider)
-	collider._world_polys_cache = nil
-	collider._world_polys_cache_source = nil
-	collider._world_polys_cache_x = nil
-	collider._world_polys_cache_y = nil
-	collider._world_circle_cache_source = nil
-	collider._world_circle_cache_x = nil
-	collider._world_circle_cache_y = nil
+local function get_sprite_offset_xy(sprite)
+	return sprite.offset.x, sprite.offset.y
+end
+
+local function get_driving_sprite_for_collider(collider)
+	local owner = collider.parent
+	if owner == nil then
+		return nil
+	end
+	if owner.collider ~= nil and owner.collider == collider then
+		if owner.sprite_component ~= nil then
+			return owner.sprite_component
+		end
+		return owner:get_component('spritecomponent')
+	end
+	local sprites = owner:get_components('spritecomponent')
+	for i = 1, #sprites do
+		local sprite = sprites[i]
+		if sprite.collider_local_id == collider.id_local then
+			return sprite
+		end
+	end
+	return nil
+end
+
+local function get_sprite_collision_geometry(sprite)
+	local id = sprite.imgid
+	if id == 'none' then
+		return nil, nil
+	end
+	local image_asset = assets.img[romdir.token(id)]
+	if image_asset == nil or image_asset.imgmeta == nil then
+		error('[spritecomponent] image metadata missing for "' .. tostring(id) .. '"')
+	end
+	local imgmeta = image_asset.imgmeta
+	local flip_h = sprite.flip.flip_h
+	local flip_v = sprite.flip.flip_v
+	return select_bounding_box(flip_h, flip_v, imgmeta.boundingbox), select_hit_polygons(flip_h, flip_v, imgmeta.hitpolygons)
 end
 
 local function update_world_area_cache(collider)
 	local parent = collider.parent
+	local sprite = get_driving_sprite_for_collider(collider)
 	local shape_offset_x = collider.shape_offset_x
 	local shape_offset_y = collider.shape_offset_y
 	local local_area = collider.local_area
+	if sprite ~= nil then
+		local_area = get_sprite_collision_geometry(sprite)
+		shape_offset_x, shape_offset_y = get_sprite_offset_xy(sprite)
+	end
 	local area = collider._world_area_cache
 	if local_area == nil then
 		local sx = parent.sx or 0
@@ -369,7 +334,7 @@ end
 --     spaceevents (string, default 'current') — scope for event emission:
 --                   'current' | 'all' | 'ui' | 'both'
 --     local_area   — table {left,top,right,bottom} : explicit AABB override
---     local_polys  — array of polygon tables : set automatically by sync_collider()
+--     local_polys  — array of polygon tables : manual polygon override
 --     local_circle — {x,y,r} : circle shape (highest shape priority)
 --     shape_offset_x / shape_offset_y — world-space offset added to all shapes
 --   For polygon shapes, prefer the @cx/@cc image suffix over setting local_polys manually.
@@ -391,9 +356,14 @@ function collider2dcomponent.new(opts)
 	self.local_area = opts.local_area
 	self.local_polys = opts.local_polys
 	self.local_circle = opts.local_circle
-	self.shape_offset_x = opts.shape_offset_x or 0
-	self.shape_offset_y = opts.shape_offset_y or 0
-	self.sync_token = opts.sync_token
+	self.shape_offset_x = 0
+	if opts.shape_offset_x ~= nil then
+		self.shape_offset_x = opts.shape_offset_x
+	end
+	self.shape_offset_y = 0
+	if opts.shape_offset_y ~= nil then
+		self.shape_offset_y = opts.shape_offset_y
+	end
 	self._world_area_cache = {
 		left = 0,
 		top = 0,
@@ -403,13 +373,7 @@ function collider2dcomponent.new(opts)
 	self._world_area_poly_cache = { 0, 0, 0, 0, 0, 0, 0, 0 }
 	self._world_area_polys_cache = { self._world_area_poly_cache }
 	self._world_circle_cache = { x = 0, y = 0, r = 0 }
-	self._world_circle_cache_source = nil
-	self._world_circle_cache_x = nil
-	self._world_circle_cache_y = nil
-	self._world_polys_cache = nil
-	self._world_polys_cache_source = nil
-	self._world_polys_cache_x = nil
-	self._world_polys_cache_y = nil
+	self._world_polys_cache = {}
 	return self
 end
 
@@ -417,28 +381,23 @@ function collider2dcomponent:set_local_shape(area, polys, circle)
 	self.local_area = area
 	self.local_polys = polys
 	self.local_circle = circle
-	invalidate_collider_world_cache(self)
 end
 
 function collider2dcomponent:set_local_area(area)
 	self.local_area = area
-	invalidate_collider_world_cache(self)
 end
 
 function collider2dcomponent:set_local_poly(poly)
 	self.local_polys = poly
-	invalidate_collider_world_cache(self)
 end
 
 function collider2dcomponent:set_local_circle(circle)
 	self.local_circle = circle
-	invalidate_collider_world_cache(self)
 end
 
 function collider2dcomponent:set_shape_offset(offset_x, offset_y)
 	self.shape_offset_x = offset_x
 	self.shape_offset_y = offset_y
-	invalidate_collider_world_cache(self)
 end
 
 function collider2dcomponent:get_world_area()
@@ -456,6 +415,14 @@ function collider2dcomponent:get_world_area_polys()
 end
 
 function collider2dcomponent:get_shape_kind()
+	local sprite = get_driving_sprite_for_collider(self)
+	if sprite ~= nil then
+		local _, local_polys = get_sprite_collision_geometry(sprite)
+		if local_polys ~= nil and #local_polys > 0 then
+			return 'poly'
+		end
+		return 'aabb'
+	end
 	if self.local_circle ~= nil then
 		return 'circle'
 	end
@@ -467,59 +434,59 @@ function collider2dcomponent:get_shape_kind()
 end
 
 function collider2dcomponent:get_world_polys()
+	local sprite = get_driving_sprite_for_collider(self)
 	local local_polys = self.local_polys
+	local px = self.parent.x + self.shape_offset_x
+	local py = self.parent.y + self.shape_offset_y
+	if sprite ~= nil then
+		local _, sprite_polys = get_sprite_collision_geometry(sprite)
+		local_polys = sprite_polys
+		local offset_x
+		local offset_y
+		offset_x, offset_y = get_sprite_offset_xy(sprite)
+		px = self.parent.x + offset_x
+		py = self.parent.y + offset_y
+	end
 	if local_polys == nil or #local_polys == 0 then
 		return nil
 	end
-	local px = self.parent.x + self.shape_offset_x
-	local py = self.parent.y + self.shape_offset_y
-	if self._world_polys_cache ~= nil and self._world_polys_cache_source == local_polys and self._world_polys_cache_x == px and self._world_polys_cache_y == py then
-		return self._world_polys_cache
-	end
 	local out = self._world_polys_cache
-	if out == nil or self._world_polys_cache_source ~= local_polys then
-		out = {}
-		for i = 1, #local_polys do
-			local poly = local_polys[i]
-			local out_poly = {}
-			for j = 1, #poly do
-				out_poly[j] = 0
-			end
-			out[i] = out_poly
-		end
-		self._world_polys_cache = out
-		self._world_polys_cache_source = local_polys
-	end
 	for i = 1, #local_polys do
 		local poly = local_polys[i]
 		local out_poly = out[i]
+		if out_poly == nil then
+			out_poly = {}
+			out[i] = out_poly
+		end
+		local old_len = #out_poly
 		for j = 1, #poly, 2 do
 			out_poly[j] = poly[j] + px
 			out_poly[j + 1] = poly[j + 1] + py
 		end
+		for j = #poly + 1, old_len do
+			out_poly[j] = nil
+		end
 	end
-	self._world_polys_cache_x = px
-	self._world_polys_cache_y = py
+	for i = #local_polys + 1, #out do
+		out[i] = nil
+	end
 	return out
 end
 
 function collider2dcomponent:get_world_circle()
+	if get_driving_sprite_for_collider(self) ~= nil then
+		return nil
+	end
 	local circle = self.local_circle
 	if circle == nil then
 		return nil
 	end
 	local px = self.parent.x + self.shape_offset_x
 	local py = self.parent.y + self.shape_offset_y
-	if self._world_circle_cache_source == circle and self._world_circle_cache_x == px and self._world_circle_cache_y == py then
-		return self._world_circle_cache
-	end
 	local out = self._world_circle_cache
 	out.x = px + circle.x
 	out.y = py + circle.y
 	out.r = circle.r
-	self._world_circle_cache_source = circle
-	self._world_circle_cache_x = px
-	self._world_circle_cache_y = py
 	return out
 end
 
@@ -569,7 +536,7 @@ end
 function timelinecomponent:seek(id, frame)
 	local entry = self.registry[id]
 	if not entry then
-		error('[timelinecomponent] unknown timeline '' .. id .. '' on '' .. self.parent.id .. ''')
+		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
 	end
 	entry.instance:force_seek(frame)
 	return entry.instance
@@ -582,7 +549,7 @@ end
 function timelinecomponent:advance(id)
 	local entry = self.registry[id]
 	if not entry then
-		error('[timelinecomponent] unknown timeline '' .. id .. '' on '' .. self.parent.id .. ''')
+		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
 	end
 	local events = entry.instance:advance()
 	if #events > 0 then
@@ -594,7 +561,7 @@ end
 function timelinecomponent:play(id, opts)
 	local entry = self.registry[id]
 	if not entry then
-		error('[timelinecomponent] unknown timeline '' .. id .. '' on '' .. self.parent.id .. ''')
+		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
 	end
 	local instance = entry.instance
 	local owner = self.parent
@@ -914,7 +881,7 @@ end
 
 function customvisualcomponent:flush()
 	if not self.producer then
-		error('customvisualcomponent: no producer for '' .. self.parent.id .. ''')
+		error('customvisualcomponent: no producer for "' .. self.parent.id .. '"')
 	end
 	self.producer({ parent = self.parent, rc = self })
 end
@@ -1050,7 +1017,7 @@ function abilitiescomponent:register_ability(id, definition)
 		error('[abilitiescomponent] ability id must be a non-empty string.')
 	end
 	if type(definition) ~= 'table' then
-		error('[abilitiescomponent] ability definition must be a table for '' .. id .. ''.')
+		error('[abilitiescomponent] ability definition must be a table for "' .. id .. '".')
 	end
 	self.registered[id] = definition
 end
@@ -1058,7 +1025,7 @@ end
 function abilitiescomponent:activate(id, payload)
 	local definition = self.registered[id]
 	if definition == nil then
-		error('[abilitiescomponent] unknown ability '' .. tostring(id) .. '' on '' .. self.parent.id .. ''')
+		error('[abilitiescomponent] unknown ability "' .. tostring(id) .. '" on "' .. self.parent.id .. '"')
 	end
 	local activate = definition.activate
 	if activate == nil then
@@ -1249,7 +1216,7 @@ end
 local function new_component(type_name, opts)
 	local ctor = componentregistry[type_name]
 	if not ctor then
-		error('component '' .. type_name .. '' is not registered.')
+		error('component "' .. type_name .. '" is not registered.')
 	end
 	return ctor.new(opts)
 end

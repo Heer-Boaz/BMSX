@@ -20,9 +20,10 @@
 --    RIGHT — convex hull suffix:
 --      self:gfx('enemy')           -- image file is 'enemy@cx.png' at pack-time
 --
--- 2. COLLISION IS SYNCED AUTOMATICALLY BY spritecomponent.sync_collider().
---    When gfx(id) is called, imgmeta.hitpolygons (baked by rombuilder) is read
---    and copied into the linked collider2dcomponent.local_polys.
+-- 2. COLLISION IS DERIVED LAZILY FROM THE SPRITE METADATA.
+--    When gfx(id) is called, imgmeta.hitpolygons (baked by rombuilder) is later
+--    read directly by the linked collider2dcomponent when collision code asks
+--    for the current shape.
 --    No extra setup is needed in cart code — just ensure a collider2dcomponent
 --    exists on the object before gfx() is called.
 --
@@ -73,8 +74,8 @@ end
 --   Sets this object's sprite to the image with the given asset id.
 --   id should be the base name WITHOUT the @cx/@cc suffix (rombuilder strips it).
 --   meta is optional; when omitted, imgmeta is fetched from romdir automatically.
---   After loading, sync_collider() copies imgmeta.hitpolygons into the linked
---   collider2dcomponent (if one exists), activating polygon collision.
+--   After loading, the linked collider2dcomponent (if one exists) will read the
+--   current imgmeta lazily when collision code asks for shape data.
 --   Must be called AFTER the object is spawned and has a collider2dcomponent.
 function spriteobject:gfx(id, meta)
 	self.imgid = id
