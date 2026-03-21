@@ -1,7 +1,20 @@
 local constants = require('constants')
 local castle_map = require('castle_map')
+local timeline = require('timeline')
 
 local room = {}
+local water_surface_timeline_id = 'r.ws'
+local water_surface_frame_imgids = {
+	'water_surface_msx',
+}
+local water_surface_timeline_frame_defs = {
+	{ value = 1, hold = 1 },
+}
+for i = 1, 63 do
+	local suffix = string.format('%02d', i)
+	water_surface_frame_imgids[i + 1] = 'water_surface_msx_' .. suffix
+	water_surface_timeline_frame_defs[i + 1] = { value = i + 1, hold = 1 }
+end
 local solid_tiles = {
 	['#'] = true,
 	['$'] = true,
@@ -851,6 +864,8 @@ function room_object:render_water()
 	if self.water == nil then
 		return
 	end
+	local water_surface_frame = self:get_timeline(water_surface_timeline_id):value()
+	local water_surface_imgid = water_surface_frame_imgids[water_surface_frame]
 
 	for y = self.water.surface_row, self.tile_rows do
 		for x = 1, self.tile_columns do
@@ -858,7 +873,7 @@ function room_object:render_water()
 			if kind ~= constants.water.none then
 				local draw_x, draw_y = self:tile_to_world(x, y)
 				if kind == constants.water.surface then
-					put_sprite('water_surface_msx', draw_x, draw_y, 0)
+					put_sprite(water_surface_imgid, draw_x, draw_y, 0)
 				else
 					put_sprite('water_body_msx', draw_x, draw_y, 0)
 				end
@@ -990,6 +1005,24 @@ local function define_room_fsm()
 						tags = { 'r.seal_fx' },
 					},
 					daemon_fx = {},
+				},
+			},
+			water_state = {
+				is_concurrent = true,
+				initial = 'active',
+				states = {
+					active = {
+						timelines = {
+							[water_surface_timeline_id] = {
+								def = {
+									-- MoG `TBD06..TBD57`: surface char `0xB6` rotates on a 64-tick cycle.
+									frames = timeline.build_frame_sequence(water_surface_timeline_frame_defs),
+									playback_mode = 'loop',
+								},
+								autoplay = true,
+							},
+						},
+					},
 				},
 			},
 		},
