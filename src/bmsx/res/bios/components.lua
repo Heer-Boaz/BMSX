@@ -505,6 +505,48 @@ local timelinecomponent = {}
 timelinecomponent.__index = timelinecomponent
 setmetatable(timelinecomponent, { __index = component })
 
+local function build_marker_event(entry, marker)
+	local event = entry.marker_event
+	local last_keys = entry.marker_event_keys
+	if last_keys ~= nil then
+		for i = 1, #last_keys do
+			event[last_keys[i]] = nil
+		end
+		entry.marker_event_keys = nil
+	end
+	event.payload = nil
+	event.type = marker.event
+	local payload = marker.payload
+	if payload == nil then
+		return event
+	end
+	local keys = marker.payload_keys
+	if keys ~= nil then
+		for i = 1, #keys do
+			local key = keys[i]
+			event[key] = payload[key]
+		end
+		entry.marker_event_keys = keys
+		return event
+	end
+	event.payload = payload
+	return event
+end
+
+local function init_timeline_dispatch_cache(owner, entry)
+	if entry.frame_payload ~= nil then
+		return
+	end
+	local id = entry.instance.id
+	entry.frame_payload = { timeline_id = id }
+	entry.end_payload = { timeline_id = id }
+	entry.base_frame_event = { type = 'timeline.frame', emitter = owner, timeline_id = id }
+	entry.scoped_frame_event = { type = 'timeline.frame.' .. id, emitter = owner, timeline_id = id }
+	entry.base_end_event = { type = 'timeline.end', emitter = owner, timeline_id = id }
+	entry.scoped_end_event = { type = 'timeline.end.' .. id, emitter = owner, timeline_id = id }
+	entry.marker_event = { emitter = owner }
+end
+
 function timelinecomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'timelinecomponent'
@@ -527,6 +569,8 @@ function timelinecomponent:define(definition)
 		params = instance.def.params,
 		tracks = instance.def.tracks,
 	}
+	local entry = self.registry[instance.id]
+	init_timeline_dispatch_cache(self.parent, entry)
 end
 
 function timelinecomponent:get(id)
@@ -552,11 +596,11 @@ function timelinecomponent:advance(id)
 	if not entry then
 		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
 	end
-	local events = entry.instance:advance()
-	if #events > 0 then
-		self:process_events(entry, events, 0)
+	local instance = entry.instance
+	if instance:advance() ~= nil then
+		self:process_instance_events(entry, 0)
 	end
-	return events
+	return instance
 end
 
 function timelinecomponent:play(id, opts)
@@ -610,7 +654,9 @@ function timelinecomponent:play(id, opts)
 		instance:rewind()
 	end
 	if snap and instance.length > 0 then
-		self:process_events(entry, instance:snap_to_start(), 0)
+		if instance:snap_to_start() ~= nil then
+			self:process_instance_events(entry, 0)
+		end
 	end
 	self.active[id] = true
 	return instance
@@ -631,64 +677,90 @@ end
 function timelinecomponent:tick_active(dt_ms)
 	for id in pairs(self.active) do
 		local entry = self.registry[id]
-		local events = entry.instance:update(dt_ms)
-		if #events > 0 then
-			self:process_events(entry, events, dt_ms)
+		if entry.instance:update(dt_ms) ~= nil then
+			self:process_instance_events(entry, dt_ms)
 		end
 	end
 end
 
-function timelinecomponent:process_events(entry, events, dt_ms)
+function timelinecomponent:process_instance_events(entry, dt_ms)
+	local instance = entry.instance
+	if instance.step_has_frame_event then
+		self:process_frame_event(entry, instance.step_frame_event, dt_ms)
+	end
+	if instance.step_has_end_event then
+		self:process_end_event(entry, instance.step_end_event)
+	end
+end
+
+function timelinecomponent:process_frame_event(entry, evt, dt_ms)
 	local owner = self.parent
 	local target = entry.target or owner
+	local payload = entry.frame_payload
 	local dt_seconds = dt_ms / 1000
 	local time_ms = entry.instance.time_ms
-	local time_seconds = time_ms / 1000
-	for i = 1, #events do
-		local evt = events[i]
-		if evt.kind == 'frame' then
-			local payload = {
-				timeline_id = entry.instance.id,
-				frame_index = evt.current,
-				frame_value = evt.value,
-				rewound = evt.rewound,
-				reason = evt.reason,
-				direction = evt.direction,
-				dt = dt_ms,
-				dt_seconds = dt_seconds,
-				time_ms = time_ms,
-				time_seconds = time_seconds,
-			}
-			self:apply_markers(entry, evt)
-			local tracks = entry.tracks
-			if tracks ~= nil then
-				apply_tracks(target, tracks, entry.params, payload)
-			end
-			if entry.apply then
-				if (entry.apply) then
-					apply_frame(target, payload.frame_value)
-				else
-					entry.apply(target, payload.frame_value, entry.params, payload)
-				end
-			end
-			self:emit_frameevent(owner, payload)
+	payload.frame_index = evt.current
+	payload.frame_value = evt.value
+	payload.rewound = evt.rewound
+	payload.reason = evt.reason
+	payload.direction = evt.direction
+	payload.dt = dt_ms
+	payload.dt_seconds = dt_seconds
+	payload.time_ms = time_ms
+	payload.time_seconds = time_ms / 1000
+	self:apply_markers(entry, evt.current)
+	local tracks = entry.tracks
+	if tracks ~= nil then
+		apply_tracks(target, tracks, entry.params, payload)
+	end
+	if entry.apply then
+		if type(entry.apply) == 'function' then
+			entry.apply(target, payload.frame_value, entry.params, payload)
 		else
-			local payload = {
-				timeline_id = entry.instance.id,
-				mode = evt.mode,
-				wrapped = evt.wrapped,
-			}
-			self:emit_endevent(owner, payload)
-			if evt.mode == 'once' then
-				self.active[entry.instance.id] = nil
-			end
+			apply_frame(target, payload.frame_value)
 		end
+	end
+	local base_event = entry.base_frame_event
+	base_event.frame_index = payload.frame_index
+	base_event.frame_value = payload.frame_value
+	base_event.rewound = payload.rewound
+	base_event.reason = payload.reason
+	base_event.direction = payload.direction
+	owner.events:emit_event(base_event)
+	owner.sc:dispatch(base_event)
+	local scoped_event = entry.scoped_frame_event
+	scoped_event.frame_index = payload.frame_index
+	scoped_event.frame_value = payload.frame_value
+	scoped_event.rewound = payload.rewound
+	scoped_event.reason = payload.reason
+	scoped_event.direction = payload.direction
+	owner.events:emit_event(scoped_event)
+	owner.sc:dispatch(scoped_event)
+end
+
+function timelinecomponent:process_end_event(entry, evt)
+	local owner = self.parent
+	local payload = entry.end_payload
+	payload.mode = evt.mode
+	payload.wrapped = evt.wrapped
+	local base_event = entry.base_end_event
+	base_event.mode = payload.mode
+	base_event.wrapped = payload.wrapped
+	owner.events:emit_event(base_event)
+	owner.sc:dispatch(base_event)
+	local scoped_event = entry.scoped_end_event
+	scoped_event.mode = payload.mode
+	scoped_event.wrapped = payload.wrapped
+	owner.events:emit_event(scoped_event)
+	owner.sc:dispatch(scoped_event)
+	if evt.mode == 'once' then
+		self.active[entry.instance.id] = nil
 	end
 end
 
-function timelinecomponent:apply_markers(entry, event)
+function timelinecomponent:apply_markers(entry, frame_index)
 	local compiled = entry.markers
-	local bucket = compiled.by_frame[event.current]
+	local bucket = compiled.by_frame[frame_index]
 	if not bucket then
 		return
 	end
@@ -707,40 +779,13 @@ function timelinecomponent:apply_markers(entry, event)
 				owner:remove_tag(remove_tags[j])
 			end
 		end
-		local payload = marker.payload
-		local spec = { type = marker.event, emitter = owner }
-		if payload ~= nil then
-			if type(payload) == 'table' and payload.type == nil then
-				for k, v in pairs(payload) do
-					spec[k] = v
-				end
-			else
-				spec.payload = payload
-			end
+		if marker.event ~= nil then
+			local event = build_marker_event(entry, marker)
+			owner.events:emit_event(event)
+			owner.sc:dispatch(event)
 		end
-		local event = eventemitter:create_gameevent(spec)
-		owner.events:emit_event(event)
-		owner.sc:dispatch(event)
 	end
 end
-
-function timelinecomponent:emit_frameevent(owner, payload)
-	self:dispatch_timeline_events(owner, 'timeline.frame', payload)
-end
-
-function timelinecomponent:emit_endevent(owner, payload)
-	self:dispatch_timeline_events(owner, 'timeline.end', payload)
-end
-
-	function timelinecomponent:dispatch_timeline_events(owner, base_type, payload)
-		local base_event = eventemitter:create_gameevent({ type = base_type, emitter = owner, timeline_id = payload.timeline_id, frame_index = payload.frame_index, frame_value = payload.frame_value, rewound = payload.rewound, reason = payload.reason, direction = payload.direction, mode = payload.mode, wrapped = payload.wrapped })
-		owner.events:emit_event(base_event)
-		owner.sc:dispatch(base_event)
-		local scoped_type = base_type .. '.' .. payload.timeline_id
-		local scoped_event = eventemitter:create_gameevent({ type = scoped_type, emitter = owner, timeline_id = payload.timeline_id, frame_index = payload.frame_index, frame_value = payload.frame_value, rewound = payload.rewound, reason = payload.reason, direction = payload.direction, mode = payload.mode, wrapped = payload.wrapped })
-		owner.events:emit_event(scoped_event)
-		owner.sc:dispatch(scoped_event)
-	end
 
 -- transformcomponent: simple positional proxy
 local transformcomponent = {}

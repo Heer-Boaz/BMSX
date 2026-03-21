@@ -38,6 +38,30 @@ local timeline = {}
 timeline.__index = timeline
 timeline.__is_timeline = true
 
+local function clear_step_events(self)
+	self.step_has_frame_event = false
+	self.step_has_end_event = false
+end
+
+local function write_frame_event(self, previous, current, value, rewound, direction, reason)
+	local event = self.step_frame_event
+	event.previous = previous
+	event.current = current
+	event.value = value
+	event.rewound = rewound
+	event.direction = direction
+	event.reason = reason
+	self.step_has_frame_event = true
+end
+
+local function write_end_event(self, frame, mode, wrapped)
+	local event = self.step_end_event
+	event.frame = frame
+	event.mode = mode
+	event.wrapped = wrapped
+	self.step_has_end_event = true
+end
+
 local function expand_timeline_windows(markers, windows)
 	if not windows or #windows == 0 then
 		return markers or {}
@@ -82,6 +106,19 @@ local function clamp_marker_frame(at, length)
 	return math.min(math.max(math.floor(normalized * (length - 1)), 0), length - 1)
 end
 
+local function collect_marker_payload_keys(payload)
+	local keys = {}
+	for key in pairs(payload) do
+		if key ~= 'type' and key ~= 'emitter' and key ~= 'timestamp' then
+			keys[#keys + 1] = key
+		end
+	end
+	if #keys == 0 then
+		return nil
+	end
+	return keys
+end
+
 local function compile_timeline_markers(def, length)
 	local cache = { by_frame = {}, controlled_tags = {} }
 	local markers = expand_timeline_windows(def.markers or {}, def.windows or {})
@@ -103,6 +140,11 @@ local function compile_timeline_markers(def, length)
 		if length > 0 then
 			local frame = clamp_marker_frame(marker, length)
 			local bucket = cache.by_frame[frame]
+			local payload = marker.payload
+			local payload_keys
+			if type(payload) == 'table' and payload.type == nil then
+				payload_keys = collect_marker_payload_keys(payload)
+			end
 			if not bucket then
 				bucket = {}
 				cache.by_frame[frame] = bucket
@@ -110,7 +152,8 @@ local function compile_timeline_markers(def, length)
 			bucket[#bucket + 1] = {
 				frame = frame,
 				event = marker.event,
-				payload = marker.payload,
+				payload = payload,
+				payload_keys = payload_keys,
 				add_tags = marker.add_tags,
 				remove_tags = marker.remove_tags,
 			}
@@ -210,7 +253,7 @@ function timeline.new(def)
 		self.length = #self.frames
 		self.built = true
 	elseif frame_source ~= nil then
-		error('[timeline] timeline '' .. tostring(def.id) .. '' requires a frames table or builder function.')
+		error('[timeline] timeline "' .. tostring(def.id) .. '" requires a frames table or builder function.')
 	end
 	if def.ticks_per_frame ~= nil then
 		self.ticks_per_frame = def.ticks_per_frame
@@ -233,16 +276,20 @@ function timeline.new(def)
 	self.duration_ms = def.duration_ms or (def.duration_seconds and (def.duration_seconds * 1000))
 	self.ended = false
 	self.direction = 1
+	self.step_frame_event = {}
+	self.step_end_event = {}
+	self.step_has_frame_event = false
+	self.step_has_end_event = false
 	return self
 end
 
 function timeline:build(params)
 	if not self.frame_builder then
-		error('[timeline] timeline '' .. tostring(self.id) .. '' has no frame builder.')
+		error('[timeline] timeline "' .. tostring(self.id) .. '" has no frame builder.')
 	end
 	local frames = self.frame_builder(params)
 	if type(frames) ~= 'table' then
-		error('[timeline] timeline '' .. tostring(self.id) .. '' frame builder must return a table.')
+		error('[timeline] timeline "' .. tostring(self.id) .. '" frame builder must return a table.')
 	end
 	self.frames = expand_frames(frames, self.repetitions)
 	self.length = #self.frames
@@ -263,14 +310,16 @@ function timeline:rewind()
 	self.time_ms = 0
 	self.ended = false
 	self.direction = 1
+	clear_step_events(self)
 end
 
 function timeline:update(dt)
+	clear_step_events(self)
 	if not self.auto_tick or self.length == 0 then
-		return {}
+		return nil
 	end
 	if self.ended then
-		return {}
+		return nil
 	end
 	self.ticks = self.ticks + dt
 	self.time_ms = self.time_ms + dt
@@ -279,25 +328,24 @@ function timeline:update(dt)
 		if head < 0 then
 			head = 0
 		end
-		local events = self:apply_frame(head, 'update')
+		self:apply_frame(head, 'update')
 		if self.duration_ms and self.time_ms >= self.duration_ms then
 			self.ended = true
-			events[#events + 1] = {
-				kind = 'end',
-				frame = self.head,
-				mode = self.playback_mode,
-				wrapped = false,
-			}
+			write_end_event(self, self.head, self.playback_mode, false)
 		end
-		return events
+		if self.step_has_frame_event or self.step_has_end_event then
+			return self
+		end
+		return nil
 	end
 	if self.ticks_per_frame <= 0 or self.ticks >= self.ticks_per_frame then
 		return self:advance_internal('advance')
 	end
-	return {}
+	return nil
 end
 
 function timeline:advance()
+	clear_step_events(self)
 	return self:advance_internal('advance')
 end
 
@@ -305,14 +353,17 @@ end
 -- Does NOT fire frame markers for skipped frames.  Use force_seek() if you
 -- need markers to fire (e.g. to sync tag state after a manual jump).
 function timeline:seek(frame)
+	clear_step_events(self)
 	return self:apply_frame(frame, 'seek')
 end
 
 function timeline:snap_to_start()
+	clear_step_events(self)
 	return self:apply_frame(0, 'snap')
 end
 
 function timeline:force_seek(frame)
+	clear_step_events(self)
 	if self.length == 0 then
 		self.head = timeline_start_index
 		self.ticks = 0
@@ -331,7 +382,7 @@ end
 
 function timeline:advance_internal(reason)
 	if self.length == 0 then
-		return {}
+		return nil
 	end
 	local delta = self.playback_mode == 'pingpong' and self.direction or 1
 	local target = self.head + (self.head == timeline_start_index and 1 or delta)
@@ -339,9 +390,8 @@ function timeline:advance_internal(reason)
 end
 
 function timeline:apply_frame(target, reason)
-	local events = {}
 	if self.length == 0 then
-		return events
+		return nil
 	end
 	local last_index = self.length - 1
 	local previous = self.head
@@ -386,7 +436,7 @@ function timeline:apply_frame(target, reason)
 	end
 
 	if previous == next and not rewound and not emit_end and reason == 'advance' then
-		return events
+		return nil
 	end
 
 	if emit_frame == nil then
@@ -397,27 +447,17 @@ function timeline:apply_frame(target, reason)
 	self.ticks = 0
 
 	if emit_frame then
-		events[#events + 1] = {
-			kind = 'frame',
-			previous = previous,
-			current = next,
-			value = self.frames[next + 1],
-			rewound = rewound,
-			direction = self.direction,
-			reason = reason,
-		}
+		write_frame_event(self, previous, next, self.frames[next + 1], rewound, self.direction, reason)
 	end
 
 	if emit_end then
-		events[#events + 1] = {
-			kind = 'end',
-			frame = self.head,
-			mode = self.playback_mode,
-			wrapped = wrapped,
-		}
+		write_end_event(self, self.head, self.playback_mode, wrapped)
 	end
 
-	return events
+	if self.step_has_frame_event or self.step_has_end_event then
+		return self
+	end
+	return nil
 end
 
 return {

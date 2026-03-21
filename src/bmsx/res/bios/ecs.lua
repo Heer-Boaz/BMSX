@@ -70,11 +70,11 @@ end
 
 local ecsystemmanager = {}
 ecsystemmanager.__index = ecsystemmanager
+local empty_stats = {}
 
 function ecsystemmanager.new()
 	local self = setmetatable({}, ecsystemmanager)
 	self.systems = {}
-	self.stats = {}
 	return self
 end
 
@@ -102,26 +102,16 @@ end
 
 function ecsystemmanager:clear()
 	self.systems = {}
-	self.stats = {}
 end
 
 function ecsystemmanager:begin_frame()
-	self.stats = {}
 end
 
 function ecsystemmanager:get_stats()
-	return self.stats
+	return empty_stats
 end
 
-function ecsystemmanager:record_stat(sys, t0, t1)
-	local id = sys.__ecs_id or sys.id or 'system'
-	self.stats[#self.stats + 1] = {
-		id = id,
-		name = sys.name or id,
-		group = sys.group,
-		priority = sys.priority,
-		ms = t1 - t0,
-	}
+function ecsystemmanager:record_stat(_sys, _t0, _t1)
 end
 
 function ecsystemmanager:update_until(max_group)
@@ -129,10 +119,10 @@ function ecsystemmanager:update_until(max_group)
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group <= max_group then
-			local t0 = $.platform.clock.perf_now()
+			-- local t0 = $.platform.clock.perf_now()
 			s:update(dt_ms)
-			local t1 = $.platform.clock.perf_now()
-			self:record_stat(s, t0, t1)
+			-- local t1 = $.platform.clock.perf_now()
+			-- self:record_stat(s, t0, t1)
 		end
 	end
 end
@@ -142,10 +132,10 @@ function ecsystemmanager:update_from(min_group)
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group >= min_group then
-			local t0 = $.platform.clock.perf_now()
+			-- local t0 = $.platform.clock.perf_now()
 			s:update(dt_ms)
-			local t1 = $.platform.clock.perf_now()
-			self:record_stat(s, t0, t1)
+			-- local t1 = $.platform.clock.perf_now()
+			-- self:record_stat(s, t0, t1)
 		end
 	end
 end
@@ -155,10 +145,10 @@ function ecsystemmanager:update_phase(group)
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.group == group then
-			local t0 = $.platform.clock.perf_now()
+			-- local t0 = $.platform.clock.perf_now()
 			s:update(dt_ms)
-			local t1 = $.platform.clock.perf_now()
-			self:record_stat(s, t0, t1)
+			-- local t1 = $.platform.clock.perf_now()
+			-- self:record_stat(s, t0, t1)
 		end
 	end
 end
@@ -169,10 +159,10 @@ function ecsystemmanager:run_paused()
 	for i = 1, #self.systems do
 		local s = self.systems[i]
 		if s.runs_while_paused then
-			local t0 = $.platform.clock.perf_now()
+			-- local t0 = $.platform.clock.perf_now()
 			s:update(dt_ms)
-			local t1 = $.platform.clock.perf_now()
-			self:record_stat(s, t0, t1)
+			-- local t1 = $.platform.clock.perf_now()
+			-- self:record_stat(s, t0, t1)
 		end
 	end
 end
