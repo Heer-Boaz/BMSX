@@ -662,12 +662,18 @@ enum class RunResult {
 	Yielded,
 };
 
+struct TaggedValueSlotState {
+	uint32_t tag = 0;
+	uint32_t payloadLo = 0;
+	uint32_t payloadHi = 0;
+};
+
 struct CallFrame {
 	int protoIndex = 0;
 	int pc = 0;
 	int depth = 0;
-	std::vector<Value> registers;
-	std::vector<Value> varargs;
+	std::vector<TaggedValueSlotState> registers;
+	std::vector<TaggedValueSlotState> varargs;
 	Closure* closure = nullptr;
 	std::unordered_map<int, Upvalue*> openUpvalues;
 	int returnBase = 0;
@@ -675,6 +681,34 @@ struct CallFrame {
 	int top = 0;
 	bool captureReturns = false;
 	int callSitePc = 0;
+};
+
+struct RuntimeOpenUpvalueState {
+	int index = 0;
+	uint32_t objectRefId = 0;
+};
+
+struct CpuRuntimeFrameState {
+	int protoIndex = 0;
+	int pc = 0;
+	int depth = 0;
+	std::vector<TaggedValueSlotState> registers;
+	std::vector<TaggedValueSlotState> varargs;
+	uint32_t closureObjectRefId = 0;
+	std::vector<RuntimeOpenUpvalueState> openUpvalues;
+	int returnBase = 0;
+	int returnCount = 0;
+	int top = 0;
+	bool captureReturns = false;
+	int callSitePc = 0;
+};
+
+struct CpuRuntimeState {
+	std::vector<CpuRuntimeFrameState> frames;
+	std::vector<TaggedValueSlotState> lastReturnValues;
+	int lastPc = 0;
+	uint32_t lastInstruction = 0;
+	uint32_t stringIndexTableObjectRefId = 0;
 };
 
 class Table : public GCObject {
@@ -923,7 +957,11 @@ public:
 	const RuntimeStringPool& stringPool() const { return m_stringPool; }
 	void reserveStringHandles(StringId minHandle);
 	ObjectHandleTableState captureObjectMemoryState() const { return m_handleTable.captureState(); }
+	CpuRuntimeState captureRuntimeState() const;
+	TaggedValueSlotState encodeTaggedValueState(const Value& value) const;
+	Value decodeTaggedValueState(const TaggedValueSlotState& slot) const;
 	void restoreObjectMemoryState(const ObjectHandleTableState& state);
+	void restoreRuntimeState(const CpuRuntimeState& state);
 	void setExternalRootMarker(std::function<void(GcHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }
 
@@ -950,13 +988,15 @@ public:
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
 	bool hasFrames() const { return !m_frames.empty(); }
+	const GcHeap& heap() const { return m_heap; }
 	std::optional<SourceRange> getDebugRange(int pc) const;
 	std::vector<std::pair<int, int>> getCallStack() const;
 	int getFrameRegisterCount(int frameIndex) const;
 	Value readFrameRegister(int frameIndex, int registerIndex) const;
+	std::vector<Value> copyLastReturnValues() const;
 
 	int instructionBudgetRemaining = 0;
-	std::vector<Value> lastReturnValues;
+	std::vector<TaggedValueSlotState> lastReturnValues;
 	int lastPc = 0;
 	uint32_t lastInstruction = 0;
 	Table* globals = nullptr;
@@ -981,17 +1021,20 @@ private:
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	Closure* createClosure(CallFrame& frame, int protoIndex);
 	void closeUpvalues(CallFrame& frame);
-	const Value& readUpvalue(Upvalue* upvalue);
+	Value readUpvalue(Upvalue* upvalue);
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
 	void writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values);
 	void setRegister(CallFrame& frame, int index, const Value& value);
-	const Value& readRK(CallFrame& frame, uint32_t raw, int bits);
+	Value readRegister(const CallFrame& frame, int index) const;
+	Value readVararg(const CallFrame& frame, int index) const;
+	void setLastReturnValues(const std::vector<Value>& values);
+	Value readRK(CallFrame& frame, uint32_t raw, int bits);
 	Value resolveTableIndex(Table* table, const Value& key);
 
 	std::unique_ptr<CallFrame> acquireFrame();
 	void releaseFrame(std::unique_ptr<CallFrame> frame);
-	std::vector<Value> acquireRegisters(size_t size);
-	void releaseRegisters(std::vector<Value>&& regs);
+	std::vector<TaggedValueSlotState> acquireRegisters(size_t size);
+	void releaseRegisters(std::vector<TaggedValueSlotState>&& regs);
 	std::vector<Value> acquireNativeReturnScratch();
 	void releaseNativeReturnScratch(std::vector<Value>&& out);
 	std::vector<Value> acquireArgScratch();
@@ -1023,7 +1066,7 @@ private:
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;
 	static constexpr int MAX_POOLED_FRAMES = 32;
 
-	std::unordered_map<size_t, std::vector<std::vector<Value>>> m_registerPool;
+	std::unordered_map<size_t, std::vector<std::vector<TaggedValueSlotState>>> m_registerPool;
 	static constexpr size_t MAX_POOLED_REGISTER_ARRAYS = 64;
 	static constexpr size_t MAX_REGISTER_ARRAY_SIZE = 256;
 

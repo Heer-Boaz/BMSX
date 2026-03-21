@@ -39,7 +39,7 @@ std::vector<Value> Runtime::callLuaFunction(Closure* fn, const std::vector<Value
 	}
 	const int remaining = m_cpu.instructionBudgetRemaining;
 	m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
-	return m_cpu.lastReturnValues;
+	return m_cpu.copyLastReturnValues();
 }
 
 Value Runtime::requireModule(const std::string& moduleName) {

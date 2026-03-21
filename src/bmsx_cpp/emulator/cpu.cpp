@@ -343,72 +343,54 @@ void NativeObject::setMetatable(Table* metatable) {
 	metatableRefId = metatable ? metatable->runtimeRefId : 0;
 }
 
+static TaggedValueSlotState encodeTaggedValueSlot(const Value& value);
+static Value decodeTaggedValueSlot(const TaggedValueSlotState& slot, const GcHeap& gcHeap);
+
 static void writeTaggedValueToHandle(ObjectHandleTable& handleTable, uint32_t addr, const Value& value) {
+	const TaggedValueSlotState slot = encodeTaggedValueSlot(value);
+	handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, slot.tag);
+	handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, slot.payloadLo);
+	handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, slot.payloadHi);
+}
+
+static TaggedValueSlotState encodeTaggedValueSlot(const Value& value) {
 	if (isNil(value)) {
-		handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::Nil));
-		handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, 0);
-		handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
-		return;
+		return { static_cast<uint32_t>(TaggedValueTag::Nil), 0, 0 };
 	}
 	if (valueIsTagged(value)) {
 		switch (valueTag(value)) {
 			case ValueTag::False:
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::False));
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, 0);
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
-				return;
+				return { static_cast<uint32_t>(TaggedValueTag::False), 0, 0 };
 			case ValueTag::True:
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::True));
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, 0);
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
-				return;
+				return { static_cast<uint32_t>(TaggedValueTag::True), 0, 0 };
 			case ValueTag::String:
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::String));
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asStringId(value));
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
-				return;
+				return { static_cast<uint32_t>(TaggedValueTag::String), asStringId(value), 0 };
 			case ValueTag::Table:
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::Table));
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asTable(value)->runtimeRefId);
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
-				return;
+				return { static_cast<uint32_t>(TaggedValueTag::Table), asTable(value)->runtimeRefId, 0 };
 			case ValueTag::Closure:
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::Closure));
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asClosure(value)->runtimeRefId);
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
-				return;
+				return { static_cast<uint32_t>(TaggedValueTag::Closure), asClosure(value)->runtimeRefId, 0 };
 			case ValueTag::NativeFunction:
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::NativeFunction));
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asNativeFunction(value)->runtimeRefId);
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
-				return;
+				return { static_cast<uint32_t>(TaggedValueTag::NativeFunction), asNativeFunction(value)->runtimeRefId, 0 };
 			case ValueTag::NativeObject:
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::NativeObject));
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asNativeObject(value)->runtimeRefId);
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
-				return;
+				return { static_cast<uint32_t>(TaggedValueTag::NativeObject), asNativeObject(value)->runtimeRefId, 0 };
 			case ValueTag::Upvalue:
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::Upvalue));
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, asUpvalue(value)->runtimeRefId);
-				handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, 0);
-				return;
+				return { static_cast<uint32_t>(TaggedValueTag::Upvalue), asUpvalue(value)->runtimeRefId, 0 };
 			case ValueTag::Nil:
-				break;
+				return { static_cast<uint32_t>(TaggedValueTag::Nil), 0, 0 };
 		}
 	}
 	uint64_t bits = 0;
 	const double number = valueToNumber(value);
 	std::memcpy(&bits, &number, sizeof(double));
-	handleTable.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, static_cast<uint32_t>(TaggedValueTag::Number));
-	handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET, static_cast<uint32_t>(bits & 0xffffffffULL));
-	handleTable.writeU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET, static_cast<uint32_t>(bits >> 32));
+	return {
+		static_cast<uint32_t>(TaggedValueTag::Number),
+		static_cast<uint32_t>(bits & 0xffffffffULL),
+		static_cast<uint32_t>(bits >> 32),
+	};
 }
 
-static Value readTaggedValueFromHandle(const ObjectHandleTable& handleTable, const GcHeap& gcHeap, uint32_t addr) {
-	const uint32_t tag = handleTable.readU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET);
-	const uint32_t payloadLo = handleTable.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET);
-	const uint32_t payloadHi = handleTable.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET);
-	switch (static_cast<TaggedValueTag>(tag)) {
+static Value decodeTaggedValueSlot(const TaggedValueSlotState& slot, const GcHeap& gcHeap) {
+	switch (static_cast<TaggedValueTag>(slot.tag)) {
 		case TaggedValueTag::Nil:
 			return valueNil();
 		case TaggedValueTag::False:
@@ -416,25 +398,47 @@ static Value readTaggedValueFromHandle(const ObjectHandleTable& handleTable, con
 		case TaggedValueTag::True:
 			return valueBool(true);
 		case TaggedValueTag::Number: {
-			uint64_t bits = static_cast<uint64_t>(payloadLo) | (static_cast<uint64_t>(payloadHi) << 32);
+			uint64_t bits = static_cast<uint64_t>(slot.payloadLo) | (static_cast<uint64_t>(slot.payloadHi) << 32);
 			double number = 0.0;
 			std::memcpy(&number, &bits, sizeof(double));
 			return valueNumber(number);
 		}
 		case TaggedValueTag::String:
-			return valueString(payloadLo);
+			return valueString(slot.payloadLo);
 		case TaggedValueTag::Table:
-			return valueTable(static_cast<Table*>(resolveRuntimeObjectRef(payloadLo)));
+			return valueTable(static_cast<Table*>(resolveRuntimeObjectRef(slot.payloadLo)));
 		case TaggedValueTag::Closure:
-			return valueClosure(static_cast<Closure*>(gcHeap.resolveRuntimeRef(payloadLo)));
+			return valueClosure(static_cast<Closure*>(gcHeap.resolveRuntimeRef(slot.payloadLo)));
 		case TaggedValueTag::NativeFunction:
-			return valueNativeFunction(static_cast<NativeFunction*>(gcHeap.resolveRuntimeRef(payloadLo)));
+			return valueNativeFunction(static_cast<NativeFunction*>(gcHeap.resolveRuntimeRef(slot.payloadLo)));
 		case TaggedValueTag::NativeObject:
-			return valueNativeObject(static_cast<NativeObject*>(gcHeap.resolveRuntimeRef(payloadLo)));
+			return valueNativeObject(static_cast<NativeObject*>(gcHeap.resolveRuntimeRef(slot.payloadLo)));
 		case TaggedValueTag::Upvalue:
-			return valueUpvalue(static_cast<Upvalue*>(gcHeap.resolveRuntimeRef(payloadLo)));
+			return valueUpvalue(static_cast<Upvalue*>(gcHeap.resolveRuntimeRef(slot.payloadLo)));
 	}
 	throw std::runtime_error("[Table] Unsupported tagged value tag.");
+}
+
+static void encodeTaggedValueVector(const std::vector<Value>& values, std::vector<TaggedValueSlotState>& out) {
+	out.resize(values.size());
+	for (size_t index = 0; index < values.size(); ++index) {
+		out[index] = encodeTaggedValueSlot(values[index]);
+	}
+}
+
+static void decodeTaggedValueVector(const std::vector<TaggedValueSlotState>& slots, const GcHeap& gcHeap, std::vector<Value>& out) {
+	out.resize(slots.size());
+	for (size_t index = 0; index < slots.size(); ++index) {
+		out[index] = decodeTaggedValueSlot(slots[index], gcHeap);
+	}
+}
+
+static Value readTaggedValueFromHandle(const ObjectHandleTable& handleTable, const GcHeap& gcHeap, uint32_t addr) {
+	return decodeTaggedValueSlot({
+		handleTable.readU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET),
+		handleTable.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET),
+		handleTable.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET),
+	}, gcHeap);
 }
 
 Table::Table(GcHeap& gcHeap, ObjectHandleTable& handleTable, const RuntimeStringPool& stringPool, int arraySize, int hashSize)
@@ -1231,12 +1235,80 @@ void CPU::reserveStringHandles(StringId minHandle) {
 	m_stringPool.reserveHandles(minHandle);
 }
 
+TaggedValueSlotState CPU::encodeTaggedValueState(const Value& value) const {
+	return encodeTaggedValueSlot(value);
+}
+
+Value CPU::decodeTaggedValueState(const TaggedValueSlotState& slot) const {
+	return decodeTaggedValueSlot(slot, m_heap);
+}
+
+CpuRuntimeState CPU::captureRuntimeState() const {
+	CpuRuntimeState state;
+	state.frames.resize(m_frames.size());
+	for (size_t frameIndex = 0; frameIndex < m_frames.size(); ++frameIndex) {
+		const CallFrame& frame = *m_frames[frameIndex];
+		CpuRuntimeFrameState& frameState = state.frames[frameIndex];
+		frameState.protoIndex = frame.protoIndex;
+		frameState.pc = frame.pc;
+		frameState.depth = frame.depth;
+		frameState.registers.assign(frame.registers.begin(), frame.registers.begin() + frame.top);
+		frameState.varargs = frame.varargs;
+		frameState.closureObjectRefId = frame.closure->runtimeRefId;
+		frameState.openUpvalues.reserve(frame.openUpvalues.size());
+		for (const auto& [registerIndex, upvalue] : frame.openUpvalues) {
+			frameState.openUpvalues.push_back({ registerIndex, upvalue->runtimeRefId });
+		}
+		frameState.returnBase = frame.returnBase;
+		frameState.returnCount = frame.returnCount;
+		frameState.top = frame.top;
+		frameState.captureReturns = frame.captureReturns;
+		frameState.callSitePc = frame.callSitePc;
+	}
+	state.lastReturnValues = lastReturnValues;
+	state.lastPc = lastPc;
+	state.lastInstruction = lastInstruction;
+	state.stringIndexTableObjectRefId = m_stringIndexTable ? m_stringIndexTable->runtimeRefId : 0;
+	return state;
+}
+
 void CPU::restoreObjectMemoryState(const ObjectHandleTableState& state) {
 	m_handleTable.restoreState(state);
 	m_stringPool.clearRuntimeCache();
 	rehydrateRuntimeObjects();
-	if (m_stringIndexTable && m_handleTable.readEntry(m_stringIndexTable->runtimeRefId).type == 0) {
-		m_stringIndexTable = nullptr;
+}
+
+void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
+	unwindToDepth(0);
+	m_frames.clear();
+	lastReturnValues = state.lastReturnValues;
+	lastPc = state.lastPc;
+	lastInstruction = state.lastInstruction;
+	m_stringIndexTable = state.stringIndexTableObjectRefId == 0
+		? nullptr
+		: static_cast<Table*>(resolveRuntimeObjectRef(state.stringIndexTableObjectRefId));
+	for (const CpuRuntimeFrameState& frameState : state.frames) {
+		const Proto& proto = m_program->protos[static_cast<size_t>(frameState.protoIndex)];
+		auto frame = acquireFrame();
+		frame->protoIndex = frameState.protoIndex;
+		frame->pc = frameState.pc;
+		frame->depth = frameState.depth;
+		frame->closure = static_cast<Closure*>(resolveRuntimeObjectRef(frameState.closureObjectRefId));
+		const size_t registerCount = std::max(
+			{ static_cast<size_t>(proto.maxStack), static_cast<size_t>(frameState.top), frameState.registers.size() });
+		frame->registers = acquireRegisters(registerCount);
+		std::copy(frameState.registers.begin(), frameState.registers.end(), frame->registers.begin());
+		frame->varargs = frameState.varargs;
+		frame->openUpvalues.clear();
+		for (const RuntimeOpenUpvalueState& upvalueState : frameState.openUpvalues) {
+			frame->openUpvalues[upvalueState.index] = static_cast<Upvalue*>(resolveRuntimeObjectRef(upvalueState.objectRefId));
+		}
+		frame->returnBase = frameState.returnBase;
+		frame->returnCount = frameState.returnCount;
+		frame->top = frameState.top;
+		frame->captureReturns = frameState.captureReturns;
+		frame->callSitePc = frameState.callSitePc;
+		m_frames.push_back(std::move(frame));
 	}
 }
 
@@ -1423,7 +1495,25 @@ Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
 	if (registerIndex < 0 || registerIndex >= static_cast<int>(frame.registers.size())) {
 		throw BMSX_RUNTIME_ERROR("[CPU] Register index out of range: " + std::to_string(registerIndex) + ".");
 	}
-	return frame.registers[static_cast<size_t>(registerIndex)];
+	return decodeTaggedValueSlot(frame.registers[static_cast<size_t>(registerIndex)], m_heap);
+}
+
+std::vector<Value> CPU::copyLastReturnValues() const {
+	std::vector<Value> out;
+	decodeTaggedValueVector(lastReturnValues, m_heap, out);
+	return out;
+}
+
+Value CPU::readRegister(const CallFrame& frame, int index) const {
+	return decodeTaggedValueSlot(frame.registers[static_cast<size_t>(index)], m_heap);
+}
+
+Value CPU::readVararg(const CallFrame& frame, int index) const {
+	return decodeTaggedValueSlot(frame.varargs[static_cast<size_t>(index)], m_heap);
+}
+
+void CPU::setLastReturnValues(const std::vector<Value>& values) {
+	encodeTaggedValueVector(values, lastReturnValues);
 }
 
 void CPU::skipNextInstruction(CallFrame& frame) {
@@ -1490,7 +1580,7 @@ void CPU::executeInstruction(
 			throw BMSX_RUNTIME_ERROR("Unexpected WIDE opcode.");
 
 		case OpCode::MOV:
-			setRegister(frame, a, frame.registers[b]);
+			setRegister(frame, a, readRegister(frame, b));
 			return;
 
 		case OpCode::LOADK:
@@ -1520,12 +1610,12 @@ void CPU::executeInstruction(
 
 		case OpCode::SETG: {
 			const Value& key = m_runtimeConstPool[bx];
-			globals->set(key, frame.registers[a]);
+			globals->set(key, readRegister(frame, a));
 			return;
 		}
 
 		case OpCode::GETT: {
-			const Value& tableValue = frame.registers[b];
+			const Value tableValue = readRegister(frame, b);
 			const Value& key = readRK(frame, rkRawC, rkBitsC);
 			if (valueIsTable(tableValue)) {
 				setRegister(frame, a, resolveTableIndex(asTable(tableValue), key));
@@ -1568,7 +1658,7 @@ void CPU::executeInstruction(
 		}
 
 		case OpCode::SETT: {
-			const Value& tableValue = frame.registers[a];
+			const Value tableValue = readRegister(frame, a);
 			const Value& key = readRK(frame, rkRawB, rkBitsB);
 			const Value& value = readRK(frame, rkRawC, rkBitsC);
 			if (valueIsTable(tableValue)) {
@@ -1699,7 +1789,7 @@ void CPU::executeInstruction(
 			std::string text;
 			CYCLES_ADD(c << 1);
 			for (int index = 0; index < c; ++index) {
-				text += valueToString(frame.registers[static_cast<size_t>(b + index)], m_stringPool);
+				text += valueToString(readRegister(frame, b + index), m_stringPool);
 			}
 			const StringId textId = m_stringPool.intern(text);
 			const int cp = m_stringPool.codepointCount(textId);
@@ -1709,17 +1799,17 @@ void CPU::executeInstruction(
 		}
 
 		case OpCode::UNM: {
-			double val = asNumber(frame.registers[b]);
+			double val = asNumber(readRegister(frame, b));
 			setRegister(frame, a, valueNumber(-val));
 			return;
 		}
 
 		case OpCode::NOT:
-			setRegister(frame, a, valueBool(!isTruthy(frame.registers[b])));
+			setRegister(frame, a, valueBool(!isTruthy(readRegister(frame, b))));
 			return;
 
 		case OpCode::LEN: {
-			const Value& val = frame.registers[b];
+			const Value val = readRegister(frame, b);
 			if (valueIsString(val)) {
 				int cp = static_cast<int>(m_stringPool.codepointCount(asStringId(val)));
 				CYCLES_ADD(ceilDiv16(cp));
@@ -1771,7 +1861,7 @@ void CPU::executeInstruction(
 		}
 
 		case OpCode::BNOT: {
-			const uint32_t val = toU32(asNumber(frame.registers[b]));
+			const uint32_t val = toU32(asNumber(readRegister(frame, b)));
 			const int32_t result = static_cast<int32_t>(~val);
 			setRegister(frame, a, valueNumber(static_cast<double>(result)));
 			return;
@@ -1873,7 +1963,7 @@ void CPU::executeInstruction(
 		}
 
 		case OpCode::TEST: {
-			const Value& val = frame.registers[a];
+			const Value val = readRegister(frame, a);
 			if (isTruthy(val) != (c != 0)) {
 				CYCLES_ADD(1);
 				skipNextInstruction(frame);
@@ -1882,7 +1972,7 @@ void CPU::executeInstruction(
 		}
 
 		case OpCode::TESTSET: {
-			const Value& val = frame.registers[b];
+			const Value val = readRegister(frame, b);
 			if (isTruthy(val) == (c != 0)) {
 				setRegister(frame, a, val);
 			} else {
@@ -1897,13 +1987,13 @@ void CPU::executeInstruction(
 			return;
 
 		case OpCode::JMPIF:
-			if (isTruthy(frame.registers[static_cast<size_t>(a)])) {
+			if (isTruthy(readRegister(frame, a))) {
 				frame.pc += sbx * INSTRUCTION_BYTES;
 			}
 			return;
 
 		case OpCode::JMPIFNOT:
-			if (!isTruthy(frame.registers[static_cast<size_t>(a)])) {
+			if (!isTruthy(readRegister(frame, a))) {
 				frame.pc += sbx * INSTRUCTION_BYTES;
 			}
 			return;
@@ -1920,7 +2010,7 @@ void CPU::executeInstruction(
 
 		case OpCode::SETUP: {
 			Upvalue* upvalue = static_cast<Upvalue*>(resolveRuntimeObjectRef(frame.closure->upvalueRefIds[b]));
-			writeUpvalue(upvalue, frame.registers[a]);
+			writeUpvalue(upvalue, readRegister(frame, a));
 			return;
 		}
 
@@ -1928,7 +2018,7 @@ void CPU::executeInstruction(
 			int count = b == 0 ? static_cast<int>(frame.varargs.size()) : b;
 			CYCLES_ADD(ceilDiv4(count));
 			for (int i = 0; i < count; ++i) {
-				Value value = i < static_cast<int>(frame.varargs.size()) ? frame.varargs[static_cast<size_t>(i)] : valueNil();
+				Value value = i < static_cast<int>(frame.varargs.size()) ? readVararg(frame, i) : valueNil();
 				setRegister(frame, a + i, value);
 			}
 			return;
@@ -1937,7 +2027,12 @@ void CPU::executeInstruction(
 		case OpCode::CALL: {
 			int argCount = b == 0 ? std::max(frame.top - a - 1, 0) : b;
 			int retCount = c;
-			const Value& callee = frame.registers[a];
+			const Value callee = readRegister(frame, a);
+			std::vector<Value> args = acquireArgScratch();
+			args.resize(static_cast<size_t>(argCount));
+			for (int i = 0; i < argCount; ++i) {
+				args[static_cast<size_t>(i)] = readRegister(frame, a + 1 + i);
+			}
 			if (valueIsClosure(callee)) {
 				Closure* closure = asClosure(callee);
 				const Proto& proto = m_program->protos[closure->protoIndex];
@@ -1946,18 +2041,14 @@ void CPU::executeInstruction(
 				if (proto.isVararg && argCount > proto.numParams) {
 					CYCLES_ADD(ceilDiv4(argCount - proto.numParams));
 				}
-				pushFrame(closure, &frame.registers[a + 1], static_cast<size_t>(argCount), a, retCount, false, frame.pc - INSTRUCTION_BYTES);
+				pushFrame(closure, args, a, retCount, false, frame.pc - INSTRUCTION_BYTES);
+				releaseArgScratch(std::move(args));
 				return;
 			}
 			if (valueIsNativeFunction(callee)) {
 				NativeFunction* fn = asNativeFunction(callee);
 				CYCLES_ADD(static_cast<int>(fn->cycleBase)
 					+ static_cast<int>(fn->cyclePerArg) * argCount);
-				std::vector<Value> args = acquireArgScratch();
-				args.resize(static_cast<size_t>(argCount));
-				for (int i = 0; i < argCount; ++i) {
-					args[static_cast<size_t>(i)] = frame.registers[a + 1 + i];
-				}
 				std::vector<Value> out = acquireNativeReturnScratch();
 				fn->invoke(args, out);
 				const int returnSlots = retCount == 0 ? static_cast<int>(out.size()) : retCount;
@@ -1967,6 +2058,7 @@ void CPU::executeInstruction(
 				releaseArgScratch(std::move(args));
 				return;
 			}
+			releaseArgScratch(std::move(args));
 			throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(
 				callee,
 				m_stringPool,
@@ -1982,9 +2074,9 @@ void CPU::executeInstruction(
 			CYCLES_ADD(static_cast<int>(frame.openUpvalues.size()) * 3);
 			results.reserve(static_cast<size_t>(count));
 			for (int i = 0; i < count; ++i) {
-				results.push_back(frame.registers[a + i]);
+				results.push_back(readRegister(frame, a + i));
 			}
-			lastReturnValues.assign(results.begin(), results.end());
+			setLastReturnValues(results);
 			closeUpvalues(frame);
 			auto finished = std::move(m_frames.back());
 			m_frames.pop_back();
@@ -2003,14 +2095,14 @@ void CPU::executeInstruction(
 		}
 
 		case OpCode::LOAD_MEM: {
-			uint32_t addr = static_cast<uint32_t>(asNumber(frame.registers[b]));
+			uint32_t addr = static_cast<uint32_t>(asNumber(readRegister(frame, b)));
 			setRegister(frame, a, m_memory.readValue(addr));
 			return;
 		}
 
 		case OpCode::STORE_MEM: {
-			uint32_t addr = static_cast<uint32_t>(asNumber(frame.registers[b]));
-			m_memory.writeValue(addr, frame.registers[a]);
+			uint32_t addr = static_cast<uint32_t>(asNumber(readRegister(frame, b)));
+			m_memory.writeValue(addr, readRegister(frame, a));
 			return;
 		}
 	}
@@ -2053,7 +2145,7 @@ Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
 void CPU::closeUpvalues(CallFrame& frame) {
 	for (auto& entry : frame.openUpvalues) {
 		Upvalue* upvalue = entry.second;
-		upvalue->value = frame.registers[upvalue->index];
+		upvalue->value = readRegister(frame, upvalue->index);
 		upvalue->open = false;
 		upvalue->frameDepth = -1;
 		syncUpvalueObjectState(upvalue);
@@ -2061,16 +2153,16 @@ void CPU::closeUpvalues(CallFrame& frame) {
 	frame.openUpvalues.clear();
 }
 
-const Value& CPU::readUpvalue(Upvalue* upvalue) {
+Value CPU::readUpvalue(Upvalue* upvalue) {
 	if (upvalue->open) {
-		return m_frames[static_cast<size_t>(upvalue->frameDepth)]->registers[static_cast<size_t>(upvalue->index)];
+		return readRegister(*m_frames[static_cast<size_t>(upvalue->frameDepth)], upvalue->index);
 	}
 	return upvalue->value;
 }
 
 void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
 	if (upvalue->open) {
-		m_frames[static_cast<size_t>(upvalue->frameDepth)]->registers[static_cast<size_t>(upvalue->index)] = value;
+		setRegister(*m_frames[static_cast<size_t>(upvalue->frameDepth)], upvalue->index, value);
 		return;
 	}
 	upvalue->value = value;
@@ -2094,15 +2186,15 @@ void CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 
 	for (int i = 0; i < proto.numParams; ++i) {
 		if (i < static_cast<int>(argCount)) {
-			frame->registers[static_cast<size_t>(i)] = args[i];
+			frame->registers[static_cast<size_t>(i)] = encodeTaggedValueSlot(args[i]);
 		} else {
-			frame->registers[static_cast<size_t>(i)] = valueNil();
+			frame->registers[static_cast<size_t>(i)] = {};
 		}
 	}
 	if (proto.isVararg) {
 		frame->varargs.clear();
 		for (size_t i = static_cast<size_t>(proto.numParams); i < argCount; ++i) {
-			frame->varargs.push_back(args[i]);
+			frame->varargs.push_back(encodeTaggedValueSlot(args[i]));
 		}
 	}
 	m_frames.push_back(std::move(frame));
@@ -2130,19 +2222,19 @@ void CPU::writeReturnValues(CallFrame& frame, int base, int count, const std::ve
 }
 
 void CPU::setRegister(CallFrame& frame, int index, const Value& value) {
-	frame.registers[static_cast<size_t>(index)] = value;
+	frame.registers[static_cast<size_t>(index)] = encodeTaggedValueSlot(value);
 	if (index >= frame.top) {
 		frame.top = index + 1;
 	}
 }
 
-const Value& CPU::readRK(CallFrame& frame, uint32_t raw, int bits) {
+Value CPU::readRK(CallFrame& frame, uint32_t raw, int bits) {
 	int rk = signExtend(raw, bits);
 	if (rk < 0) {
 		int index = -1 - rk;
 		return m_runtimeConstPool[static_cast<size_t>(index)];
 	}
-	return frame.registers[static_cast<size_t>(rk)];
+	return readRegister(frame, rk);
 }
 
 Value CPU::resolveTableIndex(Table* table, const Value& key) {
@@ -2183,25 +2275,25 @@ void CPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
 	}
 }
 
-std::vector<Value> CPU::acquireRegisters(size_t size) {
+std::vector<TaggedValueSlotState> CPU::acquireRegisters(size_t size) {
 	size_t bucket = 8;
 	while (bucket < size) {
 		bucket <<= 1;
 	}
 	auto& pool = m_registerPool[bucket];
 	if (!pool.empty()) {
-		std::vector<Value> regs = std::move(pool.back());
+		std::vector<TaggedValueSlotState> regs = std::move(pool.back());
 		pool.pop_back();
 		for (size_t i = 0; i < size; ++i) {
-			regs[i] = valueNil();
+			regs[i] = {};
 		}
 		return regs;
 	}
-	std::vector<Value> regs(bucket, valueNil());
+	std::vector<TaggedValueSlotState> regs(bucket);
 	return regs;
 }
 
-void CPU::releaseRegisters(std::vector<Value>&& regs) {
+void CPU::releaseRegisters(std::vector<TaggedValueSlotState>&& regs) {
 	size_t bucket = regs.size();
 	if (bucket > MAX_REGISTER_ARRAY_SIZE) {
 		return;
@@ -2254,8 +2346,8 @@ void CPU::markRoots(GcHeap& heap) {
 	for (const auto& value : m_memory.ioSlots()) {
 		heap.markValue(value);
 	}
-	for (const auto& value : lastReturnValues) {
-		heap.markValue(value);
+	for (const auto& slot : lastReturnValues) {
+		heap.markValue(decodeTaggedValueSlot(slot, m_heap));
 	}
 	for (const auto& value : m_returnScratch) {
 		heap.markValue(value);
@@ -2267,14 +2359,14 @@ void CPU::markRoots(GcHeap& heap) {
 		CallFrame* frame = framePtr.get();
 		heap.markObject(frame->closure);
 		for (int i = 0; i < frame->top; ++i) {
-			heap.markValue(frame->registers[static_cast<size_t>(i)]);
+			heap.markValue(readRegister(*frame, i));
 		}
-		for (const auto& value : frame->varargs) {
-			heap.markValue(value);
+		for (int index = 0; index < static_cast<int>(frame->varargs.size()); ++index) {
+			heap.markValue(readVararg(*frame, index));
 		}
 		for (const auto& entry : frame->openUpvalues) {
 			heap.markObject(entry.second);
-			heap.markValue(frame->registers[static_cast<size_t>(entry.first)]);
+			heap.markValue(readRegister(*frame, entry.first));
 		}
 	}
 	m_externalRootMarker(heap);

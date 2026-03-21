@@ -70,12 +70,17 @@ struct RuntimeOptions {
  * Runtime state snapshot for save/load.
  */
 struct RuntimeState {
-	std::vector<Value> ioMemory;
-	std::vector<std::pair<Value, Value>> globals; // key-value pairs
+	std::vector<TaggedValueSlotState> ioMemory;
 	ObjectHandleTableState objectMemoryState;
+	CpuRuntimeState cpuState;
+	std::vector<std::pair<std::string, TaggedValueSlotState>> moduleCache;
+	uint32_t randomSeed = 0;
+	bool pendingEntryCall = false;
 	std::vector<u8> assetMemory;
 	std::array<i32, 2> atlasSlots{{-1, -1}};
-	std::optional<SkyboxImageIds> skyboxFaceIds;
+	bool hasSkybox = false;
+	SkyboxImageIds skyboxFaceIds{};
+	i32 vdpDitherType = 0;
 	int cyclesIntoFrame = 0;
 	bool vblankPendingClear = false;
 	bool vblankClearOnIrqEnd = false;

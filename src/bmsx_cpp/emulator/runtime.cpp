@@ -664,12 +664,27 @@ void Runtime::resetCartBootState() {
 
 RuntimeState Runtime::captureCurrentState() const {
 	RuntimeState state;
-	state.ioMemory = m_memory.ioSlots();
-	state.globals = m_cpu.globals->entries();
+	const std::vector<Value>& ioSlots = m_memory.ioSlots();
+	state.ioMemory.resize(ioSlots.size());
+	for (size_t index = 0; index < ioSlots.size(); ++index) {
+		state.ioMemory[index] = m_cpu.encodeTaggedValueState(ioSlots[index]);
+	}
 	state.objectMemoryState = m_cpu.captureObjectMemoryState();
+	state.cpuState = m_cpu.captureRuntimeState();
+	state.moduleCache.reserve(m_moduleCache.size());
+	for (const auto& entry : m_moduleCache) {
+		state.moduleCache.push_back({ entry.first, m_cpu.encodeTaggedValueState(entry.second) });
+	}
+	state.randomSeed = m_randomSeedValue;
+	state.pendingEntryCall = m_pendingCall == PendingCall::Entry;
 	state.assetMemory = m_memory.dumpAssetMemory();
 	state.atlasSlots = m_vdp.atlasSlots();
-	state.skyboxFaceIds = m_vdp.skyboxFaceIds();
+	const std::optional<SkyboxImageIds> skyboxFaceIds = m_vdp.skyboxFaceIds();
+	state.hasSkybox = skyboxFaceIds.has_value();
+	if (state.hasSkybox) {
+		state.skyboxFaceIds = *skyboxFaceIds;
+	}
+	state.vdpDitherType = m_vdp.getDitherType();
 	state.cyclesIntoFrame = m_cyclesIntoFrame;
 	state.vblankPendingClear = m_vblankPendingClear;
 	state.vblankClearOnIrqEnd = m_vblankClearOnIrqEnd;
@@ -678,7 +693,11 @@ RuntimeState Runtime::captureCurrentState() const {
 
 void Runtime::applyState(const RuntimeState& state) {
 	// Restore memory
-	m_memory.loadIoSlots(state.ioMemory);
+	std::vector<Value> ioSlots(state.ioMemory.size());
+	for (size_t index = 0; index < state.ioMemory.size(); ++index) {
+		ioSlots[index] = m_cpu.decodeTaggedValueState(state.ioMemory[index]);
+	}
+	m_memory.loadIoSlots(ioSlots);
 	m_vdp.syncRegisters();
 	m_cyclesIntoFrame = state.cyclesIntoFrame;
 	m_vblankPendingClear = state.vblankPendingClear;
@@ -688,21 +707,21 @@ void Runtime::applyState(const RuntimeState& state) {
 		|| (m_cyclesIntoFrame >= m_vblankStartCycle);
 	setVblankStatus(vblankActive);
 	m_cpu.restoreObjectMemoryState(state.objectMemoryState);
-	if (!state.assetMemory.empty()) {
-		m_memory.restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
+	m_cpu.restoreRuntimeState(state.cpuState);
+	m_moduleCache.clear();
+	for (const auto& entry : state.moduleCache) {
+		m_moduleCache[entry.first] = m_cpu.decodeTaggedValueState(entry.second);
 	}
+	m_randomSeedValue = state.randomSeed;
+	m_pendingCall = state.pendingEntryCall ? PendingCall::Entry : PendingCall::None;
+	m_memory.restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
 	applyAtlasSlotMapping(state.atlasSlots);
-	if (state.skyboxFaceIds.has_value()) {
-		m_vdp.setSkyboxImages(*state.skyboxFaceIds);
+	if (state.hasSkybox) {
+		m_vdp.setSkyboxImages(state.skyboxFaceIds);
 	} else {
 		m_vdp.clearSkybox();
 	}
-
-	// Restore globals
-	m_cpu.globals->clear();
-	for (const auto& [key, value] : state.globals) {
-		m_cpu.globals->set(key, value);
-	}
+	m_vdp.setDitherType(state.vdpDitherType);
 	flushAssetEdits();
 	resetRenderBuffers();
 }

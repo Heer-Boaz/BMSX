@@ -1138,7 +1138,7 @@ void Runtime::setupBuiltins() {
 			const int remaining = m_cpu.instructionBudgetRemaining;
 			m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 			out.clear();
-			const auto& results = m_cpu.lastReturnValues;
+			const auto results = m_cpu.copyLastReturnValues();
 			out.insert(out.end(), results.begin(), results.end());
 			return;
 		}

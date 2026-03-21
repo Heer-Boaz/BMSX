@@ -427,3 +427,62 @@ test('CPU object memory restore rehydrates runtime object views from RAM', () =>
 	assert.equal(upvalue.index, 0);
 	assert.equal(upvalue.value, restoredClosedValue);
 });
+
+test('CPU runtime state restore rebuilds frames and register values without Lua entry snapshots', () => {
+	const { memory, handles, pool } = createRuntimeStringPool();
+	const cpu = new CPU(memory, pool, handles);
+	const program: Program = {
+		code: new Uint8Array(0),
+		constPool: [],
+		protos: [
+			{
+				entryPC: 12,
+				codeLen: 0,
+				numParams: 1,
+				isVararg: true,
+				maxStack: 4,
+				upvalueDescs: [],
+			},
+		],
+		stringPool: pool,
+		constPoolStringPool: pool,
+	};
+	cpu.setProgram(program);
+	const stringIndexTable = cpu.createTable(0, 1);
+	cpu.setStringIndexTable(stringIndexTable);
+	const arg0 = pool.intern('arg0');
+	const extra = pool.intern('vararg');
+	cpu.start(0, [arg0, extra]);
+	const internal = cpu as unknown as {
+		frames: Array<{
+			pc: number;
+			top: number;
+			registers: { set(index: number, value: unknown): void; get(index: number): unknown };
+			varargs: unknown[];
+			closure: { objectId: number };
+			openUpvalues: Map<number, unknown>;
+		}>;
+		stringIndexTable: Table | null;
+	};
+	const frame = internal.frames[0];
+	const reg1 = pool.intern('reg1');
+	frame.pc = 28;
+	frame.registers.set(1, reg1);
+	frame.top = 2;
+	const state = cpu.captureRuntimeState();
+	frame.pc = 0;
+	frame.registers.set(0, null);
+	frame.registers.set(1, null);
+	frame.varargs.length = 0;
+	internal.stringIndexTable = null;
+	cpu.restoreRuntimeState(state);
+	const restored = (cpu as unknown as typeof internal);
+	assert.equal(restored.frames.length, 1);
+	assert.equal(restored.frames[0].pc, 28);
+	assert.equal(restored.frames[0].top, 2);
+	assert.equal(restored.frames[0].closure.objectId, frame.closure.objectId);
+	assert.equal(restored.frames[0].registers.get(0), arg0);
+	assert.equal(restored.frames[0].registers.get(1), reg1);
+	assert.deepEqual(restored.frames[0].varargs, [extra]);
+	assert.equal(restored.stringIndexTable, stringIndexTable);
+});

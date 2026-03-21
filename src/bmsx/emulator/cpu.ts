@@ -135,11 +135,11 @@ export function createNativeObject(raw: object, handlers: { get: (key: Value) =>
 }
 
 export function isNativeFunction(value: Value): value is NativeFunction {
-	return (value as NativeFunction)?.kind === NATIVE_FUNCTION_KIND;
+	return (value as NativeFunction).kind === NATIVE_FUNCTION_KIND;
 }
 
 export function isNativeObject(value: Value): value is NativeObject {
-	return (value as NativeObject)?.kind === NATIVE_OBJECT_KIND;
+	return (value as NativeObject).kind === NATIVE_OBJECT_KIND;
 }
 
 export type ProgramMetadata = {
@@ -153,6 +153,33 @@ export type CpuFrameSnapshot = {
 	protoIndex: number;
 	pc: number;
 	registers: Value[];
+};
+
+export const TAGGED_VALUE_STATE_STRIDE = 3;
+export type TaggedValueSlotBuffer = Uint32Array;
+
+export type CpuRuntimeFrameState = {
+	protoIndex: number;
+	pc: number;
+	depth: number;
+	registers: TaggedValueSlotBuffer;
+	varargs: TaggedValueSlotBuffer;
+	closureObjectId: number;
+	openUpvalueRegisters: Int32Array;
+	openUpvalueObjectIds: Uint32Array;
+	returnBase: number;
+	returnCount: number;
+	top: number;
+	captureReturns: boolean;
+	callSitePc: number;
+};
+
+export type CpuRuntimeState = {
+	frames: CpuRuntimeFrameState[];
+	lastReturnValues: TaggedValueSlotBuffer;
+	lastPc: number;
+	lastInstruction: number;
+	stringIndexTableObjectId: number;
 };
 
 export type Program = {
@@ -332,7 +359,7 @@ type CallFrame = {
 	pc: number;
 	depth: number;
 	registers: RegisterFile;
-	varargs: Value[];
+	varargs: TaggedValueList;
 	closure: Closure;
 	openUpvalues: Map<number, Upvalue>;
 	returnBase: number;
@@ -830,6 +857,10 @@ export class Table {
 		return value as T;
 	}
 
+	public static resolveRuntimeObjectId<T extends object>(id: number): T {
+		return Table.resolveObjectId<T>(id);
+	}
+
 	private hashValue(key: Value): number {
 		if (typeof key === 'number') {
 			if (Number.isNaN(key)) {
@@ -1153,6 +1184,90 @@ export class Table {
 		return Table.readTaggedValueFromHandles(this.objectHandles, addr, stringPool);
 	}
 
+	public static encodeTaggedValueToBuffer(buffer: Uint32Array, slotIndex: number, value: Value | undefined, objectHandles: ObjectHandleTable): void {
+		const offset = slotIndex * TAGGED_VALUE_STATE_STRIDE;
+		if (value === undefined || value === null) {
+			buffer[offset] = TaggedValueTag.Nil;
+			buffer[offset + 1] = 0;
+			buffer[offset + 2] = 0;
+			return;
+		}
+		if (value === false) {
+			buffer[offset] = TaggedValueTag.False;
+			buffer[offset + 1] = 0;
+			buffer[offset + 2] = 0;
+			return;
+		}
+		if (value === true) {
+			buffer[offset] = TaggedValueTag.True;
+			buffer[offset + 1] = 0;
+			buffer[offset + 2] = 0;
+			return;
+		}
+		if (typeof value === 'number') {
+			Table.numberEncoder.setFloat64(0, value, true);
+			buffer[offset] = TaggedValueTag.Number;
+			buffer[offset + 1] = Table.numberEncoder.getUint32(0, true);
+			buffer[offset + 2] = Table.numberEncoder.getUint32(4, true);
+			return;
+		}
+		if (isStringValue(value)) {
+			buffer[offset] = TaggedValueTag.String;
+			buffer[offset + 1] = value.id >>> 0;
+			buffer[offset + 2] = 0;
+			return;
+		}
+		if (value instanceof Table) {
+			buffer[offset] = TaggedValueTag.Table;
+			buffer[offset + 1] = Table.ensureValueObjectId(value, objectHandles) >>> 0;
+			buffer[offset + 2] = 0;
+			return;
+		}
+		if (isNativeFunction(value)) {
+			buffer[offset] = TaggedValueTag.NativeFunction;
+			buffer[offset + 1] = Table.ensureValueObjectId(value, objectHandles) >>> 0;
+			buffer[offset + 2] = 0;
+			return;
+		}
+		if (isNativeObject(value)) {
+			buffer[offset] = TaggedValueTag.NativeObject;
+			buffer[offset + 1] = Table.ensureValueObjectId(value, objectHandles) >>> 0;
+			buffer[offset + 2] = 0;
+			return;
+		}
+		buffer[offset] = TaggedValueTag.Closure;
+		buffer[offset + 1] = Table.ensureValueObjectId(value, objectHandles) >>> 0;
+		buffer[offset + 2] = 0;
+	}
+
+	public static decodeTaggedValueFromBuffer(buffer: ArrayLike<number>, slotIndex: number, stringPool: StringPool): Value {
+		const offset = slotIndex * TAGGED_VALUE_STATE_STRIDE;
+		const tag = buffer[offset];
+		const payloadLo = buffer[offset + 1];
+		const payloadHi = buffer[offset + 2];
+		switch (tag) {
+			case TaggedValueTag.Nil:
+				return null;
+			case TaggedValueTag.False:
+				return false;
+			case TaggedValueTag.True:
+				return true;
+			case TaggedValueTag.Number:
+				Table.numberEncoder.setUint32(0, payloadLo, true);
+				Table.numberEncoder.setUint32(4, payloadHi, true);
+				return Table.numberEncoder.getFloat64(0, true);
+			case TaggedValueTag.String:
+				return stringPool.getById(payloadLo);
+			case TaggedValueTag.Table:
+			case TaggedValueTag.Closure:
+			case TaggedValueTag.NativeFunction:
+			case TaggedValueTag.NativeObject:
+				return Table.resolveObjectId<Value & object>(payloadLo) as Value;
+			default:
+				throw new Error(`[Table] Unsupported tagged value tag ${tag}.`);
+		}
+	}
+
 	public static writeTaggedValueToHandles(objectHandles: ObjectHandleTable, addr: number, value: Value | undefined): void {
 		if (value === undefined || value === null) {
 			objectHandles.writeU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET, TaggedValueTag.Nil);
@@ -1210,8 +1325,6 @@ export class Table {
 
 	public static readTaggedValueFromHandles(objectHandles: ObjectHandleTable, addr: number, stringPool: StringPool): Value {
 		const tag = objectHandles.readU32(addr + TAGGED_VALUE_SLOT_TAG_OFFSET);
-		const payloadLo = objectHandles.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET);
-		const payloadHi = objectHandles.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET);
 		switch (tag) {
 			case TaggedValueTag.Nil:
 				return null;
@@ -1220,199 +1333,219 @@ export class Table {
 			case TaggedValueTag.True:
 				return true;
 			case TaggedValueTag.Number:
-				Table.numberEncoder.setUint32(0, payloadLo, true);
-				Table.numberEncoder.setUint32(4, payloadHi, true);
+				Table.numberEncoder.setUint32(0, objectHandles.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET), true);
+				Table.numberEncoder.setUint32(4, objectHandles.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET), true);
 				return Table.numberEncoder.getFloat64(0, true);
 			case TaggedValueTag.String:
-				return stringPool.getById(payloadLo);
+				return stringPool.getById(objectHandles.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET));
 			case TaggedValueTag.Table:
 			case TaggedValueTag.Closure:
 			case TaggedValueTag.NativeFunction:
 			case TaggedValueTag.NativeObject:
-				return Table.resolveObjectId<Value & object>(payloadLo) as Value;
+				return Table.resolveObjectId<Value & object>(objectHandles.readU32(addr + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET)) as Value;
 			default:
 				throw new Error(`[Table] Unsupported tagged value tag ${tag}.`);
 		}
 	}
 }
 
-const enum RegisterTag {
-	Nil,
-	False,
-	True,
-	Number,
-	String,
-	Table,
-	Closure,
-	NativeFunction,
-	NativeObject,
+class TaggedValueList {
+	private slots: Uint32Array;
+	private valueCount = 0;
+
+	constructor(
+		private readonly stringPool: StringPool,
+		private readonly objectHandles: ObjectHandleTable,
+		initialCapacity: number = 0,
+	) {
+		this.slots = new Uint32Array(initialCapacity * TAGGED_VALUE_STATE_STRIDE);
+	}
+
+	public get length(): number {
+		return this.valueCount;
+	}
+
+	public clear(): void {
+		this.valueCount = 0;
+	}
+
+	public get(index: number): Value {
+		return Table.decodeTaggedValueFromBuffer(this.slots, index, this.stringPool);
+	}
+
+	public push(value: Value): void {
+		this.ensureCapacity(this.valueCount + 1);
+		Table.encodeTaggedValueToBuffer(this.slots, this.valueCount, value, this.objectHandles);
+		this.valueCount += 1;
+	}
+
+	public assignFromValues(values: ReadonlyArray<Value>): void {
+		this.ensureCapacity(values.length);
+		this.valueCount = values.length;
+		for (let index = 0; index < values.length; index += 1) {
+			Table.encodeTaggedValueToBuffer(this.slots, index, values[index], this.objectHandles);
+		}
+	}
+
+	public copyTo(target: Value[]): Value[] {
+		target.length = this.valueCount;
+		for (let index = 0; index < this.valueCount; index += 1) {
+			target[index] = Table.decodeTaggedValueFromBuffer(this.slots, index, this.stringPool);
+		}
+		return target;
+	}
+
+	public snapshot(): Uint32Array {
+		return this.slots.slice(0, this.valueCount * TAGGED_VALUE_STATE_STRIDE);
+	}
+
+	public restore(snapshot: Uint32Array): void {
+		this.slots = snapshot.slice();
+		this.valueCount = Math.floor(snapshot.length / TAGGED_VALUE_STATE_STRIDE);
+	}
+
+	private ensureCapacity(count: number): void {
+		const currentCapacity = Math.floor(this.slots.length / TAGGED_VALUE_STATE_STRIDE);
+		if (count <= currentCapacity) {
+			return;
+		}
+		let nextCapacity = currentCapacity === 0 ? 4 : currentCapacity;
+		while (nextCapacity < count) {
+			nextCapacity <<= 1;
+		}
+		const next = new Uint32Array(nextCapacity * TAGGED_VALUE_STATE_STRIDE);
+		next.set(this.slots.subarray(0, this.valueCount * TAGGED_VALUE_STATE_STRIDE), 0);
+		this.slots = next;
+	}
 }
 
 class RegisterFile {
-	private readonly tags: Uint8Array;
-	private readonly numbers: Float64Array;
-	private readonly refs: Value[];
+	private slots: Uint32Array;
+	private static readonly numberEncoder = new DataView(new ArrayBuffer(8));
 
-	constructor(size: number) {
-		this.tags = new Uint8Array(size);
-		this.numbers = new Float64Array(size);
-		this.refs = new Array<Value>(size);
-		for (let index = 0; index < size; index += 1) {
-			this.refs[index] = null;
-		}
+	constructor(
+		size: number,
+		private readonly stringPool: StringPool,
+		private readonly objectHandles: ObjectHandleTable,
+	) {
+		this.slots = new Uint32Array(size * TAGGED_VALUE_STATE_STRIDE);
 	}
 
 	public capacity(): number {
-		return this.tags.length;
+		return Math.floor(this.slots.length / TAGGED_VALUE_STATE_STRIDE);
 	}
 
 	public clear(count: number): void {
-		this.tags.fill(RegisterTag.Nil, 0, count);
-		for (let index = 0; index < count; index += 1) {
-			this.refs[index] = null;
-		}
+		this.slots.fill(0, 0, count * TAGGED_VALUE_STATE_STRIDE);
 	}
 
 	public copyFrom(source: RegisterFile, count: number): void {
-		for (let index = 0; index < count; index += 1) {
-			this.tags[index] = source.tags[index];
-			this.numbers[index] = source.numbers[index];
-			this.refs[index] = source.refs[index];
-		}
+		this.slots.set(source.slots.subarray(0, count * TAGGED_VALUE_STATE_STRIDE), 0);
 	}
 
 	public copyTo(target: Value[], count: number): void {
 		target.length = count;
 		for (let index = 0; index < count; index += 1) {
-			target[index] = this.get(index);
+			target[index] = Table.decodeTaggedValueFromBuffer(this.slots, index, this.stringPool);
 		}
 	}
 
 	public copySlot(dst: number, src: number): void {
-		this.tags[dst] = this.tags[src];
-		this.numbers[dst] = this.numbers[src];
-		this.refs[dst] = this.refs[src];
+		const dstOffset = dst * TAGGED_VALUE_STATE_STRIDE;
+		const srcOffset = src * TAGGED_VALUE_STATE_STRIDE;
+		this.slots[dstOffset] = this.slots[srcOffset];
+		this.slots[dstOffset + 1] = this.slots[srcOffset + 1];
+		this.slots[dstOffset + 2] = this.slots[srcOffset + 2];
 	}
 
 	public isNumber(index: number): boolean {
-		return this.tags[index] === RegisterTag.Number;
+		return this.slots[index * TAGGED_VALUE_STATE_STRIDE] === TaggedValueTag.Number;
 	}
 
 	public getNumber(index: number): number {
-		return this.numbers[index];
+		const offset = index * TAGGED_VALUE_STATE_STRIDE;
+		RegisterFile.numberEncoder.setUint32(0, this.slots[offset + 1], true);
+		RegisterFile.numberEncoder.setUint32(4, this.slots[offset + 2], true);
+		return RegisterFile.numberEncoder.getFloat64(0, true);
 	}
 
 	public isTruthy(index: number): boolean {
-		const tag = this.tags[index];
-		return tag !== RegisterTag.Nil && tag !== RegisterTag.False;
+		const tag = this.slots[index * TAGGED_VALUE_STATE_STRIDE];
+		return tag !== TaggedValueTag.Nil && tag !== TaggedValueTag.False;
 	}
 
 	public get(index: number): Value {
-		switch (this.tags[index]) {
-			case RegisterTag.Nil:
-				return null;
-			case RegisterTag.False:
-				return false;
-			case RegisterTag.True:
-				return true;
-			case RegisterTag.Number:
-				return this.numbers[index];
-			case RegisterTag.String:
-			case RegisterTag.Table:
-			case RegisterTag.Closure:
-			case RegisterTag.NativeFunction:
-			case RegisterTag.NativeObject:
-				return this.refs[index];
-			default:
-				throw new Error('Invalid register tag.');
-		}
+		return Table.decodeTaggedValueFromBuffer(this.slots, index, this.stringPool);
 	}
 
 	public setNil(index: number): void {
-		this.tags[index] = RegisterTag.Nil;
-		this.refs[index] = null;
+		const offset = index * TAGGED_VALUE_STATE_STRIDE;
+		this.slots[offset] = TaggedValueTag.Nil;
+		this.slots[offset + 1] = 0;
+		this.slots[offset + 2] = 0;
 	}
 
 	public setBool(index: number, value: boolean): void {
-		this.tags[index] = value ? RegisterTag.True : RegisterTag.False;
-		this.refs[index] = null;
+		const offset = index * TAGGED_VALUE_STATE_STRIDE;
+		this.slots[offset] = value ? TaggedValueTag.True : TaggedValueTag.False;
+		this.slots[offset + 1] = 0;
+		this.slots[offset + 2] = 0;
 	}
 
 	public setNumber(index: number, value: number): void {
-		this.tags[index] = RegisterTag.Number;
-		this.numbers[index] = value;
-		this.refs[index] = null;
+		const offset = index * TAGGED_VALUE_STATE_STRIDE;
+		RegisterFile.numberEncoder.setFloat64(0, value, true);
+		this.slots[offset] = TaggedValueTag.Number;
+		this.slots[offset + 1] = RegisterFile.numberEncoder.getUint32(0, true);
+		this.slots[offset + 2] = RegisterFile.numberEncoder.getUint32(4, true);
 	}
 
 	public setString(index: number, value: StringValue): void {
-		this.tags[index] = RegisterTag.String;
-		this.refs[index] = value;
+		const offset = index * TAGGED_VALUE_STATE_STRIDE;
+		this.slots[offset] = TaggedValueTag.String;
+		this.slots[offset + 1] = value.id >>> 0;
+		this.slots[offset + 2] = 0;
 	}
 
 	public setTable(index: number, value: Table): void {
-		this.tags[index] = RegisterTag.Table;
-		this.refs[index] = value;
+		const offset = index * TAGGED_VALUE_STATE_STRIDE;
+		this.slots[offset] = TaggedValueTag.Table;
+		this.slots[offset + 1] = Table.ensureValueObjectId(value, this.objectHandles) >>> 0;
+		this.slots[offset + 2] = 0;
 	}
 
 	public setClosure(index: number, value: Closure): void {
-		this.tags[index] = RegisterTag.Closure;
-		this.refs[index] = value;
+		const offset = index * TAGGED_VALUE_STATE_STRIDE;
+		this.slots[offset] = TaggedValueTag.Closure;
+		this.slots[offset + 1] = Table.ensureValueObjectId(value, this.objectHandles) >>> 0;
+		this.slots[offset + 2] = 0;
 	}
 
 	public setNativeFunction(index: number, value: NativeFunction): void {
-		this.tags[index] = RegisterTag.NativeFunction;
-		this.refs[index] = value;
+		const offset = index * TAGGED_VALUE_STATE_STRIDE;
+		this.slots[offset] = TaggedValueTag.NativeFunction;
+		this.slots[offset + 1] = Table.ensureValueObjectId(value, this.objectHandles) >>> 0;
+		this.slots[offset + 2] = 0;
 	}
 
 	public setNativeObject(index: number, value: NativeObject): void {
-		this.tags[index] = RegisterTag.NativeObject;
-		this.refs[index] = value;
+		const offset = index * TAGGED_VALUE_STATE_STRIDE;
+		this.slots[offset] = TaggedValueTag.NativeObject;
+		this.slots[offset + 1] = Table.ensureValueObjectId(value, this.objectHandles) >>> 0;
+		this.slots[offset + 2] = 0;
 	}
 
 	public set(index: number, value: Value): void {
-		if (value === null) {
-			this.setNil(index);
-			return;
-		}
-		if (typeof value === 'number') {
-			this.setNumber(index, value);
-			return;
-		}
-		if (typeof value === 'boolean') {
-			this.setBool(index, value);
-			return;
-		}
-		if (isStringValue(value)) {
-			this.setString(index, value);
-			return;
-		}
-		if (value instanceof Table) {
-			this.setTable(index, value);
-			return;
-		}
-		if (isNativeFunction(value)) {
-			this.setNativeFunction(index, value);
-			return;
-		}
-		if (isNativeObject(value)) {
-			this.setNativeObject(index, value);
-			return;
-		}
-		this.setClosure(index, value);
+		Table.encodeTaggedValueToBuffer(this.slots, index, value, this.objectHandles);
 	}
 
-	public rehydrateValues(fn: (value: Value) => Value): void {
-		for (let index = 0; index < this.tags.length; index += 1) {
-			switch (this.tags[index]) {
-				case RegisterTag.String:
-				case RegisterTag.Table:
-				case RegisterTag.Closure:
-				case RegisterTag.NativeFunction:
-				case RegisterTag.NativeObject:
-					this.refs[index] = fn(this.refs[index]);
-					break;
-			}
-		}
+	public snapshot(count: number): Uint32Array {
+		return this.slots.slice(0, count * TAGGED_VALUE_STATE_STRIDE);
+	}
+
+	public restore(snapshot: Uint32Array): void {
+		this.slots.fill(0);
+		this.slots.set(snapshot, 0);
 	}
 }
 
@@ -1428,7 +1561,6 @@ const signExtend = (value: number, bits: number): number => {
 
 export class CPU {
 	public instructionBudgetRemaining: number = 0;
-	public lastReturnValues: Value[] = [];
 	public lastPc: number = 0;
 	public lastInstruction: number = 0;
 	public readonly globals: Table;
@@ -1440,6 +1572,8 @@ export class CPU {
 	private readonly stringPool: RuntimeStringPool;
 	private indexKey: StringValue = null;
 	private readonly frames: CallFrame[] = [];
+	private readonly lastReturnValuesBuffer: TaggedValueList;
+	private readonly lastReturnValuesScratch: Value[] = [];
 	private readonly valueScratch: Value[] = [];
 	private readonly returnScratch: Value[] = [];
 	private readonly debugRegistersScratch: Value[] = [];
@@ -1463,8 +1597,13 @@ export class CPU {
 		this.memory = memory;
 		this.stringPool = stringPool;
 		this.objectHandles = objectHandles;
+		this.lastReturnValuesBuffer = new TaggedValueList(this.stringPool, this.objectHandles);
 		this.globals = this.createTable(0, 0);
 		this.indexKey = this.stringPool.intern('__index');
+	}
+
+	public get lastReturnValues(): Value[] {
+		return this.lastReturnValuesBuffer.copyTo(this.lastReturnValuesScratch);
 	}
 
 	public createTable(arraySize: number = 0, hashSize: number = 0): Table {
@@ -1480,24 +1619,53 @@ export class CPU {
 		return this.objectHandles.captureState();
 	}
 
+	public captureRuntimeState(): CpuRuntimeState {
+		const frames = new Array<CpuRuntimeFrameState>(this.frames.length);
+		for (let index = 0; index < this.frames.length; index += 1) {
+			const frame = this.frames[index];
+			const openUpvalueRegisters = new Int32Array(frame.openUpvalues.size);
+			const openUpvalueObjectIds = new Uint32Array(frame.openUpvalues.size);
+			let upvalueIndex = 0;
+			for (const [registerIndex, upvalue] of frame.openUpvalues.entries()) {
+				openUpvalueRegisters[upvalueIndex] = registerIndex;
+				openUpvalueObjectIds[upvalueIndex] = upvalue.objectId >>> 0;
+				upvalueIndex += 1;
+			}
+			frames[index] = {
+				protoIndex: frame.protoIndex,
+				pc: frame.pc,
+				depth: frame.depth,
+				registers: frame.registers.snapshot(frame.top),
+				varargs: frame.varargs.snapshot(),
+				closureObjectId: frame.closure.objectId,
+				openUpvalueRegisters,
+				openUpvalueObjectIds,
+				returnBase: frame.returnBase,
+				returnCount: frame.returnCount,
+				top: frame.top,
+				captureReturns: frame.captureReturns,
+				callSitePc: frame.callSitePc,
+			};
+		}
+		return {
+			frames,
+			lastReturnValues: this.lastReturnValuesBuffer.snapshot(),
+			lastPc: this.lastPc,
+			lastInstruction: this.lastInstruction,
+			stringIndexTableObjectId: this.stringIndexTable ? this.stringIndexTable.objectId : 0,
+		};
+	}
+
 	public restoreObjectMemoryState(state: ObjectHandleTableState): void {
 		this.objectHandles.restoreState(state);
 		this.stringPool.clearRuntimeCache();
 		Table.rehydrateRuntimeObjects(this.objectHandles, this.stringPool);
-		if (this.stringIndexTable !== null && this.stringIndexTable.objectId === 0) {
-			this.stringIndexTable = null;
-		}
 		this.indexKey = this.stringPool.getById(this.indexKey.id);
 		this.rehydrateValueArray(this.runtimeConstPool);
-		this.rehydrateValueArray(this.lastReturnValues);
-		this.rehydrateValueArray(this.valueScratch);
-		this.rehydrateValueArray(this.returnScratch);
-		this.rehydrateValueArray(this.debugRegistersScratch);
-		for (let index = 0; index < this.frames.length; index += 1) {
-			const frame = this.frames[index];
-			frame.registers.rehydrateValues((value) => this.rehydrateValue(value));
-			this.rehydrateValueArray(frame.varargs);
-		}
+		this.valueScratch.length = 0;
+		this.returnScratch.length = 0;
+		this.debugRegistersScratch.length = 0;
+		this.lastReturnValuesScratch.length = 0;
 	}
 
 	private rehydrateValue(value: Value): Value {
@@ -1507,16 +1675,62 @@ export class CPU {
 		return value;
 	}
 
+	public encodeTaggedValueBufferEntry(buffer: Uint32Array, slotIndex: number, value: Value): void {
+		Table.encodeTaggedValueToBuffer(buffer, slotIndex, value, this.objectHandles);
+	}
+
+	public decodeTaggedValueBufferEntry(buffer: ArrayLike<number>, slotIndex: number): Value {
+		return Table.decodeTaggedValueFromBuffer(buffer, slotIndex, this.stringPool);
+	}
+
 	private rehydrateValueArray(values: Value[]): void {
 		for (let index = 0; index < values.length; index += 1) {
 			values[index] = this.rehydrateValue(values[index]);
 		}
 	}
 
+	public restoreRuntimeState(state: CpuRuntimeState): void {
+		this.unwindToDepth(0);
+		this.frames.length = 0;
+		this.lastReturnValuesBuffer.restore(state.lastReturnValues);
+		this.lastReturnValuesScratch.length = 0;
+		this.lastPc = state.lastPc;
+		this.lastInstruction = state.lastInstruction;
+		this.stringIndexTable = state.stringIndexTableObjectId === 0
+			? null
+			: Table.resolveRuntimeObjectId<Table>(state.stringIndexTableObjectId);
+		for (let index = 0; index < state.frames.length; index += 1) {
+			const frameState = state.frames[index];
+			const proto = this.program.protos[frameState.protoIndex];
+			const frame = this.acquireFrame();
+			frame.protoIndex = frameState.protoIndex;
+			frame.pc = frameState.pc;
+			frame.depth = frameState.depth;
+			const registerCount = Math.floor(frameState.registers.length / TAGGED_VALUE_STATE_STRIDE);
+			frame.registers = this.acquireRegisters(Math.max(proto.maxStack, frameState.top, registerCount));
+			frame.registers.restore(frameState.registers);
+			frame.varargs.restore(frameState.varargs);
+			frame.closure = Table.resolveRuntimeObjectId<Closure>(frameState.closureObjectId);
+			frame.openUpvalues.clear();
+			for (let upvalueIndex = 0; upvalueIndex < frameState.openUpvalueRegisters.length; upvalueIndex += 1) {
+				frame.openUpvalues.set(
+					frameState.openUpvalueRegisters[upvalueIndex],
+					Table.resolveRuntimeObjectId<Upvalue>(frameState.openUpvalueObjectIds[upvalueIndex]),
+				);
+			}
+			frame.returnBase = frameState.returnBase;
+			frame.returnCount = frameState.returnCount;
+			frame.top = frameState.top;
+			frame.captureReturns = frameState.captureReturns;
+			frame.callSitePc = frameState.callSitePc;
+			this.frames.push(frame);
+		}
+	}
+
 	// Acquire a register array of at least `size` slots, reusing pooled arrays when possible
 	private acquireRegisters(size: number): RegisterFile {
 		if (size > MAX_REGISTER_ARRAY_SIZE) {
-			const regs = new RegisterFile(size);
+			const regs = new RegisterFile(size, this.stringPool, this.objectHandles);
 			regs.clear(size);
 			return regs;
 		}
@@ -1528,7 +1742,7 @@ export class CPU {
 			regs.clear(size);
 			return regs;
 		}
-		const regs = new RegisterFile(bucket);
+		const regs = new RegisterFile(bucket, this.stringPool, this.objectHandles);
 		regs.clear(size);
 		return regs;
 	}
@@ -1597,7 +1811,7 @@ export class CPU {
 			pc: 0,
 			depth: 0,
 			registers: null!,
-			varargs: [],
+			varargs: new TaggedValueList(this.stringPool, this.objectHandles),
 			closure: null!,
 			openUpvalues: new Map<number, Upvalue>(),
 			returnBase: 0,
@@ -1612,8 +1826,7 @@ export class CPU {
 	private releaseFrame(frame: CallFrame): void {
 		// Release register array
 		this.releaseRegisters(frame.registers);
-		// Clear varargs (reuse array)
-		frame.varargs.length = 0;
+		frame.varargs.clear();
 		// Clear upvalues map (reuse map)
 		frame.openUpvalues.clear();
 		// Pool the frame if not at capacity
@@ -2217,7 +2430,7 @@ export class CPU {
 				const count = b === 0 ? frame.varargs.length : b;
 				this.charge(CEIL_DIV4(count));
 				for (let index = 0; index < count; index += 1) {
-					const value = index < frame.varargs.length ? frame.varargs[index] : null;
+					const value = index < frame.varargs.length ? frame.varargs.get(index) : null;
 					this.setRegister(frame, a + index, value);
 				}
 				return;
@@ -2276,10 +2489,8 @@ export class CPU {
 				for (let index = 0; index < total; index += 1) {
 					scratch.push(frame.registers.get(a + index));
 				}
-				this.lastReturnValues.length = scratch.length;
-				for (let i = 0; i < scratch.length; i++) {
-					this.lastReturnValues[i] = scratch[i];
-				}
+				this.lastReturnValuesBuffer.assignFromValues(scratch);
+				this.lastReturnValuesScratch.length = 0;
 				this.closeUpvalues(frame);
 				this.frames.pop();
 				this.releaseFrame(frame);
@@ -2432,7 +2643,9 @@ export class CPU {
 			const needed = index + 1;
 			const bucket = Math.max(8, 1 << (32 - Math.clz32(needed - 1)));
 			const target = bucket > MAX_REGISTER_ARRAY_SIZE ? needed : bucket;
-			const next = target > MAX_REGISTER_ARRAY_SIZE ? new RegisterFile(target) : this.acquireRegisters(target);
+			const next = target > MAX_REGISTER_ARRAY_SIZE
+				? new RegisterFile(target, this.stringPool, this.objectHandles)
+				: this.acquireRegisters(target);
 			next.copyFrom(registers, frame.top);
 			this.releaseRegisters(registers);
 			registers = next;

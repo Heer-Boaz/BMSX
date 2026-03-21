@@ -2,13 +2,12 @@ import { $, calcCyclesPerFrameScaled } from '../core/engine_core';
 import type { LuaChunk } from '../lua/syntax/lua_ast';
 import { LuaInterpreter } from '../lua/luaruntime';
 import type { LuaValue } from '../lua/luavalue';
-import { convertToError, isLuaFunctionValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/luavalue';
+import { convertToError, setLuaTableCaseInsensitiveKeys } from '../lua/luavalue';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clearNativeMemberCompletionCache } from './ide/intellisense';
 import { getSourceForChunk } from './ide/cart_editor';
 import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from './lua_builtins';
 import { seedLuaGlobals } from './lua_globals';
-import { LuaEntrySnapshot } from './lua_js_bridge';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
 import { linkProgramAssets } from './program_linker';
 import { getWorkspaceCachedSource } from './workspace_cache';
@@ -41,45 +40,9 @@ import {
 } from './io';
 import { CanonicalizationType, getMachinePerfSpecs } from '../rompack/rompack';
 import type { RawAssetSource } from '../rompack/asset_source';
-import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from './cpu';
+import { Table, TAGGED_VALUE_STATE_STRIDE, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from './cpu';
 import { StringValue, isStringValue, stringValueToString } from './string_pool';
 import type { Runtime } from './runtime';
-
-const LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
-	'print',
-	'type',
-	'tostring',
-	'tonumber',
-	'setmetatable',
-	'getmetatable',
-	'require',
-	'pairs',
-	'ipairs',
-	'serialize',
-	'deserialize',
-	'math',
-	'easing',
-	'table',
-	'string',
-	'coroutine',
-	'debug',
-	'utf8',
-	'_VERSION',
-	'assert',
-	'error',
-	'next',
-	'rawget',
-	'rawset',
-	'rawequal',
-	'pcall',
-	'xpcall',
-	'collectgarbage',
-	'load',
-	'loadstring',
-	'dofile',
-	'select',
-	'debug',
-]);
 
 const ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
 const getRealtimeOptLevel = (runtime: Runtime): 0 | 1 | 2 | 3 =>
@@ -152,28 +115,33 @@ function resolveRuntimeManifestForPlan(runtime: Runtime, plan: RuntimeAssetReloa
 }
 
 export function captureCurrentState(runtime: Runtime): RuntimeState {
-	const storage = runtime.storage.dump();
-	const stateSnapshot = captureRuntimeState(runtime);
-	const atlasSlots = runtime.vdp.getAtlasSlotMapping();
-	const skyboxFaceIds = runtime.vdp.getSkyboxFaceIds();
-	const vdpDitherType = runtime.vdp.getDitherType();
 	const vblankState = runtime.captureVblankState();
-	const state: RuntimeState = {
+	const moduleCachePaths = new Array<string>(runtime.moduleCache.size);
+	const moduleCacheValues = new Uint32Array(runtime.moduleCache.size * TAGGED_VALUE_STATE_STRIDE);
+	let moduleIndex = 0;
+	for (const [path, value] of runtime.moduleCache.entries()) {
+		moduleCachePaths[moduleIndex] = path;
+		runtime.cpu.encodeTaggedValueBufferEntry(moduleCacheValues, moduleIndex, value);
+		moduleIndex += 1;
+	}
+	return {
 		luaRuntimeFailed: runtime.luaRuntimeFailed,
 		luaPath: runtime.currentPath,
-		luaGlobals: stateSnapshot.globals,
-		luaLocals: stateSnapshot.locals,
-		luaRandomSeed: stateSnapshot.randomSeed,
-		luaProgramCounter: stateSnapshot.programCounter,
-		storage,
-		atlasSlots,
-		skyboxFaceIds,
-		vdpDitherType,
+		storage: runtime.storage.dump(),
+		objectMemoryState: runtime.cpu.captureObjectMemoryState(),
+		cpuState: runtime.cpu.captureRuntimeState(),
+		moduleCachePaths,
+		moduleCacheValues,
+		randomSeed: runtime.randomSeedValue,
+		pendingCall: runtime.pendingCall,
+		assetMemory: runtime.memory.dumpAssetMemory(),
+		atlasSlots: runtime.vdp.getAtlasSlotMapping(),
+		skyboxFaceIds: runtime.vdp.getSkyboxFaceIds(),
+		vdpDitherType: runtime.vdp.getDitherType(),
 		cyclesIntoFrame: vblankState.cyclesIntoFrame,
 		vblankPendingClear: vblankState.vblankPendingClear,
 		vblankClearOnIrqEnd: vblankState.vblankClearOnIrqEnd,
 	};
-	return state;
 }
 
 export async function applyState(runtime: Runtime, state: RuntimeState) {
@@ -195,12 +163,10 @@ export async function resetRuntimeToFreshState(runtime: Runtime) {
 
 export function restoreFromStateSnapshot(runtime: Runtime, snapshot: RuntimeState): void {
 	runtimeIde.clearActiveDebuggerPause(runtime);
-	const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
+	const savedRuntimeFailed = snapshot.luaRuntimeFailed;
 
 	runtime.api.cartdata($.lua_sources.namespace);
-	if (snapshot.storage !== undefined) {
-		runtime.storage.restore(snapshot.storage);
-	}
+	runtime.storage.restore(snapshot.storage);
 
 	runtime.luaRuntimeFailed = false;
 	applyAssetMemorySnapshot(runtime, snapshot);
@@ -214,23 +180,15 @@ export function restoreFromStateSnapshot(runtime: Runtime, snapshot: RuntimeStat
 }
 
 export function applyAssetMemorySnapshot(runtime: Runtime, snapshot: RuntimeState): void {
-	if (snapshot.assetMemory) {
-		runtime.memory.restoreAssetMemory(snapshot.assetMemory);
-		runtime.memory.rehydrateAssetEntriesFromTable();
+	runtime.memory.restoreAssetMemory(snapshot.assetMemory);
+	runtime.memory.rehydrateAssetEntriesFromTable();
+	runtime.vdp.restoreAtlasSlotMapping(snapshot.atlasSlots);
+	if (snapshot.skyboxFaceIds === null) {
+		runtime.vdp.clearSkybox();
+	} else {
+		runtime.vdp.setSkyboxImages(snapshot.skyboxFaceIds);
 	}
-	if (snapshot.atlasSlots) {
-		runtime.vdp.restoreAtlasSlotMapping(snapshot.atlasSlots);
-	}
-	if (snapshot.skyboxFaceIds !== undefined) {
-		if (snapshot.skyboxFaceIds === null) {
-			runtime.vdp.clearSkybox();
-		} else {
-			runtime.vdp.setSkyboxImages(snapshot.skyboxFaceIds);
-		}
-	}
-	if (snapshot.vdpDitherType !== undefined) {
-		runtime.vdp.setDitherType(snapshot.vdpDitherType);
-	}
+	runtime.vdp.setDitherType(snapshot.vdpDitherType);
 	runtime.vdp.flushAssetEdits();
 }
 
@@ -248,6 +206,21 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState):
 	runtime.restoreVblankState(snapshot);
 	runtime.resetRenderBuffers();
 	runtime.luaInitialized = true;
+}
+
+function restoreMachineState(runtime: Runtime, snapshot: RuntimeState): void {
+	runtime.cpu.restoreObjectMemoryState(snapshot.objectMemoryState);
+	runtime.cpu.restoreRuntimeState(snapshot.cpuState);
+	runtime.moduleCache.clear();
+	for (let index = 0; index < snapshot.moduleCachePaths.length; index += 1) {
+		runtime.moduleCache.set(
+			snapshot.moduleCachePaths[index],
+			runtime.cpu.decodeTaggedValueBufferEntry(snapshot.moduleCacheValues, index),
+		);
+	}
+	runtime.interpreter.packageLoadedTable.clear();
+	runtime.randomSeedValue = snapshot.randomSeed;
+	runtime.pendingCall = snapshot.pendingCall;
 }
 
 export function hotReloadProgramEntry(runtime: Runtime, params: { path: string; source: string; preserveEngineModules?: boolean }): void {
@@ -343,7 +316,7 @@ export function reloadLuaProgramState(runtime: Runtime, options: { runInit?: boo
 }
 
 export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeState): void {
-	const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
+	const savedRuntimeFailed = snapshot.luaRuntimeFailed;
 	const binding = snapshot.luaPath;
 	let source: string;
 	try {
@@ -361,8 +334,7 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeState):
 	}
 	refreshLuaModulesOnResume(runtime, binding);
 	clearNativeMemberCompletionCache();
-	queueLifecycleHandlers(runtime, { runInit: true, runNewGame: false });
-	restoreRuntimeState(runtime, snapshot);
+	restoreMachineState(runtime, snapshot);
 	if (savedRuntimeFailed) {
 		runtime.luaRuntimeFailed = true;
 	}
@@ -397,14 +369,11 @@ export function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: stri
 
 export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: { source: string; path: string; snapshot: RuntimeState; runInit: boolean; hotReload: boolean }): void {
 	const snapshot = params.snapshot;
-	const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
+	const savedRuntimeFailed = snapshot.luaRuntimeFailed;
 	const binding = $.lua_sources.path2lua[params.path];
 	if (params.hotReload) {
 		hotReloadProgramEntry(runtime, { source: params.source, path: binding.source_path, preserveEngineModules: !runtime.isEngineProgramActive() });
-		if (params.runInit && !savedRuntimeFailed) {
-			queueLifecycleHandlers(runtime, { runInit: true, runNewGame: true });
-		}
-		restoreRuntimeState(runtime, snapshot);
+		restoreMachineState(runtime, snapshot);
 		if (savedRuntimeFailed) {
 			runtime.luaRuntimeFailed = true;
 		}
@@ -436,11 +405,7 @@ export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: {
 	runtime.programMetadata = prelude.metadata;
 	beginEntryExecution(runtime, entryProtoIndex);
 	runtime.luaInitialized = true;
-
-	if (params.runInit && !savedRuntimeFailed) {
-		queueLifecycleHandlers(runtime, { runInit: true, runNewGame: false });
-	}
-	restoreRuntimeState(runtime, snapshot);
+	restoreMachineState(runtime, snapshot);
 	if (savedRuntimeFailed) {
 		runtime.luaRuntimeFailed = true;
 	}
@@ -448,117 +413,6 @@ export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: {
 
 export function markSourceChunkAsDirty(runtime: Runtime, path: string): void {
 	runtime.luaGenericChunksExecuted.delete(path);
-}
-
-export function captureRuntimeState(runtime: Runtime): { globals: LuaEntrySnapshot | null; locals: LuaEntrySnapshot | null; randomSeed: number; programCounter: number } {
-	const interpreter = runtime.interpreter;
-	const globals = captureLuaEntryCollection(runtime, interpreter.enumerateGlobalEntries());
-	const locals = captureLuaEntryCollection(runtime, interpreter.enumerateChunkEntries());
-	const randomSeed = interpreter.randomSeed;
-	const programCounter = interpreter.programCounter;
-	return {
-		globals: globals,
-		locals: locals,
-		randomSeed: randomSeed,
-		programCounter: programCounter,
-	};
-}
-
-export function captureLuaEntryCollection(runtime: Runtime, entries: ReadonlyArray<[string, LuaValue]>): LuaEntrySnapshot | null {
-	if (entries.length === 0) {
-		return null;
-	}
-	const ctx = runtime.luaJsBridge.createLuaSnapshotContext();
-	const snapshotRoot: Record<string, unknown> = {};
-	let count = 0;
-	for (const [name, value] of entries) {
-		if (shouldSkipLuaSnapshotEntry(runtime, name, value)) {
-			continue;
-		}
-		try {
-			const serialized = runtime.luaJsBridge.serializeLuaValueForSnapshot(value, ctx);
-			snapshotRoot[name] = serialized;
-			count += 1;
-		}
-		catch (error) {
-			console.warn(`[Runtime] Skipped Lua snapshot entry '${name}':`, error);
-		}
-	}
-	return count > 0 ? { root: snapshotRoot, objects: ctx.objects } : null;
-}
-
-export function shouldSkipLuaSnapshotEntry(runtime: Runtime, name: string, value: LuaValue): boolean {
-	if (runtime.apiFunctionNames.has(name)) {
-		return true;
-	}
-	if (LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
-		return true;
-	}
-	if (isLuaFunctionValue(value)) {
-		return true;
-	}
-	return false;
-}
-
-export function restoreRuntimeState(runtime: Runtime, snapshot: RuntimeState): void {
-	const interpreter = runtime.interpreter;
-	interpreter.randomSeed = snapshot.luaRandomSeed;
-	interpreter.programCounter = snapshot.luaProgramCounter;
-	if (snapshot.luaGlobals) {
-		restoreLuaGlobals(runtime, snapshot.luaGlobals);
-	}
-	if (snapshot.luaLocals) {
-		restoreLuaLocals(runtime, snapshot.luaLocals);
-	}
-}
-
-export function restoreLuaGlobals(runtime: Runtime, globals: LuaEntrySnapshot): void {
-	const interpreter = runtime.interpreter;
-	const entries = runtime.luaJsBridge.materializeLuaEntrySnapshot(globals);
-	for (const [name, value] of entries) {
-		if (runtime.apiFunctionNames.has(name) || LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
-			continue;
-		}
-		const existing = interpreter.getGlobal(name);
-		if (isLuaTable(existing) && isLuaTable(value)) {
-			runtime.luaJsBridge.applyLuaTableSnapshot(existing, value);
-			continue;
-		}
-		try {
-			interpreter.setGlobal(name, value);
-		}
-		catch (error) {
-			if ($.debug) {
-				console.warn(`[Runtime] Failed to restore Lua global '${name}':`, error);
-			}
-		}
-	}
-}
-
-export function restoreLuaLocals(runtime: Runtime, locals: LuaEntrySnapshot): void {
-	const interpreter = runtime.interpreter;
-	const entries = runtime.luaJsBridge.materializeLuaEntrySnapshot(locals);
-	for (const [name, value] of entries) {
-		if (!interpreter.hasChunkBinding(name)) {
-			continue;
-		}
-		const env = interpreter.pathEnvironment;
-		if (env) {
-			const current = env.get(name);
-			if (isLuaTable(current) && isLuaTable(value)) {
-				runtime.luaJsBridge.applyLuaTableSnapshot(current, value);
-				continue;
-			}
-		}
-		try {
-			interpreter.assignChunkValue(name, value);
-		}
-		catch (error) {
-			if ($.debug) {
-				console.warn(`[Runtime] Failed to restore Lua local '${name}':`, error);
-			}
-		}
-	}
 }
 
 export function resetLuaInteroperabilityState(runtime: Runtime): void {
@@ -1090,7 +944,7 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 export function resourceSourceForChunk(runtime: Runtime, path: string): string {
 	const binding = resolveLuaSourceRecord(runtime, path);
 	if (!binding) {
-		return null;
+		throw new Error(`[Runtime] Lua source not found: ${path}.`);
 	}
 	const cached = getWorkspaceCachedSource(binding.source_path);
 	if (cached !== null) {
@@ -1146,14 +1000,11 @@ export function requireLuaModule(runtime: Runtime, interpreter: LuaInterpreter, 
 		throw interpreter.runtimeError(`require('${moduleName}') failed: module not found.`);
 	}
 	const loaded = interpreter.packageLoadedTable.get(path);
-	if (loaded !== undefined && loaded !== null) {
+	if (loaded !== undefined) {
 		return loaded;
 	}
 	interpreter.packageLoadedTable.set(path, true);
 	const source = resourceSourceForChunk(runtime, path);
-	if (!source) {
-		throw interpreter.runtimeError(`require('${moduleName}') failed: module source unavailable.`);
-	}
 	const chunk = interpreter.compileChunk(source, path);
 	const results = interpreter.executeChunk(chunk);
 	const value = results.length > 0 ? results[0] : null;

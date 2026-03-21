@@ -2,7 +2,8 @@ import type { LuaFunctionValue } from '../lua/luavalue';
 import type { asset_id, CanonicalizationType, Viewport } from '../rompack/rompack';
 import type { SkyboxImageIds } from '../render/shared/render_types';
 import type { Memory } from './memory';
-import { LuaEntrySnapshot } from './lua_js_bridge';
+import type { CpuRuntimeState, TaggedValueSlotBuffer } from './cpu';
+import type { ObjectHandleTableState } from './object_memory';
 
 export type ResourceDescriptor = {
 	path: string;
@@ -115,15 +116,17 @@ export type RuntimeOptions = {
 export type RuntimeState = {
 	luaRuntimeFailed: boolean;
 	luaPath: string;
-	storage?: { namespace: string; entries: Array<{ index: number; value: number; }>; };
-	luaGlobals: LuaEntrySnapshot | null;
-	luaLocals: LuaEntrySnapshot | null;
-	luaRandomSeed: number;
-	luaProgramCounter: number;
-	assetMemory?: Uint8Array;
-	atlasSlots?: { primary: number | null; secondary: number | null };
-	skyboxFaceIds?: SkyboxImageIds | null;
-	vdpDitherType?: number;
+	storage: { namespace: string; entries: Array<{ index: number; value: number; }>; };
+	objectMemoryState: ObjectHandleTableState;
+	cpuState: CpuRuntimeState;
+	moduleCachePaths: string[];
+	moduleCacheValues: TaggedValueSlotBuffer;
+	randomSeed: number;
+	pendingCall: 'entry' | null;
+	assetMemory: Uint8Array;
+	atlasSlots: { primary: number | null; secondary: number | null };
+	skyboxFaceIds: SkyboxImageIds | null;
+	vdpDitherType: number;
 	cyclesIntoFrame: number;
 	vblankPendingClear: boolean;
 	vblankClearOnIrqEnd: boolean;
