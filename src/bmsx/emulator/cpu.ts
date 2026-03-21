@@ -1,4 +1,4 @@
-import { StringPool, StringValue, isStringValue, stringValueToString } from './string_pool';
+import { StringPool, StringValue, isStringValue, stringValueHash32, stringValueToString, stringValuesEqual } from './string_pool';
 import type { Memory } from './memory';
 import { formatNumber } from './number_format';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
@@ -132,6 +132,19 @@ export type UpvalueDesc = {
 	inStack: boolean;
 	index: number;
 };
+
+export function valuesEqual(left: Value, right: Value): boolean {
+	if (typeof left === 'number' && typeof right === 'number') {
+		if (Number.isNaN(left) && Number.isNaN(right)) {
+			return true;
+		}
+		return left === right;
+	}
+	if (isStringValue(left) && isStringValue(right)) {
+		return stringValuesEqual(left, right);
+	}
+	return left === right;
+}
 
 export type Closure = {
 	protoIndex: number;
@@ -514,22 +527,13 @@ export class Table {
 			return key ? 0x9e3779b9 : 0x85ebca6b;
 		}
 		if (isStringValue(key)) {
-			return (key.id * 2654435761) >>> 0;
+			return stringValueHash32(key);
 		}
 		return (Table.getObjectId(key as object) * 2654435761) >>> 0;
 	}
 
 	private keyEquals(a: Value, b: Value): boolean {
-		if (typeof a === 'number' && typeof b === 'number') {
-			if (Number.isNaN(a) && Number.isNaN(b)) {
-				return true;
-			}
-			return a === b;
-		}
-		if (isStringValue(a) && isStringValue(b)) {
-			return a.id === b.id;
-		}
-		return a === b;
+		return valuesEqual(a, b);
 	}
 
 	private findNodeIndex(key: Value): number {
@@ -1109,15 +1113,23 @@ export class CPU {
 	public setProgram(program: Program, metadata: ProgramMetadata | null = null): void {
 		this.program = program;
 		this.metadata = metadata;
-		const constPool = program.constPool;
-		for (let index = 0; index < constPool.length; index += 1) {
-			const value = constPool[index];
-			if (isStringValue(value)) {
-				constPool[index] = this.stringPool.intern(stringValueToString(value));
+		if (program.constPoolStringPool !== this.stringPool) {
+			const constPool = program.constPool;
+			const remapped = new Map<number, StringValue>();
+			for (let index = 0; index < constPool.length; index += 1) {
+				const value = constPool[index];
+				if (!isStringValue(value)) {
+					continue;
+				}
+				let mapped = remapped.get(value.id);
+				if (mapped === undefined) {
+					mapped = this.stringPool.intern(stringValueToString(value));
+					remapped.set(value.id, mapped);
+				}
+				constPool[index] = mapped;
 			}
 		}
 		program.constPoolStringPool = this.stringPool;
-		this.indexKey = this.stringPool.intern('__index');
 		this.decodeProgram(program);
 	}
 
@@ -1619,7 +1631,7 @@ export class CPU {
 			case OpCode.EQ: {
 				const left = this.readRK(frame, rkRawB, rkBitsB);
 				const right = this.readRK(frame, rkRawC, rkBitsC);
-				const eq = left === right;
+				const eq = valuesEqual(left, right);
 				if (eq !== (a !== 0)) {
 					this.charge(1);
 					this.skipNextInstruction(frame);

@@ -179,7 +179,8 @@ const char* valueTypeName(Value v) {
 	return valueTypeNameInline(v);
 }
 
-Table::Table(int arraySize, int hashSize) {
+Table::Table(const StringPool* stringPool, int arraySize, int hashSize)
+	: m_stringPool(stringPool) {
 	if (arraySize > 0) {
 		m_array.resize(static_cast<size_t>(arraySize), valueNil());
 	}
@@ -232,11 +233,11 @@ void Table::updateArrayLengthFrom(size_t startIndex) {
 }
 
 size_t Table::hashValue(const Value& key) const {
-	return ValueHash{}(key);
+	return ValueHash{ m_stringPool }(key);
 }
 
 bool Table::keyEquals(const Value& a, const Value& b) const {
-	return ValueEq{}(a, b);
+	return ValueEq{ m_stringPool }(a, b);
 }
 
 int Table::findNodeIndex(const Value& key) const {
@@ -736,7 +737,7 @@ CPU::CPU(Memory& memory, StringHandleTable* handleTable)
 	, m_stringPool(handleTable) {
 	m_heap.setRootMarker([this](GcHeap& heap) { markRoots(heap); });
 	m_externalRootMarker = [](GcHeap&) {};
-	globals = m_heap.allocate<Table>(ObjType::Table, 0, 0);
+	globals = m_heap.allocate<Table>(ObjType::Table, &m_stringPool, 0, 0);
 	m_indexKey = valueString(m_stringPool.intern("__index"));
 }
 
@@ -769,7 +770,7 @@ Value CPU::createNativeObject(
 }
 
 Table* CPU::createTable(int arraySize, int hashSize) {
-	return m_heap.allocate<Table>(ObjType::Table, arraySize, hashSize);
+	return m_heap.allocate<Table>(ObjType::Table, &m_stringPool, arraySize, hashSize);
 }
 
 Closure* CPU::createRootClosure(int protoIndex) {
@@ -786,23 +787,28 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 		m_decoded.clear();
 		return;
 	}
-	if (!m_program->constPoolCanonicalized) {
+	if (m_program->constPoolStringPool != &m_stringPool) {
 		const StringPool& programPool = *m_program->constPoolStringPool;
 		auto& constPool = m_program->constPool;
+		std::unordered_map<StringId, StringId> remappedIds;
 		for (size_t index = 0; index < constPool.size(); ++index) {
 			Value value = constPool[index];
 			if (valueIsString(value)) {
 				StringId oldId = asStringId(value);
-				StringId newId = m_stringPool.intern(programPool.toString(oldId));
+				auto remapped = remappedIds.find(oldId);
+				StringId newId = 0;
+				if (remapped != remappedIds.end()) {
+					newId = remapped->second;
+				} else {
+					newId = m_stringPool.intern(programPool.toString(oldId));
+					remappedIds.emplace(oldId, newId);
+				}
 				constPool[index] = valueString(newId);
 			}
 		}
 		m_program->constPoolCanonicalized = true;
 		m_program->constPoolStringPool = &m_stringPool;
-	} else if (m_program->constPoolStringPool != &m_stringPool) {
-		throw BMSX_RUNTIME_ERROR("[CPU] Program const pool is canonicalized for a different string pool.");
 	}
-	m_indexKey = valueString(m_stringPool.intern("__index"));
 	decodeProgram();
 }
 
@@ -1121,7 +1127,7 @@ void CPU::executeInstruction(
 
 		case OpCode::NEWT: {
 			CYCLES_ADD(ceilDiv4(b) + ceilDiv4(c));
-			auto* table = m_heap.allocate<Table>(ObjType::Table, b, c);
+			auto* table = m_heap.allocate<Table>(ObjType::Table, &m_stringPool, b, c);
 			setRegister(frame, a, valueTable(table));
 			return;
 		}
@@ -1309,12 +1315,7 @@ void CPU::executeInstruction(
 		case OpCode::EQ: {
 			const Value& left = readRK(frame, rkRawB, rkBitsB);
 			const Value& right = readRK(frame, rkRawC, rkBitsC);
-			bool eq = false;
-			if (valueIsNumber(left) && valueIsNumber(right)) {
-				eq = valueToNumber(left) == valueToNumber(right);
-			} else if (valueIsTagged(left) && valueIsTagged(right)) {
-				eq = left == right;
-			}
+			const bool eq = ValueEq{ &m_stringPool }(left, right);
 			if (eq != (a != 0)) {
 				CYCLES_ADD(1);
 				skipNextInstruction(frame);

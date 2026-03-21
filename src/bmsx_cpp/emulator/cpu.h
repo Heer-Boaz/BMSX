@@ -42,7 +42,10 @@ using StringId = uint32_t;
 struct InternedString {
 	StringId id = 0;
 	std::string value;
+	uint32_t byteLength = 0;
 	int codepointCount = 0;
+	uint32_t hashLo = 0;
+	uint32_t hashHi = 0;
 };
 
 struct StringKeyHash {
@@ -70,23 +73,31 @@ public:
 	}
 
 	StringId intern(std::string_view value) {
-		auto it = m_stringMap.find(value);
-		if (it != m_stringMap.end()) {
-			return it->second;
+		if (!m_handleTable) {
+			auto it = m_stringMap.find(value);
+			if (it != m_stringMap.end()) {
+				return it->second;
+			}
 		}
 		auto entry = std::make_unique<InternedString>();
+		const StringMetadata metadata = analyzeString(value);
 		StringId id = m_nextId;
 		if (m_handleTable) {
 			id = static_cast<StringId>(m_handleTable->allocateHandle(value));
 		}
 		entry->id = id;
 		entry->value.assign(value.data(), value.size());
-		entry->codepointCount = countCodepoints(entry->value);
+		entry->byteLength = metadata.byteLength;
+		entry->codepointCount = metadata.codepointCount;
+		entry->hashLo = metadata.hashLo;
+		entry->hashHi = metadata.hashHi;
 		if (id >= m_entries.size()) {
 			m_entries.resize(static_cast<size_t>(id) + 1);
 		}
 		m_entries[id] = std::move(entry);
-		m_stringMap.emplace(std::string_view(m_entries[id]->value), id);
+		if (!m_handleTable) {
+			m_stringMap.emplace(std::string_view(m_entries[id]->value), id);
+		}
 		if (id >= m_nextId) {
 			m_nextId = id + 1;
 		}
@@ -94,19 +105,31 @@ public:
 	}
 
 	const std::string& toString(StringId id) const {
-		const auto* entry = m_entries.at(static_cast<size_t>(id)).get();
-		if (!entry) {
-			throw std::runtime_error("StringPool: missing string entry.");
-		}
-		return entry->value;
+		return get(id).value;
 	}
 
 	int codepointCount(StringId id) const {
-		const auto* entry = m_entries.at(static_cast<size_t>(id)).get();
-		if (!entry) {
-			throw std::runtime_error("StringPool: missing string entry.");
+		return get(id).codepointCount;
+	}
+
+	uint32_t hash32(StringId id) const {
+		const auto& entry = get(id);
+		return (entry.hashLo ^ entry.hashHi) & 0xffffffffu;
+	}
+
+	bool equals(StringId lhs, StringId rhs) const {
+		if (lhs == rhs) {
+			return true;
 		}
-		return entry->codepointCount;
+		const auto& left = get(lhs);
+		const auto& right = get(rhs);
+		if (left.hashLo != right.hashLo || left.hashHi != right.hashHi) {
+			return false;
+		}
+		if (left.byteLength != right.byteLength) {
+			return false;
+		}
+		return left.value == right.value;
 	}
 
 	void reserveHandles(StringId minHandle) {
@@ -122,6 +145,13 @@ public:
 	}
 
 private:
+	struct StringMetadata {
+		uint32_t byteLength = 0;
+		int codepointCount = 0;
+		uint32_t hashLo = 0;
+		uint32_t hashHi = 0;
+	};
+
 	static size_t utf8NextIndex(std::string_view text, size_t index) {
 		unsigned char c0 = static_cast<unsigned char>(text[index]);
 		if (c0 < 0x80) {
@@ -144,6 +174,28 @@ private:
 			count += 1;
 		}
 		return count;
+	}
+
+	static StringMetadata analyzeString(std::string_view text) {
+		uint64_t hash = 14695981039346656037ULL;
+		for (unsigned char byte : text) {
+			hash ^= static_cast<uint64_t>(byte);
+			hash *= 1099511628211ULL;
+		}
+		StringMetadata metadata;
+		metadata.byteLength = static_cast<uint32_t>(text.size());
+		metadata.codepointCount = countCodepoints(text);
+		metadata.hashLo = static_cast<uint32_t>(hash & 0xffffffffULL);
+		metadata.hashHi = static_cast<uint32_t>(hash >> 32);
+		return metadata;
+	}
+
+	const InternedString& get(StringId id) const {
+		const auto* entry = m_entries.at(static_cast<size_t>(id)).get();
+		if (!entry) {
+			throw std::runtime_error("StringPool: missing string entry.");
+		}
+		return *entry;
 	}
 
 	StringHandleTable* m_handleTable = nullptr;
@@ -345,6 +397,8 @@ inline const char* valueTypeNameInline(Value v) {
 }
 
 struct ValueHash {
+	const StringPool* stringPool = nullptr;
+
 	size_t operator()(Value v) const noexcept {
 		if (valueIsNumber(v)) {
 			double num = valueToNumber(v);
@@ -358,11 +412,16 @@ struct ValueHash {
 			std::memcpy(&bits, &num, sizeof(double));
 			return static_cast<size_t>(bits ^ (bits >> 32));
 		}
+		if (stringPool && valueIsString(v)) {
+			return static_cast<size_t>(stringPool->hash32(asStringId(v)));
+		}
 		return static_cast<size_t>(v ^ (v >> 32));
 	}
 };
 
 struct ValueEq {
+	const StringPool* stringPool = nullptr;
+
 	bool operator()(Value lhs, Value rhs) const noexcept {
 		if (valueIsNumber(lhs) && valueIsNumber(rhs)) {
 			double leftNum = valueToNumber(lhs);
@@ -371,6 +430,9 @@ struct ValueEq {
 				return true;
 			}
 			return leftNum == rightNum;
+		}
+		if (stringPool && valueIsString(lhs) && valueIsString(rhs)) {
+			return stringPool->equals(asStringId(lhs), asStringId(rhs));
 		}
 		return lhs == rhs;
 	}
@@ -563,7 +625,7 @@ struct CallFrame {
 
 class Table : public GCObject {
 public:
-	Table(int arraySize = 0, int hashSize = 0);
+	Table(const StringPool* stringPool, int arraySize = 0, int hashSize = 0);
 
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);
@@ -615,6 +677,7 @@ private:
 	std::vector<HashNode> m_hash;
 	int m_hashFree = -1;
 	Table* m_metatable = nullptr;
+	const StringPool* m_stringPool = nullptr;
 };
 
 class GcHeap {
