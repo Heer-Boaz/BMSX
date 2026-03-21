@@ -29,7 +29,7 @@ local eventemitter = eventemitter_module.eventemitter
 eventemitter_module.eventemitter = eventemitter
 eventemitter_module.instance = eventemitter.instance
 local quickmenu = require('quickmenu')
-local ide_editor = require('ide_editor')
+-- local ide_editor = require('ide_editor')
 local romdir = require('romdir')
 local bool01 = require('bool01')
 local deep_clone = require('deep_clone')
@@ -535,13 +535,13 @@ function engine.attach_component(object_or_id, component_or_type)
 end
 
 function engine.update()
-	if ide_editor.is_enabled() then
-		ide_editor.update()
-		if ide_editor.is_open() then
-			ide_editor.draw()
-			return
-		end
-	end
+	-- if ide_editor.is_enabled() then
+	-- 	ide_editor.update()
+	-- 	if ide_editor.is_open() then
+	-- 		ide_editor.draw()
+	-- 		return
+	-- 	end
+	-- end
 	quickmenu.update()
 	if not quickmenu.is_open() then
 		world_instance:update()
