@@ -33,85 +33,29 @@ local function move_vertical(self, target, vertical)
 	return delta_y
 end
 
-local function try_snap_player_side(self, player)
-	local feet_y = player.y + player.height
-	local relative_feet_y = feet_y - self.y - 1
-	if relative_feet_y < 0 or relative_feet_y >= constants.elevator.side_snap_y then
-		return
-	end
-
-	local left_snap_x = player.x - self.x - constants.elevator.left_snap_x
-	if left_snap_x >= 0 and left_snap_x < constants.elevator.left_snap_width then
-		player.x = self.x + constants.elevator.left_snap_x
-		return
-	end
-
-	local right_snap_x = player.x - self.x - constants.elevator.right_snap_x
-	if right_snap_x >= 0 and right_snap_x < constants.elevator.right_snap_width then
-		player.x = self.x + constants.elevator.right_snap_x + constants.elevator.right_snap_width - 1
-	end
-end
-
-local function is_in_transport_x_band(self, player)
-	local relative_x = (player.x - self.x) - constants.elevator.transport_min_x
-	return relative_x >= 0 and relative_x < constants.elevator.transport_width
-end
-
-local function update_player_transport(self, player, delta_x)
-	if not self.visible then
-		self.transport_active = false
-		self.transport_switch_cooldown_steps = 0
-		return
-	end
-
-	if self.transport_switch_cooldown_steps > 0 then
-		self.transport_switch_cooldown_steps = self.transport_switch_cooldown_steps - 1
-		if self.transport_active then
-			player.x = player.x + delta_x
-			player.y = self.y - player.height
-			player.on_vertical_elevator = true
-		end
-		return
-	end
-
-	local previous_transport_active = self.transport_active
-	try_snap_player_side(self, player)
-
-	local next_transport_active = false
-	if is_in_transport_x_band(self, player) then
-		local feet_y = player.y + player.height
-		local tile_support = player:collides_at_support_profile(player.x, player.y, false)
-		if feet_y < (self.y + constants.elevator.top_attach_feet_y) then
-			if previous_transport_active or not tile_support then
-				next_transport_active = true
-			end
-		else
-			local bottom_offset = feet_y - self.y - constants.elevator.bottom_push_feet_y
-			if bottom_offset >= 0
-				and bottom_offset < constants.elevator.bottom_push_height
-				and not tile_support
-			then
-				player.y = self.y + constants.room.tile_size2
-			end
-		end
-	end
-
-	self.transport_active = next_transport_active
-	if next_transport_active then
-		player.x = player.x + delta_x
-		player.y = self.y - player.height
-		player.on_vertical_elevator = true
-	end
-	if next_transport_active ~= previous_transport_active then
-		self.transport_switch_cooldown_steps = constants.elevator.transport_switch_cooldown_steps
-	end
-end
-
 function elevator:update_motion()
 	local player = object('pietolon')
 	local current_room_number = object('c').current_room_number
 	self.visible = self.current_room_number == current_room_number
 	self.collider.enabled = self.visible
+	local previous_y = self.y
+
+	local character_over = false
+	local standing_on_top = false
+	if self.visible
+		and player.y >= (self.y - constants.room.tile_size2)
+		and player.y < (self.y + constants.room.tile_size2)
+	then
+		standing_on_top = player.y == (self.y - constants.player.height) and player:has_feet_over_elevator_top(self, player.x)
+		if player:has_tag('g.et') and player:is_in_elevator_transport_band(self, player.x, player.y) then
+			character_over = true
+		end
+		if player.x > (self.x - (constants.room.tile_size2 - (constants.room.tile_unit * 5)))
+			and player.x < ((self.x + constants.room.tile_size4) - (constants.room.tile_unit * 4))
+		then
+			character_over = true
+		end
+	end
 
 	local target = self.path[self.going_to]
 	local vertical = self.vertical_to_point[self.going_to]
@@ -126,7 +70,19 @@ function elevator:update_motion()
 		delta_x = -2
 	end
 	local delta_y = move_vertical(self, target, vertical)
-	update_player_transport(self, player, delta_x)
+	if character_over and delta_y ~= 0 then
+		player.on_vertical_elevator = true
+	end
+
+	if character_over and (delta_x ~= 0 or delta_y ~= 0) then
+		player.x = player.x + delta_x
+		if standing_on_top then
+			player.y = player.y + delta_y
+		end
+	end
+	if self.visible and delta_y ~= 0 then
+		player:resolve_overlap_with_elevator(self, previous_y)
+	end
 
 	if self.x == target.x
 		and self.y == target.y
@@ -167,8 +123,6 @@ local function register_elevator_definition()
 			vertical_to_point = nil,
 			going_to = 1,
 			current_room_number = 0,
-			transport_active = false,
-			transport_switch_cooldown_steps = 0,
 		},
 	})
 end

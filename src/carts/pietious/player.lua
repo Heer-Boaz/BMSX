@@ -1479,19 +1479,12 @@ end
 function player:try_snap_to_elevator_platform(next_x, next_y)
 	local count = object('c').elevator_count
 	local current_room_number = object('c').current_room_number
-	local tile_support = self:collides_at_support_profile(self.x, self.y, false)
 	for i = 1, count do
 		local platform = object('e.p' .. tostring(i))
 		if platform.current_room_number ~= current_room_number then
 			goto continue
 		end
-		local relative_x = (next_x + 2) - platform.x
-		if platform.transport_switch_cooldown_steps == 0
-			and relative_x >= 0
-			and relative_x < constants.elevator.transport_width
-			and (next_y + self.height) < (platform.y + constants.elevator.top_attach_feet_y)
-			and (platform.transport_active or not tile_support)
-		then
+		if self:is_in_elevator_transport_band(platform, self.x, self.y) then
 			self.y = platform.y - self.height
 			self.x = next_x
 			return true
@@ -1500,6 +1493,62 @@ function player:try_snap_to_elevator_platform(next_x, next_y)
 	end
 
 	return false
+end
+
+function player:has_feet_over_elevator_top(platform, x)
+	local left_foot_x = x + constants.room.tile_half
+	local mid_foot_x = x + (self.width / 2)
+	local right_foot_x = (x + self.width) - constants.room.tile_half
+	return (left_foot_x >= platform.x and left_foot_x < (platform.x + constants.room.tile_size4))
+		or (mid_foot_x >= platform.x and mid_foot_x < (platform.x + constants.room.tile_size4))
+		or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
+end
+
+function player:is_in_elevator_transport_band(platform, x, y)
+	local landing_left = platform.x - (constants.room.tile_size2 - (constants.room.tile_unit * 4))
+	local landing_right = (platform.x + constants.room.tile_size4) - (constants.room.tile_unit * 3)
+	return y >= (platform.y - self.height)
+		and y < platform.y
+		and x > landing_left
+		and x < landing_right
+end
+
+function player:resolve_overlap_with_elevator(platform, previous_platform_y)
+	if platform.current_room_number ~= object('c').current_room_number then
+		return false
+	end
+	if not collision2d.collides(self.collider, platform.collider) then
+		return false
+	end
+	if self.y <= previous_platform_y and self:has_feet_over_elevator_top(platform, self.x) then
+		self.y = platform.y - self.height
+		return true
+	end
+	local left_x = platform.x - self.width
+	local right_x = platform.x + constants.room.tile_size4
+	local left_clear = not self:collides_at(left_x, self.y, true)
+	local right_clear = not self:collides_at(right_x, self.y, true)
+	if left_clear and right_clear then
+		if math.abs(self.x - left_x) <= math.abs(self.x - right_x) then
+			self.x = left_x
+		else
+			self.x = right_x
+		end
+		return true
+	end
+	if left_clear then
+		self.x = left_x
+		return true
+	end
+	if right_clear then
+		self.x = right_x
+		return true
+	end
+	if self.y <= previous_platform_y then
+		return false
+	end
+	self.y = platform.y + constants.room.tile_size2
+	return true
 end
 
 function player:is_support_below_at(x, y, include_elevator)

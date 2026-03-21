@@ -141,8 +141,6 @@ function prepareElevatorRoom(engine) {
 		elevator.going_to = 2
 		elevator.visible = true
 		elevator.collider.enabled = true
-		elevator.transport_active = false
-		elevator.transport_switch_cooldown_steps = 0
 		player:clear_input_state()
 		player:zero_motion()
 		player:reset_fall_substate_sequence()
@@ -170,8 +168,6 @@ function prepareLowerElevatorRoom(engine) {
 		elevator.going_to = 1
 		elevator.visible = true
 		elevator.collider.enabled = true
-		elevator.transport_active = false
-		elevator.transport_switch_cooldown_steps = 0
 		player:clear_input_state()
 		player:zero_motion()
 		player:reset_fall_substate_sequence()
