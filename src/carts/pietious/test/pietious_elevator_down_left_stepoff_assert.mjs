@@ -89,7 +89,10 @@ function setupScenario(engine, logger) {
 		player.sword_cooldown = 0
 		player.jump_substate = 0
 		player.jump_inertia = 0
-		player.on_vertical_elevator = false
+		player.on_vertical_elevator = true
+		player.vertical_elevator_id = elevator.id
+		player.next_vertical_elevator = false
+		player.next_vertical_elevator_id = nil
 		player.jumping_from_elevator = false
 		player.stairs_landing_sound_pending = false
 		player.x = probe_x
@@ -111,6 +114,7 @@ function setupScenario(engine, logger) {
 function getRuntimeState(engine) {
 	const [state] = evalLua(engine, `
 		local constants = require('constants')
+		local collision2d = require('collision2d')
 		local player = object('pietolon')
 		local elevator = object('e.p1')
 		local left_foot_x = player.x + constants.room.tile_half

@@ -123,7 +123,6 @@ local state_tags = {
 		sword_activation_allowed = player_abilities.tags.sword_activation_allowed,
 		stairs_action_allowed = player_abilities.tags.stairs_action_allowed,
 		damage_lock = 'g.dl',
-		elevator_transport = 'g.et',
 		transition_lock = 'g.tr',
 		damage_visual = 'g.dv',
 		movement_walk = 'g.mw',
@@ -1476,25 +1475,6 @@ function player:collides_with_elevator_at(x, y)
 	return false
 end
 
-function player:try_snap_to_elevator_platform(next_x, next_y)
-	local count = object('c').elevator_count
-	local current_room_number = object('c').current_room_number
-	for i = 1, count do
-		local platform = object('e.p' .. tostring(i))
-		if platform.current_room_number ~= current_room_number then
-			goto continue
-		end
-		if self:is_in_elevator_transport_band(platform, self.x, self.y) then
-			self.y = platform.y - self.height
-			self.x = next_x
-			return true
-		end
-		::continue::
-	end
-
-	return false
-end
-
 function player:has_feet_over_elevator_top(platform, x)
 	local left_foot_x = x + constants.room.tile_half
 	local mid_foot_x = x + (self.width / 2)
@@ -1502,15 +1482,6 @@ function player:has_feet_over_elevator_top(platform, x)
 	return (left_foot_x >= platform.x and left_foot_x < (platform.x + constants.room.tile_size4))
 		or (mid_foot_x >= platform.x and mid_foot_x < (platform.x + constants.room.tile_size4))
 		or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
-end
-
-function player:is_in_elevator_transport_band(platform, x, y)
-	local landing_left = platform.x - (constants.room.tile_size2 - (constants.room.tile_unit * 4))
-	local landing_right = (platform.x + constants.room.tile_size4) - (constants.room.tile_unit * 3)
-	return y >= (platform.y - self.height)
-		and y < platform.y
-		and x > landing_left
-		and x < landing_right
 end
 
 function player:resolve_overlap_with_elevator(platform, previous_platform_y)
@@ -1522,6 +1493,10 @@ function player:resolve_overlap_with_elevator(platform, previous_platform_y)
 	end
 	if self.y <= previous_platform_y and self:has_feet_over_elevator_top(platform, self.x) then
 		self.y = platform.y - self.height
+		return true
+	end
+	if self.y >= (previous_platform_y + constants.room.tile_size2) then
+		self.y = platform.y + constants.room.tile_size2
 		return true
 	end
 	local left_x = platform.x - self.width
@@ -1544,11 +1519,7 @@ function player:resolve_overlap_with_elevator(platform, previous_platform_y)
 		self.x = right_x
 		return true
 	end
-	if self.y <= previous_platform_y then
-		return false
-	end
-	self.y = platform.y + constants.room.tile_size2
-	return true
+	return false
 end
 
 function player:is_support_below_at(x, y, include_elevator)
@@ -1718,10 +1689,7 @@ function player:apply_air_move(dx, dy, include_elevator_collision)
 	local moved_x, collided_x = self:apply_side_probe_horizontal_move(dx)
 
 	local next_y = old_y + dy
-	if dy > 0 and (not self.on_vertical_elevator) and self:try_snap_to_elevator_platform(self.x, next_y) then
-	else
-		self.y = next_y
-	end
+	self.y = next_y
 
 	local max_x = room.world_width - self.width
 	local room_links = room.room_links
@@ -3063,14 +3031,6 @@ local function define_player_fsm()
 				state_tags.variant.hit_collision,
 				state_tags.variant.hit_recovery,
 			},
-			[state_tags.group.elevator_transport] = {
-				state_tags.variant.quiet,
-				state_tags.variant.walking_right,
-				state_tags.variant.walking_left,
-				state_tags.variant.hit_recovery,
-				state_tags.variant.controlled_fall,
-				state_tags.variant.uncontrolled_fall,
-			},
 			[state_tags.group.sword_activation_allowed] = {
 				any = {
 					state_tags.variant.quiet,
@@ -3204,6 +3164,9 @@ local function register_player_definition()
 			left_wall_collision = false,
 			right_wall_collision = false,
 			on_vertical_elevator = false,
+			vertical_elevator_id = nil,
+			next_vertical_elevator = false,
+			next_vertical_elevator_id = nil,
 			jumping_from_elevator = false,
 			walk_frame = 0,
 			walk_distance_accum = 0,

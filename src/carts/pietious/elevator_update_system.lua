@@ -14,10 +14,14 @@ local pipeline_registered = false
 local pipeline_ref = 'pt.eup'
 
 function elevator_update_system:update()
-	object('pietolon').on_vertical_elevator = false
+	local player = object('pietolon')
+	player.next_vertical_elevator = false
+	player.next_vertical_elevator_id = nil
 	for elevator in world_instance:objects_by_type('elevator_platform', { scope = 'active' }) do
 		elevator:update_motion()
 	end
+	player.on_vertical_elevator = player.next_vertical_elevator
+	player.vertical_elevator_id = player.next_vertical_elevator_id
 end
 
 local function register_pipeline()

@@ -48,7 +48,6 @@ function getLuaState(engine) {
 		local player = object('pietolon')
 		local elevator = object('e.p1')
 		local expected_floor_y = -1
-		local character_over = false
 		local standing_on_top = false
 		if player ~= nil then
 			for test_y = player.y, constants.room.height - player.height do
@@ -70,17 +69,6 @@ function getLuaState(engine) {
 				or (mid_foot_x >= elevator.x and mid_foot_x < (elevator.x + constants.room.tile_size4))
 				or (right_foot_x >= elevator.x and right_foot_x < (elevator.x + constants.room.tile_size4))
 			standing_on_top = player.y == (elevator.y - player.height) and feet_over_platform_top
-			if player.x > (elevator.x - constants.room.tile_size2)
-				and player.x < (elevator.x + constants.room.tile_size4)
-				and player:has_tag('g.et')
-			then
-				character_over = true
-			end
-			if player.x > (elevator.x - (constants.room.tile_size2 - (constants.room.tile_unit * 5)))
-				and player.x < ((elevator.x + constants.room.tile_size4) - (constants.room.tile_unit * 4))
-			then
-				character_over = true
-			end
 		end
 		return {
 			has_castle = castle ~= nil,
@@ -111,7 +99,7 @@ function getLuaState(engine) {
 			player_on_vertical_elevator = player and player.on_vertical_elevator or false,
 			player_jumping_from_elevator = player and player.jumping_from_elevator or false,
 			player_overlap_elevator = player and elevator and collision2d.collides(player.collider, elevator.collider) or false,
-			elevator_character_over = character_over,
+			elevator_character_over = standing_on_top,
 			elevator_standing_on_top = standing_on_top,
 			expected_floor_y = expected_floor_y,
 		}
@@ -148,6 +136,9 @@ function prepareElevatorRoom(engine) {
 		player.jump_substate = 0
 		player.jump_inertia = 0
 		player.on_vertical_elevator = false
+		player.vertical_elevator_id = nil
+		player.next_vertical_elevator = false
+		player.next_vertical_elevator_id = nil
 		player.jumping_from_elevator = false
 		player.stairs_landing_sound_pending = false
 	`);
@@ -175,6 +166,9 @@ function prepareLowerElevatorRoom(engine) {
 		player.jump_substate = 0
 		player.jump_inertia = 0
 		player.on_vertical_elevator = false
+		player.vertical_elevator_id = nil
+		player.next_vertical_elevator = false
+		player.next_vertical_elevator_id = nil
 		player.jumping_from_elevator = false
 		player.stairs_landing_sound_pending = false
 	`);
@@ -187,6 +181,8 @@ function setupCarryScenario(engine, logger) {
 		local elevator = object('e.p1')
 		player.x = elevator.x
 		player.y = elevator.y - player.height
+		player.on_vertical_elevator = true
+		player.vertical_elevator_id = elevator.id
 		return {
 			player_x = player.x,
 			player_y = player.y,
@@ -258,6 +254,8 @@ function setupStepOffScenario(engine, logger, variantIndex = 0) {
 		local elevator = object('e.p1')
 		player.x = elevator.x + ${variant.xOffset}
 		player.y = elevator.y - player.height
+		player.on_vertical_elevator = true
+		player.vertical_elevator_id = elevator.id
 		player.facing = 1
 		player.right_held = false
 		return {

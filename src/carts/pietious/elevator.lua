@@ -39,23 +39,9 @@ function elevator:update_motion()
 	self.visible = self.current_room_number == current_room_number
 	self.collider.enabled = self.visible
 	local previous_y = self.y
-
-	local character_over = false
-	local standing_on_top = false
-	if self.visible
-		and player.y >= (self.y - constants.room.tile_size2)
-		and player.y < (self.y + constants.room.tile_size2)
-	then
-		standing_on_top = player.y == (self.y - constants.player.height) and player:has_feet_over_elevator_top(self, player.x)
-		if player:has_tag('g.et') and player:is_in_elevator_transport_band(self, player.x, player.y) then
-			character_over = true
-		end
-		if player.x > (self.x - (constants.room.tile_size2 - (constants.room.tile_unit * 5)))
-			and player.x < ((self.x + constants.room.tile_size4) - (constants.room.tile_unit * 4))
-		then
-			character_over = true
-		end
-	end
+	local was_supported = self.visible
+		and player.on_vertical_elevator
+		and player.vertical_elevator_id == self.id
 
 	local target = self.path[self.going_to]
 	local vertical = self.vertical_to_point[self.going_to]
@@ -70,15 +56,10 @@ function elevator:update_motion()
 		delta_x = -2
 	end
 	local delta_y = move_vertical(self, target, vertical)
-	if character_over and delta_y ~= 0 then
-		player.on_vertical_elevator = true
-	end
 
-	if character_over and (delta_x ~= 0 or delta_y ~= 0) then
+	if was_supported and (delta_x ~= 0 or delta_y ~= 0) then
 		player.x = player.x + delta_x
-		if standing_on_top then
-			player.y = player.y + delta_y
-		end
+		player.y = player.y + delta_y
 	end
 	if self.visible and delta_y ~= 0 then
 		player:resolve_overlap_with_elevator(self, previous_y)
@@ -99,6 +80,12 @@ function elevator:update_motion()
 	self.collider.enabled = self.visible
 
 	if self.visible then
+		local standing_on_top = player.y == (self.y - constants.player.height)
+			and player:has_feet_over_elevator_top(self, player.x)
+		if standing_on_top then
+			player.next_vertical_elevator = true
+			player.next_vertical_elevator_id = self.id
+		end
 		player:try_room_switches_from_position()
 	end
 end
