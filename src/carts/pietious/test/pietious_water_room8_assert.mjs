@@ -186,12 +186,14 @@ function runAssert(engine, logger) {
 		transition_trace = {}
 		player.x = surface_probe.x
 		player.y = surface_probe.y
-		local dry_to_surface_changed = player:update_water_state()
+		player:update_water_state()
+		local dry_to_surface_changed = player.previous_water_state ~= player.water_state
 		local surface_previous_state = player.previous_water_state
 
 		player.x = body_probe.x
 		player.y = body_probe.y
-		local surface_to_body_changed = player:update_water_state()
+		player:update_water_state()
+		local surface_to_body_changed = player.previous_water_state ~= player.water_state
 		local body_previous_state = player.previous_water_state
 		player.walk_speed_accum = 0
 		local water_walk_dx_1 = player:get_walk_dx()
