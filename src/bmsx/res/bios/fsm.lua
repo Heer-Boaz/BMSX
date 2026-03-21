@@ -83,16 +83,20 @@
 -- 6. COMPOUND STATE AUTO-ENTRY (enter_initial_substate_chain).
 --    When a state with substates is entered (either on transition or on
 --    machine start), the runtime calls enter_initial_substate_chain() which
---    recursively descends into the initial substate, activating timelines and
---    calling entering_state at each level.  This ensures that entering a
---    compound state like /shrine always also enters /shrine/entering without
---    the caller needing to know the internal structure.
+--    recursively enters the active child tree: the current main child plus
+--    any concurrent siblings.  It activates timelines and calls
+--    entering_state before descending into each active child.  This ensures
+--    that entering a compound state like /shrine always also enters
+--    /shrine/entering, and that concurrent regions are initialized before the
+--    first update/draw.
 --
 -- 7. CONCURRENT REGIONS (is_concurrent = true).
 --    A state marked is_concurrent runs in parallel with the main (non-concurrent)
---    substate.  It has its own state machine lifecycle (update, event dispatch)
---    but shares the same target object.  During dispatch_event, the current
---    main child is dispatched first, then all concurrent siblings.  During
+--    substate.  It has its own state machine lifecycle (entry, update, event
+--    dispatch) but shares the same target object.  When the parent state
+--    becomes active, the runtime enters the current main child first and then
+--    enters all concurrent siblings.  During dispatch_event, the current main
+--    child is dispatched first, then all concurrent siblings.  During
 --    update(), the main child runs first, then concurrent siblings.
 --    Example: player's sword region runs alongside the movement states.
 --
@@ -639,6 +643,20 @@ function state:is_root()
 	return not self.parent
 end
 
+function state:is_active()
+	if self:is_root() then
+		return true
+	end
+	local parent = self.parent
+	if not parent:is_active() then
+		return false
+	end
+	if parent.current_id == self.localdef_id then
+		return true
+	end
+	return self.definition.is_concurrent and parent.states[self.localdef_id] == self
+end
+
 function state:make_id()
 	if self:is_root() then
 		return self.target_id .. '.' .. self.localdef_id
@@ -789,45 +807,73 @@ function state:deactivate_timelines()
 	end
 end
 
+local function append_active_child_states(ctx, out)
+	local states = ctx.states
+	if not states or next(states) == nil then
+		return out
+	end
+	local current_id = ctx.current_id
+	if not current_id then
+		return out
+	end
+	local current = states[current_id]
+	if not current then
+		error('current child "' .. tostring(current_id) .. '" not found in "' .. tostring(ctx.id) .. '".')
+	end
+	out[#out + 1] = current
+	for id, child in pairs(states) do
+		if id ~= current_id and child.definition.is_concurrent then
+			out[#out + 1] = child
+		end
+	end
+	return out
+end
+
+function state:enter_child_state(child)
+	local child_def = child.definition
+	self:with_critical_section(function()
+		child:activate_timelines()
+		local enter_child = child_def.entering_state
+		local next_state
+		if enter_child then
+			next_state = enter_child(self.target, child)
+		end
+		child:transition_to_next_state_if_provided(next_state)
+	end)
+end
+
 function state:start()
 	self:activate_timelines()
 	self:enter_initial_substate_chain()
 end
 
--- enter_initial_substate_chain: recursively enters the initial substate
+-- enter_initial_substate_chain: recursively enters the active child tree
 -- after a compound state is entered.  Called from start() (machine boot) and
 -- transition_to_state() (on transition into a state that has substates).
--- Runs each level's entering_state in a critical section to queue any
--- transitions triggered by the callback.  After the entering_state callback,
--- descends into the next initial substate.  Finally syncs target state tags.
+-- The current main child is entered first, followed by concurrent siblings.
+-- After each active child is entered, the runtime descends into that child's
+-- own active substate tree.  Finally syncs target state tags.
 function state:enter_initial_substate_chain()
-	local start_state_id = self.definition.initial
-	if not start_state_id then
+	if not self:is_active() then
 		return
 	end
 	if not self.states or next(self.states) == nil then
 		return
 	end
-	if self.current_id ~= start_state_id then
+	if not self.current_id then
 		return
 	end
-	local start_instance = self.states[start_state_id]
-	if not start_instance then
-		error('enter_initial_substate_chain(): start state "' .. tostring(start_state_id) .. '" not found in state machine "' .. tostring(self.id) .. '".')
-	end
-	local start_state_def = start_instance.definition
-
-	self:with_critical_section(function()
-		start_instance:activate_timelines()
-		local enter_start = start_state_def.entering_state
-		local start_next
-		if enter_start then
-			start_next = enter_start(self.target, start_instance)
+	local active_children = append_active_child_states(self, {})
+	for i = 1, #active_children do
+		if not self:is_active() then
+			return
 		end
-		start_instance:transition_to_next_state_if_provided(start_next)
-	end)
-
-	start_instance:enter_initial_substate_chain()
+		local child = active_children[i]
+		if child.definition.is_concurrent or self.current_id == child.localdef_id then
+			self:enter_child_state(child)
+			child:enter_initial_substate_chain()
+		end
+	end
 	self.root:sync_target_state_tags()
 end
 
