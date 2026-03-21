@@ -1718,7 +1718,7 @@ function player:apply_air_move(dx, dy, include_elevator_collision)
 	local moved_x, collided_x = self:apply_side_probe_horizontal_move(dx)
 
 	local next_y = old_y + dy
-	if dy > 0 and self:try_snap_to_elevator_platform(self.x, next_y) then
+	if dy > 0 and (not self.on_vertical_elevator) and self:try_snap_to_elevator_platform(self.x, next_y) then
 	else
 		self.y = next_y
 	end
