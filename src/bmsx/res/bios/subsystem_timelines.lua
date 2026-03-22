@@ -4,7 +4,12 @@ local timeline_dispatch = require("timeline_dispatch")
 local function apply_frame(target, frame)
 	for k, v in pairs(frame) do
 		if type(v) == "table" then
-			apply_frame(target[k], v)
+			local child = target[k]
+			if type(child) ~= "table" then
+				child = {}
+				target[k] = child
+			end
+			apply_frame(child, v)
 		else
 			target[k] = v
 		end

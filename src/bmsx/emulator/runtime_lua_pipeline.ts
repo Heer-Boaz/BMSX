@@ -218,7 +218,9 @@ function restoreMachineState(runtime: Runtime, snapshot: RuntimeState): void {
 			runtime.cpu.decodeTaggedValueBufferEntry(snapshot.moduleCacheValues, index),
 		);
 	}
-	runtime.interpreter.packageLoadedTable.clear();
+	for (const [key] of runtime.interpreter.packageLoadedTable.entriesArray()) {
+		runtime.interpreter.packageLoadedTable.delete(key);
+	}
 	runtime.randomSeedValue = snapshot.randomSeed;
 	runtime.pendingCall = snapshot.pendingCall;
 }
@@ -419,6 +421,7 @@ export function resetLuaInteroperabilityState(runtime: Runtime): void {
 	runtime.luaGenericChunksExecuted.clear();
 	runtime.handledLuaErrors = new WeakSet<object>();
 	runtime.luaFunctionRedirectCache.clear();
+	runtime.resetNativeInteropCaches();
 	setLuaTableCaseInsensitiveKeys(runtime.canonicalization !== 'none');
 }
 

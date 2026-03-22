@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -27,9 +28,10 @@ struct Upvalue;
 struct CallFrame;
 struct GCObject;
 
-void registerRuntimeObjectRef(uint32_t objectRefId, GCObject* object);
-void unregisterRuntimeObjectRef(uint32_t objectRefId);
-GCObject* resolveRuntimeObjectRef(uint32_t objectRefId);
+void registerRuntimeObjectRef(ObjectHandleTable& handleTable, uint32_t objectRefId, GCObject* object);
+void unregisterRuntimeObjectRef(ObjectHandleTable& handleTable, uint32_t objectRefId);
+GCObject* resolveRuntimeObjectRef(const ObjectHandleTable& handleTable, uint32_t objectRefId);
+const std::unordered_map<uint32_t, GCObject*>& getRuntimeObjectRegistry(const ObjectHandleTable& handleTable);
 
 /**
  * Source range in Lua code for debugging/error reporting.
@@ -169,37 +171,8 @@ private:
 
 class RuntimeStringPool {
 public:
-	explicit RuntimeStringPool(ObjectHandleTable& handleTable)
-		: m_handleTable(handleTable) {
-	}
-
-	StringId intern(std::string_view value) {
-		auto entry = std::make_unique<InternedString>();
-		const StringMetadata metadata = analyzeStringMetadata(value);
-		const ObjectAllocation allocation = m_handleTable.allocateObject(
-			static_cast<uint32_t>(HeapObjectType::String),
-			STRING_OBJECT_HEADER_SIZE + metadata.byteLength);
-		const auto* bytes = reinterpret_cast<const u8*>(value.data());
-		m_handleTable.writeU32(allocation.addr + STRING_OBJECT_HASH_LO_OFFSET, metadata.hashLo);
-		m_handleTable.writeU32(allocation.addr + STRING_OBJECT_HASH_HI_OFFSET, metadata.hashHi);
-		m_handleTable.writeU32(allocation.addr + STRING_OBJECT_BYTE_LENGTH_OFFSET, metadata.byteLength);
-		m_handleTable.writeU32(allocation.addr + STRING_OBJECT_CODEPOINT_COUNT_OFFSET, static_cast<uint32_t>(metadata.codepointCount));
-		m_handleTable.writeBytes(allocation.addr + STRING_OBJECT_DATA_OFFSET, bytes, value.size());
-		entry->id = allocation.id;
-		entry->value.assign(value.data(), value.size());
-		entry->byteLength = metadata.byteLength;
-		entry->codepointCount = metadata.codepointCount;
-		entry->hashLo = metadata.hashLo;
-		entry->hashHi = metadata.hashHi;
-		if (allocation.id >= m_entries.size()) {
-			m_entries.resize(static_cast<size_t>(allocation.id) + 1);
-		}
-		m_entries[allocation.id] = std::move(entry);
-		if (allocation.id >= m_nextId) {
-			m_nextId = allocation.id + 1;
-		}
-		return allocation.id;
-	}
+	RuntimeStringPool(ObjectHandleTable& handleTable, GcHeap& gcHeap);
+	StringId intern(std::string_view value);
 
 	const std::string& toString(StringId id) const {
 		return get(id).value;
@@ -230,7 +203,7 @@ public:
 	}
 
 	void reserveHandles(StringId minHandle) {
-		m_handleTable.reserveHandles(minHandle);
+		m_handleTable->reserveHandles(minHandle);
 		if (minHandle > m_nextId) {
 			if (m_entries.size() < static_cast<size_t>(minHandle)) {
 				m_entries.resize(static_cast<size_t>(minHandle));
@@ -254,27 +227,33 @@ private:
 		return *entry;
 	}
 
-	const InternedString* restoreFromHandle(StringId id) const {
-		const ObjectHandleEntry handle = m_handleTable.readEntry(id);
-		if (handle.type != static_cast<uint32_t>(HeapObjectType::String)) {
-			throw std::runtime_error("RuntimeStringPool: handle is not a string object.");
-		}
+		const InternedString* restoreFromHandle(StringId id) const {
+			const ObjectHandleEntry handle = m_handleTable->readEntry(id);
+			if (handle.type != static_cast<uint32_t>(HeapObjectType::String)) {
+				throw std::runtime_error(
+					"RuntimeStringPool: handle " + std::to_string(id)
+					+ " is not a string object (type=" + std::to_string(handle.type)
+					+ ", flags=" + std::to_string(handle.flags)
+					+ ", addr=" + std::to_string(handle.addr) + ")."
+				);
+			}
 		if (id >= m_entries.size()) {
 			m_entries.resize(static_cast<size_t>(id) + 1);
 		}
 		auto entry = std::make_unique<InternedString>();
 		entry->id = id;
-		entry->hashLo = m_handleTable.readU32(handle.addr + STRING_OBJECT_HASH_LO_OFFSET);
-		entry->hashHi = m_handleTable.readU32(handle.addr + STRING_OBJECT_HASH_HI_OFFSET);
-		entry->byteLength = m_handleTable.readU32(handle.addr + STRING_OBJECT_BYTE_LENGTH_OFFSET);
-		entry->codepointCount = static_cast<int>(m_handleTable.readU32(handle.addr + STRING_OBJECT_CODEPOINT_COUNT_OFFSET));
+		entry->hashLo = m_handleTable->readU32(handle.addr + STRING_OBJECT_HASH_LO_OFFSET);
+		entry->hashHi = m_handleTable->readU32(handle.addr + STRING_OBJECT_HASH_HI_OFFSET);
+		entry->byteLength = m_handleTable->readU32(handle.addr + STRING_OBJECT_BYTE_LENGTH_OFFSET);
+		entry->codepointCount = static_cast<int>(m_handleTable->readU32(handle.addr + STRING_OBJECT_CODEPOINT_COUNT_OFFSET));
 		entry->value.resize(entry->byteLength);
-		m_handleTable.readBytes(handle.addr + STRING_OBJECT_DATA_OFFSET, reinterpret_cast<uint8_t*>(entry->value.data()), entry->byteLength);
+		m_handleTable->readBytes(handle.addr + STRING_OBJECT_DATA_OFFSET, reinterpret_cast<uint8_t*>(entry->value.data()), entry->byteLength);
 		m_entries[id] = std::move(entry);
 		return m_entries[id].get();
 	}
 
-	ObjectHandleTable& m_handleTable;
+	ObjectHandleTable* m_handleTable;
+	GcHeap* m_gcHeap;
 	StringId m_nextId = 1;
 	mutable std::vector<std::unique_ptr<InternedString>> m_entries;
 };
@@ -384,11 +363,11 @@ inline StringId asStringId(Value v) {
 	return static_cast<StringId>(valuePayload(v));
 }
 
-Table* asTable(Value v);
-Closure* asClosure(Value v);
-NativeFunction* asNativeFunction(Value v);
-NativeObject* asNativeObject(Value v);
-Upvalue* asUpvalue(Value v);
+Table* asTable(Value v, const GcHeap& heap);
+Closure* asClosure(Value v, const GcHeap& heap);
+NativeFunction* asNativeFunction(Value v, const GcHeap& heap);
+NativeObject* asNativeObject(Value v, const GcHeap& heap);
+Upvalue* asUpvalue(Value v, const GcHeap& heap);
 
 inline bool valueIsString(Value v) {
 	return valueIsTagged(v) && valueTag(v) == ValueTag::String;
@@ -473,9 +452,6 @@ struct ValueEq {
 		if (valueIsNumber(lhs) && valueIsNumber(rhs)) {
 			double leftNum = valueToNumber(lhs);
 			double rightNum = valueToNumber(rhs);
-			if (leftNum != leftNum && rightNum != rightNum) {
-				return true;
-			}
 			return leftNum == rightNum;
 		}
 		if (valueIsString(lhs) && valueIsString(rhs)) {
@@ -489,6 +465,7 @@ struct ValueEq {
  * Native function signature - takes args, writes results into out buffer.
  */
 using NativeFunctionInvoke = std::function<void(const std::vector<Value>&, std::vector<Value>&)>;
+using NativeBridgeMark = std::function<void(GcHeap&)>;
 
 enum class ObjType : uint8_t {
 	Table,
@@ -500,8 +477,6 @@ enum class ObjType : uint8_t {
 
 struct GCObject {
 	ObjType type;
-	bool marked = false;
-	GCObject* next = nullptr;
 	uint32_t runtimeRefId = 0;
 };
 
@@ -509,10 +484,11 @@ struct GCObject {
  * Native function wrapper for C++ functions callable from Lua.
  */
 struct NativeFunction : GCObject {
-	std::string name;
-	uint16_t cycleBase = 20;
-	uint8_t cyclePerArg = 2;
-	uint8_t cyclePerRet = 1;
+	explicit NativeFunction(ObjectHandleTable& handleTable)
+		: handleTable(handleTable) {
+	}
+
+	ObjectHandleTable& handleTable;
 
 	void invoke(const std::vector<Value>& args, std::vector<Value>& out) const;
 };
@@ -521,7 +497,11 @@ struct NativeFunction : GCObject {
  * Native object wrapper for exposing C++ objects to Lua.
  */
 struct NativeObject : GCObject {
-	uint32_t metatableRefId = 0;
+	explicit NativeObject(ObjectHandleTable& handleTable)
+		: handleTable(handleTable) {
+	}
+
+	ObjectHandleTable& handleTable;
 
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value) const;
@@ -596,15 +576,9 @@ struct DecodedInstruction {
 };
 
 struct Upvalue : GCObject {
-	bool open = false;
-	int index = 0;
-	int frameDepth = -1;
-	Value value = valueNil();
 };
 
 struct Closure : GCObject {
-	int protoIndex = 0;
-	std::vector<uint32_t> upvalueRefIds;
 };
 
 /**
@@ -720,116 +694,40 @@ public:
 	void set(const Value& key, const Value& value);
 	int length() const;
 	void clear();
-	void rehydrateStoreViews();
 	template <typename Fn>
 	void forEachEntry(Fn&& fn) const {
-		m_arrayStore.forEachPresent([&fn](size_t index, Value value) {
+		const size_t arrayCapacity = arrayStoreCapacity();
+		for (size_t index = 0; index < arrayCapacity; ++index) {
+			const Value value = readArraySlot(index);
+			if (isNil(value)) {
+				continue;
+			}
 			fn(valueNumber(static_cast<double>(index + 1)), value);
-		});
-		m_hashStore.forEachPresent([&fn](size_t, const HashNode& node) {
-			fn(node.key, node.value);
-		});
+		}
+		const size_t hashCapacity = hashStoreCapacity();
+		for (size_t index = 0; index < hashCapacity; ++index) {
+			const Value key = readHashNodeKey(index);
+			if (isNil(key)) {
+				continue;
+			}
+			fn(key, readHashNodeValue(index));
+		}
 	}
 	std::vector<std::pair<Value, Value>> entries() const;
 	std::optional<std::pair<Value, Value>> nextEntry(const Value& after) const;
 
-	Table* getMetatable() const { return m_metatable; }
-	void setMetatable(Table* mt) {
-		m_metatable = mt;
-		syncTableMetadata();
-	}
-	uint32_t objectId() const { return m_objectId; }
+	Table* getMetatable() const;
+	void setMetatable(Table* mt);
+	uint32_t objectId() const { return runtimeRefId; }
 
 private:
-	struct HashNode {
-		Value key = valueNil();
-		Value value = valueNil();
-		int next = -1;
-	};
-
-	struct ArrayStoreView {
-		std::vector<Value> values;
-
-		void resize(size_t size) {
-			values.assign(size, valueNil());
-		}
-
-		size_t capacity() const {
-			return values.size();
-		}
-
-		bool has(size_t index) const {
-			return !isNil(values[index]);
-		}
-
-		const Value& read(size_t index) const {
-			return values[index];
-		}
-
-		Value& slot(size_t index) {
-			return values[index];
-		}
-
-		void clear() {
-			values.clear();
-		}
-
-		template <typename Fn>
-		void forEachPresent(Fn&& fn) const {
-			for (size_t index = 0; index < values.size(); ++index) {
-				if (isNil(values[index])) {
-					continue;
-				}
-				fn(index, values[index]);
-			}
-		}
-	};
-
-	struct HashStoreView {
-		std::vector<HashNode> nodes;
-		int free = -1;
-
-		void resize(size_t size) {
-			nodes.assign(size, HashNode{});
-			free = size > 0 ? static_cast<int>(size) - 1 : -1;
-		}
-
-		size_t capacity() const {
-			return nodes.size();
-		}
-
-		HashNode& node(size_t index) {
-			return nodes[index];
-		}
-
-		const HashNode& node(size_t index) const {
-			return nodes[index];
-		}
-
-		void clear() {
-			nodes.clear();
-			free = -1;
-		}
-
-		template <typename Fn>
-		void forEachPresent(Fn&& fn) const {
-			for (size_t index = 0; index < nodes.size(); ++index) {
-				if (isNil(nodes[index].key)) {
-					continue;
-				}
-				fn(index, nodes[index]);
-			}
-		}
-	};
-
+	uint32_t objectAddr() const;
 	bool tryGetArrayIndex(const Value& key, int& outIndex) const;
 	bool hasArrayIndex(size_t index) const;
 	void updateArrayLengthFrom(size_t startIndex);
 	size_t hashValue(const Value& key) const;
 	bool keyEquals(const Value& a, const Value& b) const;
 	int findNodeIndex(const Value& key) const;
-	HashNode* getNode(const Value& key);
-	HashNode* getMainNode(const Value& key);
 	int getFreeIndex();
 	void rehash(const Value& key);
 	void resize(size_t newArraySize, size_t newHashSize);
@@ -837,26 +735,43 @@ private:
 	void rawSet(const Value& key, const Value& value);
 	void insertHash(const Value& key, const Value& value);
 	void removeFromHash(const Value& key);
-	void syncObjectState();
-	void syncTableMetadata();
-	void syncStoreMetadata();
-	void writeArraySlot(size_t index);
-	void writeHashNode(size_t index);
+	uint32_t readMetatableId() const;
+	void writeMetatableId(uint32_t metatableId);
+	uint32_t readArrayStoreId() const;
+	uint32_t readHashStoreId() const;
+	size_t readArrayLength() const;
+	void writeArrayLength(size_t length);
+	uint32_t arrayStoreAddr() const;
+	uint32_t hashStoreAddr() const;
+	size_t arrayStoreCapacity() const;
+	size_t readArrayStoreCapacity(uint32_t arrayStoreAddr) const;
+	size_t hashStoreCapacity() const;
+	size_t readHashStoreCapacity(uint32_t hashStoreAddr) const;
+	int hashStoreFreeIndex() const;
+	int readHashStoreFreeIndexAt(uint32_t hashStoreAddr) const;
+	void writeHashStoreFreeIndexAt(uint32_t hashStoreAddr, int freeIndex);
+	uint32_t arraySlotAddr(size_t index) const;
+	uint32_t arraySlotAddrAt(uint32_t arrayStoreAddr, size_t index) const;
+	Value readArraySlot(size_t index) const;
+	Value readArraySlotAt(uint32_t arrayStoreAddr, size_t index) const;
+	void writeArraySlot(size_t index, const Value& value);
+	uint32_t hashNodeAddrAt(uint32_t hashStoreAddr, size_t index) const;
+	Value readHashNodeKey(size_t index) const;
+	Value readHashNodeKeyAt(uint32_t hashStoreAddr, size_t index) const;
+	Value readHashNodeValue(size_t index) const;
+	Value readHashNodeValueAt(uint32_t hashStoreAddr, size_t index) const;
+	int readHashNodeNext(size_t index) const;
+	int readHashNodeNextAt(uint32_t hashStoreAddr, size_t index) const;
+	void writeHashNode(size_t index, const Value& key, const Value& value, int next);
+	void writeHashNodeAt(uint32_t hashStoreAddr, size_t index, const Value& key, const Value& value, int next);
+	void writeHashNodeNextAt(uint32_t hashStoreAddr, size_t index, int next);
+	void clearTaggedValueAt(uint32_t addr);
+	void clearHashNodeAt(uint32_t hashStoreAddr, size_t index);
 	void writeTaggedValue(uint32_t addr, const Value& value);
 	Value readTaggedValue(uint32_t addr) const;
 
-	ArrayStoreView m_arrayStore;
-	size_t m_arrayLength = 0;
-	HashStoreView m_hashStore;
-	Table* m_metatable = nullptr;
 	GcHeap& m_gcHeap;
 	ObjectHandleTable& m_handleTable;
-	uint32_t m_objectId = 0;
-	uint32_t m_objectAddr = 0;
-	uint32_t m_arrayStoreId = 0;
-	uint32_t m_arrayStoreAddr = 0;
-	uint32_t m_hashStoreId = 0;
-	uint32_t m_hashStoreAddr = 0;
 	const RuntimeStringPool& m_stringPool;
 };
 
@@ -874,13 +789,21 @@ public:
 
 	template <typename T, typename... Args>
 	T* allocateWithRamSize(ObjType type, uint32_t ramSizeBytes, Args&&... args) {
+		struct ConstructionScope {
+			GcHeap& heap;
+			explicit ConstructionScope(GcHeap& value)
+				: heap(value) {
+				heap.beginConstructionScope();
+			}
+			~ConstructionScope() {
+				heap.endConstructionScope();
+			}
+		} constructionScope(*this);
 		auto* obj = new T(std::forward<Args>(args)...);
 		obj->type = type;
-		obj->marked = false;
-		obj->next = m_objects;
 		if (type == ObjType::Table) {
 			auto* table = reinterpret_cast<Table*>(obj);
-			obj->runtimeRefId = table->objectId() != 0 ? table->objectId() : m_nextRuntimeRefId++;
+			obj->runtimeRefId = table->objectId();
 		} else {
 			uint32_t heapType = 0;
 			switch (type) {
@@ -898,22 +821,14 @@ public:
 					break;
 				case ObjType::Table:
 					break;
+				}
+				obj->runtimeRefId = allocateHandleObject(heapType, ramSizeBytes).id;
 			}
-			obj->runtimeRefId = m_handleTable.allocateObject(heapType, ramSizeBytes).id;
+			registerRuntimeObjectRef(m_handleTable, obj->runtimeRefId, obj);
+			return obj;
 		}
-		if (obj->runtimeRefId >= m_nextRuntimeRefId) {
-			m_nextRuntimeRefId = obj->runtimeRefId + 1;
-		}
-		m_objects = obj;
-		m_runtimeRefs[obj->runtimeRefId] = obj;
-		registerRuntimeObjectRef(obj->runtimeRefId, obj);
-		m_bytesAllocated += sizeof(T);
-		if (m_bytesAllocated > m_nextGC) {
-			m_collectRequested = true;
-		}
-		return obj;
-	}
 
+	ObjectAllocation allocateHandleObject(uint32_t type, uint32_t ramSizeBytes, uint32_t flags = 0);
 	void requestCollection() { m_collectRequested = true; }
 	bool needsCollection() const { return m_collectRequested; }
 	void collect();
@@ -923,27 +838,43 @@ public:
 	GCObject* resolveRuntimeRef(uint32_t runtimeRefId) const;
 	template <typename Fn>
 	void forEachRuntimeRef(Fn&& fn) const {
-		for (const auto& entry : m_runtimeRefs) {
+		for (const auto& entry : getRuntimeObjectRegistry(m_handleTable)) {
 			fn(entry.first, entry.second);
 		}
 	}
 
-	void setRootMarker(std::function<void(GcHeap&)> marker) { m_rootMarker = std::move(marker); }
+		void setRootMarker(std::function<void(GcHeap&)> marker) { m_rootMarker = std::move(marker); }
+		void beginConstructionScope();
+		void endConstructionScope();
+		void beginPinnedHandleScope();
+		void endPinnedHandleScope();
+		void pinHandleRoot(uint32_t handleId);
+		void beginPinnedValueScope();
+		void endPinnedValueScope();
+		void pinValueRoot(Value value);
 
-private:
+	private:
+		void pinConstructionHandle(uint32_t handleId);
+	void markHandle(uint32_t handleId);
+	void compactObjectMemory();
 	void trace();
 	void sweep();
 	void destroyObject(GCObject* obj);
 
 	ObjectHandleTable& m_handleTable;
-	GCObject* m_objects = nullptr;
 	std::vector<GCObject*> m_grayStack;
-	size_t m_bytesAllocated = 0;
-	size_t m_nextGC = 1024 * 1024;
-	uint32_t m_nextRuntimeRefId = 1;
-	std::unordered_map<uint32_t, GCObject*> m_runtimeRefs;
-	bool m_collectRequested = false;
-	std::function<void(GcHeap&)> m_rootMarker;
+	std::vector<uint32_t> m_liveHandleIds;
+		std::unordered_set<uint32_t> m_liveHandleSet;
+		std::unordered_set<uint32_t> m_tracedObjectSet;
+		std::vector<uint32_t> m_constructionHandleIds;
+		std::vector<size_t> m_constructionScopeOffsets;
+		std::vector<uint32_t> m_pinnedHandleIds;
+		std::vector<size_t> m_pinnedHandleScopeOffsets;
+		std::vector<Value> m_pinnedValues;
+		std::vector<size_t> m_pinnedValueScopeOffsets;
+		size_t m_nextGCHeapBytes = 1024 * 1024;
+		bool m_collectRequested = false;
+		std::function<void(GcHeap&)> m_rootMarker;
 };
 
 class CPU {
@@ -965,7 +896,7 @@ public:
 	void setExternalRootMarker(std::function<void(GcHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }
 
-	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn);
+	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeBridgeMark mark = nullptr);
 	Value createNativeObject(
 		void* raw,
 		std::function<Value(const Value&)> get,
@@ -988,7 +919,10 @@ public:
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
 	bool hasFrames() const { return !m_frames.empty(); }
+	GcHeap& heap() { return m_heap; }
 	const GcHeap& heap() const { return m_heap; }
+	void pinActiveValueScratch(const std::vector<Value>* values);
+	void unpinActiveValueScratch(const std::vector<Value>* values);
 	std::optional<SourceRange> getDebugRange(int pc) const;
 	std::vector<std::pair<int, int>> getCallStack() const;
 	int getFrameRegisterCount(int frameIndex) const;
@@ -1042,10 +976,6 @@ private:
 
 	void decodeProgram();
 	void markRoots(GcHeap& heap);
-	void syncNativeObjectState(NativeObject* native);
-	void syncClosureObjectState(Closure* closure);
-	void syncUpvalueObjectState(Upvalue* upvalue);
-	void rehydrateRuntimeObjects();
 
 	Program* m_program = nullptr;
 	ProgramMetadata* m_metadata = nullptr;
@@ -1053,8 +983,8 @@ private:
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
 	Memory& m_memory;
 	ObjectHandleTable& m_handleTable;
-	RuntimeStringPool m_stringPool;
 	GcHeap m_heap;
+	RuntimeStringPool m_stringPool;
 	std::function<void(GcHeap&)> m_externalRootMarker;
 
 	std::vector<Value> m_returnScratch;
@@ -1062,6 +992,7 @@ private:
 	static constexpr size_t MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;
 	std::vector<std::vector<Value>> m_nativeArgPool;
 	static constexpr size_t MAX_POOLED_NATIVE_ARG_ARRAYS = 32;
+	std::vector<const std::vector<Value>*> m_activeValueScratch;
 
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;
 	static constexpr int MAX_POOLED_FRAMES = 32;

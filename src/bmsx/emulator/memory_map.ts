@@ -64,8 +64,8 @@ export let RAM_USED_END = RAM_BASE + RAM_SIZE;
 
 export type MemoryMapSpecs = {
 	ram_bytes?: number;
-	string_handle_count?: number;
-	string_heap_bytes?: number;
+	object_handle_count?: number;
+	gc_heap_bytes?: number;
 	asset_table_bytes?: number;
 	asset_data_bytes?: number;
 	atlas_slot_bytes?: number;
@@ -147,8 +147,8 @@ function recomputeMemoryLayout(config: {
 }
 
 export function configureMemoryMap(specs?: MemoryMapSpecs): void {
-	const objectHandleCount = resolvePositiveInteger(specs?.string_handle_count ?? DEFAULT_OBJECT_HANDLE_COUNT, 'string_handle_count');
-	const gcHeapBytes = resolvePositiveInteger(specs?.string_heap_bytes ?? DEFAULT_GC_HEAP_SIZE, 'string_heap_bytes');
+	const objectHandleCount = resolvePositiveInteger(specs?.object_handle_count ?? DEFAULT_OBJECT_HANDLE_COUNT, 'object_handle_count');
+	const gcHeapBytes = resolvePositiveInteger(specs?.gc_heap_bytes ?? DEFAULT_GC_HEAP_SIZE, 'gc_heap_bytes');
 	const assetTableBytes = resolvePositiveInteger(specs?.asset_table_bytes ?? DEFAULT_ASSET_TABLE_SIZE, 'asset_table_bytes');
 	const atlasSlotBytes = resolvePositiveInteger(specs?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE, 'atlas_slot_bytes');
 	const engineAtlasSlotBytes = resolvePositiveInteger(specs?.system_atlas_slot_bytes ?? atlasSlotBytes, 'system_atlas_slot_bytes');

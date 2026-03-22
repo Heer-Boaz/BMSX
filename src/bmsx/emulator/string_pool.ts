@@ -1,5 +1,6 @@
 import {
 	HeapObjectType,
+	type ObjectAllocation,
 	type ObjectHandleTable,
 	STRING_OBJECT_BYTE_LENGTH_OFFSET,
 	STRING_OBJECT_CODEPOINT_COUNT_OFFSET,
@@ -8,6 +9,7 @@ import {
 	STRING_OBJECT_HASH_LO_OFFSET,
 	STRING_OBJECT_HEADER_SIZE,
 } from './object_memory';
+import { registerRuntimeObject, unregisterRuntimeObject } from './runtime_object_registry';
 
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
@@ -23,7 +25,8 @@ type StringMetadata = {
 };
 
 export class StringValue {
-	public readonly id: StringId;
+	public objectId: StringId;
+	public objectAddr: number;
 	public readonly text: string;
 	public readonly byteLength: number;
 	public readonly codepointCount: number;
@@ -31,8 +34,9 @@ export class StringValue {
 	public readonly hashHi: number;
 	public readonly hash32: number;
 
-	private constructor(id: StringId, text: string, byteLength: number, codepointCount: number, hashLo: number, hashHi: number) {
-		this.id = id;
+	private constructor(objectId: StringId, objectAddr: number, text: string, byteLength: number, codepointCount: number, hashLo: number, hashHi: number) {
+		this.objectId = objectId;
+		this.objectAddr = objectAddr;
 		this.text = text;
 		this.byteLength = byteLength;
 		this.codepointCount = codepointCount;
@@ -41,14 +45,19 @@ export class StringValue {
 		this.hash32 = (hashLo ^ hashHi) >>> 0;
 	}
 
-	public static create(id: StringId, text: string): StringValue {
-		const metadata = analyzeString(text);
-		return new StringValue(id, text, metadata.byteLength, metadata.codepointCount, metadata.hashLo, metadata.hashHi);
+	public get id(): StringId {
+		return this.objectId;
 	}
 
-	public static createFromMetadata(id: StringId, text: string, metadata: StringMetadata): StringValue {
+	public static create(id: StringId, text: string): StringValue {
+		const metadata = analyzeString(text);
+		return new StringValue(id, 0, text, metadata.byteLength, metadata.codepointCount, metadata.hashLo, metadata.hashHi);
+	}
+
+	public static createFromMetadata(id: StringId, objectAddr: number, text: string, metadata: StringMetadata): StringValue {
 		return new StringValue(
 			id,
+			objectAddr,
 			text,
 			metadata.byteLength,
 			metadata.codepointCount,
@@ -92,20 +101,27 @@ export class CompileTimeStringPool {
 export class RuntimeStringPool {
 	private readonly byId: Array<StringValue | null> = [];
 	private nextId = 1;
+	private allocator: (type: number, sizeBytes: number, flags?: number) => ObjectAllocation;
 
 	constructor(private readonly handleTable: ObjectHandleTable) {
+		this.allocator = (type, sizeBytes, flags = 0) => this.handleTable.allocateObject(type, sizeBytes, flags);
+	}
+
+	public setAllocator(allocator: (type: number, sizeBytes: number, flags?: number) => ObjectAllocation): void {
+		this.allocator = allocator;
 	}
 
 	public intern(text: string): StringValue {
 		const metadata = analyzeString(text);
-		const allocation = this.handleTable.allocateObject(HeapObjectType.String, STRING_OBJECT_HEADER_SIZE + metadata.byteLength);
+		const allocation = this.allocator(HeapObjectType.String, STRING_OBJECT_HEADER_SIZE + metadata.byteLength);
 		this.handleTable.writeU32(allocation.addr + STRING_OBJECT_HASH_LO_OFFSET, metadata.hashLo);
 		this.handleTable.writeU32(allocation.addr + STRING_OBJECT_HASH_HI_OFFSET, metadata.hashHi);
 		this.handleTable.writeU32(allocation.addr + STRING_OBJECT_BYTE_LENGTH_OFFSET, metadata.byteLength);
 		this.handleTable.writeU32(allocation.addr + STRING_OBJECT_CODEPOINT_COUNT_OFFSET, metadata.codepointCount);
 		this.handleTable.writeBytes(allocation.addr + STRING_OBJECT_DATA_OFFSET, metadata.bytes);
-		const entry = StringValue.createFromMetadata(allocation.id, text, metadata);
+		const entry = StringValue.createFromMetadata(allocation.id, allocation.addr, text, metadata);
 		this.byId[allocation.id] = entry;
+		registerRuntimeObject(this.handleTable, entry, allocation.id);
 		if (allocation.id >= this.nextId) {
 			this.nextId = allocation.id + 1;
 		}
@@ -141,7 +157,11 @@ export class RuntimeStringPool {
 
 	public clearRuntimeCache(): void {
 		for (let index = 0; index < this.byId.length; index += 1) {
-			this.byId[index] = null;
+			const value = this.byId[index];
+			if (value) {
+				unregisterRuntimeObject(this.handleTable, value);
+				this.byId[index] = null;
+			}
 		}
 	}
 
@@ -156,7 +176,9 @@ export class RuntimeStringPool {
 		const codepointCount = this.handleTable.readU32(entry.addr + STRING_OBJECT_CODEPOINT_COUNT_OFFSET);
 		const bytes = this.handleTable.readBytes(entry.addr + STRING_OBJECT_DATA_OFFSET, byteLength);
 		const text = TEXT_DECODER.decode(bytes);
-		return StringValue.createFromMetadata(id, text, { bytes, byteLength, codepointCount, hashLo, hashHi });
+		const value = StringValue.createFromMetadata(id, entry.addr, text, { bytes, byteLength, codepointCount, hashLo, hashHi });
+		registerRuntimeObject(this.handleTable, value, id);
+		return value;
 	}
 }
 

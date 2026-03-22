@@ -212,7 +212,7 @@ static ModulationInput parseModulationInputTable(const Table& table) {
 		if (!valueIsTable(v)) {
 			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is not an array");
 		}
-		const Table& arr = *asTable(v);
+		const Table& arr = *asTable(v, Runtime::instance().cpu().heap());
 		const int len = arr.length();
 		if (len < 2) {
 			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is missing bounds");
@@ -240,7 +240,7 @@ static ModulationInput parseModulationInputTable(const Table& table) {
 		if (!valueIsTable(filterVal)) {
 			throw BMSX_RUNTIME_ERROR("Modulation filter must be a table");
 		}
-		const Table& ftable = *asTable(filterVal);
+		const Table& ftable = *asTable(filterVal, Runtime::instance().cpu().heap());
 		FilterModulationParams filter;
 		Value typeVal = ftable.get(key("type"));
 		if (valueIsString(typeVal)) {
@@ -272,7 +272,7 @@ static ParsedAudioOptions parseAudioOptions(const Value& value) {
 	if (!valueIsTable(value)) {
 		throw BMSX_RUNTIME_ERROR("audio options must be a table");
 	}
-	const Table& table = *asTable(value);
+	const Table& table = *asTable(value, Runtime::instance().cpu().heap());
 	auto key = [](std::string_view name) {
 		return Runtime::instance().canonicalizeIdentifier(name);
 	};
@@ -320,12 +320,12 @@ static ParsedAudioOptions parseAudioOptions(const Value& value) {
 		if (!valueIsTable(modulationParamsVal)) {
 			throw BMSX_RUNTIME_ERROR("modulation_params must be a table");
 		}
-		out.request.params = parseModulationInputTable(*asTable(modulationParamsVal));
+		out.request.params = parseModulationInputTable(*asTable(modulationParamsVal, Runtime::instance().cpu().heap()));
 	} else if (!isNil(paramsVal)) {
 		if (!valueIsTable(paramsVal)) {
 			throw BMSX_RUNTIME_ERROR("params must be a table");
 		}
-		out.request.params = parseModulationInputTable(*asTable(paramsVal));
+		out.request.params = parseModulationInputTable(*asTable(paramsVal, Runtime::instance().cpu().heap()));
 	} else if (hasModulationFields(table)) {
 		out.request.params = parseModulationInputTable(table);
 	}
@@ -363,7 +363,7 @@ static MusicTransitionSync parseMusicSyncValue(const Value& value) {
 	if (!valueIsTable(value)) {
 		throw BMSX_RUNTIME_ERROR("music sync must be a string or table");
 	}
-	const Table& table = *asTable(value);
+	const Table& table = *asTable(value, Runtime::instance().cpu().heap());
 	Value delayVal = table.get(key("delay_ms"));
 	if (!isNil(delayVal)) {
 		if (!valueIsNumber(delayVal)) {
@@ -405,7 +405,7 @@ static std::optional<MusicTransitionRequest> parseMusicTransition(const Value& v
 	if (!valueIsTable(value)) {
 		throw BMSX_RUNTIME_ERROR("music options must be a table");
 	}
-	const Table& table = *asTable(value);
+	const Table& table = *asTable(value, Runtime::instance().cpu().heap());
 	auto key = [](std::string_view name) {
 		return Runtime::instance().canonicalizeIdentifier(name);
 	};
@@ -476,7 +476,7 @@ static std::optional<i32> parseStopMusicFadeMs(const Value& value) {
 	if (!valueIsTable(value)) {
 		throw BMSX_RUNTIME_ERROR("stop_music options must be a table");
 	}
-	const Table& table = *asTable(value);
+	const Table& table = *asTable(value, Runtime::instance().cpu().heap());
 	auto key = [](std::string_view name) {
 		return Runtime::instance().canonicalizeIdentifier(name);
 	};
@@ -693,7 +693,28 @@ Value Api::get_player_input_handle(int playerIndex) {
 		},
 		nullptr,
 		nullptr,
-		[getModifiersStateFn, getButtonStateFn, getButtonRepeatStateFn, consumeButtonFn](GcHeap& heap) {
+		[
+			getModifiersStateKey,
+			getButtonStateKey,
+			getButtonRepeatStateKey,
+			consumeButtonKey,
+			getModifiersStateIdentifierKey,
+			getButtonStateIdentifierKey,
+			getButtonRepeatStateIdentifierKey,
+			consumeButtonIdentifierKey,
+			getModifiersStateFn,
+			getButtonStateFn,
+			getButtonRepeatStateFn,
+			consumeButtonFn
+		](GcHeap& heap) {
+			heap.markValue(getModifiersStateKey);
+			heap.markValue(getButtonStateKey);
+			heap.markValue(getButtonRepeatStateKey);
+			heap.markValue(consumeButtonKey);
+			heap.markValue(getModifiersStateIdentifierKey);
+			heap.markValue(getButtonStateIdentifierKey);
+			heap.markValue(getButtonRepeatStateIdentifierKey);
+			heap.markValue(consumeButtonIdentifierKey);
 			heap.markValue(getModifiersStateFn);
 			heap.markValue(getButtonStateFn);
 			heap.markValue(getButtonRepeatStateFn);
@@ -914,7 +935,7 @@ m_runtime.registerNativeFunction("put_rectfillcolor", [this, key](const std::vec
 			if (!valueIsTable(optionsValue)) {
 				throw BMSX_RUNTIME_ERROR("put_rectfillcolor options must be a table.");
 			}
-			auto* options = asTable(optionsValue);
+			auto* options = asTable(optionsValue, m_runtime.cpu().heap());
 			Value layerValue = options->get(key("layer"));
 			if (!isNil(layerValue)) {
 				layer = resolve_layer(layerValue);
@@ -936,14 +957,14 @@ m_runtime.registerNativeFunction("put_sprite", [this, key, asText](const std::ve
 		submission.scale = {1.0f, 1.0f};
 
 		if (args.size() > 4 && valueIsTable(args[4])) {
-			auto* options = asTable(args[4]);
+			auto* options = asTable(args[4], m_runtime.cpu().heap());
 			Value scaleValue = options->get(key("scale"));
 			if (!isNil(scaleValue)) {
 				if (valueIsNumber(scaleValue)) {
 					float scale = static_cast<float>(asNumber(scaleValue));
 					submission.scale = {scale, scale};
 				} else if (valueIsTable(scaleValue)) {
-					auto* scaleTable = asTable(scaleValue);
+					auto* scaleTable = asTable(scaleValue, m_runtime.cpu().heap());
 					float scaleX = static_cast<float>(asNumber(scaleTable->get(key("x"))));
 					float scaleY = static_cast<float>(asNumber(scaleTable->get(key("y"))));
 					submission.scale = {scaleX, scaleY};
@@ -977,7 +998,7 @@ m_runtime.registerNativeFunction("put_glyphs", [this, key, asText](const std::ve
 	if (valueIsString(glyphValue)) {
 		glyphs.push_back(asText(glyphValue));
 		} else {
-			auto* tbl = asTable(glyphValue);
+			auto* tbl = asTable(glyphValue, m_runtime.cpu().heap());
 			int length = tbl->length();
 			for (int i = 1; i <= length; ++i) {
 				glyphs.push_back(asText(tbl->get(valueNumber(static_cast<double>(i)))));
@@ -995,7 +1016,7 @@ m_runtime.registerNativeFunction("put_glyphs", [this, key, asText](const std::ve
 		submission.font = m_font.get();
 
 		if (args.size() > 4 && valueIsTable(args[4])) {
-			auto* options = asTable(args[4]);
+			auto* options = asTable(args[4], m_runtime.cpu().heap());
 			Value colorValue = options->get(key("color"));
 			if (!isNil(colorValue)) {
 				submission.color = resolve_color(colorValue);
@@ -1067,7 +1088,7 @@ m_runtime.registerNativeFunction("put_mesh", [this, key](const std::vector<Value
 	MeshRenderSubmission submission;
 	submission.matrix = read_matrix(args.at(1));
 	if (args.size() > 2 && valueIsTable(args[2])) {
-		auto* options = asTable(args[2]);
+		auto* options = asTable(args[2], m_runtime.cpu().heap());
 			Value receiveShadow = options->get(key("receive_shadow"));
 			if (!isNil(receiveShadow)) {
 				submission.receive_shadow = valueIsBool(receiveShadow) && valueToBool(receiveShadow);
@@ -1083,7 +1104,7 @@ m_runtime.registerNativeFunction("put_particle", [this, key](const std::vector<V
 	submission.size = static_cast<float>(asNumber(args.at(1)));
 	submission.color = resolve_color(args.at(2));
 		if (args.size() > 3 && valueIsTable(args[3])) {
-			auto* options = asTable(args[3]);
+			auto* options = asTable(args[3], m_runtime.cpu().heap());
 			Value ambientMode = options->get(key("ambient_mode"));
 			Value ambientFactor = options->get(key("ambient_factor"));
 			if (!isNil(ambientMode)) {
@@ -1181,7 +1202,7 @@ m_runtime.registerNativeFunction("consume_action", [this, asText](const std::vec
 	if (valueIsString(actionVal)) {
 		action = asText(actionVal);
 	} else if (valueIsTable(actionVal)) {
-		auto* tbl = asTable(actionVal);
+		auto* tbl = asTable(actionVal, m_runtime.cpu().heap());
 		auto key = [this](std::string_view name) { return m_runtime.canonicalizeIdentifier(name); };
 		Value def = tbl->get(key("definition"));
 		if (!isNil(def) && valueIsString(def)) {
@@ -1200,7 +1221,7 @@ m_runtime.registerNativeFunction("consume_action", [this, asText](const std::vec
 			}
 		}
 	} else if (valueIsNativeObject(actionVal)) {
-		auto* obj = asNativeObject(actionVal);
+		auto* obj = asNativeObject(actionVal, m_runtime.cpu().heap());
 		Value def = obj->get(valueNumber(1.0));
 		if (!isNil(def) && valueIsString(def)) {
 			action = asText(def);
@@ -1481,7 +1502,7 @@ void Api::write(const std::string& text, std::optional<int> x, std::optional<int
 		if (!valueIsTable(options)) {
 			throw BMSX_RUNTIME_ERROR("write options must be a table.");
 		}
-		auto* table = asTable(options);
+		auto* table = asTable(options, m_runtime.cpu().heap());
 		auto key = [this](std::string_view name) {
 			return m_runtime.canonicalizeIdentifier(name);
 		};
@@ -1824,7 +1845,7 @@ BFont* Api::resolve_font(const Value& value) {
 	if (!valueIsNativeObject(value)) {
 		throw BMSX_RUNTIME_ERROR("Font must be a native font handle.");
 	}
-	NativeObject* obj = asNativeObject(value);
+	NativeObject* obj = asNativeObject(value, m_runtime.cpu().heap());
 	if (obj->raw() == m_font.get()) {
 		return m_font.get();
 	}
@@ -1847,12 +1868,12 @@ BFont* Api::create_font(const Value& definition) {
 	auto asText = [this](Value value) -> const std::string& {
 		return m_runtime.cpu().stringPool().toString(asStringId(value));
 	};
-	Table* definitionTable = asTable(definition);
+	Table* definitionTable = asTable(definition, m_runtime.cpu().heap());
 	Value glyphsValue = definitionTable->get(key("glyphs"));
 	if (!valueIsTable(glyphsValue)) {
 		throw BMSX_RUNTIME_ERROR("create_font(definition) requires definition.glyphs to be a table.");
 	}
-	Table* glyphsTable = asTable(glyphsValue);
+	Table* glyphsTable = asTable(glyphsValue, m_runtime.cpu().heap());
 	GlyphMap glyphMap;
 	glyphsTable->forEachEntry([&](const Value& glyphKey, const Value& glyphValue) {
 		if (!valueIsString(glyphKey)) {
@@ -1891,7 +1912,7 @@ Color Api::resolve_color(const Value& value) {
 	if (!valueIsTable(value)) {
 		throw BMSX_RUNTIME_ERROR("Color expects a number or table.");
 	}
-	auto* tbl = asTable(value);
+	auto* tbl = asTable(value, m_runtime.cpu().heap());
 	Color color;
 	color.r = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("r"))));
 	color.g = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("g"))));
@@ -1912,7 +1933,7 @@ RenderLayer Api::resolve_layer(const Value& value) {
 std::vector<f32> Api::read_polygon(const Value& value) {
 	std::vector<f32> points;
 	if (valueIsTable(value)) {
-		auto* tbl = asTable(value);
+		auto* tbl = asTable(value, m_runtime.cpu().heap());
 		const int length = tbl->length();
 		for (int i = 1; i + 1 <= length; i += 2) {
 			float x = static_cast<float>(asNumber(tbl->get(valueNumber(static_cast<double>(i)))));
@@ -1923,7 +1944,7 @@ std::vector<f32> Api::read_polygon(const Value& value) {
 		return points;
 	}
 	if (valueIsNativeObject(value)) {
-		auto* obj = asNativeObject(value);
+		auto* obj = asNativeObject(value, m_runtime.cpu().heap());
 		for (int i = 1; ; i += 2) {
 			Value xValue = obj->get(valueNumber(static_cast<double>(i)));
 			Value yValue = obj->get(valueNumber(static_cast<double>(i + 1)));
@@ -1942,7 +1963,7 @@ std::vector<f32> Api::read_polygon(const Value& value) {
 
 Vec3 Api::read_vec3(const Value& value) {
 	if (valueIsTable(value)) {
-		auto* tbl = asTable(value);
+		auto* tbl = asTable(value, m_runtime.cpu().heap());
 		Vec3 out;
 		out.x = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("x"))));
 		out.y = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("y"))));
@@ -1950,7 +1971,7 @@ Vec3 Api::read_vec3(const Value& value) {
 		return out;
 	}
 	if (valueIsNativeObject(value)) {
-		auto* obj = asNativeObject(value);
+		auto* obj = asNativeObject(value, m_runtime.cpu().heap());
 		Vec3 out;
 		out.x = static_cast<f32>(asNumber(obj->get(valueNumber(1.0))));
 		out.y = static_cast<f32>(asNumber(obj->get(valueNumber(2.0))));
@@ -1963,14 +1984,14 @@ Vec3 Api::read_vec3(const Value& value) {
 std::array<f32, 16> Api::read_matrix(const Value& value) {
 	std::array<f32, 16> matrix{};
 	if (valueIsTable(value)) {
-		auto* tbl = asTable(value);
+		auto* tbl = asTable(value, m_runtime.cpu().heap());
 		for (int i = 0; i < 16; ++i) {
 			matrix[static_cast<size_t>(i)] = static_cast<f32>(asNumber(tbl->get(valueNumber(static_cast<double>(i + 1)))));
 		}
 		return matrix;
 	}
 	if (valueIsNativeObject(value)) {
-		auto* obj = asNativeObject(value);
+		auto* obj = asNativeObject(value, m_runtime.cpu().heap());
 		for (int i = 0; i < 16; ++i) {
 			matrix[static_cast<size_t>(i)] = static_cast<f32>(asNumber(obj->get(valueNumber(static_cast<double>(i + 1)))));
 		}

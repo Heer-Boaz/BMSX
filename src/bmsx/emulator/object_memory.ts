@@ -30,7 +30,10 @@ export const CLOSURE_OBJECT_PROTO_INDEX_OFFSET = HEAP_OBJECT_HEADER_SIZE;
 export const CLOSURE_OBJECT_UPVALUE_COUNT_OFFSET = CLOSURE_OBJECT_PROTO_INDEX_OFFSET + 4;
 export const CLOSURE_OBJECT_UPVALUE_IDS_OFFSET = CLOSURE_OBJECT_UPVALUE_COUNT_OFFSET + 4;
 export const CLOSURE_OBJECT_HEADER_SIZE = CLOSURE_OBJECT_UPVALUE_IDS_OFFSET;
-export const NATIVE_OBJECT_METATABLE_ID_OFFSET = HEAP_OBJECT_HEADER_SIZE;
+export const NATIVE_FUNCTION_OBJECT_BRIDGE_ID_OFFSET = HEAP_OBJECT_HEADER_SIZE;
+export const NATIVE_FUNCTION_OBJECT_HEADER_SIZE = NATIVE_FUNCTION_OBJECT_BRIDGE_ID_OFFSET + 4;
+export const NATIVE_OBJECT_BRIDGE_ID_OFFSET = HEAP_OBJECT_HEADER_SIZE;
+export const NATIVE_OBJECT_METATABLE_ID_OFFSET = NATIVE_OBJECT_BRIDGE_ID_OFFSET + 4;
 export const NATIVE_OBJECT_HEADER_SIZE = NATIVE_OBJECT_METATABLE_ID_OFFSET + 4;
 export const UPVALUE_OBJECT_STATE_OFFSET = HEAP_OBJECT_HEADER_SIZE;
 export const UPVALUE_OBJECT_FRAME_DEPTH_OFFSET = UPVALUE_OBJECT_STATE_OFFSET + 4;
@@ -89,11 +92,19 @@ export type ObjectAllocation = {
 };
 
 export type ObjectHandleTableState = {
-	nextHandle: number;
 	heapUsedBytes: number;
 	handleTableBytes: Uint8Array;
 	heapBytes: Uint8Array;
 };
+
+const OBJECT_HANDLE_ENTRY_FLAG_FREE = 1;
+const HANDLE_TABLE_HEADER_NEXT_HANDLE_OFFSET = 0;
+const HANDLE_TABLE_HEADER_FREE_LIST_HEAD_OFFSET = 4;
+const HANDLE_TABLE_HEADER_ALLOC_FLOOR_OFFSET = 8;
+
+function alignObjectSize(sizeBytes: number): number {
+	return (sizeBytes + 3) & ~3;
+}
 
 class ObjectHeap {
 	private cursor = GC_HEAP_BASE;
@@ -123,30 +134,80 @@ class ObjectHeap {
 
 export class ObjectHandleTable {
 	private readonly heap: ObjectHeap;
-	private nextHandle = 1;
 
 	constructor(private readonly memory: Memory) {
 		this.heap = new ObjectHeap();
+		this.resetHeap();
 	}
 
 	public reserveHandles(minHandle: number): void {
 		if (minHandle > OBJECT_HANDLE_COUNT) {
 			throw new Error(`[ObjectHandleTable] Reserve exceeds handle capacity: ${minHandle}.`);
 		}
-		if (minHandle > this.nextHandle) {
-			this.nextHandle = minHandle;
+		if (minHandle > this.allocFloor()) {
+			this.writeAllocFloor(minHandle);
 		}
+		if (minHandle > this.nextHandle()) {
+			this.writeNextHandle(minHandle);
+		}
+		this.rebuildFreeList(this.nextHandle());
+	}
+
+	public compact(liveHandleIds: number[]): void {
+		const liveSet = new Set<number>();
+		for (let index = 0; index < liveHandleIds.length; index += 1) {
+			const id = liveHandleIds[index];
+			if (id !== 0) {
+				liveSet.add(id);
+			}
+		}
+		const liveEntries: Array<{ id: number; entry: ObjectHandleEntry }> = [];
+		for (const id of liveSet) {
+			liveEntries.push({ id, entry: this.readEntry(id) });
+		}
+		liveEntries.sort((left, right) => left.entry.addr - right.entry.addr);
+		let totalLiveBytes = 0;
+		for (let index = 0; index < liveEntries.length; index += 1) {
+			totalLiveBytes += liveEntries[index].entry.sizeBytes;
+		}
+		const compactedBytes = new Uint8Array(totalLiveBytes);
+		let offset = 0;
+		let addr = GC_HEAP_BASE;
+		for (let index = 0; index < liveEntries.length; index += 1) {
+			const live = liveEntries[index];
+			compactedBytes.set(this.readBytes(live.entry.addr, live.entry.sizeBytes), offset);
+			this.writeEntry(live.id, addr, live.entry.sizeBytes, live.entry.type, live.entry.flags, live.entry.reserved);
+			offset += live.entry.sizeBytes;
+			addr += live.entry.sizeBytes;
+		}
+		if (compactedBytes.byteLength > 0) {
+			this.memory.writeBytes(GC_HEAP_BASE, compactedBytes);
+		}
+		this.rebuildFreeList(this.nextHandle(), liveSet);
+		this.heap.restore(totalLiveBytes);
+	}
+
+	public usedHeapBytes(): number {
+		return this.heap.usedBytes();
 	}
 
 	public allocateObject(type: number, sizeBytes: number, flags: number = 0): ObjectAllocation {
-		if (this.nextHandle >= OBJECT_HANDLE_COUNT) {
-			throw new Error('[ObjectHandleTable] Out of object handles.');
+		sizeBytes = alignObjectSize(sizeBytes);
+		const freeHead = this.freeListHead();
+		let id = freeHead;
+		if (id !== 0) {
+			const freeEntry = this.readEntry(id);
+			this.writeFreeListHead(freeEntry.reserved);
+		} else {
+			id = this.nextHandle();
+			if (id >= OBJECT_HANDLE_COUNT) {
+				throw new Error('[ObjectHandleTable] Out of object handles.');
+			}
+			this.writeNextHandle(id + 1);
 		}
 		const addr = this.heap.allocate(sizeBytes);
 		this.writeHeapHeader(addr, type, flags, sizeBytes);
-		const id = this.nextHandle;
 		this.writeEntry(id, addr, sizeBytes, type, flags, 0);
-		this.nextHandle += 1;
 		return {
 			id,
 			addr,
@@ -194,25 +255,67 @@ export class ObjectHandleTable {
 
 	public resetHeap(): void {
 		this.heap.reset();
-		this.nextHandle = 1;
+		this.writeEntry(0, 1, 0, 1, 0, 0);
 	}
 
 	public captureState(): ObjectHandleTableState {
-		const nextHandle = this.nextHandle;
 		const heapUsedBytes = this.heap.usedBytes();
 		return {
-			nextHandle,
 			heapUsedBytes,
-			handleTableBytes: this.memory.readBytes(OBJECT_HANDLE_TABLE_BASE, nextHandle * OBJECT_HANDLE_ENTRY_SIZE),
-			heapBytes: this.memory.readBytes(GC_HEAP_BASE, heapUsedBytes),
+			handleTableBytes: this.memory.readBytes(OBJECT_HANDLE_TABLE_BASE, this.nextHandle() * OBJECT_HANDLE_ENTRY_SIZE).slice(),
+			heapBytes: this.memory.readBytes(GC_HEAP_BASE, heapUsedBytes).slice(),
 		};
 	}
 
 	public restoreState(state: ObjectHandleTableState): void {
 		this.memory.writeBytes(OBJECT_HANDLE_TABLE_BASE, state.handleTableBytes);
 		this.memory.writeBytes(GC_HEAP_BASE, state.heapBytes);
-		this.nextHandle = state.nextHandle;
 		this.heap.restore(state.heapUsedBytes);
+	}
+
+	private nextHandle(): number {
+		return this.memory.readU32(OBJECT_HANDLE_TABLE_BASE + HANDLE_TABLE_HEADER_NEXT_HANDLE_OFFSET);
+	}
+
+	private writeNextHandle(value: number): void {
+		this.memory.writeU32(OBJECT_HANDLE_TABLE_BASE + HANDLE_TABLE_HEADER_NEXT_HANDLE_OFFSET, value >>> 0);
+	}
+
+	private freeListHead(): number {
+		return this.memory.readU32(OBJECT_HANDLE_TABLE_BASE + HANDLE_TABLE_HEADER_FREE_LIST_HEAD_OFFSET);
+	}
+
+	private writeFreeListHead(value: number): void {
+		this.memory.writeU32(OBJECT_HANDLE_TABLE_BASE + HANDLE_TABLE_HEADER_FREE_LIST_HEAD_OFFSET, value >>> 0);
+	}
+
+	private allocFloor(): number {
+		return this.memory.readU32(OBJECT_HANDLE_TABLE_BASE + HANDLE_TABLE_HEADER_ALLOC_FLOOR_OFFSET);
+	}
+
+	private writeAllocFloor(value: number): void {
+		this.memory.writeU32(OBJECT_HANDLE_TABLE_BASE + HANDLE_TABLE_HEADER_ALLOC_FLOOR_OFFSET, value >>> 0);
+	}
+
+	private rebuildFreeList(nextHandle: number, liveSet: Set<number> = new Set()): void {
+		let freeListHead = 0;
+		const allocFloor = this.allocFloor();
+		for (let id = nextHandle - 1; id >= 1; id -= 1) {
+			if (liveSet.has(id)) {
+				continue;
+			}
+			const entry = this.readEntry(id);
+			if (id >= allocFloor && (entry.type !== 0 || entry.flags === OBJECT_HANDLE_ENTRY_FLAG_FREE)) {
+				this.writeEntry(id, 0, 0, 0, OBJECT_HANDLE_ENTRY_FLAG_FREE, freeListHead);
+				freeListHead = id;
+				continue;
+			}
+			if (entry.type === 0 && entry.flags === 0 && entry.reserved === 0) {
+				continue;
+			}
+			this.writeEntry(id, 0, 0, 0, 0, 0);
+		}
+		this.writeFreeListHead(freeListHead);
 	}
 
 	private writeHeapHeader(addr: number, type: number, flags: number, sizeBytes: number): void {

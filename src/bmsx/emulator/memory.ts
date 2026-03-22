@@ -155,6 +155,12 @@ export class Memory {
 		return this.ioSlots.length;
 	}
 
+	public forEachIoValue(fn: (value: Value) => void): void {
+		for (let index = 0; index < this.ioSlots.length; index += 1) {
+			fn(this.ioSlots[index]);
+		}
+	}
+
 	public resetAssetMemory(): void {
 		const previousDataCursor = this.assetDataCursor;
 		if (previousDataCursor > ASSET_TABLE_BASE) {

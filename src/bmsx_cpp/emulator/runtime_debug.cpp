@@ -254,9 +254,9 @@ std::optional<Value> resolveExpressionValue(
 			? std::string_view(expression).substr(nameStart)
 			: std::string_view(expression).substr(nameStart, nextDot - nameStart);
 		if (valueIsTable(current)) {
-			current = asTable(current)->get(canonicalizeDebugIdentifier(runtime, part));
+			current = asTable(current, runtime.cpu().heap())->get(canonicalizeDebugIdentifier(runtime, part));
 		} else if (valueIsNativeObject(current)) {
-			current = asNativeObject(current)->get(canonicalizeDebugIdentifier(runtime, part));
+			current = asNativeObject(current, runtime.cpu().heap())->get(canonicalizeDebugIdentifier(runtime, part));
 		} else {
 			return std::nullopt;
 		}

@@ -96,11 +96,11 @@ static void parseMachineSpecs(const BinObject& machineObj, RomManifest& manifest
 		if (ramObj.count("ram_bytes")) {
 			manifest.ramBytes = ramObj.at("ram_bytes").toI32();
 		}
-		if (ramObj.count("string_handle_count")) {
-			manifest.stringHandleCount = ramObj.at("string_handle_count").toI32();
+		if (ramObj.count("object_handle_count")) {
+			manifest.objectHandleCount = ramObj.at("object_handle_count").toI32();
 		}
-		if (ramObj.count("string_heap_bytes")) {
-			manifest.stringHeapBytes = ramObj.at("string_heap_bytes").toI32();
+		if (ramObj.count("gc_heap_bytes")) {
+			manifest.gcHeapBytes = ramObj.at("gc_heap_bytes").toI32();
 		}
 		if (ramObj.count("asset_table_bytes")) {
 			manifest.assetTableBytes = ramObj.at("asset_table_bytes").toI32();

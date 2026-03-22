@@ -19,8 +19,8 @@ machine:
             vblank_cycles: 10000
         ram:
             # Breakdown of string_heap, asset_table, and asset_data:
-            string_handle_count: 32768 # 32K
-            string_heap_bytes: 4194304 # 4 MB
+            object_handle_count: 32768 # 32K
+            gc_heap_bytes: 4194304 # 4 MB
             # asset_table_bytes: 34473 # ~34 KB
         vram:
             atlas_slot_bytes: 16777216 # 16 MB

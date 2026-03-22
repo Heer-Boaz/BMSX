@@ -2257,7 +2257,8 @@ export function collectFrameLocals(snapshot: CpuFrameSnapshot[], cpuFrameIndex: 
 	}
 	const result: FrameLocal[] = [];
 	for (const [name, slot] of byName) {
-		result.push({ name, value: wrapRuntimeValueForIntellisense(frame.registers[slot.register]) });
+		const value = runtime.cpu.decodeTaggedValueBufferEntry(frame.registers, slot.register);
+		result.push({ name, value: wrapRuntimeValueForIntellisense(value) });
 	}
 	result.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 	return result;
@@ -2404,7 +2405,7 @@ function resolveRuntimeLocalChainValue(
 		return null;
 	}
 	const rawRegValue = faultSnapshot
-		? faultSnapshot[selectedFrameIndex].registers[selectedSlot.register]
+		? runtime.cpu.decodeTaggedValueBufferEntry(faultSnapshot[selectedFrameIndex].registers, selectedSlot.register)
 		: runtime.cpu.readFrameRegister(selectedFrameIndex, selectedSlot.register);
 	const chained = walkValueChain(wrapRuntimeValueForIntellisense(rawRegValue), parts, 1);
 	if (chained === null) {

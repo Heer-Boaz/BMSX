@@ -88,6 +88,7 @@ import {
 	extendMarshalContext,
 	getOrAssignTableId,
 	getOrCreateAssetsNativeObject,
+	getNativeObjectBacking,
 	getOrCreateNativeObject,
 	nextNativeEntry,
 	toNativeValue,
@@ -931,7 +932,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_ram_size', RAM_SIZE);
 	const maxAssets = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_assets', maxAssets);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_string_handle_count', OBJECT_HANDLE_COUNT - 1);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_object_handle_count', OBJECT_HANDLE_COUNT - 1);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.cycleBudgetPerFrame);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_dither', IO_VDP_DITHER);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_primary_atlas_id', IO_VDP_PRIMARY_ATLAS_ID);
@@ -1114,7 +1115,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		throw new LuaThrownValueError(message);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'setmetatable', createNativeFunction('setmetatable', (args, out) => {
-		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
+		const target = args.length > 0 ? args[0] : null;
+		const isNativeTarget = target !== null && isNativeObject(target);
+		if (!(target instanceof Table) && !isNativeTarget) {
 			throw runtime.createApiRuntimeError('setmetatable expects a table or native value as the first argument.');
 		}
 		let metatable: Table | null = null;
@@ -1124,7 +1127,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			}
 			metatable = args[1] as Table;
 		}
-		const target = args[0];
 		if (target instanceof Table) {
 			target.setMetatable(metatable);
 			out.push(target);
@@ -1134,10 +1136,11 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(target);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'getmetatable', createNativeFunction('getmetatable', (args, out) => {
-		if (args.length === 0 || (!(args[0] instanceof Table) && !isNativeObject(args[0]))) {
+		const target = args.length > 0 ? args[0] : null;
+		const isNativeTarget = target !== null && isNativeObject(target);
+		if (!(target instanceof Table) && !isNativeTarget) {
 			throw runtime.createApiRuntimeError('getmetatable expects a table or native value as the first argument.');
 		}
-		const target = args[0];
 		if (target instanceof Table) {
 			out.push(target.getMetatable());
 			return;
@@ -1909,7 +1912,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			out.push(entry[0], entry[1]);
 			return;
 		}
-		if (isNativeObject(target)) {
+		if (target !== null && isNativeObject(target)) {
 			const entry = nextNativeEntry(runtime, target, keyValue);
 			if (entry === null) {
 				out.push(null);
@@ -1933,8 +1936,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			out.push(nextIndex, value);
 			return;
 		}
-		if (isNativeObject(target)) {
-			const raw = target.raw as object;
+		if (target !== null && isNativeObject(target)) {
+			const raw = getNativeObjectBacking(target);
 			if (Array.isArray(raw)) {
 				const value = (raw as unknown[])[nextIndex - 1];
 				if (value === undefined || value === null) {
@@ -1957,7 +1960,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'next', nextFn);
 	runtimeLuaPipeline.registerGlobal(runtime, 'pairs', createNativeFunction('pairs', (args, out) => {
 		const target = args[0];
-		if (!(target instanceof Table) && !isNativeObject(target)) {
+		if (!(target instanceof Table) && !(target !== null && isNativeObject(target))) {
 			const stack = buildLuaStackFrames(runtime)
 				.map(frame => `${frame.source ?? '<unknown>'}:${frame.line ?? '?'}:${frame.column ?? '?'}`)
 				.join(' <- ');
@@ -1967,7 +1970,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'ipairs', createNativeFunction('ipairs', (args, out) => {
 		const target = args[0];
-		if (!(target instanceof Table) && !isNativeObject(target)) {
+		if (!(target instanceof Table) && !(target !== null && isNativeObject(target))) {
 			throw runtime.createApiRuntimeError('ipairs expects a table or native object.');
 		}
 		out.push(ipairsIterator, target, 0);

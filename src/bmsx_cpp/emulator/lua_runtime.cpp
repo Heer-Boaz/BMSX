@@ -154,7 +154,7 @@ void Runtime::runEngineBuiltinPrelude() {
 		}
 		return false;
 	};
-	auto* engineModule = asTable(requireModule("bios/engine"));
+	auto* engineModule = asTable(requireModule("bios/engine"), m_cpu.heap());
 	for (const char* name : engineBuiltins) {
 		Value key = canonicalizeIdentifier(name);
 		if (isOverrideableBuiltin(name) && !isNil(m_cpu.globals->get(key))) {

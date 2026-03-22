@@ -1,7 +1,7 @@
 import { $ } from '../core/engine_core';
 import { describeInstructionAtPc, formatSourceSnippet, type InstructionOperandDebugInfo } from './disassembler';
 import { valueToString } from './lua_globals';
-import { Table, isNativeObject, type LocalSlotDebug, type SourceRange, type Value } from './cpu';
+import { Table, isNativeObject, type LocalSlotDebug, type SourceRange, type TaggedValueSlotBuffer, type Value } from './cpu';
 import type { LuaSourceRecord } from './lua_sources';
 import type { Runtime } from './runtime';
 import { getWorkspaceCachedSource } from './workspace_cache';
@@ -117,10 +117,16 @@ function resourceSourceForPath(runtime: Runtime, path: string): string | null {
 	return cached !== null ? cached : binding.src;
 }
 
-function formatInstructionOperandDebug(operand: InstructionOperandDebugInfo, registers: ReadonlyArray<Value>): string {
+function formatInstructionOperandDebug(
+	runtime: Runtime,
+	operand: InstructionOperandDebugInfo,
+	registers: TaggedValueSlotBuffer,
+	top: number,
+): string {
 	let text = `${operand.label}=${operand.text}`;
-	if (operand.registerIndex !== undefined && operand.registerIndex < registers.length) {
-		text += `(${formatDebugValue(registers[operand.registerIndex])})`;
+	if (operand.registerIndex !== undefined && operand.registerIndex < top) {
+		const value = runtime.cpu.decodeTaggedValueBufferEntry(registers, operand.registerIndex);
+		text += `(${formatDebugValue(value)})`;
 	}
 	return text;
 }
@@ -165,7 +171,8 @@ function resolveRootExpressionValue(
 	frameIndex: number,
 	protoIndex: number,
 	range: SourceRange,
-	registers: ReadonlyArray<Value>,
+	registers: TaggedValueSlotBuffer,
+	top: number,
 	rootName: string,
 ): { found: boolean; value: Value } {
 	const metadata = runtime.programMetadata;
@@ -176,7 +183,9 @@ function resolveRootExpressionValue(
 		if (slot) {
 			return {
 				found: true,
-				value: slot.register < registers.length ? registers[slot.register] : runtime.cpu.readFrameRegister(frameIndex, slot.register),
+				value: slot.register < top
+					? runtime.cpu.decodeTaggedValueBufferEntry(registers, slot.register)
+					: runtime.cpu.readFrameRegister(frameIndex, slot.register),
 			};
 		}
 	}
@@ -199,11 +208,12 @@ function resolveExpressionValue(
 	frameIndex: number,
 	protoIndex: number,
 	range: SourceRange,
-	registers: ReadonlyArray<Value>,
+	registers: TaggedValueSlotBuffer,
+	top: number,
 	expression: string,
 ): { found: boolean; value: Value } {
 	const parts = expression.split('.');
-	const root = resolveRootExpressionValue(runtime, frameIndex, protoIndex, range, registers, parts[0]);
+	const root = resolveRootExpressionValue(runtime, frameIndex, protoIndex, range, registers, top, parts[0]);
 	if (!root.found) {
 		return root;
 	}
@@ -223,7 +233,13 @@ function resolveExpressionValue(
 	return { found: true, value: current };
 }
 
-function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, source: string, registers: ReadonlyArray<Value>): string[] {
+function collectSourceExpressionDebug(
+	runtime: Runtime,
+	range: SourceRange,
+	source: string,
+	registers: TaggedValueSlotBuffer,
+	top: number,
+): string[] {
 	const callStack = runtime.cpu.getCallStack();
 	if (callStack.length === 0) {
 		return [];
@@ -234,7 +250,7 @@ function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, sour
 	const result: string[] = [];
 	for (let index = 0; index < expressions.length; index += 1) {
 		const expression = expressions[index];
-		const resolved = resolveExpressionValue(runtime, frameIndex, protoIndex, range, registers, expression);
+		const resolved = resolveExpressionValue(runtime, frameIndex, protoIndex, range, registers, top, expression);
 		if (!resolved.found) {
 			continue;
 		}
@@ -246,14 +262,16 @@ function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, sour
 export function logDebugState(runtime: Runtime): void {
 	const debug = runtime.cpu.getDebugState();
 	const instruction = describeInstructionAtPc(runtime.cpu.getProgram(), debug.pc, runtime.programMetadata, { formatStyle: 'assembly' });
-	const operandSummary = instruction.operands.map(operand => formatInstructionOperandDebug(operand, debug.registers)).join(' ');
+	const operandSummary = instruction.operands
+		.map(operand => formatInstructionOperandDebug(runtime, operand, debug.registers, debug.top))
+		.join(' ');
 	console.error(`[Runtime] debug: pc=${instruction.pcText} op=${instruction.opName}${operandSummary.length > 0 ? ` ${operandSummary}` : ''}`);
 	console.error(`[Runtime] debug: instr=${instruction.pcText}: ${instruction.instructionText}`);
 	if (instruction.sourceRange) {
 		const source = resourceSourceForPath(runtime, instruction.sourceRange.path);
 		console.error(`[Runtime] debug: source=${formatDebugSourceLine(instruction.sourceRange, source)}`);
 		if (source !== null) {
-			const expressions = collectSourceExpressionDebug(runtime, instruction.sourceRange, source, debug.registers);
+			const expressions = collectSourceExpressionDebug(runtime, instruction.sourceRange, source, debug.registers, debug.top);
 			if (expressions.length > 0) {
 				console.error(`[Runtime] debug: exprs=${expressions.join(' ')}`);
 			}

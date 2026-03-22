@@ -18,6 +18,17 @@ export interface LuaInteropAdapter {
 }
 type LuaSnapshotContext = { ids: WeakMap<LuaTable, number>; objects: LuaSnapshotObjects; nextId: number };
 
+export function getNativeObjectBacking(target: NativeObject): object {
+	if (target.bridgeRaw === null) {
+		throw new Error('Unknown native object bridge.');
+	}
+	return target.bridgeRaw;
+}
+
+function setNativeObjectBacking(target: NativeObject, raw: object): void {
+	target.bridgeRaw = raw;
+}
+
 export class LuaJsBridge implements LuaInteropAdapter {
 	private readonly luaHandlerCache: LuaHandlerCache;
 	private readonly runtime: Runtime;
@@ -703,6 +714,12 @@ export class LuaJsBridge implements LuaInteropAdapter {
 	}
 }
 
+function createNativeObjectWithBacking(raw: object, handlers: { get: (key: Value) => Value; set: (key: Value, value: Value) => void; len?: () => number }): NativeObject {
+	const wrapper = createNativeObject(handlers);
+	setNativeObjectBacking(wrapper, raw);
+	return wrapper;
+}
+
 export function extendMarshalContext(ctx: LuaMarshalContext, segment: string): LuaMarshalContext {
 	if (!segment) {
 		return ctx;
@@ -897,7 +914,7 @@ export function getOrAssignTableId(runtime: Runtime, table: Table): number {
 }
 
 export function nextNativeEntry(runtime: Runtime, target: NativeObject, after: Value): [Value, Value] | null {
-	const raw = target.raw as object;
+	const raw = getNativeObjectBacking(target);
 	const keys = collectNativeKeys(runtime, raw);
 	if (keys.length === 0) {
 		return null;
@@ -923,11 +940,11 @@ export function nextNativeEntry(runtime: Runtime, target: NativeObject, after: V
 export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
 	const assets = $.assets;
 	const cached = runtime.nativeObjectCache.get(assets);
-	if (cached) {
+	if (cached && !cached.bridgeReleased) {
 		return cached;
 	}
 	const assetMapKeys = new Set<string>(['img', 'audio', 'model', 'data', 'audioevents']);
-	const wrapper = createNativeObject(assets, {
+	const wrapper = createNativeObjectWithBacking(assets, {
 		get: (key) => {
 			const prop = resolveNativeKey(key);
 			if (!prop) {
@@ -964,10 +981,10 @@ export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
 
 export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<string, unknown>): NativeObject {
 	const cached = runtime.nativeObjectCache.get(map);
-	if (cached) {
+	if (cached && !cached.bridgeReleased) {
 		return cached;
 	}
-	const wrapper = createNativeObject(map, {
+	const wrapper = createNativeObjectWithBacking(map, {
 		get: (key) => {
 			const prop = resolveNativeKey(key);
 			if (!prop) {
@@ -1052,7 +1069,7 @@ export function toNativeValue(runtime: Runtime, value: Value, context: LuaMarsha
 		return tableToNative(runtime, value, context, visited);
 	}
 	if (isNativeObject(value)) {
-		return value.raw;
+		return getNativeObjectBacking(value);
 	}
 	if (isNativeFunction(value)) {
 		return (...args: unknown[]) => {
@@ -1090,12 +1107,12 @@ export function wrapNativeResult(runtime: Runtime, result: unknown, out: Value[]
 
 export function getOrCreateNativeObject(runtime: Runtime, value: object): NativeObject {
 	const cached = runtime.nativeObjectCache.get(value);
-	if (cached) {
+	if (cached && !cached.bridgeReleased) {
 		return cached;
 	}
 	const isArray = Array.isArray(value);
 	const arrayValue = isArray ? (value as unknown[]) : null;
-	const wrapper = createNativeObject(value, {
+	const wrapper = createNativeObjectWithBacking(value, {
 		get: (key) => {
 			if (isArray && typeof key === 'number' && Number.isInteger(key) && key >= 1) {
 				const index = key - 1;
@@ -1150,7 +1167,7 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 
 export function getOrCreateNativeFunction(runtime: Runtime, fn: Function): NativeFunction {
 	const cached = runtime.nativeFunctionCache.get(fn);
-	if (cached) {
+	if (cached && !cached.bridgeReleased) {
 		return cached;
 	}
 	const name = resolveNativeTypeName(fn);
@@ -1175,7 +1192,7 @@ export function getOrCreateNativeMethod(runtime: Runtime, target: object, key: s
 		runtime.nativeMemberCache.set(target, bucket);
 	}
 	const cached = bucket.get(key);
-	if (cached) {
+	if (cached && !cached.bridgeReleased) {
 		return cached;
 	}
 	const name = `${resolveNativeTypeName(target)}.${key}`;

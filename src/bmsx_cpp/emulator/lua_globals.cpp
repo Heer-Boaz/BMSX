@@ -15,6 +15,7 @@
 #include <cstring>
 #include <ctime>
 #include <iomanip>
+#include <initializer_list>
 #include <iostream>
 #include <limits>
 #include <regex>
@@ -38,6 +39,49 @@ struct LuaPcallError final : std::exception {
 		return "Lua error value";
 	}
 };
+
+struct ScopedPinnedValues {
+	CPU& cpu;
+	std::vector<Value> values;
+	explicit ScopedPinnedValues(CPU& owner)
+		: cpu(owner) {
+		cpu.pinActiveValueScratch(&values);
+	}
+	~ScopedPinnedValues() {
+		cpu.unpinActiveValueScratch(&values);
+	}
+	void keep(Value value) {
+		values.push_back(value);
+	}
+};
+
+template <typename KeyFn, typename MakeValueFn>
+void setNamedTableField(CPU& cpu, Table* table, const KeyFn& key, std::string_view name, const MakeValueFn& makeValue) {
+	ScopedPinnedValues roots(cpu);
+	roots.keep(valueTable(table));
+	const Value fieldKey = key(name);
+	roots.keep(fieldKey);
+	const Value fieldValue = makeValue();
+	roots.keep(fieldValue);
+	table->set(fieldKey, fieldValue);
+}
+
+template <typename MakeKeyFn, typename MakeValueFn>
+void setComputedTableField(CPU& cpu, Table* table, const MakeKeyFn& makeKey, const MakeValueFn& makeValue) {
+	ScopedPinnedValues roots(cpu);
+	roots.keep(valueTable(table));
+	const Value fieldKey = makeKey();
+	roots.keep(fieldKey);
+	const Value fieldValue = makeValue();
+	roots.keep(fieldValue);
+	table->set(fieldKey, fieldValue);
+}
+
+void markValues(GcHeap& heap, std::initializer_list<Value> values) {
+	for (const Value value : values) {
+		heap.markValue(value);
+	}
+}
 
 std::string formatNonFunctionCallError(Value callee, const CPU& cpu) {
 	std::string message = "Attempted to call a non-function value.";
@@ -170,8 +214,72 @@ std::string utf8_to_lower(const std::string& text) {
 	return out;
 }
 
+std::string formatAssetKeyNumber(double value) {
+	if (value == 0.0) {
+		return "0";
+	}
+	std::ostringstream oss;
+	oss << std::fixed << std::setprecision(0) << value;
+	return oss.str();
+}
+
+std::string formatAssetTokenKey(AssetToken token) {
+	const uint32_t hi = static_cast<uint32_t>((token >> 32) & 0xffffffffu);
+	const uint32_t lo = static_cast<uint32_t>(token & 0xffffffffu);
+	std::ostringstream oss;
+	oss << std::hex << std::nouppercase << std::setfill('0')
+		<< std::setw(8) << hi
+		<< std::setw(8) << lo;
+	return oss.str();
+}
+
+const char* canonicalizationLabel(CanonicalizationType value) {
+	switch (value) {
+		case CanonicalizationType::Upper:
+			return "upper";
+		case CanonicalizationType::Lower:
+			return "lower";
+		case CanonicalizationType::None:
+		default:
+			return "none";
+	}
+}
+
+template <typename Map>
+const typename Map::mapped_type* lookupMergedAssetEntry(const Map& primary, const Map* fallback, AssetToken token) {
+	const auto primaryIt = primary.find(token);
+	if (primaryIt != primary.end()) {
+		return &primaryIt->second;
+	}
+	if (!fallback) {
+		return nullptr;
+	}
+	const auto fallbackIt = fallback->find(token);
+	if (fallbackIt == fallback->end()) {
+		return nullptr;
+	}
+	return &fallbackIt->second;
+}
+
+template <typename Map, typename Fn>
+void forEachMergedAssetEntry(const Map& primary, const Map* fallback, const Fn& fn) {
+	if (fallback) {
+		for (const auto& entry : *fallback) {
+			if (primary.count(entry.first)) {
+				continue;
+			}
+			fn(entry.first, entry.second);
+		}
+	}
+	for (const auto& entry : primary) {
+		fn(entry.first, entry.second);
+	}
+}
+
 Table* buildArrayTable(CPU& cpu, const std::array<f32, 12>& values) {
 	auto* table = cpu.createTable(static_cast<int>(values.size()), 0);
+	ScopedPinnedValues roots(cpu);
+	roots.keep(valueTable(table));
 	for (size_t index = 0; index < values.size(); ++index) {
 		table->set(valueNumber(static_cast<double>(index + 1)), valueNumber(static_cast<double>(values[index])));
 	}
@@ -181,47 +289,53 @@ Table* buildArrayTable(CPU& cpu, const std::array<f32, 12>& values) {
 template <typename KeyFn>
 Table* buildBoundingBoxTable(CPU& cpu, const ImgMeta& meta, const KeyFn& key) {
 	auto* table = cpu.createTable(0, 4);
+	ScopedPinnedValues roots(cpu);
+	roots.keep(valueTable(table));
 	const auto& originalRect = meta.boundingbox.original;
 	const auto& fliphRect = meta.boundingbox.fliph;
 	const auto& flipvRect = meta.boundingbox.flipv;
 	const auto& fliphvRect = meta.boundingbox.fliphv;
 
 	auto* original = cpu.createTable(0, 6);
-	original->set(key("left"), valueNumber(static_cast<double>(originalRect.x)));
-	original->set(key("right"), valueNumber(static_cast<double>(originalRect.x + originalRect.width)));
-	original->set(key("top"), valueNumber(static_cast<double>(originalRect.y)));
-	original->set(key("bottom"), valueNumber(static_cast<double>(originalRect.y + originalRect.height)));
-	original->set(key("width"), valueNumber(static_cast<double>(originalRect.width)));
-	original->set(key("height"), valueNumber(static_cast<double>(originalRect.height)));
+	roots.keep(valueTable(original));
+	setNamedTableField(cpu, original, key, "left", [&] { return valueNumber(static_cast<double>(originalRect.x)); });
+	setNamedTableField(cpu, original, key, "right", [&] { return valueNumber(static_cast<double>(originalRect.x + originalRect.width)); });
+	setNamedTableField(cpu, original, key, "top", [&] { return valueNumber(static_cast<double>(originalRect.y)); });
+	setNamedTableField(cpu, original, key, "bottom", [&] { return valueNumber(static_cast<double>(originalRect.y + originalRect.height)); });
+	setNamedTableField(cpu, original, key, "width", [&] { return valueNumber(static_cast<double>(originalRect.width)); });
+	setNamedTableField(cpu, original, key, "height", [&] { return valueNumber(static_cast<double>(originalRect.height)); });
 
 	auto* fliph = cpu.createTable(0, 6);
-	fliph->set(key("left"), valueNumber(static_cast<double>(fliphRect.x)));
-	fliph->set(key("right"), valueNumber(static_cast<double>(fliphRect.x + fliphRect.width)));
-	fliph->set(key("top"), valueNumber(static_cast<double>(fliphRect.y)));
-	fliph->set(key("bottom"), valueNumber(static_cast<double>(fliphRect.y + fliphRect.height)));
-	fliph->set(key("width"), valueNumber(static_cast<double>(fliphRect.width)));
-	fliph->set(key("height"), valueNumber(static_cast<double>(fliphRect.height)));
+	roots.keep(valueTable(fliph));
+	setNamedTableField(cpu, fliph, key, "left", [&] { return valueNumber(static_cast<double>(fliphRect.x)); });
+	setNamedTableField(cpu, fliph, key, "right", [&] { return valueNumber(static_cast<double>(fliphRect.x + fliphRect.width)); });
+	setNamedTableField(cpu, fliph, key, "top", [&] { return valueNumber(static_cast<double>(fliphRect.y)); });
+	setNamedTableField(cpu, fliph, key, "bottom", [&] { return valueNumber(static_cast<double>(fliphRect.y + fliphRect.height)); });
+	setNamedTableField(cpu, fliph, key, "width", [&] { return valueNumber(static_cast<double>(fliphRect.width)); });
+	setNamedTableField(cpu, fliph, key, "height", [&] { return valueNumber(static_cast<double>(fliphRect.height)); });
 
 	auto* flipv = cpu.createTable(0, 6);
-	flipv->set(key("left"), valueNumber(static_cast<double>(flipvRect.x)));
-	flipv->set(key("right"), valueNumber(static_cast<double>(flipvRect.x + flipvRect.width)));
-	flipv->set(key("top"), valueNumber(static_cast<double>(flipvRect.y)));
-	flipv->set(key("bottom"), valueNumber(static_cast<double>(flipvRect.y + flipvRect.height)));
-	flipv->set(key("width"), valueNumber(static_cast<double>(flipvRect.width)));
-	flipv->set(key("height"), valueNumber(static_cast<double>(flipvRect.height)));
+	roots.keep(valueTable(flipv));
+	setNamedTableField(cpu, flipv, key, "left", [&] { return valueNumber(static_cast<double>(flipvRect.x)); });
+	setNamedTableField(cpu, flipv, key, "right", [&] { return valueNumber(static_cast<double>(flipvRect.x + flipvRect.width)); });
+	setNamedTableField(cpu, flipv, key, "top", [&] { return valueNumber(static_cast<double>(flipvRect.y)); });
+	setNamedTableField(cpu, flipv, key, "bottom", [&] { return valueNumber(static_cast<double>(flipvRect.y + flipvRect.height)); });
+	setNamedTableField(cpu, flipv, key, "width", [&] { return valueNumber(static_cast<double>(flipvRect.width)); });
+	setNamedTableField(cpu, flipv, key, "height", [&] { return valueNumber(static_cast<double>(flipvRect.height)); });
 
 	auto* fliphv = cpu.createTable(0, 6);
-	fliphv->set(key("left"), valueNumber(static_cast<double>(fliphvRect.x)));
-	fliphv->set(key("right"), valueNumber(static_cast<double>(fliphvRect.x + fliphvRect.width)));
-	fliphv->set(key("top"), valueNumber(static_cast<double>(fliphvRect.y)));
-	fliphv->set(key("bottom"), valueNumber(static_cast<double>(fliphvRect.y + fliphvRect.height)));
-	fliphv->set(key("width"), valueNumber(static_cast<double>(fliphvRect.width)));
-	fliphv->set(key("height"), valueNumber(static_cast<double>(fliphvRect.height)));
+	roots.keep(valueTable(fliphv));
+	setNamedTableField(cpu, fliphv, key, "left", [&] { return valueNumber(static_cast<double>(fliphvRect.x)); });
+	setNamedTableField(cpu, fliphv, key, "right", [&] { return valueNumber(static_cast<double>(fliphvRect.x + fliphvRect.width)); });
+	setNamedTableField(cpu, fliphv, key, "top", [&] { return valueNumber(static_cast<double>(fliphvRect.y)); });
+	setNamedTableField(cpu, fliphv, key, "bottom", [&] { return valueNumber(static_cast<double>(fliphvRect.y + fliphvRect.height)); });
+	setNamedTableField(cpu, fliphv, key, "width", [&] { return valueNumber(static_cast<double>(fliphvRect.width)); });
+	setNamedTableField(cpu, fliphv, key, "height", [&] { return valueNumber(static_cast<double>(fliphvRect.height)); });
 
-	table->set(key("original"), valueTable(original));
-	table->set(key("fliph"), valueTable(fliph));
-	table->set(key("flipv"), valueTable(flipv));
-	table->set(key("fliphv"), valueTable(fliphv));
+	setNamedTableField(cpu, table, key, "original", [&] { return valueTable(original); });
+	setNamedTableField(cpu, table, key, "fliph", [&] { return valueTable(fliph); });
+	setNamedTableField(cpu, table, key, "flipv", [&] { return valueTable(flipv); });
+	setNamedTableField(cpu, table, key, "fliphv", [&] { return valueTable(fliphv); });
 	return table;
 }
 
@@ -234,39 +348,43 @@ Table* buildTableArray(CPU& cpu, const std::vector<T>& values, const BuildFn& bu
 template <typename KeyFn>
 Table* buildImgMetaTable(CPU& cpu, const ImgMeta& meta, const KeyFn& key) {
 	auto* table = cpu.createTable(0, 12);
-	table->set(key("atlassed"), valueBool(meta.atlassed));
+	ScopedPinnedValues roots(cpu);
+	roots.keep(valueTable(table));
+	setNamedTableField(cpu, table, key, "atlassed", [&] { return valueBool(meta.atlassed); });
 	if (meta.atlassed) {
-		table->set(key("atlasid"), valueNumber(static_cast<double>(meta.atlasid)));
+		setNamedTableField(cpu, table, key, "atlasid", [&] { return valueNumber(static_cast<double>(meta.atlasid)); });
 	}
-	table->set(key("width"), valueNumber(static_cast<double>(meta.width)));
-	table->set(key("height"), valueNumber(static_cast<double>(meta.height)));
-	table->set(key("texcoords"), valueTable(buildArrayTable(cpu, meta.texcoords)));
-	table->set(key("texcoords_fliph"), valueTable(buildArrayTable(cpu, meta.texcoords_fliph)));
-	table->set(key("texcoords_flipv"), valueTable(buildArrayTable(cpu, meta.texcoords_flipv)));
-	table->set(key("texcoords_fliphv"), valueTable(buildArrayTable(cpu, meta.texcoords_fliphv)));
-	table->set(key("boundingbox"), valueTable(buildBoundingBoxTable(cpu, meta, key)));
+	setNamedTableField(cpu, table, key, "width", [&] { return valueNumber(static_cast<double>(meta.width)); });
+	setNamedTableField(cpu, table, key, "height", [&] { return valueNumber(static_cast<double>(meta.height)); });
+	setNamedTableField(cpu, table, key, "texcoords", [&] { return valueTable(buildArrayTable(cpu, meta.texcoords)); });
+	setNamedTableField(cpu, table, key, "texcoords_fliph", [&] { return valueTable(buildArrayTable(cpu, meta.texcoords_fliph)); });
+	setNamedTableField(cpu, table, key, "texcoords_flipv", [&] { return valueTable(buildArrayTable(cpu, meta.texcoords_flipv)); });
+	setNamedTableField(cpu, table, key, "texcoords_fliphv", [&] { return valueTable(buildArrayTable(cpu, meta.texcoords_fliphv)); });
+	setNamedTableField(cpu, table, key, "boundingbox", [&] { return valueTable(buildBoundingBoxTable(cpu, meta, key)); });
 
 	if (meta.hasCenterpoint) {
 		auto* centerpoint = cpu.createTable(2, 0);
+		roots.keep(valueTable(centerpoint));
 		centerpoint->set(valueNumber(1.0), valueNumber(static_cast<double>(meta.centerX)));
 		centerpoint->set(valueNumber(2.0), valueNumber(static_cast<double>(meta.centerY)));
-		table->set(key("centerpoint"), valueTable(centerpoint));
+		setNamedTableField(cpu, table, key, "centerpoint", [&] { return valueTable(centerpoint); });
 	}
 	if (meta.hitpolygons) {
 		auto* hitTable = cpu.createTable(0, 4);
-		hitTable->set(key("original"), valueTable(buildTableArray(cpu, meta.hitpolygons->original, [&cpu](const std::vector<f32>& poly) {
+		roots.keep(valueTable(hitTable));
+		setNamedTableField(cpu, hitTable, key, "original", [&] { return valueTable(buildTableArray(cpu, meta.hitpolygons->original, [&cpu](const std::vector<f32>& poly) {
 			return buildNumericArrayTable(cpu, poly);
-		})));
-		hitTable->set(key("fliph"), valueTable(buildTableArray(cpu, meta.hitpolygons->fliph, [&cpu](const std::vector<f32>& poly) {
+		})); });
+		setNamedTableField(cpu, hitTable, key, "fliph", [&] { return valueTable(buildTableArray(cpu, meta.hitpolygons->fliph, [&cpu](const std::vector<f32>& poly) {
 			return buildNumericArrayTable(cpu, poly);
-		})));
-		hitTable->set(key("flipv"), valueTable(buildTableArray(cpu, meta.hitpolygons->flipv, [&cpu](const std::vector<f32>& poly) {
+		})); });
+		setNamedTableField(cpu, hitTable, key, "flipv", [&] { return valueTable(buildTableArray(cpu, meta.hitpolygons->flipv, [&cpu](const std::vector<f32>& poly) {
 			return buildNumericArrayTable(cpu, poly);
-		})));
-		hitTable->set(key("fliphv"), valueTable(buildTableArray(cpu, meta.hitpolygons->fliphv, [&cpu](const std::vector<f32>& poly) {
+		})); });
+		setNamedTableField(cpu, hitTable, key, "fliphv", [&] { return valueTable(buildTableArray(cpu, meta.hitpolygons->fliphv, [&cpu](const std::vector<f32>& poly) {
 			return buildNumericArrayTable(cpu, poly);
-		})));
-		table->set(key("hitpolygons"), valueTable(hitTable));
+		})); });
+		setNamedTableField(cpu, table, key, "hitpolygons", [&] { return valueTable(hitTable); });
 	}
 	return table;
 }
@@ -274,20 +392,88 @@ Table* buildImgMetaTable(CPU& cpu, const ImgMeta& meta, const KeyFn& key) {
 template <typename KeyFn>
 Table* buildAudioMetaTable(CPU& cpu, const AudioMeta& meta, const KeyFn& key) {
 	auto* table = cpu.createTable(0, 4);
-	table->set(key("audiotype"), valueString(cpu.internString(audioTypeToString(meta.type))));
-	table->set(key("priority"), valueNumber(static_cast<double>(meta.priority)));
+	ScopedPinnedValues roots(cpu);
+	roots.keep(valueTable(table));
+	setNamedTableField(cpu, table, key, "audiotype", [&] { return valueString(cpu.internString(audioTypeToString(meta.type))); });
+	setNamedTableField(cpu, table, key, "priority", [&] { return valueNumber(static_cast<double>(meta.priority)); });
 	if (meta.loopStart) {
-		table->set(key("loop"), valueNumber(static_cast<double>(*meta.loopStart)));
+		setNamedTableField(cpu, table, key, "loop", [&] { return valueNumber(static_cast<double>(*meta.loopStart)); });
 	}
 	if (meta.loopEnd) {
-		table->set(key("loopEnd"), valueNumber(static_cast<double>(*meta.loopEnd)));
+		setNamedTableField(cpu, table, key, "loopEnd", [&] { return valueNumber(static_cast<double>(*meta.loopEnd)); });
 	}
 	return table;
+}
+
+template <typename KeyFn>
+void appendRomAssetFields(CPU& cpu, Table* table, const RomAssetInfo& info, std::string_view resid, const KeyFn& key) {
+	setNamedTableField(cpu, table, key, "resid", [&] { return valueString(cpu.internString(resid)); });
+	if (!info.type.empty()) {
+		setNamedTableField(cpu, table, key, "type", [&] { return valueString(cpu.internString(info.type)); });
+	}
+	if (info.op) {
+		setNamedTableField(cpu, table, key, "op", [&] { return valueString(cpu.internString(*info.op)); });
+	}
+	if (info.start) {
+		setNamedTableField(cpu, table, key, "start", [&] { return valueNumber(static_cast<double>(*info.start)); });
+	}
+	if (info.end) {
+		setNamedTableField(cpu, table, key, "end", [&] { return valueNumber(static_cast<double>(*info.end)); });
+	}
+	if (info.compiledStart) {
+		setNamedTableField(cpu, table, key, "compiled_start", [&] { return valueNumber(static_cast<double>(*info.compiledStart)); });
+	}
+	if (info.compiledEnd) {
+		setNamedTableField(cpu, table, key, "compiled_end", [&] { return valueNumber(static_cast<double>(*info.compiledEnd)); });
+	}
+	if (info.metabufferStart) {
+		setNamedTableField(cpu, table, key, "metabuffer_start", [&] { return valueNumber(static_cast<double>(*info.metabufferStart)); });
+	}
+	if (info.metabufferEnd) {
+		setNamedTableField(cpu, table, key, "metabuffer_end", [&] { return valueNumber(static_cast<double>(*info.metabufferEnd)); });
+	}
+	if (info.textureStart) {
+		setNamedTableField(cpu, table, key, "texture_start", [&] { return valueNumber(static_cast<double>(*info.textureStart)); });
+	}
+	if (info.textureEnd) {
+		setNamedTableField(cpu, table, key, "texture_end", [&] { return valueNumber(static_cast<double>(*info.textureEnd)); });
+	}
+	if (info.sourcePath) {
+		setNamedTableField(cpu, table, key, "source_path", [&] { return valueString(cpu.internString(*info.sourcePath)); });
+	}
+	if (info.updateTimestamp) {
+		setNamedTableField(cpu, table, key, "update_timestamp", [&] { return valueNumber(static_cast<double>(*info.updateTimestamp)); });
+	}
+	if (info.payloadId) {
+		setNamedTableField(cpu, table, key, "payload_id", [&] { return valueString(cpu.internString(*info.payloadId)); });
+	}
+}
+
+template <typename KeyFn>
+Table* buildImgAssetTable(CPU& cpu, const ImgAsset& imgAsset, const KeyFn& key) {
+	auto* imgEntry = cpu.createTable(0, 8);
+	ScopedPinnedValues roots(cpu);
+	roots.keep(valueTable(imgEntry));
+	appendRomAssetFields(cpu, imgEntry, imgAsset.rom, imgAsset.id, key);
+	setNamedTableField(cpu, imgEntry, key, "imgmeta", [&] { return valueTable(buildImgMetaTable(cpu, imgAsset.meta, key)); });
+	return imgEntry;
+}
+
+template <typename KeyFn>
+Table* buildAudioAssetTable(CPU& cpu, const AudioAsset& audioAsset, const KeyFn& key) {
+	auto* audioEntry = cpu.createTable(0, 6);
+	ScopedPinnedValues roots(cpu);
+	roots.keep(valueTable(audioEntry));
+	appendRomAssetFields(cpu, audioEntry, audioAsset.rom, audioAsset.id, key);
+	setNamedTableField(cpu, audioEntry, key, "audiometa", [&] { return valueTable(buildAudioMetaTable(cpu, audioAsset.meta, key)); });
+	return audioEntry;
 }
 
 template <typename Container>
 Table* buildNumericArrayTable(CPU& cpu, const Container& values) {
 	auto* table = cpu.createTable(static_cast<int>(values.size()), 0);
+	ScopedPinnedValues roots(cpu);
+	roots.keep(valueTable(table));
 	for (size_t index = 0; index < values.size(); ++index) {
 		table->set(valueNumber(static_cast<double>(index + 1)), valueNumber(static_cast<double>(values[index])));
 	}
@@ -296,6 +482,8 @@ Table* buildNumericArrayTable(CPU& cpu, const Container& values) {
 
 Table* buildStringArrayTable(CPU& cpu, const std::vector<std::string>& values) {
 	auto* table = cpu.createTable(static_cast<int>(values.size()), 0);
+	ScopedPinnedValues roots(cpu);
+	roots.keep(valueTable(table));
 	for (size_t index = 0; index < values.size(); ++index) {
 		table->set(valueNumber(static_cast<double>(index + 1)), valueString(cpu.internString(values[index])));
 	}
@@ -305,6 +493,8 @@ Table* buildStringArrayTable(CPU& cpu, const std::vector<std::string>& values) {
 template <typename T, typename BuildFn>
 Table* buildTableArray(CPU& cpu, const std::vector<T>& values, const BuildFn& buildFn) {
 	auto* table = cpu.createTable(static_cast<int>(values.size()), 0);
+	ScopedPinnedValues roots(cpu);
+	roots.keep(valueTable(table));
 	for (size_t index = 0; index < values.size(); ++index) {
 		table->set(valueNumber(static_cast<double>(index + 1)), valueTable(buildFn(values[index])));
 	}
@@ -583,6 +773,132 @@ Table* buildModelAssetTable(CPU& cpu, const ModelAsset& asset, const KeyFn& key)
 		})));
 	}
 	return table;
+}
+
+template <typename KeyFn>
+Table* buildManifestTable(CPU& cpu, const RuntimeAssets& source, const KeyFn& key) {
+	const RomManifest& manifest = source.manifest;
+	ScopedPinnedValues buildRoots(cpu);
+	auto* manifestTable = cpu.createTable();
+	buildRoots.keep(valueTable(manifestTable));
+	const std::string_view title = manifest.title.empty() ? manifest.name : manifest.title;
+	if (!title.empty()) {
+		setNamedTableField(cpu, manifestTable, key, "title", [&] { return valueString(cpu.internString(title)); });
+	}
+	const std::string_view romName = manifest.romName.empty() ? manifest.name : manifest.romName;
+	if (!romName.empty()) {
+		setNamedTableField(cpu, manifestTable, key, "rom_name", [&] { return valueString(cpu.internString(romName)); });
+	}
+	const std::string_view shortName = manifest.shortName.empty() ? romName : manifest.shortName;
+	if (!shortName.empty()) {
+		setNamedTableField(cpu, manifestTable, key, "short_name", [&] { return valueString(cpu.internString(shortName)); });
+	}
+	auto* machineTable = cpu.createTable(0, 3);
+	buildRoots.keep(valueTable(machineTable));
+	if (!manifest.namespaceName.empty()) {
+		setNamedTableField(cpu, machineTable, key, "namespace", [&] { return valueString(cpu.internString(manifest.namespaceName)); });
+	}
+	setNamedTableField(cpu, machineTable, key, "canonicalization", [&] { return valueString(cpu.internString(canonicalizationLabel(manifest.canonicalization))); });
+	if (manifest.ufpsScaled) {
+		setNamedTableField(cpu, machineTable, key, "ufps", [&] { return valueNumber(static_cast<double>(*manifest.ufpsScaled)); });
+	}
+	if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
+		auto* viewportTable = cpu.createTable(0, 2);
+		buildRoots.keep(valueTable(viewportTable));
+		setNamedTableField(cpu, viewportTable, key, "width", [&] { return valueNumber(static_cast<double>(manifest.viewportWidth)); });
+		setNamedTableField(cpu, viewportTable, key, "height", [&] { return valueNumber(static_cast<double>(manifest.viewportHeight)); });
+		setNamedTableField(cpu, machineTable, key, "viewport", [&] { return valueTable(viewportTable); });
+	}
+	auto* specsTable = cpu.createTable(0, 4);
+	auto* cpuTable = cpu.createTable(0, 2);
+	buildRoots.keep(valueTable(specsTable));
+	buildRoots.keep(valueTable(cpuTable));
+	if (manifest.cpuHz) {
+		setNamedTableField(cpu, cpuTable, key, "cpu_freq_hz", [&] { return valueNumber(static_cast<double>(*manifest.cpuHz)); });
+	}
+	if (manifest.imgDecBytesPerSec) {
+		setNamedTableField(cpu, cpuTable, key, "imgdec_bytes_per_sec", [&] { return valueNumber(static_cast<double>(*manifest.imgDecBytesPerSec)); });
+	}
+	setNamedTableField(cpu, specsTable, key, "cpu", [&] { return valueTable(cpuTable); });
+	auto* dmaTable = cpu.createTable(0, 2);
+	buildRoots.keep(valueTable(dmaTable));
+	if (manifest.dmaBytesPerSecIso) {
+		setNamedTableField(cpu, dmaTable, key, "dma_bytes_per_sec_iso", [&] { return valueNumber(static_cast<double>(*manifest.dmaBytesPerSecIso)); });
+	}
+	if (manifest.dmaBytesPerSecBulk) {
+		setNamedTableField(cpu, dmaTable, key, "dma_bytes_per_sec_bulk", [&] { return valueNumber(static_cast<double>(*manifest.dmaBytesPerSecBulk)); });
+	}
+	setNamedTableField(cpu, specsTable, key, "dma", [&] { return valueTable(dmaTable); });
+	if (manifest.ramBytes || manifest.objectHandleCount || manifest.gcHeapBytes || manifest.assetTableBytes || manifest.assetDataBytes) {
+		auto* ramTable = cpu.createTable(0, 5);
+		buildRoots.keep(valueTable(ramTable));
+		if (manifest.ramBytes) {
+			setNamedTableField(cpu, ramTable, key, "ram_bytes", [&] { return valueNumber(static_cast<double>(*manifest.ramBytes)); });
+		}
+		if (manifest.objectHandleCount) {
+			setNamedTableField(cpu, ramTable, key, "object_handle_count", [&] { return valueNumber(static_cast<double>(*manifest.objectHandleCount)); });
+		}
+		if (manifest.gcHeapBytes) {
+			setNamedTableField(cpu, ramTable, key, "gc_heap_bytes", [&] { return valueNumber(static_cast<double>(*manifest.gcHeapBytes)); });
+		}
+		if (manifest.assetTableBytes) {
+			setNamedTableField(cpu, ramTable, key, "asset_table_bytes", [&] { return valueNumber(static_cast<double>(*manifest.assetTableBytes)); });
+		}
+		if (manifest.assetDataBytes) {
+			setNamedTableField(cpu, ramTable, key, "asset_data_bytes", [&] { return valueNumber(static_cast<double>(*manifest.assetDataBytes)); });
+		}
+		setNamedTableField(cpu, specsTable, key, "ram", [&] { return valueTable(ramTable); });
+	}
+	if (manifest.atlasSlotBytes || manifest.engineAtlasSlotBytes || manifest.stagingBytes || manifest.skyboxFaceSize > 0 || manifest.skyboxFaceBytes) {
+		auto* vramTable = cpu.createTable(0, 5);
+		buildRoots.keep(valueTable(vramTable));
+		if (manifest.atlasSlotBytes) {
+			setNamedTableField(cpu, vramTable, key, "atlas_slot_bytes", [&] { return valueNumber(static_cast<double>(*manifest.atlasSlotBytes)); });
+		}
+		if (manifest.engineAtlasSlotBytes) {
+			setNamedTableField(cpu, vramTable, key, "system_atlas_slot_bytes", [&] { return valueNumber(static_cast<double>(*manifest.engineAtlasSlotBytes)); });
+		}
+		if (manifest.stagingBytes) {
+			setNamedTableField(cpu, vramTable, key, "staging_bytes", [&] { return valueNumber(static_cast<double>(*manifest.stagingBytes)); });
+		}
+		if (manifest.skyboxFaceSize > 0) {
+			setNamedTableField(cpu, vramTable, key, "skybox_face_size", [&] { return valueNumber(static_cast<double>(manifest.skyboxFaceSize)); });
+		}
+		if (manifest.skyboxFaceBytes) {
+			setNamedTableField(cpu, vramTable, key, "skybox_face_bytes", [&] { return valueNumber(static_cast<double>(*manifest.skyboxFaceBytes)); });
+		}
+		setNamedTableField(cpu, specsTable, key, "vram", [&] { return valueTable(vramTable); });
+	}
+	if (manifest.vblankCycles) {
+		auto* vdpTable = cpu.createTable(0, 1);
+		buildRoots.keep(valueTable(vdpTable));
+		setNamedTableField(cpu, vdpTable, key, "vblank_cycles", [&] { return valueNumber(static_cast<double>(*manifest.vblankCycles)); });
+		setNamedTableField(cpu, specsTable, key, "vdp", [&] { return valueTable(vdpTable); });
+	}
+	if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
+		auto* audioTable = cpu.createTable(0, 1);
+		auto* voicesTable = cpu.createTable(0, 3);
+		buildRoots.keep(valueTable(audioTable));
+		buildRoots.keep(valueTable(voicesTable));
+		if (manifest.maxVoicesSfx) {
+			setNamedTableField(cpu, voicesTable, key, "sfx", [&] { return valueNumber(static_cast<double>(*manifest.maxVoicesSfx)); });
+		}
+		if (manifest.maxVoicesMusic) {
+			setNamedTableField(cpu, voicesTable, key, "music", [&] { return valueNumber(static_cast<double>(*manifest.maxVoicesMusic)); });
+		}
+		if (manifest.maxVoicesUi) {
+			setNamedTableField(cpu, voicesTable, key, "ui", [&] { return valueNumber(static_cast<double>(*manifest.maxVoicesUi)); });
+		}
+		setNamedTableField(cpu, audioTable, key, "max_voices", [&] { return valueTable(voicesTable); });
+		setNamedTableField(cpu, specsTable, key, "audio", [&] { return valueTable(audioTable); });
+	}
+	setNamedTableField(cpu, machineTable, key, "specs", [&] { return valueTable(specsTable); });
+	setNamedTableField(cpu, manifestTable, key, "machine", [&] { return valueTable(machineTable); });
+	auto* luaTable = cpu.createTable(0, 1);
+	buildRoots.keep(valueTable(luaTable));
+	setNamedTableField(cpu, luaTable, key, "entry_path", [&] { return valueString(cpu.internString(manifest.entryPoint)); });
+	setNamedTableField(cpu, manifestTable, key, "lua", [&] { return valueTable(luaTable); });
+	return manifestTable;
 }
 
 Value binValueToRuntimeValue(CPU& cpu, const BinValue& value) {
@@ -1120,7 +1436,7 @@ void Runtime::setupBuiltins() {
 	};
 	auto callClosureValue = [this](const Value& callee, const std::vector<Value>& args, std::vector<Value>& out) {
 		if (valueIsNativeFunction(callee)) {
-			asNativeFunction(callee)->invoke(args, out);
+			asNativeFunction(callee, m_cpu.heap())->invoke(args, out);
 			return;
 		}
 		if (valueIsClosure(callee)) {
@@ -1128,7 +1444,7 @@ void Runtime::setupBuiltins() {
 			const int previousBudget = m_cpu.instructionBudgetRemaining;
 			const int budgetSentinel = std::numeric_limits<int>::max();
 			try {
-				m_cpu.callExternal(asClosure(callee), args);
+				m_cpu.callExternal(asClosure(callee, m_cpu.heap()), args);
 				m_cpu.runUntilDepth(depthBefore, budgetSentinel);
 			} catch (...) {
 				const int remaining = m_cpu.instructionBudgetRemaining;
@@ -1149,6 +1465,15 @@ void Runtime::setupBuiltins() {
 	};
 	auto str = [this](std::string_view value) {
 		return valueString(m_cpu.internString(value));
+	};
+	auto setNamedField = [this, key](Table* table, std::string_view name, auto&& makeValue) {
+		ScopedPinnedValues roots(m_cpu);
+		roots.keep(valueTable(table));
+		const Value fieldKey = key(name);
+		roots.keep(fieldKey);
+		const Value fieldValue = makeValue();
+		roots.keep(fieldValue);
+		table->set(fieldKey, fieldValue);
 	};
 	auto asText = [this](Value value) -> const std::string& {
 		return m_cpu.stringPool().toString(asStringId(value));
@@ -1389,7 +1714,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_cart_rom_size", valueNumber(static_cast<double>(CART_ROM_SIZE)));
 	setGlobal("sys_ram_size", valueNumber(static_cast<double>(RAM_SIZE)));
 	setGlobal("sys_max_assets", valueNumber(static_cast<double>(maxAssets)));
-	setGlobal("sys_string_handle_count", valueNumber(static_cast<double>(OBJECT_HANDLE_COUNT - 1)));
+	setGlobal("sys_object_handle_count", valueNumber(static_cast<double>(OBJECT_HANDLE_COUNT - 1)));
 	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(m_cycleBudgetPerFrame)));
 	setGlobal("sys_vdp_dither", valueNumber(static_cast<double>(IO_VDP_DITHER)));
 	setGlobal("sys_vdp_primary_atlas_id", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
@@ -1620,17 +1945,17 @@ void Runtime::setupBuiltins() {
 			if (!valueIsTable(args.at(1))) {
 				throw BMSX_RUNTIME_ERROR("setmetatable expects a table or nil as the second argument.");
 			}
-			metatable = asTable(args.at(1));
+			metatable = asTable(args.at(1), m_cpu.heap());
 		}
 
 		const Value target = args.at(0);
 		if (valueIsTable(target)) {
-			asTable(target)->setMetatable(metatable);
+			asTable(target, m_cpu.heap())->setMetatable(metatable);
 			out.push_back(target);
 			return;
 		}
 
-		auto* native = asNativeObject(target);
+		auto* native = asNativeObject(target, m_cpu.heap());
 		m_cpu.setNativeObjectMetatable(native, metatable);
 		out.push_back(target);
 	});
@@ -1641,11 +1966,11 @@ void Runtime::setupBuiltins() {
 		}
 		const Value target = args.at(0);
 		if (valueIsTable(target)) {
-			auto* mt = asTable(target)->getMetatable();
+			auto* mt = asTable(target, Runtime::instance().cpu().heap())->getMetatable();
 			out.push_back(mt ? valueTable(mt) : valueNil());
 			return;
 		}
-		auto* mt = asNativeObject(target)->getMetatable();
+		auto* mt = asNativeObject(target, Runtime::instance().cpu().heap())->getMetatable();
 		out.push_back(mt ? valueTable(mt) : valueNil());
 	});
 
@@ -1654,13 +1979,13 @@ void Runtime::setupBuiltins() {
 	});
 
 	registerNativeFunction("rawget", [](const std::vector<Value>& args, std::vector<Value>& out) {
-		auto* tbl = asTable(args.at(0));
+		auto* tbl = asTable(args.at(0), Runtime::instance().cpu().heap());
 		Value key = args.size() > 1 ? args.at(1) : valueNil();
 		out.push_back(tbl->get(key));
 	});
 
 	registerNativeFunction("rawset", [](const std::vector<Value>& args, std::vector<Value>& out) {
-		auto* tbl = asTable(args.at(0));
+		auto* tbl = asTable(args.at(0), Runtime::instance().cpu().heap());
 		Value key = args.at(1);
 		Value value = args.size() > 2 ? args.at(2) : valueNil();
 		tbl->set(key, value);
@@ -1763,7 +2088,7 @@ void Runtime::setupBuiltins() {
 
 		auto data = std::make_shared<NativeArray>();
 		if (args.size() == 1 && valueIsTable(args.at(0))) {
-			const auto* tbl = asTable(args.at(0));
+			const auto* tbl = asTable(args.at(0), Runtime::instance().cpu().heap());
 			const auto entries = tbl->entries();
 			for (const auto& [key, value] : entries) {
 				if (valueIsNumber(key)) {
@@ -2457,7 +2782,7 @@ stringTable->set(key("gsub"), m_cpu.createNativeFunction("string.gsub", [this, c
 				return match[0].str();
 			}
 			Value key = match.size() > 1 ? str(match[1].str()) : str(match[0].str());
-			Value mapped = asTable(replacement)->get(key);
+			Value mapped = asTable(replacement, m_cpu.heap())->get(key);
 			if (isNil(mapped)) {
 				return match[0].str();
 			}
@@ -2814,7 +3139,7 @@ stringTable->set(key("unpack"), m_cpu.createNativeFunction("string.unpack", [str
 
 	auto* tableLib = m_cpu.createTable();
 tableLib->set(key("insert"), m_cpu.createNativeFunction("table.insert", [](const std::vector<Value>& args, std::vector<Value>& out) {
-	auto* tbl = asTable(args.at(0));
+auto* tbl = asTable(args.at(0), Runtime::instance().cpu().heap());
 	int position = 0;
 	Value value;
 	if (args.size() == 2) {
@@ -2832,7 +3157,7 @@ tableLib->set(key("insert"), m_cpu.createNativeFunction("table.insert", [](const
 	(void)out;
 }));
 tableLib->set(key("remove"), m_cpu.createNativeFunction("table.remove", [](const std::vector<Value>& args, std::vector<Value>& out) {
-	auto* tbl = asTable(args.at(0));
+auto* tbl = asTable(args.at(0), Runtime::instance().cpu().heap());
 	int position = args.size() > 1 ? static_cast<int>(std::floor(asNumber(args.at(1)))) : tbl->length();
 	int length = tbl->length();
 	Value removed = tbl->get(valueNumber(static_cast<double>(position)));
@@ -2846,7 +3171,7 @@ tableLib->set(key("remove"), m_cpu.createNativeFunction("table.remove", [](const
 	out.push_back(removed);
 }));
 tableLib->set(key("concat"), m_cpu.createNativeFunction("table.concat", [this, str](const std::vector<Value>& args, std::vector<Value>& out) {
-	auto* tbl = asTable(args.at(0));
+	auto* tbl = asTable(args.at(0), m_cpu.heap());
 	const std::string separator = args.size() > 1 ? valueToString(args.at(1)) : std::string("");
 	int length = tbl->length();
 	auto normalizeIndex = [length](double value, int fallback) -> int {
@@ -2881,9 +3206,11 @@ tableLib->set(key("pack"), m_cpu.createNativeFunction("table.pack", [this, packC
 	}
 	tbl->set(packCountKey, valueNumber(static_cast<double>(args.size())));
 	out.push_back(valueTable(tbl));
+}, [packCountKey](GcHeap& heap) {
+	markValues(heap, { packCountKey });
 }));
 tableLib->set(key("unpack"), m_cpu.createNativeFunction("table.unpack", [](const std::vector<Value>& args, std::vector<Value>& out) {
-	auto* tbl = asTable(args.at(0));
+auto* tbl = asTable(args.at(0), Runtime::instance().cpu().heap());
 	int length = tbl->length();
 	auto normalizeIndex = [length](double value, int fallback) -> int {
 			int integer = static_cast<int>(std::floor(value));
@@ -2901,7 +3228,7 @@ tableLib->set(key("unpack"), m_cpu.createNativeFunction("table.unpack", [](const
 	}
 }));
 tableLib->set(key("sort"), m_cpu.createNativeFunction("table.sort", [this, callClosureValue](const std::vector<Value>& args, std::vector<Value>& out) {
-	auto* tbl = asTable(args.at(0));
+	auto* tbl = asTable(args.at(0), m_cpu.heap());
 	Value comparator = args.size() > 1 ? args.at(1) : valueNil();
 	int length = tbl->length();
 	std::vector<Value> values = acquireValueScratch();
@@ -2956,7 +3283,7 @@ osTable->set(key("clock"), m_cpu.createNativeFunction("os.clock", [](const std::
 }));
 osTable->set(key("time"), m_cpu.createNativeFunction("os.time", [yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey](const std::vector<Value>& args, std::vector<Value>& out) {
 	if (!args.empty() && !isNil(args.at(0))) {
-		auto* table = asTable(args.at(0));
+		auto* table = asTable(args.at(0), Runtime::instance().cpu().heap());
 		std::tm timeInfo{};
 		timeInfo.tm_year = static_cast<int>(asNumber(table->get(yearKey))) - 1900;
 		timeInfo.tm_mon = static_cast<int>(asNumber(table->get(monthKey))) - 1;
@@ -2969,6 +3296,8 @@ osTable->set(key("time"), m_cpu.createNativeFunction("os.time", [yearKey, monthK
 		return;
 	}
 	out.push_back(valueNumber(static_cast<double>(std::time(nullptr))));
+}, [yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey](GcHeap& heap) {
+	markValues(heap, { yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey });
 }));
 osTable->set(key("difftime"), m_cpu.createNativeFunction("os.difftime", [](const std::vector<Value>& args, std::vector<Value>& out) {
 	double t2 = asNumber(args.at(0));
@@ -2998,6 +3327,8 @@ osTable->set(key("date"), m_cpu.createNativeFunction("os.date", [str, yearKey, m
 	char buffer[256];
 	size_t size = std::strftime(buffer, sizeof(buffer), format.c_str(), &timeInfo);
 	out.push_back(str(std::string(buffer, size)));
+}, [yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey](GcHeap& heap) {
+	markValues(heap, { yearKey, monthKey, dayKey, hourKey, minuteKey, secondKey, wdayKey, ydayKey, isdstKey });
 }));
 	setGlobal("os", valueTable(osTable));
 
@@ -3005,7 +3336,7 @@ auto nextFn = m_cpu.createNativeFunction("next", [this](const std::vector<Value>
 	const Value& target = args.at(0);
 	const Value key = args.size() > 1 ? args.at(1) : valueNil();
 	if (valueIsTable(target)) {
-		auto entry = asTable(target)->nextEntry(key);
+		auto entry = asTable(target, m_cpu.heap())->nextEntry(key);
 		if (!entry.has_value()) {
 			out.push_back(valueNil());
 			return;
@@ -3015,7 +3346,7 @@ auto nextFn = m_cpu.createNativeFunction("next", [this](const std::vector<Value>
 		return;
 	}
 	if (valueIsNativeObject(target)) {
-		auto* obj = asNativeObject(target);
+		auto* obj = asNativeObject(target, m_cpu.heap());
 		if (!obj->hasNextEntry()) {
 			throw BMSX_RUNTIME_ERROR("next expects a native object with iteration.");
 		}
@@ -3039,7 +3370,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	}
 	double nextIndex = index + 1.0;
 	if (valueIsTable(target)) {
-		Value value = asTable(target)->get(valueNumber(nextIndex));
+		Value value = asTable(target, Runtime::instance().cpu().heap())->get(valueNumber(nextIndex));
 		if (isNil(value)) {
 			out.push_back(valueNil());
 			return;
@@ -3049,7 +3380,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		return;
 	}
 	if (valueIsNativeObject(target)) {
-		Value value = asNativeObject(target)->get(valueNumber(nextIndex));
+		Value value = asNativeObject(target, Runtime::instance().cpu().heap())->get(valueNumber(nextIndex));
 		if (isNil(value)) {
 			out.push_back(valueNil());
 			return;
@@ -3070,6 +3401,8 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		out.push_back(nextFn);
 		out.push_back(target);
 		out.push_back(valueNil());
+	}, [nextFn](GcHeap& heap) {
+		markValues(heap, { nextFn });
 	});
 	registerNativeFunction("ipairs", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& target = args.at(0);
@@ -3082,197 +3415,183 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	});
 
 	const RuntimeAssets& assets = EngineCore::instance().assets();
-	auto* assetsTable = m_cpu.createTable();
-	auto formatAssetKeyNumber = [](double value) -> std::string {
-		if (value == 0.0) {
-			return "0";
+	enum class AssetMapKind {
+		Img,
+		Data,
+		Audio,
+		AudioEvents,
+		Model,
+	};
+	struct AssetMapItemState {
+		AssetToken token = 0;
+		std::string keyText;
+		Value keyValue = valueNil();
+		bool hasKeyValue = false;
+		Value cachedValue = valueNil();
+		bool hasCachedValue = false;
+	};
+	struct AssetMapState {
+		AssetMapKind kind = AssetMapKind::Data;
+		std::vector<AssetMapItemState> items;
+		std::unordered_map<std::string, size_t, StringKeyHash, StringKeyEq> indexByKey;
+	};
+	auto makeAssetMapNativeObject = [this, &assets, key](AssetMapKind kind) -> Value {
+		auto state = std::make_shared<AssetMapState>();
+		state->kind = kind;
+		auto appendItem = [state](AssetToken token) {
+			const std::string keyText = formatAssetTokenKey(token);
+			state->indexByKey.emplace(keyText, state->items.size());
+			state->items.push_back(AssetMapItemState{
+				token,
+				keyText,
+				valueNil(),
+				false,
+				valueNil(),
+				false,
+			});
+		};
+		switch (kind) {
+			case AssetMapKind::Img:
+				forEachMergedAssetEntry(assets.img, assets.fallback ? &assets.fallback->img : nullptr, [&](AssetToken token, const ImgAsset&) {
+					appendItem(token);
+				});
+				break;
+			case AssetMapKind::Data:
+				forEachMergedAssetEntry(assets.data, assets.fallback ? &assets.fallback->data : nullptr, [&](AssetToken token, const DataAsset&) {
+					appendItem(token);
+				});
+				break;
+			case AssetMapKind::Audio:
+				forEachMergedAssetEntry(assets.audio, assets.fallback ? &assets.fallback->audio : nullptr, [&](AssetToken token, const AudioAsset&) {
+					appendItem(token);
+				});
+				break;
+			case AssetMapKind::AudioEvents:
+				forEachMergedAssetEntry(assets.audioevents, assets.fallback ? &assets.fallback->audioevents : nullptr, [&](AssetToken token, const AudioEventAsset&) {
+					appendItem(token);
+				});
+				break;
+			case AssetMapKind::Model:
+				forEachMergedAssetEntry(assets.model, assets.fallback ? &assets.fallback->model : nullptr, [&](AssetToken token, const ModelAsset&) {
+					appendItem(token);
+				});
+				break;
 		}
-		std::ostringstream oss;
-		oss << std::fixed << std::setprecision(0) << value;
-		return oss.str();
-	};
-	auto formatAssetTokenKey = [](AssetToken token) -> std::string {
-		const uint32_t hi = static_cast<uint32_t>((token >> 32) & 0xffffffffu);
-		const uint32_t lo = static_cast<uint32_t>(token & 0xffffffffu);
-		std::ostringstream oss;
-		oss << std::hex << std::nouppercase << std::setfill('0')
-			<< std::setw(8) << hi
-			<< std::setw(8) << lo;
-		return oss.str();
-	};
-	auto makeAssetMapNativeObject = [this, formatAssetKeyNumber](Table* mapTable) -> Value {
+		auto resolveKeyText = [this](const Value& keyValue) -> std::string {
+			if (valueIsString(keyValue)) {
+				return m_cpu.stringPool().toString(asStringId(keyValue));
+			}
+			if (valueIsNumber(keyValue)) {
+				double n = valueToNumber(keyValue);
+				double intpart = 0.0;
+				if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
+					return formatAssetKeyNumber(n);
+				}
+			}
+			throw BMSX_RUNTIME_ERROR("Attempted to retrieve an asset that did not use a string or integer key.");
+		};
+		auto resolveKeyIndex = [resolveKeyText, state](const Value& keyValue) -> size_t {
+			const std::string keyText = resolveKeyText(keyValue);
+			const auto it = state->indexByKey.find(keyText);
+			if (it == state->indexByKey.end()) {
+				throw BMSX_RUNTIME_ERROR("Asset '" + keyText + "' does not exist.");
+			}
+			return it->second;
+		};
+		auto materializeKey = [this, state](size_t index) -> Value {
+			AssetMapItemState& item = state->items[index];
+			if (!item.hasKeyValue) {
+				item.keyValue = valueString(m_cpu.internString(item.keyText));
+				item.hasKeyValue = true;
+			}
+			return item.keyValue;
+		};
+		auto materializeValue = [this, &assets, key, state](size_t index) -> Value {
+			AssetMapItemState& item = state->items[index];
+			if (item.hasCachedValue) {
+				return item.cachedValue;
+			}
+			switch (state->kind) {
+				case AssetMapKind::Img: {
+					const ImgAsset* asset = lookupMergedAssetEntry(assets.img, assets.fallback ? &assets.fallback->img : nullptr, item.token);
+					item.cachedValue = valueTable(buildImgAssetTable(m_cpu, *asset, key));
+					break;
+				}
+				case AssetMapKind::Data: {
+					const DataAsset* asset = lookupMergedAssetEntry(assets.data, assets.fallback ? &assets.fallback->data : nullptr, item.token);
+					item.cachedValue = binValueToRuntimeValue(m_cpu, asset->value);
+					break;
+				}
+				case AssetMapKind::Audio: {
+					const AudioAsset* asset = lookupMergedAssetEntry(assets.audio, assets.fallback ? &assets.fallback->audio : nullptr, item.token);
+					item.cachedValue = valueTable(buildAudioAssetTable(m_cpu, *asset, key));
+					break;
+				}
+				case AssetMapKind::AudioEvents: {
+					const AudioEventAsset* asset = lookupMergedAssetEntry(assets.audioevents, assets.fallback ? &assets.fallback->audioevents : nullptr, item.token);
+					item.cachedValue = binValueToRuntimeValue(m_cpu, asset->value);
+					break;
+				}
+				case AssetMapKind::Model: {
+					const ModelAsset* asset = lookupMergedAssetEntry(assets.model, assets.fallback ? &assets.fallback->model : nullptr, item.token);
+					item.cachedValue = valueTable(buildModelAssetTable(m_cpu, *asset, key));
+					break;
+				}
+			}
+			item.hasCachedValue = true;
+			return item.cachedValue;
+		};
 		return m_cpu.createNativeObject(
-			mapTable,
-			[this, mapTable, formatAssetKeyNumber](const Value& keyValue) -> Value {
-				if (valueIsString(keyValue)) {
-					Value value = mapTable->get(keyValue);
-					if (isNil(value)) {
-						const std::string& keyName = m_cpu.stringPool().toString(asStringId(keyValue));
-						throw BMSX_RUNTIME_ERROR("Asset '" + keyName + "' does not exist.");
-					}
-					return value;
-				}
-				if (valueIsNumber(keyValue)) {
-					double n = valueToNumber(keyValue);
-					double intpart = 0.0;
-					if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
-						std::string keyName = formatAssetKeyNumber(n);
-						Value resolvedKey = valueString(m_cpu.internString(keyName));
-						Value value = mapTable->get(resolvedKey);
-						if (isNil(value)) {
-							throw BMSX_RUNTIME_ERROR("Asset '" + keyName + "' does not exist.");
-						}
-						return value;
-					}
-				}
-				throw BMSX_RUNTIME_ERROR("Attempted to retrieve an asset that did not use a string or integer key.");
+			state.get(),
+			[resolveKeyIndex, materializeValue](const Value& keyValue) -> Value {
+				return materializeValue(resolveKeyIndex(keyValue));
 			},
-			[this, mapTable, formatAssetKeyNumber](const Value& keyValue, const Value& value) {
-				if (valueIsString(keyValue)) {
-					mapTable->set(keyValue, value);
-					return;
-				}
-				if (valueIsNumber(keyValue)) {
-					double n = valueToNumber(keyValue);
-					double intpart = 0.0;
-					if (std::isfinite(n) && std::modf(n, &intpart) == 0.0) {
-						std::string keyName = formatAssetKeyNumber(n);
-						Value resolvedKey = valueString(m_cpu.internString(keyName));
-						mapTable->set(resolvedKey, value);
-						return;
-					}
-				}
-				throw BMSX_RUNTIME_ERROR("Attempted to index native object with unsupported key. Asset maps and methods require string or integer keys.");
+			[](const Value&, const Value&) {
+				throw BMSX_RUNTIME_ERROR("Asset maps are read-only.");
 			},
 			nullptr,
-			[mapTable](const Value& after) -> std::optional<std::pair<Value, Value>> {
-				return mapTable->nextEntry(after);
+			[resolveKeyText, materializeKey, materializeValue, state](const Value& after) -> std::optional<std::pair<Value, Value>> {
+				size_t nextIndex = 0;
+				if (!isNil(after)) {
+					if (!valueIsString(after) && !valueIsNumber(after)) {
+						return std::nullopt;
+					}
+					const std::string afterKey = resolveKeyText(after);
+					const auto it = state->indexByKey.find(afterKey);
+					if (it == state->indexByKey.end()) {
+						return std::nullopt;
+					}
+					nextIndex = it->second + 1;
+				}
+				if (nextIndex >= state->items.size()) {
+					return std::nullopt;
+				}
+				return std::pair<Value, Value>{ materializeKey(nextIndex), materializeValue(nextIndex) };
 			},
-			[mapTable](GcHeap& heap) {
-				heap.markValue(valueTable(mapTable));
+			[state](GcHeap& heap) {
+				for (AssetMapItemState& item : state->items) {
+					if (item.hasKeyValue) {
+						heap.markValue(item.keyValue);
+					}
+					if (item.hasCachedValue) {
+						heap.markValue(item.cachedValue);
+					}
+				}
 			}
 		);
 	};
-	auto appendRomAssetFields = [key, str](Table* table, const RomAssetInfo& info, std::string_view resid) {
-		table->set(key("resid"), str(resid));
-		if (!info.type.empty()) {
-			table->set(key("type"), str(info.type));
-		}
-		if (info.op) {
-			table->set(key("op"), str(*info.op));
-		}
-		if (info.start) {
-			table->set(key("start"), valueNumber(static_cast<double>(*info.start)));
-		}
-		if (info.end) {
-			table->set(key("end"), valueNumber(static_cast<double>(*info.end)));
-		}
-		if (info.compiledStart) {
-			table->set(key("compiled_start"), valueNumber(static_cast<double>(*info.compiledStart)));
-		}
-		if (info.compiledEnd) {
-			table->set(key("compiled_end"), valueNumber(static_cast<double>(*info.compiledEnd)));
-		}
-		if (info.metabufferStart) {
-			table->set(key("metabuffer_start"), valueNumber(static_cast<double>(*info.metabufferStart)));
-		}
-		if (info.metabufferEnd) {
-			table->set(key("metabuffer_end"), valueNumber(static_cast<double>(*info.metabufferEnd)));
-		}
-		if (info.textureStart) {
-			table->set(key("texture_start"), valueNumber(static_cast<double>(*info.textureStart)));
-		}
-		if (info.textureEnd) {
-			table->set(key("texture_end"), valueNumber(static_cast<double>(*info.textureEnd)));
-		}
-		if (info.sourcePath) {
-			table->set(key("source_path"), str(*info.sourcePath));
-		}
-		if (info.updateTimestamp) {
-			table->set(key("update_timestamp"), valueNumber(static_cast<double>(*info.updateTimestamp)));
-		}
-		if (info.payloadId) {
-			table->set(key("payload_id"), str(*info.payloadId));
-		}
-	};
-	auto appendBinEntry = [this, str, formatAssetTokenKey](Table* table, AssetToken token, const BinValue& value) {
-		table->set(str(formatAssetTokenKey(token)), binValueToRuntimeValue(m_cpu, value));
-	};
-	const int imgCapacity = static_cast<int>(assets.img.size() + (assets.fallback ? assets.fallback->img.size() : 0));
-	auto* imgTable = m_cpu.createTable(0, imgCapacity);
-	auto appendImgEntry = [this, imgTable, key, str, appendRomAssetFields, formatAssetTokenKey](AssetToken token, const ImgAsset& imgAsset) {
-		auto* imgEntry = m_cpu.createTable(0, 8);
-		appendRomAssetFields(imgEntry, imgAsset.rom, imgAsset.id);
-		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset.meta, key)));
-		imgTable->set(str(formatAssetTokenKey(token)), valueTable(imgEntry));
-	};
-	if (assets.fallback) {
-		for (const auto& entry : assets.fallback->img) {
-			appendImgEntry(entry.first, entry.second);
-		}
-	}
-	for (const auto& entry : assets.img) {
-		appendImgEntry(entry.first, entry.second);
-	}
-	assetsTable->set(key("img"), makeAssetMapNativeObject(imgTable));
-
-	const int dataCapacity = static_cast<int>(assets.data.size() + (assets.fallback ? assets.fallback->data.size() : 0));
-	auto* dataTable = m_cpu.createTable(0, dataCapacity);
-	if (assets.fallback) {
-		for (const auto& entry : assets.fallback->data) {
-			appendBinEntry(dataTable, entry.first, entry.second.value);
-		}
-	}
-	for (const auto& entry : assets.data) {
-		appendBinEntry(dataTable, entry.first, entry.second.value);
-	}
-	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
-	const int audioCapacity = static_cast<int>(assets.audio.size() + (assets.fallback ? assets.fallback->audio.size() : 0));
-	auto* audioTable = m_cpu.createTable(0, audioCapacity);
-	auto appendAudioEntry = [this, audioTable, key, str, appendRomAssetFields, formatAssetTokenKey](AssetToken token, const AudioAsset& audioAsset) {
-		auto* audioEntry = m_cpu.createTable(0, 6);
-		appendRomAssetFields(audioEntry, audioAsset.rom, audioAsset.id);
-		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(m_cpu, audioAsset.meta, key)));
-		audioTable->set(str(formatAssetTokenKey(token)), valueTable(audioEntry));
-	};
-	if (assets.fallback) {
-		for (const auto& entry : assets.fallback->audio) {
-			appendAudioEntry(entry.first, entry.second);
-		}
-	}
-	for (const auto& entry : assets.audio) {
-		appendAudioEntry(entry.first, entry.second);
-	}
-	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
-	const int audioEventCapacity = static_cast<int>(assets.audioevents.size() + (assets.fallback ? assets.fallback->audioevents.size() : 0));
-	auto* audioEventsTable = m_cpu.createTable(0, audioEventCapacity);
-	if (assets.fallback) {
-		for (const auto& entry : assets.fallback->audioevents) {
-			appendBinEntry(audioEventsTable, entry.first, entry.second.value);
-		}
-	}
-	for (const auto& entry : assets.audioevents) {
-		appendBinEntry(audioEventsTable, entry.first, entry.second.value);
-	}
-	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
-	const int modelCapacity = static_cast<int>(assets.model.size() + (assets.fallback ? assets.fallback->model.size() : 0));
-	auto* modelTable = m_cpu.createTable(0, modelCapacity);
-	auto appendModelEntry = [this, modelTable, key, str, formatAssetTokenKey](AssetToken token, const ModelAsset& modelAsset) {
-		modelTable->set(str(formatAssetTokenKey(token)), valueTable(buildModelAssetTable(m_cpu, modelAsset, key)));
-	};
-	if (assets.fallback) {
-		for (const auto& entry : assets.fallback->model) {
-			appendModelEntry(entry.first, entry.second);
-		}
-	}
-	for (const auto& entry : assets.model) {
-		appendModelEntry(entry.first, entry.second);
-	}
-	assetsTable->set(key("model"), makeAssetMapNativeObject(modelTable));
-	assetsTable->set(key("project_root_path"), str(assets.projectRootPath));
+	auto* assetsTable = m_cpu.createTable(0, 8);
+	setNamedField(assetsTable, "img", [&] { return makeAssetMapNativeObject(AssetMapKind::Img); });
+	setNamedField(assetsTable, "data", [&] { return makeAssetMapNativeObject(AssetMapKind::Data); });
+	setNamedField(assetsTable, "audio", [&] { return makeAssetMapNativeObject(AssetMapKind::Audio); });
+	setNamedField(assetsTable, "audioevents", [&] { return makeAssetMapNativeObject(AssetMapKind::AudioEvents); });
+	setNamedField(assetsTable, "model", [&] { return makeAssetMapNativeObject(AssetMapKind::Model); });
+	setNamedField(assetsTable, "project_root_path", [&] { return str(assets.projectRootPath); });
+	setNamedField(assetsTable, "manifest", [&] { return valueTable(buildManifestTable(m_cpu, assets, key)); });
+	setNamedField(assetsTable, "canonicalization", [&] { return str(canonicalizationLabel(assets.canonicalization)); });
 	auto assetsNative = m_cpu.createNativeObject(
 		assetsTable,
-		[this, assetsTable, formatAssetKeyNumber](const Value& keyValue) -> Value {
+		[this, assetsTable](const Value& keyValue) -> Value {
 			if (valueIsString(keyValue)) {
 				Value value = assetsTable->get(keyValue);
 				if (isNil(value)) {
@@ -3296,7 +3615,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			}
 			throw BMSX_RUNTIME_ERROR("Attempted to retrieve an asset that did not use a string or integer key.");
 		},
-		[this, assetsTable, formatAssetKeyNumber](const Value& keyValue, const Value& value) {
+		[this, assetsTable](const Value& keyValue, const Value& value) {
 			if (valueIsString(keyValue)) {
 				assetsTable->set(keyValue, value);
 				return;
@@ -3322,134 +3641,9 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		}
 	);
 	setGlobal("assets", assetsNative);
-
-	auto canonicalizationLabel = [](CanonicalizationType value) -> const char* {
-		switch (value) {
-			case CanonicalizationType::Upper:
-				return "upper";
-			case CanonicalizationType::Lower:
-				return "lower";
-			case CanonicalizationType::None:
-			default:
-				return "none";
-		}
-	};
-	auto buildManifestTable = [this, key, str, canonicalizationLabel](const RuntimeAssets& source) -> Table* {
-		const RomManifest& manifest = source.manifest;
-		auto* manifestTable = m_cpu.createTable();
-		const std::string_view title = manifest.title.empty() ? manifest.name : manifest.title;
-		if (!title.empty()) {
-			manifestTable->set(key("title"), str(title));
-		}
-		const std::string_view romName = manifest.romName.empty() ? manifest.name : manifest.romName;
-		if (!romName.empty()) {
-			manifestTable->set(key("rom_name"), str(romName));
-		}
-		const std::string_view shortName = manifest.shortName.empty() ? romName : manifest.shortName;
-		if (!shortName.empty()) {
-			manifestTable->set(key("short_name"), str(shortName));
-		}
-		auto* machineTable = m_cpu.createTable(0, 3);
-		if (!manifest.namespaceName.empty()) {
-			machineTable->set(key("namespace"), str(manifest.namespaceName));
-		}
-		machineTable->set(key("canonicalization"), str(canonicalizationLabel(manifest.canonicalization)));
-		if (manifest.ufpsScaled) {
-			machineTable->set(key("ufps"), valueNumber(static_cast<double>(*manifest.ufpsScaled)));
-		}
-		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
-			auto* viewportTable = m_cpu.createTable(0, 2);
-			viewportTable->set(key("width"), valueNumber(static_cast<double>(manifest.viewportWidth)));
-			viewportTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
-			machineTable->set(key("viewport"), valueTable(viewportTable));
-		}
-		auto* specsTable = m_cpu.createTable(0, 4);
-		auto* cpuTable = m_cpu.createTable(0, 2);
-		if (manifest.cpuHz) {
-			cpuTable->set(key("cpu_freq_hz"), valueNumber(static_cast<double>(*manifest.cpuHz)));
-		}
-		if (manifest.imgDecBytesPerSec) {
-			cpuTable->set(key("imgdec_bytes_per_sec"), valueNumber(static_cast<double>(*manifest.imgDecBytesPerSec)));
-		}
-		specsTable->set(key("cpu"), valueTable(cpuTable));
-		auto* dmaTable = m_cpu.createTable(0, 2);
-		if (manifest.dmaBytesPerSecIso) {
-			dmaTable->set(key("dma_bytes_per_sec_iso"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecIso)));
-		}
-		if (manifest.dmaBytesPerSecBulk) {
-			dmaTable->set(key("dma_bytes_per_sec_bulk"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecBulk)));
-		}
-		specsTable->set(key("dma"), valueTable(dmaTable));
-		if (manifest.ramBytes || manifest.stringHandleCount || manifest.stringHeapBytes || manifest.assetTableBytes || manifest.assetDataBytes) {
-			auto* ramTable = m_cpu.createTable(0, 5);
-			if (manifest.ramBytes) {
-				ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));
-			}
-			if (manifest.stringHandleCount) {
-				ramTable->set(key("string_handle_count"), valueNumber(static_cast<double>(*manifest.stringHandleCount)));
-			}
-			if (manifest.stringHeapBytes) {
-				ramTable->set(key("string_heap_bytes"), valueNumber(static_cast<double>(*manifest.stringHeapBytes)));
-			}
-			if (manifest.assetTableBytes) {
-				ramTable->set(key("asset_table_bytes"), valueNumber(static_cast<double>(*manifest.assetTableBytes)));
-			}
-			if (manifest.assetDataBytes) {
-				ramTable->set(key("asset_data_bytes"), valueNumber(static_cast<double>(*manifest.assetDataBytes)));
-			}
-			specsTable->set(key("ram"), valueTable(ramTable));
-		}
-		if (manifest.atlasSlotBytes || manifest.engineAtlasSlotBytes || manifest.stagingBytes || manifest.skyboxFaceSize > 0 || manifest.skyboxFaceBytes) {
-			auto* vramTable = m_cpu.createTable(0, 5);
-			if (manifest.atlasSlotBytes) {
-				vramTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
-			}
-			if (manifest.engineAtlasSlotBytes) {
-				vramTable->set(key("system_atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.engineAtlasSlotBytes)));
-			}
-			if (manifest.stagingBytes) {
-				vramTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));
-			}
-			if (manifest.skyboxFaceSize > 0) {
-				vramTable->set(key("skybox_face_size"), valueNumber(static_cast<double>(manifest.skyboxFaceSize)));
-			}
-			if (manifest.skyboxFaceBytes) {
-				vramTable->set(key("skybox_face_bytes"), valueNumber(static_cast<double>(*manifest.skyboxFaceBytes)));
-			}
-			specsTable->set(key("vram"), valueTable(vramTable));
-		}
-		if (manifest.vblankCycles) {
-			auto* vdpTable = m_cpu.createTable(0, 1);
-			vdpTable->set(key("vblank_cycles"), valueNumber(static_cast<double>(*manifest.vblankCycles)));
-			specsTable->set(key("vdp"), valueTable(vdpTable));
-		}
-		if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
-			auto* audioTable = m_cpu.createTable(0, 1);
-			auto* voicesTable = m_cpu.createTable(0, 3);
-			if (manifest.maxVoicesSfx) {
-				voicesTable->set(key("sfx"), valueNumber(static_cast<double>(*manifest.maxVoicesSfx)));
-			}
-			if (manifest.maxVoicesMusic) {
-				voicesTable->set(key("music"), valueNumber(static_cast<double>(*manifest.maxVoicesMusic)));
-			}
-			if (manifest.maxVoicesUi) {
-				voicesTable->set(key("ui"), valueNumber(static_cast<double>(*manifest.maxVoicesUi)));
-			}
-			audioTable->set(key("max_voices"), valueTable(voicesTable));
-			specsTable->set(key("audio"), valueTable(audioTable));
-		}
-		machineTable->set(key("specs"), valueTable(specsTable));
-		manifestTable->set(key("machine"), valueTable(machineTable));
-		auto* luaTable = m_cpu.createTable(0, 1);
-		luaTable->set(key("entry_path"), str(manifest.entryPoint));
-		manifestTable->set(key("lua"), valueTable(luaTable));
-		return manifestTable;
-	};
 	const RuntimeAssets* engineAssets = assets.fallback ? assets.fallback : &assets;
-	assetsTable->set(key("manifest"), valueTable(buildManifestTable(assets)));
-	assetsTable->set(key("canonicalization"), str(canonicalizationLabel(assets.canonicalization)));
-	setGlobal("cart_manifest", valueTable(buildManifestTable(assets)));
-	setGlobal("sys_manifest", valueTable(buildManifestTable(*engineAssets)));
+	setGlobal("cart_manifest", valueTable(buildManifestTable(m_cpu, assets, key)));
+	setGlobal("sys_manifest", valueTable(buildManifestTable(m_cpu, *engineAssets, key)));
 
 	auto viewSize = EngineCore::instance().view()->viewportSize;
 	auto* viewportTable = m_cpu.createTable(0, 2);

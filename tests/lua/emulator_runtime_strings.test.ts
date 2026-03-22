@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CPU, Table, createNativeObject, valuesEqual, type Program } from '../../src/bmsx/emulator/cpu';
+import { CPU, Table, createNativeObject, valuesEqual, type Closure, type Program } from '../../src/bmsx/emulator/cpu';
 import { Memory } from '../../src/bmsx/emulator/memory';
 import {
 	ARRAY_STORE_OBJECT_CAPACITY_OFFSET,
@@ -16,6 +16,7 @@ import {
 	HASH_NODE_VALUE_OFFSET,
 	HeapObjectType,
 	type ObjectHandleTableState,
+	NATIVE_OBJECT_BRIDGE_ID_OFFSET,
 	NATIVE_OBJECT_METATABLE_ID_OFFSET,
 	ObjectHandleTable,
 	STRING_OBJECT_BYTE_LENGTH_OFFSET,
@@ -38,9 +39,9 @@ import {
 	UPVALUE_OBJECT_STATE_OPEN,
 } from '../../src/bmsx/emulator/object_memory';
 import { OBJECT_HANDLE_ENTRY_SIZE, OBJECT_HANDLE_TABLE_BASE } from '../../src/bmsx/emulator/memory_map';
-import { CompileTimeStringPool, RuntimeStringPool, stringValueToString, type StringPool } from '../../src/bmsx/emulator/string_pool';
+import { CompileTimeStringPool, RuntimeStringPool, stringValueToString } from '../../src/bmsx/emulator/string_pool';
 
-function createRuntimeStringPool(): { memory: Memory; handles: ObjectHandleTable; pool: StringPool } {
+function createRuntimeStringPool(): { memory: Memory; handles: ObjectHandleTable; pool: RuntimeStringPool } {
 	const memory = new Memory({ engineRom: new Uint8Array(0) });
 	const handles = new ObjectHandleTable(memory);
 	return {
@@ -48,6 +49,15 @@ function createRuntimeStringPool(): { memory: Memory; handles: ObjectHandleTable
 		handles,
 		pool: new RuntimeStringPool(handles),
 	};
+}
+
+function forceTsObjectCollection(cpu: CPU): void {
+	const internal = cpu as unknown as {
+		collectRequested: boolean;
+		collectObjectMemory(): void;
+	};
+	internal.collectRequested = true;
+	internal.collectObjectMemory();
 }
 
 test('compile-time string pool still canonicalizes identical text', () => {
@@ -75,11 +85,15 @@ test('runtime string equality stays content-based', () => {
 	assert.equal(valuesEqual(left, right), true);
 });
 
+test('runtime numeric equality keeps NaN unequal to itself', () => {
+	assert.equal(valuesEqual(Number.NaN, Number.NaN), false);
+});
+
 test('table lookup accepts equal runtime strings with different ids', () => {
 	const { memory, pool, handles } = createRuntimeStringPool();
 	const left = pool.intern('vlok');
 	const right = pool.intern('vlok');
-	const table = new Table(0, 2, handles);
+	const table = new Table(0, 2, handles, pool);
 	table.set(left, 42);
 	assert.equal(table.get(right), 42);
 	const tableEntry = handles.readEntry(table.objectId);
@@ -105,6 +119,8 @@ test('runtime strings are stored as heap objects in RAM', () => {
 	const entryAddr = OBJECT_HANDLE_TABLE_BASE + value.id * OBJECT_HANDLE_ENTRY_SIZE;
 	assert.equal(memory.readU32(entryAddr + 8), HeapObjectType.String);
 	const entry = handles.readEntry(value.id);
+	assert.equal(value.objectId, value.id);
+	assert.equal(value.objectAddr, entry.addr);
 	assert.equal(entry.type, HeapObjectType.String);
 	assert.equal(entry.reserved, 0);
 	assert.equal(memory.readU32(entry.addr), HeapObjectType.String);
@@ -123,6 +139,8 @@ test('runtime string cache can be rebuilt from heap objects', () => {
 	const restored = pool.getById(value.id);
 	assert.notEqual(restored, value);
 	assert.equal(restored.id, value.id);
+	assert.equal(restored.objectId, value.objectId);
+	assert.equal(restored.objectAddr, value.objectAddr);
 	assert.equal(restored.text, value.text);
 	assert.equal(restored.hashLo, value.hashLo);
 	assert.equal(restored.hashHi, value.hashHi);
@@ -132,27 +150,41 @@ test('runtime string cache can be rebuilt from heap objects', () => {
 test('object handle table state can be captured and restored', () => {
 	const { handles, pool } = createRuntimeStringPool();
 	const key = pool.intern('heap-snapshot');
-	const table = new Table(1, 1, handles);
+	const table = new Table(1, 1, handles, pool);
 	table.set(key, 33);
 	const snapshot: ObjectHandleTableState = handles.captureState();
 	handles.resetHeap();
 	handles.restoreState(snapshot);
 	pool.clearRuntimeCache();
-	const internal = table as unknown as {
-		arrayStore: { clear(): void };
-		hashStore: { clear(): void };
-		arrayLength: number;
-		metatable: Table | null;
-		rehydrateStoreViews(pool: StringPool): void;
-	};
-	internal.arrayStore.clear();
-	internal.hashStore.clear();
-	internal.arrayLength = 0;
-	internal.metatable = null;
-	internal.rehydrateStoreViews(pool);
+	Table.rehydrateRuntimeObjects(handles, pool);
 	const restoredKey = pool.getById(key.id);
 	assert.equal(restoredKey.text, 'heap-snapshot');
 	assert.equal(table.get(restoredKey), 33);
+});
+
+test('object handle table compaction recycles freed ids', () => {
+	const { handles, pool } = createRuntimeStringPool();
+	const first = pool.intern('first');
+	const freed = pool.intern('freed');
+	const third = pool.intern('third');
+	handles.compact([first.id, third.id]);
+	pool.clearRuntimeCache();
+	const reused = pool.intern('reused');
+	assert.equal(reused.id, freed.id);
+});
+
+test('object handle table snapshot preserves recycled free ids', () => {
+	const { handles, pool } = createRuntimeStringPool();
+	const first = pool.intern('first');
+	const freed = pool.intern('freed');
+	const third = pool.intern('third');
+	handles.compact([first.id, third.id]);
+	const snapshot = handles.captureState();
+	handles.resetHeap();
+	handles.restoreState(snapshot);
+	pool.clearRuntimeCache();
+	const reused = pool.intern('reused');
+	assert.equal(reused.id, freed.id);
 });
 
 test('CPU runtime const pool does not mutate compile-time const pool strings', () => {
@@ -179,9 +211,9 @@ test('CPU runtime const pool does not mutate compile-time const pool strings', (
 });
 
 test('runtime tables are stored as heap objects with synced metadata', () => {
-	const { memory, handles } = createRuntimeStringPool();
-	const table = new Table(4, 3, handles);
-	const metatable = new Table(0, 1, handles);
+	const { memory, handles, pool } = createRuntimeStringPool();
+	const table = new Table(4, 3, handles, pool);
+	const metatable = new Table(0, 1, handles, pool);
 	table.set(1, 99);
 	table.setMetatable(metatable);
 	const entryAddr = OBJECT_HANDLE_TABLE_BASE + table.objectId * OBJECT_HANDLE_ENTRY_SIZE;
@@ -207,8 +239,8 @@ test('runtime tables are stored as heap objects with synced metadata', () => {
 });
 
 test('table resize allocates new backing store objects and updates table metadata', () => {
-	const { memory, handles } = createRuntimeStringPool();
-	const table = new Table(1, 1, handles);
+	const { memory, handles, pool } = createRuntimeStringPool();
+	const table = new Table(1, 1, handles, pool);
 	table.set(1, 10);
 	const tableEntry = handles.readEntry(table.objectId);
 	const initialArrayStoreId = memory.readU32(tableEntry.addr + TABLE_OBJECT_ARRAY_STORE_ID_OFFSET);
@@ -230,27 +262,15 @@ test('table resize allocates new backing store objects and updates table metadat
 	assert.equal(memory.readU32(resizedArrayStore.addr + ARRAY_STORE_OBJECT_DATA_OFFSET + TAGGED_VALUE_SLOT_TAG_OFFSET), TaggedValueTag.Number);
 });
 
-test('table host views can be rehydrated from packed RAM stores', () => {
+test('table state stays authoritative in packed RAM stores after cache resets', () => {
 	const { handles, pool } = createRuntimeStringPool();
-	const table = new Table(2, 2, handles);
-	const metatable = new Table(0, 1, handles);
+	const table = new Table(2, 2, handles, pool);
+	const metatable = new Table(0, 1, handles, pool);
 	const key = pool.intern('rehydrate-key');
 	table.set(1, 77);
 	table.set(key, metatable);
 	table.setMetatable(metatable);
-	const internal = table as unknown as {
-		arrayStore: { clear(): void };
-		hashStore: { clear(): void };
-		arrayLength: number;
-		metatable: Table | null;
-		rehydrateStoreViews(pool: StringPool): void;
-	};
-	internal.arrayStore.clear();
-	internal.hashStore.clear();
-	internal.arrayLength = 0;
-	internal.metatable = null;
 	pool.clearRuntimeCache();
-	internal.rehydrateStoreViews(pool);
 	assert.equal(table.length(), 1);
 	assert.equal(table.get(1), 77);
 	assert.equal(table.get(key), metatable);
@@ -261,7 +281,7 @@ test('native objects get heap handles and synced metatable state', () => {
 	const { memory, handles, pool } = createRuntimeStringPool();
 	const cpu = new CPU(memory, pool, handles);
 	const metatable = cpu.createTable(0, 1);
-	const native = createNativeObject({ value: 1 }, {
+	const native = createNativeObject({
 		get: () => null,
 		set: () => {},
 	});
@@ -269,6 +289,7 @@ test('native objects get heap handles and synced metatable state', () => {
 	assert.equal(native.objectId > 0, true);
 	const entry = handles.readEntry(native.objectId);
 	assert.equal(entry.type, HeapObjectType.NativeObject);
+	assert.equal(memory.readU32(entry.addr + NATIVE_OBJECT_BRIDGE_ID_OFFSET), native.bridgeId);
 	assert.equal(memory.readU32(entry.addr + NATIVE_OBJECT_METATABLE_ID_OFFSET), metatable.objectId);
 });
 
@@ -339,11 +360,42 @@ test('closures and upvalues get heap metadata in TS runtime objects', () => {
 	assert.equal(memory.readU32(upvalueEntry.addr + UPVALUE_OBJECT_CLOSED_VALUE_OFFSET + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET), 0);
 });
 
+test('TS heap sync handles cyclic closure and upvalue graphs', () => {
+	const { memory, handles, pool } = createRuntimeStringPool();
+	const closure: Closure = {
+		objectId: 0,
+		objectAddr: 0,
+		protoIndex: 7,
+		upvalues: [],
+	};
+	const upvalue = {
+		objectId: 0,
+		objectAddr: 0,
+		open: false,
+		index: 3,
+		frameDepth: -1,
+		value: closure,
+	};
+	closure.upvalues.push(upvalue as never);
+	assert.doesNotThrow(() => Table.ensureValueObjectId(closure, handles));
+	const closureEntry = handles.readEntry(closure.objectId);
+	const upvalueId = memory.readU32(closureEntry.addr + CLOSURE_OBJECT_UPVALUE_IDS_OFFSET);
+	assert.equal(upvalueId, upvalue.objectId);
+	const upvalueEntry = handles.readEntry(upvalue.objectId);
+	assert.equal(memory.readU32(upvalueEntry.addr + UPVALUE_OBJECT_STATE_OFFSET), 0);
+	assert.equal(memory.readU32(upvalueEntry.addr + UPVALUE_OBJECT_FRAME_DEPTH_OFFSET), 0xffffffff);
+	assert.equal(memory.readU32(upvalueEntry.addr + UPVALUE_OBJECT_REGISTER_INDEX_OFFSET), 3);
+	assert.equal(memory.readU32(upvalueEntry.addr + UPVALUE_OBJECT_CLOSED_VALUE_OFFSET + TAGGED_VALUE_SLOT_TAG_OFFSET), TaggedValueTag.Closure);
+	assert.equal(memory.readU32(upvalueEntry.addr + UPVALUE_OBJECT_CLOSED_VALUE_OFFSET + TAGGED_VALUE_SLOT_PAYLOAD_LO_OFFSET), closure.objectId);
+	assert.equal(memory.readU32(upvalueEntry.addr + UPVALUE_OBJECT_CLOSED_VALUE_OFFSET + TAGGED_VALUE_SLOT_PAYLOAD_HI_OFFSET), 0);
+	pool.clearRuntimeCache();
+});
+
 test('CPU object memory restore rehydrates runtime object views from RAM', () => {
 	const { memory, handles, pool } = createRuntimeStringPool();
 	const cpu = new CPU(memory, pool, handles);
 	const metatable = cpu.createTable(0, 1);
-	const native = createNativeObject({ value: 1 }, {
+	const native = createNativeObject({
 		get: () => null,
 		set: () => {},
 	});
@@ -458,7 +510,7 @@ test('CPU runtime state restore rebuilds frames and register values without Lua 
 			pc: number;
 			top: number;
 			registers: { set(index: number, value: unknown): void; get(index: number): unknown };
-			varargs: unknown[];
+			varargs: { clear(): void; length: number; get(index: number): unknown };
 			closure: { objectId: number };
 			openUpvalues: Map<number, unknown>;
 		}>;
@@ -473,7 +525,7 @@ test('CPU runtime state restore rebuilds frames and register values without Lua 
 	frame.pc = 0;
 	frame.registers.set(0, null);
 	frame.registers.set(1, null);
-	frame.varargs.length = 0;
+	frame.varargs.clear();
 	internal.stringIndexTable = null;
 	cpu.restoreRuntimeState(state);
 	const restored = (cpu as unknown as typeof internal);
@@ -483,6 +535,48 @@ test('CPU runtime state restore rebuilds frames and register values without Lua 
 	assert.equal(restored.frames[0].closure.objectId, frame.closure.objectId);
 	assert.equal(restored.frames[0].registers.get(0), arg0);
 	assert.equal(restored.frames[0].registers.get(1), reg1);
-	assert.deepEqual(restored.frames[0].varargs, [extra]);
+	assert.equal(restored.frames[0].varargs.length, 1);
+	assert.equal(restored.frames[0].varargs.get(0), extra);
 	assert.equal(restored.stringIndexTable, stringIndexTable);
+});
+
+test('TS CPU collector compacts live objects and reuses dead handles', () => {
+	const { memory, handles, pool } = createRuntimeStringPool();
+	const cpu = new CPU(memory, pool, handles);
+	const dead = pool.intern('dead-before-table');
+	const deadId = dead.id;
+	const table = cpu.createTable(0, 2);
+	const globalsKey = pool.intern('globals-key');
+	const tableKey = pool.intern('table-key');
+	const tableValue = pool.intern('table-value');
+	cpu.globals.set(globalsKey, table);
+	table.set(tableKey, tableValue);
+	const originalTableObjectId = table.objectId;
+	const originalTableAddr = table.objectAddr;
+	forceTsObjectCollection(cpu);
+	assert.equal(table.objectId, originalTableObjectId);
+	assert.equal(table.objectAddr < originalTableAddr, true);
+	assert.equal(dead.objectId, 0);
+	assert.equal(dead.objectAddr, 0);
+	const lookupKey = pool.intern('table-key');
+	assert.equal(stringValueToString(table.get(lookupKey) as typeof tableValue), 'table-value');
+	const reusedA = pool.intern('reused-after-collect-a');
+	const reusedB = pool.intern('reused-after-collect-b');
+	assert.equal([lookupKey.id, reusedA.id, reusedB.id].includes(deadId), true);
+});
+
+test('TS CPU collector releases dead native object bridges', () => {
+	const { memory, handles, pool } = createRuntimeStringPool();
+	const cpu = new CPU(memory, pool, handles);
+	const native = createNativeObject({
+		get: () => 99,
+		set: () => {},
+	});
+	cpu.setNativeObjectMetatable(native, null);
+	assert.equal(native.objectId > 0, true);
+	assert.equal(native.objectAddr > 0, true);
+	forceTsObjectCollection(cpu);
+	assert.equal(native.objectId, 0);
+	assert.equal(native.objectAddr, 0);
+	assert.throws(() => native.get(null), /Unknown native object bridge/);
 });

@@ -763,7 +763,13 @@ size_t Memory::ioIndex(uint32_t addr) const {
 
 size_t Memory::ramOffset(uint32_t addr, size_t length) const {
 	if (addr < RAM_BASE || addr + length > RAM_USED_END) {
-		throw std::runtime_error("[Memory] Address out of RAM bounds.");
+		throw std::runtime_error(
+			"[Memory] Address out of RAM bounds (addr="
+			+ std::to_string(addr)
+			+ ", length=" + std::to_string(length)
+			+ ", ram_base=" + std::to_string(RAM_BASE)
+			+ ", ram_end=" + std::to_string(RAM_USED_END) + ")."
+		);
 	}
 	return static_cast<size_t>(addr - RAM_BASE);
 }

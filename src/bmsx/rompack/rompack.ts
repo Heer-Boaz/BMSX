@@ -440,8 +440,8 @@ export type MachineDmaSpecs = {
 };
 export type MachineRamSpecs = {
 	ram_bytes?: number;
-	string_handle_count?: number;
-	string_heap_bytes?: number;
+	object_handle_count?: number;
+	gc_heap_bytes?: number;
 	asset_table_bytes?: number;
 	asset_data_bytes?: number;
 };
@@ -501,8 +501,8 @@ export type MachinePerfSpecs = {
 
 export type MachineMemorySpecs = {
 	ram_bytes?: number;
-	string_handle_count?: number;
-	string_heap_bytes?: number;
+	object_handle_count?: number;
+	gc_heap_bytes?: number;
 	asset_table_bytes?: number;
 	asset_data_bytes?: number;
 	atlas_slot_bytes?: number;
@@ -533,8 +533,8 @@ export function getMachineMemorySpecs(machine: CartManifest['machine']): Machine
 	const vram = machine.specs.vram;
 	return {
 		ram_bytes: ram?.ram_bytes,
-		string_handle_count: ram?.string_handle_count,
-		string_heap_bytes: ram?.string_heap_bytes,
+		object_handle_count: ram?.object_handle_count,
+		gc_heap_bytes: ram?.gc_heap_bytes,
 		asset_table_bytes: ram?.asset_table_bytes,
 		asset_data_bytes: ram?.asset_data_bytes,
 		atlas_slot_bytes: vram?.atlas_slot_bytes,

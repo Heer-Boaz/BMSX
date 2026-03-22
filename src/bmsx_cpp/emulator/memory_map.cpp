@@ -80,10 +80,10 @@ void configureMemoryMap(const MemoryMapConfig& config) {
 		throw std::runtime_error("[MemoryMap] ram_bytes must be greater than 0.");
 	}
 	if (config.objectHandleCount == 0) {
-		throw std::runtime_error("[MemoryMap] string_handle_count must be greater than 0.");
+		throw std::runtime_error("[MemoryMap] object_handle_count must be greater than 0.");
 	}
 	if (config.gcHeapBytes == 0) {
-		throw std::runtime_error("[MemoryMap] string_heap_bytes must be greater than 0.");
+		throw std::runtime_error("[MemoryMap] gc_heap_bytes must be greater than 0.");
 	}
 	if (config.assetTableBytes == 0) {
 		throw std::runtime_error("[MemoryMap] asset_table_bytes must be greater than 0.");

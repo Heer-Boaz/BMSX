@@ -134,17 +134,17 @@ uint32_t computeRequiredAssetDataBytes(const RuntimeAssets& engineAssets, const 
 
 MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomManifest& engineManifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
 	MemoryMapConfig config;
-	if (manifest.stringHandleCount) {
-		const i32 value = *manifest.stringHandleCount;
+	if (manifest.objectHandleCount) {
+		const i32 value = *manifest.objectHandleCount;
 		if (value <= 0) {
-			throw std::runtime_error("[EngineCore] string_handle_count must be greater than 0.");
+			throw std::runtime_error("[EngineCore] object_handle_count must be greater than 0.");
 		}
 		config.objectHandleCount = static_cast<uint32_t>(value);
 	}
-	if (manifest.stringHeapBytes) {
-		const i32 value = *manifest.stringHeapBytes;
+	if (manifest.gcHeapBytes) {
+		const i32 value = *manifest.gcHeapBytes;
 		if (value <= 0) {
-			throw std::runtime_error("[EngineCore] string_heap_bytes must be greater than 0.");
+			throw std::runtime_error("[EngineCore] gc_heap_bytes must be greater than 0.");
 		}
 		config.gcHeapBytes = static_cast<uint32_t>(value);
 	}

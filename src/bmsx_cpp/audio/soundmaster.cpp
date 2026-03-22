@@ -1051,7 +1051,7 @@ ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 		if (!valueIsTable(v)) {
 			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is not an array");
 		}
-		const Table& arr = *asTable(v);
+		const Table& arr = *asTable(v, Runtime::instance().cpu().heap());
 		const int len = arr.length();
 		if (len < 2) {
 			throw BMSX_RUNTIME_ERROR("Modulation range '" + field + "' is missing bounds");
@@ -1079,7 +1079,7 @@ ModulationInput SoundMaster::parseModulationInput(const Table& table) const {
 		if (!valueIsTable(filterVal)) {
 			throw BMSX_RUNTIME_ERROR("Modulation filter must be a table");
 		}
-		const Table& ftable = *asTable(filterVal);
+		const Table& ftable = *asTable(filterVal, Runtime::instance().cpu().heap());
 		FilterModulationParams filter;
 		Value typeVal = ftable.get(key("type"));
 		if (valueIsString(typeVal)) {

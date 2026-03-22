@@ -717,10 +717,10 @@ export class Runtime {
 	);
 	public readonly moduleProtos = new Map<string, number>();
 	public readonly moduleCache = new Map<string, Value>();
-	public readonly nativeObjectCache = new WeakMap<object, NativeObject>();
-	public readonly nativeFunctionCache = new WeakMap<Function, NativeFunction>();
-	public readonly nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
-	public readonly tableIds = new WeakMap<Table, number>();
+	public nativeObjectCache = new WeakMap<object, NativeObject>();
+	public nativeFunctionCache = new WeakMap<Function, NativeFunction>();
+	public nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
+	public tableIds = new WeakMap<Table, number>();
 	public nextTableId = 1;
 	public randomSeedValue = 0;
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
@@ -947,15 +947,7 @@ export class Runtime {
 	}
 
 	private static startEngineWithDeferredStartupAudioRefresh(): void {
-		$.bootstrapStartupAudio();
 		$.start();
-		const firstFrameHandle = $.platform.frames.start(() => {
-			firstFrameHandle.stop();
-			const audioRefreshHandle = $.platform.frames.start(() => {
-				audioRefreshHandle.stop();
-				void $.refresh_audio_assets();
-			});
-		});
 	}
 
 	private static collectAssetEntryIds(engineSource: RawAssetSource, assetSource: RawAssetSource, assets: RuntimeAssets): Set<string> {
@@ -1054,8 +1046,8 @@ export class Runtime {
 		const engineMachine = params.engineManifest.machine;
 		const memorySpecs = getMachineMemorySpecs(machineConfig);
 		const engineMemorySpecs = getMachineMemorySpecs(engineMachine);
-		const objectHandleCount = memorySpecs.string_handle_count ?? DEFAULT_OBJECT_HANDLE_COUNT;
-		const gcHeapBytes = memorySpecs.string_heap_bytes ?? DEFAULT_GC_HEAP_SIZE;
+		const objectHandleCount = memorySpecs.object_handle_count ?? DEFAULT_OBJECT_HANDLE_COUNT;
+		const gcHeapBytes = memorySpecs.gc_heap_bytes ?? DEFAULT_GC_HEAP_SIZE;
 		const atlasSlotBytes = memorySpecs.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 		const engineAtlasSlotBytes = engineMemorySpecs.system_atlas_slot_bytes;
 		if (engineAtlasSlotBytes === undefined) {
@@ -1108,8 +1100,8 @@ export class Runtime {
 		);
 		return {
 			ram_bytes: ramBytes,
-			string_handle_count: objectHandleCount,
-			string_heap_bytes: gcHeapBytes,
+			object_handle_count: objectHandleCount,
+			gc_heap_bytes: gcHeapBytes,
 			asset_table_bytes: assetTableBytes,
 			asset_data_bytes: assetDataBytes,
 			atlas_slot_bytes: atlasSlotBytes,
@@ -1300,8 +1292,8 @@ export class Runtime {
 				}
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset the runtime state
 				await $.resetRuntime();
-				await $.refresh_audio_assets();
 			}
+			await $.refresh_audio_assets();
 			api.cartdata($.lua_sources.namespace);
 			runtimeLuaPipeline.bootActiveProgram(this);
 			this.hasCompletedInitialBoot = true;
@@ -1912,6 +1904,15 @@ export class Runtime {
 		if (this.stringScratchPool.length < MAX_POOLED_RUNTIME_SCRATCH_ARRAYS) {
 			this.stringScratchPool.push(values);
 		}
+	}
+
+	public resetNativeInteropCaches(): void {
+		this.nativeObjectCache = new WeakMap<object, NativeObject>();
+		this.nativeFunctionCache = new WeakMap<Function, NativeFunction>();
+		this.nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
+		this.tableIds = new WeakMap<Table, number>();
+		this.nextTableId = 1;
+		this.nativeMemberCompletionCache = new WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }>();
 	}
 
 	public callLuaFunction(fn: LuaFunctionValue, args: unknown[]): unknown[] {

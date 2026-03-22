@@ -193,6 +193,10 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
+	m_cpu.unwindToDepth(0);
+	m_cpu.lastReturnValues.clear();
+	m_cpu.lastPc = 0;
+	m_cpu.lastInstruction = 0;
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
 	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
@@ -537,12 +541,12 @@ void Runtime::tickUpdate() {
 	m_frameState.cycleCarryGranted = carryBudget;
 	m_frameDeltaMs = static_cast<f64>(EngineCore::instance().deltaTime()) * 1000.0;
 	m_vdp.beginFrame();
-	auto* gameTable = asTable(m_cpu.globals->get(canonicalizeIdentifier("game")));
-	auto* viewportTable = asTable(gameTable->get(canonicalizeIdentifier("viewportsize")));
+	auto* gameTable = asTable(m_cpu.globals->get(canonicalizeIdentifier("game")), m_cpu.heap());
+	auto* viewportTable = asTable(gameTable->get(canonicalizeIdentifier("viewportsize")), m_cpu.heap());
 	auto viewSize = EngineCore::instance().view()->viewportSize;
 	viewportTable->set(canonicalizeIdentifier("x"), valueNumber(static_cast<double>(viewSize.x)));
 	viewportTable->set(canonicalizeIdentifier("y"), valueNumber(static_cast<double>(viewSize.y)));
-	auto* viewTable = asTable(gameTable->get(canonicalizeIdentifier("view")));
+	auto* viewTable = asTable(gameTable->get(canonicalizeIdentifier("view")), m_cpu.heap());
 	auto* view = EngineCore::instance().view();
 	const Value viewCrtKey = canonicalizeIdentifier("crt_postprocessing_enabled");
 	const Value viewNoiseKey = canonicalizeIdentifier("enable_noise");
@@ -743,12 +747,38 @@ Value Runtime::getGlobal(std::string_view name) {
 }
 
 void Runtime::setGlobal(std::string_view name, const Value& value) {
-	m_cpu.globals->set(canonicalizeIdentifier(name), value);
+	auto scratch = acquireValueScratch();
+	m_cpu.pinActiveValueScratch(&scratch);
+	try {
+		const Value keyValue = canonicalizeIdentifier(name);
+		scratch.push_back(keyValue);
+		scratch.push_back(value);
+		m_cpu.globals->set(keyValue, value);
+	} catch (...) {
+		m_cpu.unpinActiveValueScratch(&scratch);
+		releaseValueScratch(std::move(scratch));
+		throw;
+	}
+	m_cpu.unpinActiveValueScratch(&scratch);
+	releaseValueScratch(std::move(scratch));
 }
 
-void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn) {
-	auto nativeFn = m_cpu.createNativeFunction(name, std::move(fn));
-	m_cpu.globals->set(canonicalizeIdentifier(name), nativeFn);
+void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeBridgeMark mark) {
+	auto scratch = acquireValueScratch();
+	m_cpu.pinActiveValueScratch(&scratch);
+	try {
+		const Value keyValue = canonicalizeIdentifier(name);
+		scratch.push_back(keyValue);
+		const Value nativeFn = m_cpu.createNativeFunction(name, std::move(fn), std::move(mark));
+		scratch.push_back(nativeFn);
+		m_cpu.globals->set(keyValue, nativeFn);
+	} catch (...) {
+		m_cpu.unpinActiveValueScratch(&scratch);
+		releaseValueScratch(std::move(scratch));
+		throw;
+	}
+	m_cpu.unpinActiveValueScratch(&scratch);
+	releaseValueScratch(std::move(scratch));
 }
 
 void Runtime::setCanonicalization(CanonicalizationType canonicalization) {

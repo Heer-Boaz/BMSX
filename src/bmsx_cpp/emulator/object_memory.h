@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 #include "memory_map.h"
@@ -34,7 +35,10 @@ constexpr uint32_t CLOSURE_OBJECT_PROTO_INDEX_OFFSET = HEAP_OBJECT_HEADER_SIZE;
 constexpr uint32_t CLOSURE_OBJECT_UPVALUE_COUNT_OFFSET = CLOSURE_OBJECT_PROTO_INDEX_OFFSET + 4;
 constexpr uint32_t CLOSURE_OBJECT_UPVALUE_IDS_OFFSET = CLOSURE_OBJECT_UPVALUE_COUNT_OFFSET + 4;
 constexpr uint32_t CLOSURE_OBJECT_HEADER_SIZE = CLOSURE_OBJECT_UPVALUE_IDS_OFFSET;
-constexpr uint32_t NATIVE_OBJECT_METATABLE_ID_OFFSET = HEAP_OBJECT_HEADER_SIZE;
+constexpr uint32_t NATIVE_FUNCTION_OBJECT_BRIDGE_ID_OFFSET = HEAP_OBJECT_HEADER_SIZE;
+constexpr uint32_t NATIVE_FUNCTION_OBJECT_HEADER_SIZE = NATIVE_FUNCTION_OBJECT_BRIDGE_ID_OFFSET + 4;
+constexpr uint32_t NATIVE_OBJECT_BRIDGE_ID_OFFSET = HEAP_OBJECT_HEADER_SIZE;
+constexpr uint32_t NATIVE_OBJECT_METATABLE_ID_OFFSET = NATIVE_OBJECT_BRIDGE_ID_OFFSET + 4;
 constexpr uint32_t NATIVE_OBJECT_HEADER_SIZE = NATIVE_OBJECT_METATABLE_ID_OFFSET + 4;
 constexpr uint32_t UPVALUE_OBJECT_STATE_OFFSET = HEAP_OBJECT_HEADER_SIZE;
 constexpr uint32_t UPVALUE_OBJECT_FRAME_DEPTH_OFFSET = UPVALUE_OBJECT_STATE_OFFSET + 4;
@@ -93,11 +97,15 @@ struct ObjectAllocation {
 };
 
 struct ObjectHandleTableState {
-	uint32_t nextHandle = 1;
 	uint32_t heapUsedBytes = 0;
 	std::vector<uint8_t> handleTableBytes;
 	std::vector<uint8_t> heapBytes;
 };
+
+constexpr uint32_t OBJECT_HANDLE_ENTRY_FLAG_FREE = 1;
+constexpr uint32_t HANDLE_TABLE_HEADER_NEXT_HANDLE_OFFSET = 0;
+constexpr uint32_t HANDLE_TABLE_HEADER_FREE_LIST_HEAD_OFFSET = 4;
+constexpr uint32_t HANDLE_TABLE_HEADER_ALLOC_FLOOR_OFFSET = 8;
 
 class ObjectHeap {
 public:
@@ -123,16 +131,25 @@ public:
 	void writeBytes(uint32_t addr, const uint8_t* data, size_t length);
 	void readBytes(uint32_t addr, uint8_t* data, size_t length) const;
 	ObjectHandleEntry readEntry(uint32_t id) const;
+	void rebuildFreeHandles(const std::vector<uint32_t>& liveHandleIds);
+	void compact(const std::vector<uint32_t>& liveHandleIds);
 	void resetHeap();
+	uint32_t usedHeapBytes() const;
 	ObjectHandleTableState captureState() const;
 	void restoreState(const ObjectHandleTableState& state);
 
 private:
+	uint32_t nextHandle() const;
+	void setNextHandle(uint32_t value);
+	uint32_t freeListHead() const;
+	void setFreeListHead(uint32_t value);
+	uint32_t allocFloor() const;
+	void setAllocFloor(uint32_t value);
+	void rebuildFreeList(uint32_t nextHandle, const std::unordered_set<uint32_t>* liveSet = nullptr);
 	void writeHeapHeader(uint32_t addr, uint32_t type, uint32_t flags, uint32_t sizeBytes);
 
 	Memory& m_memory;
 	ObjectHeap m_heap;
-	uint32_t m_nextHandle = 1;
 };
 
 } // namespace bmsx
