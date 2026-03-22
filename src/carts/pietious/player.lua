@@ -390,7 +390,10 @@ function player:ctor()
 	self:equip_subweapon(self.secondary_weapon)
 	self.weapon_level = 0
 	self:apply_presentation_state()
-	self:update_collision_state()
+	self.left_wall_collision_primary = false
+	self.left_wall_collision_secondary = false
+	self.left_wall_collision = false
+	self.right_wall_collision = false
 	self:force_seek_timeline('p.seq.s', 0)
 	self:reset_hit_invulnerability_sequence()
 	self:reset_fall_substate_sequence()
