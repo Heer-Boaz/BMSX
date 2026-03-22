@@ -196,8 +196,7 @@ export class ObjectHandleTable {
 		const freeHead = this.freeListHead();
 		let id = freeHead;
 		if (id !== 0) {
-			const freeEntry = this.readEntry(id);
-			this.writeFreeListHead(freeEntry.reserved);
+			this.writeFreeListHead(this.readEntryReserved(id));
 		} else {
 			id = this.nextHandle();
 			if (id >= OBJECT_HANDLE_COUNT) {
@@ -234,7 +233,7 @@ export class ObjectHandleTable {
 	}
 
 	public writeEntry(id: number, addr: number, sizeBytes: number, type: number, flags: number, reserved: number): void {
-		const entryAddr = OBJECT_HANDLE_TABLE_BASE + id * OBJECT_HANDLE_ENTRY_SIZE;
+		const entryAddr = this.entryAddrOf(id);
 		this.memory.writeU32(entryAddr, addr);
 		this.memory.writeU32(entryAddr + 4, sizeBytes);
 		this.memory.writeU32(entryAddr + 8, type);
@@ -243,7 +242,7 @@ export class ObjectHandleTable {
 	}
 
 	public readEntry(id: number): ObjectHandleEntry {
-		const entryAddr = OBJECT_HANDLE_TABLE_BASE + id * OBJECT_HANDLE_ENTRY_SIZE;
+		const entryAddr = this.entryAddrOf(id);
 		return {
 			addr: this.memory.readU32(entryAddr),
 			sizeBytes: this.memory.readU32(entryAddr + 4),
@@ -251,6 +250,26 @@ export class ObjectHandleTable {
 			flags: this.memory.readU32(entryAddr + 12),
 			reserved: this.memory.readU32(entryAddr + 16),
 		};
+	}
+
+	public readEntryAddr(id: number): number {
+		return this.memory.readU32(this.entryAddrOf(id));
+	}
+
+	public readEntrySizeBytes(id: number): number {
+		return this.memory.readU32(this.entryAddrOf(id) + 4);
+	}
+
+	public readEntryType(id: number): number {
+		return this.memory.readU32(this.entryAddrOf(id) + 8);
+	}
+
+	public readEntryFlags(id: number): number {
+		return this.memory.readU32(this.entryAddrOf(id) + 12);
+	}
+
+	public readEntryReserved(id: number): number {
+		return this.memory.readU32(this.entryAddrOf(id) + 16);
 	}
 
 	public resetHeap(): void {
@@ -322,5 +341,9 @@ export class ObjectHandleTable {
 		this.memory.writeU32(addr, type);
 		this.memory.writeU32(addr + 4, flags);
 		this.memory.writeU32(addr + 8, sizeBytes);
+	}
+
+	private entryAddrOf(id: number): number {
+		return OBJECT_HANDLE_TABLE_BASE + id * OBJECT_HANDLE_ENTRY_SIZE;
 	}
 }

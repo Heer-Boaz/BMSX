@@ -829,8 +829,7 @@ export class Table {
 		}
 		native.bridgeReleased = false;
 		reserveNativeFunctionBridge(objectHandles, native.bridgeId);
-		const entry = objectHandles.readEntry(native.objectId);
-		objectHandles.writeU32(entry.addr + NATIVE_FUNCTION_OBJECT_BRIDGE_ID_OFFSET, native.bridgeId >>> 0);
+		objectHandles.writeU32(objectHandles.readEntryAddr(native.objectId) + NATIVE_FUNCTION_OBJECT_BRIDGE_ID_OFFSET, native.bridgeId >>> 0);
 	}
 
 	public static syncNativeObjectState(native: NativeObject, objectHandles: ObjectHandleTable): void {
@@ -839,34 +838,34 @@ export class Table {
 		}
 		native.bridgeReleased = false;
 		reserveNativeObjectBridge(objectHandles, native.bridgeId);
-		const entry = objectHandles.readEntry(native.objectId);
-		objectHandles.writeU32(entry.addr + NATIVE_OBJECT_BRIDGE_ID_OFFSET, native.bridgeId >>> 0);
+		const objectAddr = objectHandles.readEntryAddr(native.objectId);
+		objectHandles.writeU32(objectAddr + NATIVE_OBJECT_BRIDGE_ID_OFFSET, native.bridgeId >>> 0);
 		const metatableId = native.metatable ? Table.ensureValueObjectId(native.metatable, objectHandles) : 0;
-		objectHandles.writeU32(entry.addr + NATIVE_OBJECT_METATABLE_ID_OFFSET, metatableId >>> 0);
+		objectHandles.writeU32(objectAddr + NATIVE_OBJECT_METATABLE_ID_OFFSET, metatableId >>> 0);
 	}
 
 	public static syncClosureState(closure: Closure, objectHandles: ObjectHandleTable): void {
-		const entry = objectHandles.readEntry(closure.objectId);
-		objectHandles.writeU32(entry.addr + CLOSURE_OBJECT_PROTO_INDEX_OFFSET, closure.protoIndex >>> 0);
-		objectHandles.writeU32(entry.addr + CLOSURE_OBJECT_UPVALUE_COUNT_OFFSET, closure.upvalues.length >>> 0);
+		const objectAddr = objectHandles.readEntryAddr(closure.objectId);
+		objectHandles.writeU32(objectAddr + CLOSURE_OBJECT_PROTO_INDEX_OFFSET, closure.protoIndex >>> 0);
+		objectHandles.writeU32(objectAddr + CLOSURE_OBJECT_UPVALUE_COUNT_OFFSET, closure.upvalues.length >>> 0);
 		for (let index = 0; index < closure.upvalues.length; index += 1) {
 			const upvalueId = Table.ensureUpvalueObjectId(closure.upvalues[index], objectHandles);
 			objectHandles.writeU32(
-				entry.addr + CLOSURE_OBJECT_UPVALUE_IDS_OFFSET + (index * 4),
+				objectAddr + CLOSURE_OBJECT_UPVALUE_IDS_OFFSET + (index * 4),
 				upvalueId >>> 0,
 			);
 		}
 	}
 
 	public static syncUpvalueState(upvalue: Upvalue, objectHandles: ObjectHandleTable): void {
-		const entry = objectHandles.readEntry(upvalue.objectId);
+		const objectAddr = objectHandles.readEntryAddr(upvalue.objectId);
 		objectHandles.writeU32(
-			entry.addr + UPVALUE_OBJECT_STATE_OFFSET,
+			objectAddr + UPVALUE_OBJECT_STATE_OFFSET,
 			(upvalue.open ? UPVALUE_OBJECT_STATE_OPEN : UPVALUE_OBJECT_STATE_CLOSED) >>> 0,
 		);
-		objectHandles.writeU32(entry.addr + UPVALUE_OBJECT_FRAME_DEPTH_OFFSET, upvalue.frameDepth >>> 0);
-		objectHandles.writeU32(entry.addr + UPVALUE_OBJECT_REGISTER_INDEX_OFFSET, upvalue.index >>> 0);
-		Table.writeTaggedValueToHandles(objectHandles, entry.addr + UPVALUE_OBJECT_CLOSED_VALUE_OFFSET, upvalue.value);
+		objectHandles.writeU32(objectAddr + UPVALUE_OBJECT_FRAME_DEPTH_OFFSET, upvalue.frameDepth >>> 0);
+		objectHandles.writeU32(objectAddr + UPVALUE_OBJECT_REGISTER_INDEX_OFFSET, upvalue.index >>> 0);
+		Table.writeTaggedValueToHandles(objectHandles, objectAddr + UPVALUE_OBJECT_CLOSED_VALUE_OFFSET, upvalue.value);
 	}
 
 	public static resolveRuntimeObjectId<T extends object>(objectHandles: ObjectHandleTable, id: number): T {
@@ -1191,11 +1190,11 @@ export class Table {
 	}
 
 	private arrayStoreAddr(): number {
-		return this.objectHandles.readEntry(this.readArrayStoreId()).addr;
+		return this.objectHandles.readEntryAddr(this.readArrayStoreId());
 	}
 
 	private hashStoreAddr(): number {
-		return this.objectHandles.readEntry(this.readHashStoreId()).addr;
+		return this.objectHandles.readEntryAddr(this.readHashStoreId());
 	}
 
 	private arrayStoreCapacity(): number {
@@ -1692,6 +1691,7 @@ const MAX_POOLED_FRAMES = 32;
 const MAX_POOLED_REGISTER_ARRAYS = 64;
 const MAX_REGISTER_ARRAY_SIZE = 256;
 const MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;
+const MIN_GC_HEAP_TRIGGER_BYTES = 4 * 1024 * 1024;
 const signExtend = (value: number, bits: number): number => {
 	const shift = 32 - bits;
 	return (value << shift) >> shift;
@@ -1736,7 +1736,7 @@ export class CPU {
 	private readonly constructionScopeOffsets: number[] = [];
 	private readonly activeNativeReturnScratch: Value[][] = [];
 	private readonly rootedValueMaps: Array<Map<any, Value>> = [];
-	private nextGcHeapBytes = 1024 * 1024;
+	private nextGcHeapBytes = MIN_GC_HEAP_TRIGGER_BYTES;
 	private collectRequested = false;
 
 	constructor(memory: Memory, stringPool: RuntimeStringPool, objectHandles: ObjectHandleTable) {
@@ -1752,7 +1752,7 @@ export class CPU {
 		this.lastReturnValuesBuffer = new TaggedValueList(this.stringPool, this.objectHandles);
 		this.globals = this.createTable(0, 0);
 		this.indexKey = this.stringPool.intern('__index');
-		this.nextGcHeapBytes = Math.max(1024 * 1024, this.objectHandles.usedHeapBytes() * 2);
+		this.nextGcHeapBytes = this.computeNextGcHeapBytes();
 	}
 
 	public get lastReturnValues(): Value[] {
@@ -1826,7 +1826,7 @@ export class CPU {
 		this.returnScratch.length = 0;
 		this.lastReturnValuesScratch.length = 0;
 		this.activeNativeReturnScratch.length = 0;
-		this.nextGcHeapBytes = Math.max(1024 * 1024, this.objectHandles.usedHeapBytes() * 2);
+		this.nextGcHeapBytes = this.computeNextGcHeapBytes();
 	}
 
 	private beginConstructionScope(): void {
@@ -1959,9 +1959,9 @@ export class CPU {
 		while (this.grayObjects.length > 0) {
 			const object = this.grayObjects.pop()!;
 			if (object instanceof Table) {
-				const entry = this.objectHandles.readEntry(object.objectId);
-				this.markHandle(this.objectHandles.readU32(entry.addr + TABLE_OBJECT_ARRAY_STORE_ID_OFFSET));
-				this.markHandle(this.objectHandles.readU32(entry.addr + TABLE_OBJECT_HASH_STORE_ID_OFFSET));
+				const objectAddr = this.objectHandles.readEntryAddr(object.objectId);
+				this.markHandle(this.objectHandles.readU32(objectAddr + TABLE_OBJECT_ARRAY_STORE_ID_OFFSET));
+				this.markHandle(this.objectHandles.readU32(objectAddr + TABLE_OBJECT_HASH_STORE_ID_OFFSET));
 				const metatable = object.getMetatable();
 				if (metatable !== null) {
 					this.markRuntimeObject(metatable);
@@ -2039,7 +2039,7 @@ export class CPU {
 		this.liveHandleIds.length = 0;
 		this.liveHandleSet.clear();
 		this.rehydrateRuntimeObjects();
-		this.nextGcHeapBytes = Math.max(1024 * 1024, this.objectHandles.usedHeapBytes() * 2);
+		this.nextGcHeapBytes = this.computeNextGcHeapBytes();
 	}
 
 	private rehydrateRuntimeObjects(): void {
@@ -2066,6 +2066,10 @@ export class CPU {
 			return this.stringPool.getById(value.id);
 		}
 		return value;
+	}
+
+	private computeNextGcHeapBytes(): number {
+		return Math.max(MIN_GC_HEAP_TRIGGER_BYTES, this.objectHandles.usedHeapBytes() * 2);
 	}
 
 	public encodeTaggedValueBufferEntry(buffer: Uint32Array, slotIndex: number, value: Value): void {

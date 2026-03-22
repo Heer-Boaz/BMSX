@@ -166,17 +166,18 @@ export class RuntimeStringPool {
 	}
 
 	private readFromHeap(id: StringId): StringValue {
-		const entry = this.handleTable.readEntry(id);
-		if (entry.type !== HeapObjectType.String) {
+		const type = this.handleTable.readEntryType(id);
+		if (type !== HeapObjectType.String) {
 			throw new Error(`[StringPool] Handle ${id} is not a string object.`);
 		}
-		const hashLo = this.handleTable.readU32(entry.addr + STRING_OBJECT_HASH_LO_OFFSET);
-		const hashHi = this.handleTable.readU32(entry.addr + STRING_OBJECT_HASH_HI_OFFSET);
-		const byteLength = this.handleTable.readU32(entry.addr + STRING_OBJECT_BYTE_LENGTH_OFFSET);
-		const codepointCount = this.handleTable.readU32(entry.addr + STRING_OBJECT_CODEPOINT_COUNT_OFFSET);
-		const bytes = this.handleTable.readBytes(entry.addr + STRING_OBJECT_DATA_OFFSET, byteLength);
+		const objectAddr = this.handleTable.readEntryAddr(id);
+		const hashLo = this.handleTable.readU32(objectAddr + STRING_OBJECT_HASH_LO_OFFSET);
+		const hashHi = this.handleTable.readU32(objectAddr + STRING_OBJECT_HASH_HI_OFFSET);
+		const byteLength = this.handleTable.readU32(objectAddr + STRING_OBJECT_BYTE_LENGTH_OFFSET);
+		const codepointCount = this.handleTable.readU32(objectAddr + STRING_OBJECT_CODEPOINT_COUNT_OFFSET);
+		const bytes = this.handleTable.readBytes(objectAddr + STRING_OBJECT_DATA_OFFSET, byteLength);
 		const text = TEXT_DECODER.decode(bytes);
-		const value = StringValue.createFromMetadata(id, entry.addr, text, { bytes, byteLength, codepointCount, hashLo, hashHi });
+		const value = StringValue.createFromMetadata(id, objectAddr, text, { bytes, byteLength, codepointCount, hashLo, hashHi });
 		registerRuntimeObject(this.handleTable, value, id);
 		return value;
 	}
