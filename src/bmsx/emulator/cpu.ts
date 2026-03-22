@@ -1735,6 +1735,7 @@ export class CPU {
 	private readonly constructionHandleIds: number[] = [];
 	private readonly constructionScopeOffsets: number[] = [];
 	private readonly activeNativeReturnScratch: Value[][] = [];
+	private readonly rootedValueMaps: Array<Map<any, Value>> = [];
 	private nextGcHeapBytes = 1024 * 1024;
 	private collectRequested = false;
 
@@ -1767,6 +1768,10 @@ export class CPU {
 			native.metatable = metatable;
 			Table.ensureValueObjectId(native, this.objectHandles);
 		});
+	}
+
+	public addRootValueMap<K>(map: Map<K, Value>): void {
+		this.rootedValueMaps.push(map as Map<any, Value>);
 	}
 
 	public captureObjectMemoryState(): ObjectHandleTableState {
@@ -1943,6 +1948,11 @@ export class CPU {
 				this.markValue(frame.registers.get(registerIndex));
 			}
 		}
+		for (let mapIndex = 0; mapIndex < this.rootedValueMaps.length; mapIndex += 1) {
+			for (const value of this.rootedValueMaps[mapIndex].values()) {
+				this.markValue(value);
+			}
+		}
 	}
 
 	private traceLiveObjects(): void {
@@ -2042,6 +2052,12 @@ export class CPU {
 		this.rehydrateValueArray(this.lastReturnValuesScratch);
 		for (let index = 0; index < this.activeNativeReturnScratch.length; index += 1) {
 			this.rehydrateValueArray(this.activeNativeReturnScratch[index]);
+		}
+		for (let mapIndex = 0; mapIndex < this.rootedValueMaps.length; mapIndex += 1) {
+			const map = this.rootedValueMaps[mapIndex];
+			for (const [key, value] of map.entries()) {
+				map.set(key, this.rehydrateValue(value));
+			}
 		}
 	}
 

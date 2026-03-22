@@ -1207,6 +1207,7 @@ export class Runtime {
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, (mask) => this.raiseIrqFlags(mask));
 		this.vdp.attachImgDecController(this.imgDecController);
 		this.cpu = new CPU(this.memory, this.runtimeStringPool, this.objectHandles);
+		this.cpu.addRootValueMap(this.moduleCache);
 		this.setCpuHz(options.cpuHz);
 		this.randomSeedValue = $.platform.clock.now();
 

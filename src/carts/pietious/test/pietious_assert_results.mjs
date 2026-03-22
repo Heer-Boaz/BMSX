@@ -43,7 +43,9 @@ function getLuaState(engine) {
 	const [state] = evalLua(engine, `
 		local collision2d = require('collision2d')
 		local constants = require('constants')
+		local world = require('world').instance
 		local castle = object('c')
+		local director = object('d')
 		local room = object('room')
 		local player = object('pietolon')
 		local elevator = object('e.p1')
@@ -72,9 +74,12 @@ function getLuaState(engine) {
 		end
 		return {
 			has_castle = castle ~= nil,
+			has_director = director ~= nil,
 			has_room = room ~= nil,
 			has_player = player ~= nil,
 			has_elevator = elevator ~= nil,
+			active_space = world:get_space(),
+			boot_mode = director and director.boot_mode or nil,
 			room_number = castle and castle.current_room_number or -1,
 			player_x = player and player.x or -1,
 			player_y = player and player.y or -1,
@@ -713,6 +718,7 @@ function updateWallSnapScenario(_engine, scenario, logger) {
 
 export default function schedule({ logger, schedule: scheduleInput }) {
 	let requestedNewGame = false;
+	let requestedRoomGame = false;
 	let cartActiveAt = 0;
 	let lastWaitingLogAt = 0;
 	let gameplayReadyAt = 0;
@@ -747,6 +753,13 @@ export default function schedule({ logger, schedule: scheduleInput }) {
 		}
 
 		const state = getLuaState(engine);
+		if (!requestedRoomGame && state && state.has_director && state.boot_mode === 'title_screen' && state.active_space === 'title') {
+			requestedRoomGame = true;
+			gameplayReadyAt = 0;
+			logger('[assert] title screen active, requesting room new_game');
+			engine.request_new_game();
+			return;
+		}
 		if (!hasGameplayObjects(state)) {
 			gameplayReadyAt = 0;
 			const now = Date.now();
