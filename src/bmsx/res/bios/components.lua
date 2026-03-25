@@ -614,7 +614,7 @@ function timelinecomponent:play(id, opts)
 		params = instance.def.params
 	end
 	if target == nil then
-		target = owner
+		target = entry.target or owner
 	end
 	entry.params = params
 	entry.target = target

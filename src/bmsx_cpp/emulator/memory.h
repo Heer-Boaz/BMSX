@@ -38,6 +38,8 @@ public:
 	size_t overlayRomSize() const;
 	void setVramWriter(VramWriter* writer);
 	void setVdpIoHandler(VdpIoHandler* handler);
+	uint32_t usedAssetTableBytes() const;
+	uint32_t usedAssetDataBytes() const;
 
 	Value readValue(uint32_t addr) const;
 	void writeValue(uint32_t addr, Value value);

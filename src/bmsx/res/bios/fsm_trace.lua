@@ -104,7 +104,7 @@ function fsm_trace.create_fallback_snapshot(trigger, description, payload)
 	return {
 		trigger = trigger,
 		description = description,
-		timestamp = $.platform.clock.now(),
+		timestamp = clock_now(),
 		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload),
 	}
 end
@@ -115,7 +115,7 @@ function fsm_trace.create_event_context(event_name, emitter, payload)
 		description = 'event:' .. event_name,
 		event_name = event_name,
 		emitter = emitter,
-		timestamp = $.platform.clock.now(),
+		timestamp = clock_now(),
 		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload),
 	}
 end
@@ -124,7 +124,7 @@ function fsm_trace.create_input_context(pattern, player_index)
 	return {
 		trigger = 'input',
 		description = 'input:' .. pattern,
-		timestamp = $.platform.clock.now(),
+		timestamp = clock_now(),
 		payload_summary = 'player=' .. tostring(player_index),
 	}
 end
@@ -133,7 +133,7 @@ function fsm_trace.create_update_context(handler_name)
 	return {
 		trigger = 'update',
 		description = 'update:' .. handler_name,
-		timestamp = $.platform.clock.now(),
+		timestamp = clock_now(),
 	}
 end
 
@@ -141,7 +141,7 @@ function fsm_trace.create_enter_context(state_id)
 	return {
 		trigger = 'enter',
 		description = 'enter:' .. tostring(state_id),
-		timestamp = $.platform.clock.now(),
+		timestamp = clock_now(),
 	}
 end
 

@@ -2,7 +2,7 @@ title: Pietsona 2025
 short_name: '2025'
 rom_name: '2025'
 machine:
-    viewport: 
+    render_size:
         width: 320
         height: 240
     canonicalization: lower
@@ -15,8 +15,6 @@ machine:
         dma:
             dma_bytes_per_sec_iso: 8388608 # 8 MB/s
             dma_bytes_per_sec_bulk: 26214400 # 25 MB/s
-        vdp:
-            vblank_cycles: 10000
         ram:
             # Breakdown of string_heap, asset_table, and asset_data:
             string_handle_count: 32768 # 32K

@@ -29,6 +29,7 @@ local eventemitter = eventemitter_module.eventemitter
 eventemitter_module.eventemitter = eventemitter
 eventemitter_module.instance = eventemitter.instance
 local quickmenu = require('quickmenu')
+local resource_usage_gizmo = require('resource_usage_gizmo')
 -- local ide_editor = require('ide_editor')
 local romdir = require('romdir')
 local bool01 = require('bool01')
@@ -309,30 +310,30 @@ end
 
 function engine.define_prefab(definition)
 	if type(definition.class) ~= 'table' then
-		error('define_prefab: definition.class must be a table for '' .. tostring(definition.def_id) .. ''.')
+		error('define_prefab: definition.class must be a table for "' .. tostring(definition.def_id) .. '".')
 	end
 	definitions[definition.def_id] = definition
 end
 
 function engine.define_subsystem(definition)
 	if type(definition.class) ~= 'table' then
-		error('define_subsystem: definition.class must be a table for '' .. tostring(definition.def_id) .. ''.')
+		error('define_subsystem: definition.class must be a table for "' .. tostring(definition.def_id) .. '".')
 	end
 	if definition.components ~= nil then
-		error('define_subsystem: subsystem '' .. tostring(definition.def_id) .. '' cannot declare components.')
+		error('define_subsystem: subsystem "' .. tostring(definition.def_id) .. '" cannot declare components.')
 	end
 	if definition.effects ~= nil then
-		error('define_subsystem: subsystem '' .. tostring(definition.def_id) .. '' cannot declare effects.')
+		error('define_subsystem: subsystem "' .. tostring(definition.def_id) .. '" cannot declare effects.')
 	end
 	if definition.bts ~= nil then
-		error('define_subsystem: subsystem '' .. tostring(definition.def_id) .. '' cannot declare behaviour trees.')
+		error('define_subsystem: subsystem "' .. tostring(definition.def_id) .. '" cannot declare behaviour trees.')
 	end
 	subsystem_definitions[definition.def_id] = definition
 end
 
 function engine.define_component(definition)
 	if type(definition.class) ~= 'table' then
-		error('define_component: definition.class must be a table for '' .. tostring(definition.def_id) .. ''.')
+		error('define_component: definition.class must be a table for "' .. tostring(definition.def_id) .. '".')
 	end
 	component_definitions[definition.def_id] = definition
 	ensure_component_type(definition.def_id, definition)
@@ -547,6 +548,9 @@ function engine.update()
 		world_instance:update()
 	end
 	world_instance:draw()
+	if not quickmenu.is_open() then
+		resource_usage_gizmo.draw()
+	end
 	quickmenu.draw()
 end
 
@@ -714,7 +718,7 @@ function engine.grant_effect(object_id, effect_id)
 	local obj = world_instance:get(object_id)
 	local component = obj:get_component('actioneffectcomponent')
 	if not component then
-		error('world object '' .. object_id .. '' does not have an actioneffectcomponent.')
+		error('world object "' .. object_id .. '" does not have an actioneffectcomponent.')
 	end
 	component:grant_effect(effect_id)
 end
@@ -723,7 +727,7 @@ function engine.trigger_effect(object_id, effect_id, options)
 	local obj = world_instance:get(object_id)
 	local component = obj:get_component('actioneffectcomponent')
 	if not component then
-		error('world object '' .. object_id .. '' does not have an actioneffectcomponent.')
+		error('world object "' .. object_id .. '" does not have an actioneffectcomponent.')
 	end
 	local payload = options and options.payload
 	if payload ~= nil then

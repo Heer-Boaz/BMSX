@@ -45,7 +45,7 @@ import {
 export function initializeCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();
 	const runtime = Runtime.instance;
-	ide_state.playerIndex = runtime.playerIndex;
+	ide_state.playerIndex = 1;
 	ide_state.fontVariant = runtime.activeIdeFontVariant;
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();

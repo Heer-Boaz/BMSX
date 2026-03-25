@@ -23,6 +23,10 @@ void StringHeap::reset() {
 	m_cursor = STRING_HEAP_BASE;
 }
 
+uint32_t StringHeap::usedBytes() const {
+	return m_cursor - STRING_HEAP_BASE;
+}
+
 StringHandleTable::StringHandleTable(Memory& memory)
 	: m_memory(memory)
 	, m_heap(memory) {
@@ -44,6 +48,12 @@ void StringHandleTable::beginNewGeneration(bool resetHeap) {
 	}
 }
 
+void StringHandleTable::reset() {
+	m_nextHandle = 0;
+	m_generation = 0;
+	m_heap.reset();
+}
+
 uint32_t StringHandleTable::allocateHandle(std::string_view text, uint32_t flags) {
 	if (m_nextHandle >= STRING_HANDLE_COUNT) {
 		throw std::runtime_error("[StringHandleTable] Out of string handles.");
@@ -62,6 +72,10 @@ void StringHandleTable::writeEntry(uint32_t id, uint32_t addr, uint32_t len, uin
 	m_memory.writeU32(entryAddr + 4, len);
 	m_memory.writeU32(entryAddr + 8, flags);
 	m_memory.writeU32(entryAddr + 12, gen);
+}
+
+uint32_t StringHandleTable::usedHeapBytes() const {
+	return m_heap.usedBytes();
 }
 
 } // namespace bmsx

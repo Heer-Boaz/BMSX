@@ -974,6 +974,19 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_primary_atlas_size', VRAM_PRIMARY_ATLAS_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_secondary_atlas_size', VRAM_SECONDARY_ATLAS_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.getTrackedVramTotalBytes());
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_used', createNativeFunction('sys_cpu_cycles_used', (_args, out) => {
+		out.push(runtime.getCpuUsedCyclesLastTick());
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_granted', createNativeFunction('sys_cpu_cycles_granted', (_args, out) => {
+		out.push(runtime.getLastTickBudgetGranted());
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_ram_used', createNativeFunction('sys_ram_used', (_args, out) => {
+		out.push(runtime.getTrackedRamUsedBytes());
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_used', createNativeFunction('sys_vram_used', (_args, out) => {
+		out.push(runtime.getTrackedVramUsedBytes());
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_done', IRQ_DMA_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_error', IRQ_DMA_ERROR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_img_done', IRQ_IMG_DONE);
@@ -1056,6 +1069,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'wait_vblank', createNativeFunction('wait_vblank', (_args, _out) => {
 		runtime.requestWaitForVblank();
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'clock_now', createNativeFunction('clock_now', (_args, out) => {
+		out.push($.platform.clock.now());
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'poke', createNativeFunction('poke', (args, out) => {
 		const address = args[0] as number;
@@ -1919,6 +1935,22 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 		throw runtime.createApiRuntimeError('next expects a table or native object.');
 	});
+	const pairsIterator = createNativeFunction('pairs.iterator', (args, out) => {
+		const state = args[0] as Table;
+		const target = state.get(1) as Table;
+		const arrayCursor = state.get(2) as number;
+		const hashCursor = state.get(3) as number;
+		const previousHashKey = state.get(4);
+		const entry = target.nextEntryFromCursor(arrayCursor, hashCursor, previousHashKey);
+		if (entry === null) {
+			out.push(null);
+			return;
+		}
+		state.set(2, entry[0]);
+		state.set(3, entry[1]);
+		state.set(4, entry[1] === 0 ? null : entry[2]);
+		out.push(entry[2], entry[3]);
+	});
 	const ipairsIterator = createNativeFunction('ipairs.iterator', (args, out) => {
 		const target = args[0];
 		const index = args[1] as number;
@@ -1953,10 +1985,21 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 		throw runtime.createApiRuntimeError('ipairs expects a table or native object.');
 	});
+	runtime.pairsIterator = pairsIterator;
+	runtime.ipairsIterator = ipairsIterator;
 	runtimeLuaPipeline.registerGlobal(runtime, 'next', nextFn);
 	runtimeLuaPipeline.registerGlobal(runtime, 'pairs', createNativeFunction('pairs', (args, out) => {
 		const target = args[0];
-		if (!(target instanceof Table) && !isNativeObject(target)) {
+		if (target instanceof Table) {
+			const state = new Table(4, 0);
+			state.set(1, target);
+			state.set(2, 0);
+			state.set(3, 0);
+			state.set(4, null);
+			out.push(pairsIterator, state, null);
+			return;
+		}
+		if (!isNativeObject(target)) {
 			const stack = buildLuaStackFrames(runtime)
 				.map(frame => `${frame.source ?? '<unknown>'}:${frame.line ?? '?'}:${frame.column ?? '?'}`)
 				.join(' <- ');

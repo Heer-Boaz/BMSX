@@ -86,14 +86,15 @@ local function make_action(label, action)
 end
 
 local entries = {
+	make_toggle('SHOW STATS', 'show_resource_usage_gizmo'),
 	make_toggle('CRT POST', 'crt_postprocessing_enabled'),
-	make_toggle('NOISE', 'enable_noise'),
-	make_toggle('COLOR BLEED', 'enable_colorbleed'),
-	make_toggle('SCANLINES', 'enable_scanlines'),
-	make_toggle('BLUR', 'enable_blur'),
-	make_toggle('GLOW', 'enable_glow'),
-	make_toggle('FRINGING', 'enable_fringing'),
-	make_toggle('APERTURE', 'enable_aperture'),
+	make_toggle('  NOISE', 'enable_noise'),
+	make_toggle('  COLOR BLEED', 'enable_colorbleed'),
+	make_toggle('  SCANLINES', 'enable_scanlines'),
+	make_toggle('  BLUR', 'enable_blur'),
+	make_toggle('  GLOW', 'enable_glow'),
+	make_toggle('  FRINGING', 'enable_fringing'),
+	make_toggle('  APERTURE', 'enable_aperture'),
 	make_vdp_enum('DITHER', sys_vdp_dither, {
 		{ value = 0, label = 'OFF' },
 		{ value = 1, label = 'PSX' },
@@ -133,10 +134,6 @@ end
 local function entry_cycle(entry, dir)
 	if entry.kind == 'action' then
 		return
-		-- if dir ~= 0 then
-		-- 	entry.action()
-		-- end
-		-- return
 	end
 	if entry.kind == 'toggle' then
 		entry.set(not entry.get())
@@ -164,24 +161,20 @@ function menu.update()
 		toggle_menu()
 	end
 
-	if action_triggered('up[jp]') then
-		consume_action('up')
+	if action_triggered('up[rp]') then
 		state.selected = state.selected - 1
 		-- if state.selected < 1 then state.selected = #entries end
 		if state.selected < 1 then state.selected = 1 end
 	end
-	if action_triggered('down[jp]') then
-		consume_action('down')
+	if action_triggered('down[rp]') then
 		state.selected = state.selected + 1
 		-- if state.selected > #entries then state.selected = 1 end
 		if state.selected > #entries then state.selected = #entries end
 	end
 	if action_triggered('left[jp]') then
-		consume_action('left')
 		entry_cycle(entries[state.selected], -1)
 	end
 	if action_triggered('right[jp]') then
-		consume_action('right')
 		entry_cycle(entries[state.selected], 1)
 	end
 	if action_triggered('a[jp]') then

@@ -681,6 +681,22 @@ void VDP::flushAssetEdits() {
 	}
 }
 
+uint32_t VDP::trackedUsedVramBytes() const {
+	uint32_t usedBytes = 0;
+	for (const auto& slot : m_vramSlots) {
+		if (slot.kind == VramSlotKind::Skybox) {
+			continue;
+		}
+		const auto& entry = m_memory.getAssetEntry(slot.assetId);
+		usedBytes += entry.baseSize;
+	}
+	return usedBytes;
+}
+
+uint32_t VDP::trackedTotalVramBytes() const {
+	return VRAM_SYSTEM_ATLAS_SIZE + VRAM_PRIMARY_ATLAS_SIZE + VRAM_SECONDARY_ATLAS_SIZE + VRAM_STAGING_SIZE;
+}
+
 void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 	m_atlasSlotById.clear();
 	m_slotAtlasIds = slots;

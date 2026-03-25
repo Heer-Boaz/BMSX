@@ -1032,7 +1032,7 @@ function state:create_fallback_snapshot(trigger, description, payload)
 	return {
 		trigger = trigger,
 		description = description,
-		timestamp = $.platform.clock.now(),
+		timestamp = clock_now(),
 		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload),
 	}
 end
@@ -1081,7 +1081,7 @@ function state:hydrate_context(snapshot, trigger, description)
 	return {
 		trigger = trigger,
 		description = description,
-		timestamp = $.platform.clock.now(),
+		timestamp = clock_now(),
 	}
 end
 
@@ -2162,7 +2162,6 @@ function statemachinecontroller:bind_machine(machine)
 				self:auto_dispatch(evt)
 			end,
 			subscriber = machine.target,
-			persistent = true,
 		})
 		self._event_subscriptions[key] = disposer
 		::continue::

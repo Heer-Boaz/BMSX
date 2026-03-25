@@ -2,7 +2,7 @@ title: Nemesis S - Nemesis 2 Baseline
 short_name: 'nemesis_s'
 rom_name: 'nemesis_s'
 machine:
-    viewport:
+    render_size:
         width: 256
         height: 192
     canonicalization: lower
@@ -15,7 +15,5 @@ machine:
         dma:
             dma_bytes_per_sec_iso: 8388608
             dma_bytes_per_sec_bulk: 26214400
-        vdp:
-            vblank_cycles: 10000
 lua:
     entry_path: cart.lua

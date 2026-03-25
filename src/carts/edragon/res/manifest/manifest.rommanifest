@@ -2,7 +2,7 @@ title: Edragon Prototype
 short_name: 'edragon'
 rom_name: 'edragon'
 machine:
-    viewport:
+    render_size:
         width: 256
         height: 240
     canonicalization: lower

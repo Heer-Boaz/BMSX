@@ -1524,6 +1524,26 @@ void Runtime::setupBuiltins() {
 		(void)out;
 		requestWaitForVblank();
 	});
+	registerNativeFunction("clock_now", [](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		out.push_back(valueNumber(EngineCore::instance().clock()->now()));
+	});
+	registerNativeFunction("sys_cpu_cycles_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		out.push_back(valueNumber(static_cast<double>(cpuUsedCyclesLastTick())));
+	});
+	registerNativeFunction("sys_cpu_cycles_granted", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		out.push_back(valueNumber(static_cast<double>(lastTickBudgetGranted())));
+	});
+	registerNativeFunction("sys_ram_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		out.push_back(valueNumber(static_cast<double>(trackedRamUsedBytes())));
+	});
+	registerNativeFunction("sys_vram_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		out.push_back(valueNumber(static_cast<double>(trackedVramUsedBytes())));
+	});
 
 	registerNativeFunction("poke", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
@@ -3031,6 +3051,24 @@ auto nextFn = m_cpu.createNativeFunction("next", [this](const std::vector<Value>
 	throw BMSX_RUNTIME_ERROR("next expects a table or native object.");
 });
 
+m_pairsIterator = m_cpu.createNativeFunction("pairs.iterator", [](const std::vector<Value>& args, std::vector<Value>& out) {
+	auto* state = asTable(args.at(0));
+	auto* target = asTable(state->get(valueNumber(1.0)));
+	size_t arrayCursor = static_cast<size_t>(asNumber(state->get(valueNumber(2.0))));
+	size_t hashCursor = static_cast<size_t>(asNumber(state->get(valueNumber(3.0))));
+	Value previousHashKey = state->get(valueNumber(4.0));
+	auto entry = target->nextEntryFromCursor(arrayCursor, hashCursor, previousHashKey);
+	if (!entry.has_value()) {
+		out.push_back(valueNil());
+		return;
+	}
+	state->set(valueNumber(2.0), valueNumber(static_cast<double>(std::get<0>(*entry))));
+	state->set(valueNumber(3.0), valueNumber(static_cast<double>(std::get<1>(*entry))));
+	state->set(valueNumber(4.0), std::get<1>(*entry) == 0 ? valueNil() : std::get<2>(*entry));
+	out.push_back(std::get<2>(*entry));
+	out.push_back(std::get<3>(*entry));
+});
+
 m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::vector<Value>& args, std::vector<Value>& out) {
 	const Value& target = args.at(0);
 	double index = 0.0;
@@ -3062,9 +3100,20 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 });
 
 	setGlobal("next", nextFn);
-	registerNativeFunction("pairs", [nextFn](const std::vector<Value>& args, std::vector<Value>& out) {
+	registerNativeFunction("pairs", [this, nextFn](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& target = args.at(0);
-		if (!valueIsTable(target) && !valueIsNativeObject(target)) {
+		if (valueIsTable(target)) {
+			auto* state = Runtime::instance().cpu().createTable(4, 0);
+			state->set(valueNumber(1.0), target);
+			state->set(valueNumber(2.0), valueNumber(0.0));
+			state->set(valueNumber(3.0), valueNumber(0.0));
+			state->set(valueNumber(4.0), valueNil());
+			out.push_back(m_pairsIterator);
+			out.push_back(valueTable(state));
+			out.push_back(valueNil());
+			return;
+		}
+		if (!valueIsNativeObject(target)) {
 			throw BMSX_RUNTIME_ERROR("pairs expects a table or native object.");
 		}
 		out.push_back(nextFn);
@@ -3358,10 +3407,10 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			machineTable->set(key("ufps"), valueNumber(static_cast<double>(*manifest.ufpsScaled)));
 		}
 		if (manifest.viewportWidth > 0 && manifest.viewportHeight > 0) {
-			auto* viewportTable = m_cpu.createTable(0, 2);
-			viewportTable->set(key("width"), valueNumber(static_cast<double>(manifest.viewportWidth)));
-			viewportTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
-			machineTable->set(key("viewport"), valueTable(viewportTable));
+			auto* renderSizeTable = m_cpu.createTable(0, 2);
+			renderSizeTable->set(key("width"), valueNumber(static_cast<double>(manifest.viewportWidth)));
+			renderSizeTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
+			machineTable->set(key("render_size"), valueTable(renderSizeTable));
 		}
 		auto* specsTable = m_cpu.createTable(0, 4);
 		auto* cpuTable = m_cpu.createTable(0, 2);
@@ -3417,11 +3466,6 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 				vramTable->set(key("skybox_face_bytes"), valueNumber(static_cast<double>(*manifest.skyboxFaceBytes)));
 			}
 			specsTable->set(key("vram"), valueTable(vramTable));
-		}
-		if (manifest.vblankCycles) {
-			auto* vdpTable = m_cpu.createTable(0, 1);
-			vdpTable->set(key("vblank_cycles"), valueNumber(static_cast<double>(*manifest.vblankCycles)));
-			specsTable->set(key("vdp"), valueTable(vdpTable));
 		}
 		if (manifest.maxVoicesSfx || manifest.maxVoicesMusic || manifest.maxVoicesUi) {
 			auto* audioTable = m_cpu.createTable(0, 1);
@@ -3527,7 +3571,7 @@ auto clockPerfNowFn = m_cpu.createNativeFunction("platform.clock.perf_now", [](c
 	};
 
 auto getActionStateFn = m_cpu.createNativeFunction("game.get_action_state", [this, makeActionStateTable](const std::vector<Value>& args, std::vector<Value>& out) {
-	int playerIndex = m_playerIndex;
+	int playerIndex = 1;
 	std::string action;
 	std::optional<f64> windowFrames;
 	if (args.size() == 1) {
@@ -3545,7 +3589,7 @@ auto getActionStateFn = m_cpu.createNativeFunction("game.get_action_state", [thi
 });
 
 auto consumeActionFn = m_cpu.createNativeFunction("game.consume_action", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-	int playerIndex = m_playerIndex;
+	int playerIndex = 1;
 	std::string action;
 	if (args.size() == 1) {
 		action = m_cpu.stringPool().toString(asStringId(args.at(0)));

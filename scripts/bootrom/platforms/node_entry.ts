@@ -44,6 +44,69 @@ interface InputTimelineEntry {
 	description?: string;
 }
 
+type ObjectPresenceSpec = Record<string, string>;
+
+interface HeadlessPollOptions {
+	timeoutMs: number;
+	pollMs?: number;
+	description: string;
+}
+
+interface HeadlessCartWaitOptions {
+	timeoutMs: number;
+	pollMs?: number;
+	settleMs?: number;
+}
+
+interface HeadlessObjectWaitOptions {
+	objects: ObjectPresenceSpec;
+	timeoutMs: number;
+	pollMs?: number;
+	settleMs?: number;
+}
+
+interface HeadlessGameplayWaitOptions extends HeadlessObjectWaitOptions {
+	cartSettleMs?: number;
+	requestNewGame?: boolean;
+}
+
+interface HeadlessButtonEvent {
+	type: 'button';
+	deviceId: string;
+	code: string;
+	down: boolean;
+	value: number;
+	timestamp: number;
+	pressId: number;
+	modifiers: {
+		ctrl: boolean;
+		shift: boolean;
+		alt: boolean;
+		meta: boolean;
+	};
+}
+
+interface HeadlessTestApi {
+	run(task: () => void | Promise<void>): void;
+	finish(message?: string): never;
+	fail(message: string): never;
+	assert(condition: boolean, message: string): asserts condition;
+	getEngine(): any;
+	nowMs(): number;
+	getRenderFrameIndex(): number;
+	evalLua<T = unknown>(source: string): T;
+	sleep(ms: number): Promise<void>;
+	waitFrames(frameCount: number): Promise<void>;
+	buttonEvent(code: string, down: boolean, pressId: number, timestampMs: number): HeadlessButtonEvent;
+	scheduleInput(entries: InputTimelineEntry[]): void;
+	pollUntil<T>(check: () => T | false | null | undefined | Promise<T | false | null | undefined>, options: HeadlessPollOptions): Promise<T>;
+	waitForCartActive(options: HeadlessCartWaitOptions): Promise<any>;
+	getObjectPresenceState(objects: ObjectPresenceSpec): Record<string, boolean>;
+	hasObjectPresence(state: Record<string, boolean>, objects: ObjectPresenceSpec): boolean;
+	waitForObjectPresence(options: HeadlessObjectWaitOptions): Promise<Record<string, boolean>>;
+	waitForGameplay(options: HeadlessGameplayWaitOptions): Promise<Record<string, boolean>>;
+}
+
 let maxScheduledMs = 0;
 const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 let workspaceFetchBridgeInstalled = false;
@@ -494,6 +557,175 @@ async function scheduleInputTimelineFromFile(filePath: string, frameIntervalMs: 
 	scheduleTimelineEntries(parsed as InputTimelineEntry[], frameIntervalMs, postInput, logger, `timeline:${path.basename(resolved)}`);
 }
 
+function createHeadlessTestApi(
+	moduleLabel: string,
+	frameIntervalMs: number,
+	logger: (msg: string) => void,
+	scheduleInput: (entries: InputTimelineEntry[]) => void,
+): HeadlessTestApi {
+	const fail = (message: string): never => {
+		throw new Error(`[assert] ${message}`);
+	};
+	const assert = (condition: boolean, message: string): asserts condition => {
+		if (!condition) {
+			fail(message);
+		}
+	};
+	const getEngine = (): any => {
+		return (globalThis as Record<string, any>).$;
+	};
+	const nowMs = (): number => {
+		return Math.round(getEngine().platform.clock.now());
+	};
+	const getRenderFrameIndex = (): number => {
+		return getEngine().view.renderFrameIndex;
+	};
+	const evalLua = <T = unknown>(source: string): T => {
+		return getEngine().evaluate_lua(source) as T;
+	};
+	const sleep = async (ms: number): Promise<void> => {
+		await new Promise<void>(resolve => setTimeout(resolve, ms));
+	};
+	const waitFrames = async (frameCount: number): Promise<void> => {
+		await sleep(frameCount * frameIntervalMs);
+	};
+	const buttonEvent = (code: string, down: boolean, pressId: number, timestampMs: number): HeadlessButtonEvent => {
+		return {
+			type: 'button',
+			deviceId: 'keyboard:0',
+			code,
+			down,
+			value: down ? 1 : 0,
+			timestamp: timestampMs,
+			pressId,
+			modifiers: { ctrl: false, shift: false, alt: false, meta: false },
+		};
+	};
+	const pollUntil = async <T>(
+		check: () => T | false | null | undefined | Promise<T | false | null | undefined>,
+		options: HeadlessPollOptions,
+	): Promise<T> => {
+		const startedAt = Date.now();
+		const pollMs = options.pollMs ?? frameIntervalMs;
+		for (;;) {
+			const result = await check();
+			if (result) {
+				return result;
+			}
+			if (Date.now() - startedAt >= options.timeoutMs) {
+				fail(`timeout while waiting for ${options.description}`);
+			}
+			await sleep(pollMs);
+		}
+	};
+	const getObjectPresenceState = (objects: ObjectPresenceSpec): Record<string, boolean> => {
+		const objectEntries = Object.entries(objects);
+		const locals = objectEntries.map(([name, objectId]) => `local ${name} = object(${JSON.stringify(objectId)})`).join('\n');
+		const fields = objectEntries.map(([name]) => `has_${name} = ${name} ~= nil`).join(',\n');
+		const [state] = evalLua<[Record<string, boolean>]>(`
+			${locals}
+			return {
+				${fields}
+			}
+		`);
+		return state;
+	};
+	const hasObjectPresence = (state: Record<string, boolean>, objects: ObjectPresenceSpec): boolean => {
+		for (const name of Object.keys(objects)) {
+			if (!state[`has_${name}`]) {
+				return false;
+			}
+		}
+		return true;
+	};
+	const waitForObjectPresence = async (options: HeadlessObjectWaitOptions): Promise<Record<string, boolean>> => {
+		const state = await pollUntil<Record<string, boolean> | null>(() => {
+			const nextState = getObjectPresenceState(options.objects);
+			return hasObjectPresence(nextState, options.objects) ? nextState : null;
+		}, {
+			timeoutMs: options.timeoutMs,
+			pollMs: options.pollMs,
+			description: `${moduleLabel} gameplay objects`,
+		});
+		if (options.settleMs && options.settleMs > 0) {
+			logger(`module:${moduleLabel} [assert] gameplay objects ready, waiting for settle`);
+			await sleep(options.settleMs);
+		}
+		return state;
+	};
+	const waitForCartActive = async (options: HeadlessCartWaitOptions): Promise<any> => {
+		await pollUntil<any>(() => {
+			const engine = getEngine();
+			return engine && engine.initialized ? engine : null;
+		}, {
+			timeoutMs: options.timeoutMs,
+			pollMs: options.pollMs,
+			description: `${moduleLabel} engine init`,
+		});
+		const engine = getEngine();
+		await pollUntil<boolean>(() => {
+			return engine.is_cart_program_active() ? true : false;
+		}, {
+			timeoutMs: options.timeoutMs,
+			pollMs: options.pollMs,
+			description: `${moduleLabel} cart active`,
+		});
+		logger(`module:${moduleLabel} [assert] cart active, waiting for settle`);
+		await sleep(options.settleMs ?? 500);
+		return engine;
+	};
+	const waitForGameplay = async (options: HeadlessGameplayWaitOptions): Promise<Record<string, boolean>> => {
+		const engine = await waitForCartActive({
+			timeoutMs: options.timeoutMs,
+			pollMs: options.pollMs,
+			settleMs: options.cartSettleMs ?? 500,
+		});
+		if (options.requestNewGame !== false) {
+			logger(`module:${moduleLabel} [assert] cart active, requesting new_game`);
+			engine.request_new_game();
+		}
+		return waitForObjectPresence({
+			objects: options.objects,
+			timeoutMs: options.timeoutMs,
+			pollMs: options.pollMs,
+			settleMs: options.settleMs ?? 1000,
+		});
+	};
+	return {
+		run(task) {
+			void Promise.resolve()
+				.then(task)
+				.catch(err => {
+					setTimeout(() => {
+						throw err;
+					}, 0);
+				});
+		},
+		finish(message) {
+			if (message) {
+				logger(`module:${moduleLabel} ${message}`);
+			}
+			process.exit(0);
+		},
+		fail,
+		assert,
+		getEngine,
+		nowMs,
+		getRenderFrameIndex,
+		evalLua,
+		sleep,
+		waitFrames,
+		buttonEvent,
+		scheduleInput,
+		pollUntil,
+		waitForCartActive,
+		getObjectPresenceState,
+		hasObjectPresence,
+		waitForObjectPresence,
+		waitForGameplay,
+	};
+}
+
 async function runInputModuleScheduler(modulePath: string, frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void): Promise<void> {
 	const resolved = path.resolve(modulePath);
 	const moduleUrl = pathToFileURL(resolved).href;
@@ -502,15 +734,18 @@ async function runInputModuleScheduler(modulePath: string, frameIntervalMs: numb
 	if (typeof scheduler !== 'function') {
 		throw new Error(`Input module '${modulePath}' must export a function (default or named 'schedule').`);
 	}
+	const moduleLabel = path.basename(resolved);
+	const scheduleInput = (entries: InputTimelineEntry[]) => scheduleTimelineEntries(entries, frameIntervalMs, postInput, logger, `module:${moduleLabel}`);
 	const context = {
 		postInput: (evt: InputEvt) => postInput(evt),
 		frameIntervalMs,
-		logger: (message: string) => logger(`module:${path.basename(resolved)} ${message}`),
-		schedule: (entries: InputTimelineEntry[]) => scheduleTimelineEntries(entries, frameIntervalMs, postInput, logger, `module:${path.basename(resolved)}`),
+		logger: (message: string) => logger(`module:${moduleLabel} ${message}`),
+		schedule: scheduleInput,
+		test: createHeadlessTestApi(moduleLabel, frameIntervalMs, logger, scheduleInput),
 	};
 	const result = await scheduler(context);
 	if (Array.isArray(result)) {
-		context.schedule(result as InputTimelineEntry[]);
+		scheduleInput(result as InputTimelineEntry[]);
 	}
 }
 

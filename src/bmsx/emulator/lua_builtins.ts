@@ -75,8 +75,13 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'pcall', params: ['func', 'arg...'], signature: 'pcall(f, ...)' },
 	{ name: 'print', params: ['...'], signature: 'print(...)' },
 	{ name: 'peek', params: ['addr'], signature: 'peek(addr)' },
+	{ name: 'sys_cpu_cycles_used', params: [], signature: 'sys_cpu_cycles_used()', description: 'Cycles consumed during the last completed tick.' },
+	{ name: 'sys_cpu_cycles_granted', params: [], signature: 'sys_cpu_cycles_granted()', description: 'Cycle budget granted to the last completed tick.' },
+	{ name: 'sys_ram_used', params: [], signature: 'sys_ram_used()', description: 'Tracked runtime RAM usage in bytes.' },
+	{ name: 'sys_vram_used', params: [], signature: 'sys_vram_used()', description: 'Tracked VRAM usage in bytes.' },
 	{ name: 'poke', params: ['addr', 'value'], signature: 'poke(addr, value)' },
 	{ name: 'wait_vblank', params: [], signature: 'wait_vblank()', description: 'Yields execution until the next VBLANK edge.' },
+	{ name: 'clock_now', params: [], signature: 'clock_now()', description: 'Returns the current platform clock value.' },
 	{ name: 'rawequal', params: ['v1', 'v2'], signature: 'rawequal(v1, v2)' },
 	{ name: 'rawget', params: ['table', 'index'], signature: 'rawget(table, index)' },
 	{ name: 'rawset', params: ['table', 'index', 'value'], signature: 'rawset(table, index, value)' },
@@ -200,6 +205,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'sys_vram_primary_atlas_size', params: [], signature: 'sys_vram_primary_atlas_size', description: 'VRAM primary atlas slot size in bytes.' },
 	{ name: 'sys_vram_secondary_atlas_size', params: [], signature: 'sys_vram_secondary_atlas_size', description: 'VRAM secondary atlas slot size in bytes.' },
 	{ name: 'sys_vram_staging_size', params: [], signature: 'sys_vram_staging_size', description: 'VRAM staging buffer size in bytes.' },
+	{ name: 'sys_vram_size', params: [], signature: 'sys_vram_size', description: 'Tracked total VRAM capacity in bytes.' },
 	{ name: 'irq_dma_done', params: [], signature: 'irq_dma_done', description: 'IRQ flag for DMA completion.' },
 	{ name: 'irq_dma_error', params: [], signature: 'irq_dma_error', description: 'IRQ flag for DMA error.' },
 	{ name: 'irq_img_done', params: [], signature: 'irq_img_done', description: 'IRQ flag for IMGDEC completion.' },
@@ -277,6 +283,7 @@ const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = [
 	'sys_vram_primary_atlas_size',
 	'sys_vram_secondary_atlas_size',
 	'sys_vram_staging_size',
+	'sys_vram_size',
 	'irq_dma_done',
 	'irq_dma_error',
 	'irq_img_done',
@@ -321,10 +328,10 @@ export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 		if (args.length === 0 || !isLuaTable(args[0])) {
 			throw runtimeError('set_input_map(mapping [, player]) requires a table as the first argument.');
 		}
-		const mappingTable = args[0] as LuaTable;
-		const targetPlayer = args.length >= 2
-			? Number(args[1])
-			: runtime.playerIndex;
+			const mappingTable = args[0] as LuaTable;
+			const targetPlayer = args.length >= 2
+				? Number(args[1])
+				: 1;
 		const moduleId = $.lua_sources.path2lua[runtime.currentPath].source_path;
 		const marshalCtx = { moduleId, path: [] };
 		const mappingValue = runtime.luaJsBridge.convertFromLua(mappingTable, marshalCtx) as InputMap;

@@ -32,6 +32,10 @@ export class StringHeap {
 	public reset(): void {
 		this.cursor = STRING_HEAP_BASE;
 	}
+
+	public usedBytes(): number {
+		return this.cursor - STRING_HEAP_BASE;
+	}
 }
 
 export class StringHandleTable {
@@ -59,6 +63,12 @@ export class StringHandleTable {
 		}
 	}
 
+	public reset(): void {
+		this.nextHandle = 0;
+		this.generation = 0;
+		this.heap.reset();
+	}
+
 	public allocateHandle(text: string, flags: number = 0): { id: number; addr: number; len: number } {
 		if (this.nextHandle >= STRING_HANDLE_COUNT) {
 			throw new Error('[StringHandleTable] Out of string handles.');
@@ -78,5 +88,9 @@ export class StringHandleTable {
 		this.memory.writeU32(entryAddr + 4, len);
 		this.memory.writeU32(entryAddr + 8, flags);
 		this.memory.writeU32(entryAddr + 12, gen);
+	}
+
+	public usedHeapBytes(): number {
+		return this.heap.usedBytes();
 	}
 }

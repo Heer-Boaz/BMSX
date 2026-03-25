@@ -41,6 +41,8 @@ public:
 	void clearSkybox();
 	std::optional<SkyboxImageIds> skyboxFaceIds() const;
 	void commitViewSnapshot(GameView& view);
+	uint32_t trackedUsedVramBytes() const;
+	uint32_t trackedTotalVramBytes() const;
 
 	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
 

@@ -22,6 +22,10 @@ public:
 
 	void registerAllFunctions();
 	void markRoots(GcHeap& heap);
+	void appendRootValues(std::vector<Value>& out) const;
+	const std::string& cartDataNamespace() const { return m_cartDataNamespace; }
+	const std::vector<double>& persistentData() const { return m_persistentData; }
+	void restorePersistentData(const std::string& ns, const std::vector<double>& values);
 
 	int display_width() const;
 	int display_height() const;

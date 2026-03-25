@@ -1,11 +1,27 @@
-local TARGET = 50
+local target = 50
 local vblank_count = 0
 local fail_reason = nil
 local done = false
 
 local cycles_per_frame = sys_max_cycles_per_frame
-local vblank_cycles = cart_manifest.machine.specs.vdp.vblank_cycles
-local full_frame_vblank = vblank_cycles >= cycles_per_frame
+local vblank_cycles = 0
+local full_frame_vblank = false
+
+local function resolve_vblank_cycles()
+	local render_height = cart_manifest.machine.render_size.height
+	if type(render_height) ~= 'number' or render_height <= 0 then
+		return nil
+	end
+	local active_display = math.floor(cycles_per_frame / (render_height + 1)) * render_height
+	return cycles_per_frame - active_display
+end
+
+local function init_vblank_cycles()
+	vblank_cycles = resolve_vblank_cycles()
+	if vblank_cycles == nil then
+		fail('machine.render_size.height is required and must be a positive integer')
+	end
+end
 
 local function fail(msg)
 	if fail_reason == nil then
@@ -61,6 +77,8 @@ on_irq(function(flags)
 end)
 
 function init()
+	init_vblank_cycles()
+	full_frame_vblank = vblank_cycles >= cycles_per_frame
 end
 
 function new_game()
@@ -71,7 +89,7 @@ function update()
 		return
 	end
 	if fail_reason ~= nil then
-		print("VBLANK TEST FAIL: " .. fail_reason .. " (cycles_per_frame=" .. cycles_per_frame .. " vblank_cycles=" .. vblank_cycles .. ")")
+		print("VBLANK TEST FAIL: " .. fail_reason .. " (cycles_per_frame=" .. cycles_per_frame .. " vblank_cycles=" .. tostring(vblank_cycles) .. ")")
 		done = true
 		return
 	end
@@ -94,7 +112,7 @@ function update()
 		end
 	end
 
-	if vblank_count >= TARGET then
+	if vblank_count >= target then
 		print("VBLANK TEST PASS: " .. vblank_count .. " IRQs")
 		done = true
 	end

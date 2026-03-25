@@ -32,9 +32,9 @@
 	],
 	"additionalProperties": false,
 	"definitions": {
-		"viewport": {
+		"render_size": {
 			"type": "object",
-			"description": "Logical viewport size for the cartridge.",
+			"description": "Machine output render size.",
 			"properties": {
 				"width": {
 					"type": "integer",
@@ -64,8 +64,8 @@
 			"type": "object",
 			"description": "Machine configuration for the cartridge.",
 			"properties": {
-				"viewport": {
-					"$ref": "#/definitions/viewport"
+				"render_size": {
+					"$ref": "#/definitions/render_size"
 				},
 				"canonicalization": {
 					"$ref": "#/definitions/canonicalization"
@@ -85,6 +85,7 @@
 			},
 			"required": [
 				"namespace",
+				"render_size",
 				"ufps",
 				"specs"
 			],
@@ -106,32 +107,13 @@
 				"ram": {
 					"$ref": "#/definitions/machineRamSpecs"
 				},
-				"vdp": {
-					"$ref": "#/definitions/machineVdpSpecs"
-				},
 				"vram": {
 					"$ref": "#/definitions/machineVramSpecs"
 				}
 			},
 			"required": [
 				"cpu",
-				"dma",
-				"vdp"
-			],
-			"additionalProperties": false
-		},
-		"machineVdpSpecs": {
-			"type": "object",
-			"description": "Video timing specs.",
-			"properties": {
-				"vblank_cycles": {
-					"type": "integer",
-					"minimum": 1,
-					"description": "Number of cycles in the VBLANK window at the end of each frame."
-				}
-			},
-			"required": [
-				"vblank_cycles"
+				"dma"
 			],
 			"additionalProperties": false
 		},

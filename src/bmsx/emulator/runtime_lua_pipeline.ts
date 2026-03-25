@@ -1,4 +1,4 @@
-import { $, calcCyclesPerFrameScaled } from '../core/engine_core';
+import { $, calcCyclesPerFrameScaled, resolveVblankCycles } from '../core/engine_core';
 import type { LuaChunk } from '../lua/syntax/lua_ast';
 import { LuaInterpreter } from '../lua/luaruntime';
 import type { LuaValue } from '../lua/luavalue';
@@ -109,12 +109,12 @@ function applyUfpsScaled(ufps: number): number {
 	return ufpsScaled;
 }
 
-function resolveVblankCycles(value: number | undefined, cyclesPerFrame: number): number {
-	const cycles = resolvePositiveSafeInteger(value, 'machine.specs.vdp.vblank_cycles');
-	if (cycles > cyclesPerFrame) {
-		throw new Error('[Runtime] machine.specs.vdp.vblank_cycles must be less than or equal to cycles_per_frame.');
+function resolveRenderHeight(value: number | undefined): number {
+	const renderHeight = resolvePositiveSafeInteger(value, 'machine.render_size.height');
+	if (renderHeight <= 0) {
+		throw new Error('[Runtime] machine.render_size.height must be a positive integer.');
 	}
-	return cycles;
+	return renderHeight;
 }
 
 type RuntimeAssetReloadMode = 'full' | 'cart';
@@ -469,7 +469,7 @@ export function captureRuntimeState(runtime: Runtime): { globals?: LuaEntrySnaps
 	const interpreter = runtime.interpreter;
 	const globals = captureLuaEntryCollection(runtime, interpreter.enumerateGlobalEntries());
 	const locals = captureLuaEntryCollection(runtime, interpreter.enumerateChunkEntries());
-	const randomSeed = interpreter.randomSeed;
+	const randomSeed = runtime.randomSeedValue;
 	const programCounter = interpreter.programCounter;
 	return {
 		globals: globals,
@@ -518,7 +518,7 @@ export function shouldSkipLuaSnapshotEntry(runtime: Runtime, name: string, value
 export function restoreRuntimeState(runtime: Runtime, snapshot: RuntimeState): void {
 	const interpreter = runtime.interpreter;
 	if (snapshot.luaRandomSeed !== undefined) {
-		interpreter.randomSeed = snapshot.luaRandomSeed;
+		runtime.randomSeedValue = snapshot.luaRandomSeed;
 	}
 	if (snapshot.luaProgramCounter !== undefined) {
 		interpreter.programCounter = snapshot.luaProgramCounter;
@@ -604,6 +604,9 @@ export function resetFrameState(runtime: Runtime): void {
 	runtime.clearWaitForVblank();
 	runtime.pendingCarryBudget = 0;
 	runtime.lastTickCompleted = false;
+	runtime.lastTickBudgetGranted = 0;
+	runtime.lastTickCpuBudgetGranted = 0;
+	runtime.lastTickCpuUsedCycles = 0;
 	runtime.lastTickBudgetRemaining = 0;
 	runtime.lastTickSequence = 0;
 	runtime.lastTickConsumedSequence = 0;
@@ -1098,7 +1101,8 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 		runtime.setCpuHz(cpuHz);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
 		runtime.setCycleBudgetPerFrame(cycleBudgetPerFrame);
-		runtime.setVblankCycles(resolveVblankCycles(manifest.machine.specs.vdp.vblank_cycles, cycleBudgetPerFrame));
+		const renderHeight = resolveRenderHeight(manifest.machine.render_size.height);
+		runtime.setVblankCycles(resolveVblankCycles(cpuHz, $.ufps_scaled, renderHeight));
 		runtime.setTransferRatesFromManifest(perfSpecs);
 	}
 	finally {

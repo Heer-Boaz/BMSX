@@ -249,6 +249,12 @@ end
 -- port's owner if not supplied.  Returns a function that unsubscribes when
 -- called.  Always supply subscriber = <owning_object> for lifecycle cleanup.
 function eventport:on(spec)
+	if spec.persistent then
+		error('Persistent listeners must register on eventemitter.instance directly.')
+	end
+	if spec.subscriber == nil and type(self.emitter) == 'table' then
+		spec.subscriber = self.emitter
+	end
 	if spec.emitter == nil then
 		spec.emitter = self.emitter.id or self.emitter
 	elseif not spec.emitter then

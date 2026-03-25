@@ -1,6 +1,5 @@
 import { $, runGate } from '../core/engine_core';
 import { Input } from '../input/input';
-import type { PlayerInput } from '../input/playerinput';
 import type {
 	color,
 	GlyphRenderSubmission,
@@ -43,7 +42,6 @@ type FontDefinition = {
 };
 
 export class Api {
-	private readonly playerindex: number;
 	private readonly storage: RuntimeStorage;
 	private readonly font: BFont;
 	private readonly defaultPrintColorIndex = 15;
@@ -70,7 +68,6 @@ export class Api {
 		}
 		this.storage = options.storage;
 		this._runtime = options.runtime;
-		this.playerindex = 1;
 		this.font = new Font();
 		this.reset_print_cursor();
 	}
@@ -84,15 +81,7 @@ export class Api {
 	}
 
 	public get keyboard() {
-		return $.input.getPlayerInput(this.playerindex).inputHandlers.keyboard;
-	}
-
-	public get_player_input(playerindex?: number): PlayerInput {
-		const playerInput = Input.instance.getPlayerInput(playerindex ?? this.playerindex);
-		if (!playerInput) {
-			throw new Error(`Player input handler for index ${playerindex ?? this.playerindex} is not initialised.`);
-		}
-		return playerInput;
+		return Input.instance.getPlayerInput(1).inputHandlers.keyboard;
 	}
 
 	private pointerButtonCode(button: number): string {
@@ -108,19 +97,19 @@ export class Api {
 	}
 
 	public mousebtn(button: number): boolean {
-		return this.get_player_input().getButtonState(this.pointerButtonCode(button), 'pointer').pressed === true;
+		return Input.instance.getPlayerInput(1).getButtonState(this.pointerButtonCode(button), 'pointer').pressed === true;
 	}
 
 	public mousebtnp(button: number): boolean {
-		return this.get_player_input().getButtonState(this.pointerButtonCode(button), 'pointer').justpressed === true;
+		return Input.instance.getPlayerInput(1).getButtonState(this.pointerButtonCode(button), 'pointer').justpressed === true;
 	}
 
 	public mousebtnr(button: number): boolean {
-		return this.get_player_input().getButtonState(this.pointerButtonCode(button), 'pointer').justreleased === true;
+		return Input.instance.getPlayerInput(1).getButtonState(this.pointerButtonCode(button), 'pointer').justreleased === true;
 	}
 
 	public pointer_screen_position(): { x: number; y: number; valid: boolean } {
-		const state = this.get_player_input().getButtonState('pointer_position', 'pointer');
+		const state = Input.instance.getPlayerInput(1).getButtonState('pointer_position', 'pointer');
 		const value = state.value2d;
 		if (!value) {
 			return { x: 0, y: 0, valid: false };
@@ -129,7 +118,7 @@ export class Api {
 	}
 
 	public pointer_delta(): { x: number; y: number; valid: boolean } {
-		const state = this.get_player_input().getButtonState('pointer_delta', 'pointer');
+		const state = Input.instance.getPlayerInput(1).getButtonState('pointer_delta', 'pointer');
 		const value = state.value2d;
 		if (!value) {
 			return { x: 0, y: 0, valid: false };
@@ -166,7 +155,7 @@ export class Api {
 	}
 
 	public mousewheel(): { value: number; valid: boolean } {
-		const state = this.get_player_input().getButtonState('pointer_wheel', 'pointer');
+		const state = Input.instance.getPlayerInput(1).getButtonState('pointer_wheel', 'pointer');
 		if (state.value === null || state.value === undefined) {
 			return { value: 0, valid: false };
 		}
@@ -550,12 +539,12 @@ export class Api {
 		this.renderBackend.glyphs(glyphs);
 	}
 
-	public action_triggered(actiondefinition: string, playerindex?: number): boolean {
-		return $.action_triggered(playerindex ?? this.playerindex, actiondefinition)
+	public action_triggered(actiondefinition: string, player?: number): boolean {
+		return $.action_triggered(player ?? 1, actiondefinition)
 	}
 
-	public consume_action(actionToConsume: ActionState | string, playerindex?: number): void {
-		$.consume_action(playerindex ?? this.playerindex, actionToConsume);
+	public consume_action(actionToConsume: ActionState | string, player?: number): void {
+		$.consume_action(player ?? 1, actionToConsume);
 	}
 
 	public cartdata(namespace: string): void {

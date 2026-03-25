@@ -297,7 +297,7 @@ export const API_METHOD_METADATA = {
 		description: 'Checks whether an input action definition is triggered for a given player.',
 		parameters: [
 			{ name: 'actiondefinition', description: 'Action definition string (e.g. "jump[p]" or "pointer_primary[jr]").' },
-			{ name: 'playerindex', optional: true, description: 'Player index (1-based).' },
+			{ name: 'player', optional: true, description: 'Player index (1-based).' },
 		],
 		returnType: 'boolean',
 		returnDescription: 'True when the action definition evaluates to triggered.',
@@ -306,7 +306,7 @@ export const API_METHOD_METADATA = {
 		description: 'Consumes an input action definition for a given player.',
 		parameters: [
 			{ name: 'actiondefinition', description: 'Action string (e.g. "jump" or "a").' },
-			{ name: 'playerindex', optional: true, description: 'Player index (1-based).' },
+			{ name: 'player', optional: true, description: 'Player index (1-based).' },
 		],
 		returnType: 'void',
 	},
@@ -609,13 +609,5 @@ export const API_METHOD_METADATA = {
 			{ name: '_descriptor', description: 'Behaviour tree descriptor.' },
 		],
 		returnType: 'void',
-	},
-	get_player_input: {
-		description: 'Returns the InputHandler for a given player index.',
-		parameters: [
-			{ name: 'playerindex', optional: true, description: 'Player index (1-based).' },
-		],
-		returnType: 'InputHandler',
-		returnDescription: 'Native input handler instance for the player.',
 	},
 } as const satisfies Record<ApiMemberName, ApiMethodMetadata>;

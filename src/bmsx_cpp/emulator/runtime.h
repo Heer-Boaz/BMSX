@@ -44,6 +44,9 @@ struct FrameState {
 	int cycleBudgetRemaining = 0;
 	int cycleBudgetGranted = 0;
 	int cycleCarryGranted = 0;
+	bool cpuStatsFrozen = false;
+	int cpuStatsUsedCycles = 0;
+	int cpuStatsGrantedCycles = 0;
 };
 
 /**
@@ -72,9 +75,14 @@ struct RuntimeOptions {
 struct RuntimeState {
 	std::vector<Value> ioMemory;
 	std::vector<std::pair<Value, Value>> globals; // key-value pairs
+	std::string cartDataNamespace;
+	std::vector<double> persistentData;
+	uint32_t randomSeed = 0;
+	bool pendingEntryCall = false;
 	std::vector<u8> assetMemory;
 	std::array<i32, 2> atlasSlots{{-1, -1}};
 	std::optional<SkyboxImageIds> skyboxFaceIds;
+	i32 vdpDitherType = 0;
 	int cyclesIntoFrame = 0;
 	bool vblankPendingClear = false;
 	bool vblankClearOnIrqEnd = false;
@@ -218,10 +226,6 @@ public:
 	void setSkyboxImages(const SkyboxImageIds& ids);
 	void clearSkybox();
 
-	/**
-	 * Get the player index for this runtime.
-	 */
-	int playerIndex() const { return m_playerIndex; }
 	f64 frameDeltaMs() const { return m_frameDeltaMs; }
 
 	/**
@@ -276,6 +280,11 @@ public:
 	bool hasActiveTick() const;
 	i64 lastTickSequence() const { return m_lastTickSequence; }
 	int lastTickBudgetRemaining() const { return m_lastTickBudgetRemaining; }
+	int lastTickBudgetGranted() const { return m_lastTickSequence == 0 ? m_cycleBudgetPerFrame : m_lastTickCpuBudgetGranted; }
+	int cpuUsedCyclesLastTick() const { return m_lastTickSequence == 0 ? 0 : m_lastTickCpuUsedCycles; }
+	uint32_t trackedRamUsedBytes() const;
+	uint32_t trackedVramUsedBytes() const { return m_vdp.trackedUsedVramBytes(); }
+	uint32_t trackedVramTotalBytes() const { return m_vdp.trackedTotalVramBytes(); }
 	bool didLastTickComplete() const { return m_lastTickCompleted; }
 	bool consumeLastTickCompletion(i64& outSequence, int& outRemaining);
 	bool isDrawPending() const;
@@ -316,6 +325,7 @@ private:
 	void commitFrameOnVblankEdge();
 	void completeTickIfPending(FrameState& frameState, uint64_t vblankSequence);
 	void reconcileCycleBudgetAfterSignal(FrameState& frameState);
+	void freezeTickCpuStats(FrameState& frameState);
 	void requestWaitForVblank();
 	void resetTransferCarry();
 	void processIrqAck();
@@ -357,7 +367,6 @@ private:
 	std::unique_ptr<Api> m_api;
 
 	// Configuration
-	int m_playerIndex = 0;
 	Viewport m_viewport{0, 0};
 	CanonicalizationType m_canonicalization = CanonicalizationType::None;
 	ProgramSource m_programSource = ProgramSource::Cart;
@@ -374,6 +383,7 @@ private:
 	f64 m_frameDeltaMs = 0.0;
 
 	// Cached function references
+	Value m_pairsIterator = valueNil();
 	Value m_ipairsIterator = valueNil();
 	PendingCall m_pendingCall = PendingCall::None;
 	uint32_t m_randomSeedValue = 0;
@@ -398,32 +408,35 @@ private:
 	double m_debugFrameYieldsAcc = 0.0;
 	double m_debugFrameGrantedAcc = 0.0;
 	double m_debugFrameCarryAcc = 0.0;
-		i64 m_debugTickYieldsBefore = 0;
-		i64 m_debugUpdateCountTotal = 0;
-		i64 m_lastTickSequence = 0;
-		int m_lastTickBudgetRemaining = 0;
-		bool m_lastTickCompleted = false;
-		i64 m_lastTickConsumedSequence = 0;
-		int m_pendingCarryBudget = 0;
-		i64 m_cpuHz = 0;
-		i64 m_imgDecBytesPerSec = 0;
-		i64 m_dmaBytesPerSecIso = 0;
-		i64 m_dmaBytesPerSecBulk = 0;
-		RateBudget m_imgRate;
-		RateBudget m_dmaIsoRate;
-		RateBudget m_dmaBulkRate;
-		int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
-		int m_vblankCycles = 0;
-		int m_vblankStartCycle = 0;
-		int m_cyclesIntoFrame = 0;
-			bool m_waitingForVblank = false;
-			uint64_t m_vblankSequence = 0;
-			uint64_t m_lastCompletedVblankSequence = 0;
-			uint64_t m_waitForVblankTargetSequence = 0;
-			bool m_clearBackQueuesAfterWaitResume = false;
-		bool m_vblankActive = false;
-		bool m_vblankPendingClear = false;
-		bool m_vblankClearOnIrqEnd = false;
+	i64 m_debugTickYieldsBefore = 0;
+	i64 m_debugUpdateCountTotal = 0;
+	i64 m_lastTickSequence = 0;
+	int m_lastTickBudgetGranted = 0;
+	int m_lastTickCpuBudgetGranted = 0;
+	int m_lastTickCpuUsedCycles = 0;
+	int m_lastTickBudgetRemaining = 0;
+	bool m_lastTickCompleted = false;
+	i64 m_lastTickConsumedSequence = 0;
+	int m_pendingCarryBudget = 0;
+	i64 m_cpuHz = 0;
+	i64 m_imgDecBytesPerSec = 0;
+	i64 m_dmaBytesPerSecIso = 0;
+	i64 m_dmaBytesPerSecBulk = 0;
+	RateBudget m_imgRate;
+	RateBudget m_dmaIsoRate;
+	RateBudget m_dmaBulkRate;
+	int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
+	int m_vblankCycles = 0;
+	int m_vblankStartCycle = 0;
+	int m_cyclesIntoFrame = 0;
+	bool m_waitingForVblank = false;
+	uint64_t m_vblankSequence = 0;
+	uint64_t m_lastCompletedVblankSequence = 0;
+	uint64_t m_waitForVblankTargetSequence = 0;
+	bool m_clearBackQueuesAfterWaitResume = false;
+	bool m_vblankActive = false;
+	bool m_vblankPendingClear = false;
+	bool m_vblankClearOnIrqEnd = false;
 		u32 m_vdpStatus = 0;
 };
 

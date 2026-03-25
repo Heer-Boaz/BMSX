@@ -2,7 +2,7 @@ title: Pietious - Maze of Galious Physics Prototype
 short_name: 'pietious'
 rom_name: 'pietious'
 machine:
-    viewport:
+    render_size:
         width: 256
         height: 192
     canonicalization: lower
@@ -15,7 +15,5 @@ machine:
         dma:
             dma_bytes_per_sec_iso: 8388608
             dma_bytes_per_sec_bulk: 26214400
-        vdp:
-            vblank_cycles: 10000
 lua:
     entry_path: cart.lua

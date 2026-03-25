@@ -29,6 +29,13 @@ inline void writeU32LE(u8* dst, uint32_t value) {
 	dst[3] = static_cast<u8>((value >> 24) & 0xffu);
 }
 
+inline uint32_t readU32LE(const u8* src) {
+	return static_cast<uint32_t>(src[0])
+		| (static_cast<uint32_t>(src[1]) << 8)
+		| (static_cast<uint32_t>(src[2]) << 16)
+		| (static_cast<uint32_t>(src[3]) << 24);
+}
+
 bool rangeOverlaps(uint32_t addr, size_t length, uint32_t base, uint32_t size) {
 	if (length == 0) {
 		return false;
@@ -129,6 +136,20 @@ void Memory::setVdpIoHandler(VdpIoHandler* handler) {
 
 void Memory::setVramWriter(VramWriter* writer) {
 	m_vramWriter = writer;
+}
+
+uint32_t Memory::usedAssetTableBytes() const {
+	const size_t headerOffset = static_cast<size_t>(ASSET_TABLE_BASE - RAM_BASE);
+	const uint8_t* base = m_ram.data();
+	const uint32_t entryCount = readU32LE(base + headerOffset + 12);
+	const uint32_t stringTableLength = readU32LE(base + headerOffset + 20);
+	return ASSET_TABLE_HEADER_SIZE + (entryCount * ASSET_TABLE_ENTRY_SIZE) + stringTableLength;
+}
+
+uint32_t Memory::usedAssetDataBytes() const {
+	const size_t headerOffset = static_cast<size_t>(ASSET_TABLE_BASE - RAM_BASE);
+	const uint8_t* base = m_ram.data();
+	return readU32LE(base + headerOffset + 28);
 }
 
 void Memory::resetAssetMemory() {

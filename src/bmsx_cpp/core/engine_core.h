@@ -26,6 +26,7 @@ constexpr i64 DEFAULT_UFPS = 50;
 constexpr i64 DEFAULT_UFPS_SCALED = DEFAULT_UFPS * HZ_SCALE;
 
 int calcCyclesPerFrame(i64 cpuHz, i64 refreshHzScaled);
+i64 resolveVblankCycles(i64 cpuHz, i64 refreshHzScaled, i32 renderHeight);
 
 class BFont;
 class TextureManager;

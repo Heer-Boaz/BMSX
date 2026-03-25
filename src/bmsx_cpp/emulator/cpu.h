@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -43,6 +44,16 @@ struct InternedString {
 	StringId id = 0;
 	std::string value;
 	int codepointCount = 0;
+};
+
+struct RuntimeStringPoolStateEntry {
+	StringId id = 0;
+	std::string value;
+};
+
+struct RuntimeStringPoolState {
+	StringId nextId = 0;
+	std::vector<RuntimeStringPoolStateEntry> entries;
 };
 
 struct StringKeyHash {
@@ -119,6 +130,36 @@ public:
 			}
 			m_nextId = minHandle;
 		}
+	}
+
+	RuntimeStringPoolState captureState() const {
+		RuntimeStringPoolState state;
+		state.nextId = m_nextId;
+		for (StringId id = 0; id < m_entries.size(); ++id) {
+			const auto* entry = m_entries[id].get();
+			if (!entry) {
+				continue;
+			}
+			state.entries.push_back(RuntimeStringPoolStateEntry{ entry->id, entry->value });
+		}
+		return state;
+	}
+
+	void restoreState(const RuntimeStringPoolState& state) {
+		m_stringMap.clear();
+		m_entries.clear();
+		m_nextId = 0;
+		if (m_handleTable) {
+			m_handleTable->reset();
+		}
+		for (const RuntimeStringPoolStateEntry& entry : state.entries) {
+			StringId restored = intern(entry.value);
+			if (restored != entry.id) {
+				throw std::runtime_error("StringPool: restore handle mismatch.");
+			}
+		}
+		reserveHandles(state.nextId);
+		m_nextId = state.nextId;
 	}
 
 private:
@@ -561,6 +602,20 @@ struct CallFrame {
 	int callSitePc = 0;
 };
 
+struct TableHashNodeState {
+	Value key = valueNil();
+	Value value = valueNil();
+	int next = -1;
+};
+
+struct TableRuntimeState {
+	std::vector<Value> array;
+	size_t arrayLength = 0;
+	std::vector<TableHashNodeState> hash;
+	int hashFree = -1;
+	Table* metatable = nullptr;
+};
+
 class Table : public GCObject {
 public:
 	Table(int arraySize = 0, int hashSize = 0);
@@ -584,6 +639,10 @@ public:
 	}
 	std::vector<std::pair<Value, Value>> entries() const;
 	std::optional<std::pair<Value, Value>> nextEntry(const Value& after) const;
+	std::optional<std::tuple<size_t, size_t, Value, Value>> nextEntryFromCursor(size_t arrayCursor, size_t hashCursor, const Value& previousHashKey = valueNil()) const;
+	TableRuntimeState captureRuntimeState() const;
+	void restoreRuntimeState(const TableRuntimeState& state);
+	size_t trackedHeapBytes() const;
 
 	Table* getMetatable() const { return m_metatable; }
 	void setMetatable(Table* mt) { m_metatable = mt; }
@@ -687,6 +746,7 @@ public:
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void unwindToDepth(int targetDepth);
 	void step();
+	size_t trackedHeapBytes(const std::vector<Value>& extraRoots = {}) const;
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
 	bool hasFrames() const { return !m_frames.empty(); }

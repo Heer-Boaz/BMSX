@@ -64,6 +64,29 @@ export function calcCyclesPerFrameScaled(cpuHz: number, refreshHzScaled: number)
 	return Math.floor(numerator / refreshHzScaled);
 }
 
+export function resolveVblankCycles(cpuFreqHz: number, ufpsScaled: number, renderHeight: number): number {
+	if (!Number.isSafeInteger(cpuFreqHz) || cpuFreqHz <= 0) {
+		throw new Error('[EngineCore] cpuFreqHz must be a positive safe integer.');
+	}
+	if (!Number.isSafeInteger(ufpsScaled) || ufpsScaled <= 0) {
+		throw new Error('[EngineCore] ufpsScaled must be a positive safe integer.');
+	}
+	if (!Number.isSafeInteger(renderHeight) || renderHeight <= 0) {
+		throw new Error('[EngineCore] renderHeight must be a positive safe integer.');
+	}
+	const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuFreqHz, ufpsScaled);
+	const activeScanlines = Math.floor(cycleBudgetPerFrame / (renderHeight + 1));
+	const activeDisplayCycles = activeScanlines * renderHeight;
+	const vblankCycles = cycleBudgetPerFrame - activeDisplayCycles;
+	if (vblankCycles > cycleBudgetPerFrame) {
+		throw new Error('[EngineCore] vblank_cycles must be less than or equal to cycles_per_frame.');
+	}
+	if (vblankCycles <= 0) {
+		throw new Error('[EngineCore] vblank_cycles must be greater than 0.');
+	}
+	return vblankCycles;
+}
+
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
 export const renderGate: GateGroup = taskGate.group('render:main');
@@ -408,11 +431,11 @@ export class EngineCore {
 		if (typeof document !== 'undefined') {
 			ensureBrowserBackendFactory();
 		}
-		let viewport = engineLayer.index.manifest.machine.viewport;
+		let viewport = engineLayer.index.manifest.machine.render_size;
 		if (cartridge) {
 			const cartNormalized = normalizeCartridgeBlob(cartridge);
 			const cartIndex = await parseCartridgeIndex(cartNormalized.payload);
-			viewport = cartIndex.manifest.machine.viewport;
+			viewport = cartIndex.manifest.machine.render_size;
 		}
 		const viewportInput = shallowcopy(viewport) as { width?: number; height?: number; x?: number; y?: number };
 		const viewportSize = { x: (viewportInput.width ?? viewportInput.x)!, y: (viewportInput.height ?? viewportInput.y)! }; // Ugly and needs to be refactored in the GameView

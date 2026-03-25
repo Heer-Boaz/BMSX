@@ -167,7 +167,6 @@ export function createPauseCoordinator(): DebugPauseCoordinator {
 }
 
 export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions): void {
-	ide_state.playerIndex = runtime.playerIndex;
 	runtime.terminal = new TerminalMode(runtime);
 	runtime.editor = createCartEditor(options.viewport);
 	runtime.overlayResolutionMode = 'viewport';
@@ -285,20 +284,20 @@ export function registerRuntimeShortcuts(runtime: Runtime): void {
 	disposeShortcutHandlers(runtime);
 	const registry = Input.instance.getGlobalShortcutRegistry();
 	const disposers: Array<() => void> = [];
-	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, EDITOR_TOGGLE_KEY, () => {
-		$.consume_button(runtime.playerIndex, EDITOR_TOGGLE_KEY, 'keyboard');
+	disposers.push(registry.registerKeyboardShortcut(1, EDITOR_TOGGLE_KEY, () => {
+		$.consume_button(1, EDITOR_TOGGLE_KEY, 'keyboard');
 		toggleEditor(runtime);
 	}));
-	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode(runtime)));
-	disposers.push(registry.registerGamepadChord(runtime.playerIndex, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => toggleEditor(runtime)));
-	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, GAME_PAUSE_KEY, () => $.toggleDebuggerControls()));
-	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, 'KeyT', () => {
-		$.consume_button(runtime.playerIndex, 'KeyT', 'keyboard');
+	disposers.push(registry.registerKeyboardShortcut(1, TERMINAL_TOGGLE_KEY, () => toggleTerminalMode(runtime)));
+	disposers.push(registry.registerGamepadChord(1, EDITOR_TOGGLE_GAMEPAD_BUTTONS, () => toggleEditor(runtime)));
+	disposers.push(registry.registerKeyboardShortcut(1, GAME_PAUSE_KEY, () => $.toggleDebuggerControls()));
+	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
+		$.consume_button(1, 'KeyT', 'keyboard');
 		const next = runtime._activeIdeFontVariant === 'tiny' ? 'msx' : 'tiny';
 		setActiveIdeFontVariant(runtime, next);
 	}, KeyModifier.ctrl | KeyModifier.shift));
-	disposers.push(registry.registerKeyboardShortcut(runtime.playerIndex, 'F8', () => {
-		const modifiers = $.input.getPlayerInput(runtime.playerIndex).getModifiersState();
+	disposers.push(registry.registerKeyboardShortcut(1, 'F8', () => {
+		const modifiers = $.input.getPlayerInput(1).getModifiersState();
 		if (modifiers.ctrl) {
 			return;
 		}
@@ -331,7 +330,7 @@ export function tickIdeInput(runtime: Runtime): void {
 	if (!editorBlocksRuntimePipeline(runtime) || !runtime.editor!.isActive) {
 		return;
 	}
-	const pollFrame = $.input.getPlayerInput(runtime.playerIndex).pollFrame;
+	const pollFrame = $.input.getPlayerInput(1).pollFrame;
 	if (pollFrame === runtime.lastIdeInputFrame) {
 		return;
 	}
@@ -343,7 +342,7 @@ export function tickTerminalInput(runtime: Runtime): void {
 	if (!runtime.terminal.isActive) {
 		return;
 	}
-	const pollFrame = $.input.getPlayerInput(runtime.playerIndex).pollFrame;
+	const pollFrame = $.input.getPlayerInput(1).pollFrame;
 	if (pollFrame === runtime.lastTerminalInputFrame) {
 		return;
 	}

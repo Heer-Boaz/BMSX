@@ -69,12 +69,12 @@ local function cart_boot_ready()
 	return ready ~= 0
 end
 
-local function format_viewport_label(viewport)
-	if not viewport then
+local function format_render_size_label(render_size)
+	if not render_size then
 		return nil
 	end
-	local w = viewport.width or viewport.x
-	local h = viewport.height or viewport.y
+	local w = render_size.width
+	local h = render_size.height
 	if not w or not h then
 		return nil
 	end
@@ -94,7 +94,7 @@ local function flatten_manifest(manifest, root_path)
 		rom_name = manifest.rom_name,
 		entry_path = manifest.lua and manifest.lua.entry_path,
 		namespace = machine.namespace,
-		viewport = format_viewport_label(machine.viewport),
+		render_size = format_render_size_label(machine.render_size),
 		canonicalization = machine.canonicalization,
 		input = manifest.input,
 		root = root_path,
@@ -2132,7 +2132,7 @@ local function build_info()
 	-- local cart_short = cart_manifest and display_text(cart_manifest.short_name) or '--'
 	local cart_rom = cart_manifest and display_text(cart_manifest.rom_name) or '--'
 	-- local cart_ns = cart_manifest and display_text(cart_manifest.namespace) or '--'
-	local cart_view_label = cart_manifest and display_text(cart_manifest.viewport) or '--'
+	local cart_view_label = cart_manifest and display_text(cart_manifest.render_size) or '--'
 	-- local cart_canon = cart_manifest and display_text(cart_manifest.canonicalization) or '--'
 	-- local cart_entry = cart_manifest and display_text(cart_manifest.entry_path) or '--'
 	-- local cart_input = cart_manifest and display_text(cart_manifest.input) or '--'
@@ -2146,7 +2146,7 @@ local function build_info()
 	local sys_title = sys_manifest and display_text(sys_manifest.title) or '--'
 	local sys_rom = sys_manifest and display_text(sys_manifest.rom_name) or '--'
 	-- local sys_ns = sys_manifest and display_text(sys_manifest.namespace) or '--'
-	local sys_view_label = sys_manifest and display_text(sys_manifest.viewport) or '--'
+	local sys_view_label = sys_manifest and display_text(sys_manifest.render_size) or '--'
 	-- local sys_canon = sys_manifest and display_text(sys_manifest.canonicalization) or '--'
 	-- local sys_entry = sys_manifest and display_text(sys_manifest.entry_path) or '--'
 	local vram_total = sys_vram_system_atlas_size + sys_vram_primary_atlas_size + sys_vram_secondary_atlas_size + sys_vram_staging_size

@@ -361,7 +361,6 @@ struct RomManifest {
 	std::optional<i64> dmaBytesPerSecIso;
 	std::optional<i64> dmaBytesPerSecBulk;
 	std::optional<i64> ufpsScaled;
-	std::optional<i64> vblankCycles;
 
 	std::string entryPoint;  // Main Lua file
 };

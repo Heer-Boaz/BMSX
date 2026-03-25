@@ -1056,6 +1056,22 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.vramStaging.set(bytes, offset);
 	}
 
+	public getTrackedUsedVramBytes(): number {
+		let usedBytes = 0;
+		for (let index = 0; index < this.vramSlots.length; index += 1) {
+			const slot = this.vramSlots[index];
+			if (slot.kind === 'skybox') {
+				continue;
+			}
+			usedBytes += slot.entry.baseSize;
+		}
+		return usedBytes;
+	}
+
+	public getTrackedTotalVramBytes(): number {
+		return VRAM_SYSTEM_ATLAS_SIZE + VRAM_PRIMARY_ATLAS_SIZE + VRAM_SECONDARY_ATLAS_SIZE + VRAM_STAGING_SIZE;
+	}
+
 	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
 		let handle = $.texmanager.getTextureByUri(textureKey);
 		let textureWidth = 1;

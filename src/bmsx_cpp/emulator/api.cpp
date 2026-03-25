@@ -514,8 +514,16 @@ void Api::markRoots(GcHeap& heap) {
 	}
 }
 
+void Api::appendRootValues(std::vector<Value>& out) const {
+	for (Value handle : m_playerInputHandles) {
+		if (!isNil(handle)) {
+			out.push_back(handle);
+		}
+	}
+}
+
 Value Api::get_player_input(std::optional<int> playerIndex) {
-	const int index = playerIndex.has_value() ? playerIndex.value() : m_runtime.playerIndex();
+	const int index = playerIndex.has_value() ? playerIndex.value() : 1;
 	if (index < 1 || index > PLAYERS_MAX) {
 		throw BMSX_RUNTIME_ERROR("Player index out of range.");
 	}
@@ -535,17 +543,17 @@ std::string Api::pointer_button_code(int button) const {
 }
 
 bool Api::mousebtn(int button) const {
-	const ButtonState state = Input::instance().getPlayerInput(m_runtime.playerIndex())->getButtonState(pointer_button_code(button), InputSource::Pointer);
+	const ButtonState state = Input::instance().getPlayerInput(1)->getButtonState(pointer_button_code(button), InputSource::Pointer);
 	return state.pressed;
 }
 
 bool Api::mousebtnp(int button) const {
-	const ButtonState state = Input::instance().getPlayerInput(m_runtime.playerIndex())->getButtonState(pointer_button_code(button), InputSource::Pointer);
+	const ButtonState state = Input::instance().getPlayerInput(1)->getButtonState(pointer_button_code(button), InputSource::Pointer);
 	return state.justpressed;
 }
 
 bool Api::mousebtnr(int button) const {
-	const ButtonState state = Input::instance().getPlayerInput(m_runtime.playerIndex())->getButtonState(pointer_button_code(button), InputSource::Pointer);
+	const ButtonState state = Input::instance().getPlayerInput(1)->getButtonState(pointer_button_code(button), InputSource::Pointer);
 	return state.justreleased;
 }
 
@@ -753,7 +761,7 @@ m_runtime.registerNativeFunction("mousebtnr", [this](const std::vector<Value>& a
 
 m_runtime.registerNativeFunction("pointer_screen_position", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
-	PlayerInput* input = Input::instance().getPlayerInput(m_runtime.playerIndex());
+	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
 	Table* table = m_runtime.cpu().createTable(0, 3);
 	if (!state.value2d.has_value()) {
@@ -771,7 +779,7 @@ m_runtime.registerNativeFunction("pointer_screen_position", [this, key](const st
 
 m_runtime.registerNativeFunction("pointer_delta", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
-	PlayerInput* input = Input::instance().getPlayerInput(m_runtime.playerIndex());
+	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_delta", InputSource::Pointer);
 	Table* table = m_runtime.cpu().createTable(0, 3);
 	if (!state.value2d.has_value()) {
@@ -789,7 +797,7 @@ m_runtime.registerNativeFunction("pointer_delta", [this, key](const std::vector<
 
 m_runtime.registerNativeFunction("pointer_viewport_position", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
-	PlayerInput* input = Input::instance().getPlayerInput(m_runtime.playerIndex());
+	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
 	Table* table = m_runtime.cpu().createTable(0, 4);
 	if (!state.value2d.has_value()) {
@@ -814,7 +822,7 @@ m_runtime.registerNativeFunction("pointer_viewport_position", [this, key](const 
 
 m_runtime.registerNativeFunction("mousepos", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
-	PlayerInput* input = Input::instance().getPlayerInput(m_runtime.playerIndex());
+	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
 	Table* table = m_runtime.cpu().createTable(0, 4);
 	if (!state.value2d.has_value()) {
@@ -839,7 +847,7 @@ m_runtime.registerNativeFunction("mousepos", [this, key](const std::vector<Value
 
 m_runtime.registerNativeFunction("mousewheel", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
-	PlayerInput* input = Input::instance().getPlayerInput(m_runtime.playerIndex());
+	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_wheel", InputSource::Pointer);
 	Table* table = m_runtime.cpu().createTable(0, 2);
 	table->set(key("value"), valueNumber(static_cast<double>(state.value)));
@@ -1644,12 +1652,12 @@ void Api::write_inline_span_with_font(const std::string& text, int start, int en
 }
 
 bool Api::action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const {
-	int index = playerIndex.has_value() ? playerIndex.value() : m_runtime.playerIndex();
+	int index = playerIndex.has_value() ? playerIndex.value() : 1;
 	return EngineCore::instance().action_triggered(index, actionDefinition);
 }
 
 void Api::consume_action(const std::string& action, std::optional<int> playerIndex) {
-	int index = playerIndex.has_value() ? playerIndex.value() : m_runtime.playerIndex();
+	int index = playerIndex.has_value() ? playerIndex.value() : 1;
 	EngineCore::instance().consume_action(index, action);
 }
 
@@ -1663,6 +1671,15 @@ void Api::dset(int index, double value) {
 
 double Api::dget(int index) const {
 	return m_persistentData.at(static_cast<size_t>(index));
+}
+
+void Api::restorePersistentData(const std::string& ns, const std::vector<double>& values) {
+	m_cartDataNamespace = ns;
+	m_persistentData.assign(PERSISTENT_DATA_SIZE, 0.0);
+	const size_t count = std::min(values.size(), m_persistentData.size());
+	for (size_t index = 0; index < count; ++index) {
+		m_persistentData[index] = values[index];
+	}
 }
 
 void Api::sfx(const std::string& id) {

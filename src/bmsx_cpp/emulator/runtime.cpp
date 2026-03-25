@@ -104,7 +104,6 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_cpu(m_memory, &m_stringHandles)
 	, m_dmaController(m_memory, [this](uint32_t mask) { raiseIrqFlags(mask); })
 	, m_imgDecController(m_memory, m_dmaController, [this](uint32_t mask) { raiseIrqFlags(mask); })
-	, m_playerIndex(options.playerIndex)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
 	, m_cpuHz(options.cpuHz)
@@ -150,6 +149,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 		for (const auto& entry : m_moduleCache) {
 			heap.markValue(entry.second);
 		}
+		heap.markValue(m_pairsIterator);
 		heap.markValue(m_ipairsIterator);
 		if (m_api) {
 			m_api->markRoots(heap);
@@ -385,6 +385,14 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	}
 	frameState.tickCompleted = true;
 	m_lastCompletedVblankSequence = vblankSequence;
+	m_lastTickBudgetGranted = frameState.cycleBudgetGranted;
+	if (frameState.cpuStatsFrozen) {
+		m_lastTickCpuBudgetGranted = frameState.cpuStatsGrantedCycles;
+		m_lastTickCpuUsedCycles = frameState.cpuStatsUsedCycles;
+	} else {
+		m_lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
+		m_lastTickCpuUsedCycles = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
+	}
 	m_lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 	m_lastTickCompleted = true;
 	m_lastTickSequence += 1;
@@ -400,6 +408,15 @@ void Runtime::reconcileCycleBudgetAfterSignal(FrameState& frameState) {
 	if (consumed > 0) {
 		advanceHardware(consumed);
 	}
+}
+
+void Runtime::freezeTickCpuStats(FrameState& frameState) {
+	if (frameState.cpuStatsFrozen) {
+		return;
+	}
+	frameState.cpuStatsFrozen = true;
+	frameState.cpuStatsGrantedCycles = frameState.cycleBudgetGranted;
+	frameState.cpuStatsUsedCycles = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
 }
 
 void Runtime::requestWaitForVblank() {
@@ -422,6 +439,7 @@ void Runtime::requestWaitForVblank() {
 			throw BMSX_RUNTIME_ERROR("[Runtime] wait_vblank resumed without an active frame state.");
 		}
 		reconcileCycleBudgetAfterSignal(m_frameState);
+		freezeTickCpuStats(m_frameState);
 		completeTickIfPending(m_frameState, m_vblankSequence);
 	}
 	throw WaitForVblankSignal{};
@@ -527,7 +545,6 @@ void Runtime::tickUpdate() {
 
 	m_frameActive = true;
 	m_lastTickCompleted = false;
-	m_lastTickBudgetRemaining = 0;
 
 	const int carryBudget = m_pendingCarryBudget;
 	m_pendingCarryBudget = 0;
@@ -650,6 +667,9 @@ void Runtime::resetFrameState() {
 	m_waitForVblankTargetSequence = 0;
 	m_clearBackQueuesAfterWaitResume = false;
 	m_pendingCarryBudget = 0;
+	m_lastTickBudgetGranted = 0;
+	m_lastTickCpuBudgetGranted = 0;
+	m_lastTickCpuUsedCycles = 0;
 	m_lastTickCompleted = false;
 	m_lastTickBudgetRemaining = 0;
 	m_lastTickSequence = 0;
@@ -666,9 +686,14 @@ RuntimeState Runtime::captureCurrentState() const {
 	RuntimeState state;
 	state.ioMemory = m_memory.ioSlots();
 	state.globals = m_cpu.globals->entries();
+	state.cartDataNamespace = m_api->cartDataNamespace();
+	state.persistentData = m_api->persistentData();
+	state.randomSeed = m_randomSeedValue;
+	state.pendingEntryCall = m_pendingCall == PendingCall::Entry;
 	state.assetMemory = m_memory.dumpAssetMemory();
 	state.atlasSlots = m_vdp.atlasSlots();
 	state.skyboxFaceIds = m_vdp.skyboxFaceIds();
+	state.vdpDitherType = m_vdp.getDitherType();
 	state.cyclesIntoFrame = m_cyclesIntoFrame;
 	state.vblankPendingClear = m_vblankPendingClear;
 	state.vblankClearOnIrqEnd = m_vblankClearOnIrqEnd;
@@ -689,12 +714,16 @@ void Runtime::applyState(const RuntimeState& state) {
 	if (!state.assetMemory.empty()) {
 		m_memory.restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
 	}
+	m_api->restorePersistentData(state.cartDataNamespace, state.persistentData);
+	m_randomSeedValue = state.randomSeed;
+	m_pendingCall = state.pendingEntryCall ? PendingCall::Entry : PendingCall::None;
 	applyAtlasSlotMapping(state.atlasSlots);
 	if (state.skyboxFaceIds.has_value()) {
 		m_vdp.setSkyboxImages(*state.skyboxFaceIds);
 	} else {
 		m_vdp.clearSkybox();
 	}
+	m_vdp.setDitherType(state.vdpDitherType);
 
 	// Restore globals
 	m_cpu.globals->clear();
@@ -741,17 +770,8 @@ void Runtime::setCpuHz(i64 hz) {
 
 void Runtime::applyActiveMachineTiming(i64 cpuHz) {
 	const RomManifest& manifest = EngineCore::instance().assets().manifest;
-	if (!manifest.vblankCycles.has_value()) {
-		throw BMSX_RUNTIME_ERROR("[Runtime] machine.specs.vdp.vblank_cycles is required.");
-	}
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, EngineCore::instance().ufpsScaled());
-	const i64 vblankCycles = *manifest.vblankCycles;
-	if (vblankCycles <= 0) {
-		throw BMSX_RUNTIME_ERROR("[Runtime] machine.specs.vdp.vblank_cycles must be a positive integer.");
-	}
-	if (vblankCycles > cycleBudget) {
-		throw BMSX_RUNTIME_ERROR("[Runtime] machine.specs.vdp.vblank_cycles must be less than or equal to cycles_per_frame.");
-	}
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, EngineCore::instance().ufpsScaled(), manifest.viewportHeight);
 	setCpuHz(cpuHz);
 	setCycleBudgetPerFrame(cycleBudget);
 	setVblankCycles(static_cast<int>(vblankCycles));
@@ -826,6 +846,31 @@ bool Runtime::hasActiveTick() const {
 	return m_frameActive && m_luaInitialized && m_tickEnabled && !m_runtimeFailed;
 }
 
+uint32_t Runtime::trackedRamUsedBytes() const {
+	std::vector<Value> extraRoots;
+	extraRoots.reserve(m_moduleCache.size() + 2 + PLAYERS_MAX);
+	for (const auto& entry : m_moduleCache) {
+		extraRoots.push_back(entry.second);
+	}
+	if (!isNil(m_pairsIterator)) {
+		extraRoots.push_back(m_pairsIterator);
+	}
+	if (!isNil(m_ipairsIterator)) {
+		extraRoots.push_back(m_ipairsIterator);
+	}
+	if (m_api) {
+		m_api->appendRootValues(extraRoots);
+	}
+	return static_cast<uint32_t>(
+		IO_REGION_SIZE
+		+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
+		+ m_stringHandles.usedHeapBytes()
+		+ m_memory.usedAssetTableBytes()
+		+ m_memory.usedAssetDataBytes()
+		+ m_cpu.trackedHeapBytes(extraRoots)
+	);
+}
+
 bool Runtime::consumeLastTickCompletion(i64& outSequence, int& outRemaining) {
 	if (!m_lastTickCompleted) {
 		return false;
@@ -873,6 +918,7 @@ void Runtime::refreshMemoryMapGlobals() {
 	setGlobal("sys_vram_primary_atlas_size", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_SIZE)));
 	setGlobal("sys_vram_secondary_atlas_size", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
 	setGlobal("sys_vram_staging_size", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
+	setGlobal("sys_vram_size", valueNumber(static_cast<double>(trackedVramTotalBytes())));
 }
 
 void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, AssetBuildMode mode) {
@@ -1042,6 +1088,7 @@ void Runtime::executeUpdateCallback() {
 		}
 	} catch (const WaitForVblankSignal&) {
 		reconcileCycleBudgetAfterSignal(m_frameState);
+		freezeTickCpuStats(m_frameState);
 		processIrqAck();
 		return;
 	} catch (const std::exception& e) {

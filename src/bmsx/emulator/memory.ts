@@ -143,6 +143,18 @@ export class Memory {
 		this.vramWriter = writer;
 	}
 
+	public getUsedAssetTableBytes(): number {
+		const headerOffset = ASSET_TABLE_BASE - RAM_BASE;
+		const entryCount = this.ramView.getUint32(headerOffset + 12, true);
+		const stringTableLength = this.ramView.getUint32(headerOffset + 20, true);
+		return ASSET_TABLE_HEADER_SIZE + (entryCount * ASSET_TABLE_ENTRY_SIZE) + stringTableLength;
+	}
+
+	public getUsedAssetDataBytes(): number {
+		const headerOffset = ASSET_TABLE_BASE - RAM_BASE;
+		return this.ramView.getUint32(headerOffset + 28, true);
+	}
+
 	public setVdpIoHandler(handler: VdpIoHandler): void {
 		this.vdpIoHandler = handler;
 	}
@@ -153,6 +165,10 @@ export class Memory {
 
 	public getIoSlotCount(): number {
 		return this.ioSlots.length;
+	}
+
+	public getIoSlots(): ReadonlyArray<Value> {
+		return this.ioSlots;
 	}
 
 	public resetAssetMemory(): void {

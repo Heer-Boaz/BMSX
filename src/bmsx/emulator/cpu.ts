@@ -1,4 +1,5 @@
 import { StringPool, StringValue, isStringValue, stringValueToString } from './string_pool';
+import type { RuntimeStringPoolState } from './string_pool';
 import type { Memory } from './memory';
 import { formatNumber } from './number_format';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
@@ -109,6 +110,76 @@ export type CpuFrameSnapshot = {
 	protoIndex: number;
 	pc: number;
 	registers: Value[];
+};
+
+export type CpuRuntimeRefSegment = string | number;
+
+export type CpuValueState =
+	| { tag: 'nil' }
+	| { tag: 'false' }
+	| { tag: 'true' }
+	| { tag: 'number'; value: number }
+	| { tag: 'string'; id: number }
+	| { tag: 'ref'; id: number }
+	| { tag: 'stable_ref'; path: CpuRuntimeRefSegment[] };
+
+export type CpuObjectState =
+	| {
+		kind: 'table';
+		array: CpuValueState[];
+		arrayLength: number;
+		hash: Array<{ key: CpuValueState; value: CpuValueState; next: number }>;
+		hashFree: number;
+		metatable: CpuValueState;
+	}
+	| {
+		kind: 'closure';
+		protoIndex: number;
+		upvalues: number[];
+	}
+	| {
+		kind: 'upvalue';
+		open: boolean;
+		index: number;
+		frameIndex: number;
+		value: CpuValueState;
+	}
+	| {
+		kind: 'native_array';
+		values: CpuValueState[];
+		props: Array<{ key: CpuValueState; value: CpuValueState }>;
+		metatable: CpuValueState;
+	};
+
+export type CpuFrameState = {
+	protoIndex: number;
+	pc: number;
+	closureRef: number;
+	registers: CpuValueState[];
+	varargs: CpuValueState[];
+	returnBase: number;
+	returnCount: number;
+	top: number;
+	captureReturns: boolean;
+	callSitePc: number;
+};
+
+export type CpuRootValueState = {
+	name: string;
+	value: CpuValueState;
+};
+
+export type CpuRuntimeState = {
+	stringPoolState: RuntimeStringPoolState;
+	globals: CpuRootValueState[];
+	ioMemory: CpuValueState[];
+	moduleCache: CpuRootValueState[];
+	frames: CpuFrameState[];
+	lastReturnValues: CpuValueState[];
+	objects: CpuObjectState[];
+	lastPc: number;
+	lastInstruction: number;
+	instructionBudgetRemaining: number;
 };
 
 export type Program = {
@@ -288,6 +359,14 @@ type HashNode = {
 	next: number;
 };
 
+export type TableRuntimeState = {
+	array: Value[];
+	arrayLength: number;
+	hash: HashNode[];
+	hashFree: number;
+	metatable: Table | null;
+};
+
 export class Table {
 	private array: Value[];
 	private arrayLength = 0;
@@ -414,6 +493,40 @@ export class Table {
 		return this.metatable;
 	}
 
+	public captureRuntimeState(): TableRuntimeState {
+		const array = this.array.slice();
+		const hash: HashNode[] = new Array(this.hash.length);
+		for (let index = 0; index < this.hash.length; index += 1) {
+			const node = this.hash[index];
+			hash[index] = { key: node.key, value: node.value, next: node.next };
+		}
+		return {
+			array,
+			arrayLength: this.arrayLength,
+			hash,
+			hashFree: this.hashFree,
+			metatable: this.metatable,
+		};
+	}
+
+	public restoreRuntimeState(state: TableRuntimeState): void {
+		this.array = state.array.slice();
+		this.arrayLength = state.arrayLength;
+		this.hash = new Array<HashNode>(state.hash.length);
+		for (let index = 0; index < state.hash.length; index += 1) {
+			const node = state.hash[index];
+			this.hash[index] = { key: node.key, value: node.value, next: node.next };
+		}
+		this.hashFree = state.hashFree;
+		this.metatable = state.metatable;
+	}
+
+	public getTrackedHeapBytes(): number {
+		return 32
+			+ (this.array.length * 8)
+			+ (this.hash.length * 24);
+	}
+
 	public setMetatable(metatable: Table | null): void {
 		if (metatable !== null && !(metatable instanceof Table)) {
 			throw new Error('setmetatable expects a table or nil as the second argument.');
@@ -464,6 +577,26 @@ export class Table {
 			const node = this.hash[i];
 			if (node.key !== null) {
 				return [node.key, node.value];
+			}
+		}
+		return null;
+	}
+
+	public nextEntryFromCursor(arrayCursor: number, hashCursor: number, previousHashKey: Value = null): [number, number, Value, Value] | null {
+		for (let index = arrayCursor; index < this.array.length; index += 1) {
+			const value = this.array[index];
+			if (value !== null && value !== undefined) {
+				return [index + 1, 0, index + 1, value];
+			}
+		}
+		const hashStart = hashCursor > 0 ? hashCursor - 1 : 0;
+		for (let index = hashStart; index < this.hash.length; index += 1) {
+			const node = this.hash[index];
+			if (node.key !== null) {
+				if (hashCursor > 0 && index === hashCursor - 1 && previousHashKey !== null && this.keyEquals(node.key, previousHashKey)) {
+					continue;
+				}
+				return [this.array.length, index + 1, node.key, node.value];
 			}
 		}
 		return null;
@@ -1975,6 +2108,149 @@ export class CPU {
 			return this.program.constPool[index];
 		}
 		return frame.registers.get(rk);
+	}
+
+	public getTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
+		const seen = new WeakSet<object>();
+		let total = 0;
+
+		const walkUpvalue = (upvalue: Upvalue): void => {
+			if (seen.has(upvalue)) {
+				return;
+			}
+			seen.add(upvalue);
+			total += 24;
+			if (upvalue.open) {
+				walkValue(upvalue.frame.registers.get(upvalue.index));
+				return;
+			}
+			walkValue(upvalue.value);
+		};
+
+		const walkNativeObject = (value: NativeObject): void => {
+			if (seen.has(value)) {
+				return;
+			}
+			seen.add(value);
+			total += 24;
+			if (value.metatable !== null && value.metatable !== undefined) {
+				walkValue(value.metatable);
+			}
+			const raw = value.raw as Record<string, unknown>;
+			if (Array.isArray(raw)) {
+				const arr = raw as unknown[];
+				total += 16 + (arr.length * 8);
+				for (let index = 0; index < arr.length; index += 1) {
+					walkValue(value.get(index + 1));
+				}
+				const ownKeys = Object.keys(raw);
+				for (let index = 0; index < ownKeys.length; index += 1) {
+					const key = ownKeys[index];
+					const numeric = Number(key);
+					if (Number.isInteger(numeric) && String(numeric) === key && numeric >= 0 && numeric < arr.length) {
+						continue;
+					}
+					total += 8;
+					walkValue(value.get(this.stringPool.intern(key)));
+				}
+				return;
+			}
+			const ownKeys = Object.keys(raw);
+			total += ownKeys.length * 8;
+			for (let index = 0; index < ownKeys.length; index += 1) {
+				const key = ownKeys[index];
+				walkValue(value.get(this.stringPool.intern(key)));
+			}
+		};
+
+		const walkClosure = (value: Closure): void => {
+			if (seen.has(value)) {
+				return;
+			}
+			seen.add(value);
+			total += 16 + (value.upvalues.length * 8);
+			for (let index = 0; index < value.upvalues.length; index += 1) {
+				walkUpvalue(value.upvalues[index]);
+			}
+		};
+
+		const walkTable = (value: Table): void => {
+			if (seen.has(value)) {
+				return;
+			}
+			seen.add(value);
+			total += value.getTrackedHeapBytes();
+			const state = value.captureRuntimeState();
+			walkValue(state.metatable);
+			for (let index = 0; index < state.array.length; index += 1) {
+				walkValue(state.array[index]);
+			}
+			for (let index = 0; index < state.hash.length; index += 1) {
+				const node = state.hash[index];
+				walkValue(node.key);
+				walkValue(node.value);
+			}
+		};
+
+		const walkValue = (value: Value): void => {
+			if (value === null || typeof value === 'boolean' || typeof value === 'number' || isStringValue(value)) {
+				return;
+			}
+			if (value instanceof Table) {
+				walkTable(value);
+				return;
+			}
+			if (isNativeFunction(value)) {
+				if (seen.has(value)) {
+					return;
+				}
+				seen.add(value);
+				total += 16;
+				return;
+			}
+			if (isNativeObject(value)) {
+				walkNativeObject(value);
+				return;
+			}
+			walkClosure(value);
+		};
+
+		walkValue(this.globals);
+		if (this.stringIndexTable !== null) {
+			walkValue(this.stringIndexTable);
+		}
+		const ioSlots = this.memory.getIoSlots();
+		for (let index = 0; index < ioSlots.length; index += 1) {
+			walkValue(ioSlots[index]);
+		}
+		for (let index = 0; index < this.lastReturnValues.length; index += 1) {
+			walkValue(this.lastReturnValues[index]);
+		}
+		for (let index = 0; index < this.returnScratch.length; index += 1) {
+			walkValue(this.returnScratch[index]);
+		}
+		if (this.program !== null) {
+			for (let index = 0; index < this.program.constPool.length; index += 1) {
+				walkValue(this.program.constPool[index]);
+			}
+		}
+		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
+			const frame = this.frames[frameIndex];
+			walkClosure(frame.closure);
+			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
+				walkValue(frame.registers.get(registerIndex));
+			}
+			for (let index = 0; index < frame.varargs.length; index += 1) {
+				walkValue(frame.varargs[index]);
+			}
+			for (const upvalue of frame.openUpvalues.values()) {
+				walkUpvalue(upvalue);
+			}
+		}
+		for (let index = 0; index < extraRoots.length; index += 1) {
+			walkValue(extraRoots[index]);
+		}
+		return total;
 	}
 
 	private valueToString(value: Value): string {

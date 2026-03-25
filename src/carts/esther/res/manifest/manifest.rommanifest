@@ -2,7 +2,7 @@ title: Esther - DK Prototype
 short_name: 'esther'
 rom_name: 'esther'
 machine:
-    viewport:
+    render_size:
         width: 320
         height: 240
     canonicalization: lower
@@ -15,7 +15,5 @@ machine:
         dma:
             dma_bytes_per_sec_iso: 8388608
             dma_bytes_per_sec_bulk: 26214400
-        vdp:
-            vblank_cycles: 10000
 lua:
     entry_path: cart.lua

@@ -340,25 +340,34 @@ i64 resolveUfpsScaled(const RomManifest& manifest) {
 	return ufpsScaled;
 }
 
-i64 resolveVblankCycles(const RomManifest& manifest, int cyclesPerFrame) {
-	if (!manifest.vblankCycles) {
-		throw std::runtime_error("[EngineCore] machine.specs.vdp.vblank_cycles is required.");
-	}
-	const i64 cycles = *manifest.vblankCycles;
-	if (cycles <= 0) {
-		throw std::runtime_error("[EngineCore] machine.specs.vdp.vblank_cycles must be a positive integer.");
-	}
-	if (cycles > cyclesPerFrame) {
-		throw std::runtime_error("[EngineCore] machine.specs.vdp.vblank_cycles must be less than or equal to cycles_per_frame.");
-	}
-	return cycles;
-}
-
 i64 hzToScaledHz(f64 hz) {
 	return static_cast<i64>(std::llround(hz * static_cast<f64>(HZ_SCALE)));
 }
 
 } // namespace
+
+i64 resolveVblankCycles(i64 cpuHz, i64 refreshHzScaled, i32 renderHeight) {
+	if (cpuHz <= 0) {
+		throw std::runtime_error("[EngineCore] cpuFreqHz must be a positive integer.");
+	}
+	if (refreshHzScaled <= 0) {
+		throw std::runtime_error("[EngineCore] ufpsScaled must be a positive integer.");
+	}
+	if (renderHeight <= 0) {
+		throw std::runtime_error("[EngineCore] renderHeight must be a positive integer.");
+	}
+	const i64 cycleBudgetPerFrame = calcCyclesPerFrame(cpuHz, refreshHzScaled);
+	const i64 activeScanlines = cycleBudgetPerFrame / static_cast<i64>(renderHeight + 1);
+	const i64 activeDisplayCycles = activeScanlines * static_cast<i64>(renderHeight);
+	const i64 vblankCycles = cycleBudgetPerFrame - activeDisplayCycles;
+	if (vblankCycles > cycleBudgetPerFrame) {
+		throw std::runtime_error("[EngineCore] vblank_cycles must be less than or equal to cycles_per_frame.");
+	}
+	if (vblankCycles <= 0) {
+		throw std::runtime_error("[EngineCore] vblank_cycles must be greater than 0.");
+	}
+	return vblankCycles;
+}
 
 int calcCyclesPerFrame(i64 cpuHz, i64 refreshHzScaled) {
 	const i64 wholeCycles = (cpuHz / refreshHzScaled) * HZ_SCALE;
@@ -885,7 +894,7 @@ bool EngineCore::bootWithoutCart() {
 		const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(m_engine_assets.manifest);
 		const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(m_engine_assets.manifest);
 		const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
-		const i64 vblankCycles = resolveVblankCycles(m_engine_assets.manifest, cycleBudget);
+		const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, m_engine_assets.manifest.viewportHeight);
 		// Create Runtime instance if it doesn't exist
 		if (!Runtime::hasInstance()) {
 			RuntimeOptions options;
@@ -1002,7 +1011,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	}
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
 	const RomManifest& transferManifest = cartCpuValid ? m_assets.manifest : m_engine_assets.manifest;
-	const i64 vblankCycles = resolveVblankCycles(transferManifest, cycleBudget);
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, transferManifest.viewportHeight);
 	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(transferManifest);
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferManifest);
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferManifest);
@@ -1145,7 +1154,7 @@ bool EngineCore::resetLoadedRom() {
 	}
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
 	const RomManifest& transferManifest = cartCpuValid ? m_assets.manifest : m_engine_assets.manifest;
-	const i64 vblankCycles = resolveVblankCycles(transferManifest, cycleBudget);
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, transferManifest.viewportHeight);
 	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(transferManifest);
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferManifest);
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferManifest);
@@ -1303,7 +1312,7 @@ void EngineCore::bootRuntimeFromProgram() {
 	const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
 	setUfpsScaled(ufpsScaled);
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
-	const i64 vblankCycles = resolveVblankCycles(m_assets.manifest, cycleBudget);
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, m_assets.manifest.viewportHeight);
 
 	// Create Runtime instance if it doesn't exist
 	if (!Runtime::hasInstance()) {

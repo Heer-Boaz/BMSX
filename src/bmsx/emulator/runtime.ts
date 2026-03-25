@@ -1,4 +1,4 @@
-import { $, calcCyclesPerFrameScaled } from '../core/engine_core';
+import { $, calcCyclesPerFrameScaled, resolveVblankCycles } from '../core/engine_core';
 import { taskGate } from '../core/taskgate';
 import { Input } from '../input/input';
 import type { InputMap } from '../input/inputtypes';
@@ -103,6 +103,7 @@ import {
 	DEFAULT_VRAM_ATLAS_SLOT_SIZE,
 	DEFAULT_VRAM_STAGING_SIZE,
 	IO_REGION_SIZE,
+	STRING_HANDLE_COUNT,
 	STRING_HANDLE_ENTRY_SIZE,
 	configureMemoryMap,
 	type MemoryMapSpecs as MemoryMapSpecs,
@@ -143,6 +144,9 @@ type FrameState = {
 	cycleBudgetRemaining: number;
 	cycleBudgetGranted: number;
 	cycleCarryGranted: number;
+	cpuStatsFrozen: boolean;
+	cpuStatsUsedCycles: number;
+	cpuStatsGrantedCycles: number;
 };
 
 type EditorViewOptionsSnapshot = {
@@ -219,12 +223,10 @@ export class Runtime {
 		return Runtime.resolvePositiveSafeInteger(value, 'machine.ufps');
 	}
 
-	private static resolveVblankCycles(value: number | undefined, cyclesPerFrame: number): number {
-		const cycles = Runtime.resolvePositiveSafeInteger(value, 'machine.specs.vdp.vblank_cycles');
-		if (cycles > cyclesPerFrame) {
-			throw new Error('[Runtime] machine.specs.vdp.vblank_cycles must be less than or equal to cycles_per_frame.');
-		}
-		return cycles;
+	private static resolveRenderSize(machine: { render_size: { width: number; height: number; } }): Viewport {
+		const width = Runtime.resolvePositiveSafeInteger(machine.render_size.width, 'machine.render_size.width');
+		const height = Runtime.resolvePositiveSafeInteger(machine.render_size.height, 'machine.render_size.height');
+		return { width, height };
 	}
 
 	private static applyUfpsScaled(ufps: number): number {
@@ -255,6 +257,44 @@ export class Runtime {
 
 	public getLastTickBudgetRemaining(): number {
 		return this.lastTickBudgetRemaining;
+	}
+
+	public getLastTickBudgetGranted(): number {
+		if (this.lastTickSequence === 0) {
+			return this.cycleBudgetPerFrame;
+		}
+		return this.lastTickCpuBudgetGranted;
+	}
+
+	public getCpuUsedCyclesLastTick(): number {
+		if (this.lastTickSequence === 0) {
+			return 0;
+		}
+		return this.lastTickCpuUsedCycles;
+	}
+
+	public getTrackedRamUsedBytes(): number {
+		const extraRoots = Array.from(this.moduleCache.values());
+		if (this.pairsIterator !== null) {
+			extraRoots.push(this.pairsIterator);
+		}
+		if (this.ipairsIterator !== null) {
+			extraRoots.push(this.ipairsIterator);
+		}
+		return IO_REGION_SIZE
+			+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
+			+ this.stringHandles.usedHeapBytes()
+			+ this.memory.getUsedAssetTableBytes()
+			+ this.memory.getUsedAssetDataBytes()
+			+ this.cpu.getTrackedHeapBytes(extraRoots);
+	}
+
+	public getTrackedVramUsedBytes(): number {
+		return this.vdp.getTrackedUsedVramBytes();
+	}
+
+	public getTrackedVramTotalBytes(): number {
+		return this.vdp.getTrackedTotalVramBytes();
 	}
 
 	public didLastTickComplete(): boolean {
@@ -342,7 +382,6 @@ export class Runtime {
 		return api;
 	}
 	public _activeIdeFontVariant: FontVariant = EDITOR_FONT_VARIANT;
-	public playerIndex: number;
 	public tickEnabled: boolean = true;
 	public editor: CartEditor | null = null;
 	public readonly overlayRenderBackend = new RenderFacade();
@@ -414,9 +453,9 @@ export class Runtime {
 		this.resetTransferCarry();
 	}
 	public applyActiveMachineTiming(cpuHz: number): void {
-		const perfSpecs = getMachinePerfSpecs($.assets.manifest.machine);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
-		const vblankCycles = Runtime.resolveVblankCycles(perfSpecs.vblank_cycles, cycleBudgetPerFrame);
+		const renderSize = Runtime.resolveRenderSize($.assets.manifest.machine);
+		const vblankCycles = resolveVblankCycles(cpuHz, $.ufps_scaled, renderSize.height);
 		this.setCpuHz(cpuHz);
 		this.setCycleBudgetPerFrame(cycleBudgetPerFrame);
 		this.setVblankCycles(vblankCycles);
@@ -558,6 +597,7 @@ export class Runtime {
 				throw new Error('[Runtime] wait_vblank resumed without an active frame state.');
 			}
 			this.reconcileCycleBudgetAfterSignal(frameState);
+			this.freezeTickCpuStats(frameState);
 			this.completeTickIfPending(frameState, this.vblankSequence);
 		}
 		throw this.waitForVblankSignal;
@@ -595,6 +635,15 @@ export class Runtime {
 			return;
 		}
 		frameState.tickCompleted = true;
+		this.lastTickBudgetGranted = frameState.cycleBudgetGranted;
+		if (frameState.cpuStatsFrozen) {
+			this.lastTickCpuBudgetGranted = frameState.cpuStatsGrantedCycles;
+			this.lastTickCpuUsedCycles = frameState.cpuStatsUsedCycles;
+		}
+		else {
+			this.lastTickCpuBudgetGranted = frameState.cycleBudgetGranted;
+			this.lastTickCpuUsedCycles = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
+		}
 		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 		this.lastTickCompleted = true;
 		this.lastTickSequence += 1;
@@ -680,6 +729,9 @@ export class Runtime {
 	private readonly dmaIsoRate = new RateBudget();
 	private readonly dmaBulkRate = new RateBudget();
 	public lastTickSequence: number = 0;
+	public lastTickBudgetGranted: number = 0;
+	public lastTickCpuBudgetGranted: number = 0;
+	public lastTickCpuUsedCycles: number = 0;
 	public lastTickBudgetRemaining: number = 0;
 	public lastTickCompleted: boolean = false;
 	private debugCycleReportAtMs: number = 0;
@@ -722,6 +774,8 @@ export class Runtime {
 	public readonly nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
 	public readonly tableIds = new WeakMap<Table, number>();
 	public nextTableId = 1;
+	public pairsIterator: Value = null;
+	public ipairsIterator: Value = null;
 	public randomSeedValue = 0;
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
 	public readonly pathSemanticCache: Map<string, { source: string; model?: LuaSemanticModel; definitions?: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
@@ -808,7 +862,8 @@ export class Runtime {
 			Runtime.applyUfpsScaled(enginePerfSpecs.ufps);
 			const cpuHz = Runtime.resolveCpuHz(enginePerfSpecs.cpu_freq_hz);
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
-			const vblankCycles = Runtime.resolveVblankCycles(engineLayer.index.manifest.machine.specs.vdp.vblank_cycles, cycleBudgetPerFrame);
+			const engineRenderSize = Runtime.resolveRenderSize(engineLayer.index.manifest.machine);
+			const vblankCycles = resolveVblankCycles(cpuHz, $.ufps_scaled, engineRenderSize.height);
 			const memory = new Memory({
 				engineRom: new Uint8Array(engineLayer.payload),
 				cartRom: new Uint8Array(CART_ROM_HEADER_SIZE),
@@ -816,7 +871,7 @@ export class Runtime {
 			const runtime = Runtime.createInstance({
 				playerIndex,
 				canonicalization: engineLayer.index.manifest.machine.canonicalization,
-				viewport: engineLayer.index.manifest.machine.viewport,
+				viewport: engineRenderSize,
 				memory,
 				cpuHz,
 				cycleBudgetPerFrame,
@@ -886,7 +941,8 @@ export class Runtime {
 		Runtime.applyUfpsScaled(cartPerfSpecs.ufps);
 		const cpuHz = Runtime.resolveCpuHz(cartPerfSpecs.cpu_freq_hz);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
-		const vblankCycles = Runtime.resolveVblankCycles(cartLayer.index.manifest.machine.specs.vdp.vblank_cycles, cycleBudgetPerFrame);
+		const cartRenderSize = Runtime.resolveRenderSize(cartLayer.index.manifest.machine);
+		const vblankCycles = resolveVblankCycles(cpuHz, $.ufps_scaled, cartRenderSize.height);
 		const memory = new Memory({
 			engineRom: new Uint8Array(engineLayer.payload),
 			cartRom: new Uint8Array(cartLayer.payload),
@@ -895,7 +951,7 @@ export class Runtime {
 		const runtime = Runtime.createInstance({
 			playerIndex,
 			canonicalization: engineLayer.index.manifest.machine.canonicalization,
-			viewport: cartLayer.index.manifest.machine.viewport,
+			viewport: cartRenderSize,
 			memory,
 			cpuHz,
 			cycleBudgetPerFrame,
@@ -1170,7 +1226,6 @@ export class Runtime {
 
 	private constructor(options: RuntimeOptions) {
 		Runtime._instance = this;
-		this.playerIndex = options.playerIndex;
 		this.cycleBudgetPerFrame = options.cycleBudgetPerFrame;
 		this.storageService = $.platform.storage;
 		this.storage = new RuntimeStorage(this.storageService, $.lua_sources.namespace);
@@ -1333,6 +1388,9 @@ export class Runtime {
 			cycleBudgetRemaining: budget,
 			cycleBudgetGranted: budget,
 			cycleCarryGranted: carryBudget,
+			cpuStatsFrozen: false,
+			cpuStatsUsedCycles: 0,
+			cpuStatsGrantedCycles: 0,
 		};
 		this.vdp.beginFrame();
 		this.currentFrameState = state;
@@ -1379,7 +1437,6 @@ export class Runtime {
 		try {
 			state = this.beginFrameState();
 			this.lastTickCompleted = false;
-			this.lastTickBudgetRemaining = 0;
 			this.runUpdatePhase(state);
 			this.vdp.flushAssetEdits();
 			state.updateExecuted = !this.isUpdatePhasePending();
@@ -1469,6 +1526,7 @@ export class Runtime {
 		} catch (error) {
 			if (this.isWaitForVblankSignal(error)) {
 				this.reconcileCycleBudgetAfterSignal(state);
+				this.freezeTickCpuStats(state);
 				this.processIrqAck();
 			} else if (isLuaDebuggerPauseSignal(error)) {
 				runtimeIde.onLuaDebuggerPause(this, error);
@@ -1491,6 +1549,15 @@ export class Runtime {
 		if (consumed > 0) {
 			this.advanceHardware(consumed);
 		}
+	}
+
+	private freezeTickCpuStats(state: FrameState): void {
+		if (state.cpuStatsFrozen) {
+			return;
+		}
+		state.cpuStatsFrozen = true;
+		state.cpuStatsGrantedCycles = state.cycleBudgetGranted;
+		state.cpuStatsUsedCycles = state.cycleBudgetGranted - state.cycleBudgetRemaining;
 	}
 
 	private runWaitForVblank(state: FrameState): boolean {
