@@ -846,10 +846,7 @@ export function handleTabBarMiddleClick(snapshot: PointerSnapshot): boolean {
 }
 
 export function handlePointerWheel(): void {
-	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
-	if (!playerInput) {
-		return;
-	}
+	const playerInput = $.input.getPlayerInput(1);
 	const wheelAction = playerInput.getActionState('pointer_wheel');
 	if (wheelAction.consumed === true) {
 		return;
@@ -995,24 +992,22 @@ export function handleTextEditorPointerInput(): void {
 	let pointerSecondaryPressed = false;
 	let pointerAuxJustPressed = false;
 	let pointerAuxPressed = false;
-	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
-	if (playerInput) {
-		const secondaryAction = playerInput.getActionState('pointer_secondary');
-		if (secondaryAction && secondaryAction.justpressed === true && secondaryAction.consumed !== true) {
-			pointerSecondaryJustPressed = true;
-			pointerSecondaryPressed = true;
-		} else if (secondaryAction && secondaryAction.pressed === true && secondaryAction.consumed !== true) {
-			pointerSecondaryPressed = true;
-			pointerSecondaryJustPressed = !ide_state.pointerSecondaryWasPressed;
-		}
-		const auxAction = playerInput.getActionState('pointer_aux');
-		if (auxAction && auxAction.justpressed === true && auxAction.consumed !== true) {
-			pointerAuxJustPressed = true;
-			pointerAuxPressed = true;
-		} else if (auxAction && auxAction.pressed === true && auxAction.consumed !== true) {
-			pointerAuxPressed = true;
-			pointerAuxJustPressed = !ide_state.pointerAuxWasPressed;
-		}
+	const playerInput = $.input.getPlayerInput(1);
+	const secondaryAction = playerInput.getActionState('pointer_secondary');
+	if (secondaryAction && secondaryAction.justpressed === true && secondaryAction.consumed !== true) {
+		pointerSecondaryJustPressed = true;
+		pointerSecondaryPressed = true;
+	} else if (secondaryAction && secondaryAction.pressed === true && secondaryAction.consumed !== true) {
+		pointerSecondaryPressed = true;
+		pointerSecondaryJustPressed = !ide_state.pointerSecondaryWasPressed;
+	}
+	const auxAction = playerInput.getActionState('pointer_aux');
+	if (auxAction && auxAction.justpressed === true && auxAction.consumed !== true) {
+		pointerAuxJustPressed = true;
+		pointerAuxPressed = true;
+	} else if (auxAction && auxAction.pressed === true && auxAction.consumed !== true) {
+		pointerAuxPressed = true;
+		pointerAuxJustPressed = !ide_state.pointerAuxWasPressed;
 	}
 	ide_state.pointerSecondaryWasPressed = pointerSecondaryPressed;
 	ide_state.pointerAuxWasPressed = pointerAuxPressed;
@@ -2126,10 +2121,7 @@ export function handleLineJumpInput(): void {
 		// keep value in sync; no additional processing required
 	}
 } export function readPointerSnapshot(): PointerSnapshot {
-	const playerInput = $.input.getPlayerInput(ide_state.playerIndex);
-	if (!playerInput) {
-		return null;
-	}
+	const playerInput = $.input.getPlayerInput(1);
 	const primaryAction = playerInput.getActionState('pointer_primary');
 	const primaryPressed = primaryAction.pressed === true && primaryAction.consumed !== true;
 
@@ -2288,36 +2280,36 @@ export function toggleThemeMode() {
 }
 
 export function isKeyJustPressed(code: string): boolean {
-	const player = $.input.getPlayerInput(ide_state.playerIndex);
+	const player = $.input.getPlayerInput(1);
 	return player.getButtonState(code, 'keyboard').justpressed === true;
 }
 
 export function shouldRepeatKeyFromPlayer(code: string): boolean {
-	const player = $.input.getPlayerInput(ide_state.playerIndex);
+	const player = $.input.getPlayerInput(1);
 	return player.getButtonRepeatState(code, 'keyboard').repeatpressed;
 }
 
 export function consumeIdeKey(code: string): void {
-	$.consume_button(ide_state.playerIndex, code, 'keyboard');
-	$.input.getPlayerInput(ide_state.playerIndex).stateManager.consumeBufferedEvent(code);
+	$.consume_button(1, code, 'keyboard');
+	$.input.getPlayerInput(1).stateManager.consumeBufferedEvent(code);
 }
 
 export function isCtrlDown(): boolean {
-	const mods = $.input.getPlayerInput(ide_state.playerIndex).getModifiersState();
+	const mods = $.input.getPlayerInput(1).getModifiersState();
 	return mods.ctrl;
 }
 
 export function isShiftDown(): boolean {
-	const mods = $.input.getPlayerInput(ide_state.playerIndex).getModifiersState();
+	const mods = $.input.getPlayerInput(1).getModifiersState();
 	return mods.shift;
 }
 
 export function isAltDown(): boolean {
-	const mods = $.input.getPlayerInput(ide_state.playerIndex).getModifiersState();
+	const mods = $.input.getPlayerInput(1).getModifiersState();
 	return mods.alt;
 }
 
 export function isMetaDown(): boolean {
-	const mods = $.input.getPlayerInput(ide_state.playerIndex).getModifiersState();
+	const mods = $.input.getPlayerInput(1).getModifiersState();
 	return mods.meta;
 }
