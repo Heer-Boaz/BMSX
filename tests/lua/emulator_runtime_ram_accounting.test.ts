@@ -66,3 +66,29 @@ test('tracked heap bytes include explicit extra roots for native iterators and h
 
 	assert.ok(after > before, `expected explicit extra roots to increase tracked heap usage (${after} <= ${before})`);
 });
+
+test('tracked heap bytes do not include raw js array capacity without native iteration entries', () => {
+	const memory = new Memory({ engineRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+
+	const before = cpu.getTrackedHeapBytes();
+	const raw = new Array(1024).fill(7);
+	const nativeArray = createNativeObject(raw, {
+		get: (entryKey) => {
+			if (typeof entryKey !== 'number' || !Number.isInteger(entryKey) || entryKey < 1 || entryKey > raw.length) {
+				return null;
+			}
+			return raw[entryKey - 1] ?? null;
+		},
+		set: (entryKey, value) => {
+			if (typeof entryKey !== 'number' || !Number.isInteger(entryKey) || entryKey < 1) {
+				throw new Error('array expects integer keys');
+			}
+			raw[entryKey - 1] = value as number;
+		},
+		len: () => raw.length,
+	});
+
+	const after = cpu.getTrackedHeapBytes([nativeArray]);
+	assert.equal(after - before, 24, `expected native object accounting to ignore raw js array capacity (${after - before} != 24)`);
+});

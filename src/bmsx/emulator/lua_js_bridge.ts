@@ -810,6 +810,31 @@ function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
 	return keys;
 }
 
+function buildNativeNextEntry(runtime: Runtime, raw: object): (after: Value) => [Value, Value] | null {
+	return (after: Value): [Value, Value] | null => {
+		const keys = collectNativeKeys(runtime, raw);
+		if (keys.length === 0) {
+			return null;
+		}
+		let nextIndex = 0;
+		if (after !== null) {
+			nextIndex = -1;
+			for (let index = 0; index < keys.length; index += 1) {
+				if (nativeKeysEqual(keys[index], after)) {
+					nextIndex = index + 1;
+					break;
+				}
+			}
+			if (nextIndex < 0 || nextIndex >= keys.length) {
+				return null;
+			}
+		}
+		const key = keys[nextIndex];
+		const value = readNativeRawValue(raw, key);
+		return [key, toRuntimeValue(runtime, value)];
+	};
+}
+
 function readNativeRawValue(raw: object, key: Value): unknown {
 	if (Array.isArray(raw)) {
 		if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
@@ -897,27 +922,10 @@ export function getOrAssignTableId(runtime: Runtime, table: Table): number {
 }
 
 export function nextNativeEntry(runtime: Runtime, target: NativeObject, after: Value): [Value, Value] | null {
-	const raw = target.raw as object;
-	const keys = collectNativeKeys(runtime, raw);
-	if (keys.length === 0) {
-		return null;
+	if (target.nextEntry) {
+		return target.nextEntry(after);
 	}
-	let nextIndex = 0;
-	if (after !== null) {
-		nextIndex = -1;
-		for (let index = 0; index < keys.length; index += 1) {
-			if (nativeKeysEqual(keys[index], after)) {
-				nextIndex = index + 1;
-				break;
-			}
-		}
-		if (nextIndex < 0 || nextIndex >= keys.length) {
-			return null;
-		}
-	}
-	const key = keys[nextIndex];
-	const value = readNativeRawValue(raw, key);
-	return [key, toRuntimeValue(runtime, value)];
+	return buildNativeNextEntry(runtime, target.raw)(after);
 }
 
 export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
@@ -957,6 +965,7 @@ export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
 			const ctx = buildMarshalContext(runtime);
 			assets[prop] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
 		},
+		nextEntry: buildNativeNextEntry(runtime, assets),
 	});
 	runtime.nativeObjectCache.set(assets, wrapper);
 	return wrapper;
@@ -994,6 +1003,7 @@ export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<st
 			const ctx = buildMarshalContext(runtime);
 			map[prop] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
 		},
+		nextEntry: buildNativeNextEntry(runtime, map),
 	});
 	runtime.nativeObjectCache.set(map, wrapper);
 	return wrapper;
@@ -1143,6 +1153,7 @@ export function getOrCreateNativeObject(runtime: Runtime, value: object): Native
 			(value as Record<string, unknown>)[prop] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
 		},
 		len: isArray ? () => arrayValue.length : undefined,
+		nextEntry: buildNativeNextEntry(runtime, value),
 	});
 	runtime.nativeObjectCache.set(value, wrapper);
 	return wrapper;

@@ -46,6 +46,7 @@ export type NativeObject = {
 	get(key: Value): Value;
 	set(key: Value, value: Value): void;
 	len?: () => number;
+	nextEntry?: (after: Value) => [Value, Value] | null;
 	metatable?: Table | null;
 };
 
@@ -87,8 +88,13 @@ export function createNativeFunction(
 	};
 }
 
-export function createNativeObject(raw: object, handlers: { get: (key: Value) => Value; set: (key: Value, value: Value) => void; len?: () => number }): NativeObject {
-	return { kind: NATIVE_OBJECT_KIND, raw, get: handlers.get, set: handlers.set, len: handlers.len, metatable: null };
+export function createNativeObject(raw: object, handlers: {
+	get: (key: Value) => Value;
+	set: (key: Value, value: Value) => void;
+	len?: () => number;
+	nextEntry?: (after: Value) => [Value, Value] | null;
+}): NativeObject {
+	return { kind: NATIVE_OBJECT_KIND, raw, get: handlers.get, set: handlers.set, len: handlers.len, nextEntry: handlers.nextEntry, metatable: null };
 }
 
 export function isNativeFunction(value: Value): value is NativeFunction {
@@ -2136,30 +2142,18 @@ export class CPU {
 			if (value.metatable !== null && value.metatable !== undefined) {
 				walkValue(value.metatable);
 			}
-			const raw = value.raw as Record<string, unknown>;
-			if (Array.isArray(raw)) {
-				const arr = raw as unknown[];
-				total += 16 + (arr.length * 8);
-				for (let index = 0; index < arr.length; index += 1) {
-					walkValue(value.get(index + 1));
-				}
-				const ownKeys = Object.keys(raw);
-				for (let index = 0; index < ownKeys.length; index += 1) {
-					const key = ownKeys[index];
-					const numeric = Number(key);
-					if (Number.isInteger(numeric) && String(numeric) === key && numeric >= 0 && numeric < arr.length) {
-						continue;
-					}
-					total += 8;
-					walkValue(value.get(this.stringPool.intern(key)));
-				}
+			if (!value.nextEntry) {
 				return;
 			}
-			const ownKeys = Object.keys(raw);
-			total += ownKeys.length * 8;
-			for (let index = 0; index < ownKeys.length; index += 1) {
-				const key = ownKeys[index];
-				walkValue(value.get(this.stringPool.intern(key)));
+			let after: Value = null;
+			while (true) {
+				const entry = value.nextEntry(after);
+				if (entry === null) {
+					return;
+				}
+				walkValue(entry[0]);
+				walkValue(entry[1]);
+				after = entry[0];
 			}
 		};
 
