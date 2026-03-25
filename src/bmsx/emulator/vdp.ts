@@ -1074,15 +1074,19 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
 		let handle = $.texmanager.getTextureByUri(textureKey);
-		let textureWidth = 1;
-		let textureHeight = 1;
+		const isEngineAtlas = textureKey === ENGINE_ATLAS_TEXTURE_KEY;
+		let textureWidth = handle ? 1 : entry.regionW;
+		let textureHeight = handle ? 1 : entry.regionH;
 		if (!handle) {
 			const stream = this.makeVramGarbageStream(entry.baseAddr >>> 0);
 			fillVramGarbageScratch(this.vramSeedPixel, stream);
 			handle = $.texmanager.createTextureFromPixelsSync(textureKey, this.vramSeedPixel, 1, 1);
 		}
+		handle = $.texmanager.resizeTextureForKey(textureKey, entry.regionW, entry.regionH);
+		textureWidth = entry.regionW;
+		textureHeight = entry.regionH;
 		$.view.textures[textureKey] = handle;
-		this.vramSlots.push({
+		const slot: AssetVramSlot = {
 			kind: 'asset',
 			baseAddr: entry.baseAddr,
 			capacity: entry.capacity,
@@ -1091,8 +1095,12 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			surfaceId,
 			textureWidth,
 			textureHeight,
-		});
+		};
+		this.vramSlots.push(slot);
 		this.registerReadSurface(surfaceId, entry, textureKey);
+		if (!isEngineAtlas) {
+			this.seedVramSlotTexture(slot);
+		}
 	}
 
 	private syncVramSlotTextureSize(slot: AssetVramSlot): void {
