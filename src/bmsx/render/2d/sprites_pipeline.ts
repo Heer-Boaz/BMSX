@@ -270,13 +270,15 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	if (spriteCount === 0) return;
 	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
 	if (useDepth) {
-		gl.enable(gl.DEPTH_TEST);
+		backend.setDepthTestEnabled(true);
+		// z=0 maps to the far plane (depth=1), so world sprites need LEQUAL to survive the cleared depth buffer.
+		backend.setDepthFunc(gl.LEQUAL);
 	} else {
-		gl.disable(gl.DEPTH_TEST);
+		backend.setDepthTestEnabled(false);
 	}
 	gl.enable(gl.BLEND);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-	gl.depthMask(false);
+	backend.setDepthMask(false);
 	backend.bindVertexArray(spriteVAO as WebGLVertexArrayObject);
 	gl.uniform4f(
 		spriteShaderParallaxRigLocation,
@@ -398,7 +400,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	});
 	if (i > 0) { flush(); }
 	backend.bindVertexArray(null);
-	gl.depthMask(true);
+	backend.setDepthMask(true);
 }
 
 export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
@@ -427,8 +429,9 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 				setupSpriteLocations(webglBackend);
 				setupDefaultUniformValues(backend);
 			} : undefined,
-			writesDepth: pass.useDepth,
+			writesDepth: false,
 			depthTest: pass.useDepth,
+			depthWrite: false,
 			shouldExecute: () => true,
 			exec: (backend: WebGLBackend, fbo, state: SpritesPipelineState) => {
 				const runtime: SpriteRuntime = { backend, gl: backend.gl, context: $.view };
