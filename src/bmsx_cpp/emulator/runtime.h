@@ -240,6 +240,8 @@ public:
 	const CPU& cpu() const { return m_cpu; }
 	Memory& memory() { return m_memory; }
 	const Memory& memory() const { return m_memory; }
+	VDP& vdp() { return m_vdp; }
+	const VDP& vdp() const { return m_vdp; }
 
 	/**
 	 * Get the API instance.

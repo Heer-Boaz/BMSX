@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "../../core/engine_core.h"
+#include "../../emulator/runtime.h"
 #include "../../rompack/rompack.h"
 #include "../../utils/clamp.h"
 #include "../shared/render_queues.h"
@@ -23,7 +24,7 @@ namespace {
 
 constexpr bool kSpritesVerboseLog = false;
 
-constexpr int kMaxSprites = 256;
+constexpr int kMaxSprites = OAM_SPRITE_SLOT_COUNT;
 constexpr int kVerticesPerSprite = 6;
 
 constexpr int kExpandedVertexStride = 48;
@@ -423,7 +424,7 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 
 void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 							const SpritesPipelineState& state) {
-	const i32 spriteCount = RenderQueues::beginSpriteQueue();
+	const i32 spriteCount = Runtime::instance().vdp().beginSpriteOamRead();
 	if (spriteCount == 0) {
 		return;
 	}
@@ -479,63 +480,52 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 		batchCount = 0;
 	};
 
-	RenderQueues::forEachSprite([&](const SpriteQueueItem& item, size_t index) {
+	Runtime::instance().vdp().forEachOamEntry([&](const OamEntry& item, size_t index) {
 		(void)index;
-		const auto& options = item.options;
-		const ImgMeta* imgmeta = item.imgmeta;
-
-		const RenderLayer layer = options.layer.value_or(RenderLayer::World);
-		const float desiredScale = (layer == RenderLayer::IDE) ? ideScale : 1.0f;
+		const OamLayer layer = item.layer;
+		const float desiredScale = (layer == OamLayer::IDE) ? ideScale : 1.0f;
 		if (desiredScale != currentScale) {
 			flush();
 			currentScale = desiredScale;
 			glUniform1f(g_sprite.uniform_scale, currentScale);
 		}
 
-		const Vec3& pos = options.pos;
-		const Vec2& scale = options.scale.value();
-		const Color& colorize = options.colorize.value();
-		const FlipOptions& flip = options.flip.value();
-		const float zValue = (pos.z == 0.0f) ? kDefaultZ : pos.z;
+		const float zValue = (item.z == 0.0f) ? kDefaultZ : item.z;
 		const float zNorm = 1.0f - (zValue / kZCoordMax);
-		float parallaxWeight = options.parallax_weight.value_or(0.0f);
-		if (layer != RenderLayer::World) {
+		float parallaxWeight = item.parallaxWeight;
+		if (layer != OamLayer::World) {
 			parallaxWeight = 0.0f;
 		}
 
-		const float sizeX = static_cast<float>(imgmeta->width) * scale.x;
-		const float sizeY = static_cast<float>(imgmeta->height) * scale.y;
-		const auto& texcoords = flip.flip_h
-			? (flip.flip_v ? imgmeta->texcoords_fliphv : imgmeta->texcoords_fliph)
-			: (flip.flip_v ? imgmeta->texcoords_flipv : imgmeta->texcoords);
-		const float uv0x = texcoords[0];
-		const float uv0y = texcoords[1];
-		const float uv1x = texcoords[10];
-		const float uv1y = texcoords[11];
+		const float sizeX = item.w;
+		const float sizeY = item.h;
+		const float uv0x = item.u0;
+		const float uv0y = item.v0;
+		const float uv1x = item.u1;
+		const float uv1y = item.v1;
 
 		const uint16_t zPacked = packUnorm16(zNorm);
-		const i32 atlasId = imgmeta->atlasid;
 		uint8_t atlasPacked = static_cast<uint8_t>(ENGINE_ATLAS_INDEX);
-		if (atlasId != ENGINE_ATLAS_INDEX) {
-			if (atlasId == context->primaryAtlasIdInSlot) {
+		if (item.atlasId != ENGINE_ATLAS_INDEX) {
+			if (item.atlasId == context->primaryAtlasIdInSlot) {
 				atlasPacked = 0;
-			} else if (atlasId == context->secondaryAtlasIdInSlot) {
+			} else if (item.atlasId == context->secondaryAtlasIdInSlot) {
 				atlasPacked = 1;
 			} else {
-				atlasPacked = 0;
+				throw BMSX_RUNTIME_ERROR("[SpritesPipeline][GLES2] Atlas " + std::to_string(item.atlasId) + " not mapped to primary/secondary slots.");
 			}
 		}
 
 		const int8_t weightPacked = packSnorm8(parallaxWeight);
-		const uint8_t colorR = packUnorm8(colorize.r);
-		const uint8_t colorG = packUnorm8(colorize.g);
-		const uint8_t colorB = packUnorm8(colorize.b);
-		const uint8_t colorA = packUnorm8(colorize.a);
+		const uint8_t colorR = packUnorm8(item.r);
+		const uint8_t colorG = packUnorm8(item.g);
+		const uint8_t colorB = packUnorm8(item.b);
+		const uint8_t colorA = packUnorm8(item.a);
 
 		const size_t base = batchCount * static_cast<size_t>(kVerticesPerSprite) *
 						static_cast<size_t>(kExpandedVertexStride);
 		uint8_t* dst = g_sprite.expanded_data.data() + base;
-		writeExpandedSprite(dst, pos.x, pos.y, sizeX, sizeY, uv0x, uv0y, uv1x, uv1y,
+		writeExpandedSprite(dst, item.x, item.y, sizeX, sizeY, uv0x, uv0y, uv1x, uv1y,
 						zPacked, atlasPacked, weightPacked, colorR, colorG, colorB, colorA);
 
 		batchCount++;

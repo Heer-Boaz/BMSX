@@ -2,7 +2,7 @@
  * render_queues.h - Render submission queues
  *
  * Mirrors TypeScript render_queues.ts
- * Uses FeatureQueue for double-buffered sprite/mesh/particle submissions.
+ * Sprites use double-buffered machine OAM; mesh/particles still use FeatureQueue.
  */
 
 #ifndef BMSX_RENDER_QUEUES_H
@@ -13,22 +13,6 @@
 #include <functional>
 
 namespace bmsx {
-
-// Forward declarations
-struct ImgMeta;
-
-/* ============================================================================
- * Sprite Queue Item
- *
- * Mirrors TypeScript SpriteQueueItem interface.
- * ============================================================================ */
-
-struct SpriteQueueItem {
-	ImgRenderSubmission options;
-	const ImgMeta* imgmeta = nullptr;
-	i32 submissionIndex = 0;
-};
-
 /* ============================================================================
  * Mesh Queue Item (for 3D meshes)
  * ============================================================================ */
@@ -105,14 +89,9 @@ bool hasPendingBackQueueContent();
 i32 beginSpriteQueue();
 
 /**
- * Iterate over all sprites in the active queue.
+ * Iterate over all active OAM entries in slot order.
  */
-void forEachSprite(const std::function<void(const SpriteQueueItem&, size_t)>& fn);
-
-/**
- * Custom sort for the sprite queue front buffer.
- */
-void sortSpriteQueue(const std::function<bool(const SpriteQueueItem&, const SpriteQueueItem&)>& compare);
+void forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn);
 
 /**
  * Clear all back queues and reset submission counters.

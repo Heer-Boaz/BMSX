@@ -15,6 +15,7 @@ namespace bmsx {
 
 constexpr uint32_t ASSET_TABLE_HEADER_SIZE = 40;
 constexpr uint32_t ASSET_TABLE_ENTRY_SIZE = 64;
+constexpr uint32_t ASSET_FLAG_VIEW = 1u << 1;
 
 class Memory {
 public:
@@ -139,8 +140,11 @@ public:
 	void markAllAssetsDirty();
 	std::vector<u8> dumpAssetMemory() const;
 	void restoreAssetMemory(const u8* data, size_t size);
+	u32 resolveAssetHandle(const std::string& id) const;
 	AssetEntry& getAssetEntry(const std::string& id);
 	const AssetEntry& getAssetEntry(const std::string& id) const;
+	AssetEntry& getAssetEntryByHandle(size_t handle);
+	const AssetEntry& getAssetEntryByHandle(size_t handle) const;
 	const u8* getImagePixels(const AssetEntry& entry) const;
 	const u8* getAudioBytes(const AssetEntry& entry) const;
 	const u8* getAudioData(const AssetEntry& entry) const;

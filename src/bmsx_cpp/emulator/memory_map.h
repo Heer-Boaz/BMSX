@@ -22,6 +22,11 @@ constexpr uint32_t DEFAULT_RAM_SIZE = 0x08000000u; // 128 MB
 
 constexpr uint32_t IO_WORD_SIZE = 4;
 constexpr uint32_t IO_REGION_SIZE = 0x00004000u; // 16 KB
+constexpr uint32_t VDP_OAM_SLOT_COUNT = 5000u;
+constexpr uint32_t VDP_OAM_ENTRY_WORDS = 18u;
+constexpr uint32_t VDP_OAM_ENTRY_BYTES = VDP_OAM_ENTRY_WORDS * IO_WORD_SIZE;
+constexpr uint32_t VDP_OAM_BUFFER_SIZE = VDP_OAM_SLOT_COUNT * VDP_OAM_ENTRY_BYTES;
+constexpr uint32_t VDP_OAM_RAM_SIZE = VDP_OAM_BUFFER_SIZE * 2u;
 
 constexpr uint32_t DEFAULT_STRING_HANDLE_COUNT = 0x40000u; // 256k handles
 constexpr uint32_t STRING_HANDLE_ENTRY_SIZE = 16;
@@ -34,6 +39,8 @@ extern uint32_t STRING_HANDLE_TABLE_SIZE;
 extern uint32_t STRING_HEAP_SIZE;
 
 constexpr uint32_t IO_BASE = RAM_BASE;
+extern uint32_t VDP_OAM_FRONT_BASE;
+extern uint32_t VDP_OAM_BACK_BASE;
 extern uint32_t STRING_HANDLE_TABLE_BASE;
 extern uint32_t STRING_HEAP_BASE;
 extern uint32_t ASSET_RAM_BASE;

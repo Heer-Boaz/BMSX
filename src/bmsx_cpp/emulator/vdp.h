@@ -28,6 +28,16 @@ public:
 	i32 getDitherType() const { return m_lastDitherType; }
 	void writeVram(uint32_t addr, const u8* data, size_t length) override;
 	void beginFrame();
+	void submitOamEntry(const OamEntry& entry);
+	void clearBackOamBuffer();
+	void swapOamBuffers();
+	void setOamReadSource(bool useBackBuffer);
+	i32 frontOamCount() const;
+	i32 backOamCount() const;
+	bool hasFrontOamContent() const;
+	bool hasBackOamContent() const;
+	i32 beginSpriteOamRead() const;
+	void forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn) const;
 	uint32_t readVdpStatus() override;
 	uint32_t readVdpData() override;
 
@@ -120,6 +130,13 @@ private:
 	void seedVramSlotTexture(VramSlot& slot);
 	void setSlotTextureSize(const std::string& textureKey, uint32_t width, uint32_t height);
 	void restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey);
+	uint32_t floatToBits(f32 value) const;
+	f32 bitsToFloat(uint32_t value) const;
+	uint32_t readOamFrontBase() const;
+	uint32_t readOamBackBase() const;
+	uint32_t readOamReadSource() const;
+	void writeOamEntry(uint32_t addr, const OamEntry& entry);
+	OamEntry readOamEntry(uint32_t addr) const;
 };
 
 } // namespace bmsx

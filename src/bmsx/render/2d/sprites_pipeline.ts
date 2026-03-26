@@ -17,14 +17,14 @@ import {
 } from '../backend/webgl/webgl.constants';
 import { ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/rompack';
 import { $ } from '../../core/engine_core';
+import { Runtime } from '../../emulator/runtime';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 import { drainOverlayFrameIntoSpriteQueue } from '../../emulator/render_facade';
 import type { LightingFrameState } from '../lighting/lightingsystem';
 import { clamp } from '../../utils/clamp';
+import { OAM_LAYER_IDE, OAM_LAYER_WORLD } from '../shared/render_types';
 import {
-	beginSpriteQueue,
-	forEachSprite,
 	spriteParallaxRig,
 } from '../shared/render_queues';
 
@@ -210,7 +210,7 @@ export function setupSpriteLocations(backend: WebGLBackend): void {
 export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: SpritesPipelineState): void {
 	const { backend, gl, context } = runtime;
 	assertAtlasSelectorRange();
-	const spriteCount = beginSpriteQueue();
+	const spriteCount = Runtime.instance.vdp.beginSpriteOamRead();
 	if (spriteCount === 0) return;
 	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
 	gl.enable(gl.BLEND);
@@ -277,19 +277,14 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		backend.drawInstanced!(passStub, VERTICES_PER_SPRITE, i, SPRITE_DRAW_OFFSET);
 		i = 0;
 	};
-	forEachSprite(({ options, entry, baseEntry, atlasId }) => {
-		const layer = options.layer;
-		const desiredScale = layer === 'ide' ? ideScale : 1;
+	Runtime.instance.vdp.forEachOamEntry((entry) => {
+		const layer = entry.layer;
+		const desiredScale = layer === OAM_LAYER_IDE ? ideScale : 1;
 		if (desiredScale !== currentScale) {
 			flush();
 			setScale(desiredScale);
 		}
-		const pos = options.pos;
-		const flip = options.flip!;
-		const scale = options.scale!;
-		const colorize = options.colorize!;
-		const parallaxEnabled = layer !== 'ui' && layer !== 'ide';
-		const parallaxWeightValue = parallaxEnabled ? (options.parallax_weight ?? 0) : 0;
+		const parallaxWeightValue = layer === OAM_LAYER_WORLD ? entry.parallaxWeight : 0;
 		// Ambient sprites disabled for now; re-enable by using the mixing block below.
 		// const layerIsOverlay = options.layer === 'ui' || options.layer === 'ide';
 		// const ambientEnabled = !layerIsOverlay && (options.ambient_affected != null ? options.ambient_affected : state.ambientEnabledDefault);
@@ -298,56 +293,40 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		// const mixR = (1 - ambientFactor) + ambientFactor * ambientMixR;
 		// const mixG = (1 - ambientFactor) + ambientFactor * ambientMixG;
 		// const mixB = (1 - ambientFactor) + ambientFactor * ambientMixB;
-		const sizeX = entry.regionW * scale.x;
-		const sizeY = entry.regionH * scale.y;
-		const baseW = baseEntry.regionW;
-		const baseH = baseEntry.regionH;
-		let u0 = entry.regionX / baseW;
-		let v0 = entry.regionY / baseH;
-		let u1 = (entry.regionX + entry.regionW) / baseW;
-		let v1 = (entry.regionY + entry.regionH) / baseH;
-		if (flip.flip_h) {
-			const tmp = u0;
-			u0 = u1;
-			u1 = tmp;
-		}
-		if (flip.flip_v) {
-			const tmp = v0;
-			v0 = v1;
-			v1 = tmp;
-		}
+		const sizeX = entry.w;
+		const sizeY = entry.h;
 		const floatOffset = i * SPRITE_INSTANCE_FLOAT_STRIDE;
-		instanceF32[floatOffset + 0] = pos.x;
-		instanceF32[floatOffset + 1] = pos.y;
+		instanceF32[floatOffset + 0] = entry.x;
+		instanceF32[floatOffset + 1] = entry.y;
 		instanceF32[floatOffset + 2] = sizeX;
 		instanceF32[floatOffset + 3] = sizeY;
-		instanceF32[floatOffset + 4] = u0;
-		instanceF32[floatOffset + 5] = v0;
-		instanceF32[floatOffset + 6] = u1;
-		instanceF32[floatOffset + 7] = v1;
+		instanceF32[floatOffset + 4] = entry.u0;
+		instanceF32[floatOffset + 5] = entry.v0;
+		instanceF32[floatOffset + 6] = entry.u1;
+		instanceF32[floatOffset + 7] = entry.v1;
 
 		const byteOffset = i * SPRITE_INSTANCE_STRIDE;
-		const zNorm = 1 - (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX;
+		const zNorm = 1 - (entry.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX;
 		instanceU16[(byteOffset + SPRITE_INSTANCE_Z_OFFSET) >> 1] = packUnorm16(zNorm);
 		// Sprite binding selector uses ENGINE_ATLAS_INDEX for engine atlas in the shader.
 		let atlasBindingId = ENGINE_ATLAS_INDEX;
-		if (atlasId !== ENGINE_ATLAS_INDEX) {
+		if (entry.atlasId !== ENGINE_ATLAS_INDEX) {
 			const primaryAtlasIdInSlot = $.view.primaryAtlasIdInSlot;
 			const secondaryAtlasIdInSlot = $.view.secondaryAtlasIdInSlot;
-			if (atlasId === primaryAtlasIdInSlot) {
+			if (entry.atlasId === primaryAtlasIdInSlot) {
 				atlasBindingId = 0;
-			} else if (atlasId === secondaryAtlasIdInSlot) {
+			} else if (entry.atlasId === secondaryAtlasIdInSlot) {
 				atlasBindingId = 1;
 			} else {
-				atlasBindingId = 0;
+				throw new Error(`[SpritesPipeline] Atlas ${entry.atlasId} not mapped to primary/secondary slots.`);
 			}
 		}
 		instanceU8[byteOffset + SPRITE_INSTANCE_ATLAS_OFFSET] = atlasBindingId;
 		instanceS8[byteOffset + SPRITE_INSTANCE_FX_OFFSET] = packSnorm8(parallaxWeightValue);
-		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 0] = packUnorm8(colorize.r);
-		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 1] = packUnorm8(colorize.g);
-		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 2] = packUnorm8(colorize.b);
-		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 3] = packUnorm8(colorize.a);
+		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 0] = packUnorm8(entry.r);
+		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 1] = packUnorm8(entry.g);
+		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 2] = packUnorm8(entry.b);
+		instanceU8[byteOffset + SPRITE_INSTANCE_COLOR_OFFSET + 3] = packUnorm8(entry.a);
 		++i;
 		if (i >= MAX_SPRITES) { flush(); }
 	});

@@ -3,20 +3,17 @@ import { RenderPassLibrary } from '../backend/renderpasslib';
 import { SpritesPipelineState, MeshBatchPipelineState, ParticlePipelineState } from '../backend/pipeline_interfaces';
 import { M4 } from '../3d/math3d';
 import {
-	beginSpriteQueue,
-	forEachSprite,
 	beginMeshQueue,
 	forEachMeshQueue,
 	beginParticleQueue,
 	forEachParticleQueue,
 	meshQueueBackSize,
 	particleQueueBackSize,
-	type SpriteQueueItem,
 } from '../shared/render_queues';
-import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/render_types';
+import { OAM_FLAG_ENABLED, oamLayerToRenderLayer } from '../shared/render_types';
+import type { MeshRenderSubmission, OamEntry, ParticleRenderSubmission } from '../shared/render_types';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
-import { tokenKeyFromId } from '../../rompack/asset_tokens';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { VRAM_ATLAS_SLOT_SIZE, VRAM_SKYBOX_FACE_BYTES, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../emulator/memory_map';
 import type { Mesh } from '../3d/mesh';
@@ -39,16 +36,6 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 
 type Snapshot = string[];
 
-type ResolvedSpriteMeta = {
-	atlasId: number;
-	width: number;
-	height: number;
-	texcoords: number[];
-	texcoords_fliph: number[];
-	texcoords_flipv: number[];
-	texcoords_fliphv: number[];
-};
-
 let previousSpriteSnapshot: Snapshot = [];
 let previousMeshSnapshot: Snapshot = [];
 let previousParticleSnapshot: Snapshot = [];
@@ -66,7 +53,6 @@ const headlessFallbackParticleState: ParticlePipelineState = {
 };
 
 const validatedAtlasByKey = new Set<string>();
-const spriteMetaCache = new Map<string, ResolvedSpriteMeta>();
 const validatedMesh = new WeakMap<Mesh, boolean>();
 const MAX_MORPH_TARGETS = 8;
 const MAX_JOINTS = 32;
@@ -108,47 +94,6 @@ function ensureAtlasResource(atlasId: number, slotBytes: number, label: string):
 		throw new Error(`[${label}] Atlas ${atlasId} not registered in assets.`);
 	}
 	validatedAtlasByKey.add(key);
-}
-
-function resolveSpriteMeta(imgid: string): ResolvedSpriteMeta {
-	const cached = spriteMetaCache.get(imgid);
-	if (cached) {
-		return cached;
-	}
-	const asset = $.assets.img[tokenKeyFromId(imgid)];
-	if (!asset) {
-		throw new Error(`[HeadlessSprites] Image '${imgid}' not found.`);
-	}
-	const meta = asset.imgmeta;
-	if (!meta) {
-		throw new Error(`[HeadlessSprites] Image '${imgid}' missing metadata.`);
-	}
-	if (!meta.atlassed) {
-		throw new Error(`[HeadlessSprites] Image '${imgid}' must be atlassed.`);
-	}
-	if (meta.atlasid === undefined || meta.atlasid === null) {
-		throw new Error(`[HeadlessSprites] Image '${imgid}' missing atlas id.`);
-	}
-	if (meta.width <= 0 || meta.height <= 0) {
-		throw new Error(`[HeadlessSprites] Image '${imgid}' has invalid dimensions (${meta.width}x${meta.height}).`);
-	}
-	if (!meta.texcoords || !meta.texcoords_fliph || !meta.texcoords_flipv || !meta.texcoords_fliphv) {
-		throw new Error(`[HeadlessSprites] Image '${imgid}' missing UV metadata.`);
-	}
-	if (meta.texcoords.length < 12 || meta.texcoords_fliph.length < 12 || meta.texcoords_flipv.length < 12 || meta.texcoords_fliphv.length < 12) {
-		throw new Error(`[HeadlessSprites] Image '${imgid}' has incomplete UV metadata.`);
-	}
-	const resolved: ResolvedSpriteMeta = {
-		atlasId: meta.atlasid,
-		width: meta.width,
-		height: meta.height,
-		texcoords: meta.texcoords,
-		texcoords_fliph: meta.texcoords_fliph,
-		texcoords_flipv: meta.texcoords_flipv,
-		texcoords_fliphv: meta.texcoords_fliphv,
-	};
-	spriteMetaCache.set(imgid, resolved);
-	return resolved;
 }
 
 function resolveExpectedSpriteAtlasBinding(atlasId: number, primaryAtlasId: number | null, secondaryAtlasId: number | null): number {
@@ -425,7 +370,7 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 				}
 				previousOverlaySnapshot = emitDiff('overlay', previousOverlaySnapshot, overlaySnapshot);
 			}
-			const count = beginSpriteQueue();
+			const count = Runtime.instance.vdp.beginSpriteOamRead();
 			const snapshot: Snapshot = [
 				`draws=${count} viewport=${spriteState.width}x${spriteState.height} base=${spriteState.baseWidth}x${spriteState.baseHeight}`,
 			];
@@ -436,53 +381,45 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 				let needsSecondaryAtlas = false;
 				let needsEngineAtlas = false;
 				if (count > 0) {
+					const runtime = Runtime.instance;
 					let index = 0;
-					forEachSprite((submission: SpriteQueueItem) => {
-						const { options, atlasId, entry } = submission;
-						if (options.imgid === 'none') {
-							throw new Error('[HeadlessSprites] Sprite submission has imgid="none".');
+					Runtime.instance.vdp.forEachOamEntry((entry: OamEntry) => {
+						if ((entry.flags & OAM_FLAG_ENABLED) === 0) {
+							throw new Error('[HeadlessSprites] Disabled OAM entry reached active sprite iteration.');
 						}
-					if (!Number.isFinite(options.scale.x) || !Number.isFinite(options.scale.y)) {
-						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' has invalid scale.`);
-					}
-					if (!Number.isFinite(options.pos.x) || !Number.isFinite(options.pos.y) || !Number.isFinite(options.pos.z ?? 0)) {
-						throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' has invalid position.`);
-					}
-						const meta = resolveSpriteMeta(options.imgid);
-						if (entry.regionW !== meta.width || entry.regionH !== meta.height) {
-							throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' size ${entry.regionW}x${entry.regionH} does not match metadata ${meta.width}x${meta.height}.`);
+						if (!Number.isFinite(entry.x) || !Number.isFinite(entry.y) || !Number.isFinite(entry.z)) {
+							throw new Error(`[HeadlessSprites] OAM sprite #${index} has invalid position.`);
 						}
-						const flipH = !!options.flip?.flip_h;
-						const flipV = !!options.flip?.flip_v;
-						const texcoords = flipH
-							? (flipV ? meta.texcoords_fliphv : meta.texcoords_fliph)
-							: (flipV ? meta.texcoords_flipv : meta.texcoords);
-						const u0 = texcoords[0];
-						const v0 = texcoords[1];
-						const u1 = texcoords[10];
-						const v1 = texcoords[11];
+						if (!Number.isFinite(entry.w) || !Number.isFinite(entry.h) || entry.w <= 0 || entry.h <= 0) {
+							throw new Error(`[HeadlessSprites] OAM sprite #${index} has invalid size.`);
+						}
+						const u0 = entry.u0;
+						const v0 = entry.v0;
+						const u1 = entry.u1;
+						const v1 = entry.v1;
 						if (!Number.isFinite(u0) || !Number.isFinite(v0) || !Number.isFinite(u1) || !Number.isFinite(v1)) {
-							throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' has non-finite UVs.`);
+							throw new Error(`[HeadlessSprites] OAM sprite #${index} has non-finite UVs.`);
 						}
 						const uMin = u0 < u1 ? u0 : u1;
 						const uMax = u0 > u1 ? u0 : u1;
 						const vMin = v0 < v1 ? v0 : v1;
 						const vMax = v0 > v1 ? v0 : v1;
 						if (uMin < 0 || vMin < 0 || uMax > 1 || vMax > 1) {
-							throw new Error(`[HeadlessSprites] Sprite '${options.imgid}' UVs out of range (${u0}, ${v0})..(${u1}, ${v1}).`);
+							throw new Error(`[HeadlessSprites] OAM sprite #${index} UVs out of range (${u0}, ${v0})..(${u1}, ${v1}).`);
 						}
-					const expectedBinding = resolveExpectedSpriteAtlasBinding(atlasId, primaryAtlasId, secondaryAtlasId);
-					if (expectedBinding === 0) needsPrimaryAtlas = true;
-					else if (expectedBinding === 1) needsSecondaryAtlas = true;
-					else needsEngineAtlas = true;
-						const layer = options.layer ?? 'world';
-						const pos = formatVec3({ x: options.pos.x, y: options.pos.y, z: options.pos.z ?? 0 });
-						const scale = formatScale(options.scale);
-						const flipHLabel = flipH ? 'H' : '-';
-						const flipVLabel = flipV ? 'V' : '-';
+						const expectedBinding = resolveExpectedSpriteAtlasBinding(entry.atlasId, primaryAtlasId, secondaryAtlasId);
+						if (expectedBinding === 0) needsPrimaryAtlas = true;
+						else if (expectedBinding === 1) needsSecondaryAtlas = true;
+						else needsEngineAtlas = true;
+						const asset = runtime.getAssetEntryByHandle(entry.assetHandle);
+						if (asset.type !== 'image') {
+							throw new Error(`[HeadlessSprites] OAM sprite #${index} references non-image asset handle ${entry.assetHandle}.`);
+						}
+						const flipHLabel = entry.u0 > entry.u1 ? 'H' : '-';
+						const flipVLabel = entry.v0 > entry.v1 ? 'V' : '-';
 						const atlas = expectedBinding;
 						// Ambient sprites are disabled in the runtime; logging follows suit until a new approach is added.
-						snapshot.push(`[sprite#${index}] id=${options.imgid} layer=${layer} pos=${pos} scale=${scale} flip=${flipHLabel}${flipVLabel} atlas=${atlas}`);
+						snapshot.push(`[sprite#${index}] id=${asset.id} layer=${oamLayerToRenderLayer(entry.layer)} pos=${formatVec3({ x: entry.x, y: entry.y, z: entry.z })} size=${entry.w}x${entry.h} flip=${flipHLabel}${flipVLabel} atlas=${atlas}`);
 						index += 1;
 					});
 				}

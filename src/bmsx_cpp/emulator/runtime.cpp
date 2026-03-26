@@ -918,6 +918,11 @@ void Runtime::refreshMemoryMapGlobals() {
 	setGlobal("sys_vram_primary_atlas_size", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_SIZE)));
 	setGlobal("sys_vram_secondary_atlas_size", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
 	setGlobal("sys_vram_staging_size", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
+	setGlobal("sys_vdp_oam_bank_a_base", valueNumber(static_cast<double>(VDP_OAM_FRONT_BASE)));
+	setGlobal("sys_vdp_oam_bank_b_base", valueNumber(static_cast<double>(VDP_OAM_BACK_BASE)));
+	setGlobal("sys_vdp_oam_buffer_size", valueNumber(static_cast<double>(VDP_OAM_BUFFER_SIZE)));
+	setGlobal("sys_vdp_oam_entry_bytes", valueNumber(static_cast<double>(VDP_OAM_ENTRY_BYTES)));
+	setGlobal("sys_vdp_oam_slot_count", valueNumber(static_cast<double>(VDP_OAM_SLOT_COUNT)));
 	setGlobal("sys_vram_size", valueNumber(static_cast<double>(trackedVramTotalBytes())));
 }
 

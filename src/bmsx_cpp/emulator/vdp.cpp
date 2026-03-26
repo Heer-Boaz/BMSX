@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <string>
 #include <unordered_set>
 
 namespace bmsx {
@@ -275,6 +276,140 @@ void VDP::beginFrame() {
 	m_readOverflow = false;
 }
 
+uint32_t VDP::floatToBits(f32 value) const {
+	uint32_t bits = 0;
+	std::memcpy(&bits, &value, sizeof(uint32_t));
+	return bits;
+}
+
+f32 VDP::bitsToFloat(uint32_t value) const {
+	f32 out = 0.0f;
+	std::memcpy(&out, &value, sizeof(uint32_t));
+	return out;
+}
+
+uint32_t VDP::readOamFrontBase() const {
+	return static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_FRONT_BASE)));
+}
+
+uint32_t VDP::readOamBackBase() const {
+	return static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_BACK_BASE)));
+}
+
+uint32_t VDP::readOamReadSource() const {
+	return static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_READ_SOURCE)));
+}
+
+void VDP::writeOamEntry(uint32_t addr, const OamEntry& entry) {
+	m_memory.writeU32(addr + 0u, static_cast<uint32_t>(entry.atlasId));
+	m_memory.writeU32(addr + 4u, entry.flags);
+	m_memory.writeU32(addr + 8u, entry.assetHandle);
+	m_memory.writeU32(addr + 12u, floatToBits(entry.x));
+	m_memory.writeU32(addr + 16u, floatToBits(entry.y));
+	m_memory.writeU32(addr + 20u, floatToBits(entry.z));
+	m_memory.writeU32(addr + 24u, floatToBits(entry.w));
+	m_memory.writeU32(addr + 28u, floatToBits(entry.h));
+	m_memory.writeU32(addr + 32u, floatToBits(entry.u0));
+	m_memory.writeU32(addr + 36u, floatToBits(entry.v0));
+	m_memory.writeU32(addr + 40u, floatToBits(entry.u1));
+	m_memory.writeU32(addr + 44u, floatToBits(entry.v1));
+	m_memory.writeU32(addr + 48u, floatToBits(entry.r));
+	m_memory.writeU32(addr + 52u, floatToBits(entry.g));
+	m_memory.writeU32(addr + 56u, floatToBits(entry.b));
+	m_memory.writeU32(addr + 60u, floatToBits(entry.a));
+	m_memory.writeU32(addr + 64u, static_cast<uint32_t>(entry.layer));
+	m_memory.writeU32(addr + 68u, floatToBits(entry.parallaxWeight));
+}
+
+OamEntry VDP::readOamEntry(uint32_t addr) const {
+	OamEntry entry;
+	entry.atlasId = static_cast<i32>(m_memory.readU32(addr + 0u));
+	entry.flags = m_memory.readU32(addr + 4u);
+	entry.assetHandle = m_memory.readU32(addr + 8u);
+	entry.x = bitsToFloat(m_memory.readU32(addr + 12u));
+	entry.y = bitsToFloat(m_memory.readU32(addr + 16u));
+	entry.z = bitsToFloat(m_memory.readU32(addr + 20u));
+	entry.w = bitsToFloat(m_memory.readU32(addr + 24u));
+	entry.h = bitsToFloat(m_memory.readU32(addr + 28u));
+	entry.u0 = bitsToFloat(m_memory.readU32(addr + 32u));
+	entry.v0 = bitsToFloat(m_memory.readU32(addr + 36u));
+	entry.u1 = bitsToFloat(m_memory.readU32(addr + 40u));
+	entry.v1 = bitsToFloat(m_memory.readU32(addr + 44u));
+	entry.r = bitsToFloat(m_memory.readU32(addr + 48u));
+	entry.g = bitsToFloat(m_memory.readU32(addr + 52u));
+	entry.b = bitsToFloat(m_memory.readU32(addr + 56u));
+	entry.a = bitsToFloat(m_memory.readU32(addr + 60u));
+	entry.layer = static_cast<OamLayer>(m_memory.readU32(addr + 64u));
+	entry.parallaxWeight = bitsToFloat(m_memory.readU32(addr + 68u));
+	return entry;
+}
+
+void VDP::submitOamEntry(const OamEntry& entry) {
+	const uint32_t backCount = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_BACK_COUNT)));
+	const uint32_t capacity = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_CAPACITY)));
+	if (backCount >= capacity) {
+		throw BMSX_RUNTIME_ERROR("[VDP] OAM back buffer overflow.");
+	}
+	writeOamEntry(readOamBackBase() + backCount * VDP_OAM_ENTRY_BYTES, entry);
+	m_memory.writeValue(IO_VDP_OAM_BACK_COUNT, valueNumber(static_cast<double>(backCount + 1u)));
+}
+
+void VDP::clearBackOamBuffer() {
+	m_memory.writeValue(IO_VDP_OAM_BACK_COUNT, valueNumber(0.0));
+}
+
+void VDP::swapOamBuffers() {
+	const uint32_t frontBase = readOamFrontBase();
+	const uint32_t backBase = readOamBackBase();
+	const uint32_t backCount = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_BACK_COUNT)));
+	const uint32_t commitSeq = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_COMMIT_SEQ)));
+	m_memory.writeValue(IO_VDP_OAM_FRONT_BASE, valueNumber(static_cast<double>(backBase)));
+	m_memory.writeValue(IO_VDP_OAM_BACK_BASE, valueNumber(static_cast<double>(frontBase)));
+	m_memory.writeValue(IO_VDP_OAM_FRONT_COUNT, valueNumber(static_cast<double>(backCount)));
+	m_memory.writeValue(IO_VDP_OAM_BACK_COUNT, valueNumber(0.0));
+	m_memory.writeValue(IO_VDP_OAM_COMMIT_SEQ, valueNumber(static_cast<double>(commitSeq + 1u)));
+	m_memory.writeValue(IO_VDP_OAM_READ_SOURCE, valueNumber(static_cast<double>(VDP_OAM_READ_SOURCE_FRONT)));
+}
+
+void VDP::setOamReadSource(bool useBackBuffer) {
+	m_memory.writeValue(
+		IO_VDP_OAM_READ_SOURCE,
+		valueNumber(static_cast<double>(useBackBuffer ? VDP_OAM_READ_SOURCE_BACK : VDP_OAM_READ_SOURCE_FRONT))
+	);
+}
+
+i32 VDP::frontOamCount() const {
+	return static_cast<i32>(asNumber(m_memory.readValue(IO_VDP_OAM_FRONT_COUNT)));
+}
+
+i32 VDP::backOamCount() const {
+	return static_cast<i32>(asNumber(m_memory.readValue(IO_VDP_OAM_BACK_COUNT)));
+}
+
+bool VDP::hasFrontOamContent() const {
+	return frontOamCount() > 0;
+}
+
+bool VDP::hasBackOamContent() const {
+	return backOamCount() > 0;
+}
+
+i32 VDP::beginSpriteOamRead() const {
+	const_cast<VDP*>(this)->syncRegisters();
+	return readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? backOamCount() : frontOamCount();
+}
+
+void VDP::forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn) const {
+	const size_t count = static_cast<size_t>(beginSpriteOamRead());
+	const uint32_t base = readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? readOamBackBase() : readOamFrontBase();
+	for (size_t index = 0; index < count; ++index) {
+		const OamEntry entry = readOamEntry(base + static_cast<uint32_t>(index) * VDP_OAM_ENTRY_BYTES);
+		if (entry.flags != 0u) {
+			fn(entry, index);
+		}
+	}
+}
+
 uint32_t VDP::readVdpStatus() {
 	uint32_t status = 0;
 	if (m_readBudgetBytes >= 4u) {
@@ -327,6 +462,15 @@ uint32_t VDP::readVdpData() {
 void VDP::initializeRegisters() {
 	const i32 dither = 0;
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
+	m_memory.writeValue(IO_VDP_OAM_FRONT_BASE, valueNumber(static_cast<double>(VDP_OAM_FRONT_BASE)));
+	m_memory.writeValue(IO_VDP_OAM_BACK_BASE, valueNumber(static_cast<double>(VDP_OAM_BACK_BASE)));
+	m_memory.writeValue(IO_VDP_OAM_FRONT_COUNT, valueNumber(0.0));
+	m_memory.writeValue(IO_VDP_OAM_BACK_COUNT, valueNumber(0.0));
+	m_memory.writeValue(IO_VDP_OAM_CAPACITY, valueNumber(static_cast<double>(VDP_OAM_SLOT_COUNT)));
+	m_memory.writeValue(IO_VDP_OAM_ENTRY_WORDS, valueNumber(static_cast<double>(VDP_OAM_ENTRY_WORDS)));
+	m_memory.writeValue(IO_VDP_OAM_READ_SOURCE, valueNumber(static_cast<double>(VDP_OAM_READ_SOURCE_FRONT)));
+	m_memory.writeValue(IO_VDP_OAM_COMMIT_SEQ, valueNumber(0.0));
+	m_memory.writeValue(IO_VDP_OAM_CMD, valueNumber(0.0));
 	m_lastDitherType = dither;
 	EngineCore::instance().view()->dither_type = static_cast<GameView::DitherType>(dither);
 }
@@ -343,6 +487,17 @@ void VDP::syncRegisters() {
 	const i32 secondary = secondaryRaw == VDP_ATLAS_ID_NONE ? -1 : static_cast<i32>(secondaryRaw);
 	if (primary != m_slotAtlasIds[0] || secondary != m_slotAtlasIds[1]) {
 		applyAtlasSlotMapping({{primary, secondary}});
+	}
+	const uint32_t command = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_CMD)));
+	if (command != 0u) {
+		if (command == OAM_CMD_SWAP) {
+			swapOamBuffers();
+		} else if (command == OAM_CMD_CLEAR_BACK) {
+			clearBackOamBuffer();
+		} else {
+			throw BMSX_RUNTIME_ERROR("[VDP] Unknown OAM command " + std::to_string(command) + ".");
+		}
+		m_memory.writeValue(IO_VDP_OAM_CMD, valueNumber(0.0));
 	}
 }
 

@@ -1,56 +1,41 @@
 import { FeatureQueue } from '../../utils/feature_queue';
-import type { color, GlyphRenderSubmission, ImgRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, PolyRenderSubmission, RectRenderSubmission, SpriteParallaxRig } from './render_types';
-import type { RenderLayer } from './render_types';
+import {
+	OAM_FLAG_ENABLED,
+	OAM_LAYER_WORLD,
+	oamLayerToRenderLayer,
+	renderLayerToOamLayer,
+} from './render_types';
+import type {
+	color,
+	GlyphRenderSubmission,
+	ImgRenderSubmission,
+	MeshRenderSubmission,
+	OamEntry,
+	ParticleRenderSubmission,
+	PolyRenderSubmission,
+	RectRenderSubmission,
+	SpriteParallaxRig,
+	RenderLayer,
+} from './render_types';
 import { DEFAULT_ZCOORD } from '../backend/webgl/webgl.constants';
 import { RenderSubmission } from '../backend/pipeline_interfaces';
-import { ASSET_FLAG_VIEW, type AssetEntry } from '../../emulator/memory';
 import { Runtime } from '../../emulator/runtime';
+import { ASSET_FLAG_VIEW } from '../../emulator/memory';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { new_vec3, new_vec2 } from '../../utils/vector_operations';
 import { clamp } from '../../utils/clamp';
 import { BFont } from './bitmap_font';
 import { $ } from '../../core/engine_core';
 
-export interface SpriteQueueItem {
-	options: ImgRenderSubmission;
-	entry: AssetEntry;
-	baseEntry: AssetEntry;
-	atlasId: number;
-	submissionIndex: number;
-}
-
-const spriteQueue = new FeatureQueue<SpriteQueueItem>(256);
+const SPRITE_SLOT_COUNT = 5000;
+export const OAM_SLOT_COUNT = SPRITE_SLOT_COUNT;
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
-let spriteSubmissionCounter = 0;
 let activeQueueSource: 'front' | 'back' = 'front';
 
 type PlaybackImgSubmission = Extract<RenderSubmission, { type: 'img' }>;
 type PlaybackMeshSubmission = Extract<RenderSubmission, { type: 'mesh' }>;
 type PlaybackParticleSubmission = Extract<RenderSubmission, { type: 'particle' }>;
-
-const DEFAULT_ASSET_ENTRY: AssetEntry = {
-	id: 'none',
-	idTokenLo: 0,
-	idTokenHi: 0,
-	type: 'image',
-	flags: 0,
-	ownerIndex: -1,
-	baseAddr: 0,
-	baseSize: 0,
-	capacity: 0,
-	baseStride: 0,
-	regionX: 0,
-	regionY: 0,
-	regionW: 0,
-	regionH: 0,
-	sampleRate: 0,
-	channels: 0,
-	frames: 0,
-	bitsPerSample: 0,
-	audioDataOffset: 0,
-	audioDataSize: 0,
-};
 
 const renderQueuePlaybackBuffer: RenderSubmission[] = [];
 
@@ -69,28 +54,36 @@ function createPlaybackImgSubmission(): PlaybackImgSubmission {
 	};
 }
 
-function setPlaybackSpriteSubmission(index: number, src: ImgRenderSubmission): void {
+function setPlaybackSpriteSubmission(index: number, src: OamEntry): void {
 	let op = renderQueuePlaybackBuffer[index] as PlaybackImgSubmission;
 	if (!op || op.type !== 'img') {
 		op = createPlaybackImgSubmission();
 		renderQueuePlaybackBuffer[index] = op;
 	}
-	op.imgid = src.imgid;
-	op.layer = src.layer;
-	op.ambient_affected = src.ambient_affected;
-	op.ambient_factor = src.ambient_factor;
-	op.pos.x = src.pos.x;
-	op.pos.y = src.pos.y;
-	op.pos.z = src.pos.z;
-	op.scale.x = src.scale.x;
-	op.scale.y = src.scale.y;
-	op.flip.flip_h = src.flip.flip_h;
-	op.flip.flip_v = src.flip.flip_v;
-	op.colorize.r = src.colorize.r;
-	op.colorize.g = src.colorize.g;
-	op.colorize.b = src.colorize.b;
-	op.colorize.a = src.colorize.a;
-	op.parallax_weight = src.parallax_weight ?? 0;
+	const runtime = Runtime.instance;
+	const entry = runtime.getAssetEntryByHandle(src.assetHandle);
+	if (entry.type !== 'image') {
+		throw new Error(`[Sprite Playback] Asset handle ${src.assetHandle} is not an image.`);
+	}
+	if (entry.regionW <= 0 || entry.regionH <= 0) {
+		throw new Error(`[Sprite Playback] Asset '${entry.id}' has invalid dimensions.`);
+	}
+	op.imgid = entry.id;
+	op.layer = oamLayerToRenderLayer(src.layer);
+	op.ambient_affected = undefined;
+	op.ambient_factor = undefined;
+	op.pos.x = src.x;
+	op.pos.y = src.y;
+	op.pos.z = src.z;
+	op.scale.x = src.w / entry.regionW;
+	op.scale.y = src.h / entry.regionH;
+	op.flip.flip_h = src.u0 > src.u1;
+	op.flip.flip_v = src.v0 > src.v1;
+	op.colorize.r = src.r;
+	op.colorize.g = src.g;
+	op.colorize.b = src.b;
+	op.colorize.a = src.a;
+	op.parallax_weight = src.parallaxWeight;
 }
 
 function setPlaybackMeshSubmission(index: number, src: MeshRenderSubmission): void {
@@ -127,50 +120,9 @@ function setPlaybackParticleSubmission(index: number, src: ParticleRenderSubmiss
 	op.layer = src.layer;
 }
 
-const spriteItemPoolA: SpriteQueueItem[] = [];
-const spriteItemPoolB: SpriteQueueItem[] = [];
-let spriteItemPool = spriteItemPoolA;
-let spriteItemPoolAlt = spriteItemPoolB;
-let spriteItemPoolIndex = 0;
-
-function createSpriteQueueItem(): SpriteQueueItem {
-	return {
-		options: {
-			imgid: 'none',
-			pos: { x: 0, y: 0, z: DEFAULT_ZCOORD },
-			scale: { x: 1, y: 1 },
-			flip: { flip_h: false, flip_v: false },
-			colorize: { r: 1, g: 1, b: 1, a: 1 },
-			layer: undefined,
-			ambient_affected: undefined,
-			ambient_factor: undefined,
-			parallax_weight: 0,
-		},
-		entry: DEFAULT_ASSET_ENTRY,
-		baseEntry: DEFAULT_ASSET_ENTRY,
-		atlasId: ENGINE_ATLAS_INDEX,
-		submissionIndex: 0,
-	};
-}
-
-function acquireSpriteQueueItem(): SpriteQueueItem {
-	const index = spriteItemPoolIndex;
-	spriteItemPoolIndex = index + 1;
-	if (index >= spriteItemPool.length) {
-		const created = createSpriteQueueItem();
-		spriteItemPool.push(created);
-		return created;
-	}
-	return spriteItemPool[index];
-}
-
 // --- Sprite queue helpers ---------------------------------------------------
 
 export function submitSprite(options: ImgRenderSubmission): void {
-	const submissionIndex = spriteSubmissionCounter++;
-	const pooled = acquireSpriteQueueItem();
-	pooled.submissionIndex = submissionIndex;
-
 	const { imgid } = options;
 	if (imgid === 'none') return;
 	const runtime = Runtime.instance;
@@ -186,73 +138,69 @@ export function submitSprite(options: ImgRenderSubmission): void {
 	const baseEntry = (entry.flags & ASSET_FLAG_VIEW)
 		? runtime.getAssetEntryByHandle(entry.ownerIndex)
 		: entry;
-	pooled.entry = entry;
-	pooled.baseEntry = baseEntry;
-	pooled.atlasId = meta.atlasid;
-	const src = options;
-	const dst = pooled.options;
-	dst.imgid = src.imgid;
-	dst.layer = src.layer;
-	dst.ambient_affected = src.ambient_affected;
-	dst.ambient_factor = src.ambient_factor;
-	dst.pos.x = ~~src.pos.x;
-	dst.pos.y = ~~src.pos.y;
-	dst.pos.z = ~~src.pos.z;
-	const scale = src.scale;
-	if (scale) {
-		dst.scale.x = scale.x;
-		dst.scale.y = scale.y;
-	} else {
-		dst.scale.x = 1;
-		dst.scale.y = 1;
+	if (entry.regionW <= 0 || entry.regionH <= 0) {
+		throw new Error(`[Sprite Pipeline] Image asset '${imgid}' has invalid region size.`);
 	}
-	const flip = src.flip;
-	if (flip) {
-		dst.flip.flip_h = flip.flip_h;
-		dst.flip.flip_v = flip.flip_v;
-	} else {
-		dst.flip.flip_h = false;
-		dst.flip.flip_v = false;
+	if (baseEntry.regionW <= 0 || baseEntry.regionH <= 0) {
+		throw new Error(`[Sprite Pipeline] Atlas backing entry for '${imgid}' missing dimensions.`);
 	}
-	const colorize = src.colorize;
-	if (colorize) {
-		dst.colorize.r = colorize.r;
-		dst.colorize.g = colorize.g;
-		dst.colorize.b = colorize.b;
-		dst.colorize.a = colorize.a;
-	} else {
-		dst.colorize.r = 1;
-		dst.colorize.g = 1;
-		dst.colorize.b = 1;
-		dst.colorize.a = 1;
+	let u0 = entry.regionX / baseEntry.regionW;
+	let v0 = entry.regionY / baseEntry.regionH;
+	let u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
+	let v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
+	const flip = options.flip;
+	if (flip?.flip_h) {
+		const tmp = u0;
+		u0 = u1;
+		u1 = tmp;
 	}
-	dst.parallax_weight = src.parallax_weight ?? 0;
-	spriteQueue.submit(pooled);
+	if (flip?.flip_v) {
+		const tmp = v0;
+		v0 = v1;
+		v1 = tmp;
+	}
+	const scale = options.scale;
+	const scaleX = scale ? scale.x : 1;
+	const scaleY = scale ? scale.y : 1;
+	const colorize = options.colorize;
+	const oam: OamEntry = {
+		atlasId: meta.atlasid,
+		flags: OAM_FLAG_ENABLED,
+		assetHandle: handle,
+		x: ~~options.pos.x,
+		y: ~~options.pos.y,
+		z: ~~(options.pos.z ?? DEFAULT_ZCOORD),
+		w: entry.regionW * scaleX,
+		h: entry.regionH * scaleY,
+		u0,
+		v0,
+		u1,
+		v1,
+		r: colorize ? colorize.r : 1,
+		g: colorize ? colorize.g : 1,
+		b: colorize ? colorize.b : 1,
+		a: colorize ? colorize.a : 1,
+		layer: renderLayerToOamLayer(options.layer),
+		parallaxWeight: 0,
+	};
+	oam.parallaxWeight = oam.layer === OAM_LAYER_WORLD ? (options.parallax_weight ?? 0) : 0;
+	runtime.vdp.submitOamEntry(oam);
 }
 
 export function beginSpriteQueue(): number {
-	if (activeQueueSource === 'back') {
-		sortSpriteBackQueueForRendering();
-		return spriteQueue.sizeBack();
-	}
-	return spriteQueue.sizeFront();
+	return Runtime.instance.vdp.beginSpriteOamRead();
 }
 
 export function prepareCompletedRenderQueues(): void {
-	spriteSubmissionCounter = 0;
-	spriteQueue.swap();
+	Runtime.instance.vdp.swapOamBuffers();
+	Runtime.instance.vdp.setOamReadSource('front');
 	meshQueue.swap();
 	particleQueue.swap();
-	const tmpPool = spriteItemPool;
-	spriteItemPool = spriteItemPoolAlt;
-	spriteItemPoolAlt = tmpPool;
-	spriteItemPoolIndex = 0;
-	sortSpriteQueueForRendering();
 	activeQueueSource = 'front';
 }
 
 function hasCommittedFrontQueueContent(): boolean {
-	return spriteQueue.sizeFront() > 0
+	return Runtime.instance.vdp.hasFrontOamContent()
 		|| meshQueue.sizeFront() > 0
 		|| particleQueue.sizeFront() > 0;
 }
@@ -261,84 +209,46 @@ export function preparePartialRenderQueues(): void {
 	activeQueueSource = hasCommittedFrontQueueContent()
 		? 'front'
 		: (hasPendingBackQueueContent() ? 'back' : 'front');
+	Runtime.instance.vdp.setOamReadSource(activeQueueSource);
 }
 
 export function prepareOverlayRenderQueues(): void {
 	activeQueueSource = 'back';
+	Runtime.instance.vdp.setOamReadSource('back');
 }
 
 export function hasPendingBackQueueContent(): boolean {
-	return spriteQueue.sizeBack() > 0
+	return Runtime.instance.vdp.hasBackOamContent()
 		|| meshQueue.sizeBack() > 0
 		|| particleQueue.sizeBack() > 0;
 }
 
 export function clearBackQueues(): void {
-	spriteSubmissionCounter = 0;
-	spriteItemPoolIndex = 0;
-	spriteQueue.clearBack();
+	Runtime.instance.vdp.clearBackOamBuffer();
 	meshQueue.clearBack();
 	particleQueue.clearBack();
 	activeQueueSource = 'front';
 }
 
-function renderLayerWeight(layer?: RenderLayer): number {
-	if (layer === 'ide') return 2;
-	if (layer === 'ui') return 1;
-	return 0;
-}
-
-function sortSpriteQueueForRendering(): void {
-	spriteQueue.sortFront((a, b) => {
-		const la = renderLayerWeight(a.options.layer);
-		const lb = renderLayerWeight(b.options.layer);
-		if (la !== lb) return la - lb;
-		const za = a.options.pos.z ?? DEFAULT_ZCOORD;
-		const zb = b.options.pos.z ?? DEFAULT_ZCOORD;
-		if (za !== zb) return za - zb;
-		return a.submissionIndex - b.submissionIndex;
-	});
-}
-
-function sortSpriteBackQueueForRendering(): void {
-	spriteQueue.sortBack((a, b) => {
-		const la = renderLayerWeight(a.options.layer);
-		const lb = renderLayerWeight(b.options.layer);
-		if (la !== lb) return la - lb;
-		const za = a.options.pos.z ?? DEFAULT_ZCOORD;
-		const zb = b.options.pos.z ?? DEFAULT_ZCOORD;
-		if (za !== zb) return za - zb;
-		return a.submissionIndex - b.submissionIndex;
-	});
-}
-
-
-export function sortSpriteQueue(compare: (a: SpriteQueueItem, b: SpriteQueueItem) => number): void {
-	spriteQueue.sortFront(compare);
-}
-
-export function forEachSprite(fn: (item: SpriteQueueItem, index: number) => void): void {
-	if (activeQueueSource === 'back') {
-		spriteQueue.forEachBack(fn);
-		return;
-	}
-	spriteQueue.forEachFront(fn);
+export function forEachOamEntry(fn: (item: OamEntry, index: number) => void): void {
+	Runtime.instance.vdp.forEachOamEntry(fn);
 }
 
 export function spriteQueueBackSize(): number {
-	return spriteQueue.sizeBack();
+	return Runtime.instance.vdp.getOamBackCount();
 }
 
 export function spriteQueueFrontSize(): number {
-	return spriteQueue.sizeFront();
+	return Runtime.instance.vdp.getOamFrontCount();
 }
 
 export function copyRenderQueueForPlayback(): RenderSubmission[] {
 	let count = 0;
-	const copySprite = (item: SpriteQueueItem) => {
-		const src = item.options;
-		setPlaybackSpriteSubmission(count, src);
-		count += 1;
+	const copySpriteEntries = () => {
+		Runtime.instance.vdp.forEachOamEntry((item) => {
+			setPlaybackSpriteSubmission(count, item);
+			count += 1;
+		});
 	};
 	const copyMesh = (item: MeshRenderSubmission) => {
 		setPlaybackMeshSubmission(count, item);
@@ -349,11 +259,11 @@ export function copyRenderQueueForPlayback(): RenderSubmission[] {
 		count += 1;
 	};
 	if (activeQueueSource === 'back') {
-		spriteQueue.forEachBack(copySprite);
+		copySpriteEntries();
 		meshQueue.forEachBack(copyMesh);
 		particleQueue.forEachBack(copyParticle);
 	} else {
-		spriteQueue.forEachFront(copySprite);
+		copySpriteEntries();
 		meshQueue.forEachFront(copyMesh);
 		particleQueue.forEachFront(copyParticle);
 	}

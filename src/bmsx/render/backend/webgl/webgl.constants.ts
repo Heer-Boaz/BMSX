@@ -2,7 +2,8 @@ import { color } from '../../shared/render_types';
 
 export const DEFAULT_VERTEX_COLOR: color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
 
-export const MAX_SPRITES = 256;
+// Canonical GPU-side sprite batch size matches OAM_SPRITE_SLOT_COUNT in C++ render queues.
+export const MAX_SPRITES = 5000;
 export const MAX_DIR_LIGHTS = 4;
 export const MAX_POINT_LIGHTS = 4;
 

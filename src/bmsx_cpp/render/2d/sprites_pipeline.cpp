@@ -7,6 +7,7 @@
 #include "sprites_pipeline.h"
 
 #include <cmath>
+#include <string>
 #include <stdexcept>
 
 #include "../../rompack/runtime_assets.h"
@@ -29,8 +30,7 @@ static constexpr f32 ZCOORD_MAX = 10000.0f;
 namespace {
 void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 								GameView* context) {
-	// Swap and sort the sprite queue (returns count)
-	i32 spriteCount = RenderQueues::beginSpriteQueue();
+	i32 spriteCount = Runtime::instance().vdp().beginSpriteOamRead();
 	if (spriteCount == 0) return;
 
 	const f32 baseWidth = context->viewportSize.x;
@@ -51,53 +51,40 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 
 	const bool useDepth = false;
 
-	auto& engine = EngineCore::instance();
-	// auto& runtime = Runtime::instance();
-	// auto& memory = runtime.memory();
-	const auto& assets = engine.assets();
 	const TextureHandle atlasPrimary = context->textures.at("_atlas_primary");
 	const TextureHandle atlasSecondary = context->textures.at("_atlas_secondary");
 	auto smoothstep01 = [](f32 t) {
 	t = clamp(t, 0.0f, 1.0f);
 	return t * t * (3.0f - 2.0f * t);
 	};
-	// Iterate over all sprites in the sorted front queue
-	RenderQueues::forEachSprite([&](const SpriteQueueItem& item, size_t) {
-	const auto& options = item.options;
-	const ImgMeta* imgmeta = item.imgmeta;
-	const auto& meta = *imgmeta;
-	const Vec2& scale = options.scale.value();
-	const FlipOptions& flip = options.flip.value();
-	const Color& colorize = options.colorize.value();
-	const RenderLayer layer = options.layer.value_or(RenderLayer::World);
-	const f32 desiredScale = (layer == RenderLayer::IDE) ? ideScale : 1.0f;
+	Runtime::instance().vdp().forEachOamEntry([&](const OamEntry& item, size_t) {
+	const OamLayer layer = item.layer;
+	const f32 desiredScale = (layer == OamLayer::IDE) ? ideScale : 1.0f;
 	const f32 totalScaleX = renderScaleX * desiredScale;
 	const f32 totalScaleY = renderScaleY * desiredScale;
 	const SpriteParallaxRig& parallaxRig = RenderQueues::spriteParallaxRig;
-	f32 parallaxWeight = clamp(options.parallax_weight.value_or(0.0f), -1.0f, 1.0f);
-	if (layer != RenderLayer::World) {
+	f32 parallaxWeight = clamp(item.parallaxWeight, -1.0f, 1.0f);
+	if (layer != OamLayer::World) {
 		parallaxWeight = 0.0f;
 	}
 
 	TextureHandle tex = nullptr;
-	if (meta.atlassed) {
-		if (meta.atlasid == ENGINE_ATLAS_INDEX) {
+	if (item.atlasId == ENGINE_ATLAS_INDEX) {
 		tex = context->textures.at(ENGINE_ATLAS_TEXTURE_KEY);
-		} else if (meta.atlasid == context->primaryAtlasIdInSlot) {
+	} else if (item.atlasId == context->primaryAtlasIdInSlot) {
 		tex = atlasPrimary;
-		} else if (meta.atlasid == context->secondaryAtlasIdInSlot) {
+	} else if (item.atlasId == context->secondaryAtlasIdInSlot) {
 		tex = atlasSecondary;
-		} else {
-		tex = atlasPrimary;
-		}
 	} else {
-		const auto* imgAsset = assets.getImg(options.imgid);
-		tex = reinterpret_cast<TextureHandle>(imgAsset->textureHandle);
+		throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Atlas " + std::to_string(item.atlasId) + " not mapped to primary/secondary slots.");
 	}
 
-	// Get UV coordinates based on flip options
-	f32 u0, v0, u1, v1;
-	meta.getUVRect(u0, v0, u1, v1, flip.flip_h, flip.flip_v);
+	const bool flipH = item.u0 > item.u1;
+	const bool flipV = item.v0 > item.v1;
+	const f32 u0 = flipH ? item.u1 : item.u0;
+	const f32 v0 = flipV ? item.v1 : item.v0;
+	const f32 u1 = flipH ? item.u0 : item.u1;
+	const f32 v1 = flipV ? item.v0 : item.v1;
 
 	auto* softTex = static_cast<SoftwareTexture*>(tex);
 
@@ -111,7 +98,7 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	i32 srcW = static_cast<i32>(srcXf1) - srcX;
 	i32 srcH = static_cast<i32>(srcYf1) - srcY;
 
-	const f32 zValue = (options.pos.z == 0.0f) ? DEFAULT_ZCOORD : options.pos.z;
+	const f32 zValue = (item.z == 0.0f) ? DEFAULT_ZCOORD : item.z;
 	const f32 zNorm = 1.0f - (zValue / ZCOORD_MAX);
 	const f32 depth = smoothstep01(zNorm);
 	const f32 dir = (parallaxWeight > 0.0f) ? 1.0f : ((parallaxWeight < 0.0f) ? -1.0f : 0.0f);
@@ -133,10 +120,11 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	const f32 parallaxScaleMul = baseScale + pulse;
 
 	// Destination position and size
-	const f32 baseW = static_cast<f32>(meta.width) * scale.x;
-	const f32 baseH = static_cast<f32>(meta.height) * scale.y;
-	const f32 centerX = options.pos.x + (baseW * 0.5f);
-	const f32 centerY = options.pos.y + (baseH * 0.5f);
+	const Color colorize{item.r, item.g, item.b, item.a};
+	const f32 baseW = item.w;
+	const f32 baseH = item.h;
+	const f32 centerX = item.x + (baseW * 0.5f);
+	const f32 centerY = item.y + (baseH * 0.5f);
 	const f32 finalW = baseW * parallaxScaleMul;
 	const f32 finalH = baseH * parallaxScaleMul;
 	const f32 finalX = centerX - (finalW * 0.5f);
@@ -151,7 +139,7 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	i32 dstH = static_cast<i32>(scaledY1) - dstY;
 
 	softBackend->blitTexture(tex, srcX, srcY, srcW, srcH, dstX, dstY, dstW,
-								dstH, zNorm, colorize, flip.flip_h, flip.flip_v,
+								dstH, zNorm, colorize, flipH, flipV,
 								dither, useDepth);
 	});
 }

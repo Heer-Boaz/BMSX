@@ -1,7 +1,8 @@
 /*
  * render_queues.cpp - Render submission queues implementation
  *
- * Mirrors TypeScript render_queues.ts
+ * Mirrors TypeScript render_queues.ts.
+ * Sprites are translated into machine OAM here and consumed mechanically by renderers.
  */
 
 #include "render_queues.h"
@@ -9,6 +10,7 @@
 #include "../../rompack/runtime_assets.h"
 #include "../../core/engine_core.h"
 #include "../../core/font.h"
+#include "../../emulator/runtime.h"
 #include "../../utils/clamp.h"
 #include <algorithm>
 #include <cmath>
@@ -19,10 +21,8 @@ namespace RenderQueues {
 
 // --- Queue instances ---
 
-static FeatureQueue<SpriteQueueItem> s_spriteQueue(256);
 static FeatureQueue<MeshRenderSubmission> s_meshQueue(256);
 static FeatureQueue<ParticleRenderSubmission> s_particleQueue(1024);
-static i32 s_spriteSubmissionCounter = 0;
 enum class QueueSource : u8 {
 	Front = 0,
 	Back = 1,
@@ -37,72 +37,11 @@ f32 _skyExposure = 1.0f;
 
 // Default Z coordinate (mirrors TypeScript DEFAULT_ZCOORD)
 static constexpr f32 DEFAULT_ZCOORD = 0.0f;
-static constexpr f32 ZCOORD_MAX = 10000.0f;
 
-// --- Object pools for sprite queue items ---
-
-static std::vector<SpriteQueueItem> s_spriteItemPoolA;
-static std::vector<SpriteQueueItem> s_spriteItemPoolB;
-static std::vector<SpriteQueueItem>* s_spriteItemPool = &s_spriteItemPoolA;
-static std::vector<SpriteQueueItem>* s_spriteItemPoolAlt = &s_spriteItemPoolB;
-static size_t s_spriteItemPoolIndex = 0;
 static std::vector<RenderSubmission> s_renderQueuePlaybackBuffer;
 
-static SpriteQueueItem& acquireSpriteQueueItem() {
-	size_t index = s_spriteItemPoolIndex++;
-	if (index >= s_spriteItemPool->size()) {
-		s_spriteItemPool->emplace_back();
-	}
-	return (*s_spriteItemPool)[index];
-}
-
-// --- Layer weight for sorting ---
-
-static i32 renderLayerWeight(const std::optional<RenderLayer>& layer) {
-	if (!layer) return 0;
-	switch (*layer) {
-		case RenderLayer::IDE:   return 2;
-		case RenderLayer::UI:    return 1;
-		case RenderLayer::World: return 0;
-	}
-	return 0;
-}
-
-// --- Sprite queue sorting ---
-
-static void sortSpriteQueueForRendering() {
-	s_spriteQueue.sortFront([](const SpriteQueueItem& a, const SpriteQueueItem& b) {
-		// First: sort by layer (world < ui < ide)
-		i32 la = renderLayerWeight(a.options.layer);
-		i32 lb = renderLayerWeight(b.options.layer);
-		if (la != lb) return la < lb;
-
-		// Second: sort by Z coordinate (lower Z = drawn first)
-		f32 za = a.options.pos.z;
-		f32 zb = b.options.pos.z;
-		if (za != zb) return za < zb;
-
-		// Third: stable sort by submission order
-		return a.submissionIndex < b.submissionIndex;
-	});
-}
-
-static void sortSpriteBackQueueForRendering() {
-	s_spriteQueue.sortBack([](const SpriteQueueItem& a, const SpriteQueueItem& b) {
-		i32 la = renderLayerWeight(a.options.layer);
-		i32 lb = renderLayerWeight(b.options.layer);
-		if (la != lb) return la < lb;
-
-		f32 za = a.options.pos.z;
-		f32 zb = b.options.pos.z;
-		if (za != zb) return za < zb;
-
-		return a.submissionIndex < b.submissionIndex;
-	});
-}
-
 static bool hasCommittedFrontQueueContent() {
-	return s_spriteQueue.sizeFront() > 0
+	return Runtime::instance().vdp().hasFrontOamContent()
 		|| s_meshQueue.sizeFront() > 0
 		|| s_particleQueue.sizeFront() > 0;
 }
@@ -112,55 +51,69 @@ static bool hasCommittedFrontQueueContent() {
 void submitSprite(const ImgRenderSubmission& options) {
 	if (options.imgid == "none") return;
 
-	const ImgMeta* imgmeta = nullptr;
-	auto& engine = EngineCore::instance();
-	const auto* imgAsset = engine.assets().getImg(options.imgid);
-	if (!imgAsset) {
-		throw BMSX_RUNTIME_ERROR("[Sprite Queue] submitSprite called with unknown image id '" + options.imgid + "'.");
+	auto& runtime = Runtime::instance();
+	auto& memory = runtime.memory();
+	const u32 handle = memory.resolveAssetHandle(options.imgid);
+	const auto& entry = memory.getAssetEntryByHandle(handle);
+	if (entry.type != Memory::AssetType::Image) {
+		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Asset '" + options.imgid + "' is not an image.");
 	}
-	imgmeta = &imgAsset->meta;
+	const auto* imgAsset = EngineCore::instance().assets().getImg(entry.id);
+	if (!imgAsset) {
+		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Missing image metadata for '" + options.imgid + "'.");
+	}
+	const ImgMeta& meta = imgAsset->meta;
+	const auto& baseEntry = (entry.flags & ASSET_FLAG_VIEW)
+		? memory.getAssetEntryByHandle(entry.ownerIndex)
+		: entry;
+	if (entry.regionW == 0 || entry.regionH == 0) {
+		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Image '" + options.imgid + "' has invalid region size.");
+	}
+	if (baseEntry.regionW == 0 || baseEntry.regionH == 0) {
+		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Atlas backing entry for '" + options.imgid + "' is missing dimensions.");
+	}
 
-	i32 submissionIndex = s_spriteSubmissionCounter++;
-	SpriteQueueItem& pooled = acquireSpriteQueueItem();
+	f32 u0 = static_cast<f32>(entry.regionX) / static_cast<f32>(baseEntry.regionW);
+	f32 v0 = static_cast<f32>(entry.regionY) / static_cast<f32>(baseEntry.regionH);
+	f32 u1 = static_cast<f32>(entry.regionX + entry.regionW) / static_cast<f32>(baseEntry.regionW);
+	f32 v1 = static_cast<f32>(entry.regionY + entry.regionH) / static_cast<f32>(baseEntry.regionH);
+	const FlipOptions flip = options.flip.value_or(FlipOptions{});
+	if (flip.flip_h) {
+		std::swap(u0, u1);
+	}
+	if (flip.flip_v) {
+		std::swap(v0, v1);
+	}
 
-	pooled.submissionIndex = submissionIndex;
-	pooled.imgmeta = imgmeta;
-
-	// Copy options (integer truncation for positions like TS)
-	pooled.options.imgid = options.imgid;
-	pooled.options.layer = options.layer;
-	pooled.options.ambient_affected = options.ambient_affected;
-	pooled.options.ambient_factor = options.ambient_factor;
-
-	// Truncate position to integers (matches TS: ~~src.pos.x)
-	pooled.options.pos.x = static_cast<f32>(static_cast<i32>(options.pos.x));
-	pooled.options.pos.y = static_cast<f32>(static_cast<i32>(options.pos.y));
-	pooled.options.pos.z = static_cast<f32>(static_cast<i32>(options.pos.z));
-
-	// Scale
-	const Vec2 defaultScale{1.0f, 1.0f};
-	pooled.options.scale = options.scale ? *options.scale : defaultScale;
-
-	// Flip
-	const FlipOptions defaultFlip{};
-	pooled.options.flip = options.flip ? *options.flip : defaultFlip;
-
-	// Colorize
-	const Color defaultColor{1.0f, 1.0f, 1.0f, 1.0f};
-	pooled.options.colorize = options.colorize ? *options.colorize : defaultColor;
-	pooled.options.parallax_weight = options.parallax_weight.value_or(0.0f);
-
-	s_spriteQueue.submit(pooled);
+	const Vec2 scale = options.scale.value_or(Vec2{1.0f, 1.0f});
+	const Color color = options.colorize.value_or(Color{1.0f, 1.0f, 1.0f, 1.0f});
+	OamEntry oam;
+	oam.atlasId = meta.atlasid;
+	oam.flags = OAM_FLAG_ENABLED;
+	oam.assetHandle = handle;
+	oam.x = static_cast<f32>(static_cast<i32>(options.pos.x));
+	oam.y = static_cast<f32>(static_cast<i32>(options.pos.y));
+	oam.z = static_cast<f32>(static_cast<i32>(options.pos.z));
+	oam.w = static_cast<f32>(entry.regionW) * scale.x;
+	oam.h = static_cast<f32>(entry.regionH) * scale.y;
+	oam.u0 = u0;
+	oam.v0 = v0;
+	oam.u1 = u1;
+	oam.v1 = v1;
+	oam.r = color.r;
+	oam.g = color.g;
+	oam.b = color.b;
+	oam.a = color.a;
+	oam.layer = renderLayerToOamLayer(options.layer);
+	oam.parallaxWeight = oam.layer == OamLayer::World ? options.parallax_weight.value_or(0.0f) : 0.0f;
+	runtime.vdp().submitOamEntry(oam);
 }
 
 void prepareCompletedRenderQueues() {
-	s_spriteSubmissionCounter = 0;
-	s_spriteQueue.swap();
+	Runtime::instance().vdp().swapOamBuffers();
+	Runtime::instance().vdp().setOamReadSource(false);
 	s_meshQueue.swap();
 	s_particleQueue.swap();
-	std::swap(s_spriteItemPool, s_spriteItemPoolAlt);
-	s_spriteItemPoolIndex = 0;
-	sortSpriteQueueForRendering();
 	s_activeQueueSource = QueueSource::Front;
 }
 
@@ -168,76 +121,68 @@ void preparePartialRenderQueues() {
 	s_activeQueueSource = hasCommittedFrontQueueContent()
 		? QueueSource::Front
 		: (hasPendingBackQueueContent() ? QueueSource::Back : QueueSource::Front);
+	Runtime::instance().vdp().setOamReadSource(s_activeQueueSource == QueueSource::Back);
 }
 
 void prepareOverlayRenderQueues() {
 	s_activeQueueSource = QueueSource::Back;
+	Runtime::instance().vdp().setOamReadSource(true);
 }
 
 bool hasPendingBackQueueContent() {
-	return s_spriteQueue.sizeBack() > 0
+	return Runtime::instance().vdp().hasBackOamContent()
 		|| s_meshQueue.sizeBack() > 0
 		|| s_particleQueue.sizeBack() > 0;
 }
 
 i32 beginSpriteQueue() {
-	if (s_activeQueueSource == QueueSource::Back) {
-		sortSpriteBackQueueForRendering();
-		return static_cast<i32>(s_spriteQueue.sizeBack());
-	}
-	return static_cast<i32>(s_spriteQueue.sizeFront());
+	return Runtime::instance().vdp().beginSpriteOamRead();
 }
 
 void clearBackQueues() {
-	s_spriteSubmissionCounter = 0;
-	s_spriteItemPoolIndex = 0;
-	s_spriteQueue.clearBack();
+	Runtime::instance().vdp().clearBackOamBuffer();
 	s_meshQueue.clearBack();
 	s_particleQueue.clearBack();
 	s_activeQueueSource = QueueSource::Front;
+	Runtime::instance().vdp().setOamReadSource(false);
 }
 
-void forEachSprite(const std::function<void(const SpriteQueueItem&, size_t)>& fn) {
-	if (s_activeQueueSource == QueueSource::Back) {
-		s_spriteQueue.forEachBack([&fn](const SpriteQueueItem& item, size_t index) {
-			fn(item, index);
-		});
-		return;
-	}
-	s_spriteQueue.forEachFront([&fn](const SpriteQueueItem& item, size_t index) {
-		fn(item, index);
-	});
+void forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn) {
+	Runtime::instance().vdp().forEachOamEntry(fn);
 }
 
-size_t spriteQueueBackSize() { return s_spriteQueue.sizeBack(); }
-size_t spriteQueueFrontSize() { return s_spriteQueue.sizeFront(); }
-
-void sortSpriteQueue(const std::function<bool(const SpriteQueueItem&, const SpriteQueueItem&)>& compare) {
-	s_spriteQueue.sortFront(compare);
-}
+size_t spriteQueueBackSize() { return static_cast<size_t>(Runtime::instance().vdp().backOamCount()); }
+size_t spriteQueueFrontSize() { return static_cast<size_t>(Runtime::instance().vdp().frontOamCount()); }
 
 const std::vector<RenderSubmission>& copyRenderQueueForPlayback() {
+	auto& memory = Runtime::instance().memory();
 	size_t count = 0;
-	const auto copySprite = [&](const SpriteQueueItem& item, size_t) {
-		if (count >= s_renderQueuePlaybackBuffer.size()) {
-			s_renderQueuePlaybackBuffer.emplace_back();
-		}
-		RenderSubmission& op = s_renderQueuePlaybackBuffer[count];
-		op.type = RenderSubmissionType::Img;
-		const ImgRenderSubmission& src = item.options;
-		ImgRenderSubmission& dst = op.img;
-		dst.imgid = src.imgid;
-		dst.layer = src.layer;
-		dst.ambient_affected = src.ambient_affected;
-		dst.ambient_factor = src.ambient_factor;
-		dst.pos.x = src.pos.x;
-		dst.pos.y = src.pos.y;
-		dst.pos.z = src.pos.z;
-		dst.scale = src.scale;
-		dst.flip = src.flip;
-		dst.colorize = src.colorize;
-		dst.parallax_weight = src.parallax_weight.value_or(0.0f);
-		count += 1;
+	const auto copySpriteEntries = [&]() {
+		Runtime::instance().vdp().forEachOamEntry([&](const OamEntry& src, size_t) {
+			if (count >= s_renderQueuePlaybackBuffer.size()) {
+				s_renderQueuePlaybackBuffer.emplace_back();
+			}
+			RenderSubmission& op = s_renderQueuePlaybackBuffer[count];
+			op.type = RenderSubmissionType::Img;
+			ImgRenderSubmission& dst = op.img;
+			const auto& asset = memory.getAssetEntryByHandle(src.assetHandle);
+			if (asset.type != Memory::AssetType::Image) {
+				throw BMSX_RUNTIME_ERROR("[Render Queue Playback] OAM entry references non-image asset.");
+			}
+			if (asset.regionW == 0 || asset.regionH == 0) {
+				throw BMSX_RUNTIME_ERROR("[Render Queue Playback] OAM entry references zero-sized image asset '" + asset.id + "'.");
+			}
+			dst.imgid = asset.id;
+			dst.layer = oamLayerToRenderLayer(src.layer);
+			dst.ambient_affected.reset();
+			dst.ambient_factor.reset();
+			dst.pos = {src.x, src.y, src.z};
+			dst.scale = Vec2{src.w / static_cast<f32>(asset.regionW), src.h / static_cast<f32>(asset.regionH)};
+			dst.flip = FlipOptions{src.u0 > src.u1, src.v0 > src.v1};
+			dst.colorize = Color{src.r, src.g, src.b, src.a};
+			dst.parallax_weight = src.parallaxWeight;
+			count += 1;
+		});
 	};
 	const auto copyMesh = [&](const MeshRenderSubmission& item, size_t) {
 		if (count >= s_renderQueuePlaybackBuffer.size()) {
@@ -258,11 +203,11 @@ const std::vector<RenderSubmission>& copyRenderQueueForPlayback() {
 		count += 1;
 	};
 	if (s_activeQueueSource == QueueSource::Back) {
-		s_spriteQueue.forEachBack(copySprite);
+		copySpriteEntries();
 		s_meshQueue.forEachBack(copyMesh);
 		s_particleQueue.forEachBack(copyParticle);
 	} else {
-		s_spriteQueue.forEachFront(copySprite);
+		copySpriteEntries();
 		s_meshQueue.forEachFront(copyMesh);
 		s_particleQueue.forEachFront(copyParticle);
 	}

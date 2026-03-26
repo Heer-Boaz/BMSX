@@ -20,6 +20,11 @@ import {
 	RAM_SIZE,
 	STRING_HANDLE_COUNT,
 	SYSTEM_ROM_BASE,
+	VDP_OAM_BACK_BASE,
+	VDP_OAM_BUFFER_SIZE,
+	VDP_OAM_ENTRY_BYTES,
+	VDP_OAM_FRONT_BASE,
+	VDP_OAM_SLOT_COUNT,
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_PRIMARY_ATLAS_SIZE,
 	VRAM_SECONDARY_ATLAS_BASE,
@@ -60,6 +65,17 @@ import {
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
 	IO_VDP_DITHER,
+	IO_VDP_OAM_BACK_BASE,
+	IO_VDP_OAM_BACK_COUNT,
+	IO_VDP_OAM_CAPACITY,
+	IO_VDP_OAM_CMD,
+	IO_VDP_OAM_COMMIT_SEQ,
+	IO_VDP_OAM_ENTRY_WORDS,
+	IO_VDP_OAM_FRONT_BASE,
+	IO_VDP_OAM_FRONT_COUNT,
+	IO_VDP_OAM_READ_SOURCE,
+	OAM_CMD_CLEAR_BACK,
+	OAM_CMD_SWAP,
 	IO_VDP_PRIMARY_ATLAS_ID,
 	IO_VDP_RD_DATA,
 	IO_VDP_RD_MODE,
@@ -77,6 +93,8 @@ import {
 	IRQ_REINIT,
 	IRQ_VBLANK,
 	VDP_ATLAS_ID_NONE,
+	VDP_OAM_READ_SOURCE_BACK,
+	VDP_OAM_READ_SOURCE_FRONT,
 	VDP_RD_MODE_RGBA8888,
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
@@ -947,6 +965,19 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_ready', VDP_RD_STATUS_READY);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_overflow', VDP_RD_STATUS_OVERFLOW);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_status_vblank', VDP_STATUS_VBLANK);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_front_base', IO_VDP_OAM_FRONT_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_back_base', IO_VDP_OAM_BACK_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_front_count', IO_VDP_OAM_FRONT_COUNT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_back_count', IO_VDP_OAM_BACK_COUNT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_capacity', IO_VDP_OAM_CAPACITY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_entry_words', IO_VDP_OAM_ENTRY_WORDS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_read_source', IO_VDP_OAM_READ_SOURCE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_commit_seq', IO_VDP_OAM_COMMIT_SEQ);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_cmd', IO_VDP_OAM_CMD);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_read_source_front', VDP_OAM_READ_SOURCE_FRONT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_read_source_back', VDP_OAM_READ_SOURCE_BACK);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_cmd_swap', OAM_CMD_SWAP);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_cmd_clear_back', OAM_CMD_CLEAR_BACK);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_irq_flags', IO_IRQ_FLAGS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_irq_ack', IO_IRQ_ACK);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_src', IO_DMA_SRC);
@@ -966,6 +997,11 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_overlay_size', runtime.memory.getOverlayRomSize());
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_bank_a_base', VDP_OAM_FRONT_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_bank_b_base', VDP_OAM_BACK_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_buffer_size', VDP_OAM_BUFFER_SIZE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_entry_bytes', VDP_OAM_ENTRY_BYTES);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_oam_slot_count', VDP_OAM_SLOT_COUNT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_system_atlas_base', VRAM_SYSTEM_ATLAS_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_primary_atlas_base', VRAM_PRIMARY_ATLAS_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_secondary_atlas_base', VRAM_SECONDARY_ATLAS_BASE);
@@ -1076,6 +1112,32 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'poke', createNativeFunction('poke', (args, out) => {
 		const address = args[0] as number;
 		runtime.memory.writeValue(address, args[1]);
+		out.length = 0;
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'mem_write', createNativeFunction('mem_write', (args, out) => {
+		const address = (args[0] as number) >>> 0;
+		const value = args[1];
+		if (!isStringValue(value)) {
+			throw new Error('mem_write expects a packed byte string.');
+		}
+		const text = stringValueToString(value);
+		const bytes = new Uint8Array(text.length);
+		for (let index = 0; index < text.length; index += 1) {
+			const code = text.charCodeAt(index);
+			if (code > 0xff) {
+				throw new Error('mem_write expects a packed byte string.');
+			}
+			bytes[index] = code;
+		}
+		const frontBase = (runtime.memory.readValue(IO_VDP_OAM_FRONT_BASE) as number) >>> 0;
+		const capacity = (runtime.memory.readValue(IO_VDP_OAM_CAPACITY) as number) >>> 0;
+		const entryWords = (runtime.memory.readValue(IO_VDP_OAM_ENTRY_WORDS) as number) >>> 0;
+		const frontEnd = frontBase + capacity * entryWords * 4;
+		const writeEnd = address + bytes.length;
+		if (bytes.length > 0 && address < frontEnd && writeEnd > frontBase) {
+			throw new Error('mem_write cannot target the active front OAM bank.');
+		}
+		runtime.memory.writeBytes(address, bytes);
 		out.length = 0;
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'type', createNativeFunction('type', (args, out) => {

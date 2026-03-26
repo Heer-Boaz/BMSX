@@ -1,7 +1,7 @@
 import { $ } from '../core/engine_core';
 import { taskGate } from '../core/taskgate';
 import * as SkyboxPipeline from '../render/3d/skybox_pipeline';
-import type { SkyboxImageIds, color } from '../render/shared/render_types';
+import type { OamEntry, SkyboxImageIds, color } from '../render/shared/render_types';
 import type { RomAsset, RuntimeAssets } from '../rompack/rompack';
 import { tokenKeyFromAsset, tokenKeyFromId } from '../rompack/asset_tokens';
 import {
@@ -14,12 +14,25 @@ import {
 import type { RawAssetSource } from '../rompack/asset_source';
 import {
 	IO_VDP_DITHER,
+	IO_VDP_OAM_BACK_BASE,
+	IO_VDP_OAM_BACK_COUNT,
+	IO_VDP_OAM_CAPACITY,
+	IO_VDP_OAM_CMD,
+	IO_VDP_OAM_COMMIT_SEQ,
+	IO_VDP_OAM_ENTRY_WORDS,
+	IO_VDP_OAM_FRONT_BASE,
+	IO_VDP_OAM_FRONT_COUNT,
+	IO_VDP_OAM_READ_SOURCE,
+	OAM_CMD_CLEAR_BACK,
+	OAM_CMD_SWAP,
 	IO_VDP_PRIMARY_ATLAS_ID,
 	IO_VDP_RD_MODE,
 	IO_VDP_RD_SURFACE,
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_SECONDARY_ATLAS_ID,
+	VDP_OAM_READ_SOURCE_BACK,
+	VDP_OAM_READ_SOURCE_FRONT,
 	VDP_ATLAS_ID_NONE,
 	VDP_RD_MODE_RGBA8888,
 	VDP_RD_STATUS_OVERFLOW,
@@ -43,7 +56,12 @@ import {
 	VRAM_SKYBOX_POSY_BASE,
 	VRAM_SKYBOX_POSZ_BASE,
 	VRAM_STAGING_BASE,
-	VRAM_STAGING_SIZE
+	VRAM_STAGING_SIZE,
+	VDP_OAM_BACK_BASE,
+	VDP_OAM_ENTRY_BYTES,
+	VDP_OAM_ENTRY_WORDS as VDP_OAM_ENTRY_WORD_COUNT,
+	VDP_OAM_FRONT_BASE,
+	VDP_OAM_SLOT_COUNT,
 } from './memory_map';
 
 const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const;
@@ -440,6 +458,8 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private skyboxFaceIds: SkyboxImageIds | null = null;
 	private lastDitherType = 0;
 	private imgDecController: ImgDecController | null = null;
+	private readonly oamWordScratch = new ArrayBuffer(4);
+	private readonly oamWordView = new DataView(this.oamWordScratch);
 
 	public constructor(
 		private readonly memory: Memory,
@@ -558,6 +578,15 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	public initializeRegisters(): void {
 		const dither = 0;
 		this.memory.writeValue(IO_VDP_DITHER, dither);
+		this.memory.writeValue(IO_VDP_OAM_FRONT_BASE, VDP_OAM_FRONT_BASE);
+		this.memory.writeValue(IO_VDP_OAM_BACK_BASE, VDP_OAM_BACK_BASE);
+		this.memory.writeValue(IO_VDP_OAM_FRONT_COUNT, 0);
+		this.memory.writeValue(IO_VDP_OAM_BACK_COUNT, 0);
+		this.memory.writeValue(IO_VDP_OAM_CAPACITY, VDP_OAM_SLOT_COUNT);
+		this.memory.writeValue(IO_VDP_OAM_ENTRY_WORDS, VDP_OAM_ENTRY_WORD_COUNT);
+		this.memory.writeValue(IO_VDP_OAM_READ_SOURCE, VDP_OAM_READ_SOURCE_FRONT);
+		this.memory.writeValue(IO_VDP_OAM_COMMIT_SEQ, 0);
+		this.memory.writeValue(IO_VDP_OAM_CMD, 0);
 		this.lastDitherType = dither;
 		$.view.dither_type = dither;
 	}
@@ -575,6 +604,17 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (primary !== this.slotAtlasIds[0] || secondary !== this.slotAtlasIds[1]) {
 			this.applyAtlasSlotMapping(primary, secondary);
 		}
+		const command = (this.memory.readValue(IO_VDP_OAM_CMD) as number) >>> 0;
+		if (command !== 0) {
+			if (command === OAM_CMD_SWAP) {
+				this.swapOamBuffers();
+			} else if (command === OAM_CMD_CLEAR_BACK) {
+				this.clearBackOamBuffer();
+			} else {
+				throw new Error(`[BmsxVDP] Unknown OAM command ${command}.`);
+			}
+			this.memory.writeValue(IO_VDP_OAM_CMD, 0);
+		}
 	}
 
 	public setDitherType(value: number): void {
@@ -588,6 +628,138 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	public getSkyboxFaceIds(): SkyboxImageIds | null {
 		return this.skyboxFaceIds;
+	}
+
+	private floatToBits(value: number): number {
+		this.oamWordView.setFloat32(0, value, true);
+		return this.oamWordView.getUint32(0, true);
+	}
+
+	private bitsToFloat(value: number): number {
+		this.oamWordView.setUint32(0, value >>> 0, true);
+		return this.oamWordView.getFloat32(0, true);
+	}
+
+	private readActiveOamHeader(): { base: number; count: number } {
+		const source = this.memory.readValue(IO_VDP_OAM_READ_SOURCE) as number;
+		if (source === VDP_OAM_READ_SOURCE_BACK) {
+			return {
+				base: this.memory.readValue(IO_VDP_OAM_BACK_BASE) as number,
+				count: this.memory.readValue(IO_VDP_OAM_BACK_COUNT) as number,
+			};
+		}
+		return {
+			base: this.memory.readValue(IO_VDP_OAM_FRONT_BASE) as number,
+			count: this.memory.readValue(IO_VDP_OAM_FRONT_COUNT) as number,
+		};
+	}
+
+	private writeOamEntry(addr: number, entry: OamEntry): void {
+		this.memory.writeU32(addr + 0, entry.atlasId >>> 0);
+		this.memory.writeU32(addr + 4, entry.flags >>> 0);
+		this.memory.writeU32(addr + 8, entry.assetHandle >>> 0);
+		this.memory.writeU32(addr + 12, this.floatToBits(entry.x));
+		this.memory.writeU32(addr + 16, this.floatToBits(entry.y));
+		this.memory.writeU32(addr + 20, this.floatToBits(entry.z));
+		this.memory.writeU32(addr + 24, this.floatToBits(entry.w));
+		this.memory.writeU32(addr + 28, this.floatToBits(entry.h));
+		this.memory.writeU32(addr + 32, this.floatToBits(entry.u0));
+		this.memory.writeU32(addr + 36, this.floatToBits(entry.v0));
+		this.memory.writeU32(addr + 40, this.floatToBits(entry.u1));
+		this.memory.writeU32(addr + 44, this.floatToBits(entry.v1));
+		this.memory.writeU32(addr + 48, this.floatToBits(entry.r));
+		this.memory.writeU32(addr + 52, this.floatToBits(entry.g));
+		this.memory.writeU32(addr + 56, this.floatToBits(entry.b));
+		this.memory.writeU32(addr + 60, this.floatToBits(entry.a));
+		this.memory.writeU32(addr + 64, entry.layer >>> 0);
+		this.memory.writeU32(addr + 68, this.floatToBits(entry.parallaxWeight));
+	}
+
+	private readOamEntry(addr: number): OamEntry {
+		return {
+			atlasId: this.memory.readU32(addr + 0),
+			flags: this.memory.readU32(addr + 4),
+			assetHandle: this.memory.readU32(addr + 8),
+			x: this.bitsToFloat(this.memory.readU32(addr + 12)),
+			y: this.bitsToFloat(this.memory.readU32(addr + 16)),
+			z: this.bitsToFloat(this.memory.readU32(addr + 20)),
+			w: this.bitsToFloat(this.memory.readU32(addr + 24)),
+			h: this.bitsToFloat(this.memory.readU32(addr + 28)),
+			u0: this.bitsToFloat(this.memory.readU32(addr + 32)),
+			v0: this.bitsToFloat(this.memory.readU32(addr + 36)),
+			u1: this.bitsToFloat(this.memory.readU32(addr + 40)),
+			v1: this.bitsToFloat(this.memory.readU32(addr + 44)),
+			r: this.bitsToFloat(this.memory.readU32(addr + 48)),
+			g: this.bitsToFloat(this.memory.readU32(addr + 52)),
+			b: this.bitsToFloat(this.memory.readU32(addr + 56)),
+			a: this.bitsToFloat(this.memory.readU32(addr + 60)),
+			layer: this.memory.readU32(addr + 64) as 0 | 1 | 2,
+			parallaxWeight: this.bitsToFloat(this.memory.readU32(addr + 68)),
+		};
+	}
+
+	public submitOamEntry(entry: OamEntry): void {
+		const backCount = this.memory.readValue(IO_VDP_OAM_BACK_COUNT) as number;
+		const capacity = this.memory.readValue(IO_VDP_OAM_CAPACITY) as number;
+		if (backCount >= capacity) {
+			throw new Error(`[BmsxVDP] OAM back buffer overflow (${capacity} slots).`);
+		}
+		const base = this.memory.readValue(IO_VDP_OAM_BACK_BASE) as number;
+		this.writeOamEntry(base + backCount * VDP_OAM_ENTRY_BYTES, entry);
+		this.memory.writeValue(IO_VDP_OAM_BACK_COUNT, backCount + 1);
+	}
+
+	public clearBackOamBuffer(): void {
+		this.memory.writeValue(IO_VDP_OAM_BACK_COUNT, 0);
+	}
+
+	public swapOamBuffers(): void {
+		const frontBase = this.memory.readValue(IO_VDP_OAM_FRONT_BASE) as number;
+		const backBase = this.memory.readValue(IO_VDP_OAM_BACK_BASE) as number;
+		const backCount = this.memory.readValue(IO_VDP_OAM_BACK_COUNT) as number;
+		const commitSeq = this.memory.readValue(IO_VDP_OAM_COMMIT_SEQ) as number;
+		this.memory.writeValue(IO_VDP_OAM_FRONT_BASE, backBase);
+		this.memory.writeValue(IO_VDP_OAM_BACK_BASE, frontBase);
+		this.memory.writeValue(IO_VDP_OAM_FRONT_COUNT, backCount);
+		this.memory.writeValue(IO_VDP_OAM_BACK_COUNT, 0);
+		this.memory.writeValue(IO_VDP_OAM_COMMIT_SEQ, commitSeq + 1);
+		this.memory.writeValue(IO_VDP_OAM_READ_SOURCE, VDP_OAM_READ_SOURCE_FRONT);
+	}
+
+	public setOamReadSource(source: 'front' | 'back'): void {
+		this.memory.writeValue(IO_VDP_OAM_READ_SOURCE, source === 'back' ? VDP_OAM_READ_SOURCE_BACK : VDP_OAM_READ_SOURCE_FRONT);
+	}
+
+	public getOamFrontCount(): number {
+		return this.memory.readValue(IO_VDP_OAM_FRONT_COUNT) as number;
+	}
+
+	public getOamBackCount(): number {
+		return this.memory.readValue(IO_VDP_OAM_BACK_COUNT) as number;
+	}
+
+	public hasFrontOamContent(): boolean {
+		return this.getOamFrontCount() > 0;
+	}
+
+	public hasBackOamContent(): boolean {
+		return this.getOamBackCount() > 0;
+	}
+
+	public beginSpriteOamRead(): number {
+		this.syncRegisters();
+		return this.readActiveOamHeader().count;
+	}
+
+	public forEachOamEntry(fn: (entry: OamEntry, index: number) => void): void {
+		this.syncRegisters();
+		const { base, count } = this.readActiveOamHeader();
+		for (let index = 0; index < count; index += 1) {
+			const entry = this.readOamEntry(base + index * VDP_OAM_ENTRY_BYTES);
+			if (entry.flags !== 0) {
+				fn(entry, index);
+			}
+		}
 	}
 
 	public commitViewSnapshot(): void {

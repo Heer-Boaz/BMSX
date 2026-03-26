@@ -13,7 +13,6 @@ constexpr uint32_t ASSET_PAGE_SHIFT = 12;
 constexpr uint32_t ASSET_PAGE_SIZE = 1u << ASSET_PAGE_SHIFT;
 constexpr uint32_t ASSET_TYPE_IMAGE = 1;
 constexpr uint32_t ASSET_TYPE_AUDIO = 2;
-constexpr uint32_t ASSET_FLAG_VIEW = 1u << 1;
 constexpr uint64_t ASSET_TOKEN_OFFSET_BASIS = 0xcbf29ce484222325ull;
 constexpr uint64_t ASSET_TOKEN_PRIME = 0x100000001b3ull;
 
@@ -506,12 +505,39 @@ void Memory::restoreAssetMemory(const u8* data, size_t size) {
 	markAllAssetsDirty();
 }
 
+u32 Memory::resolveAssetHandle(const std::string& id) const {
+	const auto direct = m_assetIndexById.find(id);
+	if (direct != m_assetIndexById.end()) {
+		return static_cast<u32>(direct->second);
+	}
+	const uint64_t token = hashAssetId(id);
+	const auto hashed = m_assetIndexByToken.find(token);
+	if (hashed == m_assetIndexByToken.end()) {
+		throw std::runtime_error("[Memory] Asset '" + id + "' not registered in memory.");
+	}
+	return static_cast<u32>(hashed->second);
+}
+
+const Memory::AssetEntry& Memory::getAssetEntryByHandle(size_t handle) const {
+	if (handle >= m_assetEntries.size()) {
+		throw std::runtime_error("[Memory] Asset handle out of range: " + std::to_string(handle) + ".");
+	}
+	return m_assetEntries[handle];
+}
+
+Memory::AssetEntry& Memory::getAssetEntryByHandle(size_t handle) {
+	if (handle >= m_assetEntries.size()) {
+		throw std::runtime_error("[Memory] Asset handle out of range: " + std::to_string(handle) + ".");
+	}
+	return m_assetEntries[handle];
+}
+
 const Memory::AssetEntry& Memory::getAssetEntry(const std::string& id) const {
-	return m_assetEntries.at(m_assetIndexById.at(id));
+	return getAssetEntryByHandle(resolveAssetHandle(id));
 }
 
 Memory::AssetEntry& Memory::getAssetEntry(const std::string& id) {
-	return m_assetEntries.at(m_assetIndexById.at(id));
+	return getAssetEntryByHandle(resolveAssetHandle(id));
 }
 
 const u8* Memory::getImagePixels(const AssetEntry& entry) const {

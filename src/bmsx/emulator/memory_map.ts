@@ -18,6 +18,11 @@ export const DEFAULT_RAM_SIZE = 0x08000000; // 128 MB
 
 export const IO_WORD_SIZE = 4;
 export const IO_REGION_SIZE = 0x00004000; // 16 KB
+export const VDP_OAM_SLOT_COUNT = 5000;
+export const VDP_OAM_ENTRY_WORDS = 18;
+export const VDP_OAM_ENTRY_BYTES = VDP_OAM_ENTRY_WORDS * IO_WORD_SIZE;
+export const VDP_OAM_BUFFER_SIZE = VDP_OAM_SLOT_COUNT * VDP_OAM_ENTRY_BYTES;
+export const VDP_OAM_RAM_SIZE = VDP_OAM_BUFFER_SIZE * 2;
 
 export const DEFAULT_STRING_HANDLE_COUNT = 0x40000; // 256k handles
 export const STRING_HANDLE_ENTRY_SIZE = 16;
@@ -36,7 +41,9 @@ export let VRAM_SYSTEM_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 export let VRAM_STAGING_SIZE = DEFAULT_VRAM_STAGING_SIZE;
 
 export let IO_BASE = RAM_BASE;
-export let STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
+export let VDP_OAM_FRONT_BASE = IO_BASE + IO_REGION_SIZE;
+export let VDP_OAM_BACK_BASE = VDP_OAM_FRONT_BASE + VDP_OAM_BUFFER_SIZE;
+export let STRING_HANDLE_TABLE_BASE = VDP_OAM_BACK_BASE + VDP_OAM_BUFFER_SIZE;
 export let STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
 export let ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
 export let ASSET_TABLE_BASE = ASSET_RAM_BASE;
@@ -118,7 +125,9 @@ function recomputeMemoryLayout(config: {
 	VRAM_STAGING_SIZE = config.stagingBytes;
 
 	IO_BASE = RAM_BASE;
-	STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
+	VDP_OAM_FRONT_BASE = IO_BASE + IO_REGION_SIZE;
+	VDP_OAM_BACK_BASE = VDP_OAM_FRONT_BASE + VDP_OAM_BUFFER_SIZE;
+	STRING_HANDLE_TABLE_BASE = VDP_OAM_BACK_BASE + VDP_OAM_BUFFER_SIZE;
 	STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
 	ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
 	ASSET_TABLE_BASE = ASSET_RAM_BASE;
@@ -161,7 +170,7 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 		})();
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
 	const defaultAssetDataBytes = DEFAULT_RAM_SIZE
-		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes);
+		- (IO_REGION_SIZE + VDP_OAM_RAM_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes);
 	const assetDataBytes = resolveNonNegativeInteger(specs?.asset_data_bytes ?? defaultAssetDataBytes, 'asset_data_bytes');
 	const computedRamBytes = IO_REGION_SIZE
 		+ stringHandleTableBytes
