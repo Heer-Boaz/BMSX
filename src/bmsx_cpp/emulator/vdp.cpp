@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -30,6 +31,24 @@ constexpr int VRAM_GARBAGE_FORCE_T0 = 120;
 constexpr int VRAM_GARBAGE_FORCE_T1 = 280;
 constexpr int VRAM_GARBAGE_FORCE_T2 = 480;
 constexpr int VRAM_GARBAGE_FORCE_T_DEN = 1000;
+constexpr int PAT_TRACE_SUBMIT_LOG_LIMIT = 48;
+constexpr int PAT_TRACE_SWAP_LOG_LIMIT = 16;
+constexpr int PAT_TRACE_READ_LOG_LIMIT = 24;
+constexpr int PAT_TRACE_ENTRY_LOG_LIMIT = 48;
+constexpr int ENGINE_ATLAS_TRACE_LOG_LIMIT = 24;
+int g_patTraceSubmitLogCount = 0;
+int g_patTraceSwapLogCount = 0;
+int g_patTraceReadLogCount = 0;
+int g_patTraceEntryLogCount = 0;
+int g_engineAtlasTraceLogCount = 0;
+
+void logEngineAtlasTrace(const std::string& message) {
+	if (g_engineAtlasTraceLogCount >= ENGINE_ATLAS_TRACE_LOG_LIMIT) {
+		return;
+	}
+	std::cout << "[EngineAtlasTrace][C++] " << message << std::endl;
+	++g_engineAtlasTraceLogCount;
+}
 
 struct OctaveSpec {
 	uint32_t shift;
@@ -300,6 +319,14 @@ uint32_t VDP::readOamReadSource() const {
 	return static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_READ_SOURCE)));
 }
 
+uint32_t VDP::activeBgMapBase() const {
+	return readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? m_bgMapBackBase : m_bgMapFrontBase;
+}
+
+uint32_t VDP::activePatBase() const {
+	return readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? m_patBackBase : m_patFrontBase;
+}
+
 void VDP::writeOamEntry(uint32_t addr, const OamEntry& entry) {
 	m_memory.writeU32(addr + 0u, static_cast<uint32_t>(entry.atlasId));
 	m_memory.writeU32(addr + 4u, entry.flags);
@@ -344,6 +371,116 @@ OamEntry VDP::readOamEntry(uint32_t addr) const {
 	return entry;
 }
 
+void VDP::writePatHeader(uint32_t base, const PatHeader& header) {
+	m_memory.writeU32(base + 0u, header.flags);
+	m_memory.writeU32(base + 4u, header.count);
+}
+
+PatHeader VDP::readPatHeader(uint32_t base) const {
+	PatHeader header;
+	header.flags = m_memory.readU32(base + 0u);
+	header.count = m_memory.readU32(base + 4u);
+	return header;
+}
+
+void VDP::writePatEntry(uint32_t addr, const PatEntry& entry) {
+	m_memory.writeU32(addr + 0u, static_cast<uint32_t>(entry.atlasId));
+	m_memory.writeU32(addr + 4u, entry.flags);
+	m_memory.writeU32(addr + 8u, entry.assetHandle);
+	m_memory.writeU32(addr + 12u, static_cast<uint32_t>(entry.layer));
+	m_memory.writeU32(addr + 16u, floatToBits(entry.x));
+	m_memory.writeU32(addr + 20u, floatToBits(entry.y));
+	m_memory.writeU32(addr + 24u, floatToBits(entry.z));
+	m_memory.writeU32(addr + 28u, floatToBits(entry.glyphW));
+	m_memory.writeU32(addr + 32u, floatToBits(entry.glyphH));
+	m_memory.writeU32(addr + 36u, floatToBits(entry.bgW));
+	m_memory.writeU32(addr + 40u, floatToBits(entry.bgH));
+	m_memory.writeU32(addr + 44u, floatToBits(entry.u0));
+	m_memory.writeU32(addr + 48u, floatToBits(entry.v0));
+	m_memory.writeU32(addr + 52u, floatToBits(entry.u1));
+	m_memory.writeU32(addr + 56u, floatToBits(entry.v1));
+	m_memory.writeU32(addr + 60u, entry.fgColor);
+	m_memory.writeU32(addr + 64u, entry.bgColor);
+}
+
+PatEntry VDP::readPatEntry(uint32_t addr) const {
+	PatEntry entry;
+	entry.atlasId = static_cast<i32>(m_memory.readU32(addr + 0u));
+	entry.flags = m_memory.readU32(addr + 4u);
+	entry.assetHandle = m_memory.readU32(addr + 8u);
+	entry.layer = static_cast<OamLayer>(m_memory.readU32(addr + 12u));
+	entry.x = bitsToFloat(m_memory.readU32(addr + 16u));
+	entry.y = bitsToFloat(m_memory.readU32(addr + 20u));
+	entry.z = bitsToFloat(m_memory.readU32(addr + 24u));
+	entry.glyphW = bitsToFloat(m_memory.readU32(addr + 28u));
+	entry.glyphH = bitsToFloat(m_memory.readU32(addr + 32u));
+	entry.bgW = bitsToFloat(m_memory.readU32(addr + 36u));
+	entry.bgH = bitsToFloat(m_memory.readU32(addr + 40u));
+	entry.u0 = bitsToFloat(m_memory.readU32(addr + 44u));
+	entry.v0 = bitsToFloat(m_memory.readU32(addr + 48u));
+	entry.u1 = bitsToFloat(m_memory.readU32(addr + 52u));
+	entry.v1 = bitsToFloat(m_memory.readU32(addr + 56u));
+	entry.fgColor = m_memory.readU32(addr + 60u);
+	entry.bgColor = m_memory.readU32(addr + 64u);
+	return entry;
+}
+
+void VDP::writeBgMapHeader(uint32_t base, const BgMapHeader& header) {
+	m_memory.writeU32(base + 0u, header.flags);
+	m_memory.writeU32(base + 4u, static_cast<uint32_t>(header.layer));
+	m_memory.writeU32(base + 8u, header.cols);
+	m_memory.writeU32(base + 12u, header.rows);
+	m_memory.writeU32(base + 16u, header.tileW);
+	m_memory.writeU32(base + 20u, header.tileH);
+	m_memory.writeU32(base + 24u, floatToBits(header.originX));
+	m_memory.writeU32(base + 28u, floatToBits(header.originY));
+	m_memory.writeU32(base + 32u, floatToBits(header.scrollX));
+	m_memory.writeU32(base + 36u, floatToBits(header.scrollY));
+	m_memory.writeU32(base + 40u, floatToBits(header.z));
+}
+
+BgMapHeader VDP::readBgMapHeader(uint32_t base) const {
+	BgMapHeader header;
+	header.flags = m_memory.readU32(base + 0u);
+	header.layer = static_cast<OamLayer>(m_memory.readU32(base + 4u));
+	header.cols = m_memory.readU32(base + 8u);
+	header.rows = m_memory.readU32(base + 12u);
+	header.tileW = m_memory.readU32(base + 16u);
+	header.tileH = m_memory.readU32(base + 20u);
+	header.originX = bitsToFloat(m_memory.readU32(base + 24u));
+	header.originY = bitsToFloat(m_memory.readU32(base + 28u));
+	header.scrollX = bitsToFloat(m_memory.readU32(base + 32u));
+	header.scrollY = bitsToFloat(m_memory.readU32(base + 36u));
+	header.z = bitsToFloat(m_memory.readU32(base + 40u));
+	return header;
+}
+
+void VDP::writeBgMapEntry(uint32_t addr, const BgMapEntry& entry) {
+	m_memory.writeU32(addr + 0u, static_cast<uint32_t>(entry.atlasId));
+	m_memory.writeU32(addr + 4u, entry.flags);
+	m_memory.writeU32(addr + 8u, entry.assetHandle);
+	m_memory.writeU32(addr + 12u, floatToBits(entry.u0));
+	m_memory.writeU32(addr + 16u, floatToBits(entry.v0));
+	m_memory.writeU32(addr + 20u, floatToBits(entry.u1));
+	m_memory.writeU32(addr + 24u, floatToBits(entry.v1));
+}
+
+BgMapEntry VDP::readBgMapEntry(uint32_t addr) const {
+	BgMapEntry entry;
+	entry.atlasId = static_cast<i32>(m_memory.readU32(addr + 0u));
+	entry.flags = m_memory.readU32(addr + 4u);
+	entry.assetHandle = m_memory.readU32(addr + 8u);
+	entry.u0 = bitsToFloat(m_memory.readU32(addr + 12u));
+	entry.v0 = bitsToFloat(m_memory.readU32(addr + 16u));
+	entry.u1 = bitsToFloat(m_memory.readU32(addr + 20u));
+	entry.v1 = bitsToFloat(m_memory.readU32(addr + 24u));
+	return entry;
+}
+
+f32 VDP::unpackColorChannel(uint32_t packed, uint32_t shift) const {
+	return static_cast<f32>((packed >> shift) & 0xffu) / 255.0f;
+}
+
 void VDP::submitOamEntry(const OamEntry& entry) {
 	const uint32_t backCount = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_BACK_COUNT)));
 	const uint32_t capacity = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_CAPACITY)));
@@ -358,6 +495,66 @@ void VDP::clearBackOamBuffer() {
 	m_memory.writeValue(IO_VDP_OAM_BACK_COUNT, valueNumber(0.0));
 }
 
+void VDP::clearBackPatBuffer() {
+	writePatHeader(m_patBackBase, PatHeader{0u, 0u});
+}
+
+void VDP::submitPatEntry(const PatEntry& entry) {
+	const PatHeader header = readPatHeader(m_patBackBase);
+	if (header.count >= VDP_PAT_CAPACITY) {
+		throw BMSX_RUNTIME_ERROR("[VDP] PAT back buffer overflow.");
+	}
+	if (g_patTraceSubmitLogCount < PAT_TRACE_SUBMIT_LOG_LIMIT) {
+		const std::string assetId = entry.assetHandle == 0u ? "none" : m_memory.getAssetEntryByHandle(entry.assetHandle).id;
+		std::cout << "[PATTrace][C++] submit backIndex=" << header.count
+			<< " asset=" << assetId
+			<< " atlas=" << entry.atlasId
+			<< " layer=" << static_cast<int>(entry.layer)
+			<< " pos=" << entry.x << "," << entry.y << "," << entry.z
+			<< " glyph=" << entry.glyphW << "x" << entry.glyphH
+			<< " uv=" << entry.u0 << "," << entry.v0 << "," << entry.u1 << "," << entry.v1
+			<< " fg=0x" << std::hex << entry.fgColor << std::dec
+			<< std::endl;
+		++g_patTraceSubmitLogCount;
+	}
+	writePatEntry(m_patBackBase + VDP_PAT_HEADER_BYTES + header.count * VDP_PAT_ENTRY_BYTES, entry);
+	writePatHeader(m_patBackBase, PatHeader{PAT_FLAG_ENABLED, header.count + 1u});
+}
+
+void VDP::clearBackBgMap() {
+	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
+		const uint32_t base = m_bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+		writeBgMapHeader(base, BgMapHeader{});
+	}
+}
+
+void VDP::beginBgMapLayerWrite(i32 layerIndex, const BgMapHeader& header) {
+	if (layerIndex < 0 || layerIndex >= static_cast<i32>(VDP_BGMAP_LAYER_COUNT)) {
+		throw BMSX_RUNTIME_ERROR("[VDP] BGMap layer out of range.");
+	}
+	if (header.cols * header.rows > VDP_BGMAP_TILE_CAPACITY) {
+		throw BMSX_RUNTIME_ERROR("[VDP] BGMap tile capacity exceeded.");
+	}
+	const uint32_t base = m_bgMapBackBase + static_cast<uint32_t>(layerIndex) * VDP_BGMAP_LAYER_SIZE;
+	writeBgMapHeader(base, header);
+	for (uint32_t tileIndex = 0; tileIndex < VDP_BGMAP_TILE_CAPACITY; ++tileIndex) {
+		m_memory.writeU32(base + VDP_BGMAP_HEADER_BYTES + tileIndex * VDP_BGMAP_ENTRY_BYTES + 4u, 0u);
+	}
+}
+
+void VDP::submitBgMapTile(i32 layerIndex, i32 col, i32 row, const BgMapEntry& entry) {
+	if (layerIndex < 0 || layerIndex >= static_cast<i32>(VDP_BGMAP_LAYER_COUNT)) {
+		throw BMSX_RUNTIME_ERROR("[VDP] BGMap layer out of range.");
+	}
+	const uint32_t base = m_bgMapBackBase + static_cast<uint32_t>(layerIndex) * VDP_BGMAP_LAYER_SIZE;
+	const BgMapHeader header = readBgMapHeader(base);
+	if (col < 0 || col >= static_cast<i32>(header.cols) || row < 0 || row >= static_cast<i32>(header.rows)) {
+		throw BMSX_RUNTIME_ERROR("[VDP] BGMap tile outside configured layer bounds.");
+	}
+	const uint32_t index = static_cast<uint32_t>(row) * header.cols + static_cast<uint32_t>(col);
+	writeBgMapEntry(base + VDP_BGMAP_HEADER_BYTES + index * VDP_BGMAP_ENTRY_BYTES, entry);
+}
+
 void VDP::swapOamBuffers() {
 	const uint32_t frontBase = readOamFrontBase();
 	const uint32_t backBase = readOamBackBase();
@@ -369,6 +566,26 @@ void VDP::swapOamBuffers() {
 	m_memory.writeValue(IO_VDP_OAM_BACK_COUNT, valueNumber(0.0));
 	m_memory.writeValue(IO_VDP_OAM_COMMIT_SEQ, valueNumber(static_cast<double>(commitSeq + 1u)));
 	m_memory.writeValue(IO_VDP_OAM_READ_SOURCE, valueNumber(static_cast<double>(VDP_OAM_READ_SOURCE_FRONT)));
+}
+
+void VDP::swapPatBuffers() {
+	if (g_patTraceSwapLogCount < PAT_TRACE_SWAP_LOG_LIMIT) {
+		const PatHeader frontHeader = readPatHeader(m_patFrontBase);
+		const PatHeader backHeader = readPatHeader(m_patBackBase);
+		std::cout << "[PATTrace][C++] swap frontBase=" << m_patFrontBase
+			<< " frontCount=" << frontHeader.count
+			<< " backBase=" << m_patBackBase
+			<< " backCount=" << backHeader.count
+			<< std::endl;
+		++g_patTraceSwapLogCount;
+	}
+	std::swap(m_patFrontBase, m_patBackBase);
+	clearBackPatBuffer();
+}
+
+void VDP::swapBgMapBuffers() {
+	std::swap(m_bgMapFrontBase, m_bgMapBackBase);
+	clearBackBgMap();
 }
 
 void VDP::setOamReadSource(bool useBackBuffer) {
@@ -394,9 +611,89 @@ bool VDP::hasBackOamContent() const {
 	return backOamCount() > 0;
 }
 
+bool VDP::hasFront2dContent() const {
+	if (frontOamCount() > 0) {
+		return true;
+	}
+	if (readPatHeader(m_patFrontBase).count > 0u) {
+		return true;
+	}
+	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
+		const BgMapHeader header = readBgMapHeader(m_bgMapFrontBase + layerIndex * VDP_BGMAP_LAYER_SIZE);
+		if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) != 0u && header.cols * header.rows > 0u) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool VDP::hasBack2dContent() const {
+	if (backOamCount() > 0) {
+		return true;
+	}
+	if (readPatHeader(m_patBackBase).count > 0u) {
+		return true;
+	}
+	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
+		const BgMapHeader header = readBgMapHeader(m_bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE);
+		if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) != 0u && header.cols * header.rows > 0u) {
+			return true;
+		}
+	}
+	return false;
+}
+
 i32 VDP::beginSpriteOamRead() const {
 	const_cast<VDP*>(this)->syncRegisters();
 	return readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? backOamCount() : frontOamCount();
+}
+
+i32 VDP::begin2dRead() const {
+	const_cast<VDP*>(this)->syncRegisters();
+	const i32 oamCount = beginSpriteOamRead();
+	i32 count = oamCount;
+	const uint32_t patBase = activePatBase();
+	const PatHeader patHeader = readPatHeader(patBase);
+	i32 patCount = 0;
+	if ((patHeader.flags & PAT_FLAG_ENABLED) != 0u) {
+		for (uint32_t patIndex = 0; patIndex < patHeader.count; ++patIndex) {
+			const PatEntry entry = readPatEntry(patBase + VDP_PAT_HEADER_BYTES + patIndex * VDP_PAT_ENTRY_BYTES);
+			if ((entry.flags & PAT_FLAG_ENABLED) == 0u) {
+				continue;
+			}
+			++patCount;
+		}
+		count += patCount;
+	}
+	const uint32_t bgMapBase = activeBgMapBase();
+	i32 bgCount = 0;
+	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
+		const BgMapHeader header = readBgMapHeader(bgMapBase + layerIndex * VDP_BGMAP_LAYER_SIZE);
+		if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) != 0u) {
+			const uint32_t cellCount = header.cols * header.rows;
+			i32 layerEnabledCount = 0;
+			for (uint32_t cellIndex = 0; cellIndex < cellCount; ++cellIndex) {
+				const BgMapEntry tile = readBgMapEntry(bgMapBase + layerIndex * VDP_BGMAP_LAYER_SIZE + VDP_BGMAP_HEADER_BYTES + cellIndex * VDP_BGMAP_ENTRY_BYTES);
+				if ((tile.flags & BGMAP_TILE_FLAG_ENABLED) == 0u) {
+					continue;
+				}
+				++layerEnabledCount;
+			}
+			bgCount += layerEnabledCount;
+			count += layerEnabledCount;
+		}
+	}
+	if (g_patTraceReadLogCount < PAT_TRACE_READ_LOG_LIMIT) {
+		std::cout << "[PATTrace][C++] begin2dRead source=" << (readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? "back" : "front")
+			<< " oamCount=" << oamCount
+			<< " patBase=" << patBase
+			<< " patCount=" << patCount
+			<< " bgCount=" << bgCount
+			<< " total=" << count
+			<< std::endl;
+		++g_patTraceReadLogCount;
+	}
+	return count;
 }
 
 void VDP::forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn) const {
@@ -406,6 +703,95 @@ void VDP::forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn
 		const OamEntry entry = readOamEntry(base + static_cast<uint32_t>(index) * VDP_OAM_ENTRY_BYTES);
 		if (entry.flags != 0u) {
 			fn(entry, index);
+		}
+	}
+}
+
+void VDP::forEach2dEntry(const std::function<void(const OamEntry&, size_t)>& fn) const {
+	const_cast<VDP*>(this)->syncRegisters();
+	size_t index = 0;
+	OamEntry scratch{};
+	scratch.flags = OAM_FLAG_ENABLED;
+	scratch.r = 1.0f;
+	scratch.g = 1.0f;
+	scratch.b = 1.0f;
+	scratch.a = 1.0f;
+	scratch.layer = OamLayer::World;
+
+	const uint32_t bgMapBase = activeBgMapBase();
+	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
+		const uint32_t layerBase = bgMapBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+		const BgMapHeader header = readBgMapHeader(layerBase);
+		if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) == 0u) {
+			continue;
+		}
+		const uint32_t cellCount = header.cols * header.rows;
+		for (uint32_t cellIndex = 0; cellIndex < cellCount; ++cellIndex) {
+			const BgMapEntry tile = readBgMapEntry(layerBase + VDP_BGMAP_HEADER_BYTES + cellIndex * VDP_BGMAP_ENTRY_BYTES);
+			if ((tile.flags & BGMAP_TILE_FLAG_ENABLED) == 0u) {
+				continue;
+			}
+			const uint32_t col = header.cols == 0u ? 0u : (cellIndex % header.cols);
+			const uint32_t row = header.cols == 0u ? 0u : (cellIndex / header.cols);
+			scratch.atlasId = tile.atlasId;
+			scratch.assetHandle = tile.assetHandle;
+			scratch.x = header.originX + static_cast<f32>(col) * static_cast<f32>(header.tileW) - header.scrollX;
+			scratch.y = header.originY + static_cast<f32>(row) * static_cast<f32>(header.tileH) - header.scrollY;
+			scratch.z = header.z;
+			scratch.w = static_cast<f32>(header.tileW);
+			scratch.h = static_cast<f32>(header.tileH);
+			scratch.u0 = tile.u0;
+			scratch.v0 = tile.v0;
+			scratch.u1 = tile.u1;
+			scratch.v1 = tile.v1;
+			scratch.layer = header.layer;
+			scratch.parallaxWeight = 0.0f;
+			fn(scratch, index++);
+		}
+	}
+	const size_t oamBaseIndex = index;
+	forEachOamEntry([&](const OamEntry& entry, size_t oamIndex) {
+		fn(entry, oamBaseIndex + oamIndex);
+	});
+	index += static_cast<size_t>(beginSpriteOamRead());
+
+	const uint32_t patBase = activePatBase();
+	const PatHeader patHeader = readPatHeader(patBase);
+	if ((patHeader.flags & PAT_FLAG_ENABLED) != 0u) {
+		for (uint32_t patIndex = 0; patIndex < patHeader.count; ++patIndex) {
+			const PatEntry entry = readPatEntry(patBase + VDP_PAT_HEADER_BYTES + patIndex * VDP_PAT_ENTRY_BYTES);
+			if ((entry.flags & PAT_FLAG_ENABLED) == 0u) {
+				continue;
+			}
+			if (g_patTraceEntryLogCount < PAT_TRACE_ENTRY_LOG_LIMIT) {
+				std::cout << "[PATTrace][C++] read patIndex=" << patIndex
+					<< " handle=" << entry.assetHandle
+					<< " atlas=" << entry.atlasId
+					<< " layer=" << static_cast<int>(entry.layer)
+					<< " pos=" << entry.x << "," << entry.y << "," << entry.z
+					<< " glyph=" << entry.glyphW << "x" << entry.glyphH
+					<< " uv=" << entry.u0 << "," << entry.v0 << "," << entry.u1 << "," << entry.v1
+					<< std::endl;
+				++g_patTraceEntryLogCount;
+			}
+			scratch.atlasId = entry.atlasId;
+			scratch.assetHandle = entry.assetHandle;
+			scratch.x = entry.x;
+			scratch.y = entry.y;
+			scratch.z = entry.z;
+			scratch.w = entry.glyphW;
+			scratch.h = entry.glyphH;
+			scratch.u0 = entry.u0;
+			scratch.v0 = entry.v0;
+			scratch.u1 = entry.u1;
+			scratch.v1 = entry.v1;
+			scratch.r = unpackColorChannel(entry.fgColor, 0u);
+			scratch.g = unpackColorChannel(entry.fgColor, 8u);
+			scratch.b = unpackColorChannel(entry.fgColor, 16u);
+			scratch.a = unpackColorChannel(entry.fgColor, 24u);
+			scratch.layer = entry.layer;
+			scratch.parallaxWeight = 0.0f;
+			fn(scratch, index++);
 		}
 	}
 }
@@ -461,6 +847,10 @@ uint32_t VDP::readVdpData() {
 
 void VDP::initializeRegisters() {
 	const i32 dither = 0;
+	m_bgMapFrontBase = VDP_BGMAP_FRONT_BASE;
+	m_bgMapBackBase = VDP_BGMAP_BACK_BASE;
+	m_patFrontBase = VDP_PAT_FRONT_BASE;
+	m_patBackBase = VDP_PAT_BACK_BASE;
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
 	m_memory.writeValue(IO_VDP_OAM_FRONT_BASE, valueNumber(static_cast<double>(VDP_OAM_FRONT_BASE)));
 	m_memory.writeValue(IO_VDP_OAM_BACK_BASE, valueNumber(static_cast<double>(VDP_OAM_BACK_BASE)));
@@ -471,6 +861,12 @@ void VDP::initializeRegisters() {
 	m_memory.writeValue(IO_VDP_OAM_READ_SOURCE, valueNumber(static_cast<double>(VDP_OAM_READ_SOURCE_FRONT)));
 	m_memory.writeValue(IO_VDP_OAM_COMMIT_SEQ, valueNumber(0.0));
 	m_memory.writeValue(IO_VDP_OAM_CMD, valueNumber(0.0));
+	writePatHeader(m_patFrontBase, PatHeader{0u, 0u});
+	writePatHeader(m_patBackBase, PatHeader{0u, 0u});
+	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
+		writeBgMapHeader(m_bgMapFrontBase + layerIndex * VDP_BGMAP_LAYER_SIZE, BgMapHeader{});
+	}
+	clearBackBgMap();
 	m_lastDitherType = dither;
 	EngineCore::instance().view()->dither_type = static_cast<GameView::DitherType>(dither);
 }
@@ -585,19 +981,23 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	if (engineAtlasAsset->meta.width <= 0 || engineAtlasAsset->meta.height <= 0) {
 		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas missing dimensions.");
 	}
-	// NOTE: Atlas priming is not allowed; slot sizing must not derive from atlas metadata.
-	auto seedAtlasSlot = [](Memory::AssetEntry& slotEntry) {
-		const double maxPixels = static_cast<double>(slotEntry.capacity) / 4.0;
-		const uint32_t side = static_cast<uint32_t>(std::floor(std::sqrt(maxPixels)));
-		const uint32_t stride = side * 4u;
-		slotEntry.baseSize = stride * side;
-		slotEntry.baseStride = stride;
+	auto setAtlasEntryDimensions = [](Memory::AssetEntry& slotEntry, uint32_t width, uint32_t height) {
+		const uint32_t size = width * height * 4u;
+		if (size > slotEntry.capacity) {
+			throw BMSX_RUNTIME_ERROR("[VDP] Atlas entry '" + slotEntry.id + "' exceeds capacity.");
+		}
+		slotEntry.baseSize = size;
+		slotEntry.baseStride = width * 4u;
 		slotEntry.regionX = 0;
 		slotEntry.regionY = 0;
-		slotEntry.regionW = side;
-		slotEntry.regionH = side;
+		slotEntry.regionW = width;
+		slotEntry.regionH = height;
 	};
-	bool engineEntryCreated = false;
+	auto seedAtlasSlot = [&](Memory::AssetEntry& slotEntry) {
+		const double maxPixels = static_cast<double>(slotEntry.capacity) / 4.0;
+		const uint32_t side = static_cast<uint32_t>(std::floor(std::sqrt(maxPixels)));
+		setAtlasEntryDimensions(slotEntry, side, side);
+	};
 	if (!m_memory.hasAsset(engineAtlasName)) {
 		m_memory.registerImageSlotAt(
 			engineAtlasName,
@@ -606,12 +1006,9 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 			0,
 			false
 		);
-		engineEntryCreated = true;
 	}
 	auto& engineEntry = m_memory.getAssetEntry(engineAtlasName);
-	if (engineEntryCreated || engineEntry.regionW == 0 || engineEntry.regionH == 0) {
-		seedAtlasSlot(engineEntry);
-	}
+	setAtlasEntryDimensions(engineEntry, static_cast<uint32_t>(engineAtlasAsset->meta.width), static_cast<uint32_t>(engineAtlasAsset->meta.height));
 	registerVramSlot(engineEntry, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
 
 	const uint32_t skyboxBytes = VRAM_SKYBOX_FACE_BYTES;
@@ -712,6 +1109,17 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 				static_cast<uint32_t>(regionH),
 				0
 			);
+		} else {
+			auto& viewEntry = m_memory.getAssetEntry(id);
+			m_memory.updateImageView(
+				viewEntry,
+				*baseEntry,
+				static_cast<uint32_t>(offsetX),
+				static_cast<uint32_t>(offsetY),
+				static_cast<uint32_t>(regionW),
+				static_cast<uint32_t>(regionH),
+				0
+			);
 		}
 		m_atlasViewIdsById[atlasId].push_back(id);
 	}
@@ -798,6 +1206,13 @@ void VDP::flushAssetEdits() {
 	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 	for (const auto* entry : dirty) {
 		if (entry->type == Memory::AssetType::Image) {
+			if (entry->id == engineAtlasName) {
+				logEngineAtlasTrace(
+					"flush dirty asset=" + entry->id +
+					" base=" + std::to_string(entry->baseAddr) +
+					" region=" + std::to_string(entry->regionW) + "x" + std::to_string(entry->regionH)
+				);
+			}
 			if (entry->regionW == 0 || entry->regionH == 0) {
 				continue;
 			}
@@ -853,6 +1268,43 @@ uint32_t VDP::trackedTotalVramBytes() const {
 }
 
 void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
+	auto configureSlotEntry = [this](Memory::AssetEntry& slotEntry, i32 atlasId) {
+		if (atlasId < 0) {
+			const uint32_t maxPixels = slotEntry.capacity / 4u;
+			const uint32_t side = static_cast<uint32_t>(std::floor(std::sqrt(static_cast<double>(maxPixels))));
+			slotEntry.baseSize = side * side * 4u;
+			slotEntry.baseStride = side * 4u;
+			slotEntry.regionX = 0u;
+			slotEntry.regionY = 0u;
+			slotEntry.regionW = side;
+			slotEntry.regionH = side;
+			return;
+		}
+		const auto atlasIt = m_atlasResourceById.find(atlasId);
+		if (atlasIt == m_atlasResourceById.end()) {
+			throw BMSX_RUNTIME_ERROR("[VDP] Atlas " + std::to_string(atlasId) + " not registered.");
+		}
+		ImgAsset* atlasAsset = EngineCore::instance().assets().getImg(atlasIt->second);
+		if (!atlasAsset) {
+			throw BMSX_RUNTIME_ERROR("[VDP] Atlas asset '" + atlasIt->second + "' not found.");
+		}
+		const uint32_t width = static_cast<uint32_t>(atlasAsset->meta.width);
+		const uint32_t height = static_cast<uint32_t>(atlasAsset->meta.height);
+		const uint32_t size = width * height * 4u;
+		if (size > slotEntry.capacity) {
+			throw BMSX_RUNTIME_ERROR("[VDP] Atlas " + std::to_string(atlasId) + " exceeds slot capacity.");
+		}
+		slotEntry.baseSize = size;
+		slotEntry.baseStride = width * 4u;
+		slotEntry.regionX = 0u;
+		slotEntry.regionY = 0u;
+		slotEntry.regionW = width;
+		slotEntry.regionH = height;
+	};
+	auto& primaryEntryForMetrics = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
+	auto& secondaryEntryForMetrics = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
+	configureSlotEntry(primaryEntryForMetrics, slots[0]);
+	configureSlotEntry(secondaryEntryForMetrics, slots[1]);
 	m_atlasSlotById.clear();
 	m_slotAtlasIds = slots;
 	if (slots[0] >= 0) {
@@ -964,6 +1416,15 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	auto* texmanager = EngineCore::instance().texmanager();
 	TextureHandle handle = texmanager->getTextureByUri(textureKey);
 	const bool isEngineAtlas = textureKey == ENGINE_ATLAS_TEXTURE_KEY;
+	if (isEngineAtlas) {
+		logEngineAtlasTrace(
+			"register slot key=" + textureKey +
+			" existingHandle=" + std::to_string(handle ? 1 : 0) +
+			" base=" + std::to_string(entry.baseAddr) +
+			" region=" + std::to_string(entry.regionW) + "x" + std::to_string(entry.regionH) +
+			" surface=" + std::to_string(surfaceId)
+		);
+	}
 	if (!handle) {
 		auto* backend = texmanager->backend();
 		if (backend && backend->readyForTextureUpload()) {
@@ -980,11 +1441,16 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 			);
 		}
 	}
-	if (!handle) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Failed to create or fetch VRAM texture '" + textureKey + "'.");
+	auto* view = EngineCore::instance().view();
+	if (!view) {
+		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
 	}
-	handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(entry.regionW), static_cast<i32>(entry.regionH));
-	EngineCore::instance().view()->textures[textureKey] = handle;
+	if (handle) {
+		handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(entry.regionW), static_cast<i32>(entry.regionH));
+		view->textures[textureKey] = handle;
+	} else {
+		view->textures[textureKey] = nullptr;
+	}
 	VramSlot slot;
 	slot.kind = VramSlotKind::Asset;
 	slot.baseAddr = entry.baseAddr;
@@ -996,8 +1462,15 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	slot.textureHeight = entry.regionH;
 	m_vramSlots.push_back(std::move(slot));
 	registerReadSurface(surfaceId, entry.id, textureKey);
-	if (!isEngineAtlas) {
+	if (handle && !isEngineAtlas) {
 		seedVramSlotTexture(m_vramSlots.back());
+	}
+	if (isEngineAtlas) {
+		logEngineAtlasTrace(
+			"register complete key=" + textureKey +
+			" base=" + std::to_string(entry.baseAddr) +
+			" region=" + std::to_string(entry.regionW) + "x" + std::to_string(entry.regionH)
+		);
 	}
 }
 
@@ -1186,6 +1659,13 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 
 void VDP::restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey) {
 	const bool isEngineAtlas = textureKey == ENGINE_ATLAS_TEXTURE_KEY;
+	if (isEngineAtlas) {
+		logEngineAtlasTrace(
+			"restore key=" + textureKey +
+			" base=" + std::to_string(entry.baseAddr) +
+			" region=" + std::to_string(entry.regionW) + "x" + std::to_string(entry.regionH)
+		);
+	}
 	if (entry.regionW == 0 || entry.regionH == 0) {
 		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot missing dimensions for seeding.");
 	}

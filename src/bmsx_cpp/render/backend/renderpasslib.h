@@ -18,6 +18,7 @@
 #include <any>
 #include <optional>
 #include <stdexcept>
+#include <utility>
 
 namespace bmsx {
 
@@ -64,6 +65,21 @@ struct SpritesPipelineState {
 	std::array<f32, 3> ambientColor = {0, 0, 0};
 	f32 ambientIntensity = 0.0f;
 	std::string viewportTypeIde = "viewport";
+};
+
+struct Sorted2DDrawEntry {
+	OamEntry entry;
+	i32 sourceIndex = 0;
+};
+
+struct Sort2DDrawBucketState {
+	std::vector<Sorted2DDrawEntry> entries;
+};
+
+struct Sort2DPipelineState {
+	Sort2DDrawBucketState world;
+	Sort2DDrawBucketState ui;
+	Sort2DDrawBucketState ide;
 };
 
 struct CRTPipelineOptions {
@@ -231,12 +247,12 @@ public:
 
 	// State management
 	template<typename T>
-	void setState(const std::string& id, const T& state) {
+	void setState(const std::string& id, T&& state) {
 		auto it = m_registered.find(id);
 		if (it == m_registered.end()) {
 			throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
 		}
-		it->second.state = state;
+		it->second.state = std::forward<T>(state);
 	}
 
 	template<typename T>
@@ -246,6 +262,24 @@ public:
 			throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
 		}
 		return std::any_cast<T>(it->second.state);
+	}
+
+	template<typename T>
+	T& getStateRef(const std::string& id) {
+		auto it = m_registered.find(id);
+		if (it == m_registered.end()) {
+			throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
+		}
+		return std::any_cast<T&>(it->second.state);
+	}
+
+	template<typename T>
+	const T& getStateRef(const std::string& id) const {
+		auto it = m_registered.find(id);
+		if (it == m_registered.end()) {
+			throw BMSX_RUNTIME_ERROR("Pipeline '" + id + "' not found");
+		}
+		return std::any_cast<const T&>(it->second.state);
 	}
 
 	// Pass execution

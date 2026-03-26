@@ -61,6 +61,9 @@ enum class OamLayer : u8 {
 };
 
 constexpr u32 OAM_FLAG_ENABLED = 1u;
+constexpr u32 PAT_FLAG_ENABLED = 1u;
+constexpr u32 BGMAP_LAYER_FLAG_ENABLED = 1u;
+constexpr u32 BGMAP_TILE_FLAG_ENABLED = 1u;
 constexpr i32 OAM_ENTRY_WORD_ATLAS_ID = 0;
 constexpr i32 OAM_ENTRY_WORD_FLAGS = 1;
 constexpr i32 OAM_ENTRY_WORD_ASSET_HANDLE = 2;
@@ -124,6 +127,55 @@ struct OamBuffer {
 struct OamFrontBackState {
 	OamBuffer* front = nullptr;
 	OamBuffer* back = nullptr;
+};
+
+struct PatHeader {
+	u32 flags = 0;
+	u32 count = 0;
+};
+
+struct PatEntry {
+	i32 atlasId = 0;
+	u32 flags = 0;
+	u32 assetHandle = 0;
+	OamLayer layer = OamLayer::World;
+	f32 x = 0.0f;
+	f32 y = 0.0f;
+	f32 z = 0.0f;
+	f32 glyphW = 0.0f;
+	f32 glyphH = 0.0f;
+	f32 bgW = 0.0f;
+	f32 bgH = 0.0f;
+	f32 u0 = 0.0f;
+	f32 v0 = 0.0f;
+	f32 u1 = 0.0f;
+	f32 v1 = 0.0f;
+	u32 fgColor = 0xffffffffu;
+	u32 bgColor = 0x00000000u;
+};
+
+struct BgMapHeader {
+	u32 flags = 0;
+	OamLayer layer = OamLayer::World;
+	u32 cols = 0;
+	u32 rows = 0;
+	u32 tileW = 0;
+	u32 tileH = 0;
+	f32 originX = 0.0f;
+	f32 originY = 0.0f;
+	f32 scrollX = 0.0f;
+	f32 scrollY = 0.0f;
+	f32 z = 0.0f;
+};
+
+struct BgMapEntry {
+	i32 atlasId = 0;
+	u32 flags = 0;
+	u32 assetHandle = 0;
+	f32 u0 = 0.0f;
+	f32 v0 = 0.0f;
+	f32 u1 = 0.0f;
+	f32 v1 = 0.0f;
 };
 
 /* ============================================================================

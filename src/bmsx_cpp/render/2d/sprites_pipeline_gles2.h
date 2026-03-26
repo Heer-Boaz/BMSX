@@ -14,7 +14,7 @@ namespace SpritesPipeline {
 
 void initGLES2(OpenGLES2Backend* backend, GameView* context);
 void shutdownGLES2(OpenGLES2Backend* backend);
-void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context, const SpritesPipelineState& state);
+void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context, const SpritesPipelineState& state, const std::vector<Sorted2DDrawEntry>& sortedEntries, bool useDepth);
 
 } // namespace SpritesPipeline
 } // namespace bmsx

@@ -979,6 +979,46 @@ m_runtime.registerNativeFunction("put_sprite", [this, key, asText](const std::ve
 	(void)out;
 });
 
+m_runtime.registerNativeFunction("bgmap_begin", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+	const int layer = static_cast<int>(std::floor(asNumber(args.at(0))));
+	const int cols = static_cast<int>(std::floor(asNumber(args.at(1))));
+	const int rows = static_cast<int>(std::floor(asNumber(args.at(2))));
+	const int tileW = static_cast<int>(std::floor(asNumber(args.at(3))));
+	const int tileH = static_cast<int>(std::floor(asNumber(args.at(4))));
+	const int originX = static_cast<int>(std::floor(asNumber(args.at(5))));
+	const int originY = static_cast<int>(std::floor(asNumber(args.at(6))));
+	const int z = static_cast<int>(std::floor(asNumber(args.at(7))));
+	std::optional<int> scrollX;
+	std::optional<int> scrollY;
+	std::optional<RenderLayer> renderLayer;
+	if (args.size() > 8 && valueIsTable(args[8])) {
+		auto* options = asTable(args[8]);
+		Value scrollXValue = options->get(key("scroll_x"));
+		if (!isNil(scrollXValue)) {
+			scrollX = static_cast<int>(std::floor(asNumber(scrollXValue)));
+		}
+		Value scrollYValue = options->get(key("scroll_y"));
+		if (!isNil(scrollYValue)) {
+			scrollY = static_cast<int>(std::floor(asNumber(scrollYValue)));
+		}
+		Value layerValue = options->get(key("layer"));
+		if (!isNil(layerValue)) {
+			renderLayer = resolve_layer(layerValue);
+		}
+	}
+	bgmap_begin(layer, cols, rows, tileW, tileH, originX, originY, z, scrollX, scrollY, renderLayer);
+	(void)out;
+});
+
+m_runtime.registerNativeFunction("bgmap_tile", [this, asText](const std::vector<Value>& args, std::vector<Value>& out) {
+	const int layer = static_cast<int>(std::floor(asNumber(args.at(0))));
+	const int col = static_cast<int>(std::floor(asNumber(args.at(1))));
+	const int row = static_cast<int>(std::floor(asNumber(args.at(2))));
+	const std::string& imgId = asText(args.at(3));
+	bgmap_tile(layer, col, row, imgId);
+	(void)out;
+});
+
 m_runtime.registerNativeFunction("put_glyphs", [this, key, asText](const std::vector<Value>& args, std::vector<Value>& out) {
 	const Value& glyphValue = args.at(0);
 	std::vector<std::string> glyphs;
@@ -1436,6 +1476,55 @@ void Api::put_sprite(const ImgRenderSubmission& submission) {
 	op.type = RenderSubmissionType::Img;
 	op.img = submission;
 	submit(std::move(op));
+}
+
+void Api::bgmap_begin(int layer, int cols, int rows, int tileW, int tileH, int originX, int originY, int z, std::optional<int> scrollX, std::optional<int> scrollY, std::optional<RenderLayer> renderLayer) {
+	BgMapHeader header;
+	header.flags = BGMAP_LAYER_FLAG_ENABLED;
+	header.layer = renderLayerToOamLayer(renderLayer);
+	header.cols = static_cast<u32>(cols);
+	header.rows = static_cast<u32>(rows);
+	header.tileW = static_cast<u32>(tileW);
+	header.tileH = static_cast<u32>(tileH);
+	header.originX = static_cast<f32>(originX);
+	header.originY = static_cast<f32>(originY);
+	header.scrollX = static_cast<f32>(scrollX.value_or(0));
+	header.scrollY = static_cast<f32>(scrollY.value_or(0));
+	header.z = static_cast<f32>(z);
+	m_runtime.vdp().beginBgMapLayerWrite(layer, header);
+}
+
+void Api::bgmap_tile(int layer, int col, int row, const std::string& imgId) {
+	Memory& memory = m_runtime.memory();
+	const u32 handle = memory.resolveAssetHandle(imgId);
+	const auto& entry = memory.getAssetEntryByHandle(handle);
+	if (entry.type != Memory::AssetType::Image) {
+		throw BMSX_RUNTIME_ERROR("[BGMap] Asset '" + imgId + "' is not an image.");
+	}
+	const ImgAsset* imgAsset = EngineCore::instance().assets().getImg(entry.id);
+	if (!imgAsset) {
+		throw BMSX_RUNTIME_ERROR("[BGMap] Missing image metadata for '" + imgId + "'.");
+	}
+	const auto& baseEntry = [&]() -> const Memory::AssetEntry& {
+		if ((entry.flags & ASSET_FLAG_VIEW) == 0u) {
+			return entry;
+		}
+		try {
+			return memory.getAssetEntryByHandle(entry.ownerIndex);
+		} catch (const std::exception& e) {
+			throw BMSX_RUNTIME_ERROR("[BGMap] View asset '" + entry.id + "' has invalid ownerIndex "
+				+ std::to_string(entry.ownerIndex) + ": " + e.what());
+		}
+	}();
+	BgMapEntry tile;
+	tile.atlasId = imgAsset->meta.atlasid;
+	tile.flags = BGMAP_TILE_FLAG_ENABLED;
+	tile.assetHandle = handle;
+	tile.u0 = static_cast<f32>(entry.regionX) / static_cast<f32>(baseEntry.regionW);
+	tile.v0 = static_cast<f32>(entry.regionY) / static_cast<f32>(baseEntry.regionH);
+	tile.u1 = static_cast<f32>(entry.regionX + entry.regionW) / static_cast<f32>(baseEntry.regionW);
+	tile.v1 = static_cast<f32>(entry.regionY + entry.regionH) / static_cast<f32>(baseEntry.regionH);
+	m_runtime.vdp().submitBgMapTile(layer, col, row, tile);
 }
 
 void Api::put_poly(const PolyRenderSubmission& submission) {

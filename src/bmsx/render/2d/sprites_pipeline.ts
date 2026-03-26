@@ -1,7 +1,7 @@
 // Provides batched 2D sprite + primitive rendering using shared buffers.
 import spriteFS from '../2d/shaders/2d.frag.glsl';
 import spriteVS from '../2d/shaders/2d.vert.glsl';
-import type { GPUBackend, RenderContext, RenderPassStateRegistry } from '../backend/pipeline_interfaces';
+import type { GPUBackend, RenderContext, RenderPassStateRegistry, Sort2DDrawBucketState } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary } from '../backend/renderpasslib';
 import { SpritesPipelineState } from '../backend/pipeline_interfaces';
 import type { FrameSharedState } from '../backend/pipeline_interfaces';
@@ -20,7 +20,6 @@ import { $ } from '../../core/engine_core';
 import { Runtime } from '../../emulator/runtime';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
-import { drainOverlayFrameIntoSpriteQueue } from '../../emulator/render_facade';
 import type { LightingFrameState } from '../lighting/lightingsystem';
 import { clamp } from '../../utils/clamp';
 import { OAM_LAYER_IDE, OAM_LAYER_WORLD } from '../shared/render_types';
@@ -38,6 +37,10 @@ const SPRITE_INSTANCE_Z_OFFSET = 32;
 const SPRITE_INSTANCE_ATLAS_OFFSET = 34;
 const SPRITE_INSTANCE_FX_OFFSET = 35;
 const SPRITE_INSTANCE_COLOR_OFFSET = 36;
+const SPRITES_PIPELINE_TRACE_LOG_LIMIT = 16;
+let spritesPipelineTraceLogCount = 0;
+const SPRITES_PASS_TRACE_LOG_LIMIT = 32;
+let spritesPassTraceLogCount = 0;
 
 const SPRITE_CORNER_DATA = new Float32Array([
 	0, 0,
@@ -98,6 +101,20 @@ interface SpriteRuntime {
 	gl: WebGL2RenderingContext;
 	context: RenderContext;
 }
+
+type SpritePassId = 'sprites_world' | 'sprites_ui' | 'sprites_ide';
+type Sort2DBucketKey = 'world' | 'ui' | 'ide';
+
+const SPRITE_PASS_CONFIGS: ReadonlyArray<{
+	id: SpritePassId;
+	name: string;
+	sortBucket: Sort2DBucketKey;
+	useDepth: boolean;
+}> = [
+	{ id: 'sprites_world', name: 'Sprites2DWorld', sortBucket: 'world', useDepth: true },
+	{ id: 'sprites_ui', name: 'Sprites2DUI', sortBucket: 'ui', useDepth: false },
+	{ id: 'sprites_ide', name: 'Sprites2DIDE', sortBucket: 'ide', useDepth: false },
+];
 
 export function setupSpriteShaderLocations(backend: GPUBackend): void {
 	const gl = (backend as WebGLBackend).gl;
@@ -205,14 +222,58 @@ export function setupSpriteLocations(backend: WebGLBackend): void {
 	spriteVAO = vao;
 }
 
+function buildSpritePassState(registry: RenderPassLibrary, backend: GPUBackend, passId: SpritePassId): void {
+	const gv = $.view;
+	const width = gv.offscreenCanvasSize.x;
+	const height = gv.offscreenCanvasSize.y;
+	const baseWidth = gv.viewportSize.x;
+	const baseHeight = gv.viewportSize.y;
+	const frameShared = registry.getState('frame_shared') as FrameSharedState | undefined;
+	const lighting = frameShared?.lighting as LightingFrameState | undefined;
+	const ambient = lighting?.ambient;
+	const ambientColor: [number, number, number] = ambient ? [ambient.color[0], ambient.color[1], ambient.color[2]] : [0, 0, 0];
+	const ambientIntensity = ambient?.intensity ?? 0;
+	const atlasTexture = gv.textures['_atlas_primary'];
+	if (!atlasTexture) {
+		throw new Error("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
+	}
+	const secondaryAtlasTexture = gv.textures['_atlas_secondary'];
+	const engineAtlasTexture = gv.textures[ENGINE_ATLAS_TEXTURE_KEY];
+	const spriteState: SpritesPipelineState = {
+		width,
+		height,
+		baseWidth,
+		baseHeight,
+		atlasPrimaryTex: atlasTexture,
+		atlasSecondaryTex: secondaryAtlasTexture,
+		atlasEngineTex: engineAtlasTexture,
+		ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
+		ambientFactorDefault: gv.spriteAmbientFactorDefault,
+		ambientColor,
+		ambientIntensity,
+		viewportTypeIde: gv.viewportTypeIde,
+	};
+	registry.setState(passId, spriteState);
+	registry.validatePassResources(passId, backend);
+}
+
 // Note: 'fbo' is provided by the render graph and used only to satisfy the
 // PassEncoder shape for backend.draw(). WebGL draw ignores it; WebGPU may use it.
-export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: SpritesPipelineState): void {
+export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: SpritesPipelineState, sortState: Sort2DDrawBucketState, passId: SpritePassId, useDepth: boolean): void {
 	const { backend, gl, context } = runtime;
 	assertAtlasSelectorRange();
-	const spriteCount = Runtime.instance.vdp.beginSpriteOamRead();
+	const spriteCount = sortState.count;
+	if (spritesPassTraceLogCount < SPRITES_PASS_TRACE_LOG_LIMIT) {
+		console.log(`[SpritesPassTrace][TS] pass=${passId} count=${spriteCount} depth=${useDepth ? 1 : 0}`);
+		spritesPassTraceLogCount += 1;
+	}
 	if (spriteCount === 0) return;
 	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
+	if (useDepth) {
+		gl.enable(gl.DEPTH_TEST);
+	} else {
+		gl.disable(gl.DEPTH_TEST);
+	}
 	gl.enable(gl.BLEND);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	gl.depthMask(false);
@@ -258,6 +319,13 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
 		context.bind2DTex(state.atlasEngineTex);
 	}
+	const atlasMapping = Runtime.instance.vdp.getAtlasSlotMapping();
+	if (spritesPipelineTraceLogCount < SPRITES_PIPELINE_TRACE_LOG_LIMIT) {
+		console.log(`[Sprites2D][TS] engineTex=${state.atlasEngineTex ? 1 : 0} primaryTex=${state.atlasPrimaryTex ? 1 : 0} secondaryTex=${state.atlasSecondaryTex ? 1 : 0} primaryAtlas=${atlasMapping.primary ?? -1} secondaryAtlas=${atlasMapping.secondary ?? -1}`);
+		spritesPipelineTraceLogCount += 1;
+	}
+	const primaryAtlasIdInSlot = atlasMapping.primary;
+	const secondaryAtlasIdInSlot = atlasMapping.secondary;
 	const { instanceF32, instanceU16, instanceU8, instanceS8 } = spriteShaderData;
 	// Ambient sprites are disabled for now; when we have a more efficient path, reuse the block below.
 	// const ambientFrameIntensity = state.ambientIntensity;
@@ -273,11 +341,11 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 0, used);
 		backend.accountUpload('vertex', used.byteLength);
-		const passStub = { fbo, desc: { label: 'sprites' } } as Parameters<GPUBackend['draw']>[0];
+		const passStub = { fbo, desc: { label: passId } } as Parameters<GPUBackend['draw']>[0];
 		backend.drawInstanced!(passStub, VERTICES_PER_SPRITE, i, SPRITE_DRAW_OFFSET);
 		i = 0;
 	};
-	Runtime.instance.vdp.forEachOamEntry((entry) => {
+	sortState.entries.forEach((entry) => {
 		const layer = entry.layer;
 		const desiredScale = layer === OAM_LAYER_IDE ? ideScale : 1;
 		if (desiredScale !== currentScale) {
@@ -311,8 +379,6 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		// Sprite binding selector uses ENGINE_ATLAS_INDEX for engine atlas in the shader.
 		let atlasBindingId = ENGINE_ATLAS_INDEX;
 		if (entry.atlasId !== ENGINE_ATLAS_INDEX) {
-			const primaryAtlasIdInSlot = $.view.primaryAtlasIdInSlot;
-			const secondaryAtlasIdInSlot = $.view.secondaryAtlasIdInSlot;
 			if (entry.atlasId === primaryAtlasIdInSlot) {
 				atlasBindingId = 0;
 			} else if (entry.atlasId === secondaryAtlasIdInSlot) {
@@ -336,72 +402,42 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 }
 
 export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
-	registry.register({
-		id: 'sprites',
-		name: 'Sprites2D',
-		...(() => {
-			const vs = shaderModule(spriteVS, { uniforms: ['FrameUniforms'] }, 'sprites-vs');
-			const fs = shaderModule(
-				spriteFS,
-				{
-					uniforms: ['FrameUniforms'],
-					textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }, { name: 'u_texture2' }],
-					samplers: [{ name: 's_texture0' }, { name: 's_texture1' }, { name: 's_texture2' }]
-				},
-				'sprites-fs'
-			);
-			const build = makePipelineBuildDesc('Sprites2D', vs, fs);
-			return { vsCode: build.vsCode, fsCode: build.fsCode, bindingLayout: build.bindingLayout };
-		})(),
-		bootstrap: (backend: WebGLBackend) => {
-			const webglBackend = backend;
-			setupSpriteShaderLocations(webglBackend);
-			setupBuffers(webglBackend);
-			setupSpriteLocations(webglBackend);
-			setupDefaultUniformValues(backend);
-		},
-		writesDepth: true,
-		shouldExecute: () => true,
-		exec: (backend: WebGLBackend, fbo, state: SpritesPipelineState) => {
-			const runtime: SpriteRuntime = { backend, gl: backend.gl, context: $.view };
-			drainOverlayFrameIntoSpriteQueue();
-			renderSpriteBatch(runtime, fbo, state);
-		},
-		prepare: (backend: GPUBackend, _state: RenderPassStateRegistry['sprites']) => {
-			const gv = $.view;
-			const width = gv.offscreenCanvasSize.x;
-			const height = gv.offscreenCanvasSize.y;
-			const baseWidth = gv.viewportSize.x;
-			const baseHeight = gv.viewportSize.y;
-			const frameShared = registry.getState('frame_shared') as FrameSharedState | undefined;
-			const lighting = frameShared?.lighting as LightingFrameState | undefined;
-			const ambient = lighting?.ambient;
-			const ambientColor: [number, number, number] = ambient ? [ambient.color[0], ambient.color[1], ambient.color[2]] : [0, 0, 0];
-			const ambientIntensity = ambient?.intensity ?? 0;
-			const atlasTexture = gv.textures['_atlas_primary'];
-			if (!atlasTexture) {
-				throw new Error("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
-			}
-			const secondaryAtlasTexture = gv.textures['_atlas_secondary'];
-			const engineAtlasTexture = gv.textures[ENGINE_ATLAS_TEXTURE_KEY];
-			const spriteState: RenderPassStateRegistry['sprites'] = {
-				width,
-				height,
-				baseWidth,
-				baseHeight,
-				// Provide atlas textures for direct binding in render step when needed
-				atlasPrimaryTex: atlasTexture,
-				atlasSecondaryTex: secondaryAtlasTexture,
-				atlasEngineTex: engineAtlasTexture,
-				ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
-				ambientFactorDefault: gv.spriteAmbientFactorDefault,
-				ambientColor,
-				ambientIntensity,
-				viewportTypeIde: gv.viewportTypeIde,
-			};
-			registry.setState('sprites', spriteState);
-			// Validate binding layout vs resources
-			registry.validatePassResources('sprites', backend);
-		},
-	});
+	for (const pass of SPRITE_PASS_CONFIGS) {
+		registry.register({
+			id: pass.id,
+			name: pass.name,
+			...(() => {
+				const vs = shaderModule(spriteVS, { uniforms: ['FrameUniforms'] }, 'sprites-vs');
+				const fs = shaderModule(
+					spriteFS,
+					{
+						uniforms: ['FrameUniforms'],
+						textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }, { name: 'u_texture2' }],
+						samplers: [{ name: 's_texture0' }, { name: 's_texture1' }, { name: 's_texture2' }]
+					},
+					'sprites-fs'
+				);
+				const build = makePipelineBuildDesc(pass.name, vs, fs);
+				return { vsCode: build.vsCode, fsCode: build.fsCode, bindingLayout: build.bindingLayout };
+			})(),
+			bootstrap: pass.id === 'sprites_world' ? (backend: WebGLBackend) => {
+				const webglBackend = backend;
+				setupSpriteShaderLocations(webglBackend);
+				setupBuffers(webglBackend);
+				setupSpriteLocations(webglBackend);
+				setupDefaultUniformValues(backend);
+			} : undefined,
+			writesDepth: pass.useDepth,
+			depthTest: pass.useDepth,
+			shouldExecute: () => true,
+			exec: (backend: WebGLBackend, fbo, state: SpritesPipelineState) => {
+				const runtime: SpriteRuntime = { backend, gl: backend.gl, context: $.view };
+				const sortState = registry.getState('sort_2d');
+				renderSpriteBatch(runtime, fbo, state, sortState[pass.sortBucket], pass.id, pass.useDepth);
+			},
+			prepare: (backend: GPUBackend, _state: RenderPassStateRegistry[typeof pass.id]) => {
+				buildSpritePassState(registry, backend, pass.id);
+			},
+		});
+	}
 }

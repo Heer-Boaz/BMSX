@@ -827,13 +827,12 @@ function room_object:render_tiles()
 	local origin_x = self.tile_origin_x
 	local origin_y = self.tile_origin_y
 	local dissolve_step = self.room_dissolve_step
+	bgmap_begin(0, self.tile_columns, self.tile_rows, tile_size, tile_size, origin_x, origin_y, 0)
 
 	for y = 1, self.tile_rows do
-		local draw_y = origin_y + ((y - 1) * tile_size)
 		local map_row = self.map_rows[y]
 		local row = self.tiles[y]
 		for x = 1, self.tile_columns do
-			local draw_x = origin_x + ((x - 1) * tile_size)
 			local tile_id = row[x]
 			if dissolve_step > 0 then
 				local dissolve_index = dissolve_step - 1
@@ -854,7 +853,7 @@ function room_object:render_tiles()
 					tile_id = dissolve_prefix .. tostring(dissolve_index)
 				end
 			end
-			put_sprite(tile_id, draw_x, draw_y, 0)
+			bgmap_tile(0, x - 1, y - 1, tile_id)
 			::continue::
 		end
 	end
@@ -864,6 +863,7 @@ function room_object:render_water()
 	if self.water == nil then
 		return
 	end
+	bgmap_begin(1, self.tile_columns, self.tile_rows, self.tile_size, self.tile_size, self.tile_origin_x, self.tile_origin_y, 0)
 	local water_surface_frame = self:get_timeline(water_surface_timeline_id):value()
 	local water_surface_imgid = water_surface_frame_imgids[water_surface_frame]
 
@@ -871,11 +871,10 @@ function room_object:render_water()
 		for x = 1, self.tile_columns do
 			local kind = water_kind_at_tile(self, x, y)
 			if kind ~= constants.water.none then
-				local draw_x, draw_y = self:tile_to_world(x, y)
 				if kind == constants.water.surface then
-					put_sprite(water_surface_imgid, draw_x, draw_y, 0)
+					bgmap_tile(1, x - 1, y - 1, water_surface_imgid)
 				else
-					put_sprite('water_body_msx', draw_x, draw_y, 0)
+					bgmap_tile(1, x - 1, y - 1, 'water_body_msx')
 				end
 			end
 		end

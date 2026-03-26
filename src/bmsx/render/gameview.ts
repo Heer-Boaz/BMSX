@@ -31,7 +31,7 @@ import {
 } from 'bmsx/rompack/rompack';
 import { renderGate } from 'bmsx/core/engine_core';
 
-const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'sprites', 'device_quantize', 'crt'];
+const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'sprites_world', 'sprites_ui', 'sprites_ide', 'device_quantize', 'crt'];
 
 interface GameViewOpts {
 	host: GameViewHost;
@@ -569,6 +569,7 @@ export class GameView implements RenderContext {
 		if (!engineAtlasTexture) {
 			throw new Error(`[GameView] Engine atlas '${ENGINE_ATLAS_TEXTURE_KEY}' not uploaded.`);
 		}
+		console.log(`[EngineAtlasTrace][TS] GameView.loadEngineAtlasTexture key=${ENGINE_ATLAS_TEXTURE_KEY} replacing=${this.textures[ENGINE_ATLAS_TEXTURE_KEY] ? 1 : 0}`);
 		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = engineAtlasTexture;
 	}
 

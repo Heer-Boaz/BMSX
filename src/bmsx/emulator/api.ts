@@ -1,6 +1,11 @@
 import { $, runGate } from '../core/engine_core';
 import { Input } from '../input/input';
-import type {
+import {
+	BGMAP_LAYER_FLAG_ENABLED,
+	BGMAP_TILE_FLAG_ENABLED,
+	renderLayerToOamLayer,
+	type BgMapEntry,
+	type BgMapHeader,
 	color,
 	GlyphRenderSubmission,
 	ImgRenderSubmission,
@@ -16,6 +21,7 @@ import { BFont, GlyphMap } from '../render/shared/bitmap_font';
 import { RuntimeStorage } from './storage';
 import type { AudioPlayOptions } from '../audio/soundmaster';
 import type { Polygon, vec3arr } from '../rompack/rompack';
+import { tokenKeyFromId } from '../rompack/asset_tokens';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { RenderFacade } from './render_facade';
 import { Runtime } from './runtime';
@@ -29,6 +35,7 @@ import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtins';
 import { createLuaTable, type LuaTable } from '../lua/luavalue';
 import { ActionState } from 'bmsx/input/inputtypes';
 import { BmsxColors } from './vdp';
+import { ASSET_FLAG_VIEW } from './memory';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;
@@ -298,6 +305,50 @@ export class Api {
 			parallax_weight: options?.parallax_weight,
 		};
 		this.renderBackend.sprite(submission);
+	}
+
+	public bgmap_begin(layer: number, cols: number, rows: number, tile_w: number, tile_h: number, origin_x: number, origin_y: number, z: number, options?: { scroll_x?: number; scroll_y?: number; layer?: RenderLayer }): void {
+		const header: BgMapHeader = {
+			flags: BGMAP_LAYER_FLAG_ENABLED,
+			layer: renderLayerToOamLayer(options?.layer),
+			cols,
+			rows,
+			tileW: tile_w,
+			tileH: tile_h,
+			originX: origin_x,
+			originY: origin_y,
+			scrollX: options?.scroll_x ?? 0,
+			scrollY: options?.scroll_y ?? 0,
+			z,
+		};
+		Runtime.instance.vdp.beginBgMapLayerWrite(layer, header);
+	}
+
+	public bgmap_tile(layer: number, col: number, row: number, img_id: string): void {
+		const runtime = Runtime.instance;
+		const memory = runtime.memory;
+		const handle = memory.resolveAssetHandle(img_id);
+		const entry = memory.getAssetEntryByHandle(handle);
+		if (entry.type !== 'image') {
+			throw new Error(`[BGMap] Asset '${img_id}' is not an image.`);
+		}
+		const imgAsset = $.assets.img[tokenKeyFromId(img_id)];
+		if (!imgAsset) {
+			throw new Error(`[BGMap] Missing image metadata for '${img_id}'.`);
+		}
+		const baseEntry = (entry.flags & ASSET_FLAG_VIEW) !== 0
+			? memory.getAssetEntryByHandle(entry.ownerIndex)
+			: entry;
+		const tile: BgMapEntry = {
+			atlasId: imgAsset.imgmeta.atlasid,
+			flags: BGMAP_TILE_FLAG_ENABLED,
+			assetHandle: handle,
+			u0: entry.regionX / baseEntry.regionW,
+			v0: entry.regionY / baseEntry.regionH,
+			u1: (entry.regionX + entry.regionW) / baseEntry.regionW,
+			v1: (entry.regionY + entry.regionH) / baseEntry.regionH,
+		};
+		runtime.vdp.submitBgMapTile(layer, col, row, tile);
 	}
 
 	public put_glyphs(glyphs: string | string[], x: number, y: number, z: number, options?: {

@@ -314,7 +314,7 @@ export class TerminalMode {
 			measureText: (text) => this.measureDisplayText(text, this.useUppercaseDisplay()),
 			drawText: (text, x, y, color) => {
 				const uppercaseDisplay = terminal.useUppercaseDisplay();
-				const display = terminal.toDisplayText(text, uppercaseDisplay).replace(/\t/g, ' '.repeat(TAB_SPACES));
+				const display = terminal.toRenderedGlyphText(text, uppercaseDisplay);
 				terminal.currentRenderer.glyphs({ glyphs: display, x, y, z: 0, color: BmsxColors[color], font: terminal.font.renderFont() });
 			},
 			fillRect: (left, top, right, bottom, color) => {
@@ -2314,51 +2314,28 @@ export class TerminalMode {
 	}
 
 	private drawGlyphBackgrounds(renderer: RenderFacade, text: string, originX: number, originY: number, uppercase: boolean): void {
-		const display = this.toDisplayText(text, uppercase);
-		let cursorX = originX;
-		for (let i = 0; i < display.length; i += 1) {
-			const ch = display.charAt(i);
-			if (ch === '\t') {
-				cursorX += this.font.advance(' ') * TAB_SPACES;
-				continue;
-			}
-			if (ch === '\n') {
-				continue;
-			}
-			const advance = this.font.advance(ch);
-			renderer.rect({
-				kind: 'fill',
-				area: {
-					left: cursorX,
-					top: originY,
-					right: cursorX + advance,
-					bottom: originY + this.font.lineHeight,
-				},
-				color: this.characterBackgroundColor,
-			});
-			cursorX += advance;
+		const width = this.measureDisplayText(text, uppercase);
+		if (width <= 0) {
+			return;
 		}
+		renderer.rect({
+			kind: 'fill',
+			area: {
+				left: originX,
+				top: originY,
+				right: originX + width,
+				bottom: originY + this.font.lineHeight,
+			},
+			color: this.characterBackgroundColor,
+		});
 	}
 
 	private drawGlyphRun(renderer: RenderFacade, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {
-		const renderFont = this.font.renderFont();
-		const display = this.toDisplayText(text, uppercase);
-		let cursorX = originX;
-		for (let i = 0; i < display.length; i += 1) {
-			const ch = display.charAt(i);
-			if (ch === '\t') {
-				cursorX += this.font.advance(' ') * TAB_SPACES;
-				continue;
-			}
-			if (ch === '\n') {
-				continue;
-			}
-			const advance = this.font.advance(ch);
-			if (ch !== ' ') {
-				renderer.glyphs({ glyphs: ch, x: cursorX, y: originY, z: 0, color: tint, font: renderFont });
-			}
-			cursorX += advance;
+		const display = this.toRenderedGlyphText(text, uppercase);
+		if (!/[^\s]/.test(display)) {
+			return;
 		}
+		renderer.glyphs({ glyphs: display, x: originX, y: originY, z: 0, color: tint, font: this.font.renderFont() });
 	}
 
 	private toDisplayText(value: string, uppercase: boolean): string {
@@ -2368,13 +2345,15 @@ export class TerminalMode {
 		return value;
 	}
 
+	private toRenderedGlyphText(value: string, uppercase: boolean): string {
+		return this.toDisplayText(value, uppercase).replace(/\t/g, ' '.repeat(TAB_SPACES));
+	}
+
 	private measureDisplayText(value: string, uppercase: boolean): number {
 		if (!value) {
 			return 0;
 		}
-		// Match renderer/tab handling: expand tabs to TAB_SPACES spaces before measuring
-		const display = this.toDisplayText(value, uppercase).replace(/\t/g, ' '.repeat(TAB_SPACES));
-		return this.font.measure(display);
+		return this.font.measure(this.toRenderedGlyphText(value, uppercase));
 	}
 
 	private useUppercaseDisplay(): boolean {

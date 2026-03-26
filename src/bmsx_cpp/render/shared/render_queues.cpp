@@ -14,6 +14,8 @@
 #include "../../utils/clamp.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
+#include <limits>
 #include <stdexcept>
 
 namespace bmsx {
@@ -28,6 +30,12 @@ enum class QueueSource : u8 {
 	Back = 1,
 };
 static QueueSource s_activeQueueSource = QueueSource::Front;
+static constexpr int kGlyphTraceCallLimit = 12;
+static constexpr int kGlyphTraceEntryLimit = 48;
+static constexpr int kOamSubmitTraceLimit = 32;
+static int s_glyphTraceCallCount = 0;
+static int s_glyphTraceEntryCount = 0;
+static int s_oamSubmitTraceCount = 0;
 
 i32 particleAmbientModeDefault = 0;
 f32 particleAmbientFactorDefault = 1.0f;
@@ -38,10 +46,51 @@ f32 _skyExposure = 1.0f;
 // Default Z coordinate (mirrors TypeScript DEFAULT_ZCOORD)
 static constexpr f32 DEFAULT_ZCOORD = 0.0f;
 
+static const Memory::AssetEntry& resolveImageBaseEntry(Memory& memory, const Memory::AssetEntry& entry, const std::string& context) {
+	if ((entry.flags & ASSET_FLAG_VIEW) == 0u) {
+		return entry;
+	}
+	try {
+		return memory.getAssetEntryByHandle(entry.ownerIndex);
+	} catch (const std::exception& e) {
+		throw BMSX_RUNTIME_ERROR("[" + context + "] View asset '" + entry.id + "' has invalid ownerIndex "
+			+ std::to_string(entry.ownerIndex) + ": " + e.what());
+	}
+}
+
 static std::vector<RenderSubmission> s_renderQueuePlaybackBuffer;
 
+static u32 packColor8888(const std::optional<Color>& color) {
+	const Color c = color.value_or(Color{1.0f, 1.0f, 1.0f, 1.0f});
+	const u32 r = static_cast<u32>(std::round(clamp(c.r, 0.0f, 1.0f) * 255.0f));
+	const u32 g = static_cast<u32>(std::round(clamp(c.g, 0.0f, 1.0f) * 255.0f));
+	const u32 b = static_cast<u32>(std::round(clamp(c.b, 0.0f, 1.0f) * 255.0f));
+	const u32 a = static_cast<u32>(std::round(clamp(c.a, 0.0f, 1.0f) * 255.0f));
+	return r | (g << 8u) | (b << 16u) | (a << 24u);
+}
+
+static u32 readUtf8Codepoint(const std::string& text, size_t& index) {
+	u8 c0 = static_cast<u8>(text.at(index++));
+	if (c0 < 0x80) {
+		return c0;
+	}
+	if ((c0 & 0xE0) == 0xC0) {
+		u8 c1 = static_cast<u8>(text.at(index++));
+		return ((c0 & 0x1F) << 6) | (c1 & 0x3F);
+	}
+	if ((c0 & 0xF0) == 0xE0) {
+		u8 c1 = static_cast<u8>(text.at(index++));
+		u8 c2 = static_cast<u8>(text.at(index++));
+		return ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
+	}
+	u8 c1 = static_cast<u8>(text.at(index++));
+	u8 c2 = static_cast<u8>(text.at(index++));
+	u8 c3 = static_cast<u8>(text.at(index++));
+	return ((c0 & 0x07) << 18) | ((c1 & 0x3F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+}
+
 static bool hasCommittedFrontQueueContent() {
-	return Runtime::instance().vdp().hasFrontOamContent()
+	return Runtime::instance().vdp().hasFront2dContent()
 		|| s_meshQueue.sizeFront() > 0
 		|| s_particleQueue.sizeFront() > 0;
 }
@@ -63,9 +112,7 @@ void submitSprite(const ImgRenderSubmission& options) {
 		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Missing image metadata for '" + options.imgid + "'.");
 	}
 	const ImgMeta& meta = imgAsset->meta;
-	const auto& baseEntry = (entry.flags & ASSET_FLAG_VIEW)
-		? memory.getAssetEntryByHandle(entry.ownerIndex)
-		: entry;
+	const auto baseEntry = resolveImageBaseEntry(memory, entry, "Sprite Queue");
 	if (entry.regionW == 0 || entry.regionH == 0) {
 		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Image '" + options.imgid + "' has invalid region size.");
 	}
@@ -106,10 +153,21 @@ void submitSprite(const ImgRenderSubmission& options) {
 	oam.a = color.a;
 	oam.layer = renderLayerToOamLayer(options.layer);
 	oam.parallaxWeight = oam.layer == OamLayer::World ? options.parallax_weight.value_or(0.0f) : 0.0f;
+	if (oam.layer != OamLayer::World && s_oamSubmitTraceCount < kOamSubmitTraceLimit) {
+		std::cout << "[OAMSubmitTrace][C++] imgid=" << options.imgid
+			<< " layer=" << static_cast<int>(oam.layer)
+			<< " pos=" << oam.x << "," << oam.y << "," << oam.z
+			<< " size=" << oam.w << "x" << oam.h
+			<< " atlas=" << oam.atlasId
+			<< std::endl;
+		++s_oamSubmitTraceCount;
+	}
 	runtime.vdp().submitOamEntry(oam);
 }
 
 void prepareCompletedRenderQueues() {
+	Runtime::instance().vdp().swapBgMapBuffers();
+	Runtime::instance().vdp().swapPatBuffers();
 	Runtime::instance().vdp().swapOamBuffers();
 	Runtime::instance().vdp().setOamReadSource(false);
 	s_meshQueue.swap();
@@ -130,16 +188,18 @@ void prepareOverlayRenderQueues() {
 }
 
 bool hasPendingBackQueueContent() {
-	return Runtime::instance().vdp().hasBackOamContent()
+	return Runtime::instance().vdp().hasBack2dContent()
 		|| s_meshQueue.sizeBack() > 0
 		|| s_particleQueue.sizeBack() > 0;
 }
 
 i32 beginSpriteQueue() {
-	return Runtime::instance().vdp().beginSpriteOamRead();
+	return Runtime::instance().vdp().begin2dRead();
 }
 
 void clearBackQueues() {
+	Runtime::instance().vdp().clearBackBgMap();
+	Runtime::instance().vdp().clearBackPatBuffer();
 	Runtime::instance().vdp().clearBackOamBuffer();
 	s_meshQueue.clearBack();
 	s_particleQueue.clearBack();
@@ -158,7 +218,7 @@ const std::vector<RenderSubmission>& copyRenderQueueForPlayback() {
 	auto& memory = Runtime::instance().memory();
 	size_t count = 0;
 	const auto copySpriteEntries = [&]() {
-		Runtime::instance().vdp().forEachOamEntry([&](const OamEntry& src, size_t) {
+		Runtime::instance().vdp().forEach2dEntry([&](const OamEntry& src, size_t) {
 			if (count >= s_renderQueuePlaybackBuffer.size()) {
 				s_renderQueuePlaybackBuffer.emplace_back();
 			}
@@ -363,9 +423,152 @@ void renderGlyphs(f32 x,
 					const std::optional<Color>& color,
 					const std::optional<Color>& backgroundColor,
 					const std::optional<RenderLayer>& layer) {
-	GameView* view = EngineCore::instance().view();
-	::bmsx::renderGlyphs(view, x, y, lines, start, end, z, font, color,
-							backgroundColor, layer);
+	if (!font) {
+		throw BMSX_RUNTIME_ERROR("No font or default font available for renderGlyphs");
+	}
+	Runtime& runtime = Runtime::instance();
+	Memory& memory = runtime.memory();
+	const f32 startX = x;
+	f32 stepY = 0.0f;
+	const i32 startIndex = start.value_or(0);
+	const i32 endIndex = end.value_or(std::numeric_limits<i32>::max());
+	const u32 packedColor = packColor8888(color);
+	const u32 packedBackgroundColor = packColor8888(backgroundColor);
+	if (s_glyphTraceCallCount < kGlyphTraceCallLimit) {
+		size_t totalChars = 0;
+		for (const auto& line : lines) {
+			totalChars += line.size();
+		}
+		std::cout << "[GlyphTrace][C++] renderGlyphs lines=" << lines.size()
+			<< " chars=" << totalChars
+			<< " start=" << startIndex
+			<< " end=" << endIndex
+			<< " z=" << z
+			<< " layer=" << static_cast<int>(renderLayerToOamLayer(layer))
+			<< " lineHeight=" << font->lineHeight()
+			<< " bg=" << (backgroundColor.has_value() ? 1 : 0)
+			<< std::endl;
+		++s_glyphTraceCallCount;
+	}
+	u32 backgroundHandle = 0u;
+	Memory::AssetEntry backgroundEntry{};
+	Memory::AssetEntry backgroundBaseEntry{};
+	const ImgAsset* backgroundImgAsset = nullptr;
+	if (backgroundColor.has_value()) {
+		backgroundHandle = memory.resolveAssetHandle("whitepixel");
+		backgroundEntry = memory.getAssetEntryByHandle(backgroundHandle);
+		if (backgroundEntry.type != Memory::AssetType::Image) {
+			throw BMSX_RUNTIME_ERROR("[Glyph Queue] Asset 'whitepixel' is not an image.");
+		}
+		backgroundImgAsset = EngineCore::instance().assets().getImg(backgroundEntry.id);
+		if (!backgroundImgAsset) {
+			throw BMSX_RUNTIME_ERROR("[Glyph Queue] Missing image metadata for 'whitepixel'.");
+		}
+		backgroundBaseEntry = resolveImageBaseEntry(memory, backgroundEntry, "Glyph Queue");
+	}
+
+	for (const auto& line : lines) {
+		if (line.empty()) {
+			y += static_cast<f32>(font->lineHeight());
+			stepY = 0.0f;
+			continue;
+		}
+
+		size_t byteIndex = 0;
+		i32 glyphIndex = 0;
+		while (byteIndex < line.size()) {
+			const u32 codepoint = readUtf8Codepoint(line, byteIndex);
+			if (glyphIndex < startIndex) {
+				++glyphIndex;
+				continue;
+			}
+			if (glyphIndex >= endIndex) {
+				break;
+			}
+
+			const FontGlyph& glyph = font->getGlyph(codepoint);
+			const f32 stepX = static_cast<f32>(glyph.advance);
+			const f32 glyphHeight = static_cast<f32>(glyph.height);
+			if (glyphHeight > stepY) {
+				stepY = glyphHeight;
+			}
+			if (backgroundImgAsset) {
+				PatEntry backgroundPat;
+				backgroundPat.atlasId = backgroundImgAsset->meta.atlasid;
+				backgroundPat.flags = PAT_FLAG_ENABLED;
+				backgroundPat.assetHandle = backgroundHandle;
+				backgroundPat.layer = renderLayerToOamLayer(layer);
+				backgroundPat.x = static_cast<f32>(static_cast<i32>(x));
+				backgroundPat.y = static_cast<f32>(static_cast<i32>(y));
+				backgroundPat.z = static_cast<f32>(static_cast<i32>(z));
+				backgroundPat.glyphW = stepX;
+				backgroundPat.glyphH = static_cast<f32>(font->lineHeight());
+				backgroundPat.bgW = 0.0f;
+				backgroundPat.bgH = 0.0f;
+				backgroundPat.u0 = static_cast<f32>(backgroundEntry.regionX) / static_cast<f32>(backgroundBaseEntry.regionW);
+				backgroundPat.v0 = static_cast<f32>(backgroundEntry.regionY) / static_cast<f32>(backgroundBaseEntry.regionH);
+				backgroundPat.u1 = static_cast<f32>(backgroundEntry.regionX + backgroundEntry.regionW) / static_cast<f32>(backgroundBaseEntry.regionW);
+				backgroundPat.v1 = static_cast<f32>(backgroundEntry.regionY + backgroundEntry.regionH) / static_cast<f32>(backgroundBaseEntry.regionH);
+				backgroundPat.fgColor = packedBackgroundColor;
+				backgroundPat.bgColor = 0u;
+				runtime.vdp().submitPatEntry(backgroundPat);
+			}
+
+			const u32 handle = memory.resolveAssetHandle(glyph.imgid);
+			const auto& entry = memory.getAssetEntryByHandle(handle);
+			if (entry.type != Memory::AssetType::Image) {
+				throw BMSX_RUNTIME_ERROR("[Glyph Queue] Asset '" + glyph.imgid + "' is not an image.");
+			}
+			const ImgAsset* imgAsset = EngineCore::instance().assets().getImg(entry.id);
+			if (!imgAsset) {
+				throw BMSX_RUNTIME_ERROR("[Glyph Queue] Missing image metadata for '" + glyph.imgid + "'.");
+			}
+						const auto baseEntry = resolveImageBaseEntry(memory, entry, "Glyph Queue");
+			if (s_glyphTraceEntryCount < kGlyphTraceEntryLimit) {
+				std::cout << "[GlyphTrace][C++] glyph codepoint=" << codepoint
+					<< " imgid=" << glyph.imgid
+					<< " atlas=" << imgAsset->meta.atlasid
+					<< " handle=" << handle
+					<< " region=" << entry.regionX << "," << entry.regionY << "," << entry.regionW << "," << entry.regionH
+					<< " base=" << baseEntry.regionW << "x" << baseEntry.regionH
+					<< " uv=" << (static_cast<f32>(entry.regionX) / static_cast<f32>(baseEntry.regionW))
+					<< "," << (static_cast<f32>(entry.regionY) / static_cast<f32>(baseEntry.regionH))
+					<< "," << (static_cast<f32>(entry.regionX + entry.regionW) / static_cast<f32>(baseEntry.regionW))
+					<< "," << (static_cast<f32>(entry.regionY + entry.regionH) / static_cast<f32>(baseEntry.regionH))
+					<< " pos=" << static_cast<i32>(x) << "," << static_cast<i32>(y)
+					<< " size=" << glyph.width << "x" << glyph.height
+					<< std::endl;
+				++s_glyphTraceEntryCount;
+			}
+
+			PatEntry pat;
+			pat.atlasId = imgAsset->meta.atlasid;
+			pat.flags = PAT_FLAG_ENABLED;
+			pat.assetHandle = handle;
+			pat.layer = renderLayerToOamLayer(layer);
+			pat.x = static_cast<f32>(static_cast<i32>(x));
+			pat.y = static_cast<f32>(static_cast<i32>(y));
+			pat.z = static_cast<f32>(static_cast<i32>(z));
+			pat.glyphW = static_cast<f32>(glyph.width);
+			pat.glyphH = static_cast<f32>(glyph.height);
+			pat.bgW = 0.0f;
+			pat.bgH = 0.0f;
+			pat.u0 = static_cast<f32>(entry.regionX) / static_cast<f32>(baseEntry.regionW);
+			pat.v0 = static_cast<f32>(entry.regionY) / static_cast<f32>(baseEntry.regionH);
+			pat.u1 = static_cast<f32>(entry.regionX + entry.regionW) / static_cast<f32>(baseEntry.regionW);
+			pat.v1 = static_cast<f32>(entry.regionY + entry.regionH) / static_cast<f32>(baseEntry.regionH);
+			pat.fgColor = packedColor;
+			pat.bgColor = 0u;
+			runtime.vdp().submitPatEntry(pat);
+
+			x += stepX;
+			++glyphIndex;
+		}
+
+		x = startX;
+		y += stepY;
+		stepY = 0.0f;
+	}
 }
 
 f32 calculateCenteredBlockX(const std::vector<std::string>& lines, i32 charWidth, i32 blockWidth) {

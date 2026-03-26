@@ -1,4 +1,5 @@
 import { $ } from '../../core/engine_core';
+import { registerSort2DPass_WebGL } from '../2d/sort_2d_pipeline';
 import { registerSpritesPass_WebGL } from '../2d/sprites_pipeline';
 import { registerSpritesPass_WebGPU } from '../2d/sprites_pipeline.wgpu';
 import * as MeshPipeline from '../3d/mesh_pipeline';
@@ -16,7 +17,7 @@ import { registerCRT_WebGL } from '../post/crt_pipeline';
 import { registerDeviceQuantize_WebGL } from '../post/device_quantize_pipeline';
 import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
-import { AnyBackend, CRTPipelineState, DeviceQuantizePipelineState, FogUniforms, FrameSharedState, GPUBackend, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry, RenderPassToken, SkyboxPipelineState, SpritesPipelineState } from './pipeline_interfaces';
+import { AnyBackend, CRTPipelineState, DeviceQuantizePipelineState, FogUniforms, FrameSharedState, GPUBackend, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry, RenderPassToken, SkyboxPipelineState, Sort2DPipelineState, SpritesPipelineState } from './pipeline_interfaces';
 import { checkWebGLError } from './webgl/webgl.helpers';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { registerHeadlessPasses } from '../headless/headless_render_passes';
@@ -28,7 +29,11 @@ type PassStateTypes = {
 	skybox: SkyboxPipelineState;
 	meshbatch: MeshBatchPipelineState;
 	particles: ParticlePipelineState;
+	sort_2d: Sort2DPipelineState;
 	sprites: SpritesPipelineState;
+	sprites_world: SpritesPipelineState;
+	sprites_ui: SpritesPipelineState;
+	sprites_ide: SpritesPipelineState;
 	device_quantize: DeviceQuantizePipelineState;
 	crt: CRTPipelineState;
 	frame_shared: FrameSharedState;
@@ -82,6 +87,7 @@ export class RenderPassLibrary {
 		});
 		// Removed: standalone fog pass. Fog state is produced in FrameSharedState.
 		this.register({ id: 'frame_shared', name: 'FrameShared', stateOnly: true, graph: { skip: true }, exec: () => { } });
+		this.register({ id: 'sort_2d', name: 'Sort2D', stateOnly: true, exec: () => { } });
 		// Backend-specific pass registrations (stubs for now)
 		registerSkyboxPass_WebGPU(this);
 		registerMeshBatchPass_WebGPU(this);
@@ -122,6 +128,9 @@ export class RenderPassLibrary {
 		// Axis gizmo (WebGL) — runs before sprites so labels render this frame
 		registerAxisGizmoPass_WebGL(this);
 
+		// 2D sort pass (WebGL)
+		registerSort2DPass_WebGL(this);
+
 		// Sprites (WebGL)
 		registerSpritesPass_WebGL(this);
 
@@ -160,7 +169,7 @@ export class RenderPassLibrary {
 			if (layoutUniforms.includes('FrameUniforms') && !backend.bindUniformBufferBase) {
 				console.warn(`[validate] ${pass.name}: backend lacks uniform buffer binding API`);
 			}
-			if (passId === 'sprites') {
+			if (passId === 'sprites' || passId === 'sprites_world' || passId === 'sprites_ui' || passId === 'sprites_ide') {
 				if (!gv.textures['_atlas_primary']) console.warn(`[validate] ${pass.name}: texture '_atlas_primary' missing`);
 				if (!gv.textures['_atlas_secondary']) console.warn(`[validate] ${pass.name}: texture '_atlas_secondary' missing`);
 				if (!gv.textures[ENGINE_ATLAS_TEXTURE_KEY]) console.warn(`[validate] ${pass.name}: engine atlas texture missing`);
@@ -391,8 +400,6 @@ export class RenderPassLibrary {
 						if (frameColorHandle != null) io.writeTex(frameColorHandle);
 						if (desc.writesDepth && frameDepthHandle != null) io.writeTex(frameDepthHandle);
 						else if (desc.depthTest && frameDepthHandle != null) io.readTex(frameDepthHandle);
-					} else {
-						if (frameColorHandle != null) io.readTex(frameColorHandle);
 					}
 					return { width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, present: isPresent };
 				},

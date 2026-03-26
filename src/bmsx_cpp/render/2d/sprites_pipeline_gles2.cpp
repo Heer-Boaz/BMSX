@@ -23,6 +23,7 @@ namespace SpritesPipeline {
 namespace {
 
 constexpr bool kSpritesVerboseLog = false;
+static int g_spriteTraceLogCount = 0;
 
 constexpr int kMaxSprites = OAM_SPRITE_SLOT_COUNT;
 constexpr int kVerticesPerSprite = 6;
@@ -423,8 +424,11 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 }
 
 void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
-							const SpritesPipelineState& state) {
-	const i32 spriteCount = Runtime::instance().vdp().beginSpriteOamRead();
+							const SpritesPipelineState& state,
+							const std::vector<Sorted2DDrawEntry>& sortedEntries,
+							bool useDepth) {
+	(void)context;
+	const i32 spriteCount = static_cast<i32>(sortedEntries.size());
 	if (spriteCount == 0) {
 		return;
 	}
@@ -437,7 +441,11 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	bindVertexLayout();
 
 	glDisable(GL_CULL_FACE);
-	glDisable(GL_DEPTH_TEST);
+	if (useDepth) {
+		glEnable(GL_DEPTH_TEST);
+	} else {
+		glDisable(GL_DEPTH_TEST);
+	}
 	glDepthMask(GL_FALSE);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -479,9 +487,23 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 		glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(batchCount * static_cast<size_t>(kVerticesPerSprite)));
 		batchCount = 0;
 	};
+	const auto& atlasSlots = Runtime::instance().vdp().atlasSlots();
+	const i32 primaryAtlasIdInSlot = atlasSlots[0];
+	const i32 secondaryAtlasIdInSlot = atlasSlots[1];
+	if (g_spriteTraceLogCount < 16) {
+		std::fprintf(stderr,
+			"[Sprites2D][C++][gles2] count=%d engineTex=%d primaryTex=%d secondaryTex=%d primaryAtlas=%d secondaryAtlas=%d\n",
+			spriteCount,
+			state.atlasEngineTex != nullptr ? 1 : 0,
+			state.atlasPrimaryTex != nullptr ? 1 : 0,
+			state.atlasSecondaryTex != nullptr ? 1 : 0,
+			primaryAtlasIdInSlot,
+			secondaryAtlasIdInSlot);
+		++g_spriteTraceLogCount;
+	}
 
-	Runtime::instance().vdp().forEachOamEntry([&](const OamEntry& item, size_t index) {
-		(void)index;
+	for (const Sorted2DDrawEntry& draw : sortedEntries) {
+		const OamEntry& item = draw.entry;
 		const OamLayer layer = item.layer;
 		const float desiredScale = (layer == OamLayer::IDE) ? ideScale : 1.0f;
 		if (desiredScale != currentScale) {
@@ -507,9 +529,9 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 		const uint16_t zPacked = packUnorm16(zNorm);
 		uint8_t atlasPacked = static_cast<uint8_t>(ENGINE_ATLAS_INDEX);
 		if (item.atlasId != ENGINE_ATLAS_INDEX) {
-			if (item.atlasId == context->primaryAtlasIdInSlot) {
+			if (item.atlasId == primaryAtlasIdInSlot) {
 				atlasPacked = 0;
-			} else if (item.atlasId == context->secondaryAtlasIdInSlot) {
+			} else if (item.atlasId == secondaryAtlasIdInSlot) {
 				atlasPacked = 1;
 			} else {
 				throw BMSX_RUNTIME_ERROR("[SpritesPipeline][GLES2] Atlas " + std::to_string(item.atlasId) + " not mapped to primary/secondary slots.");
@@ -532,7 +554,7 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 		if (batchCount >= static_cast<size_t>(kMaxSprites)) {
 			flush();
 		}
-	});
+	}
 
 	if (batchCount > 0) {
 		flush();

@@ -30,14 +30,29 @@ public:
 	void beginFrame();
 	void submitOamEntry(const OamEntry& entry);
 	void clearBackOamBuffer();
+	void clearBackPatBuffer();
+	void submitPatEntry(const PatEntry& entry);
+	void clearBackBgMap();
+	void beginBgMapLayerWrite(i32 layerIndex, const BgMapHeader& header);
+	void submitBgMapTile(i32 layerIndex, i32 col, i32 row, const BgMapEntry& entry);
 	void swapOamBuffers();
+	void swapPatBuffers();
+	void swapBgMapBuffers();
+	uint32_t getBgMapFrontBase() const { return m_bgMapFrontBase; }
+	uint32_t getBgMapBackBase() const { return m_bgMapBackBase; }
+	uint32_t getPatFrontBase() const { return m_patFrontBase; }
+	uint32_t getPatBackBase() const { return m_patBackBase; }
 	void setOamReadSource(bool useBackBuffer);
 	i32 frontOamCount() const;
 	i32 backOamCount() const;
 	bool hasFrontOamContent() const;
 	bool hasBackOamContent() const;
+	bool hasFront2dContent() const;
+	bool hasBack2dContent() const;
 	i32 beginSpriteOamRead() const;
+	i32 begin2dRead() const;
 	void forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn) const;
+	void forEach2dEntry(const std::function<void(const OamEntry&, size_t)>& fn) const;
 	uint32_t readVdpStatus() override;
 	uint32_t readVdpData() override;
 
@@ -110,6 +125,10 @@ private:
 	SkyboxImageIds m_skyboxFaceIds;
 	bool m_hasSkybox = false;
 	i32 m_lastDitherType = 0;
+	uint32_t m_bgMapFrontBase = VDP_BGMAP_FRONT_BASE;
+	uint32_t m_bgMapBackBase = VDP_BGMAP_BACK_BASE;
+	uint32_t m_patFrontBase = VDP_PAT_FRONT_BASE;
+	uint32_t m_patBackBase = VDP_PAT_BACK_BASE;
 	std::array<Memory::ImageWriteEntry, 6> m_skyboxSlots{};
 
 	void registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId);
@@ -135,8 +154,19 @@ private:
 	uint32_t readOamFrontBase() const;
 	uint32_t readOamBackBase() const;
 	uint32_t readOamReadSource() const;
+	uint32_t activeBgMapBase() const;
+	uint32_t activePatBase() const;
 	void writeOamEntry(uint32_t addr, const OamEntry& entry);
 	OamEntry readOamEntry(uint32_t addr) const;
+	void writePatHeader(uint32_t base, const PatHeader& header);
+	PatHeader readPatHeader(uint32_t base) const;
+	void writePatEntry(uint32_t addr, const PatEntry& entry);
+	PatEntry readPatEntry(uint32_t addr) const;
+	void writeBgMapHeader(uint32_t base, const BgMapHeader& header);
+	BgMapHeader readBgMapHeader(uint32_t base) const;
+	void writeBgMapEntry(uint32_t addr, const BgMapEntry& entry);
+	BgMapEntry readBgMapEntry(uint32_t addr) const;
+	f32 unpackColorChannel(uint32_t packed, uint32_t shift) const;
 };
 
 } // namespace bmsx

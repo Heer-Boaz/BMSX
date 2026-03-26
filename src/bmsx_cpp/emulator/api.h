@@ -49,6 +49,8 @@ public:
 	void put_rectfill(int x0, int y0, int x1, int y1, int z, int colorIndex);
 	void put_rectfillcolor(int x0, int y0, int x1, int y1, int z, const Color& color, std::optional<RenderLayer> layer);
 	void put_sprite(const ImgRenderSubmission& submission);
+	void bgmap_begin(int layer, int cols, int rows, int tileW, int tileH, int originX, int originY, int z, std::optional<int> scrollX, std::optional<int> scrollY, std::optional<RenderLayer> renderLayer);
+	void bgmap_tile(int layer, int col, int row, const std::string& imgId);
 	void put_poly(const PolyRenderSubmission& submission);
 	void put_mesh(const MeshRenderSubmission& submission);
 	void put_particle(const ParticleRenderSubmission& submission);

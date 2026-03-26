@@ -34,6 +34,9 @@ export const OAM_LAYER_WORLD: OamLayer = 0;
 export const OAM_LAYER_UI: OamLayer = 1;
 export const OAM_LAYER_IDE: OamLayer = 2;
 export const OAM_FLAG_ENABLED = 1;
+export const PAT_FLAG_ENABLED = 1;
+export const BGMAP_LAYER_FLAG_ENABLED = 1;
+export const BGMAP_TILE_FLAG_ENABLED = 1;
 export const OAM_ENTRY_WORD_ATLAS_ID = 0;
 export const OAM_ENTRY_WORD_FLAGS = 1;
 export const OAM_ENTRY_WORD_ASSET_HANDLE = 2;
@@ -96,6 +99,55 @@ export type OamBuffer = {
 export type OamFrontBackState = {
 	front: OamBuffer;
 	back: OamBuffer;
+};
+
+export type PatHeader = {
+	flags: number;
+	count: number;
+};
+
+export type PatEntry = {
+	atlasId: number;
+	flags: number;
+	assetHandle: number;
+	layer: OamLayer;
+	x: number;
+	y: number;
+	z: number;
+	glyphW: number;
+	glyphH: number;
+	bgW: number;
+	bgH: number;
+	u0: number;
+	v0: number;
+	u1: number;
+	v1: number;
+	fgColor: number;
+	bgColor: number;
+};
+
+export type BgMapHeader = {
+	flags: number;
+	layer: OamLayer;
+	cols: number;
+	rows: number;
+	tileW: number;
+	tileH: number;
+	originX: number;
+	originY: number;
+	scrollX: number;
+	scrollY: number;
+	z: number;
+};
+
+export type BgMapEntry = {
+	atlasId: number;
+	flags: number;
+	assetHandle: number;
+	u0: number;
+	v0: number;
+	u1: number;
+	v1: number;
 };
 
 export type RectRenderSubmission = {

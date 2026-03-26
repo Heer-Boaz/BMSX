@@ -1,11 +1,13 @@
 import { FeatureQueue } from '../../utils/feature_queue';
 import {
+	PAT_FLAG_ENABLED,
 	OAM_FLAG_ENABLED,
 	OAM_LAYER_WORLD,
 	oamLayerToRenderLayer,
 	renderLayerToOamLayer,
 } from './render_types';
 import type {
+	PatEntry,
 	color,
 	GlyphRenderSubmission,
 	ImgRenderSubmission,
@@ -22,6 +24,7 @@ import { RenderSubmission } from '../backend/pipeline_interfaces';
 import { Runtime } from '../../emulator/runtime';
 import { ASSET_FLAG_VIEW } from '../../emulator/memory';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
+import { tokenKeyFromId } from '../../rompack/asset_tokens';
 import { new_vec3, new_vec2 } from '../../utils/vector_operations';
 import { clamp } from '../../utils/clamp';
 import { BFont } from './bitmap_font';
@@ -38,6 +41,12 @@ type PlaybackMeshSubmission = Extract<RenderSubmission, { type: 'mesh' }>;
 type PlaybackParticleSubmission = Extract<RenderSubmission, { type: 'particle' }>;
 
 const renderQueuePlaybackBuffer: RenderSubmission[] = [];
+const GLYPH_TRACE_CALL_LOG_LIMIT = 12;
+const GLYPH_TRACE_ENTRY_LOG_LIMIT = 48;
+const OAM_SUBMIT_TRACE_LOG_LIMIT = 32;
+let glyphTraceCallLogCount = 0;
+let glyphTraceEntryLogCount = 0;
+let oamSubmitTraceLogCount = 0;
 
 function createPlaybackImgSubmission(): PlaybackImgSubmission {
 	return {
@@ -184,14 +193,20 @@ export function submitSprite(options: ImgRenderSubmission): void {
 		parallaxWeight: 0,
 	};
 	oam.parallaxWeight = oam.layer === OAM_LAYER_WORLD ? (options.parallax_weight ?? 0) : 0;
+	if (oam.layer !== OAM_LAYER_WORLD && oamSubmitTraceLogCount < OAM_SUBMIT_TRACE_LOG_LIMIT) {
+		console.log(`[OAMSubmitTrace][TS] imgid=${options.imgid} layer=${oam.layer} pos=${oam.x},${oam.y},${oam.z} size=${oam.w}x${oam.h} atlas=${oam.atlasId}`);
+		oamSubmitTraceLogCount += 1;
+	}
 	runtime.vdp.submitOamEntry(oam);
 }
 
 export function beginSpriteQueue(): number {
-	return Runtime.instance.vdp.beginSpriteOamRead();
+	return Runtime.instance.vdp.begin2dRead();
 }
 
 export function prepareCompletedRenderQueues(): void {
+	Runtime.instance.vdp.swapBgMapBuffers();
+	Runtime.instance.vdp.swapPatBuffers();
 	Runtime.instance.vdp.swapOamBuffers();
 	Runtime.instance.vdp.setOamReadSource('front');
 	meshQueue.swap();
@@ -200,7 +215,7 @@ export function prepareCompletedRenderQueues(): void {
 }
 
 function hasCommittedFrontQueueContent(): boolean {
-	return Runtime.instance.vdp.hasFrontOamContent()
+	return Runtime.instance.vdp.hasFront2dContent()
 		|| meshQueue.sizeFront() > 0
 		|| particleQueue.sizeFront() > 0;
 }
@@ -218,12 +233,14 @@ export function prepareOverlayRenderQueues(): void {
 }
 
 export function hasPendingBackQueueContent(): boolean {
-	return Runtime.instance.vdp.hasBackOamContent()
+	return Runtime.instance.vdp.hasBack2dContent()
 		|| meshQueue.sizeBack() > 0
 		|| particleQueue.sizeBack() > 0;
 }
 
 export function clearBackQueues(): void {
+	Runtime.instance.vdp.clearBackBgMap();
+	Runtime.instance.vdp.clearBackPatBuffer();
 	Runtime.instance.vdp.clearBackOamBuffer();
 	meshQueue.clearBack();
 	particleQueue.clearBack();
@@ -245,7 +262,7 @@ export function spriteQueueFrontSize(): number {
 export function copyRenderQueueForPlayback(): RenderSubmission[] {
 	let count = 0;
 	const copySpriteEntries = () => {
-		Runtime.instance.vdp.forEachOamEntry((item) => {
+		Runtime.instance.vdp.forEach2dEntry((item) => {
 			setPlaybackSpriteSubmission(count, item);
 			count += 1;
 		});
@@ -480,13 +497,53 @@ const CHAR_CACHE: string[] = (() => {
 export function renderGlyphs(x: number, y: number, textToWrite: string | string[], start?: number, end?: number, z: number = 950, font?: BFont, color?: color, backgroundColor?: color, layer?: RenderLayer): void {
 	font ??= $.view.default_font;
 	if (!font) { throw new Error('No font or default font available for renderGlyphs'); }
+	const runtime = Runtime.instance;
+	const memory = runtime.memory;
 	const startX = x;
 	let stepY = 0;
-	const spriteOptions: ImgRenderSubmission = { imgid: 'none', pos: { x, y, z }, colorize: color, layer };
-	const spritePos = spriteOptions.pos;
-	const rectoptions: RectRenderSubmission = backgroundColor
-		? { area: { left: 0, top: 0, right: 0, bottom: 0 }, color: backgroundColor, kind: 'fill', layer }
-		: null;
+	const packColor8888 = (source: color | undefined): number => {
+		const value = source ?? { r: 1, g: 1, b: 1, a: 1 };
+		const r = Math.round(clamp(value.r, 0, 1) * 255);
+		const g = Math.round(clamp(value.g, 0, 1) * 255);
+		const b = Math.round(clamp(value.b, 0, 1) * 255);
+		const a = Math.round(clamp(value.a, 0, 1) * 255);
+		return (r | (g << 8) | (b << 16) | (a << 24)) >>> 0;
+	};
+	const packedColor = packColor8888(color);
+	const packedBackgroundColor = backgroundColor ? packColor8888(backgroundColor) : 0;
+	if (glyphTraceCallLogCount < GLYPH_TRACE_CALL_LOG_LIMIT) {
+		const lineCount = Array.isArray(textToWrite) ? textToWrite.length : 1;
+		const totalChars = Array.isArray(textToWrite)
+			? textToWrite.reduce((sum, line) => sum + line.length, 0)
+			: textToWrite.length;
+		console.log(`[GlyphTrace][TS] renderGlyphs lines=${lineCount} chars=${totalChars} start=${start ?? 0} end=${end ?? -1} z=${z} layer=${layer ?? 'world'} lineHeight=${font.lineHeight} bg=${backgroundColor ? 1 : 0}`);
+		glyphTraceCallLogCount += 1;
+	}
+	const backgroundAsset = (() => {
+		if (!backgroundColor) {
+			return null;
+		}
+		const handle = memory.resolveAssetHandle('whitepixel');
+		const entry = memory.getAssetEntryByHandle(handle);
+		if (entry.type !== 'image') {
+			throw new Error(`[Glyph Queue] Asset 'whitepixel' is not an image.`);
+		}
+		const imgAsset = $.assets.img[tokenKeyFromId('whitepixel')];
+		if (!imgAsset) {
+			throw new Error(`[Glyph Queue] Missing image metadata for 'whitepixel'.`);
+		}
+		const baseEntry = (entry.flags & ASSET_FLAG_VIEW) !== 0
+			? memory.getAssetEntryByHandle(entry.ownerIndex)
+			: entry;
+		if (baseEntry.regionW <= 0 || baseEntry.regionH <= 0) {
+			throw new Error(`[Glyph Queue] Atlas backing entry for 'whitepixel' missing dimensions.`);
+		}
+		const u0 = entry.regionX / baseEntry.regionW;
+		const v0 = entry.regionY / baseEntry.regionH;
+		const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
+		const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
+		return { handle, imgAsset, u0, v0, u1, v1 };
+	})();
 
 	start = start ?? 0;
 
@@ -505,18 +562,71 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 			if (height > stepY) {
 				stepY = height;
 			}
-			if (rectoptions) {
-				const area = rectoptions.area;
-				area.left = x;
-				area.top = y;
-				area.right = x + stepX;
-				area.bottom = y + stepY;
-				$.view.renderer.submit.rect(rectoptions);
+			if (backgroundAsset) {
+				const pat: PatEntry = {
+					atlasId: backgroundAsset.imgAsset.imgmeta.atlasid,
+					flags: PAT_FLAG_ENABLED,
+					assetHandle: backgroundAsset.handle,
+					layer: renderLayerToOamLayer(layer),
+					x: ~~x,
+					y: ~~y,
+					z: ~~z,
+					glyphW: stepX,
+					glyphH: font.lineHeight,
+					bgW: 0,
+					bgH: 0,
+					u0: backgroundAsset.u0,
+					v0: backgroundAsset.v0,
+					u1: backgroundAsset.u1,
+					v1: backgroundAsset.v1,
+					fgColor: packedBackgroundColor,
+					bgColor: 0,
+				};
+				runtime.vdp.submitPatEntry(pat);
 			}
-			spritePos.x = x;
-			spritePos.y = y;
-			spriteOptions.imgid = glyph.imgid;
-			$.view.renderer.submit.sprite(spriteOptions);
+			const handle = memory.resolveAssetHandle(glyph.imgid);
+			const entry = memory.getAssetEntryByHandle(handle);
+			if (entry.type !== 'image') {
+				throw new Error(`[Glyph Queue] Asset '${glyph.imgid}' is not an image.`);
+			}
+			const imgAsset = $.assets.img[tokenKeyFromId(glyph.imgid)];
+			if (!imgAsset) {
+				throw new Error(`[Glyph Queue] Missing image metadata for '${glyph.imgid}'.`);
+			}
+			const baseEntry = (entry.flags & ASSET_FLAG_VIEW) !== 0
+				? memory.getAssetEntryByHandle(entry.ownerIndex)
+				: entry;
+			if (baseEntry.regionW <= 0 || baseEntry.regionH <= 0) {
+				throw new Error(`[Glyph Queue] Atlas backing entry for '${glyph.imgid}' missing dimensions.`);
+			}
+			const u0 = entry.regionX / baseEntry.regionW;
+			const v0 = entry.regionY / baseEntry.regionH;
+			const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
+			const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
+			if (glyphTraceEntryLogCount < GLYPH_TRACE_ENTRY_LOG_LIMIT) {
+				console.log(`[GlyphTrace][TS] glyph=${JSON.stringify(letter)} imgid=${glyph.imgid} atlas=${imgAsset.imgmeta.atlasid} handle=${handle} region=${entry.regionX},${entry.regionY},${entry.regionW},${entry.regionH} base=${baseEntry.regionW}x${baseEntry.regionH} uv=${u0.toFixed(4)},${v0.toFixed(4)},${u1.toFixed(4)},${v1.toFixed(4)} pos=${~~x},${~~y} size=${glyph.width}x${glyph.height}`);
+				glyphTraceEntryLogCount += 1;
+			}
+			const pat: PatEntry = {
+				atlasId: imgAsset.imgmeta.atlasid,
+				flags: PAT_FLAG_ENABLED,
+				assetHandle: handle,
+				layer: renderLayerToOamLayer(layer),
+				x: ~~x,
+				y: ~~y,
+				z: ~~z,
+				glyphW: glyph.width,
+				glyphH: glyph.height,
+				bgW: 0,
+				bgH: 0,
+				u0,
+				v0,
+				u1,
+				v1,
+				fgColor: packedColor,
+				bgColor: 0,
+			};
+			runtime.vdp.submitPatEntry(pat);
 			x += stepX;
 		}
 		x = startX;

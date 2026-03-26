@@ -17,6 +17,8 @@ namespace bmsx {
 
 // Forward declarations
 class GameView;
+struct Sort2DPipelineState;
+struct SpritesPipelineState;
 
 /* ============================================================================
  * SpritesPipeline
@@ -52,11 +54,17 @@ void drawRectangle(const RectRenderSubmission& options);
 void drawPolygon(const std::vector<f32>& coords, f32 z, const Color& color, f32 thickness = 1.0f, std::optional<RenderLayer> layer = std::nullopt);
 
 /**
- * Render the sprite batch.
+ * Flatten and sort the active 2D draw list.
+ * Mirrors the TypeScript sort_2d render pass.
+ */
+Sort2DPipelineState buildSorted2DPipelineState();
+
+/**
+ * Render the sprite batch from a pre-sorted 2D draw list.
  * Called by the render graph to execute sprite rendering.
  * Mirrors TypeScript renderSpriteBatch().
  */
-void renderSpriteBatch(GPUBackend* backend, GameView* context);
+void renderSpriteBatch(GPUBackend* backend, GameView* context, const SpritesPipelineState& spriteState, const Sort2DPipelineState& sortState, OamLayer layer, bool useDepth);
 
 /**
  * Get sprite queue debug counts.

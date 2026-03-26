@@ -135,6 +135,7 @@ public:
 	ImageWritePlan planImageSlotWrite(AssetEntry& entry, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacity);
 	void writeImageSlot(AssetEntry& entry, const u8* pixels, size_t pixelBytes, uint32_t width, uint32_t height, uint32_t capacity);
 	void updateImageViewBase(AssetEntry& entry, const AssetEntry& base);
+	void updateImageView(AssetEntry& entry, const AssetEntry& base, uint32_t regionX, uint32_t regionY, uint32_t regionW, uint32_t regionH, uint32_t flags = 0);
 	void finalizeAssetTable();
 	std::vector<AssetEntry*> consumeDirtyAssets();
 	void markAllAssetsDirty();

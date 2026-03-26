@@ -126,18 +126,32 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		registerPass(desc);
 	}
 
-	// Sprites pass
+	// 2D sort pass
 	{
 		RenderPassDef desc;
-		desc.id = "sprites";
-		desc.name = "Sprites2D";
-		desc.writesDepth = true;
+		desc.id = "sort_2d";
+		desc.name = "Sort2D";
+		desc.stateOnly = true;
+		desc.exec = [this](GPUBackend*, void*, std::any&) {
+			this->setState("sort_2d", SpritesPipeline::buildSorted2DPipelineState());
+		};
+		registerPass(desc);
+	}
+
+	auto registerSpritePass = [this](const char* passId, const char* passName, OamLayer layer, bool useDepth) {
+		RenderPassDef desc;
+		desc.id = passId;
+		desc.name = passName;
+		desc.writesDepth = useDepth;
+		desc.depthTest = useDepth;
 		desc.shouldExecute = []() { return true; };
-		desc.exec = [](GPUBackend* backend, void* fbo, std::any&) {
+		desc.exec = [this, layer, useDepth](GPUBackend* backend, void* fbo, std::any& state) {
 			(void)fbo;
 			auto& engine = EngineCore::instance();
 			auto* view = engine.view();
-			SpritesPipeline::renderSpriteBatch(backend, view);
+			auto& spriteState = std::any_cast<SpritesPipelineState&>(state);
+			const auto& sortState = this->getStateRef<Sort2DPipelineState>("sort_2d");
+			SpritesPipeline::renderSpriteBatch(backend, view, spriteState, sortState, layer, useDepth);
 		};
 		desc.prepare = [](GPUBackend*, std::any& state) {
 			auto& engine = EngineCore::instance();
@@ -170,7 +184,11 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 			state = spriteState;
 		};
 		registerPass(desc);
-	}
+	};
+
+	registerSpritePass("sprites_world", "Sprites2DWorld", OamLayer::World, true);
+	registerSpritePass("sprites_ui", "Sprites2DUI", OamLayer::UI, false);
+	registerSpritePass("sprites_ide", "Sprites2DIDE", OamLayer::IDE, false);
 
 	// Present pass (software: direct blit)
 	{
@@ -230,22 +248,37 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		registerPass(desc);
 	}
 
-	// Sprites pass (GLES2)
+	// 2D sort pass
 	{
 		RenderPassDef desc;
-		desc.id = "sprites";
-		desc.name = "Sprites2D";
-		desc.writesDepth = true;
-		desc.bootstrap = [](GPUBackend* backend) {
-			auto& engine = EngineCore::instance();
-			SpritesPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view());
+		desc.id = "sort_2d";
+		desc.name = "Sort2D";
+		desc.stateOnly = true;
+		desc.exec = [this](GPUBackend*, void*, std::any&) {
+			this->setState("sort_2d", SpritesPipeline::buildSorted2DPipelineState());
 		};
+		registerPass(desc);
+	}
+
+	auto registerSpritePass = [this](const char* passId, const char* passName, OamLayer layer, bool useDepth, bool bootstrap) {
+		RenderPassDef desc;
+		desc.id = passId;
+		desc.name = passName;
+		desc.writesDepth = useDepth;
+		desc.depthTest = useDepth;
+		if (bootstrap) {
+			desc.bootstrap = [](GPUBackend* backend) {
+				auto& engine = EngineCore::instance();
+				SpritesPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view());
+			};
+		}
 		desc.shouldExecute = []() { return true; };
-		desc.exec = [](GPUBackend* backend, void* fbo, std::any& state) {
+		desc.exec = [this, layer, useDepth](GPUBackend* backend, void* fbo, std::any& state) {
 			(void)fbo;
 			auto& engine = EngineCore::instance();
 			auto& spriteState = std::any_cast<SpritesPipelineState&>(state);
-			SpritesPipeline::renderSpriteBatchGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), spriteState);
+			const auto& sortState = this->getStateRef<Sort2DPipelineState>("sort_2d");
+			SpritesPipeline::renderSpriteBatch(backend, engine.view(), spriteState, sortState, layer, useDepth);
 		};
 		desc.prepare = [](GPUBackend*, std::any& state) {
 			auto& engine = EngineCore::instance();
@@ -278,7 +311,11 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 			state = spriteState;
 		};
 		registerPass(desc);
-	}
+	};
+
+	registerSpritePass("sprites_world", "Sprites2DWorld", OamLayer::World, true, true);
+	registerSpritePass("sprites_ui", "Sprites2DUI", OamLayer::UI, false, false);
+	registerSpritePass("sprites_ide", "Sprites2DIDE", OamLayer::IDE, false, false);
 
 	// Device quantize/dither pass (GLES2)
 	{
@@ -616,8 +653,6 @@ std::unique_ptr<RenderGraphRuntime> RenderPassLibrary::buildRenderGraph(GameView
 				io.writeTex(handles->color);
 				if (writesDepth) io.writeTex(handles->depth);
 				else if (depthTest) io.readTex(handles->depth);
-			} else {
-				io.readTex(handles->color);
 			}
 			return std::any{};
 		};

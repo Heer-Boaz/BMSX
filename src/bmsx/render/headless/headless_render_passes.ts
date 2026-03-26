@@ -1,6 +1,6 @@
 import { $ } from '../../core/engine_core';
 import { RenderPassLibrary } from '../backend/renderpasslib';
-import { SpritesPipelineState, MeshBatchPipelineState, ParticlePipelineState } from '../backend/pipeline_interfaces';
+import { Sort2DPipelineState, Sorted2DDrawEntry, SpritesPipelineState, MeshBatchPipelineState, ParticlePipelineState } from '../backend/pipeline_interfaces';
 import { M4 } from '../3d/math3d';
 import {
 	beginMeshQueue,
@@ -10,8 +10,9 @@ import {
 	meshQueueBackSize,
 	particleQueueBackSize,
 } from '../shared/render_queues';
+import { buildSorted2DState } from '../2d/sort_2d_pipeline';
 import { OAM_FLAG_ENABLED, oamLayerToRenderLayer } from '../shared/render_types';
-import type { MeshRenderSubmission, OamEntry, ParticleRenderSubmission } from '../shared/render_types';
+import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/render_types';
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
@@ -24,6 +25,7 @@ import { IO_VDP_PRIMARY_ATLAS_ID, IO_VDP_SECONDARY_ATLAS_ID, VDP_ATLAS_ID_NONE }
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
 	registerSkyboxPass(registry);
+	registerSort2DPass(registry);
 	registerSpritePass(registry);
 	registerMeshPass(registry);
 	registerParticlePass(registry);
@@ -337,16 +339,12 @@ function makeSpriteState(): SpritesPipelineState {
 	};
 }
 
-function registerSpritePass(registry: RenderPassLibrary): void {
+function registerSort2DPass(registry: RenderPassLibrary): void {
 	registry.register({
-		id: 'sprites',
-		name: 'HeadlessSprites',
+		id: 'sort_2d',
+		name: 'HeadlessSort2D',
 		stateOnly: true,
-		prepare: () => {
-			registry.setState('sprites', makeSpriteState());
-		},
-		exec: (_backend, _fbo, state: unknown) => {
-			const spriteState = state as SpritesPipelineState;
+		exec: () => {
 			const overlayFrame = drainOverlayFrameForHeadless();
 			if (overlayFrame) {
 				let glyphCount = 0;
@@ -370,59 +368,93 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 				}
 				previousOverlaySnapshot = emitDiff('overlay', previousOverlaySnapshot, overlaySnapshot);
 			}
-			const count = Runtime.instance.vdp.beginSpriteOamRead();
+			registry.setState('sort_2d', buildSorted2DState());
+		},
+	});
+}
+
+function forEachSorted2DDrawEntry(sortState: Sort2DPipelineState, visitor: (entry: Sorted2DDrawEntry, index: number) => void): void {
+	let index = 0;
+	sortState.world.entries.forEach((entry) => {
+		visitor(entry, index);
+		index += 1;
+	});
+	sortState.ui.entries.forEach((entry) => {
+		visitor(entry, index);
+		index += 1;
+	});
+	sortState.ide.entries.forEach((entry) => {
+		visitor(entry, index);
+		index += 1;
+	});
+}
+
+function registerSpritePass(registry: RenderPassLibrary): void {
+	registry.register({
+		id: 'sprites',
+		name: 'HeadlessSprites',
+		stateOnly: true,
+		prepare: () => {
+			registry.setState('sprites', makeSpriteState());
+		},
+		exec: (_backend, _fbo, state: unknown) => {
+			const spriteState = state as SpritesPipelineState;
+			const sortState = registry.getState('sort_2d') as Sort2DPipelineState;
+			const count = sortState.world.count + sortState.ui.count + sortState.ide.count;
 			const snapshot: Snapshot = [
 				`draws=${count} viewport=${spriteState.width}x${spriteState.height} base=${spriteState.baseWidth}x${spriteState.baseHeight}`,
 			];
 			const slots = resolveHeadlessAtlasSlots();
 			const primaryAtlasId = slots.primary;
 			const secondaryAtlasId = slots.secondary;
-				let needsPrimaryAtlas = false;
-				let needsSecondaryAtlas = false;
-				let needsEngineAtlas = false;
-				if (count > 0) {
-					const runtime = Runtime.instance;
-					let index = 0;
-					Runtime.instance.vdp.forEachOamEntry((entry: OamEntry) => {
-						if ((entry.flags & OAM_FLAG_ENABLED) === 0) {
-							throw new Error('[HeadlessSprites] Disabled OAM entry reached active sprite iteration.');
-						}
-						if (!Number.isFinite(entry.x) || !Number.isFinite(entry.y) || !Number.isFinite(entry.z)) {
-							throw new Error(`[HeadlessSprites] OAM sprite #${index} has invalid position.`);
-						}
-						if (!Number.isFinite(entry.w) || !Number.isFinite(entry.h) || entry.w <= 0 || entry.h <= 0) {
-							throw new Error(`[HeadlessSprites] OAM sprite #${index} has invalid size.`);
-						}
-						const u0 = entry.u0;
-						const v0 = entry.v0;
-						const u1 = entry.u1;
-						const v1 = entry.v1;
-						if (!Number.isFinite(u0) || !Number.isFinite(v0) || !Number.isFinite(u1) || !Number.isFinite(v1)) {
-							throw new Error(`[HeadlessSprites] OAM sprite #${index} has non-finite UVs.`);
-						}
-						const uMin = u0 < u1 ? u0 : u1;
-						const uMax = u0 > u1 ? u0 : u1;
-						const vMin = v0 < v1 ? v0 : v1;
-						const vMax = v0 > v1 ? v0 : v1;
-						if (uMin < 0 || vMin < 0 || uMax > 1 || vMax > 1) {
-							throw new Error(`[HeadlessSprites] OAM sprite #${index} UVs out of range (${u0}, ${v0})..(${u1}, ${v1}).`);
-						}
-						const expectedBinding = resolveExpectedSpriteAtlasBinding(entry.atlasId, primaryAtlasId, secondaryAtlasId);
-						if (expectedBinding === 0) needsPrimaryAtlas = true;
-						else if (expectedBinding === 1) needsSecondaryAtlas = true;
-						else needsEngineAtlas = true;
-						const asset = runtime.getAssetEntryByHandle(entry.assetHandle);
-						if (asset.type !== 'image') {
-							throw new Error(`[HeadlessSprites] OAM sprite #${index} references non-image asset handle ${entry.assetHandle}.`);
-						}
-						const flipHLabel = entry.u0 > entry.u1 ? 'H' : '-';
-						const flipVLabel = entry.v0 > entry.v1 ? 'V' : '-';
-						const atlas = expectedBinding;
-						// Ambient sprites are disabled in the runtime; logging follows suit until a new approach is added.
-						snapshot.push(`[sprite#${index}] id=${asset.id} layer=${oamLayerToRenderLayer(entry.layer)} pos=${formatVec3({ x: entry.x, y: entry.y, z: entry.z })} size=${entry.w}x${entry.h} flip=${flipHLabel}${flipVLabel} atlas=${atlas}`);
-						index += 1;
-					});
-				}
+			let needsPrimaryAtlas = false;
+			let needsSecondaryAtlas = false;
+			let needsEngineAtlas = false;
+			if (count > 0) {
+				const runtime = Runtime.instance;
+				forEachSorted2DDrawEntry(sortState, (entry, index) => {
+					if ((entry.flags & OAM_FLAG_ENABLED) === 0) {
+						throw new Error('[HeadlessSprites] Disabled OAM entry reached active sprite iteration.');
+					}
+					if (!Number.isFinite(entry.x) || !Number.isFinite(entry.y) || !Number.isFinite(entry.z)) {
+						throw new Error(`[HeadlessSprites] OAM sprite #${index} has invalid position.`);
+					}
+					if (!Number.isFinite(entry.w) || !Number.isFinite(entry.h) || entry.w <= 0 || entry.h <= 0) {
+						throw new Error(`[HeadlessSprites] OAM sprite #${index} has invalid size.`);
+					}
+					const assetLabel = entry.assetHandle !== 0
+						? (() => {
+							const asset = runtime.getAssetEntryByHandle(entry.assetHandle);
+							if (asset.type !== 'image') {
+								throw new Error(`[HeadlessSprites] 2D draw #${index} references non-image asset handle ${entry.assetHandle}.`);
+							}
+							return asset.id;
+						})()
+						: 'baked';
+					const u0 = entry.u0;
+					const v0 = entry.v0;
+					const u1 = entry.u1;
+					const v1 = entry.v1;
+					if (!Number.isFinite(u0) || !Number.isFinite(v0) || !Number.isFinite(u1) || !Number.isFinite(v1)) {
+						throw new Error(`[HeadlessSprites] OAM sprite #${index} id=${assetLabel} atlas=${entry.atlasId} has non-finite UVs.`);
+					}
+					const uMin = u0 < u1 ? u0 : u1;
+					const uMax = u0 > u1 ? u0 : u1;
+					const vMin = v0 < v1 ? v0 : v1;
+					const vMax = v0 > v1 ? v0 : v1;
+					if (uMin < 0 || vMin < 0 || uMax > 1 || vMax > 1) {
+						throw new Error(`[HeadlessSprites] OAM sprite #${index} id=${assetLabel} atlas=${entry.atlasId} UVs out of range (${u0}, ${v0})..(${u1}, ${v1}).`);
+					}
+					const expectedBinding = resolveExpectedSpriteAtlasBinding(entry.atlasId, primaryAtlasId, secondaryAtlasId);
+					if (expectedBinding === 0) needsPrimaryAtlas = true;
+					else if (expectedBinding === 1) needsSecondaryAtlas = true;
+					else needsEngineAtlas = true;
+					const flipHLabel = entry.u0 > entry.u1 ? 'H' : '-';
+					const flipVLabel = entry.v0 > entry.v1 ? 'V' : '-';
+					const atlas = expectedBinding;
+					snapshot.push(`[sprite#${index}] id=${assetLabel} layer=${oamLayerToRenderLayer(entry.layer)} pos=${formatVec3({ x: entry.x, y: entry.y, z: entry.z })} size=${entry.w}x${entry.h} flip=${flipHLabel}${flipVLabel} atlas=${atlas}`);
+				});
+			}
 			if (needsPrimaryAtlas) {
 				if (primaryAtlasId === null || primaryAtlasId === undefined) {
 					throw new Error('[HeadlessSprites] Primary atlas slot is not set.');

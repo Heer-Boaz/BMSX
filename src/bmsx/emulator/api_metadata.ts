@@ -169,6 +169,31 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
+	bgmap_begin: {
+		description: 'Begins authoring a retained BGMap layer in the current back buffer.',
+		parameters: [
+			{ name: 'layer', description: 'BGMap layer index.' },
+			{ name: 'cols', description: 'Tile columns.' },
+			{ name: 'rows', description: 'Tile rows.' },
+			{ name: 'tile_w', description: 'Tile width in pixels.' },
+			{ name: 'tile_h', description: 'Tile height in pixels.' },
+			{ name: 'origin_x', description: 'Layer origin X in pixels.' },
+			{ name: 'origin_y', description: 'Layer origin Y in pixels.' },
+			{ name: 'z', description: 'Layer Z coordinate.' },
+			{ name: 'options', optional: true, description: 'Optional layer options (scroll_x, scroll_y, layer).' },
+		],
+		returnType: 'void',
+	},
+	bgmap_tile: {
+		description: 'Writes one tile into the current BGMap back layer.',
+		parameters: [
+			{ name: 'layer', description: 'BGMap layer index.' },
+			{ name: 'col', description: 'Tile column.' },
+			{ name: 'row', description: 'Tile row.' },
+			{ name: 'img_id', description: 'Tile image asset id.' },
+		],
+		returnType: 'void',
+	},
 	poly: {
 		description: 'Draws a polygon/line strip.',
 		parameters: [
