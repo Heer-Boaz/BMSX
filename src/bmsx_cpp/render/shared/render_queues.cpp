@@ -207,6 +207,13 @@ void clearBackQueues() {
 	Runtime::instance().vdp().setOamReadSource(false);
 }
 
+void clearAllQueues() {
+	Runtime::instance().vdp().initializeRegisters();
+	s_meshQueue.clearAll();
+	s_particleQueue.clearAll();
+	s_activeQueueSource = QueueSource::Front;
+}
+
 void forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn) {
 	Runtime::instance().vdp().forEachOamEntry(fn);
 }

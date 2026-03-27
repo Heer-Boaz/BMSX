@@ -2,6 +2,7 @@ import { $ } from '../core/engine_core';
 import { taskGate } from '../core/taskgate';
 import { Runtime } from './runtime';
 import * as SkyboxPipeline from '../render/3d/skybox_pipeline';
+import { decodePngToRgba } from '../utils/image_decode';
 import {
 	BGMAP_LAYER_FLAG_ENABLED,
 	BGMAP_TILE_FLAG_ENABLED,
@@ -9,7 +10,7 @@ import {
 	PAT_FLAG_ENABLED,
 } from '../render/shared/render_types';
 import type { BgMapEntry, BgMapHeader, OamEntry, PatEntry, PatHeader, SkyboxImageIds, color } from '../render/shared/render_types';
-import type { RomAsset } from '../rompack/rompack';
+import type { RomAsset, RomImgAsset } from '../rompack/rompack';
 import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
@@ -1565,6 +1566,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 		setAtlasEntryDimensions(engineEntryRecord, engineAtlasMeta.width, engineAtlasMeta.height);
 		this.registerVramSlot(engineEntryRecord, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
+		await this.restoreEngineAtlasFromSource(engineEntryRecord, source, engineAtlasAsset);
 
 		const skyboxBytes = VRAM_SKYBOX_FACE_BYTES;
 		for (let index = 0; index < SKYBOX_FACE_KEYS.length; index += 1) {
@@ -1672,6 +1674,24 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 
 		this.syncRegisters();
+	}
+
+	private async restoreEngineAtlasFromSource(entry: AssetEntry, source: RawAssetSource, asset: RomImgAsset): Promise<void> {
+		if (typeof asset.start !== 'number' || typeof asset.end !== 'number') {
+			throw new Error(`[BmsxVDP] Engine atlas '${asset.resid}' missing ROM buffer offsets.`);
+		}
+		logEngineAtlasTrace(`restore source=${asset.resid} base=${entry.baseAddr} region=${entry.regionW}x${entry.regionH}`);
+		const decoded = await decodePngToRgba(source.getBytes(asset));
+		const plan = this.memory.planImageSlotWrite(entry, {
+			pixels: decoded.pixels,
+			width: decoded.width,
+			height: decoded.height,
+			capacity: entry.capacity,
+		});
+		if (plan.clipped) {
+			throw new Error(`[BmsxVDP] Engine atlas '${asset.resid}' does not fit in system atlas slot.`);
+		}
+		this.memory.writeBytes(entry.baseAddr, decoded.pixels.subarray(0, plan.writeSize));
 	}
 
 	public flushAssetEdits(): void {
@@ -1852,19 +1872,20 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
 		let handle = $.texmanager.getTextureByUri(textureKey);
 		const isEngineAtlas = textureKey === ENGINE_ATLAS_TEXTURE_KEY;
+		const preserveEngineAtlasTexture = isEngineAtlas && !!handle;
 		if (isEngineAtlas) {
 			logEngineAtlasTrace(`register slot key=${textureKey} existingHandle=${handle ? 1 : 0} base=${entry.baseAddr} region=${entry.regionW}x${entry.regionH} surface=${surfaceId}`);
 		}
-		let textureWidth = handle ? 1 : entry.regionW;
-		let textureHeight = handle ? 1 : entry.regionH;
+		let textureWidth = entry.regionW;
+		let textureHeight = entry.regionH;
 		if (!handle) {
 			const stream = this.makeVramGarbageStream(entry.baseAddr >>> 0);
 			fillVramGarbageScratch(this.vramSeedPixel, stream);
 			handle = $.texmanager.createTextureFromPixelsSync(textureKey, this.vramSeedPixel, 1, 1);
+			handle = $.texmanager.resizeTextureForKey(textureKey, entry.regionW, entry.regionH);
+		} else if (!preserveEngineAtlasTexture) {
+			handle = $.texmanager.resizeTextureForKey(textureKey, entry.regionW, entry.regionH);
 		}
-		handle = $.texmanager.resizeTextureForKey(textureKey, entry.regionW, entry.regionH);
-		textureWidth = entry.regionW;
-		textureHeight = entry.regionH;
 		$.view.textures[textureKey] = handle;
 		const slot: AssetVramSlot = {
 			kind: 'asset',

@@ -190,7 +190,20 @@ export class RenderPassLibrary {
 		const idStr = String(desc.id);
 		if (this.registered.has(idStr)) throw new Error(`Pipeline '${desc.id}' already registered`);
 		let pipelineHandle: RenderPassInstanceHandle = null;
-		if (this.backend.createRenderPassInstance && (desc.vsCode || desc.fsCode)) {
+		if (desc.sharedPipelineWith) {
+			const sharedPassId = String(desc.sharedPipelineWith);
+			const sharedPass = this.registered.get(sharedPassId);
+			if (!sharedPass) {
+				throw new Error(`Pipeline '${desc.id}' cannot share pipeline with unregistered pass '${sharedPassId}'`);
+			}
+			if (!sharedPass.pipelineHandle) {
+				throw new Error(`Pipeline '${desc.id}' cannot share pipeline with pass '${sharedPassId}' because it has no pipeline handle`);
+			}
+			if (desc.vsCode || desc.fsCode) {
+				throw new Error(`Pipeline '${desc.id}' cannot define shaders when sharedPipelineWith='${sharedPassId}'`);
+			}
+			pipelineHandle = sharedPass.pipelineHandle;
+		} else if (this.backend.createRenderPassInstance && (desc.vsCode || desc.fsCode)) {
 			pipelineHandle = this.backend.createRenderPassInstance({
 				label: desc.name,
 				vsCode: desc.vsCode,

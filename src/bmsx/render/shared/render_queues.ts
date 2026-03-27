@@ -245,6 +245,13 @@ export function clearBackQueues(): void {
 	activeQueueSource = 'front';
 }
 
+export function clearAllQueues(): void {
+	Runtime.instance.vdp.initializeRegisters();
+	meshQueue.clearAll();
+	particleQueue.clearAll();
+	activeQueueSource = 'front';
+}
+
 export function forEachOamEntry(fn: (item: OamEntry, index: number) => void): void {
 	Runtime.instance.vdp.forEachOamEntry(fn);
 }

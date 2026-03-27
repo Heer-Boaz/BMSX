@@ -99,6 +99,11 @@ void forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn);
 void clearBackQueues();
 
 /**
+ * Clear both front and back queues and reset VDP queue state to power-on values.
+ */
+void clearAllQueues();
+
+/**
  * Get sprite queue sizes for debugging.
  */
 size_t spriteQueueBackSize();

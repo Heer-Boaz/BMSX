@@ -806,8 +806,7 @@ void Runtime::resetHardwareState() {
 }
 
 void Runtime::resetRenderBuffers() {
-	RenderQueues::clearBackQueues();
-	RenderQueues::prepareCompletedRenderQueues();
+	RenderQueues::clearAllQueues();
 }
 
 void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk) {

@@ -23,7 +23,8 @@ import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
 import { clamp } from '../utils/clamp';
-import { clearBackQueues, prepareCompletedRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
+import { clearAllQueues, clearBackQueues, prepareCompletedRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
+import { clearOverlayFrame } from '../render/editor/editor_overlay_queue';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
@@ -532,7 +533,8 @@ export class EngineCore {
 			this.accumulated_time = 0;
 			this.cycleCarry = 0;
 			this.debug_runSingleFrameAndPause = false;
-			clearBackQueues();
+			clearAllQueues();
+			clearOverlayFrame();
 
 			const runtime = Runtime.instance;
 			if (runtime) {
@@ -540,6 +542,7 @@ export class EngineCore {
 				runtime.drawFrameState = null;
 				runtime.clearWaitForVblank();
 				runtime.resetVblankState();
+				runtime.overlayRenderBackend.abandonFrame();
 				runtime.preservedRenderQueue = [];
 			}
 

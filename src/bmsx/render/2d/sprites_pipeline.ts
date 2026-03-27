@@ -116,14 +116,27 @@ const SPRITE_PASS_CONFIGS: ReadonlyArray<{
 	{ id: 'sprites_ide', name: 'Sprites2DIDE', sortBucket: 'ide', useDepth: false },
 ];
 
+const SPRITE_PASS_BUILD = (() => {
+	const vs = shaderModule(spriteVS, { uniforms: ['FrameUniforms'] }, 'sprites-vs');
+	const fs = shaderModule(
+		spriteFS,
+		{
+			uniforms: ['FrameUniforms'],
+			textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }, { name: 'u_texture2' }],
+			samplers: [{ name: 's_texture0' }, { name: 's_texture1' }, { name: 's_texture2' }]
+		},
+		'sprites-fs'
+	);
+	return makePipelineBuildDesc('Sprites2D', vs, fs);
+})();
+
 export function setupSpriteShaderLocations(backend: GPUBackend): void {
 	const gl = (backend as WebGLBackend).gl;
-	// If program not explicitly created yet, pick up the program bound by the PipelineManager
-	if (!spriteShaderProgram) {
-		const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
-		if (!current) throw new Error('Sprite shader program not bound during bootstrap');
-		spriteShaderProgram = current;
+	const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram;
+	if (!current) {
+		throw new Error('Sprite shader program not bound during setup.');
 	}
+	spriteShaderProgram = current;
 	const locations = {
 		corner: gl.getAttribLocation(spriteShaderProgram, 'a_corner'),
 		inst_pos: gl.getAttribLocation(spriteShaderProgram, 'i_pos'),
@@ -167,14 +180,17 @@ export function setupDefaultUniformValues(backend: WebGLBackend): void {
 
 export function setupBuffers(backend: WebGLBackend): void {
 	const gl = backend.gl;
-	cornerBuffer = gl.createBuffer()!;
-	gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, SPRITE_CORNER_DATA, gl.STATIC_DRAW);
-	backend.accountUpload('vertex', SPRITE_CORNER_DATA.byteLength);
-
-	instanceBuffer = gl.createBuffer()!;
-	gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
-	gl.bufferData(gl.ARRAY_BUFFER, SPRITE_INSTANCE_STRIDE * MAX_SPRITES, gl.DYNAMIC_DRAW);
+	if (!cornerBuffer) {
+		cornerBuffer = gl.createBuffer()!;
+		gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, SPRITE_CORNER_DATA, gl.STATIC_DRAW);
+		backend.accountUpload('vertex', SPRITE_CORNER_DATA.byteLength);
+	}
+	if (!instanceBuffer) {
+		instanceBuffer = gl.createBuffer()!;
+		gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, SPRITE_INSTANCE_STRIDE * MAX_SPRITES, gl.DYNAMIC_DRAW);
+	}
 }
 
 export function setupSpriteLocations(backend: WebGLBackend): void {
@@ -220,6 +236,21 @@ export function setupSpriteLocations(backend: WebGLBackend): void {
 	backend.vertexAttribDivisor(instColorLocation, 1);
 	backend.bindVertexArray(null);
 	spriteVAO = vao;
+}
+
+function ensureSpritePipelineBindings(backend: WebGLBackend): void {
+	const currentProgram = backend.gl.getParameter(backend.gl.CURRENT_PROGRAM) as WebGLProgram;
+	if (!currentProgram) {
+		throw new Error('[SpritesPipeline] No WebGL program bound for sprite pass.');
+	}
+	if (spriteShaderProgram !== currentProgram) {
+		throw new Error('[SpritesPipeline] Unexpected sprite program bound for shared sprite pipeline.');
+	}
+	setupBuffers(backend);
+	if (spriteVAO === null) {
+		setupSpriteLocations(backend);
+		setupDefaultUniformValues(backend);
+	}
 }
 
 function buildSpritePassState(registry: RenderPassLibrary, backend: GPUBackend, passId: SpritePassId): void {
@@ -268,6 +299,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		spritesPassTraceLogCount += 1;
 	}
 	if (spriteCount === 0) return;
+	ensureSpritePipelineBindings(backend);
 	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
 	if (useDepth) {
 		backend.setDepthTestEnabled(true);
@@ -408,20 +440,10 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 		registry.register({
 			id: pass.id,
 			name: pass.name,
-			...(() => {
-				const vs = shaderModule(spriteVS, { uniforms: ['FrameUniforms'] }, 'sprites-vs');
-				const fs = shaderModule(
-					spriteFS,
-					{
-						uniforms: ['FrameUniforms'],
-						textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }, { name: 'u_texture2' }],
-						samplers: [{ name: 's_texture0' }, { name: 's_texture1' }, { name: 's_texture2' }]
-					},
-					'sprites-fs'
-				);
-				const build = makePipelineBuildDesc(pass.name, vs, fs);
-				return { vsCode: build.vsCode, fsCode: build.fsCode, bindingLayout: build.bindingLayout };
-			})(),
+			...(pass.id === 'sprites_world'
+				? { vsCode: SPRITE_PASS_BUILD.vsCode, fsCode: SPRITE_PASS_BUILD.fsCode }
+				: { sharedPipelineWith: 'sprites_world' as const }),
+			bindingLayout: SPRITE_PASS_BUILD.bindingLayout,
 			bootstrap: pass.id === 'sprites_world' ? (backend: WebGLBackend) => {
 				const webglBackend = backend;
 				setupSpriteShaderLocations(webglBackend);

@@ -926,22 +926,41 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 
 	std::vector<std::string> viewAssets;
 	viewAssets.reserve(assets.img.size());
-	std::unordered_set<std::string> primaryIds;
-	primaryIds.reserve(assets.img.size());
+	std::unordered_set<std::string> viewAssetIds;
+	viewAssetIds.reserve(EngineCore::instance().systemAssets().img.size() + assets.img.size());
+	std::unordered_map<std::string, ImgAsset*> viewAssetById;
+	viewAssetById.reserve(EngineCore::instance().systemAssets().img.size() + assets.img.size());
 
 	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-	const ImgAsset* engineAtlasAsset = nullptr;
+	RuntimeAssets& systemAssets = EngineCore::instance().systemAssets();
+	const ImgAsset* engineAtlasAsset = systemAssets.getImg(engineAtlasName);
+
+	if (!engineAtlasAsset) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas missing from system assets.");
+	}
+
+	for (auto& entry : systemAssets.img) {
+		auto& imgAsset = entry.second;
+		if (!imgAsset.meta.atlassed || imgAsset.meta.atlasid != ENGINE_ATLAS_INDEX) {
+			continue;
+		}
+		if (viewAssetIds.insert(imgAsset.id).second) {
+			viewAssets.push_back(imgAsset.id);
+		}
+		viewAssetById[imgAsset.id] = &imgAsset;
+	}
 
 	for (auto& entry : assets.img) {
 		auto& imgAsset = entry.second;
 		const std::string& id = imgAsset.id;
-		primaryIds.insert(id);
 		if (imgAsset.meta.atlassed) {
-			viewAssets.push_back(id);
+			if (viewAssetIds.insert(id).second) {
+				viewAssets.push_back(id);
+			}
+			viewAssetById[id] = &imgAsset;
 			continue;
 		}
 		if (id == engineAtlasName) {
-			engineAtlasAsset = &imgAsset;
 			continue;
 		}
 		if (!isAtlasName(id)) {
@@ -951,9 +970,6 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 		m_atlasResourceById[atlasId] = id;
 	}
 
-	if (!engineAtlasAsset) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas missing from assets.");
-	}
 	if (engineAtlasAsset->meta.width <= 0 || engineAtlasAsset->meta.height <= 0) {
 		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas missing dimensions.");
 	}
@@ -1033,10 +1049,11 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 
 	std::sort(viewAssets.begin(), viewAssets.end());
 	for (const auto& id : viewAssets) {
-		auto* imgAsset = assets.getImg(id);
-		if (!imgAsset) {
+		const auto viewAssetIt = viewAssetById.find(id);
+		if (viewAssetIt == viewAssetById.end()) {
 			throw BMSX_RUNTIME_ERROR("[VDP] Image asset '" + id + "' not found.");
 		}
+		ImgAsset* imgAsset = viewAssetIt->second;
 		if (!imgAsset->meta.atlassed) {
 			throw BMSX_RUNTIME_ERROR("[VDP] Image asset '" + id + "' expected to be atlassed.");
 		}
@@ -1391,6 +1408,7 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	auto* texmanager = EngineCore::instance().texmanager();
 	TextureHandle handle = texmanager->getTextureByUri(textureKey);
 	const bool isEngineAtlas = textureKey == ENGINE_ATLAS_TEXTURE_KEY;
+	const bool preserveEngineAtlasTexture = isEngineAtlas && handle;
 	if (isEngineAtlas) {
 		logEngineAtlasTrace(
 			"register slot key=" + textureKey +
@@ -1421,7 +1439,9 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
 	}
 	if (handle) {
-		handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(entry.regionW), static_cast<i32>(entry.regionH));
+		if (!preserveEngineAtlasTexture) {
+			handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(entry.regionW), static_cast<i32>(entry.regionH));
+		}
 		view->textures[textureKey] = handle;
 	} else {
 		view->textures[textureKey] = nullptr;

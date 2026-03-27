@@ -102,6 +102,7 @@ export interface RenderPassDef<S = unknown> {
 	id: RenderPassStateId;
 	vsCode?: string;
 	fsCode?: string;
+	sharedPipelineWith?: RenderPassStateId;
 	bindingLayout?: GraphicsPipelineBindingLayout;
 	graph?: RenderPassGraphDef<S>;
 	name: string;

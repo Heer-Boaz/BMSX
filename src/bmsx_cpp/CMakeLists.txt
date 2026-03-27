@@ -93,6 +93,7 @@ add_library(bmsx_core STATIC
 	# Core systems
 	core/types.cpp
 	core/engine_core.cpp
+	core/system_machine.cpp
 	core/registry.cpp
 	rompack/runtime_assets.cpp
 	serializer/binencoder.cpp

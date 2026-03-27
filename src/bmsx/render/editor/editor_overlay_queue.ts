@@ -21,3 +21,7 @@ export function consumeOverlayFrame(): EditorOverlayFrame {
 	pendingFrame = null;
 	return frame;
 }
+
+export function clearOverlayFrame(): void {
+	pendingFrame = null;
+}
