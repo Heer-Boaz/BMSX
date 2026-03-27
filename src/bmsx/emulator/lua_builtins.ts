@@ -77,6 +77,8 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'peek', params: ['addr'], signature: 'peek(addr)' },
 	{ name: 'sys_cpu_cycles_used', params: [], signature: 'sys_cpu_cycles_used()', description: 'Cycles consumed during the last completed tick.' },
 	{ name: 'sys_cpu_cycles_granted', params: [], signature: 'sys_cpu_cycles_granted()', description: 'Cycle budget granted to the last completed tick.' },
+	{ name: 'sys_cpu_active_cycles_used', params: [], signature: 'sys_cpu_active_cycles_used()', description: 'Cycles consumed during the last completed tick, capped to the active display window.' },
+	{ name: 'sys_cpu_active_cycles_granted', params: [], signature: 'sys_cpu_active_cycles_granted()', description: 'Cycle budget granted to the last completed tick, excluding vblank cycles.' },
 	{ name: 'sys_ram_used', params: [], signature: 'sys_ram_used()', description: 'Tracked runtime RAM usage in bytes.' },
 	{ name: 'sys_vram_used', params: [], signature: 'sys_vram_used()', description: 'Tracked VRAM usage in bytes.' },
 	{ name: 'poke', params: ['addr', 'value'], signature: 'poke(addr, value)' },

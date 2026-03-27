@@ -1,6 +1,7 @@
 #include "runtime.h"
 #include "api.h"
 #include "io.h"
+#include "lua_heap_usage.h"
 #include "program_loader.h"
 #include "resource_usage_detector.h"
 #include "../core/engine_core.h"
@@ -81,6 +82,8 @@ Runtime& Runtime::createInstance(const RuntimeOptions& options) {
 	if (s_instance) {
 		throw BMSX_RUNTIME_ERROR("[Runtime] Instance already exists.");
 	}
+	configureLuaHeapUsage({});
+	resetTrackedLuaHeapBytes();
 	s_instance = new Runtime(options);
 	return *s_instance;
 }
@@ -160,33 +163,28 @@ Runtime::Runtime(const RuntimeOptions& options)
 	// Create API instance
 	m_api = std::make_unique<Api>(*this);
 	m_resourceUsageDetector = std::make_unique<ResourceUsageDetector>(
-		m_cpu,
 		m_memory,
 		m_stringHandles,
-		m_vdp,
-		[this](std::vector<Value>& extraRoots) {
-			extraRoots.reserve(m_moduleCache.size() + 2 + PLAYERS_MAX);
-			for (const auto& entry : m_moduleCache) {
-				extraRoots.push_back(entry.second);
-			}
-			if (!isNil(m_pairsIterator)) {
-				extraRoots.push_back(m_pairsIterator);
-			}
-			if (!isNil(m_ipairsIterator)) {
-				extraRoots.push_back(m_ipairsIterator);
-			}
-			if (m_api) {
-				m_api->appendRootValues(extraRoots);
-			}
-		}
+		m_vdp
 	);
+	configureLuaHeapUsage({
+		.collect = [this]() {
+			m_cpu.collectHeap();
+		},
+		.getBaseRamUsedBytes = [this]() {
+			return static_cast<size_t>(m_resourceUsageDetector->baseRamUsedBytes());
+		},
+	});
 
 	// Setup builtin functions
 	setupBuiltins();
 	m_api->registerAllFunctions();
+	enforceLuaHeapBudget();
 }
 
 Runtime::~Runtime() {
+	configureLuaHeapUsage({});
+	resetTrackedLuaHeapBytes();
 	m_api.reset();
 }
 
@@ -242,18 +240,20 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_vdp.initializeRegisters();
 	m_memory.writeValue(IO_VDP_STATUS, valueNumber(0.0));
 	resetVblankState();
-	m_resourceUsageDetector->reset();
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	setupBuiltins();
 	m_api->registerAllFunctions();
+	enforceLuaHeapBudget();
 	m_program = program;
 	m_programMetadata = metadata;
 	m_cpu.setProgram(program, metadata);
 	runEngineBuiltinPrelude();
+	enforceLuaHeapBudget();
 
 	// Start execution at entry point
 	std::cout << "[Runtime] boot: starting CPU at entry point..." << std::endl;
 	m_cpu.start(entryProtoIndex);
+	enforceLuaHeapBudget();
 	m_pendingCall = PendingCall::Entry;
 	queueLifecycleHandlers(true, true);
 	m_luaInitialized = true;
@@ -418,7 +418,6 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	m_lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 	m_lastTickCompleted = true;
 	m_lastTickSequence += 1;
-	m_resourceUsageDetector->refresh(m_lastTickSequence, isResourceUsageGizmoVisible());
 }
 
 void Runtime::reconcileCycleBudgetAfterSignal(FrameState& frameState) {
@@ -827,7 +826,6 @@ void Runtime::resetHardwareState() {
 	m_imgDecController.reset();
 	resetVblankState();
 	resetRenderBuffers();
-	m_resourceUsageDetector->reset();
 }
 
 void Runtime::resetRenderBuffers() {
@@ -883,19 +881,6 @@ uint32_t Runtime::trackedRamUsedBytes() const {
 
 uint32_t Runtime::trackedVramUsedBytes() const {
 	return m_resourceUsageDetector->vramUsedBytes();
-}
-
-bool Runtime::isResourceUsageGizmoVisible() {
-	auto* gameTable = asTable(m_cpu.globals->get(canonicalizeIdentifier("game")));
-	auto* viewTable = asTable(gameTable->get(canonicalizeIdentifier("view")));
-	const Value value = viewTable->get(canonicalizeIdentifier("show_resource_usage_gizmo"));
-	if (isNil(value)) {
-		return false;
-	}
-	if (!valueIsBool(value)) {
-		throw BMSX_RUNTIME_ERROR("game.view.show_resource_usage_gizmo must be boolean.");
-	}
-	return valueToBool(value);
 }
 
 bool Runtime::consumeLastTickCompletion(i64& outSequence, int& outRemaining) {

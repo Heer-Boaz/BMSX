@@ -1,4 +1,5 @@
 #include "string_memory.h"
+#include "lua_heap_usage.h"
 #include "memory.h"
 
 #include <stdexcept>
@@ -16,6 +17,7 @@ uint32_t StringHeap::allocate(uint32_t length) {
 		throw std::runtime_error("[StringHeap] Out of heap memory.");
 	}
 	m_cursor = next;
+	enforceLuaHeapBudget();
 	return addr;
 }
 

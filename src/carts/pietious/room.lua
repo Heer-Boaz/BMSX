@@ -121,6 +121,22 @@ local background_themes = {
 	},
 }
 
+local room_hidden_mode_events = {
+	'transition',
+	'halo',
+	'shrine',
+	'item',
+	'lithograph',
+	'title',
+	'title_wait',
+	'story',
+	'ending',
+	'victory_dance',
+	'death',
+	'seal_dissolution',
+	'daemon_appearance',
+}
+
 local pillar_themes = {
 	castleblue = {
 		l1 = 'castle_pillar_blue_l1',
@@ -457,6 +473,8 @@ local function refresh_room_geometry(room_state)
 	room_state.tiles = build_tile_grid(map_rows, collision_map, room_state.room_subtype)
 	room_state.solids = build_solids(collision_map, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
 	room_state.stairs = build_stairs(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y, constants.player.height)
+	room_state.tile_layer_dirty = true
+	room_state.water_layer_dirty = true
 end
 
 local function apply_room_template(room_state, template)
@@ -501,6 +519,10 @@ local function apply_room_template(room_state, template)
 	room_state.draaideuren = template.draaideuren
 	room_state.room_links = template.room_links
 	room_state.edge_gates = template.edge_gates
+	room_state.tile_layer_dirty = true
+	room_state.water_layer_dirty = true
+	room_state.last_room_dissolve_step = -1
+	room_state.last_water_surface_frame = -1
 end
 
 local room_object = {}
@@ -817,9 +839,37 @@ function room_object:bind_visual()
 	end
 end
 
+function room_object:bind()
+	for i = 1, #room_hidden_mode_events do
+		local event_name = room_hidden_mode_events[i]
+		self.events:on({
+			event = event_name,
+			emitter = 'd',
+			subscriber = self,
+			handler = function()
+				self:hide_room_bgmaps()
+			end,
+		})
+	end
+end
+
 function room_object:ctor()
 	self.destroyed_rock_ids = {}
+	self.tile_layer_dirty = true
+	self.water_layer_dirty = true
+	self.last_room_dissolve_step = -1
+	self.last_water_surface_frame = -1
 	self:bind_visual()
+	self:bind()
+end
+
+function room_object:hide_room_bgmaps()
+	bgmap_begin(0, self.tile_columns, self.tile_rows, self.tile_size, self.tile_size, self.tile_origin_x, self.tile_origin_y, 0)
+	bgmap_begin(1, self.tile_columns, self.tile_rows, self.tile_size, self.tile_size, self.tile_origin_x, self.tile_origin_y, 0)
+	self.tile_layer_dirty = true
+	self.water_layer_dirty = true
+	self.last_room_dissolve_step = -1
+	self.last_water_surface_frame = -1
 end
 
 function room_object:render_tiles()
@@ -859,12 +909,14 @@ function room_object:render_tiles()
 	end
 end
 
-function room_object:render_water()
+function room_object:render_water(water_surface_frame)
+	bgmap_begin(1, self.tile_columns, self.tile_rows, self.tile_size, self.tile_size, self.tile_origin_x, self.tile_origin_y, 0)
 	if self.water == nil then
 		return
 	end
-	bgmap_begin(1, self.tile_columns, self.tile_rows, self.tile_size, self.tile_size, self.tile_origin_x, self.tile_origin_y, 0)
-	local water_surface_frame = self:get_timeline(water_surface_timeline_id):value()
+	if water_surface_frame == nil then
+		water_surface_frame = self:get_timeline(water_surface_timeline_id):value()
+	end
 	local water_surface_imgid = water_surface_frame_imgids[water_surface_frame]
 
 	for y = self.water.surface_row, self.tile_rows do
@@ -881,9 +933,51 @@ function room_object:render_water()
 	end
 end
 
+function room_object:patch_water_surface(water_surface_frame)
+	if self.water == nil then
+		return
+	end
+	local y = self.water.surface_row
+	local water_surface_imgid = water_surface_frame_imgids[water_surface_frame]
+	for x = 1, self.tile_columns do
+		if water_kind_at_tile(self, x, y) == constants.water.surface then
+			bgmap_tile(1, x - 1, y - 1, water_surface_imgid)
+		end
+	end
+end
+
+function room_object:sync_room_bgmaps()
+	local dissolve_step = self.room_dissolve_step
+	if self.tile_layer_dirty or self.last_room_dissolve_step ~= dissolve_step then
+		self:render_tiles()
+		self.tile_layer_dirty = false
+		self.last_room_dissolve_step = dissolve_step
+	end
+
+	if self.water == nil then
+		if self.water_layer_dirty or self.last_water_surface_frame ~= -1 then
+			self:render_water()
+			self.water_layer_dirty = false
+			self.last_water_surface_frame = -1
+		end
+		return
+	end
+
+	local water_surface_frame = self:get_timeline(water_surface_timeline_id):value()
+	if self.water_layer_dirty then
+		self:render_water(water_surface_frame)
+		self.water_layer_dirty = false
+		self.last_water_surface_frame = water_surface_frame
+		return
+	end
+	if self.last_water_surface_frame ~= water_surface_frame then
+		self:patch_water_surface(water_surface_frame)
+		self.last_water_surface_frame = water_surface_frame
+	end
+end
+
 function room_object:render_room()
-	self:render_tiles()
-	self:render_water()
+	self:sync_room_bgmaps()
 	if not self:has_tag('r.seal_fx') then
 		return
 	end

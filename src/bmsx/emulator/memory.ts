@@ -26,6 +26,7 @@ import {
 	VRAM_STAGING_SIZE,
 } from './memory_map';
 import { IO_SLOT_COUNT, IO_VDP_RD_DATA, IO_VDP_RD_STATUS } from './io';
+import { enforceLuaHeapBudget } from './lua_heap_usage';
 import { hashAssetId, tokenKey } from '../rompack/asset_tokens';
 import { ScratchBatch } from '../utils/scratchbatch';
 
@@ -633,6 +634,7 @@ export class Memory {
 			cursor += 1;
 		}
 		this.assetTableFinalized = true;
+		enforceLuaHeapBudget();
 	}
 
 	public writeImageSlot(entry: AssetEntry, params: { pixels: Uint8Array; width: number; height: number; capacity?: number }): void {
@@ -1091,6 +1093,7 @@ export class Memory {
 			throw new Error(`[Memory] RAM exhausted: ${end} > ${ASSET_DATA_ALLOC_END}.`);
 		}
 		this.assetDataCursor = end;
+		enforceLuaHeapBudget();
 		const offset = addr - RAM_BASE;
 		return { addr, view: this.ram.subarray(offset, offset + size) };
 	}
@@ -1117,6 +1120,7 @@ export class Memory {
 		this.assetDirtyFlags[index] = 0;
 		this.assetIndexById.set(entry.id, index);
 		this.assetIndexByToken.set(key, index);
+		enforceLuaHeapBudget();
 		return index;
 	}
 

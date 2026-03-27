@@ -285,6 +285,15 @@ public:
 	int lastTickBudgetRemaining() const { return m_lastTickBudgetRemaining; }
 	int lastTickBudgetGranted() const { return m_lastTickSequence == 0 ? m_cycleBudgetPerFrame : m_lastTickCpuBudgetGranted; }
 	int cpuUsedCyclesLastTick() const { return m_lastTickSequence == 0 ? 0 : m_lastTickCpuUsedCycles; }
+	int activeCpuCyclesGrantedLastTick() const {
+		const int activeBudget = lastTickBudgetGranted() - m_vblankCycles;
+		return activeBudget > 0 ? activeBudget : 0;
+	}
+	int activeCpuUsedCyclesLastTick() const {
+		const int activeBudget = activeCpuCyclesGrantedLastTick();
+		const int usedCycles = cpuUsedCyclesLastTick();
+		return usedCycles > activeBudget ? activeBudget : usedCycles;
+	}
 	uint32_t trackedRamUsedBytes() const;
 	uint32_t trackedVramUsedBytes() const;
 	uint32_t trackedVramTotalBytes() const { return m_vdp.trackedTotalVramBytes(); }
@@ -344,7 +353,6 @@ private:
 	void logDebugState() const;
 	void logLuaCallStack() const;
 	void refreshMemoryMapGlobals();
-	bool isResourceUsageGizmoVisible();
 	void setCartBootReadyFlag(bool value);
 	void prepareCartBootIfNeeded();
 	bool pollSystemBootRequest();

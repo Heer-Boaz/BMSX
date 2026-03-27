@@ -195,52 +195,6 @@ export class Api {
 			throw new Error('stat index must be finite.');
 		}
 		throw new Error('stat is not implemented.');
-
-		// const value = Math.trunc(index);
-		// switch (value) {
-		// 	case 32: {
-		// 		const viewport = this.pointer_viewport_position_internal();
-		// 		if (!viewport.valid) {
-		// 			return 0;
-		// 		}
-		// 		return Math.floor(viewport.x);
-		// 	}
-		// 	case 33: {
-		// 		const viewport = this.pointer_viewport_position_internal();
-		// 		if (!viewport.valid) {
-		// 			return 0;
-		// 		}
-		// 		return Math.floor(viewport.y);
-		// 	}
-		// 	case 34: {
-		// 		return this.compute_pointer_button_mask();
-		// 	}
-		// 	case 36: {
-		// 		const wheel = this.mousewheel();
-		// 		if (!wheel.valid) {
-		// 			return 0;
-		// 		}
-		// 		return Math.floor(wheel.value);
-		// 	}
-		// 	default:
-		// 		return 0;
-		// }
-	}
-
-	public isFrameCaptureActive(): boolean {
-		return this.renderBackend.isCapturingFrame();
-	}
-
-	public beginFrameCapture(): void {
-		this.renderBackend.beginFrame();
-	}
-
-	public commitFrameCapture(): void {
-		this.renderBackend.endFrameToRenderer();
-	}
-
-	public abandonFrameCapture(): void {
-		this.renderBackend.abandonFrame();
 	}
 
 	public cls(colorindex: number = 0): void {

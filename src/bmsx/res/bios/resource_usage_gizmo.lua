@@ -54,7 +54,7 @@ function gizmo.draw()
 
 	ui_options.layer = 'ide'
 	put_rectfillcolor(x - 4, y - 4, x - 4 + panel_w, y - 4 + panel_h, z, colors.panel, ui_options)
-	draw_usage_bar('CPU', sys_cpu_cycles_used(), sys_cpu_cycles_granted(), x, y, z + 1)
+	draw_usage_bar('CPU', sys_cpu_active_cycles_used(), sys_cpu_active_cycles_granted(), x, y, z + 1)
 	draw_usage_bar('RAM', sys_ram_used(), sys_ram_size, x, y + row_h, z + 1)
 	draw_usage_bar('VRAM', sys_vram_used(), sys_vram_size, x, y + (row_h * 2), z + 1)
 end

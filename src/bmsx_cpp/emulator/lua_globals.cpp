@@ -1114,6 +1114,14 @@ double Runtime::nextRandom() {
 }
 
 void Runtime::setupBuiltins() {
+	m_cpu.suspendGc();
+	struct ResumeBuiltinGc {
+		CPU& cpu;
+		~ResumeBuiltinGc() {
+			cpu.resumeGc();
+		}
+	} resumeBuiltinGc{ m_cpu };
+
 	auto logPcallError = [this](const std::string& message) {
 		std::cerr << "[Runtime] pcall error: " << message << std::endl;
 		logLuaCallStack();
@@ -1560,6 +1568,14 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("sys_cpu_cycles_granted", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(lastTickBudgetGranted())));
+	});
+	registerNativeFunction("sys_cpu_active_cycles_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		out.push_back(valueNumber(static_cast<double>(activeCpuUsedCyclesLastTick())));
+	});
+	registerNativeFunction("sys_cpu_active_cycles_granted", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		out.push_back(valueNumber(static_cast<double>(activeCpuCyclesGrantedLastTick())));
 	});
 	registerNativeFunction("sys_ram_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;

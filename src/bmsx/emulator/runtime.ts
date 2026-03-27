@@ -61,6 +61,7 @@ import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/lu
 import type { ParsedLuaChunk } from './ide/lua/lua_parse';
 import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 import { ResourceUsageDetector } from './resource_usage_detector';
+import { configureLuaHeapUsage } from './lua_heap_usage';
 import {
 	IO_DMA_CTRL,
 	IO_DMA_DST,
@@ -324,6 +325,17 @@ export class Runtime {
 			return 0;
 		}
 		return this.lastTickCpuUsedCycles;
+	}
+
+	public getActiveCpuCyclesGranted(): number {
+		const activeBudget = this.getLastTickBudgetGranted() - this.vblankCycles;
+		return activeBudget > 0 ? activeBudget : 0;
+	}
+
+	public getActiveCpuUsedCyclesLastTick(): number {
+		const activeBudget = this.getActiveCpuCyclesGranted();
+		const usedCycles = this.getCpuUsedCyclesLastTick();
+		return usedCycles > activeBudget ? activeBudget : usedCycles;
 	}
 
 	public getTrackedRamUsedBytes(): number {
@@ -688,7 +700,6 @@ export class Runtime {
 		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 		this.lastTickCompleted = true;
 		this.lastTickSequence += 1;
-		this.resourceUsageDetector.refresh(this.lastTickSequence, $.view.show_resource_usage_gizmo);
 		this.lastCompletedVblankSequence = vblankSequence;
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugTickRate) {
@@ -818,6 +829,7 @@ export class Runtime {
 	public nextTableId = 1;
 	public pairsIterator: Value = null;
 	public ipairsIterator: Value = null;
+	private readonly luaHeapRootScratch: Value[] = [];
 	public randomSeedValue = 0;
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
 	public readonly pathSemanticCache: Map<string, { source: string; model?: LuaSemanticModel; definitions?: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
@@ -1317,11 +1329,14 @@ export class Runtime {
 		this.vdp.attachImgDecController(this.imgDecController);
 		this.cpu = new CPU(this.memory, this.runtimeStringPool);
 		this.resourceUsageDetector = new ResourceUsageDetector(
-			this.cpu,
 			this.memory,
 			this.stringHandles,
 			this.vdp,
-			(extraRoots) => {
+		);
+		configureLuaHeapUsage({
+			collectReachableBytes: () => {
+				const extraRoots = this.luaHeapRootScratch;
+				extraRoots.length = 0;
 				for (const value of this.moduleCache.values()) {
 					extraRoots.push(value);
 				}
@@ -1331,8 +1346,10 @@ export class Runtime {
 				if (this.ipairsIterator !== null) {
 					extraRoots.push(this.ipairsIterator);
 				}
+				return this.cpu.getTrackedHeapBytes(extraRoots);
 			},
-		);
+			getBaseRamUsedBytes: () => this.resourceUsageDetector.getBaseRamUsedBytes(),
+		});
 		this.setCpuHz(options.cpuHz);
 		this.randomSeedValue = $.platform.clock.now();
 
@@ -1422,7 +1439,6 @@ export class Runtime {
 			}
 			api.cartdata($.lua_sources.namespace);
 			runtimeLuaPipeline.bootActiveProgram(this);
-			this.resourceUsageDetector.reset();
 			this.hasCompletedInitialBoot = true;
 		}
 		catch (error) {
@@ -1466,7 +1482,6 @@ export class Runtime {
 			await this.prepareBootRomStartupState({ resetRuntime: true, refreshAudio: true });
 			api.cartdata($.lua_sources.namespace);
 			runtimeLuaPipeline.bootActiveProgram(this);
-			this.resourceUsageDetector.reset();
 		}
 		finally {
 			this.luaGate.end(gateToken);

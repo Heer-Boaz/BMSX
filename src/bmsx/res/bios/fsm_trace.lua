@@ -57,9 +57,9 @@ function fsm_trace.compose_transition_trace_message(entry)
 	parts[1] = '[transition]'
 	parts[#parts + 1] = 'outcome=' .. entry.outcome
 	parts[#parts + 1] = 'exec=' .. entry.execution
-	parts[#parts + 1] = 'to='' .. tostring(entry.to) .. '''
+	parts[#parts + 1] = 'to="' .. tostring(entry.to) .. '"'
 	if entry.from ~= nil then
-		parts[#parts + 1] = 'from='' .. tostring(entry.from) .. '''
+		parts[#parts + 1] = 'from="' .. tostring(entry.from) .. '"'
 	end
 	if entry.context and entry.context.trigger then
 		local trigger = entry.context.event_name and (entry.context.trigger .. '(' .. entry.context.event_name .. ')') or entry.context.trigger

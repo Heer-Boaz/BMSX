@@ -3,6 +3,7 @@ import { taskGate } from '../core/taskgate';
 import { Runtime } from './runtime';
 import * as SkyboxPipeline from '../render/3d/skybox_pipeline';
 import { decodePngToRgba } from '../utils/image_decode';
+import { ScratchBatch } from '../utils/scratchbatch';
 import {
 	BGMAP_LAYER_FLAG_ENABLED,
 	BGMAP_TILE_FLAG_ENABLED,
@@ -572,6 +573,11 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private readonly patEntryScratch = createPatEntryScratch();
 	private readonly bgMapHeaderScratch = createBgMapHeaderScratch();
 	private readonly bgMapEntryScratch = createBgMapEntryScratch();
+	private readonly bgMapBackLayerPending = new Array<boolean>(VDP_BGMAP_LAYER_COUNT).fill(false);
+	private readonly bgMapBackLayerRewritePending = new Array<boolean>(VDP_BGMAP_LAYER_COUNT).fill(false);
+	private readonly bgMapPatchFlags = Array.from({ length: VDP_BGMAP_LAYER_COUNT }, () => new Uint8Array(VDP_BGMAP_TILE_CAPACITY));
+	private readonly bgMapPatchEntries = Array.from({ length: VDP_BGMAP_LAYER_COUNT }, () => Array.from({ length: VDP_BGMAP_TILE_CAPACITY }, () => createBgMapEntryScratch()));
+	private readonly bgMapPatchIndices = Array.from({ length: VDP_BGMAP_LAYER_COUNT }, () => new ScratchBatch<number>(64));
 	private readonly forEach2dScratch = createOamEntryScratch();
 	private readonly oamReadPool: OamEntry[] = [];
 	private readonly oamWordScratch = new ArrayBuffer(4);
@@ -793,10 +799,16 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		return target;
 	}
 
-	private getActiveBgMapBase(): number {
-		return (this.memory.readValue(IO_VDP_OAM_READ_SOURCE) as number) === VDP_OAM_READ_SOURCE_BACK
-			? this.bgMapBackBase
-			: this.bgMapFrontBase;
+	private getBgMapLayerBaseForRead(layerIndex: number): number {
+		const readSource = (this.memory.readValue(IO_VDP_OAM_READ_SOURCE) as number) >>> 0;
+		if (
+			readSource === VDP_OAM_READ_SOURCE_BACK
+			&& this.bgMapBackLayerPending[layerIndex]
+			&& this.bgMapBackLayerRewritePending[layerIndex]
+		) {
+			return this.bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+		}
+		return this.bgMapFrontBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
 	}
 
 	private getActivePatBase(): number {
@@ -950,6 +962,50 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		return target;
 	}
 
+	private copyBgMapLayer(srcBase: number, dstBase: number): void {
+		this.memory.writeBytes(dstBase, this.memory.readBytes(srcBase, VDP_BGMAP_LAYER_SIZE));
+	}
+
+	private clearBgMapPatchLayer(layerIndex: number): void {
+		const patchFlags = this.bgMapPatchFlags[layerIndex];
+		const patchIndices = this.bgMapPatchIndices[layerIndex];
+		for (let index = 0; index < patchIndices.size; index += 1) {
+			patchFlags[patchIndices.get(index)] = 0;
+		}
+		patchIndices.clear();
+	}
+
+	private writeBgMapPatchEntry(layerIndex: number, tileIndex: number, entry: BgMapEntry): void {
+		const patchFlags = this.bgMapPatchFlags[layerIndex];
+		if (patchFlags[tileIndex] === 0) {
+			patchFlags[tileIndex] = 1;
+			this.bgMapPatchIndices[layerIndex].push(tileIndex);
+		}
+		const target = this.bgMapPatchEntries[layerIndex][tileIndex];
+		target.atlasId = entry.atlasId;
+		target.flags = entry.flags;
+		target.assetHandle = entry.assetHandle;
+		target.u0 = entry.u0;
+		target.v0 = entry.v0;
+		target.u1 = entry.u1;
+		target.v1 = entry.v1;
+	}
+
+	private getBgMapTileForRead(layerIndex: number, tileIndex: number, layerBase: number, patchRead: boolean, target: BgMapEntry): BgMapEntry {
+		if (patchRead && this.bgMapPatchFlags[layerIndex][tileIndex] !== 0) {
+			const patch = this.bgMapPatchEntries[layerIndex][tileIndex];
+			target.atlasId = patch.atlasId;
+			target.flags = patch.flags;
+			target.assetHandle = patch.assetHandle;
+			target.u0 = patch.u0;
+			target.v0 = patch.v0;
+			target.u1 = patch.u1;
+			target.v1 = patch.v1;
+			return target;
+		}
+		return this.readBgMapEntryInto(layerBase + 44 + tileIndex * VDP_BGMAP_ENTRY_BYTES, target);
+	}
+
 	private unpackColorChannel(packed: number, shift: number): number {
 		return ((packed >>> shift) & 0xff) / 255;
 	}
@@ -994,6 +1050,9 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	public clearBackBgMap(): void {
 		for (let layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; layerIndex += 1) {
+			this.bgMapBackLayerPending[layerIndex] = false;
+			this.bgMapBackLayerRewritePending[layerIndex] = false;
+			this.clearBgMapPatchLayer(layerIndex);
 			const base = this.bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
 			this.writeBgMapHeader(base, {
 				flags: 0,
@@ -1019,6 +1078,9 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			throw new Error(`[BmsxVDP] BGMap layer ${layerIndex} exceeds tile capacity ${VDP_BGMAP_TILE_CAPACITY}.`);
 		}
 		const base = this.bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+		this.bgMapBackLayerPending[layerIndex] = true;
+		this.bgMapBackLayerRewritePending[layerIndex] = true;
+		this.clearBgMapPatchLayer(layerIndex);
 		this.writeBgMapHeader(base, header);
 		for (let tileIndex = 0; tileIndex < VDP_BGMAP_TILE_CAPACITY; tileIndex += 1) {
 			this.memory.writeU32(base + 44 + tileIndex * VDP_BGMAP_ENTRY_BYTES + 4, 0);
@@ -1029,14 +1091,22 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (layerIndex < 0 || layerIndex >= VDP_BGMAP_LAYER_COUNT) {
 			throw new Error(`[BmsxVDP] BGMap layer ${layerIndex} outside range 0-${VDP_BGMAP_LAYER_COUNT - 1}.`);
 		}
-		const base = this.bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+		const rewritePending = this.bgMapBackLayerRewritePending[layerIndex];
+		const base = rewritePending
+			? this.bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE
+			: this.bgMapFrontBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
 		const header = this.readBgMapHeaderInto(base, this.bgMapHeaderScratch);
 		if (col < 0 || col >= header.cols || row < 0 || row >= header.rows) {
 			throw new Error(`[BmsxVDP] BGMap tile (${col}, ${row}) outside configured layer bounds ${header.cols}x${header.rows}.`);
 		}
 		const index = row * header.cols + col;
-		const addr = base + 44 + index * VDP_BGMAP_ENTRY_BYTES;
-		this.writeBgMapEntry(addr, entry);
+		if (rewritePending) {
+			const addr = base + 44 + index * VDP_BGMAP_ENTRY_BYTES;
+			this.writeBgMapEntry(addr, entry);
+			return;
+		}
+		this.bgMapBackLayerPending[layerIndex] = true;
+		this.writeBgMapPatchEntry(layerIndex, index, entry);
 	}
 
 	public swapOamBuffers(): void {
@@ -1060,10 +1130,25 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public swapBgMapBuffers(): void {
-		const frontBase = this.bgMapFrontBase;
-		this.bgMapFrontBase = this.bgMapBackBase;
-		this.bgMapBackBase = frontBase;
-		this.clearBackBgMap();
+		for (let layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; layerIndex += 1) {
+			if (!this.bgMapBackLayerPending[layerIndex]) {
+				continue;
+			}
+			const frontBase = this.bgMapFrontBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+			if (this.bgMapBackLayerRewritePending[layerIndex]) {
+				const backBase = this.bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+				this.copyBgMapLayer(backBase, frontBase);
+			} else {
+				const patchIndices = this.bgMapPatchIndices[layerIndex];
+				for (let index = 0; index < patchIndices.size; index += 1) {
+					const tileIndex = patchIndices.get(index);
+					this.writeBgMapEntry(frontBase + 44 + tileIndex * VDP_BGMAP_ENTRY_BYTES, this.bgMapPatchEntries[layerIndex][tileIndex]);
+				}
+				this.clearBgMapPatchLayer(layerIndex);
+			}
+			this.bgMapBackLayerPending[layerIndex] = false;
+			this.bgMapBackLayerRewritePending[layerIndex] = false;
+		}
 	}
 
 	public getBgMapFrontBase(): number {
@@ -1126,7 +1211,13 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			return true;
 		}
 		for (let layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; layerIndex += 1) {
-			const header = this.readBgMapHeaderInto(this.bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE, this.bgMapHeaderScratch);
+			if (!this.bgMapBackLayerPending[layerIndex]) {
+				continue;
+			}
+			const headerBase = this.bgMapBackLayerRewritePending[layerIndex]
+				? this.bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE
+				: this.bgMapFrontBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+			const header = this.readBgMapHeaderInto(headerBase, this.bgMapHeaderScratch);
 			if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) !== 0 && header.cols * header.rows > 0) {
 				return true;
 			}
@@ -1155,16 +1246,17 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			}
 			count += patCount;
 		}
-		const bgMapBase = this.getActiveBgMapBase();
 		let bgCount = 0;
+		const readSource = (this.memory.readValue(IO_VDP_OAM_READ_SOURCE) as number) >>> 0;
 		for (let layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; layerIndex += 1) {
-			const layerBase = bgMapBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+			const layerBase = this.getBgMapLayerBaseForRead(layerIndex);
+			const patchRead = readSource === VDP_OAM_READ_SOURCE_BACK && this.bgMapBackLayerPending[layerIndex] && !this.bgMapBackLayerRewritePending[layerIndex];
 			const header = this.readBgMapHeaderInto(layerBase, this.bgMapHeaderScratch);
 			if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) !== 0) {
 				const cellCount = header.cols * header.rows;
 				let layerEnabledCount = 0;
 				for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
-					const tile = this.readBgMapEntryInto(layerBase + 44 + cellIndex * VDP_BGMAP_ENTRY_BYTES, this.bgMapEntryScratch);
+					const tile = this.getBgMapTileForRead(layerIndex, cellIndex, layerBase, patchRead, this.bgMapEntryScratch);
 					if ((tile.flags & BGMAP_TILE_FLAG_ENABLED) === 0) {
 						continue;
 					}
@@ -1200,16 +1292,17 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		scratch.b = 1;
 		scratch.a = 1;
 		scratch.layer = 0;
-		const bgMapBase = this.getActiveBgMapBase();
+		const readSource = (this.memory.readValue(IO_VDP_OAM_READ_SOURCE) as number) >>> 0;
 		for (let layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; layerIndex += 1) {
-			const layerBase = bgMapBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+			const layerBase = this.getBgMapLayerBaseForRead(layerIndex);
+			const patchRead = readSource === VDP_OAM_READ_SOURCE_BACK && this.bgMapBackLayerPending[layerIndex] && !this.bgMapBackLayerRewritePending[layerIndex];
 			const header = this.readBgMapHeaderInto(layerBase, this.bgMapHeaderScratch);
 			if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) === 0) {
 				continue;
 			}
 			const cellCount = header.cols * header.rows;
 			for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
-				const tile = this.readBgMapEntryInto(layerBase + 44 + cellIndex * VDP_BGMAP_ENTRY_BYTES, this.bgMapEntryScratch);
+				const tile = this.getBgMapTileForRead(layerIndex, cellIndex, layerBase, patchRead, this.bgMapEntryScratch);
 				if ((tile.flags & BGMAP_TILE_FLAG_ENABLED) === 0) {
 					continue;
 				}

@@ -1,6 +1,7 @@
 import { StringPool, StringValue, isStringValue, stringValueToString } from './string_pool';
 import type { RuntimeStringPoolState } from './string_pool';
 import type { Memory } from './memory';
+import { addTrackedLuaHeapBytes, replaceTrackedLuaHeapBytes } from './lua_heap_usage';
 import { formatNumber } from './number_format';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
 
@@ -68,6 +69,7 @@ export function createNativeFunction(
 	invoke: (args: ReadonlyArray<Value>, out: Value[]) => void,
 	cost: NativeFnCost = DEFAULT_NATIVE_COST,
 ): NativeFunction {
+	addTrackedLuaHeapBytes(16);
 	return {
 		kind: NATIVE_FUNCTION_KIND,
 		name,
@@ -94,6 +96,7 @@ export function createNativeObject(raw: object, handlers: {
 	len?: () => number;
 	nextEntry?: (after: Value) => [Value, Value] | null;
 }): NativeObject {
+	addTrackedLuaHeapBytes(24);
 	return { kind: NATIVE_OBJECT_KIND, raw, get: handlers.get, set: handlers.set, len: handlers.len, nextEntry: handlers.nextEntry, metatable: null };
 }
 
@@ -395,6 +398,7 @@ export class Table {
 			this.hash[i] = { key: null, value: null, next: -1 };
 		}
 		this.hashFree = size > 0 ? size - 1 : -1;
+		addTrackedLuaHeapBytes(this.getTrackedHeapBytes());
 	}
 
 	public get(key: Value): Value {
@@ -471,10 +475,12 @@ export class Table {
 	}
 
 	public clear(): void {
+		const previousBytes = this.getTrackedHeapBytes();
 		this.array.length = 0;
 		this.arrayLength = 0;
 		this.hash.length = 0;
 		this.hashFree = -1;
+		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
 	}
 
 	public entriesArray(): ReadonlyArray<[Value, Value]> {
@@ -516,6 +522,7 @@ export class Table {
 	}
 
 	public restoreRuntimeState(state: TableRuntimeState): void {
+		const previousBytes = this.getTrackedHeapBytes();
 		this.array = state.array.slice();
 		this.arrayLength = state.arrayLength;
 		this.hash = new Array<HashNode>(state.hash.length);
@@ -525,6 +532,7 @@ export class Table {
 		}
 		this.hashFree = state.hashFree;
 		this.metatable = state.metatable;
+		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
 	}
 
 	public walkTrackedValues(visitor: (value: Value) => void): void {
@@ -766,6 +774,7 @@ export class Table {
 	}
 
 	private resize(newArraySize: number, newHashSize: number): void {
+		const previousBytes = this.getTrackedHeapBytes();
 		const oldArray = this.array;
 		const oldHash = this.hash;
 
@@ -789,6 +798,7 @@ export class Table {
 				this.rawSet(node.key, node.value);
 			}
 		}
+		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
 	}
 
 	private rawSet(key: Value, value: Value): void {
@@ -1313,6 +1323,7 @@ export class CPU {
 	public start(entryProtoIndex: number, args: Value[] = []): void {
 		this.frames.length = 0;
 		const closure: Closure = { protoIndex: entryProtoIndex, upvalues: [] };
+		addTrackedLuaHeapBytes(16);
 		this.pushFrame(closure, args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
 	}
 
@@ -1984,12 +1995,14 @@ export class CPU {
 				if (!upvalue) {
 					upvalue = { open: true, index: desc.index, frame, value: null };
 					frame.openUpvalues.set(desc.index, upvalue);
+					addTrackedLuaHeapBytes(24);
 				}
 				upvalues[index] = upvalue;
 				continue;
 			}
 			upvalues[index] = frame.closure.upvalues[desc.index];
 		}
+		addTrackedLuaHeapBytes(16 + (upvalues.length * 8));
 		return { protoIndex, upvalues };
 	}
 
@@ -2131,121 +2144,105 @@ export class CPU {
 	public getTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
 		const seen = new WeakSet<object>();
 		let total = 0;
+		const valueStack: Value[] = [];
+		const upvalueStack: Upvalue[] = [];
 
-		const walkUpvalue = (upvalue: Upvalue): void => {
-			if (seen.has(upvalue)) {
-				return;
-			}
-			seen.add(upvalue);
-			total += 24;
-			if (upvalue.open) {
-				walkValue(upvalue.frame.registers.get(upvalue.index));
-				return;
-			}
-			walkValue(upvalue.value);
-		};
-
-		const walkNativeObject = (value: NativeObject): void => {
-			if (seen.has(value)) {
-				return;
-			}
-			seen.add(value);
-			total += 24;
-			if (value.metatable !== null && value.metatable !== undefined) {
-				walkValue(value.metatable);
-			}
-			if (!value.nextEntry) {
-				return;
-			}
-			let after: Value = null;
-			while (true) {
-				const entry = value.nextEntry(after);
-				if (entry === null) {
-					return;
-				}
-				walkValue(entry[0]);
-				walkValue(entry[1]);
-				after = entry[0];
-			}
-		};
-
-		const walkClosure = (value: Closure): void => {
-			if (seen.has(value)) {
-				return;
-			}
-			seen.add(value);
-			total += 16 + (value.upvalues.length * 8);
-			for (let index = 0; index < value.upvalues.length; index += 1) {
-				walkUpvalue(value.upvalues[index]);
-			}
-		};
-
-		const walkTable = (value: Table): void => {
-			if (seen.has(value)) {
-				return;
-			}
-			seen.add(value);
-			total += value.getTrackedHeapBytes();
-			value.walkTrackedValues(walkValue);
-		};
-
-		const walkValue = (value: Value): void => {
+		const pushValue = (value: Value): void => {
 			if (value === null || typeof value === 'boolean' || typeof value === 'number' || isStringValue(value)) {
 				return;
 			}
-			if (value instanceof Table) {
-				walkTable(value);
-				return;
-			}
-			if (isNativeFunction(value)) {
-				if (seen.has(value)) {
-					return;
-				}
-				seen.add(value);
-				total += 16;
-				return;
-			}
-			if (isNativeObject(value)) {
-				walkNativeObject(value);
-				return;
-			}
-			walkClosure(value);
+			valueStack.push(value);
 		};
 
-		walkValue(this.globals);
+		pushValue(this.globals);
 		if (this.stringIndexTable !== null) {
-			walkValue(this.stringIndexTable);
+			pushValue(this.stringIndexTable);
 		}
 		const ioSlots = this.memory.getIoSlots();
 		for (let index = 0; index < ioSlots.length; index += 1) {
-			walkValue(ioSlots[index]);
+			pushValue(ioSlots[index]);
 		}
 		for (let index = 0; index < this.lastReturnValues.length; index += 1) {
-			walkValue(this.lastReturnValues[index]);
+			pushValue(this.lastReturnValues[index]);
 		}
 		for (let index = 0; index < this.returnScratch.length; index += 1) {
-			walkValue(this.returnScratch[index]);
+			pushValue(this.returnScratch[index]);
 		}
 		if (this.program !== null) {
 			for (let index = 0; index < this.program.constPool.length; index += 1) {
-				walkValue(this.program.constPool[index]);
+				pushValue(this.program.constPool[index]);
 			}
 		}
 		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
 			const frame = this.frames[frameIndex];
-			walkClosure(frame.closure);
+			pushValue(frame.closure);
 			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
-				walkValue(frame.registers.get(registerIndex));
+				pushValue(frame.registers.get(registerIndex));
 			}
 			for (let index = 0; index < frame.varargs.length; index += 1) {
-				walkValue(frame.varargs[index]);
+				pushValue(frame.varargs[index]);
 			}
 			for (const upvalue of frame.openUpvalues.values()) {
-				walkUpvalue(upvalue);
+				upvalueStack.push(upvalue);
 			}
 		}
 		for (let index = 0; index < extraRoots.length; index += 1) {
-			walkValue(extraRoots[index]);
+			pushValue(extraRoots[index]);
+		}
+		while (valueStack.length > 0 || upvalueStack.length > 0) {
+			if (upvalueStack.length > 0) {
+				const upvalue = upvalueStack.pop()!;
+				if (seen.has(upvalue)) {
+					continue;
+				}
+				seen.add(upvalue);
+				total += 24;
+				if (upvalue.open) {
+					pushValue(upvalue.frame.registers.get(upvalue.index));
+				}
+				else {
+					pushValue(upvalue.value);
+				}
+				continue;
+			}
+			const value = valueStack.pop()!;
+			if (value instanceof Table) {
+				if (seen.has(value)) {
+					continue;
+				}
+				seen.add(value);
+				total += value.getTrackedHeapBytes();
+				value.walkTrackedValues(pushValue);
+				continue;
+			}
+			if (isNativeFunction(value)) {
+				if (seen.has(value)) {
+					continue;
+				}
+				seen.add(value);
+				total += 16;
+				continue;
+			}
+			if (isNativeObject(value)) {
+				if (seen.has(value)) {
+					continue;
+				}
+				seen.add(value);
+				total += 24;
+				if (value.metatable !== null && value.metatable !== undefined) {
+					pushValue(value.metatable);
+				}
+				continue;
+			}
+			const closure = value as Closure;
+			if (seen.has(closure)) {
+				continue;
+			}
+			seen.add(closure);
+			total += 16 + (closure.upvalues.length * 8);
+			for (let index = 0; index < closure.upvalues.length; index += 1) {
+				upvalueStack.push(closure.upvalues[index]);
+			}
 		}
 		return total;
 	}

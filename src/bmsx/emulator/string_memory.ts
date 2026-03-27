@@ -5,6 +5,7 @@ import {
 	STRING_HEAP_BASE,
 	STRING_HEAP_SIZE,
 } from './memory_map';
+import { enforceLuaHeapBudget } from './lua_heap_usage';
 import { Memory } from './memory';
 
 const TEXT_ENCODER = new TextEncoder();
@@ -26,6 +27,7 @@ export class StringHeap {
 			throw new Error(`[StringHeap] Out of heap memory (len=${length}).`);
 		}
 		this.cursor = next;
+		enforceLuaHeapBudget();
 		return addr;
 	}
 

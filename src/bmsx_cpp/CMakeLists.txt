@@ -133,6 +133,7 @@ add_library(bmsx_core STATIC
 	emulator/api.cpp
 	emulator/disassembler.cpp
 	emulator/lua_globals.cpp
+	emulator/lua_heap_usage.cpp
 	emulator/lua_runtime.cpp
 	emulator/resource_usage_detector.cpp
 	emulator/runtime.cpp

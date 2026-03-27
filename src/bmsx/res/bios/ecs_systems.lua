@@ -166,7 +166,7 @@ local function resolve_object_tick_order(obj)
 	if object_tick_order_lookup[order] then
 		return order
 	end
-	error('[objectticksystem] unknown tick_order '' .. tostring(order) .. '' on '' .. tostring(obj.id) .. ''.')
+	error('[objectticksystem] unknown tick_order "' .. tostring(order) .. '" on "' .. tostring(obj.id) .. '".')
 end
 
 function objectticksystem.new(priority)
@@ -434,7 +434,7 @@ function overlap2dsystem:space_match(scope, owner_space, other_space)
 	if scope == 'both' then
 		return (other_space == owner_space and other_space == current) or other_space == 'ui'
 	end
-	error('[overlap2dsystem] unknown spaceevents scope '' .. tostring(scope) .. ''')
+	error('[overlap2dsystem] unknown spaceevents scope "' .. tostring(scope) .. '" on collider2dcomponent of object in space "' .. tostring(owner_space) .. '".')
 end
 
 -- overlap2dsystem.new(priority?)

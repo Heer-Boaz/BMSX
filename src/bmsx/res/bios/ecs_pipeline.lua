@@ -15,10 +15,7 @@ function ecspipelineregistry.new()
 end
 
 function ecspipelineregistry:register(desc)
-	if self._descs[desc.id] then
-		error('ecspipelineregistry: duplicate id '' .. desc.id .. ''')
-	end
-	self._descs[desc.id] = desc
+	self._descs[desc.id] = desc -- Allow overriding existing descs with the same id, to allow for dynamic changes to the pipeline and hot-reloading.
 end
 
 function ecspipelineregistry:register_many(descs)
@@ -46,7 +43,7 @@ function ecspipelineregistry:build(world_instance, nodes)
 		local n = filtered[i]
 		local d = self._descs[n.ref]
 		if not d then
-			error('ecspipelineregistry: unknown system ref '' .. n.ref .. ''')
+			error('ecspipelineregistry: unknown system ref "' .. n.ref .. '"')
 		end
 		resolved[#resolved + 1] = {
 			ref = n.ref,

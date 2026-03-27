@@ -697,6 +697,16 @@ public:
 	void requestCollection() { m_collectRequested = true; }
 	bool needsCollection() const { return m_collectRequested; }
 	void collect();
+	void suspendCollection() { m_collectionSuspendDepth += 1; }
+	void resumeCollection() {
+		if (m_collectionSuspendDepth <= 0) {
+			throw std::runtime_error("[GcHeap] Collection resume underflow.");
+		}
+		m_collectionSuspendDepth -= 1;
+		if (m_collectionSuspendDepth == 0 && m_collectRequested) {
+			collect();
+		}
+	}
 
 	void markValue(Value v);
 	void markObject(GCObject* obj);
@@ -712,6 +722,7 @@ private:
 	size_t m_bytesAllocated = 0;
 	size_t m_nextGC = 1024 * 1024;
 	bool m_collectRequested = false;
+	int m_collectionSuspendDepth = 0;
 	std::function<void(GcHeap&)> m_rootMarker;
 };
 
@@ -746,7 +757,9 @@ public:
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void unwindToDepth(int targetDepth);
 	void step();
-	size_t trackedHeapBytes(const std::vector<Value>& extraRoots = {}) const;
+	void collectHeap();
+	void suspendGc() { m_heap.suspendCollection(); }
+	void resumeGc() { m_heap.resumeCollection(); }
 
 	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
 	bool hasFrames() const { return !m_frames.empty(); }

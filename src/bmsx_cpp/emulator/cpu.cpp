@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include "lua_heap_usage.h"
 #include "memory.h"
 #include "number_format.h"
 #include <algorithm>
@@ -8,7 +9,6 @@
 #include <cstdlib>
 #include <limits>
 #include <stdexcept>
-#include <unordered_set>
 
 namespace bmsx {
 
@@ -151,6 +151,10 @@ static constexpr std::array<uint8_t, 64> makeBaseCycles() {
 
 static constexpr std::array<uint8_t, 64> kBaseCycles = makeBaseCycles();
 
+static inline size_t trackedClosureBytes(const Closure& closure) {
+	return 16 + (closure.upvalues.size() * sizeof(Upvalue*));
+}
+
 } // namespace
 
 std::string valueToString(const Value& v, const StringPool& stringPool) {
@@ -189,6 +193,7 @@ Table::Table(int arraySize, int hashSize) {
 		m_hash.assign(size, HashNode{});
 		m_hashFree = static_cast<int>(size) - 1;
 	}
+	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedHeapBytes()));
 }
 
 bool Table::tryGetArrayIndex(const Value& key, int& outIndex) const {
@@ -339,6 +344,7 @@ void Table::rehash(const Value& key) {
 }
 
 void Table::resize(size_t newArraySize, size_t newHashSize) {
+	const size_t previousBytes = trackedHeapBytes();
 	std::vector<Value> oldArray = std::move(m_array);
 	std::vector<HashNode> oldHash = std::move(m_hash);
 
@@ -357,6 +363,7 @@ void Table::resize(size_t newArraySize, size_t newHashSize) {
 			rawSet(node.key, node.value);
 		}
 	}
+	replaceTrackedLuaHeapBytes(previousBytes, trackedHeapBytes());
 }
 
 void Table::rawSet(const Value& key, const Value& value) {
@@ -543,10 +550,12 @@ int Table::length() const {
 }
 
 void Table::clear() {
+	const size_t previousBytes = trackedHeapBytes();
 	m_array.clear();
 	m_arrayLength = 0;
 	m_hash.clear();
 	m_hashFree = -1;
+	replaceTrackedLuaHeapBytes(previousBytes, trackedHeapBytes());
 }
 
 std::vector<std::pair<Value, Value>> Table::entries() const {
@@ -638,6 +647,7 @@ TableRuntimeState Table::captureRuntimeState() const {
 }
 
 void Table::restoreRuntimeState(const TableRuntimeState& state) {
+	const size_t previousBytes = trackedHeapBytes();
 	m_array = state.array;
 	m_arrayLength = state.arrayLength;
 	m_hash.clear();
@@ -647,6 +657,7 @@ void Table::restoreRuntimeState(const TableRuntimeState& state) {
 	}
 	m_hashFree = state.hashFree;
 	m_metatable = state.metatable;
+	replaceTrackedLuaHeapBytes(previousBytes, trackedHeapBytes());
 }
 
 size_t Table::trackedHeapBytes() const {
@@ -747,22 +758,27 @@ void GcHeap::sweep() {
 		switch (obj->type) {
 			case ObjType::Table:
 				m_bytesAllocated -= sizeof(Table);
+				addTrackedLuaHeapBytes(-static_cast<ptrdiff_t>(static_cast<Table*>(obj)->trackedHeapBytes()));
 				delete static_cast<Table*>(obj);
 				break;
 			case ObjType::Closure:
 				m_bytesAllocated -= sizeof(Closure);
+				addTrackedLuaHeapBytes(-static_cast<ptrdiff_t>(trackedClosureBytes(*static_cast<Closure*>(obj))));
 				delete static_cast<Closure*>(obj);
 				break;
 			case ObjType::NativeFunction:
 				m_bytesAllocated -= sizeof(NativeFunction);
+				addTrackedLuaHeapBytes(-16);
 				delete static_cast<NativeFunction*>(obj);
 				break;
 			case ObjType::NativeObject:
 				m_bytesAllocated -= sizeof(NativeObject);
+				addTrackedLuaHeapBytes(-24);
 				delete static_cast<NativeObject*>(obj);
 				break;
 			case ObjType::Upvalue:
 				m_bytesAllocated -= sizeof(Upvalue);
+				addTrackedLuaHeapBytes(-24);
 				delete static_cast<Upvalue*>(obj);
 				break;
 		}
@@ -771,6 +787,10 @@ void GcHeap::sweep() {
 }
 
 void GcHeap::collect() {
+	if (m_collectionSuspendDepth > 0) {
+		m_collectRequested = true;
+		return;
+	}
 	if (!m_collectRequested) {
 		return;
 	}
@@ -794,6 +814,7 @@ CPU::CPU(Memory& memory, StringHandleTable* handleTable)
 
 Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn) {
 	auto* native = m_heap.allocate<NativeFunction>(ObjType::NativeFunction);
+	addTrackedLuaHeapBytes(16);
 	native->name = std::string(name);
 	native->invoke = [invoke = std::move(fn)](const std::vector<Value>& args, std::vector<Value>& out) {
 		out.clear();
@@ -811,6 +832,7 @@ Value CPU::createNativeObject(
 	std::function<void(GcHeap&)> mark
 ) {
 	auto* native = m_heap.allocate<NativeObject>(ObjType::NativeObject);
+	addTrackedLuaHeapBytes(24);
 	native->raw = raw;
 	native->get = std::move(get);
 	native->set = std::move(set);
@@ -828,6 +850,7 @@ Closure* CPU::createRootClosure(int protoIndex) {
 	auto* closure = m_heap.allocate<Closure>(ObjType::Closure);
 	closure->protoIndex = protoIndex;
 	closure->upvalues.clear();
+	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedClosureBytes(*closure)));
 	return closure;
 }
 
@@ -906,6 +929,7 @@ RunResult CPU::run(int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	RunResult result = RunResult::Halted;
 	while (!m_frames.empty()) {
+		enforceLuaHeapBudget();
 		if (instructionBudgetRemaining <= 0) {
 			result = RunResult::Yielded;
 			break;
@@ -919,6 +943,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	RunResult result = RunResult::Halted;
 	while (static_cast<int>(m_frames.size()) > targetDepth) {
+		enforceLuaHeapBudget();
 		if (instructionBudgetRemaining <= 0) {
 			result = RunResult::Yielded;
 			break;
@@ -937,8 +962,14 @@ void CPU::unwindToDepth(int targetDepth) {
 	}
 }
 
+void CPU::collectHeap() {
+	m_heap.requestCollection();
+	m_heap.collect();
+}
+
 void CPU::step() {
 	if (m_frames.empty()) return;
+	enforceLuaHeapBudget();
 	if (m_heap.needsCollection()) {
 		m_heap.collect();
 	}
@@ -1609,6 +1640,7 @@ Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
 	auto* closure = m_heap.allocate<Closure>(ObjType::Closure);
 	closure->protoIndex = protoIndex;
 	closure->upvalues.resize(proto.upvalues.size());
+	addTrackedLuaHeapBytes(static_cast<ptrdiff_t>(trackedClosureBytes(*closure)));
 	for (size_t i = 0; i < proto.upvalues.size(); ++i) {
 		const UpvalueDesc& uv = proto.upvalues[i];
 		if (uv.isLocal) {
@@ -1618,6 +1650,7 @@ Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
 				upvalue = it->second;
 			} else {
 				upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
+				addTrackedLuaHeapBytes(24);
 				upvalue->open = true;
 				upvalue->index = uv.index;
 				upvalue->frame = &frame;
@@ -1820,141 +1853,6 @@ void CPU::releaseArgScratch(std::vector<Value>&& args) {
 	if (m_nativeArgPool.size() < MAX_POOLED_NATIVE_ARG_ARRAYS) {
 		m_nativeArgPool.push_back(std::move(args));
 	}
-}
-
-size_t CPU::trackedHeapBytes(const std::vector<Value>& extraRoots) const {
-	std::unordered_set<const GCObject*> seen;
-	size_t total = 0;
-
-	std::function<void(Value)> walkValue;
-	std::function<void(Upvalue*)> walkUpvalue;
-
-	auto walkTable = [&](Table* table) {
-		if (!table || !seen.insert(table).second) {
-			return;
-		}
-		total += table->trackedHeapBytes();
-		TableRuntimeState state = table->captureRuntimeState();
-		walkValue(state.metatable ? valueTable(state.metatable) : valueNil());
-		for (const Value& value : state.array) {
-			walkValue(value);
-		}
-		for (const auto& node : state.hash) {
-			walkValue(node.key);
-			walkValue(node.value);
-		}
-	};
-
-	auto walkClosure = [&](Closure* closure) {
-		if (!closure || !seen.insert(closure).second) {
-			return;
-		}
-		total += 16 + (closure->upvalues.size() * sizeof(Upvalue*));
-		for (Upvalue* upvalue : closure->upvalues) {
-			walkUpvalue(upvalue);
-		}
-	};
-
-	auto walkNativeFunction = [&](NativeFunction* fn) {
-		if (!fn || !seen.insert(fn).second) {
-			return;
-		}
-		total += 16;
-	};
-
-	auto walkNativeObject = [&](NativeObject* object) {
-		if (!object || !seen.insert(object).second) {
-			return;
-		}
-		total += 24;
-		if (object->metatable) {
-			walkTable(object->metatable);
-		}
-		if (!object->nextEntry) {
-			return;
-		}
-		Value after = valueNil();
-		while (true) {
-			auto entry = object->nextEntry(after);
-			if (!entry.has_value()) {
-				break;
-			}
-			walkValue(entry->first);
-			walkValue(entry->second);
-			after = entry->first;
-		}
-	};
-
-	walkUpvalue = [&](Upvalue* upvalue) {
-		if (!upvalue || !seen.insert(upvalue).second) {
-			return;
-		}
-		total += 24;
-		if (upvalue->open && upvalue->frame) {
-			walkValue(upvalue->frame->registers[static_cast<size_t>(upvalue->index)]);
-			return;
-		}
-		walkValue(upvalue->value);
-	};
-
-	walkValue = [&](Value value) {
-		if (isNil(value) || valueIsBool(value) || valueIsNumber(value) || valueIsString(value)) {
-			return;
-		}
-		if (valueIsTable(value)) {
-			walkTable(asTable(value));
-			return;
-		}
-		if (valueIsClosure(value)) {
-			walkClosure(asClosure(value));
-			return;
-		}
-		if (valueIsNativeFunction(value)) {
-			walkNativeFunction(asNativeFunction(value));
-			return;
-		}
-		if (valueIsNativeObject(value)) {
-			walkNativeObject(asNativeObject(value));
-		}
-	};
-
-	if (globals) {
-		walkTable(globals);
-	}
-	if (m_stringIndexTable) {
-		walkTable(m_stringIndexTable);
-	}
-	for (const Value& value : m_memory.ioSlots()) {
-		walkValue(value);
-	}
-	for (const Value& value : lastReturnValues) {
-		walkValue(value);
-	}
-	for (const Value& value : m_returnScratch) {
-		walkValue(value);
-	}
-	if (m_program) {
-		for (const Value& value : m_program->constPool) {
-			walkValue(value);
-		}
-	}
-	for (const auto& framePtr : m_frames) {
-		const CallFrame& frame = *framePtr;
-		walkClosure(frame.closure);
-		for (int index = 0; index < frame.top; ++index) {
-			walkValue(frame.registers[static_cast<size_t>(index)]);
-		}
-		for (const Value& value : frame.varargs) {
-			walkValue(value);
-		}
-		for (const auto& entry : frame.openUpvalues) {
-			walkUpvalue(entry.second);
-		}
-	}
-	for (const Value& value : extraRoots) {
-		walkValue(value);
-	}
-	return total;
 }
 
 void CPU::markRoots(GcHeap& heap) {

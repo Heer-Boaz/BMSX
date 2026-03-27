@@ -210,7 +210,8 @@ uint32_t nextWord(BlockGen& gen) {
 VDP::VDP(Memory& memory)
 	: m_memory(memory)
 	, m_vramStaging(VRAM_STAGING_SIZE)
-	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES) {
+	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
+	, m_bgMapLayerCopyScratch(VDP_BGMAP_LAYER_SIZE) {
 	m_memory.setVramWriter(this);
 	m_memory.setVdpIoHandler(this);
 	m_vramMachineSeed = nextVramMachineSeed();
@@ -300,12 +301,41 @@ uint32_t VDP::readOamReadSource() const {
 	return static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_READ_SOURCE)));
 }
 
-uint32_t VDP::activeBgMapBase() const {
-	return readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? m_bgMapBackBase : m_bgMapFrontBase;
-}
-
 uint32_t VDP::activePatBase() const {
 	return readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? m_patBackBase : m_patFrontBase;
+}
+
+uint32_t VDP::bgMapLayerBaseForRead(uint32_t layerIndex) const {
+	if (
+		readOamReadSource() == VDP_OAM_READ_SOURCE_BACK
+		&& m_bgMapBackLayerPending[layerIndex]
+		&& m_bgMapBackLayerRewritePending[layerIndex]
+	) {
+		return m_bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+	}
+	return m_bgMapFrontBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+}
+
+void VDP::copyBgMapLayer(uint32_t srcBase, uint32_t dstBase) {
+	m_memory.readBytes(srcBase, m_bgMapLayerCopyScratch.data(), VDP_BGMAP_LAYER_SIZE);
+	m_memory.writeBytes(dstBase, m_bgMapLayerCopyScratch.data(), VDP_BGMAP_LAYER_SIZE);
+}
+
+void VDP::clearBgMapPatchLayer(uint32_t layerIndex) {
+	auto& patchFlags = m_bgMapPatchFlags[layerIndex];
+	auto& patchIndices = m_bgMapPatchIndices[layerIndex];
+	for (size_t index = 0; index < patchIndices.size(); ++index) {
+		patchFlags[patchIndices.get(index)] = 0u;
+	}
+	patchIndices.clear();
+}
+
+const BgMapEntry& VDP::bgMapTileForRead(uint32_t layerIndex, uint32_t tileIndex, uint32_t layerBase, bool patchRead, BgMapEntry& scratch) const {
+	if (patchRead && m_bgMapPatchFlags[layerIndex][tileIndex] != 0u) {
+		return m_bgMapPatchEntries[layerIndex][tileIndex];
+	}
+	scratch = readBgMapEntry(layerBase + VDP_BGMAP_HEADER_BYTES + tileIndex * VDP_BGMAP_ENTRY_BYTES);
+	return scratch;
 }
 
 void VDP::writeOamEntry(uint32_t addr, const OamEntry& entry) {
@@ -491,6 +521,9 @@ void VDP::submitPatEntry(const PatEntry& entry) {
 
 void VDP::clearBackBgMap() {
 	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
+		m_bgMapBackLayerPending[layerIndex] = false;
+		m_bgMapBackLayerRewritePending[layerIndex] = false;
+		clearBgMapPatchLayer(layerIndex);
 		const uint32_t base = m_bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
 		writeBgMapHeader(base, BgMapHeader{});
 	}
@@ -504,6 +537,9 @@ void VDP::beginBgMapLayerWrite(i32 layerIndex, const BgMapHeader& header) {
 		throw BMSX_RUNTIME_ERROR("[VDP] BGMap tile capacity exceeded.");
 	}
 	const uint32_t base = m_bgMapBackBase + static_cast<uint32_t>(layerIndex) * VDP_BGMAP_LAYER_SIZE;
+	m_bgMapBackLayerPending[static_cast<uint32_t>(layerIndex)] = true;
+	m_bgMapBackLayerRewritePending[static_cast<uint32_t>(layerIndex)] = true;
+	clearBgMapPatchLayer(static_cast<uint32_t>(layerIndex));
 	writeBgMapHeader(base, header);
 	for (uint32_t tileIndex = 0; tileIndex < VDP_BGMAP_TILE_CAPACITY; ++tileIndex) {
 		m_memory.writeU32(base + VDP_BGMAP_HEADER_BYTES + tileIndex * VDP_BGMAP_ENTRY_BYTES + 4u, 0u);
@@ -514,13 +550,26 @@ void VDP::submitBgMapTile(i32 layerIndex, i32 col, i32 row, const BgMapEntry& en
 	if (layerIndex < 0 || layerIndex >= static_cast<i32>(VDP_BGMAP_LAYER_COUNT)) {
 		throw BMSX_RUNTIME_ERROR("[VDP] BGMap layer out of range.");
 	}
-	const uint32_t base = m_bgMapBackBase + static_cast<uint32_t>(layerIndex) * VDP_BGMAP_LAYER_SIZE;
+	const bool rewritePending = m_bgMapBackLayerRewritePending[static_cast<uint32_t>(layerIndex)];
+	const uint32_t base = rewritePending
+		? m_bgMapBackBase + static_cast<uint32_t>(layerIndex) * VDP_BGMAP_LAYER_SIZE
+		: m_bgMapFrontBase + static_cast<uint32_t>(layerIndex) * VDP_BGMAP_LAYER_SIZE;
 	const BgMapHeader header = readBgMapHeader(base);
 	if (col < 0 || col >= static_cast<i32>(header.cols) || row < 0 || row >= static_cast<i32>(header.rows)) {
 		throw BMSX_RUNTIME_ERROR("[VDP] BGMap tile outside configured layer bounds.");
 	}
 	const uint32_t index = static_cast<uint32_t>(row) * header.cols + static_cast<uint32_t>(col);
-	writeBgMapEntry(base + VDP_BGMAP_HEADER_BYTES + index * VDP_BGMAP_ENTRY_BYTES, entry);
+	if (rewritePending) {
+		writeBgMapEntry(base + VDP_BGMAP_HEADER_BYTES + index * VDP_BGMAP_ENTRY_BYTES, entry);
+		return;
+	}
+	const uint32_t layer = static_cast<uint32_t>(layerIndex);
+	m_bgMapBackLayerPending[layer] = true;
+	if (m_bgMapPatchFlags[layer][index] == 0u) {
+		m_bgMapPatchFlags[layer][index] = 1u;
+		m_bgMapPatchIndices[layer].push(index);
+	}
+	m_bgMapPatchEntries[layer][index] = entry;
 }
 
 void VDP::swapOamBuffers() {
@@ -542,8 +591,24 @@ void VDP::swapPatBuffers() {
 }
 
 void VDP::swapBgMapBuffers() {
-	std::swap(m_bgMapFrontBase, m_bgMapBackBase);
-	clearBackBgMap();
+	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
+		if (!m_bgMapBackLayerPending[layerIndex]) {
+			continue;
+		}
+		const uint32_t frontBase = m_bgMapFrontBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+		if (m_bgMapBackLayerRewritePending[layerIndex]) {
+			copyBgMapLayer(m_bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE, frontBase);
+		} else {
+			auto& patchIndices = m_bgMapPatchIndices[layerIndex];
+			for (size_t index = 0; index < patchIndices.size(); ++index) {
+				const uint32_t tileIndex = patchIndices.get(index);
+				writeBgMapEntry(frontBase + VDP_BGMAP_HEADER_BYTES + tileIndex * VDP_BGMAP_ENTRY_BYTES, m_bgMapPatchEntries[layerIndex][tileIndex]);
+			}
+			clearBgMapPatchLayer(layerIndex);
+		}
+		m_bgMapBackLayerPending[layerIndex] = false;
+		m_bgMapBackLayerRewritePending[layerIndex] = false;
+	}
 }
 
 void VDP::setOamReadSource(bool useBackBuffer) {
@@ -593,7 +658,13 @@ bool VDP::hasBack2dContent() const {
 		return true;
 	}
 	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
-		const BgMapHeader header = readBgMapHeader(m_bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE);
+		if (!m_bgMapBackLayerPending[layerIndex]) {
+			continue;
+		}
+		const uint32_t headerBase = m_bgMapBackLayerRewritePending[layerIndex]
+			? m_bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE
+			: m_bgMapFrontBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+		const BgMapHeader header = readBgMapHeader(headerBase);
 		if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) != 0u && header.cols * header.rows > 0u) {
 			return true;
 		}
@@ -623,15 +694,19 @@ i32 VDP::begin2dRead() const {
 		}
 		count += patCount;
 	}
-	const uint32_t bgMapBase = activeBgMapBase();
 	i32 bgCount = 0;
 	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
-		const BgMapHeader header = readBgMapHeader(bgMapBase + layerIndex * VDP_BGMAP_LAYER_SIZE);
+		const uint32_t layerBase = bgMapLayerBaseForRead(layerIndex);
+		const bool patchRead = readOamReadSource() == VDP_OAM_READ_SOURCE_BACK
+			&& m_bgMapBackLayerPending[layerIndex]
+			&& !m_bgMapBackLayerRewritePending[layerIndex];
+		const BgMapHeader header = readBgMapHeader(layerBase);
 		if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) != 0u) {
 			const uint32_t cellCount = header.cols * header.rows;
 			i32 layerEnabledCount = 0;
 			for (uint32_t cellIndex = 0; cellIndex < cellCount; ++cellIndex) {
-				const BgMapEntry tile = readBgMapEntry(bgMapBase + layerIndex * VDP_BGMAP_LAYER_SIZE + VDP_BGMAP_HEADER_BYTES + cellIndex * VDP_BGMAP_ENTRY_BYTES);
+				BgMapEntry tileScratch{};
+				const BgMapEntry& tile = bgMapTileForRead(layerIndex, cellIndex, layerBase, patchRead, tileScratch);
 				if ((tile.flags & BGMAP_TILE_FLAG_ENABLED) == 0u) {
 					continue;
 				}
@@ -666,16 +741,19 @@ void VDP::forEach2dEntry(const std::function<void(const OamEntry&, size_t)>& fn)
 	scratch.a = 1.0f;
 	scratch.layer = OamLayer::World;
 
-	const uint32_t bgMapBase = activeBgMapBase();
 	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
-		const uint32_t layerBase = bgMapBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
+		const uint32_t layerBase = bgMapLayerBaseForRead(layerIndex);
+		const bool patchRead = readOamReadSource() == VDP_OAM_READ_SOURCE_BACK
+			&& m_bgMapBackLayerPending[layerIndex]
+			&& !m_bgMapBackLayerRewritePending[layerIndex];
 		const BgMapHeader header = readBgMapHeader(layerBase);
 		if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) == 0u) {
 			continue;
 		}
 		const uint32_t cellCount = header.cols * header.rows;
+		BgMapEntry tileScratch{};
 		for (uint32_t cellIndex = 0; cellIndex < cellCount; ++cellIndex) {
-			const BgMapEntry tile = readBgMapEntry(layerBase + VDP_BGMAP_HEADER_BYTES + cellIndex * VDP_BGMAP_ENTRY_BYTES);
+			const BgMapEntry& tile = bgMapTileForRead(layerIndex, cellIndex, layerBase, patchRead, tileScratch);
 			if ((tile.flags & BGMAP_TILE_FLAG_ENABLED) == 0u) {
 				continue;
 			}

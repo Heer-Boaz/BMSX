@@ -15,6 +15,7 @@ import { getWorkspaceCachedSource } from './workspace_cache';
 import type { RuntimeState, SymbolEntry, SymbolKind } from './types';
 import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
 import { logDebugState } from './runtime_debug';
+import { addTrackedLuaHeapBytes, resetTrackedLuaHeapBytes } from './lua_heap_usage';
 import * as runtimeIde from './runtime_ide';
 import {
 	buildModuleAliasMap,
@@ -593,6 +594,8 @@ export function resetRuntimeState(runtime: Runtime): void {
 	runtime.pendingCartBoot = false;
 	resetHardwareState(runtime);
 	runtime.cpu.globals.clear();
+	resetTrackedLuaHeapBytes();
+	addTrackedLuaHeapBytes(runtime.cpu.globals.getTrackedHeapBytes());
 	runtime.moduleCache.clear();
 	runtime.moduleProtos.clear();
 	seedGlobals(runtime);

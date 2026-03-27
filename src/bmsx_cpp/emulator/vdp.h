@@ -5,6 +5,7 @@
 #include "memory.h"
 #include "../rompack/rompack.h"
 #include "../render/shared/render_types.h"
+#include "../utils/scratchbatch.h"
 #include <array>
 #include <optional>
 #include <string>
@@ -116,6 +117,15 @@ private:
 	std::array<u8, 4> m_vramSeedPixel{{0, 0, 0, 0}};
 	uint32_t m_vramMachineSeed = 0;
 	uint32_t m_vramBootSeed = 0;
+	std::array<bool, VDP_BGMAP_LAYER_COUNT> m_bgMapBackLayerPending{};
+	std::array<bool, VDP_BGMAP_LAYER_COUNT> m_bgMapBackLayerRewritePending{};
+	std::array<std::array<u8, VDP_BGMAP_TILE_CAPACITY>, VDP_BGMAP_LAYER_COUNT> m_bgMapPatchFlags{};
+	std::array<std::array<BgMapEntry, VDP_BGMAP_TILE_CAPACITY>, VDP_BGMAP_LAYER_COUNT> m_bgMapPatchEntries{};
+	std::array<ScratchBatch<uint32_t>, VDP_BGMAP_LAYER_COUNT> m_bgMapPatchIndices{
+		ScratchBatch<uint32_t>(64u),
+		ScratchBatch<uint32_t>(64u),
+	};
+	std::vector<u8> m_bgMapLayerCopyScratch;
 	std::array<ReadSurface, 3> m_readSurfaces{};
 	std::array<ReadCache, 3> m_readCaches{};
 	uint32_t m_readBudgetBytes = 0;
@@ -154,8 +164,11 @@ private:
 	uint32_t readOamFrontBase() const;
 	uint32_t readOamBackBase() const;
 	uint32_t readOamReadSource() const;
-	uint32_t activeBgMapBase() const;
 	uint32_t activePatBase() const;
+	uint32_t bgMapLayerBaseForRead(uint32_t layerIndex) const;
+	void copyBgMapLayer(uint32_t srcBase, uint32_t dstBase);
+	void clearBgMapPatchLayer(uint32_t layerIndex);
+	const BgMapEntry& bgMapTileForRead(uint32_t layerIndex, uint32_t tileIndex, uint32_t layerBase, bool patchRead, BgMapEntry& scratch) const;
 	void writeOamEntry(uint32_t addr, const OamEntry& entry);
 	OamEntry readOamEntry(uint32_t addr) const;
 	void writePatHeader(uint32_t base, const PatHeader& header);

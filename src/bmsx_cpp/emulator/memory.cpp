@@ -1,4 +1,5 @@
 #include "memory.h"
+#include "lua_heap_usage.h"
 
 #include <algorithm>
 #include <cstring>
@@ -465,6 +466,7 @@ void Memory::finalizeAssetTable() {
 	const uint32_t stringOffset = stringTableAddr - RAM_BASE;
 	std::memcpy(base + stringOffset, stringTable.data(), stringTable.size());
 	m_assetTableFinalized = true;
+	enforceLuaHeapBudget();
 }
 
 std::vector<Memory::AssetEntry*> Memory::consumeDirtyAssets() {
@@ -904,6 +906,7 @@ uint32_t Memory::allocateAssetData(uint32_t size, uint32_t alignment) {
 		throw std::runtime_error("[Memory] RAM exhausted.");
 	}
 	m_assetDataCursor = end;
+	enforceLuaHeapBudget();
 	return addr;
 }
 
@@ -921,6 +924,7 @@ size_t Memory::addAssetEntry(AssetEntry entry) {
 	m_assetIndexById[m_assetEntries.back().id] = index;
 	m_assetIndexByToken[m_assetEntries.back().idToken] = index;
 	m_assetDirtyFlags.push_back(0);
+	enforceLuaHeapBudget();
 	return index;
 }
 

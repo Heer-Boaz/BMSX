@@ -1058,6 +1058,12 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_granted', createNativeFunction('sys_cpu_cycles_granted', (_args, out) => {
 		out.push(runtime.getLastTickBudgetGranted());
 	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_used', createNativeFunction('sys_cpu_active_cycles_used', (_args, out) => {
+		out.push(runtime.getActiveCpuUsedCyclesLastTick());
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_granted', createNativeFunction('sys_cpu_active_cycles_granted', (_args, out) => {
+		out.push(runtime.getActiveCpuCyclesGranted());
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_ram_used', createNativeFunction('sys_ram_used', (_args, out) => {
 		out.push(runtime.getTrackedRamUsedBytes());
 	}));
