@@ -39,10 +39,16 @@ export function renderBufferBar(
 	const cellColors = new Array(barLength).fill('');
 
 	// Filter out empty regions (start === end === 0)
-	let regions = unfilteredRegions.filter(region => region.start !== 0 || region.end !== 0);
-	// Concatenate all neighbouring regions with the same colorTag
-	// Note that this is actually not strictly necessary for the rendering,
-	// but it simplifies the rendering logic and avoids unnecessary complexity.
+	let regions = unfilteredRegions
+		.filter(region => region.start !== 0 || region.end !== 0)
+		.sort((left, right) => {
+			if (left.start !== right.start) return left.start - right.start;
+			if (left.end !== right.end) return left.end - right.end;
+			if (left.colorTag !== right.colorTag) return left.colorTag < right.colorTag ? -1 : 1;
+			if (left.label !== right.label) return left.label < right.label ? -1 : 1;
+			return 0;
+		});
+	// Concatenate neighbouring regions with the same color once they are in ROM order.
 	{
 		const mergedRegions: BufferRegion[] = [];
 		for (const region of regions) {
