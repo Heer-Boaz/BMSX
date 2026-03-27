@@ -147,7 +147,7 @@ local function entry_cycle(entry, dir)
 end
 
 function menu.update()
-	if action_triggered('?wp{5}(select, start)') then
+	if action_triggered('select[jp] && start[jp]') then
 		consume_action('select')
 		consume_action('start')
 		toggle_menu()
