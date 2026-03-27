@@ -1265,8 +1265,9 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 			}
 		}
 		baseEntry = &m_memory.getAssetEntry(baseEntryId);
-		const i32 offsetX = static_cast<i32>(std::floor(minU * static_cast<f32>(atlasWidth)));
-		const i32 offsetY = static_cast<i32>(std::floor(minV * static_cast<f32>(atlasHeight)));
+		// Texcoords are stored as float32, so round back to the source texel grid.
+		const i32 offsetX = static_cast<i32>(std::round(minU * static_cast<f32>(atlasWidth)));
+		const i32 offsetY = static_cast<i32>(std::round(minV * static_cast<f32>(atlasHeight)));
 		const i32 regionW = std::max(1, std::min(atlasWidth - offsetX,
 			static_cast<i32>(std::round((maxU - minU) * static_cast<f32>(atlasWidth)))));
 		const i32 regionH = std::max(1, std::min(atlasHeight - offsetY,

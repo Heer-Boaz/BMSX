@@ -1954,8 +1954,9 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			const maxU = Math.max(coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]);
 			const minV = Math.min(coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]);
 			const maxV = Math.max(coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]);
-			const offsetX = Math.floor(minU * atlasWidth);
-			const offsetY = Math.floor(minV * atlasHeight);
+			// Texcoords are serialized as float32, so round back to the source texel grid.
+			const offsetX = Math.round(minU * atlasWidth);
+			const offsetY = Math.round(minV * atlasHeight);
 			const regionW = Math.max(1, Math.min(atlasWidth - offsetX, Math.round((maxU - minU) * atlasWidth)));
 			const regionH = Math.max(1, Math.min(atlasHeight - offsetY, Math.round((maxV - minV) * atlasHeight)));
 			const viewEntry = this.memory.hasAsset(entry.resid)

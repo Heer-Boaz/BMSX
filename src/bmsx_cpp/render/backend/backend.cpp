@@ -166,6 +166,7 @@ void SoftwareBackend::updateTexture(TextureHandle handle, const u8* data, i32 wi
 }
 
 TextureHandle SoftwareBackend::resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) {
+	(void)params;
 	auto* tex = static_cast<SoftwareTexture*>(handle);
 	if (tex->width != width || tex->height != height) {
 		tex->width = width;
