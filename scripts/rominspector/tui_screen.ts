@@ -89,6 +89,7 @@ export class TuiScreen {
 	private buffer: TuiCell[] = [];
 	private prevBuffer: TuiCell[] = [];
 	private initialized = false;
+	private fullRedraw = true;
 
 	width(): number {
 		return this.widthValue;
@@ -103,6 +104,7 @@ export class TuiScreen {
 			return;
 		}
 		this.initialized = true;
+		this.fullRedraw = true;
 		process.stdout.write('\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H');
 		this.updateSize();
 	}
@@ -116,13 +118,20 @@ export class TuiScreen {
 	}
 
 	updateSize(): void {
-		this.widthValue = Math.max(40, process.stdout.columns ?? 80);
-		this.heightValue = Math.max(10, process.stdout.rows ?? 24);
+		const nextWidth = Math.max(40, process.stdout.columns ?? 80);
+		const nextHeight = Math.max(10, process.stdout.rows ?? 24);
+		const sizeChanged = nextWidth !== this.widthValue || nextHeight !== this.heightValue;
+		this.widthValue = nextWidth;
+		this.heightValue = nextHeight;
 		const size = this.widthValue * this.heightValue;
 		const cell: TuiCell = { ch: ' ', fg: { ...DEFAULT_STYLE.fg }, bg: { ...DEFAULT_STYLE.bg } };
 		this.buffer = Array.from({ length: size }, () => cloneCell(cell));
 		if (this.prevBuffer.length !== size) {
 			this.prevBuffer = Array.from({ length: size }, () => cloneCell(cell));
+			this.fullRedraw = true;
+		}
+		if (sizeChanged) {
+			this.fullRedraw = true;
 		}
 	}
 
@@ -214,14 +223,14 @@ export class TuiScreen {
 			const rowStart = y * this.widthValue;
 			let x = 0;
 			while (x < this.widthValue) {
-				while (x < this.widthValue && sameCell(this.buffer[rowStart + x], this.prevBuffer[rowStart + x])) {
+				while (x < this.widthValue && !this.fullRedraw && sameCell(this.buffer[rowStart + x], this.prevBuffer[rowStart + x])) {
 					x += 1;
 				}
 				if (x >= this.widthValue) {
 					break;
 				}
 				out += `\x1b[${y + 1};${x + 1}H`;
-				while (x < this.widthValue && !sameCell(this.buffer[rowStart + x], this.prevBuffer[rowStart + x])) {
+				while (x < this.widthValue && (this.fullRedraw || !sameCell(this.buffer[rowStart + x], this.prevBuffer[rowStart + x]))) {
 					const cell = this.buffer[rowStart + x];
 					if (!currentFg || !sameColor(currentFg, cell.fg)) {
 						out += ansiColor(38, cell.fg);
@@ -241,6 +250,7 @@ export class TuiScreen {
 		if (!wrote) {
 			return;
 		}
+		this.fullRedraw = false;
 		out += '\x1b[0m';
 		process.stdout.write(out);
 	}

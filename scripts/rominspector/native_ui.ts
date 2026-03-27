@@ -2,21 +2,35 @@ import type { RomAsset } from '../../src/bmsx/rompack/rompack';
 import { parseCartHeader } from '../../src/bmsx/rompack/romloader';
 import { renderSummaryBar } from './asciiart';
 import { buildAssetModalView, type AssetModalView } from './asset_modal_view';
-import { sortAssetsById } from './inspector_shared';
 import { TuiInput, type TuiMouseEvent } from './tui_input';
 import { TuiScreen, TUI_COLORS, type TuiStyle } from './tui_screen';
+
+const GREY_HIGHLIGHT = { r: 180, g: 180, b: 180 };
+const GREY_ACTIVE = { r: 150, g: 150, b: 150 };
+const ASSET_TEXT_COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 
 const STYLE_NORMAL: TuiStyle = { fg: TUI_COLORS.white, bg: TUI_COLORS.black };
 const STYLE_DIM: TuiStyle = { fg: TUI_COLORS.dim, bg: TUI_COLORS.black };
 const STYLE_HEADER: TuiStyle = { fg: TUI_COLORS.black, bg: TUI_COLORS.yellow };
+const STYLE_HEADER_ACTIVE: TuiStyle = { fg: TUI_COLORS.black, bg: GREY_ACTIVE };
+const STYLE_HEADER_HOVER: TuiStyle = { fg: TUI_COLORS.black, bg: GREY_HIGHLIGHT };
 const STYLE_SELECTED: TuiStyle = { fg: TUI_COLORS.black, bg: TUI_COLORS.blue };
+const STYLE_SELECTED_HOVER: TuiStyle = { fg: TUI_COLORS.black, bg: TUI_COLORS.cyan };
+const STYLE_HOVER: TuiStyle = { fg: TUI_COLORS.black, bg: GREY_HIGHLIGHT };
 const STYLE_FILTER: TuiStyle = { fg: TUI_COLORS.green, bg: TUI_COLORS.black };
 const STYLE_STATUS: TuiStyle = { fg: TUI_COLORS.black, bg: TUI_COLORS.panel2 };
 const STYLE_PANEL: TuiStyle = { fg: TUI_COLORS.white, bg: TUI_COLORS.panel };
+const STYLE_MODAL_BORDER: TuiStyle = { fg: TUI_COLORS.dim, bg: TUI_COLORS.panel };
+const STYLE_MODAL_TITLE: TuiStyle = { fg: TUI_COLORS.lightYellow, bg: TUI_COLORS.panel };
 const STYLE_PANEL_TAB: TuiStyle = { fg: TUI_COLORS.white, bg: TUI_COLORS.panel2 };
+const STYLE_PANEL_TAB_ACTIVE: TuiStyle = { fg: TUI_COLORS.black, bg: GREY_ACTIVE };
+const STYLE_PANEL_TAB_HOVER: TuiStyle = { fg: TUI_COLORS.black, bg: GREY_HIGHLIGHT };
 const STYLE_CLOSE: TuiStyle = { fg: TUI_COLORS.white, bg: TUI_COLORS.red };
+const STYLE_CLOSE_HOVER: TuiStyle = { fg: TUI_COLORS.black, bg: GREY_HIGHLIGHT };
 const STYLE_SCROLL_TRACK: TuiStyle = { fg: TUI_COLORS.dim, bg: TUI_COLORS.black };
 const STYLE_SCROLL_THUMB: TuiStyle = { fg: TUI_COLORS.black, bg: TUI_COLORS.yellow };
+const STYLE_SCROLL_TRACK_HOVER: TuiStyle = { fg: TUI_COLORS.white, bg: TUI_COLORS.panel2 };
+const STYLE_SCROLL_THUMB_HOVER: TuiStyle = { fg: TUI_COLORS.black, bg: TUI_COLORS.cyan };
 
 type NativeUiContext = {
 	romfile: string;
@@ -48,6 +62,9 @@ type SummaryMetrics = {
 
 type Rect = { x: number; y: number; width: number; height: number };
 type TabHit = Rect & { index: number; close?: boolean };
+type AssetSortKey = 'id' | 'type' | 'size' | 'offset';
+type SortState = { key: AssetSortKey; descending: boolean };
+type TableColumn = Rect & { key: AssetSortKey; label: string };
 
 type ModalLayout = {
 	frame: Rect;
@@ -66,6 +83,7 @@ type UiLayout = {
 	rowsTop: number;
 	visibleRows: number;
 	tableContentWidth: number;
+	tableColumns: TableColumn[];
 	tableScrollbar: Rect;
 	modal: ModalLayout | null;
 };
@@ -74,17 +92,47 @@ function clamp(value: number, min: number, max: number): number {
 	return value < min ? min : value > max ? max : value;
 }
 
-function getFilteredAssets(assetList: RomAsset[], filter: string): RomAsset[] {
+function assetOffset(asset: RomAsset): number {
+	return asset.start ?? asset.metabuffer_start ?? Number.MAX_SAFE_INTEGER;
+}
+
+function compareAssets(left: RomAsset, right: RomAsset, sortKey: AssetSortKey): number {
+	if (sortKey === 'id') {
+		return ASSET_TEXT_COLLATOR.compare(left.resid, right.resid);
+	}
+	if (sortKey === 'type') {
+		const typeCompare = ASSET_TEXT_COLLATOR.compare(left.type, right.type);
+		return typeCompare !== 0 ? typeCompare : ASSET_TEXT_COLLATOR.compare(left.resid, right.resid);
+	}
+	if (sortKey === 'size') {
+		const sizeCompare = assetSize(left) - assetSize(right);
+		return sizeCompare !== 0 ? sizeCompare : ASSET_TEXT_COLLATOR.compare(left.resid, right.resid);
+	}
+	const offsetCompare = assetOffset(left) - assetOffset(right);
+	return offsetCompare !== 0 ? offsetCompare : ASSET_TEXT_COLLATOR.compare(left.resid, right.resid);
+}
+
+function sortAssets(assetList: RomAsset[], sortState: SortState): RomAsset[] {
+	return [...assetList].sort((left, right) => {
+		const compare = compareAssets(left, right, sortState.key);
+		if (compare === 0) {
+			return ASSET_TEXT_COLLATOR.compare(left.resid, right.resid);
+		}
+		return sortState.descending ? -compare : compare;
+	});
+}
+
+function getFilteredAssets(assetList: RomAsset[], filter: string, sortState: SortState): RomAsset[] {
 	if (!filter) {
-		return sortAssetsById(assetList);
+		return sortAssets(assetList, sortState);
 	}
 	const lowered = filter.toLowerCase();
-	return sortAssetsById(assetList.filter(asset =>
+	return sortAssets(assetList.filter(asset =>
 		asset.resid.toLowerCase().includes(lowered) ||
 		asset.type.toLowerCase().includes(lowered) ||
 		(asset.source_path !== undefined && asset.source_path.toLowerCase().includes(lowered)) ||
 		(asset.normalized_source_path !== undefined && asset.normalized_source_path.toLowerCase().includes(lowered))
-	));
+	), sortState);
 }
 
 function assetSize(asset: RomAsset): number {
@@ -102,6 +150,26 @@ function pad(text: string, width: number): string {
 	if (width <= 0) return '';
 	if (text.length >= width) return text.slice(0, Math.max(0, width - 1)) + (text.length > width ? '~' : '');
 	return text.padEnd(width, ' ');
+}
+
+function buildTableColumns(tableContentWidth: number): TableColumn[] {
+	const idWidth = Math.max(16, Math.floor(tableContentWidth * 0.42));
+	const typeWidth = 8;
+	const sizeWidth = 10;
+	const offsetWidth = Math.max(8, tableContentWidth - idWidth - typeWidth - sizeWidth - 3);
+	return [
+		{ x: 0, y: 0, width: idWidth, height: 1, key: 'id', label: 'ID' },
+		{ x: idWidth + 1, y: 0, width: typeWidth, height: 1, key: 'type', label: 'Type' },
+		{ x: idWidth + typeWidth + 2, y: 0, width: sizeWidth, height: 1, key: 'size', label: 'Size' },
+		{ x: idWidth + typeWidth + sizeWidth + 3, y: 0, width: offsetWidth, height: 1, key: 'offset', label: 'Offset' },
+	];
+}
+
+function headerLabel(column: TableColumn, sortState: SortState): string {
+	if (column.key !== sortState.key) {
+		return column.label;
+	}
+	return `${column.label} ${sortState.descending ? '▼' : '▲'}`;
 }
 
 function makeRegionColorTag(asset: RomAsset): string {
@@ -173,15 +241,15 @@ function writeTaggedLine(screen: TuiScreen, x: number, y: number, width: number,
 	screen.writeTaggedText(x, y, text, style, width);
 }
 
-function drawScrollbar(screen: TuiScreen, rect: Rect, totalLines: number, visibleLines: number, topLine: number): void {
-	screen.fillRect(rect.x, rect.y, rect.width, rect.height, STYLE_SCROLL_TRACK);
+function drawScrollbar(screen: TuiScreen, rect: Rect, totalLines: number, visibleLines: number, topLine: number, hovered: boolean): void {
+	screen.fillRect(rect.x, rect.y, rect.width, rect.height, hovered ? STYLE_SCROLL_TRACK_HOVER : STYLE_SCROLL_TRACK);
 	if (totalLines <= visibleLines || rect.height <= 0) {
 		return;
 	}
 	const thumbHeight = Math.max(1, Math.floor(rect.height * visibleLines / totalLines));
 	const maxTop = Math.max(1, totalLines - visibleLines);
 	const thumbY = rect.y + Math.floor((rect.height - thumbHeight) * clamp(topLine, 0, maxTop) / maxTop);
-	screen.fillRect(rect.x, thumbY, rect.width, thumbHeight, STYLE_SCROLL_THUMB, ' ');
+	screen.fillRect(rect.x, thumbY, rect.width, thumbHeight, hovered ? STYLE_SCROLL_THUMB_HOVER : STYLE_SCROLL_THUMB, ' ');
 }
 
 function isInside(rect: Rect, x: number, y: number): boolean {
@@ -194,7 +262,8 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	const summaryMetrics = buildSummaryMetrics(ctx);
 	let filterMode = false;
 	let filterValue = '';
-	let filteredAssets = getFilteredAssets(ctx.assets, filterValue);
+	let sortState: SortState = { key: 'id', descending: false };
+	let filteredAssets = getFilteredAssets(ctx.assets, filterValue, sortState);
 	let selectedIndex = 0;
 	let scrollRow = 0;
 	let statusLine = '';
@@ -204,6 +273,8 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let modalScroll = 0;
 	let loadingModal = false;
 	let lastLayout: UiLayout | null = null;
+	let mouseX = -1;
+	let mouseY = -1;
 
 	const buildSummaryLines = (width: number): string[] => {
 		const summaryBarLines = renderSummaryBar(summaryMetrics.regions, summaryMetrics.totalSize, Math.max(16, width - 16)).split('\n');
@@ -229,6 +300,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const rowsTop = tableTop + 1;
 		const visibleRows = Math.max(1, height - rowsTop - 2);
 		const tableContentWidth = Math.max(12, width - 1);
+		const tableColumns = buildTableColumns(tableContentWidth).map(column => ({ ...column, y: tableTop }));
 		const tableScrollbar: Rect = { x: width - 1, y: rowsTop, width: 1, height: visibleRows };
 		let modal: ModalLayout | null = null;
 		if (modalView) {
@@ -244,11 +316,11 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			const tabs: TabHit[] = [];
 			let tabX = frame.x + 2;
 			for (const [index, label] of ['Preview', 'Details', 'Hex'].entries()) {
-				const tabWidth = label.length + 2;
+				const tabWidth = label.length + 4;
 				tabs.push({ x: tabX, y: tabY, width: tabWidth, height: 1, index });
 				tabX += tabWidth + 1;
 			}
-			tabs.push({ x: frame.x + frame.width - 5, y: tabY, width: 3, height: 1, index: -1, close: true });
+			tabs.push({ x: frame.x + frame.width - 4, y: frame.y, width: 3, height: 1, index: -1, close: true });
 			const maxInfoLineCount = Math.min(modalView.infoLines.length, Math.max(0, frame.height - 8));
 			const infoLineCount = Math.min(5, maxInfoLineCount);
 			const content: Rect = {
@@ -267,7 +339,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			const maxScroll = Math.max(0, getModalLines().length - visibleContentLines);
 			modal = { frame, tabs, content, scrollbar, maxScroll, visibleContentLines, infoLineCount };
 		}
-		return { width, height, tableTop, rowsTop, visibleRows, tableContentWidth, tableScrollbar, modal };
+		return { width, height, tableTop, rowsTop, visibleRows, tableContentWidth, tableColumns, tableScrollbar, modal };
 	};
 
 	const render = () => {
@@ -294,17 +366,30 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			scrollRow = selectedIndex - layout.visibleRows + 1;
 		}
 
-		const idWidth = Math.max(16, Math.floor(layout.tableContentWidth * 0.42));
-		const typeWidth = 8;
-		const sizeWidth = 10;
-		const offsetWidth = Math.max(8, layout.tableContentWidth - idWidth - typeWidth - sizeWidth - 3);
-		const header = `${pad('ID', idWidth)} ${pad('Type', typeWidth)} ${pad('Size', sizeWidth)} ${pad('Offset', offsetWidth)}`;
-		writeLine(screen, 0, layout.tableTop, layout.tableContentWidth, header, STYLE_HEADER);
+		screen.fillRect(0, layout.tableTop, layout.tableContentWidth, 1, STYLE_HEADER);
+		const hoveredHeader = !layout.modal
+			? layout.tableColumns.find(column => isInside(column, mouseX, mouseY)) ?? null
+			: null;
+		for (const column of layout.tableColumns) {
+			const style = hoveredHeader?.key === column.key
+				? STYLE_HEADER_HOVER
+				: sortState.key === column.key
+					? STYLE_HEADER_ACTIVE
+					: STYLE_HEADER;
+			screen.fillRect(column.x, column.y, column.width, 1, style);
+			screen.writeText(column.x, column.y, pad(headerLabel(column, sortState), column.width), style);
+		}
+
+		const hoveredListRow = !layout.modal && mouseY >= layout.rowsTop && mouseY < layout.rowsTop + layout.visibleRows && mouseX >= 0 && mouseX < layout.tableContentWidth
+			? scrollRow + (mouseY - layout.rowsTop)
+			: -1;
+		const hoveredTableScrollbar = !layout.modal && isInside(layout.tableScrollbar, mouseX, mouseY);
 
 		for (let row = 0; row < layout.visibleRows; row += 1) {
 			const assetIndex = scrollRow + row;
 			const y = layout.rowsTop + row;
-			const style = assetIndex === selectedIndex ? STYLE_SELECTED : STYLE_NORMAL;
+			const hovered = assetIndex === hoveredListRow && assetIndex < filteredAssets.length;
+			const style = assetIndex === selectedIndex ? (hovered ? STYLE_SELECTED_HOVER : STYLE_SELECTED) : hovered ? STYLE_HOVER : STYLE_NORMAL;
 			screen.fillRect(0, y, layout.tableContentWidth, 1, style);
 			if (assetIndex >= filteredAssets.length) {
 				continue;
@@ -313,10 +398,11 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			const size = ctx.formatByteSize(assetSize(asset));
 			const location = asset.start ?? asset.metabuffer_start;
 			const offset = location === undefined ? '' : ctx.formatNumberAsHex(location);
-			const line = `${pad(asset.resid, idWidth)} ${pad(asset.type, typeWidth)} ${pad(size, sizeWidth)} ${pad(offset, offsetWidth)}`;
+			const [idColumn, typeColumn, sizeColumn, offsetColumn] = layout.tableColumns;
+			const line = `${pad(asset.resid, idColumn.width)} ${pad(asset.type, typeColumn.width)} ${pad(size, sizeColumn.width)} ${pad(offset, offsetColumn.width)}`;
 			screen.writeText(0, y, pad(line, layout.tableContentWidth), style);
 		}
-		drawScrollbar(screen, layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow);
+		drawScrollbar(screen, layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow, hoveredTableScrollbar);
 
 		const bottomInfo = filteredAssets.length === 0
 			? 'No assets match the current filter.'
@@ -328,20 +414,35 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			const { frame, tabs, content, scrollbar, infoLineCount, maxScroll, visibleContentLines } = layout.modal;
 			modalScroll = clamp(modalScroll, 0, maxScroll);
 			screen.fillRect(frame.x, frame.y, frame.width, frame.height, STYLE_PANEL);
-			for (let y = 0; y < frame.height; y += 1) {
-				for (let x = 0; x < frame.width; x += 1) {
-					const border = x === 0 || y === 0 || x === frame.width - 1 || y === frame.height - 1;
-					if (border) {
-						screen.writeChar(frame.x + x, frame.y + y, '#', STYLE_DIM);
-					}
-				}
+			for (let x = 1; x < frame.width - 1; x += 1) {
+				screen.writeChar(frame.x + x, frame.y, '─', STYLE_MODAL_BORDER);
+				screen.writeChar(frame.x + x, frame.y + frame.height - 1, '─', STYLE_MODAL_BORDER);
 			}
-			writeLine(screen, frame.x + 2, frame.y, frame.width - 4, modalView.title, STYLE_HEADER);
+			for (let y = 1; y < frame.height - 1; y += 1) {
+				screen.writeChar(frame.x, frame.y + y, '│', STYLE_MODAL_BORDER);
+				screen.writeChar(frame.x + frame.width - 1, frame.y + y, '│', STYLE_MODAL_BORDER);
+			}
+			screen.writeChar(frame.x, frame.y, '┌', STYLE_MODAL_BORDER);
+			screen.writeChar(frame.x + frame.width - 1, frame.y, '┐', STYLE_MODAL_BORDER);
+			screen.writeChar(frame.x, frame.y + frame.height - 1, '└', STYLE_MODAL_BORDER);
+			screen.writeChar(frame.x + frame.width - 1, frame.y + frame.height - 1, '┘', STYLE_MODAL_BORDER);
+			const closeTab = tabs.find(tab => tab.close)!;
+			const titleWidth = Math.max(0, closeTab.x - (frame.x + 3));
+			if (titleWidth > 0) {
+				screen.writeText(frame.x + 2, frame.y, ` ${pad(modalView.title, Math.max(0, titleWidth - 2))} `, STYLE_MODAL_TITLE);
+			}
 			for (const tab of tabs) {
 				const label = tab.close ? '×' : ['Preview', 'Details', 'Hex'][tab.index];
-				const style = tab.close ? STYLE_CLOSE : tab.index === modalTab ? STYLE_HEADER : STYLE_PANEL_TAB;
+				const hovered = isInside(tab, mouseX, mouseY);
+				const style = tab.close ? (hovered ? STYLE_CLOSE_HOVER : STYLE_CLOSE) : tab.index === modalTab ? STYLE_PANEL_TAB_ACTIVE : hovered ? STYLE_PANEL_TAB_HOVER : STYLE_PANEL_TAB;
 				screen.fillRect(tab.x, tab.y, tab.width, 1, style);
-				screen.writeText(tab.x + 1, tab.y, label, style);
+				if (tab.close) {
+					screen.writeText(tab.x + 1, tab.y, label, style);
+					continue;
+				}
+				screen.writeChar(tab.x, tab.y, '│', STYLE_MODAL_BORDER);
+				screen.writeText(tab.x + 1, tab.y, ` ${label} `, style);
+				screen.writeChar(tab.x + tab.width - 1, tab.y, '│', STYLE_MODAL_BORDER);
 			}
 			for (let index = 0; index < infoLineCount; index += 1) {
 				writeTaggedLine(screen, frame.x + 2, frame.y + 2 + index, frame.width - 4, modalView.infoLines[index], STYLE_DIM);
@@ -351,17 +452,41 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				const line = contentLines[modalScroll + row] ?? '';
 				writeTaggedLine(screen, content.x, content.y + row, content.width, line, STYLE_PANEL);
 			}
-			drawScrollbar(screen, scrollbar, contentLines.length, visibleContentLines, modalScroll);
-			writeLine(screen, frame.x + 2, frame.y + frame.height - 1, frame.width - 4, '', STYLE_STATUS);
+			drawScrollbar(screen, scrollbar, contentLines.length, visibleContentLines, modalScroll, isInside(scrollbar, mouseX, mouseY));
 		}
 
 		screen.draw();
 	};
 
+	const refreshFilteredAssets = () => {
+		const selectedAssetId = filteredAssets[selectedIndex]?.resid;
+		filteredAssets = getFilteredAssets(ctx.assets, filterValue, sortState);
+		if (filteredAssets.length === 0) {
+			selectedIndex = 0;
+			scrollRow = 0;
+			return;
+		}
+		if (selectedAssetId !== undefined) {
+			const nextIndex = filteredAssets.findIndex(asset => asset.resid === selectedAssetId);
+			if (nextIndex >= 0) {
+				selectedIndex = nextIndex;
+				return;
+			}
+		}
+		selectedIndex = Math.min(selectedIndex, filteredAssets.length - 1);
+	};
+
 	const applyFilter = () => {
-		filteredAssets = getFilteredAssets(ctx.assets, filterValue);
-		selectedIndex = Math.min(selectedIndex, Math.max(0, filteredAssets.length - 1));
+		refreshFilteredAssets();
 		scrollRow = 0;
+	};
+
+	const applySort = (key: AssetSortKey) => {
+		sortState = sortState.key === key
+			? { key, descending: !sortState.descending }
+			: { key, descending: false };
+		refreshFilteredAssets();
+		statusLine = `Sorted by ${key} (${sortState.descending ? 'desc' : 'asc'}).`;
 	};
 
 	const openAssetModal = async (assetIndex: number, tabIndex = 0): Promise<void> => {
@@ -439,6 +564,11 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (event.button !== 'left' || event.action !== 'down') {
 			return false;
 		}
+		const headerColumn = layout.tableColumns.find(column => isInside(column, event.x, event.y));
+		if (headerColumn) {
+			applySort(headerColumn.key);
+			return true;
+		}
 		if (isInside(layout.tableScrollbar, event.x, event.y)) {
 			const ratio = clamp((event.y - layout.tableScrollbar.y) / Math.max(1, layout.tableScrollbar.height - 1), 0, 1);
 			selectedIndex = Math.round(Math.max(0, filteredAssets.length - 1) * ratio);
@@ -465,8 +595,11 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				continue;
 			}
 			if (event.type === 'mouse') {
+				const hoverChanged = event.x !== mouseX || event.y !== mouseY;
+				mouseX = event.x;
+				mouseY = event.y;
 				const handled = modalView ? await handleModalMouse(event) : await handleListMouse(event);
-				if (handled) {
+				if (handled || hoverChanged || event.action === 'move') {
 					render();
 				}
 				continue;

@@ -11,7 +11,7 @@ export type TuiMouseEvent = {
 	type: 'mouse';
 	x: number;
 	y: number;
-	button: 'left' | 'middle' | 'right' | 'wheelup' | 'wheeldown';
+	button: 'left' | 'middle' | 'right' | 'wheelup' | 'wheeldown' | 'none';
 	action: 'down' | 'up' | 'drag' | 'move' | 'scroll';
 	ctrl: boolean;
 	shift: boolean;
@@ -27,15 +27,24 @@ export class TuiInput {
 	private queue: TuiInputEvent[] = [];
 	private resolver: ((event: TuiInputEvent) => void) | null = null;
 	private pending = '';
+	private suppressKeypress = false;
 	private onData = (chunk: Buffer) => {
 		const text = chunk.toString('utf8');
-		if (this.pending.length === 0 && text.indexOf('\x1b[<') === -1) {
+		const hasMouseSequence = this.pending.length > 0 || text.indexOf('\x1b[<') !== -1;
+		if (!hasMouseSequence) {
 			return;
 		}
+		this.suppressKeypress = true;
+		queueMicrotask(() => {
+			this.suppressKeypress = false;
+		});
 		this.pending += text;
 		this.parsePending();
 	};
 	private onKeypress = (ch: string | undefined, key: { name?: string; ctrl?: boolean; shift?: boolean; meta?: boolean; sequence?: string }) => {
+		if (this.suppressKeypress) {
+			return;
+		}
 		if (key.sequence?.startsWith('\x1b[<')) {
 			return;
 		}
@@ -51,27 +60,28 @@ export class TuiInput {
 	};
 
 	init(): void {
-		readline.emitKeypressEvents(process.stdin);
 		if (process.stdin.isTTY) {
 			process.stdin.setRawMode(true);
 		}
 		process.stdin.resume();
 		process.stdin.on('data', this.onData);
+		readline.emitKeypressEvents(process.stdin);
 		process.stdin.on('keypress', this.onKeypress);
 		process.stdout.on('resize', this.onResize);
-		process.stdout.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h');
+		process.stdout.write('\x1b[?1000h\x1b[?1003h\x1b[?1006h');
 	}
 
 	restore(): void {
 		process.stdin.off('data', this.onData);
 		process.stdin.off('keypress', this.onKeypress);
 		process.stdout.off('resize', this.onResize);
-		process.stdout.write('\x1b[?1000l\x1b[?1002l\x1b[?1006l');
+		process.stdout.write('\x1b[?1000l\x1b[?1003l\x1b[?1006l');
 		if (process.stdin.isTTY) {
 			process.stdin.setRawMode(false);
 		}
 		process.stdin.pause();
 		this.pending = '';
+		this.suppressKeypress = false;
 	}
 
 	async nextEvent(): Promise<TuiInputEvent> {
@@ -135,13 +145,13 @@ export class TuiInput {
 			return true;
 		}
 		const buttonIndex = code & 3;
-		const button = buttonIndex === 0 ? 'left' : buttonIndex === 1 ? 'middle' : 'right';
+		const button = buttonIndex === 0 ? 'left' : buttonIndex === 1 ? 'middle' : buttonIndex === 2 ? 'right' : 'none';
 		this.push({
 			type: 'mouse',
 			x,
 			y,
 			button,
-			action: suffix === 'm' ? 'up' : motion ? 'drag' : 'down',
+			action: suffix === 'm' ? 'up' : motion ? (button === 'none' ? 'move' : 'drag') : 'down',
 			ctrl,
 			shift,
 			meta,

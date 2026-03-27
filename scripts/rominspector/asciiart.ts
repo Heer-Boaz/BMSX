@@ -8,14 +8,36 @@ const GAP_FG_TAG = '{black-fg}';
 const HEX_TABLE = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
 const FG_CACHE = new Map<number, string>();
 const MAX_FG_CACHE_SIZE = 4096;
-
-const SRGB_TO_LINEAR = (() => {
-	const table = new Float32Array(256);
-	for (let i = 0; i < 256; i++) {
-		const s = i / 255;
-		table[i] = s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+const BRAILLE_BASE = 0x2800;
+const BRAILLE_MAP = [[0, 1, 2, 6], [3, 4, 5, 7]];
+const K_SIGNAL_STRENGTH_FLOOR = 51;
+const K_COLOR_LIFT = 0;
+const K_INK_MIN_LUMA = 40;
+const K_BG_MIN_LUMA = 10;
+const K_INK_MAX_SCALE = 1280;
+const K_COLOR_SATURATION = 340;
+const K_INK_LEVEL_FROM_LUMA = (() => {
+	const lut = new Uint8Array(256);
+	for (let i = 0; i < 256; ++i) {
+		const norm = i / 255;
+		let coverage = Math.pow(norm, 0.65);
+		if (coverage > 0.001) {
+			coverage *= 1.30;
+		}
+		if (coverage < 0.03) {
+			coverage = 0;
+		}
+		lut[i] = Math.round(clamp(coverage, 0, 1) * 255);
 	}
-	return table;
+	return lut;
+})();
+const K_DITHER_THRESHOLD_BY_BIT = (() => {
+	const lut = new Uint8Array(8);
+	const ranks = [0, 4, 2, 6, 1, 5, 3, 7];
+	for (let i = 0; i < 8; ++i) {
+		lut[i] = Math.floor((ranks[i] * 255 + 4) / 8);
+	}
+	return lut;
 })();
 
 /**
@@ -233,9 +255,8 @@ export function generatePixelPerfectAsciiArt(
  * @param maxArtWidth - The maximum width of the output ASCII art in characters.
  * @param opts - Optional rendering options:
  *   - useEdgeDetection: Whether to apply edge detection (default: true).
- *   - useDithering: Whether to apply dithering (default: false).
- *   - strictBgDist: Background color distance threshold (default: 32²).
- *   - deltaLum: Luminance difference threshold for dot placement (default: 30).
+ *   - useDithering: Whether to apply ordered dithering in low-contrast cells (default: true).
+ *   - deltaLum: Base luminance threshold for dot placement (default: 26).
  * @returns The generated ASCII art string using braille characters.
  */
 export function generateBrailleAsciiArt(
@@ -245,151 +266,419 @@ export function generateBrailleAsciiArt(
 	maxArtWidth: number,
 	opts: {
 		useEdgeDetection?: boolean;   // default true
-		useDithering?: boolean;       // default false
-		strictBgDist?: number;        // sq-dist voor BG (default 32²)
-		deltaLum?: number;            // |Ydiff| drempel (default 30)
+		useDithering?: boolean;       // default true
+		deltaLum?: number;            // base threshold (default 26)
 	} = {}
 ): string {
-
-	// --- Scaling logic ---
-	// Each braille char is 2x4 pixels, so max output width in chars is (imgW / 2)
-	const maxOutW = maxArtWidth - 8;
-	let scale = 1;
-	if (Math.floor(imgW / 2) > maxOutW) {
-		scale = maxOutW / Math.floor(imgW / 2);
-	}
-
-	let scaledBuf = imgBuf;
-	let scaledW = imgW;
-	let scaledH = imgH;
-
-	if (scale < 1) {
-		// Downscale image using nearest-neighbor
-		scaledW = Math.max(2, Math.floor(imgW * scale));
-		scaledH = Math.max(4, Math.floor(imgH * scale));
-		scaledBuf = downscaleImageNN(imgBuf, imgW, imgH, scaledW, scaledH);
-	}
-
 	const useEdge = opts.useEdgeDetection ?? true;
-	const useDith = opts.useDithering ?? false;
-	const BG_DIST = opts.strictBgDist ?? 32 * 32;
-	const DELTA = opts.deltaLum ?? 30; // luminantie 0-255
+	const orderedDither = opts.useDithering ?? true;
+	const baseThreshold = opts.deltaLum ?? 26;
+	const maxOutW = Math.max(1, maxArtWidth - 8);
+	const scale = Math.min(1, (maxOutW * 2) / Math.max(1, imgW));
+	const outW = Math.max(1, Math.min(maxOutW, Math.floor(imgW * scale / 2)));
+	const outH = Math.max(1, Math.ceil(imgH * scale / 4));
+	const scaledW = outW * 2;
+	const scaledH = outH * 4;
+	const pixelCount = scaledW * scaledH;
+	const scaled = new Uint8Array(pixelCount * 4);
+	const luma = new Uint8Array(pixelCount);
+	const edges = new Uint8Array(pixelCount);
+	const hist = new Uint32Array(256);
+	let lumCount = 0;
 
-	const BRAILLE_BASE = 0x2800;
-	const brailleMap = [[0, 1, 2, 6], [3, 4, 5, 7]];
-	const outW = Math.min(maxArtWidth - 8, Math.floor(scaledW / 2));
-	const outH = Math.max(Math.ceil(scaledH / 4), Math.floor(outW * (scaledH / scaledW) / 2)) + 1;
-
-	/* ---------- gamma-correcte luminantie-buffer ---------- */
-	const linY = new Float32Array(scaledW * scaledH);
-	{
-		let p = 0;
-		for (let y = 0; y < scaledH; ++y) {
-			for (let x = 0; x < scaledW; ++x, ++p) {
-				const i4 = p * 4;
-				const r = scaledBuf[i4];
-				const g = scaledBuf[i4 + 1];
-				const b = scaledBuf[i4 + 2];
-				linY[p] = 255 * (0.2126 * SRGB_TO_LINEAR[r] + 0.7152 * SRGB_TO_LINEAR[g] + 0.0722 * SRGB_TO_LINEAR[b]);
+	for (let y = 0; y < scaledH; ++y) {
+		const syStart = Math.floor((y * imgH) / scaledH);
+		const syEnd = Math.max(syStart + 1, Math.min(imgH, Math.floor(((y + 1) * imgH) / scaledH)));
+		for (let x = 0; x < scaledW; ++x) {
+			const sxStart = Math.floor((x * imgW) / scaledW);
+			const sxEnd = Math.max(sxStart + 1, Math.min(imgW, Math.floor(((x + 1) * imgW) / scaledW)));
+			let sumR = 0;
+			let sumG = 0;
+			let sumB = 0;
+			let sumA = 0;
+			let sumY = 0;
+			let sampleCount = 0;
+			for (let sy = syStart; sy < syEnd; ++sy) {
+				for (let sx = sxStart; sx < sxEnd; ++sx) {
+					const src = (sy * imgW + sx) * 4;
+					const r = imgBuf[src];
+					const g = imgBuf[src + 1];
+					const b = imgBuf[src + 2];
+					const a = imgBuf[src + 3];
+					sumR += r;
+					sumG += g;
+					sumB += b;
+					sumA += a;
+					sumY += rgbToY(r, g, b);
+					++sampleCount;
+				}
+			}
+			const dst = (y * scaledW + x) * 4;
+			const avgR = Math.floor(sumR / sampleCount);
+			const avgG = Math.floor(sumG / sampleCount);
+			const avgB = Math.floor(sumB / sampleCount);
+			const avgA = Math.floor(sumA / sampleCount);
+			const avgY = avgA === 0 ? 255 : Math.floor(sumY / sampleCount);
+			scaled[dst] = avgR;
+			scaled[dst + 1] = avgG;
+			scaled[dst + 2] = avgB;
+			scaled[dst + 3] = avgA;
+			luma[y * scaledW + x] = avgY;
+			if (avgA !== 0) {
+				++hist[avgY];
+				++lumCount;
 			}
 		}
 	}
 
-	/* ---------- global dominant kleur ---------- */
-	const hist = new Map<number, number>();
-	for (let p = 0; p < scaledW * scaledH; ++p) {
-		const i4 = p << 2;
-		if (!scaledBuf[i4 + 3]) continue;                       // transparant
-		const key = rgbToKey(scaledBuf[i4], scaledBuf[i4 + 1], scaledBuf[i4 + 2]);
-		hist.set(key, (hist.get(key) ?? 0) + 1);
-	}
-	let bgKey = 0, bgCnt = 0;
-	// @ts-ignore
-	for (const [k, c] of hist) if (c > bgCnt) { bgCnt = c; bgKey = k; }
-	const bgR = bgKey >>> 16 & 255, bgG = bgKey >>> 8 & 255, bgB = bgKey & 255;
-	const bgLum = 255 * (0.2126 * srgb2lin(bgR) + 0.7152 * srgb2lin(bgG) + 0.0722 * srgb2lin(bgB));
-
-	/* ---------- dither buffer ---------- */
-	const err = useDith ? new Float32Array(scaledW * scaledH) : null;
-
-	/* ---------- edge strength cache ---------- */
-	const edges = useEdge ? new Float32Array(scaledW * scaledH) : null;
-	if (edges) {
+	if (useEdge) {
 		for (let y = 0; y < scaledH; ++y) {
 			for (let x = 0; x < scaledW; ++x) {
-				edges[y * scaledW + x] = sobelAt(linY, scaledW, scaledH, x, y);
+				edges[y * scaledW + x] = sobelAt8(luma, scaledW, scaledH, x, y);
 			}
 		}
 	}
 
-	/* ---------- render loop ---------- */
-	let asciiArt = '';
+	let bgLum = 255;
+	if (lumCount > 0) {
+		let maxCount = 0;
+		for (let i = 0; i < 256; ++i) {
+			if (hist[i] > maxCount) {
+				maxCount = hist[i];
+				bgLum = i;
+			}
+		}
+	}
+
+	const totalCells = outW * outH;
+	const masks = new Uint8Array(totalCells);
+	const fgR = new Uint8Array(totalCells);
+	const fgG = new Uint8Array(totalCells);
+	const fgB = new Uint8Array(totalCells);
+	const bgR = new Uint8Array(totalCells);
+	const bgG = new Uint8Array(totalCells);
+	const bgB = new Uint8Array(totalCells);
+	const hasBg = new Uint8Array(totalCells);
+	const dotCounts = new Uint8Array(totalCells);
+	const signalStrengths = new Uint8Array(totalCells);
+	const usedDither = new Uint8Array(totalCells);
 
 	for (let cy = 0; cy < outH; ++cy) {
-		let line = '';
 		for (let cx = 0; cx < outW; ++cx) {
-
-			let k1 = 0, c1 = 0;
-			let k2 = 0, c2 = 0;
-			let k3 = 0, c3 = 0;
-			const vote = (key: number) => {
-				if (key === k1) { ++c1; return; }
-				if (key === k2) { ++c2; return; }
-				if (key === k3) { ++c3; return; }
-				if (c1 <= c2 && c1 <= c3) { k1 = key; c1 = 1; return; }
-				if (c2 <= c1 && c2 <= c3) { k2 = key; c2 = 1; return; }
-				k3 = key; c3 = 1;
-			};
-			let cellBgR = 0, cellBgG = 0, cellBgB = 0, cellBgCnt = 0;
+			const cellIndex = cy * outW + cx;
+			const baseX = cx * 2;
+			const baseY = cy * 4;
+			const rVals = new Uint8Array(8);
+			const gVals = new Uint8Array(8);
+			const bVals = new Uint8Array(8);
+			const lumVals = new Uint8Array(8);
+			const edgeVals = new Uint8Array(8);
+			const bitIds = new Uint8Array(8);
+			const validVals = new Uint8Array(8);
+			let dotIndex = 0;
 			let bitmask = 0;
+			let sumAllR = 0;
+			let sumAllG = 0;
+			let sumAllB = 0;
+			let colorCount = 0;
+			let cellLumMin = 255;
+			let cellLumMax = 0;
+			let cellLumSum = 0;
+			let validCount = 0;
+			let cellEdgeMax = 0;
 
 			for (let dy = 0; dy < 4; ++dy) {
 				for (let dx = 0; dx < 2; ++dx) {
-					const px = Math.min(scaledW - 1, cx * 2 + dx);
-					const py = Math.min(scaledH - 1, cy * 4 + dy);
+					const px = baseX + dx;
+					const py = baseY + dy;
 					const p = py * scaledW + px;
-					const idx4 = (p * 4);
-					const r = scaledBuf[idx4], g = scaledBuf[idx4 + 1], b = scaledBuf[idx4 + 2];
-
-					let yLin = linY[p];
-					const nearBg = colorDistSq(r, g, b, bgR, bgG, bgB) < BG_DIST;
-					const ditherThisPixel = useDith && !nearBg;   // BG nooit diffusen
-					if (ditherThisPixel && err) yLin = clamp(yLin + err[p], 0, 255);
-
-					/* edge-aware Δ-drempel (trekt Δ iets naar beneden op randen) */
-				let deltaThr = DELTA;
-				if (useEdge && edges) deltaThr = Math.max(10, DELTA - 0.2 * edges[p]);
-
-					const lumDiff = Math.abs(yLin - bgLum);
-					const dotSet = !nearBg && lumDiff >= deltaThr;
-
-					if (dotSet) {
-						bitmask |= 1 << brailleMap[dx][dy];
-						vote(rgbToKey(r, g, b));
+					const src = p * 4;
+					const r = scaled[src];
+					const g = scaled[src + 1];
+					const b = scaled[src + 2];
+					const a = scaled[src + 3];
+					const lum = luma[p];
+					const edge = useEdge ? edges[p] : 0;
+					rVals[dotIndex] = r;
+					gVals[dotIndex] = g;
+					bVals[dotIndex] = b;
+					lumVals[dotIndex] = lum;
+					edgeVals[dotIndex] = edge;
+					bitIds[dotIndex] = BRAILLE_MAP[dx][dy];
+					validVals[dotIndex] = a !== 0 ? 1 : 0;
+					if (a === 0) {
+						++dotIndex;
+						continue;
 					}
-
-					if (nearBg) { cellBgR += r; cellBgG += g; cellBgB += b; ++cellBgCnt; }
-
-					if (ditherThisPixel && err) {
-						const target = dotSet ? 0 : 255;
-						distributeError(err, yLin - target, p, scaledW, scaledH);
+					if (edge > cellEdgeMax) {
+						cellEdgeMax = edge;
 					}
+					if (lum < cellLumMin) {
+						cellLumMin = lum;
+					}
+					if (lum > cellLumMax) {
+						cellLumMax = lum;
+					}
+					cellLumSum += lum;
+					++validCount;
+					sumAllR += r;
+					sumAllG += g;
+					sumAllB += b;
+					++colorCount;
+					++dotIndex;
 				}
 			}
 
-			/* dominante FG-kleur o.b.v. gezette dots */
-			let domKey = 0x808080;
-			let domCnt = 0;
-			if (c1 > domCnt) { domCnt = c1; domKey = k1; }
-			if (c2 > domCnt) { domCnt = c2; domKey = k2; }
-			if (c3 > domCnt) { domCnt = c3; domKey = k3; }
+			const cellLumRange = cellLumMax - cellLumMin;
+			const cellLumMean = validCount > 0 ? Math.floor(cellLumSum / validCount) : bgLum;
+			let cellBgLum = bgLum;
+			if (validCount >= 3) {
+				cellBgLum = Math.floor((cellLumSum - cellLumMin - cellLumMax) / (validCount - 2));
+			} else if (validCount > 0) {
+				cellBgLum = Math.floor(cellLumSum / validCount);
+			}
+			let alpha = 0;
+			if (cellLumRange < 40) {
+				alpha = 255;
+			} else if (cellLumRange <= 90) {
+				alpha = Math.floor(((90 - cellLumRange) * 255) / 50);
+			}
+			const refLum = Math.floor((bgLum * (255 - alpha) + cellBgLum * alpha + 127) / 255);
+			const useLocalThreshold = cellLumRange > 20;
 
-			const fgTag = `{${keyToHex(domKey)}-fg}`;
-			const bgTag = cellBgCnt
-				? `{#${hex(cellBgR / cellBgCnt)}${hex(cellBgG / cellBgCnt)}${hex(cellBgB / cellBgCnt)}-bg}`
+			for (let i = 0; i < 8; ++i) {
+				if (!validVals[i]) {
+					continue;
+				}
+				const threshold = Math.max(10, baseThreshold - Math.floor((edgeVals[i] * 77) / 255));
+				const lumDiff = Math.abs(lumVals[i] - refLum);
+				if (lumDiff >= threshold) {
+					bitmask |= 1 << bitIds[i];
+				}
+			}
+
+			const rawDiff = Math.abs(cellLumMean - bgLum);
+			const avgLumDiff = validCount > 0 ? Math.min(255, Math.floor((rawDiff * 255) / Math.max(1, cellLumRange))) : 0;
+			let cellUsedDither = 0;
+			if (!useLocalThreshold && orderedDither) {
+				const coverage = K_INK_LEVEL_FROM_LUMA[rawDiff];
+				let ditherMask = 0;
+				for (let i = 0; i < 8; ++i) {
+					if (validVals[i] && coverage > K_DITHER_THRESHOLD_BY_BIT[bitIds[i]]) {
+						ditherMask |= 1 << bitIds[i];
+					}
+				}
+				bitmask = ditherMask;
+				cellUsedDither = 1;
+			}
+
+			let dotCount = 0;
+			let maskWalker = bitmask;
+			while (maskWalker) {
+				dotCount += maskWalker & 1;
+				maskWalker >>= 1;
+			}
+			masks[cellIndex] = bitmask;
+			dotCounts[cellIndex] = dotCount;
+
+			let sumInkR = 0;
+			let sumInkG = 0;
+			let sumInkB = 0;
+			let inkCount = 0;
+			let sumBgR = 0;
+			let sumBgG = 0;
+			let sumBgB = 0;
+			let bgCount = 0;
+			for (let i = 0; i < 8; ++i) {
+				if (!validVals[i]) {
+					continue;
+				}
+				if (bitmask & (1 << bitIds[i])) {
+					sumInkR += rVals[i];
+					sumInkG += gVals[i];
+					sumInkB += bVals[i];
+					++inkCount;
+				} else {
+					sumBgR += rVals[i];
+					sumBgG += gVals[i];
+					sumBgB += bVals[i];
+					++bgCount;
+				}
+			}
+
+			if (colorCount === 0) {
+				continue;
+			}
+
+			let curR = Math.floor((inkCount > 0 ? sumInkR : sumAllR) / (inkCount > 0 ? inkCount : colorCount));
+			let curG = Math.floor((inkCount > 0 ? sumInkG : sumAllG) / (inkCount > 0 ? inkCount : colorCount));
+			let curB = Math.floor((inkCount > 0 ? sumInkB : sumAllB) / (inkCount > 0 ? inkCount : colorCount));
+			let cellBgR = Math.floor((bgCount > 0 ? sumBgR : sumAllR) / (bgCount > 0 ? bgCount : colorCount));
+			let cellBgG = Math.floor((bgCount > 0 ? sumBgG : sumAllG) / (bgCount > 0 ? bgCount : colorCount));
+			let cellBgB = Math.floor((bgCount > 0 ? sumBgB : sumAllB) / (bgCount > 0 ? bgCount : colorCount));
+			curR = Math.max(curR, K_COLOR_LIFT);
+			curG = Math.max(curG, K_COLOR_LIFT);
+			curB = Math.max(curB, K_COLOR_LIFT);
+			cellBgR = Math.max(cellBgR, K_COLOR_LIFT);
+			cellBgG = Math.max(cellBgG, K_COLOR_LIFT);
+			cellBgB = Math.max(cellBgB, K_COLOR_LIFT);
+
+			const edgeSig = clamp(Math.floor(((cellEdgeMax - 4) * 255) / 12), 0, 255);
+			const lumSig = clamp(Math.floor(((avgLumDiff - 4) * 255) / 24), 0, 255);
+			const signalStrength = Math.max(edgeSig, lumSig);
+			signalStrengths[cellIndex] = signalStrength;
+			const blendStrength = K_SIGNAL_STRENGTH_FLOOR + Math.floor((signalStrength * (255 - K_SIGNAL_STRENGTH_FLOOR) + 127) / 255);
+			curR = Math.floor(cellBgR + (((curR - cellBgR) * blendStrength) >> 8));
+			curG = Math.floor(cellBgG + (((curG - cellBgG) * blendStrength) >> 8));
+			curB = Math.floor(cellBgB + (((curB - cellBgB) * blendStrength) >> 8));
+
+			if (signalStrength > 204) {
+				const boost = (signalStrength - 204) * 5;
+				const cR = (curR + cellBgR) >> 1;
+				const cG = (curG + cellBgG) >> 1;
+				const cB = (curB + cellBgB) >> 1;
+				const dR = curR - cR;
+				const dG = curG - cG;
+				const dB = curB - cB;
+				const scaleFg = 256 + (boost >> 1);
+				const scaleBg = 256 + (boost >> 3);
+				curR = clamp(cR + ((dR * scaleFg) >> 8), 0, 255);
+				curG = clamp(cG + ((dG * scaleFg) >> 8), 0, 255);
+				curB = clamp(cB + ((dB * scaleFg) >> 8), 0, 255);
+				cellBgR = clamp(cR - ((dR * scaleBg) >> 8), 0, 255);
+				cellBgG = clamp(cG - ((dG * scaleBg) >> 8), 0, 255);
+				cellBgB = clamp(cB - ((dB * scaleBg) >> 8), 0, 255);
+			}
+
+			let curY = rgbToY(curR, curG, curB);
+			if (curY < K_INK_MIN_LUMA) {
+				if (curY <= 0) {
+					curR = K_INK_MIN_LUMA;
+					curG = K_INK_MIN_LUMA;
+					curB = K_INK_MIN_LUMA;
+				} else {
+					let scaleUp = Math.floor((K_INK_MIN_LUMA * 256) / curY);
+					if (scaleUp > K_INK_MAX_SCALE) {
+						scaleUp = K_INK_MAX_SCALE;
+					}
+					curR = Math.min(255, Math.floor((curR * scaleUp + 128) >> 8));
+					curG = Math.min(255, Math.floor((curG * scaleUp + 128) >> 8));
+					curB = Math.min(255, Math.floor((curB * scaleUp + 128) >> 8));
+				}
+			}
+
+			const inkY = rgbToY(curR, curG, curB);
+			let adaptiveSat = K_COLOR_SATURATION + ((255 - inkY) >> 2);
+			if (adaptiveSat > 400) {
+				adaptiveSat = 400;
+			}
+			curR = clamp(inkY + (((curR - inkY) * adaptiveSat) >> 8), 0, 255);
+			curG = clamp(inkY + (((curG - inkY) * adaptiveSat) >> 8), 0, 255);
+			curB = clamp(inkY + (((curB - inkY) * adaptiveSat) >> 8), 0, 255);
+
+			let bgY = rgbToY(cellBgR, cellBgG, cellBgB);
+			if (bgY < K_BG_MIN_LUMA) {
+				if (bgY <= 0) {
+					cellBgR = K_BG_MIN_LUMA;
+					cellBgG = K_BG_MIN_LUMA;
+					cellBgB = K_BG_MIN_LUMA;
+				} else {
+					const scaleUp = Math.floor((K_BG_MIN_LUMA * 256) / bgY);
+					cellBgR = Math.min(255, Math.floor((cellBgR * scaleUp + 128) >> 8));
+					cellBgG = Math.min(255, Math.floor((cellBgG * scaleUp + 128) >> 8));
+					cellBgB = Math.min(255, Math.floor((cellBgB * scaleUp + 128) >> 8));
+				}
+			}
+
+			if (dotCount === 8 && bgCount === 0) {
+				const fgY = rgbToY(curR, curG, curB);
+				bgY = rgbToY(cellBgR, cellBgG, cellBgB);
+				const dir = cellLumMean < bgLum ? 1 : -1;
+				const need = 6 - dir * (bgY - fgY);
+				if (need > 0) {
+					const shift = dir * need;
+					cellBgR = clamp(cellBgR + shift, 0, 255);
+					cellBgG = clamp(cellBgG + shift, 0, 255);
+					cellBgB = clamp(cellBgB + shift, 0, 255);
+				}
+			}
+
+			fgR[cellIndex] = curR;
+			fgG[cellIndex] = curG;
+			fgB[cellIndex] = curB;
+			bgR[cellIndex] = cellBgR;
+			bgG[cellIndex] = cellBgG;
+			bgB[cellIndex] = cellBgB;
+			hasBg[cellIndex] = 1;
+			usedDither[cellIndex] = cellUsedDither;
+		}
+	}
+
+	const neighborY = new Int16Array(9);
+	for (let cy = 0; cy < outH; ++cy) {
+		for (let cx = 0; cx < outW; ++cx) {
+			const idx = cy * outW + cx;
+			if (!hasBg[idx]) {
+				continue;
+			}
+			const curBgY = rgbToY(bgR[idx], bgG[idx], bgB[idx]);
+			const curFgY = rgbToY(fgR[idx], fgG[idx], fgB[idx]);
+			if (curBgY <= curFgY + 4) {
+				continue;
+			}
+			const bright = clamp((curBgY - 96) / 64, 0, 1);
+			let dotLimit = 2;
+			if (bright > 0.8) {
+				dotLimit = 4;
+			} else if (bright > 0.4) {
+				dotLimit = 3;
+			}
+			if (dotCounts[idx] > dotLimit || usedDither[idx]) {
+				continue;
+			}
+			const maxSignal = 0.30 + 0.40 * bright;
+			if (signalStrengths[idx] >= Math.round(maxSignal * 255)) {
+				continue;
+			}
+			let n = 0;
+			for (let oy = -1; oy <= 1; ++oy) {
+				const ny = clamp(cy + oy, 0, outH - 1);
+				for (let ox = -1; ox <= 1; ++ox) {
+					const nx = clamp(cx + ox, 0, outW - 1);
+					const nIdx = ny * outW + nx;
+					neighborY[n] = rgbToY(bgR[nIdx], bgG[nIdx], bgB[nIdx]);
+					++n;
+				}
+			}
+			const median = median9(neighborY);
+			const delta = curBgY - median;
+			const jumpThreshold = Math.round(8 - 3 * bright);
+			if (Math.abs(delta) <= jumpThreshold) {
+				continue;
+			}
+			const maxDelta = Math.round(12 - 4 * bright);
+			const clampedDelta = clamp(delta, -maxDelta, maxDelta);
+			const newBgY = Math.max(K_BG_MIN_LUMA, median + clampedDelta);
+			if (curBgY <= 0) {
+				continue;
+			}
+			const scaleBg = newBgY / curBgY;
+			bgR[idx] = clamp(Math.round(bgR[idx] * scaleBg), 0, 255);
+			bgG[idx] = clamp(Math.round(bgG[idx] * scaleBg), 0, 255);
+			bgB[idx] = clamp(Math.round(bgB[idx] * scaleBg), 0, 255);
+		}
+	}
+
+	let asciiArt = '';
+	for (let cy = 0; cy < outH; ++cy) {
+		let line = '';
+		for (let cx = 0; cx < outW; ++cx) {
+			const idx = cy * outW + cx;
+			const bgTag = hasBg[idx]
+				? `{#${HEX_TABLE[bgR[idx]]}${HEX_TABLE[bgG[idx]]}${HEX_TABLE[bgB[idx]]}-bg}`
 				: '';
-
-			line += bgTag + fgTag + String.fromCharCode(BRAILLE_BASE + bitmask) + '{/}';
+			const fgTag = fgTagFromRGB(fgR[idx], fgG[idx], fgB[idx]);
+			line += bgTag + fgTag + String.fromCharCode(BRAILLE_BASE + masks[idx]) + '{/}';
 		}
 		asciiArt += line + '\n';
 	}
@@ -397,59 +686,11 @@ export function generateBrailleAsciiArt(
 }
 
 /**
- * Downscales an image using nearest-neighbor interpolation.
- * This method reduces the dimensions of the image while preserving pixel colors.
- *
- * @param src - The source image buffer (RGBA format, Buffer or Uint8Array).
- * @param srcW - The width of the source image in pixels.
- * @param srcH - The height of the source image in pixels.
- * @param dstW - The desired width of the downscaled image in pixels.
- * @param dstH - The desired height of the downscaled image in pixels.
- * @returns A new Uint8Array containing the downscaled image in RGBA format.
+ * Converts RGB into an 8-bit luminance value tuned for thresholding.
  */
-function downscaleImageNN(
-	src: Buffer | Uint8Array,
-	srcW: number,
-	srcH: number,
-	dstW: number,
-	dstH: number
-): Uint8Array {
-	const dst = new Uint8Array(dstW * dstH * 4);
-	for (let y = 0; y < dstH; ++y) {
-		const sy = Math.floor(y * srcH / dstH);
-		for (let x = 0; x < dstW; ++x) {
-			const sx = Math.floor(x * srcW / dstW);
-			const srcIdx = (sy * srcW + sx) * 4;
-			const dstIdx = (y * dstW + x) * 4;
-			dst[dstIdx] = src[srcIdx];
-			dst[dstIdx + 1] = src[srcIdx + 1];
-			dst[dstIdx + 2] = src[srcIdx + 2];
-			dst[dstIdx + 3] = src[srcIdx + 3];
-		}
-	}
-	return dst;
+function rgbToY(r: number, g: number, b: number): number {
+	return (r * 54 + g * 183 + b * 19 + 128) >> 8;
 }
-
-/**
- * Converts an sRGB color component to linear color space.
- * This function applies gamma correction to transform the sRGB value
- * into a linear representation suitable for calculations.
- *
- * @param v - The sRGB color component (0-255).
- * @returns The linear color space value (0-1).
- */
-function srgb2lin(v: number) {
-	return SRGB_TO_LINEAR[v];
-}
-
-/**
- * Converts a numeric value to a two-digit hexadecimal string.
- * The value is clamped between 0 and 255 before conversion.
- *
- * @param v - The numeric value to convert (expected range: 0-255).
- * @returns A two-digit hexadecimal string representing the value.
- */
-function hex(v: number) { return HEX_TABLE[Math.round(clamp(v, 0, 255))]; }
 
 /**
  * Clamps a value between a lower and upper bound.
@@ -487,34 +728,12 @@ function fgTagFromRGB(r: number, g: number, b: number) {
 }
 
 /**
- * Converts a 24-bit integer color key into a hexadecimal color string.
- * The resulting string is in the format `#RRGGBB`, where `RR`, `GG`, and `BB`
- * are the hexadecimal representations of the red, green, and blue components.
- *
- * @param k - The 24-bit integer color key, where:
- *   - Bits 16-23 represent the red component.
- *   - Bits 8-15 represent the green component.
- *   - Bits 0-7 represent the blue component.
- * @returns A string representing the color in hexadecimal format.
+ * Returns the median of a fixed 3x3 neighborhood.
  */
-function keyToHex(k: number) { return `#${HEX_TABLE[(k >>> 16) & 0xff]}${HEX_TABLE[(k >>> 8) & 0xff]}${HEX_TABLE[k & 0xff]}`; }
-
-/**
- * Calculates the squared Euclidean distance between two RGB colors.
- * This function is useful for comparing color similarity or detecting
- * differences between colors in a computationally efficient manner.
- *
- * @param r1 - Red component of the first color (0-255).
- * @param g1 - Green component of the first color (0-255).
- * @param b1 - Blue component of the first color (0-255).
- * @param r2 - Red component of the second color (0-255).
- * @param g2 - Green component of the second color (0-255).
- * @param b2 - Blue component of the second color (0-255).
- * @returns The squared distance between the two colors.
- */
-function colorDistSq(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number) {
-	const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
-	return dr * dr + dg * dg + db * db;
+function median9(values: Int16Array): number {
+	const copy = Array.from(values);
+	copy.sort((a, b) => a - b);
+	return copy[4];
 }
 
 /**
@@ -522,14 +741,14 @@ function colorDistSq(r1: number, g1: number, b1: number, r2: number, g2: number,
  * The Sobel operator is used for edge detection by calculating the gradient in both
  * horizontal and vertical directions.
  *
- * @param buf - The grayscale buffer as a Float32Array, where each value represents luminance.
+ * @param buf - The grayscale buffer as a Uint8Array, where each value represents luminance.
  * @param w - The width of the image in pixels.
  * @param h - The height of the image in pixels.
  * @param x - The x-coordinate of the pixel.
  * @param y - The y-coordinate of the pixel.
  * @returns The gradient magnitude at the specified pixel.
  */
-function sobelAt(buf: Float32Array, w: number, h: number, x: number, y: number): number {
+function sobelAt8(buf: Uint8Array, w: number, h: number, x: number, y: number): number {
 	const xm1 = Math.max(0, x - 1), xp1 = Math.min(w - 1, x + 1);
 	const ym1 = Math.max(0, y - 1), yp1 = Math.min(h - 1, y + 1);
 	const row = y * w;
@@ -537,26 +756,7 @@ function sobelAt(buf: Float32Array, w: number, h: number, x: number, y: number):
 		- buf[ym1 * w + xm1] - 2 * buf[row + xm1] - buf[yp1 * w + xm1];
 	const gy = buf[yp1 * w + xm1] + 2 * buf[yp1 * w + x] + buf[yp1 * w + xp1]
 		- buf[ym1 * w + xm1] - 2 * buf[ym1 * w + x] - buf[ym1 * w + xp1];
-	return Math.hypot(gx, gy);
-}
-
-/**
- * Distributes the quantization error to neighboring pixels in a dithering process.
- * This function implements Floyd-Steinberg dithering, ensuring smoother transitions
- * between pixel values by propagating the error to adjacent pixels.
- *
- * @param buf - The buffer containing the error values for each pixel.
- * @param e - The quantization error to distribute.
- * @param idx - The index of the current pixel in the buffer.
- * @param w - The width of the image in pixels.
- * @param h - The height of the image in pixels.
- */
-function distributeError(buf: Float32Array, e: number, idx: number, w: number, h: number) {
-	const x = idx % w, y = Math.floor(idx / w);
-	if (x + 1 < w) buf[idx + 1] += e * 7 / 16;
-	if (x > 0 && y + 1 < h) buf[idx + w - 1] += e * 3 / 16;
-	if (y + 1 < h) buf[idx + w] += e * 5 / 16;
-	if (x + 1 < w && y + 1 < h) buf[idx + w + 1] += e * 1 / 16;
+	return clamp(Math.floor(Math.hypot(gx, gy) >> 2), 0, 255);
 }
 
 /**
