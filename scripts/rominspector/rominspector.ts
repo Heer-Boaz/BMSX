@@ -595,11 +595,10 @@ async function main() {
 					break;
 			}
 
-			if (asset.start || asset.end || asset.metabuffer_start || asset.metabuffer_end) {
-				const start = (asset.start == asset.end) ? asset.metabuffer_start ?? 0 : asset.start;
-				const end = (asset.end == asset.start) ? asset.metabuffer_end ?? 0 : asset.end;
-				summaryRegions.push({ start, end, colorTag, label });
-			}
+			if (asset.start != null && asset.end != null) summaryRegions.push({ start: asset.start, end: asset.end, colorTag, label });
+			if (asset.compiled_start != null && asset.compiled_end != null) summaryRegions.push({ start: asset.compiled_start, end: asset.compiled_end, colorTag, label });
+			if (asset.metabuffer_start != null && asset.metabuffer_end != null) summaryRegions.push({ start: asset.metabuffer_start, end: asset.metabuffer_end, colorTag, label });
+			if (asset.texture_start != null && asset.texture_end != null) summaryRegions.push({ start: asset.texture_start, end: asset.texture_end, colorTag, label });
 		}
 		// Manifest + TOC regions
 		if (manifestLength > 0) {
@@ -1356,8 +1355,9 @@ function extractSubimageAndSizeFromAtlassedImage(imgToExtract: Buffer, imgmeta: 
 		const maxV = Math.min(1, Math.max(...ys));
 
 		// Convert to pixel coordinates and clamp inside atlas bounds
-		offsetX = Math.floor(minU * atlas.width);
-		offsetY = Math.floor(minV * atlas.height);
+		// Texcoords are serialized as float32, so round back to the source texel grid.
+		offsetX = Math.round(minU * atlas.width);
+		offsetY = Math.round(minV * atlas.height);
 		imgW = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
 		imgH = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
 	}
