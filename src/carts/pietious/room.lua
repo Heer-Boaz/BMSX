@@ -15,17 +15,31 @@ for i = 1, 63 do
 	water_surface_frame_imgids[i + 1] = 'water_surface_msx_' .. suffix
 	water_surface_timeline_frame_defs[i + 1] = { value = i + 1, hold = 1 }
 end
+local tile_chars = {
+	wall = string.byte('#'),
+	breakable_wall = string.byte('$'),
+	stair_left = string.byte('-'),
+	stair_left_alt = string.byte('_'),
+	stair_right = string.byte('='),
+	stair_right_alt = string.byte('+'),
+	pillar_l1 = string.byte('p'),
+	pillar_r1 = string.byte('i'),
+	pillar_mid = string.byte('l'),
+	pillar_l3 = string.byte('a'),
+	pillar_r3 = string.byte('r'),
+	empty = string.byte('.'),
+}
 local solid_tiles = {
-	['#'] = true,
-	['$'] = true,
+	[tile_chars.wall] = true,
+	[tile_chars.breakable_wall] = true,
 }
 local stair_left_tiles = {
-	['-'] = true,
-	['_'] = true,
+	[tile_chars.stair_left] = true,
+	[tile_chars.stair_left_alt] = true,
 }
 local stair_right_tiles = {
-	['='] = true,
-	['+'] = true,
+	[tile_chars.stair_right] = true,
+	[tile_chars.stair_right_alt] = true,
 }
 local breakable_wall_kinds = {
 	breakablewall = true,
@@ -194,29 +208,10 @@ local pillar_themes = {
 	},
 }
 
-local function build_collision_map(map_rows)
-	local collision = {}
+local function build_screen_rows(map_rows, draaideuren, tile_size, origin_x, origin_y)
+	local screen_rows = {}
 	for y = 1, #map_rows do
-		local row = map_rows[y]
-		local width = #row
-		local collision_row = {}
-		for x = 1, width do
-			local ch = row:sub(x, x)
-			if solid_tiles[ch] then
-				collision_row[x] = 1
-			else
-				collision_row[x] = 0
-			end
-		end
-		collision[y] = collision_row
-	end
-	return collision
-end
-
-local function build_visual_map_rows(map_rows, draaideuren, tile_size, origin_x, origin_y)
-	local visual_rows = {}
-	for y = 1, #map_rows do
-		visual_rows[y] = map_rows[y]
+		screen_rows[y] = map_rows[y]
 	end
 
 	for i = 1, #draaideuren do
@@ -224,22 +219,22 @@ local function build_visual_map_rows(map_rows, draaideuren, tile_size, origin_x,
 		local tx = math.modf((draaideur.x - origin_x) / tile_size) + 1
 		local ty = math.modf((draaideur.y - origin_y) / tile_size) + 1
 		for row = ty, ty + 2 do
-			local line = visual_rows[row]
-			visual_rows[row] = line:sub(1, tx - 1) .. '.' .. line:sub(tx + 1)
+			local line = screen_rows[row]
+			screen_rows[row] = line:sub(1, tx - 1) .. '.' .. line:sub(tx + 1)
 		end
 	end
 
-	return visual_rows
+	return screen_rows
 end
 
-local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
+local function create_tile_id(ch, x, y, map_rows, room_subtype)
 	local background = background_themes[room_subtype]
 	local pillars = pillar_themes[room_subtype]
 
-	if ch == '#' then
+	if ch == tile_chars.wall then
 		return background.front
 	end
-	if ch == '$' then
+	if ch == tile_chars.breakable_wall then
 		if background.front_dissolve ~= nil then
 			return background.front_dissolve
 		end
@@ -251,33 +246,33 @@ local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
 	if stair_right_tiles[ch] then
 		return 'castle_stairs_r'
 	end
-	if ch == 'p' then
+	if ch == tile_chars.pillar_l1 then
 		return pillars.l1
 	end
-	if ch == 'i' then
+	if ch == tile_chars.pillar_r1 then
 		return pillars.r1
 	end
-	if ch == 'l' then
+	if ch == tile_chars.pillar_mid then
 		if y > 1 and y < #map_rows then
-			local ch_up = map_rows[y - 1]:sub(x, x)
-			local ch_down = map_rows[y + 1]:sub(x, x)
-			if ch_up == 'p' and ch_down == 'a' then
+			local ch_up = string.byte(map_rows[y - 1], x)
+			local ch_down = string.byte(map_rows[y + 1], x)
+			if ch_up == tile_chars.pillar_l1 and ch_down == tile_chars.pillar_l3 then
 				return pillars.l2
 			end
-			if ch_up == 'i' and ch_down == 'r' then
+			if ch_up == tile_chars.pillar_r1 and ch_down == tile_chars.pillar_r3 then
 				return pillars.r2
 			end
 		end
 	end
-	if ch == 'a' then
+	if ch == tile_chars.pillar_l3 then
 		return pillars.l3
 	end
-	if ch == 'r' then
+	if ch == tile_chars.pillar_r3 then
 		return pillars.r3
 	end
 
 	if background.mode == 'grid4' then
-		local wall_up = y > 1 and collision_map[y - 1][x] ~= 0
+		local wall_up = y > 1 and solid_tiles[string.byte(map_rows[y - 1], x)]
 		if wall_up then
 			local dark_index = ((x - 1) % 4) + 1
 			return background.dark_tiles[dark_index]
@@ -289,7 +284,7 @@ local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
 	end
 
 	if background.mode == 'world4' then
-		local dark = y > 1 and collision_map[y - 1][x] ~= 0
+		local dark = y > 1 and solid_tiles[string.byte(map_rows[y - 1], x)]
 		local left_column = ((x - 1) % 2) == 0
 		local row_mod = (y - 1) % 4
 		if row_mod == 0 then
@@ -319,7 +314,7 @@ local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
 	local is_left_column = ((x - 1) % 2) == 0
 	local is_top_row = ((y - 1) % 2) == 0
 	if is_top_row then
-		local dark = y > 1 and collision_map[y - 1][x] ~= 0
+		local dark = y > 1 and solid_tiles[string.byte(map_rows[y - 1], x)]
 		if is_left_column then
 			if dark then
 				return background.dark_l
@@ -332,7 +327,7 @@ local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
 		return background.light_r
 	end
 
-	local dark = collision_map[y - 1][x] ~= 0
+	local dark = solid_tiles[string.byte(map_rows[y - 1], x)]
 	if is_left_column then
 		if dark then
 			return background.dark_r
@@ -345,29 +340,15 @@ local function create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
 	return background.light_l
 end
 
-local function build_tile_grid(map_rows, collision_map, room_subtype)
-	local tiles = {}
-	for y = 1, #map_rows do
-		local row = map_rows[y]
-		local width = #row
-		local tile_row = {}
-		for x = 1, width do
-			local ch = row:sub(x, x)
-			tile_row[x] = create_tile_id(ch, x, y, map_rows, collision_map, room_subtype)
-		end
-		tiles[y] = tile_row
-	end
-	return tiles
-end
-
-local function build_solids(collision_map, tile_size, origin_x, origin_y)
+local function build_solids(map_rows, tile_size, origin_x, origin_y)
 	local solids = {}
-	local rows = #collision_map
-	local cols = #collision_map[1]
+	local rows = #map_rows
+	local cols = #map_rows[1]
 	for y = 1, rows do
+		local row = map_rows[y]
 		local run_start = 0
 		for x = 1, cols + 1 do
-			local is_solid = x <= cols and collision_map[y][x] ~= 0
+			local is_solid = x <= cols and solid_tiles[string.byte(row, x)]
 			if is_solid and run_start == 0 then
 				run_start = x
 			elseif (not is_solid) and run_start ~= 0 then
@@ -396,8 +377,8 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 		local ty = 1
 		while ty <= row_count do
 			local row = map_rows[ty]
-			local left = row:sub(tx, tx)
-			local right = row:sub(tx + 1, tx + 1)
+			local left = string.byte(row, tx)
+			local right = string.byte(row, tx + 1)
 			if stair_left_tiles[left] and stair_right_tiles[right] then
 				local min_row = ty
 				local max_row
@@ -405,8 +386,8 @@ local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_heig
 				ty = ty + 1
 				while ty <= row_count do
 					local next_row = map_rows[ty]
-					local next_left = next_row:sub(tx, tx)
-					local next_right = next_row:sub(tx + 1, tx + 1)
+					local next_left = string.byte(next_row, tx)
+					local next_right = string.byte(next_row, tx + 1)
 					if not (stair_left_tiles[next_left] and stair_right_tiles[next_right]) then
 						break
 					end
@@ -446,7 +427,7 @@ local function water_kind_at_tile(room_state, tx, ty)
 	if tx < 1 or tx > room_state.tile_columns then
 		return constants.water.none
 	end
-	if room_state.collision_map[ty][tx] ~= 0 then
+	if solid_tiles[string.byte(room_state.map_rows[ty], tx)] then
 		return constants.water.none
 	end
 	if ty == water.surface_row then
@@ -474,24 +455,19 @@ end
 
 local function refresh_room_geometry(room_state)
 	local map_rows = room_state.map_rows
-	local collision_map = build_collision_map(map_rows)
-	room_state.collision_map = collision_map
-	room_state.tiles = build_tile_grid(map_rows, collision_map, room_state.room_subtype)
-	room_state.solids = build_solids(collision_map, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
+	room_state.solids = build_solids(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
 	room_state.stairs = build_stairs(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y, constants.player.height)
 	room_state:rebuild_room_bgmaps()
 end
 
 local function apply_room_template(room_state, template)
-	local map_rows = build_visual_map_rows(
+	local map_rows = build_screen_rows(
 		template.map_rows,
 		template.draaideuren,
 		constants.room.tile_size,
 		constants.room.tile_origin_x,
 		constants.room.tile_origin_y
 	)
-	local collision_map = build_collision_map(map_rows)
-	local tiles = build_tile_grid(map_rows, collision_map, template.room_subtype)
 
 	room_state.room_number = template.room_number
 	room_state.world_number = template.world_number
@@ -509,10 +485,8 @@ local function apply_room_template(room_state, template)
 	room_state.tile_rows = #map_rows
 	room_state.tile_columns = #map_rows[1]
 	room_state.map_rows = map_rows
-	room_state.collision_map = collision_map
-	room_state.tiles = tiles
 	room_state.water = template.water
-	room_state.solids = build_solids(collision_map, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
+	room_state.solids = build_solids(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
 	room_state.stairs = build_stairs(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y, constants.player.height)
 	room_state.enemies = template.enemies
 	room_state.rocks = template.rocks
@@ -588,7 +562,7 @@ function room_object:base_collision_flags_at_tile(tx, ty)
 		return constants.collision_flags.none
 	end
 	local collision = 0
-	if self.collision_map[ty][tx] ~= 0 then
+	if solid_tiles[string.byte(self.map_rows[ty], tx)] then
 		collision = collision | constants.collision_flags.wall
 	end
 	if self:is_active_rock_at_tile(tx, ty) then
@@ -915,12 +889,11 @@ function room_object:render_tiles()
 
 	for y = 1, self.tile_rows do
 		local map_row = self.map_rows[y]
-		local row = self.tiles[y]
 		for x = 1, self.tile_columns do
-			local tile_id = row[x]
+			local tile_id = create_tile_id(string.byte(self.map_rows[y], x), x, y, self.map_rows, self.room_subtype)
 			if dissolve_step > 0 then
 				local dissolve_index = dissolve_step - 1
-				if self.room_subtype == 'world' and map_row:sub(x, x) == '$' then
+				if self.room_subtype == 'world' and string.byte(map_row, x) == tile_chars.breakable_wall then
 					if dissolve_index >= 6 then
 						goto continue
 					end
