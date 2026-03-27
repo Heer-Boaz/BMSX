@@ -191,17 +191,18 @@ async function loadRompackFromFile(romfile: string): Promise<Uint8Array> {
 /**
  * Print asset list to stdout in a tabular format (CLI mode).
  */
-function printAssetList(assets: RomAsset[]): void {
+function printAssetList(assets: RomAsset[], romByteLength: number): void {
+	const offsetHexWidth = Math.max(1, Math.max(0, romByteLength - 1).toString(16).length);
 	const headers = ['id', 'type', 'path', 'size', 'buffer-start', 'buffer-end', 'metabuffer-start', 'metabuffer-end'];
 	const rows = sortAssetsById(assets).map(asset => {
 		const path = asset.source_path ?? asset.normalized_source_path ?? '';
 		const hasBufferRange = typeof asset.start === 'number' && typeof asset.end === 'number';
 		const hasMetaRange = typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number';
 		const size = (hasBufferRange ? asset.end - asset.start : 0) + (hasMetaRange ? asset.metabuffer_end - asset.metabuffer_start : 0);
-		const bufferStart = typeof asset.start === 'number' ? formatNumberAsHex(asset.start) : '';
-		const bufferEnd = typeof asset.end === 'number' ? formatNumberAsHex(asset.end) : '';
-		const metaStart = typeof asset.metabuffer_start === 'number' ? formatNumberAsHex(asset.metabuffer_start) : '';
-		const metaEnd = typeof asset.metabuffer_end === 'number' ? formatNumberAsHex(asset.metabuffer_end) : '';
+		const bufferStart = typeof asset.start === 'number' ? formatNumberAsHex(asset.start, offsetHexWidth) : '';
+		const bufferEnd = typeof asset.end === 'number' ? formatNumberAsHex(asset.end, offsetHexWidth) : '';
+		const metaStart = typeof asset.metabuffer_start === 'number' ? formatNumberAsHex(asset.metabuffer_start, offsetHexWidth) : '';
+		const metaEnd = typeof asset.metabuffer_end === 'number' ? formatNumberAsHex(asset.metabuffer_end, offsetHexWidth) : '';
 		return [
 			String(asset.resid),
 			String(asset.type),
@@ -303,7 +304,7 @@ async function main() {
 
 	// Print assets by default; UI is only enabled with --ui
 	if ((!uiFlag && !nativeUiFlag) || listAssetsFlag) {
-		printAssetList(assetList);
+		printAssetList(assetList, rombin.byteLength);
 		if (!uiFlag && !nativeUiFlag) process.exit(0);
 	}
 

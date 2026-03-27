@@ -65,6 +65,8 @@ type TabHit = Rect & { index: number; close?: boolean };
 type AssetSortKey = 'id' | 'type' | 'size' | 'offset';
 type SortState = { key: AssetSortKey; descending: boolean };
 type TableColumn = Rect & { key: AssetSortKey; label: string };
+type ScrollbarThumb = Rect & { maxTop: number };
+type ScrollbarDrag = { target: 'list' | 'modal'; grabOffset: number };
 
 type ModalLayout = {
 	frame: Rect;
@@ -155,7 +157,7 @@ function pad(text: string, width: number): string {
 function buildTableColumns(tableContentWidth: number): TableColumn[] {
 	const idWidth = Math.max(16, Math.floor(tableContentWidth * 0.42));
 	const typeWidth = 8;
-	const sizeWidth = 10;
+	const sizeWidth = 12;
 	const offsetWidth = Math.max(8, tableContentWidth - idWidth - typeWidth - sizeWidth - 3);
 	return [
 		{ x: 0, y: 0, width: idWidth, height: 1, key: 'id', label: 'ID' },
@@ -243,23 +245,41 @@ function writeTaggedLine(screen: TuiScreen, x: number, y: number, width: number,
 
 function drawScrollbar(screen: TuiScreen, rect: Rect, totalLines: number, visibleLines: number, topLine: number, hovered: boolean): void {
 	screen.fillRect(rect.x, rect.y, rect.width, rect.height, hovered ? STYLE_SCROLL_TRACK_HOVER : STYLE_SCROLL_TRACK);
-	if (totalLines <= visibleLines || rect.height <= 0) {
+	const thumb = getScrollbarThumb(rect, totalLines, visibleLines, topLine);
+	if (!thumb) {
 		return;
 	}
-	const thumbHeight = Math.max(1, Math.floor(rect.height * visibleLines / totalLines));
-	const maxTop = Math.max(1, totalLines - visibleLines);
-	const thumbY = rect.y + Math.floor((rect.height - thumbHeight) * clamp(topLine, 0, maxTop) / maxTop);
-	screen.fillRect(rect.x, thumbY, rect.width, thumbHeight, hovered ? STYLE_SCROLL_THUMB_HOVER : STYLE_SCROLL_THUMB, ' ');
+	screen.fillRect(rect.x, thumb.y, rect.width, thumb.height, hovered ? STYLE_SCROLL_THUMB_HOVER : STYLE_SCROLL_THUMB, ' ');
 }
 
 function isInside(rect: Rect, x: number, y: number): boolean {
 	return x >= rect.x && y >= rect.y && x < rect.x + rect.width && y < rect.y + rect.height;
 }
 
+function getScrollbarThumb(rect: Rect, totalLines: number, visibleLines: number, topLine: number): ScrollbarThumb | null {
+	if (totalLines <= visibleLines || rect.height <= 0) {
+		return null;
+	}
+	const thumbHeight = Math.max(1, Math.floor(rect.height * visibleLines / totalLines));
+	const maxTop = Math.max(1, totalLines - visibleLines);
+	const thumbY = rect.y + Math.floor((rect.height - thumbHeight) * clamp(topLine, 0, maxTop) / maxTop);
+	return { x: rect.x, y: thumbY, width: rect.width, height: thumbHeight, maxTop };
+}
+
+function scrollTopFromThumb(rect: Rect, thumbHeight: number, maxTop: number, thumbY: number): number {
+	const travel = rect.height - thumbHeight;
+	if (travel <= 0) {
+		return 0;
+	}
+	const ratio = clamp((thumbY - rect.y) / travel, 0, 1);
+	return Math.round(maxTop * ratio);
+}
+
 export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> {
 	const screen = new TuiScreen();
 	const input = new TuiInput();
 	const summaryMetrics = buildSummaryMetrics(ctx);
+	const offsetHexWidth = Math.max(1, Math.max(0, ctx.rombin.byteLength - 1).toString(16).length);
 	let filterMode = false;
 	let filterValue = '';
 	let sortState: SortState = { key: 'id', descending: false };
@@ -275,6 +295,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let lastLayout: UiLayout | null = null;
 	let mouseX = -1;
 	let mouseY = -1;
+	let scrollbarDrag: ScrollbarDrag | null = null;
 
 	const buildSummaryLines = (width: number): string[] => {
 		const summaryBarLines = renderSummaryBar(summaryMetrics.regions, summaryMetrics.totalSize, Math.max(16, width - 16)).split('\n');
@@ -397,7 +418,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			const asset = filteredAssets[assetIndex];
 			const size = ctx.formatByteSize(assetSize(asset));
 			const location = asset.start ?? asset.metabuffer_start;
-			const offset = location === undefined ? '' : ctx.formatNumberAsHex(location);
+			const offset = location === undefined ? '' : ctx.formatNumberAsHex(location, offsetHexWidth);
 			const [idColumn, typeColumn, sizeColumn, offsetColumn] = layout.tableColumns;
 			const line = `${pad(asset.resid, idColumn.width)} ${pad(asset.type, typeColumn.width)} ${pad(size, sizeColumn.width)} ${pad(offset, offsetColumn.width)}`;
 			screen.writeText(0, y, pad(line, layout.tableContentWidth), style);
@@ -519,6 +540,19 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (!modal || !modalView) {
 			return false;
 		}
+		if (event.button === 'left' && event.action === 'up') {
+			scrollbarDrag = null;
+			return true;
+		}
+		if (event.button === 'left' && event.action === 'drag' && scrollbarDrag?.target === 'modal') {
+			const thumb = getScrollbarThumb(modal.scrollbar, getModalLines().length, modal.visibleContentLines, modalScroll);
+			if (!thumb) {
+				return false;
+			}
+			const thumbY = clamp(event.y - scrollbarDrag.grabOffset, modal.scrollbar.y, modal.scrollbar.y + modal.scrollbar.height - thumb.height);
+			modalScroll = scrollTopFromThumb(modal.scrollbar, thumb.height, thumb.maxTop, thumbY);
+			return true;
+		}
 		if (event.action === 'scroll') {
 			if (isInside(modal.frame, event.x, event.y)) {
 				modalScroll += event.button === 'wheelup' ? -3 : 3;
@@ -542,8 +576,16 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			}
 		}
 		if (isInside(modal.scrollbar, event.x, event.y)) {
-			const ratio = clamp((event.y - modal.scrollbar.y) / Math.max(1, modal.scrollbar.height - 1), 0, 1);
-			modalScroll = Math.round(modal.maxScroll * ratio);
+			const thumb = getScrollbarThumb(modal.scrollbar, getModalLines().length, modal.visibleContentLines, modalScroll);
+			if (!thumb) {
+				return false;
+			}
+			if (isInside(thumb, event.x, event.y)) {
+				scrollbarDrag = { target: 'modal', grabOffset: event.y - thumb.y };
+				return true;
+			}
+			const thumbY = clamp(event.y - Math.floor(thumb.height / 2), modal.scrollbar.y, modal.scrollbar.y + modal.scrollbar.height - thumb.height);
+			modalScroll = scrollTopFromThumb(modal.scrollbar, thumb.height, thumb.maxTop, thumbY);
 			return true;
 		}
 		return isInside(modal.frame, event.x, event.y);
@@ -553,6 +595,20 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const layout = lastLayout;
 		if (!layout) {
 			return false;
+		}
+		if (event.button === 'left' && event.action === 'up') {
+			scrollbarDrag = null;
+			return true;
+		}
+		if (event.button === 'left' && event.action === 'drag' && scrollbarDrag?.target === 'list') {
+			const thumb = getScrollbarThumb(layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow);
+			if (!thumb) {
+				return false;
+			}
+			const thumbY = clamp(event.y - scrollbarDrag.grabOffset, layout.tableScrollbar.y, layout.tableScrollbar.y + layout.tableScrollbar.height - thumb.height);
+			scrollRow = scrollTopFromThumb(layout.tableScrollbar, thumb.height, thumb.maxTop, thumbY);
+			selectedIndex = clamp(selectedIndex, scrollRow, scrollRow + layout.visibleRows - 1);
+			return true;
 		}
 		if (event.action === 'scroll') {
 			if (event.y >= layout.rowsTop && event.y < layout.rowsTop + layout.visibleRows) {
@@ -570,8 +626,17 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			return true;
 		}
 		if (isInside(layout.tableScrollbar, event.x, event.y)) {
-			const ratio = clamp((event.y - layout.tableScrollbar.y) / Math.max(1, layout.tableScrollbar.height - 1), 0, 1);
-			selectedIndex = Math.round(Math.max(0, filteredAssets.length - 1) * ratio);
+			const thumb = getScrollbarThumb(layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow);
+			if (!thumb) {
+				return false;
+			}
+			if (isInside(thumb, event.x, event.y)) {
+				scrollbarDrag = { target: 'list', grabOffset: event.y - thumb.y };
+				return true;
+			}
+			const thumbY = clamp(event.y - Math.floor(thumb.height / 2), layout.tableScrollbar.y, layout.tableScrollbar.y + layout.tableScrollbar.height - thumb.height);
+			scrollRow = scrollTopFromThumb(layout.tableScrollbar, thumb.height, thumb.maxTop, thumbY);
+			selectedIndex = clamp(selectedIndex, scrollRow, scrollRow + layout.visibleRows - 1);
 			return true;
 		}
 		if (event.y >= layout.rowsTop && event.y < layout.rowsTop + layout.visibleRows && event.x >= 0 && event.x < layout.tableContentWidth) {
