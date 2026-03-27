@@ -15,11 +15,76 @@ const sorted2DOamPatWorldEntries = new ScratchBatch<Sorted2DDrawEntry>();
 const sorted2DOamPatUIEntries = new ScratchBatch<Sorted2DDrawEntry>();
 const sorted2DOamPatIDEEntries = new ScratchBatch<Sorted2DDrawEntry>();
 const sorted2DDrawPool: Sorted2DDrawEntry[] = [];
+const sorted2DCapacityHints = {
+	world: 0,
+	ui: 0,
+	ide: 0,
+	draws: 0,
+};
 const sorted2DState: Sort2DPipelineState = {
 	world: { count: 0, entries: sorted2DWorldEntries },
 	ui: { count: 0, entries: sorted2DUIEntries },
 	ide: { count: 0, entries: sorted2DIDEEntries },
 };
+let sorted2DWriteCount = 0;
+
+function createSorted2DDraw(): Sorted2DDrawEntry {
+	return {
+		sourceIndex: 0,
+		atlasId: 0,
+		flags: 0,
+		assetHandle: 0,
+		x: 0,
+		y: 0,
+		z: 0,
+		w: 0,
+		h: 0,
+		u0: 0,
+		v0: 0,
+		u1: 0,
+		v1: 0,
+		r: 0,
+		g: 0,
+		b: 0,
+		a: 0,
+		layer: 0,
+		parallaxWeight: 0,
+	};
+}
+
+function ensureSorted2DDrawPoolCapacity(capacity: number): void {
+	while (sorted2DDrawPool.length < capacity) {
+		sorted2DDrawPool.push(createSorted2DDraw());
+	}
+}
+
+function reserveSorted2DBuckets(): void {
+	if (sorted2DCapacityHints.world > 0) {
+		sorted2DWorldEntries.reserve(sorted2DCapacityHints.world);
+		sorted2DStaticWorldEntries.reserve(sorted2DCapacityHints.world);
+		sorted2DOamPatWorldEntries.reserve(sorted2DCapacityHints.world);
+	}
+	if (sorted2DCapacityHints.ui > 0) {
+		sorted2DUIEntries.reserve(sorted2DCapacityHints.ui);
+		sorted2DStaticUIEntries.reserve(sorted2DCapacityHints.ui);
+		sorted2DOamPatUIEntries.reserve(sorted2DCapacityHints.ui);
+	}
+	if (sorted2DCapacityHints.ide > 0) {
+		sorted2DIDEEntries.reserve(sorted2DCapacityHints.ide);
+		sorted2DStaticIDEEntries.reserve(sorted2DCapacityHints.ide);
+		sorted2DOamPatIDEEntries.reserve(sorted2DCapacityHints.ide);
+	}
+	if (sorted2DCapacityHints.draws > 0) {
+		ensureSorted2DDrawPoolCapacity(sorted2DCapacityHints.draws);
+	}
+}
+
+function updateSorted2DCapacityHints(drawCount: number): void {
+	sorted2DCapacityHints.draws = Math.max(sorted2DCapacityHints.draws, drawCount);
+	sorted2DCapacityHints.world = Math.max(sorted2DCapacityHints.world, sorted2DWorldEntries.size, sorted2DStaticWorldEntries.size, sorted2DOamPatWorldEntries.size);
+	sorted2DCapacityHints.ui = Math.max(sorted2DCapacityHints.ui, sorted2DUIEntries.size, sorted2DStaticUIEntries.size, sorted2DOamPatUIEntries.size);
+	sorted2DCapacityHints.ide = Math.max(sorted2DCapacityHints.ide, sorted2DIDEEntries.size, sorted2DStaticIDEEntries.size, sorted2DOamPatIDEEntries.size);
+}
 
 function copySorted2DDraw(target: Sorted2DDrawEntry, sourceIndex: number, atlasId: number, flags: number, assetHandle: number, x: number, y: number, z: number, w: number, h: number, u0: number, v0: number, u1: number, v1: number, r: number, g: number, b: number, a: number, layer: Sorted2DDrawEntry['layer'], parallaxWeight: number): void {
 	target.sourceIndex = sourceIndex;
@@ -54,29 +119,8 @@ function compareSorted2DDraws(a: Sorted2DDrawEntry, b: Sorted2DDrawEntry): numbe
 function getSorted2DDraw(sourceIndex: number, entry: Omit<Sorted2DDrawEntry, 'sourceIndex'>): Sorted2DDrawEntry {
 	let draw = sorted2DDrawPool[sourceIndex];
 	if (!draw) {
-		draw = {
-			sourceIndex,
-			atlasId: entry.atlasId,
-			flags: entry.flags,
-			assetHandle: entry.assetHandle,
-			x: entry.x,
-			y: entry.y,
-			z: entry.z,
-			w: entry.w,
-			h: entry.h,
-			u0: entry.u0,
-			v0: entry.v0,
-			u1: entry.u1,
-			v1: entry.v1,
-			r: entry.r,
-			g: entry.g,
-			b: entry.b,
-			a: entry.a,
-			layer: entry.layer,
-			parallaxWeight: entry.parallaxWeight,
-		};
+		draw = createSorted2DDraw();
 		sorted2DDrawPool[sourceIndex] = draw;
-		return draw;
 	}
 	copySorted2DDraw(
 		draw,
@@ -101,6 +145,18 @@ function getSorted2DDraw(sourceIndex: number, entry: Omit<Sorted2DDrawEntry, 'so
 		entry.parallaxWeight,
 	);
 	return draw;
+}
+
+function appendSortedBgMap2dEntry(entry: Omit<Sorted2DDrawEntry, 'sourceIndex'>, sourceIndex: number): void {
+	const draw = getSorted2DDraw(sourceIndex, entry);
+	resolveBucket(entry.layer, sorted2DStaticWorldEntries, sorted2DStaticUIEntries, sorted2DStaticIDEEntries).push(draw);
+	sorted2DWriteCount += 1;
+}
+
+function appendSortedOamPat2dEntry(entry: Omit<Sorted2DDrawEntry, 'sourceIndex'>, sourceIndex: number): void {
+	const draw = getSorted2DDraw(sourceIndex, entry);
+	resolveBucket(entry.layer, sorted2DOamPatWorldEntries, sorted2DOamPatUIEntries, sorted2DOamPatIDEEntries).push(draw);
+	sorted2DWriteCount += 1;
 }
 
 function resolveBucket(layer: number, world: ScratchBatch<Sorted2DDrawEntry>, ui: ScratchBatch<Sorted2DDrawEntry>, ide: ScratchBatch<Sorted2DDrawEntry>): ScratchBatch<Sorted2DDrawEntry> {
@@ -141,6 +197,8 @@ export function buildSorted2DState(): Sort2DPipelineState {
 	const bgMapCount = Runtime.instance.vdp.beginBgMap2dRead();
 	const oamPatCount = Runtime.instance.vdp.beginOamPat2dRead();
 	const expectedCount = bgMapCount + oamPatCount;
+	reserveSorted2DBuckets();
+	ensureSorted2DDrawPoolCapacity(expectedCount);
 	sorted2DWorldEntries.clear();
 	sorted2DUIEntries.clear();
 	sorted2DIDEEntries.clear();
@@ -150,19 +208,11 @@ export function buildSorted2DState(): Sort2DPipelineState {
 	sorted2DOamPatWorldEntries.clear();
 	sorted2DOamPatUIEntries.clear();
 	sorted2DOamPatIDEEntries.clear();
-	let sourceIndex = 0;
-	Runtime.instance.vdp.forEachSortedBgMap2dEntry((entry, bgSourceIndex) => {
-		const draw = getSorted2DDraw(bgSourceIndex, entry);
-		resolveBucket(entry.layer, sorted2DStaticWorldEntries, sorted2DStaticUIEntries, sorted2DStaticIDEEntries).push(draw);
-		sourceIndex += 1;
-	});
-	Runtime.instance.vdp.forEachOamPat2dEntry((entry, oamPatSourceIndex) => {
-		const draw = getSorted2DDraw(oamPatSourceIndex, entry);
-		resolveBucket(entry.layer, sorted2DOamPatWorldEntries, sorted2DOamPatUIEntries, sorted2DOamPatIDEEntries).push(draw);
-		sourceIndex += 1;
-	});
-	if (sourceIndex !== expectedCount) {
-		throw new Error(`[Sort2D] begin2dRead count mismatch (${expectedCount} != ${sourceIndex}).`);
+	sorted2DWriteCount = 0;
+	Runtime.instance.vdp.forEachSortedBgMap2dEntry(appendSortedBgMap2dEntry);
+	Runtime.instance.vdp.forEachOamPat2dEntry(appendSortedOamPat2dEntry);
+	if (sorted2DWriteCount !== expectedCount) {
+		throw new Error(`[Sort2D] begin2dRead count mismatch (${expectedCount} != ${sorted2DWriteCount}).`);
 	}
 	if (sorted2DOamPatWorldEntries.size > 1) {
 		sorted2DOamPatWorldEntries.sort(compareSorted2DDraws);
@@ -176,6 +226,7 @@ export function buildSorted2DState(): Sort2DPipelineState {
 	sorted2DState.world.count = mergeSortedBuckets(sorted2DWorldEntries, sorted2DStaticWorldEntries, sorted2DOamPatWorldEntries);
 	sorted2DState.ui.count = mergeSortedBuckets(sorted2DUIEntries, sorted2DStaticUIEntries, sorted2DOamPatUIEntries);
 	sorted2DState.ide.count = mergeSortedBuckets(sorted2DIDEEntries, sorted2DStaticIDEEntries, sorted2DOamPatIDEEntries);
+	updateSorted2DCapacityHints(expectedCount);
 	return sorted2DState;
 }
 

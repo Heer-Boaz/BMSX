@@ -22,6 +22,12 @@ export class ScratchBatch<T> implements Iterable<T> {
 
 	clear(): void { this._size = 0; }
 
+	reserve(capacity: number): void {
+		if (capacity > this.items.length) {
+			this.items.length = capacity;
+		}
+	}
+
 	push(v: T): void { this.items[this._size++] = v; }
 
 	get(index: number): T { return this.items[index]; }
