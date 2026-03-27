@@ -261,7 +261,7 @@ export class InputStateManager {
 			if (event.eventType === 'release') {
 				wasreleased = true;
 			}
-			if (event.consumed) consumed = true;
+			if (event.consumed && (pressId == null || event.pressId === pressId)) consumed = true;
 		}
 
 		return makeButtonState({

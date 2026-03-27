@@ -147,15 +147,14 @@ ButtonState InputStateManager::getButtonState(const std::string& button, std::op
 	state.justreleased = getBufferedEdgeRecord(m_bufferedReleaseEdges, button, 1).has_value();
 	state.waspressed = state.pressed || wasPressedInWindow(button, effectiveWindow);
 	state.wasreleased = state.justreleased || wasReleasedInWindow(button, effectiveWindow);
-	if (!state.consumed) {
-		for (const auto& bufferedEvent : m_inputBuffer) {
-			if (bufferedEvent.event.identifier == button &&
-				bufferedEvent.frame <= m_currentFrame &&
-				isBufferedFrameInWindow(bufferedEvent.frame, effectiveWindow) &&
-				bufferedEvent.event.consumed) {
-				state.consumed = true;
-				break;
-			}
+	for (const auto& bufferedEvent : m_inputBuffer) {
+		if (bufferedEvent.event.identifier == button &&
+			bufferedEvent.frame <= m_currentFrame &&
+			isBufferedFrameInWindow(bufferedEvent.frame, effectiveWindow) &&
+			bufferedEvent.event.consumed &&
+			(!state.pressId.has_value() || (bufferedEvent.event.pressId.has_value() && bufferedEvent.event.pressId.value() == state.pressId.value()))) {
+			state.consumed = true;
+			break;
 		}
 	}
 	
