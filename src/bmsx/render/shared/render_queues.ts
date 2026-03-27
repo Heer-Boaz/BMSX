@@ -39,12 +39,6 @@ type PlaybackMeshSubmission = Extract<RenderSubmission, { type: 'mesh' }>;
 type PlaybackParticleSubmission = Extract<RenderSubmission, { type: 'particle' }>;
 
 const renderQueuePlaybackBuffer: RenderSubmission[] = [];
-const GLYPH_TRACE_CALL_LOG_LIMIT = 12;
-const GLYPH_TRACE_ENTRY_LOG_LIMIT = 48;
-const OAM_SUBMIT_TRACE_LOG_LIMIT = 32;
-let glyphTraceCallLogCount = 0;
-let glyphTraceEntryLogCount = 0;
-let oamSubmitTraceLogCount = 0;
 
 function createPlaybackImgSubmission(): PlaybackImgSubmission {
 	return {
@@ -191,10 +185,6 @@ export function submitSprite(options: ImgRenderSubmission): void {
 		parallaxWeight: 0,
 	};
 	oam.parallaxWeight = oam.layer === OAM_LAYER_WORLD ? (options.parallax_weight ?? 0) : 0;
-	if (oam.layer !== OAM_LAYER_WORLD && oamSubmitTraceLogCount < OAM_SUBMIT_TRACE_LOG_LIMIT) {
-		console.log(`[OAMSubmitTrace][TS] imgid=${options.imgid} layer=${oam.layer} pos=${oam.x},${oam.y},${oam.z} size=${oam.w}x${oam.h} atlas=${oam.atlasId}`);
-		oamSubmitTraceLogCount += 1;
-	}
 	runtime.vdp.submitOamEntry(oam);
 }
 
@@ -516,14 +506,6 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 	};
 	const packedColor = packColor8888(color);
 	const packedBackgroundColor = backgroundColor ? packColor8888(backgroundColor) : 0;
-	if (glyphTraceCallLogCount < GLYPH_TRACE_CALL_LOG_LIMIT) {
-		const lineCount = Array.isArray(textToWrite) ? textToWrite.length : 1;
-		const totalChars = Array.isArray(textToWrite)
-			? textToWrite.reduce((sum, line) => sum + line.length, 0)
-			: textToWrite.length;
-		console.log(`[GlyphTrace][TS] renderGlyphs lines=${lineCount} chars=${totalChars} start=${start ?? 0} end=${end ?? -1} z=${z} layer=${layer ?? 'world'} lineHeight=${font.lineHeight} bg=${backgroundColor ? 1 : 0}`);
-		glyphTraceCallLogCount += 1;
-	}
 	const backgroundAsset = (() => {
 		if (!backgroundColor) {
 			return null;
@@ -602,10 +584,6 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 			const v0 = entry.regionY / baseEntry.regionH;
 			const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
 			const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
-			if (glyphTraceEntryLogCount < GLYPH_TRACE_ENTRY_LOG_LIMIT) {
-				console.log(`[GlyphTrace][TS] glyph=${JSON.stringify(letter)} imgid=${glyph.imgid} atlas=${imgMeta.atlasid} handle=${handle} region=${entry.regionX},${entry.regionY},${entry.regionW},${entry.regionH} base=${baseEntry.regionW}x${baseEntry.regionH} uv=${u0.toFixed(4)},${v0.toFixed(4)},${u1.toFixed(4)},${v1.toFixed(4)} pos=${~~x},${~~y} size=${glyph.width}x${glyph.height}`);
-				glyphTraceEntryLogCount += 1;
-			}
 			const pat: PatEntry = {
 				atlasId: imgMeta.atlasid,
 				flags: PAT_FLAG_ENABLED,

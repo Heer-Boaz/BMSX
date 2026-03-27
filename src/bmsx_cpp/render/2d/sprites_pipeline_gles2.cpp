@@ -5,7 +5,6 @@
 #include "sprites_pipeline_gles2.h"
 
 #include <cmath>
-#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -21,9 +20,6 @@
 namespace bmsx {
 namespace SpritesPipeline {
 namespace {
-
-constexpr bool kSpritesVerboseLog = false;
-static int g_spriteTraceLogCount = 0;
 
 constexpr int kMaxSprites = OAM_SPRITE_SLOT_COUNT;
 constexpr int kVerticesPerSprite = 6;
@@ -404,12 +400,6 @@ void initGLES2(OpenGLES2Backend* backend, GameView* context) {
 	glUniform1i(g_sprite.uniform_tex0, kTexUnitAtlasPrimary);
 	glUniform1i(g_sprite.uniform_tex1, kTexUnitAtlasSecondary);
 	glUniform1i(g_sprite.uniform_tex2, kTexUnitAtlasEngine);
-
-	if (kSpritesVerboseLog) {
-		std::fprintf(stderr,
-					"[BMSX][GLES2][Sprites] init program=%u\n",
-					static_cast<unsigned>(g_sprite.program));
-	}
 }
 
 void shutdownGLES2(OpenGLES2Backend* backend) {
@@ -443,6 +433,7 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	glDisable(GL_CULL_FACE);
 	if (useDepth) {
 		glEnable(GL_DEPTH_TEST);
+		glDepthFunc(GL_LEQUAL);
 	} else {
 		glDisable(GL_DEPTH_TEST);
 	}
@@ -490,17 +481,6 @@ void renderSpriteBatchGLES2(OpenGLES2Backend* backend, GameView* context,
 	const auto& atlasSlots = Runtime::instance().vdp().atlasSlots();
 	const i32 primaryAtlasIdInSlot = atlasSlots[0];
 	const i32 secondaryAtlasIdInSlot = atlasSlots[1];
-	if (g_spriteTraceLogCount < 16) {
-		std::fprintf(stderr,
-			"[Sprites2D][C++][gles2] count=%d engineTex=%d primaryTex=%d secondaryTex=%d primaryAtlas=%d secondaryAtlas=%d\n",
-			spriteCount,
-			state.atlasEngineTex != nullptr ? 1 : 0,
-			state.atlasPrimaryTex != nullptr ? 1 : 0,
-			state.atlasSecondaryTex != nullptr ? 1 : 0,
-			primaryAtlasIdInSlot,
-			secondaryAtlasIdInSlot);
-		++g_spriteTraceLogCount;
-	}
 
 	for (const Sorted2DDrawEntry& draw : sortedEntries) {
 		const OamEntry& item = draw.entry;

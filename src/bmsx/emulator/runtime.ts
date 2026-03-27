@@ -1441,6 +1441,8 @@ export class Runtime {
 		try {
 			runtimeIde.clearActiveDebuggerPause(this);
 			runtimeIde.clearRuntimeFault(this);
+			runtimeIde.deactivateTerminalMode(this);
+			runtimeIde.deactivateEditor(this);
 			this.luaInitialized = false;
 			runtimeLuaPipeline.invalidateModuleAliases(this);
 			this.luaChunkEnvironmentsByPath.clear();

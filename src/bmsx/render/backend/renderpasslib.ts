@@ -496,14 +496,12 @@ export class RenderPassLibrary {
 					console.warn('Framegraph validation: Only baseline setup wrote to frame color.');
 				}
 			}
-			// Pass registry validation: unique IDs and shader availability for non-state passes
+			// Pass registry validation: unique IDs
 			const seen = new Set<string>();
 			for (const p of this.getPipelinePasses()) {
 				const idStr = String(p.id);
 				if (seen.has(idStr)) console.warn(`Duplicate pass id registered: ${idStr}`);
 				seen.add(idStr);
-				const needsShaders = !p.stateOnly && !p.present;
-				if (needsShaders && (!p.vsCode || !p.fsCode)) console.warn(`Pass '${p.name}' missing shaders (vs=${!!p.vsCode} fs=${!!p.fsCode})`);
 			}
 		} catch (e) {
 			console.error(`Framegraph validation failed: ${e}`);

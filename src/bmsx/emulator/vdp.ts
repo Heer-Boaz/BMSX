@@ -83,75 +83,6 @@ import {
 } from './memory_map';
 
 const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const;
-const PAT_TRACE_SUBMIT_LOG_LIMIT = 48;
-const PAT_TRACE_SWAP_LOG_LIMIT = 16;
-const PAT_TRACE_READ_LOG_LIMIT = 24;
-const PAT_TRACE_ENTRY_LOG_LIMIT = 48;
-const ENGINE_ATLAS_TRACE_LOG_LIMIT = 24;
-const ATLAS_SLOT_TRACE_LOG_LIMIT = 48;
-const BGMAP_TRACE_BEGIN_LOG_LIMIT = 12;
-const BGMAP_TRACE_TILE_LOG_LIMIT = 48;
-const BGMAP_TRACE_READ_LOG_LIMIT = 48;
-const OAM_TRACE_READ_LOG_LIMIT = 24;
-let patTraceSubmitLogCount = 0;
-let patTraceSwapLogCount = 0;
-let patTraceReadLogCount = 0;
-let patTraceEntryLogCount = 0;
-let engineAtlasTraceLogCount = 0;
-let atlasSlotTraceLogCount = 0;
-let bgMapTraceBeginLogCount = 0;
-let bgMapTraceTileLogCount = 0;
-let bgMapTraceReadLogCount = 0;
-let oamTraceReadLogCount = 0;
-
-function logEngineAtlasTrace(message: string): void {
-	if (engineAtlasTraceLogCount >= ENGINE_ATLAS_TRACE_LOG_LIMIT) {
-		return;
-	}
-	console.log(`[EngineAtlasTrace][TS] ${message}`);
-	engineAtlasTraceLogCount += 1;
-}
-
-function logAtlasSlotTrace(message: string): void {
-	if (atlasSlotTraceLogCount >= ATLAS_SLOT_TRACE_LOG_LIMIT) {
-		return;
-	}
-	console.log(`[AtlasSlotTrace][TS] ${message}`);
-	atlasSlotTraceLogCount += 1;
-}
-
-function logBgMapTraceBegin(message: string): void {
-	if (bgMapTraceBeginLogCount >= BGMAP_TRACE_BEGIN_LOG_LIMIT) {
-		return;
-	}
-	console.log(`[BGMapTrace][TS] ${message}`);
-	bgMapTraceBeginLogCount += 1;
-}
-
-function logBgMapTraceTile(message: string): void {
-	if (bgMapTraceTileLogCount >= BGMAP_TRACE_TILE_LOG_LIMIT) {
-		return;
-	}
-	console.log(`[BGMapTrace][TS] ${message}`);
-	bgMapTraceTileLogCount += 1;
-}
-
-function logBgMapTraceRead(message: string): void {
-	if (bgMapTraceReadLogCount >= BGMAP_TRACE_READ_LOG_LIMIT) {
-		return;
-	}
-	console.log(`[BGMapReadTrace][TS] ${message}`);
-	bgMapTraceReadLogCount += 1;
-}
-
-function logOamTraceRead(message: string): void {
-	if (oamTraceReadLogCount >= OAM_TRACE_READ_LOG_LIMIT) {
-		return;
-	}
-	console.log(`[OAMReadTrace][TS] ${message}`);
-	oamTraceReadLogCount += 1;
-}
-
 const BMSX_BASE_COLORS: color[] = [
 	{ r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 0 }, // 0 = Transparent
 	{ r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 1 }, // 1 = Black
@@ -550,9 +481,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private bgMapBackBase = VDP_BGMAP_BACK_BASE;
 	private patFrontBase = VDP_PAT_FRONT_BASE;
 	private patBackBase = VDP_PAT_BACK_BASE;
-	private lastAtlasTracePrimaryRaw = VDP_ATLAS_ID_NONE;
-	private lastAtlasTraceSecondaryRaw = VDP_ATLAS_ID_NONE;
-
 	public constructor(
 		private readonly memory: Memory,
 	) {
@@ -567,33 +495,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	public attachImgDecController(controller: ImgDecController): void {
 		this.imgDecController = controller;
-	}
-
-	private resetDebugTraceCounters(): void {
-		patTraceSubmitLogCount = 0;
-		patTraceSwapLogCount = 0;
-		patTraceReadLogCount = 0;
-		patTraceEntryLogCount = 0;
-		engineAtlasTraceLogCount = 0;
-		atlasSlotTraceLogCount = 0;
-		bgMapTraceBeginLogCount = 0;
-		bgMapTraceTileLogCount = 0;
-		bgMapTraceReadLogCount = 0;
-		oamTraceReadLogCount = 0;
-		this.lastAtlasTracePrimaryRaw = VDP_ATLAS_ID_NONE;
-		this.lastAtlasTraceSecondaryRaw = VDP_ATLAS_ID_NONE;
-	}
-
-	private formatAtlasTraceId(value: number | null): string {
-		return value === null ? '-1' : `${value}`;
-	}
-
-	private formatAtlasTraceResource(value: number | null): string {
-		if (value === null) {
-			return 'none';
-		}
-		const atlasEntry = this.atlasResourcesById.get(value);
-		return atlasEntry ? `${value}:${atlasEntry.resid}` : `${value}:missing`;
 	}
 
 	public writeVram(addr: number, bytes: Uint8Array): void {
@@ -742,18 +643,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const secondaryRaw = (this.memory.readValue(IO_VDP_SECONDARY_ATLAS_ID) as number) >>> 0;
 		const primary = primaryRaw === VDP_ATLAS_ID_NONE ? null : primaryRaw;
 		const secondary = secondaryRaw === VDP_ATLAS_ID_NONE ? null : secondaryRaw;
-		if (
-			primaryRaw !== this.lastAtlasTracePrimaryRaw
-			|| secondaryRaw !== this.lastAtlasTraceSecondaryRaw
-			|| primary !== this.slotAtlasIds[0]
-			|| secondary !== this.slotAtlasIds[1]
-		) {
-			logAtlasSlotTrace(
-				`sync rawPrimary=${this.formatAtlasTraceId(primary)} rawSecondary=${this.formatAtlasTraceId(secondary)} currentPrimary=${this.formatAtlasTraceId(this.slotAtlasIds[0])} currentSecondary=${this.formatAtlasTraceId(this.slotAtlasIds[1])}`
-			);
-			this.lastAtlasTracePrimaryRaw = primaryRaw;
-			this.lastAtlasTraceSecondaryRaw = secondaryRaw;
-		}
 		if (primary !== this.slotAtlasIds[0] || secondary !== this.slotAtlasIds[1]) {
 			this.applyAtlasSlotMapping(primary, secondary);
 		}
@@ -997,11 +886,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (header.count >= VDP_PAT_CAPACITY) {
 			throw new Error(`[BmsxVDP] PAT back buffer overflow (${VDP_PAT_CAPACITY} entries).`);
 		}
-		if (patTraceSubmitLogCount < PAT_TRACE_SUBMIT_LOG_LIMIT) {
-			const assetId = entry.assetHandle === 0 ? 'none' : this.memory.getAssetEntryByHandle(entry.assetHandle).id;
-			console.log(`[PATTrace][TS] submit backIndex=${header.count} asset=${assetId} atlas=${entry.atlasId} layer=${entry.layer} pos=${entry.x},${entry.y},${entry.z} glyph=${entry.glyphW}x${entry.glyphH} uv=${entry.u0.toFixed(4)},${entry.v0.toFixed(4)},${entry.u1.toFixed(4)},${entry.v1.toFixed(4)} fg=0x${entry.fgColor.toString(16)}`);
-			patTraceSubmitLogCount += 1;
-		}
 		const addr = this.patBackBase + VDP_PAT_HEADER_BYTES + header.count * VDP_PAT_ENTRY_BYTES;
 		this.writePatEntry(addr, entry);
 		this.writePatHeader(this.patBackBase, { flags: PAT_FLAG_ENABLED, count: header.count + 1 });
@@ -1033,9 +917,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (header.cols * header.rows > VDP_BGMAP_TILE_CAPACITY) {
 			throw new Error(`[BmsxVDP] BGMap layer ${layerIndex} exceeds tile capacity ${VDP_BGMAP_TILE_CAPACITY}.`);
 		}
-		logBgMapTraceBegin(
-			`begin layerIndex=${layerIndex} renderLayer=${header.layer} cols=${header.cols} rows=${header.rows} tile=${header.tileW}x${header.tileH} origin=${header.originX},${header.originY} scroll=${header.scrollX},${header.scrollY} z=${header.z}`
-		);
 		const base = this.bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
 		this.writeBgMapHeader(base, header);
 		for (let tileIndex = 0; tileIndex < VDP_BGMAP_TILE_CAPACITY; tileIndex += 1) {
@@ -1052,10 +933,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (col < 0 || col >= header.cols || row < 0 || row >= header.rows) {
 			throw new Error(`[BmsxVDP] BGMap tile (${col}, ${row}) outside configured layer bounds ${header.cols}x${header.rows}.`);
 		}
-		const assetId = this.memory.getAssetEntryByHandle(entry.assetHandle).id;
-		logBgMapTraceTile(
-			`submit layerIndex=${layerIndex} renderLayer=${header.layer} cell=${col},${row} asset=${assetId} atlas=${entry.atlasId} uv=${entry.u0.toFixed(4)},${entry.v0.toFixed(4)},${entry.u1.toFixed(4)},${entry.v1.toFixed(4)}`
-		);
 		const index = row * header.cols + col;
 		const addr = base + 44 + index * VDP_BGMAP_ENTRY_BYTES;
 		this.writeBgMapEntry(addr, entry);
@@ -1075,12 +952,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public swapPatBuffers(): void {
-		if (patTraceSwapLogCount < PAT_TRACE_SWAP_LOG_LIMIT) {
-			const frontHeader = this.readPatHeader(this.patFrontBase);
-			const backHeader = this.readPatHeader(this.patBackBase);
-			console.log(`[PATTrace][TS] swap frontBase=${this.patFrontBase} frontCount=${frontHeader.count} backBase=${this.patBackBase} backCount=${backHeader.count}`);
-			patTraceSwapLogCount += 1;
-		}
 		const frontBase = this.patFrontBase;
 		this.patFrontBase = this.patBackBase;
 		this.patBackBase = frontBase;
@@ -1202,11 +1073,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				count += layerEnabledCount;
 			}
 		}
-		if (patTraceReadLogCount < PAT_TRACE_READ_LOG_LIMIT) {
-			const source = (this.memory.readValue(IO_VDP_OAM_READ_SOURCE) as number) === VDP_OAM_READ_SOURCE_BACK ? 'back' : 'front';
-			console.log(`[PATTrace][TS] begin2dRead source=${source} oamCount=${activeOam.count} patBase=${activePatBase} patCount=${patCount} bgCount=${bgCount} total=${count}`);
-			patTraceReadLogCount += 1;
-		}
 		return count;
 	}
 
@@ -1216,10 +1082,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		for (let index = 0; index < count; index += 1) {
 			const entry = this.readOamEntry(base + index * VDP_OAM_ENTRY_BYTES);
 			if (entry.flags !== 0) {
-				const assetId = this.memory.getAssetEntryByHandle(entry.assetHandle).id;
-				logOamTraceRead(
-					`index=${index} layer=${entry.layer} asset=${assetId} atlas=${entry.atlasId} pos=${entry.x},${entry.y},${entry.z} size=${entry.w}x${entry.h}`
-				);
 				fn(entry, index);
 			}
 		}
@@ -1263,10 +1125,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				}
 				const col = cellIndex % header.cols;
 				const row = Math.floor(cellIndex / header.cols);
-				const assetId = this.memory.getAssetEntryByHandle(tile.assetHandle).id;
-				logBgMapTraceRead(
-					`layerIndex=${layerIndex} renderLayer=${header.layer} cell=${col},${row} asset=${assetId} atlas=${tile.atlasId} pos=${header.originX + col * header.tileW - header.scrollX},${header.originY + row * header.tileH - header.scrollY},${header.z} tile=${header.tileW}x${header.tileH}`
-				);
 				scratch.atlasId = tile.atlasId;
 				scratch.assetHandle = tile.assetHandle;
 				scratch.x = header.originX + col * header.tileW - header.scrollX;
@@ -1299,11 +1157,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				const entry = this.readPatEntry(patBase + VDP_PAT_HEADER_BYTES + patIndex * VDP_PAT_ENTRY_BYTES);
 				if ((entry.flags & PAT_FLAG_ENABLED) === 0) {
 					continue;
-				}
-				if (patTraceEntryLogCount < PAT_TRACE_ENTRY_LOG_LIMIT) {
-					const assetId = entry.assetHandle === 0 ? 'none' : this.memory.getAssetEntryByHandle(entry.assetHandle).id;
-					console.log(`[PATTrace][TS] read patIndex=${patIndex} asset=${assetId} atlas=${entry.atlasId} layer=${entry.layer} pos=${entry.x},${entry.y},${entry.z} glyph=${entry.glyphW}x${entry.glyphH} uv=${entry.u0.toFixed(4)},${entry.v0.toFixed(4)},${entry.u1.toFixed(4)},${entry.v1.toFixed(4)}`);
-					patTraceEntryLogCount += 1;
 				}
 				scratch.atlasId = entry.atlasId;
 				scratch.assetHandle = entry.assetHandle;
@@ -1408,9 +1261,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				}
 			}
 		}
-		logAtlasSlotTrace(
-			`apply primary=${this.formatAtlasTraceResource(primary)} secondary=${this.formatAtlasTraceResource(secondary)} slot0=${this.atlasSlotEntries[0].regionW}x${this.atlasSlotEntries[0].regionH} slot1=${this.atlasSlotEntries[1].regionW}x${this.atlasSlotEntries[1].regionH}`
-		);
 	}
 
 	public setSkyboxImages(ids: SkyboxImageIds): void {
@@ -1497,7 +1347,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			const side = Math.floor(Math.sqrt(maxPixels));
 			setAtlasEntryDimensions(slotEntry, side, side);
 		};
-		this.resetDebugTraceCounters();
 		this.atlasResourcesById.clear();
 		this.atlasViewsById.clear();
 		this.atlasSlotById.clear();
@@ -1680,7 +1529,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (typeof asset.start !== 'number' || typeof asset.end !== 'number') {
 			throw new Error(`[BmsxVDP] Engine atlas '${asset.resid}' missing ROM buffer offsets.`);
 		}
-		logEngineAtlasTrace(`restore source=${asset.resid} base=${entry.baseAddr} region=${entry.regionW}x${entry.regionH}`);
 		const decoded = await decodePngToRgba(source.getBytes(asset));
 		const plan = this.memory.planImageSlotWrite(entry, {
 			pixels: decoded.pixels,
@@ -1703,9 +1551,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		for (let index = 0; index < dirty.length; index += 1) {
 			const entry = dirty[index];
 			if (entry.type === 'image') {
-				if (entry.id === engineAtlasId) {
-					logEngineAtlasTrace(`flush dirty asset=${entry.id} base=${entry.baseAddr} region=${entry.regionW}x${entry.regionH}`);
-				}
 				const vramSpan = entry.capacity > 0 ? entry.capacity : 1;
 				if (this.memory.isVramRange(entry.baseAddr, vramSpan)) {
 					continue;
@@ -1873,9 +1718,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		let handle = $.texmanager.getTextureByUri(textureKey);
 		const isEngineAtlas = textureKey === ENGINE_ATLAS_TEXTURE_KEY;
 		const preserveEngineAtlasTexture = isEngineAtlas && !!handle;
-		if (isEngineAtlas) {
-			logEngineAtlasTrace(`register slot key=${textureKey} existingHandle=${handle ? 1 : 0} base=${entry.baseAddr} region=${entry.regionW}x${entry.regionH} surface=${surfaceId}`);
-		}
 		let textureWidth = entry.regionW;
 		let textureHeight = entry.regionH;
 		if (!handle) {
@@ -1901,9 +1743,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.registerReadSurface(surfaceId, entry, textureKey);
 		if (!isEngineAtlas) {
 			this.seedVramSlotTexture(slot);
-		}
-		if (isEngineAtlas) {
-			logEngineAtlasTrace(`register complete key=${textureKey} base=${entry.baseAddr} region=${entry.regionW}x${entry.regionH}`);
 		}
 	}
 

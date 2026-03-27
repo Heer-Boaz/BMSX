@@ -9,8 +9,6 @@ const sorted2DWorldEntries = new ScratchBatch<Sorted2DDrawEntry>();
 const sorted2DUIEntries = new ScratchBatch<Sorted2DDrawEntry>();
 const sorted2DIDEEntries = new ScratchBatch<Sorted2DDrawEntry>();
 const sorted2DDrawPool: Sorted2DDrawEntry[] = [];
-const SORT2D_TRACE_LOG_LIMIT = 32;
-let sort2DTraceLogCount = 0;
 const sorted2DState: Sort2DPipelineState = {
 	world: { count: 0, entries: sorted2DWorldEntries },
 	ui: { count: 0, entries: sorted2DUIEntries },
@@ -132,10 +130,6 @@ export function buildSorted2DState(): Sort2DPipelineState {
 	sorted2DState.world.count = worldCount;
 	sorted2DState.ui.count = uiCount;
 	sorted2DState.ide.count = ideCount;
-	if (sort2DTraceLogCount < SORT2D_TRACE_LOG_LIMIT) {
-		console.log(`[Sort2DTrace][TS] world=${worldCount} ui=${uiCount} ide=${ideCount} total=${sourceIndex}`);
-		sort2DTraceLogCount += 1;
-	}
 	return sorted2DState;
 }
 

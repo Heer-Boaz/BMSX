@@ -569,7 +569,6 @@ export class GameView implements RenderContext {
 		if (!engineAtlasTexture) {
 			throw new Error(`[GameView] Engine atlas '${ENGINE_ATLAS_TEXTURE_KEY}' not uploaded.`);
 		}
-		console.log(`[EngineAtlasTrace][TS] GameView.loadEngineAtlasTexture key=${ENGINE_ATLAS_TEXTURE_KEY} replacing=${this.textures[ENGINE_ATLAS_TEXTURE_KEY] ? 1 : 0}`);
 		this.textures[ENGINE_ATLAS_TEXTURE_KEY] = engineAtlasTexture;
 	}
 

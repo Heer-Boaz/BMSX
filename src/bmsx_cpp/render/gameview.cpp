@@ -19,7 +19,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <stdexcept>
 
 namespace bmsx {
@@ -163,7 +162,6 @@ void GameView::initializeDefaultTextures() {
 }
 
 void GameView::loadEngineAtlasTexture() {
-	static int s_engineAtlasTraceLogCount = 0;
 	if (!m_backend) {
 		throw BMSX_RUNTIME_ERROR("[GameView] loadEngineAtlasTexture called before backend was configured.");
 	}
@@ -174,12 +172,6 @@ void GameView::loadEngineAtlasTexture() {
 	TextureHandle handle = texmanager->getTextureByUri(ENGINE_ATLAS_TEXTURE_KEY);
 	if (!handle) {
 		throw BMSX_RUNTIME_ERROR("[GameView] Engine atlas not uploaded.");
-	}
-	if (s_engineAtlasTraceLogCount < 12) {
-		std::cout << "[EngineAtlasTrace][C++] GameView.loadEngineAtlasTexture key=" << ENGINE_ATLAS_TEXTURE_KEY
-			<< " replacing=" << (textures.count(ENGINE_ATLAS_TEXTURE_KEY) != 0u ? 1 : 0)
-			<< std::endl;
-		++s_engineAtlasTraceLogCount;
 	}
 	textures[ENGINE_ATLAS_TEXTURE_KEY] = handle;
 }

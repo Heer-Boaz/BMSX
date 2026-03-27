@@ -37,10 +37,6 @@ const SPRITE_INSTANCE_Z_OFFSET = 32;
 const SPRITE_INSTANCE_ATLAS_OFFSET = 34;
 const SPRITE_INSTANCE_FX_OFFSET = 35;
 const SPRITE_INSTANCE_COLOR_OFFSET = 36;
-const SPRITES_PIPELINE_TRACE_LOG_LIMIT = 16;
-let spritesPipelineTraceLogCount = 0;
-const SPRITES_PASS_TRACE_LOG_LIMIT = 32;
-let spritesPassTraceLogCount = 0;
 
 const SPRITE_CORNER_DATA = new Float32Array([
 	0, 0,
@@ -294,10 +290,6 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	const { backend, gl, context } = runtime;
 	assertAtlasSelectorRange();
 	const spriteCount = sortState.count;
-	if (spritesPassTraceLogCount < SPRITES_PASS_TRACE_LOG_LIMIT) {
-		console.log(`[SpritesPassTrace][TS] pass=${passId} count=${spriteCount} depth=${useDepth ? 1 : 0}`);
-		spritesPassTraceLogCount += 1;
-	}
 	if (spriteCount === 0) return;
 	ensureSpritePipelineBindings(backend);
 	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
@@ -354,10 +346,6 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		context.bind2DTex(state.atlasEngineTex);
 	}
 	const atlasMapping = Runtime.instance.vdp.getAtlasSlotMapping();
-	if (spritesPipelineTraceLogCount < SPRITES_PIPELINE_TRACE_LOG_LIMIT) {
-		console.log(`[Sprites2D][TS] engineTex=${state.atlasEngineTex ? 1 : 0} primaryTex=${state.atlasPrimaryTex ? 1 : 0} secondaryTex=${state.atlasSecondaryTex ? 1 : 0} primaryAtlas=${atlasMapping.primary ?? -1} secondaryAtlas=${atlasMapping.secondary ?? -1}`);
-		spritesPipelineTraceLogCount += 1;
-	}
 	const primaryAtlasIdInSlot = atlasMapping.primary;
 	const secondaryAtlasIdInSlot = atlasMapping.secondary;
 	const { instanceF32, instanceU16, instanceU8, instanceS8 } = spriteShaderData;

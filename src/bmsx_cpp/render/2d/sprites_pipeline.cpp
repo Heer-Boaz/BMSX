@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <string>
 #include <stdexcept>
 
@@ -31,12 +30,6 @@ static constexpr f32 DEFAULT_ZCOORD = 0.0f;
 static constexpr f32 ZCOORD_MAX = 10000.0f;
 
 namespace {
-static int g_spriteTraceLogCount = 0;
-static int g_sort2DTraceLogCount = 0;
-static int g_spritePassTraceLogCount = 0;
-static constexpr int kSort2DTraceLogLimit = 32;
-static constexpr int kSpritePassTraceLogLimit = 32;
-
 bool compareSorted2DDrawEntries(const Sorted2DDrawEntry& a, const Sorted2DDrawEntry& b) {
 	if (a.entry.z != b.entry.z) {
 		return a.entry.z < b.entry.z;
@@ -95,19 +88,6 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 	const auto& atlasSlots = Runtime::instance().vdp().atlasSlots();
 	const i32 primaryAtlasIdInSlot = atlasSlots[0];
 	const i32 secondaryAtlasIdInSlot = atlasSlots[1];
-	if (g_spriteTraceLogCount < 16) {
-		auto engineIt = context->textures.find(ENGINE_ATLAS_TEXTURE_KEY);
-		const bool hasEngineTex = engineIt != context->textures.end() && engineIt->second != nullptr;
-		std::fprintf(stderr,
-			"[Sprites2D][C++][soft] count=%d engineTex=%d primaryTex=%d secondaryTex=%d primaryAtlas=%d secondaryAtlas=%d\n",
-			spriteCount,
-			hasEngineTex ? 1 : 0,
-			atlasPrimary != nullptr ? 1 : 0,
-			atlasSecondary != nullptr ? 1 : 0,
-			primaryAtlasIdInSlot,
-			secondaryAtlasIdInSlot);
-		++g_spriteTraceLogCount;
-	}
 	auto smoothstep01 = [](f32 t) {
 	t = clamp(t, 0.0f, 1.0f);
 	return t * t * (3.0f - 2.0f * t);
@@ -223,15 +203,6 @@ Sort2DPipelineState buildSorted2DPipelineState() {
 	if (sortState.ide.entries.size() > 1) {
 		std::sort(sortState.ide.entries.begin(), sortState.ide.entries.end(), compareSorted2DDrawEntries);
 	}
-	if (g_sort2DTraceLogCount < kSort2DTraceLogLimit) {
-		std::fprintf(stderr,
-			"[Sort2DTrace][C++] world=%zu ui=%zu ide=%zu total=%d\n",
-			sortState.world.entries.size(),
-			sortState.ui.entries.size(),
-			sortState.ide.entries.size(),
-			drawCount);
-		++g_sort2DTraceLogCount;
-	}
 	return sortState;
 }
 
@@ -241,14 +212,6 @@ Sort2DPipelineState buildSorted2DPipelineState() {
  */
 void renderSpriteBatch(GPUBackend* backend, GameView* context, const SpritesPipelineState& spriteState, const Sort2DPipelineState& sortState, OamLayer layer, bool useDepth) {
 	const auto& sortedEntries = resolveSorted2DBucket(sortState, layer);
-	if (g_spritePassTraceLogCount < kSpritePassTraceLogLimit) {
-		std::fprintf(stderr,
-			"[SpritesPassTrace][C++] layer=%d count=%zu depth=%d\n",
-			static_cast<int>(layer),
-			sortedEntries.size(),
-			useDepth ? 1 : 0);
-		++g_spritePassTraceLogCount;
-	}
 	switch (backend->type()) {
 	case BackendType::Software:
 		renderSpriteBatchSoftware(static_cast<SoftwareBackend*>(backend),

@@ -14,7 +14,6 @@
 #include "../../utils/clamp.h"
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 #include <limits>
 #include <stdexcept>
 
@@ -30,12 +29,6 @@ enum class QueueSource : u8 {
 	Back = 1,
 };
 static QueueSource s_activeQueueSource = QueueSource::Front;
-static constexpr int kGlyphTraceCallLimit = 12;
-static constexpr int kGlyphTraceEntryLimit = 48;
-static constexpr int kOamSubmitTraceLimit = 32;
-static int s_glyphTraceCallCount = 0;
-static int s_glyphTraceEntryCount = 0;
-static int s_oamSubmitTraceCount = 0;
 
 i32 particleAmbientModeDefault = 0;
 f32 particleAmbientFactorDefault = 1.0f;
@@ -153,15 +146,6 @@ void submitSprite(const ImgRenderSubmission& options) {
 	oam.a = color.a;
 	oam.layer = renderLayerToOamLayer(options.layer);
 	oam.parallaxWeight = oam.layer == OamLayer::World ? options.parallax_weight.value_or(0.0f) : 0.0f;
-	if (oam.layer != OamLayer::World && s_oamSubmitTraceCount < kOamSubmitTraceLimit) {
-		std::cout << "[OAMSubmitTrace][C++] imgid=" << options.imgid
-			<< " layer=" << static_cast<int>(oam.layer)
-			<< " pos=" << oam.x << "," << oam.y << "," << oam.z
-			<< " size=" << oam.w << "x" << oam.h
-			<< " atlas=" << oam.atlasId
-			<< std::endl;
-		++s_oamSubmitTraceCount;
-	}
 	runtime.vdp().submitOamEntry(oam);
 }
 
@@ -441,22 +425,6 @@ void renderGlyphs(f32 x,
 	const i32 endIndex = end.value_or(std::numeric_limits<i32>::max());
 	const u32 packedColor = packColor8888(color);
 	const u32 packedBackgroundColor = packColor8888(backgroundColor);
-	if (s_glyphTraceCallCount < kGlyphTraceCallLimit) {
-		size_t totalChars = 0;
-		for (const auto& line : lines) {
-			totalChars += line.size();
-		}
-		std::cout << "[GlyphTrace][C++] renderGlyphs lines=" << lines.size()
-			<< " chars=" << totalChars
-			<< " start=" << startIndex
-			<< " end=" << endIndex
-			<< " z=" << z
-			<< " layer=" << static_cast<int>(renderLayerToOamLayer(layer))
-			<< " lineHeight=" << font->lineHeight()
-			<< " bg=" << (backgroundColor.has_value() ? 1 : 0)
-			<< std::endl;
-		++s_glyphTraceCallCount;
-	}
 	u32 backgroundHandle = 0u;
 	Memory::AssetEntry backgroundEntry{};
 	Memory::AssetEntry backgroundBaseEntry{};
@@ -530,23 +498,7 @@ void renderGlyphs(f32 x,
 			if (!imgAsset) {
 				throw BMSX_RUNTIME_ERROR("[Glyph Queue] Missing image metadata for '" + glyph.imgid + "'.");
 			}
-						const auto baseEntry = resolveImageBaseEntry(memory, entry, "Glyph Queue");
-			if (s_glyphTraceEntryCount < kGlyphTraceEntryLimit) {
-				std::cout << "[GlyphTrace][C++] glyph codepoint=" << codepoint
-					<< " imgid=" << glyph.imgid
-					<< " atlas=" << imgAsset->meta.atlasid
-					<< " handle=" << handle
-					<< " region=" << entry.regionX << "," << entry.regionY << "," << entry.regionW << "," << entry.regionH
-					<< " base=" << baseEntry.regionW << "x" << baseEntry.regionH
-					<< " uv=" << (static_cast<f32>(entry.regionX) / static_cast<f32>(baseEntry.regionW))
-					<< "," << (static_cast<f32>(entry.regionY) / static_cast<f32>(baseEntry.regionH))
-					<< "," << (static_cast<f32>(entry.regionX + entry.regionW) / static_cast<f32>(baseEntry.regionW))
-					<< "," << (static_cast<f32>(entry.regionY + entry.regionH) / static_cast<f32>(baseEntry.regionH))
-					<< " pos=" << static_cast<i32>(x) << "," << static_cast<i32>(y)
-					<< " size=" << glyph.width << "x" << glyph.height
-					<< std::endl;
-				++s_glyphTraceEntryCount;
-			}
+			const auto baseEntry = resolveImageBaseEntry(memory, entry, "Glyph Queue");
 
 			PatEntry pat;
 			pat.atlasId = imgAsset->meta.atlasid;

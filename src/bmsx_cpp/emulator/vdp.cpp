@@ -8,7 +8,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -31,24 +30,6 @@ constexpr int VRAM_GARBAGE_FORCE_T0 = 120;
 constexpr int VRAM_GARBAGE_FORCE_T1 = 280;
 constexpr int VRAM_GARBAGE_FORCE_T2 = 480;
 constexpr int VRAM_GARBAGE_FORCE_T_DEN = 1000;
-constexpr int PAT_TRACE_SUBMIT_LOG_LIMIT = 48;
-constexpr int PAT_TRACE_SWAP_LOG_LIMIT = 16;
-constexpr int PAT_TRACE_READ_LOG_LIMIT = 24;
-constexpr int PAT_TRACE_ENTRY_LOG_LIMIT = 48;
-constexpr int ENGINE_ATLAS_TRACE_LOG_LIMIT = 24;
-int g_patTraceSubmitLogCount = 0;
-int g_patTraceSwapLogCount = 0;
-int g_patTraceReadLogCount = 0;
-int g_patTraceEntryLogCount = 0;
-int g_engineAtlasTraceLogCount = 0;
-
-void logEngineAtlasTrace(const std::string& message) {
-	if (g_engineAtlasTraceLogCount >= ENGINE_ATLAS_TRACE_LOG_LIMIT) {
-		return;
-	}
-	std::cout << "[EngineAtlasTrace][C++] " << message << std::endl;
-	++g_engineAtlasTraceLogCount;
-}
 
 struct OctaveSpec {
 	uint32_t shift;
@@ -504,19 +485,6 @@ void VDP::submitPatEntry(const PatEntry& entry) {
 	if (header.count >= VDP_PAT_CAPACITY) {
 		throw BMSX_RUNTIME_ERROR("[VDP] PAT back buffer overflow.");
 	}
-	if (g_patTraceSubmitLogCount < PAT_TRACE_SUBMIT_LOG_LIMIT) {
-		const std::string assetId = entry.assetHandle == 0u ? "none" : m_memory.getAssetEntryByHandle(entry.assetHandle).id;
-		std::cout << "[PATTrace][C++] submit backIndex=" << header.count
-			<< " asset=" << assetId
-			<< " atlas=" << entry.atlasId
-			<< " layer=" << static_cast<int>(entry.layer)
-			<< " pos=" << entry.x << "," << entry.y << "," << entry.z
-			<< " glyph=" << entry.glyphW << "x" << entry.glyphH
-			<< " uv=" << entry.u0 << "," << entry.v0 << "," << entry.u1 << "," << entry.v1
-			<< " fg=0x" << std::hex << entry.fgColor << std::dec
-			<< std::endl;
-		++g_patTraceSubmitLogCount;
-	}
 	writePatEntry(m_patBackBase + VDP_PAT_HEADER_BYTES + header.count * VDP_PAT_ENTRY_BYTES, entry);
 	writePatHeader(m_patBackBase, PatHeader{PAT_FLAG_ENABLED, header.count + 1u});
 }
@@ -569,16 +537,6 @@ void VDP::swapOamBuffers() {
 }
 
 void VDP::swapPatBuffers() {
-	if (g_patTraceSwapLogCount < PAT_TRACE_SWAP_LOG_LIMIT) {
-		const PatHeader frontHeader = readPatHeader(m_patFrontBase);
-		const PatHeader backHeader = readPatHeader(m_patBackBase);
-		std::cout << "[PATTrace][C++] swap frontBase=" << m_patFrontBase
-			<< " frontCount=" << frontHeader.count
-			<< " backBase=" << m_patBackBase
-			<< " backCount=" << backHeader.count
-			<< std::endl;
-		++g_patTraceSwapLogCount;
-	}
 	std::swap(m_patFrontBase, m_patBackBase);
 	clearBackPatBuffer();
 }
@@ -683,16 +641,6 @@ i32 VDP::begin2dRead() const {
 			count += layerEnabledCount;
 		}
 	}
-	if (g_patTraceReadLogCount < PAT_TRACE_READ_LOG_LIMIT) {
-		std::cout << "[PATTrace][C++] begin2dRead source=" << (readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? "back" : "front")
-			<< " oamCount=" << oamCount
-			<< " patBase=" << patBase
-			<< " patCount=" << patCount
-			<< " bgCount=" << bgCount
-			<< " total=" << count
-			<< std::endl;
-		++g_patTraceReadLogCount;
-	}
 	return count;
 }
 
@@ -762,17 +710,6 @@ void VDP::forEach2dEntry(const std::function<void(const OamEntry&, size_t)>& fn)
 			const PatEntry entry = readPatEntry(patBase + VDP_PAT_HEADER_BYTES + patIndex * VDP_PAT_ENTRY_BYTES);
 			if ((entry.flags & PAT_FLAG_ENABLED) == 0u) {
 				continue;
-			}
-			if (g_patTraceEntryLogCount < PAT_TRACE_ENTRY_LOG_LIMIT) {
-				std::cout << "[PATTrace][C++] read patIndex=" << patIndex
-					<< " handle=" << entry.assetHandle
-					<< " atlas=" << entry.atlasId
-					<< " layer=" << static_cast<int>(entry.layer)
-					<< " pos=" << entry.x << "," << entry.y << "," << entry.z
-					<< " glyph=" << entry.glyphW << "x" << entry.glyphH
-					<< " uv=" << entry.u0 << "," << entry.v0 << "," << entry.u1 << "," << entry.v1
-					<< std::endl;
-				++g_patTraceEntryLogCount;
 			}
 			scratch.atlasId = entry.atlasId;
 			scratch.assetHandle = entry.assetHandle;
@@ -1199,13 +1136,6 @@ void VDP::flushAssetEdits() {
 	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 	for (const auto* entry : dirty) {
 		if (entry->type == Memory::AssetType::Image) {
-			if (entry->id == engineAtlasName) {
-				logEngineAtlasTrace(
-					"flush dirty asset=" + entry->id +
-					" base=" + std::to_string(entry->baseAddr) +
-					" region=" + std::to_string(entry->regionW) + "x" + std::to_string(entry->regionH)
-				);
-			}
 			if (entry->regionW == 0 || entry->regionH == 0) {
 				continue;
 			}
@@ -1409,15 +1339,6 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	TextureHandle handle = texmanager->getTextureByUri(textureKey);
 	const bool isEngineAtlas = textureKey == ENGINE_ATLAS_TEXTURE_KEY;
 	const bool preserveEngineAtlasTexture = isEngineAtlas && handle;
-	if (isEngineAtlas) {
-		logEngineAtlasTrace(
-			"register slot key=" + textureKey +
-			" existingHandle=" + std::to_string(handle ? 1 : 0) +
-			" base=" + std::to_string(entry.baseAddr) +
-			" region=" + std::to_string(entry.regionW) + "x" + std::to_string(entry.regionH) +
-			" surface=" + std::to_string(surfaceId)
-		);
-	}
 	if (!handle) {
 		auto* backend = texmanager->backend();
 		if (backend && backend->readyForTextureUpload()) {
@@ -1459,13 +1380,6 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	registerReadSurface(surfaceId, entry.id, textureKey);
 	if (handle && !isEngineAtlas) {
 		seedVramSlotTexture(m_vramSlots.back());
-	}
-	if (isEngineAtlas) {
-		logEngineAtlasTrace(
-			"register complete key=" + textureKey +
-			" base=" + std::to_string(entry.baseAddr) +
-			" region=" + std::to_string(entry.regionW) + "x" + std::to_string(entry.regionH)
-		);
 	}
 }
 
@@ -1654,13 +1568,6 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 
 void VDP::restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey) {
 	const bool isEngineAtlas = textureKey == ENGINE_ATLAS_TEXTURE_KEY;
-	if (isEngineAtlas) {
-		logEngineAtlasTrace(
-			"restore key=" + textureKey +
-			" base=" + std::to_string(entry.baseAddr) +
-			" region=" + std::to_string(entry.regionW) + "x" + std::to_string(entry.regionH)
-		);
-	}
 	if (entry.regionW == 0 || entry.regionH == 0) {
 		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot missing dimensions for seeding.");
 	}
