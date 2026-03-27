@@ -50,6 +50,7 @@ function formatNumberAsHex(n: number, width?: number): string {
 const PROGRAM_ASM_BIAS_FLAG = '--program-asm-bias';
 const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
 const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';
+const ASSET_ID_COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 
 function parseProgramAsmBias(args: string[]): number | null {
 	for (const arg of args) {
@@ -187,6 +188,10 @@ function buildManifestAsset(header: CartRomHeader): RomAsset {
 		start,
 		end,
 	};
+}
+
+function sortAssetsById(assets: RomAsset[]): RomAsset[] {
+	return [...assets].sort((left, right) => ASSET_ID_COLLATOR.compare(left.resid, right.resid));
 }
 
 async function nodeImageLoader(buffer: Uint8Array) {
@@ -393,7 +398,7 @@ async function loadRompackFromFile(romfile: string): Promise<Uint8Array> {
  */
 function printAssetList(assets: RomAsset[]): void {
 	const headers = ['id', 'type', 'path', 'size', 'buffer-start', 'buffer-end', 'metabuffer-start', 'metabuffer-end'];
-	const rows = assets.map(asset => {
+	const rows = sortAssetsById(assets).map(asset => {
 		const path = asset.source_path ?? asset.normalized_source_path ?? '';
 		const hasBufferRange = typeof asset.start === 'number' && typeof asset.end === 'number';
 		const hasMetaRange = typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number';
@@ -638,7 +643,7 @@ async function main() {
 		width: '100%',
 		height: '100%-5',
 		columnSpacing: 2,
-		columnWidth: [30, 5, 10, 10],
+		columnWidth: [32, 8, 10, 12],
 		keys: true,
 		interactive: 'true',
 		label: 'Select asset (Enter to view details, q to quit)',
@@ -690,18 +695,21 @@ async function main() {
 	async function updateTable(filter: string = undefined) {
 		filteredAssetList = getFilteredAssets(assetList, filter);
 		const tableRows = filteredAssetList.map(asset => [
-			asset.resid ? String(asset.resid) : '',
-			asset.resid ? String(asset.resid) : '',
-			asset.type ? String(asset.type) : '',
+			asset.resid,
+			asset.type,
 			(() => {
 				let size = 0;
 				if (asset.start != null && asset.end != null) size += asset.end - asset.start;
 				if (asset.metabuffer_start != null && asset.metabuffer_end != null) size += asset.metabuffer_end - asset.metabuffer_start;
 				return formatByteSize(size); // Convert size to human-readable format
-			})()
+			})(),
+			(() => {
+				const location = asset.start ?? asset.metabuffer_start;
+				return location !== undefined ? formatNumberAsHex(location) : '';
+			})(),
 		]);
 		table.setData({
-			headers: ['Name', 'ID', 'Type', 'Size'],
+			headers: ['ID', 'Type', 'Size', 'ROM offset'],
 			data: tableRows,
 		});
 
@@ -732,7 +740,7 @@ async function main() {
 			top: 'center', left: 'center',
 			width: '80%', height: '80%',
 			border: 'line', style: { border: { fg: 'yellow' }, bg: 'black' },
-			label: `Asset - Name: ${selected.resid} | ID: ${selected.resid} | Type: ${selected.type}`,
+			label: `Asset - ID: ${selected.resid} | Type: ${selected.type}`,
 			tags: true, scrollable: false, alwaysScroll: false, keys: true, mouse: true, draggable: true,
 			vi: true, input: true, // Enable vi-style keybindings
 			// scrollbar: { ch: '|', track: { bg: 'grey' }, style: { bg: 'yellow' } }
@@ -1270,12 +1278,14 @@ async function main() {
 
 	// Helper to filter assets
 	function getFilteredAssets(assetList, filter: string) {
-		if (!filter) return assetList;
+		if (!filter) return sortAssetsById(assetList);
 		const f = filter.toLowerCase();
-		return assetList.filter(a =>
-			(a.resname && a.resname.toLowerCase().includes(f)) ||
-			(a.type && a.type.toLowerCase().includes(f))
-		);
+		return sortAssetsById(assetList.filter(a =>
+			a.resid.toLowerCase().includes(f) ||
+			(a.source_path !== undefined && a.source_path.toLowerCase().includes(f)) ||
+			(a.normalized_source_path !== undefined && a.normalized_source_path.toLowerCase().includes(f)) ||
+			a.type.toLowerCase().includes(f)
+		));
 	}
 
 	// Focus filter box on `/ `

@@ -489,6 +489,8 @@ export type CartManifest = {
 	};
 };
 
+export type RomManifest = CartManifest;
+
 export type MachinePerfSpecs = {
 	cpu_freq_hz: number;
 	imgdec_bytes_per_sec: number;

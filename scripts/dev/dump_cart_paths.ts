@@ -1,8 +1,6 @@
-import { getZippedRomAndRomLabelFromBlob, loadAssetList } from '../../src/bmsx/rompack/romloader';
+import { loadAssetList, normalizeCartridgeBlob } from '../../src/bmsx/rompack/romloader';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-
-import pako from 'pako';
 
 async function main(): Promise<void> {
 	const romPath = process.argv[2];
@@ -12,11 +10,8 @@ async function main(): Promise<void> {
 	}
 	const absoluteRomPath = path.resolve(romPath);
 	const romBuffer = await readFile(absoluteRomPath);
-	const arrayBuffer = romBuffer.buffer.slice(romBuffer.byteOffset, romBuffer.byteOffset + romBuffer.byteLength);
-	// @ts-ignore
-	const { zipped_rom } = await getZippedRomAndRomLabelFromBlob(arrayBuffer);
-	const inflated = pako.inflate(zipped_rom);
-	const { assets, projectRootPath } = await loadAssetList(inflated);
+	const { payload } = normalizeCartridgeBlob(romBuffer);
+	const { assets, projectRootPath } = await loadAssetList(payload);
 
 	console.log(`ROM: ${absoluteRomPath}`);
 	console.log(`projectRootPath: ${projectRootPath ?? '<none>'}`);

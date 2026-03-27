@@ -348,6 +348,15 @@ export async function loadRomAssetList(rom: Uint8Array): Promise<RomAssetList> {
 	return loadRomAssetListFromHeader(rom, header);
 }
 
+export async function loadAssetList(rom: Uint8Array): Promise<{ assets: RomAsset[]; projectRootPath: string; manifest: CartManifest }> {
+	const { assets, projectRootPath, cart_manifest } = await parseCartridgeIndex(rom);
+	return {
+		assets,
+		projectRootPath,
+		manifest: cart_manifest,
+	};
+}
+
 export async function parseCartridgeIndex(payload: Uint8Array): Promise<CartridgeIndex> {
 	const header = parseCartHeader(payload);
 	const { assets, projectRootPath } = await loadRomAssetListFromHeader(payload, header);
