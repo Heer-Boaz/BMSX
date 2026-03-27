@@ -24,7 +24,6 @@ import { RenderSubmission } from '../backend/pipeline_interfaces';
 import { Runtime } from '../../emulator/runtime';
 import { ASSET_FLAG_VIEW } from '../../emulator/memory';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
-import { new_vec3, new_vec2 } from '../../utils/vector_operations';
 import { clamp } from '../../utils/clamp';
 import { BFont } from './bitmap_font';
 
@@ -39,6 +38,54 @@ type PlaybackMeshSubmission = Extract<RenderSubmission, { type: 'mesh' }>;
 type PlaybackParticleSubmission = Extract<RenderSubmission, { type: 'particle' }>;
 
 const renderQueuePlaybackBuffer: RenderSubmission[] = [];
+
+function createScratchOamEntry(): OamEntry {
+	return {
+		atlasId: 0,
+		flags: OAM_FLAG_ENABLED,
+		assetHandle: 0,
+		x: 0,
+		y: 0,
+		z: DEFAULT_ZCOORD,
+		w: 0,
+		h: 0,
+		u0: 0,
+		v0: 0,
+		u1: 0,
+		v1: 0,
+		r: 1,
+		g: 1,
+		b: 1,
+		a: 1,
+		layer: OAM_LAYER_WORLD,
+		parallaxWeight: 0,
+	};
+}
+
+function createScratchPatEntry(): PatEntry {
+	return {
+		atlasId: 0,
+		flags: PAT_FLAG_ENABLED,
+		assetHandle: 0,
+		layer: OAM_LAYER_WORLD,
+		x: 0,
+		y: 0,
+		z: 0,
+		glyphW: 0,
+		glyphH: 0,
+		bgW: 0,
+		bgH: 0,
+		u0: 0,
+		v0: 0,
+		u1: 0,
+		v1: 0,
+		fgColor: 0,
+		bgColor: 0,
+	};
+}
+
+const spriteSubmitScratch = createScratchOamEntry();
+const glyphPatSubmitScratch = createScratchPatEntry();
 
 function createPlaybackImgSubmission(): PlaybackImgSubmission {
 	return {
@@ -121,11 +168,10 @@ function setPlaybackParticleSubmission(index: number, src: ParticleRenderSubmiss
 	op.layer = src.layer;
 }
 
-// --- Sprite queue helpers ---------------------------------------------------
-
-export function submitSprite(options: ImgRenderSubmission): void {
-	const { imgid } = options;
-	if (imgid === 'none') return;
+function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color | undefined, layer: RenderLayer | undefined, flipH = false, flipV = false, parallaxWeight = 0): void {
+	if (imgid === 'none') {
+		return;
+	}
 	const runtime = Runtime.instance;
 	const handle = runtime.resolveAssetHandle(imgid);
 	const entry = runtime.getAssetEntryByHandle(handle);
@@ -149,43 +195,57 @@ export function submitSprite(options: ImgRenderSubmission): void {
 	let v0 = entry.regionY / baseEntry.regionH;
 	let u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
 	let v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
-	const flip = options.flip;
-	if (flip?.flip_h) {
+	if (flipH) {
 		const tmp = u0;
 		u0 = u1;
 		u1 = tmp;
 	}
-	if (flip?.flip_v) {
+	if (flipV) {
 		const tmp = v0;
 		v0 = v1;
 		v1 = tmp;
 	}
+	const layerId = renderLayerToOamLayer(layer);
+	const target = spriteSubmitScratch;
+	target.atlasId = meta.atlasid;
+	target.flags = OAM_FLAG_ENABLED;
+	target.assetHandle = handle;
+	target.x = ~~x;
+	target.y = ~~y;
+	target.z = ~~z;
+	target.w = entry.regionW * scaleX;
+	target.h = entry.regionH * scaleY;
+	target.u0 = u0;
+	target.v0 = v0;
+	target.u1 = u1;
+	target.v1 = v1;
+	target.r = colorize ? colorize.r : 1;
+	target.g = colorize ? colorize.g : 1;
+	target.b = colorize ? colorize.b : 1;
+	target.a = colorize ? colorize.a : 1;
+	target.layer = layerId;
+	target.parallaxWeight = layerId === OAM_LAYER_WORLD ? parallaxWeight : 0;
+	runtime.vdp.submitOamEntry(target);
+}
+
+// --- Sprite queue helpers ---------------------------------------------------
+
+export function submitSprite(options: ImgRenderSubmission): void {
+	const flip = options.flip;
 	const scale = options.scale;
-	const scaleX = scale ? scale.x : 1;
-	const scaleY = scale ? scale.y : 1;
-	const colorize = options.colorize;
-	const oam: OamEntry = {
-		atlasId: meta.atlasid,
-		flags: OAM_FLAG_ENABLED,
-		assetHandle: handle,
-		x: ~~options.pos.x,
-		y: ~~options.pos.y,
-		z: ~~(options.pos.z ?? DEFAULT_ZCOORD),
-		w: entry.regionW * scaleX,
-		h: entry.regionH * scaleY,
-		u0,
-		v0,
-		u1,
-		v1,
-		r: colorize ? colorize.r : 1,
-		g: colorize ? colorize.g : 1,
-		b: colorize ? colorize.b : 1,
-		a: colorize ? colorize.a : 1,
-		layer: renderLayerToOamLayer(options.layer),
-		parallaxWeight: 0,
-	};
-	oam.parallaxWeight = oam.layer === OAM_LAYER_WORLD ? (options.parallax_weight ?? 0) : 0;
-	runtime.vdp.submitOamEntry(oam);
+	submitSpriteDirect(
+		options.imgid,
+		options.pos.x,
+		options.pos.y,
+		options.pos.z ?? DEFAULT_ZCOORD,
+		scale ? scale.x : 1,
+		scale ? scale.y : 1,
+		options.colorize,
+		options.layer,
+		flip?.flip_h === true,
+		flip?.flip_v === true,
+		options.parallax_weight ?? 0,
+	);
 }
 
 export function beginSpriteQueue(): number {
@@ -381,13 +441,13 @@ export function submitRectangle(options: RectRenderSubmission): void {
 	const imgid = 'whitepixel';
 	[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
 	if (options.kind === 'fill') {
-		submitSprite({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(~~(ex - x), ~~(ey - y)), colorize: c, layer: options.layer });
+		submitSpriteDirect(imgid, x, y, z ?? DEFAULT_ZCOORD, ~~(ex - x), ~~(ey - y), c, options.layer);
 	}
 	else {
-		submitSprite({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(~~(ex - x), 1), colorize: c, layer: options.layer });
-		submitSprite({ pos: new_vec3(x, ey, z), imgid, scale: new_vec2(~~(ex - x), 1), colorize: c, layer: options.layer });
-		submitSprite({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(1, ~~(ey - y)), colorize: c, layer: options.layer });
-		submitSprite({ pos: new_vec3(ex, y, z), imgid, scale: new_vec2(1, ~~(ey - y)), colorize: c, layer: options.layer });
+		submitSpriteDirect(imgid, x, y, z ?? DEFAULT_ZCOORD, ~~(ex - x), 1, c, options.layer);
+		submitSpriteDirect(imgid, x, ey, z ?? DEFAULT_ZCOORD, ~~(ex - x), 1, c, options.layer);
+		submitSpriteDirect(imgid, x, y, z ?? DEFAULT_ZCOORD, 1, ~~(ey - y), c, options.layer);
+		submitSpriteDirect(imgid, ex, y, z ?? DEFAULT_ZCOORD, 1, ~~(ey - y), c, options.layer);
 	}
 }
 
@@ -400,11 +460,11 @@ export function submitDrawPolygon(options: PolyRenderSubmission): void {
 		const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0); const sx = x0 < x1 ? 1 : -1; const sy = y0 < y1 ? 1 : -1; let err = dx - dy;
 		if (dx > dy) {
 			while (true) {
-				submitSprite({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { submitSprite({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); break; } if (e2 < dx) { err += dx; y0 += sy; }
+				submitSpriteDirect(imgid, x0, y0, z, thickness, thickness, color, layer); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { submitSpriteDirect(imgid, x0, y0, z, thickness, thickness, color, layer); break; } if (e2 < dx) { err += dx; y0 += sy; }
 			}
 		} else {
 			while (true) {
-				submitSprite({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { submitSprite({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); break; } if (e2 < dx) { err += dx; y0 += sy; }
+				submitSpriteDirect(imgid, x0, y0, z, thickness, thickness, color, layer); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { submitSpriteDirect(imgid, x0, y0, z, thickness, thickness, color, layer); break; } if (e2 < dx) { err += dx; y0 += sy; }
 			}
 		}
 	}
@@ -506,6 +566,7 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 	};
 	const packedColor = packColor8888(color);
 	const packedBackgroundColor = backgroundColor ? packColor8888(backgroundColor) : 0;
+	const layerId = renderLayerToOamLayer(layer);
 	const backgroundAsset = (() => {
 		if (!backgroundColor) {
 			return null;
@@ -547,25 +608,24 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 				stepY = height;
 			}
 			if (backgroundAsset) {
-				const pat: PatEntry = {
-					atlasId: backgroundAsset.imgMeta.atlasid,
-					flags: PAT_FLAG_ENABLED,
-					assetHandle: backgroundAsset.handle,
-					layer: renderLayerToOamLayer(layer),
-					x: ~~x,
-					y: ~~y,
-					z: ~~z,
-					glyphW: stepX,
-					glyphH: font.lineHeight,
-					bgW: 0,
-					bgH: 0,
-					u0: backgroundAsset.u0,
-					v0: backgroundAsset.v0,
-					u1: backgroundAsset.u1,
-					v1: backgroundAsset.v1,
-					fgColor: packedBackgroundColor,
-					bgColor: 0,
-				};
+				const pat = glyphPatSubmitScratch;
+				pat.atlasId = backgroundAsset.imgMeta.atlasid;
+				pat.flags = PAT_FLAG_ENABLED;
+				pat.assetHandle = backgroundAsset.handle;
+				pat.layer = layerId;
+				pat.x = ~~x;
+				pat.y = ~~y;
+				pat.z = ~~z;
+				pat.glyphW = stepX;
+				pat.glyphH = font.lineHeight;
+				pat.bgW = 0;
+				pat.bgH = 0;
+				pat.u0 = backgroundAsset.u0;
+				pat.v0 = backgroundAsset.v0;
+				pat.u1 = backgroundAsset.u1;
+				pat.v1 = backgroundAsset.v1;
+				pat.fgColor = packedBackgroundColor;
+				pat.bgColor = 0;
 				runtime.vdp.submitPatEntry(pat);
 			}
 			const handle = memory.resolveAssetHandle(glyph.imgid);
@@ -584,25 +644,24 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 			const v0 = entry.regionY / baseEntry.regionH;
 			const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
 			const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
-			const pat: PatEntry = {
-				atlasId: imgMeta.atlasid,
-				flags: PAT_FLAG_ENABLED,
-				assetHandle: handle,
-				layer: renderLayerToOamLayer(layer),
-				x: ~~x,
-				y: ~~y,
-				z: ~~z,
-				glyphW: glyph.width,
-				glyphH: glyph.height,
-				bgW: 0,
-				bgH: 0,
-				u0,
-				v0,
-				u1,
-				v1,
-				fgColor: packedColor,
-				bgColor: 0,
-			};
+			const pat = glyphPatSubmitScratch;
+			pat.atlasId = imgMeta.atlasid;
+			pat.flags = PAT_FLAG_ENABLED;
+			pat.assetHandle = handle;
+			pat.layer = layerId;
+			pat.x = ~~x;
+			pat.y = ~~y;
+			pat.z = ~~z;
+			pat.glyphW = glyph.width;
+			pat.glyphH = glyph.height;
+			pat.bgW = 0;
+			pat.bgH = 0;
+			pat.u0 = u0;
+			pat.v0 = v0;
+			pat.u1 = u1;
+			pat.v1 = v1;
+			pat.fgColor = packedColor;
+			pat.bgColor = 0;
 			runtime.vdp.submitPatEntry(pat);
 			x += stepX;
 		}

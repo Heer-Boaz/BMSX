@@ -17,7 +17,6 @@ import {
 } from '../backend/webgl/webgl.constants';
 import { ENGINE_ATLAS_INDEX, ENGINE_ATLAS_TEXTURE_KEY } from 'bmsx/rompack/rompack';
 import { $ } from '../../core/engine_core';
-import { Runtime } from '../../emulator/runtime';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 import type { LightingFrameState } from '../lighting/lightingsystem';
@@ -271,6 +270,8 @@ function buildSpritePassState(registry: RenderPassLibrary, backend: GPUBackend, 
 		height,
 		baseWidth,
 		baseHeight,
+		primaryAtlasIdInSlot: gv.primaryAtlasIdInSlot,
+		secondaryAtlasIdInSlot: gv.secondaryAtlasIdInSlot,
 		atlasPrimaryTex: atlasTexture,
 		atlasSecondaryTex: secondaryAtlasTexture,
 		atlasEngineTex: engineAtlasTexture,
@@ -345,9 +346,8 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		context.activeTexUnit = TEXTURE_UNIT_ATLAS_ENGINE;
 		context.bind2DTex(state.atlasEngineTex);
 	}
-	const atlasMapping = Runtime.instance.vdp.getAtlasSlotMapping();
-	const primaryAtlasIdInSlot = atlasMapping.primary;
-	const secondaryAtlasIdInSlot = atlasMapping.secondary;
+	const primaryAtlasIdInSlot = state.primaryAtlasIdInSlot;
+	const secondaryAtlasIdInSlot = state.secondaryAtlasIdInSlot;
 	const { instanceF32, instanceU16, instanceU8, instanceS8 } = spriteShaderData;
 	// Ambient sprites are disabled for now; when we have a more efficient path, reuse the block below.
 	// const ambientFrameIntensity = state.ambientIntensity;

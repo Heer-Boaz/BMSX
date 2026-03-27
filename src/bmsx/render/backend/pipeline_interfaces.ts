@@ -314,6 +314,8 @@ export interface SpritesPipelineState {
 	height: number;
 	baseWidth: number;
 	baseHeight: number;
+	primaryAtlasIdInSlot: number | null;
+	secondaryAtlasIdInSlot: number | null;
 	atlasPrimaryTex?: TextureHandle;
 	atlasSecondaryTex?: TextureHandle;
 	atlasEngineTex?: TextureHandle;

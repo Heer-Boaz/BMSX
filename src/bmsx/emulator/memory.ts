@@ -27,6 +27,7 @@ import {
 } from './memory_map';
 import { IO_SLOT_COUNT, IO_VDP_RD_DATA, IO_VDP_RD_STATUS } from './io';
 import { hashAssetId, tokenKey } from '../rompack/asset_tokens';
+import { ScratchBatch } from '../utils/scratchbatch';
 
 export type AssetType = 'image' | 'audio';
 
@@ -117,7 +118,9 @@ export class Memory {
 	private assetIndexById = new Map<string, number>();
 	private assetIndexByToken = new Map<string, number>();
 	private assetOwnerPages: Int32Array;
-	private assetDirtyOwners = new Set<number>();
+	private readonly assetDirtyEntries = new ScratchBatch<AssetEntry>();
+	private readonly assetDirtyDrainEntries = new ScratchBatch<AssetEntry>();
+	private assetDirtyFlags = new Uint8Array(0);
 	private assetDataCursor = ASSET_DATA_BASE;
 	private assetTableFinalized = false;
 	private engineAssetEntryCount = 0;
@@ -182,7 +185,7 @@ export class Memory {
 		this.assetEntries = [];
 		this.assetIndexById.clear();
 		this.assetIndexByToken.clear();
-		this.assetDirtyOwners.clear();
+		this.clearDirtyAssetTracking();
 		this.assetTableFinalized = false;
 		this.engineAssetEntryCount = 0;
 		this.engineAssetDataEnd = ASSET_DATA_BASE;
@@ -215,7 +218,7 @@ export class Memory {
 		this.assetEntries.length = this.engineAssetEntryCount;
 		this.assetIndexById.clear();
 		this.assetIndexByToken.clear();
-		this.assetDirtyOwners.clear();
+		this.clearDirtyAssetTracking();
 		this.assetTableFinalized = false;
 		this.assetOwnerPages.fill(-1);
 		for (let index = 0; index < this.assetEntries.length; index += 1) {
@@ -513,27 +516,28 @@ export class Memory {
 		return this.ram.subarray(offset, offset + entry.baseSize);
 	}
 
-	public consumeDirtyAssets(): AssetEntry[] {
-		if (this.assetDirtyOwners.size === 0) {
-			return [];
+	public consumeDirtyAssets(): ScratchBatch<AssetEntry> {
+		const drained = this.assetDirtyDrainEntries;
+		drained.clear();
+		for (let index = 0; index < this.assetDirtyEntries.length; index += 1) {
+			const entry = this.assetDirtyEntries.get(index);
+			this.assetDirtyFlags[entry.ownerIndex] = 0;
+			drained.push(entry);
 		}
-		const entries: AssetEntry[] = [];
-		for (const ownerIndex of this.assetDirtyOwners) {
-			entries.push(this.assetEntries[ownerIndex]);
-		}
-		this.assetDirtyOwners.clear();
-		return entries;
+		this.assetDirtyEntries.clear();
+		return drained;
 	}
 
 	public markAllAssetsDirty(): void {
 		for (let index = 0; index < this.assetEntries.length; index += 1) {
 			const entry = this.assetEntries[index];
-			if (entry.ownerIndex === index) {
-				if (this.isVramRange(entry.baseAddr, entry.capacity)) {
-					continue;
-				}
-				this.assetDirtyOwners.add(index);
+			if (entry.ownerIndex !== index) {
+				continue;
 			}
+			if (this.isVramRange(entry.baseAddr, entry.capacity)) {
+				continue;
+			}
+			this.markAssetOwnerDirty(index);
 		}
 	}
 
@@ -771,7 +775,7 @@ export class Memory {
 		const entries = reuseEntries ? this.assetEntries : new Array<AssetEntry>(entryCount);
 		this.assetIndexById.clear();
 		this.assetIndexByToken.clear();
-		this.assetDirtyOwners.clear();
+		this.clearDirtyAssetTracking();
 		for (let index = 0; index < entryCount; index += 1) {
 			const entryOffset = entryBaseAddr + index * ASSET_TABLE_ENTRY_SIZE - RAM_BASE;
 			const typeId = this.ramView.getUint32(entryOffset + 0, true);
@@ -866,6 +870,7 @@ export class Memory {
 			this.assetIndexByToken.set(tokenKeyValue, index);
 		}
 		this.assetEntries = entries;
+		this.ensureAssetDirtyFlagCapacity(entryCount);
 
 		const ownerByBaseAddr = new Map<number, number>();
 		for (let index = 0; index < entryCount; index += 1) {
@@ -1108,6 +1113,8 @@ export class Memory {
 		}
 		const index = this.assetEntries.length;
 		this.assetEntries.push(entry);
+		this.ensureAssetDirtyFlagCapacity(this.assetEntries.length);
+		this.assetDirtyFlags[index] = 0;
 		this.assetIndexById.set(entry.id, index);
 		this.assetIndexByToken.set(key, index);
 		return index;
@@ -1140,6 +1147,29 @@ export class Memory {
 		}
 	}
 
+	private clearDirtyAssetTracking(): void {
+		this.assetDirtyEntries.clear();
+		this.assetDirtyDrainEntries.clear();
+		this.assetDirtyFlags.fill(0);
+	}
+
+	private ensureAssetDirtyFlagCapacity(length: number): void {
+		if (this.assetDirtyFlags.length >= length) {
+			return;
+		}
+		const grown = new Uint8Array(Math.max(length, this.assetDirtyFlags.length * 2, 8));
+		grown.set(this.assetDirtyFlags);
+		this.assetDirtyFlags = grown;
+	}
+
+	private markAssetOwnerDirty(ownerIndex: number): void {
+		if (this.assetDirtyFlags[ownerIndex] !== 0) {
+			return;
+		}
+		this.assetDirtyFlags[ownerIndex] = 1;
+		this.assetDirtyEntries.push(this.assetEntries[ownerIndex]);
+	}
+
 	private mapAssetPages(ownerIndex: number, addr: number, size: number): void {
 		const startPage = (addr - ASSET_DATA_BASE) >> ASSET_PAGE_SHIFT;
 		const endPage = (addr + size - ASSET_DATA_BASE - 1) >> ASSET_PAGE_SHIFT;
@@ -1162,7 +1192,7 @@ export class Memory {
 		for (let page = startPage; page <= endPage; page += 1) {
 			const owner = this.assetOwnerPages[page];
 			if (owner >= 0) {
-				this.assetDirtyOwners.add(owner);
+				this.markAssetOwnerDirty(owner);
 			}
 		}
 	}

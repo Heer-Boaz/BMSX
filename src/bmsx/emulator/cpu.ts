@@ -527,6 +527,18 @@ export class Table {
 		this.metatable = state.metatable;
 	}
 
+	public walkTrackedValues(visitor: (value: Value) => void): void {
+		visitor(this.metatable);
+		for (let index = 0; index < this.array.length; index += 1) {
+			visitor(this.array[index]);
+		}
+		for (let index = 0; index < this.hash.length; index += 1) {
+			const node = this.hash[index];
+			visitor(node.key);
+			visitor(node.value);
+		}
+	}
+
 	public getTrackedHeapBytes(): number {
 		return 32
 			+ (this.array.length * 8)
@@ -2174,16 +2186,7 @@ export class CPU {
 			}
 			seen.add(value);
 			total += value.getTrackedHeapBytes();
-			const state = value.captureRuntimeState();
-			walkValue(state.metatable);
-			for (let index = 0; index < state.array.length; index += 1) {
-				walkValue(state.array[index]);
-			}
-			for (let index = 0; index < state.hash.length; index += 1) {
-				const node = state.hash[index];
-				walkValue(node.key);
-				walkValue(node.value);
-			}
+			value.walkTrackedValues(walkValue);
 		};
 
 		const walkValue = (value: Value): void => {

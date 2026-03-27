@@ -2,6 +2,7 @@
 #include "api.h"
 #include "io.h"
 #include "program_loader.h"
+#include "resource_usage_detector.h"
 #include "../core/engine_core.h"
 #include "../rompack/rompack.h"
 #include "../input/input.h"
@@ -158,6 +159,27 @@ Runtime::Runtime(const RuntimeOptions& options)
 
 	// Create API instance
 	m_api = std::make_unique<Api>(*this);
+	m_resourceUsageDetector = std::make_unique<ResourceUsageDetector>(
+		m_cpu,
+		m_memory,
+		m_stringHandles,
+		m_vdp,
+		[this](std::vector<Value>& extraRoots) {
+			extraRoots.reserve(m_moduleCache.size() + 2 + PLAYERS_MAX);
+			for (const auto& entry : m_moduleCache) {
+				extraRoots.push_back(entry.second);
+			}
+			if (!isNil(m_pairsIterator)) {
+				extraRoots.push_back(m_pairsIterator);
+			}
+			if (!isNil(m_ipairsIterator)) {
+				extraRoots.push_back(m_ipairsIterator);
+			}
+			if (m_api) {
+				m_api->appendRootValues(extraRoots);
+			}
+		}
+	);
 
 	// Setup builtin functions
 	setupBuiltins();
@@ -220,6 +242,7 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_vdp.initializeRegisters();
 	m_memory.writeValue(IO_VDP_STATUS, valueNumber(0.0));
 	resetVblankState();
+	m_resourceUsageDetector->reset();
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	setupBuiltins();
 	m_api->registerAllFunctions();
@@ -395,6 +418,7 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	m_lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 	m_lastTickCompleted = true;
 	m_lastTickSequence += 1;
+	m_resourceUsageDetector->refresh(m_lastTickSequence, isResourceUsageGizmoVisible());
 }
 
 void Runtime::reconcileCycleBudgetAfterSignal(FrameState& frameState) {
@@ -803,6 +827,7 @@ void Runtime::resetHardwareState() {
 	m_imgDecController.reset();
 	resetVblankState();
 	resetRenderBuffers();
+	m_resourceUsageDetector->reset();
 }
 
 void Runtime::resetRenderBuffers() {
@@ -853,28 +878,24 @@ bool Runtime::hasActiveTick() const {
 }
 
 uint32_t Runtime::trackedRamUsedBytes() const {
-	std::vector<Value> extraRoots;
-	extraRoots.reserve(m_moduleCache.size() + 2 + PLAYERS_MAX);
-	for (const auto& entry : m_moduleCache) {
-		extraRoots.push_back(entry.second);
+	return m_resourceUsageDetector->ramUsedBytes();
+}
+
+uint32_t Runtime::trackedVramUsedBytes() const {
+	return m_resourceUsageDetector->vramUsedBytes();
+}
+
+bool Runtime::isResourceUsageGizmoVisible() {
+	auto* gameTable = asTable(m_cpu.globals->get(canonicalizeIdentifier("game")));
+	auto* viewTable = asTable(gameTable->get(canonicalizeIdentifier("view")));
+	const Value value = viewTable->get(canonicalizeIdentifier("show_resource_usage_gizmo"));
+	if (isNil(value)) {
+		return false;
 	}
-	if (!isNil(m_pairsIterator)) {
-		extraRoots.push_back(m_pairsIterator);
+	if (!valueIsBool(value)) {
+		throw BMSX_RUNTIME_ERROR("game.view.show_resource_usage_gizmo must be boolean.");
 	}
-	if (!isNil(m_ipairsIterator)) {
-		extraRoots.push_back(m_ipairsIterator);
-	}
-	if (m_api) {
-		m_api->appendRootValues(extraRoots);
-	}
-	return static_cast<uint32_t>(
-		IO_REGION_SIZE
-		+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
-		+ m_stringHandles.usedHeapBytes()
-		+ m_memory.usedAssetTableBytes()
-		+ m_memory.usedAssetDataBytes()
-		+ m_cpu.trackedHeapBytes(extraRoots)
-	);
+	return valueToBool(value);
 }
 
 bool Runtime::consumeLastTickCompletion(i64& outSequence, int& outRemaining) {

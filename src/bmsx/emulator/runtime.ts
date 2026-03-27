@@ -60,6 +60,7 @@ import { registerAudioAssets as registerAudioAssetsFromSource } from './runtime_
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
 import type { ParsedLuaChunk } from './ide/lua/lua_parse';
 import { RenderSubmission } from '../render/backend/pipeline_interfaces';
+import { ResourceUsageDetector } from './resource_usage_detector';
 import {
 	IO_DMA_CTRL,
 	IO_DMA_DST,
@@ -326,27 +327,15 @@ export class Runtime {
 	}
 
 	public getTrackedRamUsedBytes(): number {
-		const extraRoots = Array.from(this.moduleCache.values());
-		if (this.pairsIterator !== null) {
-			extraRoots.push(this.pairsIterator);
-		}
-		if (this.ipairsIterator !== null) {
-			extraRoots.push(this.ipairsIterator);
-		}
-		return IO_REGION_SIZE
-			+ (STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE)
-			+ this.stringHandles.usedHeapBytes()
-			+ this.memory.getUsedAssetTableBytes()
-			+ this.memory.getUsedAssetDataBytes()
-			+ this.cpu.getTrackedHeapBytes(extraRoots);
+		return this.resourceUsageDetector.getRamUsedBytes();
 	}
 
 	public getTrackedVramUsedBytes(): number {
-		return this.vdp.getTrackedUsedVramBytes();
+		return this.resourceUsageDetector.getVramUsedBytes();
 	}
 
 	public getTrackedVramTotalBytes(): number {
-		return this.vdp.getTrackedTotalVramBytes();
+		return this.resourceUsageDetector.getVramTotalBytes();
 	}
 
 	public didLastTickComplete(): boolean {
@@ -699,6 +688,7 @@ export class Runtime {
 		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 		this.lastTickCompleted = true;
 		this.lastTickSequence += 1;
+		this.resourceUsageDetector.refresh(this.lastTickSequence, $.view.show_resource_usage_gizmo);
 		this.lastCompletedVblankSequence = vblankSequence;
 		const debugTickRate = Boolean((globalThis as any).__bmsx_debug_tickrate);
 		if (debugTickRate) {
@@ -861,6 +851,7 @@ export class Runtime {
 	private readonly imageMetaByHandle = new Map<number, ImgMeta>();
 	private readonly audioMetaByHandle = new Map<number, AudioMeta>();
 	public readonly vdp: VDP;
+	private readonly resourceUsageDetector: ResourceUsageDetector;
 	private editorViewOptionsSnapshot: EditorViewOptionsSnapshot = null;
 	public readonly dmaController: DmaController;
 	public readonly imgDecController: ImgDecController;
@@ -1325,6 +1316,23 @@ export class Runtime {
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, (mask) => this.raiseIrqFlags(mask));
 		this.vdp.attachImgDecController(this.imgDecController);
 		this.cpu = new CPU(this.memory, this.runtimeStringPool);
+		this.resourceUsageDetector = new ResourceUsageDetector(
+			this.cpu,
+			this.memory,
+			this.stringHandles,
+			this.vdp,
+			(extraRoots) => {
+				for (const value of this.moduleCache.values()) {
+					extraRoots.push(value);
+				}
+				if (this.pairsIterator !== null) {
+					extraRoots.push(this.pairsIterator);
+				}
+				if (this.ipairsIterator !== null) {
+					extraRoots.push(this.ipairsIterator);
+				}
+			},
+		);
 		this.setCpuHz(options.cpuHz);
 		this.randomSeedValue = $.platform.clock.now();
 
@@ -1414,6 +1422,7 @@ export class Runtime {
 			}
 			api.cartdata($.lua_sources.namespace);
 			runtimeLuaPipeline.bootActiveProgram(this);
+			this.resourceUsageDetector.reset();
 			this.hasCompletedInitialBoot = true;
 		}
 		catch (error) {
@@ -1457,6 +1466,7 @@ export class Runtime {
 			await this.prepareBootRomStartupState({ resetRuntime: true, refreshAudio: true });
 			api.cartdata($.lua_sources.namespace);
 			runtimeLuaPipeline.bootActiveProgram(this);
+			this.resourceUsageDetector.reset();
 		}
 		finally {
 			this.luaGate.end(gateToken);

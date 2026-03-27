@@ -25,6 +25,7 @@ namespace bmsx {
 class Api;
 struct ProgramAsset;
 class RuntimeAssets;
+class ResourceUsageDetector;
 
 constexpr int DEFAULT_CYCLE_BUDGET = 1'000'000;
 
@@ -285,7 +286,7 @@ public:
 	int lastTickBudgetGranted() const { return m_lastTickSequence == 0 ? m_cycleBudgetPerFrame : m_lastTickCpuBudgetGranted; }
 	int cpuUsedCyclesLastTick() const { return m_lastTickSequence == 0 ? 0 : m_lastTickCpuUsedCycles; }
 	uint32_t trackedRamUsedBytes() const;
-	uint32_t trackedVramUsedBytes() const { return m_vdp.trackedUsedVramBytes(); }
+	uint32_t trackedVramUsedBytes() const;
 	uint32_t trackedVramTotalBytes() const { return m_vdp.trackedTotalVramBytes(); }
 	bool didLastTickComplete() const { return m_lastTickCompleted; }
 	bool consumeLastTickCompletion(i64& outSequence, int& outRemaining);
@@ -343,6 +344,7 @@ private:
 	void logDebugState() const;
 	void logLuaCallStack() const;
 	void refreshMemoryMapGlobals();
+	bool isResourceUsageGizmoVisible();
 	void setCartBootReadyFlag(bool value);
 	void prepareCartBootIfNeeded();
 	bool pollSystemBootRequest();
@@ -360,6 +362,7 @@ private:
 	VDP m_vdp;
 	StringHandleTable m_stringHandles;
 	CPU m_cpu;
+	std::unique_ptr<ResourceUsageDetector> m_resourceUsageDetector;
 	DmaController m_dmaController;
 	ImgDecController m_imgDecController;
 	Program* m_program = nullptr;

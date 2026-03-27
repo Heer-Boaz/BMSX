@@ -61,6 +61,28 @@ export class Api {
 	private readonly cameraEyeScratch: vec3arr = [0, 0, 0];
 	private readonly lightColorScratch: vec3arr = [0, 0, 0];
 	private readonly lightVecScratch: vec3arr = [0, 0, 0];
+	private readonly bgMapHeaderScratch: BgMapHeader = {
+		flags: BGMAP_LAYER_FLAG_ENABLED,
+		layer: 0,
+		cols: 0,
+		rows: 0,
+		tileW: 0,
+		tileH: 0,
+		originX: 0,
+		originY: 0,
+		scrollX: 0,
+		scrollY: 0,
+		z: 0,
+	};
+	private readonly bgMapTileScratch: BgMapEntry = {
+		atlasId: 0,
+		flags: BGMAP_TILE_FLAG_ENABLED,
+		assetHandle: 0,
+		u0: 0,
+		v0: 0,
+		u1: 0,
+		v1: 0,
+	};
 	private _runtime: Runtime;
 
 	constructor(options: ApiOptions) {
@@ -307,19 +329,18 @@ export class Api {
 	}
 
 	public bgmap_begin(layer: number, cols: number, rows: number, tile_w: number, tile_h: number, origin_x: number, origin_y: number, z: number, options?: { scroll_x?: number; scroll_y?: number; layer?: RenderLayer }): void {
-		const header: BgMapHeader = {
-			flags: BGMAP_LAYER_FLAG_ENABLED,
-			layer: renderLayerToOamLayer(options?.layer),
-			cols,
-			rows,
-			tileW: tile_w,
-			tileH: tile_h,
-			originX: origin_x,
-			originY: origin_y,
-			scrollX: options?.scroll_x ?? 0,
-			scrollY: options?.scroll_y ?? 0,
-			z,
-		};
+		const header = this.bgMapHeaderScratch;
+		header.flags = BGMAP_LAYER_FLAG_ENABLED;
+		header.layer = renderLayerToOamLayer(options?.layer);
+		header.cols = cols;
+		header.rows = rows;
+		header.tileW = tile_w;
+		header.tileH = tile_h;
+		header.originX = origin_x;
+		header.originY = origin_y;
+		header.scrollX = options?.scroll_x ?? 0;
+		header.scrollY = options?.scroll_y ?? 0;
+		header.z = z;
 		Runtime.instance.vdp.beginBgMapLayerWrite(layer, header);
 	}
 
@@ -335,15 +356,14 @@ export class Api {
 		const baseEntry = (entry.flags & ASSET_FLAG_VIEW) !== 0
 			? memory.getAssetEntryByHandle(entry.ownerIndex)
 			: entry;
-		const tile: BgMapEntry = {
-			atlasId: imgMeta.atlasid,
-			flags: BGMAP_TILE_FLAG_ENABLED,
-			assetHandle: handle,
-			u0: entry.regionX / baseEntry.regionW,
-			v0: entry.regionY / baseEntry.regionH,
-			u1: (entry.regionX + entry.regionW) / baseEntry.regionW,
-			v1: (entry.regionY + entry.regionH) / baseEntry.regionH,
-		};
+		const tile = this.bgMapTileScratch;
+		tile.atlasId = imgMeta.atlasid;
+		tile.flags = BGMAP_TILE_FLAG_ENABLED;
+		tile.assetHandle = handle;
+		tile.u0 = entry.regionX / baseEntry.regionW;
+		tile.v0 = entry.regionY / baseEntry.regionH;
+		tile.u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
+		tile.v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
 		runtime.vdp.submitBgMapTile(layer, col, row, tile);
 	}
 
