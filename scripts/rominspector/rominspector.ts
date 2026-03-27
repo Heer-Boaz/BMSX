@@ -19,8 +19,9 @@ import {
 	PROGRAM_ASSET_ID,
 	PROGRAM_SYMBOLS_ASSET_ID,
 } from '../../src/bmsx/emulator/program_asset';
+import { decodeAudioPreviewToPcm } from './audio_preview';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
-import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
+import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, renderBufferBar, renderSummaryBar } from './asciiart';
 
 const PER_PIXEL_RENDERING_THRESHOLD = 64; // sprites ≤64×64 get per-pixel rendering
 
@@ -196,10 +197,6 @@ function sortAssetsById(assets: RomAsset[]): RomAsset[] {
 
 async function nodeImageLoader(buffer: Uint8Array) {
 	return PNG.sync.read(Buffer.from(buffer.slice(0)));
-}
-
-async function loadAudio(buffer: Uint8Array) {
-	return buffer.slice(0);
 }
 
 async function loadDataFromBuffer(buf: Uint8Array): Promise<any> {
@@ -752,6 +749,32 @@ async function main() {
 
 		const getModalWidth = () => (modal?.width ?? 80) as number;
 
+		const tabbarBox = blessed.box({
+			parent: modal,
+			top: 0,
+			left: 0,
+			width: '100%-2',
+			height: 6,
+			tags: true,
+			style: { fg: 'white', bg: 'black' },
+			content: '',
+			scrollable: false,
+		});
+
+		const contentBox = blessed.box({
+			parent: modal,
+			top: 6,
+			left: 0,
+			width: '100%-2',
+			height: '100%-8',
+			tags: true,
+			scrollable: true,
+			alwaysScroll: true,
+			keys: true,
+			mouse: true,
+			scrollbar: { ch: '|', track: { bg: 'grey' }, style: { bg: 'yellow' } },
+		});
+
 		// Show image/audio specific metadata
 		switch (selected.type) {
 			case 'image':
@@ -853,28 +876,28 @@ async function main() {
 					metadataLines.push(`Audio type: SFX`);
 				}
 				metadataLines.push(`Priority: ${audiometa.priority ?? 'Unset!'}`);
-				// ------ ASCII-preview toevoegen ------
 				try {
-					asciiArt = '[No audio buffer available]';
-					// @ts-ignore
-					if (!selected.buffer || !(selected.buffer instanceof Uint8Array) || selected.buffer?.byteLength === 0) {
-						// Load the audio buffer from the ROM pack
+					if (!selected.buffer || !(selected.buffer instanceof Uint8Array) || selected.buffer.byteLength === 0) {
 						// @ts-ignore
-						(selected.buffer as Uint8Array) = await loadAudio(rombin.slice(selected.start, selected.end));
+						selected.buffer = rombin.slice(selected.start, selected.end);
 					}
-					// @ts-ignore
-					const info = parseWav(selected.buffer as Uint8Array);
-					if (!info || !info.dataOff || !info.dataLen || !info.bits || !info.channels) {
-						asciiArt = '[Invalid WAV data]';
-						break;
-					}
-					else asciiArt = `${info.dataOff} ${info.dataLen} ${info.bits} ${info.channels}`;
-					const pcm = new Uint8Array(selected.buffer).subarray(info.dataOff, info.dataOff + info.dataLen);
-
-					const scope = asciiWaveBraille(
-						pcm, info.bits, getModalWidth() - 10, undefined, info.channels,
+					const preview = decodeAudioPreviewToPcm(selected.buffer as Uint8Array);
+					const pcm = new Uint8Array(
+						preview.samples.buffer,
+						preview.samples.byteOffset,
+						preview.samples.byteLength,
 					);
-					asciiArt = scope;
+					metadataLines.push(`Sample rate: ${preview.sampleRate}`);
+					metadataLines.push(`Channels: ${preview.channels}`);
+					metadataLines.push(`Frames: ${preview.frames}`);
+					metadataLines.push(`Preview format: ${preview.format.toUpperCase()}`);
+					asciiArt = asciiWaveBraille(
+						pcm,
+						16,
+						Math.max(1, Math.floor(contentBox.width as number)),
+						Math.max(1, Math.floor(contentBox.height as number)),
+						preview.channels,
+					);
 				} catch (e) {
 					asciiArt = `(Preview failed: ${e}\n${e.stack})`;
 				}
@@ -1045,33 +1068,6 @@ async function main() {
 		let currentTab = tabIndex || 0; // Default to 0 if not provided
 		const tabLabels = ['Preview', 'Details', 'Hex', '×']; // Voeg sluit-tab toe
 
-		// Maak een aparte box voor de tabbar
-		const tabbarBox = blessed.box({
-			parent: modal,
-			top: 0,
-			left: 0,
-			width: '100%-2',
-			height: 6,
-			tags: true,
-			style: { fg: 'white', bg: 'black' },
-			content: '', // wordt gezet door renderTabBar()
-			scrollable: false
-		});
-
-		const contentBox = blessed.box({
-			parent: modal,
-			top: 6,
-			left: 0,
-			width: '100%-2',
-			height: '100%-8',
-			tags: true,
-			scrollable: true,
-			alwaysScroll: true,
-			keys: true,
-			mouse: true,
-			scrollbar: { ch: '|', track: { bg: 'grey' }, style: { bg: 'yellow' } }
-		});
-
 		// Voeg deze variabele toe boven renderTabBar:
 		let tabBoxes: blessed.Widgets.BoxElement[] = [];
 
@@ -1134,7 +1130,7 @@ async function main() {
 		function renderModalContent(asset: RomAsset = selected) {
 			let content = '';
 			if (currentTab === 0) {
-				content += `${asciiArt} \n`;
+				content += asciiArt;
 			} else if (currentTab === 1) {
 				content += `${metadataLines.join('\n')}`;
 				if (disassembly) {

@@ -641,6 +641,7 @@ export function asciiWaveBraille(
 
 	const BRAILLE = 0x2800;
 	const DOT = [[0, 1, 2, 6], [3, 4, 5, 7]];         // (dx,dy)→bit
+	const cellCols = Math.max(1, Math.floor(cols) - 1);
 
 	/* ---------- sample → float helper ---------- */
 	const BPS = bits >> 3;
@@ -651,17 +652,14 @@ export function asciiWaveBraille(
 		return (pcm[i] | pcm[i + 1] << 8 | pcm[i + 2] << 16 | pcm[i + 3] << 24) / 2147483648;
 	};
 
-	/* ---------- 1. peaks met zwevende cursor + oversampling ---------- */
+	/* ---------- 1. peaks over gelijk verdeelde tijdvakken ---------- */
 	const S = pcm.length / BPS / channels;      // total #samples
-	const step = S / (cols * 2);                      // fractie-stap
-	const over = Math.ceil(step);               // oversample-margin
+	const step = S / (cellCols * 2);
 	const peaks: [number, number][] = [];
 
-	let pos = 0;
-	for (let c = 0; c < cols * 2; ++c) {
-		const s0 = pos | 0;
-		pos += step;
-		const s1 = Math.min(S, (pos | 0) + over); // extra “hold” samples
+	for (let c = 0; c < cellCols * 2; ++c) {
+		const s0 = Math.floor(c * step);
+		const s1 = Math.min(S, Math.max(s0 + 1, Math.floor((c + 1) * step)));
 
 		let mn = 1, mx = -1;
 		for (let s = s0; s < s1; ++s) {
@@ -693,11 +691,10 @@ export function asciiWaveBraille(
 	const scale = ((rows * 4 - 1) / 2) * zoom / (gMax || 1);
 
 	/* ---------- 3. braille-grid ---------- */
-	const cellCols = Math.max(1, Math.ceil(cols));
 	const grid: number[][] = Array.from({ length: rows }, () => Array(cellCols).fill(0));
 	const cellPeaks: Array<[number, number]> = Array.from({ length: cellCols }, () => [1, -1] as [number, number]);
 
-	for (let x = 0; x < cols * 2; ++x) {
+	for (let x = 0; x < cellCols * 2; ++x) {
 		const [mn, mx] = peaks[x];
 		const cellX = x >> 1;
 		if (mn < cellPeaks[cellX][0]) cellPeaks[cellX][0] = mn;
