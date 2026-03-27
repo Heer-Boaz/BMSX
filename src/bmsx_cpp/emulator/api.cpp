@@ -1469,6 +1469,10 @@ void Api::put_rectfillcolor(int x0, int y0, int x1, int y1, int z, const Color& 
 }
 
 void Api::put_sprite(const ImgRenderSubmission& submission) {
+	if (!m_frameCaptureActive) {
+		EngineCore::instance().view()->renderer.submit.sprite(submission);
+		return;
+	}
 	RenderSubmission op{};
 	op.type = RenderSubmissionType::Img;
 	op.img = submission;
@@ -1539,6 +1543,10 @@ void Api::put_mesh(const MeshRenderSubmission& submission) {
 }
 
 void Api::put_particle(const ParticleRenderSubmission& submission) {
+	if (!m_frameCaptureActive) {
+		EngineCore::instance().view()->renderer.submit.particle(submission);
+		return;
+	}
 	RenderSubmission op{};
 	op.type = RenderSubmissionType::Particle;
 	op.particle = submission;

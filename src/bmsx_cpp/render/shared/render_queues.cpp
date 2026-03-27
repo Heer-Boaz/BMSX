@@ -39,16 +39,92 @@ f32 _skyExposure = 1.0f;
 // Default Z coordinate (mirrors TypeScript DEFAULT_ZCOORD)
 static constexpr f32 DEFAULT_ZCOORD = 0.0f;
 
-static const Memory::AssetEntry& resolveImageBaseEntry(Memory& memory, const Memory::AssetEntry& entry, const std::string& context) {
+struct ResolvedSpriteAsset {
+	u32 handle = 0u;
+	const Memory::AssetEntry* entry = nullptr;
+	const Memory::AssetEntry* baseEntry = nullptr;
+	i32 atlasId = 0;
+};
+
+static const Memory::AssetEntry& resolveImageBaseEntry(Memory& memory, const Memory::AssetEntry& entry, const char* context) {
 	if ((entry.flags & ASSET_FLAG_VIEW) == 0u) {
 		return entry;
 	}
 	try {
 		return memory.getAssetEntryByHandle(entry.ownerIndex);
 	} catch (const std::exception& e) {
-		throw BMSX_RUNTIME_ERROR("[" + context + "] View asset '" + entry.id + "' has invalid ownerIndex "
+		throw BMSX_RUNTIME_ERROR("[" + std::string(context) + "] View asset '" + entry.id + "' has invalid ownerIndex "
 			+ std::to_string(entry.ownerIndex) + ": " + e.what());
 	}
+}
+
+static ResolvedSpriteAsset resolveSpriteAsset(Memory& memory, const std::string& imgId, const char* context) {
+	const u32 handle = memory.resolveAssetHandle(imgId);
+	const auto& entry = memory.getAssetEntryByHandle(handle);
+	if (entry.type != Memory::AssetType::Image) {
+		throw BMSX_RUNTIME_ERROR("[" + std::string(context) + "] Asset '" + imgId + "' is not an image.");
+	}
+	const auto* imgAsset = EngineCore::instance().resolveImgAsset(entry.id);
+	if (!imgAsset) {
+		throw BMSX_RUNTIME_ERROR("[" + std::string(context) + "] Missing image metadata for '" + imgId + "'.");
+	}
+	const auto& baseEntry = resolveImageBaseEntry(memory, entry, context);
+	if (entry.regionW == 0 || entry.regionH == 0) {
+		throw BMSX_RUNTIME_ERROR("[" + std::string(context) + "] Image '" + imgId + "' has invalid region size.");
+	}
+	if (baseEntry.regionW == 0 || baseEntry.regionH == 0) {
+		throw BMSX_RUNTIME_ERROR("[" + std::string(context) + "] Atlas backing entry for '" + imgId + "' is missing dimensions.");
+	}
+	return ResolvedSpriteAsset{
+		handle,
+		&entry,
+		&baseEntry,
+		imgAsset->meta.atlasid,
+	};
+}
+
+static void submitResolvedSprite(Runtime& runtime,
+									const ResolvedSpriteAsset& resolved,
+									f32 x,
+									f32 y,
+									f32 z,
+									f32 scaleX,
+									f32 scaleY,
+									const Color& color,
+									const std::optional<RenderLayer>& layer,
+									const FlipOptions& flip,
+									f32 parallaxWeight) {
+	f32 u0 = static_cast<f32>(resolved.entry->regionX) / static_cast<f32>(resolved.baseEntry->regionW);
+	f32 v0 = static_cast<f32>(resolved.entry->regionY) / static_cast<f32>(resolved.baseEntry->regionH);
+	f32 u1 = static_cast<f32>(resolved.entry->regionX + resolved.entry->regionW) / static_cast<f32>(resolved.baseEntry->regionW);
+	f32 v1 = static_cast<f32>(resolved.entry->regionY + resolved.entry->regionH) / static_cast<f32>(resolved.baseEntry->regionH);
+	if (flip.flip_h) {
+		std::swap(u0, u1);
+	}
+	if (flip.flip_v) {
+		std::swap(v0, v1);
+	}
+
+	OamEntry oam;
+	oam.atlasId = resolved.atlasId;
+	oam.flags = OAM_FLAG_ENABLED;
+	oam.assetHandle = resolved.handle;
+	oam.x = static_cast<f32>(static_cast<i32>(x));
+	oam.y = static_cast<f32>(static_cast<i32>(y));
+	oam.z = static_cast<f32>(static_cast<i32>(z));
+	oam.w = static_cast<f32>(resolved.entry->regionW) * scaleX;
+	oam.h = static_cast<f32>(resolved.entry->regionH) * scaleY;
+	oam.u0 = u0;
+	oam.v0 = v0;
+	oam.u1 = u1;
+	oam.v1 = v1;
+	oam.r = color.r;
+	oam.g = color.g;
+	oam.b = color.b;
+	oam.a = color.a;
+	oam.layer = renderLayerToOamLayer(layer);
+	oam.parallaxWeight = oam.layer == OamLayer::World ? parallaxWeight : 0.0f;
+	runtime.vdp().submitOamEntry(oam);
 }
 
 static std::vector<RenderSubmission> s_renderQueuePlaybackBuffer;
@@ -95,58 +171,23 @@ void submitSprite(const ImgRenderSubmission& options) {
 
 	auto& runtime = Runtime::instance();
 	auto& memory = runtime.memory();
-	const u32 handle = memory.resolveAssetHandle(options.imgid);
-	const auto& entry = memory.getAssetEntryByHandle(handle);
-	if (entry.type != Memory::AssetType::Image) {
-		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Asset '" + options.imgid + "' is not an image.");
-	}
-	const auto* imgAsset = EngineCore::instance().resolveImgAsset(entry.id);
-	if (!imgAsset) {
-		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Missing image metadata for '" + options.imgid + "'.");
-	}
-	const ImgMeta& meta = imgAsset->meta;
-	const auto baseEntry = resolveImageBaseEntry(memory, entry, "Sprite Queue");
-	if (entry.regionW == 0 || entry.regionH == 0) {
-		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Image '" + options.imgid + "' has invalid region size.");
-	}
-	if (baseEntry.regionW == 0 || baseEntry.regionH == 0) {
-		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Atlas backing entry for '" + options.imgid + "' is missing dimensions.");
-	}
-
-	f32 u0 = static_cast<f32>(entry.regionX) / static_cast<f32>(baseEntry.regionW);
-	f32 v0 = static_cast<f32>(entry.regionY) / static_cast<f32>(baseEntry.regionH);
-	f32 u1 = static_cast<f32>(entry.regionX + entry.regionW) / static_cast<f32>(baseEntry.regionW);
-	f32 v1 = static_cast<f32>(entry.regionY + entry.regionH) / static_cast<f32>(baseEntry.regionH);
+	const ResolvedSpriteAsset resolved = resolveSpriteAsset(memory, options.imgid, "Sprite Queue");
 	const FlipOptions flip = options.flip.value_or(FlipOptions{});
-	if (flip.flip_h) {
-		std::swap(u0, u1);
-	}
-	if (flip.flip_v) {
-		std::swap(v0, v1);
-	}
-
 	const Vec2 scale = options.scale.value_or(Vec2{1.0f, 1.0f});
 	const Color color = options.colorize.value_or(Color{1.0f, 1.0f, 1.0f, 1.0f});
-	OamEntry oam;
-	oam.atlasId = meta.atlasid;
-	oam.flags = OAM_FLAG_ENABLED;
-	oam.assetHandle = handle;
-	oam.x = static_cast<f32>(static_cast<i32>(options.pos.x));
-	oam.y = static_cast<f32>(static_cast<i32>(options.pos.y));
-	oam.z = static_cast<f32>(static_cast<i32>(options.pos.z));
-	oam.w = static_cast<f32>(entry.regionW) * scale.x;
-	oam.h = static_cast<f32>(entry.regionH) * scale.y;
-	oam.u0 = u0;
-	oam.v0 = v0;
-	oam.u1 = u1;
-	oam.v1 = v1;
-	oam.r = color.r;
-	oam.g = color.g;
-	oam.b = color.b;
-	oam.a = color.a;
-	oam.layer = renderLayerToOamLayer(options.layer);
-	oam.parallaxWeight = oam.layer == OamLayer::World ? options.parallax_weight.value_or(0.0f) : 0.0f;
-	runtime.vdp().submitOamEntry(oam);
+	submitResolvedSprite(
+		runtime,
+		resolved,
+		options.pos.x,
+		options.pos.y,
+		options.pos.z,
+		scale.x,
+		scale.y,
+		color,
+		options.layer,
+		flip,
+		options.parallax_weight.value_or(0.0f)
+	);
 }
 
 void prepareCompletedRenderQueues() {
@@ -288,38 +329,26 @@ void submitRectangle(const RectRenderSubmission& options) {
 	const Color& c = options.color;
 
 	correctAreaStartEnd(x, y, ex, ey);
-
-	ImgRenderSubmission sprite;
-	sprite.imgid = "whitepixel";
-	sprite.pos = {x, y, z};
-	sprite.colorize = c;
-	sprite.layer = options.layer;
+	Runtime& runtime = Runtime::instance();
+	Memory& memory = runtime.memory();
+	const ResolvedSpriteAsset whitepixel = resolveSpriteAsset(memory, "whitepixel", "Rectangle Queue");
+	const FlipOptions noFlip{};
 
 	const i32 width = snapSpanToInt(ex - x);
 	const i32 height = snapSpanToInt(ey - y);
 
 	if (options.kind == RectRenderSubmission::Kind::Fill) {
-		sprite.scale = Vec2{static_cast<f32>(width),
-							static_cast<f32>(height)};
-		submitSprite(sprite);
+		submitResolvedSprite(runtime, whitepixel, x, y, z, static_cast<f32>(width), static_cast<f32>(height), c, options.layer, noFlip, 0.0f);
 		return;
 	}
 
 	const f32 widthF = static_cast<f32>(width);
 	const f32 heightF = static_cast<f32>(height);
 
-	sprite.scale = Vec2{widthF, 1.0f};
-	submitSprite(sprite);
-
-	sprite.pos = {x, ey, z};
-	submitSprite(sprite);
-
-	sprite.pos = {x, y, z};
-	sprite.scale = Vec2{1.0f, heightF};
-	submitSprite(sprite);
-
-	sprite.pos = {ex, y, z};
-	submitSprite(sprite);
+	submitResolvedSprite(runtime, whitepixel, x, y, z, widthF, 1.0f, c, options.layer, noFlip, 0.0f);
+	submitResolvedSprite(runtime, whitepixel, x, ey, z, widthF, 1.0f, c, options.layer, noFlip, 0.0f);
+	submitResolvedSprite(runtime, whitepixel, x, y, z, 1.0f, heightF, c, options.layer, noFlip, 0.0f);
+	submitResolvedSprite(runtime, whitepixel, ex, y, z, 1.0f, heightF, c, options.layer, noFlip, 0.0f);
 }
 
 void submitDrawPolygon(const PolyRenderSubmission& options) {
@@ -330,7 +359,10 @@ void submitDrawPolygon(const PolyRenderSubmission& options) {
 	const Color& color = options.color;
 	const f32 thickness = options.thickness.value_or(1.0f);
 	const std::optional<RenderLayer>& layer = options.layer;
-	const std::string imgid = "whitepixel";
+	Runtime& runtime = Runtime::instance();
+	Memory& memory = runtime.memory();
+	const ResolvedSpriteAsset whitepixel = resolveSpriteAsset(memory, "whitepixel", "Polygon Queue");
+	const FlipOptions noFlip{};
 
 	for (size_t i = 0; i < coords.size(); i += 2) {
 		size_t next = (i + 2) % coords.size();
@@ -346,13 +378,7 @@ void submitDrawPolygon(const PolyRenderSubmission& options) {
 		f32 err = dx - dy;
 
 		while (true) {
-			ImgRenderSubmission pixel;
-			pixel.imgid = imgid;
-			pixel.pos = {x0, y0, z};
-			pixel.scale = {thickness, thickness};
-			pixel.colorize = color;
-			pixel.layer = layer;
-			submitSprite(pixel);
+			submitResolvedSprite(runtime, whitepixel, x0, y0, z, thickness, thickness, color, layer, noFlip, 0.0f);
 
 			if (x0 == x1 && y0 == y1) break;
 
@@ -362,13 +388,7 @@ void submitDrawPolygon(const PolyRenderSubmission& options) {
 				x0 += sx;
 			}
 			if (x0 == x1 && y0 == y1) {
-				ImgRenderSubmission finalPixel;
-				finalPixel.imgid = imgid;
-				finalPixel.pos = {x0, y0, z};
-				finalPixel.scale = {thickness, thickness};
-				finalPixel.colorize = color;
-				finalPixel.layer = layer;
-				submitSprite(finalPixel);
+				submitResolvedSprite(runtime, whitepixel, x0, y0, z, thickness, thickness, color, layer, noFlip, 0.0f);
 				break;
 			}
 			if (e2 < dx) {

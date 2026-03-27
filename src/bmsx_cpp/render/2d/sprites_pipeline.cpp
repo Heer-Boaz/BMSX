@@ -30,6 +30,14 @@ static constexpr f32 DEFAULT_ZCOORD = 0.0f;
 static constexpr f32 ZCOORD_MAX = 10000.0f;
 
 namespace {
+struct Sort2DCapacityHints {
+	size_t world = 0;
+	size_t ui = 0;
+	size_t ide = 0;
+};
+
+Sort2DCapacityHints s_sort2dCapacityHints;
+
 bool compareSorted2DDrawEntries(const Sorted2DDrawEntry& a, const Sorted2DDrawEntry& b) {
 	if (a.entry.z != b.entry.z) {
 		return a.entry.z < b.entry.z;
@@ -57,6 +65,24 @@ const std::vector<Sorted2DDrawEntry>& resolveSorted2DBucket(const Sort2DPipeline
 	default:
 		return sortState.world.entries;
 	}
+}
+
+void reserveSorted2DBuckets(Sort2DPipelineState& sortState) {
+	if (s_sort2dCapacityHints.world > 0) {
+		sortState.world.entries.reserve(s_sort2dCapacityHints.world);
+	}
+	if (s_sort2dCapacityHints.ui > 0) {
+		sortState.ui.entries.reserve(s_sort2dCapacityHints.ui);
+	}
+	if (s_sort2dCapacityHints.ide > 0) {
+		sortState.ide.entries.reserve(s_sort2dCapacityHints.ide);
+	}
+}
+
+void updateSorted2DCapacityHints(const Sort2DPipelineState& sortState) {
+	s_sort2dCapacityHints.world = std::max(s_sort2dCapacityHints.world, sortState.world.entries.size());
+	s_sort2dCapacityHints.ui = std::max(s_sort2dCapacityHints.ui, sortState.ui.entries.size());
+	s_sort2dCapacityHints.ide = std::max(s_sort2dCapacityHints.ide, sortState.ide.entries.size());
 }
 
 void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
@@ -182,18 +208,17 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 Sort2DPipelineState buildSorted2DPipelineState() {
 	const i32 drawCount = Runtime::instance().vdp().begin2dRead();
 	Sort2DPipelineState sortState;
+	reserveSorted2DBuckets(sortState);
 	size_t writeIndex = 0;
 	Runtime::instance().vdp().forEach2dEntry([&](const OamEntry& entry, size_t sourceIndex) {
 		auto& bucket = resolveSorted2DBucket(sortState, entry.layer);
-		bucket.emplace_back();
-		Sorted2DDrawEntry& draw = bucket.back();
-		draw.entry = entry;
-		draw.sourceIndex = static_cast<i32>(sourceIndex);
+		bucket.push_back(Sorted2DDrawEntry{entry, static_cast<i32>(sourceIndex)});
 		writeIndex += 1;
 	});
 	if (writeIndex != static_cast<size_t>(drawCount)) {
 		throw BMSX_RUNTIME_ERROR("[Sort2D] begin2dRead count mismatch.");
 	}
+	updateSorted2DCapacityHints(sortState);
 	if (sortState.world.entries.size() > 1) {
 		std::sort(sortState.world.entries.begin(), sortState.world.entries.end(), compareSorted2DDrawEntries);
 	}
