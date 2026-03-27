@@ -1,0 +1,121 @@
+import type { RomAsset, CartRomHeader } from '../../src/bmsx/rompack/rompack';
+import { disassembleProgram } from '../../src/bmsx/emulator/disassembler';
+import type { Program, ProgramMetadata } from '../../src/bmsx/emulator/cpu';
+import {
+	decodeProgramAsset,
+	decodeProgramSymbolsAsset,
+	inflateProgram,
+	PROGRAM_ASSET_ID,
+	PROGRAM_SYMBOLS_ASSET_ID,
+} from '../../src/bmsx/emulator/program_asset';
+
+export const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
+export const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';
+
+const ASSET_ID_COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+
+export function formatNumberAsHex(n: number, width?: number): string {
+	const hex = n.toString(16).toUpperCase();
+	const padded = width === undefined ? hex : hex.padStart(width, '0');
+	return `${padded}h`;
+}
+
+export function formatByteSize(size: number): string {
+	const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+	let i = 0;
+	let n = size;
+	while (n >= 1024 && i < units.length - 1) {
+		n /= 1024;
+		i++;
+	}
+	return i === 0 ? `${size} ${units[0]}` : `${n.toFixed(2)} ${units[i]}`;
+}
+
+export function buildManifestAsset(header: CartRomHeader): RomAsset {
+	const start = header.manifestOffset;
+	const end = header.manifestOffset + header.manifestLength;
+	return {
+		resid: ROM_MANIFEST_ASSET_ID,
+		type: 'data',
+		source_path: ROM_MANIFEST_SOURCE_PATH,
+		normalized_source_path: ROM_MANIFEST_SOURCE_PATH,
+		start,
+		end,
+	};
+}
+
+export function sortAssetsById(assets: RomAsset[]): RomAsset[] {
+	return [...assets].sort((left, right) => ASSET_ID_COLLATOR.compare(left.resid, right.resid));
+}
+
+export function buildLuaSourceLookup(rombin: Uint8Array, assets: RomAsset[]): (path: string) => string {
+	const sources = new Map<string, string>();
+	for (const asset of assets) {
+		if (asset.type !== 'lua') {
+			continue;
+		}
+		const path = asset.normalized_source_path ?? asset.source_path;
+		if (!path) {
+			throw new Error(`[RomInspector] Lua asset '${asset.resid}' is missing its source path.`);
+		}
+		if (asset.start === undefined || asset.end === undefined) {
+			throw new Error(`[RomInspector] Lua asset '${asset.resid}' is missing buffer range.`);
+		}
+		if (sources.has(path)) {
+			throw new Error(`[RomInspector] Duplicate lua source path '${path}'.`);
+		}
+		sources.set(path, Buffer.from(rombin.slice(asset.start, asset.end)).toString('utf8'));
+	}
+	return (path: string) => {
+		const text = sources.get(path);
+		if (text === undefined) {
+			throw new Error(`[RomInspector] Lua source '${path}' not found in ROM pack.`);
+		}
+		return text;
+	};
+}
+
+export function loadProgramFromAssets(rombin: Uint8Array, assets: RomAsset[]) {
+	const programAssetEntry = assets.find(asset => asset.resid === PROGRAM_ASSET_ID);
+	if (!programAssetEntry) {
+		throw new Error('[RomInspector] Program asset not found.');
+	}
+	if (programAssetEntry.start === undefined || programAssetEntry.end === undefined) {
+		throw new Error(`[RomInspector] Program asset '${programAssetEntry.resid}' is missing buffer range.`);
+	}
+	const programBytes = new Uint8Array(rombin.slice(programAssetEntry.start, programAssetEntry.end));
+	const programAsset = decodeProgramAsset(programBytes);
+	const program = inflateProgram(programAsset.program);
+	const symbolsAsset = assets.find(asset => asset.resid === PROGRAM_SYMBOLS_ASSET_ID);
+	const metadata = symbolsAsset
+		? (() => {
+			if (symbolsAsset.start === undefined || symbolsAsset.end === undefined) {
+				throw new Error(`[RomInspector] Program symbols asset '${symbolsAsset.resid}' is missing buffer range.`);
+			}
+			const symbolsBytes = new Uint8Array(rombin.slice(symbolsAsset.start, symbolsAsset.end));
+			return decodeProgramSymbolsAsset(symbolsBytes).metadata;
+		})()
+		: null;
+	const sourceTextForPath = metadata ? buildLuaSourceLookup(rombin, assets) : null;
+	return { programAsset, program, metadata, sourceTextForPath };
+}
+
+export function disassembleProgramAsset(
+	program: Program,
+	metadata: ProgramMetadata | null,
+	sourceTextForPath: ((path: string) => string) | null,
+	options: { assembly?: boolean; pcBias?: number } = {},
+): string {
+	if (metadata && !sourceTextForPath) {
+		throw new Error('[RomInspector] Program symbols found but Lua sources were not resolved.');
+	}
+	const assembly = options.assembly === true;
+	return disassembleProgram(program, metadata, {
+		formatStyle: assembly ? 'assembly' : 'default',
+		pcRadix: 16,
+		pcFormatter: assembly ? undefined : (pc, width) => formatNumberAsHex(pc, width),
+		pcBias: options.pcBias,
+		showSourceComments: metadata !== null,
+		sourceTextForPath: sourceTextForPath ?? undefined,
+	});
+}
