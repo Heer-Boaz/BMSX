@@ -1068,7 +1068,6 @@ async function main() {
 		let currentTab = tabIndex || 0; // Default to 0 if not provided
 		const tabLabels = ['Preview', 'Details', 'Hex', '×']; // Voeg sluit-tab toe
 
-		// Voeg deze variabele toe boven renderTabBar:
 		let tabBoxes: blessed.Widgets.BoxElement[] = [];
 
 		function renderTabBar() {
@@ -1127,6 +1126,31 @@ async function main() {
 			tabbarBox.setContent(`\n${helpLine}\n\n${bufferInfo}`);
 		}
 
+		let hexContent: string = null;
+
+		function getHexTabContent(): string {
+			if (hexContent !== null) {
+				return hexContent;
+			}
+			let content = '';
+			const assetBuf = typeof selected.start === 'number' && typeof selected.end === 'number'
+				? (selected.buffer instanceof Uint8Array
+					? selected.buffer
+					: getRomSliceView(rombin, selected.start, selected.end))
+				: null;
+			if (!assetBuf || assetBuf.byteLength === 0) {
+				content += 'Buffer: [No buffer data available]\n';
+			} else {
+				content += renderHexDumpSectionPreview('Buffer', selected.start, selected.end, assetBuf);
+			}
+			if (typeof selected.metabuffer_start === 'number' && typeof selected.metabuffer_end === 'number' && selected.metabuffer_end > selected.metabuffer_start) {
+				const metaBuf = getRomSliceView(rombin, selected.metabuffer_start, selected.metabuffer_end);
+				content += `\n${renderHexDumpSectionPreview('Metabuffer', selected.metabuffer_start, selected.metabuffer_end, metaBuf)}`;
+			}
+			hexContent = content;
+			return content;
+		}
+
 		function renderModalContent(asset: RomAsset = selected) {
 			let content = '';
 			if (currentTab === 0) {
@@ -1137,27 +1161,7 @@ async function main() {
 					content += `\n\nDisassembly:\n${disassembly}`;
 				}
 			} else if (currentTab === 2) {
-				// Asset buffer dump
-				const assetBuf = asset.start || asset.end
-					? new Uint8Array(rombin.slice(asset.start, asset.end))
-					: null;
-				if (!assetBuf || assetBuf.byteLength === 0) {
-					content += `Buffer: [No buffer data available]\n`;
-				} else {
-					content += `Buffer: [${asset.start} - ${asset.end}]:\n${asciiHexDump(assetBuf)}\n`;
-				}
-
-				// Metabuffer dump (indien aanwezig)
-				if (typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number' && asset.metabuffer_end > asset.metabuffer_start) {
-					const metaBuf = asset.metabuffer_start || asset.metabuffer_end
-						? new Uint8Array(rombin.slice(asset.metabuffer_start, asset.metabuffer_end))
-						: null;
-					if (!metaBuf || metaBuf.byteLength === 0) {
-						content += `Metabuffer: [No metabuffer data available]\n`;
-					} else {
-						content += `Metabuffer: [${asset.metabuffer_start} - ${asset.metabuffer_end}]\n${asciiHexDump(metaBuf)}\n`;
-					}
-				}
+				content += getHexTabContent();
 			}
 			contentBox.setContent(content);
 			renderTabBar();
@@ -1169,32 +1173,32 @@ async function main() {
 
 		let currentIdx = table.rows.selected;
 		// Navigatie en tab-wissel
-		contentBox.key(['left', 'right', '1', '2', '3', 'pageup', 'pagedown', 'home', 'end', 'S-down', 'S-up', 'escape', 'enter'], (ch, key) => {
+		contentBox.key(['up', 'down', 'left', 'right', '1', '2', '3', 'pageup', 'pagedown', 'home', 'end', 'S-down', 'S-up', 'escape', 'enter'], (ch, key) => {
 			if (!modal) return
 			const keyname = key.name || ch;
 			const shift = key.shift || keyname.startsWith('S-');
 			// const ctrl = key.ctrl || keyname.startsWith('C-');
 			// const alt = key.meta || keyname.startsWith('A-');
 
-			switch (keyname) {
-				case 'up':
-					if (shift) {
-						if (currentIdx <= 0) break; // Prevent going out of bounds
-						currentIdx--;
-						table.rows.select(currentIdx); // update table selection
-						selected = filteredAssetList[currentIdx];
-						showAssetModal(currentIdx, currentTab);
-					}
-					break;
-				case 'down':
-					if (shift) {
-						if (currentIdx >= assetList.length - 1) break; // Prevent going out of bounds
-						currentIdx++;
-						table.rows.select(currentIdx); // update table selection
-						selected = filteredAssetList[currentIdx];
-						showAssetModal(currentIdx, currentTab);
-					}
-					break;
+				switch (keyname) {
+					case 'up':
+						if (shift) {
+							if (currentIdx <= 0) break; // Prevent going out of bounds
+							currentIdx--;
+							table.rows.select(currentIdx); // update table selection
+							selected = filteredAssetList[currentIdx];
+							showAssetModal(currentIdx, currentTab);
+						}
+						break;
+					case 'down':
+						if (shift) {
+							if (currentIdx >= assetList.length - 1) break; // Prevent going out of bounds
+							currentIdx++;
+							table.rows.select(currentIdx); // update table selection
+							selected = filteredAssetList[currentIdx];
+							showAssetModal(currentIdx, currentTab);
+						}
+						break;
 				case 'left':
 					if (currentTab > 0) {
 						currentTab--;
@@ -1253,7 +1257,6 @@ async function main() {
 					break;
 			}
 		});
-
 		screen.render();
 	}
 
@@ -1424,34 +1427,45 @@ function generateAsciiArtFromImageBuffer(img: Buffer, modalWidth: number): strin
 	}
 }
 
-function asciiHexDump(buf: Uint8Array | Uint8Array, maxBytes?: number): string {
-	if (!(buf instanceof Uint8Array)) buf = new Uint8Array(buf);
-	const bytesPerLine = 16;
+const HEX_BYTES_PER_LINE = 16;
+const HEX_PREVIEW_MAX_BYTES = 4096;
+
+function getRomSliceView(rombin: Uint8Array, start: number, end: number): Uint8Array {
+	return rombin.subarray(start, end);
+}
+
+function formatHexDumpLine(buf: Uint8Array, byteOffset: number): string {
+	const slice = buf.subarray(byteOffset, byteOffset + HEX_BYTES_PER_LINE);
+	let line = byteOffset.toString(16).padStart(8, '0') + '  ';
+	line += Array.from(slice)
+		.map(b => b.toString(16).padStart(2, '0'))
+		.join(' ')
+		.padEnd(HEX_BYTES_PER_LINE * 3 - 1, ' ');
+	line += '  ';
+	line += Array.from(slice)
+		.map(b =>
+			(b < 32 || b === 127)
+				? '{red-fg}.{/red-fg}'
+				: (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.')
+		)
+		.join('');
+	return line;
+}
+
+function asciiHexDump(buf: Uint8Array, maxBytes = HEX_PREVIEW_MAX_BYTES): string {
 	let result = '';
-	const length = Math.min(buf.byteLength, maxBytes || buf.byteLength);
-	for (let i = 0; i < length; i += bytesPerLine) {
-		const slice = (buf as Uint8Array).subarray(i, i + bytesPerLine);
-		let line = i.toString(16).padStart(8, '0') + '  ';
-		line += Array.from(slice)
-			.map(b => b.toString(16).padStart(2, '0'))
-			.join(' ')
-			.padEnd(bytesPerLine * 3 - 1, ' ');
-		line += '  ';
-		// Kleurt control-chars rood in het ASCII-gedeelte
-		line += Array.from(slice)
-			.map(b =>
-				(b < 32 || b === 127)
-					? `{red-fg}.{/red-fg}` // Control-chars als rode punt
-					: (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.')
-			)
-			.join('');
-		result += line + '\n';
+	const length = Math.min(buf.byteLength, maxBytes);
+	for (let i = 0; i < length; i += HEX_BYTES_PER_LINE) {
+		result += formatHexDumpLine(buf, i) + '\n';
 	}
-	if (maxBytes && buf.byteLength > maxBytes) {
-		result += `... (truncated, showing first ${maxBytes} bytes of ${buf.byteLength})\n`;
-		return result;
+	if (buf.byteLength > maxBytes) {
+		result += `... truncated: showing first ${formatByteSize(maxBytes)} of ${formatByteSize(buf.byteLength)}\n`;
 	}
-	return result;
+	return result.trimEnd();
+}
+
+function renderHexDumpSectionPreview(title: string, start: number, end: number, buf: Uint8Array): string {
+	return `${title}: [${start} - ${end}] (${formatByteSize(buf.byteLength)})\n${asciiHexDump(buf)}`;
 }
 
 // Add a runtime type-guard for GLTFModel to avoid unsafe casts
