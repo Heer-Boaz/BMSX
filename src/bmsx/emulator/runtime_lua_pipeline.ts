@@ -118,11 +118,11 @@ function resolveRenderHeight(value: number | undefined): number {
 }
 
 type RuntimeAssetReloadMode = 'full' | 'cart';
-type RuntimeManifestSource = 'system' | 'cart';
+type RuntimeMachineSource = 'system' | 'cart';
 
 interface RuntimeAssetReloadPlan {
 	mode: RuntimeAssetReloadMode;
-	manifestSource: RuntimeManifestSource;
+	machineSource: RuntimeMachineSource;
 	sealSystemAssets: boolean;
 	resetFreshWorldOptions: { preserve_textures: boolean };
 }
@@ -131,24 +131,24 @@ function buildRuntimeAssetReloadPlan(runtime: Runtime): RuntimeAssetReloadPlan {
 	if (runtime.cartAssetLayer) {
 		return {
 			mode: 'cart',
-			manifestSource: 'cart',
+			machineSource: 'cart',
 			sealSystemAssets: false,
 			resetFreshWorldOptions: { preserve_textures: true },
 		};
 	}
 	return {
 		mode: 'full',
-		manifestSource: 'system',
+		machineSource: 'system',
 		sealSystemAssets: true,
 		resetFreshWorldOptions: { preserve_textures: false },
 	};
 }
 
-function resolveRuntimeManifestForPlan(runtime: Runtime, plan: RuntimeAssetReloadPlan) {
-	if (plan.manifestSource === 'cart') {
-		return runtime.cartAssetLayer.index.manifest;
+function resolveRuntimeMachineForPlan(runtime: Runtime, plan: RuntimeAssetReloadPlan) {
+	if (plan.machineSource === 'cart') {
+		return runtime.cartAssetLayer.index.machine;
 	}
-	return $.engine_layer.index.manifest;
+	return $.engine_layer.index.machine;
 }
 
 export function captureCurrentState(runtime: Runtime): RuntimeState {
@@ -765,8 +765,8 @@ export function resolveProgramAssetSource(runtime: Runtime): RawAssetSource {
 }
 
 export function hasLuaAssets(runtime: Runtime): boolean {
-	const source = resolveProgramAssetSource(runtime);
-	return source.list('lua').length > 0;
+	const registry = runtime.isEngineProgramActive() ? runtime.engineLuaSources : runtime.cartLuaSources;
+	return registry.can_boot_from_source;
 }
 
 export function shouldBootLuaProgramFromSources(runtime: Runtime): boolean {
@@ -1071,7 +1071,7 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 		runtime.luaChunkEnvironmentsByPath.clear();
 		runtime.luaGenericChunksExecuted.clear();
 
-		runtime.applyCartAssetLayers();
+		runtime.activateCartProgramAssets();
 		const reloadPlan = buildRuntimeAssetReloadPlan(runtime);
 		await runtime.buildAssetMemory({ mode: reloadPlan.mode });
 		if (reloadPlan.sealSystemAssets) {
@@ -1094,14 +1094,14 @@ export async function reloadProgramAndResetWorld(runtime: Runtime, options?: { r
 		} catch (error) {
 			runtimeIde.handleLuaError(runtime, error);
 		}
-		const manifest = resolveRuntimeManifestForPlan(runtime, reloadPlan);
-		const perfSpecs = getMachinePerfSpecs(manifest.machine);
+		const machine = resolveRuntimeMachineForPlan(runtime, reloadPlan);
+		const perfSpecs = getMachinePerfSpecs(machine);
 		applyUfpsScaled(perfSpecs.ufps);
 		const cpuHz = resolveCpuHz(perfSpecs.cpu_freq_hz);
 		runtime.setCpuHz(cpuHz);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
 		runtime.setCycleBudgetPerFrame(cycleBudgetPerFrame);
-		const renderHeight = resolveRenderHeight(manifest.machine.render_size.height);
+		const renderHeight = resolveRenderHeight(machine.render_size.height);
 		runtime.setVblankCycles(resolveVblankCycles(cpuHz, $.ufps_scaled, renderHeight));
 		runtime.setTransferRatesFromManifest(perfSpecs);
 	}

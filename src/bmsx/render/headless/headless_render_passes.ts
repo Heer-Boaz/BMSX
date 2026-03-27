@@ -78,7 +78,7 @@ function ensureAtlasResource(atlasId: number, slotBytes: number, label: string):
 		return;
 	}
 	let found = false;
-	for (const asset of Object.values($.assets.img)) {
+	for (const asset of Runtime.instance.listImageAssets()) {
 		if (asset.type !== 'atlas') continue;
 		const meta = asset.imgmeta;
 		if (!meta || meta.atlasid !== atlasId) continue;
@@ -499,14 +499,7 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 			];
 			const snapshot: Snapshot = [`faces=${faces.map((face) => face[1]).join(',')}`];
 			for (const [face, id] of faces) {
-				const asset = $.assets.img[tokenKeyFromId(id)];
-				if (!asset) {
-					throw new Error(`[HeadlessSkybox] Skybox image '${id}' not found.`);
-				}
-				const meta = asset.imgmeta;
-				if (!meta) {
-					throw new Error(`[HeadlessSkybox] Skybox image '${id}' missing metadata.`);
-				}
+				const meta = Runtime.instance.getImageMeta(id);
 				if (meta.atlassed) {
 					throw new Error(`[HeadlessSkybox] Skybox image '${id}' must not be atlassed.`);
 				}

@@ -3299,7 +3299,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	auto appendBinEntry = [this, str, formatAssetTokenKey](Table* table, AssetToken token, const BinValue& value) {
 		table->set(str(formatAssetTokenKey(token)), binValueToRuntimeValue(m_cpu, value));
 	};
-	const int imgCapacity = static_cast<int>(assets.img.size() + (assets.fallback ? assets.fallback->img.size() : 0));
+	const int imgCapacity = static_cast<int>(assets.img.size());
 	auto* imgTable = m_cpu.createTable(0, imgCapacity);
 	auto appendImgEntry = [this, imgTable, key, str, appendRomAssetFields, formatAssetTokenKey](AssetToken token, const ImgAsset& imgAsset) {
 		auto* imgEntry = m_cpu.createTable(0, 8);
@@ -3307,28 +3307,18 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset.meta, key)));
 		imgTable->set(str(formatAssetTokenKey(token)), valueTable(imgEntry));
 	};
-	if (assets.fallback) {
-		for (const auto& entry : assets.fallback->img) {
-			appendImgEntry(entry.first, entry.second);
-		}
-	}
 	for (const auto& entry : assets.img) {
 		appendImgEntry(entry.first, entry.second);
 	}
 	assetsTable->set(key("img"), makeAssetMapNativeObject(imgTable));
 
-	const int dataCapacity = static_cast<int>(assets.data.size() + (assets.fallback ? assets.fallback->data.size() : 0));
+	const int dataCapacity = static_cast<int>(assets.data.size());
 	auto* dataTable = m_cpu.createTable(0, dataCapacity);
-	if (assets.fallback) {
-		for (const auto& entry : assets.fallback->data) {
-			appendBinEntry(dataTable, entry.first, entry.second.value);
-		}
-	}
 	for (const auto& entry : assets.data) {
 		appendBinEntry(dataTable, entry.first, entry.second.value);
 	}
 	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
-	const int audioCapacity = static_cast<int>(assets.audio.size() + (assets.fallback ? assets.fallback->audio.size() : 0));
+	const int audioCapacity = static_cast<int>(assets.audio.size());
 	auto* audioTable = m_cpu.createTable(0, audioCapacity);
 	auto appendAudioEntry = [this, audioTable, key, str, appendRomAssetFields, formatAssetTokenKey](AssetToken token, const AudioAsset& audioAsset) {
 		auto* audioEntry = m_cpu.createTable(0, 6);
@@ -3336,36 +3326,21 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(m_cpu, audioAsset.meta, key)));
 		audioTable->set(str(formatAssetTokenKey(token)), valueTable(audioEntry));
 	};
-	if (assets.fallback) {
-		for (const auto& entry : assets.fallback->audio) {
-			appendAudioEntry(entry.first, entry.second);
-		}
-	}
 	for (const auto& entry : assets.audio) {
 		appendAudioEntry(entry.first, entry.second);
 	}
 	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
-	const int audioEventCapacity = static_cast<int>(assets.audioevents.size() + (assets.fallback ? assets.fallback->audioevents.size() : 0));
+	const int audioEventCapacity = static_cast<int>(assets.audioevents.size());
 	auto* audioEventsTable = m_cpu.createTable(0, audioEventCapacity);
-	if (assets.fallback) {
-		for (const auto& entry : assets.fallback->audioevents) {
-			appendBinEntry(audioEventsTable, entry.first, entry.second.value);
-		}
-	}
 	for (const auto& entry : assets.audioevents) {
 		appendBinEntry(audioEventsTable, entry.first, entry.second.value);
 	}
 	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
-	const int modelCapacity = static_cast<int>(assets.model.size() + (assets.fallback ? assets.fallback->model.size() : 0));
+	const int modelCapacity = static_cast<int>(assets.model.size());
 	auto* modelTable = m_cpu.createTable(0, modelCapacity);
 	auto appendModelEntry = [this, modelTable, key, str, formatAssetTokenKey](AssetToken token, const ModelAsset& modelAsset) {
 		modelTable->set(str(formatAssetTokenKey(token)), valueTable(buildModelAssetTable(m_cpu, modelAsset, key)));
 	};
-	if (assets.fallback) {
-		for (const auto& entry : assets.fallback->model) {
-			appendModelEntry(entry.first, entry.second);
-		}
-	}
 	for (const auto& entry : assets.model) {
 		appendModelEntry(entry.first, entry.second);
 	}
@@ -3435,22 +3410,8 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 				return "none";
 		}
 	};
-	auto buildManifestTable = [this, key, str, canonicalizationLabel](const RuntimeAssets& source) -> Table* {
-		const RomManifest& manifest = source.manifest;
-		auto* manifestTable = m_cpu.createTable();
-		const std::string_view title = manifest.title.empty() ? manifest.name : manifest.title;
-		if (!title.empty()) {
-			manifestTable->set(key("title"), str(title));
-		}
-		const std::string_view romName = manifest.romName.empty() ? manifest.name : manifest.romName;
-		if (!romName.empty()) {
-			manifestTable->set(key("rom_name"), str(romName));
-		}
-		const std::string_view shortName = manifest.shortName.empty() ? romName : manifest.shortName;
-		if (!shortName.empty()) {
-			manifestTable->set(key("short_name"), str(shortName));
-		}
-		auto* machineTable = m_cpu.createTable(0, 3);
+	auto buildMachineManifestTable = [this, key, str, canonicalizationLabel](const MachineManifest& manifest) -> Table* {
+		auto* machineTable = m_cpu.createTable(0, 5);
 		if (!manifest.namespaceName.empty()) {
 			machineTable->set(key("namespace"), str(manifest.namespaceName));
 		}
@@ -3535,17 +3496,34 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			specsTable->set(key("audio"), valueTable(audioTable));
 		}
 		machineTable->set(key("specs"), valueTable(specsTable));
-		manifestTable->set(key("machine"), valueTable(machineTable));
+		return machineTable;
+	};
+	auto buildCartManifestTable = [this, key, str, buildMachineManifestTable](const CartManifest& manifest, const MachineManifest& machine, const std::string& entryPath) -> Table* {
+		auto* manifestTable = m_cpu.createTable();
+		const std::string_view title = manifest.title.empty() ? manifest.name : manifest.title;
+		if (!title.empty()) {
+			manifestTable->set(key("title"), str(title));
+		}
+		const std::string_view romName = manifest.romName.empty() ? manifest.name : manifest.romName;
+		if (!romName.empty()) {
+			manifestTable->set(key("rom_name"), str(romName));
+		}
+		const std::string_view shortName = manifest.shortName.empty() ? romName : manifest.shortName;
+		if (!shortName.empty()) {
+			manifestTable->set(key("short_name"), str(shortName));
+		}
+		manifestTable->set(key("machine"), valueTable(buildMachineManifestTable(machine)));
 		auto* luaTable = m_cpu.createTable(0, 1);
-		luaTable->set(key("entry_path"), str(manifest.entryPoint));
+		luaTable->set(key("entry_path"), str(entryPath));
 		manifestTable->set(key("lua"), valueTable(luaTable));
 		return manifestTable;
 	};
-	const RuntimeAssets* engineAssets = assets.fallback ? assets.fallback : &assets;
-	assetsTable->set(key("manifest"), valueTable(buildManifestTable(assets)));
-	assetsTable->set(key("canonicalization"), str(canonicalizationLabel(assets.canonicalization)));
-	setGlobal("cart_manifest", valueTable(buildManifestTable(assets)));
-	setGlobal("sys_manifest", valueTable(buildManifestTable(*engineAssets)));
+	const CartManifest* cartManifest = EngineCore::instance().loadedCartManifest();
+	const std::string* cartEntryPath = EngineCore::instance().loadedCartEntryPath();
+	setGlobal("cart_manifest", cartManifest ? valueTable(buildCartManifestTable(*cartManifest, EngineCore::instance().cartAssets().machine, *cartEntryPath)) : valueNil());
+	setGlobal("machine_manifest", valueTable(buildMachineManifestTable(EngineCore::instance().machineManifest())));
+	const std::string* cartProjectRootPath = EngineCore::instance().cartProjectRootPath();
+	setGlobal("cart_project_root_path", cartProjectRootPath ? str(*cartProjectRootPath) : valueNil());
 
 	auto viewSize = EngineCore::instance().view()->viewportSize;
 	auto* viewportTable = m_cpu.createTable(0, 2);

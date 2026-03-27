@@ -1,5 +1,5 @@
 import type { RawAssetSource } from '../rompack/asset_source';
-import type { CartridgeIndex, RomLuaAsset } from '../rompack/rompack';
+import type { CartridgeIndex, CartridgeLayerId, RomLuaAsset } from '../rompack/rompack';
 import { decodeuint8arr } from '../serializer/binencoder';
 import { PROGRAM_ASSET_ID } from './program_asset';
 
@@ -9,30 +9,24 @@ export type LuaSourceRegistry = {
 	path2lua: Record<string, LuaSourceRecord>;
 	entry_path: string;
 	namespace: string;
+	can_boot_from_source: boolean;
 };
 
-export function buildLuaSources(params: { cartSource: RawAssetSource; assetSource: RawAssetSource; index: CartridgeIndex }): LuaSourceRegistry {
-	const { cartSource, assetSource, index } = params;
+export function buildLuaSources(params: { cartSource: RawAssetSource; assetSource: RawAssetSource; index: CartridgeIndex; allowedPayloadIds: CartridgeLayerId[] }): LuaSourceRegistry {
+	const { cartSource, assetSource, index, allowedPayloadIds } = params;
+	const allowedPayloadIdSet = new Set(allowedPayloadIds);
+	const activeLuaEntries = assetSource.list('lua').filter(entry => allowedPayloadIdSet.has(entry.payload_id));
 	const registry: LuaSourceRegistry = {
 		path2lua: {},
-		entry_path: index.manifest.lua.entry_path,
-		namespace: index.manifest.machine.namespace,
+		entry_path: index.entry_path,
+		namespace: index.machine.namespace,
+		can_boot_from_source: activeLuaEntries.length > 0,
 	};
 
-	for (const asset of index.assets) {
-		if (asset.type !== 'lua') {
-			continue;
-		}
-		const baseEntry = cartSource.getEntry(asset.resid);
-		if (!baseEntry) {
-			continue;
-		}
-		const activeEntry = assetSource.getEntry(asset.resid);
-		if (!activeEntry) {
-			continue;
-		}
-		const baseSrc = decodeuint8arr(cartSource.getBytes(baseEntry));
+	for (const activeEntry of activeLuaEntries) {
+		const baseEntry = cartSource.getEntry(activeEntry.resid);
 		const src = decodeuint8arr(assetSource.getBytes(activeEntry));
+		const baseSrc = baseEntry ? decodeuint8arr(cartSource.getBytes(baseEntry)) : src;
 		const luaAsset: LuaSourceRecord = {
 			...activeEntry,
 			src,

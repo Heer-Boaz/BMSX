@@ -1307,7 +1307,7 @@ extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec) {
 }
 
 extern "C" int64_t bmsx_get_ufps(void) {
-	return bmsx::EngineCore::instance().assets().manifest.ufpsScaled.value();
+	return bmsx::EngineCore::instance().machineManifest().ufpsScaled.value();
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {
@@ -1354,7 +1354,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 		memset(&av, 0, sizeof(av));
 		retro_get_system_av_info(&av);
 	}
-	const auto& manifest = g_platform->engine()->assets().manifest;
+	const auto& manifest = g_platform->engine()->machineManifest();
 	av.geometry.base_width = static_cast<unsigned>(manifest.viewportWidth);
 	av.geometry.base_height = static_cast<unsigned>(manifest.viewportHeight);
 	if (av.geometry.max_width < av.geometry.base_width) {

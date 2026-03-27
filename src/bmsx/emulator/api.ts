@@ -21,7 +21,6 @@ import { BFont, GlyphMap } from '../render/shared/bitmap_font';
 import { RuntimeStorage } from './storage';
 import type { AudioPlayOptions } from '../audio/soundmaster';
 import type { Polygon, vec3arr } from '../rompack/rompack';
-import { tokenKeyFromId } from '../rompack/asset_tokens';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { RenderFacade } from './render_facade';
 import { Runtime } from './runtime';
@@ -332,15 +331,12 @@ export class Api {
 		if (entry.type !== 'image') {
 			throw new Error(`[BGMap] Asset '${img_id}' is not an image.`);
 		}
-		const imgAsset = $.assets.img[tokenKeyFromId(img_id)];
-		if (!imgAsset) {
-			throw new Error(`[BGMap] Missing image metadata for '${img_id}'.`);
-		}
+		const imgMeta = runtime.getImageMetaByHandle(handle);
 		const baseEntry = (entry.flags & ASSET_FLAG_VIEW) !== 0
 			? memory.getAssetEntryByHandle(entry.ownerIndex)
 			: entry;
 		const tile: BgMapEntry = {
-			atlasId: imgAsset.imgmeta.atlasid,
+			atlasId: imgMeta.atlasid,
 			flags: BGMAP_TILE_FLAG_ENABLED,
 			assetHandle: handle,
 			u0: entry.regionX / baseEntry.regionW,
@@ -745,8 +741,9 @@ export class Api {
 
 	public reboot(): void {
 		console.log('[Runtime API] Reboot requested.');
-		runtimeLuaPipeline.reloadProgramAndResetWorld(this.runtime); // Reboot to initial state
-		console.log('[Runtime API] Reboot completed.');
+		void this.runtime.rebootToBootRom().catch((error) => {
+			console.error('[Runtime API] Reboot failed:', error);
+		});
 	}
 
 	private expand_tabs(text: string): string {

@@ -100,7 +100,18 @@ public:
 	Platform* platform() { return m_platform; }
 	GameView* view() { return m_view.get(); }
 	Registry& registry() { return Registry::instance(); }
-	RuntimeAssets& assets() { return m_assets; }
+	RuntimeAssets& assets() { return *m_active_assets; }
+	const RuntimeAssets& assets() const { return *m_active_assets; }
+	RuntimeAssets& systemAssets() { return m_engine_assets; }
+	const RuntimeAssets& systemAssets() const { return m_engine_assets; }
+	RuntimeAssets& cartAssets() { return m_cart_assets; }
+	const RuntimeAssets& cartAssets() const { return m_cart_assets; }
+	const MachineManifest& machineManifest() const { return *m_machine_manifest; }
+	const CartManifest* loadedCartManifest() const { return m_cart_assets.cartManifest ? &*m_cart_assets.cartManifest : nullptr; }
+	const std::string* loadedCartEntryPath() const { return m_cart_rom_size > 0 ? &m_cart_assets.entryPoint : nullptr; }
+	const std::string* cartProjectRootPath() const { return m_cart_rom_size > 0 ? &m_cart_assets.projectRootPath : nullptr; }
+	ImgAsset* resolveImgAsset(const AssetId& id);
+	const ImgAsset* resolveImgAsset(const AssetId& id) const;
 	Clock* clock() { return m_platform ? m_platform->clock() : nullptr; }
 	SoundMaster* soundMaster() { return m_sound_master.get(); }
 	TextureManager* texmanager() { return m_texture_manager.get(); }
@@ -140,8 +151,10 @@ public:
 	bool loadRom(const u8* data, size_t size);            // Load game cartridge ROM
 	bool loadRomOwned(std::vector<u8>&& data);            // Load game cartridge ROM without extra copy
 	void unloadRom();
-	bool resetLoadedRom();
+	bool bootLoadedCart();
+	bool rebootLoadedRom();
 	bool romLoaded() const { return m_rom_loaded; }
+	bool hasLoadedCartProgram() const { return m_loaded_cart_has_program; }
 	bool engineAssetsLoaded() const { return m_engine_assets_loaded; }
 	void prepareLoadedRomAssets();
 
@@ -172,13 +185,18 @@ private:
 	void bootRuntimeFromProgram();  // Boot runtime with pre-compiled program from ROM
 	void refreshAudioAssets();
 	void refreshAudioAssets(const RuntimeAssets& assets);
+	void activateEngineAssets();
+	void activateCartAssets();
+	void setMachineManifest(const MachineManifest& manifest);
+	void configureViewForMachine(const MachineManifest& manifest);
+	bool bootEngineStartupProgram(const MachineManifest& runtimeMachine, const RuntimeAssets& sizingAssets);
 
 	Platform* m_platform = nullptr;
 	std::unique_ptr<GameView> m_view;
 	std::unique_ptr<BFont> m_default_font;
 	std::unique_ptr<SoundMaster> m_sound_master;
 	std::unique_ptr<TextureManager> m_texture_manager;
-	RuntimeAssets m_assets;
+	RuntimeAssets* m_active_assets = nullptr;
 
 	EngineState m_state = EngineState::Uninitialized;
 
@@ -201,8 +219,11 @@ private:
 	bool m_commit_presented_frame = false;
 
 	bool m_rom_loaded = false;
+	bool m_loaded_cart_has_program = false;
 	bool m_engine_assets_loaded = false;
 	RuntimeAssets m_engine_assets;  // Base engine assets (fonts, UI sprites, etc.)
+	RuntimeAssets m_cart_assets;
+	const MachineManifest* m_machine_manifest = nullptr;
 	std::vector<u8> m_engine_rom_owned;
 	const u8* m_engine_rom_data = nullptr;
 	size_t m_engine_rom_size = 0;

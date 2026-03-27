@@ -45,9 +45,6 @@ void forEachLuaSource(const RuntimeAssets& assets, Fn&& fn) {
 	for (const auto& entry : assets.lua) {
 		fn(entry.second);
 	}
-	if (assets.fallback) {
-		forEachLuaSource(*assets.fallback, std::forward<Fn>(fn));
-	}
 }
 
 const LuaSourceAsset* resolveLuaSourceByPath(const RuntimeAssets& assets, const std::string& path) {
@@ -500,7 +497,7 @@ Api::Api(Runtime& runtime)
 	: m_runtime(runtime)
 	, m_persistentData(PERSISTENT_DATA_SIZE, 0.0)
 {
-	m_font = std::make_unique<Font>(EngineCore::instance().assets());
+	m_font = std::make_unique<Font>(EngineCore::instance().systemAssets());
 	reset_print_cursor();
 }
 
@@ -559,7 +556,7 @@ bool Api::mousebtnr(int button) const {
 
 std::string Api::get_lua_entry_path() const {
 	const RuntimeAssets& assets = EngineCore::instance().assets();
-	const std::string& entryPath = assets.manifest.entryPoint;
+	const std::string& entryPath = assets.entryPoint;
 	if (entryPath.empty()) {
 		throw BMSX_RUNTIME_ERROR("[api.get_lua_entry_path] Lua entry path is empty.");
 	}
@@ -1501,7 +1498,7 @@ void Api::bgmap_tile(int layer, int col, int row, const std::string& imgId) {
 	if (entry.type != Memory::AssetType::Image) {
 		throw BMSX_RUNTIME_ERROR("[BGMap] Asset '" + imgId + "' is not an image.");
 	}
-	const ImgAsset* imgAsset = EngineCore::instance().assets().getImg(entry.id);
+	const ImgAsset* imgAsset = EngineCore::instance().resolveImgAsset(entry.id);
 	if (!imgAsset) {
 		throw BMSX_RUNTIME_ERROR("[BGMap] Missing image metadata for '" + imgId + "'.");
 	}

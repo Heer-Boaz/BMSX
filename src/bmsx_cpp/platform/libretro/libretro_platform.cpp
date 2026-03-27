@@ -352,7 +352,7 @@ void LibretroPlatform::setControllerDevice(unsigned port, unsigned device) {
 }
 
 void LibretroPlatform::applyManifestViewport() {
-	const auto& manifest = m_engine->assets().manifest;
+	const auto& manifest = m_engine->machineManifest();
 	m_pending_viewport = {
 		static_cast<f32>(manifest.viewportWidth),
 		static_cast<f32>(manifest.viewportHeight)
@@ -550,7 +550,7 @@ void LibretroPlatform::reset() {
 	m_audio_buffer.clear();
 
 	if (m_engine && m_engine->romLoaded()) {
-		if (!m_engine->resetLoadedRom()) {
+		if (!m_engine->rebootLoadedRom()) {
 			log(RETRO_LOG_ERROR, "[BMSX] Reset failed: runtime reset failed\n");
 			return;
 		}

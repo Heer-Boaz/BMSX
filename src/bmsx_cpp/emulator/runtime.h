@@ -378,6 +378,7 @@ private:
 	bool m_runtimeFailed = false;
 	bool m_tickEnabled = true;
 	bool m_cartBootPrepared = false;
+	bool m_rebootRequested = false;
 
 	// Frame state
 	FrameState m_frameState;

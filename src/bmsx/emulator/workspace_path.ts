@@ -21,7 +21,7 @@ export function stripProjectRootPrefix(resourcePath: string, projectRootPath: st
 }
 
 export function resolveWorkspacePath(path: string, projectRootPath?: string): string {
-	const root = projectRootPath ?? $.assets.project_root_path;
+	const root = projectRootPath ?? $.cart_project_root_path;
 	const normalizedPath = path.replace(/^\.?\//, '');
 	if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
 		return path;

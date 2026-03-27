@@ -48,7 +48,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 	ide_state.fontVariant = runtime.activeIdeFontVariant;
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	ide_state.themeVariant = constants.getActiveIdeThemeVariant();
-	ide_state.canonicalization = $.assets.canonicalization;
+	ide_state.canonicalization = Runtime.instance.cartCanonicalization;
 	ide_state.caseInsensitive = ide_state.canonicalization !== 'none';
 	ide_state.preMutationSource = null;
 	applyViewportSize(viewport);
@@ -60,7 +60,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 	ide_state.resourceSearchField = createInlineTextField();
 	ide_state.lineJumpField = createInlineTextField();
 	ide_state.createResourceField = createInlineTextField();
-	initializeWorkspaceStorage($.assets.project_root_path);
+	initializeWorkspaceStorage($.cart_project_root_path);
 	applySearchFieldText(ide_state.searchQuery, true);
 	applySymbolSearchFieldText(ide_state.symbolSearchQuery, true);
 	applyResourceSearchFieldText(ide_state.resourceSearchQuery, true);

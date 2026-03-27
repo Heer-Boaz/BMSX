@@ -16,7 +16,7 @@ import {
 } from '../lua/luavalue';
 import type { StorageService } from '../platform/platform';
 import type { SkyboxImageIds } from '../render/shared/render_types';
-import type { AudioMeta, ImgMeta, Viewport, CartridgeIndex, RuntimeAssets, id2res } from '../rompack/rompack';
+import type { AudioMeta, CartridgeLayerId, ImgMeta, MachineManifest, RomAsset, RomImgAsset, Viewport, CartridgeIndex, RuntimeAssets, id2res } from '../rompack/rompack';
 import {
 	CanonicalizationType,
 	ATLAS_PRIMARY_SLOT_ID,
@@ -29,9 +29,9 @@ import {
 	generateAtlasName,
 } from '../rompack/rompack';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
-import { applyRuntimeAssetLayer, buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
+import { buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
 import { decodeBinary } from '../serializer/binencoder';
-import { tokenKeyFromAsset, tokenKeyFromId } from '../rompack/asset_tokens';
+import { tokenKeyFromAsset } from '../rompack/asset_tokens';
 import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
 import { Api } from './api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from './cpu';
@@ -155,6 +155,8 @@ type EditorViewOptionsSnapshot = {
 
 type ProgramSource = 'engine' | 'cart';
 type WaitForVblankSignal = { readonly kind: 'wait_vblank' };
+type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'audioevents';
+type RuntimeLayerLookup = Partial<Record<CartridgeLayerId, RuntimeAssetLayer>>;
 
 export var api: Api; // Initialized in Runtime constructor
 
@@ -180,6 +182,56 @@ class RateBudget {
 		const clamped = out > max ? max : out;
 		return Number(clamped);
 	}
+}
+
+function buildRuntimeLayerLookup(layers: ReadonlyArray<RuntimeAssetLayer>): RuntimeLayerLookup {
+	const lookup: RuntimeLayerLookup = {};
+	for (let index = 0; index < layers.length; index += 1) {
+		const layer = layers[index]!;
+		lookup[layer.id] = layer;
+	}
+	return lookup;
+}
+
+function getRuntimeLayerAssets(layer: RuntimeAssetLayer, kind: RuntimeAssetCollectionKey): RuntimeAssets[RuntimeAssetCollectionKey] {
+	switch (kind) {
+		case 'img': return layer.assets.img;
+		case 'audio': return layer.assets.audio;
+		case 'model': return layer.assets.model;
+		case 'data': return layer.assets.data;
+		case 'audioevents': return layer.assets.audioevents;
+	}
+}
+
+function resolveLayerForPayload(lookup: RuntimeLayerLookup, payloadId: CartridgeLayerId): RuntimeAssetLayer {
+	const layer = lookup[payloadId];
+	if (!layer) {
+		throw new Error(`[Runtime] Asset layer '${payloadId}' not configured.`);
+	}
+	return layer;
+}
+
+function resolveRuntimeLayerAssetFromEntry<T>(lookup: RuntimeLayerLookup, kind: RuntimeAssetCollectionKey, entry: RomAsset): T {
+	const payloadId = entry.payload_id;
+	if (!payloadId) {
+		throw new Error(`[Runtime] Asset '${entry.resid}' missing payload_id.`);
+	}
+	const layer = resolveLayerForPayload(lookup, payloadId);
+	const assets = getRuntimeLayerAssets(layer, kind) as Record<string, T>;
+	const token = tokenKeyFromAsset(entry);
+	const asset = assets[token];
+	if (!asset) {
+		throw new Error(`[Runtime] ${kind} asset '${entry.resid}' missing from '${payloadId}' layer.`);
+	}
+	return asset;
+}
+
+function resolveRuntimeLayerAssetById<T>(lookup: RuntimeLayerLookup, source: RawAssetSource, kind: RuntimeAssetCollectionKey, id: string): T {
+	const entry = source.getEntry(id);
+	if (!entry) {
+		throw new Error(`[Runtime] ${kind} asset '${id}' not found.`);
+	}
+	return resolveRuntimeLayerAssetFromEntry<T>(lookup, kind, entry);
 }
 
 export class Runtime {
@@ -454,7 +506,7 @@ export class Runtime {
 	}
 	public applyActiveMachineTiming(cpuHz: number): void {
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
-		const renderSize = Runtime.resolveRenderSize($.assets.manifest.machine);
+		const renderSize = Runtime.resolveRenderSize($.machine_manifest);
 		const vblankCycles = resolveVblankCycles(cpuHz, $.ufps_scaled, renderSize.height);
 		this.setCpuHz(cpuHz);
 		this.setCycleBudgetPerFrame(cycleBudgetPerFrame);
@@ -800,6 +852,10 @@ export class Runtime {
 	public cartLuaSources: LuaSourceRegistry = null;
 	public engineAssetSource: RawAssetSource = null;
 	public cartAssetSource: RawAssetSource = null;
+	private engineAssetLayer: RuntimeAssetLayer = null;
+	private assetLayerLookup: RuntimeLayerLookup = {};
+	private programAssetLayers: ReadonlyArray<RuntimeAssetLayer> = null;
+	private residentAssetLayers: ReadonlyArray<RuntimeAssetLayer> = null;
 	public cartAssetLayer: RuntimeAssetLayer = null;
 	private overlayAssetLayer: RuntimeAssetLayer = null;
 	private readonly imageMetaByHandle = new Map<number, ImgMeta>();
@@ -843,26 +899,30 @@ export class Runtime {
 			cartSource: engineSource,
 			assetSource: engineSource,
 			index: engineLayer.index,
+			allowedPayloadIds: ['system'],
 		});
 
 		if (!cartridge) {
 			$.set_asset_source(engineSource);
+			$.set_cart_manifest(null);
+			$.set_machine_manifest(engineLayer.index.machine);
+			$.set_cart_project_root_path(null);
 			$.set_inputmap(1, { keyboard: null, gamepad: null, pointer: null }); // Default input mapping for player 1 is required even with no cart to prevent errors
 
 			$.set_lua_sources(engineLuaSources);
 			const engineMemorySpecs = Runtime.resolveMemoryMapSpecs({
-				manifest: engineLayer.index.manifest,
-				engineManifest: engineLayer.index.manifest,
+				machine: engineLayer.index.machine,
+				engineMachine: engineLayer.index.machine,
 				engineSource,
 				assetSource: engineSource,
-				assets: engineLayer.assets,
+				assetLayers: [engineLayer],
 			});
 			configureMemoryMap(engineMemorySpecs);
-			const enginePerfSpecs = getMachinePerfSpecs(engineLayer.index.manifest.machine);
+			const enginePerfSpecs = getMachinePerfSpecs(engineLayer.index.machine);
 			Runtime.applyUfpsScaled(enginePerfSpecs.ufps);
 			const cpuHz = Runtime.resolveCpuHz(enginePerfSpecs.cpu_freq_hz);
 			const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
-			const engineRenderSize = Runtime.resolveRenderSize(engineLayer.index.manifest.machine);
+			const engineRenderSize = Runtime.resolveRenderSize(engineLayer.index.machine);
 			const vblankCycles = resolveVblankCycles(cpuHz, $.ufps_scaled, engineRenderSize.height);
 			const memory = new Memory({
 				engineRom: new Uint8Array(engineLayer.payload),
@@ -870,7 +930,7 @@ export class Runtime {
 			});
 			const runtime = Runtime.createInstance({
 				playerIndex,
-				canonicalization: engineLayer.index.manifest.machine.canonicalization,
+				canonicalization: engineLayer.index.machine.canonicalization,
 				viewport: engineRenderSize,
 				memory,
 				cpuHz,
@@ -878,13 +938,16 @@ export class Runtime {
 				vblankCycles,
 			});
 			runtime.setTransferRatesFromManifest(enginePerfSpecs);
+			runtime.engineAssetLayer = engineLayer;
+			runtime.assetLayerLookup = buildRuntimeLayerLookup([engineLayer]);
+			runtime.programAssetLayers = [engineLayer];
+			runtime.residentAssetLayers = [engineLayer];
 			runtime.configureProgramSources({
 				engineSources: engineLuaSources,
 				engineAssetSource: engineSource,
-				engineCanonicalization: engineLayer.index.manifest.machine.canonicalization,
+				engineCanonicalization: engineLayer.index.machine.canonicalization,
 			});
-			await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
-			runtime.memory.sealEngineAssets();
+			await runtime.prepareBootRomStartupState();
 			$.view.default_font = new Font();
 			await runtime.boot();
 			Runtime.startEngineWithDeferredStartupAudioRefresh();
@@ -894,10 +957,6 @@ export class Runtime {
 		const cartLayer = await buildRuntimeAssetLayer({ blob: cartridge, id: 'cart' });
 		const overlayBlob = $.workspace_overlay;
 		const overlayLayer = overlayBlob ? await buildRuntimeAssetLayer({ blob: overlayBlob, id: 'overlay' }) : null;
-		Runtime.applyLayerMetadata(cartLayer);
-		if (overlayLayer) {
-			Runtime.applyLayerMetadata(overlayLayer);
-		}
 		const layers = [];
 		if (overlayLayer) {
 			layers.push({ id: overlayLayer.id, index: overlayLayer.index, payload: overlayLayer.payload });
@@ -906,15 +965,19 @@ export class Runtime {
 		layers.push({ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload });
 		const assetSource = new AssetSourceStack(layers);
 		$.set_asset_source(assetSource);
+		$.set_cart_manifest(cartLayer.index.cart_manifest);
+		$.set_machine_manifest(cartLayer.index.machine);
+		$.set_cart_project_root_path(cartLayer.index.projectRootPath);
 
 		const cartSource = new AssetSourceStack([{ id: cartLayer.id, index: cartLayer.index, payload: cartLayer.payload }]);
 		const cartLuaSources = buildLuaSources({
 			cartSource,
 			assetSource,
 			index: cartLayer.index,
+			allowedPayloadIds: overlayLayer ? ['overlay', 'cart'] : ['cart'],
 		});
 
-		const inputMappingPerPlayer = cartLayer.index.manifest.input ?? { 1: { keyboard: null, gamepad: null, pointer: null } as InputMap };
+		const inputMappingPerPlayer = cartLayer.index.input ?? { 1: { keyboard: null, gamepad: null, pointer: null } as InputMap };
 		for (const playerIndexStr of Object.keys(inputMappingPerPlayer)) {
 			const mappedIndex = parseInt(playerIndexStr, 10);
 			const inputMapping = inputMappingPerPlayer[mappedIndex];
@@ -924,24 +987,19 @@ export class Runtime {
 		await applyWorkspaceOverridesToCart({ cart: cartLuaSources, storage: $.platform.storage, includeServer: true });
 		$.set_lua_sources(engineLuaSources);
 
-		const sizingAssets = Runtime.cloneRuntimeAssets(engineLayer.assets);
-		applyRuntimeAssetLayer(sizingAssets, cartLayer);
-		if (overlayLayer) {
-			applyRuntimeAssetLayer(sizingAssets, overlayLayer);
-		}
 		const memoryLimits = Runtime.resolveMemoryMapSpecs({
-			manifest: cartLayer.index.manifest,
-			engineManifest: engineLayer.index.manifest,
+			machine: cartLayer.index.machine,
+			engineMachine: engineLayer.index.machine,
 			engineSource,
 			assetSource,
-			assets: sizingAssets,
+			assetLayers: overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer],
 		});
 		configureMemoryMap(memoryLimits);
-		const cartPerfSpecs = getMachinePerfSpecs(cartLayer.index.manifest.machine);
+		const cartPerfSpecs = getMachinePerfSpecs(cartLayer.index.machine);
 		Runtime.applyUfpsScaled(cartPerfSpecs.ufps);
 		const cpuHz = Runtime.resolveCpuHz(cartPerfSpecs.cpu_freq_hz);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
-		const cartRenderSize = Runtime.resolveRenderSize(cartLayer.index.manifest.machine);
+		const cartRenderSize = Runtime.resolveRenderSize(cartLayer.index.machine);
 		const vblankCycles = resolveVblankCycles(cpuHz, $.ufps_scaled, cartRenderSize.height);
 		const memory = new Memory({
 			engineRom: new Uint8Array(engineLayer.payload),
@@ -950,7 +1008,7 @@ export class Runtime {
 		});
 		const runtime = Runtime.createInstance({
 			playerIndex,
-			canonicalization: engineLayer.index.manifest.machine.canonicalization,
+			canonicalization: engineLayer.index.machine.canonicalization,
 			viewport: cartRenderSize,
 			memory,
 			cpuHz,
@@ -958,6 +1016,10 @@ export class Runtime {
 			vblankCycles,
 		});
 		runtime.setTransferRatesFromManifest(cartPerfSpecs);
+		runtime.engineAssetLayer = engineLayer;
+		runtime.assetLayerLookup = buildRuntimeLayerLookup(overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer]);
+		runtime.programAssetLayers = overlayLayer ? [cartLayer, overlayLayer] : [cartLayer];
+		runtime.residentAssetLayers = overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer];
 		runtime.cartAssetLayer = cartLayer;
 		runtime.overlayAssetLayer = overlayLayer;
 		runtime.configureProgramSources({
@@ -965,11 +1027,10 @@ export class Runtime {
 			cartSources: cartLuaSources,
 			engineAssetSource: engineSource,
 			cartAssetSource: cartSource,
-			engineCanonicalization: engineLayer.index.manifest.machine.canonicalization,
-			cartCanonicalization: cartLayer.index.manifest.machine.canonicalization,
+			engineCanonicalization: engineLayer.index.machine.canonicalization,
+			cartCanonicalization: cartLayer.index.machine.canonicalization,
 		});
-		await runtime.buildAssetMemory({ source: engineSource, assets: $.assets });
-		runtime.memory.sealEngineAssets();
+		await runtime.prepareBootRomStartupState();
 		$.view.default_font = new Font();
 		await runtime.boot();
 		Runtime.startEngineWithDeferredStartupAudioRefresh();
@@ -989,19 +1050,6 @@ export class Runtime {
 		Runtime._instance = null;
 	}
 
-	private static cloneRuntimeAssets(base: RuntimeAssets): RuntimeAssets {
-		return {
-			img: { ...base.img },
-			audio: { ...base.audio },
-			model: { ...base.model },
-			data: { ...base.data },
-			audioevents: { ...base.audioevents },
-			project_root_path: base.project_root_path,
-			canonicalization: base.canonicalization,
-			manifest: base.manifest,
-		};
-	}
-
 	private static startEngineWithDeferredStartupAudioRefresh(): void {
 		$.bootstrapStartupAudio();
 		$.start();
@@ -1014,10 +1062,11 @@ export class Runtime {
 		});
 	}
 
-	private static collectAssetEntryIds(engineSource: RawAssetSource, assetSource: RawAssetSource, assets: RuntimeAssets): Set<string> {
+	private static collectAssetEntryIds(engineSource: RawAssetSource, assetSource: RawAssetSource, assetLayers: ReadonlyArray<RuntimeAssetLayer>): Set<string> {
+		const layerLookup = buildRuntimeLayerLookup(assetLayers);
 		const ids = new Set<string>();
 		const engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const engineAtlas = assets.img[tokenKeyFromId(engineAtlasId)];
+		const engineAtlas = resolveRuntimeLayerAssetById<RomImgAsset>(layerLookup, engineSource, 'img', engineAtlasId);
 		if (!engineAtlas) {
 			throw new Error(`[Runtime] Engine atlas '${engineAtlasId}' not found for memory sizing.`);
 		}
@@ -1032,7 +1081,7 @@ export class Runtime {
 				if (entry.type !== 'image') {
 					continue;
 				}
-				const asset = assets.img[tokenKeyFromAsset(entry)];
+				const asset = resolveRuntimeLayerAssetFromEntry<RomImgAsset>(layerLookup, 'img', entry);
 				if (!asset) {
 					throw new Error(`[Runtime] Image asset '${entry.resid}' not found for memory sizing.`);
 				}
@@ -1057,8 +1106,8 @@ export class Runtime {
 		return ids;
 	}
 
-	private static computeAssetTableBytes(engineSource: RawAssetSource, assetSource: RawAssetSource, assets: RuntimeAssets): { bytes: number; entryCount: number; stringBytes: number } {
-		const ids = this.collectAssetEntryIds(engineSource, assetSource, assets);
+	private static computeAssetTableBytes(engineSource: RawAssetSource, assetSource: RawAssetSource, assetLayers: ReadonlyArray<RuntimeAssetLayer>): { bytes: number; entryCount: number; stringBytes: number } {
+		const ids = this.collectAssetEntryIds(engineSource, assetSource, assetLayers);
 		const encoder = new TextEncoder();
 		let stringBytes = 0;
 		for (const id of ids) {
@@ -1074,11 +1123,16 @@ export class Runtime {
 		return (value + mask) & ~mask;
 	}
 
-	private static computeRequiredAssetDataBytes(assets: RuntimeAssets): number {
+	private static computeRequiredAssetDataBytes(assetSource: RawAssetSource, assetLayers: ReadonlyArray<RuntimeAssetLayer>): number {
+		const layerLookup = buildRuntimeLayerLookup(assetLayers);
 		let requiredBytes = 0;
-		const imageAssets = Object.values(assets.img);
-		for (let index = 0; index < imageAssets.length; index += 1) {
-			const image = imageAssets[index];
+		const entries = assetSource.list();
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (entry.type !== 'image' && entry.type !== 'atlas') {
+				continue;
+			}
+			const image = resolveRuntimeLayerAssetFromEntry<RomImgAsset>(layerLookup, 'img', entry);
 			if (image.type === 'atlas' || image.imgmeta?.atlassed) {
 				continue;
 			}
@@ -1087,9 +1141,9 @@ export class Runtime {
 			}
 			requiredBytes += this.alignUp(image.buffer.byteLength, 4);
 		}
-		const audioAssets = Object.values(assets.audio);
-		for (let index = 0; index < audioAssets.length; index += 1) {
-			const audio = audioAssets[index];
+		const audioEntries = assetSource.list('audio');
+		for (let index = 0; index < audioEntries.length; index += 1) {
+			const audio = resolveRuntimeLayerAssetFromEntry<RomAsset>(layerLookup, 'audio', audioEntries[index]!);
 			if (!audio.buffer || audio.buffer.byteLength === 0) {
 				continue;
 			}
@@ -1099,29 +1153,36 @@ export class Runtime {
 		return this.alignUp(requiredBytes, ASSET_DATA_ALIGNMENT_BYTES);
 	}
 
+	private static resolveEngineAtlasSlotBytes(engineSource: RawAssetSource): number {
+		const engineAtlas = engineSource.getEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
+		if (!engineAtlas || !engineAtlas.imgmeta) {
+			throw new Error('[Runtime] Engine atlas metadata is missing.');
+		}
+		const width = Runtime.resolvePositiveSafeInteger(engineAtlas.imgmeta.width, 'engine_atlas.width');
+		const height = Runtime.resolvePositiveSafeInteger(engineAtlas.imgmeta.height, 'engine_atlas.height');
+		return width * height * 4;
+	}
+
 	private static resolveMemoryMapSpecs(params: {
-		manifest: CartridgeIndex['manifest'];
-		engineManifest: CartridgeIndex['manifest'];
+		machine: MachineManifest;
+		engineMachine: MachineManifest;
 		engineSource: RawAssetSource;
 		assetSource: RawAssetSource;
-		assets: RuntimeAssets;
+		assetLayers: ReadonlyArray<RuntimeAssetLayer>;
 	}): MemoryMapSpecs {
-		const machineConfig = params.manifest.machine;
-		const engineMachine = params.engineManifest.machine;
+		const machineConfig = params.machine;
+		const engineMachine = params.engineMachine;
 		const memorySpecs = getMachineMemorySpecs(machineConfig);
 		const engineMemorySpecs = getMachineMemorySpecs(engineMachine);
 		const stringHandleCount = memorySpecs.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT;
 		const stringHeapBytes = memorySpecs.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE;
 		const atlasSlotBytes = memorySpecs.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
-		const engineAtlasSlotBytes = engineMemorySpecs.system_atlas_slot_bytes;
-		if (engineAtlasSlotBytes === undefined) {
-			throw new Error('[Runtime] machine.specs.vram.system_atlas_slot_bytes is required in the engine manifest.');
-		}
+		const engineAtlasSlotBytes = engineMemorySpecs.system_atlas_slot_bytes ?? this.resolveEngineAtlasSlotBytes(params.engineSource);
 		if (!Number.isSafeInteger(engineAtlasSlotBytes) || engineAtlasSlotBytes <= 0) {
-			throw new Error('[Runtime] machine.specs.vram.system_atlas_slot_bytes must be a positive integer.');
+			throw new Error('[Runtime] system atlas slot bytes must be a positive integer.');
 		}
 		const stagingBytes = memorySpecs.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
-		const assetTableInfo = this.computeAssetTableBytes(params.engineSource, params.assetSource, params.assets);
+		const assetTableInfo = this.computeAssetTableBytes(params.engineSource, params.assetSource, params.assetLayers);
 		const requiredAssetTableBytes = assetTableInfo.bytes;
 		const assetTableBytes = memorySpecs.asset_table_bytes ?? requiredAssetTableBytes;
 		if (memorySpecs.asset_table_bytes !== undefined && assetTableBytes !== requiredAssetTableBytes) {
@@ -1137,7 +1198,7 @@ export class Runtime {
 		if (skyboxFaceBytes === undefined && skyboxFaceSize <= 0) {
 			throw new Error(`[Runtime] Invalid skybox_face_size: ${skyboxFaceSize}.`);
 		}
-		const requiredAssetDataBytes = this.computeRequiredAssetDataBytes(params.assets);
+		const requiredAssetDataBytes = this.computeRequiredAssetDataBytes(params.assetSource, params.assetLayers);
 		const assetDataBytes = memorySpecs.asset_data_bytes ?? requiredAssetDataBytes;
 		if (!Number.isSafeInteger(assetDataBytes) || assetDataBytes < 0) {
 			throw new Error(`[Runtime] machine.specs.ram.asset_data_bytes must be a non-negative integer (got ${assetDataBytes}).`);
@@ -1174,12 +1235,6 @@ export class Runtime {
 			skybox_face_size: skyboxFaceBytes === undefined ? skyboxFaceSize : memorySpecs.skybox_face_size,
 			skybox_face_bytes: skyboxFaceBytes,
 		};
-	}
-
-	private static applyLayerMetadata(layer: RuntimeAssetLayer): void {
-		$.assets.project_root_path = layer.assets.project_root_path;
-		$.assets.manifest = layer.assets.manifest;
-		$.assets.canonicalization = layer.assets.canonicalization;
 	}
 
 	private configureProgramSources(params: {
@@ -1363,6 +1418,43 @@ export class Runtime {
 		}
 		catch (error) {
 			throw new Error('[Runtime]: Failed to boot runtime: ' + error);
+		}
+		finally {
+			this.luaGate.end(gateToken);
+		}
+	}
+
+	private async prepareBootRomStartupState(options?: { resetRuntime?: boolean; refreshAudio?: boolean }): Promise<void> {
+		this.activateEngineProgramAssets();
+		if (options?.resetRuntime) {
+			await $.resetRuntime();
+		}
+		await this.buildAssetMemory({ source: this.engineAssetSource, mode: 'full' });
+		this.memory.sealEngineAssets();
+		if (options?.refreshAudio) {
+			await $.refresh_audio_assets();
+		}
+	}
+
+	public async rebootToBootRom(): Promise<void> {
+		const gateToken = this.luaGate.begin({ blocking: true, tag: 'reboot_bootrom' });
+		try {
+			runtimeIde.clearActiveDebuggerPause(this);
+			runtimeIde.clearRuntimeFault(this);
+			this.luaInitialized = false;
+			runtimeLuaPipeline.invalidateModuleAliases(this);
+			this.luaChunkEnvironmentsByPath.clear();
+			this.luaGenericChunksExecuted.clear();
+			if (this.editor !== null) {
+				this.editor.clearRuntimeErrorOverlay();
+			}
+			this.pendingCartBoot = false;
+			this.preparedCartProgram = null;
+			this.resetDeferredCartBootPreparation();
+			this.setCartBootReadyFlag(false);
+			await this.prepareBootRomStartupState({ resetRuntime: true, refreshAudio: true });
+			api.cartdata($.lua_sources.namespace);
+			runtimeLuaPipeline.bootActiveProgram(this);
 		}
 		finally {
 			this.luaGate.end(gateToken);
@@ -1627,6 +1719,43 @@ export class Runtime {
 		return this.getImageMetaByHandle(this.resolveAssetHandle(id));
 	}
 
+	public getResidentAssetLayers(): ReadonlyArray<RuntimeAssetLayer> {
+		return this.residentAssetLayers ?? [this.engineAssetLayer];
+	}
+
+	public hasAssetLayerLookup(): boolean {
+		return this.engineAssetLayer !== null;
+	}
+
+	public getImageAssetByEntry(entry: RomAsset): RomImgAsset {
+		return resolveRuntimeLayerAssetFromEntry<RomImgAsset>(this.assetLayerLookup, 'img', entry);
+	}
+
+	public getImageAsset(id: string, source: RawAssetSource = $.asset_source): RomImgAsset {
+		return resolveRuntimeLayerAssetById<RomImgAsset>(this.assetLayerLookup, source, 'img', id);
+	}
+
+	private getAudioAssetByEntry(entry: RomAsset): RomAsset {
+		return resolveRuntimeLayerAssetFromEntry<RomAsset>(this.assetLayerLookup, 'audio', entry);
+	}
+
+	public getDataAsset(id: string, source: RawAssetSource = $.asset_source): unknown {
+		return resolveRuntimeLayerAssetById<unknown>(this.assetLayerLookup, source, 'data', id);
+	}
+
+	public listImageAssets(source: RawAssetSource = $.asset_source): RomImgAsset[] {
+		const entries = source.list();
+		const assets: RomImgAsset[] = [];
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (entry.type !== 'image' && entry.type !== 'atlas') {
+				continue;
+			}
+			assets.push(this.getImageAssetByEntry(entry));
+		}
+		return assets;
+	}
+
 	public getAudioMetaByHandle(handle: number): AudioMeta {
 		const meta = this.audioMetaByHandle.get(handle);
 		if (!meta) {
@@ -1763,7 +1892,7 @@ export class Runtime {
 			return;
 		}
 		try {
-			if (this.cartAssetSource.list('lua').length > 0) {
+			if (this.cartLuaSources.can_boot_from_source) {
 				this.preparedCartProgram = runtimeLuaPipeline.compileCartLuaProgramForBoot(this);
 				this.setCartBootReadyFlag(true);
 				console.info('[Runtime] Cart boot payload prepared from Lua sources.');
@@ -1805,12 +1934,11 @@ export class Runtime {
 		this.deferredCartBootPreparationHandle = handle;
 	}
 
-	public async buildAssetMemory(params?: { source?: RawAssetSource; assets?: RuntimeAssets; mode?: 'full' | 'cart' }): Promise<void> {
+	public async buildAssetMemory(params?: { source?: RawAssetSource; mode?: 'full' | 'cart' }): Promise<void> {
 		const token = this.assetMemoryGate.begin({ blocking: true, category: 'asset', tag: 'asset_memory' });
 		try {
 			const mode = params?.mode ?? 'full';
 			const assetSource = params?.source ?? $.asset_source;
-			const assets = params?.assets ?? $.assets;
 			if (!assetSource) {
 				throw new Error('[Runtime] Asset source not configured.');
 			}
@@ -1819,9 +1947,9 @@ export class Runtime {
 			} else {
 				this.memory.resetAssetMemory();
 			}
-			await this.vdp.registerImageAssets(assetSource, assets);
+			await this.vdp.registerImageAssets(assetSource);
 			this.registerAudioAssets(assetSource);
-			this.rebuildAssetMetaCaches(assets);
+			this.rebuildAssetMetaCaches(assetSource);
 			this.memory.finalizeAssetTable();
 			this.memory.markAllAssetsDirty();
 		} finally {
@@ -1833,13 +1961,17 @@ export class Runtime {
 		registerAudioAssetsFromSource(source, this.memory);
 	}
 
-	private rebuildAssetMetaCaches(assets: RuntimeAssets): void {
+	private rebuildAssetMetaCaches(source: RawAssetSource): void {
 		this.imageMetaByHandle.clear();
 		this.audioMetaByHandle.clear();
 		const engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
-		const imgAssets = Object.values(assets.img);
-		for (let index = 0; index < imgAssets.length; index += 1) {
-			const asset = imgAssets[index]!;
+		const entries = source.list();
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (entry.type !== 'image' && entry.type !== 'atlas') {
+				continue;
+			}
+			const asset = this.getImageAssetByEntry(entry);
 			if (asset.type === 'atlas' && asset.resid !== engineAtlasId) {
 				continue;
 			}
@@ -1850,9 +1982,9 @@ export class Runtime {
 			const handle = this.resolveAssetHandle(asset.resid);
 			this.imageMetaByHandle.set(handle, meta);
 		}
-		const audioAssets = Object.values(assets.audio);
-		for (let index = 0; index < audioAssets.length; index += 1) {
-			const asset = audioAssets[index]!;
+		const audioEntries = source.list('audio');
+		for (let index = 0; index < audioEntries.length; index += 1) {
+			const asset = this.getAudioAssetByEntry(audioEntries[index]!);
 			const meta = asset.audiometa;
 			if (!meta) {
 				throw new Error(`[Runtime] Audio asset '${asset.resid}' missing metadata.`);
@@ -1862,12 +1994,18 @@ export class Runtime {
 		}
 	}
 
-	public applyCartAssetLayers(): void {
-		applyRuntimeAssetLayer($.assets, this.cartAssetLayer);
-		if (this.overlayAssetLayer) {
-			applyRuntimeAssetLayer($.assets, this.overlayAssetLayer);
-		}
-		const perfSpecs = getMachinePerfSpecs($.assets.manifest.machine);
+	private activateEngineProgramAssets(): void {
+		$.set_assets(this.engineAssetLayer.assets);
+		this.programAssetLayers = [this.engineAssetLayer];
+		this.residentAssetLayers = [this.engineAssetLayer];
+		this.activateProgramSource('engine');
+	}
+
+	public activateCartProgramAssets(): void {
+		$.set_assets((this.overlayAssetLayer ?? this.cartAssetLayer).assets);
+		this.programAssetLayers = this.overlayAssetLayer ? [this.cartAssetLayer, this.overlayAssetLayer] : [this.cartAssetLayer];
+		this.residentAssetLayers = this.overlayAssetLayer ? [this.engineAssetLayer, this.cartAssetLayer, this.overlayAssetLayer] : [this.engineAssetLayer, this.cartAssetLayer];
+		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
 		Runtime.applyUfpsScaled(perfSpecs.ufps);
 		const cpuHz = Runtime.resolveCpuHz(perfSpecs.cpu_freq_hz);
 		this.applyActiveMachineTiming(cpuHz);

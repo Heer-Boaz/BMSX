@@ -6,6 +6,7 @@ import { renderResourcePanel } from './render/render_resource_panel';
 import type { ResourceBrowserItem } from './types';
 import type { RectBounds } from '../../rompack/rompack';
 import type { ResourceDescriptor } from '../types';
+import { Runtime } from '../runtime';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 import { ide_state } from './ide_state';
 import { applyDefinitionSelection, focusChunkSource, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab } from './cart_editor';
@@ -339,9 +340,7 @@ export class ResourcePanelController {
 		const descriptors = listResourcesStrict();
 		// Augment with atlas entries (moved from editor)
 		const augmented = descriptors.slice();
-		const assets = $.assets;
-		const imgAssets = Object.values(assets.img);
-		for (const asset of imgAssets) {
+		for (const asset of Runtime.instance.listImageAssets()) {
 			if (asset.type !== 'atlas') continue;
 			const key = asset.resid;
 			if (augmented.some(entry => entry.asset_id === key)) continue;

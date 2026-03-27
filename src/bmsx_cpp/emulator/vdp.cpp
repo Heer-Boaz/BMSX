@@ -923,7 +923,6 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	m_hasSkybox = false;
 	m_vramBootSeed = nextVramBootSeed();
 	seedVramStaging();
-	const RuntimeAssets* fallback = assets.fallback;
 
 	std::vector<std::string> viewAssets;
 	viewAssets.reserve(assets.img.size());
@@ -950,29 +949,6 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 		}
 		const i32 atlasId = imgAsset.meta.atlasid;
 		m_atlasResourceById[atlasId] = id;
-	}
-
-	if (fallback) {
-		for (const auto& entry : fallback->img) {
-			const auto& imgAsset = entry.second;
-			const std::string& id = imgAsset.id;
-			if (primaryIds.find(id) != primaryIds.end()) {
-				continue;
-			}
-			if (imgAsset.meta.atlassed) {
-				viewAssets.push_back(id);
-				continue;
-			}
-			if (id == engineAtlasName && !engineAtlasAsset) {
-				engineAtlasAsset = &imgAsset;
-				continue;
-			}
-			if (!isAtlasName(id)) {
-				continue;
-			}
-			const i32 atlasId = imgAsset.meta.atlasid;
-			m_atlasResourceById[atlasId] = id;
-		}
 	}
 
 	if (!engineAtlasAsset) {
@@ -1237,7 +1213,7 @@ void VDP::flushAssetEdits() {
 				}
 				view->textures[textureKey] = handle;
 				if (isEngineAtlas) {
-					ImgAsset* engineAsset = EngineCore::instance().assets().getImg(engineAtlasName);
+					ImgAsset* engineAsset = EngineCore::instance().systemAssets().getImg(engineAtlasName);
 					if (!engineAsset) {
 						throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas asset missing during texture upload.");
 					}
@@ -1284,7 +1260,7 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 		if (atlasIt == m_atlasResourceById.end()) {
 			throw BMSX_RUNTIME_ERROR("[VDP] Atlas " + std::to_string(atlasId) + " not registered.");
 		}
-		ImgAsset* atlasAsset = EngineCore::instance().assets().getImg(atlasIt->second);
+		ImgAsset* atlasAsset = EngineCore::instance().resolveImgAsset(atlasIt->second);
 		if (!atlasAsset) {
 			throw BMSX_RUNTIME_ERROR("[VDP] Atlas asset '" + atlasIt->second + "' not found.");
 		}
@@ -1344,11 +1320,10 @@ void VDP::setSkyboxImages(const SkyboxImageIds& ids) {
 	if (!m_imgDecController) {
 		throw BMSX_RUNTIME_ERROR("[VDP] ImgDecController not attached.");
 	}
-	auto& assets = EngineCore::instance().assets();
 	const std::array<const std::string*, 6> faces = {{&ids.posx, &ids.negx, &ids.posy, &ids.negy, &ids.posz, &ids.negz}};
 	for (size_t index = 0; index < faces.size(); ++index) {
 		const std::string& assetId = *faces[index];
-		auto* asset = assets.getImg(assetId);
+		auto* asset = EngineCore::instance().resolveImgAsset(assetId);
 		if (!asset) {
 			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' not found.");
 		}

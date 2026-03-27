@@ -687,9 +687,7 @@ export function buildRuntimeErrorDetailsForEditor(runtime: Runtime, error: unkno
 			}
 		}
 	}
-	const projectRootPath = runtime.isEngineProgramActive()
-		? $.engine_layer.index.projectRootPath
-		: $.assets.project_root_path;
+	const projectRootPath = $.cart_project_root_path;
 	if (luaFrames.length > 0) {
 		for (const frame of luaFrames) {
 			const source = frame.source;

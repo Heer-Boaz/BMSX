@@ -3,6 +3,7 @@ import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
+import { SYSTEM_BOOT_ENTRY_PATH } from '../../src/bmsx/core/system_machine';
 import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
 import type { LuaChunk } from '../../src/bmsx/lua/syntax/lua_ast';
 import { encodeAudioAssetToAdpcm } from './adpcm';
@@ -1257,7 +1258,7 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 
 export function appendProgramAsset(
 	assetList: RomAsset[],
-	manifest: RomManifest,
+	entryPath: string = SYSTEM_BOOT_ENTRY_PATH,
 	options: {
 		extraLuaAssets?: RomAsset[];
 		includeSymbols?: boolean;
@@ -1300,10 +1301,6 @@ export function appendProgramAsset(
 	if (luaAssets.length === 0) {
 		throw new Error('[RomPacker] Cannot build program header without Lua assets.');
 	}
-	if (!manifest || !manifest.lua || !manifest.lua.entry_path) {
-		throw new Error('[RomPacker] Manifest is missing lua.entry_path; cannot build program asset.');
-	}
-	const entryPath = manifest.lua.entry_path;
 	const entryAsset = luaAssets.find(asset => asset.source_path === entryPath);
 	if (!entryAsset) {
 		throw new Error(`[RomPacker] Lua entry '${entryPath}' not found in asset list.`);
@@ -1513,7 +1510,7 @@ export async function finalizeRompack(
 	options: {
 		projectRootPath?: string,
 		status?: ProgressNote,
-		manifest?: RomManifest,
+		manifest?: RomManifest | null,
 		zipRom: boolean,
 		debug: boolean,
 		programBoot: {
@@ -1598,14 +1595,15 @@ export async function finalizeRompack(
 		}
 
 		const dataLength = offset - dataOffset;
-		if (!options.manifest) {
-			throw new Error('[RomPacker] Missing manifest for ROM; cannot build header.');
+		let manifestOffset = 0;
+		let manifestLength = 0;
+		if (options.manifest) {
+			status?.('encode rom manifest');
+			const manifestBuffer = encodeBiosManifest(options.manifest);
+			manifestOffset = offset;
+			manifestLength = manifestBuffer.length;
+			await writeBuffer(manifestBuffer);
 		}
-		status?.('encode bios manifest');
-		const biosManifestBuffer = encodeBiosManifest(options.manifest);
-		const manifestOffset = offset;
-		const manifestLength = biosManifestBuffer.length;
-		await writeBuffer(biosManifestBuffer);
 
 		status?.('encode toc');
 		const tocBuffer = Buffer.from(encodeRomToc({

@@ -7,7 +7,8 @@ import type {
 	Polygon,
 	RomAsset,
 	RomImgAsset,
-	RomManifest,
+	CartManifest,
+	MachineManifest,
 	RuntimeAssets,
 	CartridgeIndex,
 	CartridgeLayerId,
@@ -174,13 +175,33 @@ export function normalizeCartridgeBlob(blob: Uint8Array): { payload: Uint8Array;
 	return { payload, romlabel };
 }
 
-export async function loadAssetList(rom: Uint8Array): Promise<{ assets: RomAsset[]; projectRootPath: string; manifest: RomManifest }> {
-	const header = parseCartHeader(rom);
+type RomAssetList = {
+	assets: RomAsset[];
+	projectRootPath: string;
+};
+
+type CartridgeMetadata = {
+	cart_manifest: CartManifest;
+	machine: MachineManifest;
+	entry_path: string;
+	input?: CartManifest['input'];
+};
+
+function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): CartridgeMetadata {
 	if (header.manifestLength === 0) {
 		throw new Error('ROM header is missing manifest payload.');
 	}
 	const manifestSlice = rom.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength);
-	const manifest = decodeBinary(manifestSlice) as RomManifest;
+	const cart_manifest = decodeBinary(manifestSlice) as CartManifest;
+	return {
+		cart_manifest,
+		machine: cart_manifest.machine,
+		entry_path: cart_manifest.lua.entry_path,
+		input: cart_manifest.input,
+	};
+}
+
+async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader): Promise<RomAssetList> {
 	const sliced = rom.subarray(header.tocOffset, header.tocOffset + header.tocLength);
 	const decoded = decodeRomToc(sliced);
 	const assetList = decoded.assets;
@@ -316,12 +337,29 @@ export async function loadAssetList(rom: Uint8Array): Promise<{ assets: RomAsset
 			}
 		}
 	}
-	return { assets: assetList, projectRootPath, manifest };
+	return {
+		assets: assetList,
+		projectRootPath,
+	};
+}
+
+export async function loadRomAssetList(rom: Uint8Array): Promise<RomAssetList> {
+	const header = parseCartHeader(rom);
+	return loadRomAssetListFromHeader(rom, header);
 }
 
 export async function parseCartridgeIndex(payload: Uint8Array): Promise<CartridgeIndex> {
-	const { assets, projectRootPath, manifest } = await loadAssetList(payload);
-	return { assets, projectRootPath, manifest };
+	const header = parseCartHeader(payload);
+	const { assets, projectRootPath } = await loadRomAssetListFromHeader(payload, header);
+	const { cart_manifest, machine, entry_path, input } = decodeCartridgeMetadata(payload, header);
+	return {
+		assets,
+		projectRootPath,
+		cart_manifest,
+		machine,
+		entry_path,
+		input,
+	};
 }
 
 async function loadDataFromBuffer(buffer: Uint8Array): Promise<any> {
@@ -524,8 +562,9 @@ async function loadRuntimeAssetsFromSource(source: RawAssetSource, index: Cartri
 		data: {},
 		audioevents: {},
 		project_root_path: index.projectRootPath,
-		manifest: index.manifest,
-		canonicalization: index.manifest.machine.canonicalization,
+		cart_manifest: index.cart_manifest,
+		machine: index.machine,
+		entry_path: index.entry_path,
 	};
 	const entries = source.list();
 	await Promise.all(entries.map(entry => load(source, entry, assets, opts)));
@@ -546,47 +585,22 @@ export async function buildRuntimeAssetLayer(params: { blob: Uint8Array; id: Car
 	return { id: params.id, index, payload: normalized.payload, assets };
 }
 
-export function applyRuntimeAssetLayer(target: RuntimeAssets, layer: RuntimeAssetLayer): void {
-	for (const asset of layer.index.assets) {
-		if (asset.op !== 'delete') {
-			continue;
-		}
-		removeRuntimeAsset(target, asset);
-	}
-	Object.assign(target.img, layer.assets.img);
-	Object.assign(target.audio, layer.assets.audio);
-	Object.assign(target.model, layer.assets.model);
-	Object.assign(target.data, layer.assets.data);
-	Object.assign(target.audioevents, layer.assets.audioevents);
-	target.project_root_path = layer.assets.project_root_path;
-	target.manifest = layer.assets.manifest;
-	target.canonicalization = layer.assets.canonicalization;
-}
-
-function removeRuntimeAsset(target: RuntimeAssets, asset: RomAsset): void {
-	const assetKey = tokenKeyFromAsset(asset);
-	switch (asset.type) {
-		case 'atlas':
-		case 'image':
-			delete target.img[assetKey];
-			return;
-		case 'audio':
-			delete target.audio[assetKey];
-			return;
-		case 'model':
-			delete target.model[assetKey];
-			return;
-		case 'data':
-			delete target.data[assetKey];
-			return;
-		case 'aem':
-			delete target.audioevents[assetKey];
-			return;
-		case 'lua':
-		case 'code':
-		case 'romlabel':
-			return;
-		default:
-			throw new Error(`Unrecognised resource type in rom: ${asset.type}, while removing runtime assets!`);
-	}
+export async function buildSystemRuntimeAssetLayer(params: {
+	blob: Uint8Array;
+	machine: MachineManifest;
+	entry_path: string;
+	opts?: RomLoadOptions;
+}): Promise<RuntimeAssetLayer> {
+	const normalized = normalizeCartridgeBlob(params.blob);
+	const { assets } = await loadRomAssetList(normalized.payload);
+	const index: CartridgeIndex = {
+		assets,
+		projectRootPath: '',
+		cart_manifest: null,
+		machine: params.machine,
+		entry_path: params.entry_path,
+	};
+	const source = new AssetSourceStack([{ id: 'system', index, payload: normalized.payload }]);
+	const runtimeAssets = await loadRuntimeAssetsFromSource(source, index, params.opts);
+	return { id: 'system', index, payload: normalized.payload, assets: runtimeAssets };
 }

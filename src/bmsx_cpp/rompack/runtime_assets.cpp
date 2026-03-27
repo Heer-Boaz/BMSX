@@ -80,7 +80,7 @@ static i64 parseRequiredPositiveI64(const BinObject& obj, const char* key, const
 	return value;
 }
 
-static void parseMachineSpecs(const BinObject& machineObj, RomManifest& manifest) {
+static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& manifest) {
 	manifest.ufpsScaled = parseRequiredPositiveI64(machineObj, "ufps", "machine.ufps");
 	const auto& specsObj = requireObject(machineObj, "specs", "machine.specs");
 	const auto& cpuObj = requireObject(specsObj, "cpu", "machine.specs.cpu");
@@ -927,9 +927,6 @@ ImgAsset* RuntimeAssets::getImg(const AssetId& id) {
 	if (it != img.end()) {
 		return &it->second;
 	}
-	if (fallback) {
-		return const_cast<ImgAsset*>(fallback->getImg(id));
-	}
 	return nullptr;
 }
 
@@ -939,7 +936,7 @@ const ImgAsset* RuntimeAssets::getImg(const AssetId& id) const {
 	if (it != img.end()) {
 		return &it->second;
 	}
-	return fallback ? fallback->getImg(id) : nullptr;
+	return nullptr;
 }
 
 AudioAsset* RuntimeAssets::getAudio(const AssetId& id) {
@@ -947,9 +944,6 @@ AudioAsset* RuntimeAssets::getAudio(const AssetId& id) {
 	auto it = audio.find(token);
 	if (it != audio.end()) {
 		return &it->second;
-	}
-	if (fallback) {
-		return const_cast<AudioAsset*>(fallback->getAudio(id));
 	}
 	return nullptr;
 }
@@ -960,7 +954,7 @@ const AudioAsset* RuntimeAssets::getAudio(const AssetId& id) const {
 	if (it != audio.end()) {
 		return &it->second;
 	}
-	return fallback ? fallback->getAudio(id) : nullptr;
+	return nullptr;
 }
 
 ModelAsset* RuntimeAssets::getModel(const AssetId& id) {
@@ -968,9 +962,6 @@ ModelAsset* RuntimeAssets::getModel(const AssetId& id) {
 	auto it = model.find(token);
 	if (it != model.end()) {
 		return &it->second;
-	}
-	if (fallback) {
-		return const_cast<ModelAsset*>(fallback->getModel(id));
 	}
 	return nullptr;
 }
@@ -981,7 +972,7 @@ const ModelAsset* RuntimeAssets::getModel(const AssetId& id) const {
 	if (it != model.end()) {
 		return &it->second;
 	}
-	return fallback ? fallback->getModel(id) : nullptr;
+	return nullptr;
 }
 
 const BinValue* RuntimeAssets::getData(const AssetId& id) const {
@@ -990,7 +981,7 @@ const BinValue* RuntimeAssets::getData(const AssetId& id) const {
 	if (it != data.end()) {
 		return &it->second.value;
 	}
-	return fallback ? fallback->getData(id) : nullptr;
+	return nullptr;
 }
 
 LuaSourceAsset* RuntimeAssets::getLua(const AssetId& path) {
@@ -998,9 +989,6 @@ LuaSourceAsset* RuntimeAssets::getLua(const AssetId& path) {
 	auto it = lua.find(token);
 	if (it != lua.end()) {
 		return &it->second;
-	}
-	if (fallback) {
-		return const_cast<LuaSourceAsset*>(fallback->getLua(path));
 	}
 	return nullptr;
 }
@@ -1011,7 +999,7 @@ const LuaSourceAsset* RuntimeAssets::getLua(const AssetId& path) const {
 	if (it != lua.end()) {
 		return &it->second;
 	}
-	return fallback ? fallback->getLua(path) : nullptr;
+	return nullptr;
 }
 
 const BinValue* RuntimeAssets::getAudioEvent(const AssetId& id) const {
@@ -1020,7 +1008,7 @@ const BinValue* RuntimeAssets::getAudioEvent(const AssetId& id) const {
 	if (it != audioevents.end()) {
 		return &it->second.value;
 	}
-	return fallback ? fallback->getAudioEvent(id) : nullptr;
+	return nullptr;
 }
 
 bool RuntimeAssets::hasImg(const AssetId& id) const {
@@ -1058,9 +1046,9 @@ void RuntimeAssets::clear() {
 	programAsset.reset();
 	programSymbols.reset();
 	projectRootPath.clear();
-	manifest = RomManifest{};
-	canonicalization = CanonicalizationType::None;
-	fallback = nullptr;
+	cartManifest.reset();
+	machine = MachineManifest{};
+	entryPoint.clear();
 }
 
 /* ============================================================================
@@ -1326,17 +1314,9 @@ static std::vector<u8> zlibDecompress(const u8* data, size_t size) {
 }
 #endif
 
-bool loadAssetsFromRom(const u8* buffer,
-						size_t size,
-						RuntimeAssets& assets,
-						const AssetLoadCallbacks*,
-						const char* payloadId) {
-	assets.clear();
-
-	// Step 1: Check for optional PNG label at start, skip it if present
-	const u8* romData = buffer;
-	size_t romSize = size;
-
+static void normalizeRomPayload(const u8* buffer, size_t size, const u8*& romData, size_t& romSize, std::vector<u8>& decompressed) {
+	romData = buffer;
+	romSize = size;
 	size_t pngEnd = findPNGEnd(buffer, size);
 	if (pngEnd > 0) {
 		const u8* candidate = buffer + pngEnd;
@@ -1347,8 +1327,6 @@ bool loadAssetsFromRom(const u8* buffer,
 		}
 	}
 
-	// Step 2: Check if data is compressed
-	std::vector<u8> decompressed;
 	if (!hasCartHeader(romData, romSize)) {
 		#if BMSX_ENABLE_ZLIB
 		if (!looksZlibCompressed(romData, romSize)) {
@@ -1365,9 +1343,9 @@ bool loadAssetsFromRom(const u8* buffer,
 			throw BMSX_RUNTIME_ERROR("Invalid ROM payload after decompression.");
 		}
 	}
-	const CartRomHeader header = parseCartHeader(romData, romSize);
+}
 
-	// Step 3: Parse manifest from header section
+static void decodeCartridgeMetadata(const u8* romData, const CartRomHeader& header, RuntimeAssets& assets) {
 	if (header.manifestLength == 0) {
 		throw BMSX_RUNTIME_ERROR("ROM header is missing manifest payload.");
 	}
@@ -1376,33 +1354,41 @@ bool loadAssetsFromRom(const u8* buffer,
 		throw BMSX_RUNTIME_ERROR("ROM manifest payload is not an object.");
 	}
 	const auto& manifestObj = manifestValue.asObject();
-	if (manifestObj.count("name")) assets.manifest.name = manifestObj.at("name").asString();
-	if (manifestObj.count("title")) assets.manifest.title = manifestObj.at("title").asString();
-	if (manifestObj.count("short_name")) assets.manifest.shortName = manifestObj.at("short_name").asString();
-	if (manifestObj.count("rom_name")) assets.manifest.romName = manifestObj.at("rom_name").asString();
-	if (manifestObj.count("version")) assets.manifest.version = manifestObj.at("version").asString();
-	if (manifestObj.count("author")) assets.manifest.author = manifestObj.at("author").asString();
-	if (manifestObj.count("description")) assets.manifest.description = manifestObj.at("description").asString();
+	CartManifest cartManifest{};
+	if (manifestObj.count("name")) cartManifest.name = manifestObj.at("name").asString();
+	if (manifestObj.count("title")) cartManifest.title = manifestObj.at("title").asString();
+	if (manifestObj.count("short_name")) cartManifest.shortName = manifestObj.at("short_name").asString();
+	if (manifestObj.count("rom_name")) cartManifest.romName = manifestObj.at("rom_name").asString();
+	if (manifestObj.count("version")) cartManifest.version = manifestObj.at("version").asString();
+	if (manifestObj.count("author")) cartManifest.author = manifestObj.at("author").asString();
+	if (manifestObj.count("description")) cartManifest.description = manifestObj.at("description").asString();
+	assets.cartManifest = cartManifest;
 
 	if (manifestObj.count("machine") && manifestObj.at("machine").isObject()) {
 		const auto& machineObj = manifestObj.at("machine").asObject();
-		if (machineObj.count("namespace")) assets.manifest.namespaceName = machineObj.at("namespace").asString();
-		assets.manifest.canonicalization = parseCanonicalization(machineObj.at("canonicalization").asString());
-		assets.canonicalization = assets.manifest.canonicalization;
-		parseMachineSpecs(machineObj, assets.manifest);
+		if (machineObj.count("namespace")) assets.machine.namespaceName = machineObj.at("namespace").asString();
+		assets.machine.canonicalization = parseCanonicalization(machineObj.at("canonicalization").asString());
+		parseMachineSpecs(machineObj, assets.machine);
 		if (machineObj.count("render_size") && machineObj.at("render_size").isObject()) {
 			const auto& vpObj = machineObj.at("render_size").asObject();
-			if (vpObj.count("width")) assets.manifest.viewportWidth = vpObj.at("width").toI32();
-			if (vpObj.count("height")) assets.manifest.viewportHeight = vpObj.at("height").toI32();
+			if (vpObj.count("width")) assets.machine.viewportWidth = vpObj.at("width").toI32();
+			if (vpObj.count("height")) assets.machine.viewportHeight = vpObj.at("height").toI32();
 		}
 	}
 
 	if (manifestObj.count("lua") && manifestObj.at("lua").isObject()) {
 		const auto& luaObj = manifestObj.at("lua").asObject();
-		if (luaObj.count("entry_path")) assets.manifest.entryPoint = luaObj.at("entry_path").asString();
+		if (luaObj.count("entry_path")) assets.entryPoint = luaObj.at("entry_path").asString();
 	}
+}
 
-	// Step 4: Parse runtime TOC
+static bool loadRomAssetPayloadInternal(const u8* romData,
+						size_t,
+						const CartRomHeader& header,
+						RuntimeAssets& assets,
+						const AssetLoadCallbacks*,
+						const char* payloadId,
+						bool loadProjectRoot) {
 	const u8* tocData = romData + header.tocOffset;
 	const size_t tocSize = header.tocLength;
 	if (tocSize < ROM_TOC_HEADER_SIZE) {
@@ -1441,7 +1427,7 @@ bool loadAssetsFromRom(const u8* buffer,
 	const u8* stringTable = tocData + stringTableOffset;
 	const size_t stringTableSize = stringTableLength;
 	const std::string projectRootPath = readStringFromTable(stringTable, stringTableSize, projectRootOffset, projectRootLength);
-	if (!projectRootPath.empty()) {
+	if (loadProjectRoot && !projectRootPath.empty()) {
 		assets.projectRootPath = projectRootPath;
 	}
 
@@ -1721,6 +1707,35 @@ bool loadAssetsFromRom(const u8* buffer,
 
 	logMemSnapshot("assets:end");
 	return true;
+}
+
+bool loadCartAssetsFromRom(const u8* buffer,
+						size_t size,
+						RuntimeAssets& assets,
+						const AssetLoadCallbacks* callbacks,
+						const char* payloadId) {
+	assets.clear();
+	const u8* romData = nullptr;
+	size_t romSize = 0;
+	std::vector<u8> decompressed;
+	normalizeRomPayload(buffer, size, romData, romSize, decompressed);
+	const CartRomHeader header = parseCartHeader(romData, romSize);
+	decodeCartridgeMetadata(romData, header, assets);
+	return loadRomAssetPayloadInternal(romData, romSize, header, assets, callbacks, payloadId, true);
+}
+
+bool loadSystemAssetsFromRom(const u8* buffer,
+						size_t size,
+						RuntimeAssets& assets,
+						const AssetLoadCallbacks* callbacks,
+						const char* payloadId) {
+	assets.clear();
+	const u8* romData = nullptr;
+	size_t romSize = 0;
+	std::vector<u8> decompressed;
+	normalizeRomPayload(buffer, size, romData, romSize, decompressed);
+	const CartRomHeader header = parseCartHeader(romData, romSize);
+	return loadRomAssetPayloadInternal(romData, romSize, header, assets, callbacks, payloadId, false);
 }
 
 } // namespace bmsx

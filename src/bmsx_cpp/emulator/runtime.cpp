@@ -245,8 +245,7 @@ void Runtime::prepareCartBootIfNeeded() {
 	if (!isEngineProgramActive()) {
 		return;
 	}
-	const RuntimeAssets& assets = EngineCore::instance().assets();
-	if (!assets.programAsset) {
+	if (!EngineCore::instance().hasLoadedCartProgram()) {
 		return;
 	}
 	if (m_cartBootPrepared) {
@@ -265,7 +264,7 @@ bool Runtime::pollSystemBootRequest() {
 	}
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	try {
-		if (!EngineCore::instance().resetLoadedRom()) {
+		if (!EngineCore::instance().bootLoadedCart()) {
 			setCartBootReadyFlag(false);
 			EngineCore::instance().log(LogLevel::Error,
 				"[Runtime] Cart boot request failed while leaving system boot screen active.\n");
@@ -510,6 +509,13 @@ void Runtime::queueLifecycleHandlers(bool runInit, bool runNewGame) {
 }
 
 void Runtime::tickUpdate() {
+	if (m_rebootRequested) {
+		m_rebootRequested = false;
+		if (!EngineCore::instance().rebootLoadedRom()) {
+			EngineCore::instance().log(LogLevel::Error, "[Runtime] Reboot to bootrom failed.\n");
+		}
+		return;
+	}
 	if (!m_luaInitialized || !m_tickEnabled || m_runtimeFailed) {
 		return;
 	}
@@ -655,7 +661,8 @@ void Runtime::processIOCommands() {
 }
 
 void Runtime::requestProgramReload() {
-	// Mark for reload - actual reload happens in the appropriate phase
+	// Reboot is executed on the next update boundary so the active Lua call can unwind first.
+	m_rebootRequested = true;
 	m_luaInitialized = false;
 	resetFrameState();
 }
@@ -769,7 +776,7 @@ void Runtime::setCpuHz(i64 hz) {
 }
 
 void Runtime::applyActiveMachineTiming(i64 cpuHz) {
-	const RomManifest& manifest = EngineCore::instance().assets().manifest;
+	const MachineManifest& manifest = EngineCore::instance().machineManifest();
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, EngineCore::instance().ufpsScaled());
 	const i64 vblankCycles = resolveVblankCycles(cpuHz, EngineCore::instance().ufpsScaled(), manifest.viewportHeight);
 	setCpuHz(cpuHz);
@@ -947,7 +954,6 @@ void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, Asse
 		m_memory.resetAssetMemory();
 	}
 	m_vdp.registerImageAssets(assets, keepDecodedData);
-	const RuntimeAssets* fallback = assets.fallback;
 	std::vector<const AudioAsset*> audioAssets;
 	audioAssets.reserve(assets.audio.size());
 	std::unordered_set<std::string> audioIdSet;
@@ -974,35 +980,6 @@ void Runtime::buildAssetMemory(RuntimeAssets& assets, bool keepDecodedData, Asse
 			static_cast<uint32_t>(audioAsset->dataOffset),
 			static_cast<uint32_t>(audioAsset->dataSize)
 		);
-	}
-	if (fallback) {
-		std::vector<const AudioAsset*> fallbackAssets;
-		fallbackAssets.reserve(fallback->audio.size());
-		for (const auto& entry : fallback->audio) {
-			const auto& audioAsset = entry.second;
-			if (audioIdSet.find(audioAsset.id) != audioIdSet.end()) {
-				continue;
-			}
-			fallbackAssets.push_back(&audioAsset);
-		}
-		std::sort(fallbackAssets.begin(), fallbackAssets.end(), [](const AudioAsset* lhs, const AudioAsset* rhs) {
-			return lhs->id < rhs->id;
-		});
-		for (const auto* audioAsset : fallbackAssets) {
-			const std::string& id = audioAsset->id;
-			if (m_memory.hasAsset(id)) {
-				continue;
-			}
-			m_memory.registerAudioMeta(
-				id,
-				static_cast<uint32_t>(audioAsset->sampleRate),
-				static_cast<uint32_t>(audioAsset->channels),
-				static_cast<uint32_t>(audioAsset->bitsPerSample),
-				static_cast<uint32_t>(audioAsset->frames),
-				static_cast<uint32_t>(audioAsset->dataOffset),
-				static_cast<uint32_t>(audioAsset->dataSize)
-			);
-		}
 	}
 
 	m_memory.finalizeAssetTable();

@@ -20,8 +20,13 @@ export type WorkspaceOverrideRecord = { source: string; path: string; cartPath: 
 type WorkspaceStoragePayload = { contents: string; updatedAt: number };
 type WorkspaceWinnerKind = 'override' | 'canonical' | 'rom';
 
+function resolveEditableCartLuaSources(): LuaSourceRegistry {
+	const runtime = Runtime.instance;
+	return runtime.cartLuaSources ? runtime.cartLuaSources : $.lua_sources;
+}
+
 export async function saveLuaResourceSource(path: string, source: string): Promise<void> {
-	const cart = $.lua_sources;
+	const cart = resolveEditableCartLuaSources();
 	const asset = cart.path2lua[path];
 	const sourcePath = asset.source_path;
 	await persistLuaSourceToFilesystem(sourcePath, source);
@@ -48,8 +53,9 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 	};
 	const registerAsset = (cart: LuaSourceRegistry): void => {
 		cart.path2lua![asset.source_path] = asset;
+		cart.can_boot_from_source = true;
 	};
-	registerAsset($.lua_sources);
+	registerAsset(resolveEditableCartLuaSources());
 	runtimeLuaPipeline.invalidateModuleAliases(Runtime.instance);
 	const filesystemPath = asset.source_path;
 	await persistLuaSourceToFilesystem(filesystemPath, contents);
@@ -327,7 +333,7 @@ export async function mergeWorkspaceOverrides(
 }
 
 export async function fetchWorkspaceOverridesPriority(cart: LuaSourceRegistry): Promise<Map<string, WorkspaceOverrideRecord>> {
-	const root = $.assets.project_root_path;
+	const root = $.cart_project_root_path;
 	try {
 		const serverOverrides = await fetchWorkspaceDirtyLuaOverrides(cart, root);
 		return serverOverrides;
@@ -585,7 +591,7 @@ export async function applyWorkspaceOverridesToCart(params: { cart: LuaSourceReg
 	const { cart, storage } = params;
 	const includeServer = params.includeServer !== false;
 	const changed = new Set<string>();
-	const root = $.assets.project_root_path;
+	const root = $.cart_project_root_path;
 
 	const localOverrides = collectWorkspaceOverrides({ cart, projectRootPath: root, storage });
 	const serverOverrides = includeServer ? await fetchWorkspaceOverridesPriority(cart) : new Map<string, WorkspaceOverrideRecord>();
@@ -668,7 +674,7 @@ export async function applyWorkspaceOverridesToCart(params: { cart: LuaSourceReg
 }
 
 export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
-	const root = $.assets.project_root_path;
+	const root = $.cart_project_root_path;
 	for (const asset of Object.values(cart.path2lua)) {
 		const cartPath = asset.source_path;
 		const dirtyPath = buildWorkspaceDirtyEntryPath(root, cartPath);
@@ -683,7 +689,7 @@ export async function clearWorkspaceArtifacts(cart: LuaSourceRegistry, storage: 
 }
 
 async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: StorageService): Promise<void> {
-	const root = $.assets.project_root_path;
+	const root = $.cart_project_root_path;
 	const scratchPaths = await collectScratchWorkspaceDirtyPaths(root);
 	for (const asset of Object.values(cart.path2lua)) {
 		const cartPath = asset.source_path;
@@ -701,12 +707,12 @@ async function clearWorkspaceDirtyFiles(cart: LuaSourceRegistry, storage: Storag
 
 export async function resetWorkspaceDirtyBuffersAndStorage(): Promise<void> {
 	const runtime = Runtime.instance;
-	await clearWorkspaceDirtyFiles($.lua_sources, runtime.storageService);
+	await clearWorkspaceDirtyFiles(resolveEditableCartLuaSources(), runtime.storageService);
 }
 
 export async function nukeWorkspaceState(): Promise<void> {
 	const runtime = Runtime.instance;
-	await clearWorkspaceArtifacts($.lua_sources, runtime.storageService);
+	await clearWorkspaceArtifacts(resolveEditableCartLuaSources(), runtime.storageService);
 }
 
 export function listResources(): ResourceDescriptor[] {

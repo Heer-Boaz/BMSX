@@ -2246,7 +2246,7 @@ export function performHotReloadAndResume(): boolean {
 	console.log('[IDE] Performing hot-reload and resume');
 	scheduleRuntimeTask(async () => {
 		console.log('[IDE] Applying workspace overrides to cart before resume');
-		await applyWorkspaceOverridesToCart({ cart: $.lua_sources, storage: $.platform.storage, includeServer: true });
+		await applyWorkspaceOverridesToCart({ cart: runtime.cartLuaSources ? runtime.cartLuaSources : $.lua_sources, storage: $.platform.storage, includeServer: true });
 		console.log('[IDE] Capturing runtime snapshot for resume');
 		const snapshot = runtimeLuaPipeline.captureCurrentState(runtime);
 		console.log('[IDE] Clear execution stop highlights before resume');
@@ -2267,19 +2267,12 @@ export function performHotReloadAndResume(): boolean {
 
 export function performReboot(): boolean {
 	const runtime = Runtime.instance;
-	const requiresReload = hasPendingRuntimeReload();
 	const targetGeneration = ide_state.saveGeneration;
 	clearExecutionStopHighlights();
 	runtimeIde.deactivateEditor(Runtime.instance);
 	scheduleRuntimeTask(async () => {
-		if (requiresReload) {
-			console.info('[IDE] Performing full program reload for reboot');
-			await runtimeLuaPipeline.reloadProgramAndResetWorld(runtime, { runInit: true }); // Was false, but it makes no sense to skip init on reboot
-		}
-		else {
-			console.info('[IDE] Performing standard reboot');
-			await runtimeLuaPipeline.reloadProgramAndResetWorld(runtime, { runInit: true });
-		}
+		console.info('[IDE] Performing cold reboot through bootrom');
+		await runtime.rebootToBootRom();
 		ide_state.appliedGeneration = targetGeneration;
 		$.paused = false;
 	}, (error) => {

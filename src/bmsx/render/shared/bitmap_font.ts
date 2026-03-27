@@ -1,4 +1,5 @@
 import { $ } from '../../core/engine_core';
+import { Runtime } from '../../emulator/runtime';
 import { tokenKeyFromId } from '../../rompack/asset_tokens';
 
 export type GlyphMap = Record<string, string>;
@@ -145,7 +146,9 @@ export class BFont {
 			return glyph;
 		}
 		const imgid = this.char_to_img(char);
-		const asset = $.assets.img[tokenKeyFromId(imgid)];
+		const asset = Runtime.hasInstance() && Runtime.instance.hasAssetLayerLookup()
+			? Runtime.instance.getImageAsset(imgid)
+			: $.assets.img[tokenKeyFromId(imgid)] ?? $.system_assets.img[tokenKeyFromId(imgid)];
 		if (!asset) {
 			throw new Error(`[BFont] Glyph asset "${imgid}" for character "${char}" not found.`);
 		}

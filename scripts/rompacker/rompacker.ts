@@ -3,12 +3,13 @@
 import pc from 'picocolors';
 import { Presets, SingleBar } from 'cli-progress';
 
+import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST, SYSTEM_ROM_NAME } from '../../src/bmsx/core/system_machine';
 import { createCliUi, findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from './cli_shared';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { lintCartLuaSources } from './cart_lua_linter';
-import { appendProgramAsset, commonResPath, createAtlasses, ENGINE_ATLAS_INDEX, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization } from './rombuilder';
-import type { AtlasResource, Resource, RomPackerOptions } from './rompacker.rompack';
-import type { CanonicalizationType, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
+import { appendProgramAsset, commonResPath, createAtlasses, finalizeRompack, GENERATE_AND_USE_TEXTURE_ATLAS, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, LUA_CANONICALIZATION, setAtlasFlag, setLuaCanonicalization } from './rombuilder';
+import type { RomPackerOptions } from './rompacker.rompack';
+import type { CanonicalizationType, RomAsset } from '../../src/bmsx/rompack/rompack';
 import { LuaError } from '../../src/bmsx/lua/luaerrors';
 
 import { join } from 'node:path';
@@ -86,25 +87,6 @@ function stripLuaAssets(assets: RomAsset[], debug: boolean): void {
 			assets.splice(index, 1);
 		}
 	}
-}
-
-function applyBIOSAtlasLimit(manifest: RomManifest, resources: Resource[]): void {
-	const atlas = resources.find((res): res is AtlasResource => res.type === 'atlas' && res.atlasid === ENGINE_ATLAS_INDEX);
-	if (!atlas || !atlas.img) {
-		throw new Error('[RomPacker] BIOS atlas missing; cannot compute system_atlas_slot_bytes.');
-	}
-	const width = atlas.img.width;
-	const height = atlas.img.height;
-	if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-		throw new Error('[RomPacker] BIOS atlas dimensions are invalid; cannot compute system_atlas_slot_bytes.');
-	}
-	const bytes = Math.floor(width) * Math.floor(height) * 4;
-	let vramSpecs = manifest.machine.specs.vram;
-	if (!vramSpecs) {
-		vramSpecs = {};
-		manifest.machine.specs.vram = vramSpecs;
-	}
-	vramSpecs.system_atlas_slot_bytes = bytes;
 }
 
 // --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---
@@ -527,15 +509,10 @@ async function runBIOSBuild(options: ParsedOptions): Promise<void> {
 	if (!BIOSResPath) {
 		throw new Error('Missing BIOS respath (expected ./src/bmsx/res).');
 	}
-	const BIOSManifest = await getRomManifest(BIOSResPath);
-	if (!BIOSManifest) {
-		throw new Error(`Rom manifest not found at "${BIOSResPath}"!`);
-	}
-	const BIOSRomName = BIOSManifest.rom_name ?? 'bmsx-bios';
+	const BIOSRomName = SYSTEM_ROM_NAME;
 
 	const BIOSProjectRoot = normalizePathKey(join(BIOSResPath, '..'));
-	const BIOSProjectRootPath = BIOSProjectRoot.replace(/^\.\//, '');
-	const BIOSVirtualRoot = BIOSProjectRootPath;
+	const BIOSVirtualRoot = BIOSProjectRoot.replace(/^\.\//, '');
 
 	logDivider('bios');
 	logBullet('ROM', pc.bold(pc.white(BIOSRomName)));
@@ -553,7 +530,7 @@ async function runBIOSBuild(options: ParsedOptions): Promise<void> {
 
 	logInfo(`Build BIOS assets (${BIOSRomName})`);
 	const previousCanonicalization = LUA_CANONICALIZATION;
-	const BIOSCanonicalization = BIOSManifest.machine.canonicalization ?? previousCanonicalization;
+	const BIOSCanonicalization = SYSTEM_MACHINE_MANIFEST.canonicalization ?? previousCanonicalization;
 	setLuaCanonicalization(BIOSCanonicalization);
 	try {
 		const biosLuaRoots = [normalizePathKey(BIOSResPath)];
@@ -568,13 +545,12 @@ async function runBIOSBuild(options: ParsedOptions): Promise<void> {
 		const BIOSResources = await getResourcesList(BIOSResMetaList);
 		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 			await createAtlasses(BIOSResources);
-			applyBIOSAtlasLimit(BIOSManifest, BIOSResources);
 		}
 		validateAudioEventReferences(BIOSResources);
 		const BIOSRomAssets = await generateRomAssets(BIOSResources);
-		const BIOSProgramBoot = appendProgramAsset(BIOSRomAssets, BIOSManifest, { includeSymbols: debug, optLevel });
+		const BIOSProgramBoot = appendProgramAsset(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: debug, optLevel });
 		stripLuaAssets(BIOSRomAssets, debug);
-		await finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: BIOSProjectRootPath, manifest: BIOSManifest, zipRom: false, debug, programBoot: BIOSProgramBoot });
+		await finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot });
 		logOk(`BIOS assets ready → ${pc.white(`dist/${BIOSRomName}${debug ? '.debug' : ''}.rom`)}`);
 	} finally {
 		setLuaCanonicalization(previousCanonicalization);
@@ -655,13 +631,7 @@ async function main() {
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
 		if (!isBIOSMode) {
-			const BIOSResPath = commonResPath;
-			const BIOSManifest = await getRomManifest(BIOSResPath);
-			if (!BIOSManifest) {
-				throw new Error(`BIOS manifest not found at "${BIOSResPath}".`);
-			}
-			const BIOSRomName = BIOSManifest.rom_name ?? 'bmsx-bios';
-			const BIOSRomPath = join(process.cwd(), 'dist', `${BIOSRomName}${romPackDebug ? '.debug' : ''}.rom`);
+			const BIOSRomPath = join(process.cwd(), 'dist', `${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom`);
 			if (!existsSync(BIOSRomPath)) {
 				throw new Error(`BIOS ROM not found at "${BIOSRomPath}". Build the bios ROM first.`);
 			}
@@ -721,7 +691,7 @@ async function main() {
 			validateAudioEventReferences(resources);
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-			const programBoot = appendProgramAsset(romAssets, romManifest, { includeSymbols: romPackDebug, optLevel });
+			const programBoot = appendProgramAsset(romAssets, romManifest.lua.entry_path, { includeSymbols: romPackDebug, optLevel });
 			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
 			if (!isBIOSMode) {

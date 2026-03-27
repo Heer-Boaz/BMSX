@@ -107,7 +107,7 @@ void submitSprite(const ImgRenderSubmission& options) {
 	if (entry.type != Memory::AssetType::Image) {
 		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Asset '" + options.imgid + "' is not an image.");
 	}
-	const auto* imgAsset = EngineCore::instance().assets().getImg(entry.id);
+	const auto* imgAsset = EngineCore::instance().resolveImgAsset(entry.id);
 	if (!imgAsset) {
 		throw BMSX_RUNTIME_ERROR("[Sprite Queue] Missing image metadata for '" + options.imgid + "'.");
 	}
@@ -460,7 +460,7 @@ void renderGlyphs(f32 x,
 		if (backgroundEntry.type != Memory::AssetType::Image) {
 			throw BMSX_RUNTIME_ERROR("[Glyph Queue] Asset 'whitepixel' is not an image.");
 		}
-		backgroundImgAsset = EngineCore::instance().assets().getImg(backgroundEntry.id);
+		backgroundImgAsset = EngineCore::instance().resolveImgAsset(backgroundEntry.id);
 		if (!backgroundImgAsset) {
 			throw BMSX_RUNTIME_ERROR("[Glyph Queue] Missing image metadata for 'whitepixel'.");
 		}
@@ -519,7 +519,7 @@ void renderGlyphs(f32 x,
 			if (entry.type != Memory::AssetType::Image) {
 				throw BMSX_RUNTIME_ERROR("[Glyph Queue] Asset '" + glyph.imgid + "' is not an image.");
 			}
-			const ImgAsset* imgAsset = EngineCore::instance().assets().getImg(entry.id);
+			const ImgAsset* imgAsset = EngineCore::instance().resolveImgAsset(entry.id);
 			if (!imgAsset) {
 				throw BMSX_RUNTIME_ERROR("[Glyph Queue] Missing image metadata for '" + glyph.imgid + "'.");
 			}

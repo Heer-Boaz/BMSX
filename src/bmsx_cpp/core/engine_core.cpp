@@ -3,6 +3,7 @@
  */
 
 #include "engine_core.h"
+#include "system_machine.h"
 #include "../input/input.h"
 #include "../render/texturemanager.h"
 #include "../emulator/runtime.h"
@@ -132,54 +133,68 @@ uint32_t computeRequiredAssetDataBytes(const RuntimeAssets& engineAssets, const 
 	return static_cast<uint32_t>(requiredBytes);
 }
 
-MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomManifest& engineManifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
+uint32_t resolveSystemAtlasSlotBytes(const RuntimeAssets& engineAssets) {
+	const std::string engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
+	const ImgAsset* engineAtlas = engineAssets.getImg(engineAtlasId);
+	if (!engineAtlas) {
+		throw std::runtime_error("[EngineCore] Engine atlas missing from assets.");
+	}
+	const i32 width = engineAtlas->meta.width;
+	const i32 height = engineAtlas->meta.height;
+	if (width <= 0 || height <= 0) {
+		throw std::runtime_error("[EngineCore] Engine atlas dimensions must be positive.");
+	}
+	return static_cast<uint32_t>(width) * static_cast<uint32_t>(height) * 4u;
+}
+
+MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const MachineManifest& systemMachine, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
 	MemoryMapConfig config;
-	if (manifest.stringHandleCount) {
-		const i32 value = *manifest.stringHandleCount;
+	if (machine.stringHandleCount) {
+		const i32 value = *machine.stringHandleCount;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] string_handle_count must be greater than 0.");
 		}
 		config.stringHandleCount = static_cast<uint32_t>(value);
 	}
-	if (manifest.stringHeapBytes) {
-		const i32 value = *manifest.stringHeapBytes;
+	if (machine.stringHeapBytes) {
+		const i32 value = *machine.stringHeapBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] string_heap_bytes must be greater than 0.");
 		}
 		config.stringHeapBytes = static_cast<uint32_t>(value);
 	}
-	if (manifest.atlasSlotBytes) {
-		const i32 value = *manifest.atlasSlotBytes;
+	if (machine.atlasSlotBytes) {
+		const i32 value = *machine.atlasSlotBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] atlas_slot_bytes must be greater than 0.");
 		}
 		config.atlasSlotBytes = static_cast<uint32_t>(value);
 	}
-	if (engineManifest.engineAtlasSlotBytes) {
-		const i32 value = *engineManifest.engineAtlasSlotBytes;
+	if (systemMachine.engineAtlasSlotBytes) {
+		const i32 value = *systemMachine.engineAtlasSlotBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] system_atlas_slot_bytes must be greater than 0.");
 		}
 		config.engineAtlasSlotBytes = static_cast<uint32_t>(value);
 	} else {
-		throw std::runtime_error("[EngineCore] system_atlas_slot_bytes is required in the engine manifest.");
+		config.engineAtlasSlotBytes = resolveSystemAtlasSlotBytes(engineAssets);
 	}
-	if (manifest.stagingBytes) {
-		const i32 value = *manifest.stagingBytes;
+	if (machine.stagingBytes) {
+		const i32 value = *machine.stagingBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] staging_bytes must be greater than 0.");
 		}
 		config.stagingBytes = static_cast<uint32_t>(value);
 	}
-	if (manifest.skyboxFaceBytes) {
-		const i32 value = *manifest.skyboxFaceBytes;
+	if (machine.skyboxFaceBytes) {
+		const i32 value = *machine.skyboxFaceBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] skybox_face_bytes must be greater than 0.");
 		}
 		config.skyboxFaceBytes = static_cast<uint32_t>(value);
 	} else {
-		const i32 faceSize = manifest.skyboxFaceSize > 0
-			? manifest.skyboxFaceSize
+		const i32 faceSize = machine.skyboxFaceSize > 0
+			? machine.skyboxFaceSize
 			: SKYBOX_FACE_DEFAULT_SIZE;
 		if (faceSize <= 0) {
 			throw std::runtime_error("[EngineCore] skybox_face_size must be greater than 0.");
@@ -188,8 +203,8 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 	}
 
 	const uint32_t requiredAssetTableBytes = computeAssetTableBytes(engineAssets, assets);
-	if (manifest.assetTableBytes) {
-		const i32 value = *manifest.assetTableBytes;
+	if (machine.assetTableBytes) {
+		const i32 value = *machine.assetTableBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] asset_table_bytes must be greater than 0.");
 		}
@@ -204,8 +219,8 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 
 	const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
 	const uint32_t requiredAssetDataBytes = computeRequiredAssetDataBytes(engineAssets, assets);
-	if (manifest.assetDataBytes) {
-		const i32 value = *manifest.assetDataBytes;
+	if (machine.assetDataBytes) {
+		const i32 value = *machine.assetDataBytes;
 		if (value < 0) {
 			throw std::runtime_error("[EngineCore] asset_data_bytes must be greater than or equal to 0.");
 		}
@@ -227,8 +242,8 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 		throw std::runtime_error("[EngineCore] ram_bytes exceeds addressable range.");
 	}
 	const uint32_t requiredRamBytes = static_cast<uint32_t>(computedRamBytes);
-	if (manifest.ramBytes) {
-		const i32 value = *manifest.ramBytes;
+	if (machine.ramBytes) {
+		const i32 value = *machine.ramBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] ram_bytes must be greater than 0.");
 		}
@@ -256,12 +271,12 @@ MemoryMapConfig resolveMemoryMapConfig(const RomManifest& manifest, const RomMan
 	return config;
 }
 
-void applyManifestMemorySpecs(const RomManifest& manifest, const RomManifest& engineManifest, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
-	const MemoryMapConfig config = resolveMemoryMapConfig(manifest, engineManifest, assets, engineAssets);
+void applyManifestMemorySpecs(const MachineManifest& machine, const MachineManifest& systemMachine, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
+	const MemoryMapConfig config = resolveMemoryMapConfig(machine, systemMachine, assets, engineAssets);
 	configureMemoryMap(config);
 }
 
-bool tryResolveCpuHz(const RomManifest& manifest, i64& outHz) {
+bool tryResolveCpuHz(const MachineManifest& manifest, i64& outHz) {
 	if (!manifest.cpuHz) {
 		return false;
 	}
@@ -273,7 +288,7 @@ bool tryResolveCpuHz(const RomManifest& manifest, i64& outHz) {
 	return true;
 }
 
-i64 resolveCpuHz(const RomManifest& manifest) {
+i64 resolveCpuHz(const MachineManifest& manifest) {
 	if (!manifest.cpuHz) {
 		throw std::runtime_error("[EngineCore] machine.specs.cpu.cpu_freq_hz is required.");
 	}
@@ -284,7 +299,7 @@ i64 resolveCpuHz(const RomManifest& manifest) {
 	return hz;
 }
 
-i64 resolveImgDecBytesPerSec(const RomManifest& manifest) {
+i64 resolveImgDecBytesPerSec(const MachineManifest& manifest) {
 	if (!manifest.imgDecBytesPerSec) {
 		throw std::runtime_error("[EngineCore] machine.specs.cpu.imgdec_bytes_per_sec is required.");
 	}
@@ -295,7 +310,7 @@ i64 resolveImgDecBytesPerSec(const RomManifest& manifest) {
 	return value;
 }
 
-i64 resolveDmaBytesPerSecIso(const RomManifest& manifest) {
+i64 resolveDmaBytesPerSecIso(const MachineManifest& manifest) {
 	if (!manifest.dmaBytesPerSecIso) {
 		throw std::runtime_error("[EngineCore] machine.specs.dma.dma_bytes_per_sec_iso is required.");
 	}
@@ -306,7 +321,7 @@ i64 resolveDmaBytesPerSecIso(const RomManifest& manifest) {
 	return value;
 }
 
-i64 resolveDmaBytesPerSecBulk(const RomManifest& manifest) {
+i64 resolveDmaBytesPerSecBulk(const MachineManifest& manifest) {
 	if (!manifest.dmaBytesPerSecBulk) {
 		throw std::runtime_error("[EngineCore] machine.specs.dma.dma_bytes_per_sec_bulk is required.");
 	}
@@ -317,7 +332,7 @@ i64 resolveDmaBytesPerSecBulk(const RomManifest& manifest) {
 	return value;
 }
 
-bool tryResolveUfpsScaled(const RomManifest& manifest, i64& outUfpsScaled) {
+bool tryResolveUfpsScaled(const MachineManifest& manifest, i64& outUfpsScaled) {
 	if (!manifest.ufpsScaled) {
 		return false;
 	}
@@ -329,7 +344,7 @@ bool tryResolveUfpsScaled(const RomManifest& manifest, i64& outUfpsScaled) {
 	return true;
 }
 
-i64 resolveUfpsScaled(const RomManifest& manifest) {
+i64 resolveUfpsScaled(const MachineManifest& manifest) {
 	if (!manifest.ufpsScaled) {
 		throw std::runtime_error("[EngineCore] machine.ufps is required.");
 	}
@@ -380,6 +395,8 @@ EngineCore* EngineCore::s_instance = nullptr;
 
 EngineCore::EngineCore() {
 	s_instance = this;
+	m_active_assets = &m_engine_assets;
+	m_machine_manifest = &m_engine_assets.machine;
 }
 
 EngineCore::~EngineCore() {
@@ -406,7 +423,11 @@ bool EngineCore::initialize(Platform* platform) {
 
 	// Get viewport size from platform
 	auto* host = platform->gameviewHost();
-	Vec2 defaultViewport{ 256.0f, 212.0f };
+	const MachineManifest& systemMachine = defaultSystemMachineManifest();
+	Vec2 defaultViewport{
+		static_cast<f32>(systemMachine.viewportWidth),
+		static_cast<f32>(systemMachine.viewportHeight)
+	};
 	ViewportDimensions dims = host->getSize(defaultViewport, defaultViewport * 2.0f);
 
 	// Create GameView with logical viewport
@@ -820,15 +841,18 @@ bool EngineCore::loadEngineAssetsInternal(const u8* data, size_t size) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
 
-	// Load engine assets from ROM
-	if (!loadAssetsFromRom(data, size, m_engine_assets, nullptr, "system")) {
+	if (!loadSystemAssetsFromRom(data, size, m_engine_assets, nullptr, "system")) {
 		return false;
 	}
 
 	m_engine_assets_loaded = true;
+	m_engine_assets.machine = defaultSystemMachineManifest();
+	m_engine_assets.entryPoint = systemBootEntryPath();
+	m_active_assets = &m_engine_assets;
+	m_machine_manifest = &m_engine_assets.machine;
 	m_default_font = std::make_unique<Font>(m_engine_assets);
 	m_view->default_font = m_default_font.get();
-	const i64 ufpsScaled = resolveUfpsScaled(m_engine_assets.manifest);
+	const i64 ufpsScaled = resolveUfpsScaled(m_engine_assets.machine);
 	setUfpsScaled(ufpsScaled);
 	return true;
 }
@@ -850,6 +874,96 @@ bool EngineCore::loadEngineAssetsFromPath(const char* path) {
 	return loadEngineAssetsOwned(std::move(data));
 }
 
+ImgAsset* EngineCore::resolveImgAsset(const AssetId& id) {
+	ImgAsset* asset = assets().getImg(id);
+	if (asset) {
+		return asset;
+	}
+	return m_engine_assets.getImg(id);
+}
+
+const ImgAsset* EngineCore::resolveImgAsset(const AssetId& id) const {
+	const ImgAsset* asset = assets().getImg(id);
+	if (asset) {
+		return asset;
+	}
+	return m_engine_assets.getImg(id);
+}
+
+void EngineCore::activateEngineAssets() {
+	m_active_assets = &m_engine_assets;
+}
+
+void EngineCore::activateCartAssets() {
+	m_active_assets = &m_cart_assets;
+}
+
+void EngineCore::setMachineManifest(const MachineManifest& manifest) {
+	m_machine_manifest = &manifest;
+}
+
+void EngineCore::configureViewForMachine(const MachineManifest& manifest) {
+	Vec2 viewportSize{
+		static_cast<f32>(manifest.viewportWidth),
+		static_cast<f32>(manifest.viewportHeight)
+	};
+	Vec2 offscreenSize{
+		viewportSize.x * 2.0f,
+		viewportSize.y * 2.0f
+	};
+	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
+}
+
+bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine, const RuntimeAssets& sizingAssets) {
+	if (!m_engine_assets_loaded) {
+		return false;
+	}
+	if (!m_engine_assets.programAsset || !m_engine_assets.programAsset->program) {
+		return false;
+	}
+
+	activateEngineAssets();
+	setMachineManifest(runtimeMachine);
+	const i64 ufpsScaled = resolveUfpsScaled(runtimeMachine);
+	setUfpsScaled(ufpsScaled);
+	applyManifestMemorySpecs(runtimeMachine, m_engine_assets.machine, sizingAssets, m_engine_assets);
+	configureViewForMachine(runtimeMachine);
+
+	const i64 cpuHz = resolveCpuHz(runtimeMachine);
+	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(runtimeMachine);
+	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(runtimeMachine);
+	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(runtimeMachine);
+	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, runtimeMachine.viewportHeight);
+
+	if (!Runtime::hasInstance()) {
+		RuntimeOptions options;
+		options.playerIndex = 1;
+		options.viewport.x = runtimeMachine.viewportWidth;
+		options.viewport.y = runtimeMachine.viewportHeight;
+		options.canonicalization = m_engine_assets.machine.canonicalization;
+		options.cpuHz = cpuHz;
+		options.cycleBudgetPerFrame = cycleBudget;
+		options.vblankCycles = static_cast<int>(vblankCycles);
+		Runtime::createInstance(options);
+	}
+
+	Runtime& runtime = Runtime::instance();
+	runtime.setCpuHz(cpuHz);
+	runtime.setCycleBudgetPerFrame(cycleBudget);
+	runtime.setVblankCycles(static_cast<int>(vblankCycles));
+	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
+	runtime.refreshMemoryMap();
+	runtime.setProgramSource(Runtime::ProgramSource::Engine);
+	runtime.setCanonicalization(m_engine_assets.machine.canonicalization);
+	runtime.buildAssetMemory(m_engine_assets, true);
+	runtime.memory().sealEngineAssets();
+	refreshAudioAssets(m_engine_assets);
+	runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
+	runtime.resetCartBootState();
+	return true;
+}
+
 bool EngineCore::bootWithoutCart() {
 	// Boot engine with only engine assets (no cartridge)
 	// This runs bootrom.lua which displays the boot screen
@@ -866,64 +980,8 @@ bool EngineCore::bootWithoutCart() {
 	}
 
 	std::cerr << "[BMSX] bootWithoutCart: program found, booting..." << std::endl;
-
-	// Reference engine assets as fallback to avoid duplicating memory.
-	m_assets.clear();
-	m_assets.setFallback(&m_engine_assets);
-	m_assets.manifest = m_engine_assets.manifest;
-	m_assets.projectRootPath = m_engine_assets.projectRootPath;
-	const i64 ufpsScaled = resolveUfpsScaled(m_engine_assets.manifest);
-	setUfpsScaled(ufpsScaled);
-	applyManifestMemorySpecs(m_assets.manifest, m_engine_assets.manifest, m_assets, m_engine_assets);
-	// Don't copy programAsset - use engine_assets.programAsset directly below
-
-	Vec2 viewportSize{
-		static_cast<f32>(m_engine_assets.manifest.viewportWidth),
-		static_cast<f32>(m_engine_assets.manifest.viewportHeight)
-	};
-	Vec2 offscreenSize{
-		viewportSize.x * 2.0f,
-		viewportSize.y * 2.0f
-	};
-	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
-
-	// Boot the runtime with the engine's system program
-	if (m_engine_assets.programAsset && m_engine_assets.programAsset->program) {
-		const i64 cpuHz = resolveCpuHz(m_engine_assets.manifest);
-		const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(m_engine_assets.manifest);
-		const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(m_engine_assets.manifest);
-		const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(m_engine_assets.manifest);
-		const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
-		const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, m_engine_assets.manifest.viewportHeight);
-		// Create Runtime instance if it doesn't exist
-		if (!Runtime::hasInstance()) {
-			RuntimeOptions options;
-			options.playerIndex = 1;
-			options.viewport.x = m_engine_assets.manifest.viewportWidth;
-			options.viewport.y = m_engine_assets.manifest.viewportHeight;
-			options.canonicalization = m_engine_assets.manifest.canonicalization;
-			options.cpuHz = cpuHz;
-			options.cycleBudgetPerFrame = cycleBudget;
-			options.vblankCycles = static_cast<int>(vblankCycles);
-			Runtime::createInstance(options);
-		}
-
-		Runtime& runtime = Runtime::instance();
-		runtime.setCpuHz(cpuHz);
-		runtime.setCycleBudgetPerFrame(cycleBudget);
-		runtime.setVblankCycles(static_cast<int>(vblankCycles));
-		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
-		runtime.refreshMemoryMap();
-		runtime.setProgramSource(Runtime::ProgramSource::Engine);
-		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
-		runtime.buildAssetMemory(m_engine_assets, true);
-		runtime.memory().sealEngineAssets();
-
-		// Refresh audio after asset memory is ready.
-		refreshAudioAssets(m_engine_assets);
-
-		// Boot the runtime with the pre-compiled program from engine assets
-		runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
+	if (!bootEngineStartupProgram(m_engine_assets.machine, m_engine_assets)) {
+		return false;
 	}
 
 	m_rom_loaded = true;  // Engine is running (with system program)
@@ -952,57 +1010,23 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		m_texture_manager->setBackend(m_view ? m_view->backend() : nullptr);
 	}
 
-	m_assets.clear();
-	if (m_engine_assets_loaded) {
-		m_assets.setFallback(&m_engine_assets);
-	}
-
-	// Load cartridge assets from ROM (overwrites engine assets with same ID)
-	RuntimeAssets cartAssets;
-	if (!loadAssetsFromRom(data, size, cartAssets, nullptr, "cart")) {
-		m_assets.clear();
+	m_cart_assets.clear();
+	if (!loadCartAssetsFromRom(data, size, m_cart_assets, nullptr, "cart")) {
 		return false;
 	}
+	m_loaded_cart_has_program = m_cart_assets.programAsset && m_cart_assets.programAsset->program;
 
-	// Merge cartridge assets on top of engine assets
-	for (auto& entry : cartAssets.img) {
-		m_assets.img[entry.first] = std::move(entry.second);
-	}
-	for (auto& entry : cartAssets.audio) {
-		m_assets.audio[entry.first] = std::move(entry.second);
-	}
-	for (auto& entry : cartAssets.model) {
-		m_assets.model[entry.first] = std::move(entry.second);
-	}
-	for (auto& entry : cartAssets.data) {
-		m_assets.data[entry.first] = std::move(entry.second);
-	}
-	for (auto& entry : cartAssets.lua) {
-		m_assets.lua[entry.first] = std::move(entry.second);
-	}
-	for (auto& entry : cartAssets.audioevents) {
-		m_assets.audioevents[entry.first] = std::move(entry.second);
-	}
-	for (auto& entry : cartAssets.atlasTextures) {
-		m_assets.atlasTextures[entry.first] = std::move(entry.second);
-	}
-
-	// Program and manifest always come from cartridge
-	m_assets.programAsset = std::move(cartAssets.programAsset);
-	m_assets.programSymbols = std::move(cartAssets.programSymbols);
-	m_assets.manifest = std::move(cartAssets.manifest);
-	m_assets.projectRootPath = std::move(cartAssets.projectRootPath);
-	const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
+	const MachineManifest& cartMachine = m_cart_assets.machine;
+	const i64 ufpsScaled = resolveUfpsScaled(cartMachine);
 	setUfpsScaled(ufpsScaled);
-	applyManifestMemorySpecs(m_assets.manifest, m_engine_assets.manifest, m_assets, m_engine_assets);
 	i64 cpuHz = 0;
-	const bool cartCpuValid = tryResolveCpuHz(m_assets.manifest, cpuHz);
+	const bool cartCpuValid = tryResolveCpuHz(cartMachine, cpuHz);
 	if (!cartCpuValid) {
 		i64 engineUfpsScaled = 0;
 		i64 engineCpuHz = 0;
 		if (!m_engine_assets_loaded
-			|| !tryResolveCpuHz(m_engine_assets.manifest, engineCpuHz)
-			|| !tryResolveUfpsScaled(m_engine_assets.manifest, engineUfpsScaled)) {
+			|| !tryResolveCpuHz(m_engine_assets.machine, engineCpuHz)
+			|| !tryResolveUfpsScaled(m_engine_assets.machine, engineUfpsScaled)) {
 			throw std::runtime_error("[EngineCore] machine.specs.cpu.cpu_freq_hz is required.");
 		}
 		std::cerr << "[EngineCore] Cart manifest machine.specs.cpu.cpu_freq_hz is required; booting BIOS only." << std::endl;
@@ -1010,63 +1034,37 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 		setUfpsScaled(engineUfpsScaled);
 	}
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
-	const RomManifest& transferManifest = cartCpuValid ? m_assets.manifest : m_engine_assets.manifest;
-	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, transferManifest.viewportHeight);
-	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(transferManifest);
-	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferManifest);
-	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferManifest);
+	const MachineManifest& transferMachine = cartCpuValid ? cartMachine : m_engine_assets.machine;
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, transferMachine.viewportHeight);
+	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(transferMachine);
+	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferMachine);
+	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferMachine);
 
-	Vec2 viewportSize{
-		static_cast<f32>(m_assets.manifest.viewportWidth),
-		static_cast<f32>(m_assets.manifest.viewportHeight)
-	};
-	Vec2 offscreenSize{
-		viewportSize.x * 2.0f,
-		viewportSize.y * 2.0f
-	};
-	m_view->configureRenderTargets(&viewportSize, &viewportSize, &offscreenSize, &m_viewport_scale, &m_canvas_scale);
+	configureViewForMachine(cartMachine);
 
 	const bool hasEngineProgram = m_engine_assets_loaded
 		&& m_engine_assets.programAsset
 		&& m_engine_assets.programAsset->program;
 	if (hasEngineProgram) {
-		if (!Runtime::hasInstance()) {
-			RuntimeOptions options;
-			options.playerIndex = 1;
-			options.viewport.x = m_assets.manifest.viewportWidth;
-			options.viewport.y = m_assets.manifest.viewportHeight;
-			options.canonicalization = m_engine_assets.manifest.canonicalization;
-			options.cpuHz = cpuHz;
-			options.cycleBudgetPerFrame = cycleBudget;
-			options.vblankCycles = static_cast<int>(vblankCycles);
-			Runtime::createInstance(options);
+		if (!bootEngineStartupProgram(transferMachine, m_cart_assets)) {
+			return false;
 		}
-		Runtime& runtime = Runtime::instance();
-		runtime.setCpuHz(cpuHz);
-		runtime.setCycleBudgetPerFrame(cycleBudget);
-		runtime.setVblankCycles(static_cast<int>(vblankCycles));
-		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
-		runtime.refreshMemoryMap();
-		runtime.setProgramSource(Runtime::ProgramSource::Engine);
-		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
-		runtime.buildAssetMemory(m_engine_assets, true);
-		runtime.memory().sealEngineAssets();
-		refreshAudioAssets(m_engine_assets);
-		runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
-		runtime.resetCartBootState();
 	} else {
 		if (!cartCpuValid) {
 			std::cerr << "[EngineCore] Cart manifest machine.specs.cpu.cpu_freq_hz is required; cannot boot cart without BIOS." << std::endl;
 			return false;
 		}
+		activateCartAssets();
+		setMachineManifest(cartMachine);
+		applyManifestMemorySpecs(assets().machine, m_engine_assets.machine, assets(), m_engine_assets);
 		// Boot the runtime if we have a pre-compiled program
-		if (m_assets.hasProgram()) {
+		if (assets().hasProgram()) {
 			if (!Runtime::hasInstance()) {
 				RuntimeOptions options;
 				options.playerIndex = 1;
-				options.viewport.x = m_assets.manifest.viewportWidth;
-				options.viewport.y = m_assets.manifest.viewportHeight;
-				options.canonicalization = m_assets.manifest.canonicalization;
+				options.viewport.x = assets().machine.viewportWidth;
+				options.viewport.y = assets().machine.viewportHeight;
+				options.canonicalization = assets().machine.canonicalization;
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
 				options.vblankCycles = static_cast<int>(vblankCycles);
@@ -1078,16 +1076,16 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			runtime.setVblankCycles(static_cast<int>(vblankCycles));
 			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 			runtime.refreshMemoryMap();
-			runtime.buildAssetMemory(m_assets, false);
+			runtime.buildAssetMemory(assets(), false);
 			refreshAudioAssets();
 			bootRuntimeFromProgram();
 		} else {
 			if (!Runtime::hasInstance()) {
 				RuntimeOptions options;
 				options.playerIndex = 1;
-				options.viewport.x = m_assets.manifest.viewportWidth;
-				options.viewport.y = m_assets.manifest.viewportHeight;
-				options.canonicalization = m_assets.manifest.canonicalization;
+				options.viewport.x = assets().machine.viewportWidth;
+				options.viewport.y = assets().machine.viewportHeight;
+				options.canonicalization = assets().machine.canonicalization;
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
 				options.vblankCycles = static_cast<int>(vblankCycles);
@@ -1099,7 +1097,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 			runtime.setVblankCycles(static_cast<int>(vblankCycles));
 			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 			runtime.refreshMemoryMap();
-			runtime.buildAssetMemory(m_assets, false);
+			runtime.buildAssetMemory(assets(), false);
 			refreshAudioAssets();
 		}
 	}
@@ -1110,11 +1108,62 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 
 void EngineCore::prepareLoadedRomAssets() {
 	Runtime& runtime = Runtime::instance();
-	runtime.buildAssetMemory(m_assets, false, Runtime::AssetBuildMode::Cart);
+	runtime.buildAssetMemory(m_cart_assets, false, Runtime::AssetBuildMode::Cart);
 	refreshAudioAssets();
 }
 
-bool EngineCore::resetLoadedRom() {
+bool EngineCore::bootLoadedCart() {
+	if (!m_rom_loaded) {
+		return false;
+	}
+
+	if (m_cart_rom_size == 0) {
+		return false;
+	}
+	activateCartAssets();
+	setMachineManifest(m_cart_assets.machine);
+
+	if (!assets().programAsset || !assets().programAsset->program) {
+		std::cerr << "[EngineCore] Loaded cart has no program asset." << std::endl;
+		return false;
+	}
+
+	const i64 cpuHz = resolveCpuHz(assets().machine);
+	const i64 ufpsScaled = resolveUfpsScaled(assets().machine);
+	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(assets().machine);
+	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(assets().machine);
+	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(assets().machine);
+	setUfpsScaled(ufpsScaled);
+	applyManifestMemorySpecs(assets().machine, m_engine_assets.machine, assets(), m_engine_assets);
+	configureViewForMachine(assets().machine);
+	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, assets().machine.viewportHeight);
+
+	if (!Runtime::hasInstance()) {
+		RuntimeOptions options;
+		options.playerIndex = 1;
+		options.viewport.x = assets().machine.viewportWidth;
+		options.viewport.y = assets().machine.viewportHeight;
+		options.canonicalization = assets().machine.canonicalization;
+		options.cpuHz = cpuHz;
+		options.cycleBudgetPerFrame = cycleBudget;
+		options.vblankCycles = static_cast<int>(vblankCycles);
+		Runtime::createInstance(options);
+	}
+
+	Runtime& runtime = Runtime::instance();
+	runtime.setCpuHz(cpuHz);
+	runtime.setCycleBudgetPerFrame(cycleBudget);
+	runtime.setVblankCycles(static_cast<int>(vblankCycles));
+	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
+	runtime.refreshMemoryMap();
+	runtime.buildAssetMemory(assets(), false, Runtime::AssetBuildMode::Cart);
+	refreshAudioAssets();
+	bootRuntimeFromProgram();
+	return true;
+}
+
+bool EngineCore::rebootLoadedRom() {
 	if (!m_rom_loaded) {
 		return false;
 	}
@@ -1122,89 +1171,30 @@ bool EngineCore::resetLoadedRom() {
 	if (m_sound_master) {
 		m_sound_master->resetPlaybackState();
 	}
-
-	i64 cpuHz = 0;
-	const bool cartCpuValid = tryResolveCpuHz(m_assets.manifest, cpuHz);
-	const bool bootCartProgram = cartCpuValid && m_assets.programAsset && m_assets.programAsset->program;
-	if (!bootCartProgram) {
-		if (m_texture_manager) {
-			m_texture_manager->clear();
-		}
-		if (m_view) {
-			m_view->reset();
-			if (m_view->backend()->readyForTextureUpload()) {
-				m_view->initializeDefaultTextures();
-			}
+	if (m_texture_manager) {
+		m_texture_manager->clear();
+	}
+	if (m_view) {
+		m_view->reset();
+		if (m_view->backend()->readyForTextureUpload()) {
+			m_view->initializeDefaultTextures();
 		}
 	}
-	if (!cartCpuValid) {
-		i64 engineUfpsScaled = 0;
-		if (!m_engine_assets_loaded || !tryResolveCpuHz(m_engine_assets.manifest, cpuHz)) {
-			std::cerr << "[EngineCore] Cart manifest machine.specs.cpu.cpu_freq_hz is required; cannot reset cart." << std::endl;
-			return false;
-		}
-		std::cerr << "[EngineCore] Cart manifest machine.specs.cpu.cpu_freq_hz is required; booting BIOS only." << std::endl;
-		if (!tryResolveUfpsScaled(m_engine_assets.manifest, engineUfpsScaled)) {
-			throw std::runtime_error("[EngineCore] machine.ufps is required.");
-		}
-		setUfpsScaled(engineUfpsScaled);
-	} else {
-		const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
-		setUfpsScaled(ufpsScaled);
-	}
-	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
-	const RomManifest& transferManifest = cartCpuValid ? m_assets.manifest : m_engine_assets.manifest;
-	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, transferManifest.viewportHeight);
-	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(transferManifest);
-	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferManifest);
-	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferManifest);
 
-	if (bootCartProgram) {
-		Runtime& runtime = Runtime::instance();
-		runtime.setCpuHz(cpuHz);
-		runtime.setCycleBudgetPerFrame(cycleBudget);
-		runtime.setVblankCycles(static_cast<int>(vblankCycles));
-		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
-		runtime.refreshMemoryMap();
-		runtime.buildAssetMemory(m_assets, false, Runtime::AssetBuildMode::Cart);
-		refreshAudioAssets();
-		bootRuntimeFromProgram();
-		return true;
+	const MachineManifest* runtimeMachine = &m_engine_assets.machine;
+	const RuntimeAssets* sizingAssets = &m_engine_assets;
+	if (m_cart_rom_size > 0 && m_cart_assets.programAsset && m_cart_assets.programAsset->program) {
+		runtimeMachine = &m_cart_assets.machine;
+		sizingAssets = &m_cart_assets;
 	}
-
-	if (m_engine_assets.programAsset && m_engine_assets.programAsset->program) {
-		if (!Runtime::hasInstance()) {
-			RuntimeOptions options;
-			options.playerIndex = 1;
-			options.viewport.x = m_engine_assets.manifest.viewportWidth;
-			options.viewport.y = m_engine_assets.manifest.viewportHeight;
-			options.canonicalization = m_engine_assets.manifest.canonicalization;
-			options.cpuHz = cpuHz;
-			options.cycleBudgetPerFrame = cycleBudget;
-			options.vblankCycles = static_cast<int>(vblankCycles);
-			Runtime::createInstance(options);
-		}
-		Runtime& runtime = Runtime::instance();
-		runtime.setCpuHz(cpuHz);
-		runtime.setCycleBudgetPerFrame(cycleBudget);
-		runtime.setVblankCycles(static_cast<int>(vblankCycles));
-		runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
-		runtime.refreshMemoryMap();
-		runtime.setProgramSource(Runtime::ProgramSource::Engine);
-		runtime.setCanonicalization(m_engine_assets.manifest.canonicalization);
-		runtime.buildAssetMemory(m_engine_assets, true);
-		runtime.memory().sealEngineAssets();
-		refreshAudioAssets(m_engine_assets);
-		runtime.boot(*m_engine_assets.programAsset, m_engine_assets.programSymbols.get());
-		return true;
-	}
-
-	return false;
+	return bootEngineStartupProgram(*runtimeMachine, *sizingAssets);
 }
 
 void EngineCore::unloadRom() {
 	if (m_rom_loaded) {
-		m_assets.clear();
+		m_active_assets = &m_engine_assets;
+		m_machine_manifest = &m_engine_assets.machine;
+		m_cart_assets.clear();
 		m_linked_program.reset();
 		m_linked_program_symbols.reset();
 		m_cart_rom_owned.clear();
@@ -1216,6 +1206,7 @@ void EngineCore::unloadRom() {
 		m_sound_master->resetPlaybackState();
 		registry().clear();
 		m_rom_loaded = false;
+		m_loaded_cart_has_program = false;
 	}
 }
 
@@ -1300,27 +1291,28 @@ void EngineCore::renderTestPattern() {
 
 void EngineCore::bootRuntimeFromProgram() {
 	// Get the pre-compiled program from assets
-	if (!m_assets.programAsset || !m_assets.programAsset->program) {
+	if (!assets().programAsset || !assets().programAsset->program) {
 		return;
 	}
 	m_linked_program.reset();
 	m_linked_program_symbols.reset();
-	const i64 cpuHz = resolveCpuHz(m_assets.manifest);
-	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(m_assets.manifest);
-	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(m_assets.manifest);
-	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(m_assets.manifest);
-	const i64 ufpsScaled = resolveUfpsScaled(m_assets.manifest);
+	const RuntimeAssets& activeAssets = assets();
+	const i64 cpuHz = resolveCpuHz(activeAssets.machine);
+	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(activeAssets.machine);
+	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(activeAssets.machine);
+	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(activeAssets.machine);
+	const i64 ufpsScaled = resolveUfpsScaled(activeAssets.machine);
 	setUfpsScaled(ufpsScaled);
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
-	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, m_assets.manifest.viewportHeight);
+	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, activeAssets.machine.viewportHeight);
 
 	// Create Runtime instance if it doesn't exist
 	if (!Runtime::hasInstance()) {
 		RuntimeOptions options;
 		options.playerIndex = 1;
-		options.viewport.x = m_assets.manifest.viewportWidth;
-		options.viewport.y = m_assets.manifest.viewportHeight;
-		options.canonicalization = m_assets.manifest.canonicalization;
+		options.viewport.x = activeAssets.machine.viewportWidth;
+		options.viewport.y = activeAssets.machine.viewportHeight;
+		options.canonicalization = activeAssets.machine.canonicalization;
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
 		options.vblankCycles = static_cast<int>(vblankCycles);
@@ -1335,24 +1327,24 @@ void EngineCore::bootRuntimeFromProgram() {
 	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);
-	runtime.setCanonicalization(m_assets.manifest.canonicalization);
+	runtime.setCanonicalization(activeAssets.machine.canonicalization);
 	if (m_engine_assets_loaded && m_engine_assets.programAsset && m_engine_assets.programAsset->program) {
 		auto linked = linkProgramAssets(
 			*m_engine_assets.programAsset,
 			m_engine_assets.programSymbols.get(),
-			*m_assets.programAsset,
-			m_assets.programSymbols.get()
+			*activeAssets.programAsset,
+			activeAssets.programSymbols.get()
 		);
 		m_linked_program = std::move(linked.program);
-	m_linked_program_symbols = std::move(linked.metadata);
-	runtime.boot(*m_linked_program, m_linked_program_symbols.get());
+		m_linked_program_symbols = std::move(linked.metadata);
+		runtime.boot(*m_linked_program, m_linked_program_symbols.get());
 		return;
 	}
-	runtime.boot(*m_assets.programAsset, m_assets.programSymbols.get());
+	runtime.boot(*activeAssets.programAsset, activeAssets.programSymbols.get());
 }
 
 void EngineCore::refreshAudioAssets() {
-	refreshAudioAssets(m_assets);
+	refreshAudioAssets(assets());
 }
 
 void EngineCore::refreshAudioAssets(const RuntimeAssets& assets) {
@@ -1386,14 +1378,15 @@ void EngineCore::refreshAudioAssets(const RuntimeAssets& assets) {
 		return AudioDataView{ wavBase + asset->dataOffset, asset->frames };
 	};
 	m_sound_master->init(assets, volume, audioResolver);
-	const std::optional<int> maxSfx = assets.manifest.maxVoicesSfx
-		? std::optional<int>(static_cast<int>(*assets.manifest.maxVoicesSfx))
+	const MachineManifest& machineManifest = this->machineManifest();
+	const std::optional<int> maxSfx = machineManifest.maxVoicesSfx
+		? std::optional<int>(static_cast<int>(*machineManifest.maxVoicesSfx))
 		: std::nullopt;
-	const std::optional<int> maxMusic = assets.manifest.maxVoicesMusic
-		? std::optional<int>(static_cast<int>(*assets.manifest.maxVoicesMusic))
+	const std::optional<int> maxMusic = machineManifest.maxVoicesMusic
+		? std::optional<int>(static_cast<int>(*machineManifest.maxVoicesMusic))
 		: std::nullopt;
-	const std::optional<int> maxUi = assets.manifest.maxVoicesUi
-		? std::optional<int>(static_cast<int>(*assets.manifest.maxVoicesUi))
+	const std::optional<int> maxUi = machineManifest.maxVoicesUi
+		? std::optional<int>(static_cast<int>(*machineManifest.maxVoicesUi))
 		: std::nullopt;
 	m_sound_master->setMaxVoicesByType(maxSfx, maxMusic, maxUi);
 }

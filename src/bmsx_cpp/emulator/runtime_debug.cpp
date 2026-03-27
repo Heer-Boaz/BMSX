@@ -61,7 +61,7 @@ const LuaSourceAsset* findLuaSourceByPath(const RuntimeAssets& assets, const std
 			return &entry.second;
 		}
 	}
-	return assets.fallback ? findLuaSourceByPath(*assets.fallback, path) : nullptr;
+	return nullptr;
 }
 
 int comparePosition(int line, int column, int otherLine, int otherColumn) {

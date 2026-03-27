@@ -24,11 +24,9 @@ import { RenderSubmission } from '../backend/pipeline_interfaces';
 import { Runtime } from '../../emulator/runtime';
 import { ASSET_FLAG_VIEW } from '../../emulator/memory';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
-import { tokenKeyFromId } from '../../rompack/asset_tokens';
 import { new_vec3, new_vec2 } from '../../utils/vector_operations';
 import { clamp } from '../../utils/clamp';
 import { BFont } from './bitmap_font';
-import { $ } from '../../core/engine_core';
 
 const SPRITE_SLOT_COUNT = 5000;
 export const OAM_SLOT_COUNT = SPRITE_SLOT_COUNT;
@@ -528,10 +526,7 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 		if (entry.type !== 'image') {
 			throw new Error(`[Glyph Queue] Asset 'whitepixel' is not an image.`);
 		}
-		const imgAsset = $.assets.img[tokenKeyFromId('whitepixel')];
-		if (!imgAsset) {
-			throw new Error(`[Glyph Queue] Missing image metadata for 'whitepixel'.`);
-		}
+		const imgMeta = runtime.getImageMetaByHandle(handle);
 		const baseEntry = (entry.flags & ASSET_FLAG_VIEW) !== 0
 			? memory.getAssetEntryByHandle(entry.ownerIndex)
 			: entry;
@@ -542,7 +537,7 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 		const v0 = entry.regionY / baseEntry.regionH;
 		const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
 		const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
-		return { handle, imgAsset, u0, v0, u1, v1 };
+		return { handle, imgMeta, u0, v0, u1, v1 };
 	})();
 
 	start = start ?? 0;
@@ -564,7 +559,7 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 			}
 			if (backgroundAsset) {
 				const pat: PatEntry = {
-					atlasId: backgroundAsset.imgAsset.imgmeta.atlasid,
+					atlasId: backgroundAsset.imgMeta.atlasid,
 					flags: PAT_FLAG_ENABLED,
 					assetHandle: backgroundAsset.handle,
 					layer: renderLayerToOamLayer(layer),
@@ -589,10 +584,7 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 			if (entry.type !== 'image') {
 				throw new Error(`[Glyph Queue] Asset '${glyph.imgid}' is not an image.`);
 			}
-			const imgAsset = $.assets.img[tokenKeyFromId(glyph.imgid)];
-			if (!imgAsset) {
-				throw new Error(`[Glyph Queue] Missing image metadata for '${glyph.imgid}'.`);
-			}
+			const imgMeta = runtime.getImageMetaByHandle(handle);
 			const baseEntry = (entry.flags & ASSET_FLAG_VIEW) !== 0
 				? memory.getAssetEntryByHandle(entry.ownerIndex)
 				: entry;
@@ -604,11 +596,11 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 			const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
 			const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
 			if (glyphTraceEntryLogCount < GLYPH_TRACE_ENTRY_LOG_LIMIT) {
-				console.log(`[GlyphTrace][TS] glyph=${JSON.stringify(letter)} imgid=${glyph.imgid} atlas=${imgAsset.imgmeta.atlasid} handle=${handle} region=${entry.regionX},${entry.regionY},${entry.regionW},${entry.regionH} base=${baseEntry.regionW}x${baseEntry.regionH} uv=${u0.toFixed(4)},${v0.toFixed(4)},${u1.toFixed(4)},${v1.toFixed(4)} pos=${~~x},${~~y} size=${glyph.width}x${glyph.height}`);
+				console.log(`[GlyphTrace][TS] glyph=${JSON.stringify(letter)} imgid=${glyph.imgid} atlas=${imgMeta.atlasid} handle=${handle} region=${entry.regionX},${entry.regionY},${entry.regionW},${entry.regionH} base=${baseEntry.regionW}x${baseEntry.regionH} uv=${u0.toFixed(4)},${v0.toFixed(4)},${u1.toFixed(4)},${v1.toFixed(4)} pos=${~~x},${~~y} size=${glyph.width}x${glyph.height}`);
 				glyphTraceEntryLogCount += 1;
 			}
 			const pat: PatEntry = {
-				atlasId: imgAsset.imgmeta.atlasid,
+				atlasId: imgMeta.atlasid,
 				flags: PAT_FLAG_ENABLED,
 				assetHandle: handle,
 				layer: renderLayerToOamLayer(layer),

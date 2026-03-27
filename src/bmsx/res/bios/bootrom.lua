@@ -103,6 +103,20 @@ local function flatten_manifest(manifest, root_path)
 	}
 end
 
+local function flatten_machine_manifest(machine)
+	if not machine then
+		return nil
+	end
+	local cpu = machine.specs and machine.specs.cpu or {}
+	return {
+		namespace = machine.namespace,
+		render_size = format_render_size_label(machine.render_size),
+		canonicalization = machine.canonicalization,
+		cpu_freq_hz = cpu.cpu_freq_hz,
+		ufps = machine.ufps,
+	}
+end
+
 local function display_text(value)
 	if value == nil then
 		return '--'
@@ -2122,11 +2136,9 @@ end
 local function build_info()
 	local cart_header = read_cart_header(cart_rom_base)
 	local cart_manifest_raw = cart_manifest
-	local cart_root_path = assets and assets.project_root_path
+	local cart_root_path = cart_project_root_path
 	local cart_manifest = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path)
-	local sys_header = read_cart_header(system_rom_base)
-	local sys_manifest_raw = sys_manifest
-	local sys_manifest = sys_header and flatten_manifest(sys_manifest_raw, nil)
+	local machine_manifest = flatten_machine_manifest(machine_manifest)
 
 	local cart_title = cart_manifest and display_text(cart_manifest.title) or '--'
 	-- local cart_short = cart_manifest and display_text(cart_manifest.short_name) or '--'
@@ -2143,21 +2155,14 @@ local function build_info()
 	local precheck_status, precheck_detail, precheck_done = get_program_precheck_status(cart_header)
 	local precheck_progress, precheck_phase_index, precheck_phase_total, precheck_phase_label = get_program_precheck_progress(cart_header)
 
-	local sys_title = sys_manifest and display_text(sys_manifest.title) or '--'
-	local sys_rom = sys_manifest and display_text(sys_manifest.rom_name) or '--'
-	-- local sys_ns = sys_manifest and display_text(sys_manifest.namespace) or '--'
-	local sys_view_label = sys_manifest and display_text(sys_manifest.render_size) or '--'
-	-- local sys_canon = sys_manifest and display_text(sys_manifest.canonicalization) or '--'
-	-- local sys_entry = sys_manifest and display_text(sys_manifest.entry_path) or '--'
+	local machine_view_label = machine_manifest and display_text(machine_manifest.render_size) or '--'
+	local machine_cpu_raw = machine_manifest and machine_manifest.cpu_freq_hz
+	local machine_cpu_label = format_cpu_mhz_from_hz(machine_cpu_raw)
 	local vram_total = sys_vram_system_atlas_size + sys_vram_primary_atlas_size + sys_vram_secondary_atlas_size + sys_vram_staging_size
 
 	return {
-		sys_title = sys_title,
-		sys_rom = sys_rom,
-		-- sys_ns = sys_ns,
-		sys_view = sys_view_label,
-		-- sys_canon = sys_canon,
-		-- sys_entry = sys_entry,
+		machine_view = machine_view_label,
+		machine_cpu_mhz = machine_cpu_label,
 		cart_title = cart_title,
 		-- cart_short = cart_short,
 		cart_rom = cart_rom,
@@ -2169,7 +2174,7 @@ local function build_info()
 		cart_cpu_mhz = cart_cpu_label,
 		cart_errors = cart_errors,
 		cart_has_errors = cart_has_errors,
-		root = cart_manifest and display_text(cart_manifest.root) or '--',
+		root = cart_root_path and display_text(cart_root_path) or '--',
 		hw_cart_max = format_bytes(sys_cart_rom_size),
 		hw_ram_total = format_bytes(sys_ram_size),
 		hw_vram_total = format_bytes(vram_total),
@@ -2252,10 +2257,10 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 	local cart_has_errors = cart_present and info.cart_has_errors
 	local hw_specs = {
 		{ label = 'MAX CART ROM', value = info.hw_cart_max, color = color_accent },
-		{ label = 'CPU MHZ', value = info.cart_cpu_mhz, color = color_accent },
+		{ label = 'CPU MHZ', value = info.machine_cpu_mhz, color = color_accent },
 		{ label = 'TOTAL RAM', value = info.hw_ram_total, color = color_info_total },
 		{ label = 'TOTAL VRAM', value = info.hw_vram_total, color = color_info_total },
-		{ label = 'VIEWPORT', value = info.cart_view, color = color_info_total },
+		{ label = 'VIEWPORT', value = info.machine_view, color = color_info_total },
 		-- { label = 'MAX ASSETS', value = info.hw_max_assets, color = color_accent },
 		-- { label = 'MAX STRING ENTRIES', value = info.hw_max_strings, color = color_accent },
 		-- { label = 'MAX CYCLES/FRAME', value = info.hw_max_cycles, color = color_accent },
@@ -2396,7 +2401,7 @@ function update()
 	end
 	local cart_header = read_cart_header(cart_rom_base)
 	local cart_manifest_raw = cart_manifest
-	local cart_root_path = assets and assets.project_root_path
+	local cart_root_path = cart_project_root_path
 	local cart_manifest_value = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path)
 	ensure_program_link_precheck(cart_header)
 	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest_value)

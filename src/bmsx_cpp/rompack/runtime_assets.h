@@ -327,19 +327,11 @@ struct ModelAsset {
 };
 
 /* ============================================================================
- * ROM manifest (cartridge metadata)
+ * Machine manifest (effective hardware spec)
  * ============================================================================ */
 
-struct RomManifest {
-	std::string name;
-	std::string title;
-	std::string shortName;
-	std::string romName;
-	std::string version;
-	std::string author;
-	std::string description;
+struct MachineManifest {
 	std::string namespaceName;
-
 	i32 viewportWidth = 0;
 	i32 viewportHeight = 0;
 	i32 skyboxFaceSize = 0;
@@ -361,8 +353,20 @@ struct RomManifest {
 	std::optional<i64> dmaBytesPerSecIso;
 	std::optional<i64> dmaBytesPerSecBulk;
 	std::optional<i64> ufpsScaled;
+};
 
-	std::string entryPoint;  // Main Lua file
+/* ============================================================================
+ * Cart manifest (cartridge metadata)
+ * ============================================================================ */
+
+struct CartManifest {
+	std::string name;
+	std::string title;
+	std::string shortName;
+	std::string romName;
+	std::string version;
+	std::string author;
+	std::string description;
 };
 
 /* ============================================================================
@@ -392,9 +396,9 @@ public:
 
 	// Project metadata
 	std::string projectRootPath;
-	RomManifest manifest;
-	CanonicalizationType canonicalization = CanonicalizationType::None;
-	const RuntimeAssets* fallback = nullptr;
+	std::optional<CartManifest> cartManifest;
+	MachineManifest machine;
+	std::string entryPoint;
 
 	// Asset access
 	ImgAsset* getImg(const AssetId& id);
@@ -423,10 +427,8 @@ public:
 	bool hasData(const AssetId& id) const;
 	bool hasLua(const AssetId& path) const;
 	bool hasAudioEvent(const AssetId& id) const;
-	bool hasProgram() const { return programAsset != nullptr || (fallback && fallback->hasProgram()); }
-	bool hasAnyImg() const { return !img.empty() || (fallback && fallback->hasAnyImg()); }
-
-	void setFallback(const RuntimeAssets* assets) { fallback = assets; }
+	bool hasProgram() const { return programAsset != nullptr; }
+	bool hasAnyImg() const { return !img.empty(); }
 };
 
 struct AssetLoadCallbacks {
@@ -442,12 +444,19 @@ struct AssetLoadCallbacks {
  * ROM loader functions
  * ============================================================================ */
 
-// Load assets from ROM buffer into RuntimeAssets
-bool loadAssetsFromRom(const u8* buffer,
+// Load a cart ROM into RuntimeAssets, including cart metadata, machine spec, and entry point.
+bool loadCartAssetsFromRom(const u8* buffer,
 				size_t size,
 				RuntimeAssets& assets,
 				const AssetLoadCallbacks* callbacks = nullptr,
 				const char* payloadId = "cart");
+
+// Load only the ROM asset/program payload into RuntimeAssets. Does not decode cart metadata.
+bool loadSystemAssetsFromRom(const u8* buffer,
+				size_t size,
+				RuntimeAssets& assets,
+				const AssetLoadCallbacks* callbacks = nullptr,
+				const char* payloadId = "system");
 
 } // namespace bmsx
 

@@ -40,8 +40,9 @@ export interface RuntimeAssets {
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	project_root_path: string; // Workspace-relative cart root path for resolving filesystem writes.
-	canonicalization: CanonicalizationType; // Canonicalization type for Lua identifiers in this ROM pack.
-	manifest: RomManifest; // The manifest of the ROM pack.
+	cart_manifest: CartManifest | null; // Cart metadata for the active program, absent for system assets.
+	machine: MachineManifest; // Effective machine spec for this asset layer.
+	entry_path: string; // Entry Lua path for this program.
 }
 
 export type asset_type = 'image' | 'audio' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
@@ -99,12 +100,13 @@ export type ModelId = asset_id;
 export type DataId = asset_id;
 export type LuaId = asset_id;
 
-export type RomManifest = CartManifest;
-
 export type CartridgeIndex = {
 	assets: RomAsset[];
 	projectRootPath: string;
-	manifest: RomManifest;
+	cart_manifest: CartManifest | null;
+	machine: MachineManifest;
+	entry_path: string;
+	input?: CartManifest['input'];
 };
 
 /**
@@ -463,17 +465,19 @@ export type MachineSpecs = {
 	vram?: MachineVramSpecs;
 };
 
+export type MachineManifest = {
+	render_size: Viewport;
+	canonicalization: CanonicalizationType;
+	namespace: string;
+	ufps: number;
+	specs: MachineSpecs;
+};
+
 export type CartManifest = {
 	title?: string;
 	short_name?: string;
 	rom_name?: string;
-	machine: {
-		render_size: Viewport;
-		canonicalization: CanonicalizationType;
-		namespace: string;
-		ufps: number;
-		specs: MachineSpecs;
-	};
+	machine: MachineManifest;
 	input?: {
 		1: InputMap,
 		2?: InputMap,
@@ -507,7 +511,7 @@ export type MachineMemorySpecs = {
 	skybox_face_bytes?: number;
 };
 
-export function getMachinePerfSpecs(machine: CartManifest['machine']): MachinePerfSpecs {
+export function getMachinePerfSpecs(machine: MachineManifest): MachinePerfSpecs {
 	const cpu = machine.specs.cpu;
 	const dma = machine.specs.dma;
 	const vram = machine.specs.vram;
@@ -521,7 +525,7 @@ export function getMachinePerfSpecs(machine: CartManifest['machine']): MachinePe
 	};
 }
 
-export function getMachineMemorySpecs(machine: CartManifest['machine']): MachineMemorySpecs {
+export function getMachineMemorySpecs(machine: MachineManifest): MachineMemorySpecs {
 	const ram = machine.specs.ram;
 	const vram = machine.specs.vram;
 	return {
@@ -538,7 +542,7 @@ export function getMachineMemorySpecs(machine: CartManifest['machine']): Machine
 	};
 }
 
-export function getMachineMaxVoices(machine: CartManifest['machine']): MachineVoiceSpecs | undefined {
+export function getMachineMaxVoices(machine: MachineManifest): MachineVoiceSpecs | undefined {
 	return machine.specs.audio?.max_voices;
 }
 // 		data: merge(bullshit.data, engine.data),

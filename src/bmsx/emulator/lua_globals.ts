@@ -751,8 +751,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			runtimeLuaPipeline.registerGlobal(runtime, name, getOrCreateNativeObject(runtime, object));
 		}
 		runtimeLuaPipeline.registerGlobal(runtime, 'assets', getOrCreateAssetsNativeObject(runtime));
-		runtimeLuaPipeline.registerGlobal(runtime, 'cart_manifest', toRuntimeValue(runtime, $.assets.manifest));
-		runtimeLuaPipeline.registerGlobal(runtime, 'sys_manifest', toRuntimeValue(runtime, $.engine_layer.index.manifest));
+		runtimeLuaPipeline.registerGlobal(runtime, 'cart_manifest', toRuntimeValue(runtime, $.cart_manifest));
+		runtimeLuaPipeline.registerGlobal(runtime, 'machine_manifest', toRuntimeValue(runtime, $.machine_manifest));
+		runtimeLuaPipeline.registerGlobal(runtime, 'cart_project_root_path', toRuntimeValue(runtime, $.cart_project_root_path));
 	};
 
 	const mathTable = new Table(0, 0);

@@ -1,7 +1,6 @@
 import { $ } from '../core/engine_core';
 import { Runtime } from './runtime';
 import * as runtimeIde from './runtime_ide';
-import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { clearWorkspaceSessionState } from './ide/workspace_storage';
 import { ide_state } from './ide/ide_state';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
@@ -95,7 +94,7 @@ export class TerminalCommandDispatcher {
 			return true;
 		}
 		if (upper === 'REBOOT') {
-			await runtimeLuaPipeline.reloadProgramAndResetWorld(this.runtime);
+			await this.runtime.rebootToBootRom();
 			return true;
 		}
 		if (upper === 'EXIT' || upper === 'QUIT') {
@@ -252,9 +251,9 @@ export class TerminalCommandDispatcher {
 			: null;
 		const debuggerLabel = suspension ? `${suspension.reason} @ ${suspensionLocation ?? suspension.location.path}` : 'idle';
 		const faultLabel = this.runtime.hasRuntimeFailed ? 'FAULTED' : 'OK';
-		const root = $.assets.project_root_path;
+		const root = $.cart_project_root_path;
 		const lines: string[] = [];
-		lines.push(`Cart: ${$.assets.project_root_path} (${$.lua_sources.namespace})`);
+		lines.push(`Cart: ${$.cart_project_root_path} (${$.lua_sources.namespace})`);
 		lines.push(`Lua runtime: ${runtimeState} | Entry: ${pathLabel}`);
 		lines.push(`Status: ${faultLabel} | Debugger: ${debuggerLabel}`);
 		lines.push(`Canonicalization: ${this.runtime.canonicalization}`);
@@ -380,7 +379,7 @@ export class TerminalCommandDispatcher {
 	}
 
 	private handleLsDebug(pathArg: string): void {
-		const root = $.assets.project_root_path;
+		const root = $.cart_project_root_path;
 		const storage = $.platform.storage;
 		if (!root || !storage) {
 			this.runtime.terminal.appendStderr('Workspace unavailable');
@@ -514,7 +513,7 @@ export class TerminalCommandDispatcher {
 
 	private collectWorkspaceEntryFlags(luaAssets: Array<LuaSourceRecord>): Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }> {
 		const flags = new Map<string, { hasSaved: boolean; hasDirty: boolean; hasUnsaved: boolean }>();
-		const root = $.assets.project_root_path;
+		const root = $.cart_project_root_path;
 		const storage = $.platform.storage;
 		if (!root || !storage) {
 			return flags;

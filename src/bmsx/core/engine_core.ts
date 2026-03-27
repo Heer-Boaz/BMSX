@@ -9,10 +9,11 @@ import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_f
 import type { SkyboxImageIds } from "../render/shared/render_types";
 import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
-import { asset_id, getMachineMaxVoices, RuntimeAssets, type vec2 } from "../rompack/rompack";
+import { asset_id, getMachineMaxVoices, RuntimeAssets, type CartManifest, type MachineManifest, type vec2 } from "../rompack/rompack";
 import { tokenKeyFromId } from '../rompack/asset_tokens';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
-import { buildRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/romloader';
+import { buildSystemRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/romloader';
+import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system_machine';
 import type { LuaSourceRegistry } from '../emulator/lua_sources';
 import { GateGroup, taskGate } from './taskgate';
 import { Runtime } from '../emulator/runtime';
@@ -145,10 +146,14 @@ export class EngineCore {
 	}
 
 	private _assets: RuntimeAssets = null;
+	private _system_assets: RuntimeAssets = null;
+	private _cart_manifest: CartManifest = null;
+	private _machine_manifest: MachineManifest = null;
 	private _asset_source: RawAssetSource = null;
 	private _lua_sources: LuaSourceRegistry = null;
 	private _engine_layer: RuntimeAssetLayer = null;
 	private _workspace_overlay: Uint8Array = null;
+	private _cart_project_root_path: string = null;
 
 	/**
 	 * The accumulated time in milliseconds.
@@ -227,15 +232,31 @@ export class EngineCore {
 	private removeWillExit: SubscriptionHandle = null;
 
 	public get assets(): RuntimeAssets { return this._assets; }
+	public get system_assets(): RuntimeAssets { return this._system_assets; }
+	public get cart_manifest(): CartManifest { return this._cart_manifest; }
+	public get machine_manifest(): MachineManifest { return this._machine_manifest; }
 	public get asset_source(): RawAssetSource { return this._asset_source; }
 	public get lua_sources(): LuaSourceRegistry { return this._lua_sources; }
 	public get engine_layer(): RuntimeAssetLayer { return this._engine_layer; }
 	public get workspace_overlay(): Uint8Array { return this._workspace_overlay; }
+	public get cart_project_root_path(): string { return this._cart_project_root_path; }
 	public set_lua_sources(sources: LuaSourceRegistry): void {
 		this._lua_sources = sources;
 	}
 	public set_asset_source(source: RawAssetSource): void {
 		this._asset_source = source;
+	}
+	public set_assets(assets: RuntimeAssets): void {
+		this._assets = assets;
+	}
+	public set_cart_manifest(manifest: CartManifest): void {
+		this._cart_manifest = manifest;
+	}
+	public set_machine_manifest(manifest: MachineManifest): void {
+		this._machine_manifest = manifest;
+	}
+	public set_cart_project_root_path(path: string): void {
+		this._cart_project_root_path = path;
 	}
 
 	public get view(): GameView { return this._view; }
@@ -334,16 +355,20 @@ export class EngineCore {
 		this.update_interval_ms = 1000 / this.target_fps;
 	}
 
-	private buildModulationResolver(assets: RuntimeAssets): ModulationPresetResolver {
+	private buildModulationResolver(): ModulationPresetResolver {
 		return {
 			resolve: (key: asset_id) => {
-				const data = assets.data;
 				const segments = key.split('.');
 				if (segments.length === 0) {
 					return undefined;
 				}
-				const rootKey = tokenKeyFromId(segments[0]);
-				let cursor: unknown = (data as Record<string, unknown>)[rootKey];
+				let cursor: unknown;
+				if (Runtime.hasInstance()) {
+					cursor = Runtime.instance.getDataAsset(segments[0]);
+				} else {
+					const rootKey = tokenKeyFromId(segments[0]);
+					cursor = this._assets.data[rootKey];
+				}
 				for (let i = 1; i < segments.length; i++) {
 					const segment = segments[i];
 					if (segment.length === 0) {
@@ -366,7 +391,7 @@ export class EngineCore {
 
 	public async refresh_audio_assets(): Promise<void> {
 		this.sndmaster.bootstrapRuntimeAudio(DEFAULT_MASTER_VOLUME);
-		const resolver = this.buildModulationResolver(this._assets);
+		const resolver = this.buildModulationResolver();
 		const runtime = Runtime.instance;
 		const resources = runtime.buildAudioResourcesForSoundMaster();
 		await SoundMaster.instance.init(
@@ -375,7 +400,7 @@ export class EngineCore {
 			resolver,
 			(id) => runtime.getAudioBytesById(id)
 		);
-		const maxVoices = getMachineMaxVoices(this._assets.manifest.machine);
+		const maxVoices = getMachineMaxVoices(this._machine_manifest);
 		if (maxVoices) {
 			SoundMaster.instance.setMaxVoicesByType(maxVoices);
 		}
@@ -405,10 +430,18 @@ export class EngineCore {
 		if (!resolvedViewHost) {
 			throw new Error('[Game] Platform did not expose a GameViewHost. Provide one in GameInitArgs.');
 		}
-		const engineLayer = await buildRuntimeAssetLayer({ blob: engineRom, id: 'system' });
+		const engineLayer = await buildSystemRuntimeAssetLayer({
+			blob: engineRom,
+			machine: SYSTEM_MACHINE_MANIFEST,
+			entry_path: SYSTEM_BOOT_ENTRY_PATH,
+		});
 		this._engine_layer = engineLayer;
 		this._workspace_overlay = workspaceOverlay;
-		this._assets = engineLayer.assets;
+		this._system_assets = engineLayer.assets;
+		this._assets = this._system_assets;
+		this._cart_manifest = null;
+		this._machine_manifest = engineLayer.index.machine;
+		this._cart_project_root_path = null;
 		this._asset_source = new AssetSourceStack([{ id: engineLayer.id, index: engineLayer.index, payload: engineLayer.payload }]);
 		platform.gameviewHost = resolvedViewHost;
 		this._platform = platform;
@@ -416,7 +449,7 @@ export class EngineCore {
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;
-		this.setUfpsScaled(engineLayer.index.manifest.machine.ufps);
+		this.setUfpsScaled(engineLayer.index.machine.ufps);
 		this.recomputeTimingCaches();
 
 		this._debug = debug ?? this._debug;
@@ -431,11 +464,11 @@ export class EngineCore {
 		if (typeof document !== 'undefined') {
 			ensureBrowserBackendFactory();
 		}
-		let viewport = engineLayer.index.manifest.machine.render_size;
+		let viewport = engineLayer.index.machine.render_size;
 		if (cartridge) {
 			const cartNormalized = normalizeCartridgeBlob(cartridge);
 			const cartIndex = await parseCartridgeIndex(cartNormalized.payload);
-			viewport = cartIndex.manifest.machine.render_size;
+			viewport = cartIndex.machine.render_size;
 		}
 		const viewportInput = shallowcopy(viewport) as { width?: number; height?: number; x?: number; y?: number };
 		const viewportSize = { x: (viewportInput.width ?? viewportInput.x)!, y: (viewportInput.height ?? viewportInput.y)! }; // Ugly and needs to be refactored in the GameView

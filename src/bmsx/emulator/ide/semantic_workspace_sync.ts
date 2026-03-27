@@ -76,7 +76,7 @@ export function primeSemanticWorkspaceProjectSources(workspace: LuaSemanticWorks
 		return workspace;
 	}
 	const runtime = Runtime.instance;
-	const path2lua = $.lua_sources.path2lua;
+	const path2lua = runtime.cartLuaSources ? runtime.cartLuaSources.path2lua : $.lua_sources.path2lua;
 	for (const path in path2lua) {
 		const cacheEntry = runtime.pathSemanticCache.get(path);
 		const source = cacheEntry ? cacheEntry.source : runtimeLuaPipeline.resourceSourceForChunk(runtime, path);
