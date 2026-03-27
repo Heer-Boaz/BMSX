@@ -51,8 +51,12 @@ public:
 	bool hasFront2dContent() const;
 	bool hasBack2dContent() const;
 	i32 beginSpriteOamRead() const;
+	i32 beginBgMap2dRead() const;
+	i32 beginOamPat2dRead() const;
 	i32 begin2dRead() const;
 	void forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn) const;
+	void forEachSortedBgMap2dEntry(const std::function<void(const OamEntry&, size_t)>& fn) const;
+	void forEachOamPat2dEntry(const std::function<void(const OamEntry&, size_t)>& fn) const;
 	void forEach2dEntry(const std::function<void(const OamEntry&, size_t)>& fn) const;
 	uint32_t readVdpStatus() override;
 	uint32_t readVdpData() override;
@@ -104,6 +108,24 @@ private:
 		uint32_t slotSalt = 0;
 		uint32_t addr = 0;
 	};
+	struct BgMapLayerRetainedState {
+		BgMapHeader header{};
+		std::array<BgMapEntry, VDP_BGMAP_TILE_CAPACITY> tiles{};
+		i32 enabledCount = 0;
+		ScratchBatch<OamEntry> drawEntries{64u};
+		bool drawEntriesDirty = false;
+	};
+	struct BgMapSortedReadRun {
+		uint32_t layerIndex = 0;
+		i32 sourceIndexStart = 0;
+		i32 count = 0;
+		f32 z = 0.0f;
+	};
+	struct BgMapSortedReadState {
+		std::array<BgMapSortedReadRun, VDP_BGMAP_LAYER_COUNT> runs{};
+		uint32_t runCount = 0;
+		i32 count = 0;
+	};
 
 	Memory& m_memory;
 	ImgDecController* m_imgDecController = nullptr;
@@ -140,6 +162,9 @@ private:
 	uint32_t m_patFrontBase = VDP_PAT_FRONT_BASE;
 	uint32_t m_patBackBase = VDP_PAT_BACK_BASE;
 	std::array<Memory::ImageWriteEntry, 6> m_skyboxSlots{};
+	std::array<BgMapLayerRetainedState, VDP_BGMAP_LAYER_COUNT> m_bgMapFrontStates{};
+	std::array<BgMapLayerRetainedState, VDP_BGMAP_LAYER_COUNT> m_bgMapBackStates{};
+	mutable BgMapSortedReadState m_bgMapSortedReadState{};
 
 	void registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId);
 	void registerReadSurface(uint32_t surfaceId, const std::string& assetId, const std::string& textureKey);
@@ -165,10 +190,15 @@ private:
 	uint32_t readOamBackBase() const;
 	uint32_t readOamReadSource() const;
 	uint32_t activePatBase() const;
-	uint32_t bgMapLayerBaseForRead(uint32_t layerIndex) const;
 	void copyBgMapLayer(uint32_t srcBase, uint32_t dstBase);
 	void clearBgMapPatchLayer(uint32_t layerIndex);
-	const BgMapEntry& bgMapTileForRead(uint32_t layerIndex, uint32_t tileIndex, uint32_t layerBase, bool patchRead, BgMapEntry& scratch) const;
+	void clearBgMapRetainedState(BgMapLayerRetainedState& state, const BgMapHeader* header = nullptr);
+	void copyBgMapRetainedState(BgMapLayerRetainedState& target, const BgMapLayerRetainedState& source);
+	void updateBgMapRetainedTile(BgMapLayerRetainedState& state, uint32_t tileIndex, const BgMapEntry& entry);
+	BgMapLayerRetainedState& bgMapRetainedStateForRead(uint32_t layerIndex);
+	const BgMapLayerRetainedState& bgMapRetainedStateForRead(uint32_t layerIndex) const;
+	void rebuildBgMapDrawEntries(BgMapLayerRetainedState& state);
+	BgMapSortedReadState& rebuildBgMapSortedReadState();
 	void writeOamEntry(uint32_t addr, const OamEntry& entry);
 	OamEntry readOamEntry(uint32_t addr) const;
 	void writePatHeader(uint32_t base, const PatHeader& header);

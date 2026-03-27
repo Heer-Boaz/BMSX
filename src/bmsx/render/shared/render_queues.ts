@@ -26,6 +26,7 @@ import { ASSET_FLAG_VIEW } from '../../emulator/memory';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { clamp } from '../../utils/clamp';
 import { BFont } from './bitmap_font';
+import { $ } from '../../core/engine_core';
 
 const SPRITE_SLOT_COUNT = 5000;
 export const OAM_SLOT_COUNT = SPRITE_SLOT_COUNT;

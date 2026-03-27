@@ -232,10 +232,6 @@ function formatVec3(input: { x: number; y: number; z: number } | Float32Array | 
 	return `(${formatNumber(input.x)}, ${formatNumber(input.y)}, ${formatNumber(input.z)})`;
 }
 
-function formatScale(scale: { x: number; y: number }): string {
-	return `(${formatNumber(scale?.x ?? 1)}, ${formatNumber(scale?.y ?? 1)})`;
-}
-
 function translationFromMatrix(m: Float32Array): string {
 	return `(${formatNumber(m[12])}, ${formatNumber(m[13])}, ${formatNumber(m[14])})`;
 }
@@ -331,6 +327,8 @@ function makeSpriteState(): SpritesPipelineState {
 		atlasPrimaryTex: null,
 		atlasSecondaryTex: null,
 		atlasEngineTex: null,
+		primaryAtlasIdInSlot: null,
+		secondaryAtlasIdInSlot: null,
 		ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
 		ambientFactorDefault: gv.spriteAmbientFactorDefault,
 		ambientColor: [0, 0, 0], // Ambient sprites disabled; update when a new path is implemented.

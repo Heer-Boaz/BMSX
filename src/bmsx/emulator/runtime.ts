@@ -16,7 +16,7 @@ import {
 } from '../lua/luavalue';
 import type { StorageService } from '../platform/platform';
 import type { SkyboxImageIds } from '../render/shared/render_types';
-import type { AudioMeta, CartridgeLayerId, ImgMeta, MachineManifest, RomAsset, RomImgAsset, Viewport, CartridgeIndex, RuntimeAssets, id2res } from '../rompack/rompack';
+import type { AudioMeta, CartridgeLayerId, ImgMeta, MachineManifest, RomAsset, RomImgAsset, Viewport, RuntimeAssets, id2res } from '../rompack/rompack';
 import {
 	CanonicalizationType,
 	ATLAS_PRIMARY_SLOT_ID,
@@ -105,7 +105,6 @@ import {
 	DEFAULT_VRAM_ATLAS_SLOT_SIZE,
 	DEFAULT_VRAM_STAGING_SIZE,
 	IO_REGION_SIZE,
-	STRING_HANDLE_COUNT,
 	STRING_HANDLE_ENTRY_SIZE,
 	configureMemoryMap,
 	type MemoryMapSpecs as MemoryMapSpecs,
@@ -854,10 +853,9 @@ export class Runtime {
 	public cartLuaSources: LuaSourceRegistry = null;
 	public engineAssetSource: RawAssetSource = null;
 	public cartAssetSource: RawAssetSource = null;
-	private engineAssetLayer: RuntimeAssetLayer = null;
+	private biosAssetLayer: RuntimeAssetLayer = null;
 	private assetLayerLookup: RuntimeLayerLookup = {};
-	private programAssetLayers: ReadonlyArray<RuntimeAssetLayer> = null;
-	private residentAssetLayers: ReadonlyArray<RuntimeAssetLayer> = null;
+	private assetLayers: ReadonlyArray<RuntimeAssetLayer> = null;
 	public cartAssetLayer: RuntimeAssetLayer = null;
 	private overlayAssetLayer: RuntimeAssetLayer = null;
 	private readonly imageMetaByHandle = new Map<number, ImgMeta>();
@@ -941,10 +939,9 @@ export class Runtime {
 				vblankCycles,
 			});
 			runtime.setTransferRatesFromManifest(enginePerfSpecs);
-			runtime.engineAssetLayer = engineLayer;
+			runtime.biosAssetLayer = engineLayer;
 			runtime.assetLayerLookup = buildRuntimeLayerLookup([engineLayer]);
-			runtime.programAssetLayers = [engineLayer];
-			runtime.residentAssetLayers = [engineLayer];
+			runtime.assetLayers = [engineLayer];
 			runtime.configureProgramSources({
 				engineSources: engineLuaSources,
 				engineAssetSource: engineSource,
@@ -1019,10 +1016,9 @@ export class Runtime {
 			vblankCycles,
 		});
 		runtime.setTransferRatesFromManifest(cartPerfSpecs);
-		runtime.engineAssetLayer = engineLayer;
+		runtime.biosAssetLayer = engineLayer;
 		runtime.assetLayerLookup = buildRuntimeLayerLookup(overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer]);
-		runtime.programAssetLayers = overlayLayer ? [cartLayer, overlayLayer] : [cartLayer];
-		runtime.residentAssetLayers = overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer];
+		runtime.assetLayers = overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer];
 		runtime.cartAssetLayer = cartLayer;
 		runtime.overlayAssetLayer = overlayLayer;
 		runtime.configureProgramSources({
@@ -1747,11 +1743,11 @@ export class Runtime {
 	}
 
 	public getResidentAssetLayers(): ReadonlyArray<RuntimeAssetLayer> {
-		return this.residentAssetLayers ?? [this.engineAssetLayer];
+		return this.assetLayers ?? [this.biosAssetLayer];
 	}
 
 	public hasAssetLayerLookup(): boolean {
-		return this.engineAssetLayer !== null;
+		return this.biosAssetLayer !== null;
 	}
 
 	public getImageAssetByEntry(entry: RomAsset): RomImgAsset {
@@ -2022,16 +2018,14 @@ export class Runtime {
 	}
 
 	private activateEngineProgramAssets(): void {
-		$.set_assets(this.engineAssetLayer.assets);
-		this.programAssetLayers = [this.engineAssetLayer];
-		this.residentAssetLayers = [this.engineAssetLayer];
+		$.set_assets(this.biosAssetLayer.assets);
+		this.assetLayers = [this.biosAssetLayer];
 		this.activateProgramSource('engine');
 	}
 
 	public activateCartProgramAssets(): void {
 		$.set_assets((this.overlayAssetLayer ?? this.cartAssetLayer).assets);
-		this.programAssetLayers = this.overlayAssetLayer ? [this.cartAssetLayer, this.overlayAssetLayer] : [this.cartAssetLayer];
-		this.residentAssetLayers = this.overlayAssetLayer ? [this.engineAssetLayer, this.cartAssetLayer, this.overlayAssetLayer] : [this.engineAssetLayer, this.cartAssetLayer];
+		this.assetLayers = this.overlayAssetLayer ? [this.biosAssetLayer, this.cartAssetLayer, this.overlayAssetLayer] : [this.biosAssetLayer, this.cartAssetLayer];
 		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
 		Runtime.applyUfpsScaled(perfSpecs.ufps);
 		const cpuHz = Runtime.resolveCpuHz(perfSpecs.cpu_freq_hz);

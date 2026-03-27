@@ -37,6 +37,8 @@ struct Sort2DCapacityHints {
 };
 
 Sort2DCapacityHints s_sort2dCapacityHints;
+Sort2DPipelineState s_staticBgMapSortScratch;
+Sort2DPipelineState s_oamPatSortScratch;
 
 bool compareSorted2DDrawEntries(const Sorted2DDrawEntry& a, const Sorted2DDrawEntry& b) {
 	if (a.entry.z != b.entry.z) {
@@ -83,6 +85,40 @@ void updateSorted2DCapacityHints(const Sort2DPipelineState& sortState) {
 	s_sort2dCapacityHints.world = std::max(s_sort2dCapacityHints.world, sortState.world.entries.size());
 	s_sort2dCapacityHints.ui = std::max(s_sort2dCapacityHints.ui, sortState.ui.entries.size());
 	s_sort2dCapacityHints.ide = std::max(s_sort2dCapacityHints.ide, sortState.ide.entries.size());
+}
+
+void clearSorted2DState(Sort2DPipelineState& sortState) {
+	sortState.world.entries.clear();
+	sortState.ui.entries.clear();
+	sortState.ide.entries.clear();
+}
+
+size_t mergeSorted2DBuckets(
+	std::vector<Sorted2DDrawEntry>& target,
+	const std::vector<Sorted2DDrawEntry>& staticEntries,
+	const std::vector<Sorted2DDrawEntry>& dynamicEntries
+) {
+	target.clear();
+	size_t staticIndex = 0;
+	size_t dynamicIndex = 0;
+	while (staticIndex < staticEntries.size() && dynamicIndex < dynamicEntries.size()) {
+		if (compareSorted2DDrawEntries(staticEntries[staticIndex], dynamicEntries[dynamicIndex])) {
+			target.push_back(staticEntries[staticIndex]);
+			++staticIndex;
+			continue;
+		}
+		target.push_back(dynamicEntries[dynamicIndex]);
+		++dynamicIndex;
+	}
+	while (staticIndex < staticEntries.size()) {
+		target.push_back(staticEntries[staticIndex]);
+		++staticIndex;
+	}
+	while (dynamicIndex < dynamicEntries.size()) {
+		target.push_back(dynamicEntries[dynamicIndex]);
+		++dynamicIndex;
+	}
+	return target.size();
 }
 
 void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
@@ -206,28 +242,42 @@ void renderSpriteBatchSoftware(SoftwareBackend* softBackend,
 }  // namespace
 
 Sort2DPipelineState buildSorted2DPipelineState() {
-	const i32 drawCount = Runtime::instance().vdp().begin2dRead();
+	const i32 bgMapCount = Runtime::instance().vdp().beginBgMap2dRead();
+	const i32 oamPatCount = Runtime::instance().vdp().beginOamPat2dRead();
+	const i32 drawCount = bgMapCount + oamPatCount;
 	Sort2DPipelineState sortState;
 	reserveSorted2DBuckets(sortState);
+	reserveSorted2DBuckets(s_staticBgMapSortScratch);
+	reserveSorted2DBuckets(s_oamPatSortScratch);
+	clearSorted2DState(s_staticBgMapSortScratch);
+	clearSorted2DState(s_oamPatSortScratch);
 	size_t writeIndex = 0;
-	Runtime::instance().vdp().forEach2dEntry([&](const OamEntry& entry, size_t sourceIndex) {
-		auto& bucket = resolveSorted2DBucket(sortState, entry.layer);
+	Runtime::instance().vdp().forEachSortedBgMap2dEntry([&](const OamEntry& entry, size_t sourceIndex) {
+		auto& bucket = resolveSorted2DBucket(s_staticBgMapSortScratch, entry.layer);
+		bucket.push_back(Sorted2DDrawEntry{entry, static_cast<i32>(sourceIndex)});
+		writeIndex += 1;
+	});
+	Runtime::instance().vdp().forEachOamPat2dEntry([&](const OamEntry& entry, size_t sourceIndex) {
+		auto& bucket = resolveSorted2DBucket(s_oamPatSortScratch, entry.layer);
 		bucket.push_back(Sorted2DDrawEntry{entry, static_cast<i32>(sourceIndex)});
 		writeIndex += 1;
 	});
 	if (writeIndex != static_cast<size_t>(drawCount)) {
 		throw BMSX_RUNTIME_ERROR("[Sort2D] begin2dRead count mismatch.");
 	}
+	if (s_oamPatSortScratch.world.entries.size() > 1) {
+		std::sort(s_oamPatSortScratch.world.entries.begin(), s_oamPatSortScratch.world.entries.end(), compareSorted2DDrawEntries);
+	}
+	if (s_oamPatSortScratch.ui.entries.size() > 1) {
+		std::sort(s_oamPatSortScratch.ui.entries.begin(), s_oamPatSortScratch.ui.entries.end(), compareSorted2DDrawEntries);
+	}
+	if (s_oamPatSortScratch.ide.entries.size() > 1) {
+		std::sort(s_oamPatSortScratch.ide.entries.begin(), s_oamPatSortScratch.ide.entries.end(), compareSorted2DDrawEntries);
+	}
+	mergeSorted2DBuckets(sortState.world.entries, s_staticBgMapSortScratch.world.entries, s_oamPatSortScratch.world.entries);
+	mergeSorted2DBuckets(sortState.ui.entries, s_staticBgMapSortScratch.ui.entries, s_oamPatSortScratch.ui.entries);
+	mergeSorted2DBuckets(sortState.ide.entries, s_staticBgMapSortScratch.ide.entries, s_oamPatSortScratch.ide.entries);
 	updateSorted2DCapacityHints(sortState);
-	if (sortState.world.entries.size() > 1) {
-		std::sort(sortState.world.entries.begin(), sortState.world.entries.end(), compareSorted2DDrawEntries);
-	}
-	if (sortState.ui.entries.size() > 1) {
-		std::sort(sortState.ui.entries.begin(), sortState.ui.entries.end(), compareSorted2DDrawEntries);
-	}
-	if (sortState.ide.entries.size() > 1) {
-		std::sort(sortState.ide.entries.begin(), sortState.ide.entries.end(), compareSorted2DDrawEntries);
-	}
 	return sortState;
 }
 
