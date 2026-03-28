@@ -1,7 +1,8 @@
 import type { RomAsset } from '../../src/bmsx/rompack/rompack';
+import { PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/emulator/program_asset';
 import { parseCartHeader } from '../../src/bmsx/rompack/romloader';
 import { clamp } from '../../src/bmsx/utils/clamp';
-import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferLegendEntry, type BufferRegion } from './asciiart';
+import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferHitRegion, type BufferLegendEntry, type BufferRegion } from './asciiart';
 import { buildAssetModalView, type AssetModalView } from './asset_modal_view';
 import { TuiInput, type TuiMouseEvent } from './tui_input';
 import { TuiScreen, TUI_COLORS, type TuiStyle } from './tui_screen';
@@ -379,31 +380,49 @@ function bufferBarCellStyle(cell: BufferBarCell, hovered: boolean, selected: boo
 }
 
 function getHitRegionEntry(cell: BufferBarCell, region: BufferRegion) {
-	for (const entry of cell.hitRegions) {
-		if (sameBufferRegion(entry.region, region)) {
-			return entry;
-		}
-	}
-	return null;
+	return findHitEntry(cell, candidate => sameBufferRegion(candidate, region));
 }
 
-function focusedBufferBarCell(
+function getHitLabelEntry(cell: BufferBarCell, label: string) {
+	return findHitEntry(cell, candidate => candidate.label === label);
+}
+
+function hitEntryCoverage(entry: BufferHitRegion): number {
+	return entry.endFrac - entry.startFrac;
+}
+
+function findHitEntry(cell: BufferBarCell, predicate: (region: BufferRegion) => boolean): BufferHitRegion | null {
+	let best: BufferHitRegion | null = null;
+	for (const entry of cell.hitRegions) {
+		if (!predicate(entry.region)) {
+			continue;
+		}
+		if (!best) {
+			best = entry;
+			continue;
+		}
+		const bestCoverage = hitEntryCoverage(best);
+		const entryCoverage = hitEntryCoverage(entry);
+		if (entryCoverage > bestCoverage || (entryCoverage === bestCoverage && entry.startFrac < best.startFrac)) {
+			best = entry;
+		}
+	}
+	return best;
+}
+
+function focusedBufferBarCellForHit(
 	cell: BufferBarCell,
-	region: BufferRegion,
+	entry: BufferHitRegion,
 	emphasis: 'hover' | 'selected',
 	selected: boolean,
 	hasSelection: boolean,
 ): { ch: string; style: TuiStyle } | null {
-	const entry = getHitRegionEntry(cell, region);
-	if (!entry) {
-		return null;
-	}
 	const glyph = bufferSegmentGlyph(entry.startFrac, entry.endFrac);
 	if (glyph.align === 'none' || !glyph.ch) {
 		return null;
 	}
 	const baseStyle = bufferBarCellStyle(cell, false, selected, hasSelection);
-	const accentBase = resolveTaggedColor(region.colorTag, baseStyle.fg);
+	const accentBase = resolveTaggedColor(entry.region.colorTag, baseStyle.fg);
 	const accent = emphasis === 'hover'
 		? mixColor(accentBase, TUI_COLORS.white, 0.35)
 		: mixColor(accentBase, TUI_COLORS.white, 0.18);
@@ -429,6 +448,34 @@ function focusedBufferBarCell(
 		ch: glyph.ch,
 		style: { fg: quietFg, bg: accent },
 	};
+}
+
+function focusedBufferBarCell(
+	cell: BufferBarCell,
+	region: BufferRegion,
+	emphasis: 'hover' | 'selected',
+	selected: boolean,
+	hasSelection: boolean,
+): { ch: string; style: TuiStyle } | null {
+	const entry = getHitRegionEntry(cell, region);
+	if (!entry) {
+		return null;
+	}
+	return focusedBufferBarCellForHit(cell, entry, emphasis, selected, hasSelection);
+}
+
+function focusedBufferBarCellForLabel(
+	cell: BufferBarCell,
+	label: string,
+	emphasis: 'hover' | 'selected',
+	selected: boolean,
+	hasSelection: boolean,
+): { ch: string; style: TuiStyle } | null {
+	const entry = getHitLabelEntry(cell, label);
+	if (!entry) {
+		return null;
+	}
+	return focusedBufferBarCellForHit(cell, entry, emphasis, selected, hasSelection);
 }
 
 function legendEntryStyles(entry: BufferLegendEntry, hovered: boolean, selected: boolean, hasSelection: boolean) {
@@ -548,15 +595,38 @@ function headerLabel(column: TableColumn, sortState: SortState): string {
 	return `${column.label} ${sortState.descending ? '▼' : '▲'}`;
 }
 
-function makeRegionColorTag(asset: RomAsset): string {
-	switch (asset.type) {
+function makeRegionLabel(asset: RomAsset): string {
+	if (asset.resid === PROGRAM_ASSET_ID) {
+		return 'program';
+	}
+	if (asset.resid === PROGRAM_SYMBOLS_ASSET_ID) {
+		return 'symbols';
+	}
+	return asset.type;
+}
+
+function makeRegionColorTag(label: string): string {
+	switch (label) {
 		case 'image': return '{light-yellow-fg}';
 		case 'atlas': return '{light-cyan-fg}';
 		case 'audio': return '{light-blue-fg}';
-		case 'data': return '{light-green-fg}';
-		case 'model': return '{light-magenta-fg}';
-		default: return '{light-magenta-fg}';
+	case 'data': return '{light-green-fg}';
+	case 'lua': return '{#6EE7B7-fg}';
+	case 'model': return '{light-magenta-fg}';
+	case 'program': return '{#FFB000-fg}';
+	case 'symbols': return '{#FF6FAE-fg}';
+	case 'texture': return '{#14B8A6-fg}';
+	case 'manifest': return '{light-red-fg}';
+	case 'toc': return '{#C084FC-fg}';
+	default: return '{light-magenta-fg}';
 	}
+}
+
+function pushSummaryRegion(regions: BufferRegion[], start: number | undefined, end: number | undefined, label: string): void {
+	if (start === undefined || end === undefined) {
+		return;
+	}
+	regions.push({ start, end, colorTag: makeRegionColorTag(label), label });
 }
 
 function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
@@ -594,16 +664,16 @@ function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 			metrics.modelCount += 1;
 			metrics.modelSize += size;
 		}
-		const colorTag = makeRegionColorTag(asset);
-		if (asset.start !== undefined && asset.end !== undefined) metrics.regions.push({ start: asset.start, end: asset.end, colorTag, label: asset.type });
-		if ((asset as any).compiled_start !== undefined && (asset as any).compiled_end !== undefined) metrics.regions.push({ start: (asset as any).compiled_start, end: (asset as any).compiled_end, colorTag, label: asset.type });
-		if (asset.metabuffer_start !== undefined && asset.metabuffer_end !== undefined) metrics.regions.push({ start: asset.metabuffer_start, end: asset.metabuffer_end, colorTag, label: asset.type });
-		if ((asset as any).texture_start !== undefined && (asset as any).texture_end !== undefined) metrics.regions.push({ start: (asset as any).texture_start, end: (asset as any).texture_end, colorTag, label: asset.type });
+		const label = makeRegionLabel(asset);
+		pushSummaryRegion(metrics.regions, asset.start, asset.end, label);
+		pushSummaryRegion(metrics.regions, (asset as any).compiled_start, (asset as any).compiled_end, label);
+		pushSummaryRegion(metrics.regions, asset.metabuffer_start, asset.metabuffer_end, label);
+		pushSummaryRegion(metrics.regions, (asset as any).texture_start, (asset as any).texture_end, 'texture');
 	}
 	if (header.manifestLength > 0) {
-		metrics.regions.push({ start: header.manifestOffset, end: header.manifestOffset + header.manifestLength, colorTag: '{light-red-fg}', label: 'manifest' });
+		pushSummaryRegion(metrics.regions, header.manifestOffset, header.manifestOffset + header.manifestLength, 'manifest');
 	}
-	metrics.regions.push({ start: header.tocOffset, end: header.tocOffset + header.tocLength, colorTag: '{light-magenta-fg}', label: 'toc' });
+	pushSummaryRegion(metrics.regions, header.tocOffset, header.tocOffset + header.tocLength, 'toc');
 	return metrics;
 }
 
@@ -673,7 +743,6 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let mouseX = -1;
 	let mouseY = -1;
 	let mouseSubX = 0.5;
-	let mouseSubY = 0.5;
 	let scrollbarDrag: ScrollbarDrag | null = null;
 
 	const buildSummaryView = (width: number): SummaryView => {
@@ -831,7 +900,8 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const hoveredBufferCell = !layout.modal ? getHoveredBufferCell(summaryView) : null;
 		const hoveredBufferRegion = !layout.modal ? getHoveredBufferRegion(summaryView) : null;
 		const hoveredLegendEntry = !layout.modal ? getHoveredLegendEntry(summaryView) : null;
-		const hoveredBufferLabels = hoveredLegendEntry ? [hoveredLegendEntry.label] : hoveredBufferRegion ? [hoveredBufferRegion.label] : hoveredBufferCell ? cellHitLabels(hoveredBufferCell) : [];
+		const hoveredBarLabels = hoveredLegendEntry ? [] : hoveredBufferRegion ? [] : hoveredBufferCell ? cellHitLabels(hoveredBufferCell) : [];
+		const hoveredLegendLabels = hoveredLegendEntry ? [hoveredLegendEntry.label] : hoveredBufferRegion ? [hoveredBufferRegion.label] : hoveredBufferCell ? cellHitLabels(hoveredBufferCell) : [];
 		const selectedBufferLabel = bufferFilterLabel(bufferFilter);
 		const hasBufferSelection = bufferFilter !== null;
 		const hoverStatus = hoverStatusText(hoveredBufferCell, hoveredBufferRegion, hoveredLegendEntry);
@@ -840,14 +910,20 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		screen.writeText(0, 1, `${BUFFER_LINE_PREFIX}[`, STYLE_NORMAL);
 		for (let cellIndex = 0; cellIndex < summaryView.barModel.cells.length; cellIndex += 1) {
 			const cell = summaryView.barModel.cells[cellIndex];
-			const hovered = cell.visibleRegions.some(region => hoveredBufferLabels.includes(region.label));
+			const hovered = cell.visibleRegions.some(region => hoveredBarLabels.includes(region.label));
 			const selected = bufferFilterMatchesCell(bufferFilter, cell);
 			const exactHover = hoveredBufferRegion && getHitRegionEntry(cell, hoveredBufferRegion) ? hoveredBufferRegion : null;
-			const exactSelected = !exactHover && bufferFilter?.kind === 'region' && getHitRegionEntry(cell, bufferFilter.region) ? bufferFilter.region : null;
+			const hoveredLabel = !exactHover && hoveredLegendEntry && getHitLabelEntry(cell, hoveredLegendEntry.label) ? hoveredLegendEntry.label : null;
+			const exactSelected = !exactHover && !hoveredLabel && bufferFilter?.kind === 'region' && getHitRegionEntry(cell, bufferFilter.region) ? bufferFilter.region : null;
+			const selectedLabel = !exactHover && !hoveredLabel && !exactSelected && bufferFilter?.kind === 'label' && getHitLabelEntry(cell, bufferFilter.label) ? bufferFilter.label : null;
 			const focusedCell = exactHover
 				? focusedBufferBarCell(cell, exactHover, 'hover', selected, hasBufferSelection)
-				: exactSelected
+				: hoveredLabel
+					? focusedBufferBarCellForLabel(cell, hoveredLabel, 'hover', selected, hasBufferSelection)
+					: exactSelected
 					? focusedBufferBarCell(cell, exactSelected, 'selected', selected, hasBufferSelection)
+					: selectedLabel
+						? focusedBufferBarCellForLabel(cell, selectedLabel, 'selected', selected, hasBufferSelection)
 					: null;
 			if (focusedCell) {
 				screen.writeChar(summaryView.barRect.x + cellIndex, 1, focusedCell.ch, focusedCell.style);
@@ -858,7 +934,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		screen.writeText(summaryView.barRect.x + summaryView.barRect.width, 1, ']', STYLE_NORMAL);
 		let summaryY = 2;
 		for (const legendRow of summaryView.barModel.legendRows) {
-			drawLegendRow(screen, 0, summaryY, width, legendRow, hoveredLegendEntry ? [hoveredLegendEntry.label] : hoveredBufferLabels, selectedBufferLabel);
+			drawLegendRow(screen, 0, summaryY, width, legendRow, hoveredLegendLabels, selectedBufferLabel);
 			summaryY += 1;
 		}
 		for (const totalLine of summaryView.totalLines) {
@@ -1195,7 +1271,6 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				mouseX = event.x;
 				mouseY = event.y;
 				mouseSubX = event.subX;
-				mouseSubY = event.subY;
 				const handled = modalView ? await handleModalMouse(event) : await handleListMouse(event);
 				if (handled || hoverChanged || event.action === 'move') {
 					render();

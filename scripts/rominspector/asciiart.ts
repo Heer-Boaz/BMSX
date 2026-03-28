@@ -1,4 +1,5 @@
 export type BufferRegion = { start: number; end: number; colorTag: string; label: string };
+export type BufferHitRegion = { startFrac: number; endFrac: number; region: BufferRegion };
 export type BufferBarCell = {
 	ch: string;
 	fgColorTag: string;
@@ -6,7 +7,7 @@ export type BufferBarCell = {
 	region: BufferRegion | null;
 	backgroundRegion: BufferRegion | null;
 	visibleRegions: BufferRegion[];
-	hitRegions: Array<{ startFrac: number; endFrac: number; region: BufferRegion }>;
+	hitRegions: BufferHitRegion[];
 };
 export type BufferLegendEntry = {
 	label: string;
@@ -25,6 +26,11 @@ export type BufferBarModel = {
 export type BufferSegmentGlyph = {
 	ch: string;
 	align: 'none' | 'full' | 'left' | 'right';
+};
+type RenderedBufferBarCell = {
+	ch: string;
+	fgColorTag: string;
+	bgColorTag: string;
 };
 
 const LEFT_BLOCKS = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
@@ -77,7 +83,7 @@ const K_DITHER_THRESHOLD_BY_BIT = (() => {
  * @returns A string representing the rendered buffer bar with color tags and labels.
  */
 function normalizeBufferRegions(unfilteredRegions: BufferRegion[]): BufferRegion[] {
-	let regions = unfilteredRegions
+	const regions = unfilteredRegions
 		.filter(region => region.start !== 0 || region.end !== 0)
 		.sort((left, right) => {
 			if (left.start !== right.start) return left.start - right.start;
@@ -172,6 +178,100 @@ function glyphForCoverage(coverage: number): string {
 	return idx === 0 ? '' : LEFT_BLOCKS[idx - 1];
 }
 
+function toBackgroundTag(colorTag: string): string {
+	return colorTag.replace('-fg}', '-bg}');
+}
+
+function sameCellRegion(cellRegion: BufferRegion | null, region: BufferRegion): boolean {
+	return cellRegion !== null && sameRegion(cellRegion, region);
+}
+
+function isRegionClearlyVisibleInCell(cell: BufferBarCell, region: BufferRegion): boolean {
+	if (sameCellRegion(cell.region, region) && cell.fgColorTag === region.colorTag) {
+		return true;
+	}
+	return sameCellRegion(cell.backgroundRegion, region)
+		&& cell.bgColorTag === toBackgroundTag(region.colorTag)
+		&& cell.ch !== '█';
+}
+
+function hitRegionCoverage(entry: BufferHitRegion): number {
+	return entry.endFrac - entry.startFrac;
+}
+
+function widestHitRegion(hitRegions: BufferHitRegion[], predicate: (region: BufferRegion) => boolean): BufferHitRegion | null {
+	let best: BufferHitRegion | null = null;
+	for (const entry of hitRegions) {
+		if (!predicate(entry.region)) {
+			continue;
+		}
+		if (!best) {
+			best = entry;
+			continue;
+		}
+		const bestCoverage = hitRegionCoverage(best);
+		const entryCoverage = hitRegionCoverage(entry);
+		if (entryCoverage > bestCoverage || (entryCoverage === bestCoverage && entry.startFrac < best.startFrac)) {
+			best = entry;
+		}
+	}
+	return best;
+}
+
+function renderExistingBufferBarCells(model: BufferBarModel): RenderedBufferBarCell[] {
+	return model.cells.map(cell => ({
+		ch: cell.ch,
+		fgColorTag: cell.fgColorTag,
+		bgColorTag: cell.bgColorTag,
+	}));
+}
+
+function renderForcedTinyRegions(model: BufferBarModel, renderedCells: RenderedBufferBarCell[]): void {
+	for (const region of model.regions) {
+		let clearlyVisible = false;
+		for (const cell of model.cells) {
+			if (isRegionClearlyVisibleInCell(cell, region)) {
+				clearlyVisible = true;
+				break;
+			}
+		}
+		if (clearlyVisible) {
+			continue;
+		}
+		let bestCellIndex = -1;
+		let bestEntry: BufferHitRegion | null = null;
+		for (let cellIndex = 0; cellIndex < model.cells.length; cellIndex += 1) {
+			const entry = widestHitRegion(model.cells[cellIndex].hitRegions, candidate => sameRegion(candidate, region));
+			if (!entry) {
+				continue;
+			}
+			if (!bestEntry || hitRegionCoverage(entry) > hitRegionCoverage(bestEntry)) {
+				bestCellIndex = cellIndex;
+				bestEntry = entry;
+			}
+		}
+		if (bestEntry === null) {
+			continue;
+		}
+		const companionRegion = widestHitRegion(model.cells[bestCellIndex].hitRegions, candidate => !sameRegion(candidate, region))?.region ?? null;
+		renderedCells[bestCellIndex] = renderForcedTinyRegionCell(region, companionRegion, bestEntry.startFrac, bestEntry.endFrac);
+	}
+}
+
+function renderForcedTinyRegionCell(
+	region: BufferRegion,
+	companionRegion: BufferRegion | null,
+	startFrac: number,
+	endFrac: number,
+): RenderedBufferBarCell {
+	const center = (startFrac + endFrac) * 0.5;
+	return {
+		ch: center >= 0.5 ? '▐' : '▌',
+		fgColorTag: region.colorTag,
+		bgColorTag: companionRegion ? toBackgroundTag(companionRegion.colorTag) : '',
+	};
+}
+
 export function bufferSegmentGlyph(startFrac: number, endFrac: number): BufferSegmentGlyph {
 	const clampedStart = clamp(startFrac, 0, 1);
 	const clampedEnd = clamp(endFrac, 0, 1);
@@ -200,7 +300,6 @@ export function buildBufferBarModel(
 	barLength: number,
 	legendWrapWidth?: number,
 ): BufferBarModel {
-	const quantize = quantizeCoverage;
 	const cellSize = totalSize / barLength;
 	const defaultCellChar = '·';
 	const regions = normalizeBufferRegions(unfilteredRegions);
@@ -214,9 +313,6 @@ export function buildBufferBarModel(
 		hitRegions: [],
 	}));
 
-	const toBackground = (colorTag: string) => {
-		return colorTag.replace('-fg}', '-bg}');
-	};
 	for (let cell = 0; cell < barLength; cell++) {
 		const cellStart = cell * cellSize;
 		const cellEnd = cellStart + cellSize;
@@ -295,7 +391,7 @@ export function buildBufferBarModel(
 				cells[cell].ch = glyph;
 				const gapFg = bgRegion ? bgRegion.colorTag : GAP_FG_TAG;
 				cells[cell].fgColorTag = gapFg;
-				cells[cell].bgColorTag = toBackground(fgRegion.colorTag);
+				cells[cell].bgColorTag = toBackgroundTag(fgRegion.colorTag);
 				cells[cell].region = fgRegion;
 				cells[cell].backgroundRegion = bgRegion;
 				cells[cell].visibleRegions = bgRegion ? [bgRegion, fgRegion] : [fgRegion];
@@ -305,7 +401,7 @@ export function buildBufferBarModel(
 			if (glyph) {
 				cells[cell].ch = glyph;
 				cells[cell].fgColorTag = fgRegion.colorTag;
-				cells[cell].bgColorTag = bgRegion ? toBackground(bgRegion.colorTag) : '';
+				cells[cell].bgColorTag = bgRegion ? toBackgroundTag(bgRegion.colorTag) : '';
 				cells[cell].region = fgRegion;
 				cells[cell].backgroundRegion = bgRegion;
 				cells[cell].visibleRegions = bgRegion ? [fgRegion, bgRegion] : [fgRegion];
@@ -368,9 +464,16 @@ export function renderBufferBar(
 	totalSize: number,
 	barLength: number,
 	legendWrapWidth?: number,
+	options?: {
+		forceVisibleTinyRegions?: boolean;
+	},
 ): string {
 	const model = buildBufferBarModel(unfilteredRegions, totalSize, barLength, legendWrapWidth);
-	const bar = model.cells.map(cell => `${cell.bgColorTag}${cell.fgColorTag}${cell.ch}{/}`).join('');
+	const renderedCells = renderExistingBufferBarCells(model);
+	if (options?.forceVisibleTinyRegions) {
+		renderForcedTinyRegions(model, renderedCells);
+	}
+	const bar = renderedCells.map(cell => `${cell.bgColorTag}${cell.fgColorTag}${cell.ch}{/}`).join('');
 	return `[${bar}]\n${model.legendLines.join('\n')}`;
 }
 

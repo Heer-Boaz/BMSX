@@ -311,7 +311,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 		const regions = [];
 		if (selected.start !== undefined && selected.end !== undefined) regions.push({ start: selected.start, end: selected.end, colorTag: '{light-red-fg}', label: 'buffer' });
 		if (selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined) regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: '{light-blue-fg}', label: 'metabuffer' });
-		const renderedBarLines = renderBufferBar(regions, total, Math.max(16, modalWidth - 2)).split('\n');
+		const renderedBarLines = renderBufferBar(regions, total, Math.max(16, modalWidth - 2), undefined, { forceVisibleTinyRegions: true }).split('\n');
 		bufferLines.push(`Buffer: ${renderedBarLines[0]}`);
 		if (renderedBarLines[1]) bufferLines.push(renderedBarLines[1]);
 		if (bufferSize) bufferLines.push(`Buffer: ${selected.start} - ${selected.end} (${ctx.formatByteSize(bufferSize)})`);
