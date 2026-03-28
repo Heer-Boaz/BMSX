@@ -1,7 +1,7 @@
 import type { RomAsset } from '../../src/bmsx/rompack/rompack';
 import { parseCartHeader } from '../../src/bmsx/rompack/romloader';
 import { clamp } from '../../src/bmsx/utils/clamp';
-import { buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferLegendEntry, type BufferRegion } from './asciiart';
+import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferLegendEntry, type BufferRegion } from './asciiart';
 import { buildAssetModalView, type AssetModalView } from './asset_modal_view';
 import { TuiInput, type TuiMouseEvent } from './tui_input';
 import { TuiScreen, TUI_COLORS, type TuiStyle } from './tui_screen';
@@ -197,22 +197,43 @@ function bufferFilterRegion(bufferFilter: BufferFilter | null): BufferRegion | n
 
 function bufferFilterMatchesCell(bufferFilter: BufferFilter | null, cell: BufferBarCell): boolean {
 	if (!bufferFilter) {
-			return false;
-		}
-	if (bufferFilter.kind === 'label') {
-		return cell.visibleRegions.some(region => region.label === bufferFilter.label);
+		return false;
 	}
-	return cell.visibleRegions.some(region => sameBufferRegion(region, bufferFilter.region));
+	if (bufferFilter.kind === 'label') {
+		return cell.hitRegions.some(entry => entry.region.label === bufferFilter.label);
+	}
+	return cell.hitRegions.some(entry => sameBufferRegion(entry.region, bufferFilter.region));
 }
 
-function cellVisibleLabels(cell: BufferBarCell): string[] {
+function cellHitLabels(cell: BufferBarCell): string[] {
 	const labels: string[] = [];
-	for (const region of cell.visibleRegions) {
-		if (!labels.includes(region.label)) {
-			labels.push(region.label);
+	for (const entry of cell.hitRegions) {
+		if (!labels.includes(entry.region.label)) {
+			labels.push(entry.region.label);
 		}
 	}
 	return labels;
+}
+
+function regionAtCellFraction(cell: BufferBarCell, subX: number): BufferRegion | null {
+	for (const entry of cell.hitRegions) {
+		if (subX >= entry.startFrac && subX < entry.endFrac) {
+			return entry.region;
+		}
+	}
+	if (cell.hitRegions.length === 0) {
+		return null;
+	}
+	let closest = cell.hitRegions[0];
+	let closestDistance = Number.POSITIVE_INFINITY;
+	for (const entry of cell.hitRegions) {
+		const distance = subX < entry.startFrac ? entry.startFrac - subX : subX > entry.endFrac ? subX - entry.endFrac : 0;
+		if (distance < closestDistance) {
+			closest = entry;
+			closestDistance = distance;
+		}
+	}
+	return closest.region;
 }
 
 function assetSize(asset: RomAsset): number {
@@ -354,6 +375,59 @@ function bufferBarCellStyle(cell: BufferBarCell, hovered: boolean, selected: boo
 	return {
 		fg: mixColor(dimmedStyle.fg, TUI_COLORS.white, 0.12),
 		bg: mixColor(dimmedStyle.bg, GREY_HIGHLIGHT, 0.25),
+	};
+}
+
+function getHitRegionEntry(cell: BufferBarCell, region: BufferRegion) {
+	for (const entry of cell.hitRegions) {
+		if (sameBufferRegion(entry.region, region)) {
+			return entry;
+		}
+	}
+	return null;
+}
+
+function focusedBufferBarCell(
+	cell: BufferBarCell,
+	region: BufferRegion,
+	emphasis: 'hover' | 'selected',
+	selected: boolean,
+	hasSelection: boolean,
+): { ch: string; style: TuiStyle } | null {
+	const entry = getHitRegionEntry(cell, region);
+	if (!entry) {
+		return null;
+	}
+	const glyph = bufferSegmentGlyph(entry.startFrac, entry.endFrac);
+	if (glyph.align === 'none' || !glyph.ch) {
+		return null;
+	}
+	const baseStyle = bufferBarCellStyle(cell, false, selected, hasSelection);
+	const accentBase = resolveTaggedColor(region.colorTag, baseStyle.fg);
+	const accent = emphasis === 'hover'
+		? mixColor(accentBase, TUI_COLORS.white, 0.35)
+		: mixColor(accentBase, TUI_COLORS.white, 0.18);
+	const quietFg = emphasis === 'hover'
+		? mixColor(baseStyle.fg, TUI_COLORS.white, 0.08)
+		: baseStyle.fg;
+	const quietBg = emphasis === 'hover'
+		? mixColor(baseStyle.bg, TUI_COLORS.white, 0.05)
+		: baseStyle.bg;
+	if (glyph.align === 'full') {
+		return {
+			ch: glyph.ch,
+			style: { fg: accent, bg: quietBg },
+		};
+	}
+	if (glyph.align === 'left') {
+		return {
+			ch: glyph.ch,
+			style: { fg: accent, bg: quietBg },
+		};
+	}
+	return {
+		ch: glyph.ch,
+		style: { fg: quietFg, bg: accent },
 	};
 }
 
@@ -598,6 +672,8 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let lastSummaryView: SummaryView | null = null;
 	let mouseX = -1;
 	let mouseY = -1;
+	let mouseSubX = 0.5;
+	let mouseSubY = 0.5;
 	let scrollbarDrag: ScrollbarDrag | null = null;
 
 	const buildSummaryView = (width: number): SummaryView => {
@@ -631,6 +707,14 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		return summaryView.barModel.cells[mouseX - summaryView.barRect.x];
 	};
 
+	const getHoveredBufferRegion = (summaryView: SummaryView | null): BufferRegion | null => {
+		const hoveredCell = getHoveredBufferCell(summaryView);
+		if (!hoveredCell) {
+			return null;
+		}
+		return regionAtCellFraction(hoveredCell, mouseSubX);
+	};
+
 	const getHoveredLegendEntry = (summaryView: SummaryView | null): BufferLegendEntry | null => {
 		if (!summaryView) {
 			return null;
@@ -662,12 +746,15 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		return count;
 	};
 
-	const hoverStatusText = (hoveredCell: BufferBarCell | null, hoveredLegendEntry: BufferLegendEntry | null): string | null => {
+	const hoverStatusText = (hoveredCell: BufferBarCell | null, hoveredRegion: BufferRegion | null, hoveredLegendEntry: BufferLegendEntry | null): string | null => {
 		if (hoveredLegendEntry) {
 			return `Hover: ${hoveredLegendEntry.label} | ${countAssetsForLabel(hoveredLegendEntry.label)} assets`;
 		}
 		if (!hoveredCell || hoveredCell.visibleRegions.length === 0) {
 			return null;
+		}
+		if (hoveredRegion) {
+			return `Hover: ${hoveredRegion.label} ${ctx.formatNumberAsHex(hoveredRegion.start, offsetHexWidth)}-${ctx.formatNumberAsHex(hoveredRegion.end, offsetHexWidth)} | ${countAssetsForRegion(hoveredRegion)} assets`;
 		}
 		const regions = hoveredCell.visibleRegions;
 		if (regions.length === 1) {
@@ -742,11 +829,12 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		lastLayout = layout;
 		lastSummaryView = summaryView;
 		const hoveredBufferCell = !layout.modal ? getHoveredBufferCell(summaryView) : null;
+		const hoveredBufferRegion = !layout.modal ? getHoveredBufferRegion(summaryView) : null;
 		const hoveredLegendEntry = !layout.modal ? getHoveredLegendEntry(summaryView) : null;
-		const hoveredBufferLabels = hoveredLegendEntry ? [hoveredLegendEntry.label] : hoveredBufferCell ? cellVisibleLabels(hoveredBufferCell) : [];
+		const hoveredBufferLabels = hoveredLegendEntry ? [hoveredLegendEntry.label] : hoveredBufferRegion ? [hoveredBufferRegion.label] : hoveredBufferCell ? cellHitLabels(hoveredBufferCell) : [];
 		const selectedBufferLabel = bufferFilterLabel(bufferFilter);
 		const hasBufferSelection = bufferFilter !== null;
-		const hoverStatus = hoverStatusText(hoveredBufferCell, hoveredLegendEntry);
+		const hoverStatus = hoverStatusText(hoveredBufferCell, hoveredBufferRegion, hoveredLegendEntry);
 		writeLine(screen, 0, 0, width, summaryView.titleLine, STYLE_STATUS);
 		screen.fillRect(0, 1, width, 1, STYLE_NORMAL);
 		screen.writeText(0, 1, `${BUFFER_LINE_PREFIX}[`, STYLE_NORMAL);
@@ -754,6 +842,17 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			const cell = summaryView.barModel.cells[cellIndex];
 			const hovered = cell.visibleRegions.some(region => hoveredBufferLabels.includes(region.label));
 			const selected = bufferFilterMatchesCell(bufferFilter, cell);
+			const exactHover = hoveredBufferRegion && getHitRegionEntry(cell, hoveredBufferRegion) ? hoveredBufferRegion : null;
+			const exactSelected = !exactHover && bufferFilter?.kind === 'region' && getHitRegionEntry(cell, bufferFilter.region) ? bufferFilter.region : null;
+			const focusedCell = exactHover
+				? focusedBufferBarCell(cell, exactHover, 'hover', selected, hasBufferSelection)
+				: exactSelected
+					? focusedBufferBarCell(cell, exactSelected, 'selected', selected, hasBufferSelection)
+					: null;
+			if (focusedCell) {
+				screen.writeChar(summaryView.barRect.x + cellIndex, 1, focusedCell.ch, focusedCell.style);
+				continue;
+			}
 			screen.writeChar(summaryView.barRect.x + cellIndex, 1, cell.ch, bufferBarCellStyle(cell, hovered, selected, hasBufferSelection));
 		}
 		screen.writeText(summaryView.barRect.x + summaryView.barRect.width, 1, ']', STYLE_NORMAL);
@@ -1043,7 +1142,8 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			return false;
 		}
 		if (lastSummaryView && isInside(lastSummaryView.barRect, event.x, event.y)) {
-			applyBufferRegionFilter(lastSummaryView.barModel.cells[event.x - lastSummaryView.barRect.x].region);
+			const cell = lastSummaryView.barModel.cells[event.x - lastSummaryView.barRect.x];
+			applyBufferRegionFilter(regionAtCellFraction(cell, event.subX));
 			return true;
 		}
 		const legendHit = lastSummaryView?.legendHits.find(hit => isInside(hit, event.x, event.y)) ?? null;
@@ -1094,6 +1194,8 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				const hoverChanged = event.x !== mouseX || event.y !== mouseY;
 				mouseX = event.x;
 				mouseY = event.y;
+				mouseSubX = event.subX;
+				mouseSubY = event.subY;
 				const handled = modalView ? await handleModalMouse(event) : await handleListMouse(event);
 				if (handled || hoverChanged || event.action === 'move') {
 					render();

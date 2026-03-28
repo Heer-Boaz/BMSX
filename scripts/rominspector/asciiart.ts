@@ -6,6 +6,7 @@ export type BufferBarCell = {
 	region: BufferRegion | null;
 	backgroundRegion: BufferRegion | null;
 	visibleRegions: BufferRegion[];
+	hitRegions: Array<{ startFrac: number; endFrac: number; region: BufferRegion }>;
 };
 export type BufferLegendEntry = {
 	label: string;
@@ -20,6 +21,10 @@ export type BufferBarModel = {
 	legendEntries: BufferLegendEntry[];
 	legendRows: BufferLegendEntry[][];
 	legendLines: string[];
+};
+export type BufferSegmentGlyph = {
+	ch: string;
+	align: 'none' | 'full' | 'left' | 'right';
 };
 
 const LEFT_BLOCKS = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
@@ -162,6 +167,33 @@ function buildLegendLines(legendRows: BufferLegendEntry[][]): string[] {
 	return legendLines;
 }
 
+function glyphForCoverage(coverage: number): string {
+	const idx = quantizeCoverage(coverage);
+	return idx === 0 ? '' : LEFT_BLOCKS[idx - 1];
+}
+
+export function bufferSegmentGlyph(startFrac: number, endFrac: number): BufferSegmentGlyph {
+	const clampedStart = clamp(startFrac, 0, 1);
+	const clampedEnd = clamp(endFrac, 0, 1);
+	const coverage = clampedEnd - clampedStart;
+	if (coverage <= 0) {
+		return { ch: '', align: 'none' };
+	}
+	if (coverage >= 1 - 1e-7) {
+		return { ch: '█', align: 'full' };
+	}
+	const leftGap = clampedStart;
+	const rightGap = 1 - clampedEnd;
+	const alignRight = leftGap > 0 && (rightGap <= 0 || rightGap < leftGap);
+	if (alignRight) {
+		if (leftGap < SLIVER_THRESHOLD) {
+			return { ch: '█', align: 'full' };
+		}
+		return { ch: glyphForCoverage(leftGap), align: 'right' };
+	}
+	return { ch: glyphForCoverage(Math.max(coverage, SLIVER_THRESHOLD)), align: 'left' };
+}
+
 export function buildBufferBarModel(
 	unfilteredRegions: Array<{ start: number; end: number; colorTag: string, label: string }>,
 	totalSize: number,
@@ -179,14 +211,11 @@ export function buildBufferBarModel(
 		region: null,
 		backgroundRegion: null,
 		visibleRegions: [],
+		hitRegions: [],
 	}));
 
 	const toBackground = (colorTag: string) => {
 		return colorTag.replace('-fg}', '-bg}');
-	};
-	const glyphForCoverage = (coverage: number) => {
-		const idx = quantize(coverage);
-		return idx === 0 ? '' : LEFT_BLOCKS[idx - 1];
 	};
 	for (let cell = 0; cell < barLength; cell++) {
 		const cellStart = cell * cellSize;
@@ -206,6 +235,11 @@ export function buildBufferBarModel(
 			const segEnd = Math.min(region.end, cellEnd);
 			const overlap = segEnd - segStart;
 			if (overlap <= 0) continue;
+			cells[cell].hitRegions.push({
+				startFrac: (segStart - cellStart) / cellSize,
+				endFrac: (segEnd - cellStart) / cellSize,
+				region,
+			});
 			if (overlap > strongestOverlap) {
 				strongestRegion = region;
 				strongestStart = segStart;
@@ -306,6 +340,16 @@ export function buildBufferBarModel(
 				return left.end - right.end;
 			}
 			return left.label < right.label ? -1 : left.label > right.label ? 1 : 0;
+		});
+		cell.hitRegions.push({ startFrac: 0, endFrac: 1, region });
+		cell.hitRegions.sort((left, right) => {
+			if (left.startFrac !== right.startFrac) {
+				return left.startFrac - right.startFrac;
+			}
+			if (left.endFrac !== right.endFrac) {
+				return left.endFrac - right.endFrac;
+			}
+			return left.region.label < right.region.label ? -1 : left.region.label > right.region.label ? 1 : 0;
 		});
 	}
 	const legendEntries = buildLegendEntries(regions);
