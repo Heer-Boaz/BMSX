@@ -58,7 +58,7 @@ end
 
 function rock:begin_break()
         local room = object('room')
-        room.destroyed_rock_ids[self.id] = true
+        room:mark_rock_destroyed(self.id)
         if self.item_type == nil then
                 return
         end

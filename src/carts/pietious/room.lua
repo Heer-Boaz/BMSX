@@ -22,6 +22,10 @@ local tile_chars = {
 	stair_left_alt = string.byte('_'),
 	stair_right = string.byte('='),
 	stair_right_alt = string.byte('+'),
+	rock_ul = 0xba,
+	rock_ur = 0xbb,
+	rock_dl = 0xbc,
+	rock_dr = 0xbd,
 	pillar_l1 = string.byte('p'),
 	pillar_r1 = string.byte('i'),
 	pillar_mid = string.byte('l'),
@@ -32,6 +36,10 @@ local tile_chars = {
 local solid_tiles = {
 	[tile_chars.wall] = true,
 	[tile_chars.breakable_wall] = true,
+	[tile_chars.rock_ul] = true,
+	[tile_chars.rock_ur] = true,
+	[tile_chars.rock_dl] = true,
+	[tile_chars.rock_dr] = true,
 }
 local stair_left_tiles = {
 	[tile_chars.stair_left] = true,
@@ -44,6 +52,12 @@ local stair_right_tiles = {
 local breakable_wall_kinds = {
 	breakablewall = true,
 	disappearingwall = true,
+}
+local rock_tile_width = constants.rock.width / constants.room.tile_size
+local rock_tile_height = constants.rock.height / constants.room.tile_size
+local rock_logic_tiles = {
+	{ tile_chars.rock_ul, tile_chars.rock_ur },
+	{ tile_chars.rock_dl, tile_chars.rock_dr },
 }
 local world_dissolve_prefix_by_tile_id = {
 	backworld_ul = 'backworld_ul_dissolve_',
@@ -227,6 +241,10 @@ local function build_screen_rows(map_rows, draaideuren, tile_size, origin_x, ori
 	return screen_rows
 end
 
+local function set_row_byte(row, tx, byte)
+	return row:sub(1, tx - 1) .. string.char(byte) .. row:sub(tx + 1)
+end
+
 local function create_tile_id(ch, x, y, map_rows, room_subtype)
 	local background = background_themes[room_subtype]
 	local pillars = pillar_themes[room_subtype]
@@ -366,6 +384,32 @@ local function build_solids(map_rows, tile_size, origin_x, origin_y)
 	return solids
 end
 
+local function build_logic_rows(room_state)
+	local logic_rows = {}
+	for y = 1, #room_state.map_rows do
+		logic_rows[y] = room_state.map_rows[y]
+	end
+
+	local destroyed_rock_ids = room_state.destroyed_rock_ids
+	for i = 1, #room_state.rocks do
+		local rock = room_state.rocks[i]
+		if not destroyed_rock_ids[rock.id] then
+			local tx0 = math.modf((rock.x - room_state.tile_origin_x) / room_state.tile_size) + 1
+			local ty0 = math.modf((rock.y - room_state.tile_origin_y) / room_state.tile_size) + 1
+			for dy = 1, rock_tile_height do
+				local ty = ty0 + dy - 1
+				local row = logic_rows[ty]
+				for dx = 1, rock_tile_width do
+					row = set_row_byte(row, tx0 + dx - 1, rock_logic_tiles[dy][dx])
+				end
+				logic_rows[ty] = row
+			end
+		end
+	end
+
+	return logic_rows
+end
+
 
 
 local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_height)
@@ -427,7 +471,7 @@ local function water_kind_at_tile(room_state, tx, ty)
 	if tx < 1 or tx > room_state.tile_columns then
 		return constants.water.none
 	end
-	if solid_tiles[string.byte(room_state.map_rows[ty], tx)] then
+	if solid_tiles[string.byte(room_state.logic_rows[ty], tx)] then
 		return constants.water.none
 	end
 	if ty == water.surface_row then
@@ -447,16 +491,24 @@ local function player_water_kind_at_tile(room_state, tx, ty)
 	if tx < 1 or tx > room_state.tile_columns then
 		return constants.water.none
 	end
+	if solid_tiles[string.byte(room_state.logic_rows[ty], tx)] then
+		return constants.water.none
+	end
 	if ty == water.surface_row then
 		return constants.water.surface
 	end
 	return constants.water.body
 end
 
+local function rebuild_room_logic(room_state)
+	local logic_rows = build_logic_rows(room_state)
+	room_state.logic_rows = logic_rows
+	room_state.solids = build_solids(logic_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
+	room_state.stairs = build_stairs(logic_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y, constants.player.height)
+end
+
 local function refresh_room_geometry(room_state)
-	local map_rows = room_state.map_rows
-	room_state.solids = build_solids(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
-	room_state.stairs = build_stairs(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y, constants.player.height)
+	rebuild_room_logic(room_state)
 	room_state:rebuild_room_bgmaps()
 end
 
@@ -486,8 +538,6 @@ local function apply_room_template(room_state, template)
 	room_state.tile_columns = #map_rows[1]
 	room_state.map_rows = map_rows
 	room_state.water = template.water
-	room_state.solids = build_solids(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y)
-	room_state.stairs = build_stairs(map_rows, constants.room.tile_size, constants.room.tile_origin_x, constants.room.tile_origin_y, constants.player.height)
 	room_state.enemies = template.enemies
 	room_state.rocks = template.rocks
 	room_state.items = template.items
@@ -499,6 +549,7 @@ local function apply_room_template(room_state, template)
 	room_state.room_links = template.room_links
 	room_state.edge_gates = template.edge_gates
 	room_state.last_water_surface_frame = -1
+	rebuild_room_logic(room_state)
 end
 
 local room_object = {}
@@ -562,10 +613,7 @@ function room_object:base_collision_flags_at_tile(tx, ty)
 		return constants.collision_flags.none
 	end
 	local collision = 0
-	if solid_tiles[string.byte(self.map_rows[ty], tx)] then
-		collision = collision | constants.collision_flags.wall
-	end
-	if self:is_active_rock_at_tile(tx, ty) then
+	if solid_tiles[string.byte(self.logic_rows[ty], tx)] then
 		collision = collision | constants.collision_flags.wall
 	end
 	if self:is_active_draaideur_at_tile(tx, ty) then
@@ -575,6 +623,11 @@ function room_object:base_collision_flags_at_tile(tx, ty)
 		collision = collision | constants.collision_flags.wall
 	end
 	return collision
+end
+
+function room_object:mark_rock_destroyed(rock_id)
+	self.destroyed_rock_ids[rock_id] = true
+	rebuild_room_logic(self)
 end
 
 function room_object:water_kind_at_world(world_x, world_y)
@@ -625,8 +678,17 @@ function room_object:overlaps_active_rock(x, y, w, h)
 end
 
 function room_object:is_active_rock_at_tile(tx, ty)
-	local world_x, world_y = self:tile_to_world(tx, ty)
-	return self:overlaps_active_rock(world_x, world_y, self.tile_size, self.tile_size)
+	if ty < 1 or ty > self.tile_rows then
+		return false
+	end
+	if tx < 1 or tx > self.tile_columns then
+		return false
+	end
+	local ch = string.byte(self.logic_rows[ty], tx)
+	return ch == tile_chars.rock_ul
+		or ch == tile_chars.rock_ur
+		or ch == tile_chars.rock_dl
+		or ch == tile_chars.rock_dr
 end
 
 function room_object:overlaps_active_elevator(x, y, w, h)
@@ -755,9 +817,6 @@ function room_object:overlaps_solid_rect(x, y, w, h)
 			return true
 		end
 	end
-	if self:overlaps_active_rock(x, y, w, h) then
-		return true
-	end
 	if self:overlaps_active_elevator(x, y, w, h) then
 		return true
 	end
@@ -844,6 +903,7 @@ end
 
 function room_object:ctor()
 	self.destroyed_rock_ids = {}
+	self.logic_rows = {}
 	self.bgmap_visible = false
 	self.last_water_surface_frame = -1
 	self:bind_visual()
