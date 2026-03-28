@@ -80,8 +80,8 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 	if (metrics.length === 0) {
 		const barTop = host.headerHeight;
 		const barBottom = barTop + rowHeightTotal;
-		api.put_rectfill(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
-		api.put_rectfill(0, Math.max(barTop, barBottom - 1), host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
+		api.fill_rect(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
+		api.fill_rect(0, Math.max(barTop, barBottom - 1), host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
 		return 1;
 	}
 
@@ -152,8 +152,8 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 	const totalHeight = totalRows * rowHeightTotal;
 	const barBottom = barTop + totalHeight;
 
-	api.put_rectfill(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
-	api.put_rectfill(0, Math.max(barTop, barBottom - 1), host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
+	api.fill_rect(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
+	api.fill_rect(0, Math.max(barTop, barBottom - 1), host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
 
 	if (layout.length === 0) {
 		return totalRows;
@@ -176,8 +176,8 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 		const fillColor = active ? constants.COLOR_TAB_ACTIVE_BACKGROUND : constants.COLOR_TAB_INACTIVE_BACKGROUND;
 		const textColor = active ? constants.COLOR_TAB_ACTIVE_TEXT : constants.COLOR_TAB_INACTIVE_TEXT;
 
-		api.put_rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, fillColor);
-		api.put_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_TAB_BORDER);
+		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, fillColor);
+		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_TAB_BORDER);
 
 		const textX = bounds.left + constants.TAB_BUTTON_PADDING_X;
 		const textY = bounds.top + constants.TAB_BUTTON_PADDING_Y;
@@ -206,7 +206,7 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 					const markerY = bounds.top + Math.floor((bounds.bottom - bounds.top - entry.markerMetrics.height) / 2);
 					const markerRight = markerX + entry.markerMetrics.width - 1;
 					const markerBottom = markerY + entry.markerMetrics.height - 1;
-					api.put_rectfill(markerX, markerY, markerRight, markerBottom, undefined, constants.COLOR_TAB_DIRTY_MARKER);
+					api.fill_rect(markerX, markerY, markerRight, markerBottom, undefined, constants.COLOR_TAB_DIRTY_MARKER);
 				}
 			}
 		} else {
@@ -219,12 +219,12 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 				const markerY = bounds.top + Math.floor((bounds.bottom - bounds.top - entry.markerMetrics.height) / 2);
 				const markerRight = markerX + entry.markerMetrics.width - 1;
 				const markerBottom = markerY + entry.markerMetrics.height - 1;
-				api.put_rectfill(markerX, markerY, markerRight, markerBottom, undefined, constants.COLOR_TAB_DIRTY_MARKER);
+				api.fill_rect(markerX, markerY, markerRight, markerBottom, undefined, constants.COLOR_TAB_DIRTY_MARKER);
 			}
 		}
 
 		if (active) {
-			api.put_rectfill(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, undefined, fillColor);
+			api.fill_rect(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, undefined, fillColor);
 		}
 	}
 

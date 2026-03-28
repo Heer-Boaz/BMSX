@@ -28,127 +28,17 @@ export type SpriteParallaxRig = {
 
 export type RenderLayer = 'world' | 'ui' | 'ide';
 
-export type OamLayer = 0 | 1 | 2;
+export type Layer2D = 0 | 1 | 2;
 
-export const OAM_LAYER_WORLD: OamLayer = 0;
-export const OAM_LAYER_UI: OamLayer = 1;
-export const OAM_LAYER_IDE: OamLayer = 2;
-export const OAM_FLAG_ENABLED = 1;
-export const PAT_FLAG_ENABLED = 1;
-export const BGMAP_LAYER_FLAG_ENABLED = 1;
-export const BGMAP_TILE_FLAG_ENABLED = 1;
-export const OAM_ENTRY_WORD_ATLAS_ID = 0;
-export const OAM_ENTRY_WORD_FLAGS = 1;
-export const OAM_ENTRY_WORD_ASSET_HANDLE = 2;
-export const OAM_ENTRY_WORD_LAYER = 3;
-export const OAM_ENTRY_WORD_X = 4;
-export const OAM_ENTRY_WORD_Y = 5;
-export const OAM_ENTRY_WORD_Z = 6;
-export const OAM_ENTRY_WORD_W = 7;
-export const OAM_ENTRY_WORD_H = 8;
-export const OAM_ENTRY_WORD_U0 = 9;
-export const OAM_ENTRY_WORD_V0 = 10;
-export const OAM_ENTRY_WORD_U1 = 11;
-export const OAM_ENTRY_WORD_V1 = 12;
-export const OAM_ENTRY_WORD_R = 13;
-export const OAM_ENTRY_WORD_G = 14;
-export const OAM_ENTRY_WORD_B = 15;
-export const OAM_ENTRY_WORD_A = 16;
-export const OAM_ENTRY_WORD_PARALLAX_WEIGHT = 17;
-export const OAM_ENTRY_WORD_COUNT = 18;
-export const OAM_ENTRY_BYTE_SIZE = OAM_ENTRY_WORD_COUNT * 4;
+export const LAYER_2D_WORLD: Layer2D = 0;
+export const LAYER_2D_UI: Layer2D = 1;
+export const LAYER_2D_IDE: Layer2D = 2;
 
-export function renderLayerToOamLayer(layer?: RenderLayer): OamLayer {
-	if (layer === 'ui') return OAM_LAYER_UI;
-	if (layer === 'ide') return OAM_LAYER_IDE;
-	return OAM_LAYER_WORLD;
+export function renderLayerTo2dLayer(layer: RenderLayer): Layer2D {
+	if (layer === 'ui') return LAYER_2D_UI;
+	if (layer === 'ide') return LAYER_2D_IDE;
+	return LAYER_2D_WORLD;
 }
-
-export function oamLayerToRenderLayer(layer: OamLayer): RenderLayer {
-	if (layer === OAM_LAYER_IDE) return 'ide';
-	if (layer === OAM_LAYER_UI) return 'ui';
-	return 'world';
-}
-
-export type OamEntry = {
-	atlasId: number;
-	flags: number;
-	assetHandle: number;
-	x: number;
-	y: number;
-	z: number;
-	w: number;
-	h: number;
-	u0: number;
-	v0: number;
-	u1: number;
-	v1: number;
-	r: number;
-	g: number;
-	b: number;
-	a: number;
-	layer: OamLayer;
-	parallaxWeight: number;
-};
-
-export type OamBuffer = {
-	entries: OamEntry[];
-	activeCount: number;
-};
-
-export type OamFrontBackState = {
-	front: OamBuffer;
-	back: OamBuffer;
-};
-
-export type PatHeader = {
-	flags: number;
-	count: number;
-};
-
-export type PatEntry = {
-	atlasId: number;
-	flags: number;
-	assetHandle: number;
-	layer: OamLayer;
-	x: number;
-	y: number;
-	z: number;
-	glyphW: number;
-	glyphH: number;
-	bgW: number;
-	bgH: number;
-	u0: number;
-	v0: number;
-	u1: number;
-	v1: number;
-	fgColor: number;
-	bgColor: number;
-};
-
-export type BgMapHeader = {
-	flags: number;
-	layer: OamLayer;
-	cols: number;
-	rows: number;
-	tileW: number;
-	tileH: number;
-	originX: number;
-	originY: number;
-	scrollX: number;
-	scrollY: number;
-	z: number;
-};
-
-export type BgMapEntry = {
-	atlasId: number;
-	flags: number;
-	assetHandle: number;
-	u0: number;
-	v0: number;
-	u1: number;
-	v1: number;
-};
 
 export type RectRenderSubmission = {
 	kind: 'rect' | 'fill';

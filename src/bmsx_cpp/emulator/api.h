@@ -38,31 +38,25 @@ public:
 	double get_cpu_freq_hz() const;
 	void set_cpu_freq_hz(double cpuHz);
 	double stat(int index) const;
-	bool isFrameCaptureActive() const;
-	void beginFrameCapture();
-	void commitFrameCapture();
-	void abandonFrameCapture();
-	void playbackRenderQueue(const std::vector<RenderSubmission>& queue);
 
 	void cls(int colorIndex = 0);
-	void put_rect(int x0, int y0, int x1, int y1, int z, int colorIndex);
-	void put_rectfill(int x0, int y0, int x1, int y1, int z, int colorIndex);
-	void put_rectfillcolor(int x0, int y0, int x1, int y1, int z, const Color& color, std::optional<RenderLayer> layer);
-	void put_sprite(const ImgRenderSubmission& submission);
-	void bgmap_begin(int layer, int cols, int rows, int tileW, int tileH, int originX, int originY, int z, std::optional<int> scrollX, std::optional<int> scrollY, std::optional<RenderLayer> renderLayer);
-	void bgmap_tile(int layer, int col, int row, const std::string& imgId);
-	void put_poly(const PolyRenderSubmission& submission);
+	void blit_rect(int x0, int y0, int x1, int y1, int z, int colorIndex);
+	void fill_rect(int x0, int y0, int x1, int y1, int z, int colorIndex);
+	void fill_rect_color(int x0, int y0, int x1, int y1, int z, const Color& color, std::optional<RenderLayer> layer);
+	void blit(const ImgRenderSubmission& submission);
+	void dma_blit_tiles(const Value& desc);
+	void blit_poly(const PolyRenderSubmission& submission);
 	void put_mesh(const MeshRenderSubmission& submission);
 	void put_particle(const ParticleRenderSubmission& submission);
 
-	void write(const std::string& text, std::optional<int> x, std::optional<int> y,
+	void blit_text(const std::string& text, std::optional<int> x, std::optional<int> y,
 				std::optional<int> z, std::optional<int> colorIndex, const Value& options);
-	void write_color(const std::string& text, std::optional<int> x, std::optional<int> y,
+	void blit_text_color(const std::string& text, std::optional<int> x, std::optional<int> y,
 						std::optional<int> z, const Value& colorValue);
-	void write_with_font(const std::string& text, std::optional<int> x, std::optional<int> y,
+	void blit_text_with_font(const std::string& text, std::optional<int> x, std::optional<int> y,
 							std::optional<int> z, std::optional<int> colorIndex, BFont* font);
-	void write_inline_with_font(const std::string& text, int x, int y, int z, int colorIndex, BFont* font);
-	void write_inline_span_with_font(const std::string& text, int start, int end,
+	void blit_text_inline_with_font(const std::string& text, int x, int y, int z, int colorIndex, BFont* font);
+	void blit_text_inline_span_with_font(const std::string& text, int start, int end,
 										int x, int y, int z, int colorIndex, BFont* font);
 
 	bool action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const;
@@ -98,9 +92,6 @@ private:
 	int m_textCursorHomeX = 0;
 	int m_textCursorColorIndex = 0;
 	int m_defaultPrintColorIndex = 15;
-	bool m_frameCaptureActive = false;
-	std::vector<RenderSubmission> m_frameCommands;
-	std::vector<RenderSubmission> m_frameCommandBuffer;
 
 	std::string m_cartDataNamespace;
 	std::vector<double> m_persistentData;

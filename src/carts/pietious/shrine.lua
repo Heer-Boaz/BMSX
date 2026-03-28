@@ -51,10 +51,10 @@ function shrine:ctor()
 end
 
 function shrine:render()
-	put_sprite('shrine_inside', 0, constants.room.tile_origin_y, 340)
+	blit('shrine_inside', 0, constants.room.tile_origin_y, 340)
 	local lines = self.lines
 	for i = 1, #lines do
-		put_glyphs(lines[i], constants.shrine.text_x, constants.shrine.text_y + ((i - 1) * constants.room.tile_size), 341, {
+		blit_glyphs(lines[i], constants.shrine.text_x, constants.shrine.text_y + ((i - 1) * constants.room.tile_size), 341, {
 			font = self.text_font,
 		})
 	end

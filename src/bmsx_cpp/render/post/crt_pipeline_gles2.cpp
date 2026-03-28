@@ -797,17 +797,15 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 	g_present = PresentGLES2State{};
 }
 
-void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state) {
-	(void)context;
-
+static void renderPresentQuadGLES2(OpenGLES2Backend* backend, i32 width, i32 height, TextureHandle colorTex, bool bindBackbuffer) {
 	glUseProgram(g_present.program);
 	glUniform1i(g_present.uniform_texture, kTexUnitPostProcess);
 
-	if (g_present.width != state.width || g_present.height != state.height) {
-		g_present.width = state.width;
-		g_present.height = state.height;
-		const float w = static_cast<float>(state.width);
-		const float h = static_cast<float>(state.height);
+	if (g_present.width != width || g_present.height != height) {
+		g_present.width = width;
+		g_present.height = height;
+		const float w = static_cast<float>(width);
+		const float h = static_cast<float>(height);
 		const float positions[12] = {
 			0.0f, 0.0f,
 			0.0f, h,
@@ -830,7 +828,9 @@ void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTP
 		glBufferData(GL_ARRAY_BUFFER, sizeof(texcoords), texcoords, GL_STATIC_DRAW);
 	}
 
-	backend->setRenderTarget(backend->backbuffer(), state.width, state.height);
+	if (bindBackbuffer) {
+		backend->setRenderTarget(backend->backbuffer(), width, height);
+	}
 
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
@@ -844,13 +844,23 @@ void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTP
 	glEnableVertexAttribArray(static_cast<GLuint>(g_present.attrib_uv));
 	glVertexAttribPointer(static_cast<GLuint>(g_present.attrib_uv), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
 
-	glUniform2f(g_present.uniform_resolution, static_cast<float>(state.width), static_cast<float>(state.height));
+	glUniform2f(g_present.uniform_resolution, static_cast<float>(width), static_cast<float>(height));
 	glUniform1f(g_present.uniform_scale, 1.0f);
 
 	backend->setActiveTextureUnit(kTexUnitPostProcess);
-	backend->bindTexture2D(state.colorTex);
+	backend->bindTexture2D(colorTex);
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state) {
+	(void)context;
+	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, true);
+}
+
+void renderPresentToCurrentTargetGLES2(OpenGLES2Backend* backend, GameView* context, const Framebuffer2DPipelineState& state) {
+	(void)context;
+	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, false);
 }
 
 void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, const DeviceQuantizePipelineState& state) {

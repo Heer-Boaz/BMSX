@@ -384,7 +384,7 @@ function textobject:draw()
 		local offset_y = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
 		local padded = margin * scale
 		highlight_rect_options.layer = self.layer
-		put_rectfillcolor(
+		fill_rect_color(
 			dims.left - padded + offset_x,
 			self.highlight_anim_y - padded + offset_y,
 			dims.right + padded + offset_x,
@@ -400,7 +400,7 @@ function textobject:draw()
 	for i = 1, #self.text do
 		local line = self.text[i]
 		local y = dims.top + line_height * (i - 1)
-		put_glyphs(line, self.centered_block_x, y, self.z, glyph_draw_options)
+		blit_glyphs(line, self.centered_block_x, y, self.z, glyph_draw_options)
 	end
 end
 

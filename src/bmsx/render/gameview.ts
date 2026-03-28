@@ -31,7 +31,7 @@ import {
 } from 'bmsx/rompack/rompack';
 import { renderGate } from 'bmsx/core/engine_core';
 
-const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'sprites_world', 'sprites_ui', 'sprites_ide', 'device_quantize', 'crt'];
+const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'framebuffer_2d', 'device_quantize', 'crt'];
 
 interface GameViewOpts {
 	host: GameViewHost;

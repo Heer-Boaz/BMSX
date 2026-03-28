@@ -14,7 +14,6 @@
 #include "../../emulator/runtime.h"
 #if BMSX_ENABLE_GLES2
 #include "../../render/backend/gles2_backend.h"
-#include "../../render/2d/sprites_pipeline_gles2.h"
 #include "../../render/post/crt_pipeline_gles2.h"
 #endif
 #include <chrono>
@@ -220,7 +219,6 @@ void LibretroPlatform::onContextDestroy() {
 	}
 	m_engine->texmanager()->clear();
 	m_render_assets_need_refresh = true;
-	SpritesPipeline::shutdownGLES2(backend);
 	CRTPipeline::shutdownGLES2(backend);
 	backend->onContextDestroy();
 	view->setPipelineRegistry(std::unique_ptr<RenderPassLibrary>());

@@ -52,34 +52,12 @@ struct ParticlePipelineState {
 	f32 ambientFactor = 1.0f;
 };
 
-struct SpritesPipelineState {
+struct Framebuffer2DPipelineState {
 	i32 width = 0;
 	i32 height = 0;
 	i32 baseWidth = 0;
 	i32 baseHeight = 0;
-	TextureHandle atlasPrimaryTex = nullptr;
-	TextureHandle atlasSecondaryTex = nullptr;
-	TextureHandle atlasEngineTex = nullptr;
-	bool ambientEnabledDefault = false;
-	f32 ambientFactorDefault = 1.0f;
-	std::array<f32, 3> ambientColor = {0, 0, 0};
-	f32 ambientIntensity = 0.0f;
-	std::string viewportTypeIde = "viewport";
-};
-
-struct Sorted2DDrawEntry {
-	OamEntry entry;
-	i32 sourceIndex = 0;
-};
-
-struct Sort2DDrawBucketState {
-	std::vector<Sorted2DDrawEntry> entries;
-};
-
-struct Sort2DPipelineState {
-	Sort2DDrawBucketState world;
-	Sort2DDrawBucketState ui;
-	Sort2DDrawBucketState ide;
+	TextureHandle colorTex = nullptr;
 };
 
 struct CRTPipelineOptions {

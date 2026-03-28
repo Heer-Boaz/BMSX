@@ -12,21 +12,21 @@ end
 
 function arena:draw_hp_bar(base_x, base_y, max_width, value, max_value, color)
 	local filled = (value * max_width) / max_value
-	put_rectfillcolor(base_x, base_y, base_x + max_width, base_y + 4, constants.z.hud, constants.palette.metal)
-	put_rectfillcolor(base_x, base_y, base_x + filled, base_y + 4, constants.z.hud + 1, color)
+	fill_rect_color(base_x, base_y, base_x + max_width, base_y + 4, constants.z.hud, constants.palette.metal)
+	fill_rect_color(base_x, base_y, base_x + filled, base_y + 4, constants.z.hud + 1, color)
 end
 
 function arena:draw()
-	put_rectfillcolor(0, 0, constants.machine.width, constants.machine.height, constants.z.background, constants.palette.bg)
-	put_rectfillcolor(0, constants.physics.floor_y, constants.machine.width, constants.physics.floor_y + 6, constants.z.background + 1, constants.palette.floor)
+	fill_rect_color(0, 0, constants.machine.width, constants.machine.height, constants.z.background, constants.palette.bg)
+	fill_rect_color(0, constants.physics.floor_y, constants.machine.width, constants.physics.floor_y + 6, constants.z.background + 1, constants.palette.floor)
 
 	local player = object(constants.ids.player_instance)
 	local enemy = object(constants.ids.enemy_instance)
 	self:draw_hp_bar(8, 8, 84, player.health, constants.player.max_health, constants.palette.player)
 	self:draw_hp_bar(164, 8, 84, enemy.health, constants.enemy.max_health, constants.palette.enemy)
 
-	put_rectfillcolor(6, 6, 10, 14, constants.z.hud, constants.palette.player)
-	put_rectfillcolor(162, 6, 166, 14, constants.z.hud, constants.palette.enemy)
+	fill_rect_color(6, 6, 10, 14, constants.z.hud, constants.palette.player)
+	fill_rect_color(162, 6, 166, 14, constants.z.hud, constants.palette.enemy)
 end
 
 function arena:ctor()

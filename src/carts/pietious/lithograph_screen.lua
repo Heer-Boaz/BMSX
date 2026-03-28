@@ -25,10 +25,10 @@ function lithograph_screen:bind_visual()
 end
 
 function lithograph_screen:draw_screen()
-	put_sprite(lithograph_mode_sprite_id, constants.room.tile_size4, constants.room.tile_origin_y + constants.room.tile_size2, 340)
+	blit(lithograph_mode_sprite_id, constants.room.tile_size4, constants.room.tile_origin_y + constants.room.tile_size2, 340)
 	local lines = self.lines
 	if #lines > 0 then
-		put_glyphs(lines, 0, constants.room.tile_origin_y + (constants.room.tile_size * 6), 341, {
+		blit_glyphs(lines, 0, constants.room.tile_origin_y + (constants.room.tile_size * 6), 341, {
 			font = self.text_font,
 			center_block_width = display_width(),
 		})

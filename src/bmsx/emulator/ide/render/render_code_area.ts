@@ -39,7 +39,7 @@ function drawHighlightSlice(
 		while (end < endDisplay && colors[end] === color) {
 			end += 1;
 		}
-		api.write_inline_span_with_font(renderText, index, end, cursorX, cursorY, z, color, renderFont);
+		api.blit_text_inline_span_with_font(renderText, index, end, cursorX, cursorY, z, color, renderFont);
 		cursorX += advancePrefix[end] - advancePrefix[index];
 		index = end;
 	}
@@ -91,9 +91,9 @@ export function renderCodeArea(): void {
 	const contentBottom = bounds.codeBottom - (ide_state.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
 	const trackRight = bounds.codeRight - (ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
 
-	api.put_rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_CODE_BACKGROUND);
+	api.fill_rect(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_CODE_BACKGROUND);
 	if (bounds.gutterRight > bounds.gutterLeft) {
-		api.put_rectfill(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, undefined, constants.COLOR_GUTTER_BACKGROUND);
+		api.fill_rect(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, undefined, constants.COLOR_GUTTER_BACKGROUND);
 	}
 
 	const activeGotoHighlight = ide_state.gotoHoverHighlight;
@@ -139,14 +139,14 @@ export function renderCodeArea(): void {
 			const markerHeight = Math.max(2, ide_state.lineHeight - 2);
 			const markerTop = rowY + Math.max(1, Math.floor((ide_state.lineHeight - markerHeight) / 2));
 			const markerBottom = Math.min(rowY + ide_state.lineHeight - 1, markerTop + markerHeight);
-			api.put_rectfillcolor(markerLeft, markerTop, markerRight, markerBottom, undefined, constants.COLOR_BREAKPOINT_BORDER);
+			api.fill_rect_color(markerLeft, markerTop, markerRight, markerBottom, undefined, constants.COLOR_BREAKPOINT_BORDER);
 		}
 		const isExecutionStopRow = ide_state.executionStopRow !== null && lineIndex === ide_state.executionStopRow;
 		const isCursorLine = lineIndex === ide_state.cursorRow;
 		if (isExecutionStopRow) {
-			api.put_rectfillcolor(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
+			api.fill_rect_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
 		} else if (isCursorLine) {
-			api.put_rectfillcolor(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
+			api.fill_rect_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
 		}
 		const highlight = entry.hi;
 		const renderText = useUppercase ? highlight.upperText : highlight.text;
@@ -172,7 +172,7 @@ export function renderCodeArea(): void {
 			const clampedLeft = clamp(selectionStartX, bounds.textLeft, contentRight);
 			const clampedRight = clamp(selectionEndX, clampedLeft, contentRight);
 			if (clampedRight > clampedLeft) {
-				api.put_rectfillcolor(clampedLeft, rowY, clampedRight, rowY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
+				api.fill_rect_color(clampedLeft, rowY, clampedRight, rowY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
 			}
 		}
 		if (shouldRenderInlinePreview && visualIndex === cursorVisualIndex && lineIndex === inlineCompletionPreview.row) {
@@ -183,7 +183,7 @@ export function renderCodeArea(): void {
 				const prefixWidth = entry.advancePrefix[insertDisplay] - entry.advancePrefix[sliceStartDisplay];
 				const ghostText = useUppercase ? ghost.toUpperCase() : ghost;
 				if (ghostText.length > 0) {
-					api.write_inline_with_font(ghostText, textLeftFloor + prefixWidth, rowY, undefined, constants.COLOR_COMPLETION_PREVIEW_TEXT, renderFont);
+					api.blit_text_inline_with_font(ghostText, textLeftFloor + prefixWidth, rowY, undefined, constants.COLOR_COMPLETION_PREVIEW_TEXT, renderFont);
 				}
 				const ghostWidth = ghostText.length > 0 ? ide_state.font.measure(ghostText) : 0;
 				drawHighlightSlice(
@@ -250,7 +250,7 @@ export function renderCodeArea(): void {
 			const underlineColor = diagnostic.severity === 'warning'
 				? constants.COLOR_DIAGNOSTIC_WARNING
 				: constants.COLOR_DIAGNOSTIC_ERROR;
-			api.put_rectfill(drawLeft, underlineY, drawRight, underlineY + 1, undefined, underlineColor);
+			api.fill_rect(drawLeft, underlineY, drawRight, underlineY + 1, undefined, underlineColor);
 		}
 		if (activeGotoHighlight && gotoVisualIndex !== null && visualIndex === gotoVisualIndex && activeGotoHighlight.row === lineIndex) {
 			const startDisplayFull = ide_state.layout.columnToDisplay(highlight, activeGotoHighlight.startColumn);
@@ -268,7 +268,7 @@ export function renderCodeArea(): void {
 				if (drawRight > drawLeft) {
 					const underlineY = Math.min(contentBottom - 1, rowY + ide_state.lineHeight - 1);
 					if (underlineY >= rowY && underlineY < contentBottom) {
-						api.put_rectfill(drawLeft, underlineY, drawRight, underlineY + 1, undefined, constants.COLOR_GOTO_UNDERLINE);
+						api.fill_rect(drawLeft, underlineY, drawRight, underlineY + 1, undefined, constants.COLOR_GOTO_UNDERLINE);
 					}
 				}
 			}
@@ -346,13 +346,13 @@ function drawRuntimeErrorOverlayIndicator(
 	const bottom = top + indicatorHeight;
 	const accentHeight = 2;
 	const accentTop = direction === 'above' ? top : bottom - accentHeight;
-	api.put_rectfillcolor(left, top, left + indicatorWidth, bottom, undefined, constants.ERROR_OVERLAY_BACKGROUND);
-	api.put_rectfillcolor(left, accentTop, left + indicatorWidth, accentTop + accentHeight, undefined, constants.ERROR_OVERLAY_LINE_HOVER);
+	api.fill_rect_color(left, top, left + indicatorWidth, bottom, undefined, constants.ERROR_OVERLAY_BACKGROUND);
+	api.fill_rect_color(left, accentTop, left + indicatorWidth, accentTop + accentHeight, undefined, constants.ERROR_OVERLAY_LINE_HOVER);
 	const notchWidth = 6;
 	const notchLeft = left + Math.max(2, Math.floor((indicatorWidth - notchWidth) / 2));
 	const notchTop = direction === 'above' ? top - 1 : bottom;
-	api.put_rectfillcolor(notchLeft, notchTop, notchLeft + notchWidth, notchTop + 1, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
-	api.put_rect(left, top, left + indicatorWidth, bottom, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
+	api.fill_rect_color(notchLeft, notchTop, notchLeft + notchWidth, notchTop + 1, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
+	api.blit_rect(left, top, left + indicatorWidth, bottom, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
 }
 
 function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
@@ -418,7 +418,7 @@ export function drawReferenceHighlightsForRow(api: Api, rowIndex: number, entry:
 		const startX = originX + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, visibleStart);
 		const endX = originX + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, visibleEnd);
 		const overlay = i === activeIndex ? constants.REFERENCES_MATCH_ACTIVE_OVERLAY : constants.REFERENCES_MATCH_OVERLAY;
-		api.put_rectfillcolor(startX, originY, endX, originY + ide_state.lineHeight, undefined, overlay);
+		api.fill_rect_color(startX, originY, endX, originY + ide_state.lineHeight, undefined, overlay);
 	}
 }
 
@@ -442,6 +442,6 @@ export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: Ca
 		const startX = originX + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, visibleStart);
 		const endX = originX + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, visibleEnd);
 		const overlay = i === ide_state.searchCurrentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
-		api.put_rectfillcolor(startX, originY, endX, originY + ide_state.lineHeight, undefined, overlay);
+		api.fill_rect_color(startX, originY, endX, originY + ide_state.lineHeight, undefined, overlay);
 	}
 }

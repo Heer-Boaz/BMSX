@@ -17,6 +17,7 @@ void initPresentGLES2(OpenGLES2Backend* backend);
 void initDeviceQuantizeGLES2(OpenGLES2Backend* backend);
 void shutdownGLES2(OpenGLES2Backend* backend);
 void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state);
+void renderPresentToCurrentTargetGLES2(OpenGLES2Backend* backend, GameView* context, const Framebuffer2DPipelineState& state);
 void renderCRTGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state);
 void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, const DeviceQuantizePipelineState& state);
 

@@ -119,7 +119,7 @@ export function renderEditorContextMenu(codeBounds: CodeAreaViewportBounds): voi
 	if (!bounds) {
 		return;
 	}
-	api.put_rectfill(
+	api.fill_rect(
 		bounds.left + CONTEXT_MENU_SHADOW_OFFSET,
 		bounds.top + CONTEXT_MENU_SHADOW_OFFSET,
 		bounds.right + CONTEXT_MENU_SHADOW_OFFSET,
@@ -127,7 +127,7 @@ export function renderEditorContextMenu(codeBounds: CodeAreaViewportBounds): voi
 		Z_CONTEXT_MENU_SHADOW,
 		constants.COLOR_COMPLETION_DETAIL
 	);
-	api.put_rectfill(
+	api.fill_rect(
 		bounds.left,
 		bounds.top,
 		bounds.right,
@@ -135,7 +135,7 @@ export function renderEditorContextMenu(codeBounds: CodeAreaViewportBounds): voi
 		Z_CONTEXT_MENU_BACKGROUND,
 		constants.COLOR_COMPLETION_BACKGROUND
 	);
-	api.put_rect(
+	api.blit_rect(
 		bounds.left,
 		bounds.top,
 		bounds.right,
@@ -148,7 +148,7 @@ export function renderEditorContextMenu(codeBounds: CodeAreaViewportBounds): voi
 		const itemBounds = menu.itemBounds[index];
 		const hovered = index === menu.hoverIndex && entry.enabled;
 		if (hovered) {
-			api.put_rectfill(
+			api.fill_rect(
 				itemBounds.left + 1,
 				itemBounds.top + 1,
 				itemBounds.right - 1,

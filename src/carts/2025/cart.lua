@@ -227,7 +227,6 @@ function new_game()
 	inst('p3.bg', {
 		id = bg_id,
 		pos = { x = 0, y = 0, z = 0 },
-		imgid = 'none',
 		visible = false,
 	})
 	inst('p3.bg', {

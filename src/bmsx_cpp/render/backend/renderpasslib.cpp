@@ -6,13 +6,12 @@
 
 #include "renderpasslib.h"
 #include "../gameview.h"
-#include "../2d/sprites_pipeline.h"
 #if BMSX_ENABLE_GLES2
-#include "../2d/sprites_pipeline_gles2.h"
 #include "../post/crt_pipeline_gles2.h"
 #endif
 #include "../graph/rendergraph.h"
 #include "../../core/engine_core.h"
+#include "../../emulator/runtime.h"
 #include "../../rompack/rompack.h"
 #include <algorithm>
 #include <stdexcept>
@@ -126,69 +125,44 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		registerPass(desc);
 	}
 
-	// 2D sort pass
 	{
 		RenderPassDef desc;
-		desc.id = "sort_2d";
-		desc.name = "Sort2D";
-		desc.stateOnly = true;
-		desc.exec = [this](GPUBackend*, void*, std::any&) {
-			this->setState("sort_2d", SpritesPipeline::buildSorted2DPipelineState());
+		desc.id = "framebuffer_2d";
+		desc.name = "Framebuffer2D";
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
+		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
+			Runtime::instance().vdp().ensureFrameBufferSurfaceReady();
+			auto* view = ctx.view;
+			Framebuffer2DPipelineState state;
+			state.width = static_cast<i32>(view->offscreenCanvasSize.x);
+			state.height = static_cast<i32>(view->offscreenCanvasSize.y);
+			state.baseWidth = static_cast<i32>(view->viewportSize.x);
+			state.baseHeight = static_cast<i32>(view->viewportSize.y);
+			state.colorTex = view->textures.at(FRAMEBUFFER_TEXTURE_KEY);
+			return state;
+		};
+		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
+			auto& fbState = std::any_cast<Framebuffer2DPipelineState&>(state);
+			auto* softBackend = static_cast<SoftwareBackend*>(backend);
+			softBackend->blitTexture(fbState.colorTex,
+				0,
+				0,
+				fbState.baseWidth,
+				fbState.baseHeight,
+				0,
+				0,
+				fbState.width,
+				fbState.height,
+				0.0f,
+				Color{1.0f, 1.0f, 1.0f, 1.0f},
+				false,
+				false,
+				DitherParams{},
+				false);
 		};
 		registerPass(desc);
 	}
-
-	auto registerSpritePass = [this](const char* passId, const char* passName, OamLayer layer, bool useDepth) {
-		RenderPassDef desc;
-		desc.id = passId;
-		desc.name = passName;
-		desc.writesDepth = useDepth;
-		desc.depthTest = useDepth;
-		desc.shouldExecute = []() { return true; };
-		desc.exec = [this, layer, useDepth](GPUBackend* backend, void* fbo, std::any& state) {
-			(void)fbo;
-			auto& engine = EngineCore::instance();
-			auto* view = engine.view();
-			auto& spriteState = std::any_cast<SpritesPipelineState&>(state);
-			const auto& sortState = this->getStateRef<Sort2DPipelineState>("sort_2d");
-			SpritesPipeline::renderSpriteBatch(backend, view, spriteState, sortState, layer, useDepth);
-		};
-		desc.prepare = [](GPUBackend*, std::any& state) {
-			auto& engine = EngineCore::instance();
-			auto* gv = engine.view();
-
-			SpritesPipelineState spriteState;
-			spriteState.width = static_cast<i32>(gv->offscreenCanvasSize.x);
-			spriteState.height = static_cast<i32>(gv->offscreenCanvasSize.y);
-			spriteState.baseWidth = static_cast<i32>(gv->viewportSize.x);
-			spriteState.baseHeight = static_cast<i32>(gv->viewportSize.y);
-
-			auto primaryIt = gv->textures.find("_atlas_primary");
-			if (primaryIt == gv->textures.end() || !primaryIt->second) {
-				throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
-			}
-			spriteState.atlasPrimaryTex = primaryIt->second;
-			auto secondaryIt = gv->textures.find("_atlas_secondary");
-			if (secondaryIt != gv->textures.end()) {
-				spriteState.atlasSecondaryTex = secondaryIt->second;
-			}
-			auto engineIt = gv->textures.find(ENGINE_ATLAS_TEXTURE_KEY);
-			if (engineIt != gv->textures.end()) {
-				spriteState.atlasEngineTex = engineIt->second;
-			}
-
-			spriteState.ambientEnabledDefault = gv->spriteAmbientEnabledDefault;
-			spriteState.ambientFactorDefault = gv->spriteAmbientFactorDefault;
-			spriteState.viewportTypeIde = (gv->viewportTypeIde == GameView::ViewportType::Viewport) ? "viewport" : "offscreen";
-
-			state = spriteState;
-		};
-		registerPass(desc);
-	};
-
-	registerSpritePass("sprites_world", "Sprites2DWorld", OamLayer::World, true);
-	registerSpritePass("sprites_ui", "Sprites2DUI", OamLayer::UI, false);
-	registerSpritePass("sprites_ide", "Sprites2DIDE", OamLayer::IDE, false);
 
 	// Present pass (software: direct blit)
 	{
@@ -248,74 +222,33 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		registerPass(desc);
 	}
 
-	// 2D sort pass
 	{
 		RenderPassDef desc;
-		desc.id = "sort_2d";
-		desc.name = "Sort2D";
-		desc.stateOnly = true;
-		desc.exec = [this](GPUBackend*, void*, std::any&) {
-			this->setState("sort_2d", SpritesPipeline::buildSorted2DPipelineState());
+		desc.id = "framebuffer_2d";
+		desc.name = "Framebuffer2D";
+		desc.graph = RenderPassDef::RenderPassGraphDef{};
+		desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
+		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
+			Runtime::instance().vdp().ensureFrameBufferSurfaceReady();
+			auto* view = ctx.view;
+			Framebuffer2DPipelineState state;
+			state.width = static_cast<i32>(view->offscreenCanvasSize.x);
+			state.height = static_cast<i32>(view->offscreenCanvasSize.y);
+			state.baseWidth = static_cast<i32>(view->viewportSize.x);
+			state.baseHeight = static_cast<i32>(view->viewportSize.y);
+			state.colorTex = view->textures.at(FRAMEBUFFER_TEXTURE_KEY);
+			return state;
+		};
+		desc.bootstrap = [](GPUBackend* backend) {
+			CRTPipeline::initPresentGLES2(static_cast<OpenGLES2Backend*>(backend));
+		};
+		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
+			auto& engine = EngineCore::instance();
+			auto& fbState = std::any_cast<Framebuffer2DPipelineState&>(state);
+			CRTPipeline::renderPresentToCurrentTargetGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view(), fbState);
 		};
 		registerPass(desc);
 	}
-
-	auto registerSpritePass = [this](const char* passId, const char* passName, OamLayer layer, bool useDepth, bool bootstrap) {
-		RenderPassDef desc;
-		desc.id = passId;
-		desc.name = passName;
-		desc.writesDepth = useDepth;
-		desc.depthTest = useDepth;
-		if (bootstrap) {
-			desc.bootstrap = [](GPUBackend* backend) {
-				auto& engine = EngineCore::instance();
-				SpritesPipeline::initGLES2(static_cast<OpenGLES2Backend*>(backend), engine.view());
-			};
-		}
-		desc.shouldExecute = []() { return true; };
-		desc.exec = [this, layer, useDepth](GPUBackend* backend, void* fbo, std::any& state) {
-			(void)fbo;
-			auto& engine = EngineCore::instance();
-			auto& spriteState = std::any_cast<SpritesPipelineState&>(state);
-			const auto& sortState = this->getStateRef<Sort2DPipelineState>("sort_2d");
-			SpritesPipeline::renderSpriteBatch(backend, engine.view(), spriteState, sortState, layer, useDepth);
-		};
-		desc.prepare = [](GPUBackend*, std::any& state) {
-			auto& engine = EngineCore::instance();
-			auto* gv = engine.view();
-
-			SpritesPipelineState spriteState;
-			spriteState.width = static_cast<i32>(gv->offscreenCanvasSize.x);
-			spriteState.height = static_cast<i32>(gv->offscreenCanvasSize.y);
-			spriteState.baseWidth = static_cast<i32>(gv->viewportSize.x);
-			spriteState.baseHeight = static_cast<i32>(gv->viewportSize.y);
-
-			auto primaryIt = gv->textures.find("_atlas_primary");
-			if (primaryIt == gv->textures.end() || !primaryIt->second) {
-				throw BMSX_RUNTIME_ERROR("[SpritesPipeline] Texture '_atlas_primary' missing from view textures.");
-			}
-			spriteState.atlasPrimaryTex = primaryIt->second;
-			auto secondaryIt = gv->textures.find("_atlas_secondary");
-			if (secondaryIt != gv->textures.end()) {
-				spriteState.atlasSecondaryTex = secondaryIt->second;
-			}
-			auto engineIt = gv->textures.find(ENGINE_ATLAS_TEXTURE_KEY);
-			if (engineIt != gv->textures.end()) {
-				spriteState.atlasEngineTex = engineIt->second;
-			}
-
-			spriteState.ambientEnabledDefault = gv->spriteAmbientEnabledDefault;
-			spriteState.ambientFactorDefault = gv->spriteAmbientFactorDefault;
-			spriteState.viewportTypeIde = (gv->viewportTypeIde == GameView::ViewportType::Viewport) ? "viewport" : "offscreen";
-
-			state = spriteState;
-		};
-		registerPass(desc);
-	};
-
-	registerSpritePass("sprites_world", "Sprites2DWorld", OamLayer::World, true, true);
-	registerSpritePass("sprites_ui", "Sprites2DUI", OamLayer::UI, false, false);
-	registerSpritePass("sprites_ide", "Sprites2DIDE", OamLayer::IDE, false, false);
 
 	// Device quantize/dither pass (GLES2)
 	{
@@ -363,9 +296,6 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.graph->presentInput = RenderPassDef::RenderPassGraphDef::PresentInput::Auto;
 		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
 			return buildCRTPipelineState(ctx, RenderPassDef::RenderPassGraphDef::PresentInput::Auto);
-		};
-		desc.bootstrap = [](GPUBackend* backend) {
-			CRTPipeline::initPresentGLES2(static_cast<OpenGLES2Backend*>(backend));
 		};
 		desc.exec = [](GPUBackend* backend, void*, std::any& state) {
 			auto& engine = EngineCore::instance();

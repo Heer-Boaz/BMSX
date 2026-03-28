@@ -542,8 +542,7 @@ export class EngineCore {
 				runtime.drawFrameState = null;
 				runtime.clearWaitForVblank();
 				runtime.resetVblankState();
-				runtime.overlayRenderBackend.abandonFrame();
-				runtime.preservedRenderQueue = [];
+				runtime.overlayRenderer.abandonFrame();
 			}
 
 			if (!preserveTextures) {

@@ -90,18 +90,18 @@ function ui:draw_ui()
 		return
 	end
 	local player = object('pietolon')
-	put_sprite('game_header', 0, 0, 200)
+	blit('game_header', 0, 0, 200)
 	local equipped_sprite_id = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
-		put_sprite(equipped_sprite_id, constants.hud.equipped_item_x * constants.room.tile_size, constants.hud.equipped_item_y * constants.room.tile_size, 202)
+		blit(equipped_sprite_id, constants.hud.equipped_item_x * constants.room.tile_size, constants.hud.equipped_item_y * constants.room.tile_size, 202)
 	end
 
 	for i = 0, (self.hud_health_level - 1) do
-		put_sprite('energybar_stripe_blue', constants.hud.health_bar_x + i, constants.hud.health_bar_y, 201)
+		blit('energybar_stripe_blue', constants.hud.health_bar_x + i, constants.hud.health_bar_y, 201)
 	end
 
 	for i = 0, (self.hud_weapon_level - 1) do
-		put_sprite('energybar_stripe_red', constants.hud.weapon_bar_x + i, constants.hud.weapon_bar_y, 201)
+		blit('energybar_stripe_red', constants.hud.weapon_bar_x + i, constants.hud.weapon_bar_y, 201)
 	end
 end
 

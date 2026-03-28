@@ -69,7 +69,7 @@ export function draw(): void {
 	ide_state.codeVerticalScrollbarVisible = false;
 	ide_state.codeHorizontalScrollbarVisible = false;
 	const frameColor = BmsxColors[constants.COLOR_FRAME];
-	api.put_rectfillcolor(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, undefined, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
+	api.fill_rect_color(0, 0, ide_state.viewportWidth, ide_state.viewportHeight, undefined, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
 
 	renderTopBar();
 

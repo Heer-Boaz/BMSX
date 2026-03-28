@@ -152,7 +152,7 @@ end
 function textflow.draw_lines(lines, x, y, color, line_height)
 	local step = line_height or 8
 	for i = 1, #lines do
-		write(lines[i], x, y, 0, color)
+		blit_text(lines[i], x, y, 0, color)
 		y = y + step
 	end
 	return y

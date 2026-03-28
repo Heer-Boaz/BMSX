@@ -98,11 +98,11 @@ export class ProblemsPanelController {
 		const layout = this.computeLayout(bounds);
 		this.cachedLayout = layout;
 
-		api.put_rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_PROBLEMS_PANEL_BACKGROUND);
+		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_PROBLEMS_PANEL_BACKGROUND);
 
 		// Header/tab area
-		api.put_rectfill(bounds.left, layout.headerTop, bounds.right, layout.headerBottom, undefined, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
-		api.put_rectfill(bounds.left, layout.headerBottom - 1, bounds.right, layout.headerBottom, undefined, constants.COLOR_PROBLEMS_PANEL_BORDER);
+		api.fill_rect(bounds.left, layout.headerTop, bounds.right, layout.headerBottom, undefined, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
+		api.fill_rect(bounds.left, layout.headerBottom - 1, bounds.right, layout.headerBottom, undefined, constants.COLOR_PROBLEMS_PANEL_BORDER);
 		const count = this.diagnostics.length;
 		const headerLabel = `PROBLEMS (${count})`;
 		const headerX = bounds.left + constants.PROBLEMS_PANEL_HEADER_PADDING_X;
@@ -149,9 +149,9 @@ export class ProblemsPanelController {
 			if (isSelected) {
 				if (this.focused) {
 					const overlay = constants.SELECTION_OVERLAY;
-					api.put_rectfillcolor(bounds.left, rowTop, bounds.right, rowBottom, undefined, overlay);
+					api.fill_rect_color(bounds.left, rowTop, bounds.right, rowBottom, undefined, overlay);
 				} else {
-					api.put_rect(bounds.left, rowTop, bounds.right, rowBottom, undefined, constants.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
+					api.blit_rect(bounds.left, rowTop, bounds.right, rowBottom, undefined, constants.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
 				}
 			}
 			let textCursorX = contentLeft;
@@ -173,7 +173,7 @@ export class ProblemsPanelController {
 		}
 
 		// Border line separating panel and status bar
-		api.put_rectfill(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, undefined, constants.COLOR_PROBLEMS_PANEL_BORDER);
+		api.fill_rect(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, undefined, constants.COLOR_PROBLEMS_PANEL_BORDER);
 	}
 
 	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean, _justReleased: boolean, bounds: RectBounds): boolean {

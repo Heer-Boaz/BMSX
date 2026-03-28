@@ -2432,8 +2432,8 @@ render_boot_screen = function(scroll_delta)
 	local top = content_top
 
 	cls(color_bg)
-	put_rectfill(0, 0, width, 24, 0, color_header_bg)
-	write('BMSX BIOS', center_x('BMSX BIOS', width), 8, 0, color_header_text)
+	fill_rect(0, 0, width, 24, 0, color_header_bg)
+	blit_text('BMSX BIOS', center_x('BMSX BIOS', width), 8, 0, color_header_text)
 	local info = build_info()
 	local cart_present = peek(cart_rom_base) == cart_rom_magic
 	local elapsed = elapsed_seconds()
@@ -2446,14 +2446,14 @@ render_boot_screen = function(scroll_delta)
 
 	for i = 1, #visible_lines do
 		local line = visible_lines[i]
-		write(line.text, left, y, 0, line.color or color_text)
+		blit_text(line.text, left, y, 0, line.color or color_text)
 		y = y + line_height
 	end
 
 	if max_scroll > 0 then
 		local first_line = scroll_top + 1
 		local last_line = scroll_top + #visible_lines
-		write('UP/DOWN: SCROLL ' .. first_line .. '-' .. last_line .. '/' .. #content_lines, left, display_height() - line_height, 0, color_muted)
+		blit_text('UP/DOWN: SCROLL ' .. first_line .. '-' .. last_line .. '/' .. #content_lines, left, display_height() - line_height, 0, color_muted)
 	end
 end
 

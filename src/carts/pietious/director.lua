@@ -83,7 +83,7 @@ function director:bind_visual()
 		if not self.seal_flash_on then
 			return
 		end
-		put_rectfillcolor(
+		fill_rect_color(
 			0,
 			constants.room.tile_origin_y,
 			display_width(),

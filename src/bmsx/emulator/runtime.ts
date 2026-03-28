@@ -38,9 +38,9 @@ import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadat
 import { StringPool, StringValue } from './string_pool';
 import { StringHandleTable } from './string_memory';
 import type { TerminalMode } from './terminal_mode';
-import { RenderFacade } from './render_facade';
+import { OverlayRenderer } from './overlay_renderer';
 import { Font, type FontVariant } from './font';
-import { beginMeshQueue, beginParticleQueue, beginSpriteQueue, clearBackQueues } from '../render/shared/render_queues';
+import { beginMeshQueue, beginParticleQueue, clearBackQueues } from '../render/shared/render_queues';
 import { clearHardwareCamera } from '../render/shared/hardware_camera';
 import { clearHardwareLighting } from '../render/shared/hardware_lighting';
 import type { CartEditor } from './ide/cart_editor';
@@ -59,7 +59,6 @@ import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { registerAudioAssets as registerAudioAssetsFromSource } from './runtime_assets';
 import { LuaDebuggerController, type LuaDebuggerSessionMetrics } from '../lua/luadebugger';
 import type { ParsedLuaChunk } from './ide/lua/lua_parse';
-import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 import { ResourceUsageDetector } from './resource_usage_detector';
 import { configureLuaHeapUsage } from './lua_heap_usage';
 import {
@@ -239,12 +238,6 @@ export class Runtime {
 	private static readonly ENGINE_IRQ_MASK = (IRQ_REINIT | IRQ_NEWGAME) >>> 0;
 	private static readonly LUA_OVERRIDEABLE_GLOBALS: ReadonlyArray<string> = ['update'];
 	private static _instance: Runtime = null;
-	/**
-	 * Preserved render queue when a fault occurs
-	 * This is used to restore the render queue to its previous state
-	 * so that the console mode can be drawn on top of it.
-	 */
-	public preservedRenderQueue: RenderSubmission[] = [];
 
 	public static createInstance(options: RuntimeOptions): Runtime {
 		const existing = Runtime._instance;
@@ -436,7 +429,7 @@ export class Runtime {
 	public _activeIdeFontVariant: FontVariant = EDITOR_FONT_VARIANT;
 	public tickEnabled: boolean = true;
 	public editor: CartEditor | null = null;
-	public readonly overlayRenderBackend = new RenderFacade();
+	public readonly overlayRenderer = new OverlayRenderer();
 	public terminal!: TerminalMode;
 	private _overlayResolutionMode: 'offscreen' | 'viewport'; // Set in constructor
 	public readonly debuggerController = new LuaDebuggerController();
@@ -448,9 +441,9 @@ export class Runtime {
 	public lastTerminalInputFrame = -1;
 	public set overlayResolutionMode(value: 'offscreen' | 'viewport') {
 		this._overlayResolutionMode = value;
-		this.overlayRenderBackend.setRenderingViewportType(value);
+		this.overlayRenderer.setRenderingViewportType(value);
 		if (this.editor !== null) {
-			this.editor.updateViewport(this.overlayRenderBackend.viewportSize);
+			this.editor.updateViewport(this.overlayRenderer.viewportSize);
 		}
 	}
 
@@ -459,7 +452,7 @@ export class Runtime {
 	}
 
 	public get overlayViewportSize(): Viewport {
-		return this.overlayRenderBackend.viewportSize;
+		return this.overlayRenderer.viewportSize;
 	}
 
 	public shortcutDisposers: Array<() => void> = [];
@@ -602,7 +595,6 @@ export class Runtime {
 		clearHardwareCamera();
 		clearHardwareLighting();
 		clearBackQueues();
-		beginSpriteQueue();
 		beginMeshQueue();
 		beginParticleQueue();
 	}

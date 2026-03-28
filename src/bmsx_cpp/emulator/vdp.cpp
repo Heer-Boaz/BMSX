@@ -2,12 +2,14 @@
 #include "memory_map.h"
 #include "../rompack/runtime_assets.h"
 #include "../core/engine_core.h"
+#include "../core/font.h"
 #include "../render/texturemanager.h"
 #include "devices/imgdec_controller.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -210,10 +212,10 @@ uint32_t nextWord(BlockGen& gen) {
 VDP::VDP(Memory& memory)
 	: m_memory(memory)
 	, m_vramStaging(VRAM_STAGING_SIZE)
-	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
-	, m_bgMapLayerCopyScratch(VDP_BGMAP_LAYER_SIZE) {
+	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES) {
 	m_memory.setVramWriter(this);
 	m_memory.setVdpIoHandler(this);
+	m_frameBufferCommands.reserve(2048);
 	m_vramMachineSeed = nextVramMachineSeed();
 	m_vramBootSeed = nextVramBootSeed();
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
@@ -277,701 +279,352 @@ void VDP::beginFrame() {
 	m_readOverflow = false;
 }
 
-uint32_t VDP::floatToBits(f32 value) const {
-	uint32_t bits = 0;
-	std::memcpy(&bits, &value, sizeof(uint32_t));
-	return bits;
+VDP::FrameBufferColor VDP::packFrameBufferColor(const Color& color) const {
+	return FrameBufferColor{
+		static_cast<u8>(std::round(color.r * 255.0f)),
+		static_cast<u8>(std::round(color.g * 255.0f)),
+		static_cast<u8>(std::round(color.b * 255.0f)),
+		static_cast<u8>(std::round(color.a * 255.0f)),
+	};
 }
 
-f32 VDP::bitsToFloat(uint32_t value) const {
-	f32 out = 0.0f;
-	std::memcpy(&out, &value, sizeof(uint32_t));
-	return out;
+void VDP::resetFrameBufferCommands() {
+	m_frameBufferCommands.clear();
+	m_frameBufferClearRequested = false;
+	m_frameBufferSourceIndex = 0;
 }
 
-uint32_t VDP::readOamFrontBase() const {
-	return static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_FRONT_BASE)));
-}
-
-uint32_t VDP::readOamBackBase() const {
-	return static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_BACK_BASE)));
-}
-
-uint32_t VDP::readOamReadSource() const {
-	return static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_READ_SOURCE)));
-}
-
-uint32_t VDP::activePatBase() const {
-	return readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? m_patBackBase : m_patFrontBase;
-}
-
-void VDP::copyBgMapLayer(uint32_t srcBase, uint32_t dstBase) {
-	m_memory.readBytes(srcBase, m_bgMapLayerCopyScratch.data(), VDP_BGMAP_LAYER_SIZE);
-	m_memory.writeBytes(dstBase, m_bgMapLayerCopyScratch.data(), VDP_BGMAP_LAYER_SIZE);
-}
-
-void VDP::clearBgMapPatchLayer(uint32_t layerIndex) {
-	auto& patchFlags = m_bgMapPatchFlags[layerIndex];
-	auto& patchIndices = m_bgMapPatchIndices[layerIndex];
-	for (size_t index = 0; index < patchIndices.size(); ++index) {
-		patchFlags[patchIndices.get(index)] = 0u;
+void VDP::ensureFrameBufferSurface() {
+	auto* view = EngineCore::instance().view();
+	auto* texmanager = EngineCore::instance().texmanager();
+	if (!view) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] GameView not configured.");
 	}
-	patchIndices.clear();
-}
-
-void VDP::clearBgMapRetainedState(BgMapLayerRetainedState& state, const BgMapHeader* header) {
-	state.header = header ? *header : BgMapHeader{};
-	state.tiles.fill(BgMapEntry{});
-	state.enabledCount = 0;
-	state.drawEntries.clear();
-	state.drawEntriesDirty = false;
-}
-
-void VDP::copyBgMapRetainedState(BgMapLayerRetainedState& target, const BgMapLayerRetainedState& source) {
-	target.header = source.header;
-	target.tiles = source.tiles;
-	target.enabledCount = source.enabledCount;
-	target.drawEntries.clear();
-	if (source.drawEntriesDirty) {
-		target.drawEntriesDirty = source.enabledCount > 0;
+	if (!texmanager) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] TextureManager not configured.");
+	}
+	const uint32_t width = static_cast<uint32_t>(view->viewportSize.x);
+	const uint32_t height = static_cast<uint32_t>(view->viewportSize.y);
+	if (width == 0 || height == 0) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Invalid framebuffer dimensions.");
+	}
+	if (m_frameBufferWidth == width && m_frameBufferHeight == height && !m_frameBufferPixels.empty()) {
 		return;
 	}
-	for (size_t index = 0; index < source.drawEntries.size(); ++index) {
-		target.drawEntries.push(source.drawEntries.get(index));
+	m_frameBufferWidth = width;
+	m_frameBufferHeight = height;
+	m_frameBufferPixels.assign(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 0u);
+	TextureParams params;
+	TextureHandle handle = texmanager->getTextureByUri(FRAMEBUFFER_TEXTURE_KEY, params);
+	if (!handle) {
+		handle = texmanager->getOrCreateTexture(texmanager->makeKey(FRAMEBUFFER_TEXTURE_KEY, params), m_frameBufferPixels.data(), static_cast<i32>(width), static_cast<i32>(height), params);
+	} else {
+		handle = texmanager->resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, static_cast<i32>(width), static_cast<i32>(height));
+		texmanager->updateTexture(handle, m_frameBufferPixels.data(), static_cast<i32>(width), static_cast<i32>(height), params);
 	}
-	target.drawEntriesDirty = false;
+	view->textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
 }
 
-void VDP::updateBgMapRetainedTile(BgMapLayerRetainedState& state, uint32_t tileIndex, const BgMapEntry& entry) {
-	const bool wasEnabled = (state.tiles[tileIndex].flags & BGMAP_TILE_FLAG_ENABLED) != 0u;
-	const bool isEnabled = (entry.flags & BGMAP_TILE_FLAG_ENABLED) != 0u;
-	state.tiles[tileIndex] = entry;
-	if (wasEnabled != isEnabled) {
-		state.enabledCount += isEnabled ? 1 : -1;
-	}
-	if (wasEnabled || isEnabled) {
-		state.drawEntriesDirty = true;
-	}
+void VDP::discardFrameBufferOps() {
+	resetFrameBufferCommands();
 }
 
-VDP::BgMapLayerRetainedState& VDP::bgMapRetainedStateForRead(uint32_t layerIndex) {
-	if (readOamReadSource() == VDP_OAM_READ_SOURCE_BACK && m_bgMapBackLayerPending[layerIndex]) {
-		return m_bgMapBackStates[layerIndex];
-	}
-	return m_bgMapFrontStates[layerIndex];
+void VDP::clearFrameBuffer(const Color& color) {
+	m_frameBufferClearColor = packFrameBufferColor(color);
+	m_frameBufferClearRequested = true;
 }
 
-const VDP::BgMapLayerRetainedState& VDP::bgMapRetainedStateForRead(uint32_t layerIndex) const {
-	if (readOamReadSource() == VDP_OAM_READ_SOURCE_BACK && m_bgMapBackLayerPending[layerIndex]) {
-		return m_bgMapBackStates[layerIndex];
-	}
-	return m_bgMapFrontStates[layerIndex];
+void VDP::queueFrameBufferSpriteHandle(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color) {
+	FrameBufferCommand command;
+	command.type = FrameBufferCommandType::Sprite;
+	command.handle = handle;
+	command.x0 = x;
+	command.y0 = y;
+	command.z = z;
+	command.layer = layer;
+	command.scaleX = scaleX;
+	command.scaleY = scaleY;
+	command.flipH = flipH;
+	command.flipV = flipV;
+	command.sourceIndex = m_frameBufferSourceIndex++;
+	command.color = packFrameBufferColor(color);
+	m_frameBufferCommands.push_back(command);
 }
 
-void VDP::rebuildBgMapDrawEntries(BgMapLayerRetainedState& state) {
-	if (!state.drawEntriesDirty) {
+void VDP::queueFrameBufferRect(bool fill, f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color) {
+	if (fill) {
+		FrameBufferCommand command;
+		command.type = FrameBufferCommandType::Fill;
+		command.x0 = x0;
+		command.y0 = y0;
+		command.x1 = x1;
+		command.y1 = y1;
+		command.z = z;
+		command.layer = layer;
+		command.sourceIndex = m_frameBufferSourceIndex++;
+		command.color = packFrameBufferColor(color);
+		m_frameBufferCommands.push_back(command);
 		return;
 	}
-	state.drawEntries.clear();
-	const BgMapHeader& header = state.header;
-	const uint32_t cellCount = header.cols * header.rows;
-	if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) == 0u || cellCount == 0u || state.enabledCount == 0) {
-		state.drawEntriesDirty = false;
+	queueFrameBufferLine(x0, y0, x1, y0, z, layer, color, 1.0f);
+	queueFrameBufferLine(x0, y1, x1, y1, z, layer, color, 1.0f);
+	queueFrameBufferLine(x0, y0, x0, y1, z, layer, color, 1.0f);
+	queueFrameBufferLine(x1, y0, x1, y1, z, layer, color, 1.0f);
+}
+
+void VDP::queueFrameBufferLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness) {
+	FrameBufferCommand command;
+	command.type = FrameBufferCommandType::Line;
+	command.x0 = x0;
+	command.y0 = y0;
+	command.x1 = x1;
+	command.y1 = y1;
+	command.z = z;
+	command.layer = layer;
+	command.thickness = thickness;
+	command.sourceIndex = m_frameBufferSourceIndex++;
+	command.color = packFrameBufferColor(color);
+	m_frameBufferCommands.push_back(command);
+}
+
+void VDP::queueFrameBufferPoly(const std::vector<f32>& points, f32 z, const Color& color, f32 thickness, Layer2D layer) {
+	if (points.size() < 4u) {
 		return;
 	}
-	uint32_t tileIndex = 0u;
-	for (uint32_t row = 0; row < header.rows; ++row) {
-		const f32 y = header.originY + static_cast<f32>(row) * static_cast<f32>(header.tileH) - header.scrollY;
-		for (uint32_t col = 0; col < header.cols; ++col) {
-			const BgMapEntry& tile = state.tiles[tileIndex];
-			if ((tile.flags & BGMAP_TILE_FLAG_ENABLED) != 0u) {
-				OamEntry draw;
-				draw.atlasId = tile.atlasId;
-				draw.flags = OAM_FLAG_ENABLED;
-				draw.assetHandle = tile.assetHandle;
-				draw.x = header.originX + static_cast<f32>(col) * static_cast<f32>(header.tileW) - header.scrollX;
-				draw.y = y;
-				draw.z = header.z;
-				draw.w = static_cast<f32>(header.tileW);
-				draw.h = static_cast<f32>(header.tileH);
-				draw.u0 = tile.u0;
-				draw.v0 = tile.v0;
-				draw.u1 = tile.u1;
-				draw.v1 = tile.v1;
-				draw.r = 1.0f;
-				draw.g = 1.0f;
-				draw.b = 1.0f;
-				draw.a = 1.0f;
-				draw.layer = header.layer;
-				draw.parallaxWeight = 0.0f;
-				state.drawEntries.push(draw);
+	for (size_t index = 0; index < points.size(); index += 2u) {
+		const size_t next = (index + 2u) % points.size();
+		queueFrameBufferLine(points[index], points[index + 1u], points[next], points[next + 1u], z, layer, color, thickness);
+	}
+}
+
+void VDP::queueFrameBufferGlyphs(const std::vector<std::string>& lines, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, RenderLayer layer) {
+	if (!font) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] No font available for glyph rendering.");
+	}
+	const Layer2D targetLayer = renderLayerTo2dLayer(layer);
+	f32 cursorY = y;
+	for (const auto& line : lines) {
+		if (line.empty()) {
+			cursorY += static_cast<f32>(font->lineHeight());
+			continue;
+		}
+		f32 cursorX = x;
+		for (i32 glyphIndex = start; glyphIndex < static_cast<i32>(line.size()) && glyphIndex < end; glyphIndex += 1) {
+			const FontGlyph& glyph = font->getGlyph(line[glyphIndex]);
+			if (backgroundColor.has_value()) {
+				queueFrameBufferRect(true, cursorX, cursorY, cursorX + static_cast<f32>(glyph.advance), cursorY + static_cast<f32>(font->lineHeight()), z, targetLayer, *backgroundColor);
 			}
-			++tileIndex;
+			queueFrameBufferSpriteHandle(m_memory.resolveAssetHandle(glyph.imgid), cursorX, cursorY, z, targetLayer, 1.0f, 1.0f, false, false, color);
+			cursorX += static_cast<f32>(glyph.advance);
 		}
+		cursorY += static_cast<f32>(font->lineHeight());
 	}
-	state.drawEntriesDirty = false;
 }
 
-VDP::BgMapSortedReadState& VDP::rebuildBgMapSortedReadState() {
-	auto& state = m_bgMapSortedReadState;
-	uint32_t runCount = 0u;
-	i32 sourceIndexStart = 0;
-	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
-		auto& layerState = bgMapRetainedStateForRead(layerIndex);
-		const BgMapHeader& header = layerState.header;
-		if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) == 0u || layerState.enabledCount == 0) {
-			continue;
+const u8* VDP::getFrameBufferSourcePixels(const Memory::AssetEntry& entry) const {
+	if (!m_memory.isVramRange(entry.baseAddr, std::max<size_t>(1u, entry.baseSize))) {
+		return m_memory.getImagePixels(entry);
+	}
+	const ImgAsset* asset = EngineCore::instance().resolveImgAsset(entry.id);
+	if (!asset || asset->pixels.empty()) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Missing CPU image pixels for '" + entry.id + "'.");
+	}
+	return asset->pixels.data();
+}
+
+VDP::FrameBufferImageSource VDP::resolveFrameBufferImageSource(u32 handle) const {
+	const auto& entry = m_memory.getAssetEntryByHandle(handle);
+	if (entry.type != Memory::AssetType::Image) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Asset handle is not an image.");
+	}
+	if ((entry.flags & ASSET_FLAG_VIEW) != 0u) {
+		const auto& base = m_memory.getAssetEntryByHandle(entry.ownerIndex);
+		if (base.type != Memory::AssetType::Image) {
+			throw BMSX_RUNTIME_ERROR("[BmsxVDP] View owner is not an image.");
 		}
-		rebuildBgMapDrawEntries(layerState);
-		if (layerState.drawEntries.size() == 0) {
-			continue;
-		}
-		auto& run = state.runs[runCount];
-		run.layerIndex = layerIndex;
-		run.sourceIndexStart = sourceIndexStart;
-		run.count = static_cast<i32>(layerState.drawEntries.size());
-		run.z = header.z;
-		sourceIndexStart += run.count;
-		++runCount;
+		return FrameBufferImageSource{
+			getFrameBufferSourcePixels(base),
+			entry.regionX,
+			entry.regionY,
+			base.baseStride,
+			entry.regionW,
+			entry.regionH,
+		};
 	}
-	for (uint32_t index = 1u; index < runCount; ++index) {
-		const uint32_t runLayerIndex = state.runs[index].layerIndex;
-		const i32 runSourceIndexStart = state.runs[index].sourceIndexStart;
-		const i32 runCountValue = state.runs[index].count;
-		const f32 runZ = state.runs[index].z;
-		i32 insertIndex = static_cast<i32>(index) - 1;
-		while (
-			insertIndex >= 0
-			&& (
-				state.runs[static_cast<size_t>(insertIndex)].z > runZ
-				|| (
-					state.runs[static_cast<size_t>(insertIndex)].z == runZ
-					&& state.runs[static_cast<size_t>(insertIndex)].sourceIndexStart > runSourceIndexStart
-				)
-			)
-		) {
-			auto& target = state.runs[static_cast<size_t>(insertIndex) + 1u];
-			target.layerIndex = state.runs[static_cast<size_t>(insertIndex)].layerIndex;
-			target.sourceIndexStart = state.runs[static_cast<size_t>(insertIndex)].sourceIndexStart;
-			target.count = state.runs[static_cast<size_t>(insertIndex)].count;
-			target.z = state.runs[static_cast<size_t>(insertIndex)].z;
-			--insertIndex;
-		}
-		auto& target = state.runs[static_cast<size_t>(insertIndex) + 1u];
-		target.layerIndex = runLayerIndex;
-		target.sourceIndexStart = runSourceIndexStart;
-		target.count = runCountValue;
-		target.z = runZ;
-	}
-	state.runCount = runCount;
-	state.count = sourceIndexStart;
-	return state;
+	return FrameBufferImageSource{
+		getFrameBufferSourcePixels(entry),
+		0u,
+		0u,
+		entry.baseStride,
+		entry.regionW,
+		entry.regionH,
+	};
 }
 
-void VDP::writeOamEntry(uint32_t addr, const OamEntry& entry) {
-	m_memory.writeU32(addr + 0u, static_cast<uint32_t>(entry.atlasId));
-	m_memory.writeU32(addr + 4u, entry.flags);
-	m_memory.writeU32(addr + 8u, entry.assetHandle);
-	m_memory.writeU32(addr + 12u, floatToBits(entry.x));
-	m_memory.writeU32(addr + 16u, floatToBits(entry.y));
-	m_memory.writeU32(addr + 20u, floatToBits(entry.z));
-	m_memory.writeU32(addr + 24u, floatToBits(entry.w));
-	m_memory.writeU32(addr + 28u, floatToBits(entry.h));
-	m_memory.writeU32(addr + 32u, floatToBits(entry.u0));
-	m_memory.writeU32(addr + 36u, floatToBits(entry.v0));
-	m_memory.writeU32(addr + 40u, floatToBits(entry.u1));
-	m_memory.writeU32(addr + 44u, floatToBits(entry.v1));
-	m_memory.writeU32(addr + 48u, floatToBits(entry.r));
-	m_memory.writeU32(addr + 52u, floatToBits(entry.g));
-	m_memory.writeU32(addr + 56u, floatToBits(entry.b));
-	m_memory.writeU32(addr + 60u, floatToBits(entry.a));
-	m_memory.writeU32(addr + 64u, static_cast<uint32_t>(entry.layer));
-	m_memory.writeU32(addr + 68u, floatToBits(entry.parallaxWeight));
-}
-
-OamEntry VDP::readOamEntry(uint32_t addr) const {
-	OamEntry entry;
-	entry.atlasId = static_cast<i32>(m_memory.readU32(addr + 0u));
-	entry.flags = m_memory.readU32(addr + 4u);
-	entry.assetHandle = m_memory.readU32(addr + 8u);
-	entry.x = bitsToFloat(m_memory.readU32(addr + 12u));
-	entry.y = bitsToFloat(m_memory.readU32(addr + 16u));
-	entry.z = bitsToFloat(m_memory.readU32(addr + 20u));
-	entry.w = bitsToFloat(m_memory.readU32(addr + 24u));
-	entry.h = bitsToFloat(m_memory.readU32(addr + 28u));
-	entry.u0 = bitsToFloat(m_memory.readU32(addr + 32u));
-	entry.v0 = bitsToFloat(m_memory.readU32(addr + 36u));
-	entry.u1 = bitsToFloat(m_memory.readU32(addr + 40u));
-	entry.v1 = bitsToFloat(m_memory.readU32(addr + 44u));
-	entry.r = bitsToFloat(m_memory.readU32(addr + 48u));
-	entry.g = bitsToFloat(m_memory.readU32(addr + 52u));
-	entry.b = bitsToFloat(m_memory.readU32(addr + 56u));
-	entry.a = bitsToFloat(m_memory.readU32(addr + 60u));
-	entry.layer = static_cast<OamLayer>(m_memory.readU32(addr + 64u));
-	entry.parallaxWeight = bitsToFloat(m_memory.readU32(addr + 68u));
-	return entry;
-}
-
-void VDP::writePatHeader(uint32_t base, const PatHeader& header) {
-	m_memory.writeU32(base + 0u, header.flags);
-	m_memory.writeU32(base + 4u, header.count);
-}
-
-PatHeader VDP::readPatHeader(uint32_t base) const {
-	PatHeader header;
-	header.flags = m_memory.readU32(base + 0u);
-	header.count = m_memory.readU32(base + 4u);
-	return header;
-}
-
-void VDP::writePatEntry(uint32_t addr, const PatEntry& entry) {
-	m_memory.writeU32(addr + 0u, static_cast<uint32_t>(entry.atlasId));
-	m_memory.writeU32(addr + 4u, entry.flags);
-	m_memory.writeU32(addr + 8u, entry.assetHandle);
-	m_memory.writeU32(addr + 12u, static_cast<uint32_t>(entry.layer));
-	m_memory.writeU32(addr + 16u, floatToBits(entry.x));
-	m_memory.writeU32(addr + 20u, floatToBits(entry.y));
-	m_memory.writeU32(addr + 24u, floatToBits(entry.z));
-	m_memory.writeU32(addr + 28u, floatToBits(entry.glyphW));
-	m_memory.writeU32(addr + 32u, floatToBits(entry.glyphH));
-	m_memory.writeU32(addr + 36u, floatToBits(entry.bgW));
-	m_memory.writeU32(addr + 40u, floatToBits(entry.bgH));
-	m_memory.writeU32(addr + 44u, floatToBits(entry.u0));
-	m_memory.writeU32(addr + 48u, floatToBits(entry.v0));
-	m_memory.writeU32(addr + 52u, floatToBits(entry.u1));
-	m_memory.writeU32(addr + 56u, floatToBits(entry.v1));
-	m_memory.writeU32(addr + 60u, entry.fgColor);
-	m_memory.writeU32(addr + 64u, entry.bgColor);
-}
-
-PatEntry VDP::readPatEntry(uint32_t addr) const {
-	PatEntry entry;
-	entry.atlasId = static_cast<i32>(m_memory.readU32(addr + 0u));
-	entry.flags = m_memory.readU32(addr + 4u);
-	entry.assetHandle = m_memory.readU32(addr + 8u);
-	entry.layer = static_cast<OamLayer>(m_memory.readU32(addr + 12u));
-	entry.x = bitsToFloat(m_memory.readU32(addr + 16u));
-	entry.y = bitsToFloat(m_memory.readU32(addr + 20u));
-	entry.z = bitsToFloat(m_memory.readU32(addr + 24u));
-	entry.glyphW = bitsToFloat(m_memory.readU32(addr + 28u));
-	entry.glyphH = bitsToFloat(m_memory.readU32(addr + 32u));
-	entry.bgW = bitsToFloat(m_memory.readU32(addr + 36u));
-	entry.bgH = bitsToFloat(m_memory.readU32(addr + 40u));
-	entry.u0 = bitsToFloat(m_memory.readU32(addr + 44u));
-	entry.v0 = bitsToFloat(m_memory.readU32(addr + 48u));
-	entry.u1 = bitsToFloat(m_memory.readU32(addr + 52u));
-	entry.v1 = bitsToFloat(m_memory.readU32(addr + 56u));
-	entry.fgColor = m_memory.readU32(addr + 60u);
-	entry.bgColor = m_memory.readU32(addr + 64u);
-	return entry;
-}
-
-void VDP::writeBgMapHeader(uint32_t base, const BgMapHeader& header) {
-	m_memory.writeU32(base + 0u, header.flags);
-	m_memory.writeU32(base + 4u, static_cast<uint32_t>(header.layer));
-	m_memory.writeU32(base + 8u, header.cols);
-	m_memory.writeU32(base + 12u, header.rows);
-	m_memory.writeU32(base + 16u, header.tileW);
-	m_memory.writeU32(base + 20u, header.tileH);
-	m_memory.writeU32(base + 24u, floatToBits(header.originX));
-	m_memory.writeU32(base + 28u, floatToBits(header.originY));
-	m_memory.writeU32(base + 32u, floatToBits(header.scrollX));
-	m_memory.writeU32(base + 36u, floatToBits(header.scrollY));
-	m_memory.writeU32(base + 40u, floatToBits(header.z));
-}
-
-BgMapHeader VDP::readBgMapHeader(uint32_t base) const {
-	BgMapHeader header;
-	header.flags = m_memory.readU32(base + 0u);
-	header.layer = static_cast<OamLayer>(m_memory.readU32(base + 4u));
-	header.cols = m_memory.readU32(base + 8u);
-	header.rows = m_memory.readU32(base + 12u);
-	header.tileW = m_memory.readU32(base + 16u);
-	header.tileH = m_memory.readU32(base + 20u);
-	header.originX = bitsToFloat(m_memory.readU32(base + 24u));
-	header.originY = bitsToFloat(m_memory.readU32(base + 28u));
-	header.scrollX = bitsToFloat(m_memory.readU32(base + 32u));
-	header.scrollY = bitsToFloat(m_memory.readU32(base + 36u));
-	header.z = bitsToFloat(m_memory.readU32(base + 40u));
-	return header;
-}
-
-void VDP::writeBgMapEntry(uint32_t addr, const BgMapEntry& entry) {
-	m_memory.writeU32(addr + 0u, static_cast<uint32_t>(entry.atlasId));
-	m_memory.writeU32(addr + 4u, entry.flags);
-	m_memory.writeU32(addr + 8u, entry.assetHandle);
-	m_memory.writeU32(addr + 12u, floatToBits(entry.u0));
-	m_memory.writeU32(addr + 16u, floatToBits(entry.v0));
-	m_memory.writeU32(addr + 20u, floatToBits(entry.u1));
-	m_memory.writeU32(addr + 24u, floatToBits(entry.v1));
-}
-
-BgMapEntry VDP::readBgMapEntry(uint32_t addr) const {
-	BgMapEntry entry;
-	entry.atlasId = static_cast<i32>(m_memory.readU32(addr + 0u));
-	entry.flags = m_memory.readU32(addr + 4u);
-	entry.assetHandle = m_memory.readU32(addr + 8u);
-	entry.u0 = bitsToFloat(m_memory.readU32(addr + 12u));
-	entry.v0 = bitsToFloat(m_memory.readU32(addr + 16u));
-	entry.u1 = bitsToFloat(m_memory.readU32(addr + 20u));
-	entry.v1 = bitsToFloat(m_memory.readU32(addr + 24u));
-	return entry;
-}
-
-f32 VDP::unpackColorChannel(uint32_t packed, uint32_t shift) const {
-	return static_cast<f32>((packed >> shift) & 0xffu) / 255.0f;
-}
-
-void VDP::submitOamEntry(const OamEntry& entry) {
-	const uint32_t backCount = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_BACK_COUNT)));
-	const uint32_t capacity = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_CAPACITY)));
-	if (backCount >= capacity) {
-		throw BMSX_RUNTIME_ERROR("[VDP] OAM back buffer overflow.");
-	}
-	writeOamEntry(readOamBackBase() + backCount * VDP_OAM_ENTRY_BYTES, entry);
-	m_memory.writeValue(IO_VDP_OAM_BACK_COUNT, valueNumber(static_cast<double>(backCount + 1u)));
-}
-
-void VDP::clearBackOamBuffer() {
-	m_memory.writeValue(IO_VDP_OAM_BACK_COUNT, valueNumber(0.0));
-}
-
-void VDP::clearBackPatBuffer() {
-	writePatHeader(m_patBackBase, PatHeader{0u, 0u});
-}
-
-void VDP::submitPatEntry(const PatEntry& entry) {
-	const PatHeader header = readPatHeader(m_patBackBase);
-	if (header.count >= VDP_PAT_CAPACITY) {
-		throw BMSX_RUNTIME_ERROR("[VDP] PAT back buffer overflow.");
-	}
-	writePatEntry(m_patBackBase + VDP_PAT_HEADER_BYTES + header.count * VDP_PAT_ENTRY_BYTES, entry);
-	writePatHeader(m_patBackBase, PatHeader{PAT_FLAG_ENABLED, header.count + 1u});
-}
-
-void VDP::clearBackBgMap() {
-	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
-		m_bgMapBackLayerPending[layerIndex] = false;
-		m_bgMapBackLayerRewritePending[layerIndex] = false;
-		clearBgMapPatchLayer(layerIndex);
-		const uint32_t base = m_bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
-		writeBgMapHeader(base, BgMapHeader{});
-		clearBgMapRetainedState(m_bgMapBackStates[layerIndex]);
-	}
-}
-
-void VDP::beginBgMapLayerWrite(i32 layerIndex, const BgMapHeader& header) {
-	if (layerIndex < 0 || layerIndex >= static_cast<i32>(VDP_BGMAP_LAYER_COUNT)) {
-		throw BMSX_RUNTIME_ERROR("[VDP] BGMap layer out of range.");
-	}
-	if (header.cols * header.rows > VDP_BGMAP_TILE_CAPACITY) {
-		throw BMSX_RUNTIME_ERROR("[VDP] BGMap tile capacity exceeded.");
-	}
-	const uint32_t base = m_bgMapBackBase + static_cast<uint32_t>(layerIndex) * VDP_BGMAP_LAYER_SIZE;
-	m_bgMapBackLayerPending[static_cast<uint32_t>(layerIndex)] = true;
-	m_bgMapBackLayerRewritePending[static_cast<uint32_t>(layerIndex)] = true;
-	clearBgMapPatchLayer(static_cast<uint32_t>(layerIndex));
-	writeBgMapHeader(base, header);
-	clearBgMapRetainedState(m_bgMapBackStates[static_cast<uint32_t>(layerIndex)], &header);
-	for (uint32_t tileIndex = 0; tileIndex < VDP_BGMAP_TILE_CAPACITY; ++tileIndex) {
-		m_memory.writeU32(base + VDP_BGMAP_HEADER_BYTES + tileIndex * VDP_BGMAP_ENTRY_BYTES + 4u, 0u);
-	}
-}
-
-void VDP::submitBgMapTile(i32 layerIndex, i32 col, i32 row, const BgMapEntry& entry) {
-	if (layerIndex < 0 || layerIndex >= static_cast<i32>(VDP_BGMAP_LAYER_COUNT)) {
-		throw BMSX_RUNTIME_ERROR("[VDP] BGMap layer out of range.");
-	}
-	const bool rewritePending = m_bgMapBackLayerRewritePending[static_cast<uint32_t>(layerIndex)];
-	const uint32_t base = rewritePending
-		? m_bgMapBackBase + static_cast<uint32_t>(layerIndex) * VDP_BGMAP_LAYER_SIZE
-		: m_bgMapFrontBase + static_cast<uint32_t>(layerIndex) * VDP_BGMAP_LAYER_SIZE;
-	const BgMapHeader header = readBgMapHeader(base);
-	if (col < 0 || col >= static_cast<i32>(header.cols) || row < 0 || row >= static_cast<i32>(header.rows)) {
-		throw BMSX_RUNTIME_ERROR("[VDP] BGMap tile outside configured layer bounds.");
-	}
-	const uint32_t index = static_cast<uint32_t>(row) * header.cols + static_cast<uint32_t>(col);
-	if (rewritePending) {
-		writeBgMapEntry(base + VDP_BGMAP_HEADER_BYTES + index * VDP_BGMAP_ENTRY_BYTES, entry);
-		updateBgMapRetainedTile(m_bgMapBackStates[static_cast<uint32_t>(layerIndex)], index, entry);
+void VDP::blendFrameBufferPixel(size_t index, u8 r, u8 g, u8 b, u8 a) {
+	if (a == 0u) {
 		return;
 	}
-	const uint32_t layer = static_cast<uint32_t>(layerIndex);
-	if (!m_bgMapBackLayerPending[layer]) {
-		copyBgMapRetainedState(m_bgMapBackStates[layer], m_bgMapFrontStates[layer]);
+	if (a == 255u) {
+		m_frameBufferPixels[index + 0u] = r;
+		m_frameBufferPixels[index + 1u] = g;
+		m_frameBufferPixels[index + 2u] = b;
+		m_frameBufferPixels[index + 3u] = 255u;
+		return;
 	}
-	m_bgMapBackLayerPending[layer] = true;
-	if (m_bgMapPatchFlags[layer][index] == 0u) {
-		m_bgMapPatchFlags[layer][index] = 1u;
-		m_bgMapPatchIndices[layer].push(index);
+	const u32 inverse = 255u - a;
+	m_frameBufferPixels[index + 0u] = static_cast<u8>(((static_cast<u32>(r) * a) + (static_cast<u32>(m_frameBufferPixels[index + 0u]) * inverse) + 127u) / 255u);
+	m_frameBufferPixels[index + 1u] = static_cast<u8>(((static_cast<u32>(g) * a) + (static_cast<u32>(m_frameBufferPixels[index + 1u]) * inverse) + 127u) / 255u);
+	m_frameBufferPixels[index + 2u] = static_cast<u8>(((static_cast<u32>(b) * a) + (static_cast<u32>(m_frameBufferPixels[index + 2u]) * inverse) + 127u) / 255u);
+	m_frameBufferPixels[index + 3u] = static_cast<u8>(a + ((static_cast<u32>(m_frameBufferPixels[index + 3u]) * inverse) + 127u) / 255u);
+}
+
+void VDP::rasterizeFrameBufferFill(const FrameBufferCommand& command) {
+	i32 left = static_cast<i32>(std::round(command.x0));
+	i32 top = static_cast<i32>(std::round(command.y0));
+	i32 right = static_cast<i32>(std::round(command.x1));
+	i32 bottom = static_cast<i32>(std::round(command.y1));
+	if (right < left) {
+		std::swap(left, right);
 	}
-	m_bgMapPatchEntries[layer][index] = entry;
-	updateBgMapRetainedTile(m_bgMapBackStates[layer], index, entry);
-}
-
-void VDP::swapOamBuffers() {
-	const uint32_t frontBase = readOamFrontBase();
-	const uint32_t backBase = readOamBackBase();
-	const uint32_t backCount = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_BACK_COUNT)));
-	const uint32_t commitSeq = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_COMMIT_SEQ)));
-	m_memory.writeValue(IO_VDP_OAM_FRONT_BASE, valueNumber(static_cast<double>(backBase)));
-	m_memory.writeValue(IO_VDP_OAM_BACK_BASE, valueNumber(static_cast<double>(frontBase)));
-	m_memory.writeValue(IO_VDP_OAM_FRONT_COUNT, valueNumber(static_cast<double>(backCount)));
-	m_memory.writeValue(IO_VDP_OAM_BACK_COUNT, valueNumber(0.0));
-	m_memory.writeValue(IO_VDP_OAM_COMMIT_SEQ, valueNumber(static_cast<double>(commitSeq + 1u)));
-	m_memory.writeValue(IO_VDP_OAM_READ_SOURCE, valueNumber(static_cast<double>(VDP_OAM_READ_SOURCE_FRONT)));
-}
-
-void VDP::swapPatBuffers() {
-	std::swap(m_patFrontBase, m_patBackBase);
-	clearBackPatBuffer();
-}
-
-void VDP::swapBgMapBuffers() {
-	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
-		if (!m_bgMapBackLayerPending[layerIndex]) {
-			continue;
-		}
-		const uint32_t frontBase = m_bgMapFrontBase + layerIndex * VDP_BGMAP_LAYER_SIZE;
-		if (m_bgMapBackLayerRewritePending[layerIndex]) {
-			copyBgMapLayer(m_bgMapBackBase + layerIndex * VDP_BGMAP_LAYER_SIZE, frontBase);
-		} else {
-			auto& patchIndices = m_bgMapPatchIndices[layerIndex];
-			for (size_t index = 0; index < patchIndices.size(); ++index) {
-				const uint32_t tileIndex = patchIndices.get(index);
-				writeBgMapEntry(frontBase + VDP_BGMAP_HEADER_BYTES + tileIndex * VDP_BGMAP_ENTRY_BYTES, m_bgMapPatchEntries[layerIndex][tileIndex]);
-			}
-			clearBgMapPatchLayer(layerIndex);
-		}
-		copyBgMapRetainedState(m_bgMapFrontStates[layerIndex], m_bgMapBackStates[layerIndex]);
-		m_bgMapBackLayerPending[layerIndex] = false;
-		m_bgMapBackLayerRewritePending[layerIndex] = false;
+	if (bottom < top) {
+		std::swap(top, bottom);
 	}
-}
-
-void VDP::setOamReadSource(bool useBackBuffer) {
-	m_memory.writeValue(
-		IO_VDP_OAM_READ_SOURCE,
-		valueNumber(static_cast<double>(useBackBuffer ? VDP_OAM_READ_SOURCE_BACK : VDP_OAM_READ_SOURCE_FRONT))
-	);
-}
-
-i32 VDP::frontOamCount() const {
-	return static_cast<i32>(asNumber(m_memory.readValue(IO_VDP_OAM_FRONT_COUNT)));
-}
-
-i32 VDP::backOamCount() const {
-	return static_cast<i32>(asNumber(m_memory.readValue(IO_VDP_OAM_BACK_COUNT)));
-}
-
-bool VDP::hasFrontOamContent() const {
-	return frontOamCount() > 0;
-}
-
-bool VDP::hasBackOamContent() const {
-	return backOamCount() > 0;
-}
-
-bool VDP::hasFront2dContent() const {
-	if (frontOamCount() > 0) {
-		return true;
-	}
-	if (readPatHeader(m_patFrontBase).count > 0u) {
-		return true;
-	}
-	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
-		const BgMapHeader& header = m_bgMapFrontStates[layerIndex].header;
-		if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) != 0u && header.cols * header.rows > 0u) {
-			return true;
+	left = std::max(0, left);
+	top = std::max(0, top);
+	right = std::min(static_cast<i32>(m_frameBufferWidth), right);
+	bottom = std::min(static_cast<i32>(m_frameBufferHeight), bottom);
+	for (i32 y = top; y < bottom; ++y) {
+		size_t index = (static_cast<size_t>(y) * static_cast<size_t>(m_frameBufferWidth) + static_cast<size_t>(left)) * 4u;
+		for (i32 x = left; x < right; ++x) {
+			blendFrameBufferPixel(index, command.color.r, command.color.g, command.color.b, command.color.a);
+			index += 4u;
 		}
 	}
-	return false;
 }
 
-bool VDP::hasBack2dContent() const {
-	if (backOamCount() > 0) {
-		return true;
-	}
-	if (readPatHeader(m_patBackBase).count > 0u) {
-		return true;
-	}
-	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
-		if (!m_bgMapBackLayerPending[layerIndex]) {
-			continue;
-		}
-		const BgMapHeader& header = m_bgMapBackStates[layerIndex].header;
-		if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) != 0u && header.cols * header.rows > 0u) {
-			return true;
-		}
-	}
-	return false;
-}
-
-i32 VDP::beginSpriteOamRead() const {
-	const_cast<VDP*>(this)->syncRegisters();
-	return readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? backOamCount() : frontOamCount();
-}
-
-i32 VDP::beginBgMap2dRead() const {
-	const_cast<VDP*>(this)->syncRegisters();
-	return const_cast<VDP*>(this)->rebuildBgMapSortedReadState().count;
-}
-
-i32 VDP::beginOamPat2dRead() const {
-	const_cast<VDP*>(this)->syncRegisters();
-	const i32 oamCount = beginSpriteOamRead();
-	i32 count = oamCount;
-	const uint32_t patBase = activePatBase();
-	const PatHeader patHeader = readPatHeader(patBase);
-	if ((patHeader.flags & PAT_FLAG_ENABLED) != 0u) {
-		for (uint32_t patIndex = 0; patIndex < patHeader.count; ++patIndex) {
-			const PatEntry entry = readPatEntry(patBase + VDP_PAT_HEADER_BYTES + patIndex * VDP_PAT_ENTRY_BYTES);
-			if ((entry.flags & PAT_FLAG_ENABLED) != 0u) {
-				++count;
-			}
-		}
-	}
-	return count;
-}
-
-i32 VDP::begin2dRead() const {
-	const_cast<VDP*>(this)->syncRegisters();
-	return const_cast<VDP*>(this)->rebuildBgMapSortedReadState().count + beginOamPat2dRead();
-}
-
-void VDP::forEachSortedBgMap2dEntry(const std::function<void(const OamEntry&, size_t)>& fn) const {
-	const_cast<VDP*>(this)->syncRegisters();
-	const auto& sortedReadState = const_cast<VDP*>(this)->rebuildBgMapSortedReadState();
-	size_t emitted = 0;
-	for (uint32_t runIndex = 0; runIndex < sortedReadState.runCount; ++runIndex) {
-		const auto& run = sortedReadState.runs[runIndex];
-		const auto& layerState = bgMapRetainedStateForRead(run.layerIndex);
-		for (i32 entryIndex = 0; entryIndex < run.count; ++entryIndex) {
-			fn(layerState.drawEntries.get(static_cast<size_t>(entryIndex)), static_cast<size_t>(run.sourceIndexStart + entryIndex));
-			++emitted;
-		}
-	}
-	if (emitted != static_cast<size_t>(sortedReadState.count)) {
-		throw BMSX_RUNTIME_ERROR("[VDP] BGMap sorted 2D read count mismatch.");
-	}
-}
-
-void VDP::forEachOamPat2dEntry(const std::function<void(const OamEntry&, size_t)>& fn) const {
-	const_cast<VDP*>(this)->syncRegisters();
-	size_t index = static_cast<size_t>(const_cast<VDP*>(this)->rebuildBgMapSortedReadState().count);
-	OamEntry scratch{};
-	scratch.flags = OAM_FLAG_ENABLED;
-	scratch.r = 1.0f;
-	scratch.g = 1.0f;
-	scratch.b = 1.0f;
-	scratch.a = 1.0f;
-	scratch.layer = OamLayer::World;
-	const size_t oamCount = static_cast<size_t>(beginSpriteOamRead());
-	const uint32_t base = readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? readOamBackBase() : readOamFrontBase();
-	for (size_t oamIndex = 0; oamIndex < oamCount; ++oamIndex) {
-		const OamEntry entry = readOamEntry(base + static_cast<uint32_t>(oamIndex) * VDP_OAM_ENTRY_BYTES);
-		if (entry.flags != 0u) {
-			fn(entry, index);
-		}
-		++index;
-	}
-	const uint32_t patBase = activePatBase();
-	const PatHeader patHeader = readPatHeader(patBase);
-	if ((patHeader.flags & PAT_FLAG_ENABLED) != 0u) {
-		for (uint32_t patIndex = 0; patIndex < patHeader.count; ++patIndex) {
-			const PatEntry entry = readPatEntry(patBase + VDP_PAT_HEADER_BYTES + patIndex * VDP_PAT_ENTRY_BYTES);
-			if ((entry.flags & PAT_FLAG_ENABLED) == 0u) {
+void VDP::rasterizeFrameBufferLine(const FrameBufferCommand& command) {
+	i32 x0 = static_cast<i32>(std::round(command.x0));
+	i32 y0 = static_cast<i32>(std::round(command.y0));
+	const i32 x1 = static_cast<i32>(std::round(command.x1));
+	const i32 y1 = static_cast<i32>(std::round(command.y1));
+	const i32 dx = std::abs(x1 - x0);
+	const i32 dy = std::abs(y1 - y0);
+	const i32 sx = x0 < x1 ? 1 : -1;
+	const i32 sy = y0 < y1 ? 1 : -1;
+	i32 err = dx - dy;
+	const i32 thickness = std::max(1, static_cast<i32>(std::round(command.thickness)));
+	while (true) {
+		const i32 half = thickness >> 1;
+		for (i32 yy = y0 - half; yy < y0 - half + thickness; ++yy) {
+			if (yy < 0 || yy >= static_cast<i32>(m_frameBufferHeight)) {
 				continue;
 			}
-			scratch.atlasId = entry.atlasId;
-			scratch.assetHandle = entry.assetHandle;
-			scratch.x = entry.x;
-			scratch.y = entry.y;
-			scratch.z = entry.z;
-			scratch.w = entry.glyphW;
-			scratch.h = entry.glyphH;
-			scratch.u0 = entry.u0;
-			scratch.v0 = entry.v0;
-			scratch.u1 = entry.u1;
-			scratch.v1 = entry.v1;
-			scratch.r = unpackColorChannel(entry.fgColor, 0u);
-			scratch.g = unpackColorChannel(entry.fgColor, 8u);
-			scratch.b = unpackColorChannel(entry.fgColor, 16u);
-			scratch.a = unpackColorChannel(entry.fgColor, 24u);
-			scratch.layer = entry.layer;
-			scratch.parallaxWeight = 0.0f;
-			fn(scratch, index++);
+			for (i32 xx = x0 - half; xx < x0 - half + thickness; ++xx) {
+				if (xx < 0 || xx >= static_cast<i32>(m_frameBufferWidth)) {
+					continue;
+				}
+				const size_t index = (static_cast<size_t>(yy) * static_cast<size_t>(m_frameBufferWidth) + static_cast<size_t>(xx)) * 4u;
+				blendFrameBufferPixel(index, command.color.r, command.color.g, command.color.b, command.color.a);
+			}
+		}
+		if (x0 == x1 && y0 == y1) {
+			return;
+		}
+		const i32 e2 = err << 1;
+		if (e2 > -dy) {
+			err -= dy;
+			x0 += sx;
+		}
+		if (e2 < dx) {
+			err += dx;
+			y0 += sy;
 		}
 	}
 }
 
-void VDP::forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn) const {
-	const size_t count = static_cast<size_t>(beginSpriteOamRead());
-	const uint32_t base = readOamReadSource() == VDP_OAM_READ_SOURCE_BACK ? readOamBackBase() : readOamFrontBase();
-	for (size_t index = 0; index < count; ++index) {
-		const OamEntry entry = readOamEntry(base + static_cast<uint32_t>(index) * VDP_OAM_ENTRY_BYTES);
-		if (entry.flags != 0u) {
-			fn(entry, index);
-		}
-	}
-}
-
-void VDP::forEach2dEntry(const std::function<void(const OamEntry&, size_t)>& fn) const {
-	const_cast<VDP*>(this)->syncRegisters();
-	size_t index = 0;
-	OamEntry scratch{};
-	scratch.flags = OAM_FLAG_ENABLED;
-	scratch.r = 1.0f;
-	scratch.g = 1.0f;
-	scratch.b = 1.0f;
-	scratch.a = 1.0f;
-	scratch.layer = OamLayer::World;
-
-	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
-		auto& state = const_cast<VDP*>(this)->bgMapRetainedStateForRead(layerIndex);
-		const_cast<VDP*>(this)->rebuildBgMapDrawEntries(state);
-		const BgMapHeader& header = state.header;
-		if ((header.flags & BGMAP_LAYER_FLAG_ENABLED) == 0u) {
+void VDP::rasterizeFrameBufferSprite(const FrameBufferCommand& command) {
+	const FrameBufferImageSource source = resolveFrameBufferImageSource(command.handle);
+	const i32 dstW = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.width) * command.scaleX)));
+	const i32 dstH = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.height) * command.scaleY)));
+	const i32 dstX = static_cast<i32>(std::round(command.x0));
+	const i32 dstY = static_cast<i32>(std::round(command.y0));
+	for (i32 y = 0; y < dstH; ++y) {
+		const i32 targetY = dstY + y;
+		if (targetY < 0 || targetY >= static_cast<i32>(m_frameBufferHeight)) {
 			continue;
 		}
-		for (size_t drawIndex = 0; drawIndex < state.drawEntries.size(); ++drawIndex) {
-			fn(state.drawEntries.get(drawIndex), index++);
-		}
-	}
-	const size_t oamBaseIndex = index;
-	forEachOamEntry([&](const OamEntry& entry, size_t oamIndex) {
-		fn(entry, oamBaseIndex + oamIndex);
-	});
-	index += static_cast<size_t>(beginSpriteOamRead());
-
-	const uint32_t patBase = activePatBase();
-	const PatHeader patHeader = readPatHeader(patBase);
-	if ((patHeader.flags & PAT_FLAG_ENABLED) != 0u) {
-		for (uint32_t patIndex = 0; patIndex < patHeader.count; ++patIndex) {
-			const PatEntry entry = readPatEntry(patBase + VDP_PAT_HEADER_BYTES + patIndex * VDP_PAT_ENTRY_BYTES);
-			if ((entry.flags & PAT_FLAG_ENABLED) == 0u) {
+		const i32 srcY = command.flipV
+			? static_cast<i32>(source.height) - 1 - ((y * static_cast<i32>(source.height)) / dstH)
+			: ((y * static_cast<i32>(source.height)) / dstH);
+		for (i32 x = 0; x < dstW; ++x) {
+			const i32 targetX = dstX + x;
+			if (targetX < 0 || targetX >= static_cast<i32>(m_frameBufferWidth)) {
 				continue;
 			}
-			scratch.atlasId = entry.atlasId;
-			scratch.assetHandle = entry.assetHandle;
-			scratch.x = entry.x;
-			scratch.y = entry.y;
-			scratch.z = entry.z;
-			scratch.w = entry.glyphW;
-			scratch.h = entry.glyphH;
-			scratch.u0 = entry.u0;
-			scratch.v0 = entry.v0;
-			scratch.u1 = entry.u1;
-			scratch.v1 = entry.v1;
-			scratch.r = unpackColorChannel(entry.fgColor, 0u);
-			scratch.g = unpackColorChannel(entry.fgColor, 8u);
-			scratch.b = unpackColorChannel(entry.fgColor, 16u);
-			scratch.a = unpackColorChannel(entry.fgColor, 24u);
-			scratch.layer = entry.layer;
-			scratch.parallaxWeight = 0.0f;
-			fn(scratch, index++);
+			const i32 srcX = command.flipH
+				? static_cast<i32>(source.width) - 1 - ((x * static_cast<i32>(source.width)) / dstW)
+				: ((x * static_cast<i32>(source.width)) / dstW);
+			const size_t srcIndex = (static_cast<size_t>(source.regionY + static_cast<uint32_t>(srcY)) * static_cast<size_t>(source.stride))
+				+ (static_cast<size_t>(source.regionX + static_cast<uint32_t>(srcX)) * 4u);
+			const u8 srcA = source.pixels[srcIndex + 3u];
+			if (srcA == 0u) {
+				continue;
+			}
+			const u8 outA = static_cast<u8>((static_cast<u32>(srcA) * static_cast<u32>(command.color.a) + 127u) / 255u);
+			const u8 outR = static_cast<u8>((static_cast<u32>(source.pixels[srcIndex + 0u]) * static_cast<u32>(command.color.r) + 127u) / 255u);
+			const u8 outG = static_cast<u8>((static_cast<u32>(source.pixels[srcIndex + 1u]) * static_cast<u32>(command.color.g) + 127u) / 255u);
+			const u8 outB = static_cast<u8>((static_cast<u32>(source.pixels[srcIndex + 2u]) * static_cast<u32>(command.color.b) + 127u) / 255u);
+			const size_t dstIndex = (static_cast<size_t>(targetY) * static_cast<size_t>(m_frameBufferWidth) + static_cast<size_t>(targetX)) * 4u;
+			blendFrameBufferPixel(dstIndex, outR, outG, outB, outA);
 		}
 	}
+}
+
+void VDP::flushFrameBufferOps() {
+	ensureFrameBufferSurface();
+	const FrameBufferColor clearColor = m_frameBufferClearRequested
+		? m_frameBufferClearColor
+		: FrameBufferColor{0u, 0u, 0u, 0u};
+	for (size_t index = 0; index < m_frameBufferPixels.size(); index += 4u) {
+		m_frameBufferPixels[index + 0u] = clearColor.r;
+		m_frameBufferPixels[index + 1u] = clearColor.g;
+		m_frameBufferPixels[index + 2u] = clearColor.b;
+		m_frameBufferPixels[index + 3u] = clearColor.a;
+	}
+	if (m_frameBufferCommands.size() > 1u) {
+		std::sort(m_frameBufferCommands.begin(), m_frameBufferCommands.end(), [](const FrameBufferCommand& a, const FrameBufferCommand& b) {
+			if (a.layer != b.layer) {
+				return static_cast<i32>(a.layer) < static_cast<i32>(b.layer);
+			}
+			if (a.z != b.z) {
+				return a.z < b.z;
+			}
+			return a.sourceIndex < b.sourceIndex;
+		});
+	}
+	for (const auto& command : m_frameBufferCommands) {
+		switch (command.type) {
+			case FrameBufferCommandType::Fill:
+				rasterizeFrameBufferFill(command);
+				break;
+			case FrameBufferCommandType::Line:
+				rasterizeFrameBufferLine(command);
+				break;
+			case FrameBufferCommandType::Sprite:
+				rasterizeFrameBufferSprite(command);
+				break;
+		}
+	}
+	TextureParams params;
+	auto* texmanager = EngineCore::instance().texmanager();
+	TextureHandle handle = EngineCore::instance().view()->textures[FRAMEBUFFER_TEXTURE_KEY];
+	texmanager->updateTexture(handle, m_frameBufferPixels.data(), static_cast<i32>(m_frameBufferWidth), static_cast<i32>(m_frameBufferHeight), params);
+	resetFrameBufferCommands();
+}
+
+void VDP::ensureFrameBufferSurfaceReady() {
+	ensureFrameBufferSurface();
 }
 
 uint32_t VDP::readVdpStatus() {
@@ -1025,27 +678,12 @@ uint32_t VDP::readVdpData() {
 
 void VDP::initializeRegisters() {
 	const i32 dither = 0;
-	m_bgMapFrontBase = VDP_BGMAP_FRONT_BASE;
-	m_bgMapBackBase = VDP_BGMAP_BACK_BASE;
-	m_patFrontBase = VDP_PAT_FRONT_BASE;
-	m_patBackBase = VDP_PAT_BACK_BASE;
+	m_frameBufferWidth = 0;
+	m_frameBufferHeight = 0;
+	m_frameBufferPixels.clear();
+	resetFrameBufferCommands();
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
-	m_memory.writeValue(IO_VDP_OAM_FRONT_BASE, valueNumber(static_cast<double>(VDP_OAM_FRONT_BASE)));
-	m_memory.writeValue(IO_VDP_OAM_BACK_BASE, valueNumber(static_cast<double>(VDP_OAM_BACK_BASE)));
-	m_memory.writeValue(IO_VDP_OAM_FRONT_COUNT, valueNumber(0.0));
-	m_memory.writeValue(IO_VDP_OAM_BACK_COUNT, valueNumber(0.0));
-	m_memory.writeValue(IO_VDP_OAM_CAPACITY, valueNumber(static_cast<double>(VDP_OAM_SLOT_COUNT)));
-	m_memory.writeValue(IO_VDP_OAM_ENTRY_WORDS, valueNumber(static_cast<double>(VDP_OAM_ENTRY_WORDS)));
-	m_memory.writeValue(IO_VDP_OAM_READ_SOURCE, valueNumber(static_cast<double>(VDP_OAM_READ_SOURCE_FRONT)));
-	m_memory.writeValue(IO_VDP_OAM_COMMIT_SEQ, valueNumber(0.0));
-	m_memory.writeValue(IO_VDP_OAM_CMD, valueNumber(0.0));
-	writePatHeader(m_patFrontBase, PatHeader{0u, 0u});
-	writePatHeader(m_patBackBase, PatHeader{0u, 0u});
-	for (uint32_t layerIndex = 0; layerIndex < VDP_BGMAP_LAYER_COUNT; ++layerIndex) {
-		writeBgMapHeader(m_bgMapFrontBase + layerIndex * VDP_BGMAP_LAYER_SIZE, BgMapHeader{});
-		clearBgMapRetainedState(m_bgMapFrontStates[layerIndex]);
-	}
-	clearBackBgMap();
+	m_memory.writeValue(IO_VDP_LEGACY_CMD, valueNumber(0.0));
 	m_lastDitherType = dither;
 	EngineCore::instance().view()->dither_type = static_cast<GameView::DitherType>(dither);
 }
@@ -1063,16 +701,9 @@ void VDP::syncRegisters() {
 	if (primary != m_slotAtlasIds[0] || secondary != m_slotAtlasIds[1]) {
 		applyAtlasSlotMapping({{primary, secondary}});
 	}
-	const uint32_t command = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_CMD)));
+	const uint32_t command = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_LEGACY_CMD)));
 	if (command != 0u) {
-		if (command == OAM_CMD_SWAP) {
-			swapOamBuffers();
-		} else if (command == OAM_CMD_CLEAR_BACK) {
-			clearBackOamBuffer();
-		} else {
-			throw BMSX_RUNTIME_ERROR("[VDP] Unknown OAM command " + std::to_string(command) + ".");
-		}
-		m_memory.writeValue(IO_VDP_OAM_CMD, valueNumber(0.0));
+		throw BMSX_RUNTIME_ERROR("[VDP] Legacy VDP command register was removed. Got " + std::to_string(command) + ".");
 	}
 }
 

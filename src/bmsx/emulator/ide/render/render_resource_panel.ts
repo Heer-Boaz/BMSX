@@ -61,7 +61,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 
 	controller.hscroll = horizontalScrollbar.getScroll();
 
-	api.put_rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
+	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
 
 	const contentTop = bounds.top + 2;
 	const scrollStart = Math.floor(controller.scroll);
@@ -96,7 +96,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 			const caretBottom = caretTop + controller.lineHeight;
 			if (panelActive) {
 				if (visibleRight > visibleLeft) {
-					api.put_rectfillcolor(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
+					api.fill_rect_color(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
 				}
 				const colors = new Array<number>(contentText.length).fill(constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
 				if (contentText.length > 0) {
@@ -118,7 +118,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 		horizontalScrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}
 	if (dividerLeft >= bounds.left && dividerLeft < bounds.right) {
-		api.put_rectfill(dividerLeft, bounds.top, bounds.right, bounds.bottom, undefined, constants.RESOURCE_PANEL_DIVIDER_COLOR);
+		api.fill_rect(dividerLeft, bounds.top, bounds.right, bounds.bottom, undefined, constants.RESOURCE_PANEL_DIVIDER_COLOR);
 	}
 }
 
@@ -161,7 +161,7 @@ export function drawResourceViewer(): void {
 	const verticalVisible = verticalScrollbar.isVisible();
 	viewer.scroll = clamp(verticalScrollbar.getScroll(), 0, Math.max(0, totalLines - capacity));
 
-	api.put_rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
+	api.fill_rect(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, undefined, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 
 	const contentTop = bounds.codeTop + 2;
 	const layout = resourceViewerImageLayout(viewer, bounds, ide_state.lineHeight);
@@ -240,8 +240,8 @@ export function drawCreateResourceErrorDialog(message: string): void {
 	const top = Math.max(8, Math.floor((ide_state.viewportHeight - dialogHeight) / 2));
 	const right = left + dialogWidth;
 	const bottom = top + dialogHeight;
-	api.put_rectfill(left, top, right, bottom, undefined, constants.COLOR_STATUS_BACKGROUND);
-	api.put_rect(left, top, right, bottom, undefined, constants.COLOR_CREATE_RESOURCE_ERROR);
+	api.fill_rect(left, top, right, bottom, undefined, constants.COLOR_STATUS_BACKGROUND);
+	api.blit_rect(left, top, right, bottom, undefined, constants.COLOR_CREATE_RESOURCE_ERROR);
 	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
 	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
 	renderErrorOverlayText(

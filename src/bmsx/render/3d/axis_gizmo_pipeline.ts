@@ -140,7 +140,7 @@ export function registerAxisGizmoPass_WebGL(registry: RenderPassLibrary): void {
 			const drawLetter = (px: number, py: number, letter: string, col: color, scale: number) => {
 				const font = gv.default_font;
 				const imgid = font.char_to_img(letter);
-				$.view.renderer.submit.sprite({ imgid, pos: { x: Math.round(px), y: Math.round(py), z: 999 }, scale: { x: scale, y: scale }, colorize: col, layer: 'ui' });
+				$.view.renderer.submit.sprite({ imgid, pos: { x: Math.round(px), y: Math.round(py), z: 999 }, scale: { x: scale, y: scale }, flip: { flip_h: false, flip_v: false }, colorize: col, layer: 'ui' });
 			};
 			const placeLabel = (vx: number, vy: number, letter: string, col: color, scale: number) => {
 				const a = originNDC; const b = endpointNDC(vx, vy, originNDC.x, originNDC.y);

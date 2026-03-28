@@ -31,11 +31,6 @@ bmsx_cpp/
 │   ├── gameview.cpp
 │   ├── texturemanager.h        # Texture manager
 │   ├── texturemanager.cpp
-│   ├── 2d/
-│   │   ├── sprites_pipeline.h
-│   │   ├── sprites_pipeline.cpp
-│   │   ├── sprites_pipeline_gles2.h
-│   │   └── sprites_pipeline_gles2.cpp
 │   ├── backend/
 │   │   ├── backend.h
 │   │   ├── backend.cpp

@@ -74,7 +74,7 @@ export function drawInlineCaret(
 	const caretValue = BmsxColors[caretColorIndex];
 	const inverseColor = BmsxColors[inverseColorIndex];
 	renderInlineCaret({
-		fillRect: (x0, y0, x1, y1, col) => api.put_rectfillcolor(x0, y0, x1, y1, undefined, col),
+		fillRect: (x0, y0, x1, y1, col) => api.fill_rect_color(x0, y0, x1, y1, undefined, col),
 		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(x0, y0, x1, y1, undefined, col),
 		drawGlyph: (text, x, y, col) => drawEditorText(ide_state.font, text, x, y, undefined, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
 	}, left, top, right, bottom, cursorX, active, caretValue, caretGlyph, inverseColor);
@@ -102,7 +102,7 @@ export function drawCursor(info: CursorScreenInfo, textX: number): void {
 	const glyphColor = BmsxColors[1];
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
 	renderInlineCaret({
-		fillRect: (x0, y0, x1, y1, col) => api.put_rectfillcolor(x0, y0, x1, y1, undefined,col),
+		fillRect: (x0, y0, x1, y1, col) => api.fill_rect_color(x0, y0, x1, y1, undefined,col),
 		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(x0, y0, x1, y1, undefined, col),
 		drawGlyph: (text, x, y, col) => drawEditorText(ide_state.font, text, x, y, undefined, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
 	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, BmsxColors[constants.CARET_COLOR], caretGlyph, glyphColor);
@@ -118,8 +118,8 @@ export function drawRectOutlineColor(left: number, top: number, right: number, b
 		return;
 	}
 	const resolved = typeof color === 'number' ? BmsxColors[color] : color;
-	api.put_rectfillcolor(left, top, right, top + 1, z, resolved);
-	api.put_rectfillcolor(left, bottom - 1, right, bottom, z, resolved);
-	api.put_rectfillcolor(left, top, left + 1, bottom, z, resolved);
-	api.put_rectfillcolor(right - 1, top, right, bottom, z, resolved);
+	api.fill_rect_color(left, top, right, top + 1, z, resolved);
+	api.fill_rect_color(left, bottom - 1, right, bottom, z, resolved);
+	api.fill_rect_color(left, top, left + 1, bottom, z, resolved);
+	api.fill_rect_color(right - 1, top, right, bottom, z, resolved);
 }

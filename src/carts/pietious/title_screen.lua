@@ -116,7 +116,6 @@ function title_screen:ctor()
 	self.z = 350
 	self.sparkle_sprite = components.spritecomponent.new({
 		id_local = 'sparkle',
-		imgid = 'none',
 		offset = { x = 0, y = 0, z = 1 },
 	})
 	self:add_component(self.sparkle_sprite)

@@ -507,7 +507,7 @@ end
 
 local function refresh_room_geometry(room_state)
 	rebuild_room_logic(room_state)
-	room_state:rebuild_room_bgmaps()
+	room_state:rebuild_room_tiles()
 end
 
 local function apply_room_template(room_state, template)
@@ -546,7 +546,6 @@ local function apply_room_template(room_state, template)
 	room_state.draaideuren = template.draaideuren
 	room_state.room_links = template.room_links
 	room_state.edge_gates = template.edge_gates
-	room_state.last_water_surface_frame = -1
 	rebuild_room_logic(room_state)
 end
 
@@ -556,7 +555,7 @@ room_object.__index = room_object
 function room_object:load_room(room_number)
 	local target_room_number = room_number or castle_map.start_room_number
 	apply_room_template(self, castle_map.room_templates[target_room_number])
-	self:rebuild_room_bgmaps()
+	self:rebuild_room_tiles()
 end
 
 function room_object:patch_rows(rows)
@@ -820,7 +819,7 @@ function room_object:switch_room(direction)
 	end
 
 	apply_room_template(self, castle_map.room_templates[target_room_number])
-	self:rebuild_room_bgmaps()
+	self:rebuild_room_tiles()
 	return {
 		from_room_number = from_room_number,
 		to_room_number = target_room_number,
@@ -843,7 +842,7 @@ function room_object:bind()
 			emitter = 'd',
 			subscriber = self,
 			handler = function()
-				self:hide_room_bgmaps()
+				self:hide_room_tiles()
 			end,
 		})
 	end
@@ -854,7 +853,7 @@ function room_object:bind()
 			emitter = 'd',
 			subscriber = self,
 			handler = function()
-				self:show_room_bgmaps()
+				self:show_room_tiles()
 			end,
 		})
 	end
@@ -863,40 +862,20 @@ end
 function room_object:ctor()
 	self.destroyed_rock_ids = {}
 	self.logic_rows = {}
-	self.bgmap_visible = false
-	self.last_water_surface_frame = -1
+	self.tiles_visible = false
 	self:bind_visual()
 	self:bind()
 end
 
-function room_object:hide_room_bgmaps()
-	bgmap_begin(0, self.tile_columns, self.tile_rows, self.tile_size, self.tile_size, self.tile_origin_x, self.tile_origin_y, 0)
-	bgmap_begin(1, self.tile_columns, self.tile_rows, self.tile_size, self.tile_size, self.tile_origin_x, self.tile_origin_y, 0)
-	self.bgmap_visible = false
-	self.last_water_surface_frame = -1
+function room_object:hide_room_tiles()
+	self.tiles_visible = false
 end
 
-function room_object:show_room_bgmaps()
-	local water_surface_frame = nil
-	if self.water ~= nil then
-		water_surface_frame = self:get_timeline(water_surface_timeline_id):value()
-	end
-	self:render_tiles()
-	self:render_water(water_surface_frame)
-	self.bgmap_visible = true
-	if water_surface_frame == nil then
-		self.last_water_surface_frame = -1
-	else
-		self.last_water_surface_frame = water_surface_frame
-	end
+function room_object:show_room_tiles()
+	self.tiles_visible = true
 end
 
-function room_object:rebuild_room_bgmaps()
-	if not self.bgmap_visible then
-		self.last_water_surface_frame = -1
-		return
-	end
-	self:show_room_bgmaps()
+function room_object:rebuild_room_tiles()
 end
 
 function room_object:render_tiles()
@@ -904,39 +883,56 @@ function room_object:render_tiles()
 	local origin_x = self.tile_origin_x
 	local origin_y = self.tile_origin_y
 	local dissolve_step = self.room_dissolve_step
-	bgmap_begin(0, self.tile_columns, self.tile_rows, tile_size, tile_size, origin_x, origin_y, 0)
+	local tiles = {}
 
 	for y = 1, self.tile_rows do
+		local row_base = ((y - 1) * self.tile_columns)
 		local map_row = self.map_rows[y]
 		for x = 1, self.tile_columns do
+			local tile_index = row_base + x
 			local tile_id = create_tile_id(string.byte(self.map_rows[y], x), x, y, self.map_rows, self.room_subtype)
 			if dissolve_step > 0 then
 				local dissolve_index = dissolve_step - 1
 				if self.room_subtype == 'world' and string.byte(map_row, x) == tile_chars.breakable_wall then
 					if dissolve_index >= 6 then
+						tiles[tile_index] = false
 						goto continue
 					end
 					local wall_phase = ((x + (y * 3)) % 6) + 1
 					if dissolve_index >= wall_phase then
+						tiles[tile_index] = false
 						goto continue
 					end
 				end
 				local dissolve_prefix = world_dissolve_prefix_by_tile_id[tile_id]
 				if dissolve_prefix ~= nil then
 					if dissolve_index >= 6 then
+						tiles[tile_index] = false
 						goto continue
 					end
 					tile_id = dissolve_prefix .. tostring(dissolve_index)
 				end
 			end
-			bgmap_tile(0, x - 1, y - 1, tile_id)
+			tiles[tile_index] = tile_id
 			::continue::
 		end
 	end
+	dma_blit_tiles({
+		tiles = tiles,
+		cols = self.tile_columns,
+		rows = self.tile_rows,
+		tile_w = tile_size,
+		tile_h = tile_size,
+		origin_x = origin_x,
+		origin_y = origin_y,
+		scroll_x = 0,
+		scroll_y = 0,
+		z = 0,
+		layer = 'world',
+	})
 end
 
 function room_object:render_water(water_surface_frame)
-	bgmap_begin(1, self.tile_columns, self.tile_rows, self.tile_size, self.tile_size, self.tile_origin_x, self.tile_origin_y, 0)
 	if self.water == nil then
 		return
 	end
@@ -944,52 +940,49 @@ function room_object:render_water(water_surface_frame)
 		water_surface_frame = self:get_timeline(water_surface_timeline_id):value()
 	end
 	local water_surface_imgid = water_surface_frame_imgids[water_surface_frame]
+	local water_rows = self.tile_rows - self.water.surface_row + 1
+	local tiles = {}
 
 	for y = self.water.surface_row, self.tile_rows do
+		local row_base = ((y - self.water.surface_row) * self.tile_columns)
 		for x = 1, self.tile_columns do
+			local tile_index = row_base + x
 			local kind = water_kind_at_tile(self, x, y)
 			if kind ~= constants.water.none then
 				if kind == constants.water.surface then
-					bgmap_tile(1, x - 1, y - 1, water_surface_imgid)
+					tiles[tile_index] = water_surface_imgid
 				else
-					bgmap_tile(1, x - 1, y - 1, 'water_body_msx')
+					tiles[tile_index] = 'water_body_msx'
 				end
+			else
+				tiles[tile_index] = false
 			end
 		end
 	end
-end
-
-function room_object:patch_water_surface(water_surface_frame)
-	if self.water == nil then
-		return
-	end
-	local y = self.water.surface_row
-	local water_surface_imgid = water_surface_frame_imgids[water_surface_frame]
-	for x = 1, self.tile_columns do
-		if water_kind_at_tile(self, x, y) == constants.water.surface then
-			bgmap_tile(1, x - 1, y - 1, water_surface_imgid)
-		end
-	end
-end
-
-function room_object:patch_water_surface_if_needed()
-	if not self.bgmap_visible then
-		return
-	end
-	if self.water == nil then
-		self.last_water_surface_frame = -1
-		return
-	end
-	local water_surface_frame = self:get_timeline(water_surface_timeline_id):value()
-	if self.last_water_surface_frame == water_surface_frame then
-		return
-	end
-	self:patch_water_surface(water_surface_frame)
-	self.last_water_surface_frame = water_surface_frame
+	dma_blit_tiles({
+		tiles = tiles,
+		cols = self.tile_columns,
+		rows = water_rows,
+		tile_w = self.tile_size,
+		tile_h = self.tile_size,
+		origin_x = self.tile_origin_x,
+		origin_y = self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size),
+		scroll_x = 0,
+		scroll_y = 0,
+		z = 0,
+		layer = 'world',
+	})
 end
 
 function room_object:render_room()
-	self:patch_water_surface_if_needed()
+	if self.tiles_visible then
+		local water_surface_frame = nil
+		if self.water ~= nil then
+			water_surface_frame = self:get_timeline(water_surface_timeline_id):value()
+		end
+		self:render_tiles()
+		self:render_water(water_surface_frame)
+	end
 	if not self:has_tag('r.seal_fx') then
 		return
 	end
@@ -997,7 +990,7 @@ function room_object:render_room()
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	put_rectfillcolor(0, constants.room.tile_origin_y, display_width(), display_height(), 342, { r = 1, g = 1, b = 1, a = 0.5 })
+	fill_rect_color(0, constants.room.tile_origin_y, display_width(), display_height(), 342, { r = 1, g = 1, b = 1, a = 0.5 })
 end
 
 local function room_runtime_state_name(room_state)

@@ -236,21 +236,21 @@ function menu.draw()
 	local z = 10000
 
 	quickmenu_ui_options.layer = 'ui'
-	put_rectfillcolor(x, y + box_y, x + menu_w, y + box_y + box_h, z, colors.panel, quickmenu_ui_options)
-	write(title, x + padding, y, z, colors.title, quickmenu_ui_options)
+	fill_rect_color(x, y + box_y, x + menu_w, y + box_y + box_h, z, colors.panel, quickmenu_ui_options)
+	blit_text(title, x + padding, y, z, colors.title, quickmenu_ui_options)
 
 	local row_y = y + box_y + padding
 	for i = 1, #entries do
 		local entry = entries[i]
 		if i == state.selected then
-			put_rectfillcolor(x, row_y - 2, x + menu_w, row_y + line_h, z, colors.highlight, quickmenu_ui_options)
+			fill_rect_color(x, row_y - 2, x + menu_w, row_y + line_h, z, colors.highlight, quickmenu_ui_options)
 		end
 		local value = entry_value_label(entry)
 		local line = entry.label
 		if value ~= '-' and (value) then
 			line = line .. ': ' .. value
 		end
-		write(line, x + padding, row_y, z, colors.text, quickmenu_ui_options)
+		blit_text(line, x + padding, row_y, z, colors.text, quickmenu_ui_options)
 		row_y = row_y + line_h
 	end
 

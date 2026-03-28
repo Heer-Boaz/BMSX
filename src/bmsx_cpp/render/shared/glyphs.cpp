@@ -6,7 +6,6 @@
 #include "../gameview.h"
 #include "../../core/font.h"
 #include <cctype>
-#include <limits>
 #include <stdexcept>
 
 namespace bmsx {
@@ -33,17 +32,17 @@ u32 readUtf8Codepoint(const std::string& text, size_t& index) {
 }
 
 void renderGlyphSpan(GameView* view, const std::string& text, i32 start, i32 end, f32& x, f32& y,
-						f32 startX, f32& stepY, f32 z, BFont* font, const std::optional<Color>& color,
-						const std::optional<Color>& backgroundColor, const std::optional<RenderLayer>& layer) {
+						f32 startX, f32& stepY, f32 z, BFont* font, const Color& color,
+	const std::optional<Color>& backgroundColor, RenderLayer layer) {
 	ImgRenderSubmission spriteOptions;
-	spriteOptions.imgid = "none";
 	spriteOptions.pos = {x, y, z};
 	spriteOptions.colorize = color;
 	spriteOptions.layer = layer;
+	spriteOptions.scale = {1.0f, 1.0f};
+	spriteOptions.flip = FlipOptions{};
 
 	RectRenderSubmission rectOptions;
 	rectOptions.kind = RectRenderSubmission::Kind::Fill;
-	rectOptions.color = backgroundColor.value_or(Color::transparent());
 	rectOptions.layer = layer;
 
 	size_t byteIndex = 0;
@@ -68,11 +67,13 @@ void renderGlyphSpan(GameView* view, const std::string& text, i32 start, i32 end
 		}
 
 		if (backgroundColor) {
+			rectOptions.color = *backgroundColor;
 			RectBounds& area = rectOptions.area;
 			area.left = x;
 			area.top = y;
 			area.right = x + stepX;
 			area.bottom = y + stepY;
+			area.z = z;
 			view->renderer.submit.rect(rectOptions);
 		}
 
@@ -96,20 +97,18 @@ void renderGlyphs(GameView* view,
 					f32 x,
 					f32 y,
 					const std::vector<std::string>& lines,
-					std::optional<i32> start,
-					std::optional<i32> end,
+					i32 start,
+					i32 end,
 					f32 z,
 					BFont* font,
-					const std::optional<Color>& color,
+					const Color& color,
 					const std::optional<Color>& backgroundColor,
-					const std::optional<RenderLayer>& layer) {
+					RenderLayer layer) {
 	if (!font) {
 		throw BMSX_RUNTIME_ERROR("No font or default font available for renderGlyphs");
 	}
 	const f32 startX = x;
 	f32 stepY = 0.0f;
-	const i32 startIndex = start.value_or(0);
-	const i32 endIndex = end.value_or(std::numeric_limits<i32>::max());
 	for (const auto& line : lines) {
 		if (line.empty()) {
 			y += static_cast<f32>(font->lineHeight());
@@ -118,7 +117,7 @@ void renderGlyphs(GameView* view,
 			}
 			continue;
 		}
-		renderGlyphSpan(view, line, startIndex, endIndex, x, y, startX, stepY,
+		renderGlyphSpan(view, line, start, end, x, y, startX, stepY,
 						z, font, color, backgroundColor, layer);
 		if (y >= view->canvasSize.y) {
 			return;

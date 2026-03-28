@@ -1,347 +1,124 @@
 import { FeatureQueue } from '../../utils/feature_queue';
 import {
-	PAT_FLAG_ENABLED,
-	OAM_FLAG_ENABLED,
-	OAM_LAYER_WORLD,
-	oamLayerToRenderLayer,
-	renderLayerToOamLayer,
+	renderLayerTo2dLayer,
 } from './render_types';
 import type {
-	PatEntry,
 	color,
 	GlyphRenderSubmission,
 	ImgRenderSubmission,
 	MeshRenderSubmission,
-	OamEntry,
 	ParticleRenderSubmission,
 	PolyRenderSubmission,
 	RectRenderSubmission,
 	SpriteParallaxRig,
 	RenderLayer,
 } from './render_types';
-import { DEFAULT_ZCOORD } from '../backend/webgl/webgl.constants';
-import { RenderSubmission } from '../backend/pipeline_interfaces';
-import { Runtime } from '../../emulator/runtime';
 import { ASSET_FLAG_VIEW } from '../../emulator/memory';
+import { Runtime } from '../../emulator/runtime';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { clamp } from '../../utils/clamp';
 import { BFont } from './bitmap_font';
 import { $ } from '../../core/engine_core';
 
-const SPRITE_SLOT_COUNT = 5000;
-export const OAM_SLOT_COUNT = SPRITE_SLOT_COUNT;
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
 let activeQueueSource: 'front' | 'back' = 'front';
 
-type PlaybackImgSubmission = Extract<RenderSubmission, { type: 'img' }>;
-type PlaybackMeshSubmission = Extract<RenderSubmission, { type: 'mesh' }>;
-type PlaybackParticleSubmission = Extract<RenderSubmission, { type: 'particle' }>;
-
-const renderQueuePlaybackBuffer: RenderSubmission[] = [];
-
-function createScratchOamEntry(): OamEntry {
-	return {
-		atlasId: 0,
-		flags: OAM_FLAG_ENABLED,
-		assetHandle: 0,
-		x: 0,
-		y: 0,
-		z: DEFAULT_ZCOORD,
-		w: 0,
-		h: 0,
-		u0: 0,
-		v0: 0,
-		u1: 0,
-		v1: 0,
-		r: 1,
-		g: 1,
-		b: 1,
-		a: 1,
-		layer: OAM_LAYER_WORLD,
-		parallaxWeight: 0,
-	};
-}
-
-function createScratchPatEntry(): PatEntry {
-	return {
-		atlasId: 0,
-		flags: PAT_FLAG_ENABLED,
-		assetHandle: 0,
-		layer: OAM_LAYER_WORLD,
-		x: 0,
-		y: 0,
-		z: 0,
-		glyphW: 0,
-		glyphH: 0,
-		bgW: 0,
-		bgH: 0,
-		u0: 0,
-		v0: 0,
-		u1: 0,
-		v1: 0,
-		fgColor: 0,
-		bgColor: 0,
-	};
-}
-
-const spriteSubmitScratch = createScratchOamEntry();
-const glyphPatSubmitScratch = createScratchPatEntry();
-
-function createPlaybackImgSubmission(): PlaybackImgSubmission {
-	return {
-		type: 'img',
-		imgid: 'none',
-		pos: { x: 0, y: 0, z: DEFAULT_ZCOORD },
-		scale: { x: 1, y: 1 },
-		flip: { flip_h: false, flip_v: false },
-		colorize: { r: 1, g: 1, b: 1, a: 1 },
-		layer: undefined,
-		ambient_affected: undefined,
-		ambient_factor: undefined,
-		parallax_weight: 0,
-	};
-}
-
-function setPlaybackSpriteSubmission(index: number, src: OamEntry): void {
-	let op = renderQueuePlaybackBuffer[index] as PlaybackImgSubmission;
-	if (!op || op.type !== 'img') {
-		op = createPlaybackImgSubmission();
-		renderQueuePlaybackBuffer[index] = op;
-	}
-	const runtime = Runtime.instance;
-	const entry = runtime.getAssetEntryByHandle(src.assetHandle);
-	if (entry.type !== 'image') {
-		throw new Error(`[Sprite Playback] Asset handle ${src.assetHandle} is not an image.`);
-	}
-	if (entry.regionW <= 0 || entry.regionH <= 0) {
-		throw new Error(`[Sprite Playback] Asset '${entry.id}' has invalid dimensions.`);
-	}
-	op.imgid = entry.id;
-	op.layer = oamLayerToRenderLayer(src.layer);
-	op.ambient_affected = undefined;
-	op.ambient_factor = undefined;
-	op.pos.x = src.x;
-	op.pos.y = src.y;
-	op.pos.z = src.z;
-	op.scale.x = src.w / entry.regionW;
-	op.scale.y = src.h / entry.regionH;
-	op.flip.flip_h = src.u0 > src.u1;
-	op.flip.flip_v = src.v0 > src.v1;
-	op.colorize.r = src.r;
-	op.colorize.g = src.g;
-	op.colorize.b = src.b;
-	op.colorize.a = src.a;
-	op.parallax_weight = src.parallaxWeight;
-}
-
-function setPlaybackMeshSubmission(index: number, src: MeshRenderSubmission): void {
-	let op = renderQueuePlaybackBuffer[index] as PlaybackMeshSubmission;
-	if (!op || op.type !== 'mesh') {
-		op = { type: 'mesh', mesh: src.mesh, matrix: src.matrix };
-		renderQueuePlaybackBuffer[index] = op;
-	}
-	op.mesh = src.mesh;
-	op.matrix = src.matrix;
-	op.joint_matrices = src.joint_matrices;
-	op.morph_weights = src.morph_weights;
-	op.receive_shadow = src.receive_shadow;
-	op.layer = src.layer;
-}
-
-function setPlaybackParticleSubmission(index: number, src: ParticleRenderSubmission): void {
-	let op = renderQueuePlaybackBuffer[index] as PlaybackParticleSubmission;
-	if (!op || op.type !== 'particle') {
-		op = {
-			type: 'particle',
-			position: src.position,
-			size: src.size,
-			color: src.color,
-		};
-		renderQueuePlaybackBuffer[index] = op;
-	}
-	op.position = src.position;
-	op.size = src.size;
-	op.color = src.color;
-	op.texture = src.texture;
-	op.ambient_mode = src.ambient_mode;
-	op.ambient_factor = src.ambient_factor;
-	op.layer = src.layer;
-}
-
-function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color | undefined, layer: RenderLayer | undefined, flipH = false, flipV = false, parallaxWeight = 0): void {
-	if (imgid === 'none') {
-		return;
-	}
+function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color, layer: RenderLayer, flipH = false, flipV = false): void {
 	const runtime = Runtime.instance;
 	const handle = runtime.resolveAssetHandle(imgid);
 	const entry = runtime.getAssetEntryByHandle(handle);
 	if (entry.type !== 'image') {
 		throw new Error(`[Sprite Pipeline] Asset '${imgid}' is not an image.`);
 	}
-	const meta = runtime.getImageMetaByHandle(handle);
-	if (meta.atlasid === undefined || meta.atlasid === null) {
-		throw new Error(`[Sprite Pipeline] Image metadata missing atlas id for imgid '${imgid}'.`);
-	}
-	const baseEntry = (entry.flags & ASSET_FLAG_VIEW)
-		? runtime.getAssetEntryByHandle(entry.ownerIndex)
-		: entry;
 	if (entry.regionW <= 0 || entry.regionH <= 0) {
 		throw new Error(`[Sprite Pipeline] Image asset '${imgid}' has invalid region size.`);
 	}
-	if (baseEntry.regionW <= 0 || baseEntry.regionH <= 0) {
-		throw new Error(`[Sprite Pipeline] Atlas backing entry for '${imgid}' missing dimensions.`);
-	}
-	let u0 = entry.regionX / baseEntry.regionW;
-	let v0 = entry.regionY / baseEntry.regionH;
-	let u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
-	let v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
-	if (flipH) {
-		const tmp = u0;
-		u0 = u1;
-		u1 = tmp;
-	}
-	if (flipV) {
-		const tmp = v0;
-		v0 = v1;
-		v1 = tmp;
-	}
-	const layerId = renderLayerToOamLayer(layer);
-	const target = spriteSubmitScratch;
-	target.atlasId = meta.atlasid;
-	target.flags = OAM_FLAG_ENABLED;
-	target.assetHandle = handle;
-	target.x = ~~x;
-	target.y = ~~y;
-	target.z = ~~z;
-	target.w = entry.regionW * scaleX;
-	target.h = entry.regionH * scaleY;
-	target.u0 = u0;
-	target.v0 = v0;
-	target.u1 = u1;
-	target.v1 = v1;
-	target.r = colorize ? colorize.r : 1;
-	target.g = colorize ? colorize.g : 1;
-	target.b = colorize ? colorize.b : 1;
-	target.a = colorize ? colorize.a : 1;
-	target.layer = layerId;
-	target.parallaxWeight = layerId === OAM_LAYER_WORLD ? parallaxWeight : 0;
-	runtime.vdp.submitOamEntry(target);
+	runtime.vdp.queueFrameBufferSpriteHandle(
+		handle,
+		x,
+		y,
+		z,
+		renderLayerTo2dLayer(layer),
+		scaleX,
+		scaleY,
+		flipH,
+		flipV,
+		colorize,
+	);
 }
 
-// --- Sprite queue helpers ---------------------------------------------------
+// --- 2D framebuffer helpers -------------------------------------------------
 
 export function submitSprite(options: ImgRenderSubmission): void {
-	const flip = options.flip;
-	const scale = options.scale;
+	if (options.scale === undefined) {
+		throw new Error('submitSprite requires scale.');
+	}
+	if (options.flip === undefined) {
+		throw new Error('submitSprite requires flip.');
+	}
+	if (options.colorize === undefined) {
+		throw new Error('submitSprite requires colorize.');
+	}
+	if (options.layer === undefined) {
+		throw new Error('submitSprite requires layer.');
+	}
 	submitSpriteDirect(
 		options.imgid,
 		options.pos.x,
 		options.pos.y,
-		options.pos.z ?? DEFAULT_ZCOORD,
-		scale ? scale.x : 1,
-		scale ? scale.y : 1,
+		options.pos.z,
+		options.scale.x,
+		options.scale.y,
 		options.colorize,
 		options.layer,
-		flip?.flip_h === true,
-		flip?.flip_v === true,
-		options.parallax_weight ?? 0,
+		options.flip.flip_h,
+		options.flip.flip_v,
 	);
 }
 
-export function beginSpriteQueue(): number {
-	return Runtime.instance.vdp.begin2dRead();
-}
-
 export function prepareCompletedRenderQueues(): void {
-	Runtime.instance.vdp.swapBgMapBuffers();
-	Runtime.instance.vdp.swapPatBuffers();
-	Runtime.instance.vdp.swapOamBuffers();
-	Runtime.instance.vdp.setOamReadSource('front');
+	Runtime.instance.vdp.flushFrameBufferOps();
 	meshQueue.swap();
 	particleQueue.swap();
 	activeQueueSource = 'front';
 }
 
 function hasCommittedFrontQueueContent(): boolean {
-	return Runtime.instance.vdp.hasFront2dContent()
-		|| meshQueue.sizeFront() > 0
+	return meshQueue.sizeFront() > 0
 		|| particleQueue.sizeFront() > 0;
 }
 
 export function preparePartialRenderQueues(): void {
+	Runtime.instance.vdp.flushFrameBufferOps();
 	activeQueueSource = hasCommittedFrontQueueContent()
 		? 'front'
 		: (hasPendingBackQueueContent() ? 'back' : 'front');
-	Runtime.instance.vdp.setOamReadSource(activeQueueSource);
 }
 
 export function prepareOverlayRenderQueues(): void {
+	Runtime.instance.vdp.flushFrameBufferOps();
 	activeQueueSource = 'back';
-	Runtime.instance.vdp.setOamReadSource('back');
 }
 
 export function hasPendingBackQueueContent(): boolean {
-	return Runtime.instance.vdp.hasBack2dContent()
-		|| meshQueue.sizeBack() > 0
+	return meshQueue.sizeBack() > 0
 		|| particleQueue.sizeBack() > 0;
 }
 
 export function clearBackQueues(): void {
-	Runtime.instance.vdp.clearBackBgMap();
-	Runtime.instance.vdp.clearBackPatBuffer();
-	Runtime.instance.vdp.clearBackOamBuffer();
+	Runtime.instance.vdp.discardFrameBufferOps();
 	meshQueue.clearBack();
 	particleQueue.clearBack();
 	activeQueueSource = 'front';
 }
 
 export function clearAllQueues(): void {
+	Runtime.instance.vdp.discardFrameBufferOps();
 	Runtime.instance.vdp.initializeRegisters();
 	meshQueue.clearAll();
 	particleQueue.clearAll();
 	activeQueueSource = 'front';
-}
-
-export function forEachOamEntry(fn: (item: OamEntry, index: number) => void): void {
-	Runtime.instance.vdp.forEachOamEntry(fn);
-}
-
-export function spriteQueueBackSize(): number {
-	return Runtime.instance.vdp.getOamBackCount();
-}
-
-export function spriteQueueFrontSize(): number {
-	return Runtime.instance.vdp.getOamFrontCount();
-}
-
-export function copyRenderQueueForPlayback(): RenderSubmission[] {
-	let count = 0;
-	const copySpriteEntries = () => {
-		Runtime.instance.vdp.forEach2dEntry((item) => {
-			setPlaybackSpriteSubmission(count, item);
-			count += 1;
-		});
-	};
-	const copyMesh = (item: MeshRenderSubmission) => {
-		setPlaybackMeshSubmission(count, item);
-		count += 1;
-	};
-	const copyParticle = (item: ParticleRenderSubmission) => {
-		setPlaybackParticleSubmission(count, item);
-		count += 1;
-	};
-	if (activeQueueSource === 'back') {
-		copySpriteEntries();
-		meshQueue.forEachBack(copyMesh);
-		particleQueue.forEachBack(copyParticle);
-	} else {
-		copySpriteEntries();
-		meshQueue.forEachFront(copyMesh);
-		particleQueue.forEachFront(copyParticle);
-	}
-	renderQueuePlaybackBuffer.length = count;
-	return renderQueuePlaybackBuffer;
 }
 
 // --- Mesh queue helpers -----------------------------------------------------
@@ -374,7 +151,10 @@ export function meshQueueFrontSize(): number {
 
 export function submit_particle(item: ParticleRenderSubmission): void {
 	const runtime = Runtime.instance;
-	const imgid = item.texture ?? 'whitepixel';
+	if (item.texture === undefined) {
+		throw new Error('submit_particle requires texture.');
+	}
+	const imgid = item.texture;
 	const handle = runtime.resolveAssetHandle(imgid);
 	const entry = runtime.getAssetEntryByHandle(handle);
 	if (entry.type !== 'image') {
@@ -437,60 +217,65 @@ export function particleQueueFrontSize(): number {
 }
 
 export function submitRectangle(options: RectRenderSubmission): void {
+	if (options.layer === undefined) {
+		throw new Error('submitRectangle requires layer.');
+	}
 	let { left: x, top: y, z, right: ex, bottom: ey } = options.area;
-	const c = options.color;
-	const imgid = 'whitepixel';
 	[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
-	if (options.kind === 'fill') {
-		submitSpriteDirect(imgid, x, y, z ?? DEFAULT_ZCOORD, ~~(ex - x), ~~(ey - y), c, options.layer);
-	}
-	else {
-		submitSpriteDirect(imgid, x, y, z ?? DEFAULT_ZCOORD, ~~(ex - x), 1, c, options.layer);
-		submitSpriteDirect(imgid, x, ey, z ?? DEFAULT_ZCOORD, ~~(ex - x), 1, c, options.layer);
-		submitSpriteDirect(imgid, x, y, z ?? DEFAULT_ZCOORD, 1, ~~(ey - y), c, options.layer);
-		submitSpriteDirect(imgid, ex, y, z ?? DEFAULT_ZCOORD, 1, ~~(ey - y), c, options.layer);
-	}
+	Runtime.instance.vdp.queueFrameBufferRect(options.kind, x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
 }
 
 export function submitDrawPolygon(options: PolyRenderSubmission): void {
-	const { points: coords, z, color, thickness = 1, layer } = options;
-	if (!coords || coords.length < 4) return; const imgid = 'whitepixel';
-	for (let i = 0; i < coords.length; i += 2) {
-		// Snap to integer grid so Bresenham-style stepping terminates with fractional inputs.
-		let x0 = Math.round(coords[i]), y0 = Math.round(coords[i + 1]); const next = (i + 2) % coords.length; let x1 = Math.round(coords[next]), y1 = Math.round(coords[next + 1]);
-		const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0); const sx = x0 < x1 ? 1 : -1; const sy = y0 < y1 ? 1 : -1; let err = dx - dy;
-		if (dx > dy) {
-			while (true) {
-				submitSpriteDirect(imgid, x0, y0, z, thickness, thickness, color, layer); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { submitSpriteDirect(imgid, x0, y0, z, thickness, thickness, color, layer); break; } if (e2 < dx) { err += dx; y0 += sy; }
-			}
-		} else {
-			while (true) {
-				submitSpriteDirect(imgid, x0, y0, z, thickness, thickness, color, layer); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { submitSpriteDirect(imgid, x0, y0, z, thickness, thickness, color, layer); break; } if (e2 < dx) { err += dx; y0 += sy; }
-			}
-		}
+	if (options.thickness === undefined) {
+		throw new Error('submitDrawPolygon requires thickness.');
 	}
+	if (options.layer === undefined) {
+		throw new Error('submitDrawPolygon requires layer.');
+	}
+	Runtime.instance.vdp.queueFrameBufferPoly(options.points, options.z, options.color, options.thickness, renderLayerTo2dLayer(options.layer));
 }
 
 export function submitGlyphs(o: GlyphRenderSubmission) {
-	let lines: string | string[] = o.glyphs;
-	const resolvedFont = o.font ?? $.view.default_font;
-	if (!resolvedFont) {
-		throw new Error('No font available for glyph rendering.');
+	if (o.font === undefined) {
+		throw new Error('submitGlyphs requires font.');
 	}
-	o.font = resolvedFont;
-
-	// Optional char-based wrapping
+	if (o.color === undefined) {
+		throw new Error('submitGlyphs requires color.');
+	}
+	if (o.layer === undefined) {
+		throw new Error('submitGlyphs requires layer.');
+	}
+	if (o.z === undefined) {
+		throw new Error('submitGlyphs requires z.');
+	}
+	if (o.glyph_start === undefined) {
+		throw new Error('submitGlyphs requires glyph_start.');
+	}
+	if (o.glyph_end === undefined) {
+		throw new Error('submitGlyphs requires glyph_end.');
+	}
+	let lines: string | string[] = o.glyphs;
 	if (typeof lines === 'string' && o.wrap_chars !== undefined && o.wrap_chars > 0) {
 		lines = wrapGlyphs(lines, o.wrap_chars);
 	}
 	let xx = o.x;
-	// Optional simple centering within a block of width (pixels)
 	if (o.center_block_width && o.center_block_width > 0) {
 		const arr = Array.isArray(lines) ? lines : [lines];
 		xx += calculateCenteredBlockX(arr, o.font.char_width('a'), o.center_block_width);
 	}
 
-	renderGlyphs(xx, o.y, lines, o.glyph_start, o.glyph_end, o.z ?? 950, o.font, o.color, o.background_color, o.layer);
+	renderGlyphs(
+		xx,
+		o.y,
+		lines,
+		o.glyph_start,
+		o.glyph_end,
+		o.z,
+		o.font,
+		o.color,
+		o.background_color,
+		o.layer,
+	);
 }
 
 export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number): [number, number, number, number] {
@@ -539,147 +324,22 @@ export function setSkyboxTintExposure(tint: [number, number, number], exposure =
 	_skyTint = [Math.max(0, tint[0]), Math.max(0, tint[1]), Math.max(0, tint[2])];
 	_skyExposure = Math.max(0, exposure);
 }
-const CHAR_CACHE: string[] = (() => {
-	const cache: string[] = new Array(256);
-	for (let i = 0; i < cache.length; i += 1) {
-		cache[i] = String.fromCharCode(i);
-	}
-	return cache;
-})();
-
 /**
  * Text rendering utility (engine-level). Preferred UE-style usage is via TextComponent + TextRenderSystem, which uses this internally.
  */
-export function renderGlyphs(x: number, y: number, textToWrite: string | string[], start?: number, end?: number, z: number = 950, font?: BFont, color?: color, backgroundColor?: color, layer?: RenderLayer): void {
-	font ??= $.view.default_font;
-	if (!font) { throw new Error('No font or default font available for renderGlyphs'); }
-	const runtime = Runtime.instance;
-	const memory = runtime.memory;
-	const startX = x;
-	let stepY = 0;
-	const packColor8888 = (source: color | undefined): number => {
-		const value = source ?? { r: 1, g: 1, b: 1, a: 1 };
-		const r = Math.round(clamp(value.r, 0, 1) * 255);
-		const g = Math.round(clamp(value.g, 0, 1) * 255);
-		const b = Math.round(clamp(value.b, 0, 1) * 255);
-		const a = Math.round(clamp(value.a, 0, 1) * 255);
-		return (r | (g << 8) | (b << 16) | (a << 24)) >>> 0;
-	};
-	const packedColor = packColor8888(color);
-	const packedBackgroundColor = backgroundColor ? packColor8888(backgroundColor) : 0;
-	const layerId = renderLayerToOamLayer(layer);
-	const backgroundAsset = (() => {
-		if (!backgroundColor) {
-			return null;
-		}
-		const handle = memory.resolveAssetHandle('whitepixel');
-		const entry = memory.getAssetEntryByHandle(handle);
-		if (entry.type !== 'image') {
-			throw new Error(`[Glyph Queue] Asset 'whitepixel' is not an image.`);
-		}
-		const imgMeta = runtime.getImageMetaByHandle(handle);
-		const baseEntry = (entry.flags & ASSET_FLAG_VIEW) !== 0
-			? memory.getAssetEntryByHandle(entry.ownerIndex)
-			: entry;
-		if (baseEntry.regionW <= 0 || baseEntry.regionH <= 0) {
-			throw new Error(`[Glyph Queue] Atlas backing entry for 'whitepixel' missing dimensions.`);
-		}
-		const u0 = entry.regionX / baseEntry.regionW;
-		const v0 = entry.regionY / baseEntry.regionH;
-		const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
-		const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
-		return { handle, imgMeta, u0, v0, u1, v1 };
-	})();
-
-	start = start ?? 0;
-
-	const renderSpan = (text: string) => {
-		if (text.length === 0) {
-			y += font.lineHeight;
-			return;
-		}
-		const endIndex = end ?? text.length;
-		for (let i = start; i < endIndex; i += 1) {
-			const code = text.charCodeAt(i);
-			const letter = code < CHAR_CACHE.length ? CHAR_CACHE[code] : text.charAt(i);
-			const glyph = font.getGlyph(letter);
-			const stepX = glyph.advance;
-			const height = glyph.height;
-			if (height > stepY) {
-				stepY = height;
-			}
-			if (backgroundAsset) {
-				const pat = glyphPatSubmitScratch;
-				pat.atlasId = backgroundAsset.imgMeta.atlasid;
-				pat.flags = PAT_FLAG_ENABLED;
-				pat.assetHandle = backgroundAsset.handle;
-				pat.layer = layerId;
-				pat.x = ~~x;
-				pat.y = ~~y;
-				pat.z = ~~z;
-				pat.glyphW = stepX;
-				pat.glyphH = font.lineHeight;
-				pat.bgW = 0;
-				pat.bgH = 0;
-				pat.u0 = backgroundAsset.u0;
-				pat.v0 = backgroundAsset.v0;
-				pat.u1 = backgroundAsset.u1;
-				pat.v1 = backgroundAsset.v1;
-				pat.fgColor = packedBackgroundColor;
-				pat.bgColor = 0;
-				runtime.vdp.submitPatEntry(pat);
-			}
-			const handle = memory.resolveAssetHandle(glyph.imgid);
-			const entry = memory.getAssetEntryByHandle(handle);
-			if (entry.type !== 'image') {
-				throw new Error(`[Glyph Queue] Asset '${glyph.imgid}' is not an image.`);
-			}
-			const imgMeta = runtime.getImageMetaByHandle(handle);
-			const baseEntry = (entry.flags & ASSET_FLAG_VIEW) !== 0
-				? memory.getAssetEntryByHandle(entry.ownerIndex)
-				: entry;
-			if (baseEntry.regionW <= 0 || baseEntry.regionH <= 0) {
-				throw new Error(`[Glyph Queue] Atlas backing entry for '${glyph.imgid}' missing dimensions.`);
-			}
-			const u0 = entry.regionX / baseEntry.regionW;
-			const v0 = entry.regionY / baseEntry.regionH;
-			const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
-			const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
-			const pat = glyphPatSubmitScratch;
-			pat.atlasId = imgMeta.atlasid;
-			pat.flags = PAT_FLAG_ENABLED;
-			pat.assetHandle = handle;
-			pat.layer = layerId;
-			pat.x = ~~x;
-			pat.y = ~~y;
-			pat.z = ~~z;
-			pat.glyphW = glyph.width;
-			pat.glyphH = glyph.height;
-			pat.bgW = 0;
-			pat.bgH = 0;
-			pat.u0 = u0;
-			pat.v0 = v0;
-			pat.u1 = u1;
-			pat.v1 = v1;
-			pat.fgColor = packedColor;
-			pat.bgColor = 0;
-			runtime.vdp.submitPatEntry(pat);
-			x += stepX;
-		}
-		x = startX;
-		y += stepY;
-		stepY = 0;
-	};
-
-	if (Array.isArray(textToWrite)) {
-		for (let a = 0; a < textToWrite.length; a += 1) {
-			renderSpan(textToWrite[a]);
-			if (y >= $.view.canvasSize.y) return;
-		}
-	}
-	else {
-		renderSpan(textToWrite);
-	}
+export function renderGlyphs(x: number, y: number, textToWrite: string | string[], start: number, end: number, z: number, font: BFont, color: color, backgroundColor: color | undefined, layer: RenderLayer): void {
+	Runtime.instance.vdp.queueFrameBufferGlyphs(
+		textToWrite,
+		x,
+		y,
+		z,
+		font,
+		color,
+		backgroundColor,
+		start,
+		end,
+		layer,
+	);
 }
 
 /**

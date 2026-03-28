@@ -10,7 +10,6 @@ import type {
 import { $ } from '../core/engine_core';
 import { consumeOverlayFrame, publishOverlayFrame, type EditorOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { Viewport } from '../rompack/rompack';
-import { copyRenderQueueForPlayback } from '../render/shared/render_queues';
 import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 
 export type RenderCommand = RenderSubmission;
@@ -19,24 +18,8 @@ type ImgSubmission = Extract<RenderSubmission, { type: 'img' }>;
 type GlyphSubmission = Extract<RenderSubmission, { type: 'glyphs' }>;
 type PolySubmission = Extract<RenderSubmission, { type: 'poly' }>;
 
-export class RenderFacade {
+export class OverlayRenderer {
 	private defaultLayer: RenderLayer = 'world';
-
-	public playbackRenderQueue(preservedRenderQueue: RenderSubmission[]) {
-		for (let i = 0; i < preservedRenderQueue.length; i++) {
-			const submission = preservedRenderQueue[i];
-			if (submission.layer === 'ide') {
-				continue;
-			}
-			$.view.renderer.submit.typed(submission);
-		}
-	}
-
-	public captureCurrentFrameRenderQueue() {
-		// Preserve the current frame's submissions so they can be replayed under overlays.
-		// We rely on playback to skip editor/overlay layers so we don't duplicate UI layers.
-		return copyRenderQueueForPlayback();
-	}
 
 	private commands: RenderCommand[] = [];
 	private commandBuffer: RenderCommand[] = [];
@@ -83,17 +66,16 @@ export class RenderFacade {
 		this.commands.length = 0;
 	}
 
-	public isCapturingFrame(): boolean {
-		return this.capturingFrame;
-	}
-
 	public setDefaultLayer(layer: RenderLayer): void {
 		this.defaultLayer = layer;
 	}
 
 	public rect(command: RectRenderSubmission): void {
 		const area = command.area;
-		if (area.z === undefined) area.z = RenderFacade.RECT_Z;
+		if (area.z === undefined) area.z = OverlayRenderer.RECT_Z;
+		if (command.layer === undefined) {
+			command.layer = this.defaultLayer;
+		}
 		const submission = command as RectSubmission;
 		submission.type = 'rect';
 		this.submit(submission);
@@ -101,7 +83,16 @@ export class RenderFacade {
 
 	public glyphs(command: GlyphRenderSubmission): void {
 		if (command.z === undefined) {
-			command.z = RenderFacade.SPRITE_Z;
+			command.z = OverlayRenderer.SPRITE_Z;
+		}
+		if (command.glyph_start === undefined) {
+			command.glyph_start = 0;
+		}
+		if (command.glyph_end === undefined) {
+			command.glyph_end = Number.MAX_SAFE_INTEGER;
+		}
+		if (command.layer === undefined) {
+			command.layer = this.defaultLayer;
 		}
 		const submission = command as GlyphSubmission;
 		submission.type = 'glyphs';
@@ -110,7 +101,19 @@ export class RenderFacade {
 
 	public sprite(command: ImgRenderSubmission): void {
 		if (command.pos.z === undefined) {
-			command.pos.z = RenderFacade.SPRITE_Z;
+			command.pos.z = OverlayRenderer.SPRITE_Z;
+		}
+		if (command.scale === undefined) {
+			command.scale = { x: 1, y: 1 };
+		}
+		if (command.flip === undefined) {
+			command.flip = { flip_h: false, flip_v: false };
+		}
+		if (command.colorize === undefined) {
+			command.colorize = { r: 1, g: 1, b: 1, a: 1 };
+		}
+		if (command.layer === undefined) {
+			command.layer = this.defaultLayer;
 		}
 		const submission = command as ImgSubmission;
 		submission.type = 'img';
@@ -118,6 +121,12 @@ export class RenderFacade {
 	}
 
 	public poly(command: PolyRenderSubmission): void {
+		if (command.thickness === undefined) {
+			command.thickness = 1;
+		}
+		if (command.layer === undefined) {
+			command.layer = this.defaultLayer;
+		}
 		const submission = command as PolySubmission;
 		submission.type = 'poly';
 		this.submit(submission);
@@ -136,28 +145,11 @@ export class RenderFacade {
 	}
 
 	private submit(submission: RenderSubmission): void {
-		this.applyDefaultLayer(submission);
 		if (!this.capturingFrame) {
 			$.view.renderer.submit.typed(submission);
 			return;
 		}
 		this.commands.push(submission);
-	}
-
-	private applyDefaultLayer(submission: RenderSubmission): void {
-		switch (submission.type) {
-			case 'rect':
-			case 'img':
-			case 'glyphs':
-			case 'poly': {
-				if (submission.layer === undefined) {
-					submission.layer = this.defaultLayer;
-				}
-				return;
-			}
-			default:
-				return;
-		}
 	}
 
 	public endFrame(): void {
@@ -179,19 +171,6 @@ export class RenderFacade {
 			commands: frameCommands,
 		};
 		publishOverlayFrame(frame);
-	}
-
-	public endFrameToRenderer(): void {
-		this.capturingFrame = false;
-		if (this.commands.length === 0) {
-			return;
-		}
-		const frameCommands = this.commands;
-		this.commands = this.commandBuffer;
-		this.commandBuffer = frameCommands;
-		for (let i = 0; i < frameCommands.length; i += 1) {
-			$.view.renderer.submit.typed(frameCommands[i]);
-		}
 	}
 
 	public abandonFrame(): void {

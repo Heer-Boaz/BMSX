@@ -27,10 +27,10 @@
 --    No extra setup is needed in cart code — just ensure a collider2dcomponent
 --    exists on the object before gfx() is called.
 --
--- 3. spriterendersystem RENDERS; spriteobject:draw() IS OBSOLETE.
---    Do not override draw() in subclasses. The ECS spriterendersystem calls
---    spritecomponent each frame; draw() on the object itself is never invoked
---    by the engine and exists only for backward compat.
+-- 3. WORLD ECS AND MANUAL DRAW PATHS CAN BOTH EXIST.
+--    World-managed spriteobjects are normally rendered by spriterendersystem.
+--    spriteobject:draw() still matters for manual draw paths (for example
+--    subsystem-owned objects or other explicit owner:draw() flows).
 --
 -- 4. COLLISION PROFILES: after gfx(), call apply_collision_profile().
 --      self:gfx('enemy')
@@ -61,7 +61,7 @@ function spriteobject.new(opts)
 	local self = setmetatable(worldobject.new(opts), spriteobject)
 	self.flip_h = false
 	self.flip_v = false
-	self.imgid = 'none'
+	self.imgid = nil
 
 	self.sprite_component = components.spritecomponent.new({ imgid = self.imgid, id_local = spriteobject.base_sprite_id })
 	self.collider = components.collider2dcomponent.new({ id_local = spriteobject.primary_collider_id })
@@ -82,7 +82,7 @@ end
 function spriteobject:gfx(id, meta)
 	self.imgid = id
 	self.sprite_component.imgid = id
-	if id == 'none' then
+	if id == nil then
 		return
 	end
 	if meta then
@@ -98,7 +98,7 @@ function spriteobject:draw()
 		return
 	end
 	local sc = self.sprite_component
-	if sc.imgid == 'none' then
+	if sc.imgid == nil then
 		return
 	end
 	local offset = sc.offset
@@ -107,7 +107,7 @@ function spriteobject:draw()
 	sprite_draw_options.flip_v = sc.flip.flip_v
 	sprite_draw_options.colorize = sc.colorize
 	sprite_draw_options.parallax_weight = sc.parallax_weight
-	put_sprite(sc.imgid, self.x + offset.x, self.y + offset.y, self.z + offset.z, sprite_draw_options)
+	blit(sc.imgid, self.x + offset.x, self.y + offset.y, self.z + offset.z, sprite_draw_options)
 end
 
 return spriteobject

@@ -42,7 +42,7 @@ function breakablewall:ctor()
 			local draw_y = self.y + (ty * constants.room.tile_size)
 			for tx = 0, self.width_tiles - 1 do
 				local draw_x = self.x + (tx * constants.room.tile_size)
-				put_sprite(self.tiletype, draw_x, draw_y, 22)
+				blit(self.tiletype, draw_x, draw_y, 22)
 			end
 		end
 	end

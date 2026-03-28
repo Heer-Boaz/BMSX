@@ -407,7 +407,7 @@ function director:draw_parallax_layer(blocks, factor, color, z)
 		local left = math.floor(block.x - cam)
 		local right = left + block.w
 		if right > 0 and left < view_w then
-			put_rectfillcolor(left, block.y, right, block.y + block.h, z, color)
+			fill_rect_color(left, block.y, right, block.y + block.h, z, color)
 		end
 	end
 end
@@ -419,7 +419,7 @@ function director:draw_trunks()
 		local left = math.floor(trunk.x - (self.camera_x * 0.62))
 		local right = left + trunk.w
 		if right > 0 and left < view_w then
-			put_rectfillcolor(left, trunk.y, right, trunk.y + trunk.h, 56, constants.palette.trunk)
+			fill_rect_color(left, trunk.y, right, trunk.y + trunk.h, 56, constants.palette.trunk)
 		end
 	end
 end
@@ -432,10 +432,10 @@ function director:draw_level_solids()
 		local left = math.floor(solid.x - self.camera_x)
 		local right = left + solid.w
 		if right > 0 and left < view_w then
-			put_rectfillcolor(left, solid.y, right, solid.y + solid.h, 80, constants.palette.ground)
-			put_rectfillcolor(left, solid.y, right, solid.y + 6, 81, constants.palette.ground_top)
-			put_rectfillcolor(left, solid.y, right, solid.y + 1, 90, { r = 1, g = 1, b = 1, a = 0.55 })
-			put_rectfillcolor(left, solid.y + solid.h - 1, right, solid.y + solid.h, 90, { r = 1, g = 1, b = 1, a = 0.35 })
+			fill_rect_color(left, solid.y, right, solid.y + solid.h, 80, constants.palette.ground)
+			fill_rect_color(left, solid.y, right, solid.y + 6, 81, constants.palette.ground_top)
+			fill_rect_color(left, solid.y, right, solid.y + 1, 90, { r = 1, g = 1, b = 1, a = 0.55 })
+			fill_rect_color(left, solid.y + solid.h - 1, right, solid.y + solid.h, 90, { r = 1, g = 1, b = 1, a = 0.35 })
 		end
 	end
 end
@@ -449,13 +449,13 @@ function director:draw_goal()
 		return
 	end
 	self.goal_glow_color.a = 0.1 + (self.goal_pulse * 0.24)
-	put_rectfillcolor(left - 8, goal.y - 8, right + 8, goal.y + goal.h + 8, 110, self.goal_glow_color)
-	put_rectfillcolor(left, goal.y, right, goal.y + goal.h, 111, constants.palette.exit_cave)
-	put_rectfillcolor(left + 10, goal.y + 12, right - 10, goal.y + goal.h - 6, 112, constants.palette.exit_cave_inner)
+	fill_rect_color(left - 8, goal.y - 8, right + 8, goal.y + goal.h + 8, 110, self.goal_glow_color)
+	fill_rect_color(left, goal.y, right, goal.y + goal.h, 111, constants.palette.exit_cave)
+	fill_rect_color(left + 10, goal.y + 12, right - 10, goal.y + goal.h - 6, 112, constants.palette.exit_cave_inner)
 	local barrel_left = left + 16
 	local barrel_top = goal.y + goal.h - 22
-	put_rectfillcolor(barrel_left, barrel_top, barrel_left + 26, barrel_top + 16, 113, constants.palette.exit_barrel)
-	put_rectfillcolor(barrel_left + 5, barrel_top + 4, barrel_left + 21, barrel_top + 12, 114, constants.palette.goal)
+	fill_rect_color(barrel_left, barrel_top, barrel_left + 26, barrel_top + 16, 113, constants.palette.exit_barrel)
+	fill_rect_color(barrel_left + 5, barrel_top + 4, barrel_left + 21, barrel_top + 12, 114, constants.palette.goal)
 end
 
 function director:draw_barrel(barrel, z_base)
@@ -469,12 +469,12 @@ function director:draw_barrel(barrel, z_base)
 	local bottom = top + barrel.h
 	local palette = constants.palette
 	if barrel.grounded then
-		put_rectfillcolor(left + 1, bottom + 1, right - 1, bottom + 4, z_base - 2, palette.barrel_shadow)
+		fill_rect_color(left + 1, bottom + 1, right - 1, bottom + 4, z_base - 2, palette.barrel_shadow)
 	end
-	put_rectfillcolor(left, top, right, bottom, z_base, palette.barrel_body)
-	put_rectfillcolor(left + 2, top + 1, right - 2, bottom - 1, z_base + 1, palette.barrel_inner)
-	put_rectfillcolor(left + 4, top, left + 6, bottom, z_base + 2, palette.barrel_band)
-	put_rectfillcolor(right - 6, top, right - 4, bottom, z_base + 2, palette.barrel_band)
+	fill_rect_color(left, top, right, bottom, z_base, palette.barrel_body)
+	fill_rect_color(left + 2, top + 1, right - 2, bottom - 1, z_base + 1, palette.barrel_inner)
+	fill_rect_color(left + 4, top, left + 6, bottom, z_base + 2, palette.barrel_band)
+	fill_rect_color(right - 6, top, right - 4, bottom, z_base + 2, palette.barrel_band)
 end
 
 function director:draw_barrels(player, draw_held)
@@ -518,11 +518,11 @@ function director:draw_stomp_target(target, z_base)
 		body = palette.exit_barrel
 		border = palette.exit_cave
 	end
-	put_rectfillcolor(left, top, right, bottom, z_base, body)
-	put_rectfillcolor(left, top, right, top + 1, z_base + 1, border)
-	put_rectfillcolor(left, bottom - 1, right, bottom, z_base + 1, border)
-	put_rectfillcolor(left, top, left + 1, bottom, z_base + 1, border)
-	put_rectfillcolor(right - 1, top, right, bottom, z_base + 1, border)
+	fill_rect_color(left, top, right, bottom, z_base, body)
+	fill_rect_color(left, top, right, top + 1, z_base + 1, border)
+	fill_rect_color(left, bottom - 1, right, bottom, z_base + 1, border)
+	fill_rect_color(left, top, left + 1, bottom, z_base + 1, border)
+	fill_rect_color(right - 1, top, right, bottom, z_base + 1, border)
 end
 
 function director:draw_stomp_targets()
@@ -559,10 +559,10 @@ function director:draw_player(player, draw_shadow)
 		local shadow_w = math.floor(fw * 0.82)
 		local shadow_x = math.floor(px + ((player.width - shadow_w) * 0.5))
 		local shadow_y = player.y + player.height + 2
-		put_rectfillcolor(shadow_x, shadow_y, shadow_x + shadow_w, shadow_y + 4, 119, constants.palette.player_shadow)
+		fill_rect_color(shadow_x, shadow_y, shadow_x + shadow_w, shadow_y + 4, 119, constants.palette.player_shadow)
 	end
 
-	put_sprite(frame_id, draw_x, draw_y, 120, {
+	blit(frame_id, draw_x, draw_y, 120, {
 		flip_h = player.facing < 0,
 		scale = { x = sx, y = sy },
 	})
@@ -573,7 +573,7 @@ function director:render_frame()
 	if render_cfg.objects_only_mode then
 		local view_w = display_width()
 		local view_h = display_height()
-		put_rectfillcolor(0, 0, view_w, view_h, 0, { r = 0, g = 0, b = 0, a = 1 })
+		fill_rect_color(0, 0, view_w, view_h, 0, { r = 0, g = 0, b = 0, a = 1 })
 		self:draw_level_solids()
 		self:draw_stomp_targets()
 		self:draw_goal()
@@ -585,7 +585,7 @@ function director:render_frame()
 
 	local view_w = display_width()
 	local view_h = display_height()
-	put_rectfillcolor(0, 0, view_w, view_h, 0, { r = 0, g = 0, b = 0, a = 1 })
+	fill_rect_color(0, 0, view_w, view_h, 0, { r = 0, g = 0, b = 0, a = 1 })
 	self:draw_level_solids()
 	self:draw_stomp_targets()
 	self:draw_barrels(self.player_ref, false)

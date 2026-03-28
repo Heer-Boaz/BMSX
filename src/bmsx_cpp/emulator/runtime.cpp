@@ -930,25 +930,6 @@ void Runtime::refreshMemoryMapGlobals() {
 	setGlobal("sys_vram_primary_atlas_size", valueNumber(static_cast<double>(VRAM_PRIMARY_ATLAS_SIZE)));
 	setGlobal("sys_vram_secondary_atlas_size", valueNumber(static_cast<double>(VRAM_SECONDARY_ATLAS_SIZE)));
 	setGlobal("sys_vram_staging_size", valueNumber(static_cast<double>(VRAM_STAGING_SIZE)));
-	setGlobal("sys_vdp_oam_bank_a_base", valueNumber(static_cast<double>(VDP_OAM_FRONT_BASE)));
-	setGlobal("sys_vdp_oam_bank_b_base", valueNumber(static_cast<double>(VDP_OAM_BACK_BASE)));
-	setGlobal("sys_vdp_oam_buffer_size", valueNumber(static_cast<double>(VDP_OAM_BUFFER_SIZE)));
-	setGlobal("sys_vdp_oam_entry_bytes", valueNumber(static_cast<double>(VDP_OAM_ENTRY_BYTES)));
-	setGlobal("sys_vdp_oam_slot_count", valueNumber(static_cast<double>(VDP_OAM_SLOT_COUNT)));
-	setGlobal("sys_vdp_bgmap_bank_a_base", valueNumber(static_cast<double>(VDP_BGMAP_FRONT_BASE)));
-	setGlobal("sys_vdp_bgmap_bank_b_base", valueNumber(static_cast<double>(VDP_BGMAP_BACK_BASE)));
-	setGlobal("sys_vdp_bgmap_buffer_size", valueNumber(static_cast<double>(VDP_BGMAP_BUFFER_SIZE)));
-	setGlobal("sys_vdp_bgmap_layer_size", valueNumber(static_cast<double>(VDP_BGMAP_LAYER_SIZE)));
-	setGlobal("sys_vdp_bgmap_entry_bytes", valueNumber(static_cast<double>(VDP_BGMAP_ENTRY_BYTES)));
-	setGlobal("sys_vdp_bgmap_header_bytes", valueNumber(static_cast<double>(VDP_BGMAP_HEADER_BYTES)));
-	setGlobal("sys_vdp_bgmap_layer_count", valueNumber(static_cast<double>(VDP_BGMAP_LAYER_COUNT)));
-	setGlobal("sys_vdp_bgmap_tile_capacity", valueNumber(static_cast<double>(VDP_BGMAP_TILE_CAPACITY)));
-	setGlobal("sys_vdp_pat_bank_a_base", valueNumber(static_cast<double>(VDP_PAT_FRONT_BASE)));
-	setGlobal("sys_vdp_pat_bank_b_base", valueNumber(static_cast<double>(VDP_PAT_BACK_BASE)));
-	setGlobal("sys_vdp_pat_buffer_size", valueNumber(static_cast<double>(VDP_PAT_BUFFER_SIZE)));
-	setGlobal("sys_vdp_pat_entry_bytes", valueNumber(static_cast<double>(VDP_PAT_ENTRY_BYTES)));
-	setGlobal("sys_vdp_pat_header_bytes", valueNumber(static_cast<double>(VDP_PAT_HEADER_BYTES)));
-	setGlobal("sys_vdp_pat_capacity", valueNumber(static_cast<double>(VDP_PAT_CAPACITY)));
 	setGlobal("sys_vram_size", valueNumber(static_cast<double>(trackedVramTotalBytes())));
 }
 

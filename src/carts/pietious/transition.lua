@@ -43,7 +43,7 @@ function transition:draw_transition_overlay()
 	end
 	local lines = self.banner_lines
 	if #lines > 0 then
-		put_glyphs(lines, 0, constants.room.tile_origin_y + (constants.room.tile_size * 9), 341, {
+		blit_glyphs(lines, 0, constants.room.tile_origin_y + (constants.room.tile_size * 9), 341, {
 				font = self.banner_font,
 				center_block_width = display_width(),
 		})

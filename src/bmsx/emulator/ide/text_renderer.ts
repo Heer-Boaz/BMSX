@@ -27,7 +27,7 @@ export function drawEditorText(font: EditorFont, text: string, originX: number, 
 		const expanded = expandTabsExternal(lines[i]);
 		if (expanded.length > 0) {
 			const display = useUppercase ? applyCaseOutsideStrings(expanded, (ch) => ch.toUpperCase()) : expanded;
-			api.write_inline_with_font(display, baseX, cursorY, z, color, renderFont);
+			api.blit_text_inline_with_font(display, baseX, cursorY, z, color, renderFont);
 		}
 		if (i < lines.length - 1) {
 			cursorY += font.lineHeight;
@@ -57,7 +57,7 @@ export function drawEditorColoredText(font: EditorFont, text: string, colors: re
 		}
 		const segment = renderText.slice(index, end);
 		if (segment.length > 0) {
-			apiWithFont.write_inline_with_font(segment, cursorX, cursorY, z, colorIndex, renderFont);
+			apiWithFont.blit_text_inline_with_font(segment, cursorX, cursorY, z, colorIndex, renderFont);
 			cursorX += font.measure(segment);
 		}
 		index = end;

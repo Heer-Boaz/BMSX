@@ -5,7 +5,6 @@
 #include "memory.h"
 #include "../rompack/rompack.h"
 #include "../render/shared/render_types.h"
-#include "../utils/scratchbatch.h"
 #include <array>
 #include <optional>
 #include <string>
@@ -18,6 +17,7 @@ class RuntimeAssets;
 class GameView;
 struct ImgAsset;
 class ImgDecController;
+class BFont;
 
 class VDP : public Memory::VramWriter, public Memory::VdpIoHandler {
 public:
@@ -29,35 +29,16 @@ public:
 	i32 getDitherType() const { return m_lastDitherType; }
 	void writeVram(uint32_t addr, const u8* data, size_t length) override;
 	void beginFrame();
-	void submitOamEntry(const OamEntry& entry);
-	void clearBackOamBuffer();
-	void clearBackPatBuffer();
-	void submitPatEntry(const PatEntry& entry);
-	void clearBackBgMap();
-	void beginBgMapLayerWrite(i32 layerIndex, const BgMapHeader& header);
-	void submitBgMapTile(i32 layerIndex, i32 col, i32 row, const BgMapEntry& entry);
-	void swapOamBuffers();
-	void swapPatBuffers();
-	void swapBgMapBuffers();
-	uint32_t getBgMapFrontBase() const { return m_bgMapFrontBase; }
-	uint32_t getBgMapBackBase() const { return m_bgMapBackBase; }
-	uint32_t getPatFrontBase() const { return m_patFrontBase; }
-	uint32_t getPatBackBase() const { return m_patBackBase; }
-	void setOamReadSource(bool useBackBuffer);
-	i32 frontOamCount() const;
-	i32 backOamCount() const;
-	bool hasFrontOamContent() const;
-	bool hasBackOamContent() const;
-	bool hasFront2dContent() const;
-	bool hasBack2dContent() const;
-	i32 beginSpriteOamRead() const;
-	i32 beginBgMap2dRead() const;
-	i32 beginOamPat2dRead() const;
-	i32 begin2dRead() const;
-	void forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn) const;
-	void forEachSortedBgMap2dEntry(const std::function<void(const OamEntry&, size_t)>& fn) const;
-	void forEachOamPat2dEntry(const std::function<void(const OamEntry&, size_t)>& fn) const;
-	void forEach2dEntry(const std::function<void(const OamEntry&, size_t)>& fn) const;
+	void discardFrameBufferOps();
+	void clearFrameBuffer(const Color& color);
+	void queueFrameBufferSpriteHandle(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color);
+	void queueFrameBufferRect(bool fill, f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color);
+	void queueFrameBufferLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness);
+	void queueFrameBufferPoly(const std::vector<f32>& points, f32 z, const Color& color, f32 thickness, Layer2D layer);
+	void queueFrameBufferGlyphs(const std::vector<std::string>& lines, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, RenderLayer layer);
+	void flushFrameBufferOps();
+	void ensureFrameBufferSurfaceReady();
+	const char* getFrameBufferTextureKey() const { return FRAMEBUFFER_TEXTURE_KEY; }
 	uint32_t readVdpStatus() override;
 	uint32_t readVdpData() override;
 
@@ -108,23 +89,41 @@ private:
 		uint32_t slotSalt = 0;
 		uint32_t addr = 0;
 	};
-	struct BgMapLayerRetainedState {
-		BgMapHeader header{};
-		std::array<BgMapEntry, VDP_BGMAP_TILE_CAPACITY> tiles{};
-		i32 enabledCount = 0;
-		ScratchBatch<OamEntry> drawEntries{64u};
-		bool drawEntriesDirty = false;
+	struct FrameBufferColor {
+		u8 r = 255;
+		u8 g = 255;
+		u8 b = 255;
+		u8 a = 255;
 	};
-	struct BgMapSortedReadRun {
-		uint32_t layerIndex = 0;
-		i32 sourceIndexStart = 0;
-		i32 count = 0;
+	enum class FrameBufferCommandType : u8 {
+		Sprite,
+		Fill,
+		Line,
+	};
+	struct FrameBufferCommand {
+		FrameBufferCommandType type = FrameBufferCommandType::Sprite;
+		u32 handle = 0;
+		f32 x0 = 0.0f;
+		f32 y0 = 0.0f;
+		f32 x1 = 0.0f;
+		f32 y1 = 0.0f;
 		f32 z = 0.0f;
+		Layer2D layer = Layer2D::World;
+		f32 scaleX = 1.0f;
+		f32 scaleY = 1.0f;
+		f32 thickness = 1.0f;
+		bool flipH = false;
+		bool flipV = false;
+		u32 sourceIndex = 0;
+		FrameBufferColor color{};
 	};
-	struct BgMapSortedReadState {
-		std::array<BgMapSortedReadRun, VDP_BGMAP_LAYER_COUNT> runs{};
-		uint32_t runCount = 0;
-		i32 count = 0;
+	struct FrameBufferImageSource {
+		const u8* pixels = nullptr;
+		uint32_t regionX = 0;
+		uint32_t regionY = 0;
+		uint32_t stride = 0;
+		uint32_t width = 0;
+		uint32_t height = 0;
 	};
 
 	Memory& m_memory;
@@ -139,15 +138,6 @@ private:
 	std::array<u8, 4> m_vramSeedPixel{{0, 0, 0, 0}};
 	uint32_t m_vramMachineSeed = 0;
 	uint32_t m_vramBootSeed = 0;
-	std::array<bool, VDP_BGMAP_LAYER_COUNT> m_bgMapBackLayerPending{};
-	std::array<bool, VDP_BGMAP_LAYER_COUNT> m_bgMapBackLayerRewritePending{};
-	std::array<std::array<u8, VDP_BGMAP_TILE_CAPACITY>, VDP_BGMAP_LAYER_COUNT> m_bgMapPatchFlags{};
-	std::array<std::array<BgMapEntry, VDP_BGMAP_TILE_CAPACITY>, VDP_BGMAP_LAYER_COUNT> m_bgMapPatchEntries{};
-	std::array<ScratchBatch<uint32_t>, VDP_BGMAP_LAYER_COUNT> m_bgMapPatchIndices{
-		ScratchBatch<uint32_t>(64u),
-		ScratchBatch<uint32_t>(64u),
-	};
-	std::vector<u8> m_bgMapLayerCopyScratch;
 	std::array<ReadSurface, 3> m_readSurfaces{};
 	std::array<ReadCache, 3> m_readCaches{};
 	uint32_t m_readBudgetBytes = 0;
@@ -157,14 +147,14 @@ private:
 	SkyboxImageIds m_skyboxFaceIds;
 	bool m_hasSkybox = false;
 	i32 m_lastDitherType = 0;
-	uint32_t m_bgMapFrontBase = VDP_BGMAP_FRONT_BASE;
-	uint32_t m_bgMapBackBase = VDP_BGMAP_BACK_BASE;
-	uint32_t m_patFrontBase = VDP_PAT_FRONT_BASE;
-	uint32_t m_patBackBase = VDP_PAT_BACK_BASE;
+	std::vector<u8> m_frameBufferPixels;
+	std::vector<FrameBufferCommand> m_frameBufferCommands;
+	FrameBufferColor m_frameBufferClearColor{0, 0, 0, 255};
+	bool m_frameBufferClearRequested = false;
+	uint32_t m_frameBufferSourceIndex = 0;
+	uint32_t m_frameBufferWidth = 0;
+	uint32_t m_frameBufferHeight = 0;
 	std::array<Memory::ImageWriteEntry, 6> m_skyboxSlots{};
-	std::array<BgMapLayerRetainedState, VDP_BGMAP_LAYER_COUNT> m_bgMapFrontStates{};
-	std::array<BgMapLayerRetainedState, VDP_BGMAP_LAYER_COUNT> m_bgMapBackStates{};
-	mutable BgMapSortedReadState m_bgMapSortedReadState{};
 
 	void registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId);
 	void registerReadSurface(uint32_t surfaceId, const std::string& assetId, const std::string& textureKey);
@@ -184,32 +174,15 @@ private:
 	void seedVramSlotTexture(VramSlot& slot);
 	void setSlotTextureSize(const std::string& textureKey, uint32_t width, uint32_t height);
 	void restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey);
-	uint32_t floatToBits(f32 value) const;
-	f32 bitsToFloat(uint32_t value) const;
-	uint32_t readOamFrontBase() const;
-	uint32_t readOamBackBase() const;
-	uint32_t readOamReadSource() const;
-	uint32_t activePatBase() const;
-	void copyBgMapLayer(uint32_t srcBase, uint32_t dstBase);
-	void clearBgMapPatchLayer(uint32_t layerIndex);
-	void clearBgMapRetainedState(BgMapLayerRetainedState& state, const BgMapHeader* header = nullptr);
-	void copyBgMapRetainedState(BgMapLayerRetainedState& target, const BgMapLayerRetainedState& source);
-	void updateBgMapRetainedTile(BgMapLayerRetainedState& state, uint32_t tileIndex, const BgMapEntry& entry);
-	BgMapLayerRetainedState& bgMapRetainedStateForRead(uint32_t layerIndex);
-	const BgMapLayerRetainedState& bgMapRetainedStateForRead(uint32_t layerIndex) const;
-	void rebuildBgMapDrawEntries(BgMapLayerRetainedState& state);
-	BgMapSortedReadState& rebuildBgMapSortedReadState();
-	void writeOamEntry(uint32_t addr, const OamEntry& entry);
-	OamEntry readOamEntry(uint32_t addr) const;
-	void writePatHeader(uint32_t base, const PatHeader& header);
-	PatHeader readPatHeader(uint32_t base) const;
-	void writePatEntry(uint32_t addr, const PatEntry& entry);
-	PatEntry readPatEntry(uint32_t addr) const;
-	void writeBgMapHeader(uint32_t base, const BgMapHeader& header);
-	BgMapHeader readBgMapHeader(uint32_t base) const;
-	void writeBgMapEntry(uint32_t addr, const BgMapEntry& entry);
-	BgMapEntry readBgMapEntry(uint32_t addr) const;
-	f32 unpackColorChannel(uint32_t packed, uint32_t shift) const;
+	FrameBufferColor packFrameBufferColor(const Color& color) const;
+	void resetFrameBufferCommands();
+	void ensureFrameBufferSurface();
+	const u8* getFrameBufferSourcePixels(const Memory::AssetEntry& entry) const;
+	FrameBufferImageSource resolveFrameBufferImageSource(u32 handle) const;
+	void blendFrameBufferPixel(size_t index, u8 r, u8 g, u8 b, u8 a);
+	void rasterizeFrameBufferFill(const FrameBufferCommand& command);
+	void rasterizeFrameBufferLine(const FrameBufferCommand& command);
+	void rasterizeFrameBufferSprite(const FrameBufferCommand& command);
 };
 
 } // namespace bmsx

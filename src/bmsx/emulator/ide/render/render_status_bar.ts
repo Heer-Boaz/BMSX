@@ -14,11 +14,11 @@ export function renderStatusBar(): void {
 	const statusTop = ide_state.viewportHeight - statusAreaHeight();
 	const statusBottom = ide_state.viewportHeight;
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;
-	api.put_rectfill(0, statusTop, ide_state.viewportWidth, statusBottom, undefined, statusBackground);
+	api.fill_rect(0, statusTop, ide_state.viewportWidth, statusBottom, undefined, statusBackground);
 	if (runtimeFaulted) {
 		const accentHeight = Math.max(2, Math.floor(ide_state.lineHeight / 6));
 		const accentBottom = Math.min(statusBottom, statusTop + accentHeight);
-		api.put_rectfillcolor(0, statusTop, ide_state.viewportWidth, accentBottom, undefined, constants.COLOR_STATUS_WARNING);
+		api.fill_rect_color(0, statusTop, ide_state.viewportWidth, accentBottom, undefined, constants.COLOR_STATUS_WARNING);
 	}
 	const statusTextColor = runtimeFaulted ? constants.COLOR_STATUS_ALERT : constants.COLOR_STATUS_TEXT;
 

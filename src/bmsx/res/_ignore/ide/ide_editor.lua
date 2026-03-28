@@ -1466,7 +1466,7 @@ local function draw_highlight_slice(render_text, colors, advance_prefix, start_d
 		while seg_end < end_display and colors[seg_end] == color do
 			seg_end = seg_end + 1
 		end
-		write_inline_span_with_font(render_text, index, seg_end, cursor_x, origin_y, 0, color, state.font)
+		blit_text_inline_span_with_font(render_text, index, seg_end, cursor_x, origin_y, 0, color, state.font)
 		cursor_x = cursor_x + (advance_prefix[seg_end] - advance_prefix[index])
 		index = seg_end
 	end
@@ -1502,9 +1502,9 @@ local function draw_code_area()
 	local vertical_visible = state.code_vertical_scrollbar_visible
 	local wrap_enabled = state.word_wrap_enabled
 
-	put_rectfill(metrics.code_left, metrics.code_top, metrics.code_right, metrics.code_bottom, 0, constants.color_code_background)
+	fill_rect(metrics.code_left, metrics.code_top, metrics.code_right, metrics.code_bottom, 0, constants.color_code_background)
 	if metrics.gutter_right > metrics.gutter_left then
-		put_rectfill(metrics.gutter_left, metrics.code_top, metrics.gutter_right, metrics.content_bottom, 0, constants.color_gutter_background)
+		fill_rect(metrics.gutter_left, metrics.code_top, metrics.gutter_right, metrics.content_bottom, 0, constants.color_gutter_background)
 	end
 
 	local cursor_visual_index = state.layout:position_to_visual_index(state.buffer, state.cursor_row, state.cursor_column)
@@ -1517,14 +1517,14 @@ local function draw_code_area()
 			break
 		end
 		if visual_index >= metrics.visual_count then
-			write_inline_with_font("~", text_left_floor, row_y, 0, constants.color_syntax.code_dim, state.font)
+			blit_text_inline_with_font("~", text_left_floor, row_y, 0, constants.color_syntax.code_dim, state.font)
 		else
 			local segment = state.layout:visual_index_to_segment(visual_index)
 			local line_index = segment.row
 			if segment.start_column == 0 and metrics.gutter_right > metrics.gutter_left then
 				local line_number = tostring(line_index + 1)
 				local number_x = metrics.gutter_right - state.gutter_padding - (#line_number * state.char_advance)
-				write_inline_with_font(line_number, math.floor(number_x), row_y, 0, constants.color_text_dim, state.font)
+				blit_text_inline_with_font(line_number, math.floor(number_x), row_y, 0, constants.color_text_dim, state.font)
 			end
 			local entry = state.layout:get_cached_highlight(state.buffer, line_index)
 			local highlight = entry.hi
@@ -1541,7 +1541,7 @@ local function draw_code_area()
 			if selection_start_display then
 				local selection_left = metrics.text_left + (entry.advance_prefix[selection_start_display] - entry.advance_prefix[slice_start_display])
 				local selection_right = metrics.text_left + (entry.advance_prefix[selection_end_display] - entry.advance_prefix[slice_start_display])
-				put_rectfill(selection_left, row_y, selection_right, row_y + state.line_height, 0, constants.color_scrollbar_thumb)
+				fill_rect(selection_left, row_y, selection_right, row_y + state.line_height, 0, constants.color_scrollbar_thumb)
 			end
 
 			draw_highlight_slice(render_text, highlight.colors, entry.advance_prefix, slice_start_display, slice_end_display, text_left_floor, row_y)
@@ -1550,7 +1550,7 @@ local function draw_code_area()
 				local cursor_display = state.layout:column_to_display(highlight, state.cursor_column)
 				if cursor_display >= slice_start_display and cursor_display <= slice_end_display then
 					local cursor_x = metrics.text_left + (entry.advance_prefix[cursor_display] - entry.advance_prefix[slice_start_display])
-					put_rectfill(math.floor(cursor_x), row_y, math.floor(cursor_x) + 1, row_y + state.line_height, 0, constants.color_syntax.keyword)
+					fill_rect(math.floor(cursor_x), row_y, math.floor(cursor_x) + 1, row_y + state.line_height, 0, constants.color_syntax.keyword)
 				end
 			end
 		end
@@ -1561,7 +1561,7 @@ local function draw_code_area()
 		local track_right = metrics.code_right
 		local track_top = metrics.code_top
 		local track_bottom = metrics.content_bottom
-		put_rectfill(track_left, track_top, track_right, track_bottom, 0, constants.color_scrollbar_track)
+		fill_rect(track_left, track_top, track_right, track_bottom, 0, constants.color_scrollbar_track)
 		local track_height = math.max(1, track_bottom - track_top)
 		local max_scroll = math.max(0, metrics.visual_count - metrics.row_capacity)
 		local thumb_height = math.floor(track_height * (metrics.row_capacity / math.max(1, metrics.visual_count)))
@@ -1573,7 +1573,7 @@ local function draw_code_area()
 		else
 			thumb_top = track_top
 		end
-		put_rectfill(track_left, thumb_top, track_right, thumb_top + thumb_height, 0, constants.color_scrollbar_thumb)
+		fill_rect(track_left, thumb_top, track_right, thumb_top + thumb_height, 0, constants.color_scrollbar_thumb)
 	end
 
 	if horizontal_visible then
@@ -1581,7 +1581,7 @@ local function draw_code_area()
 		local track_right = metrics.code_right - (vertical_visible and constants.scrollbar_width or 0)
 		local track_top = metrics.code_bottom - constants.scrollbar_width
 		local track_bottom = metrics.code_bottom
-		put_rectfill(track_left, track_top, track_right, track_bottom, 0, constants.color_scrollbar_track)
+		fill_rect(track_left, track_top, track_right, track_bottom, 0, constants.color_scrollbar_track)
 		local track_width = math.max(1, track_right - track_left)
 		local max_scroll = math.max(0, compute_max_line_length() - metrics.column_capacity)
 		local thumb_width = math.floor(track_width * (metrics.column_capacity / math.max(1, compute_max_line_length())))
@@ -1593,23 +1593,23 @@ local function draw_code_area()
 		else
 			thumb_left = track_left
 		end
-		put_rectfill(thumb_left, track_top, thumb_left + thumb_width, track_bottom, 0, constants.color_scrollbar_thumb)
+		fill_rect(thumb_left, track_top, thumb_left + thumb_width, track_bottom, 0, constants.color_scrollbar_thumb)
 	end
 end
 
 local function draw_header()
 	local width = display_width()
-	put_rectfill(0, 0, width, state.header_height, 0, constants.color_top_bar)
+	fill_rect(0, 0, width, state.header_height, 0, constants.color_top_bar)
 	local left = truncate_for_width("Lua IDE", math.floor(width * 0.25))
 	local right = truncate_for_width(state.active_path, math.floor(width * 0.7))
-	write_inline_with_font(left, 4, 2, 0, constants.color_syntax.builtin, state.font)
-	write_inline_with_font(right, math.max(4, width - 4 - (#right * state.char_advance)), 2, 0, constants.color_syntax.code_text, state.font)
+	blit_text_inline_with_font(left, 4, 2, 0, constants.color_syntax.builtin, state.font)
+	blit_text_inline_with_font(right, math.max(4, width - 4 - (#right * state.char_advance)), 2, 0, constants.color_syntax.code_text, state.font)
 end
 
 local function draw_status()
 	local width = display_width()
 	local top = display_height() - state.status_height
-	put_rectfill(0, top, width, display_height(), 0, constants.color_status_bar)
+	fill_rect(0, top, width, display_height(), 0, constants.color_status_bar)
 
 	local line_info = string.format("Ln %d  Col %d", state.cursor_row + 1, state.cursor_column + 1)
 	local selection_info = ""
@@ -1632,10 +1632,10 @@ local function draw_status()
 	local available_left = width - 8
 	local display_text = truncate_for_width(status_text, available_left)
 	if state.analysis_entry and state.analysis_entry.syntax_error then
-		write_inline_with_font(display_text, 4, top + 2, 0, constants.color_syntax.string, state.font)
+		blit_text_inline_with_font(display_text, 4, top + 2, 0, constants.color_syntax.string, state.font)
 		return
 	end
-	write_inline_with_font(display_text, 4, top + 2, 0, constants.color_syntax.code_text, state.font)
+	blit_text_inline_with_font(display_text, 4, top + 2, 0, constants.color_syntax.code_text, state.font)
 end
 
 function editor.init(path)

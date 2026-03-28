@@ -12,7 +12,7 @@
 --      moderesolution (30) — resolve mode / space switches
 --      physics        (40) — movement, collision, position integration
 --      animation      (50) — advance timelines, sprite frame selection
---      presentation   (60) — build draw calls / render all objects
+--      presentation   (60) — emit 2D blits / submit render work
 --      eventflush     (70) — flush deferred events after all updates
 --
 -- 2. USE ECS SYSTEMS FOR SHARED PER-FRAME WORK.
@@ -24,14 +24,14 @@
 --
 --    WRONG — per-object rendering inside update():
 --      function my_object:update()
---          put_sprite(self.x, self.y, self.sprite_id)  -- runs per-object
+--          blit(self.x, self.y, self.sprite_id)  -- runs per-object
 --      end
 --    RIGHT — register a render system in the presentation group:
 --      local mysystem = ecsystem.new(tickgroup.presentation, priority)
 --      function mysystem:update()
 --          for obj in world_instance:objects({ scope = 'active' }) do
 --              if obj.components['spritecomponent'] then
---                  put_sprite(obj.x, obj.y, obj.sprite_id)
+--                  blit(obj.x, obj.y, obj.sprite_id)
 --              end
 --          end
 --      end

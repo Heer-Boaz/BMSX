@@ -212,10 +212,6 @@ export function activateTerminalMode(runtime: Runtime): void {
 	if (runtime.terminal.isActive) {
 		return;
 	}
-	const overlayWasActive = isOverlayActive(runtime);
-	if (!overlayWasActive) {
-		runtime.preservedRenderQueue = runtime.overlayRenderBackend.captureCurrentFrameRenderQueue();
-	}
 	deactivateEditor(runtime);
 	runtime.terminal.activate();
 	updateGamePipelineExts(runtime);
@@ -244,10 +240,6 @@ export function toggleEditor(runtime: Runtime): void {
 export function activateEditor(runtime: Runtime): void {
 	if (!runtime.hasProgramSymbols) {
 		return;
-	}
-	const overlayWasActive = isOverlayActive(runtime);
-	if (!overlayWasActive) {
-		runtime.preservedRenderQueue = runtime.overlayRenderBackend.captureCurrentFrameRenderQueue();
 	}
 	if (runtime.terminal.isActive) {
 		runtime.terminal.deactivate();
@@ -792,8 +784,8 @@ export function tickIDEDraw(runtime: Runtime): void {
 
 export function drawIde(runtime: Runtime): void {
 	try {
-		runtime.overlayRenderBackend.beginFrame();
-		runtime.overlayRenderBackend.setDefaultLayer('ide');
+		runtime.overlayRenderer.beginFrame();
+		runtime.overlayRenderer.setDefaultLayer('ide');
 		runtime.editor!.draw();
 	} catch (error) {
 		if (isLuaDebuggerPauseSignal(error)) {
@@ -802,17 +794,16 @@ export function drawIde(runtime: Runtime): void {
 			handleLuaError(runtime, error);
 		}
 	} finally {
-		runtime.overlayRenderBackend.endFrame();
+		runtime.overlayRenderer.endFrame();
 	}
 }
 
 export function drawTerminal(runtime: Runtime): void {
 	try {
-		runtime.overlayRenderBackend.beginFrame();
-		runtime.overlayRenderBackend.setDefaultLayer('ide');
-		runtime.terminal.draw(runtime.overlayRenderBackend, runtime.overlayRenderBackend.viewportSize);
-		runtime.overlayRenderBackend.setDefaultLayer('world');
-		runtime.overlayRenderBackend.playbackRenderQueue(runtime.preservedRenderQueue);
+		runtime.overlayRenderer.beginFrame();
+		runtime.overlayRenderer.setDefaultLayer('ide');
+		runtime.terminal.draw(runtime.overlayRenderer, runtime.overlayRenderer.viewportSize);
+		runtime.overlayRenderer.setDefaultLayer('world');
 	} catch (error) {
 		if (isLuaDebuggerPauseSignal(error)) {
 			onLuaDebuggerPause(runtime, error);
@@ -820,6 +811,6 @@ export function drawTerminal(runtime: Runtime): void {
 			handleLuaError(runtime, error);
 		}
 	} finally {
-		runtime.overlayRenderBackend.endFrame();
+		runtime.overlayRenderer.endFrame();
 	}
 }

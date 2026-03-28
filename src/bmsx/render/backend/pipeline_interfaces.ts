@@ -1,8 +1,7 @@
 /// <reference types="@webgpu/types" />
 import { type color_arr, type TextureSource, type vec2 } from '../../rompack/rompack';
-import { GlyphRenderSubmission, ImgRenderSubmission, MeshRenderSubmission, OamEntry, ParticleRenderSubmission, PolyRenderSubmission, RectRenderSubmission } from '../shared/render_types';
+import { GlyphRenderSubmission, ImgRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, PolyRenderSubmission, RectRenderSubmission } from '../shared/render_types';
 import { LightingFrameState } from '../lighting/lightingsystem';
-import type { ScratchBatch } from '../../utils/scratchbatch';
 import type { WebGLBackend } from './webgl/webgl_backend';
 import type { WebGPUBackend } from './webgpu/webgpu_backend';
 
@@ -41,11 +40,7 @@ export type RenderPassId =
 	| 'skybox'
 	| 'meshbatch'
 	| 'particles'
-	| 'sort_2d'
-	| 'sprites'
-	| 'sprites_world'
-	| 'sprites_ui'
-	| 'sprites_ide'
+	| 'framebuffer_2d'
 	| 'device_quantize'
 	| 'crt'
 	| 'frame_shared'
@@ -213,11 +208,7 @@ export interface RenderPassStateRegistry {
 	['skybox']: SkyboxPipelineState;
 	['meshbatch']: MeshBatchPipelineState;
 	['particles']: ParticlePipelineState;
-	['sort_2d']: Sort2DPipelineState;
-	['sprites']: SpritesPipelineState;
-	['sprites_world']: SpritesPipelineState;
-	['sprites_ui']: SpritesPipelineState;
-	['sprites_ide']: SpritesPipelineState;
+	['framebuffer_2d']: Framebuffer2DPipelineState;
 	['device_quantize']: DeviceQuantizePipelineState;
 	['crt']: CRTPipelineState;
 	['frame_shared']: FrameSharedState;
@@ -226,15 +217,13 @@ export interface RenderPassStateRegistry {
 	['debug_solid']: never;
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;
-export type Sorted2DDrawEntry = OamEntry & { sourceIndex: number; };
-export type Sort2DDrawBucketState = {
-	count: number;
-	entries: ScratchBatch<Sorted2DDrawEntry>;
-};
-export type Sort2DPipelineState = {
-	world: Sort2DDrawBucketState;
-	ui: Sort2DDrawBucketState;
-	ide: Sort2DDrawBucketState;
+
+export type Framebuffer2DPipelineState = {
+	width: number;
+	height: number;
+	baseWidth: number;
+	baseHeight: number;
+	colorTex: TextureHandle;
 };
 
 export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);
@@ -308,23 +297,6 @@ export interface ParticlePipelineState {
 }
 
 export type RenderingViewportType = 'viewport' | 'offscreen';
-
-export interface SpritesPipelineState {
-	width: number;
-	height: number;
-	baseWidth: number;
-	baseHeight: number;
-	primaryAtlasIdInSlot: number | null;
-	secondaryAtlasIdInSlot: number | null;
-	atlasPrimaryTex?: TextureHandle;
-	atlasSecondaryTex?: TextureHandle;
-	atlasEngineTex?: TextureHandle;
-	ambientEnabledDefault: boolean;
-	ambientFactorDefault: number;
-	ambientColor: [number, number, number];
-	ambientIntensity: number;
-	viewportTypeIde: RenderingViewportType;
-}
 
 export const enum CRTDitherType {
 	None = 0,

@@ -129,7 +129,7 @@ function item_screen:draw_inventory_items()
 		if player.inventory_items[item_type] then
 			if item_type ~= 'map_world1' or world_number > 0 then
 				local x, y = self:item_position_px(item_type)
-				put_sprite(constants.world_item.sprite[item_type], x, y, 321)
+				blit(constants.world_item.sprite[item_type], x, y, 321)
 			end
 		end
 	end
@@ -141,7 +141,7 @@ function item_screen:draw_secondary_weapon_selector()
 	end
 	local x = (14 * constants.room.tile_size) + (self.secondary_weapon_selection_index * (3 * constants.room.tile_size))
 	local y = constants.room.hud_height + (16 * constants.room.tile_size) + constants.room.tile_half - 1
-	put_sprite('f1_selector_white', x, y, 322)
+	blit('f1_selector_white', x, y, 322)
 end
 
 function item_screen:draw_map()
@@ -157,7 +157,7 @@ function item_screen:draw_map()
 
 	local map_proxies = castle_map.map_world_proxies[world_number]
 
-	put_sprite('f1_map_title', map_title_x, 103 + constants.room.hud_height, 323)
+	blit('f1_map_title', map_title_x, 103 + constants.room.hud_height, 323)
 
 	for i = 1, #map_proxies do
 		local proxy = map_proxies[i]
@@ -171,7 +171,7 @@ function item_screen:draw_map()
 		end
 		local proxy_x = (5 * constants.room.tile_size) + (proxy.x * constants.room.tile_size)
 		local proxy_y = constants.room.hud_height + (14 * constants.room.tile_size) + constants.room.tile_half + (proxy.y * constants.room.tile_half)
-		put_sprite(sprite_id, proxy_x, proxy_y, 323)
+		blit(sprite_id, proxy_x, proxy_y, 323)
 	end
 end
 
@@ -208,7 +208,7 @@ function item_screen:shift_secondary_weapon_selection(direction)
 end
 
 function item_screen:draw_screen()
-	put_sprite('f1_screen', 0, constants.room.hud_height, 320)
+	blit('f1_screen', 0, constants.room.hud_height, 320)
 	self:draw_inventory_items()
 	self:draw_secondary_weapon_selector()
 	self:draw_map()

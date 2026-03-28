@@ -1414,19 +1414,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_rd_status_ready", valueNumber(static_cast<double>(VDP_RD_STATUS_READY)));
 	setGlobal("sys_vdp_rd_status_overflow", valueNumber(static_cast<double>(VDP_RD_STATUS_OVERFLOW)));
 	setGlobal("sys_vdp_status_vblank", valueNumber(static_cast<double>(VDP_STATUS_VBLANK)));
-	setGlobal("sys_vdp_oam_front_base", valueNumber(static_cast<double>(IO_VDP_OAM_FRONT_BASE)));
-	setGlobal("sys_vdp_oam_back_base", valueNumber(static_cast<double>(IO_VDP_OAM_BACK_BASE)));
-	setGlobal("sys_vdp_oam_front_count", valueNumber(static_cast<double>(IO_VDP_OAM_FRONT_COUNT)));
-	setGlobal("sys_vdp_oam_back_count", valueNumber(static_cast<double>(IO_VDP_OAM_BACK_COUNT)));
-	setGlobal("sys_vdp_oam_capacity", valueNumber(static_cast<double>(IO_VDP_OAM_CAPACITY)));
-	setGlobal("sys_vdp_oam_entry_words", valueNumber(static_cast<double>(IO_VDP_OAM_ENTRY_WORDS)));
-	setGlobal("sys_vdp_oam_read_source", valueNumber(static_cast<double>(IO_VDP_OAM_READ_SOURCE)));
-	setGlobal("sys_vdp_oam_commit_seq", valueNumber(static_cast<double>(IO_VDP_OAM_COMMIT_SEQ)));
-	setGlobal("sys_vdp_oam_cmd", valueNumber(static_cast<double>(IO_VDP_OAM_CMD)));
-	setGlobal("sys_vdp_oam_read_source_front", valueNumber(static_cast<double>(VDP_OAM_READ_SOURCE_FRONT)));
-	setGlobal("sys_vdp_oam_read_source_back", valueNumber(static_cast<double>(VDP_OAM_READ_SOURCE_BACK)));
-	setGlobal("sys_vdp_oam_cmd_swap", valueNumber(static_cast<double>(OAM_CMD_SWAP)));
-	setGlobal("sys_vdp_oam_cmd_clear_back", valueNumber(static_cast<double>(OAM_CMD_CLEAR_BACK)));
 	setGlobal("sys_irq_flags", valueNumber(static_cast<double>(IO_IRQ_FLAGS)));
 	setGlobal("sys_irq_ack", valueNumber(static_cast<double>(IO_IRQ_ACK)));
 	setGlobal("sys_dma_src", valueNumber(static_cast<double>(IO_DMA_SRC)));
@@ -1446,18 +1433,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_rom_cart_base", valueNumber(static_cast<double>(CART_ROM_BASE)));
 	setGlobal("sys_rom_overlay_base", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
 	setGlobal("sys_rom_overlay_size", valueNumber(static_cast<double>(m_memory.overlayRomSize())));
-	setGlobal("sys_vdp_bgmap_front_base", m_cpu.createNativeFunction("sys_vdp_bgmap_front_base", [this](const std::vector<Value>&, std::vector<Value>& out) {
-		out.push_back(valueNumber(static_cast<double>(Runtime::instance().vdp().getBgMapFrontBase())));
-	}));
-	setGlobal("sys_vdp_bgmap_back_base", m_cpu.createNativeFunction("sys_vdp_bgmap_back_base", [this](const std::vector<Value>&, std::vector<Value>& out) {
-		out.push_back(valueNumber(static_cast<double>(Runtime::instance().vdp().getBgMapBackBase())));
-	}));
-	setGlobal("sys_vdp_pat_front_base", m_cpu.createNativeFunction("sys_vdp_pat_front_base", [this](const std::vector<Value>&, std::vector<Value>& out) {
-		out.push_back(valueNumber(static_cast<double>(Runtime::instance().vdp().getPatFrontBase())));
-	}));
-	setGlobal("sys_vdp_pat_back_base", m_cpu.createNativeFunction("sys_vdp_pat_back_base", [this](const std::vector<Value>&, std::vector<Value>& out) {
-		out.push_back(valueNumber(static_cast<double>(Runtime::instance().vdp().getPatBackBase())));
-	}));
 	refreshMemoryMapGlobals();
 	setGlobal("irq_dma_done", valueNumber(static_cast<double>(IRQ_DMA_DONE)));
 	setGlobal("irq_dma_error", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));
@@ -1597,24 +1572,6 @@ void Runtime::setupBuiltins() {
 			throw BMSX_RUNTIME_ERROR("mem_write expects a packed byte string.");
 		}
 		const std::string& bytes = m_cpu.stringPool().toString(asStringId(args.at(1)));
-		const uint32_t frontBase = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_FRONT_BASE)));
-		const uint32_t capacity = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_CAPACITY)));
-		const uint32_t entryWords = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_OAM_ENTRY_WORDS)));
-		const uint64_t frontEnd = static_cast<uint64_t>(frontBase) + static_cast<uint64_t>(capacity) * static_cast<uint64_t>(entryWords) * 4ull;
-		const uint32_t bgMapFrontBase = Runtime::instance().vdp().getBgMapFrontBase();
-		const uint64_t bgMapFrontEnd = static_cast<uint64_t>(bgMapFrontBase) + static_cast<uint64_t>(VDP_BGMAP_BUFFER_SIZE);
-		const uint32_t patFrontBase = Runtime::instance().vdp().getPatFrontBase();
-		const uint64_t patFrontEnd = static_cast<uint64_t>(patFrontBase) + static_cast<uint64_t>(VDP_PAT_BUFFER_SIZE);
-		const uint64_t writeEnd = static_cast<uint64_t>(address) + static_cast<uint64_t>(bytes.size());
-		if (!bytes.empty() && static_cast<uint64_t>(address) < frontEnd && writeEnd > static_cast<uint64_t>(frontBase)) {
-			throw BMSX_RUNTIME_ERROR("mem_write cannot target the active front OAM bank.");
-		}
-		if (!bytes.empty() && static_cast<uint64_t>(address) < bgMapFrontEnd && writeEnd > static_cast<uint64_t>(bgMapFrontBase)) {
-			throw BMSX_RUNTIME_ERROR("mem_write cannot target the active front BGMap bank.");
-		}
-		if (!bytes.empty() && static_cast<uint64_t>(address) < patFrontEnd && writeEnd > static_cast<uint64_t>(patFrontBase)) {
-			throw BMSX_RUNTIME_ERROR("mem_write cannot target the active front PAT bank.");
-		}
 		m_memory.writeBytes(address, reinterpret_cast<const u8*>(bytes.data()), bytes.size());
 		(void)out;
 	});

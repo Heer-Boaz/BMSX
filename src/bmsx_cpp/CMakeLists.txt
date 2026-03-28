@@ -121,7 +121,6 @@ add_library(bmsx_core STATIC
 	render/gameview.cpp
 	render/backend/frame_uniforms.cpp
 	render/shared/render_queues.cpp
-	render/2d/sprites_pipeline.cpp
 	render/texturemanager.cpp
 	render/backend/renderpasslib.cpp
 	render/graph/rendergraph.cpp
@@ -166,7 +165,6 @@ target_compile_definitions(bmsx_core PUBLIC
 if(BMSX_ENABLE_GLES2)
 	target_sources(bmsx_core PRIVATE
 		render/backend/gles2_backend.cpp
-		render/2d/sprites_pipeline_gles2.cpp
 		render/post/crt_pipeline_gles2.cpp
 	)
 endif()

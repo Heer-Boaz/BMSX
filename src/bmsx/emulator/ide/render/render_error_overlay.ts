@@ -96,7 +96,7 @@ export function renderErrorOverlay(
 	config: ErrorOverlayRenderConfig
 ): void {
 	const { bounds, background, textColor, paddingX, paddingY, connector, highlightLines, highlightColor } = config;
-	api.put_rectfillcolor(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, background);
+	api.fill_rect_color(bounds.left, bounds.top, bounds.right, bounds.bottom, undefined, background);
 	const startX = bounds.left + paddingX;
 	const contentRightInset = config.contentRightInset ?? 0;
 	const lineRightLimit = Math.max(startX, bounds.right - paddingX - contentRightInset);
@@ -114,7 +114,7 @@ export function renderErrorOverlay(
 			const lineRight = lineRightLimit;
 			if (lineRight > lineLeft) {
 				const color = highlightColor ?? background;
-				api.put_rectfillcolor(lineLeft, currentY, lineRight, currentY + lineHeight, undefined, color);
+				api.fill_rect_color(lineLeft, currentY, lineRight, currentY + lineHeight, undefined, color);
 			}
 		}
 		drawEditorText(font, lines[i], startX, currentY, undefined, textColor);
@@ -132,7 +132,7 @@ export function renderErrorOverlay(
 
 	const connectorTop = Math.min(startY, endY);
 	const connectorBottom = Math.max(startY, endY);
-	api.put_rectfillcolor(left, connectorTop, right, connectorBottom, undefined, background);
+	api.fill_rect_color(left, connectorTop, right, connectorBottom, undefined, background);
 }
 
 export function renderErrorOverlayText(
@@ -439,11 +439,11 @@ export function renderRuntimeErrorOverlayBubble(
 	});
 
 	// Draw copy button
-	api.put_rectfillcolor(layout.copyButtonRect.left, layout.copyButtonRect.top, layout.copyButtonRect.right, layout.copyButtonRect.bottom, undefined, overlay.copyButtonHovered ? options.highlightColor : options.backgroundColor);
-	api.put_rect(layout.copyButtonRect.left, layout.copyButtonRect.top, layout.copyButtonRect.right, layout.copyButtonRect.bottom, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
+	api.fill_rect_color(layout.copyButtonRect.left, layout.copyButtonRect.top, layout.copyButtonRect.right, layout.copyButtonRect.bottom, undefined, overlay.copyButtonHovered ? options.highlightColor : options.backgroundColor);
+	api.blit_rect(layout.copyButtonRect.left, layout.copyButtonRect.top, layout.copyButtonRect.right, layout.copyButtonRect.bottom, undefined, constants.ERROR_OVERLAY_TEXT_COLOR);
 	const iconX = layout.copyButtonRect.left + (layout.copyButtonRect.right - layout.copyButtonRect.left - COPY_ICON_WIDTH) / 2;
 	const iconY = layout.copyButtonRect.top + (layout.copyButtonRect.bottom - layout.copyButtonRect.top - COPY_ICON_HEIGHT) / 2;
-	api.put_sprite(COPY_ICON_ID, iconX, iconY, undefined, { colorize: BmsxColors[constants.ERROR_OVERLAY_TEXT_COLOR] });
+	api.blit(COPY_ICON_ID, iconX, iconY, undefined, { colorize: BmsxColors[constants.ERROR_OVERLAY_TEXT_COLOR] });
 }
 
 export function findRuntimeErrorOverlayLineAtPosition(overlay: RuntimeErrorOverlay, x: number, y: number): number {

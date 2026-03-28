@@ -2,7 +2,7 @@
  * render_queues.h - Render submission queues
  *
  * Mirrors TypeScript render_queues.ts
- * Sprites use double-buffered machine OAM; mesh/particles still use FeatureQueue.
+ * 2D submissions are rasterized into the live fantasy framebuffer; mesh/particles still use FeatureQueue.
  */
 
 #ifndef BMSX_RENDER_QUEUES_H
@@ -28,31 +28,31 @@ namespace bmsx {
 /* ============================================================================
  * Render Queues Module
  *
- * Global queues for sprite/mesh/particle rendering.
- * Mirrors TypeScript's module-level queues.
+ * 2D submissions write straight into the framebuffer path.
+ * Only mesh and particle submissions stay queued between frames.
  * ============================================================================ */
 
 namespace RenderQueues {
 
-// --- Sprite queue helpers ---
+// --- 2D framebuffer helpers ---
 
 /**
- * Submit a sprite to the queue (resolves image metadata).
+ * Submit one image blit to the framebuffer path.
  */
 void submitSprite(const ImgRenderSubmission& options);
 
 /**
- * Submit a rectangle (filled or outline) using the primitive solid sprite.
+ * Submit a rectangle (filled or outline) to the framebuffer path.
  */
 void submitRectangle(const RectRenderSubmission& options);
 
 /**
- * Submit a polygon outline using the primitive solid sprite.
+ * Submit a polygon outline to the framebuffer path.
  */
 void submitDrawPolygon(const PolyRenderSubmission& options);
 
 /**
- * Submit glyphs for rendering (uses sprite + rect submissions).
+ * Submit glyphs for framebuffer text rendering.
  */
 void submitGlyphs(const GlyphRenderSubmission& options);
 
@@ -83,17 +83,6 @@ void prepareOverlayRenderQueues();
 bool hasPendingBackQueueContent();
 
 /**
- * Begin sprite queue processing using the currently selected queue source.
- * Returns the number of sprites in the active queue.
- */
-i32 beginSpriteQueue();
-
-/**
- * Iterate over all active OAM entries in slot order.
- */
-void forEachOamEntry(const std::function<void(const OamEntry&, size_t)>& fn);
-
-/**
  * Clear all back queues and reset submission counters.
  */
 void clearBackQueues();
@@ -102,25 +91,6 @@ void clearBackQueues();
  * Clear both front and back queues and reset VDP queue state to power-on values.
  */
 void clearAllQueues();
-
-/**
- * Get sprite queue sizes for debugging.
- */
-size_t spriteQueueBackSize();
-size_t spriteQueueFrontSize();
-
-/**
- * Copy render queues into a reusable playback buffer.
- */
-const std::vector<RenderSubmission>& copyRenderQueueForPlayback();
-
-/**
- * Sprite queue debug counts.
- */
-struct QueueDebug { size_t front; size_t back; };
-QueueDebug getSpriteQueueDebug();
-QueueDebug getMeshQueueDebug();
-size_t getQueuedParticleCount();
 
 // --- Mesh queue helpers ---
 
@@ -160,13 +130,13 @@ void setSkyboxTintExposure(const std::array<f32, 3>& tint, f32 exposure = 1.0f);
 void renderGlyphs(f32 x,
 					f32 y,
 					const std::vector<std::string>& lines,
-					std::optional<i32> start,
-					std::optional<i32> end,
+					i32 start,
+					i32 end,
 					f32 z,
 					BFont* font,
-					const std::optional<Color>& color,
+					const Color& color,
 					const std::optional<Color>& backgroundColor,
-					const std::optional<RenderLayer>& layer);
+					RenderLayer layer);
 f32 calculateCenteredBlockX(const std::vector<std::string>& lines, i32 charWidth, i32 blockWidth);
 std::vector<std::string> wrapGlyphs(const std::string& text, i32 maxLineLength);
 

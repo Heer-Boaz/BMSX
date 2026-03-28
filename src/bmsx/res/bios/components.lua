@@ -211,7 +211,7 @@ function spritecomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'spritecomponent'
 	local self = setmetatable(component.new(opts), spritecomponent)
-	self.imgid = opts and opts.imgid or 'none'
+	self.imgid = opts and opts.imgid
 	self.flip = { flip_h = false, flip_v = false }
 	self.colorize = opts and opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
 	self.scale = opts and opts.scale or { x = 1, y = 1 }
@@ -278,7 +278,7 @@ end
 
 local function get_sprite_collision_geometry(sprite)
 	local id = sprite.imgid
-	if id == 'none' then
+	if id == nil then
 		return nil, nil
 	end
 	local image_asset = assets.img[romdir.token(id)]
@@ -827,7 +827,7 @@ function customvisualcomponent:submit_sprite(desc)
 	end
 	customvisual_sprite_options.colorize = desc.colorize
 	customvisual_sprite_options.parallax_weight = desc.parallax_weight
-	put_sprite(desc.imgid, pos.x, pos.y, pos.z, customvisual_sprite_options)
+	blit(desc.imgid, pos.x, pos.y, pos.z, customvisual_sprite_options)
 end
 
 function customvisualcomponent:submit_rect(desc)
@@ -837,19 +837,19 @@ function customvisualcomponent:submit_rect(desc)
 		if type(color) == 'table' then
 			error('customvisualcomponent: stroke rectangle requires palette color index')
 		end
-		put_rect(area.left, area.top, area.right, area.bottom, area.z, color)
+		blit_rect(area.left, area.top, area.right, area.bottom, area.z, color)
 	else
 		if type(color) == 'table' then
-			put_rectfillcolor(area.left, area.top, area.right, area.bottom, area.z, color)
+			fill_rect_color(area.left, area.top, area.right, area.bottom, area.z, color)
 		else
-			put_rectfill(area.left, area.top, area.right, area.bottom, area.z, color)
+			fill_rect(area.left, area.top, area.right, area.bottom, area.z, color)
 		end
 	end
 end
 
 function customvisualcomponent:submit_poly(desc)
 	local thickness = desc.thickness
-	put_poly(desc.points, desc.z, desc.color, thickness)
+	blit_poly(desc.points, desc.z, desc.color, thickness)
 end
 
 function customvisualcomponent:submit_mesh(desc)
@@ -877,7 +877,7 @@ function customvisualcomponent:submit_glyphs(desc)
 	customvisual_glyph_options.align = desc.align
 	customvisual_glyph_options.baseline = desc.baseline
 	customvisual_glyph_options.layer = desc.layer
-	put_glyphs(desc.glyphs, desc.x, desc.y, desc.z, customvisual_glyph_options)
+	blit_glyphs(desc.glyphs, desc.x, desc.y, desc.z, customvisual_glyph_options)
 end
 
 -- inputintentcomponent: declarative input -> state bindings

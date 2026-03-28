@@ -121,7 +121,7 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	rect: {
+	blit_rect: {
 		description: 'Draws a rectangle outline.',
 		parameters: [
 			{ name: 'x0', description: 'Left coordinate in pixels.' },
@@ -133,7 +133,7 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	rectfill: {
+	fill_rect: {
 		description: 'Draws a filled rectangle.',
 		parameters: [
 			{ name: 'x0', description: 'Left coordinate in pixels.' },
@@ -145,7 +145,7 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	rectfill_color: {
+	fill_rect_color: {
 		description: 'Draws a filled rectangle using a raw color value.',
 		parameters: [
 			{ name: 'x0', description: 'Left coordinate in pixels.' },
@@ -158,43 +158,25 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	sprite: {
-		description: 'Draws an image resource at the given position.',
+	blit: {
+		description: 'Blits an image resource at the given position.',
 		parameters: [
 			{ name: 'img_id', description: 'Image asset id (imgid).' },
 			{ name: 'x', description: 'X coordinate in pixels.' },
 			{ name: 'y', description: 'Y coordinate in pixels.' },
 			{ name: 'z', description: 'Z coordinate for ordering.' },
-			{ name: 'options', optional: true, description: 'Optional sprite options (scale: number or {x,y}, flip_h, flip_v, colorize, parallax_weight).' },
+			{ name: 'options', optional: true, description: 'Optional blit options (scale: number or {x,y}, flip_h, flip_v, colorize, parallax_weight, layer).' },
 		],
 		returnType: 'void',
 	},
-	bgmap_begin: {
-		description: 'Begins authoring a retained BGMap layer in the current back buffer.',
+	dma_blit_tiles: {
+		description: 'Blits a flat row-major tile array directly into the framebuffer.',
 		parameters: [
-			{ name: 'layer', description: 'BGMap layer index.' },
-			{ name: 'cols', description: 'Tile columns.' },
-			{ name: 'rows', description: 'Tile rows.' },
-			{ name: 'tile_w', description: 'Tile width in pixels.' },
-			{ name: 'tile_h', description: 'Tile height in pixels.' },
-			{ name: 'origin_x', description: 'Layer origin X in pixels.' },
-			{ name: 'origin_y', description: 'Layer origin Y in pixels.' },
-			{ name: 'z', description: 'Layer Z coordinate.' },
-			{ name: 'options', optional: true, description: 'Optional layer options (scroll_x, scroll_y, layer).' },
+			{ name: 'desc', description: 'Tile blit descriptor: { tiles, cols, rows, tile_w, tile_h, origin_x, origin_y, scroll_x, scroll_y, z, layer }.' },
 		],
 		returnType: 'void',
 	},
-	bgmap_tile: {
-		description: 'Writes one tile into the current BGMap back layer.',
-		parameters: [
-			{ name: 'layer', description: 'BGMap layer index.' },
-			{ name: 'col', description: 'Tile column.' },
-			{ name: 'row', description: 'Tile row.' },
-			{ name: 'img_id', description: 'Tile image asset id.' },
-		],
-		returnType: 'void',
-	},
-	poly: {
+	blit_poly: {
 		description: 'Draws a polygon/line strip.',
 		parameters: [
 			{ name: 'points', description: 'Polygon points array.' },
@@ -202,6 +184,17 @@ export const API_METHOD_METADATA = {
 			{ name: 'colorvalue', description: 'Palette index (number) or a color object.' },
 			{ name: 'thickness', optional: true, description: 'Optional line thickness.' },
 			{ name: 'layer', optional: true, description: 'Optional render layer.' },
+		],
+		returnType: 'void',
+	},
+	blit_glyphs: {
+		description: 'Blits one line or an array of lines using an explicit font and glyph options.',
+		parameters: [
+			{ name: 'glyphs', description: 'String or array of strings to blit.' },
+			{ name: 'x', description: 'X coordinate in pixels.' },
+			{ name: 'y', description: 'Y coordinate in pixels.' },
+			{ name: 'z', description: 'Z coordinate for ordering.' },
+			{ name: 'options', description: 'Glyph options table: { font, color?, background_color?, wrap_chars?, center_block_width?, glyph_start?, glyph_end?, align?, baseline?, layer? }.' },
 		],
 		returnType: 'void',
 	},
@@ -275,10 +268,10 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	write: {
-		description: 'Writes text to the screen. If x/y are omitted, uses the current text cursor and auto-advances.',
+	blit_text: {
+		description: 'Blits text to the screen. If x/y are omitted, uses the current text cursor and auto-advances.',
 		parameters: [
-			{ name: 'text', description: 'Text to write.' },
+			{ name: 'text', description: 'Text to blit.' },
 			{ name: 'x', optional: true, description: 'Optional X coordinate in pixels.' },
 			{ name: 'y', optional: true, description: 'Optional Y coordinate in pixels.' },
 			{ name: 'z', optional: true, description: 'Optional Z coordinate for ordering.' },
@@ -287,10 +280,10 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	write_color: {
-		description: 'Writes text to the screen using a raw color value. If x/y are omitted, uses the current text cursor and auto-advances.',
+	blit_text_color: {
+		description: 'Blits text to the screen using a raw color value. If x/y are omitted, uses the current text cursor and auto-advances.',
 		parameters: [
-			{ name: 'text', description: 'Text to write.' },
+			{ name: 'text', description: 'Text to blit.' },
 			{ name: 'x', optional: true, description: 'Optional X coordinate in pixels.' },
 			{ name: 'y', optional: true, description: 'Optional Y coordinate in pixels.' },
 			{ name: 'z', optional: true, description: 'Optional Z coordinate for ordering.' },
@@ -298,10 +291,10 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	write_with_font: {
-		description: 'Writes text to the screen using a specific font instance.',
+	blit_text_with_font: {
+		description: 'Blits text to the screen using a specific font instance.',
 		parameters: [
-			{ name: 'text', description: 'Text to write.' },
+			{ name: 'text', description: 'Text to blit.' },
 			{ name: 'x', optional: true, description: 'Optional X coordinate in pixels.' },
 			{ name: 'y', optional: true, description: 'Optional Y coordinate in pixels.' },
 			{ name: 'z', optional: true, description: 'Optional Z coordinate for ordering.' },
@@ -316,7 +309,7 @@ export const API_METHOD_METADATA = {
 			{ name: 'definition', description: 'Font definition table: { glyphs = { ["A"]="imgid", ... }, advance_padding? = number }' },
 		],
 		returnType: 'Font',
-		returnDescription: 'Native font handle usable in put_glyphs/write options.',
+		returnDescription: 'Native font handle usable in blit_glyphs/blit_text options.',
 	},
 	action_triggered: {
 		description: 'Checks whether an input action definition is triggered for a given player.',

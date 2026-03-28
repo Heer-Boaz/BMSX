@@ -32,12 +32,12 @@ local function draw_usage_bar(label, used, total, x, y, z)
 	local fill_w = math.floor(bar_w * ratio)
 	local pct = usage_percent(used, total)
 
-	write(label, x, y - 1, z + 2, colors.text, ui_options)
-	put_rectfillcolor(bar_x, y + 1, bar_x + bar_w, y + 1 + bar_h, z, colors.text_dim, ui_options)
+	blit_text(label, x, y - 1, z + 2, colors.text, ui_options)
+	fill_rect_color(bar_x, y + 1, bar_x + bar_w, y + 1 + bar_h, z, colors.text_dim, ui_options)
 	if fill_w > 0 then
-		put_rectfillcolor(bar_x, y + 1, bar_x + fill_w, y + 1 + bar_h, z + 1, usage_color(ratio), ui_options)
+		fill_rect_color(bar_x, y + 1, bar_x + fill_w, y + 1 + bar_h, z + 1, usage_color(ratio), ui_options)
 	end
-	write(pct .. '%', bar_x + bar_w + 4, y - 1, z + 2, colors.text, ui_options)
+	blit_text(pct .. '%', bar_x + bar_w + 4, y - 1, z + 2, colors.text, ui_options)
 end
 
 function gizmo.draw()
@@ -53,7 +53,7 @@ function gizmo.draw()
 	local row_h = 10
 
 	ui_options.layer = 'ide'
-	put_rectfillcolor(x - 4, y - 4, x - 4 + panel_w, y - 4 + panel_h, z, colors.panel, ui_options)
+	fill_rect_color(x - 4, y - 4, x - 4 + panel_w, y - 4 + panel_h, z, colors.panel, ui_options)
 	draw_usage_bar('CPU', sys_cpu_active_cycles_used(), sys_cpu_active_cycles_granted(), x, y, z + 1)
 	draw_usage_bar('RAM', sys_ram_used(), sys_ram_size, x, y + row_h, z + 1)
 	draw_usage_bar('VRAM', sys_vram_used(), sys_vram_size, x, y + (row_h * 2), z + 1)

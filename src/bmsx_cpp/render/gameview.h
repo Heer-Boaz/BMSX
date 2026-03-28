@@ -47,7 +47,7 @@ struct AtmosphereParams {
  *
  * Mirrors TypeScript GameView class structure.
  * The renderer.submit functions route to the appropriate pipeline
- * (e.g., SpritesPipeline, MeshPipeline, etc.).
+ * (e.g., framebuffer 2D, MeshPipeline, etc.).
  *
  * For libretro, viewportSize IS the framebuffer size.
  * ============================================================================ */

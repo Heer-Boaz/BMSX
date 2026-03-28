@@ -54,129 +54,17 @@ enum class RenderLayer {
 	IDE     // Editor/debug overlay
 };
 
-enum class OamLayer : u8 {
+enum class Layer2D : u8 {
 	World = 0,
 	UI = 1,
 	IDE = 2,
 };
 
-constexpr u32 OAM_FLAG_ENABLED = 1u;
-constexpr u32 PAT_FLAG_ENABLED = 1u;
-constexpr u32 BGMAP_LAYER_FLAG_ENABLED = 1u;
-constexpr u32 BGMAP_TILE_FLAG_ENABLED = 1u;
-constexpr i32 OAM_ENTRY_WORD_ATLAS_ID = 0;
-constexpr i32 OAM_ENTRY_WORD_FLAGS = 1;
-constexpr i32 OAM_ENTRY_WORD_ASSET_HANDLE = 2;
-constexpr i32 OAM_ENTRY_WORD_LAYER = 3;
-constexpr i32 OAM_ENTRY_WORD_X = 4;
-constexpr i32 OAM_ENTRY_WORD_Y = 5;
-constexpr i32 OAM_ENTRY_WORD_Z = 6;
-constexpr i32 OAM_ENTRY_WORD_W = 7;
-constexpr i32 OAM_ENTRY_WORD_H = 8;
-constexpr i32 OAM_ENTRY_WORD_U0 = 9;
-constexpr i32 OAM_ENTRY_WORD_V0 = 10;
-constexpr i32 OAM_ENTRY_WORD_U1 = 11;
-constexpr i32 OAM_ENTRY_WORD_V1 = 12;
-constexpr i32 OAM_ENTRY_WORD_R = 13;
-constexpr i32 OAM_ENTRY_WORD_G = 14;
-constexpr i32 OAM_ENTRY_WORD_B = 15;
-constexpr i32 OAM_ENTRY_WORD_A = 16;
-constexpr i32 OAM_ENTRY_WORD_PARALLAX_WEIGHT = 17;
-constexpr i32 OAM_ENTRY_WORD_COUNT = 18;
-constexpr i32 OAM_ENTRY_BYTE_SIZE = OAM_ENTRY_WORD_COUNT * 4;
-constexpr i32 OAM_SPRITE_SLOT_COUNT = 5000;
-
-inline OamLayer renderLayerToOamLayer(const std::optional<RenderLayer>& layer) {
-	if (layer && *layer == RenderLayer::UI) return OamLayer::UI;
-	if (layer && *layer == RenderLayer::IDE) return OamLayer::IDE;
-	return OamLayer::World;
+inline Layer2D renderLayerTo2dLayer(RenderLayer layer) {
+	if (layer == RenderLayer::UI) return Layer2D::UI;
+	if (layer == RenderLayer::IDE) return Layer2D::IDE;
+	return Layer2D::World;
 }
-
-inline RenderLayer oamLayerToRenderLayer(OamLayer layer) {
-	if (layer == OamLayer::IDE) return RenderLayer::IDE;
-	if (layer == OamLayer::UI) return RenderLayer::UI;
-	return RenderLayer::World;
-}
-
-struct OamEntry {
-	i32 atlasId = 0;
-	u32 flags = 0;
-	u32 assetHandle = 0;
-	f32 x = 0.0f;
-	f32 y = 0.0f;
-	f32 z = 0.0f;
-	f32 w = 0.0f;
-	f32 h = 0.0f;
-	f32 u0 = 0.0f;
-	f32 v0 = 0.0f;
-	f32 u1 = 0.0f;
-	f32 v1 = 0.0f;
-	f32 r = 1.0f;
-	f32 g = 1.0f;
-	f32 b = 1.0f;
-	f32 a = 1.0f;
-	OamLayer layer = OamLayer::World;
-	f32 parallaxWeight = 0.0f;
-};
-
-struct OamBuffer {
-	std::array<OamEntry, OAM_SPRITE_SLOT_COUNT> entries;
-	size_t activeCount = 0;
-};
-
-struct OamFrontBackState {
-	OamBuffer* front = nullptr;
-	OamBuffer* back = nullptr;
-};
-
-struct PatHeader {
-	u32 flags = 0;
-	u32 count = 0;
-};
-
-struct PatEntry {
-	i32 atlasId = 0;
-	u32 flags = 0;
-	u32 assetHandle = 0;
-	OamLayer layer = OamLayer::World;
-	f32 x = 0.0f;
-	f32 y = 0.0f;
-	f32 z = 0.0f;
-	f32 glyphW = 0.0f;
-	f32 glyphH = 0.0f;
-	f32 bgW = 0.0f;
-	f32 bgH = 0.0f;
-	f32 u0 = 0.0f;
-	f32 v0 = 0.0f;
-	f32 u1 = 0.0f;
-	f32 v1 = 0.0f;
-	u32 fgColor = 0xffffffffu;
-	u32 bgColor = 0x00000000u;
-};
-
-struct BgMapHeader {
-	u32 flags = 0;
-	OamLayer layer = OamLayer::World;
-	u32 cols = 0;
-	u32 rows = 0;
-	u32 tileW = 0;
-	u32 tileH = 0;
-	f32 originX = 0.0f;
-	f32 originY = 0.0f;
-	f32 scrollX = 0.0f;
-	f32 scrollY = 0.0f;
-	f32 z = 0.0f;
-};
-
-struct BgMapEntry {
-	i32 atlasId = 0;
-	u32 flags = 0;
-	u32 assetHandle = 0;
-	f32 u0 = 0.0f;
-	f32 v0 = 0.0f;
-	f32 u1 = 0.0f;
-	f32 v1 = 0.0f;
-};
 
 /* ============================================================================
  * Rect bounds (for rectangles and hitboxes)

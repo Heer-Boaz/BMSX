@@ -614,7 +614,7 @@ end
 
 function fighter:draw_hit_freeze()
 	if self.hit_freeze > 0 then
-		put_rectfillcolor(math.floor(self.x), math.floor(self.y - 4), math.floor(self.x + self.width), math.floor(self.y - 2), constants.z.hud, constants.palette.hurt)
+		fill_rect_color(math.floor(self.x), math.floor(self.y - 4), math.floor(self.x + self.width), math.floor(self.y - 2), constants.z.hud, constants.palette.hurt)
 	end
 end
 
@@ -635,14 +635,14 @@ function fighter:draw_fighter()
 	local y1 = math.floor(self.y)
 	local x2 = math.floor(self.x + self.width)
 	local y2 = math.floor(self.y + self.height)
-	put_rectfillcolor(x1, y1, x2, y2, constants.z.fighter, color)
+	fill_rect_color(x1, y1, x2, y2, constants.z.fighter, color)
 
 	if self.state == state.punch_normal or self.state == state.kick or self.state == state.jump_kick or self.state == state.uppercut_normal or self.state == state.cyclone_kick or self.state == state.uppercut_sudden then
 		local range = constants.attack.range_x
 		if self.facing == 1 then
-			put_rectfillcolor(x2, y1 + 6, x2 + range, y1 + 10, constants.z.fighter + 1, constants.palette.metal)
+			fill_rect_color(x2, y1 + 6, x2 + range, y1 + 10, constants.z.fighter + 1, constants.palette.metal)
 		else
-			put_rectfillcolor(x1 - range, y1 + 6, x1, y1 + 10, constants.z.fighter + 1, constants.palette.metal)
+			fill_rect_color(x1 - range, y1 + 6, x1, y1 + 10, constants.z.fighter + 1, constants.palette.metal)
 		end
 	end
 end

@@ -480,7 +480,7 @@ function castle:begin_seal_dissolution()
 	set_tag_flag(self, castle_tags.seal_broken, false)
 	room.room_dissolve_step = 0
 	room.seal_dissolve_step = 0
-	room:rebuild_room_bgmaps()
+	room:rebuild_room_tiles()
 	set_tag_flag(self, castle_tags.daemon_fight, false)
 	self:apply_seal_timeline_frame(1)
 	self:emit_room_state_changed()
@@ -514,7 +514,7 @@ function castle:apply_seal_timeline_frame(frame)
 	end
 	if room.room_dissolve_step ~= room_dissolve_step then
 		room.room_dissolve_step = room_dissolve_step
-		room:rebuild_room_bgmaps()
+		room:rebuild_room_tiles()
 	end
 	if room.seal_dissolve_step ~= seal_dissolve_step then
 		room.seal_dissolve_step = seal_dissolve_step

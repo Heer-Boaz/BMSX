@@ -750,7 +750,7 @@ function textrendersystem:update()
 		text_render_options.align = tc.align
 		text_render_options.baseline = tc.baseline
 		text_render_options.layer = tc.layer
-		put_glyphs(tc.text, x, y, z, text_render_options)
+		blit_glyphs(tc.text, x, y, z, text_render_options)
 		::continue_text_render::
 	end
 end
@@ -788,7 +788,7 @@ function spriterendersystem:update()
 		sprite_render_options.flip_v = sc.flip.flip_v
 		sprite_render_options.colorize = sc.colorize
 		sprite_render_options.parallax_weight = sc.parallax_weight
-		put_sprite(sc.imgid, x, y, z, sprite_render_options)
+		blit(sc.imgid, x, y, z, sprite_render_options)
 		::continue_sprite_render::
 	end
 end

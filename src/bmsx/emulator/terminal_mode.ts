@@ -18,7 +18,7 @@ import {
 } from './ide/inline_text_field';
 import type { InlineInputOptions, TextField, CursorScreenInfo, CompletionContext, EditContext, LuaCompletionItem } from './ide/types';
 import { COLOR_COMPLETION_BACKGROUND, COLOR_COMPLETION_BORDER, COLOR_COMPLETION_HIGHLIGHT, COLOR_COMPLETION_HIGHLIGHT_TEXT, COLOR_COMPLETION_PREVIEW_TEXT, COLOR_COMPLETION_TEXT, TAB_SPACES } from './ide/constants';
-import { RenderFacade } from './render_facade';
+import { OverlayRenderer } from './overlay_renderer';
 import { renderInlineCaret, type CaretDrawOps } from './ide/render/render_caret';
 import {
 	isKeyJustPressed as isKeyJustPressed,
@@ -288,7 +288,7 @@ export class TerminalMode {
 	private cachedLinesVersion = -1;
 	private promptPrefix = '> ';
 	private cursorScreenInfo: CursorScreenInfo = null;
-	private currentRenderer: RenderFacade = null;
+	private currentRenderer: OverlayRenderer = null;
 	constructor(private readonly runtime: Runtime) {
 		this.terminalCommands = new TerminalCommandDispatcher(this.runtime);
 		this.setPromptPrefix(this.terminalCommands.getPrompt());
@@ -1518,7 +1518,7 @@ export class TerminalMode {
 		return `${name.slice(0, cellWidth - 3)}...`;
 	}
 
-	public draw(renderer: RenderFacade, surface: Viewport): void {
+	public draw(renderer: OverlayRenderer, surface: Viewport): void {
 		this.currentRenderer = renderer;
 		this.lastSurfaceWidth = surface.width;
 		this.lastSurfaceHeight = surface.height;
@@ -1920,7 +1920,7 @@ export class TerminalMode {
 		return Math.max(0, wrappedLines.length - pageLines);
 	}
 
-	private drawPagerOverlay(renderer: RenderFacade, surface: Viewport, lineHeight: number, uppercaseDisplay: boolean): void {
+	private drawPagerOverlay(renderer: OverlayRenderer, surface: Viewport, lineHeight: number, uppercaseDisplay: boolean): void {
 		if (!this.pagerActive) {
 			return;
 		}
@@ -2195,7 +2195,7 @@ export class TerminalMode {
 	}
 
 	// Replace single-line drawInputField with multi-line aware renderer
-	private drawMultilineInput(renderer: RenderFacade, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
+	private drawMultilineInput(renderer: OverlayRenderer, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
 		const inputColor = BmsxColors[OUTPUT_COLORS.stdout];
 		const sel = selectionRange(this.field);
 		const cursorIndex = this.cursorOffset();
@@ -2313,7 +2313,7 @@ export class TerminalMode {
 		}
 	}
 
-	private drawGlyphBackgrounds(renderer: RenderFacade, text: string, originX: number, originY: number, uppercase: boolean): void {
+	private drawGlyphBackgrounds(renderer: OverlayRenderer, text: string, originX: number, originY: number, uppercase: boolean): void {
 		const width = this.measureDisplayText(text, uppercase);
 		if (width <= 0) {
 			return;
@@ -2330,7 +2330,7 @@ export class TerminalMode {
 		});
 	}
 
-	private drawGlyphRun(renderer: RenderFacade, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {
+	private drawGlyphRun(renderer: OverlayRenderer, text: string, originX: number, originY: number, tint: color, uppercase: boolean): void {
 		const display = this.toRenderedGlyphText(text, uppercase);
 		if (!/[^\s]/.test(display)) {
 			return;
