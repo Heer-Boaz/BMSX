@@ -5,6 +5,7 @@ export type BufferBarCell = {
 	bgColorTag: string;
 	region: BufferRegion | null;
 	backgroundRegion: BufferRegion | null;
+	visibleRegions: BufferRegion[];
 };
 export type BufferLegendEntry = {
 	label: string;
@@ -92,24 +93,30 @@ function normalizeBufferRegions(unfilteredRegions: BufferRegion[]): BufferRegion
 	return mergedRegions;
 }
 
-function buildLegendEntries(cells: BufferBarCell[], regions: BufferRegion[]): BufferLegendEntry[] {
-	const orderedRegions: BufferRegion[] = [];
-	const seenLabels = new Set<string>();
-	for (const cell of cells) {
-		for (const region of [cell.region, cell.backgroundRegion]) {
-			if (region && !seenLabels.has(region.label)) {
-				seenLabels.add(region.label);
-				orderedRegions.push(region);
-			}
-		}
-	}
+function sameRegion(left: BufferRegion, right: BufferRegion): boolean {
+	return left.start === right.start
+		&& left.end === right.end
+		&& left.label === right.label
+		&& left.colorTag === right.colorTag;
+}
+
+function buildLegendEntries(regions: BufferRegion[]): BufferLegendEntry[] {
+	const earliestRegionByLabel = new Map<string, BufferRegion>();
 	for (const region of regions) {
-		if (!seenLabels.has(region.label)) {
-			seenLabels.add(region.label);
-			orderedRegions.push(region);
+		const existing = earliestRegionByLabel.get(region.label);
+		if (!existing || region.start < existing.start || (region.start === existing.start && region.end < existing.end)) {
+			earliestRegionByLabel.set(region.label, region);
 		}
 	}
-	return orderedRegions.map(region => ({
+	return Array.from(earliestRegionByLabel.values()).sort((left, right) => {
+		if (left.start !== right.start) {
+			return left.start - right.start;
+		}
+		if (left.end !== right.end) {
+			return left.end - right.end;
+		}
+		return left.label < right.label ? -1 : left.label > right.label ? 1 : 0;
+	}).map(region => ({
 		label: region.label,
 		colorTag: region.colorTag,
 		region,
@@ -171,6 +178,7 @@ export function buildBufferBarModel(
 		bgColorTag: '',
 		region: null,
 		backgroundRegion: null,
+		visibleRegions: [],
 	}));
 
 	const toBackground = (colorTag: string) => {
@@ -232,6 +240,7 @@ export function buildBufferBarModel(
 			cells[cell].ch = '█';
 			cells[cell].fgColorTag = fgRegion.colorTag;
 			cells[cell].region = fgRegion;
+			cells[cell].visibleRegions = [fgRegion];
 			continue;
 		}
 
@@ -244,6 +253,7 @@ export function buildBufferBarModel(
 				cells[cell].ch = '█';
 				cells[cell].fgColorTag = fgRegion.colorTag;
 				cells[cell].region = fgRegion;
+				cells[cell].visibleRegions = [fgRegion];
 				continue;
 			}
 			const glyph = glyphForCoverage(leftGap);
@@ -254,6 +264,7 @@ export function buildBufferBarModel(
 				cells[cell].bgColorTag = toBackground(fgRegion.colorTag);
 				cells[cell].region = fgRegion;
 				cells[cell].backgroundRegion = bgRegion;
+				cells[cell].visibleRegions = bgRegion ? [bgRegion, fgRegion] : [fgRegion];
 			}
 		} else {
 			const glyph = glyphForCoverage(Math.max(coverage, SLIVER_THRESHOLD));
@@ -263,10 +274,41 @@ export function buildBufferBarModel(
 				cells[cell].bgColorTag = bgRegion ? toBackground(bgRegion.colorTag) : '';
 				cells[cell].region = fgRegion;
 				cells[cell].backgroundRegion = bgRegion;
+				cells[cell].visibleRegions = bgRegion ? [fgRegion, bgRegion] : [fgRegion];
 			}
 		}
 	}
-	const legendEntries = buildLegendEntries(cells, regions);
+	for (const region of regions) {
+		let represented = false;
+		for (const cell of cells) {
+			if (cell.visibleRegions.some(visibleRegion => sameRegion(visibleRegion, region))) {
+				represented = true;
+				break;
+			}
+		}
+		if (represented) {
+			continue;
+		}
+		const regionMid = (region.start + region.end) * 0.5;
+		const cellIndex = Math.max(0, Math.min(barLength - 1, Math.floor(regionMid / cellSize)));
+		const cell = cells[cellIndex];
+		if (cell.region === null) {
+			cell.ch = LEFT_BLOCKS[0];
+			cell.fgColorTag = region.colorTag;
+			cell.region = region;
+		}
+		cell.visibleRegions.push(region);
+		cell.visibleRegions.sort((left, right) => {
+			if (left.start !== right.start) {
+				return left.start - right.start;
+			}
+			if (left.end !== right.end) {
+				return left.end - right.end;
+			}
+			return left.label < right.label ? -1 : left.label > right.label ? 1 : 0;
+		});
+	}
+	const legendEntries = buildLegendEntries(regions);
 	const legendRows = buildLegendRows(legendEntries, legendWrapWidth);
 	return {
 		cells,
