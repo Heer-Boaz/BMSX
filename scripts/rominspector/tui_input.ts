@@ -11,8 +11,6 @@ export type TuiMouseEvent = {
 	y: number;
 	subX: number;
 	subY: number;
-	pixelX?: number;
-	pixelY?: number;
 	button: 'left' | 'middle' | 'right' | 'wheelup' | 'wheeldown' | 'none';
 	action: 'down' | 'up' | 'drag' | 'move' | 'scroll';
 	ctrl: boolean;
@@ -114,15 +112,6 @@ export class TuiInput {
 					return;
 				}
 				if (x10MouseResult) {
-					continue;
-				}
-			}
-			if (this.pending.startsWith('\x1b[')) {
-				const urxvtMouseResult = this.tryParseUrxvtMouse();
-				if (urxvtMouseResult === 'wait') {
-					return;
-				}
-				if (urxvtMouseResult) {
 					continue;
 				}
 			}
@@ -279,33 +268,6 @@ export class TuiInput {
 		return true;
 	}
 
-	private tryParseUrxvtMouse(): boolean | 'wait' {
-		const match = this.pending.match(/^\x1b\[(\d+);(\d+);(\d+)M/);
-		if (!match) {
-			return /^\x1b\[[0-9;]*$/.test(this.pending) ? 'wait' : false;
-		}
-		this.pending = this.pending.slice(match[0].length);
-		const code = Number.parseInt(match[1], 10);
-		const rawX = Number.parseInt(match[2], 10) - 1;
-		const rawY = Number.parseInt(match[3], 10) - 1;
-		const shift = (code & 4) !== 0;
-		const meta = (code & 8) !== 0;
-		const ctrl = (code & 16) !== 0;
-		const motion = (code & 32) !== 0;
-		const wheel = (code & 64) !== 0;
-		const position = this.resolveMousePosition(rawX, rawY);
-		if (wheel) {
-			this.pushMouse(position, (code & 1) === 0 ? 'wheelup' : 'wheeldown', 'scroll', ctrl, shift, meta);
-			return true;
-		}
-		const buttonIndex = code & 3;
-		const isRelease = buttonIndex === 3 && !motion;
-		const button = isRelease ? 'none' : buttonIndex === 0 ? 'left' : buttonIndex === 1 ? 'middle' : buttonIndex === 2 ? 'right' : 'none';
-		const action = isRelease ? 'up' : motion ? (button === 'none' ? 'move' : 'drag') : 'down';
-		this.pushMouse(position, button, action, ctrl, shift, meta);
-		return true;
-	}
-
 	private tryParseCsiKey(): boolean | 'wait' {
 		if (/^\x1b\[[0-9;]*$/.test(this.pending)) {
 			return 'wait';
@@ -435,17 +397,17 @@ export class TuiInput {
 
 	private resolveMousePosition(rawX: number, rawY: number) {
 		if (!this.pixelMouseEnabled) {
-			return { x: rawX, y: rawY, subX: 0.5, subY: 0.5, pixelX: undefined, pixelY: undefined };
+			return { x: rawX, y: rawY, subX: 0.5, subY: 0.5 };
 		}
 		const x = Math.floor(rawX / this.cellPixelWidth);
 		const y = Math.floor(rawY / this.cellPixelHeight);
 		const subX = (rawX - x * this.cellPixelWidth) / this.cellPixelWidth;
 		const subY = (rawY - y * this.cellPixelHeight) / this.cellPixelHeight;
-		return { x, y, subX, subY, pixelX: rawX, pixelY: rawY };
+		return { x, y, subX, subY };
 	}
 
 	private pushMouse(
-		position: { x: number; y: number; subX: number; subY: number; pixelX?: number; pixelY?: number },
+		position: { x: number; y: number; subX: number; subY: number },
 		button: TuiMouseEvent['button'],
 		action: TuiMouseEvent['action'],
 		ctrl: boolean,
@@ -458,8 +420,6 @@ export class TuiInput {
 			y: position.y,
 			subX: position.subX,
 			subY: position.subY,
-			pixelX: position.pixelX,
-			pixelY: position.pixelY,
 			button,
 			action,
 			ctrl,

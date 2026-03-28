@@ -34,6 +34,7 @@ const STYLE_SCROLL_THUMB: TuiStyle = { fg: TUI_COLORS.black, bg: TUI_COLORS.yell
 const STYLE_SCROLL_TRACK_HOVER: TuiStyle = { fg: TUI_COLORS.white, bg: TUI_COLORS.panel2 };
 const STYLE_SCROLL_THUMB_HOVER: TuiStyle = { fg: TUI_COLORS.black, bg: TUI_COLORS.cyan };
 const BUFFER_LINE_PREFIX = 'Buffer: ';
+const MODAL_TAB_LABELS = ['Preview', 'Details', 'Hex'] as const;
 
 type NativeUiContext = {
 	romfile: string;
@@ -104,8 +105,28 @@ type UiLayout = {
 	modal: ModalLayout | null;
 };
 
-function assetOffset(asset: RomAsset): number {
-	return asset.start ?? asset.metabuffer_start ?? Number.MAX_SAFE_INTEGER;
+function bufferRegionKey(region: BufferRegion): string {
+	return `${region.label}:${region.start}:${region.end}`;
+}
+
+function assetLocation(asset: RomAsset): number | undefined {
+	if (asset.start !== undefined) {
+		return asset.start;
+	}
+	if (asset.metabuffer_start !== undefined) {
+		return asset.metabuffer_start;
+	}
+	return undefined;
+}
+
+function assetSourcePath(asset: RomAsset): string {
+	if (asset.source_path !== undefined) {
+		return asset.source_path;
+	}
+	if (asset.normalized_source_path !== undefined) {
+		return asset.normalized_source_path;
+	}
+	return '';
 }
 
 function compareAssets(left: RomAsset, right: RomAsset, sortKey: AssetSortKey): number {
@@ -120,7 +141,18 @@ function compareAssets(left: RomAsset, right: RomAsset, sortKey: AssetSortKey): 
 		const sizeCompare = assetSize(left) - assetSize(right);
 		return sizeCompare !== 0 ? sizeCompare : ASSET_TEXT_COLLATOR.compare(left.resid, right.resid);
 	}
-	const offsetCompare = assetOffset(left) - assetOffset(right);
+	const leftOffset = assetLocation(left);
+	const rightOffset = assetLocation(right);
+	if (leftOffset === undefined) {
+		if (rightOffset === undefined) {
+			return ASSET_TEXT_COLLATOR.compare(left.resid, right.resid);
+		}
+		return 1;
+	}
+	if (rightOffset === undefined) {
+		return -1;
+	}
+	const offsetCompare = leftOffset - rightOffset;
 	return offsetCompare !== 0 ? offsetCompare : ASSET_TEXT_COLLATOR.compare(left.resid, right.resid);
 }
 
@@ -147,7 +179,10 @@ function getFilteredAssets(
 			return false;
 		}
 		if (bufferFilter?.kind === 'label') {
-			const labelRegions = regionsByLabel.get(bufferFilter.label) ?? [];
+			const labelRegions = regionsByLabel.get(bufferFilter.label);
+			if (!labelRegions) {
+				return false;
+			}
 			let matchesLabel = false;
 			for (const region of labelRegions) {
 				if (assetIntersectsRegion(asset, region)) {
@@ -256,13 +291,13 @@ function assetRanges(asset: RomAsset): Array<[number, number]> {
 	if (typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number' && asset.metabuffer_end > asset.metabuffer_start) {
 		ranges.push([asset.metabuffer_start, asset.metabuffer_end]);
 	}
-	const compiledStart = (asset as any).compiled_start;
-	const compiledEnd = (asset as any).compiled_end;
+	const compiledStart = asset.compiled_start;
+	const compiledEnd = asset.compiled_end;
 	if (typeof compiledStart === 'number' && typeof compiledEnd === 'number' && compiledEnd > compiledStart) {
 		ranges.push([compiledStart, compiledEnd]);
 	}
-	const textureStart = (asset as any).texture_start;
-	const textureEnd = (asset as any).texture_end;
+	const textureStart = asset.texture_start;
+	const textureEnd = asset.texture_end;
 	if (typeof textureStart === 'number' && typeof textureEnd === 'number' && textureEnd > textureStart) {
 		ranges.push([textureStart, textureEnd]);
 	}
@@ -622,6 +657,19 @@ function makeRegionColorTag(label: string): string {
 	}
 }
 
+function totalSummarySegments(ctx: NativeUiContext, metrics: SummaryMetrics): string[] {
+	const pct = (value: number) => ((value / metrics.totalSize) * 100).toFixed(1);
+	return [
+		`Total: ${ctx.formatByteSize(metrics.totalSize)}`,
+		`Images: ${ctx.formatByteSize(metrics.imageSize)} (${pct(metrics.imageSize)}%)`,
+		`Audio: ${ctx.formatByteSize(metrics.audioSize)} (${pct(metrics.audioSize)}%)`,
+		`Data: ${ctx.formatByteSize(metrics.dataSize)} (${pct(metrics.dataSize)}%)`,
+		`Models: ${ctx.formatByteSize(metrics.modelSize)} (${pct(metrics.modelSize)}%)`,
+		`Atlas: ${ctx.formatByteSize(metrics.atlasSize)} (${pct(metrics.atlasSize)}%)`,
+		`Metadata: ${ctx.formatByteSize(metrics.metadataSize)} (${pct(metrics.metadataSize)}%)`,
+	];
+}
+
 function pushSummaryRegion(regions: BufferRegion[], start: number | undefined, end: number | undefined, label: string): void {
 	if (start === undefined || end === undefined) {
 		return;
@@ -666,9 +714,9 @@ function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 		}
 		const label = makeRegionLabel(asset);
 		pushSummaryRegion(metrics.regions, asset.start, asset.end, label);
-		pushSummaryRegion(metrics.regions, (asset as any).compiled_start, (asset as any).compiled_end, label);
+		pushSummaryRegion(metrics.regions, asset.compiled_start, asset.compiled_end, label);
 		pushSummaryRegion(metrics.regions, asset.metabuffer_start, asset.metabuffer_end, label);
-		pushSummaryRegion(metrics.regions, (asset as any).texture_start, (asset as any).texture_end, 'texture');
+		pushSummaryRegion(metrics.regions, asset.texture_start, asset.texture_end, 'texture');
 	}
 	if (header.manifestLength > 0) {
 		pushSummaryRegion(metrics.regions, header.manifestOffset, header.manifestOffset + header.manifestLength, 'manifest');
@@ -719,6 +767,231 @@ function scrollTopFromThumb(rect: Rect, thumbHeight: number, maxTop: number, thu
 	return Math.round(maxTop * ratio);
 }
 
+function scrollDelta(button: TuiMouseEvent['button']): number {
+	return button === 'wheelup' ? -3 : 3;
+}
+
+function hoveredBarLabels(hoveredCell: BufferBarCell | null, hoveredRegion: BufferRegion | null, hoveredLegendEntry: BufferLegendEntry | null): string[] {
+	if (hoveredLegendEntry || hoveredRegion || !hoveredCell) {
+		return [];
+	}
+	return cellHitLabels(hoveredCell);
+}
+
+function hoveredLegendLabels(hoveredCell: BufferBarCell | null, hoveredRegion: BufferRegion | null, hoveredLegendEntry: BufferLegendEntry | null): string[] {
+	if (hoveredLegendEntry) {
+		return [hoveredLegendEntry.label];
+	}
+	if (hoveredRegion) {
+		return [hoveredRegion.label];
+	}
+	if (!hoveredCell) {
+		return [];
+	}
+	return cellHitLabels(hoveredCell);
+}
+
+function drawSummaryBar(
+	screen: TuiScreen,
+	summaryView: SummaryView,
+	hoveredCell: BufferBarCell | null,
+	hoveredBufferRegion: BufferRegion | null,
+	hoveredLegendEntry: BufferLegendEntry | null,
+	bufferFilter: BufferFilter | null,
+): void {
+	const hoveredLabels = hoveredBarLabels(hoveredCell, hoveredBufferRegion, hoveredLegendEntry);
+	const hasSelection = bufferFilter !== null;
+	screen.fillRect(0, 1, summaryView.barRect.x + summaryView.barRect.width + 1, 1, STYLE_NORMAL);
+	screen.writeText(0, 1, `${BUFFER_LINE_PREFIX}[`, STYLE_NORMAL);
+	for (let cellIndex = 0; cellIndex < summaryView.barModel.cells.length; cellIndex += 1) {
+		const cell = summaryView.barModel.cells[cellIndex];
+		const hovered = cell.visibleRegions.some(region => hoveredLabels.includes(region.label));
+		const selected = bufferFilterMatchesCell(bufferFilter, cell);
+		const exactHover = hoveredBufferRegion && getHitRegionEntry(cell, hoveredBufferRegion) ? hoveredBufferRegion : null;
+		const hoveredLabel = !exactHover && hoveredLegendEntry && getHitLabelEntry(cell, hoveredLegendEntry.label) ? hoveredLegendEntry.label : null;
+		const exactSelected = !exactHover && !hoveredLabel && bufferFilter?.kind === 'region' && getHitRegionEntry(cell, bufferFilter.region) ? bufferFilter.region : null;
+		const selectedLabelHit = !exactHover && !hoveredLabel && !exactSelected && bufferFilter?.kind === 'label' && getHitLabelEntry(cell, bufferFilter.label) ? bufferFilter.label : null;
+		const focusedCell = exactHover
+			? focusedBufferBarCell(cell, exactHover, 'hover', selected, hasSelection)
+			: hoveredLabel
+				? focusedBufferBarCellForLabel(cell, hoveredLabel, 'hover', selected, hasSelection)
+				: exactSelected
+					? focusedBufferBarCell(cell, exactSelected, 'selected', selected, hasSelection)
+					: selectedLabelHit
+						? focusedBufferBarCellForLabel(cell, selectedLabelHit, 'selected', selected, hasSelection)
+						: null;
+		if (focusedCell) {
+			screen.writeChar(summaryView.barRect.x + cellIndex, 1, focusedCell.ch, focusedCell.style);
+			continue;
+		}
+		screen.writeChar(summaryView.barRect.x + cellIndex, 1, cell.ch, bufferBarCellStyle(cell, hovered, selected, hasSelection));
+	}
+	screen.writeText(summaryView.barRect.x + summaryView.barRect.width, 1, ']', STYLE_NORMAL);
+}
+
+function drawSummaryLegendAndTotals(
+	screen: TuiScreen,
+	summaryView: SummaryView,
+	width: number,
+	hoveredCell: BufferBarCell | null,
+	hoveredBufferRegion: BufferRegion | null,
+	hoveredLegendEntry: BufferLegendEntry | null,
+	selectedBufferLabel: string | null,
+): void {
+	let summaryY = 2;
+	for (const legendRow of summaryView.barModel.legendRows) {
+		drawLegendRow(screen, 0, summaryY, width, legendRow, hoveredLegendLabels(hoveredCell, hoveredBufferRegion, hoveredLegendEntry), selectedBufferLabel);
+		summaryY += 1;
+	}
+	for (const totalLine of summaryView.totalLines) {
+		writeTaggedLine(screen, 0, summaryY, width, totalLine, STYLE_DIM);
+		summaryY += 1;
+	}
+}
+
+function drawTable(
+	screen: TuiScreen,
+	layout: UiLayout,
+	filteredAssets: RomAsset[],
+	selectedIndex: number,
+	scrollRow: number,
+	sortState: SortState,
+	mouseX: number,
+	mouseY: number,
+	modalOpen: boolean,
+	getRowText: (asset: RomAsset, columns: TableColumn[]) => [string, string, string, string],
+): void {
+	screen.fillRect(0, layout.tableTop, layout.tableContentWidth, 1, STYLE_HEADER);
+	let hoveredHeader: TableColumn | null = null;
+	if (!modalOpen) {
+		hoveredHeader = layout.tableColumns.find(column => isInside(column, mouseX, mouseY)) || null;
+	}
+	for (const column of layout.tableColumns) {
+		const style = hoveredHeader?.key === column.key
+			? STYLE_HEADER_HOVER
+			: sortState.key === column.key
+				? STYLE_HEADER_ACTIVE
+				: STYLE_HEADER;
+		screen.fillRect(column.x, column.y, column.width, 1, style);
+		screen.writeText(column.x, column.y, pad(headerLabel(column, sortState), column.width), style);
+	}
+
+	const hoveredListRow = !modalOpen && mouseY >= layout.rowsTop && mouseY < layout.rowsTop + layout.visibleRows && mouseX >= 0 && mouseX < layout.tableContentWidth
+		? scrollRow + (mouseY - layout.rowsTop)
+		: -1;
+	for (let row = 0; row < layout.visibleRows; row += 1) {
+		const assetIndex = scrollRow + row;
+		const y = layout.rowsTop + row;
+		const hovered = assetIndex === hoveredListRow && assetIndex < filteredAssets.length;
+		const style = assetIndex === selectedIndex ? (hovered ? STYLE_SELECTED_HOVER : STYLE_SELECTED) : hovered ? STYLE_HOVER : STYLE_NORMAL;
+		screen.fillRect(0, y, layout.tableContentWidth, 1, style);
+		if (assetIndex >= filteredAssets.length) {
+			continue;
+		}
+		const asset = filteredAssets[assetIndex];
+		const [idColumn, typeColumn, sizeColumn, offsetColumn] = layout.tableColumns;
+		const [idText, typeText, sizeText, offsetText] = getRowText(asset, layout.tableColumns);
+		screen.writeText(idColumn.x, y, idText, style);
+		screen.writeText(typeColumn.x, y, typeText, style);
+		screen.writeText(sizeColumn.x, y, sizeText, style);
+		screen.writeText(offsetColumn.x, y, offsetText, style);
+	}
+	drawScrollbar(screen, layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow, !modalOpen && isInside(layout.tableScrollbar, mouseX, mouseY));
+}
+
+function drawModal(
+	screen: TuiScreen,
+	layout: ModalLayout,
+	modalView: AssetModalView,
+	modalTab: number,
+	modalScroll: number,
+	mouseX: number,
+	mouseY: number,
+	contentLines: string[],
+): void {
+	const { frame, tabs, content, scrollbar, infoLineCount, visibleContentLines } = layout;
+	screen.fillRect(frame.x, frame.y, frame.width, frame.height, STYLE_PANEL);
+	for (let x = 1; x < frame.width - 1; x += 1) {
+		screen.writeChar(frame.x + x, frame.y, '─', STYLE_MODAL_BORDER);
+		screen.writeChar(frame.x + x, frame.y + frame.height - 1, '─', STYLE_MODAL_BORDER);
+	}
+	for (let y = 1; y < frame.height - 1; y += 1) {
+		screen.writeChar(frame.x, frame.y + y, '│', STYLE_MODAL_BORDER);
+		screen.writeChar(frame.x + frame.width - 1, frame.y + y, '│', STYLE_MODAL_BORDER);
+	}
+	screen.writeChar(frame.x, frame.y, '┌', STYLE_MODAL_BORDER);
+	screen.writeChar(frame.x + frame.width - 1, frame.y, '┐', STYLE_MODAL_BORDER);
+	screen.writeChar(frame.x, frame.y + frame.height - 1, '└', STYLE_MODAL_BORDER);
+	screen.writeChar(frame.x + frame.width - 1, frame.y + frame.height - 1, '┘', STYLE_MODAL_BORDER);
+	const closeTab = tabs.find(tab => tab.close)!;
+	const titleWidth = Math.max(0, closeTab.x - (frame.x + 3));
+	if (titleWidth > 0) {
+		screen.writeText(frame.x + 2, frame.y, ` ${pad(modalView.title, Math.max(0, titleWidth - 2))} `, STYLE_MODAL_TITLE);
+	}
+	for (const tab of tabs) {
+		const label = tab.close ? '×' : MODAL_TAB_LABELS[tab.index];
+		const hovered = isInside(tab, mouseX, mouseY);
+		const style = tab.close ? (hovered ? STYLE_CLOSE_HOVER : STYLE_CLOSE) : tab.index === modalTab ? STYLE_PANEL_TAB_ACTIVE : hovered ? STYLE_PANEL_TAB_HOVER : STYLE_PANEL_TAB;
+		screen.fillRect(tab.x, tab.y, tab.width, 1, style);
+		if (tab.close) {
+			screen.writeText(tab.x + 1, tab.y, label, style);
+			continue;
+		}
+		screen.writeChar(tab.x, tab.y, '│', STYLE_MODAL_BORDER);
+		screen.writeText(tab.x + 1, tab.y, ` ${label} `, style);
+		screen.writeChar(tab.x + tab.width - 1, tab.y, '│', STYLE_MODAL_BORDER);
+	}
+	for (let index = 0; index < infoLineCount; index += 1) {
+		writeTaggedLine(screen, frame.x + 2, frame.y + 2 + index, frame.width - 4, modalView.infoLines[index], STYLE_DIM);
+	}
+	for (let row = 0; row < content.height; row += 1) {
+		writeTaggedLine(screen, content.x, content.y + row, content.width, contentLines[modalScroll + row] || '', STYLE_PANEL);
+	}
+	drawScrollbar(screen, scrollbar, contentLines.length, visibleContentLines, modalScroll, isInside(scrollbar, mouseX, mouseY));
+}
+
+function updateScrollbarFromMouse(
+	event: TuiMouseEvent,
+	rect: Rect,
+	totalLines: number,
+	visibleLines: number,
+	topLine: number,
+	scrollbarDrag: ScrollbarDrag | null,
+	target: ScrollbarDrag['target'],
+): { handled: boolean; nextTopLine: number; nextDrag: ScrollbarDrag | null } {
+	if (event.action === 'up') {
+		return { handled: true, nextTopLine: topLine, nextDrag: null };
+	}
+	const thumb = getScrollbarThumb(rect, totalLines, visibleLines, topLine);
+	if (!thumb) {
+		return { handled: false, nextTopLine: topLine, nextDrag: scrollbarDrag };
+	}
+	if (event.button === 'left' && event.action === 'drag' && scrollbarDrag?.target === target) {
+		const thumbY = clamp(event.y - scrollbarDrag.grabOffset, rect.y, rect.y + rect.height - thumb.height);
+		return {
+			handled: true,
+			nextTopLine: scrollTopFromThumb(rect, thumb.height, thumb.maxTop, thumbY),
+			nextDrag: scrollbarDrag,
+		};
+	}
+	if (event.button !== 'left' || event.action !== 'down' || !isInside(rect, event.x, event.y)) {
+		return { handled: false, nextTopLine: topLine, nextDrag: scrollbarDrag };
+	}
+	if (isInside(thumb, event.x, event.y)) {
+		return {
+			handled: true,
+			nextTopLine: topLine,
+			nextDrag: { target, grabOffset: event.y - thumb.y },
+		};
+	}
+	const thumbY = clamp(event.y - Math.floor(thumb.height / 2), rect.y, rect.y + rect.height - thumb.height);
+	return {
+		handled: true,
+		nextTopLine: scrollTopFromThumb(rect, thumb.height, thumb.maxTop, thumbY),
+		nextDrag: scrollbarDrag,
+	};
+}
+
 export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> {
 	const screen = new TuiScreen();
 	const input = new TuiInput();
@@ -737,6 +1010,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let modalView: AssetModalView | null = null;
 	let modalTab = 0;
 	let modalScroll = 0;
+	let modalLinesByTab: string[][] = [];
 	let loadingModal = false;
 	let lastLayout: UiLayout | null = null;
 	let lastSummaryView: SummaryView | null = null;
@@ -744,22 +1018,52 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let mouseY = -1;
 	let mouseSubX = 0.5;
 	let scrollbarDrag: ScrollbarDrag | null = null;
+	let summaryViewWidth = -1;
+	let summaryViewCache: SummaryView;
+	let hoverStatusKey = '';
+	let hoverStatusCache: string | null = null;
+	let tableRowCacheWidth = -1;
+	let tableRowCache = new Map<string, [string, string, string, string]>();
+
+	const regionAssetCounts = new Map<string, number>();
+	for (const region of summaryMetrics.regions) {
+		const key = bufferRegionKey(region);
+		if (regionAssetCounts.has(key)) {
+			continue;
+		}
+		let count = 0;
+		for (const asset of ctx.assets) {
+			if (assetIntersectsRegion(asset, region)) {
+				count += 1;
+			}
+		}
+		regionAssetCounts.set(key, count);
+	}
+
+	const labelAssetCounts = new Map<string, number>();
+	for (const [label, labelRegions] of regionsByLabel) {
+		let count = 0;
+		for (const asset of ctx.assets) {
+			for (const region of labelRegions) {
+				if (assetIntersectsRegion(asset, region)) {
+					count += 1;
+					break;
+				}
+			}
+		}
+		labelAssetCounts.set(label, count);
+	}
 
 	const buildSummaryView = (width: number): SummaryView => {
+		if (width === summaryViewWidth) {
+			return summaryViewCache;
+		}
 		const barWidth = Math.max(1, width - BUFFER_LINE_PREFIX.length - 2);
 		const barModel = buildBufferBarModel(summaryMetrics.regions, summaryMetrics.totalSize, barWidth, width);
 		const legendHits = buildLegendHits(barModel.legendRows, 2);
-		const pct = (value: number) => ((value / summaryMetrics.totalSize) * 100).toFixed(1);
-		const totalLines = wrapSummarySegments([
-			`Total: ${ctx.formatByteSize(summaryMetrics.totalSize)}`,
-			`Images: ${ctx.formatByteSize(summaryMetrics.imageSize)} (${pct(summaryMetrics.imageSize)}%)`,
-			`Audio: ${ctx.formatByteSize(summaryMetrics.audioSize)} (${pct(summaryMetrics.audioSize)}%)`,
-			`Data: ${ctx.formatByteSize(summaryMetrics.dataSize)} (${pct(summaryMetrics.dataSize)}%)`,
-			`Models: ${ctx.formatByteSize(summaryMetrics.modelSize)} (${pct(summaryMetrics.modelSize)}%)`,
-			`Atlas: ${ctx.formatByteSize(summaryMetrics.atlasSize)} (${pct(summaryMetrics.atlasSize)}%)`,
-			`Metadata: ${ctx.formatByteSize(summaryMetrics.metadataSize)} (${pct(summaryMetrics.metadataSize)}%)`,
-		], width);
-		return {
+		const totalLines = wrapSummarySegments(totalSummarySegments(ctx, summaryMetrics), width);
+		summaryViewWidth = width;
+		summaryViewCache = {
 			titleLine: `${ctx.romfile} | assets: ${ctx.assets.length} | image: ${summaryMetrics.imageCount} | atlas: ${summaryMetrics.atlasCount} | audio: ${summaryMetrics.audioCount} | data: ${summaryMetrics.dataCount} | model: ${summaryMetrics.modelCount}`,
 			barModel,
 			totalLines,
@@ -767,6 +1071,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			barRect: { x: BUFFER_LINE_PREFIX.length + 1, y: 1, width: barModel.cells.length, height: 1 },
 			legendHits,
 		};
+		return summaryViewCache;
 	};
 
 	const getHoveredBufferCell = (summaryView: SummaryView | null): BufferBarCell | null => {
@@ -788,57 +1093,97 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (!summaryView) {
 			return null;
 		}
-		return summaryView.legendHits.find(hit => isInside(hit, mouseX, mouseY))?.entry ?? null;
+		const hit = summaryView.legendHits.find(hitEntry => isInside(hitEntry, mouseX, mouseY));
+		if (!hit) {
+			return null;
+		}
+		return hit.entry;
 	};
 
 	const countAssetsForRegion = (region: BufferRegion): number => {
-		let count = 0;
-		for (const asset of ctx.assets) {
-			if (assetIntersectsRegion(asset, region)) {
-				count += 1;
-			}
-		}
-		return count;
+		return regionAssetCounts.get(bufferRegionKey(region)) || 0;
 	};
 
 	const countAssetsForLabel = (label: string): number => {
-		let count = 0;
-		const labelRegions = regionsByLabel.get(label) ?? [];
-		for (const asset of ctx.assets) {
-			for (const region of labelRegions) {
-				if (assetIntersectsRegion(asset, region)) {
-					count += 1;
-					break;
-				}
-			}
-		}
-		return count;
+		return labelAssetCounts.get(label) || 0;
+	};
+
+	const applyBufferFilter = (nextFilter: BufferFilter | null, nextStatusLine: string) => {
+		bufferFilter = nextFilter;
+		refreshFilteredAssets();
+		scrollRow = 0;
+		statusLine = nextStatusLine;
 	};
 
 	const hoverStatusText = (hoveredCell: BufferBarCell | null, hoveredRegion: BufferRegion | null, hoveredLegendEntry: BufferLegendEntry | null): string | null => {
+		const nextKey = hoveredLegendEntry
+			? `legend:${hoveredLegendEntry.label}`
+			: hoveredRegion
+				? `region:${bufferRegionKey(hoveredRegion)}`
+				: hoveredCell
+					? `cell:${hoveredCell.visibleRegions.map(bufferRegionKey).join('|')}`
+					: '';
+		if (nextKey === hoverStatusKey) {
+			return hoverStatusCache;
+		}
+		hoverStatusKey = nextKey;
 		if (hoveredLegendEntry) {
-			return `Hover: ${hoveredLegendEntry.label} | ${countAssetsForLabel(hoveredLegendEntry.label)} assets`;
+			hoverStatusCache = `Hover: ${hoveredLegendEntry.label} | ${countAssetsForLabel(hoveredLegendEntry.label)} assets`;
+			return hoverStatusCache;
 		}
 		if (!hoveredCell || hoveredCell.visibleRegions.length === 0) {
-			return null;
+			hoverStatusCache = null;
+			return hoverStatusCache;
 		}
 		if (hoveredRegion) {
-			return `Hover: ${hoveredRegion.label} ${ctx.formatNumberAsHex(hoveredRegion.start, offsetHexWidth)}-${ctx.formatNumberAsHex(hoveredRegion.end, offsetHexWidth)} | ${countAssetsForRegion(hoveredRegion)} assets`;
+			hoverStatusCache = `Hover: ${hoveredRegion.label} ${ctx.formatNumberAsHex(hoveredRegion.start, offsetHexWidth)}-${ctx.formatNumberAsHex(hoveredRegion.end, offsetHexWidth)} | ${countAssetsForRegion(hoveredRegion)} assets`;
+			return hoverStatusCache;
 		}
 		const regions = hoveredCell.visibleRegions;
 		if (regions.length === 1) {
 			const region = regions[0];
-			return `Hover: ${region.label} ${ctx.formatNumberAsHex(region.start, offsetHexWidth)}-${ctx.formatNumberAsHex(region.end, offsetHexWidth)} | ${countAssetsForRegion(region)} assets`;
+			hoverStatusCache = `Hover: ${region.label} ${ctx.formatNumberAsHex(region.start, offsetHexWidth)}-${ctx.formatNumberAsHex(region.end, offsetHexWidth)} | ${countAssetsForRegion(region)} assets`;
+			return hoverStatusCache;
 		}
-		return `Hover: ${regions.map(region => region.label).join(' + ')}`;
+		hoverStatusCache = `Hover: ${regions.map(region => region.label).join(' + ')}`;
+		return hoverStatusCache;
+	};
+
+	const getTableRowText = (asset: RomAsset, columns: TableColumn[]): [string, string, string, string] => {
+		const tableWidth = columns[3].x + columns[3].width;
+		if (tableWidth !== tableRowCacheWidth) {
+			tableRowCacheWidth = tableWidth;
+			tableRowCache = new Map<string, [string, string, string, string]>();
+		}
+		const cached = tableRowCache.get(asset.resid);
+		if (cached) {
+			return cached;
+		}
+		const size = ctx.formatByteSize(assetSize(asset));
+		const location = assetLocation(asset);
+		const offset = location === undefined ? '' : ctx.formatNumberAsHex(location, offsetHexWidth);
+		const row: [string, string, string, string] = [
+			pad(asset.resid, columns[0].width),
+			pad(asset.type, columns[1].width),
+			pad(size, columns[2].width),
+			pad(offset, columns[3].width),
+		];
+		tableRowCache.set(asset.resid, row);
+		return row;
 	};
 
 	const getModalLines = () => {
 		if (!modalView) {
 			return [];
 		}
+		let lines = modalLinesByTab[modalTab];
+		if (lines) {
+			return lines;
+		}
 		const activeText = modalTab === 0 ? modalView.preview : modalTab === 1 ? modalView.details : modalView.hex;
-		return activeText.split('\n');
+		lines = activeText.split('\n');
+		modalLinesByTab[modalTab] = lines;
+		return lines;
 	};
 
 	const computeLayout = (width: number, height: number, summaryLineCount: number): UiLayout => {
@@ -863,7 +1208,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			const tabY = frame.y + 2 + infoLineCount;
 			const tabs: TabHit[] = [];
 			let tabX = frame.x + 2;
-			for (const [index, label] of ['Preview', 'Details', 'Hex'].entries()) {
+			for (const [index, label] of MODAL_TAB_LABELS.entries()) {
 				const tabWidth = label.length + 4;
 				tabs.push({ x: tabX, y: tabY, width: tabWidth, height: 1, index });
 				tabX += tabWidth + 1;
@@ -900,47 +1245,12 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const hoveredBufferCell = !layout.modal ? getHoveredBufferCell(summaryView) : null;
 		const hoveredBufferRegion = !layout.modal ? getHoveredBufferRegion(summaryView) : null;
 		const hoveredLegendEntry = !layout.modal ? getHoveredLegendEntry(summaryView) : null;
-		const hoveredBarLabels = hoveredLegendEntry ? [] : hoveredBufferRegion ? [] : hoveredBufferCell ? cellHitLabels(hoveredBufferCell) : [];
-		const hoveredLegendLabels = hoveredLegendEntry ? [hoveredLegendEntry.label] : hoveredBufferRegion ? [hoveredBufferRegion.label] : hoveredBufferCell ? cellHitLabels(hoveredBufferCell) : [];
 		const selectedBufferLabel = bufferFilterLabel(bufferFilter);
-		const hasBufferSelection = bufferFilter !== null;
 		const hoverStatus = hoverStatusText(hoveredBufferCell, hoveredBufferRegion, hoveredLegendEntry);
+		const modalLines = getModalLines();
 		writeLine(screen, 0, 0, width, summaryView.titleLine, STYLE_STATUS);
-		screen.fillRect(0, 1, width, 1, STYLE_NORMAL);
-		screen.writeText(0, 1, `${BUFFER_LINE_PREFIX}[`, STYLE_NORMAL);
-		for (let cellIndex = 0; cellIndex < summaryView.barModel.cells.length; cellIndex += 1) {
-			const cell = summaryView.barModel.cells[cellIndex];
-			const hovered = cell.visibleRegions.some(region => hoveredBarLabels.includes(region.label));
-			const selected = bufferFilterMatchesCell(bufferFilter, cell);
-			const exactHover = hoveredBufferRegion && getHitRegionEntry(cell, hoveredBufferRegion) ? hoveredBufferRegion : null;
-			const hoveredLabel = !exactHover && hoveredLegendEntry && getHitLabelEntry(cell, hoveredLegendEntry.label) ? hoveredLegendEntry.label : null;
-			const exactSelected = !exactHover && !hoveredLabel && bufferFilter?.kind === 'region' && getHitRegionEntry(cell, bufferFilter.region) ? bufferFilter.region : null;
-			const selectedLabel = !exactHover && !hoveredLabel && !exactSelected && bufferFilter?.kind === 'label' && getHitLabelEntry(cell, bufferFilter.label) ? bufferFilter.label : null;
-			const focusedCell = exactHover
-				? focusedBufferBarCell(cell, exactHover, 'hover', selected, hasBufferSelection)
-				: hoveredLabel
-					? focusedBufferBarCellForLabel(cell, hoveredLabel, 'hover', selected, hasBufferSelection)
-					: exactSelected
-					? focusedBufferBarCell(cell, exactSelected, 'selected', selected, hasBufferSelection)
-					: selectedLabel
-						? focusedBufferBarCellForLabel(cell, selectedLabel, 'selected', selected, hasBufferSelection)
-					: null;
-			if (focusedCell) {
-				screen.writeChar(summaryView.barRect.x + cellIndex, 1, focusedCell.ch, focusedCell.style);
-				continue;
-			}
-			screen.writeChar(summaryView.barRect.x + cellIndex, 1, cell.ch, bufferBarCellStyle(cell, hovered, selected, hasBufferSelection));
-		}
-		screen.writeText(summaryView.barRect.x + summaryView.barRect.width, 1, ']', STYLE_NORMAL);
-		let summaryY = 2;
-		for (const legendRow of summaryView.barModel.legendRows) {
-			drawLegendRow(screen, 0, summaryY, width, legendRow, hoveredLegendLabels, selectedBufferLabel);
-			summaryY += 1;
-		}
-		for (const totalLine of summaryView.totalLines) {
-			writeTaggedLine(screen, 0, summaryY, width, totalLine, STYLE_DIM);
-			summaryY += 1;
-		}
+		drawSummaryBar(screen, summaryView, hoveredBufferCell, hoveredBufferRegion, hoveredLegendEntry, bufferFilter);
+		drawSummaryLegendAndTotals(screen, summaryView, width, hoveredBufferCell, hoveredBufferRegion, hoveredLegendEntry, selectedBufferLabel);
 		const selectedRegion = bufferFilterRegion(bufferFilter);
 		const bufferFilterText = selectedRegion
 			? ` | Buffer: ${selectedRegion.label}${bufferFilter?.kind === 'region' ? ` ${ctx.formatNumberAsHex(selectedRegion.start, offsetHexWidth)}-${ctx.formatNumberAsHex(selectedRegion.end, offsetHexWidth)}` : ''}`
@@ -955,101 +1265,26 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (selectedIndex >= scrollRow + layout.visibleRows) {
 			scrollRow = selectedIndex - layout.visibleRows + 1;
 		}
-
-		screen.fillRect(0, layout.tableTop, layout.tableContentWidth, 1, STYLE_HEADER);
-		const hoveredHeader = !layout.modal
-			? layout.tableColumns.find(column => isInside(column, mouseX, mouseY)) ?? null
-			: null;
-		for (const column of layout.tableColumns) {
-			const style = hoveredHeader?.key === column.key
-				? STYLE_HEADER_HOVER
-				: sortState.key === column.key
-					? STYLE_HEADER_ACTIVE
-					: STYLE_HEADER;
-			screen.fillRect(column.x, column.y, column.width, 1, style);
-			screen.writeText(column.x, column.y, pad(headerLabel(column, sortState), column.width), style);
-		}
-
-		const hoveredListRow = !layout.modal && mouseY >= layout.rowsTop && mouseY < layout.rowsTop + layout.visibleRows && mouseX >= 0 && mouseX < layout.tableContentWidth
-			? scrollRow + (mouseY - layout.rowsTop)
-			: -1;
-		const hoveredTableScrollbar = !layout.modal && isInside(layout.tableScrollbar, mouseX, mouseY);
-
-		for (let row = 0; row < layout.visibleRows; row += 1) {
-			const assetIndex = scrollRow + row;
-			const y = layout.rowsTop + row;
-			const hovered = assetIndex === hoveredListRow && assetIndex < filteredAssets.length;
-			const style = assetIndex === selectedIndex ? (hovered ? STYLE_SELECTED_HOVER : STYLE_SELECTED) : hovered ? STYLE_HOVER : STYLE_NORMAL;
-			screen.fillRect(0, y, layout.tableContentWidth, 1, style);
-			if (assetIndex >= filteredAssets.length) {
-				continue;
-			}
-			const asset = filteredAssets[assetIndex];
-			const size = ctx.formatByteSize(assetSize(asset));
-			const location = asset.start ?? asset.metabuffer_start;
-			const offset = location === undefined ? '' : ctx.formatNumberAsHex(location, offsetHexWidth);
-			const [idColumn, typeColumn, sizeColumn, offsetColumn] = layout.tableColumns;
-			const line = `${pad(asset.resid, idColumn.width)} ${pad(asset.type, typeColumn.width)} ${pad(size, sizeColumn.width)} ${pad(offset, offsetColumn.width)}`;
-			screen.writeText(0, y, pad(line, layout.tableContentWidth), style);
-		}
-		drawScrollbar(screen, layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow, hoveredTableScrollbar);
+		drawTable(screen, layout, filteredAssets, selectedIndex, scrollRow, sortState, mouseX, mouseY, layout.modal !== null, getTableRowText);
 
 		const bottomInfo = filteredAssets.length === 0
 			? 'No assets match the current filter.'
-			: `Row ${selectedIndex + 1}/${filteredAssets.length} | ${filteredAssets[selectedIndex].resid} | ${filteredAssets[selectedIndex].source_path ?? filteredAssets[selectedIndex].normalized_source_path ?? ''}`;
+			: `Row ${selectedIndex + 1}/${filteredAssets.length} | ${filteredAssets[selectedIndex].resid} | ${assetSourcePath(filteredAssets[selectedIndex])}`;
 		writeLine(screen, 0, height - 2, width, bottomInfo, STYLE_DIM);
-		writeLine(screen, 0, height - 1, width, loadingModal ? 'Loading asset view...' : hoverStatus ?? statusLine, STYLE_STATUS);
+		const footerText = loadingModal ? 'Loading asset view...' : hoverStatus !== null ? hoverStatus : statusLine;
+		writeLine(screen, 0, height - 1, width, footerText, STYLE_STATUS);
 
 		if (layout.modal && modalView) {
-			const { frame, tabs, content, scrollbar, infoLineCount, maxScroll, visibleContentLines } = layout.modal;
-			modalScroll = clamp(modalScroll, 0, maxScroll);
-			screen.fillRect(frame.x, frame.y, frame.width, frame.height, STYLE_PANEL);
-			for (let x = 1; x < frame.width - 1; x += 1) {
-				screen.writeChar(frame.x + x, frame.y, '─', STYLE_MODAL_BORDER);
-				screen.writeChar(frame.x + x, frame.y + frame.height - 1, '─', STYLE_MODAL_BORDER);
-			}
-			for (let y = 1; y < frame.height - 1; y += 1) {
-				screen.writeChar(frame.x, frame.y + y, '│', STYLE_MODAL_BORDER);
-				screen.writeChar(frame.x + frame.width - 1, frame.y + y, '│', STYLE_MODAL_BORDER);
-			}
-			screen.writeChar(frame.x, frame.y, '┌', STYLE_MODAL_BORDER);
-			screen.writeChar(frame.x + frame.width - 1, frame.y, '┐', STYLE_MODAL_BORDER);
-			screen.writeChar(frame.x, frame.y + frame.height - 1, '└', STYLE_MODAL_BORDER);
-			screen.writeChar(frame.x + frame.width - 1, frame.y + frame.height - 1, '┘', STYLE_MODAL_BORDER);
-			const closeTab = tabs.find(tab => tab.close)!;
-			const titleWidth = Math.max(0, closeTab.x - (frame.x + 3));
-			if (titleWidth > 0) {
-				screen.writeText(frame.x + 2, frame.y, ` ${pad(modalView.title, Math.max(0, titleWidth - 2))} `, STYLE_MODAL_TITLE);
-			}
-			for (const tab of tabs) {
-				const label = tab.close ? '×' : ['Preview', 'Details', 'Hex'][tab.index];
-				const hovered = isInside(tab, mouseX, mouseY);
-				const style = tab.close ? (hovered ? STYLE_CLOSE_HOVER : STYLE_CLOSE) : tab.index === modalTab ? STYLE_PANEL_TAB_ACTIVE : hovered ? STYLE_PANEL_TAB_HOVER : STYLE_PANEL_TAB;
-				screen.fillRect(tab.x, tab.y, tab.width, 1, style);
-				if (tab.close) {
-					screen.writeText(tab.x + 1, tab.y, label, style);
-					continue;
-				}
-				screen.writeChar(tab.x, tab.y, '│', STYLE_MODAL_BORDER);
-				screen.writeText(tab.x + 1, tab.y, ` ${label} `, style);
-				screen.writeChar(tab.x + tab.width - 1, tab.y, '│', STYLE_MODAL_BORDER);
-			}
-			for (let index = 0; index < infoLineCount; index += 1) {
-				writeTaggedLine(screen, frame.x + 2, frame.y + 2 + index, frame.width - 4, modalView.infoLines[index], STYLE_DIM);
-			}
-			const contentLines = getModalLines();
-			for (let row = 0; row < content.height; row += 1) {
-				const line = contentLines[modalScroll + row] ?? '';
-				writeTaggedLine(screen, content.x, content.y + row, content.width, line, STYLE_PANEL);
-			}
-			drawScrollbar(screen, scrollbar, contentLines.length, visibleContentLines, modalScroll, isInside(scrollbar, mouseX, mouseY));
+			modalScroll = clamp(modalScroll, 0, layout.modal.maxScroll);
+			drawModal(screen, layout.modal, modalView, modalTab, modalScroll, mouseX, mouseY, modalLines);
 		}
 
 		screen.draw();
 	};
 
 	const refreshFilteredAssets = () => {
-		const selectedAssetId = filteredAssets[selectedIndex]?.resid;
+		const selectedAsset = filteredAssets[selectedIndex];
+		const selectedAssetId = selectedAsset ? selectedAsset.resid : undefined;
 		filteredAssets = getFilteredAssets(ctx.assets, filterValue, sortState, bufferFilter, regionsByLabel);
 		if (filteredAssets.length === 0) {
 			selectedIndex = 0;
@@ -1083,28 +1318,16 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (region === null && bufferFilter === null) {
 			return;
 		}
-		bufferFilter = bufferFilter?.kind === 'region' && sameBufferRegion(bufferFilter.region, region) ? null : region ? { kind: 'region', region } : null;
-		refreshFilteredAssets();
-		scrollRow = 0;
-		if (!bufferFilter) {
-			statusLine = 'Buffer filter cleared.';
-			return;
-		}
-		statusLine = `Buffer filter: ${region.label} ${ctx.formatNumberAsHex(region.start, offsetHexWidth)}-${ctx.formatNumberAsHex(region.end, offsetHexWidth)}.`;
+		const nextFilter = bufferFilter?.kind === 'region' && sameBufferRegion(bufferFilter.region, region) ? null : region ? { kind: 'region', region } : null;
+		applyBufferFilter(nextFilter, nextFilter ? `Buffer filter: ${region.label} ${ctx.formatNumberAsHex(region.start, offsetHexWidth)}-${ctx.formatNumberAsHex(region.end, offsetHexWidth)}.` : 'Buffer filter cleared.');
 	};
 
 	const applyBufferLegendFilter = (entry: BufferLegendEntry | null) => {
 		if (entry === null && bufferFilter === null) {
 			return;
 		}
-		bufferFilter = bufferFilter?.kind === 'label' && bufferFilter.label === entry?.label ? null : entry ? { kind: 'label', label: entry.label, region: entry.region } : null;
-		refreshFilteredAssets();
-		scrollRow = 0;
-		if (!bufferFilter) {
-			statusLine = 'Buffer filter cleared.';
-			return;
-		}
-		statusLine = `Buffer filter: ${entry.label}.`;
+		const nextFilter = bufferFilter?.kind === 'label' && bufferFilter.label === entry?.label ? null : entry ? { kind: 'label', label: entry.label, region: entry.region } : null;
+		applyBufferFilter(nextFilter, nextFilter ? `Buffer filter: ${entry.label}.` : 'Buffer filter cleared.');
 	};
 
 	const openAssetModal = async (assetIndex: number, tabIndex = 0): Promise<void> => {
@@ -1126,6 +1349,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				modalWidth: Math.max(20, Math.floor(screen.width() * 0.8) - 4),
 				modalHeight: Math.max(8, Math.floor(screen.height() * 0.8) - 8),
 			});
+			modalLinesByTab = [];
 			statusLine = `Opened ${filteredAssets[selectedIndex].resid}.`;
 		} finally {
 			loadingModal = false;
@@ -1133,26 +1357,19 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	};
 
 	const handleModalMouse = async (event: TuiMouseEvent): Promise<boolean> => {
-		const modal = lastLayout?.modal;
-		if (!modal || !modalView) {
+		if (!lastLayout || !lastLayout.modal || !modalView) {
 			return false;
 		}
-		if (event.action === 'up') {
-			scrollbarDrag = null;
-			return true;
-		}
-		if (event.button === 'left' && event.action === 'drag' && scrollbarDrag?.target === 'modal') {
-			const thumb = getScrollbarThumb(modal.scrollbar, getModalLines().length, modal.visibleContentLines, modalScroll);
-			if (!thumb) {
-				return false;
-			}
-			const thumbY = clamp(event.y - scrollbarDrag.grabOffset, modal.scrollbar.y, modal.scrollbar.y + modal.scrollbar.height - thumb.height);
-			modalScroll = scrollTopFromThumb(modal.scrollbar, thumb.height, thumb.maxTop, thumbY);
+		const modal = lastLayout.modal;
+		const scrollbarResult = updateScrollbarFromMouse(event, modal.scrollbar, getModalLines().length, modal.visibleContentLines, modalScroll, scrollbarDrag, 'modal');
+		scrollbarDrag = scrollbarResult.nextDrag;
+		if (scrollbarResult.handled) {
+			modalScroll = scrollbarResult.nextTopLine;
 			return true;
 		}
 		if (event.action === 'scroll') {
 			if (isInside(modal.frame, event.x, event.y)) {
-				modalScroll += event.button === 'wheelup' ? -3 : 3;
+				modalScroll += scrollDelta(event.button);
 				return true;
 			}
 			return false;
@@ -1165,25 +1382,13 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				if (tab.close) {
 					modalView = null;
 					modalScroll = 0;
+					modalLinesByTab = [];
 					return true;
 				}
 				modalTab = tab.index;
 				modalScroll = 0;
 				return true;
 			}
-		}
-		if (isInside(modal.scrollbar, event.x, event.y)) {
-			const thumb = getScrollbarThumb(modal.scrollbar, getModalLines().length, modal.visibleContentLines, modalScroll);
-			if (!thumb) {
-				return false;
-			}
-			if (isInside(thumb, event.x, event.y)) {
-				scrollbarDrag = { target: 'modal', grabOffset: event.y - thumb.y };
-				return true;
-			}
-			const thumbY = clamp(event.y - Math.floor(thumb.height / 2), modal.scrollbar.y, modal.scrollbar.y + modal.scrollbar.height - thumb.height);
-			modalScroll = scrollTopFromThumb(modal.scrollbar, thumb.height, thumb.maxTop, thumbY);
-			return true;
 		}
 		return isInside(modal.frame, event.x, event.y);
 	};
@@ -1193,23 +1398,16 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (!layout) {
 			return false;
 		}
-		if (event.action === 'up') {
-			scrollbarDrag = null;
-			return true;
-		}
-		if (event.button === 'left' && event.action === 'drag' && scrollbarDrag?.target === 'list') {
-			const thumb = getScrollbarThumb(layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow);
-			if (!thumb) {
-				return false;
-			}
-			const thumbY = clamp(event.y - scrollbarDrag.grabOffset, layout.tableScrollbar.y, layout.tableScrollbar.y + layout.tableScrollbar.height - thumb.height);
-			scrollRow = scrollTopFromThumb(layout.tableScrollbar, thumb.height, thumb.maxTop, thumbY);
+		const scrollbarResult = updateScrollbarFromMouse(event, layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow, scrollbarDrag, 'list');
+		scrollbarDrag = scrollbarResult.nextDrag;
+		if (scrollbarResult.handled) {
+			scrollRow = scrollbarResult.nextTopLine;
 			selectedIndex = clamp(selectedIndex, scrollRow, scrollRow + layout.visibleRows - 1);
 			return true;
 		}
 		if (event.action === 'scroll') {
 			if (event.y >= layout.rowsTop && event.y < layout.rowsTop + layout.visibleRows) {
-				selectedIndex = clamp(selectedIndex + (event.button === 'wheelup' ? -3 : 3), 0, Math.max(0, filteredAssets.length - 1));
+				selectedIndex = clamp(selectedIndex + scrollDelta(event.button), 0, Math.max(0, filteredAssets.length - 1));
 				return true;
 			}
 			return false;
@@ -1222,7 +1420,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			applyBufferRegionFilter(regionAtCellFraction(cell, event.subX));
 			return true;
 		}
-		const legendHit = lastSummaryView?.legendHits.find(hit => isInside(hit, event.x, event.y)) ?? null;
+		const legendHit = lastSummaryView ? lastSummaryView.legendHits.find(hit => isInside(hit, event.x, event.y)) || null : null;
 		if (legendHit) {
 			applyBufferLegendFilter(legendHit.entry);
 			return true;
@@ -1230,20 +1428,6 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const headerColumn = layout.tableColumns.find(column => isInside(column, event.x, event.y));
 		if (headerColumn) {
 			applySort(headerColumn.key);
-			return true;
-		}
-		if (isInside(layout.tableScrollbar, event.x, event.y)) {
-			const thumb = getScrollbarThumb(layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow);
-			if (!thumb) {
-				return false;
-			}
-			if (isInside(thumb, event.x, event.y)) {
-				scrollbarDrag = { target: 'list', grabOffset: event.y - thumb.y };
-				return true;
-			}
-			const thumbY = clamp(event.y - Math.floor(thumb.height / 2), layout.tableScrollbar.y, layout.tableScrollbar.y + layout.tableScrollbar.height - thumb.height);
-			scrollRow = scrollTopFromThumb(layout.tableScrollbar, thumb.height, thumb.maxTop, thumbY);
-			selectedIndex = clamp(selectedIndex, scrollRow, scrollRow + layout.visibleRows - 1);
 			return true;
 		}
 		if (event.y >= layout.rowsTop && event.y < layout.rowsTop + layout.visibleRows && event.x >= 0 && event.x < layout.tableContentWidth) {
@@ -1314,6 +1498,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 					case 'q':
 						modalView = null;
 						modalScroll = 0;
+						modalLinesByTab = [];
 						render();
 						continue;
 					case 'left':
@@ -1342,11 +1527,11 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 						render();
 						continue;
 					case 'pageup':
-						modalScroll = Math.max(0, modalScroll - Math.max(1, (lastLayout?.modal?.visibleContentLines ?? 1) - 1));
+						modalScroll = Math.max(0, modalScroll - Math.max(1, lastLayout && lastLayout.modal ? lastLayout.modal.visibleContentLines - 1 : 1));
 						render();
 						continue;
 					case 'pagedown':
-						modalScroll += Math.max(1, (lastLayout?.modal?.visibleContentLines ?? 1) - 1);
+						modalScroll += Math.max(1, lastLayout && lastLayout.modal ? lastLayout.modal.visibleContentLines - 1 : 1);
 						render();
 						continue;
 					case 'home':
@@ -1354,7 +1539,9 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 						render();
 						continue;
 					case 'end':
-						modalScroll = Number.MAX_SAFE_INTEGER;
+						if (lastLayout && lastLayout.modal) {
+							modalScroll = lastLayout.modal.maxScroll;
+						}
 						render();
 						continue;
 					default:
@@ -1379,12 +1566,12 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 					selectedIndex = Math.min(Math.max(0, filteredAssets.length - 1), selectedIndex + 1);
 					break;
 				case 'pageup': {
-					const page = Math.max(1, (lastLayout?.visibleRows ?? 1) - 1);
+					const page = Math.max(1, lastLayout ? lastLayout.visibleRows - 1 : 1);
 					selectedIndex = Math.max(0, selectedIndex - page);
 					break;
 				}
 				case 'pagedown': {
-					const page = Math.max(1, (lastLayout?.visibleRows ?? 1) - 1);
+					const page = Math.max(1, lastLayout ? lastLayout.visibleRows - 1 : 1);
 					selectedIndex = Math.min(Math.max(0, filteredAssets.length - 1), selectedIndex + page);
 					break;
 				}

@@ -27,8 +27,8 @@ function sameCell(left: TuiCell, right: TuiCell): boolean {
 function cloneCell(cell: TuiCell): TuiCell {
 	return {
 		ch: cell.ch,
-		fg: { ...cell.fg },
-		bg: { ...cell.bg },
+		fg: cell.fg,
+		bg: cell.bg,
 	};
 }
 
@@ -124,9 +124,12 @@ export class TuiScreen {
 		this.widthValue = nextWidth;
 		this.heightValue = nextHeight;
 		const size = this.widthValue * this.heightValue;
-		const cell: TuiCell = { ch: ' ', fg: { ...DEFAULT_STYLE.fg }, bg: { ...DEFAULT_STYLE.bg } };
-		this.buffer = Array.from({ length: size }, () => cloneCell(cell));
+		if (this.buffer.length !== size) {
+			const cell: TuiCell = { ch: ' ', fg: DEFAULT_STYLE.fg, bg: DEFAULT_STYLE.bg };
+			this.buffer = Array.from({ length: size }, () => cloneCell(cell));
+		}
 		if (this.prevBuffer.length !== size) {
+			const cell: TuiCell = { ch: ' ', fg: DEFAULT_STYLE.fg, bg: DEFAULT_STYLE.bg };
 			this.prevBuffer = Array.from({ length: size }, () => cloneCell(cell));
 			this.fullRedraw = true;
 		}
@@ -138,8 +141,8 @@ export class TuiScreen {
 	clear(style: TuiStyle = DEFAULT_STYLE): void {
 		for (let i = 0; i < this.buffer.length; i += 1) {
 			this.buffer[i].ch = ' ';
-			this.buffer[i].fg = { ...style.fg };
-			this.buffer[i].bg = { ...style.bg };
+			this.buffer[i].fg = style.fg;
+			this.buffer[i].bg = style.bg;
 		}
 	}
 
@@ -157,8 +160,8 @@ export class TuiScreen {
 		}
 		const offset = y * this.widthValue + x;
 		this.buffer[offset].ch = ch[0] ?? ' ';
-		this.buffer[offset].fg = { ...style.fg };
-		this.buffer[offset].bg = { ...style.bg };
+		this.buffer[offset].fg = style.fg;
+		this.buffer[offset].bg = style.bg;
 	}
 
 	writeText(x: number, y: number, text: string, style: TuiStyle): void {
