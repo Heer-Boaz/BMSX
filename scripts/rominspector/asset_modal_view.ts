@@ -171,9 +171,16 @@ function isGLTFModel(obj: unknown): obj is GLTFModel {
 	return !!obj && typeof obj === 'object' && Array.isArray((obj as { meshes?: unknown }).meshes);
 }
 
+function errorText(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+	return String(error);
+}
+
 export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetModalViewContext): Promise<AssetModalView> {
-	const imgmeta = selected.imgmeta || {} as ImgMeta;
-	const audiometa = selected.audiometa || {} as AudioMeta;
+	const imgmeta = selected.imgmeta ? selected.imgmeta : {} as ImgMeta;
+	const audiometa = selected.audiometa ? selected.audiometa : {} as AudioMeta;
 	const metadataLines: string[] = [];
 	let preview = '';
 	let disassembly = '';
@@ -183,7 +190,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 	switch (selected.type) {
 		case 'image':
 			if (imgmeta.atlassed && imgmeta.texcoords) {
-				const atlasName = generateAtlasName(imgmeta.atlasid ?? 0);
+				const atlasName = generateAtlasName(imgmeta.atlasid as number);
 				const atlasAsset = ctx.assetList.find(a => a.resid === atlasName && a.type === 'atlas');
 				if (atlasAsset) {
 					const atlasBuf = atlasAsset.buffer instanceof Uint8Array ? Buffer.from(atlasAsset.buffer) : Buffer.from(ctx.rombin.slice(atlasAsset.start, atlasAsset.end));
@@ -219,7 +226,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 							: sizeString + generateBrailleAsciiArt(png.data, png.width, png.height, modalWidth);
 						rendered = true;
 					} catch (e: any) {
-						preview = `[Error generating ASCII art from image: ${e?.message ?? e}]`;
+						preview = `[Error generating ASCII art from image: ${errorText(e)}]`;
 					}
 				}
 				if (!rendered) preview = '[No PNG buffer in ROM for this image and fallback decode failed.]';
@@ -236,7 +243,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 			} else if (audiometa.audiotype === 'sfx') {
 				metadataLines.push('Audio type: SFX');
 			}
-			metadataLines.push(`Priority: ${audiometa.priority ?? 'Unset!'}`);
+			metadataLines.push(`Priority: ${audiometa.priority === undefined ? 'Unset!' : audiometa.priority}`);
 			if (!selected.buffer || !(selected.buffer instanceof Uint8Array) || selected.buffer.byteLength === 0) {
 				selected.buffer = getRomSliceView(ctx.rombin, selected.start, selected.end);
 			}
@@ -276,7 +283,9 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 			break;
 		case 'model':
 			if (!selected.buffer || !isGLTFModel(selected.buffer)) {
-				const texBuf = (selected as any).texture_start != null && (selected as any).texture_end != null ? ctx.rombin.slice((selected as any).texture_start, (selected as any).texture_end) : undefined;
+				const texBuf = selected.texture_start !== undefined && selected.texture_end !== undefined
+					? ctx.rombin.slice(selected.texture_start, selected.texture_end)
+					: undefined;
 				selected.buffer = await loadGLTFModelFromBuffer(String(selected.resid), ctx.rombin.slice(selected.start, selected.end), texBuf);
 			}
 			if (!isGLTFModel(selected.buffer)) throw new Error(`Asset '${selected.resid}' buffer is not a GLTFModel.`);
@@ -304,14 +313,19 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 	}
 
 	const bufferLines: string[] = [];
-	const bufferSize = (selected.end ?? 0) - (selected.start ?? 0);
-	const metabufferSize = (selected.metabuffer_end ?? 0) - (selected.metabuffer_start ?? 0);
+	const hasBuffer = selected.start !== undefined && selected.end !== undefined;
+	const hasMetabuffer = selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined;
+	const bufferSize = hasBuffer ? selected.end - selected.start : 0;
+	const metabufferSize = hasMetabuffer ? selected.metabuffer_end - selected.metabuffer_start : 0;
 	if (bufferSize || metabufferSize) {
-		const total = ctx.rombin.byteLength;
-		const regions = [];
-		if (selected.start !== undefined && selected.end !== undefined) regions.push({ start: selected.start, end: selected.end, colorTag: '{light-red-fg}', label: 'buffer' });
-		if (selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined) regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: '{light-blue-fg}', label: 'metabuffer' });
-		const renderedBarLines = renderBufferBar(regions, total, Math.max(16, modalWidth - 2), undefined, { forceVisibleTinyRegions: true }).split('\n');
+		const regions: Array<{ start: number; end: number; colorTag: string; label: string }> = [];
+		if (hasBuffer) {
+			regions.push({ start: selected.start, end: selected.end, colorTag: '{light-red-fg}', label: 'buffer' });
+		}
+		if (hasMetabuffer) {
+			regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: '{light-blue-fg}', label: 'metabuffer' });
+		}
+		const renderedBarLines = renderBufferBar(regions, ctx.rombin.byteLength, Math.max(16, modalWidth - 2), undefined, { forceVisibleTinyRegions: true }).split('\n');
 		bufferLines.push(`Buffer: ${renderedBarLines[0]}`);
 		if (renderedBarLines[1]) bufferLines.push(renderedBarLines[1]);
 		if (bufferSize) bufferLines.push(`Buffer: ${selected.start} - ${selected.end} (${ctx.formatByteSize(bufferSize)})`);

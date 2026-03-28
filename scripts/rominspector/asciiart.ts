@@ -321,6 +321,8 @@ export function buildBufferBarModel(
 		let bgRegion: BufferRegion | null = null;
 		let fgStart = 0;
 		let fgEnd = 0;
+		let bgStart = 0;
+		let bgEnd = 0;
 		let strongestRegion: BufferRegion | null = null;
 		let strongestStart = 0;
 		let strongestEnd = 0;
@@ -350,6 +352,8 @@ export function buildBufferBarModel(
 				continue;
 			}
 			bgRegion = region;
+			bgStart = segStart;
+			bgEnd = segEnd;
 			break;
 		}
 
@@ -365,6 +369,10 @@ export function buildBufferBarModel(
 		const coverage = rightFrac - leftFrac;
 
 		if (coverage <= 0) continue;
+
+		const backgroundOccupiesCell = bgRegion !== null
+			&& (Math.max(fgEnd, bgEnd) - Math.min(fgStart, bgStart)) / cellSize >= 1 - 1e-7;
+		const visibleBackgroundRegion = backgroundOccupiesCell ? bgRegion : null;
 
 		if (coverage >= 1 - 1e-7) {
 			cells[cell].ch = '█';
@@ -389,22 +397,22 @@ export function buildBufferBarModel(
 			const glyph = glyphForCoverage(leftGap);
 			if (glyph) {
 				cells[cell].ch = glyph;
-				const gapFg = bgRegion ? bgRegion.colorTag : GAP_FG_TAG;
+				const gapFg = visibleBackgroundRegion ? visibleBackgroundRegion.colorTag : GAP_FG_TAG;
 				cells[cell].fgColorTag = gapFg;
 				cells[cell].bgColorTag = toBackgroundTag(fgRegion.colorTag);
 				cells[cell].region = fgRegion;
-				cells[cell].backgroundRegion = bgRegion;
-				cells[cell].visibleRegions = bgRegion ? [bgRegion, fgRegion] : [fgRegion];
+				cells[cell].backgroundRegion = visibleBackgroundRegion;
+				cells[cell].visibleRegions = visibleBackgroundRegion ? [visibleBackgroundRegion, fgRegion] : [fgRegion];
 			}
 		} else {
 			const glyph = glyphForCoverage(Math.max(coverage, SLIVER_THRESHOLD));
 			if (glyph) {
 				cells[cell].ch = glyph;
 				cells[cell].fgColorTag = fgRegion.colorTag;
-				cells[cell].bgColorTag = bgRegion ? toBackgroundTag(bgRegion.colorTag) : '';
+				cells[cell].bgColorTag = visibleBackgroundRegion ? toBackgroundTag(visibleBackgroundRegion.colorTag) : '';
 				cells[cell].region = fgRegion;
-				cells[cell].backgroundRegion = bgRegion;
-				cells[cell].visibleRegions = bgRegion ? [fgRegion, bgRegion] : [fgRegion];
+				cells[cell].backgroundRegion = visibleBackgroundRegion;
+				cells[cell].visibleRegions = visibleBackgroundRegion ? [fgRegion, visibleBackgroundRegion] : [fgRegion];
 			}
 		}
 	}
