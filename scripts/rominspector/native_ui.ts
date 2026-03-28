@@ -154,6 +154,36 @@ function pad(text: string, width: number): string {
 	return text.padEnd(width, ' ');
 }
 
+function wrapSummarySegments(segments: string[], width: number): string[] {
+	if (segments.length === 0) {
+		return [];
+	}
+	const lines: string[] = [];
+	let currentLine = '';
+	let currentWidth = 0;
+	for (const segment of segments) {
+		const segmentWidth = segment.length;
+		const nextWidth = currentWidth === 0 ? segmentWidth : currentWidth + 3 + segmentWidth;
+		if (currentLine && nextWidth > width) {
+			lines.push(currentLine);
+			currentLine = segment;
+			currentWidth = segmentWidth;
+			continue;
+		}
+		if (currentLine) {
+			currentLine += ` | ${segment}`;
+			currentWidth += 3 + segmentWidth;
+			continue;
+		}
+		currentLine = segment;
+		currentWidth = segmentWidth;
+	}
+	if (currentLine) {
+		lines.push(currentLine);
+	}
+	return lines;
+}
+
 function buildTableColumns(tableContentWidth: number): TableColumn[] {
 	const idWidth = Math.max(16, Math.floor(tableContentWidth * 0.42));
 	const typeWidth = 8;
@@ -298,13 +328,22 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let scrollbarDrag: ScrollbarDrag | null = null;
 
 	const buildSummaryLines = (width: number): string[] => {
-		const summaryBarLines = renderSummaryBar(summaryMetrics.regions, summaryMetrics.totalSize, Math.max(16, width - 16)).split('\n');
+		const summaryBarLines = renderSummaryBar(summaryMetrics.regions, summaryMetrics.totalSize, Math.max(16, width - 16), width).split('\n');
 		const pct = (value: number) => ((value / summaryMetrics.totalSize) * 100).toFixed(1);
+		const totalLines = wrapSummarySegments([
+			`Total: ${ctx.formatByteSize(summaryMetrics.totalSize)}`,
+			`Images: ${ctx.formatByteSize(summaryMetrics.imageSize)} (${pct(summaryMetrics.imageSize)}%)`,
+			`Audio: ${ctx.formatByteSize(summaryMetrics.audioSize)} (${pct(summaryMetrics.audioSize)}%)`,
+			`Data: ${ctx.formatByteSize(summaryMetrics.dataSize)} (${pct(summaryMetrics.dataSize)}%)`,
+			`Models: ${ctx.formatByteSize(summaryMetrics.modelSize)} (${pct(summaryMetrics.modelSize)}%)`,
+			`Atlas: ${ctx.formatByteSize(summaryMetrics.atlasSize)} (${pct(summaryMetrics.atlasSize)}%)`,
+			`Metadata: ${ctx.formatByteSize(summaryMetrics.metadataSize)} (${pct(summaryMetrics.metadataSize)}%)`,
+		], width);
 		return [
 			`${ctx.romfile} | assets: ${ctx.assets.length} | image: ${summaryMetrics.imageCount} | atlas: ${summaryMetrics.atlasCount} | audio: ${summaryMetrics.audioCount} | data: ${summaryMetrics.dataCount} | model: ${summaryMetrics.modelCount}`,
 			`Buffer: ${summaryBarLines[0] ?? ''}`,
-			summaryBarLines[1] ?? '',
-			`Total: ${ctx.formatByteSize(summaryMetrics.totalSize)} | Images: ${ctx.formatByteSize(summaryMetrics.imageSize)} (${pct(summaryMetrics.imageSize)}%) | Audio: ${ctx.formatByteSize(summaryMetrics.audioSize)} (${pct(summaryMetrics.audioSize)}%) | Data: ${ctx.formatByteSize(summaryMetrics.dataSize)} (${pct(summaryMetrics.dataSize)}%) | Models: ${ctx.formatByteSize(summaryMetrics.modelSize)} (${pct(summaryMetrics.modelSize)}%) | Atlas: ${ctx.formatByteSize(summaryMetrics.atlasSize)} (${pct(summaryMetrics.atlasSize)}%) | Metadata: ${ctx.formatByteSize(summaryMetrics.metadataSize)} (${pct(summaryMetrics.metadataSize)}%)`,
+			...summaryBarLines.slice(1),
+			...totalLines,
 		];
 	};
 
@@ -316,8 +355,8 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		return activeText.split('\n');
 	};
 
-	const computeLayout = (width: number, height: number): UiLayout => {
-		const tableTop = 5;
+	const computeLayout = (width: number, height: number, summaryLineCount: number): UiLayout => {
+		const tableTop = summaryLineCount + 1;
 		const rowsTop = tableTop + 1;
 		const visibleRows = Math.max(1, height - rowsTop - 2);
 		const tableContentWidth = Math.max(12, width - 1);
@@ -368,15 +407,16 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		screen.clear(STYLE_NORMAL);
 		const width = screen.width();
 		const height = screen.height();
-		const layout = computeLayout(width, height);
-		lastLayout = layout;
-
 		const summaryLines = buildSummaryLines(width);
+		const layout = computeLayout(width, height, summaryLines.length);
+		lastLayout = layout;
 		writeLine(screen, 0, 0, width, summaryLines[0], STYLE_STATUS);
 		writeTaggedLine(screen, 0, 1, width, summaryLines[1], STYLE_NORMAL);
-		writeTaggedLine(screen, 0, 2, width, summaryLines[2], STYLE_DIM);
-		writeLine(screen, 0, 3, width, summaryLines[3], STYLE_DIM);
-		writeLine(screen, 0, 4, width, filterMode ? `Filter: ${filterValue}` : `Filter: ${filterValue || '<none>'}`, filterMode ? STYLE_FILTER : STYLE_DIM);
+		for (let lineIndex = 2; lineIndex < summaryLines.length - 1; lineIndex += 1) {
+			writeTaggedLine(screen, 0, lineIndex, width, summaryLines[lineIndex], STYLE_DIM);
+		}
+		writeLine(screen, 0, summaryLines.length - 1, width, summaryLines[summaryLines.length - 1], STYLE_DIM);
+		writeLine(screen, 0, summaryLines.length, width, filterMode ? `Filter: ${filterValue}` : `Filter: ${filterValue || '<none>'}`, filterMode ? STYLE_FILTER : STYLE_DIM);
 
 		const maxScroll = Math.max(0, filteredAssets.length - layout.visibleRows);
 		scrollRow = clamp(scrollRow, 0, maxScroll);

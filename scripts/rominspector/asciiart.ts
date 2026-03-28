@@ -52,7 +52,8 @@ const K_DITHER_THRESHOLD_BY_BIT = (() => {
 export function renderBufferBar(
 	unfilteredRegions: Array<{ start: number; end: number; colorTag: string, label: string }>,
 	totalSize: number,
-	barLength: number
+	barLength: number,
+	legendWrapWidth?: number,
 ): string {
 	const quantize = quantizeCoverage;
 	const cellSize = totalSize / barLength;
@@ -175,12 +176,36 @@ export function renderBufferBar(
 	});
 
 	// Compose legend string
-	const legend = sortedLegend
-		.map(label => `${legendMap.get(label)}█{/${legendMap.get(label).replace('{', '').replace('-fg}', '')}-fg} ${label}`)
-		.join('  ');
-
-
-	return `[${bar}]\n${legend}`;
+	const legendEntries = sortedLegend.map(label => ({
+		text: `${legendMap.get(label)}█{/${legendMap.get(label).replace('{', '').replace('-fg}', '')}-fg} ${label}`,
+		width: label.length + 2,
+	}));
+	if (legendWrapWidth === undefined || legendWrapWidth <= 0) {
+		return `[${bar}]\n${legendEntries.map(entry => entry.text).join('  ')}`;
+	}
+	const legendLines: string[] = [];
+	let currentLine = '';
+	let currentWidth = 0;
+	for (const entry of legendEntries) {
+		const nextWidth = currentWidth === 0 ? entry.width : currentWidth + 2 + entry.width;
+		if (currentLine && nextWidth > legendWrapWidth) {
+			legendLines.push(currentLine);
+			currentLine = entry.text;
+			currentWidth = entry.width;
+			continue;
+		}
+		if (currentLine) {
+			currentLine += `  ${entry.text}`;
+			currentWidth += 2 + entry.width;
+			continue;
+		}
+		currentLine = entry.text;
+		currentWidth = entry.width;
+	}
+	if (currentLine) {
+		legendLines.push(currentLine);
+	}
+	return `[${bar}]\n${legendLines.join('\n')}`;
 }
 
 /**
@@ -190,8 +215,9 @@ export function renderSummaryBar(
 	regions: Array<{ start: number, end: number, colorTag: string, label: string }>,
 	totalSize: number,
 	barLength: number,
+	legendWrapWidth?: number,
 ): string {
-	return renderBufferBar(regions, totalSize, barLength);
+	return renderBufferBar(regions, totalSize, barLength, legendWrapWidth);
 }
 
 /**
