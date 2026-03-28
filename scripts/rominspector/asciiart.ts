@@ -218,6 +218,32 @@ function widestHitRegion(hitRegions: BufferHitRegion[], predicate: (region: Buff
 	return best;
 }
 
+function widestHitRegionInSpan(
+	hitRegions: BufferHitRegion[],
+	spanStart: number,
+	spanEnd: number,
+	predicate: (region: BufferRegion) => boolean,
+): BufferHitRegion | null {
+	let best: BufferHitRegion | null = null;
+	let bestCoverage = 0;
+	for (const entry of hitRegions) {
+		if (!predicate(entry.region)) {
+			continue;
+		}
+		const overlapStart = Math.max(spanStart, entry.startFrac);
+		const overlapEnd = Math.min(spanEnd, entry.endFrac);
+		const overlap = overlapEnd - overlapStart;
+		if (overlap <= 0) {
+			continue;
+		}
+		if (!best || overlap > bestCoverage || (overlap === bestCoverage && overlapStart < best.startFrac)) {
+			best = entry;
+			bestCoverage = overlap;
+		}
+	}
+	return best;
+}
+
 function renderExistingBufferBarCells(model: BufferBarModel): RenderedBufferBarCell[] {
 	return model.cells.map(cell => ({
 		ch: cell.ch,
@@ -370,6 +396,14 @@ export function buildBufferBarModel(
 
 		if (coverage <= 0) continue;
 
+		const leadingGapEntry = leftFrac > 0
+			? widestHitRegionInSpan(cells[cell].hitRegions, 0, leftFrac, candidate => !sameRegion(candidate, fgRegion))
+			: null;
+		const leadingGapRegion = leadingGapEntry ? leadingGapEntry.region : null;
+		const trailingGapEntry = rightFrac < 1
+			? widestHitRegionInSpan(cells[cell].hitRegions, rightFrac, 1, candidate => !sameRegion(candidate, fgRegion))
+			: null;
+		const trailingGapRegion = trailingGapEntry ? trailingGapEntry.region : null;
 		const backgroundOccupiesCell = bgRegion !== null
 			&& (Math.max(fgEnd, bgEnd) - Math.min(fgStart, bgStart)) / cellSize >= 1 - 1e-7;
 		const visibleBackgroundRegion = backgroundOccupiesCell ? bgRegion : null;
@@ -397,22 +431,30 @@ export function buildBufferBarModel(
 			const glyph = glyphForCoverage(leftGap);
 			if (glyph) {
 				cells[cell].ch = glyph;
-				const gapFg = visibleBackgroundRegion ? visibleBackgroundRegion.colorTag : GAP_FG_TAG;
+				const gapFg = leadingGapRegion ? leadingGapRegion.colorTag : GAP_FG_TAG;
 				cells[cell].fgColorTag = gapFg;
 				cells[cell].bgColorTag = toBackgroundTag(fgRegion.colorTag);
-				cells[cell].region = fgRegion;
-				cells[cell].backgroundRegion = visibleBackgroundRegion;
-				cells[cell].visibleRegions = visibleBackgroundRegion ? [visibleBackgroundRegion, fgRegion] : [fgRegion];
+				cells[cell].region = leadingGapRegion;
+				cells[cell].backgroundRegion = fgRegion;
+				cells[cell].visibleRegions = leadingGapRegion ? [leadingGapRegion, fgRegion] : [fgRegion];
 			}
 		} else {
 			const glyph = glyphForCoverage(Math.max(coverage, SLIVER_THRESHOLD));
 			if (glyph) {
 				cells[cell].ch = glyph;
 				cells[cell].fgColorTag = fgRegion.colorTag;
-				cells[cell].bgColorTag = visibleBackgroundRegion ? toBackgroundTag(visibleBackgroundRegion.colorTag) : '';
+				cells[cell].bgColorTag = trailingGapRegion
+					? toBackgroundTag(trailingGapRegion.colorTag)
+					: visibleBackgroundRegion
+						? toBackgroundTag(visibleBackgroundRegion.colorTag)
+						: '';
 				cells[cell].region = fgRegion;
-				cells[cell].backgroundRegion = visibleBackgroundRegion;
-				cells[cell].visibleRegions = visibleBackgroundRegion ? [fgRegion, visibleBackgroundRegion] : [fgRegion];
+				cells[cell].backgroundRegion = trailingGapRegion ? trailingGapRegion : visibleBackgroundRegion;
+				cells[cell].visibleRegions = trailingGapRegion
+					? [fgRegion, trailingGapRegion]
+					: visibleBackgroundRegion
+						? [fgRegion, visibleBackgroundRegion]
+						: [fgRegion];
 			}
 		}
 	}
