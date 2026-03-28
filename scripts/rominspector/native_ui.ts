@@ -1,6 +1,7 @@
 import type { RomAsset } from '../../src/bmsx/rompack/rompack';
 import { parseCartHeader } from '../../src/bmsx/rompack/romloader';
-import { renderSummaryBar } from './asciiart';
+import { clamp } from '../../src/bmsx/utils/clamp';
+import { buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferLegendEntry, type BufferRegion } from './asciiart';
 import { buildAssetModalView, type AssetModalView } from './asset_modal_view';
 import { TuiInput, type TuiMouseEvent } from './tui_input';
 import { TuiScreen, TUI_COLORS, type TuiStyle } from './tui_screen';
@@ -31,6 +32,7 @@ const STYLE_SCROLL_TRACK: TuiStyle = { fg: TUI_COLORS.dim, bg: TUI_COLORS.black 
 const STYLE_SCROLL_THUMB: TuiStyle = { fg: TUI_COLORS.black, bg: TUI_COLORS.yellow };
 const STYLE_SCROLL_TRACK_HOVER: TuiStyle = { fg: TUI_COLORS.white, bg: TUI_COLORS.panel2 };
 const STYLE_SCROLL_THUMB_HOVER: TuiStyle = { fg: TUI_COLORS.black, bg: TUI_COLORS.cyan };
+const BUFFER_LINE_PREFIX = 'Buffer: ';
 
 type NativeUiContext = {
 	romfile: string;
@@ -41,8 +43,6 @@ type NativeUiContext = {
 	formatByteSize(size: number): string;
 	formatNumberAsHex(n: number, width?: number): string;
 };
-
-type SummaryRegion = { start: number; end: number; colorTag: string; label: string };
 
 type SummaryMetrics = {
 	totalSize: number;
@@ -57,10 +57,20 @@ type SummaryMetrics = {
 	dataSize: number;
 	modelSize: number;
 	metadataSize: number;
-	regions: SummaryRegion[];
+	regions: BufferRegion[];
+};
+
+type SummaryView = {
+	titleLine: string;
+	barModel: BufferBarModel;
+	totalLines: string[];
+	lineCount: number;
+	barRect: Rect;
+	legendHits: LegendHit[];
 };
 
 type Rect = { x: number; y: number; width: number; height: number };
+type LegendHit = Rect & { entry: BufferLegendEntry };
 type TabHit = Rect & { index: number; close?: boolean };
 type AssetSortKey = 'id' | 'type' | 'size' | 'offset';
 type SortState = { key: AssetSortKey; descending: boolean };
@@ -89,10 +99,6 @@ type UiLayout = {
 	tableScrollbar: Rect;
 	modal: ModalLayout | null;
 };
-
-function clamp(value: number, min: number, max: number): number {
-	return value < min ? min : value > max ? max : value;
-}
 
 function assetOffset(asset: RomAsset): number {
 	return asset.start ?? asset.metabuffer_start ?? Number.MAX_SAFE_INTEGER;
@@ -124,17 +130,20 @@ function sortAssets(assetList: RomAsset[], sortState: SortState): RomAsset[] {
 	});
 }
 
-function getFilteredAssets(assetList: RomAsset[], filter: string, sortState: SortState): RomAsset[] {
-	if (!filter) {
-		return sortAssets(assetList, sortState);
-	}
+function getFilteredAssets(assetList: RomAsset[], filter: string, sortState: SortState, regionFilter: BufferRegion | null): RomAsset[] {
 	const lowered = filter.toLowerCase();
-	return sortAssets(assetList.filter(asset =>
-		asset.resid.toLowerCase().includes(lowered) ||
-		asset.type.toLowerCase().includes(lowered) ||
-		(asset.source_path !== undefined && asset.source_path.toLowerCase().includes(lowered)) ||
-		(asset.normalized_source_path !== undefined && asset.normalized_source_path.toLowerCase().includes(lowered))
-	), sortState);
+	return sortAssets(assetList.filter(asset => {
+		if (regionFilter && !assetIntersectsRegion(asset, regionFilter)) {
+			return false;
+		}
+		if (!filter) {
+			return true;
+		}
+		return asset.resid.toLowerCase().includes(lowered)
+			|| asset.type.toLowerCase().includes(lowered)
+			|| (asset.source_path !== undefined && asset.source_path.toLowerCase().includes(lowered))
+			|| (asset.normalized_source_path !== undefined && asset.normalized_source_path.toLowerCase().includes(lowered));
+	}), sortState);
 }
 
 function assetSize(asset: RomAsset): number {
@@ -148,10 +157,202 @@ function assetSize(asset: RomAsset): number {
 	return size;
 }
 
+function assetRanges(asset: RomAsset): Array<[number, number]> {
+	const ranges: Array<[number, number]> = [];
+	if (typeof asset.start === 'number' && typeof asset.end === 'number' && asset.end > asset.start) {
+		ranges.push([asset.start, asset.end]);
+	}
+	if (typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number' && asset.metabuffer_end > asset.metabuffer_start) {
+		ranges.push([asset.metabuffer_start, asset.metabuffer_end]);
+	}
+	const compiledStart = (asset as any).compiled_start;
+	const compiledEnd = (asset as any).compiled_end;
+	if (typeof compiledStart === 'number' && typeof compiledEnd === 'number' && compiledEnd > compiledStart) {
+		ranges.push([compiledStart, compiledEnd]);
+	}
+	const textureStart = (asset as any).texture_start;
+	const textureEnd = (asset as any).texture_end;
+	if (typeof textureStart === 'number' && typeof textureEnd === 'number' && textureEnd > textureStart) {
+		ranges.push([textureStart, textureEnd]);
+	}
+	return ranges;
+}
+
+function assetIntersectsRegion(asset: RomAsset, region: BufferRegion): boolean {
+	for (const [start, end] of assetRanges(asset)) {
+		if (start < region.end && end > region.start) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function sameBufferRegion(left: BufferRegion | null, right: BufferRegion | null): boolean {
+	return left !== null && right !== null
+		&& left.start === right.start
+		&& left.end === right.end
+		&& left.label === right.label
+		&& left.colorTag === right.colorTag;
+}
+
 function pad(text: string, width: number): string {
 	if (width <= 0) return '';
 	if (text.length >= width) return text.slice(0, Math.max(0, width - 1)) + (text.length > width ? '~' : '');
 	return text.padEnd(width, ' ');
+}
+
+function mixChannel(left: number, right: number, ratio: number): number {
+	return Math.round(left + (right - left) * ratio);
+}
+
+function mixColor(left: { r: number; g: number; b: number }, right: { r: number; g: number; b: number }, ratio: number) {
+	return {
+		r: mixChannel(left.r, right.r, ratio),
+		g: mixChannel(left.g, right.g, ratio),
+		b: mixChannel(left.b, right.b, ratio),
+	};
+}
+
+function dimColor(color: { r: number; g: number; b: number }, ratio: number) {
+	return mixColor(color, TUI_COLORS.black, ratio);
+}
+
+function resolveTaggedColor(tag: string, fallback: { r: number; g: number; b: number }) {
+	if (!tag) {
+		return fallback;
+	}
+	const trimmed = tag.startsWith('{') && tag.endsWith('}') ? tag.slice(1, -1) : tag;
+	const colorName = trimmed.slice(0, -3);
+	if (colorName.startsWith('#') && colorName.length === 7) {
+		return {
+			r: Number.parseInt(colorName.slice(1, 3), 16),
+			g: Number.parseInt(colorName.slice(3, 5), 16),
+			b: Number.parseInt(colorName.slice(5, 7), 16),
+		};
+	}
+	switch (colorName) {
+		case 'black': return TUI_COLORS.black;
+		case 'white': return TUI_COLORS.white;
+		case 'blue': return TUI_COLORS.blue;
+		case 'yellow': return TUI_COLORS.yellow;
+		case 'green': return TUI_COLORS.green;
+		case 'red': return TUI_COLORS.red;
+		case 'cyan': return TUI_COLORS.cyan;
+		case 'magenta': return TUI_COLORS.magenta;
+		case 'grey':
+		case 'gray':
+		case 'light-black': return TUI_COLORS.dim;
+		case 'light-red': return TUI_COLORS.lightRed;
+		case 'light-blue': return TUI_COLORS.lightBlue;
+		case 'light-yellow': return TUI_COLORS.lightYellow;
+		case 'light-green': return TUI_COLORS.lightGreen;
+		case 'light-cyan': return TUI_COLORS.lightCyan;
+		case 'light-magenta': return TUI_COLORS.lightMagenta;
+		default: return fallback;
+	}
+}
+
+function bufferBarCellStyle(cell: BufferBarCell, hovered: boolean, selected: boolean, hasSelection: boolean): TuiStyle {
+	const baseStyle: TuiStyle = {
+		fg: resolveTaggedColor(cell.fgColorTag, STYLE_NORMAL.fg),
+		bg: resolveTaggedColor(cell.bgColorTag, STYLE_NORMAL.bg),
+	};
+	if (!hasSelection) {
+		if (!hovered) {
+			return baseStyle;
+		}
+		return {
+			fg: mixColor(baseStyle.fg, TUI_COLORS.white, 0.25),
+			bg: mixColor(baseStyle.bg, GREY_HIGHLIGHT, 0.7),
+		};
+	}
+	if (selected) {
+		if (!hovered) {
+			return baseStyle;
+		}
+		return {
+			fg: mixColor(baseStyle.fg, TUI_COLORS.white, 0.2),
+			bg: mixColor(baseStyle.bg, GREY_ACTIVE, 0.35),
+		};
+	}
+	const dimmedStyle: TuiStyle = {
+		fg: dimColor(baseStyle.fg, 0.7),
+		bg: dimColor(baseStyle.bg, 0.7),
+	};
+	if (!hovered) {
+		return dimmedStyle;
+	}
+	return {
+		fg: mixColor(dimmedStyle.fg, TUI_COLORS.white, 0.12),
+		bg: mixColor(dimmedStyle.bg, GREY_HIGHLIGHT, 0.25),
+	};
+}
+
+function legendEntryStyles(entry: BufferLegendEntry, hovered: boolean, selected: boolean, hasSelection: boolean) {
+	const color = resolveTaggedColor(entry.colorTag, STYLE_DIM.fg);
+	if (!hasSelection) {
+		return {
+			square: hovered ? mixColor(color, TUI_COLORS.white, 0.18) : color,
+			label: hovered ? color : STYLE_DIM.fg,
+		};
+	}
+	if (selected) {
+		return {
+			square: hovered ? mixColor(color, TUI_COLORS.white, 0.18) : color,
+			label: hovered ? mixColor(color, TUI_COLORS.white, 0.18) : color,
+		};
+	}
+	const dimmed = dimColor(color, 0.72);
+	if (!hovered) {
+		return {
+			square: dimmed,
+			label: dimColor(STYLE_DIM.fg, 0.45),
+		};
+	}
+	return {
+		square: mixColor(dimmed, TUI_COLORS.white, 0.1),
+		label: mixColor(dimmed, TUI_COLORS.white, 0.1),
+	};
+}
+
+function drawLegendRow(
+	screen: TuiScreen,
+	x: number,
+	y: number,
+	width: number,
+	entries: BufferLegendEntry[],
+	hoveredLabel: string | null,
+	selectedLabel: string | null,
+): void {
+	screen.fillRect(x, y, width, 1, STYLE_DIM);
+	let cursorX = x;
+	const hasSelection = selectedLabel !== null;
+	for (const entry of entries) {
+		const hovered = hoveredLabel === entry.label;
+		const selected = selectedLabel === entry.label;
+		const style = legendEntryStyles(entry, hovered, selected, hasSelection);
+		screen.writeChar(cursorX, y, '█', { fg: style.square, bg: STYLE_DIM.bg });
+		screen.writeText(cursorX + 1, y, ' ', STYLE_DIM);
+		screen.writeText(cursorX + 2, y, entry.label, { fg: style.label, bg: STYLE_DIM.bg });
+		cursorX += entry.width + 2;
+		if (cursorX > x + width) {
+			return;
+		}
+	}
+}
+
+function buildLegendHits(legendRows: BufferLegendEntry[][], startY: number): LegendHit[] {
+	const hits: LegendHit[] = [];
+	let y = startY;
+	for (const row of legendRows) {
+		let x = 0;
+		for (const entry of row) {
+			hits.push({ x, y, width: entry.width, height: 1, entry });
+			x += entry.width + 2;
+		}
+		y += 1;
+	}
+	return hits;
 }
 
 function wrapSummarySegments(segments: string[], width: number): string[] {
@@ -312,8 +513,9 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	const offsetHexWidth = Math.max(1, Math.max(0, ctx.rombin.byteLength - 1).toString(16).length);
 	let filterMode = false;
 	let filterValue = '';
+	let bufferRegionFilter: BufferRegion | null = null;
 	let sortState: SortState = { key: 'id', descending: false };
-	let filteredAssets = getFilteredAssets(ctx.assets, filterValue, sortState);
+	let filteredAssets = getFilteredAssets(ctx.assets, filterValue, sortState, bufferRegionFilter);
 	let selectedIndex = 0;
 	let scrollRow = 0;
 	let statusLine = '';
@@ -323,12 +525,15 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let modalScroll = 0;
 	let loadingModal = false;
 	let lastLayout: UiLayout | null = null;
+	let lastSummaryView: SummaryView | null = null;
 	let mouseX = -1;
 	let mouseY = -1;
 	let scrollbarDrag: ScrollbarDrag | null = null;
 
-	const buildSummaryLines = (width: number): string[] => {
-		const summaryBarLines = renderSummaryBar(summaryMetrics.regions, summaryMetrics.totalSize, Math.max(16, width - 16), width).split('\n');
+	const buildSummaryView = (width: number): SummaryView => {
+		const barWidth = Math.max(1, width - BUFFER_LINE_PREFIX.length - 2);
+		const barModel = buildBufferBarModel(summaryMetrics.regions, summaryMetrics.totalSize, barWidth, width);
+		const legendHits = buildLegendHits(barModel.legendRows, 2);
 		const pct = (value: number) => ((value / summaryMetrics.totalSize) * 100).toFixed(1);
 		const totalLines = wrapSummarySegments([
 			`Total: ${ctx.formatByteSize(summaryMetrics.totalSize)}`,
@@ -339,12 +544,28 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			`Atlas: ${ctx.formatByteSize(summaryMetrics.atlasSize)} (${pct(summaryMetrics.atlasSize)}%)`,
 			`Metadata: ${ctx.formatByteSize(summaryMetrics.metadataSize)} (${pct(summaryMetrics.metadataSize)}%)`,
 		], width);
-		return [
-			`${ctx.romfile} | assets: ${ctx.assets.length} | image: ${summaryMetrics.imageCount} | atlas: ${summaryMetrics.atlasCount} | audio: ${summaryMetrics.audioCount} | data: ${summaryMetrics.dataCount} | model: ${summaryMetrics.modelCount}`,
-			`Buffer: ${summaryBarLines[0] ?? ''}`,
-			...summaryBarLines.slice(1),
-			...totalLines,
-		];
+		return {
+			titleLine: `${ctx.romfile} | assets: ${ctx.assets.length} | image: ${summaryMetrics.imageCount} | atlas: ${summaryMetrics.atlasCount} | audio: ${summaryMetrics.audioCount} | data: ${summaryMetrics.dataCount} | model: ${summaryMetrics.modelCount}`,
+			barModel,
+			totalLines,
+			lineCount: 1 + 1 + barModel.legendRows.length + totalLines.length,
+			barRect: { x: BUFFER_LINE_PREFIX.length + 1, y: 1, width: barModel.cells.length, height: 1 },
+			legendHits,
+		};
+	};
+
+	const getHoveredBufferRegion = (summaryView: SummaryView | null): BufferRegion | null => {
+		if (!summaryView || mouseY !== summaryView.barRect.y || mouseX < summaryView.barRect.x || mouseX >= summaryView.barRect.x + summaryView.barRect.width) {
+			return null;
+		}
+		return summaryView.barModel.cells[mouseX - summaryView.barRect.x].region;
+	};
+
+	const getHoveredLegendEntry = (summaryView: SummaryView | null): BufferLegendEntry | null => {
+		if (!summaryView) {
+			return null;
+		}
+		return summaryView.legendHits.find(hit => isInside(hit, mouseX, mouseY))?.entry ?? null;
 	};
 
 	const getModalLines = () => {
@@ -407,16 +628,39 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		screen.clear(STYLE_NORMAL);
 		const width = screen.width();
 		const height = screen.height();
-		const summaryLines = buildSummaryLines(width);
-		const layout = computeLayout(width, height, summaryLines.length);
+		const summaryView = buildSummaryView(width);
+		const layout = computeLayout(width, height, summaryView.lineCount);
 		lastLayout = layout;
-		writeLine(screen, 0, 0, width, summaryLines[0], STYLE_STATUS);
-		writeTaggedLine(screen, 0, 1, width, summaryLines[1], STYLE_NORMAL);
-		for (let lineIndex = 2; lineIndex < summaryLines.length - 1; lineIndex += 1) {
-			writeTaggedLine(screen, 0, lineIndex, width, summaryLines[lineIndex], STYLE_DIM);
+		lastSummaryView = summaryView;
+		const hoveredBufferRegion = !layout.modal ? getHoveredBufferRegion(summaryView) : null;
+		const hoveredLegendEntry = !layout.modal ? getHoveredLegendEntry(summaryView) : null;
+		const hoveredBufferLabel = hoveredLegendEntry?.label ?? hoveredBufferRegion?.label ?? null;
+		const selectedBufferLabel = bufferRegionFilter?.label ?? null;
+		const hasBufferSelection = bufferRegionFilter !== null;
+		writeLine(screen, 0, 0, width, summaryView.titleLine, STYLE_STATUS);
+		screen.fillRect(0, 1, width, 1, STYLE_NORMAL);
+		screen.writeText(0, 1, `${BUFFER_LINE_PREFIX}[`, STYLE_NORMAL);
+		for (let cellIndex = 0; cellIndex < summaryView.barModel.cells.length; cellIndex += 1) {
+			const cell = summaryView.barModel.cells[cellIndex];
+			const hovered = hoveredBufferLabel !== null && (cell.region?.label === hoveredBufferLabel || cell.backgroundRegion?.label === hoveredBufferLabel);
+			const selected = (bufferRegionFilter !== null && sameBufferRegion(cell.region, bufferRegionFilter))
+				|| (bufferRegionFilter !== null && sameBufferRegion(cell.backgroundRegion, bufferRegionFilter));
+			screen.writeChar(summaryView.barRect.x + cellIndex, 1, cell.ch, bufferBarCellStyle(cell, hovered, selected, hasBufferSelection));
 		}
-		writeLine(screen, 0, summaryLines.length - 1, width, summaryLines[summaryLines.length - 1], STYLE_DIM);
-		writeLine(screen, 0, summaryLines.length, width, filterMode ? `Filter: ${filterValue}` : `Filter: ${filterValue || '<none>'}`, filterMode ? STYLE_FILTER : STYLE_DIM);
+		screen.writeText(summaryView.barRect.x + summaryView.barRect.width, 1, ']', STYLE_NORMAL);
+		let summaryY = 2;
+		for (const legendRow of summaryView.barModel.legendRows) {
+			drawLegendRow(screen, 0, summaryY, width, legendRow, hoveredBufferLabel, selectedBufferLabel);
+			summaryY += 1;
+		}
+		for (const totalLine of summaryView.totalLines) {
+			writeTaggedLine(screen, 0, summaryY, width, totalLine, STYLE_DIM);
+			summaryY += 1;
+		}
+		const bufferFilterText = bufferRegionFilter
+			? ` | Buffer: ${bufferRegionFilter.label} ${ctx.formatNumberAsHex(bufferRegionFilter.start, offsetHexWidth)}-${ctx.formatNumberAsHex(bufferRegionFilter.end, offsetHexWidth)}`
+			: '';
+		writeLine(screen, 0, summaryView.lineCount, width, (filterMode ? `Filter: ${filterValue}` : `Filter: ${filterValue || '<none>'}`) + bufferFilterText, filterMode ? STYLE_FILTER : STYLE_DIM);
 
 		const maxScroll = Math.max(0, filteredAssets.length - layout.visibleRows);
 		scrollRow = clamp(scrollRow, 0, maxScroll);
@@ -521,7 +765,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 
 	const refreshFilteredAssets = () => {
 		const selectedAssetId = filteredAssets[selectedIndex]?.resid;
-		filteredAssets = getFilteredAssets(ctx.assets, filterValue, sortState);
+		filteredAssets = getFilteredAssets(ctx.assets, filterValue, sortState, bufferRegionFilter);
 		if (filteredAssets.length === 0) {
 			selectedIndex = 0;
 			scrollRow = 0;
@@ -550,6 +794,20 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		statusLine = `Sorted by ${key} (${sortState.descending ? 'desc' : 'asc'}).`;
 	};
 
+	const applyBufferRegionFilter = (region: BufferRegion | null) => {
+		if (region === null && bufferRegionFilter === null) {
+			return;
+		}
+		bufferRegionFilter = sameBufferRegion(bufferRegionFilter, region) ? null : region;
+		refreshFilteredAssets();
+		scrollRow = 0;
+		if (!bufferRegionFilter) {
+			statusLine = 'Buffer filter cleared.';
+			return;
+		}
+		statusLine = `Buffer filter: ${bufferRegionFilter.label} ${ctx.formatNumberAsHex(bufferRegionFilter.start, offsetHexWidth)}-${ctx.formatNumberAsHex(bufferRegionFilter.end, offsetHexWidth)}.`;
+	};
+
 	const openAssetModal = async (assetIndex: number, tabIndex = 0): Promise<void> => {
 		if (filteredAssets.length === 0) {
 			return;
@@ -560,15 +818,15 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		modalTab = tabIndex;
 		modalScroll = 0;
 		try {
-							modalView = await buildAssetModalView(filteredAssets[selectedIndex], {
-								rombin: ctx.rombin,
-								assetList: ctx.assets,
-								manifest: ctx.manifest,
-								projectRootPath: ctx.projectRootPath,
-								formatByteSize: ctx.formatByteSize,
-								modalWidth: Math.max(20, Math.floor(screen.width() * 0.8) - 4),
-								modalHeight: Math.max(8, Math.floor(screen.height() * 0.8) - 8),
-							});
+			modalView = await buildAssetModalView(filteredAssets[selectedIndex], {
+				rombin: ctx.rombin,
+				assetList: ctx.assets,
+				manifest: ctx.manifest,
+				projectRootPath: ctx.projectRootPath,
+				formatByteSize: ctx.formatByteSize,
+				modalWidth: Math.max(20, Math.floor(screen.width() * 0.8) - 4),
+				modalHeight: Math.max(8, Math.floor(screen.height() * 0.8) - 8),
+			});
 			statusLine = `Opened ${filteredAssets[selectedIndex].resid}.`;
 		} finally {
 			loadingModal = false;
@@ -659,6 +917,15 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		}
 		if (event.button !== 'left' || event.action !== 'down') {
 			return false;
+		}
+		if (lastSummaryView && isInside(lastSummaryView.barRect, event.x, event.y)) {
+			applyBufferRegionFilter(lastSummaryView.barModel.cells[event.x - lastSummaryView.barRect.x].region);
+			return true;
+		}
+		const legendHit = lastSummaryView?.legendHits.find(hit => isInside(hit, event.x, event.y)) ?? null;
+		if (legendHit) {
+			applyBufferRegionFilter(legendHit.entry.region);
+			return true;
 		}
 		const headerColumn = layout.tableColumns.find(column => isInside(column, event.x, event.y));
 		if (headerColumn) {

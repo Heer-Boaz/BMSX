@@ -1,4 +1,25 @@
-type BufferRegion = { start: number; end: number; colorTag: string; label: string };
+export type BufferRegion = { start: number; end: number; colorTag: string; label: string };
+export type BufferBarCell = {
+	ch: string;
+	fgColorTag: string;
+	bgColorTag: string;
+	region: BufferRegion | null;
+	backgroundRegion: BufferRegion | null;
+};
+export type BufferLegendEntry = {
+	label: string;
+	colorTag: string;
+	region: BufferRegion;
+	text: string;
+	width: number;
+};
+export type BufferBarModel = {
+	cells: BufferBarCell[];
+	regions: BufferRegion[];
+	legendEntries: BufferLegendEntry[];
+	legendRows: BufferLegendEntry[][];
+	legendLines: string[];
+};
 
 const LEFT_BLOCKS = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
 const SLIVER_THRESHOLD = 1 / 16;
@@ -49,19 +70,7 @@ const K_DITHER_THRESHOLD_BY_BIT = (() => {
  * @param barLength - The length of the bar in characters.
  * @returns A string representing the rendered buffer bar with color tags and labels.
  */
-export function renderBufferBar(
-	unfilteredRegions: Array<{ start: number; end: number; colorTag: string, label: string }>,
-	totalSize: number,
-	barLength: number,
-	legendWrapWidth?: number,
-): string {
-	const quantize = quantizeCoverage;
-	const cellSize = totalSize / barLength;
-	const defaultCellChar = '·';
-	const cellChars = new Array(barLength).fill(defaultCellChar);
-	const cellColors = new Array(barLength).fill('');
-
-	// Filter out empty regions (start === end === 0)
+function normalizeBufferRegions(unfilteredRegions: BufferRegion[]): BufferRegion[] {
 	let regions = unfilteredRegions
 		.filter(region => region.start !== 0 || region.end !== 0)
 		.sort((left, right) => {
@@ -71,22 +80,100 @@ export function renderBufferBar(
 			if (left.label !== right.label) return left.label < right.label ? -1 : 1;
 			return 0;
 		});
-	// Concatenate neighbouring regions with the same color once they are in ROM order.
-	{
-		const mergedRegions: BufferRegion[] = [];
-		for (const region of regions) {
-			const last = mergedRegions[mergedRegions.length - 1];
-			if (last && last.colorTag === region.colorTag && region.start <= last.end) {
-				last.end = Math.max(last.end, region.end);
-			} else {
-				mergedRegions.push({ start: region.start, end: region.end, colorTag: region.colorTag, label: region.label });
+	const mergedRegions: BufferRegion[] = [];
+	for (const region of regions) {
+		const last = mergedRegions[mergedRegions.length - 1];
+		if (last && last.colorTag === region.colorTag && last.label === region.label && region.start <= last.end) {
+			last.end = Math.max(last.end, region.end);
+			continue;
+		}
+		mergedRegions.push({ start: region.start, end: region.end, colorTag: region.colorTag, label: region.label });
+	}
+	return mergedRegions;
+}
+
+function buildLegendEntries(cells: BufferBarCell[], regions: BufferRegion[]): BufferLegendEntry[] {
+	const orderedRegions: BufferRegion[] = [];
+	const seenLabels = new Set<string>();
+	for (const cell of cells) {
+		for (const region of [cell.region, cell.backgroundRegion]) {
+			if (region && !seenLabels.has(region.label)) {
+				seenLabels.add(region.label);
+				orderedRegions.push(region);
 			}
 		}
-		regions = mergedRegions;
 	}
+	for (const region of regions) {
+		if (!seenLabels.has(region.label)) {
+			seenLabels.add(region.label);
+			orderedRegions.push(region);
+		}
+	}
+	return orderedRegions.map(region => ({
+		label: region.label,
+		colorTag: region.colorTag,
+		region,
+		text: `${region.colorTag}█{/${region.colorTag.replace('{', '').replace('-fg}', '')}-fg} ${region.label}`,
+		width: region.label.length + 2,
+	}));
+}
+
+function buildLegendRows(legendEntries: BufferLegendEntry[], legendWrapWidth?: number): BufferLegendEntry[][] {
+	if (legendWrapWidth === undefined || legendWrapWidth <= 0) {
+		return [legendEntries];
+	}
+	const legendRows: BufferLegendEntry[][] = [];
+	let currentRow: BufferLegendEntry[] = [];
+	let currentWidth = 0;
+	for (const entry of legendEntries) {
+		const nextWidth = currentWidth === 0 ? entry.width : currentWidth + 2 + entry.width;
+		if (currentRow.length > 0 && nextWidth > legendWrapWidth) {
+			legendRows.push(currentRow);
+			currentRow = [entry];
+			currentWidth = entry.width;
+			continue;
+		}
+		if (currentRow.length > 0) {
+			currentRow.push(entry);
+			currentWidth += 2 + entry.width;
+			continue;
+		}
+		currentRow = [entry];
+		currentWidth = entry.width;
+	}
+	if (currentRow.length > 0) {
+		legendRows.push(currentRow);
+	}
+	return legendRows;
+}
+
+function buildLegendLines(legendRows: BufferLegendEntry[][]): string[] {
+	const legendLines: string[] = [];
+	for (const row of legendRows) {
+		legendLines.push(row.map(entry => entry.text).join('  '));
+	}
+	return legendLines;
+}
+
+export function buildBufferBarModel(
+	unfilteredRegions: Array<{ start: number; end: number; colorTag: string, label: string }>,
+	totalSize: number,
+	barLength: number,
+	legendWrapWidth?: number,
+): BufferBarModel {
+	const quantize = quantizeCoverage;
+	const cellSize = totalSize / barLength;
+	const defaultCellChar = '·';
+	const regions = normalizeBufferRegions(unfilteredRegions);
+	const cells: BufferBarCell[] = Array.from({ length: barLength }, () => ({
+		ch: defaultCellChar,
+		fgColorTag: '',
+		bgColorTag: '',
+		region: null,
+		backgroundRegion: null,
+	}));
 
 	const toBackground = (colorTag: string) => {
-		// Convert color tag to background color by replacing -fg with -bg
 		return colorTag.replace('-fg}', '-bg}');
 	};
 	const glyphForCoverage = (coverage: number) => {
@@ -97,16 +184,26 @@ export function renderBufferBar(
 		const cellStart = cell * cellSize;
 		const cellEnd = cellStart + cellSize;
 
-		let fgRegion: BufferRegion = null;
-		let bgRegion: BufferRegion = null;
+		let fgRegion: BufferRegion | null = null;
+		let bgRegion: BufferRegion | null = null;
 		let fgStart = 0;
 		let fgEnd = 0;
+		let strongestRegion: BufferRegion | null = null;
+		let strongestStart = 0;
+		let strongestEnd = 0;
+		let strongestOverlap = 0;
 
 		for (const region of regions) {
 			const segStart = Math.max(region.start, cellStart);
 			const segEnd = Math.min(region.end, cellEnd);
 			const overlap = segEnd - segStart;
 			if (overlap <= 0) continue;
+			if (overlap > strongestOverlap) {
+				strongestRegion = region;
+				strongestStart = segStart;
+				strongestEnd = segEnd;
+				strongestOverlap = overlap;
+			}
 			if (!fgRegion) {
 				if (overlap / cellSize < SLIVER_THRESHOLD) continue;
 				fgRegion = region;
@@ -118,6 +215,11 @@ export function renderBufferBar(
 			break;
 		}
 
+		if (!fgRegion && strongestRegion) {
+			fgRegion = strongestRegion;
+			fgStart = strongestStart;
+			fgEnd = strongestEnd;
+		}
 		if (!fgRegion) continue;
 
 		const leftFrac = (fgStart - cellStart) / cellSize;
@@ -127,8 +229,9 @@ export function renderBufferBar(
 		if (coverage <= 0) continue;
 
 		if (coverage >= 1 - 1e-7) {
-			cellChars[cell] = '█';
-			cellColors[cell] = fgRegion.colorTag;
+			cells[cell].ch = '█';
+			cells[cell].fgColorTag = fgRegion.colorTag;
+			cells[cell].region = fgRegion;
 			continue;
 		}
 
@@ -138,74 +241,51 @@ export function renderBufferBar(
 
 		if (alignRight) {
 			if (leftGap < SLIVER_THRESHOLD) {
-				cellChars[cell] = '█';
-				cellColors[cell] = fgRegion.colorTag;
+				cells[cell].ch = '█';
+				cells[cell].fgColorTag = fgRegion.colorTag;
+				cells[cell].region = fgRegion;
 				continue;
 			}
 			const glyph = glyphForCoverage(leftGap);
 			if (glyph) {
-				cellChars[cell] = glyph;
+				cells[cell].ch = glyph;
 				const gapFg = bgRegion ? bgRegion.colorTag : GAP_FG_TAG;
-				cellColors[cell] = toBackground(fgRegion.colorTag) + gapFg;
+				cells[cell].fgColorTag = gapFg;
+				cells[cell].bgColorTag = toBackground(fgRegion.colorTag);
+				cells[cell].region = fgRegion;
+				cells[cell].backgroundRegion = bgRegion;
 			}
 		} else {
-			if (coverage < SLIVER_THRESHOLD) continue;
-			const glyph = glyphForCoverage(coverage);
+			const glyph = glyphForCoverage(Math.max(coverage, SLIVER_THRESHOLD));
 			if (glyph) {
-				cellChars[cell] = glyph;
-				cellColors[cell] = (bgRegion ? toBackground(bgRegion.colorTag) : '') + fgRegion.colorTag;
+				cells[cell].ch = glyph;
+				cells[cell].fgColorTag = fgRegion.colorTag;
+				cells[cell].bgColorTag = bgRegion ? toBackground(bgRegion.colorTag) : '';
+				cells[cell].region = fgRegion;
+				cells[cell].backgroundRegion = bgRegion;
 			}
 		}
 	}
+	const legendEntries = buildLegendEntries(cells, regions);
+	const legendRows = buildLegendRows(legendEntries, legendWrapWidth);
+	return {
+		cells,
+		regions,
+		legendEntries,
+		legendRows,
+		legendLines: buildLegendLines(legendRows),
+	};
+}
 
-	const bar = cellChars.map((ch, i) => cellColors[i] + ch + '{/}').join('');
-
-	// --- Generate legend from summaryRegions ---
-	// Collect unique colorTag/label pairs, preserving order of first appearance
-	const legendMap = new Map<string, string>();
-	for (const region of regions) {
-		if (region.colorTag && region.label && !legendMap.has(region.label)) {
-			legendMap.set(region.label, region.colorTag);
-		}
-	}
-	// Sort legend as per the order of appearance in the regions array
-	const sortedLegend = Array.from(legendMap.keys()).sort((a, b) => {
-		const aIndex = regions.findIndex(r => r.label === a);
-		const bIndex = regions.findIndex(r => r.label === b);
-		return aIndex - bIndex;
-	});
-
-	// Compose legend string
-	const legendEntries = sortedLegend.map(label => ({
-		text: `${legendMap.get(label)}█{/${legendMap.get(label).replace('{', '').replace('-fg}', '')}-fg} ${label}`,
-		width: label.length + 2,
-	}));
-	if (legendWrapWidth === undefined || legendWrapWidth <= 0) {
-		return `[${bar}]\n${legendEntries.map(entry => entry.text).join('  ')}`;
-	}
-	const legendLines: string[] = [];
-	let currentLine = '';
-	let currentWidth = 0;
-	for (const entry of legendEntries) {
-		const nextWidth = currentWidth === 0 ? entry.width : currentWidth + 2 + entry.width;
-		if (currentLine && nextWidth > legendWrapWidth) {
-			legendLines.push(currentLine);
-			currentLine = entry.text;
-			currentWidth = entry.width;
-			continue;
-		}
-		if (currentLine) {
-			currentLine += `  ${entry.text}`;
-			currentWidth += 2 + entry.width;
-			continue;
-		}
-		currentLine = entry.text;
-		currentWidth = entry.width;
-	}
-	if (currentLine) {
-		legendLines.push(currentLine);
-	}
-	return `[${bar}]\n${legendLines.join('\n')}`;
+export function renderBufferBar(
+	unfilteredRegions: Array<{ start: number; end: number; colorTag: string, label: string }>,
+	totalSize: number,
+	barLength: number,
+	legendWrapWidth?: number,
+): string {
+	const model = buildBufferBarModel(unfilteredRegions, totalSize, barLength, legendWrapWidth);
+	const bar = model.cells.map(cell => `${cell.bgColorTag}${cell.fgColorTag}${cell.ch}{/}`).join('');
+	return `[${bar}]\n${model.legendLines.join('\n')}`;
 }
 
 /**
