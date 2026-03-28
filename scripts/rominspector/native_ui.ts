@@ -1137,7 +1137,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (!modal || !modalView) {
 			return false;
 		}
-		if (event.button === 'left' && event.action === 'up') {
+		if (event.action === 'up') {
 			scrollbarDrag = null;
 			return true;
 		}
@@ -1193,7 +1193,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (!layout) {
 			return false;
 		}
-		if (event.button === 'left' && event.action === 'up') {
+		if (event.action === 'up') {
 			scrollbarDrag = null;
 			return true;
 		}
