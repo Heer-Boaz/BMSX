@@ -278,12 +278,56 @@ local tilecollisionsystem = {}
 tilecollisionsystem.__index = tilecollisionsystem
 setmetatable(tilecollisionsystem, { __index = ecsystem })
 
+local function emit_tilecollision_event(owner, component, suffix, phase, collision_key, payload)
+	local event = component._event
+	clear_map(event)
+	event.type = component.event_base .. '.' .. suffix
+	event.emitter = owner
+	event.phase = phase
+	event.component_id = component.id
+	event.component_local_id = component.id_local
+	event.collision_key = collision_key
+	for key, value in pairs(payload) do
+		event[key] = value
+	end
+	owner.events:emit_event(event)
+end
+
 function tilecollisionsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), tilecollisionsystem)
+	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 45), tilecollisionsystem)
 	return self
 end
 
 function tilecollisionsystem:update()
+	for obj, component in world_instance:objects_with_components(tilecollisioncomponent, active_scope) do
+		if component.enabled and not obj.dispose_flag and obj.active then
+			local current_payload = component.current_payload
+			local previous_payload = component.previous_payload
+			clear_map(current_payload)
+			local current_key = component.query(component, obj, current_payload)
+			local previous_key = component.previous_collision_key
+			if current_key == nil then
+				if previous_key ~= nil then
+					emit_tilecollision_event(obj, component, 'end', 'end', previous_key, previous_payload)
+					component.previous_collision_key = nil
+				end
+			else
+				if previous_key == nil then
+					emit_tilecollision_event(obj, component, 'begin', 'begin', current_key, current_payload)
+				elseif previous_key ~= current_key then
+					emit_tilecollision_event(obj, component, 'end', 'end', previous_key, previous_payload)
+					emit_tilecollision_event(obj, component, 'begin', 'begin', current_key, current_payload)
+				else
+					emit_tilecollision_event(obj, component, 'stay', 'stay', current_key, current_payload)
+				end
+				component.previous_payload = current_payload
+				component.current_payload = previous_payload
+				component.previous_collision_key = current_key
+			end
+		else
+			component.previous_collision_key = nil
+		end
+	end
 end
 
 local physicssyncbeforestepsystem = {}

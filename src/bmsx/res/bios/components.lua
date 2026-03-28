@@ -1084,12 +1084,23 @@ tilecollisioncomponent.__index = tilecollisioncomponent
 setmetatable(tilecollisioncomponent, { __index = positionupdateaxiscomponent })
 
 function tilecollisioncomponent.new(opts)
-	return init_positionupdateaxis_fields(new_typed_component_instance(
+	opts = opts or {}
+	local self = init_positionupdateaxis_fields(new_typed_component_instance(
 		tilecollisioncomponent,
 		'tilecollisioncomponent',
 		opts,
 		true
 	))
+	self.query = opts.query
+	if type(self.query) ~= 'function' then
+		error('[tilecollisioncomponent] opts.query must be a function')
+	end
+	self.event_base = opts.event_base or 'tilecollision'
+	self.previous_collision_key = nil
+	self.current_payload = {}
+	self.previous_payload = {}
+	self._event = {}
+	return self
 end
 
 local prohibitleavingscreencomponent = {}

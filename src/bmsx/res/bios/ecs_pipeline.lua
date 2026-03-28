@@ -45,10 +45,15 @@ function ecspipelineregistry:build(world_instance, nodes)
 		if not d then
 			error('ecspipelineregistry: unknown system ref "' .. n.ref .. '"')
 		end
+		local create_priority = n.priority
+		if create_priority == nil then
+			create_priority = d.default_priority
+		end
 		resolved[#resolved + 1] = {
 			ref = n.ref,
 			group = n.group or d.group,
-			priority = n.priority or d.default_priority or 0,
+			priority = create_priority or 0,
+			create_priority = create_priority,
 			index = i,
 		}
 	end
@@ -74,7 +79,7 @@ function ecspipelineregistry:build(world_instance, nodes)
 	for i = 1, #resolved do
 		local r = resolved[i]
 		local d = self._descs[r.ref]
-		local sys = d.create(r.priority)
+		local sys = d.create(r.create_priority)
 		sys.__ecs_id = r.ref
 		sys.id = 'ecs:' .. r.ref
 		sys.type_name = 'ecsystem'
