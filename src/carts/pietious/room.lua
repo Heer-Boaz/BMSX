@@ -410,8 +410,6 @@ local function build_logic_rows(room_state)
 	return logic_rows
 end
 
-
-
 local function build_stairs(map_rows, tile_size, origin_x, origin_y, player_height)
 	local stairs = {}
 	local row_count = #map_rows
@@ -650,45 +648,6 @@ function room_object:collision_flags_at_tile(tx, ty, include_elevator)
 		collision = collision | constants.collision_flags.elevator
 	end
 	return collision
-end
-
-function room_object:find_active_rock_overlapping_rect(x, y, w, h)
-	local rocks = self.rocks
-	if #rocks == 0 then
-		return nil
-	end
-
-	local destroyed_rock_ids = self.destroyed_rock_ids
-	for i = 1, #rocks do
-		local rock = rocks[i]
-		if not destroyed_rock_ids[rock.id] then
-			if rect_overlaps(x, y, w, h, rock.x, rock.y, constants.rock.width, constants.rock.height) then
-				return rock
-			end
-		end
-	end
-	return nil
-end
-
-function room_object:overlaps_active_rock(x, y, w, h)
-	if self:find_active_rock_overlapping_rect(x, y, w, h) ~= nil then
-		return true
-	end
-	return false
-end
-
-function room_object:is_active_rock_at_tile(tx, ty)
-	if ty < 1 or ty > self.tile_rows then
-		return false
-	end
-	if tx < 1 or tx > self.tile_columns then
-		return false
-	end
-	local ch = string.byte(self.logic_rows[ty], tx)
-	return ch == tile_chars.rock_ul
-		or ch == tile_chars.rock_ur
-		or ch == tile_chars.rock_dl
-		or ch == tile_chars.rock_dr
 end
 
 function room_object:overlaps_active_elevator(x, y, w, h)

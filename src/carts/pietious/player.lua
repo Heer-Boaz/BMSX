@@ -323,9 +323,6 @@ function player:define_runtime_timelines()
 		frames = timeline.range(constants.sword.duration_frames + 1),
 		playback_mode = 'once',
 		autotick = false,
-		markers = {
-			{ frame = 1, event = 'sword.slice' },
-		},
 	}))
 	self:define_timeline(timeline.new({
 		id = 'p.seq.hi',
@@ -568,21 +565,6 @@ end
 function player:cancel_sword()
 	self:force_seek_timeline('p.seq.s', 0)
 	self.events:emit('sword_cancel')
-end
-
-function player:try_hit_rock_with_sword()
-	local room = object('room')
-	local area = self.sword_collider:get_world_area()
-	local rock_def = room:find_active_rock_overlapping_rect(
-		area.left,
-		area.top,
-		area.right - area.left,
-		area.bottom - area.top
-	)
-	if rock_def == nil then
-		return
-	end
-	object(rock_def.id):process_weapon_hit(self.id, 'sword')
 end
 
 function player:advance_sword_sequence()
@@ -3081,9 +3063,6 @@ local function define_player_fsm()
 		on = {
 					[player_abilities.command_ids.activate_sword] = function(self)
 						player_abilities.activate_sword(self)
-					end,
-					['sword.slice'] = function(self)
-						self:try_hit_rock_with_sword()
 					end,
 					['player.world_emerge'] = {
 						emitter = 'd',

@@ -11,6 +11,7 @@
 -- automatic state restoration.
 
 local constants = require('constants')
+local components = require('components')
 local worldobject = require('worldobject')
 
 local pepernoot_projectile = {}
@@ -22,6 +23,19 @@ local state_tags = {
 
 function pepernoot_projectile:ctor()
 	self.collider:apply_collision_profile('projectile')
+	self:add_component(components.tilecollisioncomponent.new({
+		id_local = 'world',
+		query = function(_component, owner, payload)
+			local collision_flags = object('room'):collision_flags_at_world(owner.x, owner.y)
+			if collision_flags == constants.collision_flags.none or collision_flags == constants.collision_flags.elevator then
+				return nil
+			end
+			payload.collision_flags = collision_flags
+			payload.world_x = owner.x
+			payload.world_y = owner.y
+			return collision_flags
+		end,
+	}))
 	self:gfx('pepernoot_16')
 end
 
@@ -51,24 +65,13 @@ function pepernoot_projectile:update_motion()
 		self:mark_for_disposal()
 		return
 	end
-	local rock_def = room:find_active_rock_overlapping_rect(self.x, self.y, self.sx, self.sy)
-	local collision_flags = room:collision_flags_at_world(self.x, self.y)
-	if rock_def ~= nil then
-		object(rock_def.id):process_weapon_hit(self.id, 'projectile')
-		self:mark_for_disposal()
-		return
-	end
-	if collision_flags ~= constants.collision_flags.none
-		and collision_flags ~= constants.collision_flags.elevator
-	then
-		self:mark_for_disposal()
-	end
 end
 
 local function define_pepernoot_projectile_fsm()
 	define_fsm('pepernoot_projectile', {
 		initial = 'active',
 		on = {
+			['tilecollision.begin'] = worldobject.mark_for_disposal,
 			['overlap.begin'] = function(self, _state, event)
 				if event.other_layer ~= constants.collision.enemy_layer then
 					return
