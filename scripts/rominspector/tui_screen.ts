@@ -217,6 +217,72 @@ export class TuiScreen {
 		}
 	}
 
+	taggedTextWidth(text: string): number {
+		let width = 0;
+		let index = 0;
+		while (index < text.length) {
+			const ch = text[index];
+			if (ch === '{') {
+				const end = text.indexOf('}', index + 1);
+				if (end >= 0) {
+					const tag = text.slice(index + 1, end);
+					if (isStyleTag(tag)) {
+						index = end + 1;
+						continue;
+					}
+				}
+			}
+			if (ch === '\n') {
+				break;
+			}
+			width += 1;
+			index += 1;
+		}
+		return width;
+	}
+
+	writeTaggedTextClipped(x: number, y: number, text: string, baseStyle: TuiStyle, startCol: number, maxWidth: number): void {
+		if (y < 0 || y >= this.heightValue || x >= this.widthValue || maxWidth <= 0) {
+			return;
+		}
+		let cx = x;
+		let fg = baseStyle.fg;
+		let bg = baseStyle.bg;
+		let index = 0;
+		let visibleCol = 0;
+		const endCol = startCol + maxWidth;
+		while (index < text.length && visibleCol < endCol && cx < this.widthValue) {
+			const ch = text[index];
+			if (ch === '{') {
+				const end = text.indexOf('}', index + 1);
+				if (end >= 0) {
+					const tag = text.slice(index + 1, end);
+					if (isStyleTag(tag)) {
+						if (tag === '/' || tag.startsWith('/')) {
+							fg = baseStyle.fg;
+							bg = baseStyle.bg;
+						} else if (tag.endsWith('-fg')) {
+							fg = resolveTagColor(tag);
+						} else if (tag.endsWith('-bg')) {
+							bg = resolveTagColor(tag);
+						}
+						index = end + 1;
+						continue;
+					}
+				}
+			}
+			if (ch === '\n') {
+				break;
+			}
+			if (visibleCol >= startCol) {
+				this.writeChar(cx, y, ch, { fg, bg });
+				cx += 1;
+			}
+			visibleCol += 1;
+			index += 1;
+		}
+	}
+
 	draw(): void {
 		let out = '';
 		let currentFg: TuiColor | null = null;

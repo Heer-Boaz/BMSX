@@ -77,19 +77,28 @@ type TabHit = Rect & { index: number; close?: boolean };
 type AssetSortKey = 'id' | 'type' | 'size' | 'offset';
 type SortState = { key: AssetSortKey; descending: boolean };
 type TableColumn = Rect & { key: AssetSortKey; label: string };
-type ScrollbarThumb = Rect & { maxTop: number };
-type ScrollbarDrag = { target: 'list' | 'modal'; grabOffset: number };
+type ScrollbarThumb = Rect & { maxOffset: number };
+type ScrollbarDrag = { target: 'list' | 'modalY' | 'modalX'; grabOffset: number };
+type PreviewDrag = { originX: number; originY: number; startScrollX: number; startScrollY: number };
 type BufferFilter =
 	| { kind: 'region'; region: BufferRegion }
 	| { kind: 'label'; label: string; region: BufferRegion };
+type ModalTabContent = {
+	lines: string[];
+	maxWidth: number;
+};
 
 type ModalLayout = {
 	frame: Rect;
 	tabs: TabHit[];
+	previewFixedLines: string[];
 	content: Rect;
-	scrollbar: Rect;
-	maxScroll: number;
+	verticalScrollbar: Rect;
+	horizontalScrollbar: Rect;
+	maxScrollY: number;
+	maxScrollX: number;
 	visibleContentLines: number;
+	visibleContentColumns: number;
 	infoLineCount: number;
 };
 
@@ -175,23 +184,25 @@ function getFilteredAssets(
 ): RomAsset[] {
 	const lowered = filter.toLowerCase();
 	return sortAssets(assetList.filter(asset => {
-		if (bufferFilter?.kind === 'region' && !assetIntersectsRegion(asset, bufferFilter.region)) {
-			return false;
-		}
-		if (bufferFilter?.kind === 'label') {
-			const labelRegions = regionsByLabel.get(bufferFilter.label);
-			if (!labelRegions) {
+		if (bufferFilter) {
+			if (bufferFilter.kind === 'region' && !assetIntersectsRegion(asset, bufferFilter.region)) {
 				return false;
 			}
-			let matchesLabel = false;
-			for (const region of labelRegions) {
-				if (assetIntersectsRegion(asset, region)) {
-					matchesLabel = true;
-					break;
+			if (bufferFilter.kind === 'label') {
+				const labelRegions = regionsByLabel.get(bufferFilter.label);
+				if (!labelRegions) {
+					return false;
 				}
-			}
-			if (!matchesLabel) {
-				return false;
+				let matchesLabel = false;
+				for (const region of labelRegions) {
+					if (assetIntersectsRegion(asset, region)) {
+						matchesLabel = true;
+						break;
+					}
+				}
+				if (!matchesLabel) {
+					return false;
+				}
 			}
 		}
 		if (!filter) {
@@ -735,40 +746,78 @@ function writeTaggedLine(screen: TuiScreen, x: number, y: number, width: number,
 	screen.writeTaggedText(x, y, text, style, width);
 }
 
-function drawScrollbar(screen: TuiScreen, rect: Rect, totalLines: number, visibleLines: number, topLine: number, hovered: boolean): void {
+function drawVerticalScrollbar(screen: TuiScreen, rect: Rect, totalLines: number, visibleLines: number, topLine: number, hovered: boolean): void {
+	if (rect.width <= 0 || rect.height <= 0) {
+		return;
+	}
 	screen.fillRect(rect.x, rect.y, rect.width, rect.height, hovered ? STYLE_SCROLL_TRACK_HOVER : STYLE_SCROLL_TRACK);
-	const thumb = getScrollbarThumb(rect, totalLines, visibleLines, topLine);
+	const thumb = getVerticalScrollbarThumb(rect, totalLines, visibleLines, topLine);
 	if (!thumb) {
 		return;
 	}
 	screen.fillRect(rect.x, thumb.y, rect.width, thumb.height, hovered ? STYLE_SCROLL_THUMB_HOVER : STYLE_SCROLL_THUMB, ' ');
 }
 
+function drawHorizontalScrollbar(screen: TuiScreen, rect: Rect, totalColumns: number, visibleColumns: number, leftColumn: number, hovered: boolean): void {
+	if (rect.width <= 0 || rect.height <= 0) {
+		return;
+	}
+	screen.fillRect(rect.x, rect.y, rect.width, rect.height, hovered ? STYLE_SCROLL_TRACK_HOVER : STYLE_SCROLL_TRACK);
+	const thumb = getHorizontalScrollbarThumb(rect, totalColumns, visibleColumns, leftColumn);
+	if (!thumb) {
+		return;
+	}
+	screen.fillRect(thumb.x, rect.y, thumb.width, rect.height, hovered ? STYLE_SCROLL_THUMB_HOVER : STYLE_SCROLL_THUMB, ' ');
+}
+
 function isInside(rect: Rect, x: number, y: number): boolean {
 	return x >= rect.x && y >= rect.y && x < rect.x + rect.width && y < rect.y + rect.height;
 }
 
-function getScrollbarThumb(rect: Rect, totalLines: number, visibleLines: number, topLine: number): ScrollbarThumb | null {
+function getVerticalScrollbarThumb(rect: Rect, totalLines: number, visibleLines: number, topLine: number): ScrollbarThumb | null {
 	if (totalLines <= visibleLines || rect.height <= 0) {
 		return null;
 	}
 	const thumbHeight = Math.max(1, Math.floor(rect.height * visibleLines / totalLines));
-	const maxTop = Math.max(1, totalLines - visibleLines);
-	const thumbY = rect.y + Math.floor((rect.height - thumbHeight) * clamp(topLine, 0, maxTop) / maxTop);
-	return { x: rect.x, y: thumbY, width: rect.width, height: thumbHeight, maxTop };
+	const maxOffset = Math.max(1, totalLines - visibleLines);
+	const thumbY = rect.y + Math.floor((rect.height - thumbHeight) * clamp(topLine, 0, maxOffset) / maxOffset);
+	return { x: rect.x, y: thumbY, width: rect.width, height: thumbHeight, maxOffset };
 }
 
-function scrollTopFromThumb(rect: Rect, thumbHeight: number, maxTop: number, thumbY: number): number {
+function getHorizontalScrollbarThumb(rect: Rect, totalColumns: number, visibleColumns: number, leftColumn: number): ScrollbarThumb | null {
+	if (totalColumns <= visibleColumns || rect.width <= 0) {
+		return null;
+	}
+	const thumbWidth = Math.max(1, Math.floor(rect.width * visibleColumns / totalColumns));
+	const maxOffset = Math.max(1, totalColumns - visibleColumns);
+	const thumbX = rect.x + Math.floor((rect.width - thumbWidth) * clamp(leftColumn, 0, maxOffset) / maxOffset);
+	return { x: thumbX, y: rect.y, width: thumbWidth, height: rect.height, maxOffset };
+}
+
+function scrollTopFromThumb(rect: Rect, thumbHeight: number, maxOffset: number, thumbY: number): number {
 	const travel = rect.height - thumbHeight;
 	if (travel <= 0) {
 		return 0;
 	}
 	const ratio = clamp((thumbY - rect.y) / travel, 0, 1);
-	return Math.round(maxTop * ratio);
+	return Math.round(maxOffset * ratio);
+}
+
+function scrollLeftFromThumb(rect: Rect, thumbWidth: number, maxOffset: number, thumbX: number): number {
+	const travel = rect.width - thumbWidth;
+	if (travel <= 0) {
+		return 0;
+	}
+	const ratio = clamp((thumbX - rect.x) / travel, 0, 1);
+	return Math.round(maxOffset * ratio);
 }
 
 function scrollDelta(button: TuiMouseEvent['button']): number {
 	return button === 'wheelup' ? -3 : 3;
+}
+
+function formatZoom(zoom: number): string {
+	return Number.isInteger(zoom) ? zoom.toFixed(1) : zoom.toString();
 }
 
 function hoveredBarLabels(hoveredCell: BufferBarCell | null, hoveredRegion: BufferRegion | null, hoveredLegendEntry: BufferLegendEntry | null): string[] {
@@ -809,8 +858,14 @@ function drawSummaryBar(
 		const selected = bufferFilterMatchesCell(bufferFilter, cell);
 		const exactHover = hoveredBufferRegion && getHitRegionEntry(cell, hoveredBufferRegion) ? hoveredBufferRegion : null;
 		const hoveredLabel = !exactHover && hoveredLegendEntry && getHitLabelEntry(cell, hoveredLegendEntry.label) ? hoveredLegendEntry.label : null;
-		const exactSelected = !exactHover && !hoveredLabel && bufferFilter?.kind === 'region' && getHitRegionEntry(cell, bufferFilter.region) ? bufferFilter.region : null;
-		const selectedLabelHit = !exactHover && !hoveredLabel && !exactSelected && bufferFilter?.kind === 'label' && getHitLabelEntry(cell, bufferFilter.label) ? bufferFilter.label : null;
+		let exactSelected: BufferRegion | null = null;
+		if (!exactHover && !hoveredLabel && bufferFilter && bufferFilter.kind === 'region' && getHitRegionEntry(cell, bufferFilter.region)) {
+			exactSelected = bufferFilter.region;
+		}
+		let selectedLabelHit: string | null = null;
+		if (!exactHover && !hoveredLabel && !exactSelected && bufferFilter && bufferFilter.kind === 'label' && getHitLabelEntry(cell, bufferFilter.label)) {
+			selectedLabelHit = bufferFilter.label;
+		}
 		const focusedCell = exactHover
 			? focusedBufferBarCell(cell, exactHover, 'hover', selected, hasSelection)
 			: hoveredLabel
@@ -867,11 +922,13 @@ function drawTable(
 		hoveredHeader = layout.tableColumns.find(column => isInside(column, mouseX, mouseY)) || null;
 	}
 	for (const column of layout.tableColumns) {
-		const style = hoveredHeader?.key === column.key
-			? STYLE_HEADER_HOVER
-			: sortState.key === column.key
-				? STYLE_HEADER_ACTIVE
-				: STYLE_HEADER;
+		let style = STYLE_HEADER;
+		if (sortState.key === column.key) {
+			style = STYLE_HEADER_ACTIVE;
+		}
+		if (hoveredHeader && hoveredHeader.key === column.key) {
+			style = STYLE_HEADER_HOVER;
+		}
 		screen.fillRect(column.x, column.y, column.width, 1, style);
 		screen.writeText(column.x, column.y, pad(headerLabel(column, sortState), column.width), style);
 	}
@@ -896,7 +953,7 @@ function drawTable(
 		screen.writeText(sizeColumn.x, y, sizeText, style);
 		screen.writeText(offsetColumn.x, y, offsetText, style);
 	}
-	drawScrollbar(screen, layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow, !modalOpen && isInside(layout.tableScrollbar, mouseX, mouseY));
+	drawVerticalScrollbar(screen, layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow, !modalOpen && isInside(layout.tableScrollbar, mouseX, mouseY));
 }
 
 function drawModal(
@@ -905,11 +962,12 @@ function drawModal(
 	modalView: AssetModalView,
 	modalTab: number,
 	modalScroll: number,
+	modalScrollX: number,
 	mouseX: number,
 	mouseY: number,
-	contentLines: string[],
+	content: ModalTabContent,
 ): void {
-	const { frame, tabs, content, scrollbar, infoLineCount, visibleContentLines } = layout;
+	const { frame, tabs, previewFixedLines, content: contentRect, verticalScrollbar, horizontalScrollbar, infoLineCount, visibleContentLines, visibleContentColumns } = layout;
 	screen.fillRect(frame.x, frame.y, frame.width, frame.height, STYLE_PANEL);
 	for (let x = 1; x < frame.width - 1; x += 1) {
 		screen.writeChar(frame.x + x, frame.y, '─', STYLE_MODAL_BORDER);
@@ -944,13 +1002,22 @@ function drawModal(
 	for (let index = 0; index < infoLineCount; index += 1) {
 		writeTaggedLine(screen, frame.x + 2, frame.y + 2 + index, frame.width - 4, modalView.infoLines[index], STYLE_DIM);
 	}
-	for (let row = 0; row < content.height; row += 1) {
-		writeTaggedLine(screen, content.x, content.y + row, content.width, contentLines[modalScroll + row] || '', STYLE_PANEL);
+	for (let index = 0; index < previewFixedLines.length; index += 1) {
+		writeTaggedLine(screen, frame.x + 2, contentRect.y - previewFixedLines.length + index, frame.width - 4, previewFixedLines[index], STYLE_DIM);
 	}
-	drawScrollbar(screen, scrollbar, contentLines.length, visibleContentLines, modalScroll, isInside(scrollbar, mouseX, mouseY));
+	screen.fillRect(contentRect.x, contentRect.y, contentRect.width, contentRect.height, STYLE_PANEL);
+	for (let row = 0; row < contentRect.height; row += 1) {
+		const line = content.lines[modalScroll + row];
+		if (!line) {
+			continue;
+		}
+		screen.writeTaggedTextClipped(contentRect.x, contentRect.y + row, line, STYLE_PANEL, modalScrollX, contentRect.width);
+	}
+	drawVerticalScrollbar(screen, verticalScrollbar, content.lines.length, visibleContentLines, modalScroll, isInside(verticalScrollbar, mouseX, mouseY));
+	drawHorizontalScrollbar(screen, horizontalScrollbar, content.maxWidth, visibleContentColumns, modalScrollX, isInside(horizontalScrollbar, mouseX, mouseY));
 }
 
-function updateScrollbarFromMouse(
+function updateVerticalScrollbarFromMouse(
 	event: TuiMouseEvent,
 	rect: Rect,
 	totalLines: number,
@@ -959,18 +1026,18 @@ function updateScrollbarFromMouse(
 	scrollbarDrag: ScrollbarDrag | null,
 	target: ScrollbarDrag['target'],
 ): { handled: boolean; nextTopLine: number; nextDrag: ScrollbarDrag | null } {
-	if (event.action === 'up') {
+	if (event.action === 'up' && scrollbarDrag && scrollbarDrag.target === target) {
 		return { handled: true, nextTopLine: topLine, nextDrag: null };
 	}
-	const thumb = getScrollbarThumb(rect, totalLines, visibleLines, topLine);
+	const thumb = getVerticalScrollbarThumb(rect, totalLines, visibleLines, topLine);
 	if (!thumb) {
 		return { handled: false, nextTopLine: topLine, nextDrag: scrollbarDrag };
 	}
-	if (event.button === 'left' && event.action === 'drag' && scrollbarDrag?.target === target) {
+	if (event.button === 'left' && event.action === 'drag' && scrollbarDrag && scrollbarDrag.target === target) {
 		const thumbY = clamp(event.y - scrollbarDrag.grabOffset, rect.y, rect.y + rect.height - thumb.height);
 		return {
 			handled: true,
-			nextTopLine: scrollTopFromThumb(rect, thumb.height, thumb.maxTop, thumbY),
+			nextTopLine: scrollTopFromThumb(rect, thumb.height, thumb.maxOffset, thumbY),
 			nextDrag: scrollbarDrag,
 		};
 	}
@@ -987,7 +1054,49 @@ function updateScrollbarFromMouse(
 	const thumbY = clamp(event.y - Math.floor(thumb.height / 2), rect.y, rect.y + rect.height - thumb.height);
 	return {
 		handled: true,
-		nextTopLine: scrollTopFromThumb(rect, thumb.height, thumb.maxTop, thumbY),
+		nextTopLine: scrollTopFromThumb(rect, thumb.height, thumb.maxOffset, thumbY),
+		nextDrag: scrollbarDrag,
+	};
+}
+
+function updateHorizontalScrollbarFromMouse(
+	event: TuiMouseEvent,
+	rect: Rect,
+	totalColumns: number,
+	visibleColumns: number,
+	leftColumn: number,
+	scrollbarDrag: ScrollbarDrag | null,
+	target: ScrollbarDrag['target'],
+): { handled: boolean; nextLeftColumn: number; nextDrag: ScrollbarDrag | null } {
+	if (event.action === 'up' && scrollbarDrag && scrollbarDrag.target === target) {
+		return { handled: true, nextLeftColumn: leftColumn, nextDrag: null };
+	}
+	const thumb = getHorizontalScrollbarThumb(rect, totalColumns, visibleColumns, leftColumn);
+	if (!thumb) {
+		return { handled: false, nextLeftColumn: leftColumn, nextDrag: scrollbarDrag };
+	}
+	if (event.button === 'left' && event.action === 'drag' && scrollbarDrag && scrollbarDrag.target === target) {
+		const thumbX = clamp(event.x - scrollbarDrag.grabOffset, rect.x, rect.x + rect.width - thumb.width);
+		return {
+			handled: true,
+			nextLeftColumn: scrollLeftFromThumb(rect, thumb.width, thumb.maxOffset, thumbX),
+			nextDrag: scrollbarDrag,
+		};
+	}
+	if (event.button !== 'left' || event.action !== 'down' || !isInside(rect, event.x, event.y)) {
+		return { handled: false, nextLeftColumn: leftColumn, nextDrag: scrollbarDrag };
+	}
+	if (isInside(thumb, event.x, event.y)) {
+		return {
+			handled: true,
+			nextLeftColumn: leftColumn,
+			nextDrag: { target, grabOffset: event.x - thumb.x },
+		};
+	}
+	const thumbX = clamp(event.x - Math.floor(thumb.width / 2), rect.x, rect.x + rect.width - thumb.width);
+	return {
+		handled: true,
+		nextLeftColumn: scrollLeftFromThumb(rect, thumb.width, thumb.maxOffset, thumbX),
 		nextDrag: scrollbarDrag,
 	};
 }
@@ -1010,14 +1119,18 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let modalView: AssetModalView | null = null;
 	let modalTab = 0;
 	let modalScroll = 0;
-	let modalLinesByTab: string[][] = [];
+	let modalScrollX = 0;
+	let modalContentByTab: ModalTabContent[] = [];
+	let modalPreviewZoom = 1;
 	let loadingModal = false;
 	let lastLayout: UiLayout | null = null;
 	let lastSummaryView: SummaryView | null = null;
 	let mouseX = -1;
 	let mouseY = -1;
 	let mouseSubX = 0.5;
+	let mouseSubY = 0.5;
 	let scrollbarDrag: ScrollbarDrag | null = null;
+	let previewDrag: PreviewDrag | null = null;
 	let summaryViewWidth = -1;
 	let summaryViewCache: SummaryView;
 	let hoverStatusKey = '';
@@ -1172,19 +1285,28 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		return row;
 	};
 
-	const getModalLines = () => {
+	const getModalContent = (tabIndex = modalTab): ModalTabContent => {
 		if (!modalView) {
-			return [];
+			return { lines: [], maxWidth: 0 };
 		}
-		let lines = modalLinesByTab[modalTab];
-		if (lines) {
-			return lines;
+		let content = modalContentByTab[tabIndex];
+		if (content) {
+			return content;
 		}
-		const activeText = modalTab === 0 ? modalView.preview : modalTab === 1 ? modalView.details : modalView.hex;
-		lines = activeText.split('\n');
-		modalLinesByTab[modalTab] = lines;
-		return lines;
+		const activeText = tabIndex === 0 ? modalView.preview : tabIndex === 1 ? modalView.details : modalView.hex;
+		const lines = activeText.split('\n');
+		let maxWidth = 0;
+		for (const line of lines) {
+			maxWidth = Math.max(maxWidth, screen.taggedTextWidth(line));
+		}
+		content = { lines, maxWidth };
+		modalContentByTab[tabIndex] = content;
+		return content;
 	};
+
+	const imagePreviewActive = () => modalView !== null
+		&& modalTab === 0
+		&& (filteredAssets[selectedIndex].type === 'atlas' || filteredAssets[selectedIndex].type === 'image');
 
 	const computeLayout = (width: number, height: number, summaryLineCount: number): UiLayout => {
 		const tableTop = summaryLineCount + 1;
@@ -1195,6 +1317,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const tableScrollbar: Rect = { x: width - 1, y: rowsTop, width: 1, height: visibleRows };
 		let modal: ModalLayout | null = null;
 		if (modalView) {
+			const modalContent = getModalContent();
 			const frame: Rect = {
 				x: Math.max(0, Math.floor(width * 0.1)),
 				y: Math.max(0, Math.floor(height * 0.1)),
@@ -1205,6 +1328,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			frame.y = Math.max(0, Math.floor((height - frame.height) / 2));
 			const maxInfoLineCount = Math.min(modalView.infoLines.length, Math.max(0, frame.height - 8));
 			const infoLineCount = Math.min(5, maxInfoLineCount);
+			const previewFixedLines = modalTab === 0 ? modalView.previewFixedLines : [];
 			const tabY = frame.y + 2 + infoLineCount;
 			const tabs: TabHit[] = [];
 			let tabX = frame.x + 2;
@@ -1214,21 +1338,43 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				tabX += tabWidth + 1;
 			}
 			tabs.push({ x: frame.x + frame.width - 4, y: frame.y, width: 3, height: 1, index: -1, close: true });
+			const baseContentX = frame.x + 2;
+			const baseContentY = tabY + 1;
+			const baseContentWidth = Math.max(1, frame.width - 4);
+			const baseContentHeight = Math.max(1, frame.height - 5 - infoLineCount);
+			const fixedPreviewLineCount = Math.min(previewFixedLines.length, Math.max(0, baseContentHeight - 1));
+			const scrollableContentY = baseContentY + fixedPreviewLineCount;
+			const scrollableBaseHeight = Math.max(1, baseContentHeight - fixedPreviewLineCount);
+			let hasVerticalScrollbar = false;
+			let hasHorizontalScrollbar = false;
+			let visibleContentColumns = baseContentWidth;
+			let visibleContentLines = scrollableBaseHeight;
+			while (true) {
+				visibleContentColumns = Math.max(1, baseContentWidth - (hasVerticalScrollbar ? 1 : 0));
+				visibleContentLines = Math.max(1, scrollableBaseHeight - (hasHorizontalScrollbar ? 1 : 0));
+				const needsVerticalScrollbar = modalContent.lines.length > visibleContentLines;
+				const needsHorizontalScrollbar = modalContent.maxWidth > visibleContentColumns;
+				if (needsVerticalScrollbar === hasVerticalScrollbar && needsHorizontalScrollbar === hasHorizontalScrollbar) {
+					break;
+				}
+				hasVerticalScrollbar = needsVerticalScrollbar;
+				hasHorizontalScrollbar = needsHorizontalScrollbar;
+			}
 			const content: Rect = {
-				x: frame.x + 2,
-				y: tabY + 1,
-				width: Math.max(1, frame.width - 5),
-				height: Math.max(1, frame.height - 5 - infoLineCount),
+				x: baseContentX,
+				y: scrollableContentY,
+				width: visibleContentColumns,
+				height: visibleContentLines,
 			};
-			const scrollbar: Rect = {
-				x: frame.x + frame.width - 2,
-				y: content.y,
-				width: 1,
-				height: content.height,
-			};
-			const visibleContentLines = content.height;
-			const maxScroll = Math.max(0, getModalLines().length - visibleContentLines);
-			modal = { frame, tabs, content, scrollbar, maxScroll, visibleContentLines, infoLineCount };
+			const verticalScrollbar: Rect = hasVerticalScrollbar
+				? { x: content.x + content.width, y: content.y, width: 1, height: content.height }
+				: { x: 0, y: 0, width: 0, height: 0 };
+			const horizontalScrollbar: Rect = hasHorizontalScrollbar
+				? { x: content.x, y: content.y + content.height, width: content.width, height: 1 }
+				: { x: 0, y: 0, width: 0, height: 0 };
+			const maxScrollY = Math.max(0, modalContent.lines.length - visibleContentLines);
+			const maxScrollX = Math.max(0, modalContent.maxWidth - visibleContentColumns);
+			modal = { frame, tabs, previewFixedLines: previewFixedLines.slice(0, fixedPreviewLineCount), content, verticalScrollbar, horizontalScrollbar, maxScrollY, maxScrollX, visibleContentLines, visibleContentColumns, infoLineCount };
 		}
 		return { width, height, tableTop, rowsTop, visibleRows, tableContentWidth, tableColumns, tableScrollbar, modal };
 	};
@@ -1247,14 +1393,18 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const hoveredLegendEntry = !layout.modal ? getHoveredLegendEntry(summaryView) : null;
 		const selectedBufferLabel = bufferFilterLabel(bufferFilter);
 		const hoverStatus = hoverStatusText(hoveredBufferCell, hoveredBufferRegion, hoveredLegendEntry);
-		const modalLines = getModalLines();
+		const modalContent = modalView ? getModalContent() : null;
 		writeLine(screen, 0, 0, width, summaryView.titleLine, STYLE_STATUS);
 		drawSummaryBar(screen, summaryView, hoveredBufferCell, hoveredBufferRegion, hoveredLegendEntry, bufferFilter);
 		drawSummaryLegendAndTotals(screen, summaryView, width, hoveredBufferCell, hoveredBufferRegion, hoveredLegendEntry, selectedBufferLabel);
 		const selectedRegion = bufferFilterRegion(bufferFilter);
-		const bufferFilterText = selectedRegion
-			? ` | Buffer: ${selectedRegion.label}${bufferFilter?.kind === 'region' ? ` ${ctx.formatNumberAsHex(selectedRegion.start, offsetHexWidth)}-${ctx.formatNumberAsHex(selectedRegion.end, offsetHexWidth)}` : ''}`
-			: '';
+		let bufferFilterText = '';
+		if (selectedRegion) {
+			bufferFilterText = ` | Buffer: ${selectedRegion.label}`;
+			if (bufferFilter && bufferFilter.kind === 'region') {
+				bufferFilterText += ` ${ctx.formatNumberAsHex(selectedRegion.start, offsetHexWidth)}-${ctx.formatNumberAsHex(selectedRegion.end, offsetHexWidth)}`;
+			}
+		}
 		writeLine(screen, 0, summaryView.lineCount, width, (filterMode ? `Filter: ${filterValue}` : `Filter: ${filterValue || '<none>'}`) + bufferFilterText, filterMode ? STYLE_FILTER : STYLE_DIM);
 
 		const maxScroll = Math.max(0, filteredAssets.length - layout.visibleRows);
@@ -1274,9 +1424,10 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const footerText = loadingModal ? 'Loading asset view...' : hoverStatus !== null ? hoverStatus : statusLine;
 		writeLine(screen, 0, height - 1, width, footerText, STYLE_STATUS);
 
-		if (layout.modal && modalView) {
-			modalScroll = clamp(modalScroll, 0, layout.modal.maxScroll);
-			drawModal(screen, layout.modal, modalView, modalTab, modalScroll, mouseX, mouseY, modalLines);
+		if (layout.modal && modalView && modalContent) {
+			modalScroll = clamp(modalScroll, 0, layout.modal.maxScrollY);
+			modalScrollX = clamp(modalScrollX, 0, layout.modal.maxScrollX);
+			drawModal(screen, layout.modal, modalView, modalTab, modalScroll, modalScrollX, mouseX, mouseY, modalContent);
 		}
 
 		screen.draw();
@@ -1318,7 +1469,14 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (region === null && bufferFilter === null) {
 			return;
 		}
-		const nextFilter = bufferFilter?.kind === 'region' && sameBufferRegion(bufferFilter.region, region) ? null : region ? { kind: 'region', region } : null;
+		let nextFilter: BufferFilter | null;
+		if (bufferFilter && bufferFilter.kind === 'region' && sameBufferRegion(bufferFilter.region, region)) {
+			nextFilter = null;
+		} else if (region) {
+			nextFilter = { kind: 'region', region };
+		} else {
+			nextFilter = null;
+		}
 		applyBufferFilter(nextFilter, nextFilter ? `Buffer filter: ${region.label} ${ctx.formatNumberAsHex(region.start, offsetHexWidth)}-${ctx.formatNumberAsHex(region.end, offsetHexWidth)}.` : 'Buffer filter cleared.');
 	};
 
@@ -1326,8 +1484,54 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (entry === null && bufferFilter === null) {
 			return;
 		}
-		const nextFilter = bufferFilter?.kind === 'label' && bufferFilter.label === entry?.label ? null : entry ? { kind: 'label', label: entry.label, region: entry.region } : null;
+		let nextFilter: BufferFilter | null;
+		if (bufferFilter && bufferFilter.kind === 'label' && entry && bufferFilter.label === entry.label) {
+			nextFilter = null;
+		} else if (entry) {
+			nextFilter = { kind: 'label', label: entry.label, region: entry.region };
+		} else {
+			nextFilter = null;
+		}
 		applyBufferFilter(nextFilter, nextFilter ? `Buffer filter: ${entry.label}.` : 'Buffer filter cleared.');
+	};
+
+	const rebuildModalView = async () => {
+		modalView = await buildAssetModalView(filteredAssets[selectedIndex], {
+			rombin: ctx.rombin,
+			assetList: ctx.assets,
+			manifest: ctx.manifest,
+			projectRootPath: ctx.projectRootPath,
+			formatByteSize: ctx.formatByteSize,
+			modalWidth: Math.max(20, Math.floor(screen.width() * 0.8) - 4),
+			modalHeight: Math.max(8, Math.floor(screen.height() * 0.8) - 8),
+			previewZoom: modalPreviewZoom,
+		});
+		modalContentByTab = [];
+	};
+
+	const modalPreviewFocus = (layout: ModalLayout, event?: TuiMouseEvent) => {
+		if (event && isInside(layout.content, event.x, event.y)) {
+			return {
+				localX: event.x - layout.content.x,
+				localY: event.y - layout.content.y,
+				subX: event.subX,
+				subY: event.subY,
+			};
+		}
+		if (isInside(layout.content, mouseX, mouseY)) {
+			return {
+				localX: mouseX - layout.content.x,
+				localY: mouseY - layout.content.y,
+				subX: mouseSubX,
+				subY: mouseSubY,
+			};
+		}
+		return {
+			localX: Math.max(0, Math.floor(layout.content.width / 2)),
+			localY: Math.max(0, Math.floor(layout.content.height / 2)),
+			subX: 0.5,
+			subY: 0.5,
+		};
 	};
 
 	const openAssetModal = async (assetIndex: number, tabIndex = 0): Promise<void> => {
@@ -1339,21 +1543,54 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		render();
 		modalTab = tabIndex;
 		modalScroll = 0;
+		modalScrollX = 0;
+		modalPreviewZoom = 1;
+		previewDrag = null;
 		try {
-			modalView = await buildAssetModalView(filteredAssets[selectedIndex], {
-				rombin: ctx.rombin,
-				assetList: ctx.assets,
-				manifest: ctx.manifest,
-				projectRootPath: ctx.projectRootPath,
-				formatByteSize: ctx.formatByteSize,
-				modalWidth: Math.max(20, Math.floor(screen.width() * 0.8) - 4),
-				modalHeight: Math.max(8, Math.floor(screen.height() * 0.8) - 8),
-			});
-			modalLinesByTab = [];
+			await rebuildModalView();
 			statusLine = `Opened ${filteredAssets[selectedIndex].resid}.`;
 		} finally {
 			loadingModal = false;
 		}
+	};
+
+	const changePreviewZoom = async (direction: number, event?: TuiMouseEvent) => {
+		if (!imagePreviewActive() || !lastLayout || !lastLayout.modal) {
+			return false;
+		}
+		const nextZoom = clamp(modalPreviewZoom + direction * 0.25, 0.25, 8);
+		if (nextZoom === modalPreviewZoom) {
+			return true;
+		}
+		const previousContent = getModalContent();
+		const previousLayout = lastLayout.modal;
+		const focus = modalPreviewFocus(previousLayout, event);
+		const previousWidth = Math.max(1, previousContent.maxWidth);
+		const previousHeight = Math.max(1, previousContent.lines.length);
+		const previousAbsoluteX = modalScrollX + focus.localX + focus.subX;
+		const previousAbsoluteY = modalScroll + focus.localY + focus.subY;
+		const focusRatioX = previousAbsoluteX / previousWidth;
+		const focusRatioY = previousAbsoluteY / previousHeight;
+		modalPreviewZoom = nextZoom;
+		loadingModal = true;
+		render();
+		try {
+			await rebuildModalView();
+			const nextSummaryView = buildSummaryView(screen.width());
+			const nextLayout = computeLayout(screen.width(), screen.height(), nextSummaryView.lineCount);
+			const nextContent = getModalContent();
+			const nextModal = nextLayout.modal;
+			if (nextModal) {
+				const nextAbsoluteX = focusRatioX * Math.max(1, nextContent.maxWidth);
+				const nextAbsoluteY = focusRatioY * Math.max(1, nextContent.lines.length);
+				modalScrollX = clamp(Math.round(nextAbsoluteX - focus.localX - focus.subX), 0, nextModal.maxScrollX);
+				modalScroll = clamp(Math.round(nextAbsoluteY - focus.localY - focus.subY), 0, nextModal.maxScrollY);
+			}
+			statusLine = `Preview zoom: ${formatZoom(modalPreviewZoom)}x`;
+		} finally {
+			loadingModal = false;
+		}
+		return true;
 	};
 
 	const handleModalMouse = async (event: TuiMouseEvent): Promise<boolean> => {
@@ -1361,13 +1598,32 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			return false;
 		}
 		const modal = lastLayout.modal;
-		const scrollbarResult = updateScrollbarFromMouse(event, modal.scrollbar, getModalLines().length, modal.visibleContentLines, modalScroll, scrollbarDrag, 'modal');
-		scrollbarDrag = scrollbarResult.nextDrag;
-		if (scrollbarResult.handled) {
-			modalScroll = scrollbarResult.nextTopLine;
+		if (event.action === 'up' && previewDrag) {
+			previewDrag = null;
+			return true;
+		}
+		if (event.action === 'drag' && previewDrag) {
+			modalScrollX = clamp(previewDrag.startScrollX - Math.round((event.x + event.subX) - previewDrag.originX), 0, modal.maxScrollX);
+			modalScroll = clamp(previewDrag.startScrollY - Math.round((event.y + event.subY) - previewDrag.originY), 0, modal.maxScrollY);
+			return true;
+		}
+		const modalContent = getModalContent();
+		const verticalScrollbarResult = updateVerticalScrollbarFromMouse(event, modal.verticalScrollbar, modalContent.lines.length, modal.visibleContentLines, modalScroll, scrollbarDrag, 'modalY');
+		scrollbarDrag = verticalScrollbarResult.nextDrag;
+		if (verticalScrollbarResult.handled) {
+			modalScroll = verticalScrollbarResult.nextTopLine;
+			return true;
+		}
+		const horizontalScrollbarResult = updateHorizontalScrollbarFromMouse(event, modal.horizontalScrollbar, modalContent.maxWidth, modal.visibleContentColumns, modalScrollX, scrollbarDrag, 'modalX');
+		scrollbarDrag = horizontalScrollbarResult.nextDrag;
+		if (horizontalScrollbarResult.handled) {
+			modalScrollX = horizontalScrollbarResult.nextLeftColumn;
 			return true;
 		}
 		if (event.action === 'scroll') {
+			if (imagePreviewActive() && isInside(modal.content, event.x, event.y)) {
+				return changePreviewZoom(event.button === 'wheelup' ? 1 : -1, event);
+			}
 			if (isInside(modal.frame, event.x, event.y)) {
 				modalScroll += scrollDelta(event.button);
 				return true;
@@ -1382,13 +1638,27 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				if (tab.close) {
 					modalView = null;
 					modalScroll = 0;
-					modalLinesByTab = [];
+					modalScrollX = 0;
+					modalContentByTab = [];
+					modalPreviewZoom = 1;
+					previewDrag = null;
 					return true;
 				}
 				modalTab = tab.index;
 				modalScroll = 0;
+				modalScrollX = 0;
+				previewDrag = null;
 				return true;
 			}
+		}
+		if (imagePreviewActive() && isInside(modal.content, event.x, event.y)) {
+			previewDrag = {
+				originX: event.x + event.subX,
+				originY: event.y + event.subY,
+				startScrollX: modalScrollX,
+				startScrollY: modalScroll,
+			};
+			return true;
 		}
 		return isInside(modal.frame, event.x, event.y);
 	};
@@ -1398,7 +1668,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (!layout) {
 			return false;
 		}
-		const scrollbarResult = updateScrollbarFromMouse(event, layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow, scrollbarDrag, 'list');
+		const scrollbarResult = updateVerticalScrollbarFromMouse(event, layout.tableScrollbar, filteredAssets.length, layout.visibleRows, scrollRow, scrollbarDrag, 'list');
 		scrollbarDrag = scrollbarResult.nextDrag;
 		if (scrollbarResult.handled) {
 			scrollRow = scrollbarResult.nextTopLine;
@@ -1455,6 +1725,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				mouseX = event.x;
 				mouseY = event.y;
 				mouseSubX = event.subX;
+				mouseSubY = event.subY;
 				const handled = modalView ? await handleModalMouse(event) : await handleListMouse(event);
 				if (handled || hoverChanged || event.action === 'move') {
 					render();
@@ -1493,22 +1764,42 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 					continue;
 				}
 				switch (key.name) {
+					case '+':
+					case '=':
+						if (await changePreviewZoom(1)) {
+							render();
+							continue;
+						}
+						break;
+					case '-':
+						if (await changePreviewZoom(-1)) {
+							render();
+							continue;
+						}
+						break;
 					case 'escape':
 					case 'return':
 					case 'q':
 						modalView = null;
 						modalScroll = 0;
-						modalLinesByTab = [];
+						modalScrollX = 0;
+						modalContentByTab = [];
+						modalPreviewZoom = 1;
+						previewDrag = null;
 						render();
 						continue;
 					case 'left':
 						modalTab = Math.max(0, modalTab - 1);
 						modalScroll = 0;
+						modalScrollX = 0;
+						previewDrag = null;
 						render();
 						continue;
 					case 'right':
 						modalTab = Math.min(2, modalTab + 1);
 						modalScroll = 0;
+						modalScrollX = 0;
+						previewDrag = null;
 						render();
 						continue;
 					case '1':
@@ -1516,6 +1807,8 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 					case '3':
 						modalTab = Number(key.name) - 1;
 						modalScroll = 0;
+						modalScrollX = 0;
+						previewDrag = null;
 						render();
 						continue;
 					case 'up':
@@ -1536,11 +1829,13 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 						continue;
 					case 'home':
 						modalScroll = 0;
+						modalScrollX = 0;
 						render();
 						continue;
 					case 'end':
 						if (lastLayout && lastLayout.modal) {
-							modalScroll = lastLayout.modal.maxScroll;
+							modalScroll = lastLayout.modal.maxScrollY;
+							modalScrollX = lastLayout.modal.maxScrollX;
 						}
 						render();
 						continue;

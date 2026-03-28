@@ -560,6 +560,7 @@ export function generatePixelPerfectAsciiArt(
  *   - useEdgeDetection: Whether to apply edge detection (default: true).
  *   - useDithering: Whether to apply ordered dithering in low-contrast cells (default: true).
  *   - deltaLum: Base luminance threshold for dot placement (default: 26).
+ *   - scaleLimit: Maximum image scale before braille packing (default: 1).
  * @returns The generated ASCII art string using braille characters.
  */
 export function generateBrailleAsciiArt(
@@ -571,13 +572,15 @@ export function generateBrailleAsciiArt(
 		useEdgeDetection?: boolean;   // default true
 		useDithering?: boolean;       // default true
 		deltaLum?: number;            // base threshold (default 26)
+		scaleLimit?: number;
 	} = {}
 ): string {
 	const useEdge = opts.useEdgeDetection ?? true;
 	const orderedDither = opts.useDithering ?? true;
 	const baseThreshold = opts.deltaLum ?? 26;
+	const scaleLimit = opts.scaleLimit ?? 1;
 	const maxOutW = Math.max(1, maxArtWidth - 8);
-	const scale = Math.min(1, (maxOutW * 2) / Math.max(1, imgW));
+	const scale = Math.min(scaleLimit, (maxOutW * 2) / Math.max(1, imgW));
 	const outW = Math.max(1, Math.min(maxOutW, Math.floor(imgW * scale / 2)));
 	const outH = Math.max(1, Math.ceil(imgH * scale / 4));
 	const scaledW = outW * 2;

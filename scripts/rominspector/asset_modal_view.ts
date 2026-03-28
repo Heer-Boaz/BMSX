@@ -19,6 +19,7 @@ const HEX_PREVIEW_MAX_BYTES = 4096;
 export type AssetModalView = {
 	title: string;
 	infoLines: string[];
+	previewFixedLines: string[];
 	preview: string;
 	details: string;
 	hex: string;
@@ -32,6 +33,7 @@ type BuildAssetModalViewContext = {
 	formatByteSize(size: number): string;
 	modalWidth: number;
 	modalHeight: number;
+	previewZoom: number;
 };
 
 function getRomSliceView(rombin: Uint8Array, start: number, end: number): Uint8Array {
@@ -67,7 +69,7 @@ async function loadDataFromBuffer(buf: Uint8Array): Promise<any> {
 	return decodeBinary(new Uint8Array(buf.slice(0)));
 }
 
-function generateOverlayAscii(imgW: number, imgH: number, polys: number[][], modalWidth: number): string {
+function generateOverlayAscii(imgW: number, imgH: number, polys: number[][], modalWidth: number, zoom: number): string {
 	const buf = Buffer.alloc(imgW * imgH * 4, 0);
 	const put = (x: number, y: number) => {
 		if (x < 0 || y < 0 || x >= imgW || y >= imgH) return;
@@ -93,9 +95,11 @@ function generateOverlayAscii(imgW: number, imgH: number, polys: number[][], mod
 		}
 	}
 	if (imgW <= PER_PIXEL_RENDERING_THRESHOLD && imgH <= PER_PIXEL_RENDERING_THRESHOLD) {
-		return generatePixelPerfectAsciiArt(buf, imgW, imgH);
+		const scaled = scaleImageNearest(buf, imgW, imgH, zoom);
+		return generatePixelPerfectAsciiArt(scaled.data, scaled.width, scaled.height);
 	}
-	return generateBrailleAsciiArt(buf, imgW, imgH, modalWidth);
+	const artWidth = Math.max(modalWidth, Math.ceil((imgW * zoom) / 2) + 8);
+	return generateBrailleAsciiArt(buf, imgW, imgH, artWidth, { scaleLimit: zoom });
 }
 
 function extractSubimageAndSizeFromAtlassedImage(imgToExtract: Buffer, imgmeta: ImgMeta): { subimage: Buffer; width: number; height: number } {
@@ -141,29 +145,60 @@ function extractSubimageAndSizeFromAtlassedImage(imgToExtract: Buffer, imgmeta: 
 	return { subimage: Buffer.from(subimageData), width: imgW, height: imgH };
 }
 
-function generateAsciiArtFromImageInAtlas(atlasBuf: Buffer, imgmeta: ImgMeta, modalWidth: number): string {
+function scaleImageNearest(data: Uint8Array, width: number, height: number, zoom: number): { data: Uint8Array; width: number; height: number } {
+	if (zoom === 1) {
+		return { data, width, height };
+	}
+	const scaledWidth = Math.max(1, Math.round(width * zoom));
+	const scaledHeight = Math.max(1, Math.round(height * zoom));
+	const scaledData = new Uint8Array(scaledWidth * scaledHeight * 4);
+	for (let y = 0; y < scaledHeight; y += 1) {
+		const sourceY = Math.min(height - 1, Math.floor(y / zoom));
+		for (let x = 0; x < scaledWidth; x += 1) {
+			const sourceX = Math.min(width - 1, Math.floor(x / zoom));
+			const sourceIndex = (sourceY * width + sourceX) << 2;
+			const targetIndex = (y * scaledWidth + x) << 2;
+			scaledData[targetIndex] = data[sourceIndex];
+			scaledData[targetIndex + 1] = data[sourceIndex + 1];
+			scaledData[targetIndex + 2] = data[sourceIndex + 2];
+			scaledData[targetIndex + 3] = data[sourceIndex + 3];
+		}
+	}
+	return { data: scaledData, width: scaledWidth, height: scaledHeight };
+}
+
+function formatZoom(zoom: number): string {
+	return Number.isInteger(zoom) ? zoom.toFixed(1) : zoom.toString();
+}
+
+function previewFixedLine(width: number, height: number, zoom: number): string {
+	return `Size: ${width}x${height} | Zoom: ${formatZoom(zoom)}x`;
+}
+
+function renderZoomedImageAscii(data: Uint8Array, width: number, height: number, modalWidth: number, zoom: number): string {
+	if (width <= PER_PIXEL_RENDERING_THRESHOLD && height <= PER_PIXEL_RENDERING_THRESHOLD) {
+		const scaled = scaleImageNearest(data, width, height, zoom);
+		return generatePixelPerfectAsciiArt(scaled.data, scaled.width, scaled.height);
+	}
+	const artWidth = Math.max(modalWidth, Math.ceil((width * zoom) / 2) + 8);
+	return generateBrailleAsciiArt(data, width, height, artWidth, { scaleLimit: zoom });
+}
+
+function generateAsciiArtFromImageInAtlas(atlasBuf: Buffer, imgmeta: ImgMeta, modalWidth: number, zoom: number): { art: string; width: number; height: number } {
 	try {
 		const { subimage, width, height } = extractSubimageAndSizeFromAtlassedImage(atlasBuf, imgmeta);
-		const sizeString = `Size: ${width}x${height}\n`;
-		if (width <= PER_PIXEL_RENDERING_THRESHOLD && height <= PER_PIXEL_RENDERING_THRESHOLD) {
-			return sizeString + generatePixelPerfectAsciiArt(subimage, width, height);
-		}
-		return sizeString + generateBrailleAsciiArt(subimage, width, height, modalWidth);
+		return { art: renderZoomedImageAscii(subimage, width, height, modalWidth, zoom), width, height };
 	} catch (e: any) {
-		return `[Error generating ASCII art from image: ${e.stack || e.message}]`;
+		return { art: `[Error generating ASCII art from image: ${e.stack || e.message}]`, width: 0, height: 0 };
 	}
 }
 
-function generateAsciiArtFromImageBuffer(img: Buffer, modalWidth: number): string {
+function generateAsciiArtFromImageBuffer(img: Buffer, modalWidth: number, zoom: number): { art: string; width: number; height: number } {
 	try {
 		const imagePNG = PNG.sync.read(img);
-		const sizeString = `Size: ${imagePNG.width}x${imagePNG.height}\n`;
-		if (imagePNG.width <= PER_PIXEL_RENDERING_THRESHOLD && imagePNG.height <= PER_PIXEL_RENDERING_THRESHOLD) {
-			return sizeString + generatePixelPerfectAsciiArt(imagePNG.data, imagePNG.width, imagePNG.height);
-		}
-		return sizeString + generateBrailleAsciiArt(imagePNG.data, imagePNG.width, imagePNG.height, modalWidth);
+		return { art: renderZoomedImageAscii(imagePNG.data, imagePNG.width, imagePNG.height, modalWidth, zoom), width: imagePNG.width, height: imagePNG.height };
 	} catch (e: any) {
-		return `[Error generating ASCII art from image: ${e.stack || e.message}]`;
+		return { art: `[Error generating ASCII art from image: ${e.stack || e.message}]`, width: 0, height: 0 };
 	}
 }
 
@@ -182,6 +217,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 	const imgmeta = selected.imgmeta ? selected.imgmeta : {} as ImgMeta;
 	const audiometa = selected.audiometa ? selected.audiometa : {} as AudioMeta;
 	const metadataLines: string[] = [];
+	const previewFixedLines: string[] = [];
 	let preview = '';
 	let disassembly = '';
 	const modalWidth = Math.max(16, ctx.modalWidth);
@@ -194,14 +230,17 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 				const atlasAsset = ctx.assetList.find(a => a.resid === atlasName && a.type === 'atlas');
 				if (atlasAsset) {
 					const atlasBuf = atlasAsset.buffer instanceof Uint8Array ? Buffer.from(atlasAsset.buffer) : Buffer.from(ctx.rombin.slice(atlasAsset.start, atlasAsset.end));
-					preview = generateAsciiArtFromImageInAtlas(atlasBuf, imgmeta, modalWidth);
+					const imagePreview = generateAsciiArtFromImageInAtlas(atlasBuf, imgmeta, modalWidth, ctx.previewZoom);
+					preview = imagePreview.art;
+					if (imagePreview.width > 0 && imagePreview.height > 0) {
+						previewFixedLines.push(previewFixedLine(imagePreview.width, imagePreview.height, ctx.previewZoom));
+					}
 				} else {
 					preview = '[Atlas asset not found]';
 				}
-				if (imgmeta.width) metadataLines.push(`Size: ${imgmeta.width}x${imgmeta.height}`);
 				if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
 					preview += `\nHitPolygons (convex pieces) overlay:\n`;
-					preview += generateOverlayAscii(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original, modalWidth);
+					preview += generateOverlayAscii(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original, modalWidth, ctx.previewZoom);
 				}
 				for (const [key, value] of Object.entries(imgmeta)) metadataLines.push(`${key}: ${JSON.stringify(value)}`);
 			} else {
@@ -210,20 +249,16 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 					try {
 						const buf = Buffer.from(ctx.rombin.slice(selected.start, selected.end));
 						const png = PNG.sync.read(buf);
-						const sizeString = `Size: ${png.width}x${png.height}\n`;
-						preview = png.width <= PER_PIXEL_RENDERING_THRESHOLD && png.height <= PER_PIXEL_RENDERING_THRESHOLD
-							? sizeString + generatePixelPerfectAsciiArt(png.data, png.width, png.height)
-							: sizeString + generateBrailleAsciiArt(png.data, png.width, png.height, modalWidth);
+						preview = renderZoomedImageAscii(png.data, png.width, png.height, modalWidth, ctx.previewZoom);
+						previewFixedLines.push(previewFixedLine(png.width, png.height, ctx.previewZoom));
 						rendered = true;
 					} catch {}
 				}
 				if (!rendered && selected.buffer) {
 					try {
 						const png = PNG.sync.read(Buffer.from(selected.buffer));
-						const sizeString = `Size: ${png.width}x${png.height}\n`;
-						preview = png.width <= PER_PIXEL_RENDERING_THRESHOLD && png.height <= PER_PIXEL_RENDERING_THRESHOLD
-							? sizeString + generatePixelPerfectAsciiArt(png.data, png.width, png.height)
-							: sizeString + generateBrailleAsciiArt(png.data, png.width, png.height, modalWidth);
+						preview = renderZoomedImageAscii(png.data, png.width, png.height, modalWidth, ctx.previewZoom);
+						previewFixedLines.push(previewFixedLine(png.width, png.height, ctx.previewZoom));
 						rendered = true;
 					} catch (e: any) {
 						preview = `[Error generating ASCII art from image: ${errorText(e)}]`;
@@ -234,7 +269,13 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 			break;
 		case 'atlas':
 			for (const [key, value] of Object.entries(imgmeta)) metadataLines.push(`${key}: ${JSON.stringify(value)}`);
-			preview = generateAsciiArtFromImageBuffer(selected.buffer instanceof Uint8Array ? Buffer.from(selected.buffer) : Buffer.from(ctx.rombin.slice(selected.start, selected.end)), modalWidth);
+			{
+				const atlasPreview = generateAsciiArtFromImageBuffer(selected.buffer instanceof Uint8Array ? Buffer.from(selected.buffer) : Buffer.from(ctx.rombin.slice(selected.start, selected.end)), modalWidth, ctx.previewZoom);
+				preview = atlasPreview.art;
+				if (atlasPreview.width > 0 && atlasPreview.height > 0) {
+					previewFixedLines.push(previewFixedLine(atlasPreview.width, atlasPreview.height, ctx.previewZoom));
+				}
+			}
 			break;
 		case 'audio':
 			if (audiometa.audiotype === 'music') {
@@ -351,6 +392,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 	return {
 		title: `Asset - ID: ${selected.resid} | Type: ${selected.type}`,
 		infoLines: bufferLines,
+		previewFixedLines,
 		preview,
 		details: details || '[No details]',
 		hex: hex || '[No hex data available]',
