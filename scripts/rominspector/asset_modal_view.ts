@@ -1,5 +1,5 @@
 import { PNG } from 'pngjs';
-import type { AudioMeta, GLTFModel, ImgMeta, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
+import type { GLTFModel, ImgMeta, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../src/bmsx/rompack/romloader';
 import { decodeProgramSymbolsAsset, PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/emulator/program_asset';
@@ -16,10 +16,22 @@ const PER_PIXEL_RENDERING_THRESHOLD = 64;
 const HEX_BYTES_PER_LINE = 16;
 const HEX_PREVIEW_MAX_BYTES = 4096;
 
+export type AssetPreviewSection = {
+	titleLine: string;
+	rgba: Uint8Array;
+	width: number;
+	height: number;
+	zoom: number;
+	pixelPerfect: boolean;
+	outputWidth: number;
+	outputHeight: number;
+};
+
 export type AssetModalView = {
 	title: string;
 	infoLines: string[];
 	previewFixedLines: string[];
+	previewSections: AssetPreviewSection[];
 	preview: string;
 	details: string;
 	hex: string;
@@ -69,8 +81,8 @@ async function loadDataFromBuffer(buf: Uint8Array): Promise<any> {
 	return decodeBinary(new Uint8Array(buf.slice(0)));
 }
 
-function generateOverlayAscii(imgW: number, imgH: number, polys: number[][], modalWidth: number, zoom: number): string {
-	const buf = Buffer.alloc(imgW * imgH * 4, 0);
+function buildOverlayBuffer(imgW: number, imgH: number, polys: number[][]): Uint8Array {
+	const buf = new Uint8Array(imgW * imgH * 4);
 	const put = (x: number, y: number) => {
 		if (x < 0 || y < 0 || x >= imgW || y >= imgH) return;
 		const i = ((y | 0) * imgW + (x | 0)) << 2;
@@ -94,12 +106,7 @@ function generateOverlayAscii(imgW: number, imgH: number, polys: number[][], mod
 			line(p[i], p[i + 1], p[j], p[j + 1]);
 		}
 	}
-	if (imgW <= PER_PIXEL_RENDERING_THRESHOLD && imgH <= PER_PIXEL_RENDERING_THRESHOLD) {
-		const scaled = scaleImageNearest(buf, imgW, imgH, zoom);
-		return generatePixelPerfectAsciiArt(scaled.data, scaled.width, scaled.height);
-	}
-	const artWidth = Math.max(modalWidth, Math.ceil((imgW * zoom) / 2) + 8);
-	return generateBrailleAsciiArt(buf, imgW, imgH, artWidth, { scaleLimit: zoom });
+	return buf;
 }
 
 function extractSubimageAndSizeFromAtlassedImage(imgToExtract: Buffer, imgmeta: ImgMeta): { subimage: Buffer; width: number; height: number } {
@@ -167,6 +174,22 @@ function scaleImageNearest(data: Uint8Array, width: number, height: number, zoom
 	return { data: scaledData, width: scaledWidth, height: scaledHeight };
 }
 
+function previewOutputMetrics(width: number, height: number, zoom: number) {
+	const pixelPerfect = width <= PER_PIXEL_RENDERING_THRESHOLD && height <= PER_PIXEL_RENDERING_THRESHOLD;
+	if (pixelPerfect) {
+		return {
+			pixelPerfect: true,
+			outputWidth: Math.max(1, Math.round(width * zoom)),
+			outputHeight: Math.max(1, Math.round(height * zoom)),
+		};
+	}
+	return {
+		pixelPerfect: false,
+		outputWidth: Math.max(1, Math.floor(width * zoom / 2)),
+		outputHeight: Math.max(1, Math.ceil(height * zoom / 4)),
+	};
+}
+
 function formatZoom(zoom: number): string {
 	return Number.isInteger(zoom) ? zoom.toFixed(1) : zoom.toString();
 }
@@ -175,31 +198,87 @@ function previewFixedLine(width: number, height: number, zoom: number): string {
 	return `Size: ${width}x${height} | Zoom: ${formatZoom(zoom)}x`;
 }
 
-function renderZoomedImageAscii(data: Uint8Array, width: number, height: number, modalWidth: number, zoom: number): string {
-	if (width <= PER_PIXEL_RENDERING_THRESHOLD && height <= PER_PIXEL_RENDERING_THRESHOLD) {
-		const scaled = scaleImageNearest(data, width, height, zoom);
-		return generatePixelPerfectAsciiArt(scaled.data, scaled.width, scaled.height);
-	}
-	const artWidth = Math.max(modalWidth, Math.ceil((width * zoom) / 2) + 8);
-	return generateBrailleAsciiArt(data, width, height, artWidth, { scaleLimit: zoom });
+function buildPreviewSection(titleLine: string, rgba: Uint8Array, width: number, height: number, zoom: number): AssetPreviewSection {
+	const metrics = previewOutputMetrics(width, height, zoom);
+	return {
+		titleLine,
+		rgba,
+		width,
+		height,
+		zoom,
+		pixelPerfect: metrics.pixelPerfect,
+		outputWidth: metrics.outputWidth,
+		outputHeight: metrics.outputHeight,
+	};
 }
 
-function generateAsciiArtFromImageInAtlas(atlasBuf: Buffer, imgmeta: ImgMeta, modalWidth: number, zoom: number): { art: string; width: number; height: number } {
-	try {
-		const { subimage, width, height } = extractSubimageAndSizeFromAtlassedImage(atlasBuf, imgmeta);
-		return { art: renderZoomedImageAscii(subimage, width, height, modalWidth, zoom), width, height };
-	} catch (e: any) {
-		return { art: `[Error generating ASCII art from image: ${e.stack || e.message}]`, width: 0, height: 0 };
+function cropRgba(data: Uint8Array, width: number, startX: number, startY: number, endX: number, endY: number): Uint8Array {
+	const cropWidth = Math.max(0, endX - startX);
+	const cropHeight = Math.max(0, endY - startY);
+	const cropped = new Uint8Array(cropWidth * cropHeight * 4);
+	for (let y = 0; y < cropHeight; y += 1) {
+		const sourceRow = ((startY + y) * width + startX) << 2;
+		const targetRow = (y * cropWidth) << 2;
+		cropped.set(data.subarray(sourceRow, sourceRow + (cropWidth << 2)), targetRow);
 	}
+	return cropped;
 }
 
-function generateAsciiArtFromImageBuffer(img: Buffer, modalWidth: number, zoom: number): { art: string; width: number; height: number } {
-	try {
-		const imagePNG = PNG.sync.read(img);
-		return { art: renderZoomedImageAscii(imagePNG.data, imagePNG.width, imagePNG.height, modalWidth, zoom), width: imagePNG.width, height: imagePNG.height };
-	} catch (e: any) {
-		return { art: `[Error generating ASCII art from image: ${e.stack || e.message}]`, width: 0, height: 0 };
+function splitAsciiArtLines(text: string): string[] {
+	const lines = text.split('\n');
+	if (lines.length > 0 && lines[lines.length - 1] === '') {
+		lines.pop();
 	}
+	return lines;
+}
+
+export function renderPreviewSectionWindow(section: AssetPreviewSection, startCol: number, startRow: number, viewportWidth: number, viewportHeight: number): { lines: string[]; clipX: number } {
+	if (viewportWidth <= 0 || viewportHeight <= 0 || startCol >= section.outputWidth || startRow >= section.outputHeight) {
+		return { lines: [], clipX: 0 };
+	}
+	const visibleEndCol = Math.min(section.outputWidth, startCol + viewportWidth);
+	const visibleEndRow = Math.min(section.outputHeight, startRow + viewportHeight);
+	const horizontalScale = section.pixelPerfect ? section.zoom : section.zoom / 2;
+	const verticalScale = section.pixelPerfect ? section.zoom : section.zoom / 4;
+	const sourceStartX = Math.max(0, Math.floor(startCol / horizontalScale));
+	const sourceEndX = Math.min(section.width, Math.ceil(visibleEndCol / horizontalScale));
+	const sourceStartY = Math.max(0, Math.floor(startRow / verticalScale));
+	const sourceEndY = Math.min(section.height, Math.ceil(visibleEndRow / verticalScale));
+	const cropped = cropRgba(section.rgba, section.width, sourceStartX, sourceStartY, sourceEndX, sourceEndY);
+	const cropWidth = Math.max(1, sourceEndX - sourceStartX);
+	const cropHeight = Math.max(1, sourceEndY - sourceStartY);
+	const outputStartCol = section.pixelPerfect
+		? Math.floor(sourceStartX * section.zoom)
+		: Math.floor(sourceStartX * section.zoom / 2);
+	const outputStartRow = section.pixelPerfect
+		? Math.floor(sourceStartY * section.zoom)
+		: Math.floor(sourceStartY * section.zoom / 4);
+	const clipX = Math.max(0, startCol - outputStartCol);
+	const clipY = Math.max(0, startRow - outputStartRow);
+	const limitRow = clipY + viewportHeight;
+	if (section.pixelPerfect) {
+		const scaled = scaleImageNearest(cropped, cropWidth, cropHeight, section.zoom);
+		const lines = splitAsciiArtLines(generatePixelPerfectAsciiArt(scaled.data, scaled.width, scaled.height)).slice(clipY, limitRow);
+		return {
+			lines,
+			clipX,
+		};
+	}
+	const artWidth = Math.max(1, Math.ceil(cropWidth * section.zoom / 2) + 8);
+	const lines = splitAsciiArtLines(generateBrailleAsciiArt(cropped, cropWidth, cropHeight, artWidth, { scaleLimit: section.zoom })).slice(clipY, limitRow);
+	return {
+		lines,
+		clipX,
+	};
+}
+
+function decodePngSection(buf: Buffer): { rgba: Uint8Array; width: number; height: number } {
+	const png = PNG.sync.read(buf);
+	return {
+		rgba: new Uint8Array(png.data.buffer, png.data.byteOffset, png.data.byteLength),
+		width: png.width,
+		height: png.height,
+	};
 }
 
 function isGLTFModel(obj: unknown): obj is GLTFModel {
@@ -214,13 +293,14 @@ function errorText(error: unknown): string {
 }
 
 export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetModalViewContext): Promise<AssetModalView> {
-	const imgmeta = selected.imgmeta ? selected.imgmeta : {} as ImgMeta;
-	const audiometa = selected.audiometa ? selected.audiometa : {} as AudioMeta;
+	const imgmeta = selected.imgmeta!;
+	const audiometa = selected.audiometa!;
 	const metadataLines: string[] = [];
 	const previewFixedLines: string[] = [];
+	const previewSections: AssetPreviewSection[] = [];
 	let preview = '';
 	let disassembly = '';
-	const modalWidth = Math.max(16, ctx.modalWidth);
+	const modalWidth = Math.max(20, ctx.modalWidth);
 	const modalHeight = Math.max(8, ctx.modalHeight);
 
 	switch (selected.type) {
@@ -229,52 +309,58 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 				const atlasName = generateAtlasName(imgmeta.atlasid as number);
 				const atlasAsset = ctx.assetList.find(a => a.resid === atlasName && a.type === 'atlas');
 				if (atlasAsset) {
-					const atlasBuf = atlasAsset.buffer instanceof Uint8Array ? Buffer.from(atlasAsset.buffer) : Buffer.from(ctx.rombin.slice(atlasAsset.start, atlasAsset.end));
-					const imagePreview = generateAsciiArtFromImageInAtlas(atlasBuf, imgmeta, modalWidth, ctx.previewZoom);
-					preview = imagePreview.art;
-					if (imagePreview.width > 0 && imagePreview.height > 0) {
+					try {
+						const atlasBuf = atlasAsset.buffer instanceof Uint8Array ? Buffer.from(atlasAsset.buffer) : Buffer.from(ctx.rombin.slice(atlasAsset.start, atlasAsset.end));
+						const imagePreview = extractSubimageAndSizeFromAtlassedImage(atlasBuf, imgmeta);
+						previewSections.push(buildPreviewSection('', new Uint8Array(imagePreview.subimage.buffer, imagePreview.subimage.byteOffset, imagePreview.subimage.byteLength), imagePreview.width, imagePreview.height, ctx.previewZoom));
 						previewFixedLines.push(previewFixedLine(imagePreview.width, imagePreview.height, ctx.previewZoom));
+					} catch (e: unknown) {
+						preview = `[Error generating ASCII art from image: ${errorText(e)}]`;
 					}
 				} else {
 					preview = '[Atlas asset not found]';
 				}
 				if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
-					preview += `\nHitPolygons (convex pieces) overlay:\n`;
-					preview += generateOverlayAscii(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original, modalWidth, ctx.previewZoom);
+					previewSections.push(buildPreviewSection('HitPolygons (convex pieces) overlay:', buildOverlayBuffer(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original), imgmeta.width, imgmeta.height, ctx.previewZoom));
 				}
 				for (const [key, value] of Object.entries(imgmeta)) metadataLines.push(`${key}: ${JSON.stringify(value)}`);
 			} else {
 				let rendered = false;
+				let decodeError = '';
 				if (typeof selected.start === 'number' && typeof selected.end === 'number') {
 					try {
 						const buf = Buffer.from(ctx.rombin.slice(selected.start, selected.end));
-						const png = PNG.sync.read(buf);
-						preview = renderZoomedImageAscii(png.data, png.width, png.height, modalWidth, ctx.previewZoom);
+						const png = decodePngSection(buf);
+						previewSections.push(buildPreviewSection('', png.rgba, png.width, png.height, ctx.previewZoom));
 						previewFixedLines.push(previewFixedLine(png.width, png.height, ctx.previewZoom));
 						rendered = true;
-					} catch {}
+					} catch (e: unknown) {
+						decodeError = errorText(e);
+					}
 				}
 				if (!rendered && selected.buffer) {
 					try {
-						const png = PNG.sync.read(Buffer.from(selected.buffer));
-						preview = renderZoomedImageAscii(png.data, png.width, png.height, modalWidth, ctx.previewZoom);
+						const png = decodePngSection(Buffer.from(selected.buffer));
+						previewSections.push(buildPreviewSection('', png.rgba, png.width, png.height, ctx.previewZoom));
 						previewFixedLines.push(previewFixedLine(png.width, png.height, ctx.previewZoom));
 						rendered = true;
-					} catch (e: any) {
-						preview = `[Error generating ASCII art from image: ${errorText(e)}]`;
+					} catch (e: unknown) {
+						decodeError = errorText(e);
 					}
 				}
-				if (!rendered) preview = '[No PNG buffer in ROM for this image and fallback decode failed.]';
+				if (!rendered) {
+					preview = decodeError ? `[Error generating ASCII art from image: ${decodeError}]` : '[No PNG buffer in ROM for this image.]';
+				}
 			}
 			break;
 		case 'atlas':
 			for (const [key, value] of Object.entries(imgmeta)) metadataLines.push(`${key}: ${JSON.stringify(value)}`);
-			{
-				const atlasPreview = generateAsciiArtFromImageBuffer(selected.buffer instanceof Uint8Array ? Buffer.from(selected.buffer) : Buffer.from(ctx.rombin.slice(selected.start, selected.end)), modalWidth, ctx.previewZoom);
-				preview = atlasPreview.art;
-				if (atlasPreview.width > 0 && atlasPreview.height > 0) {
-					previewFixedLines.push(previewFixedLine(atlasPreview.width, atlasPreview.height, ctx.previewZoom));
-				}
+			try {
+				const atlasPreview = decodePngSection(selected.buffer instanceof Uint8Array ? Buffer.from(selected.buffer) : Buffer.from(ctx.rombin.slice(selected.start, selected.end)));
+				previewSections.push(buildPreviewSection('', atlasPreview.rgba, atlasPreview.width, atlasPreview.height, ctx.previewZoom));
+				previewFixedLines.push(previewFixedLine(atlasPreview.width, atlasPreview.height, ctx.previewZoom));
+			} catch (e: unknown) {
+				preview = `[Error generating ASCII art from image: ${errorText(e)}]`;
 			}
 			break;
 		case 'audio':
@@ -285,11 +371,11 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 				metadataLines.push('Audio type: SFX');
 			}
 			metadataLines.push(`Priority: ${audiometa.priority === undefined ? 'Unset!' : audiometa.priority}`);
-			if (!selected.buffer || !(selected.buffer instanceof Uint8Array) || selected.buffer.byteLength === 0) {
-				selected.buffer = getRomSliceView(ctx.rombin, selected.start, selected.end);
+			if (!selected.buffer || selected.buffer.byteLength === 0) {
+				selected.buffer = Buffer.from(getRomSliceView(ctx.rombin, selected.start, selected.end));
 			}
 			{
-				const decoded = decodeAudioPreviewToPcm(selected.buffer as Uint8Array);
+				const decoded = decodeAudioPreviewToPcm(selected.buffer);
 				const pcm = new Uint8Array(decoded.samples.buffer, decoded.samples.byteOffset, decoded.samples.byteLength);
 				metadataLines.push(`Sample rate: ${decoded.sampleRate}`);
 				metadataLines.push(`Channels: ${decoded.channels}`);
@@ -323,14 +409,18 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 			}
 			break;
 		case 'model':
-			if (!selected.buffer || !isGLTFModel(selected.buffer)) {
-				const texBuf = selected.texture_start !== undefined && selected.texture_end !== undefined
-					? ctx.rombin.slice(selected.texture_start, selected.texture_end)
-					: undefined;
-				selected.buffer = await loadGLTFModelFromBuffer(String(selected.resid), ctx.rombin.slice(selected.start, selected.end), texBuf);
+			const modelData = isGLTFModel(selected.buffer)
+				? selected.buffer
+				: await loadGLTFModelFromBuffer(
+					String(selected.resid),
+					ctx.rombin.slice(selected.start, selected.end),
+					selected.texture_start !== undefined && selected.texture_end !== undefined
+						? ctx.rombin.slice(selected.texture_start, selected.texture_end)
+						: undefined,
+				);
+			if (!isGLTFModel(modelData)) {
+				throw new Error(`Asset '${selected.resid}' buffer is not a GLTFModel.`);
 			}
-			if (!isGLTFModel(selected.buffer)) throw new Error(`Asset '${selected.resid}' buffer is not a GLTFModel.`);
-			const modelData = selected.buffer;
 			metadataLines.push(`Model size: ${ctx.formatByteSize(selected.end - selected.start)}`);
 			metadataLines.push(`Nodes: ${modelData.nodes ? modelData.nodes.length : 0}`);
 			metadataLines.push(`Scenes: ${modelData.scenes ? modelData.scenes.length : 0}`);
@@ -393,6 +483,7 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 		title: `Asset - ID: ${selected.resid} | Type: ${selected.type}`,
 		infoLines: bufferLines,
 		previewFixedLines,
+		previewSections,
 		preview,
 		details: details || '[No details]',
 		hex: hex || '[No hex data available]',

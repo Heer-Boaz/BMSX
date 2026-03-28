@@ -3,7 +3,7 @@ import { PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/emula
 import { parseCartHeader } from '../../src/bmsx/rompack/romloader';
 import { clamp } from '../../src/bmsx/utils/clamp';
 import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferHitRegion, type BufferLegendEntry, type BufferRegion } from './asciiart';
-import { buildAssetModalView, type AssetModalView } from './asset_modal_view';
+import { buildAssetModalView, renderPreviewSectionWindow, type AssetModalView, type AssetPreviewSection } from './asset_modal_view';
 import { TuiInput, type TuiMouseEvent } from './tui_input';
 import { TuiScreen, TUI_COLORS, type TuiStyle } from './tui_screen';
 
@@ -86,6 +86,8 @@ type BufferFilter =
 type ModalTabContent = {
 	lines: string[];
 	maxWidth: number;
+	lineCount: number;
+	previewSections: AssetPreviewSection[];
 };
 
 type ModalLayout = {
@@ -820,6 +822,72 @@ function formatZoom(zoom: number): string {
 	return Number.isInteger(zoom) ? zoom.toFixed(1) : zoom.toString();
 }
 
+function clipPlainText(text: string, startCol: number, width: number): string {
+	if (width <= 0 || startCol >= text.length) {
+		return '';
+	}
+	return text.slice(Math.max(0, startCol), Math.max(0, startCol) + width);
+}
+
+function previewSectionLineCount(section: AssetPreviewSection): number {
+	return section.outputHeight + (section.titleLine ? 1 : 0);
+}
+
+function previewSectionsLineCount(sections: AssetPreviewSection[]): number {
+	let lineCount = 0;
+	for (const section of sections) {
+		lineCount += previewSectionLineCount(section);
+	}
+	return lineCount;
+}
+
+function previewSectionsMaxWidth(sections: AssetPreviewSection[]): number {
+	let maxWidth = 0;
+	for (const section of sections) {
+		maxWidth = Math.max(maxWidth, section.outputWidth, section.titleLine.length);
+	}
+	return maxWidth;
+}
+
+function drawPreviewSections(
+	screen: TuiScreen,
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	sections: AssetPreviewSection[],
+	startRow: number,
+	startCol: number,
+	style: TuiStyle,
+): void {
+	let documentRow = 0;
+	for (const section of sections) {
+		if (section.titleLine) {
+			if (documentRow >= startRow && documentRow < startRow + height) {
+				screen.writeText(x, y + documentRow - startRow, clipPlainText(section.titleLine, startCol, width), style);
+			}
+			documentRow += 1;
+		}
+		const sectionStartRow = documentRow;
+		const sectionEndRow = sectionStartRow + section.outputHeight;
+		const visibleStartRow = Math.max(startRow, sectionStartRow);
+		const visibleEndRow = Math.min(startRow + height, sectionEndRow);
+		if (visibleStartRow < visibleEndRow) {
+			const rendered = renderPreviewSectionWindow(
+				section,
+				startCol,
+				visibleStartRow - sectionStartRow,
+				width,
+				visibleEndRow - visibleStartRow,
+			);
+			for (let row = 0; row < rendered.lines.length; row += 1) {
+				screen.writeTaggedTextClipped(x, y + visibleStartRow - startRow + row, rendered.lines[row], style, rendered.clipX, width);
+			}
+		}
+		documentRow = sectionEndRow;
+	}
+}
+
 function hoveredBarLabels(hoveredCell: BufferBarCell | null, hoveredRegion: BufferRegion | null, hoveredLegendEntry: BufferLegendEntry | null): string[] {
 	if (hoveredLegendEntry || hoveredRegion || !hoveredCell) {
 		return [];
@@ -1006,14 +1074,28 @@ function drawModal(
 		writeTaggedLine(screen, frame.x + 2, contentRect.y - previewFixedLines.length + index, frame.width - 4, previewFixedLines[index], STYLE_DIM);
 	}
 	screen.fillRect(contentRect.x, contentRect.y, contentRect.width, contentRect.height, STYLE_PANEL);
-	for (let row = 0; row < contentRect.height; row += 1) {
-		const line = content.lines[modalScroll + row];
-		if (!line) {
-			continue;
+	if (content.previewSections.length > 0) {
+		drawPreviewSections(
+			screen,
+			contentRect.x,
+			contentRect.y,
+			contentRect.width,
+			contentRect.height,
+			content.previewSections,
+			modalScroll,
+			modalScrollX,
+			STYLE_PANEL,
+		);
+	} else {
+		for (let row = 0; row < contentRect.height; row += 1) {
+			const line = content.lines[modalScroll + row];
+			if (!line) {
+				continue;
+			}
+			screen.writeTaggedTextClipped(contentRect.x, contentRect.y + row, line, STYLE_PANEL, modalScrollX, contentRect.width);
 		}
-		screen.writeTaggedTextClipped(contentRect.x, contentRect.y + row, line, STYLE_PANEL, modalScrollX, contentRect.width);
 	}
-	drawVerticalScrollbar(screen, verticalScrollbar, content.lines.length, visibleContentLines, modalScroll, isInside(verticalScrollbar, mouseX, mouseY));
+	drawVerticalScrollbar(screen, verticalScrollbar, content.lineCount, visibleContentLines, modalScroll, isInside(verticalScrollbar, mouseX, mouseY));
 	drawHorizontalScrollbar(screen, horizontalScrollbar, content.maxWidth, visibleContentColumns, modalScrollX, isInside(horizontalScrollbar, mouseX, mouseY));
 }
 
@@ -1287,10 +1369,20 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 
 	const getModalContent = (tabIndex = modalTab): ModalTabContent => {
 		if (!modalView) {
-			return { lines: [], maxWidth: 0 };
+			return { lines: [], maxWidth: 0, lineCount: 0, previewSections: [] };
 		}
 		let content = modalContentByTab[tabIndex];
 		if (content) {
+			return content;
+		}
+		if (tabIndex === 0 && modalView.previewSections.length > 0) {
+			content = {
+				lines: [],
+				maxWidth: previewSectionsMaxWidth(modalView.previewSections),
+				lineCount: previewSectionsLineCount(modalView.previewSections),
+				previewSections: modalView.previewSections,
+			};
+			modalContentByTab[tabIndex] = content;
 			return content;
 		}
 		const activeText = tabIndex === 0 ? modalView.preview : tabIndex === 1 ? modalView.details : modalView.hex;
@@ -1299,7 +1391,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		for (const line of lines) {
 			maxWidth = Math.max(maxWidth, screen.taggedTextWidth(line));
 		}
-		content = { lines, maxWidth };
+		content = { lines, maxWidth, lineCount: lines.length, previewSections: [] };
 		modalContentByTab[tabIndex] = content;
 		return content;
 	};
@@ -1352,7 +1444,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			while (true) {
 				visibleContentColumns = Math.max(1, baseContentWidth - (hasVerticalScrollbar ? 1 : 0));
 				visibleContentLines = Math.max(1, scrollableBaseHeight - (hasHorizontalScrollbar ? 1 : 0));
-				const needsVerticalScrollbar = modalContent.lines.length > visibleContentLines;
+				const needsVerticalScrollbar = modalContent.lineCount > visibleContentLines;
 				const needsHorizontalScrollbar = modalContent.maxWidth > visibleContentColumns;
 				if (needsVerticalScrollbar === hasVerticalScrollbar && needsHorizontalScrollbar === hasHorizontalScrollbar) {
 					break;
@@ -1372,7 +1464,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			const horizontalScrollbar: Rect = hasHorizontalScrollbar
 				? { x: content.x, y: content.y + content.height, width: content.width, height: 1 }
 				: { x: 0, y: 0, width: 0, height: 0 };
-			const maxScrollY = Math.max(0, modalContent.lines.length - visibleContentLines);
+			const maxScrollY = Math.max(0, modalContent.lineCount - visibleContentLines);
 			const maxScrollX = Math.max(0, modalContent.maxWidth - visibleContentColumns);
 			modal = { frame, tabs, previewFixedLines: previewFixedLines.slice(0, fixedPreviewLineCount), content, verticalScrollbar, horizontalScrollbar, maxScrollY, maxScrollX, visibleContentLines, visibleContentColumns, infoLineCount };
 		}
@@ -1566,7 +1658,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		const previousLayout = lastLayout.modal;
 		const focus = modalPreviewFocus(previousLayout, event);
 		const previousWidth = Math.max(1, previousContent.maxWidth);
-		const previousHeight = Math.max(1, previousContent.lines.length);
+		const previousHeight = Math.max(1, previousContent.lineCount);
 		const previousAbsoluteX = modalScrollX + focus.localX + focus.subX;
 		const previousAbsoluteY = modalScroll + focus.localY + focus.subY;
 		const focusRatioX = previousAbsoluteX / previousWidth;
@@ -1582,7 +1674,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			const nextModal = nextLayout.modal;
 			if (nextModal) {
 				const nextAbsoluteX = focusRatioX * Math.max(1, nextContent.maxWidth);
-				const nextAbsoluteY = focusRatioY * Math.max(1, nextContent.lines.length);
+				const nextAbsoluteY = focusRatioY * Math.max(1, nextContent.lineCount);
 				modalScrollX = clamp(Math.round(nextAbsoluteX - focus.localX - focus.subX), 0, nextModal.maxScrollX);
 				modalScroll = clamp(Math.round(nextAbsoluteY - focus.localY - focus.subY), 0, nextModal.maxScrollY);
 			}
@@ -1608,7 +1700,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			return true;
 		}
 		const modalContent = getModalContent();
-		const verticalScrollbarResult = updateVerticalScrollbarFromMouse(event, modal.verticalScrollbar, modalContent.lines.length, modal.visibleContentLines, modalScroll, scrollbarDrag, 'modalY');
+		const verticalScrollbarResult = updateVerticalScrollbarFromMouse(event, modal.verticalScrollbar, modalContent.lineCount, modal.visibleContentLines, modalScroll, scrollbarDrag, 'modalY');
 		scrollbarDrag = verticalScrollbarResult.nextDrag;
 		if (verticalScrollbarResult.handled) {
 			modalScroll = verticalScrollbarResult.nextTopLine;
