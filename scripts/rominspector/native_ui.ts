@@ -333,7 +333,9 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			};
 			frame.x = Math.max(0, Math.floor((width - frame.width) / 2));
 			frame.y = Math.max(0, Math.floor((height - frame.height) / 2));
-			const tabY = frame.y + 1;
+			const maxInfoLineCount = Math.min(modalView.infoLines.length, Math.max(0, frame.height - 8));
+			const infoLineCount = Math.min(5, maxInfoLineCount);
+			const tabY = frame.y + 2 + infoLineCount;
 			const tabs: TabHit[] = [];
 			let tabX = frame.x + 2;
 			for (const [index, label] of ['Preview', 'Details', 'Hex'].entries()) {
@@ -342,13 +344,11 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 				tabX += tabWidth + 1;
 			}
 			tabs.push({ x: frame.x + frame.width - 4, y: frame.y, width: 3, height: 1, index: -1, close: true });
-			const maxInfoLineCount = Math.min(modalView.infoLines.length, Math.max(0, frame.height - 8));
-			const infoLineCount = Math.min(5, maxInfoLineCount);
 			const content: Rect = {
 				x: frame.x + 2,
-				y: frame.y + 2 + infoLineCount,
+				y: tabY + 1,
 				width: Math.max(1, frame.width - 5),
-				height: Math.max(1, frame.height - 4 - infoLineCount),
+				height: Math.max(1, frame.height - 5 - infoLineCount),
 			};
 			const scrollbar: Rect = {
 				x: frame.x + frame.width - 2,

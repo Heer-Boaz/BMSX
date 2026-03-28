@@ -105,7 +105,7 @@ export class TuiScreen {
 		}
 		this.initialized = true;
 		this.fullRedraw = true;
-		process.stdout.write('\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H');
+		process.stdout.write('\x1b[?1049h\x1b[?25l\x1b[?7l\x1b[2J\x1b[H');
 		this.updateSize();
 	}
 
@@ -113,7 +113,7 @@ export class TuiScreen {
 		if (!this.initialized) {
 			return;
 		}
-		process.stdout.write('\x1b[0m\x1b[?25h\x1b[?1049l');
+		process.stdout.write('\x1b[0m\x1b[?7h\x1b[?25h\x1b[?1049l');
 		this.initialized = false;
 	}
 
