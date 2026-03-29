@@ -34,7 +34,7 @@ export class WebGLBackend implements GPUBackend {
 	private currentActiveTexUnit: number = null;
 	private boundTex2D: (WebGLTexture)[] = [];
 	private boundTexCube: (WebGLTexture)[] = [];
-	private texSizes = new WeakMap<WebGLTexture, { w: number; h: number }>();
+	private texInfo = new WeakMap<WebGLTexture, { w: number; h: number; srgb: boolean }>();
 	private readbackFbo: WebGLFramebuffer = null;
 	private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation>>();
 	private attribCache = new WeakMap<WebGLProgram, Map<string, number>>();
@@ -50,18 +50,20 @@ export class WebGLBackend implements GPUBackend {
 	createTexture(src: TextureSource | Promise<TextureSource>, desc: TextureParams): WebGLTexture {
 		const source = src as TextureSource;
 		const data = source.data;
+		const srgb = desc.srgb !== false;
+		const internalFormat = srgb ? this.gl.SRGB8_ALPHA8 : this.gl.RGBA8;
 		if (data) {
 			const gl = this.gl;
 			const tex = gl.createTexture()!;
 			gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 			gl.bindTexture(gl.TEXTURE_2D, tex);
-			gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, source.width, source.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+			gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, source.width, source.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
 			gl.bindTexture(gl.TEXTURE_2D, null);
-			this.texSizes.set(tex, { w: source.width, h: source.height });
+			this.texInfo.set(tex, { w: source.width, h: source.height, srgb });
 			const bytes = source.width * source.height * 4;
 			this.frameStats.bytesUploaded += bytes;
 			this.frameStats.textureBytes += bytes;
@@ -69,7 +71,7 @@ export class WebGLBackend implements GPUBackend {
 		}
 		const img = source as ImageBitmap;
 		const t = GLR.glCreateTextureFromImage(this.gl, img, desc, null);
-		this.texSizes.set(t, { w: img.width, h: img.height });
+		this.texInfo.set(t, { w: img.width, h: img.height, srgb });
 		this.frameStats.bytesUploaded += img.width * img.height * 4;
 		this.frameStats.textureBytes += img.width * img.height * 4;
 		return t;
@@ -78,26 +80,27 @@ export class WebGLBackend implements GPUBackend {
 	updateTexture(handle: WebGLTexture, src: TextureSource): void {
 		const gl = this.gl;
 		const data = src.data;
+		const info = this.texInfo.get(handle);
+		const srgb = info ? info.srgb : true;
+		const internalFormat = srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		gl.bindTexture(gl.TEXTURE_2D, handle);
-		const size = this.texSizes.get(handle);
-		const needsResize = !size || size.w !== src.width || size.h !== src.height;
+		const needsResize = !info || info.w !== src.width || info.h !== src.height;
 		if (data) {
 			if (needsResize) {
-				gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
-				this.texSizes.set(handle, { w: src.width, h: src.height });
+				gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 			} else {
 				gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, src.width, src.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
 			}
 		} else {
 			const img = src as ImageBitmap;
 			if (needsResize) {
-				gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
-				this.texSizes.set(handle, { w: img.width, h: img.height });
+				gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, gl.RGBA, gl.UNSIGNED_BYTE, img);
 			} else {
 				gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
 			}
 		}
+		this.texInfo.set(handle, { w: src.width, h: src.height, srgb });
 		const bytes = src.width * src.height * 4;
 		this.frameStats.bytesUploaded += bytes;
 		this.frameStats.textureBytes += bytes;
@@ -106,10 +109,13 @@ export class WebGLBackend implements GPUBackend {
 
 	resizeTexture(handle: WebGLTexture, width: number, height: number, _desc: TextureParams): WebGLTexture {
 		const gl = this.gl;
+		const info = this.texInfo.get(handle);
+		const srgb = info ? info.srgb : _desc.srgb !== false;
+		const internalFormat = srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
 		gl.bindTexture(gl.TEXTURE_2D, handle);
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-		this.texSizes.set(handle, { w: width, h: height });
+		gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+		this.texInfo.set(handle, { w: width, h: height, srgb });
 		gl.bindTexture(gl.TEXTURE_2D, null);
 		return handle;
 	}
@@ -133,7 +139,7 @@ export class WebGLBackend implements GPUBackend {
 
 	readTextureRegion(handle: WebGLTexture, x: number, y: number, width: number, height: number): Uint8Array {
 		const gl = this.gl;
-		const size = this.texSizes.get(handle);
+		const size = this.texInfo.get(handle);
 		if (!size) {
 			throw new Error('[WebGLBackend] Texture size not tracked for readback.');
 		}
@@ -174,7 +180,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
 		gl.bindTexture(gl.TEXTURE_2D, null);
-		this.texSizes.set(tex, { w: width, h: height });
+		this.texInfo.set(tex, { w: width, h: height, srgb: false });
 		return tex;
 	}
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): WebGLTexture {
@@ -275,7 +281,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 		gl.bindTexture(gl.TEXTURE_2D, null);
-		this.texSizes.set(tex, { w: desc.width, h: desc.height });
+		this.texInfo.set(tex, { w: desc.width, h: desc.height, srgb: false });
 		return tex;
 	}
 	createDepthTexture(desc: { width: number; height: number }): WebGLTexture { return GLR.glCreateDepthTexture(this.gl, desc.width, desc.height, TEXTURE_UNIT_UPLOAD); }

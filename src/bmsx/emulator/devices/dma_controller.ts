@@ -24,6 +24,8 @@ import {
 	VRAM_SYSTEM_ATLAS_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_PRIMARY_ATLAS_SIZE,
+	VRAM_FRAMEBUFFER_BASE,
+	VRAM_FRAMEBUFFER_SIZE,
 	VRAM_SKYBOX_BASE,
 	VRAM_SKYBOX_SIZE,
 	VRAM_SECONDARY_ATLAS_BASE,
@@ -219,7 +221,7 @@ export class DmaController {
 				}
 			}
 			const srcOffset = job.row * job.plan.sourceStride + job.rowOffset;
-			const dstAddr = job.plan.baseAddr + (job.row * job.plan.writeStride) + job.rowOffset;
+			const dstAddr = job.plan.baseAddr + (job.row * job.plan.targetStride) + job.rowOffset;
 			try {
 				this.memory.writeBytesFrom(job.pixels, srcOffset, dstAddr, toCopy);
 			} catch {
@@ -318,6 +320,9 @@ export class DmaController {
 		}
 		if (dst >= VRAM_SECONDARY_ATLAS_BASE && dst < VRAM_SECONDARY_ATLAS_BASE + VRAM_SECONDARY_ATLAS_SIZE) {
 			return (VRAM_SECONDARY_ATLAS_BASE + VRAM_SECONDARY_ATLAS_SIZE) - dst;
+		}
+		if (dst >= VRAM_FRAMEBUFFER_BASE && dst < VRAM_FRAMEBUFFER_BASE + VRAM_FRAMEBUFFER_SIZE) {
+			return (VRAM_FRAMEBUFFER_BASE + VRAM_FRAMEBUFFER_SIZE) - dst;
 		}
 		if (dst >= VRAM_STAGING_BASE && dst < VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
 			return (VRAM_STAGING_BASE + VRAM_STAGING_SIZE) - dst;

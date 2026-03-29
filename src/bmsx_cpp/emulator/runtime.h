@@ -243,6 +243,8 @@ public:
 	const Memory& memory() const { return m_memory; }
 	VDP& vdp() { return m_vdp; }
 	const VDP& vdp() const { return m_vdp; }
+	DmaController& dmaController() { return m_dmaController; }
+	const DmaController& dmaController() const { return m_dmaController; }
 
 	/**
 	 * Get the API instance.

@@ -1169,6 +1169,8 @@ export class Runtime {
 		const stringHeapBytes = memorySpecs.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE;
 		const atlasSlotBytes = memorySpecs.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 		const engineAtlasSlotBytes = engineMemorySpecs.system_atlas_slot_bytes ?? this.resolveEngineAtlasSlotBytes(params.engineSource);
+		const renderSize = this.resolveRenderSize(machineConfig);
+		const frameBufferBytes = renderSize.width * renderSize.height * 4;
 		if (!Number.isSafeInteger(engineAtlasSlotBytes) || engineAtlasSlotBytes <= 0) {
 			throw new Error('[Runtime] system atlas slot bytes must be a positive integer.');
 		}
@@ -1211,7 +1213,7 @@ export class Runtime {
 			`[Runtime] memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
 			+ `(io=${IO_REGION_SIZE}, string_handles=${stringHandleCount}, string_heap=${stringHeapBytes}, `
 			+ `asset_table=${assetTableBytes} (${assetTableInfo.entryCount} entries, ${assetTableInfo.stringBytes} string bytes), `
-			+ `asset_data=${assetDataBytes}, vram_staging=${stagingBytes}, `
+			+ `asset_data=${assetDataBytes}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes}, `
 			+ `engine_atlas_slot=${engineAtlasSlotBytes}, atlas_slot=${atlasSlotBytes}x2=${atlasSlotBytes * 2}).`,
 		);
 		return {
@@ -1223,6 +1225,7 @@ export class Runtime {
 			atlas_slot_bytes: atlasSlotBytes,
 			system_atlas_slot_bytes: engineAtlasSlotBytes,
 			staging_bytes: stagingBytes,
+			framebuffer_bytes: frameBufferBytes,
 			skybox_face_size: skyboxFaceBytes === undefined ? skyboxFaceSize : memorySpecs.skybox_face_size,
 			skybox_face_bytes: skyboxFaceBytes,
 		};

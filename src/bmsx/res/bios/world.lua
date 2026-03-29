@@ -258,6 +258,9 @@ function world_class:set_space(space_id)
 	if self._spaces[space_id] == nil then
 		error('world.set_space unknown space id '' .. tostring(space_id) .. ''.')
 	end
+	if self.active_space_id ~= space_id then
+		cls(1)
+	end
 	self.active_space_id = space_id
 	return self.active_space_id
 end

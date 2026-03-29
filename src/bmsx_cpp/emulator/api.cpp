@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <unordered_set>
@@ -1448,16 +1449,53 @@ void Api::dma_blit_tiles(const Value& desc) {
 	const i32 originY = requireInt(table->get(key("origin_y")), "desc.origin_y");
 	const i32 scrollX = requireInt(table->get(key("scroll_x")), "desc.scroll_x");
 	const i32 scrollY = requireInt(table->get(key("scroll_y")), "desc.scroll_y");
-	const i32 z = requireInt(table->get(key("z")), "desc.z");
-	const Layer2D layer = renderLayerTo2dLayer(resolve_layer(table->get(key("layer"))));
+	requireInt(table->get(key("z")), "desc.z");
+	resolve_layer(table->get(key("layer")));
+	auto& vdp = m_runtime.vdp();
+	vdp.ensureFrameBufferSurfaceReady();
+	const i32 frameWidth = static_cast<i32>(vdp.frameBufferWidth());
+	const i32 frameHeight = static_cast<i32>(vdp.frameBufferHeight());
+	const i32 totalWidth = cols * tileW;
+	const i32 totalHeight = rows * tileH;
+	i32 dstX = originX - scrollX;
+	i32 dstY = originY - scrollY;
+	i32 srcClipX = 0;
+	i32 srcClipY = 0;
+	i32 writeWidth = totalWidth;
+	i32 writeHeight = totalHeight;
+	if (dstX < 0) {
+		srcClipX = -dstX;
+		writeWidth += dstX;
+		dstX = 0;
+	}
+	if (dstY < 0) {
+		srcClipY = -dstY;
+		writeHeight += dstY;
+		dstY = 0;
+	}
+	const i32 overflowX = (dstX + writeWidth) - frameWidth;
+	if (overflowX > 0) {
+		writeWidth -= overflowX;
+	}
+	const i32 overflowY = (dstY + writeHeight) - frameHeight;
+	if (overflowY > 0) {
+		writeHeight -= overflowY;
+	}
+	if (writeWidth <= 0 || writeHeight <= 0) {
+		return;
+	}
+	const i32 rowBytes = writeWidth * 4;
+	std::vector<u8> pixels(static_cast<size_t>(rowBytes) * static_cast<size_t>(writeHeight), 0u);
 	Memory& memory = m_runtime.memory();
 	for (i32 row = 0; row < rows; row += 1) {
-		const f32 y = static_cast<f32>(originY + (row * tileH) - scrollY);
 		const i32 base = row * cols;
 		for (i32 col = 0; col < cols; col += 1) {
 			const Value tileValue = tiles->get(valueNumber(static_cast<double>(base + col + 1)));
 			if (valueIsBool(tileValue) && !valueToBool(tileValue)) {
 				continue;
+			}
+			if (!valueIsString(tileValue)) {
+				throw BMSX_RUNTIME_ERROR("dma_blit_tiles tiles must contain image ids or false.");
 			}
 			const std::string& imgId = m_runtime.cpu().stringPool().toString(asStringId(tileValue));
 			const u32 handle = memory.resolveAssetHandle(imgId);
@@ -1465,20 +1503,43 @@ void Api::dma_blit_tiles(const Value& desc) {
 			if (entry.type != Memory::AssetType::Image) {
 				throw BMSX_RUNTIME_ERROR("dma_blit_tiles asset '" + imgId + "' is not an image.");
 			}
-			m_runtime.vdp().queueFrameBufferSpriteHandle(
-				handle,
-				static_cast<f32>(originX + (col * tileW) - scrollX),
-				y,
-				static_cast<f32>(z),
-				layer,
-				1.0f,
-				1.0f,
-				false,
-				false,
-				Color{1.0f, 1.0f, 1.0f, 1.0f}
-			);
+			const auto source = vdp.resolveFrameBufferSource(handle);
+			if (source.width != static_cast<uint32_t>(tileW) || source.height != static_cast<uint32_t>(tileH)) {
+				throw BMSX_RUNTIME_ERROR("dma_blit_tiles asset '" + imgId + "' size mismatch.");
+			}
+			const i32 tileX = (col * tileW) - srcClipX;
+			const i32 tileY = (row * tileH) - srcClipY;
+			const i32 tileRight = tileX + tileW;
+			const i32 tileBottom = tileY + tileH;
+			if (tileRight <= 0 || tileBottom <= 0 || tileX >= writeWidth || tileY >= writeHeight) {
+				continue;
+			}
+			const i32 copyLeft = tileX < 0 ? -tileX : 0;
+			const i32 copyTop = tileY < 0 ? -tileY : 0;
+			const i32 copyRight = tileRight > writeWidth ? writeWidth - tileX : tileW;
+			const i32 copyBottom = tileBottom > writeHeight ? writeHeight - tileY : tileH;
+			const i32 copyWidth = copyRight - copyLeft;
+			const i32 copyHeight = copyBottom - copyTop;
+			for (i32 copyRow = 0; copyRow < copyHeight; copyRow += 1) {
+				const size_t srcOffset =
+					(static_cast<size_t>(source.regionY + static_cast<uint32_t>(copyTop + copyRow)) * static_cast<size_t>(source.stride))
+					+ (static_cast<size_t>(source.regionX + static_cast<uint32_t>(copyLeft)) * 4u);
+				const size_t dstOffset =
+					(static_cast<size_t>(tileY + copyTop + copyRow) * static_cast<size_t>(writeWidth) + static_cast<size_t>(tileX + copyLeft)) * 4u;
+				std::memcpy(pixels.data() + dstOffset, source.pixels + srcOffset, static_cast<size_t>(copyWidth) * 4u);
+			}
 		}
 	}
+	Memory::ImageWritePlan plan;
+	plan.baseAddr = VRAM_FRAMEBUFFER_BASE + static_cast<uint32_t>(((dstY * frameWidth) + dstX) * 4);
+	plan.writeWidth = static_cast<uint32_t>(writeWidth);
+	plan.writeHeight = static_cast<uint32_t>(writeHeight);
+	plan.writeStride = static_cast<uint32_t>(rowBytes);
+	plan.targetStride = static_cast<uint32_t>(frameWidth * 4);
+	plan.sourceStride = static_cast<uint32_t>(rowBytes);
+	plan.writeLen = pixels.size();
+	plan.clipped = writeWidth != totalWidth || writeHeight != totalHeight;
+	m_runtime.dmaController().enqueueImageCopy(plan, std::move(pixels), [](bool, bool) {});
 }
 
 void Api::blit_poly(const PolyRenderSubmission& submission) {

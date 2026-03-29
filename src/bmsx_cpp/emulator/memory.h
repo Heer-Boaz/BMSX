@@ -98,6 +98,7 @@ public:
 		uint32_t writeWidth = 0;
 		uint32_t writeHeight = 0;
 		uint32_t writeStride = 0;
+		uint32_t targetStride = 0;
 		uint32_t sourceStride = 0;
 		size_t writeLen = 0;
 		bool clipped = false;

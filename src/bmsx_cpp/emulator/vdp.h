@@ -21,6 +21,15 @@ class BFont;
 
 class VDP : public Memory::VramWriter, public Memory::VdpIoHandler {
 public:
+	struct FrameBufferImageSource {
+		const u8* pixels = nullptr;
+		uint32_t regionX = 0;
+		uint32_t regionY = 0;
+		uint32_t stride = 0;
+		uint32_t width = 0;
+		uint32_t height = 0;
+	};
+
 	explicit VDP(Memory& memory);
 
 	void initializeRegisters();
@@ -38,6 +47,9 @@ public:
 	void queueFrameBufferGlyphs(const std::vector<std::string>& lines, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, RenderLayer layer);
 	void flushFrameBufferOps();
 	void ensureFrameBufferSurfaceReady();
+	uint32_t frameBufferWidth() const { return m_frameBufferWidth; }
+	uint32_t frameBufferHeight() const { return m_frameBufferHeight; }
+	FrameBufferImageSource resolveFrameBufferSource(u32 handle) const;
 	const char* getFrameBufferTextureKey() const { return FRAMEBUFFER_TEXTURE_KEY; }
 	uint32_t readVdpStatus() override;
 	uint32_t readVdpData() override;
@@ -81,6 +93,7 @@ private:
 		uint32_t surfaceId = 0;
 		uint32_t textureWidth = 0;
 		uint32_t textureHeight = 0;
+		std::vector<u8> cpuReadback;
 		std::vector<u8> contextSnapshot;
 	};
 	struct VramGarbageStream {
@@ -117,15 +130,6 @@ private:
 		u32 sourceIndex = 0;
 		FrameBufferColor color{};
 	};
-	struct FrameBufferImageSource {
-		const u8* pixels = nullptr;
-		uint32_t regionX = 0;
-		uint32_t regionY = 0;
-		uint32_t stride = 0;
-		uint32_t width = 0;
-		uint32_t height = 0;
-	};
-
 	Memory& m_memory;
 	ImgDecController* m_imgDecController = nullptr;
 	std::unordered_map<i32, std::string> m_atlasResourceById;
@@ -138,8 +142,6 @@ private:
 	std::array<u8, 4> m_vramSeedPixel{{0, 0, 0, 0}};
 	uint32_t m_vramMachineSeed = 0;
 	uint32_t m_vramBootSeed = 0;
-	std::array<ReadSurface, 3> m_readSurfaces{};
-	std::array<ReadCache, 3> m_readCaches{};
 	uint32_t m_readBudgetBytes = 0;
 	bool m_readOverflow = false;
 	bool m_dirtyAtlasBindings = false;
@@ -147,14 +149,16 @@ private:
 	SkyboxImageIds m_skyboxFaceIds;
 	bool m_hasSkybox = false;
 	i32 m_lastDitherType = 0;
-	std::vector<u8> m_frameBufferPixels;
 	std::vector<FrameBufferCommand> m_frameBufferCommands;
 	FrameBufferColor m_frameBufferClearColor{0, 0, 0, 255};
 	bool m_frameBufferClearRequested = false;
+	bool m_hasFrameBufferSlot = false;
 	uint32_t m_frameBufferSourceIndex = 0;
 	uint32_t m_frameBufferWidth = 0;
 	uint32_t m_frameBufferHeight = 0;
 	std::array<Memory::ImageWriteEntry, 6> m_skyboxSlots{};
+	std::array<ReadSurface, 4> m_readSurfaces{};
+	std::array<ReadCache, 4> m_readCaches{};
 
 	void registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId);
 	void registerReadSurface(uint32_t surfaceId, const std::string& assetId, const std::string& textureKey);
@@ -167,6 +171,9 @@ private:
 	const VramSlot& findVramSlot(uint32_t addr, size_t length) const;
 	void syncVramSlotTextureSize(VramSlot& slot);
 	VramSlot& getVramSlotByTextureKey(const std::string& textureKey);
+	const VramSlot& getVramSlotByTextureKey(const std::string& textureKey) const;
+	VramSlot& getAssetVramSlotByOwner(size_t ownerIndex);
+	const VramSlot& getAssetVramSlotByOwner(size_t ownerIndex) const;
 	uint32_t nextVramMachineSeed() const;
 	uint32_t nextVramBootSeed() const;
 	void fillVramGarbageScratch(u8* data, size_t length, VramGarbageStream& stream) const;
@@ -177,12 +184,13 @@ private:
 	FrameBufferColor packFrameBufferColor(const Color& color) const;
 	void resetFrameBufferCommands();
 	void ensureFrameBufferSurface();
+	std::vector<u8>& getFrameBufferPixels();
 	const u8* getFrameBufferSourcePixels(const Memory::AssetEntry& entry) const;
 	FrameBufferImageSource resolveFrameBufferImageSource(u32 handle) const;
-	void blendFrameBufferPixel(size_t index, u8 r, u8 g, u8 b, u8 a);
-	void rasterizeFrameBufferFill(const FrameBufferCommand& command);
-	void rasterizeFrameBufferLine(const FrameBufferCommand& command);
-	void rasterizeFrameBufferSprite(const FrameBufferCommand& command);
+	void blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a);
+	void rasterizeFrameBufferFill(std::vector<u8>& pixels, const FrameBufferCommand& command);
+	void rasterizeFrameBufferLine(std::vector<u8>& pixels, const FrameBufferCommand& command);
+	void rasterizeFrameBufferSprite(std::vector<u8>& pixels, const FrameBufferCommand& command);
 };
 
 } // namespace bmsx

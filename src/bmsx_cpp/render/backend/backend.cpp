@@ -46,11 +46,15 @@ static std::array<u8, 256> buildDitherGuardLut() {
 
 static const std::array<u8, 256> kDitherGuardLut = buildDitherGuardLut();
 
+} // namespace
+
 std::array<u8, 256> buildSrgbToLinearLut() {
 	std::array<u8, 256> lut{};
 	for (i32 i = 0; i < 256; ++i) {
 		const f32 c = static_cast<f32>(i) / 255.0f;
-		const f32 linear = std::pow(c, 2.2f);
+		const f32 linear = c <= 0.04045f
+			? c / 12.92f
+			: std::pow((c + 0.055f) / 1.055f, 2.4f);
 		lut[static_cast<size_t>(i)] = static_cast<u8>(std::round(linear * 255.0f));
 	}
 	return lut;
@@ -65,7 +69,9 @@ std::array<u8, 256> buildLinearToSrgbLut() {
 	std::array<u8, 256> lut{};
 	for (i32 i = 0; i < 256; ++i) {
 		const f32 c = static_cast<f32>(i) / 255.0f;
-		const f32 encoded = std::pow(c, 1.0f / 2.2f);
+		const f32 encoded = c <= 0.0031308f
+			? c * 12.92f
+			: 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
 		lut[static_cast<size_t>(i)] = static_cast<u8>(std::round(encoded * 255.0f));
 	}
 	return lut;
@@ -87,8 +93,6 @@ void convertSrgbToLinear(const u8* src, size_t pixels, std::vector<u8>& out) {
 		out[idx + 3] = src[idx + 3];
 	}
 }
-
-} // namespace
 
 /* ============================================================================
  * SoftwareBackend implementation

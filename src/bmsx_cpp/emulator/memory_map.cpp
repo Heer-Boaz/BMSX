@@ -19,10 +19,12 @@ uint32_t ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
 uint32_t ASSET_DATA_END = ASSET_RAM_BASE + ASSET_RAM_SIZE;
 uint32_t VRAM_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 uint32_t VRAM_STAGING_SIZE = DEFAULT_VRAM_STAGING_SIZE;
+uint32_t VRAM_FRAMEBUFFER_SIZE = DEFAULT_VRAM_FRAMEBUFFER_SIZE;
 uint32_t VRAM_SECONDARY_ATLAS_BASE = 0;
 uint32_t VRAM_PRIMARY_ATLAS_BASE = 0;
 uint32_t VRAM_SYSTEM_ATLAS_BASE = 0;
 uint32_t VRAM_STAGING_BASE = 0;
+uint32_t VRAM_FRAMEBUFFER_BASE = 0;
 uint32_t VRAM_SKYBOX_BASE = 0;
 uint32_t VRAM_SKYBOX_FACE_BYTES = 0;
 uint32_t VRAM_SKYBOX_SIZE = 0;
@@ -46,6 +48,7 @@ static void recomputeMemoryLayout(const MemoryMapConfig& config) {
 	ASSET_TABLE_SIZE = config.assetTableBytes;
 	VRAM_ATLAS_SLOT_SIZE = config.atlasSlotBytes;
 	VRAM_STAGING_SIZE = config.stagingBytes;
+	VRAM_FRAMEBUFFER_SIZE = config.frameBufferBytes;
 
 	STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
 	STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
@@ -68,6 +71,7 @@ static void recomputeMemoryLayout(const MemoryMapConfig& config) {
 	VRAM_SYSTEM_ATLAS_BASE = VRAM_SKYBOX_BASE + VRAM_SKYBOX_SIZE;
 	VRAM_PRIMARY_ATLAS_BASE = VRAM_SYSTEM_ATLAS_BASE + config.engineAtlasSlotBytes;
 	VRAM_SECONDARY_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE + VRAM_ATLAS_SLOT_SIZE;
+	VRAM_FRAMEBUFFER_BASE = VRAM_SECONDARY_ATLAS_BASE + VRAM_ATLAS_SLOT_SIZE;
 	VRAM_SYSTEM_ATLAS_SIZE = config.engineAtlasSlotBytes;
 	VRAM_PRIMARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
 	VRAM_SECONDARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
@@ -96,6 +100,9 @@ void configureMemoryMap(const MemoryMapConfig& config) {
 	}
 	if (config.stagingBytes == 0) {
 		throw std::runtime_error("[MemoryMap] staging_bytes must be greater than 0.");
+	}
+	if (config.frameBufferBytes == 0) {
+		throw std::runtime_error("[MemoryMap] framebuffer_bytes must be greater than 0.");
 	}
 	if (config.skyboxFaceBytes == 0) {
 		throw std::runtime_error("[MemoryMap] skybox_face_bytes must be greater than 0.");

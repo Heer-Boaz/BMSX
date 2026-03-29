@@ -39,6 +39,8 @@ import {
 	VRAM_SYSTEM_ATLAS_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_PRIMARY_ATLAS_SIZE,
+	VRAM_FRAMEBUFFER_BASE,
+	VRAM_FRAMEBUFFER_SIZE,
 	VRAM_SECONDARY_ATLAS_BASE,
 	VRAM_SECONDARY_ATLAS_SIZE,
 	VRAM_SKYBOX_FACE_BYTES,
@@ -148,7 +150,8 @@ function skyboxFaceBaseByIndex(index: number): number {
 const VDP_RD_SURFACE_ENGINE = 0;
 const VDP_RD_SURFACE_PRIMARY = 1;
 const VDP_RD_SURFACE_SECONDARY = 2;
-const VDP_RD_SURFACE_COUNT = 3;
+const VDP_RD_SURFACE_FRAMEBUFFER = 3;
+const VDP_RD_SURFACE_COUNT = 4;
 const VDP_RD_BUDGET_BYTES = 4096;
 const VDP_RD_MAX_CHUNK_PIXELS = 256;
 const VRAM_GARBAGE_CHUNK_BYTES = 64 * 1024;
@@ -488,7 +491,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private readonly vramSeedPixel = new Uint8Array(4);
 	private vramMachineSeed = 0;
 	private vramBootSeed = 0;
-	private readSurfaces: Array<VdpReadSurface | null> = [null, null, null];
+	private readSurfaces: Array<VdpReadSurface | null> = [null, null, null, null];
 	private readCaches: VdpReadCache[] = [];
 	private readBudgetBytes = VDP_RD_BUDGET_BYTES;
 	private readOverflow = false;
@@ -498,9 +501,10 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private skyboxFaceIds: SkyboxImageIds | null = null;
 	private lastDitherType = 0;
 	private imgDecController: ImgDecController | null = null;
+	private frameBufferEntry: AssetEntry | null = null;
+	private frameBufferSlot: AssetVramSlot | null = null;
 	private frameBufferWidth = 0;
 	private frameBufferHeight = 0;
-	private frameBufferPixels = new Uint8Array(0);
 	private frameBufferClearRequested = false;
 	private readonly frameBufferClearColor = createFrameBufferColor();
 	private readonly frameBufferCommands: FrameBufferCommand[] = [];
@@ -560,14 +564,37 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (width <= 0 || height <= 0) {
 			throw new Error('[BmsxVDP] Invalid framebuffer dimensions.');
 		}
-		if (this.frameBufferWidth === width && this.frameBufferHeight === height && this.frameBufferPixels.byteLength !== 0) {
+		if (this.frameBufferWidth === width && this.frameBufferHeight === height) {
 			return;
 		}
+		if (!this.memory.hasAsset(FRAMEBUFFER_TEXTURE_KEY)) {
+			this.memory.registerImageSlotAt({
+				id: FRAMEBUFFER_TEXTURE_KEY,
+				baseAddr: VRAM_FRAMEBUFFER_BASE,
+				capacityBytes: VRAM_FRAMEBUFFER_SIZE,
+				clear: false,
+			});
+		}
+		const entry = this.memory.getAssetEntry(FRAMEBUFFER_TEXTURE_KEY);
+		const size = width * height * 4;
+		if (size > entry.capacity) {
+			throw new Error(`[BmsxVDP] Framebuffer surface exceeds VRAM capacity (${size} > ${entry.capacity}).`);
+		}
+		entry.baseSize = size;
+		entry.baseStride = width * 4;
+		entry.regionX = 0;
+		entry.regionY = 0;
+		entry.regionW = width;
+		entry.regionH = height;
 		this.frameBufferWidth = width;
 		this.frameBufferHeight = height;
-		this.frameBufferPixels = new Uint8Array(width * height * 4);
-		const handle = $.texmanager.createTextureFromPixelsSync(FRAMEBUFFER_TEXTURE_KEY, this.frameBufferPixels, width, height);
-		$.view.textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
+		this.frameBufferEntry = entry;
+		if (this.frameBufferSlot === null) {
+			this.registerVramSlot(entry, FRAMEBUFFER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
+			this.frameBufferSlot = this.getVramSlotByTextureKey(FRAMEBUFFER_TEXTURE_KEY);
+		} else {
+			this.syncVramSlotTextureSize(this.frameBufferSlot);
+		}
 	}
 
 	public discardFrameBufferOps(): void {
@@ -729,25 +756,25 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		};
 	}
 
-	private blendFrameBufferPixel(index: number, r: number, g: number, b: number, a: number): void {
+	private blendFrameBufferPixel(pixels: Uint8Array, index: number, r: number, g: number, b: number, a: number): void {
 		if (a <= 0) {
 			return;
 		}
 		if (a >= 255) {
-			this.frameBufferPixels[index + 0] = r;
-			this.frameBufferPixels[index + 1] = g;
-			this.frameBufferPixels[index + 2] = b;
-			this.frameBufferPixels[index + 3] = 255;
+			pixels[index + 0] = r;
+			pixels[index + 1] = g;
+			pixels[index + 2] = b;
+			pixels[index + 3] = 255;
 			return;
 		}
 		const inverse = 255 - a;
-		this.frameBufferPixels[index + 0] = ((r * a) + (this.frameBufferPixels[index + 0] * inverse) + 127) / 255;
-		this.frameBufferPixels[index + 1] = ((g * a) + (this.frameBufferPixels[index + 1] * inverse) + 127) / 255;
-		this.frameBufferPixels[index + 2] = ((b * a) + (this.frameBufferPixels[index + 2] * inverse) + 127) / 255;
-		this.frameBufferPixels[index + 3] = a + ((this.frameBufferPixels[index + 3] * inverse) + 127) / 255;
+		pixels[index + 0] = ((r * a) + (pixels[index + 0] * inverse) + 127) / 255;
+		pixels[index + 1] = ((g * a) + (pixels[index + 1] * inverse) + 127) / 255;
+		pixels[index + 2] = ((b * a) + (pixels[index + 2] * inverse) + 127) / 255;
+		pixels[index + 3] = a + ((pixels[index + 3] * inverse) + 127) / 255;
 	}
 
-	private rasterizeFrameBufferFill(command: FrameBufferCommand): void {
+	private rasterizeFrameBufferFill(pixels: Uint8Array, command: FrameBufferCommand): void {
 		let left = Math.round(command.x0);
 		let top = Math.round(command.y0);
 		let right = Math.round(command.x1);
@@ -769,13 +796,13 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		for (let y = top; y < bottom; y += 1) {
 			let index = (y * this.frameBufferWidth + left) * 4;
 			for (let x = left; x < right; x += 1) {
-				this.blendFrameBufferPixel(index, command.color.r, command.color.g, command.color.b, command.color.a);
+				this.blendFrameBufferPixel(pixels, index, command.color.r, command.color.g, command.color.b, command.color.a);
 				index += 4;
 			}
 		}
 	}
 
-	private rasterizeFrameBufferLine(command: FrameBufferCommand): void {
+	private rasterizeFrameBufferLine(pixels: Uint8Array, command: FrameBufferCommand): void {
 		let x0 = Math.round(command.x0);
 		let y0 = Math.round(command.y0);
 		const x1 = Math.round(command.x1);
@@ -797,7 +824,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 						continue;
 					}
 					const index = (yy * this.frameBufferWidth + xx) * 4;
-					this.blendFrameBufferPixel(index, command.color.r, command.color.g, command.color.b, command.color.a);
+					this.blendFrameBufferPixel(pixels, index, command.color.r, command.color.g, command.color.b, command.color.a);
 				}
 			}
 			if (x0 === x1 && y0 === y1) {
@@ -815,7 +842,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 	}
 
-	private rasterizeFrameBufferSprite(command: FrameBufferCommand): void {
+	private rasterizeFrameBufferSprite(pixels: Uint8Array, command: FrameBufferCommand): void {
 		const source = this.resolveFrameBufferImageSource(command.handle);
 		const dstW = Math.max(1, Math.round(source.width * command.scaleX));
 		const dstH = Math.max(1, Math.round(source.height * command.scaleY));
@@ -847,25 +874,21 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				const outG = (source.pixels[srcIndex + 1] * command.color.g + 127) / 255;
 				const outB = (source.pixels[srcIndex + 2] * command.color.b + 127) / 255;
 				const dstIndex = (targetY * this.frameBufferWidth + targetX) * 4;
-				this.blendFrameBufferPixel(dstIndex, outR, outG, outB, outA);
+				this.blendFrameBufferPixel(pixels, dstIndex, outR, outG, outB, outA);
 			}
 		}
 	}
 
 	public flushFrameBufferOps(): void {
 		this.ensureFrameBufferSurface();
-		const clearColor = this.frameBufferClearColor;
-		if (!this.frameBufferClearRequested) {
-			clearColor.r = 0;
-			clearColor.g = 0;
-			clearColor.b = 0;
-			clearColor.a = 0;
-		}
-		for (let index = 0; index < this.frameBufferPixels.length; index += 4) {
-			this.frameBufferPixels[index + 0] = clearColor.r;
-			this.frameBufferPixels[index + 1] = clearColor.g;
-			this.frameBufferPixels[index + 2] = clearColor.b;
-			this.frameBufferPixels[index + 3] = clearColor.a;
+		const pixels = this.getFrameBufferPixels();
+		if (this.frameBufferClearRequested) {
+			for (let index = 0; index < pixels.length; index += 4) {
+				pixels[index + 0] = this.frameBufferClearColor.r;
+				pixels[index + 1] = this.frameBufferClearColor.g;
+				pixels[index + 2] = this.frameBufferClearColor.b;
+				pixels[index + 3] = this.frameBufferClearColor.a;
+			}
 		}
 		if (this.frameBufferCommands.length > 1) {
 			this.frameBufferCommands.sort((a, b) => {
@@ -881,16 +904,18 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		for (let index = 0; index < this.frameBufferCommands.length; index += 1) {
 			const command = this.frameBufferCommands[index];
 			if (command.type === 'fill') {
-				this.rasterizeFrameBufferFill(command);
+				this.rasterizeFrameBufferFill(pixels, command);
 				continue;
 			}
 			if (command.type === 'line') {
-				this.rasterizeFrameBufferLine(command);
+				this.rasterizeFrameBufferLine(pixels, command);
 				continue;
 			}
-			this.rasterizeFrameBufferSprite(command);
+			this.rasterizeFrameBufferSprite(pixels, command);
 		}
-		$.texmanager.updateTexturesForKey(FRAMEBUFFER_TEXTURE_KEY, this.frameBufferPixels, this.frameBufferWidth, this.frameBufferHeight);
+		if (this.frameBufferClearRequested || this.frameBufferCommands.length > 0) {
+			$.texmanager.updateTexturesForKey(FRAMEBUFFER_TEXTURE_KEY, pixels, this.frameBufferWidth, this.frameBufferHeight);
+		}
 		this.resetFrameBufferCommands();
 	}
 
@@ -911,7 +936,11 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public getFrameBufferPixels(): Uint8Array {
-		return this.frameBufferPixels;
+		return this.getCpuReadbackBuffer(this.getReadSurface(VDP_RD_SURFACE_FRAMEBUFFER));
+	}
+
+	public resolveFrameBufferSource(handle: number): { pixels: Uint8Array; regionX: number; regionY: number; stride: number; width: number; height: number } {
+		return this.resolveFrameBufferImageSource(handle);
 	}
 
 	public writeVram(addr: number, bytes: Uint8Array): void {
@@ -962,6 +991,11 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	public beginFrame(): void {
 		this.readBudgetBytes = VDP_RD_BUDGET_BYTES;
 		this.readOverflow = false;
+		this.frameBufferClearColor.r = 0;
+		this.frameBufferClearColor.g = 0;
+		this.frameBufferClearColor.b = 0;
+		this.frameBufferClearColor.a = 0;
+		this.frameBufferClearRequested = true;
 	}
 
 	public readVdpStatus(): number {
@@ -1016,7 +1050,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const dither = 0;
 		this.frameBufferWidth = 0;
 		this.frameBufferHeight = 0;
-		this.frameBufferPixels = new Uint8Array(0);
 		this.resetFrameBufferCommands();
 		this.memory.writeValue(IO_VDP_DITHER, dither);
 		this.memory.writeValue(IO_VDP_LEGACY_CMD, 0);
@@ -1228,12 +1261,14 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.slotAtlasIds[0] = null;
 		this.slotAtlasIds[1] = null;
 		this.vramSlots = [];
-		this.readSurfaces = [null, null, null];
+		this.readSurfaces = [null, null, null, null];
 		this.clearReadCaches();
 		this.cpuReadbackByKey.clear();
 		this.skyboxSlots = [];
 		this.imgDecController.clearExternalSlots();
 		this.skyboxFaceIds = null;
+		this.frameBufferEntry = null;
+		this.frameBufferSlot = null;
 		this.dirtySkybox = true;
 		SkyboxPipeline.clearSkyboxSources();
 		this.vramBootSeed = this.nextVramBootSeed();
@@ -1600,7 +1635,17 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public getTrackedTotalVramBytes(): number {
-		return VRAM_SYSTEM_ATLAS_SIZE + VRAM_PRIMARY_ATLAS_SIZE + VRAM_SECONDARY_ATLAS_SIZE + VRAM_STAGING_SIZE;
+		return VRAM_SYSTEM_ATLAS_SIZE + VRAM_PRIMARY_ATLAS_SIZE + VRAM_SECONDARY_ATLAS_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
+	}
+
+	private getVramSlotByTextureKey(textureKey: string): AssetVramSlot {
+		for (let index = 0; index < this.vramSlots.length; index += 1) {
+			const slot = this.vramSlots[index];
+			if (slot.kind === 'asset' && slot.textureKey === textureKey) {
+				return slot;
+			}
+		}
+		throw new Error(`[BmsxVDP] No VRAM slot found for texture '${textureKey}'.`);
 	}
 
 	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {

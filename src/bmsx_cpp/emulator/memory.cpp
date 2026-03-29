@@ -50,7 +50,8 @@ bool isVramRangeLocal(uint32_t addr, size_t length) {
 		|| rangeOverlaps(addr, length, VRAM_SKYBOX_BASE, VRAM_SKYBOX_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_SYSTEM_ATLAS_BASE, VRAM_SYSTEM_ATLAS_SIZE)
 		|| rangeOverlaps(addr, length, VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
-		|| rangeOverlaps(addr, length, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE);
+		|| rangeOverlaps(addr, length, VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE)
+		|| rangeOverlaps(addr, length, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
 std::string canonicalizeAssetId(const std::string& id) {
@@ -603,6 +604,7 @@ Memory::ImageWritePlan Memory::planImageSlotWrite(AssetEntry& entry, size_t pixe
 	plan.writeWidth = writeWidth;
 	plan.writeHeight = writeHeight;
 	plan.writeStride = writeStride;
+	plan.targetStride = writeStride;
 	plan.sourceStride = sourceStride;
 	plan.writeLen = writeLen;
 	plan.clipped = (writeWidth != sourceWidth) || (writeHeight != sourceHeight);
@@ -646,6 +648,7 @@ Memory::ImageWritePlan Memory::planImageWrite(ImageWriteEntry& entry, size_t pix
 	plan.writeWidth = writeWidth;
 	plan.writeHeight = writeHeight;
 	plan.writeStride = writeStride;
+	plan.targetStride = writeStride;
 	plan.sourceStride = sourceStride;
 	plan.writeLen = writeLen;
 	plan.clipped = (writeWidth != sourceWidth) || (writeHeight != sourceHeight);

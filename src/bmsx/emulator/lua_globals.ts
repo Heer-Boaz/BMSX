@@ -20,6 +20,8 @@ import {
 	RAM_SIZE,
 	STRING_HANDLE_COUNT,
 	SYSTEM_ROM_BASE,
+	VRAM_FRAMEBUFFER_BASE,
+	VRAM_FRAMEBUFFER_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_PRIMARY_ATLAS_SIZE,
 	VRAM_SECONDARY_ATLAS_BASE,
@@ -970,10 +972,12 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_system_atlas_base', VRAM_SYSTEM_ATLAS_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_primary_atlas_base', VRAM_PRIMARY_ATLAS_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_secondary_atlas_base', VRAM_SECONDARY_ATLAS_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_base', VRAM_FRAMEBUFFER_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_staging_base', VRAM_STAGING_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_system_atlas_size', VRAM_SYSTEM_ATLAS_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_primary_atlas_size', VRAM_PRIMARY_ATLAS_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_secondary_atlas_size', VRAM_SECONDARY_ATLAS_SIZE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_size', VRAM_FRAMEBUFFER_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.getTrackedVramTotalBytes());
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_used', createNativeFunction('sys_cpu_cycles_used', (_args, out) => {

@@ -19,6 +19,7 @@ import { Runtime } from './runtime';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { setHardwareCamera } from '../render/shared/hardware_camera';
 import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../render/shared/hardware_lighting';
+import { VRAM_FRAMEBUFFER_BASE } from './memory_map';
 import { listResources } from './workspace';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { buildDirtyFilePath, hasWorkspaceStorage } from './ide/workspace_storage';
@@ -84,6 +85,7 @@ export class Api {
 	private readonly cameraEyeScratch: vec3arr = [0, 0, 0];
 	private readonly lightColorScratch: vec3arr = [0, 0, 0];
 	private readonly lightVecScratch: vec3arr = [0, 0, 0];
+	private readonly dmaTilePixelPool: Uint8Array[] = [];
 	private _runtime: Runtime;
 
 	constructor(options: ApiOptions) {
@@ -123,6 +125,18 @@ export class Api {
 			default:
 				throw new Error(`Unsupported pointer button index ${button}.`);
 		}
+	}
+
+	private acquireDmaTilePixels(size: number): Uint8Array {
+		for (let index = 0; index < this.dmaTilePixelPool.length; index += 1) {
+			const pixels = this.dmaTilePixelPool[index];
+			if (pixels.length < size) {
+				continue;
+			}
+			this.dmaTilePixelPool.splice(index, 1);
+			return pixels.subarray(0, size);
+		}
+		return new Uint8Array(size);
 	}
 
 	public mousebtn(button: number): boolean {
@@ -266,30 +280,90 @@ export class Api {
 	}
 
 	public dma_blit_tiles(desc: FrameBufferTileBlitDescriptor): void {
-		const layer = renderLayerTo2dLayer(desc.layer);
+		const vdp = Runtime.instance.vdp;
+		vdp.ensureFrameBufferSurfaceReady();
+		const frameWidth = vdp.getFrameBufferWidth();
+		const frameHeight = vdp.getFrameBufferHeight();
+		const totalWidth = desc.cols * desc.tile_w;
+		const totalHeight = desc.rows * desc.tile_h;
+		let dstX = desc.origin_x - desc.scroll_x;
+		let dstY = desc.origin_y - desc.scroll_y;
+		let srcClipX = 0;
+		let srcClipY = 0;
+		let writeWidth = totalWidth;
+		let writeHeight = totalHeight;
+		if (dstX < 0) {
+			srcClipX = -dstX;
+			writeWidth += dstX;
+			dstX = 0;
+		}
+		if (dstY < 0) {
+			srcClipY = -dstY;
+			writeHeight += dstY;
+			dstY = 0;
+		}
+		const overflowX = (dstX + writeWidth) - frameWidth;
+		if (overflowX > 0) {
+			writeWidth -= overflowX;
+		}
+		const overflowY = (dstY + writeHeight) - frameHeight;
+		if (overflowY > 0) {
+			writeHeight -= overflowY;
+		}
+		if (writeWidth <= 0 || writeHeight <= 0) {
+			return;
+		}
+		const rowBytes = writeWidth * 4;
+		const pixels = this.acquireDmaTilePixels(rowBytes * writeHeight);
+		pixels.fill(0);
 		for (let row = 0; row < desc.rows; row += 1) {
 			const base = row * desc.cols;
-			const y = desc.origin_y + (row * desc.tile_h) - desc.scroll_y;
 			for (let col = 0; col < desc.cols; col += 1) {
 				const tile = desc.tiles[base + col];
 				if (tile === false) {
 					continue;
 				}
 				const handle = Runtime.instance.resolveAssetHandle(tile);
-				Runtime.instance.vdp.queueFrameBufferSpriteHandle(
-					handle,
-					desc.origin_x + (col * desc.tile_w) - desc.scroll_x,
-					y,
-					desc.z,
-					layer,
-					1,
-					1,
-					false,
-					false,
-					{ r: 255, g: 255, b: 255, a: 255 },
-				);
+				const source = vdp.resolveFrameBufferSource(handle);
+				if (source.width !== desc.tile_w || source.height !== desc.tile_h) {
+					throw new Error(`dma_blit_tiles asset '${tile}' size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`);
+				}
+				const tileX = (col * desc.tile_w) - srcClipX;
+				const tileY = (row * desc.tile_h) - srcClipY;
+				const tileRight = tileX + desc.tile_w;
+				const tileBottom = tileY + desc.tile_h;
+				if (tileRight <= 0 || tileBottom <= 0 || tileX >= writeWidth || tileY >= writeHeight) {
+					continue;
+				}
+				const copyLeft = tileX < 0 ? -tileX : 0;
+				const copyTop = tileY < 0 ? -tileY : 0;
+				const copyRight = tileRight > writeWidth ? writeWidth - tileX : desc.tile_w;
+				const copyBottom = tileBottom > writeHeight ? writeHeight - tileY : desc.tile_h;
+				const copyWidth = copyRight - copyLeft;
+				const copyHeight = copyBottom - copyTop;
+				for (let copyRow = 0; copyRow < copyHeight; copyRow += 1) {
+					const srcOffset = ((source.regionY + copyTop + copyRow) * source.stride) + ((source.regionX + copyLeft) * 4);
+					const dstOffset = (((tileY + copyTop + copyRow) * writeWidth) + tileX + copyLeft) * 4;
+					pixels.set(source.pixels.subarray(srcOffset, srcOffset + copyWidth * 4), dstOffset);
+				}
 			}
 		}
+		Runtime.instance.dmaController.enqueueImageCopy(
+			{
+				baseAddr: VRAM_FRAMEBUFFER_BASE + (((dstY * frameWidth) + dstX) * 4),
+				writeWidth,
+				writeHeight,
+				writeStride: rowBytes,
+				targetStride: frameWidth * 4,
+				sourceStride: rowBytes,
+				writeSize: rowBytes * writeHeight,
+				clipped: writeWidth !== totalWidth || writeHeight !== totalHeight,
+			},
+			pixels,
+			() => {
+				this.dmaTilePixelPool.push(pixels);
+			},
+		);
 	}
 
 	public blit_glyphs(glyphs: string | string[], x: number, y: number, z: number, options: FrameBufferGlyphOptions): void {

@@ -9,11 +9,17 @@
 #define BMSX_BACKEND_H
 
 #include "../shared/render_types.h"
+#include <array>
 #include <memory>
 #include <functional>
 #include <unordered_map>
+#include <vector>
 
 namespace bmsx {
+
+const std::array<u8, 256>& srgbToLinearLut();
+const std::array<u8, 256>& linearToSrgbLut();
+void convertSrgbToLinear(const u8* src, size_t pixels, std::vector<u8>& out);
 
 /* ============================================================================
  * Backend type discriminator

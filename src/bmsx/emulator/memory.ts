@@ -14,6 +14,8 @@ import {
 	OVERLAY_ROM_BASE,
 	RAM_BASE,
 	RAM_USED_END,
+	VRAM_FRAMEBUFFER_BASE,
+	VRAM_FRAMEBUFFER_SIZE,
 	VRAM_SYSTEM_ATLAS_BASE,
 	VRAM_SYSTEM_ATLAS_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
@@ -60,6 +62,7 @@ export type ImageWritePlan = {
 	writeWidth: number;
 	writeHeight: number;
 	writeStride: number;
+	targetStride: number;
 	sourceStride: number;
 	writeSize: number;
 	clipped: boolean;
@@ -687,6 +690,7 @@ export class Memory {
 			writeWidth,
 			writeHeight,
 			writeStride,
+			targetStride: writeStride,
 			sourceStride,
 			writeSize,
 			clipped: writeWidth !== sourceWidth || writeHeight !== sourceHeight,
@@ -1079,7 +1083,8 @@ export class Memory {
 			|| overlaps(VRAM_SKYBOX_BASE, VRAM_SKYBOX_SIZE)
 			|| overlaps(VRAM_SYSTEM_ATLAS_BASE, VRAM_SYSTEM_ATLAS_SIZE)
 			|| overlaps(VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
-			|| overlaps(VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE);
+			|| overlaps(VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE)
+			|| overlaps(VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 	}
 
 	private allocateAssetData(size: number, alignment: number): { addr: number; view: Uint8Array } {

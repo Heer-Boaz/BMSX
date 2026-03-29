@@ -20,7 +20,8 @@ namespace {
 constexpr uint32_t VDP_RD_SURFACE_ENGINE = 0u;
 constexpr uint32_t VDP_RD_SURFACE_PRIMARY = 1u;
 constexpr uint32_t VDP_RD_SURFACE_SECONDARY = 2u;
-constexpr uint32_t VDP_RD_SURFACE_COUNT = 3u;
+constexpr uint32_t VDP_RD_SURFACE_FRAMEBUFFER = 3u;
+constexpr uint32_t VDP_RD_SURFACE_COUNT = 4u;
 constexpr uint32_t VDP_RD_BUDGET_BYTES = 4096u;
 constexpr uint32_t VDP_RD_MAX_CHUNK_PIXELS = 256u;
 constexpr size_t VRAM_GARBAGE_CHUNK_BYTES = 64u * 1024u;
@@ -266,6 +267,8 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 			x,
 			static_cast<i32>(row)
 		);
+		const size_t cpuOffset = static_cast<size_t>(row) * static_cast<size_t>(stride) + static_cast<size_t>(rowOffset);
+		std::memcpy(slot.cpuReadback.data() + cpuOffset, data + cursor, rowBytes);
 		invalidateReadCache(slot.surfaceId);
 		remaining -= rowBytes;
 		cursor += rowBytes;
@@ -277,6 +280,8 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 void VDP::beginFrame() {
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
 	m_readOverflow = false;
+	m_frameBufferClearColor = FrameBufferColor{0u, 0u, 0u, 0u};
+	m_frameBufferClearRequested = true;
 }
 
 VDP::FrameBufferColor VDP::packFrameBufferColor(const Color& color) const {
@@ -308,21 +313,38 @@ void VDP::ensureFrameBufferSurface() {
 	if (width == 0 || height == 0) {
 		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Invalid framebuffer dimensions.");
 	}
-	if (m_frameBufferWidth == width && m_frameBufferHeight == height && !m_frameBufferPixels.empty()) {
+	if (m_frameBufferWidth == width && m_frameBufferHeight == height) {
 		return;
 	}
+	if (!m_memory.hasAsset(FRAMEBUFFER_TEXTURE_KEY)) {
+		m_memory.registerImageSlotAt(
+			FRAMEBUFFER_TEXTURE_KEY,
+			VRAM_FRAMEBUFFER_BASE,
+			VRAM_FRAMEBUFFER_SIZE,
+			0,
+			false
+		);
+	}
+	auto& entry = m_memory.getAssetEntry(FRAMEBUFFER_TEXTURE_KEY);
+	const uint32_t size = width * height * 4u;
+	if (size > entry.capacity) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Framebuffer surface exceeds VRAM capacity.");
+	}
+	entry.baseSize = size;
+	entry.baseStride = width * 4u;
+	entry.regionX = 0;
+	entry.regionY = 0;
+	entry.regionW = width;
+	entry.regionH = height;
 	m_frameBufferWidth = width;
 	m_frameBufferHeight = height;
-	m_frameBufferPixels.assign(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 0u);
-	TextureParams params;
-	TextureHandle handle = texmanager->getTextureByUri(FRAMEBUFFER_TEXTURE_KEY, params);
-	if (!handle) {
-		handle = texmanager->getOrCreateTexture(texmanager->makeKey(FRAMEBUFFER_TEXTURE_KEY, params), m_frameBufferPixels.data(), static_cast<i32>(width), static_cast<i32>(height), params);
+	if (!m_hasFrameBufferSlot) {
+		registerVramSlot(entry, FRAMEBUFFER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
+		m_hasFrameBufferSlot = true;
 	} else {
-		handle = texmanager->resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, static_cast<i32>(width), static_cast<i32>(height));
-		texmanager->updateTexture(handle, m_frameBufferPixels.data(), static_cast<i32>(width), static_cast<i32>(height), params);
+		auto& slot = getVramSlotByTextureKey(FRAMEBUFFER_TEXTURE_KEY);
+		syncVramSlotTextureSize(slot);
 	}
-	view->textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
 }
 
 void VDP::discardFrameBufferOps() {
@@ -425,11 +447,7 @@ const u8* VDP::getFrameBufferSourcePixels(const Memory::AssetEntry& entry) const
 	if (!m_memory.isVramRange(entry.baseAddr, std::max<size_t>(1u, entry.baseSize))) {
 		return m_memory.getImagePixels(entry);
 	}
-	const ImgAsset* asset = EngineCore::instance().resolveImgAsset(entry.id);
-	if (!asset || asset->pixels.empty()) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Missing CPU image pixels for '" + entry.id + "'.");
-	}
-	return asset->pixels.data();
+	return getAssetVramSlotByOwner(entry.ownerIndex).cpuReadback.data();
 }
 
 VDP::FrameBufferImageSource VDP::resolveFrameBufferImageSource(u32 handle) const {
@@ -461,25 +479,33 @@ VDP::FrameBufferImageSource VDP::resolveFrameBufferImageSource(u32 handle) const
 	};
 }
 
-void VDP::blendFrameBufferPixel(size_t index, u8 r, u8 g, u8 b, u8 a) {
+VDP::FrameBufferImageSource VDP::resolveFrameBufferSource(u32 handle) const {
+	return resolveFrameBufferImageSource(handle);
+}
+
+std::vector<u8>& VDP::getFrameBufferPixels() {
+	return getVramSlotByTextureKey(FRAMEBUFFER_TEXTURE_KEY).cpuReadback;
+}
+
+void VDP::blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a) {
 	if (a == 0u) {
 		return;
 	}
 	if (a == 255u) {
-		m_frameBufferPixels[index + 0u] = r;
-		m_frameBufferPixels[index + 1u] = g;
-		m_frameBufferPixels[index + 2u] = b;
-		m_frameBufferPixels[index + 3u] = 255u;
+		pixels[index + 0u] = r;
+		pixels[index + 1u] = g;
+		pixels[index + 2u] = b;
+		pixels[index + 3u] = 255u;
 		return;
 	}
 	const u32 inverse = 255u - a;
-	m_frameBufferPixels[index + 0u] = static_cast<u8>(((static_cast<u32>(r) * a) + (static_cast<u32>(m_frameBufferPixels[index + 0u]) * inverse) + 127u) / 255u);
-	m_frameBufferPixels[index + 1u] = static_cast<u8>(((static_cast<u32>(g) * a) + (static_cast<u32>(m_frameBufferPixels[index + 1u]) * inverse) + 127u) / 255u);
-	m_frameBufferPixels[index + 2u] = static_cast<u8>(((static_cast<u32>(b) * a) + (static_cast<u32>(m_frameBufferPixels[index + 2u]) * inverse) + 127u) / 255u);
-	m_frameBufferPixels[index + 3u] = static_cast<u8>(a + ((static_cast<u32>(m_frameBufferPixels[index + 3u]) * inverse) + 127u) / 255u);
+	pixels[index + 0u] = static_cast<u8>(((static_cast<u32>(r) * a) + (static_cast<u32>(pixels[index + 0u]) * inverse) + 127u) / 255u);
+	pixels[index + 1u] = static_cast<u8>(((static_cast<u32>(g) * a) + (static_cast<u32>(pixels[index + 1u]) * inverse) + 127u) / 255u);
+	pixels[index + 2u] = static_cast<u8>(((static_cast<u32>(b) * a) + (static_cast<u32>(pixels[index + 2u]) * inverse) + 127u) / 255u);
+	pixels[index + 3u] = static_cast<u8>(a + ((static_cast<u32>(pixels[index + 3u]) * inverse) + 127u) / 255u);
 }
 
-void VDP::rasterizeFrameBufferFill(const FrameBufferCommand& command) {
+void VDP::rasterizeFrameBufferFill(std::vector<u8>& pixels, const FrameBufferCommand& command) {
 	i32 left = static_cast<i32>(std::round(command.x0));
 	i32 top = static_cast<i32>(std::round(command.y0));
 	i32 right = static_cast<i32>(std::round(command.x1));
@@ -497,13 +523,13 @@ void VDP::rasterizeFrameBufferFill(const FrameBufferCommand& command) {
 	for (i32 y = top; y < bottom; ++y) {
 		size_t index = (static_cast<size_t>(y) * static_cast<size_t>(m_frameBufferWidth) + static_cast<size_t>(left)) * 4u;
 		for (i32 x = left; x < right; ++x) {
-			blendFrameBufferPixel(index, command.color.r, command.color.g, command.color.b, command.color.a);
+			blendFrameBufferPixel(pixels, index, command.color.r, command.color.g, command.color.b, command.color.a);
 			index += 4u;
 		}
 	}
 }
 
-void VDP::rasterizeFrameBufferLine(const FrameBufferCommand& command) {
+void VDP::rasterizeFrameBufferLine(std::vector<u8>& pixels, const FrameBufferCommand& command) {
 	i32 x0 = static_cast<i32>(std::round(command.x0));
 	i32 y0 = static_cast<i32>(std::round(command.y0));
 	const i32 x1 = static_cast<i32>(std::round(command.x1));
@@ -525,7 +551,7 @@ void VDP::rasterizeFrameBufferLine(const FrameBufferCommand& command) {
 					continue;
 				}
 				const size_t index = (static_cast<size_t>(yy) * static_cast<size_t>(m_frameBufferWidth) + static_cast<size_t>(xx)) * 4u;
-				blendFrameBufferPixel(index, command.color.r, command.color.g, command.color.b, command.color.a);
+				blendFrameBufferPixel(pixels, index, command.color.r, command.color.g, command.color.b, command.color.a);
 			}
 		}
 		if (x0 == x1 && y0 == y1) {
@@ -543,7 +569,7 @@ void VDP::rasterizeFrameBufferLine(const FrameBufferCommand& command) {
 	}
 }
 
-void VDP::rasterizeFrameBufferSprite(const FrameBufferCommand& command) {
+void VDP::rasterizeFrameBufferSprite(std::vector<u8>& pixels, const FrameBufferCommand& command) {
 	const FrameBufferImageSource source = resolveFrameBufferImageSource(command.handle);
 	const i32 dstW = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.width) * command.scaleX)));
 	const i32 dstH = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.height) * command.scaleY)));
@@ -576,21 +602,21 @@ void VDP::rasterizeFrameBufferSprite(const FrameBufferCommand& command) {
 			const u8 outG = static_cast<u8>((static_cast<u32>(source.pixels[srcIndex + 1u]) * static_cast<u32>(command.color.g) + 127u) / 255u);
 			const u8 outB = static_cast<u8>((static_cast<u32>(source.pixels[srcIndex + 2u]) * static_cast<u32>(command.color.b) + 127u) / 255u);
 			const size_t dstIndex = (static_cast<size_t>(targetY) * static_cast<size_t>(m_frameBufferWidth) + static_cast<size_t>(targetX)) * 4u;
-			blendFrameBufferPixel(dstIndex, outR, outG, outB, outA);
+			blendFrameBufferPixel(pixels, dstIndex, outR, outG, outB, outA);
 		}
 	}
 }
 
 void VDP::flushFrameBufferOps() {
 	ensureFrameBufferSurface();
-	const FrameBufferColor clearColor = m_frameBufferClearRequested
-		? m_frameBufferClearColor
-		: FrameBufferColor{0u, 0u, 0u, 0u};
-	for (size_t index = 0; index < m_frameBufferPixels.size(); index += 4u) {
-		m_frameBufferPixels[index + 0u] = clearColor.r;
-		m_frameBufferPixels[index + 1u] = clearColor.g;
-		m_frameBufferPixels[index + 2u] = clearColor.b;
-		m_frameBufferPixels[index + 3u] = clearColor.a;
+	auto& pixels = getFrameBufferPixels();
+	if (m_frameBufferClearRequested) {
+		for (size_t index = 0; index < pixels.size(); index += 4u) {
+			pixels[index + 0u] = m_frameBufferClearColor.r;
+			pixels[index + 1u] = m_frameBufferClearColor.g;
+			pixels[index + 2u] = m_frameBufferClearColor.b;
+			pixels[index + 3u] = m_frameBufferClearColor.a;
+		}
 	}
 	if (m_frameBufferCommands.size() > 1u) {
 		std::sort(m_frameBufferCommands.begin(), m_frameBufferCommands.end(), [](const FrameBufferCommand& a, const FrameBufferCommand& b) {
@@ -606,20 +632,22 @@ void VDP::flushFrameBufferOps() {
 	for (const auto& command : m_frameBufferCommands) {
 		switch (command.type) {
 			case FrameBufferCommandType::Fill:
-				rasterizeFrameBufferFill(command);
+				rasterizeFrameBufferFill(pixels, command);
 				break;
 			case FrameBufferCommandType::Line:
-				rasterizeFrameBufferLine(command);
+				rasterizeFrameBufferLine(pixels, command);
 				break;
 			case FrameBufferCommandType::Sprite:
-				rasterizeFrameBufferSprite(command);
+				rasterizeFrameBufferSprite(pixels, command);
 				break;
 		}
 	}
-	TextureParams params;
-	auto* texmanager = EngineCore::instance().texmanager();
-	TextureHandle handle = EngineCore::instance().view()->textures[FRAMEBUFFER_TEXTURE_KEY];
-	texmanager->updateTexture(handle, m_frameBufferPixels.data(), static_cast<i32>(m_frameBufferWidth), static_cast<i32>(m_frameBufferHeight), params);
+	if (m_frameBufferClearRequested || !m_frameBufferCommands.empty()) {
+		TextureParams params;
+		auto* texmanager = EngineCore::instance().texmanager();
+		TextureHandle handle = EngineCore::instance().view()->textures[FRAMEBUFFER_TEXTURE_KEY];
+		texmanager->updateTexture(handle, pixels.data(), static_cast<i32>(m_frameBufferWidth), static_cast<i32>(m_frameBufferHeight), params);
+	}
 	resetFrameBufferCommands();
 }
 
@@ -680,7 +708,6 @@ void VDP::initializeRegisters() {
 	const i32 dither = 0;
 	m_frameBufferWidth = 0;
 	m_frameBufferHeight = 0;
-	m_frameBufferPixels.clear();
 	resetFrameBufferCommands();
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
 	m_memory.writeValue(IO_VDP_LEGACY_CMD, valueNumber(0.0));
@@ -718,6 +745,7 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	m_atlasSlotById.clear();
 	m_slotAtlasIds = {{-1, -1}};
 	m_vramSlots.clear();
+	m_hasFrameBufferSlot = false;
 	if (!m_imgDecController) {
 		throw BMSX_RUNTIME_ERROR("[VDP] ImgDecController not attached.");
 	}
@@ -1061,7 +1089,7 @@ uint32_t VDP::trackedUsedVramBytes() const {
 }
 
 uint32_t VDP::trackedTotalVramBytes() const {
-	return VRAM_SYSTEM_ATLAS_SIZE + VRAM_PRIMARY_ATLAS_SIZE + VRAM_SECONDARY_ATLAS_SIZE + VRAM_STAGING_SIZE;
+	return VRAM_SYSTEM_ATLAS_SIZE + VRAM_PRIMARY_ATLAS_SIZE + VRAM_SECONDARY_ATLAS_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
 }
 
 void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
@@ -1250,6 +1278,7 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	slot.surfaceId = surfaceId;
 	slot.textureWidth = entry.regionW;
 	slot.textureHeight = entry.regionH;
+	slot.cpuReadback.resize(static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u);
 	m_vramSlots.push_back(std::move(slot));
 	registerReadSurface(surfaceId, entry.id, textureKey);
 	if (handle && !isEngineAtlas) {
@@ -1291,6 +1320,7 @@ void VDP::syncVramSlotTextureSize(VramSlot& slot) {
 	EngineCore::instance().view()->textures[slot.textureKey] = handle;
 	slot.textureWidth = width;
 	slot.textureHeight = height;
+	slot.cpuReadback.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
 	invalidateReadCache(slot.surfaceId);
 	seedVramSlotTexture(slot);
 }
@@ -1302,6 +1332,33 @@ VDP::VramSlot& VDP::getVramSlotByTextureKey(const std::string& textureKey) {
 		}
 	}
 	throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not registered for texture '" + textureKey + "'.");
+}
+
+const VDP::VramSlot& VDP::getVramSlotByTextureKey(const std::string& textureKey) const {
+	for (const auto& slot : m_vramSlots) {
+		if (slot.textureKey == textureKey) {
+			return slot;
+		}
+	}
+	throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not registered for texture '" + textureKey + "'.");
+}
+
+VDP::VramSlot& VDP::getAssetVramSlotByOwner(size_t ownerIndex) {
+	for (auto& slot : m_vramSlots) {
+		if (slot.kind == VramSlotKind::Asset && m_memory.getAssetEntry(slot.assetId).ownerIndex == ownerIndex) {
+			return slot;
+		}
+	}
+	throw BMSX_RUNTIME_ERROR("[VDP] No VRAM slot found for asset owner.");
+}
+
+const VDP::VramSlot& VDP::getAssetVramSlotByOwner(size_t ownerIndex) const {
+	for (const auto& slot : m_vramSlots) {
+		if (slot.kind == VramSlotKind::Asset && m_memory.getAssetEntry(slot.assetId).ownerIndex == ownerIndex) {
+			return slot;
+		}
+	}
+	throw BMSX_RUNTIME_ERROR("[VDP] No VRAM slot found for asset owner.");
 }
 
 uint32_t VDP::nextVramMachineSeed() const {
@@ -1400,6 +1457,7 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 	if (maxPixels == 0u) {
 		throw BMSX_RUNTIME_ERROR("[VDP] VRAM garbage scratch buffer is empty.");
 	}
+	slot.cpuReadback.resize(static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u);
 	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
 	const size_t rowBytes = rowPixels * 4u;
 	const uint32_t height = entry.regionH;
@@ -1417,6 +1475,7 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 				0,
 				static_cast<i32>(y)
 			);
+			std::memcpy(slot.cpuReadback.data() + static_cast<size_t>(y) * rowBytes, m_vramGarbageScratch.data(), chunkBytes);
 			y += static_cast<uint32_t>(rows);
 		}
 	} else {
@@ -1432,6 +1491,11 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 					1,
 					static_cast<i32>(x),
 					static_cast<i32>(y)
+				);
+				std::memcpy(
+					slot.cpuReadback.data() + static_cast<size_t>(y) * rowBytes + static_cast<size_t>(x) * 4u,
+					m_vramGarbageScratch.data(),
+					segmentBytes
 				);
 				x += static_cast<uint32_t>(segmentWidth);
 			}
@@ -1482,7 +1546,24 @@ void VDP::restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::str
 			static_cast<i32>(entry.regionH),
 			params
 		);
+		slot.cpuReadback = slot.contextSnapshot;
 		slot.contextSnapshot.clear();
+		invalidateReadCache(slot.surfaceId);
+		return;
+	}
+	if (isEngineAtlas) {
+		ImgAsset* engineAsset = EngineCore::instance().systemAssets().getImg(generateAtlasName(ENGINE_ATLAS_INDEX));
+		if (!engineAsset) {
+			throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas asset missing during restore.");
+		}
+		slot.cpuReadback.assign(engineAsset->pixels.begin(), engineAsset->pixels.end());
+		texmanager->updateTexture(
+			handle,
+			slot.cpuReadback.data(),
+			static_cast<i32>(entry.regionW),
+			static_cast<i32>(entry.regionH),
+			params
+		);
 		invalidateReadCache(slot.surfaceId);
 		return;
 	}

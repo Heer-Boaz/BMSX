@@ -99,6 +99,7 @@ struct PresentGLES2State {
 	GLuint vbo_uv = 0;
 	i32 width = -1;
 	i32 height = -1;
+	bool flipTexY = true;
 };
 
 PresentGLES2State g_present;
@@ -797,13 +798,14 @@ void shutdownGLES2(OpenGLES2Backend* backend) {
 	g_present = PresentGLES2State{};
 }
 
-static void renderPresentQuadGLES2(OpenGLES2Backend* backend, i32 width, i32 height, TextureHandle colorTex, bool bindBackbuffer) {
+static void renderPresentQuadGLES2(OpenGLES2Backend* backend, i32 width, i32 height, TextureHandle colorTex, bool bindBackbuffer, bool flipTexY) {
 	glUseProgram(g_present.program);
 	glUniform1i(g_present.uniform_texture, kTexUnitPostProcess);
 
-	if (g_present.width != width || g_present.height != height) {
+	if (g_present.width != width || g_present.height != height || g_present.flipTexY != flipTexY) {
 		g_present.width = width;
 		g_present.height = height;
+		g_present.flipTexY = flipTexY;
 		const float w = static_cast<float>(width);
 		const float h = static_cast<float>(height);
 		const float positions[12] = {
@@ -815,12 +817,12 @@ static void renderPresentQuadGLES2(OpenGLES2Backend* backend, i32 width, i32 hei
 			w, h
 		};
 		const float texcoords[12] = {
-			0.0f, 1.0f,
-			0.0f, 0.0f,
-			1.0f, 1.0f,
-			1.0f, 1.0f,
-			0.0f, 0.0f,
-			1.0f, 0.0f
+			0.0f, flipTexY ? 1.0f : 0.0f,
+			0.0f, flipTexY ? 0.0f : 1.0f,
+			1.0f, flipTexY ? 1.0f : 0.0f,
+			1.0f, flipTexY ? 1.0f : 0.0f,
+			0.0f, flipTexY ? 0.0f : 1.0f,
+			1.0f, flipTexY ? 0.0f : 1.0f
 		};
 		glBindBuffer(GL_ARRAY_BUFFER, g_present.vbo_pos);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(positions), positions, GL_STATIC_DRAW);
@@ -855,12 +857,12 @@ static void renderPresentQuadGLES2(OpenGLES2Backend* backend, i32 width, i32 hei
 
 void renderPresentGLES2(OpenGLES2Backend* backend, GameView* context, const CRTPipelineState& state) {
 	(void)context;
-	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, true);
+	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, true, true);
 }
 
 void renderPresentToCurrentTargetGLES2(OpenGLES2Backend* backend, GameView* context, const Framebuffer2DPipelineState& state) {
 	(void)context;
-	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, false);
+	renderPresentQuadGLES2(backend, state.width, state.height, state.colorTex, false, false);
 }
 
 void renderDeviceQuantizeGLES2(OpenGLES2Backend* backend, GameView* context, const DeviceQuantizePipelineState& state) {

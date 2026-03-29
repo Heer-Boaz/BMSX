@@ -33,6 +33,7 @@ export interface TextureParams {
 	wrapT?: number;
 	minFilter?: number;
 	magFilter?: number;
+	srgb?: boolean;
 }
 
 // High-level render pass identifiers

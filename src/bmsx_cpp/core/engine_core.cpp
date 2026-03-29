@@ -186,6 +186,7 @@ MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const Mac
 		}
 		config.stagingBytes = static_cast<uint32_t>(value);
 	}
+	config.frameBufferBytes = static_cast<uint32_t>(machine.viewportWidth) * static_cast<uint32_t>(machine.viewportHeight) * 4u;
 	if (machine.skyboxFaceBytes) {
 		const i32 value = *machine.skyboxFaceBytes;
 		if (value <= 0) {
@@ -265,6 +266,7 @@ MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const Mac
 		<< ", asset_table=" << config.assetTableBytes
 		<< ", asset_data=" << config.assetDataBytes
 		<< ", vram_staging=" << config.stagingBytes
+		<< ", framebuffer=" << config.frameBufferBytes
 		<< ", engine_atlas_slot=" << config.engineAtlasSlotBytes
 		<< ", atlas_slot=" << config.atlasSlotBytes << "x2=" << (config.atlasSlotBytes * 2u)
 		<< ")." << std::endl;

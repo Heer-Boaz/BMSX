@@ -144,7 +144,7 @@ uint32_t DmaController::processImageJob(DmaJob& job, uint32_t budget) {
 			}
 		}
 		const size_t srcOffset = static_cast<size_t>(job.row) * job.plan.sourceStride + job.rowOffset;
-		const uint32_t dstAddr = job.plan.baseAddr + job.row * job.plan.writeStride + job.rowOffset;
+		const uint32_t dstAddr = job.plan.baseAddr + job.row * job.plan.targetStride + job.rowOffset;
 		try {
 			m_memory.writeBytes(dstAddr, job.pixels.data() + srcOffset, toCopy);
 		} catch (...) {
@@ -276,6 +276,9 @@ uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {
 	}
 	if (dst >= VRAM_SECONDARY_ATLAS_BASE && dst < VRAM_SECONDARY_ATLAS_BASE + VRAM_SECONDARY_ATLAS_SIZE) {
 		return (VRAM_SECONDARY_ATLAS_BASE + VRAM_SECONDARY_ATLAS_SIZE) - dst;
+	}
+	if (dst >= VRAM_FRAMEBUFFER_BASE && dst < VRAM_FRAMEBUFFER_BASE + VRAM_FRAMEBUFFER_SIZE) {
+		return (VRAM_FRAMEBUFFER_BASE + VRAM_FRAMEBUFFER_SIZE) - dst;
 	}
 	if (dst >= VRAM_STAGING_BASE && dst < VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
 		return (VRAM_STAGING_BASE + VRAM_STAGING_SIZE) - dst;

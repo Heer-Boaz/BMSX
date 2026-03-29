@@ -19,36 +19,6 @@ constexpr bool kGLES2FinishFrame = false;
 #define GL_SRGB_ALPHA_EXT 0x8C42
 #endif
 
-std::array<uint8_t, 256> buildSrgbToLinearLut() {
-	std::array<uint8_t, 256> lut{};
-	for (size_t i = 0; i < lut.size(); ++i) {
-		const double c = static_cast<double>(i) / 255.0;
-		const double linear = std::pow(c, 2.2);
-		lut[i] = static_cast<uint8_t>(std::round(linear * 255.0));
-	}
-	return lut;
-}
-
-const std::array<uint8_t, 256>& srgbToLinearLut() {
-	static const std::array<uint8_t, 256> lut = buildSrgbToLinearLut();
-	return lut;
-}
-
-std::array<uint8_t, 256> buildLinearToSrgbLut() {
-	std::array<uint8_t, 256> lut{};
-	for (size_t i = 0; i < lut.size(); ++i) {
-		const double c = static_cast<double>(i) / 255.0;
-		const double encoded = std::pow(c, 1.0 / 2.2);
-		lut[i] = static_cast<uint8_t>(std::round(encoded * 255.0));
-	}
-	return lut;
-}
-
-const std::array<uint8_t, 256>& linearToSrgbLut() {
-	static const std::array<uint8_t, 256> lut = buildLinearToSrgbLut();
-	return lut;
-}
-
 bool hasExtensionToken(const char* extensions, const char* needle) {
 	if (extensions == nullptr || needle == nullptr || *needle == '\0') {
 		return false;
@@ -73,17 +43,6 @@ bool hasExtensionToken(const char* extensions, const char* needle) {
 	}
 }
 
-void convertSrgbToLinear(const bmsx::u8* src, size_t pixels, std::vector<bmsx::u8>& out) {
-	out.resize(pixels * 4);
-	const auto& lut = srgbToLinearLut();
-	for (size_t i = 0; i < pixels; ++i) {
-		const size_t idx = i * 4;
-		out[idx + 0] = lut[src[idx + 0]];
-		out[idx + 1] = lut[src[idx + 1]];
-		out[idx + 2] = lut[src[idx + 2]];
-		out[idx + 3] = src[idx + 3];
-	}
-}
 }  // namespace
 
 namespace bmsx {

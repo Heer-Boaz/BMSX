@@ -41,11 +41,12 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	createTexture(src: TextureSource | Promise<TextureSource>, _desc: TextureParams): TextureHandle {
+		const format = _desc.srgb === false ? 'rgba8unorm' : 'rgba8unorm-srgb';
 		const source = src as TextureSource;
 		const data = source.data;
 		const texture = this.device.createTexture({
 			size: { width: source.width, height: source.height, depthOrArrayLayers: 1 },
-			format: 'rgba8unorm',
+			format,
 			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
 			mipLevelCount: 1,
 			dimension: '2d',
@@ -96,9 +97,10 @@ export class WebGPUBackend implements GPUBackend {
 	}
 
 	resizeTexture(_handle: TextureHandle, width: number, height: number, _desc: TextureParams): TextureHandle {
+		const format = _desc.srgb === false ? 'rgba8unorm' : 'rgba8unorm-srgb';
 		return this.device.createTexture({
 			size: { width, height, depthOrArrayLayers: 1 },
-			format: 'rgba8unorm',
+			format,
 			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
 			mipLevelCount: 1,
 			dimension: '2d',

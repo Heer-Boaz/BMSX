@@ -25,6 +25,7 @@ export const DEFAULT_STRING_HEAP_SIZE = 0x02000000; // 32 MB
 export const DEFAULT_ASSET_TABLE_SIZE = 0x00100000; // 1 MB
 export const DEFAULT_VRAM_ATLAS_SLOT_SIZE = 0x01000000; // 16 MB
 export const DEFAULT_VRAM_STAGING_SIZE = 0x00400000; // 4 MB
+export const DEFAULT_VRAM_FRAMEBUFFER_SIZE = 256 * 212 * 4;
 
 export let RAM_SIZE = DEFAULT_RAM_SIZE;
 export let STRING_HANDLE_COUNT = DEFAULT_STRING_HANDLE_COUNT;
@@ -34,6 +35,7 @@ export let ASSET_TABLE_SIZE = DEFAULT_ASSET_TABLE_SIZE;
 export let VRAM_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 export let VRAM_SYSTEM_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 export let VRAM_STAGING_SIZE = DEFAULT_VRAM_STAGING_SIZE;
+export let VRAM_FRAMEBUFFER_SIZE = DEFAULT_VRAM_FRAMEBUFFER_SIZE;
 
 export let IO_BASE = RAM_BASE;
 export let STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
@@ -47,6 +49,7 @@ export let VRAM_SECONDARY_ATLAS_BASE = 0;
 export let VRAM_PRIMARY_ATLAS_BASE = 0;
 export let VRAM_SYSTEM_ATLAS_BASE = 0;
 export let VRAM_STAGING_BASE = 0;
+export let VRAM_FRAMEBUFFER_BASE = 0;
 export let VRAM_SKYBOX_BASE = 0;
 export let VRAM_SKYBOX_FACE_BYTES = 0;
 export let VRAM_SKYBOX_SIZE = 0;
@@ -71,6 +74,7 @@ export type MemoryMapSpecs = {
 	atlas_slot_bytes?: number;
 	system_atlas_slot_bytes?: number;
 	staging_bytes?: number;
+	framebuffer_bytes?: number;
 	skybox_face_size?: number;
 	skybox_face_bytes?: number;
 };
@@ -106,6 +110,7 @@ function recomputeMemoryLayout(config: {
 	atlasSlotBytes: number;
 	engineAtlasSlotBytes: number;
 	stagingBytes: number;
+	frameBufferBytes: number;
 	skyboxFaceBytes: number;
 }): void {
 	RAM_SIZE = config.ramBytes;
@@ -116,6 +121,7 @@ function recomputeMemoryLayout(config: {
 	VRAM_ATLAS_SLOT_SIZE = config.atlasSlotBytes;
 	VRAM_SYSTEM_ATLAS_SLOT_SIZE = config.engineAtlasSlotBytes;
 	VRAM_STAGING_SIZE = config.stagingBytes;
+	VRAM_FRAMEBUFFER_SIZE = config.frameBufferBytes;
 
 	IO_BASE = RAM_BASE;
 	STRING_HANDLE_TABLE_BASE = IO_BASE + IO_REGION_SIZE;
@@ -139,6 +145,7 @@ function recomputeMemoryLayout(config: {
 	VRAM_SYSTEM_ATLAS_BASE = VRAM_SKYBOX_BASE + VRAM_SKYBOX_SIZE;
 	VRAM_PRIMARY_ATLAS_BASE = VRAM_SYSTEM_ATLAS_BASE + VRAM_SYSTEM_ATLAS_SLOT_SIZE;
 	VRAM_SECONDARY_ATLAS_BASE = VRAM_PRIMARY_ATLAS_BASE + VRAM_ATLAS_SLOT_SIZE;
+	VRAM_FRAMEBUFFER_BASE = VRAM_SECONDARY_ATLAS_BASE + VRAM_ATLAS_SLOT_SIZE;
 	VRAM_SYSTEM_ATLAS_SIZE = VRAM_SYSTEM_ATLAS_SLOT_SIZE;
 	VRAM_PRIMARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
 	VRAM_SECONDARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
@@ -153,6 +160,7 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 	const atlasSlotBytes = resolvePositiveInteger(specs?.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE, 'atlas_slot_bytes');
 	const engineAtlasSlotBytes = resolvePositiveInteger(specs?.system_atlas_slot_bytes ?? atlasSlotBytes, 'system_atlas_slot_bytes');
 	const stagingBytes = resolvePositiveInteger(specs?.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE, 'staging_bytes');
+	const frameBufferBytes = resolvePositiveInteger(specs?.framebuffer_bytes ?? DEFAULT_VRAM_FRAMEBUFFER_SIZE, 'framebuffer_bytes');
 	const skyboxFaceBytes = specs?.skybox_face_bytes !== undefined
 		? resolvePositiveInteger(specs.skybox_face_bytes, 'skybox_face_bytes')
 		: (() => {
@@ -182,6 +190,7 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 			atlasSlotBytes,
 			engineAtlasSlotBytes,
 			stagingBytes,
+			frameBufferBytes,
 			skyboxFaceBytes,
 		});
 		return;
@@ -195,6 +204,7 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 		atlasSlotBytes,
 		engineAtlasSlotBytes,
 		stagingBytes,
+		frameBufferBytes,
 		skyboxFaceBytes,
 	});
 }

@@ -2158,7 +2158,7 @@ local function build_info()
 	local machine_view_label = machine_manifest and display_text(machine_manifest.render_size) or '--'
 	local machine_cpu_raw = machine_manifest and machine_manifest.cpu_freq_hz
 	local machine_cpu_label = format_cpu_mhz_from_hz(machine_cpu_raw)
-	local vram_total = sys_vram_system_atlas_size + sys_vram_primary_atlas_size + sys_vram_secondary_atlas_size + sys_vram_staging_size
+	local vram_total = sys_vram_system_atlas_size + sys_vram_primary_atlas_size + sys_vram_secondary_atlas_size + sys_vram_framebuffer_size + sys_vram_staging_size
 
 	return {
 		machine_view = machine_view_label,

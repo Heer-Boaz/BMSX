@@ -30,7 +30,7 @@ function createFullscreenQuad(gl: WebGL2RenderingContext, outW: number, outH: nu
 		0.0, 0.0, 0.0, outH, outW, 0.0, outW, 0.0, 0.0, outH, outW, outH,
 	]);
 	const texcoords = new Float32Array([
-		0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+		0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0,
 	]);
 	const vbo = gl.createBuffer();
 	if (!vbo) {
@@ -72,8 +72,7 @@ function renderFrameBuffer(runtime: FrameBuffer2DRuntime, fbo: WebGLFramebuffer,
 		}
 		fsq = createFullscreenQuad(gl, state.width, state.height);
 	}
-	gl.enable(gl.BLEND);
-	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+	backend.setBlendEnabled(false);
 	gl.bindBuffer(gl.ARRAY_BUFFER, fsq.vbo);
 	if (fsq.attribPos !== -1) {
 		gl.enableVertexAttribArray(fsq.attribPos);
