@@ -182,8 +182,5 @@ end
 while true do
 	wait_vblank()
 	dispatch_irqs()
-	poke(sys_io_write_ptr, peek(sys_io_write_ptr))
-	poke(sys_io_write_ptr, 0)
-	poke(sys_io_payload_write_ptr, 0)
 	update()
 end

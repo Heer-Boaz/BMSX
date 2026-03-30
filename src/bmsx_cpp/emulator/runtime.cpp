@@ -477,6 +477,7 @@ void Runtime::requestWaitForVblank() {
 		if (!m_frameActive) {
 			throw BMSX_RUNTIME_ERROR("[Runtime] wait_vblank resumed without an active frame state.");
 		}
+		processIOCommands();
 		reconcileCycleBudgetAfterSignal(m_frameState);
 		freezeTickCpuStats(m_frameState);
 		completeTickIfPending(m_frameState, m_vblankSequence);
@@ -1219,6 +1220,7 @@ void Runtime::executeUpdateCallback() {
 			m_pendingCall = PendingCall::None;
 		}
 	} catch (const WaitForVblankSignal&) {
+		processIOCommands();
 		reconcileCycleBudgetAfterSignal(m_frameState);
 		freezeTickCpuStats(m_frameState);
 		processIrqAck();

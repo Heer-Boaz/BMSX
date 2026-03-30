@@ -1008,27 +1008,26 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_cart_base', CART_ROM_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_overlay_base', OVERLAY_ROM_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_rom_overlay_size', runtime.memory.getOverlayRomSize());
+	runtimeLuaPipeline.registerGlobal(runtime, 'resolve_cart_rom_asset_range', createNativeFunction('resolve_cart_rom_asset_range', (args, out) => {
+		const assetId = stringValueToString(args[0] as StringValue);
+		const range = runtime.resolveRomAssetRange(assetId, 'cart');
+		out.push(range.romBase);
+		out.push(range.start);
+		out.push(range.end);
+	}, CHEAP_NATIVE_LOOKUP_COST));
+	runtimeLuaPipeline.registerGlobal(runtime, 'resolve_sys_rom_asset_range', createNativeFunction('resolve_sys_rom_asset_range', (args, out) => {
+		const assetId = stringValueToString(args[0] as StringValue);
+		const range = runtime.resolveRomAssetRange(assetId, 'sys');
+		out.push(range.romBase);
+		out.push(range.start);
+		out.push(range.end);
+	}, CHEAP_NATIVE_LOOKUP_COST));
 	runtimeLuaPipeline.registerGlobal(runtime, 'resolve_rom_asset_range', createNativeFunction('resolve_rom_asset_range', (args, out) => {
 		const assetId = stringValueToString(args[0] as StringValue);
-		const entry = $.asset_source.getEntry(assetId);
-		if (!entry) {
-			throw runtime.createApiRuntimeError(`Asset '${assetId}' does not exist.`);
-		}
-		if (entry.start === undefined || entry.end === undefined) {
-			throw runtime.createApiRuntimeError(`Asset '${assetId}' is missing ROM range.`);
-		}
-		const payloadId = entry.payload_id;
-		if (!payloadId) {
-			throw runtime.createApiRuntimeError(`Asset '${assetId}' is missing a payload id.`);
-		}
-		const romBase = payloadId === 'system'
-			? SYSTEM_ROM_BASE
-			: payloadId === 'overlay'
-				? OVERLAY_ROM_BASE
-				: CART_ROM_BASE;
-		out.push(romBase);
-		out.push(entry.start);
-		out.push(entry.end);
+		const range = runtime.resolveRomAssetRange(assetId, 'sys');
+		out.push(range.romBase);
+		out.push(range.start);
+		out.push(range.end);
 	}, CHEAP_NATIVE_LOOKUP_COST));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_system_atlas_base', VRAM_SYSTEM_ATLAS_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_primary_atlas_base', VRAM_PRIMARY_ATLAS_BASE);

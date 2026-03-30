@@ -100,11 +100,14 @@ import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntr
 import { DmaController } from './devices/dma_controller';
 import { ImgDecController } from './devices/imgdec_controller';
 import {
+	CART_ROM_BASE,
 	DEFAULT_STRING_HANDLE_COUNT,
 	DEFAULT_STRING_HEAP_SIZE,
 	DEFAULT_VRAM_ATLAS_SLOT_SIZE,
 	DEFAULT_VRAM_STAGING_SIZE,
 	IO_REGION_SIZE,
+	OVERLAY_ROM_BASE,
+	SYSTEM_ROM_BASE,
 	STRING_HANDLE_ENTRY_SIZE,
 	configureMemoryMap,
 	type MemoryMapSpecs as MemoryMapSpecs,
@@ -642,6 +645,7 @@ export class Runtime {
 			if (frameState === null) {
 				throw new Error('[Runtime] wait_vblank resumed without an active frame state.');
 			}
+			runtimeLuaPipeline.processIo(this);
 			this.reconcileCycleBudgetAfterSignal(frameState);
 			this.freezeTickCpuStats(frameState);
 			this.completeTickIfPending(frameState, this.vblankSequence);
@@ -1658,6 +1662,7 @@ export class Runtime {
 			}
 		} catch (error) {
 			if (this.isWaitForVblankSignal(error)) {
+				runtimeLuaPipeline.processIo(this);
 				this.reconcileCycleBudgetAfterSignal(state);
 				this.freezeTickCpuStats(state);
 				this.processIrqAck();
@@ -1774,6 +1779,72 @@ export class Runtime {
 
 	public getImageAsset(id: string, source: RawAssetSource = $.asset_source): RomImgAsset {
 		return resolveRuntimeLayerAssetById<RomImgAsset>(this.assetLayerLookup, source, 'img', id);
+	}
+
+	public resolveRomAssetRange(assetId: string, scope: 'cart' | 'sys'): { romBase: number; start: number; end: number } {
+		const resolveFromLayer = (layer: RuntimeAssetLayer | null): { found: boolean; deleted: boolean; romBase: number; start: number; end: number } => {
+			if (layer === null) {
+				return { found: false, deleted: false, romBase: 0, start: 0, end: 0 };
+			}
+			const entries = layer.index.assets;
+			for (let index = 0; index < entries.length; index += 1) {
+				const entry = entries[index];
+				if (entry.resid !== assetId) {
+					continue;
+				}
+				if (entry.op === 'delete') {
+					return { found: true, deleted: true, romBase: 0, start: 0, end: 0 };
+				}
+				if (entry.start === undefined || entry.end === undefined) {
+					throw new Error(`[Runtime] Asset '${assetId}' is missing ROM range.`);
+				}
+				const romBase = layer.id === 'system'
+					? SYSTEM_ROM_BASE
+					: layer.id === 'overlay'
+						? OVERLAY_ROM_BASE
+						: CART_ROM_BASE;
+				return {
+					found: true,
+					deleted: false,
+					romBase,
+					start: entry.start,
+					end: entry.end,
+				};
+			}
+			return { found: false, deleted: false, romBase: 0, start: 0, end: 0 };
+		};
+
+		if (this.overlayAssetLayer !== null) {
+			const overlayResult = resolveFromLayer(this.overlayAssetLayer);
+			if (overlayResult.found) {
+				if (overlayResult.deleted) {
+					throw new Error(`[Runtime] Asset '${assetId}' does not exist.`);
+				}
+				return overlayResult;
+			}
+		}
+
+		if (this.cartAssetLayer !== null) {
+			const cartResult = resolveFromLayer(this.cartAssetLayer);
+			if (cartResult.found) {
+				if (cartResult.deleted) {
+					throw new Error(`[Runtime] Asset '${assetId}' does not exist.`);
+				}
+				return cartResult;
+			}
+		}
+
+		if (scope === 'sys') {
+			const systemResult = resolveFromLayer(this.biosAssetLayer);
+			if (systemResult.found) {
+				if (systemResult.deleted) {
+					throw new Error(`[Runtime] Asset '${assetId}' does not exist.`);
+				}
+				return systemResult;
+			}
+		}
+
+		throw new Error(`[Runtime] Asset '${assetId}' does not exist.`);
 	}
 
 	private getAudioAssetByEntry(entry: RomAsset): RomAsset {

@@ -19,11 +19,24 @@
 #include <limits>
 #include <regex>
 #include <sstream>
+#include <tuple>
 
 namespace bmsx {
 namespace {
 inline double to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<double, std::milli>(duration).count();
+}
+
+constexpr uint64_t ASSET_TOKEN_OFFSET_BASIS = 0xcbf29ce484222325ull;
+constexpr uint64_t ASSET_TOKEN_PRIME = 0x100000001b3ull;
+
+AssetToken hashAssetTokenLocal(const std::string& id) {
+	AssetToken hash = ASSET_TOKEN_OFFSET_BASIS;
+	for (unsigned char c : id) {
+		hash ^= static_cast<AssetToken>(c);
+		hash *= ASSET_TOKEN_PRIME;
+	}
+	return hash;
 }
 
 constexpr uint32_t CART_ROM_MAGIC = 0x58534D42u;
@@ -1591,27 +1604,71 @@ void Runtime::setupBuiltins() {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(trackedVramUsedBytes())));
 		}, CHEAP_NATIVE_READ_COST);
-	registerNativeFunction("resolve_rom_asset_range", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		const std::string& assetId = m_cpu.stringPool().toString(asStringId(args.at(0)));
-		const ImgAsset* asset = EngineCore::instance().resolveImgAsset(assetId);
-		if (asset == nullptr) {
+	auto findRomAssetInfo = [](RuntimeAssets& assets, const std::string& assetId) -> const RomAssetInfo* {
+		if (const ImgAsset* image = assets.getImg(assetId)) {
+			return &image->rom;
+		}
+		if (const AudioAsset* audio = assets.getAudio(assetId)) {
+			return &audio->rom;
+		}
+		const AssetToken token = hashAssetTokenLocal(assetId);
+		auto dataIt = assets.data.find(token);
+		if (dataIt != assets.data.end()) {
+			return &dataIt->second.rom;
+		}
+		auto luaIt = assets.lua.find(token);
+		if (luaIt != assets.lua.end()) {
+			return &luaIt->second.rom;
+		}
+		auto eventIt = assets.audioevents.find(token);
+		if (eventIt != assets.audioevents.end()) {
+			return &eventIt->second.rom;
+		}
+		return nullptr;
+	};
+	auto resolveRomAssetRange = [findRomAssetInfo](const std::string& assetId, bool includeSystem) -> std::tuple<uint32_t, uint32_t, uint32_t> {
+		EngineCore& engine = EngineCore::instance();
+		const RomAssetInfo* rom = findRomAssetInfo(engine.cartAssets(), assetId);
+		if (rom == nullptr && includeSystem) {
+			rom = findRomAssetInfo(engine.systemAssets(), assetId);
+		}
+		if (rom == nullptr) {
 			throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' does not exist.");
 		}
-		if (!asset->rom.payloadId) {
+		if (!rom->payloadId) {
 			throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' is missing a payload id.");
 		}
-		if (!asset->rom.start || !asset->rom.end) {
+		if (!rom->start || !rom->end) {
 			throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' is missing ROM range.");
 		}
 		uint32_t romBase = CART_ROM_BASE;
-		if (*asset->rom.payloadId == "system") {
+		if (*rom->payloadId == "system") {
 			romBase = SYSTEM_ROM_BASE;
-		} else if (*asset->rom.payloadId == "overlay") {
+		} else if (*rom->payloadId == "overlay") {
 			romBase = OVERLAY_ROM_BASE;
 		}
+		return { romBase, *rom->start, *rom->end };
+	};
+	registerNativeFunction("resolve_cart_rom_asset_range", [resolveRomAssetRange, this](const std::vector<Value>& args, std::vector<Value>& out) {
+		const std::string& assetId = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const auto [romBase, start, end] = resolveRomAssetRange(assetId, false);
 		out.push_back(valueNumber(static_cast<double>(romBase)));
-		out.push_back(valueNumber(static_cast<double>(*asset->rom.start)));
-		out.push_back(valueNumber(static_cast<double>(*asset->rom.end)));
+		out.push_back(valueNumber(static_cast<double>(start)));
+		out.push_back(valueNumber(static_cast<double>(end)));
+	}, CHEAP_NATIVE_LOOKUP_COST);
+	registerNativeFunction("resolve_sys_rom_asset_range", [resolveRomAssetRange, this](const std::vector<Value>& args, std::vector<Value>& out) {
+		const std::string& assetId = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const auto [romBase, start, end] = resolveRomAssetRange(assetId, true);
+		out.push_back(valueNumber(static_cast<double>(romBase)));
+		out.push_back(valueNumber(static_cast<double>(start)));
+		out.push_back(valueNumber(static_cast<double>(end)));
+	}, CHEAP_NATIVE_LOOKUP_COST);
+	registerNativeFunction("resolve_rom_asset_range", [resolveRomAssetRange, this](const std::vector<Value>& args, std::vector<Value>& out) {
+		const std::string& assetId = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const auto [romBase, start, end] = resolveRomAssetRange(assetId, true);
+		out.push_back(valueNumber(static_cast<double>(romBase)));
+		out.push_back(valueNumber(static_cast<double>(start)));
+		out.push_back(valueNumber(static_cast<double>(end)));
 	}, CHEAP_NATIVE_LOOKUP_COST);
 
 	registerNativeFunction("poke", [this](const std::vector<Value>& args, std::vector<Value>& out) {

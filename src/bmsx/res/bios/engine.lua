@@ -364,7 +364,7 @@ function engine.vdp_load_slot(slot, atlas_id)
 		vdp_load_queue_tail = 0
 	end
 	local atlas_name = string.format('_atlas_%02d', atlas_id)
-	local rom_base, start, finish = resolve_rom_asset_range(atlas_name)
+	local rom_base, start, finish = resolve_cart_rom_asset_range(atlas_name)
 	local src = rom_base + start
 	local len = finish - start
 	local dst
@@ -400,7 +400,7 @@ function engine.vdp_load_sys_atlas()
 		vdp_load_queue_tail = 0
 	end
 	local atlas_name = string.format('_atlas_%02d', sys_atlas_id)
-	local rom_base, start, finish = resolve_rom_asset_range(atlas_name)
+	local rom_base, start, finish = resolve_sys_rom_asset_range(atlas_name)
 	local src = rom_base + start
 	local len = finish - start
 	vdp_load_job_seq = vdp_load_job_seq + 1
