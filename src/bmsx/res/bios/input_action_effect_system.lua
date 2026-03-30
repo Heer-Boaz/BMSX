@@ -5,7 +5,6 @@ local ecs = require('ecs')
 local action_effects = require('action_effects')
 local compiler = require('input_action_effect_compiler')
 local dsl = require('input_action_effect_dsl')
-local romdir = require('romdir')
 local scratchbatch = require('scratchbatch')
 local world_instance = require('world').instance
 local inputintentcomponent = 'inputintentcomponent'
@@ -383,7 +382,7 @@ function inputactioneffectsystem:resolve_program_by_id(program_id)
 	if self.missing_program_ids[program_id] then
 		error('[inputactioneffectsystem] program "' .. program_id .. '" is marked as missing.')
 	end
-	local data = assets.data[romdir.token(program_id)]
+	local data = assets.data[program_id]
 	if not dsl.is_input_action_effect_program(data) then
 		self.missing_program_ids[program_id] = true
 		error('[inputactioneffectsystem] program "' .. program_id .. '" not found or invalid.')

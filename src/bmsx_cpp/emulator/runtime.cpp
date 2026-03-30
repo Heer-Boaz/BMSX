@@ -815,7 +815,10 @@ void Runtime::processIOCommands() {
 }
 
 void Runtime::onIoWrite(uint32_t addr, Value value) {
-	if (addr != IO_WRITE_PTR_ADDR || !valueIsNumber(value) || asNumber(value) == 0.0 || m_drainingIoCommandsOnWrite) {
+	if (addr != IO_WRITE_PTR_ADDR
+		|| !valueIsNumber(value)
+		|| asNumber(value) < static_cast<double>(IO_COMMAND_CAPACITY)
+		|| m_drainingIoCommandsOnWrite) {
 		return;
 	}
 	m_drainingIoCommandsOnWrite = true;
@@ -929,8 +932,8 @@ void Runtime::setGlobal(std::string_view name, const Value& value) {
 	m_cpu.globals->set(canonicalizeIdentifier(name), value);
 }
 
-void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn) {
-	auto nativeFn = m_cpu.createNativeFunction(name, std::move(fn));
+void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeFnCost cost) {
+	auto nativeFn = m_cpu.createNativeFunction(name, std::move(fn), cost);
 	m_cpu.globals->set(canonicalizeIdentifier(name), nativeFn);
 }
 

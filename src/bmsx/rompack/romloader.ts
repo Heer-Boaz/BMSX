@@ -20,7 +20,6 @@ import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES }
 import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 import { decodeRomToc } from './rom_toc';
-import { tokenKeyFromAsset } from './asset_tokens';
 
 export type RomLoadOptions = {
 	loadAudioFromBuffer?: (buffer: Uint8Array) => Promise<any>;
@@ -504,7 +503,7 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 		return;
 	}
 	const baseAsset = res;
-	const assetKey = tokenKeyFromAsset(baseAsset);
+	const assetKey = baseAsset.resid;
 	switch (res.type) {
 		case 'image':
 		case 'atlas': {

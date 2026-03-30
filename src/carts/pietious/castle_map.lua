@@ -1,5 +1,4 @@
 local constants = require('constants')
-local romdir = require('romdir')
 local text = require('text')
 
 local castle_map = {}
@@ -437,7 +436,7 @@ local function build_draaideuren(room_number, object_defs)
 end
 
 local function load_room_templates()
-	local data = assets.data[romdir.token('castle_map')]
+	local data = assets.data['castle_map']
 	local templates = {}
 
 	for raw_room_number, room_def in pairs(data) do

@@ -812,10 +812,13 @@ CPU::CPU(Memory& memory, StringHandleTable* handleTable)
 	m_indexKey = valueString(m_stringPool.intern("__index"));
 }
 
-Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn) {
+Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeFnCost cost) {
 	auto* native = m_heap.allocate<NativeFunction>(ObjType::NativeFunction);
 	addTrackedLuaHeapBytes(16);
 	native->name = std::string(name);
+	native->cycleBase = cost.base;
+	native->cyclePerArg = cost.perArg;
+	native->cyclePerRet = cost.perRet;
 	native->invoke = [invoke = std::move(fn)](const std::vector<Value>& args, std::vector<Value>& out) {
 		out.clear();
 		invoke(args, out);

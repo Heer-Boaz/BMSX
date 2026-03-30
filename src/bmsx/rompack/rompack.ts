@@ -47,7 +47,6 @@ export interface RuntimeAssets {
 
 export type asset_type = 'image' | 'audio' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
 export type asset_id = string;
-export type asset_token_key = string; // tokenKey(lo, hi) string
 
 /**
  * Represents an asset in a ROM pack.
@@ -56,8 +55,8 @@ export interface RomAsset {
 	resid: asset_id; // The resource ID of the asset.
 	type: asset_type; // The type of the asset.
 	handle?: number; // Runtime-resolved memory handle for firmware-facing MMIO code.
-	id_token_lo?: number; // 64-bit token (low 32)
-	id_token_hi?: number; // 64-bit token (high 32)
+	id_token_lo?: number; // 64-bit exact-id token (low 32)
+	id_token_hi?: number; // 64-bit exact-id token (high 32)
 	op?: RomAssetOp; // Optional patch operation for this asset.
 	start?: number; // The optional start offset of the asset in the ROM. (e.g., atlassed images don't have a start offset, as they are part of an atlas)
 	end?: number; // The optional end offset of the asset in the ROM. (e.g., atlassed images don't have an end offset, as they are part of an atlas)
@@ -87,13 +86,13 @@ export type RomLuaAsset = RomAsset & {
 	update_timestamp: number; // Timestamp of the last update to this Lua asset, used for caching and reloading during development.
 }
 
-export type id2res = Record<asset_token_key, RomAsset>;
-export type id2imgres = Record<asset_token_key, RomImgAsset>;
-export type id2model = Record<asset_token_key, GLTFModel>;
-export type id2data = Record<asset_token_key, any>;
-export type id2lua = Record<asset_token_key, RomLuaAsset>;
+export type id2res = Record<asset_id, RomAsset>;
+export type id2imgres = Record<asset_id, RomImgAsset>;
+export type id2model = Record<asset_id, GLTFModel>;
+export type id2data = Record<asset_id, any>;
+export type id2lua = Record<asset_id, RomLuaAsset>;
 export type AudioEventMapEntry = Record<string, unknown>;
-export type id2audioevent = Record<asset_token_key, AudioEventMapEntry>;
+export type id2audioevent = Record<asset_id, AudioEventMapEntry>;
 
 export type BitmapId = asset_id;
 export type AudioId = asset_id;

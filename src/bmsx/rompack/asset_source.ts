@@ -1,5 +1,4 @@
 import type { asset_id, asset_type, CartridgeIndex, CartridgeLayerId, RomAsset } from './rompack';
-import { tokenKeyFromAsset, tokenKeyFromId } from './asset_tokens';
 
 export type AssetSourceLayer = {
 	id: CartridgeLayerId;
@@ -27,7 +26,7 @@ export class AssetSourceStack implements RawAssetSource {
 		this.idMaps = layers.map(layer => {
 			const map = new Map<string, RomAsset>();
 			for (const asset of layer.index.assets) {
-				map.set(tokenKeyFromAsset(asset), asset);
+				map.set(asset.resid, asset);
 			}
 			return map;
 		});
@@ -49,9 +48,8 @@ export class AssetSourceStack implements RawAssetSource {
 	}
 
 	public getEntry(id: asset_id): RomAsset | null {
-		const tokenKey = tokenKeyFromId(id);
 		for (let i = 0; i < this.layers.length; i++) {
-			const asset = this.idMaps[i].get(tokenKey);
+			const asset = this.idMaps[i].get(id);
 			if (!asset) {
 				continue;
 			}
@@ -86,7 +84,7 @@ export class AssetSourceStack implements RawAssetSource {
 				if (type && asset.type !== type) {
 					continue;
 				}
-				const id = tokenKeyFromAsset(asset);
+				const id = asset.resid;
 				if (blocked.has(id)) {
 					continue;
 				}

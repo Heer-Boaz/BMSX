@@ -32,7 +32,6 @@ eventemitter_module.instance = eventemitter.instance
 local quickmenu = require('quickmenu')
 local resource_usage_gizmo = require('resource_usage_gizmo')
 -- local ide_editor = require('ide_editor')
-local romdir = require('romdir')
 local bool01 = require('bool01')
 local deep_clone = require('deep_clone')
 local velocity = require('velocity')
@@ -365,16 +364,8 @@ function engine.vdp_load_slot(slot, atlas_id)
 		vdp_load_queue_tail = 0
 	end
 	local atlas_name = string.format('_atlas_%02d', atlas_id)
-	local entry = romdir.cart(atlas_name)
-	if entry == nil then
-		error('vdp_load_slot: atlas asset missing')
-	end
-	local start = entry.start
-	local finish = entry['end']
-	if start == nil or finish == nil then
-		error('vdp_load_slot: atlas asset missing ROM range')
-	end
-	local src = entry.rom_base + start
+	local rom_base, start, finish = resolve_rom_asset_range(atlas_name)
+	local src = rom_base + start
 	local len = finish - start
 	local dst
 	local cap
@@ -409,16 +400,8 @@ function engine.vdp_load_sys_atlas()
 		vdp_load_queue_tail = 0
 	end
 	local atlas_name = string.format('_atlas_%02d', sys_atlas_id)
-	local entry = romdir.sys(atlas_name)
-	if entry == nil then
-		error('vdp_load_sys_atlas: system atlas asset missing')
-	end
-	local start = entry.start
-	local finish = entry['end']
-	if start == nil or finish == nil then
-		error('vdp_load_sys_atlas: system atlas missing ROM range')
-	end
-	local src = entry.rom_base + start
+	local rom_base, start, finish = resolve_rom_asset_range(atlas_name)
+	local src = rom_base + start
 	local len = finish - start
 	vdp_load_job_seq = vdp_load_job_seq + 1
 	vdp_load_queue_tail = vdp_load_queue_tail + 1

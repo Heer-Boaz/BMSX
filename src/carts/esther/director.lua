@@ -1,6 +1,5 @@
 -- bmsx-lint:disable
 local constants = require('constants')
-local romdir = require('romdir')
 
 local director = {}
 director.__index = director
@@ -540,7 +539,7 @@ function director:draw_player(player, draw_shadow)
 	end
 
 	local frame_id = player.visual_frame_id
-	local frame_meta = assets.img[romdir.token(frame_id)].imgmeta
+	local frame_meta = assets.img[frame_id].imgmeta
 	local sx = player.draw_scale_x
 	local sy = player.draw_scale_y
 

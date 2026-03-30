@@ -40,6 +40,12 @@ struct SourceRange {
 
 using StringId = uint32_t;
 
+struct NativeFnCost {
+	uint16_t base = 20;
+	uint8_t perArg = 2;
+	uint8_t perRet = 1;
+};
+
 struct InternedString {
 	StringId id = 0;
 	std::string value;
@@ -738,7 +744,7 @@ public:
 	void setExternalRootMarker(std::function<void(GcHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }
 
-	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn);
+	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeFnCost cost = {});
 	Value createNativeObject(
 		void* raw,
 		std::function<Value(const Value&)> get,

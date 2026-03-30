@@ -10,7 +10,6 @@ import type { SkyboxImageIds } from "../render/shared/render_types";
 import { HZ_SCALE as PLATFORM_HZ_SCALE, setMicrotaskQueue } from '../platform';
 import type { GameViewHost, Platform, PlatformExitEvent, SubscriptionHandle } from '../platform';
 import { asset_id, getMachineMaxVoices, RuntimeAssets, type CartManifest, type MachineManifest, type vec2 } from "../rompack/rompack";
-import { tokenKeyFromId } from '../rompack/asset_tokens';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { buildSystemRuntimeAssetLayer, normalizeCartridgeBlob, parseCartridgeIndex, type RuntimeAssetLayer } from '../rompack/romloader';
 import { SYSTEM_BOOT_ENTRY_PATH, SYSTEM_MACHINE_MANIFEST } from './system_machine';
@@ -367,8 +366,7 @@ export class EngineCore {
 				if (Runtime.hasInstance()) {
 					cursor = Runtime.instance.getDataAsset(segments[0]);
 				} else {
-					const rootKey = tokenKeyFromId(segments[0]);
-					cursor = this._assets.data[rootKey];
+					cursor = this._assets.data[segments[0]];
 				}
 				for (let i = 1; i < segments.length; i++) {
 					const segment = segments[i];

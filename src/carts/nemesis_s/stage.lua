@@ -1,5 +1,4 @@
 local constants = require('constants')
-local romdir = require('romdir')
 
 local stage_subsystem = {}
 stage_subsystem.__index = stage_subsystem
@@ -380,7 +379,7 @@ function stage_subsystem:apply_stage_config(stage_data)
 end
 
 function stage_subsystem:build_tape()
-	local stage_data = assets.data[romdir.token(constants.stage.asset_id)]
+	local stage_data = assets.data[constants.stage.asset_id]
 	self:apply_stage_config(stage_data)
 	local map_rows = stage_data.map_rows
 

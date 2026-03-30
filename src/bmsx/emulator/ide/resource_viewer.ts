@@ -1,5 +1,4 @@
 import { $ } from '../../core/engine_core';
-import { tokenKeyFromId } from '../../rompack/asset_tokens';
 import { clamp } from '../../utils/clamp';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
@@ -55,7 +54,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			break;
 		}
 		case 'data': {
-			const dataEntry = assets.data?.[tokenKeyFromId(descriptor.asset_id)];
+			const dataEntry = assets.data?.[descriptor.asset_id];
 			if (dataEntry !== undefined) {
 				appendResourceViewerLines(lines, ['-- Data --', '']);
 				appendResourceViewerLines(lines, safeJsonStringify(dataEntry).split(/\r?\n/));
@@ -67,7 +66,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 		case 'image':
 		case 'atlas':
 		case 'romlabel': {
-			const image = assets.img?.[tokenKeyFromId(descriptor.asset_id)];
+			const image = assets.img?.[descriptor.asset_id];
 			if (!image) {
 				error = `Image asset '${descriptor.asset_id}' not found.`;
 				break;
@@ -95,7 +94,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			break;
 		}
 		case 'audio': {
-			const audio = assets.audio?.[tokenKeyFromId(descriptor.asset_id)];
+			const audio = assets.audio?.[descriptor.asset_id];
 			if (!audio) {
 				error = `Audio asset '${descriptor.asset_id}' not found.`;
 				break;
@@ -111,7 +110,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			break;
 		}
 		case 'model': {
-			const model = assets.model?.[tokenKeyFromId(descriptor.asset_id)];
+			const model = assets.model?.[descriptor.asset_id];
 			if (!model) {
 				error = `Model asset '${descriptor.asset_id}' not found.`;
 				break;
@@ -120,7 +119,7 @@ export function buildResourceViewerState(descriptor: ResourceDescriptor): Resour
 			break;
 		}
 		case 'aem': {
-			const events = assets.audioevents?.[tokenKeyFromId(descriptor.asset_id)];
+			const events = assets.audioevents?.[descriptor.asset_id];
 			if (!events) {
 				error = `Audio event map '${descriptor.asset_id}' not found.`;
 				break;

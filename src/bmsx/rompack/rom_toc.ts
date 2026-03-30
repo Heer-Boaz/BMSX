@@ -81,9 +81,9 @@ export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: str
 	let stringTableLength = 0;
 	const assets = params.assets
 		.map((asset) => {
-			const token = (typeof asset.id_token_lo === 'number' && typeof asset.id_token_hi === 'number')
-				? { lo: asset.id_token_lo, hi: asset.id_token_hi }
-				: hashAssetId(asset.resid);
+		const token = (typeof asset.id_token_lo === 'number' && typeof asset.id_token_hi === 'number')
+			? { lo: asset.id_token_lo, hi: asset.id_token_hi }
+			: hashAssetId(asset.resid);
 			return { asset, token };
 		})
 		.sort((a, b) => (a.token.hi - b.token.hi) || (a.token.lo - b.token.lo));

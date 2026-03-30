@@ -31,7 +31,6 @@ import {
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
 import { buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
 import { decodeBinary } from '../serializer/binencoder';
-import { tokenKeyFromAsset } from '../rompack/asset_tokens';
 import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
 import { Api } from './firmware_api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from './cpu';
@@ -62,6 +61,7 @@ import type { ParsedLuaChunk } from './ide/lua/lua_parse';
 import { ResourceUsageDetector } from './resource_usage_detector';
 import { configureLuaHeapUsage } from './lua_heap_usage';
 import {
+	IO_COMMAND_CAPACITY,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -220,8 +220,7 @@ function resolveRuntimeLayerAssetFromEntry<T>(lookup: RuntimeLayerLookup, kind: 
 	}
 	const layer = resolveLayerForPayload(lookup, payloadId);
 	const assets = getRuntimeLayerAssets(layer, kind) as Record<string, T>;
-	const token = tokenKeyFromAsset(entry);
-	const asset = assets[token];
+	const asset = assets[entry.resid];
 	if (!asset) {
 		throw new Error(`[Runtime] ${kind} asset '${entry.resid}' missing from '${payloadId}' layer.`);
 	}
@@ -1614,7 +1613,7 @@ export class Runtime {
 	}
 
 	public onIoWrite(addr: number, value: Value): void {
-		if (addr !== IO_WRITE_PTR_ADDR || value === 0 || this.drainingIoCommandsOnWrite) {
+		if (addr !== IO_WRITE_PTR_ADDR || typeof value !== 'number' || value < IO_COMMAND_CAPACITY || this.drainingIoCommandsOnWrite) {
 			return;
 		}
 		this.drainingIoCommandsOnWrite = true;

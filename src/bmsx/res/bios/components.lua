@@ -4,7 +4,6 @@
 local eventemitter = require('eventemitter')
 local timeline_module = require('timeline')
 local timeline_dispatch = require('timeline_dispatch')
-local romdir = require('romdir')
 local collision_profiles = require('collision_profiles')
 local scratchrecordbatch = require('scratchrecordbatch')
 local eventemitter = eventemitter.eventemitter
@@ -281,7 +280,7 @@ local function get_sprite_collision_geometry(sprite)
 	if id == nil then
 		return nil, nil
 	end
-	local image_asset = assets.img[romdir.token(id)]
+	local image_asset = assets.img[id]
 	if image_asset == nil or image_asset.imgmeta == nil then
 		error('[spritecomponent] image metadata missing for "' .. tostring(id) .. '"')
 	end

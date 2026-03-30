@@ -1,21 +1,24 @@
 local vdp_firmware = {}
-local romdir = require('romdir')
 
 local default_print_color_index = 15
 local max_glyph_index = 2147483647
+local white_color = { r = 1, g = 1, b = 1, a = 1 }
 local text_cursor_x
 local text_cursor_y
 local text_cursor_home_x
 local text_cursor_color_index
 
 local function resolve_layer(layer)
+	if layer == nil or layer == 'world' then
+		return sys_vdp_layer_world
+	end
 	if layer == 'ui' then
 		return sys_vdp_layer_ui
 	end
 	if layer == 'ide' then
 		return sys_vdp_layer_ide
 	end
-	return sys_vdp_layer_world
+	return layer
 end
 
 local function resolve_color(value)
@@ -26,7 +29,7 @@ local function resolve_color(value)
 end
 
 local function resolve_image_handle(id)
-	local asset = assets.img[romdir.token(id)]
+	local asset = assets.img[id]
 	if asset == nil then
 		error('[vdp_firmware] Image asset "' .. tostring(id) .. '" not found.')
 	end
@@ -52,30 +55,17 @@ local function font_char_width(font, char)
 	return resolve_font_glyph(font, char).width
 end
 
-local function write_io_arg(base, index, value)
-	poke(base + index * sys_io_arg_stride, value)
-end
-
-local function write_io_color(base, offset, color_value)
-	write_io_arg(base, offset + 0, color_value.r)
-	write_io_arg(base, offset + 1, color_value.g)
-	write_io_arg(base, offset + 2, color_value.b)
-	write_io_arg(base, offset + 3, color_value.a)
-end
-
 local function alloc_io_command(opcode)
 	local count = peek(sys_io_write_ptr)
 	if count >= sys_io_command_capacity then
 		error('[vdp_firmware] IO command buffer overflow at opcode ' .. opcode .. '.')
 	end
 	local base = sys_io_buffer_base + count * sys_io_command_stride
-	poke(base, opcode)
-	return base
+	return base, count + 1
 end
 
-local function commit_io_command()
-	local count = peek(sys_io_write_ptr)
-	poke(sys_io_write_ptr, count + 1)
+local function commit_io_command(next_count)
+	poke(sys_io_write_ptr, next_count)
 end
 
 local function alloc_io_payload(words)
@@ -195,49 +185,27 @@ local function calculate_centered_block_x(lines, font, block_width)
 end
 
 local function queue_clear(color_value)
-	local base = alloc_io_command(sys_io_cmd_vdp_clear)
-	write_io_color(base, 1, color_value)
-	commit_io_command()
+	local base, next_count = alloc_io_command(sys_io_cmd_vdp_clear)
+	poke_words(base, sys_io_cmd_vdp_clear, color_value.r, color_value.g, color_value.b, color_value.a)
+	commit_io_command(next_count)
 end
 
 local function queue_fill_rect(x0, y0, x1, y1, z, layer, color_value)
-	local base = alloc_io_command(sys_io_cmd_vdp_fill_rect)
-	write_io_arg(base, 1, x0)
-	write_io_arg(base, 2, y0)
-	write_io_arg(base, 3, x1)
-	write_io_arg(base, 4, y1)
-	write_io_arg(base, 5, z)
-	write_io_arg(base, 6, layer)
-	write_io_color(base, 7, color_value)
-	commit_io_command()
+	local base, next_count = alloc_io_command(sys_io_cmd_vdp_fill_rect)
+	poke_words(base, sys_io_cmd_vdp_fill_rect, x0, y0, x1, y1, z, layer, color_value.r, color_value.g, color_value.b, color_value.a)
+	commit_io_command(next_count)
 end
 
 local function queue_draw_line(x0, y0, x1, y1, z, layer, color_value, thickness)
-	local base = alloc_io_command(sys_io_cmd_vdp_draw_line)
-	write_io_arg(base, 1, x0)
-	write_io_arg(base, 2, y0)
-	write_io_arg(base, 3, x1)
-	write_io_arg(base, 4, y1)
-	write_io_arg(base, 5, z)
-	write_io_arg(base, 6, layer)
-	write_io_color(base, 7, color_value)
-	write_io_arg(base, 11, thickness)
-	commit_io_command()
+	local base, next_count = alloc_io_command(sys_io_cmd_vdp_draw_line)
+	poke_words(base, sys_io_cmd_vdp_draw_line, x0, y0, x1, y1, z, layer, color_value.r, color_value.g, color_value.b, color_value.a, thickness)
+	commit_io_command(next_count)
 end
 
 local function queue_blit(handle, x, y, z, layer, scale_x, scale_y, flip_h, flip_v, color_value, parallax_weight)
-	local base = alloc_io_command(sys_io_cmd_vdp_blit)
-	write_io_arg(base, 1, handle)
-	write_io_arg(base, 2, x)
-	write_io_arg(base, 3, y)
-	write_io_arg(base, 4, z)
-	write_io_arg(base, 5, layer)
-	write_io_arg(base, 6, scale_x)
-	write_io_arg(base, 7, scale_y)
-	write_io_arg(base, 8, (flip_h and 1 or 0) | (flip_v and 2 or 0))
-	write_io_color(base, 9, color_value)
-	write_io_arg(base, 13, parallax_weight)
-	commit_io_command()
+	local base, next_count = alloc_io_command(sys_io_cmd_vdp_blit)
+	poke_words(base, sys_io_cmd_vdp_blit, handle, x, y, z, layer, scale_x, scale_y, (flip_h and 1 or 0) | (flip_v and 2 or 0), color_value.r, color_value.g, color_value.b, color_value.a, parallax_weight)
+	commit_io_command(next_count)
 end
 
 local function queue_glyph_line(text, x, y, z, font, color_value, background_color, start_index, end_index, layer)
@@ -255,25 +223,14 @@ local function queue_glyph_line(text, x, y, z, font, color_value, background_col
 			| ((string.byte(text, byte_index + 3) or 0) << 24)
 		poke(sys_io_payload_buffer_base + (payload_offset + word_index) * sys_io_arg_stride, word)
 	end
-	local base = alloc_io_command(sys_io_cmd_vdp_glyph_run)
-	write_io_arg(base, 1, payload_offset)
-	write_io_arg(base, 2, #text)
-	write_io_arg(base, 3, x)
-	write_io_arg(base, 4, y)
-	write_io_arg(base, 5, z)
-	write_io_arg(base, 6, font.id)
-	write_io_arg(base, 7, start_index)
-	write_io_arg(base, 8, end_index)
-	write_io_arg(base, 9, layer)
-	write_io_color(base, 10, color_value)
+	local base, next_count = alloc_io_command(sys_io_cmd_vdp_glyph_run)
 	if background_color ~= nil then
-		write_io_arg(base, 14, 1)
-		write_io_color(base, 15, background_color)
-		commit_io_command()
+		poke_words(base, sys_io_cmd_vdp_glyph_run, payload_offset, #text, x, y, z, font.id, start_index, end_index, layer, color_value.r, color_value.g, color_value.b, color_value.a, 1, background_color.r, background_color.g, background_color.b, background_color.a)
+		commit_io_command(next_count)
 		return
 	end
-	write_io_arg(base, 14, 0)
-	commit_io_command()
+	poke_words(base, sys_io_cmd_vdp_glyph_run, payload_offset, #text, x, y, z, font.id, start_index, end_index, layer, color_value.r, color_value.g, color_value.b, color_value.a, 0)
+	commit_io_command(next_count)
 end
 
 function dma_blit_tiles(desc)
@@ -290,20 +247,9 @@ function dma_blit_tiles(desc)
 		end
 		poke(sys_io_payload_buffer_base + (payload_offset + index - 1) * sys_io_arg_stride, handle)
 	end
-	local base = alloc_io_command(sys_io_cmd_vdp_tile_run)
-	write_io_arg(base, 1, payload_offset)
-	write_io_arg(base, 2, tile_count)
-	write_io_arg(base, 3, desc.cols)
-	write_io_arg(base, 4, desc.rows)
-	write_io_arg(base, 5, desc.tile_w)
-	write_io_arg(base, 6, desc.tile_h)
-	write_io_arg(base, 7, desc.origin_x)
-	write_io_arg(base, 8, desc.origin_y)
-	write_io_arg(base, 9, desc.scroll_x)
-	write_io_arg(base, 10, desc.scroll_y)
-	write_io_arg(base, 11, desc.z)
-	write_io_arg(base, 12, resolve_layer(desc.layer))
-	commit_io_command()
+	local base, next_count = alloc_io_command(sys_io_cmd_vdp_tile_run)
+	poke_words(base, sys_io_cmd_vdp_tile_run, payload_offset, tile_count, desc.cols, desc.rows, desc.tile_w, desc.tile_h, desc.origin_x, desc.origin_y, desc.scroll_x, desc.scroll_y, desc.z, resolve_layer(desc.layer))
+	commit_io_command(next_count)
 end
 
 local function draw_multiline_text(text, x, y, z, color_value, font)
@@ -341,8 +287,11 @@ function fill_rect(x0, y0, x1, y1, z, colorindex)
 end
 
 function fill_rect_color(x0, y0, x1, y1, z, color_value, options)
-	local layer = options and options.layer or 'world'
-	queue_fill_rect(x0, y0, x1, y1, z, resolve_layer(layer), resolve_color(color_value))
+	local layer = sys_vdp_layer_world
+	if options ~= nil and options.layer ~= nil then
+		layer = resolve_layer(options.layer)
+	end
+	queue_fill_rect(x0, y0, x1, y1, z, layer, resolve_color(color_value))
 end
 
 function blit(img_id, x, y, z, options)
@@ -350,9 +299,9 @@ function blit(img_id, x, y, z, options)
 	local scale_y = 1
 	local flip_h = false
 	local flip_v = false
-	local color_value = { r = 1, g = 1, b = 1, a = 1 }
+	local color_value = white_color
 	local parallax_weight = 0
-	local layer = 'world'
+	local layer = sys_vdp_layer_world
 	if options ~= nil then
 		if options.scale ~= nil then
 			if type(options.scale) == 'number' then
@@ -372,10 +321,10 @@ function blit(img_id, x, y, z, options)
 			parallax_weight = options.parallax_weight
 		end
 		if options.layer ~= nil then
-			layer = options.layer
+			layer = resolve_layer(options.layer)
 		end
 	end
-	queue_blit(resolve_image_handle(img_id), x, y, z, resolve_layer(layer), scale_x, scale_y, flip_h, flip_v, color_value, parallax_weight)
+	queue_blit(resolve_image_handle(img_id), x, y, z, layer, scale_x, scale_y, flip_h, flip_v, color_value, parallax_weight)
 end
 
 function blit_glyphs(glyphs, x, y, z, options)
@@ -389,7 +338,7 @@ function blit_glyphs(glyphs, x, y, z, options)
 	if options.background_color ~= nil then
 		background_color = resolve_color(options.background_color)
 	end
-	local layer = resolve_layer(options.layer or 'world')
+	local layer = resolve_layer(options.layer)
 	local lines
 	if type(glyphs) == 'string' then
 		if options.wrap_chars ~= nil and options.wrap_chars > 0 then
@@ -418,7 +367,7 @@ function blit_poly(points, z, color_value, thickness, layer)
 	end
 	local resolved_color = resolve_color(color_value)
 	local resolved_thickness = thickness or 1
-	local resolved_layer = resolve_layer(layer or 'world')
+	local resolved_layer = resolve_layer(layer)
 	local index = 1
 	while index <= #points do
 		local next_index = index + 2
@@ -450,7 +399,7 @@ function blit_text(text, x, y, z, colorindex, options)
 	local center_block_width = nil
 	local glyph_start = 0
 	local glyph_end = max_glyph_index
-	local layer = 'world'
+	local layer = sys_vdp_layer_world
 	local should_advance = true
 	if options ~= nil then
 		if options.color ~= nil then
@@ -463,7 +412,9 @@ function blit_text(text, x, y, z, colorindex, options)
 		center_block_width = options.center_block_width
 		glyph_start = options.glyph_start or glyph_start
 		glyph_end = options.glyph_end or glyph_end
-		layer = options.layer or layer
+		if options.layer ~= nil then
+			layer = resolve_layer(options.layer)
+		end
 		if options.auto_advance ~= nil then
 				should_advance = options.auto_advance
 			end
@@ -481,10 +432,9 @@ function blit_text(text, x, y, z, colorindex, options)
 	end
 	local line_height = render_font.line_height
 	local cursor_y = base_y
-	local resolved_layer = resolve_layer(layer)
 	local render_z = z or 0
 	for index = 1, #lines do
-		queue_glyph_line(lines[index], draw_x, cursor_y, render_z, render_font, color_value, background_color, glyph_start, glyph_end, resolved_layer)
+		queue_glyph_line(lines[index], draw_x, cursor_y, render_z, render_font, color_value, background_color, glyph_start, glyph_end, layer)
 		cursor_y = cursor_y + line_height
 	end
 	if should_advance then

@@ -1451,6 +1451,9 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_rom_cart_base", valueNumber(static_cast<double>(CART_ROM_BASE)));
 	setGlobal("sys_rom_overlay_base", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
 	setGlobal("sys_rom_overlay_size", valueNumber(static_cast<double>(m_memory.overlayRomSize())));
+	const NativeFnCost CHEAP_NATIVE_READ_COST { 1, 1, 0 };
+	const NativeFnCost CHEAP_NATIVE_WRITE_COST { 1, 1, 0 };
+	const NativeFnCost CHEAP_NATIVE_LOOKUP_COST { 1, 1, 0 };
 	registerNativeFunction("sys_palette_color", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
 		const int index = static_cast<int>(std::floor(asNumber(args.at(0))));
 		const Color color = api().palette_color(index);
@@ -1460,7 +1463,7 @@ void Runtime::setupBuiltins() {
 		table->set(key("b"), valueNumber(static_cast<double>(color.b)));
 		table->set(key("a"), valueNumber(static_cast<double>(color.a)));
 		out.push_back(valueTable(table));
-	});
+	}, CHEAP_NATIVE_LOOKUP_COST);
 	refreshMemoryMapGlobals();
 	setGlobal("irq_dma_done", valueNumber(static_cast<double>(IRQ_DMA_DONE)));
 	setGlobal("irq_dma_error", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));
@@ -1484,12 +1487,12 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
 		out.push_back(m_memory.readValue(address));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 
 	registerNativeFunction("peek8", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
 		out.push_back(valueNumber(static_cast<double>(m_memory.readU8(address))));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 
 	registerNativeFunction("peek16le", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
@@ -1497,7 +1500,7 @@ void Runtime::setupBuiltins() {
 		const uint32_t b1 = static_cast<uint32_t>(m_memory.readU8(address + 1));
 		const uint32_t value = b0 | (b1 << 8);
 		out.push_back(valueNumber(static_cast<double>(value)));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 
 	registerNativeFunction("peek32le", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
@@ -1507,7 +1510,7 @@ void Runtime::setupBuiltins() {
 		const uint32_t b3 = static_cast<uint32_t>(m_memory.readU8(address + 3));
 		const uint32_t value = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
 		out.push_back(valueNumber(static_cast<double>(value)));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 
 	registerNativeFunction("reader_read_f32", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
@@ -1519,7 +1522,7 @@ void Runtime::setupBuiltins() {
 		float value = 0.0f;
 		std::memcpy(&value, &bits, sizeof(value));
 		out.push_back(valueNumber(static_cast<double>(value)));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 
 	registerNativeFunction("reader_read_f64", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
@@ -1537,14 +1540,14 @@ void Runtime::setupBuiltins() {
 		double value = 0.0;
 		std::memcpy(&value, &bits, sizeof(value));
 		out.push_back(valueNumber(value));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 
 	registerNativeFunction("u32_to_f32", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint32_t bits = static_cast<uint32_t>(asNumber(args.at(0)));
 		float value = 0.0f;
 		std::memcpy(&value, &bits, sizeof(value));
 		out.push_back(valueNumber(static_cast<double>(value)));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 
 	registerNativeFunction("u64_to_f64", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint64_t hi = static_cast<uint64_t>(static_cast<uint32_t>(asNumber(args.at(0))));
@@ -1553,47 +1556,76 @@ void Runtime::setupBuiltins() {
 		double value = 0.0;
 		std::memcpy(&value, &bits, sizeof(value));
 		out.push_back(valueNumber(value));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 
 	registerNativeFunction("wait_vblank", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		(void)out;
 		requestWaitForVblank();
-	});
+	}, CHEAP_NATIVE_WRITE_COST);
 	registerNativeFunction("clock_now", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(EngineCore::instance().clock()->now()));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 	registerNativeFunction("sys_cpu_cycles_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(cpuUsedCyclesLastTick())));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 	registerNativeFunction("sys_cpu_cycles_granted", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(lastTickBudgetGranted())));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 	registerNativeFunction("sys_cpu_active_cycles_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(activeCpuUsedCyclesLastTick())));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 	registerNativeFunction("sys_cpu_active_cycles_granted", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(activeCpuCyclesGrantedLastTick())));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 	registerNativeFunction("sys_ram_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(trackedRamUsedBytes())));
-	});
+	}, CHEAP_NATIVE_READ_COST);
 	registerNativeFunction("sys_vram_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(trackedVramUsedBytes())));
-	});
+		}, CHEAP_NATIVE_READ_COST);
+	registerNativeFunction("resolve_rom_asset_range", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		const std::string& assetId = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const ImgAsset* asset = EngineCore::instance().resolveImgAsset(assetId);
+		if (asset == nullptr) {
+			throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' does not exist.");
+		}
+		if (!asset->rom.payloadId) {
+			throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' is missing a payload id.");
+		}
+		if (!asset->rom.start || !asset->rom.end) {
+			throw BMSX_RUNTIME_ERROR("Asset '" + assetId + "' is missing ROM range.");
+		}
+		uint32_t romBase = CART_ROM_BASE;
+		if (*asset->rom.payloadId == "system") {
+			romBase = SYSTEM_ROM_BASE;
+		} else if (*asset->rom.payloadId == "overlay") {
+			romBase = OVERLAY_ROM_BASE;
+		}
+		out.push_back(valueNumber(static_cast<double>(romBase)));
+		out.push_back(valueNumber(static_cast<double>(*asset->rom.start)));
+		out.push_back(valueNumber(static_cast<double>(*asset->rom.end)));
+	}, CHEAP_NATIVE_LOOKUP_COST);
 
 	registerNativeFunction("poke", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
 		m_memory.writeValue(address, args.at(1));
 		(void)out;
-	});
+	}, CHEAP_NATIVE_WRITE_COST);
+	registerNativeFunction("poke_words", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
+		for (size_t index = 1; index < args.size(); ++index) {
+			m_memory.writeValue(address + static_cast<uint32_t>((index - 1) * IO_ARG_STRIDE), args.at(index));
+		}
+		(void)out;
+	}, CHEAP_NATIVE_WRITE_COST);
 	registerNativeFunction("mem_write", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
 		if (!valueIsString(args.at(1))) {
@@ -1602,7 +1634,7 @@ void Runtime::setupBuiltins() {
 		const std::string& bytes = m_cpu.stringPool().toString(asStringId(args.at(1)));
 		m_memory.writeBytes(address, reinterpret_cast<const u8*>(bytes.data()), bytes.size());
 		(void)out;
-	});
+	}, CHEAP_NATIVE_WRITE_COST);
 
 	registerNativeFunction("type", [str](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& v = args.empty() ? valueNil() : args.at(0);
@@ -3193,15 +3225,6 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		oss << std::fixed << std::setprecision(0) << value;
 		return oss.str();
 	};
-	auto formatAssetTokenKey = [](AssetToken token) -> std::string {
-		const uint32_t hi = static_cast<uint32_t>((token >> 32) & 0xffffffffu);
-		const uint32_t lo = static_cast<uint32_t>(token & 0xffffffffu);
-		std::ostringstream oss;
-		oss << std::hex << std::nouppercase << std::setfill('0')
-			<< std::setw(8) << hi
-			<< std::setw(8) << lo;
-		return oss.str();
-	};
 	auto makeAssetMapNativeObject = [this, formatAssetKeyNumber](Table* mapTable) -> Value {
 		return m_cpu.createNativeObject(
 			mapTable,
@@ -3297,55 +3320,55 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			table->set(key("payload_id"), str(*info.payloadId));
 		}
 	};
-	auto appendBinEntry = [this, str, formatAssetTokenKey](Table* table, AssetToken token, const BinValue& value) {
-		table->set(str(formatAssetTokenKey(token)), binValueToRuntimeValue(m_cpu, value));
+	auto appendBinEntry = [this, str](Table* table, const std::string& assetId, const BinValue& value) {
+		table->set(str(assetId), binValueToRuntimeValue(m_cpu, value));
 	};
 	const int imgCapacity = static_cast<int>(assets.img.size());
 	auto* imgTable = m_cpu.createTable(0, imgCapacity);
-	auto appendImgEntry = [this, imgTable, key, str, appendRomAssetFields, formatAssetTokenKey](AssetToken token, const ImgAsset& imgAsset) {
+	auto appendImgEntry = [this, imgTable, key, str, appendRomAssetFields](const ImgAsset& imgAsset) {
 		auto* imgEntry = m_cpu.createTable(0, 8);
 		appendRomAssetFields(imgEntry, imgAsset.rom, imgAsset.id);
 		imgEntry->set(key("handle"), valueNumber(static_cast<double>(m_memory.resolveAssetHandle(imgAsset.id))));
 		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset.meta, key)));
-		imgTable->set(str(formatAssetTokenKey(token)), valueTable(imgEntry));
+		imgTable->set(str(imgAsset.id), valueTable(imgEntry));
 	};
 	for (const auto& entry : assets.img) {
-		appendImgEntry(entry.first, entry.second);
+		appendImgEntry(entry.second);
 	}
 	assetsTable->set(key("img"), makeAssetMapNativeObject(imgTable));
 
 	const int dataCapacity = static_cast<int>(assets.data.size());
 	auto* dataTable = m_cpu.createTable(0, dataCapacity);
 	for (const auto& entry : assets.data) {
-		appendBinEntry(dataTable, entry.first, entry.second.value);
+		appendBinEntry(dataTable, entry.second.id, entry.second.value);
 	}
 	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
 	const int audioCapacity = static_cast<int>(assets.audio.size());
 	auto* audioTable = m_cpu.createTable(0, audioCapacity);
-	auto appendAudioEntry = [this, audioTable, key, str, appendRomAssetFields, formatAssetTokenKey](AssetToken token, const AudioAsset& audioAsset) {
+	auto appendAudioEntry = [this, audioTable, key, str, appendRomAssetFields](const AudioAsset& audioAsset) {
 		auto* audioEntry = m_cpu.createTable(0, 6);
 		appendRomAssetFields(audioEntry, audioAsset.rom, audioAsset.id);
 		audioEntry->set(key("handle"), valueNumber(static_cast<double>(m_memory.resolveAssetHandle(audioAsset.id))));
 		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(m_cpu, audioAsset.meta, key)));
-		audioTable->set(str(formatAssetTokenKey(token)), valueTable(audioEntry));
+		audioTable->set(str(audioAsset.id), valueTable(audioEntry));
 	};
 	for (const auto& entry : assets.audio) {
-		appendAudioEntry(entry.first, entry.second);
+		appendAudioEntry(entry.second);
 	}
 	assetsTable->set(key("audio"), makeAssetMapNativeObject(audioTable));
 	const int audioEventCapacity = static_cast<int>(assets.audioevents.size());
 	auto* audioEventsTable = m_cpu.createTable(0, audioEventCapacity);
 	for (const auto& entry : assets.audioevents) {
-		appendBinEntry(audioEventsTable, entry.first, entry.second.value);
+		appendBinEntry(audioEventsTable, entry.second.id, entry.second.value);
 	}
 	assetsTable->set(key("audioevents"), makeAssetMapNativeObject(audioEventsTable));
 	const int modelCapacity = static_cast<int>(assets.model.size());
 	auto* modelTable = m_cpu.createTable(0, modelCapacity);
-	auto appendModelEntry = [this, modelTable, key, str, formatAssetTokenKey](AssetToken token, const ModelAsset& modelAsset) {
-		modelTable->set(str(formatAssetTokenKey(token)), valueTable(buildModelAssetTable(m_cpu, modelAsset, key)));
+	auto appendModelEntry = [this, modelTable, key, str](const ModelAsset& modelAsset) {
+		modelTable->set(str(modelAsset.id), valueTable(buildModelAssetTable(m_cpu, modelAsset, key)));
 	};
 	for (const auto& entry : assets.model) {
-		appendModelEntry(entry.first, entry.second);
+		appendModelEntry(entry.second);
 	}
 	assetsTable->set(key("model"), makeAssetMapNativeObject(modelTable));
 	assetsTable->set(key("project_root_path"), str(assets.projectRootPath));

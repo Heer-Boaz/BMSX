@@ -1361,7 +1361,6 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	auto* texmanager = EngineCore::instance().texmanager();
 	TextureHandle handle = texmanager->getTextureByUri(textureKey);
 	const bool isEngineAtlas = textureKey == ENGINE_ATLAS_TEXTURE_KEY;
-	const bool preserveEngineAtlasTexture = isEngineAtlas && handle;
 	if (!handle) {
 		auto* backend = texmanager->backend();
 		if (backend->readyForTextureUpload()) {
@@ -1380,9 +1379,7 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	}
 	auto* view = EngineCore::instance().view();
 	if (handle) {
-		if (!preserveEngineAtlasTexture) {
-			handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(entry.regionW), static_cast<i32>(entry.regionH));
-		}
+		handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(entry.regionW), static_cast<i32>(entry.regionH));
 		view->textures[textureKey] = handle;
 	} else {
 		view->textures[textureKey] = nullptr;

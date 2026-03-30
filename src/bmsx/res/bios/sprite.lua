@@ -38,7 +38,6 @@
 
 local worldobject = require('worldobject')
 local components = require('components')
-local romdir = require('romdir')
 local scratchrecordbatch = require('scratchrecordbatch')
 
 local spriteobject = {}
@@ -50,7 +49,11 @@ spriteobject.base_sprite_id = 'base_sprite'
 spriteobject.primary_collider_id = 'primary'
 
 local function apply_image_metadata(self, id)
-	local meta = assets.img[romdir.token(id)].imgmeta
+	local asset = assets.img[id]
+	if asset == nil then
+		error('[spriteobject] Image asset "' .. tostring(id) .. '" not found.')
+	end
+	local meta = asset.imgmeta
 	self.sx = meta.width
 	self.sy = meta.height
 end
@@ -75,7 +78,7 @@ end
 -- spriteobject:gfx(id, meta?)
 --   Sets this object's sprite to the image with the given asset id.
 --   id should be the base name WITHOUT the @cx/@cc suffix (rombuilder strips it).
---   meta is optional; when omitted, imgmeta is fetched from romdir automatically.
+--   meta is optional; when omitted, imgmeta is fetched through host asset lookup.
 --   After loading, the linked collider2dcomponent (if one exists) will read the
 --   current imgmeta lazily when collision code asks for shape data.
 --   Must be called AFTER the object is spawned and has a collider2dcomponent.

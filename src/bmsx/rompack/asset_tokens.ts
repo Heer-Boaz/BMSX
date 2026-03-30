@@ -1,38 +1,13 @@
 const HASH_SELF_TEST_VECTORS = [
 	{ id: '', lo: 0x84222325, hi: 0xcbf29ce4 },
 	{ id: 'a', lo: 0x8601ec8c, hi: 0xaf63dc4c },
-	{ id: './Foo\\Bar', lo: 0xef2def0d, hi: 0x571d17d6 },
+	{ id: './Foo\\Bar', lo: 0x4a2a0873, hi: 0x4dc5355f },
 ];
 
 let hashSelfTested = false;
 const assetIdEncoder = new TextEncoder();
 
 export type AssetToken = { lo: number; hi: number };
-
-export function canonicalizeAssetId(id: string): string {
-	const normalized = id.replace(/\\/g, '/');
-	const start = normalized.startsWith('./') ? 2 : 0;
-	let prevSlash = false;
-	let out = '';
-	for (let i = start; i < normalized.length; i += 1) {
-		let ch = normalized[i];
-		if (ch === '/') {
-			if (prevSlash) {
-				continue;
-			}
-			prevSlash = true;
-			out += '/';
-			continue;
-		}
-		prevSlash = false;
-		const code = ch.charCodeAt(0);
-		if (code >= 65 && code <= 90) {
-			ch = String.fromCharCode(code + 32);
-		}
-		out += ch;
-	}
-	return out;
-}
 
 function ensureHashSelfTest(): void {
 	if (hashSelfTested) {
@@ -54,8 +29,7 @@ export function hashAssetId(id: string): AssetToken {
 }
 
 function hashAssetIdInternal(id: string): AssetToken {
-	const canonical = canonicalizeAssetId(id);
-	const bytes = assetIdEncoder.encode(canonical);
+	const bytes = assetIdEncoder.encode(id);
 	let lo = 0x84222325;
 	let hi = 0xcbf29ce4;
 	for (let i = 0; i < bytes.length; i += 1) {

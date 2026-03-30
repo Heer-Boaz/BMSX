@@ -91,7 +91,7 @@
   - asset file: `src/carts/nemesis_s/res/data/nemesis_s_stage.yaml`
   - source of map rows: `nemesis-s-bdx` `StageFactory.Stage0Map` (22 rows, 554 columns)
 - Runtime loader:
-  - `stage.lua` reads `assets.data[romdir.token('nemesis_s_stage')]`
+  - `stage.lua` reads `assets.data['nemesis_s_stage']`
   - map symbols are converted to tile/collision tapes during cart boot/reset
 - Scroll gate and tape-head progression stay tied to disassembly-derived behavior (`E202` rotate gate + `E203` increment), while stage layout source is externalized as data.
 

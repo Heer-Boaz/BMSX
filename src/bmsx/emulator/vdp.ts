@@ -1618,17 +1618,14 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
 		let handle = $.texmanager.getTextureByUri(textureKey);
 		const isEngineAtlas = textureKey === ENGINE_ATLAS_TEXTURE_KEY;
-		const preserveEngineAtlasTexture = isEngineAtlas && !!handle;
 		let textureWidth = entry.regionW;
 		let textureHeight = entry.regionH;
 		if (!handle) {
 			const stream = this.makeVramGarbageStream(entry.baseAddr >>> 0);
 			fillVramGarbageScratch(this.vramSeedPixel, stream);
 			handle = $.texmanager.createTextureFromPixelsSync(textureKey, this.vramSeedPixel, 1, 1);
-			handle = $.texmanager.resizeTextureForKey(textureKey, entry.regionW, entry.regionH);
-		} else if (!preserveEngineAtlasTexture) {
-			handle = $.texmanager.resizeTextureForKey(textureKey, entry.regionW, entry.regionH);
 		}
+		handle = $.texmanager.resizeTextureForKey(textureKey, entry.regionW, entry.regionH);
 		$.view.textures[textureKey] = handle;
 		const slot: AssetVramSlot = {
 			kind: 'asset',

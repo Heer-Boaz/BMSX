@@ -8,8 +8,8 @@
 namespace bmsx {
 namespace {
 constexpr uint32_t ASSET_TABLE_MAGIC = 0x32534D41u; // 'AMS2'
-// 1 = FNV-1a 64 over canonical UTF-8 (lowercase, slash-normalized, collapse "//", trim leading "./").
-constexpr uint32_t ASSET_TABLE_HASH_ALG_ID = 1;
+// 2 = FNV-1a 64 over exact UTF-8 bytes.
+constexpr uint32_t ASSET_TABLE_HASH_ALG_ID = 2;
 constexpr uint32_t ASSET_PAGE_SHIFT = 12;
 constexpr uint32_t ASSET_PAGE_SIZE = 1u << ASSET_PAGE_SHIFT;
 constexpr uint32_t ASSET_TYPE_IMAGE = 1;
@@ -54,40 +54,9 @@ bool isVramRangeLocal(uint32_t addr, size_t length) {
 		|| rangeOverlaps(addr, length, VRAM_FRAMEBUFFER_BASE, VRAM_FRAMEBUFFER_SIZE);
 }
 
-std::string canonicalizeAssetId(const std::string& id) {
-	std::string out;
-	out.reserve(id.size());
-	size_t index = 0;
-	if (id.size() >= 2 && id[0] == '.' && (id[1] == '/' || id[1] == '\\')) {
-		index = 2;
-	}
-	bool prevSlash = false;
-	for (; index < id.size(); ++index) {
-		unsigned char c = static_cast<unsigned char>(id[index]);
-		if (c == '\\') {
-			c = '/';
-		}
-		if (c == '/') {
-			if (prevSlash) {
-				continue;
-			}
-			prevSlash = true;
-			out.push_back('/');
-			continue;
-		}
-		prevSlash = false;
-		if (c >= 'A' && c <= 'Z') {
-			c = static_cast<unsigned char>(c - 'A' + 'a');
-		}
-		out.push_back(static_cast<char>(c));
-	}
-	return out;
-}
-
 uint64_t hashAssetId(const std::string& id) {
-	const std::string canonical = canonicalizeAssetId(id);
 	uint64_t hash = ASSET_TOKEN_OFFSET_BASIS;
-	for (unsigned char c : canonical) {
+	for (unsigned char c : id) {
 		hash ^= static_cast<uint64_t>(c);
 		hash *= ASSET_TOKEN_PRIME;
 	}

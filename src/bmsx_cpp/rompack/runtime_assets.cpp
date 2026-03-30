@@ -165,40 +165,9 @@ static std::string assetTypeFromId(u32 id) {
 static constexpr u64 ASSET_TOKEN_OFFSET_BASIS = 0xcbf29ce484222325ull;
 static constexpr u64 ASSET_TOKEN_PRIME = 0x100000001b3ull;
 
-static std::string canonicalizeAssetId(const std::string& id) {
-	std::string out;
-	out.reserve(id.size());
-	size_t index = 0;
-	if (id.size() >= 2 && id[0] == '.' && (id[1] == '/' || id[1] == '\\')) {
-		index = 2;
-	}
-	bool prevSlash = false;
-	for (; index < id.size(); ++index) {
-		unsigned char c = static_cast<unsigned char>(id[index]);
-		if (c == '\\') {
-			c = '/';
-		}
-		if (c == '/') {
-			if (prevSlash) {
-				continue;
-			}
-			prevSlash = true;
-			out.push_back('/');
-			continue;
-		}
-		prevSlash = false;
-		if (c >= 'A' && c <= 'Z') {
-			c = static_cast<unsigned char>(c - 'A' + 'a');
-		}
-		out.push_back(static_cast<char>(c));
-	}
-	return out;
-}
-
 static AssetToken hashAssetToken(const std::string& id) {
-	const std::string canonical = canonicalizeAssetId(id);
 	AssetToken hash = ASSET_TOKEN_OFFSET_BASIS;
-	for (unsigned char c : canonical) {
+	for (unsigned char c : id) {
 		hash ^= static_cast<AssetToken>(c);
 		hash *= ASSET_TOKEN_PRIME;
 	}
