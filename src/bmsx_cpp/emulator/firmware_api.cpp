@@ -1185,14 +1185,8 @@ void Api::writeIoColor(uint32_t base, int offset, const Color& value) {
 	writeIoArg(base, offset + 3, value.a);
 }
 
-uint32_t Api::allocIoPayload(uint32_t words) {
-	const uint32_t writePtr = static_cast<uint32_t>(asNumber(m_runtime.memory().readValue(IO_PAYLOAD_WRITE_PTR_ADDR)));
-	const uint32_t next = writePtr + words;
-	if (next > IO_PAYLOAD_CAPACITY) {
-		throw BMSX_RUNTIME_ERROR("[FirmwareApi] IO payload buffer overflow (" + std::to_string(next) + " > " + std::to_string(IO_PAYLOAD_CAPACITY) + ").");
-	}
-	m_runtime.memory().writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(static_cast<double>(next)));
-	return writePtr;
+void Api::allocIoPayload(uint32_t words) {
+	m_runtime.memory().writeValue(IO_PAYLOAD_ALLOC_ADDR, valueNumber(static_cast<double>(words)));
 }
 
 void Api::submitClear(const Color& color) {
@@ -1242,7 +1236,7 @@ void Api::submitGlyphLine(const std::string& text, f32 x, f32 y, f32 z, BFont* f
 		return;
 	}
 	const uint32_t payloadWords = static_cast<uint32_t>((text.size() + 3u) / 4u);
-	const uint32_t payloadOffset = allocIoPayload(payloadWords);
+	allocIoPayload(payloadWords);
 	for (uint32_t wordIndex = 0; wordIndex < payloadWords; wordIndex += 1u) {
 		const size_t byteIndex = static_cast<size_t>(wordIndex) * 4u;
 		const uint32_t word =
@@ -1250,49 +1244,44 @@ void Api::submitGlyphLine(const std::string& text, f32 x, f32 y, f32 z, BFont* f
 			| (static_cast<uint32_t>(byteIndex + 1u < text.size() ? static_cast<unsigned char>(text[byteIndex + 1u]) : 0u) << 8u)
 			| (static_cast<uint32_t>(byteIndex + 2u < text.size() ? static_cast<unsigned char>(text[byteIndex + 2u]) : 0u) << 16u)
 			| (static_cast<uint32_t>(byteIndex + 3u < text.size() ? static_cast<unsigned char>(text[byteIndex + 3u]) : 0u) << 24u);
-		m_runtime.memory().writeValue(
-			IO_PAYLOAD_BUFFER_BASE + (payloadOffset + wordIndex) * IO_ARG_STRIDE,
-			valueNumber(static_cast<double>(word))
-		);
+		m_runtime.memory().writeValue(IO_PAYLOAD_DATA_ADDR, valueNumber(static_cast<double>(word)));
 	}
-	writeIoArg(IO_VDP_CMD_ARG0, 0, static_cast<double>(payloadOffset));
-	writeIoArg(IO_VDP_CMD_ARG0, 1, static_cast<double>(text.size()));
-	writeIoArg(IO_VDP_CMD_ARG0, 2, x);
-	writeIoArg(IO_VDP_CMD_ARG0, 3, y);
-	writeIoArg(IO_VDP_CMD_ARG0, 4, z);
-	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(fontId(font)));
-	writeIoArg(IO_VDP_CMD_ARG0, 6, static_cast<double>(start));
-	writeIoArg(IO_VDP_CMD_ARG0, 7, static_cast<double>(end));
-	writeIoArg(IO_VDP_CMD_ARG0, 8, static_cast<double>(static_cast<int>(layer)));
-	writeIoColor(IO_VDP_CMD_ARG0, 9, color);
+	writeIoArg(IO_VDP_CMD_ARG0, 0, static_cast<double>(text.size()));
+	writeIoArg(IO_VDP_CMD_ARG0, 1, x);
+	writeIoArg(IO_VDP_CMD_ARG0, 2, y);
+	writeIoArg(IO_VDP_CMD_ARG0, 3, z);
+	writeIoArg(IO_VDP_CMD_ARG0, 4, static_cast<double>(fontId(font)));
+	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(start));
+	writeIoArg(IO_VDP_CMD_ARG0, 6, static_cast<double>(end));
+	writeIoArg(IO_VDP_CMD_ARG0, 7, static_cast<double>(static_cast<int>(layer)));
+	writeIoColor(IO_VDP_CMD_ARG0, 8, color);
 	if (backgroundColor.has_value()) {
-		writeIoArg(IO_VDP_CMD_ARG0, 13, 1.0);
-		writeIoColor(IO_VDP_CMD_ARG0, 14, *backgroundColor);
+		writeIoArg(IO_VDP_CMD_ARG0, 12, 1.0);
+		writeIoColor(IO_VDP_CMD_ARG0, 13, *backgroundColor);
 		m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_GLYPH_RUN)));
 		return;
 	}
-	writeIoArg(IO_VDP_CMD_ARG0, 13, 0.0);
+	writeIoArg(IO_VDP_CMD_ARG0, 12, 0.0);
 	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_GLYPH_RUN)));
 }
 
 void Api::submitTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
 	const uint32_t tileCount = static_cast<uint32_t>(handles.size());
-	const uint32_t payloadOffset = allocIoPayload(tileCount);
+	allocIoPayload(tileCount);
 	for (uint32_t index = 0; index < tileCount; index += 1u) {
-		m_runtime.memory().writeValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + index) * IO_ARG_STRIDE, valueNumber(static_cast<double>(handles[index])));
+		m_runtime.memory().writeValue(IO_PAYLOAD_DATA_ADDR, valueNumber(static_cast<double>(handles[index])));
 	}
-	writeIoArg(IO_VDP_CMD_ARG0, 0, static_cast<double>(payloadOffset));
-	writeIoArg(IO_VDP_CMD_ARG0, 1, static_cast<double>(tileCount));
-	writeIoArg(IO_VDP_CMD_ARG0, 2, static_cast<double>(cols));
-	writeIoArg(IO_VDP_CMD_ARG0, 3, static_cast<double>(rows));
-	writeIoArg(IO_VDP_CMD_ARG0, 4, static_cast<double>(tileW));
-	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(tileH));
-	writeIoArg(IO_VDP_CMD_ARG0, 6, static_cast<double>(originX));
-	writeIoArg(IO_VDP_CMD_ARG0, 7, static_cast<double>(originY));
-	writeIoArg(IO_VDP_CMD_ARG0, 8, static_cast<double>(scrollX));
-	writeIoArg(IO_VDP_CMD_ARG0, 9, static_cast<double>(scrollY));
-	writeIoArg(IO_VDP_CMD_ARG0, 10, z);
-	writeIoArg(IO_VDP_CMD_ARG0, 11, static_cast<double>(static_cast<int>(layer)));
+	writeIoArg(IO_VDP_CMD_ARG0, 0, static_cast<double>(tileCount));
+	writeIoArg(IO_VDP_CMD_ARG0, 1, static_cast<double>(cols));
+	writeIoArg(IO_VDP_CMD_ARG0, 2, static_cast<double>(rows));
+	writeIoArg(IO_VDP_CMD_ARG0, 3, static_cast<double>(tileW));
+	writeIoArg(IO_VDP_CMD_ARG0, 4, static_cast<double>(tileH));
+	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(originX));
+	writeIoArg(IO_VDP_CMD_ARG0, 6, static_cast<double>(originY));
+	writeIoArg(IO_VDP_CMD_ARG0, 7, static_cast<double>(scrollX));
+	writeIoArg(IO_VDP_CMD_ARG0, 8, static_cast<double>(scrollY));
+	writeIoArg(IO_VDP_CMD_ARG0, 9, z);
+	writeIoArg(IO_VDP_CMD_ARG0, 10, static_cast<double>(static_cast<int>(layer)));
 	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_TILE_RUN)));
 }
 
@@ -1490,19 +1479,18 @@ void Api::blit_text(const std::string& text, std::optional<int> x, std::optional
 		}
 	}
 
-	const std::string expanded = expand_tabs(text);
 	std::vector<std::string> lines;
 	if (wrapChars.has_value() && wrapChars.value() > 0) {
-		lines = RenderQueues::wrapGlyphs(expanded, wrapChars.value());
+		lines = RenderQueues::wrapGlyphs(text, wrapChars.value());
 	} else {
 		size_t start = 0;
 		while (true) {
-			size_t end = expanded.find('\n', start);
+			size_t end = text.find('\n', start);
 			if (end == std::string::npos) {
-				lines.push_back(expanded.substr(start));
+				lines.push_back(text.substr(start));
 				break;
 			}
-			lines.push_back(expanded.substr(start, end - start));
+			lines.push_back(text.substr(start, end - start));
 			start = end + 1;
 		}
 	}
@@ -1645,35 +1633,19 @@ void Api::reboot() {
 	m_runtime.requestProgramReload();
 }
 
-std::string Api::expand_tabs(const std::string& text) const {
-	if (text.find('\t') == std::string::npos) {
-		return text;
-	}
-	std::string result;
-	for (char ch : text) {
-		if (ch == '\t') {
-			result.append(2, ' ');
-			continue;
-		}
-		result.push_back(ch);
-	}
-	return result;
-}
-
 void Api::draw_multiline_text(const std::string& text, int x, int y, int z, const Color& color, BFont& font) {
-	std::string expanded = text;
 	size_t start = 0;
 	int cursorY = y;
-	while (start <= expanded.size()) {
-		size_t end = expanded.find('\n', start);
+	while (start <= text.size()) {
+		size_t end = text.find('\n', start);
 		if (end == std::string::npos) {
-			end = expanded.size();
+			end = text.size();
 		}
-		std::string line = expand_tabs(expanded.substr(start, end - start));
+		std::string line = text.substr(start, end - start);
 		if (!line.empty()) {
 			submitGlyphLine(line, static_cast<f32>(x), static_cast<f32>(cursorY), static_cast<f32>(z), &font, color, std::nullopt, 0, std::numeric_limits<i32>::max(), Layer2D::World);
 		}
-		if (end == expanded.size()) {
+		if (end == text.size()) {
 			break;
 		}
 		cursorY += font.lineHeight();
@@ -1716,6 +1688,15 @@ Value Api::build_font_descriptor(BFont* font) {
 		glyphEntry->set(key("height"), valueNumber(static_cast<double>(glyph.height)));
 		glyphEntry->set(key("advance"), valueNumber(static_cast<double>(glyph.advance)));
 		glyphs->set(str(glyphKey), valueTable(glyphEntry));
+	}
+	{
+		const FontGlyph& tabGlyph = font->getGlyph(static_cast<u32>('\t'));
+		Table* glyphEntry = m_runtime.cpu().createTable(0, 4);
+		glyphEntry->set(key("imgid"), str(tabGlyph.imgid));
+		glyphEntry->set(key("width"), valueNumber(static_cast<double>(tabGlyph.width)));
+		glyphEntry->set(key("height"), valueNumber(static_cast<double>(tabGlyph.height)));
+		glyphEntry->set(key("advance"), valueNumber(static_cast<double>(tabGlyph.advance)));
+		glyphs->set(str("\t"), valueTable(glyphEntry));
 	}
 	Table* descriptor = m_runtime.cpu().createTable(0, 4);
 	descriptor->set(key("id"), valueNumber(static_cast<double>(fontId(font))));

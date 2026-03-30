@@ -263,6 +263,16 @@ export const enum OpCode {
 	RET,
 	LOAD_MEM,
 	STORE_MEM,
+	STORE_MEM_WORDS,
+}
+
+export const enum MemoryAccessKind {
+	Word,
+	U8,
+	U16LE,
+	U32LE,
+	F32LE,
+	F64LE,
 }
 
 export const enum RunResult {
@@ -337,6 +347,7 @@ const BASE_CYCLES: Uint8Array = (() => {
 
 	set(OpCode.LOAD_MEM, 5);
 	set(OpCode.STORE_MEM, 6);
+	set(OpCode.STORE_MEM_WORDS, 3);
 
 	return table;
 })();
@@ -1941,13 +1952,18 @@ export class CPU {
 				return;
 			}
 			case OpCode.LOAD_MEM: {
-				const addr = this.readRegisterNumber(frame, b);
-				this.setRegister(frame, a, this.memory.readValue(addr));
+				const addr = this.readRKNumber(frame, rkRawB, rkBitsB);
+				this.setRegister(frame, a, this.readMappedMemoryValue(addr, c));
 				return;
 			}
 			case OpCode.STORE_MEM: {
-				const addr = this.readRegisterNumber(frame, b);
-				this.memory.writeValue(addr, frame.registers.get(a));
+				const addr = this.readRKNumber(frame, rkRawB, rkBitsB);
+				this.writeMappedMemoryValue(addr, c, frame.registers.get(a));
+				return;
+			}
+			case OpCode.STORE_MEM_WORDS: {
+				const addr = this.readRKNumber(frame, rkRawB, rkBitsB);
+				this.writeMappedWordSequence(frame, addr, a, c);
 				return;
 			}
 			default:
@@ -2121,6 +2137,74 @@ export class CPU {
 			return registers.getNumber(index);
 		}
 		return registers.get(index) as number;
+	}
+
+	private readMappedMemoryValue(addr: number, accessKind: number): Value {
+		switch (accessKind) {
+			case MemoryAccessKind.Word:
+				return this.memory.readMappedValue(addr);
+			case MemoryAccessKind.U8:
+				return this.memory.readMappedU8(addr);
+			case MemoryAccessKind.U16LE:
+				return this.memory.readMappedU16LE(addr);
+			case MemoryAccessKind.U32LE:
+				return this.memory.readMappedU32LE(addr);
+			case MemoryAccessKind.F32LE:
+				return this.memory.readMappedF32LE(addr);
+			case MemoryAccessKind.F64LE:
+				return this.memory.readMappedF64LE(addr);
+			default:
+				throw new Error(`[CPU] Unknown memory access kind: ${accessKind}.`);
+		}
+	}
+
+	private writeMappedMemoryValue(addr: number, accessKind: number, value: Value): void {
+		switch (accessKind) {
+			case MemoryAccessKind.Word:
+				this.memory.writeMappedValue(addr, value);
+				return;
+			case MemoryAccessKind.U8:
+				if (typeof value !== 'number') {
+					throw new Error(`[Memory] mem8[addr] expects a number. Got ${typeof value}.`);
+				}
+				this.memory.writeMappedU8(addr, value);
+				return;
+			case MemoryAccessKind.U16LE:
+				if (typeof value !== 'number') {
+					throw new Error(`[Memory] mem16le[addr] expects a number. Got ${typeof value}.`);
+				}
+				this.memory.writeMappedU16LE(addr, value);
+				return;
+			case MemoryAccessKind.U32LE:
+				if (typeof value !== 'number') {
+					throw new Error(`[Memory] mem32le[addr] expects a number. Got ${typeof value}.`);
+				}
+				this.memory.writeMappedU32LE(addr, value);
+				return;
+			case MemoryAccessKind.F32LE:
+				if (typeof value !== 'number') {
+					throw new Error(`[Memory] memf32le[addr] expects a number. Got ${typeof value}.`);
+				}
+				this.memory.writeMappedF32LE(addr, value);
+				return;
+			case MemoryAccessKind.F64LE:
+				if (typeof value !== 'number') {
+					throw new Error(`[Memory] memf64le[addr] expects a number. Got ${typeof value}.`);
+				}
+				this.memory.writeMappedF64LE(addr, value);
+				return;
+			default:
+				throw new Error(`[CPU] Unknown memory access kind: ${accessKind}.`);
+		}
+	}
+
+	private writeMappedWordSequence(frame: CallFrame, addr: number, valueBase: number, valueCount: number): void {
+		this.charge(CEIL_DIV4(valueCount));
+		let writeAddr = addr;
+		for (let offset = 0; offset < valueCount; offset += 1) {
+			this.memory.writeMappedValue(writeAddr, frame.registers.get(valueBase + offset));
+			writeAddr += 4;
+		}
 	}
 
 	private readRKNumber(frame: CallFrame, raw: number, bits: number): number {

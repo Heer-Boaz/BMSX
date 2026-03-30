@@ -952,7 +952,7 @@ function state:run_with_transition_context(factory, fn)
 	return r1, r2, r3, r4, r5, r6, r7, r8
 end
 
-function state:peek_transition_context()
+function state:transition_context()
 	local stack = self._transition_context_stack
 	if not stack or #stack == 0 then
 		return nil
@@ -964,7 +964,7 @@ function state:append_action_evaluation(detail)
 	if not should_trace_transitions() then
 		return
 	end
-	local ctx = self:peek_transition_context()
+	local ctx = self:transition_context()
 	if not ctx then
 		return
 	end
@@ -978,7 +978,7 @@ function state:append_guard_evaluation(detail)
 	if not should_trace_transitions() then
 		return
 	end
-	local ctx = self:peek_transition_context()
+	local ctx = self:transition_context()
 	if not ctx then
 		return
 	end
@@ -992,7 +992,7 @@ function state:record_transition_outcome_on_context(outcome)
 	if not should_trace_transitions() then
 		return
 	end
-	local ctx = self:peek_transition_context()
+	local ctx = self:transition_context()
 	if not ctx then
 		return
 	end
@@ -1007,7 +1007,7 @@ function state:resolve_context_snapshot(provided)
 	if provided then
 		return provided
 	end
-	return self:peek_transition_context()
+	return self:transition_context()
 end
 
 function state:emit_transition_trace(entry)

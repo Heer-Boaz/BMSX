@@ -39,7 +39,6 @@ import {
 	IO_CMD_VDP_GLYPH_RUN,
 	IO_CMD_VDP_TILE_RUN,
 	IO_PAYLOAD_BUFFER_BASE,
-	IO_PAYLOAD_WRITE_PTR_ADDR,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
 	IRQ_NEWGAME,
@@ -301,7 +300,7 @@ export function hotReloadProgramEntry(runtime: Runtime, params: { path: string; 
 	} else {
 		runtime.moduleCache.clear();
 	}
-	runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
+	runtime.resetVdpPayloadState();
 	const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 	const finalizedMetadata = prelude.metadata;
 	beginEntryExecution(runtime, entryProtoIndex);
@@ -452,7 +451,7 @@ export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: {
 		runtime.moduleAliases.set(entry.alias, entry.path);
 	}
 	runtime.moduleCache.clear();
-	runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
+	runtime.resetVdpPayloadState();
 	const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 	runtime.programMetadata = prelude.metadata;
 	beginEntryExecution(runtime, entryProtoIndex);
@@ -757,7 +756,7 @@ function readIoColor(runtime: Runtime, base: number, offset: number): { r: numbe
 const ioGlyphRunUtf8Decoder = new TextDecoder();
 let ioGlyphRunTextBytes = new Uint8Array(0);
 
-function readIoGlyphRunText(runtime: Runtime, payloadOffset: number, byteLength: number): string {
+function readIoGlyphRunText(runtime: Runtime, byteLength: number): string {
 	if (byteLength === 0) {
 		return '';
 	}
@@ -765,6 +764,10 @@ function readIoGlyphRunText(runtime: Runtime, payloadOffset: number, byteLength:
 		ioGlyphRunTextBytes = new Uint8Array(byteLength);
 	}
 	const payloadWords = Math.ceil(byteLength / 4);
+	const payloadOffset = runtime.getArmedVdpPayloadBaseOffset();
+	if (payloadWords > runtime.getArmedVdpPayloadWordCount()) {
+		throw new Error(`[VDP] Glyph payload underrun (${payloadWords} > ${runtime.getArmedVdpPayloadWordCount()}).`);
+	}
 	let outIndex = 0;
 	for (let wordIndex = 0; wordIndex < payloadWords; wordIndex += 1) {
 		const word = (runtime.memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + wordIndex) * IO_ARG_STRIDE) as number) >>> 0;
@@ -839,42 +842,44 @@ export function processVdpCommand(runtime: Runtime, cmdBase: number, cmd: number
 			break;
 		}
 		case IO_CMD_VDP_GLYPH_RUN: {
-			const payloadOffset = readIoArg(runtime, cmdBase, 1) >>> 0;
-			const textByteLength = readIoArg(runtime, cmdBase, 2) >>> 0;
-			const backgroundEnabled = (readIoArg(runtime, cmdBase, 14) >>> 0) !== 0;
+			const textByteLength = readIoArg(runtime, cmdBase, 1) >>> 0;
+			const backgroundEnabled = (readIoArg(runtime, cmdBase, 13) >>> 0) !== 0;
 			runtime.vdp.enqueueGlyphRun(
-				readIoGlyphRunText(runtime, payloadOffset, textByteLength),
+				readIoGlyphRunText(runtime, textByteLength),
+				readIoArg(runtime, cmdBase, 2),
 				readIoArg(runtime, cmdBase, 3),
 				readIoArg(runtime, cmdBase, 4),
-				readIoArg(runtime, cmdBase, 5),
-				runtime.api.resolveFontId(readIoArg(runtime, cmdBase, 6) >>> 0),
-				readIoColor(runtime, cmdBase, 10),
-				backgroundEnabled ? readIoColor(runtime, cmdBase, 15) : undefined,
+				runtime.api.resolveFontId(readIoArg(runtime, cmdBase, 5) >>> 0),
+				readIoColor(runtime, cmdBase, 9),
+				backgroundEnabled ? readIoColor(runtime, cmdBase, 14) : undefined,
+				readIoArg(runtime, cmdBase, 6),
 				readIoArg(runtime, cmdBase, 7),
-				readIoArg(runtime, cmdBase, 8),
-				readIoArg(runtime, cmdBase, 9) as 0 | 1 | 2,
+				readIoArg(runtime, cmdBase, 8) as 0 | 1 | 2,
 			);
 			break;
 		}
 		case IO_CMD_VDP_TILE_RUN: {
-			const payloadOffset = readIoArg(runtime, cmdBase, 1) >>> 0;
-			const tileCount = readIoArg(runtime, cmdBase, 2) >>> 0;
+			const tileCount = readIoArg(runtime, cmdBase, 1) >>> 0;
+			const payloadOffset = runtime.getArmedVdpPayloadBaseOffset();
+			if (tileCount > runtime.getArmedVdpPayloadWordCount()) {
+				throw new Error(`[VDP] Tile payload underrun (${tileCount} > ${runtime.getArmedVdpPayloadWordCount()}).`);
+			}
 			const handles = new Array<number>(tileCount);
 			for (let tileIndex = 0; tileIndex < tileCount; tileIndex += 1) {
 				handles[tileIndex] = (memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + tileIndex) * IO_ARG_STRIDE) as number) >>> 0;
 			}
 			runtime.vdp.enqueueResolvedTileRun({
 				handles,
-				cols: readIoArg(runtime, cmdBase, 3),
-				rows: readIoArg(runtime, cmdBase, 4),
-				tile_w: readIoArg(runtime, cmdBase, 5),
-				tile_h: readIoArg(runtime, cmdBase, 6),
-				origin_x: readIoArg(runtime, cmdBase, 7),
-				origin_y: readIoArg(runtime, cmdBase, 8),
-				scroll_x: readIoArg(runtime, cmdBase, 9),
-				scroll_y: readIoArg(runtime, cmdBase, 10),
-				z: readIoArg(runtime, cmdBase, 11),
-				layer: readIoArg(runtime, cmdBase, 12) as 0 | 1 | 2,
+				cols: readIoArg(runtime, cmdBase, 2),
+				rows: readIoArg(runtime, cmdBase, 3),
+				tile_w: readIoArg(runtime, cmdBase, 4),
+				tile_h: readIoArg(runtime, cmdBase, 5),
+				origin_x: readIoArg(runtime, cmdBase, 6),
+				origin_y: readIoArg(runtime, cmdBase, 7),
+				scroll_x: readIoArg(runtime, cmdBase, 8),
+				scroll_y: readIoArg(runtime, cmdBase, 9),
+				z: readIoArg(runtime, cmdBase, 10),
+				layer: readIoArg(runtime, cmdBase, 11) as 0 | 1 | 2,
 			});
 			break;
 		}
@@ -1062,7 +1067,7 @@ export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: b
 		runtime.moduleAliases.set(alias, path);
 	}
 	runtime.moduleCache.clear();
-	runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
+	runtime.resetVdpPayloadState();
 
 	const inflated = inflateProgram(programAsset.program);
 	try {
@@ -1106,7 +1111,7 @@ export function bootPreparedCartProgram(runtime: Runtime, options?: { preserveSt
 		runtime.moduleAliases.set(entry.alias, entry.path);
 	}
 	runtime.moduleCache.clear();
-	runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
+	runtime.resetVdpPayloadState();
 	const prelude = runEngineBuiltinPrelude(runtime, prepared.program, prepared.metadata);
 	runtime.programMetadata = prelude.metadata;
 	beginEntryExecution(runtime, prepared.entryProtoIndex);
@@ -1166,7 +1171,7 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 			runtime.moduleAliases.set(entry.alias, entry.path);
 		}
 		runtime.moduleCache.clear();
-		runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
+		runtime.resetVdpPayloadState();
 		const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 		runtime.programMetadata = prelude.metadata;
 		beginEntryExecution(runtime, entryProtoIndex);

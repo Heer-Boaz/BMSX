@@ -1,5 +1,5 @@
-import type { LuaDefinitionInfo, LuaDefinitionKind, LuaMemberExpression, LuaSourceRange, LuaStringLiteralExpression } from '../../lua/syntax/lua_ast';
-import { LuaSyntaxKind, type LuaAssignmentStatement, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaIndexExpression, type LuaLocalAssignmentStatement, type LuaStatement } from '../../lua/syntax/lua_ast';
+import type { LuaChunk, LuaDefinitionInfo, LuaDefinitionKind, LuaMemberExpression, LuaSourceRange, LuaStringLiteralExpression } from '../../lua/syntax/lua_ast';
+import { LuaSyntaxKind, LuaTableFieldKind, type LuaAssignmentStatement, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaIndexExpression, type LuaLocalAssignmentStatement, type LuaStatement } from '../../lua/syntax/lua_ast';
 import { LuaEnvironment } from '../../lua/luaenvironment';
 import { LuaLexer } from '../../lua/syntax/lualexer';
 import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
@@ -88,12 +88,24 @@ const definitionPriorityForSymbols = buildDefinitionPriority(SYMBOL_PRIORITY_ORD
 const definitionPriorityForLocals = buildDefinitionPriority(LOCAL_DEFINITION_PRIORITY_ORDER);
 
 const identityCanonicalizer = (value: string): string => value;
+const RESERVED_MEMORY_MAP_NAMES = ['mem', 'mem8', 'mem16le', 'mem32le', 'memf32le', 'memf64le'] as const;
 const builtinLookupScratch = new Map<string, LuaBuiltinDescriptor>();
 const globalKnownNamesScratch = new Set<string>();
 const globalSymbolsCache: { version: number; entries: LuaSymbolEntry[] } = { version: -1, entries: [] };
 
 function getActiveCanonicalizer(): (value: string) => string {
 	return ide_state.caseInsensitive ? createIdentifierCanonicalizer(ide_state.canonicalization) : identityCanonicalizer;
+}
+
+export function isReservedMemoryMapName(name: string): boolean {
+	const canonicalize = getActiveCanonicalizer();
+	const canonical = canonicalize(name);
+	for (let index = 0; index < RESERVED_MEMORY_MAP_NAMES.length; index += 1) {
+		if (canonicalize(RESERVED_MEMORY_MAP_NAMES[index]) === canonical) {
+			return true;
+		}
+	}
+	return false;
 }
 
 export type LuaScopedSymbol = {
@@ -570,6 +582,165 @@ function addCallDiagnosticsFromSemantic(
 	}
 }
 
+function buildRangeKey(range: LuaSourceRange): string {
+	return `${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
+}
+
+function pushRangeDiagnostic(range: LuaSourceRange, message: string, severity: LuaDiagnosticSeverity): void {
+	const row = range.start.line > 0 ? range.start.line - 1 : 0;
+	const startColumn = range.start.column > 0 ? range.start.column - 1 : 0;
+	const endColumn = range.end.column > range.start.column ? range.end.column - 1 : startColumn + 1;
+	pushDiagnostic(row, startColumn, endColumn, message, severity);
+}
+
+function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
+	const allowed = new Set<string>();
+	const visitBlock = (statements: readonly LuaStatement[]): void => {
+		for (let index = 0; index < statements.length; index += 1) {
+			visitStatement(statements[index]);
+		}
+	};
+	const visitStatement = (statement: LuaStatement): void => {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement:
+				for (let index = 0; index < statement.values.length; index += 1) {
+					visitExpression(statement.values[index]);
+				}
+				return;
+			case LuaSyntaxKind.LocalFunctionStatement:
+				visitBlock(statement.functionExpression.body.body);
+				return;
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+				visitBlock(statement.functionExpression.body.body);
+				return;
+			case LuaSyntaxKind.AssignmentStatement:
+				for (let index = 0; index < statement.left.length; index += 1) {
+					visitExpression(statement.left[index]);
+				}
+				for (let index = 0; index < statement.right.length; index += 1) {
+					visitExpression(statement.right[index]);
+				}
+				return;
+			case LuaSyntaxKind.ReturnStatement:
+				for (let index = 0; index < statement.expressions.length; index += 1) {
+					visitExpression(statement.expressions[index]);
+				}
+				return;
+			case LuaSyntaxKind.IfStatement:
+				for (let index = 0; index < statement.clauses.length; index += 1) {
+					const clause = statement.clauses[index];
+					visitExpression(clause.condition);
+					visitBlock(clause.block.body);
+				}
+				return;
+			case LuaSyntaxKind.WhileStatement:
+				visitExpression(statement.condition);
+				visitBlock(statement.block.body);
+				return;
+			case LuaSyntaxKind.RepeatStatement:
+				visitBlock(statement.block.body);
+				visitExpression(statement.condition);
+				return;
+			case LuaSyntaxKind.ForNumericStatement:
+				visitExpression(statement.start);
+				visitExpression(statement.limit);
+				visitExpression(statement.step);
+				visitBlock(statement.block.body);
+				return;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (let index = 0; index < statement.iterators.length; index += 1) {
+					visitExpression(statement.iterators[index]);
+				}
+				visitBlock(statement.block.body);
+				return;
+			case LuaSyntaxKind.DoStatement:
+				visitBlock(statement.block.body);
+				return;
+			case LuaSyntaxKind.CallStatement:
+				visitExpression(statement.expression);
+				return;
+			default:
+				return;
+		}
+	};
+	const visitExpression = (expression: LuaExpression): void => {
+		switch (expression.kind) {
+			case LuaSyntaxKind.IndexExpression:
+				if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && isReservedMemoryMapName(expression.base.name)) {
+					allowed.add(buildRangeKey(expression.base.range));
+				}
+				visitExpression(expression.base);
+				visitExpression(expression.index);
+				return;
+			case LuaSyntaxKind.MemberExpression:
+				visitExpression(expression.base);
+				return;
+			case LuaSyntaxKind.CallExpression:
+				visitExpression(expression.callee);
+				for (let index = 0; index < expression.arguments.length; index += 1) {
+					visitExpression(expression.arguments[index]);
+				}
+				return;
+			case LuaSyntaxKind.FunctionExpression:
+				visitBlock(expression.body.body);
+				return;
+			case LuaSyntaxKind.TableConstructorExpression:
+				for (let index = 0; index < expression.fields.length; index += 1) {
+					const field = expression.fields[index];
+					if (field.kind === LuaTableFieldKind.Array) {
+						visitExpression(field.value);
+						continue;
+					}
+					if (field.kind === LuaTableFieldKind.IdentifierKey) {
+						visitExpression(field.value);
+						continue;
+					}
+					visitExpression(field.key);
+					visitExpression(field.value);
+				}
+				return;
+			case LuaSyntaxKind.BinaryExpression:
+				visitExpression(expression.left);
+				visitExpression(expression.right);
+				return;
+			case LuaSyntaxKind.UnaryExpression:
+				visitExpression(expression.operand);
+				return;
+			default:
+				return;
+		}
+	};
+	visitBlock(chunk.body);
+	return allowed;
+}
+
+function addReservedMemoryDiagnosticsFromSemantic(analysis: FileSemanticData, chunk: LuaChunk): void {
+	const allowedReservedRanges = collectAllowedReservedMemoryRanges(chunk);
+	for (let index = 0; index < analysis.decls.length; index += 1) {
+		const decl = analysis.decls[index];
+		if (!isReservedMemoryMapName(decl.name)) {
+			continue;
+		}
+		if (decl.kind === 'local' || decl.kind === 'parameter') {
+			pushRangeDiagnostic(decl.range, `'${decl.name}' is a reserved memory map name and cannot be used as a local or parameter.`, 'error');
+			continue;
+		}
+		if (decl.kind === 'function' || decl.kind === 'global') {
+			pushRangeDiagnostic(decl.range, `'${decl.name}' is a reserved memory map. Use direct indexing syntax like ${decl.name}[addr].`, 'error');
+		}
+	}
+	for (let index = 0; index < analysis.refs.length; index += 1) {
+		const ref = analysis.refs[index];
+		if (!isReservedMemoryMapName(ref.name) || ref.namePath.length !== 1) {
+			continue;
+		}
+		if (allowedReservedRanges.has(buildRangeKey(ref.range))) {
+			continue;
+		}
+		pushRangeDiagnostic(ref.range, `'${ref.name}' is a reserved memory map. Use direct indexing syntax like ${ref.name}[addr].`, 'error');
+	}
+}
+
 export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnostic[] {
 	luaDiagnosticBatch.clear();
 	const parseEntry = getCachedLuaParse({
@@ -603,6 +774,7 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors, canonicalize);
 	addIdentifierDiagnosticsFromSemantic(semanticData, globalKnownNames);
 	addCallDiagnosticsFromSemantic(semanticData, builtinLookup, options.apiSignatures, canonicalApiRoot);
+	addReservedMemoryDiagnosticsFromSemantic(semanticData, parseEntry.parsed.chunk);
 
 	return finalizeLuaDiagnostics();
 }

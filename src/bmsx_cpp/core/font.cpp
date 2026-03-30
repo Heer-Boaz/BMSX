@@ -3,7 +3,6 @@
  */
 
 #include "font.h"
-#include <iostream>
 #include <stdexcept>
 
 namespace bmsx {
@@ -107,7 +106,6 @@ BFont::BFont(RuntimeAssets& assets, GlyphMap glyphmap, i32 advancePadding)
 	: m_assets(assets)
 	, m_letter_to_img(std::move(glyphmap))
 	, m_advance_padding(advancePadding) {
-	m_space_advance = advance(' ');
 	m_line_height = char_height('A');
 }
 
@@ -132,19 +130,23 @@ const std::string& BFont::char_to_img(u32 codepoint) const {
 	if (it != m_letter_to_img.end()) {
 		return it->second;
 	}
-	std::cerr << "[BFont] Character codepoint " << codepoint << " not found in letter_to_img map. Using fallback '?'."
-				<< std::endl;
-	auto fallbackIt = m_letter_to_img.find(static_cast<u32>('?'));
-	if (fallbackIt == m_letter_to_img.end()) {
-		throw BMSX_RUNTIME_ERROR("[BFont] Fallback character '?' not found in letter_to_img map.");
-	}
-	return fallbackIt->second;
+	return m_letter_to_img.at(static_cast<u32>('?'));
 }
 
 const FontGlyph& BFont::getGlyph(u32 codepoint) {
 	auto it = m_glyphs.find(codepoint);
 	if (it != m_glyphs.end()) {
 		return it->second;
+	}
+	if (codepoint == static_cast<u32>('\t') && m_letter_to_img.find(codepoint) == m_letter_to_img.end()) {
+		const FontGlyph& space = getGlyph(static_cast<u32>(' '));
+		FontGlyph glyph;
+		glyph.imgid = space.imgid;
+		glyph.width = space.advance * TAB_SPACES;
+		glyph.height = space.height;
+		glyph.advance = glyph.width;
+		auto tabResult = m_glyphs.emplace(codepoint, std::move(glyph));
+		return tabResult.first->second;
 	}
 
 	const std::string& imgid = char_to_img(codepoint);
@@ -172,8 +174,7 @@ i32 BFont::measure(const std::string& text) {
 	size_t index = 0;
 	while (index < text.size()) {
 		u32 codepoint = readUtf8Codepoint(text, index);
-		if (codepoint == static_cast<u32>('\t')) {
-			width += m_space_advance * TAB_SPACES;
+		if (codepoint == static_cast<u32>('\n')) {
 			continue;
 		}
 		width += advance(codepoint);

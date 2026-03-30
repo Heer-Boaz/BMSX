@@ -27,7 +27,7 @@ import {
 	type LuaGotoStatement,
 } from '../lua/syntax/lua_ast';
 import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
-import { OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from './cpu';
+import { MemoryAccessKind, OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from './cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './program_optimizer';
 import type { ProgramConstReloc } from './program_asset';
 import { StringPool, StringValue, isStringValue } from './string_pool';
@@ -79,6 +79,13 @@ type ScopeFrame = {
 	names: string[];
 	range: SourceRange;
 };
+
+type AssignmentTarget =
+	| { kind: 'local'; reg: number }
+	| { kind: 'upvalue'; upvalue: number }
+	| { kind: 'global'; keyConst: number }
+	| { kind: 'table'; tableReg: number; keyConst?: number; keyReg?: number }
+	| { kind: 'memory'; accessKind: MemoryAccessKind; addrConst?: number; addrReg?: number };
 
 const RK_B = 1;
 const RK_C = 2;
@@ -681,6 +688,12 @@ class FunctionBuilder {
 
 	private declareLocal(name: string, definitionRange: LuaSourceRange, scopeRange?: LuaSourceRange): number {
 		const canonicalName = this.canonicalizeName(name);
+		if (this.getMemoryAccessKindForCanonicalName(canonicalName) !== null) {
+			throw new Error(`[Compiler] '${canonicalName}' is a reserved memory map name and cannot be used as a local or parameter.`);
+		}
+		if (this.isReservedIntrinsicName(canonicalName)) {
+			throw new Error(`[Compiler] '${canonicalName}' is a reserved intrinsic name and cannot be used as a local or parameter.`);
+		}
 		const reg = this.localCount;
 		this.localCount += 1;
 		if (this.tempTop < this.localCount) {
@@ -742,6 +755,17 @@ class FunctionBuilder {
 			return index;
 		}
 		return null;
+	}
+
+	private hasLexicalBindingCanonical(canonicalName: string): boolean {
+		const stack = this.localStacks.get(canonicalName);
+		if (stack && stack.length > 0) {
+			return true;
+		}
+		if (this.upvalueMap.has(canonicalName)) {
+			return true;
+		}
+		return this.parent !== null && this.parent.hasLexicalBindingCanonical(canonicalName);
 	}
 
 	private allocTemp(): number {
@@ -992,8 +1016,8 @@ class FunctionBuilder {
 		}
 	}
 
-	private compileAssignmentTargets(expressions: ReadonlyArray<LuaExpression>): Array<{ kind: 'local' | 'upvalue' | 'global' | 'table'; reg?: number; upvalue?: number; keyConst?: number; tableReg?: number; keyReg?: number }> {
-		const targets: Array<{ kind: 'local' | 'upvalue' | 'global' | 'table'; reg?: number; upvalue?: number; keyConst?: number; tableReg?: number; keyReg?: number }> = [];
+	private compileAssignmentTargets(expressions: ReadonlyArray<LuaExpression>): AssignmentTarget[] {
+		const targets: AssignmentTarget[] = [];
 		for (let i = 0; i < expressions.length; i += 1) {
 			const expr = expressions[i];
 			if (expr.kind === LuaSyntaxKind.IdentifierExpression) {
@@ -1008,6 +1032,12 @@ class FunctionBuilder {
 					targets.push({ kind: 'upvalue', upvalue });
 					continue;
 				}
+				if (this.getMemoryAccessKindForCanonicalName(name) !== null) {
+					throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
+				}
+				if (this.isReservedIntrinsicName(name)) {
+					throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${name}(base, ...).`);
+				}
 				const keyConst = this.program.constIndexString(name);
 				targets.push({ kind: 'global', keyConst });
 				continue;
@@ -1020,6 +1050,11 @@ class FunctionBuilder {
 				continue;
 			}
 			if (expr.kind === LuaSyntaxKind.IndexExpression) {
+				const memoryTarget = this.tryCompileMemoryTarget(expr as LuaIndexExpression);
+				if (memoryTarget !== null) {
+					targets.push(memoryTarget);
+					continue;
+				}
 				const baseReg = this.allocTemp();
 				this.compileExpressionInto(expr.base, baseReg, 1);
 				const keyConst = this.tryGetConstIndex(expr.index);
@@ -1069,7 +1104,7 @@ class FunctionBuilder {
 		return values;
 	}
 
-	private assignTarget(target: { kind: string; reg?: number; upvalue?: number; keyConst?: number; tableReg?: number; keyReg?: number }, valueReg: number): void {
+	private assignTarget(target: AssignmentTarget, valueReg: number): void {
 		switch (target.kind) {
 			case 'local':
 				this.emitABC(OpCode.MOV, target.reg, valueReg, 0);
@@ -1085,13 +1120,16 @@ class FunctionBuilder {
 				this.emitABC(OpCode.SETT, target.tableReg, keyOperand, valueReg, RK_B | RK_C);
 				return;
 			}
+			case 'memory':
+				this.emitMemoryStore(target.accessKind, target.addrConst, target.addrReg, valueReg);
+				return;
 			default:
-				throw new Error(`Unsupported assignment target kind: ${target.kind}`);
+				throw new Error('Unsupported assignment target kind.');
 		}
 	}
 
 	private applyCompoundAssignment(
-		target: { kind: string; reg?: number; upvalue?: number; keyConst?: number; tableReg?: number; keyReg?: number },
+		target: AssignmentTarget,
 		operator: LuaAssignmentOperator,
 		valueReg: number,
 	): void {
@@ -1119,8 +1157,13 @@ class FunctionBuilder {
 				this.emitABC(OpCode.SETT, target.tableReg, keyOperand, temp, RK_B | RK_C);
 				return;
 			}
+			case 'memory':
+				this.emitMemoryLoad(temp, target.accessKind, target.addrConst, target.addrReg);
+				this.emitArithmetic(opForAssignment(operator), temp, temp, valueReg);
+				this.emitMemoryStore(target.accessKind, target.addrConst, target.addrReg, temp);
+				return;
 			default:
-				throw new Error(`Unsupported compound assignment target: ${target.kind}`);
+				throw new Error('Unsupported compound assignment target.');
 		}
 	}
 
@@ -1491,6 +1534,12 @@ class FunctionBuilder {
 			this.emitABC(OpCode.GETUP, target, upvalue, 0);
 			return;
 		}
+		if (this.getMemoryAccessKindForCanonicalName(name) !== null) {
+			throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
+		}
+		if (this.isReservedIntrinsicName(name)) {
+			throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${name}(base, ...).`);
+		}
 		const key = this.program.constIndexString(name);
 		this.emitABx(OpCode.GETG, target, key);
 	}
@@ -1503,6 +1552,11 @@ class FunctionBuilder {
 	}
 
 	private compileIndexExpression(expression: any, target: number): void {
+		const memoryTarget = this.tryCompileMemoryTarget(expression as LuaIndexExpression);
+		if (memoryTarget !== null) {
+			this.emitMemoryLoad(target, memoryTarget.accessKind, memoryTarget.addrConst, memoryTarget.addrReg);
+			return;
+		}
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
 		const keyConst = this.tryGetConstIndex(expression.index);
@@ -1577,6 +1631,117 @@ class FunctionBuilder {
 				return this.program.constIndex(null);
 			default:
 				return null;
+		}
+	}
+
+	private tryGetNumericConstIndex(expression: LuaExpression): number | null {
+		if (expression.kind !== LuaSyntaxKind.NumericLiteralExpression) {
+			return null;
+		}
+		return this.program.constIndex((expression as LuaNumericLiteralExpression).value);
+	}
+
+	private getMemoryAccessKindForCanonicalName(name: string): MemoryAccessKind | null {
+		switch (name) {
+			case 'mem':
+				return MemoryAccessKind.Word;
+			case 'mem8':
+				return MemoryAccessKind.U8;
+			case 'mem16le':
+				return MemoryAccessKind.U16LE;
+			case 'mem32le':
+				return MemoryAccessKind.U32LE;
+			case 'memf32le':
+				return MemoryAccessKind.F32LE;
+			case 'memf64le':
+				return MemoryAccessKind.F64LE;
+			default:
+				return null;
+		}
+	}
+
+	private isReservedIntrinsicName(name: string): boolean {
+		return name === 'write_words';
+	}
+
+	private tryGetMemoryAccessKind(expression: LuaExpression): MemoryAccessKind | null {
+		if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return null;
+		}
+		const name = this.canonicalizeName((expression as LuaIdentifierExpression).name);
+		if (this.hasLexicalBindingCanonical(name)) {
+			return null;
+		}
+		return this.getMemoryAccessKindForCanonicalName(name);
+	}
+
+	private tryCompileMemoryTarget(expression: LuaIndexExpression): Extract<AssignmentTarget, { kind: 'memory' }> | null {
+		const accessKind = this.tryGetMemoryAccessKind(expression.base);
+		if (accessKind === null) {
+			return null;
+		}
+		const addrConst = this.tryGetNumericConstIndex(expression.index);
+		if (addrConst !== null) {
+			return { kind: 'memory', accessKind, addrConst };
+		}
+		const addrReg = this.allocTemp();
+		this.compileExpressionInto(expression.index, addrReg, 1);
+		return { kind: 'memory', accessKind, addrReg };
+	}
+
+	private emitMemoryLoad(target: number, accessKind: MemoryAccessKind, addrConst: number | undefined, addrReg: number | undefined): void {
+		const addrOperand = addrConst !== undefined ? this.encodeConstOperand(addrConst) : addrReg;
+		this.emitABC(OpCode.LOAD_MEM, target, addrOperand, accessKind, addrConst !== undefined ? RK_B : 0);
+	}
+
+	private emitMemoryStore(accessKind: MemoryAccessKind, addrConst: number | undefined, addrReg: number | undefined, valueReg: number): void {
+		const addrOperand = addrConst !== undefined ? this.encodeConstOperand(addrConst) : addrReg;
+		this.emitABC(OpCode.STORE_MEM, valueReg, addrOperand, accessKind, addrConst !== undefined ? RK_B : 0);
+	}
+
+	private emitMemoryWordStoreSequence(valueBase: number, valueCount: number, addrConst: number | undefined, addrReg: number | undefined): void {
+		const addrOperand = addrConst !== undefined ? this.encodeConstOperand(addrConst) : addrReg;
+		this.emitABC(OpCode.STORE_MEM_WORDS, valueBase, addrOperand, valueCount, addrConst !== undefined ? RK_B : 0);
+	}
+
+	private tryCompileIntrinsicCall(expression: LuaCallExpression, target: number, resultCount: number): boolean {
+		if (expression.methodName !== null || expression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return false;
+		}
+		const name = this.canonicalizeName((expression.callee as LuaIdentifierExpression).name);
+		if (this.hasLexicalBindingCanonical(name)) {
+			return false;
+		}
+		if (name === 'write_words') {
+			this.compileWriteWordsIntrinsic(expression, target, resultCount);
+			return true;
+		}
+		return false;
+	}
+
+	private compileWriteWordsIntrinsic(expression: LuaCallExpression, target: number, resultCount: number): void {
+		if (expression.arguments.length < 2) {
+			throw new Error('[Compiler] write_words expects a base address and at least one word.');
+		}
+		const lastArg = expression.arguments[expression.arguments.length - 1];
+		if (this.isMultiReturnExpression(lastArg)) {
+			throw new Error('[Compiler] write_words does not support multi-return or vararg operands.');
+		}
+		const addrExpression = expression.arguments[0];
+		const addrConst = this.tryGetNumericConstIndex(addrExpression);
+		let addrReg: number | undefined;
+		if (addrConst === null) {
+			addrReg = this.allocTemp();
+			this.compileExpressionInto(addrExpression, addrReg, 1);
+		}
+		const valueCount = expression.arguments.length - 1;
+		const valueBase = this.allocTempBlock(valueCount);
+		for (let index = 0; index < valueCount; index += 1) {
+			this.compileExpressionInto(expression.arguments[index + 1], valueBase + index, 1);
+		}
+		this.emitMemoryWordStoreSequence(valueBase, valueCount, addrConst ?? undefined, addrReg);
+		if (resultCount > 0) {
+			this.emitLoadNil(target, resultCount);
 		}
 	}
 
@@ -1751,10 +1916,7 @@ class FunctionBuilder {
 	}
 
 	private compileCallExpression(expression: LuaCallExpression, target: number, resultCount: number): void {
-		if (this.tryCompilePeekCall(expression, target)) {
-			return;
-		}
-		if (this.tryCompilePokeCall(expression, target)) {
+		if (this.tryCompileIntrinsicCall(expression, target, resultCount)) {
 			return;
 		}
 		const methodName = expression.methodName !== null ? this.canonicalizeName(expression.methodName) : null;
@@ -1803,43 +1965,6 @@ class FunctionBuilder {
 				this.emitABC(OpCode.MOV, target + i, callBase + i, 0);
 			}
 		}
-	}
-
-	private tryCompilePeekCall(expression: LuaCallExpression, target: number): boolean {
-		if (expression.methodName && expression.methodName.length > 0) {
-			return false;
-		}
-		if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
-			return false;
-		}
-		const name = this.canonicalizeName((expression.callee as LuaIdentifierExpression).name);
-		if (name !== this.canonicalizeName('peek')) {
-			return false;
-		}
-		const addrReg = this.allocTemp();
-		this.compileExpressionInto(expression.arguments[0], addrReg, 1);
-		this.emitABC(OpCode.LOAD_MEM, target, addrReg, 0);
-		return true;
-	}
-
-	private tryCompilePokeCall(expression: LuaCallExpression, target: number): boolean {
-		if (expression.methodName && expression.methodName.length > 0) {
-			return false;
-		}
-		if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
-			return false;
-		}
-		const name = this.canonicalizeName((expression.callee as LuaIdentifierExpression).name);
-		if (name !== this.canonicalizeName('poke')) {
-			return false;
-		}
-		const addrReg = this.allocTemp();
-		const valueReg = this.allocTemp();
-		this.compileExpressionInto(expression.arguments[0], addrReg, 1);
-		this.compileExpressionInto(expression.arguments[1], valueReg, 1);
-		this.emitABC(OpCode.STORE_MEM, valueReg, addrReg, 0);
-		this.emitLoadNil(target, 1);
-		return true;
 	}
 
 	private encodeConstOperand(constIndex: number): number {

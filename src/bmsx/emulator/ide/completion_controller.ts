@@ -1,5 +1,5 @@
 import { clamp } from '../../utils/clamp';
-import { getApiCompletionData, getKeywordCompletions, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaModuleSymbols, type LuaScopedSymbol } from './intellisense';
+import { getApiCompletionData, getKeywordCompletions, isReservedMemoryMapName, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaModuleSymbols, type LuaScopedSymbol } from './intellisense';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/syntax/lua_ast';
 import {
 	CompletionContext,
@@ -742,10 +742,11 @@ export class CompletionController {
 		const items: LuaCompletionItem[] = [];
 		for (const descriptor of this.builtinDescriptorMap.values()) {
 			const label = descriptor.name;
+			const insertText = isReservedMemoryMapName(label) ? `${label}[]` : label;
 			const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
 			const baseDetail = descriptor.signature && descriptor.signature.length > 0 ? descriptor.signature : 'Lua builtin';
 			const detail = descriptor.description && descriptor.description.length > 0 ? `${baseDetail} • ${descriptor.description}` : baseDetail;
-			items.push({ label, insertText: label, sortKey: `builtin:${label.toLowerCase()}`, kind: 'builtin', detail, parameters: params });
+			items.push({ label, insertText, sortKey: `builtin:${label.toLowerCase()}`, kind: 'builtin', detail, parameters: params });
 		}
 		items.sort((a, b) => a.label.localeCompare(b.label));
 		return items;
@@ -1313,6 +1314,8 @@ export class CompletionController {
 		this.host.replaceSelectionWith(insertion);
 		if (addParentheses) {
 			this.host.setCursorPosition(row, replaceStart + item.insertText.length + 1);
+		} else if (insertion.endsWith('[]')) {
+			this.host.setCursorPosition(row, replaceStart + insertion.length - 1);
 		} else {
 			this.host.setCursorPosition(row, replaceStart + insertion.length);
 		}

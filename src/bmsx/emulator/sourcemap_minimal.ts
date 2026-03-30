@@ -77,8 +77,8 @@ function decodeMappings(mappings: string): DecodedMappings {
 		if (indexRef.index >= mappings.length) {
 			continue;
 		}
-		const peek = mappings.charCodeAt(indexRef.index);
-		if (peek === 44 || peek === 59) {
+		const delimiterCode = mappings.charCodeAt(indexRef.index);
+		if (delimiterCode === 44 || delimiterCode === 59) {
 			continue;
 		}
 

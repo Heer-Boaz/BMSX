@@ -1435,6 +1435,8 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_layer_ide", valueNumber(2.0));
 	setGlobal("sys_vdp_arg_stride", valueNumber(static_cast<double>(IO_ARG_STRIDE)));
 	setGlobal("sys_vdp_payload_write_ptr", valueNumber(static_cast<double>(IO_PAYLOAD_WRITE_PTR_ADDR)));
+	setGlobal("sys_vdp_payload_alloc", valueNumber(static_cast<double>(IO_PAYLOAD_ALLOC_ADDR)));
+	setGlobal("sys_vdp_payload_data", valueNumber(static_cast<double>(IO_PAYLOAD_DATA_ADDR)));
 	setGlobal("sys_vdp_payload_buffer_base", valueNumber(static_cast<double>(IO_PAYLOAD_BUFFER_BASE)));
 	setGlobal("sys_vdp_payload_capacity", valueNumber(static_cast<double>(IO_PAYLOAD_CAPACITY)));
 	setGlobal("sys_vdp_cmd_clear", valueNumber(static_cast<double>(IO_CMD_VDP_CLEAR)));
@@ -1494,64 +1496,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("img_status_done", valueNumber(static_cast<double>(IMG_STATUS_DONE)));
 	setGlobal("img_status_error", valueNumber(static_cast<double>(IMG_STATUS_ERROR)));
 	setGlobal("img_status_clipped", valueNumber(static_cast<double>(IMG_STATUS_CLIPPED)));
-
-	registerNativeFunction("peek", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
-		out.push_back(m_memory.readValue(address));
-	}, CHEAP_NATIVE_READ_COST);
-
-	registerNativeFunction("peek8", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
-		out.push_back(valueNumber(static_cast<double>(m_memory.readU8(address))));
-	}, CHEAP_NATIVE_READ_COST);
-
-	registerNativeFunction("peek16le", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
-		const uint32_t b0 = static_cast<uint32_t>(m_memory.readU8(address));
-		const uint32_t b1 = static_cast<uint32_t>(m_memory.readU8(address + 1));
-		const uint32_t value = b0 | (b1 << 8);
-		out.push_back(valueNumber(static_cast<double>(value)));
-	}, CHEAP_NATIVE_READ_COST);
-
-	registerNativeFunction("peek32le", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
-		const uint32_t b0 = static_cast<uint32_t>(m_memory.readU8(address));
-		const uint32_t b1 = static_cast<uint32_t>(m_memory.readU8(address + 1));
-		const uint32_t b2 = static_cast<uint32_t>(m_memory.readU8(address + 2));
-		const uint32_t b3 = static_cast<uint32_t>(m_memory.readU8(address + 3));
-		const uint32_t value = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
-		out.push_back(valueNumber(static_cast<double>(value)));
-	}, CHEAP_NATIVE_READ_COST);
-
-	registerNativeFunction("reader_read_f32", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
-		const uint32_t b0 = static_cast<uint32_t>(m_memory.readU8(address));
-		const uint32_t b1 = static_cast<uint32_t>(m_memory.readU8(address + 1));
-		const uint32_t b2 = static_cast<uint32_t>(m_memory.readU8(address + 2));
-		const uint32_t b3 = static_cast<uint32_t>(m_memory.readU8(address + 3));
-		const uint32_t bits = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
-		float value = 0.0f;
-		std::memcpy(&value, &bits, sizeof(value));
-		out.push_back(valueNumber(static_cast<double>(value)));
-	}, CHEAP_NATIVE_READ_COST);
-
-	registerNativeFunction("reader_read_f64", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
-		const uint32_t lo0 = static_cast<uint32_t>(m_memory.readU8(address));
-		const uint32_t lo1 = static_cast<uint32_t>(m_memory.readU8(address + 1));
-		const uint32_t lo2 = static_cast<uint32_t>(m_memory.readU8(address + 2));
-		const uint32_t lo3 = static_cast<uint32_t>(m_memory.readU8(address + 3));
-		const uint32_t hi0 = static_cast<uint32_t>(m_memory.readU8(address + 4));
-		const uint32_t hi1 = static_cast<uint32_t>(m_memory.readU8(address + 5));
-		const uint32_t hi2 = static_cast<uint32_t>(m_memory.readU8(address + 6));
-		const uint32_t hi3 = static_cast<uint32_t>(m_memory.readU8(address + 7));
-		const uint64_t lo = static_cast<uint64_t>(lo0 | (lo1 << 8) | (lo2 << 16) | (lo3 << 24));
-		const uint64_t hi = static_cast<uint64_t>(hi0 | (hi1 << 8) | (hi2 << 16) | (hi3 << 24));
-		const uint64_t bits = (hi << 32) | lo;
-		double value = 0.0;
-		std::memcpy(&value, &bits, sizeof(value));
-		out.push_back(valueNumber(value));
-	}, CHEAP_NATIVE_READ_COST);
 
 	registerNativeFunction("u32_to_f32", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint32_t bits = static_cast<uint32_t>(asNumber(args.at(0)));
@@ -1668,28 +1612,6 @@ void Runtime::setupBuiltins() {
 		out.push_back(valueNumber(static_cast<double>(start)));
 		out.push_back(valueNumber(static_cast<double>(end)));
 	}, CHEAP_NATIVE_LOOKUP_COST);
-
-	registerNativeFunction("poke", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
-		m_memory.writeValue(address, args.at(1));
-		(void)out;
-	}, CHEAP_NATIVE_WRITE_COST);
-	registerNativeFunction("poke_words", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
-		for (size_t index = 1; index < args.size(); ++index) {
-			m_memory.writeValue(address + static_cast<uint32_t>((index - 1) * IO_ARG_STRIDE), args.at(index));
-		}
-		(void)out;
-	}, CHEAP_NATIVE_WRITE_COST);
-	registerNativeFunction("mem_write", [this](const std::vector<Value>& args, std::vector<Value>& out) {
-		const uint32_t address = static_cast<uint32_t>(asNumber(args.at(0)));
-		if (!valueIsString(args.at(1))) {
-			throw BMSX_RUNTIME_ERROR("mem_write expects a packed byte string.");
-		}
-		const std::string& bytes = m_cpu.stringPool().toString(asStringId(args.at(1)));
-		m_memory.writeBytes(address, reinterpret_cast<const u8*>(bytes.data()), bytes.size());
-		(void)out;
-	}, CHEAP_NATIVE_WRITE_COST);
 
 	registerNativeFunction("type", [str](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& v = args.empty() ? valueNil() : args.at(0);

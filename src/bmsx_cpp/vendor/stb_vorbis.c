@@ -4856,7 +4856,7 @@ error:
 }
 
 // the same as vorbis_decode_initial, but without advancing
-static int peek_decode_initial(vorb *f, int *p_left_start, int *p_left_end, int *p_right_start, int *p_right_end, int *mode)
+static int inspect_decode_initial(vorb *f, int *p_left_start, int *p_left_end, int *p_right_start, int *p_right_end, int *mode)
 {
 	int bits_read, bytes_read;
 
@@ -4898,7 +4898,7 @@ int stb_vorbis_seek_frame(stb_vorbis *f, unsigned int sample_number)
 	max_frame_samples = (f->blocksize_1*3 - f->blocksize_0) >> 2;
 	while (f->current_loc < sample_number) {
 		int left_start, left_end, right_start, right_end, mode, frame_samples;
-		if (!peek_decode_initial(f, &left_start, &left_end, &right_start, &right_end, &mode))
+		if (!inspect_decode_initial(f, &left_start, &left_end, &right_start, &right_end, &mode))
 			return error(f, VORBIS_seek_failed);
 		// calculate the number of samples returned by the next frame
 		frame_samples = right_start - left_start;

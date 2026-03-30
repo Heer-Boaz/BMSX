@@ -97,6 +97,7 @@ const char* opCodeName(OpCode op) {
 		case OpCode::RET: return "RET";
 		case OpCode::LOAD_MEM: return "LOAD_MEM";
 		case OpCode::STORE_MEM: return "STORE_MEM";
+		case OpCode::STORE_MEM_WORDS: return "STORE_MEM_WORDS";
 	}
 	return "UNKNOWN";
 }
@@ -158,6 +159,10 @@ std::string formatProtoOperand(const ProgramMetadata* metadata, int bx) {
 		throw BMSX_RUNTIME_ERROR("[Disassembler] Missing proto id for index " + std::to_string(bx) + ".");
 	}
 	return "p" + std::to_string(bx) + " (" + metadata->protoIds[static_cast<size_t>(bx)] + ")";
+}
+
+std::string formatRKOperand(const Program& program, uint32_t raw, int bits) {
+	return describeRkValue(program, raw, bits).text;
 }
 
 InstructionOperandDebugInfo registerOperand(const char* label, int index) {
@@ -330,9 +335,11 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::RET:
 			return "RET r" + std::to_string(decoded.a) + ", " + formatCountLiteral(decoded.b);
 		case OpCode::LOAD_MEM:
-			return "LOAD_MEM r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
+			return "LOAD_MEM r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB);
 		case OpCode::STORE_MEM:
-			return "STORE_MEM r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
+			return "STORE_MEM r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB);
+		case OpCode::STORE_MEM_WORDS:
+			return "STORE_MEM_WORDS r" + std::to_string(decoded.a) + ", " + formatRKOperand(program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB) + ", " + std::to_string(decoded.c);
 		case OpCode::WIDE:
 			break;
 	}
@@ -406,9 +413,11 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::RET:
 			return {registerOperand("base", decoded.a), plainOperand("count", formatCountLiteral(decoded.b))};
 		case OpCode::LOAD_MEM:
-			return {registerOperand("dst", decoded.a), registerOperand("addr", decoded.b)};
+			return {registerOperand("dst", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB)};
 		case OpCode::STORE_MEM:
-			return {registerOperand("src", decoded.a), registerOperand("addr", decoded.b)};
+			return {registerOperand("src", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB)};
+		case OpCode::STORE_MEM_WORDS:
+			return {registerOperand("src_base", decoded.a), rkOperand("addr", program, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), plainOperand("count", std::to_string(decoded.c))};
 		case OpCode::WIDE:
 			break;
 	}

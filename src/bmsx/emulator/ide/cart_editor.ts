@@ -2486,7 +2486,7 @@ export function updateDesiredColumn(): void {
 	let segmentStartColumn = 0;
 	if (ide_state.wordWrapEnabled) {
 		ensureVisualLines();
-		const override = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
+		const override = caretNavigation.lookup(ide_state.cursorRow, ide_state.cursorColumn);
 		if (override) {
 			segmentStartColumn = override.segmentStartColumn;
 		} else {

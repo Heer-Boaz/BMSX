@@ -1,7 +1,7 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
-require('vdp_firmware')
+local vdp_firmware = require('vdp_firmware')
 local textflow = require('textflow')
 
 local boot_delay = 2.0
@@ -38,35 +38,35 @@ local boot_screen_presented
 local render_boot_screen
 
 local function read_cart_header(base)
-	if peek(base) ~= cart_rom_magic then
+	if mem[base] ~= cart_rom_magic then
 		return nil
 	end
-	local header_size = peek(base + 4)
+	local header_size = mem[base + 4]
 	if header_size < cart_rom_base_header_size then
 		return nil
 	end
 	local has_extended_header = header_size >= cart_rom_header_size
 	return {
 		header_size = header_size,
-		manifest_off = peek(base + 8),
-		manifest_len = peek(base + 12),
-		toc_off = peek(base + 16),
-		toc_len = peek(base + 20),
-		data_off = peek(base + 24),
-		data_len = peek(base + 28),
-		program_boot_version = has_extended_header and peek(base + 32) or 0,
-		program_boot_flags = has_extended_header and peek(base + 36) or 0,
-		program_entry_proto_index = has_extended_header and peek(base + 40) or 0,
-		program_code_byte_count = has_extended_header and peek(base + 44) or 0,
-		program_const_pool_count = has_extended_header and peek(base + 48) or 0,
-		program_proto_count = has_extended_header and peek(base + 52) or 0,
-		program_module_alias_count = has_extended_header and peek(base + 56) or 0,
-		program_const_reloc_count = has_extended_header and peek(base + 60) or 0,
+		manifest_off = mem[base + 8],
+		manifest_len = mem[base + 12],
+		toc_off = mem[base + 16],
+		toc_len = mem[base + 20],
+		data_off = mem[base + 24],
+		data_len = mem[base + 28],
+		program_boot_version = has_extended_header and mem[base + 32] or 0,
+		program_boot_flags = has_extended_header and mem[base + 36] or 0,
+		program_entry_proto_index = has_extended_header and mem[base + 40] or 0,
+		program_code_byte_count = has_extended_header and mem[base + 44] or 0,
+		program_const_pool_count = has_extended_header and mem[base + 48] or 0,
+		program_proto_count = has_extended_header and mem[base + 52] or 0,
+		program_module_alias_count = has_extended_header and mem[base + 56] or 0,
+		program_const_reloc_count = has_extended_header and mem[base + 60] or 0,
 	}
 end
 
 local function cart_boot_ready()
-	local ready = peek(sys_cart_bootready)
+	local ready = mem[sys_cart_bootready]
 	return ready ~= 0
 end
 
@@ -241,9 +241,6 @@ local get_program_asset_summary_step_progress
 local begin_program_asset_details_step_state
 local step_program_asset_details_step_state
 local get_program_asset_details_step_progress
-local builtin_reader_read_f32 = reader_read_f32
-local builtin_reader_read_f64 = reader_read_f64
-
 local function clear_precheck_cache()
 	precheck_cache_key = nil
 	precheck_errors = {}
@@ -256,7 +253,7 @@ end
 clear_precheck_cache()
 
 local function refresh_atlas_load_state()
-	local status = peek(sys_img_status)
+	local status = mem[sys_img_status]
 	if (status & img_status_done) ~= 0 then
 		sys_atlas_ready = true
 	end
@@ -475,7 +472,7 @@ end
 local function reader_read_u8(reader, label)
 	reader_require(reader, 1, label)
 	local addr = reader.base + reader.pos
-	local out = peek8(addr)
+	local out = mem8[addr]
 	reader.pos = reader.pos + 1
 	return out
 end
@@ -537,35 +534,13 @@ end
 local function reader_read_u32le(reader, label)
 	reader_require(reader, 4, label)
 	local addr = reader.base + reader.pos
-	local out = peek32le(addr)
+	local out = mem32le[addr]
 	reader.pos = reader.pos + 4
-	return out
-end
-
-local function reader_read_f32(reader, label)
-	reader_require(reader, 4, label)
-	local addr = reader.base + reader.pos
-	local out = builtin_reader_read_f32(addr)
-	reader.pos = reader.pos + 4
-	return out
-end
-
-local function reader_read_f64(reader, label)
-	reader_require(reader, 8, label)
-	local addr = reader.base + reader.pos
-	local out = builtin_reader_read_f64(addr)
-	reader.pos = reader.pos + 8
 	return out
 end
 
 local function selftest_bitcast_builtins()
 	local ok, err = pcall(function()
-		if type(builtin_reader_read_f32) ~= 'function' then
-			error('reader_read_f32 missing')
-		end
-		if type(builtin_reader_read_f64) ~= 'function' then
-			error('reader_read_f64 missing')
-		end
 		if type(u64_to_f64) ~= 'function' then
 			error('u64_to_f64 missing')
 		end
@@ -788,10 +763,18 @@ local function reader_read_const_value(reader, prop_names)
 		return { kind = 'num', value = reader_read_varint(reader, 'const int') }
 	end
 	if tag == bin_tag_f32 then
-		return { kind = 'num', value = reader_read_f32(reader, 'const f32') }
+		reader_require(reader, 4, 'const f32')
+		local addr = reader.base + reader.pos
+		local value = memf32le[addr]
+		reader.pos = reader.pos + 4
+		return { kind = 'num', value = value }
 	end
 	if tag == bin_tag_f64 then
-		return { kind = 'num', value = reader_read_f64(reader, 'const f64') }
+		reader_require(reader, 8, 'const f64')
+		local addr = reader.base + reader.pos
+		local value = memf64le[addr]
+		reader.pos = reader.pos + 8
+		return { kind = 'num', value = value }
 	end
 	if tag == bin_tag_str then
 		return { kind = 'str', value = reader_read_string(reader, 'const string') }
@@ -881,25 +864,25 @@ local function find_data_asset_payload_range(rom_base, header, target_asset_id)
 		error('ROM TOC is too small.')
 	end
 	local toc_base = rom_base + header.toc_off
-	local toc_magic = peek(toc_base + 0)
+	local toc_magic = mem[toc_base + 0]
 	if toc_magic ~= rom_toc_magic then
 		error('Invalid ROM TOC magic.')
 	end
-	local toc_header_size = peek(toc_base + 4)
+	local toc_header_size = mem[toc_base + 4]
 	if toc_header_size ~= rom_toc_header_size then
 		error('Unexpected ROM TOC header size.')
 	end
-	local entry_size = peek(toc_base + 8)
+	local entry_size = mem[toc_base + 8]
 	if entry_size ~= rom_toc_entry_size then
 		error('Unexpected ROM TOC entry size.')
 	end
-	local entry_count = peek(toc_base + 12)
-	local entry_offset = peek(toc_base + 16)
+	local entry_count = mem[toc_base + 12]
+	local entry_offset = mem[toc_base + 16]
 	if entry_offset ~= rom_toc_header_size then
 		error('Unexpected ROM TOC entry offset.')
 	end
-	local string_table_offset = peek(toc_base + 20)
-	local string_table_length = peek(toc_base + 24)
+	local string_table_offset = mem[toc_base + 20]
+	local string_table_length = mem[toc_base + 24]
 	local entries_bytes = entry_count * entry_size
 	local expected_string_offset = entry_offset + entries_bytes
 	if string_table_offset ~= expected_string_offset then
@@ -910,14 +893,14 @@ local function find_data_asset_payload_range(rom_base, header, target_asset_id)
 	local string_table_base = toc_base + string_table_offset
 	for index = 0, entry_count - 1 do
 		local entry = toc_base + entry_offset + (index * entry_size)
-		local type_id = peek(entry + 8)
+		local type_id = mem[entry + 8]
 		if type_id == rom_asset_type_data then
-			local resid_offset = peek(entry + 16)
-			local resid_length = peek(entry + 20)
+			local resid_offset = mem[entry + 16]
+			local resid_length = mem[entry + 20]
 			local asset_id = read_toc_string(string_table_base, string_table_length, resid_offset, resid_length)
 			if asset_id == target_asset_id then
-				local payload_start = peek(entry + 40)
-				local payload_end = peek(entry + 44)
+				local payload_start = mem[entry + 40]
+				local payload_end = mem[entry + 44]
 				if payload_start == rom_toc_invalid_u32 or payload_end == rom_toc_invalid_u32 or payload_end <= payload_start then
 					error('Data asset "' .. target_asset_id .. '" is missing payload range.')
 				end
@@ -947,10 +930,18 @@ local function reader_read_number_from_tag(reader, tag, label)
 		return reader_read_varint(reader, label)
 	end
 	if tag == bin_tag_f32 then
-		return reader_read_f32(reader, label)
+		reader_require(reader, 4, label)
+		local addr = reader.base + reader.pos
+		local value = memf32le[addr]
+		reader.pos = reader.pos + 4
+		return value
 	end
 	if tag == bin_tag_f64 then
-		return reader_read_f64(reader, label)
+		reader_require(reader, 8, label)
+		local addr = reader.base + reader.pos
+		local value = memf64le[addr]
+		reader.pos = reader.pos + 8
+		return value
 	end
 	error((label or reader.label) .. ' must be a number.')
 end
@@ -2414,14 +2405,14 @@ function update()
 			and #cart_errors == 0
 			and bitcast_selftest_ok
 			and precheck_done
-		local cart_present_and_ready = peek(cart_rom_base) == cart_rom_magic
+		local cart_present_and_ready = mem[cart_rom_base] == cart_rom_magic
 			and cart_boot_ready()
 			and cart_valid
 
 		if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
 			boot_requested = true
 			print('[BootRom] Requesting cart boot.')
-			poke(sys_boot_cart, 1)
+			mem[sys_boot_cart] = 1
 		end
 	end
 end
@@ -2434,9 +2425,9 @@ render_boot_screen = function(scroll_delta)
 
 	cls(color_bg)
 	fill_rect(0, 0, width, 24, 0, color_header_bg)
-	blit_text('BMSX BIOS', center_x('BMSX BIOS', width), 8, 0, color_header_text)
+	vdp_firmware.submit_text_block('BMSX BIOS', center_x('BMSX BIOS', width), 8, 0, vdp_firmware.default_font, sys_palette_color(color_header_text), nil, nil, nil, 0, 2147483647, sys_vdp_layer_world, vdp_firmware.default_font.line_height)
 	local info = build_info()
-	local cart_present = peek(cart_rom_base) == cart_rom_magic
+	local cart_present = mem[cart_rom_base] == cart_rom_magic
 	local elapsed = elapsed_seconds()
 	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
 	local line_slots = textflow.line_slots(width, left, font_width)
@@ -2447,19 +2438,19 @@ render_boot_screen = function(scroll_delta)
 
 	for i = 1, #visible_lines do
 		local line = visible_lines[i]
-		blit_text(line.text, left, y, 0, line.color or color_text)
+		vdp_firmware.submit_text_block(line.text, left, y, 0, vdp_firmware.default_font, sys_palette_color(line.color or color_text), nil, nil, nil, 0, 2147483647, sys_vdp_layer_world, vdp_firmware.default_font.line_height)
 		y = y + line_height
 	end
 
 	if max_scroll > 0 then
 		local first_line = scroll_top + 1
 		local last_line = scroll_top + #visible_lines
-		blit_text('UP/DOWN: SCROLL ' .. first_line .. '-' .. last_line .. '/' .. #content_lines, left, display_height() - line_height, 0, color_muted)
+		vdp_firmware.submit_text_block('UP/DOWN: SCROLL ' .. first_line .. '-' .. last_line .. '/' .. #content_lines, left, display_height() - line_height, 0, vdp_firmware.default_font, sys_palette_color(color_muted), nil, nil, nil, 0, 2147483647, sys_vdp_layer_world, vdp_firmware.default_font.line_height)
 	end
 end
 
 local function service_irqs()
-	local flags = peek(sys_irq_flags)
+	local flags = mem[sys_irq_flags]
 	if flags ~= 0 then
 		irq(flags)
 	end

@@ -1076,6 +1076,53 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 	}
 
+	public readVram(addr: number, out: Uint8Array): void {
+		if (addr >= VRAM_STAGING_BASE && addr + out.byteLength <= VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
+			const offset = addr - VRAM_STAGING_BASE;
+			out.set(this.vramStaging.subarray(offset, offset + out.byteLength));
+			return;
+		}
+		const slot = this.findVramSlot(addr, out.byteLength);
+		const entry = slot.entry;
+		if (entry.baseStride === 0 || entry.regionW === 0 || entry.regionH === 0) {
+			out.fill(0);
+			return;
+		}
+		const offset = addr - slot.baseAddr;
+		const stride = entry.baseStride;
+		const totalBytes = entry.regionH * stride;
+		if (offset + out.byteLength > totalBytes) {
+			throw new Error('[BmsxVDP] VRAM read out of bounds.');
+		}
+		let remaining = out.byteLength;
+		let cursor = 0;
+		let row = Math.floor(offset / stride);
+		let rowOffset = offset - row * stride;
+		while (remaining > 0) {
+			const rowAvailable = stride - rowOffset;
+			const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
+			if (slot.kind === 'asset') {
+				const x = rowOffset / 4;
+				const width = rowBytes / 4;
+				if ($.view.backend.type === 'webgpu') {
+					const surface = this.readSurfaces[slot.surfaceId]!;
+					const buffer = this.getCpuReadbackBuffer(surface);
+					const srcOffset = row * stride + rowOffset;
+					out.set(buffer.subarray(srcOffset, srcOffset + rowBytes), cursor);
+				} else {
+					const slice = $.view.backend.readTextureRegion($.texmanager.getTextureByUri(slot.textureKey), x, row, width, 1);
+					out.set(slice, cursor);
+				}
+			} else {
+				out.fill(0, cursor, cursor + rowBytes);
+			}
+			remaining -= rowBytes;
+			cursor += rowBytes;
+			row += 1;
+			rowOffset = 0;
+		}
+	}
+
 	public beginFrame(): void {
 		this.readBudgetBytes = VDP_RD_BUDGET_BYTES;
 		this.readOverflow = false;

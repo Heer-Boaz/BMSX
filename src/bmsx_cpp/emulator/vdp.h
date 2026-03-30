@@ -28,6 +28,7 @@ public:
 	void setDitherType(i32 type);
 	i32 getDitherType() const { return m_lastDitherType; }
 	void writeVram(uint32_t addr, const u8* data, size_t length) override;
+	void readVram(uint32_t addr, u8* out, size_t length) const override;
 	void beginFrame();
 	void advanceBlitter(int cycles);
 	void enqueueClear(const Color& color);

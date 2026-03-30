@@ -437,7 +437,7 @@ export function clearLights(): void {
 	uploadPointLights();
 }
 export function consumeLightsDirty(): boolean { const d = lightsDirty; lightsDirty = false; return d; }
-export function peekLightsDirty(): boolean { return lightsDirty; }
+export function lightsDirtyNow(): boolean { return lightsDirty; }
 export const DIR_LIGHT_UNIFORM_BINDING = DIR_LIGHT_BINDING; export const POINT_LIGHT_UNIFORM_BINDING = POINT_LIGHT_BINDING;
 export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale: number): void {
 	gl.useProgram(gameShaderProgram3D);

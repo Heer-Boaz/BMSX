@@ -100,7 +100,6 @@ private:
 
 	static constexpr int PERSISTENT_DATA_SIZE = 256;
 
-	std::string expand_tabs(const std::string& text) const;
 	void draw_multiline_text(const std::string& text, int x, int y, int z, const Color& color, BFont& font);
 	void advance_print_cursor(int lineHeight);
 	void reset_print_cursor();
@@ -113,7 +112,7 @@ private:
 	std::string pointer_button_code(int button) const;
 	void writeIoArg(uint32_t base, int index, double value);
 	void writeIoColor(uint32_t base, int offset, const Color& value);
-	uint32_t allocIoPayload(uint32_t words);
+	void allocIoPayload(uint32_t words);
 	void submitClear(const Color& color);
 	void submitFillRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color);
 	void submitDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness);

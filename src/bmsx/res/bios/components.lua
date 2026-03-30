@@ -6,6 +6,7 @@ local timeline_module = require('timeline')
 local timeline_dispatch = require('timeline_dispatch')
 local collision_profiles = require('collision_profiles')
 local scratchrecordbatch = require('scratchrecordbatch')
+local vdp_firmware = require('vdp_firmware')
 local eventemitter = eventemitter.eventemitter
 local timeline = timeline_module.timeline
 
@@ -697,15 +698,28 @@ function textcomponent.new(opts)
 	opts.type_name = 'textcomponent'
 	local self = setmetatable(component.new(opts), textcomponent)
 	self.text = (opts.text)
-	self.font = opts.font
+	self.font = opts.font or get_default_font()
 	self.color = opts.color or { r = 1, g = 1, b = 1, a = 1 }
 	self.background_color = opts.background_color
+	if type(self.color) == 'number' then
+		self.color = sys_palette_color(self.color)
+	end
+	if type(self.background_color) == 'number' then
+		self.background_color = sys_palette_color(self.background_color)
+	end
 	self.wrap_chars = opts.wrap_chars
 	self.center_block_width = opts.center_block_width
 	self.align = opts.align
 	self.baseline = opts.baseline
 	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
-	self.layer = opts.layer or 'world'
+	self.layer = opts.layer or sys_vdp_layer_world
+	if self.layer == 'world' then
+		self.layer = sys_vdp_layer_world
+	elseif self.layer == 'ui' then
+		self.layer = sys_vdp_layer_ui
+	elseif self.layer == 'ide' then
+		self.layer = sys_vdp_layer_ide
+	end
 	return self
 end
 
@@ -776,11 +790,10 @@ end
 local customvisualcomponent = {}
 customvisualcomponent.__index = customvisualcomponent
 setmetatable(customvisualcomponent, { __index = component })
-local customvisual_scratch_items = scratchrecordbatch.new(4):reserve(4)
+local customvisual_scratch_items = scratchrecordbatch.new(3):reserve(3)
 local customvisual_sprite_options = customvisual_scratch_items[1]
 local customvisual_mesh_options = customvisual_scratch_items[2]
 local customvisual_particle_options = customvisual_scratch_items[3]
-local customvisual_glyph_options = customvisual_scratch_items[4]
 
 function customvisualcomponent.new(opts)
 	opts = opts or {}
@@ -866,17 +879,45 @@ function customvisualcomponent:submit_particle(desc)
 end
 
 function customvisualcomponent:submit_glyphs(desc)
-	customvisual_glyph_options.font = desc.font
-	customvisual_glyph_options.color = desc.color
-	customvisual_glyph_options.background_color = desc.background_color
-	customvisual_glyph_options.wrap_chars = desc.wrap_chars
-	customvisual_glyph_options.center_block_width = desc.center_block_width
-	customvisual_glyph_options.glyph_start = desc.glyph_start
-	customvisual_glyph_options.glyph_end = desc.glyph_end
-	customvisual_glyph_options.align = desc.align
-	customvisual_glyph_options.baseline = desc.baseline
-	customvisual_glyph_options.layer = desc.layer
-	blit_glyphs(desc.glyphs, desc.x, desc.y, desc.z, customvisual_glyph_options)
+	local render_font = desc.font or get_default_font()
+	local color = desc.color
+	if type(color) == 'number' then
+		color = sys_palette_color(color)
+	end
+	local background_color = desc.background_color
+	if type(background_color) == 'number' then
+		background_color = sys_palette_color(background_color)
+	end
+	local layer = desc.layer or sys_vdp_layer_world
+	if layer == 'world' then
+		layer = sys_vdp_layer_world
+	elseif layer == 'ui' then
+		layer = sys_vdp_layer_ui
+	elseif layer == 'ide' then
+		layer = sys_vdp_layer_ide
+	end
+	local glyphs = desc.glyphs
+	if type(glyphs) == 'string' then
+		if desc.wrap_chars ~= nil and desc.wrap_chars > 0 then
+			glyphs = vdp_firmware.wrap_text_lines(glyphs, desc.wrap_chars)
+		else
+			glyphs = { glyphs }
+		end
+	end
+	vdp_firmware.submit_glyph_lines(
+		glyphs,
+		desc.x,
+		desc.y,
+		desc.z,
+		render_font,
+		color,
+		background_color,
+		render_font.line_height,
+		desc.center_block_width,
+		desc.glyph_start or 0,
+		desc.glyph_end or 2147483647,
+		layer
+	)
 end
 
 -- inputintentcomponent: declarative input -> state bindings

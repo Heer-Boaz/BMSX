@@ -781,10 +781,10 @@ const computeBlockConstantIn = (
 					case OpCode.NEWT:
 					case OpCode.CONCATN:
 					case OpCode.CLOSURE:
-					case OpCode.GETUP:
-					case OpCode.LOAD_MEM:
-						constants.delete(instruction.a);
-						break;
+				case OpCode.GETUP:
+				case OpCode.LOAD_MEM:
+					constants.delete(instruction.a);
+					break;
 					case OpCode.VARARG: {
 						const countValue = instruction.b === 0 ? null : instruction.b;
 						clearConstRange(constants, instruction.a, countValue);
@@ -1208,7 +1208,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 						changed = true;
 					}
 					if (instruction.op === OpCode.STORE_MEM) {
-						const nextB = rewriteRegisterOperand(instruction.b, copies);
+						const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
 						if (nextB !== instruction.b) {
 							instruction.b = nextB;
 							changed = true;
@@ -1216,8 +1216,16 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					}
 					break;
 				}
+				case OpCode.STORE_MEM_WORDS: {
+					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
+					if (nextB !== instruction.b) {
+						instruction.b = nextB;
+						changed = true;
+					}
+					break;
+				}
 				case OpCode.LOAD_MEM: {
-					const nextB = rewriteRegisterOperand(instruction.b, copies);
+					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
 						changed = true;
@@ -1382,7 +1390,14 @@ const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.JMPIFNOT:
 			case OpCode.LOAD_MEM:
 				updateMax(instruction.a);
-				if (instruction.op === OpCode.LOAD_MEM) {
+				if (instruction.op === OpCode.LOAD_MEM && ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0)) {
+					updateMax(instruction.b);
+				}
+				break;
+			case OpCode.STORE_MEM_WORDS:
+				updateMax(instruction.a);
+				updateMax(instruction.a + Math.max(instruction.c - 1, 0));
+				if ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0) {
 					updateMax(instruction.b);
 				}
 				break;
@@ -1448,7 +1463,9 @@ const computeMaxRegister = (instructions: Instruction[]): number => {
 			}
 			case OpCode.STORE_MEM:
 				updateMax(instruction.a);
-				updateMax(instruction.b);
+				if ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0) {
+					updateMax(instruction.b);
+				}
 				break;
 			default:
 				break;
@@ -1602,11 +1619,21 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 				addRange(instruction.b, instruction.c);
 				break;
 			case OpCode.LOAD_MEM:
-				add(instruction.b);
+				if ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0) {
+					add(instruction.b);
+				}
 				break;
 			case OpCode.STORE_MEM:
 				add(instruction.a);
-				add(instruction.b);
+				if ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0) {
+					add(instruction.b);
+				}
+				break;
+			case OpCode.STORE_MEM_WORDS:
+				addRange(instruction.a, instruction.c);
+				if ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0) {
+					add(instruction.b);
+				}
 				break;
 			case OpCode.CALL: {
 				const countValue = instruction.b === 0 ? maxRegister - instruction.a : instruction.b;
@@ -2375,11 +2402,15 @@ const buildInlineExpansion = (
 				break;
 			case OpCode.LOAD_MEM:
 				mapped.a = mapRegister(mapped.a);
-				mapped.b = mapRegister(mapped.b);
+				mapped.b = remapRkOperand(mapped.b);
 				break;
 			case OpCode.STORE_MEM:
 				mapped.a = mapRegister(mapped.a);
-				mapped.b = mapRegister(mapped.b);
+				mapped.b = remapRkOperand(mapped.b);
+				break;
+			case OpCode.STORE_MEM_WORDS:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = remapRkOperand(mapped.b);
 				break;
 			default:
 				break;

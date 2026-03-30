@@ -316,7 +316,7 @@ export class EngineCore {
 	}
 
 	public is_cart_program_active(): boolean {
-		return Runtime.hasInstance() && !Runtime.instance.isEngineProgramActive();
+		return Runtime.hasInstance && !Runtime.instance.isEngineProgramActive();
 	}
 
 	public request_new_game(): void {
@@ -363,7 +363,7 @@ export class EngineCore {
 					return undefined;
 				}
 				let cursor: unknown;
-				if (Runtime.hasInstance()) {
+				if (Runtime.hasInstance) {
 					cursor = Runtime.instance.getDataAsset(segments[0]);
 				} else {
 					cursor = this._assets.data[segments[0]];

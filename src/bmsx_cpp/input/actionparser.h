@@ -130,13 +130,13 @@ public:
 	explicit Tokenizer(std::string_view input);
 	
 	Token next();
-	Token peek();
+	Token preview();
 	bool hasMore() const;
 	
 private:
 	std::string_view m_input;
 	size_t m_pos = 0;
-	std::optional<Token> m_peeked;
+	std::optional<Token> m_bufferedToken;
 	
 	void skipWhitespace();
 	Token scanToken();

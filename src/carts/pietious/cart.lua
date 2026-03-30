@@ -52,7 +52,7 @@ local function register_collision_profiles()
 end
 
 local function dispatch_irqs()
-	local flags = peek(sys_irq_flags)
+	local flags = mem[sys_irq_flags]
 	if flags ~= 0 then
 		irq(flags)
 	end
@@ -78,7 +78,7 @@ local function grant_starting_loadout()
 end
 
 function init()
-	poke(sys_vdp_dither, 0)
+	mem[sys_vdp_dither] = 0
 	on_irq(irq_reinit, function()
 		init()
 	end)

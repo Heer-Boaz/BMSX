@@ -57,6 +57,13 @@ inline Color readIoColor(const Runtime& runtime, uint32_t base, int offset) {
 	};
 }
 
+inline uint32_t requireArmedPayloadBaseOffset(const Runtime& runtime, uint32_t requiredWords, const char* label) {
+	if (requiredWords > runtime.armedVdpPayloadWordCount()) {
+		throw BMSX_RUNTIME_ERROR(std::string("[VDP] ") + label + " payload underrun (" + std::to_string(requiredWords) + " > " + std::to_string(runtime.armedVdpPayloadWordCount()) + ").");
+	}
+	return runtime.armedVdpPayloadBaseOffset();
+}
+
 void processVdpCommand(Runtime& runtime, uint32_t cmdBase, uint32_t cmd) {
 	auto& memory = runtime.memory();
 	switch (cmd) {
@@ -107,12 +114,12 @@ void processVdpCommand(Runtime& runtime, uint32_t cmdBase, uint32_t cmd) {
 			break;
 		}
 		case IO_CMD_VDP_GLYPH_RUN: {
-			const uint32_t payloadOffset = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 1));
-			const uint32_t textByteLength = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 2));
-			const bool backgroundEnabled = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 14)) != 0u;
+			const uint32_t textByteLength = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 1));
+			const uint32_t payloadWords = (textByteLength + 3u) / 4u;
+			const uint32_t payloadOffset = requireArmedPayloadBaseOffset(runtime, payloadWords, "Glyph");
+			const bool backgroundEnabled = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 13)) != 0u;
 			std::string text;
 			text.resize(textByteLength);
-			const uint32_t payloadWords = (textByteLength + 3u) / 4u;
 			uint32_t byteIndex = 0u;
 			for (uint32_t wordIndex = 0; wordIndex < payloadWords; wordIndex += 1u) {
 				const uint32_t word = static_cast<uint32_t>(asNumber(memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + wordIndex) * IO_ARG_STRIDE)));
@@ -135,31 +142,32 @@ void processVdpCommand(Runtime& runtime, uint32_t cmdBase, uint32_t cmd) {
 				byteIndex += 1u;
 			}
 			const std::optional<Color> backgroundColor = backgroundEnabled
-				? std::optional<Color>(readIoColor(runtime, cmdBase, 15))
+				? std::optional<Color>(readIoColor(runtime, cmdBase, 14))
 				: std::nullopt;
 			runtime.vdp().enqueueGlyphRun(
 				std::vector<std::string>{ text },
+				static_cast<f32>(readIoArg(runtime, cmdBase, 2)),
 				static_cast<f32>(readIoArg(runtime, cmdBase, 3)),
 				static_cast<f32>(readIoArg(runtime, cmdBase, 4)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 5)),
-				runtime.api().resolveFontId(static_cast<uint32_t>(readIoArg(runtime, cmdBase, 6))),
-				readIoColor(runtime, cmdBase, 10),
+				runtime.api().resolveFontId(static_cast<uint32_t>(readIoArg(runtime, cmdBase, 5))),
+				readIoColor(runtime, cmdBase, 9),
 				backgroundColor,
+				static_cast<i32>(readIoArg(runtime, cmdBase, 6)),
 				static_cast<i32>(readIoArg(runtime, cmdBase, 7)),
-				static_cast<i32>(readIoArg(runtime, cmdBase, 8)),
-				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 9)))
+				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 8)))
 			);
 			break;
 		}
 		case IO_CMD_VDP_TILE_RUN: {
-			const uint32_t payloadOffset = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 1));
-			const uint32_t tileCount = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 2));
+			const uint32_t tileCount = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 1));
+			const uint32_t payloadOffset = requireArmedPayloadBaseOffset(runtime, tileCount, "Tile");
 			std::vector<u32> handles(tileCount, IO_VDP_TILE_HANDLE_NONE);
 			for (uint32_t tileIndex = 0; tileIndex < tileCount; tileIndex += 1u) {
 				handles[tileIndex] = static_cast<u32>(asNumber(memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + tileIndex) * IO_ARG_STRIDE)));
 			}
 			runtime.vdp().enqueueTileRun(
 				handles,
+				static_cast<i32>(readIoArg(runtime, cmdBase, 2)),
 				static_cast<i32>(readIoArg(runtime, cmdBase, 3)),
 				static_cast<i32>(readIoArg(runtime, cmdBase, 4)),
 				static_cast<i32>(readIoArg(runtime, cmdBase, 5)),
@@ -167,9 +175,8 @@ void processVdpCommand(Runtime& runtime, uint32_t cmdBase, uint32_t cmd) {
 				static_cast<i32>(readIoArg(runtime, cmdBase, 7)),
 				static_cast<i32>(readIoArg(runtime, cmdBase, 8)),
 				static_cast<i32>(readIoArg(runtime, cmdBase, 9)),
-				static_cast<i32>(readIoArg(runtime, cmdBase, 10)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 11)),
-				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 12)))
+				static_cast<f32>(readIoArg(runtime, cmdBase, 10)),
+				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 11)))
 			);
 			break;
 		}
@@ -249,7 +256,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 {
 	// Initialize I/O memory region
 	m_memory.clearIoSlots();
-	m_memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(0.0));
+	resetVdpPayloadState();
 	// System flags
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
@@ -318,6 +325,15 @@ Runtime::~Runtime() {
 	m_api.reset();
 }
 
+void Runtime::resetVdpPayloadState() {
+	m_memory.writeIoValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(0.0));
+	m_memory.writeIoValue(IO_PAYLOAD_ALLOC_ADDR, valueNumber(0.0));
+	m_memory.writeIoValue(IO_PAYLOAD_DATA_ADDR, valueNumber(0.0));
+	m_payloadDataWritePtr = 0;
+	m_armedVdpPayloadBaseOffset = 0;
+	m_armedVdpPayloadWordCount = 0;
+}
+
 Api& Runtime::api() {
 	return *m_api;
 }
@@ -345,7 +361,7 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_pendingCall = PendingCall::None;
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
-	m_memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(0.0));
+	resetVdpPayloadState();
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
@@ -792,6 +808,31 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 	if (m_handlingVdpCommandWrite || !valueIsNumber(value)) {
 		return;
 	}
+	if (addr == IO_PAYLOAD_ALLOC_ADDR) {
+		const uint32_t words = static_cast<uint32_t>(asNumber(value));
+		const uint32_t writePtr = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_PAYLOAD_WRITE_PTR_ADDR)));
+		const uint32_t next = writePtr + words;
+		if (next > IO_PAYLOAD_CAPACITY) {
+			throw BMSX_RUNTIME_ERROR("[VDP] IO payload buffer overflow (" + std::to_string(next) + " > " + std::to_string(IO_PAYLOAD_CAPACITY) + ").");
+		}
+		m_memory.writeIoValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(static_cast<double>(next)));
+		m_memory.writeIoValue(IO_PAYLOAD_ALLOC_ADDR, valueNumber(static_cast<double>(writePtr)));
+		m_payloadDataWritePtr = writePtr;
+		m_armedVdpPayloadBaseOffset = writePtr;
+		m_armedVdpPayloadWordCount = words;
+		return;
+	}
+	if (addr == IO_PAYLOAD_DATA_ADDR) {
+		const uint32_t writeLimit = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_PAYLOAD_WRITE_PTR_ADDR)));
+		if (m_payloadDataWritePtr >= writeLimit) {
+			throw BMSX_RUNTIME_ERROR("[VDP] IO payload data write exceeds allocated payload (" + std::to_string(m_payloadDataWritePtr) + " >= " + std::to_string(writeLimit) + ").");
+		}
+		const double numericValue = static_cast<double>(static_cast<uint32_t>(asNumber(value)));
+		m_memory.writeIoValue(IO_PAYLOAD_BUFFER_BASE + m_payloadDataWritePtr * IO_ARG_STRIDE, valueNumber(numericValue));
+		m_memory.writeIoValue(IO_PAYLOAD_DATA_ADDR, valueNumber(numericValue));
+		m_payloadDataWritePtr += 1u;
+		return;
+	}
 	if (addr == IO_VDP_CMD) {
 		if (asNumber(value) == 0.0) {
 			return;
@@ -801,11 +842,11 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 			m_vdp.syncRegisters();
 			processVdpCommand(*this, IO_VDP_CMD, static_cast<uint32_t>(asNumber(value)));
 		} catch (...) {
-			m_memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(0.0));
+			resetVdpPayloadState();
 			m_handlingVdpCommandWrite = false;
 			throw;
 		}
-		m_memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(0.0));
+		resetVdpPayloadState();
 		m_handlingVdpCommandWrite = false;
 		return;
 	}

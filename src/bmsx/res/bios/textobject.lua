@@ -4,87 +4,30 @@
 local worldobject = require('worldobject')
 local components = require('components')
 local scratchrecordbatch = require('scratchrecordbatch')
+local vdp_firmware = require('vdp_firmware')
 
 local textobject = {}
 textobject.__index = textobject
 setmetatable(textobject, { __index = worldobject })
-local textobject_draw_scratch_items = scratchrecordbatch.new(4):reserve(4)
+local textobject_draw_scratch_items = scratchrecordbatch.new(3):reserve(3)
 local normal_bg_color = textobject_draw_scratch_items[1]
 local highlight_bg_color = textobject_draw_scratch_items[2]
 local highlight_rect_options = textobject_draw_scratch_items[3]
-local glyph_draw_options = textobject_draw_scratch_items[4]
 
-local default_char_width = 6
-local default_line_height = 16
 local highlight_move_timeline_id = 'textobject.highlight.move'
 local highlight_vibe_timeline_id = 'textobject.highlight.vibe'
 local highlight_move_in_frames = 6
 local highlight_move_settle_frames = 3
 local highlight_move_overshoot = 0.12
 local highlight_move_ticks_per_frame = 12
-local inline_whitespace_chars = { [' '] = true, ['\t'] = true, ['\r'] = true, ['\f'] = true, ['\v'] = true }
-local wrap_break_chars = { ['\n'] = true, [' '] = true, ['\t'] = true, ['\r'] = true, ['\f'] = true, ['\v'] = true }
 
-local function trim(text)
-	return string.gsub(text, '^%s*(.-)%s*$', '%1')
-end
-
-local function wrap_glyphs(text, max_line_length)
-	local lines = {}
-	local line_map = {}
-	local current_line
-	local i = 1
-	local logical_line_index = 1
-
-	local function push_line(line)
-		lines[#lines + 1] = line
-		line_map[#lines] = logical_line_index
+local function measure_line_width(font, line)
+	local width = 0
+	for i = 1, #line do
+		local glyph = font.glyphs[line:sub(i, i)] or font.glyphs['?']
+		width = width + glyph.advance
 	end
-
-	while i <= #text do
-		local ch = string.sub(text, i, i)
-		if ch == '\n' then
-			if current_line then
-				push_line(trim(current_line))
-			else
-				push_line('')
-			end
-			current_line = nil
-			logical_line_index = logical_line_index + 1
-			i = i + 1
-			elseif inline_whitespace_chars[ch] then
-				i = i + 1
-			else
-				local j = i
-				while j <= #text do
-					local cj = string.sub(text, j, j)
-					if wrap_break_chars[cj] then
-						break
-					end
-				j = j + 1
-			end
-			local word = string.sub(text, i, j - 1)
-				local tentative = current_line and (current_line .. ' ' .. word) or word
-			if #tentative <= max_line_length then
-				current_line = tentative
-			else
-				if (current_line) then
-					push_line(trim(current_line))
-					current_line = word
-				else
-					push_line(word)
-						current_line = nil
-				end
-			end
-			i = j
-		end
-	end
-
-	if current_line then
-		push_line(trim(current_line))
-	end
-
-	return lines, line_map
+	return width
 end
 
 local function build_highlight_move_frames(params)
@@ -133,7 +76,7 @@ function textobject.new(opts)
 	self.highlight_move_enabled = false
 	self.highlight_pulse_enabled = false
 	self.highlight_jitter_enabled = false
-	self.layer = opts.layer or 'ui'
+	self.layer = opts.layer or sys_vdp_layer_ui
 	self.highlight_vibe_scale = 1
 	self.highlight_vibe_offset_x = 0
 	self.highlight_vibe_offset_y = 0
@@ -141,10 +84,11 @@ function textobject.new(opts)
 	self.is_typing = false
 	self.text_color = { r = 1, g = 1, b = 1, a = 1 }
 	self.highlight_color = { r = 0, g = 0, b = 0.5, a = 1 }
+	self.font = opts.font or get_default_font()
 	self.dimensions = opts.dimensions or opts.dims or { left = 0, top = 0, right = display_width(), bottom = display_height() }
 	self.centered_block_x = 0
-	self.char_width = opts.char_width or default_char_width
-	self.line_height = opts.line_height or default_line_height
+	self.char_width = opts.char_width or self.font.glyphs['a'].width
+	self.line_height = opts.line_height or self.font.line_height
 	self:set_dimensions(self.dimensions)
 	self.custom_visual = components.customvisualcomponent.new({
 		producer = function()
@@ -207,7 +151,7 @@ function textobject:recenter_text_block()
 	local longest = 0
 	for i = 1, #self.full_text_lines do
 		local line = self.full_text_lines[i]
-		local width = #line * self.char_width
+		local width = measure_line_width(self.font, line)
 		if width > longest then
 			longest = width
 		end
@@ -298,10 +242,10 @@ function textobject:set_text(text_or_lines, opts)
 		typed = true
 	end
 	if type(text_or_lines) == 'string' then
-		self.full_text_lines, self.wrapped_line_to_logical_line = wrap_glyphs(text_or_lines, self.maximum_characters_per_line)
+		self.full_text_lines, self.wrapped_line_to_logical_line = vdp_firmware.wrap_text_lines(text_or_lines, self.maximum_characters_per_line)
 	else
 		local joined = table.concat(text_or_lines, '\n')
-		self.full_text_lines, self.wrapped_line_to_logical_line = wrap_glyphs(joined, self.maximum_characters_per_line)
+		self.full_text_lines, self.wrapped_line_to_logical_line = vdp_firmware.wrap_text_lines(joined, self.maximum_characters_per_line)
 	end
 	self:recenter_text_block()
 	if typed and not snap then
@@ -394,14 +338,20 @@ function textobject:draw()
 			highlight_rect_options
 		)
 	end
-	glyph_draw_options.color = text_color
-	glyph_draw_options.background_color = normal_bg_color
-	glyph_draw_options.layer = self.layer
-	for i = 1, #self.text do
-		local line = self.text[i]
-		local y = dims.top + line_height * (i - 1)
-		blit_glyphs(line, self.centered_block_x, y, self.z, glyph_draw_options)
-	end
+	vdp_firmware.submit_glyph_lines(
+		self.text,
+		self.centered_block_x,
+		dims.top,
+		self.z,
+		self.font,
+		text_color,
+		normal_bg_color,
+		line_height,
+		nil,
+		0,
+		2147483647,
+		self.layer
+	)
 end
 
 return textobject

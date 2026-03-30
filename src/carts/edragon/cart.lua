@@ -3,14 +3,14 @@ local fighter_module = require('fighter')
 local arena_module = require('arena')
 
 local function service_irqs()
-	local flags = peek(sys_irq_flags)
+	local flags = mem[sys_irq_flags]
 	if flags ~= 0 then
 		irq(flags)
 	end
 end
 
 function init()
-	poke(sys_vdp_dither, 0)
+	mem[sys_vdp_dither] = 0
 	on_irq(irq_reinit, function()
 		init()
 	end)

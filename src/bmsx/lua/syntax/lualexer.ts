@@ -171,7 +171,7 @@ export class LuaLexer {
 				this.pushToken(tokens, this.match(':') ? LuaTokenType.DoubleColon : LuaTokenType.Colon, null);
 				return;
 			case '.':
-				if (LuaLexer.isDigit(this.peek())) {
+				if (LuaLexer.isDigit(this.currentChar())) {
 					this.scanNumber(tokens, true);
 					return;
 				}
@@ -206,7 +206,7 @@ export class LuaLexer {
 	}
 
 	private skipComment(): void {
-		if (this.peek() === '[') {
+		if (this.currentChar() === '[') {
 			const level = this.determineLongBracketLevelAt(this.currentIndex);
 			if (level >= 0) {
 				this.advance();
@@ -219,13 +219,13 @@ export class LuaLexer {
 	}
 
 	private skipLineComment(): void {
-		while (!this.isAtEnd() && this.peek() !== '\n') {
+		while (!this.isAtEnd() && this.currentChar() !== '\n') {
 			this.advance();
 		}
 	}
 
 	private scanIdentifier(tokens: LuaToken[]): void {
-		while (LuaLexer.isIdentifierPart(this.peek())) {
+		while (LuaLexer.isIdentifierPart(this.currentChar())) {
 			this.advance();
 		}
 		const lexeme = this.currentLexeme();
@@ -247,7 +247,7 @@ export class LuaLexer {
 	}
 
 	private scanNumber(tokens: LuaToken[], startedWithDot: boolean): void {
-		if (!startedWithDot && this.source.charAt(this.tokenStartIndex) === '0' && (this.peek() === 'x' || this.peek() === 'X')) {
+		if (!startedWithDot && this.source.charAt(this.tokenStartIndex) === '0' && (this.currentChar() === 'x' || this.currentChar() === 'X')) {
 			this.advance();
 			this.scanHexadecimalLiteral(tokens);
 			return;
@@ -257,12 +257,12 @@ export class LuaLexer {
 		}
 		else {
 			this.consumeDigits();
-			if (this.peek() === '.' && LuaLexer.isDigit(this.peekNext())) {
+			if (this.currentChar() === '.' && LuaLexer.isDigit(this.nextChar())) {
 				this.advance();
 				this.consumeDigits();
 			}
 		}
-		if (this.peek() === 'e' || this.peek() === 'E') {
+		if (this.currentChar() === 'e' || this.currentChar() === 'E') {
 			this.scanDecimalExponent();
 		}
 		const lexeme = this.currentLexeme();
@@ -331,7 +331,7 @@ export class LuaLexer {
 			default:
 				if (LuaLexer.isDigit(code)) {
 					let digits = code;
-					for (let index = 0; index < 2 && LuaLexer.isDigit(this.peek()); index += 1) {
+					for (let index = 0; index < 2 && LuaLexer.isDigit(this.currentChar()); index += 1) {
 						digits += this.advance();
 					}
 					const value = Number.parseInt(digits, 10);
@@ -345,7 +345,7 @@ export class LuaLexer {
 	}
 
 	private consumeDigits(): void {
-		while (LuaLexer.isDigit(this.peek())) {
+		while (LuaLexer.isDigit(this.currentChar())) {
 			this.advance();
 		}
 	}
@@ -353,10 +353,10 @@ export class LuaLexer {
 	private scanDecimalExponent(): void {
 		const markerIndex = this.currentIndex;
 		this.advance();
-		if (this.peek() === '+' || this.peek() === '-') {
+		if (this.currentChar() === '+' || this.currentChar() === '-') {
 			this.advance();
 		}
-		if (!LuaLexer.isDigit(this.peek())) {
+		if (!LuaLexer.isDigit(this.currentChar())) {
 			throw new LuaSyntaxError('[LuaLexer] Invalid numeric literal exponent.', this.path, this.tokenStartLine, this.tokenStartColumn);
 		}
 		this.consumeDigits();
@@ -367,13 +367,13 @@ export class LuaLexer {
 
 	private scanHexadecimalLiteral(tokens: LuaToken[]): void {
 		let hasDigits = false;
-		while (LuaLexer.isHexDigit(this.peek())) {
+		while (LuaLexer.isHexDigit(this.currentChar())) {
 			this.advance();
 			hasDigits = true;
 		}
-		if (this.peek() === '.') {
+		if (this.currentChar() === '.') {
 			this.advance();
-			while (LuaLexer.isHexDigit(this.peek())) {
+			while (LuaLexer.isHexDigit(this.currentChar())) {
 				this.advance();
 				hasDigits = true;
 			}
@@ -381,12 +381,12 @@ export class LuaLexer {
 		if (!hasDigits) {
 			throw new LuaSyntaxError('[LuaLexer] Hexadecimal literal requires digits.', this.path, this.tokenStartLine, this.tokenStartColumn);
 		}
-		if (this.peek() === 'p' || this.peek() === 'P') {
+		if (this.currentChar() === 'p' || this.currentChar() === 'P') {
 			this.advance();
-			if (this.peek() === '+' || this.peek() === '-') {
+			if (this.currentChar() === '+' || this.currentChar() === '-') {
 				this.advance();
 			}
-			if (!LuaLexer.isDigit(this.peek())) {
+			if (!LuaLexer.isDigit(this.currentChar())) {
 				throw new LuaSyntaxError('[LuaLexer] Hexadecimal literal requires binary exponent.', this.path, this.tokenStartLine, this.tokenStartColumn);
 			}
 			this.consumeDigits();
@@ -400,7 +400,7 @@ export class LuaLexer {
 	}
 
 	private skipWhitespaceSequence(): void {
-		while (!this.isAtEnd() && LuaLexer.isWhitespace(this.peek())) {
+		while (!this.isAtEnd() && LuaLexer.isWhitespace(this.currentChar())) {
 			this.advance();
 		}
 	}
@@ -408,7 +408,7 @@ export class LuaLexer {
 	private readHexEscapeDigits(required: number): string {
 		let digits = '';
 		for (let index = 0; index < required; index += 1) {
-			const next = this.peek();
+			const next = this.currentChar();
 			if (!LuaLexer.isHexDigit(next)) {
 				throw new LuaSyntaxError('[LuaLexer] Invalid hexadecimal escape sequence.', this.path, this.tokenStartLine, this.tokenStartColumn);
 			}
@@ -472,12 +472,12 @@ export class LuaLexer {
 	private checkLongBracketClose(level: number): boolean {
 		let index = this.currentIndex;
 		for (let count = 0; count < level; count += 1) {
-			if (this.peekAt(index) !== '=') {
+			if (this.charAtIndex(index) !== '=') {
 				return false;
 			}
 			index += 1;
 		}
-		return this.peekAt(index) === ']';
+		return this.charAtIndex(index) === ']';
 	}
 
 	private consumeLongBracketClose(level: number): void {
@@ -494,10 +494,10 @@ export class LuaLexer {
 	}
 
 	private consumeOptionalLineBreak(): void {
-		const next = this.peek();
+		const next = this.currentChar();
 		if (next === '\r') {
 			this.advance();
-			if (this.peek() === '\n') {
+			if (this.currentChar() === '\n') {
 				this.advance();
 			}
 		} else if (next === '\n') {
@@ -505,7 +505,7 @@ export class LuaLexer {
 		}
 	}
 
-	private peekAt(index: number): string {
+	private charAtIndex(index: number): string {
 		return this.source.charAt(index) || '\0';
 	}
 
@@ -571,11 +571,11 @@ export class LuaLexer {
 		return true;
 	}
 
-	private peek(): string {
+	private currentChar(): string {
 		return this.source.charAt(this.currentIndex) || '\0';
 	}
 
-	private peekNext(): string {
+	private nextChar(): string {
 		return this.source.charAt(this.currentIndex + 1) || '\0';
 	}
 

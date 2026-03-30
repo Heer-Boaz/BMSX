@@ -27,7 +27,18 @@ import {
 	VRAM_STAGING_BASE,
 	VRAM_STAGING_SIZE,
 } from './memory_map';
-import { IO_SLOT_COUNT, IO_VDP_RD_DATA, IO_VDP_RD_STATUS } from './io';
+import {
+	IO_DMA_STATUS,
+	IO_DMA_WRITTEN,
+	IO_IMG_STATUS,
+	IO_IMG_WRITTEN,
+	IO_IRQ_FLAGS,
+	IO_SLOT_COUNT,
+	IO_SYS_CART_BOOTREADY,
+	IO_VDP_RD_DATA,
+	IO_VDP_RD_STATUS,
+	IO_VDP_STATUS,
+} from './io';
 import { enforceLuaHeapBudget } from './lua_heap_usage';
 import { hashAssetId, tokenKey } from '../rompack/asset_tokens';
 import { ScratchBatch } from '../utils/scratchbatch';
@@ -81,6 +92,7 @@ export type ImageWriteEntry = {
 
 export type VramWriteSink = {
 	writeVram(addr: number, bytes: Uint8Array): void;
+	readVram(addr: number, out: Uint8Array): void;
 };
 
 export type VdpIoHandler = {
@@ -122,6 +134,9 @@ export class Memory {
 	private vdpIoHandler: VdpIoHandler;
 	private ioWriteHandler: IoWriteHandler | null = null;
 	private readonly vramScratch = new Uint8Array(4);
+	private readonly vramReadScratch = new Uint8Array(4);
+	private readonly mappedFloatBuffer = new ArrayBuffer(8);
+	private readonly mappedFloatView = new DataView(this.mappedFloatBuffer);
 
 	private assetEntries: AssetEntry[] = [];
 	private assetIndexById = new Map<string, number>();
@@ -938,6 +953,13 @@ export class Memory {
 		return this.readU32(addr);
 	}
 
+	public readMappedValue(addr: number): Value {
+		if (this.isVramRange(addr, 4)) {
+			return this.readMappedU32LE(addr);
+		}
+		return this.readValue(addr);
+	}
+
 	public writeValue(addr: number, value: Value): void {
 		if (this.isIoAddress(addr)) {
 			this.ioSlots[this.ioIndex(addr)] = value;
@@ -952,9 +974,49 @@ export class Memory {
 		this.writeU32(addr, value);
 	}
 
+	public writeIoValue(addr: number, value: Value): void {
+		if (!this.isIoAddress(addr)) {
+			throw new Error(`[Memory] writeIoValue expects an IO address. Got ${addr}.`);
+		}
+		this.ioSlots[this.ioIndex(addr)] = value;
+	}
+
+	public writeMappedValue(addr: number, value: Value): void {
+		if (!this.isMappedWritableRange(addr, 4)) {
+			return;
+		}
+		if (this.isVramRange(addr, 4)) {
+			if (typeof value !== 'number') {
+				throw new Error(`[Memory] mem[addr] expects a number for VRAM writes. Got ${typeof value}.`);
+			}
+			this.writeMappedU32LE(addr, value);
+			return;
+		}
+		this.writeValue(addr, value);
+	}
+
 	public readU8(addr: number): number {
 		const { data, offset } = this.resolveReadRegion(addr, 1);
 		return data[offset];
+	}
+
+	public readMappedU8(addr: number): number {
+		if (this.isVramRange(addr, 1)) {
+			const out = this.vramReadScratch.subarray(0, 1);
+			this.readVram(addr, out);
+			return out[0];
+		}
+		if (this.isIoAddress(addr)) {
+			const value = this.readValue(addr);
+			if (typeof value !== 'number') {
+				throw new Error(`[Memory] mem8[addr] expects a numeric IO register. Got ${typeof value}.`);
+			}
+			return value & 0xff;
+		}
+		if (this.isIoRegionRange(addr, 1)) {
+			return 0;
+		}
+		return this.readU8(addr);
 	}
 
 	public writeU8(addr: number, value: number): void {
@@ -969,6 +1031,17 @@ export class Memory {
 		const { data, offset } = this.resolveWriteRegion(addr, 1);
 		data[offset] = value & 0xff;
 		this.markAssetDirty(addr, 1);
+	}
+
+	public writeMappedU8(addr: number, value: number): void {
+		if (!this.isMappedWritableRange(addr, 1)) {
+			return;
+		}
+		if (this.isIoAddress(addr)) {
+			this.writeValue(addr, value & 0xff);
+			return;
+		}
+		this.writeU8(addr, value);
 	}
 
 	public readU32(addr: number): number {
@@ -987,6 +1060,31 @@ export class Memory {
 		) >>> 0;
 	}
 
+	public readMappedU16LE(addr: number): number {
+		const b0 = this.readMappedU8(addr);
+		const b1 = this.readMappedU8(addr + 1);
+		return (b0 | (b1 << 8)) >>> 0;
+	}
+
+	public readMappedU32LE(addr: number): number {
+		const b0 = this.readMappedU8(addr);
+		const b1 = this.readMappedU8(addr + 1);
+		const b2 = this.readMappedU8(addr + 2);
+		const b3 = this.readMappedU8(addr + 3);
+		return (b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)) >>> 0;
+	}
+
+	public readMappedF32LE(addr: number): number {
+		this.mappedFloatView.setUint32(0, this.readMappedU32LE(addr), true);
+		return this.mappedFloatView.getFloat32(0, true);
+	}
+
+	public readMappedF64LE(addr: number): number {
+		this.mappedFloatView.setUint32(0, this.readMappedU32LE(addr), true);
+		this.mappedFloatView.setUint32(4, this.readMappedU32LE(addr + 4), true);
+		return this.mappedFloatView.getFloat64(0, true);
+	}
+
 	public writeU32(addr: number, value: number): void {
 		if (this.isVramRange(addr, 4)) {
 			this.vramScratch[0] = value & 0xff;
@@ -999,6 +1097,42 @@ export class Memory {
 		const offset = this.resolveRamOffset(addr, 4);
 		this.ramView.setUint32(offset, value >>> 0, true);
 		this.markAssetDirty(addr, 4);
+	}
+
+	public writeMappedU16LE(addr: number, value: number): void {
+		if (!this.isMappedWritableRange(addr, 2)) {
+			return;
+		}
+		this.writeMappedU8(addr, value);
+		this.writeMappedU8(addr + 1, value >>> 8);
+	}
+
+	public writeMappedU32LE(addr: number, value: number): void {
+		if (!this.isMappedWritableRange(addr, 4)) {
+			return;
+		}
+		if (this.isIoAddress(addr)) {
+			this.writeValue(addr, value >>> 0);
+			return;
+		}
+		this.writeMappedU8(addr, value);
+		this.writeMappedU8(addr + 1, value >>> 8);
+		this.writeMappedU8(addr + 2, value >>> 16);
+		this.writeMappedU8(addr + 3, value >>> 24);
+	}
+
+	public writeMappedF32LE(addr: number, value: number): void {
+		this.mappedFloatView.setFloat32(0, value, true);
+		this.writeMappedU32LE(addr, this.mappedFloatView.getUint32(0, true));
+	}
+
+	public writeMappedF64LE(addr: number, value: number): void {
+		if (!this.isMappedWritableRange(addr, 8)) {
+			return;
+		}
+		this.mappedFloatView.setFloat64(0, value, true);
+		this.writeMappedU32LE(addr, this.mappedFloatView.getUint32(0, true));
+		this.writeMappedU32LE(addr + 4, this.mappedFloatView.getUint32(4, true));
 	}
 
 	public readBytes(addr: number, length: number): Uint8Array {
@@ -1031,6 +1165,10 @@ export class Memory {
 	private isIoAddress(addr: number): boolean {
 		const index = addr - IO_BASE;
 		return index >= 0 && index < this.ioSlots.length * IO_WORD_SIZE && (index % IO_WORD_SIZE) === 0;
+	}
+
+	private isIoRegionRange(addr: number, length: number): boolean {
+		return addr >= IO_BASE && addr + length <= IO_BASE + this.ioSlots.length * IO_WORD_SIZE;
 	}
 
 	private ioIndex(addr: number): number {
@@ -1081,8 +1219,47 @@ export class Memory {
 		}
 	}
 
+	private isRangeWithinRegion(addr: number, length: number, base: number, size: number): boolean {
+		return addr >= base && addr + length <= base + size;
+	}
+
+	private isLuaReadOnlyIoAddress(addr: number): boolean {
+		return addr === IO_SYS_CART_BOOTREADY
+			|| addr === IO_IRQ_FLAGS
+			|| addr === IO_DMA_STATUS
+			|| addr === IO_DMA_WRITTEN
+			|| addr === IO_IMG_STATUS
+			|| addr === IO_IMG_WRITTEN
+			|| addr === IO_VDP_RD_STATUS
+			|| addr === IO_VDP_RD_DATA
+			|| addr === IO_VDP_STATUS;
+	}
+
+	private isMappedWritableRange(addr: number, length: number): boolean {
+		if (this.isIoRegionRange(addr, length)) {
+			return length === IO_WORD_SIZE && this.isIoAddress(addr) && !this.isLuaReadOnlyIoAddress(addr);
+		}
+		if (this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.engineRom.byteLength)) {
+			return false;
+		}
+		if (this.cartRom && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength)) {
+			return false;
+		}
+		if (this.overlayRom && this.isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, this.overlayRom.byteLength)) {
+			return false;
+		}
+		if (this.isVramRange(addr, length)) {
+			return true;
+		}
+		return addr >= RAM_BASE && addr + length <= RAM_USED_END;
+	}
+
 	private writeVram(addr: number, bytes: Uint8Array): void {
 		this.vramWriter.writeVram(addr, bytes);
+	}
+
+	private readVram(addr: number, out: Uint8Array): void {
+		this.vramWriter.readVram(addr, out);
 	}
 
 	public isVramRange(addr: number, length: number): boolean {

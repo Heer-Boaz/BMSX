@@ -32,7 +32,7 @@ end
 local function wait_for_vblank_clear()
 	local remaining = cycles_per_frame
 	while remaining > 0 do
-		local status = peek(sys_vdp_status)
+		local status = mem[sys_vdp_status]
 		if (status & sys_vdp_status_vblank) == 0 then
 			return true
 		end
@@ -45,11 +45,11 @@ local function wait_for_vblank_set()
 	local remaining = cycles_per_frame
 	local saw_irq = false
 	while remaining > 0 do
-		local status = peek(sys_vdp_status)
+		local status = mem[sys_vdp_status]
 		if (status & sys_vdp_status_vblank) ~= 0 then
 			return true
 		end
-		local flags = peek(sys_irq_flags)
+		local flags = mem[sys_irq_flags]
 		if (flags & irq_vblank) ~= 0 then
 			saw_irq = true
 		end
@@ -67,12 +67,12 @@ on_irq(function(flags)
 	if (flags & irq_vblank) ~= 0 then
 		vblank_count = vblank_count + 1
 
-		local status = peek(sys_vdp_status)
+		local status = mem[sys_vdp_status]
 		if (status & sys_vdp_status_vblank) == 0 then
 			fail("irq_vblank seen but VDP_STATUS_VBLANK not set")
 		end
 
-		poke(sys_irq_ack, irq_vblank)
+		mem[sys_irq_ack] = irq_vblank
 	end
 end)
 
@@ -95,12 +95,12 @@ function update()
 	end
 
 	if full_frame_vblank then
-		local status = peek(sys_vdp_status)
+		local status = mem[sys_vdp_status]
 		if (status & sys_vdp_status_vblank) == 0 then
 			fail("VDP_STATUS_VBLANK not set for full-frame VBLANK")
 		end
 	else
-		local status = peek(sys_vdp_status)
+		local status = mem[sys_vdp_status]
 		if (status & sys_vdp_status_vblank) ~= 0 then
 			if not wait_for_vblank_clear() then
 				fail("VDP_STATUS_VBLANK never cleared")

@@ -32,7 +32,7 @@ export class CaretNavigationState {
 		};
 	}
 
-	public peek(row: number, column: number): { visualIndex: number; segmentStartColumn: number } {
+	public lookup(row: number, column: number): { visualIndex: number; segmentStartColumn: number } {
 		const current = this.override;
 		if (!current) {
 			return null;
@@ -337,7 +337,7 @@ export function moveCursorDown(): void {
  * Move cursor to start of line or document
  */
 export function moveCursorHome(): void {
-	const previousOverride = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
+	const previousOverride = caretNavigation.lookup(ide_state.cursorRow, ide_state.cursorColumn);
 	caretNavigation.clear();
 	const buffer = ide_state.buffer;
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
@@ -374,7 +374,7 @@ export function moveCursorHome(): void {
  * Move cursor to end of line or document
  */
 export function moveCursorEnd(): void {
-	const previousOverride = caretNavigation.peek(ide_state.cursorRow, ide_state.cursorColumn);
+	const previousOverride = caretNavigation.lookup(ide_state.cursorRow, ide_state.cursorColumn);
 	caretNavigation.clear();
 	const buffer = ide_state.buffer;
 	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };

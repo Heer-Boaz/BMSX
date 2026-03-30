@@ -1,5 +1,6 @@
 -- ecs_systems.lua
 -- built-in ecs systems for lua engine
+local vdp_firmware = require('vdp_firmware')
 --
 -- DESIGN PRINCIPLES — collision handling via overlap2dsystem
 --
@@ -76,11 +77,10 @@ local actioneffectcomponent = 'actioneffectcomponent'
 
 -- Shared opts table to avoid per-frame allocation.
 local active_scope = { scope = 'active' }
-local render_scratch_items = scratchrecordbatch.new(4):reserve(4)
-local text_render_options = render_scratch_items[1]
-local sprite_render_options = render_scratch_items[2]
-local mesh_render_options = render_scratch_items[3]
-local point_light_position = render_scratch_items[4]
+local render_scratch_items = scratchrecordbatch.new(3):reserve(3)
+local sprite_render_options = render_scratch_items[1]
+local mesh_render_options = render_scratch_items[2]
+local point_light_position = render_scratch_items[3]
 
 local behaviortreesystem = {}
 behaviortreesystem.__index = behaviortreesystem
@@ -742,15 +742,28 @@ function textrendersystem:update()
 			y = obj.y + offset.y
 			z = obj.z + offset.z
 		end
-		text_render_options.font = tc.font
-		text_render_options.color = tc.color
-		text_render_options.background_color = tc.background_color
-		text_render_options.wrap_chars = tc.wrap_chars
-		text_render_options.center_block_width = tc.center_block_width
-		text_render_options.align = tc.align
-		text_render_options.baseline = tc.baseline
-		text_render_options.layer = tc.layer
-		blit_glyphs(tc.text, x, y, z, text_render_options)
+		local glyphs = tc.text
+		if type(glyphs) == 'string' then
+			if tc.wrap_chars ~= nil and tc.wrap_chars > 0 then
+				glyphs = vdp_firmware.wrap_text_lines(glyphs, tc.wrap_chars)
+			else
+				glyphs = { glyphs }
+			end
+		end
+		vdp_firmware.submit_glyph_lines(
+			glyphs,
+			x,
+			y,
+			z,
+			tc.font,
+			tc.color,
+			tc.background_color,
+			tc.font.line_height,
+			tc.center_block_width,
+			0,
+			2147483647,
+			tc.layer
+		)
 		::continue_text_render::
 	end
 end

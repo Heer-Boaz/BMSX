@@ -586,7 +586,7 @@ export function visualIndexToSegment(index: number): VisualLineSegment {
 
 export function positionToVisualIndex(row: number, column: number): number {
 	ensureVisualLines();
-	const override = caretNavigation.peek(row, column);
+	const override = caretNavigation.lookup(row, column);
 	if (override) {
 		return override.visualIndex;
 	}

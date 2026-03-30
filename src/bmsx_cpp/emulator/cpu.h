@@ -587,6 +587,16 @@ enum class OpCode : uint8_t {
 	RET,
 	LOAD_MEM,
 	STORE_MEM,
+	STORE_MEM_WORDS,
+};
+
+enum class MemoryAccessKind : uint8_t {
+	Word = 0,
+	U8 = 1,
+	U16LE = 2,
+	U32LE = 3,
+	F32LE = 4,
+	F64LE = 5,
 };
 
 enum class RunResult {
@@ -804,6 +814,9 @@ private:
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
 	void writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values);
 	void setRegister(CallFrame& frame, int index, const Value& value);
+	Value readMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind) const;
+	void writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, const Value& value);
+	void writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount);
 	const Value& readRK(CallFrame& frame, uint32_t raw, int bits);
 	Value resolveTableIndex(Table* table, const Value& key);
 

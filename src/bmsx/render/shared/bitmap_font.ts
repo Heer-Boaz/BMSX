@@ -101,14 +101,12 @@ export class BFont {
 	protected readonly glyphs: Map<string, FontGlyph> = new Map();
 	protected readonly advancePadding: number;
 	protected readonly lineHeightValue: number;
-	protected readonly spaceAdvanceValue: number;
 	protected readonly fallbackCharacter: string = '?';
 	protected letter_to_img: GlyphMap;
 
 	constructor(glyphmap?: GlyphMap, advancePadding: number = 0) {
 		this.letter_to_img = glyphmap ?? DEFAULT_GLYPH_MAP;
 		this.advancePadding = advancePadding;
-		this.spaceAdvanceValue = this.advance(' ');
 		this.lineHeightValue = this.char_height('A');
 	}
 
@@ -121,14 +119,7 @@ export class BFont {
 	}
 
 	public char_to_img(c: string): string {
-		let letter: string;
-		if (c in this.letter_to_img) {
-			letter = this.letter_to_img[c];
-		} else {
-			console.warn(`[BFont]: Character '${c}' not found in letter_to_img map.`);
-			letter = this.letter_to_img[this.fallbackCharacter];
-		}
-		return letter;
+		return this.letter_to_img[c] ?? this.letter_to_img[this.fallbackCharacter]!;
 	}
 
 	public textWidth(text: string): number {
@@ -140,23 +131,26 @@ export class BFont {
 	}
 
 	public getGlyph(char: string): FontGlyph {
-		let glyph = this.glyphs.get(char);
-		if (glyph) {
+		const glyph = this.glyphs.get(char);
+		if (glyph !== undefined) {
 			return glyph;
 		}
+		if (char === '\t' && this.letter_to_img[char] === undefined) {
+			const space = this.getGlyph(' ');
+			const tabAdvance = space.advance * TAB_SPACES;
+			const computed: FontGlyph = {
+				imgid: space.imgid,
+				width: tabAdvance,
+				height: space.height,
+				advance: tabAdvance,
+			};
+			this.glyphs.set(char, computed);
+			return computed;
+		}
 		const imgid = this.char_to_img(char);
-		const asset = Runtime.hasInstance() && Runtime.instance.hasAssetLayerLookup()
-			? Runtime.instance.getImageAsset(imgid)
-			: $.assets.img[imgid] ?? $.system_assets.img[imgid];
-		if (!asset) {
-			throw new Error(`[BFont] Glyph asset "${imgid}" for character "${char}" not found.`);
-		}
-		const meta = asset.imgmeta;
-		if (!meta) {
-			throw new Error(`[BFont] Glyph asset "${imgid}" for character "${char}" missing metadata.`);
-		}
-		const width = meta.width;
-		const height = meta.height;
+		const asset = $.assets.img[imgid] ?? $.system_assets.img[imgid] ?? Runtime.instance.getImageAsset(imgid);
+		const width = asset.imgmeta.width;
+		const height = asset.imgmeta.height;
 		const computed: FontGlyph = {
 			imgid,
 			width,
@@ -187,10 +181,6 @@ export class BFont {
 		let width = 0;
 		for (let i = 0; i < text.length; i++) {
 			const ch = text.charAt(i);
-			if (ch === '\t') {
-				width += this.spaceAdvanceValue * TAB_SPACES;
-				continue;
-			}
 			if (ch === '\n') {
 				continue;
 			}

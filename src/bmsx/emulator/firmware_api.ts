@@ -34,9 +34,8 @@ import {
 	IO_CMD_VDP_FILL_RECT,
 	IO_CMD_VDP_GLYPH_RUN,
 	IO_CMD_VDP_TILE_RUN,
-	IO_PAYLOAD_BUFFER_BASE,
-	IO_PAYLOAD_CAPACITY,
-	IO_PAYLOAD_WRITE_PTR_ADDR,
+	IO_PAYLOAD_ALLOC_ADDR,
+	IO_PAYLOAD_DATA_ADDR,
 	IO_VDP_CMD,
 	IO_VDP_CMD_ARG0,
 	IO_VDP_TILE_HANDLE_NONE,
@@ -47,7 +46,6 @@ export type ApiOptions = {
 	runtime: Runtime;
 };
 
-const TAB_SPACES = 2;
 const ioGlyphRunUtf8Encoder = new TextEncoder();
 type FontDefinition = {
 	glyphs: Record<string, string>;
@@ -152,10 +150,6 @@ export class Api {
 		return font;
 	}
 
-	public getFontId(font: BFont): number {
-		return this.registerFont(font);
-	}
-
 	private buildFontDescriptor(font: BFont): FirmwareFontDescriptor {
 		const cached = this.fontDescriptors.get(font);
 		if (cached) {
@@ -173,6 +167,13 @@ export class Api {
 				advance: glyph.advance,
 			};
 		}
+		const tabGlyph = font.getGlyph('\t');
+		glyphs['\t'] = {
+			imgid: tabGlyph.imgid,
+			width: tabGlyph.width,
+			height: tabGlyph.height,
+			advance: tabGlyph.advance,
+		};
 		const descriptor: FirmwareFontDescriptor = {
 			id: this.registerFont(font),
 			line_height: font.lineHeight,
@@ -194,14 +195,8 @@ export class Api {
 		this.writeIoArg(base, offset + 3, value.a);
 	}
 
-	private allocIoPayload(words: number): number {
-		const writePtr = this._runtime.memory.readValue(IO_PAYLOAD_WRITE_PTR_ADDR) as number;
-		const next = writePtr + words;
-		if (next > IO_PAYLOAD_CAPACITY) {
-			throw new Error(`[FirmwareApi] IO payload buffer overflow (${next} > ${IO_PAYLOAD_CAPACITY}).`);
-		}
-		this._runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, next);
-		return writePtr;
+	private allocIoPayload(words: number): void {
+		this._runtime.memory.writeValue(IO_PAYLOAD_ALLOC_ADDR, words);
 	}
 
 	private submitClear(colorValue: color): void {
@@ -252,7 +247,7 @@ export class Api {
 		}
 		const textBytes = ioGlyphRunUtf8Encoder.encode(text);
 		const payloadWords = Math.ceil(textBytes.length / 4);
-		const payloadOffset = this.allocIoPayload(payloadWords);
+		this.allocIoPayload(payloadWords);
 		for (let wordIndex = 0; wordIndex < payloadWords; wordIndex += 1) {
 			const byteIndex = wordIndex * 4;
 			const word =
@@ -260,25 +255,24 @@ export class Api {
 				| ((textBytes[byteIndex + 1] ?? 0) << 8)
 				| ((textBytes[byteIndex + 2] ?? 0) << 16)
 				| ((textBytes[byteIndex + 3] ?? 0) << 24);
-			this._runtime.memory.writeValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + wordIndex) * IO_ARG_STRIDE, word >>> 0);
+			this._runtime.memory.writeValue(IO_PAYLOAD_DATA_ADDR, word >>> 0);
 		}
-		this.writeIoArg(IO_VDP_CMD_ARG0, 0, payloadOffset);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 1, textBytes.length);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 2, x);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 3, y);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 4, z);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 5, this.registerFont(font));
-		this.writeIoArg(IO_VDP_CMD_ARG0, 6, start);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 7, end);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 8, layer);
-		this.writeIoColor(IO_VDP_CMD_ARG0, 9, colorValue);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 0, textBytes.length);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 1, x);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 2, y);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 3, z);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 4, this.registerFont(font));
+		this.writeIoArg(IO_VDP_CMD_ARG0, 5, start);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 6, end);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 7, layer);
+		this.writeIoColor(IO_VDP_CMD_ARG0, 8, colorValue);
 		if (backgroundColor) {
-			this.writeIoArg(IO_VDP_CMD_ARG0, 13, 1);
-			this.writeIoColor(IO_VDP_CMD_ARG0, 14, backgroundColor);
+			this.writeIoArg(IO_VDP_CMD_ARG0, 12, 1);
+			this.writeIoColor(IO_VDP_CMD_ARG0, 13, backgroundColor);
 			this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_GLYPH_RUN);
 			return;
 		}
-		this.writeIoArg(IO_VDP_CMD_ARG0, 13, 0);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 12, 0);
 		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_GLYPH_RUN);
 	}
 
@@ -289,32 +283,6 @@ export class Api {
 			this.submitGlyphLine(lines[index], x, cursorY, z, font, colorValue, backgroundColor, start, end, layer);
 			cursorY += font.lineHeight;
 		}
-	}
-
-	private submitTileRun(desc: FrameBufferTileBlitDescriptor): void {
-		const tileCount = desc.cols * desc.rows;
-		const payloadOffset = this.allocIoPayload(tileCount);
-		for (let index = 0; index < tileCount; index += 1) {
-			const tile = desc.tiles[index];
-			if (tile === undefined) {
-				throw new Error(`[FirmwareApi] dma_blit_tiles missing tile at index ${index}.`);
-			}
-			const handle = tile === false ? IO_VDP_TILE_HANDLE_NONE : this._runtime.resolveAssetHandle(tile);
-			this._runtime.memory.writeValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + index) * IO_ARG_STRIDE, handle);
-		}
-		this.writeIoArg(IO_VDP_CMD_ARG0, 0, payloadOffset);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 1, tileCount);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 2, desc.cols);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 3, desc.rows);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 4, desc.tile_w);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 5, desc.tile_h);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 6, desc.origin_x);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 7, desc.origin_y);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 8, desc.scroll_x);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 9, desc.scroll_y);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 10, desc.z);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 11, renderLayerTo2dLayer(desc.layer));
-		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_TILE_RUN);
 	}
 
 	public display_width(): number {
@@ -490,7 +458,28 @@ export class Api {
 	}
 
 	public dma_blit_tiles(desc: FrameBufferTileBlitDescriptor): void {
-		this.submitTileRun(desc);
+		const tileCount = desc.cols * desc.rows;
+		this.allocIoPayload(tileCount);
+		for (let index = 0; index < tileCount; index += 1) {
+			const tile = desc.tiles[index];
+			if (tile === undefined) {
+				throw new Error(`[FirmwareApi] dma_blit_tiles missing tile at index ${index}.`);
+			}
+			const handle = tile === false ? IO_VDP_TILE_HANDLE_NONE : this._runtime.resolveAssetHandle(tile);
+			this._runtime.memory.writeValue(IO_PAYLOAD_DATA_ADDR, handle);
+		}
+		this.writeIoArg(IO_VDP_CMD_ARG0, 0, tileCount);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 1, desc.cols);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 2, desc.rows);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 3, desc.tile_w);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 4, desc.tile_h);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 5, desc.origin_x);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 6, desc.origin_y);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 7, desc.scroll_x);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 8, desc.scroll_y);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 9, desc.z);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 10, renderLayerTo2dLayer(desc.layer));
+		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_TILE_RUN);
 	}
 
 	public blit_glyphs(glyphs: string | string[], x: number, y: number, z: number, options: FrameBufferGlyphOptions): void {
@@ -659,15 +648,14 @@ export class Api {
 		const glyphStart = options === undefined || options.glyph_start === undefined ? 0 : options.glyph_start;
 		const glyphEnd = options === undefined || options.glyph_end === undefined ? Number.MAX_SAFE_INTEGER : options.glyph_end;
 		const renderLayer = options === undefined || options.layer === undefined ? 'world' : options.layer;
-		const expanded = this.expand_tabs(text);
 		let lines: string[] | null = null;
 		if (wrapChars !== undefined && wrapChars > 0) {
-			lines = wrapGlyphs(expanded, wrapChars);
-		} else if (expanded.indexOf('\n') !== -1) {
-			lines = expanded.split('\n');
+			lines = wrapGlyphs(text, wrapChars);
+		} else if (text.indexOf('\n') !== -1) {
+			lines = text.split('\n');
 		}
 		const glyphs: GlyphRenderSubmission = {
-			glyphs: lines === null ? expanded : lines,
+			glyphs: lines === null ? text : lines,
 			x: baseX,
 			y: baseY,
 			z,
@@ -916,24 +904,6 @@ export class Api {
 		});
 	}
 
-	private expand_tabs(text: string): string {
-		if (text.indexOf('\t') === -1) {
-			return text;
-		}
-		let result = '';
-		for (let i = 0; i < text.length; i++) {
-			const ch = text.charAt(i);
-			if (ch === '\t') {
-				for (let j = 0; j < TAB_SPACES; j++) {
-					result += ' ';
-				}
-			} else {
-				result += ch;
-			}
-		}
-		return result;
-	}
-
 	private palette_color(index: number): color {
 		if (!Number.isInteger(index)) {
 			throw new Error('Color index must be an integer.');
@@ -1065,10 +1035,10 @@ export class Api {
 		const lines = text.split('\n');
 		let cursorY = y;
 		for (let i = 0; i < lines.length; i += 1) {
-			const expanded = this.expand_tabs(lines[i]);
-			if (expanded.length > 0) {
+			const line = lines[i];
+			if (line.length > 0) {
 				const glyphs: GlyphRenderSubmission = {
-					glyphs: expanded,
+					glyphs: line,
 					x,
 					y: cursorY,
 					z,

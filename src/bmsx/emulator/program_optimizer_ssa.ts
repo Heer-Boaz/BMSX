@@ -318,6 +318,11 @@ const computeMaxRegister = (instructions: Instruction[]): number => {
 				updateMax(instruction.a);
 				updateMax(instruction.b);
 				break;
+			case OpCode.STORE_MEM_WORDS:
+				updateMax(instruction.a);
+				updateMax(instruction.a + Math.max(instruction.c - 1, 0));
+				updateMax(instruction.b);
+				break;
 			default:
 				break;
 		}
@@ -344,6 +349,7 @@ const supportsRkB = (op: OpCode): boolean => {
 		case OpCode.LT:
 		case OpCode.LE:
 		case OpCode.SETT:
+		case OpCode.STORE_MEM_WORDS:
 			return true;
 		default:
 			return false;
@@ -1187,6 +1193,9 @@ const collectUsesForSsa = (instruction: Instruction): UseOperand[] => {
 			add('a', instruction.a, null, false);
 			add('b', instruction.b, null, false);
 			break;
+		case OpCode.STORE_MEM_WORDS:
+			add('b', instruction.b, RK_B, true);
+			break;
 		default:
 			break;
 	}
@@ -1269,6 +1278,10 @@ const collectUsesForLiveness = (instruction: Instruction, maxRegister: number): 
 			break;
 		case OpCode.STORE_MEM:
 			add(instruction.a);
+			add(instruction.b);
+			break;
+		case OpCode.STORE_MEM_WORDS:
+			addRange(instruction.a, instruction.c);
 			add(instruction.b);
 			break;
 		case OpCode.CALL: {

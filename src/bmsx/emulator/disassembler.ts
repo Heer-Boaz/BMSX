@@ -152,6 +152,7 @@ const getOpName = (op: OpCode): string => {
 		case OpCode.RET: return 'RET';
 		case OpCode.LOAD_MEM: return 'LOAD_MEM';
 		case OpCode.STORE_MEM: return 'STORE_MEM';
+		case OpCode.STORE_MEM_WORDS: return 'STORE_MEM_WORDS';
 		default:
 			throw new Error(`[Disassembler] Unknown opcode ${op}.`);
 	}
@@ -519,9 +520,11 @@ const buildInstructionOperands = (
 		case OpCode.RET:
 			return [registerOperand('a', 'base', a), plainOperand('b', 'count', formatCount(b))];
 		case OpCode.LOAD_MEM:
-			return [registerOperand('a', 'dst', a), registerOperand('b', 'addr', b)];
+			return [registerOperand('a', 'dst', a), rkOperand('b', 'addr', program, b, decoded.rkBitsB, options)];
 		case OpCode.STORE_MEM:
-			return [registerOperand('a', 'src', a), registerOperand('b', 'addr', b)];
+			return [registerOperand('a', 'src', a), rkOperand('b', 'addr', program, b, decoded.rkBitsB, options)];
+		case OpCode.STORE_MEM_WORDS:
+			return [registerOperand('a', 'src_base', a), rkOperand('b', 'addr', program, b, decoded.rkBitsB, options), plainOperand('c', 'count', c.toString())];
 		case OpCode.WIDE:
 			throw new Error(`[Disassembler] Unexpected WIDE opcode at pc ${pc}.`);
 		default:
@@ -656,9 +659,11 @@ const formatInstruction = (
 		case OpCode.RET:
 			return `RET r${a}, ${formatCount(b)}`;
 		case OpCode.LOAD_MEM:
-			return `LOAD_MEM r${a}, r${b}`;
+			return `LOAD_MEM r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}`;
 		case OpCode.STORE_MEM:
-			return `STORE_MEM r${a}, r${b}`;
+			return `STORE_MEM r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}`;
+		case OpCode.STORE_MEM_WORDS:
+			return `STORE_MEM_WORDS r${a}, ${formatRK(program, b, decoded.rkBitsB, options)}, ${c}`;
 		case OpCode.WIDE:
 			throw new Error(`[Disassembler] Unexpected WIDE opcode at pc ${pc}.`);
 		default:

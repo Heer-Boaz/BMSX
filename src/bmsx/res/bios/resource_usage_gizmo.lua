@@ -1,3 +1,4 @@
+local vdp_firmware = require('vdp_firmware')
 local scratchrecordbatch = require('scratchrecordbatch')
 local clamp_int = require('clamp_int')
 
@@ -32,12 +33,12 @@ local function draw_usage_bar(label, used, total, x, y, z)
 	local fill_w = math.floor(bar_w * ratio)
 	local pct = usage_percent(used, total)
 
-	blit_text(label, x, y - 1, z + 2, colors.text, ui_options)
+	vdp_firmware.submit_text_block(label, x, y - 1, z + 2, vdp_firmware.default_font, sys_palette_color(colors.text), nil, nil, nil, 0, 2147483647, sys_vdp_layer_ide, vdp_firmware.default_font.line_height)
 	fill_rect_color(bar_x, y + 1, bar_x + bar_w, y + 1 + bar_h, z, colors.text_dim, ui_options)
 	if fill_w > 0 then
 		fill_rect_color(bar_x, y + 1, bar_x + fill_w, y + 1 + bar_h, z + 1, usage_color(ratio), ui_options)
 	end
-	blit_text(pct .. '%', bar_x + bar_w + 4, y - 1, z + 2, colors.text, ui_options)
+	vdp_firmware.submit_text_block(pct .. '%', bar_x + bar_w + 4, y - 1, z + 2, vdp_firmware.default_font, sys_palette_color(colors.text), nil, nil, nil, 0, 2147483647, sys_vdp_layer_ide, vdp_firmware.default_font.line_height)
 end
 
 function gizmo.draw()
@@ -52,7 +53,7 @@ function gizmo.draw()
 	local panel_h = 32
 	local row_h = 10
 
-	ui_options.layer = 'ide'
+	ui_options.layer = sys_vdp_layer_ide
 	fill_rect_color(x - 4, y - 4, x - 4 + panel_w, y - 4 + panel_h, z, colors.panel, ui_options)
 	draw_usage_bar('CPU', sys_cpu_active_cycles_used(), sys_cpu_active_cycles_granted(), x, y, z + 1)
 	draw_usage_bar('RAM', sys_ram_used(), sys_ram_size, x, y + row_h, z + 1)

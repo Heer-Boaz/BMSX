@@ -242,6 +242,8 @@ public:
 	const VDP& vdp() const { return m_vdp; }
 	DmaController& dmaController() { return m_dmaController; }
 	const DmaController& dmaController() const { return m_dmaController; }
+	u32 armedVdpPayloadBaseOffset() const { return m_armedVdpPayloadBaseOffset; }
+	u32 armedVdpPayloadWordCount() const { return m_armedVdpPayloadWordCount; }
 
 	/**
 	 * Get the API instance.
@@ -360,6 +362,7 @@ private:
 	std::vector<Value> acquireValueScratch();
 	void releaseValueScratch(std::vector<Value>&& values);
 	bool hasEntryContinuation() const;
+	void resetVdpPayloadState();
 
 	static Runtime* s_instance;
 	static constexpr size_t MAX_POOLED_RUNTIME_SCRATCH = 32;
@@ -444,6 +447,9 @@ private:
 	int m_cyclesIntoFrame = 0;
 	bool m_waitingForVblank = false;
 	bool m_handlingVdpCommandWrite = false;
+	u32 m_payloadDataWritePtr = 0;
+	u32 m_armedVdpPayloadBaseOffset = 0;
+	u32 m_armedVdpPayloadWordCount = 0;
 	uint64_t m_vblankSequence = 0;
 	uint64_t m_lastCompletedVblankSequence = 0;
 	uint64_t m_waitForVblankTargetSequence = 0;

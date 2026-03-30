@@ -318,6 +318,44 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 	}
 }
 
+void VDP::readVram(uint32_t addr, u8* out, size_t length) const {
+	if (addr >= VRAM_STAGING_BASE && addr + length <= VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
+		const uint32_t offset = addr - VRAM_STAGING_BASE;
+		std::memcpy(out, m_vramStaging.data() + offset, length);
+		return;
+	}
+	const auto& slot = findVramSlot(addr, length);
+	if (slot.kind == VramSlotKind::Skybox) {
+		std::memset(out, 0, length);
+		return;
+	}
+	const auto& entry = m_memory.getAssetEntry(slot.assetId);
+	if (entry.baseStride == 0 || entry.regionW == 0 || entry.regionH == 0) {
+		std::memset(out, 0, length);
+		return;
+	}
+	const uint32_t offset = addr - slot.baseAddr;
+	const uint32_t stride = entry.baseStride;
+	const uint32_t totalBytes = entry.regionH * stride;
+	if (offset + length > totalBytes) {
+		throw BMSX_RUNTIME_ERROR("[VDP] VRAM read exceeds slot bounds.");
+	}
+	size_t remaining = length;
+	size_t cursor = 0;
+	uint32_t row = offset / stride;
+	uint32_t rowOffset = offset - row * stride;
+	while (remaining > 0) {
+		const uint32_t rowAvailable = stride - rowOffset;
+		const uint32_t rowBytes = static_cast<uint32_t>(std::min<size_t>(remaining, rowAvailable));
+		const size_t cpuOffset = static_cast<size_t>(row) * static_cast<size_t>(stride) + static_cast<size_t>(rowOffset);
+		std::memcpy(out + cursor, slot.cpuReadback.data() + cpuOffset, rowBytes);
+		remaining -= rowBytes;
+		cursor += rowBytes;
+		row += 1;
+		rowOffset = 0;
+	}
+}
+
 void VDP::beginFrame() {
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
 	m_readOverflow = false;

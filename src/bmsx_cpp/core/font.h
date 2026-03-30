@@ -52,7 +52,6 @@ private:
 	std::unordered_map<u32, FontGlyph> m_glyphs;
 	i32 m_advance_padding = 0;
 	i32 m_line_height = 0;
-	i32 m_space_advance = 0;
 };
 
 GlyphMap buildKonamiGlyphMap();

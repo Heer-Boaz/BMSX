@@ -690,6 +690,13 @@ Value Memory::readValue(uint32_t addr) const {
 	return valueFromNumber(static_cast<double>(readU32(addr)));
 }
 
+Value Memory::readMappedValue(uint32_t addr) const {
+	if (isVramRange(addr, 4)) {
+		return valueNumber(static_cast<double>(readMappedU32LE(addr)));
+	}
+	return readValue(addr);
+}
+
 void Memory::writeValue(uint32_t addr, Value value) {
 	if (isIoAddress(addr)) {
 		m_ioSlots[ioIndex(addr)] = value;
@@ -704,10 +711,50 @@ void Memory::writeValue(uint32_t addr, Value value) {
 	writeU32(addr, static_cast<uint32_t>(asNumber(value)));
 }
 
+void Memory::writeIoValue(uint32_t addr, Value value) {
+	if (!isIoAddress(addr)) {
+		throw std::runtime_error("[Memory] writeIoValue expects an IO address.");
+	}
+	m_ioSlots[ioIndex(addr)] = value;
+}
+
+void Memory::writeMappedValue(uint32_t addr, Value value) {
+	if (!isMappedWritableRange(addr, 4)) {
+		return;
+	}
+	if (isVramRange(addr, 4)) {
+		if (!valueIsNumber(value)) {
+			throw std::runtime_error("[Memory] mem[addr] expects a number for VRAM writes.");
+		}
+		writeMappedU32LE(addr, static_cast<uint32_t>(asNumber(value)));
+		return;
+	}
+	writeValue(addr, value);
+}
+
 u8 Memory::readU8(uint32_t addr) const {
 	size_t offset = 0;
 	const auto* region = readRegion(addr, 1, offset);
 	return region[offset];
+}
+
+u8 Memory::readMappedU8(uint32_t addr) const {
+	if (isVramRange(addr, 1)) {
+		u8 value = 0;
+		m_vramWriter->readVram(addr, &value, 1);
+		return value;
+	}
+	if (isIoAddress(addr)) {
+		const Value value = readValue(addr);
+		if (!valueIsNumber(value)) {
+			throw std::runtime_error("[Memory] mem8[addr] expects a numeric IO register.");
+		}
+		return static_cast<u8>(static_cast<uint32_t>(asNumber(value)) & 0xffu);
+	}
+	if (isIoRegionRange(addr, 1)) {
+		return 0;
+	}
+	return readU8(addr);
 }
 
 void Memory::writeU8(uint32_t addr, u8 value) {
@@ -719,6 +766,17 @@ void Memory::writeU8(uint32_t addr, u8 value) {
 	auto* region = writeRegion(addr, 1, offset);
 	region[offset] = value;
 	markAssetDirty(addr, 1);
+}
+
+void Memory::writeMappedU8(uint32_t addr, u8 value) {
+	if (!isMappedWritableRange(addr, 1)) {
+		return;
+	}
+	if (isIoAddress(addr)) {
+		writeValue(addr, valueNumber(static_cast<double>(value)));
+		return;
+	}
+	writeU8(addr, value);
 }
 
 uint32_t Memory::readU32(uint32_t addr) const {
@@ -740,6 +798,36 @@ uint32_t Memory::readU32FromRegion(uint32_t addr) const {
 		| (static_cast<uint32_t>(region[offset + 3]) << 24);
 }
 
+uint32_t Memory::readMappedU16LE(uint32_t addr) const {
+	const uint32_t b0 = static_cast<uint32_t>(readMappedU8(addr));
+	const uint32_t b1 = static_cast<uint32_t>(readMappedU8(addr + 1));
+	return b0 | (b1 << 8);
+}
+
+uint32_t Memory::readMappedU32LE(uint32_t addr) const {
+	const uint32_t b0 = static_cast<uint32_t>(readMappedU8(addr));
+	const uint32_t b1 = static_cast<uint32_t>(readMappedU8(addr + 1));
+	const uint32_t b2 = static_cast<uint32_t>(readMappedU8(addr + 2));
+	const uint32_t b3 = static_cast<uint32_t>(readMappedU8(addr + 3));
+	return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+}
+
+float Memory::readMappedF32LE(uint32_t addr) const {
+	const uint32_t bits = readMappedU32LE(addr);
+	float value = 0.0f;
+	std::memcpy(&value, &bits, sizeof(value));
+	return value;
+}
+
+double Memory::readMappedF64LE(uint32_t addr) const {
+	const uint64_t lo = static_cast<uint64_t>(readMappedU32LE(addr));
+	const uint64_t hi = static_cast<uint64_t>(readMappedU32LE(addr + 4));
+	const uint64_t bits = (hi << 32) | lo;
+	double value = 0.0;
+	std::memcpy(&value, &bits, sizeof(value));
+	return value;
+}
+
 void Memory::writeU32(uint32_t addr, uint32_t value) {
 	if (isVramRange(addr, 4)) {
 		u8 bytes[4] = {
@@ -754,6 +842,44 @@ void Memory::writeU32(uint32_t addr, uint32_t value) {
 	const size_t offset = ramOffset(addr, 4);
 	std::memcpy(m_ram.data() + offset, &value, sizeof(uint32_t));
 	markAssetDirty(addr, 4);
+}
+
+void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
+	if (!isMappedWritableRange(addr, 2)) {
+		return;
+	}
+	writeMappedU8(addr, static_cast<u8>(value & 0xffu));
+	writeMappedU8(addr + 1, static_cast<u8>((value >> 8) & 0xffu));
+}
+
+void Memory::writeMappedU32LE(uint32_t addr, uint32_t value) {
+	if (!isMappedWritableRange(addr, 4)) {
+		return;
+	}
+	if (isIoAddress(addr)) {
+		writeValue(addr, valueNumber(static_cast<double>(value)));
+		return;
+	}
+	writeMappedU8(addr, static_cast<u8>(value & 0xffu));
+	writeMappedU8(addr + 1, static_cast<u8>((value >> 8) & 0xffu));
+	writeMappedU8(addr + 2, static_cast<u8>((value >> 16) & 0xffu));
+	writeMappedU8(addr + 3, static_cast<u8>((value >> 24) & 0xffu));
+}
+
+void Memory::writeMappedF32LE(uint32_t addr, float value) {
+	uint32_t bits = 0;
+	std::memcpy(&bits, &value, sizeof(bits));
+	writeMappedU32LE(addr, bits);
+}
+
+void Memory::writeMappedF64LE(uint32_t addr, double value) {
+	if (!isMappedWritableRange(addr, 8)) {
+		return;
+	}
+	uint64_t bits = 0;
+	std::memcpy(&bits, &value, sizeof(bits));
+	writeMappedU32LE(addr, static_cast<uint32_t>(bits & 0xffffffffull));
+	writeMappedU32LE(addr + 4, static_cast<uint32_t>(bits >> 32));
 }
 
 void Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
@@ -798,6 +924,10 @@ bool Memory::isIoAddress(uint32_t addr) const {
 	return (delta % IO_WORD_SIZE) == 0;
 }
 
+bool Memory::isIoRegionRange(uint32_t addr, size_t length) const {
+	return addr >= IO_BASE && addr + length <= IO_BASE + m_ioSlots.size() * IO_WORD_SIZE;
+}
+
 size_t Memory::ioIndex(uint32_t addr) const {
 	const uint32_t delta = addr - IO_BASE;
 	if ((delta % IO_WORD_SIZE) != 0) {
@@ -808,6 +938,41 @@ size_t Memory::ioIndex(uint32_t addr) const {
 		throw std::runtime_error("[Memory] IO address out of range.");
 	}
 	return slot;
+}
+
+bool Memory::isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, uint32_t size) const {
+	return addr >= base && addr + length <= base + size;
+}
+
+bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
+	return addr == IO_SYS_CART_BOOTREADY
+		|| addr == IO_IRQ_FLAGS
+		|| addr == IO_DMA_STATUS
+		|| addr == IO_DMA_WRITTEN
+		|| addr == IO_IMG_STATUS
+		|| addr == IO_IMG_WRITTEN
+		|| addr == IO_VDP_RD_STATUS
+		|| addr == IO_VDP_RD_DATA
+		|| addr == IO_VDP_STATUS;
+}
+
+bool Memory::isMappedWritableRange(uint32_t addr, size_t length) const {
+	if (isIoRegionRange(addr, length)) {
+		return length == IO_WORD_SIZE && isIoAddress(addr) && !isLuaReadOnlyIoAddress(addr);
+	}
+	if (isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_engineRom.size))) {
+		return false;
+	}
+	if (m_cartRom.data != nullptr && isRangeWithinRegion(addr, length, CART_ROM_BASE, static_cast<uint32_t>(m_cartRom.size))) {
+		return false;
+	}
+	if (m_overlayRom.data != nullptr && isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, static_cast<uint32_t>(m_overlayRom.size))) {
+		return false;
+	}
+	if (isVramRange(addr, length)) {
+		return true;
+	}
+	return addr >= RAM_BASE && addr + length <= RAM_USED_END;
 }
 
 size_t Memory::ramOffset(uint32_t addr, size_t length) const {

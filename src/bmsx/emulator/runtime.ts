@@ -76,6 +76,11 @@ import {
 	IO_IMG_WRITTEN,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
+	IO_ARG_STRIDE,
+	IO_PAYLOAD_ALLOC_ADDR,
+	IO_PAYLOAD_CAPACITY,
+	IO_PAYLOAD_DATA_ADDR,
+	IO_PAYLOAD_BUFFER_BASE,
 	IO_PAYLOAD_WRITE_PTR_ADDR,
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
@@ -325,6 +330,23 @@ export class Runtime {
 	public getActiveCpuCyclesGranted(): number {
 		const activeBudget = this.getLastTickBudgetGranted() - this.vblankCycles;
 		return activeBudget > 0 ? activeBudget : 0;
+	}
+
+	public getArmedVdpPayloadBaseOffset(): number {
+		return this.armedVdpPayloadBaseOffset;
+	}
+
+	public getArmedVdpPayloadWordCount(): number {
+		return this.armedVdpPayloadWordCount;
+	}
+
+	public resetVdpPayloadState(): void {
+		this.memory.writeIoValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
+		this.memory.writeIoValue(IO_PAYLOAD_ALLOC_ADDR, 0);
+		this.memory.writeIoValue(IO_PAYLOAD_DATA_ADDR, 0);
+		this.payloadDataWritePtr = 0;
+		this.armedVdpPayloadBaseOffset = 0;
+		this.armedVdpPayloadWordCount = 0;
 	}
 
 	public getActiveCpuUsedCyclesLastTick(): number {
@@ -760,6 +782,9 @@ export class Runtime {
 	private clearBackQueuesAfterWaitResume = false;
 	private readonly waitForVblankSignal: WaitForVblankSignal = { kind: 'wait_vblank' };
 	private handlingVdpCommandWrite = false;
+	private payloadDataWritePtr = 0;
+	private armedVdpPayloadBaseOffset = 0;
+	private armedVdpPayloadWordCount = 0;
 	private vblankSequence = 0;
 	private lastCompletedVblankSequence = 0;
 	public cycleBudgetPerFrame: number;
@@ -852,7 +877,6 @@ export class Runtime {
 	public cartAssetSource: RawAssetSource = null;
 	private biosAssetLayer: RuntimeAssetLayer = null;
 	private assetLayerLookup: RuntimeLayerLookup = {};
-	private assetLayers: ReadonlyArray<RuntimeAssetLayer> = null;
 	public cartAssetLayer: RuntimeAssetLayer = null;
 	private overlayAssetLayer: RuntimeAssetLayer = null;
 	private readonly imageMetaByHandle = new Map<number, ImgMeta>();
@@ -938,7 +962,6 @@ export class Runtime {
 			runtime.setTransferRatesFromManifest(enginePerfSpecs);
 			runtime.biosAssetLayer = engineLayer;
 			runtime.assetLayerLookup = buildRuntimeLayerLookup([engineLayer]);
-			runtime.assetLayers = [engineLayer];
 			runtime.configureProgramSources({
 				engineSources: engineLuaSources,
 				engineAssetSource: engineSource,
@@ -1015,7 +1038,6 @@ export class Runtime {
 		runtime.setTransferRatesFromManifest(cartPerfSpecs);
 		runtime.biosAssetLayer = engineLayer;
 		runtime.assetLayerLookup = buildRuntimeLayerLookup(overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer]);
-		runtime.assetLayers = overlayLayer ? [engineLayer, cartLayer, overlayLayer] : [engineLayer, cartLayer];
 		runtime.cartAssetLayer = cartLayer;
 		runtime.overlayAssetLayer = overlayLayer;
 		runtime.configureProgramSources({
@@ -1036,7 +1058,7 @@ export class Runtime {
 		return Runtime._instance!;
 	}
 
-	public static hasInstance(): boolean {
+	public static get hasInstance(): boolean {
 		return Runtime._instance !== null;
 	}
 
@@ -1299,7 +1321,7 @@ export class Runtime {
 		);
 		this.stringHandles = new StringHandleTable(this.memory);
 		this.runtimeStringPool = new StringPool(this.stringHandles);
-		this.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
+		this.resetVdpPayloadState();
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
 		this.memory.writeValue(IO_IRQ_FLAGS, 0);
@@ -1617,6 +1639,30 @@ export class Runtime {
 		if (this.handlingVdpCommandWrite || typeof value !== 'number') {
 			return;
 		}
+		if (addr === IO_PAYLOAD_ALLOC_ADDR) {
+			const words = value >>> 0;
+			const writePtr = (this.memory.readValue(IO_PAYLOAD_WRITE_PTR_ADDR) as number) >>> 0;
+			const next = writePtr + words;
+			if (next > IO_PAYLOAD_CAPACITY) {
+				throw new Error(`[VDP] IO payload buffer overflow (${next} > ${IO_PAYLOAD_CAPACITY}).`);
+			}
+			this.memory.writeIoValue(IO_PAYLOAD_WRITE_PTR_ADDR, next >>> 0);
+			this.memory.writeIoValue(IO_PAYLOAD_ALLOC_ADDR, writePtr >>> 0);
+			this.payloadDataWritePtr = writePtr >>> 0;
+			this.armedVdpPayloadBaseOffset = writePtr >>> 0;
+			this.armedVdpPayloadWordCount = words >>> 0;
+			return;
+		}
+		if (addr === IO_PAYLOAD_DATA_ADDR) {
+			const writeLimit = (this.memory.readValue(IO_PAYLOAD_WRITE_PTR_ADDR) as number) >>> 0;
+			if (this.payloadDataWritePtr >= writeLimit) {
+				throw new Error(`[VDP] IO payload data write exceeds allocated payload (${this.payloadDataWritePtr} >= ${writeLimit}).`);
+			}
+			this.memory.writeIoValue(IO_PAYLOAD_BUFFER_BASE + this.payloadDataWritePtr * IO_ARG_STRIDE, value >>> 0);
+			this.memory.writeIoValue(IO_PAYLOAD_DATA_ADDR, value >>> 0);
+			this.payloadDataWritePtr += 1;
+			return;
+		}
 		if (addr === IO_VDP_CMD) {
 			if (value === 0) {
 				return;
@@ -1626,7 +1672,7 @@ export class Runtime {
 				this.vdp.syncRegisters();
 				runtimeLuaPipeline.processVdpCommand(this, IO_VDP_CMD, value);
 			} finally {
-				this.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
+				this.resetVdpPayloadState();
 				this.handlingVdpCommandWrite = false;
 			}
 			return;
@@ -1766,14 +1812,6 @@ export class Runtime {
 
 	public getImageMeta(id: string): ImgMeta {
 		return this.getImageMetaByHandle(this.resolveAssetHandle(id));
-	}
-
-	public getResidentAssetLayers(): ReadonlyArray<RuntimeAssetLayer> {
-		return this.assetLayers ?? [this.biosAssetLayer];
-	}
-
-	public hasAssetLayerLookup(): boolean {
-		return this.biosAssetLayer !== null;
 	}
 
 	public getImageAssetByEntry(entry: RomAsset): RomImgAsset {
@@ -2140,13 +2178,11 @@ export class Runtime {
 
 	private activateEngineProgramAssets(): void {
 		$.set_assets(this.biosAssetLayer.assets);
-		this.assetLayers = [this.biosAssetLayer];
 		this.activateProgramSource('engine');
 	}
 
 	public activateCartProgramAssets(): void {
 		$.set_assets((this.overlayAssetLayer ?? this.cartAssetLayer).assets);
-		this.assetLayers = this.overlayAssetLayer ? [this.biosAssetLayer, this.cartAssetLayer, this.overlayAssetLayer] : [this.biosAssetLayer, this.cartAssetLayer];
 		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
 		Runtime.applyUfpsScaled(perfSpecs.ufps);
 		const cpuHz = Runtime.resolveCpuHz(perfSpecs.cpu_freq_hz);

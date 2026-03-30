@@ -156,23 +156,23 @@ Token Tokenizer::scanToken() {
 }
 
 Token Tokenizer::next() {
-	if (m_peeked) {
-		Token t = std::move(*m_peeked);
-		m_peeked.reset();
+	if (m_bufferedToken) {
+		Token t = std::move(*m_bufferedToken);
+		m_bufferedToken.reset();
 		return t;
 	}
 	return scanToken();
 }
 
-Token Tokenizer::peek() {
-	if (!m_peeked) {
-		m_peeked = scanToken();
+Token Tokenizer::preview() {
+	if (!m_bufferedToken) {
+		m_bufferedToken = scanToken();
 	}
-	return *m_peeked;
+	return *m_bufferedToken;
 }
 
 bool Tokenizer::hasMore() const {
-	return m_pos < m_input.size() || m_peeked.has_value();
+	return m_pos < m_input.size() || m_bufferedToken.has_value();
 }
 
 /* ============================================================================
@@ -195,7 +195,7 @@ std::unique_ptr<AstNode> InputActionParser::parse(const std::string& def) {
 }
 
 Token InputActionParser::current() {
-	return m_tokenizer.peek();
+	return m_tokenizer.preview();
 }
 
 Token InputActionParser::eat() {

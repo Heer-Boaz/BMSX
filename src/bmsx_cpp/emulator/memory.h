@@ -23,6 +23,7 @@ public:
 	public:
 		virtual ~VramWriter() = default;
 		virtual void writeVram(uint32_t addr, const u8* data, size_t length) = 0;
+		virtual void readVram(uint32_t addr, u8* out, size_t length) const = 0;
 	};
 	class VdpIoHandler {
 	public:
@@ -49,13 +50,26 @@ public:
 	uint32_t usedAssetDataBytes() const;
 
 	Value readValue(uint32_t addr) const;
+	Value readMappedValue(uint32_t addr) const;
 	void writeValue(uint32_t addr, Value value);
+	void writeIoValue(uint32_t addr, Value value);
+	void writeMappedValue(uint32_t addr, Value value);
 
 	u8 readU8(uint32_t addr) const;
+	u8 readMappedU8(uint32_t addr) const;
 	void writeU8(uint32_t addr, u8 value);
+	void writeMappedU8(uint32_t addr, u8 value);
 
 	uint32_t readU32(uint32_t addr) const;
+	uint32_t readMappedU16LE(uint32_t addr) const;
+	uint32_t readMappedU32LE(uint32_t addr) const;
+	float readMappedF32LE(uint32_t addr) const;
+	double readMappedF64LE(uint32_t addr) const;
 	void writeU32(uint32_t addr, uint32_t value);
+	void writeMappedU16LE(uint32_t addr, uint32_t value);
+	void writeMappedU32LE(uint32_t addr, uint32_t value);
+	void writeMappedF32LE(uint32_t addr, float value);
+	void writeMappedF64LE(uint32_t addr, double value);
 
 	void writeBytes(uint32_t addr, const u8* data, size_t length);
 	void readBytes(uint32_t addr, u8* out, size_t length) const;
@@ -194,11 +208,15 @@ private:
 
 
 	bool isIoAddress(uint32_t addr) const;
+	bool isIoRegionRange(uint32_t addr, size_t length) const;
 	size_t ioIndex(uint32_t addr) const;
 	size_t ramOffset(uint32_t addr, size_t length) const;
 	uint32_t readU32FromRegion(uint32_t addr) const;
 	const u8* readRegion(uint32_t addr, size_t length, size_t& outOffset) const;
 	u8* writeRegion(uint32_t addr, size_t length, size_t& outOffset);
+	bool isRangeWithinRegion(uint32_t addr, size_t length, uint32_t base, uint32_t size) const;
+	bool isLuaReadOnlyIoAddress(uint32_t addr) const;
+	bool isMappedWritableRange(uint32_t addr, size_t length) const;
 	void mapAssetPages(size_t ownerIndex, uint32_t addr, uint32_t size);
 	void markAssetDirty(uint32_t addr, uint32_t size);
 	uint32_t allocateAssetData(uint32_t size, uint32_t alignment);

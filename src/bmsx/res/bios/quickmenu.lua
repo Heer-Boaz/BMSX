@@ -1,6 +1,7 @@
 -- quickmenu.lua
 -- system quick menu (select+start)
 
+local vdp_firmware = require('vdp_firmware')
 local scratchrecordbatch = require('scratchrecordbatch')
 
 local menu = {}
@@ -68,10 +69,10 @@ local function make_vdp_enum(label, register, values)
 		kind = 'enum',
 		label = label,
 		get = function()
-			return peek(register)
+			return mem[register]
 		end,
 		set = function(value)
-			poke(register, value)
+			mem[register] = value
 		end,
 		values = values,
 	}
@@ -235,9 +236,9 @@ function menu.draw()
 	if y < 0 then y = 0 end
 	local z = 10000
 
-	quickmenu_ui_options.layer = 'ui'
+	quickmenu_ui_options.layer = sys_vdp_layer_ui
 	fill_rect_color(x, y + box_y, x + menu_w, y + box_y + box_h, z, colors.panel, quickmenu_ui_options)
-	blit_text(title, x + padding, y, z, colors.title, quickmenu_ui_options)
+	vdp_firmware.submit_text_block(title, x + padding, y, z, vdp_firmware.default_font, sys_palette_color(colors.title), nil, nil, nil, 0, 2147483647, sys_vdp_layer_ui, vdp_firmware.default_font.line_height)
 
 	local row_y = y + box_y + padding
 	for i = 1, #entries do
@@ -250,7 +251,7 @@ function menu.draw()
 		if value ~= '-' and (value) then
 			line = line .. ': ' .. value
 		end
-		blit_text(line, x + padding, row_y, z, colors.text, quickmenu_ui_options)
+		vdp_firmware.submit_text_block(line, x + padding, row_y, z, vdp_firmware.default_font, sys_palette_color(colors.text), nil, nil, nil, 0, 2147483647, sys_vdp_layer_ui, vdp_firmware.default_font.line_height)
 		row_y = row_y + line_h
 	end
 

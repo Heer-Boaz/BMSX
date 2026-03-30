@@ -163,18 +163,18 @@ end
 
 local function vdp_start_job(job)
 	vdp_active_job = job
-	poke(sys_img_src, job.src)
-	poke(sys_img_len, job.len)
-	poke(sys_img_dst, job.dst)
-	poke(sys_img_cap, job.cap)
-	poke(sys_img_ctrl, img_ctrl_start)
+	mem[sys_img_src] = job.src
+	mem[sys_img_len] = job.len
+	mem[sys_img_dst] = job.dst
+	mem[sys_img_cap] = job.cap
+	mem[sys_img_ctrl] = img_ctrl_start
 end
 
 local function vdp_try_start_next_job()
 	if vdp_active_job ~= nil then
 		return
 	end
-	local status = peek(sys_img_status)
+	local status = mem[sys_img_status]
 	if (status & img_status_busy) ~= 0 then
 		return
 	end
@@ -348,11 +348,11 @@ function engine.vdp_map_slot(slot, atlas_id)
 		atlas_id = sys_vdp_atlas_none
 	end
 	if slot == 0 then
-		poke(sys_vdp_primary_atlas_id, atlas_id)
+		mem[sys_vdp_primary_atlas_id] = atlas_id
 		return
 	end
 	if slot == 1 then
-		poke(sys_vdp_secondary_atlas_id, atlas_id)
+		mem[sys_vdp_secondary_atlas_id] = atlas_id
 		return
 	end
 	error('vdp_map_slot: invalid slot ' .. tostring(slot))
@@ -601,7 +601,7 @@ function engine.irq(flags)
 		end
 	end
 	if ack ~= 0 then
-		poke(sys_irq_ack, ack)
+		mem[sys_irq_ack] = ack
 	end
 	if fatal ~= nil then
 		error(fatal)

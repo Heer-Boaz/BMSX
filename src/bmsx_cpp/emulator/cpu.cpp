@@ -145,6 +145,7 @@ static constexpr std::array<uint8_t, 64> makeBaseCycles() {
 
 	setCycle(table, OpCode::LOAD_MEM, 5);
 	setCycle(table, OpCode::STORE_MEM, 6);
+	setCycle(table, OpCode::STORE_MEM_WORDS, 3);
 
 	return table;
 }
@@ -1623,14 +1624,20 @@ void CPU::executeInstruction(
 		}
 
 		case OpCode::LOAD_MEM: {
-			uint32_t addr = static_cast<uint32_t>(asNumber(frame.registers[b]));
-			setRegister(frame, a, m_memory.readValue(addr));
+			const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(frame, rkRawB, rkBitsB)));
+			setRegister(frame, a, readMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c)));
 			return;
 		}
 
 		case OpCode::STORE_MEM: {
-			uint32_t addr = static_cast<uint32_t>(asNumber(frame.registers[b]));
-			m_memory.writeValue(addr, frame.registers[a]);
+			const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(frame, rkRawB, rkBitsB)));
+			writeMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c), frame.registers[a]);
+			return;
+		}
+
+		case OpCode::STORE_MEM_WORDS: {
+			const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(frame, rkRawB, rkBitsB)));
+			writeMappedWordSequence(frame, addr, a, c);
 			return;
 		}
 	}
@@ -1747,6 +1754,72 @@ void CPU::setRegister(CallFrame& frame, int index, const Value& value) {
 	frame.registers[static_cast<size_t>(index)] = value;
 	if (index >= frame.top) {
 		frame.top = index + 1;
+	}
+}
+
+Value CPU::readMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind) const {
+	switch (accessKind) {
+		case MemoryAccessKind::Word:
+			return m_memory.readMappedValue(addr);
+		case MemoryAccessKind::U8:
+			return valueNumber(static_cast<double>(m_memory.readMappedU8(addr)));
+		case MemoryAccessKind::U16LE:
+			return valueNumber(static_cast<double>(m_memory.readMappedU16LE(addr)));
+		case MemoryAccessKind::U32LE:
+			return valueNumber(static_cast<double>(m_memory.readMappedU32LE(addr)));
+		case MemoryAccessKind::F32LE:
+			return valueNumber(static_cast<double>(m_memory.readMappedF32LE(addr)));
+		case MemoryAccessKind::F64LE:
+			return valueNumber(m_memory.readMappedF64LE(addr));
+	}
+	throw std::runtime_error("Unknown memory access kind.");
+}
+
+void CPU::writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, const Value& value) {
+	switch (accessKind) {
+		case MemoryAccessKind::Word:
+			m_memory.writeMappedValue(addr, value);
+			return;
+		case MemoryAccessKind::U8:
+			if (!valueIsNumber(value)) {
+				throw std::runtime_error("[Memory] mem8[addr] expects a number.");
+			}
+			m_memory.writeMappedU8(addr, static_cast<u8>(static_cast<uint32_t>(asNumber(value))));
+			return;
+		case MemoryAccessKind::U16LE:
+			if (!valueIsNumber(value)) {
+				throw std::runtime_error("[Memory] mem16le[addr] expects a number.");
+			}
+			m_memory.writeMappedU16LE(addr, static_cast<uint32_t>(asNumber(value)));
+			return;
+		case MemoryAccessKind::U32LE:
+			if (!valueIsNumber(value)) {
+				throw std::runtime_error("[Memory] mem32le[addr] expects a number.");
+			}
+			m_memory.writeMappedU32LE(addr, static_cast<uint32_t>(asNumber(value)));
+			return;
+		case MemoryAccessKind::F32LE:
+			if (!valueIsNumber(value)) {
+				throw std::runtime_error("[Memory] memf32le[addr] expects a number.");
+			}
+			m_memory.writeMappedF32LE(addr, static_cast<float>(asNumber(value)));
+			return;
+		case MemoryAccessKind::F64LE:
+			if (!valueIsNumber(value)) {
+				throw std::runtime_error("[Memory] memf64le[addr] expects a number.");
+			}
+			m_memory.writeMappedF64LE(addr, asNumber(value));
+			return;
+	}
+	throw std::runtime_error("Unknown memory access kind.");
+}
+
+void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount) {
+	instructionBudgetRemaining -= (valueCount + 3) / 4;
+	uint32_t writeAddr = addr;
+	for (int offset = 0; offset < valueCount; ++offset) {
+		writeMappedMemoryValue(writeAddr, MemoryAccessKind::Word, frame.registers[static_cast<size_t>(valueBase + offset)]);
+		writeAddr += 4;
 	}
 }
 
