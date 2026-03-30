@@ -234,9 +234,9 @@ export type Framebuffer2DPipelineState = {
 export type HostOverlayPipelineState = {
 	width: number;
 	height: number;
-	baseWidth: number;
-	baseHeight: number;
-	colorTex: TextureHandle;
+	overlayWidth: number;
+	overlayHeight: number;
+	commands: RenderSubmission[];
 };
 
 export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);
