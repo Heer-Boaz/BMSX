@@ -2,13 +2,11 @@
 
 #include "../core/engine_core.h"
 #include "../input/input.h"
-#include "../render/shared/render_queues.h"
 #include "runtime.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstring>
-#include <limits>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
@@ -118,25 +116,6 @@ static AudioType parseAudioChannel(const std::string& value) {
 	if (value == "music") return AudioType::Music;
 	if (value == "ui") return AudioType::Ui;
 	throw BMSX_RUNTIME_ERROR("Unknown audio channel '" + value + "'");
-}
-
-static TextAlign parseTextAlign(const std::string& value) {
-	if (value == "left") return TextAlign::Left;
-	if (value == "right") return TextAlign::Right;
-	if (value == "center") return TextAlign::Center;
-	if (value == "start") return TextAlign::Start;
-	if (value == "end") return TextAlign::End;
-	throw BMSX_RUNTIME_ERROR("Unknown text align '" + value + "'");
-}
-
-static TextBaseline parseTextBaseline(const std::string& value) {
-	if (value == "top") return TextBaseline::Top;
-	if (value == "hanging") return TextBaseline::Hanging;
-	if (value == "middle") return TextBaseline::Middle;
-	if (value == "alphabetic") return TextBaseline::Alphabetic;
-	if (value == "ideographic") return TextBaseline::Ideographic;
-	if (value == "bottom") return TextBaseline::Bottom;
-	throw BMSX_RUNTIME_ERROR("Unknown text baseline '" + value + "'");
 }
 
 static u32 readUtf8Codepoint(const std::string& text, size_t& index) {
@@ -545,7 +524,6 @@ Api::Api(Runtime& runtime)
 	, m_persistentData(PERSISTENT_DATA_SIZE, 0.0)
 {
 	m_font = std::make_unique<Font>(EngineCore::instance().systemAssets());
-	reset_print_cursor();
 }
 
 Api::~Api() = default;
@@ -1174,117 +1152,6 @@ uint32_t Api::getFontId(BFont* font) const {
 	return fontId(font);
 }
 
-void Api::writeIoArg(uint32_t base, int index, double value) {
-	m_runtime.memory().writeValue(base + static_cast<uint32_t>(index) * IO_ARG_STRIDE, valueNumber(value));
-}
-
-void Api::writeIoColor(uint32_t base, int offset, const Color& value) {
-	writeIoArg(base, offset + 0, value.r);
-	writeIoArg(base, offset + 1, value.g);
-	writeIoArg(base, offset + 2, value.b);
-	writeIoArg(base, offset + 3, value.a);
-}
-
-void Api::allocIoPayload(uint32_t words) {
-	m_runtime.memory().writeValue(IO_PAYLOAD_ALLOC_ADDR, valueNumber(static_cast<double>(words)));
-}
-
-void Api::submitClear(const Color& color) {
-	writeIoColor(IO_VDP_CMD_ARG0, 0, color);
-	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_CLEAR)));
-}
-
-void Api::submitFillRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color) {
-	writeIoArg(IO_VDP_CMD_ARG0, 0, x0);
-	writeIoArg(IO_VDP_CMD_ARG0, 1, y0);
-	writeIoArg(IO_VDP_CMD_ARG0, 2, x1);
-	writeIoArg(IO_VDP_CMD_ARG0, 3, y1);
-	writeIoArg(IO_VDP_CMD_ARG0, 4, z);
-	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(static_cast<int>(layer)));
-	writeIoColor(IO_VDP_CMD_ARG0, 6, color);
-	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_FILL_RECT)));
-}
-
-void Api::submitDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness) {
-	writeIoArg(IO_VDP_CMD_ARG0, 0, x0);
-	writeIoArg(IO_VDP_CMD_ARG0, 1, y0);
-	writeIoArg(IO_VDP_CMD_ARG0, 2, x1);
-	writeIoArg(IO_VDP_CMD_ARG0, 3, y1);
-	writeIoArg(IO_VDP_CMD_ARG0, 4, z);
-	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(static_cast<int>(layer)));
-	writeIoColor(IO_VDP_CMD_ARG0, 6, color);
-	writeIoArg(IO_VDP_CMD_ARG0, 10, thickness);
-	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_DRAW_LINE)));
-}
-
-void Api::submitBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight) {
-	writeIoArg(IO_VDP_CMD_ARG0, 0, static_cast<double>(handle));
-	writeIoArg(IO_VDP_CMD_ARG0, 1, x);
-	writeIoArg(IO_VDP_CMD_ARG0, 2, y);
-	writeIoArg(IO_VDP_CMD_ARG0, 3, z);
-	writeIoArg(IO_VDP_CMD_ARG0, 4, static_cast<double>(static_cast<int>(layer)));
-	writeIoArg(IO_VDP_CMD_ARG0, 5, scaleX);
-	writeIoArg(IO_VDP_CMD_ARG0, 6, scaleY);
-	writeIoArg(IO_VDP_CMD_ARG0, 7, static_cast<double>((flipH ? 1 : 0) | (flipV ? 2 : 0)));
-	writeIoColor(IO_VDP_CMD_ARG0, 8, color);
-	writeIoArg(IO_VDP_CMD_ARG0, 12, parallaxWeight);
-	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_BLIT)));
-}
-
-void Api::submitGlyphLine(const std::string& text, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer) {
-	if (text.empty()) {
-		return;
-	}
-	const uint32_t payloadWords = static_cast<uint32_t>((text.size() + 3u) / 4u);
-	allocIoPayload(payloadWords);
-	for (uint32_t wordIndex = 0; wordIndex < payloadWords; wordIndex += 1u) {
-		const size_t byteIndex = static_cast<size_t>(wordIndex) * 4u;
-		const uint32_t word =
-			static_cast<uint32_t>(byteIndex < text.size() ? static_cast<unsigned char>(text[byteIndex]) : 0u)
-			| (static_cast<uint32_t>(byteIndex + 1u < text.size() ? static_cast<unsigned char>(text[byteIndex + 1u]) : 0u) << 8u)
-			| (static_cast<uint32_t>(byteIndex + 2u < text.size() ? static_cast<unsigned char>(text[byteIndex + 2u]) : 0u) << 16u)
-			| (static_cast<uint32_t>(byteIndex + 3u < text.size() ? static_cast<unsigned char>(text[byteIndex + 3u]) : 0u) << 24u);
-		m_runtime.memory().writeValue(IO_PAYLOAD_DATA_ADDR, valueNumber(static_cast<double>(word)));
-	}
-	writeIoArg(IO_VDP_CMD_ARG0, 0, static_cast<double>(text.size()));
-	writeIoArg(IO_VDP_CMD_ARG0, 1, x);
-	writeIoArg(IO_VDP_CMD_ARG0, 2, y);
-	writeIoArg(IO_VDP_CMD_ARG0, 3, z);
-	writeIoArg(IO_VDP_CMD_ARG0, 4, static_cast<double>(fontId(font)));
-	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(start));
-	writeIoArg(IO_VDP_CMD_ARG0, 6, static_cast<double>(end));
-	writeIoArg(IO_VDP_CMD_ARG0, 7, static_cast<double>(static_cast<int>(layer)));
-	writeIoColor(IO_VDP_CMD_ARG0, 8, color);
-	if (backgroundColor.has_value()) {
-		writeIoArg(IO_VDP_CMD_ARG0, 12, 1.0);
-		writeIoColor(IO_VDP_CMD_ARG0, 13, *backgroundColor);
-		m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_GLYPH_RUN)));
-		return;
-	}
-	writeIoArg(IO_VDP_CMD_ARG0, 12, 0.0);
-	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_GLYPH_RUN)));
-}
-
-void Api::submitTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
-	const uint32_t tileCount = static_cast<uint32_t>(handles.size());
-	allocIoPayload(tileCount);
-	for (uint32_t index = 0; index < tileCount; index += 1u) {
-		m_runtime.memory().writeValue(IO_PAYLOAD_DATA_ADDR, valueNumber(static_cast<double>(handles[index])));
-	}
-	writeIoArg(IO_VDP_CMD_ARG0, 0, static_cast<double>(tileCount));
-	writeIoArg(IO_VDP_CMD_ARG0, 1, static_cast<double>(cols));
-	writeIoArg(IO_VDP_CMD_ARG0, 2, static_cast<double>(rows));
-	writeIoArg(IO_VDP_CMD_ARG0, 3, static_cast<double>(tileW));
-	writeIoArg(IO_VDP_CMD_ARG0, 4, static_cast<double>(tileH));
-	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(originX));
-	writeIoArg(IO_VDP_CMD_ARG0, 6, static_cast<double>(originY));
-	writeIoArg(IO_VDP_CMD_ARG0, 7, static_cast<double>(scrollX));
-	writeIoArg(IO_VDP_CMD_ARG0, 8, static_cast<double>(scrollY));
-	writeIoArg(IO_VDP_CMD_ARG0, 9, z);
-	writeIoArg(IO_VDP_CMD_ARG0, 10, static_cast<double>(static_cast<int>(layer)));
-	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_TILE_RUN)));
-}
-
 uint32_t Api::fontId(BFont* font) const {
 	if (font == m_font.get()) {
 		return 0u;
@@ -1297,262 +1164,12 @@ uint32_t Api::fontId(BFont* font) const {
 	throw BMSX_RUNTIME_ERROR("Unknown font handle.");
 }
 
-void Api::cls(int colorIndex) {
-	submitClear(palette_color(colorIndex));
-	reset_print_cursor();
-}
-
-void Api::blit_rect(int x0, int y0, int x1, int y1, int z, int colorIndex) {
-	const Color color = palette_color(colorIndex);
-	submitDrawLine(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y0), static_cast<f32>(z), Layer2D::World, color, 1.0f);
-	submitDrawLine(static_cast<f32>(x0), static_cast<f32>(y1), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, color, 1.0f);
-	submitDrawLine(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x0), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, color, 1.0f);
-	submitDrawLine(static_cast<f32>(x1), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, color, 1.0f);
-}
-
-void Api::fill_rect(int x0, int y0, int x1, int y1, int z, int colorIndex) {
-	submitFillRect(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, palette_color(colorIndex));
-}
-
-void Api::fill_rect_color(int x0, int y0, int x1, int y1, int z, const Color& color, std::optional<RenderLayer> layer) {
-	submitFillRect(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), renderLayerTo2dLayer(layer.has_value() ? layer.value() : RenderLayer::World), color);
-}
-
-void Api::blit(const ImgRenderSubmission& submission) {
-	submitBlit(
-		m_runtime.memory().resolveAssetHandle(submission.imgid),
-		submission.pos.x,
-		submission.pos.y,
-		submission.pos.z,
-		renderLayerTo2dLayer(*submission.layer),
-		submission.scale->x,
-		submission.scale->y,
-		submission.flip->flip_h,
-		submission.flip->flip_v,
-		*submission.colorize,
-		submission.parallax_weight.value_or(0.0f)
-	);
-}
-
-void Api::dma_blit_tiles(const Value& desc) {
-	if (!valueIsTable(desc)) {
-		throw BMSX_RUNTIME_ERROR("dma_blit_tiles requires a descriptor table.");
-	}
-	auto* table = asTable(desc);
-	auto key = [this](std::string_view name) {
-		return m_runtime.canonicalizeIdentifier(name);
-	};
-	auto requireInt = [table](const Value& value, const char* label) {
-		if (!valueIsNumber(value)) {
-			throw BMSX_RUNTIME_ERROR(std::string("dma_blit_tiles requires numeric ") + label + ".");
-		}
-		return static_cast<i32>(std::floor(asNumber(value)));
-	};
-	const Value tilesValue = table->get(key("tiles"));
-	if (!valueIsTable(tilesValue)) {
-		throw BMSX_RUNTIME_ERROR("dma_blit_tiles requires desc.tiles to be a table.");
-	}
-	auto* tiles = asTable(tilesValue);
-	const i32 cols = requireInt(table->get(key("cols")), "desc.cols");
-	const i32 rows = requireInt(table->get(key("rows")), "desc.rows");
-	const i32 tileW = requireInt(table->get(key("tile_w")), "desc.tile_w");
-	const i32 tileH = requireInt(table->get(key("tile_h")), "desc.tile_h");
-	const i32 originX = requireInt(table->get(key("origin_x")), "desc.origin_x");
-	const i32 originY = requireInt(table->get(key("origin_y")), "desc.origin_y");
-	const i32 scrollX = requireInt(table->get(key("scroll_x")), "desc.scroll_x");
-	const i32 scrollY = requireInt(table->get(key("scroll_y")), "desc.scroll_y");
-	requireInt(table->get(key("z")), "desc.z");
-	resolve_layer(table->get(key("layer")));
-	std::vector<u32> handles(static_cast<size_t>(cols * rows), IO_VDP_TILE_HANDLE_NONE);
-	for (i32 row = 0; row < rows; row += 1) {
-		const i32 base = row * cols;
-		for (i32 col = 0; col < cols; col += 1) {
-			const Value tileValue = tiles->get(valueNumber(static_cast<double>(base + col + 1)));
-			if (valueIsBool(tileValue) && !valueToBool(tileValue)) {
-				continue;
-			}
-			if (!valueIsString(tileValue)) {
-				throw BMSX_RUNTIME_ERROR("dma_blit_tiles tiles must contain image ids or false.");
-			}
-			const std::string& imgId = m_runtime.cpu().stringPool().toString(asStringId(tileValue));
-			handles[static_cast<size_t>(base + col)] = m_runtime.memory().resolveAssetHandle(imgId);
-		}
-	}
-	submitTileRun(handles, cols, rows, tileW, tileH, originX, originY, scrollX, scrollY, static_cast<f32>(asNumber(table->get(key("z")))), renderLayerTo2dLayer(resolve_layer(table->get(key("layer")))));
-}
-
-void Api::blit_poly(const PolyRenderSubmission& submission) {
-	if (submission.points.size() < 4u) {
-		return;
-	}
-	for (size_t index = 0; index < submission.points.size(); index += 2u) {
-		const size_t next = (index + 2u) % submission.points.size();
-		submitDrawLine(submission.points[index], submission.points[index + 1u], submission.points[next], submission.points[next + 1u], submission.z, renderLayerTo2dLayer(*submission.layer), submission.color, *submission.thickness);
-	}
-}
-
 void Api::put_mesh(const MeshRenderSubmission& submission) {
 	EngineCore::instance().view()->renderer.submit.mesh(submission);
 }
 
 void Api::put_particle(const ParticleRenderSubmission& submission) {
 	EngineCore::instance().view()->renderer.submit.particle(submission);
-}
-
-void Api::blit_text(const std::string& text, std::optional<int> x, std::optional<int> y,
-					std::optional<int> z, std::optional<int> colorIndex, const Value& options) {
-	BFont* renderFont = m_font.get();
-	int baseX = m_textCursorX;
-	int baseY = m_textCursorY;
-	if (x.has_value() && y.has_value()) {
-		m_textCursorHomeX = x.value();
-		m_textCursorX = m_textCursorHomeX;
-		m_textCursorY = y.value();
-		baseX = m_textCursorX;
-		baseY = m_textCursorY;
-	}
-	if (colorIndex.has_value()) {
-		m_textCursorColorIndex = colorIndex.value();
-	}
-	Color color = palette_color(m_textCursorColorIndex);
-	std::optional<Color> backgroundColor;
-	std::optional<int> wrapChars;
-	std::optional<int> centerBlockWidth;
-	int glyphStart = 0;
-	int glyphEnd = std::numeric_limits<i32>::max();
-	std::optional<TextAlign> align;
-	std::optional<TextBaseline> baseline;
-	RenderLayer layer = RenderLayer::World;
-	bool shouldAdvance = true;
-
-	if (!isNil(options)) {
-		if (!valueIsTable(options)) {
-			throw BMSX_RUNTIME_ERROR("blit_text options must be a table.");
-		}
-		auto* table = asTable(options);
-		auto key = [this](std::string_view name) {
-			return m_runtime.canonicalizeIdentifier(name);
-		};
-		Value colorValue = table->get(key("color"));
-		if (!isNil(colorValue)) {
-			color = resolve_color(colorValue);
-		}
-		Value backgroundValue = table->get(key("background_color"));
-		if (!isNil(backgroundValue)) {
-			backgroundColor = resolve_color(backgroundValue);
-		}
-		Value wrapValue = table->get(key("wrap_chars"));
-		if (!isNil(wrapValue)) {
-			wrapChars = static_cast<int>(std::floor(asNumber(wrapValue)));
-		}
-		Value centerValue = table->get(key("center_block_width"));
-		if (!isNil(centerValue)) {
-			centerBlockWidth = static_cast<int>(std::floor(asNumber(centerValue)));
-		}
-		Value startValue = table->get(key("glyph_start"));
-		if (!isNil(startValue)) {
-			glyphStart = static_cast<int>(std::floor(asNumber(startValue)));
-		}
-		Value endValue = table->get(key("glyph_end"));
-		if (!isNil(endValue)) {
-			glyphEnd = static_cast<int>(std::floor(asNumber(endValue)));
-		}
-		Value alignValue = table->get(key("align"));
-		if (!isNil(alignValue)) {
-			align = parseTextAlign(m_runtime.cpu().stringPool().toString(asStringId(alignValue)));
-		}
-		Value baselineValue = table->get(key("baseline"));
-		if (!isNil(baselineValue)) {
-			baseline = parseTextBaseline(m_runtime.cpu().stringPool().toString(asStringId(baselineValue)));
-		}
-		Value layerValue = table->get(key("layer"));
-		if (!isNil(layerValue)) {
-			layer = resolve_layer(layerValue);
-		}
-		Value autoValue = table->get(key("auto_advance"));
-		if (!isNil(autoValue)) {
-			shouldAdvance = valueIsBool(autoValue) && valueToBool(autoValue);
-		}
-		Value fontValue = table->get(key("font"));
-		if (!isNil(fontValue)) {
-			renderFont = resolve_font(fontValue);
-		}
-	}
-
-	std::vector<std::string> lines;
-	if (wrapChars.has_value() && wrapChars.value() > 0) {
-		lines = RenderQueues::wrapGlyphs(text, wrapChars.value());
-	} else {
-		size_t start = 0;
-		while (true) {
-			size_t end = text.find('\n', start);
-			if (end == std::string::npos) {
-				lines.push_back(text.substr(start));
-				break;
-			}
-			lines.push_back(text.substr(start, end - start));
-			start = end + 1;
-		}
-	}
-
-	const f32 renderZ = static_cast<f32>(z.has_value() ? z.value() : 0);
-	f32 cursorY = static_cast<f32>(baseY);
-	for (const std::string& line : lines) {
-		submitGlyphLine(line, static_cast<f32>(baseX), cursorY, renderZ, renderFont, color, backgroundColor, glyphStart, glyphEnd, renderLayerTo2dLayer(layer));
-		cursorY += static_cast<f32>(renderFont->lineHeight());
-	}
-
-	if (shouldAdvance) {
-		const int lineCount = static_cast<int>(lines.size());
-		m_textCursorY = baseY + ((lineCount - 1) * renderFont->lineHeight());
-		advance_print_cursor(renderFont->lineHeight());
-	}
-}
-
-void Api::blit_text_color(const std::string& text, std::optional<int> x, std::optional<int> y,
-						std::optional<int> z, const Value& colorValue) {
-	if (x.has_value() && y.has_value()) {
-		m_textCursorHomeX = x.value();
-		m_textCursorX = m_textCursorHomeX;
-		m_textCursorY = y.value();
-	}
-	if (valueIsNumber(colorValue)) {
-		m_textCursorColorIndex = static_cast<int>(std::floor(asNumber(colorValue)));
-	}
-	Color color = !isNil(colorValue) && !valueIsNumber(colorValue)
-		? resolve_color(colorValue)
-		: palette_color(m_textCursorColorIndex);
-	draw_multiline_text(text, m_textCursorX, m_textCursorY, z.has_value() ? z.value() : 0, color, *m_font);
-	advance_print_cursor(m_font->lineHeight());
-}
-
-void Api::blit_text_with_font(const std::string& text, std::optional<int> x, std::optional<int> y,
-							std::optional<int> z, std::optional<int> colorIndex, BFont* font) {
-	BFont* renderFont = font ? font : m_font.get();
-	int baseX = m_textCursorX;
-	int baseY = m_textCursorY;
-	if (x.has_value() && y.has_value()) {
-		m_textCursorHomeX = x.value();
-		m_textCursorX = m_textCursorHomeX;
-		m_textCursorY = y.value();
-		baseX = m_textCursorX;
-		baseY = m_textCursorY;
-	}
-	if (colorIndex.has_value()) {
-		m_textCursorColorIndex = colorIndex.value();
-	}
-	Color color = palette_color(m_textCursorColorIndex);
-	draw_multiline_text(text, baseX, baseY, z.has_value() ? z.value() : 0, color, *renderFont);
-	advance_print_cursor(renderFont->lineHeight());
-}
-
-void Api::blit_text_inline_with_font(const std::string& text, int x, int y, int z, int colorIndex, BFont* font) {
-	submitGlyphLine(text, static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(z), font ? font : m_font.get(), palette_color(colorIndex), std::nullopt, 0, std::numeric_limits<i32>::max(), Layer2D::World);
-}
-
-void Api::blit_text_inline_span_with_font(const std::string& text, int start, int end,
-										int x, int y, int z, int colorIndex, BFont* font) {
-	submitGlyphLine(text, static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(z), font ? font : m_font.get(), palette_color(colorIndex), std::nullopt, start, end, Layer2D::World);
 }
 
 bool Api::action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const {
@@ -1631,43 +1248,6 @@ void Api::resume_audio() {
 
 void Api::reboot() {
 	m_runtime.requestProgramReload();
-}
-
-void Api::draw_multiline_text(const std::string& text, int x, int y, int z, const Color& color, BFont& font) {
-	size_t start = 0;
-	int cursorY = y;
-	while (start <= text.size()) {
-		size_t end = text.find('\n', start);
-		if (end == std::string::npos) {
-			end = text.size();
-		}
-		std::string line = text.substr(start, end - start);
-		if (!line.empty()) {
-			submitGlyphLine(line, static_cast<f32>(x), static_cast<f32>(cursorY), static_cast<f32>(z), &font, color, std::nullopt, 0, std::numeric_limits<i32>::max(), Layer2D::World);
-		}
-		if (end == text.size()) {
-			break;
-		}
-		cursorY += font.lineHeight();
-		start = end + 1;
-	}
-	m_textCursorX = m_textCursorHomeX;
-	m_textCursorY = cursorY;
-}
-
-void Api::advance_print_cursor(int lineHeight) {
-	m_textCursorY += lineHeight;
-	int limit = display_height() - lineHeight;
-	if (m_textCursorY >= limit) {
-		m_textCursorY = 0;
-	}
-}
-
-void Api::reset_print_cursor() {
-	m_textCursorHomeX = 0;
-	m_textCursorX = 0;
-	m_textCursorY = 0;
-	m_textCursorColorIndex = m_defaultPrintColorIndex;
 }
 
 Value Api::build_font_descriptor(BFont* font) {
@@ -1798,46 +1378,6 @@ Color Api::resolve_color(const Value& value) {
 	color.b = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("b"))));
 	color.a = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("a"))));
 	return color;
-}
-
-RenderLayer Api::resolve_layer(const Value& value) {
-	if (valueIsString(value)) {
-		const std::string& key = m_runtime.cpu().stringPool().toString(asStringId(value));
-		if (key == "ui") return RenderLayer::UI;
-		if (key == "ide") return RenderLayer::IDE;
-	}
-	return RenderLayer::World;
-}
-
-std::vector<f32> Api::read_polygon(const Value& value) {
-	std::vector<f32> points;
-	if (valueIsTable(value)) {
-		auto* tbl = asTable(value);
-		const int length = tbl->length();
-		for (int i = 1; i + 1 <= length; i += 2) {
-			float x = static_cast<float>(asNumber(tbl->get(valueNumber(static_cast<double>(i)))));
-			float y = static_cast<float>(asNumber(tbl->get(valueNumber(static_cast<double>(i + 1)))));
-			points.push_back(x);
-			points.push_back(y);
-		}
-		return points;
-	}
-	if (valueIsNativeObject(value)) {
-		auto* obj = asNativeObject(value);
-		for (int i = 1; ; i += 2) {
-			Value xValue = obj->get(valueNumber(static_cast<double>(i)));
-			Value yValue = obj->get(valueNumber(static_cast<double>(i + 1)));
-			if (isNil(xValue) || isNil(yValue)) {
-				break;
-			}
-			float x = static_cast<float>(asNumber(xValue));
-			float y = static_cast<float>(asNumber(yValue));
-			points.push_back(x);
-			points.push_back(y);
-		}
-		return points;
-	}
-	throw BMSX_RUNTIME_ERROR("blit_poly expects a table or native object.");
 }
 
 Vec3 Api::read_vec3(const Value& value) {

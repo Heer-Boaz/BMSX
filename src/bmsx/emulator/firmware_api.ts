@@ -1,19 +1,15 @@
 import { $, runGate } from '../core/engine_core';
 import { Input } from '../input/input';
 import {
-	renderLayerTo2dLayer,
 	color,
-	GlyphRenderSubmission,
 	MeshRenderSubmission,
 	ParticleRenderSubmission,
-	RenderLayer
 } from '../render/shared/render_types';
-import { wrapGlyphs } from '../render/shared/render_queues';
 import { Font } from './font';
 import { BFont, GlyphMap } from '../render/shared/bitmap_font';
 import { RuntimeStorage } from './storage';
 import type { AudioPlayOptions } from '../audio/soundmaster';
-import type { Polygon, vec3arr } from '../rompack/rompack';
+import type { vec3arr } from '../rompack/rompack';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { Runtime } from './runtime';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
@@ -26,27 +22,12 @@ import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtins';
 import { createLuaTable, type LuaTable } from '../lua/luavalue';
 import { ActionState } from 'bmsx/input/inputtypes';
 import { BmsxColors } from './vdp';
-import {
-	IO_ARG_STRIDE,
-	IO_CMD_VDP_BLIT,
-	IO_CMD_VDP_CLEAR,
-	IO_CMD_VDP_DRAW_LINE,
-	IO_CMD_VDP_FILL_RECT,
-	IO_CMD_VDP_GLYPH_RUN,
-	IO_CMD_VDP_TILE_RUN,
-	IO_PAYLOAD_ALLOC_ADDR,
-	IO_PAYLOAD_DATA_ADDR,
-	IO_VDP_CMD,
-	IO_VDP_CMD_ARG0,
-	IO_VDP_TILE_HANDLE_NONE,
-} from './io';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;
 	runtime: Runtime;
 };
 
-const ioGlyphRunUtf8Encoder = new TextEncoder();
 type FontDefinition = {
 	glyphs: Record<string, string>;
 	advance_padding?: number;
@@ -63,39 +44,6 @@ type FirmwareFontDescriptor = {
 	advance_padding: number;
 	glyphs: Record<string, FirmwareFontGlyphDescriptor>;
 };
-type FrameBufferBlitOptions = {
-	scale?: number | { x: number; y: number };
-	flip_h?: boolean;
-	flip_v?: boolean;
-	colorize?: color;
-	parallax_weight?: number;
-	layer?: RenderLayer;
-};
-type FrameBufferGlyphOptions = {
-	font: BFont;
-	color?: number | color;
-	background_color?: number | color;
-	wrap_chars?: number;
-	center_block_width?: number;
-	glyph_start?: number;
-	glyph_end?: number;
-	align?: CanvasTextAlign;
-	baseline?: CanvasTextBaseline;
-	layer?: RenderLayer;
-};
-type FrameBufferTileBlitDescriptor = {
-	tiles: Array<string | false>;
-	cols: number;
-	rows: number;
-	tile_w: number;
-	tile_h: number;
-	origin_x: number;
-	origin_y: number;
-	scroll_x: number;
-	scroll_y: number;
-	z: number;
-	layer: RenderLayer;
-};
 
 export class Api {
 	private readonly storage: RuntimeStorage;
@@ -103,11 +51,6 @@ export class Api {
 	private readonly runtimeFonts: BFont[] = [];
 	private readonly fontIds = new WeakMap<BFont, number>();
 	private readonly fontDescriptors = new WeakMap<BFont, FirmwareFontDescriptor>();
-	private readonly defaultPrintColorIndex = 15;
-	private textCursorX = 0;
-	private textCursorY = 0;
-	private textCursorHomeX = 0;
-	private textCursorColorIndex = 0;
 	private readonly cameraViewScratch = new Float32Array(16);
 	private readonly cameraProjScratch = new Float32Array(16);
 	private readonly cameraEyeScratch: vec3arr = [0, 0, 0];
@@ -128,7 +71,6 @@ export class Api {
 		this._runtime = options.runtime;
 		this.font = new Font();
 		this.registerFont(this.font);
-		this.reset_print_cursor();
 	}
 
 	private registerFont(font: BFont): number {
@@ -182,107 +124,6 @@ export class Api {
 		};
 		this.fontDescriptors.set(font, descriptor);
 		return descriptor;
-	}
-
-	private writeIoArg(base: number, index: number, value: number): void {
-		this._runtime.memory.writeValue(base + index * IO_ARG_STRIDE, value);
-	}
-
-	private writeIoColor(base: number, offset: number, value: color): void {
-		this.writeIoArg(base, offset + 0, value.r);
-		this.writeIoArg(base, offset + 1, value.g);
-		this.writeIoArg(base, offset + 2, value.b);
-		this.writeIoArg(base, offset + 3, value.a);
-	}
-
-	private allocIoPayload(words: number): void {
-		this._runtime.memory.writeValue(IO_PAYLOAD_ALLOC_ADDR, words);
-	}
-
-	private submitClear(colorValue: color): void {
-		this.writeIoColor(IO_VDP_CMD_ARG0, 0, colorValue);
-		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_CLEAR);
-	}
-
-	private submitFillRect(x0: number, y0: number, x1: number, y1: number, z: number, layer: number, colorValue: color): void {
-		this.writeIoArg(IO_VDP_CMD_ARG0, 0, x0);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 1, y0);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 2, x1);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 3, y1);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 4, z);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 5, layer);
-		this.writeIoColor(IO_VDP_CMD_ARG0, 6, colorValue);
-		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_FILL_RECT);
-	}
-
-	private submitDrawLine(x0: number, y0: number, x1: number, y1: number, z: number, layer: number, colorValue: color, thickness: number): void {
-		this.writeIoArg(IO_VDP_CMD_ARG0, 0, x0);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 1, y0);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 2, x1);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 3, y1);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 4, z);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 5, layer);
-		this.writeIoColor(IO_VDP_CMD_ARG0, 6, colorValue);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 10, thickness);
-		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_DRAW_LINE);
-	}
-
-	private submitBlit(handle: number, x: number, y: number, z: number, layer: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, parallaxWeight: number): void {
-		this.writeIoArg(IO_VDP_CMD_ARG0, 0, handle);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 1, x);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 2, y);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 3, z);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 4, layer);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 5, scaleX);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 6, scaleY);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 7, (flipH ? 1 : 0) | (flipV ? 2 : 0));
-		this.writeIoColor(IO_VDP_CMD_ARG0, 8, colorValue);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 12, parallaxWeight);
-		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_BLIT);
-	}
-
-	private submitGlyphLine(text: string, x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: number): void {
-		if (text.length === 0) {
-			return;
-		}
-		const textBytes = ioGlyphRunUtf8Encoder.encode(text);
-		const payloadWords = Math.ceil(textBytes.length / 4);
-		this.allocIoPayload(payloadWords);
-		for (let wordIndex = 0; wordIndex < payloadWords; wordIndex += 1) {
-			const byteIndex = wordIndex * 4;
-			const word =
-				(textBytes[byteIndex] ?? 0)
-				| ((textBytes[byteIndex + 1] ?? 0) << 8)
-				| ((textBytes[byteIndex + 2] ?? 0) << 16)
-				| ((textBytes[byteIndex + 3] ?? 0) << 24);
-			this._runtime.memory.writeValue(IO_PAYLOAD_DATA_ADDR, word >>> 0);
-		}
-		this.writeIoArg(IO_VDP_CMD_ARG0, 0, textBytes.length);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 1, x);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 2, y);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 3, z);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 4, this.registerFont(font));
-		this.writeIoArg(IO_VDP_CMD_ARG0, 5, start);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 6, end);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 7, layer);
-		this.writeIoColor(IO_VDP_CMD_ARG0, 8, colorValue);
-		if (backgroundColor) {
-			this.writeIoArg(IO_VDP_CMD_ARG0, 12, 1);
-			this.writeIoColor(IO_VDP_CMD_ARG0, 13, backgroundColor);
-			this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_GLYPH_RUN);
-			return;
-		}
-		this.writeIoArg(IO_VDP_CMD_ARG0, 12, 0);
-		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_GLYPH_RUN);
-	}
-
-	private submitGlyphRun(text: string | string[], x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: number): void {
-		const lines = Array.isArray(text) ? text : [text];
-		let cursorY = y;
-		for (let index = 0; index < lines.length; index += 1) {
-			this.submitGlyphLine(lines[index], x, cursorY, z, font, colorValue, backgroundColor, start, end, layer);
-			cursorY += font.lineHeight;
-		}
 	}
 
 	public display_width(): number {
@@ -382,154 +223,6 @@ export class Api {
 		throw new Error('stat is not implemented.');
 	}
 
-	public cls(colorindex: number = 0): void {
-		this.submitClear(this.palette_color(colorindex));
-		this.reset_print_cursor();
-	}
-
-	public blit_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
-		const colorValue = this.palette_color(colorindex);
-		const layer = renderLayerTo2dLayer('world');
-		this.submitDrawLine(x0, y0, x1, y0, z, layer, colorValue, 1);
-		this.submitDrawLine(x0, y1, x1, y1, z, layer, colorValue, 1);
-		this.submitDrawLine(x0, y0, x0, y1, z, layer, colorValue, 1);
-		this.submitDrawLine(x1, y0, x1, y1, z, layer, colorValue, 1);
-	}
-
-	public fill_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
-		this.submitFillRect(x0, y0, x1, y1, z, renderLayerTo2dLayer('world'), this.palette_color(colorindex));
-	}
-
-	public fill_rect_color(
-		x0: number,
-		y0: number,
-		x1: number,
-		y1: number,
-		z: number,
-		colorvalue: number | color,
-		options?: { layer?: RenderLayer },
-	): void {
-		const renderLayer = options === undefined || options.layer === undefined ? 'world' : options.layer;
-		this.submitFillRect(x0, y0, x1, y1, z, renderLayerTo2dLayer(renderLayer), this.resolve_color(colorvalue));
-	}
-
-	public blit(img_id: string, x: number, y: number, z: number, options?: FrameBufferBlitOptions): void {
-		const handle = Runtime.instance.resolveAssetHandle(img_id);
-		let scaleX = 1;
-		let scaleY = 1;
-		let flipH = false;
-		let flipV = false;
-		let colorize: color = { r: 1, g: 1, b: 1, a: 1 };
-		let parallaxWeight = 0;
-		let renderLayer: RenderLayer = 'world';
-		if (options !== undefined) {
-			if (options.scale !== undefined) {
-				if (typeof options.scale === 'number') {
-					scaleX = options.scale;
-					scaleY = options.scale;
-				} else {
-					scaleX = options.scale.x;
-					scaleY = options.scale.y;
-				}
-			}
-			flipH = options.flip_h === true;
-			flipV = options.flip_v === true;
-			if (options.colorize !== undefined) {
-				colorize = options.colorize;
-			}
-			parallaxWeight = options.parallax_weight ?? 0;
-			if (options.layer !== undefined) {
-				renderLayer = options.layer;
-			}
-		}
-		this.submitBlit(
-			handle,
-			x,
-			y,
-			z,
-			renderLayerTo2dLayer(renderLayer),
-			scaleX,
-			scaleY,
-			flipH,
-			flipV,
-			colorize,
-			parallaxWeight,
-		);
-	}
-
-	public dma_blit_tiles(desc: FrameBufferTileBlitDescriptor): void {
-		const tileCount = desc.cols * desc.rows;
-		this.allocIoPayload(tileCount);
-		for (let index = 0; index < tileCount; index += 1) {
-			const tile = desc.tiles[index];
-			if (tile === undefined) {
-				throw new Error(`[FirmwareApi] dma_blit_tiles missing tile at index ${index}.`);
-			}
-			const handle = tile === false ? IO_VDP_TILE_HANDLE_NONE : this._runtime.resolveAssetHandle(tile);
-			this._runtime.memory.writeValue(IO_PAYLOAD_DATA_ADDR, handle);
-		}
-		this.writeIoArg(IO_VDP_CMD_ARG0, 0, tileCount);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 1, desc.cols);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 2, desc.rows);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 3, desc.tile_w);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 4, desc.tile_h);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 5, desc.origin_x);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 6, desc.origin_y);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 7, desc.scroll_x);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 8, desc.scroll_y);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 9, desc.z);
-		this.writeIoArg(IO_VDP_CMD_ARG0, 10, renderLayerTo2dLayer(desc.layer));
-		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_TILE_RUN);
-	}
-
-	public blit_glyphs(glyphs: string | string[], x: number, y: number, z: number, options: FrameBufferGlyphOptions): void {
-		const glyphStart = options.glyph_start === undefined ? 0 : options.glyph_start;
-		const glyphEnd = options.glyph_end === undefined ? Number.MAX_SAFE_INTEGER : options.glyph_end;
-		const renderLayer = options.layer === undefined ? 'world' : options.layer;
-		const submission: GlyphRenderSubmission = {
-			glyphs,
-			x,
-			y,
-			z,
-			font: options.font,
-			color: options.color === undefined ? this.palette_color(this.defaultPrintColorIndex) : this.resolve_color(options.color),
-			background_color: options.background_color !== undefined ? this.resolve_color(options.background_color) : undefined,
-			wrap_chars: options.wrap_chars,
-			center_block_width: options.center_block_width,
-			glyph_start: glyphStart,
-			glyph_end: glyphEnd,
-			align: options.align,
-			baseline: options.baseline,
-			layer: renderLayer,
-		};
-		this.submitGlyphRun(
-			submission.glyphs,
-			submission.x,
-			submission.y,
-			submission.z,
-			submission.font,
-			submission.color,
-			submission.background_color,
-			glyphStart,
-			glyphEnd,
-			renderLayerTo2dLayer(submission.layer),
-		);
-	}
-
-	public blit_poly(points: Polygon, z: number, colorvalue: number | color, thickness?: number, layer?: RenderLayer): void {
-		if (points.length < 4) {
-			return;
-		}
-		const renderLayer = layer === undefined ? 'world' : layer;
-		const color = this.resolve_color(colorvalue);
-		const lineThickness = thickness === undefined ? 1 : thickness;
-		const layer2d = renderLayerTo2dLayer(renderLayer);
-		for (let index = 0; index < points.length; index += 2) {
-			const next = (index + 2) % points.length;
-			this.submitDrawLine(points[index], points[index + 1], points[next], points[next + 1], z, layer2d, color, lineThickness);
-		}
-	}
-
 	public put_mesh(mesh: MeshRenderSubmission['mesh'], matrix: MeshRenderSubmission['matrix'], options?: Omit<MeshRenderSubmission, 'mesh' | 'matrix'>): void {
 		const submission: MeshRenderSubmission = {
 			mesh,
@@ -618,120 +311,6 @@ export class Api {
 			range,
 			intensity,
 		});
-	}
-
-	public blit_text(
-		text: string,
-		x?: number,
-		y?: number,
-		z?: number,
-		colorindex?: number,
-		options?: {
-			color?: number | color;
-			background_color?: number | color;
-			wrap_chars?: number;
-			center_block_width?: number;
-			glyph_start?: number;
-			glyph_end?: number;
-			align?: CanvasTextAlign;
-			baseline?: CanvasTextBaseline;
-			layer?: RenderLayer;
-			font?: BFont;
-			auto_advance?: boolean;
-		},
-	): void {
-		const renderFont = options === undefined || options.font === undefined ? this.font : options.font;
-		const { baseX, baseY, color, autoAdvance } = this.resolve_write_context(renderFont, x, y, z, colorindex);
-		const resolvedColor = options === undefined || options.color === undefined ? color : this.resolve_color(options.color);
-		const backgroundColor = options === undefined || options.background_color === undefined ? undefined : this.resolve_color(options.background_color);
-		const wrapChars = options === undefined ? undefined : options.wrap_chars;
-		const glyphStart = options === undefined || options.glyph_start === undefined ? 0 : options.glyph_start;
-		const glyphEnd = options === undefined || options.glyph_end === undefined ? Number.MAX_SAFE_INTEGER : options.glyph_end;
-		const renderLayer = options === undefined || options.layer === undefined ? 'world' : options.layer;
-		let lines: string[] | null = null;
-		if (wrapChars !== undefined && wrapChars > 0) {
-			lines = wrapGlyphs(text, wrapChars);
-		} else if (text.indexOf('\n') !== -1) {
-			lines = text.split('\n');
-		}
-		const glyphs: GlyphRenderSubmission = {
-			glyphs: lines === null ? text : lines,
-			x: baseX,
-			y: baseY,
-			z,
-			font: renderFont,
-			color: resolvedColor,
-			background_color: backgroundColor,
-			center_block_width: options === undefined ? undefined : options.center_block_width,
-			glyph_start: glyphStart,
-			glyph_end: glyphEnd,
-			align: options === undefined ? undefined : options.align,
-			baseline: options === undefined ? undefined : options.baseline,
-			layer: renderLayer,
-		};
-		this.submitGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, glyphStart, glyphEnd, renderLayerTo2dLayer(renderLayer));
-		const shouldAdvance = options === undefined || options.auto_advance === undefined ? autoAdvance : options.auto_advance;
-		if (shouldAdvance) {
-			const lineCount = lines ? lines.length : 1;
-			this.textCursorY = baseY + ((lineCount - 1) * renderFont.lineHeight);
-			this.advance_print_cursor(renderFont.lineHeight);
-		}
-	}
-
-	public blit_text_color(text: string, x?: number, y?: number, z?: number, colorvalue?: number | color): void {
-		const hasExplicitPosition = x !== undefined && y !== undefined;
-		if (hasExplicitPosition) {
-			this.textCursorHomeX = x;
-			this.textCursorX = this.textCursorHomeX;
-			this.textCursorY = y;
-		}
-		if (typeof colorvalue === 'number') {
-			this.textCursorColorIndex = colorvalue;
-		}
-		const baseX = this.textCursorX;
-		const baseY = this.textCursorY;
-		const color = colorvalue !== undefined ? this.resolve_color(colorvalue) : this.palette_color(this.textCursorColorIndex);
-		this.draw_multiline_text(text, baseX, baseY, z, color, this.font);
-		this.advance_print_cursor(this.font.lineHeight);
-	}
-
-	public blit_text_with_font(text: string, x?: number, y?: number, z?: number, colorindex?: number, font?: BFont): void {
-		const renderFont = font === undefined ? this.font : font;
-		const { baseX, baseY, color, autoAdvance } = this.resolve_write_context(renderFont, x, y, z, colorindex);
-		this.draw_multiline_text(text, baseX, baseY, z, color, renderFont);
-		if (autoAdvance) {
-			this.advance_print_cursor(renderFont.lineHeight);
-		}
-	}
-
-	public blit_text_inline_with_font(text: string, x: number, y: number, z: number, colorindex: number, font?: BFont): void {
-		const renderFont = font === undefined ? this.font : font;
-		const glyphs: GlyphRenderSubmission = {
-			glyphs: text,
-			x,
-			y,
-			z,
-			color: BmsxColors[colorindex],
-			font: renderFont,
-			layer: 'world',
-		};
-		this.submitGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, 0, Number.MAX_SAFE_INTEGER, renderLayerTo2dLayer(glyphs.layer));
-	}
-
-	public blit_text_inline_span_with_font(text: string, start: number, end: number, x: number, y: number, z: number, colorindex: number, font?: BFont): void {
-		const renderFont = font === undefined ? this.font : font;
-		const glyphs: GlyphRenderSubmission = {
-			glyphs: text,
-			glyph_start: start,
-			glyph_end: end,
-			x,
-			y,
-			z,
-			color: BmsxColors[colorindex],
-			font: renderFont,
-			layer: 'world',
-		};
-		this.submitGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, start, end, renderLayerTo2dLayer(glyphs.layer));
 	}
 
 	public action_triggered(actiondefinition: string, player?: number): boolean {
@@ -1013,62 +592,5 @@ export class Api {
 		out[1] = y;
 		out[2] = z;
 		return out;
-	}
-
-	private resolve_write_context(font: BFont, x: number, y: number, z: number, colorindex: number) {
-		const hasExplicitPosition = x !== undefined && y !== undefined;
-		if (hasExplicitPosition) {
-			this.textCursorHomeX = x;
-			this.textCursorX = this.textCursorHomeX;
-			this.textCursorY = y;
-		}
-		if (colorindex !== undefined) {
-			this.textCursorColorIndex = colorindex;
-		}
-		const baseX = this.textCursorX;
-		const baseY = this.textCursorY;
-		const color = this.palette_color(this.textCursorColorIndex);
-		return { baseX, baseY, color, autoAdvance: true, font, z };
-	}
-
-	private draw_multiline_text(text: string, x: number, y: number, z: number, color: color, font: BFont): number {
-		const lines = text.split('\n');
-		let cursorY = y;
-		for (let i = 0; i < lines.length; i += 1) {
-			const line = lines[i];
-			if (line.length > 0) {
-				const glyphs: GlyphRenderSubmission = {
-					glyphs: line,
-					x,
-					y: cursorY,
-					z,
-					color,
-					font,
-					layer: 'world',
-				};
-				this.submitGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, 0, Number.MAX_SAFE_INTEGER, renderLayerTo2dLayer(glyphs.layer));
-			}
-			if (i < lines.length - 1) {
-				cursorY += font.lineHeight;
-			}
-		}
-		this.textCursorX = this.textCursorHomeX;
-		this.textCursorY = cursorY;
-		return cursorY;
-	}
-
-	private advance_print_cursor(lineHeight: number): void {
-		this.textCursorY += lineHeight;
-		const limit = this.display_height() - lineHeight;
-		if (this.textCursorY >= limit) {
-			this.textCursorY = 0;
-		}
-	}
-
-	private reset_print_cursor(): void {
-		this.textCursorHomeX = 0;
-		this.textCursorX = 0;
-		this.textCursorY = 0;
-		this.textCursorColorIndex = this.defaultPrintColorIndex;
 	}
 }

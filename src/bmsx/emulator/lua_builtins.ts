@@ -346,21 +346,7 @@ export const DEFAULT_LUA_BUILTIN_NAMES: ReadonlyArray<string> = (() => {
 	return Array.from(names);
 })();
 
-const FIRMWARE_LUA_GLOBAL_METHODS = new Set<string>([
-	'cls',
-	'blit_rect',
-	'fill_rect',
-	'fill_rect_color',
-	'blit',
-	'dma_blit_tiles',
-	'blit_glyphs',
-	'blit_poly',
-	'blit_text',
-	'blit_text_color',
-	'blit_text_with_font',
-	'blit_text_inline_with_font',
-	'blit_text_inline_span_with_font',
-]);
+const FIRMWARE_LUA_GLOBAL_METHODS = new Set<string>();
 
 export function registerApiBuiltins(interpreter: LuaInterpreter): void {
 	const runtime = Runtime.instance;

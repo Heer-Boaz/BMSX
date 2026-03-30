@@ -114,90 +114,6 @@ export const API_METHOD_METADATA = {
 		returnType: 'number',
 		returnDescription: 'Stat value (0 when unavailable/unsupported).',
 	},
-	cls: {
-		description: 'Clears the screen and resets the text cursor.',
-		parameters: [
-			{ name: 'colorindex', optional: true, description: 'Palette index to fill the screen with (defaults to 0).' },
-		],
-		returnType: 'void',
-	},
-	blit_rect: {
-		description: 'Draws a rectangle outline.',
-		parameters: [
-			{ name: 'x0', description: 'Left coordinate in pixels.' },
-			{ name: 'y0', description: 'Top coordinate in pixels.' },
-			{ name: 'x1', description: 'Right coordinate in pixels.' },
-			{ name: 'y1', description: 'Bottom coordinate in pixels.' },
-			{ name: 'z', description: 'Z coordinate for ordering.' },
-			{ name: 'colorindex', description: 'Palette index for the outline color.' },
-		],
-		returnType: 'void',
-	},
-	fill_rect: {
-		description: 'Draws a filled rectangle.',
-		parameters: [
-			{ name: 'x0', description: 'Left coordinate in pixels.' },
-			{ name: 'y0', description: 'Top coordinate in pixels.' },
-			{ name: 'x1', description: 'Right coordinate in pixels.' },
-			{ name: 'y1', description: 'Bottom coordinate in pixels.' },
-			{ name: 'z', description: 'Z coordinate for ordering.' },
-			{ name: 'colorindex', description: 'Palette index for the fill color.' },
-		],
-		returnType: 'void',
-	},
-	fill_rect_color: {
-		description: 'Draws a filled rectangle using a raw color value.',
-		parameters: [
-			{ name: 'x0', description: 'Left coordinate in pixels.' },
-			{ name: 'y0', description: 'Top coordinate in pixels.' },
-			{ name: 'x1', description: 'Right coordinate in pixels.' },
-			{ name: 'y1', description: 'Bottom coordinate in pixels.' },
-			{ name: 'z', description: 'Z coordinate for ordering.' },
-			{ name: 'colorvalue', description: 'Palette index (number) or a color object.' },
-			{ name: 'options', optional: true, description: 'Optional rectangle options (layer).' },
-		],
-		returnType: 'void',
-	},
-	blit: {
-		description: 'Blits an image resource at the given position.',
-		parameters: [
-			{ name: 'img_id', description: 'Image asset id (imgid).' },
-			{ name: 'x', description: 'X coordinate in pixels.' },
-			{ name: 'y', description: 'Y coordinate in pixels.' },
-			{ name: 'z', description: 'Z coordinate for ordering.' },
-			{ name: 'options', optional: true, description: 'Optional blit options (scale: number or {x,y}, flip_h, flip_v, colorize, parallax_weight, layer).' },
-		],
-		returnType: 'void',
-	},
-	dma_blit_tiles: {
-		description: 'Blits a flat row-major tile array directly into the framebuffer.',
-		parameters: [
-			{ name: 'desc', description: 'Tile blit descriptor: { tiles, cols, rows, tile_w, tile_h, origin_x, origin_y, scroll_x, scroll_y, z, layer }.' },
-		],
-		returnType: 'void',
-	},
-	blit_poly: {
-		description: 'Draws a polygon/line strip.',
-		parameters: [
-			{ name: 'points', description: 'Polygon points array.' },
-			{ name: 'z', description: 'Z coordinate for ordering.' },
-			{ name: 'colorvalue', description: 'Palette index (number) or a color object.' },
-			{ name: 'thickness', optional: true, description: 'Optional line thickness.' },
-			{ name: 'layer', optional: true, description: 'Optional render layer.' },
-		],
-		returnType: 'void',
-	},
-	blit_glyphs: {
-		description: 'Blits one line or an array of lines using an explicit font and glyph options.',
-		parameters: [
-			{ name: 'glyphs', description: 'String or array of strings to blit.' },
-			{ name: 'x', description: 'X coordinate in pixels.' },
-			{ name: 'y', description: 'Y coordinate in pixels.' },
-			{ name: 'z', description: 'Z coordinate for ordering.' },
-			{ name: 'options', description: 'Glyph options table: { font, color?, background_color?, wrap_chars?, center_block_width?, glyph_start?, glyph_end?, align?, baseline?, layer? }.' },
-		],
-		returnType: 'void',
-	},
 	mesh: {
 		description: 'Submits a 3D mesh render request.',
 		parameters: [
@@ -268,48 +184,13 @@ export const API_METHOD_METADATA = {
 		],
 		returnType: 'void',
 	},
-	blit_text: {
-		description: 'Blits text to the screen. If x/y are omitted, uses the current text cursor and auto-advances.',
-		parameters: [
-			{ name: 'text', description: 'Text to blit.' },
-			{ name: 'x', optional: true, description: 'Optional X coordinate in pixels.' },
-			{ name: 'y', optional: true, description: 'Optional Y coordinate in pixels.' },
-			{ name: 'z', optional: true, description: 'Optional Z coordinate for ordering.' },
-			{ name: 'colorindex', optional: true, description: 'Optional palette index for the text color.' },
-			{ name: 'options', optional: true, description: 'Optional text options (color, background_color, wrap_chars, center_block_width, glyph_start, glyph_end, align, baseline, layer, font, auto_advance). `font` can be created via create_font().' },
-		],
-		returnType: 'void',
-	},
-	blit_text_color: {
-		description: 'Blits text to the screen using a raw color value. If x/y are omitted, uses the current text cursor and auto-advances.',
-		parameters: [
-			{ name: 'text', description: 'Text to blit.' },
-			{ name: 'x', optional: true, description: 'Optional X coordinate in pixels.' },
-			{ name: 'y', optional: true, description: 'Optional Y coordinate in pixels.' },
-			{ name: 'z', optional: true, description: 'Optional Z coordinate for ordering.' },
-			{ name: 'colorvalue', optional: true, description: 'Palette index (number) or a color object.' },
-		],
-		returnType: 'void',
-	},
-	blit_text_with_font: {
-		description: 'Blits text to the screen using a specific font instance.',
-		parameters: [
-			{ name: 'text', description: 'Text to blit.' },
-			{ name: 'x', optional: true, description: 'Optional X coordinate in pixels.' },
-			{ name: 'y', optional: true, description: 'Optional Y coordinate in pixels.' },
-			{ name: 'z', optional: true, description: 'Optional Z coordinate for ordering.' },
-			{ name: 'colorindex', optional: true, description: 'Optional palette index for the text color.' },
-			{ name: 'font', optional: true, description: 'Optional font to use (defaults to the runtime font). Use create_font() to build a Lua-defined bitmap font.' },
-		],
-		returnType: 'void',
-	},
 	create_font: {
 		description: 'Creates a runtime bitmap font from a Lua definition table.',
 		parameters: [
 			{ name: 'definition', description: 'Font definition table: { glyphs = { ["A"]="imgid", ... }, advance_padding? = number }' },
 		],
 		returnType: 'Font',
-		returnDescription: 'Native font handle usable in blit_glyphs/blit_text options.',
+		returnDescription: 'Native font handle for direct glyph-submission code.',
 	},
 	action_triggered: {
 		description: 'Checks whether an input action definition is triggered for a given player.',
