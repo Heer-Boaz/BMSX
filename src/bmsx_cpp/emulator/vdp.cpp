@@ -313,13 +313,15 @@ void VDP::initializeFrameBufferSurface() {
 	auto* view = EngineCore::instance().view();
 	const uint32_t width = static_cast<uint32_t>(view->viewportSize.x);
 	const uint32_t height = static_cast<uint32_t>(view->viewportSize.y);
-	auto& entry = m_memory.registerImageSlotAt(
-		FRAMEBUFFER_TEXTURE_KEY,
-		VRAM_FRAMEBUFFER_BASE,
-		VRAM_FRAMEBUFFER_SIZE,
-		0,
-		false
-	);
+	auto& entry = m_memory.hasAsset(FRAMEBUFFER_TEXTURE_KEY)
+		? m_memory.getAssetEntry(FRAMEBUFFER_TEXTURE_KEY)
+		: m_memory.registerImageSlotAt(
+			FRAMEBUFFER_TEXTURE_KEY,
+			VRAM_FRAMEBUFFER_BASE,
+			VRAM_FRAMEBUFFER_SIZE,
+			0,
+			false
+		);
 	const uint32_t size = width * height * 4u;
 	if (size > entry.capacity) {
 		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Framebuffer surface exceeds VRAM capacity.");
@@ -1126,6 +1128,8 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 }
 
 void VDP::restoreVramSlotTextures() {
+	const auto& frameBufferEntry = m_memory.getAssetEntry(FRAMEBUFFER_TEXTURE_KEY);
+	restoreVramSlotTexture(frameBufferEntry, FRAMEBUFFER_TEXTURE_KEY);
 	const auto& engineEntry = m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
 	restoreVramSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
 	auto* view = EngineCore::instance().view();

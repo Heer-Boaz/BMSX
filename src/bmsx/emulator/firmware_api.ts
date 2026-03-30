@@ -57,7 +57,6 @@ type FontDefinition = {
 };
 type FirmwareFontGlyphDescriptor = {
 	imgid: string;
-	handle: number;
 	width: number;
 	height: number;
 	advance: number;
@@ -171,7 +170,6 @@ export class Api {
 			const glyph = font.getGlyph(char);
 			glyphs[char] = {
 				imgid: glyph.imgid,
-				handle: this._runtime.resolveAssetHandle(glyph.imgid),
 				width: glyph.width,
 				height: glyph.height,
 				advance: glyph.advance,

@@ -2196,7 +2196,7 @@ local function build_info()
 end
 
 local function divider(line_slots)
-	return string.rep('—', line_slots)
+	return string.rep('-', line_slots)
 end
 
 local function build_progress_bar(progress, width)

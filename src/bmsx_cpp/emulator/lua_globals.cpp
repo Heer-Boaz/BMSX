@@ -3385,7 +3385,9 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	auto appendImgEntry = [this, imgTable, key, str, appendRomAssetFields](const ImgAsset& imgAsset) {
 		auto* imgEntry = m_cpu.createTable(0, 8);
 		appendRomAssetFields(imgEntry, imgAsset.rom, imgAsset.id);
-		imgEntry->set(key("handle"), valueNumber(static_cast<double>(m_memory.resolveAssetHandle(imgAsset.id))));
+		if (m_memory.hasAsset(imgAsset.id)) {
+			imgEntry->set(key("handle"), valueNumber(static_cast<double>(m_memory.resolveAssetHandle(imgAsset.id))));
+		}
 		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset.meta, key)));
 		imgTable->set(str(imgAsset.id), valueTable(imgEntry));
 	};
@@ -3405,7 +3407,9 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	auto appendAudioEntry = [this, audioTable, key, str, appendRomAssetFields](const AudioAsset& audioAsset) {
 		auto* audioEntry = m_cpu.createTable(0, 6);
 		appendRomAssetFields(audioEntry, audioAsset.rom, audioAsset.id);
-		audioEntry->set(key("handle"), valueNumber(static_cast<double>(m_memory.resolveAssetHandle(audioAsset.id))));
+		if (m_memory.hasAsset(audioAsset.id)) {
+			audioEntry->set(key("handle"), valueNumber(static_cast<double>(m_memory.resolveAssetHandle(audioAsset.id))));
+		}
 		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(m_cpu, audioAsset.meta, key)));
 		audioTable->set(str(audioAsset.id), valueTable(audioEntry));
 	};

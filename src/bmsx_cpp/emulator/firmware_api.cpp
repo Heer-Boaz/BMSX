@@ -1708,9 +1708,8 @@ Value Api::build_font_descriptor(BFont* font) {
 		std::string glyphKey;
 		utf8AppendCodepoint(glyphKey, codepoint);
 		const FontGlyph& glyph = font->getGlyph(codepoint);
-		Table* glyphEntry = m_runtime.cpu().createTable(0, 5);
+		Table* glyphEntry = m_runtime.cpu().createTable(0, 4);
 		glyphEntry->set(key("imgid"), str(glyph.imgid));
-		glyphEntry->set(key("handle"), valueNumber(static_cast<double>(m_runtime.memory().resolveAssetHandle(glyph.imgid))));
 		glyphEntry->set(key("width"), valueNumber(static_cast<double>(glyph.width)));
 		glyphEntry->set(key("height"), valueNumber(static_cast<double>(glyph.height)));
 		glyphEntry->set(key("advance"), valueNumber(static_cast<double>(glyph.advance)));

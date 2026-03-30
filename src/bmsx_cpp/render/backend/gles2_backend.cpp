@@ -391,6 +391,9 @@ void OpenGLES2Backend::setActiveTextureUnit(i32 unit) {
 
 void OpenGLES2Backend::bindTexture2D(TextureHandle tex) {
 	auto* gltex = static_cast<GLES2Texture*>(tex);
+	if (!gltex) {
+		throw std::runtime_error("[GLES2] bindTexture2D called with null texture.");
+	}
 	const i32 unit = m_active_texture_unit;
 	if (m_bound_texture_2d_by_unit[unit] == gltex->id) return;
 	glBindTexture(GL_TEXTURE_2D, gltex->id);

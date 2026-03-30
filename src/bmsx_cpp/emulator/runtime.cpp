@@ -191,10 +191,6 @@ Runtime::Runtime(const RuntimeOptions& options)
 		},
 	});
 
-	// Setup builtin functions
-	setupBuiltins();
-	m_api->registerAllFunctions();
-	enforceLuaHeapBudget();
 }
 
 Runtime::~Runtime() {

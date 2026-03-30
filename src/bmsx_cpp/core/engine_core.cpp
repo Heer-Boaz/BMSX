@@ -47,6 +47,7 @@ void collectAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& ass
 	ids.insert(engineAtlasId);
 	ids.insert(ATLAS_PRIMARY_SLOT_ID);
 	ids.insert(ATLAS_SECONDARY_SLOT_ID);
+	ids.insert(FRAMEBUFFER_TEXTURE_KEY);
 
 	for (const auto& entry : engineAssets.img) {
 		const auto& imgAsset = entry.second;
