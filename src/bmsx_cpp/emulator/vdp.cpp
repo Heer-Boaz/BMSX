@@ -67,6 +67,49 @@ bool isAtlasName(const std::string& name) {
 	return name.rfind(kPrefix, 0) == 0;
 }
 
+u32 readUtf8Codepoint(const std::string& text, size_t& index) {
+	const size_t size = text.size();
+	u8 c0 = static_cast<u8>(text[index]);
+	index += 1u;
+	if (c0 < 0x80u) {
+		return c0;
+	}
+	if ((c0 & 0xE0u) == 0xC0u) {
+		if (index >= size) {
+			return static_cast<u32>('?');
+		}
+		u8 c1 = static_cast<u8>(text[index]);
+		index += 1u;
+		if ((c1 & 0xC0u) != 0x80u) {
+			return static_cast<u32>('?');
+		}
+		return ((c0 & 0x1Fu) << 6u) | (c1 & 0x3Fu);
+	}
+	if ((c0 & 0xF0u) == 0xE0u) {
+		if (index + 1u >= size) {
+			return static_cast<u32>('?');
+		}
+		u8 c1 = static_cast<u8>(text[index]);
+		u8 c2 = static_cast<u8>(text[index + 1u]);
+		index += 2u;
+		if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u) {
+			return static_cast<u32>('?');
+		}
+		return ((c0 & 0x0Fu) << 12u) | ((c1 & 0x3Fu) << 6u) | (c2 & 0x3Fu);
+	}
+	if (index + 2u >= size) {
+		return static_cast<u32>('?');
+	}
+	u8 c1 = static_cast<u8>(text[index]);
+	u8 c2 = static_cast<u8>(text[index + 1u]);
+	u8 c3 = static_cast<u8>(text[index + 2u]);
+	index += 3u;
+	if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u || (c3 & 0xC0u) != 0x80u) {
+		return static_cast<u32>('?');
+	}
+	return ((c0 & 0x07u) << 18u) | ((c1 & 0x3Fu) << 12u) | ((c2 & 0x3Fu) << 6u) | (c3 & 0x3Fu);
+}
+
 uint32_t fmix32(uint32_t h) {
 	h ^= h >> 16u;
 	h *= 0x85ebca6bU;
@@ -490,8 +533,18 @@ void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f
 			continue;
 		}
 		f32 cursorX = x;
-		for (i32 glyphIndex = start; glyphIndex < static_cast<i32>(line.size()) && glyphIndex < end; glyphIndex += 1) {
-			const FontGlyph& glyph = font->getGlyph(line[glyphIndex]);
+		size_t byteIndex = 0u;
+		i32 glyphIndex = 0;
+		while (byteIndex < line.size()) {
+			const u32 codepoint = readUtf8Codepoint(line, byteIndex);
+			if (glyphIndex >= end) {
+				break;
+			}
+			if (glyphIndex < start) {
+				glyphIndex += 1;
+				continue;
+			}
+			const FontGlyph& glyph = font->getGlyph(codepoint);
 			const BlitterSource source = resolveBlitterSource(m_memory.resolveAssetHandle(glyph.imgid));
 			GlyphRunGlyph blit;
 			blit.surfaceId = source.surfaceId;
@@ -504,6 +557,7 @@ void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f
 			blit.advance = static_cast<u32>(glyph.advance);
 			command.glyphs.push_back(blit);
 			cursorX += static_cast<f32>(glyph.advance);
+			glyphIndex += 1;
 		}
 		cursorY += static_cast<f32>(font->lineHeight());
 	}
@@ -872,7 +926,10 @@ void VDP::initializeRegisters() {
 	}
 	resetBlitterState();
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
-	m_memory.writeValue(IO_VDP_LEGACY_CMD, valueNumber(0.0));
+	m_memory.writeValue(IO_VDP_CMD, valueNumber(0.0));
+	for (int index = 0; index < IO_VDP_CMD_ARG_COUNT; ++index) {
+		m_memory.writeValue(IO_VDP_CMD_ARG0 + static_cast<uint32_t>(index) * IO_WORD_SIZE, valueNumber(0.0));
+	}
 	m_lastDitherType = dither;
 	EngineCore::instance().view()->dither_type = static_cast<GameView::DitherType>(dither);
 }
@@ -889,10 +946,6 @@ void VDP::syncRegisters() {
 	const i32 secondary = secondaryRaw == VDP_ATLAS_ID_NONE ? -1 : static_cast<i32>(secondaryRaw);
 	if (primary != m_slotAtlasIds[0] || secondary != m_slotAtlasIds[1]) {
 		applyAtlasSlotMapping({{primary, secondary}});
-	}
-	const uint32_t command = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_LEGACY_CMD)));
-	if (command != 0u) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Legacy VDP command register was removed. Got " + std::to_string(command) + ".");
 	}
 }
 

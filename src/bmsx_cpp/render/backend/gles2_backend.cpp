@@ -72,13 +72,18 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 	auto* tex = new GLES2Texture{};
 	tex->width = width;
 	tex->height = height;
+	tex->logicalSrgb = params.srgb;
 	tex->srgb = params.srgb && m_supports_srgb_textures;
 
 	const u8* uploadData = data;
 	std::vector<u8> zeroed;
+	std::vector<u8> linearized;
 	if (uploadData == nullptr) {
 		zeroed.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 0);
 		uploadData = zeroed.data();
+	} else if (tex->logicalSrgb && !tex->srgb) {
+		convertSrgbToLinear(uploadData, static_cast<size_t>(width) * static_cast<size_t>(height), linearized);
+		uploadData = linearized.data();
 	}
 
 	const GLint internalFormat = tex->srgb ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
@@ -109,10 +114,16 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 	}
 	auto* tex = static_cast<GLES2Texture*>(handle);
 	const bool needsResize = tex->width != width || tex->height != height;
-	const bool useSrgbTexture = params.srgb && m_supports_srgb_textures;
+	const bool logicalSrgb = params.srgb;
+	const bool useSrgbTexture = logicalSrgb && m_supports_srgb_textures;
 	const bool needsRecreate = needsResize || (tex->srgb != useSrgbTexture);
 
 	const u8* uploadData = data;
+	std::vector<u8> linearized;
+	if (uploadData != nullptr && logicalSrgb && !useSrgbTexture) {
+		convertSrgbToLinear(uploadData, static_cast<size_t>(width) * static_cast<size_t>(height), linearized);
+		uploadData = linearized.data();
+	}
 
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -124,6 +135,7 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 	}
 	tex->width = width;
 	tex->height = height;
+	tex->logicalSrgb = logicalSrgb;
 	tex->srgb = useSrgbTexture;
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
@@ -134,18 +146,21 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 }
 
 TextureHandle OpenGLES2Backend::resizeTexture(TextureHandle handle, i32 width, i32 height, const TextureParams& params) {
-	(void)params;
 	if (!m_context_ready) {
 		throw std::runtime_error("[GLES2] resizeTexture called before context reset.");
 	}
 	auto* tex = static_cast<GLES2Texture*>(handle);
+	const bool logicalSrgb = params.srgb;
+	const bool useSrgbTexture = logicalSrgb && m_supports_srgb_textures;
 	std::vector<u8> zeroed(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 0);
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	const GLint internalFormat = tex->srgb ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
+	const GLint internalFormat = useSrgbTexture ? static_cast<GLint>(GL_SRGB_ALPHA_EXT) : static_cast<GLint>(GL_RGBA);
 	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, zeroed.data());
 	tex->width = width;
 	tex->height = height;
+	tex->logicalSrgb = logicalSrgb;
+	tex->srgb = useSrgbTexture;
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
 					"[BMSX][GLES2] resizeTexture id=%u size=%dx%d\n",
@@ -160,6 +175,11 @@ void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data,
 	}
 	auto* tex = static_cast<GLES2Texture*>(handle);
 	const u8* uploadData = data;
+	std::vector<u8> linearized;
+	if (uploadData != nullptr && tex->logicalSrgb && !tex->srgb) {
+		convertSrgbToLinear(uploadData, static_cast<size_t>(width) * static_cast<size_t>(height), linearized);
+		uploadData = linearized.data();
+	}
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
@@ -186,9 +206,20 @@ void OpenGLES2Backend::readTextureRegion(TextureHandle handle, u8* out, i32 widt
 	if (glY < 0) {
 		throw std::runtime_error("[GLES2] Readback Y coordinate out of bounds.");
 	}
+	std::vector<u8> linearized;
+	u8* readTarget = out;
+	if (tex->logicalSrgb && !tex->srgb) {
+		linearized.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+		readTarget = linearized.data();
+	}
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
-	glReadPixels(x, glY, width, height, GL_RGBA, GL_UNSIGNED_BYTE, out);
+	glReadPixels(x, glY, width, height, GL_RGBA, GL_UNSIGNED_BYTE, readTarget);
 	glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+	if (readTarget != out) {
+		std::vector<u8> encoded;
+		convertLinearToSrgb(readTarget, static_cast<size_t>(width) * static_cast<size_t>(height), encoded);
+		std::memcpy(out, encoded.data(), encoded.size());
+	}
 }
 
 TextureHandle OpenGLES2Backend::createSolidTexture2D(i32 width, i32 height,

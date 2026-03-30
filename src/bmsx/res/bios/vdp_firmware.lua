@@ -3,78 +3,23 @@ local vdp_firmware = {}
 local default_print_color_index = 15
 local max_glyph_index = 2147483647
 local white_color = { r = 1, g = 1, b = 1, a = 1 }
+local layer_by_name = {
+	world = sys_vdp_layer_world,
+	ui = sys_vdp_layer_ui,
+	ide = sys_vdp_layer_ide,
+}
 local text_cursor_x
 local text_cursor_y
 local text_cursor_home_x
 local text_cursor_color_index
 
-local function resolve_layer(layer)
-	if layer == nil or layer == 'world' then
-		return sys_vdp_layer_world
-	end
-	if layer == 'ui' then
-		return sys_vdp_layer_ui
-	end
-	if layer == 'ide' then
-		return sys_vdp_layer_ide
-	end
-	return layer
-end
-
-local function resolve_color(value)
-	if type(value) == 'number' then
-		return sys_palette_color(value)
-	end
-	return value
-end
-
-local function resolve_image_handle(id)
-	local asset = assets.img[id]
-	if asset == nil then
-		error('[vdp_firmware] Image asset "' .. tostring(id) .. '" not found.')
-	end
-	if asset.handle == nil then
-		error('[vdp_firmware] Image asset "' .. tostring(id) .. '" has no runtime handle.')
-	end
-	return asset.handle
-end
-
-local function resolve_font_glyph(font, char)
-	local glyph = font.glyphs[char]
-	if glyph ~= nil then
-		return glyph
-	end
-	glyph = font.glyphs['?']
-	if glyph ~= nil then
-		return glyph
-	end
-	error('[vdp_firmware] Font is missing glyph "' .. tostring(char) .. '" and fallback "?".')
-end
-
-local function font_char_width(font, char)
-	return resolve_font_glyph(font, char).width
-end
-
-local function alloc_io_command(opcode)
-	local count = peek(sys_io_write_ptr)
-	if count >= sys_io_command_capacity then
-		error('[vdp_firmware] IO command buffer overflow at opcode ' .. opcode .. '.')
-	end
-	local base = sys_io_buffer_base + count * sys_io_command_stride
-	return base, count + 1
-end
-
-local function commit_io_command(next_count)
-	poke(sys_io_write_ptr, next_count)
-end
-
 local function alloc_io_payload(words)
-	local write_ptr = peek(sys_io_payload_write_ptr)
+	local write_ptr = peek(sys_vdp_payload_write_ptr)
 	local next_ptr = write_ptr + words
-	if next_ptr > sys_io_payload_capacity then
-		error('[vdp_firmware] IO payload buffer overflow (' .. next_ptr .. ' > ' .. sys_io_payload_capacity .. ').')
+	if next_ptr > sys_vdp_payload_capacity then
+		error('[vdp_firmware] IO payload buffer overflow (' .. next_ptr .. ' > ' .. sys_vdp_payload_capacity .. ').')
 	end
-	poke(sys_io_payload_write_ptr, next_ptr)
+	poke(sys_vdp_payload_write_ptr, next_ptr)
 	return write_ptr
 end
 
@@ -180,35 +125,31 @@ local function calculate_centered_block_x(lines, font, block_width)
 			longest_line = line
 		end
 	end
-	local char_width = font_char_width(font, 'a')
+	local char_width = font.glyphs['a'].width
 	return (block_width - (#longest_line * char_width)) / 2
 end
 
-local function queue_clear(color_value)
-	local base, next_count = alloc_io_command(sys_io_cmd_vdp_clear)
-	poke_words(base, sys_io_cmd_vdp_clear, color_value.r, color_value.g, color_value.b, color_value.a)
-	commit_io_command(next_count)
+local function submit_clear(color_value)
+	poke_words(sys_vdp_cmd_arg0, color_value.r, color_value.g, color_value.b, color_value.a)
+	poke(sys_vdp_cmd, sys_vdp_cmd_clear)
 end
 
-local function queue_fill_rect(x0, y0, x1, y1, z, layer, color_value)
-	local base, next_count = alloc_io_command(sys_io_cmd_vdp_fill_rect)
-	poke_words(base, sys_io_cmd_vdp_fill_rect, x0, y0, x1, y1, z, layer, color_value.r, color_value.g, color_value.b, color_value.a)
-	commit_io_command(next_count)
+local function submit_fill_rect(x0, y0, x1, y1, z, layer, color_value)
+	poke_words(sys_vdp_cmd_arg0, x0, y0, x1, y1, z, layer, color_value.r, color_value.g, color_value.b, color_value.a)
+	poke(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
 end
 
-local function queue_draw_line(x0, y0, x1, y1, z, layer, color_value, thickness)
-	local base, next_count = alloc_io_command(sys_io_cmd_vdp_draw_line)
-	poke_words(base, sys_io_cmd_vdp_draw_line, x0, y0, x1, y1, z, layer, color_value.r, color_value.g, color_value.b, color_value.a, thickness)
-	commit_io_command(next_count)
+local function submit_draw_line(x0, y0, x1, y1, z, layer, color_value, thickness)
+	poke_words(sys_vdp_cmd_arg0, x0, y0, x1, y1, z, layer, color_value.r, color_value.g, color_value.b, color_value.a, thickness)
+	poke(sys_vdp_cmd, sys_vdp_cmd_draw_line)
 end
 
-local function queue_blit(handle, x, y, z, layer, scale_x, scale_y, flip_h, flip_v, color_value, parallax_weight)
-	local base, next_count = alloc_io_command(sys_io_cmd_vdp_blit)
-	poke_words(base, sys_io_cmd_vdp_blit, handle, x, y, z, layer, scale_x, scale_y, (flip_h and 1 or 0) | (flip_v and 2 or 0), color_value.r, color_value.g, color_value.b, color_value.a, parallax_weight)
-	commit_io_command(next_count)
+local function submit_blit(handle, x, y, z, layer, scale_x, scale_y, flip_h, flip_v, color_value, parallax_weight)
+	poke_words(sys_vdp_cmd_arg0, handle, x, y, z, layer, scale_x, scale_y, (flip_h and 1 or 0) | (flip_v and 2 or 0), color_value.r, color_value.g, color_value.b, color_value.a, parallax_weight)
+	poke(sys_vdp_cmd, sys_vdp_cmd_blit)
 end
 
-local function queue_glyph_line(text, x, y, z, font, color_value, background_color, start_index, end_index, layer)
+local function submit_glyph_line(text, x, y, z, font, color_value, background_color, start_index, end_index, layer)
 	if #text == 0 then
 		return
 	end
@@ -221,16 +162,15 @@ local function queue_glyph_line(text, x, y, z, font, color_value, background_col
 			| ((string.byte(text, byte_index + 1) or 0) << 8)
 			| ((string.byte(text, byte_index + 2) or 0) << 16)
 			| ((string.byte(text, byte_index + 3) or 0) << 24)
-		poke(sys_io_payload_buffer_base + (payload_offset + word_index) * sys_io_arg_stride, word)
+		poke(sys_vdp_payload_buffer_base + (payload_offset + word_index) * sys_vdp_arg_stride, word)
 	end
-	local base, next_count = alloc_io_command(sys_io_cmd_vdp_glyph_run)
 	if background_color ~= nil then
-		poke_words(base, sys_io_cmd_vdp_glyph_run, payload_offset, #text, x, y, z, font.id, start_index, end_index, layer, color_value.r, color_value.g, color_value.b, color_value.a, 1, background_color.r, background_color.g, background_color.b, background_color.a)
-		commit_io_command(next_count)
+		poke_words(sys_vdp_cmd_arg0, payload_offset, #text, x, y, z, font.id, start_index, end_index, layer, color_value.r, color_value.g, color_value.b, color_value.a, 1, background_color.r, background_color.g, background_color.b, background_color.a)
+		poke(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
 		return
 	end
-	poke_words(base, sys_io_cmd_vdp_glyph_run, payload_offset, #text, x, y, z, font.id, start_index, end_index, layer, color_value.r, color_value.g, color_value.b, color_value.a, 0)
-	commit_io_command(next_count)
+	poke_words(sys_vdp_cmd_arg0, payload_offset, #text, x, y, z, font.id, start_index, end_index, layer, color_value.r, color_value.g, color_value.b, color_value.a, 0)
+	poke(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
 end
 
 function dma_blit_tiles(desc)
@@ -241,15 +181,15 @@ function dma_blit_tiles(desc)
 		if tile == nil then
 			error('[vdp_firmware] dma_blit_tiles missing tile at index ' .. (index - 1) .. '.')
 		end
-		local handle = sys_io_vdp_tile_handle_none
-		if tile then
-			handle = resolve_image_handle(tile)
-		end
-		poke(sys_io_payload_buffer_base + (payload_offset + index - 1) * sys_io_arg_stride, handle)
+		local handle = assets.img[tile].handle
+		poke(sys_vdp_payload_buffer_base + (payload_offset + index - 1) * sys_vdp_arg_stride, handle)
 	end
-	local base, next_count = alloc_io_command(sys_io_cmd_vdp_tile_run)
-	poke_words(base, sys_io_cmd_vdp_tile_run, payload_offset, tile_count, desc.cols, desc.rows, desc.tile_w, desc.tile_h, desc.origin_x, desc.origin_y, desc.scroll_x, desc.scroll_y, desc.z, resolve_layer(desc.layer))
-	commit_io_command(next_count)
+	local layer = sys_vdp_layer_world
+	if desc.layer ~= nil then
+		layer = layer_by_name[desc.layer] or desc.layer
+	end
+	poke_words(sys_vdp_cmd_arg0, payload_offset, tile_count, desc.cols, desc.rows, desc.tile_w, desc.tile_h, desc.origin_x, desc.origin_y, desc.scroll_x, desc.scroll_y, desc.z, layer)
+	poke(sys_vdp_cmd, sys_vdp_cmd_tile_run)
 end
 
 local function draw_multiline_text(text, x, y, z, color_value, font)
@@ -258,7 +198,7 @@ local function draw_multiline_text(text, x, y, z, color_value, font)
 	for index = 1, #lines do
 		local expanded = expand_tabs(lines[index])
 		if #expanded > 0 then
-			queue_glyph_line(expanded, x, cursor_y, z, font, color_value, nil, 0, max_glyph_index, sys_vdp_layer_world)
+			submit_glyph_line(expanded, x, cursor_y, z, font, color_value, nil, 0, max_glyph_index, sys_vdp_layer_world)
 		end
 		if index < #lines then
 			cursor_y = cursor_y + font.line_height
@@ -270,28 +210,31 @@ local function draw_multiline_text(text, x, y, z, color_value, font)
 end
 
 function cls(colorindex)
-	queue_clear(sys_palette_color(colorindex or 0))
+	submit_clear(sys_palette_color(colorindex or 0))
 	reset_print_cursor()
 end
 
 function blit_rect(x0, y0, x1, y1, z, colorindex)
 	local color_value = sys_palette_color(colorindex)
-	queue_draw_line(x0, y0, x1, y0, z, sys_vdp_layer_world, color_value, 1)
-	queue_draw_line(x0, y1, x1, y1, z, sys_vdp_layer_world, color_value, 1)
-	queue_draw_line(x0, y0, x0, y1, z, sys_vdp_layer_world, color_value, 1)
-	queue_draw_line(x1, y0, x1, y1, z, sys_vdp_layer_world, color_value, 1)
+	submit_draw_line(x0, y0, x1, y0, z, sys_vdp_layer_world, color_value, 1)
+	submit_draw_line(x0, y1, x1, y1, z, sys_vdp_layer_world, color_value, 1)
+	submit_draw_line(x0, y0, x0, y1, z, sys_vdp_layer_world, color_value, 1)
+	submit_draw_line(x1, y0, x1, y1, z, sys_vdp_layer_world, color_value, 1)
 end
 
 function fill_rect(x0, y0, x1, y1, z, colorindex)
-	queue_fill_rect(x0, y0, x1, y1, z, sys_vdp_layer_world, sys_palette_color(colorindex))
+	submit_fill_rect(x0, y0, x1, y1, z, sys_vdp_layer_world, sys_palette_color(colorindex))
 end
 
 function fill_rect_color(x0, y0, x1, y1, z, color_value, options)
 	local layer = sys_vdp_layer_world
 	if options ~= nil and options.layer ~= nil then
-		layer = resolve_layer(options.layer)
+		layer = layer_by_name[options.layer] or options.layer
 	end
-	queue_fill_rect(x0, y0, x1, y1, z, layer, resolve_color(color_value))
+	if type(color_value) == 'number' then
+		color_value = sys_palette_color(color_value)
+	end
+	submit_fill_rect(x0, y0, x1, y1, z, layer, color_value)
 end
 
 function blit(img_id, x, y, z, options)
@@ -315,16 +258,20 @@ function blit(img_id, x, y, z, options)
 		flip_h = options.flip_h
 		flip_v = options.flip_v
 		if options.colorize ~= nil then
-			color_value = resolve_color(options.colorize)
+			if type(options.colorize) == 'number' then
+				color_value = sys_palette_color(options.colorize)
+			else
+				color_value = options.colorize
+			end
 		end
 		if options.parallax_weight ~= nil then
 			parallax_weight = options.parallax_weight
 		end
 		if options.layer ~= nil then
-			layer = resolve_layer(options.layer)
+			layer = layer_by_name[options.layer] or options.layer
 		end
 	end
-	queue_blit(resolve_image_handle(img_id), x, y, z, layer, scale_x, scale_y, flip_h, flip_v, color_value, parallax_weight)
+	submit_blit(assets.img[img_id].handle, x, y, z, layer, scale_x, scale_y, flip_h, flip_v, color_value, parallax_weight)
 end
 
 function blit_glyphs(glyphs, x, y, z, options)
@@ -333,12 +280,26 @@ function blit_glyphs(glyphs, x, y, z, options)
 	end
 	local glyph_start = options.glyph_start or 0
 	local glyph_end = options.glyph_end or max_glyph_index
-	local color_value = options.color ~= nil and resolve_color(options.color) or sys_palette_color(default_print_color_index)
+	local color_value = sys_palette_color(default_print_color_index)
+	if options.color ~= nil then
+		if type(options.color) == 'number' then
+			color_value = sys_palette_color(options.color)
+		else
+			color_value = options.color
+		end
+	end
 	local background_color
 	if options.background_color ~= nil then
-		background_color = resolve_color(options.background_color)
+		if type(options.background_color) == 'number' then
+			background_color = sys_palette_color(options.background_color)
+		else
+			background_color = options.background_color
+		end
 	end
-	local layer = resolve_layer(options.layer)
+	local layer = sys_vdp_layer_world
+	if options.layer ~= nil then
+		layer = layer_by_name[options.layer] or options.layer
+	end
 	local lines
 	if type(glyphs) == 'string' then
 		if options.wrap_chars ~= nil and options.wrap_chars > 0 then
@@ -356,7 +317,7 @@ function blit_glyphs(glyphs, x, y, z, options)
 	local cursor_y = y
 	local line_height = options.font.line_height
 	for index = 1, #lines do
-		queue_glyph_line(lines[index], draw_x, cursor_y, z, options.font, color_value, background_color, glyph_start, glyph_end, layer)
+		submit_glyph_line(lines[index], draw_x, cursor_y, z, options.font, color_value, background_color, glyph_start, glyph_end, layer)
 		cursor_y = cursor_y + line_height
 	end
 end
@@ -365,16 +326,22 @@ function blit_poly(points, z, color_value, thickness, layer)
 	if #points < 4 then
 		return
 	end
-	local resolved_color = resolve_color(color_value)
+	local resolved_color = color_value
+	if type(resolved_color) == 'number' then
+		resolved_color = sys_palette_color(resolved_color)
+	end
 	local resolved_thickness = thickness or 1
-	local resolved_layer = resolve_layer(layer)
+	local resolved_layer = sys_vdp_layer_world
+	if layer ~= nil then
+		resolved_layer = layer_by_name[layer] or layer
+	end
 	local index = 1
 	while index <= #points do
 		local next_index = index + 2
 		if next_index > #points then
 			next_index = 1
 		end
-		queue_draw_line(points[index], points[index + 1], points[next_index], points[next_index + 1], z, resolved_layer, resolved_color, resolved_thickness)
+		submit_draw_line(points[index], points[index + 1], points[next_index], points[next_index + 1], z, resolved_layer, resolved_color, resolved_thickness)
 		index = index + 2
 	end
 end
@@ -403,17 +370,25 @@ function blit_text(text, x, y, z, colorindex, options)
 	local should_advance = true
 	if options ~= nil then
 		if options.color ~= nil then
-			color_value = resolve_color(options.color)
+			if type(options.color) == 'number' then
+				color_value = sys_palette_color(options.color)
+			else
+				color_value = options.color
+			end
 		end
 		if options.background_color ~= nil then
-			background_color = resolve_color(options.background_color)
+			if type(options.background_color) == 'number' then
+				background_color = sys_palette_color(options.background_color)
+			else
+				background_color = options.background_color
+			end
 		end
 		wrap_chars = options.wrap_chars
 		center_block_width = options.center_block_width
 		glyph_start = options.glyph_start or glyph_start
 		glyph_end = options.glyph_end or glyph_end
 		if options.layer ~= nil then
-			layer = resolve_layer(options.layer)
+			layer = layer_by_name[options.layer] or options.layer
 		end
 		if options.auto_advance ~= nil then
 				should_advance = options.auto_advance
@@ -434,7 +409,7 @@ function blit_text(text, x, y, z, colorindex, options)
 	local cursor_y = base_y
 	local render_z = z or 0
 	for index = 1, #lines do
-		queue_glyph_line(lines[index], draw_x, cursor_y, render_z, render_font, color_value, background_color, glyph_start, glyph_end, layer)
+		submit_glyph_line(lines[index], draw_x, cursor_y, render_z, render_font, color_value, background_color, glyph_start, glyph_end, layer)
 		cursor_y = cursor_y + line_height
 	end
 	if should_advance then
@@ -454,7 +429,7 @@ function blit_text_color(text, x, y, z, colorvalue)
 	end
 	local color_value
 	if colorvalue ~= nil and type(colorvalue) ~= 'number' then
-		color_value = resolve_color(colorvalue)
+		color_value = colorvalue
 	else
 		color_value = sys_palette_color(text_cursor_color_index)
 	end
@@ -481,11 +456,11 @@ function blit_text_with_font(text, x, y, z, colorindex, font)
 end
 
 function blit_text_inline_with_font(text, x, y, z, colorindex, font)
-	queue_glyph_line(text, x, y, z, font or get_default_font(), sys_palette_color(colorindex), nil, 0, max_glyph_index, sys_vdp_layer_world)
+	submit_glyph_line(text, x, y, z, font or get_default_font(), sys_palette_color(colorindex), nil, 0, max_glyph_index, sys_vdp_layer_world)
 end
 
 function blit_text_inline_span_with_font(text, start_index, end_index, x, y, z, colorindex, font)
-	queue_glyph_line(text, x, y, z, font or get_default_font(), sys_palette_color(colorindex), nil, start_index, end_index, sys_vdp_layer_world)
+	submit_glyph_line(text, x, y, z, font or get_default_font(), sys_palette_color(colorindex), nil, start_index, end_index, sys_vdp_layer_world)
 end
 
 reset_print_cursor()

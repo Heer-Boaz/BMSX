@@ -32,20 +32,16 @@ import {
 import { INSTRUCTION_BYTES } from './instruction_format';
 import {
 	IO_ARG_STRIDE,
-	IO_BUFFER_BASE,
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
 	IO_CMD_VDP_DRAW_LINE,
 	IO_CMD_VDP_FILL_RECT,
 	IO_CMD_VDP_GLYPH_RUN,
-	IO_COMMAND_STRIDE,
-	IO_CMD_PRINT,
 	IO_CMD_VDP_TILE_RUN,
 	IO_PAYLOAD_BUFFER_BASE,
 	IO_PAYLOAD_WRITE_PTR_ADDR,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
-	IO_WRITE_PTR_ADDR,
 	IRQ_NEWGAME,
 	IRQ_REINIT,
 } from './io';
@@ -305,7 +301,6 @@ export function hotReloadProgramEntry(runtime: Runtime, params: { path: string; 
 	} else {
 		runtime.moduleCache.clear();
 	}
-	runtime.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 	runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
 	const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 	const finalizedMetadata = prelude.metadata;
@@ -457,7 +452,6 @@ export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: {
 		runtime.moduleAliases.set(entry.alias, entry.path);
 	}
 	runtime.moduleCache.clear();
-	runtime.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 	runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
 	const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 	runtime.programMetadata = prelude.metadata;
@@ -668,7 +662,6 @@ export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, meta
 	runtime.cpu.setProgram(compiled.program, compiled.metadata);
 	runtime.programMetadata = compiled.metadata;
 	runtime.callClosure({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
-	processIo(runtime);
 	return { program: compiled.program, metadata: compiled.metadata };
 }
 
@@ -796,113 +789,98 @@ function readIoGlyphRunText(runtime: Runtime, payloadOffset: number, byteLength:
 	return ioGlyphRunUtf8Decoder.decode(ioGlyphRunTextBytes.subarray(0, byteLength));
 }
 
-export function processIo(runtime: Runtime): void {
+export function processVdpCommand(runtime: Runtime, cmdBase: number, cmd: number): void {
 	const memory = runtime.memory;
-	runtime.vdp.syncRegisters();
-	const count = memory.readValue(IO_WRITE_PTR_ADDR) as number;
-	if (!count) {
-		return;
-	}
-	const base = IO_BUFFER_BASE;
-	for (let index = 0; index < count; index += 1) {
-		const cmdBase = base + index * IO_COMMAND_STRIDE;
-		const cmd = memory.readValue(cmdBase) as number;
-		switch (cmd) {
-			case IO_CMD_PRINT: {
-				throw new Error('[Runtime] IO_CMD_PRINT is deprecated. Rebuild program assets so print() uses the native builtin path.');
-			}
-			case IO_CMD_VDP_CLEAR: {
-				runtime.vdp.enqueueClear(readIoColor(runtime, cmdBase, 1));
-				break;
-			}
-			case IO_CMD_VDP_FILL_RECT: {
-				runtime.vdp.enqueueFillRect(
-					readIoArg(runtime, cmdBase, 1),
-					readIoArg(runtime, cmdBase, 2),
-					readIoArg(runtime, cmdBase, 3),
-					readIoArg(runtime, cmdBase, 4),
-					readIoArg(runtime, cmdBase, 5),
-					readIoArg(runtime, cmdBase, 6) as 0 | 1 | 2,
-					readIoColor(runtime, cmdBase, 7),
-				);
-				break;
-			}
-			case IO_CMD_VDP_DRAW_LINE: {
-				runtime.vdp.enqueueDrawLine(
-					readIoArg(runtime, cmdBase, 1),
-					readIoArg(runtime, cmdBase, 2),
-					readIoArg(runtime, cmdBase, 3),
-					readIoArg(runtime, cmdBase, 4),
-					readIoArg(runtime, cmdBase, 5),
-					readIoArg(runtime, cmdBase, 6) as 0 | 1 | 2,
-					readIoColor(runtime, cmdBase, 7),
-					readIoArg(runtime, cmdBase, 11),
-				);
-				break;
-			}
-			case IO_CMD_VDP_BLIT: {
-				const flipFlags = readIoArg(runtime, cmdBase, 8) >>> 0;
-				runtime.vdp.enqueueBlit(
-					readIoArg(runtime, cmdBase, 1) >>> 0,
-					readIoArg(runtime, cmdBase, 2),
-					readIoArg(runtime, cmdBase, 3),
-					readIoArg(runtime, cmdBase, 4),
-					readIoArg(runtime, cmdBase, 5) as 0 | 1 | 2,
-					readIoArg(runtime, cmdBase, 6),
-					readIoArg(runtime, cmdBase, 7),
-					(flipFlags & 1) !== 0,
-					(flipFlags & 2) !== 0,
-					readIoColor(runtime, cmdBase, 9),
-					readIoArg(runtime, cmdBase, 13),
-				);
-				break;
-			}
-			case IO_CMD_VDP_GLYPH_RUN: {
-				const payloadOffset = readIoArg(runtime, cmdBase, 1) >>> 0;
-				const textByteLength = readIoArg(runtime, cmdBase, 2) >>> 0;
-				const backgroundEnabled = (readIoArg(runtime, cmdBase, 14) >>> 0) !== 0;
-				runtime.vdp.enqueueGlyphRun(
-					readIoGlyphRunText(runtime, payloadOffset, textByteLength),
-					readIoArg(runtime, cmdBase, 3),
-					readIoArg(runtime, cmdBase, 4),
-					readIoArg(runtime, cmdBase, 5),
-					runtime.api.resolveFontId(readIoArg(runtime, cmdBase, 6) >>> 0),
-					readIoColor(runtime, cmdBase, 10),
-					backgroundEnabled ? readIoColor(runtime, cmdBase, 15) : undefined,
-					readIoArg(runtime, cmdBase, 7),
-					readIoArg(runtime, cmdBase, 8),
-					readIoArg(runtime, cmdBase, 9) as 0 | 1 | 2,
-				);
-				break;
-			}
-			case IO_CMD_VDP_TILE_RUN: {
-				const payloadOffset = readIoArg(runtime, cmdBase, 1) >>> 0;
-				const tileCount = readIoArg(runtime, cmdBase, 2) >>> 0;
-				const handles = new Array<number>(tileCount);
-				for (let tileIndex = 0; tileIndex < tileCount; tileIndex += 1) {
-					handles[tileIndex] = (memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + tileIndex) * IO_ARG_STRIDE) as number) >>> 0;
-				}
-				runtime.vdp.enqueueResolvedTileRun({
-					handles,
-					cols: readIoArg(runtime, cmdBase, 3),
-					rows: readIoArg(runtime, cmdBase, 4),
-					tile_w: readIoArg(runtime, cmdBase, 5),
-					tile_h: readIoArg(runtime, cmdBase, 6),
-					origin_x: readIoArg(runtime, cmdBase, 7),
-					origin_y: readIoArg(runtime, cmdBase, 8),
-					scroll_x: readIoArg(runtime, cmdBase, 9),
-					scroll_y: readIoArg(runtime, cmdBase, 10),
-					z: readIoArg(runtime, cmdBase, 11),
-					layer: readIoArg(runtime, cmdBase, 12) as 0 | 1 | 2,
-				});
-				break;
-			}
-			default:
-				throw new Error(`Unknown IO command: ${cmd}.`);
+	switch (cmd) {
+		case IO_CMD_VDP_CLEAR: {
+			runtime.vdp.enqueueClear(readIoColor(runtime, cmdBase, 1));
+			break;
 		}
+		case IO_CMD_VDP_FILL_RECT: {
+			runtime.vdp.enqueueFillRect(
+				readIoArg(runtime, cmdBase, 1),
+				readIoArg(runtime, cmdBase, 2),
+				readIoArg(runtime, cmdBase, 3),
+				readIoArg(runtime, cmdBase, 4),
+				readIoArg(runtime, cmdBase, 5),
+				readIoArg(runtime, cmdBase, 6) as 0 | 1 | 2,
+				readIoColor(runtime, cmdBase, 7),
+			);
+			break;
+		}
+		case IO_CMD_VDP_DRAW_LINE: {
+			runtime.vdp.enqueueDrawLine(
+				readIoArg(runtime, cmdBase, 1),
+				readIoArg(runtime, cmdBase, 2),
+				readIoArg(runtime, cmdBase, 3),
+				readIoArg(runtime, cmdBase, 4),
+				readIoArg(runtime, cmdBase, 5),
+				readIoArg(runtime, cmdBase, 6) as 0 | 1 | 2,
+				readIoColor(runtime, cmdBase, 7),
+				readIoArg(runtime, cmdBase, 11),
+			);
+			break;
+		}
+		case IO_CMD_VDP_BLIT: {
+			const flipFlags = readIoArg(runtime, cmdBase, 8) >>> 0;
+			runtime.vdp.enqueueBlit(
+				readIoArg(runtime, cmdBase, 1) >>> 0,
+				readIoArg(runtime, cmdBase, 2),
+				readIoArg(runtime, cmdBase, 3),
+				readIoArg(runtime, cmdBase, 4),
+				readIoArg(runtime, cmdBase, 5) as 0 | 1 | 2,
+				readIoArg(runtime, cmdBase, 6),
+				readIoArg(runtime, cmdBase, 7),
+				(flipFlags & 1) !== 0,
+				(flipFlags & 2) !== 0,
+				readIoColor(runtime, cmdBase, 9),
+				readIoArg(runtime, cmdBase, 13),
+			);
+			break;
+		}
+		case IO_CMD_VDP_GLYPH_RUN: {
+			const payloadOffset = readIoArg(runtime, cmdBase, 1) >>> 0;
+			const textByteLength = readIoArg(runtime, cmdBase, 2) >>> 0;
+			const backgroundEnabled = (readIoArg(runtime, cmdBase, 14) >>> 0) !== 0;
+			runtime.vdp.enqueueGlyphRun(
+				readIoGlyphRunText(runtime, payloadOffset, textByteLength),
+				readIoArg(runtime, cmdBase, 3),
+				readIoArg(runtime, cmdBase, 4),
+				readIoArg(runtime, cmdBase, 5),
+				runtime.api.resolveFontId(readIoArg(runtime, cmdBase, 6) >>> 0),
+				readIoColor(runtime, cmdBase, 10),
+				backgroundEnabled ? readIoColor(runtime, cmdBase, 15) : undefined,
+				readIoArg(runtime, cmdBase, 7),
+				readIoArg(runtime, cmdBase, 8),
+				readIoArg(runtime, cmdBase, 9) as 0 | 1 | 2,
+			);
+			break;
+		}
+		case IO_CMD_VDP_TILE_RUN: {
+			const payloadOffset = readIoArg(runtime, cmdBase, 1) >>> 0;
+			const tileCount = readIoArg(runtime, cmdBase, 2) >>> 0;
+			const handles = new Array<number>(tileCount);
+			for (let tileIndex = 0; tileIndex < tileCount; tileIndex += 1) {
+				handles[tileIndex] = (memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + tileIndex) * IO_ARG_STRIDE) as number) >>> 0;
+			}
+			runtime.vdp.enqueueResolvedTileRun({
+				handles,
+				cols: readIoArg(runtime, cmdBase, 3),
+				rows: readIoArg(runtime, cmdBase, 4),
+				tile_w: readIoArg(runtime, cmdBase, 5),
+				tile_h: readIoArg(runtime, cmdBase, 6),
+				origin_x: readIoArg(runtime, cmdBase, 7),
+				origin_y: readIoArg(runtime, cmdBase, 8),
+				scroll_x: readIoArg(runtime, cmdBase, 9),
+				scroll_y: readIoArg(runtime, cmdBase, 10),
+				z: readIoArg(runtime, cmdBase, 11),
+				layer: readIoArg(runtime, cmdBase, 12) as 0 | 1 | 2,
+			});
+			break;
+		}
+		default:
+			throw new Error(`Unknown IO command: ${cmd}.`);
 	}
-	memory.writeValue(IO_WRITE_PTR_ADDR, 0);
-	memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
 }
 
 export function resolveProgramAssetSource(runtime: Runtime): RawAssetSource {
@@ -1084,7 +1062,6 @@ export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: b
 		runtime.moduleAliases.set(alias, path);
 	}
 	runtime.moduleCache.clear();
-	runtime.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 	runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
 
 	const inflated = inflateProgram(programAsset.program);
@@ -1092,7 +1069,6 @@ export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: b
 		runtime.cpu.setProgram(inflated, metadata);
 		runtime.programMetadata = metadata;
 		applyEngineBuiltinGlobals(runtime);
-		processIo(runtime);
 
 		beginEntryExecution(runtime, programAsset.entryProtoIndex);
 		runtime.luaInitialized = true;
@@ -1130,7 +1106,6 @@ export function bootPreparedCartProgram(runtime: Runtime, options?: { preserveSt
 		runtime.moduleAliases.set(entry.alias, entry.path);
 	}
 	runtime.moduleCache.clear();
-	runtime.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 	runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
 	const prelude = runEngineBuiltinPrelude(runtime, prepared.program, prepared.metadata);
 	runtime.programMetadata = prelude.metadata;
@@ -1191,7 +1166,6 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 			runtime.moduleAliases.set(entry.alias, entry.path);
 		}
 		runtime.moduleCache.clear();
-		runtime.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 		runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
 		const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 		runtime.programMetadata = prelude.metadata;
@@ -1394,6 +1368,5 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 		runtime.consoleMetadata = compiled.metadata;
 	}
 	const results = runtime.callClosure({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
-	processIo(runtime);
 	return results;
 }

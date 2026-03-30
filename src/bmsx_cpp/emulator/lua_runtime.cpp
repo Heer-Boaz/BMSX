@@ -162,7 +162,6 @@ void Runtime::runEngineBuiltinPrelude() {
 		}
 		m_cpu.globals->set(key, engineModule->get(key));
 	}
-	processIOCommands();
 	std::cout << "[Runtime] prelude: engine builtins bound" << std::endl;
 }
 

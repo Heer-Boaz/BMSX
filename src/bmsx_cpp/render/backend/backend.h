@@ -20,6 +20,7 @@ namespace bmsx {
 const std::array<u8, 256>& srgbToLinearLut();
 const std::array<u8, 256>& linearToSrgbLut();
 void convertSrgbToLinear(const u8* src, size_t pixels, std::vector<u8>& out);
+void convertLinearToSrgb(const u8* src, size_t pixels, std::vector<u8>& out);
 
 /* ============================================================================
  * Backend type discriminator

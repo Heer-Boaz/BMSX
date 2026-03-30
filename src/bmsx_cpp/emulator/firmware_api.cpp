@@ -140,22 +140,45 @@ static TextBaseline parseTextBaseline(const std::string& value) {
 }
 
 static u32 readUtf8Codepoint(const std::string& text, size_t& index) {
-	u8 c0 = static_cast<u8>(text.at(index++));
+	const size_t size = text.size();
+	u8 c0 = static_cast<u8>(text[index]);
+	index += 1u;
 	if (c0 < 0x80) {
 		return c0;
 	}
 	if ((c0 & 0xE0) == 0xC0) {
-		u8 c1 = static_cast<u8>(text.at(index++));
+		if (index >= size) {
+			return static_cast<u32>('?');
+		}
+		u8 c1 = static_cast<u8>(text[index]);
+		index += 1u;
+		if ((c1 & 0xC0u) != 0x80u) {
+			return static_cast<u32>('?');
+		}
 		return ((c0 & 0x1F) << 6) | (c1 & 0x3F);
 	}
 	if ((c0 & 0xF0) == 0xE0) {
-		u8 c1 = static_cast<u8>(text.at(index++));
-		u8 c2 = static_cast<u8>(text.at(index++));
+		if (index + 1u >= size) {
+			return static_cast<u32>('?');
+		}
+		u8 c1 = static_cast<u8>(text[index]);
+		u8 c2 = static_cast<u8>(text[index + 1u]);
+		index += 2u;
+		if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u) {
+			return static_cast<u32>('?');
+		}
 		return ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
 	}
-	u8 c1 = static_cast<u8>(text.at(index++));
-	u8 c2 = static_cast<u8>(text.at(index++));
-	u8 c3 = static_cast<u8>(text.at(index++));
+	if (index + 2u >= size) {
+		return static_cast<u32>('?');
+	}
+	u8 c1 = static_cast<u8>(text[index]);
+	u8 c2 = static_cast<u8>(text[index + 1u]);
+	u8 c3 = static_cast<u8>(text[index + 2u]);
+	index += 3u;
+	if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u || (c3 & 0xC0u) != 0x80u) {
+		return static_cast<u32>('?');
+	}
 	return ((c0 & 0x07) << 18) | ((c1 & 0x3F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
 }
 
@@ -1162,21 +1185,6 @@ void Api::writeIoColor(uint32_t base, int offset, const Color& value) {
 	writeIoArg(base, offset + 3, value.a);
 }
 
-uint32_t Api::allocIoCommand(int opcode) {
-	const int count = static_cast<int>(asNumber(m_runtime.memory().readValue(IO_WRITE_PTR_ADDR)));
-	if (count >= IO_COMMAND_CAPACITY) {
-		throw BMSX_RUNTIME_ERROR("[FirmwareApi] IO command buffer overflow at opcode " + std::to_string(opcode) + ".");
-	}
-	const uint32_t base = IO_BUFFER_BASE + static_cast<uint32_t>(count) * IO_COMMAND_STRIDE;
-	m_runtime.memory().writeValue(base, valueNumber(static_cast<double>(opcode)));
-	return base;
-}
-
-void Api::commitIoCommand() {
-	const int count = static_cast<int>(asNumber(m_runtime.memory().readValue(IO_WRITE_PTR_ADDR)));
-	m_runtime.memory().writeValue(IO_WRITE_PTR_ADDR, valueNumber(static_cast<double>(count + 1)));
-}
-
 uint32_t Api::allocIoPayload(uint32_t words) {
 	const uint32_t writePtr = static_cast<uint32_t>(asNumber(m_runtime.memory().readValue(IO_PAYLOAD_WRITE_PTR_ADDR)));
 	const uint32_t next = writePtr + words;
@@ -1187,53 +1195,49 @@ uint32_t Api::allocIoPayload(uint32_t words) {
 	return writePtr;
 }
 
-void Api::queueClear(const Color& color) {
-	const uint32_t base = allocIoCommand(IO_CMD_VDP_CLEAR);
-	writeIoColor(base, 1, color);
-	commitIoCommand();
+void Api::submitClear(const Color& color) {
+	writeIoColor(IO_VDP_CMD_ARG0, 0, color);
+	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_CLEAR)));
 }
 
-void Api::queueFillRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color) {
-	const uint32_t base = allocIoCommand(IO_CMD_VDP_FILL_RECT);
-	writeIoArg(base, 1, x0);
-	writeIoArg(base, 2, y0);
-	writeIoArg(base, 3, x1);
-	writeIoArg(base, 4, y1);
-	writeIoArg(base, 5, z);
-	writeIoArg(base, 6, static_cast<double>(static_cast<int>(layer)));
-	writeIoColor(base, 7, color);
-	commitIoCommand();
+void Api::submitFillRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color) {
+	writeIoArg(IO_VDP_CMD_ARG0, 0, x0);
+	writeIoArg(IO_VDP_CMD_ARG0, 1, y0);
+	writeIoArg(IO_VDP_CMD_ARG0, 2, x1);
+	writeIoArg(IO_VDP_CMD_ARG0, 3, y1);
+	writeIoArg(IO_VDP_CMD_ARG0, 4, z);
+	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(static_cast<int>(layer)));
+	writeIoColor(IO_VDP_CMD_ARG0, 6, color);
+	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_FILL_RECT)));
 }
 
-void Api::queueDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness) {
-	const uint32_t base = allocIoCommand(IO_CMD_VDP_DRAW_LINE);
-	writeIoArg(base, 1, x0);
-	writeIoArg(base, 2, y0);
-	writeIoArg(base, 3, x1);
-	writeIoArg(base, 4, y1);
-	writeIoArg(base, 5, z);
-	writeIoArg(base, 6, static_cast<double>(static_cast<int>(layer)));
-	writeIoColor(base, 7, color);
-	writeIoArg(base, 11, thickness);
-	commitIoCommand();
+void Api::submitDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness) {
+	writeIoArg(IO_VDP_CMD_ARG0, 0, x0);
+	writeIoArg(IO_VDP_CMD_ARG0, 1, y0);
+	writeIoArg(IO_VDP_CMD_ARG0, 2, x1);
+	writeIoArg(IO_VDP_CMD_ARG0, 3, y1);
+	writeIoArg(IO_VDP_CMD_ARG0, 4, z);
+	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(static_cast<int>(layer)));
+	writeIoColor(IO_VDP_CMD_ARG0, 6, color);
+	writeIoArg(IO_VDP_CMD_ARG0, 10, thickness);
+	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_DRAW_LINE)));
 }
 
-void Api::queueBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight) {
-	const uint32_t base = allocIoCommand(IO_CMD_VDP_BLIT);
-	writeIoArg(base, 1, static_cast<double>(handle));
-	writeIoArg(base, 2, x);
-	writeIoArg(base, 3, y);
-	writeIoArg(base, 4, z);
-	writeIoArg(base, 5, static_cast<double>(static_cast<int>(layer)));
-	writeIoArg(base, 6, scaleX);
-	writeIoArg(base, 7, scaleY);
-	writeIoArg(base, 8, static_cast<double>((flipH ? 1 : 0) | (flipV ? 2 : 0)));
-	writeIoColor(base, 9, color);
-	writeIoArg(base, 13, parallaxWeight);
-	commitIoCommand();
+void Api::submitBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight) {
+	writeIoArg(IO_VDP_CMD_ARG0, 0, static_cast<double>(handle));
+	writeIoArg(IO_VDP_CMD_ARG0, 1, x);
+	writeIoArg(IO_VDP_CMD_ARG0, 2, y);
+	writeIoArg(IO_VDP_CMD_ARG0, 3, z);
+	writeIoArg(IO_VDP_CMD_ARG0, 4, static_cast<double>(static_cast<int>(layer)));
+	writeIoArg(IO_VDP_CMD_ARG0, 5, scaleX);
+	writeIoArg(IO_VDP_CMD_ARG0, 6, scaleY);
+	writeIoArg(IO_VDP_CMD_ARG0, 7, static_cast<double>((flipH ? 1 : 0) | (flipV ? 2 : 0)));
+	writeIoColor(IO_VDP_CMD_ARG0, 8, color);
+	writeIoArg(IO_VDP_CMD_ARG0, 12, parallaxWeight);
+	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_BLIT)));
 }
 
-void Api::queueGlyphLine(const std::string& text, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer) {
+void Api::submitGlyphLine(const std::string& text, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer) {
 	if (text.empty()) {
 		return;
 	}
@@ -1251,47 +1255,45 @@ void Api::queueGlyphLine(const std::string& text, f32 x, f32 y, f32 z, BFont* fo
 			valueNumber(static_cast<double>(word))
 		);
 	}
-	const uint32_t base = allocIoCommand(IO_CMD_VDP_GLYPH_RUN);
-	writeIoArg(base, 1, static_cast<double>(payloadOffset));
-	writeIoArg(base, 2, static_cast<double>(text.size()));
-	writeIoArg(base, 3, x);
-	writeIoArg(base, 4, y);
-	writeIoArg(base, 5, z);
-	writeIoArg(base, 6, static_cast<double>(fontId(font)));
-	writeIoArg(base, 7, static_cast<double>(start));
-	writeIoArg(base, 8, static_cast<double>(end));
-	writeIoArg(base, 9, static_cast<double>(static_cast<int>(layer)));
-	writeIoColor(base, 10, color);
+	writeIoArg(IO_VDP_CMD_ARG0, 0, static_cast<double>(payloadOffset));
+	writeIoArg(IO_VDP_CMD_ARG0, 1, static_cast<double>(text.size()));
+	writeIoArg(IO_VDP_CMD_ARG0, 2, x);
+	writeIoArg(IO_VDP_CMD_ARG0, 3, y);
+	writeIoArg(IO_VDP_CMD_ARG0, 4, z);
+	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(fontId(font)));
+	writeIoArg(IO_VDP_CMD_ARG0, 6, static_cast<double>(start));
+	writeIoArg(IO_VDP_CMD_ARG0, 7, static_cast<double>(end));
+	writeIoArg(IO_VDP_CMD_ARG0, 8, static_cast<double>(static_cast<int>(layer)));
+	writeIoColor(IO_VDP_CMD_ARG0, 9, color);
 	if (backgroundColor.has_value()) {
-		writeIoArg(base, 14, 1.0);
-		writeIoColor(base, 15, *backgroundColor);
-		commitIoCommand();
+		writeIoArg(IO_VDP_CMD_ARG0, 13, 1.0);
+		writeIoColor(IO_VDP_CMD_ARG0, 14, *backgroundColor);
+		m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_GLYPH_RUN)));
 		return;
 	}
-	writeIoArg(base, 14, 0.0);
-	commitIoCommand();
+	writeIoArg(IO_VDP_CMD_ARG0, 13, 0.0);
+	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_GLYPH_RUN)));
 }
 
-void Api::queueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
+void Api::submitTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
 	const uint32_t tileCount = static_cast<uint32_t>(handles.size());
 	const uint32_t payloadOffset = allocIoPayload(tileCount);
 	for (uint32_t index = 0; index < tileCount; index += 1u) {
 		m_runtime.memory().writeValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + index) * IO_ARG_STRIDE, valueNumber(static_cast<double>(handles[index])));
 	}
-	const uint32_t base = allocIoCommand(IO_CMD_VDP_TILE_RUN);
-	writeIoArg(base, 1, static_cast<double>(payloadOffset));
-	writeIoArg(base, 2, static_cast<double>(tileCount));
-	writeIoArg(base, 3, static_cast<double>(cols));
-	writeIoArg(base, 4, static_cast<double>(rows));
-	writeIoArg(base, 5, static_cast<double>(tileW));
-	writeIoArg(base, 6, static_cast<double>(tileH));
-	writeIoArg(base, 7, static_cast<double>(originX));
-	writeIoArg(base, 8, static_cast<double>(originY));
-	writeIoArg(base, 9, static_cast<double>(scrollX));
-	writeIoArg(base, 10, static_cast<double>(scrollY));
-	writeIoArg(base, 11, z);
-	writeIoArg(base, 12, static_cast<double>(static_cast<int>(layer)));
-	commitIoCommand();
+	writeIoArg(IO_VDP_CMD_ARG0, 0, static_cast<double>(payloadOffset));
+	writeIoArg(IO_VDP_CMD_ARG0, 1, static_cast<double>(tileCount));
+	writeIoArg(IO_VDP_CMD_ARG0, 2, static_cast<double>(cols));
+	writeIoArg(IO_VDP_CMD_ARG0, 3, static_cast<double>(rows));
+	writeIoArg(IO_VDP_CMD_ARG0, 4, static_cast<double>(tileW));
+	writeIoArg(IO_VDP_CMD_ARG0, 5, static_cast<double>(tileH));
+	writeIoArg(IO_VDP_CMD_ARG0, 6, static_cast<double>(originX));
+	writeIoArg(IO_VDP_CMD_ARG0, 7, static_cast<double>(originY));
+	writeIoArg(IO_VDP_CMD_ARG0, 8, static_cast<double>(scrollX));
+	writeIoArg(IO_VDP_CMD_ARG0, 9, static_cast<double>(scrollY));
+	writeIoArg(IO_VDP_CMD_ARG0, 10, z);
+	writeIoArg(IO_VDP_CMD_ARG0, 11, static_cast<double>(static_cast<int>(layer)));
+	m_runtime.memory().writeValue(IO_VDP_CMD, valueNumber(static_cast<double>(IO_CMD_VDP_TILE_RUN)));
 }
 
 uint32_t Api::fontId(BFont* font) const {
@@ -1307,28 +1309,28 @@ uint32_t Api::fontId(BFont* font) const {
 }
 
 void Api::cls(int colorIndex) {
-	queueClear(palette_color(colorIndex));
+	submitClear(palette_color(colorIndex));
 	reset_print_cursor();
 }
 
 void Api::blit_rect(int x0, int y0, int x1, int y1, int z, int colorIndex) {
 	const Color color = palette_color(colorIndex);
-	queueDrawLine(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y0), static_cast<f32>(z), Layer2D::World, color, 1.0f);
-	queueDrawLine(static_cast<f32>(x0), static_cast<f32>(y1), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, color, 1.0f);
-	queueDrawLine(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x0), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, color, 1.0f);
-	queueDrawLine(static_cast<f32>(x1), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, color, 1.0f);
+	submitDrawLine(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y0), static_cast<f32>(z), Layer2D::World, color, 1.0f);
+	submitDrawLine(static_cast<f32>(x0), static_cast<f32>(y1), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, color, 1.0f);
+	submitDrawLine(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x0), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, color, 1.0f);
+	submitDrawLine(static_cast<f32>(x1), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, color, 1.0f);
 }
 
 void Api::fill_rect(int x0, int y0, int x1, int y1, int z, int colorIndex) {
-	queueFillRect(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, palette_color(colorIndex));
+	submitFillRect(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), Layer2D::World, palette_color(colorIndex));
 }
 
 void Api::fill_rect_color(int x0, int y0, int x1, int y1, int z, const Color& color, std::optional<RenderLayer> layer) {
-	queueFillRect(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), renderLayerTo2dLayer(layer.has_value() ? layer.value() : RenderLayer::World), color);
+	submitFillRect(static_cast<f32>(x0), static_cast<f32>(y0), static_cast<f32>(x1), static_cast<f32>(y1), static_cast<f32>(z), renderLayerTo2dLayer(layer.has_value() ? layer.value() : RenderLayer::World), color);
 }
 
 void Api::blit(const ImgRenderSubmission& submission) {
-	queueBlit(
+	submitBlit(
 		m_runtime.memory().resolveAssetHandle(submission.imgid),
 		submission.pos.x,
 		submission.pos.y,
@@ -1387,7 +1389,7 @@ void Api::dma_blit_tiles(const Value& desc) {
 			handles[static_cast<size_t>(base + col)] = m_runtime.memory().resolveAssetHandle(imgId);
 		}
 	}
-	queueTileRun(handles, cols, rows, tileW, tileH, originX, originY, scrollX, scrollY, static_cast<f32>(asNumber(table->get(key("z")))), renderLayerTo2dLayer(resolve_layer(table->get(key("layer")))));
+	submitTileRun(handles, cols, rows, tileW, tileH, originX, originY, scrollX, scrollY, static_cast<f32>(asNumber(table->get(key("z")))), renderLayerTo2dLayer(resolve_layer(table->get(key("layer")))));
 }
 
 void Api::blit_poly(const PolyRenderSubmission& submission) {
@@ -1396,7 +1398,7 @@ void Api::blit_poly(const PolyRenderSubmission& submission) {
 	}
 	for (size_t index = 0; index < submission.points.size(); index += 2u) {
 		const size_t next = (index + 2u) % submission.points.size();
-		queueDrawLine(submission.points[index], submission.points[index + 1u], submission.points[next], submission.points[next + 1u], submission.z, renderLayerTo2dLayer(*submission.layer), submission.color, *submission.thickness);
+		submitDrawLine(submission.points[index], submission.points[index + 1u], submission.points[next], submission.points[next + 1u], submission.z, renderLayerTo2dLayer(*submission.layer), submission.color, *submission.thickness);
 	}
 }
 
@@ -1508,7 +1510,7 @@ void Api::blit_text(const std::string& text, std::optional<int> x, std::optional
 	const f32 renderZ = static_cast<f32>(z.has_value() ? z.value() : 0);
 	f32 cursorY = static_cast<f32>(baseY);
 	for (const std::string& line : lines) {
-		queueGlyphLine(line, static_cast<f32>(baseX), cursorY, renderZ, renderFont, color, backgroundColor, glyphStart, glyphEnd, renderLayerTo2dLayer(layer));
+		submitGlyphLine(line, static_cast<f32>(baseX), cursorY, renderZ, renderFont, color, backgroundColor, glyphStart, glyphEnd, renderLayerTo2dLayer(layer));
 		cursorY += static_cast<f32>(renderFont->lineHeight());
 	}
 
@@ -1557,12 +1559,12 @@ void Api::blit_text_with_font(const std::string& text, std::optional<int> x, std
 }
 
 void Api::blit_text_inline_with_font(const std::string& text, int x, int y, int z, int colorIndex, BFont* font) {
-	queueGlyphLine(text, static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(z), font ? font : m_font.get(), palette_color(colorIndex), std::nullopt, 0, std::numeric_limits<i32>::max(), Layer2D::World);
+	submitGlyphLine(text, static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(z), font ? font : m_font.get(), palette_color(colorIndex), std::nullopt, 0, std::numeric_limits<i32>::max(), Layer2D::World);
 }
 
 void Api::blit_text_inline_span_with_font(const std::string& text, int start, int end,
 										int x, int y, int z, int colorIndex, BFont* font) {
-	queueGlyphLine(text, static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(z), font ? font : m_font.get(), palette_color(colorIndex), std::nullopt, start, end, Layer2D::World);
+	submitGlyphLine(text, static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(z), font ? font : m_font.get(), palette_color(colorIndex), std::nullopt, start, end, Layer2D::World);
 }
 
 bool Api::action_triggered(const std::string& actionDefinition, std::optional<int> playerIndex) const {
@@ -1669,7 +1671,7 @@ void Api::draw_multiline_text(const std::string& text, int x, int y, int z, cons
 		}
 		std::string line = expand_tabs(expanded.substr(start, end - start));
 		if (!line.empty()) {
-			queueGlyphLine(line, static_cast<f32>(x), static_cast<f32>(cursorY), static_cast<f32>(z), &font, color, std::nullopt, 0, std::numeric_limits<i32>::max(), Layer2D::World);
+			submitGlyphLine(line, static_cast<f32>(x), static_cast<f32>(cursorY), static_cast<f32>(z), &font, color, std::nullopt, 0, std::numeric_limits<i32>::max(), Layer2D::World);
 		}
 		if (end == expanded.size()) {
 			break;

@@ -12,22 +12,45 @@ namespace bmsx {
 namespace {
 
 u32 readUtf8Codepoint(const std::string& text, size_t& index) {
-	u8 c0 = static_cast<u8>(text.at(index++));
+	const size_t size = text.size();
+	u8 c0 = static_cast<u8>(text[index]);
+	index += 1u;
 	if (c0 < 0x80) {
 		return c0;
 	}
 	if ((c0 & 0xE0) == 0xC0) {
-		u8 c1 = static_cast<u8>(text.at(index++));
+		if (index >= size) {
+			return static_cast<u32>('?');
+		}
+		u8 c1 = static_cast<u8>(text[index]);
+		index += 1u;
+		if ((c1 & 0xC0u) != 0x80u) {
+			return static_cast<u32>('?');
+		}
 		return ((c0 & 0x1F) << 6) | (c1 & 0x3F);
 	}
 	if ((c0 & 0xF0) == 0xE0) {
-		u8 c1 = static_cast<u8>(text.at(index++));
-		u8 c2 = static_cast<u8>(text.at(index++));
+		if (index + 1u >= size) {
+			return static_cast<u32>('?');
+		}
+		u8 c1 = static_cast<u8>(text[index]);
+		u8 c2 = static_cast<u8>(text[index + 1u]);
+		index += 2u;
+		if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u) {
+			return static_cast<u32>('?');
+		}
 		return ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
 	}
-	u8 c1 = static_cast<u8>(text.at(index++));
-	u8 c2 = static_cast<u8>(text.at(index++));
-	u8 c3 = static_cast<u8>(text.at(index++));
+	if (index + 2u >= size) {
+		return static_cast<u32>('?');
+	}
+	u8 c1 = static_cast<u8>(text[index]);
+	u8 c2 = static_cast<u8>(text[index + 1u]);
+	u8 c3 = static_cast<u8>(text[index + 2u]);
+	index += 3u;
+	if ((c1 & 0xC0u) != 0x80u || (c2 & 0xC0u) != 0x80u || (c3 & 0xC0u) != 0x80u) {
+		return static_cast<u32>('?');
+	}
 	return ((c0 & 0x07) << 18) | ((c1 & 0x3F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
 }
 

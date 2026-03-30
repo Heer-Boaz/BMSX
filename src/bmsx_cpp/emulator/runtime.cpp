@@ -56,6 +56,127 @@ inline Color readIoColor(const Runtime& runtime, uint32_t base, int offset) {
 		static_cast<f32>(readIoArg(runtime, base, offset + 3)),
 	};
 }
+
+void processVdpCommand(Runtime& runtime, uint32_t cmdBase, uint32_t cmd) {
+	auto& memory = runtime.memory();
+	switch (cmd) {
+		case IO_CMD_VDP_CLEAR: {
+			runtime.vdp().enqueueClear(readIoColor(runtime, cmdBase, 1));
+			break;
+		}
+		case IO_CMD_VDP_FILL_RECT: {
+			runtime.vdp().enqueueFillRect(
+				static_cast<f32>(readIoArg(runtime, cmdBase, 1)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 2)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 3)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 4)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 5)),
+				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 6))),
+				readIoColor(runtime, cmdBase, 7)
+			);
+			break;
+		}
+		case IO_CMD_VDP_DRAW_LINE: {
+			runtime.vdp().enqueueDrawLine(
+				static_cast<f32>(readIoArg(runtime, cmdBase, 1)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 2)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 3)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 4)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 5)),
+				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 6))),
+				readIoColor(runtime, cmdBase, 7),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 11))
+			);
+			break;
+		}
+		case IO_CMD_VDP_BLIT: {
+			const uint32_t flipFlags = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 8));
+			runtime.vdp().enqueueBlit(
+				static_cast<u32>(readIoArg(runtime, cmdBase, 1)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 2)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 3)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 4)),
+				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 5))),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 6)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 7)),
+				(flipFlags & 1u) != 0u,
+				(flipFlags & 2u) != 0u,
+				readIoColor(runtime, cmdBase, 9),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 13))
+			);
+			break;
+		}
+		case IO_CMD_VDP_GLYPH_RUN: {
+			const uint32_t payloadOffset = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 1));
+			const uint32_t textByteLength = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 2));
+			const bool backgroundEnabled = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 14)) != 0u;
+			std::string text;
+			text.resize(textByteLength);
+			const uint32_t payloadWords = (textByteLength + 3u) / 4u;
+			uint32_t byteIndex = 0u;
+			for (uint32_t wordIndex = 0; wordIndex < payloadWords; wordIndex += 1u) {
+				const uint32_t word = static_cast<uint32_t>(asNumber(memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + wordIndex) * IO_ARG_STRIDE)));
+				text[byteIndex] = static_cast<char>(word & 0xffu);
+				byteIndex += 1u;
+				if (byteIndex >= textByteLength) {
+					break;
+				}
+				text[byteIndex] = static_cast<char>((word >> 8u) & 0xffu);
+				byteIndex += 1u;
+				if (byteIndex >= textByteLength) {
+					break;
+				}
+				text[byteIndex] = static_cast<char>((word >> 16u) & 0xffu);
+				byteIndex += 1u;
+				if (byteIndex >= textByteLength) {
+					break;
+				}
+				text[byteIndex] = static_cast<char>((word >> 24u) & 0xffu);
+				byteIndex += 1u;
+			}
+			const std::optional<Color> backgroundColor = backgroundEnabled
+				? std::optional<Color>(readIoColor(runtime, cmdBase, 15))
+				: std::nullopt;
+			runtime.vdp().enqueueGlyphRun(
+				std::vector<std::string>{ text },
+				static_cast<f32>(readIoArg(runtime, cmdBase, 3)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 4)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 5)),
+				runtime.api().resolveFontId(static_cast<uint32_t>(readIoArg(runtime, cmdBase, 6))),
+				readIoColor(runtime, cmdBase, 10),
+				backgroundColor,
+				static_cast<i32>(readIoArg(runtime, cmdBase, 7)),
+				static_cast<i32>(readIoArg(runtime, cmdBase, 8)),
+				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 9)))
+			);
+			break;
+		}
+		case IO_CMD_VDP_TILE_RUN: {
+			const uint32_t payloadOffset = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 1));
+			const uint32_t tileCount = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 2));
+			std::vector<u32> handles(tileCount, IO_VDP_TILE_HANDLE_NONE);
+			for (uint32_t tileIndex = 0; tileIndex < tileCount; tileIndex += 1u) {
+				handles[tileIndex] = static_cast<u32>(asNumber(memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + tileIndex) * IO_ARG_STRIDE)));
+			}
+			runtime.vdp().enqueueTileRun(
+				handles,
+				static_cast<i32>(readIoArg(runtime, cmdBase, 3)),
+				static_cast<i32>(readIoArg(runtime, cmdBase, 4)),
+				static_cast<i32>(readIoArg(runtime, cmdBase, 5)),
+				static_cast<i32>(readIoArg(runtime, cmdBase, 6)),
+				static_cast<i32>(readIoArg(runtime, cmdBase, 7)),
+				static_cast<i32>(readIoArg(runtime, cmdBase, 8)),
+				static_cast<i32>(readIoArg(runtime, cmdBase, 9)),
+				static_cast<i32>(readIoArg(runtime, cmdBase, 10)),
+				static_cast<f32>(readIoArg(runtime, cmdBase, 11)),
+				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 12)))
+			);
+			break;
+		}
+		default:
+			throw BMSX_RUNTIME_ERROR("Unknown IO command: " + std::to_string(cmd) + ".");
+	}
+}
 }
 
 uint32_t Runtime::RateBudget::calcBytesForCycles(i64 cpuHz, i64 cycles) {
@@ -128,8 +249,6 @@ Runtime::Runtime(const RuntimeOptions& options)
 {
 	// Initialize I/O memory region
 	m_memory.clearIoSlots();
-	// Write pointer starts at 0
-	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
 	m_memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(0.0));
 	// System flags
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
@@ -226,7 +345,6 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_pendingCall = PendingCall::None;
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
-	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
 	m_memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
@@ -473,7 +591,6 @@ void Runtime::requestWaitForVblank() {
 		if (!m_frameActive) {
 			throw BMSX_RUNTIME_ERROR("[Runtime] wait_vblank resumed without an active frame state.");
 		}
-		processIOCommands();
 		reconcileCycleBudgetAfterSignal(m_frameState);
 		freezeTickCpuStats(m_frameState);
 		completeTickIfPending(m_frameState, m_vblankSequence);
@@ -671,161 +788,27 @@ void Runtime::tickTerminalModeDraw() {
 	// Terminal mode draw - stub for now
 }
 
-void Runtime::processIOCommands() {
-	// Get write pointer
-	m_vdp.syncRegisters();
-	int writePtr = static_cast<int>(asNumber(m_memory.readValue(IO_WRITE_PTR_ADDR)));
-	if (writePtr <= 0) {
-		return;
-	}
-
-	// Process each command
-	for (int i = 0; i < writePtr && i < IO_COMMAND_CAPACITY; ++i) {
-		const uint32_t cmdBase = IO_BUFFER_BASE + static_cast<uint32_t>(i) * IO_COMMAND_STRIDE;
-		const int cmd = static_cast<int>(asNumber(m_memory.readValue(cmdBase)));
-
-		switch (cmd) {
-			case IO_CMD_PRINT: {
-				throw BMSX_RUNTIME_ERROR("[Runtime] IO_CMD_PRINT is deprecated. Rebuild program assets so print() uses the native builtin path.");
-			}
-			case IO_CMD_VDP_CLEAR: {
-				m_vdp.enqueueClear(readIoColor(*this, cmdBase, 1));
-				break;
-			}
-			case IO_CMD_VDP_FILL_RECT: {
-				m_vdp.enqueueFillRect(
-					static_cast<f32>(readIoArg(*this, cmdBase, 1)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 2)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 3)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 4)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 5)),
-					static_cast<Layer2D>(static_cast<int>(readIoArg(*this, cmdBase, 6))),
-					readIoColor(*this, cmdBase, 7)
-				);
-				break;
-			}
-			case IO_CMD_VDP_DRAW_LINE: {
-				m_vdp.enqueueDrawLine(
-					static_cast<f32>(readIoArg(*this, cmdBase, 1)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 2)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 3)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 4)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 5)),
-					static_cast<Layer2D>(static_cast<int>(readIoArg(*this, cmdBase, 6))),
-					readIoColor(*this, cmdBase, 7),
-					static_cast<f32>(readIoArg(*this, cmdBase, 11))
-				);
-				break;
-			}
-			case IO_CMD_VDP_BLIT: {
-				const uint32_t flipFlags = static_cast<uint32_t>(readIoArg(*this, cmdBase, 8));
-				m_vdp.enqueueBlit(
-					static_cast<u32>(readIoArg(*this, cmdBase, 1)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 2)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 3)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 4)),
-					static_cast<Layer2D>(static_cast<int>(readIoArg(*this, cmdBase, 5))),
-					static_cast<f32>(readIoArg(*this, cmdBase, 6)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 7)),
-					(flipFlags & 1u) != 0u,
-					(flipFlags & 2u) != 0u,
-					readIoColor(*this, cmdBase, 9),
-					static_cast<f32>(readIoArg(*this, cmdBase, 13))
-				);
-				break;
-			}
-			case IO_CMD_VDP_GLYPH_RUN: {
-				const uint32_t payloadOffset = static_cast<uint32_t>(readIoArg(*this, cmdBase, 1));
-				const uint32_t textByteLength = static_cast<uint32_t>(readIoArg(*this, cmdBase, 2));
-				const bool backgroundEnabled = static_cast<uint32_t>(readIoArg(*this, cmdBase, 14)) != 0u;
-				std::string text;
-				text.resize(textByteLength);
-				const uint32_t payloadWords = (textByteLength + 3u) / 4u;
-				uint32_t byteIndex = 0u;
-				for (uint32_t wordIndex = 0; wordIndex < payloadWords; wordIndex += 1u) {
-					const uint32_t word = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + wordIndex) * IO_ARG_STRIDE)));
-					text[byteIndex] = static_cast<char>(word & 0xffu);
-					byteIndex += 1u;
-					if (byteIndex >= textByteLength) {
-						break;
-					}
-					text[byteIndex] = static_cast<char>((word >> 8u) & 0xffu);
-					byteIndex += 1u;
-					if (byteIndex >= textByteLength) {
-						break;
-					}
-					text[byteIndex] = static_cast<char>((word >> 16u) & 0xffu);
-					byteIndex += 1u;
-					if (byteIndex >= textByteLength) {
-						break;
-					}
-					text[byteIndex] = static_cast<char>((word >> 24u) & 0xffu);
-					byteIndex += 1u;
-				}
-				const std::optional<Color> backgroundColor = backgroundEnabled
-					? std::optional<Color>(readIoColor(*this, cmdBase, 15))
-					: std::nullopt;
-				m_vdp.enqueueGlyphRun(
-					std::vector<std::string>{ text },
-					static_cast<f32>(readIoArg(*this, cmdBase, 3)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 4)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 5)),
-					api().resolveFontId(static_cast<uint32_t>(readIoArg(*this, cmdBase, 6))),
-					readIoColor(*this, cmdBase, 10),
-					backgroundColor,
-					static_cast<i32>(readIoArg(*this, cmdBase, 7)),
-					static_cast<i32>(readIoArg(*this, cmdBase, 8)),
-					static_cast<Layer2D>(static_cast<int>(readIoArg(*this, cmdBase, 9)))
-				);
-				break;
-			}
-			case IO_CMD_VDP_TILE_RUN: {
-				const uint32_t payloadOffset = static_cast<uint32_t>(readIoArg(*this, cmdBase, 1));
-				const uint32_t tileCount = static_cast<uint32_t>(readIoArg(*this, cmdBase, 2));
-				std::vector<u32> handles(tileCount, IO_VDP_TILE_HANDLE_NONE);
-				for (uint32_t tileIndex = 0; tileIndex < tileCount; tileIndex += 1u) {
-					handles[tileIndex] = static_cast<u32>(asNumber(m_memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + tileIndex) * IO_ARG_STRIDE)));
-				}
-				m_vdp.enqueueTileRun(
-					handles,
-					static_cast<i32>(readIoArg(*this, cmdBase, 3)),
-					static_cast<i32>(readIoArg(*this, cmdBase, 4)),
-					static_cast<i32>(readIoArg(*this, cmdBase, 5)),
-					static_cast<i32>(readIoArg(*this, cmdBase, 6)),
-					static_cast<i32>(readIoArg(*this, cmdBase, 7)),
-					static_cast<i32>(readIoArg(*this, cmdBase, 8)),
-					static_cast<i32>(readIoArg(*this, cmdBase, 9)),
-					static_cast<i32>(readIoArg(*this, cmdBase, 10)),
-					static_cast<f32>(readIoArg(*this, cmdBase, 11)),
-					static_cast<Layer2D>(static_cast<int>(readIoArg(*this, cmdBase, 12)))
-				);
-				break;
-			}
-			default:
-				throw BMSX_RUNTIME_ERROR("Unknown IO command: " + std::to_string(cmd) + ".");
-		}
-	}
-
-	// Reset write pointer
-	m_memory.writeValue(IO_WRITE_PTR_ADDR, valueNumber(0.0));
-	m_memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(0.0));
-}
-
 void Runtime::onIoWrite(uint32_t addr, Value value) {
-	if (addr != IO_WRITE_PTR_ADDR
-		|| !valueIsNumber(value)
-		|| asNumber(value) < static_cast<double>(IO_COMMAND_CAPACITY)
-		|| m_drainingIoCommandsOnWrite) {
+	if (m_handlingVdpCommandWrite || !valueIsNumber(value)) {
 		return;
 	}
-	m_drainingIoCommandsOnWrite = true;
-	try {
-		processIOCommands();
-	} catch (...) {
-		m_drainingIoCommandsOnWrite = false;
-		throw;
+	if (addr == IO_VDP_CMD) {
+		if (asNumber(value) == 0.0) {
+			return;
+		}
+		m_handlingVdpCommandWrite = true;
+		try {
+			m_vdp.syncRegisters();
+			processVdpCommand(*this, IO_VDP_CMD, static_cast<uint32_t>(asNumber(value)));
+		} catch (...) {
+			m_memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(0.0));
+			m_handlingVdpCommandWrite = false;
+			throw;
+		}
+		m_memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(0.0));
+		m_handlingVdpCommandWrite = false;
+		return;
 	}
-	m_drainingIoCommandsOnWrite = false;
 }
 
 void Runtime::requestProgramReload() {
@@ -1210,13 +1193,11 @@ void Runtime::executeUpdateCallback() {
 			return;
 		}
 		RunResult result = runWithBudget();
-		processIOCommands();
 		processIrqAck();
 		if (result == RunResult::Halted) {
 			m_pendingCall = PendingCall::None;
 		}
 	} catch (const WaitForVblankSignal&) {
-		processIOCommands();
 		reconcileCycleBudgetAfterSignal(m_frameState);
 		freezeTickCpuStats(m_frameState);
 		processIrqAck();

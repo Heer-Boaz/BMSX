@@ -61,7 +61,6 @@ import type { ParsedLuaChunk } from './ide/lua/lua_parse';
 import { ResourceUsageDetector } from './resource_usage_detector';
 import { configureLuaHeapUsage } from './lua_heap_usage';
 import {
-	IO_COMMAND_CAPACITY,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -81,13 +80,13 @@ import {
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
 	IO_VDP_PRIMARY_ATLAS_ID,
+	IO_VDP_CMD,
 	IO_VDP_RD_MODE,
 	IO_VDP_RD_SURFACE,
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_SECONDARY_ATLAS_ID,
 	IO_VDP_STATUS,
-	IO_WRITE_PTR_ADDR,
 	IRQ_NEWGAME,
 	IRQ_REINIT,
 	IRQ_VBLANK,
@@ -645,7 +644,6 @@ export class Runtime {
 			if (frameState === null) {
 				throw new Error('[Runtime] wait_vblank resumed without an active frame state.');
 			}
-			runtimeLuaPipeline.processIo(this);
 			this.reconcileCycleBudgetAfterSignal(frameState);
 			this.freezeTickCpuStats(frameState);
 			this.completeTickIfPending(frameState, this.vblankSequence);
@@ -761,7 +759,7 @@ export class Runtime {
 	private waitForVblankTargetSequence = 0;
 	private clearBackQueuesAfterWaitResume = false;
 	private readonly waitForVblankSignal: WaitForVblankSignal = { kind: 'wait_vblank' };
-	private drainingIoCommandsOnWrite = false;
+	private handlingVdpCommandWrite = false;
 	private vblankSequence = 0;
 	private lastCompletedVblankSequence = 0;
 	public cycleBudgetPerFrame: number;
@@ -1301,7 +1299,6 @@ export class Runtime {
 		);
 		this.stringHandles = new StringHandleTable(this.memory);
 		this.runtimeStringPool = new StringPool(this.stringHandles);
-		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
 		this.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
@@ -1617,14 +1614,22 @@ export class Runtime {
 	}
 
 	public onIoWrite(addr: number, value: Value): void {
-		if (addr !== IO_WRITE_PTR_ADDR || typeof value !== 'number' || value < IO_COMMAND_CAPACITY || this.drainingIoCommandsOnWrite) {
+		if (this.handlingVdpCommandWrite || typeof value !== 'number') {
 			return;
 		}
-		this.drainingIoCommandsOnWrite = true;
-		try {
-			runtimeLuaPipeline.processIo(this);
-		} finally {
-			this.drainingIoCommandsOnWrite = false;
+		if (addr === IO_VDP_CMD) {
+			if (value === 0) {
+				return;
+			}
+			this.handlingVdpCommandWrite = true;
+			try {
+				this.vdp.syncRegisters();
+				runtimeLuaPipeline.processVdpCommand(this, IO_VDP_CMD, value);
+			} finally {
+				this.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
+				this.handlingVdpCommandWrite = false;
+			}
+			return;
 		}
 	}
 
@@ -1655,14 +1660,12 @@ export class Runtime {
 				return;
 			}
 			const result = this.runWithBudget(state);
-			runtimeLuaPipeline.processIo(this);
 			this.processIrqAck();
 			if (result === RunResult.Halted) {
 				this.pendingCall = null;
 			}
 		} catch (error) {
 			if (this.isWaitForVblankSignal(error)) {
-				runtimeLuaPipeline.processIo(this);
 				this.reconcileCycleBudgetAfterSignal(state);
 				this.freezeTickCpuStats(state);
 				this.processIrqAck();

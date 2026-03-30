@@ -47,15 +47,12 @@ import {
 	IMG_STATUS_DONE,
 	IMG_STATUS_ERROR,
 	IO_ARG_STRIDE,
-	IO_BUFFER_BASE,
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
 	IO_CMD_VDP_DRAW_LINE,
 	IO_CMD_VDP_FILL_RECT,
 	IO_CMD_VDP_GLYPH_RUN,
 	IO_CMD_VDP_TILE_RUN,
-	IO_COMMAND_CAPACITY,
-	IO_COMMAND_STRIDE,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -77,6 +74,9 @@ import {
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
 	IO_VDP_DITHER,
+	IO_VDP_CMD,
+	IO_VDP_CMD_ARG0,
+	IO_VDP_CMD_ARG_COUNT,
 	IO_VDP_PRIMARY_ATLAS_ID,
 	IO_VDP_RD_DATA,
 	IO_VDP_RD_MODE,
@@ -86,8 +86,6 @@ import {
 	IO_VDP_RD_Y,
 	IO_VDP_SECONDARY_ATLAS_ID,
 	IO_VDP_STATUS,
-	IO_VDP_TILE_HANDLE_NONE,
-	IO_WRITE_PTR_ADDR,
 	IRQ_DMA_DONE,
 	IRQ_DMA_ERROR,
 	IRQ_IMG_DONE,
@@ -957,6 +955,9 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_string_handle_count', STRING_HANDLE_COUNT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.cycleBudgetPerFrame);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_dither', IO_VDP_DITHER);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd', IO_VDP_CMD);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_arg0', IO_VDP_CMD_ARG0);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_arg_count', IO_VDP_CMD_ARG_COUNT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_primary_atlas_id', IO_VDP_PRIMARY_ATLAS_ID);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_secondary_atlas_id', IO_VDP_SECONDARY_ATLAS_ID);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_atlas_none', VDP_ATLAS_ID_NONE);
@@ -974,21 +975,16 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_layer_world', 0);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ui', 1);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ide', 2);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_write_ptr', IO_WRITE_PTR_ADDR);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_buffer_base', IO_BUFFER_BASE);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_command_stride', IO_COMMAND_STRIDE);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_arg_stride', IO_ARG_STRIDE);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_command_capacity', IO_COMMAND_CAPACITY);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_payload_write_ptr', IO_PAYLOAD_WRITE_PTR_ADDR);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_payload_buffer_base', IO_PAYLOAD_BUFFER_BASE);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_payload_capacity', IO_PAYLOAD_CAPACITY);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_clear', IO_CMD_VDP_CLEAR);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_fill_rect', IO_CMD_VDP_FILL_RECT);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_blit', IO_CMD_VDP_BLIT);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_draw_line', IO_CMD_VDP_DRAW_LINE);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_glyph_run', IO_CMD_VDP_GLYPH_RUN);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_tile_run', IO_CMD_VDP_TILE_RUN);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_vdp_tile_handle_none', IO_VDP_TILE_HANDLE_NONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_arg_stride', IO_ARG_STRIDE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_payload_write_ptr', IO_PAYLOAD_WRITE_PTR_ADDR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_payload_buffer_base', IO_PAYLOAD_BUFFER_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_payload_capacity', IO_PAYLOAD_CAPACITY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_clear', IO_CMD_VDP_CLEAR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_fill_rect', IO_CMD_VDP_FILL_RECT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_blit', IO_CMD_VDP_BLIT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_draw_line', IO_CMD_VDP_DRAW_LINE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_glyph_run', IO_CMD_VDP_GLYPH_RUN);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_tile_run', IO_CMD_VDP_TILE_RUN);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_irq_flags', IO_IRQ_FLAGS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_irq_ack', IO_IRQ_ACK);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_src', IO_DMA_SRC);

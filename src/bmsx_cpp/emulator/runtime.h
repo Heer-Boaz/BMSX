@@ -181,10 +181,6 @@ public:
 	 */
 	void tickTerminalModeDraw();
 
-	/**
-	 * Process pending I/O commands from the runtime.
-	 */
-	void processIOCommands();
 	void onIoWrite(uint32_t addr, Value value) override;
 
 	/**
@@ -447,7 +443,7 @@ private:
 	int m_vblankStartCycle = 0;
 	int m_cyclesIntoFrame = 0;
 	bool m_waitingForVblank = false;
-	bool m_drainingIoCommandsOnWrite = false;
+	bool m_handlingVdpCommandWrite = false;
 	uint64_t m_vblankSequence = 0;
 	uint64_t m_lastCompletedVblankSequence = 0;
 	uint64_t m_waitForVblankTargetSequence = 0;

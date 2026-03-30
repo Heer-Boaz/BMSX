@@ -28,20 +28,18 @@ import { ActionState } from 'bmsx/input/inputtypes';
 import { BmsxColors } from './vdp';
 import {
 	IO_ARG_STRIDE,
-	IO_BUFFER_BASE,
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
 	IO_CMD_VDP_DRAW_LINE,
 	IO_CMD_VDP_FILL_RECT,
 	IO_CMD_VDP_GLYPH_RUN,
 	IO_CMD_VDP_TILE_RUN,
-	IO_COMMAND_CAPACITY,
-	IO_COMMAND_STRIDE,
 	IO_PAYLOAD_BUFFER_BASE,
 	IO_PAYLOAD_CAPACITY,
 	IO_PAYLOAD_WRITE_PTR_ADDR,
+	IO_VDP_CMD,
+	IO_VDP_CMD_ARG0,
 	IO_VDP_TILE_HANDLE_NONE,
-	IO_WRITE_PTR_ADDR,
 } from './io';
 
 export type ApiOptions = {
@@ -196,21 +194,6 @@ export class Api {
 		this.writeIoArg(base, offset + 3, value.a);
 	}
 
-	private allocIoCommand(opcode: number): number {
-		const count = this._runtime.memory.readValue(IO_WRITE_PTR_ADDR) as number;
-		if (count >= IO_COMMAND_CAPACITY) {
-			throw new Error(`[FirmwareApi] IO command buffer overflow at opcode ${opcode}.`);
-		}
-		const base = IO_BUFFER_BASE + count * IO_COMMAND_STRIDE;
-		this._runtime.memory.writeValue(base, opcode);
-		return base;
-	}
-
-	private commitIoCommand(): void {
-		const count = this._runtime.memory.readValue(IO_WRITE_PTR_ADDR) as number;
-		this._runtime.memory.writeValue(IO_WRITE_PTR_ADDR, count + 1);
-	}
-
 	private allocIoPayload(words: number): number {
 		const writePtr = this._runtime.memory.readValue(IO_PAYLOAD_WRITE_PTR_ADDR) as number;
 		const next = writePtr + words;
@@ -221,53 +204,49 @@ export class Api {
 		return writePtr;
 	}
 
-	private queueClear(colorValue: color): void {
-		const base = this.allocIoCommand(IO_CMD_VDP_CLEAR);
-		this.writeIoColor(base, 1, colorValue);
-		this.commitIoCommand();
+	private submitClear(colorValue: color): void {
+		this.writeIoColor(IO_VDP_CMD_ARG0, 0, colorValue);
+		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_CLEAR);
 	}
 
-	private queueFillRect(x0: number, y0: number, x1: number, y1: number, z: number, layer: number, colorValue: color): void {
-		const base = this.allocIoCommand(IO_CMD_VDP_FILL_RECT);
-		this.writeIoArg(base, 1, x0);
-		this.writeIoArg(base, 2, y0);
-		this.writeIoArg(base, 3, x1);
-		this.writeIoArg(base, 4, y1);
-		this.writeIoArg(base, 5, z);
-		this.writeIoArg(base, 6, layer);
-		this.writeIoColor(base, 7, colorValue);
-		this.commitIoCommand();
+	private submitFillRect(x0: number, y0: number, x1: number, y1: number, z: number, layer: number, colorValue: color): void {
+		this.writeIoArg(IO_VDP_CMD_ARG0, 0, x0);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 1, y0);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 2, x1);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 3, y1);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 4, z);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 5, layer);
+		this.writeIoColor(IO_VDP_CMD_ARG0, 6, colorValue);
+		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_FILL_RECT);
 	}
 
-	private queueDrawLine(x0: number, y0: number, x1: number, y1: number, z: number, layer: number, colorValue: color, thickness: number): void {
-		const base = this.allocIoCommand(IO_CMD_VDP_DRAW_LINE);
-		this.writeIoArg(base, 1, x0);
-		this.writeIoArg(base, 2, y0);
-		this.writeIoArg(base, 3, x1);
-		this.writeIoArg(base, 4, y1);
-		this.writeIoArg(base, 5, z);
-		this.writeIoArg(base, 6, layer);
-		this.writeIoColor(base, 7, colorValue);
-		this.writeIoArg(base, 11, thickness);
-		this.commitIoCommand();
+	private submitDrawLine(x0: number, y0: number, x1: number, y1: number, z: number, layer: number, colorValue: color, thickness: number): void {
+		this.writeIoArg(IO_VDP_CMD_ARG0, 0, x0);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 1, y0);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 2, x1);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 3, y1);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 4, z);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 5, layer);
+		this.writeIoColor(IO_VDP_CMD_ARG0, 6, colorValue);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 10, thickness);
+		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_DRAW_LINE);
 	}
 
-	private queueBlit(handle: number, x: number, y: number, z: number, layer: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, parallaxWeight: number): void {
-		const base = this.allocIoCommand(IO_CMD_VDP_BLIT);
-		this.writeIoArg(base, 1, handle);
-		this.writeIoArg(base, 2, x);
-		this.writeIoArg(base, 3, y);
-		this.writeIoArg(base, 4, z);
-		this.writeIoArg(base, 5, layer);
-		this.writeIoArg(base, 6, scaleX);
-		this.writeIoArg(base, 7, scaleY);
-		this.writeIoArg(base, 8, (flipH ? 1 : 0) | (flipV ? 2 : 0));
-		this.writeIoColor(base, 9, colorValue);
-		this.writeIoArg(base, 13, parallaxWeight);
-		this.commitIoCommand();
+	private submitBlit(handle: number, x: number, y: number, z: number, layer: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, parallaxWeight: number): void {
+		this.writeIoArg(IO_VDP_CMD_ARG0, 0, handle);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 1, x);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 2, y);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 3, z);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 4, layer);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 5, scaleX);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 6, scaleY);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 7, (flipH ? 1 : 0) | (flipV ? 2 : 0));
+		this.writeIoColor(IO_VDP_CMD_ARG0, 8, colorValue);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 12, parallaxWeight);
+		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_BLIT);
 	}
 
-	private queueGlyphLine(text: string, x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: number): void {
+	private submitGlyphLine(text: string, x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: number): void {
 		if (text.length === 0) {
 			return;
 		}
@@ -283,37 +262,36 @@ export class Api {
 				| ((textBytes[byteIndex + 3] ?? 0) << 24);
 			this._runtime.memory.writeValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + wordIndex) * IO_ARG_STRIDE, word >>> 0);
 		}
-		const base = this.allocIoCommand(IO_CMD_VDP_GLYPH_RUN);
-		this.writeIoArg(base, 1, payloadOffset);
-		this.writeIoArg(base, 2, textBytes.length);
-		this.writeIoArg(base, 3, x);
-		this.writeIoArg(base, 4, y);
-		this.writeIoArg(base, 5, z);
-		this.writeIoArg(base, 6, this.registerFont(font));
-		this.writeIoArg(base, 7, start);
-		this.writeIoArg(base, 8, end);
-		this.writeIoArg(base, 9, layer);
-		this.writeIoColor(base, 10, colorValue);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 0, payloadOffset);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 1, textBytes.length);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 2, x);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 3, y);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 4, z);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 5, this.registerFont(font));
+		this.writeIoArg(IO_VDP_CMD_ARG0, 6, start);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 7, end);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 8, layer);
+		this.writeIoColor(IO_VDP_CMD_ARG0, 9, colorValue);
 		if (backgroundColor) {
-			this.writeIoArg(base, 14, 1);
-			this.writeIoColor(base, 15, backgroundColor);
-			this.commitIoCommand();
+			this.writeIoArg(IO_VDP_CMD_ARG0, 13, 1);
+			this.writeIoColor(IO_VDP_CMD_ARG0, 14, backgroundColor);
+			this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_GLYPH_RUN);
 			return;
 		}
-		this.writeIoArg(base, 14, 0);
-		this.commitIoCommand();
+		this.writeIoArg(IO_VDP_CMD_ARG0, 13, 0);
+		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_GLYPH_RUN);
 	}
 
-	private queueGlyphRun(text: string | string[], x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: number): void {
+	private submitGlyphRun(text: string | string[], x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: number): void {
 		const lines = Array.isArray(text) ? text : [text];
 		let cursorY = y;
 		for (let index = 0; index < lines.length; index += 1) {
-			this.queueGlyphLine(lines[index], x, cursorY, z, font, colorValue, backgroundColor, start, end, layer);
+			this.submitGlyphLine(lines[index], x, cursorY, z, font, colorValue, backgroundColor, start, end, layer);
 			cursorY += font.lineHeight;
 		}
 	}
 
-	private queueTileRun(desc: FrameBufferTileBlitDescriptor): void {
+	private submitTileRun(desc: FrameBufferTileBlitDescriptor): void {
 		const tileCount = desc.cols * desc.rows;
 		const payloadOffset = this.allocIoPayload(tileCount);
 		for (let index = 0; index < tileCount; index += 1) {
@@ -324,20 +302,19 @@ export class Api {
 			const handle = tile === false ? IO_VDP_TILE_HANDLE_NONE : this._runtime.resolveAssetHandle(tile);
 			this._runtime.memory.writeValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + index) * IO_ARG_STRIDE, handle);
 		}
-		const base = this.allocIoCommand(IO_CMD_VDP_TILE_RUN);
-		this.writeIoArg(base, 1, payloadOffset);
-		this.writeIoArg(base, 2, tileCount);
-		this.writeIoArg(base, 3, desc.cols);
-		this.writeIoArg(base, 4, desc.rows);
-		this.writeIoArg(base, 5, desc.tile_w);
-		this.writeIoArg(base, 6, desc.tile_h);
-		this.writeIoArg(base, 7, desc.origin_x);
-		this.writeIoArg(base, 8, desc.origin_y);
-		this.writeIoArg(base, 9, desc.scroll_x);
-		this.writeIoArg(base, 10, desc.scroll_y);
-		this.writeIoArg(base, 11, desc.z);
-		this.writeIoArg(base, 12, renderLayerTo2dLayer(desc.layer));
-		this.commitIoCommand();
+		this.writeIoArg(IO_VDP_CMD_ARG0, 0, payloadOffset);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 1, tileCount);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 2, desc.cols);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 3, desc.rows);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 4, desc.tile_w);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 5, desc.tile_h);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 6, desc.origin_x);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 7, desc.origin_y);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 8, desc.scroll_x);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 9, desc.scroll_y);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 10, desc.z);
+		this.writeIoArg(IO_VDP_CMD_ARG0, 11, renderLayerTo2dLayer(desc.layer));
+		this._runtime.memory.writeValue(IO_VDP_CMD, IO_CMD_VDP_TILE_RUN);
 	}
 
 	public display_width(): number {
@@ -438,21 +415,21 @@ export class Api {
 	}
 
 	public cls(colorindex: number = 0): void {
-		this.queueClear(this.palette_color(colorindex));
+		this.submitClear(this.palette_color(colorindex));
 		this.reset_print_cursor();
 	}
 
 	public blit_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
 		const colorValue = this.palette_color(colorindex);
 		const layer = renderLayerTo2dLayer('world');
-		this.queueDrawLine(x0, y0, x1, y0, z, layer, colorValue, 1);
-		this.queueDrawLine(x0, y1, x1, y1, z, layer, colorValue, 1);
-		this.queueDrawLine(x0, y0, x0, y1, z, layer, colorValue, 1);
-		this.queueDrawLine(x1, y0, x1, y1, z, layer, colorValue, 1);
+		this.submitDrawLine(x0, y0, x1, y0, z, layer, colorValue, 1);
+		this.submitDrawLine(x0, y1, x1, y1, z, layer, colorValue, 1);
+		this.submitDrawLine(x0, y0, x0, y1, z, layer, colorValue, 1);
+		this.submitDrawLine(x1, y0, x1, y1, z, layer, colorValue, 1);
 	}
 
 	public fill_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
-		this.queueFillRect(x0, y0, x1, y1, z, renderLayerTo2dLayer('world'), this.palette_color(colorindex));
+		this.submitFillRect(x0, y0, x1, y1, z, renderLayerTo2dLayer('world'), this.palette_color(colorindex));
 	}
 
 	public fill_rect_color(
@@ -465,7 +442,7 @@ export class Api {
 		options?: { layer?: RenderLayer },
 	): void {
 		const renderLayer = options === undefined || options.layer === undefined ? 'world' : options.layer;
-		this.queueFillRect(x0, y0, x1, y1, z, renderLayerTo2dLayer(renderLayer), this.resolve_color(colorvalue));
+		this.submitFillRect(x0, y0, x1, y1, z, renderLayerTo2dLayer(renderLayer), this.resolve_color(colorvalue));
 	}
 
 	public blit(img_id: string, x: number, y: number, z: number, options?: FrameBufferBlitOptions): void {
@@ -497,7 +474,7 @@ export class Api {
 				renderLayer = options.layer;
 			}
 		}
-		this.queueBlit(
+		this.submitBlit(
 			handle,
 			x,
 			y,
@@ -513,7 +490,7 @@ export class Api {
 	}
 
 	public dma_blit_tiles(desc: FrameBufferTileBlitDescriptor): void {
-		this.queueTileRun(desc);
+		this.submitTileRun(desc);
 	}
 
 	public blit_glyphs(glyphs: string | string[], x: number, y: number, z: number, options: FrameBufferGlyphOptions): void {
@@ -536,7 +513,7 @@ export class Api {
 			baseline: options.baseline,
 			layer: renderLayer,
 		};
-		this.queueGlyphRun(
+		this.submitGlyphRun(
 			submission.glyphs,
 			submission.x,
 			submission.y,
@@ -560,7 +537,7 @@ export class Api {
 		const layer2d = renderLayerTo2dLayer(renderLayer);
 		for (let index = 0; index < points.length; index += 2) {
 			const next = (index + 2) % points.length;
-			this.queueDrawLine(points[index], points[index + 1], points[next], points[next + 1], z, layer2d, color, lineThickness);
+			this.submitDrawLine(points[index], points[index + 1], points[next], points[next + 1], z, layer2d, color, lineThickness);
 		}
 	}
 
@@ -704,7 +681,7 @@ export class Api {
 			baseline: options === undefined ? undefined : options.baseline,
 			layer: renderLayer,
 		};
-		this.queueGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, glyphStart, glyphEnd, renderLayerTo2dLayer(renderLayer));
+		this.submitGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, glyphStart, glyphEnd, renderLayerTo2dLayer(renderLayer));
 		const shouldAdvance = options === undefined || options.auto_advance === undefined ? autoAdvance : options.auto_advance;
 		if (shouldAdvance) {
 			const lineCount = lines ? lines.length : 1;
@@ -750,7 +727,7 @@ export class Api {
 			font: renderFont,
 			layer: 'world',
 		};
-		this.queueGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, 0, Number.MAX_SAFE_INTEGER, renderLayerTo2dLayer(glyphs.layer));
+		this.submitGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, 0, Number.MAX_SAFE_INTEGER, renderLayerTo2dLayer(glyphs.layer));
 	}
 
 	public blit_text_inline_span_with_font(text: string, start: number, end: number, x: number, y: number, z: number, colorindex: number, font?: BFont): void {
@@ -766,7 +743,7 @@ export class Api {
 			font: renderFont,
 			layer: 'world',
 		};
-		this.queueGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, start, end, renderLayerTo2dLayer(glyphs.layer));
+		this.submitGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, start, end, renderLayerTo2dLayer(glyphs.layer));
 	}
 
 	public action_triggered(actiondefinition: string, player?: number): boolean {
@@ -1099,7 +1076,7 @@ export class Api {
 					font,
 					layer: 'world',
 				};
-				this.queueGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, 0, Number.MAX_SAFE_INTEGER, renderLayerTo2dLayer(glyphs.layer));
+				this.submitGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, 0, Number.MAX_SAFE_INTEGER, renderLayerTo2dLayer(glyphs.layer));
 			}
 			if (i < lines.length - 1) {
 				cursorY += font.lineHeight;

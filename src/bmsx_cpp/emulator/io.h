@@ -7,25 +7,11 @@ namespace bmsx {
 /**
  * Runtime I/O memory layout constants.
  *
- * The runtime has a memory-mapped I/O region for communication between the
- * bytecode interpreter and the host system. This includes a command buffer
- * for operations like print, and system flags for cart boot.
+ * The runtime exposes a memory-mapped register bank followed by a payload
+ * staging area for variable-length submit data.
  */
 
-// Write pointer for I/O command buffer (index of next command to write)
-constexpr int IO_WRITE_PTR_INDEX = 0;
-
-// Base address of the I/O command buffer
-constexpr int IO_BUFFER_BASE_INDEX = 1;
-
-// Stride between commands in the buffer (command + args)
-constexpr int IO_COMMAND_STRIDE_WORDS = 20;
-
-// Offset from command base to first argument
-constexpr int IO_ARG0_OFFSET_WORDS = 1;
-
 // I/O command codes
-constexpr int IO_CMD_PRINT = 1;
 constexpr int IO_CMD_VDP_CLEAR = 0x10;
 constexpr int IO_CMD_VDP_FILL_RECT = 0x11;
 constexpr int IO_CMD_VDP_BLIT = 0x12;
@@ -35,15 +21,7 @@ constexpr int IO_CMD_VDP_TILE_RUN = 0x15;
 
 constexpr uint32_t IO_VDP_TILE_HANDLE_NONE = 0xffffffffu;
 
-// Maximum number of commands that can be queued
-constexpr int IO_COMMAND_CAPACITY = 1024;
-
-constexpr int IO_PAYLOAD_WRITE_PTR_INDEX = IO_BUFFER_BASE_INDEX + IO_COMMAND_STRIDE_WORDS * IO_COMMAND_CAPACITY;
-constexpr int IO_PAYLOAD_BUFFER_BASE_INDEX = IO_PAYLOAD_WRITE_PTR_INDEX + 1;
-constexpr int IO_PAYLOAD_CAPACITY = 16384;
-
-// Base address for system flags (after command buffer)
-constexpr int IO_SYS_BASE_INDEX = IO_PAYLOAD_BUFFER_BASE_INDEX + IO_PAYLOAD_CAPACITY;
+constexpr int IO_SYS_BASE_INDEX = 0;
 
 // System flag: should boot cartridge?
 constexpr int IO_SYS_BOOT_CART_INDEX = IO_SYS_BASE_INDEX;
@@ -61,8 +39,10 @@ constexpr int IO_VDP_RD_Y_INDEX = IO_VDP_BASE_INDEX + 5;
 constexpr int IO_VDP_RD_MODE_INDEX = IO_VDP_BASE_INDEX + 6;
 constexpr int IO_VDP_RD_STATUS_INDEX = IO_VDP_BASE_INDEX + 7;
 constexpr int IO_VDP_RD_DATA_INDEX = IO_VDP_BASE_INDEX + 8;
-constexpr int IO_VDP_LEGACY_CMD_INDEX = IO_VDP_BASE_INDEX + 9;
-constexpr int IO_VDP_SIZE = 10;
+constexpr int IO_VDP_CMD_INDEX = IO_VDP_BASE_INDEX + 9;
+constexpr int IO_VDP_CMD_ARG0_INDEX = IO_VDP_BASE_INDEX + 10;
+constexpr int IO_VDP_CMD_ARG_COUNT = 18;
+constexpr int IO_VDP_SIZE = 10 + IO_VDP_CMD_ARG_COUNT;
 
 constexpr int IO_IRQ_BASE_INDEX = IO_VDP_BASE_INDEX + IO_VDP_SIZE;
 constexpr int IO_IRQ_FLAGS_INDEX = IO_IRQ_BASE_INDEX;
@@ -91,12 +71,12 @@ constexpr int IO_IMG_SIZE = 7;
 constexpr int IO_VDP_STATUS_INDEX = IO_IMG_BASE_INDEX + IO_IMG_SIZE;
 constexpr int IO_VDP_STATUS_SIZE = 1;
 
-constexpr int IO_SLOT_COUNT = IO_VDP_STATUS_INDEX + IO_VDP_STATUS_SIZE;
+constexpr int IO_PAYLOAD_WRITE_PTR_INDEX = IO_VDP_STATUS_INDEX + IO_VDP_STATUS_SIZE;
+constexpr int IO_PAYLOAD_BUFFER_BASE_INDEX = IO_PAYLOAD_WRITE_PTR_INDEX + 1;
+constexpr int IO_PAYLOAD_CAPACITY = 16384;
 
-constexpr uint32_t IO_WRITE_PTR_ADDR = IO_BASE + IO_WRITE_PTR_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_BUFFER_BASE = IO_BASE + IO_BUFFER_BASE_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_COMMAND_STRIDE = IO_COMMAND_STRIDE_WORDS * IO_WORD_SIZE;
-constexpr uint32_t IO_ARG0_OFFSET = IO_ARG0_OFFSET_WORDS * IO_WORD_SIZE;
+constexpr int IO_SLOT_COUNT = IO_PAYLOAD_BUFFER_BASE_INDEX + IO_PAYLOAD_CAPACITY;
+
 constexpr uint32_t IO_ARG_STRIDE = IO_WORD_SIZE;
 constexpr uint32_t IO_PAYLOAD_WRITE_PTR_ADDR = IO_BASE + IO_PAYLOAD_WRITE_PTR_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_PAYLOAD_BUFFER_BASE = IO_BASE + IO_PAYLOAD_BUFFER_BASE_INDEX * IO_WORD_SIZE;
@@ -114,7 +94,8 @@ constexpr uint32_t IO_VDP_RD_Y = IO_BASE + IO_VDP_RD_Y_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_RD_MODE = IO_BASE + IO_VDP_RD_MODE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_RD_STATUS = IO_BASE + IO_VDP_RD_STATUS_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_RD_DATA = IO_BASE + IO_VDP_RD_DATA_INDEX * IO_WORD_SIZE;
-constexpr uint32_t IO_VDP_LEGACY_CMD = IO_BASE + IO_VDP_LEGACY_CMD_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_VDP_CMD = IO_BASE + IO_VDP_CMD_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_VDP_CMD_ARG0 = IO_BASE + IO_VDP_CMD_ARG0_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_STATUS = IO_BASE + IO_VDP_STATUS_INDEX * IO_WORD_SIZE;
 
 constexpr uint32_t IO_IRQ_BASE = IO_BASE + IO_IRQ_BASE_INDEX * IO_WORD_SIZE;

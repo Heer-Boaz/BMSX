@@ -15,7 +15,9 @@ import {
 import type { RawAssetSource } from '../rompack/asset_source';
 import {
 	IO_VDP_DITHER,
-	IO_VDP_LEGACY_CMD,
+	IO_VDP_CMD,
+	IO_VDP_CMD_ARG0,
+	IO_VDP_CMD_ARG_COUNT,
 	IO_VDP_PRIMARY_ATLAS_ID,
 	IO_VDP_RD_MODE,
 	IO_VDP_RD_SURFACE,
@@ -1139,7 +1141,10 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 		this.resetBlitterState();
 		this.memory.writeValue(IO_VDP_DITHER, dither);
-		this.memory.writeValue(IO_VDP_LEGACY_CMD, 0);
+		this.memory.writeValue(IO_VDP_CMD, 0);
+		for (let index = 0; index < IO_VDP_CMD_ARG_COUNT; index += 1) {
+			this.memory.writeValue(IO_VDP_CMD_ARG0 + index * 4, 0);
+		}
 		this.lastDitherType = dither;
 		$.view.dither_type = dither;
 	}
@@ -1156,10 +1161,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const secondary = secondaryRaw === VDP_ATLAS_ID_NONE ? null : secondaryRaw;
 		if (primary !== this.slotAtlasIds[0] || secondary !== this.slotAtlasIds[1]) {
 			this.applyAtlasSlotMapping(primary, secondary);
-		}
-		const command = (this.memory.readValue(IO_VDP_LEGACY_CMD) as number) >>> 0;
-		if (command !== 0) {
-			throw new Error(`[BmsxVDP] Legacy VDP command register was removed. Got ${command}.`);
 		}
 	}
 

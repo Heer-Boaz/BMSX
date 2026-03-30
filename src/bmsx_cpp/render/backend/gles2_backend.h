@@ -18,6 +18,7 @@ struct GLES2Texture {
 	i32 width = 0;
 	i32 height = 0;
 	bool srgb = false;
+	bool logicalSrgb = false;
 };
 
 class OpenGLES2Backend : public GPUBackend {

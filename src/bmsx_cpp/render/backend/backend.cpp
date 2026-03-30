@@ -94,6 +94,18 @@ void convertSrgbToLinear(const u8* src, size_t pixels, std::vector<u8>& out) {
 	}
 }
 
+void convertLinearToSrgb(const u8* src, size_t pixels, std::vector<u8>& out) {
+	out.resize(pixels * 4);
+	const auto& lut = linearToSrgbLut();
+	for (size_t i = 0; i < pixels; ++i) {
+		const size_t idx = i * 4;
+		out[idx + 0] = lut[src[idx + 0]];
+		out[idx + 1] = lut[src[idx + 1]];
+		out[idx + 2] = lut[src[idx + 2]];
+		out[idx + 3] = src[idx + 3];
+	}
+}
+
 /* ============================================================================
  * SoftwareBackend implementation
  * ============================================================================ */
