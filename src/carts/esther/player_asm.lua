@@ -8697,7 +8697,7 @@ function player:get_overlapping_solid(x, y)
 	for i = 1, #solids do
 		local box = solids[i]
 		if x < (box.x + box.w) and (x + self.width) > box.x and 
-		   y < (box.y + box.h) and (y + self.height) > box.y then
+			y < (box.y + box.h) and (y + self.height) > box.y then
 			return box
 		end
 	end

@@ -74,8 +74,8 @@ bmsx_cpp/
 │   ├── cpu.cpp
 │   ├── runtime.h             # Runtime lifecycle + builtins
 │   ├── runtime.cpp
-│   ├── api.h                 # Lua API bindings
-│   ├── api.cpp
+│   ├── firmware_api.h        # Lua firmware API bindings
+│   ├── firmware_api.cpp
 │   ├── io.h                  # I/O map
 │   ├── memory.h              # Memory
 │   ├── memory.cpp

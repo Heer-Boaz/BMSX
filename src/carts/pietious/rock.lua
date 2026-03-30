@@ -6,18 +6,18 @@ rock.__index = rock
 local rock_break_timeline_id = 'rock.tl.break'
 
 local dropped_item_uses_y_offset = {
-        pepernoot = true,
-        spyglass = true,
+		pepernoot = true,
+		spyglass = true,
 }
 
 local function drop_offset_y_for_item_type(item_type)
-        if item_type == nil then
-                return 0
-        end
-        if dropped_item_uses_y_offset[item_type] then
-                return constants.room.tile_size
-        end
-        return 0
+		if item_type == nil then
+				return 0
+		end
+		if dropped_item_uses_y_offset[item_type] then
+				return constants.room.tile_size
+		end
+		return 0
 end
 
 function rock:ctor()
@@ -49,46 +49,46 @@ function rock:process_damage_result(result)
 end
 
 function rock:begin_break()
-        local room = object('room')
-        room:mark_rock_destroyed(self.id)
-        if self.item_type == nil then
-                return
-        end
-        local player = object('pietolon')
-        if player and player.inventory_items and player.inventory_items[self.item_type] then
-                return
-        end
-        local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
-        local id = 'drop.' .. self.id
-        inst('world_item', {
-                id = id,
-                space_id = 'main',
-                pos = { x = self.x, y = drop_y, z = 130 },
-                item_id = id,
-                item_type = self.item_type,
-        })
+		local room = object('room')
+		room:mark_rock_destroyed(self.id)
+		if self.item_type == nil then
+				return
+		end
+		local player = object('pietolon')
+		if player and player.inventory_items and player.inventory_items[self.item_type] then
+				return
+		end
+		local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
+		local id = 'drop.' .. self.id
+		inst('world_item', {
+				id = id,
+				space_id = 'main',
+				pos = { x = self.x, y = drop_y, z = 130 },
+				item_id = id,
+				item_type = self.item_type,
+		})
 end
 
 local function define_rock_fsm()
-        define_fsm('rock', {
-                initial = 'idle',
-                on = {
-                        ['overlap.begin'] = function(self, _state, event)
-                                local contact_kind = combat_overlap.classify_player_contact(event)
-                                if contact_kind ~= 'sword' and contact_kind ~= 'projectile' then
-                                        return
-                                end
-                                local result = combat_damage.resolve(self, combat_damage.build_weapon_request(self, 'rock', event, contact_kind))
-                                self:process_damage_result(result)
-                        end,
-                },
-                states = {
-                        idle = {
-                                on = {
-                                        ['break'] = '/breaking',
-                                        ['reset'] = '/idle',
-                                },
-                        },
+		define_fsm('rock', {
+				initial = 'idle',
+				on = {
+						['overlap.begin'] = function(self, _state, event)
+								local contact_kind = combat_overlap.classify_player_contact(event)
+								if contact_kind ~= 'sword' and contact_kind ~= 'projectile' then
+										return
+								end
+								local result = combat_damage.resolve(self, combat_damage.build_weapon_request(self, 'rock', event, contact_kind))
+								self:process_damage_result(result)
+						end,
+				},
+				states = {
+						idle = {
+								on = {
+										['break'] = '/breaking',
+										['reset'] = '/idle',
+								},
+						},
 			breaking = {
 				timelines = {
 					[rock_break_timeline_id] = {
@@ -121,11 +121,11 @@ local function define_rock_fsm()
 end
 
 local function register_rock_definition()
-        define_prefab({
-                def_id = 'rock',
-                class = rock,
-                type = 'sprite',
-                fsms = { 'rock' },
+		define_prefab({
+				def_id = 'rock',
+				class = rock,
+				type = 'sprite',
+				fsms = { 'rock' },
 		defaults = {
 			item_type = nil,
 			max_health = constants.rock.max_health,
@@ -135,7 +135,7 @@ local function register_rock_definition()
 end
 
 return {
-        rock = rock,
-        define_rock_fsm = define_rock_fsm,
-        register_rock_definition = register_rock_definition,
+		rock = rock,
+		define_rock_fsm = define_rock_fsm,
+		register_rock_definition = register_rock_definition,
 }
