@@ -1,5 +1,5 @@
-import { Api } from '../../api';
-import { api } from '../../runtime';
+import type { OverlayApi as Api } from '../../overlay_api';
+import { api } from '../../overlay_api';
 import { getTabBarTotalHeight, getCreateResourceBarHeight, getSearchBarHeight, getResourceSearchBarHeight, getSymbolSearchBarHeight, getRenameBarHeight, getLineJumpBarHeight, searchVisibleResultCount, searchResultEntryHeight, symbolSearchVisibleResultCount, symbolSearchEntryHeight, isSymbolSearchCompactMode } from '../editor_view';
 import { drawCreateResourceErrorDialog } from './render_resource_panel';
 import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../editor_search';

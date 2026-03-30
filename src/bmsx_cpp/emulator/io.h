@@ -19,19 +19,31 @@ constexpr int IO_WRITE_PTR_INDEX = 0;
 constexpr int IO_BUFFER_BASE_INDEX = 1;
 
 // Stride between commands in the buffer (command + args)
-constexpr int IO_COMMAND_STRIDE_WORDS = 4;
+constexpr int IO_COMMAND_STRIDE_WORDS = 20;
 
 // Offset from command base to first argument
 constexpr int IO_ARG0_OFFSET_WORDS = 1;
 
 // I/O command codes
 constexpr int IO_CMD_PRINT = 1;
+constexpr int IO_CMD_VDP_CLEAR = 0x10;
+constexpr int IO_CMD_VDP_FILL_RECT = 0x11;
+constexpr int IO_CMD_VDP_BLIT = 0x12;
+constexpr int IO_CMD_VDP_DRAW_LINE = 0x13;
+constexpr int IO_CMD_VDP_GLYPH_RUN = 0x14;
+constexpr int IO_CMD_VDP_TILE_RUN = 0x15;
+
+constexpr uint32_t IO_VDP_TILE_HANDLE_NONE = 0xffffffffu;
 
 // Maximum number of commands that can be queued
-constexpr int IO_COMMAND_CAPACITY = 256;
+constexpr int IO_COMMAND_CAPACITY = 1024;
+
+constexpr int IO_PAYLOAD_WRITE_PTR_INDEX = IO_BUFFER_BASE_INDEX + IO_COMMAND_STRIDE_WORDS * IO_COMMAND_CAPACITY;
+constexpr int IO_PAYLOAD_BUFFER_BASE_INDEX = IO_PAYLOAD_WRITE_PTR_INDEX + 1;
+constexpr int IO_PAYLOAD_CAPACITY = 16384;
 
 // Base address for system flags (after command buffer)
-constexpr int IO_SYS_BASE_INDEX = IO_BUFFER_BASE_INDEX + IO_COMMAND_STRIDE_WORDS * IO_COMMAND_CAPACITY;
+constexpr int IO_SYS_BASE_INDEX = IO_PAYLOAD_BUFFER_BASE_INDEX + IO_PAYLOAD_CAPACITY;
 
 // System flag: should boot cartridge?
 constexpr int IO_SYS_BOOT_CART_INDEX = IO_SYS_BASE_INDEX;
@@ -86,6 +98,8 @@ constexpr uint32_t IO_BUFFER_BASE = IO_BASE + IO_BUFFER_BASE_INDEX * IO_WORD_SIZ
 constexpr uint32_t IO_COMMAND_STRIDE = IO_COMMAND_STRIDE_WORDS * IO_WORD_SIZE;
 constexpr uint32_t IO_ARG0_OFFSET = IO_ARG0_OFFSET_WORDS * IO_WORD_SIZE;
 constexpr uint32_t IO_ARG_STRIDE = IO_WORD_SIZE;
+constexpr uint32_t IO_PAYLOAD_WRITE_PTR_ADDR = IO_BASE + IO_PAYLOAD_WRITE_PTR_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_PAYLOAD_BUFFER_BASE = IO_BASE + IO_PAYLOAD_BUFFER_BASE_INDEX * IO_WORD_SIZE;
 
 constexpr uint32_t IO_SYS_BASE = IO_BASE + IO_SYS_BASE_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_SYS_BOOT_CART = IO_BASE + IO_SYS_BOOT_CART_INDEX * IO_WORD_SIZE;

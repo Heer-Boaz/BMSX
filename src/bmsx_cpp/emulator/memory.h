@@ -30,6 +30,11 @@ public:
 		virtual uint32_t readVdpStatus() = 0;
 		virtual uint32_t readVdpData() = 0;
 	};
+	class IoWriteHandler {
+	public:
+		virtual ~IoWriteHandler() = default;
+		virtual void onIoWrite(uint32_t addr, Value value) = 0;
+	};
 
 	Memory();
 
@@ -39,6 +44,7 @@ public:
 	size_t overlayRomSize() const;
 	void setVramWriter(VramWriter* writer);
 	void setVdpIoHandler(VdpIoHandler* handler);
+	void setIoWriteHandler(IoWriteHandler* handler);
 	uint32_t usedAssetTableBytes() const;
 	uint32_t usedAssetDataBytes() const;
 
@@ -172,6 +178,7 @@ private:
 	std::vector<Value> m_ioSlots;
 	VramWriter* m_vramWriter = nullptr;
 	VdpIoHandler* m_vdpIoHandler = nullptr;
+	IoWriteHandler* m_ioWriteHandler = nullptr;
 
 	std::vector<AssetEntry> m_assetEntries;
 	std::unordered_map<std::string, size_t> m_assetIndexById;

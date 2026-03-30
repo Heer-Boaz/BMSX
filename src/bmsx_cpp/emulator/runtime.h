@@ -99,7 +99,7 @@ struct RuntimeState {
  * - Editor/terminal mode coordination
  * - State save/restore
  */
-class Runtime {
+class Runtime : public Memory::IoWriteHandler {
 public:
 	enum class ProgramSource {
 		Engine,
@@ -185,6 +185,7 @@ public:
 	 * Process pending I/O commands from the runtime.
 	 */
 	void processIOCommands();
+	void onIoWrite(uint32_t addr, Value value) override;
 
 	/**
 	 * Request a program reload.
@@ -446,6 +447,7 @@ private:
 	int m_vblankStartCycle = 0;
 	int m_cyclesIntoFrame = 0;
 	bool m_waitingForVblank = false;
+	bool m_drainingIoCommandsOnWrite = false;
 	uint64_t m_vblankSequence = 0;
 	uint64_t m_lastCompletedVblankSequence = 0;
 	uint64_t m_waitForVblankTargetSequence = 0;

@@ -31,7 +31,7 @@ import {
 } from 'bmsx/rompack/rompack';
 import { renderGate } from 'bmsx/core/engine_core';
 
-const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'framebuffer_2d', 'device_quantize', 'crt'];
+const PRESENTATION_PASS_IDS = ['skybox', 'meshbatch', 'particles', 'framebuffer_2d', 'device_quantize', 'crt', 'host_overlay'];
 
 interface GameViewOpts {
 	host: GameViewHost;
@@ -93,10 +93,8 @@ export class GameView implements RenderContext {
 	public pipelineRegistry?: RenderPassLibrary;
 	private presentationPassTokens: RenderPassToken[] = [];
 	private presentationEnabled = true;
-	// Texture binding cache
+	// Active texture unit cache
 	private _activeTexUnit: number = null;
-	private _activeTexture2D: TextureHandle = null;
-	private _activeCubemap: TextureHandle = null;
 	// CRT/post flags (used by passes)
 	public enable_noise = true;
 	public enable_colorbleed = true;
@@ -607,25 +605,21 @@ export class GameView implements RenderContext {
 
 	bind2DTex(tex: TextureHandle): void {
 		if (this.backendType !== 'webgl2') return; // Texture units are not a thing in WebGPU
-		if (this._activeTexture2D === tex) return;
 		const backend = this.backend;
 		const bindTexture2D = backend.bindTexture2D;
 		if (!bindTexture2D) {
 			throw new Error('[GameView] WebGL2 backend does not implement bindTexture2D.');
 		}
 		bindTexture2D.call(backend, tex);
-		this._activeTexture2D = tex;
 	}
 
 	bindCubemapTex(tex: TextureHandle): void {
 		if (this.backendType !== 'webgl2') return; // Texture units are not a thing in WebGPU
-		if (this._activeCubemap === tex) return;
 		const backend = this.backend;
 		const bindTextureCube = backend.bindTextureCube;
 		if (!bindTextureCube) {
 			throw new Error('[GameView] WebGL2 backend does not implement bindTextureCube.');
 		}
 		bindTextureCube.call(backend, tex);
-		this._activeCubemap = tex;
 	}
 }

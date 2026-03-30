@@ -1,4 +1,4 @@
-import type { Api } from '../../api';
+import type { OverlayApi as Api } from '../../overlay_api';
 import type { EditorFont } from '../../editor_font';
 import { drawEditorText } from '../text_renderer';
 import { clamp } from '../../../utils/clamp';
@@ -10,7 +10,8 @@ import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../types';
 import type { StackTraceFrame } from '../../../lua/luavalue';
 import type { RectBounds } from '../../../rompack/rompack';
 import { point_in_rect } from '../../../utils/rect_operations';
-import { api, Runtime } from '../../runtime';
+import { Runtime } from '../../runtime';
+import { api } from '../../overlay_api';
 import { clampCursorColumn, centerCursorVertically, revealCursor } from '../caret';
 import * as constants from '../constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay';

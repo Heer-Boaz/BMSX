@@ -1,5 +1,6 @@
 import { $ } from '../../core/engine_core';
 import { registerFramebuffer2DPass_WebGL } from '../2d/framebuffer_pipeline';
+import { registerHostOverlayPass_Headless, registerHostOverlayPass_WebGL, registerHostOverlayPass_WebGPU } from '../editor/host_overlay_pipeline';
 import * as MeshPipeline from '../3d/mesh_pipeline';
 import { registerMeshBatchPass_WebGL } from '../3d/mesh_pipeline';
 import { registerMeshBatchPass_WebGPU } from '../3d/mesh_pipeline.wgpu';
@@ -15,7 +16,7 @@ import { registerCRT_WebGL } from '../post/crt_pipeline';
 import { registerDeviceQuantize_WebGL } from '../post/device_quantize_pipeline';
 import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
-import { AnyBackend, CRTPipelineState, DeviceQuantizePipelineState, FogUniforms, FrameSharedState, Framebuffer2DPipelineState, GPUBackend, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry, RenderPassToken, SkyboxPipelineState } from './pipeline_interfaces';
+import { AnyBackend, CRTPipelineState, DeviceQuantizePipelineState, FogUniforms, FrameSharedState, Framebuffer2DPipelineState, GPUBackend, HostOverlayPipelineState, MeshBatchPipelineState, ParticlePipelineState, PassEncoder, RenderContext, RenderGraphSlot, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, RenderPassStateRegistry, RenderPassToken, SkyboxPipelineState } from './pipeline_interfaces';
 import { checkWebGLError } from './webgl/webgl.helpers';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { registerHeadlessPasses } from '../headless/headless_render_passes';
@@ -27,6 +28,7 @@ type PassStateTypes = {
 	meshbatch: MeshBatchPipelineState;
 	particles: ParticlePipelineState;
 	framebuffer_2d: Framebuffer2DPipelineState;
+	host_overlay: HostOverlayPipelineState;
 	device_quantize: DeviceQuantizePipelineState;
 	crt: CRTPipelineState;
 	frame_shared: FrameSharedState;
@@ -87,6 +89,7 @@ export class RenderPassLibrary {
 		registerParticlesPass_WebGPU(this);
 		registerSolidColorPass_WebGPU(this);
 		registerCRT_WebGPU(this);
+		registerHostOverlayPass_WebGPU(this);
 	}
 
 	private registerBuiltinPassesWebGL() {
@@ -130,6 +133,7 @@ export class RenderPassLibrary {
 
 		// CRT (WebGL)
 		registerCRT_WebGL(this); // Registers program + execution
+		registerHostOverlayPass_WebGL(this);
 
 		// FrameShared
 		this.register({
@@ -143,6 +147,7 @@ export class RenderPassLibrary {
 
 	private registerBuiltinPassesHeadless() {
 		registerHeadlessPasses(this);
+		registerHostOverlayPass_Headless(this);
 	}
 
 	public validatePassResources(passId: string, backend: GPUBackend): void {
@@ -152,7 +157,6 @@ export class RenderPassLibrary {
 			if (idx < 0) return;
 			pass = this.passes[idx];
 			const layout = pass.bindingLayout; if (!layout) return;
-			const gv = $.view;
 			const layoutUniforms = Array.isArray(layout.uniforms) ? layout.uniforms : [];
 			if (layoutUniforms.includes('FrameUniforms') && !backend.bindUniformBufferBase) {
 				console.warn(`[validate] ${pass.name}: backend lacks uniform buffer binding API`);
@@ -422,28 +426,29 @@ export class RenderPassLibrary {
 						const baseTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
 						const deviceTex = deviceColorEnabled ? ctx.getTex(deviceColorHandle) : null;
 						const colorTex = useDither ? deviceTex : baseTex;
-						// TODO: Move CRT state setup to prepare()?
-						const applyCrt = !!gv.crt_postprocessing_enabled;
-						this.setState('crt', {
-							width: gv.offscreenCanvasSize.x,
-							height: gv.offscreenCanvasSize.y,
-							baseWidth: gv.viewportSize.x,
-							baseHeight: gv.viewportSize.y,
-							colorTex,
-							options: {
-								enableNoise: applyCrt && !!gv.enable_noise,
-								enableColorBleed: applyCrt && !!gv.enable_colorbleed,
-								enableScanlines: applyCrt && !!gv.enable_scanlines,
-								enableBlur: applyCrt && !!gv.enable_blur,
-								enableGlow: applyCrt && !!gv.enable_glow,
-								enableFringing: applyCrt && !!gv.enable_fringing,
-								enableAperture: applyCrt && !!gv.enable_aperture,
-								noiseIntensity: gv.noiseIntensity,
-								colorBleed: gv.colorBleed,
-								blurIntensity: gv.blurIntensity,
-								glowColor: gv.glowColor,
-							},
-						});
+						if (desc.id === 'crt') {
+							const applyCrt = !!gv.crt_postprocessing_enabled;
+							this.setState('crt', {
+								width: gv.offscreenCanvasSize.x,
+								height: gv.offscreenCanvasSize.y,
+								baseWidth: gv.viewportSize.x,
+								baseHeight: gv.viewportSize.y,
+								colorTex,
+								options: {
+									enableNoise: applyCrt && !!gv.enable_noise,
+									enableColorBleed: applyCrt && !!gv.enable_colorbleed,
+									enableScanlines: applyCrt && !!gv.enable_scanlines,
+									enableBlur: applyCrt && !!gv.enable_blur,
+									enableGlow: applyCrt && !!gv.enable_glow,
+									enableFringing: applyCrt && !!gv.enable_fringing,
+									enableAperture: applyCrt && !!gv.enable_aperture,
+									noiseIntensity: gv.noiseIntensity,
+									colorBleed: gv.colorBleed,
+									blurIntensity: gv.blurIntensity,
+									glowColor: gv.glowColor,
+								},
+							});
+						}
 						this.execute(desc.id, null);
 					} else if (isStateOnly) {
 						// Even for state-only passes, route through execute() to keep behavior uniform.

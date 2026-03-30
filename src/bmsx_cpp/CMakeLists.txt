@@ -131,7 +131,7 @@ add_library(bmsx_core STATIC
 	emulator/font.cpp
 	emulator/devices/dma_controller.cpp
 	emulator/devices/imgdec_controller.cpp
-	emulator/api.cpp
+	emulator/firmware_api.cpp
 	emulator/disassembler.cpp
 	emulator/lua_globals.cpp
 	emulator/lua_heap_usage.cpp

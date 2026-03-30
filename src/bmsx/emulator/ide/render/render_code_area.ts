@@ -1,4 +1,4 @@
-import type { Api } from '../../api';
+import type { OverlayApi as Api } from '../../overlay_api';
 import type { CachedHighlight, CursorScreenInfo } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
@@ -11,7 +11,7 @@ import { ide_state } from '../ide_state';
 import { drawEditorColoredText } from '../text_renderer';
 import { getBreakpointsForChunk } from '../ide_debugger';
 import { getActiveCodeTabContext } from '../editor_tabs';
-import { api } from '../../runtime';
+import { api } from '../../overlay_api';
 import { computeSelectionSlice, ensureVisualLines, getVisualLineCount, visualIndexToSegment } from '../text_utils';
 import { drawCursor } from './render_caret';
 import type { Font } from '../../font';

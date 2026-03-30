@@ -186,7 +186,9 @@ MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const Mac
 		}
 		config.stagingBytes = static_cast<uint32_t>(value);
 	}
-	config.frameBufferBytes = static_cast<uint32_t>(machine.viewportWidth) * static_cast<uint32_t>(machine.viewportHeight) * 4u;
+	const uint32_t frameBufferWidth = static_cast<uint32_t>(machine.viewportWidth);
+	const uint32_t frameBufferHeight = static_cast<uint32_t>(machine.viewportHeight);
+	config.frameBufferBytes = frameBufferWidth * frameBufferHeight * 4u;
 	if (machine.skyboxFaceBytes) {
 		const i32 value = *machine.skyboxFaceBytes;
 		if (value <= 0) {

@@ -1,5 +1,5 @@
 #include "runtime.h"
-#include "api.h"
+#include "firmware_api.h"
 #include "number_format.h"
 #include "../core/engine_core.h"
 #include "../rompack/rompack.h"
@@ -1414,6 +1414,24 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_rd_status_ready", valueNumber(static_cast<double>(VDP_RD_STATUS_READY)));
 	setGlobal("sys_vdp_rd_status_overflow", valueNumber(static_cast<double>(VDP_RD_STATUS_OVERFLOW)));
 	setGlobal("sys_vdp_status_vblank", valueNumber(static_cast<double>(VDP_STATUS_VBLANK)));
+	setGlobal("sys_vdp_layer_world", valueNumber(0.0));
+	setGlobal("sys_vdp_layer_ui", valueNumber(1.0));
+	setGlobal("sys_vdp_layer_ide", valueNumber(2.0));
+	setGlobal("sys_io_write_ptr", valueNumber(static_cast<double>(IO_WRITE_PTR_ADDR)));
+	setGlobal("sys_io_buffer_base", valueNumber(static_cast<double>(IO_BUFFER_BASE)));
+	setGlobal("sys_io_command_stride", valueNumber(static_cast<double>(IO_COMMAND_STRIDE)));
+	setGlobal("sys_io_arg_stride", valueNumber(static_cast<double>(IO_ARG_STRIDE)));
+	setGlobal("sys_io_command_capacity", valueNumber(static_cast<double>(IO_COMMAND_CAPACITY)));
+	setGlobal("sys_io_payload_write_ptr", valueNumber(static_cast<double>(IO_PAYLOAD_WRITE_PTR_ADDR)));
+	setGlobal("sys_io_payload_buffer_base", valueNumber(static_cast<double>(IO_PAYLOAD_BUFFER_BASE)));
+	setGlobal("sys_io_payload_capacity", valueNumber(static_cast<double>(IO_PAYLOAD_CAPACITY)));
+	setGlobal("sys_io_cmd_vdp_clear", valueNumber(static_cast<double>(IO_CMD_VDP_CLEAR)));
+	setGlobal("sys_io_cmd_vdp_fill_rect", valueNumber(static_cast<double>(IO_CMD_VDP_FILL_RECT)));
+	setGlobal("sys_io_cmd_vdp_blit", valueNumber(static_cast<double>(IO_CMD_VDP_BLIT)));
+	setGlobal("sys_io_cmd_vdp_draw_line", valueNumber(static_cast<double>(IO_CMD_VDP_DRAW_LINE)));
+	setGlobal("sys_io_cmd_vdp_glyph_run", valueNumber(static_cast<double>(IO_CMD_VDP_GLYPH_RUN)));
+	setGlobal("sys_io_cmd_vdp_tile_run", valueNumber(static_cast<double>(IO_CMD_VDP_TILE_RUN)));
+	setGlobal("sys_io_vdp_tile_handle_none", valueNumber(static_cast<double>(IO_VDP_TILE_HANDLE_NONE)));
 	setGlobal("sys_irq_flags", valueNumber(static_cast<double>(IO_IRQ_FLAGS)));
 	setGlobal("sys_irq_ack", valueNumber(static_cast<double>(IO_IRQ_ACK)));
 	setGlobal("sys_dma_src", valueNumber(static_cast<double>(IO_DMA_SRC)));
@@ -1433,6 +1451,16 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_rom_cart_base", valueNumber(static_cast<double>(CART_ROM_BASE)));
 	setGlobal("sys_rom_overlay_base", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
 	setGlobal("sys_rom_overlay_size", valueNumber(static_cast<double>(m_memory.overlayRomSize())));
+	registerNativeFunction("sys_palette_color", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+		const int index = static_cast<int>(std::floor(asNumber(args.at(0))));
+		const Color color = api().palette_color(index);
+		Table* table = m_cpu.createTable(0, 4);
+		table->set(key("r"), valueNumber(static_cast<double>(color.r)));
+		table->set(key("g"), valueNumber(static_cast<double>(color.g)));
+		table->set(key("b"), valueNumber(static_cast<double>(color.b)));
+		table->set(key("a"), valueNumber(static_cast<double>(color.a)));
+		out.push_back(valueTable(table));
+	});
 	refreshMemoryMapGlobals();
 	setGlobal("irq_dma_done", valueNumber(static_cast<double>(IRQ_DMA_DONE)));
 	setGlobal("irq_dma_error", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));
@@ -3277,6 +3305,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	auto appendImgEntry = [this, imgTable, key, str, appendRomAssetFields, formatAssetTokenKey](AssetToken token, const ImgAsset& imgAsset) {
 		auto* imgEntry = m_cpu.createTable(0, 8);
 		appendRomAssetFields(imgEntry, imgAsset.rom, imgAsset.id);
+		imgEntry->set(key("handle"), valueNumber(static_cast<double>(m_memory.resolveAssetHandle(imgAsset.id))));
 		imgEntry->set(key("imgmeta"), valueTable(buildImgMetaTable(m_cpu, imgAsset.meta, key)));
 		imgTable->set(str(formatAssetTokenKey(token)), valueTable(imgEntry));
 	};
@@ -3296,6 +3325,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 	auto appendAudioEntry = [this, audioTable, key, str, appendRomAssetFields, formatAssetTokenKey](AssetToken token, const AudioAsset& audioAsset) {
 		auto* audioEntry = m_cpu.createTable(0, 6);
 		appendRomAssetFields(audioEntry, audioAsset.rom, audioAsset.id);
+		audioEntry->set(key("handle"), valueNumber(static_cast<double>(m_memory.resolveAssetHandle(audioAsset.id))));
 		audioEntry->set(key("audiometa"), valueTable(buildAudioMetaTable(m_cpu, audioAsset.meta, key)));
 		audioTable->set(str(formatAssetTokenKey(token)), valueTable(audioEntry));
 	};

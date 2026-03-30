@@ -88,6 +88,10 @@ export type VdpIoHandler = {
 	readVdpData(): number;
 };
 
+export type IoWriteHandler = {
+	onIoWrite(addr: number, value: Value): void;
+};
+
 export type MemoryInit = {
 	engineRom: Uint8Array;
 	cartRom?: Uint8Array | null;
@@ -116,6 +120,7 @@ export class Memory {
 	private readonly ioSlots: Value[];
 	private vramWriter: VramWriteSink;
 	private vdpIoHandler: VdpIoHandler;
+	private ioWriteHandler: IoWriteHandler | null = null;
 	private readonly vramScratch = new Uint8Array(4);
 
 	private assetEntries: AssetEntry[] = [];
@@ -164,6 +169,10 @@ export class Memory {
 
 	public setVdpIoHandler(handler: VdpIoHandler): void {
 		this.vdpIoHandler = handler;
+	}
+
+	public setIoWriteHandler(handler: IoWriteHandler): void {
+		this.ioWriteHandler = handler;
 	}
 
 	public getOverlayRomSize(): number {
@@ -932,6 +941,9 @@ export class Memory {
 	public writeValue(addr: number, value: Value): void {
 		if (this.isIoAddress(addr)) {
 			this.ioSlots[this.ioIndex(addr)] = value;
+			if (this.ioWriteHandler !== null) {
+				this.ioWriteHandler.onIoWrite(addr, value);
+			}
 			return;
 		}
 		if (typeof value !== 'number') {

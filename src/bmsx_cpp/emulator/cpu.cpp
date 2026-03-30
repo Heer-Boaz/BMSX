@@ -72,7 +72,7 @@ static inline int ceilDiv16(int value) {
 }
 
 static std::string formatNonFunctionCallError(Value callee, const StringPool& stringPool,
-												 const std::optional<SourceRange>& range) {
+													const std::optional<SourceRange>& range) {
 	std::string message = "Attempted to call a non-function value.";
 	message += " callee=" + std::string(valueTypeName(callee)) + "(" + valueToString(callee, stringPool) + ")";
 	if (range.has_value()) {

@@ -1,6 +1,7 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
+require('vdp_firmware')
 local textflow = require('textflow')
 
 local boot_delay = 2.0

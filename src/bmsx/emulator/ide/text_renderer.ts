@@ -1,7 +1,7 @@
 import type { EditorFont } from '../editor_font';
 import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from './text_utils';
 import * as constants from './constants';
-import { api } from '../runtime';
+import { api } from '../overlay_api';
 import { splitText } from './text/source_text';
 
 let CASE_INSENSITIVE_EDITOR = true;

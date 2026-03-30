@@ -6,7 +6,8 @@ import { ide_state } from '../ide_state';
 import { getActiveResourceViewer } from '../resource_viewer';
 import { drawEditorText } from '../text_renderer';
 import { measureText, truncateTextToWidth } from '../text_utils';
-import { api, Runtime } from '../../runtime';
+import { Runtime } from '../../runtime';
+import { api } from '../../overlay_api';
 
 export function renderStatusBar(): void {
 	const runtime = Runtime.instance;

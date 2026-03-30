@@ -24,6 +24,7 @@ constexpr uint32_t VDP_RD_SURFACE_FRAMEBUFFER = 3u;
 constexpr uint32_t VDP_RD_SURFACE_COUNT = 4u;
 constexpr uint32_t VDP_RD_BUDGET_BYTES = 4096u;
 constexpr uint32_t VDP_RD_MAX_CHUNK_PIXELS = 256u;
+constexpr size_t BLITTER_FIFO_CAPACITY = 4096u;
 constexpr size_t VRAM_GARBAGE_CHUNK_BYTES = 64u * 1024u;
 constexpr uint32_t VRAM_GARBAGE_SPACE_SALT = 0x5652414dU;
 constexpr int VRAM_GARBAGE_WEIGHT_BLOCK = 1;
@@ -216,7 +217,7 @@ VDP::VDP(Memory& memory)
 	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES) {
 	m_memory.setVramWriter(this);
 	m_memory.setVdpIoHandler(this);
-	m_frameBufferCommands.reserve(2048);
+	m_blitterQueue.reserve(BLITTER_FIFO_CAPACITY);
 	m_vramMachineSeed = nextVramMachineSeed();
 	m_vramBootSeed = nextVramBootSeed();
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
@@ -247,9 +248,6 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 		throw BMSX_RUNTIME_ERROR("[VDP] VRAM write exceeds slot bounds.");
 	}
 	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
-	}
 	size_t remaining = length;
 	size_t cursor = 0;
 	uint32_t row = offset / stride;
@@ -280,8 +278,6 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 void VDP::beginFrame() {
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
 	m_readOverflow = false;
-	m_frameBufferClearColor = FrameBufferColor{0u, 0u, 0u, 0u};
-	m_frameBufferClearRequested = true;
 }
 
 VDP::FrameBufferColor VDP::packFrameBufferColor(const Color& color) const {
@@ -293,39 +289,37 @@ VDP::FrameBufferColor VDP::packFrameBufferColor(const Color& color) const {
 	};
 }
 
-void VDP::resetFrameBufferCommands() {
-	m_frameBufferCommands.clear();
-	m_frameBufferClearRequested = false;
-	m_frameBufferSourceIndex = 0;
+u32 VDP::nextBlitterSequence() {
+	const u32 seq = m_blitterSequence;
+	m_blitterSequence += 1u;
+	return seq;
 }
 
-void VDP::ensureFrameBufferSurface() {
+void VDP::resetBlitterState() {
+	m_blitterQueue.clear();
+	m_blitterSequence = 0u;
+	m_blitterError = false;
+}
+
+void VDP::enqueueBlitterCommand(BlitterCommand&& command) {
+	if (m_blitterQueue.size() >= BLITTER_FIFO_CAPACITY) {
+		m_blitterError = true;
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Blitter FIFO overflow (4096 commands).");
+	}
+	m_blitterQueue.push_back(std::move(command));
+}
+
+void VDP::initializeFrameBufferSurface() {
 	auto* view = EngineCore::instance().view();
-	auto* texmanager = EngineCore::instance().texmanager();
-	if (!view) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] GameView not configured.");
-	}
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] TextureManager not configured.");
-	}
 	const uint32_t width = static_cast<uint32_t>(view->viewportSize.x);
 	const uint32_t height = static_cast<uint32_t>(view->viewportSize.y);
-	if (width == 0 || height == 0) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Invalid framebuffer dimensions.");
-	}
-	if (m_frameBufferWidth == width && m_frameBufferHeight == height) {
-		return;
-	}
-	if (!m_memory.hasAsset(FRAMEBUFFER_TEXTURE_KEY)) {
-		m_memory.registerImageSlotAt(
-			FRAMEBUFFER_TEXTURE_KEY,
-			VRAM_FRAMEBUFFER_BASE,
-			VRAM_FRAMEBUFFER_SIZE,
-			0,
-			false
-		);
-	}
-	auto& entry = m_memory.getAssetEntry(FRAMEBUFFER_TEXTURE_KEY);
+	auto& entry = m_memory.registerImageSlotAt(
+		FRAMEBUFFER_TEXTURE_KEY,
+		VRAM_FRAMEBUFFER_BASE,
+		VRAM_FRAMEBUFFER_SIZE,
+		0,
+		false
+	);
 	const uint32_t size = width * height * 4u;
 	if (size > entry.capacity) {
 		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Framebuffer surface exceeds VRAM capacity.");
@@ -338,65 +332,113 @@ void VDP::ensureFrameBufferSurface() {
 	entry.regionH = height;
 	m_frameBufferWidth = width;
 	m_frameBufferHeight = height;
-	if (!m_hasFrameBufferSlot) {
-		registerVramSlot(entry, FRAMEBUFFER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
-		m_hasFrameBufferSlot = true;
-	} else {
-		auto& slot = getVramSlotByTextureKey(FRAMEBUFFER_TEXTURE_KEY);
-		syncVramSlotTextureSize(slot);
+	const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+	m_frameBufferPriorityLayer.resize(pixelCount);
+	m_frameBufferPriorityZ.resize(pixelCount);
+	m_frameBufferPrioritySeq.resize(pixelCount);
+	std::fill(m_frameBufferPriorityLayer.begin(), m_frameBufferPriorityLayer.end(), static_cast<u8>(Layer2D::World));
+	std::fill(m_frameBufferPriorityZ.begin(), m_frameBufferPriorityZ.end(), -std::numeric_limits<f32>::infinity());
+	std::fill(m_frameBufferPrioritySeq.begin(), m_frameBufferPrioritySeq.end(), 0u);
+	registerVramSlot(entry, FRAMEBUFFER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
+}
+
+void VDP::resetFrameBufferPriority() {
+	std::fill(m_frameBufferPriorityLayer.begin(), m_frameBufferPriorityLayer.end(), static_cast<u8>(Layer2D::World));
+	std::fill(m_frameBufferPriorityZ.begin(), m_frameBufferPriorityZ.end(), -std::numeric_limits<f32>::infinity());
+	std::fill(m_frameBufferPrioritySeq.begin(), m_frameBufferPrioritySeq.end(), 0u);
+}
+
+VDP::BlitterSource VDP::resolveBlitterSource(u32 handle) const {
+	const auto& entry = m_memory.getAssetEntryByHandle(handle);
+	if (entry.type != Memory::AssetType::Image) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Asset handle is not an image.");
 	}
+	if ((entry.flags & ASSET_FLAG_VIEW) != 0u) {
+		const auto& base = m_memory.getAssetEntryByHandle(entry.ownerIndex);
+		const auto slotIt = std::find_if(m_vramSlots.begin(), m_vramSlots.end(), [this, &base](const VramSlot& candidate) {
+			return candidate.kind == VramSlotKind::Asset && m_memory.getAssetEntry(candidate.assetId).ownerIndex == base.ownerIndex;
+		});
+		const auto& slot = *slotIt;
+		return BlitterSource{
+			slot.surfaceId,
+			entry.regionX,
+			entry.regionY,
+			entry.regionW,
+			entry.regionH,
+		};
+	}
+	const auto slotIt = std::find_if(m_vramSlots.begin(), m_vramSlots.end(), [this, &entry](const VramSlot& candidate) {
+		return candidate.kind == VramSlotKind::Asset && m_memory.getAssetEntry(candidate.assetId).ownerIndex == entry.ownerIndex;
+	});
+	const auto& slot = *slotIt;
+	return BlitterSource{
+		slot.surfaceId,
+		0u,
+		0u,
+		entry.regionW,
+		entry.regionH,
+	};
 }
 
-void VDP::discardFrameBufferOps() {
-	resetFrameBufferCommands();
+void VDP::enqueueClear(const Color& color) {
+	BlitterCommand command;
+	command.type = BlitterCommandType::Clear;
+	command.seq = nextBlitterSequence();
+	command.color = packFrameBufferColor(color);
+	enqueueBlitterCommand(std::move(command));
 }
 
-void VDP::clearFrameBuffer(const Color& color) {
-	m_frameBufferClearColor = packFrameBufferColor(color);
-	m_frameBufferClearRequested = true;
-}
-
-void VDP::queueFrameBufferSpriteHandle(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color) {
-	FrameBufferCommand command;
-	command.type = FrameBufferCommandType::Sprite;
-	command.handle = handle;
-	command.x0 = x;
-	command.y0 = y;
+void VDP::enqueueBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight) {
+	(void)parallaxWeight;
+	BlitterCommand command;
+	command.type = BlitterCommandType::Blit;
+	command.seq = nextBlitterSequence();
 	command.z = z;
 	command.layer = layer;
+	command.source = resolveBlitterSource(handle);
+	command.dstX = x;
+	command.dstY = y;
 	command.scaleX = scaleX;
 	command.scaleY = scaleY;
 	command.flipH = flipH;
 	command.flipV = flipV;
-	command.sourceIndex = m_frameBufferSourceIndex++;
 	command.color = packFrameBufferColor(color);
-	m_frameBufferCommands.push_back(command);
+	enqueueBlitterCommand(std::move(command));
 }
 
-void VDP::queueFrameBufferRect(bool fill, f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color) {
-	if (fill) {
-		FrameBufferCommand command;
-		command.type = FrameBufferCommandType::Fill;
-		command.x0 = x0;
-		command.y0 = y0;
-		command.x1 = x1;
-		command.y1 = y1;
-		command.z = z;
-		command.layer = layer;
-		command.sourceIndex = m_frameBufferSourceIndex++;
-		command.color = packFrameBufferColor(color);
-		m_frameBufferCommands.push_back(command);
-		return;
-	}
-	queueFrameBufferLine(x0, y0, x1, y0, z, layer, color, 1.0f);
-	queueFrameBufferLine(x0, y1, x1, y1, z, layer, color, 1.0f);
-	queueFrameBufferLine(x0, y0, x0, y1, z, layer, color, 1.0f);
-	queueFrameBufferLine(x1, y0, x1, y1, z, layer, color, 1.0f);
+void VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 z, Layer2D layer) {
+	BlitterCommand command;
+	command.type = BlitterCommandType::CopyRect;
+	command.seq = nextBlitterSequence();
+	command.z = z;
+	command.layer = layer;
+	command.srcX = srcX;
+	command.srcY = srcY;
+	command.width = width;
+	command.height = height;
+	command.dstX = static_cast<f32>(dstX);
+	command.dstY = static_cast<f32>(dstY);
+	enqueueBlitterCommand(std::move(command));
 }
 
-void VDP::queueFrameBufferLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness) {
-	FrameBufferCommand command;
-	command.type = FrameBufferCommandType::Line;
+void VDP::enqueueFillRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color) {
+	BlitterCommand command;
+	command.type = BlitterCommandType::FillRect;
+	command.seq = nextBlitterSequence();
+	command.x0 = x0;
+	command.y0 = y0;
+	command.x1 = x1;
+	command.y1 = y1;
+	command.z = z;
+	command.layer = layer;
+	command.color = packFrameBufferColor(color);
+	enqueueBlitterCommand(std::move(command));
+}
+
+void VDP::enqueueDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness) {
+	BlitterCommand command;
+	command.type = BlitterCommandType::DrawLine;
+	command.seq = nextBlitterSequence();
 	command.x0 = x0;
 	command.y0 = y0;
 	command.x1 = x1;
@@ -404,26 +446,41 @@ void VDP::queueFrameBufferLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D la
 	command.z = z;
 	command.layer = layer;
 	command.thickness = thickness;
-	command.sourceIndex = m_frameBufferSourceIndex++;
 	command.color = packFrameBufferColor(color);
-	m_frameBufferCommands.push_back(command);
+	enqueueBlitterCommand(std::move(command));
 }
 
-void VDP::queueFrameBufferPoly(const std::vector<f32>& points, f32 z, const Color& color, f32 thickness, Layer2D layer) {
+void VDP::enqueueDrawRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color) {
+	enqueueDrawLine(x0, y0, x1, y0, z, layer, color, 1.0f);
+	enqueueDrawLine(x0, y1, x1, y1, z, layer, color, 1.0f);
+	enqueueDrawLine(x0, y0, x0, y1, z, layer, color, 1.0f);
+	enqueueDrawLine(x1, y0, x1, y1, z, layer, color, 1.0f);
+}
+
+void VDP::enqueueDrawPoly(const std::vector<f32>& points, f32 z, const Color& color, f32 thickness, Layer2D layer) {
 	if (points.size() < 4u) {
 		return;
 	}
 	for (size_t index = 0; index < points.size(); index += 2u) {
 		const size_t next = (index + 2u) % points.size();
-		queueFrameBufferLine(points[index], points[index + 1u], points[next], points[next + 1u], z, layer, color, thickness);
+		enqueueDrawLine(points[index], points[index + 1u], points[next], points[next + 1u], z, layer, color, thickness);
 	}
 }
 
-void VDP::queueFrameBufferGlyphs(const std::vector<std::string>& lines, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, RenderLayer layer) {
+void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer) {
 	if (!font) {
 		throw BMSX_RUNTIME_ERROR("[BmsxVDP] No font available for glyph rendering.");
 	}
-	const Layer2D targetLayer = renderLayerTo2dLayer(layer);
+	BlitterCommand command;
+	command.type = BlitterCommandType::GlyphRun;
+	command.seq = nextBlitterSequence();
+	command.z = z;
+	command.layer = layer;
+	command.lineHeight = static_cast<u32>(font->lineHeight());
+	command.color = packFrameBufferColor(color);
+	command.backgroundColor = backgroundColor.has_value()
+		? std::optional<FrameBufferColor>(packFrameBufferColor(*backgroundColor))
+		: std::nullopt;
 	f32 cursorY = y;
 	for (const auto& line : lines) {
 		if (line.empty()) {
@@ -433,69 +490,119 @@ void VDP::queueFrameBufferGlyphs(const std::vector<std::string>& lines, f32 x, f
 		f32 cursorX = x;
 		for (i32 glyphIndex = start; glyphIndex < static_cast<i32>(line.size()) && glyphIndex < end; glyphIndex += 1) {
 			const FontGlyph& glyph = font->getGlyph(line[glyphIndex]);
-			if (backgroundColor.has_value()) {
-				queueFrameBufferRect(true, cursorX, cursorY, cursorX + static_cast<f32>(glyph.advance), cursorY + static_cast<f32>(font->lineHeight()), z, targetLayer, *backgroundColor);
-			}
-			queueFrameBufferSpriteHandle(m_memory.resolveAssetHandle(glyph.imgid), cursorX, cursorY, z, targetLayer, 1.0f, 1.0f, false, false, color);
+			const BlitterSource source = resolveBlitterSource(m_memory.resolveAssetHandle(glyph.imgid));
+			GlyphRunGlyph blit;
+			blit.surfaceId = source.surfaceId;
+			blit.srcX = source.srcX;
+			blit.srcY = source.srcY;
+			blit.width = source.width;
+			blit.height = source.height;
+			blit.dstX = cursorX;
+			blit.dstY = cursorY;
+			blit.advance = static_cast<u32>(glyph.advance);
+			command.glyphs.push_back(blit);
 			cursorX += static_cast<f32>(glyph.advance);
 		}
 		cursorY += static_cast<f32>(font->lineHeight());
 	}
+	enqueueBlitterCommand(std::move(command));
 }
 
-const u8* VDP::getFrameBufferSourcePixels(const Memory::AssetEntry& entry) const {
-	if (!m_memory.isVramRange(entry.baseAddr, std::max<size_t>(1u, entry.baseSize))) {
-		return m_memory.getImagePixels(entry);
+void VDP::enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
+	const i32 frameWidth = static_cast<i32>(m_frameBufferWidth);
+	const i32 frameHeight = static_cast<i32>(m_frameBufferHeight);
+	const i32 totalWidth = cols * tileW;
+	const i32 totalHeight = rows * tileH;
+	i32 dstX = originX - scrollX;
+	i32 dstY = originY - scrollY;
+	i32 srcClipX = 0;
+	i32 srcClipY = 0;
+	i32 writeWidth = totalWidth;
+	i32 writeHeight = totalHeight;
+	if (dstX < 0) {
+		srcClipX = -dstX;
+		writeWidth += dstX;
+		dstX = 0;
 	}
-	return getAssetVramSlotByOwner(entry.ownerIndex).cpuReadback.data();
-}
-
-VDP::FrameBufferImageSource VDP::resolveFrameBufferImageSource(u32 handle) const {
-	const auto& entry = m_memory.getAssetEntryByHandle(handle);
-	if (entry.type != Memory::AssetType::Image) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Asset handle is not an image.");
+	if (dstY < 0) {
+		srcClipY = -dstY;
+		writeHeight += dstY;
+		dstY = 0;
 	}
-	if ((entry.flags & ASSET_FLAG_VIEW) != 0u) {
-		const auto& base = m_memory.getAssetEntryByHandle(entry.ownerIndex);
-		if (base.type != Memory::AssetType::Image) {
-			throw BMSX_RUNTIME_ERROR("[BmsxVDP] View owner is not an image.");
+	const i32 overflowX = (dstX + writeWidth) - frameWidth;
+	if (overflowX > 0) {
+		writeWidth -= overflowX;
+	}
+	const i32 overflowY = (dstY + writeHeight) - frameHeight;
+	if (overflowY > 0) {
+		writeHeight -= overflowY;
+	}
+	if (writeWidth <= 0 || writeHeight <= 0) {
+		return;
+	}
+	BlitterCommand command;
+	command.type = BlitterCommandType::TileRun;
+	command.seq = nextBlitterSequence();
+	command.z = z;
+	command.layer = layer;
+	for (i32 row = 0; row < rows; row += 1) {
+		const i32 base = row * cols;
+		for (i32 col = 0; col < cols; col += 1) {
+			const u32 handle = handles[static_cast<size_t>(base + col)];
+			if (handle == IO_VDP_TILE_HANDLE_NONE) {
+				continue;
+			}
+			const BlitterSource source = resolveBlitterSource(handle);
+			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
+				throw BMSX_RUNTIME_ERROR("[BmsxVDP] enqueueTileRun tile size mismatch.");
+			}
+			const i32 tileX = dstX + (col * tileW) - srcClipX;
+			const i32 tileY = dstY + (row * tileH) - srcClipY;
+			const i32 tileRight = tileX + tileW;
+			const i32 tileBottom = tileY + tileH;
+			if (tileRight <= 0 || tileBottom <= 0 || tileX >= frameWidth || tileY >= frameHeight) {
+				continue;
+			}
+			TileRunBlit blit;
+			blit.surfaceId = source.surfaceId;
+			blit.srcX = source.srcX;
+			blit.srcY = source.srcY;
+			blit.width = source.width;
+			blit.height = source.height;
+			blit.dstX = static_cast<f32>(tileX);
+			blit.dstY = static_cast<f32>(tileY);
+			command.tiles.push_back(blit);
 		}
-		return FrameBufferImageSource{
-			getFrameBufferSourcePixels(base),
-			entry.regionX,
-			entry.regionY,
-			base.baseStride,
-			entry.regionW,
-			entry.regionH,
-		};
 	}
-	return FrameBufferImageSource{
-		getFrameBufferSourcePixels(entry),
-		0u,
-		0u,
-		entry.baseStride,
-		entry.regionW,
-		entry.regionH,
-	};
+	enqueueBlitterCommand(std::move(command));
 }
 
-VDP::FrameBufferImageSource VDP::resolveFrameBufferSource(u32 handle) const {
-	return resolveFrameBufferImageSource(handle);
-}
-
-std::vector<u8>& VDP::getFrameBufferPixels() {
-	return getVramSlotByTextureKey(FRAMEBUFFER_TEXTURE_KEY).cpuReadback;
-}
-
-void VDP::blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a) {
+void VDP::blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 g, u8 b, u8 a, Layer2D layer, f32 z, u32 seq) {
 	if (a == 0u) {
 		return;
+	}
+	const size_t pixelIndex = index >> 2u;
+	const auto currentLayer = static_cast<Layer2D>(m_frameBufferPriorityLayer[pixelIndex]);
+	if (layer < currentLayer) {
+		return;
+	}
+	if (layer == currentLayer) {
+		const f32 currentZ = m_frameBufferPriorityZ[pixelIndex];
+		if (z < currentZ) {
+			return;
+		}
+		if (z == currentZ && seq < m_frameBufferPrioritySeq[pixelIndex]) {
+			return;
+		}
 	}
 	if (a == 255u) {
 		pixels[index + 0u] = r;
 		pixels[index + 1u] = g;
 		pixels[index + 2u] = b;
 		pixels[index + 3u] = 255u;
+		m_frameBufferPriorityLayer[pixelIndex] = static_cast<u8>(layer);
+		m_frameBufferPriorityZ[pixelIndex] = z;
+		m_frameBufferPrioritySeq[pixelIndex] = seq;
 		return;
 	}
 	const u32 inverse = 255u - a;
@@ -503,13 +610,16 @@ void VDP::blendFrameBufferPixel(std::vector<u8>& pixels, size_t index, u8 r, u8 
 	pixels[index + 1u] = static_cast<u8>(((static_cast<u32>(g) * a) + (static_cast<u32>(pixels[index + 1u]) * inverse) + 127u) / 255u);
 	pixels[index + 2u] = static_cast<u8>(((static_cast<u32>(b) * a) + (static_cast<u32>(pixels[index + 2u]) * inverse) + 127u) / 255u);
 	pixels[index + 3u] = static_cast<u8>(a + ((static_cast<u32>(pixels[index + 3u]) * inverse) + 127u) / 255u);
+	m_frameBufferPriorityLayer[pixelIndex] = static_cast<u8>(layer);
+	m_frameBufferPriorityZ[pixelIndex] = z;
+	m_frameBufferPrioritySeq[pixelIndex] = seq;
 }
 
-void VDP::rasterizeFrameBufferFill(std::vector<u8>& pixels, const FrameBufferCommand& command) {
-	i32 left = static_cast<i32>(std::round(command.x0));
-	i32 top = static_cast<i32>(std::round(command.y0));
-	i32 right = static_cast<i32>(std::round(command.x1));
-	i32 bottom = static_cast<i32>(std::round(command.y1));
+void VDP::rasterizeFrameBufferFill(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, const FrameBufferColor& color, Layer2D layer, f32 z, u32 seq) {
+	i32 left = static_cast<i32>(std::round(x0));
+	i32 top = static_cast<i32>(std::round(y0));
+	i32 right = static_cast<i32>(std::round(x1));
+	i32 bottom = static_cast<i32>(std::round(y1));
 	if (right < left) {
 		std::swap(left, right);
 	}
@@ -523,64 +633,66 @@ void VDP::rasterizeFrameBufferFill(std::vector<u8>& pixels, const FrameBufferCom
 	for (i32 y = top; y < bottom; ++y) {
 		size_t index = (static_cast<size_t>(y) * static_cast<size_t>(m_frameBufferWidth) + static_cast<size_t>(left)) * 4u;
 		for (i32 x = left; x < right; ++x) {
-			blendFrameBufferPixel(pixels, index, command.color.r, command.color.g, command.color.b, command.color.a);
+			blendFrameBufferPixel(pixels, index, color.r, color.g, color.b, color.a, layer, z, seq);
 			index += 4u;
 		}
 	}
 }
 
-void VDP::rasterizeFrameBufferLine(std::vector<u8>& pixels, const FrameBufferCommand& command) {
-	i32 x0 = static_cast<i32>(std::round(command.x0));
-	i32 y0 = static_cast<i32>(std::round(command.y0));
-	const i32 x1 = static_cast<i32>(std::round(command.x1));
-	const i32 y1 = static_cast<i32>(std::round(command.y1));
-	const i32 dx = std::abs(x1 - x0);
-	const i32 dy = std::abs(y1 - y0);
-	const i32 sx = x0 < x1 ? 1 : -1;
-	const i32 sy = y0 < y1 ? 1 : -1;
+void VDP::rasterizeFrameBufferLine(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, f32 thicknessValue, const FrameBufferColor& color, Layer2D layer, f32 z, u32 seq) {
+	i32 currentX = static_cast<i32>(std::round(x0));
+	i32 currentY = static_cast<i32>(std::round(y0));
+	const i32 targetX = static_cast<i32>(std::round(x1));
+	const i32 targetY = static_cast<i32>(std::round(y1));
+	const i32 dx = std::abs(targetX - currentX);
+	const i32 dy = std::abs(targetY - currentY);
+	const i32 sx = currentX < targetX ? 1 : -1;
+	const i32 sy = currentY < targetY ? 1 : -1;
 	i32 err = dx - dy;
-	const i32 thickness = std::max(1, static_cast<i32>(std::round(command.thickness)));
+	const i32 thickness = std::max(1, static_cast<i32>(std::round(thicknessValue)));
 	while (true) {
 		const i32 half = thickness >> 1;
-		for (i32 yy = y0 - half; yy < y0 - half + thickness; ++yy) {
+		for (i32 yy = currentY - half; yy < currentY - half + thickness; ++yy) {
 			if (yy < 0 || yy >= static_cast<i32>(m_frameBufferHeight)) {
 				continue;
 			}
-			for (i32 xx = x0 - half; xx < x0 - half + thickness; ++xx) {
+			for (i32 xx = currentX - half; xx < currentX - half + thickness; ++xx) {
 				if (xx < 0 || xx >= static_cast<i32>(m_frameBufferWidth)) {
 					continue;
 				}
 				const size_t index = (static_cast<size_t>(yy) * static_cast<size_t>(m_frameBufferWidth) + static_cast<size_t>(xx)) * 4u;
-				blendFrameBufferPixel(pixels, index, command.color.r, command.color.g, command.color.b, command.color.a);
+				blendFrameBufferPixel(pixels, index, color.r, color.g, color.b, color.a, layer, z, seq);
 			}
 		}
-		if (x0 == x1 && y0 == y1) {
+		if (currentX == targetX && currentY == targetY) {
 			return;
 		}
 		const i32 e2 = err << 1;
 		if (e2 > -dy) {
 			err -= dy;
-			x0 += sx;
+			currentX += sx;
 		}
 		if (e2 < dx) {
 			err += dx;
-			y0 += sy;
+			currentY += sy;
 		}
 	}
 }
 
-void VDP::rasterizeFrameBufferSprite(std::vector<u8>& pixels, const FrameBufferCommand& command) {
-	const FrameBufferImageSource source = resolveFrameBufferImageSource(command.handle);
-	const i32 dstW = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.width) * command.scaleX)));
-	const i32 dstH = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.height) * command.scaleY)));
-	const i32 dstX = static_cast<i32>(std::round(command.x0));
-	const i32 dstY = static_cast<i32>(std::round(command.y0));
+void VDP::rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource& source, f32 dstXValue, f32 dstYValue, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const FrameBufferColor& color, Layer2D layer, f32 z, u32 seq) {
+	const auto& sourceSurface = getReadSurface(source.surfaceId);
+	const u8* sourcePixels = getVramSlotByTextureKey(sourceSurface.textureKey).cpuReadback.data();
+	const u32 sourceStride = m_memory.getAssetEntry(sourceSurface.assetId).regionW * 4u;
+	const i32 dstW = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.width) * scaleX)));
+	const i32 dstH = std::max(1, static_cast<i32>(std::round(static_cast<f32>(source.height) * scaleY)));
+	const i32 dstX = static_cast<i32>(std::round(dstXValue));
+	const i32 dstY = static_cast<i32>(std::round(dstYValue));
 	for (i32 y = 0; y < dstH; ++y) {
 		const i32 targetY = dstY + y;
 		if (targetY < 0 || targetY >= static_cast<i32>(m_frameBufferHeight)) {
 			continue;
 		}
-		const i32 srcY = command.flipV
+		const i32 srcY = flipV
 			? static_cast<i32>(source.height) - 1 - ((y * static_cast<i32>(source.height)) / dstH)
 			: ((y * static_cast<i32>(source.height)) / dstH);
 		for (i32 x = 0; x < dstW; ++x) {
@@ -588,71 +700,111 @@ void VDP::rasterizeFrameBufferSprite(std::vector<u8>& pixels, const FrameBufferC
 			if (targetX < 0 || targetX >= static_cast<i32>(m_frameBufferWidth)) {
 				continue;
 			}
-			const i32 srcX = command.flipH
+			const i32 srcX = flipH
 				? static_cast<i32>(source.width) - 1 - ((x * static_cast<i32>(source.width)) / dstW)
 				: ((x * static_cast<i32>(source.width)) / dstW);
-			const size_t srcIndex = (static_cast<size_t>(source.regionY + static_cast<uint32_t>(srcY)) * static_cast<size_t>(source.stride))
-				+ (static_cast<size_t>(source.regionX + static_cast<uint32_t>(srcX)) * 4u);
-			const u8 srcA = source.pixels[srcIndex + 3u];
+			const size_t srcIndex = (static_cast<size_t>(source.srcY + static_cast<uint32_t>(srcY)) * static_cast<size_t>(sourceStride))
+				+ (static_cast<size_t>(source.srcX + static_cast<uint32_t>(srcX)) * 4u);
+			const u8 srcA = sourcePixels[srcIndex + 3u];
 			if (srcA == 0u) {
 				continue;
 			}
-			const u8 outA = static_cast<u8>((static_cast<u32>(srcA) * static_cast<u32>(command.color.a) + 127u) / 255u);
-			const u8 outR = static_cast<u8>((static_cast<u32>(source.pixels[srcIndex + 0u]) * static_cast<u32>(command.color.r) + 127u) / 255u);
-			const u8 outG = static_cast<u8>((static_cast<u32>(source.pixels[srcIndex + 1u]) * static_cast<u32>(command.color.g) + 127u) / 255u);
-			const u8 outB = static_cast<u8>((static_cast<u32>(source.pixels[srcIndex + 2u]) * static_cast<u32>(command.color.b) + 127u) / 255u);
+			const u8 outA = static_cast<u8>((static_cast<u32>(srcA) * static_cast<u32>(color.a) + 127u) / 255u);
+			const u8 outR = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 0u]) * static_cast<u32>(color.r) + 127u) / 255u);
+			const u8 outG = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 1u]) * static_cast<u32>(color.g) + 127u) / 255u);
+			const u8 outB = static_cast<u8>((static_cast<u32>(sourcePixels[srcIndex + 2u]) * static_cast<u32>(color.b) + 127u) / 255u);
 			const size_t dstIndex = (static_cast<size_t>(targetY) * static_cast<size_t>(m_frameBufferWidth) + static_cast<size_t>(targetX)) * 4u;
-			blendFrameBufferPixel(pixels, dstIndex, outR, outG, outB, outA);
+			blendFrameBufferPixel(pixels, dstIndex, outR, outG, outB, outA, layer, z, seq);
 		}
 	}
 }
 
-void VDP::flushFrameBufferOps() {
-	ensureFrameBufferSurface();
-	auto& pixels = getFrameBufferPixels();
-	if (m_frameBufferClearRequested) {
-		for (size_t index = 0; index < pixels.size(); index += 4u) {
-			pixels[index + 0u] = m_frameBufferClearColor.r;
-			pixels[index + 1u] = m_frameBufferClearColor.g;
-			pixels[index + 2u] = m_frameBufferClearColor.b;
-			pixels[index + 3u] = m_frameBufferClearColor.a;
+void VDP::copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 z, u32 seq) {
+	const size_t rowBytes = static_cast<size_t>(width) * 4u;
+	const bool overlapping =
+		dstX < srcX + width
+		&& dstX + width > srcX
+		&& dstY < srcY + height
+		&& dstY + height > srcY;
+	const i32 startRow = overlapping && dstY > srcY ? height - 1 : 0;
+	const i32 endRow = overlapping && dstY > srcY ? -1 : height;
+	const i32 step = overlapping && dstY > srcY ? -1 : 1;
+	for (i32 row = startRow; row != endRow; row += step) {
+		const size_t sourceIndex = (static_cast<size_t>(srcY + row) * static_cast<size_t>(m_frameBufferWidth) + static_cast<size_t>(srcX)) * 4u;
+		const size_t targetIndex = (static_cast<size_t>(dstY + row) * static_cast<size_t>(m_frameBufferWidth) + static_cast<size_t>(dstX)) * 4u;
+		std::memmove(pixels.data() + targetIndex, pixels.data() + sourceIndex, rowBytes);
+		const size_t targetPixel = (static_cast<size_t>(dstY + row) * static_cast<size_t>(m_frameBufferWidth)) + static_cast<size_t>(dstX);
+		for (i32 col = 0; col < width; ++col) {
+			const size_t pixelIndex = targetPixel + static_cast<size_t>(col);
+			m_frameBufferPriorityLayer[pixelIndex] = static_cast<u8>(layer);
+			m_frameBufferPriorityZ[pixelIndex] = z;
+			m_frameBufferPrioritySeq[pixelIndex] = seq;
 		}
 	}
-	if (m_frameBufferCommands.size() > 1u) {
-		std::sort(m_frameBufferCommands.begin(), m_frameBufferCommands.end(), [](const FrameBufferCommand& a, const FrameBufferCommand& b) {
-			if (a.layer != b.layer) {
-				return static_cast<i32>(a.layer) < static_cast<i32>(b.layer);
-			}
-			if (a.z != b.z) {
-				return a.z < b.z;
-			}
-			return a.sourceIndex < b.sourceIndex;
-		});
+}
+
+void VDP::advanceBlitter(int cycles) {
+	(void)cycles;
+	if (m_blitterQueue.empty()) {
+		return;
 	}
-	for (const auto& command : m_frameBufferCommands) {
+	resetFrameBufferPriority();
+	auto& pixels = getVramSlotByTextureKey(FRAMEBUFFER_TEXTURE_KEY).cpuReadback;
+	for (const auto& command : m_blitterQueue) {
 		switch (command.type) {
-			case FrameBufferCommandType::Fill:
-				rasterizeFrameBufferFill(pixels, command);
+			case BlitterCommandType::Clear:
+				for (size_t index = 0; index < pixels.size(); index += 4u) {
+					pixels[index + 0u] = command.color.r;
+					pixels[index + 1u] = command.color.g;
+					pixels[index + 2u] = command.color.b;
+					pixels[index + 3u] = command.color.a;
+				}
+				resetFrameBufferPriority();
 				break;
-			case FrameBufferCommandType::Line:
-				rasterizeFrameBufferLine(pixels, command);
+			case BlitterCommandType::FillRect:
+				rasterizeFrameBufferFill(pixels, command.x0, command.y0, command.x1, command.y1, command.color, command.layer, command.z, command.seq);
 				break;
-			case FrameBufferCommandType::Sprite:
-				rasterizeFrameBufferSprite(pixels, command);
+			case BlitterCommandType::DrawLine:
+				rasterizeFrameBufferLine(pixels, command.x0, command.y0, command.x1, command.y1, command.thickness, command.color, command.layer, command.z, command.seq);
+				break;
+			case BlitterCommandType::Blit:
+				rasterizeFrameBufferBlit(pixels, command.source, command.dstX, command.dstY, command.scaleX, command.scaleY, command.flipH, command.flipV, command.color, command.layer, command.z, command.seq);
+				break;
+			case BlitterCommandType::CopyRect:
+				copyFrameBufferRect(pixels, command.srcX, command.srcY, command.width, command.height, static_cast<i32>(std::round(command.dstX)), static_cast<i32>(std::round(command.dstY)), command.layer, command.z, command.seq);
+				break;
+			case BlitterCommandType::GlyphRun:
+				if (command.backgroundColor.has_value()) {
+					for (const auto& glyph : command.glyphs) {
+						rasterizeFrameBufferFill(
+							pixels,
+							glyph.dstX,
+							glyph.dstY,
+							glyph.dstX + static_cast<f32>(glyph.advance),
+							glyph.dstY + static_cast<f32>(command.lineHeight),
+							*command.backgroundColor,
+							command.layer,
+							command.z,
+							command.seq
+						);
+					}
+				}
+				for (const auto& glyph : command.glyphs) {
+					rasterizeFrameBufferBlit(pixels, glyph, glyph.dstX, glyph.dstY, 1.0f, 1.0f, false, false, command.color, command.layer, command.z, command.seq);
+				}
+				break;
+			case BlitterCommandType::TileRun:
+				for (const auto& tile : command.tiles) {
+					rasterizeFrameBufferBlit(pixels, tile, tile.dstX, tile.dstY, 1.0f, 1.0f, false, false, FrameBufferColor{255u, 255u, 255u, 255u}, command.layer, command.z, command.seq);
+				}
 				break;
 		}
 	}
-	if (m_frameBufferClearRequested || !m_frameBufferCommands.empty()) {
-		TextureParams params;
-		auto* texmanager = EngineCore::instance().texmanager();
-		TextureHandle handle = EngineCore::instance().view()->textures[FRAMEBUFFER_TEXTURE_KEY];
-		texmanager->updateTexture(handle, pixels.data(), static_cast<i32>(m_frameBufferWidth), static_cast<i32>(m_frameBufferHeight), params);
-	}
-	resetFrameBufferCommands();
-}
-
-void VDP::ensureFrameBufferSurfaceReady() {
-	ensureFrameBufferSurface();
+	TextureParams params;
+	auto* texmanager = EngineCore::instance().texmanager();
+	TextureHandle handle = EngineCore::instance().view()->textures[FRAMEBUFFER_TEXTURE_KEY];
+	texmanager->updateTexture(handle, pixels.data(), static_cast<i32>(m_frameBufferWidth), static_cast<i32>(m_frameBufferHeight), params);
+	resetBlitterState();
 }
 
 uint32_t VDP::readVdpStatus() {
@@ -706,9 +858,17 @@ uint32_t VDP::readVdpData() {
 
 void VDP::initializeRegisters() {
 	const i32 dither = 0;
-	m_frameBufferWidth = 0;
-	m_frameBufferHeight = 0;
-	resetFrameBufferCommands();
+	const auto& frameBufferSurface = m_readSurfaces[VDP_RD_SURFACE_FRAMEBUFFER];
+	if (!frameBufferSurface.assetId.empty()) {
+		const auto& entry = m_memory.getAssetEntry(frameBufferSurface.assetId);
+		m_frameBufferWidth = entry.regionW;
+		m_frameBufferHeight = entry.regionH;
+	} else {
+		auto* view = EngineCore::instance().view();
+		m_frameBufferWidth = static_cast<uint32_t>(view->viewportSize.x);
+		m_frameBufferHeight = static_cast<uint32_t>(view->viewportSize.y);
+	}
+	resetBlitterState();
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
 	m_memory.writeValue(IO_VDP_LEGACY_CMD, valueNumber(0.0));
 	m_lastDitherType = dither;
@@ -745,10 +905,6 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	m_atlasSlotById.clear();
 	m_slotAtlasIds = {{-1, -1}};
 	m_vramSlots.clear();
-	m_hasFrameBufferSlot = false;
-	if (!m_imgDecController) {
-		throw BMSX_RUNTIME_ERROR("[VDP] ImgDecController not attached.");
-	}
 	m_imgDecController->clearExternalSlots();
 	m_readSurfaces = {};
 	for (auto& cache : m_readCaches) {
@@ -761,6 +917,7 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	m_hasSkybox = false;
 	m_vramBootSeed = nextVramBootSeed();
 	seedVramStaging();
+	initializeFrameBufferSurface();
 
 	std::vector<std::string> viewAssets;
 	viewAssets.reserve(assets.img.size());
@@ -772,10 +929,6 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 	RuntimeAssets& systemAssets = EngineCore::instance().systemAssets();
 	const ImgAsset* engineAtlasAsset = systemAssets.getImg(engineAtlasName);
-
-	if (!engineAtlasAsset) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas missing from system assets.");
-	}
 
 	for (auto& entry : systemAssets.img) {
 		auto& imgAsset = entry.second;
@@ -976,9 +1129,6 @@ void VDP::restoreVramSlotTextures() {
 	const auto& engineEntry = m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
 	restoreVramSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
 	auto* view = EngineCore::instance().view();
-	if (!view) {
-		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
-	}
 	view->loadEngineAtlasTexture();
 	const auto& primaryEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 	const auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
@@ -989,27 +1139,15 @@ void VDP::restoreVramSlotTextures() {
 
 void VDP::captureVramTextureSnapshots() {
 	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
-	}
 	auto* backend = texmanager->backend();
-	if (!backend) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Backend not configured.");
-	}
 	for (auto& slot : m_vramSlots) {
 		if (slot.kind != VramSlotKind::Asset) {
 			continue;
 		}
 		auto& entry = m_memory.getAssetEntry(slot.assetId);
-		if (entry.regionW == 0 || entry.regionH == 0) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Snapshot capture slot missing dimensions for '" + slot.textureKey + "'.");
-		}
 		const size_t bytes = static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u;
 		slot.contextSnapshot.resize(bytes);
 		TextureHandle handle = texmanager->getTextureByUri(slot.textureKey);
-		if (!handle) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Snapshot capture texture missing for '" + slot.textureKey + "'.");
-		}
 		backend->readTextureRegion(
 			handle,
 			slot.contextSnapshot.data(),
@@ -1023,24 +1161,19 @@ void VDP::captureVramTextureSnapshots() {
 }
 
 void VDP::flushAssetEdits() {
+	auto* texmanager = EngineCore::instance().texmanager();
+	auto* backend = texmanager->backend();
+	if (!backend->readyForTextureUpload()) {
+		return;
+	}
+	auto* view = EngineCore::instance().view();
 	auto dirty = m_memory.consumeDirtyAssets();
 	if (dirty.empty()) {
 		return;
 	}
-	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
-	}
-	auto* view = EngineCore::instance().view();
-	if (!view) {
-		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
-	}
 	const std::string engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
 	for (const auto* entry : dirty) {
 		if (entry->type == Memory::AssetType::Image) {
-			if (entry->regionW == 0 || entry->regionH == 0) {
-				continue;
-			}
 			const uint32_t span = entry->capacity > 0 ? entry->capacity : 1u;
 			if (m_memory.isVramRange(entry->baseAddr, span)) {
 				continue;
@@ -1063,9 +1196,6 @@ void VDP::flushAssetEdits() {
 				view->textures[textureKey] = handle;
 				if (isEngineAtlas) {
 					ImgAsset* engineAsset = EngineCore::instance().systemAssets().getImg(engineAtlasName);
-					if (!engineAsset) {
-						throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas asset missing during texture upload.");
-					}
 					engineAsset->textureHandle = reinterpret_cast<uintptr_t>(handle);
 					engineAsset->uploaded = true;
 				}
@@ -1110,9 +1240,6 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 			throw BMSX_RUNTIME_ERROR("[VDP] Atlas " + std::to_string(atlasId) + " not registered.");
 		}
 		ImgAsset* atlasAsset = EngineCore::instance().resolveImgAsset(atlasIt->second);
-		if (!atlasAsset) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Atlas asset '" + atlasIt->second + "' not found.");
-		}
 		const uint32_t width = static_cast<uint32_t>(atlasAsset->meta.width);
 		const uint32_t height = static_cast<uint32_t>(atlasAsset->meta.height);
 		const uint32_t size = width * height * 4u;
@@ -1166,9 +1293,6 @@ void VDP::attachImgDecController(ImgDecController& controller) {
 }
 
 void VDP::setSkyboxImages(const SkyboxImageIds& ids) {
-	if (!m_imgDecController) {
-		throw BMSX_RUNTIME_ERROR("[VDP] ImgDecController not attached.");
-	}
 	const std::array<const std::string*, 6> faces = {{&ids.posx, &ids.negx, &ids.posy, &ids.negy, &ids.posz, &ids.negz}};
 	for (size_t index = 0; index < faces.size(); ++index) {
 		const std::string& assetId = *faces[index];
@@ -1204,9 +1328,6 @@ void VDP::setSkyboxImages(const SkyboxImageIds& ids) {
 		std::vector<u8> buffer(len);
 		m_memory.readBytes(base + static_cast<uint32_t>(start), buffer.data(), len);
 		auto& slot = m_skyboxSlots[index];
-		if (slot.capacity == 0) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Skybox slot not initialized.");
-		}
 		m_imgDecController->decodeToVram(std::move(buffer), slot.baseAddr, slot.capacity,
 			[asset](uint32_t width, uint32_t height, bool clipped) {
 				(void)clipped;
@@ -1243,7 +1364,7 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	const bool preserveEngineAtlasTexture = isEngineAtlas && handle;
 	if (!handle) {
 		auto* backend = texmanager->backend();
-		if (backend && backend->readyForTextureUpload()) {
+		if (backend->readyForTextureUpload()) {
 			VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
 			fillVramGarbageScratch(m_vramSeedPixel.data(), m_vramSeedPixel.size(), stream);
 			TextureParams params;
@@ -1258,9 +1379,6 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 		}
 	}
 	auto* view = EngineCore::instance().view();
-	if (!view) {
-		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
-	}
 	if (handle) {
 		if (!preserveEngineAtlasTexture) {
 			handle = texmanager->resizeTextureForKey(textureKey, static_cast<i32>(entry.regionW), static_cast<i32>(entry.regionH));
@@ -1281,7 +1399,24 @@ void VDP::registerVramSlot(const Memory::AssetEntry& entry, const std::string& t
 	slot.cpuReadback.resize(static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u);
 	m_vramSlots.push_back(std::move(slot));
 	registerReadSurface(surfaceId, entry.id, textureKey);
-	if (handle && !isEngineAtlas) {
+	if (isEngineAtlas) {
+		auto& engineSlot = m_vramSlots.back();
+		ImgAsset* engineAsset = EngineCore::instance().systemAssets().getImg(generateAtlasName(ENGINE_ATLAS_INDEX));
+		engineSlot.cpuReadback.assign(engineAsset->pixels.begin(), engineAsset->pixels.end());
+		if (handle) {
+			TextureParams params;
+			texmanager->updateTexture(
+				handle,
+				engineSlot.cpuReadback.data(),
+				static_cast<i32>(entry.regionW),
+				static_cast<i32>(entry.regionH),
+				params
+			);
+		}
+		invalidateReadCache(surfaceId);
+		return;
+	}
+	if (handle) {
 		seedVramSlotTexture(m_vramSlots.back());
 	}
 }
@@ -1341,24 +1476,6 @@ const VDP::VramSlot& VDP::getVramSlotByTextureKey(const std::string& textureKey)
 		}
 	}
 	throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not registered for texture '" + textureKey + "'.");
-}
-
-VDP::VramSlot& VDP::getAssetVramSlotByOwner(size_t ownerIndex) {
-	for (auto& slot : m_vramSlots) {
-		if (slot.kind == VramSlotKind::Asset && m_memory.getAssetEntry(slot.assetId).ownerIndex == ownerIndex) {
-			return slot;
-		}
-	}
-	throw BMSX_RUNTIME_ERROR("[VDP] No VRAM slot found for asset owner.");
-}
-
-const VDP::VramSlot& VDP::getAssetVramSlotByOwner(size_t ownerIndex) const {
-	for (const auto& slot : m_vramSlots) {
-		if (slot.kind == VramSlotKind::Asset && m_memory.getAssetEntry(slot.assetId).ownerIndex == ownerIndex) {
-			return slot;
-		}
-	}
-	throw BMSX_RUNTIME_ERROR("[VDP] No VRAM slot found for asset owner.");
 }
 
 uint32_t VDP::nextVramMachineSeed() const {
@@ -1445,18 +1562,9 @@ void VDP::seedVramStaging() {
 
 void VDP::seedVramSlotTexture(VramSlot& slot) {
 	auto& entry = m_memory.getAssetEntry(slot.assetId);
-	if (entry.regionW == 0 || entry.regionH == 0) {
-		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot missing dimensions for seeding.");
-	}
 	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
-	}
 	const size_t rowPixels = static_cast<size_t>(entry.regionW);
 	const size_t maxPixels = m_vramGarbageScratch.size() / 4u;
-	if (maxPixels == 0u) {
-		throw BMSX_RUNTIME_ERROR("[VDP] VRAM garbage scratch buffer is empty.");
-	}
 	slot.cpuReadback.resize(static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u);
 	VramGarbageStream stream{m_vramMachineSeed, m_vramBootSeed, VRAM_GARBAGE_SPACE_SALT, entry.baseAddr};
 	const size_t rowBytes = rowPixels * 4u;
@@ -1506,17 +1614,8 @@ void VDP::seedVramSlotTexture(VramSlot& slot) {
 
 void VDP::restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey) {
 	const bool isEngineAtlas = textureKey == ENGINE_ATLAS_TEXTURE_KEY;
-	if (entry.regionW == 0 || entry.regionH == 0) {
-		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot missing dimensions for seeding.");
-	}
 	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
-	}
 	auto* view = EngineCore::instance().view();
-	if (!view) {
-		throw BMSX_RUNTIME_ERROR("[VDP] GameView not configured.");
-	}
 	auto& slot = getVramSlotByTextureKey(textureKey);
 	const size_t snapshotBytes = static_cast<size_t>(entry.regionW) * static_cast<size_t>(entry.regionH) * 4u;
 	const bool restoreSnapshot = slot.contextSnapshot.size() == snapshotBytes;
@@ -1553,9 +1652,6 @@ void VDP::restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::str
 	}
 	if (isEngineAtlas) {
 		ImgAsset* engineAsset = EngineCore::instance().systemAssets().getImg(generateAtlasName(ENGINE_ATLAS_INDEX));
-		if (!engineAsset) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas asset missing during restore.");
-		}
 		slot.cpuReadback.assign(engineAsset->pixels.begin(), engineAsset->pixels.end());
 		texmanager->updateTexture(
 			handle,
@@ -1583,36 +1679,20 @@ void VDP::setSlotTextureSize(const std::string& textureKey, uint32_t width, uint
 }
 
 void VDP::registerReadSurface(uint32_t surfaceId, const std::string& assetId, const std::string& textureKey) {
-	if (surfaceId >= VDP_RD_SURFACE_COUNT) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Invalid read surface.");
-	}
 	m_readSurfaces[surfaceId].assetId = assetId;
 	m_readSurfaces[surfaceId].textureKey = textureKey;
 	invalidateReadCache(surfaceId);
 }
 
 const VDP::ReadSurface& VDP::getReadSurface(uint32_t surfaceId) const {
-	if (surfaceId >= VDP_RD_SURFACE_COUNT) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Invalid read surface.");
-	}
-	const auto& surface = m_readSurfaces[surfaceId];
-	if (surface.assetId.empty()) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Read surface not registered.");
-	}
-	return surface;
+	return m_readSurfaces[surfaceId];
 }
 
 void VDP::invalidateReadCache(uint32_t surfaceId) {
-	if (surfaceId >= VDP_RD_SURFACE_COUNT) {
-		return;
-	}
 	m_readCaches[surfaceId].width = 0;
 }
 
 VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y) {
-	if (surfaceId >= VDP_RD_SURFACE_COUNT) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Invalid read surface.");
-	}
 	auto& cache = m_readCaches[surfaceId];
 	if (cache.width == 0 || cache.y != y || x < cache.x0 || x >= cache.x0 + cache.width) {
 		prefetchReadCache(surfaceId, surface, x, y);
@@ -1623,10 +1703,6 @@ VDP::ReadCache& VDP::getReadCache(uint32_t surfaceId, const ReadSurface& surface
 void VDP::prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint32_t x, uint32_t y) {
 	auto& entry = m_memory.getAssetEntry(surface.assetId);
 	const uint32_t width = entry.regionW;
-	const uint32_t height = entry.regionH;
-	if (x >= width || y >= height) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Read cache prefetch out of bounds.");
-	}
 	const uint32_t maxPixelsByBudget = m_readBudgetBytes / 4u;
 	if (maxPixelsByBudget == 0) {
 		m_readOverflow = true;
@@ -1644,19 +1720,8 @@ void VDP::prefetchReadCache(uint32_t surfaceId, const ReadSurface& surface, uint
 
 std::vector<u8> VDP::readSurfacePixels(const ReadSurface& surface, uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
 	auto* texmanager = EngineCore::instance().texmanager();
-	if (!texmanager) {
-		throw BMSX_RUNTIME_ERROR("[VDP] TextureManager not configured.");
-	}
-	auto* backend = texmanager->backend();
-	if (!backend) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Backend not configured.");
-	}
-	TextureHandle handle = texmanager->getTextureByUri(surface.textureKey);
-	if (!handle) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Readback texture missing.");
-	}
 	std::vector<u8> out(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
-	backend->readTextureRegion(handle, out.data(), static_cast<i32>(width), static_cast<i32>(height),
+	texmanager->backend()->readTextureRegion(texmanager->getTextureByUri(surface.textureKey), out.data(), static_cast<i32>(width), static_cast<i32>(height),
 								static_cast<i32>(x), static_cast<i32>(y), {});
 	return out;
 }

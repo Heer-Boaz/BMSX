@@ -101,13 +101,12 @@ export function registerFramebuffer2DPass_WebGL(registry: RenderPassLibrary): vo
 			renderFrameBuffer(runtime, fbo as WebGLFramebuffer, state);
 		},
 		prepare: (backend: WebGLBackend, _state: RenderPassStateRegistry['framebuffer_2d']) => {
-			Runtime.instance.vdp.ensureFrameBufferSurfaceReady();
 			const state: RenderPassStateRegistry['framebuffer_2d'] = {
 				width: $.view.offscreenCanvasSize.x,
 				height: $.view.offscreenCanvasSize.y,
 				baseWidth: $.view.viewportSize.x,
 				baseHeight: $.view.viewportSize.y,
-				colorTex: $.view.textures[Runtime.instance.vdp.getFrameBufferTextureKey()],
+				colorTex: $.view.textures[Runtime.instance.vdp.frameBufferTextureKey],
 			};
 			registry.setState('framebuffer_2d', state);
 			const gl = backend.gl;

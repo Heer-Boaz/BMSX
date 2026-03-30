@@ -55,6 +55,7 @@ export type asset_token_key = string; // tokenKey(lo, hi) string
 export interface RomAsset {
 	resid: asset_id; // The resource ID of the asset.
 	type: asset_type; // The type of the asset.
+	handle?: number; // Runtime-resolved memory handle for firmware-facing MMIO code.
 	id_token_lo?: number; // 64-bit token (low 32)
 	id_token_hi?: number; // 64-bit token (high 32)
 	op?: RomAssetOp; // Optional patch operation for this asset.

@@ -8,7 +8,7 @@ import type {
 	RenderLayer
 } from '../render/shared/render_types';
 import { $ } from '../core/engine_core';
-import { consumeOverlayFrame, publishOverlayFrame, type EditorOverlayFrame } from '../render/editor/editor_overlay_queue';
+import { publishOverlayFrame, type EditorOverlayFrame } from '../render/editor/editor_overlay_queue';
 import type { Viewport } from '../rompack/rompack';
 import { RenderSubmission } from '../render/backend/pipeline_interfaces';
 
@@ -176,14 +176,5 @@ export class OverlayRenderer {
 	public abandonFrame(): void {
 		this.capturingFrame = false;
 		this.commands.length = 0;
-	}
-}
-
-export function drainOverlayFrameIntoSpriteQueue(): void {
-	const frame: EditorOverlayFrame = consumeOverlayFrame();
-	if (!frame) return;
-	const commands = frame.commands;
-	for (let i = 0; i < commands.length; i += 1) {
-		$.view.renderer.submit.typed(commands[i]);
 	}
 }

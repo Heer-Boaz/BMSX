@@ -3,10 +3,7 @@ import { taskGate } from '../core/taskgate';
 import { Runtime } from './runtime';
 import * as SkyboxPipeline from '../render/3d/skybox_pipeline';
 import { decodePngToRgba } from '../utils/image_decode';
-import {
-	renderLayerTo2dLayer,
-} from '../render/shared/render_types';
-import type { Layer2D, RenderLayer, SkyboxImageIds, color } from '../render/shared/render_types';
+import type { Layer2D, SkyboxImageIds, color } from '../render/shared/render_types';
 import type { RomAsset, RomImgAsset } from '../rompack/rompack';
 import {
 	ATLAS_PRIMARY_SLOT_ID,
@@ -25,6 +22,7 @@ import {
 	IO_VDP_RD_X,
 	IO_VDP_RD_Y,
 	IO_VDP_SECONDARY_ATLAS_ID,
+	IO_VDP_TILE_HANDLE_NONE,
 	VDP_ATLAS_ID_NONE,
 	VDP_RD_MODE_RGBA8888,
 	VDP_RD_STATUS_OVERFLOW,
@@ -425,58 +423,135 @@ type SkyboxSlot = {
 	entry: ImageWriteEntry;
 };
 
-type FrameBufferCommandType = 'sprite' | 'fill' | 'line';
-
-type FrameBufferColor = {
+export type VdpFrameBufferColor = {
 	r: number;
 	g: number;
 	b: number;
 	a: number;
 };
 
-type FrameBufferCommand = {
-	type: FrameBufferCommandType;
-	sourceIndex: number;
+export type VdpBlitterSource = {
+	surfaceId: number;
+	srcX: number;
+	srcY: number;
+	width: number;
+	height: number;
+};
+
+export type VdpGlyphRunGlyph = VdpBlitterSource & {
+	dstX: number;
+	dstY: number;
+	advance: number;
+};
+
+export type VdpTileRunBlit = VdpBlitterSource & {
+	dstX: number;
+	dstY: number;
+};
+
+export type VdpBlitterClearCommand = {
+	opcode: 'clear';
+	seq: number;
+	color: VdpFrameBufferColor;
+};
+
+export type VdpBlitterBlitCommand = {
+	opcode: 'blit';
+	seq: number;
 	layer: Layer2D;
 	z: number;
-	handle: number;
-	x0: number;
-	y0: number;
-	x1: number;
-	y1: number;
+	source: VdpBlitterSource;
+	dstX: number;
+	dstY: number;
 	scaleX: number;
 	scaleY: number;
 	flipH: boolean;
 	flipV: boolean;
-	thickness: number;
-	color: FrameBufferColor;
+	color: VdpFrameBufferColor;
+	parallaxWeight: number;
 };
 
-const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
+export type VdpBlitterCopyRectCommand = {
+	opcode: 'copy_rect';
+	seq: number;
+	layer: Layer2D;
+	z: number;
+	srcX: number;
+	srcY: number;
+	width: number;
+	height: number;
+	dstX: number;
+	dstY: number;
+};
 
-function createFrameBufferColor(): FrameBufferColor {
-	return { r: 255, g: 255, b: 255, a: 255 };
+export type VdpBlitterFillRectCommand = {
+	opcode: 'fill_rect';
+	seq: number;
+	layer: Layer2D;
+	z: number;
+	x0: number;
+	y0: number;
+	x1: number;
+	y1: number;
+	color: VdpFrameBufferColor;
+};
+
+export type VdpBlitterDrawLineCommand = {
+	opcode: 'draw_line';
+	seq: number;
+	layer: Layer2D;
+	z: number;
+	x0: number;
+	y0: number;
+	x1: number;
+	y1: number;
+	thickness: number;
+	color: VdpFrameBufferColor;
+};
+
+export type VdpBlitterGlyphRunCommand = {
+	opcode: 'glyph_run';
+	seq: number;
+	layer: Layer2D;
+	z: number;
+	lineHeight: number;
+	color: VdpFrameBufferColor;
+	backgroundColor: VdpFrameBufferColor | null;
+	glyphs: VdpGlyphRunGlyph[];
+};
+
+export type VdpBlitterTileRunCommand = {
+	opcode: 'tile_run';
+	seq: number;
+	layer: Layer2D;
+	z: number;
+	tiles: VdpTileRunBlit[];
+};
+
+export type VdpBlitterCommand =
+	| VdpBlitterClearCommand
+	| VdpBlitterBlitCommand
+	| VdpBlitterCopyRectCommand
+	| VdpBlitterFillRectCommand
+	| VdpBlitterDrawLineCommand
+	| VdpBlitterGlyphRunCommand
+	| VdpBlitterTileRunCommand;
+
+export interface VdpBlitterHost {
+	width: number;
+	height: number;
+	frameBufferTextureKey: string;
+	getSurface(surfaceId: number): { textureKey: string; width: number; height: number };
+	getShaderAtlasId(surfaceId: number): number;
 }
 
-function createFrameBufferCommand(): FrameBufferCommand {
-	return {
-		type: 'sprite',
-		sourceIndex: 0,
-		layer: 0,
-		z: 0,
-		handle: 0,
-		x0: 0,
-		y0: 0,
-		x1: 0,
-		y1: 0,
-		scaleX: 1,
-		scaleY: 1,
-		flipH: false,
-		flipV: false,
-		thickness: 1,
-		color: createFrameBufferColor(),
-	};
+export interface VdpBlitterExecutor {
+	readonly backendType: 'webgl2' | 'webgpu' | 'headless';
+	execute(host: VdpBlitterHost, commands: readonly VdpBlitterCommand[]): void;
 }
+
+export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
+const BLITTER_FIFO_CAPACITY = 4096;
 
 export class VDP implements VramWriteSink, VdpIoHandler {
 	private readonly assetUpdateGate = taskGate.group('asset:update');
@@ -498,20 +573,16 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private cpuReadbackByKey = new Map<string, Uint8Array>();
 	private skyboxSlots: SkyboxSlot[] = [];
 	private dirtySkybox = false;
-	private skyboxFaceIds: SkyboxImageIds | null = null;
+	private _skyboxFaceIds: SkyboxImageIds | null = null;
 	private lastDitherType = 0;
 	private imgDecController: ImgDecController | null = null;
-	private frameBufferEntry: AssetEntry | null = null;
-	private frameBufferSlot: AssetVramSlot | null = null;
-	private frameBufferWidth = 0;
-	private frameBufferHeight = 0;
-	private frameBufferClearRequested = false;
-	private readonly frameBufferClearColor = createFrameBufferColor();
-	private readonly frameBufferCommands: FrameBufferCommand[] = [];
-	private readonly frameBufferCommandPool: FrameBufferCommand[] = [];
-	private frameBufferSourceIndex = 0;
+	private _frameBufferWidth = 0;
+	private _frameBufferHeight = 0;
+	private readonly blitterQueue: VdpBlitterCommand[] = [];
+	private blitterSequence = 0;
 	public constructor(
 		private readonly memory: Memory,
+		private readonly blitterExecutor: VdpBlitterExecutor | null,
 	) {
 		this.memory.setVramWriter(this);
 		this.memory.setVdpIoHandler(this);
@@ -526,7 +597,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.imgDecController = controller;
 	}
 
-	private packFrameBufferColor(source: color): FrameBufferColor {
+	private packFrameBufferColor(source: color): VdpFrameBufferColor {
 		return {
 			r: Math.round(source.r * 255),
 			g: Math.round(source.g * 255),
@@ -535,47 +606,35 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		};
 	}
 
-	private acquireFrameBufferCommand(): FrameBufferCommand {
-		let command = this.frameBufferCommandPool.pop();
-		if (command === undefined) {
-			command = createFrameBufferCommand();
-		}
-		command.sourceIndex = this.frameBufferSourceIndex;
-		this.frameBufferSourceIndex += 1;
-		return command;
+	private nextBlitterSequence(): number {
+		const seq = this.blitterSequence;
+		this.blitterSequence += 1;
+		return seq;
 	}
 
-	private releaseFrameBufferCommand(command: FrameBufferCommand): void {
-		this.frameBufferCommandPool.push(command);
+	private resetBlitterState(): void {
+		this.blitterQueue.length = 0;
+		this.blitterSequence = 0;
 	}
 
-	private resetFrameBufferCommands(): void {
-		for (let index = 0; index < this.frameBufferCommands.length; index += 1) {
-			this.releaseFrameBufferCommand(this.frameBufferCommands[index]);
+	private enqueueBlitterCommand(command: VdpBlitterCommand): void {
+		if (this.blitterQueue.length >= BLITTER_FIFO_CAPACITY) {
+			throw new Error(`[BmsxVDP] Blitter FIFO overflow (${BLITTER_FIFO_CAPACITY} commands).`);
 		}
-		this.frameBufferCommands.length = 0;
-		this.frameBufferClearRequested = false;
-		this.frameBufferSourceIndex = 0;
+		this.blitterQueue.push(command);
 	}
 
-	private ensureFrameBufferSurface(): void {
-		const width = $.view.viewportSize.x | 0;
-		const height = $.view.viewportSize.y | 0;
-		if (width <= 0 || height <= 0) {
-			throw new Error('[BmsxVDP] Invalid framebuffer dimensions.');
-		}
-		if (this.frameBufferWidth === width && this.frameBufferHeight === height) {
-			return;
-		}
-		if (!this.memory.hasAsset(FRAMEBUFFER_TEXTURE_KEY)) {
-			this.memory.registerImageSlotAt({
+	private initializeFrameBufferSurface(): void {
+		const width = $.view.viewportSize.x;
+		const height = $.view.viewportSize.y;
+		const entry = this.memory.hasAsset(FRAMEBUFFER_TEXTURE_KEY)
+			? this.memory.getAssetEntry(FRAMEBUFFER_TEXTURE_KEY)
+			: this.memory.registerImageSlotAt({
 				id: FRAMEBUFFER_TEXTURE_KEY,
 				baseAddr: VRAM_FRAMEBUFFER_BASE,
 				capacityBytes: VRAM_FRAMEBUFFER_SIZE,
 				clear: false,
 			});
-		}
-		const entry = this.memory.getAssetEntry(FRAMEBUFFER_TEXTURE_KEY);
 		const size = width * height * 4;
 		if (size > entry.capacity) {
 			throw new Error(`[BmsxVDP] Framebuffer surface exceeds VRAM capacity (${size} > ${entry.capacity}).`);
@@ -586,106 +645,124 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		entry.regionY = 0;
 		entry.regionW = width;
 		entry.regionH = height;
-		this.frameBufferWidth = width;
-		this.frameBufferHeight = height;
-		this.frameBufferEntry = entry;
-		if (this.frameBufferSlot === null) {
-			this.registerVramSlot(entry, FRAMEBUFFER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
-			this.frameBufferSlot = this.getVramSlotByTextureKey(FRAMEBUFFER_TEXTURE_KEY);
-		} else {
-			this.syncVramSlotTextureSize(this.frameBufferSlot);
+		this._frameBufferWidth = width;
+		this._frameBufferHeight = height;
+		this.registerVramSlot(entry, FRAMEBUFFER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
+	}
+
+	private resolveBlitterSource(handle: number): VdpBlitterSource {
+		const entry = Runtime.instance.getAssetEntryByHandle(handle);
+		if (entry.type !== 'image') {
+			throw new Error(`[BmsxVDP] Asset handle ${handle} is not an image.`);
 		}
-	}
-
-	public discardFrameBufferOps(): void {
-		this.resetFrameBufferCommands();
-	}
-
-	public clearFrameBuffer(colorValue: color): void {
-		const packed = this.packFrameBufferColor(colorValue);
-		this.frameBufferClearColor.r = packed.r;
-		this.frameBufferClearColor.g = packed.g;
-		this.frameBufferClearColor.b = packed.b;
-		this.frameBufferClearColor.a = packed.a;
-		this.frameBufferClearRequested = true;
-	}
-
-	public queueFrameBufferSpriteHandle(handle: number, x: number, y: number, z: number, layer: Layer2D, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorize: FrameBufferColor): void {
-		const command = this.acquireFrameBufferCommand();
-		command.type = 'sprite';
-		command.handle = handle;
-		command.x0 = x;
-		command.y0 = y;
-		command.z = z;
-		command.layer = layer;
-		command.scaleX = scaleX;
-		command.scaleY = scaleY;
-		command.flipH = flipH;
-		command.flipV = flipV;
-		command.color.r = colorize.r;
-		command.color.g = colorize.g;
-		command.color.b = colorize.b;
-		command.color.a = colorize.a;
-		this.frameBufferCommands.push(command);
-	}
-
-	public queueFrameBufferRect(kind: 'fill' | 'rect', x0: number, y0: number, x1: number, y1: number, z: number, layer: Layer2D, colorValue: color): void {
-		const packed = this.packFrameBufferColor(colorValue);
-		if (kind === 'fill') {
-			const command = this.acquireFrameBufferCommand();
-			command.type = 'fill';
-			command.layer = layer;
-			command.z = z;
-			command.x0 = x0;
-			command.y0 = y0;
-			command.x1 = x1;
-			command.y1 = y1;
-			command.color.r = packed.r;
-			command.color.g = packed.g;
-			command.color.b = packed.b;
-			command.color.a = packed.a;
-			this.frameBufferCommands.push(command);
-			return;
+		if ((entry.flags & ASSET_FLAG_VIEW) !== 0) {
+			const baseEntry = Runtime.instance.getAssetEntryByHandle(entry.ownerIndex);
+			const slot = this.vramSlots.find((candidate) => candidate.kind === 'asset' && candidate.entry.ownerIndex === baseEntry.ownerIndex)! as AssetVramSlot;
+			return {
+				surfaceId: slot.surfaceId,
+				srcX: entry.regionX,
+				srcY: entry.regionY,
+				width: entry.regionW,
+				height: entry.regionH,
+			};
 		}
-		this.queueFrameBufferLine(x0, y0, x1, y0, z, layer, colorValue, 1);
-		this.queueFrameBufferLine(x0, y1, x1, y1, z, layer, colorValue, 1);
-		this.queueFrameBufferLine(x0, y0, x0, y1, z, layer, colorValue, 1);
-		this.queueFrameBufferLine(x1, y0, x1, y1, z, layer, colorValue, 1);
+		const slot = this.vramSlots.find((candidate) => candidate.kind === 'asset' && candidate.entry.ownerIndex === entry.ownerIndex)! as AssetVramSlot;
+		return {
+			surfaceId: slot.surfaceId,
+			srcX: 0,
+			srcY: 0,
+			width: entry.regionW,
+			height: entry.regionH,
+		};
 	}
 
-	public queueFrameBufferLine(x0: number, y0: number, x1: number, y1: number, z: number, layer: Layer2D, colorValue: color, thickness: number): void {
-		const packed = this.packFrameBufferColor(colorValue);
-		const command = this.acquireFrameBufferCommand();
-		command.type = 'line';
-		command.layer = layer;
-		command.z = z;
-		command.x0 = x0;
-		command.y0 = y0;
-		command.x1 = x1;
-		command.y1 = y1;
-		command.thickness = thickness;
-		command.color.r = packed.r;
-		command.color.g = packed.g;
-		command.color.b = packed.b;
-		command.color.a = packed.a;
-		this.frameBufferCommands.push(command);
+	public enqueueClear(colorValue: color): void {
+		this.enqueueBlitterCommand({
+			opcode: 'clear',
+			seq: this.nextBlitterSequence(),
+			color: this.packFrameBufferColor(colorValue),
+		});
 	}
 
-	public queueFrameBufferPoly(points: number[], z: number, colorValue: color, thickness: number, layer: Layer2D): void {
-		if (points.length < 4) {
-			return;
-		}
+	public enqueueBlit(handle: number, x: number, y: number, z: number, layer: Layer2D, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, parallaxWeight: number): void {
+		this.enqueueBlitterCommand({
+			opcode: 'blit',
+			seq: this.nextBlitterSequence(),
+			layer,
+			z,
+			source: this.resolveBlitterSource(handle),
+			dstX: x,
+			dstY: y,
+			scaleX,
+			scaleY,
+			flipH,
+			flipV,
+			color: this.packFrameBufferColor(colorValue),
+			parallaxWeight,
+		});
+	}
+
+	public enqueueCopyRect(srcX: number, srcY: number, width: number, height: number, dstX: number, dstY: number, z: number, layer: Layer2D): void {
+		this.enqueueBlitterCommand({
+			opcode: 'copy_rect',
+			seq: this.nextBlitterSequence(),
+			layer,
+			z,
+			srcX,
+			srcY,
+			width,
+			height,
+			dstX,
+			dstY,
+		});
+	}
+
+	public enqueueFillRect(x0: number, y0: number, x1: number, y1: number, z: number, layer: Layer2D, colorValue: color): void {
+		this.enqueueBlitterCommand({
+			opcode: 'fill_rect',
+			seq: this.nextBlitterSequence(),
+			layer,
+			z,
+			x0,
+			y0,
+			x1,
+			y1,
+			color: this.packFrameBufferColor(colorValue),
+		});
+	}
+
+	public enqueueDrawLine(x0: number, y0: number, x1: number, y1: number, z: number, layer: Layer2D, colorValue: color, thickness: number): void {
+		this.enqueueBlitterCommand({
+			opcode: 'draw_line',
+			seq: this.nextBlitterSequence(),
+			layer,
+			z,
+			x0,
+			y0,
+			x1,
+			y1,
+			thickness,
+			color: this.packFrameBufferColor(colorValue),
+		});
+	}
+
+	public enqueueDrawRect(x0: number, y0: number, x1: number, y1: number, z: number, layer: Layer2D, colorValue: color): void {
+		this.enqueueDrawLine(x0, y0, x1, y0, z, layer, colorValue, 1);
+		this.enqueueDrawLine(x0, y1, x1, y1, z, layer, colorValue, 1);
+		this.enqueueDrawLine(x0, y0, x0, y1, z, layer, colorValue, 1);
+		this.enqueueDrawLine(x1, y0, x1, y1, z, layer, colorValue, 1);
+	}
+
+	public enqueueDrawPoly(points: number[], z: number, colorValue: color, thickness: number, layer: Layer2D): void {
 		for (let index = 0; index < points.length; index += 2) {
 			const next = (index + 2) % points.length;
-			this.queueFrameBufferLine(points[index], points[index + 1], points[next], points[next + 1], z, layer, colorValue, thickness);
+			this.enqueueDrawLine(points[index], points[index + 1], points[next], points[next + 1], z, layer, colorValue, thickness);
 		}
 	}
 
-	public queueFrameBufferGlyphs(text: string | string[], x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: RenderLayer): void {
+	public enqueueGlyphRun(text: string | string[], x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: Layer2D): void {
 		const lines = Array.isArray(text) ? text : [text];
-		const lineLayer = renderLayerTo2dLayer(layer);
-		const glyphColor = this.packFrameBufferColor(colorValue);
-		const background = backgroundColor ? this.packFrameBufferColor(backgroundColor) : null;
+		const glyphs: VdpGlyphRunGlyph[] = [];
 		let cursorY = y;
 		for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
 			const line = lines[lineIndex];
@@ -696,256 +773,265 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			let cursorX = x;
 			for (let glyphIndex = start; glyphIndex < line.length && glyphIndex < end; glyphIndex += 1) {
 				const glyph = font.getGlyph(line.charAt(glyphIndex));
-				if (background) {
-					const backgroundCommand = this.acquireFrameBufferCommand();
-					backgroundCommand.type = 'fill';
-					backgroundCommand.layer = lineLayer;
-					backgroundCommand.z = z;
-					backgroundCommand.x0 = cursorX;
-					backgroundCommand.y0 = cursorY;
-					backgroundCommand.x1 = cursorX + glyph.advance;
-					backgroundCommand.y1 = cursorY + font.lineHeight;
-					backgroundCommand.color.r = background.r;
-					backgroundCommand.color.g = background.g;
-					backgroundCommand.color.b = background.b;
-					backgroundCommand.color.a = background.a;
-					this.frameBufferCommands.push(backgroundCommand);
-				}
 				const handle = Runtime.instance.resolveAssetHandle(glyph.imgid);
-				this.queueFrameBufferSpriteHandle(handle, cursorX, cursorY, z, lineLayer, 1, 1, false, false, glyphColor);
+				const source = this.resolveBlitterSource(handle);
+				glyphs.push({
+					surfaceId: source.surfaceId,
+					srcX: source.srcX,
+					srcY: source.srcY,
+					width: source.width,
+					height: source.height,
+					dstX: cursorX,
+					dstY: cursorY,
+					advance: glyph.advance,
+				});
 				cursorX += glyph.advance;
 			}
 			cursorY += font.lineHeight;
 		}
+		this.enqueueBlitterCommand({
+			opcode: 'glyph_run',
+			seq: this.nextBlitterSequence(),
+			layer,
+			z,
+			lineHeight: font.lineHeight,
+			color: this.packFrameBufferColor(colorValue),
+			backgroundColor: backgroundColor ? this.packFrameBufferColor(backgroundColor) : null,
+			glyphs,
+		});
 	}
 
-	private getFrameBufferSourcePixels(entry: AssetEntry): Uint8Array {
-		if (!this.memory.isVramRange(entry.baseAddr, Math.max(1, entry.baseSize))) {
-			return Runtime.instance.getImagePixels(entry);
+	public enqueueTileRun(desc: { tiles: Array<string | false>; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
+		const frameWidth = this._frameBufferWidth;
+		const frameHeight = this._frameBufferHeight;
+		const totalWidth = desc.cols * desc.tile_w;
+		const totalHeight = desc.rows * desc.tile_h;
+		let dstX = desc.origin_x - desc.scroll_x;
+		let dstY = desc.origin_y - desc.scroll_y;
+		let srcClipX = 0;
+		let srcClipY = 0;
+		let writeWidth = totalWidth;
+		let writeHeight = totalHeight;
+		if (dstX < 0) {
+			srcClipX = -dstX;
+			writeWidth += dstX;
+			dstX = 0;
 		}
-		const slot = this.getAssetVramSlotByOwner(entry.ownerIndex);
-		return this.getCpuReadbackBuffer(this.getReadSurface(slot.surfaceId));
-	}
-
-	private resolveFrameBufferImageSource(handle: number): { pixels: Uint8Array; regionX: number; regionY: number; stride: number; width: number; height: number } {
-		const entry = Runtime.instance.getAssetEntryByHandle(handle);
-		if (entry.type !== 'image') {
-			throw new Error(`[BmsxVDP] Asset handle ${handle} is not an image.`);
+		if (dstY < 0) {
+			srcClipY = -dstY;
+			writeHeight += dstY;
+			dstY = 0;
 		}
-		if ((entry.flags & ASSET_FLAG_VIEW) !== 0) {
-			const baseEntry = Runtime.instance.getAssetEntryByHandle(entry.ownerIndex);
-			if (baseEntry.type !== 'image') {
-				throw new Error(`[BmsxVDP] View owner for '${entry.id}' is not an image.`);
+		const overflowX = (dstX + writeWidth) - frameWidth;
+		if (overflowX > 0) {
+			writeWidth -= overflowX;
+		}
+		const overflowY = (dstY + writeHeight) - frameHeight;
+		if (overflowY > 0) {
+			writeHeight -= overflowY;
+		}
+		if (writeWidth <= 0 || writeHeight <= 0) {
+			return;
+		}
+		const tiles: VdpTileRunBlit[] = [];
+		for (let row = 0; row < desc.rows; row += 1) {
+			const base = row * desc.cols;
+			for (let col = 0; col < desc.cols; col += 1) {
+				const tile = desc.tiles[base + col];
+				if (tile === false) {
+					continue;
+				}
+				const handle = Runtime.instance.resolveAssetHandle(tile);
+				const source = this.resolveBlitterSource(handle);
+				if (source.width !== desc.tile_w || source.height !== desc.tile_h) {
+					throw new Error(`dma_blit_tiles asset '${tile}' size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`);
+				}
+				const tileX = dstX + (col * desc.tile_w) - srcClipX;
+				const tileY = dstY + (row * desc.tile_h) - srcClipY;
+				const tileRight = tileX + desc.tile_w;
+				const tileBottom = tileY + desc.tile_h;
+				if (tileRight <= 0 || tileBottom <= 0 || tileX >= frameWidth || tileY >= frameHeight) {
+					continue;
+				}
+				tiles.push({
+					surfaceId: source.surfaceId,
+					srcX: source.srcX,
+					srcY: source.srcY,
+					width: source.width,
+					height: source.height,
+					dstX: tileX,
+					dstY: tileY,
+				});
 			}
-			return {
-				pixels: this.getFrameBufferSourcePixels(baseEntry),
-				regionX: entry.regionX,
-				regionY: entry.regionY,
-				stride: baseEntry.baseStride,
-				width: entry.regionW,
-				height: entry.regionH,
-			};
 		}
+		this.enqueueBlitterCommand({
+			opcode: 'tile_run',
+			seq: this.nextBlitterSequence(),
+			layer: desc.layer,
+			z: desc.z,
+			tiles,
+		});
+	}
+
+	public enqueueResolvedTileRun(desc: { handles: number[]; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
+		const frameWidth = this._frameBufferWidth;
+		const frameHeight = this._frameBufferHeight;
+		const totalWidth = desc.cols * desc.tile_w;
+		const totalHeight = desc.rows * desc.tile_h;
+		let dstX = desc.origin_x - desc.scroll_x;
+		let dstY = desc.origin_y - desc.scroll_y;
+		let srcClipX = 0;
+		let srcClipY = 0;
+		let writeWidth = totalWidth;
+		let writeHeight = totalHeight;
+		if (dstX < 0) {
+			srcClipX = -dstX;
+			writeWidth += dstX;
+			dstX = 0;
+		}
+		if (dstY < 0) {
+			srcClipY = -dstY;
+			writeHeight += dstY;
+			dstY = 0;
+		}
+		const overflowX = (dstX + writeWidth) - frameWidth;
+		if (overflowX > 0) {
+			writeWidth -= overflowX;
+		}
+		const overflowY = (dstY + writeHeight) - frameHeight;
+		if (overflowY > 0) {
+			writeHeight -= overflowY;
+		}
+		if (writeWidth <= 0 || writeHeight <= 0) {
+			return;
+		}
+		const tiles: VdpTileRunBlit[] = [];
+		for (let row = 0; row < desc.rows; row += 1) {
+			const base = row * desc.cols;
+			for (let col = 0; col < desc.cols; col += 1) {
+				const handle = desc.handles[base + col];
+				if (handle === IO_VDP_TILE_HANDLE_NONE) {
+					continue;
+				}
+				const source = this.resolveBlitterSource(handle);
+				if (source.width !== desc.tile_w || source.height !== desc.tile_h) {
+					throw new Error(`[BmsxVDP] enqueueResolvedTileRun tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`);
+				}
+				const tileX = dstX + (col * desc.tile_w) - srcClipX;
+				const tileY = dstY + (row * desc.tile_h) - srcClipY;
+				const tileRight = tileX + desc.tile_w;
+				const tileBottom = tileY + desc.tile_h;
+				if (tileRight <= 0 || tileBottom <= 0 || tileX >= frameWidth || tileY >= frameHeight) {
+					continue;
+				}
+				tiles.push({
+					surfaceId: source.surfaceId,
+					srcX: source.srcX,
+					srcY: source.srcY,
+					width: source.width,
+					height: source.height,
+					dstX: tileX,
+					dstY: tileY,
+				});
+			}
+		}
+		this.enqueueBlitterCommand({
+			opcode: 'tile_run',
+			seq: this.nextBlitterSequence(),
+			layer: desc.layer,
+			z: desc.z,
+			tiles,
+		});
+	}
+
+	private resolveSurfaceStride(surfaceId: number): number {
+		return this.getReadSurface(surfaceId).entry.regionW * 4;
+	}
+
+	private getBlitterSurface(surfaceId: number): { textureKey: string; width: number; height: number } {
+		const surface = this.getReadSurface(surfaceId);
 		return {
-			pixels: this.getFrameBufferSourcePixels(entry),
-			regionX: 0,
-			regionY: 0,
-			stride: entry.baseStride,
-			width: entry.regionW,
-			height: entry.regionH,
+			textureKey: surface.textureKey,
+			width: surface.entry.regionW,
+			height: surface.entry.regionH,
 		};
 	}
 
-	private blendFrameBufferPixel(pixels: Uint8Array, index: number, r: number, g: number, b: number, a: number): void {
-		if (a <= 0) {
+	private getBlitterAtlasId(surfaceId: number): number {
+		if (surfaceId === VDP_RD_SURFACE_PRIMARY) {
+			return 0;
+		}
+		if (surfaceId === VDP_RD_SURFACE_SECONDARY) {
+			return 1;
+		}
+		if (surfaceId === VDP_RD_SURFACE_ENGINE) {
+			return 254;
+		}
+		throw new Error(`[BmsxVDP] Surface ${surfaceId} cannot be sampled by the WebGL blitter.`);
+	}
+
+	public advanceBlitter(_cycles: number): void {
+		if (this.blitterQueue.length === 0) {
 			return;
 		}
-		if (a >= 255) {
-			pixels[index + 0] = r;
-			pixels[index + 1] = g;
-			pixels[index + 2] = b;
-			pixels[index + 3] = 255;
-			return;
+		if (this.blitterExecutor === null) {
+			throw new Error(`[BmsxVDP] No JS blitter executor for backend ${$.view.backend.type}.`);
 		}
-		const inverse = 255 - a;
-		pixels[index + 0] = ((r * a) + (pixels[index + 0] * inverse) + 127) / 255;
-		pixels[index + 1] = ((g * a) + (pixels[index + 1] * inverse) + 127) / 255;
-		pixels[index + 2] = ((b * a) + (pixels[index + 2] * inverse) + 127) / 255;
-		pixels[index + 3] = a + ((pixels[index + 3] * inverse) + 127) / 255;
+		if ($.view.backend.type !== this.blitterExecutor.backendType) {
+			throw new Error(`[BmsxVDP] JS blitter executor mismatch (${this.blitterExecutor.backendType} != ${$.view.backend.type}).`);
+		}
+		const host: VdpBlitterHost = {
+			width: this._frameBufferWidth,
+			height: this._frameBufferHeight,
+			frameBufferTextureKey: FRAMEBUFFER_TEXTURE_KEY,
+			getSurface: (surfaceId) => this.getBlitterSurface(surfaceId),
+			getShaderAtlasId: (surfaceId) => this.getBlitterAtlasId(surfaceId),
+		};
+		this.blitterExecutor.execute(host, this.blitterQueue);
+		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+		this.resetBlitterState();
 	}
 
-	private rasterizeFrameBufferFill(pixels: Uint8Array, command: FrameBufferCommand): void {
-		let left = Math.round(command.x0);
-		let top = Math.round(command.y0);
-		let right = Math.round(command.x1);
-		let bottom = Math.round(command.y1);
-		if (right < left) {
-			const swap = left;
-			left = right;
-			right = swap;
-		}
-		if (bottom < top) {
-			const swap = top;
-			top = bottom;
-			bottom = swap;
-		}
-		if (left < 0) left = 0;
-		if (top < 0) top = 0;
-		if (right > this.frameBufferWidth) right = this.frameBufferWidth;
-		if (bottom > this.frameBufferHeight) bottom = this.frameBufferHeight;
-		for (let y = top; y < bottom; y += 1) {
-			let index = (y * this.frameBufferWidth + left) * 4;
-			for (let x = left; x < right; x += 1) {
-				this.blendFrameBufferPixel(pixels, index, command.color.r, command.color.g, command.color.b, command.color.a);
-				index += 4;
-			}
-		}
-	}
-
-	private rasterizeFrameBufferLine(pixels: Uint8Array, command: FrameBufferCommand): void {
-		let x0 = Math.round(command.x0);
-		let y0 = Math.round(command.y0);
-		const x1 = Math.round(command.x1);
-		const y1 = Math.round(command.y1);
-		const dx = Math.abs(x1 - x0);
-		const dy = Math.abs(y1 - y0);
-		const sx = x0 < x1 ? 1 : -1;
-		const sy = y0 < y1 ? 1 : -1;
-		let err = dx - dy;
-		const thickness = Math.max(1, Math.round(command.thickness));
-		while (true) {
-			const half = thickness >> 1;
-			for (let yy = y0 - half; yy < y0 - half + thickness; yy += 1) {
-				if (yy < 0 || yy >= this.frameBufferHeight) {
-					continue;
-				}
-				for (let xx = x0 - half; xx < x0 - half + thickness; xx += 1) {
-					if (xx < 0 || xx >= this.frameBufferWidth) {
-						continue;
-					}
-					const index = (yy * this.frameBufferWidth + xx) * 4;
-					this.blendFrameBufferPixel(pixels, index, command.color.r, command.color.g, command.color.b, command.color.a);
-				}
-			}
-			if (x0 === x1 && y0 === y1) {
-				return;
-			}
-			const e2 = err << 1;
-			if (e2 > -dy) {
-				err -= dy;
-				x0 += sx;
-			}
-			if (e2 < dx) {
-				err += dx;
-				y0 += sy;
-			}
-		}
-	}
-
-	private rasterizeFrameBufferSprite(pixels: Uint8Array, command: FrameBufferCommand): void {
-		const source = this.resolveFrameBufferImageSource(command.handle);
-		const dstW = Math.max(1, Math.round(source.width * command.scaleX));
-		const dstH = Math.max(1, Math.round(source.height * command.scaleY));
-		const dstX = Math.round(command.x0);
-		const dstY = Math.round(command.y0);
-		for (let y = 0; y < dstH; y += 1) {
-			const targetY = dstY + y;
-			if (targetY < 0 || targetY >= this.frameBufferHeight) {
-				continue;
-			}
-			const srcY = command.flipV
-				? source.height - 1 - Math.floor((y * source.height) / dstH)
-				: Math.floor((y * source.height) / dstH);
-			for (let x = 0; x < dstW; x += 1) {
-				const targetX = dstX + x;
-				if (targetX < 0 || targetX >= this.frameBufferWidth) {
-					continue;
-				}
-				const srcX = command.flipH
-					? source.width - 1 - Math.floor((x * source.width) / dstW)
-					: Math.floor((x * source.width) / dstW);
-				const srcIndex = ((source.regionY + srcY) * source.stride) + ((source.regionX + srcX) * 4);
-				const srcA = source.pixels[srcIndex + 3];
-				if (srcA === 0) {
-					continue;
-				}
-				const outA = (srcA * command.color.a + 127) / 255;
-				const outR = (source.pixels[srcIndex + 0] * command.color.r + 127) / 255;
-				const outG = (source.pixels[srcIndex + 1] * command.color.g + 127) / 255;
-				const outB = (source.pixels[srcIndex + 2] * command.color.b + 127) / 255;
-				const dstIndex = (targetY * this.frameBufferWidth + targetX) * 4;
-				this.blendFrameBufferPixel(pixels, dstIndex, outR, outG, outB, outA);
-			}
-		}
-	}
-
-	public flushFrameBufferOps(): void {
-		this.ensureFrameBufferSurface();
-		const pixels = this.getFrameBufferPixels();
-		if (this.frameBufferClearRequested) {
-			for (let index = 0; index < pixels.length; index += 4) {
-				pixels[index + 0] = this.frameBufferClearColor.r;
-				pixels[index + 1] = this.frameBufferClearColor.g;
-				pixels[index + 2] = this.frameBufferClearColor.b;
-				pixels[index + 3] = this.frameBufferClearColor.a;
-			}
-		}
-		if (this.frameBufferCommands.length > 1) {
-			this.frameBufferCommands.sort((a, b) => {
-				if (a.layer !== b.layer) {
-					return a.layer - b.layer;
-				}
-				if (a.z !== b.z) {
-					return a.z - b.z;
-				}
-				return a.sourceIndex - b.sourceIndex;
-			});
-		}
-		for (let index = 0; index < this.frameBufferCommands.length; index += 1) {
-			const command = this.frameBufferCommands[index];
-			if (command.type === 'fill') {
-				this.rasterizeFrameBufferFill(pixels, command);
-				continue;
-			}
-			if (command.type === 'line') {
-				this.rasterizeFrameBufferLine(pixels, command);
-				continue;
-			}
-			this.rasterizeFrameBufferSprite(pixels, command);
-		}
-		if (this.frameBufferClearRequested || this.frameBufferCommands.length > 0) {
-			$.texmanager.updateTexturesForKey(FRAMEBUFFER_TEXTURE_KEY, pixels, this.frameBufferWidth, this.frameBufferHeight);
-		}
-		this.resetFrameBufferCommands();
-	}
-
-	public getFrameBufferTextureKey(): string {
+	public get frameBufferTextureKey(): string {
 		return FRAMEBUFFER_TEXTURE_KEY;
 	}
 
-	public ensureFrameBufferSurfaceReady(): void {
-		this.ensureFrameBufferSurface();
+	public get frameBufferWidth(): number {
+		return this._frameBufferWidth;
 	}
 
-	public getFrameBufferWidth(): number {
-		return this.frameBufferWidth;
+	public get frameBufferHeight(): number {
+		return this._frameBufferHeight;
 	}
 
-	public getFrameBufferHeight(): number {
-		return this.frameBufferHeight;
-	}
-
-	public getFrameBufferPixels(): Uint8Array {
-		return this.getCpuReadbackBuffer(this.getReadSurface(VDP_RD_SURFACE_FRAMEBUFFER));
+	public get frameBufferPixels(): Uint8Array {
+		const surface = this.getReadSurface(VDP_RD_SURFACE_FRAMEBUFFER);
+		const buffer = this.getCpuReadbackBuffer(surface);
+		if ($.view.backend.type !== 'webgpu') {
+			buffer.set($.view.backend.readTextureRegion($.texmanager.getTextureByUri(surface.textureKey), 0, 0, this._frameBufferWidth, this._frameBufferHeight));
+		}
+		return buffer;
 	}
 
 	public resolveFrameBufferSource(handle: number): { pixels: Uint8Array; regionX: number; regionY: number; stride: number; width: number; height: number } {
-		return this.resolveFrameBufferImageSource(handle);
+		const source = this.resolveBlitterSource(handle);
+		const surface = this.getReadSurface(source.surfaceId);
+		return {
+			pixels: $.view.backend.type === 'webgpu'
+				? this.getCpuReadbackBuffer(surface)
+				: $.view.backend.readTextureRegion($.texmanager.getTextureByUri(surface.textureKey), 0, 0, surface.entry.regionW, surface.entry.regionH),
+			regionX: source.srcX,
+			regionY: source.srcY,
+			stride: this.resolveSurfaceStride(source.surfaceId),
+			width: source.width,
+			height: source.height,
+		};
 	}
 
 	public writeVram(addr: number, bytes: Uint8Array): void {
 		if (addr >= VRAM_STAGING_BASE && addr + bytes.byteLength <= VRAM_STAGING_BASE + VRAM_STAGING_SIZE) {
-			this.writeVramStaging(addr, bytes);
+			const offset = addr - VRAM_STAGING_BASE;
+			this.vramStaging.set(bytes, offset);
 			return;
 		}
 		const slot = this.findVramSlot(addr, bytes.byteLength);
@@ -971,16 +1057,16 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		let row = Math.floor(offset / stride);
 		let rowOffset = offset - row * stride;
 		while (remaining > 0) {
-			const rowAvailable = stride - rowOffset;
-			const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
-			const x = rowOffset / 4;
-			const width = rowBytes / 4;
-			const slice = bytes.subarray(cursor, cursor + rowBytes);
-			if (slot.kind === 'asset') {
-				this.updateTextureRegion(slot.textureKey, slice, width, 1, x, row);
-				this.invalidateReadCache(slot.surfaceId);
-				this.updateCpuReadback(slot.surfaceId, slice, x, row);
-			}
+				const rowAvailable = stride - rowOffset;
+				const rowBytes = remaining < rowAvailable ? remaining : rowAvailable;
+				const x = rowOffset / 4;
+				const width = rowBytes / 4;
+				const slice = bytes.subarray(cursor, cursor + rowBytes);
+				if (slot.kind === 'asset') {
+					$.texmanager.updateTextureRegionForKey(slot.textureKey, slice, width, 1, x, row);
+					this.invalidateReadCache(slot.surfaceId);
+					this.updateCpuReadback(slot.surfaceId, slice, x, row);
+				}
 			remaining -= rowBytes;
 			cursor += rowBytes;
 			row += 1;
@@ -991,11 +1077,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	public beginFrame(): void {
 		this.readBudgetBytes = VDP_RD_BUDGET_BYTES;
 		this.readOverflow = false;
-		this.frameBufferClearColor.r = 0;
-		this.frameBufferClearColor.g = 0;
-		this.frameBufferClearColor.b = 0;
-		this.frameBufferClearColor.a = 0;
-		this.frameBufferClearRequested = true;
 	}
 
 	public readVdpStatus(): number {
@@ -1048,9 +1129,15 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	public initializeRegisters(): void {
 		const dither = 0;
-		this.frameBufferWidth = 0;
-		this.frameBufferHeight = 0;
-		this.resetFrameBufferCommands();
+		const frameBufferSurface = this.readSurfaces[VDP_RD_SURFACE_FRAMEBUFFER];
+		if (frameBufferSurface) {
+			this._frameBufferWidth = frameBufferSurface.entry.regionW;
+			this._frameBufferHeight = frameBufferSurface.entry.regionH;
+		} else {
+			this._frameBufferWidth = $.view.viewportSize.x;
+			this._frameBufferHeight = $.view.viewportSize.y;
+		}
+		this.resetBlitterState();
 		this.memory.writeValue(IO_VDP_DITHER, dither);
 		this.memory.writeValue(IO_VDP_LEGACY_CMD, 0);
 		this.lastDitherType = dither;
@@ -1076,17 +1163,17 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 	}
 
-	public setDitherType(value: number): void {
+	public set ditherType(value: number) {
 		this.memory.writeValue(IO_VDP_DITHER, value);
 		this.syncRegisters();
 	}
 
-	public getDitherType(): number {
+	public get ditherType(): number {
 		return this.lastDitherType;
 	}
 
-	public getSkyboxFaceIds(): SkyboxImageIds | null {
-		return this.skyboxFaceIds;
+	public get skyboxFaceIds(): SkyboxImageIds | null {
+		return this._skyboxFaceIds;
 	}
 
 	public commitViewSnapshot(): void {
@@ -1094,12 +1181,12 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		view.primaryAtlasIdInSlot = this.slotAtlasIds[0];
 		view.secondaryAtlasIdInSlot = this.slotAtlasIds[1];
 		if (this.dirtySkybox) {
-			view.skyboxFaceIds = this.skyboxFaceIds;
+			view.skyboxFaceIds = this._skyboxFaceIds;
 			this.dirtySkybox = false;
 		}
 	}
 
-	public getAtlasSlotMapping(): { primary: number | null; secondary: number | null } {
+	public get atlasSlotMapping(): { primary: number | null; secondary: number | null } {
 		return { primary: this.slotAtlasIds[0], secondary: this.slotAtlasIds[1] };
 	}
 
@@ -1124,13 +1211,9 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				slotEntry.regionH = side;
 				return;
 			}
-				const atlasEntry = this.atlasResourcesById.get(atlasId);
-				if (!atlasEntry) {
-					throw new Error(`[BmsxVDP] Atlas ${atlasId} not registered.`);
-				}
-				const atlasAsset = Runtime.instance.getImageAsset(atlasEntry.resid);
-				const width = atlasAsset.imgmeta.width;
-				const height = atlasAsset.imgmeta.height;
+			const atlasEntry = this.atlasResourcesById.get(atlasId)!;
+			const atlasAsset = Runtime.instance.getImageAsset(atlasEntry.resid);
+			const { width, height } = atlasAsset.imgmeta!;
 			const size = width * height * 4;
 			if (size > slotEntry.capacity) {
 				throw new Error(`[BmsxVDP] Atlas ${atlasId} (${width}x${height}) exceeds slot capacity ${slotEntry.capacity}.`);
@@ -1172,47 +1255,30 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public setSkyboxImages(ids: SkyboxImageIds): void {
-		if (!this.imgDecController) {
-			throw new Error('[BmsxVDP] ImgDecController not attached.');
-		}
 		const source = $.asset_source;
-		if (!source) {
-			throw new Error('[BmsxVDP] Asset source not configured.');
-		}
 		const runtime = Runtime.instance;
-		this.skyboxFaceIds = ids;
+		this._skyboxFaceIds = ids;
 		this.dirtySkybox = true;
 		SkyboxPipeline.clearSkyboxSources();
 		const tasks = SKYBOX_FACE_KEYS.map((key, index) => {
 			const assetId = ids[key];
-			const entry = source.getEntry(assetId);
-			if (!entry) {
-				throw new Error(`[BmsxVDP] Skybox image '${assetId}' not found.`);
-			}
-			if (entry.type !== 'image') {
-				throw new Error(`[BmsxVDP] Skybox image '${assetId}' is not an image.`);
-			}
-			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-				throw new Error(`[BmsxVDP] Skybox image '${assetId}' missing ROM buffer offsets.`);
-			}
+			const entry = source.getEntry(assetId)!;
 			const asset = runtime.getImageAsset(assetId);
-			if (!asset.imgmeta) {
-				throw new Error(`[BmsxVDP] Skybox image '${assetId}' missing metadata.`);
-			}
-			if (asset.imgmeta.atlassed) {
+			const meta = asset.imgmeta!;
+			if (meta.atlassed) {
 				throw new Error(`[BmsxVDP] Skybox image '${assetId}' must not be atlassed.`);
 			}
 			const slot = this.skyboxSlots[index];
-			return this.imgDecController.decodeToVram({
+			return this.imgDecController!.decodeToVram({
 				bytes: source.getBytes(entry),
 				dst: slot.entry.baseAddr,
 				cap: slot.entry.capacity,
 			}).then((decoded) => {
-				if (asset.imgmeta.width <= 0) {
-					asset.imgmeta.width = decoded.width;
+				if (meta.width <= 0) {
+					meta.width = decoded.width;
 				}
-				if (asset.imgmeta.height <= 0) {
-					asset.imgmeta.height = decoded.height;
+				if (meta.height <= 0) {
+					meta.height = decoded.height;
 				}
 				return {
 					width: slot.entry.regionW,
@@ -1225,19 +1291,15 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public clearSkybox(): void {
-		this.skyboxFaceIds = null;
+		this._skyboxFaceIds = null;
 		this.dirtySkybox = true;
 		SkyboxPipeline.clearSkyboxSources();
 	}
 
 	public async registerImageAssets(source: RawAssetSource): Promise<void> {
-		if (!this.imgDecController) {
-			throw new Error('[BmsxVDP] ImgDecController not attached.');
-		}
 		const entries = source.list();
 		const viewEntries: RomAsset[] = [];
 		const engineAtlasName = generateAtlasName(ENGINE_ATLAS_INDEX);
-		let engineEntryRecord: AssetEntry | null = null;
 		const setAtlasEntryDimensions = (slotEntry: AssetEntry, width: number, height: number): void => {
 			const size = width * height * 4;
 			if (size > slotEntry.capacity) {
@@ -1259,20 +1321,21 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.atlasViewsById.clear();
 		this.atlasSlotById.clear();
 		this.slotAtlasIds[0] = null;
-		this.slotAtlasIds[1] = null;
-		this.vramSlots = [];
-		this.readSurfaces = [null, null, null, null];
-		this.clearReadCaches();
-		this.cpuReadbackByKey.clear();
-		this.skyboxSlots = [];
-		this.imgDecController.clearExternalSlots();
-		this.skyboxFaceIds = null;
-		this.frameBufferEntry = null;
-		this.frameBufferSlot = null;
+			this.slotAtlasIds[1] = null;
+			this.vramSlots = [];
+			this.readSurfaces = [null, null, null, null];
+			for (let index = 0; index < this.readCaches.length; index += 1) {
+				this.readCaches[index].width = 0;
+			}
+			this.cpuReadbackByKey.clear();
+			this.skyboxSlots = [];
+			this.imgDecController!.clearExternalSlots();
+			this._skyboxFaceIds = null;
 		this.dirtySkybox = true;
 		SkyboxPipeline.clearSkyboxSources();
 		this.vramBootSeed = this.nextVramBootSeed();
 		this.seedVramStaging();
+		this.initializeFrameBufferSurface();
 
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
@@ -1280,21 +1343,13 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				continue;
 			}
 			const imgAsset = Runtime.instance.getImageAssetByEntry(entry);
-			if (!imgAsset) {
-				throw new Error(`[BmsxVDP] Image asset '${entry.resid}' not found.`);
-			}
-			const meta = imgAsset.imgmeta;
-			if (!meta) {
-				throw new Error(`[BmsxVDP] Image asset '${entry.resid}' missing metadata.`);
-			}
+			const meta = imgAsset.imgmeta!;
 			if (entry.type === 'atlas') {
-				if (typeof meta.atlasid !== 'number') {
-					throw new Error(`[BmsxVDP] Atlas '${entry.resid}' missing atlas id.`);
-				}
+				const atlasId = meta.atlasid!;
 				if (meta.width <= 0 || meta.height <= 0) {
 					throw new Error(`[BmsxVDP] Atlas '${entry.resid}' missing dimensions.`);
 				}
-				this.atlasResourcesById.set(meta.atlasid, entry);
+				this.atlasResourcesById.set(atlasId, entry);
 				continue;
 			}
 			if (meta.atlassed) {
@@ -1303,26 +1358,19 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			}
 		}
 
-		if (!engineEntryRecord && this.memory.hasAsset(engineAtlasName)) {
-			engineEntryRecord = this.memory.getAssetEntry(engineAtlasName);
-		}
-
 		const engineAtlasAsset = Runtime.instance.getImageAsset(engineAtlasName, source);
-		if (!engineAtlasAsset) {
-			throw new Error(`[BmsxVDP] Engine atlas '${engineAtlasName}' not found.`);
-		}
-		const engineAtlasMeta = engineAtlasAsset.imgmeta;
-		if (!engineAtlasMeta || engineAtlasMeta.width <= 0 || engineAtlasMeta.height <= 0) {
+		const engineAtlasMeta = engineAtlasAsset.imgmeta!;
+		if (engineAtlasMeta.width <= 0 || engineAtlasMeta.height <= 0) {
 			throw new Error(`[BmsxVDP] Engine atlas '${engineAtlasName}' missing dimensions.`);
 		}
-		if (!engineEntryRecord) {
-			engineEntryRecord = this.memory.registerImageSlotAt({
+		const engineEntryRecord = this.memory.hasAsset(engineAtlasName)
+			? this.memory.getAssetEntry(engineAtlasName)
+			: this.memory.registerImageSlotAt({
 				id: engineAtlasName,
 				baseAddr: VRAM_SYSTEM_ATLAS_BASE,
 				capacityBytes: VRAM_SYSTEM_ATLAS_SIZE,
 				clear: false,
 			});
-		}
 		setAtlasEntryDimensions(engineEntryRecord, engineAtlasMeta.width, engineAtlasMeta.height);
 		this.registerVramSlot(engineEntryRecord, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE);
 		await this.restoreEngineAtlasFromSource(engineEntryRecord, source, engineAtlasAsset);
@@ -1340,7 +1388,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				regionH: 0,
 			};
 			this.skyboxSlots.push({ face: SKYBOX_FACE_KEYS[index], entry });
-			this.imgDecController.registerExternalSlot(entry.baseAddr, entry);
+			this.imgDecController!.registerExternalSlot(entry.baseAddr, entry);
 			this.vramSlots.push({
 				kind: 'skybox',
 				baseAddr: entry.baseAddr,
@@ -1374,17 +1422,9 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		for (let index = 0; index < viewEntries.length; index += 1) {
 			const entry = viewEntries[index];
 			const imgAsset = Runtime.instance.getImageAssetByEntry(entry);
-			const meta = imgAsset.imgmeta;
-			if (!meta.atlassed) {
-				throw new Error(`[BmsxVDP] Image asset '${entry.resid}' expected to be atlassed.`);
-			}
-			if (!meta.texcoords) {
-				throw new Error(`[BmsxVDP] Image asset '${entry.resid}' missing atlas texcoords.`);
-			}
-			const atlasId = meta.atlasid;
-			if (atlasId === undefined || atlasId === null) {
-				throw new Error(`[BmsxVDP] Image asset '${entry.resid}' missing atlas id.`);
-			}
+			const meta = imgAsset.imgmeta!;
+			const coords = meta.texcoords!;
+			const atlasId = meta.atlasid!;
 			let atlasWidth = 0;
 			let atlasHeight = 0;
 			let baseEntry = primarySlotEntry;
@@ -1393,10 +1433,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				atlasWidth = engineAtlasMeta.width;
 				atlasHeight = engineAtlasMeta.height;
 			} else {
-				const atlasEntry = this.atlasResourcesById.get(atlasId);
-				if (!atlasEntry) {
-					throw new Error(`[BmsxVDP] Atlas ${atlasId} not registered for '${entry.resid}'.`);
-				}
+				const atlasEntry = this.atlasResourcesById.get(atlasId)!;
 				const atlasAsset = Runtime.instance.getImageAssetByEntry(atlasEntry);
 				atlasWidth = atlasAsset.imgmeta.width;
 				atlasHeight = atlasAsset.imgmeta.height;
@@ -1405,7 +1442,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 					baseEntry = this.atlasSlotEntries[mappedSlot];
 				}
 			}
-			const coords = meta.texcoords;
 			const minU = Math.min(coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]);
 			const maxU = Math.max(coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]);
 			const minV = Math.min(coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]);
@@ -1486,37 +1522,17 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 	}
 
-	private updateTextureRegion(textureKey: string, pixels: Uint8Array, width: number, height: number, x: number, y: number): void {
-		$.texmanager.updateTextureRegionForKey(textureKey, pixels, width, height, x, y);
-	}
-
-	private clearReadCaches(): void {
-		for (let index = 0; index < this.readCaches.length; index += 1) {
-			this.readCaches[index].width = 0;
-		}
-	}
-
 	private invalidateReadCache(surfaceId: number): void {
-		const cache = this.readCaches[surfaceId];
-		if (cache) {
-			cache.width = 0;
-		}
+		this.readCaches[surfaceId].width = 0;
 	}
 
 	private registerReadSurface(surfaceId: number, entry: AssetEntry, textureKey: string): void {
-		if (surfaceId < 0 || surfaceId >= VDP_RD_SURFACE_COUNT) {
-			throw new Error(`[BmsxVDP] Invalid read surface ${surfaceId}.`);
-		}
 		this.readSurfaces[surfaceId] = { entry, textureKey };
 		this.invalidateReadCache(surfaceId);
 	}
 
 	private getReadSurface(surfaceId: number): VdpReadSurface {
-		const surface = this.readSurfaces[surfaceId];
-		if (!surface) {
-			throw new Error(`[BmsxVDP] Read surface ${surfaceId} not registered.`);
-		}
-		return surface;
+		return this.readSurfaces[surfaceId]!;
 	}
 
 	private getReadCache(surfaceId: number, surface: VdpReadSurface, x: number, y: number): VdpReadCache {
@@ -1529,10 +1545,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	private prefetchReadCache(cache: VdpReadCache, surface: VdpReadSurface, x: number, y: number): void {
 		const width = surface.entry.regionW;
-		const height = surface.entry.regionH;
-		if (x >= width || y >= height) {
-			throw new Error(`[BmsxVDP] Read cache prefetch out of bounds (${x}, ${y}).`);
-		}
 		const maxPixelsByBudget = Math.floor(this.readBudgetBytes / 4);
 		if (maxPixelsByBudget <= 0) {
 			this.readOverflow = true;
@@ -1548,28 +1560,18 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	private readSurfacePixels(cache: VdpReadCache, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
-		if (this.useCpuReadback()) {
+		if ($.view.backend.type === 'webgpu') {
 			return this.readCpuReadback(cache, surface, x, y, width, height);
 		}
-		const handle = $.texmanager.getTextureByUri(surface.textureKey);
-		if (!handle) {
-			throw new Error(`[BmsxVDP] Readback texture missing for '${surface.textureKey}'.`);
-		}
-		return $.view.backend.readTextureRegion(handle, x, y, width, height);
-	}
-
-	private ensureReadCacheCapacity(cache: VdpReadCache, byteLength: number): Uint8Array {
-		if (cache.data.byteLength < byteLength) {
-			cache.data = new Uint8Array(byteLength);
-		}
-		return cache.data;
+		return $.view.backend.readTextureRegion($.texmanager.getTextureByUri(surface.textureKey), x, y, width, height);
 	}
 
 	private readCpuReadback(cache: VdpReadCache, surface: VdpReadSurface, x: number, y: number, width: number, height: number): Uint8Array {
 		const buffer = this.getCpuReadbackBuffer(surface);
 		const stride = surface.entry.regionW * 4;
 		const rowBytes = width * 4;
-		const out = this.ensureReadCacheCapacity(cache, rowBytes * height);
+		const byteLength = rowBytes * height;
+		const out = cache.data.byteLength < byteLength ? (cache.data = new Uint8Array(byteLength)) : cache.data;
 		for (let row = 0; row < height; row += 1) {
 			const srcOffset = (y + row) * stride + x * 4;
 			const dstOffset = row * rowBytes;
@@ -1579,10 +1581,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	private updateCpuReadback(surfaceId: number, slice: Uint8Array, x: number, y: number): void {
-		const surface = this.readSurfaces[surfaceId];
-		if (!surface) {
-			return;
-		}
+		const surface = this.readSurfaces[surfaceId]!;
 		const buffer = this.getCpuReadbackBuffer(surface);
 		const stride = surface.entry.regionW * 4;
 		const offset = y * stride + x * 4;
@@ -1600,29 +1599,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		return buffer;
 	}
 
-	private getAssetVramSlotByOwner(ownerIndex: number): AssetVramSlot {
-		for (let index = 0; index < this.vramSlots.length; index += 1) {
-			const slot = this.vramSlots[index];
-			if (slot.kind === 'asset' && slot.entry.ownerIndex === ownerIndex) {
-				return slot;
-			}
-		}
-		throw new Error(`[BmsxVDP] No VRAM slot found for owner ${ownerIndex}.`);
-	}
-
-	private useCpuReadback(): boolean {
-		return $.view.backend.type === 'headless';
-	}
-
-	private writeVramStaging(addr: number, bytes: Uint8Array): void {
-		const offset = addr - VRAM_STAGING_BASE;
-		if (offset < 0 || offset + bytes.byteLength > this.vramStaging.byteLength) {
-			throw new Error(`[BmsxVDP] VRAM staging write out of bounds (addr=${addr}, len=${bytes.byteLength}).`);
-		}
-		this.vramStaging.set(bytes, offset);
-	}
-
-	public getTrackedUsedVramBytes(): number {
+	public get trackedUsedVramBytes(): number {
 		let usedBytes = 0;
 		for (let index = 0; index < this.vramSlots.length; index += 1) {
 			const slot = this.vramSlots[index];
@@ -1634,18 +1611,8 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		return usedBytes;
 	}
 
-	public getTrackedTotalVramBytes(): number {
+	public get trackedTotalVramBytes(): number {
 		return VRAM_SYSTEM_ATLAS_SIZE + VRAM_PRIMARY_ATLAS_SIZE + VRAM_SECONDARY_ATLAS_SIZE + VRAM_FRAMEBUFFER_SIZE + VRAM_STAGING_SIZE;
-	}
-
-	private getVramSlotByTextureKey(textureKey: string): AssetVramSlot {
-		for (let index = 0; index < this.vramSlots.length; index += 1) {
-			const slot = this.vramSlots[index];
-			if (slot.kind === 'asset' && slot.textureKey === textureKey) {
-				return slot;
-			}
-		}
-		throw new Error(`[BmsxVDP] No VRAM slot found for texture '${textureKey}'.`);
 	}
 
 	private registerVramSlot(entry: AssetEntry, textureKey: string, surfaceId: number): void {
@@ -1724,24 +1691,18 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private seedVramSlotTexture(slot: AssetVramSlot): void {
 		const width = slot.entry.regionW;
 		const height = slot.entry.regionH;
-		if (width === 0 || height === 0) {
-			throw new Error(`[BmsxVDP] VRAM slot '${slot.entry.id}' missing dimensions.`);
-		}
 		const rowPixels = width;
 		const maxPixels = Math.floor(this.vramGarbageScratch.byteLength / 4);
-		if (maxPixels <= 0) {
-			throw new Error('[BmsxVDP] VRAM garbage scratch buffer is empty.');
-		}
 		const stream = this.makeVramGarbageStream(slot.baseAddr >>> 0);
 		if (rowPixels <= maxPixels) {
 			const rowsPerChunk = Math.max(1, Math.floor(maxPixels / rowPixels));
 			for (let y = 0; y < height; ) {
-				const rows = Math.min(rowsPerChunk, height - y);
-				const chunkBytes = rowPixels * rows * 4;
-				const chunk = this.vramGarbageScratch.subarray(0, chunkBytes);
-				fillVramGarbageScratch(chunk, stream);
-				this.updateTextureRegion(slot.textureKey, chunk, rowPixels, rows, 0, y);
-				for (let row = 0; row < rows; row += 1) {
+					const rows = Math.min(rowsPerChunk, height - y);
+					const chunkBytes = rowPixels * rows * 4;
+					const chunk = this.vramGarbageScratch.subarray(0, chunkBytes);
+					fillVramGarbageScratch(chunk, stream);
+					$.texmanager.updateTextureRegionForKey(slot.textureKey, chunk, rowPixels, rows, 0, y);
+					for (let row = 0; row < rows; row += 1) {
 					const rowOffset = row * rowPixels * 4;
 					const slice = chunk.subarray(rowOffset, rowOffset + rowPixels * 4);
 					this.updateCpuReadback(slot.surfaceId, slice, 0, y + row);
@@ -1750,15 +1711,15 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			}
 		} else {
 			for (let y = 0; y < height; y += 1) {
-				for (let x = 0; x < width; ) {
-					const segmentWidth = Math.min(maxPixels, width - x);
-					const segmentBytes = segmentWidth * 4;
-					const segment = this.vramGarbageScratch.subarray(0, segmentBytes);
-					fillVramGarbageScratch(segment, stream);
-					this.updateTextureRegion(slot.textureKey, segment, segmentWidth, 1, x, y);
-					this.updateCpuReadback(slot.surfaceId, segment, x, y);
-					x += segmentWidth;
-				}
+					for (let x = 0; x < width; ) {
+						const segmentWidth = Math.min(maxPixels, width - x);
+						const segmentBytes = segmentWidth * 4;
+						const segment = this.vramGarbageScratch.subarray(0, segmentBytes);
+						fillVramGarbageScratch(segment, stream);
+						$.texmanager.updateTextureRegionForKey(slot.textureKey, segment, segmentWidth, 1, x, y);
+						this.updateCpuReadback(slot.surfaceId, segment, x, y);
+						x += segmentWidth;
+					}
 			}
 		}
 		this.invalidateReadCache(slot.surfaceId);

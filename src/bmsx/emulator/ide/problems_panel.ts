@@ -6,7 +6,7 @@ import { gotoDiagnostic } from './cart_editor';
 import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from './editor_view';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
-import { api } from '../runtime';
+import { api } from '../overlay_api';
 import { drawEditorText } from './text_renderer';
 import { markAllDiagnosticsDirty } from './diagnostics';
 import { resetBlink } from './render/render_caret';

@@ -1,5 +1,5 @@
 import type { EngineCore } from '../core/engine_core';
-import type { Api } from './api';
+import type { Api } from './firmware_api';
 
 export type ApiParameterMetadata = {
 	readonly name: string;

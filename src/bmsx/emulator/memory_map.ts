@@ -17,7 +17,7 @@ export const RAM_BASE = 0x08000000;
 export const DEFAULT_RAM_SIZE = 0x08000000; // 128 MB
 
 export const IO_WORD_SIZE = 4;
-export const IO_REGION_SIZE = 0x00004000; // 16 KB
+export const IO_REGION_SIZE = 0x00040000; // 256 KB
 
 export const DEFAULT_STRING_HANDLE_COUNT = 0x40000; // 256k handles
 export const STRING_HANDLE_ENTRY_SIZE = 16;

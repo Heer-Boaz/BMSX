@@ -76,7 +76,8 @@ import { applyWorkspaceOverridesToCart, createLuaResource, listResources, saveLu
 
 import * as TextEditing from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';
-import { api, Runtime } from '../runtime';
+import { Runtime } from '../runtime';
+import { api } from '../overlay_api';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import * as runtimeIde from '../runtime_ide';
 import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './render/render_error_overlay';

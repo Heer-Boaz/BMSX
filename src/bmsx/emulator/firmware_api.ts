@@ -19,7 +19,6 @@ import { Runtime } from './runtime';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
 import { setHardwareCamera } from '../render/shared/hardware_camera';
 import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../render/shared/hardware_lighting';
-import { VRAM_FRAMEBUFFER_BASE } from './memory_map';
 import { listResources } from './workspace';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { buildDirtyFilePath, hasWorkspaceStorage } from './ide/workspace_storage';
@@ -27,6 +26,23 @@ import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtins';
 import { createLuaTable, type LuaTable } from '../lua/luavalue';
 import { ActionState } from 'bmsx/input/inputtypes';
 import { BmsxColors } from './vdp';
+import {
+	IO_ARG_STRIDE,
+	IO_BUFFER_BASE,
+	IO_CMD_VDP_BLIT,
+	IO_CMD_VDP_CLEAR,
+	IO_CMD_VDP_DRAW_LINE,
+	IO_CMD_VDP_FILL_RECT,
+	IO_CMD_VDP_GLYPH_RUN,
+	IO_CMD_VDP_TILE_RUN,
+	IO_COMMAND_CAPACITY,
+	IO_COMMAND_STRIDE,
+	IO_PAYLOAD_BUFFER_BASE,
+	IO_PAYLOAD_CAPACITY,
+	IO_PAYLOAD_WRITE_PTR_ADDR,
+	IO_VDP_TILE_HANDLE_NONE,
+	IO_WRITE_PTR_ADDR,
+} from './io';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;
@@ -34,9 +50,23 @@ export type ApiOptions = {
 };
 
 const TAB_SPACES = 2;
+const ioGlyphRunUtf8Encoder = new TextEncoder();
 type FontDefinition = {
 	glyphs: Record<string, string>;
 	advance_padding?: number;
+};
+type FirmwareFontGlyphDescriptor = {
+	imgid: string;
+	handle: number;
+	width: number;
+	height: number;
+	advance: number;
+};
+type FirmwareFontDescriptor = {
+	id: number;
+	line_height: number;
+	advance_padding: number;
+	glyphs: Record<string, FirmwareFontGlyphDescriptor>;
 };
 type FrameBufferBlitOptions = {
 	scale?: number | { x: number; y: number };
@@ -75,6 +105,9 @@ type FrameBufferTileBlitDescriptor = {
 export class Api {
 	private readonly storage: RuntimeStorage;
 	private readonly font: BFont;
+	private readonly runtimeFonts: BFont[] = [];
+	private readonly fontIds = new WeakMap<BFont, number>();
+	private readonly fontDescriptors = new WeakMap<BFont, FirmwareFontDescriptor>();
 	private readonly defaultPrintColorIndex = 15;
 	private textCursorX = 0;
 	private textCursorY = 0;
@@ -85,7 +118,6 @@ export class Api {
 	private readonly cameraEyeScratch: vec3arr = [0, 0, 0];
 	private readonly lightColorScratch: vec3arr = [0, 0, 0];
 	private readonly lightVecScratch: vec3arr = [0, 0, 0];
-	private readonly dmaTilePixelPool: Uint8Array[] = [];
 	private _runtime: Runtime;
 
 	constructor(options: ApiOptions) {
@@ -100,7 +132,214 @@ export class Api {
 		this.storage = options.storage;
 		this._runtime = options.runtime;
 		this.font = new Font();
+		this.registerFont(this.font);
 		this.reset_print_cursor();
+	}
+
+	private registerFont(font: BFont): number {
+		const existing = this.fontIds.get(font);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const id = this.runtimeFonts.length;
+		this.runtimeFonts.push(font);
+		this.fontIds.set(font, id);
+		return id;
+	}
+
+	public resolveFontId(id: number): BFont {
+		const font = this.runtimeFonts[id];
+		if (font === undefined) {
+			throw new Error(`[FirmwareApi] Unknown font id ${id}.`);
+		}
+		return font;
+	}
+
+	public getFontId(font: BFont): number {
+		return this.registerFont(font);
+	}
+
+	private buildFontDescriptor(font: BFont): FirmwareFontDescriptor {
+		const cached = this.fontDescriptors.get(font);
+		if (cached) {
+			return cached;
+		}
+		const glyphs: Record<string, FirmwareFontGlyphDescriptor> = {};
+		const glyphEntries = Object.entries(font.glyphMap);
+		for (let index = 0; index < glyphEntries.length; index += 1) {
+			const [char] = glyphEntries[index];
+			const glyph = font.getGlyph(char);
+			glyphs[char] = {
+				imgid: glyph.imgid,
+				handle: this._runtime.resolveAssetHandle(glyph.imgid),
+				width: glyph.width,
+				height: glyph.height,
+				advance: glyph.advance,
+			};
+		}
+		const descriptor: FirmwareFontDescriptor = {
+			id: this.registerFont(font),
+			line_height: font.lineHeight,
+			advance_padding: font.glyphAdvancePadding,
+			glyphs,
+		};
+		this.fontDescriptors.set(font, descriptor);
+		return descriptor;
+	}
+
+	private writeIoArg(base: number, index: number, value: number): void {
+		this._runtime.memory.writeValue(base + index * IO_ARG_STRIDE, value);
+	}
+
+	private writeIoColor(base: number, offset: number, value: color): void {
+		this.writeIoArg(base, offset + 0, value.r);
+		this.writeIoArg(base, offset + 1, value.g);
+		this.writeIoArg(base, offset + 2, value.b);
+		this.writeIoArg(base, offset + 3, value.a);
+	}
+
+	private allocIoCommand(opcode: number): number {
+		const count = this._runtime.memory.readValue(IO_WRITE_PTR_ADDR) as number;
+		if (count >= IO_COMMAND_CAPACITY) {
+			throw new Error(`[FirmwareApi] IO command buffer overflow at opcode ${opcode}.`);
+		}
+		const base = IO_BUFFER_BASE + count * IO_COMMAND_STRIDE;
+		this._runtime.memory.writeValue(base, opcode);
+		return base;
+	}
+
+	private commitIoCommand(): void {
+		const count = this._runtime.memory.readValue(IO_WRITE_PTR_ADDR) as number;
+		this._runtime.memory.writeValue(IO_WRITE_PTR_ADDR, count + 1);
+	}
+
+	private allocIoPayload(words: number): number {
+		const writePtr = this._runtime.memory.readValue(IO_PAYLOAD_WRITE_PTR_ADDR) as number;
+		const next = writePtr + words;
+		if (next > IO_PAYLOAD_CAPACITY) {
+			throw new Error(`[FirmwareApi] IO payload buffer overflow (${next} > ${IO_PAYLOAD_CAPACITY}).`);
+		}
+		this._runtime.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, next);
+		return writePtr;
+	}
+
+	private queueClear(colorValue: color): void {
+		const base = this.allocIoCommand(IO_CMD_VDP_CLEAR);
+		this.writeIoColor(base, 1, colorValue);
+		this.commitIoCommand();
+	}
+
+	private queueFillRect(x0: number, y0: number, x1: number, y1: number, z: number, layer: number, colorValue: color): void {
+		const base = this.allocIoCommand(IO_CMD_VDP_FILL_RECT);
+		this.writeIoArg(base, 1, x0);
+		this.writeIoArg(base, 2, y0);
+		this.writeIoArg(base, 3, x1);
+		this.writeIoArg(base, 4, y1);
+		this.writeIoArg(base, 5, z);
+		this.writeIoArg(base, 6, layer);
+		this.writeIoColor(base, 7, colorValue);
+		this.commitIoCommand();
+	}
+
+	private queueDrawLine(x0: number, y0: number, x1: number, y1: number, z: number, layer: number, colorValue: color, thickness: number): void {
+		const base = this.allocIoCommand(IO_CMD_VDP_DRAW_LINE);
+		this.writeIoArg(base, 1, x0);
+		this.writeIoArg(base, 2, y0);
+		this.writeIoArg(base, 3, x1);
+		this.writeIoArg(base, 4, y1);
+		this.writeIoArg(base, 5, z);
+		this.writeIoArg(base, 6, layer);
+		this.writeIoColor(base, 7, colorValue);
+		this.writeIoArg(base, 11, thickness);
+		this.commitIoCommand();
+	}
+
+	private queueBlit(handle: number, x: number, y: number, z: number, layer: number, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, parallaxWeight: number): void {
+		const base = this.allocIoCommand(IO_CMD_VDP_BLIT);
+		this.writeIoArg(base, 1, handle);
+		this.writeIoArg(base, 2, x);
+		this.writeIoArg(base, 3, y);
+		this.writeIoArg(base, 4, z);
+		this.writeIoArg(base, 5, layer);
+		this.writeIoArg(base, 6, scaleX);
+		this.writeIoArg(base, 7, scaleY);
+		this.writeIoArg(base, 8, (flipH ? 1 : 0) | (flipV ? 2 : 0));
+		this.writeIoColor(base, 9, colorValue);
+		this.writeIoArg(base, 13, parallaxWeight);
+		this.commitIoCommand();
+	}
+
+	private queueGlyphLine(text: string, x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: number): void {
+		if (text.length === 0) {
+			return;
+		}
+		const textBytes = ioGlyphRunUtf8Encoder.encode(text);
+		const payloadWords = Math.ceil(textBytes.length / 4);
+		const payloadOffset = this.allocIoPayload(payloadWords);
+		for (let wordIndex = 0; wordIndex < payloadWords; wordIndex += 1) {
+			const byteIndex = wordIndex * 4;
+			const word =
+				(textBytes[byteIndex] ?? 0)
+				| ((textBytes[byteIndex + 1] ?? 0) << 8)
+				| ((textBytes[byteIndex + 2] ?? 0) << 16)
+				| ((textBytes[byteIndex + 3] ?? 0) << 24);
+			this._runtime.memory.writeValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + wordIndex) * IO_ARG_STRIDE, word >>> 0);
+		}
+		const base = this.allocIoCommand(IO_CMD_VDP_GLYPH_RUN);
+		this.writeIoArg(base, 1, payloadOffset);
+		this.writeIoArg(base, 2, textBytes.length);
+		this.writeIoArg(base, 3, x);
+		this.writeIoArg(base, 4, y);
+		this.writeIoArg(base, 5, z);
+		this.writeIoArg(base, 6, this.registerFont(font));
+		this.writeIoArg(base, 7, start);
+		this.writeIoArg(base, 8, end);
+		this.writeIoArg(base, 9, layer);
+		this.writeIoColor(base, 10, colorValue);
+		if (backgroundColor) {
+			this.writeIoArg(base, 14, 1);
+			this.writeIoColor(base, 15, backgroundColor);
+			this.commitIoCommand();
+			return;
+		}
+		this.writeIoArg(base, 14, 0);
+		this.commitIoCommand();
+	}
+
+	private queueGlyphRun(text: string | string[], x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: number): void {
+		const lines = Array.isArray(text) ? text : [text];
+		let cursorY = y;
+		for (let index = 0; index < lines.length; index += 1) {
+			this.queueGlyphLine(lines[index], x, cursorY, z, font, colorValue, backgroundColor, start, end, layer);
+			cursorY += font.lineHeight;
+		}
+	}
+
+	private queueTileRun(desc: FrameBufferTileBlitDescriptor): void {
+		const tileCount = desc.cols * desc.rows;
+		const payloadOffset = this.allocIoPayload(tileCount);
+		for (let index = 0; index < tileCount; index += 1) {
+			const tile = desc.tiles[index];
+			if (tile === undefined) {
+				throw new Error(`[FirmwareApi] dma_blit_tiles missing tile at index ${index}.`);
+			}
+			const handle = tile === false ? IO_VDP_TILE_HANDLE_NONE : this._runtime.resolveAssetHandle(tile);
+			this._runtime.memory.writeValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + index) * IO_ARG_STRIDE, handle);
+		}
+		const base = this.allocIoCommand(IO_CMD_VDP_TILE_RUN);
+		this.writeIoArg(base, 1, payloadOffset);
+		this.writeIoArg(base, 2, tileCount);
+		this.writeIoArg(base, 3, desc.cols);
+		this.writeIoArg(base, 4, desc.rows);
+		this.writeIoArg(base, 5, desc.tile_w);
+		this.writeIoArg(base, 6, desc.tile_h);
+		this.writeIoArg(base, 7, desc.origin_x);
+		this.writeIoArg(base, 8, desc.origin_y);
+		this.writeIoArg(base, 9, desc.scroll_x);
+		this.writeIoArg(base, 10, desc.scroll_y);
+		this.writeIoArg(base, 11, desc.z);
+		this.writeIoArg(base, 12, renderLayerTo2dLayer(desc.layer));
+		this.commitIoCommand();
 	}
 
 	public display_width(): number {
@@ -125,18 +364,6 @@ export class Api {
 			default:
 				throw new Error(`Unsupported pointer button index ${button}.`);
 		}
-	}
-
-	private acquireDmaTilePixels(size: number): Uint8Array {
-		for (let index = 0; index < this.dmaTilePixelPool.length; index += 1) {
-			const pixels = this.dmaTilePixelPool[index];
-			if (pixels.length < size) {
-				continue;
-			}
-			this.dmaTilePixelPool.splice(index, 1);
-			return pixels.subarray(0, size);
-		}
-		return new Uint8Array(size);
 	}
 
 	public mousebtn(button: number): boolean {
@@ -213,16 +440,21 @@ export class Api {
 	}
 
 	public cls(colorindex: number = 0): void {
-		Runtime.instance.vdp.clearFrameBuffer(this.palette_color(colorindex));
+		this.queueClear(this.palette_color(colorindex));
 		this.reset_print_cursor();
 	}
 
 	public blit_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
-		Runtime.instance.vdp.queueFrameBufferRect('rect', x0, y0, x1, y1, z, renderLayerTo2dLayer('world'), this.palette_color(colorindex));
+		const colorValue = this.palette_color(colorindex);
+		const layer = renderLayerTo2dLayer('world');
+		this.queueDrawLine(x0, y0, x1, y0, z, layer, colorValue, 1);
+		this.queueDrawLine(x0, y1, x1, y1, z, layer, colorValue, 1);
+		this.queueDrawLine(x0, y0, x0, y1, z, layer, colorValue, 1);
+		this.queueDrawLine(x1, y0, x1, y1, z, layer, colorValue, 1);
 	}
 
 	public fill_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
-		Runtime.instance.vdp.queueFrameBufferRect('fill', x0, y0, x1, y1, z, renderLayerTo2dLayer('world'), this.palette_color(colorindex));
+		this.queueFillRect(x0, y0, x1, y1, z, renderLayerTo2dLayer('world'), this.palette_color(colorindex));
 	}
 
 	public fill_rect_color(
@@ -235,7 +467,7 @@ export class Api {
 		options?: { layer?: RenderLayer },
 	): void {
 		const renderLayer = options === undefined || options.layer === undefined ? 'world' : options.layer;
-		Runtime.instance.vdp.queueFrameBufferRect('fill', x0, y0, x1, y1, z, renderLayerTo2dLayer(renderLayer), this.resolve_color(colorvalue));
+		this.queueFillRect(x0, y0, x1, y1, z, renderLayerTo2dLayer(renderLayer), this.resolve_color(colorvalue));
 	}
 
 	public blit(img_id: string, x: number, y: number, z: number, options?: FrameBufferBlitOptions): void {
@@ -244,7 +476,8 @@ export class Api {
 		let scaleY = 1;
 		let flipH = false;
 		let flipV = false;
-		let colorize = { r: 255, g: 255, b: 255, a: 255 };
+		let colorize: color = { r: 1, g: 1, b: 1, a: 1 };
+		let parallaxWeight = 0;
 		let renderLayer: RenderLayer = 'world';
 		if (options !== undefined) {
 			if (options.scale !== undefined) {
@@ -259,13 +492,14 @@ export class Api {
 			flipH = options.flip_h === true;
 			flipV = options.flip_v === true;
 			if (options.colorize !== undefined) {
-				colorize = this.toFrameBufferColor(options.colorize);
+				colorize = options.colorize;
 			}
+			parallaxWeight = options.parallax_weight ?? 0;
 			if (options.layer !== undefined) {
 				renderLayer = options.layer;
 			}
 		}
-		Runtime.instance.vdp.queueFrameBufferSpriteHandle(
+		this.queueBlit(
 			handle,
 			x,
 			y,
@@ -276,94 +510,12 @@ export class Api {
 			flipH,
 			flipV,
 			colorize,
+			parallaxWeight,
 		);
 	}
 
 	public dma_blit_tiles(desc: FrameBufferTileBlitDescriptor): void {
-		const vdp = Runtime.instance.vdp;
-		vdp.ensureFrameBufferSurfaceReady();
-		const frameWidth = vdp.getFrameBufferWidth();
-		const frameHeight = vdp.getFrameBufferHeight();
-		const totalWidth = desc.cols * desc.tile_w;
-		const totalHeight = desc.rows * desc.tile_h;
-		let dstX = desc.origin_x - desc.scroll_x;
-		let dstY = desc.origin_y - desc.scroll_y;
-		let srcClipX = 0;
-		let srcClipY = 0;
-		let writeWidth = totalWidth;
-		let writeHeight = totalHeight;
-		if (dstX < 0) {
-			srcClipX = -dstX;
-			writeWidth += dstX;
-			dstX = 0;
-		}
-		if (dstY < 0) {
-			srcClipY = -dstY;
-			writeHeight += dstY;
-			dstY = 0;
-		}
-		const overflowX = (dstX + writeWidth) - frameWidth;
-		if (overflowX > 0) {
-			writeWidth -= overflowX;
-		}
-		const overflowY = (dstY + writeHeight) - frameHeight;
-		if (overflowY > 0) {
-			writeHeight -= overflowY;
-		}
-		if (writeWidth <= 0 || writeHeight <= 0) {
-			return;
-		}
-		const rowBytes = writeWidth * 4;
-		const pixels = this.acquireDmaTilePixels(rowBytes * writeHeight);
-		pixels.fill(0);
-		for (let row = 0; row < desc.rows; row += 1) {
-			const base = row * desc.cols;
-			for (let col = 0; col < desc.cols; col += 1) {
-				const tile = desc.tiles[base + col];
-				if (tile === false) {
-					continue;
-				}
-				const handle = Runtime.instance.resolveAssetHandle(tile);
-				const source = vdp.resolveFrameBufferSource(handle);
-				if (source.width !== desc.tile_w || source.height !== desc.tile_h) {
-					throw new Error(`dma_blit_tiles asset '${tile}' size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`);
-				}
-				const tileX = (col * desc.tile_w) - srcClipX;
-				const tileY = (row * desc.tile_h) - srcClipY;
-				const tileRight = tileX + desc.tile_w;
-				const tileBottom = tileY + desc.tile_h;
-				if (tileRight <= 0 || tileBottom <= 0 || tileX >= writeWidth || tileY >= writeHeight) {
-					continue;
-				}
-				const copyLeft = tileX < 0 ? -tileX : 0;
-				const copyTop = tileY < 0 ? -tileY : 0;
-				const copyRight = tileRight > writeWidth ? writeWidth - tileX : desc.tile_w;
-				const copyBottom = tileBottom > writeHeight ? writeHeight - tileY : desc.tile_h;
-				const copyWidth = copyRight - copyLeft;
-				const copyHeight = copyBottom - copyTop;
-				for (let copyRow = 0; copyRow < copyHeight; copyRow += 1) {
-					const srcOffset = ((source.regionY + copyTop + copyRow) * source.stride) + ((source.regionX + copyLeft) * 4);
-					const dstOffset = (((tileY + copyTop + copyRow) * writeWidth) + tileX + copyLeft) * 4;
-					pixels.set(source.pixels.subarray(srcOffset, srcOffset + copyWidth * 4), dstOffset);
-				}
-			}
-		}
-		Runtime.instance.dmaController.enqueueImageCopy(
-			{
-				baseAddr: VRAM_FRAMEBUFFER_BASE + (((dstY * frameWidth) + dstX) * 4),
-				writeWidth,
-				writeHeight,
-				writeStride: rowBytes,
-				targetStride: frameWidth * 4,
-				sourceStride: rowBytes,
-				writeSize: rowBytes * writeHeight,
-				clipped: writeWidth !== totalWidth || writeHeight !== totalHeight,
-			},
-			pixels,
-			() => {
-				this.dmaTilePixelPool.push(pixels);
-			},
-		);
+		this.queueTileRun(desc);
 	}
 
 	public blit_glyphs(glyphs: string | string[], x: number, y: number, z: number, options: FrameBufferGlyphOptions): void {
@@ -386,7 +538,7 @@ export class Api {
 			baseline: options.baseline,
 			layer: renderLayer,
 		};
-		Runtime.instance.vdp.queueFrameBufferGlyphs(
+		this.queueGlyphRun(
 			submission.glyphs,
 			submission.x,
 			submission.y,
@@ -396,13 +548,22 @@ export class Api {
 			submission.background_color,
 			glyphStart,
 			glyphEnd,
-			submission.layer,
+			renderLayerTo2dLayer(submission.layer),
 		);
 	}
 
 	public blit_poly(points: Polygon, z: number, colorvalue: number | color, thickness?: number, layer?: RenderLayer): void {
+		if (points.length < 4) {
+			return;
+		}
 		const renderLayer = layer === undefined ? 'world' : layer;
-		Runtime.instance.vdp.queueFrameBufferPoly(points, z, this.resolve_color(colorvalue), thickness === undefined ? 1 : thickness, renderLayerTo2dLayer(renderLayer));
+		const color = this.resolve_color(colorvalue);
+		const lineThickness = thickness === undefined ? 1 : thickness;
+		const layer2d = renderLayerTo2dLayer(renderLayer);
+		for (let index = 0; index < points.length; index += 2) {
+			const next = (index + 2) % points.length;
+			this.queueDrawLine(points[index], points[index + 1], points[next], points[next + 1], z, layer2d, color, lineThickness);
+		}
 	}
 
 	public put_mesh(mesh: MeshRenderSubmission['mesh'], matrix: MeshRenderSubmission['matrix'], options?: Omit<MeshRenderSubmission, 'mesh' | 'matrix'>): void {
@@ -545,7 +706,7 @@ export class Api {
 			baseline: options === undefined ? undefined : options.baseline,
 			layer: renderLayer,
 		};
-		Runtime.instance.vdp.queueFrameBufferGlyphs(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, glyphStart, glyphEnd, renderLayer);
+		this.queueGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, glyphStart, glyphEnd, renderLayerTo2dLayer(renderLayer));
 		const shouldAdvance = options === undefined || options.auto_advance === undefined ? autoAdvance : options.auto_advance;
 		if (shouldAdvance) {
 			const lineCount = lines ? lines.length : 1;
@@ -591,7 +752,7 @@ export class Api {
 			font: renderFont,
 			layer: 'world',
 		};
-		Runtime.instance.vdp.queueFrameBufferGlyphs(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, 0, Number.MAX_SAFE_INTEGER, glyphs.layer);
+		this.queueGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, 0, Number.MAX_SAFE_INTEGER, renderLayerTo2dLayer(glyphs.layer));
 	}
 
 	public blit_text_inline_span_with_font(text: string, start: number, end: number, x: number, y: number, z: number, colorindex: number, font?: BFont): void {
@@ -607,7 +768,7 @@ export class Api {
 			font: renderFont,
 			layer: 'world',
 		};
-		Runtime.instance.vdp.queueFrameBufferGlyphs(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, start, end, glyphs.layer);
+		this.queueGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, start, end, renderLayerTo2dLayer(glyphs.layer));
 	}
 
 	public action_triggered(actiondefinition: string, player?: number): boolean {
@@ -682,7 +843,7 @@ export class Api {
 		return table;
 	}
 
-	public create_font(definition: FontDefinition): BFont {
+	public create_font(definition: FontDefinition): FirmwareFontDescriptor {
 		if (!definition || typeof definition !== 'object') {
 			throw new Error('create_font(definition) requires a table.');
 		}
@@ -710,11 +871,12 @@ export class Api {
 			}
 			advancePadding = Math.floor(definition.advance_padding);
 		}
-		return new BFont(glyphMap, advancePadding);
+		const font = new BFont(glyphMap, advancePadding);
+		return this.buildFontDescriptor(font);
 	}
 
-	public get_default_font(): BFont {
-		return this.font;
+	public get_default_font(): FirmwareFontDescriptor {
+		return this.buildFontDescriptor(this.font);
 	}
 
 	public dset(index: number, value: number): void {
@@ -809,15 +971,6 @@ export class Api {
 
 	private resolve_color(value: number | color): color {
 		return typeof value === 'number' ? this.palette_color(value) : value;
-	}
-
-	private toFrameBufferColor(value: color): { r: number; g: number; b: number; a: number } {
-		return {
-			r: Math.round(value.r * 255),
-			g: Math.round(value.g * 255),
-			b: Math.round(value.b * 255),
-			a: Math.round(value.a * 255),
-		};
 	}
 
 	private coerceLightColor(value: number | color | vec3arr | number[], out: vec3arr, label: string): vec3arr {
@@ -948,7 +1101,7 @@ export class Api {
 					font,
 					layer: 'world',
 				};
-				Runtime.instance.vdp.queueFrameBufferGlyphs(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, 0, Number.MAX_SAFE_INTEGER, glyphs.layer);
+				this.queueGlyphRun(glyphs.glyphs, glyphs.x, glyphs.y, glyphs.z, glyphs.font, glyphs.color, glyphs.background_color, 0, Number.MAX_SAFE_INTEGER, renderLayerTo2dLayer(glyphs.layer));
 			}
 			if (i < lines.length - 1) {
 				cursorY += font.lineHeight;

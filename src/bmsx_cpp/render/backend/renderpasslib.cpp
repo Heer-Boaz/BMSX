@@ -132,7 +132,6 @@ void RenderPassLibrary::registerBuiltinPassesSoftware() {
 		desc.graph = RenderPassDef::RenderPassGraphDef{};
 		desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
 		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-			Runtime::instance().vdp().ensureFrameBufferSurfaceReady();
 			auto* view = ctx.view;
 			Framebuffer2DPipelineState state;
 			state.width = static_cast<i32>(view->offscreenCanvasSize.x);
@@ -229,7 +228,6 @@ void RenderPassLibrary::registerBuiltinPassesOpenGLES2() {
 		desc.graph = RenderPassDef::RenderPassGraphDef{};
 		desc.graph->writes = { RenderPassDef::RenderGraphSlot::FrameColor };
 		desc.graph->buildState = [](const RenderPassDef::RenderGraphPassContext& ctx) -> std::any {
-			Runtime::instance().vdp().ensureFrameBufferSurfaceReady();
 			auto* view = ctx.view;
 			Framebuffer2DPipelineState state;
 			state.width = static_cast<i32>(view->offscreenCanvasSize.x);

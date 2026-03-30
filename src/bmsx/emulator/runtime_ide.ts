@@ -32,6 +32,7 @@ import type { Runtime } from './runtime';
 import type { RuntimeOptions } from './types';
 import { resolveWorkspacePath } from './workspace_path';
 import { shallowcopy } from '../utils/shallowcopy';
+import { api as overlay_api } from './overlay_api';
 
 class DebugPauseCoordinator {
 	private suspension: LuaDebuggerPauseSignal = null;
@@ -73,7 +74,7 @@ type RenderTargetState = {
 	stack: TargetOwner[];
 };
 
-const EDITOR_TARGET: RenderTargetVec2 = { x: 384, y: 288 };
+export const EDITOR_TARGET: RenderTargetVec2 = { x: 384, y: 288 };
 const RT_STATE = new WeakMap<Runtime, RenderTargetState>();
 
 function getRenderTargetState(runtime: Runtime): RenderTargetState {
@@ -784,6 +785,7 @@ export function tickIDEDraw(runtime: Runtime): void {
 
 export function drawIde(runtime: Runtime): void {
 	try {
+		overlay_api.beginFrame(runtime.overlayRenderer);
 		runtime.overlayRenderer.beginFrame();
 		runtime.overlayRenderer.setDefaultLayer('ide');
 		runtime.editor!.draw();
@@ -794,12 +796,14 @@ export function drawIde(runtime: Runtime): void {
 			handleLuaError(runtime, error);
 		}
 	} finally {
+		overlay_api.endFrame();
 		runtime.overlayRenderer.endFrame();
 	}
 }
 
 export function drawTerminal(runtime: Runtime): void {
 	try {
+		overlay_api.beginFrame(runtime.overlayRenderer);
 		runtime.overlayRenderer.beginFrame();
 		runtime.overlayRenderer.setDefaultLayer('ide');
 		runtime.terminal.draw(runtime.overlayRenderer, runtime.overlayRenderer.viewportSize);
@@ -811,6 +815,7 @@ export function drawTerminal(runtime: Runtime): void {
 			handleLuaError(runtime, error);
 		}
 	} finally {
+		overlay_api.endFrame();
 		runtime.overlayRenderer.endFrame();
 	}
 }

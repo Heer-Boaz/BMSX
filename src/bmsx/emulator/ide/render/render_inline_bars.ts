@@ -1,10 +1,10 @@
-import { Api } from '../../api';
+import type { OverlayApi as Api } from '../../overlay_api';
 import { drawInlineCaret } from './render_caret';
 import * as constants from '../constants';
 import type { TextField } from '../types';
 import { ide_state } from '../ide_state';
 import { caretX, getFieldText, measureRange, selectionRange } from '../inline_text_field';
-import { api } from '../../runtime';
+import { api } from '../../overlay_api';
 import { drawEditorText } from '../text_renderer';
 import { getCreateResourceBarHeight, getResourceSearchBarHeight, getSearchBarHeight, isResourceSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../editor_view';
 import { measureText } from '../text_utils';

@@ -107,6 +107,13 @@ interface HeadlessTestApi {
 	waitForGameplay(options: HeadlessGameplayWaitOptions): Promise<Record<string, boolean>>;
 }
 
+type HeadlessAssertionRunState = {
+	moduleLabel: string;
+	requireExplicitFinish: boolean;
+	assertCount: number;
+	finished: boolean;
+};
+
 let maxScheduledMs = 0;
 const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 let workspaceFetchBridgeInstalled = false;
@@ -562,11 +569,15 @@ function createHeadlessTestApi(
 	frameIntervalMs: number,
 	logger: (msg: string) => void,
 	scheduleInput: (entries: InputTimelineEntry[]) => void,
+	runState: HeadlessAssertionRunState | null,
 ): HeadlessTestApi {
 	const fail = (message: string): never => {
 		throw new Error(`[assert] ${message}`);
 	};
 	const assert = (condition: boolean, message: string): asserts condition => {
+		if (runState) {
+			runState.assertCount += 1;
+		}
 		if (!condition) {
 			fail(message);
 		}
@@ -702,6 +713,9 @@ function createHeadlessTestApi(
 				});
 		},
 		finish(message) {
+			if (runState) {
+				runState.finished = true;
+			}
 			if (message) {
 				logger(`module:${moduleLabel} ${message}`);
 			}
@@ -726,7 +740,7 @@ function createHeadlessTestApi(
 	};
 }
 
-async function runInputModuleScheduler(modulePath: string, frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void): Promise<void> {
+async function runInputModuleScheduler(modulePath: string, frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void, runState: HeadlessAssertionRunState | null): Promise<void> {
 	const resolved = path.resolve(modulePath);
 	const moduleUrl = pathToFileURL(resolved).href;
 	const imported = await import(moduleUrl);
@@ -741,11 +755,20 @@ async function runInputModuleScheduler(modulePath: string, frameIntervalMs: numb
 		frameIntervalMs,
 		logger: (message: string) => logger(`module:${moduleLabel} ${message}`),
 		schedule: scheduleInput,
-		test: createHeadlessTestApi(moduleLabel, frameIntervalMs, logger, scheduleInput),
+		test: createHeadlessTestApi(moduleLabel, frameIntervalMs, logger, scheduleInput, runState),
 	};
 	const result = await scheduler(context);
 	if (Array.isArray(result)) {
 		scheduleInput(result as InputTimelineEntry[]);
+	}
+}
+
+function assertHeadlessAssertionRunState(runState: HeadlessAssertionRunState): void {
+	if (runState.assertCount <= 0) {
+		throw new Error(`[bootrom:${__BOOTROM_TARGET__}] Assertion module '${runState.moduleLabel}' completed without assertions.`);
+	}
+	if (runState.requireExplicitFinish && !runState.finished) {
+		throw new Error(`[bootrom:${__BOOTROM_TARGET__}] Assertion module '${runState.moduleLabel}' did not call test.finish() before TTL.`);
 	}
 }
 
@@ -895,6 +918,7 @@ async function main(): Promise<void> {
 	const inputLogger = (message: string) => console.log(`[bootrom:${__BOOTROM_TARGET__}:input] ${message}`);
 	const romFolder = cliOptions.romFolder;
 	let cartRoot: string | null = null;
+	let assertionRunState: HeadlessAssertionRunState | null = null;
 	if (romFolder) {
 		cartRoot = await resolveCartRoot(romFolder);
 	}
@@ -909,11 +933,17 @@ async function main(): Promise<void> {
 		}
 	}
 	if (cliOptions.inputModulePath) {
-		await runInputModuleScheduler(cliOptions.inputModulePath, frameInterval, postInput, inputLogger);
+		await runInputModuleScheduler(cliOptions.inputModulePath, frameInterval, postInput, inputLogger, null);
 	} else if (cartRoot && romFolder) {
 		const modulePath = path.join(cartRoot, 'test', `${romFolder}_assert_results.mjs`);
 		if (await fileExists(modulePath)) {
-			await runInputModuleScheduler(modulePath, frameInterval, postInput, inputLogger);
+			assertionRunState = {
+				moduleLabel: path.basename(modulePath),
+				requireExplicitFinish: true,
+				assertCount: 0,
+				finished: false,
+			};
+			await runInputModuleScheduler(modulePath, frameInterval, postInput, inputLogger, assertionRunState);
 		}
 	}
 	const defaultTtl = 1_000; // minimum 1 second default TTL to allow gameboot and graceful shutdown
@@ -922,6 +952,15 @@ async function main(): Promise<void> {
 	const ttlMs = Math.max(requestedTtl, minTtl);
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL set to ${ttlMs}ms (min required ${minTtl}ms).`);
 	setTimeout(() => {
+		try {
+			if (assertionRunState) {
+				assertHeadlessAssertionRunState(assertionRunState);
+			}
+		} catch (error) {
+			console.error(`[bootrom:${__BOOTROM_TARGET__}] Fatal error:`, error);
+			process.exit(1);
+			return;
+		}
 		console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL reached (${ttlMs}ms). Terminating.`);
 		process.exit(0);
 	}, ttlMs);

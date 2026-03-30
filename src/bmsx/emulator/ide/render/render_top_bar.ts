@@ -4,7 +4,7 @@ import { ide_state } from '../ide_state';
 import { measureText } from '../text_utils';
 import { drawEditorText } from '../text_renderer';
 import { MenuId, TopBarButtonId } from '../types';
-import { api } from '../../runtime';
+import { api } from '../../overlay_api';
 import { MENU_COMMANDS, MENU_IDS } from '../ide_input';
 
 type MenuSeparator = { type: 'separator' };

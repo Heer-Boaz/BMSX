@@ -21,7 +21,7 @@ constexpr uint32_t RAM_BASE = 0x08000000u;
 constexpr uint32_t DEFAULT_RAM_SIZE = 0x08000000u; // 128 MB
 
 constexpr uint32_t IO_WORD_SIZE = 4;
-constexpr uint32_t IO_REGION_SIZE = 0x00004000u; // 16 KB
+constexpr uint32_t IO_REGION_SIZE = 0x00040000u; // 256 KB
 
 constexpr uint32_t DEFAULT_STRING_HANDLE_COUNT = 0x40000u; // 256k handles
 constexpr uint32_t STRING_HANDLE_ENTRY_SIZE = 16;

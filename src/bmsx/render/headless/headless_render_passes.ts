@@ -286,17 +286,28 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 		name: 'HeadlessFramebuffer2D',
 		stateOnly: true,
 		prepare: () => {
-			Runtime.instance.vdp.ensureFrameBufferSurfaceReady();
 			registry.setState('framebuffer_2d', {
-				width: $.view.viewportSize.x,
-				height: $.view.viewportSize.y,
+				width: $.view.offscreenCanvasSize.x,
+				height: $.view.offscreenCanvasSize.y,
 				baseWidth: $.view.viewportSize.x,
 				baseHeight: $.view.viewportSize.y,
-				colorTex: $.view.textures[Runtime.instance.vdp.getFrameBufferTextureKey()],
+				colorTex: $.view.textures[Runtime.instance.vdp.frameBufferTextureKey],
 			} as Framebuffer2DPipelineState);
 		},
-		exec: () => {
-			const pixels = Runtime.instance.vdp.getFrameBufferPixels();
+		exec: (backend, _fbo, state: Framebuffer2DPipelineState) => {
+			const frameBufferWidth = Runtime.instance.vdp.frameBufferWidth;
+			const frameBufferHeight = Runtime.instance.vdp.frameBufferHeight;
+			if (frameBufferWidth <= 0 || frameBufferHeight <= 0) {
+				throw new Error(`[HeadlessFramebuffer2D] Invalid framebuffer dimensions ${frameBufferWidth}x${frameBufferHeight}.`);
+			}
+			if (!state.colorTex) {
+				throw new Error(`[HeadlessFramebuffer2D] Missing framebuffer texture '${Runtime.instance.vdp.frameBufferTextureKey}'.`);
+			}
+			const pixels = backend.readTextureRegion(state.colorTex, 0, 0, frameBufferWidth, frameBufferHeight);
+			const expectedByteLength = frameBufferWidth * frameBufferHeight * 4;
+			if (pixels.byteLength !== expectedByteLength) {
+				throw new Error(`[HeadlessFramebuffer2D] Framebuffer byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);
+			}
 			let active = 0;
 			for (let index = 3; index < pixels.length; index += 4) {
 				if (pixels[index] !== 0) {
@@ -304,7 +315,7 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 				}
 			}
 			const snapshot: Snapshot = [
-				`pixels=${pixels.length >> 2} active=${active} size=${Runtime.instance.vdp.getFrameBufferWidth()}x${Runtime.instance.vdp.getFrameBufferHeight()}`,
+				`pixels=${pixels.length >> 2} active=${active} framebuffer=${frameBufferWidth}x${frameBufferHeight} present=${state.width}x${state.height} logical=${state.baseWidth}x${state.baseHeight}`,
 			];
 			previousFrameBufferSnapshot = emitDiff('framebuffer', previousFrameBufferSnapshot, snapshot);
 		},

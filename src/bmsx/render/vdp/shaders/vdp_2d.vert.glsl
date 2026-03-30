@@ -11,6 +11,7 @@ in vec2 i_uv1;
 in float i_z;
 in uint i_atlas_id;
 in float i_fx;
+in float i_priority;
 in vec4 i_color;
 
 uniform float u_scale;
@@ -18,7 +19,6 @@ uniform vec4 u_parallax_rig; // (vy, scale, impact, impact_t)
 uniform vec4 u_parallax_rig2; // (bias_px, parallax_strength, scale_strength, flip_strength)
 uniform float u_parallax_flip_window;
 
-// Frame-shared UBO (std140). Only first fields are used in this shader.
 layout(std140) uniform FrameUniforms {
 	vec2 u_offscreenSize;
 	vec2 u_logicalSize;
@@ -31,6 +31,7 @@ layout(std140) uniform FrameUniforms {
 
 out vec2 v_texcoord;
 out vec4 v_color_override;
+out float v_priority;
 flat out uint v_atlas_id;
 
 float wobble(float t) {
@@ -64,5 +65,6 @@ void main() {
 	gl_Position = vec4(clipSpace, 0.0, 1.0);
 	v_texcoord = mix(i_uv0, i_uv1, a_corner);
 	v_color_override = i_color;
+	v_priority = i_priority;
 	v_atlas_id = i_atlas_id;
 }

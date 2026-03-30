@@ -176,6 +176,14 @@ export class BFont {
 		return this.lineHeightValue;
 	}
 
+	public get glyphMap(): GlyphMap {
+		return this.letter_to_img;
+	}
+
+	public get glyphAdvancePadding(): number {
+		return this.advancePadding;
+	}
+
 	public measure(text: string): number {
 		let width = 0;
 		for (let i = 0; i < text.length; i++) {

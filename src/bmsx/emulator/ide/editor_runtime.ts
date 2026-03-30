@@ -1,4 +1,5 @@
-import { Runtime, api } from '../runtime';
+import { Runtime } from '../runtime';
+import { api } from '../overlay_api';
 import { BmsxColors } from '../vdp';
 import * as constants from './constants';
 import { activateCodeTab, getActiveCodeTabContext, isResourceViewActive, setActiveTab, storeActiveCodeTabContext } from './editor_tabs';

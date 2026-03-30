@@ -1,5 +1,5 @@
 import type { RectBounds } from '../../../rompack/rompack';
-import { api } from '../../runtime';
+import { api } from '../../overlay_api';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';

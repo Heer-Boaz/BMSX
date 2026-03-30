@@ -42,11 +42,13 @@ export type RenderPassId =
 	| 'meshbatch'
 	| 'particles'
 	| 'framebuffer_2d'
+	| 'host_overlay'
 	| 'device_quantize'
 	| 'crt'
 	| 'frame_shared'
 	| 'frame_resolve'
-	| 'axis_gizmo';
+	| 'axis_gizmo'
+	| 'sprites';
 
 export interface BackendCaps { maxColorAttachments: number; }
 export type PresentationMode = 'partial' | 'completed';
@@ -210,16 +212,26 @@ export interface RenderPassStateRegistry {
 	['meshbatch']: MeshBatchPipelineState;
 	['particles']: ParticlePipelineState;
 	['framebuffer_2d']: Framebuffer2DPipelineState;
+	['host_overlay']: HostOverlayPipelineState;
 	['device_quantize']: DeviceQuantizePipelineState;
 	['crt']: CRTPipelineState;
 	['frame_shared']: FrameSharedState;
 	['frame_resolve']: never;
 	['axis_gizmo']: never;
+	['sprites']: never;
 	['debug_solid']: never;
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;
 
 export type Framebuffer2DPipelineState = {
+	width: number;
+	height: number;
+	baseWidth: number;
+	baseHeight: number;
+	colorTex: TextureHandle;
+};
+
+export type HostOverlayPipelineState = {
 	width: number;
 	height: number;
 	baseWidth: number;

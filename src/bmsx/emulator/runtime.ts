@@ -33,7 +33,7 @@ import { buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romlo
 import { decodeBinary } from '../serializer/binencoder';
 import { tokenKeyFromAsset } from '../rompack/asset_tokens';
 import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
-import { Api } from './api';
+import { Api } from './firmware_api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from './cpu';
 import { StringPool, StringValue } from './string_pool';
 import { StringHandleTable } from './string_memory';
@@ -77,6 +77,7 @@ import {
 	IO_IMG_WRITTEN,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
+	IO_PAYLOAD_WRITE_PTR_ADDR,
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
 	IO_VDP_PRIMARY_ATLAS_ID,
@@ -95,7 +96,7 @@ import {
 	VDP_STATUS_VBLANK,
 } from './io';
 import { HandlerCache } from './handler_cache';
-import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry } from './memory';
+import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry, type IoWriteHandler } from './memory';
 import { DmaController } from './devices/dma_controller';
 import { ImgDecController } from './devices/imgdec_controller';
 import {
@@ -108,8 +109,9 @@ import {
 	configureMemoryMap,
 	type MemoryMapSpecs as MemoryMapSpecs,
 } from './memory_map';
-import { VDP } from './vdp';
+import { FRAMEBUFFER_TEXTURE_KEY, VDP } from './vdp';
 import { PROGRAM_ASSET_ID } from './program_asset';
+import { createVdpBlitterExecutor } from '../render/vdp/vdp_blitter';
 
 export const BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'left',
@@ -529,6 +531,7 @@ export class Runtime {
 		});
 		this.dmaController.tick();
 		this.imgDecController.tick();
+		this.vdp.advanceBlitter(cycles);
 		this.advanceVblank(cycles);
 	}
 
@@ -755,6 +758,7 @@ export class Runtime {
 	private waitForVblankTargetSequence = 0;
 	private clearBackQueuesAfterWaitResume = false;
 	private readonly waitForVblankSignal: WaitForVblankSignal = { kind: 'wait_vblank' };
+	private drainingIoCommandsOnWrite = false;
 	private vblankSequence = 0;
 	private lastCompletedVblankSequence = 0;
 	public cycleBudgetPerFrame: number;
@@ -1099,6 +1103,7 @@ export class Runtime {
 
 	private static computeAssetTableBytes(engineSource: RawAssetSource, assetSource: RawAssetSource, assetLayers: ReadonlyArray<RuntimeAssetLayer>): { bytes: number; entryCount: number; stringBytes: number } {
 		const ids = this.collectAssetEntryIds(engineSource, assetSource, assetLayers);
+		ids.add(FRAMEBUFFER_TEXTURE_KEY);
 		const encoder = new TextEncoder();
 		let stringBytes = 0;
 		for (const id of ids) {
@@ -1170,7 +1175,9 @@ export class Runtime {
 		const atlasSlotBytes = memorySpecs.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 		const engineAtlasSlotBytes = engineMemorySpecs.system_atlas_slot_bytes ?? this.resolveEngineAtlasSlotBytes(params.engineSource);
 		const renderSize = this.resolveRenderSize(machineConfig);
-		const frameBufferBytes = renderSize.width * renderSize.height * 4;
+		const frameBufferWidth = renderSize.width;
+		const frameBufferHeight = renderSize.height;
+		const frameBufferBytes = frameBufferWidth * frameBufferHeight * 4;
 		if (!Number.isSafeInteger(engineAtlasSlotBytes) || engineAtlasSlotBytes <= 0) {
 			throw new Error('[Runtime] system atlas slot bytes must be a positive integer.');
 		}
@@ -1213,7 +1220,7 @@ export class Runtime {
 			`[Runtime] memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
 			+ `(io=${IO_REGION_SIZE}, string_handles=${stringHandleCount}, string_heap=${stringHeapBytes}, `
 			+ `asset_table=${assetTableBytes} (${assetTableInfo.entryCount} entries, ${assetTableInfo.stringBytes} string bytes), `
-			+ `asset_data=${assetDataBytes}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes}, `
+			+ `asset_data=${assetDataBytes}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes} (${frameBufferWidth}x${frameBufferHeight}), `
 			+ `engine_atlas_slot=${engineAtlasSlotBytes}, atlas_slot=${atlasSlotBytes}x2=${atlasSlotBytes * 2}).`,
 		);
 		return {
@@ -1285,10 +1292,14 @@ export class Runtime {
 		this.cartCanonicalization = resolvedCanonicalization;
 		this.luaJsBridge = new LuaJsBridge(this, this.luaHandlerCache);
 		this.memory = options.memory;
-		this.vdp = new VDP(this.memory);
+		this.vdp = new VDP(
+			this.memory,
+			createVdpBlitterExecutor($.view.backend),
+		);
 		this.stringHandles = new StringHandleTable(this.memory);
 		this.runtimeStringPool = new StringPool(this.stringHandles);
 		this.memory.writeValue(IO_WRITE_PTR_ADDR, 0);
+		this.memory.writeValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
 		this.memory.writeValue(IO_IRQ_FLAGS, 0);
@@ -1314,6 +1325,7 @@ export class Runtime {
 		this.memory.writeValue(IO_VDP_RD_MODE, VDP_RD_MODE_RGBA8888);
 		this.memory.writeValue(IO_VDP_STATUS, 0);
 		this.vdp.initializeRegisters();
+		this.memory.setIoWriteHandler(this as IoWriteHandler);
 		this.setVblankCycles(options.vblankCycles);
 		this.dmaController = new DmaController(this.memory, (mask) => this.raiseIrqFlags(mask));
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, (mask) => this.raiseIrqFlags(mask));
@@ -1601,6 +1613,18 @@ export class Runtime {
 		this.memory.writeValue(IO_IRQ_FLAGS, (current | mask) >>> 0);
 	}
 
+	public onIoWrite(addr: number, value: Value): void {
+		if (addr !== IO_WRITE_PTR_ADDR || value === 0 || this.drainingIoCommandsOnWrite) {
+			return;
+		}
+		this.drainingIoCommandsOnWrite = true;
+		try {
+			runtimeLuaPipeline.processIo(this);
+		} finally {
+			this.drainingIoCommandsOnWrite = false;
+		}
+	}
+
 	private runUpdatePhase(state: FrameState): void {
 		if (!this.cartEntryAvailable) {
 			return;
@@ -1873,7 +1897,7 @@ export class Runtime {
 	}
 
 	public setVdpDitherType(value: number): void {
-		this.vdp.setDitherType(value);
+		this.vdp.ditherType = value;
 	}
 
 	public disableCrtPostprocessingForEditor(): void {
@@ -1965,12 +1989,13 @@ export class Runtime {
 			} else {
 				this.memory.resetAssetMemory();
 			}
-			await this.vdp.registerImageAssets(assetSource);
-			this.registerAudioAssets(assetSource);
-			this.rebuildAssetMetaCaches(assetSource);
-			this.memory.finalizeAssetTable();
-			this.memory.markAllAssetsDirty();
-		} finally {
+				await this.vdp.registerImageAssets(assetSource);
+				this.registerAudioAssets(assetSource);
+				this.rebuildAssetMetaCaches(assetSource);
+				this.memory.finalizeAssetTable();
+				this.applyAssetHandlesToActiveLayers();
+				this.memory.markAllAssetsDirty();
+			} finally {
 			this.assetMemoryGate.end(token);
 		}
 	}
@@ -2009,6 +2034,34 @@ export class Runtime {
 			}
 			const handle = this.resolveAssetHandle(asset.resid);
 			this.audioMetaByHandle.set(handle, meta);
+		}
+	}
+
+	private applyAssetHandlesToLayer(assets: RuntimeAssets): void {
+		const maps = [assets.img, assets.audio];
+		for (let mapIndex = 0; mapIndex < maps.length; mapIndex += 1) {
+			const map = maps[mapIndex];
+			for (const entry of Object.values(map)) {
+				if (!entry || typeof entry.resid !== 'string') {
+					continue;
+				}
+				if (!this.memory.hasAsset(entry.resid)) {
+					continue;
+				}
+				entry.handle = this.resolveAssetHandle(entry.resid);
+			}
+		}
+	}
+
+	private applyAssetHandlesToActiveLayers(): void {
+		if (this.biosAssetLayer) {
+			this.applyAssetHandlesToLayer(this.biosAssetLayer.assets);
+		}
+		if (this.cartAssetLayer) {
+			this.applyAssetHandlesToLayer(this.cartAssetLayer.assets);
+		}
+		if (this.overlayAssetLayer) {
+			this.applyAssetHandlesToLayer(this.overlayAssetLayer.assets);
 		}
 	}
 

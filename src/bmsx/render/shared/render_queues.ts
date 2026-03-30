@@ -10,7 +10,6 @@ import type {
 	ParticleRenderSubmission,
 	PolyRenderSubmission,
 	RectRenderSubmission,
-	SpriteParallaxRig,
 	RenderLayer,
 } from './render_types';
 import { ASSET_FLAG_VIEW } from '../../emulator/memory';
@@ -19,12 +18,13 @@ import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { clamp } from '../../utils/clamp';
 import { BFont } from './bitmap_font';
 import { $ } from '../../core/engine_core';
+import { setSpriteParallaxRigValues } from '../2d/sprite_parallax_rig';
 
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 const particleQueue = new FeatureQueue<ParticleRenderSubmission>(1024);
 let activeQueueSource: 'front' | 'back' = 'front';
 
-function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color, layer: RenderLayer, flipH = false, flipV = false): void {
+function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scaleX: number, scaleY: number, colorize: color, layer: RenderLayer, parallaxWeight: number, flipH = false, flipV = false): void {
 	const runtime = Runtime.instance;
 	const handle = runtime.resolveAssetHandle(imgid);
 	const entry = runtime.getAssetEntryByHandle(handle);
@@ -34,7 +34,7 @@ function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scal
 	if (entry.regionW <= 0 || entry.regionH <= 0) {
 		throw new Error(`[Sprite Pipeline] Image asset '${imgid}' has invalid region size.`);
 	}
-	runtime.vdp.queueFrameBufferSpriteHandle(
+	runtime.vdp.enqueueBlit(
 		handle,
 		x,
 		y,
@@ -45,6 +45,7 @@ function submitSpriteDirect(imgid: string, x: number, y: number, z: number, scal
 		flipH,
 		flipV,
 		colorize,
+		parallaxWeight,
 	);
 }
 
@@ -72,13 +73,13 @@ export function submitSprite(options: ImgRenderSubmission): void {
 		options.scale.y,
 		options.colorize,
 		options.layer,
+		options.parallax_weight ?? 0,
 		options.flip.flip_h,
 		options.flip.flip_v,
 	);
 }
 
 export function prepareCompletedRenderQueues(): void {
-	Runtime.instance.vdp.flushFrameBufferOps();
 	meshQueue.swap();
 	particleQueue.swap();
 	activeQueueSource = 'front';
@@ -90,14 +91,12 @@ function hasCommittedFrontQueueContent(): boolean {
 }
 
 export function preparePartialRenderQueues(): void {
-	Runtime.instance.vdp.flushFrameBufferOps();
 	activeQueueSource = hasCommittedFrontQueueContent()
 		? 'front'
 		: (hasPendingBackQueueContent() ? 'back' : 'front');
 }
 
 export function prepareOverlayRenderQueues(): void {
-	Runtime.instance.vdp.flushFrameBufferOps();
 	activeQueueSource = 'back';
 }
 
@@ -107,14 +106,12 @@ export function hasPendingBackQueueContent(): boolean {
 }
 
 export function clearBackQueues(): void {
-	Runtime.instance.vdp.discardFrameBufferOps();
 	meshQueue.clearBack();
 	particleQueue.clearBack();
 	activeQueueSource = 'front';
 }
 
 export function clearAllQueues(): void {
-	Runtime.instance.vdp.discardFrameBufferOps();
 	Runtime.instance.vdp.initializeRegisters();
 	meshQueue.clearAll();
 	particleQueue.clearAll();
@@ -222,7 +219,11 @@ export function submitRectangle(options: RectRenderSubmission): void {
 	}
 	let { left: x, top: y, z, right: ex, bottom: ey } = options.area;
 	[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
-	Runtime.instance.vdp.queueFrameBufferRect(options.kind, x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
+	if (options.kind === 'fill') {
+		Runtime.instance.vdp.enqueueFillRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
+		return;
+	}
+	Runtime.instance.vdp.enqueueDrawRect(x, y, ex, ey, z, renderLayerTo2dLayer(options.layer), options.color);
 }
 
 export function submitDrawPolygon(options: PolyRenderSubmission): void {
@@ -232,7 +233,7 @@ export function submitDrawPolygon(options: PolyRenderSubmission): void {
 	if (options.layer === undefined) {
 		throw new Error('submitDrawPolygon requires layer.');
 	}
-	Runtime.instance.vdp.queueFrameBufferPoly(options.points, options.z, options.color, options.thickness, renderLayerTo2dLayer(options.layer));
+	Runtime.instance.vdp.enqueueDrawPoly(options.points, options.z, options.color, options.thickness, renderLayerTo2dLayer(options.layer));
 }
 
 export function submitGlyphs(o: GlyphRenderSubmission) {
@@ -292,30 +293,8 @@ export function setAmbientDefaults(mode: 0 | 1, factor = 1.0): void {
 	particleAmbientFactorDefault = clamp(factor, 0, 1);
 }
 
-export const spriteParallaxRig: SpriteParallaxRig = {
-	vy: 0,
-	scale: 1,
-	impact: 0,
-	impact_t: 0,
-	bias_px: 0,
-	parallax_strength: 1,
-	scale_strength: 1,
-	flip_strength: 0,
-	flip_window: 0.6,
-};
 export function setSpriteParallaxRig(vy: number, scale: number, impact: number, impact_t: number, bias_px: number, parallax_strength: number, scale_strength: number, flip_strength: number, flip_window: number): void {
-	if (flip_window <= 0) {
-		throw new Error(`[Sprite Pipeline] setSpriteParallaxRig requires flip_window > 0, got ${flip_window}.`);
-	}
-	spriteParallaxRig.vy = vy;
-	spriteParallaxRig.scale = scale;
-	spriteParallaxRig.impact = impact;
-	spriteParallaxRig.impact_t = impact_t;
-	spriteParallaxRig.bias_px = bias_px;
-	spriteParallaxRig.parallax_strength = parallax_strength;
-	spriteParallaxRig.scale_strength = scale_strength;
-	spriteParallaxRig.flip_strength = flip_strength;
-	spriteParallaxRig.flip_window = flip_window;
+	setSpriteParallaxRigValues(vy, scale, impact, impact_t, bias_px, parallax_strength, scale_strength, flip_strength, flip_window);
 }
 
 export let _skyTint: [number, number, number] = [1, 1, 1];
@@ -328,7 +307,7 @@ export function setSkyboxTintExposure(tint: [number, number, number], exposure =
  * Text rendering utility (engine-level). Preferred UE-style usage is via TextComponent + TextRenderSystem, which uses this internally.
  */
 export function renderGlyphs(x: number, y: number, textToWrite: string | string[], start: number, end: number, z: number, font: BFont, color: color, backgroundColor: color | undefined, layer: RenderLayer): void {
-	Runtime.instance.vdp.queueFrameBufferGlyphs(
+	Runtime.instance.vdp.enqueueGlyphRun(
 		textToWrite,
 		x,
 		y,
@@ -338,7 +317,7 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 		backgroundColor,
 		start,
 		end,
-		layer,
+		renderLayerTo2dLayer(layer),
 	);
 }
 

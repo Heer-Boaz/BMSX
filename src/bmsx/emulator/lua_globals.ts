@@ -32,6 +32,7 @@ import {
 	VRAM_SYSTEM_ATLAS_SIZE,
 } from './memory_map';
 import { CART_ROM_MAGIC } from '../rompack/rompack';
+import { BmsxColors } from './vdp';
 import {
 	DMA_CTRL_START,
 	DMA_CTRL_STRICT,
@@ -44,6 +45,16 @@ import {
 	IMG_STATUS_CLIPPED,
 	IMG_STATUS_DONE,
 	IMG_STATUS_ERROR,
+	IO_ARG_STRIDE,
+	IO_BUFFER_BASE,
+	IO_CMD_VDP_BLIT,
+	IO_CMD_VDP_CLEAR,
+	IO_CMD_VDP_DRAW_LINE,
+	IO_CMD_VDP_FILL_RECT,
+	IO_CMD_VDP_GLYPH_RUN,
+	IO_CMD_VDP_TILE_RUN,
+	IO_COMMAND_CAPACITY,
+	IO_COMMAND_STRIDE,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -59,6 +70,9 @@ import {
 	IO_IMG_WRITTEN,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
+	IO_PAYLOAD_BUFFER_BASE,
+	IO_PAYLOAD_CAPACITY,
+	IO_PAYLOAD_WRITE_PTR_ADDR,
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
 	IO_VDP_DITHER,
@@ -71,6 +85,8 @@ import {
 	IO_VDP_RD_Y,
 	IO_VDP_SECONDARY_ATLAS_ID,
 	IO_VDP_STATUS,
+	IO_VDP_TILE_HANDLE_NONE,
+	IO_WRITE_PTR_ADDR,
 	IRQ_DMA_DONE,
 	IRQ_DMA_ERROR,
 	IRQ_IMG_DONE,
@@ -950,6 +966,24 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_ready', VDP_RD_STATUS_READY);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_overflow', VDP_RD_STATUS_OVERFLOW);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_status_vblank', VDP_STATUS_VBLANK);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_layer_world', 0);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ui', 1);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ide', 2);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_write_ptr', IO_WRITE_PTR_ADDR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_buffer_base', IO_BUFFER_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_command_stride', IO_COMMAND_STRIDE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_arg_stride', IO_ARG_STRIDE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_command_capacity', IO_COMMAND_CAPACITY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_payload_write_ptr', IO_PAYLOAD_WRITE_PTR_ADDR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_payload_buffer_base', IO_PAYLOAD_BUFFER_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_payload_capacity', IO_PAYLOAD_CAPACITY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_clear', IO_CMD_VDP_CLEAR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_fill_rect', IO_CMD_VDP_FILL_RECT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_blit', IO_CMD_VDP_BLIT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_draw_line', IO_CMD_VDP_DRAW_LINE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_glyph_run', IO_CMD_VDP_GLYPH_RUN);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_cmd_vdp_tile_run', IO_CMD_VDP_TILE_RUN);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_io_vdp_tile_handle_none', IO_VDP_TILE_HANDLE_NONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_irq_flags', IO_IRQ_FLAGS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_irq_ack', IO_IRQ_ACK);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_src', IO_DMA_SRC);
@@ -980,6 +1014,22 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_framebuffer_size', VRAM_FRAMEBUFFER_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_staging_size', VRAM_STAGING_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_size', runtime.getTrackedVramTotalBytes());
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_palette_color', createNativeFunction('sys_palette_color', (args, out) => {
+		const index = args[0] as number;
+		if (!Number.isInteger(index)) {
+			throw runtime.createApiRuntimeError('sys_palette_color(index) requires an integer palette index.');
+		}
+		const color = BmsxColors[index];
+		if (color === undefined) {
+			throw runtime.createApiRuntimeError(`sys_palette_color(index) index ${index} is outside the palette range.`);
+		}
+		const table = new Table(0, 4);
+		table.set(runtime.internString('r'), color.r);
+		table.set(runtime.internString('g'), color.g);
+		table.set(runtime.internString('b'), color.b);
+		table.set(runtime.internString('a'), color.a);
+		out.push(table);
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_used', createNativeFunction('sys_cpu_cycles_used', (_args, out) => {
 		out.push(runtime.getCpuUsedCyclesLastTick());
 	}));

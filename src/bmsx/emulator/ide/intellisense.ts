@@ -9,7 +9,7 @@ import type { LuaSyntaxError } from '../../lua/luaerrors';
 import { getCachedLuaParse } from './lua/lua_analysis_cache';
 import { LuaInterpreter } from '../../lua/luaruntime';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../lua/luavalue';
-import { Api } from '../api';
+import { Api } from '../firmware_api';
 import { API_METHOD_METADATA } from '../api_metadata';
 import { Table, type CpuFrameSnapshot, type LocalSlotDebug, type SourceRange, type Value } from '../cpu';
 import { buildMarshalContext, toNativeValue } from '../lua_js_bridge';

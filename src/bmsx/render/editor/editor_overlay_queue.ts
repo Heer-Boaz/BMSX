@@ -16,6 +16,10 @@ export function publishOverlayFrame(frame: EditorOverlayFrame): void {
 	pendingFrame = frame;
 }
 
+export function hasPendingOverlayFrame(): boolean {
+	return pendingFrame !== null;
+}
+
 export function consumeOverlayFrame(): EditorOverlayFrame {
 	const frame = pendingFrame;
 	pendingFrame = null;

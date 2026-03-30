@@ -42,6 +42,8 @@ public:
 	i32 advance(u32 codepoint);
 
 	i32 lineHeight() const { return m_line_height; }
+	const GlyphMap& glyphMap() const { return m_letter_to_img; }
+	i32 advancePadding() const { return m_advance_padding; }
 	i32 measure(const std::string& text);
 
 private:

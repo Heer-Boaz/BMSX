@@ -135,6 +135,10 @@ void Memory::setVdpIoHandler(VdpIoHandler* handler) {
 	m_vdpIoHandler = handler;
 }
 
+void Memory::setIoWriteHandler(IoWriteHandler* handler) {
+	m_ioWriteHandler = handler;
+}
+
 void Memory::setVramWriter(VramWriter* writer) {
 	m_vramWriter = writer;
 }
@@ -720,6 +724,9 @@ Value Memory::readValue(uint32_t addr) const {
 void Memory::writeValue(uint32_t addr, Value value) {
 	if (isIoAddress(addr)) {
 		m_ioSlots[ioIndex(addr)] = value;
+		if (m_ioWriteHandler != nullptr) {
+			m_ioWriteHandler->onIoWrite(addr, value);
+		}
 		return;
 	}
 	if (!valueIsNumber(value)) {

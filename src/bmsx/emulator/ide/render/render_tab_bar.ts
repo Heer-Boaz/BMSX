@@ -1,4 +1,4 @@
-import { Api } from '../../api';
+import type { OverlayApi as Api } from '../../overlay_api';
 import * as constants from '../constants';
 import type { EditorTabDescriptor } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';

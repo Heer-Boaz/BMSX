@@ -1,12 +1,12 @@
 import type { color } from '../../../render/shared/render_types';
 import { BmsxColors, resolvePaletteIndex, invertColorIndex } from '../../vdp';
-import type { Api } from '../../api';
+import type { OverlayApi as Api } from '../../overlay_api';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from '../text_renderer';
 import type { CursorScreenInfo, TextField } from '../types';
 import { getCursorOffset, getFieldText } from '../inline_text_field';
-import { api } from '../../runtime';
+import { api } from '../../overlay_api';
 
 export interface CaretDrawOps {
 	fillRect(x0: number, y0: number, x1: number, y1: number, color: color): void;

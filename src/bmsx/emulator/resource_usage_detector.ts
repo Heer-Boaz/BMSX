@@ -21,11 +21,11 @@ export class ResourceUsageDetector {
 	}
 
 	public getVramUsedBytes(): number {
-		return this.vdp.getTrackedUsedVramBytes();
+		return this.vdp.trackedUsedVramBytes;
 	}
 
 	public getVramTotalBytes(): number {
-		return this.vdp.getTrackedTotalVramBytes();
+		return this.vdp.trackedTotalVramBytes;
 	}
 
 	public getBaseRamUsedBytes(): number {
