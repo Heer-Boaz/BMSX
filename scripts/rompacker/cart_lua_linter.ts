@@ -98,7 +98,9 @@ type LuaLintIssueRule =
 	'staged_export_local_table_pattern' |
 	'require_lua_extension_pattern' |
 	'branch_uninitialized_local_pattern' |
-	'ensure_pattern';
+	'ensure_pattern' |
+	'forbidden_render_wrapper_call_pattern' |
+	'forbidden_render_module_require_pattern';
 
 type LuaLintProfile = 'cart' | 'bios';
 
@@ -253,6 +255,23 @@ const BUILTIN_TABLE_NAMES = new Set<string>([
 	'debug',
 	'package',
 ]);
+const FORBIDDEN_RENDER_WRAPPER_CALLS = new Set<string>([
+	'cls',
+	'blit_rect',
+	'fill_rect',
+	'fill_rect_color',
+	'blit_poly',
+	'blit_glyphs',
+	'blit_text',
+	'blit_text_color',
+	'blit_text_with_font',
+	'blit_text_inline_with_font',
+	'blit_text_inline_span_with_font',
+]);
+const FORBIDDEN_RENDER_MODULE_REQUIRES = new Set<string>([
+	'vdp_firmware',
+	'textflow',
+]);
 const FORBIDDEN_STATE_CALL_RECEIVERS = new Set<string>([
 	'sc',
 	'worldobject',
@@ -329,6 +348,8 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'require_lua_extension_pattern',
 	'branch_uninitialized_local_pattern',
 	'ensure_pattern',
+	'forbidden_render_wrapper_call_pattern',
+	'forbidden_render_module_require_pattern',
 ];
 const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'visual_update_pattern',
@@ -5270,6 +5291,15 @@ function lintRequireCall(expression: LuaCallExpression, issues: LuaLintIssue[]):
 	if (firstArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
 		return;
 	}
+	if (FORBIDDEN_RENDER_MODULE_REQUIRES.has(firstArgument.value)) {
+		pushIssue(
+			issues,
+			'forbidden_render_module_require_pattern',
+			firstArgument,
+			`require('${firstArgument.value}') is forbidden. The legacy Lua render wrapper modules are removed; submit VDP work through MMIO registers instead.`,
+		);
+		return;
+	}
 	if (!firstArgument.value.toLowerCase().endsWith('.lua')) {
 		return;
 	}
@@ -5283,6 +5313,22 @@ function lintRequireCall(expression: LuaCallExpression, issues: LuaLintIssue[]):
 
 function isGlobalCall(expression: LuaCallExpression, name: string): boolean {
 	return expression.callee.kind === LuaSyntaxKind.IdentifierExpression && expression.callee.name === name;
+}
+
+function lintForbiddenRenderWrapperCall(expression: LuaCallExpression, issues: LuaLintIssue[]): void {
+	if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
+		return;
+	}
+	const calleeName = expression.callee.name;
+	if (!FORBIDDEN_RENDER_WRAPPER_CALLS.has(calleeName)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'forbidden_render_wrapper_call_pattern',
+		expression.callee,
+		`Legacy render wrapper "${calleeName}" is forbidden. Submit VDP work through MMIO registers instead of Lua draw-wrapper calls.`,
+	);
 }
 
 function containsServiceLabel(value: string): boolean {
@@ -7033,6 +7079,7 @@ function lintExpression(expression: LuaExpression | null, issues: LuaLintIssue[]
 			switch (expression.kind) {
 				case LuaSyntaxKind.CallExpression:
 					lintRequireCall(expression, issues);
+					lintForbiddenRenderWrapperCall(expression, issues);
 					lintForbiddenStateCalls(expression, issues);
 					lintForbiddenDispatchPattern(expression, issues);
 					lintEventHandlerDispatchPattern(expression, issues);
