@@ -22,6 +22,7 @@ export interface BuilderLogger {
 	ok(message: string): void;
 	progress?: {
 		runWithDetail<T>(detail: string, action: () => Promise<T>): Promise<T>;
+		runWithOutput<T>(detail: string, action: () => Promise<T>): Promise<T>;
 		taskCompleted(): Promise<void>;
 		showDone(): Promise<void>;
 		showInitial(): void;
@@ -152,7 +153,7 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 	logger.bullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
 
 	const runStep = async <T>(task: string, action: () => Promise<T>): Promise<T> => {
-		const result = progress ? await progress.runWithDetail(task, action) : await action();
+		const result = progress ? await progress.runWithOutput(task, action) : await action();
 		if (progress) {
 			await progress.taskCompleted();
 		}
@@ -201,7 +202,6 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 	});
 	if (progress) {
 		await progress.showDone();
-		progress.suspend();
 	}
 }
 

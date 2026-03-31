@@ -1,5 +1,4 @@
 import pc from 'picocolors';
-import { Presets, SingleBar } from 'cli-progress';
 import { stat, readdir } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 
@@ -38,45 +37,41 @@ function timer(ms: number) {
 }
 
 class ProgressReporter {
-	private bar: SingleBar;
 	private tasks: string[];
 	private totalTasks: number;
 	private completedTasks = 0;
 	private started = false;
 	private detail = '';
-	private suspended = false;
-	private failed = false;
+	private lastLineLength = 0;
+	private readonly barSize = 80;
+	private readonly barComplete = '█';
+	private readonly barIncomplete = '░';
 
 	constructor(tasks: string[]) {
 		this.tasks = [...tasks];
 		this.totalTasks = this.tasks.length;
-		this.bar = new SingleBar({
-			format: `${pc.dim('[')}${pc.green('{bar}')}${pc.dim(']')} ${pc.dim('{value}/{total}')} ${pc.cyan('{percentage}%')} {task} {detail}`,
-			barCompleteChar: '█',
-			barIncompleteChar: '░',
-			barsize: 80,
-			hideCursor: true,
-			stopOnComplete: false,
-			align: 'left',
-			fps: 10,
-			clearOnComplete: false,
-		}, Presets.shades_classic);
 	}
 	private currentTask(): string {
 		return this.tasks[0] as string;
 	}
 
-	private recalcTotals(): void {
-		this.totalTasks = this.completedTasks + this.tasks.length;
+	private draw(label: string): void {
+		if (!this.started) return;
+		const total = Math.max(1, this.totalTasks);
+		const clampedCompleted = Math.min(this.completedTasks, total);
+		const pct = Math.round((clampedCompleted / total) * 100);
+		const filled = Math.round((clampedCompleted / total) * this.barSize);
+		const bar = pc.green(this.barComplete.repeat(filled))
+			+ pc.dim(this.barIncomplete.repeat(this.barSize - filled));
+		const detail = this.detail ? pc.dim(` · ${this.detail}`) : '';
+		const line = `${pc.dim('[')}${bar}${pc.dim(']')} ${pc.dim(`${clampedCompleted}/${total}`)} ${pc.cyan(`${pct}%`)} ${pc.cyan(label)}${detail}`;
+		const pad = Math.max(0, this.lastLineLength - line.length);
+		process.stdout.write(`\r${line}${pad ? ' '.repeat(pad) : ''}`);
+		this.lastLineLength = line.length;
 	}
 
-	private sync(label?: string): void {
-		if (!this.started) return;
-		const total = this.totalTasks || 1;
-		this.bar.setTotal(total);
-		const taskLabel = label ?? this.currentTask();
-		const detailLabel = this.detail ? pc.dim(`· ${this.detail}`) : '';
-		this.bar.update(this.completedTasks, { task: taskLabel, detail: detailLabel });
+	private recalcTotals(): void {
+		this.totalTasks = this.completedTasks + this.tasks.length;
 	}
 
 	public async taskCompleted() {
@@ -84,26 +79,21 @@ class ProgressReporter {
 		this.completedTasks++;
 		this.detail = '';
 		this.recalcTotals();
-		this.sync(this.currentTask() || finishedTask);
+		this.draw(this.currentTask() || finishedTask);
 		await this.pulse();
-		if (!this.tasks.length) {
-			this.bar.update(this.completedTasks, { task: finishedTask });
-		}
 	}
 
 	public showInitial() {
 		if (this.started) return;
 		this.started = true;
-		const total = this.totalTasks || 1;
-		this.bar.start(total, this.completedTasks, { task: this.currentTask() });
+		this.draw(this.currentTask());
 	}
 
 	public async showDone() {
-		if (this.started && !this.suspended && !this.failed) {
-			this.bar.update(this.totalTasks || this.completedTasks, { task: 'Gereed' });
-			this.bar.stop();
-		}
+		if (!this.started) return;
+		this.draw('Gereed');
 		await this.pulse();
+		process.stdout.write('\n');
 	}
 
 	public async pulse() {
@@ -112,12 +102,22 @@ class ProgressReporter {
 
 	public setDetail(detail: string) {
 		this.detail = detail;
-		this.sync();
+		this.draw(this.currentTask());
 	}
 
 	public clearDetail() {
 		this.detail = '';
-		this.sync();
+		this.draw(this.currentTask());
+	}
+
+	public async runWithOutput<T>(detail: string, action: () => Promise<T>): Promise<T> {
+		this.suspend();
+		this.setDetail(detail);
+		try {
+			return await action();
+		} finally {
+			this.clearDetail();
+		}
 	}
 
 	public async runWithDetail<T>(detail: string, action: () => Promise<T>): Promise<T> {
@@ -130,9 +130,7 @@ class ProgressReporter {
 	}
 
 	public suspend() {
-		if (!this.started || this.suspended) return;
-		this.bar.stop();
-		this.suspended = true;
+		if (!this.started) return;
 		process.stdout.write('\n');
 	}
 }
