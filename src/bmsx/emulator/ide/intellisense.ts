@@ -629,7 +629,9 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 			case LuaSyntaxKind.IfStatement:
 				for (let index = 0; index < statement.clauses.length; index += 1) {
 					const clause = statement.clauses[index];
-					visitExpression(clause.condition);
+					if (clause.condition) {
+						visitExpression(clause.condition);
+					}
 					visitBlock(clause.block.body);
 				}
 				return;
