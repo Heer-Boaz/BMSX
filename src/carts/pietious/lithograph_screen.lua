@@ -41,18 +41,31 @@ function lithograph_screen:draw_screen()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 	local lines = self.lines
 	if #lines > 0 then
 		local font = self.text_font
-		mem[sys_vdp_cmd_arg0+0*4] = 0
-		mem[sys_vdp_cmd_arg0+1*4] = constants.room.tile_origin_y + (constants.room.tile_size * 6)
-		mem[sys_vdp_cmd_arg0+2*4] = 341
-		mem[sys_vdp_cmd_arg0+3*4] = font.advance_x
-		mem[sys_vdp_cmd_arg0+4*4] = font.line_height
-		mem[sys_vdp_cmd_arg0+5*4] = display_width()
-		mem[sys_vdp_cmd_arg0+6*4] = table.concat(lines, '\n')
-		mem[sys_vdp_cmd] = 0x20
+		write_words(
+			sys_vdp_cmd_arg0,
+			table.concat(lines, '\n'),
+			0,
+			constants.room.tile_origin_y + (constants.room.tile_size * 6),
+			341,
+			font.id,
+			0,
+			2147483647,
+			sys_vdp_layer_ui,
+			1,
+			1,
+			1,
+			1,
+			0,
+			0,
+			0,
+			0,
+			0
+		)
+		write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
 	end
 end
 

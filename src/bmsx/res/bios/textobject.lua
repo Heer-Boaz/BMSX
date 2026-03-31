@@ -23,7 +23,8 @@ local highlight_move_ticks_per_frame = 12
 
 local function measure_line_width(font, line)
 	local width = 0
-	for i = 1, #line do
+	local line_length = string.len(line)
+	for i = 1, line_length do
 		local glyph = font.glyphs[line:sub(i, i)] or font.glyphs['?']
 		width = width + glyph.advance
 	end
@@ -284,7 +285,7 @@ function textobject:type_next()
 	end
 	local line_index = self.current_line_index + 1
 	local line = self.full_text_lines[line_index]
-	if self.current_char_index < #line then
+	if self.current_char_index < string.len(line) then
 		local char_index = self.current_char_index + 1
 		local char = string.sub(line, char_index, char_index)
 		self.displayed_lines[line_index] = self.displayed_lines[line_index] .. char
@@ -341,7 +342,7 @@ function textobject:draw()
 			highlight_bg_color.b,
 			highlight_bg_color.a
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+		write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
 	end
 
 end

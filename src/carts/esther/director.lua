@@ -577,7 +577,7 @@ function director:draw_player(player, draw_shadow)
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 end
 
 function director:render_frame()

@@ -819,7 +819,7 @@ function spriterendersystem:update()
 			sc.colorize.a,
 			sc.parallax_weight
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 		::continue_sprite_render::
 	end
 end

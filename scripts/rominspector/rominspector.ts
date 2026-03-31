@@ -5,7 +5,7 @@
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import type { RomAsset, CartRomHeader, RomManifest } from '../../src/bmsx/rompack/rompack';
-import { getZippedRomAndRomLabelFromBlob, loadAssetList, parseCartHeader } from '../../src/bmsx/rompack/romloader';
+import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadRomAssetList, parseCartHeader } from '../../src/bmsx/rompack/romloader';
 import {
 	buildManifestAsset,
 	disassembleProgramAsset,
@@ -56,24 +56,35 @@ function parseBiasValue(raw: string): number {
 	}
 	return parsed;
 }
-async function loadAssets(rombin: Uint8Array): Promise<{ assets: RomAsset[]; manifest: RomManifest | null; projectRootPath: string | null }> {
+async function loadAssets(
+	rombin: Uint8Array,
+	header: CartRomHeader,
+): Promise<{ assets: RomAsset[]; manifest: RomManifest | null; projectRootPath: string | null }> {
 	let assets: RomAsset[] = [];
 	let manifest: RomManifest | null = null;
 	let projectRootPath: string | null = null;
+	if (header.manifestLength === 0) {
+		const assetsAndRoot = await loadRomAssetList(rombin);
+		assets = assetsAndRoot.assets;
+		projectRootPath = assetsAndRoot.projectRootPath;
+		console.log('ROM header has no manifest; loading TOC assets only.');
+		return { assets, manifest, projectRootPath };
+	}
+
+	// Load the ROM pack metadata using the loadResources function
+	console.log('Loading ROM pack metadata...');
+	if (!rombin || !(rombin instanceof Uint8Array)) {
+		console.error('Invalid metadata format: expected an Uint8Array');
+		process.exit(1);
+	}
+	if (rombin.byteLength < 16) {
+		console.error('Metadata buffer is too short, expected at least 16 bytes');
+		process.exit(1);
+	}
+	// Load the ROM pack metadata using the loadResources function
+	console.log('Extracting ROM pack metadata...');
+	console.log('Loading resources from metadata buffer...');
 	try {
-		// Load the ROM pack metadata using the loadResources function
-		console.log('Loading ROM pack metadata...');
-		if (!rombin || !(rombin instanceof Uint8Array)) {
-			console.error('Invalid metadata format: expected an Uint8Array');
-			process.exit(1);
-		}
-		if (rombin.byteLength < 16) {
-			console.error('Metadata buffer is too short, expected at least 16 bytes');
-			process.exit(1);
-		}
-		// Load the ROM pack metadata using the loadResources function
-		console.log('Extracting ROM pack metadata...');
-		console.log('Loading resources from metadata buffer...');
 		// Load asset list from the ROM binary buffer
 		({ assets, manifest, projectRootPath } = await loadAssetList(rombin));
 
@@ -283,8 +294,8 @@ async function main() {
 	);
 
 	getTocBuffer(rombin, header);
-	({ assets: assetList, manifest: romManifest, projectRootPath: romProjectRootPath } = await loadAssets(rombin));
-	if (!assetList.some(asset => asset.resid === ROM_MANIFEST_ASSET_ID)) {
+	({ assets: assetList, manifest: romManifest, projectRootPath: romProjectRootPath } = await loadAssets(rombin, header));
+	if (header.manifestLength > 0 && !assetList.some(asset => asset.resid === ROM_MANIFEST_ASSET_ID)) {
 		assetList.unshift(buildManifestAsset(header));
 	}
 

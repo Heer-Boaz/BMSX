@@ -201,7 +201,7 @@ function player:draw_lasers()
 				1,
 				0
 			)
-			mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+			write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 			x = x + constants.weapons.laser.tile_width
 		end
 	end
@@ -226,7 +226,7 @@ function player:draw_missiles()
 			1,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 	end
 end
 
@@ -253,7 +253,7 @@ function player:draw_uplasers()
 				1,
 				0
 			)
-			mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+			write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 		end
 	end
 end
@@ -279,7 +279,7 @@ function player:draw_visual()
 			1,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 	end
 	write_words(
 		sys_vdp_cmd_arg0,
@@ -297,7 +297,7 @@ function player:draw_visual()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 	self:draw_lasers()
 	self:draw_missiles()
 	self:draw_uplasers()

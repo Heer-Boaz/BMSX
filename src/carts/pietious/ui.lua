@@ -106,7 +106,7 @@ function ui:draw_ui()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 	local equipped_sprite_id = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
 		write_words(
@@ -125,7 +125,7 @@ function ui:draw_ui()
 			1,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 	end
 	local blue_handle = assets.img['energybar_stripe_blue'].handle
 	for i = 0, (self.hud_health_level - 1) do
@@ -145,7 +145,7 @@ function ui:draw_ui()
 			1,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 	end
 	local red_handle = assets.img['energybar_stripe_red'].handle
 	for i = 0, (self.hud_weapon_level - 1) do
@@ -165,7 +165,7 @@ function ui:draw_ui()
 			1,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 	end
 end
 

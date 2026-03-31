@@ -35,44 +35,26 @@ local function draw_usage_bar(label, used, total, x, y, z, font_id)
 	local pct_color = colors.text
 	local label_len = #label
 	local pct_text = tostring(pct) .. '%'
+	-- print(pct_text)
 	local pct_len = #pct_text
 
 	write_words(sys_vdp_cmd_arg0, bar_x, y + 1, bar_x + bar_w, y + 1 + bar_h, z, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+	write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
 	if fill_w > 0 then
 		local c = usage_color(ratio)
 		write_words(sys_vdp_cmd_arg0, bar_x, y + 1, bar_x + fill_w, y + 1 + bar_h, z + 1, sys_vdp_layer_ide, c.r, c.g, c.b, c.a)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+		write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
 	end
 
 	if label_len > 0 then
-		mem[sys_vdp_payload_alloc] = math.floor((label_len + 3) / 4)
-		local byte_index = 1
-		while byte_index <= label_len do
-			local b1 = string.byte(label, byte_index) or 0
-			local b2 = string.byte(label, byte_index + 1) or 0
-			local b3 = string.byte(label, byte_index + 2) or 0
-			local b4 = string.byte(label, byte_index + 3) or 0
-			mem[sys_vdp_payload_data] = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
-			byte_index = byte_index + 4
-		end
-		write_words(sys_vdp_cmd_arg0, label_len, x, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a, 0, 0, 0, 0, 0)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+		write_words(sys_vdp_cmd_arg0, label, x, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a, 0, 0, 0, 0, 0)
+		write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
 	end
 
 	if pct_len > 0 then
-		mem[sys_vdp_payload_alloc] = math.floor((pct_len + 3) / 4)
-		local byte_index = 1
-		while byte_index <= pct_len do
-			local b1 = string.byte(pct_text, byte_index) or 0
-			local b2 = string.byte(pct_text, byte_index + 1) or 0
-			local b3 = string.byte(pct_text, byte_index + 2) or 0
-			local b4 = string.byte(pct_text, byte_index + 3) or 0
-			mem[sys_vdp_payload_data] = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
-			byte_index = byte_index + 4
-		end
-		write_words(sys_vdp_cmd_arg0, pct_len, bar_x + bar_w + 1, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, pct_color.r, pct_color.g, pct_color.b, pct_color.a, 0, 0, 0, 0, 0)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+		-- print(pct_text)
+		write_words(sys_vdp_cmd_arg0, pct_text, bar_x + bar_w + 1, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, pct_color.r, pct_color.g, pct_color.b, pct_color.a, 0, 0, 0, 0, 0)
+		write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
 	end
 end
 
@@ -102,7 +84,7 @@ function gizmo.draw()
 		colors.panel.b,
 		colors.panel.a
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+	write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
 	draw_usage_bar('CPU', sys_cpu_active_cycles_used(), sys_cpu_active_cycles_granted(), x, y, z + 1, font_id)
 	draw_usage_bar('RAM', sys_ram_used(), sys_ram_size, x, y + row_h, z + 1, font_id)
 	draw_usage_bar('VRAM', sys_vram_used(), sys_vram_size, x, y + (row_h * 2), z + 1, font_id)

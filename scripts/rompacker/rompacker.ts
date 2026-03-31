@@ -60,7 +60,10 @@ const TASK = {
 	RESOURCE_LOAD: 'Resources laden en metadata genereren',
 	ATLAS_BUILD: 'Atlassen puzellen (indien nodig)',
 	ROM_ASSETS: 'Rom-assets genereren',
-	ROM_FINALIZE: 'Rompakket finaliseren',
+	ROM_FINALIZE: 'Rompakket finaliseren', 
+	BIOS_REBUILD_CHECK: 'Checken of BIOS rebuild nodig is',
+	BIOS_LINT: 'BIOS Lua linten',
+	BIOS_FINALIZE: 'BIOS ROM finaliseren',
 	DONE: 'ROM PACKING GE-DONUT!! :-)',
 } as const;
 
@@ -92,9 +95,17 @@ function stripLuaAssets(assets: RomAsset[], debug: boolean): void {
 // --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---
 const romBuildTasks: TaskName[] = taskList.slice(1, -1);
 
-// const bootromBuildTasks: TaskName[] = [
-// 	`bootrom compileren`,
-// ];
+const biosBuildTasks: TaskName[] = [
+	TASK.BIOS_REBUILD_CHECK,
+	TASK.BIOS_LINT,
+	TASK.MANIFEST_SCAN,
+	TASK.RESOURCE_LIST,
+	TASK.ATLAS_BUILD,
+	TASK.ROM_ASSETS,
+	TASK.BIOS_FINALIZE,
+	TASK.DONE,
+];
+const biosPipelineTasks: TaskName[] = biosBuildTasks.slice(1, -1);
 
 // const webTasks: TaskName[] = [
 // 	'Platform-artifacts bouwen',
@@ -499,7 +510,7 @@ class ProgressReporter {
 	}
 }
 
-async function runBIOSBuild(options: ParsedOptions): Promise<void> {
+async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter): Promise<void> {
 	const { respath, bootloader_path, force, debug, optLevel, canonicalization, useTextureAtlas } = options;
 
 	setAtlasFlag(useTextureAtlas);
@@ -517,40 +528,72 @@ async function runBIOSBuild(options: ParsedOptions): Promise<void> {
 	logDivider('bios');
 	logBullet('ROM', pc.bold(pc.white(BIOSRomName)));
 	logBullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
+	logBullet('Opt level', pc.white(`-O${optLevel}`));
+	if (progress) {
+		progress.showInitial();
+	}
 
-	const assetsNeedRebuild = force || await isRebuildRequired(BIOSRomName, bootloader_path, BIOSResPath, {
-		extraLuaPaths: [],
-		resolveAtlasIndex: false,
-		debug,
-	});
+	let assetsNeedRebuild = false;
+	if (force) {
+		assetsNeedRebuild = true;
+		if (progress) {
+			await progress.taskCompleted();
+		}
+	} else {
+		const checkBuild = () => isRebuildRequired(BIOSRomName, bootloader_path, BIOSResPath, {
+			extraLuaPaths: [],
+			resolveAtlasIndex: false,
+			debug,
+		});
+		assetsNeedRebuild = progress ? await progress.runWithDetail(TASK.BIOS_REBUILD_CHECK, checkBuild) : await checkBuild();
+		if (progress) {
+			await progress.taskCompleted();
+		}
+	}
 	if (!assetsNeedRebuild) {
 		logInfo('BIOS assets up-to-date (use --force to rebuild)');
+		if (progress) {
+			progress.skipTasks(biosPipelineTasks.length);
+			await progress.showDone();
+			progress.suspend();
+		}
 		return;
 	}
 
-	logInfo(`Build BIOS assets (${BIOSRomName})`);
 	const previousCanonicalization = LUA_CANONICALIZATION;
 	const BIOSCanonicalization = SYSTEM_MACHINE_MANIFEST.canonicalization ?? previousCanonicalization;
 	setLuaCanonicalization(BIOSCanonicalization);
+	const runBIOSStep = async <T>(task: string, action: () => Promise<T>): Promise<T> => {
+		const result = progress ? await progress.runWithDetail(task, action) : await action();
+		if (progress) {
+			await progress.taskCompleted();
+		}
+		return result;
+	};
 	try {
 		const biosLuaRoots = [normalizePathKey(BIOSResPath)];
-		logInfo('Lint BIOS Lua');
-		await lintCartLuaSources({ roots: biosLuaRoots, profile: 'bios' });
+		await runBIOSStep(TASK.BIOS_LINT, () => lintCartLuaSources({ roots: biosLuaRoots, profile: 'bios' }));
 
-		const BIOSResMetaList = await getResMetaList([BIOSResPath], BIOSRomName, {
+		const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath], BIOSRomName, {
 			extraLuaPaths: [],
 			virtualRoot: BIOSVirtualRoot,
 			resolveAtlasIndex: true,
-		});
-		const BIOSResources = await getResourcesList(BIOSResMetaList);
+		}));
+		const BIOSResources = await runBIOSStep(TASK.RESOURCE_LIST, () => getResourcesList(BIOSResMetaList));
 		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-			await createAtlasses(BIOSResources);
+			await runBIOSStep(TASK.ATLAS_BUILD, () => createAtlasses(BIOSResources));
+		} else if (progress) {
+			progress.skipTasks(1);
 		}
 		validateAudioEventReferences(BIOSResources);
-		const BIOSRomAssets = await generateRomAssets(BIOSResources);
+		const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
 		const BIOSProgramBoot = appendProgramAsset(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: debug, optLevel });
 		stripLuaAssets(BIOSRomAssets, debug);
-		await finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot });
+		await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot }));
+		if (progress) {
+			await progress.showDone();
+			progress.suspend();
+		}
 		logOk(`BIOS assets ready → ${pc.white(`dist/${BIOSRomName}${debug ? '.debug' : ''}.rom`)}`);
 	} finally {
 		setLuaCanonicalization(previousCanonicalization);
@@ -571,7 +614,8 @@ async function main() {
 		let { title, rom_name, bootloader_path, respath, force, debug, useTextureAtlas, canonicalization, optLevel, mode, extraLuaRoots } = options;
 
 		if (mode === 'bios') {
-			await runBIOSBuild(options);
+			progress = new ProgressReporter(biosBuildTasks);
+			await runBIOSBuild(options, progress);
 			writeOut('\n');
 			return;
 		}
@@ -603,7 +647,7 @@ async function main() {
 
 		if (rom_name) {
 			if (rom_name.includes('.')) {
-				throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': '2025'.`);
+				throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': 'pietious'.`);
 			}
 			rom_name = rom_name.toLowerCase();
 		}

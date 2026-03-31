@@ -843,7 +843,7 @@ function customvisualcomponent:submit_sprite(desc)
 		desc.colorize.a,
 		desc.parallax_weight
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 end
 
 function customvisualcomponent:submit_rect(desc)
@@ -852,10 +852,14 @@ function customvisualcomponent:submit_rect(desc)
 	local x0, y0, x1, y1, z = area.left, area.top, area.right, area.bottom, area.z
 	if desc.kind == 'stroke' then
 		local c = color
-		mem[sys_vdp_cmd_arg0 + 0*4] = x0 mem[sys_vdp_cmd_arg0 + 1*4] = y0 mem[sys_vdp_cmd_arg0 + 2*4] = x1 mem[sys_vdp_cmd_arg0 + 3*4] = y0 mem[sys_vdp_cmd_arg0 + 4*4] = z mem[sys_vdp_cmd_arg0 + 5*4] = sys_vdp_layer_world mem[sys_vdp_cmd_arg0 + 6*4] = c.r mem[sys_vdp_cmd_arg0 + 7*4] = c.g mem[sys_vdp_cmd_arg0 + 8*4] = c.b mem[sys_vdp_cmd_arg0 + 9*4] = c.a mem[sys_vdp_cmd_arg0 + 10*4] = 1 mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
-		mem[sys_vdp_cmd_arg0 + 0*4] = x1 mem[sys_vdp_cmd_arg0 + 1*4] = y0 mem[sys_vdp_cmd_arg0 + 2*4] = x1 mem[sys_vdp_cmd_arg0 + 3*4] = y1 mem[sys_vdp_cmd_arg0 + 4*4] = z mem[sys_vdp_cmd_arg0 + 5*4] = sys_vdp_layer_world mem[sys_vdp_cmd_arg0 + 6*4] = c.r mem[sys_vdp_cmd_arg0 + 7*4] = c.g mem[sys_vdp_cmd_arg0 + 8*4] = c.b mem[sys_vdp_cmd_arg0 + 9*4] = c.a mem[sys_vdp_cmd_arg0 + 10*4] = 1 mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
-		mem[sys_vdp_cmd_arg0 + 0*4] = x1 mem[sys_vdp_cmd_arg0 + 1*4] = y1 mem[sys_vdp_cmd_arg0 + 2*4] = x0 mem[sys_vdp_cmd_arg0 + 3*4] = y1 mem[sys_vdp_cmd_arg0 + 4*4] = z mem[sys_vdp_cmd_arg0 + 5*4] = sys_vdp_layer_world mem[sys_vdp_cmd_arg0 + 6*4] = c.r mem[sys_vdp_cmd_arg0 + 7*4] = c.g mem[sys_vdp_cmd_arg0 + 8*4] = c.b mem[sys_vdp_cmd_arg0 + 9*4] = c.a mem[sys_vdp_cmd_arg0 + 10*4] = 1 mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
-		mem[sys_vdp_cmd_arg0 + 0*4] = x0 mem[sys_vdp_cmd_arg0 + 1*4] = y1 mem[sys_vdp_cmd_arg0 + 2*4] = x0 mem[sys_vdp_cmd_arg0 + 3*4] = y0 mem[sys_vdp_cmd_arg0 + 4*4] = z mem[sys_vdp_cmd_arg0 + 5*4] = sys_vdp_layer_world mem[sys_vdp_cmd_arg0 + 6*4] = c.r mem[sys_vdp_cmd_arg0 + 7*4] = c.g mem[sys_vdp_cmd_arg0 + 8*4] = c.b mem[sys_vdp_cmd_arg0 + 9*4] = c.a mem[sys_vdp_cmd_arg0 + 10*4] = 1 mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
+		write_words(sys_vdp_cmd_arg0, x0, y0, x1, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
+		write_words(sys_vdp_cmd, sys_vdp_cmd_draw_line)
+		write_words(sys_vdp_cmd_arg0, x1, y0, x1, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
+		write_words(sys_vdp_cmd, sys_vdp_cmd_draw_line)
+		write_words(sys_vdp_cmd_arg0, x1, y1, x0, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
+		write_words(sys_vdp_cmd, sys_vdp_cmd_draw_line)
+		write_words(sys_vdp_cmd_arg0, x0, y1, x0, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
+		write_words(sys_vdp_cmd, sys_vdp_cmd_draw_line)
 	else
 		write_words(
 			sys_vdp_cmd_arg0,
@@ -870,7 +874,7 @@ function customvisualcomponent:submit_rect(desc)
 			color.b,
 			color.a
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+		write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
 	end
 end
 
@@ -885,7 +889,8 @@ function customvisualcomponent:submit_poly(desc)
 		local y0 = points[i * 2 + 2]
 		local x1 = points[((i + 1) % n) * 2 + 1]
 		local y1 = points[((i + 1) % n) * 2 + 2]
-		mem[sys_vdp_cmd_arg0 + 0*4] = x0 mem[sys_vdp_cmd_arg0 + 1*4] = y0 mem[sys_vdp_cmd_arg0 + 2*4] = x1 mem[sys_vdp_cmd_arg0 + 3*4] = y1 mem[sys_vdp_cmd_arg0 + 4*4] = z mem[sys_vdp_cmd_arg0 + 5*4] = sys_vdp_layer_world mem[sys_vdp_cmd_arg0 + 6*4] = color.r mem[sys_vdp_cmd_arg0 + 7*4] = color.g mem[sys_vdp_cmd_arg0 + 8*4] = color.b mem[sys_vdp_cmd_arg0 + 9*4] = color.a mem[sys_vdp_cmd_arg0 + 10*4] = thickness mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
+		write_words(sys_vdp_cmd_arg0, x0, y0, x1, y1, z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, thickness)
+		write_words(sys_vdp_cmd, sys_vdp_cmd_draw_line)
 	end
 end
 

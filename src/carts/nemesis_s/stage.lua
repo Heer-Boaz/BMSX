@@ -517,7 +517,7 @@ function stage_subsystem:draw_star_particles(stars, imgid, hidden)
 			1,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 	end
 end
 
@@ -556,7 +556,7 @@ function stage_subsystem:draw()
 					1,
 					0
 				)
-				mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+				write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 			end
 		end
 	end

@@ -83,7 +83,7 @@ function director:bind_visual()
 		if not self.seal_flash_on then
 			return
 		end
-		local c={r=1,g=1,b=1,a=0.7};write_words(sys_vdp_cmd_arg0,0,constants.room.tile_origin_y,display_width(),display_height(),500,sys_vdp_layer_ui,c.r,c.g,c.b,c.a);mem[sys_vdp_cmd]=sys_vdp_cmd_fill_rect
+		local c={r=1,g=1,b=1,a=0.7};write_words(sys_vdp_cmd_arg0,0,constants.room.tile_origin_y,display_width(),display_height(),500,sys_vdp_layer_ui,c.r,c.g,c.b,c.a);write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
 	end
 end
 

@@ -31,7 +31,7 @@ function disappearingwall:bind_visual()
 					1,
 					0
 				)
-				mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+				write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 			end
 		end
 	end

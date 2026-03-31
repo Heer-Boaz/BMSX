@@ -146,7 +146,7 @@ function item_screen:draw_inventory_items()
 					1,
 					0
 				)
-				mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+				write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 			end
 		end
 	end
@@ -174,7 +174,7 @@ function item_screen:draw_secondary_weapon_selector()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 end
 
 function item_screen:draw_map()
@@ -206,7 +206,7 @@ function item_screen:draw_map()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 
 	for i = 1, #map_proxies do
 		local proxy = map_proxies[i]
@@ -236,7 +236,7 @@ function item_screen:draw_map()
 			1,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 	end
 end
 
@@ -289,7 +289,7 @@ function item_screen:draw_screen()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
 	self:draw_inventory_items()
 	self:draw_secondary_weapon_selector()
 	self:draw_map()

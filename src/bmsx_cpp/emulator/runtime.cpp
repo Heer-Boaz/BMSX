@@ -114,38 +114,29 @@ void processVdpCommand(Runtime& runtime, uint32_t cmdBase, uint32_t cmd) {
 			break;
 		}
 		case IO_CMD_VDP_GLYPH_RUN: {
-			const uint32_t textByteLength = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 1));
-			const uint32_t payloadWords = (textByteLength + 3u) / 4u;
-			const uint32_t payloadOffset = requireArmedPayloadBaseOffset(runtime, payloadWords, "Glyph");
-			const bool backgroundEnabled = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 13)) != 0u;
-			std::string text;
-			text.resize(textByteLength);
-			uint32_t byteIndex = 0u;
-			for (uint32_t wordIndex = 0; wordIndex < payloadWords; wordIndex += 1u) {
-				const uint32_t word = static_cast<uint32_t>(asNumber(memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + wordIndex) * IO_ARG_STRIDE)));
-				text[byteIndex] = static_cast<char>(word & 0xffu);
-				byteIndex += 1u;
-				if (byteIndex >= textByteLength) {
-					break;
-				}
-				text[byteIndex] = static_cast<char>((word >> 8u) & 0xffu);
-				byteIndex += 1u;
-				if (byteIndex >= textByteLength) {
-					break;
-				}
-				text[byteIndex] = static_cast<char>((word >> 16u) & 0xffu);
-				byteIndex += 1u;
-				if (byteIndex >= textByteLength) {
-					break;
-				}
-				text[byteIndex] = static_cast<char>((word >> 24u) & 0xffu);
-				byteIndex += 1u;
+			const Value textValue = memory.readValue(cmdBase + IO_ARG_STRIDE);
+			if (!valueIsString(textValue)) {
+				throw BMSX_RUNTIME_ERROR("[VDP] Glyph text expects a string.");
 			}
+			const std::string& text = runtime.cpu().stringPool().toString(asStringId(textValue));
+			std::vector<std::string> lines;
+			lines.reserve(1u + static_cast<size_t>(std::count(text.begin(), text.end(), '\n')));
+			size_t lineStart = 0u;
+			while (lineStart <= text.size()) {
+				const size_t lineEnd = text.find('\n', lineStart);
+				if (lineEnd == std::string::npos) {
+					lines.emplace_back(text.substr(lineStart));
+					break;
+				}
+				lines.emplace_back(text.substr(lineStart, lineEnd - lineStart));
+				lineStart = lineEnd + 1u;
+			}
+			const bool backgroundEnabled = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 13)) != 0u;
 			const std::optional<Color> backgroundColor = backgroundEnabled
 				? std::optional<Color>(readIoColor(runtime, cmdBase, 14))
 				: std::nullopt;
 			runtime.vdp().enqueueGlyphRun(
-				std::vector<std::string>{ text },
+				lines,
 				static_cast<f32>(readIoArg(runtime, cmdBase, 2)),
 				static_cast<f32>(readIoArg(runtime, cmdBase, 3)),
 				static_cast<f32>(readIoArg(runtime, cmdBase, 4)),

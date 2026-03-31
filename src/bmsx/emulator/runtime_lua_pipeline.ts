@@ -66,6 +66,7 @@ const LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 	'easing',
 	'table',
 	'string',
+	'wrap_text_lines',
 	'coroutine',
 	'debug',
 	'utf8',
@@ -753,45 +754,6 @@ function readIoColor(runtime: Runtime, base: number, offset: number): { r: numbe
 	};
 }
 
-const ioGlyphRunUtf8Decoder = new TextDecoder();
-let ioGlyphRunTextBytes = new Uint8Array(0);
-
-function readIoGlyphRunText(runtime: Runtime, byteLength: number): string {
-	if (byteLength === 0) {
-		return '';
-	}
-	if (ioGlyphRunTextBytes.byteLength < byteLength) {
-		ioGlyphRunTextBytes = new Uint8Array(byteLength);
-	}
-	const payloadWords = Math.ceil(byteLength / 4);
-	const payloadOffset = runtime.getArmedVdpPayloadBaseOffset();
-	if (payloadWords > runtime.getArmedVdpPayloadWordCount()) {
-		throw new Error(`[VDP] Glyph payload underrun (${payloadWords} > ${runtime.getArmedVdpPayloadWordCount()}).`);
-	}
-	let outIndex = 0;
-	for (let wordIndex = 0; wordIndex < payloadWords; wordIndex += 1) {
-		const word = (runtime.memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + wordIndex) * IO_ARG_STRIDE) as number) >>> 0;
-		ioGlyphRunTextBytes[outIndex] = word & 0xff;
-		outIndex += 1;
-		if (outIndex >= byteLength) {
-			break;
-		}
-		ioGlyphRunTextBytes[outIndex] = (word >>> 8) & 0xff;
-		outIndex += 1;
-		if (outIndex >= byteLength) {
-			break;
-		}
-		ioGlyphRunTextBytes[outIndex] = (word >>> 16) & 0xff;
-		outIndex += 1;
-		if (outIndex >= byteLength) {
-			break;
-		}
-		ioGlyphRunTextBytes[outIndex] = (word >>> 24) & 0xff;
-		outIndex += 1;
-	}
-	return ioGlyphRunUtf8Decoder.decode(ioGlyphRunTextBytes.subarray(0, byteLength));
-}
-
 export function processVdpCommand(runtime: Runtime, cmdBase: number, cmd: number): void {
 	const memory = runtime.memory;
 	switch (cmd) {
@@ -842,10 +804,25 @@ export function processVdpCommand(runtime: Runtime, cmdBase: number, cmd: number
 			break;
 		}
 		case IO_CMD_VDP_GLYPH_RUN: {
-			const textByteLength = readIoArg(runtime, cmdBase, 1) >>> 0;
+			const textValue = runtime.memory.readValue(cmdBase + IO_ARG_STRIDE);
+			if (!isStringValue(textValue)) {
+				throw new Error('[VDP] Glyph text expects a string.');
+			}
+			const text = stringValueToString(textValue);
+			const lines: string[] = [];
+			let lineStart = 0;
+			while (lineStart <= text.length) {
+				const lineEnd = text.indexOf('\n', lineStart);
+				if (lineEnd === -1) {
+					lines.push(text.slice(lineStart));
+					break;
+				}
+				lines.push(text.slice(lineStart, lineEnd));
+				lineStart = lineEnd + 1;
+			}
 			const backgroundEnabled = (readIoArg(runtime, cmdBase, 13) >>> 0) !== 0;
 			runtime.vdp.enqueueGlyphRun(
-				readIoGlyphRunText(runtime, textByteLength),
+				lines,
 				readIoArg(runtime, cmdBase, 2),
 				readIoArg(runtime, cmdBase, 3),
 				readIoArg(runtime, cmdBase, 4),

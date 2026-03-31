@@ -105,6 +105,34 @@ int utf8_codepoint_index_from_byte(const std::string& text, size_t byteIndex) {
 	return current;
 }
 
+int utf8_codepoint_count(const std::string& text) {
+	int count = 0;
+	size_t index = 0;
+	while (index < text.size()) {
+		index = utf8_next_index(text, index);
+		count += 1;
+	}
+	return count;
+}
+
+std::string utf8_slice_by_codepoints(const std::string& text, int startIndex, int endIndex) {
+	if (startIndex > endIndex) {
+		return std::string();
+	}
+	size_t startByte = utf8_byte_index_from_codepoint(text, startIndex);
+	if (startByte >= text.size()) {
+		return std::string();
+	}
+	size_t endByte = utf8_byte_index_from_codepoint(text, endIndex + 1);
+	if (endByte > text.size()) {
+		endByte = text.size();
+	}
+	if (endByte < startByte) {
+		return std::string();
+	}
+	return text.substr(startByte, endByte - startByte);
+}
+
 uint32_t utf8_codepoint_at(const std::string& text, size_t index) {
 	unsigned char c0 = static_cast<unsigned char>(text[index]);
 	if (c0 < 0x80) {
@@ -1984,6 +2012,42 @@ void Runtime::setupBuiltins() {
 		std::cerr << text << std::endl;
 		EngineCore::instance().log(LogLevel::Info, "%s", text.c_str());
 		(void)out;
+	});
+
+	registerNativeFunction("wrap_text_lines", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		const std::string text = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const int maxChars = static_cast<int>(std::floor(asNumber(args.at(1))));
+		const std::string firstPrefix = args.size() > 2 && !isNil(args.at(2)) ? m_cpu.stringPool().toString(asStringId(args.at(2))) : std::string();
+		const std::string nextPrefix = args.size() > 3 && !isNil(args.at(3)) ? m_cpu.stringPool().toString(asStringId(args.at(3))) : firstPrefix;
+		const int textLength = utf8_codepoint_count(text);
+		const int firstPrefixLength = utf8_codepoint_count(firstPrefix);
+		const int nextPrefixLength = utf8_codepoint_count(nextPrefix);
+		std::vector<std::string> lines;
+		std::vector<int> lineMap;
+		int startIndex = 1;
+		bool isFirstLine = true;
+		while (startIndex <= textLength) {
+			const std::string& prefix = isFirstLine ? firstPrefix : nextPrefix;
+			const int available = maxChars - (isFirstLine ? firstPrefixLength : nextPrefixLength);
+			if (available <= 0) {
+				throw BMSX_RUNTIME_ERROR("wrap_text_lines prefix exceeds max_chars.");
+			}
+			const int endIndex = std::min(textLength, startIndex + available - 1);
+			lines.push_back(prefix + utf8_slice_by_codepoints(text, startIndex, endIndex));
+			lineMap.push_back(1);
+			startIndex = endIndex + 1;
+			isFirstLine = false;
+		}
+		auto* linesTable = m_cpu.createTable(static_cast<int>(lines.size()), 0);
+		for (size_t index = 0; index < lines.size(); ++index) {
+			linesTable->set(valueNumber(static_cast<double>(index + 1)), valueString(m_cpu.internString(lines[index])));
+		}
+		auto* lineMapTable = m_cpu.createTable(static_cast<int>(lineMap.size()), 0);
+		for (size_t index = 0; index < lineMap.size(); ++index) {
+			lineMapTable->set(valueNumber(static_cast<double>(index + 1)), valueNumber(static_cast<double>(lineMap[index])));
+		}
+		out.push_back(valueTable(linesTable));
+		out.push_back(valueTable(lineMapTable));
 	});
 
 auto* stringTable = m_cpu.createTable();

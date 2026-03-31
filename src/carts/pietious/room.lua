@@ -942,7 +942,7 @@ function room_object:render_tiles()
 			0,
 			sys_vdp_layer_world
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_tile_run
+		write_words(sys_vdp_cmd, sys_vdp_cmd_tile_run)
 	end
 end
 
@@ -998,7 +998,7 @@ function room_object:render_water(water_surface_frame)
 			0,
 			sys_vdp_layer_world
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_tile_run
+		write_words(sys_vdp_cmd, sys_vdp_cmd_tile_run)
 	end
 end
 
@@ -1018,7 +1018,7 @@ function room_object:render_room()
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	local c={r=1,g=1,b=1,a=0.5};write_words(sys_vdp_cmd_arg0,0,constants.room.tile_origin_y,display_width(),display_height(),342,sys_vdp_layer_world,c.r,c.g,c.b,c.a);mem[sys_vdp_cmd]=sys_vdp_cmd_fill_rect
+	local c={r=1,g=1,b=1,a=0.5};write_words(sys_vdp_cmd_arg0,0,constants.room.tile_origin_y,display_width(),display_height(),342,sys_vdp_layer_world,c.r,c.g,c.b,c.a);write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
 end
 
 local function room_runtime_state_name(room_state)

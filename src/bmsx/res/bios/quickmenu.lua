@@ -199,7 +199,7 @@ function menu.draw()
 	local title_h = line_h
 	local title_gap = 6
 	local lines = #entries > 0 and #entries or 1
-	local max_chars = #title
+	local max_chars = string.len(title)
 	-- if #footer > max_chars then max_chars = #footer end
 	for i = 1, #entries do
 		local entry = entries[i]
@@ -208,7 +208,8 @@ function menu.draw()
 		if value ~= nil then
 			line = line .. ': ' .. value
 		end
-		if #line > max_chars then max_chars = #line end
+		local line_len = string.len(line)
+		if line_len > max_chars then max_chars = line_len end
 	end
 	local box_lines = lines + 1
 	local box_w = (max_chars * font_w * scale) + (padding * 2)
@@ -246,28 +247,17 @@ function menu.draw()
 		colors.panel.b,
 		colors.panel.a
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+	write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
 	local font = get_default_font()
 	local font_id = font.id
 	local text_z = z + 1
-	local title_x = x + math.floor((menu_w - (#title * font_w)) / 2)
+	local title_len = string.len(title)
+	local title_x = x + math.floor((menu_w - (title_len * font_w)) / 2)
 	local title_y = y + math.floor((title_h - font_h) / 2)
-	local title_len = #title
 	if title_len > 0 then
-		local payload_words = math.floor((title_len + 3) / 4)
-		mem[sys_vdp_payload_alloc] = payload_words
-		local byte_index = 1
-		while byte_index <= title_len do
-			local b1 = string.byte(title, byte_index) or 0
-			local b2 = string.byte(title, byte_index + 1) or 0
-			local b3 = string.byte(title, byte_index + 2) or 0
-			local b4 = string.byte(title, byte_index + 3) or 0
-			mem[sys_vdp_payload_data] = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
-			byte_index = byte_index + 4
-		end
 		write_words(
 			sys_vdp_cmd_arg0,
-			title_len,
+			title,
 			title_x,
 			title_y,
 			text_z,
@@ -285,7 +275,7 @@ function menu.draw()
 			0,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+		write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
 	end
 
 	local row_y = y + box_y + padding
@@ -305,7 +295,7 @@ function menu.draw()
 				colors.highlight.b,
 				colors.highlight.a
 			)
-			mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+			write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
 		end
 		local value = entry_value_label(entry)
 		local line = entry.label
@@ -315,22 +305,11 @@ function menu.draw()
 		local text_color = i == state.selected and colors.text or colors.text_dim
 		local text_x = x + padding
 		local text_y = row_y + math.floor((line_h - font_h) / 2)
-		local line_len = #line
+		local line_len = string.len(line)
 		if line_len > 0 then
-			local payload_words = math.floor((line_len + 3) / 4)
-			mem[sys_vdp_payload_alloc] = payload_words
-			local byte_index = 1
-			while byte_index <= line_len do
-				local b1 = string.byte(line, byte_index) or 0
-				local b2 = string.byte(line, byte_index + 1) or 0
-				local b3 = string.byte(line, byte_index + 2) or 0
-				local b4 = string.byte(line, byte_index + 3) or 0
-				mem[sys_vdp_payload_data] = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
-				byte_index = byte_index + 4
-			end
 			write_words(
 				sys_vdp_cmd_arg0,
-				line_len,
+				line,
 				text_x,
 				text_y,
 				text_z,
@@ -348,7 +327,7 @@ function menu.draw()
 				0,
 				0
 			)
-			mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+			write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
 		end
 		row_y = row_y + line_h
 	end

@@ -2,6 +2,7 @@
 -- bmsx system boot screen
 
 local clamp_int = require('util/clamp_int')
+local wrap_text_lines = require('util/wrap_text_lines')
 
 local function reset_scroll_state(state) state.top = 0 end
 local function clamp_scroll(top, line_count, window_size)
@@ -28,41 +29,6 @@ end
 local function window_size(height, top_margin, line_height, top_padding, bottom_padding)
 	local available_height = height - top_margin - top_padding - bottom_padding
 	return math.max(1, math.floor(available_height / line_height))
-end
-local function wrap_prefixed(text, line_slots, first_prefix, next_prefix)
-	next_prefix = next_prefix or first_prefix
-	local prefix_len = #first_prefix
-	local next_prefix_len = #next_prefix
-	local lines = {}
-	local remaining = text
-	local is_first = true
-	while #remaining > 0 do
-		local available = is_first and (line_slots - prefix_len) or (line_slots - next_prefix_len)
-		if available <= 0 then available = 1 end
-		local chunk = string.sub(remaining, 1, available)
-		local prefix = is_first and first_prefix or next_prefix
-		table.insert(lines, prefix .. chunk)
-		remaining = string.sub(remaining, available + 1)
-		is_first = false
-	end
-	return lines
-end
-local function wrap_entries(entries, line_slots, first_prefix, next_prefix)
-	local lines = {}
-	next_prefix = next_prefix or first_prefix
-	for idx, entry in ipairs(entries) do
-		local text = type(entry) == 'string' and entry or tostring(entry)
-		local prefix = (idx == 1) and first_prefix or next_prefix
-		local prefixed = prefix .. text
-		local available = line_slots - #prefix
-		while #prefixed > line_slots do
-			local chunk = string.sub(prefixed, 1, line_slots)
-			table.insert(lines, chunk)
-			prefixed = next_prefix .. string.sub(prefixed, line_slots + 1)
-		end
-		table.insert(lines, prefixed)
-	end
-	return lines
 end
 
 local boot_delay = 2.0
@@ -177,13 +143,6 @@ local function flatten_machine_manifest(machine)
 		cpu_freq_hz = cpu.cpu_freq_hz,
 		ufps = machine.ufps,
 	}
-end
-
-local function display_text(value)
-	if value == nil then
-		return '--'
-	end
-	return value
 end
 
 local function format_cpu_mhz_from_hz(value)
@@ -2146,7 +2105,7 @@ end
 
 local function center_x(text, width)
 	-- center text in given width, but ensure that the result is dividable by font_width
-	return math.floor((width - (#text * font_width)) / 2 / font_width) * font_width
+	return math.floor((width - (string.len(text) * font_width)) / 2 / font_width) * font_width
 end
 
 local function format_bytes(value)
@@ -2194,14 +2153,14 @@ local function build_info()
 	local cart_manifest = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path)
 	local machine_manifest = flatten_machine_manifest(machine_manifest)
 
-	local cart_title = cart_manifest and display_text(cart_manifest.title) or '--'
-	-- local cart_short = cart_manifest and display_text(cart_manifest.short_name) or '--'
-	local cart_rom = cart_manifest and display_text(cart_manifest.rom_name) or '--'
-	-- local cart_ns = cart_manifest and display_text(cart_manifest.namespace) or '--'
-	local cart_view_label = cart_manifest and display_text(cart_manifest.render_size) or '--'
-	-- local cart_canon = cart_manifest and display_text(cart_manifest.canonicalization) or '--'
-	-- local cart_entry = cart_manifest and display_text(cart_manifest.entry_path) or '--'
-	-- local cart_input = cart_manifest and display_text(cart_manifest.input) or '--'
+	local cart_title = cart_manifest and cart_manifest.title or '--'
+	-- local cart_short = cart_manifest and cart_manifest.short_name or '--'
+	local cart_rom = cart_manifest and cart_manifest.rom_name or '--'
+	-- local cart_ns = cart_manifest and cart_manifest.namespace or '--'
+	local cart_view_label = cart_manifest and cart_manifest.render_size or '--'
+	-- local cart_canon = cart_manifest and cart_manifest.canonicalization or '--'
+	-- local cart_entry = cart_manifest and cart_manifest.entry_path or '--'
+	-- local cart_input = cart_manifest and cart_manifest.input or '--'
 	local cart_cpu_raw = cart_manifest and cart_manifest.cpu_freq_hz
 	local cart_cpu_label = format_cpu_mhz_from_hz(cart_cpu_raw)
 	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest)
@@ -2209,7 +2168,7 @@ local function build_info()
 	local precheck_status, precheck_detail, precheck_done = get_program_precheck_status(cart_header)
 	local precheck_progress, precheck_phase_index, precheck_phase_total, precheck_phase_label = get_program_precheck_progress(cart_header)
 
-	local machine_view_label = machine_manifest and display_text(machine_manifest.render_size) or '--'
+	local machine_view_label = machine_manifest and machine_manifest.render_size or '--'
 	local machine_cpu_raw = machine_manifest and machine_manifest.cpu_freq_hz
 	local machine_cpu_label = format_cpu_mhz_from_hz(machine_cpu_raw)
 	local vram_total = sys_vram_system_atlas_size + sys_vram_primary_atlas_size + sys_vram_secondary_atlas_size + sys_vram_framebuffer_size + sys_vram_staging_size
@@ -2228,7 +2187,7 @@ local function build_info()
 		cart_cpu_mhz = cart_cpu_label,
 		cart_errors = cart_errors,
 		cart_has_errors = cart_has_errors,
-		root = cart_root_path and display_text(cart_root_path) or '--',
+		root = cart_root_path and cart_root_path or '--',
 		hw_cart_max = format_bytes(sys_cart_rom_size),
 		hw_ram_total = format_bytes(sys_ram_size),
 		hw_vram_total = format_bytes(vram_total),
@@ -2282,7 +2241,7 @@ local function compute_boot_progress(info, cart_ready, elapsed)
 end
 
 local function append_wrapped_line(lines, value, color, line_slots, first_prefix, next_prefix)
-	local wrapped = wrap_prefixed(value, line_slots, (first_prefix), ((next_prefix or first_prefix)))
+	local wrapped = wrap_text_lines(value, line_slots, first_prefix, next_prefix or first_prefix)
 	for i = 1, #wrapped do
 		lines[#lines + 1] = { text = wrapped[i], color = color }
 	end
@@ -2291,7 +2250,7 @@ end
 local function append_kv_wrapped(lines, label, value, color, label_width, line_slots)
 	local first_prefix = string.format('%-' .. label_width .. 's : ', label)
 	local next_prefix = string.rep(' ', label_width) .. '   '
-	local wrapped = wrap_prefixed(value, line_slots, first_prefix, next_prefix)
+	local wrapped = wrap_text_lines(value, line_slots, first_prefix, next_prefix)
 	for i = 1, #wrapped do
 		lines[#lines + 1] = { text = wrapped[i], color = color }
 	end
@@ -2372,10 +2331,14 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 	end
 
 	if cart_has_errors then
-		local error_lines = wrap_entries(info.cart_errors, line_slots, '- ', '  ')
 		append_blank_line(lines)
-		for i = 1, #error_lines do
-			lines[#lines + 1] = { text = error_lines[i], color = color_warn }
+		for idx, entry in ipairs(info.cart_errors) do
+			local text = type(entry) == 'string' and entry or tostring(entry)
+			local prefix = (idx == 1) and '- ' or '  '
+			local error_lines = wrap_text_lines(text, line_slots, prefix, '  ')
+			for i = 1, #error_lines do
+				lines[#lines + 1] = { text = error_lines[i], color = color_warn }
+			end
 		end
 		append_wrapped_line(lines, 'BOOT BLOCKED ' .. cursor, color_warn, line_slots, '', '')
 		return lines
@@ -2488,8 +2451,8 @@ render_boot_screen = function(scroll_delta)
 	local font = get_default_font()
 	local font_id = font.id
 
-	do local c=sys_palette_color(color_bg);mem[sys_vdp_cmd_arg0+0*4]=c.r;mem[sys_vdp_cmd_arg0+1*4]=c.g;mem[sys_vdp_cmd_arg0+2*4]=c.b;mem[sys_vdp_cmd_arg0+3*4]=c.a;mem[sys_vdp_cmd]=sys_vdp_cmd_clear end
-	do local c=sys_palette_color(color_header_bg);write_words(sys_vdp_cmd_arg0,0,0,width,24,0,sys_vdp_layer_world,c.r,c.g,c.b,c.a);mem[sys_vdp_cmd]=sys_vdp_cmd_fill_rect end
+	do local c=sys_palette_color(color_bg);write_words(sys_vdp_cmd_arg0, c.r, c.g, c.b, c.a);write_words(sys_vdp_cmd, sys_vdp_cmd_clear) end
+	do local c=sys_palette_color(color_header_bg);write_words(sys_vdp_cmd_arg0, 0, 0, width, 24, 0, sys_vdp_layer_world, c.r, c.g, c.b, c.a);write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect) end
 	local info = build_info()
 	local cart_present = mem[cart_rom_base] == cart_rom_magic
 	local elapsed = elapsed_seconds()
@@ -2512,23 +2475,11 @@ render_boot_screen = function(scroll_delta)
 			text = line
 			line_color = color_text
 		end
-		local text_len = #text
-		if text_len > 0 then
-			local payload_words = math.floor((text_len + 3) / 4)
-			mem[sys_vdp_payload_alloc] = payload_words
-			local byte_index = 1
-			while byte_index <= text_len do
-				local b1 = string.byte(text, byte_index) or 0
-				local b2 = string.byte(text, byte_index + 1) or 0
-				local b3 = string.byte(text, byte_index + 2) or 0
-				local b4 = string.byte(text, byte_index + 3) or 0
-				mem[sys_vdp_payload_data] = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
-				byte_index = byte_index + 4
-			end
+		if string.len(text) > 0 then
 			local color = sys_palette_color(line_color or color_text)
 			write_words(
 				sys_vdp_cmd_arg0,
-				text_len,
+				text,
 				left,
 				y,
 				text_z,
@@ -2546,7 +2497,7 @@ render_boot_screen = function(scroll_delta)
 				0,
 				0
 			)
-			mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+			write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
 		end
 		y = y + line_height
 	end

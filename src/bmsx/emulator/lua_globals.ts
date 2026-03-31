@@ -1316,7 +1316,50 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		return unitIndex;
 	};
 
+	const wrapTextLines = (text: string, maxChars: number, firstPrefix: string = '', nextPrefix: string = firstPrefix): { lines: string[]; lineMap: number[] } => {
+		const textLength = utf8CodepointCount(text);
+		const firstPrefixLength = utf8CodepointCount(firstPrefix);
+		const nextPrefixLength = utf8CodepointCount(nextPrefix);
+		const lines: string[] = [];
+		const lineMap: number[] = [];
+		if (textLength === 0) {
+			return { lines, lineMap };
+		}
+		let startIndex = 1;
+		let isFirstLine = true;
+		while (startIndex <= textLength) {
+			const prefix = isFirstLine ? firstPrefix : nextPrefix;
+			const available = maxChars - (isFirstLine ? firstPrefixLength : nextPrefixLength);
+			if (available <= 0) {
+				throw runtime.createApiRuntimeError('wrap_text_lines prefix exceeds max_chars.');
+			}
+			const endIndex = Math.min(textLength, startIndex + available - 1);
+			const startUnit = utf8CodepointIndexToUnitIndex(text, startIndex);
+			const endUnit = utf8CodepointIndexToUnitIndex(text, endIndex + 1);
+			lines.push(prefix + text.slice(startUnit, endUnit));
+			lineMap.push(1);
+			startIndex = endIndex + 1;
+			isFirstLine = false;
+		}
+		return { lines, lineMap };
+	};
+
 	const stringTable = new Table(0, 0);
+	runtimeLuaPipeline.registerGlobal(runtime, 'wrap_text_lines', createNativeFunction('wrap_text_lines', (args, out) => {
+		const text = runtimeLuaPipeline.requireString(args[0]);
+		const maxChars = Math.floor(args[1] as number);
+		const firstPrefix = args.length > 2 && args[2] !== null ? runtimeLuaPipeline.requireString(args[2]) : '';
+		const nextPrefix = args.length > 3 && args[3] !== null ? runtimeLuaPipeline.requireString(args[3]) : firstPrefix;
+		const wrapped = wrapTextLines(text, maxChars, firstPrefix, nextPrefix);
+		const linesTable = new Table(wrapped.lines.length, 0);
+		const lineMapTable = new Table(wrapped.lineMap.length, 0);
+		for (let index = 0; index < wrapped.lines.length; index += 1) {
+			linesTable.set(index + 1, runtime.internString(wrapped.lines[index]));
+			lineMapTable.set(index + 1, wrapped.lineMap[index]);
+		}
+		out.push(linesTable);
+		out.push(lineMapTable);
+	}, CHEAP_NATIVE_LOOKUP_COST));
 	setKey(stringTable, 'len', createNativeFunction('string.len', (args, out) => {
 		const value = args[0] as StringValue;
 		out.push(runtime.cpu.getStringPool().codepointCount(value));

@@ -151,6 +151,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'string.rep', params: ['s', 'n', 'sep?'], signature: 'string.rep(s, n [, sep])' },
 	{ name: 'string.sub', params: ['s', 'i', 'j?'], signature: 'string.sub(s, i [, j])' },
 	{ name: 'string.upper', params: ['s'], signature: 'string.upper(s)' },
+	{ name: 'wrap_text_lines', params: ['text', 'max_chars', 'first_prefix?', 'next_prefix?'], signature: 'wrap_text_lines(text, max_chars [, first_prefix [, next_prefix]])', description: 'Wraps UTF-8 text into fixed-width lines while preserving code points.' },
 	{ name: 'os.clock', params: [], signature: 'os.clock()' },
 	{ name: 'os.date', params: ['format?', 'time?'], signature: 'os.date([format [, time]])' },
 	{ name: 'os.difftime', params: ['t2', 't1?'], signature: 'os.difftime(t2 [, t1])' },
