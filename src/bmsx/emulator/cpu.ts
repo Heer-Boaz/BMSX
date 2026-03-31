@@ -1503,6 +1503,14 @@ export class CPU {
 		return upvalue.value;
 	}
 
+	public hasFrameUpvalue(frameIndex: number, upvalueIndex: number): boolean {
+		const frame = this.frames[frameIndex];
+		if (!frame) {
+			throw new Error(`[CPU] Frame index out of range: ${frameIndex}.`);
+		}
+		return frame.closure.upvalues[upvalueIndex] !== undefined;
+	}
+
 	public getConst(index: number): Value {
 		return this.program.constPool[index];
 	}

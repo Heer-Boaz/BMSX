@@ -183,7 +183,7 @@ function resolveRootExpressionValue(
 	const upvalueNames = metadata?.upvalueNamesByProto?.[protoIndex];
 	if (upvalueNames) {
 		const upvalueIndex = upvalueNames.indexOf(canonicalName);
-		if (upvalueIndex >= 0) {
+		if (upvalueIndex >= 0 && runtime.cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
 			return { found: true, value: runtime.cpu.readFrameUpvalue(frameIndex, upvalueIndex) };
 		}
 	}

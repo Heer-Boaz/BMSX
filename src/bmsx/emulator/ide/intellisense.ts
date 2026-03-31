@@ -37,8 +37,8 @@ import { getTextSnapshot, splitText } from './text/source_text';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
 
-const SYMBOL_PRIORITY_ORDER: LuaDefinitionKind[] = ['table_field', 'function', 'parameter', 'variable', 'assignment'];
-const LOCAL_DEFINITION_PRIORITY_ORDER: LuaDefinitionKind[] = ['parameter', 'table_field', 'function', 'variable', 'assignment'];
+const SYMBOL_PRIORITY_ORDER: LuaDefinitionKind[] = ['table_field', 'function', 'constant', 'parameter', 'variable', 'assignment'];
+const LOCAL_DEFINITION_PRIORITY_ORDER: LuaDefinitionKind[] = ['parameter', 'table_field', 'function', 'constant', 'variable', 'assignment'];
 
 function resolveTableChain(table: LuaTable): LuaTable[] {
 	const chain: LuaTable[] = [];
@@ -554,6 +554,28 @@ function addIdentifierDiagnosticsFromSemantic(analysis: FileSemanticData, global
 	}
 }
 
+function addConstLocalWriteDiagnosticsFromSemantic(analysis: FileSemanticData): void {
+	const declById = new Map<string, Decl>();
+	for (let index = 0; index < analysis.decls.length; index += 1) {
+		const decl = analysis.decls[index];
+		declById.set(decl.id, decl);
+	}
+	for (let index = 0; index < analysis.refs.length; index += 1) {
+		const ref = analysis.refs[index];
+		if (!ref.isWrite || !ref.target) {
+			continue;
+		}
+		const decl = declById.get(ref.target);
+		if (!decl || decl.kind !== 'constant') {
+			continue;
+		}
+		const row = ref.range.start.line - 1;
+		const startColumn = ref.range.start.column - 1;
+		const endColumn = startColumn + ref.name.length;
+		pushDiagnostic(row, startColumn, endColumn, `Cannot assign to constant local '${ref.name}'.`, 'error');
+	}
+}
+
 function addCallDiagnosticsFromSemantic(
 	analysis: FileSemanticData,
 	builtinLookup: Map<string, LuaBuiltinDescriptor>,
@@ -584,6 +606,10 @@ function addCallDiagnosticsFromSemantic(
 
 function buildRangeKey(range: LuaSourceRange): string {
 	return `${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
+}
+
+function isMultiReturnExpression(expression: LuaExpression): boolean {
+	return expression.kind === LuaSyntaxKind.CallExpression || expression.kind === LuaSyntaxKind.VarargExpression;
 }
 
 function pushRangeDiagnostic(range: LuaSourceRange, message: string, severity: LuaDiagnosticSeverity): void {
@@ -725,8 +751,8 @@ function addReservedMemoryDiagnosticsFromSemantic(analysis: FileSemanticData, ch
 		if (!isReservedMemoryMapName(decl.name)) {
 			continue;
 		}
-		if (decl.kind === 'local' || decl.kind === 'parameter') {
-			pushRangeDiagnostic(decl.range, `'${decl.name}' is a reserved memory map name and cannot be used as a local or parameter.`, 'error');
+		if (decl.kind === 'local' || decl.kind === 'constant' || decl.kind === 'parameter') {
+			pushRangeDiagnostic(decl.range, `'${decl.name}' is a reserved memory map name and cannot be used as a local, constant, or parameter.`, 'error');
 			continue;
 		}
 		if (decl.kind === 'function' || decl.kind === 'global') {
@@ -743,6 +769,73 @@ function addReservedMemoryDiagnosticsFromSemantic(analysis: FileSemanticData, ch
 		}
 		pushRangeDiagnostic(ref.range, `'${ref.name}' is a reserved memory map. Use direct indexing syntax like ${ref.name}[addr].`, 'error');
 	}
+}
+
+function addConstLocalInitializerDiagnostics(chunk: LuaChunk): void {
+	const visitBlock = (statements: readonly LuaStatement[]): void => {
+		for (let index = 0; index < statements.length; index += 1) {
+			visitStatement(statements[index]);
+		}
+	};
+	const isExplicitInitializer = (statement: LuaLocalAssignmentStatement, nameIndex: number): boolean => {
+		if (statement.values.length === 0) {
+			return false;
+		}
+		if (nameIndex < statement.values.length - 1) {
+			return true;
+		}
+		if (nameIndex === statement.values.length - 1) {
+			return true;
+		}
+		return isMultiReturnExpression(statement.values[statement.values.length - 1]);
+	};
+	const visitStatement = (statement: LuaStatement): void => {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement: {
+				const localAssignment = statement as LuaLocalAssignmentStatement;
+				for (let index = 0; index < localAssignment.names.length; index += 1) {
+					if (localAssignment.attributes[index] !== 'const') {
+						continue;
+					}
+					if (isExplicitInitializer(localAssignment, index)) {
+						continue;
+					}
+					const identifier = localAssignment.names[index];
+					pushRangeDiagnostic(identifier.range, `Constant local '${identifier.name}' must have an initializer.`, 'error');
+				}
+				return;
+			}
+			case LuaSyntaxKind.LocalFunctionStatement:
+				visitBlock(statement.functionExpression.body.body);
+				return;
+			case LuaSyntaxKind.FunctionDeclarationStatement:
+				visitBlock(statement.functionExpression.body.body);
+				return;
+			case LuaSyntaxKind.IfStatement:
+				for (let index = 0; index < statement.clauses.length; index += 1) {
+					visitBlock(statement.clauses[index].block.body);
+				}
+				return;
+			case LuaSyntaxKind.WhileStatement:
+				visitBlock(statement.block.body);
+				return;
+			case LuaSyntaxKind.RepeatStatement:
+				visitBlock(statement.block.body);
+				return;
+			case LuaSyntaxKind.ForNumericStatement:
+				visitBlock(statement.block.body);
+				return;
+			case LuaSyntaxKind.ForGenericStatement:
+				visitBlock(statement.block.body);
+				return;
+			case LuaSyntaxKind.DoStatement:
+				visitBlock(statement.block.body);
+				return;
+			default:
+				return;
+		}
+	};
+	visitBlock(chunk.body);
 }
 
 export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnostic[] {
@@ -777,6 +870,8 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 	const globalKnownNames = buildGlobalKnownNameSet(options.localSymbols, options.globalSymbols, options.builtinDescriptors, options.apiSignatures, canonicalize);
 	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors, canonicalize);
 	addIdentifierDiagnosticsFromSemantic(semanticData, globalKnownNames);
+	addConstLocalWriteDiagnosticsFromSemantic(semanticData);
+	addConstLocalInitializerDiagnostics(parseEntry.parsed.chunk);
 	addCallDiagnosticsFromSemantic(semanticData, builtinLookup, options.apiSignatures, canonicalApiRoot);
 	addReservedMemoryDiagnosticsFromSemantic(semanticData, parseEntry.parsed.chunk);
 
@@ -2043,6 +2138,8 @@ function symbolKindToLuaKind(kind: Decl['kind']): LuaSymbolKind {
 			return 'function';
 		case 'parameter':
 			return 'parameter';
+		case 'constant':
+			return 'constant';
 		default:
 			return 'variable';
 	}
@@ -2568,7 +2665,7 @@ function resolveRuntimeLocalChainValue(
 					continue;
 				}
 				const upvalueIndex = frameUpvalueNames.indexOf(canonicalRoot);
-				if (upvalueIndex === -1) {
+				if (upvalueIndex === -1 || !runtime.cpu.hasFrameUpvalue(frameIndex, upvalueIndex)) {
 					continue;
 				}
 				const chained = walkValueChain(wrapRuntimeValueForIntellisense(runtime.cpu.readFrameUpvalue(frameIndex, upvalueIndex)), parts, 1);

@@ -277,6 +277,8 @@ function resolveColorForSymbolKind(kind: SymbolKind): number {
 			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_PARAMETER;
 		case 'local':
 			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_FUNCTION;
+		case 'constant':
+			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_LOCAL_TOP;
 		case 'function':
 			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_HANDLE;
 		case 'global':

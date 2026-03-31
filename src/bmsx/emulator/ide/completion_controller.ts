@@ -901,7 +901,7 @@ export class CompletionController {
 	}
 
 	private isLocalDefinitionKind(kind: LuaScopedSymbol['kind']): boolean {
-		return kind === 'variable' || kind === 'function' || kind === 'parameter';
+		return kind === 'variable' || kind === 'constant' || kind === 'function' || kind === 'parameter';
 	}
 
 	private isPositionWithinRange(row: number, column: number, range: LuaDefinitionRange): boolean {
@@ -957,6 +957,7 @@ export class CompletionController {
 		switch (kind) {
 			case 'function': return 'function';
 			case 'variable': return 'variable';
+			case 'constant': return 'constant';
 			case 'parameter': return 'parameter';
 			case 'table_field': return 'table field';
 			case 'assignment': return 'assignment';

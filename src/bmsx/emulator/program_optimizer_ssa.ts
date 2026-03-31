@@ -457,6 +457,7 @@ const replaceWithMov = (instruction: Instruction, dst: number, src: number): voi
 	instruction.format = 'ABC';
 	instruction.rkMask = 0;
 	instruction.target = null;
+	instruction.callProtoIndex = null;
 };
 
 const replaceWithUnm = (instruction: Instruction, dst: number, src: number): void => {
@@ -467,6 +468,7 @@ const replaceWithUnm = (instruction: Instruction, dst: number, src: number): voi
 	instruction.format = 'ABC';
 	instruction.rkMask = 0;
 	instruction.target = null;
+	instruction.callProtoIndex = null;
 };
 
 const replaceWithJump = (instruction: Instruction, target: number): void => {
@@ -477,6 +479,7 @@ const replaceWithJump = (instruction: Instruction, target: number): void => {
 	instruction.format = 'AsBx';
 	instruction.rkMask = 0;
 	instruction.target = target;
+	instruction.callProtoIndex = null;
 };
 
 const replaceWithNop = (instruction: Instruction): void => {
@@ -593,6 +596,7 @@ const simplifyBranches = (
 const replaceWithConst = (instruction: Instruction, target: number, value: Value, context: OptimizationContext): ConstValue => {
 	instruction.target = null;
 	instruction.rkMask = 0;
+	instruction.callProtoIndex = null;
 	if (value === null) {
 		instruction.op = OpCode.LOADNIL;
 		instruction.a = target;
@@ -1769,6 +1773,7 @@ const cloneInstruction = (instruction: Instruction): Instruction => ({
 	format: instruction.format,
 	rkMask: instruction.rkMask,
 	target: instruction.target,
+	callProtoIndex: instruction.callProtoIndex ?? null,
 });
 
 const isControlFlowInstruction = (instruction: Instruction): boolean => {
@@ -3188,7 +3193,7 @@ export const applyGlobalOptimizations = (
 			// Keep RK replacement for non-string constants only.
 			// If we add new string-producing opcodes, extend this exclusion too.
 			// (Currently CONCAT is the only such op in this pass.)
-			// When write_words (STORE_MEM_WORDS) sources become string constants,
+			// When memwrite (STORE_MEM_WORDS) sources become string constants,
 			// that would encode the constant literal directly instead of the register
 			// and produces the wrong text.
 			if (

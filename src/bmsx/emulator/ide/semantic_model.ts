@@ -25,7 +25,7 @@ import type { LuaSymbolEntry } from '../types';
 import type { ParsedLuaChunk } from './lua/lua_parse';
 import { getCachedLuaParse } from './lua/lua_analysis_cache';
 
-export type SymbolKind = 'parameter' | 'local' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
+export type SymbolKind = 'parameter' | 'local' | 'constant' | 'function' | 'global' | 'tableField' | 'module' | 'type' | 'label' | 'keyword';
 
 export type SymbolID = string;
 
@@ -957,7 +957,8 @@ class SemanticBuilder {
 				const pending: InternalDecl[] = [];
 				for (let index = 0; index < localAssignment.names.length; index += 1) {
 					const name = localAssignment.names[index];
-					const decl = this.declareLocal(name, 'local', false);
+					const kind = localAssignment.attributes[index] === 'const' ? 'constant' : 'local';
+					const decl = this.declareLocal(name, kind, false);
 					pending.push(decl);
 				}
 				const valueLimit = localAssignment.values.length;
@@ -1822,6 +1823,8 @@ function symbolKindToDefinitionKind(kind: SymbolKind): LuaDefinitionInfo['kind']
 			return 'function';
 		case 'tableField':
 			return 'table_field';
+		case 'constant':
+			return 'constant';
 		case 'global':
 		case 'local':
 		default:
@@ -2308,8 +2311,10 @@ export class LuaSemanticWorkspace {
 export function symbolPriority(kind: LuaSymbolEntry['kind']): number {
 	switch (kind) {
 		case 'table_field':
-			return 5;
+			return 6;
 		case 'function':
+			return 5;
+		case 'constant':
 			return 4;
 		case 'parameter':
 			return 3;
@@ -2329,6 +2334,8 @@ export function symbolKindLabel(kind: LuaSymbolEntry['kind']): string {
 			return 'FIELD';
 		case 'parameter':
 			return 'PARAM';
+		case 'constant':
+			return 'CONST';
 		case 'variable':
 			return 'VAR';
 		case 'assignment':

@@ -6,6 +6,7 @@ import {
 	LuaUnaryOperator,
 	type LuaAssignableExpression,
 	type LuaAssignmentStatement,
+	type LuaBinaryExpression,
 	type LuaCallExpression,
 	type LuaChunk,
 	type LuaExpression,
@@ -21,6 +22,7 @@ import {
 	type LuaStatement,
 	type LuaBooleanLiteralExpression,
 	type LuaStringLiteralExpression,
+	type LuaUnaryExpression,
 	type LuaSourceRange,
 	type LuaTableConstructorExpression,
 	type LuaWhileStatement,
@@ -78,6 +80,16 @@ type LoopContext = {
 type ScopeFrame = {
 	names: string[];
 	range: SourceRange;
+};
+
+type LocalBindingKind = 'local' | 'const' | 'parameter';
+
+type LocalBinding = {
+	reg: number;
+	kind: LocalBindingKind;
+	constValue: Value | null;
+	hasConstValue: boolean;
+	constClosureProtoIndex: number | null;
 };
 
 type AssignmentTarget =
@@ -373,7 +385,7 @@ class FunctionBuilder {
 	private finalizedCode: Uint8Array | null = null;
 	private finalizedRanges: Array<SourceRange | null> | null = null;
 	private finalizedConstRelocs: ProgramConstReloc[] | null = null;
-	private readonly localStacks = new Map<string, number[]>();
+	private readonly localStacks = new Map<string, LocalBinding[]>();
 	private readonly scopeStack: ScopeFrame[] = [];
 	private readonly localDebugSlots: LocalSlotDebug[] = [];
 	private readonly upvalueDescs: UpvalueDesc[] = [];
@@ -410,10 +422,10 @@ class FunctionBuilder {
 	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean): void {
 		this.pushScope(expression.body.range);
 		if (implicitSelf) {
-			this.declareLocal('self', expression.range, expression.range);
+			this.declareLocal('self', expression.range, expression.range, 'parameter');
 		}
 		for (let i = 0; i < expression.parameters.length; i += 1) {
-			this.declareLocal(expression.parameters[i].name, expression.parameters[i].range, expression.range);
+			this.declareLocal(expression.parameters[i].name, expression.parameters[i].range, expression.range, 'parameter');
 		}
 		for (let i = 0; i < expression.body.body.length; i += 1) {
 			this.compileStatement(expression.body.body[i]);
@@ -686,7 +698,15 @@ class FunctionBuilder {
 		throw new Error(`Missing label(s): ${labels.join(', ')}`);
 	}
 
-	private declareLocal(name: string, definitionRange: LuaSourceRange, scopeRange?: LuaSourceRange): number {
+	private declareLocal(
+		name: string,
+		definitionRange: LuaSourceRange,
+		scopeRange?: LuaSourceRange,
+		kind: LocalBindingKind = 'local',
+		constValue: Value | null = null,
+		hasConstValue = false,
+		constClosureProtoIndex: number | null = null,
+	): number {
 		const canonicalName = this.canonicalizeName(name);
 		if (this.getMemoryAccessKindForCanonicalName(canonicalName) !== null) {
 			throw new Error(`[Compiler] '${canonicalName}' is a reserved memory map name and cannot be used as a local or parameter.`);
@@ -707,7 +727,13 @@ class FunctionBuilder {
 			stack = [];
 			this.localStacks.set(canonicalName, stack);
 		}
-		stack.push(reg);
+		stack.push({
+			reg,
+			kind,
+			constValue,
+			hasConstValue,
+			constClosureProtoIndex,
+		});
 		const scope = this.scopeStack[this.scopeStack.length - 1];
 		scope.names.push(canonicalName);
 		const effectiveScopeRange = scopeRange ?? scope.range;
@@ -721,6 +747,15 @@ class FunctionBuilder {
 	}
 
 	private resolveLocal(name: string): number | null {
+		const canonicalName = this.canonicalizeName(name);
+		const stack = this.localStacks.get(canonicalName);
+		if (!stack || stack.length === 0) {
+			return null;
+		}
+		return stack[stack.length - 1].reg;
+	}
+
+	private resolveLocalBinding(name: string): LocalBinding | null {
 		const canonicalName = this.canonicalizeName(name);
 		const stack = this.localStacks.get(canonicalName);
 		if (!stack || stack.length === 0) {
@@ -766,6 +801,33 @@ class FunctionBuilder {
 			return true;
 		}
 		return this.parent !== null && this.parent.hasLexicalBindingCanonical(canonicalName);
+	}
+
+	private resolveVisibleBinding(name: string): LocalBinding | null {
+		const localBinding = this.resolveLocalBinding(name);
+		if (localBinding) {
+			return localBinding;
+		}
+		if (!this.parent) {
+			return null;
+		}
+		return this.parent.resolveVisibleBinding(name);
+	}
+
+	private resolveCompileTimeConstBinding(name: string): LocalBinding | null {
+		const binding = this.resolveVisibleBinding(name);
+		if (!binding || binding.kind !== 'const' || !binding.hasConstValue) {
+			return null;
+		}
+		return binding;
+	}
+
+	private resolveCompileTimeConstClosureBinding(name: string): LocalBinding | null {
+		const binding = this.resolveVisibleBinding(name);
+		if (!binding || binding.kind !== 'const' || binding.constClosureProtoIndex === null) {
+			return null;
+		}
+		return binding;
 	}
 
 	private allocTemp(): number {
@@ -890,8 +952,207 @@ class FunctionBuilder {
 	}
 
 	private emitLoadConst(target: number, value: Value): void {
-		const index = this.program.constIndex(value);
+		const normalizedValue = typeof value === 'string' ? this.program.internString(value) : value;
+		const index = this.program.constIndex(normalizedValue);
 		this.emitABx(OpCode.LOADK, target, index);
+	}
+
+	private compileExpressionWithStaticClosureProto(expression: LuaExpression, target: number, resultCount: number, protoIdHint: string | null = null): number | null {
+		let closureProtoIndex: number | null = null;
+		this.withRange(expression.range, () => {
+			if (expression.kind === LuaSyntaxKind.FunctionExpression) {
+				const protoId = this.createChildProtoId(protoIdHint ?? buildAnonymousHint(expression.range));
+				closureProtoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId);
+				this.emitABx(OpCode.CLOSURE, target, closureProtoIndex);
+				return;
+			}
+			if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+				const binding = this.resolveCompileTimeConstClosureBinding((expression as LuaIdentifierExpression).name);
+				if (binding !== null) {
+					closureProtoIndex = binding.constClosureProtoIndex;
+				}
+			}
+			this.compileExpressionInto(expression, target, resultCount, protoIdHint);
+		});
+		return closureProtoIndex;
+	}
+
+	private evaluateCompileTimeExpression(expression: LuaExpression): Value | undefined {
+		switch (expression.kind) {
+			case LuaSyntaxKind.NumericLiteralExpression:
+				return (expression as LuaNumericLiteralExpression).value;
+			case LuaSyntaxKind.StringLiteralExpression:
+				return this.program.internString((expression as LuaStringLiteralExpression).value);
+			case LuaSyntaxKind.BooleanLiteralExpression:
+				return (expression as LuaBooleanLiteralExpression).value;
+			case LuaSyntaxKind.NilLiteralExpression:
+				return null;
+			case LuaSyntaxKind.IdentifierExpression: {
+				const binding = this.resolveCompileTimeConstBinding((expression as LuaIdentifierExpression).name);
+				return binding ? binding.constValue : undefined;
+			}
+			case LuaSyntaxKind.UnaryExpression:
+				return this.evaluateCompileTimeUnaryExpression(expression as LuaUnaryExpression);
+			case LuaSyntaxKind.BinaryExpression:
+				return this.evaluateCompileTimeBinaryExpression(expression as LuaBinaryExpression);
+			default:
+				return undefined;
+		}
+	}
+
+	private evaluateCompileTimeUnaryExpression(expression: LuaUnaryExpression): Value | undefined {
+		const operand = this.evaluateCompileTimeExpression(expression.operand);
+		if (operand === undefined) {
+			return undefined;
+		}
+		switch (expression.operator) {
+			case LuaUnaryOperator.Negate:
+				return typeof operand === 'number' ? -operand : undefined;
+			case LuaUnaryOperator.Not:
+				return !this.isTruthyCompileTimeValue(operand);
+			case LuaUnaryOperator.Length:
+				return isStringValue(operand) ? operand.codepointCount : undefined;
+			case LuaUnaryOperator.BitwiseNot:
+				return typeof operand === 'number' ? ~operand : undefined;
+			default:
+				return undefined;
+		}
+	}
+
+	private evaluateCompileTimeBinaryExpression(expression: LuaBinaryExpression): Value | undefined {
+		switch (expression.operator) {
+			case LuaBinaryOperator.And: {
+				const left = this.evaluateCompileTimeExpression(expression.left);
+				if (left === undefined) {
+					return undefined;
+				}
+				if (!this.isTruthyCompileTimeValue(left)) {
+					return left;
+				}
+				return this.evaluateCompileTimeExpression(expression.right);
+			}
+			case LuaBinaryOperator.Or: {
+				const left = this.evaluateCompileTimeExpression(expression.left);
+				if (left === undefined) {
+					return undefined;
+				}
+				if (this.isTruthyCompileTimeValue(left)) {
+					return left;
+				}
+				return this.evaluateCompileTimeExpression(expression.right);
+			}
+			case LuaBinaryOperator.Equal:
+				return this.evaluateCompileTimeEquality(expression.left, expression.right);
+			case LuaBinaryOperator.NotEqual: {
+				const equal = this.evaluateCompileTimeEquality(expression.left, expression.right);
+				return equal === undefined ? undefined : !equal;
+			}
+			case LuaBinaryOperator.LessThan:
+				return this.evaluateCompileTimeRelational(expression.left, expression.right, (a, b) => a < b);
+			case LuaBinaryOperator.LessEqual:
+				return this.evaluateCompileTimeRelational(expression.left, expression.right, (a, b) => a <= b);
+			case LuaBinaryOperator.GreaterThan:
+				return this.evaluateCompileTimeRelational(expression.right, expression.left, (a, b) => a < b);
+			case LuaBinaryOperator.GreaterEqual:
+				return this.evaluateCompileTimeRelational(expression.right, expression.left, (a, b) => a <= b);
+			case LuaBinaryOperator.BitwiseOr:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a | b);
+			case LuaBinaryOperator.BitwiseXor:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a ^ b);
+			case LuaBinaryOperator.BitwiseAnd:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a & b);
+			case LuaBinaryOperator.ShiftLeft:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a << (b & 31));
+			case LuaBinaryOperator.ShiftRight:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a >> (b & 31));
+			case LuaBinaryOperator.Add:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a + b);
+			case LuaBinaryOperator.Subtract:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a - b);
+			case LuaBinaryOperator.Multiply:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a * b);
+			case LuaBinaryOperator.Divide:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a / b);
+			case LuaBinaryOperator.FloorDivide:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => Math.floor(a / b));
+			case LuaBinaryOperator.Modulus:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => a % b);
+			case LuaBinaryOperator.Concat:
+				return this.evaluateCompileTimeConcat(expression.left, expression.right);
+			case LuaBinaryOperator.Exponent:
+				return this.evaluateCompileTimeNumericBinary(expression.left, expression.right, (a, b) => Math.pow(a, b));
+			default:
+				return undefined;
+		}
+	}
+
+	private evaluateCompileTimeNumericBinary(leftExpression: LuaExpression, rightExpression: LuaExpression, operator: (left: number, right: number) => number | undefined): Value | undefined {
+		const left = this.evaluateCompileTimeExpression(leftExpression);
+		const right = this.evaluateCompileTimeExpression(rightExpression);
+		if (left === undefined || right === undefined) {
+			return undefined;
+		}
+		if (typeof left !== 'number' || typeof right !== 'number') {
+			return undefined;
+		}
+		return operator(left, right);
+	}
+
+	private evaluateCompileTimeConcat(leftExpression: LuaExpression, rightExpression: LuaExpression): Value | undefined {
+		const left = this.evaluateCompileTimeExpression(leftExpression);
+		const right = this.evaluateCompileTimeExpression(rightExpression);
+		if (left === undefined || right === undefined) {
+			return undefined;
+		}
+		if (!this.isCompileTimeConcatValue(left) || !this.isCompileTimeConcatValue(right)) {
+			return undefined;
+		}
+		return this.program.internString(this.toCompileTimeString(left) + this.toCompileTimeString(right));
+	}
+
+	private evaluateCompileTimeEquality(leftExpression: LuaExpression, rightExpression: LuaExpression): boolean | undefined {
+		const left = this.evaluateCompileTimeExpression(leftExpression);
+		const right = this.evaluateCompileTimeExpression(rightExpression);
+		if (left === undefined || right === undefined) {
+			return undefined;
+		}
+		if (typeof left === 'number') {
+			return typeof right === 'number' && left === right;
+		}
+		if (isStringValue(left)) {
+			return isStringValue(right) && left.text === right.text;
+		}
+		if (typeof left === 'boolean' || left === null) {
+			return left === right;
+		}
+		return undefined;
+	}
+
+	private evaluateCompileTimeRelational(leftExpression: LuaExpression, rightExpression: LuaExpression, comparator: (left: number | string, right: number | string) => boolean): boolean | undefined {
+		const left = this.evaluateCompileTimeExpression(leftExpression);
+		const right = this.evaluateCompileTimeExpression(rightExpression);
+		if (left === undefined || right === undefined) {
+			return undefined;
+		}
+		if (typeof left === 'number' && typeof right === 'number') {
+			return comparator(left, right);
+		}
+		if (isStringValue(left) && isStringValue(right)) {
+			return comparator(left.text, right.text);
+		}
+		return undefined;
+	}
+
+	private isCompileTimeConcatValue(value: Value): boolean {
+		return typeof value === 'number' || isStringValue(value);
+	}
+
+	private toCompileTimeString(value: Value): string {
+		return isStringValue(value) ? value.text : String(value);
+	}
+
+	private isTruthyCompileTimeValue(value: Value): boolean {
+		return value !== null && value !== false;
 	}
 
 	private compileStatement(statement: LuaStatement): void {
@@ -956,41 +1217,100 @@ class FunctionBuilder {
 	private compileLocalAssignment(statement: LuaLocalAssignmentStatement): void {
 		const tempsBase = this.tempTop;
 		const names = statement.names;
+		const attributes = statement.attributes;
 		const values = statement.values;
-		const valueRegs: number[] = [];
+		if (names.length === 1 && attributes[0] === 'const' && values.length === 1 && values[0].kind === LuaSyntaxKind.FunctionExpression) {
+			const name = this.canonicalizeName(names[0].name);
+			const target = this.declareLocal(name, names[0].range, undefined, 'const', null, false);
+			const hint = this.createLocalFunctionHint(name);
+			const closureProtoIndex = this.compileExpressionWithStaticClosureProto(values[0], target, 1, hint);
+			const binding = this.resolveLocalBinding(name);
+			if (binding !== null) {
+				binding.constClosureProtoIndex = closureProtoIndex;
+			}
+			this.tempTop = Math.max(this.tempTop, tempsBase);
+			return;
+		}
+		const valueRegs: Array<number | undefined> = new Array(names.length);
+		const initializerValues: Array<Value | undefined> = new Array(names.length);
+		const initializerClosureProtoIndices: Array<number | undefined> = new Array(names.length);
 		if (values.length > 0) {
 			const lastIndex = values.length - 1;
 			for (let i = 0; i < lastIndex; i += 1) {
-				const reg = this.allocTemp();
 				const expr = values[i];
+				const constantValue = this.evaluateCompileTimeExpression(expr);
+				if (constantValue !== undefined) {
+					if (i < names.length) {
+						initializerValues[i] = constantValue;
+					}
+					continue;
+				}
+				const reg = this.allocTemp();
 				const name = i < names.length ? this.canonicalizeName(names[i].name) : '';
 				const hint = expr.kind === LuaSyntaxKind.FunctionExpression && i < names.length
 					? this.createLocalFunctionHint(name)
 					: null;
-				this.compileExpressionInto(expr, reg, 1, hint);
-				valueRegs.push(reg);
+				const closureProtoIndex = this.compileExpressionWithStaticClosureProto(expr, reg, 1, hint);
+				if (i < names.length) {
+					valueRegs[i] = reg;
+					if (attributes[i] === 'const' && closureProtoIndex !== null) {
+						initializerClosureProtoIndices[i] = closureProtoIndex;
+					}
+				}
 			}
-			const remaining = names.length - lastIndex;
 			const lastExpr = values[lastIndex];
-			const lastReg = this.allocTemp();
-			const lastName = lastIndex < names.length ? this.canonicalizeName(names[lastIndex].name) : '';
+			const remaining = names.length - lastIndex;
 			const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);
-			const resultCount = wantsMulti ? remaining : 1;
-			const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastIndex < names.length
-				? this.createLocalFunctionHint(lastName)
-				: null;
-			this.compileExpressionInto(lastExpr, lastReg, resultCount, lastHint);
-			valueRegs.push(lastReg);
-			if (wantsMulti) {
-				this.reserveTempRange(lastReg, remaining);
-				for (let i = 1; i < remaining; i += 1) {
-					valueRegs.push(lastReg + i);
+			const constantValue = this.evaluateCompileTimeExpression(lastExpr);
+			if (constantValue !== undefined && !wantsMulti) {
+				if (lastIndex < names.length) {
+					initializerValues[lastIndex] = constantValue;
+				}
+			} else {
+				const lastReg = this.allocTemp();
+				const lastName = lastIndex < names.length ? this.canonicalizeName(names[lastIndex].name) : '';
+				const resultCount = wantsMulti ? remaining : 1;
+				const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastIndex < names.length
+					? this.createLocalFunctionHint(lastName)
+					: null;
+				const closureProtoIndex = this.compileExpressionWithStaticClosureProto(lastExpr, lastReg, resultCount, lastHint);
+				if (lastIndex < names.length) {
+					valueRegs[lastIndex] = lastReg;
+					if (attributes[lastIndex] === 'const' && closureProtoIndex !== null) {
+						initializerClosureProtoIndices[lastIndex] = closureProtoIndex;
+					}
+				}
+				if (wantsMulti) {
+					this.reserveTempRange(lastReg, remaining);
+					for (let i = 1; i < remaining && lastIndex + i < names.length; i += 1) {
+						valueRegs[lastIndex + i] = lastReg + i;
+					}
 				}
 			}
 		}
 		for (let i = 0; i < names.length; i += 1) {
 			const name = this.canonicalizeName(names[i].name);
-			const target = this.declareLocal(name, names[i].range);
+			const attribute = attributes[i];
+			const lastIndex = values.length - 1;
+			const hasInitializer = values.length > 0 && (i < lastIndex || i === lastIndex || (i > lastIndex && this.isMultiReturnExpression(values[lastIndex])));
+			if (attribute === 'const' && !hasInitializer) {
+				throw new Error(`[Compiler] Constant local '${name}' must have an initializer.`);
+			}
+			const initializerValue = initializerValues[i];
+			const initializerClosureProtoIndex = attribute === 'const' ? initializerClosureProtoIndices[i] ?? null : null;
+			const target = this.declareLocal(
+				name,
+				names[i].range,
+				undefined,
+				attribute === 'const' ? 'const' : 'local',
+				initializerValue ?? null,
+				initializerValue !== undefined && attribute === 'const',
+				initializerClosureProtoIndex,
+			);
+			if (initializerValue !== undefined) {
+				this.emitLoadConst(target, initializerValue);
+				continue;
+			}
 			const valueReg = valueRegs[i];
 			if (valueReg !== undefined) {
 				this.emitABC(OpCode.MOV, target, valueReg, 0);
@@ -1022,10 +1342,17 @@ class FunctionBuilder {
 			const expr = expressions[i];
 			if (expr.kind === LuaSyntaxKind.IdentifierExpression) {
 				const name = this.canonicalizeName((expr as LuaIdentifierExpression).name);
-				const localReg = this.resolveLocal(name);
-				if (localReg !== null) {
-					targets.push({ kind: 'local', reg: localReg });
+				const localBinding = this.resolveLocalBinding(name);
+				if (localBinding !== null) {
+					if (localBinding.kind === 'const') {
+						throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
+					}
+					targets.push({ kind: 'local', reg: localBinding.reg });
 					continue;
+				}
+				const visibleBinding = this.resolveVisibleBinding(name);
+				if (visibleBinding !== null && visibleBinding.kind === 'const') {
+					throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
 				}
 				const upvalue = this.resolveUpvalue(name);
 				if (upvalue !== null) {
@@ -1522,6 +1849,11 @@ class FunctionBuilder {
 
 	private compileIdentifier(expression: LuaIdentifierExpression, target: number): void {
 		const name = this.canonicalizeName(expression.name);
+		const constBinding = this.resolveCompileTimeConstBinding(name);
+		if (constBinding !== null) {
+			this.emitLoadConst(target, constBinding.constValue);
+			return;
+		}
 		const localReg = this.resolveLocal(name);
 		if (localReg !== null) {
 			if (localReg !== target) {
@@ -1620,25 +1952,19 @@ class FunctionBuilder {
 	}
 
 	private tryGetConstIndex(expression: LuaExpression): number | null {
-		switch (expression.kind) {
-			case LuaSyntaxKind.NumericLiteralExpression:
-				return this.program.constIndex((expression as LuaNumericLiteralExpression).value);
-			case LuaSyntaxKind.StringLiteralExpression:
-				return this.program.constIndexString((expression as LuaStringLiteralExpression).value);
-			case LuaSyntaxKind.BooleanLiteralExpression:
-				return this.program.constIndex((expression as LuaBooleanLiteralExpression).value);
-			case LuaSyntaxKind.NilLiteralExpression:
-				return this.program.constIndex(null);
-			default:
-				return null;
+		const constValue = this.evaluateCompileTimeExpression(expression);
+		if (constValue === undefined) {
+			return null;
 		}
+		return this.program.constIndex(constValue);
 	}
 
 	private tryGetNumericConstIndex(expression: LuaExpression): number | null {
-		if (expression.kind !== LuaSyntaxKind.NumericLiteralExpression) {
+		const constValue = this.evaluateCompileTimeExpression(expression);
+		if (typeof constValue !== 'number') {
 			return null;
 		}
-		return this.program.constIndex((expression as LuaNumericLiteralExpression).value);
+		return this.program.constIndex(constValue);
 	}
 
 	private getMemoryAccessKindForCanonicalName(name: string): MemoryAccessKind | null {
@@ -1661,7 +1987,7 @@ class FunctionBuilder {
 	}
 
 	private isReservedIntrinsicName(name: string): boolean {
-		return name === 'write_words';
+		return name === 'memwrite';
 	}
 
 	private tryGetMemoryAccessKind(expression: LuaExpression): MemoryAccessKind | null {
@@ -1716,20 +2042,20 @@ class FunctionBuilder {
 		if (this.hasLexicalBindingCanonical(name)) {
 			return false;
 		}
-		if (name === 'write_words') {
-			this.compileWriteWordsIntrinsic(expression, target, resultCount);
+		if (name === 'memwrite') {
+			this.compileMemWriteIntrinsic(expression, target, resultCount);
 			return true;
 		}
 		return false;
 	}
 
-	private compileWriteWordsIntrinsic(expression: LuaCallExpression, target: number, resultCount: number): void {
+	private compileMemWriteIntrinsic(expression: LuaCallExpression, target: number, resultCount: number): void {
 		if (expression.arguments.length < 2) {
-			throw new Error('[Compiler] write_words expects a base address and at least one word.');
+			throw new Error('[Compiler] memwrite expects a base address and at least one word.');
 		}
 		const lastArg = expression.arguments[expression.arguments.length - 1];
 		if (this.isMultiReturnExpression(lastArg)) {
-			throw new Error('[Compiler] write_words does not support multi-return or vararg operands.');
+			throw new Error('[Compiler] memwrite does not support multi-return or vararg operands.');
 		}
 		const addrExpression = expression.arguments[0];
 		const addrConst = this.tryGetNumericConstIndex(addrExpression);
@@ -1925,6 +2251,10 @@ class FunctionBuilder {
 		}
 		const methodName = expression.methodName !== null ? this.canonicalizeName(expression.methodName) : null;
 		const hasMethod = methodName && methodName.length > 0;
+		const constClosureBinding = !hasMethod && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
+			? this.resolveCompileTimeConstClosureBinding((expression.callee as LuaIdentifierExpression).name)
+			: null;
+		const callProtoIndex = constClosureBinding !== null ? constClosureBinding.constClosureProtoIndex : null;
 		const argCount = expression.arguments.length;
 		const lastArg = argCount > 0 ? expression.arguments[argCount - 1] : null;
 		const hasVarArg = lastArg !== null && this.isMultiReturnExpression(lastArg);
@@ -1964,6 +2294,9 @@ class FunctionBuilder {
 			callArgs = 0;
 		}
 		this.emitABC(OpCode.CALL, callBase, callArgs, resultCount);
+		if (callProtoIndex !== null) {
+			this.code[this.code.length - 1].callProtoIndex = callProtoIndex;
+		}
 		if (!useTarget) {
 			for (let i = 0; i < resultCount; i += 1) {
 				this.emitABC(OpCode.MOV, target + i, callBase + i, 0);

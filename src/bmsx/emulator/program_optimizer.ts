@@ -13,6 +13,7 @@ export type Instruction = {
 	format: InstructionFormat;
 	rkMask: number;
 	target: number | null;
+	callProtoIndex?: number | null;
 };
 
 export type OptimizationLevel = 0 | 1 | 2 | 3;
@@ -79,6 +80,7 @@ const replaceWithJump = (instruction: Instruction, target: number): void => {
 	instruction.format = 'AsBx';
 	instruction.rkMask = 0;
 	instruction.target = target;
+	instruction.callProtoIndex = null;
 };
 
 const replaceWithMov = (instruction: Instruction, dst: number, src: number): void => {
@@ -89,11 +91,13 @@ const replaceWithMov = (instruction: Instruction, dst: number, src: number): voi
 	instruction.format = 'ABC';
 	instruction.rkMask = 0;
 	instruction.target = null;
+	instruction.callProtoIndex = null;
 };
 
 const replaceWithConst = (instruction: Instruction, target: number, value: Value, context: OptimizationContext): ConstValue => {
 	instruction.target = null;
 	instruction.rkMask = 0;
+	instruction.callProtoIndex = null;
 	if (value === null) {
 		instruction.op = OpCode.LOADNIL;
 		instruction.a = target;
@@ -1996,6 +2000,7 @@ const cloneInstruction = (instruction: Instruction): Instruction => ({
 	format: instruction.format,
 	rkMask: instruction.rkMask,
 	target: instruction.target,
+	callProtoIndex: instruction.callProtoIndex ?? null,
 });
 
 const hasDynamicTopUsage = (instructions: Instruction[]): boolean => {
@@ -2573,7 +2578,7 @@ const inlineFunctionCalls = (
 			for (let index = block.start; index < block.end; index += 1) {
 				const instruction = instructions[index];
 				if (instruction.op === OpCode.CALL && instruction.b > 0 && instruction.c > 0) {
-					const protoIndex = closures.get(instruction.a);
+					const protoIndex = instruction.callProtoIndex ?? closures.get(instruction.a);
 					if (protoIndex !== undefined) {
 						const callee = getInlineCallee(protoIndex);
 						if (callee && instruction.b <= callee.meta.numParams && callee.meta.maxStack <= Math.max(instruction.b + 1, instruction.c)) {

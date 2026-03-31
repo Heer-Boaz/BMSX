@@ -868,6 +868,8 @@ function declarationPriority(decl: Decl): number {
 			return 700;
 		case 'function':
 			return isTopLevelScope && isRootIdentifier ? 650 : 520;
+		case 'constant':
+			return isTopLevelScope ? 560 : 380;
 		case 'parameter':
 			return 400;
 		case 'global':

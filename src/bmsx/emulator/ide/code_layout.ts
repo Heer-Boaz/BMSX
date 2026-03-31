@@ -743,20 +743,22 @@ export class CodeLayout {
 				return 1;
 			case 'local':
 				return 2;
-			case 'function':
+			case 'constant':
 				return 3;
-			case 'global':
+			case 'function':
 				return 4;
-			case 'tableField':
+			case 'global':
 				return 5;
-			case 'module':
+			case 'tableField':
 				return 6;
-			case 'type':
+			case 'module':
 				return 7;
-			case 'label':
+			case 'type':
 				return 8;
-			case 'keyword':
+			case 'label':
 				return 9;
+			case 'keyword':
+				return 10;
 			default:
 				return 0;
 		}

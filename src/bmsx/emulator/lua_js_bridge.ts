@@ -607,6 +607,11 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			const [name, value] = entries[index];
 			const wrapped = this.wrapFunctionsInValue(moduleId, value, [name], visited, { filter });
 			if (wrapped !== value) {
+				const resolved = environment.resolve(name);
+				if (resolved !== null) {
+					resolved.assignExisting(name, wrapped);
+					continue;
+				}
 				environment.set(name, wrapped);
 			}
 		}
@@ -636,6 +641,11 @@ export class LuaJsBridge implements LuaInteropAdapter {
 			return;
 		}
 		if (owner instanceof LuaEnvironment) {
+			const resolvedOwner = owner.resolve(leafKey);
+			if (resolvedOwner !== null) {
+				resolvedOwner.assignExisting(leafKey, wrapped);
+				return;
+			}
 			owner.set(leafKey, wrapped);
 		} else {
 			owner.set(leafKey, wrapped);

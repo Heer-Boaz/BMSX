@@ -158,7 +158,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'os.time', params: ['table?'], signature: 'os.time([table])' },
 	...ENGINE_LUA_BUILTIN_FUNCTIONS,
 	...ENGINE_LUA_BUILTIN_GLOBALS,
-	{ name: 'write_words', params: ['base', '...'], signature: 'write_words(base, ...)', description: 'Reserved compiler intrinsic for burst word writes. Lowers directly to a memory-write opcode and is not a first-class Lua value.' },
+	{ name: 'memwrite', params: ['base', '...'], signature: 'memwrite(base, ...)', description: 'Reserved compiler intrinsic for burst word writes. Lowers directly to a memory-write opcode and is not a first-class Lua value.' },
 		{ name: 'mem', params: ['addr'], signature: 'mem[addr]', description: 'Reserved memory-mapped 32-bit word space for direct `mem[addr]` reads/writes. Not a first-class Lua value. Writes to read-only locations are ignored.' },
 		{ name: 'mem8', params: ['addr'], signature: 'mem8[addr]', description: 'Reserved memory-mapped byte space for direct `mem8[addr]` reads/writes. Not a first-class Lua value.' },
 		{ name: 'mem16le', params: ['addr'], signature: 'mem16le[addr]', description: 'Reserved memory-mapped little-endian 16-bit space for direct `mem16le[addr]` reads/writes. Not a first-class Lua value.' },

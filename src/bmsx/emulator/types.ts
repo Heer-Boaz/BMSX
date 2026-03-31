@@ -34,6 +34,7 @@ export type LuaDefinitionLocation = {
 
 export type LuaSymbolKind =
 	| 'variable'
+	| 'constant'
 	| 'function'
 	| 'table_field'
 	| 'parameter'
