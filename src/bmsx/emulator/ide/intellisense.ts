@@ -644,7 +644,9 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 			case LuaSyntaxKind.ForNumericStatement:
 				visitExpression(statement.start);
 				visitExpression(statement.limit);
-				visitExpression(statement.step);
+				if (statement.step) {
+					visitExpression(statement.step);
+				}
 				visitBlock(statement.block.body);
 				return;
 			case LuaSyntaxKind.ForGenericStatement:
