@@ -1,4 +1,5 @@
 import pc from 'picocolors';
+import { Presets, SingleBar } from 'cli-progress';
 import { stat, readdir } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 
@@ -17,6 +18,124 @@ const KNOWN_FLAGS = new Set<string>([
 	'-h',
 	'--help',
 ]);
+
+const TASK = {
+	ENGINE_RUNTIME: 'Build engine runtime',
+	PLATFORM_ARTIFACTS: 'Build platform artifacts',
+	DONE: 'PLATFORM BUILD COMPLETE',
+} as const;
+
+type TaskName = typeof TASK[keyof typeof TASK];
+
+const platformTaskList: TaskName[] = [
+	TASK.ENGINE_RUNTIME,
+	TASK.PLATFORM_ARTIFACTS,
+	TASK.DONE,
+];
+
+function timer(ms: number) {
+	return new Promise(res => setTimeout(res, ms));
+}
+
+class ProgressReporter {
+	private bar: SingleBar;
+	private tasks: string[];
+	private totalTasks: number;
+	private completedTasks = 0;
+	private started = false;
+	private detail = '';
+	private suspended = false;
+	private failed = false;
+
+	constructor(tasks: string[]) {
+		this.tasks = [...tasks];
+		this.totalTasks = this.tasks.length;
+		this.bar = new SingleBar({
+			format: `${pc.dim('[')}${pc.green('{bar}')}${pc.dim(']')} ${pc.dim('{value}/{total}')} ${pc.cyan('{percentage}%')} {task} {detail}`,
+			barCompleteChar: '█',
+			barIncompleteChar: '░',
+			barsize: 80,
+			hideCursor: true,
+			stopOnComplete: false,
+			align: 'left',
+			fps: 10,
+			clearOnComplete: false,
+		}, Presets.shades_classic);
+	}
+	private currentTask(): string {
+		return this.tasks[0] as string;
+	}
+
+	private recalcTotals(): void {
+		this.totalTasks = this.completedTasks + this.tasks.length;
+	}
+
+	private sync(label?: string): void {
+		if (!this.started) return;
+		const total = this.totalTasks || 1;
+		this.bar.setTotal(total);
+		const taskLabel = label ?? this.currentTask();
+		const detailLabel = this.detail ? pc.dim(`· ${this.detail}`) : '';
+		this.bar.update(this.completedTasks, { task: taskLabel, detail: detailLabel });
+	}
+
+	public async taskCompleted() {
+		const finishedTask = this.tasks.shift() as string;
+		this.completedTasks++;
+		this.detail = '';
+		this.recalcTotals();
+		this.sync(this.currentTask() || finishedTask);
+		await this.pulse();
+		if (!this.tasks.length) {
+			this.bar.update(this.completedTasks, { task: finishedTask });
+		}
+	}
+
+	public showInitial() {
+		if (this.started) return;
+		this.started = true;
+		const total = this.totalTasks || 1;
+		this.bar.start(total, this.completedTasks, { task: this.currentTask() });
+	}
+
+	public async showDone() {
+		if (this.started && !this.suspended && !this.failed) {
+			this.bar.update(this.totalTasks || this.completedTasks, { task: 'Gereed' });
+			this.bar.stop();
+		}
+		await this.pulse();
+	}
+
+	public async pulse() {
+		await timer(100);
+	}
+
+	public setDetail(detail: string) {
+		this.detail = detail;
+		this.sync();
+	}
+
+	public clearDetail() {
+		this.detail = '';
+		this.sync();
+	}
+
+	public async runWithDetail<T>(detail: string, action: () => Promise<T>): Promise<T> {
+		this.setDetail(detail);
+		try {
+			return await action();
+		} finally {
+			this.clearDetail();
+		}
+	}
+
+	public suspend() {
+		if (!this.started || this.suspended) return;
+		this.bar.stop();
+		this.suspended = true;
+		process.stdout.write('\n');
+	}
+}
 
 const FLAGS_WITH_VALUES = new Set<string>([
 	'--platform',
@@ -210,7 +329,12 @@ async function main(): Promise<void> {
 		bullet: ui.bullet,
 		info: ui.info,
 		ok: ui.ok,
+		progress: undefined,
 	};
+	if (options.platform === 'browser' || options.platform === 'headless') {
+		const progress = new ProgressReporter(platformTaskList);
+		logger.progress = progress;
+	}
 	await runPlatformBuild(options, logger);
 	ui.writeOut('\n');
 }

@@ -20,6 +20,13 @@ export interface BuilderLogger {
 	bullet(label: string, value: string): void;
 	info(message: string): void;
 	ok(message: string): void;
+	progress?: {
+		runWithDetail<T>(detail: string, action: () => Promise<T>): Promise<T>;
+		taskCompleted(): Promise<void>;
+		showDone(): Promise<void>;
+		showInitial(): void;
+		suspend(): void;
+	};
 }
 
 type PlatformBuildOptions = Pick<RomPackerOptions, 'platform' | 'canonicalization' | 'debug' | 'force'>;
@@ -138,10 +145,22 @@ async function stageLibretroArtifacts(platform: RomPackerTarget, debug: boolean)
 
 export async function runPlatformBuild(options: PlatformBuildOptions, logger: BuilderLogger): Promise<void> {
 	const { platform, canonicalization, debug, force } = options;
+	const { progress } = logger;
 
 	logger.divider('Platform');
 	logger.bullet('Platform', pc.cyan(platform));
 	logger.bullet('Debug', debug ? pc.green('enabled') : pc.dim('disabled'));
+
+	const runStep = async <T>(task: string, action: () => Promise<T>): Promise<T> => {
+		const result = progress ? await progress.runWithDetail(task, action) : await action();
+		if (progress) {
+			await progress.taskCompleted();
+		}
+		return result;
+	};
+	if (progress) {
+		progress.showInitial();
+	}
 
 	if (platform.startsWith('libretro')) {
 		logger.info('Building libretro core');
@@ -154,28 +173,36 @@ export async function runPlatformBuild(options: PlatformBuildOptions, logger: Bu
 	}
 
 	if (platform === 'browser' || platform === 'headless') {
-		const engineRuntimeOut = debug ? './dist/engine.debug.js' : './dist/engine.js';
-		const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
-		if (runtimeNeedsRebuild) {
-			logger.info('Build engine runtime');
-			await buildEngineRuntime({ debug });
-			logger.ok(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
+		await runStep('Build engine runtime', async () => {
+			const engineRuntimeOut = debug ? './dist/engine.debug.js' : './dist/engine.js';
+			const runtimeNeedsRebuild = force || await isEngineRuntimeRebuildRequired(engineRuntimeOut);
+			if (runtimeNeedsRebuild) {
+				await buildEngineRuntime({ debug });
+				logger.ok(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))}`);
+			}
+			else {
+				logger.ok(`Engine runtime ready → ${pc.white(engineRuntimeOut.replace('./dist/', 'dist/'))} (up-to-date)`);
+			}
+		});
+	}
+	await runStep('Build platform artifacts', async () => {
+		await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, canonicalization });
+		logger.ok('Boot ROM ready');
+
+		if (platform === 'browser') {
+			await buildGameHtmlAndManifest('', 'BMSX', 'BMSX', debug, false);
+			logger.ok(`Browser loader → ${pc.white('dist/index.html')}`);
+			logger.ok(`Manifest → ${pc.white('dist/manifest.webmanifest')}`);
+		} else {
+			const launcherName = getNodeLauncherFilename(platform, debug);
+			logger.ok(`Node launcher → ${pc.white(`dist/${launcherName}`)}`);
 		}
+		logger.ok(`Platform build complete → ${pc.cyan(platform)}`);
+	});
+	if (progress) {
+		await progress.showDone();
+		progress.suspend();
 	}
-
-	logger.info('Building platform artifacts');
-	await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, canonicalization });
-	logger.ok('Boot ROM ready');
-
-	if (platform === 'browser') {
-		await buildGameHtmlAndManifest('', 'BMSX', 'BMSX', debug, false);
-		logger.ok(`Browser loader → ${pc.white('dist/index.html')}`);
-		logger.ok(`Manifest → ${pc.white('dist/manifest.webmanifest')}`);
-	} else {
-		const launcherName = getNodeLauncherFilename(platform, debug);
-		logger.ok(`Node launcher → ${pc.white(`dist/${launcherName}`)}`);
-	}
-	logger.ok(`Platform build complete → ${pc.cyan(platform)}`);
 }
 
 export async function runBrowserDeploy(options: BrowserDeployOptions, logger: BuilderLogger): Promise<void> {
