@@ -1,6 +1,8 @@
 -- timeline.lua
 -- timeline runtime for system rom
 --
+local clamp_int = require('util/clamp_int')
+--
 -- DESIGN PRINCIPLES — timeline authoring
 --
 -- 1. ALWAYS USE A PLAIN def TABLE; NEVER CALL timeline.new() IN CART CODE.
@@ -100,10 +102,10 @@ end
 
 local function clamp_marker_frame(at, length)
 	if at.frame ~= nil then
-		return math.min(math.max(at.frame, 0), length - 1)
+		return clamp_int(at.frame, 0, length - 1)
 	end
-	local normalized = math.min(math.max(at.u or 0, 0), 1)
-	return math.min(math.max(math.floor(normalized * (length - 1)), 0), length - 1)
+	local normalized = clamp_int(at.u or 0, 0, 1)
+	return clamp_int(math.floor(normalized * (length - 1)), 0, length - 1)
 end
 
 local function compile_timeline_markers(def, length)
@@ -351,7 +353,7 @@ function timeline:force_seek(frame)
 		self.direction = 1
 		return
 	end
-	local clamped = math.min(math.max(frame, timeline_start_index), self.length - 1)
+	local clamped = clamp_int(frame, timeline_start_index, self.length - 1)
 	self.head = clamped
 	self.ticks = 0
 	if self.playback_mode ~= 'pingpong' then

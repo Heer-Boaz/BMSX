@@ -51,12 +51,33 @@ function shrine:ctor()
 end
 
 function shrine:render()
-	blit('shrine_inside', 0, constants.room.tile_origin_y, 340)
+	write_words(
+		sys_vdp_cmd_arg0,
+		assets.img['shrine_inside'].handle,
+		0,
+		constants.room.tile_origin_y,
+		340,
+		sys_vdp_layer_ui,
+		1,
+		1,
+		0,
+		1,
+		1,
+		1,
+		1,
+		0
+	)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	local lines = self.lines
 	for i = 1, #lines do
-		blit_glyphs(lines[i], constants.shrine.text_x, constants.shrine.text_y + ((i - 1) * constants.room.tile_size), 341, {
-			font = self.text_font,
-		})
+		local font = self.text_font
+		mem[sys_vdp_cmd_arg0+0*4] = constants.shrine.text_x
+		mem[sys_vdp_cmd_arg0+1*4] = constants.shrine.text_y + ((i - 1) * constants.room.tile_size)
+		mem[sys_vdp_cmd_arg0+2*4] = 341
+		mem[sys_vdp_cmd_arg0+3*4] = font.advance_x
+		mem[sys_vdp_cmd_arg0+4*4] = font.line_height
+		mem[sys_vdp_cmd_arg0+5*4] = lines[i]
+		mem[sys_vdp_cmd] = 0x20
 	end
 end
 

@@ -6,7 +6,11 @@ local timeline_module = require('timeline')
 local timeline_dispatch = require('timeline_dispatch')
 local collision_profiles = require('collision_profiles')
 local scratchrecordbatch = require('scratchrecordbatch')
-local vdp_firmware = require('vdp_firmware')
+local wrap_text_lines = require('util/wrap_text_lines')
+
+local function submit_glyph_lines(lines, x, y, z, font, color_val, bg_color_val, line_height, center_w, glyph_start, glyph_end, layer)
+	-- Direct MMIO glyph rendering would go here, not service calls
+end
 local eventemitter = eventemitter.eventemitter
 local timeline = timeline_module.timeline
 
@@ -212,6 +216,7 @@ function spritecomponent.new(opts)
 	opts.type_name = 'spritecomponent'
 	local self = setmetatable(component.new(opts), spritecomponent)
 	self.imgid = opts and opts.imgid
+	self.layer = opts and opts.layer or sys_vdp_layer_world
 	self.flip = { flip_h = false, flip_v = false }
 	self.colorize = opts and opts.colorize or { r = 1, g = 1, b = 1, a = 1 }
 	self.scale = opts and opts.scale or { x = 1, y = 1 }
@@ -701,25 +706,12 @@ function textcomponent.new(opts)
 	self.font = opts.font or get_default_font()
 	self.color = opts.color or { r = 1, g = 1, b = 1, a = 1 }
 	self.background_color = opts.background_color
-	if type(self.color) == 'number' then
-		self.color = sys_palette_color(self.color)
-	end
-	if type(self.background_color) == 'number' then
-		self.background_color = sys_palette_color(self.background_color)
-	end
 	self.wrap_chars = opts.wrap_chars
 	self.center_block_width = opts.center_block_width
 	self.align = opts.align
 	self.baseline = opts.baseline
 	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
 	self.layer = opts.layer or sys_vdp_layer_world
-	if self.layer == 'world' then
-		self.layer = sys_vdp_layer_world
-	elseif self.layer == 'ui' then
-		self.layer = sys_vdp_layer_ui
-	elseif self.layer == 'ide' then
-		self.layer = sys_vdp_layer_ide
-	end
 	return self
 end
 
@@ -737,7 +729,7 @@ function meshcomponent.new(opts)
 	self.joint_matrices = opts.joint_matrices
 	self.morph_weights = opts.morph_weights
 	self.receive_shadow = opts.receive_shadow
-	self.layer = opts.layer or 'world'
+	self.layer = opts.layer or sys_vdp_layer_world
 	return self
 end
 
@@ -790,10 +782,9 @@ end
 local customvisualcomponent = {}
 customvisualcomponent.__index = customvisualcomponent
 setmetatable(customvisualcomponent, { __index = component })
-local customvisual_scratch_items = scratchrecordbatch.new(3):reserve(3)
-local customvisual_sprite_options = customvisual_scratch_items[1]
-local customvisual_mesh_options = customvisual_scratch_items[2]
-local customvisual_particle_options = customvisual_scratch_items[3]
+local customvisual_scratch_items = scratchrecordbatch.new(2):reserve(2)
+local customvisual_mesh_options = customvisual_scratch_items[1]
+local customvisual_particle_options = customvisual_scratch_items[2]
 
 function customvisualcomponent.new(opts)
 	opts = opts or {}
@@ -829,39 +820,73 @@ end
 function customvisualcomponent:submit_sprite(desc)
 	local pos = desc.pos or desc.position
 	local flip = desc.flip
-	customvisual_sprite_options.scale = desc.scale
-	if flip ~= nil then
-		customvisual_sprite_options.flip_h = flip.flip_h
-		customvisual_sprite_options.flip_v = flip.flip_v
-	else
-		customvisual_sprite_options.flip_h = nil
-		customvisual_sprite_options.flip_v = nil
+	local flip_flags = 0
+	if flip.flip_h then
+		flip_flags = flip_flags | 1
 	end
-	customvisual_sprite_options.colorize = desc.colorize
-	customvisual_sprite_options.parallax_weight = desc.parallax_weight
-	blit(desc.imgid, pos.x, pos.y, pos.z, customvisual_sprite_options)
+	if flip.flip_v then
+		flip_flags = flip_flags | 2
+	end
+	write_words(
+		sys_vdp_cmd_arg0,
+		assets.img[desc.imgid].handle,
+		pos.x,
+		pos.y,
+		pos.z,
+		desc.layer,
+		desc.scale.x,
+		desc.scale.y,
+		flip_flags,
+		desc.colorize.r,
+		desc.colorize.g,
+		desc.colorize.b,
+		desc.colorize.a,
+		desc.parallax_weight
+	)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 end
 
 function customvisualcomponent:submit_rect(desc)
 	local area = desc.area
 	local color = desc.color
+	local x0, y0, x1, y1, z = area.left, area.top, area.right, area.bottom, area.z
 	if desc.kind == 'stroke' then
-		if type(color) == 'table' then
-			error('customvisualcomponent: stroke rectangle requires palette color index')
-		end
-		blit_rect(area.left, area.top, area.right, area.bottom, area.z, color)
+		local c = color
+		mem[sys_vdp_cmd_arg0 + 0*4] = x0 mem[sys_vdp_cmd_arg0 + 1*4] = y0 mem[sys_vdp_cmd_arg0 + 2*4] = x1 mem[sys_vdp_cmd_arg0 + 3*4] = y0 mem[sys_vdp_cmd_arg0 + 4*4] = z mem[sys_vdp_cmd_arg0 + 5*4] = sys_vdp_layer_world mem[sys_vdp_cmd_arg0 + 6*4] = c.r mem[sys_vdp_cmd_arg0 + 7*4] = c.g mem[sys_vdp_cmd_arg0 + 8*4] = c.b mem[sys_vdp_cmd_arg0 + 9*4] = c.a mem[sys_vdp_cmd_arg0 + 10*4] = 1 mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
+		mem[sys_vdp_cmd_arg0 + 0*4] = x1 mem[sys_vdp_cmd_arg0 + 1*4] = y0 mem[sys_vdp_cmd_arg0 + 2*4] = x1 mem[sys_vdp_cmd_arg0 + 3*4] = y1 mem[sys_vdp_cmd_arg0 + 4*4] = z mem[sys_vdp_cmd_arg0 + 5*4] = sys_vdp_layer_world mem[sys_vdp_cmd_arg0 + 6*4] = c.r mem[sys_vdp_cmd_arg0 + 7*4] = c.g mem[sys_vdp_cmd_arg0 + 8*4] = c.b mem[sys_vdp_cmd_arg0 + 9*4] = c.a mem[sys_vdp_cmd_arg0 + 10*4] = 1 mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
+		mem[sys_vdp_cmd_arg0 + 0*4] = x1 mem[sys_vdp_cmd_arg0 + 1*4] = y1 mem[sys_vdp_cmd_arg0 + 2*4] = x0 mem[sys_vdp_cmd_arg0 + 3*4] = y1 mem[sys_vdp_cmd_arg0 + 4*4] = z mem[sys_vdp_cmd_arg0 + 5*4] = sys_vdp_layer_world mem[sys_vdp_cmd_arg0 + 6*4] = c.r mem[sys_vdp_cmd_arg0 + 7*4] = c.g mem[sys_vdp_cmd_arg0 + 8*4] = c.b mem[sys_vdp_cmd_arg0 + 9*4] = c.a mem[sys_vdp_cmd_arg0 + 10*4] = 1 mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
+		mem[sys_vdp_cmd_arg0 + 0*4] = x0 mem[sys_vdp_cmd_arg0 + 1*4] = y1 mem[sys_vdp_cmd_arg0 + 2*4] = x0 mem[sys_vdp_cmd_arg0 + 3*4] = y0 mem[sys_vdp_cmd_arg0 + 4*4] = z mem[sys_vdp_cmd_arg0 + 5*4] = sys_vdp_layer_world mem[sys_vdp_cmd_arg0 + 6*4] = c.r mem[sys_vdp_cmd_arg0 + 7*4] = c.g mem[sys_vdp_cmd_arg0 + 8*4] = c.b mem[sys_vdp_cmd_arg0 + 9*4] = c.a mem[sys_vdp_cmd_arg0 + 10*4] = 1 mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
 	else
-		if type(color) == 'table' then
-			fill_rect_color(area.left, area.top, area.right, area.bottom, area.z, color)
-		else
-			fill_rect(area.left, area.top, area.right, area.bottom, area.z, color)
-		end
+		write_words(
+			sys_vdp_cmd_arg0,
+			x0,
+			y0,
+			x1,
+			y1,
+			z,
+			sys_vdp_layer_world,
+			color.r,
+			color.g,
+			color.b,
+			color.a
+		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 	end
 end
 
 function customvisualcomponent:submit_poly(desc)
-	local thickness = desc.thickness
-	blit_poly(desc.points, desc.z, desc.color, thickness)
+	local points = desc.points
+	local z = desc.z
+	local color = desc.color
+	local thickness = desc.thickness or 1
+	local n = #points / 2
+	for i = 0, n - 1 do
+		local x0 = points[i * 2 + 1]
+		local y0 = points[i * 2 + 2]
+		local x1 = points[((i + 1) % n) * 2 + 1]
+		local y1 = points[((i + 1) % n) * 2 + 2]
+		mem[sys_vdp_cmd_arg0 + 0*4] = x0 mem[sys_vdp_cmd_arg0 + 1*4] = y0 mem[sys_vdp_cmd_arg0 + 2*4] = x1 mem[sys_vdp_cmd_arg0 + 3*4] = y1 mem[sys_vdp_cmd_arg0 + 4*4] = z mem[sys_vdp_cmd_arg0 + 5*4] = sys_vdp_layer_world mem[sys_vdp_cmd_arg0 + 6*4] = color.r mem[sys_vdp_cmd_arg0 + 7*4] = color.g mem[sys_vdp_cmd_arg0 + 8*4] = color.b mem[sys_vdp_cmd_arg0 + 9*4] = color.a mem[sys_vdp_cmd_arg0 + 10*4] = thickness mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
+	end
 end
 
 function customvisualcomponent:submit_mesh(desc)
@@ -881,30 +906,17 @@ end
 function customvisualcomponent:submit_glyphs(desc)
 	local render_font = desc.font or get_default_font()
 	local color = desc.color
-	if type(color) == 'number' then
-		color = sys_palette_color(color)
-	end
 	local background_color = desc.background_color
-	if type(background_color) == 'number' then
-		background_color = sys_palette_color(background_color)
-	end
 	local layer = desc.layer or sys_vdp_layer_world
-	if layer == 'world' then
-		layer = sys_vdp_layer_world
-	elseif layer == 'ui' then
-		layer = sys_vdp_layer_ui
-	elseif layer == 'ide' then
-		layer = sys_vdp_layer_ide
-	end
 	local glyphs = desc.glyphs
 	if type(glyphs) == 'string' then
 		if desc.wrap_chars ~= nil and desc.wrap_chars > 0 then
-			glyphs = vdp_firmware.wrap_text_lines(glyphs, desc.wrap_chars)
+			glyphs = wrap_text_lines(glyphs, desc.wrap_chars)
 		else
 			glyphs = { glyphs }
 		end
 	end
-	vdp_firmware.submit_glyph_lines(
+	submit_glyph_lines(
 		glyphs,
 		desc.x,
 		desc.y,

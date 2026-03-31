@@ -498,9 +498,26 @@ function stage_subsystem:draw_star_particles(stars, imgid, hidden)
 	if hidden then
 		return
 	end
+	local handle = assets.img[imgid].handle
 	for i = 1, #stars do
 		local star = stars[i]
-		blit(imgid, star.x, star.y, constants.stage.star_particle_z)
+		write_words(
+			sys_vdp_cmd_arg0,
+			handle,
+			star.x,
+			star.y,
+			constants.stage.star_particle_z,
+			sys_vdp_layer_world,
+			1,
+			1,
+			0,
+			1,
+			1,
+			1,
+			1,
+			0
+		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
 end
 
@@ -522,7 +539,24 @@ function stage_subsystem:draw()
 		for stage_row = 1, self.tile_rows do
 			local tile_id = self.tile_tape[stage_row][stage_column]
 			if tile_id ~= nil then
-				blit(tile_id, draw_x, (stage_row - 1) * tile_size, z)
+				local handle = assets.img[tile_id].handle
+				write_words(
+					sys_vdp_cmd_arg0,
+					handle,
+					draw_x,
+					(stage_row - 1) * tile_size,
+					z,
+					sys_vdp_layer_world,
+					1,
+					1,
+					0,
+					1,
+					1,
+					1,
+					1,
+					0
+				)
+				mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 			end
 		end
 	end

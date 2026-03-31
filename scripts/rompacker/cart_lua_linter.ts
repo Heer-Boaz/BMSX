@@ -100,7 +100,8 @@ type LuaLintIssueRule =
 	'branch_uninitialized_local_pattern' |
 	'ensure_pattern' |
 	'forbidden_render_wrapper_call_pattern' |
-	'forbidden_render_module_require_pattern';
+	'forbidden_render_module_require_pattern' |
+	'forbidden_render_layer_string_pattern';
 
 type LuaLintProfile = 'cart' | 'bios';
 
@@ -272,6 +273,11 @@ const FORBIDDEN_RENDER_MODULE_REQUIRES = new Set<string>([
 	'vdp_firmware',
 	'textflow',
 ]);
+const FORBIDDEN_RENDER_LAYER_STRINGS = new Set<string>([
+	'world',
+	'ui',
+	'ide',
+]);
 const FORBIDDEN_STATE_CALL_RECEIVERS = new Set<string>([
 	'sc',
 	'worldobject',
@@ -350,6 +356,7 @@ const ALL_LUA_LINT_RULES: ReadonlyArray<LuaLintIssueRule> = [
 	'ensure_pattern',
 	'forbidden_render_wrapper_call_pattern',
 	'forbidden_render_module_require_pattern',
+	'forbidden_render_layer_string_pattern',
 ];
 const BIOS_PROFILE_DISABLED_RULES = new Set<LuaLintIssueRule>([
 	'visual_update_pattern',
@@ -5331,6 +5338,24 @@ function lintForbiddenRenderWrapperCall(expression: LuaCallExpression, issues: L
 	);
 }
 
+function lintForbiddenRenderLayerString(field: LuaTableField, issues: LuaLintIssue[]): void {
+	if (field.kind !== LuaTableFieldKind.IdentifierKey || field.name !== 'layer') {
+		return;
+	}
+	if (field.value.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return;
+	}
+	if (!FORBIDDEN_RENDER_LAYER_STRINGS.has(field.value.value)) {
+		return;
+	}
+	pushIssue(
+		issues,
+		'forbidden_render_layer_string_pattern',
+		field.value,
+		`Render layer "${field.value.value}" is forbidden here. Use the sys_vdp_layer_* enum constants instead of Lua strings.`,
+	);
+}
+
 function containsServiceLabel(value: string): boolean {
 	return value.toLowerCase().includes('service');
 }
@@ -6753,6 +6778,7 @@ function lintInjectedServiceIdPropertyTableField(field: LuaTableField, issues: L
 function lintTableField(field: LuaTableField, issues: LuaLintIssue[]): void {
 	lintCollectionLabelPatterns(field, issues);
 	lintInjectedServiceIdPropertyTableField(field, issues);
+	lintForbiddenRenderLayerString(field, issues);
 	if (field.kind === LuaTableFieldKind.IdentifierKey
 		&& field.name === 'tick'
 		&& field.value.kind === LuaSyntaxKind.FunctionExpression) {

@@ -90,18 +90,82 @@ function ui:draw_ui()
 		return
 	end
 	local player = object('pietolon')
-	blit('game_header', 0, 0, 200)
+	write_words(
+		sys_vdp_cmd_arg0,
+		assets.img['game_header'].handle,
+		0,
+		0,
+		200,
+		sys_vdp_layer_ui,
+		1,
+		1,
+		0,
+		1,
+		1,
+		1,
+		1,
+		0
+	)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	local equipped_sprite_id = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
-		blit(equipped_sprite_id, constants.hud.equipped_item_x * constants.room.tile_size, constants.hud.equipped_item_y * constants.room.tile_size, 202)
+		write_words(
+			sys_vdp_cmd_arg0,
+			assets.img[equipped_sprite_id].handle,
+			constants.hud.equipped_item_x * constants.room.tile_size,
+			constants.hud.equipped_item_y * constants.room.tile_size,
+			202,
+			sys_vdp_layer_ui,
+			1,
+			1,
+			0,
+			1,
+			1,
+			1,
+			1,
+			0
+		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
-
+	local blue_handle = assets.img['energybar_stripe_blue'].handle
 	for i = 0, (self.hud_health_level - 1) do
-		blit('energybar_stripe_blue', constants.hud.health_bar_x + i, constants.hud.health_bar_y, 201)
+		write_words(
+			sys_vdp_cmd_arg0,
+			blue_handle,
+			constants.hud.health_bar_x + i,
+			constants.hud.health_bar_y,
+			201,
+			sys_vdp_layer_ui,
+			1,
+			1,
+			0,
+			1,
+			1,
+			1,
+			1,
+			0
+		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
-
+	local red_handle = assets.img['energybar_stripe_red'].handle
 	for i = 0, (self.hud_weapon_level - 1) do
-		blit('energybar_stripe_red', constants.hud.weapon_bar_x + i, constants.hud.weapon_bar_y, 201)
+		write_words(
+			sys_vdp_cmd_arg0,
+			red_handle,
+			constants.hud.weapon_bar_x + i,
+			constants.hud.weapon_bar_y,
+			201,
+			sys_vdp_layer_ui,
+			1,
+			1,
+			0,
+			1,
+			1,
+			1,
+			1,
+			0
+		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
 end
 

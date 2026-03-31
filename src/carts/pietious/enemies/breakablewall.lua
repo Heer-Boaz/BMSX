@@ -42,7 +42,23 @@ function breakablewall:ctor()
 			local draw_y = self.y + (ty * constants.room.tile_size)
 			for tx = 0, self.width_tiles - 1 do
 				local draw_x = self.x + (tx * constants.room.tile_size)
-				blit(self.tiletype, draw_x, draw_y, 22)
+				write_words(
+					sys_vdp_cmd_arg0,
+					assets.img[self.tiletype].handle,
+					draw_x,
+					draw_y,
+					22,
+					sys_vdp_layer_world,
+					1,
+					1,
+					0,
+					1,
+					1,
+					1,
+					1,
+					0
+				)
+				mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 			end
 		end
 	end

@@ -174,6 +174,7 @@ function player:get_laser_visual_y(y, weapon)
 end
 
 function player:draw_lasers()
+	local laser_handle = assets.img[constants.assets.laser].handle
 	for i = 1, #self.lasers do
 		local laser = self.lasers[i]
 		local start_x = self:get_laser_visual_x(laser.left_x, constants.weapons.laser)
@@ -184,7 +185,23 @@ function player:draw_lasers()
 		end
 		local x = start_x
 		while x < end_x do
-			blit(constants.assets.laser, x, visual_y, 122)
+			write_words(
+				sys_vdp_cmd_arg0,
+				laser_handle,
+				x,
+				visual_y,
+				122,
+				sys_vdp_layer_world,
+				1,
+				1,
+				0,
+				1,
+				1,
+				1,
+				1,
+				0
+			)
+			mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 			x = x + constants.weapons.laser.tile_width
 		end
 	end
@@ -193,28 +210,94 @@ end
 function player:draw_missiles()
 	for i = 1, #self.missiles do
 		local missile = self.missiles[i]
-		blit(missile.sprite_imgid, missile.x, missile.y, 122)
+		write_words(
+			sys_vdp_cmd_arg0,
+			assets.img[missile.sprite_imgid].handle,
+			missile.x,
+			missile.y,
+			122,
+			sys_vdp_layer_world,
+			1,
+			1,
+			0,
+			1,
+			1,
+			1,
+			1,
+			0
+		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
 end
 
 function player:draw_uplasers()
+	local laser_handle = assets.img[constants.assets.laser].handle
 	for i = 1, #self.uplasers do
 		local uplaser = self.uplasers[i]
 		local base_x = self:get_laser_visual_x(uplaser.x, constants.weapons.uplaser)
 		local visual_y = self:get_laser_visual_y(uplaser.y, constants.weapons.uplaser)
 		for tile_index = 0, uplaser.tile_count - 1 do
-			blit(constants.assets.laser, base_x + (tile_index * constants.weapons.uplaser.tile_width), visual_y, 122)
+			write_words(
+				sys_vdp_cmd_arg0,
+				laser_handle,
+				base_x + (tile_index * constants.weapons.uplaser.tile_width),
+				visual_y,
+				122,
+				sys_vdp_layer_world,
+				1,
+				1,
+				0,
+				1,
+				1,
+				1,
+				1,
+				0
+			)
+			mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 		end
 	end
 end
 
 function player:draw_visual()
 	local option_imgid = self:get_option_imgid()
+	local option_handle = assets.img[option_imgid].handle
 	for i = 1, #self.options do
 		local option = self.options[i]
-		blit(option_imgid, option.x, option.y, 119)
+		write_words(
+			sys_vdp_cmd_arg0,
+			option_handle,
+			option.x,
+			option.y,
+			119,
+			sys_vdp_layer_world,
+			1,
+			1,
+			0,
+			1,
+			1,
+			1,
+			1,
+			0
+		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
-	blit(self.sprite_imgid, self.x, self.y, 120)
+	write_words(
+		sys_vdp_cmd_arg0,
+		assets.img[self.sprite_imgid].handle,
+		self.x,
+		self.y,
+		120,
+		sys_vdp_layer_world,
+		1,
+		1,
+		0,
+		1,
+		1,
+		1,
+		1,
+		0
+	)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	self:draw_lasers()
 	self:draw_missiles()
 	self:draw_uplasers()

@@ -13,7 +13,6 @@
 -- `local p = constants.physics`): read constants directly from their source table/global.
 -- This module is BIOS/runtime plumbing.
 
-require('vdp_firmware')
 local world_module = require('world')
 local ecs_builtin = require('ecs_builtin')
 local ecs_pipeline = require('ecs_pipeline')

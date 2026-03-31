@@ -38,12 +38,10 @@
 
 local worldobject = require('worldobject')
 local components = require('components')
-local scratchrecordbatch = require('scratchrecordbatch')
 
 local spriteobject = {}
 spriteobject.__index = spriteobject
 setmetatable(spriteobject, { __index = worldobject })
-local sprite_draw_options = scratchrecordbatch.new(1):get(1)
 
 spriteobject.base_sprite_id = 'base_sprite'
 spriteobject.primary_collider_id = 'primary'
@@ -66,7 +64,11 @@ function spriteobject.new(opts)
 	self.flip_v = false
 	self.imgid = nil
 
-	self.sprite_component = components.spritecomponent.new({ imgid = self.imgid, id_local = spriteobject.base_sprite_id })
+	self.sprite_component = components.spritecomponent.new({
+		imgid = self.imgid,
+		id_local = spriteobject.base_sprite_id,
+		layer = opts.layer,
+	})
 	self.collider = components.collider2dcomponent.new({ id_local = spriteobject.primary_collider_id })
 
 	self:add_component(self.sprite_component)
@@ -105,12 +107,30 @@ function spriteobject:draw()
 		return
 	end
 	local offset = sc.offset
-	sprite_draw_options.scale = sc.scale
-	sprite_draw_options.flip_h = sc.flip.flip_h
-	sprite_draw_options.flip_v = sc.flip.flip_v
-	sprite_draw_options.colorize = sc.colorize
-	sprite_draw_options.parallax_weight = sc.parallax_weight
-	blit(sc.imgid, self.x + offset.x, self.y + offset.y, self.z + offset.z, sprite_draw_options)
+	local flip_flags = 0
+	if sc.flip.flip_h then
+		flip_flags = flip_flags | 1
+	end
+	if sc.flip.flip_v then
+		flip_flags = flip_flags | 2
+	end
+	write_words(
+		sys_vdp_cmd_arg0,
+		assets.img[sc.imgid].handle,
+		self.x + offset.x,
+		self.y + offset.y,
+		self.z + offset.z,
+		sc.layer,
+		sc.scale.x,
+		sc.scale.y,
+		flip_flags,
+		sc.colorize.r,
+		sc.colorize.g,
+		sc.colorize.b,
+		sc.colorize.a,
+		sc.parallax_weight
+	)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 end
 
 return spriteobject

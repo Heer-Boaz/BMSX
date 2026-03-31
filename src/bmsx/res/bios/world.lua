@@ -256,10 +256,10 @@ end
 --   Errors if space_id is not registered.
 function world_class:set_space(space_id)
 	if self._spaces[space_id] == nil then
-		error('world.set_space unknown space id '' .. tostring(space_id) .. ''.')
+		error('world.set_space unknown space id "' .. tostring(space_id) .. '".')
 	end
 	if self.active_space_id ~= space_id then
-		cls(1)
+		do local c=sys_palette_color(1);mem[sys_vdp_cmd_arg0+0*4]=c.r;mem[sys_vdp_cmd_arg0+1*4]=c.g;mem[sys_vdp_cmd_arg0+2*4]=c.b;mem[sys_vdp_cmd_arg0+3*4]=c.a;mem[sys_vdp_cmd]=sys_vdp_cmd_clear end
 	end
 	self.active_space_id = space_id
 	return self.active_space_id
@@ -276,7 +276,7 @@ end
 function world_class:set_object_space(obj, space_id)
 	local target_space = self._spaces[space_id]
 	if target_space == nil then
-		error('world.set_object_space unknown space id '' .. tostring(space_id) .. ''.')
+		error('world.set_object_space unknown space id "' .. tostring(space_id) .. '".')
 	end
 
 	local object_id = obj.id
@@ -386,7 +386,7 @@ end
 function world_class:spawn(obj, pos)
 	local existing = self._by_id[obj.id]
 	if existing ~= nil and existing ~= obj then
-		error('world.spawn duplicate id '' .. obj.id .. ''')
+		error('world.spawn duplicate id "' .. obj.id .. '".')
 	end
 	local space_id = obj.space_id
 	if space_id == nil then
@@ -410,7 +410,7 @@ end
 function world_class:spawn_subsystem(subsys)
 	local existing = self._subsystems_by_id[subsys.id]
 	if existing ~= nil and existing ~= subsys then
-		error('world.spawn_subsystem duplicate id '' .. subsys.id .. ''')
+		error('world.spawn_subsystem duplicate id "' .. subsys.id .. '".')
 	end
 	self._subsystems_by_id[subsys.id] = subsys
 	self._subsystems[#self._subsystems + 1] = subsys

@@ -1,6 +1,7 @@
 -- ecs_systems.lua
 -- built-in ecs systems for lua engine
-local vdp_firmware = require('vdp_firmware')
+
+local wrap_text_lines = require('util/wrap_text_lines')
 --
 -- DESIGN PRINCIPLES — collision handling via overlap2dsystem
 --
@@ -77,10 +78,9 @@ local actioneffectcomponent = 'actioneffectcomponent'
 
 -- Shared opts table to avoid per-frame allocation.
 local active_scope = { scope = 'active' }
-local render_scratch_items = scratchrecordbatch.new(3):reserve(3)
-local sprite_render_options = render_scratch_items[1]
-local mesh_render_options = render_scratch_items[2]
-local point_light_position = render_scratch_items[3]
+local render_scratch_items = scratchrecordbatch.new(2):reserve(2)
+local mesh_render_options = render_scratch_items[1]
+local point_light_position = render_scratch_items[2]
 
 local behaviortreesystem = {}
 behaviortreesystem.__index = behaviortreesystem
@@ -745,12 +745,12 @@ function textrendersystem:update()
 		local glyphs = tc.text
 		if type(glyphs) == 'string' then
 			if tc.wrap_chars ~= nil and tc.wrap_chars > 0 then
-				glyphs = vdp_firmware.wrap_text_lines(glyphs, tc.wrap_chars)
+				glyphs = wrap_text_lines(glyphs, tc.wrap_chars)
 			else
 				glyphs = { glyphs }
 			end
 		end
-		vdp_firmware.submit_glyph_lines(
+		submit_glyph_lines(
 			glyphs,
 			x,
 			y,
@@ -796,12 +796,30 @@ function spriterendersystem:update()
 			y = obj.y + offset.y
 			z = obj.z + offset.z
 		end
-		sprite_render_options.scale = sc.scale
-		sprite_render_options.flip_h = sc.flip.flip_h
-		sprite_render_options.flip_v = sc.flip.flip_v
-		sprite_render_options.colorize = sc.colorize
-		sprite_render_options.parallax_weight = sc.parallax_weight
-		blit(sc.imgid, x, y, z, sprite_render_options)
+		local flip_flags = 0
+		if sc.flip.flip_h then
+			flip_flags = flip_flags | 1
+		end
+		if sc.flip.flip_v then
+			flip_flags = flip_flags | 2
+		end
+		write_words(
+			sys_vdp_cmd_arg0,
+			assets.img[sc.imgid].handle,
+			x,
+			y,
+			z,
+			sc.layer,
+			sc.scale.x,
+			sc.scale.y,
+			flip_flags,
+			sc.colorize.r,
+			sc.colorize.g,
+			sc.colorize.b,
+			sc.colorize.a,
+			sc.parallax_weight
+		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 		::continue_sprite_render::
 	end
 end

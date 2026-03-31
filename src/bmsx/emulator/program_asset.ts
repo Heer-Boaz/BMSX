@@ -291,6 +291,11 @@ function registerModuleAliases(aliases: Map<string, string>, path: string): void
 	if (compactPath !== null) {
 		registerAlias(aliases, compactPath, path);
 		registerAlias(aliases, `${compactPath}.lua`, path);
+		if (compactPath.startsWith('bios/')) {
+			const biosRelativePath = compactPath.slice('bios/'.length);
+			registerAlias(aliases, biosRelativePath, path);
+			registerAlias(aliases, `${biosRelativePath}.lua`, path);
+		}
 	}
 	const dotted = pathWithoutExt.replace(/\//g, '.');
 	registerAlias(aliases, dotted, path);

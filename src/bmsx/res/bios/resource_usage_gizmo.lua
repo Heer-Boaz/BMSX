@@ -1,17 +1,14 @@
-local vdp_firmware = require('vdp_firmware')
 local scratchrecordbatch = require('scratchrecordbatch')
-local clamp_int = require('clamp_int')
 
 local gizmo = {}
-local ui_options = scratchrecordbatch.new(1):get(1)
 
 local colors = {
-	panel = 1,
-	text = 15,
-	text_dim = 14,
-	ok = 12,
-	warn = 10,
-	danger = 8,
+	panel = sys_palette_color(1),
+	text = sys_palette_color(15),
+	text_dim = sys_palette_color(14),
+	ok = sys_palette_color(12),
+	warn = sys_palette_color(10),
+	danger = sys_palette_color(8),
 }
 
 local function usage_color(ratio)
@@ -24,7 +21,7 @@ local function usage_percent(used, total)
 	return math.floor(((used * 100) / total) + 0.5)
 end
 
-local function draw_usage_bar(label, used, total, x, y, z)
+local function draw_usage_bar(label, used, total, x, y, z, font_id)
 	local label_w = 28
 	local bar_w = 54
 	local bar_h = 5
@@ -32,13 +29,51 @@ local function draw_usage_bar(label, used, total, x, y, z)
 	local ratio = clamp_int(used / total, 0, 1)
 	local fill_w = math.floor(bar_w * ratio)
 	local pct = usage_percent(used, total)
+	local text_y = y + 1
+	local text_z = z + 2
+	local label_color = colors.text_dim
+	local pct_color = colors.text
+	local label_len = #label
+	local pct_text = tostring(pct) .. '%'
+	local pct_len = #pct_text
 
-	vdp_firmware.submit_text_block(label, x, y - 1, z + 2, vdp_firmware.default_font, sys_palette_color(colors.text), nil, nil, nil, 0, 2147483647, sys_vdp_layer_ide, vdp_firmware.default_font.line_height)
-	fill_rect_color(bar_x, y + 1, bar_x + bar_w, y + 1 + bar_h, z, colors.text_dim, ui_options)
+	write_words(sys_vdp_cmd_arg0, bar_x, y + 1, bar_x + bar_w, y + 1 + bar_h, z, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 	if fill_w > 0 then
-		fill_rect_color(bar_x, y + 1, bar_x + fill_w, y + 1 + bar_h, z + 1, usage_color(ratio), ui_options)
+		local c = usage_color(ratio)
+		write_words(sys_vdp_cmd_arg0, bar_x, y + 1, bar_x + fill_w, y + 1 + bar_h, z + 1, sys_vdp_layer_ide, c.r, c.g, c.b, c.a)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 	end
-	vdp_firmware.submit_text_block(pct .. '%', bar_x + bar_w + 4, y - 1, z + 2, vdp_firmware.default_font, sys_palette_color(colors.text), nil, nil, nil, 0, 2147483647, sys_vdp_layer_ide, vdp_firmware.default_font.line_height)
+
+	if label_len > 0 then
+		mem[sys_vdp_payload_alloc] = math.floor((label_len + 3) / 4)
+		local byte_index = 1
+		while byte_index <= label_len do
+			local b1 = string.byte(label, byte_index) or 0
+			local b2 = string.byte(label, byte_index + 1) or 0
+			local b3 = string.byte(label, byte_index + 2) or 0
+			local b4 = string.byte(label, byte_index + 3) or 0
+			mem[sys_vdp_payload_data] = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
+			byte_index = byte_index + 4
+		end
+		write_words(sys_vdp_cmd_arg0, label_len, x, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a, 0, 0, 0, 0, 0)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+	end
+
+	if pct_len > 0 then
+		mem[sys_vdp_payload_alloc] = math.floor((pct_len + 3) / 4)
+		local byte_index = 1
+		while byte_index <= pct_len do
+			local b1 = string.byte(pct_text, byte_index) or 0
+			local b2 = string.byte(pct_text, byte_index + 1) or 0
+			local b3 = string.byte(pct_text, byte_index + 2) or 0
+			local b4 = string.byte(pct_text, byte_index + 3) or 0
+			mem[sys_vdp_payload_data] = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
+			byte_index = byte_index + 4
+		end
+		write_words(sys_vdp_cmd_arg0, pct_len, bar_x + bar_w + 1, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, pct_color.r, pct_color.g, pct_color.b, pct_color.a, 0, 0, 0, 0, 0)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+	end
 end
 
 function gizmo.draw()
@@ -52,12 +87,25 @@ function gizmo.draw()
 	local panel_w = 112
 	local panel_h = 32
 	local row_h = 10
+	local font_id = get_default_font().id
 
-	ui_options.layer = sys_vdp_layer_ide
-	fill_rect_color(x - 4, y - 4, x - 4 + panel_w, y - 4 + panel_h, z, colors.panel, ui_options)
-	draw_usage_bar('CPU', sys_cpu_active_cycles_used(), sys_cpu_active_cycles_granted(), x, y, z + 1)
-	draw_usage_bar('RAM', sys_ram_used(), sys_ram_size, x, y + row_h, z + 1)
-	draw_usage_bar('VRAM', sys_vram_used(), sys_vram_size, x, y + (row_h * 2), z + 1)
+	write_words(
+		sys_vdp_cmd_arg0,
+		x - 4,
+		y - 4,
+		x - 4 + panel_w,
+		y - 4 + panel_h,
+		z,
+		sys_vdp_layer_ide,
+		colors.panel.r,
+		colors.panel.g,
+		colors.panel.b,
+		colors.panel.a
+	)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+	draw_usage_bar('CPU', sys_cpu_active_cycles_used(), sys_cpu_active_cycles_granted(), x, y, z + 1, font_id)
+	draw_usage_bar('RAM', sys_ram_used(), sys_ram_size, x, y + row_h, z + 1, font_id)
+	draw_usage_bar('VRAM', sys_vram_used(), sys_vram_size, x, y + (row_h * 2), z + 1, font_id)
 end
 
 return gizmo

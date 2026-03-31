@@ -1,18 +1,14 @@
 -- quickmenu.lua
 -- system quick menu (select+start)
 
-local vdp_firmware = require('vdp_firmware')
 local scratchrecordbatch = require('scratchrecordbatch')
 
-local menu = {}
-local quickmenu_ui_options = scratchrecordbatch.new(1):get(1)
-
 local colors = {
-	panel = 1,
-	text = 15,
-	text_dim = 14,
-	title = 11,
-	highlight = 5,
+	panel = sys_palette_color(1),
+	text = sys_palette_color(15),
+	text_dim = sys_palette_color(14),
+	title = sys_palette_color(11),
+	highlight = sys_palette_color(5),
 }
 
 local state = {
@@ -20,6 +16,8 @@ local state = {
 	selected = 1,
 	audio_paused = false,
 }
+
+local menu = {}
 
 local function toggle_menu()
 	state.open = not state.open
@@ -107,7 +105,7 @@ local entries = {
 
 local function entry_value_label(entry)
 	if entry.kind == 'action' then
-		return ''
+		return nil
 	end
 	if entry.kind == 'toggle' then
 		return entry.get() and 'ON' or 'OFF'
@@ -207,7 +205,7 @@ function menu.draw()
 		local entry = entries[i]
 		local value = entry_value_label(entry)
 		local line = entry.label
-		if value ~= '-' and (value) then
+		if value ~= nil then
 			line = line .. ': ' .. value
 		end
 		if #line > max_chars then max_chars = #line end
@@ -235,23 +233,123 @@ function menu.draw()
 	if x < 0 then x = 0 end
 	if y < 0 then y = 0 end
 	local z = 10000
-
-	quickmenu_ui_options.layer = sys_vdp_layer_ui
-	fill_rect_color(x, y + box_y, x + menu_w, y + box_y + box_h, z, colors.panel, quickmenu_ui_options)
-	vdp_firmware.submit_text_block(title, x + padding, y, z, vdp_firmware.default_font, sys_palette_color(colors.title), nil, nil, nil, 0, 2147483647, sys_vdp_layer_ui, vdp_firmware.default_font.line_height)
+	write_words(
+		sys_vdp_cmd_arg0,
+		x,
+		y + box_y,
+		x + menu_w,
+		y + box_y + box_h,
+		z,
+		sys_vdp_layer_ui,
+		colors.panel.r,
+		colors.panel.g,
+		colors.panel.b,
+		colors.panel.a
+	)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+	local font = get_default_font()
+	local font_id = font.id
+	local text_z = z + 1
+	local title_x = x + math.floor((menu_w - (#title * font_w)) / 2)
+	local title_y = y + math.floor((title_h - font_h) / 2)
+	local title_len = #title
+	if title_len > 0 then
+		local payload_words = math.floor((title_len + 3) / 4)
+		mem[sys_vdp_payload_alloc] = payload_words
+		local byte_index = 1
+		while byte_index <= title_len do
+			local b1 = string.byte(title, byte_index) or 0
+			local b2 = string.byte(title, byte_index + 1) or 0
+			local b3 = string.byte(title, byte_index + 2) or 0
+			local b4 = string.byte(title, byte_index + 3) or 0
+			mem[sys_vdp_payload_data] = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
+			byte_index = byte_index + 4
+		end
+		write_words(
+			sys_vdp_cmd_arg0,
+			title_len,
+			title_x,
+			title_y,
+			text_z,
+			font_id,
+			0,
+			2147483647,
+			sys_vdp_layer_ui,
+			colors.title.r,
+			colors.title.g,
+			colors.title.b,
+			colors.title.a,
+			0,
+			0,
+			0,
+			0,
+			0
+		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+	end
 
 	local row_y = y + box_y + padding
 	for i = 1, #entries do
 		local entry = entries[i]
 		if i == state.selected then
-			fill_rect_color(x, row_y - 2, x + menu_w, row_y + line_h, z, colors.highlight, quickmenu_ui_options)
+			write_words(
+				sys_vdp_cmd_arg0,
+				x,
+				row_y - 2,
+				x + menu_w,
+				row_y + line_h,
+				z,
+				sys_vdp_layer_ui,
+				colors.highlight.r,
+				colors.highlight.g,
+				colors.highlight.b,
+				colors.highlight.a
+			)
+			mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 		end
 		local value = entry_value_label(entry)
 		local line = entry.label
-		if value ~= '-' and (value) then
+		if value ~= nil then
 			line = line .. ': ' .. value
 		end
-		vdp_firmware.submit_text_block(line, x + padding, row_y, z, vdp_firmware.default_font, sys_palette_color(colors.text), nil, nil, nil, 0, 2147483647, sys_vdp_layer_ui, vdp_firmware.default_font.line_height)
+		local text_color = i == state.selected and colors.text or colors.text_dim
+		local text_x = x + padding
+		local text_y = row_y + math.floor((line_h - font_h) / 2)
+		local line_len = #line
+		if line_len > 0 then
+			local payload_words = math.floor((line_len + 3) / 4)
+			mem[sys_vdp_payload_alloc] = payload_words
+			local byte_index = 1
+			while byte_index <= line_len do
+				local b1 = string.byte(line, byte_index) or 0
+				local b2 = string.byte(line, byte_index + 1) or 0
+				local b3 = string.byte(line, byte_index + 2) or 0
+				local b4 = string.byte(line, byte_index + 3) or 0
+				mem[sys_vdp_payload_data] = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
+				byte_index = byte_index + 4
+			end
+			write_words(
+				sys_vdp_cmd_arg0,
+				line_len,
+				text_x,
+				text_y,
+				text_z,
+				font_id,
+				0,
+				2147483647,
+				sys_vdp_layer_ui,
+				text_color.r,
+				text_color.g,
+				text_color.b,
+				text_color.a,
+				0,
+				0,
+				0,
+				0,
+				0
+			)
+			mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+		end
 		row_y = row_y + line_h
 	end
 

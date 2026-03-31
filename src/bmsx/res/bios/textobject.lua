@@ -4,7 +4,7 @@
 local worldobject = require('worldobject')
 local components = require('components')
 local scratchrecordbatch = require('scratchrecordbatch')
-local vdp_firmware = require('vdp_firmware')
+local wrap_text_lines = require('util/wrap_text_lines')
 
 local textobject = {}
 textobject.__index = textobject
@@ -242,10 +242,10 @@ function textobject:set_text(text_or_lines, opts)
 		typed = true
 	end
 	if type(text_or_lines) == 'string' then
-		self.full_text_lines, self.wrapped_line_to_logical_line = vdp_firmware.wrap_text_lines(text_or_lines, self.maximum_characters_per_line)
+		self.full_text_lines, self.wrapped_line_to_logical_line = wrap_text_lines(text_or_lines, self.maximum_characters_per_line)
 	else
 		local joined = table.concat(text_or_lines, '\n')
-		self.full_text_lines, self.wrapped_line_to_logical_line = vdp_firmware.wrap_text_lines(joined, self.maximum_characters_per_line)
+		self.full_text_lines, self.wrapped_line_to_logical_line = wrap_text_lines(joined, self.maximum_characters_per_line)
 	end
 	self:recenter_text_block()
 	if typed and not snap then
@@ -328,30 +328,22 @@ function textobject:draw()
 		local offset_y = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
 		local padded = margin * scale
 		highlight_rect_options.layer = self.layer
-		fill_rect_color(
+		write_words(
+			sys_vdp_cmd_arg0,
 			dims.left - padded + offset_x,
 			self.highlight_anim_y - padded + offset_y,
 			dims.right + padded + offset_x,
 			self.highlight_anim_y + self.highlight_anim_h - padded + offset_y,
 			self.z,
-			highlight_bg_color,
-			highlight_rect_options
+			self.layer,
+			highlight_bg_color.r,
+			highlight_bg_color.g,
+			highlight_bg_color.b,
+			highlight_bg_color.a
 		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 	end
-	vdp_firmware.submit_glyph_lines(
-		self.text,
-		self.centered_block_x,
-		dims.top,
-		self.z,
-		self.font,
-		text_color,
-		normal_bg_color,
-		line_height,
-		nil,
-		0,
-		2147483647,
-		self.layer
-	)
+
 end
 
 return textobject

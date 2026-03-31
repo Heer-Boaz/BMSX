@@ -25,13 +25,34 @@ function lithograph_screen:bind_visual()
 end
 
 function lithograph_screen:draw_screen()
-	blit(lithograph_mode_sprite_id, constants.room.tile_size4, constants.room.tile_origin_y + constants.room.tile_size2, 340)
+	write_words(
+		sys_vdp_cmd_arg0,
+		assets.img[lithograph_mode_sprite_id].handle,
+		constants.room.tile_size4,
+		constants.room.tile_origin_y + constants.room.tile_size2,
+		340,
+		sys_vdp_layer_ui,
+		1,
+		1,
+		0,
+		1,
+		1,
+		1,
+		1,
+		0
+	)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	local lines = self.lines
 	if #lines > 0 then
-		blit_glyphs(lines, 0, constants.room.tile_origin_y + (constants.room.tile_size * 6), 341, {
-			font = self.text_font,
-			center_block_width = display_width(),
-		})
+		local font = self.text_font
+		mem[sys_vdp_cmd_arg0+0*4] = 0
+		mem[sys_vdp_cmd_arg0+1*4] = constants.room.tile_origin_y + (constants.room.tile_size * 6)
+		mem[sys_vdp_cmd_arg0+2*4] = 341
+		mem[sys_vdp_cmd_arg0+3*4] = font.advance_x
+		mem[sys_vdp_cmd_arg0+4*4] = font.line_height
+		mem[sys_vdp_cmd_arg0+5*4] = display_width()
+		mem[sys_vdp_cmd_arg0+6*4] = table.concat(lines, '\n')
+		mem[sys_vdp_cmd] = 0x20
 	end
 end
 

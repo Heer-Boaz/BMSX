@@ -917,19 +917,33 @@ function room_object:render_tiles()
 			::continue::
 		end
 	end
-	dma_blit_tiles({
-		tiles = tiles,
-		cols = self.tile_columns,
-		rows = self.tile_rows,
-		tile_w = tile_size,
-		tile_h = tile_size,
-		origin_x = origin_x,
-		origin_y = origin_y,
-		scroll_x = 0,
-		scroll_y = 0,
-		z = 0,
-		layer = 'world',
-	})
+	do
+		local tile_count = self.tile_columns * self.tile_rows
+		mem[sys_vdp_payload_alloc] = tile_count
+		for i = 1, tile_count do
+		local tile = tiles[i]
+			if not tile then
+				mem[sys_vdp_payload_data] = 0xffffffff
+			else
+				mem[sys_vdp_payload_data] = assets.img[tile].handle
+			end
+		end
+		write_words(
+			sys_vdp_cmd_arg0,
+			tile_count,
+			self.tile_columns,
+			self.tile_rows,
+			tile_size,
+			tile_size,
+			origin_x,
+			origin_y,
+			0,
+			0,
+			0,
+			sys_vdp_layer_world
+		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_tile_run
+	end
 end
 
 function room_object:render_water(water_surface_frame)
@@ -959,19 +973,33 @@ function room_object:render_water(water_surface_frame)
 			end
 		end
 	end
-	dma_blit_tiles({
-		tiles = tiles,
-		cols = self.tile_columns,
-		rows = water_rows,
-		tile_w = self.tile_size,
-		tile_h = self.tile_size,
-		origin_x = self.tile_origin_x,
-		origin_y = self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size),
-		scroll_x = 0,
-		scroll_y = 0,
-		z = 0,
-		layer = 'world',
-	})
+	do
+		local tile_count = self.tile_columns * water_rows
+		mem[sys_vdp_payload_alloc] = tile_count
+		for i = 1, tile_count do
+		local tile = tiles[i]
+			if not tile then
+				mem[sys_vdp_payload_data] = 0xffffffff
+			else
+				mem[sys_vdp_payload_data] = assets.img[tile].handle
+			end
+		end
+		write_words(
+			sys_vdp_cmd_arg0,
+			tile_count,
+			self.tile_columns,
+			water_rows,
+			self.tile_size,
+			self.tile_size,
+			self.tile_origin_x,
+			self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size),
+			0,
+			0,
+			0,
+			sys_vdp_layer_world
+		)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_tile_run
+	end
 end
 
 function room_object:render_room()
@@ -990,7 +1018,7 @@ function room_object:render_room()
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	fill_rect_color(0, constants.room.tile_origin_y, display_width(), display_height(), 342, { r = 1, g = 1, b = 1, a = 0.5 })
+	local c={r=1,g=1,b=1,a=0.5};write_words(sys_vdp_cmd_arg0,0,constants.room.tile_origin_y,display_width(),display_height(),342,sys_vdp_layer_world,c.r,c.g,c.b,c.a);mem[sys_vdp_cmd]=sys_vdp_cmd_fill_rect
 end
 
 local function room_runtime_state_name(room_state)

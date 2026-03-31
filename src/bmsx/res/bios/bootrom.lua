@@ -1,8 +1,69 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
-local vdp_firmware = require('vdp_firmware')
-local textflow = require('textflow')
+local clamp_int = require('util/clamp_int')
+
+local function reset_scroll_state(state) state.top = 0 end
+local function clamp_scroll(top, line_count, window_size)
+	local max_top = math.max(0, line_count - window_size)
+	return clamp_int(top, 0, max_top)
+end
+local function scroll_window(lines, top, window_size)
+	local visible_lines = {}
+	local max_scroll = math.max(0, #lines - window_size)
+	local clamped_top = clamp_int(top, 0, max_scroll)
+	for i = 1, window_size do
+		local idx = clamped_top + i
+		if idx <= #lines then
+			table.insert(visible_lines, lines[idx])
+		else
+			table.insert(visible_lines, '')
+		end
+	end
+	return visible_lines, max_scroll, #visible_lines
+end
+local function line_slots(width, left_margin, char_width)
+	return math.floor((width - left_margin) / char_width)
+end
+local function window_size(height, top_margin, line_height, top_padding, bottom_padding)
+	local available_height = height - top_margin - top_padding - bottom_padding
+	return math.max(1, math.floor(available_height / line_height))
+end
+local function wrap_prefixed(text, line_slots, first_prefix, next_prefix)
+	next_prefix = next_prefix or first_prefix
+	local prefix_len = #first_prefix
+	local next_prefix_len = #next_prefix
+	local lines = {}
+	local remaining = text
+	local is_first = true
+	while #remaining > 0 do
+		local available = is_first and (line_slots - prefix_len) or (line_slots - next_prefix_len)
+		if available <= 0 then available = 1 end
+		local chunk = string.sub(remaining, 1, available)
+		local prefix = is_first and first_prefix or next_prefix
+		table.insert(lines, prefix .. chunk)
+		remaining = string.sub(remaining, available + 1)
+		is_first = false
+	end
+	return lines
+end
+local function wrap_entries(entries, line_slots, first_prefix, next_prefix)
+	local lines = {}
+	next_prefix = next_prefix or first_prefix
+	for idx, entry in ipairs(entries) do
+		local text = type(entry) == 'string' and entry or tostring(entry)
+		local prefix = (idx == 1) and first_prefix or next_prefix
+		local prefixed = prefix .. text
+		local available = line_slots - #prefix
+		while #prefixed > line_slots do
+			local chunk = string.sub(prefixed, 1, line_slots)
+			table.insert(lines, chunk)
+			prefixed = next_prefix .. string.sub(prefixed, line_slots + 1)
+		end
+		table.insert(lines, prefixed)
+	end
+	return lines
+end
 
 local boot_delay = 2.0
 local font_width = 6
@@ -32,7 +93,7 @@ local boot_start
 local boot_requested
 local sys_atlas_ready
 local sys_atlas_failed
-local boot_scroll_state = textflow.new_scroll_state()
+local boot_scroll_state = { top = 0 }
 local boot_screen_visible = false
 local boot_screen_presented
 local render_boot_screen
@@ -2070,10 +2131,11 @@ local function scroll_boot_lines(lines, window_size, delta)
 	local line_count = #lines
 	if line_count ~= boot_scroll_state.last_line_count then
 		boot_scroll_state.last_line_count = line_count
-		boot_scroll_state.top = textflow.clamp_scroll(boot_scroll_state.top, line_count, window_size)
+		boot_scroll_state.top = clamp_scroll(boot_scroll_state.top, line_count, window_size)
 	end
-	boot_scroll_state.top = textflow.clamp_scroll(boot_scroll_state.top + delta, line_count, window_size)
-	local scroll_top, max_scroll, visible_lines = textflow.scroll_window(lines, boot_scroll_state.top, window_size)
+	boot_scroll_state.top = clamp_scroll(boot_scroll_state.top + delta, line_count, window_size)
+	local visible_lines, max_scroll = scroll_window(lines, boot_scroll_state.top, window_size)
+	local scroll_top = boot_scroll_state.top
 	boot_scroll_state.top = scroll_top
 	return scroll_top, max_scroll, visible_lines
 end
@@ -2220,7 +2282,7 @@ local function compute_boot_progress(info, cart_ready, elapsed)
 end
 
 local function append_wrapped_line(lines, value, color, line_slots, first_prefix, next_prefix)
-	local wrapped = textflow.wrap_prefixed(value, line_slots, (first_prefix), ((next_prefix or first_prefix)))
+	local wrapped = wrap_prefixed(value, line_slots, (first_prefix), ((next_prefix or first_prefix)))
 	for i = 1, #wrapped do
 		lines[#lines + 1] = { text = wrapped[i], color = color }
 	end
@@ -2229,7 +2291,7 @@ end
 local function append_kv_wrapped(lines, label, value, color, label_width, line_slots)
 	local first_prefix = string.format('%-' .. label_width .. 's : ', label)
 	local next_prefix = string.rep(' ', label_width) .. '   '
-	local wrapped = textflow.wrap_prefixed(value, line_slots, first_prefix, next_prefix)
+	local wrapped = wrap_prefixed(value, line_slots, first_prefix, next_prefix)
 	for i = 1, #wrapped do
 		lines[#lines + 1] = { text = wrapped[i], color = color }
 	end
@@ -2310,7 +2372,7 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 	end
 
 	if cart_has_errors then
-		local error_lines = textflow.wrap_entries(info.cart_errors, line_slots, '- ', '  ')
+		local error_lines = wrap_entries(info.cart_errors, line_slots, '- ', '  ')
 		append_blank_line(lines)
 		for i = 1, #error_lines do
 			lines[#lines + 1] = { text = error_lines[i], color = color_warn }
@@ -2362,7 +2424,7 @@ function init()
 	bitcast_selftest_error = nil
 	bitcast_selftest_logged = false
 	cart_start_failed_logged = false
-	textflow.reset_scroll_state(boot_scroll_state)
+	reset_scroll_state(boot_scroll_state)
 	on_irq(irq_img_done, function()
 		sys_atlas_ready = true
 	end)
@@ -2420,32 +2482,78 @@ end
 render_boot_screen = function(scroll_delta)
 	refresh_atlas_load_state()
 	local width = display_width()
+	local height = display_height()
 	local left = 8
 	local top = content_top
+	local font = get_default_font()
+	local font_id = font.id
 
-	cls(color_bg)
-	fill_rect(0, 0, width, 24, 0, color_header_bg)
-	vdp_firmware.submit_text_block('BMSX BIOS', center_x('BMSX BIOS', width), 8, 0, vdp_firmware.default_font, sys_palette_color(color_header_text), nil, nil, nil, 0, 2147483647, sys_vdp_layer_world, vdp_firmware.default_font.line_height)
+	do local c=sys_palette_color(color_bg);mem[sys_vdp_cmd_arg0+0*4]=c.r;mem[sys_vdp_cmd_arg0+1*4]=c.g;mem[sys_vdp_cmd_arg0+2*4]=c.b;mem[sys_vdp_cmd_arg0+3*4]=c.a;mem[sys_vdp_cmd]=sys_vdp_cmd_clear end
+	do local c=sys_palette_color(color_header_bg);write_words(sys_vdp_cmd_arg0,0,0,width,24,0,sys_vdp_layer_world,c.r,c.g,c.b,c.a);mem[sys_vdp_cmd]=sys_vdp_cmd_fill_rect end
 	local info = build_info()
 	local cart_present = mem[cart_rom_base] == cart_rom_magic
 	local elapsed = elapsed_seconds()
 	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
-	local line_slots = textflow.line_slots(width, left, font_width)
+	local line_slots = line_slots(width, left, font_width)
 	local content_lines = build_boot_content_lines(info, cart_present, cursor, elapsed, line_slots)
-	local window_size = textflow.window_size(display_height(), top, line_height, 1, 1)
+	local window_size = window_size(display_height(), top, line_height, 1, 1)
 	local scroll_top, max_scroll, visible_lines = scroll_boot_lines(content_lines, window_size, scroll_delta)
-	local y = top
+	local y = top + 1
+	local text_z = 1
 
 	for i = 1, #visible_lines do
 		local line = visible_lines[i]
-		vdp_firmware.submit_text_block(line.text, left, y, 0, vdp_firmware.default_font, sys_palette_color(line.color or color_text), nil, nil, nil, 0, 2147483647, sys_vdp_layer_world, vdp_firmware.default_font.line_height)
+		local text
+		local line_color
+		if type(line) == 'table' then
+			text = line.text
+			line_color = line.color
+		else
+			text = line
+			line_color = color_text
+		end
+		local text_len = #text
+		if text_len > 0 then
+			local payload_words = math.floor((text_len + 3) / 4)
+			mem[sys_vdp_payload_alloc] = payload_words
+			local byte_index = 1
+			while byte_index <= text_len do
+				local b1 = string.byte(text, byte_index) or 0
+				local b2 = string.byte(text, byte_index + 1) or 0
+				local b3 = string.byte(text, byte_index + 2) or 0
+				local b4 = string.byte(text, byte_index + 3) or 0
+				mem[sys_vdp_payload_data] = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
+				byte_index = byte_index + 4
+			end
+			local color = sys_palette_color(line_color or color_text)
+			write_words(
+				sys_vdp_cmd_arg0,
+				text_len,
+				left,
+				y,
+				text_z,
+				font_id,
+				0,
+				2147483647,
+				sys_vdp_layer_world,
+				color.r,
+				color.g,
+				color.b,
+				color.a,
+				0,
+				0,
+				0,
+				0,
+				0
+			)
+			mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+		end
 		y = y + line_height
 	end
 
 	if max_scroll > 0 then
 		local first_line = scroll_top + 1
 		local last_line = scroll_top + #visible_lines
-		vdp_firmware.submit_text_block('UP/DOWN: SCROLL ' .. first_line .. '-' .. last_line .. '/' .. #content_lines, left, display_height() - line_height, 0, vdp_firmware.default_font, sys_palette_color(color_muted), nil, nil, nil, 0, 2147483647, sys_vdp_layer_world, vdp_firmware.default_font.line_height)
 	end
 end
 
