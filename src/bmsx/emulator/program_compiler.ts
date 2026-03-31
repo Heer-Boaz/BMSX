@@ -1700,6 +1700,10 @@ class FunctionBuilder {
 	}
 
 	private emitMemoryWordStoreSequence(valueBase: number, valueCount: number, addrConst: number | undefined, addrReg: number | undefined): void {
+		if (valueCount === 1) {
+			this.emitMemoryStore(MemoryAccessKind.Word, addrConst, addrReg, valueBase);
+			return;
+		}
 		const addrOperand = addrConst !== undefined ? this.encodeConstOperand(addrConst) : addrReg;
 		this.emitABC(OpCode.STORE_MEM_WORDS, valueBase, addrOperand, valueCount, addrConst !== undefined ? RK_B : 0);
 	}

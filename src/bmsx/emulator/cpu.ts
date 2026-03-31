@@ -347,7 +347,7 @@ const BASE_CYCLES: Uint8Array = (() => {
 
 	set(OpCode.LOAD_MEM, 5);
 	set(OpCode.STORE_MEM, 6);
-	set(OpCode.STORE_MEM_WORDS, 3);
+	set(OpCode.STORE_MEM_WORDS, 6);
 
 	return table;
 })();
@@ -1963,6 +1963,7 @@ export class CPU {
 			}
 			case OpCode.STORE_MEM_WORDS: {
 				const addr = this.readRKNumber(frame, rkRawB, rkBitsB);
+				this.charge(CEIL_DIV16(c));
 				this.writeMappedWordSequence(frame, addr, a, c);
 				return;
 			}
@@ -2199,7 +2200,6 @@ export class CPU {
 	}
 
 	private writeMappedWordSequence(frame: CallFrame, addr: number, valueBase: number, valueCount: number): void {
-		this.charge(CEIL_DIV4(valueCount));
 		let writeAddr = addr;
 		for (let offset = 0; offset < valueCount; offset += 1) {
 			this.memory.writeMappedValue(writeAddr, frame.registers.get(valueBase + offset));

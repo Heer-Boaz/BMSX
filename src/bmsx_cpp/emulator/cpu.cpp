@@ -145,7 +145,7 @@ static constexpr std::array<uint8_t, 64> makeBaseCycles() {
 
 	setCycle(table, OpCode::LOAD_MEM, 5);
 	setCycle(table, OpCode::STORE_MEM, 6);
-	setCycle(table, OpCode::STORE_MEM_WORDS, 3);
+	setCycle(table, OpCode::STORE_MEM_WORDS, 6);
 
 	return table;
 }
@@ -1637,6 +1637,7 @@ void CPU::executeInstruction(
 
 		case OpCode::STORE_MEM_WORDS: {
 			const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(frame, rkRawB, rkBitsB)));
+			CYCLES_ADD(ceilDiv16(c));
 			writeMappedWordSequence(frame, addr, a, c);
 			return;
 		}
@@ -1815,7 +1816,6 @@ void CPU::writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, con
 }
 
 void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount) {
-	instructionBudgetRemaining -= (valueCount + 3) / 4;
 	uint32_t writeAddr = addr;
 	for (int offset = 0; offset < valueCount; ++offset) {
 		writeMappedMemoryValue(writeAddr, MemoryAccessKind::Word, frame.registers[static_cast<size_t>(valueBase + offset)]);
