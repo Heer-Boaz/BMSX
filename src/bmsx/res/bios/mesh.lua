@@ -1,12 +1,12 @@
 -- mesh.lua
 -- simple mesh container for system rom
 
-local mesh = {}
+local mesh<const> = {}
 mesh.__index = mesh
 
-local function vec_slice(tbl, step)
-	local len = #tbl
-	local out = {}
+local vec_slice<const> = function(tbl, step)
+	local len<const> = #tbl
+	local out<const> = {}
 	for i = 1, len, step do
 		out[#out + 1] = { tbl[i], tbl[i + 1], tbl[i + 2] }
 	end
@@ -14,7 +14,7 @@ local function vec_slice(tbl, step)
 end
 
 function mesh.new(opts)
-	local self = setmetatable({}, mesh)
+	local self<const> = setmetatable({}, mesh)
 	opts = opts or {}
 	self.name = (opts.meshname)
 	self.positions = opts.positions or {}
@@ -62,7 +62,7 @@ function mesh:update_bounds()
 	local maxx, maxy, maxz = -math.huge, -math.huge, -math.huge
 
 	for i = 1, #self.positions, 3 do
-		local x, y, z = self.positions[i], self.positions[i + 1], self.positions[i + 2]
+		local x<const>, y<const>, z<const> = self.positions[i], self.positions[i + 1], self.positions[i + 2]
 		if x < minx then minx = x end
 		if y < miny then miny = y end
 		if z < minz then minz = z end
@@ -79,10 +79,10 @@ function mesh:update_bounds()
 
 	local max_dist_sq = 0
 	for i = 1, #self.positions, 3 do
-		local dx = self.positions[i] - self.bounding_center[1]
-		local dy = self.positions[i + 1] - self.bounding_center[2]
-		local dz = self.positions[i + 2] - self.bounding_center[3]
-		local d2 = dx * dx + dy * dy + dz * dz
+		local dx<const> = self.positions[i] - self.bounding_center[1]
+		local dy<const> = self.positions[i + 1] - self.bounding_center[2]
+		local dz<const> = self.positions[i + 2] - self.bounding_center[3]
+		local d2<const> = dx * dx + dy * dy + dz * dz
 		if d2 > max_dist_sq then
 			max_dist_sq = d2
 		end

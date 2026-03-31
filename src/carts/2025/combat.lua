@@ -1,8 +1,8 @@
-local combat = {}
-local timeline_builders = require('timeline_builders')
-local stagger = require('stagger')
+local combat<const> = {}
+local timeline_builders<const> = require('timeline_builders')
+local stagger<const> = require('stagger')
 
-local function stat_label(stat_id)
+local stat_label<const> = function(stat_id)
 	if stat_id == 'planning' then
 		return 'Planning'
 	end
@@ -18,19 +18,19 @@ local function stat_label(stat_id)
 end
 
 combat.all_out_shake = timeline_builders.build_all_out_shake(combat_all_out_frame_count)
-local round = timeline_builders.round
-local combat_all_out_prompt_timeline_id = 'combat_all_out_prompt'
+local round<const> = timeline_builders.round
+local combat_all_out_prompt_timeline_id<const> = 'combat_all_out_prompt'
 
-local function build_all_out_prompt_portrait_frames(params)
-	local frames = {}
-	local in_frames = params.in_frames
-	local settle_frames = params.settle_frames
+local build_all_out_prompt_portrait_frames<const> = function(params)
+	local frames<const> = {}
+	local in_frames<const> = params.in_frames
+	local settle_frames<const> = params.settle_frames
 	for i = 0, in_frames - 1 do
-		local u = i / (in_frames - 1)
-		local eased = easing.smoothstep(u)
-		local x = params.from_x + ((params.to_x - params.from_x) * eased)
-		local y = params.from_y + ((params.to_y - params.from_y) * eased)
-		local scale = params.from_scale + ((params.overshoot_scale - params.from_scale) * easing.smoothstep(u))
+		local u<const> = i / (in_frames - 1)
+		local eased<const> = easing.smoothstep(u)
+		local x<const> = params.from_x + ((params.to_x - params.from_x) * eased)
+		local y<const> = params.from_y + ((params.to_y - params.from_y) * eased)
+		local scale<const> = params.from_scale + ((params.overshoot_scale - params.from_scale) * easing.smoothstep(u))
 		frames[#frames + 1] = {
 			x = x,
 			y = y,
@@ -38,10 +38,10 @@ local function build_all_out_prompt_portrait_frames(params)
 		}
 	end
 	for i = 0, settle_frames - 1 do
-		local u = i / (settle_frames - 1)
-		local eased = easing.smoothstep(u)
-		local scale = params.overshoot_scale + ((params.to_scale - params.overshoot_scale) * eased)
-		local bob = math.sin(u * math.pi) * params.settle_bob
+		local u<const> = i / (settle_frames - 1)
+		local eased<const> = easing.smoothstep(u)
+		local scale<const> = params.overshoot_scale + ((params.to_scale - params.overshoot_scale) * eased)
+		local bob<const> = math.sin(u * math.pi) * params.settle_bob
 		frames[#frames + 1] = {
 			x = params.to_x,
 			y = params.to_y + bob,
@@ -51,8 +51,8 @@ local function build_all_out_prompt_portrait_frames(params)
 	return frames
 end
 
-local function build_all_out_screen_shake_frames(params)
-	local frames = {}
+local build_all_out_screen_shake_frames<const> = function(params)
+	local frames<const> = {}
 	for frame_index = 0, combat_all_out_frame_count - 1 do
 		local dx, dy = combat.all_out_shake(frame_index)
 		dx = round(dx)
@@ -83,13 +83,13 @@ local function build_all_out_screen_shake_frames(params)
 	return frames
 end
 
-local combat_director = {}
+local combat_director<const> = {}
 combat_director.__index = combat_director
 
 function combat_director:start_combat(node_id, opts)
 	self.node_id = node_id
 	self.combat_node_id = node_id
-	local node = story[node_id]
+	local node<const> = story[node_id]
 	self.combat_monster_imgid = node.monster_imgid
 	self.combat_rewards = {}
 	self.skip_transition_fade = false
@@ -98,8 +98,8 @@ function combat_director:start_combat(node_id, opts)
 end
 
 function combat_director:apply_combat_round(node)
-	local round = node.rounds[self.combat_round_index]
-	local choice_lines = {}
+	local round<const> = node.rounds[self.combat_round_index]
+	local choice_lines<const> = {}
 	for i = 1, #round.options do
 		choice_lines[i] = round.options[i].label
 	end
@@ -119,26 +119,26 @@ function combat_director:apply_combat_round(node)
 	self.choice_index = 1
 end
 
-local function refresh_combat_parallax(self)
-	local rig_vy = combat_parallax_vy_base + combat_parallax_vy_momentum
-	local rig_scale = combat_parallax_scale_base + combat_parallax_scale_momentum
+local refresh_combat_parallax<const> = function(self)
+	local rig_vy<const> = combat_parallax_vy_base + combat_parallax_vy_momentum
+	local rig_scale<const> = combat_parallax_scale_base + combat_parallax_scale_momentum
 	local rig_impact = 0
 	if self.combat_parallax_impact_side == 'hero' then
 		rig_impact = combat_parallax_impact_amp
 	elseif self.combat_parallax_impact_side == 'monster' then
 		rig_impact = -combat_parallax_impact_amp
 	end
-	local momentum = self.combat_parallax_momentum
-	local hero_weight = (combat_parallax_vy_base - (combat_parallax_vy_momentum * momentum)) / rig_vy
-	local monster_weight = -(combat_parallax_vy_base + (combat_parallax_vy_momentum * momentum)) / rig_vy
-	local bias_px = combat_parallax_bias_base - (combat_parallax_bias_momentum * momentum)
+	local momentum<const> = self.combat_parallax_momentum
+	local hero_weight<const> = (combat_parallax_vy_base - (combat_parallax_vy_momentum * momentum)) / rig_vy
+	local monster_weight<const> = -(combat_parallax_vy_base + (combat_parallax_vy_momentum * momentum)) / rig_vy
+	local bias_px<const> = combat_parallax_bias_base - (combat_parallax_bias_momentum * momentum)
 	local flip_strength = 0
 	if self.combat_parallax_impact_side then
 		flip_strength = combat_parallax_flip_strength
 	end
-	local hero = object(combat_maya_a_id)
-	local hero_b = object(combat_maya_b_id)
-	local monster = object(combat_monster_id)
+	local hero<const> = object(combat_maya_a_id)
+	local hero_b<const> = object(combat_maya_b_id)
+	local monster<const> = object(combat_monster_id)
 	hero.sprite_component.parallax_weight = hero_weight
 	hero_b.sprite_component.parallax_weight = hero_weight
 	monster.sprite_component.parallax_weight = monster_weight
@@ -169,16 +169,16 @@ function combat_director:disable_combat_parallax()
 	self.combat_parallax_enabled = false
 	self:stop_timeline(combat_parallax_timeline_id)
 	set_sprite_parallax_rig(0, 1, 0, 0, 0, 1, 1, 0, combat_parallax_flip_window_seconds)
-	local hero = object(combat_maya_a_id)
-	local hero_b = object(combat_maya_b_id)
-	local monster = object(combat_monster_id)
+	local hero<const> = object(combat_maya_a_id)
+	local hero_b<const> = object(combat_maya_b_id)
+	local monster<const> = object(combat_monster_id)
 	hero.sprite_component.parallax_weight = 0
 	hero_b.sprite_component.parallax_weight = 0
 	monster.sprite_component.parallax_weight = 0
 end
 
 function combat_director:push_combat_momentum(side, power)
-	local delta = side == 'hero' and power or -power
+	local delta<const> = side == 'hero' and power or -power
 	local next = self.combat_parallax_momentum + delta
 	if next < -1 then
 		next = -1
@@ -203,7 +203,7 @@ function combat_director:skip_typing()
 end
 
 function combat.define_fsm()
-	local states = {}
+	local states<const> = {}
 
 	states.boot = {
 		entering_state = function(self)
@@ -216,7 +216,7 @@ function combat.define_fsm()
 			}
 			self.combat_hit_slash_rc = attach_component(self, 'customvisualcomponent')
 			self.combat_hit_slash_rc:add_producer(function(ctx)
-				local frame = ctx.parent.combat_hit_slash_frame
+				local frame<const> = ctx.parent.combat_hit_slash_frame
 				if not frame.slash_active then
 					return
 				end
@@ -262,28 +262,28 @@ function combat.define_fsm()
 		end,
 	}
 
-	local function finish_combat_fade_in(self)
+	local finish_combat_fade_in<const> = function(self)
 		return '/combat_init'
 	end
 
-	local function finish_combat_fade_out(self)
+	local finish_combat_fade_out<const> = function(self)
 		return '/combat_done'
 	end
 
-	local function finish_combat_intro(self)
+	local finish_combat_intro<const> = function(self)
 		return '/combat_round'
 	end
 
-	local function finish_combat_exchange(self)
-		local node = story[self.node_id]
+	local finish_combat_exchange<const> = function(self)
+		local node<const> = story[self.node_id]
 		if self.combat_round_index > #node.rounds then
 			return '/combat_all_out_prompt'
 		end
 		return '/combat_round'
 	end
 
-	local function finish_combat_hit(self)
-		local monster = object(combat_monster_id)
+	local finish_combat_hit<const> = function(self)
+		local monster<const> = object(combat_monster_id)
 		monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 		monster.x = self.combat_monster_base_x
 		monster.y = self.combat_monster_base_y
@@ -291,47 +291,47 @@ function combat.define_fsm()
 		return '/combat_exchange_miss'
 	end
 
-	local function finish_combat_dodge(self)
-		local monster = object(combat_monster_id)
+	local finish_combat_dodge<const> = function(self)
+		local monster<const> = object(combat_monster_id)
 		monster.x = self.combat_monster_base_x
 		monster.y = self.combat_monster_base_y
 		monster.sprite_component.scale = { x = 1, y = 1 }
 		return '/combat_exchange_hit'
 	end
 
-	local function finish_combat_all_out(self)
+	local finish_combat_all_out<const> = function(self)
 		return '/combat_focus'
 	end
 
-	local function finish_combat_focus(self)
+	local finish_combat_focus<const> = function(self)
 		hide_combat_sprites()
 		clear_texts(text_ids_all)
 		return '/combat_results_setup'
 	end
 
-	local function finish_combat_results_fade_in(self)
-		local bg = object(bg_id)
+	local finish_combat_results_fade_in<const> = function(self)
+		local bg<const> = object(bg_id)
 		bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = combat_results_bg_a }
-		local maya_b = object(combat_maya_b_id)
+		local maya_b<const> = object(combat_maya_b_id)
 		maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 		maya_b.x = self.combat_results_maya_target_x
-		local results = object(text_results_id)
+		local results<const> = object(text_results_id)
 		results.text_color = { r = 1, g = 1, b = 1, a = 1 }
 		results.centered_block_x = self.combat_results_text_target_x
 		return '/combat_results'
 	end
 
-	local function finish_combat_results_fade_out(self)
+	local finish_combat_results_fade_out<const> = function(self)
 		object(combat_maya_b_id).visible = false
 		clear_text(text_results_id)
-		local bg = object(bg_id)
-		local bg_sprite = bg.sprite_component
+		local bg<const> = object(bg_id)
+		local bg_sprite<const> = bg.sprite_component
 		bg.visible = false
 		bg:gfx(self.combat_results_prev_bg_imgid)
 		bg_sprite.scale = { x = self.combat_results_prev_bg_scale_x, y = self.combat_results_prev_bg_scale_y }
 		bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 		hide_combat_sprites()
-		local next_kind = story[self.node_id].kind
+		local next_kind<const> = story[self.node_id].kind
 		if next_kind == 'transition' then
 			self.skip_transition_fade = true
 			return '/combat_done'
@@ -344,8 +344,8 @@ function combat.define_fsm()
 		return '/combat_exit_fade_in'
 	end
 
-	local function finish_combat_exit_fade_in(self)
-		local bg = object(bg_id)
+	local finish_combat_exit_fade_in<const> = function(self)
+		local bg<const> = object(bg_id)
 		bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 		return '/combat_done'
 	end
@@ -366,7 +366,7 @@ function combat.define_fsm()
 			clear_texts(text_ids_all)
 			hide_combat_sprites()
 			hide_transition_layers()
-			local bg = object(bg_id)
+			local bg<const> = object(bg_id)
 			bg.visible = true
 			bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 			self:play_timeline(combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = bg })
@@ -380,7 +380,7 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local bg = object(bg_id)
+			local bg<const> = object(bg_id)
 			bg.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 1 }
 		end,
 	}
@@ -413,19 +413,19 @@ function combat.define_fsm()
 
 	states.combat_init = {
 		entering_state = function(self)
-			local node = story[self.node_id]
+			local node<const> = story[self.node_id]
 			clear_texts(text_ids_transition_results)
 			reset_text_colors()
 			hide_transition_layers()
 
-			local bg = object(bg_id)
+			local bg<const> = object(bg_id)
 			bg.visible = false
 
 			self.combat_round_index = 1
 			self.combat_points = 0
 			self.combat_max_points = #node.rounds
 
-			local monster = object(combat_monster_id)
+			local monster<const> = object(combat_monster_id)
 			monster:gfx(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
@@ -441,7 +441,7 @@ function combat.define_fsm()
 				self.combat_monster_start_y = self.combat_monster_base_y + combat_intro_monster_start_y_offset
 				self.combat_monster_start_scale = math.max(1, display_width() / monster.sx, display_height() / monster.sy)
 
-			local maya_a = object(combat_maya_a_id)
+			local maya_a<const> = object(combat_maya_a_id)
 			maya_a:gfx('maya_a')
 			maya_a.visible = false
 			maya_a.x = 0
@@ -452,13 +452,13 @@ function combat.define_fsm()
 			self.combat_maya_a_start_x = display_width()
 			self.combat_maya_a_start_scale = combat_intro_maya_a_scale_ratio
 
-			local all_out = object(combat_all_out_id)
+			local all_out<const> = object(combat_all_out_id)
 			all_out.visible = false
 			all_out.x = 0
 			all_out.y = 0
 			all_out.z = 800
 
-			local maya_b = object(combat_maya_b_id)
+			local maya_b<const> = object(combat_maya_b_id)
 			maya_b:gfx('maya_b')
 			maya_b.visible = true
 			maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
@@ -490,10 +490,10 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local monster = object(combat_monster_id)
-			local maya_a = object(combat_maya_a_id)
-			local maya_b = object(combat_maya_b_id)
-			local targets = {
+			local monster<const> = object(combat_monster_id)
+			local maya_a<const> = object(combat_maya_a_id)
+			local maya_b<const> = object(combat_maya_b_id)
+			local targets<const> = {
 				monster = monster,
 				maya_a = maya_a,
 				maya_b = maya_b,
@@ -535,19 +535,19 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local monster = object(combat_monster_id)
+			local monster<const> = object(combat_monster_id)
 			monster.sprite_component.scale = { x = 1, y = 1 }
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			monster.visible = true
 
-			local maya_a = object(combat_maya_a_id)
+			local maya_a<const> = object(combat_maya_a_id)
 			maya_a.sprite_component.scale = { x = 1, y = 1 }
 			maya_a.x = self.combat_maya_a_base_x
 			maya_a.y = self.combat_maya_a_base_y
 			maya_a.visible = true
 
-			local maya_b = object(combat_maya_b_id)
+			local maya_b<const> = object(combat_maya_b_id)
 			maya_b.sprite_component.scale = { x = 1, y = 1 }
 			maya_b.visible = false
 			maya_b.x = self.combat_maya_b_start_x
@@ -557,14 +557,14 @@ function combat.define_fsm()
 
 	states.combat_round = {
 		entering_state = function(self)
-			local node = story[self.node_id]
+			local node<const> = story[self.node_id]
 			clear_texts(text_ids_transition_results)
-			local bg = object(bg_id)
+			local bg<const> = object(bg_id)
 			bg.visible = false
-			local monster = object(combat_monster_id)
+			local monster<const> = object(combat_monster_id)
 			monster:gfx(node.monster_imgid)
 			monster.visible = true
-			local maya_a = object(combat_maya_a_id)
+			local maya_a<const> = object(combat_maya_a_id)
 			maya_a:gfx('maya_a')
 			maya_a.visible = true
 			object(combat_all_out_id).visible = false
@@ -581,13 +581,13 @@ function combat.define_fsm()
 			if self.stagger_blocked then
 				return
 			end
-			local main = object(text_main_id)
+			local main<const> = object(text_main_id)
 			if main.is_typing then
 				main:type_next()
 				return
 			end
 			set_prompt_line('(A) select')
-			local choice_text = object(text_choice_id)
+			local choice_text<const> = object(text_choice_id)
 			choice_text.highlighted_line_index = self.choice_index - 1
 		end,
 		input_eval = 'first',
@@ -601,8 +601,8 @@ function combat.define_fsm()
 			['down[jp]'] = {
 				go = function(self)
 					if self.stagger_blocked then return end
-					local node = story[self.node_id]
-					local round = node.rounds[self.combat_round_index]
+					local node<const> = story[self.node_id]
+					local round<const> = node.rounds[self.combat_round_index]
 					self.choice_index = math.min(#round.options, self.choice_index + 1)
 				end,
 			},
@@ -616,9 +616,9 @@ function combat.define_fsm()
 				go = function(self)
 					if self.stagger_blocked then return end
 						if object(text_main_id).is_typing then return end
-					local node = story[self.node_id]
-					local round = node.rounds[self.combat_round_index]
-					local option = round.options[self.choice_index]
+					local node<const> = story[self.node_id]
+					local round<const> = node.rounds[self.combat_round_index]
+					local option<const> = round.options[self.choice_index]
 					self.combat_points = self.combat_points + option.points
 					self.combat_round_index = self.combat_round_index + 1
 					if option.outcome == 'hit' then
@@ -649,11 +649,11 @@ function combat.define_fsm()
 			clear_texts(text_ids_choice_prompt)
 			set_text_lines(text_main_id, { 'RAAK!' }, false)
 			self:push_combat_momentum('hero', combat_parallax_momentum_step)
-			local monster = object(combat_monster_id)
+			local monster<const> = object(combat_monster_id)
 			monster.x = self.combat_monster_base_x
 			monster.y = self.combat_monster_base_y
 			monster.sprite_component.scale = { x = 1, y = 1 }
-			local targets = {
+			local targets<const> = {
 				monster = monster,
 				slash_frame = self.combat_hit_slash_frame,
 			}
@@ -697,7 +697,7 @@ function combat.define_fsm()
 			entering_state = function(self)
 				clear_texts(text_ids_choice_prompt)
 				set_text_lines(text_main_id, { 'ONTWIJKT!' }, false)
-				local monster = object(combat_monster_id)
+				local monster<const> = object(combat_monster_id)
 				monster.sprite_component.scale = { x = 1, y = 1 }
 				self.combat_dodge_dir = -self.combat_dodge_dir
 				self:play_timeline(combat_dodge_timeline_id, {
@@ -733,9 +733,9 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local monster = object(combat_monster_id)
-			local maya_a = object(combat_maya_a_id)
-			local overlay = object(transition_overlay_id)
+			local monster<const> = object(combat_monster_id)
+			local maya_a<const> = object(combat_maya_a_id)
+			local overlay<const> = object(transition_overlay_id)
 			clear_texts(text_ids_choice_prompt)
 			self:push_combat_momentum('monster', combat_parallax_momentum_step)
 			monster.visible = true
@@ -754,7 +754,7 @@ function combat.define_fsm()
 				overlay.y = 0
 					overlay.sprite_component.scale = { x = display_width(), y = display_height() }
 					overlay.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
-			local targets = {
+			local targets<const> = {
 				monster = monster,
 				maya_a = maya_a,
 				overlay = overlay,
@@ -799,9 +799,9 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local monster = object(combat_monster_id)
-			local maya_a = object(combat_maya_a_id)
-			local overlay = object(transition_overlay_id)
+			local monster<const> = object(combat_monster_id)
+			local maya_a<const> = object(combat_maya_a_id)
+			local overlay<const> = object(transition_overlay_id)
 					monster.x = self.combat_monster_base_x
 				monster.y = self.combat_monster_base_y
 				maya_a.x = self.combat_maya_a_base_x
@@ -828,9 +828,9 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local monster = object(combat_monster_id)
-			local maya_a = object(combat_maya_a_id)
-			local overlay = object(transition_overlay_id)
+			local monster<const> = object(combat_monster_id)
+			local maya_a<const> = object(combat_maya_a_id)
+			local overlay<const> = object(transition_overlay_id)
 			clear_texts(text_ids_choice_prompt)
 			monster.visible = true
 				maya_a.visible = true
@@ -848,7 +848,7 @@ function combat.define_fsm()
 				overlay.y = 0
 					overlay.sprite_component.scale = { x = display_width(), y = display_height() }
 					overlay.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
-			local targets = {
+			local targets<const> = {
 				monster = monster,
 				maya_a = maya_a,
 				overlay = overlay,
@@ -893,9 +893,9 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local monster = object(combat_monster_id)
-			local maya_a = object(combat_maya_a_id)
-			local overlay = object(transition_overlay_id)
+			local monster<const> = object(combat_monster_id)
+			local maya_a<const> = object(combat_maya_a_id)
+			local overlay<const> = object(transition_overlay_id)
 					monster.x = self.combat_monster_base_x
 				monster.y = self.combat_monster_base_y
 				maya_a.x = self.combat_maya_a_base_x
@@ -916,13 +916,13 @@ function combat.define_fsm()
 			set_text_lines(text_choice_id, { 'ALL-OUT-ATTACK!!' }, false)
 			self.choice_index = 1
 			object(text_choice_id).highlight_jitter_enabled = true
-			local portrait = object(combat_all_out_id)
+			local portrait<const> = object(combat_all_out_id)
 			portrait:gfx('maya_v_s')
 			portrait.visible = true
 			portrait.z = 750
 			portrait.sprite_component.scale = { x = 1, y = 1 }
-			local target_x = math.floor(display_width() * 0.08)
-			local target_y = math.floor(display_height() - portrait.sy)
+			local target_x<const> = math.floor(display_width() * 0.08)
+			local target_y<const> = math.floor(display_height() - portrait.sy)
 			self:play_timeline(combat_all_out_prompt_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
@@ -948,7 +948,7 @@ function combat.define_fsm()
 			})
 		end,
 		update = function(self)
-			local main = object(text_main_id)
+			local main<const> = object(text_main_id)
 			if main.is_typing then
 				main:type_next()
 				return
@@ -971,7 +971,7 @@ function combat.define_fsm()
 		leaving_state = function(self)
 			self:stop_timeline(combat_hover_timeline_id)
 			self:stop_timeline(combat_all_out_prompt_timeline_id)
-			local portrait = object(combat_all_out_id)
+			local portrait<const> = object(combat_all_out_id)
 			portrait.visible = false
 			portrait.sprite_component.scale = { x = 1, y = 1 }
 			object(text_choice_id).highlight_jitter_enabled = false
@@ -993,17 +993,17 @@ function combat.define_fsm()
 		entering_state = function(self)
 			self:disable_combat_parallax() -- Disable parallax during "All Out" sequence.
 			clear_texts(text_ids_all)
-			local all_out = object(combat_all_out_id)
+			local all_out<const> = object(combat_all_out_id)
 			all_out:gfx('all_out')
 			all_out.sprite_component.scale = { x = 1, y = 1 }
 			all_out.visible = true
 			all_out.x = 0
 			all_out.y = 0
 			all_out.z = 800
-			local monster = object(combat_monster_id)
-			local maya_a = object(combat_maya_a_id)
-			local maya_b = object(combat_maya_b_id)
-			local bg = object(bg_id)
+			local monster<const> = object(combat_monster_id)
+			local maya_a<const> = object(combat_maya_a_id)
+			local maya_b<const> = object(combat_maya_b_id)
+			local bg<const> = object(bg_id)
 			self.all_out_shake_all_out_x = all_out.x
 			self.all_out_shake_all_out_y = all_out.y
 			self.all_out_shake_monster_x = monster.x
@@ -1047,11 +1047,11 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local all_out = object(combat_all_out_id)
-			local monster = object(combat_monster_id)
-			local maya_a = object(combat_maya_a_id)
-			local maya_b = object(combat_maya_b_id)
-			local bg = object(bg_id)
+			local all_out<const> = object(combat_all_out_id)
+			local monster<const> = object(combat_monster_id)
+			local maya_a<const> = object(combat_maya_a_id)
+			local maya_b<const> = object(combat_maya_b_id)
+			local bg<const> = object(bg_id)
 			all_out.x = self.all_out_shake_all_out_x
 			all_out.y = self.all_out_shake_all_out_y
 			all_out.visible = false
@@ -1068,7 +1068,7 @@ function combat.define_fsm()
 
 	states.combat_focus = {
 			entering_state = function(self)
-				local monster = object(combat_monster_id)
+				local monster<const> = object(combat_monster_id)
 
 				self:play_timeline(combat_focus_timeline_id, {
 					rewind = true,
@@ -1108,8 +1108,8 @@ function combat.define_fsm()
 	states.combat_results_setup = {
 		entering_state = function(self)
 			self:disable_combat_parallax() -- Not required, as the "All Out" state already does this, but just to be safe.
-			local node = story[self.node_id]
-				local rewards = node.rewards[self.combat_points + 1]
+			local node<const> = story[self.node_id]
+				local rewards<const> = node.rewards[self.combat_points + 1]
 			self.combat_rewards = rewards
 			object(director_instance_id).events:emit('combat.results', {
 				combat_node_id = self.combat_node_id,
@@ -1118,15 +1118,15 @@ function combat.define_fsm()
 
 			clear_texts(text_ids_core)
 
-			local monster = object(combat_monster_id)
+			local monster<const> = object(combat_monster_id)
 			monster.visible = false
-			local maya_a = object(combat_maya_a_id)
+			local maya_a<const> = object(combat_maya_a_id)
 			maya_a.visible = false
-			local all_out = object(combat_all_out_id)
+			local all_out<const> = object(combat_all_out_id)
 			all_out.visible = false
 
-			local bg = object(bg_id)
-			local bg_sprite = bg.sprite_component
+			local bg<const> = object(bg_id)
+			local bg_sprite<const> = bg.sprite_component
 			self.combat_results_prev_bg_imgid = bg.imgid
 			self.combat_results_prev_bg_scale_x = bg_sprite.scale.x
 			self.combat_results_prev_bg_scale_y = bg_sprite.scale.y
@@ -1137,7 +1137,7 @@ function combat.define_fsm()
 			bg_sprite.scale = { x = display_width(), y = display_height() }
 			bg.sprite_component.colorize = { r = combat_results_bg_r, g = combat_results_bg_g, b = combat_results_bg_b, a = 0 }
 
-			local maya_b = object(combat_maya_b_id)
+			local maya_b<const> = object(combat_maya_b_id)
 			maya_b:gfx('maya_b')
 			maya_b.visible = true
 			self.combat_results_maya_target_x = display_width() - maya_b.sx
@@ -1147,13 +1147,13 @@ function combat.define_fsm()
 			maya_b.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 0 }
 			maya_b.z = 300
 
-			local lines = { 'Combat Results:' }
+			local lines<const> = { 'Combat Results:' }
 			for i = 1, #rewards do
-				local effect = rewards[i]
+				local effect<const> = rewards[i]
 				lines[#lines + 1] = stat_label(effect.stat) .. ' +' .. effect.add
 			end
 			set_text_lines(text_results_id, lines, false)
-			local results = object(text_results_id)
+			local results<const> = object(text_results_id)
 			results.text_color = { r = 1, g = 1, b = 1, a = 0 }
 			self.combat_results_text_target_x = results.centered_block_x / 2
 			self.combat_results_text_start_x = -display_width()
@@ -1215,7 +1215,7 @@ function combat.define_fsm()
 		input_event_handlers = {
 			['a[jp]'] = {
 				go = function(self)
-					local node = story[self.node_id]
+					local node<const> = story[self.node_id]
 					self.node_id = node.next
 					return '/combat_results_fade_out'
 				end,
@@ -1270,7 +1270,7 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			local bg = object(bg_id)
+			local bg<const> = object(bg_id)
 			apply_background(self.combat_exit_target_bg)
 			bg.visible = true
 			bg.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 1 }
@@ -1285,7 +1285,7 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local bg = object(bg_id)
+			local bg<const> = object(bg_id)
 			bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 		end,
 	}

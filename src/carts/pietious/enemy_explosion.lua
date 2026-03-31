@@ -1,10 +1,10 @@
-local constants = require('constants')
-local worldobject = require('worldobject')
+local constants<const> = require('constants')
+local worldobject<const> = require('worldobject')
 
-local enemy_explosion = {}
+local enemy_explosion<const> = {}
 enemy_explosion.__index = enemy_explosion
 
-local explosion_frames = {
+local explosion_frames<const> = {
 	'explosion_2',
 	'explosion_3',
 	'explosion_1',
@@ -16,11 +16,11 @@ local explosion_frames = {
 }
 
 local loot_spawn_sequence = 0
-local explosion_timeline_id = 'enemy_explosion.timeline.explosion'
-local explosion_timeline_frame_event = 'timeline.frame.enemy_explosion.timeline.explosion'
-local explosion_timeline_end_event = 'timeline.end.enemy_explosion.timeline.explosion'
+local explosion_timeline_id<const> = 'enemy_explosion.timeline.explosion'
+local explosion_timeline_frame_event<const> = 'timeline.frame.enemy_explosion.timeline.explosion'
+local explosion_timeline_end_event<const> = 'timeline.end.enemy_explosion.timeline.explosion'
 
-local function loot_value_for_type(loot_type)
+local loot_value_for_type<const> = function(loot_type)
 	if loot_type == 'life' then
 		return constants.enemy.loot_life_regen
 	end
@@ -41,7 +41,7 @@ function enemy_explosion:spawn_loot()
 	end
 
 	loot_spawn_sequence = loot_spawn_sequence + 1
-	local loot_id = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
+	local loot_id<const> = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
 	inst('loot_drop', {
 		id = loot_id,
 		loot_type = self.loot_type,
@@ -61,7 +61,7 @@ function enemy_explosion:ctor()
 	self:sync_explosion_sprite(explosion_frames[1])
 end
 
-local function define_enemy_explosion_fsm()
+local define_enemy_explosion_fsm<const> = function()
 	define_fsm('enemy_explosion', {
 		initial = 'animating',
 		on = {
@@ -87,7 +87,7 @@ local function define_enemy_explosion_fsm()
 	})
 end
 
-local function register_enemy_explosion_definition()
+local register_enemy_explosion_definition<const> = function()
 	define_prefab({
 		def_id = 'enemy_explosion',
 		class = enemy_explosion,

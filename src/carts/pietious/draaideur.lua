@@ -1,5 +1,5 @@
-local constants = require('constants')
-local sprite_id_by_kind = {
+local constants<const> = require('constants')
+local sprite_id_by_kind<const> = {
 	[1] = {
 		closed = 'draaideur_1_closed',
 		open_1 = 'draaideur_1_open_1',
@@ -13,9 +13,9 @@ local sprite_id_by_kind = {
 		open_3 = 'draaideur_2_open_3',
 	},
 }
-local closed_offset_x = 0
+local closed_offset_x<const> = 0
 
-local draaideur = {}
+local draaideur<const> = {}
 draaideur.__index = draaideur
 
 function draaideur:touches_player(player, walking_left, walking_right)
@@ -109,10 +109,10 @@ function draaideur:update_active()
 		return
 	end
 
-	local player = object('pietolon')
-	local walking_left = player:has_tag('v.wl')
-	local walking_right = player:has_tag('v.wr')
-	local touches = self:touches_player(player, walking_left, walking_right)
+	local player<const> = object('pietolon')
+	local walking_left<const> = player:has_tag('v.wl')
+	local walking_right<const> = player:has_tag('v.wr')
+	local touches<const> = self:touches_player(player, walking_left, walking_right)
 
 	if not touches then
 		self.state = 0
@@ -125,7 +125,7 @@ function draaideur:update_active()
 end
 
 function draaideur:sync_sprite()
-	local sprite_set = sprite_id_by_kind[self.kind]
+	local sprite_set<const> = sprite_id_by_kind[self.kind]
 	if self.state >= 0 then
 		self:gfx(sprite_set.closed)
 		self.sprite_component.offset.x = closed_offset_x
@@ -133,7 +133,7 @@ function draaideur:sync_sprite()
 	end
 
 	if self.state < -16 then
-		local sprite_id = self.player_was_right and sprite_set.open_3 or sprite_set.open_1
+		local sprite_id<const> = self.player_was_right and sprite_set.open_3 or sprite_set.open_1
 		self:gfx(sprite_id)
 		self.sprite_component.offset.x = -constants.room.tile_half
 		return
@@ -160,7 +160,7 @@ function draaideur:ctor()
 	self:sync_sprite()
 end
 
-local function define_draaideur_fsm()
+local define_draaideur_fsm<const> = function()
 	define_fsm('draaideur', {
 		initial = 'active',
 		states = {
@@ -171,7 +171,7 @@ local function define_draaideur_fsm()
 	})
 end
 
-local function register_draaideur_definition()
+local register_draaideur_definition<const> = function()
 	define_prefab({
 		def_id = 'draaideur',
 		class = draaideur,

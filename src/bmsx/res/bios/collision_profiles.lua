@@ -28,9 +28,9 @@
 --      bit 1 → 'ui'
 --      bit 2+→ cart-specific layers (player, enemy, projectile, terrain…)
 
-local collision_profiles = {}
+local collision_profiles<const> = {}
 
-local profiles = {}
+local profiles<const> = {}
 
 -- collision_profiles.define(name, {layer, mask})
 -- collision_profiles.define(name, layer, mask)
@@ -64,7 +64,7 @@ end
 --   profile is not defined. Prefer collider:apply_collision_profile(name) in
 --   cart code (which calls this internally).
 function collision_profiles.apply(collider, name)
-	local profile = profiles[name]
+	local profile<const> = profiles[name]
 	if profile == nil then
 		error('[collision_profiles] unknown profile '' .. tostring(name) .. ''')
 	end

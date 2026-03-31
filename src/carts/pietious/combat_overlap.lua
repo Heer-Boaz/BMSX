@@ -1,6 +1,6 @@
-local constants = require('constants')
+local constants<const> = require('constants')
 
-local combat_overlap = {}
+local combat_overlap<const> = {}
 
 function combat_overlap.classify_player_contact(event)
 	if event.other_collider_local_id == 'sword' then

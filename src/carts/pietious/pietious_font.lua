@@ -1,6 +1,6 @@
-local font = require('font')
+local font<const> = require('font')
 
-local glyphs = {
+local glyphs<const> = {
 	[' '] = 'pf_sp',
 	[','] = 'pf_comma',
 	['.'] = 'pf_dot',
@@ -21,18 +21,18 @@ local glyphs = {
 	['¡'] = 'pf_ij',
 }
 for codepoint = string.byte('0'), string.byte('9') do
-	local c = string.char(codepoint)
+	local c<const> = string.char(codepoint)
 	glyphs[c] = 'pf_' .. c
 end
 for codepoint = string.byte('A'), string.byte('Z') do
-	local upper = string.char(codepoint)
-	local lower = string.char(codepoint + 32)
-	local glyph_id = 'pf_' .. lower
+	local upper<const> = string.char(codepoint)
+	local lower<const> = string.char(codepoint + 32)
+	local glyph_id<const> = 'pf_' .. lower
 	glyphs[upper] = glyph_id
 	glyphs[lower] = glyph_id
 end
 
-local function register_fonts()
+local register_fonts<const> = function()
 	font.define('pietious', {
 		glyphs = glyphs,
 	})

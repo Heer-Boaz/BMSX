@@ -1,7 +1,7 @@
-local font = {}
+local font<const> = {}
 
-local definitions = {}
-local handles = {}
+local definitions<const> = {}
+local handles<const> = {}
 
 function font.define(id, definition)
 	definitions[id] = definition

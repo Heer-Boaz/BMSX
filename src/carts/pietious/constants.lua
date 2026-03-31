@@ -1,4 +1,4 @@
-local constants = {}
+local constants<const> = {}
 
 constants.flow = {
 	room_transition_frames = 8,

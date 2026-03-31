@@ -15,13 +15,13 @@
 -- this tag before rendering, so the transition overlay can exist and play
 -- its mask timeline without showing any text.
 
-local constants = require('constants')
-local font = require('font')
+local constants<const> = require('constants')
+local font<const> = require('font')
 
-local transition = {}
+local transition<const> = {}
 transition.__index = transition
 
-local transition_mode_events = {
+local transition_mode_events<const> = {
 	'halo',
 	'title',
 	'story',
@@ -31,7 +31,7 @@ local transition_mode_events = {
 }
 
 function transition:bind_visual()
-	local rc = self:get_component('customvisualcomponent')
+	local rc<const> = self:get_component('customvisualcomponent')
 	rc.producer = function(_ctx)
 		self:draw_transition_overlay()
 	end
@@ -41,10 +41,10 @@ function transition:draw_transition_overlay()
 	if not object('d'):has_tag('d.bt') then
 		return
 	end
-	local lines = self.banner_lines
+	local lines<const> = self.banner_lines
 	if #lines > 0 then
-		local font = self.banner_font
-		write_words(
+		local font<const> = self.banner_font
+		memwrite(
 			sys_vdp_cmd_arg0,
 			table.concat(lines, '\n'),
 			0,
@@ -64,7 +64,7 @@ function transition:draw_transition_overlay()
 			0,
 			0
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 	end
 end
 
@@ -79,8 +79,8 @@ function transition:ctor()
 	}))
 end
 
-local function define_transition_fsm()
-	local on = {
+local define_transition_fsm<const> = function()
+	local on<const> = {
 		['transition'] = {
 			emitter = 'd',
 			go = function(self, _state, event)
@@ -96,7 +96,7 @@ local function define_transition_fsm()
 		},
 	}
 	for i = 1, #transition_mode_events do
-		local event_name = transition_mode_events[i]
+		local event_name<const> = transition_mode_events[i]
 		on[event_name] = {
 			emitter = 'd',
 			go = function(self)
@@ -114,7 +114,7 @@ local function define_transition_fsm()
 	})
 end
 
-local function register_transition_definition()
+local register_transition_definition<const> = function()
 	define_prefab({
 		def_id = 'transition',
 		class = transition,

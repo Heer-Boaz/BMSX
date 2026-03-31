@@ -1,12 +1,12 @@
 -- scratchbatch.lua
 -- lightweight reusable scratch collections for per-frame batching
 
-local scratchbatch = {}
+local scratchbatch<const> = {}
 scratchbatch.__index = scratchbatch
 
 function scratchbatch.new(initial_capacity, fill_value)
-	local items = {}
-	local count = initial_capacity or 0
+	local items<const> = {}
+	local count<const> = initial_capacity or 0
 	local i = 0
 	while i < count do
 		i = i + 1
@@ -25,7 +25,7 @@ function scratchbatch:clear()
 end
 
 function scratchbatch:push(value)
-	local next_index = self.size + 1
+	local next_index<const> = self.size + 1
 	self.items[next_index] = value
 	self.size = next_index
 	self.length = next_index
@@ -36,7 +36,7 @@ function scratchbatch:get(index)
 end
 
 function scratchbatch:reserve(min_capacity, fill_value)
-	local items = self.items
+	local items<const> = self.items
 	while #items < min_capacity do
 		items[#items + 1] = fill_value
 	end

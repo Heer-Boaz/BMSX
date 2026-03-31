@@ -1,7 +1,7 @@
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local staffspawn = {}
+local staffspawn<const> = {}
 staffspawn.__index = staffspawn
 
 function staffspawn:ctor()

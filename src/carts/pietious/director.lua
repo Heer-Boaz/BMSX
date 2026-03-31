@@ -51,39 +51,39 @@
 --    (e.g. 'death_resolved').  No polling, no pending flag — the FSM state
 --    IS the waiting mechanism.
 
-local constants = require('constants')
-local halo_teleport_timeline_id = 'director.halo.transition'
-local banner_world_timeline_id = 'director.banner.world'
-local banner_castle_timeline_id = 'director.banner.castle'
-local banner_pre_delay_timeline_id = 'director.banner.prewait'
-local banner_prewait_cue_event = 'd.bp.c'
-local banner_world_show_event = 'd.bw.s'
-local banner_castle_show_event = 'd.bc.s'
-local room_switch_passthrough_dirs = {
+local constants<const> = require('constants')
+local halo_teleport_timeline_id<const> = 'director.halo.transition'
+local banner_world_timeline_id<const> = 'director.banner.world'
+local banner_castle_timeline_id<const> = 'director.banner.castle'
+local banner_pre_delay_timeline_id<const> = 'director.banner.prewait'
+local banner_prewait_cue_event<const> = 'd.bp.c'
+local banner_world_show_event<const> = 'd.bw.s'
+local banner_castle_show_event<const> = 'd.bc.s'
+local room_switch_passthrough_dirs<const> = {
 	world_enter = true,
 	halo = true,
 }
-local room_switch_wait_timeline_id = 'director.wait.room_switch'
-local title_start_wait_timeline_id = 'director.wait.title_start'
-local item_screen_open_timeline_id = 'director.wait.item.open'
-local item_screen_close_timeline_id = 'director.wait.item.close'
-local item_screen_halo_request_timeline_id = 'director.item.halo.request'
-local item_screen_halo_request_event = 'd.ih.r'
-local lithograph_open_timeline_id = 'director.wait.lithograph.open'
-local lithograph_close_timeline_id = 'director.wait.lithograph.close'
-local seal_timeline_id = 'director.seal'
-local daemon_timeline_id = 'director.daemon'
+local room_switch_wait_timeline_id<const> = 'director.wait.room_switch'
+local title_start_wait_timeline_id<const> = 'director.wait.title_start'
+local item_screen_open_timeline_id<const> = 'director.wait.item.open'
+local item_screen_close_timeline_id<const> = 'director.wait.item.close'
+local item_screen_halo_request_timeline_id<const> = 'director.item.halo.request'
+local item_screen_halo_request_event<const> = 'd.ih.r'
+local lithograph_open_timeline_id<const> = 'director.wait.lithograph.open'
+local lithograph_close_timeline_id<const> = 'director.wait.lithograph.close'
+local seal_timeline_id<const> = 'director.seal'
+local daemon_timeline_id<const> = 'director.daemon'
 
-local director = {}
+local director<const> = {}
 director.__index = director
 
 function director:bind_visual()
-	local rc = self:get_component('customvisualcomponent')
+	local rc<const> = self:get_component('customvisualcomponent')
 	rc.producer = function(_ctx)
 		if not self.seal_flash_on then
 			return
 		end
-		local c={r=1,g=1,b=1,a=0.7};write_words(sys_vdp_cmd_arg0,0,constants.room.tile_origin_y,display_width(),display_height(),500,sys_vdp_layer_ui,c.r,c.g,c.b,c.a);write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
+		local c<const> = {r=1,g=1,b=1,a=0.7};memwrite(sys_vdp_cmd_arg0,0,constants.room.tile_origin_y,display_width(),display_height(),500,sys_vdp_layer_ui,c.r,c.g,c.b,c.a);mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 	end
 end
 
@@ -127,7 +127,7 @@ function director:open_shrine(text_lines)
 end
 
 function director:ensure_daemon_cloud_pool()
-	local clouds = self.daemon_clouds
+	local clouds<const> = self.daemon_clouds
 	for i = 1, constants.flow.daemon_cloud_max do
 		if clouds[i] == nil then
 			clouds[i] = inst('daemon_cloud', {
@@ -141,11 +141,11 @@ function director:ensure_daemon_cloud_pool()
 end
 
 function director:spawn_daemon_cloud()
-	local clouds = self.daemon_clouds
-	local start_index = self.daemon_smoke_next
+	local clouds<const> = self.daemon_clouds
+	local start_index<const> = self.daemon_smoke_next
 	for i = 0, constants.flow.daemon_cloud_max - 1 do
-		local index = ((start_index - 1 + i) % constants.flow.daemon_cloud_max) + 1
-		local cloud = clouds[index]
+		local index<const> = ((start_index - 1 + i) % constants.flow.daemon_cloud_max) + 1
+		local cloud<const> = clouds[index]
 		if not cloud.visible then
 			cloud:play_once_at(
 				constants.room.tile_origin_x + (math.random(constants.flow.daemon_cloud_spawn_x_min, constants.flow.daemon_cloud_spawn_x_max) * constants.room.tile_size),
@@ -161,7 +161,7 @@ function director:spawn_daemon_cloud()
 end
 
 function director:despawn_daemon_clouds()
-	local clouds = self.daemon_clouds
+	local clouds<const> = self.daemon_clouds
 	for i = 1, #clouds do
 		clouds[i]:stop_and_hide()
 	end
@@ -282,21 +282,21 @@ end
 --   'player.shrine_overlay_exit'   → player → reply 'shrine_exit_done'
 --   'player.halo_trigger'          → player → reply 'halo_trigger_cancelled'
 --   'player.world_emerge'          → player (begins emergence animation)
-local function define_director_fsm()
+local define_director_fsm<const> = function()
 	-- Shared timeline callbacks for both daemon appearance variants.
 	-- Two FSM states (daemon_appearance / daemon_appearance_post_death) share
 	-- the same cloud-spawning on_frame and completion on_end.  Defining them
 	-- as local functions here avoids duplication without creating cross-state
 	-- flags — the two states navigate from different decision points but run
 	-- identical timeline behaviour.
-	local function on_daemon_frame(self, _state, event)
-		local frame_value = event.frame_value
-		local intro_state = math.modf(frame_value / 2) + 97
+	local on_daemon_frame<const> = function(self, _state, event)
+		local frame_value<const> = event.frame_value
+		local intro_state<const> = math.modf(frame_value / 2) + 97
 		if (frame_value % 2) == 0 and intro_state > 96 and intro_state < 160 and (intro_state % 8) < 4 then
 			self:spawn_daemon_cloud()
 		end
 	end
-	local function on_daemon_end(self)
+	local on_daemon_end<const> = function(self)
 		self:despawn_daemon_clouds()
 		self.events:emit('daemon_appearance_done')
 		return '/room'
@@ -510,7 +510,7 @@ local function define_director_fsm()
 							-- Single 'shrine' broadcast carries text lines as payload.
 							-- The shrine overlay reads event.lines in its own handler.
 							entering_state = function(self)
-								local lines = self.shrine_text_lines
+								local lines<const> = self.shrine_text_lines
 								self.shrine_text_lines = {}
 								self:set_active_space('shrine')
 								self.events:emit('shrine', { lines = lines })
@@ -781,7 +781,7 @@ local function define_director_fsm()
 							snap_to_start = true,
 						},
 						on_frame = function(self, _state, event)
-							local intro_state = event.frame_value + 1
+							local intro_state<const> = event.frame_value + 1
 							self.seal_flash_on = intro_state < 32 and (intro_state % 4) >= 2
 							if self.seal_flash_on then
 								self:add_tag('d.seal.flash')
@@ -946,7 +946,7 @@ local function define_director_fsm()
 	})
 end
 
-local function register_director_definition()
+local register_director_definition<const> = function()
 	define_prefab({
 		def_id = 'director',
 		class = director,

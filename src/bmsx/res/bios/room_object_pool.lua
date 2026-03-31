@@ -30,10 +30,10 @@
 --    The pool owns the object lifetime; only interact with them via use() and
 --    the callbacks in opts.
 
-local room_object_pool = {}
+local room_object_pool<const> = {}
 room_object_pool.__index = room_object_pool
 
-local function activate_main(instance)
+local activate_main<const> = function(instance)
 	instance:set_space('main')
 	if not instance.active then
 		instance:activate()
@@ -41,7 +41,7 @@ local function activate_main(instance)
 	instance.visible = true
 end
 
-local function deactivate_instance(instance)
+local deactivate_instance<const> = function(instance)
 	instance.visible = false
 	if instance.active then
 		instance:deactivate()
@@ -81,9 +81,9 @@ end
 --   syncs it via sync_instance, and marks it active for this cycle.
 --   Returns the object instance.
 function room_object_pool:use(definition, context)
-	local id = definition.id
+	local id<const> = definition.id
 	local instance = object(id)
-	local was_missing = instance == nil
+	local was_missing<const> = instance == nil
 	local was_active = false
 	if not was_missing then
 		was_active = instance.active
@@ -107,7 +107,7 @@ end
 --   for objects that no longer exist in the world.
 function room_object_pool:end_cycle()
 	for id in pairs(self.instances_by_id) do
-		local instance = object(id)
+		local instance<const> = object(id)
 		if instance == nil then
 			self.instances_by_id[id] = nil
 		else
@@ -122,7 +122,7 @@ end
 function room_object_pool:deactivate_id(id)
 	self.active_ids[id] = nil
 	self.instances_by_id[id] = nil
-	local instance = object(id)
+	local instance<const> = object(id)
 	if instance ~= nil then
 		self.deactivate_instance(instance, id)
 	end
@@ -135,7 +135,7 @@ end
 function room_object_pool:sync_array(definitions, include_definition, context)
 	self:begin_cycle()
 	for i = 1, #definitions do
-		local definition = definitions[i]
+		local definition<const> = definitions[i]
 		if include_definition == nil or include_definition(definition, context) then
 			self:use(definition, context)
 		end

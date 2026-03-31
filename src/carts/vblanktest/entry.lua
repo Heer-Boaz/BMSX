@@ -7,7 +7,7 @@ local cycles_per_frame = sys_max_cycles_per_frame
 local vblank_cycles = 0
 local full_frame_vblank = false
 
-local function resolve_vblank_cycles()
+local resolve_vblank_cycles<const> = function()
 	local render_height = cart_manifest.machine.render_size.height
 	if type(render_height) ~= 'number' or render_height <= 0 then
 		return nil
@@ -16,20 +16,20 @@ local function resolve_vblank_cycles()
 	return cycles_per_frame - active_display
 end
 
-local function init_vblank_cycles()
+local init_vblank_cycles<const> = function()
 	vblank_cycles = resolve_vblank_cycles()
 	if vblank_cycles == nil then
 		fail('machine.render_size.height is required and must be a positive integer')
 	end
 end
 
-local function fail(msg)
+local fail<const> = function(msg)
 	if fail_reason == nil then
 		fail_reason = msg
 	end
 end
 
-local function wait_for_vblank_clear()
+local wait_for_vblank_clear<const> = function()
 	local remaining = cycles_per_frame
 	while remaining > 0 do
 		local status = mem[sys_vdp_status]
@@ -41,7 +41,7 @@ local function wait_for_vblank_clear()
 	return false
 end
 
-local function wait_for_vblank_set()
+local wait_for_vblank_set<const> = function()
 	local remaining = cycles_per_frame
 	local saw_irq = false
 	while remaining > 0 do

@@ -1,14 +1,14 @@
-local constants = require('constants')
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local constants<const> = require('constants')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local stafffoe = {}
+local stafffoe<const> = {}
 stafffoe.__index = stafffoe
 
-local function speed_components_from_angle(speed_num, angle_degrees)
-	local radians = math.rad(angle_degrees)
-	local speed_x_num = round_to_nearest(math.cos(radians) * speed_num)
-	local speed_y_num = round_to_nearest(math.sin(radians) * speed_num)
+local speed_components_from_angle<const> = function(speed_num, angle_degrees)
+	local radians<const> = math.rad(angle_degrees)
+	local speed_x_num<const> = round_to_nearest(math.cos(radians) * speed_num)
+	local speed_y_num<const> = round_to_nearest(math.sin(radians) * speed_num)
 	return speed_x_num, speed_y_num
 end
 
@@ -19,7 +19,7 @@ function stafffoe:ctor()
 end
 
 function stafffoe.bt_tick(self, blackboard)
-	local node = blackboard.nodedata
+	local node<const> = blackboard.nodedata
 	if self.staff_state == 'default' then
 		local wait_ticks = node.staff_wait_ticks or constants.enemy.staff_wait_before_spawn_state_steps
 		wait_ticks = wait_ticks - 1
@@ -46,12 +46,12 @@ function stafffoe.bt_tick(self, blackboard)
 		return behaviourtree.running
 	end
 
-	local player = object('pietolon')
-	local bullets_dangerous = not player.inventory_items.greenvase
-	local base_angle = math.random(0, 359)
+	local player<const> = object('pietolon')
+	local bullets_dangerous<const> = not player.inventory_items.greenvase
+	local base_angle<const> = math.random(0, 359)
 	for i = 0, 3 do
-		local angle = (base_angle + (i * 90)) % 360
-		local speed_x_num, speed_y_num = speed_components_from_angle(constants.enemy.staff_bullet_speed_num, angle)
+		local angle<const> = (base_angle + (i * 90)) % 360
+		local speed_x_num<const>, speed_y_num<const> = speed_components_from_angle(constants.enemy.staff_bullet_speed_num, angle)
 		inst('enemy.staffspawn', {
 			direction = speed_x_num < 0 and 'left' or 'right',
 			speed_x_num = speed_x_num,

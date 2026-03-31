@@ -10,14 +10,14 @@
 -- This is the same pattern the player uses — temporary interruption with
 -- automatic state restoration.
 
-local constants = require('constants')
-local components = require('components')
-local worldobject = require('worldobject')
+local constants<const> = require('constants')
+local components<const> = require('components')
+local worldobject<const> = require('worldobject')
 
-local pepernoot_projectile = {}
+local pepernoot_projectile<const> = {}
 pepernoot_projectile.__index = pepernoot_projectile
 
-local state_tags = {
+local state_tags<const> = {
 	frozen = 'v.fz',
 }
 
@@ -26,7 +26,7 @@ function pepernoot_projectile:ctor()
 	self:add_component(components.tilecollisioncomponent.new({
 		id_local = 'world',
 		query = function(_component, owner, payload)
-			local collision_flags = object('room'):collision_flags_at_world(owner.x, owner.y)
+			local collision_flags<const> = object('room'):collision_flags_at_world(owner.x, owner.y)
 			if collision_flags == constants.collision_flags.none or collision_flags == constants.collision_flags.elevator then
 				return nil
 			end
@@ -40,15 +40,15 @@ function pepernoot_projectile:ctor()
 end
 
 function pepernoot_projectile:onspawn(pos)
-	local room = object('room')
-	local snapped_x, snapped_y = room:snap_world_to_tile(self.x, self.y)
+	local room<const> = object('room')
+	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(self.x, self.y)
 	self.sprite_component.offset.x = snapped_x - self.x
 	self.sprite_component.offset.y = snapped_y - self.y
 end
 
 function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
-	local room = object('room')
-	local snapped_x, snapped_y = room:snap_world_to_tile(self.x, self.y)
+	local room<const> = object('room')
+	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(self.x, self.y)
 	self.sprite_component.offset.x = snapped_x - self.x
 	self.sprite_component.offset.y = snapped_y - self.y
 end
@@ -57,7 +57,7 @@ function pepernoot_projectile:update_motion()
 	if self:has_tag(state_tags.frozen) then
 		return
 	end
-	local room = object('room')
+	local room<const> = object('room')
 	self.x = self.x + (self.direction * constants.secondary_weapon.pepernoot_speed_px)
 	self:refresh_tile_aligned_sprite_offset()
 
@@ -67,7 +67,7 @@ function pepernoot_projectile:update_motion()
 	end
 end
 
-local function define_pepernoot_projectile_fsm()
+local define_pepernoot_projectile_fsm<const> = function()
 	define_fsm('pepernoot_projectile', {
 		initial = 'active',
 		on = {
@@ -100,7 +100,7 @@ local function define_pepernoot_projectile_fsm()
 	})
 end
 
-local function register_pepernoot_projectile_definition()
+local register_pepernoot_projectile_definition<const> = function()
 	define_prefab({
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,

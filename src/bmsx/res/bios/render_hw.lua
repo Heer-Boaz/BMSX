@@ -1,7 +1,7 @@
 -- render_hw.lua
 -- lightweight render helpers that forward to built-in API functions
 
-local render_hw = {}
+local render_hw<const> = {}
 
 function render_hw.put_mesh(mesh, matrix, opts)
 	put_mesh(mesh, matrix, opts)

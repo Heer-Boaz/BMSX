@@ -61,6 +61,7 @@ export type LuaDefinitionInfo = {
 
 export type LuaDefinitionKind =
 	| 'variable'
+	| 'constant'
 	| 'function'
 	| 'table_field'
 	| 'parameter'
@@ -126,9 +127,12 @@ export type LuaAssignmentStatement = LuaNode & {
 	readonly operator: LuaAssignmentOperator;
 };
 
+export type LuaLocalAttribute = 'const';
+
 export type LuaLocalAssignmentStatement = LuaNode & {
 	readonly kind: LuaSyntaxKind.LocalAssignmentStatement;
 	readonly names: ReadonlyArray<LuaIdentifierExpression>;
+	readonly attributes: ReadonlyArray<LuaLocalAttribute | null>;
 	readonly values: ReadonlyArray<LuaExpression>;
 };
 

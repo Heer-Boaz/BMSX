@@ -1,8 +1,8 @@
-local constants = require('constants')
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local constants<const> = require('constants')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local zakfoe = {}
+local zakfoe<const> = {}
 zakfoe.__index = zakfoe
 
 function zakfoe:ctor()
@@ -14,7 +14,7 @@ function zakfoe:ctor()
 end
 
 function zakfoe.bt_tick(self, blackboard)
-	local node = blackboard.nodedata
+	local node<const> = blackboard.nodedata
 
 	if self.zak_state == 'prepare' then
 		local prepare_ticks = node.zak_prepare_ticks or constants.enemy.zak_prepare_jump_steps
@@ -36,13 +36,13 @@ function zakfoe.bt_tick(self, blackboard)
 	if self.zak_state == 'jump' then
 		local jump_ticks = node.zak_jump_ticks or constants.enemy.zak_jump_steps
 
-		local direction_mod = self.direction == 'right' and 1 or -1
+		local direction_mod<const> = self.direction == 'right' and 1 or -1
 		self.x = self.x + (constants.enemy.zak_horizontal_speed_px * direction_mod)
 		self.y = self.y + self.current_vertical_speed
 		self.current_vertical_speed = self.current_vertical_speed + constants.enemy.zak_vertical_speed_step
 
 		if self.direction == 'left' then
-			local rm = object('room')
+			local rm<const> = object('room')
 			if self.x < 0
 				or rm:has_collision_flags_at_world(self.x + 2, self.y + 2, constants.collision_flags.solid_mask)
 				or not rm:has_collision_flags_at_world(self.x + 2 - constants.room.tile_half, self.y + 14 + constants.room.tile_size, constants.collision_flags.solid_mask)
@@ -50,7 +50,7 @@ function zakfoe.bt_tick(self, blackboard)
 				self.direction = 'right'
 			end
 		else
-			local rm = object('room')
+			local rm<const> = object('room')
 			if self.x + 14 >= rm.world_width
 				or rm:has_collision_flags_at_world(self.x + 14, self.y + 2, constants.collision_flags.solid_mask)
 				or not rm:has_collision_flags_at_world(self.x + 14 + constants.room.tile_half, self.y + 14 + constants.room.tile_size, constants.collision_flags.solid_mask)

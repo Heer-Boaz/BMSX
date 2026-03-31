@@ -1,6 +1,6 @@
-local constants = require('constants')
+local constants<const> = require('constants')
 
-local elevator = {}
+local elevator<const> = {}
 elevator.__index = elevator
 
 function elevator:ctor()
@@ -11,8 +11,8 @@ function elevator:ctor()
 	self.collider.spaceevents = 'current'
 end
 
-local function move_vertical(self, target, vertical)
-	local top_boundary = constants.room.hud_height + constants.room.tile_size
+local move_vertical<const> = function(self, target, vertical)
+	local top_boundary<const> = constants.room.hud_height + constants.room.tile_size
 	local delta_y = 0
 	if vertical == 'down' then
 		self.y = self.y + 2
@@ -34,17 +34,17 @@ local function move_vertical(self, target, vertical)
 end
 
 function elevator:update_motion()
-	local player = object('pietolon')
-	local current_room_number = object('c').current_room_number
+	local player<const> = object('pietolon')
+	local current_room_number<const> = object('c').current_room_number
 	self.visible = self.current_room_number == current_room_number
 	self.collider.enabled = self.visible
-	local previous_y = self.y
-	local was_supported = self.visible
+	local previous_y<const> = self.y
+	local was_supported<const> = self.visible
 		and player.on_vertical_elevator
 		and player.vertical_elevator_id == self.id
 
-	local target = self.path[self.going_to]
-	local vertical = self.vertical_to_point[self.going_to]
+	local target<const> = self.path[self.going_to]
+	local vertical<const> = self.vertical_to_point[self.going_to]
 	local delta_x = 0
 
 	if self.x < target.x then
@@ -55,7 +55,7 @@ function elevator:update_motion()
 		self.x = self.x - 2
 		delta_x = -2
 	end
-	local delta_y = move_vertical(self, target, vertical)
+	local delta_y<const> = move_vertical(self, target, vertical)
 
 	if was_supported and (delta_x ~= 0 or delta_y ~= 0) then
 		player.x = player.x + delta_x
@@ -80,7 +80,7 @@ function elevator:update_motion()
 	self.collider.enabled = self.visible
 
 	if self.visible then
-		local standing_on_top = player.y == (self.y - constants.player.height)
+		local standing_on_top<const> = player.y == (self.y - constants.player.height)
 			and player:has_feet_over_elevator_top(self, player.x)
 		if standing_on_top then
 			player.next_vertical_elevator = true
@@ -90,7 +90,7 @@ function elevator:update_motion()
 	end
 end
 
-local function define_elevator_fsm()
+local define_elevator_fsm<const> = function()
 	define_fsm('elevator_platform', {
 		initial = 'active',
 		states = {
@@ -99,7 +99,7 @@ local function define_elevator_fsm()
 	})
 end
 
-local function register_elevator_definition()
+local register_elevator_definition<const> = function()
 	define_prefab({
 		def_id = 'elevator_platform',
 		class = elevator,

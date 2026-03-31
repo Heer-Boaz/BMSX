@@ -1,7 +1,7 @@
-local text = {}
+local text<const> = {}
 
 function text.split_lines(value)
-	local lines = {}
+	local lines<const> = {}
 	for line in value:gmatch('[^\r\n]+') do
 		lines[#lines + 1] = line
 	end

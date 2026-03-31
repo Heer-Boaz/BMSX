@@ -1,4 +1,4 @@
-local lithograph = {}
+local lithograph<const> = {}
 lithograph.__index = lithograph
 
 function lithograph:ctor()
@@ -6,7 +6,7 @@ function lithograph:ctor()
 	self:gfx('lithograph')
 end
 
-local function register_lithograph_definition()
+local register_lithograph_definition<const> = function()
 	define_prefab({
 		def_id = 'lithograph',
 		class = lithograph,

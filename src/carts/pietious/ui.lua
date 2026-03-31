@@ -1,9 +1,9 @@
-local constants = require('constants')
+local constants<const> = require('constants')
 
-local ui = {}
+local ui<const> = {}
 ui.__index = ui
 
-local function animate_level(current, target)
+local animate_level<const> = function(current, target)
 	if current < target then
 		return current + 1
 	end
@@ -13,7 +13,7 @@ local function animate_level(current, target)
 	return current
 end
 
-local function secondary_weapon_sprite_id(item_type)
+local secondary_weapon_sprite_id<const> = function(item_type)
 	if item_type == nil then
 		return nil
 	end
@@ -27,7 +27,7 @@ local function secondary_weapon_sprite_id(item_type)
 end
 
 function ui:bind_visual()
-	local rc = self:get_component('customvisualcomponent')
+	local rc<const> = self:get_component('customvisualcomponent')
 	rc.producer = function(_ctx)
 		self:draw_ui()
 	end
@@ -43,9 +43,9 @@ end
 
 function ui:ctor()
 	self:bind_visual()
-	local player = object('pietolon')
-	local health = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
-	local weapon = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
+	local player<const> = object('pietolon')
+	local health<const> = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
+	local weapon<const> = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
 	self.hud_visible = true
 	self.hud_health_level = health
 	self.hud_health_target = health
@@ -89,8 +89,8 @@ function ui:draw_ui()
 	if not self.hud_visible then
 		return
 	end
-	local player = object('pietolon')
-	write_words(
+	local player<const> = object('pietolon')
+	memwrite(
 		sys_vdp_cmd_arg0,
 		assets.img['game_header'].handle,
 		0,
@@ -106,10 +106,10 @@ function ui:draw_ui()
 		1,
 		0
 	)
-	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
-	local equipped_sprite_id = secondary_weapon_sprite_id(player.secondary_weapon)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+	local equipped_sprite_id<const> = secondary_weapon_sprite_id(player.secondary_weapon)
 	if equipped_sprite_id ~= nil then
-		write_words(
+		memwrite(
 			sys_vdp_cmd_arg0,
 			assets.img[equipped_sprite_id].handle,
 			constants.hud.equipped_item_x * constants.room.tile_size,
@@ -125,11 +125,11 @@ function ui:draw_ui()
 			1,
 			0
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
-	local blue_handle = assets.img['energybar_stripe_blue'].handle
+	local blue_handle<const> = assets.img['energybar_stripe_blue'].handle
 	for i = 0, (self.hud_health_level - 1) do
-		write_words(
+		memwrite(
 			sys_vdp_cmd_arg0,
 			blue_handle,
 			constants.hud.health_bar_x + i,
@@ -145,11 +145,11 @@ function ui:draw_ui()
 			1,
 			0
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
-	local red_handle = assets.img['energybar_stripe_red'].handle
+	local red_handle<const> = assets.img['energybar_stripe_red'].handle
 	for i = 0, (self.hud_weapon_level - 1) do
-		write_words(
+		memwrite(
 			sys_vdp_cmd_arg0,
 			red_handle,
 			constants.hud.weapon_bar_x + i,
@@ -165,11 +165,11 @@ function ui:draw_ui()
 			1,
 			0
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
 end
 
-local function define_ui_fsm()
+local define_ui_fsm<const> = function()
 	define_fsm('ui', {
 		initial = 'active',
 		on = {
@@ -210,7 +210,7 @@ local function define_ui_fsm()
 	})
 end
 
-local function register_ui_definition()
+local register_ui_definition<const> = function()
 	define_prefab({
 		def_id = 'ui',
 		class = ui,

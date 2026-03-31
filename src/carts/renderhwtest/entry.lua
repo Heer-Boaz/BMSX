@@ -8,12 +8,12 @@ local put_ambient_light = render_hw.put_ambient_light
 local put_directional_light = render_hw.put_directional_light
 local put_point_light = render_hw.put_point_light
 
-local function normalize(x, y, z)
+local normalize<const> = function(x, y, z)
 	local len = math.sqrt(x * x + y * y + z * z)
 	return x / len, y / len, z / len
 end
 
-local function look_at(eye, target, up)
+local look_at<const> = function(eye, target, up)
 	local fx = target[1] - eye[1]
 	local fy = target[2] - eye[2]
 	local fz = target[3] - eye[3]
@@ -43,7 +43,7 @@ local function look_at(eye, target, up)
 	}
 end
 
-local function perspective(fov_deg, aspect, near, far)
+local perspective<const> = function(fov_deg, aspect, near, far)
 	local fov_rad = (fov_deg * math.pi) / 180
 	local f = 1 / math.tan(fov_rad / 2)
 	local nf = 1 / (near - far)
@@ -55,7 +55,7 @@ local function perspective(fov_deg, aspect, near, far)
 	}
 end
 
-local function rotate_y(angle)
+local rotate_y<const> = function(angle)
 	local c = math.cos(angle)
 	local s = math.sin(angle)
 	return {

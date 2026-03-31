@@ -1,9 +1,9 @@
-local timeline = require('timeline')
+local timeline<const> = require('timeline')
 
-local daemon_cloud = {}
+local daemon_cloud<const> = {}
 daemon_cloud.__index = daemon_cloud
 
-local anim_timeline_id = 'daemon_cloud.anim'
+local anim_timeline_id<const> = 'daemon_cloud.anim'
 
 function daemon_cloud:ctor()
 	self.visible = false
@@ -23,7 +23,7 @@ function daemon_cloud:stop_and_hide()
 	self.visible = false
 end
 
-local function define_daemon_cloud_fsm()
+local define_daemon_cloud_fsm<const> = function()
 	define_fsm('daemon_cloud', {
 		initial = 'active',
 		states = {
@@ -54,7 +54,7 @@ local function define_daemon_cloud_fsm()
 	})
 end
 
-local function register_daemon_cloud_definition()
+local register_daemon_cloud_definition<const> = function()
 	define_prefab({
 		def_id = 'daemon_cloud',
 		class = daemon_cloud,

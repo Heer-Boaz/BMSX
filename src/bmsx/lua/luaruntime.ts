@@ -251,7 +251,7 @@ class LuaScriptFunction implements LuaFunctionValue {
 		this.name = name;
 		this.interpreter = interpreter;
 		this.expression = expression;
-		this.closure = closure;
+		this.closure = closure.snapshot();
 		this.implicitSelfName = implicitSelfName;
 		this.range = expression.range;
 	}
@@ -1008,17 +1008,34 @@ export class LuaInterpreter {
 	}
 
 	public executeLocalAssignment(statement: LuaLocalAssignmentStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): void {
+		if (statement.names.length === 1 && statement.attributes[0] === 'const' && statement.values.length === 1 && statement.values[0].kind === LuaSyntaxKind.FunctionExpression) {
+			const identifier = statement.names[0];
+			environment.set(identifier.name, null, identifier.range);
+			const functionValue = new LuaScriptFunction(statement.values[0] as LuaFunctionExpression, environment, identifier.name, null, this);
+			environment.assignExisting(identifier.name, functionValue, true);
+			return;
+		}
 		const values = this.evaluateExpressionList(statement.values, environment, varargs);
+		const lastIndex = statement.values.length - 1;
+		const lastExpression = lastIndex >= 0 ? statement.values[lastIndex] : null;
+		const hasMultiReturn = lastExpression !== null && this.isMultiReturnExpression(lastExpression);
 		for (let index = 0; index < statement.names.length; index += 1) {
 			const identifier = statement.names[index];
+			if (statement.attributes[index] === 'const') {
+				const hasInitializer = statement.values.length > 0 && (index < lastIndex || index === lastIndex || hasMultiReturn);
+				if (!hasInitializer) {
+					throw this.runtimeErrorAt(identifier.range, `Constant local '${identifier.name}' must have an initializer.`);
+				}
+			}
 			const value = index < values.length ? values[index] : null;
-			environment.set(identifier.name, value, identifier.range);
+			environment.set(identifier.name, value, identifier.range, statement.attributes[index] === 'const');
 		}
 	}
 
 	public executeLocalFunction(statement: LuaLocalFunctionStatement, environment: LuaEnvironment): void {
+		environment.set(statement.name.name, null, statement.name.range);
 		const functionValue = new LuaScriptFunction(statement.functionExpression, environment, statement.name.name, null, this);
-		environment.set(statement.name.name, functionValue, statement.name.range);
+		environment.assignExisting(statement.name.name, functionValue);
 	}
 
 	public executeFunctionDeclaration(statement: LuaFunctionDeclarationStatement, environment: LuaEnvironment): void {
@@ -1036,13 +1053,13 @@ export class LuaInterpreter {
 			return;
 		}
 
-		if (functionNameParts.length === 1) {
-			const resolvedEnv = environment.resolve(functionNameParts[0]);
-			if (resolvedEnv !== null) {
-				resolvedEnv.set(functionNameParts[0], functionValue, statement.range);
-				return;
-			}
-			this.globals.set(functionNameParts[0], functionValue, statement.range);
+			if (functionNameParts.length === 1) {
+				const resolvedEnv = environment.resolve(functionNameParts[0]);
+				if (resolvedEnv !== null) {
+					resolvedEnv.assignExisting(functionNameParts[0], functionValue);
+					return;
+				}
+				this.globals.set(functionNameParts[0], functionValue, statement.range);
 			return;
 		}
 
@@ -1178,6 +1195,10 @@ export class LuaInterpreter {
 				out.push(this.evaluateExpressionFirst(expression, environment, varargs));
 				return;
 		}
+	}
+
+	private isMultiReturnExpression(expression: LuaExpression): boolean {
+		return expression.kind === LuaSyntaxKind.CallExpression || expression.kind === LuaSyntaxKind.VarargExpression;
 	}
 
 	private evaluateExpressionFirst(expression: LuaExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
@@ -1502,7 +1523,7 @@ public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnv
 	private assignResolvedTarget(target: ResolvedAssignmentTarget, value: LuaValue, range: LuaSourceRange): void {
 		if (target.kind === 'identifier') {
 			if (target.environment !== null) {
-				target.environment.set(target.name, value, range);
+				target.environment.assignExisting(target.name, value);
 			}
 			else {
 				this.globals.set(target.name, value, range);

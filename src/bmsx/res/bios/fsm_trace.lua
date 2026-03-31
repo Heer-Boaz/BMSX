@@ -1,6 +1,6 @@
-local fsm_trace = {}
+local fsm_trace<const> = {}
 
-local payload_primitive_types = {
+local payload_primitive_types<const> = {
 	['number'] = true,
 	['boolean'] = true,
 }
@@ -9,7 +9,7 @@ function fsm_trace.describe_payload(payload)
 	if payload == nil then
 		return 'nil'
 	end
-	local payload_type = type(payload)
+	local payload_type<const> = type(payload)
 	if payload_type == 'string' then
 		return payload
 	end
@@ -23,17 +23,17 @@ function fsm_trace.format_guard_diagnostics(guard)
 	if not guard or not guard.evaluations or #guard.evaluations == 0 then
 		return nil
 	end
-	local parts = {}
+	local parts<const> = {}
 	for i = 1, #guard.evaluations do
-		local evaluation = guard.evaluations[i]
-		local status = evaluation.passed and 'pass' or 'fail'
+		local evaluation<const> = guard.evaluations[i]
+		local status<const> = evaluation.passed and 'pass' or 'fail'
 		local descriptor
 		if evaluation.descriptor and evaluation.descriptor ~= '<none>' then
 			descriptor = '(' .. evaluation.descriptor .. ')'
 		else
 			descriptor = ''
 		end
-		local note = evaluation.reason and not evaluation.passed and ('!' .. evaluation.reason)
+		local note<const> = evaluation.reason and not evaluation.passed and ('!' .. evaluation.reason)
 		local suffix
 		if note then
 			suffix = '[' .. note .. ']'
@@ -53,7 +53,7 @@ function fsm_trace.format_action_evaluations(context)
 end
 
 function fsm_trace.compose_transition_trace_message(entry)
-	local parts = {}
+	local parts<const> = {}
 	parts[1] = '[transition]'
 	parts[#parts + 1] = 'outcome=' .. entry.outcome
 	parts[#parts + 1] = 'exec=' .. entry.execution
@@ -62,7 +62,7 @@ function fsm_trace.compose_transition_trace_message(entry)
 		parts[#parts + 1] = 'from="' .. tostring(entry.from) .. '"'
 	end
 	if entry.context and entry.context.trigger then
-		local trigger = entry.context.event_name and (entry.context.trigger .. '(' .. entry.context.event_name .. ')') or entry.context.trigger
+		local trigger<const> = entry.context.event_name and (entry.context.trigger .. '(' .. entry.context.event_name .. ')') or entry.context.trigger
 		parts[#parts + 1] = 'trigger=' .. trigger
 	end
 	if entry.context and entry.context.description then
@@ -80,11 +80,11 @@ function fsm_trace.compose_transition_trace_message(entry)
 	if entry.reason then
 		parts[#parts + 1] = 'reason=' .. entry.reason
 	end
-	local guard_summary = fsm_trace.format_guard_diagnostics(entry.guard)
+	local guard_summary<const> = fsm_trace.format_guard_diagnostics(entry.guard)
 	if guard_summary then
 		parts[#parts + 1] = 'guards=' .. guard_summary
 	end
-	local action_summary = fsm_trace.format_action_evaluations(entry.context)
+	local action_summary<const> = fsm_trace.format_action_evaluations(entry.context)
 	if action_summary then
 		parts[#parts + 1] = 'actions=' .. action_summary
 	end
@@ -167,7 +167,7 @@ function fsm_trace.describe_transition_handler(spec)
 		return fsm_trace.describe_string_handler(spec)
 	end
 	if type(spec) == 'function' then
-		local name = spec.name
+		local name<const> = spec.name
 		if name then
 			return name
 		end
@@ -177,8 +177,8 @@ function fsm_trace.describe_transition_handler(spec)
 end
 
 function fsm_trace.compose_event_dispatch_trace_message(entry)
-	local transition = entry.context.last_transition
-	local parts = {}
+	local transition<const> = entry.context.last_transition
+	local parts<const> = {}
 	parts[1] = '[dispatch]'
 	parts[#parts + 1] = 'event=' .. entry.event_name
 	parts[#parts + 1] = 'handled=' .. tostring(entry.handled)
@@ -201,7 +201,7 @@ function fsm_trace.compose_event_dispatch_trace_message(entry)
 		parts[#parts + 1] = 'target=' .. tostring(entry.current_id)
 		parts[#parts + 1] = 'transition=none'
 	end
-	local payload_summary = entry.context.payload_summary or (entry.detail ~= nil and fsm_trace.describe_payload(entry.detail))
+	local payload_summary<const> = entry.context.payload_summary or (entry.detail ~= nil and fsm_trace.describe_payload(entry.detail))
 	if payload_summary then
 		parts[#parts + 1] = 'payload=' .. payload_summary
 	end

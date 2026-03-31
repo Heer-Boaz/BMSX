@@ -1,14 +1,14 @@
-local constants = require('constants')
-local castle_map = require('castle_map')
-local progression = require('progression')
-local room_spawner = require('room_spawner')
+local constants<const> = require('constants')
+local castle_map<const> = require('castle_map')
+local progression<const> = require('progression')
+local room_spawner<const> = require('room_spawner')
 
-local castle = {}
+local castle<const> = {}
 
-local world1_stairs_open_row = '#............................-=#'
-local halo_destination_room_number = 1
-local director_seal_frame_event = 'timeline.frame.director.seal'
-local castle_tags = {
+local world1_stairs_open_row<const> = '#............................-=#'
+local halo_destination_room_number<const> = 1
+local director_seal_frame_event<const> = 'timeline.frame.director.seal'
+local castle_tags<const> = {
 	seal_active = 'c.seal.active',
 	seal_sequence = 'c.seal.sequence',
 	seal_dissolving = 'c.seal.diss',
@@ -16,11 +16,11 @@ local castle_tags = {
 	daemon_fight = 'c.daemon.fight',
 }
 
-local function current_room()
+local current_room<const> = function()
 	return object('room')
 end
 
-local function set_tag_flag(owner, tag, enabled)
+local set_tag_flag<const> = function(owner, tag, enabled)
 	if enabled then
 		owner:add_tag(tag)
 		return
@@ -28,17 +28,17 @@ local function set_tag_flag(owner, tag, enabled)
 	owner:remove_tag(tag)
 end
 
-local function build_progression_program()
-	local rules = {}
-	local condition_name_set = {}
-	local condition_names = {}
-	local world1_marspein_destroyed_keys = {}
+local build_progression_program<const> = function()
+	local rules<const> = {}
+	local condition_name_set<const> = {}
+	local condition_names<const> = {}
+	local world1_marspein_destroyed_keys<const> = {}
 
 	for _, room_template in pairs(castle_map.room_templates) do
-		local room_number = room_template.room_number
-		local enemies = room_template.enemies
+		local room_number<const> = room_template.room_number
+		local enemies<const> = room_template.enemies
 		for i = 1, #enemies do
-			local enemy_def = enemies[i]
+			local enemy_def<const> = enemies[i]
 			rules[#rules + 1] = {
 				id = enemy_def.id,
 				on = 'damage.resolved',
@@ -64,7 +64,7 @@ local function build_progression_program()
 
 	table.sort(condition_names)
 	for i = 1, #condition_names do
-		local condition_name = condition_names[i]
+		local condition_name<const> = condition_names[i]
 		rules[#rules + 1] = {
 			id = condition_name,
 			on = 'room.condition_set',
@@ -100,7 +100,7 @@ local function build_progression_program()
 		},
 	}
 
-	local stairs_latch_conditions = {
+	local stairs_latch_conditions<const> = {
 		{ key = 'r109.stairs', equals = false },
 		{ key = 'staff1destroyed', equals = true },
 		{ key = 'staff2destroyed', equals = true },
@@ -120,7 +120,7 @@ local function build_progression_program()
 		},
 	}
 
-	local world1_wall_conditions = {
+	local world1_wall_conditions<const> = {
 		{ key = 'r106.wall', equals = false },
 	}
 	for i = 1, #world1_marspein_destroyed_keys do
@@ -217,14 +217,14 @@ local function build_progression_program()
 				current_room():apply_progression_command(command)
 			end,
 			refresh_current_room_enemies = function(ctx, command, event)
-				local room = current_room()
+				local room<const> = current_room()
 				if event.room_number == ctx.current_room_number then
 					ctx:refresh_current_room_customizations()
 					room_spawner.spawn_all_for_room(room)
 				end
 			end,
 			apply_room_condition = function(ctx, command, event)
-				local room = current_room()
+				local room<const> = current_room()
 				if event.room_number ~= ctx.current_room_number then
 					return
 				end
@@ -235,7 +235,7 @@ local function build_progression_program()
 				end
 			end,
 			emit_event = function(ctx, command)
-				local payload = {}
+				local payload<const> = {}
 				if command.payload ~= nil then
 					for key, value in pairs(command.payload) do
 						payload[key] = value
@@ -247,7 +247,7 @@ local function build_progression_program()
 	})
 end
 
-local function create_room_switch(from_room_number, to_room_number, direction)
+local create_room_switch<const> = function(from_room_number, to_room_number, direction)
 	return {
 		from_room_number = from_room_number,
 		to_room_number = to_room_number,
@@ -256,13 +256,13 @@ local function create_room_switch(from_room_number, to_room_number, direction)
 end
 
 function castle:spawn_global_elevators()
-	local routes = castle_map.elevator_routes
+	local routes<const> = castle_map.elevator_routes
 	self.elevator_count = #routes
 	for i = 1, #routes do
-		local route = routes[i]
-		local elevator_id = 'e.p' .. tostring(i)
+		local route<const> = routes[i]
+		local elevator_id<const> = 'e.p' .. tostring(i)
 		if object(elevator_id) == nil then
-			local start = route.path[1]
+			local start<const> = route.path[1]
 			inst('elevator_platform', {
 				id = elevator_id,
 				space_id = 'main',
@@ -277,12 +277,12 @@ function castle:spawn_global_elevators()
 end
 
 function castle:sync_current_room_seal_instance()
-	local room = current_room()
-	local seal = room.seal
+	local room<const> = current_room()
+	local seal<const> = room.seal
 	if seal == nil then
 		return
 	end
-	local active_space = get_space()
+	local active_space<const> = get_space()
 
 	local seal_instance = object(seal.id)
 	local keep_seal_instance = false
@@ -299,7 +299,7 @@ function castle:sync_current_room_seal_instance()
 		return
 	end
 
-	local dissolve_step = room.seal_dissolve_step
+	local dissolve_step<const> = room.seal_dissolve_step
 	if dissolve_step >= 6 then
 		if seal_instance ~= nil then
 			seal_instance:mark_for_disposal()
@@ -335,8 +335,8 @@ function castle:sync_current_room_seal_instance()
 end
 
 function castle:emit_room_state_changed()
-	local room = current_room()
-	local payload = {
+	local room<const> = current_room()
+	local payload<const> = {
 		room_number = self.current_room_number,
 		world_number = room.world_number,
 	}
@@ -362,9 +362,9 @@ function castle:reset_room_encounter_tags()
 end
 
 function castle:refresh_current_room_customizations()
-	local room = current_room()
-	local seal = room.seal
-	local world_boss_defeated = self.world_boss_defeated[room.world_number]
+	local room<const> = current_room()
+	local seal<const> = room.seal
+	local world_boss_defeated<const> = self.world_boss_defeated[room.world_number]
 	local has_active_seal = false
 	if seal ~= nil then
 		if self:has_tag(castle_tags.seal_broken) then
@@ -473,7 +473,7 @@ function castle:bind()
 end
 
 function castle:begin_seal_dissolution()
-	local room = current_room()
+	local room<const> = current_room()
 	self.world_boss_defeated[room.world_number] = false
 	set_tag_flag(self, castle_tags.seal_sequence, true)
 	set_tag_flag(self, castle_tags.seal_dissolving, true)
@@ -488,12 +488,12 @@ function castle:begin_seal_dissolution()
 end
 
 function castle:apply_seal_timeline_frame(frame)
-	local room = current_room()
+	local room<const> = current_room()
 	local room_dissolve_step = 0
 	local seal_dissolve_step = 0
 	if frame >= 32 then
 		if frame < 64 then
-			local progress = frame - 32
+			local progress<const> = frame - 32
 			room_dissolve_step = math.modf((progress * constants.flow.seal_room_dissolve_steps) / 32) + 1
 		else
 			room_dissolve_step = constants.flow.seal_room_dissolve_steps
@@ -523,16 +523,16 @@ function castle:apply_seal_timeline_frame(frame)
 end
 
 function castle:finish_seal_dissolution()
-	local room = current_room()
+	local room<const> = current_room()
 	set_tag_flag(self, castle_tags.seal_sequence, true)
 	set_tag_flag(self, castle_tags.seal_dissolving, false)
 	set_tag_flag(self, castle_tags.seal_broken, true)
 	set_tag_flag(self, castle_tags.seal_active, false)
 	set_tag_flag(self, castle_tags.daemon_fight, false)
-	local row_patches = {}
+	local row_patches<const> = {}
 	for i = 1, #room.map_rows do
-		local row = room.map_rows[i]
-		local patched_row = row:gsub('%$', '.')
+		local row<const> = room.map_rows[i]
+		local patched_row<const> = row:gsub('%$', '.')
 		if patched_row ~= row then
 			row_patches[#row_patches + 1] = {
 				index = i,
@@ -555,7 +555,7 @@ function castle:begin_daemon_appearance()
 end
 
 function castle:mark_current_world_boss_defeated()
-	local world_number = current_room().world_number
+	local world_number<const> = current_room().world_number
 	self.world_boss_defeated[world_number] = true
 	set_tag_flag(self, castle_tags.seal_sequence, false)
 	set_tag_flag(self, castle_tags.seal_dissolving, false)
@@ -566,7 +566,7 @@ function castle:mark_current_world_boss_defeated()
 end
 
 function castle:should_restart_daemon_appearance_after_death()
-	local room = current_room()
+	local room<const> = current_room()
 	if room.seal == nil then
 		return false
 	end
@@ -587,7 +587,7 @@ function castle:resolve_death()
 end
 
 function castle:is_current_room_boss_encounter_active()
-	local room = current_room()
+	local room<const> = current_room()
 	if room.seal == nil then
 		return false
 	end
@@ -617,9 +617,9 @@ function castle:ctor()
 end
 
 function castle:sync_world_entrance_states_for_room(room_state)
-	local world_entrances = room_state.world_entrances
+	local world_entrances<const> = room_state.world_entrances
 	for i = 1, #world_entrances do
-		local target = world_entrances[i].target
+		local target<const> = world_entrances[i].target
 		if self.world_entrance_states[target] == nil then
 			self.world_entrance_states[target] = {
 				state = 'closed',
@@ -629,8 +629,8 @@ function castle:sync_world_entrance_states_for_room(room_state)
 end
 
 function castle:create_room_enter_payload(suppress_room_music)
-	local room = current_room()
-	local payload = {
+	local room<const> = current_room()
+	local payload<const> = {
 		room_number = self.current_room_number,
 		world_number = room.world_number,
 	}
@@ -656,12 +656,12 @@ end
 
 function castle:emit_room_enter()
 	self.room_enter_pending = false
-	local payload = self:create_room_enter_payload()
+	local payload<const> = self:create_room_enter_payload()
 	self.events:emit('room.enter', payload)
 end
 
 function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter_now)
-	local room = current_room()
+	local room<const> = current_room()
 	self.current_room_number = switch.to_room_number
 	room.map_id = map_id
 	room.map_x = map_x
@@ -680,8 +680,8 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter
 end
 
 function castle:initialize(initial_room_number, emit_room_enter_now)
-	local rm = object('room')
-	local room_number = initial_room_number or castle_map.start_room_number
+	local rm<const> = object('room')
+	local room_number<const> = initial_room_number or castle_map.start_room_number
 	self.current_room_number = room_number
 	rm:load_room(room_number)
 	rm.map_id = rm.world_number
@@ -715,8 +715,8 @@ function castle:begin_open_world_entrance(target)
 end
 
 function castle:switch_room(direction, player_top, player_bottom)
-	local room = current_room()
-	local switch = room:switch_room(direction)
+	local room<const> = current_room()
+	local switch<const> = room:switch_room(direction)
 
 	if switch.outside then
 		room.last_room_switch = switch
@@ -739,9 +739,9 @@ function castle:switch_room(direction, player_top, player_bottom)
 end
 
 function castle:enter_world(target)
-	local transition = castle_map.world_transitions[target]
-	local from_room_number = self.current_room_number
-	local switch = create_room_switch(from_room_number, transition.world_room_number, 'down')
+	local transition<const> = castle_map.world_transitions[target]
+	local from_room_number<const> = self.current_room_number
+	local switch<const> = create_room_switch(from_room_number, transition.world_room_number, 'down')
 	switch.world_number = transition.world_number
 	switch.map_id = transition.world_number
 	switch.map_x = transition.world_map_x
@@ -761,15 +761,15 @@ function castle:enter_world(target)
 end
 
 function castle:leave_world_to_castle(emit_room_enter_now)
-	local room = current_room()
-	local world_number = room.world_number
-	local from_room_number = self.current_room_number
+	local room<const> = current_room()
+	local world_number<const> = room.world_number
+	local from_room_number<const> = self.current_room_number
 
-	local transition = castle_map.world_transitions_by_number[world_number]
+	local transition<const> = castle_map.world_transitions_by_number[world_number]
 
 	room:load_room(transition.castle_room_number)
 	self.current_room_number = transition.castle_room_number
-	local switch = create_room_switch(from_room_number, self.current_room_number, 'world_leave')
+	local switch<const> = create_room_switch(from_room_number, self.current_room_number, 'world_leave')
 	self:commit_room_switch(
 		switch,
 		0,
@@ -789,12 +789,12 @@ function castle:leave_world_to_castle(emit_room_enter_now)
 end
 
 function castle:halo_teleport_to_room_1(emit_room_enter_now)
-	local room = current_room()
-	local from_room_number = self.current_room_number
+	local room<const> = current_room()
+	local from_room_number<const> = self.current_room_number
 
 	room:load_room(halo_destination_room_number)
 	self.current_room_number = halo_destination_room_number
-	local switch = create_room_switch(from_room_number, self.current_room_number, 'halo')
+	local switch<const> = create_room_switch(from_room_number, self.current_room_number, 'halo')
 	self:commit_room_switch(switch, 0, 5, 12, emit_room_enter_now)
 	switch.spawn_x = constants.player.start_x
 	switch.spawn_y = constants.player.start_y
@@ -810,7 +810,7 @@ function castle:halo_teleport_to_room_1(emit_room_enter_now)
 	}
 end
 
-local function register_castle_definition()
+local register_castle_definition<const> = function()
 	define_prefab({
 		def_id = 'castle',
 		class = castle,

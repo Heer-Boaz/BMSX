@@ -1,7 +1,7 @@
 -- ecs_systems.lua
 -- built-in ecs systems for lua engine
 
-local wrap_text_lines = require('util/wrap_text_lines')
+local wrap_text_lines<const> = require('util/wrap_text_lines')
 --
 -- DESIGN PRINCIPLES — collision handling via overlap2dsystem
 --
@@ -51,52 +51,52 @@ local wrap_text_lines = require('util/wrap_text_lines')
 --    Use collision_profiles to assign named layer+mask presets rather than
 --    setting layer/mask directly.
 
-local ecs = require('ecs')
-local clear_map = require('clear_map')
-local collision2d = require('collision2d')
-local scratchrecordbatch = require('scratchrecordbatch')
-local world_instance = require('world').instance
+local ecs<const> = require('ecs')
+local clear_map<const> = require('clear_map')
+local collision2d<const> = require('collision2d')
+local scratchrecordbatch<const> = require('scratchrecordbatch')
+local world_instance<const> = require('world').instance
 
-local tickgroup = ecs.tickgroup
-local ecsystem = ecs.ecsystem
+local tickgroup<const> = ecs.tickgroup
+local ecsystem<const> = ecs.ecsystem
 
-local spritecomponent = 'spritecomponent'
-local timelinecomponent = 'timelinecomponent'
-local transformcomponent = 'transformcomponent'
-local textcomponent = 'textcomponent'
-local meshcomponent = 'meshcomponent'
-local ambientlightcomponent = 'ambientlightcomponent'
-local directionallightcomponent = 'directionallightcomponent'
-local pointlightcomponent = 'pointlightcomponent'
-local customvisualcomponent = 'customvisualcomponent'
-local collider2dcomponent = 'collider2dcomponent'
-local positionupdateaxiscomponent = 'positionupdateaxiscomponent'
-local screenboundarycomponent = 'screenboundarycomponent'
-local tilecollisioncomponent = 'tilecollisioncomponent'
-local prohibitleavingscreencomponent = 'prohibitleavingscreencomponent'
-local actioneffectcomponent = 'actioneffectcomponent'
+local spritecomponent<const> = 'spritecomponent'
+local timelinecomponent<const> = 'timelinecomponent'
+local transformcomponent<const> = 'transformcomponent'
+local textcomponent<const> = 'textcomponent'
+local meshcomponent<const> = 'meshcomponent'
+local ambientlightcomponent<const> = 'ambientlightcomponent'
+local directionallightcomponent<const> = 'directionallightcomponent'
+local pointlightcomponent<const> = 'pointlightcomponent'
+local customvisualcomponent<const> = 'customvisualcomponent'
+local collider2dcomponent<const> = 'collider2dcomponent'
+local positionupdateaxiscomponent<const> = 'positionupdateaxiscomponent'
+local screenboundarycomponent<const> = 'screenboundarycomponent'
+local tilecollisioncomponent<const> = 'tilecollisioncomponent'
+local prohibitleavingscreencomponent<const> = 'prohibitleavingscreencomponent'
+local actioneffectcomponent<const> = 'actioneffectcomponent'
 
 -- Shared opts table to avoid per-frame allocation.
-local active_scope = { scope = 'active' }
-local render_scratch_items = scratchrecordbatch.new(2):reserve(2)
-local mesh_render_options = render_scratch_items[1]
-local point_light_position = render_scratch_items[2]
+local active_scope<const> = { scope = 'active' }
+local render_scratch_items<const> = scratchrecordbatch.new(2):reserve(2)
+local mesh_render_options<const> = render_scratch_items[1]
+local point_light_position<const> = render_scratch_items[2]
 
-local behaviortreesystem = {}
+local behaviortreesystem<const> = {}
 behaviortreesystem.__index = behaviortreesystem
 setmetatable(behaviortreesystem, { __index = ecsystem })
 
 function behaviortreesystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.input, priority or 0), behaviortreesystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.input, priority or 0), behaviortreesystem)
 	return self
 end
 
-local audioroutersystem = {}
+local audioroutersystem<const> = {}
 audioroutersystem.__index = audioroutersystem
 setmetatable(audioroutersystem, { __index = ecsystem })
 
 function audioroutersystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.input, priority or 5), audioroutersystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.input, priority or 5), audioroutersystem)
 	self.__ecs_id = 'audioroutersystem'
 	return self
 end
@@ -109,7 +109,7 @@ function behaviortreesystem:update()
 		if not (obj.active) then
 			goto continue_behavior_tree
 		end
-		local bts = obj.btreecontexts
+		local bts<const> = obj.btreecontexts
 		for id in pairs(bts) do
 			obj:tick_tree(id)
 		end
@@ -117,12 +117,12 @@ function behaviortreesystem:update()
 	end
 end
 
-local actioneffectruntimesystem = {}
+local actioneffectruntimesystem<const> = {}
 actioneffectruntimesystem.__index = actioneffectruntimesystem
 setmetatable(actioneffectruntimesystem, { __index = ecsystem })
 
 function actioneffectruntimesystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.actioneffect, priority or 32), actioneffectruntimesystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.actioneffect, priority or 32), actioneffectruntimesystem)
 	return self
 end
 
@@ -132,12 +132,12 @@ function actioneffectruntimesystem:update(dt_ms)
 	end
 end
 
-local statemachinesystem = {}
+local statemachinesystem<const> = {}
 statemachinesystem.__index = statemachinesystem
 setmetatable(statemachinesystem, { __index = ecsystem })
 
 function statemachinesystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.moderesolution, priority or 0), statemachinesystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.moderesolution, priority or 0), statemachinesystem)
 	return self
 end
 
@@ -151,15 +151,15 @@ function statemachinesystem:update(dt_ms)
 	end
 end
 
-local objectticksystem = {}
+local objectticksystem<const> = {}
 objectticksystem.__index = objectticksystem
 setmetatable(objectticksystem, { __index = ecsystem })
 
-local object_tick_orders = { 'early', 'normal', 'late' }
-local object_tick_order_lookup = { early = true, normal = true, late = true }
+local object_tick_orders<const> = { 'early', 'normal', 'late' }
+local object_tick_order_lookup<const> = { early = true, normal = true, late = true }
 
-local function resolve_object_tick_order(obj)
-	local order = obj.tick_order
+local resolve_object_tick_order<const> = function(obj)
+	local order<const> = obj.tick_order
 	if order == nil then
 		return 'normal'
 	end
@@ -170,17 +170,17 @@ local function resolve_object_tick_order(obj)
 end
 
 function objectticksystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.moderesolution, priority or 10), objectticksystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.moderesolution, priority or 10), objectticksystem)
 	return self
 end
 
 function objectticksystem:update(dt_ms)
 	for order_index = 1, #object_tick_orders do
-		local tick_order = object_tick_orders[order_index]
+		local tick_order<const> = object_tick_orders[order_index]
 		for obj in world_instance:objects(active_scope) do
 			if resolve_object_tick_order(obj) == tick_order then
 				for i = 1, #obj.components do
-					local comp = obj.components[i]
+					local comp<const> = obj.components[i]
 					if comp.enabled then
 						comp:update(dt_ms)
 					end
@@ -190,11 +190,11 @@ function objectticksystem:update(dt_ms)
 	end
 end
 
-local prepositionsystem = {}
+local prepositionsystem<const> = {}
 prepositionsystem.__index = prepositionsystem
 setmetatable(prepositionsystem, { __index = ecsystem })
 
-local function preprocess_positionupdate_components(type_name)
+local preprocess_positionupdate_components<const> = function(type_name)
 	for _, component in world_instance:objects_with_components(type_name, active_scope) do
 		if component.enabled then
 			component:preprocess_update()
@@ -203,7 +203,7 @@ local function preprocess_positionupdate_components(type_name)
 end
 
 function prepositionsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.input, priority or -100), prepositionsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.input, priority or -100), prepositionsystem)
 	return self
 end
 
@@ -214,29 +214,29 @@ function prepositionsystem:update()
 	preprocess_positionupdate_components(prohibitleavingscreencomponent)
 end
 
-local boundarysystem = {}
+local boundarysystem<const> = {}
 boundarysystem.__index = boundarysystem
 setmetatable(boundarysystem, { __index = ecsystem })
 
 function boundarysystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), boundarysystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), boundarysystem)
 	return self
 end
 
-local function emit_boundary_events(obj, component)
+local emit_boundary_events<const> = function(obj, component)
 	if not component.enabled then
 		return
 	end
-	local left = component.boundary_left
-	local top = component.boundary_top
-	local right = component.boundary_right
-	local bottom = component.boundary_bottom
-	local oldx = component.old_pos.x
-	local oldy = component.old_pos.y
-	local newx = obj.x
-	local newy = obj.y
-	local sx = obj.sx or 0
-	local sy = obj.sy or 0
+	local left<const> = component.boundary_left
+	local top<const> = component.boundary_top
+	local right<const> = component.boundary_right
+	local bottom<const> = component.boundary_bottom
+	local oldx<const> = component.old_pos.x
+	local oldy<const> = component.old_pos.y
+	local newx<const> = obj.x
+	local newy<const> = obj.y
+	local sx<const> = obj.sx or 0
+	local sy<const> = obj.sy or 0
 	if newx < oldx then
 		if newx + sx < left then
 			obj.events:emit('screen.leave', { d = 'left', old_x_or_y = oldx })
@@ -274,12 +274,12 @@ function boundarysystem:update()
 	end
 end
 
-local tilecollisionsystem = {}
+local tilecollisionsystem<const> = {}
 tilecollisionsystem.__index = tilecollisionsystem
 setmetatable(tilecollisionsystem, { __index = ecsystem })
 
-local function emit_tilecollision_event(owner, component, suffix, phase, collision_key, payload)
-	local event = component._event
+local emit_tilecollision_event<const> = function(owner, component, suffix, phase, collision_key, payload)
+	local event<const> = component._event
 	clear_map(event)
 	event.type = component.event_base .. '.' .. suffix
 	event.emitter = owner
@@ -294,18 +294,18 @@ local function emit_tilecollision_event(owner, component, suffix, phase, collisi
 end
 
 function tilecollisionsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 45), tilecollisionsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 45), tilecollisionsystem)
 	return self
 end
 
 function tilecollisionsystem:update()
 	for obj, component in world_instance:objects_with_components(tilecollisioncomponent, active_scope) do
 		if component.enabled and not obj.dispose_flag and obj.active then
-			local current_payload = component.current_payload
-			local previous_payload = component.previous_payload
+			local current_payload<const> = component.current_payload
+			local previous_payload<const> = component.previous_payload
 			clear_map(current_payload)
-			local current_key = component.query(component, obj, current_payload)
-			local previous_key = component.previous_collision_key
+			local current_key<const> = component.query(component, obj, current_payload)
+			local previous_key<const> = component.previous_collision_key
 			if current_key == nil then
 				if previous_key ~= nil then
 					emit_tilecollision_event(obj, component, 'end', 'end', previous_key, previous_payload)
@@ -330,71 +330,71 @@ function tilecollisionsystem:update()
 	end
 end
 
-local physicssyncbeforestepsystem = {}
+local physicssyncbeforestepsystem<const> = {}
 physicssyncbeforestepsystem.__index = physicssyncbeforestepsystem
 setmetatable(physicssyncbeforestepsystem, { __index = ecsystem })
 
 function physicssyncbeforestepsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicssyncbeforestepsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicssyncbeforestepsystem)
 	return self
 end
 
 function physicssyncbeforestepsystem:update()
 end
 
-local physicsworldstepsystem = {}
+local physicsworldstepsystem<const> = {}
 physicsworldstepsystem.__index = physicsworldstepsystem
 setmetatable(physicsworldstepsystem, { __index = ecsystem })
 
 function physicsworldstepsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicsworldstepsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicsworldstepsystem)
 	return self
 end
 
 function physicsworldstepsystem:update()
 end
 
-local physicspostsystem = {}
+local physicspostsystem<const> = {}
 physicspostsystem.__index = physicspostsystem
 setmetatable(physicspostsystem, { __index = ecsystem })
 
 function physicspostsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicspostsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicspostsystem)
 	return self
 end
 
 function physicspostsystem:update()
 end
 
-local physicscollisioneventsystem = {}
+local physicscollisioneventsystem<const> = {}
 physicscollisioneventsystem.__index = physicscollisioneventsystem
 setmetatable(physicscollisioneventsystem, { __index = ecsystem })
 
 function physicscollisioneventsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicscollisioneventsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicscollisioneventsystem)
 	return self
 end
 
 function physicscollisioneventsystem:update()
 end
 
-local physicssyncafterworldcollisionsystem = {}
+local physicssyncafterworldcollisionsystem<const> = {}
 physicssyncafterworldcollisionsystem.__index = physicssyncafterworldcollisionsystem
 setmetatable(physicssyncafterworldcollisionsystem, { __index = ecsystem })
 
 function physicssyncafterworldcollisionsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicssyncafterworldcollisionsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), physicssyncafterworldcollisionsystem)
 	return self
 end
 
 function physicssyncafterworldcollisionsystem:update()
 end
 
-local overlap2dsystem = {}
+local overlap2dsystem<const> = {}
 overlap2dsystem.__index = overlap2dsystem
 setmetatable(overlap2dsystem, { __index = ecsystem })
 
-local function add_pair(set, row_pool, a, b)
+local add_pair<const> = function(set, row_pool, a, b)
 	if b < a then
 		a, b = b, a
 	end
@@ -411,13 +411,13 @@ local function add_pair(set, row_pool, a, b)
 	row[b] = true
 end
 
-local function clear_array(array)
+local clear_array<const> = function(array)
 	for i = #array, 1, -1 do
 		array[i] = nil
 	end
 end
 
-local function clear_pair_set(set, row_pool)
+local clear_pair_set<const> = function(set, row_pool)
 	for key, row in pairs(set) do
 		clear_map(row)
 		row_pool[#row_pool + 1] = row
@@ -425,7 +425,7 @@ local function clear_pair_set(set, row_pool)
 	end
 end
 
-local function build_overlap_event(event_name, owner, self_col, other_col, other_owner, contact, phase)
+local build_overlap_event<const> = function(event_name, owner, self_col, other_col, other_owner, contact, phase)
 	return {
 		type = event_name,
 		emitter = owner,
@@ -443,11 +443,11 @@ local function build_overlap_event(event_name, owner, self_col, other_col, other
 	}
 end
 
-local function contact_with_flipped_normal(contact)
+local contact_with_flipped_normal<const> = function(contact)
 	if contact == nil then
 		return nil
 	end
-	local normal = contact.normal
+	local normal<const> = contact.normal
 	if normal == nil then
 		return {
 			depth = contact.depth,
@@ -468,7 +468,7 @@ function overlap2dsystem:space_match(scope, owner_space, other_space)
 	if scope == 'all' then
 		return true
 	end
-	local current = world_instance.active_space_id
+	local current<const> = world_instance.active_space_id
 	if scope == 'current' or scope == nil then
 		return other_space == owner_space and other_space == current
 	end
@@ -488,7 +488,7 @@ end
 --   broadphase grid, tests exact shapes with collision2d, and fires the three
 --   overlap events described in the file header.
 function overlap2dsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 42), overlap2dsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 42), overlap2dsystem)
 	self.prev_pairs = {}
 	self.next_pairs = {}
 	self.prev_collider_lookup = {}
@@ -506,19 +506,19 @@ function overlap2dsystem.new(priority)
 end
 
 function overlap2dsystem:update()
-	local prev_pairs = self.prev_pairs
-	local new_pairs = self.next_pairs
-	local prev_collider_lookup = self.prev_collider_lookup
-	local collider_lookup = self.next_collider_lookup
-	local pair_row_pool = self.pair_row_pool
+	local prev_pairs<const> = self.prev_pairs
+	local new_pairs<const> = self.next_pairs
+	local prev_collider_lookup<const> = self.prev_collider_lookup
+	local collider_lookup<const> = self.next_collider_lookup
+	local pair_row_pool<const> = self.pair_row_pool
 	clear_pair_set(new_pairs, pair_row_pool)
 	clear_map(collider_lookup)
 
-	local broadphase = self.broadphase
+	local broadphase<const> = self.broadphase
 	broadphase.cell_size = self.grid_cell_size
 	broadphase:clear()
 
-	local event_colliders = self.event_colliders
+	local event_colliders<const> = self.event_colliders
 	clear_array(event_colliders)
 	for obj, collider in world_instance:objects_with_components(collider2dcomponent, active_scope) do
 		if collider.enabled and not obj.dispose_flag then
@@ -535,30 +535,30 @@ function overlap2dsystem:update()
 	end
 
 	for i = 1, #event_colliders do
-		local collider = event_colliders[i]
-		local owner = collider.parent
+		local collider<const> = event_colliders[i]
+		local owner<const> = collider.parent
 		-- if owner == nil then
 		-- 	error('[overlap2dsystem] collider '' .. tostring(collider.id) .. '' has no parent')
 		-- end
 		if owner.dispose_flag or not owner.active then
 			goto continue_event_collider
 		end
-		local owner_space = owner.space_id
-		local candidates = broadphase:query_aabb(collider:get_world_area(), self.candidate_colliders, self.candidate_seen)
+		local owner_space<const> = owner.space_id
+		local candidates<const> = broadphase:query_aabb(collider:get_world_area(), self.candidate_colliders, self.candidate_seen)
 		for j = 1, #candidates do
-			local other = candidates[j]
+			local other<const> = candidates[j]
 			if other ~= collider then
-				local other_owner = other.parent
+				local other_owner<const> = other.parent
 				-- if other_owner == nil then
 				-- 	error('[overlap2dsystem] collider '' .. tostring(other.id) .. '' has no parent')
 				-- end
 				if other_owner.dispose_flag or not other_owner.active then
 					goto continue_candidate
 				end
-				local a_hits_b = (collider.mask & other.layer) ~= 0
-				local b_hits_a = (other.mask & collider.layer) ~= 0
+				local a_hits_b<const> = (collider.mask & other.layer) ~= 0
+				local b_hits_a<const> = (other.mask & collider.layer) ~= 0
 				if a_hits_b and b_hits_a then
-						local other_space = other_owner.space_id
+						local other_space<const> = other_owner.space_id
 						if self:space_match(collider.spaceevents, owner_space, other_space) then
 							if not (other.id < collider.id) then
 								if collision2d.collides(collider, other) then
@@ -573,14 +573,14 @@ function overlap2dsystem:update()
 		::continue_event_collider::
 	end
 
-	local begins = self.begins
-	local stays = self.stays
-	local ends = self.ends
+	local begins<const> = self.begins
+	local stays<const> = self.stays
+	local ends<const> = self.ends
 	clear_array(begins)
 	clear_array(stays)
 	clear_array(ends)
 	for a_id, row in pairs(new_pairs) do
-		local prev_row = prev_pairs[a_id]
+		local prev_row<const> = prev_pairs[a_id]
 		for b_id in pairs(row) do
 			if prev_row ~= nil and prev_row[b_id] then
 				stays[#stays + 1] = a_id
@@ -592,7 +592,7 @@ function overlap2dsystem:update()
 		end
 	end
 	for a_id, row in pairs(prev_pairs) do
-		local new_row = new_pairs[a_id]
+		local new_row<const> = new_pairs[a_id]
 		for b_id in pairs(row) do
 			if not (new_row ~= nil and new_row[b_id]) then
 				ends[#ends + 1] = a_id
@@ -601,9 +601,9 @@ function overlap2dsystem:update()
 		end
 	end
 
-	local function resolve_pair(a_id, b_id)
-		local a = collider_lookup[a_id] or prev_collider_lookup[a_id]
-		local b = collider_lookup[b_id] or prev_collider_lookup[b_id]
+	local resolve_pair<const> = function(a_id, b_id)
+		local a<const> = collider_lookup[a_id] or prev_collider_lookup[a_id]
+		local b<const> = collider_lookup[b_id] or prev_collider_lookup[b_id]
 		if a == nil or b == nil then
 			return nil, nil
 		end
@@ -613,9 +613,9 @@ function overlap2dsystem:update()
 		return a, b
 	end
 
-	local function emit_pair(event_name, col_a, col_b, contact, phase)
-		local owner_a = col_a.parent
-		local owner_b = col_b.parent
+	local emit_pair<const> = function(event_name, col_a, col_b, contact, phase)
+		local owner_a<const> = col_a.parent
+		local owner_b<const> = col_b.parent
 		if owner_a == nil or owner_b == nil then
 			error('[overlap2dsystem] attempted to emit overlap event without collider parents')
 		end
@@ -635,23 +635,23 @@ function overlap2dsystem:update()
 	end
 
 	for i = 1, #begins, 2 do
-		local a, b = resolve_pair(begins[i], begins[i + 1])
+		local a<const>, b<const> = resolve_pair(begins[i], begins[i + 1])
 		if a ~= nil and b ~= nil then
-			local contact = collision2d.get_contact2d(a, b)
+			local contact<const> = collision2d.get_contact2d(a, b)
 			emit_pair('overlap.begin', a, b, contact, 'begin')
 			emit_pair('overlap', a, b, contact, 'begin')
 		end
 	end
 	for i = 1, #stays, 2 do
-		local a, b = resolve_pair(stays[i], stays[i + 1])
+		local a<const>, b<const> = resolve_pair(stays[i], stays[i + 1])
 		if a ~= nil and b ~= nil then
-			local contact = collision2d.get_contact2d(a, b)
+			local contact<const> = collision2d.get_contact2d(a, b)
 			emit_pair('overlap.stay', a, b, contact, 'stay')
 			emit_pair('overlap', a, b, contact, 'stay')
 		end
 	end
 	for i = 1, #ends, 2 do
-		local a, b = resolve_pair(ends[i], ends[i + 1])
+		local a<const>, b<const> = resolve_pair(ends[i], ends[i + 1])
 		if a ~= nil and b ~= nil then
 			emit_pair('overlap.end', a, b, nil, 'end')
 		end
@@ -663,12 +663,12 @@ function overlap2dsystem:update()
 	self.next_collider_lookup = prev_collider_lookup
 end
 
-local transformsystem = {}
+local transformsystem<const> = {}
 transformsystem.__index = transformsystem
 setmetatable(transformsystem, { __index = ecsystem })
 
 function transformsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), transformsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority or 0), transformsystem)
 	return self
 end
 
@@ -680,12 +680,12 @@ function transformsystem:update()
 	end
 end
 
-local timelinesystem = {}
+local timelinesystem<const> = {}
 timelinesystem.__index = timelinesystem
 setmetatable(timelinesystem, { __index = ecsystem })
 
 function timelinesystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.animation, priority or 0), timelinesystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.animation, priority or 0), timelinesystem)
 	return self
 end
 
@@ -697,12 +697,12 @@ function timelinesystem:update(dt_ms)
 	end
 end
 
-local meshanimationsystem = {}
+local meshanimationsystem<const> = {}
 meshanimationsystem.__index = meshanimationsystem
 setmetatable(meshanimationsystem, { __index = ecsystem })
 
 function meshanimationsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.animation, priority or 0), meshanimationsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.animation, priority or 0), meshanimationsystem)
 	return self
 end
 
@@ -714,12 +714,12 @@ function meshanimationsystem:update(dt_ms)
 	end
 end
 
-local textrendersystem = {}
+local textrendersystem<const> = {}
 textrendersystem.__index = textrendersystem
 setmetatable(textrendersystem, { __index = ecsystem })
 
 function textrendersystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.presentation, priority or 7), textrendersystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority or 7), textrendersystem)
 	return self
 end
 
@@ -728,11 +728,11 @@ function textrendersystem:update()
 		if not tc.enabled then
 			goto continue_text_render
 		end
-		local offset = tc.offset
+		local offset<const> = tc.offset
 		local x
 		local y
 		local z
-		local t = obj:get_component(transformcomponent)
+		local t<const> = obj:get_component(transformcomponent)
 		if t then
 			x = t.position.x + offset.x
 			y = t.position.y + offset.y
@@ -768,12 +768,12 @@ function textrendersystem:update()
 	end
 end
 
-local spriterendersystem = {}
+local spriterendersystem<const> = {}
 spriterendersystem.__index = spriterendersystem
 setmetatable(spriterendersystem, { __index = ecsystem })
 
 function spriterendersystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.presentation, priority or 8), spriterendersystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority or 8), spriterendersystem)
 	return self
 end
 
@@ -782,11 +782,11 @@ function spriterendersystem:update()
 		if not obj.visible or not sc.enabled then
 			goto continue_sprite_render
 		end
-		local offset = sc.offset
+		local offset<const> = sc.offset
 		local x
 		local y
 		local z
-		local t = obj:get_component(transformcomponent)
+		local t<const> = obj:get_component(transformcomponent)
 		if t then
 			x = t.position.x + offset.x
 			y = t.position.y + offset.y
@@ -803,7 +803,7 @@ function spriterendersystem:update()
 		if sc.flip.flip_v then
 			flip_flags = flip_flags | 2
 		end
-		write_words(
+		memwrite(
 			sys_vdp_cmd_arg0,
 			assets.img[sc.imgid].handle,
 			x,
@@ -819,16 +819,16 @@ function spriterendersystem:update()
 			sc.colorize.a,
 			sc.parallax_weight
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 		::continue_sprite_render::
 	end
 end
 
-local function resolve_world_position(obj, offset)
+local resolve_world_position<const> = function(obj, offset)
 	local x
 	local y
 	local z
-	local t = obj:get_component(transformcomponent)
+	local t<const> = obj:get_component(transformcomponent)
 	if t then
 		x = t.position.x + offset.x
 		y = t.position.y + offset.y
@@ -841,12 +841,12 @@ local function resolve_world_position(obj, offset)
 	return x, y, z
 end
 
-local lightrendersystem = {}
+local lightrendersystem<const> = {}
 lightrendersystem.__index = lightrendersystem
 setmetatable(lightrendersystem, { __index = ecsystem })
 
 function lightrendersystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.presentation, priority or 8.5), lightrendersystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority or 8.5), lightrendersystem)
 	return self
 end
 
@@ -871,7 +871,7 @@ function lightrendersystem:update()
 		if not obj.visible or not lc.enabled then
 			goto continue_point
 		end
-		local x, y, z = resolve_world_position(obj, lc.offset)
+		local x<const>, y<const>, z<const> = resolve_world_position(obj, lc.offset)
 		point_light_position.x = x
 		point_light_position.y = y
 		point_light_position.z = z
@@ -880,12 +880,12 @@ function lightrendersystem:update()
 	end
 end
 
-local meshrendersystem = {}
+local meshrendersystem<const> = {}
 meshrendersystem.__index = meshrendersystem
 setmetatable(meshrendersystem, { __index = ecsystem })
 
 function meshrendersystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.presentation, priority or 9), meshrendersystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority or 9), meshrendersystem)
 	return self
 end
 
@@ -902,12 +902,12 @@ function meshrendersystem:update()
 	end
 end
 
-local rendersubmitsystem = {}
+local rendersubmitsystem<const> = {}
 rendersubmitsystem.__index = rendersubmitsystem
 setmetatable(rendersubmitsystem, { __index = ecsystem })
 
 function rendersubmitsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.presentation, priority or 10), rendersubmitsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, priority or 10), rendersubmitsystem)
 	return self
 end
 
@@ -921,12 +921,12 @@ function rendersubmitsystem:update()
 	end
 end
 
-local eventflushsystem = {}
+local eventflushsystem<const> = {}
 eventflushsystem.__index = eventflushsystem
 setmetatable(eventflushsystem, { __index = ecsystem })
 
 function eventflushsystem.new(priority)
-	local self = setmetatable(ecsystem.new(tickgroup.eventflush, priority or 0), eventflushsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.eventflush, priority or 0), eventflushsystem)
 	return self
 end
 

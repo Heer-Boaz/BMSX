@@ -1,8 +1,8 @@
-local constants = require('constants')
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local constants<const> = require('constants')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local boekfoe = {}
+local boekfoe<const> = {}
 boekfoe.__index = boekfoe
 
 function boekfoe:ctor()
@@ -12,7 +12,7 @@ function boekfoe:ctor()
 end
 
 function boekfoe.bt_tick(self, blackboard)
-	local node = blackboard.nodedata
+	local node<const> = blackboard.nodedata
 	if self.boek_state == 'closed' then
 		local closed_ticks = node.boek_state_ticks or constants.enemy.boek_wait_open_steps
 		closed_ticks = closed_ticks - 1
@@ -35,7 +35,7 @@ function boekfoe.bt_tick(self, blackboard)
 	spawn_ticks = spawn_ticks - 1
 
 	if spawn_ticks <= 0 then
-		local y_speed_num = math.random(-5, 4)
+		local y_speed_num<const> = math.random(-5, 4)
 		object('c').events:emit('paperspawn')
 		inst('enemy.paperfoe', {
 			direction = self.direction == 'left' and 'left' or 'right',

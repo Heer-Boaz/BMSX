@@ -1,4 +1,4 @@
-local function consume_axis_accum(accum, speed_num, speed_den)
+local consume_axis_accum<const> = function(accum, speed_num, speed_den)
 	accum = accum + speed_num
 	local delta = 0
 	while accum >= speed_den do
@@ -12,7 +12,7 @@ local function consume_axis_accum(accum, speed_num, speed_den)
 	return delta, accum
 end
 
-local function set_velocity(target, speed_x_num, speed_y_num, speed_den)
+local set_velocity<const> = function(target, speed_x_num, speed_y_num, speed_den)
 	target.speed_x_num = speed_x_num
 	target.speed_y_num = speed_y_num
 	target.speed_den = speed_den
@@ -20,9 +20,9 @@ local function set_velocity(target, speed_x_num, speed_y_num, speed_den)
 	target.speed_accum_y = 0
 end
 
-local function move_with_velocity(target)
-	local dx, next_accum_x = consume_axis_accum(target.speed_accum_x, target.speed_x_num, target.speed_den)
-	local dy, next_accum_y = consume_axis_accum(target.speed_accum_y, target.speed_y_num, target.speed_den)
+local move_with_velocity<const> = function(target)
+	local dx<const>, next_accum_x<const> = consume_axis_accum(target.speed_accum_x, target.speed_x_num, target.speed_den)
+	local dy<const>, next_accum_y<const> = consume_axis_accum(target.speed_accum_y, target.speed_y_num, target.speed_den)
 	target.speed_accum_x = next_accum_x
 	target.speed_accum_y = next_accum_y
 	target.x = target.x + dx

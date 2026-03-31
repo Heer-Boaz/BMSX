@@ -36,22 +36,22 @@
 --      self:gfx('enemy')
 --      self.collider:apply_collision_profile('enemy')  -- sets layer/mask
 
-local worldobject = require('worldobject')
-local components = require('components')
+local worldobject<const> = require('worldobject')
+local components<const> = require('components')
 
-local spriteobject = {}
+local spriteobject<const> = {}
 spriteobject.__index = spriteobject
 setmetatable(spriteobject, { __index = worldobject })
 
 spriteobject.base_sprite_id = 'base_sprite'
 spriteobject.primary_collider_id = 'primary'
 
-local function apply_image_metadata(self, id)
-	local asset = assets.img[id]
+local apply_image_metadata<const> = function(self, id)
+	local asset<const> = assets.img[id]
 	if asset == nil then
 		error('[spriteobject] Image asset "' .. tostring(id) .. '" not found.')
 	end
-	local meta = asset.imgmeta
+	local meta<const> = asset.imgmeta
 	self.sx = meta.width
 	self.sy = meta.height
 end
@@ -59,7 +59,7 @@ end
 function spriteobject.new(opts)
 	opts = opts or {}
 	opts.type_name = 'spriteobject'
-	local self = setmetatable(worldobject.new(opts), spriteobject)
+	local self<const> = setmetatable(worldobject.new(opts), spriteobject)
 	self.flip_h = false
 	self.flip_v = false
 	self.imgid = nil
@@ -102,11 +102,11 @@ function spriteobject:draw()
 	if not self.visible then
 		return
 	end
-	local sc = self.sprite_component
+	local sc<const> = self.sprite_component
 	if sc.imgid == nil then
 		return
 	end
-	local offset = sc.offset
+	local offset<const> = sc.offset
 	local flip_flags = 0
 	if sc.flip.flip_h then
 		flip_flags = flip_flags | 1
@@ -114,7 +114,7 @@ function spriteobject:draw()
 	if sc.flip.flip_v then
 		flip_flags = flip_flags | 2
 	end
-	write_words(
+	memwrite(
 		sys_vdp_cmd_arg0,
 		assets.img[sc.imgid].handle,
 		self.x + offset.x,
@@ -130,7 +130,7 @@ function spriteobject:draw()
 		sc.colorize.a,
 		sc.parallax_weight
 	)
-	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 end
 
 return spriteobject

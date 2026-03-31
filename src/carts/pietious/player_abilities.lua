@@ -1,7 +1,7 @@
-local constants = require('constants')
-local action_effects = require('action_effects')
+local constants<const> = require('constants')
+local action_effects<const> = require('action_effects')
 
-local player_abilities = {}
+local player_abilities<const> = {}
 
 player_abilities.tags = {
 	sword_activation_allowed = 'g.sa',
@@ -33,7 +33,7 @@ action_effects.register_effect('pepernoot', {
 	id = 'pepernoot',
 	blocked_tags = { 'g.dl' },
 	can_trigger = function(context)
-		local owner = context.owner
+		local owner<const> = context.owner
 		if not owner:has_tag(player_abilities.tags.stairs_action_allowed) then
 			return false
 		end
@@ -52,10 +52,10 @@ action_effects.register_effect('pepernoot', {
 		return true
 	end,
 	handler = function(context)
-		local owner = context.owner
-		local room = object('room')
+		local owner<const> = context.owner
+		local room<const> = object('room')
 		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
-		local projectile_id = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
+		local projectile_id<const> = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
 		local spawn_x = owner.x + (owner.facing < 0 and -constants.secondary_weapon.pepernoot_spawn_offset_x or constants.secondary_weapon.pepernoot_spawn_offset_x)
 		local spawn_y = owner.y + constants.secondary_weapon.pepernoot_spawn_offset_y
 		spawn_x, spawn_y = room:snap_world_to_tile(spawn_x, spawn_y)
@@ -80,7 +80,7 @@ action_effects.register_effect('spyglass', {
 		return object('room'):find_near_lithograph(context.owner) ~= nil
 	end,
 	handler = function(context)
-		local lithograph = object('room'):find_near_lithograph(context.owner)
+		local lithograph<const> = object('room'):find_near_lithograph(context.owner)
 		context.owner.events:emit('lithograph.request', {
 			text_line = lithograph.text,
 		})
@@ -91,7 +91,7 @@ action_effects.register_effect('halo', {
 	id = 'halo',
 	blocked_tags = { 'g.tr' },
 	can_trigger = function(context)
-		local castle = object('c')
+		local castle<const> = object('c')
 		if not context.owner.inventory_items.halo then
 			return false
 		end
@@ -101,15 +101,15 @@ action_effects.register_effect('halo', {
 		return true
 	end,
 	handler = function(context)
-		local castle = object('c')
-		local from_world = (object('room').world_number or 0) ~= 0
+		local castle<const> = object('c')
+		local from_world<const> = (object('room').world_number or 0) ~= 0
 		if from_world then
 			castle:halo_teleport_to_room_1(false)
 			context.owner:begin_waiting_halo_banner()
 			context.owner:emit_gameplay_fact('halo_resolved_from_world')
 			return
 		end
-		local switch = castle:halo_teleport_to_room_1(true)
+		local switch<const> = castle:halo_teleport_to_room_1(true)
 		context.owner:apply_halo_teleport_arrival(switch)
 		context.owner:emit_gameplay_fact('halo_resolved_in_castle')
 	end,
@@ -164,11 +164,11 @@ end
 
 function player_abilities.attach_player_methods(player)
 	function player:equip_subweapon(id)
-		local next_id = id
+		local next_id<const> = id
 		self:remove_tag(player_abilities.equip_tags.pepernoot)
 		self:remove_tag(player_abilities.equip_tags.spyglass)
 		self.secondary_weapon = next_id
-		local grant_tag = player_abilities.equip_tags[next_id or 'none']
+		local grant_tag<const> = player_abilities.equip_tags[next_id or 'none']
 		if grant_tag ~= nil then
 			self:add_tag(grant_tag)
 		end

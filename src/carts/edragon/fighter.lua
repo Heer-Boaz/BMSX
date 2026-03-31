@@ -7,7 +7,7 @@ local role_player = constants.role.player
 local role_enemy = constants.role.enemy
 local state = constants.state
 
-local function sign(value)
+local sign<const> = function(value)
 	if value < 0 then
 		return -1
 	end
@@ -26,7 +26,7 @@ end
 
 local hit_state_chain = constants.hit_state_chain or {}
 
-local function state_duration(state_id)
+local state_duration<const> = function(state_id)
 	return state_timing[state_id] or 0
 end
 
@@ -674,7 +674,7 @@ function fighter:update()
 	self:progress_timers()
 end
 
-local function define_fighter_fsm()
+local define_fighter_fsm<const> = function()
 	define_fsm(constants.ids.fighter_fsm, {
 		initial = 'boot',
 		states = {
@@ -689,7 +689,7 @@ local function define_fighter_fsm()
 	})
 end
 
-local function register_fighter_definition()
+local register_fighter_definition<const> = function()
 	define_prefab({
 		def_id = constants.ids.fighter_def,
 		class = fighter,

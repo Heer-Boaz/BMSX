@@ -23,12 +23,12 @@
 --    It returns all live state machine instances for a given type.  Do not
 --    iterate it in gameplay code; reach objects through the world instead.
 
-local fsm = require('fsm')
+local fsm<const> = require('fsm')
 
-local statedefinitions = {}
-local activemachines = {}
+local statedefinitions<const> = {}
+local activemachines<const> = {}
 
-local fsmlibrary = {}
+local fsmlibrary<const> = {}
 
 -- fsmlibrary.register(machine_name, blueprint)
 --   Compiles a state-definition from blueprint and stores it under machine_name.
@@ -60,9 +60,9 @@ end
 --   target is typically a worldobject; the controller stores itself on target.
 --   Prefer the @assign_fsm decorator over calling this directly.
 function fsmlibrary.instantiate(machine_name, target)
-	local definition = statedefinitions[machine_name]
+	local definition<const> = statedefinitions[machine_name]
 	assert(definition, 'fsm '' .. machine_name .. '' not registered')
-	local controller = fsm.statemachinecontroller.new({ target = target, definition = definition, fsm_id = machine_name })
+	local controller<const> = fsm.statemachinecontroller.new({ target = target, definition = definition, fsm_id = machine_name })
 	local list = activemachines[machine_name]
 	if not list then
 		list = {}

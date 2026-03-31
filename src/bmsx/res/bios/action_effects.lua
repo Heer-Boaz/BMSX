@@ -35,11 +35,11 @@
 -- 4. CONTEXT: handler receives { owner, target, payload, args }.
 --    target defaults to owner but can be overridden for targeted effects.
 
-local eventemitter = require('eventemitter')
-local components = require('components')
-local component = components.component
+local eventemitter<const> = require('eventemitter')
+local components<const> = require('components')
+local component<const> = components.component
 
-local actioneffects = {}
+local actioneffects<const> = {}
 
 actioneffects.effecttype = {
 	spawn = 'spawn',
@@ -52,7 +52,7 @@ actioneffects.effecttype = {
 	emit_event = 'emit_event',
 }
 
-local registry = {
+local registry<const> = {
 	definitions = {},
 	schemas = {},
 	validators = {},
@@ -67,7 +67,7 @@ local registry = {
 --     validate — extra validation function
 function actioneffects.register_effect(definition, opts)
 	if type(definition) == 'string' then
-		local id = definition
+		local id<const> = definition
 		if type(opts) == 'table' then
 			definition = opts
 			definition.id = definition.id or id
@@ -97,11 +97,11 @@ function actioneffects.has(id)
 end
 
 function actioneffects.validate(id, payload)
-	local schema = registry.schemas[id]
+	local schema<const> = registry.schemas[id]
 	if schema and not schema.validate(payload) then
 		error('actioneffect payload failed schema for '' .. id .. ''')
 	end
-	local validator = registry.validators[id]
+	local validator<const> = registry.validators[id]
 	if validator then
 		validator(payload)
 	end
@@ -111,15 +111,15 @@ end
 --   bypassing cooldown / tag / grant checks.  Rarely needed in cart code;
 --   prefer actioneffectcomponent:trigger() for normal gameplay use.
 function actioneffects.execute(id, context, ...)
-	local def = registry.definitions[id]
+	local def<const> = registry.definitions[id]
 	return def.handler(context, ...)
 end
 
-local function create_context(owner, payload, args)
+local create_context<const> = function(owner, payload, args)
 	return { owner = owner, target = owner, payload = payload, args = args }
 end
 
-local function matches_tag_requirements(owner, required_tags, blocked_tags)
+local matches_tag_requirements<const> = function(owner, required_tags, blocked_tags)
 	if required_tags then
 		for i = 1, #required_tags do
 			if not owner:has_tag(required_tags[i]) then
@@ -137,7 +137,7 @@ local function matches_tag_requirements(owner, required_tags, blocked_tags)
 	return true
 end
 
-local function matches_state_path_requirements(owner, required_paths, blocked_paths)
+local matches_state_path_requirements<const> = function(owner, required_paths, blocked_paths)
 	if required_paths then
 		for i = 1, #required_paths do
 			if not owner:matches_state_path(required_paths[i]) then
@@ -155,29 +155,29 @@ local function matches_state_path_requirements(owner, required_paths, blocked_pa
 	return true
 end
 
-local function can_trigger(definition, context, args)
+local can_trigger<const> = function(definition, context, args)
 	if not matches_tag_requirements(context.owner, definition.required_tags, definition.blocked_tags) then
 		return false
 	end
 	if not matches_state_path_requirements(context.owner, definition.required_state_paths, definition.blocked_state_paths) then
 		return false
 	end
-	local trigger_gate = definition.can_trigger
+	local trigger_gate<const> = definition.can_trigger
 	if trigger_gate then
 		return (trigger_gate(context, table.unpack((args or {}))))
 	end
 	return true
 end
 
-local function invoke_handler(definition, context, args)
+local invoke_handler<const> = function(definition, context, args)
 	if not definition.handler then
 		return nil
 	end
 	return definition.handler(context, table.unpack(args or {}))
 end
 
-local function create_owner_event(owner, event_type, payload)
-	local base = { type = event_type, emitter = owner }
+local create_owner_event<const> = function(owner, event_type, payload)
+	local base<const> = { type = event_type, emitter = owner }
 	if payload ~= nil then
 		if type(payload) == 'table' and payload.type == nil then
 			for k, v in pairs(payload) do
@@ -193,7 +193,7 @@ end
 actioneffects.register_effect(actioneffects.effecttype.move, {
 	id = actioneffects.effecttype.move,
 	handler = function(context, dx, dy)
-		local target = context.target
+		local target<const> = context.target
 		target.x = target.x + dx
 		target.y = target.y + dy
 	end,
@@ -206,7 +206,7 @@ actioneffects.register_effect(actioneffects.effecttype.play_animation, {
 	end,
 })
 
-local actioneffectcomponent = {}
+local actioneffectcomponent<const> = {}
 actioneffectcomponent.__index = actioneffectcomponent
 setmetatable(actioneffectcomponent, { __index = component })
 
@@ -217,7 +217,7 @@ function actioneffectcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'actioneffectcomponent'
 	opts.unique = true
-	local self = setmetatable(component.new(opts), actioneffectcomponent)
+	local self<const> = setmetatable(component.new(opts), actioneffectcomponent)
 	self.definitions = {}
 	self.cooldown_until = {}
 	self.time_ms = 0
@@ -236,7 +236,7 @@ end
 -- actioneffectcomponent:grant_effect(id): gives the object access to the
 --   named registered effect.  Call when an ability is unlocked or equipped.
 function actioneffectcomponent:grant_effect(id)
-	local definition = registry.definitions[id]
+	local definition<const> = registry.definitions[id]
 	self.definitions[definition.id] = definition
 end
 
@@ -261,31 +261,31 @@ end
 --     'blocked'     — effect conditions / tag requirements not met
 --     'failed'      — effect id is not granted to this component
 function actioneffectcomponent:trigger(id, opts)
-	local definition = self.definitions[id]
+	local definition<const> = self.definitions[id]
 	if not definition then
 		return 'failed'
 	end
-	local payload = opts and opts.payload
-	local args = opts and opts.args or {}
+	local payload<const> = opts and opts.payload
+	local args<const> = opts and opts.args or {}
 	actioneffects.validate(id, payload)
 
-	local now = self.time_ms
-	local until_time = self.cooldown_until[id]
+	local now<const> = self.time_ms
+	local until_time<const> = self.cooldown_until[id]
 	if until_time ~= nil and now < until_time then
 		return 'on_cooldown'
 	end
 
-	local owner = self.parent
-	local context = create_context(owner, payload, args)
+	local owner<const> = self.parent
+	local context<const> = create_context(owner, payload, args)
 	if not can_trigger(definition, context, args) then
 		return 'blocked'
 	end
 
-	local outcome = invoke_handler(definition, context, args)
-	local event_type = (outcome and outcome.event) or definition.event
+	local outcome<const> = invoke_handler(definition, context, args)
+	local event_type<const> = (outcome and outcome.event) or definition.event
 	if event_type ~= nil then
-		local event_payload = (outcome and outcome.payload ~= nil) and outcome.payload or payload
-		local event = create_owner_event(owner, event_type, event_payload)
+		local event_payload<const> = (outcome and outcome.payload ~= nil) and outcome.payload or payload
+		local event<const> = create_owner_event(owner, event_type, event_payload)
 		owner:emit_gameplay_fact(event)
 	end
 
@@ -298,11 +298,11 @@ end
 -- actioneffectcomponent:cooldown_remaining(id)
 --   Returns remaining cooldown in ms, or nil if the effect is ready.
 function actioneffectcomponent:cooldown_remaining(id)
-	local until_time = self.cooldown_until[id]
+	local until_time<const> = self.cooldown_until[id]
 	if until_time == nil then
 		return nil
 	end
-	local remaining = until_time - self.time_ms
+	local remaining<const> = until_time - self.time_ms
 	if remaining <= 0 then
 		return nil
 	end

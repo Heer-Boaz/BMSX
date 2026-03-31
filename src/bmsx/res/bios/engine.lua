@@ -13,56 +13,56 @@
 -- `local p = constants.physics`): read constants directly from their source table/global.
 -- This module is BIOS/runtime plumbing.
 
-local world_module = require('world')
-local ecs_builtin = require('ecs_builtin')
-local ecs_pipeline = require('ecs_pipeline')
-local worldobject = require('worldobject')
-local subsystem = require('subsystem')
-local spriteobject = require('sprite')
-local textobject = require('textobject')
-local fsmlibrary = require('fsmlibrary')
-local action_effects = require('action_effects')
-local components = require('components')
-local registry = require('registry')
-local eventemitter_module = require('eventemitter')
-local eventemitter = eventemitter_module.eventemitter
+local world_module<const> = require('world')
+local ecs_builtin<const> = require('ecs_builtin')
+local ecs_pipeline<const> = require('ecs_pipeline')
+local worldobject<const> = require('worldobject')
+local subsystem<const> = require('subsystem')
+local spriteobject<const> = require('sprite')
+local textobject<const> = require('textobject')
+local fsmlibrary<const> = require('fsmlibrary')
+local action_effects<const> = require('action_effects')
+local components<const> = require('components')
+local registry<const> = require('registry')
+local eventemitter_module<const> = require('eventemitter')
+local eventemitter<const> = eventemitter_module.eventemitter
 eventemitter_module.eventemitter = eventemitter
 eventemitter_module.instance = eventemitter.instance
-local quickmenu = require('quickmenu')
-local resource_usage_gizmo = require('resource_usage_gizmo')
+local quickmenu<const> = require('quickmenu')
+local resource_usage_gizmo<const> = require('resource_usage_gizmo')
 -- local ide_editor = require('ide_editor')
-local bool01 = require('bool01')
-local deep_clone = require('deep_clone')
-local velocity = require('velocity')
-local rect_overlaps = require('rect_overlaps')
-local clamp_int = require('clamp_int')
-local clear_map = require('clear_map')
-local scratchbatch = require('scratchbatch')
-local sorted_scratchbatch = require('sorted_scratchbatch')
-local div_toward_zero = require('div_toward_zero')
-local round_to_nearest = require('round_to_nearest')
-local rol8 = require('rol8')
-local swap_remove = require('swap_remove')
-local timeline = require('timeline')
-local audio_router = require('audio_router')
-local progression = require('progression')
+local bool01<const> = require('bool01')
+local deep_clone<const> = require('deep_clone')
+local velocity<const> = require('velocity')
+local rect_overlaps<const> = require('rect_overlaps')
+local clamp_int<const> = require('clamp_int')
+local clear_map<const> = require('clear_map')
+local scratchbatch<const> = require('scratchbatch')
+local sorted_scratchbatch<const> = require('sorted_scratchbatch')
+local div_toward_zero<const> = require('div_toward_zero')
+local round_to_nearest<const> = require('round_to_nearest')
+local rol8<const> = require('rol8')
+local swap_remove<const> = require('swap_remove')
+local timeline<const> = require('timeline')
+local audio_router<const> = require('audio_router')
+local progression<const> = require('progression')
 
-local world_instance = world_module.instance
+local world_instance<const> = world_module.instance
 
-local definitions = {}
-local subsystem_definitions = {}
-local component_definitions = {}
+local definitions<const> = {}
+local subsystem_definitions<const> = {}
+local component_definitions<const> = {}
 local vdp_load_job_seq = 0
-local vdp_load_queue = {}
+local vdp_load_queue<const> = {}
 local vdp_load_queue_head
 local vdp_load_queue_tail
 local vdp_active_job
 local vdp_load_handler
 local cart_irq_handler
-local cart_irq_handlers = {}
-local sys_atlas_id = 254
+local cart_irq_handlers<const> = {}
+local sys_atlas_id<const> = 254
 
-local excluded_class_keys = {
+local excluded_class_keys<const> = {
 	def_id = true,
 	class = true,
 	defaults = true,
@@ -74,7 +74,7 @@ local excluded_class_keys = {
 	__index = true,
 }
 
-local function apply_defaults(instance, defaults, skip_key)
+local apply_defaults<const> = function(instance, defaults, skip_key)
 	if not defaults then
 		return
 	end
@@ -85,7 +85,7 @@ local function apply_defaults(instance, defaults, skip_key)
 	end
 end
 
-local function apply_class_addons(instance, class_table)
+local apply_class_addons<const> = function(instance, class_table)
 	if not class_table then
 		return
 	end
@@ -96,15 +96,15 @@ local function apply_class_addons(instance, class_table)
 	end
 end
 
-local function apply_class_prototype(instance, class_table)
+local apply_class_prototype<const> = function(instance, class_table)
 	if class_table == nil then
 		return
 	end
-	local shared_mt = getmetatable(instance)
+	local shared_mt<const> = getmetatable(instance)
 	if shared_mt == nil then
 		error('apply_class_prototype: instance is missing a metatable.')
 	end
-	local base_index = shared_mt.__index
+	local base_index<const> = shared_mt.__index
 	if base_index == nil then
 		error('apply_class_prototype: instance metatable is missing __index.')
 	end
@@ -116,7 +116,7 @@ local function apply_class_prototype(instance, class_table)
 		class_mt.__index = base_index
 		setmetatable(class_table, class_mt)
 	end
-	local instance_mt = { __index = class_table }
+	local instance_mt<const> = { __index = class_table }
 	for key, value in pairs(shared_mt) do
 		if key ~= '__index' and type(key) == 'string' and key:sub(1, 2) == '__' then
 			instance_mt[key] = value
@@ -125,7 +125,7 @@ local function apply_class_prototype(instance, class_table)
 	setmetatable(instance, instance_mt)
 end
 
-local function apply_addons(instance, addons, skip_keys)
+local apply_addons<const> = function(instance, addons, skip_keys)
 	if not addons then
 		return
 	end
@@ -136,21 +136,21 @@ local function apply_addons(instance, addons, skip_keys)
 	end
 end
 
-local function apply_ctor(instance, class_table, ctor_args, def_id)
-	local ctor = class_table.ctor or class_table.constructor
+local apply_ctor<const> = function(instance, class_table, ctor_args, def_id)
+	local ctor<const> = class_table.ctor or class_table.constructor
 	if ctor then
 		ctor(instance, ctor_args, def_id)
 	end
 end
 
-local function vdp_dequeue_job()
+local vdp_dequeue_job<const> = function()
 	if vdp_load_queue_head == nil or vdp_load_queue_tail == nil then
 		return nil
 	end
 	if vdp_load_queue_head > vdp_load_queue_tail then
 		return nil
 	end
-	local job = vdp_load_queue[vdp_load_queue_head]
+	local job<const> = vdp_load_queue[vdp_load_queue_head]
 	vdp_load_queue[vdp_load_queue_head] = nil
 	vdp_load_queue_head = vdp_load_queue_head + 1
 	if vdp_load_queue_head > vdp_load_queue_tail then
@@ -160,7 +160,7 @@ local function vdp_dequeue_job()
 	return job
 end
 
-local function vdp_start_job(job)
+local vdp_start_job<const> = function(job)
 	vdp_active_job = job
 	mem[sys_img_src] = job.src
 	mem[sys_img_len] = job.len
@@ -169,33 +169,33 @@ local function vdp_start_job(job)
 	mem[sys_img_ctrl] = img_ctrl_start
 end
 
-local function vdp_try_start_next_job()
+local vdp_try_start_next_job<const> = function()
 	if vdp_active_job ~= nil then
 		return
 	end
-	local status = mem[sys_img_status]
+	local status<const> = mem[sys_img_status]
 	if (status & img_status_busy) ~= 0 then
 		return
 	end
-	local job = vdp_dequeue_job()
+	local job<const> = vdp_dequeue_job()
 	if job == nil then
 		return
 	end
 	vdp_start_job(job)
 end
 
-local function ensure_component_type(def_id, def)
+local ensure_component_type<const> = function(def_id, def)
 	if components.componentregistry[def_id] then
 		return
 	end
-	local luacomponent = {}
+	local luacomponent<const> = {}
 	luacomponent.__index = luacomponent
 	setmetatable(luacomponent, { __index = components.component })
 	function luacomponent.new(opts)
 		opts = opts or {}
 		opts.type_name = def_id
-		local self = setmetatable(components.component.new(opts), luacomponent)
-		local class_table = def and def.class
+		local self<const> = setmetatable(components.component.new(opts), luacomponent)
+		local class_table<const> = def and def.class
 		apply_class_addons(self, class_table)
 		if class_table then
 			apply_ctor(self, class_table, opts, def_id)
@@ -205,38 +205,38 @@ local function ensure_component_type(def_id, def)
 	components.register_component(def_id, luacomponent)
 end
 
-local function attach_components(instance, list)
+local attach_components<const> = function(instance, list)
 	if not list then
 		return
 	end
 	for i = 1, #list do
-		local entry = list[i]
+		local entry<const> = list[i]
 		if type(entry) == 'string' then
-			local comp = components.new_component(entry, { parent = instance })
+			local comp<const> = components.new_component(entry, { parent = instance })
 			instance:add_component(comp)
 		elseif type(entry) == 'table' and entry.type_name then
-			local comp = entry
+			local comp<const> = entry
 			comp.parent = instance
 			instance:add_component(comp)
 		end
 	end
 end
 
-local function attach_fsms(instance, fsms)
+local attach_fsms<const> = function(instance, fsms)
 	if not fsms then
 		return
 	end
 	for i = 1, #fsms do
-		local id = fsms[i]
+		local id<const> = fsms[i]
 		instance.sc:add_statemachine(id, fsmlibrary.get(id))
 	end
 end
 
-local function attach_effects(instance, effects)
+local attach_effects<const> = function(instance, effects)
 	if not effects or #effects == 0 then
 		return
 	end
-	local component = action_effects.actioneffectcomponent.new({ parent = instance })
+	local component<const> = action_effects.actioneffectcomponent.new({ parent = instance })
 	instance:add_component(component)
 	for i = 1, #effects do
 		component:grant_effect(effects[i])
@@ -244,7 +244,7 @@ local function attach_effects(instance, effects)
 	instance.actioneffects = component
 end
 
-local function attach_bts(instance, bts)
+local attach_bts<const> = function(instance, bts)
 	if not bts then
 		return
 	end
@@ -253,8 +253,8 @@ local function attach_bts(instance, bts)
 	end
 end
 
-local function apply_definition(instance, def, addons, skip_key)
-	local class_table = def and def.class
+local apply_definition<const> = function(instance, def, addons, skip_key)
+	local class_table<const> = def and def.class
 	if def then
 		apply_defaults(instance, def.defaults, skip_key)
 		apply_class_prototype(instance, class_table)
@@ -263,7 +263,7 @@ local function apply_definition(instance, def, addons, skip_key)
 		attach_effects(instance, def.effects)
 		attach_bts(instance, def.bts)
 	end
-	local skip_keys = { pos = true }
+	local skip_keys<const> = { pos = true }
 	if skip_key then
 		skip_keys[skip_key] = true
 	end
@@ -273,8 +273,8 @@ local function apply_definition(instance, def, addons, skip_key)
 	end
 end
 
-local function apply_subsystem_definition(instance, def, addons)
-	local class_table = def and def.class
+local apply_subsystem_definition<const> = function(instance, def, addons)
+	local class_table<const> = def and def.class
 	if def then
 		apply_defaults(instance, def.defaults)
 		apply_class_prototype(instance, class_table)
@@ -286,7 +286,7 @@ local function apply_subsystem_definition(instance, def, addons)
 	end
 end
 
-local engine = {}
+local engine<const> = {}
 engine.bool01 = bool01
 engine.clear_map = clear_map
 engine.scratchbatch = scratchbatch
@@ -362,10 +362,10 @@ function engine.vdp_load_slot(slot, atlas_id)
 		vdp_load_queue_head = 1
 		vdp_load_queue_tail = 0
 	end
-	local atlas_name = string.format('_atlas_%02d', atlas_id)
-	local rom_base, start, finish = resolve_cart_rom_asset_range(atlas_name)
-	local src = rom_base + start
-	local len = finish - start
+	local atlas_name<const> = string.format('_atlas_%02d', atlas_id)
+	local rom_base<const>, start<const>, finish<const> = resolve_cart_rom_asset_range(atlas_name)
+	local src<const> = rom_base + start
+	local len<const> = finish - start
 	local dst
 	local cap
 	if slot == 0 then
@@ -398,10 +398,10 @@ function engine.vdp_load_sys_atlas()
 		vdp_load_queue_head = 1
 		vdp_load_queue_tail = 0
 	end
-	local atlas_name = string.format('_atlas_%02d', sys_atlas_id)
-	local rom_base, start, finish = resolve_sys_rom_asset_range(atlas_name)
-	local src = rom_base + start
-	local len = finish - start
+	local atlas_name<const> = string.format('_atlas_%02d', sys_atlas_id)
+	local rom_base<const>, start<const>, finish<const> = resolve_sys_rom_asset_range(atlas_name)
+	local src<const> = rom_base + start
+	local len<const> = finish - start
 	vdp_load_job_seq = vdp_load_job_seq + 1
 	vdp_load_queue_tail = vdp_load_queue_tail + 1
 	vdp_load_queue[vdp_load_queue_tail] = {
@@ -419,15 +419,15 @@ function engine.vdp_load_sys_atlas()
 end
 
 function engine.inst(definition_id, addons)
-	local def = definitions[definition_id]
-	local object_type = def and def.type
+	local def<const> = definitions[definition_id]
+	local object_type<const> = def and def.type
 	if object_type == 'sprite' then
-		local class_table = def and def.class
-		local instance_id = (addons and addons.id) or (class_table and class_table.id)
-		local instance = spriteobject.new({ id = instance_id })
+		local class_table<const> = def and def.class
+		local instance_id<const> = (addons and addons.id) or (class_table and class_table.id)
+		local instance<const> = spriteobject.new({ id = instance_id })
 		instance.type_name = definition_id
 		apply_definition(instance, def, addons, 'imgid')
-		local imgid = (addons and addons.imgid) or (def and def.defaults and def.defaults.imgid)
+		local imgid<const> = (addons and addons.imgid) or (def and def.defaults and def.defaults.imgid)
 		if imgid then
 			instance:gfx(imgid)
 		end
@@ -435,21 +435,21 @@ function engine.inst(definition_id, addons)
 		return instance
 	end
 	if object_type == 'textobject' then
-		local class_table = def and def.class
-		local instance_id = (addons and addons.id) or (class_table and class_table.id)
-		local instance = textobject.new({ id = instance_id })
+		local class_table<const> = def and def.class
+		local instance_id<const> = (addons and addons.id) or (class_table and class_table.id)
+		local instance<const> = textobject.new({ id = instance_id })
 		instance.type_name = definition_id
 		apply_definition(instance, def, addons, 'dimensions')
-		local dimensions = (addons and addons.dimensions) or (def and def.defaults and def.defaults.dimensions)
+		local dimensions<const> = (addons and addons.dimensions) or (def and def.defaults and def.defaults.dimensions)
 		if dimensions then
 			instance:set_dimensions(dimensions)
 		end
 		world_instance:spawn(instance, addons and addons.pos)
 		return instance
 	end
-	local class_table = def and def.class
-	local instance_id = (addons and addons.id) or (class_table and class_table.id)
-	local instance = worldobject.new({ id = instance_id })
+	local class_table<const> = def and def.class
+	local instance_id<const> = (addons and addons.id) or (class_table and class_table.id)
+	local instance<const> = worldobject.new({ id = instance_id })
 	instance.type_name = definition_id
 	apply_definition(instance, def, addons)
 	world_instance:spawn(instance, addons and addons.pos)
@@ -457,10 +457,10 @@ function engine.inst(definition_id, addons)
 end
 
 function engine.inst_subsystem(definition_id, addons)
-	local def = subsystem_definitions[definition_id]
-	local class_table = def and def.class
-	local instance_id = (addons and addons.id) or (class_table and class_table.id) or definition_id
-	local instance = subsystem.subsystem.new({ id = instance_id, type_name = definition_id })
+	local def<const> = subsystem_definitions[definition_id]
+	local class_table<const> = def and def.class
+	local instance_id<const> = (addons and addons.id) or (class_table and class_table.id) or definition_id
+	local instance<const> = subsystem.subsystem.new({ id = instance_id, type_name = definition_id })
 	apply_subsystem_definition(instance, def, addons)
 	world_instance:spawn_subsystem(instance)
 	return instance
@@ -505,13 +505,13 @@ function engine.find_by_tag(tag, opts)
 end
 
 function engine.attach_component(object_or_id, component_or_type)
-	local obj = type(object_or_id) == 'string' and world_instance:get(object_or_id) or object_or_id
+	local obj<const> = type(object_or_id) == 'string' and world_instance:get(object_or_id) or object_or_id
 	if type(component_or_type) == 'table' and component_or_type.type_name then
 		obj:add_component(component_or_type)
 		return component_or_type
 	end
 	if type(component_or_type) == 'string' then
-		local comp = components.new_component(component_or_type, { parent = obj })
+		local comp<const> = components.new_component(component_or_type, { parent = obj })
 		obj:add_component(comp)
 		return comp
 	end
@@ -540,8 +540,8 @@ end
 function engine.irq(flags)
 	local ack = 0
 	local fatal
-	local has_reinit_handler = cart_irq_handlers[irq_reinit] ~= nil
-	local has_newgame_handler = cart_irq_handlers[irq_newgame] ~= nil
+	local has_reinit_handler<const> = cart_irq_handlers[irq_reinit] ~= nil
+	local has_newgame_handler<const> = cart_irq_handlers[irq_newgame] ~= nil
 	if (flags & irq_img_done) ~= 0 then
 		ack = ack | irq_img_done
 		if vdp_active_job == nil then
@@ -553,7 +553,7 @@ function engine.irq(flags)
 				allow_handler = true
 			end
 			if allow_handler and vdp_load_handler ~= nil then
-				local should_skip = vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'done')
+				local should_skip<const> = vdp_load_handler(vdp_active_job.job_id, vdp_active_job.slot, vdp_active_job.atlas_id, 'done')
 				if should_skip then
 					skip_map = true
 				end
@@ -609,7 +609,7 @@ end
 
 function engine.on_irq(mask_or_handler, handler)
 	if type(mask_or_handler) == 'number' then
-		local mask = mask_or_handler
+		local mask<const> = mask_or_handler
 		if handler == nil then
 			cart_irq_handlers[mask] = nil
 			return
@@ -698,8 +698,8 @@ function engine.get_fsm_definition(fsm_id)
 end
 
 function engine.grant_effect(object_id, effect_id)
-	local obj = world_instance:get(object_id)
-	local component = obj:get_component('actioneffectcomponent')
+	local obj<const> = world_instance:get(object_id)
+	local component<const> = obj:get_component('actioneffectcomponent')
 	if not component then
 		error('world object "' .. object_id .. '" does not have an actioneffectcomponent.')
 	end
@@ -707,12 +707,12 @@ function engine.grant_effect(object_id, effect_id)
 end
 
 function engine.trigger_effect(object_id, effect_id, options)
-	local obj = world_instance:get(object_id)
-	local component = obj:get_component('actioneffectcomponent')
+	local obj<const> = world_instance:get(object_id)
+	local component<const> = obj:get_component('actioneffectcomponent')
 	if not component then
 		error('world object "' .. object_id .. '" does not have an actioneffectcomponent.')
 	end
-	local payload = options and options.payload
+	local payload<const> = options and options.payload
 	if payload ~= nil then
 		return component:trigger(effect_id, { payload = payload })
 	end
@@ -723,7 +723,7 @@ function $.emit(name_or_event, emitter, payload, ...)
 	if type(name_or_event) == 'native' and name_or_event.type == nil then
 		name_or_event, emitter, payload = emitter, payload, select(1, ...)
 	end
-	local kind = type(name_or_event)
+	local kind<const> = type(name_or_event)
 	if kind == 'table' then
 		if name_or_event.type == nil then
 			error('engine.emit: event is missing type')
@@ -731,11 +731,11 @@ function $.emit(name_or_event, emitter, payload, ...)
 		return eventemitter.instance:emit(name_or_event)
 	end
 	if kind == 'native' then
-		local event_type = name_or_event.type
+		local event_type<const> = name_or_event.type
 		if event_type == nil then
 			error('engine.emit: event is missing type')
 		end
-		local event = { type = tostring(event_type) }
+		local event<const> = { type = tostring(event_type) }
 		for k, v in pairs(name_or_event) do
 			if k ~= 'type' and k ~= 'timestamp' then
 				event[k] = v
@@ -743,7 +743,7 @@ function $.emit(name_or_event, emitter, payload, ...)
 		end
 		return eventemitter.instance:emit(event)
 	end
-	local spec = { type = name_or_event, emitter = emitter }
+	local spec<const> = { type = name_or_event, emitter = emitter }
 	if payload ~= nil then
 		if type(payload) == 'table' then
 			for k, v in pairs(payload) do
@@ -764,8 +764,8 @@ progression.init()
 -- Register BIOS singletons as persistent registry entries.
 -- This mirrors the TS engine where all subsystems (PhysicsWorld, SoundMaster,
 -- Input, Services, etc.) are registered so they are discoverable and inspectable.
-local registry_instance = registry.instance
-local function register_singleton(obj, id, tn)
+local registry_instance<const> = registry.instance
+local register_singleton<const> = function(obj, id, tn)
 	obj.id = id
 	obj.type_name = tn
 	obj.registrypersistent = true

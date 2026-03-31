@@ -1,21 +1,21 @@
-local constants = require('constants')
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local constants<const> = require('constants')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local muziekfoe = {}
+local muziekfoe<const> = {}
 muziekfoe.__index = muziekfoe
 
-local function get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, speed_scale)
-	local dx = target_x - source_x
-	local dy = target_y - source_y
+local get_delta_from_source_to_target_scaled<const> = function(source_x, source_y, target_x, target_y, speed_scale)
+	local dx<const> = target_x - source_x
+	local dy<const> = target_y - source_y
 	if dx == 0 then
 		return 0, dy > 0 and speed_scale or -speed_scale
 	end
 	if dy == 0 then
 		return dx > 0 and speed_scale or -speed_scale, 0
 	end
-	local abs_dx = math.abs(dx)
-	local abs_dy = math.abs(dy)
+	local abs_dx<const> = math.abs(dx)
+	local abs_dy<const> = math.abs(dy)
 	if abs_dx > abs_dy then
 		return dx > 0 and speed_scale or -speed_scale, div_toward_zero(dy * speed_scale, abs_dx)
 	end
@@ -27,8 +27,8 @@ function muziekfoe:ctor()
 end
 
 function muziekfoe.bt_tick(self, blackboard)
-	local node = blackboard.nodedata
-	local dir_modifier = self.direction == 'left' and -1 or 1
+	local node<const> = blackboard.nodedata
+	local dir_modifier<const> = self.direction == 'left' and -1 or 1
 	local move_accum = node.muziek_move_accum or 0
 	move_accum = move_accum + constants.enemy.muziek_horizontal_speed_num
 	while move_accum >= constants.enemy.muziek_horizontal_speed_den do
@@ -38,12 +38,12 @@ function muziekfoe.bt_tick(self, blackboard)
 	node.muziek_move_accum = move_accum
 
 	if self.direction == 'left' then
-		local rm = object('room')
+		local rm<const> = object('room')
 		if self.x < 0 or rm:has_collision_flags_at_world(self.x, self.y, constants.collision_flags.solid_mask) then
 			self.direction = 'right'
 		end
 	else
-		local rm = object('room')
+		local rm<const> = object('room')
 		if self.x + 24 >= rm.world_width or rm:has_collision_flags_at_world(self.x + 24, self.y + 16, constants.collision_flags.solid_mask) then
 			self.direction = 'left'
 		end
@@ -52,14 +52,14 @@ function muziekfoe.bt_tick(self, blackboard)
 	local noot_ticks = node.muziek_noot_ticks or constants.enemy.muziek_spawn_noot_steps
 	noot_ticks = noot_ticks - 1
 	if noot_ticks <= 0 then
-		local player = object('pietolon')
-		local source_x = self.x + 12
-		local source_y = self.y + 8
-		local target_x = player.x
-		local target_y = player.y + player.height
-		local delta_scale = 8
-		local delta_x, delta_y = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
-		local delta_divisor = math.random(1, 2)
+		local player<const> = object('pietolon')
+		local source_x<const> = self.x + 12
+		local source_y<const> = self.y + 8
+		local target_x<const> = player.x
+		local target_y<const> = player.y + player.height
+		local delta_scale<const> = 8
+		local delta_x<const>, delta_y<const> = get_delta_from_source_to_target_scaled(source_x, source_y, target_x, target_y, delta_scale)
+		local delta_divisor<const> = math.random(1, 2)
 		inst('enemy.nootfoe', {
 			direction = delta_x < 0 and 'left' or 'right',
 			speed_x_num = delta_x,

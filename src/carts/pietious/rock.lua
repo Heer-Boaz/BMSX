@@ -1,16 +1,16 @@
-local constants = require('constants')
-local combat_overlap = require('combat_overlap')
-local combat_damage = require('combat_damage')
-local rock = {}
+local constants<const> = require('constants')
+local combat_overlap<const> = require('combat_overlap')
+local combat_damage<const> = require('combat_damage')
+local rock<const> = {}
 rock.__index = rock
-local rock_break_timeline_id = 'rock.tl.break'
+local rock_break_timeline_id<const> = 'rock.tl.break'
 
-local dropped_item_uses_y_offset = {
+local dropped_item_uses_y_offset<const> = {
 		pepernoot = true,
 		spyglass = true,
 }
 
-local function drop_offset_y_for_item_type(item_type)
+local drop_offset_y_for_item_type<const> = function(item_type)
 		if item_type == nil then
 				return 0
 		end
@@ -49,17 +49,17 @@ function rock:process_damage_result(result)
 end
 
 function rock:begin_break()
-		local room = object('room')
+		local room<const> = object('room')
 		room:mark_rock_destroyed(self.id)
 		if self.item_type == nil then
 				return
 		end
-		local player = object('pietolon')
+		local player<const> = object('pietolon')
 		if player and player.inventory_items and player.inventory_items[self.item_type] then
 				return
 		end
-		local drop_y = self.y + drop_offset_y_for_item_type(self.item_type)
-		local id = 'drop.' .. self.id
+		local drop_y<const> = self.y + drop_offset_y_for_item_type(self.item_type)
+		local id<const> = 'drop.' .. self.id
 		inst('world_item', {
 				id = id,
 				space_id = 'main',
@@ -69,16 +69,16 @@ function rock:begin_break()
 		})
 end
 
-local function define_rock_fsm()
+local define_rock_fsm<const> = function()
 		define_fsm('rock', {
 				initial = 'idle',
 				on = {
 						['overlap.begin'] = function(self, _state, event)
-								local contact_kind = combat_overlap.classify_player_contact(event)
+								local contact_kind<const> = combat_overlap.classify_player_contact(event)
 								if contact_kind ~= 'sword' and contact_kind ~= 'projectile' then
 										return
 								end
-								local result = combat_damage.resolve(self, combat_damage.build_weapon_request(self, 'rock', event, contact_kind))
+								local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, 'rock', event, contact_kind))
 								self:process_damage_result(result)
 						end,
 				},
@@ -120,7 +120,7 @@ local function define_rock_fsm()
 	})
 end
 
-local function register_rock_definition()
+local register_rock_definition<const> = function()
 		define_prefab({
 				def_id = 'rock',
 				class = rock,

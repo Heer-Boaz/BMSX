@@ -1,20 +1,20 @@
 -- bootrom.lua
 -- bmsx system boot screen
 
-local clamp_int = require('util/clamp_int')
-local wrap_text_lines = require('util/wrap_text_lines')
+local clamp_int<const> = require('util/clamp_int')
+local wrap_text_lines<const> = require('util/wrap_text_lines')
 
-local function reset_scroll_state(state) state.top = 0 end
-local function clamp_scroll(top, line_count, window_size)
-	local max_top = math.max(0, line_count - window_size)
+local reset_scroll_state<const> = function(state) state.top = 0 end
+local clamp_scroll<const> = function(top, line_count, window_size)
+	local max_top<const> = math.max(0, line_count - window_size)
 	return clamp_int(top, 0, max_top)
 end
-local function scroll_window(lines, top, window_size)
-	local visible_lines = {}
-	local max_scroll = math.max(0, #lines - window_size)
-	local clamped_top = clamp_int(top, 0, max_scroll)
+local scroll_window<const> = function(lines, top, window_size)
+	local visible_lines<const> = {}
+	local max_scroll<const> = math.max(0, #lines - window_size)
+	local clamped_top<const> = clamp_int(top, 0, max_scroll)
 	for i = 1, window_size do
-		local idx = clamped_top + i
+		local idx<const> = clamped_top + i
 		if idx <= #lines then
 			table.insert(visible_lines, lines[idx])
 		else
@@ -23,56 +23,56 @@ local function scroll_window(lines, top, window_size)
 	end
 	return visible_lines, max_scroll, #visible_lines
 end
-local function line_slots(width, left_margin, char_width)
+local line_slots<const> = function(width, left_margin, char_width)
 	return math.floor((width - left_margin) / char_width)
 end
-local function window_size(height, top_margin, line_height, top_padding, bottom_padding)
-	local available_height = height - top_margin - top_padding - bottom_padding
+local window_size<const> = function(height, top_margin, line_height, top_padding, bottom_padding)
+	local available_height<const> = height - top_margin - top_padding - bottom_padding
 	return math.max(1, math.floor(available_height / line_height))
 end
 
-local boot_delay = 2.0
-local font_width = 6
-local line_height = 8
-local content_top = 32
-local cart_rom_base_header_size = 32
-local cart_rom_header_size = 64
+local boot_delay<const> = 2.0
+local font_width<const> = 6
+local line_height<const> = 8
+local content_top<const> = 32
+local cart_rom_base_header_size<const> = 32
+local cart_rom_header_size<const> = 64
 
-local color_bg = 4
-local color_header_bg = 7
-local color_header_text = 1
-local color_text = 15
-local color_muted = 14
-local color_accent = 15
-local color_section = 1
-local color_warn = 9
-local color_ok = 15
-local color_info_total = 15
+local color_bg<const> = 4
+local color_header_bg<const> = 7
+local color_header_text<const> = 1
+local color_text<const> = 15
+local color_muted<const> = 14
+local color_accent<const> = 15
+local color_section<const> = 1
+local color_warn<const> = 9
+local color_ok<const> = 15
+local color_info_total<const> = 15
 
-local boot_status_labels = { 'STATUS', 'BOOT STATUS', 'BITCAST SELFTEST', 'PROGRAM PRECHECK' }
+local boot_status_labels<const> = { 'STATUS', 'BOOT STATUS', 'BITCAST SELFTEST', 'PROGRAM PRECHECK' }
 
-local system_rom_base = 0x00000000
-local cart_rom_base = 0x01000000
-local cart_rom_magic = 0x58534d42
+local system_rom_base<const> = 0x00000000
+local cart_rom_base<const> = 0x01000000
+local cart_rom_magic<const> = 0x58534d42
 
 local boot_start
 local boot_requested
 local sys_atlas_ready
 local sys_atlas_failed
-local boot_scroll_state = { top = 0 }
+local boot_scroll_state<const> = { top = 0 }
 local boot_screen_visible = false
 local boot_screen_presented
 local render_boot_screen
 
-local function read_cart_header(base)
+local read_cart_header<const> = function(base)
 	if mem[base] ~= cart_rom_magic then
 		return nil
 	end
-	local header_size = mem[base + 4]
+	local header_size<const> = mem[base + 4]
 	if header_size < cart_rom_base_header_size then
 		return nil
 	end
-	local has_extended_header = header_size >= cart_rom_header_size
+	local has_extended_header<const> = header_size >= cart_rom_header_size
 	return {
 		header_size = header_size,
 		manifest_off = mem[base + 8],
@@ -92,30 +92,30 @@ local function read_cart_header(base)
 	}
 end
 
-local function cart_boot_ready()
-	local ready = mem[sys_cart_bootready]
+local cart_boot_ready<const> = function()
+	local ready<const> = mem[sys_cart_bootready]
 	return ready ~= 0
 end
 
-local function format_render_size_label(render_size)
+local format_render_size_label<const> = function(render_size)
 	if not render_size then
 		return nil
 	end
-	local w = render_size.width
-	local h = render_size.height
+	local w<const> = render_size.width
+	local h<const> = render_size.height
 	if not w or not h then
 		return nil
 	end
 	return tostring(w) .. 'x' .. tostring(h)
 end
 
-local function flatten_manifest(manifest, root_path)
+local flatten_manifest<const> = function(manifest, root_path)
 	if not manifest then
 		return nil
 	end
-	local machine = manifest.machine or {}
-	local specs = machine.specs or {}
-	local cpu = specs.cpu or {}
+	local machine<const> = manifest.machine or {}
+	local specs<const> = machine.specs or {}
+	local cpu<const> = specs.cpu or {}
 	return {
 		title = manifest.title,
 		short_name = manifest.short_name,
@@ -131,11 +131,11 @@ local function flatten_manifest(manifest, root_path)
 	}
 end
 
-local function flatten_machine_manifest(machine)
+local flatten_machine_manifest<const> = function(machine)
 	if not machine then
 		return nil
 	end
-	local cpu = machine.specs and machine.specs.cpu or {}
+	local cpu<const> = machine.specs and machine.specs.cpu or {}
 	return {
 		namespace = machine.namespace,
 		render_size = format_render_size_label(machine.render_size),
@@ -145,33 +145,33 @@ local function flatten_machine_manifest(machine)
 	}
 end
 
-local function format_cpu_mhz_from_hz(value)
-	local hz = tonumber(value)
+local format_cpu_mhz_from_hz<const> = function(value)
+	local hz<const> = tonumber(value)
 	if hz == nil then
 		return '--'
 	end
-	local mhz_int = math.floor(hz / 1000000)
-	local mhz_frac = math.floor((hz % 1000000) / 1000)
+	local mhz_int<const> = math.floor(hz / 1000000)
+	local mhz_frac<const> = math.floor((hz % 1000000) / 1000)
 	return string.format('%d.%03d', mhz_int, mhz_frac)
 end
 
-local function is_valid_cpu_freq_hz(value)
+local is_valid_cpu_freq_hz<const> = function(value)
 	if value == nil then
 		return false
 	end
-	local num = tonumber(value)
+	local num<const> = tonumber(value)
 	return num ~= nil and num > 0 and num == math.floor(num)
 end
 
-local function is_valid_ufps(value)
+local is_valid_ufps<const> = function(value)
 	if value == nil then
 		return false
 	end
-	local num = tonumber(value)
+	local num<const> = tonumber(value)
 	return num ~= nil and num > 0 and num == math.floor(num)
 end
 
-local cart_manifest_validators = {
+local cart_manifest_validators<const> = {
 	function(manifest, errors)
 		if not is_valid_cpu_freq_hz(manifest.cpu_freq_hz) then
 			errors[#errors + 1] = 'MACHINE.CPU_FREQ_HZ IS MISSING OR INVALID'
@@ -184,8 +184,8 @@ local cart_manifest_validators = {
 	end,
 }
 
-local function collect_cart_manifest_errors(cart_manifest)
-	local errors = {}
+local collect_cart_manifest_errors<const> = function(cart_manifest)
+	local errors<const> = {}
 	if not cart_manifest then
 		errors[#errors + 1] = 'CART MANIFEST IS MISSING'
 		return errors
@@ -196,28 +196,28 @@ local function collect_cart_manifest_errors(cart_manifest)
 	return errors
 end
 
-local rom_toc_magic = 0x434f5442
-local rom_toc_header_size = 48
-local rom_toc_entry_size = 80
-local rom_toc_invalid_u32 = 0xffffffff
-local rom_asset_type_data = 3
-local program_asset_id = '__program__'
-local program_boot_header_version = 1
-local program_boot_flag_has_bios_engine_alias = 1
+local rom_toc_magic<const> = 0x434f5442
+local rom_toc_header_size<const> = 48
+local rom_toc_entry_size<const> = 80
+local rom_toc_invalid_u32<const> = 0xffffffff
+local rom_asset_type_data<const> = 3
+local program_asset_id<const> = '__program__'
+local program_boot_header_version<const> = 1
+local program_boot_flag_has_bios_engine_alias<const> = 1
 
-local bin_version = 0xa1
-local bin_tag_null = 0
-local bin_tag_true = 1
-local bin_tag_false = 2
-local bin_tag_f64 = 3
-local bin_tag_str = 4
-local bin_tag_arr = 5
-local bin_tag_ref = 6
-local bin_tag_obj = 7
-local bin_tag_bin = 8
-local bin_tag_int = 9
-local bin_tag_f32 = 10
-local bin_tag_set = 11
+local bin_version<const> = 0xa1
+local bin_tag_null<const> = 0
+local bin_tag_true<const> = 1
+local bin_tag_false<const> = 2
+local bin_tag_f64<const> = 3
+local bin_tag_str<const> = 4
+local bin_tag_arr<const> = 5
+local bin_tag_ref<const> = 6
+local bin_tag_obj<const> = 7
+local bin_tag_bin<const> = 8
+local bin_tag_int<const> = 9
+local bin_tag_f32<const> = 10
+local bin_tag_set<const> = 11
 
 local precheck_cache_key
 local precheck_errors
@@ -226,8 +226,8 @@ local precheck_stderr_reported
 local precheck_running
 local precheck_co_thread
 local precheck_co_target_key
-local precheck_step_budget = 16384
-local precheck_phase_order = {
+local precheck_step_budget<const> = 16384
+local precheck_phase_order<const> = {
 	'read_system_summary',
 	'validate_system_core',
 	'validate_system_details',
@@ -235,7 +235,7 @@ local precheck_phase_order = {
 	'validate_cart_core',
 	'validate_cart_details',
 }
-local precheck_phase_labels = {
+local precheck_phase_labels<const> = {
 	read_system_summary = 'READ SYSTEM SUMMARY',
 	validate_system_core = 'VALIDATE SYSTEM CORE',
 	validate_system_details = 'VALIDATE SYSTEM DETAILS',
@@ -261,7 +261,7 @@ local get_program_asset_summary_step_progress
 local begin_program_asset_details_step_state
 local step_program_asset_details_step_state
 local get_program_asset_details_step_progress
-local function clear_precheck_cache()
+local clear_precheck_cache<const> = function()
 	precheck_cache_key = nil
 	precheck_errors = {}
 	precheck_stderr_message = nil
@@ -272,8 +272,8 @@ local function clear_precheck_cache()
 end
 clear_precheck_cache()
 
-local function refresh_atlas_load_state()
-	local status = mem[sys_img_status]
+local refresh_atlas_load_state<const> = function()
+	local status<const> = mem[sys_img_status]
 	if (status & img_status_done) ~= 0 then
 		sys_atlas_ready = true
 	end
@@ -282,7 +282,7 @@ local function refresh_atlas_load_state()
 	end
 end
 
-local function build_precheck_key(header)
+local build_precheck_key<const> = function(header)
 	return tostring(header.header_size)
 		.. ':' .. tostring(header.manifest_off)
 		.. ':' .. tostring(header.manifest_len)
@@ -300,7 +300,7 @@ local function build_precheck_key(header)
 		.. ':' .. tostring(header.program_const_reloc_count)
 end
 
-local function get_precheck_phase_index(phase)
+local get_precheck_phase_index<const> = function(phase)
 	for i = 1, #precheck_phase_order do
 		if precheck_phase_order[i] == phase then
 			return i
@@ -309,15 +309,15 @@ local function get_precheck_phase_index(phase)
 	return 1
 end
 
-local function get_precheck_phase_label(phase)
+local get_precheck_phase_label<const> = function(phase)
 	return precheck_phase_labels[phase] or tostring(phase)
 end
 
-local function reset_precheck_step_budget(job)
+local reset_precheck_step_budget<const> = function(job)
 	job.remaining_steps = precheck_step_budget
 end
 
-local function consume_precheck_step(job)
+local consume_precheck_step<const> = function(job)
 	if job.remaining_steps <= 0 then
 		return false
 	end
@@ -325,7 +325,7 @@ local function consume_precheck_step(job)
 	return true
 end
 
-local function start_program_link_precheck_job(cart_header, key)
+local start_program_link_precheck_job<const> = function(cart_header, key)
 	precheck_co_target_key = key
 	precheck_errors = {}
 	precheck_stderr_message = nil
@@ -337,7 +337,7 @@ local function start_program_link_precheck_job(cart_header, key)
 	}
 end
 
-local function finish_program_link_precheck(errors, stderr_message)
+local finish_program_link_precheck<const> = function(errors, stderr_message)
 	precheck_running = false
 	precheck_cache_key = precheck_co_target_key
 	precheck_co_thread = nil
@@ -346,21 +346,21 @@ local function finish_program_link_precheck(errors, stderr_message)
 	precheck_stderr_message = stderr_message
 end
 
-local function finish_program_link_precheck_from_failure(failure)
-	local errors = {}
+local finish_program_link_precheck_from_failure<const> = function(failure)
+	local errors<const> = {}
 	errors[#errors + 1] = failure.title
 	errors[#errors + 1] = failure.detail
 	finish_program_link_precheck(errors, failure.stderr)
 end
 
-local function run_staged_program_link_precheck_job()
-	local job = precheck_co_thread
+local run_staged_program_link_precheck_job<const> = function()
+	local job<const> = precheck_co_thread
 	if job == nil then
 		return
 	end
-	local ok, err = pcall(function()
+	local ok<const>, err<const> = pcall(function()
 		if job.phase == 'read_system_summary' then
-			local sys_header = read_cart_header(system_rom_base)
+			local sys_header<const> = read_cart_header(system_rom_base)
 			if not sys_header then
 				finish_program_link_precheck({
 					'SYSTEM ROM HEADER IS INVALID',
@@ -368,7 +368,7 @@ local function run_staged_program_link_precheck_job()
 				return
 			end
 			job.system_header = sys_header
-			local system_key = build_precheck_key(sys_header)
+			local system_key<const> = build_precheck_key(sys_header)
 			if system_program_summary_cache_key == system_key and system_program_summary_cache ~= nil then
 				job.system_summary = system_program_summary_cache
 				job.phase = 'validate_system_core'
@@ -377,7 +377,7 @@ local function run_staged_program_link_precheck_job()
 			if job.system_summary_state == nil then
 				job.system_summary_state = begin_program_asset_summary_step_state(system_rom_base, sys_header)
 			end
-			local done, summary = step_program_asset_summary_step_state(job.system_summary_state, job)
+			local done<const>, summary<const> = step_program_asset_summary_step_state(job.system_summary_state, job)
 			if not done then
 				return
 			end
@@ -387,7 +387,7 @@ local function run_staged_program_link_precheck_job()
 			system_program_summary_cache = summary
 			job.phase = 'validate_system_core'
 		elseif job.phase == 'validate_system_core' then
-			local failure = validate_program_asset_core(job.system_summary, 'SYSTEM')
+			local failure<const> = validate_program_asset_core(job.system_summary, 'SYSTEM')
 			if failure then
 				finish_program_link_precheck_from_failure(failure)
 				return
@@ -400,7 +400,7 @@ local function run_staged_program_link_precheck_job()
 					required_alias = 'bios/engine',
 				})
 			end
-			local done, failure = step_program_asset_details_step_state(job.system_details_state, job)
+			local done<const>, failure<const> = step_program_asset_details_step_state(job.system_details_state, job)
 			if done == nil then
 				finish_program_link_precheck_from_failure(failure)
 				return
@@ -414,7 +414,7 @@ local function run_staged_program_link_precheck_job()
 			if job.cart_summary_state == nil then
 				job.cart_summary_state = begin_program_asset_summary_step_state(cart_rom_base, job.cart_header)
 			end
-			local done, summary = step_program_asset_summary_step_state(job.cart_summary_state, job)
+			local done<const>, summary<const> = step_program_asset_summary_step_state(job.cart_summary_state, job)
 			if not done then
 				return
 			end
@@ -422,7 +422,7 @@ local function run_staged_program_link_precheck_job()
 			job.cart_summary = summary
 			job.phase = 'validate_cart_core'
 		elseif job.phase == 'validate_cart_core' then
-			local failure = validate_program_asset_core(job.cart_summary, 'CART')
+			local failure<const> = validate_program_asset_core(job.cart_summary, 'CART')
 			if failure then
 				finish_program_link_precheck_from_failure(failure)
 				return
@@ -434,7 +434,7 @@ local function run_staged_program_link_precheck_job()
 					scope = 'CART',
 				})
 			end
-			local done, failure = step_program_asset_details_step_state(job.cart_details_state, job)
+			local done<const>, failure<const> = step_program_asset_details_step_state(job.cart_details_state, job)
 			if done == nil then
 				finish_program_link_precheck_from_failure(failure)
 				return
@@ -460,7 +460,7 @@ local function run_staged_program_link_precheck_job()
 	end
 end
 
-local function run_program_link_precheck_job()
+local run_program_link_precheck_job<const> = function()
 	if precheck_co_thread == nil then
 		return
 	end
@@ -468,13 +468,13 @@ local function run_program_link_precheck_job()
 	run_staged_program_link_precheck_job()
 end
 
-local function assert_range(offset, length, total, label)
+local assert_range<const> = function(offset, length, total, label)
 	if offset < 0 or length < 0 or (offset + length) > total then
 		error('Invalid ROM ' .. label .. ' range.')
 	end
 end
 
-local function new_reader(base, size, label)
+local new_reader<const> = function(base, size, label)
 	return {
 		base = base,
 		size = size,
@@ -483,30 +483,30 @@ local function new_reader(base, size, label)
 	}
 end
 
-local function reader_require(reader, length, label)
+local reader_require<const> = function(reader, length, label)
 	if reader.pos + length > reader.size then
 		error((label or reader.label) .. ' out of bounds.')
 	end
 end
 
-local function reader_read_u8(reader, label)
+local reader_read_u8<const> = function(reader, label)
 	reader_require(reader, 1, label)
-	local addr = reader.base + reader.pos
-	local out = mem8[addr]
+	local addr<const> = reader.base + reader.pos
+	local out<const> = mem8[addr]
 	reader.pos = reader.pos + 1
 	return out
 end
 
-local function reader_skip_bytes(reader, length, label)
+local reader_skip_bytes<const> = function(reader, length, label)
 	reader_require(reader, length, label)
 	reader.pos = reader.pos + length
 end
 
-local function reader_read_varuint(reader, label)
+local reader_read_varuint<const> = function(reader, label)
 	local result = 0
 	local shift = 0
 	while true do
-		local byte = reader_read_u8(reader, label)
+		local byte<const> = reader_read_u8(reader, label)
 		result = result | ((byte & 0x7f) << shift)
 		if (byte & 0x80) == 0 then
 			return result
@@ -518,24 +518,24 @@ local function reader_read_varuint(reader, label)
 	end
 end
 
-local function reader_read_varint(reader, label)
-	local raw = reader_read_varuint(reader, label)
-	local value = raw >> 1
+local reader_read_varint<const> = function(reader, label)
+	local raw<const> = reader_read_varuint(reader, label)
+	local value<const> = raw >> 1
 	if (raw & 1) ~= 0 then
 		return -value - 1
 	end
 	return value
 end
 
-local function reader_read_raw_string(reader, length, label)
+local reader_read_raw_string<const> = function(reader, length, label)
 	if length == 0 then
 		return ''
 	end
 	reader_require(reader, length, label)
-	local parts = {}
+	local parts<const> = {}
 	local remaining = length
 	while remaining > 0 do
-		local chunk_len = math.min(120, remaining)
+		local chunk_len<const> = math.min(120, remaining)
 		local chunk = ''
 		for i = 1, chunk_len do
 			chunk = chunk .. string.char(reader_read_u8(reader, label))
@@ -546,21 +546,21 @@ local function reader_read_raw_string(reader, length, label)
 	return table.concat(parts)
 end
 
-local function reader_read_string(reader, label)
-	local length = reader_read_varuint(reader, label)
+local reader_read_string<const> = function(reader, label)
+	local length<const> = reader_read_varuint(reader, label)
 	return reader_read_raw_string(reader, length, label)
 end
 
-local function reader_read_u32le(reader, label)
+local reader_read_u32le<const> = function(reader, label)
 	reader_require(reader, 4, label)
-	local addr = reader.base + reader.pos
-	local out = mem32le[addr]
+	local addr<const> = reader.base + reader.pos
+	local out<const> = mem32le[addr]
 	reader.pos = reader.pos + 4
 	return out
 end
 
-local function selftest_bitcast_builtins()
-	local ok, err = pcall(function()
+local selftest_bitcast_builtins<const> = function()
+	local ok<const>, err<const> = pcall(function()
 		if type(u64_to_f64) ~= 'function' then
 			error('u64_to_f64 missing')
 		end
@@ -572,12 +572,12 @@ local function selftest_bitcast_builtins()
 		-- f32 1.0 = 0x3f800000
 		assert(u32_to_f32(0x3f800000) == 1.0)
 		-- -0.0 keeps sign bit in IEEE754
-		local neg_zero = u64_to_f64(0x80000000, 0x00000000)
+		local neg_zero<const> = u64_to_f64(0x80000000, 0x00000000)
 		assert(neg_zero == 0.0 and (1.0 / neg_zero) == -math.huge)
 		-- +inf
 		assert(u64_to_f64(0x7ff00000, 0x00000000) == math.huge)
 		-- qNaN: NaN is the only value not equal to itself
-		local nan = u64_to_f64(0x7ff80000, 0x00000000)
+		local nan<const> = u64_to_f64(0x7ff80000, 0x00000000)
 		assert(nan ~= nan)
 	end)
 	bitcast_selftest_ok = ok
@@ -597,17 +597,17 @@ local function selftest_bitcast_builtins()
 	end
 end
 
-local function reader_read_prop_key(reader, prop_names, label)
-	local prop_id = reader_read_varuint(reader, label)
-	local index = prop_id + 1
-	local key = prop_names[index]
+local reader_read_prop_key<const> = function(reader, prop_names, label)
+	local prop_id<const> = reader_read_varuint(reader, label)
+	local index<const> = prop_id + 1
+	local key<const> = prop_names[index]
 	if key == nil then
 		error((label or reader.label) .. ' invalid property id ' .. tostring(prop_id) .. '.')
 	end
 	return key
 end
 
-local function reader_skip_value_from_tag(reader, prop_names, tag)
+local reader_skip_value_from_tag<const> = function(reader, prop_names, tag)
 	if tag == bin_tag_null or tag == bin_tag_true or tag == bin_tag_false then
 		return
 	end
@@ -624,14 +624,14 @@ local function reader_skip_value_from_tag(reader, prop_names, tag)
 		return
 	end
 	if tag == bin_tag_str then
-		local length = reader_read_varuint(reader, 'string length')
+		local length<const> = reader_read_varuint(reader, 'string length')
 		reader_skip_bytes(reader, length, 'string')
 		return
 	end
 	if tag == bin_tag_arr or tag == bin_tag_set then
-		local count = reader_read_varuint(reader, 'array length')
+		local count<const> = reader_read_varuint(reader, 'array length')
 		for i = 1, count do
-			local value_tag = reader_read_u8(reader, 'array tag')
+			local value_tag<const> = reader_read_u8(reader, 'array tag')
 			reader_skip_value_from_tag(reader, prop_names, value_tag)
 		end
 		return
@@ -641,23 +641,23 @@ local function reader_skip_value_from_tag(reader, prop_names, tag)
 		return
 	end
 	if tag == bin_tag_obj then
-		local count = reader_read_varuint(reader, 'object property count')
+		local count<const> = reader_read_varuint(reader, 'object property count')
 		for i = 1, count do
 			reader_read_prop_key(reader, prop_names, 'object property id')
-			local value_tag = reader_read_u8(reader, 'object value tag')
+			local value_tag<const> = reader_read_u8(reader, 'object value tag')
 			reader_skip_value_from_tag(reader, prop_names, value_tag)
 		end
 		return
 	end
 	if tag == bin_tag_bin then
-		local length = reader_read_varuint(reader, 'binary length')
+		local length<const> = reader_read_varuint(reader, 'binary length')
 		reader_skip_bytes(reader, length, 'binary payload')
 		return
 	end
 	error('Unsupported bin tag ' .. tostring(tag) .. '.')
 end
 
-local function new_skip_value_state(reader, prop_names, tag)
+local new_skip_value_state<const> = function(reader, prop_names, tag)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -667,7 +667,7 @@ local function new_skip_value_state(reader, prop_names, tag)
 	}
 end
 
-local function new_skip_array_items_state(reader, prop_names, count)
+local new_skip_array_items_state<const> = function(reader, prop_names, count)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -677,7 +677,7 @@ local function new_skip_array_items_state(reader, prop_names, count)
 	}
 end
 
-local function new_skip_object_properties_state(reader, prop_names, count)
+local new_skip_object_properties_state<const> = function(reader, prop_names, count)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -687,17 +687,17 @@ local function new_skip_object_properties_state(reader, prop_names, count)
 	}
 end
 
-local function step_skip_state(skip_state, job)
-	local reader = skip_state.reader
-	local prop_names = skip_state.prop_names
+local step_skip_state<const> = function(skip_state, job)
+	local reader<const> = skip_state.reader
+	local prop_names<const> = skip_state.prop_names
 	while consume_precheck_step(job) do
-		local stack = skip_state.stack
-		local frame = stack[#stack]
+		local stack<const> = skip_state.stack
+		local frame<const> = stack[#stack]
 		if frame == nil then
 			return true
 		end
 		if frame.kind == 'value' then
-			local tag = frame.tag
+			local tag<const> = frame.tag
 			if tag == bin_tag_null or tag == bin_tag_true or tag == bin_tag_false then
 				stack[#stack] = nil
 			elseif tag == bin_tag_f64 then
@@ -710,11 +710,11 @@ local function step_skip_state(skip_state, job)
 				reader_read_varint(reader, 'int')
 				stack[#stack] = nil
 			elseif tag == bin_tag_str then
-				local length = reader_read_varuint(reader, 'string length')
+				local length<const> = reader_read_varuint(reader, 'string length')
 				reader_skip_bytes(reader, length, 'string')
 				stack[#stack] = nil
 			elseif tag == bin_tag_arr or tag == bin_tag_set then
-				local count = reader_read_varuint(reader, 'array length')
+				local count<const> = reader_read_varuint(reader, 'array length')
 				frame.kind = 'array'
 				frame.remaining = count
 				frame.total = count
@@ -722,12 +722,12 @@ local function step_skip_state(skip_state, job)
 				reader_read_varuint(reader, 'ref id')
 				stack[#stack] = nil
 			elseif tag == bin_tag_obj then
-				local count = reader_read_varuint(reader, 'object property count')
+				local count<const> = reader_read_varuint(reader, 'object property count')
 				frame.kind = 'object'
 				frame.remaining = count
 				frame.total = count
 			elseif tag == bin_tag_bin then
-				local length = reader_read_varuint(reader, 'binary length')
+				local length<const> = reader_read_varuint(reader, 'binary length')
 				reader_skip_bytes(reader, length, 'binary payload')
 				stack[#stack] = nil
 			else
@@ -738,7 +738,7 @@ local function step_skip_state(skip_state, job)
 				stack[#stack] = nil
 			else
 				frame.remaining = frame.remaining - 1
-				local value_tag = reader_read_u8(reader, 'array tag')
+				local value_tag<const> = reader_read_u8(reader, 'array tag')
 				stack[#stack + 1] = { kind = 'value', tag = value_tag }
 			end
 		elseif frame.kind == 'object' then
@@ -747,7 +747,7 @@ local function step_skip_state(skip_state, job)
 			else
 				frame.remaining = frame.remaining - 1
 				reader_read_prop_key(reader, prop_names, 'object property id')
-				local value_tag = reader_read_u8(reader, 'object value tag')
+				local value_tag<const> = reader_read_u8(reader, 'object value tag')
 				stack[#stack + 1] = { kind = 'value', tag = value_tag }
 			end
 		else
@@ -757,8 +757,8 @@ local function step_skip_state(skip_state, job)
 	return false
 end
 
-local function get_skip_state_progress(skip_state)
-	local frame = skip_state.stack[1]
+local get_skip_state_progress<const> = function(skip_state)
+	local frame<const> = skip_state.stack[1]
 	if frame == nil then
 		return 1
 	end
@@ -768,8 +768,8 @@ local function get_skip_state_progress(skip_state)
 	return (frame.total - frame.remaining) / frame.total
 end
 
-local function reader_read_const_value(reader, prop_names)
-	local tag = reader_read_u8(reader, 'const value tag')
+local reader_read_const_value<const> = function(reader, prop_names)
+	local tag<const> = reader_read_u8(reader, 'const value tag')
 	if tag == bin_tag_null then
 		return { kind = 'nil' }
 	end
@@ -784,15 +784,15 @@ local function reader_read_const_value(reader, prop_names)
 	end
 	if tag == bin_tag_f32 then
 		reader_require(reader, 4, 'const f32')
-		local addr = reader.base + reader.pos
-		local value = memf32le[addr]
+		local addr<const> = reader.base + reader.pos
+		local value<const> = memf32le[addr]
 		reader.pos = reader.pos + 4
 		return { kind = 'num', value = value }
 	end
 	if tag == bin_tag_f64 then
 		reader_require(reader, 8, 'const f64')
-		local addr = reader.base + reader.pos
-		local value = memf64le[addr]
+		local addr<const> = reader.base + reader.pos
+		local value<const> = memf64le[addr]
 		reader.pos = reader.pos + 8
 		return { kind = 'num', value = value }
 	end
@@ -803,32 +803,32 @@ local function reader_read_const_value(reader, prop_names)
 	return { kind = 'unsupported' }
 end
 
-local function reader_read_const_pool(reader, prop_names)
-	local tag = reader_read_u8(reader, 'constPool tag')
+local reader_read_const_pool<const> = function(reader, prop_names)
+	local tag<const> = reader_read_u8(reader, 'constPool tag')
 	if tag ~= bin_tag_arr then
 		error('Program constPool must be an array.')
 	end
-	local count = reader_read_varuint(reader, 'constPool count')
-	local out = {}
+	local count<const> = reader_read_varuint(reader, 'constPool count')
+	local out<const> = {}
 	for i = 1, count do
 		out[i] = reader_read_const_value(reader, prop_names)
 	end
 	return out
 end
 
-local function reader_read_program_const_pool(reader, prop_names)
-	local tag = reader_read_u8(reader, 'program tag')
+local reader_read_program_const_pool<const> = function(reader, prop_names)
+	local tag<const> = reader_read_u8(reader, 'program tag')
 	if tag ~= bin_tag_obj then
 		error('Program payload must be an object.')
 	end
-	local prop_count = reader_read_varuint(reader, 'program property count')
+	local prop_count<const> = reader_read_varuint(reader, 'program property count')
 	local const_pool
 	for i = 1, prop_count do
-		local key = reader_read_prop_key(reader, prop_names, 'program property id')
+		local key<const> = reader_read_prop_key(reader, prop_names, 'program property id')
 		if key == 'constPool' then
 			const_pool = reader_read_const_pool(reader, prop_names)
 		else
-			local value_tag = reader_read_u8(reader, 'program value tag')
+			local value_tag<const> = reader_read_u8(reader, 'program value tag')
 			reader_skip_value_from_tag(reader, prop_names, value_tag)
 		end
 	end
@@ -838,29 +838,29 @@ local function reader_read_program_const_pool(reader, prop_names)
 	return const_pool
 end
 
-local function read_program_const_pool_payload(base, size)
-	local reader = new_reader(base, size, 'program payload')
-	local version = reader_read_u8(reader, 'bin version')
+local read_program_const_pool_payload<const> = function(base, size)
+	local reader<const> = new_reader(base, size, 'program payload')
+	local version<const> = reader_read_u8(reader, 'bin version')
 	if version ~= bin_version then
 		error('Unsupported binary payload version.')
 	end
-	local prop_count = reader_read_varuint(reader, 'property count')
-	local prop_names = {}
+	local prop_count<const> = reader_read_varuint(reader, 'property count')
+	local prop_names<const> = {}
 	for i = 1, prop_count do
 		prop_names[i] = reader_read_string(reader, 'property name')
 	end
-	local root_tag = reader_read_u8(reader, 'root tag')
+	local root_tag<const> = reader_read_u8(reader, 'root tag')
 	if root_tag ~= bin_tag_obj then
 		error('Program root must be an object.')
 	end
-	local root_prop_count = reader_read_varuint(reader, 'root property count')
+	local root_prop_count<const> = reader_read_varuint(reader, 'root property count')
 	local const_pool
 	for i = 1, root_prop_count do
-		local key = reader_read_prop_key(reader, prop_names, 'root property id')
+		local key<const> = reader_read_prop_key(reader, prop_names, 'root property id')
 		if key == 'program' then
 			const_pool = reader_read_program_const_pool(reader, prop_names)
 		else
-			local value_tag = reader_read_u8(reader, 'root value tag')
+			local value_tag<const> = reader_read_u8(reader, 'root value tag')
 			reader_skip_value_from_tag(reader, prop_names, value_tag)
 		end
 	end
@@ -870,57 +870,57 @@ local function read_program_const_pool_payload(base, size)
 	return const_pool
 end
 
-local function read_toc_string(string_table_base, string_table_size, offset, length)
+local read_toc_string<const> = function(string_table_base, string_table_size, offset, length)
 	if offset == rom_toc_invalid_u32 or length == 0 then
 		return ''
 	end
 	assert_range(offset, length, string_table_size, 'toc string table')
-	local reader = new_reader(string_table_base + offset, length, 'toc string')
+	local reader<const> = new_reader(string_table_base + offset, length, 'toc string')
 	return reader_read_raw_string(reader, length, 'toc string')
 end
 
-local function find_data_asset_payload_range(rom_base, header, target_asset_id)
+local find_data_asset_payload_range<const> = function(rom_base, header, target_asset_id)
 	if header.toc_len < rom_toc_header_size then
 		error('ROM TOC is too small.')
 	end
-	local toc_base = rom_base + header.toc_off
-	local toc_magic = mem[toc_base + 0]
+	local toc_base<const> = rom_base + header.toc_off
+	local toc_magic<const> = mem[toc_base + 0]
 	if toc_magic ~= rom_toc_magic then
 		error('Invalid ROM TOC magic.')
 	end
-	local toc_header_size = mem[toc_base + 4]
+	local toc_header_size<const> = mem[toc_base + 4]
 	if toc_header_size ~= rom_toc_header_size then
 		error('Unexpected ROM TOC header size.')
 	end
-	local entry_size = mem[toc_base + 8]
+	local entry_size<const> = mem[toc_base + 8]
 	if entry_size ~= rom_toc_entry_size then
 		error('Unexpected ROM TOC entry size.')
 	end
-	local entry_count = mem[toc_base + 12]
-	local entry_offset = mem[toc_base + 16]
+	local entry_count<const> = mem[toc_base + 12]
+	local entry_offset<const> = mem[toc_base + 16]
 	if entry_offset ~= rom_toc_header_size then
 		error('Unexpected ROM TOC entry offset.')
 	end
-	local string_table_offset = mem[toc_base + 20]
-	local string_table_length = mem[toc_base + 24]
-	local entries_bytes = entry_count * entry_size
-	local expected_string_offset = entry_offset + entries_bytes
+	local string_table_offset<const> = mem[toc_base + 20]
+	local string_table_length<const> = mem[toc_base + 24]
+	local entries_bytes<const> = entry_count * entry_size
+	local expected_string_offset<const> = entry_offset + entries_bytes
 	if string_table_offset ~= expected_string_offset then
 		error('Unexpected ROM TOC string table offset.')
 	end
 	assert_range(entry_offset, entries_bytes, header.toc_len, 'toc entries')
 	assert_range(string_table_offset, string_table_length, header.toc_len, 'toc string table')
-	local string_table_base = toc_base + string_table_offset
+	local string_table_base<const> = toc_base + string_table_offset
 	for index = 0, entry_count - 1 do
-		local entry = toc_base + entry_offset + (index * entry_size)
-		local type_id = mem[entry + 8]
+		local entry<const> = toc_base + entry_offset + (index * entry_size)
+		local type_id<const> = mem[entry + 8]
 		if type_id == rom_asset_type_data then
-			local resid_offset = mem[entry + 16]
-			local resid_length = mem[entry + 20]
-			local asset_id = read_toc_string(string_table_base, string_table_length, resid_offset, resid_length)
+			local resid_offset<const> = mem[entry + 16]
+			local resid_length<const> = mem[entry + 20]
+			local asset_id<const> = read_toc_string(string_table_base, string_table_length, resid_offset, resid_length)
 			if asset_id == target_asset_id then
-				local payload_start = mem[entry + 40]
-				local payload_end = mem[entry + 44]
+				local payload_start<const> = mem[entry + 40]
+				local payload_end<const> = mem[entry + 44]
 				if payload_start == rom_toc_invalid_u32 or payload_end == rom_toc_invalid_u32 or payload_end <= payload_start then
 					error('Data asset "' .. target_asset_id .. '" is missing payload range.')
 				end
@@ -935,46 +935,46 @@ local function find_data_asset_payload_range(rom_base, header, target_asset_id)
 	error('Data asset "' .. target_asset_id .. '" was not found in ROM TOC.')
 end
 
-local function find_program_payload_range(rom_base, header)
+local find_program_payload_range<const> = function(rom_base, header)
 	return find_data_asset_payload_range(rom_base, header, program_asset_id)
 end
 
 read_rom_program_const_pool = function(rom_base, header)
-	local payload = find_program_payload_range(rom_base, header)
-	local payload_size = payload['end'] - payload.start
+	local payload<const> = find_program_payload_range(rom_base, header)
+	local payload_size<const> = payload['end'] - payload.start
 	return read_program_const_pool_payload(rom_base + payload.start, payload_size)
 end
 
-local function reader_read_number_from_tag(reader, tag, label)
+local reader_read_number_from_tag<const> = function(reader, tag, label)
 	if tag == bin_tag_int then
 		return reader_read_varint(reader, label)
 	end
 	if tag == bin_tag_f32 then
 		reader_require(reader, 4, label)
-		local addr = reader.base + reader.pos
-		local value = memf32le[addr]
+		local addr<const> = reader.base + reader.pos
+		local value<const> = memf32le[addr]
 		reader.pos = reader.pos + 4
 		return value
 	end
 	if tag == bin_tag_f64 then
 		reader_require(reader, 8, label)
-		local addr = reader.base + reader.pos
-		local value = memf64le[addr]
+		local addr<const> = reader.base + reader.pos
+		local value<const> = memf64le[addr]
 		reader.pos = reader.pos + 8
 		return value
 	end
 	error((label or reader.label) .. ' must be a number.')
 end
 
-local function reader_read_string_from_tag(reader, tag, label)
+local reader_read_string_from_tag<const> = function(reader, tag, label)
 	if tag ~= bin_tag_str then
 		error((label or reader.label) .. ' must be a string.')
 	end
 	return reader_read_string(reader, label)
 end
 
-local function reader_read_non_negative_integer_from_tag(reader, tag, label)
-	local value = reader_read_number_from_tag(reader, tag, label)
+local reader_read_non_negative_integer_from_tag<const> = function(reader, tag, label)
+	local value<const> = reader_read_number_from_tag(reader, tag, label)
 	if value ~= math.floor(value) then
 		error((label or reader.label) .. ' must be an integer.')
 	end
@@ -984,12 +984,12 @@ local function reader_read_non_negative_integer_from_tag(reader, tag, label)
 	return value
 end
 
-local function reader_read_binary_range_from_tag(reader, tag, label)
+local reader_read_binary_range_from_tag<const> = function(reader, tag, label)
 	if tag ~= bin_tag_bin then
 		error((label or reader.label) .. ' must be binary.')
 	end
-	local length = reader_read_varuint(reader, (label or reader.label) .. ' length')
-	local start = reader.base + reader.pos
+	local length<const> = reader_read_varuint(reader, (label or reader.label) .. ' length')
+	local start<const> = reader.base + reader.pos
 	reader_skip_bytes(reader, length, label)
 	return {
 		start = start,
@@ -997,67 +997,67 @@ local function reader_read_binary_range_from_tag(reader, tag, label)
 	}
 end
 
-local function reader_read_object_property_count(reader, tag, label)
+local reader_read_object_property_count<const> = function(reader, tag, label)
 	if tag ~= bin_tag_obj then
 		error((label or reader.label) .. ' must be an object.')
 	end
 	return reader_read_varuint(reader, (label or reader.label) .. ' property count')
 end
 
-local function reader_read_array_length(reader, tag, label)
+local reader_read_array_length<const> = function(reader, tag, label)
 	if tag ~= bin_tag_arr then
 		error((label or reader.label) .. ' must be an array.')
 	end
 	return reader_read_varuint(reader, (label or reader.label) .. ' count')
 end
 
-local function reader_skip_array(reader, prop_names, tag, label)
-	local count = reader_read_array_length(reader, tag, label)
+local reader_skip_array<const> = function(reader, prop_names, tag, label)
+	local count<const> = reader_read_array_length(reader, tag, label)
 	for i = 1, count do
-		local value_tag = reader_read_u8(reader, (label or reader.label) .. ' item tag')
+		local value_tag<const> = reader_read_u8(reader, (label or reader.label) .. ' item tag')
 		reader_skip_value_from_tag(reader, prop_names, value_tag)
 	end
 	return count
 end
 
-local function begin_program_asset_payload_reader(rom_base, header)
-	local payload = find_program_payload_range(rom_base, header)
-	local payload_size = payload['end'] - payload.start
-	local reader = new_reader(rom_base + payload.start, payload_size, 'program asset payload')
-	local version = reader_read_u8(reader, 'bin version')
+local begin_program_asset_payload_reader<const> = function(rom_base, header)
+	local payload<const> = find_program_payload_range(rom_base, header)
+	local payload_size<const> = payload['end'] - payload.start
+	local reader<const> = new_reader(rom_base + payload.start, payload_size, 'program asset payload')
+	local version<const> = reader_read_u8(reader, 'bin version')
 	if version ~= bin_version then
 		error('Unsupported binary payload version.')
 	end
-	local prop_count = reader_read_varuint(reader, 'property count')
-	local prop_names = {}
+	local prop_count<const> = reader_read_varuint(reader, 'property count')
+	local prop_names<const> = {}
 	for i = 1, prop_count do
 		prop_names[i] = reader_read_string(reader, 'property name')
 	end
-	local root_tag = reader_read_u8(reader, 'root tag')
+	local root_tag<const> = reader_read_u8(reader, 'root tag')
 	if root_tag ~= bin_tag_obj then
 		error('Program asset root must be an object.')
 	end
-	local root_prop_count = reader_read_varuint(reader, 'root property count')
+	local root_prop_count<const> = reader_read_varuint(reader, 'root property count')
 	return reader, prop_names, root_prop_count
 end
 
-local function read_program_asset_core_summary_from_reader(reader, prop_names, root_prop_count)
-	local summary = {
+local read_program_asset_core_summary_from_reader<const> = function(reader, prop_names, root_prop_count)
+	local summary<const> = {
 		entry_proto_index = nil,
 		code_range = nil,
 		const_pool_count = nil,
 		proto_count = nil,
 	}
 	for i = 1, root_prop_count do
-		local key = reader_read_prop_key(reader, prop_names, 'root property id')
-		local value_tag = reader_read_u8(reader, 'root value tag')
+		local key<const> = reader_read_prop_key(reader, prop_names, 'root property id')
+		local value_tag<const> = reader_read_u8(reader, 'root value tag')
 		if key == 'entryProtoIndex' then
 			summary.entry_proto_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.entryProtoIndex')
 		elseif key == 'program' then
-			local prop_count = reader_read_object_property_count(reader, value_tag, 'ProgramAsset.program')
+			local prop_count<const> = reader_read_object_property_count(reader, value_tag, 'ProgramAsset.program')
 			for j = 1, prop_count do
-				local program_key = reader_read_prop_key(reader, prop_names, 'program property id')
-				local program_tag = reader_read_u8(reader, 'program value tag')
+				local program_key<const> = reader_read_prop_key(reader, prop_names, 'program property id')
+				local program_tag<const> = reader_read_u8(reader, 'program value tag')
 				if program_key == 'code' then
 					summary.code_range = reader_read_binary_range_from_tag(reader, program_tag, 'ProgramAsset.program.code')
 				elseif program_key == 'constPool' then
@@ -1076,7 +1076,7 @@ local function read_program_asset_core_summary_from_reader(reader, prop_names, r
 end
 
 begin_program_asset_summary_step_state = function(rom_base, header)
-	local reader, prop_names, root_prop_count = begin_program_asset_payload_reader(rom_base, header)
+	local reader<const>, prop_names<const>, root_prop_count<const> = begin_program_asset_payload_reader(rom_base, header)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -1096,8 +1096,8 @@ begin_program_asset_summary_step_state = function(rom_base, header)
 end
 
 step_program_asset_summary_step_state = function(state, job)
-	local reader = state.reader
-	local prop_names = state.prop_names
+	local reader<const> = state.reader
+	local prop_names<const> = state.prop_names
 	while true do
 		if state.skip ~= nil then
 			if not step_skip_state(state.skip, job) then
@@ -1119,18 +1119,18 @@ step_program_asset_summary_step_state = function(state, job)
 				if not consume_precheck_step(job) then
 					return false
 				end
-				local program_key = reader_read_prop_key(reader, prop_names, 'program property id')
-				local program_tag = reader_read_u8(reader, 'program value tag')
+				local program_key<const> = reader_read_prop_key(reader, prop_names, 'program property id')
+				local program_tag<const> = reader_read_u8(reader, 'program value tag')
 				if program_key == 'code' then
 					state.summary.code_range = reader_read_binary_range_from_tag(reader, program_tag, 'ProgramAsset.program.code')
 					state.program_index = state.program_index + 1
 				elseif program_key == 'constPool' then
-					local count = reader_read_array_length(reader, program_tag, 'ProgramAsset.program.constPool')
+					local count<const> = reader_read_array_length(reader, program_tag, 'ProgramAsset.program.constPool')
 					state.summary.const_pool_count = count
 					state.skip = new_skip_array_items_state(reader, prop_names, count)
 					state.skip_target = 'program'
 				elseif program_key == 'protos' then
-					local count = reader_read_array_length(reader, program_tag, 'ProgramAsset.program.protos')
+					local count<const> = reader_read_array_length(reader, program_tag, 'ProgramAsset.program.protos')
 					state.summary.proto_count = count
 					state.skip = new_skip_array_items_state(reader, prop_names, count)
 					state.skip_target = 'program'
@@ -1146,8 +1146,8 @@ step_program_asset_summary_step_state = function(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local key = reader_read_prop_key(reader, prop_names, 'root property id')
-			local value_tag = reader_read_u8(reader, 'root value tag')
+			local key<const> = reader_read_prop_key(reader, prop_names, 'root property id')
+			local value_tag<const> = reader_read_u8(reader, 'root value tag')
 			if key == 'entryProtoIndex' then
 				state.summary.entry_proto_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.entryProtoIndex')
 				state.root_index = state.root_index + 1
@@ -1166,29 +1166,29 @@ get_program_asset_summary_step_progress = function(state)
 	if state.root_prop_count <= 0 then
 		return 1
 	end
-	local root_progress = state.root_index - 1
-	local root_scale = 1 / state.root_prop_count
+	local root_progress<const> = state.root_index - 1
+	local root_scale<const> = 1 / state.root_prop_count
 	if state.skip ~= nil then
-		local skip_progress = get_skip_state_progress(state.skip)
+		local skip_progress<const> = get_skip_state_progress(state.skip)
 		if state.skip_target == 'program' and state.program_prop_count ~= nil and state.program_prop_count > 0 then
-			local program_progress = ((state.program_index - 1) + skip_progress) / state.program_prop_count
+			local program_progress<const> = ((state.program_index - 1) + skip_progress) / state.program_prop_count
 			return clamp_int((root_progress + program_progress) * root_scale, 0, 1)
 		end
 		return clamp_int((root_progress + skip_progress) * root_scale, 0, 1)
 	end
 	if state.program_prop_count ~= nil and state.program_prop_count > 0 then
-		local program_progress = (state.program_index - 1) / state.program_prop_count
+		local program_progress<const> = (state.program_index - 1) / state.program_prop_count
 		return clamp_int((root_progress + program_progress) * root_scale, 0, 1)
 	end
 	return clamp_int(root_progress * root_scale, 0, 1)
 end
 
 read_rom_program_asset_summary = function(rom_base, header)
-	local reader, prop_names, root_prop_count = begin_program_asset_payload_reader(rom_base, header)
+	local reader<const>, prop_names<const>, root_prop_count<const> = begin_program_asset_payload_reader(rom_base, header)
 	return read_program_asset_core_summary_from_reader(reader, prop_names, root_prop_count)
 end
 
-local function make_program_precheck_failure(scope, detail, stderr)
+local make_program_precheck_failure<const> = function(scope, detail, stderr)
 	return {
 		title = scope .. ' PROGRAM ASSET IS INVALID',
 		detail = detail,
@@ -1251,13 +1251,13 @@ validate_program_boot_asset = function(summary, scope, params)
 	return nil
 end
 
-local function read_module_proto_entry(reader, prop_names, tag)
-	local prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleProtos[]')
+local read_module_proto_entry<const> = function(reader, prop_names, tag)
+	local prop_count<const> = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleProtos[]')
 	local path = nil
 	local proto_index = nil
 	for i = 1, prop_count do
-		local key = reader_read_prop_key(reader, prop_names, 'ProgramAsset.moduleProtos[] property id')
-		local value_tag = reader_read_u8(reader, 'ProgramAsset.moduleProtos[] value tag')
+		local key<const> = reader_read_prop_key(reader, prop_names, 'ProgramAsset.moduleProtos[] property id')
+		local value_tag<const> = reader_read_u8(reader, 'ProgramAsset.moduleProtos[] value tag')
 		if key == 'path' then
 			path = reader_read_string_from_tag(reader, value_tag, 'ProgramAsset.moduleProtos[].path')
 		elseif key == 'protoIndex' then
@@ -1269,11 +1269,11 @@ local function read_module_proto_entry(reader, prop_names, tag)
 	return path, proto_index
 end
 
-local function validate_module_protos_array(reader, prop_names, tag, summary, scope)
-	local count = reader_read_array_length(reader, tag, 'ProgramAsset.moduleProtos')
+local validate_module_protos_array<const> = function(reader, prop_names, tag, summary, scope)
+	local count<const> = reader_read_array_length(reader, tag, 'ProgramAsset.moduleProtos')
 	for i = 1, count do
-		local item_tag = reader_read_u8(reader, 'ProgramAsset.moduleProtos item tag')
-		local path, proto_index = read_module_proto_entry(reader, prop_names, item_tag)
+		local item_tag<const> = reader_read_u8(reader, 'ProgramAsset.moduleProtos item tag')
+		local path<const>, proto_index<const> = read_module_proto_entry(reader, prop_names, item_tag)
 		if path == nil or #path == 0 then
 			return make_program_precheck_failure(scope, 'MODULEPROTO PATH IS MISSING', '[ProgramLinker] ' .. scope .. ' moduleProtos entry is missing path.')
 		end
@@ -1291,13 +1291,13 @@ local function validate_module_protos_array(reader, prop_names, tag, summary, sc
 	return nil
 end
 
-local function read_module_alias_entry(reader, prop_names, tag)
-	local prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleAliases[]')
+local read_module_alias_entry<const> = function(reader, prop_names, tag)
+	local prop_count<const> = reader_read_object_property_count(reader, tag, 'ProgramAsset.moduleAliases[]')
 	local alias = nil
 	local path = nil
 	for i = 1, prop_count do
-		local key = reader_read_prop_key(reader, prop_names, 'ProgramAsset.moduleAliases[] property id')
-		local value_tag = reader_read_u8(reader, 'ProgramAsset.moduleAliases[] value tag')
+		local key<const> = reader_read_prop_key(reader, prop_names, 'ProgramAsset.moduleAliases[] property id')
+		local value_tag<const> = reader_read_u8(reader, 'ProgramAsset.moduleAliases[] value tag')
 		if key == 'alias' then
 			alias = reader_read_string_from_tag(reader, value_tag, 'ProgramAsset.moduleAliases[].alias')
 		elseif key == 'path' then
@@ -1309,12 +1309,12 @@ local function read_module_alias_entry(reader, prop_names, tag)
 	return alias, path
 end
 
-local function validate_module_aliases_array(reader, prop_names, tag, summary, scope, required_alias)
-	local count = reader_read_array_length(reader, tag, 'ProgramAsset.moduleAliases')
+local validate_module_aliases_array<const> = function(reader, prop_names, tag, summary, scope, required_alias)
+	local count<const> = reader_read_array_length(reader, tag, 'ProgramAsset.moduleAliases')
 	local found_required_alias = required_alias == nil
 	for i = 1, count do
-		local item_tag = reader_read_u8(reader, 'ProgramAsset.moduleAliases item tag')
-		local alias, path = read_module_alias_entry(reader, prop_names, item_tag)
+		local item_tag<const> = reader_read_u8(reader, 'ProgramAsset.moduleAliases item tag')
+		local alias<const>, path<const> = read_module_alias_entry(reader, prop_names, item_tag)
 		if alias == nil or #alias == 0 then
 			return make_program_precheck_failure(scope, 'MODULEALIAS ALIAS IS MISSING', '[ProgramLinker] ' .. scope .. ' moduleAliases entry is missing alias.')
 		end
@@ -1335,14 +1335,14 @@ local function validate_module_aliases_array(reader, prop_names, tag, summary, s
 	return nil
 end
 
-local function read_const_reloc_entry(reader, prop_names, tag)
-	local prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.link.constRelocs[]')
+local read_const_reloc_entry<const> = function(reader, prop_names, tag)
+	local prop_count<const> = reader_read_object_property_count(reader, tag, 'ProgramAsset.link.constRelocs[]')
 	local word_index = nil
 	local kind = nil
 	local const_index = nil
 	for i = 1, prop_count do
-		local key = reader_read_prop_key(reader, prop_names, 'ProgramAsset.link.constRelocs[] property id')
-		local value_tag = reader_read_u8(reader, 'ProgramAsset.link.constRelocs[] value tag')
+		local key<const> = reader_read_prop_key(reader, prop_names, 'ProgramAsset.link.constRelocs[] property id')
+		local value_tag<const> = reader_read_u8(reader, 'ProgramAsset.link.constRelocs[] value tag')
 		if key == 'wordIndex' then
 			word_index = reader_read_non_negative_integer_from_tag(reader, value_tag, 'ProgramAsset.link.constRelocs[].wordIndex')
 		elseif key == 'kind' then
@@ -1356,12 +1356,12 @@ local function read_const_reloc_entry(reader, prop_names, tag)
 	return word_index, kind, const_index
 end
 
-local function validate_const_relocs_array(reader, prop_names, tag, summary, scope)
-	local count = reader_read_array_length(reader, tag, 'ProgramAsset.link.constRelocs')
+local validate_const_relocs_array<const> = function(reader, prop_names, tag, summary, scope)
+	local count<const> = reader_read_array_length(reader, tag, 'ProgramAsset.link.constRelocs')
 	for i = 1, count do
-		local item_tag = reader_read_u8(reader, 'ProgramAsset.link.constRelocs item tag')
-		local word_index, kind, const_index = read_const_reloc_entry(reader, prop_names, item_tag)
-		local reloc_id = tostring(i - 1)
+		local item_tag<const> = reader_read_u8(reader, 'ProgramAsset.link.constRelocs item tag')
+		local word_index<const>, kind<const>, const_index<const> = read_const_reloc_entry(reader, prop_names, item_tag)
+		local reloc_id<const> = tostring(i - 1)
 		if word_index == nil then
 			return make_program_precheck_failure(scope, 'CONSTRELOC ' .. reloc_id .. ' IS MISSING WORDINDEX', '[ProgramLinker] ' .. scope .. ' const reloc is missing wordIndex.')
 		end
@@ -1392,15 +1392,15 @@ local function validate_const_relocs_array(reader, prop_names, tag, summary, sco
 	return nil
 end
 
-local function validate_program_link_object(reader, prop_names, tag, summary, scope)
-	local prop_count = reader_read_object_property_count(reader, tag, 'ProgramAsset.link')
+local validate_program_link_object<const> = function(reader, prop_names, tag, summary, scope)
+	local prop_count<const> = reader_read_object_property_count(reader, tag, 'ProgramAsset.link')
 	local saw_const_relocs = false
 	for i = 1, prop_count do
-		local key = reader_read_prop_key(reader, prop_names, 'ProgramAsset.link property id')
-		local value_tag = reader_read_u8(reader, 'ProgramAsset.link value tag')
+		local key<const> = reader_read_prop_key(reader, prop_names, 'ProgramAsset.link property id')
+		local value_tag<const> = reader_read_u8(reader, 'ProgramAsset.link value tag')
 		if key == 'constRelocs' then
 			saw_const_relocs = true
-			local failure = validate_const_relocs_array(reader, prop_names, value_tag, summary, scope)
+			local failure<const> = validate_const_relocs_array(reader, prop_names, value_tag, summary, scope)
 			if failure then
 				return failure
 			end
@@ -1414,7 +1414,7 @@ local function validate_program_link_object(reader, prop_names, tag, summary, sc
 	return nil
 end
 
-local function get_object_entry_state_progress(state)
+local get_object_entry_state_progress<const> = function(state)
 	if state.prop_count <= 0 then
 		return 1
 	end
@@ -1425,7 +1425,7 @@ local function get_object_entry_state_progress(state)
 	return clamp_int(progress / state.prop_count, 0, 1)
 end
 
-local function new_module_proto_entry_state(reader, prop_names, tag)
+local new_module_proto_entry_state<const> = function(reader, prop_names, tag)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -1437,7 +1437,7 @@ local function new_module_proto_entry_state(reader, prop_names, tag)
 	}
 end
 
-local function step_module_proto_entry_state(state, job)
+local step_module_proto_entry_state<const> = function(state, job)
 	while true do
 		if state.skip ~= nil then
 			if not step_skip_state(state.skip, job) then
@@ -1452,8 +1452,8 @@ local function step_module_proto_entry_state(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local key = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.moduleProtos[] property id')
-			local value_tag = reader_read_u8(state.reader, 'ProgramAsset.moduleProtos[] value tag')
+			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.moduleProtos[] property id')
+			local value_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.moduleProtos[] value tag')
 			if key == 'path' then
 				state.path = reader_read_string_from_tag(state.reader, value_tag, 'ProgramAsset.moduleProtos[].path')
 				state.prop_index = state.prop_index + 1
@@ -1467,7 +1467,7 @@ local function step_module_proto_entry_state(state, job)
 	end
 end
 
-local function new_module_protos_array_state(reader, prop_names, tag, summary, scope)
+local new_module_protos_array_state<const> = function(reader, prop_names, tag, summary, scope)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -1479,10 +1479,10 @@ local function new_module_protos_array_state(reader, prop_names, tag, summary, s
 	}
 end
 
-local function step_module_protos_array_state(state, job)
+local step_module_protos_array_state<const> = function(state, job)
 	while true do
 		if state.entry ~= nil then
-			local done = step_module_proto_entry_state(state.entry, job)
+			local done<const> = step_module_proto_entry_state(state.entry, job)
 			if not done then
 				return false
 			end
@@ -1508,13 +1508,13 @@ local function step_module_protos_array_state(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local item_tag = reader_read_u8(state.reader, 'ProgramAsset.moduleProtos item tag')
+			local item_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.moduleProtos item tag')
 			state.entry = new_module_proto_entry_state(state.reader, state.prop_names, item_tag)
 		end
 	end
 end
 
-local function get_module_protos_array_progress(state)
+local get_module_protos_array_progress<const> = function(state)
 	if state.count <= 0 then
 		return 1
 	end
@@ -1525,7 +1525,7 @@ local function get_module_protos_array_progress(state)
 	return clamp_int(progress / state.count, 0, 1)
 end
 
-local function new_module_alias_entry_state(reader, prop_names, tag)
+local new_module_alias_entry_state<const> = function(reader, prop_names, tag)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -1537,7 +1537,7 @@ local function new_module_alias_entry_state(reader, prop_names, tag)
 	}
 end
 
-local function step_module_alias_entry_state(state, job)
+local step_module_alias_entry_state<const> = function(state, job)
 	while true do
 		if state.skip ~= nil then
 			if not step_skip_state(state.skip, job) then
@@ -1552,8 +1552,8 @@ local function step_module_alias_entry_state(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local key = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.moduleAliases[] property id')
-			local value_tag = reader_read_u8(state.reader, 'ProgramAsset.moduleAliases[] value tag')
+			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.moduleAliases[] property id')
+			local value_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.moduleAliases[] value tag')
 			if key == 'alias' then
 				state.alias = reader_read_string_from_tag(state.reader, value_tag, 'ProgramAsset.moduleAliases[].alias')
 				state.prop_index = state.prop_index + 1
@@ -1567,7 +1567,7 @@ local function step_module_alias_entry_state(state, job)
 	end
 end
 
-local function new_module_aliases_array_state(reader, prop_names, tag, scope, required_alias)
+local new_module_aliases_array_state<const> = function(reader, prop_names, tag, scope, required_alias)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -1580,10 +1580,10 @@ local function new_module_aliases_array_state(reader, prop_names, tag, scope, re
 	}
 end
 
-local function step_module_aliases_array_state(state, job)
+local step_module_aliases_array_state<const> = function(state, job)
 	while true do
 		if state.entry ~= nil then
-			local done = step_module_alias_entry_state(state.entry, job)
+			local done<const> = step_module_alias_entry_state(state.entry, job)
 			if not done then
 				return false
 			end
@@ -1612,13 +1612,13 @@ local function step_module_aliases_array_state(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local item_tag = reader_read_u8(state.reader, 'ProgramAsset.moduleAliases item tag')
+			local item_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.moduleAliases item tag')
 			state.entry = new_module_alias_entry_state(state.reader, state.prop_names, item_tag)
 		end
 	end
 end
 
-local function get_module_aliases_array_progress(state)
+local get_module_aliases_array_progress<const> = function(state)
 	if state.count <= 0 then
 		return 1
 	end
@@ -1629,7 +1629,7 @@ local function get_module_aliases_array_progress(state)
 	return clamp_int(progress / state.count, 0, 1)
 end
 
-local function new_const_reloc_entry_state(reader, prop_names, tag)
+local new_const_reloc_entry_state<const> = function(reader, prop_names, tag)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -1642,7 +1642,7 @@ local function new_const_reloc_entry_state(reader, prop_names, tag)
 	}
 end
 
-local function step_const_reloc_entry_state(state, job)
+local step_const_reloc_entry_state<const> = function(state, job)
 	while true do
 		if state.skip ~= nil then
 			if not step_skip_state(state.skip, job) then
@@ -1657,8 +1657,8 @@ local function step_const_reloc_entry_state(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local key = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.link.constRelocs[] property id')
-			local value_tag = reader_read_u8(state.reader, 'ProgramAsset.link.constRelocs[] value tag')
+			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.link.constRelocs[] property id')
+			local value_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.link.constRelocs[] value tag')
 			if key == 'wordIndex' then
 				state.word_index = reader_read_non_negative_integer_from_tag(state.reader, value_tag, 'ProgramAsset.link.constRelocs[].wordIndex')
 				state.prop_index = state.prop_index + 1
@@ -1675,7 +1675,7 @@ local function step_const_reloc_entry_state(state, job)
 	end
 end
 
-local function new_const_relocs_array_state(reader, prop_names, tag, summary, scope)
+local new_const_relocs_array_state<const> = function(reader, prop_names, tag, summary, scope)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -1687,14 +1687,14 @@ local function new_const_relocs_array_state(reader, prop_names, tag, summary, sc
 	}
 end
 
-local function step_const_relocs_array_state(state, job)
+local step_const_relocs_array_state<const> = function(state, job)
 	while true do
 		if state.entry ~= nil then
-			local done = step_const_reloc_entry_state(state.entry, job)
+			local done<const> = step_const_reloc_entry_state(state.entry, job)
 			if not done then
 				return false
 			end
-			local reloc_id = tostring(state.index - 1)
+			local reloc_id<const> = tostring(state.index - 1)
 			if state.entry.word_index == nil then
 				return nil, make_program_precheck_failure(state.scope, 'CONSTRELOC ' .. reloc_id .. ' IS MISSING WORDINDEX', '[ProgramLinker] ' .. state.scope .. ' const reloc is missing wordIndex.')
 			end
@@ -1730,13 +1730,13 @@ local function step_const_relocs_array_state(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local item_tag = reader_read_u8(state.reader, 'ProgramAsset.link.constRelocs item tag')
+			local item_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.link.constRelocs item tag')
 			state.entry = new_const_reloc_entry_state(state.reader, state.prop_names, item_tag)
 		end
 	end
 end
 
-local function get_const_relocs_array_progress(state)
+local get_const_relocs_array_progress<const> = function(state)
 	if state.count <= 0 then
 		return 1
 	end
@@ -1747,7 +1747,7 @@ local function get_const_relocs_array_progress(state)
 	return clamp_int(progress / state.count, 0, 1)
 end
 
-local function new_link_object_state(reader, prop_names, tag, summary, scope)
+local new_link_object_state<const> = function(reader, prop_names, tag, summary, scope)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -1761,10 +1761,10 @@ local function new_link_object_state(reader, prop_names, tag, summary, scope)
 	}
 end
 
-local function step_link_object_state(state, job)
+local step_link_object_state<const> = function(state, job)
 	while true do
 		if state.const_relocs ~= nil then
-			local done, failure = step_const_relocs_array_state(state.const_relocs, job)
+			local done<const>, failure<const> = step_const_relocs_array_state(state.const_relocs, job)
 			if done == nil then
 				return nil, failure
 			end
@@ -1789,8 +1789,8 @@ local function step_link_object_state(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local key = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.link property id')
-			local value_tag = reader_read_u8(state.reader, 'ProgramAsset.link value tag')
+			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'ProgramAsset.link property id')
+			local value_tag<const> = reader_read_u8(state.reader, 'ProgramAsset.link value tag')
 			if key == 'constRelocs' then
 				state.saw_const_relocs = true
 				state.const_relocs = new_const_relocs_array_state(state.reader, state.prop_names, value_tag, state.summary, state.scope)
@@ -1801,7 +1801,7 @@ local function step_link_object_state(state, job)
 	end
 end
 
-local function get_link_object_state_progress(state)
+local get_link_object_state_progress<const> = function(state)
 	if state.prop_count <= 0 then
 		return 1
 	end
@@ -1815,7 +1815,7 @@ local function get_link_object_state_progress(state)
 end
 
 begin_program_asset_details_step_state = function(rom_base, header, summary, params)
-	local reader, prop_names, root_prop_count = begin_program_asset_payload_reader(rom_base, header)
+	local reader<const>, prop_names<const>, root_prop_count<const> = begin_program_asset_payload_reader(rom_base, header)
 	return {
 		reader = reader,
 		prop_names = prop_names,
@@ -1836,7 +1836,7 @@ end
 step_program_asset_details_step_state = function(state, job)
 	while true do
 		if state.module_protos ~= nil then
-			local done, failure = step_module_protos_array_state(state.module_protos, job)
+			local done<const>, failure<const> = step_module_protos_array_state(state.module_protos, job)
 			if done == nil then
 				return nil, failure
 			end
@@ -1846,7 +1846,7 @@ step_program_asset_details_step_state = function(state, job)
 			state.module_protos = nil
 			state.root_index = state.root_index + 1
 		elseif state.module_aliases ~= nil then
-			local done, failure = step_module_aliases_array_state(state.module_aliases, job)
+			local done<const>, failure<const> = step_module_aliases_array_state(state.module_aliases, job)
 			if done == nil then
 				return nil, failure
 			end
@@ -1856,7 +1856,7 @@ step_program_asset_details_step_state = function(state, job)
 			state.module_aliases = nil
 			state.root_index = state.root_index + 1
 		elseif state.link ~= nil then
-			local done, failure = step_link_object_state(state.link, job)
+			local done<const>, failure<const> = step_link_object_state(state.link, job)
 			if done == nil then
 				return nil, failure
 			end
@@ -1884,8 +1884,8 @@ step_program_asset_details_step_state = function(state, job)
 			if not consume_precheck_step(job) then
 				return false
 			end
-			local key = reader_read_prop_key(state.reader, state.prop_names, 'root property id')
-			local value_tag = reader_read_u8(state.reader, 'root value tag')
+			local key<const> = reader_read_prop_key(state.reader, state.prop_names, 'root property id')
+			local value_tag<const> = reader_read_u8(state.reader, 'root value tag')
 			if key == 'moduleProtos' then
 				state.module_protos = new_module_protos_array_state(state.reader, state.prop_names, value_tag, state.summary, state.scope)
 			elseif key == 'moduleAliases' then
@@ -1919,28 +1919,28 @@ get_program_asset_details_step_progress = function(state)
 end
 
 validate_program_asset_details = function(rom_base, header, summary, params)
-	local scope = params.scope
-	local required_alias = params.required_alias
-	local reader, prop_names, root_prop_count = begin_program_asset_payload_reader(rom_base, header)
+	local scope<const> = params.scope
+	local required_alias<const> = params.required_alias
+	local reader<const>, prop_names<const>, root_prop_count<const> = begin_program_asset_payload_reader(rom_base, header)
 	local saw_module_aliases = false
 	local saw_link = false
 	for i = 1, root_prop_count do
-		local key = reader_read_prop_key(reader, prop_names, 'root property id')
-		local value_tag = reader_read_u8(reader, 'root value tag')
+		local key<const> = reader_read_prop_key(reader, prop_names, 'root property id')
+		local value_tag<const> = reader_read_u8(reader, 'root value tag')
 		if key == 'moduleProtos' then
-			local failure = validate_module_protos_array(reader, prop_names, value_tag, summary, scope)
+			local failure<const> = validate_module_protos_array(reader, prop_names, value_tag, summary, scope)
 			if failure then
 				return failure
 			end
 		elseif key == 'moduleAliases' then
 			saw_module_aliases = true
-			local failure = validate_module_aliases_array(reader, prop_names, value_tag, summary, scope, required_alias)
+			local failure<const> = validate_module_aliases_array(reader, prop_names, value_tag, summary, scope, required_alias)
 			if failure then
 				return failure
 			end
 		elseif key == 'link' then
 			saw_link = true
-			local failure = validate_program_link_object(reader, prop_names, value_tag, summary, scope)
+			local failure<const> = validate_program_link_object(reader, prop_names, value_tag, summary, scope)
 			if failure then
 				return failure
 			end
@@ -1957,9 +1957,9 @@ validate_program_asset_details = function(rom_base, header, summary, params)
 	return nil
 end
 
-local function compute_program_link_errors(cart_header)
-	local errors = {}
-	local sys_header = read_cart_header(system_rom_base)
+local compute_program_link_errors<const> = function(cart_header)
+	local errors<const> = {}
+	local sys_header<const> = read_cart_header(system_rom_base)
 	if not sys_header then
 		errors[#errors + 1] = 'SYSTEM ROM HEADER IS INVALID'
 		return errors, '[ProgramLinker] Missing system ROM header.'
@@ -1981,7 +1981,7 @@ local function compute_program_link_errors(cart_header)
 	return errors, nil
 end
 
-local function report_precheck_stderr_once()
+local report_precheck_stderr_once<const> = function()
 	if precheck_stderr_message and not precheck_stderr_reported then
 		precheck_stderr_reported = true
 		print(precheck_stderr_message)
@@ -1991,7 +1991,7 @@ local function report_precheck_stderr_once()
 	end
 end
 
-local function ensure_program_link_precheck(cart_header)
+local ensure_program_link_precheck<const> = function(cart_header)
 	if not cart_header then
 		clear_precheck_cache()
 		return {}
@@ -2005,12 +2005,12 @@ local function ensure_program_link_precheck(cart_header)
 			bitcast_selftest_error or 'BITCAST BUILTIN CONTRACT FAILURE',
 		}
 	end
-	local key = build_precheck_key(cart_header)
+	local key<const> = build_precheck_key(cart_header)
 	if precheck_cache_key == key then
 		return precheck_errors
 	end
 	precheck_co_target_key = key
-	local ok, errors, stderr_message = pcall(compute_program_link_errors, cart_header)
+	local ok<const>, errors<const>, stderr_message<const> = pcall(compute_program_link_errors, cart_header)
 	if not ok then
 		finish_program_link_precheck({
 			'PROGRAM PRECHECK FAILED',
@@ -2023,43 +2023,43 @@ local function ensure_program_link_precheck(cart_header)
 	return precheck_errors
 end
 
-local function collect_cached_program_link_errors(cart_header)
+local collect_cached_program_link_errors<const> = function(cart_header)
 	if not cart_header then
 		return {}
 	end
-	local key = build_precheck_key(cart_header)
+	local key<const> = build_precheck_key(cart_header)
 	if precheck_cache_key ~= key then
 		return {}
 	end
 	return precheck_errors
 end
 
-local function collect_cart_precheck_errors(cart_header, cart_manifest)
+local collect_cart_precheck_errors<const> = function(cart_header, cart_manifest)
 	if not cart_header then
 		clear_precheck_cache()
 		return {}
 	end
-	local errors = collect_cart_manifest_errors(cart_manifest)
+	local errors<const> = collect_cart_manifest_errors(cart_manifest)
 	if not bitcast_selftest_ok then
 		errors[#errors + 1] = 'BITCAST BUILTIN SELFTEST FAILED'
 		errors[#errors + 1] = bitcast_selftest_error or 'BITCAST BUILTIN CONTRACT FAILURE'
 		return errors
 	end
-	local link_errors = collect_cached_program_link_errors(cart_header)
+	local link_errors<const> = collect_cached_program_link_errors(cart_header)
 	for i = 1, #link_errors do
 		errors[#errors + 1] = link_errors[i]
 	end
 	return errors
 end
 
-local function get_program_precheck_status(cart_header)
+local get_program_precheck_status<const> = function(cart_header)
 	if not cart_header then
 		return 'NO CART', nil, true
 	end
 	if not bitcast_selftest_ok then
 		return 'FAILED', bitcast_selftest_error or 'BITCAST BUILTIN CONTRACT FAILURE', true
 	end
-	local key = build_precheck_key(cart_header)
+	local key<const> = build_precheck_key(cart_header)
 	if precheck_cache_key == key then
 		if #precheck_errors > 0 then
 			return 'FAILED', precheck_errors[1], true
@@ -2072,11 +2072,11 @@ local function get_program_precheck_status(cart_header)
 	return 'PENDING', 'PROGRAM BOOT HEADER NOT READ', false
 end
 
-local function get_program_precheck_progress(cart_header)
+local get_program_precheck_progress<const> = function(cart_header)
 	if not cart_header then
 		return 0, 0, 1, 'NO CART'
 	end
-	local key = build_precheck_key(cart_header)
+	local key<const> = build_precheck_key(cart_header)
 	if precheck_cache_key == key then
 		return 1, 1, 1, 'DONE'
 	end
@@ -2086,40 +2086,40 @@ local function get_program_precheck_progress(cart_header)
 	return 0, 1, 1, 'READING PROGRAM BOOT HEADER'
 end
 
-local function scroll_boot_lines(lines, window_size, delta)
-	local line_count = #lines
+local scroll_boot_lines<const> = function(lines, window_size, delta)
+	local line_count<const> = #lines
 	if line_count ~= boot_scroll_state.last_line_count then
 		boot_scroll_state.last_line_count = line_count
 		boot_scroll_state.top = clamp_scroll(boot_scroll_state.top, line_count, window_size)
 	end
 	boot_scroll_state.top = clamp_scroll(boot_scroll_state.top + delta, line_count, window_size)
-	local visible_lines, max_scroll = scroll_window(lines, boot_scroll_state.top, window_size)
-	local scroll_top = boot_scroll_state.top
+	local visible_lines<const>, max_scroll<const> = scroll_window(lines, boot_scroll_state.top, window_size)
+	local scroll_top<const> = boot_scroll_state.top
 	boot_scroll_state.top = scroll_top
 	return scroll_top, max_scroll, visible_lines
 end
 
-local function elapsed_seconds()
+local elapsed_seconds<const> = function()
 	return os.clock() - boot_start
 end
 
-local function center_x(text, width)
+local center_x<const> = function(text, width)
 	-- center text in given width, but ensure that the result is dividable by font_width
 	return math.floor((width - (string.len(text) * font_width)) / 2 / font_width) * font_width
 end
 
-local function format_bytes(value)
-	local kb = 1024
-	local mb = kb * 1024645
+local format_bytes<const> = function(value)
+	local kb<const> = 1024
+	local mb<const> = kb * 1024645
 	if value >= mb then
-		local scaled = value / mb
+		local scaled<const> = value / mb
 		if scaled == math.floor(scaled) then
 			return string.format('%d MB', scaled)
 		end
 		return string.format('%.1f MB', scaled)
 	end
 	if value >= kb then
-		local scaled = value / kb
+		local scaled<const> = value / kb
 		if scaled == math.floor(scaled) then
 			return string.format('%d KB', scaled)
 		end
@@ -2128,16 +2128,16 @@ local function format_bytes(value)
 	return tostring(value) .. ' B'
 end
 
-local function format_bignumbers(value)
+local format_bignumbers<const> = function(value)
 	if value >= 1000000 then
-		local scaled = value / 1000000
+		local scaled<const> = value / 1000000
 		if scaled == math.floor(scaled) then
 			return string.format('%dM', scaled)
 		end
 		return string.format('%.1fM', scaled)
 	end
 	if value >= 1000 then
-		local scaled = value / 1000
+		local scaled<const> = value / 1000
 		if scaled == math.floor(scaled) then
 			return string.format('%dK', scaled)
 		end
@@ -2146,32 +2146,32 @@ local function format_bignumbers(value)
 	return tostring(value)
 end
 
-local function build_info()
-	local cart_header = read_cart_header(cart_rom_base)
-	local cart_manifest_raw = cart_manifest
-	local cart_root_path = cart_project_root_path
-	local cart_manifest = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path)
-	local machine_manifest = flatten_machine_manifest(machine_manifest)
+local build_info<const> = function()
+	local cart_header<const> = read_cart_header(cart_rom_base)
+	local cart_manifest_raw<const> = cart_manifest
+	local cart_root_path<const> = cart_project_root_path
+	local cart_manifest<const> = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path)
+	local machine_manifest<const> = flatten_machine_manifest(machine_manifest)
 
-	local cart_title = cart_manifest and cart_manifest.title or '--'
+	local cart_title<const> = cart_manifest and cart_manifest.title or '--'
 	-- local cart_short = cart_manifest and cart_manifest.short_name or '--'
-	local cart_rom = cart_manifest and cart_manifest.rom_name or '--'
+	local cart_rom<const> = cart_manifest and cart_manifest.rom_name or '--'
 	-- local cart_ns = cart_manifest and cart_manifest.namespace or '--'
-	local cart_view_label = cart_manifest and cart_manifest.render_size or '--'
+	local cart_view_label<const> = cart_manifest and cart_manifest.render_size or '--'
 	-- local cart_canon = cart_manifest and cart_manifest.canonicalization or '--'
 	-- local cart_entry = cart_manifest and cart_manifest.entry_path or '--'
 	-- local cart_input = cart_manifest and cart_manifest.input or '--'
-	local cart_cpu_raw = cart_manifest and cart_manifest.cpu_freq_hz
-	local cart_cpu_label = format_cpu_mhz_from_hz(cart_cpu_raw)
-	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest)
-	local cart_has_errors = #cart_errors > 0
-	local precheck_status, precheck_detail, precheck_done = get_program_precheck_status(cart_header)
-	local precheck_progress, precheck_phase_index, precheck_phase_total, precheck_phase_label = get_program_precheck_progress(cart_header)
+	local cart_cpu_raw<const> = cart_manifest and cart_manifest.cpu_freq_hz
+	local cart_cpu_label<const> = format_cpu_mhz_from_hz(cart_cpu_raw)
+	local cart_errors<const> = collect_cart_precheck_errors(cart_header, cart_manifest)
+	local cart_has_errors<const> = #cart_errors > 0
+	local precheck_status<const>, precheck_detail<const>, precheck_done<const> = get_program_precheck_status(cart_header)
+	local precheck_progress<const>, precheck_phase_index<const>, precheck_phase_total<const>, precheck_phase_label<const> = get_program_precheck_progress(cart_header)
 
-	local machine_view_label = machine_manifest and machine_manifest.render_size or '--'
-	local machine_cpu_raw = machine_manifest and machine_manifest.cpu_freq_hz
-	local machine_cpu_label = format_cpu_mhz_from_hz(machine_cpu_raw)
-	local vram_total = sys_vram_system_atlas_size + sys_vram_primary_atlas_size + sys_vram_secondary_atlas_size + sys_vram_framebuffer_size + sys_vram_staging_size
+	local machine_view_label<const> = machine_manifest and machine_manifest.render_size or '--'
+	local machine_cpu_raw<const> = machine_manifest and machine_manifest.cpu_freq_hz
+	local machine_cpu_label<const> = format_cpu_mhz_from_hz(machine_cpu_raw)
+	local vram_total<const> = sys_vram_system_atlas_size + sys_vram_primary_atlas_size + sys_vram_secondary_atlas_size + sys_vram_framebuffer_size + sys_vram_staging_size
 
 	return {
 		machine_view = machine_view_label,
@@ -2207,18 +2207,18 @@ local function build_info()
 		}
 end
 
-local function divider(line_slots)
+local divider<const> = function(line_slots)
 	return string.rep('-', line_slots)
 end
 
-local function build_progress_bar(progress, width)
-	local clamped = clamp_int(progress, 0, 1)
-	local filled = clamp_int(math.floor(width * clamped + 0.5), 0, width)
+local build_progress_bar<const> = function(progress, width)
+	local clamped<const> = clamp_int(progress, 0, 1)
+	local filled<const> = clamp_int(math.floor(width * clamped + 0.5), 0, width)
 	return '[' .. string.rep('#', filled) .. string.rep('-', width - filled) .. ']'
 end
 
-local function compute_boot_progress(info, cart_ready, elapsed)
-	local stage_count = 5
+local compute_boot_progress<const> = function(info, cart_ready, elapsed)
+	local stage_count<const> = 5
 	local stage_done = 0
 	if boot_screen_visible then
 		stage_done = stage_done + 1
@@ -2233,42 +2233,42 @@ local function compute_boot_progress(info, cart_ready, elapsed)
 	if cart_ready then
 		stage_done = stage_done + 1
 	end
-	local stage_progress = stage_done / stage_count
+	local stage_progress<const> = stage_done / stage_count
 	local time_progress = elapsed / boot_delay
 	if time_progress < 0 then time_progress = 0 end
 	if time_progress > 1 then time_progress = 1 end
 	return (stage_progress * 0.8) + (time_progress * 0.2)
 end
 
-local function append_wrapped_line(lines, value, color, line_slots, first_prefix, next_prefix)
-	local wrapped = wrap_text_lines(value, line_slots, first_prefix, next_prefix or first_prefix)
+local append_wrapped_line<const> = function(lines, value, color, line_slots, first_prefix, next_prefix)
+	local wrapped<const> = wrap_text_lines(value, line_slots, first_prefix, next_prefix or first_prefix)
 	for i = 1, #wrapped do
 		lines[#lines + 1] = { text = wrapped[i], color = color }
 	end
 end
 
-local function append_kv_wrapped(lines, label, value, color, label_width, line_slots)
-	local first_prefix = string.format('%-' .. label_width .. 's : ', label)
-	local next_prefix = string.rep(' ', label_width) .. '   '
-	local wrapped = wrap_text_lines(value, line_slots, first_prefix, next_prefix)
+local append_kv_wrapped<const> = function(lines, label, value, color, label_width, line_slots)
+	local first_prefix<const> = string.format('%-' .. label_width .. 's : ', label)
+	local next_prefix<const> = string.rep(' ', label_width) .. '   '
+	local wrapped<const> = wrap_text_lines(value, line_slots, first_prefix, next_prefix)
 	for i = 1, #wrapped do
 		lines[#lines + 1] = { text = wrapped[i], color = color }
 	end
 end
 
-local function append_blank_line(lines)
+local append_blank_line<const> = function(lines)
 	lines[#lines + 1] = { text = '' }
 end
 
-local function append_section(lines, title, line_slots)
+local append_section<const> = function(lines, title, line_slots)
 	append_wrapped_line(lines, title, color_section, line_slots, '', '')
 	append_wrapped_line(lines, divider(line_slots), color_section, line_slots, '', '')
 end
 
-local function build_boot_content_lines(info, cart_present, cursor, elapsed, line_slots)
-	local lines = {}
-	local cart_has_errors = cart_present and info.cart_has_errors
-	local hw_specs = {
+local build_boot_content_lines<const> = function(info, cart_present, cursor, elapsed, line_slots)
+	local lines<const> = {}
+	local cart_has_errors<const> = cart_present and info.cart_has_errors
+	local hw_specs<const> = {
 		{ label = 'MAX CART ROM', value = info.hw_cart_max, color = color_accent },
 		{ label = 'CPU MHZ', value = info.machine_cpu_mhz, color = color_accent },
 		{ label = 'TOTAL RAM', value = info.hw_ram_total, color = color_info_total },
@@ -2278,40 +2278,40 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 		-- { label = 'MAX STRING ENTRIES', value = info.hw_max_strings, color = color_accent },
 		-- { label = 'MAX CYCLES/FRAME', value = info.hw_max_cycles, color = color_accent },
 	}
-	local cart_specs = {
+	local cart_specs<const> = {
 		-- { label = 'CART ROM', value = info.cart_rom, color = color_accent },
 		{ label = 'CART NAME', value = info.cart_title, color = color_ok },
 	}
 	local label_width = 0
 	for i = 1, #hw_specs do
-		local len = #hw_specs[i].label
+		local len<const> = #hw_specs[i].label
 		if len > label_width then label_width = len end
 	end
 	for i = 1, #cart_specs do
-		local len = #cart_specs[i].label
+		local len<const> = #cart_specs[i].label
 		if len > label_width then label_width = len end
 	end
 	for i = 1, #boot_status_labels do
-		local len = #boot_status_labels[i]
+		local len<const> = #boot_status_labels[i]
 		if len > label_width then label_width = len end
 	end
 
 	append_section(lines, 'SYSTEM SPECS', line_slots)
 	for i = 1, #hw_specs do
-		local spec = hw_specs[i]
+		local spec<const> = hw_specs[i]
 		append_kv_wrapped(lines, spec.label, spec.value, spec.color, label_width, line_slots)
 	end
 
 	append_blank_line(lines)
 	append_section(lines, 'CARTRIDGE', line_slots)
 	for i = 1, #cart_specs do
-		local spec = cart_specs[i]
+		local spec<const> = cart_specs[i]
 		append_kv_wrapped(lines, spec.label, spec.value, spec.color or color_text, label_width, line_slots)
 	end
 
 	append_blank_line(lines)
 	append_section(lines, 'BOOT STATUS', line_slots)
-	local bitcast_color = info.bitcast_selftest_ok and color_ok or color_warn
+	local bitcast_color<const> = info.bitcast_selftest_ok and color_ok or color_warn
 	append_kv_wrapped(lines, 'BITCAST SELFTEST', info.bitcast_selftest_status, bitcast_color, label_width, line_slots)
 	local precheck_color
 	if info.precheck_status == 'OK' then
@@ -2323,7 +2323,7 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 	end
 	append_kv_wrapped(lines, 'PROGRAM PRECHECK', info.precheck_status, precheck_color, label_width, line_slots)
 	if not info.precheck_done then
-		local phase_label = tostring(info.precheck_phase_index) .. '/' .. tostring(info.precheck_phase_total) .. ' ' .. info.precheck_phase_label
+		local phase_label<const> = tostring(info.precheck_phase_index) .. '/' .. tostring(info.precheck_phase_total) .. ' ' .. info.precheck_phase_label
 		append_kv_wrapped(lines, 'PRECHECK PHASE', phase_label, color_muted, label_width, line_slots)
 		local precheck_bar_width = line_slots - 2
 		if precheck_bar_width < 1 then precheck_bar_width = 1 end
@@ -2333,9 +2333,9 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 	if cart_has_errors then
 		append_blank_line(lines)
 		for idx, entry in ipairs(info.cart_errors) do
-			local text = type(entry) == 'string' and entry or tostring(entry)
-			local prefix = (idx == 1) and '- ' or '  '
-			local error_lines = wrap_text_lines(text, line_slots, prefix, '  ')
+			local text<const> = type(entry) == 'string' and entry or tostring(entry)
+			local prefix<const> = (idx == 1) and '- ' or '  '
+			local error_lines<const> = wrap_text_lines(text, line_slots, prefix, '  ')
 			for i = 1, #error_lines do
 				lines[#lines + 1] = { text = error_lines[i], color = color_warn }
 			end
@@ -2351,7 +2351,7 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 	end
 
 	if cart_present then
-		local cart_ready = cart_boot_ready()
+		local cart_ready<const> = cart_boot_ready()
 		if not cart_ready and not boot_requested and elapsed >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
 			if not cart_start_failed_logged then
 				cart_start_failed_logged = true
@@ -2361,12 +2361,12 @@ local function build_boot_content_lines(info, cart_present, cursor, elapsed, lin
 			append_wrapped_line(lines, 'CHECK HOST LOG / REBUILD BIOS + CART TOGETHER', color_muted, line_slots, '', '')
 			return lines
 		end
-		local status = cart_ready and 'CART LOADED' or (boot_requested and 'STARTING CART' or 'LOADING CART')
-		local status_color = cart_ready and color_ok or color_accent
+		local status<const> = cart_ready and 'CART LOADED' or (boot_requested and 'STARTING CART' or 'LOADING CART')
+		local status_color<const> = cart_ready and color_ok or color_accent
 		append_wrapped_line(lines, status, status_color, line_slots, '', '')
 		local bar_width = line_slots - 3
 		if bar_width < 1 then bar_width = 1 end
-		local bar = build_progress_bar(compute_boot_progress(info, cart_ready, elapsed), bar_width)
+		local bar<const> = build_progress_bar(compute_boot_progress(info, cart_ready, elapsed), bar_width)
 		append_wrapped_line(lines, bar .. cursor, color_text, line_slots, '', '')
 	else
 		append_wrapped_line(lines, 'NO CART DETECTED ' .. cursor, color_warn, line_slots, '', '')
@@ -2411,26 +2411,26 @@ end
 function update()
 	refresh_atlas_load_state()
 	boot_screen_visible = true
-	local scroll_delta = action_triggered('down[rp]') and 1 or (action_triggered('up[rp]') and -1 or 0)
+	local scroll_delta<const> = action_triggered('down[rp]') and 1 or (action_triggered('up[rp]') and -1 or 0)
 	render_boot_screen(scroll_delta)
 	if not boot_screen_presented then
 		boot_screen_presented = true
 	end
-	local cart_header = read_cart_header(cart_rom_base)
-	local cart_manifest_raw = cart_manifest
-	local cart_root_path = cart_project_root_path
-	local cart_manifest_value = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path)
+	local cart_header<const> = read_cart_header(cart_rom_base)
+	local cart_manifest_raw<const> = cart_manifest
+	local cart_root_path<const> = cart_project_root_path
+	local cart_manifest_value<const> = cart_header and flatten_manifest(cart_manifest_raw, cart_root_path)
 	ensure_program_link_precheck(cart_header)
-	local cart_errors = collect_cart_precheck_errors(cart_header, cart_manifest_value)
-	local cart_has_errors = cart_header and #cart_errors > 0
-	local _, _, precheck_done = get_program_precheck_status(cart_header)
+	local cart_errors<const> = collect_cart_precheck_errors(cart_header, cart_manifest_value)
+	local cart_has_errors<const> = cart_header and #cart_errors > 0
+	local _<const>, _<const>, precheck_done<const> = get_program_precheck_status(cart_header)
 
 	if not cart_has_errors then
-		local cart_valid = cart_header
+		local cart_valid<const> = cart_header
 			and #cart_errors == 0
 			and bitcast_selftest_ok
 			and precheck_done
-		local cart_present_and_ready = mem[cart_rom_base] == cart_rom_magic
+		local cart_present_and_ready<const> = mem[cart_rom_base] == cart_rom_magic
 			and cart_boot_ready()
 			and cart_valid
 
@@ -2444,28 +2444,28 @@ end
 
 render_boot_screen = function(scroll_delta)
 	refresh_atlas_load_state()
-	local width = display_width()
-	local height = display_height()
-	local left = 8
-	local top = content_top
-	local font = get_default_font()
-	local font_id = font.id
+	local width<const> = display_width()
+	local height<const> = display_height()
+	local left<const> = 8
+	local top<const> = content_top
+	local font<const> = get_default_font()
+	local font_id<const> = font.id
 
-	do local c=sys_palette_color(color_bg);write_words(sys_vdp_cmd_arg0, c.r, c.g, c.b, c.a);write_words(sys_vdp_cmd, sys_vdp_cmd_clear) end
-	do local c=sys_palette_color(color_header_bg);write_words(sys_vdp_cmd_arg0, 0, 0, width, 24, 0, sys_vdp_layer_world, c.r, c.g, c.b, c.a);write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect) end
-	local info = build_info()
-	local cart_present = mem[cart_rom_base] == cart_rom_magic
-	local elapsed = elapsed_seconds()
-	local cursor = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
-	local line_slots = line_slots(width, left, font_width)
-	local content_lines = build_boot_content_lines(info, cart_present, cursor, elapsed, line_slots)
-	local window_size = window_size(display_height(), top, line_height, 1, 1)
-	local scroll_top, max_scroll, visible_lines = scroll_boot_lines(content_lines, window_size, scroll_delta)
+	do local c<const> = sys_palette_color(color_bg);memwrite(sys_vdp_cmd_arg0, c.r, c.g, c.b, c.a);mem[sys_vdp_cmd] = sys_vdp_cmd_clear end
+	do local c<const> = sys_palette_color(color_header_bg);memwrite(sys_vdp_cmd_arg0, 0, 0, width, 24, 0, sys_vdp_layer_world, c.r, c.g, c.b, c.a);mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect end
+	local info<const> = build_info()
+	local cart_present<const> = mem[cart_rom_base] == cart_rom_magic
+	local elapsed<const> = elapsed_seconds()
+	local cursor<const> = (math.floor(elapsed * 2) % 2 == 0) and '█' or ' '
+	local line_slots<const> = line_slots(width, left, font_width)
+	local content_lines<const> = build_boot_content_lines(info, cart_present, cursor, elapsed, line_slots)
+	local window_size<const> = window_size(display_height(), top, line_height, 1, 1)
+	local scroll_top<const>, max_scroll<const>, visible_lines<const> = scroll_boot_lines(content_lines, window_size, scroll_delta)
 	local y = top + 1
-	local text_z = 1
+	local text_z<const> = 1
 
 	for i = 1, #visible_lines do
-		local line = visible_lines[i]
+		local line<const> = visible_lines[i]
 		local text
 		local line_color
 		if type(line) == 'table' then
@@ -2476,8 +2476,8 @@ render_boot_screen = function(scroll_delta)
 			line_color = color_text
 		end
 		if string.len(text) > 0 then
-			local color = sys_palette_color(line_color or color_text)
-			write_words(
+			local color<const> = sys_palette_color(line_color or color_text)
+			memwrite(
 				sys_vdp_cmd_arg0,
 				text,
 				left,
@@ -2497,19 +2497,19 @@ render_boot_screen = function(scroll_delta)
 				0,
 				0
 			)
-			write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
+			mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 		end
 		y = y + line_height
 	end
 
 	if max_scroll > 0 then
-		local first_line = scroll_top + 1
-		local last_line = scroll_top + #visible_lines
+		local first_line<const> = scroll_top + 1
+		local last_line<const> = scroll_top + #visible_lines
 	end
 end
 
-local function service_irqs()
-	local flags = mem[sys_irq_flags]
+local service_irqs<const> = function()
+	local flags<const> = mem[sys_irq_flags]
 	if flags ~= 0 then
 		irq(flags)
 	end

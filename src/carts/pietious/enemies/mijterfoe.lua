@@ -1,11 +1,11 @@
-local constants = require('constants')
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local constants<const> = require('constants')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local mijterfoe = {}
+local mijterfoe<const> = {}
 mijterfoe.__index = mijterfoe
 
-local function new_random_direction(self)
+local new_random_direction<const> = function(self)
 	local horizontal = 0
 	local vertical = 0
 	while horizontal == 0 and vertical == 0 do
@@ -16,7 +16,7 @@ local function new_random_direction(self)
 	self.vertical_dir_mod = vertical
 end
 
-local function set_takeoff_heading(self)
+local set_takeoff_heading<const> = function(self)
 	if self.direction == 'up' then
 		self.horizontal_dir_mod = 0
 		self.vertical_dir_mod = -1
@@ -32,17 +32,17 @@ local function set_takeoff_heading(self)
 	end
 end
 
-local function player_triggered_takeoff(self, player)
-	local player_left = player.x
-	local player_top = player.y
-	local player_right = player.x + player.width
-	local player_bottom = player.y + player.height
-	local enemy_left = self.x + 2
-	local enemy_top = self.y + 2
-	local enemy_right = self.x + 14
-	local enemy_bottom = self.y + 14
-	local overlap_x = player_right >= enemy_left and player_left <= enemy_right
-	local overlap_y = player_bottom >= enemy_top and player_top <= enemy_bottom
+local player_triggered_takeoff<const> = function(self, player)
+	local player_left<const> = player.x
+	local player_top<const> = player.y
+	local player_right<const> = player.x + player.width
+	local player_bottom<const> = player.y + player.height
+	local enemy_left<const> = self.x + 2
+	local enemy_top<const> = self.y + 2
+	local enemy_right<const> = self.x + 14
+	local enemy_bottom<const> = self.y + 14
+	local overlap_x<const> = player_right >= enemy_left and player_left <= enemy_right
+	local overlap_y<const> = player_bottom >= enemy_top and player_top <= enemy_bottom
 
 	if self.direction == 'up' then
 		return overlap_x and player_top < enemy_top
@@ -56,7 +56,7 @@ local function player_triggered_takeoff(self, player)
 	return overlap_y and player_right < enemy_left
 end
 
-local function start_flying(self, blackboard)
+local start_flying<const> = function(self, blackboard)
 	set_takeoff_heading(self)
 	self.mijter_state = 'flying'
 	self:change_sprite_on_direction()
@@ -78,8 +78,8 @@ function mijterfoe.change_sprite_on_direction(self)
 	local imgid
 	local flip_h
 	local flip_v
-	local h = self.horizontal_dir_mod
-	local v = self.vertical_dir_mod
+	local h<const> = self.horizontal_dir_mod
+	local v<const> = self.vertical_dir_mod
 	if v == -1 and h == 0 then
 		imgid = 'meijter_up'
 		flip_h = false
@@ -119,14 +119,14 @@ function mijterfoe.change_sprite_on_direction(self)
 end
 
 function mijterfoe.bt_tick_waiting(self, blackboard)
-	local entry_lock = blackboard.nodedata.mijter_entry_lock_ticks or self.mijter_entry_lock_ticks
+	local entry_lock<const> = blackboard.nodedata.mijter_entry_lock_ticks or self.mijter_entry_lock_ticks
 	if entry_lock > 0 then
 		blackboard.nodedata.mijter_entry_lock_ticks = entry_lock - 1
 		return behaviourtree.running
 	end
 	blackboard.nodedata.mijter_entry_lock_ticks = 0
 
-	local player = object('pietolon')
+	local player<const> = object('pietolon')
 	if player_triggered_takeoff(self, player) then
 		return start_flying(self, blackboard)
 	end

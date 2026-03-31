@@ -7,11 +7,11 @@ director.__index = director
 local director_fsm_id = constants.ids.director_fsm
 local goal_pulse_timeline_id = 'dkc.director.goal_pulse'
 
-local function overlaps(ax, ay, aw, ah, box)
+local overlaps<const> = function(ax, ay, aw, ah, box)
 	return ax < (box.x + box.w) and (ax + aw) > box.x and ay < (box.y + box.h) and (ay + ah) > box.y
 end
 
-local function clamp(value, min_value, max_value)
+local clamp<const> = function(value, min_value, max_value)
 	if value < min_value then
 		return min_value
 	end
@@ -21,14 +21,14 @@ local function clamp(value, min_value, max_value)
 	return value
 end
 
-local function rotate_collision_flags_12a5(flags)
+local rotate_collision_flags_12a5<const> = function(flags)
 	local state = flags & 0xFFFF
 	local prev_low_to_high = ((state & 0x00FF) << 8) & 0xFFFF
 	local low_nibble_history = (state >> 4) & 0x000F
 	return (prev_low_to_high | low_nibble_history) & 0xFFFF
 end
 
-local function update_collision_flags_12a5(sprite)
+local update_collision_flags_12a5<const> = function(sprite)
 	sprite.dkc1_ramtable12a5lo = rotate_collision_flags_12a5(sprite.dkc1_ramtable12a5lo)
 	if sprite.grounded then
 		sprite.dkc1_ramtable12a5lo = sprite.dkc1_ramtable12a5lo | 0x0001
@@ -561,7 +561,7 @@ function director:draw_player(player, draw_shadow)
 		fill_rect_color(shadow_x, shadow_y, shadow_x + shadow_w, shadow_y + 4, 119, constants.palette.player_shadow)
 	end
 
-	write_words(
+	memwrite(
 		sys_vdp_cmd_arg0,
 		assets.img[frame_id].handle,
 		draw_x,
@@ -577,7 +577,7 @@ function director:draw_player(player, draw_shadow)
 		1,
 		0
 	)
-	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 end
 
 function director:render_frame()
@@ -605,7 +605,7 @@ function director:render_frame()
 	self:draw_barrels(self.player_ref, true)
 end
 
-local function define_director_fsm()
+local define_director_fsm<const> = function()
 	define_fsm(director_fsm_id, {
 		initial = 'boot',
 		states = {
@@ -639,7 +639,7 @@ local function define_director_fsm()
 	})
 end
 
-local function register_director_definition()
+local register_director_definition<const> = function()
 	define_prefab({
 		def_id = constants.ids.director_def,
 		class = director,

@@ -1,14 +1,14 @@
-local constants = require('constants')
-local text = require('text')
+local constants<const> = require('constants')
+local text<const> = require('text')
 
-local castle_map = {}
-local empty_conditions = {}
+local castle_map<const> = {}
+local empty_conditions<const> = {}
 
 -- local start_room_number = 100
 -- local start_room_number = 8
-local start_room_number = 1
+local start_room_number<const> = 1
 
-local world_transition_specs = {
+local world_transition_specs<const> = {
 	world_1 = {
 		target = 'world_1',
 		world_number = 1,
@@ -43,12 +43,12 @@ castle_map.map_world_proxies = {
 	},
 }
 
-local frontworld_blue_tiletypes = {
+local frontworld_blue_tiletypes<const> = {
 	frontworld_blue_l = true,
 	frontworld_blue_r = true,
 }
 
-local supported_enemy_kinds = {
+local supported_enemy_kinds<const> = {
 	mijterfoe = true,
 	crossfoe = true,
 	zakfoe = true,
@@ -62,25 +62,25 @@ local supported_enemy_kinds = {
 	disappearingwall = true,
 }
 
-local wall_enemy_kinds = {
+local wall_enemy_kinds<const> = {
 	breakablewall = true,
 	disappearingwall = true,
 }
 
-local draaideur_kind_by_type = {
+local draaideur_kind_by_type<const> = {
 	draaideur_blauw = 1,
 	draaideur_rood = 2, -- unused right now
 }
 
-local function tile_x_to_world(tile_x)
+local tile_x_to_world<const> = function(tile_x)
 	return tile_x * constants.room.tile_size
 end
 
-local function tile_y_to_world(tile_y)
+local tile_y_to_world<const> = function(tile_y)
 	return constants.room.tile_origin_y + (tile_y * constants.room.tile_size)
 end
 
-local elevator_route_specs = {
+local elevator_route_specs<const> = {
 	{
 		points = {
 			{ room_number = 13, tile_x = 14, tile_y = 5 },
@@ -91,12 +91,12 @@ local elevator_route_specs = {
 	},
 }
 
-local function build_elevator_routes()
-	local routes = {}
+local build_elevator_routes<const> = function()
+	local routes<const> = {}
 	for i = 1, #elevator_route_specs do
-		local spec = elevator_route_specs[i]
-		local point1 = spec.points[1]
-		local point2 = spec.points[2]
+		local spec<const> = elevator_route_specs[i]
+		local point1<const> = spec.points[1]
+		local point2<const> = spec.points[2]
 		routes[i] = {
 			path = {
 				{
@@ -117,28 +117,28 @@ local function build_elevator_routes()
 	return routes
 end
 
-local function build_links(room_number, exits)
-	local up, right, down, left = tonumber(exits[1]), tonumber(exits[2]), tonumber(exits[3]), tonumber(exits[4])
+local build_links<const> = function(room_number, exits)
+	local up<const>, right<const>, down<const>, left<const> = tonumber(exits[1]), tonumber(exits[2]), tonumber(exits[3]), tonumber(exits[4])
 	assert(up and right and down and left, 'pietious castle_map room ' .. tostring(room_number) .. ' has non-numeric exits')
 	return { up = up, right = right, down = down, left = left, }
 end
 
-local function build_water_spec(room_number, water_def)
+local build_water_spec<const> = function(room_number, water_def)
 	if water_def == nil then
 		return nil
 	end
-	local surface_row = tonumber(water_def.surface_row)
+	local surface_row<const> = tonumber(water_def.surface_row)
 	assert(surface_row ~= nil, 'pietious castle_map room ' .. tostring(room_number) .. ' has invalid water.surface_row')
 	return {
 		surface_row = surface_row,
 	}
 end
 
-local function build_edge_gate(map_rows, border_x)
+local build_edge_gate<const> = function(map_rows, border_x)
 	local first_open_row
 	local last_open_row
 	for y = 1, #map_rows do
-		local ch = map_rows[y]:sub(border_x, border_x)
+		local ch<const> = map_rows[y]:sub(border_x, border_x)
 		if ch ~= '#' then
 			if first_open_row == nil then
 				first_open_row = y
@@ -156,9 +156,9 @@ local function build_edge_gate(map_rows, border_x)
 	}
 end
 
-local function build_edge_gates(map_rows, room_links)
-	local edge_gates = {}
-	local row_width = #map_rows[1]
+local build_edge_gates<const> = function(map_rows, room_links)
+	local edge_gates<const> = {}
+	local row_width<const> = #map_rows[1]
 
 	if room_links.left > 0 then
 		edge_gates.left = build_edge_gate(map_rows, 1)
@@ -171,10 +171,10 @@ local function build_edge_gates(map_rows, room_links)
 	return edge_gates
 end
 
-local function can_spawn_at(map_rows, tx, ty)
-	local row0 = map_rows[ty]
-	local row1 = map_rows[ty + 1]
-	local row2 = map_rows[ty + 2]
+local can_spawn_at<const> = function(map_rows, tx, ty)
+	local row0<const> = map_rows[ty]
+	local row1<const> = map_rows[ty + 1]
+	local row2<const> = map_rows[ty + 2]
 
 	if row0:sub(tx, tx) == '#' or row0:sub(tx + 1, tx + 1) == '#' then
 		return false
@@ -183,8 +183,8 @@ local function can_spawn_at(map_rows, tx, ty)
 		return false
 	end
 
-	local support_left = row2:sub(tx, tx) == '#'
-	local support_right = row2:sub(tx + 1, tx + 1) == '#'
+	local support_left<const> = row2:sub(tx, tx) == '#'
+	local support_right<const> = row2:sub(tx + 1, tx + 1) == '#'
 	if not support_left and not support_right then
 		return false
 	end
@@ -192,9 +192,9 @@ local function can_spawn_at(map_rows, tx, ty)
 	return true
 end
 
-local function build_spawn(map_rows)
-	local row_count = #map_rows
-	local col_count = #map_rows[1]
+local build_spawn<const> = function(map_rows)
+	local row_count<const> = #map_rows
+	local col_count<const> = #map_rows[1]
 
 	for ty = row_count - 2, 1, -1 do
 		for tx = 1, col_count - 1 do
@@ -210,7 +210,7 @@ local function build_spawn(map_rows)
 	error('pietious castle_map failed to find spawn tile')
 end
 
-local function resolve_wall_tiletype(room_subtype, tiletype)
+local resolve_wall_tiletype<const> = function(room_subtype, tiletype)
 	if frontworld_blue_tiletypes[tiletype] then
 		if room_subtype == 'castlegold' then
 			return 'castle_front_gold_1'
@@ -223,18 +223,18 @@ local function resolve_wall_tiletype(room_subtype, tiletype)
 	return tiletype
 end
 
-local function build_enemies(room_number, room_subtype, object_defs)
-	local enemies = {}
+local build_enemies<const> = function(room_number, room_subtype, object_defs)
+	local enemies<const> = {}
 	local enemy_index = 0
 
 	for i = 1, #object_defs do
-		local object_def = object_defs[i]
-		local kind = object_def.type
+		local object_def<const> = object_defs[i]
+		local kind<const> = object_def.type
 		if supported_enemy_kinds[kind] then
 			enemy_index = enemy_index + 1
-			local enemy_id = string.format('enemy_%03d_%02d', room_number, enemy_index)
-			local raw_conditions = object_def.condition or empty_conditions
-			local conditions = {
+			local enemy_id<const> = string.format('enemy_%03d_%02d', room_number, enemy_index)
+			local raw_conditions<const> = object_def.condition or empty_conditions
+			local conditions<const> = {
 				{
 					key = enemy_id,
 					equals = false,
@@ -244,11 +244,11 @@ local function build_enemies(room_number, room_subtype, object_defs)
 				conditions[#conditions + 1] = raw_conditions[j]
 			end
 			if wall_enemy_kinds[kind] then
-				local area = object_def.area
-				local left = area[1]
-				local top = area[2]
-				local right = area[3]
-				local bottom = area[4]
+				local area<const> = object_def.area
+				local left<const> = area[1]
+				local top<const> = area[2]
+				local right<const> = area[3]
+				local bottom<const> = area[4]
 				enemies[#enemies + 1] = {
 					id = enemy_id,
 					kind = kind,
@@ -266,7 +266,7 @@ local function build_enemies(room_number, room_subtype, object_defs)
 					tiletype = resolve_wall_tiletype(room_subtype, object_def.tiletype),
 				}
 			else
-				local enemy_x = tile_x_to_world(object_def.x or 0)
+				local enemy_x<const> = tile_x_to_world(object_def.x or 0)
 				local enemy_y = tile_y_to_world(object_def.y or 0)
 				if kind == 'stafffoe' then
 					enemy_y = enemy_y + 2
@@ -291,12 +291,12 @@ local function build_enemies(room_number, room_subtype, object_defs)
 	return enemies
 end
 
-local function build_rocks(room_number, object_defs)
-	local rocks = {}
+local build_rocks<const> = function(room_number, object_defs)
+	local rocks<const> = {}
 	local rock_index = 0
 
 	for i = 1, #object_defs do
-		local object_def = object_defs[i]
+		local object_def<const> = object_defs[i]
 		if object_def.type == 'rock' then
 			rock_index = rock_index + 1
 			rocks[#rocks + 1] = {
@@ -312,12 +312,12 @@ local function build_rocks(room_number, object_defs)
 	return rocks
 end
 
-local function build_items(room_number, object_defs)
-	local items = {}
+local build_items<const> = function(room_number, object_defs)
+	local items<const> = {}
 	local item_index = 0
 
 	for i = 1, #object_defs do
-		local object_def = object_defs[i]
+		local object_def<const> = object_defs[i]
 		if object_def.type == 'item' then
 			item_index = item_index + 1
 			items[#items + 1] = {
@@ -333,12 +333,12 @@ local function build_items(room_number, object_defs)
 	return items
 end
 
-local function build_lithographs(room_number, object_defs)
-	local lithographs = {}
+local build_lithographs<const> = function(room_number, object_defs)
+	local lithographs<const> = {}
 	local lithograph_index = 0
 
 	for i = 1, #object_defs do
-		local object_def = object_defs[i]
+		local object_def<const> = object_defs[i]
 		if object_def.type == 'lithograph' then
 			lithograph_index = lithograph_index + 1
 			lithographs[#lithographs + 1] = {
@@ -353,12 +353,12 @@ local function build_lithographs(room_number, object_defs)
 	return lithographs
 end
 
-local function build_shrines(room_number, object_defs)
-	local shrines = {}
+local build_shrines<const> = function(room_number, object_defs)
+	local shrines<const> = {}
 	local shrine_index = 0
 
 	for i = 1, #object_defs do
-		local object_def = object_defs[i]
+		local object_def<const> = object_defs[i]
 		if object_def.type == 'shrine' then
 			shrine_index = shrine_index + 1
 			shrines[#shrines + 1] = {
@@ -373,9 +373,9 @@ local function build_shrines(room_number, object_defs)
 	return shrines
 end
 
-local function build_seal(room_number, object_defs)
+local build_seal<const> = function(room_number, object_defs)
 	for i = 1, #object_defs do
-		local object_def = object_defs[i]
+		local object_def<const> = object_defs[i]
 		if object_def.type == 'seal' then
 			return {
 				id = string.format('seal_%03d_01', room_number),
@@ -389,16 +389,16 @@ local function build_seal(room_number, object_defs)
 	return nil
 end
 
-local function build_world_entrances(room_number, object_defs)
-	local world_entrances = {}
+local build_world_entrances<const> = function(room_number, object_defs)
+	local world_entrances<const> = {}
 	local entrance_index = 0
 
 	for i = 1, #object_defs do
-		local object_def = object_defs[i]
+		local object_def<const> = object_defs[i]
 		if object_def.type == 'worldentrance' then
 			entrance_index = entrance_index + 1
-			local x = tile_x_to_world(object_def.x)
-			local y = tile_y_to_world(object_def.y)
+			local x<const> = tile_x_to_world(object_def.x)
+			local y<const> = tile_y_to_world(object_def.y)
 			world_entrances[#world_entrances + 1] = {
 				id = string.format('world_entrance_%03d_%02d', room_number, entrance_index),
 				x = x,
@@ -413,14 +413,14 @@ local function build_world_entrances(room_number, object_defs)
 	return world_entrances
 end
 
-local function build_draaideuren(room_number, object_defs)
-	local draaideuren = {}
+local build_draaideuren<const> = function(room_number, object_defs)
+	local draaideuren<const> = {}
 	local door_index = 0
 
 	for i = 1, #object_defs do
-		local object_def = object_defs[i]
-		local object_type = object_def.type
-		local kind = draaideur_kind_by_type[object_type]
+		local object_def<const> = object_defs[i]
+		local object_type<const> = object_def.type
+		local kind<const> = draaideur_kind_by_type[object_type]
 		if kind ~= nil then
 			door_index = door_index + 1
 			draaideuren[#draaideuren + 1] = {
@@ -435,16 +435,16 @@ local function build_draaideuren(room_number, object_defs)
 	return draaideuren
 end
 
-local function load_room_templates()
-	local data = assets.data['castle_map']
-	local templates = {}
+local load_room_templates<const> = function()
+	local data<const> = assets.data['castle_map']
+	local templates<const> = {}
 
 	for raw_room_number, room_def in pairs(data) do
 		if type(room_def) == 'table' and room_def.map ~= nil then
-			local room_number = tonumber(raw_room_number)
-			local room_links = build_links(room_number, room_def.exits)
-			local map_rows = room_def.map
-			local object_defs = room_def.objects or {}
+			local room_number<const> = tonumber(raw_room_number)
+			local room_links<const> = build_links(room_number, room_def.exits)
+			local map_rows<const> = room_def.map
+			local object_defs<const> = room_def.objects or {}
 			templates[room_number] = {
 					room_number = room_number,
 				world_number = room_def.worldnumber or 0, -- Normalized to prevent bugs like indexing with string world numbers for events/progression
@@ -470,12 +470,12 @@ local function load_room_templates()
 	return templates
 end
 
-local function attach_world_transition_metadata(room_templates)
+local attach_world_transition_metadata<const> = function(room_templates)
 	for _, template in pairs(room_templates) do
-		local world_entrances = template.world_entrances
+		local world_entrances<const> = template.world_entrances
 		for i = 1, #world_entrances do
-			local world_entrance = world_entrances[i]
-			local spec = world_transition_specs[world_entrance.target]
+			local world_entrance<const> = world_entrances[i]
+			local spec<const> = world_transition_specs[world_entrance.target]
 			spec.castle_room_number = template.room_number
 			spec.castle_spawn_x = world_entrance.stair_x
 			spec.castle_spawn_y = world_entrance.stair_y

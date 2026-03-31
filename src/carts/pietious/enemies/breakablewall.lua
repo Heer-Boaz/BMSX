@@ -1,8 +1,8 @@
-local constants = require('constants')
-local combat_overlap = require('combat_overlap')
-local combat_damage = require('combat_damage')
+local constants<const> = require('constants')
+local combat_overlap<const> = require('combat_overlap')
+local combat_damage<const> = require('combat_damage')
 
-local breakablewall = {}
+local breakablewall<const> = {}
 breakablewall.__index = breakablewall
 
 function breakablewall:apply_damage(request)
@@ -36,13 +36,13 @@ function breakablewall:ctor()
 	self:get_component('collider2dcomponent'):apply_collision_profile('enemy')
 	self.sx = self.width_tiles * constants.room.tile_size
 	self.sy = self.height_tiles * constants.room.tile_size
-	local renderer = self:get_component('customvisualcomponent')
+	local renderer<const> = self:get_component('customvisualcomponent')
 	renderer.producer = function(_ctx)
 		for ty = 0, self.height_tiles - 1 do
-			local draw_y = self.y + (ty * constants.room.tile_size)
+			local draw_y<const> = self.y + (ty * constants.room.tile_size)
 			for tx = 0, self.width_tiles - 1 do
-				local draw_x = self.x + (tx * constants.room.tile_size)
-				write_words(
+				local draw_x<const> = self.x + (tx * constants.room.tile_size)
+				memwrite(
 					sys_vdp_cmd_arg0,
 					assets.img[self.tiletype].handle,
 					draw_x,
@@ -58,7 +58,7 @@ function breakablewall:ctor()
 					1,
 					0
 				)
-				write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+				mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 			end
 		end
 	end
@@ -66,11 +66,11 @@ function breakablewall:ctor()
 		event = 'overlap.begin',
 		subscriber = self,
 		handler = function(event)
-			local contact_kind = combat_overlap.classify_player_contact(event)
+			local contact_kind<const> = combat_overlap.classify_player_contact(event)
 			if contact_kind == nil then
 				return
 			end
-			local result = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, contact_kind))
+			local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, contact_kind))
 			self:process_damage_result(result)
 		end,
 	})

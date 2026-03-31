@@ -133,27 +133,27 @@
 --     entries provides per-handler emitter filtering, so a handler can
 --     restrict to events from a specific source object.
 
-local fsm_trace = require('fsm_trace')
-local clear_map = require('clear_map')
-local timeline_module = require('timeline')
+local fsm_trace<const> = require('fsm_trace')
+local clear_map<const> = require('clear_map')
+local timeline_module<const> = require('timeline')
 
-local statedefinition = {}
+local statedefinition<const> = {}
 statedefinition.__index = statedefinition
 
-local start_state_prefixes = { ['_'] = true, ['#'] = true }
-local no_op_aliases = { ['no-op'] = true, ['noop'] = true, ['no_op'] = true }
-local ignored_relative_segments = { [''] = true, ['.'] = true }
-local input_eval_modes = { ['first'] = true, ['all'] = true }
+local start_state_prefixes<const> = { ['_'] = true, ['#'] = true }
+local no_op_aliases<const> = { ['no-op'] = true, ['noop'] = true, ['no_op'] = true }
+local ignored_relative_segments<const> = { [''] = true, ['.'] = true }
+local input_eval_modes<const> = { ['first'] = true, ['all'] = true }
 
-local function make_def_id(id, parent)
+local make_def_id<const> = function(id, parent)
 	if not parent then
 		return id
 	end
-	local separator = parent.parent and '/' or ':/'
+	local separator<const> = parent.parent and '/' or ':/'
 	return parent.def_id .. separator .. id
 end
 
-local function collect_event_list(def, list, seen)
+local collect_event_list<const> = function(def, list, seen)
 	for name, action in pairs(def.on or {}) do
 		local emitter = nil
 		if type(action) == 'table' and action.emitter ~= nil then
@@ -162,7 +162,7 @@ local function collect_event_list(def, list, seen)
 				emitter = emitter.id
 			end
 		end
-		local key = name .. ':' .. tostring(emitter)
+		local key<const> = name .. ':' .. tostring(emitter)
 		if not seen[key] then
 			list[#list + 1] = { name = name, emitter = emitter }
 			seen[key] = true
@@ -173,12 +173,12 @@ local function collect_event_list(def, list, seen)
 	end
 end
 
-local function validate_tag_list(values, owner_tag, field_name)
+local validate_tag_list<const> = function(values, owner_tag, field_name)
 	if type(values) ~= 'table' then
 		error('tag derivation "' .. tostring(owner_tag) .. '" field "' .. tostring(field_name) .. '" must be an array of tags.')
 	end
 	for i = 1, #values do
-		local source_tag = values[i]
+		local source_tag<const> = values[i]
 		if type(source_tag) ~= 'string' then
 			error('tag derivation "' .. tostring(owner_tag) .. '" field "' .. tostring(field_name) .. '" contains non-string value at index ' .. tostring(i) .. '.')
 		end
@@ -199,14 +199,14 @@ end
 -- Full-form: spec is { any = [...], all = [...], none = [...] }.
 -- Rules are sorted by derived_tag name for deterministic evaluation order.
 -- The runtime evaluates rules in a fixed-point loop to resolve chains.
-local function compile_tag_derivations(raw)
+local compile_tag_derivations<const> = function(raw)
 	if raw == nil then
 		return nil
 	end
 	if type(raw) ~= 'table' then
 		error('fsm.tag_derivations must be a table.')
 	end
-	local derived_tags = {}
+	local derived_tags<const> = {}
 	for derived_tag in pairs(raw) do
 		derived_tags[#derived_tags + 1] = derived_tag
 	end
@@ -214,14 +214,14 @@ local function compile_tag_derivations(raw)
 		return nil
 	end
 	table.sort(derived_tags)
-	local compiled = {}
+	local compiled<const> = {}
 	for i = 1, #derived_tags do
-		local derived_tag = derived_tags[i]
+		local derived_tag<const> = derived_tags[i]
 		if type(derived_tag) ~= 'string' then
 			error('fsm.tag_derivations contains non-string derived tag key.')
 		end
-		local spec = raw[derived_tag]
-		local rule = {
+		local spec<const> = raw[derived_tag]
+		local rule<const> = {
 			derived_tag = derived_tag,
 			any = nil,
 			all = nil,
@@ -251,7 +251,7 @@ local function compile_tag_derivations(raw)
 	return compiled
 end
 
-local function validate_optional_state_function(def_id, field_name, value)
+local validate_optional_state_function<const> = function(def_id, field_name, value)
 	if value ~= nil and type(value) ~= 'function' then
 		error(
 			'state definition "' .. tostring(def_id)
@@ -261,14 +261,14 @@ local function validate_optional_state_function(def_id, field_name, value)
 	end
 end
 
-local function validate_no_op_alias_value(def_id, field_name, value)
+local validate_no_op_alias_value<const> = function(def_id, field_name, value)
 	if type(value) ~= 'string' then
 		return
 	end
 	if no_op_aliases[value] then
 		return
 	end
-	local lowered = string.lower(value)
+	local lowered<const> = string.lower(value)
 	if no_op_aliases[lowered] then
 		error(
 			'state definition "' .. tostring(def_id)
@@ -279,11 +279,11 @@ local function validate_no_op_alias_value(def_id, field_name, value)
 	end
 end
 
-local function validate_transition_spec(def_id, field_name, spec)
+local validate_transition_spec<const> = function(def_id, field_name, spec)
 	if spec == nil then
 		return
 	end
-	local kind = type(spec)
+	local kind<const> = type(spec)
 	if kind == 'string' then
 		validate_no_op_alias_value(def_id, field_name, spec)
 		return
@@ -298,11 +298,11 @@ local function validate_transition_spec(def_id, field_name, spec)
 				.. '" must be a string, function, or transition table, but got ' .. kind .. '.'
 		)
 	end
-	local go = spec.go
+	local go<const> = spec.go
 	if go == nil then
 		return
 	end
-	local go_kind = type(go)
+	local go_kind<const> = type(go)
 	if go_kind == 'string' then
 		validate_no_op_alias_value(def_id, field_name .. '.go', go)
 		return
@@ -316,7 +316,7 @@ local function validate_transition_spec(def_id, field_name, spec)
 	end
 end
 
-local function validate_transition_spec_map(def_id, field_name, map)
+local validate_transition_spec_map<const> = function(def_id, field_name, map)
 	if map == nil then
 		return
 	end
@@ -333,7 +333,7 @@ local function validate_transition_spec_map(def_id, field_name, map)
 end
 
 function statedefinition.new(id, def, root, parent)
-	local self = setmetatable({}, statedefinition)
+	local self<const> = setmetatable({}, statedefinition)
 	self.__is_state_definition = true
 	self.id = id
 	self.parent = parent
@@ -351,14 +351,14 @@ function statedefinition.new(id, def, root, parent)
 	if def and def.timelines then
 		for tl_id, tl_def in pairs(def.timelines) do
 			if tl_def.on_end ~= nil then
-				local key = 'timeline.end.' .. tl_id
+				local key<const> = 'timeline.end.' .. tl_id
 				if self.on[key] ~= nil then
 					error('state "' .. tostring(self.def_id) .. '": "on_end" for timeline "' .. tl_id .. '" conflicts with an existing "on" entry')
 				end
 				self.on[key] = tl_def.on_end
 			end
 			if tl_def.on_frame ~= nil then
-				local key = 'timeline.frame.' .. tl_id
+				local key<const> = 'timeline.frame.' .. tl_id
 				if self.on[key] ~= nil then
 					error('state "' .. tostring(self.def_id) .. '": "on_frame" for timeline "' .. tl_id .. '" conflicts with an existing "on" entry')
 				end
@@ -399,13 +399,13 @@ function statedefinition.new(id, def, root, parent)
 	self.tags = def and def.tags
 	self.tag_derivations = nil
 	if self.root == self then
-		local raw_tag_derivations = def and (def.tag_derivations or def.derived_tags or def.tag_groups)
+		local raw_tag_derivations<const> = def and (def.tag_derivations or def.derived_tags or def.tag_groups)
 		self.tag_derivations = compile_tag_derivations(raw_tag_derivations)
 	end
 
 	if def and def.states then
 		for state_id, state_def in pairs(def.states) do
-			local child = statedefinition.new(state_id, state_def, self.root, self)
+			local child<const> = statedefinition.new(state_id, state_def, self.root, self)
 			self.states[state_id] = child
 			if not self.initial and start_state_prefixes[string.sub(state_id, 1, 1)] then
 				self.initial = state_id
@@ -420,15 +420,15 @@ function statedefinition.new(id, def, root, parent)
 		end
 	end
 	if self.root == self then
-		local list = {}
-		local seen = {}
+		local list<const> = {}
+		local seen<const> = {}
 		collect_event_list(self, list, seen)
 		self.event_list = list
 	end
 	return self
 end
 
-local state = {}
+local state<const> = {}
 state.__index = state
 
 state.trace_map = {}
@@ -440,12 +440,12 @@ state.diagnostics = {
 	max_entries_per_machine = 512,
 }
 
-local bst_max_history = 10
-local max_transitions_per_update = 1000
-local empty_game_event = { type = '__fsm.synthetic__', emitter = nil, timestamp = 0 }
-local target_state_tag_refs = setmetatable({}, { __mode = 'k' })
+local bst_max_history<const> = 10
+local max_transitions_per_update<const> = 1000
+local empty_game_event<const> = { type = '__fsm.synthetic__', emitter = nil, timestamp = 0 }
+local target_state_tag_refs<const> = setmetatable({}, { __mode = 'k' })
 
-local function get_target_state_tag_refs(target)
+local get_target_state_tag_refs<const> = function(target)
 	local refs = target_state_tag_refs[target]
 	if refs then
 		return refs
@@ -455,9 +455,9 @@ local function get_target_state_tag_refs(target)
 	return refs
 end
 
-local function increment_target_state_tag_ref(target, tag)
-	local refs = get_target_state_tag_refs(target)
-	local count = refs[tag]
+local increment_target_state_tag_ref<const> = function(target, tag)
+	local refs<const> = get_target_state_tag_refs(target)
+	local count<const> = refs[tag]
 	if count then
 		refs[tag] = count + 1
 		return
@@ -466,12 +466,12 @@ local function increment_target_state_tag_ref(target, tag)
 	target:add_tag(tag)
 end
 
-local function decrement_target_state_tag_ref(target, tag)
-	local refs = target_state_tag_refs[target]
+local decrement_target_state_tag_ref<const> = function(target, tag)
+	local refs<const> = target_state_tag_refs[target]
 	if not refs then
 		error('missing state-tag reference map for target while removing "' .. tostring(tag) .. '".')
 	end
-	local count = refs[tag]
+	local count<const> = refs[tag]
 	if not count then
 		error('missing state-tag reference for "' .. tostring(tag) .. '".')
 	end
@@ -486,26 +486,26 @@ local function decrement_target_state_tag_ref(target, tag)
 	refs[tag] = count - 1
 end
 
-local function clone_defaults(source)
-	local out = {}
+local clone_defaults<const> = function(source)
+	local out<const> = {}
 	for k, v in pairs(source) do
 		out[k] = v
 	end
 	return out
 end
 
-local function should_trace_transitions()
-	local diag = state.diagnostics
+local should_trace_transitions<const> = function()
+	local diag<const> = state.diagnostics
 	return diag and (diag.trace_transitions)
 end
 
-local function should_trace_dispatch()
-	local diag = state.diagnostics
+local should_trace_dispatch<const> = function()
+	local diag<const> = state.diagnostics
 	return diag and (diag.trace_dispatch)
 end
 
-local function append_trace_entry(id, message)
-	local diag = state.diagnostics
+local append_trace_entry<const> = function(id, message)
+	local diag<const> = state.diagnostics
 	if not diag then
 		return
 	end
@@ -515,30 +515,30 @@ local function append_trace_entry(id, message)
 		state.trace_map[id] = list
 	end
 	list[#list + 1] = message
-	local limit = diag.max_entries_per_machine or 0
+	local limit<const> = diag.max_entries_per_machine or 0
 	if limit > 0 and #list > limit then
-		local overflow = #list - limit
+		local overflow<const> = #list - limit
 		for i = 1, overflow do
 			table.remove(list, 1)
 		end
 	end
 end
 
-local function resolve_emitter_id(event, fallback)
+local resolve_emitter_id<const> = function(event, fallback)
 	if not event or event.emitter == nil then
 		return fallback
 	end
 	if not event.emitter then
 		return false
 	end
-	local emitter = event.emitter
+	local emitter<const> = event.emitter
 	if type(emitter) == 'table' and emitter.id ~= nil then
 		return emitter.id
 	end
 	return emitter
 end
 
-local function resolve_event_payload(event)
+local resolve_event_payload<const> = function(event)
 	if not event then
 		return nil
 	end
@@ -554,40 +554,40 @@ local function resolve_event_payload(event)
 	return payload
 end
 
-local function is_no_op_string(value)
+local is_no_op_string<const> = function(value)
 	return type(value) == 'string' and no_op_aliases[value] ~= nil
 end
 
-local function resolve_state_key(definition, state_id)
-	local states = definition.states
+local resolve_state_key<const> = function(definition, state_id)
+	local states<const> = definition.states
 	if not states then
 		error('state "' .. definition.id .. '" does not define substates.')
 	end
 	if states[state_id] then
 		return state_id
 	end
-	local underscore = '_' .. state_id
+	local underscore<const> = '_' .. state_id
 	if states[underscore] then
 		return underscore
 	end
-	local hash = '#' .. state_id
+	local hash<const> = '#' .. state_id
 	if states[hash] then
 		return hash
 	end
 	return nil
 end
 
-local function resolve_state_instance(parent, state_id)
+local resolve_state_instance<const> = function(parent, state_id)
 	local child = parent.states[state_id]
 	if child then
 		return child, state_id
 	end
-	local underscore = '_' .. state_id
+	local underscore<const> = '_' .. state_id
 	child = parent.states[underscore]
 	if child then
 		return child, underscore
 	end
-	local hash = '#' .. state_id
+	local hash<const> = '#' .. state_id
 	child = parent.states[hash]
 	if child then
 		return child, hash
@@ -595,11 +595,11 @@ local function resolve_state_instance(parent, state_id)
 	return nil, nil
 end
 
-local function build_state_tag_lookup(tags)
+local build_state_tag_lookup<const> = function(tags)
 	if not tags then
 		return nil
 	end
-	local lookup = {}
+	local lookup<const> = {}
 	for i = 1, #tags do
 		lookup[tags[i]] = true
 	end
@@ -607,7 +607,7 @@ local function build_state_tag_lookup(tags)
 end
 
 function state.new(definition, target, parent)
-	local self = setmetatable({}, state)
+	local self<const> = setmetatable({}, state)
 	self.definition = definition
 	self.target = target
 	self.target_id = target.id
@@ -647,7 +647,7 @@ function state:is_active()
 	if self:is_root() then
 		return true
 	end
-	local parent = self.parent
+	local parent<const> = self.parent
 	if not parent:is_active() then
 		return false
 	end
@@ -661,12 +661,12 @@ function state:make_id()
 	if self:is_root() then
 		return self.target_id .. '.' .. self.localdef_id
 	end
-	local separator = self.parent.parent and '/' or ':/'
+	local separator<const> = self.parent.parent and '/' or ':/'
 	return self.parent.id .. separator .. self.localdef_id
 end
 
 function state:definition_or_throw()
-	local def = self.definition
+	local def<const> = self.definition
 	if not def then
 		error('state "' .. tostring(self.localdef_id) .. '" missing definition.')
 	end
@@ -674,11 +674,11 @@ function state:definition_or_throw()
 end
 
 function state:child_definition_or_throw(child_id)
-	local def = self:definition_or_throw()
+	local def<const> = self:definition_or_throw()
 	if not def.states then
 		error('definition "' .. tostring(def.def_id) .. '" has no substates while resolving "' .. child_id .. '".')
 	end
-	local key = resolve_state_key(def, child_id)
+	local key<const> = resolve_state_key(def, child_id)
 	if not key then
 		error('definition "' .. tostring(def.def_id) .. '" is missing child "' .. child_id .. '".')
 	end
@@ -686,7 +686,7 @@ function state:child_definition_or_throw(child_id)
 end
 
 function state:states_or_throw(ctx)
-	local container = ctx or self
+	local container<const> = ctx or self
 	if not container.states or next(container.states) == nil then
 		error('state "' .. tostring(container.id) .. '" does not define substates.')
 	end
@@ -694,7 +694,7 @@ function state:states_or_throw(ctx)
 end
 
 function state:current_state_definition()
-	local current = self.states and self.states[self.current_id]
+	local current<const> = self.states and self.states[self.current_id]
 	if not current then
 		error('current state "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 	end
@@ -702,17 +702,17 @@ function state:current_state_definition()
 end
 
 function state:find_child(ctx, seg)
-	local child, key = resolve_state_instance(ctx, seg)
+	local child<const>, key<const> = resolve_state_instance(ctx, seg)
 	return child, key
 end
 
 function state:ensure_child(ctx, seg)
-	local child, key = self:find_child(ctx, seg)
+	local child<const>, key<const> = self:find_child(ctx, seg)
 	if not child then
 		if not ctx.states then
 			error('state "' .. tostring(ctx.id) .. '" does not define substates.')
 		end
-		local children = {}
+		local children<const> = {}
 		for id in pairs(ctx.states) do
 			children[#children + 1] = id
 		end
@@ -725,7 +725,7 @@ function state:ensure_child(ctx, seg)
 end
 
 function state:timeline(id)
-	local timeline = self.target:get_timeline(id)
+	local timeline<const> = self.target:get_timeline(id)
 	if not timeline then
 		error('timeline "' .. tostring(id) .. '" not found for target "' .. tostring(self.target_id) .. '".')
 	end
@@ -760,19 +760,19 @@ end
 
 function state:ensure_timeline_definitions()
 	if not self.timeline_bindings then
-		local defs = self.definition.timelines or {}
-		local bindings = {}
+		local defs<const> = self.definition.timelines or {}
+		local bindings<const> = {}
 		for key, config in pairs(defs) do
 			bindings[#bindings + 1] = self:create_timeline_binding(key, config)
 		end
 		self.timeline_bindings = bindings
 	end
-	local bindings = self.timeline_bindings
+	local bindings<const> = self.timeline_bindings
 	for i = 1, #bindings do
-		local binding = bindings[i]
+		local binding<const> = bindings[i]
 		if not binding.defined then
 			if binding.def then
-				local def = binding.def
+				local def<const> = binding.def
 				if def.id == nil then
 					def.id = binding.id
 				end
@@ -785,9 +785,9 @@ function state:ensure_timeline_definitions()
 end
 
 function state:activate_timelines()
-	local bindings = self:ensure_timeline_definitions()
+	local bindings<const> = self:ensure_timeline_definitions()
 	for i = 1, #bindings do
-		local binding = bindings[i]
+		local binding<const> = bindings[i]
 		if binding.autoplay then
 			self.target:play_timeline(binding.id, binding.play_options)
 		end
@@ -795,28 +795,28 @@ function state:activate_timelines()
 end
 
 function state:deactivate_timelines()
-	local bindings = self.timeline_bindings
+	local bindings<const> = self.timeline_bindings
 	if not bindings then
 		return
 	end
 	for i = 1, #bindings do
-		local binding = bindings[i]
+		local binding<const> = bindings[i]
 		if binding.stop_on_exit then
 			self.target:stop_timeline(binding.id)
 		end
 	end
 end
 
-local function append_active_child_states(ctx, out)
-	local states = ctx.states
+local append_active_child_states<const> = function(ctx, out)
+	local states<const> = ctx.states
 	if not states or next(states) == nil then
 		return out
 	end
-	local current_id = ctx.current_id
+	local current_id<const> = ctx.current_id
 	if not current_id then
 		return out
 	end
-	local current = states[current_id]
+	local current<const> = states[current_id]
 	if not current then
 		error('current child "' .. tostring(current_id) .. '" not found in "' .. tostring(ctx.id) .. '".')
 	end
@@ -830,10 +830,10 @@ local function append_active_child_states(ctx, out)
 end
 
 function state:enter_child_state(child)
-	local child_def = child.definition
+	local child_def<const> = child.definition
 	self:with_critical_section(function()
 		child:activate_timelines()
-		local enter_child = child_def.entering_state
+		local enter_child<const> = child_def.entering_state
 		local next_state
 		if enter_child then
 			next_state = enter_child(self.target, child)
@@ -863,12 +863,12 @@ function state:enter_initial_substate_chain()
 	if not self.current_id then
 		return
 	end
-	local active_children = append_active_child_states(self, {})
+	local active_children<const> = append_active_child_states(self, {})
 	for i = 1, #active_children do
 		if not self:is_active() then
 			return
 		end
-		local child = active_children[i]
+		local child<const> = active_children[i]
 		if child.definition.is_concurrent or self.current_id == child.localdef_id then
 			self:enter_child_state(child)
 			child:enter_initial_substate_chain()
@@ -894,7 +894,7 @@ end
 
 function state:with_critical_section(fn)
 	self:enter_critical_section()
-	local r1, r2, r3, r4, r5, r6, r7, r8 = fn()
+	local r1<const>, r2<const>, r3<const>, r4<const>, r5<const>, r6<const>, r7<const>, r8<const> = fn()
 	self:leave_critical_section()
 	return r1, r2, r3, r4, r5, r6, r7, r8
 end
@@ -904,10 +904,10 @@ end
 			return
 		end
 		self.is_processing_queue = true
-		local ok, err = pcall(function()
+		local ok<const>, err<const> = pcall(function()
 			local i = 1
 			while i <= #self.transition_queue do
-				local t = self.transition_queue[i]
+				local t<const> = self.transition_queue[i]
 				if should_trace_transitions() then
 					self:run_with_transition_context(
 						function()
@@ -934,14 +934,14 @@ function state:run_with_transition_context(factory, fn)
 	if not should_trace_transitions() then
 		return fn(nil)
 	end
-	local ctx = factory()
+	local ctx<const> = factory()
 	local stack = self._transition_context_stack
 	if not stack then
 		stack = {}
 		self._transition_context_stack = stack
 	end
 	stack[#stack + 1] = ctx
-	local ok, r1, r2, r3, r4, r5, r6, r7, r8 = pcall(fn, ctx)
+	local ok<const>, r1<const>, r2<const>, r3<const>, r4<const>, r5<const>, r6<const>, r7<const>, r8<const> = pcall(fn, ctx)
 	stack[#stack] = nil
 	if #stack == 0 then
 		self._transition_context_stack = nil
@@ -953,7 +953,7 @@ function state:run_with_transition_context(factory, fn)
 end
 
 function state:transition_context()
-	local stack = self._transition_context_stack
+	local stack<const> = self._transition_context_stack
 	if not stack or #stack == 0 then
 		return nil
 	end
@@ -964,7 +964,7 @@ function state:append_action_evaluation(detail)
 	if not should_trace_transitions() then
 		return
 	end
-	local ctx = self:transition_context()
+	local ctx<const> = self:transition_context()
 	if not ctx then
 		return
 	end
@@ -978,7 +978,7 @@ function state:append_guard_evaluation(detail)
 	if not should_trace_transitions() then
 		return
 	end
-	local ctx = self:transition_context()
+	local ctx<const> = self:transition_context()
 	if not ctx then
 		return
 	end
@@ -992,7 +992,7 @@ function state:record_transition_outcome_on_context(outcome)
 	if not should_trace_transitions() then
 		return
 	end
-	local ctx = self:transition_context()
+	local ctx<const> = self:transition_context()
 	if not ctx then
 		return
 	end
@@ -1014,8 +1014,8 @@ function state:emit_transition_trace(entry)
 	if not should_trace_transitions() then
 		return
 	end
-	local context = self:resolve_context_snapshot(entry.context)
-	local message = fsm_trace.compose_transition_trace_message({
+	local context<const> = self:resolve_context_snapshot(entry.context)
+	local message<const> = fsm_trace.compose_transition_trace_message({
 		outcome = entry.outcome,
 		execution = entry.execution,
 		from = entry.from,
@@ -1089,8 +1089,8 @@ function state:emit_event_dispatch_trace(event_name, emitter, detail, handled, b
 	if not should_trace_dispatch() then
 		return
 	end
-	local ctx = context or self:create_fallback_snapshot('event', 'event:' .. event_name, detail)
-	local message = fsm_trace.compose_event_dispatch_trace_message({
+	local ctx<const> = context or self:create_fallback_snapshot('event', 'event:' .. event_name, detail)
+	local message<const> = fsm_trace.compose_event_dispatch_trace_message({
 		event_name = event_name,
 		emitter = emitter,
 		detail = detail,
@@ -1114,7 +1114,7 @@ function state:handle_state_transition(action, event)
 	if not action then
 		return false
 	end
-	local t = type(action)
+	local t<const> = type(action)
 	if t == 'string' then
 		if is_no_op_string(action) then
 			return true
@@ -1123,8 +1123,8 @@ function state:handle_state_transition(action, event)
 		return true
 	end
 	if t == 'function' then
-		local handler_event = event or empty_game_event
-		local next_state = action(self.target, self, handler_event)
+		local handler_event<const> = event or empty_game_event
+		local next_state<const> = action(self.target, self, handler_event)
 		local detail = 'do:<anonymous>'
 		if next_state then
 			detail = detail .. '->' .. tostring(next_state)
@@ -1147,11 +1147,11 @@ function state:handle_state_transition(action, event)
 			return false
 		end
 	end
-	local do_handler = action.go
+	local do_handler<const> = action.go
 	if not do_handler then
 		return false
 	end
-	local dt = type(do_handler)
+	local dt<const> = type(do_handler)
 	if dt == 'string' then
 		if is_no_op_string(do_handler) then
 			return true
@@ -1161,8 +1161,8 @@ function state:handle_state_transition(action, event)
 		return true
 	end
 	if dt == 'function' then
-		local handler_event = event or empty_game_event
-		local next_state = do_handler(self.target, self, handler_event)
+		local handler_event<const> = event or empty_game_event
+		local next_state<const> = do_handler(self.target, self, handler_event)
 		local detail = 'do:<anonymous>'
 		if next_state then
 			detail = detail .. '->' .. tostring(next_state)
@@ -1178,14 +1178,14 @@ end
 
 function state:check_state_guard_conditions(target_state_id)
 	local allowed
-	local evaluations = {}
+	local evaluations<const> = {}
 
-	local cur_def = self:current_state_definition()
-	local exit_guard_def = cur_def.transition_guards
-	local exit_guard = exit_guard_def and exit_guard_def.can_exit
+	local cur_def<const> = self:current_state_definition()
+	local exit_guard_def<const> = cur_def.transition_guards
+	local exit_guard<const> = exit_guard_def and exit_guard_def.can_exit
 	if type(exit_guard) == 'function' then
-		local passed = exit_guard(self.target, self)
-		local evaluation = {
+		local passed<const> = exit_guard(self.target, self)
+		local evaluation<const> = {
 			side = 'exit',
 			descriptor = '<anonymous>',
 			passed = passed,
@@ -1216,7 +1216,7 @@ function state:check_state_guard_conditions(target_state_id)
 	end
 
 	if not allowed then
-		local evaluation = {
+		local evaluation<const> = {
 			side = 'enter',
 			descriptor = '<not-evaluated>',
 			passed = false,
@@ -1229,16 +1229,16 @@ function state:check_state_guard_conditions(target_state_id)
 		return { allowed = allowed, evaluations = evaluations }
 	end
 
-	local states = self:states_or_throw()
-	local tgt = states[target_state_id]
+	local states<const> = self:states_or_throw()
+	local tgt<const> = states[target_state_id]
 	if not tgt then
 		error('target state "' .. tostring(target_state_id) .. '" not found under "' .. tostring(self.id) .. '".')
 	end
-	local enter_guard_def = self:child_definition_or_throw(target_state_id).transition_guards
-	local enter_guard = enter_guard_def and enter_guard_def.can_enter
+	local enter_guard_def<const> = self:child_definition_or_throw(target_state_id).transition_guards
+	local enter_guard<const> = enter_guard_def and enter_guard_def.can_enter
 	if type(enter_guard) == 'function' then
-		local passed = enter_guard(self.target, tgt)
-		local evaluation = {
+		local passed<const> = enter_guard(self.target, tgt)
+		local evaluation<const> = {
 			side = 'enter',
 			descriptor = '<anonymous>',
 			passed = passed,
@@ -1286,13 +1286,13 @@ function state:transition_to_state(state_id)
 		end
 	end
 
-	local diag_enabled = should_trace_transitions()
-	local execution = self.is_processing_queue and 'deferred' or 'manual'
+	local diag_enabled<const> = should_trace_transitions()
+	local execution<const> = self.is_processing_queue and 'deferred' or 'manual'
 
 	if self.critical_section_counter > 0 then
 		if diag_enabled then
-			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot('manual', 'queued-transition')
-			local outcome = { from = self.current_id, to = state_id, execution = 'queued', status = 'queued', reason = 'critical-section' }
+			local context<const> = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot('manual', 'queued-transition')
+			local outcome<const> = { from = self.current_id, to = state_id, execution = 'queued', status = 'queued', reason = 'critical-section' }
 			self:record_transition_outcome_on_context(outcome)
 			self:emit_transition_trace({
 				outcome = 'queued',
@@ -1312,7 +1312,7 @@ function state:transition_to_state(state_id)
 
 	if self.current_id == state_id then
 		if diag_enabled then
-			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == 'deferred' and 'queue-drain' or 'manual', 'noop-transition')
+			local context<const> = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == 'deferred' and 'queue-drain' or 'manual', 'noop-transition')
 			self:record_transition_outcome_on_context({
 				from = self.current_id,
 				to = state_id,
@@ -1332,11 +1332,11 @@ function state:transition_to_state(state_id)
 		return
 	end
 
-	local guard_diagnostics = self:check_state_guard_conditions(state_id)
+	local guard_diagnostics<const> = self:check_state_guard_conditions(state_id)
 	if not guard_diagnostics.allowed then
 		if diag_enabled then
-			local context = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == 'deferred' and 'queue-drain' or 'manual', 'guard-blocked')
-			local outcome = {
+			local context<const> = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == 'deferred' and 'queue-drain' or 'manual', 'guard-blocked')
+			local outcome<const> = {
 				from = self.current_id,
 				to = state_id,
 				execution = execution,
@@ -1358,15 +1358,15 @@ function state:transition_to_state(state_id)
 	end
 
 	self:with_critical_section(function()
-		local prev_id = self.current_id
-		local prev_def = self:current_state_definition()
-		local prev_states = self:states_or_throw()
-		local prev_instance = prev_states[prev_id]
+		local prev_id<const> = self.current_id
+		local prev_def<const> = self:current_state_definition()
+		local prev_states<const> = self:states_or_throw()
+		local prev_instance<const> = prev_states[prev_id]
 		if not prev_instance then
 			error('previous state '' .. tostring(prev_id) .. '' not found in '' .. tostring(self.id) .. ''.')
 		end
 
-		local exit_handler = prev_def.exiting_state
+		local exit_handler<const> = prev_def.exiting_state
 		if type(exit_handler) == 'function' then
 			exit_handler(self.target, prev_instance)
 		end
@@ -1374,23 +1374,23 @@ function state:transition_to_state(state_id)
 		self:push_history(prev_id)
 
 		self.current_id = state_id
-		local cur = self.states[state_id]
+		local cur<const> = self.states[state_id]
 		if not cur then
 			error('state "' .. tostring(self.id) .. '" transitioned to "' .. tostring(state_id) .. '" but the instance was not created.')
 		end
-		local cur_def = self:current_state_definition()
+		local cur_def<const> = self:current_state_definition()
 		if cur_def.is_concurrent then
 			error('cannot transition to parallel state "' .. tostring(state_id) .. '".')
 		end
 
 		cur:activate_timelines()
-		local enter_handler = cur_def.entering_state
+		local enter_handler<const> = cur_def.entering_state
 		local next_state
 		if enter_handler then
 			if should_trace_transitions() then
 				next_state = self:run_with_transition_context(
 					function()
-						local ctx = fsm_trace.create_enter_context(state_id)
+						local ctx<const> = fsm_trace.create_enter_context(state_id)
 						ctx.handler_name = '<anonymous>'
 						return ctx
 					end,
@@ -1405,7 +1405,7 @@ function state:transition_to_state(state_id)
 		cur:transition_to_next_state_if_provided(next_state)
 
 		if diag_enabled then
-			local outcome = {
+			local outcome<const> = {
 				from = prev_id,
 				to = state_id,
 				execution = execution,
@@ -1423,7 +1423,7 @@ function state:transition_to_state(state_id)
 		end
 	end)
 
-	local entered = self.states[state_id]
+	local entered<const> = self.states[state_id]
 	if entered.definition.initial then
 		entered:reset_submachine(true)
 		entered:enter_initial_substate_chain()
@@ -1431,8 +1431,8 @@ function state:transition_to_state(state_id)
 end
 
 function state:push_history(to_push)
-	local cap = bst_max_history
-	local tail_index = (self._hist_head + self._hist_size) % cap
+	local cap<const> = bst_max_history
+	local tail_index<const> = (self._hist_head + self._hist_size) % cap
 	self._hist[tail_index + 1] = to_push
 	if self._hist_size < cap then
 		self._hist_size = self._hist_size + 1
@@ -1452,9 +1452,9 @@ function state:pop_and_transition()
 		end
 		return
 	end
-	local cap = bst_max_history
-	local tail_index = (self._hist_head + self._hist_size - 1 + cap) % cap
-	local popped_state_id = self._hist[tail_index + 1]
+	local cap<const> = bst_max_history
+	local tail_index<const> = (self._hist_head + self._hist_size - 1 + cap) % cap
+	local popped_state_id<const> = self._hist[tail_index + 1]
 	self._hist_size = self._hist_size - 1
 	if popped_state_id then
 		self:transition_to(popped_state_id)
@@ -1462,7 +1462,7 @@ function state:pop_and_transition()
 end
 
 function state:get_history_snapshot()
-	local out = {}
+	local out<const> = {}
 	for i = 1, self._hist_size do
 		out[#out + 1] = self._hist[(self._hist_head + i - 1) % bst_max_history + 1]
 	end
@@ -1476,8 +1476,8 @@ function state:transition_to_path(path)
 		end
 		local ctx = self
 		for i = 1, #path do
-			local seg = path[i]
-			local child, key = self:ensure_child(ctx, seg)
+			local seg<const> = path[i]
+			local child<const>, key<const> = self:ensure_child(ctx, seg)
 			if not child.definition.is_concurrent and ctx.current_id ~= key then
 				ctx:transition_to_state(key)
 			end
@@ -1486,7 +1486,7 @@ function state:transition_to_path(path)
 		return
 	end
 
-	local spec = state.parse_fs_path(path)
+	local spec<const> = state.parse_fs_path(path)
 	if not spec.abs and spec.up == 0 and #spec.segs == 0 then
 		error('empty path is invalid.')
 	end
@@ -1498,8 +1498,8 @@ function state:transition_to_path(path)
 		ctx = ctx.parent
 	end
 	for i = 1, #spec.segs do
-		local seg = spec.segs[i]
-		local child, key = self:ensure_child(ctx, seg)
+		local seg<const> = spec.segs[i]
+		local child<const>, key<const> = self:ensure_child(ctx, seg)
 		if not child.definition.is_concurrent and ctx.current_id ~= key then
 			ctx:transition_to_state(key)
 		end
@@ -1516,13 +1516,13 @@ function state:path()
 	if self:is_root() then
 		return '/'
 	end
-	local segments = {}
+	local segments<const> = {}
 	local node = self
 	while node and not node:is_root() do
 		segments[#segments + 1] = node.current_id
 		node = node.parent
 	end
-	local path = {}
+	local path<const> = {}
 	for i = #segments, 1, -1 do
 		path[#path + 1] = segments[i]
 	end
@@ -1532,15 +1532,15 @@ end
 state._path_cache = {}
 
 function state.parse_fs_path(input)
-	local cached = state._path_cache[input]
+	local cached<const> = state._path_cache[input]
 	if cached then
 		return cached
 	end
-	local len = #input
+	local len<const> = #input
 	local i = 1
 	local abs
 	local up = 0
-	local segs = {}
+	local segs<const> = {}
 	if len == 0 then
 		return { abs = false, up = 0, segs = {} }
 	end
@@ -1559,7 +1559,7 @@ function state.parse_fs_path(input)
 		end
 	end
 
-	local function push_seg(seg)
+	local push_seg<const> = function(seg)
 		if ignored_relative_segments[seg] then
 			return
 		end
@@ -1575,7 +1575,7 @@ function state.parse_fs_path(input)
 	end
 
 	while i <= len do
-		local c = string.sub(input, i, i)
+		local c<const> = string.sub(input, i, i)
 		if c == '/' then
 			i = i + 1
 		elseif c == '[' and string.sub(input, i + 1, i + 1) == '\'' then
@@ -1583,11 +1583,11 @@ function state.parse_fs_path(input)
 			local seg = ''
 			local closed
 			while i <= len do
-				local ch = string.sub(input, i, i)
+				local ch<const> = string.sub(input, i, i)
 				i = i + 1
 				if ch == '\\' then
 					if i <= len then
-						local esc = string.sub(input, i, i)
+						local esc<const> = string.sub(input, i, i)
 						i = i + 1
 						if esc == '\'' then
 							seg = seg .. '\''
@@ -1614,7 +1614,7 @@ function state.parse_fs_path(input)
 			end
 			push_seg(seg)
 		else
-			local start = i
+			local start<const> = i
 			while i <= len and string.sub(input, i, i) ~= '/' do
 				i = i + 1
 			end
@@ -1622,7 +1622,7 @@ function state.parse_fs_path(input)
 		end
 	end
 
-	local cache_size = state.path_config.cache_size
+	local cache_size<const> = state.path_config.cache_size
 	local cache_count = 0
 	for _ in pairs(state._path_cache) do
 		cache_count = cache_count + 1
@@ -1633,20 +1633,20 @@ function state.parse_fs_path(input)
 			break
 		end
 	end
-	local rec = { abs = abs, up = up, segs = segs }
+	local rec<const> = { abs = abs, up = up, segs = segs }
 	state._path_cache[input] = rec
 	return rec
 end
 
 function state:matches_state_path(path)
-	local function match_segments(start, segments)
+	local match_segments<const> = function(start, segments)
 		if #segments == 0 then
 			return false
 		end
 		local ctx = start
 		for i = 1, #segments do
-			local seg = segments[i]
-			local child, key = resolve_state_instance(ctx, seg)
+			local seg<const> = segments[i]
+			local child<const>, key<const> = resolve_state_instance(ctx, seg)
 			if not child then
 				return false
 			end
@@ -1665,7 +1665,7 @@ function state:matches_state_path(path)
 		return match_segments(self, path)
 	end
 
-	local spec = state.parse_fs_path(path)
+	local spec<const> = state.parse_fs_path(path)
 	local ctx = spec.abs and self.root or self
 	for i = 1, spec.up do
 		if not ctx.parent then
@@ -1677,13 +1677,13 @@ function state:matches_state_path(path)
 end
 
 function state:matches_state_tag(tag)
-	local tags = self.tag_lookup
+	local tags<const> = self.tag_lookup
 	if tags and tags[tag] then
 		return true
 	end
 
 	if self.current_id then
-		local child = self.states[self.current_id]
+		local child<const> = self.states[self.current_id]
 		if not child then
 			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 		end
@@ -1704,14 +1704,14 @@ end
 -- collect_active_state_tags: walk the current state tree (including concurrent
 -- regions) and collect all tags from active states into the output table.
 function state:collect_active_state_tags(out)
-	local tags = self.tag_lookup
+	local tags<const> = self.tag_lookup
 	if tags then
 		for tag in pairs(tags) do
 			out[tag] = true
 		end
 	end
 	if self.current_id then
-		local child = self.states[self.current_id]
+		local child<const> = self.states[self.current_id]
 		if not child then
 			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 		end
@@ -1728,8 +1728,8 @@ end
 -- current set of active tags.  all → every listed tag must be present.
 -- none → no listed tag may be present.  any → at least one listed tag must
 -- be present (returns false if none match, even when all/none pass).
-local function matches_tag_derivation_rule(rule, tags)
-	local all = rule.all
+local matches_tag_derivation_rule<const> = function(rule, tags)
+	local all<const> = rule.all
 	if all then
 		for i = 1, #all do
 			if not tags[all[i]] then
@@ -1737,7 +1737,7 @@ local function matches_tag_derivation_rule(rule, tags)
 			end
 		end
 	end
-	local none = rule.none
+	local none<const> = rule.none
 	if none then
 		for i = 1, #none do
 			if tags[none[i]] then
@@ -1745,7 +1745,7 @@ local function matches_tag_derivation_rule(rule, tags)
 			end
 		end
 	end
-	local any = rule.any
+	local any<const> = rule.any
 	if any then
 		for i = 1, #any do
 			if tags[any[i]] then
@@ -1761,8 +1761,8 @@ end
 -- active tags.  Uses a fixed-point loop to resolve chains (derived tags that
 -- reference other derived tags).
 function state:collect_derived_state_tags(out)
-	local root = self:is_root() and self or self.root
-	local derivations = root.definition.tag_derivations
+	local root<const> = self:is_root() and self or self.root
+	local derivations<const> = root.definition.tag_derivations
 	if derivations == nil then
 		return
 	end
@@ -1770,8 +1770,8 @@ function state:collect_derived_state_tags(out)
 	while unresolved > 0 do
 		local changed
 		for i = 1, #derivations do
-			local rule = derivations[i]
-			local derived_tag = rule.derived_tag
+			local rule<const> = derivations[i]
+			local derived_tag<const> = rule.derived_tag
 			if not out[derived_tag] and matches_tag_derivation_rule(rule, out) then
 				out[derived_tag] = true
 				unresolved = unresolved - 1
@@ -1788,8 +1788,8 @@ end
 -- against previously applied tags on the target object.  Adds new tags and
 -- removes stale ones via add_tag/remove_tag.  Called after every transition.
 function state:sync_target_state_tags()
-	local root = self:is_root() and self or self.root
-	local target = root.target
+	local root<const> = self:is_root() and self or self.root
+	local target<const> = root.target
 	if target == nil then
 		return
 	end
@@ -1836,7 +1836,7 @@ function state:handle_event(event_name, emitter_id, detail, event)
 	if self.paused then
 		return { handled = false }
 	end
-	local trace_transitions = should_trace_transitions()
+	local trace_transitions<const> = should_trace_transitions()
 	local captured_context = nil
 	local handled
 	if trace_transitions then
@@ -1847,11 +1847,11 @@ function state:handle_event(event_name, emitter_id, detail, event)
 				end,
 				function(ctx)
 					captured_context = ctx
-					local handlers = self.definition.on
+					local handlers<const> = self.definition.on
 					if not handlers then
 						return false
 					end
-					local spec = handlers[event_name]
+					local spec<const> = handlers[event_name]
 					if not spec then
 						return false
 					end
@@ -1862,11 +1862,11 @@ function state:handle_event(event_name, emitter_id, detail, event)
 		end)
 	else
 		handled = self:with_critical_section(function()
-			local handlers = self.definition.on
+			local handlers<const> = self.definition.on
 			if not handlers then
 				return false
 			end
-			local spec = handlers[event_name]
+			local spec<const> = handlers[event_name]
 			if not spec then
 				return false
 			end
@@ -1896,8 +1896,8 @@ function state:dispatch_event(event_or_name, payload)
 		event_name = event_or_name
 		data = payload
 	end
-	local trace_dispatch = should_trace_dispatch()
-	local trace_transitions = should_trace_transitions()
+	local trace_dispatch<const> = should_trace_dispatch()
+	local trace_transitions<const> = should_trace_transitions()
 	local emitter_id
 	local detail
 	if trace_dispatch or trace_transitions then
@@ -1908,7 +1908,7 @@ function state:dispatch_event(event_or_name, payload)
 	end
 
 	if self.states and next(self.states) ~= nil and self.current_id then
-		local child = self.states[self.current_id]
+		local child<const> = self.states[self.current_id]
 		if not child then
 			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 		end
@@ -1926,8 +1926,8 @@ function state:dispatch_event(event_or_name, payload)
 	local current = self
 	local depth = 0
 	while current do
-		local result = current:handle_event(event_name, emitter_id, detail, data)
-		local bubbled = depth > 0 or (not result.handled and current.parent ~= nil)
+		local result<const> = current:handle_event(event_name, emitter_id, detail, data)
+		local bubbled<const> = depth > 0 or (not result.handled and current.parent ~= nil)
 		current:emit_event_dispatch_trace(event_name, emitter_id, detail, result.handled, bubbled, depth, result.context)
 		if result.handled then
 			return true
@@ -1941,7 +1941,7 @@ end
 function state:resolve_input_eval_mode()
 	local node = self
 	while node do
-		local mode = node.definition.input_eval
+		local mode<const> = node.definition.input_eval
 		if mode and input_eval_modes[mode] then
 			return mode
 		end
@@ -1951,13 +1951,13 @@ function state:resolve_input_eval_mode()
 end
 
 function state:process_input_events()
-	local handlers = self.definition.input_event_handlers
+	local handlers<const> = self.definition.input_event_handlers
 	if not handlers then
 		return
 	end
-	local trace_transitions = should_trace_transitions()
-	local player_index = self.target.player_index or 1
-	local eval_mode = self:resolve_input_eval_mode()
+	local trace_transitions<const> = should_trace_transitions()
+	local player_index<const> = self.target.player_index or 1
+	local eval_mode<const> = self:resolve_input_eval_mode()
 	for pattern, handler in pairs(handlers) do
 		if action_triggered(pattern, player_index) then
 			local handled
@@ -1982,7 +1982,7 @@ function state:process_input_events()
 end
 
 function state:run_current_state()
-	local update_handler = self.definition.update
+	local update_handler<const> = self.definition.update
 	if not update_handler then
 		return
 	end
@@ -2006,8 +2006,8 @@ function state:run_substate_machines()
 	if not self.states or not self.current_id then
 		return
 	end
-	local states = self.states
-	local cur = states[self.current_id]
+	local states<const> = self.states
+	local cur<const> = states[self.current_id]
 	if not cur then
 		error('current state "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 	end
@@ -2034,12 +2034,12 @@ function state:update()
 end
 
 function state:populate_states()
-	local sdef = self.definition
+	local sdef<const> = self.definition
 	if not sdef or not sdef.states then
 		self.states = {}
 		return
 	end
-	local state_ids = {}
+	local state_ids<const> = {}
 	for state_id in pairs(sdef.states) do
 		state_ids[#state_ids + 1] = state_id
 	end
@@ -2049,9 +2049,9 @@ function state:populate_states()
 	end
 	self.states = {}
 	for i = 1, #state_ids do
-		local sdef_id = state_ids[i]
-		local child_def = sdef.states[sdef_id]
-		local child = state.new(child_def, self.target, self)
+		local sdef_id<const> = state_ids[i]
+		local child_def<const> = sdef.states[sdef_id]
+		local child<const> = state.new(child_def, self.target, self)
 		self.states[sdef_id] = child
 	end
 	if not self.current_id then
@@ -2060,7 +2060,7 @@ function state:populate_states()
 end
 
 function state:reset(reset_tree)
-	local def = self.definition
+	local def<const> = self.definition
 	self.data = def.data and clone_defaults(def.data) or {}
 	local should_reset = reset_tree
 	if should_reset == nil then
@@ -2072,7 +2072,7 @@ function state:reset(reset_tree)
 end
 
 function state:reset_submachine(reset_tree)
-	local def = self.definition
+	local def<const> = self.definition
 	self.current_id = def.initial
 	self._hist_head = 0
 	self._hist_size = 0
@@ -2091,7 +2091,7 @@ end
 function state:dispose()
 	self:deactivate_timelines()
 		if self:is_root() then
-			local applied = self._applied_state_tags
+			local applied<const> = self._applied_state_tags
 			if applied then
 				for tag in pairs(applied) do
 					decrement_target_state_tag_ref(self.target, tag)
@@ -2110,11 +2110,11 @@ function state:dispose()
 	self.current_id = nil
 end
 
-local statemachinecontroller = {}
+local statemachinecontroller<const> = {}
 statemachinecontroller.__index = statemachinecontroller
 
 function statemachinecontroller.new(opts)
-	local self = setmetatable({}, statemachinecontroller)
+	local self<const> = setmetatable({}, statemachinecontroller)
 	opts = opts or {}
 	self.target = opts.target
 	self.statemachines = {}
@@ -2125,8 +2125,8 @@ function statemachinecontroller.new(opts)
 	self._started = false
 	self._event_subscriptions = {}
 	if opts.definition then
-		local def = opts.definition
-		local id = def.id or opts.fsm_id or 'master'
+		local def<const> = opts.definition
+		local id<const> = def.id or opts.fsm_id or 'master'
 		self:add_statemachine(id, def)
 	end
 	return self
@@ -2139,23 +2139,23 @@ function statemachinecontroller:add_statemachine(id, definition)
 	else
 		def = statedefinition.new(id, definition)
 	end
-	local machine = state.new(def, self.target)
+	local machine<const> = state.new(def, self.target)
 	self.statemachines[id] = machine
 	return machine
 end
 
 function statemachinecontroller:bind_machine(machine)
-	local events = machine.definition.event_list
+	local events<const> = machine.definition.event_list
 	if not events or #events == 0 then
 		return
 	end
 	for i = 1, #events do
-		local event = events[i]
-		local key = machine.localdef_id .. ':' .. event.name .. ':' .. tostring(event.emitter)
+		local event<const> = events[i]
+		local key<const> = machine.localdef_id .. ':' .. event.name .. ':' .. tostring(event.emitter)
 		if self._event_subscriptions[key] then
 			goto continue
 		end
-		local disposer = machine.target.events:on({
+		local disposer<const> = machine.target.events:on({
 			event = event.name,
 			emitter = event.emitter,
 			handler = function(evt)
@@ -2183,9 +2183,9 @@ end
 
 function statemachinecontroller:unsubscribe_events_for(machine, event_names)
 	for i = 1, #event_names do
-		local name = event_names[i]
-		local key = machine.localdef_id .. ':' .. name
-		local disposer = self._event_subscriptions[key]
+		local name<const> = event_names[i]
+		local key<const> = machine.localdef_id .. ':' .. name
+		local disposer<const> = self._event_subscriptions[key]
 		if disposer then
 			disposer()
 			self._event_subscriptions[key] = nil
@@ -2264,7 +2264,7 @@ function statemachinecontroller:transition_to(path)
 		machine_id = path
 		state_path = path
 	end
-	local machine = self.statemachines[machine_id]
+	local machine<const> = self.statemachines[machine_id]
 	if not machine then
 		error('no machine with id "' .. tostring(machine_id) .. '"')
 	end
@@ -2277,9 +2277,9 @@ end
 -- Use tag-based queries (matches_state_tag) when possible — they are cheaper
 -- and do not depend on internal state naming.
 function statemachinecontroller:matches_state_path(path)
-	local machine_id, state_path = string.match(path, '^(.-):/(.+)$')
+	local machine_id<const>, state_path<const> = string.match(path, '^(.-):/(.+)$')
 	if machine_id then
-		local machine = self.statemachines[machine_id]
+		local machine<const> = self.statemachines[machine_id]
 		if not machine then
 			return false
 		end
@@ -2302,7 +2302,7 @@ function statemachinecontroller:matches_state_tag(tag)
 end
 
 function statemachinecontroller:run_statemachine(id)
-	local machine = self.statemachines[id]
+	local machine<const> = self.statemachines[id]
 	if not machine then
 		error('no machine with id "' .. tostring(id) .. '"')
 	end
@@ -2316,7 +2316,7 @@ function statemachinecontroller:run_all_statemachines()
 end
 
 function statemachinecontroller:reset_statemachine(id)
-	local machine = self.statemachines[id]
+	local machine<const> = self.statemachines[id]
 	if not machine then
 		error('no machine with id "' .. tostring(id) .. '"')
 	end
@@ -2330,7 +2330,7 @@ function statemachinecontroller:reset_all_statemachines()
 end
 
 function statemachinecontroller:pop_statemachine(id)
-	local machine = self.statemachines[id]
+	local machine<const> = self.statemachines[id]
 	if not machine then
 		error('no machine with id "' .. tostring(id) .. '"')
 	end
@@ -2344,7 +2344,7 @@ function statemachinecontroller:pop_all_statemachines()
 end
 
 function statemachinecontroller:switch_state(id, path)
-	local machine = self.statemachines[id]
+	local machine<const> = self.statemachines[id]
 	if not machine then
 		error('no machine with id "' .. tostring(id) .. '"')
 	end
@@ -2352,7 +2352,7 @@ function statemachinecontroller:switch_state(id, path)
 end
 
 function statemachinecontroller:pause_statemachine(id)
-	local machine = self.statemachines[id]
+	local machine<const> = self.statemachines[id]
 	if not machine then
 		error('no machine with id "' .. tostring(id) .. '"')
 	end
@@ -2360,7 +2360,7 @@ function statemachinecontroller:pause_statemachine(id)
 end
 
 function statemachinecontroller:resume_statemachine(id)
-	local machine = self.statemachines[id]
+	local machine<const> = self.statemachines[id]
 	if not machine then
 		error('no machine with id "' .. tostring(id) .. '"')
 	end

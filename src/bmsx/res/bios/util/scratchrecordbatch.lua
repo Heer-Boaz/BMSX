@@ -1,12 +1,12 @@
 -- scratchrecordbatch.lua
 -- reusable scratch batch for small table-shaped records
 
-local scratchrecordbatch = {}
+local scratchrecordbatch<const> = {}
 scratchrecordbatch.__index = scratchrecordbatch
 
 function scratchrecordbatch.new(initial_capacity)
-	local items = {}
-	local count = initial_capacity or 0
+	local items<const> = {}
+	local count<const> = initial_capacity or 0
 	local i = 0
 	while i < count do
 		i = i + 1
@@ -33,7 +33,7 @@ function scratchrecordbatch:get(index)
 end
 
 function scratchrecordbatch:reserve(min_capacity)
-	local items = self.items
+	local items<const> = self.items
 	while #items < min_capacity do
 		items[#items + 1] = {}
 	end

@@ -1,4 +1,4 @@
-local constants = {}
+local constants<const> = {}
 
 constants.ids = {
 	stage_def = 'nemesis_s.stage',

@@ -1,9 +1,9 @@
-local scratchrecordbatch = require('scratchrecordbatch')
+local scratchrecordbatch<const> = require('scratchrecordbatch')
 
-local timeline_dispatch = {}
+local timeline_dispatch<const> = {}
 
-local function collect_payload_keys(payload)
-	local keys = {}
+local collect_payload_keys<const> = function(payload)
+	local keys<const> = {}
 	for key in pairs(payload) do
 		if key ~= 'type' and key ~= 'emitter' and key ~= 'timestamp' then
 			keys[#keys + 1] = key
@@ -12,12 +12,12 @@ local function collect_payload_keys(payload)
 	return keys
 end
 
-local function prepare_markers(markers)
-	local by_frame = markers.by_frame
+local prepare_markers<const> = function(markers)
+	local by_frame<const> = markers.by_frame
 	for _, bucket in pairs(by_frame) do
 		for i = 1, #bucket do
-			local marker = bucket[i]
-			local payload = marker.payload
+			local marker<const> = bucket[i]
+			local payload<const> = marker.payload
 			if type(payload) == 'table' and payload.type == nil then
 				marker.dispatch_payload_is_fields = true
 				marker.dispatch_payload_keys = collect_payload_keys(payload)
@@ -29,7 +29,7 @@ local function prepare_markers(markers)
 	end
 end
 
-local function bind_slot(slot, owner, timeline_id)
+local bind_slot<const> = function(slot, owner, timeline_id)
 	local frame_payload = slot.frame_payload
 	if frame_payload == nil then
 		frame_payload = {}
@@ -87,13 +87,13 @@ local function bind_slot(slot, owner, timeline_id)
 	marker_event.emitter = owner
 end
 
-local function clear_marker_event(slot)
+local clear_marker_event<const> = function(slot)
 	local marker_event = slot.marker_event
 	if marker_event == nil then
 		marker_event = {}
 		slot.marker_event = marker_event
 	end
-	local keys = slot.marker_event_keys
+	local keys<const> = slot.marker_event_keys
 	if keys ~= nil then
 		for i = 1, #keys do
 			marker_event[keys[i]] = nil
@@ -103,41 +103,41 @@ local function clear_marker_event(slot)
 	marker_event.payload = nil
 end
 
-local function ensure_slot(state, depth)
-	local slot = state.slots:get(depth)
+local ensure_slot<const> = function(state, depth)
+	local slot<const> = state.slots:get(depth)
 	bind_slot(slot, state.owner, state.timeline_id)
 	return slot
 end
 
-local function acquire_slot(entry)
-	local state = entry.timeline_dispatch_state
-	local depth = state.depth + 1
+local acquire_slot<const> = function(entry)
+	local state<const> = entry.timeline_dispatch_state
+	local depth<const> = state.depth + 1
 	state.depth = depth
 	return ensure_slot(state, depth)
 end
 
-local function release_slot(entry)
-	local state = entry.timeline_dispatch_state
+local release_slot<const> = function(entry)
+	local state<const> = entry.timeline_dispatch_state
 	state.depth = state.depth - 1
 end
 
-local function emit_and_dispatch(owner, event)
+local emit_and_dispatch<const> = function(owner, event)
 	owner.events:emit_event(event)
 	owner.sc:dispatch(event)
 end
 
-local function fill_marker_event(slot, marker)
-	local event = slot.marker_event
+local fill_marker_event<const> = function(slot, marker)
+	local event<const> = slot.marker_event
 	clear_marker_event(slot)
 	event.type = marker.event
-	local payload = marker.payload
+	local payload<const> = marker.payload
 	if payload == nil then
 		return event
 	end
 	if marker.dispatch_payload_is_fields then
-		local keys = marker.dispatch_payload_keys
+		local keys<const> = marker.dispatch_payload_keys
 		for i = 1, #keys do
-			local key = keys[i]
+			local key<const> = keys[i]
 			event[key] = payload[key]
 		end
 		slot.marker_event_keys = keys
@@ -147,20 +147,20 @@ local function fill_marker_event(slot, marker)
 	return event
 end
 
-local function apply_markers(entry, owner, slot, frame_index)
-	local bucket = entry.markers.by_frame[frame_index]
+local apply_markers<const> = function(entry, owner, slot, frame_index)
+	local bucket<const> = entry.markers.by_frame[frame_index]
 	if bucket == nil then
 		return
 	end
 	for i = 1, #bucket do
-		local marker = bucket[i]
-		local add_tags = marker.add_tags
+		local marker<const> = bucket[i]
+		local add_tags<const> = marker.add_tags
 		if add_tags ~= nil then
 			for j = 1, #add_tags do
 				owner:add_tag(add_tags[j])
 			end
 		end
-		local remove_tags = marker.remove_tags
+		local remove_tags<const> = marker.remove_tags
 		if remove_tags ~= nil then
 			for j = 1, #remove_tags do
 				owner:remove_tag(remove_tags[j])
@@ -172,10 +172,10 @@ local function apply_markers(entry, owner, slot, frame_index)
 	end
 end
 
-local function dispatch_frame(entry, owner, evt, dt_ms, on_frame_payload, context)
-	local slot = acquire_slot(entry)
-	local payload = slot.frame_payload
-	local time_ms = entry.instance.time_ms
+local dispatch_frame<const> = function(entry, owner, evt, dt_ms, on_frame_payload, context)
+	local slot<const> = acquire_slot(entry)
+	local payload<const> = slot.frame_payload
+	local time_ms<const> = entry.instance.time_ms
 	payload.frame_index = evt.current
 	payload.frame_value = evt.value
 	payload.rewound = evt.rewound
@@ -188,7 +188,7 @@ local function dispatch_frame(entry, owner, evt, dt_ms, on_frame_payload, contex
 	apply_markers(entry, owner, slot, evt.current)
 	on_frame_payload(context, entry, owner, payload)
 
-	local base_frame_event = slot.base_frame_event
+	local base_frame_event<const> = slot.base_frame_event
 	base_frame_event.frame_index = payload.frame_index
 	base_frame_event.frame_value = payload.frame_value
 	base_frame_event.rewound = payload.rewound
@@ -196,7 +196,7 @@ local function dispatch_frame(entry, owner, evt, dt_ms, on_frame_payload, contex
 	base_frame_event.direction = payload.direction
 	emit_and_dispatch(owner, base_frame_event)
 
-	local scoped_frame_event = slot.scoped_frame_event
+	local scoped_frame_event<const> = slot.scoped_frame_event
 	scoped_frame_event.frame_index = payload.frame_index
 	scoped_frame_event.frame_value = payload.frame_value
 	scoped_frame_event.rewound = payload.rewound
@@ -206,18 +206,18 @@ local function dispatch_frame(entry, owner, evt, dt_ms, on_frame_payload, contex
 	release_slot(entry)
 end
 
-local function dispatch_end(entry, owner, evt)
-	local slot = acquire_slot(entry)
-	local payload = slot.end_payload
+local dispatch_end<const> = function(entry, owner, evt)
+	local slot<const> = acquire_slot(entry)
+	local payload<const> = slot.end_payload
 	payload.mode = evt.mode
 	payload.wrapped = evt.wrapped
 
-	local base_end_event = slot.base_end_event
+	local base_end_event<const> = slot.base_end_event
 	base_end_event.mode = payload.mode
 	base_end_event.wrapped = payload.wrapped
 	emit_and_dispatch(owner, base_end_event)
 
-	local scoped_end_event = slot.scoped_end_event
+	local scoped_end_event<const> = slot.scoped_end_event
 	scoped_end_event.mode = payload.mode
 	scoped_end_event.wrapped = payload.wrapped
 	emit_and_dispatch(owner, scoped_end_event)
@@ -240,7 +240,7 @@ function timeline_dispatch.init_entry(entry, owner)
 end
 
 function timeline_dispatch.process_instance_events(entry, owner, dt_ms, on_frame_payload, context)
-	local instance = entry.instance
+	local instance<const> = entry.instance
 	if instance.step_has_frame_event then
 		dispatch_frame(entry, owner, instance.step_frame_event, dt_ms, on_frame_payload, context)
 	end

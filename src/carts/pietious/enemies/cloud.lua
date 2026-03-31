@@ -1,11 +1,11 @@
-local constants = require('constants')
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local constants<const> = require('constants')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local cloud = {}
+local cloud<const> = {}
 cloud.__index = cloud
 
-local full_circle_milliradians = 6283
+local full_circle_milliradians<const> = 6283
 
 function cloud:ctor()
 	self.cloud_anim_frame = 1
@@ -13,8 +13,8 @@ function cloud:ctor()
 end
 
 function cloud.bt_tick(self, blackboard)
-	local node = blackboard.nodedata
-	local room = object('room')
+	local node<const> = blackboard.nodedata
+	local room<const> = object('room')
 	if self.cloud_anim_frame == 2 then
 		self:gfx('cloud_2')
 	else
@@ -33,7 +33,7 @@ function cloud.bt_tick(self, blackboard)
 	end
 	node.cloud_anim_ticks = anim_ticks
 
-	local dir_modifier = self.direction == 'left' and -1 or 1
+	local dir_modifier<const> = self.direction == 'left' and -1 or 1
 	local move_accum = node.cloud_move_accum or 0
 	move_accum = move_accum + constants.enemy.cloud_horizontal_speed_num
 	while move_accum >= constants.enemy.cloud_horizontal_speed_den do
@@ -42,10 +42,10 @@ function cloud.bt_tick(self, blackboard)
 	end
 	node.cloud_move_accum = move_accum
 
-	local wave_accum = node.cloud_wave_accum or 0
+	local wave_accum<const> = node.cloud_wave_accum or 0
 	local wave_phase = node.cloud_wave_phase_millirad or 0
-	local wave_speed_num = round_to_nearest(math.sin(wave_phase / constants.enemy.cloud_wave_phase_denominator) * constants.enemy.cloud_wave_speed_num)
-	local wave_dy, next_wave_accum = consume_axis_accum(wave_accum, wave_speed_num, constants.enemy.cloud_wave_speed_den)
+	local wave_speed_num<const> = round_to_nearest(math.sin(wave_phase / constants.enemy.cloud_wave_phase_denominator) * constants.enemy.cloud_wave_speed_num)
+	local wave_dy<const>, next_wave_accum<const> = consume_axis_accum(wave_accum, wave_speed_num, constants.enemy.cloud_wave_speed_den)
 	self.y = self.y + wave_dy
 	wave_phase = wave_phase + constants.enemy.cloud_wave_phase_step_millirad
 	if wave_phase >= full_circle_milliradians then

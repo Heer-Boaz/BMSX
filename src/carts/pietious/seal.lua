@@ -1,4 +1,4 @@
-local seal = {}
+local seal<const> = {}
 seal.__index = seal
 
 function seal:ctor()
@@ -6,7 +6,7 @@ function seal:ctor()
 	self:gfx('seal')
 end
 
-local function register_seal_definition()
+local register_seal_definition<const> = function()
 	define_prefab({
 		def_id = 'seal',
 		class = seal,

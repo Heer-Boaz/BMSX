@@ -1,20 +1,20 @@
-local ecs = require('ecs')
-local ecs_builtin = require('ecs_builtin')
-local ecs_pipeline = require('ecs_pipeline')
-local world_instance = require('world').instance
+local ecs<const> = require('ecs')
+local ecs_builtin<const> = require('ecs_builtin')
+local ecs_pipeline<const> = require('ecs_pipeline')
+local world_instance<const> = require('world').instance
 
-local tickgroup = ecs.tickgroup
-local ecsystem = ecs.ecsystem
+local tickgroup<const> = ecs.tickgroup
+local ecsystem<const> = ecs.ecsystem
 
-local elevator_update_system = {}
+local elevator_update_system<const> = {}
 elevator_update_system.__index = elevator_update_system
 setmetatable(elevator_update_system, { __index = ecsystem })
 
 local pipeline_registered = false
-local pipeline_ref = 'pt.eup'
+local pipeline_ref<const> = 'pt.eup'
 
 function elevator_update_system:update()
-	local player = object('pietolon')
+	local player<const> = object('pietolon')
 	player.next_vertical_elevator = false
 	player.next_vertical_elevator_id = nil
 	for elevator in world_instance:objects_by_type('elevator_platform', { scope = 'active' }) do
@@ -24,7 +24,7 @@ function elevator_update_system:update()
 	player.vertical_elevator_id = player.next_vertical_elevator_id
 end
 
-local function register_pipeline()
+local register_pipeline<const> = function()
 	if pipeline_registered then
 		return
 	end
@@ -39,8 +39,8 @@ local function register_pipeline()
 	pipeline_registered = true
 end
 
-local function build_pipeline_spec()
-	local nodes = ecs_builtin.default_pipeline_spec()
+local build_pipeline_spec<const> = function()
+	local nodes<const> = ecs_builtin.default_pipeline_spec()
 	local insert_at = #nodes + 1
 	for i = 1, #nodes do
 		if nodes[i].ref == 'objecttick' then
@@ -52,7 +52,7 @@ local function build_pipeline_spec()
 	return nodes
 end
 
-local function apply_pipeline()
+local apply_pipeline<const> = function()
 	ecs_pipeline.defaultecspipelineregistry:build(world_instance, build_pipeline_spec())
 end
 

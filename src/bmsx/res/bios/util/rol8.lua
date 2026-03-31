@@ -1,4 +1,4 @@
-local function rol8(value)
+local rol8<const> = function(value)
 	local rotated = value + value
 	if rotated >= 256 then
 		rotated = rotated - 255

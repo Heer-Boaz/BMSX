@@ -1,10 +1,10 @@
-local dialogue = {}
-local stagger = require('stagger')
+local dialogue<const> = {}
+local stagger<const> = require('stagger')
 
 function dialogue.register_methods(director)
 
 	function director:show_dialogue_page(typed)
-		local page = self.pages[self.page_index]
+		local page<const> = self.pages[self.page_index]
 		clear_text(text_choice_id)
 		stagger.play(self, 'calm', {
 			bg = object(bg_id),
@@ -28,7 +28,7 @@ function dialogue.register_methods(director)
 	end
 
 	function director:update_dialogue_prompt()
-		local main = object(text_main_id)
+		local main<const> = object(text_main_id)
 		if main.is_typing then
 			set_prompt_line('(B) skip')
 			return
@@ -41,7 +41,7 @@ function dialogue.register_methods(director)
 	end
 
 	function director:setup_choice_menu(node)
-		local choice_lines = {}
+		local choice_lines<const> = {}
 		for i = 1, #node.options do
 			choice_lines[i] = node.options[i].label
 		end
@@ -63,9 +63,9 @@ function dialogue.register_states(states)
 
 	states.bg_only = {
 		entering_state = function(self)
-			local node = story[self.node_id]
+			local node<const> = story[self.node_id]
 			apply_background(node.bg)
-			local bg = object(bg_id)
+			local bg<const> = object(bg_id)
 			bg.visible = true
 			bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
 			hide_combat_sprites()
@@ -76,7 +76,7 @@ function dialogue.register_states(states)
 		input_event_handlers = {
 			['a[jp]'] = {
 				go = function(self)
-					local node = story[self.node_id]
+					local node<const> = story[self.node_id]
 					self.node_id = node.next
 					return '/run_node'
 				end,
@@ -86,7 +86,7 @@ function dialogue.register_states(states)
 
 	states.dialogue = {
 		entering_state = function(self)
-			local node = story[self.node_id]
+			local node<const> = story[self.node_id]
 			apply_background(node.bg)
 			object(bg_id).visible = true
 			reset_text_colors()
@@ -105,7 +105,7 @@ function dialogue.register_states(states)
 				return
 			end
 
-			local main = object(text_main_id)
+			local main<const> = object(text_main_id)
 			if main.is_typing then
 				main:type_next()
 			end
@@ -126,12 +126,12 @@ function dialogue.register_states(states)
 
 					if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
-						local node = story[self.node_id]
+						local node<const> = story[self.node_id]
 						self:show_dialogue_page(node.typed)
 						self:update_dialogue_prompt()
 						return
 					end
-					local node = story[self.node_id]
+					local node<const> = story[self.node_id]
 					if node.kind == 'dialogue_inline' then
 						self.node_id = self.inline_next
 						self.inline_pages = {}
@@ -147,14 +147,14 @@ function dialogue.register_states(states)
 
 	states.ending = {
 		entering_state = function(self)
-			local node = story[self.node_id]
+			local node<const> = story[self.node_id]
 			apply_background(node.bg)
 			object(bg_id).visible = true
 			reset_text_colors()
 			clear_text(text_transition_id)
 			clear_text(text_choice_id)
 			clear_text(text_prompt_id)
-			local total = self.stats.planning + self.stats.opdekin + self.stats.rust + self.stats.makeup
+			local total<const> = self.stats.planning + self.stats.opdekin + self.stats.rust + self.stats.makeup
 			local title = nil
 			local total_line = nil
 			local line1 = nil
@@ -192,7 +192,7 @@ function dialogue.register_states(states)
 			if self.stagger_blocked then
 				return
 			end
-			local main = object(text_main_id)
+			local main<const> = object(text_main_id)
 			if main.is_typing then
 				main:type_next()
 				return
@@ -217,7 +217,7 @@ function dialogue.register_states(states)
 						if object(text_main_id).is_typing then return end
 					if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
-						local node = story[self.node_id]
+						local node<const> = story[self.node_id]
 						self:show_dialogue_page(node.typed)
 						return
 					end
@@ -228,7 +228,7 @@ function dialogue.register_states(states)
 
 	states.choice = {
 		entering_state = function(self)
-			local node = story[self.node_id]
+			local node<const> = story[self.node_id]
 			apply_background(node.bg)
 			object(bg_id).visible = true
 			reset_text_colors()
@@ -238,8 +238,8 @@ function dialogue.register_states(states)
 			if self.stagger_blocked then
 				return
 			end
-			local main = object(text_main_id)
-			local choice_text = object(text_choice_id)
+			local main<const> = object(text_main_id)
+			local choice_text<const> = object(text_choice_id)
 			if main.is_typing then
 				main:type_next()
 				choice_text.highlighted_line_index = nil
@@ -259,7 +259,7 @@ function dialogue.register_states(states)
 			['down[jp]'] = {
 				go = function(self)
 					if self.stagger_blocked then return end
-					local node = story[self.node_id]
+					local node<const> = story[self.node_id]
 					self.choice_index = math.min(#node.options, self.choice_index + 1)
 				end,
 			},
@@ -273,8 +273,8 @@ function dialogue.register_states(states)
 				go = function(self)
 					if self.stagger_blocked then return end
 						if object(text_main_id).is_typing then return end
-					local node = story[self.node_id]
-					local option = node.options[self.choice_index]
+					local node<const> = story[self.node_id]
+					local option<const> = node.options[self.choice_index]
 					self:apply_effects(option.effects)
 					self.inline_pages = option.result_pages
 					self.inline_next = option.next

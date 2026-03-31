@@ -1,7 +1,7 @@
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local vlokfoe = {}
+local vlokfoe<const> = {}
 vlokfoe.__index = vlokfoe
 
 function vlokfoe:ctor()

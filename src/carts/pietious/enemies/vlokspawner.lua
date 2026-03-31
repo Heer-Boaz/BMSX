@@ -1,8 +1,8 @@
-local constants = require('constants')
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local constants<const> = require('constants')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local vlokspawner = {}
+local vlokspawner<const> = {}
 vlokspawner.__index = vlokspawner
 
 function vlokspawner:ctor()
@@ -18,8 +18,8 @@ function vlokspawner.bt_tick(self, blackboard)
 		return behaviourtree.running
 	end
 
-	local room = object('room')
-	local random_x = math.random(-5, 4)
+	local room<const> = object('room')
+	local random_x<const> = math.random(-5, 4)
 	inst('enemy.vlokfoe', {
 		direction = random_x < 0 and 'left' or 'right',
 		speed_x_num = random_x * 2,

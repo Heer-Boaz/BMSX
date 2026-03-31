@@ -1,18 +1,18 @@
 -- ecs_builtin.lua
 -- built-in ecs pipeline registration for lua engine
 
-local ecs = require('ecs')
-local ecs_pipeline = require('ecs_pipeline')
-local ecs_systems = require('ecs_systems')
-local input_action_effect_system = require('input_action_effect_system')
+local ecs<const> = require('ecs')
+local ecs_pipeline<const> = require('ecs_pipeline')
+local ecs_systems<const> = require('ecs_systems')
+local input_action_effect_system<const> = require('input_action_effect_system')
 
 local registered = false
 
-local function register_builtin_ecs()
+local register_builtin_ecs<const> = function()
 	if registered then
 		return
 	end
-	local r = ecs_pipeline.defaultecspipelineregistry
+	local r<const> = ecs_pipeline.defaultecspipelineregistry
 	r:register_many({
 		{ id = 'preposition', group = ecs.tickgroup.input, default_priority = -100, create = function(p) return ecs_systems.prepositionsystem.new(p) end },
 		{ id = 'behaviortrees', group = ecs.tickgroup.input, create = function(p) return ecs_systems.behaviortreesystem.new(p) end },
@@ -42,7 +42,7 @@ local function register_builtin_ecs()
 	registered = true
 end
 
-local function default_pipeline_spec()
+local default_pipeline_spec<const> = function()
 	return {
 		{ ref = 'preposition' },
 		{ ref = 'behaviortrees' },

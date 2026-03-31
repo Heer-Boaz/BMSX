@@ -1,4 +1,4 @@
-local function bool01(value)
+local bool01<const> = function(value)
 	if value then
 		return 1
 	end

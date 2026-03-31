@@ -1,11 +1,11 @@
-local constants = require('constants')
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local constants<const> = require('constants')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local crossfoe = {}
+local crossfoe<const> = {}
 crossfoe.__index = crossfoe
 
-local function apply_spin_visual(self)
+local apply_spin_visual<const> = function(self)
 	local imgid
 	local flip_h
 	local flip_v
@@ -38,8 +38,8 @@ function crossfoe:ctor()
 end
 
 function crossfoe.bt_tick_waiting(self, blackboard)
-	local player = object('pietolon')
-	local node = blackboard.nodedata
+	local player<const> = object('pietolon')
+	local node<const> = blackboard.nodedata
 	apply_spin_visual(self)
 	local wait_ticks = node.cross_wait_ticks or constants.enemy.cross_wait_before_fly_steps
 	wait_ticks = wait_ticks - 1
@@ -62,13 +62,13 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 end
 
 function crossfoe.bt_tick_flying(self, blackboard)
-	local player = object('pietolon')
-	local node = blackboard.nodedata
+	local player<const> = object('pietolon')
+	local node<const> = blackboard.nodedata
 	apply_spin_visual(self)
-	local direction_mod = self.cross_state == 'flying_left' and -1 or 1
-	local next_x = self.x + (constants.enemy.cross_horizontal_speed_px * direction_mod)
-	local next_left = next_x
-	local next_right = next_x + self.sx
+	local direction_mod<const> = self.cross_state == 'flying_left' and -1 or 1
+	local next_x<const> = self.x + (constants.enemy.cross_horizontal_speed_px * direction_mod)
+	local next_left<const> = next_x
+	local next_right<const> = next_x + self.sx
 
 	if (self.cross_state == 'flying_left' and self.x < (player.x - player.width))
 		or (self.cross_state == 'flying_right' and self.x > (player.x + (player.width * 2)))

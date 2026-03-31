@@ -12,14 +12,14 @@
 -- broadcasts: subscribe in bind(), read payload data from the event, and
 -- self-clear when the mode returns to 'room'.
 
-local constants = require('constants')
-local font = require('font')
+local constants<const> = require('constants')
+local font<const> = require('font')
 
-local shrine = {}
+local shrine<const> = {}
 shrine.__index = shrine
 
 function shrine:bind_visual()
-	local renderer = self:get_component('customvisualcomponent')
+	local renderer<const> = self:get_component('customvisualcomponent')
 	renderer.producer = function(_ctx)
 		self:render()
 	end
@@ -51,7 +51,7 @@ function shrine:ctor()
 end
 
 function shrine:render()
-	write_words(
+	memwrite(
 		sys_vdp_cmd_arg0,
 		assets.img['shrine_inside'].handle,
 		0,
@@ -67,11 +67,11 @@ function shrine:render()
 		1,
 		0
 	)
-	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
-	local lines = self.lines
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+	local lines<const> = self.lines
 	for i = 1, #lines do
-		local font = self.text_font
-		write_words(
+		local font<const> = self.text_font
+		memwrite(
 			sys_vdp_cmd_arg0,
 			lines[i],
 			constants.shrine.text_x,
@@ -91,11 +91,11 @@ function shrine:render()
 			0,
 			0
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 	end
 end
 
-local room_shrine = {}
+local room_shrine<const> = {}
 room_shrine.__index = room_shrine
 
 function room_shrine:ctor()
@@ -103,7 +103,7 @@ function room_shrine:ctor()
 	self:gfx('shrine')
 end
 
-local function register_shrine_definition()
+local register_shrine_definition<const> = function()
 	define_prefab({
 		def_id = 'shrine',
 		class = shrine,
@@ -114,7 +114,7 @@ local function register_shrine_definition()
 	})
 end
 
-local function register_room_shrine_definition()
+local register_room_shrine_definition<const> = function()
 	define_prefab({
 		def_id = 'room_shrine',
 		class = room_shrine,

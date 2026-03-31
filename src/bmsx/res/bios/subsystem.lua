@@ -1,26 +1,26 @@
-local eventemitter = require('eventemitter')
-local fsm = require('fsm')
-local fsmlibrary = require('fsmlibrary')
-local ecs = require('ecs')
-local subsystem_timeline_module = require('subsystem_timelines')
-local world_instance = require('world').instance
+local eventemitter<const> = require('eventemitter')
+local fsm<const> = require('fsm')
+local fsmlibrary<const> = require('fsmlibrary')
+local ecs<const> = require('ecs')
+local subsystem_timeline_module<const> = require('subsystem_timelines')
+local world_instance<const> = require('world').instance
 
-local tickgroup = ecs.tickgroup
-local ecsystem = ecs.ecsystem
-local subsystemtimelines = subsystem_timeline_module.subsystemtimelines
+local tickgroup<const> = ecs.tickgroup
+local ecsystem<const> = ecs.ecsystem
+local subsystemtimelines<const> = subsystem_timeline_module.subsystemtimelines
 
-local subsystem = {}
+local subsystem<const> = {}
 subsystem.__index = subsystem
 
-local subsystem_group_lookup = {}
+local subsystem_group_lookup<const> = {}
 for _, value in pairs(tickgroup) do
 	subsystem_group_lookup[value] = true
 end
 
-local subsystem_id_max = 2147483647
+local subsystem_id_max<const> = 2147483647
 
-local function generate_subsystem_id(type_name)
-	local baseid = type_name or 'subsystem'
+local generate_subsystem_id<const> = function(type_name)
+	local baseid<const> = type_name or 'subsystem'
 	local uniquenumber = world_instance.idcounter + 1
 	if uniquenumber >= subsystem_id_max then
 		uniquenumber = 1
@@ -39,8 +39,8 @@ local function generate_subsystem_id(type_name)
 	return result
 end
 
-local function resolve_update_group(owner)
-	local group = owner.update_group
+local resolve_update_group<const> = function(owner)
+	local group<const> = owner.update_group
 	if group == nil then
 		return tickgroup.moderesolution
 	end
@@ -52,7 +52,7 @@ end
 
 function subsystem.new(opts)
 	opts = opts or {}
-	local self = setmetatable({}, subsystem)
+	local self<const> = setmetatable({}, subsystem)
 	self.type_name = opts.type_name or 'subsystem'
 	self.id = opts.id or generate_subsystem_id(self.type_name)
 	self.active = false
@@ -71,7 +71,7 @@ function subsystem.new(opts)
 	self.dispose_flag = false
 	self.is_subsystem = true
 	self.events = eventemitter.events_of(self)
-	local definition = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
+	local definition<const> = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
 	self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
 	self.timelines = subsystemtimelines.new(self)
 	self.update_group = opts.update_group or tickgroup.moderesolution
@@ -108,7 +108,7 @@ end
 function subsystem:emit_gameplay_fact(event_or_name, payload)
 	local event
 	if type(event_or_name) ~= 'table' then
-		local spec = { type = event_or_name, emitter = self }
+		local spec<const> = { type = event_or_name, emitter = self }
 		if payload ~= nil then
 			if type(payload) == 'table' and payload.type == nil then
 				for k, v in pairs(payload) do
@@ -238,12 +238,12 @@ function subsystem:set_presentation_enabled(enabled)
 	end
 end
 
-local subsystemupdatesystem = {}
+local subsystemupdatesystem<const> = {}
 subsystemupdatesystem.__index = subsystemupdatesystem
 setmetatable(subsystemupdatesystem, { __index = ecsystem })
 
 function subsystemupdatesystem.new(owner)
-	local self = setmetatable(ecsystem.new(resolve_update_group(owner), owner.update_priority or 0), subsystemupdatesystem)
+	local self<const> = setmetatable(ecsystem.new(resolve_update_group(owner), owner.update_priority or 0), subsystemupdatesystem)
 	self.owner = owner
 	self.__ecs_id = 'subsystem_update:' .. owner.id
 	self.name = 'subsystem_update:' .. owner.id
@@ -253,14 +253,14 @@ function subsystemupdatesystem.new(owner)
 end
 
 function subsystemupdatesystem:update(dt_ms)
-	local owner = self.owner
+	local owner<const> = self.owner
 	if owner == nil or owner.dispose_flag or not owner.active or not owner.update_enabled then
 		return
 	end
 	owner.sc:update(dt_ms)
 end
 
-local subsystemanimationsystem = {}
+local subsystemanimationsystem<const> = {}
 subsystemanimationsystem.__index = subsystemanimationsystem
 setmetatable(subsystemanimationsystem, { __index = ecsystem })
 
@@ -269,7 +269,7 @@ function subsystemanimationsystem.new(owner)
 	if priority == nil then
 		priority = owner.update_priority or 0
 	end
-	local self = setmetatable(ecsystem.new(tickgroup.animation, priority), subsystemanimationsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.animation, priority), subsystemanimationsystem)
 	self.owner = owner
 	self.__ecs_id = 'subsystem_animation:' .. owner.id
 	self.name = 'subsystem_animation:' .. owner.id
@@ -279,19 +279,19 @@ function subsystemanimationsystem.new(owner)
 end
 
 function subsystemanimationsystem:update(dt_ms)
-	local owner = self.owner
+	local owner<const> = self.owner
 	if owner == nil or owner.dispose_flag or not owner.active or not owner.update_enabled then
 		return
 	end
 	owner.timelines:update(dt_ms)
 end
 
-local subsystempresentationsystem = {}
+local subsystempresentationsystem<const> = {}
 subsystempresentationsystem.__index = subsystempresentationsystem
 setmetatable(subsystempresentationsystem, { __index = ecsystem })
 
 function subsystempresentationsystem.new(owner)
-	local self = setmetatable(ecsystem.new(tickgroup.presentation, owner.presentation_priority or 0), subsystempresentationsystem)
+	local self<const> = setmetatable(ecsystem.new(tickgroup.presentation, owner.presentation_priority or 0), subsystempresentationsystem)
 	self.owner = owner
 	self.__ecs_id = 'subsystem_presentation:' .. owner.id
 	self.name = 'subsystem_presentation:' .. owner.id
@@ -301,14 +301,14 @@ function subsystempresentationsystem.new(owner)
 end
 
 function subsystempresentationsystem:update()
-	local owner = self.owner
+	local owner<const> = self.owner
 	if owner == nil or owner.dispose_flag or not owner.active or not owner.visible then
 		return
 	end
 	owner:draw()
 end
 
-local function create_presentation_system(owner)
+local create_presentation_system<const> = function(owner)
 	if not owner.presentation_enabled then
 		return nil
 	end

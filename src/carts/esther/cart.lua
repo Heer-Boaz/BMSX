@@ -3,7 +3,7 @@ local level_module = require('level')
 local player_module = require('player_asm')
 local director_module = require('director')
 
-local function service_irqs()
+local service_irqs<const> = function()
 	local flags = mem[sys_irq_flags]
 	if flags ~= 0 then
 		irq(flags)

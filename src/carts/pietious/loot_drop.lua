@@ -1,11 +1,11 @@
-local constants = require('constants')
-local combat_overlap = require('combat_overlap')
-local worldobject = require('worldobject')
+local constants<const> = require('constants')
+local combat_overlap<const> = require('combat_overlap')
+local worldobject<const> = require('worldobject')
 
-local loot_drop = {}
+local loot_drop<const> = {}
 loot_drop.__index = loot_drop
 
-local function sprite_for_loot_type(loot_type)
+local sprite_for_loot_type<const> = function(loot_type)
 	if loot_type == 'life' then
 		return 'item_health'
 	end
@@ -20,7 +20,7 @@ function loot_drop:ctor()
 	self:gfx(sprite_for_loot_type(self.loot_type))
 end
 
-local function define_loot_drop_fsm()
+local define_loot_drop_fsm<const> = function()
 	define_fsm('loot_drop', {
 		initial = 'active',
 		on = {
@@ -28,7 +28,7 @@ local function define_loot_drop_fsm()
 				if combat_overlap.classify_player_contact(event) ~= 'body' then
 					return
 				end
-				local player = object(event.other_id)
+				local player<const> = object(event.other_id)
 				if player:collect_loot(self.loot_type, self.loot_value) then
 					if self.loot_type == 'life' then
 						player.events:emit('healing')
@@ -56,7 +56,7 @@ local function define_loot_drop_fsm()
 	})
 end
 
-local function register_loot_drop_definition()
+local register_loot_drop_definition<const> = function()
 	define_prefab({
 		def_id = 'loot_drop',
 		class = loot_drop,

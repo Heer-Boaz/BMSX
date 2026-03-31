@@ -1,4 +1,4 @@
-local function clamp_int(value, min_value, max_value)
+local clamp_int<const> = function(value, min_value, max_value)
 	local clamped = value
 	if clamped < min_value then
 		clamped = min_value

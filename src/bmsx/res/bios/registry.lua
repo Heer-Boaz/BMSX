@@ -22,13 +22,13 @@
 --    Access it via require('registry').instance — do not create additional
 --    registry.new() instances unless you have an explicit separate scope.
 
-local registry = {}
+local registry<const> = {}
 registry.__index = registry
 
-local empty_bucket = {}
+local empty_bucket<const> = {}
 
-local function add_to_type_bucket(self, entity)
-	local type_name = entity.type_name
+local add_to_type_bucket<const> = function(self, entity)
+	local type_name<const> = entity.type_name
 	if type_name == nil then
 		return
 	end
@@ -40,12 +40,12 @@ local function add_to_type_bucket(self, entity)
 	bucket[entity.id] = entity
 end
 
-local function remove_from_type_bucket(self, entity)
-	local type_name = entity.type_name
+local remove_from_type_bucket<const> = function(self, entity)
+	local type_name<const> = entity.type_name
 	if type_name == nil then
 		return
 	end
-	local bucket = self._by_type[type_name]
+	local bucket<const> = self._by_type[type_name]
 	if bucket == nil then
 		return
 	end
@@ -56,7 +56,7 @@ local function remove_from_type_bucket(self, entity)
 end
 
 function registry.new()
-	local self = setmetatable({}, registry)
+	local self<const> = setmetatable({}, registry)
 	self._registry = {}
 	self._by_type = {}
 	return self
@@ -75,7 +75,7 @@ end
 -- registry:register(entity): adds entity to the registry keyed by entity.id.
 --   entity.id must be set before calling this.
 function registry:register(entity)
-	local existing = self._registry[entity.id]
+	local existing<const> = self._registry[entity.id]
 	if existing ~= nil and existing ~= entity then
 		error('registry.register duplicate id "' .. entity.id .. '"')
 	end
@@ -88,8 +88,8 @@ end
 --   a no-op unless remove_persistent is explicitly true. Returns false when
 --   removal was blocked, true otherwise.
 function registry:deregister(id_or_entity, remove_persistent)
-	local id = type(id_or_entity) == 'string' and id_or_entity or id_or_entity.id
-	local entity = self._registry[id]
+	local id<const> = type(id_or_entity) == 'string' and id_or_entity or id_or_entity.id
+	local entity<const> = self._registry[id]
 	if entity and entity.registrypersistent and not remove_persistent then
 		return false
 	end
@@ -101,7 +101,7 @@ function registry:deregister(id_or_entity, remove_persistent)
 end
 
 function registry:get_persistent_entities()
-	local out = {}
+	local out<const> = {}
 	for _, entity in pairs(self._registry) do
 		if entity.registrypersistent then
 			out[#out + 1] = entity
@@ -130,9 +130,9 @@ function registry:get_registered_entities_by_type(type_name)
 	return self._by_type[type_name] or empty_bucket
 end
 
-local function iter_registry(state, key)
-	local entries = state.entries
-	local persistent_only = state.persistent_only
+local iter_registry<const> = function(state, key)
+	local entries<const> = state.entries
+	local persistent_only<const> = state.persistent_only
 	local next_key, entity = next(entries, key)
 	while next_key do
 		if not persistent_only or entity.registrypersistent then
@@ -148,16 +148,16 @@ end
 --     type_name      — only yield entities whose .type_name matches
 --     persistent_only — when true, only yield persistent entities
 function registry:iterate(type_name, persistent_only)
-	local entries = type_name and self:get_registered_entities_by_type(type_name) or self._registry
+	local entries<const> = type_name and self:get_registered_entities_by_type(type_name) or self._registry
 	return iter_registry, { entries = entries, persistent_only = persistent_only }, nil
 end
 
-local function iter_by_tag(state, key)
-	local reg = state.registry
-	local tag = state.tag
+local iter_by_tag<const> = function(state, key)
+	local reg<const> = state.registry
+	local tag<const> = state.tag
 	local next_key, entity = next(reg._registry, key)
 	while next_key do
-		local tags = entity.tags
+		local tags<const> = entity.tags
 		if tags and tags[tag] then
 			return next_key, entity
 		end
@@ -172,13 +172,13 @@ function registry:iterate_by_tag(tag)
 	return iter_by_tag, { registry = self, tag = tag }, nil
 end
 
-local function iter_by_tags(state, key)
-	local reg = state.registry
-	local wanted = state.tags
-	local wanted_n = state.tags_n
+local iter_by_tags<const> = function(state, key)
+	local reg<const> = state.registry
+	local wanted<const> = state.tags
+	local wanted_n<const> = state.tags_n
 	local next_key, entity = next(reg._registry, key)
 	while next_key do
-		local tags = entity.tags
+		local tags<const> = entity.tags
 		if tags then
 			local match = true
 			for i = 1, wanted_n do

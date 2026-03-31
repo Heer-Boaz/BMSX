@@ -28,21 +28,21 @@
 --    Do not spawn/despawn while iterating world:objects(). If you need to
 --    defer a spawn/despawn, use a queue and process it after the loop.
 
-local ecs = require('ecs')
-local registry = require('registry')
+local ecs<const> = require('ecs')
+local registry<const> = require('registry')
 
-local tickgroup = ecs.tickgroup
+local tickgroup<const> = ecs.tickgroup
 local world_instance
 
-local world_class = {}
+local world_class<const> = {}
 world_class.__index = world_class
 
-local tickgroup_names = {}
+local tickgroup_names<const> = {}
 for name, value in pairs(tickgroup) do
 	tickgroup_names[value] = name
 end
 
-local phase_order = {
+local phase_order<const> = {
 	tickgroup.input,
 	tickgroup.actioneffect,
 	tickgroup.moderesolution,
@@ -158,12 +158,12 @@ local phase_order = {
 -- 	reset_perf_accumulators(p)
 -- end
 
-local function iter_objects(state, _)
-	local list = state.list
-	local scope = state.scope
+local iter_objects<const> = function(state, _)
+	local list<const> = state.list
+	local scope<const> = state.scope
 	local index = state.index + state.step
 	while true do
-		local obj = list[index]
+		local obj<const> = list[index]
 		if not obj then
 			return nil
 		end
@@ -175,14 +175,14 @@ local function iter_objects(state, _)
 	end
 end
 
-local function iter_objects_with_components(state, _)
-	local bucket = state.bucket
-	local by_id = state.by_id
-	local world = state.world
-	local scope = state.scope
+local iter_objects_with_components<const> = function(state, _)
+	local bucket<const> = state.bucket
+	local by_id<const> = state.by_id
+	local world<const> = state.world
+	local scope<const> = state.scope
 	local next_key, entity = next(bucket, state.reg_key)
 	while next_key do
-		local parent = entity.parent
+		local parent<const> = entity.parent
 		if parent and by_id[parent.id] and world:_object_in_scope(parent, scope) then
 			state.reg_key = next_key
 			return parent, entity
@@ -193,12 +193,12 @@ local function iter_objects_with_components(state, _)
 	return nil
 end
 
-local function iter_subsystems(state, _)
-	local list = state.list
-	local scope = state.scope
+local iter_subsystems<const> = function(state, _)
+	local list<const> = state.list
+	local scope<const> = state.scope
 	local index = state.index + state.step
 	while true do
-		local subsys = list[index]
+		local subsys<const> = list[index]
 		if not subsys then
 			return nil
 		end
@@ -211,7 +211,7 @@ local function iter_subsystems(state, _)
 end
 
 function world_class.new()
-	local self = setmetatable({}, world_class)
+	local self<const> = setmetatable({}, world_class)
 	self._objects = {}
 	self._by_id = {}
 	self._subsystems = {}
@@ -259,7 +259,7 @@ function world_class:set_space(space_id)
 		error('world.set_space unknown space id "' .. tostring(space_id) .. '".')
 	end
 	if self.active_space_id ~= space_id then
-		do local c=sys_palette_color(1);write_words(sys_vdp_cmd_arg0, c.r, c.g, c.b, c.a);write_words(sys_vdp_cmd, sys_vdp_cmd_clear) end
+		do local c<const> = sys_palette_color(1);memwrite(sys_vdp_cmd_arg0, c.r, c.g, c.b, c.a);mem[sys_vdp_cmd] = sys_vdp_cmd_clear end
 	end
 	self.active_space_id = space_id
 	return self.active_space_id
@@ -274,27 +274,27 @@ function world_class:list_spaces()
 end
 
 function world_class:set_object_space(obj, space_id)
-	local target_space = self._spaces[space_id]
+	local target_space<const> = self._spaces[space_id]
 	if target_space == nil then
 		error('world.set_object_space unknown space id "' .. tostring(space_id) .. '".')
 	end
 
-	local object_id = obj.id
+	local object_id<const> = obj.id
 	if self._by_id[object_id] == nil then
 		obj.space_id = space_id
 		return space_id
 	end
 
-	local current_space_id = self._obj_to_space[object_id]
+	local current_space_id<const> = self._obj_to_space[object_id]
 	if current_space_id == space_id then
 		obj.space_id = space_id
 		return space_id
 	end
 
 	if current_space_id ~= nil then
-		local current_space = self._spaces[current_space_id]
+		local current_space<const> = self._spaces[current_space_id]
 		current_space.by_id[object_id] = nil
-		local current_space_objects = current_space.objects
+		local current_space_objects<const> = current_space.objects
 		for i = #current_space_objects, 1, -1 do
 			if current_space_objects[i] == obj then
 				table.remove(current_space_objects, i)
@@ -303,7 +303,7 @@ function world_class:set_object_space(obj, space_id)
 		end
 	end
 
-	local target_space_objects = target_space.objects
+	local target_space_objects<const> = target_space.objects
 	target_space_objects[#target_space_objects + 1] = obj
 	target_space.by_id[object_id] = obj
 	self._obj_to_space[object_id] = space_id
@@ -335,12 +335,12 @@ function world_class:_subsystem_in_scope(subsys, scope)
 end
 
 function world_class:_remove_subsystem_systems(subsys)
-	local systems = subsys.__subsystem_systems
+	local systems<const> = subsys.__subsystem_systems
 	if systems == nil then
 		return
 	end
 	for i = 1, #systems do
-		local sys = systems[i]
+		local sys<const> = systems[i]
 		self.systems:unregister(sys)
 		if sys.id then
 			registry.instance:deregister(sys.id, true)
@@ -354,15 +354,15 @@ function world_class:rebind_subsystem_systems(subsys)
 	if self._subsystems_by_id[subsys.id] ~= subsys or subsys.dispose_flag then
 		return
 	end
-	local subsystem_module = require('subsystem')
-	local systems = {
+	local subsystem_module<const> = require('subsystem')
+	local systems<const> = {
 		subsystem_module.create_update_system(subsys),
 		subsystem_module.create_animation_system(subsys),
 		subsystem_module.create_presentation_system(subsys),
 	}
-	local registered = {}
+	local registered<const> = {}
 	for i = 1, #systems do
-		local sys = systems[i]
+		local sys<const> = systems[i]
 		if sys ~= nil then
 			self.systems:register(sys)
 			registry.instance:register(sys)
@@ -384,7 +384,7 @@ end
 --   the object and emits the 'spawn' event.
 --   obj.id must be unique. Returns obj.
 function world_class:spawn(obj, pos)
-	local existing = self._by_id[obj.id]
+	local existing<const> = self._by_id[obj.id]
 	if existing ~= nil and existing ~= obj then
 		error('world.spawn duplicate id "' .. obj.id .. '".')
 	end
@@ -408,7 +408,7 @@ function world_class:spawn(obj, pos)
 end
 
 function world_class:spawn_subsystem(subsys)
-	local existing = self._subsystems_by_id[subsys.id]
+	local existing<const> = self._subsystems_by_id[subsys.id]
 	if existing ~= nil and existing ~= subsys then
 		error('world.spawn_subsystem duplicate id "' .. subsys.id .. '".')
 	end
@@ -434,12 +434,12 @@ function world_class:despawn(id_or_obj)
 		obj = id_or_obj
 	end
 
-	local object_id = obj.id
-	local space_id = self._obj_to_space[object_id]
+	local object_id<const> = obj.id
+	local space_id<const> = self._obj_to_space[object_id]
 	if space_id ~= nil then
-		local space = self._spaces[space_id]
+		local space<const> = self._spaces[space_id]
 		space.by_id[object_id] = nil
-		local space_objects = space.objects
+		local space_objects<const> = space.objects
 		for i = #space_objects, 1, -1 do
 			if space_objects[i] == obj then
 				table.remove(space_objects, i)
@@ -464,7 +464,7 @@ end
 -- world:get(id): returns the live object with this id, or nil.
 --   Returns nil if the object is pending disposal (dispose_flag=true).
 function world_class:get(id)
-	local obj = self._by_id[id]
+	local obj<const> = self._by_id[id]
 	if obj == nil then
 		return nil
 	end
@@ -475,7 +475,7 @@ function world_class:get(id)
 end
 
 function world_class:get_subsystem(id)
-	local subsys = self._subsystems_by_id[id]
+	local subsys<const> = self._subsystems_by_id[id]
 	if subsys == nil then
 		return nil
 	end
@@ -492,18 +492,18 @@ end
 --   Usage:  for obj in world_instance:objects({scope='active'}) do … end
 --   Do NOT spawn or despawn inside this loop.
 function world_class:objects(opts)
-	local scope = opts and opts.scope or 'all'
-	local reverse = opts and opts.reverse or false
-	local step = reverse and -1 or 1
-	local start = reverse and (#self._objects + 1) or 0
+	local scope<const> = opts and opts.scope or 'all'
+	local reverse<const> = opts and opts.reverse or false
+	local step<const> = reverse and -1 or 1
+	local start<const> = reverse and (#self._objects + 1) or 0
 	return iter_objects, { world = self, list = self._objects, scope = scope, step = step, index = start }, nil
 end
 
 function world_class:subsystems(opts)
-	local scope = opts and opts.scope or 'all'
-	local reverse = opts and opts.reverse or false
-	local step = reverse and -1 or 1
-	local start = reverse and (#self._subsystems + 1) or 0
+	local scope<const> = opts and opts.scope or 'all'
+	local reverse<const> = opts and opts.reverse or false
+	local step<const> = reverse and -1 or 1
+	local start<const> = reverse and (#self._subsystems + 1) or 0
 	return iter_subsystems, { world = self, list = self._subsystems, scope = scope, step = step, index = start }, nil
 end
 
@@ -512,7 +512,7 @@ end
 --   given type on every matching object. opts.scope follows the same rules as
 --   world:objects(). Used by ECS systems; rarely needed in cart code.
 function world_class:objects_with_components(type_name, opts)
-	local scope = opts and opts.scope or 'all'
+	local scope<const> = opts and opts.scope or 'all'
 	return iter_objects_with_components,
 		{ world = self, bucket = registry.instance:get_registered_entities_by_type(type_name), by_id = self._by_id, scope = scope, reg_key = nil },
 			nil
@@ -521,11 +521,11 @@ end
 -- Stateless iterator functions for world queries.
 -- These traverse the registry directly without allocating a results table.
 
-local function iter_world_by_type(state, key)
-	local bucket = state.bucket
-	local by_id = state.by_id
-	local world = state.world
-	local scope = state.scope
+local iter_world_by_type<const> = function(state, key)
+	local bucket<const> = state.bucket
+	local by_id<const> = state.by_id
+	local world<const> = state.world
+	local scope<const> = state.scope
 	local next_key, entity = next(bucket, state.reg_key)
 	while next_key do
 		if by_id[entity.id] and world:_object_in_scope(entity, scope) then
@@ -538,15 +538,15 @@ local function iter_world_by_type(state, key)
 	return nil
 end
 
-local function iter_world_by_tag(state, key)
-	local reg_table = state.reg
-	local tag = state.tag
-	local by_id = state.by_id
-	local world = state.world
-	local scope = state.scope
+local iter_world_by_tag<const> = function(state, key)
+	local reg_table<const> = state.reg
+	local tag<const> = state.tag
+	local by_id<const> = state.by_id
+	local world<const> = state.world
+	local scope<const> = state.scope
 	local next_key, entity = next(reg_table, state.reg_key)
 	while next_key do
-		local tags = entity.tags
+		local tags<const> = entity.tags
 		if tags and tags[tag] and by_id[entity.id] and world:_object_in_scope(entity, scope) then
 			state.reg_key = next_key
 			return entity
@@ -563,7 +563,7 @@ end
 --   Like UE5 GetAllActorsOfClass — returns all objects spawned from a given
 --   define_prefab definition_id.
 function world_class:objects_by_type(obj_type_name, opts)
-	local scope = opts and opts.scope or 'all'
+	local scope<const> = opts and opts.scope or 'all'
 	return iter_world_by_type, { bucket = registry.instance:get_registered_entities_by_type(obj_type_name), by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil
 end
 
@@ -572,14 +572,14 @@ end
 --   tag-based queries. opts.scope follows the same rules as world:objects().
 --   Like UE5 GetAllActorsWithTag.
 function world_class:objects_by_tag(tag, opts)
-	local scope = opts and opts.scope or 'all'
+	local scope<const> = opts and opts.scope or 'all'
 	return iter_world_by_tag, { reg = registry.instance._registry, tag = tag, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil
 end
 
 -- world:find_by_type(type_name, opts?)
 --   Returns the first object matching type_name (or nil). Like UE5 GetActorOfClass.
 function world_class:find_by_type(obj_type_name, opts)
-	local scope = opts and opts.scope or 'all'
+	local scope<const> = opts and opts.scope or 'all'
 	for entity in iter_world_by_type, { bucket = registry.instance:get_registered_entities_by_type(obj_type_name), by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil do
 		return entity
 	end
@@ -589,7 +589,7 @@ end
 -- world:find_by_tag(tag, opts?)
 --   Returns the first object carrying the given tag (or nil). Like UE5 GetActorWithTag.
 function world_class:find_by_tag(tag, opts)
-	local scope = opts and opts.scope or 'all'
+	local scope<const> = opts and opts.scope or 'all'
 	for entity in iter_world_by_tag, { reg = registry.instance._registry, tag = tag, by_id = self._by_id, world = self, scope = scope, reg_key = nil }, nil do
 		return entity
 	end
@@ -618,14 +618,14 @@ function world_class:update()
 
 	-- local cleanup_start = $.platform.clock.perf_now()
 		for i = #self._objects, 1, -1 do
-			local obj = self._objects[i]
+			local obj<const> = self._objects[i]
 		if obj.dispose_flag then
-			local object_id = obj.id
-			local space_id = self._obj_to_space[object_id]
+			local object_id<const> = obj.id
+			local space_id<const> = self._obj_to_space[object_id]
 			if space_id ~= nil then
-				local space = self._spaces[space_id]
+				local space<const> = self._spaces[space_id]
 				space.by_id[object_id] = nil
-				local space_objects = space.objects
+				local space_objects<const> = space.objects
 				for j = #space_objects, 1, -1 do
 					if space_objects[j] == obj then
 						table.remove(space_objects, j)
@@ -642,9 +642,9 @@ function world_class:update()
 		end
 		end
 		for i = #self._subsystems, 1, -1 do
-			local subsys = self._subsystems[i]
+			local subsys<const> = self._subsystems[i]
 			if subsys.dispose_flag then
-				local subsys_id = subsys.id
+				local subsys_id<const> = subsys.id
 				self:_remove_subsystem_systems(subsys)
 				subsys:onderegister()
 				subsys:dispose()
@@ -676,7 +676,7 @@ function world_class:clear()
 		self._objects[i]:dispose()
 	end
 	for i = #self._subsystems, 1, -1 do
-		local subsys = self._subsystems[i]
+		local subsys<const> = self._subsystems[i]
 		self:_remove_subsystem_systems(subsys)
 		registry.instance:deregister(subsys.id, true)
 		subsys:onderegister()

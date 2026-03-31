@@ -1,7 +1,7 @@
 -- timeline.lua
 -- timeline runtime for system rom
 --
-local clamp_int = require('util/clamp_int')
+local clamp_int<const> = require('util/clamp_int')
 --
 -- DESIGN PRINCIPLES — timeline authoring
 --
@@ -34,19 +34,19 @@ local clamp_int = require('util/clamp_int')
 --    also add/remove tags for their duration; declare them in `windows` to
 --    avoid writing the start/end markers manually.
 
-local timeline_start_index = -1
+local timeline_start_index<const> = -1
 
-local timeline = {}
+local timeline<const> = {}
 timeline.__index = timeline
 timeline.__is_timeline = true
 
-local function clear_step_events(self)
+local clear_step_events<const> = function(self)
 	self.step_has_frame_event = false
 	self.step_has_end_event = false
 end
 
-local function write_frame_event(self, previous, current, value, rewound, direction, reason)
-	local event = self.step_frame_event
+local write_frame_event<const> = function(self, previous, current, value, rewound, direction, reason)
+	local event<const> = self.step_frame_event
 	event.previous = previous
 	event.current = current
 	event.value = value
@@ -56,38 +56,38 @@ local function write_frame_event(self, previous, current, value, rewound, direct
 	self.step_has_frame_event = true
 end
 
-local function write_end_event(self, frame, mode, wrapped)
-	local event = self.step_end_event
+local write_end_event<const> = function(self, frame, mode, wrapped)
+	local event<const> = self.step_end_event
 	event.frame = frame
 	event.mode = mode
 	event.wrapped = wrapped
 	self.step_has_end_event = true
 end
 
-local function expand_timeline_windows(markers, windows)
+local expand_timeline_windows<const> = function(markers, windows)
 	if not windows or #windows == 0 then
 		return markers or {}
 	end
-	local out = {}
+	local out<const> = {}
 	if markers then
 		for i = 1, #markers do
 			out[#out + 1] = markers[i]
 		end
 	end
 	for i = 1, #windows do
-		local window_def = windows[i]
-		local name = window_def.name
-		local tag = window_def.tag or ('timeline.window.' .. name)
-		local start_at = window_def.start
-		local start = {
+		local window_def<const> = windows[i]
+		local name<const> = window_def.name
+		local tag<const> = window_def.tag or ('timeline.window.' .. name)
+		local start_at<const> = window_def.start
+		local start<const> = {
 			frame = start_at.frame,
 			u = start_at.u,
 			event = 'window.' .. name .. '.start',
 			payload = window_def.payloadstart,
 			add_tags = { tag },
 		}
-		local end_at = window_def['end']
-		local finish = {
+		local end_at<const> = window_def['end']
+		local finish<const> = {
 			frame = end_at.frame,
 			u = end_at.u,
 			event = 'window.' .. name .. '.end',
@@ -100,34 +100,34 @@ local function expand_timeline_windows(markers, windows)
 	return out
 end
 
-local function clamp_marker_frame(at, length)
+local clamp_marker_frame<const> = function(at, length)
 	if at.frame ~= nil then
 		return clamp_int(at.frame, 0, length - 1)
 	end
-	local normalized = clamp_int(at.u or 0, 0, 1)
+	local normalized<const> = clamp_int(at.u or 0, 0, 1)
 	return clamp_int(math.floor(normalized * (length - 1)), 0, length - 1)
 end
 
-local function compile_timeline_markers(def, length)
-	local cache = { by_frame = {}, controlled_tags = {} }
-	local markers = expand_timeline_windows(def.markers or {}, def.windows or {})
-	local controlled = {}
+local compile_timeline_markers<const> = function(def, length)
+	local cache<const> = { by_frame = {}, controlled_tags = {} }
+	local markers<const> = expand_timeline_windows(def.markers or {}, def.windows or {})
+	local controlled<const> = {}
 	for i = 1, #markers do
-		local marker = markers[i]
-		local adds = marker.add_tags
+		local marker<const> = markers[i]
+		local adds<const> = marker.add_tags
 		if adds then
 			for j = 1, #adds do
 				controlled[adds[j]] = true
 			end
 		end
-		local removes = marker.remove_tags
+		local removes<const> = marker.remove_tags
 		if removes then
 			for j = 1, #removes do
 				controlled[removes[j]] = true
 			end
 		end
 		if length > 0 then
-			local frame = clamp_marker_frame(marker, length)
+			local frame<const> = clamp_marker_frame(marker, length)
 			local bucket = cache.by_frame[frame]
 			if not bucket then
 				bucket = {}
@@ -148,11 +148,11 @@ local function compile_timeline_markers(def, length)
 	return cache
 end
 
-local function expand_frames(frames, repetitions)
+local expand_frames<const> = function(frames, repetitions)
 	if repetitions <= 1 then
 		return frames
 	end
-	local out = {}
+	local out<const> = {}
 	for r = 1, repetitions do
 		for i = 1, #frames do
 			out[#out + 1] = frames[i]
@@ -161,11 +161,11 @@ local function expand_frames(frames, repetitions)
 	return out
 end
 
-local function build_frame_sequence(sequence)
-	local out = {}
+local build_frame_sequence<const> = function(sequence)
+	local out<const> = {}
 	for i = 1, #sequence do
-		local entry = sequence[i]
-		local hold = entry.hold or 1
+		local entry<const> = sequence[i]
+		local hold<const> = entry.hold or 1
 		for h = 1, hold do
 			out[#out + 1] = entry.value
 		end
@@ -173,8 +173,8 @@ local function build_frame_sequence(sequence)
 	return out
 end
 
-local function build_pingpong_frames(frames, include_endpoints)
-	local out = {}
+local build_pingpong_frames<const> = function(frames, include_endpoints)
+	local out<const> = {}
 	for i = 1, #frames do
 		out[#out + 1] = frames[i]
 	end
@@ -199,8 +199,8 @@ end
 -- timeline.range(n): returns a sequential frame list [0, 1, 2, …, n-1].
 -- Use for simple timer or single-row sprite timelines instead of writing
 -- out the list manually.  Example: timeline.range(30) = 30-frame once timer.
-local function range(frame_count)
-	local frames = {}
+local range<const> = function(frame_count)
+	local frames<const> = {}
 	for i = 0, frame_count - 1 do
 		frames[#frames + 1] = i
 	end
@@ -213,19 +213,19 @@ end
 -- directly in cart code — pass a plain table to `def` and let the FSM handle
 -- construction.  See DESIGN PRINCIPLES rule 1 at the top of this file.
 function timeline.new(def)
-	local self = setmetatable({}, timeline)
+	local self<const> = setmetatable({}, timeline)
 	self.def = def
 	self.id = def.id
 	self.tracks = def.tracks
 	self.repetitions = def.repetitions or 1
 	local continuous = def.continuous
-	local frame_source = def.frames
+	local frame_source<const> = def.frames
 	if frame_source == nil and self.tracks ~= nil then
 		self.frames = { {} }
 		self.length = 1
 		self.built = true
 	end
-	local source_type = type(frame_source)
+	local source_type<const> = type(frame_source)
 	if source_type == 'function' then
 		self.frame_builder = frame_source
 		self.frames = {}
@@ -270,7 +270,7 @@ function timeline:build(params)
 	if not self.frame_builder then
 		error('[timeline] timeline "' .. tostring(self.id) .. '" has no frame builder.')
 	end
-	local frames = self.frame_builder(params)
+	local frames<const> = self.frame_builder(params)
 	if type(frames) ~= 'table' then
 		error('[timeline] timeline "' .. tostring(self.id) .. '" frame builder must return a table.')
 	end
@@ -353,7 +353,7 @@ function timeline:force_seek(frame)
 		self.direction = 1
 		return
 	end
-	local clamped = clamp_int(frame, timeline_start_index, self.length - 1)
+	local clamped<const> = clamp_int(frame, timeline_start_index, self.length - 1)
 	self.head = clamped
 	self.ticks = 0
 	if self.playback_mode ~= 'pingpong' then
@@ -367,8 +367,8 @@ function timeline:advance_internal(reason)
 	if self.length == 0 then
 		return nil
 	end
-	local delta = self.playback_mode == 'pingpong' and self.direction or 1
-	local target = self.head + (self.head == timeline_start_index and 1 or delta)
+	local delta<const> = self.playback_mode == 'pingpong' and self.direction or 1
+	local target<const> = self.head + (self.head == timeline_start_index and 1 or delta)
 	return self:apply_frame(target, reason)
 end
 
@@ -376,8 +376,8 @@ function timeline:apply_frame(target, reason)
 	if self.length == 0 then
 		return nil
 	end
-	local last_index = self.length - 1
-	local previous = self.head
+	local last_index<const> = self.length - 1
+	local previous<const> = self.head
 	local next = target
 	local rewound
 	local emit_frame

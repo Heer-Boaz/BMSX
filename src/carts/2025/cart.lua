@@ -1,39 +1,39 @@
 require('globals')
 require('story')
-local start_node = 'title'
+local start_node<const> = 'title'
 -- local start_node = 'combat_wekker'
 
-local combat_module = require('combat')
-local dialogue_module = require('dialogue')
-local transition_module = require('transition')
-local dialogue_node_kinds = {
+local combat_module<const> = require('combat')
+local dialogue_module<const> = require('dialogue')
+local transition_module<const> = require('transition')
+local dialogue_node_kinds<const> = {
 	dialogue = true,
 	dialogue_inline = true,
 }
 
-local director_def_id = 'p3.director'
-local director_fsm_id = 'p3.director.fsm'
+local director_def_id<const> = 'p3.director'
+local director_fsm_id<const> = 'p3.director.fsm'
 local combat_director_instance = nil
 
-local director = {}
+local director<const> = {}
 director.__index = director
 
 -- Example: optional hook for atlas load completion (return true to skip BIOS mapping).
-local function on_vdp_load_example(job_id, slot, atlas_id, status)
+local on_vdp_load_example<const> = function(job_id, slot, atlas_id, status)
 	-- Example: handle "done"/"error" and optionally call vdp_map_slot(slot, atlas_id).
 end
 
 function director:apply_effects(effects)
 	for i = 1, #effects do
-		local effect = effects[i]
+		local effect<const> = effects[i]
 		self.stats[effect.stat] = self.stats[effect.stat] + effect.add
 	end
 end
 
 dialogue_module.register_methods(director)
 
-local function build_director_fsm()
-	local states = {
+local build_director_fsm<const> = function()
+	local states<const> = {
 		boot = {
 			entering_state = function(self)
 				self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
@@ -50,8 +50,8 @@ local function build_director_fsm()
 		},
 		run_node = {
 			entering_state = function(self)
-				local node = story[self.node_id]
-				local just_finished_combat = self.just_finished_combat
+				local node<const> = story[self.node_id]
+				local just_finished_combat<const> = self.just_finished_combat
 				$.emit('story.node.enter', 'world', { node_id = self.node_id, node_kind = node.kind, bg = node.bg, label = node.label, just_finished_combat = just_finished_combat, last_combat_monster_imgid = self.last_combat_monster_imgid })
 				self.just_finished_combat = false
 				if node.kind == 'transition' then
@@ -104,7 +104,7 @@ local function build_director_fsm()
 		states = states,
 	})
 end
-local function register_director()
+local register_director<const> = function()
 	define_prefab({
 		def_id = director_def_id,
 		class = director,
@@ -214,15 +214,15 @@ function init()
 end
 
 function new_game()
-	local w = display_width()
-	local h = display_height()
-	local line_height = 16
-	local prompt_lines = 1
-	local choice_lines = 4
-	local main_lines = 4
-	local prompt_top = h - (line_height * prompt_lines)
-	local choice_top = h - (line_height * (prompt_lines + choice_lines))
-	local main_top = h - (line_height * (prompt_lines + choice_lines + main_lines))
+	local w<const> = display_width()
+	local h<const> = display_height()
+	local line_height<const> = 16
+	local prompt_lines<const> = 1
+	local choice_lines<const> = 4
+	local main_lines<const> = 4
+	local prompt_top<const> = h - (line_height * prompt_lines)
+	local choice_top<const> = h - (line_height * (prompt_lines + choice_lines))
+	local main_top<const> = h - (line_height * (prompt_lines + choice_lines + main_lines))
 
 	inst('p3.bg', {
 		id = bg_id,
@@ -260,7 +260,7 @@ function new_game()
 		visible = false,
 	})
 
-	local horizontal_margin = w / 10
+	local horizontal_margin<const> = w / 10
 	inst('p3.text.main', {
 		id = text_main_id,
 		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
@@ -326,18 +326,18 @@ function new_game()
 	inst(director_def_id, { id = director_instance_id })
 end
 
-local function test()
+local test<const> = function()
 	-- assert(false)
 end
 
-local function cart_update(_dt)
+local cart_update<const> = function(_dt)
 	-- assert(false)
 	-- print(_dt)
 	test()
 end
 
-local function service_irqs()
-	local flags = mem[sys_irq_flags]
+local service_irqs<const> = function()
+	local flags<const> = mem[sys_irq_flags]
 	if flags ~= 0 then
 		irq(flags)
 	end

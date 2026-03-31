@@ -1,8 +1,8 @@
-local stagger = {}
+local stagger<const> = {}
 
-local stagger_timeline_prefix = 'p3.stagger.'
+local stagger_timeline_prefix<const> = 'p3.stagger.'
 
-local presets = {
+local presets<const> = {
 	calm = {
 		offset = 0.15,
 		bg_duration = 0.18,
@@ -44,7 +44,7 @@ local presets = {
 	},
 }
 
-local function clamp01(value)
+local clamp01<const> = function(value)
 	if value < 0 then
 		return 0
 	end
@@ -54,12 +54,12 @@ local function clamp01(value)
 	return value
 end
 
-local function ease_out_quart(u)
-	local x = 1 - u
+local ease_out_quart<const> = function(u)
+	local x<const> = 1 - u
 	return 1 - (x * x * x * x)
 end
 
-local function resolve_ease(kind)
+local resolve_ease<const> = function(kind)
 	if kind == 'quad' then
 		return easing.ease_out_quad
 	end
@@ -72,59 +72,59 @@ local function resolve_ease(kind)
 	return easing.smoothstep
 end
 
-local function tween_u(time, start_time, duration, ease)
+local tween_u<const> = function(time, start_time, duration, ease)
 	local u = (time - start_time) / duration
 	u = clamp01(u)
 	return ease(u)
 end
 
-local function apply_text_alpha(text_obj, alpha)
-	local color = text_obj.text_color
+local apply_text_alpha<const> = function(text_obj, alpha)
+	local color<const> = text_obj.text_color
 	color.a = alpha
 end
 
-local function apply_bg_alpha(bg, base, alpha)
-	local color = bg.sprite_component.colorize
+local apply_bg_alpha<const> = function(bg, base, alpha)
+	local color<const> = bg.sprite_component.colorize
 	color.r = base.r
 	color.g = base.g
 	color.b = base.b
 	color.a = alpha
 end
 
-local function pose_apply(entry, scale, nudge)
-	local obj = entry.obj
-	local sc = obj.sprite_component
-	local target = sc.scale
+local pose_apply<const> = function(entry, scale, nudge)
+	local obj<const> = entry.obj
+	local sc<const> = obj.sprite_component
+	local target<const> = sc.scale
 	target.x = entry.base_scale_x * scale
 	target.y = entry.base_scale_y * scale
 	obj.y = entry.base_y + nudge
 end
 
-local function stagger_track(target, params, event)
-	local cfg = params.cfg
-	local t = event.time_seconds
-	local bg = params.bg
-	local text_main = params.text_main
-	local text_choice = params.text_choice
-	local text_prompt = params.text_prompt
-	local bg_ease = params.bg_ease
-	local pose_ease = params.pose_ease
-	local text_ease = params.text_ease
-	local text_active = text_main ~= nil and text_main.is_typing
+local stagger_track<const> = function(target, params, event)
+	local cfg<const> = params.cfg
+	local t<const> = event.time_seconds
+	local bg<const> = params.bg
+	local text_main<const> = params.text_main
+	local text_choice<const> = params.text_choice
+	local text_prompt<const> = params.text_prompt
+	local bg_ease<const> = params.bg_ease
+	local pose_ease<const> = params.pose_ease
+	local text_ease<const> = params.text_ease
+	local text_active<const> = text_main ~= nil and text_main.is_typing
 
 	target.stagger_blocked = t < cfg.text_start
 
 	if bg then
-		local u = tween_u(t, cfg.bg_start, cfg.bg_duration, bg_ease)
-		local alpha = cfg.bg_from + ((cfg.bg_to - cfg.bg_from) * u)
+		local u<const> = tween_u(t, cfg.bg_start, cfg.bg_duration, bg_ease)
+		local alpha<const> = cfg.bg_from + ((cfg.bg_to - cfg.bg_from) * u)
 		apply_bg_alpha(bg, params.bg_base_color, alpha)
 	end
 
-	local poses = params.pose_targets
+	local poses<const> = params.pose_targets
 	if poses then
-		local u = tween_u(t, cfg.pose_start, cfg.pose_duration, pose_ease)
-		local scale = cfg.pose_from + ((cfg.pose_to - cfg.pose_from) * u)
-		local nudge = text_active and params.pose_text_nudge or 0
+		local u<const> = tween_u(t, cfg.pose_start, cfg.pose_duration, pose_ease)
+		local scale<const> = cfg.pose_from + ((cfg.pose_to - cfg.pose_from) * u)
+		local nudge<const> = text_active and params.pose_text_nudge or 0
 		for i = 1, #poses do
 			pose_apply(poses[i], scale, nudge)
 		end
@@ -143,8 +143,8 @@ local function stagger_track(target, params, event)
 		params.text_started = true
 	end
 
-	local text_u = tween_u(t, cfg.text_start, cfg.text_duration, text_ease)
-	local text_alpha = cfg.text_from + ((cfg.text_to - cfg.text_from) * text_u)
+	local text_u<const> = tween_u(t, cfg.text_start, cfg.text_duration, text_ease)
+	local text_alpha<const> = cfg.text_from + ((cfg.text_to - cfg.text_from) * text_u)
 	if text_main then
 		apply_text_alpha(text_main, params.text_base_alpha * text_alpha)
 	end
@@ -156,12 +156,12 @@ local function stagger_track(target, params, event)
 	end
 end
 
-local function ensure_timeline(owner, preset_id, cfg)
-	local timeline_id = stagger_timeline_prefix .. preset_id
+local ensure_timeline<const> = function(owner, preset_id, cfg)
+	local timeline_id<const> = stagger_timeline_prefix .. preset_id
 	if owner:get_timeline(timeline_id) then
 		return timeline_id
 	end
-	local total = cfg.text_start + cfg.text_duration
+	local total<const> = cfg.text_start + cfg.text_duration
 	owner:define_timeline(timeline.new({
 		id = timeline_id,
 		continuous = true,
@@ -174,14 +174,14 @@ local function ensure_timeline(owner, preset_id, cfg)
 	return timeline_id
 end
 
-local function build_pose_targets(pose_targets)
+local build_pose_targets<const> = function(pose_targets)
 	if not pose_targets then
 		return nil
 	end
-	local entries = {}
+	local entries<const> = {}
 	for i = 1, #pose_targets do
-		local obj = pose_targets[i]
-		local scale = obj.sprite_component.scale
+		local obj<const> = pose_targets[i]
+		local scale<const> = obj.sprite_component.scale
 		entries[#entries + 1] = {
 			obj = obj,
 			base_scale_x = scale.x,
@@ -193,9 +193,9 @@ local function build_pose_targets(pose_targets)
 end
 
 function stagger.play(owner, preset_id, opts)
-	local cfg = presets[preset_id]
+	local cfg<const> = presets[preset_id]
 	opts = opts or {}
-	local timeline_cfg = {
+	local timeline_cfg<const> = {
 		bg_start = 0,
 		bg_duration = cfg.bg_duration,
 		pose_start = cfg.offset,
@@ -209,15 +209,15 @@ function stagger.play(owner, preset_id, opts)
 		text_from = 0,
 		text_to = 1,
 	}
-	local timeline_id = ensure_timeline(owner, preset_id, timeline_cfg)
-	local bg = opts.bg
-	local text_main = opts.text_main
-	local text_choice = opts.text_choice
-	local text_prompt = opts.text_prompt
+	local timeline_id<const> = ensure_timeline(owner, preset_id, timeline_cfg)
+	local bg<const> = opts.bg
+	local text_main<const> = opts.text_main
+	local text_choice<const> = opts.text_choice
+	local text_prompt<const> = opts.text_prompt
 	local text_base_alpha = 1
 
 	if bg then
-		local base = bg.sprite_component.colorize
+		local base<const> = bg.sprite_component.colorize
 		timeline_cfg.bg_base_color = { r = base.r, g = base.g, b = base.b, a = base.a }
 		if opts.bg_dim ~= nil and not opts.bg_dim then
 			timeline_cfg.bg_from = base.a

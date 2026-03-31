@@ -1,10 +1,10 @@
-local combat_overlap = require('combat_overlap')
-local combat_damage = require('combat_damage')
-local constants = require('constants')
-local components = require('components')
+local combat_overlap<const> = require('combat_overlap')
+local combat_damage<const> = require('combat_damage')
+local constants<const> = require('constants')
+local components<const> = require('components')
 
-local enemy_base = {}
-local damaging_contact_kinds = {
+local enemy_base<const> = {}
+local damaging_contact_kinds<const> = {
 	sword = true,
 	projectile = true,
 }
@@ -80,7 +80,7 @@ function enemy_base.bind(self)
 end
 
 function enemy_base.spawn_death_effect(self)
-	local room = object('room')
+	local room<const> = object('room')
 	inst('enemy_explosion', {
 		room_number = object('c').current_room_number,
 		loot_type = self:choose_drop_type(),
@@ -116,13 +116,13 @@ function enemy_base.process_damage_result(self, result)
 end
 
 function enemy_base.on_overlap(self, event)
-	local player = object('pietolon')
-	local contact_kind = combat_overlap.classify_player_contact(event)
+	local player<const> = object('pietolon')
+	local contact_kind<const> = combat_overlap.classify_player_contact(event)
 	if contact_kind == nil then
 		return
 	end
 	if damaging_contact_kinds[contact_kind] then
-		local result = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, contact_kind))
+		local result<const> = combat_damage.resolve(self, combat_damage.build_weapon_request(self, self.enemy_kind, event, contact_kind))
 		self:process_damage_result(result)
 	end
 	if contact_kind == 'body' and self.dangerous then
@@ -138,7 +138,7 @@ function enemy_base.on_overlap(self, event)
 end
 
 function enemy_base.extend(enemy_class, enemy_kind)
-	local original_ctor = enemy_class.ctor
+	local original_ctor<const> = enemy_class.ctor
 	enemy_class.enemy_kind = enemy_kind
 	enemy_class.bind = enemy_base.bind
 	enemy_class.spawn_death_effect = enemy_base.spawn_death_effect

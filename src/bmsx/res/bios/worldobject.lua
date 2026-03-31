@@ -58,26 +58,26 @@
 --    Moving an object to a non-active space hides it from gameplay queries
 --    without destroying it (components, subscriptions, and FSM persist).
 --    Pattern: move enemies to 'transition' during screen transitions, not despawn.
-local eventemitter = require('eventemitter')
-local fsm = require('fsm')
-local fsmlibrary = require('fsmlibrary')
-local components = require('components')
-local behaviourtree = require('behaviourtree')
-local world_instance = require('world').instance
-local registry_instance = require('registry').instance
+local eventemitter<const> = require('eventemitter')
+local fsm<const> = require('fsm')
+local fsmlibrary<const> = require('fsmlibrary')
+local components<const> = require('components')
+local behaviourtree<const> = require('behaviourtree')
+local world_instance<const> = require('world').instance
+local registry_instance<const> = require('registry').instance
 
-local worldobject = {}
+local worldobject<const> = {}
 worldobject.__index = worldobject
 
-local world_id_max = 2147483647
+local world_id_max<const> = 2147483647
 
-local function component_key(type_or_name)
-	local t = type(type_or_name)
+local component_key<const> = function(type_or_name)
+	local t<const> = type(type_or_name)
 	if t == 'string' then
 		return string.lower(type_or_name)
 	end
 	if t == 'table' then
-		local name = type_or_name.type_name or type_or_name.typename or type_or_name.name
+		local name<const> = type_or_name.type_name or type_or_name.typename or type_or_name.name
 		if name == nil then
 			error('worldobject component key table is missing type name')
 		end
@@ -88,7 +88,7 @@ end
 
 function worldobject.new(opts)
 	opts = opts or {}
-	local self = setmetatable({}, worldobject)
+	local self<const> = setmetatable({}, worldobject)
 	self.type_name = opts.type_name or 'worldobject'
 	self.id = opts.id or self:generate_id()
 	self.x = opts.x or 0
@@ -110,7 +110,7 @@ function worldobject.new(opts)
 	self.space_id = opts.space_id
 	self.dispose_flag = false
 	self.events = eventemitter.events_of(self)
-	local definition = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
+	local definition<const> = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
 	self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
 	self.btreecontexts = {}
 
@@ -120,7 +120,7 @@ function worldobject.new(opts)
 end
 
 function worldobject:generate_id()
-	local baseid = self.type_name
+	local baseid<const> = self.type_name
 	local uniquenumber = world_instance.idcounter + 1
 	if uniquenumber >= world_id_max then
 		uniquenumber = 1
@@ -179,7 +179,7 @@ function worldobject:add_component(comp)
 	if not comp.id then
 		comp.id = components.component.generate_id(comp)
 	end
-	local key = component_key(comp.type_name or comp)
+	local key<const> = component_key(comp.type_name or comp)
 	local bucket = self.component_map[key]
 	if not bucket then
 		bucket = {}
@@ -207,18 +207,18 @@ function worldobject:add_component(comp)
 end
 
 function worldobject:get_component(type_name)
-	local key = component_key(type_name)
-	local list = self.component_map[key]
+	local key<const> = component_key(type_name)
+	local list<const> = self.component_map[key]
 	return list and list[1]
 end
 
 function worldobject:get_components(type_name)
-	local key = component_key(type_name)
+	local key<const> = component_key(type_name)
 	return self.component_map[key] or {}
 end
 
 function worldobject:get_unique_component(type_name)
-	local list = self.component_map[component_key(type_name)]
+	local list<const> = self.component_map[component_key(type_name)]
 	if not list or #list == 0 then
 		return nil
 	end
@@ -229,8 +229,8 @@ function worldobject:get_unique_component(type_name)
 end
 
 function worldobject:has_component(type_name)
-	local key = component_key(type_name)
-	local list = self.component_map[key]
+	local key<const> = component_key(type_name)
+	local list<const> = self.component_map[key]
 	return list and #list > 0
 end
 
@@ -253,14 +253,14 @@ function worldobject:get_component_by_local_id(type_name, id_local)
 end
 
 function worldobject:get_component_at(type_name, index)
-	local list = self.component_map[component_key(type_name)]
+	local list<const> = self.component_map[component_key(type_name)]
 	return list and list[index + 1]
 end
 
 function worldobject:find_component(predicate, type_name)
-	local list = type_name and self:get_components(type_name) or self.components
+	local list<const> = type_name and self:get_components(type_name) or self.components
 	for i = 1, #list do
-		local c = list[i]
+		local c<const> = list[i]
 		if predicate(c, i) then
 			return c
 		end
@@ -269,10 +269,10 @@ function worldobject:find_component(predicate, type_name)
 end
 
 function worldobject:find_components(predicate, type_name)
-	local list = type_name and self:get_components(type_name) or self.components
-	local out = {}
+	local list<const> = type_name and self:get_components(type_name) or self.components
+	local out<const> = {}
 	for i = 1, #list do
-		local c = list[i]
+		local c<const> = list[i]
 		if predicate(c, i) then
 			out[#out + 1] = c
 		end
@@ -281,8 +281,8 @@ function worldobject:find_components(predicate, type_name)
 end
 
 function worldobject:remove_components(type_name)
-	local key = component_key(type_name)
-	local list = self.component_map[key]
+	local key<const> = component_key(type_name)
+	local list<const> = self.component_map[key]
 	if not list then
 		return
 	end
@@ -292,8 +292,8 @@ function worldobject:remove_components(type_name)
 end
 
 function worldobject:remove_component_instance(comp)
-	local key = component_key(comp.type_name or comp)
-	local list = self.component_map[key]
+	local key<const> = component_key(comp.type_name or comp)
+	local list<const> = self.component_map[key]
 	if list then
 		for i = #list, 1, -1 do
 			if list[i] == comp then
@@ -372,7 +372,7 @@ end
 function worldobject:emit_gameplay_fact(event_or_name, payload)
 	local event
 	if type(event_or_name) ~= 'table' then
-		local spec = { type = event_or_name, emitter = self }
+		local spec<const> = { type = event_or_name, emitter = self }
 		if payload ~= nil then
 			if type(payload) == 'table' and payload.type == nil then
 				for k, v in pairs(payload) do
@@ -507,7 +507,7 @@ function worldobject:add_btree(bt_id)
 	if self.btreecontexts[bt_id] then
 		return
 	end
-	local blackboard = behaviourtree.blackboard.new({ id = bt_id })
+	local blackboard<const> = behaviourtree.blackboard.new({ id = bt_id })
 	self.btreecontexts[bt_id] = {
 		tree_id = bt_id,
 		running = true,
@@ -517,7 +517,7 @@ function worldobject:add_btree(bt_id)
 end
 
 function worldobject:tick_tree(bt_id)
-	local context = self.btreecontexts[bt_id]
+	local context<const> = self.btreecontexts[bt_id]
 	if not context then
 		error('behavior tree context "' .. bt_id .. '" does not exist.')
 	end
@@ -528,7 +528,7 @@ function worldobject:tick_tree(bt_id)
 end
 
 function worldobject:reset_tree(bt_id)
-	local context = self.btreecontexts[bt_id]
+	local context<const> = self.btreecontexts[bt_id]
 	if not context then
 		error('behavior tree context "' .. bt_id .. '" does not exist.')
 	end

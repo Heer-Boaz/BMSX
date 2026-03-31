@@ -79,15 +79,15 @@
 --    This prevents accidentally omitting the emitter and creating
 --    subscriptions that fire for unrelated sources.
 
-local eventemitter = {}
+local eventemitter<const> = {}
 eventemitter.__index = eventemitter
 
-local eventport = {}
+local eventport<const> = {}
 eventport.__index = eventport
 
-local port_cache = setmetatable({}, { __mode = 'k' })
+local port_cache<const> = setmetatable({}, { __mode = 'k' })
 
-local function copy_event_fields(dst, src)
+local copy_event_fields<const> = function(dst, src)
 	for k, v in pairs(src) do
 		if k ~= 'type' and k ~= 'emitter' and k ~= 'timestamp' then
 			dst[k] = v
@@ -135,7 +135,7 @@ end
 --                                    Always supply for non-unique event names.
 --   persistent          (bool)    — if true, survives clear() calls.
 function eventemitter:on(spec)
-	local name = spec.event_name or spec.event
+	local name<const> = spec.event_name or spec.event
 	local list = self.listeners[name]
 	if not list then
 		list = {}
@@ -153,12 +153,12 @@ end
 -- by exact handler reference + emitter.  Prefer remove_subscriber() for bulk
 -- cleanup of all subscriptions owned by a subscriber.
 function eventemitter:off(event_name, handler, emitter)
-	local list = self.listeners[event_name]
+	local list<const> = self.listeners[event_name]
 	if not list then
 		return
 	end
 	for i = #list, 1, -1 do
-		local entry = list[i]
+		local entry<const> = list[i]
 		if entry.handler == handler and entry.emitter == emitter then
 			table.remove(list, i)
 		end
@@ -174,7 +174,7 @@ end
 
 function eventemitter:off_any(handler, force_persistent)
 	for i = #self.any_listeners, 1, -1 do
-		local entry = self.any_listeners[i]
+		local entry<const> = self.any_listeners[i]
 		if entry.handler == handler and (force_persistent or not entry.persistent) then
 			table.remove(self.any_listeners, i)
 		end
@@ -192,11 +192,11 @@ function eventemitter:emit(event)
 		return
 	end
 
-	local list = self.listeners[event.type]
+	local list<const> = self.listeners[event.type]
 	if list then
 		for i = 1, #list do
-			local entry = list[i]
-			local filter = entry.emitter
+			local entry<const> = list[i]
+			local filter<const> = entry.emitter
 			if filter == nil or filter == event.emitter or filter == (event.emitter and event.emitter.id) then
 				entry.handler(event)
 			end
@@ -215,14 +215,14 @@ end
 function eventemitter:remove_subscriber(subscriber, force_persistent)
 	for _, list in pairs(self.listeners) do
 		for i = #list, 1, -1 do
-			local entry = list[i]
+			local entry<const> = list[i]
 			if entry.subscriber == subscriber and (force_persistent or not entry.persistent) then
 				table.remove(list, i)
 			end
 		end
 	end
 	for i = #self.any_listeners, 1, -1 do
-		local entry = self.any_listeners[i]
+		local entry<const> = self.any_listeners[i]
 		if entry.subscriber == subscriber and (force_persistent or not entry.persistent) then
 			table.remove(self.any_listeners, i)
 		end
@@ -261,7 +261,7 @@ function eventport:on(spec)
 		spec.emitter = nil
 	end
 	eventemitter.instance:on(spec)
-	local name = spec.event_name or spec.event
+	local name<const> = spec.event_name or spec.event
 	return function()
 		eventemitter.instance:off(name, spec.handler, spec.emitter)
 	end
@@ -270,7 +270,7 @@ end
 -- eventport:emit(event_name, payload): preferred cart API for emitting events.
 -- Automatically builds a canonical event table with emitter=self.emitter.
 function eventport:emit(event_name, payload)
-	local event = {
+	local event<const> = {
 		type = event_name,
 		emitter = self.emitter,
 	}

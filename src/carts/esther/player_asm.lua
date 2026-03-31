@@ -753,22 +753,22 @@ local data_be942d = {
 -- helper functions
 -- ============================================================================
 
-local function to_signed_16(value)
+local to_signed_16<const> = function(value)
 	if value >= 0x8000 then
 		return value - 0x10000
 	end
 	return value
 end
 
-local function to_unsigned_16(value)
+local to_unsigned_16<const> = function(value)
 	return value & 0xffff
 end
 
-local function eor_16(a, b)
+local eor_16<const> = function(a, b)
 	return to_unsigned_16(a ~ b)
 end
 
-local function abs_16(value)
+local abs_16<const> = function(value)
 	local signed = to_signed_16(value)
 	if signed < 0 then
 		return -signed
@@ -776,11 +776,11 @@ local function abs_16(value)
 	return signed
 end
 
-local function cmp_bpl_16(a, imm)
+local cmp_bpl_16<const> = function(a, imm)
 	return (((a - imm) & 0x8000) == 0)
 end
 
-local function visual_frame_cycle(frames, phase)
+local visual_frame_cycle<const> = function(frames, phase)
 	local count = #frames
 	local idx = (phase % count) + 1
 	return frames[idx]
@@ -788,7 +788,7 @@ end
 
 -- $32 is level-context state in DKC1 and is initialized by level setup routines
 -- (e.g. CODE_B9859E: STZ.b $32 for jungle). Keep player-side reads synced from level data.
-local function read_level_state32(level)
+local read_level_state32<const> = function(level)
 	return level.dkc1_state32 & 0xFFFF
 end
 
@@ -7072,7 +7072,7 @@ end
 function player:code_b89a60()
 	local y = self.ram_global_oamindexlo & 0xFFFF
 	local limit = 0x01B8
-	local function emit(a, x)
+	local emit<const> = function(a, x)
 		if y < limit then
 			self:code_b89e78(a, x)
 			y = (y + 8) & 0xFFFF
@@ -9248,7 +9248,7 @@ local player_def_id = 'dkc_player_asm'
 local player_instance_id = 'player_1'
 local player_fsm_id = 'dkc_player_asm_fsm'
 
-local function define_player_fsm()
+local define_player_fsm<const> = function()
 	define_fsm(player_fsm_id, {
 		initial = 'active',
 		states = {
@@ -9261,7 +9261,7 @@ local function define_player_fsm()
 	})
 end
 
-local function register_player_definition()
+local register_player_definition<const> = function()
 	define_prefab({
 		def_id = player_def_id,
 		class = player,

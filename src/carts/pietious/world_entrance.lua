@@ -1,15 +1,15 @@
-local constants = require('constants')
+local constants<const> = require('constants')
 
-local world_entrance_sprite_ids = {
+local world_entrance_sprite_ids<const> = {
 	closed = 'world_entrance',
 	opening_1 = 'world_entrance',
 	opening_2 = 'world_entrance_half_open',
 	open = 'world_entrance_open',
 }
 
-local opening_timeline_id = 'world_entrance.opening'
+local opening_timeline_id<const> = 'world_entrance.opening'
 
-local world_entrance = {}
+local world_entrance<const> = {}
 world_entrance.__index = world_entrance
 
 function world_entrance:set_entrance_state(entrance_state)
@@ -75,7 +75,7 @@ function world_entrance:ctor()
 	}))
 end
 
-local function register_world_entrance_definition()
+local register_world_entrance_definition<const> = function()
 	define_prefab({
 		def_id = 'world_entrance',
 		class = world_entrance,

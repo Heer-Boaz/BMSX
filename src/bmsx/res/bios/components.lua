@@ -1,20 +1,20 @@
 -- components.lua
 -- base component primitives for system rom
 
-local eventemitter = require('eventemitter')
-local timeline_module = require('timeline')
-local timeline_dispatch = require('timeline_dispatch')
-local collision_profiles = require('collision_profiles')
-local scratchrecordbatch = require('scratchrecordbatch')
-local wrap_text_lines = require('util/wrap_text_lines')
+local eventemitter<const> = require('eventemitter')
+local timeline_module<const> = require('timeline')
+local timeline_dispatch<const> = require('timeline_dispatch')
+local collision_profiles<const> = require('collision_profiles')
+local scratchrecordbatch<const> = require('scratchrecordbatch')
+local wrap_text_lines<const> = require('util/wrap_text_lines')
 
-local function submit_glyph_lines(lines, x, y, z, font, color_val, bg_color_val, line_height, center_w, glyph_start, glyph_end, layer)
+local submit_glyph_lines<const> = function(lines, x, y, z, font, color_val, bg_color_val, line_height, center_w, glyph_start, glyph_end, layer)
 	-- Direct MMIO glyph rendering would go here, not service calls
 end
-local eventemitter = eventemitter.eventemitter
-local timeline = timeline_module.timeline
+local eventemitter<const> = eventemitter.eventemitter
+local timeline<const> = timeline_module.timeline
 
-local function apply_frame(target, frame)
+local apply_frame<const> = function(target, frame)
 	for k, v in pairs(frame) do
 		if type(v) == 'table' then
 			apply_frame(target[k], v)
@@ -24,7 +24,7 @@ local function apply_frame(target, frame)
 	end
 end
 
-local function set_path(target, path, value)
+local set_path<const> = function(target, path, value)
 	local node = target
 	for i = 1, #path - 1 do
 		node = node[path[i]]
@@ -32,7 +32,7 @@ local function set_path(target, path, value)
 	node[path[#path]] = value
 end
 
-local function select_bounding_box(flip_h, flip_v, box)
+local select_bounding_box<const> = function(flip_h, flip_v, box)
 	if box == nil then
 		return nil
 	end
@@ -48,7 +48,7 @@ local function select_bounding_box(flip_h, flip_v, box)
 	return box.original
 end
 
-local function select_hit_polygons(flip_h, flip_v, polys)
+local select_hit_polygons<const> = function(flip_h, flip_v, polys)
 	if polys == nil then
 		return nil
 	end
@@ -64,8 +64,8 @@ local function select_hit_polygons(flip_h, flip_v, polys)
 	return polys.original
 end
 
-local function eval_wave(track, time_seconds)
-	local u = (time_seconds / track.period) + (track.phase or 0)
+local eval_wave<const> = function(track, time_seconds)
+	local u<const> = (time_seconds / track.period) + (track.phase or 0)
 	local w
 	if track.wave == 'pingpong' then
 		w = easing.pingpong01(u)
@@ -74,24 +74,24 @@ local function eval_wave(track, time_seconds)
 	else
 		error('[timelinecomponent] unknown wave "' .. tostring(track.wave) .. '".')
 	end
-	local ease = track.ease
+	local ease<const> = track.ease
 	if ease ~= nil then
 		w = ease(w)
 	end
 	return w
 end
 
-local function apply_track(target, track, params, event)
+local apply_track<const> = function(target, track, params, event)
 	if type(track) == 'function' then
 		track(target, params, event)
 		return
 	end
-	local kind = track.kind
+	local kind<const> = track.kind
 	if kind == 'wave' then
-		local base = track.base
-		local base_value = type(base) == 'string' and params[base] or base
-		local w = eval_wave(track, event.time_seconds)
-		local value = base_value + ((w - 0.5) * 2 * track.amp)
+		local base<const> = track.base
+		local base_value<const> = type(base) == 'string' and params[base] or base
+		local w<const> = eval_wave(track, event.time_seconds)
+		local value<const> = base_value + ((w - 0.5) * 2 * track.amp)
 		set_path(target, track.path, value)
 		return
 	end
@@ -112,17 +112,17 @@ local function apply_track(target, track, params, event)
 	error('[timelinecomponent] unknown track kind '' .. tostring(kind) .. ''.')
 end
 
-local function apply_tracks(target, tracks, params, event)
+local apply_tracks<const> = function(target, tracks, params, event)
 	for i = 1, #tracks do
 		apply_track(target, tracks[i], params, event)
 	end
 end
 
-local component = {}
+local component<const> = {}
 component.__index = component
 
 function component.new(opts)
-	local self = setmetatable({}, component)
+	local self<const> = setmetatable({}, component)
 	opts = opts or {}
 	self.parent = opts.parent
 	self.type_name = opts.type_name or 'component'
@@ -207,14 +207,14 @@ function component:draw()
 end
 
 -- spritecomponent: holds sprite metadata
-local spritecomponent = {}
+local spritecomponent<const> = {}
 spritecomponent.__index = spritecomponent
 setmetatable(spritecomponent, { __index = component })
 
 function spritecomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'spritecomponent'
-	local self = setmetatable(component.new(opts), spritecomponent)
+	local self<const> = setmetatable(component.new(opts), spritecomponent)
 	self.imgid = opts and opts.imgid
 	self.layer = opts and opts.layer or sys_vdp_layer_world
 	self.flip = { flip_h = false, flip_v = false }
@@ -252,16 +252,16 @@ end
 -- 4. NEVER POLL colliders in update().
 --    Subscribe to 'overlap.begin', 'overlap.stay', 'overlap.end' in bind()
 --    (see ecs_systems.lua for event payload fields).
-local collider2dcomponent = {}
+local collider2dcomponent<const> = {}
 collider2dcomponent.__index = collider2dcomponent
 setmetatable(collider2dcomponent, { __index = component })
 
-local function get_sprite_offset_xy(sprite)
+local get_sprite_offset_xy<const> = function(sprite)
 	return sprite.offset.x, sprite.offset.y
 end
 
-local function get_driving_sprite_for_collider(collider)
-	local owner = collider.parent
+local get_driving_sprite_for_collider<const> = function(collider)
+	local owner<const> = collider.parent
 	if owner == nil then
 		return nil
 	end
@@ -271,9 +271,9 @@ local function get_driving_sprite_for_collider(collider)
 		end
 		return owner:get_component('spritecomponent')
 	end
-	local sprites = owner:get_components('spritecomponent')
+	local sprites<const> = owner:get_components('spritecomponent')
 	for i = 1, #sprites do
-		local sprite = sprites[i]
+		local sprite<const> = sprites[i]
 		if sprite.collider_local_id == collider.id_local then
 			return sprite
 		end
@@ -281,24 +281,24 @@ local function get_driving_sprite_for_collider(collider)
 	return nil
 end
 
-local function get_sprite_collision_geometry(sprite)
-	local id = sprite.imgid
+local get_sprite_collision_geometry<const> = function(sprite)
+	local id<const> = sprite.imgid
 	if id == nil then
 		return nil, nil
 	end
-	local image_asset = assets.img[id]
+	local image_asset<const> = assets.img[id]
 	if image_asset == nil or image_asset.imgmeta == nil then
 		error('[spritecomponent] image metadata missing for "' .. tostring(id) .. '"')
 	end
-	local imgmeta = image_asset.imgmeta
-	local flip_h = sprite.flip.flip_h
-	local flip_v = sprite.flip.flip_v
+	local imgmeta<const> = image_asset.imgmeta
+	local flip_h<const> = sprite.flip.flip_h
+	local flip_v<const> = sprite.flip.flip_v
 	return select_bounding_box(flip_h, flip_v, imgmeta.boundingbox), select_hit_polygons(flip_h, flip_v, imgmeta.hitpolygons)
 end
 
-local function update_world_area_cache(collider)
-	local parent = collider.parent
-	local sprite = get_driving_sprite_for_collider(collider)
+local update_world_area_cache<const> = function(collider)
+	local parent<const> = collider.parent
+	local sprite<const> = get_driving_sprite_for_collider(collider)
 	local shape_offset_x = collider.shape_offset_x
 	local shape_offset_y = collider.shape_offset_y
 	local local_area = collider.local_area
@@ -306,10 +306,10 @@ local function update_world_area_cache(collider)
 		local_area = get_sprite_collision_geometry(sprite)
 		shape_offset_x, shape_offset_y = get_sprite_offset_xy(sprite)
 	end
-	local area = collider._world_area_cache
+	local area<const> = collider._world_area_cache
 	if local_area == nil then
-		local sx = parent.sx or 0
-		local sy = parent.sy or 0
+		local sx<const> = parent.sx or 0
+		local sy<const> = parent.sy or 0
 		area.left = parent.x + shape_offset_x
 		area.top = parent.y + shape_offset_y
 		area.right = area.left + sx
@@ -320,7 +320,7 @@ local function update_world_area_cache(collider)
 		area.right = parent.x + shape_offset_x + local_area.right
 		area.bottom = parent.y + shape_offset_y + local_area.bottom
 	end
-	local area_poly = collider._world_area_poly_cache
+	local area_poly<const> = collider._world_area_poly_cache
 	area_poly[1] = area.left
 	area_poly[2] = area.top
 	area_poly[3] = area.right
@@ -348,7 +348,7 @@ end
 function collider2dcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'collider2dcomponent'
-	local self = setmetatable(component.new(opts), collider2dcomponent)
+	local self<const> = setmetatable(component.new(opts), collider2dcomponent)
 	self.hittable = true
 	if opts.hittable ~= nil then
 		self.hittable = opts.hittable
@@ -422,9 +422,9 @@ function collider2dcomponent:get_world_area_polys()
 end
 
 function collider2dcomponent:get_shape_kind()
-	local sprite = get_driving_sprite_for_collider(self)
+	local sprite<const> = get_driving_sprite_for_collider(self)
 	if sprite ~= nil then
-		local _, local_polys = get_sprite_collision_geometry(sprite)
+		local _<const>, local_polys<const> = get_sprite_collision_geometry(sprite)
 		if local_polys ~= nil and #local_polys > 0 then
 			return 'poly'
 		end
@@ -433,7 +433,7 @@ function collider2dcomponent:get_shape_kind()
 	if self.local_circle ~= nil then
 		return 'circle'
 	end
-	local local_polys = self.local_polys
+	local local_polys<const> = self.local_polys
 	if local_polys ~= nil and #local_polys > 0 then
 		return 'poly'
 	end
@@ -441,12 +441,12 @@ function collider2dcomponent:get_shape_kind()
 end
 
 function collider2dcomponent:get_world_polys()
-	local sprite = get_driving_sprite_for_collider(self)
+	local sprite<const> = get_driving_sprite_for_collider(self)
 	local local_polys = self.local_polys
 	local px = self.parent.x + self.shape_offset_x
 	local py = self.parent.y + self.shape_offset_y
 	if sprite ~= nil then
-		local _, sprite_polys = get_sprite_collision_geometry(sprite)
+		local _<const>, sprite_polys<const> = get_sprite_collision_geometry(sprite)
 		local_polys = sprite_polys
 		local offset_x
 		local offset_y
@@ -457,15 +457,15 @@ function collider2dcomponent:get_world_polys()
 	if local_polys == nil or #local_polys == 0 then
 		return nil
 	end
-	local out = self._world_polys_cache
+	local out<const> = self._world_polys_cache
 	for i = 1, #local_polys do
-		local poly = local_polys[i]
+		local poly<const> = local_polys[i]
 		local out_poly = out[i]
 		if out_poly == nil then
 			out_poly = {}
 			out[i] = out_poly
 		end
-		local old_len = #out_poly
+		local old_len<const> = #out_poly
 		for j = 1, #poly, 2 do
 			out_poly[j] = poly[j] + px
 			out_poly[j + 1] = poly[j + 1] + py
@@ -484,13 +484,13 @@ function collider2dcomponent:get_world_circle()
 	if get_driving_sprite_for_collider(self) ~= nil then
 		return nil
 	end
-	local circle = self.local_circle
+	local circle<const> = self.local_circle
 	if circle == nil then
 		return nil
 	end
-	local px = self.parent.x + self.shape_offset_x
-	local py = self.parent.y + self.shape_offset_y
-	local out = self._world_circle_cache
+	local px<const> = self.parent.x + self.shape_offset_x
+	local py<const> = self.parent.y + self.shape_offset_y
+	local out<const> = self._world_circle_cache
 	out.x = px + circle.x
 	out.y = py + circle.y
 	out.r = circle.r
@@ -507,17 +507,17 @@ function collider2dcomponent:apply_collision_profile(profile_name)
 end
 
 -- timelinecomponent: lightweight placeholder
-local timelinecomponent = {}
+local timelinecomponent<const> = {}
 timelinecomponent.__index = timelinecomponent
 setmetatable(timelinecomponent, { __index = component })
 
-local function process_timeline_frame_payload(_, entry, owner, payload)
-	local target = entry.target or owner
-	local tracks = entry.tracks
+local process_timeline_frame_payload<const> = function(_, entry, owner, payload)
+	local target<const> = entry.target or owner
+	local tracks<const> = entry.tracks
 	if tracks ~= nil then
 		apply_tracks(target, tracks, entry.params, payload)
 	end
-	local apply = entry.apply
+	local apply<const> = entry.apply
 	if apply ~= nil then
 		if type(apply) == 'function' then
 			apply(target, payload.frame_value, entry.params, payload)
@@ -531,7 +531,7 @@ function timelinecomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'timelinecomponent'
 	opts.unique = true
-	local self = setmetatable(component.new(opts), timelinecomponent)
+	local self<const> = setmetatable(component.new(opts), timelinecomponent)
 	self.registry = {}
 	self.active = {}
 	self.listeners = {}
@@ -539,8 +539,8 @@ function timelinecomponent.new(opts)
 end
 
 function timelinecomponent:define(definition)
-	local instance = definition.__is_timeline and definition or timeline.new(definition)
-	local markers = timeline_module.compile_timeline_markers(instance.def, instance.length)
+	local instance<const> = definition.__is_timeline and definition or timeline.new(definition)
+	local markers<const> = timeline_module.compile_timeline_markers(instance.def, instance.length)
 	self.registry[instance.id] = {
 		instance = instance,
 		markers = markers,
@@ -553,12 +553,12 @@ function timelinecomponent:define(definition)
 end
 
 function timelinecomponent:get(id)
-	local entry = self.registry[id]
+	local entry<const> = self.registry[id]
 	return entry and entry.instance
 end
 
 function timelinecomponent:seek(id, frame)
-	local entry = self.registry[id]
+	local entry<const> = self.registry[id]
 	if not entry then
 		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
 	end
@@ -571,11 +571,11 @@ function timelinecomponent:force_seek(id, frame)
 end
 
 function timelinecomponent:advance(id)
-	local entry = self.registry[id]
+	local entry<const> = self.registry[id]
 	if not entry then
 		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
 	end
-	local instance = entry.instance
+	local instance<const> = entry.instance
 	if instance:advance() ~= nil then
 		if timeline_dispatch.process_instance_events(entry, self.parent, 0, process_timeline_frame_payload) then
 			self.active[instance.id] = nil
@@ -585,12 +585,12 @@ function timelinecomponent:advance(id)
 end
 
 function timelinecomponent:play(id, opts)
-	local entry = self.registry[id]
+	local entry<const> = self.registry[id]
 	if not entry then
 		error('[timelinecomponent] unknown timeline "' .. id .. '" on "' .. self.parent.id .. '"')
 	end
-	local instance = entry.instance
-	local owner = self.parent
+	local instance<const> = entry.instance
+	local owner<const> = self.parent
 	local rewind
 	local snap
 	local params
@@ -629,7 +629,7 @@ function timelinecomponent:play(id, opts)
 	end
 	timeline_dispatch.init_entry(entry, owner)
 	if rewind then
-		local controlled = entry.markers.controlled_tags
+		local controlled<const> = entry.markers.controlled_tags
 		for i = 1, #controlled do
 			owner:remove_tag(controlled[i])
 		end
@@ -647,10 +647,10 @@ function timelinecomponent:play(id, opts)
 end
 
 function timelinecomponent:stop(id)
-	local entry = self.registry[id]
+	local entry<const> = self.registry[id]
 	if entry then
-		local owner = self.parent
-		local controlled = entry.markers.controlled_tags
+		local owner<const> = self.parent
+		local controlled<const> = entry.markers.controlled_tags
 		for i = 1, #controlled do
 			owner:remove_tag(controlled[i])
 		end
@@ -660,7 +660,7 @@ end
 
 function timelinecomponent:tick_active(dt_ms)
 	for id in pairs(self.active) do
-		local entry = self.registry[id]
+		local entry<const> = self.registry[id]
 		if entry.instance:update(dt_ms) ~= nil then
 			if timeline_dispatch.process_instance_events(entry, self.parent, dt_ms, process_timeline_frame_payload) then
 				self.active[id] = nil
@@ -670,7 +670,7 @@ function timelinecomponent:tick_active(dt_ms)
 end
 
 -- transformcomponent: simple positional proxy
-local transformcomponent = {}
+local transformcomponent<const> = {}
 transformcomponent.__index = transformcomponent
 setmetatable(transformcomponent, { __index = component })
 
@@ -678,8 +678,8 @@ function transformcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'transformcomponent'
 	opts.unique = true
-	local self = setmetatable(component.new(opts), transformcomponent)
-	local p = self.parent
+	local self<const> = setmetatable(component.new(opts), transformcomponent)
+	local p<const> = self.parent
 	self.position = opts.position or { x = p.x or 0, y = p.y or 0, z = p.z or 0 }
 	self.scale = opts.scale or { x = 1, y = 1, z = 1 }
 	self.orientation = opts.orientation
@@ -687,21 +687,21 @@ function transformcomponent.new(opts)
 end
 
 function transformcomponent:post_update()
-	local p = self.parent
+	local p<const> = self.parent
 	self.position.x = p.x
 	self.position.y = p.y
 	self.position.z = p.z
 end
 
 -- textcomponent: lightweight render descriptor
-local textcomponent = {}
+local textcomponent<const> = {}
 textcomponent.__index = textcomponent
 setmetatable(textcomponent, { __index = component })
 
 function textcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'textcomponent'
-	local self = setmetatable(component.new(opts), textcomponent)
+	local self<const> = setmetatable(component.new(opts), textcomponent)
 	self.text = (opts.text)
 	self.font = opts.font or get_default_font()
 	self.color = opts.color or { r = 1, g = 1, b = 1, a = 1 }
@@ -716,14 +716,14 @@ function textcomponent.new(opts)
 end
 
 -- meshcomponent: minimal render descriptor
-local meshcomponent = {}
+local meshcomponent<const> = {}
 meshcomponent.__index = meshcomponent
 setmetatable(meshcomponent, { __index = component })
 
 function meshcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'meshcomponent'
-	local self = setmetatable(component.new(opts), meshcomponent)
+	local self<const> = setmetatable(component.new(opts), meshcomponent)
 	self.mesh = opts.mesh
 	self.matrix = opts.matrix
 	self.joint_matrices = opts.joint_matrices
@@ -736,41 +736,41 @@ end
 function meshcomponent:update_animation(_dt)
 end
 
-local ambientlightcomponent = {}
+local ambientlightcomponent<const> = {}
 ambientlightcomponent.__index = ambientlightcomponent
 setmetatable(ambientlightcomponent, { __index = component })
 
 function ambientlightcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'ambientlightcomponent'
-	local self = setmetatable(component.new(opts), ambientlightcomponent)
+	local self<const> = setmetatable(component.new(opts), ambientlightcomponent)
 	self.color = opts.color or { r = 1, g = 1, b = 1 }
 	self.intensity = opts.intensity or 1
 	return self
 end
 
-local directionallightcomponent = {}
+local directionallightcomponent<const> = {}
 directionallightcomponent.__index = directionallightcomponent
 setmetatable(directionallightcomponent, { __index = component })
 
 function directionallightcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'directionallightcomponent'
-	local self = setmetatable(component.new(opts), directionallightcomponent)
+	local self<const> = setmetatable(component.new(opts), directionallightcomponent)
 	self.orientation = opts.orientation or { x = 0, y = -1, z = 0 }
 	self.color = opts.color or { r = 1, g = 1, b = 1 }
 	self.intensity = opts.intensity or 1
 	return self
 end
 
-local pointlightcomponent = {}
+local pointlightcomponent<const> = {}
 pointlightcomponent.__index = pointlightcomponent
 setmetatable(pointlightcomponent, { __index = component })
 
 function pointlightcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'pointlightcomponent'
-	local self = setmetatable(component.new(opts), pointlightcomponent)
+	local self<const> = setmetatable(component.new(opts), pointlightcomponent)
 	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
 	self.color = opts.color or { r = 1, g = 1, b = 1 }
 	self.range = opts.range or 6
@@ -779,17 +779,17 @@ function pointlightcomponent.new(opts)
 end
 
 -- customvisualcomponent: scripted render producer
-local customvisualcomponent = {}
+local customvisualcomponent<const> = {}
 customvisualcomponent.__index = customvisualcomponent
 setmetatable(customvisualcomponent, { __index = component })
-local customvisual_scratch_items = scratchrecordbatch.new(2):reserve(2)
-local customvisual_mesh_options = customvisual_scratch_items[1]
-local customvisual_particle_options = customvisual_scratch_items[2]
+local customvisual_scratch_items<const> = scratchrecordbatch.new(2):reserve(2)
+local customvisual_mesh_options<const> = customvisual_scratch_items[1]
+local customvisual_particle_options<const> = customvisual_scratch_items[2]
 
 function customvisualcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'customvisualcomponent'
-	local self = setmetatable(component.new(opts), customvisualcomponent)
+	local self<const> = setmetatable(component.new(opts), customvisualcomponent)
 	self.producer = opts.producer
 	return self
 end
@@ -799,7 +799,7 @@ function customvisualcomponent:add_producer(fn)
 		self.producer = nil
 		return
 	end
-	local prev = self.producer
+	local prev<const> = self.producer
 	if prev then
 		self.producer = function(ctx)
 			prev(ctx)
@@ -818,8 +818,8 @@ function customvisualcomponent:flush()
 end
 
 function customvisualcomponent:submit_sprite(desc)
-	local pos = desc.pos or desc.position
-	local flip = desc.flip
+	local pos<const> = desc.pos or desc.position
+	local flip<const> = desc.flip
 	local flip_flags = 0
 	if flip.flip_h then
 		flip_flags = flip_flags | 1
@@ -827,7 +827,7 @@ function customvisualcomponent:submit_sprite(desc)
 	if flip.flip_v then
 		flip_flags = flip_flags | 2
 	end
-	write_words(
+	memwrite(
 		sys_vdp_cmd_arg0,
 		assets.img[desc.imgid].handle,
 		pos.x,
@@ -843,25 +843,25 @@ function customvisualcomponent:submit_sprite(desc)
 		desc.colorize.a,
 		desc.parallax_weight
 	)
-	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 end
 
 function customvisualcomponent:submit_rect(desc)
-	local area = desc.area
-	local color = desc.color
-	local x0, y0, x1, y1, z = area.left, area.top, area.right, area.bottom, area.z
+	local area<const> = desc.area
+	local color<const> = desc.color
+	local x0<const>, y0<const>, x1<const>, y1<const>, z<const> = area.left, area.top, area.right, area.bottom, area.z
 	if desc.kind == 'stroke' then
-		local c = color
-		write_words(sys_vdp_cmd_arg0, x0, y0, x1, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_draw_line)
-		write_words(sys_vdp_cmd_arg0, x1, y0, x1, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_draw_line)
-		write_words(sys_vdp_cmd_arg0, x1, y1, x0, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_draw_line)
-		write_words(sys_vdp_cmd_arg0, x0, y1, x0, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_draw_line)
+		local c<const> = color
+		memwrite(sys_vdp_cmd_arg0, x0, y0, x1, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
+		memwrite(sys_vdp_cmd_arg0, x1, y0, x1, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
+		memwrite(sys_vdp_cmd_arg0, x1, y1, x0, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
+		memwrite(sys_vdp_cmd_arg0, x0, y1, x0, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
 	else
-		write_words(
+		memwrite(
 			sys_vdp_cmd_arg0,
 			x0,
 			y0,
@@ -874,23 +874,23 @@ function customvisualcomponent:submit_rect(desc)
 			color.b,
 			color.a
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 	end
 end
 
 function customvisualcomponent:submit_poly(desc)
-	local points = desc.points
-	local z = desc.z
-	local color = desc.color
-	local thickness = desc.thickness or 1
-	local n = #points / 2
+	local points<const> = desc.points
+	local z<const> = desc.z
+	local color<const> = desc.color
+	local thickness<const> = desc.thickness or 1
+	local n<const> = #points / 2
 	for i = 0, n - 1 do
-		local x0 = points[i * 2 + 1]
-		local y0 = points[i * 2 + 2]
-		local x1 = points[((i + 1) % n) * 2 + 1]
-		local y1 = points[((i + 1) % n) * 2 + 2]
-		write_words(sys_vdp_cmd_arg0, x0, y0, x1, y1, z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, thickness)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_draw_line)
+		local x0<const> = points[i * 2 + 1]
+		local y0<const> = points[i * 2 + 2]
+		local x1<const> = points[((i + 1) % n) * 2 + 1]
+		local y1<const> = points[((i + 1) % n) * 2 + 2]
+		memwrite(sys_vdp_cmd_arg0, x0, y0, x1, y1, z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, thickness)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
 	end
 end
 
@@ -909,10 +909,10 @@ function customvisualcomponent:submit_particle(desc)
 end
 
 function customvisualcomponent:submit_glyphs(desc)
-	local render_font = desc.font or get_default_font()
-	local color = desc.color
-	local background_color = desc.background_color
-	local layer = desc.layer or sys_vdp_layer_world
+	local render_font<const> = desc.font or get_default_font()
+	local color<const> = desc.color
+	local background_color<const> = desc.background_color
+	local layer<const> = desc.layer or sys_vdp_layer_world
 	local glyphs = desc.glyphs
 	if type(glyphs) == 'string' then
 		if desc.wrap_chars ~= nil and desc.wrap_chars > 0 then
@@ -938,7 +938,7 @@ function customvisualcomponent:submit_glyphs(desc)
 end
 
 -- inputintentcomponent: declarative input -> state bindings
-local inputintentcomponent = {}
+local inputintentcomponent<const> = {}
 inputintentcomponent.__index = inputintentcomponent
 setmetatable(inputintentcomponent, { __index = component })
 
@@ -946,14 +946,14 @@ function inputintentcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'inputintentcomponent'
 	opts.unique = true
-	local self = setmetatable(component.new(opts), inputintentcomponent)
+	local self<const> = setmetatable(component.new(opts), inputintentcomponent)
 	self.player_index = opts.player_index or 1
 	self.bindings = opts.bindings or {}
 	return self
 end
 
 -- inputactioneffectcomponent: links an input-action program to an object
-local inputactioneffectcomponent = {}
+local inputactioneffectcomponent<const> = {}
 inputactioneffectcomponent.__index = inputactioneffectcomponent
 setmetatable(inputactioneffectcomponent, { __index = component })
 
@@ -961,13 +961,13 @@ function inputactioneffectcomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'inputactioneffectcomponent'
 	opts.unique = true
-	local self = setmetatable(component.new(opts), inputactioneffectcomponent)
+	local self<const> = setmetatable(component.new(opts), inputactioneffectcomponent)
 	self.program_id = opts.program_id
 	self.program = opts.program
 	return self
 end
 
-local function merge_ability_payload(base, payload)
+local merge_ability_payload<const> = function(base, payload)
 	if payload == nil then
 		return base
 	end
@@ -982,7 +982,7 @@ local function merge_ability_payload(base, payload)
 end
 
 -- abilitiescomponent: owns ability activation + lifecycle events
-local abilitiescomponent = {}
+local abilitiescomponent<const> = {}
 abilitiescomponent.__index = abilitiescomponent
 setmetatable(abilitiescomponent, { __index = component })
 
@@ -990,7 +990,7 @@ function abilitiescomponent.new(opts)
 	opts = opts or {}
 	opts.type_name = 'abilitiescomponent'
 	opts.unique = true
-	local self = setmetatable(component.new(opts), abilitiescomponent)
+	local self<const> = setmetatable(component.new(opts), abilitiescomponent)
 	self.registered = {}
 	self.instance_seq = {}
 	self.active_seq = {}
@@ -1009,15 +1009,15 @@ function abilitiescomponent:register_ability(id, definition)
 end
 
 function abilitiescomponent:activate(id, payload)
-	local definition = self.registered[id]
+	local definition<const> = self.registered[id]
 	if definition == nil then
 		error('[abilitiescomponent] unknown ability "' .. tostring(id) .. '" on "' .. self.parent.id .. '"')
 	end
-	local activate = definition.activate
+	local activate<const> = definition.activate
 	if activate == nil then
 		return false
 	end
-	local result = activate({
+	local result<const> = activate({
 		component = self,
 		owner = self.parent,
 		ability = id,
@@ -1030,14 +1030,14 @@ function abilitiescomponent:activate(id, payload)
 end
 
 function abilitiescomponent:begin(id, payload)
-	local active_seq = self.active_seq[id]
+	local active_seq<const> = self.active_seq[id]
 	if active_seq ~= nil and active_seq ~= 0 then
 		return active_seq
 	end
-	local next_seq = (self.instance_seq[id] or 0) + 1
+	local next_seq<const> = (self.instance_seq[id] or 0) + 1
 	self.instance_seq[id] = next_seq
 	self.active_seq[id] = next_seq
-	local event_payload = merge_ability_payload({
+	local event_payload<const> = merge_ability_payload({
 		ability = id,
 		ability_instance_seq = next_seq,
 	}, payload)
@@ -1046,7 +1046,7 @@ function abilitiescomponent:begin(id, payload)
 end
 
 function abilitiescomponent:end_once(id, reason, payload)
-	local active_seq = self.active_seq[id]
+	local active_seq<const> = self.active_seq[id]
 	if active_seq == nil or active_seq == 0 then
 		return false
 	end
@@ -1055,7 +1055,7 @@ function abilitiescomponent:end_once(id, reason, payload)
 	end
 	self.ended_seq[id] = active_seq
 	self.active_seq[id] = 0
-	local event_payload = merge_ability_payload({
+	local event_payload<const> = merge_ability_payload({
 		ability = id,
 		ability_instance_seq = active_seq,
 		reason = reason,
@@ -1065,13 +1065,13 @@ function abilitiescomponent:end_once(id, reason, payload)
 end
 
 -- positionupdateaxiscomponent: tracks old position for physics/boundary systems
-local positionupdateaxiscomponent = {}
+local positionupdateaxiscomponent<const> = {}
 positionupdateaxiscomponent.__index = positionupdateaxiscomponent
 setmetatable(positionupdateaxiscomponent, { __index = component })
 
 -- ECS component queries match exact type_name, not Lua inheritance.
 -- Derived constructors must therefore stamp their own type_name up front.
-local function new_typed_component_instance(component_class, type_name, opts, unique)
+local new_typed_component_instance<const> = function(component_class, type_name, opts, unique)
 	opts = opts or {}
 	return setmetatable(component.new({
 		parent = opts.parent,
@@ -1084,7 +1084,7 @@ local function new_typed_component_instance(component_class, type_name, opts, un
 	}), component_class)
 end
 
-local function init_positionupdateaxis_fields(self)
+local init_positionupdateaxis_fields<const> = function(self)
 	self.old_pos = { x = 0, y = 0 }
 	return self
 end
@@ -1098,12 +1098,12 @@ function positionupdateaxiscomponent.new(opts)
 end
 
 function positionupdateaxiscomponent:preprocess_update()
-	local p = self.parent
+	local p<const> = self.parent
 	self.old_pos.x = p.x
 	self.old_pos.y = p.y
 end
 
-local screenboundarycomponent = {}
+local screenboundarycomponent<const> = {}
 screenboundarycomponent.__index = screenboundarycomponent
 setmetatable(screenboundarycomponent, { __index = positionupdateaxiscomponent })
 
@@ -1116,13 +1116,13 @@ setmetatable(screenboundarycomponent, { __index = positionupdateaxiscomponent })
 --   Any field omitted falls back to the viewport edge for that side.
 --   Boundary values are resolved once at construction and stored as boundary_left/top/right/bottom,
 --   so the boundarysystem hot loop has no per-frame table lookups or conditionals.
-local function init_screenboundary_fields(self, opts)
+local init_screenboundary_fields<const> = function(self, opts)
 	opts = opts or {}
 	self.stick_to_edge = true
 	if opts.stick_to_edge ~= nil then
 		self.stick_to_edge = opts.stick_to_edge
 	end
-	local bounds = opts.bounds
+	local bounds<const> = opts.bounds
 	self.boundary_left = bounds and bounds.left or 0
 	self.boundary_top = bounds and bounds.top or 0
 	self.boundary_right = bounds and bounds.right or $.viewportsize.x
@@ -1131,18 +1131,18 @@ local function init_screenboundary_fields(self, opts)
 end
 
 function screenboundarycomponent.new(opts)
-	local self = new_typed_component_instance(screenboundarycomponent, 'screenboundarycomponent', opts, true)
+	local self<const> = new_typed_component_instance(screenboundarycomponent, 'screenboundarycomponent', opts, true)
 	init_positionupdateaxis_fields(self)
 	return init_screenboundary_fields(self, opts)
 end
 
-local tilecollisioncomponent = {}
+local tilecollisioncomponent<const> = {}
 tilecollisioncomponent.__index = tilecollisioncomponent
 setmetatable(tilecollisioncomponent, { __index = positionupdateaxiscomponent })
 
 function tilecollisioncomponent.new(opts)
 	opts = opts or {}
-	local self = init_positionupdateaxis_fields(new_typed_component_instance(
+	local self<const> = init_positionupdateaxis_fields(new_typed_component_instance(
 		tilecollisioncomponent,
 		'tilecollisioncomponent',
 		opts,
@@ -1160,19 +1160,19 @@ function tilecollisioncomponent.new(opts)
 	return self
 end
 
-local prohibitleavingscreencomponent = {}
+local prohibitleavingscreencomponent<const> = {}
 prohibitleavingscreencomponent.__index = prohibitleavingscreencomponent
 setmetatable(prohibitleavingscreencomponent, { __index = screenboundarycomponent })
 
 function prohibitleavingscreencomponent.new(opts)
-	local self = new_typed_component_instance(prohibitleavingscreencomponent, 'prohibitleavingscreencomponent', opts, true)
+	local self<const> = new_typed_component_instance(prohibitleavingscreencomponent, 'prohibitleavingscreencomponent', opts, true)
 	init_positionupdateaxis_fields(self)
 	return init_screenboundary_fields(self, opts)
 end
 
 function prohibitleavingscreencomponent:bind()
 	self.parent.events:on({ event_name = 'screen.leaving', handler = function(event)
-		local p = self.parent
+		local p<const> = self.parent
 		if event.d == 'left' then
 			p.x = self.stick_to_edge and self.boundary_left or event.old_x_or_y
 		elseif event.d == 'right' then
@@ -1185,7 +1185,7 @@ function prohibitleavingscreencomponent:bind()
 	end, subscriber = self })
 end
 
-local componentregistry = {
+local componentregistry<const> = {
 	component = component,
 	spritecomponent = spritecomponent,
 	collider2dcomponent = collider2dcomponent,
@@ -1206,12 +1206,12 @@ local componentregistry = {
 	prohibitleavingscreencomponent = prohibitleavingscreencomponent,
 }
 
-local function register_component(type_name, ctor)
+local register_component<const> = function(type_name, ctor)
 	componentregistry[type_name] = ctor
 end
 
-local function new_component(type_name, opts)
-	local ctor = componentregistry[type_name]
+local new_component<const> = function(type_name, opts)
+	local ctor<const> = componentregistry[type_name]
 	if not ctor then
 		error('component "' .. type_name .. '" is not registered.')
 	end

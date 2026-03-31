@@ -1,10 +1,10 @@
-local constants = require('constants')
-local stage_module = require('stage')
-local player_module = require('player')
-local director_module = require('director')
+local constants<const> = require('constants')
+local stage_module<const> = require('stage')
+local player_module<const> = require('player')
+local director_module<const> = require('director')
 
-local function service_irqs()
-	local flags = mem[sys_irq_flags]
+local service_irqs<const> = function()
+	local flags<const> = mem[sys_irq_flags]
 	if flags ~= 0 then
 		irq(flags)
 	end

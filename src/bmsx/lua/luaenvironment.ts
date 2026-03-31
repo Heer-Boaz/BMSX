@@ -2,15 +2,19 @@ import { LuaRuntimeError } from './luaerrors';
 import type { LuaValue } from './luavalue';
 import type { LuaSourceRange } from './syntax/lua_ast';
 
+type BindingRecord = {
+	value: LuaValue;
+	definition: LuaSourceRange | null;
+	isConst: boolean;
+};
+
 export class LuaEnvironment {
 	private readonly parent: LuaEnvironment;
-	private readonly values: Map<string, LuaValue>;
-	private readonly definitions: Map<string, LuaSourceRange>;
+	private readonly bindings: Map<string, BindingRecord>;
 
-	private constructor(parent: LuaEnvironment) {
+	private constructor(parent: LuaEnvironment, bindings: Map<string, BindingRecord> = new Map<string, BindingRecord>()) {
 		this.parent = parent;
-		this.values = new Map<string, LuaValue>();
-		this.definitions = new Map<string, LuaSourceRange>();
+		this.bindings = bindings;
 	}
 
 	public static createRoot(): LuaEnvironment {
@@ -21,28 +25,46 @@ export class LuaEnvironment {
 		return new LuaEnvironment(parent);
 	}
 
-	public set(_name: string, value: LuaValue, range?: LuaSourceRange): void {
-		const name = _name;
-		this.values.set(name, value);
-		if (range && !this.definitions.has(name)) {
-			this.definitions.set(name, range);
+	public snapshot(): LuaEnvironment {
+		if (this.parent === null) {
+			return this;
 		}
+		const parentSnapshot = this.parent.parent === null ? this.parent : this.parent.snapshot();
+		return new LuaEnvironment(parentSnapshot, new Map(this.bindings));
 	}
 
-	public assignExisting(_name: string, value: LuaValue): void {
+	public set(_name: string, value: LuaValue, range?: LuaSourceRange, isConst = false): void {
+		const name = _name;
+		const existing = this.bindings.get(name);
+		this.bindings.set(name, {
+			value,
+			definition: range ?? (existing ? existing.definition : null),
+			isConst,
+		});
+	}
+
+	public assignExisting(_name: string, value: LuaValue, isConst?: boolean): void {
 		const name = _name;
 		const resolved = this.resolve(name);
 		if (resolved === null) {
 			throw new LuaRuntimeError(`[LuaEnvironment] Attempted to assign to undefined variable '${name}'.`, '<environment>', 0, 0);
 		}
-		resolved.values.set(name, value);
+		const binding = resolved.bindings.get(name);
+		if (binding.isConst) {
+			const range = binding.definition ?? resolved.getDefinition(name);
+			throw new LuaRuntimeError(`[LuaEnvironment] Attempted to assign to constant variable '${name}'.`, range?.path ?? '<environment>', range?.start.line ?? 0, range?.start.column ?? 0);
+		}
+		binding.value = value;
+		if (isConst !== undefined) {
+			binding.isConst = isConst;
+		}
 	}
 
 	public get(_name: string): LuaValue {
 		const name = _name;
-		const value = this.values.get(name);
-		if (value !== undefined) {
-			return value;
+		const binding = this.bindings.get(name);
+		if (binding) {
+			return binding.value;
 		}
 		if (this.parent !== null) {
 			return this.parent.get(name);
@@ -52,9 +74,9 @@ export class LuaEnvironment {
 
 	public getDefinition(_name: string): LuaSourceRange {
 		const name = _name;
-		const local = this.definitions.get(name);
-		if (local) {
-			return local;
+		const local = this.bindings.get(name);
+		if (local && local.definition) {
+			return local.definition;
 		}
 		if (this.parent !== null) {
 			return this.parent.getDefinition(name);
@@ -64,12 +86,12 @@ export class LuaEnvironment {
 
 	public hasLocal(_name: string): boolean {
 		const name = _name;
-		return this.values.has(name);
+		return this.bindings.has(name);
 	}
 
 	public resolve(_name: string): LuaEnvironment {
 		const name = _name;
-		if (this.values.has(name)) {
+		if (this.bindings.has(name)) {
 			return this;
 		}
 		if (this.parent !== null) {
@@ -79,11 +101,15 @@ export class LuaEnvironment {
 	}
 
 	public entries(): Array<[string, LuaValue]> {
-		return Array.from(this.values.entries());
+		const entries: Array<[string, LuaValue]> = [];
+		for (const [name, binding] of this.bindings.entries()) {
+			entries.push([name, binding.value]);
+		}
+		return entries;
 	}
 
 	public keys(): IterableIterator<string> {
-		return this.values.keys();
+		return this.bindings.keys();
 	}
 
 	public getParent(): LuaEnvironment {

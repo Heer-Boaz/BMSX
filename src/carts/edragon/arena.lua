@@ -33,7 +33,7 @@ function arena:ctor()
 	self:bind_visual()
 end
 
-local function register_arena_definition()
+local register_arena_definition<const> = function()
 	define_prefab({
 		def_id = constants.ids.arena_def,
 		class = arena,

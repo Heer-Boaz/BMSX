@@ -1,15 +1,15 @@
-local constants = require('constants')
+local constants<const> = require('constants')
 
-local stage_subsystem = {}
+local stage_subsystem<const> = {}
 stage_subsystem.__index = stage_subsystem
 
-local house_roof_base_chars = { ['@'] = true, ['/'] = true, ['\\'] = true, ['^'] = true }
-local snow_surface_chars = { ['='] = true, ['-'] = true }
-local empty_stage_chars = { p = true, ['P'] = true, m = true, ['M'] = true }
-local chimney_chars = { s = true, ['S'] = true, ['R'] = true }
-local transparent_overlay_chars = { ['K'] = true, ["'"] = true }
+local house_roof_base_chars<const> = { ['@'] = true, ['/'] = true, ['\\'] = true, ['^'] = true }
+local snow_surface_chars<const> = { ['='] = true, ['-'] = true }
+local empty_stage_chars<const> = { p = true, ['P'] = true, m = true, ['M'] = true }
+local chimney_chars<const> = { s = true, ['S'] = true, ['R'] = true }
+local transparent_overlay_chars<const> = { ['K'] = true, ["'"] = true }
 
-local non_collision_tile_keys = {
+local non_collision_tile_keys<const> = {
 	none = true,
 	lantaarn1 = true,
 	lantaarn2 = true,
@@ -24,7 +24,7 @@ local non_collision_tile_keys = {
 	snowtree20 = true,
 }
 
-local tile_asset_by_key = {
+local tile_asset_by_key<const> = {
 	collision = constants.assets.house_tile_1,
 	house_1 = constants.assets.house_tile_1,
 	house_2 = constants.assets.house_tile_2,
@@ -82,10 +82,10 @@ local tile_asset_by_key = {
 	snowtree21 = constants.assets.snowtree21,
 }
 
-local function new_rows(width, height, default_value)
-	local out = {}
+local new_rows<const> = function(width, height, default_value)
+	local out<const> = {}
 	for y = 1, height do
-		local row = {}
+		local row<const> = {}
 		for x = 1, width do
 			row[x] = default_value
 		end
@@ -94,9 +94,9 @@ local function new_rows(width, height, default_value)
 	return out
 end
 
-local function reset_star_positions(target, source)
+local reset_star_positions<const> = function(target, source)
 	for i = 1, #source do
-		local src = source[i]
+		local src<const> = source[i]
 		local star = target[i]
 		if star == nil then
 			star = {}
@@ -110,29 +110,29 @@ local function reset_star_positions(target, source)
 	end
 end
 
-local function char_at(map_rows, x, y)
+local char_at<const> = function(map_rows, x, y)
 	if y < 1 or y > #map_rows then
 		return ' '
 	end
-	local row = map_rows[y]
+	local row<const> = map_rows[y]
 	if x < 1 or x > string.len(row) then
 		return ' '
 	end
 	return string.sub(row, x, x)
 end
 
-local function should_snow_from_neighbors(below, left_down, right_down)
+local should_snow_from_neighbors<const> = function(below, left_down, right_down)
 	return snow_surface_chars[below] and left_down ~= ' ' and right_down ~= ' '
 end
 
-local function decode_stage_tile(map_rows, x, y)
-	local ch = char_at(map_rows, x, y)
-	local above = char_at(map_rows, x, y - 1)
-	local below = char_at(map_rows, x, y + 1)
-	local left = char_at(map_rows, x - 1, y)
-	local right = char_at(map_rows, x + 1, y)
-	local left_down = char_at(map_rows, x - 1, y + 1)
-	local right_down = char_at(map_rows, x + 1, y + 1)
+local decode_stage_tile<const> = function(map_rows, x, y)
+	local ch<const> = char_at(map_rows, x, y)
+	local above<const> = char_at(map_rows, x, y - 1)
+	local below<const> = char_at(map_rows, x, y + 1)
+	local left<const> = char_at(map_rows, x - 1, y)
+	local right<const> = char_at(map_rows, x + 1, y)
+	local left_down<const> = char_at(map_rows, x - 1, y + 1)
+	local right_down<const> = char_at(map_rows, x + 1, y + 1)
 
 	if ch == '!' then
 		return 'collision'
@@ -216,7 +216,7 @@ local function decode_stage_tile(map_rows, x, y)
 		return 'ground_end'
 	end
 	if ch == '_' then
-		local parity_even = ((x - 1) % 2) == 0
+		local parity_even<const> = ((x - 1) % 2) == 0
 		if left == ' ' then
 			return 'ground_start_v'
 		end
@@ -229,7 +229,7 @@ local function decode_stage_tile(map_rows, x, y)
 		return 'ground2_v'
 	end
 	if ch == '%' then
-		local parity_even = ((x - 1) % 2) == 0
+		local parity_even<const> = ((x - 1) % 2) == 0
 		if parity_even then
 			return 'ground3'
 		end
@@ -355,12 +355,12 @@ local function decode_stage_tile(map_rows, x, y)
 	error('nemesis_s unsupported stage symbol "' .. ch .. '" at x=' .. tostring(x) .. ', y=' .. tostring(y))
 end
 
-local function resolve_tile_material(tile_key)
+local resolve_tile_material<const> = function(tile_key)
 	if tile_key == nil then
 		return nil, 0
 	end
 
-	local tile_id = tile_asset_by_key[tile_key]
+	local tile_id<const> = tile_asset_by_key[tile_key]
 	if non_collision_tile_keys[tile_key] then
 		return tile_id, 0
 	end
@@ -379,12 +379,12 @@ function stage_subsystem:apply_stage_config(stage_data)
 end
 
 function stage_subsystem:build_tape()
-	local stage_data = assets.data[constants.stage.asset_id]
+	local stage_data<const> = assets.data[constants.stage.asset_id]
 	self:apply_stage_config(stage_data)
-	local map_rows = stage_data.map_rows
+	local map_rows<const> = stage_data.map_rows
 
-	local width = string.len(map_rows[1])
-	local height = #map_rows
+	local width<const> = string.len(map_rows[1])
+	local height<const> = #map_rows
 
 	self.tile_rows = height
 	self.tape_length_tiles = width
@@ -393,10 +393,10 @@ function stage_subsystem:build_tape()
 	self.solid_tape = new_rows(width, height, 0)
 
 	for stage_y = 1, height do
-		local row = map_rows[stage_y]
+		local row<const> = map_rows[stage_y]
 		for stage_x = 1, width do
-			local tile_key = decode_stage_tile(map_rows, stage_x, stage_y)
-			local tile_id, solid = resolve_tile_material(tile_key)
+			local tile_key<const> = decode_stage_tile(map_rows, stage_x, stage_y)
+			local tile_id<const> , solid<const> = resolve_tile_material(tile_key)
 			self.tile_tape[stage_y][stage_x] = tile_id
 			self.solid_tape[stage_y][stage_x] = solid
 		end
@@ -405,7 +405,7 @@ end
 
 function stage_subsystem:apply_star_scroll(stars, step)
 	for i = 1, #stars do
-		local star = stars[i]
+		local star<const> = stars[i]
 		star.x = star.x - step
 		if star.x < 0 then
 			star.x = constants.machine.game_width
@@ -439,7 +439,7 @@ function stage_subsystem:update_runtime()
 	local smooth_scroll_px = 0
 
 	if self.scrolling then
-		local max_left_tile = self.tape_length_tiles - self.tile_columns + 1
+		local max_left_tile<const> = self.tape_length_tiles - self.tile_columns + 1
 		local should_advance = false
 
 		self.scroll_advanced = false
@@ -498,10 +498,10 @@ function stage_subsystem:draw_star_particles(stars, imgid, hidden)
 	if hidden then
 		return
 	end
-	local handle = assets.img[imgid].handle
+	local handle<const> = assets.img[imgid].handle
 	for i = 1, #stars do
-		local star = stars[i]
-		write_words(
+		local star<const> = stars[i]
+		memwrite(
 			sys_vdp_cmd_arg0,
 			handle,
 			star.x,
@@ -517,7 +517,7 @@ function stage_subsystem:draw_star_particles(stars, imgid, hidden)
 			1,
 			0
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
 end
 
@@ -525,22 +525,22 @@ function stage_subsystem:draw()
 	self:draw_star_particles(self.yellow_stars, constants.assets.star_yellow, self.yellow_blink)
 	self:draw_star_particles(self.blue_stars, constants.assets.star_blue, self.blue_blink)
 
-	local draw_columns = self.tile_columns + 1
-	local tile_size = self.tile_size
-	local z = self.draw_z
+	local draw_columns<const> = self.tile_columns + 1
+	local tile_size<const> = self.tile_size
+	local z<const> = self.draw_z
 
 	for screen_column = 0, draw_columns do
-		local stage_column = self.left_tile + screen_column
+		local stage_column<const> = self.left_tile + screen_column
 		if stage_column > self.tape_length_tiles then
 			break
 		end
 
-		local draw_x = screen_column * tile_size
+		local draw_x<const> = screen_column * tile_size
 		for stage_row = 1, self.tile_rows do
-			local tile_id = self.tile_tape[stage_row][stage_column]
+			local tile_id<const> = self.tile_tape[stage_row][stage_column]
 			if tile_id ~= nil then
-				local handle = assets.img[tile_id].handle
-				write_words(
+				local handle<const> = assets.img[tile_id].handle
+				memwrite(
 					sys_vdp_cmd_arg0,
 					handle,
 					draw_x,
@@ -556,7 +556,7 @@ function stage_subsystem:draw()
 					1,
 					0
 				)
-				write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+				mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 			end
 		end
 	end
@@ -579,7 +579,7 @@ function stage_subsystem:ctor()
 	self.blue_stars = {}
 end
 
-local function define_stage_fsm()
+local define_stage_fsm<const> = function()
 	define_fsm(constants.ids.stage_fsm, {
 		initial = 'boot',
 		states = {
@@ -625,7 +625,7 @@ local function define_stage_fsm()
 		})
 end
 
-local function register_stage_subsystem_definition()
+local register_stage_subsystem_definition<const> = function()
 	define_subsystem({
 		def_id = constants.ids.stage_def,
 		class = stage_subsystem,

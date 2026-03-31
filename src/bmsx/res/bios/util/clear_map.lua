@@ -1,6 +1,6 @@
-local function clear_map(map)
+local clear_map<const> = function(map)
 	while true do
-		local key = next(map)
+		local key<const> = next(map)
 		if key == nil then
 			break
 		end

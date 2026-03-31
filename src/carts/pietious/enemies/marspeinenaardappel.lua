@@ -1,8 +1,8 @@
-local constants = require('constants')
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local constants<const> = require('constants')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local marspeinenaardappel = {}
+local marspeinenaardappel<const> = {}
 marspeinenaardappel.__index = marspeinenaardappel
 
 function marspeinenaardappel:ctor()
@@ -10,21 +10,21 @@ function marspeinenaardappel:ctor()
 end
 
 function marspeinenaardappel.bt_tick(self, _blackboard)
-	local speed_x = self.speed_x_num
-	local speed_y = self.speed_y_num
-	local rm = object('room')
+	local speed_x<const> = self.speed_x_num
+	local speed_y<const> = self.speed_y_num
+	local rm<const> = object('room')
 
 	self.x = self.x + speed_x
 	self.y = self.y + speed_y
 
 	if speed_x < 0 then
-		local test_x = self.x + speed_x
+		local test_x<const> = self.x + speed_x
 		if test_x <= 0 or rm:has_collision_flags_at_world(test_x, self.y, constants.collision_flags.solid_mask) then
 			self.speed_x_num = -speed_x
 			self.x = self.x + (self.speed_x_num * 2)
 		end
 	elseif speed_x > 0 then
-		local test_x = self.x + self.sx + speed_x
+		local test_x<const> = self.x + self.sx + speed_x
 		if test_x >= rm.world_width or rm:has_collision_flags_at_world(test_x, self.y, constants.collision_flags.solid_mask) then
 			self.speed_x_num = -speed_x
 			self.x = self.x + (self.speed_x_num * 2)
@@ -32,13 +32,13 @@ function marspeinenaardappel.bt_tick(self, _blackboard)
 	end
 
 	if speed_y < 0 then
-		local test_y = self.y + speed_y
+		local test_y<const> = self.y + speed_y
 		if test_y <= rm.world_top or rm:has_collision_flags_at_world(self.x, test_y, constants.collision_flags.solid_mask) then
 			self.speed_y_num = -speed_y
 			self.y = self.y + (self.speed_y_num * 2)
 		end
 	elseif speed_y > 0 then
-		local test_y = self.y + self.sy + speed_y
+		local test_y<const> = self.y + self.sy + speed_y
 		if test_y >= rm.world_height or rm:has_collision_flags_at_world(self.x, test_y, constants.collision_flags.solid_mask) then
 			self.speed_y_num = -speed_y
 			self.y = self.y + (self.speed_y_num * 2)

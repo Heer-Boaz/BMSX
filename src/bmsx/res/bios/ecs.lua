@@ -43,7 +43,7 @@
 --    state-specific physics).  Never put generic rendering or component
 --    processing there.
 
-local tickgroup = {
+local tickgroup<const> = {
 	input = 10,
 	actioneffect = 20,
 	moderesolution = 30,
@@ -53,11 +53,11 @@ local tickgroup = {
 	eventflush = 70,
 }
 
-local ecsystem = {}
+local ecsystem<const> = {}
 ecsystem.__index = ecsystem
 
 function ecsystem.new(group, priority)
-	local self = setmetatable({}, ecsystem)
+	local self<const> = setmetatable({}, ecsystem)
 	self.group = group
 	self.priority = priority or 0
 	self.__ecs_id = nil
@@ -68,12 +68,12 @@ end
 function ecsystem:update(_dt_ms)
 end
 
-local ecsystemmanager = {}
+local ecsystemmanager<const> = {}
 ecsystemmanager.__index = ecsystemmanager
-local empty_stats = {}
+local empty_stats<const> = {}
 
 function ecsystemmanager.new()
-	local self = setmetatable({}, ecsystemmanager)
+	local self<const> = setmetatable({}, ecsystemmanager)
 	self.systems = {}
 	return self
 end
@@ -115,9 +115,9 @@ function ecsystemmanager:record_stat(_sys, _t0, _t1)
 end
 
 function ecsystemmanager:update_until(max_group)
-	local dt_ms = $.get_frame_delta_ms()
+	local dt_ms<const> = $.get_frame_delta_ms()
 	for i = 1, #self.systems do
-		local s = self.systems[i]
+		local s<const> = self.systems[i]
 		if s.group <= max_group then
 			-- local t0 = $.platform.clock.perf_now()
 			s:update(dt_ms)
@@ -128,9 +128,9 @@ function ecsystemmanager:update_until(max_group)
 end
 
 function ecsystemmanager:update_from(min_group)
-	local dt_ms = $.get_frame_delta_ms()
+	local dt_ms<const> = $.get_frame_delta_ms()
 	for i = 1, #self.systems do
-		local s = self.systems[i]
+		local s<const> = self.systems[i]
 		if s.group >= min_group then
 			-- local t0 = $.platform.clock.perf_now()
 			s:update(dt_ms)
@@ -141,9 +141,9 @@ function ecsystemmanager:update_from(min_group)
 end
 
 function ecsystemmanager:update_phase(group)
-	local dt_ms = $.get_frame_delta_ms()
+	local dt_ms<const> = $.get_frame_delta_ms()
 	for i = 1, #self.systems do
-		local s = self.systems[i]
+		local s<const> = self.systems[i]
 		if s.group == group then
 			-- local t0 = $.platform.clock.perf_now()
 			s:update(dt_ms)
@@ -155,9 +155,9 @@ end
 
 function ecsystemmanager:run_paused()
 	self:begin_frame()
-	local dt_ms = $.get_frame_delta_ms()
+	local dt_ms<const> = $.get_frame_delta_ms()
 	for i = 1, #self.systems do
-		local s = self.systems[i]
+		local s<const> = self.systems[i]
 		if s.runs_while_paused then
 			-- local t0 = $.platform.clock.perf_now()
 			s:update(dt_ms)

@@ -9,23 +9,23 @@
 -- of bind().  Both approaches are equivalent — FSM `on` is preferred when
 -- the object already has an FSM.
 
-local constants = require('constants')
-local font = require('font')
+local constants<const> = require('constants')
+local font<const> = require('font')
 
-local lithograph_screen = {}
+local lithograph_screen<const> = {}
 lithograph_screen.__index = lithograph_screen
 
-local lithograph_mode_sprite_id = 'lithograph_mode'
+local lithograph_mode_sprite_id<const> = 'lithograph_mode'
 
 function lithograph_screen:bind_visual()
-	local rc = self:get_component('customvisualcomponent')
+	local rc<const> = self:get_component('customvisualcomponent')
 	rc.producer = function(_ctx)
 		self:draw_screen()
 	end
 end
 
 function lithograph_screen:draw_screen()
-	write_words(
+	memwrite(
 		sys_vdp_cmd_arg0,
 		assets.img[lithograph_mode_sprite_id].handle,
 		constants.room.tile_size4,
@@ -41,11 +41,11 @@ function lithograph_screen:draw_screen()
 		1,
 		0
 	)
-	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
-	local lines = self.lines
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
+	local lines<const> = self.lines
 	if #lines > 0 then
-		local font = self.text_font
-		write_words(
+		local font<const> = self.text_font
+		memwrite(
 			sys_vdp_cmd_arg0,
 			table.concat(lines, '\n'),
 			0,
@@ -65,7 +65,7 @@ function lithograph_screen:draw_screen()
 			0,
 			0
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 	end
 end
 
@@ -75,7 +75,7 @@ function lithograph_screen:ctor()
 	self:bind_visual()
 end
 
-local function define_lithograph_screen_fsm()
+local define_lithograph_screen_fsm<const> = function()
 	define_fsm('lithograph_screen', {
 		initial = 'active',
 		on = {
@@ -98,7 +98,7 @@ local function define_lithograph_screen_fsm()
 	})
 end
 
-local function register_lithograph_screen_definition()
+local register_lithograph_screen_definition<const> = function()
 	define_prefab({
 		def_id = 'lithograph_screen',
 		class = lithograph_screen,

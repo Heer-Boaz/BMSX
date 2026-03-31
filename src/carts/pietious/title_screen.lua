@@ -1,13 +1,13 @@
-local constants = require('constants')
-local components = require('components')
+local constants<const> = require('constants')
+local components<const> = require('components')
 
-local title_screen = {}
+local title_screen<const> = {}
 title_screen.__index = title_screen
 
-local sparkle_timeline_id = 'title_screen.sparkle'
-local start_timeline_id = 'title_screen.start'
+local sparkle_timeline_id<const> = 'title_screen.sparkle'
+local start_timeline_id<const> = 'title_screen.start'
 
-local title_exit_events = {
+local title_exit_events<const> = {
 	'title_wait',
 	'room',
 	'transition',
@@ -23,29 +23,29 @@ local title_exit_events = {
 	'daemon_appearance',
 }
 
-local sparkle_sweep_sprite_ids = {
+local sparkle_sweep_sprite_ids<const> = {
 	'tsf4',
 	'tsf5',
 	'tsf6',
 	'tsf7',
 }
 
-local sparkle_sweep_start_x = 96
-local sparkle_sweep_y = 71
-local sparkle_sweep_stage_frames = 7
-local sparkle_sweep_step_x = 2
-local sparkle_burst_single = { sprite_id = 'tsf_burst_single', x = 160, y = 63 }
-local sparkle_burst_pair = { sprite_id = 'tsf_pair', x = 158, y = 63 }
+local sparkle_sweep_start_x<const> = 96
+local sparkle_sweep_y<const> = 71
+local sparkle_sweep_stage_frames<const> = 7
+local sparkle_sweep_step_x<const> = 2
+local sparkle_burst_single<const> = { sprite_id = 'tsf_burst_single', x = 160, y = 63 }
+local sparkle_burst_pair<const> = { sprite_id = 'tsf_pair', x = 158, y = 63 }
 
-local sparkle_delay_frames = 48
-local sparkle_burst_single_frames = 16
-local sparkle_burst_pair_frames = 32
-local sparkle_burst_return_frames = 16
-local sparkle_tail_frames = 120
+local sparkle_delay_frames<const> = 48
+local sparkle_burst_single_frames<const> = 16
+local sparkle_burst_pair_frames<const> = 32
+local sparkle_burst_return_frames<const> = 16
+local sparkle_tail_frames<const> = 120
 
-local function build_title_sparkle_frames()
-	local frames = {}
-	local function add_hidden_frame(phase, hold)
+local build_title_sparkle_frames<const> = function()
+	local frames<const> = {}
+	local add_hidden_frame<const> = function(phase, hold)
 		frames[#frames + 1] = {
 			value = {
 				phase = phase,
@@ -56,7 +56,7 @@ local function build_title_sparkle_frames()
 			hold = hold,
 		}
 	end
-	local function add_single_frame(phase, sprite_id, x, y, hold)
+	local add_single_frame<const> = function(phase, sprite_id, x, y, hold)
 		frames[#frames + 1] = {
 			value = {
 				phase = phase,
@@ -87,8 +87,8 @@ local function build_title_sparkle_frames()
 	return timeline.build_frame_sequence(frames)
 end
 
-local function build_title_start_frames()
-	local frames = {}
+local build_title_start_frames<const> = function()
+	local frames<const> = {}
 	for _ = 1, constants.flow.title_start_blink_cycles do
 		frames[#frames + 1] = {
 			value = { sprite_id = 'title_screen_play_start' },
@@ -122,15 +122,15 @@ function title_screen:ctor()
 	self.sparkle_sprite.enabled = false
 end
 
-local function build_title_root_on(show_path)
-	local on = {
+local build_title_root_on<const> = function(show_path)
+	local on<const> = {
 		['title'] = {
 			emitter = 'd',
 			go = show_path,
 		},
 	}
 	for i = 1, #title_exit_events do
-		local event_name = title_exit_events[i]
+		local event_name<const> = title_exit_events[i]
 		on[event_name] = {
 			emitter = 'd',
 			go = '/hidden',
@@ -139,7 +139,7 @@ local function build_title_root_on(show_path)
 	return on
 end
 
-local function define_title_screen_fsm()
+local define_title_screen_fsm<const> = function()
 	define_fsm('title_screen', {
 		initial = 'hidden',
 		on = build_title_root_on('/idle'),
@@ -199,7 +199,7 @@ local function define_title_screen_fsm()
 	})
 end
 
-local function register_title_screen_definition()
+local register_title_screen_definition<const> = function()
 	define_prefab({
 		def_id = 'title_screen',
 		class = title_screen,

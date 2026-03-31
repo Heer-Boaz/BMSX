@@ -1,17 +1,17 @@
-local constants = require('constants')
-local combat_overlap = require('combat_overlap')
-local progression = require('progression')
-local worldobject = require('worldobject')
-local world_item = {}
+local constants<const> = require('constants')
+local combat_overlap<const> = require('combat_overlap')
+local progression<const> = require('progression')
+local worldobject<const> = require('worldobject')
+local world_item<const> = {}
 world_item.__index = world_item
 
-local function pickup_inventory_item(player, item_type)
+local pickup_inventory_item<const> = function(player, item_type)
 	player.inventory_items[item_type] = true
 	player.events:emit('pickupitem')
 	return true
 end
 
-local function pickup_keyworld1(player, _item_type)
+local pickup_keyworld1<const> = function(player, _item_type)
 	player.health = player.max_health
 	player:emit_health_changed()
 	player.inventory_items.keyworld1 = true
@@ -19,23 +19,23 @@ local function pickup_keyworld1(player, _item_type)
 	return true
 end
 
-local function pickup_life(player, _item_type)
-	local picked = player:collect_loot('life', constants.pickup_item.life_regen)
+local pickup_life<const> = function(player, _item_type)
+	local picked<const> = player:collect_loot('life', constants.pickup_item.life_regen)
 	if picked then
 		player.events:emit('healing')
 	end
 	return picked
 end
 
-local function pickup_ammo(player, _item_type)
-	local picked = player:collect_loot('ammo', constants.pickup_item.ammo_regen)
+local pickup_ammo<const> = function(player, _item_type)
+	local picked<const> = player:collect_loot('ammo', constants.pickup_item.ammo_regen)
 	if picked then
 		player.events:emit('pickupitem')
 	end
 	return picked
 end
 
-local pickup_handlers = {
+local pickup_handlers<const> = {
 	ammo = pickup_ammo,
 	ammofromrock = pickup_ammo,
 	life = pickup_life,
@@ -55,7 +55,7 @@ function world_item:ctor()
 	self:gfx(constants.world_item.sprite[self.item_type])
 end
 
-local function define_world_item_fsm()
+local define_world_item_fsm<const> = function()
 		define_fsm('world_item', {
 			initial = 'active',
 			on = {
@@ -63,11 +63,11 @@ local function define_world_item_fsm()
 					if combat_overlap.classify_player_contact(event) ~= 'body' then
 						return
 					end
-				local player = object('pietolon')
+				local player<const> = object('pietolon')
 				if player.health <= 0 then
 					return
 				end
-				local pickup_handler = pickup_handlers[self.item_type]
+				local pickup_handler<const> = pickup_handlers[self.item_type]
 				if not pickup_handler(player, self.item_type) then
 					return
 				end
@@ -89,7 +89,7 @@ local function define_world_item_fsm()
 	})
 end
 
-local function register_world_item_definition()
+local register_world_item_definition<const> = function()
 	define_prefab({
 		def_id = 'world_item',
 		class = world_item,

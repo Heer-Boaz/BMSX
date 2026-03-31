@@ -1,10 +1,10 @@
-local behaviourtree = require('behaviourtree')
-local enemy_base = require('enemies/enemy_base')
+local behaviourtree<const> = require('behaviourtree')
+local enemy_base<const> = require('enemies/enemy_base')
 
-local nootfoe = {}
+local nootfoe<const> = {}
 nootfoe.__index = nootfoe
 
-local noot_colors = {
+local noot_colors<const> = {
 	{ r = 1, g = 1, b = 1, a = 1 },
 	{ r = 1, g = 0, b = 0, a = 1 },
 	{ r = 0, g = 1, b = 1, a = 1 },

@@ -2,7 +2,7 @@ local constants = require('constants')
 local fighter_module = require('fighter')
 local arena_module = require('arena')
 
-local function service_irqs()
+local service_irqs<const> = function()
 	local flags = mem[sys_irq_flags]
 	if flags ~= 0 then
 		irq(flags)

@@ -1,6 +1,6 @@
-local constants = require('constants')
+local constants<const> = require('constants')
 
-local director = {}
+local director<const> = {}
 director.__index = director
 
 function director:emit_metric()
@@ -48,7 +48,7 @@ function director:update_runtime()
 	self.frame = self.frame + 1
 end
 
-local function define_director_fsm()
+local define_director_fsm<const> = function()
 	define_fsm(constants.ids.director_fsm, {
 		initial = 'boot',
 		on = {
@@ -113,7 +113,7 @@ local function define_director_fsm()
 		})
 end
 
-local function register_director_definition()
+local register_director_definition<const> = function()
 	define_prefab({
 		def_id = constants.ids.director_def,
 		class = director,

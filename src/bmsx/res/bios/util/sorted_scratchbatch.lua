@@ -1,21 +1,21 @@
 -- sorted_scratchbatch.lua
 -- reusable scratch batch with sort support for the active window
 
-local scratchbatch = require('scratchbatch')
+local scratchbatch<const> = require('scratchbatch')
 
-local sorted_scratchbatch = {}
+local sorted_scratchbatch<const> = {}
 sorted_scratchbatch.__index = sorted_scratchbatch
 setmetatable(sorted_scratchbatch, { __index = scratchbatch })
 
-local function default_compare(left, right)
+local default_compare<const> = function(left, right)
 	return left < right
 end
 
-local function sort_range(items, left, right, compare)
+local sort_range<const> = function(items, left, right, compare)
 	while left < right do
 		local i = left
 		local j = right
-		local pivot = items[(left + right) // 2]
+		local pivot<const> = items[(left + right) // 2]
 		while i <= j do
 			while i <= right and compare(items[i], pivot) do
 				i = i + 1
@@ -44,7 +44,7 @@ local function sort_range(items, left, right, compare)
 end
 
 function sorted_scratchbatch.new(initial_capacity, fill_value, compare)
-	local batch = scratchbatch.new(initial_capacity, fill_value)
+	local batch<const> = scratchbatch.new(initial_capacity, fill_value)
 	batch.compare = compare or default_compare
 	return setmetatable(batch, sorted_scratchbatch)
 end

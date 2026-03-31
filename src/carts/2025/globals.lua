@@ -228,15 +228,15 @@ combat_results_bg_b = p3_blue_b
 combat_results_bg_a = 0.85
 
 function set_text_lines(text_object_id, lines, typed)
-	local text_obj = object(text_object_id)
+	local text_obj<const> = object(text_object_id)
 	-- Convert table to newline-separated string (portable to C++)
-	local should_type = typed
+	local should_type<const> = typed
 	text_obj:set_text(lines, { typed = should_type, snap = not should_type })
 end
 
 function clear_text(text_object_id)
 	set_text_lines(text_object_id, {}, false)
-	local text_obj = object(text_object_id)
+	local text_obj<const> = object(text_object_id)
 	text_obj.highlighted_line_index = nil
 end
 
@@ -247,7 +247,7 @@ function clear_texts(text_ids)
 end
 
 function finish_text(text_object_id)
-	local text_obj = object(text_object_id)
+	local text_obj<const> = object(text_object_id)
 	text_obj:reveal_text()
 end
 
@@ -255,7 +255,7 @@ function apply_background(id)
 	if id == nil then
 		return
 	end
-	local bg = object(bg_id)
+	local bg<const> = object(bg_id)
 	bg:gfx(id)
 end
 
@@ -268,15 +268,15 @@ function reset_text_colors()
 end
 
 function hide_transition_layers()
-	local overlay = object(transition_overlay_id)
+	local overlay<const> = object(transition_overlay_id)
 	overlay.visible = false
 	overlay.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
 	for i = 1, #transition_panel_ids do
-		local panel = object(transition_panel_ids[i])
+		local panel<const> = object(transition_panel_ids[i])
 		panel.visible = false
 		panel.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
 	end
-	local accent = object(transition_accent_id)
+	local accent<const> = object(transition_accent_id)
 	accent.visible = false
 	accent.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 0 }
 end

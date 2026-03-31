@@ -1,14 +1,14 @@
 -- ecs_pipeline.lua
 -- ecs pipeline registry and builder for lua engine
 
-local ecs = require('ecs')
-local registry = require('registry')
+local ecs<const> = require('ecs')
+local registry<const> = require('registry')
 
-local ecspipelineregistry = {}
+local ecspipelineregistry<const> = {}
 ecspipelineregistry.__index = ecspipelineregistry
 
 function ecspipelineregistry.new()
-	local self = setmetatable({}, ecspipelineregistry)
+	local self<const> = setmetatable({}, ecspipelineregistry)
 	self._descs = {}
 	self._last_diagnostics = nil
 	return self
@@ -29,19 +29,19 @@ function ecspipelineregistry:get(id)
 end
 
 function ecspipelineregistry:build(world_instance, nodes)
-	local t0 = $.platform.clock.perf_now()
-	local filtered = {}
+	local t0<const> = $.platform.clock.perf_now()
+	local filtered<const> = {}
 	for i = 1, #nodes do
-		local n = nodes[i]
+		local n<const> = nodes[i]
 		if not n.when or n.when(world_instance) then
 			filtered[#filtered + 1] = n
 		end
 	end
 
-	local resolved = {}
+	local resolved<const> = {}
 	for i = 1, #filtered do
-		local n = filtered[i]
-		local d = self._descs[n.ref]
+		local n<const> = filtered[i]
+		local d<const> = self._descs[n.ref]
 		if not d then
 			error('ecspipelineregistry: unknown system ref "' .. n.ref .. '"')
 		end
@@ -68,18 +68,18 @@ function ecspipelineregistry:build(world_instance, nodes)
 		return a.index < b.index
 	end)
 
-	local group_orders = {}
+	local group_orders<const> = {}
 	for i = 1, #resolved do
-		local r = resolved[i]
+		local r<const> = resolved[i]
 		group_orders[r.group] = group_orders[r.group] or {}
 		group_orders[r.group][#group_orders[r.group] + 1] = r.ref
 	end
 
-	local systems = {}
+	local systems<const> = {}
 	for i = 1, #resolved do
-		local r = resolved[i]
-		local d = self._descs[r.ref]
-		local sys = d.create(r.create_priority)
+		local r<const> = resolved[i]
+		local d<const> = self._descs[r.ref]
+		local sys<const> = d.create(r.create_priority)
 		sys.__ecs_id = r.ref
 		sys.id = 'ecs:' .. r.ref
 		sys.type_name = 'ecsystem'
@@ -88,7 +88,7 @@ function ecspipelineregistry:build(world_instance, nodes)
 
 	-- Deregister previous ECS system instances from the registry.
 	for i = 1, #world_instance.systems.systems do
-		local old = world_instance.systems.systems[i]
+		local old<const> = world_instance.systems.systems[i]
 		if old.id then
 			registry.instance:deregister(old.id, true)
 		end
@@ -101,10 +101,10 @@ function ecspipelineregistry:build(world_instance, nodes)
 	end
 	world_instance:rebind_subsystem_systems_all()
 
-	local t1 = $.platform.clock.perf_now()
-	local diag = {
+	local t1<const> = $.platform.clock.perf_now()
+	local diag<const> = {
 		final_order = (function()
-			local out = {}
+			local out<const> = {}
 			for i = 1, #resolved do
 				out[i] = resolved[i].ref
 			end

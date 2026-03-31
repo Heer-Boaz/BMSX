@@ -1,13 +1,13 @@
 -- input_action_effect_compiler.lua
 -- compile input action effect programs into executable bindings
 
-local action_effects = require('action_effects')
-local eventemitter = require('eventemitter')
+local action_effects<const> = require('action_effects')
+local eventemitter<const> = require('eventemitter')
 
 local compile_effect_list
 
-local function execute_effect_trigger(env, id, payload)
-	local effects = env.effects
+local execute_effect_trigger<const> = function(env, id, payload)
+	local effects<const> = env.effects
 	if not effects then
 		error('[inputactioneffectcompiler] effect trigger "' .. id .. '" attempted without actioneffectcomponent on "' .. env.owner_id .. '".')
 	end
@@ -17,12 +17,12 @@ local function execute_effect_trigger(env, id, payload)
 	return effects:trigger(id, { payload = payload })
 end
 
-local function compile_effect(effect, slot, analysis)
+local compile_effect<const> = function(effect, slot, analysis)
 	if effect['effect.trigger'] ~= nil then
 		if analysis then
 			analysis.uses_effect_triggers = true
 		end
-		local spec = effect['effect.trigger']
+		local spec<const> = effect['effect.trigger']
 		if type(spec) == 'string' then
 			return function(env)
 				execute_effect_trigger(env, spec)
@@ -44,10 +44,10 @@ local function compile_effect(effect, slot, analysis)
 		end
 	end
 	if effect['emit.gameplay'] ~= nil then
-		local spec = effect['emit.gameplay']
+		local spec<const> = effect['emit.gameplay']
 		return function(env)
-			local base = { emitter = env.owner, type = spec.event }
-			local payload = spec.payload
+			local base<const> = { emitter = env.owner, type = spec.event }
+			local payload<const> = spec.payload
 			if payload ~= nil then
 				for k, v in pairs(payload) do
 					base[k] = v
@@ -57,7 +57,7 @@ local function compile_effect(effect, slot, analysis)
 		end
 	end
 	if effect['dispatch.command'] ~= nil then
-		local spec = effect['dispatch.command']
+		local spec<const> = effect['dispatch.command']
 		if type(spec) ~= 'table' then
 			error('[inputactioneffectcompiler] dispatch.command must be a table.')
 		end
@@ -72,13 +72,13 @@ local function compile_effect(effect, slot, analysis)
 		end
 	end
 	if effect.commands ~= nil then
-		local nested = compile_effect_list(effect.commands, slot, analysis)
+		local nested<const> = compile_effect_list(effect.commands, slot, analysis)
 		return nested
 	end
 	error('[inputactioneffectcompiler] unknown effect in slot "' .. (slot or "unknown") .. '".')
 end
 
-local function compile_effect_list(spec, slot, analysis)
+local compile_effect_list<const> = function(spec, slot, analysis)
 	if not spec then
 		return nil
 	end
@@ -88,7 +88,7 @@ local function compile_effect_list(spec, slot, analysis)
 	else
 		entries = { spec }
 	end
-	local executors = {}
+	local executors<const> = {}
 	for i = 1, #entries do
 		executors[#executors + 1] = compile_effect(entries[i], slot, analysis)
 	end
@@ -102,14 +102,14 @@ local function compile_effect_list(spec, slot, analysis)
 	end
 end
 
-local function compile_predicate(binding)
-	local when = binding.when
+local compile_predicate<const> = function(binding)
+	local when<const> = binding.when
 	if not when then
 		return function()
 			return true
 		end
 	end
-	local mode_pred = when.mode
+	local mode_pred<const> = when.mode
 	local mode_items
 	if mode_pred then
 		if type(mode_pred) == 'table' and mode_pred[1] ~= nil then
@@ -123,16 +123,16 @@ local function compile_predicate(binding)
 			return true
 		end
 	end
-	local binding_name = binding.name or '(unnamed)'
+	local binding_name<const> = binding.name or '(unnamed)'
 	for i = 1, #mode_items do
-		local entry = mode_items[i]
+		local entry<const> = mode_items[i]
 		if entry.path == nil and entry.tag == nil then
 			error('[inputactioneffectcompiler] "mode" clause in binding "' .. binding_name .. '" is missing both "path" and "tag".')
 		end
 	end
 	return function(env)
 		for i = 1, #mode_items do
-			local entry = mode_items[i]
+			local entry<const> = mode_items[i]
 			local matches = true
 			if entry.path ~= nil then
 				matches = matches and env.owner:matches_state_path(entry.path)
@@ -154,9 +154,9 @@ local function compile_predicate(binding)
 	end
 end
 
-local function compile_custom_effects(binding, analysis)
-	local map = {}
-	local table_go = binding.go or {}
+local compile_custom_effects<const> = function(binding, analysis)
+	local map<const> = {}
+	local table_go<const> = binding.go or {}
 	for key, spec in pairs(table_go) do
 		if key ~= 'press' and key ~= 'hold' and key ~= 'release' then
 			map[key] = compile_effect_list(spec, key, analysis)
@@ -165,22 +165,22 @@ local function compile_custom_effects(binding, analysis)
 	return map
 end
 
-local function compile_binding(binding, parse)
-	local priority = binding.priority or 0
-	local analysis = { uses_effect_triggers = false }
-	local predicate = compile_predicate(binding)
-	local on = binding.on
+local compile_binding<const> = function(binding, parse)
+	local priority<const> = binding.priority or 0
+	local analysis<const> = { uses_effect_triggers = false }
+	local predicate<const> = compile_predicate(binding)
+	local on<const> = binding.on
 	if not on then
 		error('[inputactioneffectcompiler] binding "' .. (binding.name or '(unnamed)') .. '" is missing an "on" clause.')
 	end
-	local press = on.press and parse(on.press)
-	local hold = on.hold and parse(on.hold)
-	local release = on.release and parse(on.release)
-	local custom_entries = on.custom or {}
-	local custom_effects = compile_custom_effects(binding, analysis)
-	local custom_edges = {}
+	local press<const> = on.press and parse(on.press)
+	local hold<const> = on.hold and parse(on.hold)
+	local release<const> = on.release and parse(on.release)
+	local custom_entries<const> = on.custom or {}
+	local custom_effects<const> = compile_custom_effects(binding, analysis)
+	local custom_edges<const> = {}
 	for i = 1, #custom_entries do
-		local entry = custom_entries[i]
+		local entry<const> = custom_entries[i]
 		custom_edges[#custom_edges + 1] = {
 			name = entry.name,
 			match = parse(entry.pattern),
@@ -204,11 +204,11 @@ local function compile_binding(binding, parse)
 end
 
 function compile_program(program, parse)
-	local prog_priority = program.priority or 0
-	local eval_mode = program.eval or 'first'
-	local bindings = program.bindings or {}
+	local prog_priority<const> = program.priority or 0
+	local eval_mode<const> = program.eval or 'first'
+	local bindings<const> = program.bindings or {}
 
-	local compiled_entries = {}
+	local compiled_entries<const> = {}
 	for i = 1, #bindings do
 		compiled_entries[#compiled_entries + 1] = {
 			index = i,
@@ -231,7 +231,7 @@ function compile_program(program, parse)
 		end
 	end
 
-	local out_bindings = {}
+	local out_bindings<const> = {}
 	for i = 1, #compiled_entries do
 		out_bindings[#out_bindings + 1] = compiled_entries[i].compiled
 	end
@@ -244,12 +244,12 @@ function compile_program(program, parse)
 	}
 end
 
-local function validate_effect(effect, ctx)
+local validate_effect<const> = function(effect, ctx)
 	if not effect then
 		return
 	end
 	if effect['effect.trigger'] ~= nil then
-		local descriptor = effect['effect.trigger']
+		local descriptor<const> = effect['effect.trigger']
 		local effect_id
 		local payload
 		if type(descriptor) == 'string' then
@@ -262,14 +262,14 @@ local function validate_effect(effect, ctx)
 		return
 	end
 	if effect['emit.gameplay'] ~= nil then
-		local spec = effect['emit.gameplay']
+		local spec<const> = effect['emit.gameplay']
 		if type(spec) ~= 'table' then
 			error('[inputactioneffectcompiler] program "' .. ctx.program_id .. '" binding "' .. ctx.binding_name .. '" slot "' .. ctx.slot .. '" emit.gameplay must be a table.')
 		end
 		if type(spec.event) ~= 'string' then
 			error('[inputactioneffectcompiler] program "' .. ctx.program_id .. '" binding "' .. ctx.binding_name .. '" slot "' .. ctx.slot .. '" emit.gameplay missing event.')
 		end
-		local payload = spec.payload
+		local payload<const> = spec.payload
 		if payload ~= nil and type(payload) == 'table' then
 			if payload.type ~= nil then
 				error('[inputactioneffectcompiler] program "' .. ctx.program_id .. '" binding "' .. ctx.binding_name .. '" slot "' .. ctx.slot .. '" emit.gameplay payload must not contain reserved key "type".')
@@ -281,7 +281,7 @@ local function validate_effect(effect, ctx)
 		return
 	end
 	if effect['dispatch.command'] ~= nil then
-		local spec = effect['dispatch.command']
+		local spec<const> = effect['dispatch.command']
 		if type(spec) ~= 'table' then
 			error('[inputactioneffectcompiler] program "' .. ctx.program_id .. '" binding "' .. ctx.binding_name .. '" slot "' .. ctx.slot .. '" dispatch.command must be a table.')
 		end
@@ -291,22 +291,22 @@ local function validate_effect(effect, ctx)
 		return
 	end
 	if effect.commands ~= nil then
-		local commands = effect.commands
+		local commands<const> = effect.commands
 		for i = 1, #commands do
-			local slot = ctx.slot .. '.commands[' .. i .. ']'
+			local slot<const> = ctx.slot .. '.commands[' .. i .. ']'
 			validate_effect(commands[i], { program_id = ctx.program_id, binding_name = ctx.binding_name, slot = slot })
 		end
 		return
 	end
 end
 
-local function validate_effect_spec(spec, ctx)
+local validate_effect_spec<const> = function(spec, ctx)
 	if not spec then
 		return
 	end
 	if type(spec) == 'table' and spec[1] ~= nil then
 		for i = 1, #spec do
-			local slot = ctx.slot .. '[' .. i .. ']'
+			local slot<const> = ctx.slot .. '[' .. i .. ']'
 			validate_effect(spec[i], { program_id = ctx.program_id, binding_name = ctx.binding_name, slot = slot })
 		end
 		return
@@ -315,11 +315,11 @@ local function validate_effect_spec(spec, ctx)
 end
 
 function validate_program_effects(program, program_id)
-	local bindings = program.bindings or {}
+	local bindings<const> = program.bindings or {}
 	for i = 1, #bindings do
-		local binding = bindings[i]
-		local binding_name = binding.name or ('#' .. i)
-		local table_go = binding.go
+		local binding<const> = bindings[i]
+		local binding_name<const> = binding.name or ('#' .. i)
+		local table_go<const> = binding.go
 		if not table_go then
 			error('[inputactioneffectprogramvalidation] program "' .. program_id .. '" binding "' .. binding_name .. '" missing effect table.')
 		end

@@ -1,6 +1,6 @@
-local constants = require('constants')
+local constants<const> = require('constants')
 
-local disappearingwall = {}
+local disappearingwall<const> = {}
 disappearingwall.__index = disappearingwall
 
 function disappearingwall:update_wall_size()
@@ -9,13 +9,13 @@ function disappearingwall:update_wall_size()
 end
 
 function disappearingwall:bind_visual()
-	local renderer = self:get_component('customvisualcomponent')
+	local renderer<const> = self:get_component('customvisualcomponent')
 	renderer.producer = function(_ctx)
 		for ty = 0, self.height_tiles - 1 do
-			local draw_y = self.y + (ty * constants.room.tile_size)
+			local draw_y<const> = self.y + (ty * constants.room.tile_size)
 			for tx = 0, self.width_tiles - 1 do
-				local draw_x = self.x + (tx * constants.room.tile_size)
-				write_words(
+				local draw_x<const> = self.x + (tx * constants.room.tile_size)
+				memwrite(
 					sys_vdp_cmd_arg0,
 					assets.img[self.tiletype].handle,
 					draw_x,
@@ -31,7 +31,7 @@ function disappearingwall:bind_visual()
 					1,
 					0
 				)
-				write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+				mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 			end
 		end
 	end

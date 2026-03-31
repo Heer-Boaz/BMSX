@@ -1,38 +1,38 @@
-local constants = require('constants')
-local enemy_registry = require('enemy_registry')
-local progression = require('progression')
-local pietious_font = require('pietious_font')
-local player_module = require('player')
-local room_module = require('room')
-local draaideur_module = require('draaideur')
-local transition_module = require('transition')
-local shrine_module = require('shrine')
-local seal_module = require('seal')
-local lithograph_module = require('lithograph')
-local lithograph_screen_module = require('lithograph_screen')
-local item_screen_module = require('item_screen')
-local ui_module = require('ui')
-local loot_drop_module = require('loot_drop')
-local world_item_module = require('world_item')
-local rock_module = require('rock')
-local pepernoot_projectile_module = require('pepernoot_projectile')
-local enemy_explosion_module = require('enemy_explosion')
-local elevator_module = require('elevator')
-local elevator_update_system_module = require('elevator_update_system')
-local castle_module = require('castle')
-local world_entrance_module = require('world_entrance')
-local daemon_cloud_module = require('daemon_cloud')
-local director_module = require('director')
-local title_screen_module = require('title_screen')
-local collision_profiles = require('collision_profiles')
-local castle_map = require('castle_map')
+local constants<const> = require('constants')
+local enemy_registry<const> = require('enemy_registry')
+local progression<const> = require('progression')
+local pietious_font<const> = require('pietious_font')
+local player_module<const> = require('player')
+local room_module<const> = require('room')
+local draaideur_module<const> = require('draaideur')
+local transition_module<const> = require('transition')
+local shrine_module<const> = require('shrine')
+local seal_module<const> = require('seal')
+local lithograph_module<const> = require('lithograph')
+local lithograph_screen_module<const> = require('lithograph_screen')
+local item_screen_module<const> = require('item_screen')
+local ui_module<const> = require('ui')
+local loot_drop_module<const> = require('loot_drop')
+local world_item_module<const> = require('world_item')
+local rock_module<const> = require('rock')
+local pepernoot_projectile_module<const> = require('pepernoot_projectile')
+local enemy_explosion_module<const> = require('enemy_explosion')
+local elevator_module<const> = require('elevator')
+local elevator_update_system_module<const> = require('elevator_update_system')
+local castle_module<const> = require('castle')
+local world_entrance_module<const> = require('world_entrance')
+local daemon_cloud_module<const> = require('daemon_cloud')
+local director_module<const> = require('director')
+local title_screen_module<const> = require('title_screen')
+local collision_profiles<const> = require('collision_profiles')
+local castle_map<const> = require('castle_map')
 
 local create_world
 local start_title_screen
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
-local function register_collision_profiles()
+local register_collision_profiles<const> = function()
 	collision_profiles.define('player', {
 		layer = constants.collision.player_layer,
 		mask = constants.collision.player_mask,
@@ -51,15 +51,15 @@ local function register_collision_profiles()
 	})
 end
 
-local function dispatch_irqs()
-	local flags = mem[sys_irq_flags]
+local dispatch_irqs<const> = function()
+	local flags<const> = mem[sys_irq_flags]
 	if flags ~= 0 then
 		irq(flags)
 	end
 end
 
-local function grant_starting_loadout()
-	local player = object('pietolon')
+local grant_starting_loadout<const> = function()
+	local player<const> = object('pietolon')
 	player.inventory_items['keyworld1'] = true
 	player.inventory_items['spyglass'] = true
 	player.inventory_items['halo'] = true
@@ -71,7 +71,7 @@ local function grant_starting_loadout()
 	player:equip_subweapon('pepernoot')
 	object('pietolon').weapon_level = constants.hud.weapon_level
 	object('pietolon'):emit_weapon_changed()
-	local castle = object('c')
+	local castle<const> = object('c')
 	progression.set(castle, 'staff1destroyed', true)
 	progression.set(castle, 'staff2destroyed', true)
 	progression.set(castle, 'staff3destroyed', true)
@@ -146,7 +146,7 @@ create_world = function(director_boot_mode)
 	add_space('ui')
 	set_space('main')
 
-	local c = inst('castle', { id = 'c', })
+	local c<const> = inst('castle', { id = 'c', })
 
 	inst('room', { id = 'room', })
 

@@ -1,9 +1,9 @@
 -- quickmenu.lua
 -- system quick menu (select+start)
 
-local scratchrecordbatch = require('scratchrecordbatch')
+local scratchrecordbatch<const> = require('scratchrecordbatch')
 
-local colors = {
+local colors<const> = {
 	panel = sys_palette_color(1),
 	text = sys_palette_color(15),
 	text_dim = sys_palette_color(14),
@@ -11,15 +11,15 @@ local colors = {
 	highlight = sys_palette_color(5),
 }
 
-local state = {
+local state<const> = {
 	open = false,
 	selected = 1,
 	audio_paused = false,
 }
 
-local menu = {}
+local menu<const> = {}
 
-local function toggle_menu()
+local toggle_menu<const> = function()
 	state.open = not state.open
 	if state.open then
 		state.selected = 1
@@ -35,7 +35,7 @@ local function toggle_menu()
 	end
 end
 
-local function make_toggle(label, key)
+local make_toggle<const> = function(label, key)
 	return {
 		kind = 'toggle',
 		label = label,
@@ -48,7 +48,7 @@ local function make_toggle(label, key)
 	}
 end
 
-local function make_enum(label, key, values)
+local make_enum<const> = function(label, key, values)
 	return {
 		kind = 'enum',
 		label = label,
@@ -62,7 +62,7 @@ local function make_enum(label, key, values)
 	}
 end
 
-local function make_vdp_enum(label, register, values)
+local make_vdp_enum<const> = function(label, register, values)
 	return {
 		kind = 'enum',
 		label = label,
@@ -76,7 +76,7 @@ local function make_vdp_enum(label, register, values)
 	}
 end
 
-local function make_action(label, action)
+local make_action<const> = function(label, action)
 	return {
 		kind = 'action',
 		label = label,
@@ -84,7 +84,7 @@ local function make_action(label, action)
 	}
 end
 
-local entries = {
+local entries<const> = {
 	make_toggle('SHOW STATS', 'show_resource_usage_gizmo'),
 	make_toggle('CRT POST', 'crt_postprocessing_enabled'),
 	make_toggle('  NOISE', 'enable_noise'),
@@ -103,16 +103,16 @@ local entries = {
 	make_action('REBOOT', reboot),
 }
 
-local function entry_value_label(entry)
+local entry_value_label<const> = function(entry)
 	if entry.kind == 'action' then
 		return nil
 	end
 	if entry.kind == 'toggle' then
 		return entry.get() and 'ON' or 'OFF'
 	end
-	local value = entry.get()
+	local value<const> = entry.get()
 	for i = 1, #entry.values do
-		local v = entry.values[i]
+		local v<const> = entry.values[i]
 		if v.value == value then
 			return v.label
 		end
@@ -120,8 +120,8 @@ local function entry_value_label(entry)
 	error('quickmenu: enum value missing for ' .. entry.label)
 end
 
-local function entry_value_index(entry)
-	local value = entry.get()
+local entry_value_index<const> = function(entry)
+	local value<const> = entry.get()
 	for i = 1, #entry.values do
 		if entry.values[i].value == value then
 			return i
@@ -130,7 +130,7 @@ local function entry_value_index(entry)
 	error('quickmenu: enum index missing for ' .. entry.label)
 end
 
-local function entry_cycle(entry, dir)
+local entry_cycle<const> = function(entry, dir)
 	if entry.kind == 'action' then
 		return
 	end
@@ -188,30 +188,30 @@ function menu.draw()
 	if not state.open then
 		return
 	end
-	local w = display_width()
-	local h = display_height()
-	local title = 'BMSX OPTIONS'
-	local font_w = 6
-	local font_h = 8
+	local w<const> = display_width()
+	local h<const> = display_height()
+	local title<const> = 'BMSX OPTIONS'
+	local font_w<const> = 6
+	local font_h<const> = 8
 	local scale = 2
-	local padding = 8
+	local padding<const> = 8
 	local line_h = (font_h * scale) + 4
 	local title_h = line_h
 	local title_gap = 6
-	local lines = #entries > 0 and #entries or 1
+	local lines<const> = #entries > 0 and #entries or 1
 	local max_chars = string.len(title)
 	-- if #footer > max_chars then max_chars = #footer end
 	for i = 1, #entries do
-		local entry = entries[i]
-		local value = entry_value_label(entry)
+		local entry<const> = entries[i]
+		local value<const> = entry_value_label(entry)
 		local line = entry.label
 		if value ~= nil then
 			line = line .. ': ' .. value
 		end
-		local line_len = string.len(line)
+		local line_len<const> = string.len(line)
 		if line_len > max_chars then max_chars = line_len end
 	end
-	local box_lines = lines + 1
+	local box_lines<const> = lines + 1
 	local box_w = (max_chars * font_w * scale) + (padding * 2)
 	local box_h = (box_lines * line_h) + (padding * 2)
 	local menu_w = box_w
@@ -228,13 +228,13 @@ function menu.draw()
 	end
 	if menu_w > w - 10 then menu_w = w - 10 end
 	if menu_h > h - 10 then menu_h = h - 10 end
-	local box_y = title_h + title_gap
+	local box_y<const> = title_h + title_gap
 	local x = math.floor((w - menu_w) / 2)
 	local y = math.floor((h - box_h) / 2) - box_y
 	if x < 0 then x = 0 end
 	if y < 0 then y = 0 end
-	local z = 10000
-	write_words(
+	local z<const> = 10000
+	memwrite(
 		sys_vdp_cmd_arg0,
 		x,
 		y + box_y,
@@ -247,15 +247,15 @@ function menu.draw()
 		colors.panel.b,
 		colors.panel.a
 	)
-	write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
-	local font = get_default_font()
-	local font_id = font.id
-	local text_z = z + 1
-	local title_len = string.len(title)
-	local title_x = x + math.floor((menu_w - (title_len * font_w)) / 2)
-	local title_y = y + math.floor((title_h - font_h) / 2)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+	local font<const> = get_default_font()
+	local font_id<const> = font.id
+	local text_z<const> = z + 1
+	local title_len<const> = string.len(title)
+	local title_x<const> = x + math.floor((menu_w - (title_len * font_w)) / 2)
+	local title_y<const> = y + math.floor((title_h - font_h) / 2)
 	if title_len > 0 then
-		write_words(
+		memwrite(
 			sys_vdp_cmd_arg0,
 			title,
 			title_x,
@@ -275,14 +275,14 @@ function menu.draw()
 			0,
 			0
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 	end
 
 	local row_y = y + box_y + padding
 	for i = 1, #entries do
-		local entry = entries[i]
+		local entry<const> = entries[i]
 		if i == state.selected then
-			write_words(
+			memwrite(
 				sys_vdp_cmd_arg0,
 				x,
 				row_y - 2,
@@ -295,19 +295,19 @@ function menu.draw()
 				colors.highlight.b,
 				colors.highlight.a
 			)
-			write_words(sys_vdp_cmd, sys_vdp_cmd_fill_rect)
+			mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 		end
-		local value = entry_value_label(entry)
+		local value<const> = entry_value_label(entry)
 		local line = entry.label
 		if value ~= nil then
 			line = line .. ': ' .. value
 		end
-		local text_color = i == state.selected and colors.text or colors.text_dim
-		local text_x = x + padding
-		local text_y = row_y + math.floor((line_h - font_h) / 2)
-		local line_len = string.len(line)
+		local text_color<const> = i == state.selected and colors.text or colors.text_dim
+		local text_x<const> = x + padding
+		local text_y<const> = row_y + math.floor((line_h - font_h) / 2)
+		local line_len<const> = string.len(line)
 		if line_len > 0 then
-			write_words(
+			memwrite(
 				sys_vdp_cmd_arg0,
 				line,
 				text_x,
@@ -327,7 +327,7 @@ function menu.draw()
 				0,
 				0
 			)
-			write_words(sys_vdp_cmd, sys_vdp_cmd_glyph_run)
+			mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 		end
 		row_y = row_y + line_h
 	end

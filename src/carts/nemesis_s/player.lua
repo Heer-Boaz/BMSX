@@ -1,12 +1,12 @@
-local constants = require('constants')
-local player_abilities = require('player_abilities')
+local constants<const> = require('constants')
+local player_abilities<const> = require('player_abilities')
 
-local player = {}
+local player<const> = {}
 player.__index = player
 
-local option_animation_timeline_id = 'player_option_animation'
-local missile_state_fall_from_vessel = 'fall_from_vessel'
-local missile_state_fall_from_floor = 'fall_from_floor'
+local option_animation_timeline_id<const> = 'player_option_animation'
+local missile_state_fall_from_vessel<const> = 'fall_from_vessel'
+local missile_state_fall_from_floor<const> = 'fall_from_floor'
 
 function player:emit_event(name, extra)
 	if not constants.telemetry.enabled then
@@ -23,12 +23,12 @@ function player:get_vessel_snapshot(vessel_id)
 	if vessel_id == 1 then
 		return self.x, self.y
 	end
-	local option = self.options[vessel_id - 1]
+	local option<const> = self.options[vessel_id - 1]
 	return option.x, option.y
 end
 
 function player:get_projectile_snapshot(list, index)
-	local projectile = list[index]
+	local projectile<const> = list[index]
 	if projectile == nil then
 		return -1, -1
 	end
@@ -39,9 +39,9 @@ function player:emit_metric()
 	if not constants.telemetry.enabled then
 		return
 	end
-	local l0x, l0y = self:get_projectile_snapshot(self.lasers, 1)
-	local m0x, m0y = self:get_projectile_snapshot(self.missiles, 1)
-	local u0x, u0y = self:get_projectile_snapshot(self.uplasers, 1)
+	local l0x<const> , l0y<const> = self:get_projectile_snapshot(self.lasers, 1)
+	local m0x<const> , m0y<const> = self:get_projectile_snapshot(self.missiles, 1)
+	local u0x<const> , u0y<const> = self:get_projectile_snapshot(self.uplasers, 1)
 	print(string.format(
 		'%s|kind=player|f=%d|x=%.3f|y=%.3f|dx=%.3f|dy=%.3f|sprite=%s|speed=%.3f|left=%d|right=%d|up=%d|down=%d|fire=%d|fire_press=%d|options=%d|laser=%d|missile=%d|uplaser=%d|l0x=%.3f|l0y=%.3f|m0x=%.3f|m0y=%.3f|u0x=%.3f|u0y=%.3f',
 		constants.telemetry.metric_prefix,
@@ -78,7 +78,7 @@ end
 function player:initialize_options()
 	self.options = {}
 	for option_index = 1, constants.loadout.option_count do
-		local option = {
+		local option<const> = {
 			vessel_id = option_index + 1,
 			target_vessel_id = option_index,
 			x = self.x,
@@ -103,7 +103,7 @@ function player:initialize_weapon_slots()
 		missile = {},
 		uplaser = {},
 	}
-	local vessel_count = self:get_vessel_count()
+	local vessel_count<const> = self:get_vessel_count()
 	for vessel_id = 1, vessel_count do
 		self.weapon_slots.laser[vessel_id] = 0
 		self.weapon_slots.missile[vessel_id] = 0
@@ -164,28 +164,28 @@ function player:get_option_imgid()
 end
 
 function player:get_laser_visual_x(x, weapon)
-	local tile_width = weapon.tile_width
+	local tile_width<const> = weapon.tile_width
 	return math.floor(x / tile_width) * tile_width
 end
 
 function player:get_laser_visual_y(y, weapon)
-	local visual_step = weapon.tile_width * 0.5
+	local visual_step<const> = weapon.tile_width * 0.5
 	return math.floor(y / visual_step) * visual_step
 end
 
 function player:draw_lasers()
-	local laser_handle = assets.img[constants.assets.laser].handle
+	local laser_handle<const> = assets.img[constants.assets.laser].handle
 	for i = 1, #self.lasers do
-		local laser = self.lasers[i]
-		local start_x = self:get_laser_visual_x(laser.left_x, constants.weapons.laser)
+		local laser<const> = self.lasers[i]
+		local start_x<const> = self:get_laser_visual_x(laser.left_x, constants.weapons.laser)
 		local end_x = self:get_laser_visual_x(laser.right_x, constants.weapons.laser)
-		local visual_y = self:get_laser_visual_y(laser.y, constants.weapons.laser)
+		local visual_y<const> = self:get_laser_visual_y(laser.y, constants.weapons.laser)
 		if end_x <= start_x then
 			end_x = start_x + constants.weapons.laser.tile_width
 		end
 		local x = start_x
 		while x < end_x do
-			write_words(
+			memwrite(
 				sys_vdp_cmd_arg0,
 				laser_handle,
 				x,
@@ -201,7 +201,7 @@ function player:draw_lasers()
 				1,
 				0
 			)
-			write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+			mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 			x = x + constants.weapons.laser.tile_width
 		end
 	end
@@ -209,8 +209,8 @@ end
 
 function player:draw_missiles()
 	for i = 1, #self.missiles do
-		local missile = self.missiles[i]
-		write_words(
+		local missile<const> = self.missiles[i]
+		memwrite(
 			sys_vdp_cmd_arg0,
 			assets.img[missile.sprite_imgid].handle,
 			missile.x,
@@ -226,18 +226,18 @@ function player:draw_missiles()
 			1,
 			0
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
 end
 
 function player:draw_uplasers()
-	local laser_handle = assets.img[constants.assets.laser].handle
+	local laser_handle<const> = assets.img[constants.assets.laser].handle
 	for i = 1, #self.uplasers do
-		local uplaser = self.uplasers[i]
-		local base_x = self:get_laser_visual_x(uplaser.x, constants.weapons.uplaser)
-		local visual_y = self:get_laser_visual_y(uplaser.y, constants.weapons.uplaser)
+		local uplaser<const> = self.uplasers[i]
+		local base_x<const> = self:get_laser_visual_x(uplaser.x, constants.weapons.uplaser)
+		local visual_y<const> = self:get_laser_visual_y(uplaser.y, constants.weapons.uplaser)
 		for tile_index = 0, uplaser.tile_count - 1 do
-			write_words(
+			memwrite(
 				sys_vdp_cmd_arg0,
 				laser_handle,
 				base_x + (tile_index * constants.weapons.uplaser.tile_width),
@@ -253,17 +253,17 @@ function player:draw_uplasers()
 				1,
 				0
 			)
-			write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+			mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 		end
 	end
 end
 
 function player:draw_visual()
-	local option_imgid = self:get_option_imgid()
-	local option_handle = assets.img[option_imgid].handle
+	local option_imgid<const> = self:get_option_imgid()
+	local option_handle<const> = assets.img[option_imgid].handle
 	for i = 1, #self.options do
-		local option = self.options[i]
-		write_words(
+		local option<const> = self.options[i]
+		memwrite(
 			sys_vdp_cmd_arg0,
 			option_handle,
 			option.x,
@@ -279,9 +279,9 @@ function player:draw_visual()
 			1,
 			0
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
-	write_words(
+	memwrite(
 		sys_vdp_cmd_arg0,
 		assets.img[self.sprite_imgid].handle,
 		self.x,
@@ -297,14 +297,14 @@ function player:draw_visual()
 		1,
 		0
 	)
-	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	self:draw_lasers()
 	self:draw_missiles()
 	self:draw_uplasers()
 end
 
 function player:on_fire_input_pressed()
-	local fire_was_held = self.fire_sources > 0
+	local fire_was_held<const> = self.fire_sources > 0
 	self.fire_sources = self.fire_sources + 1
 	self.fire_held = true
 	if fire_was_held then
@@ -323,12 +323,12 @@ function player:get_movement_speed()
 end
 
 function player:update_position()
-	local max_x = constants.machine.game_width - constants.player.width
-	local max_y = constants.machine.game_height - constants.player.height
-	local previous_x = self.x
-	local previous_y = self.y
+	local max_x<const> = constants.machine.game_width - constants.player.width
+	local max_y<const> = constants.machine.game_height - constants.player.height
+	local previous_x<const> = self.x
+	local previous_y<const> = self.y
 
-	local function collides_at(x, y)
+	local collides_at<const> = function(x, y)
 		for i = 1, #constants.player.hitcheck_x do
 			if self.stage:is_solid_pixel(x + constants.player.hitcheck_x[i], y + constants.player.hitcheck_y[i]) then
 				return true
@@ -337,12 +337,12 @@ function player:update_position()
 		return false
 	end
 
-	local function try_move_x(dx)
+	local try_move_x<const> = function(dx)
 		if dx == 0 then
 			return
 		end
-		local raw_target_x = self.x + dx
-		local target_x = clamp_int(raw_target_x, 0, max_x)
+		local raw_target_x<const> = self.x + dx
+		local target_x<const> = clamp_int(raw_target_x, 0, max_x)
 		if target_x ~= raw_target_x then
 			self.edge_push_dx = dx
 		end
@@ -353,12 +353,12 @@ function player:update_position()
 		self.x = target_x
 	end
 
-	local function try_move_y(dy)
+	local try_move_y<const> = function(dy)
 		if dy == 0 then
 			return
 		end
-		local raw_target_y = self.y + dy
-		local target_y = clamp_int(raw_target_y, 0, max_y)
+		local raw_target_y<const> = self.y + dy
+		local target_y<const> = clamp_int(raw_target_y, 0, max_y)
 		if target_y ~= raw_target_y then
 			self.edge_push_dy = dy
 		end
@@ -399,8 +399,8 @@ function player:update_options()
 	end
 
 	for i = 1, #self.options do
-		local option = self.options[i]
-		local target_x, target_y = self:get_vessel_snapshot(option.target_vessel_id)
+		local option<const> = self.options[i]
+		local target_x<const> , target_y<const> = self:get_vessel_snapshot(option.target_vessel_id)
 		local target_dx = target_x - option.target_prev_x
 		local target_dy = target_y - option.target_prev_y
 		if option.target_vessel_id == 1 then
@@ -432,8 +432,8 @@ function player:refresh_uplaser_dimensions(uplaser)
 end
 
 function player:spawn_laser(vessel_id)
-	local vessel_x, vessel_y = self:get_vessel_snapshot(vessel_id)
-	local laser = {
+	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
+	local laser<const> = {
 		vessel_id = vessel_id,
 		x = vessel_x + constants.weapons.laser.spawn_offset_x,
 		y = vessel_y + constants.weapons.laser.spawn_offset_y,
@@ -458,8 +458,8 @@ function player:spawn_laser(vessel_id)
 end
 
 function player:spawn_missile(vessel_id)
-	local vessel_x, vessel_y = self:get_vessel_snapshot(vessel_id)
-	local missile = {
+	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
+	local missile<const> = {
 		vessel_id = vessel_id,
 		x = vessel_x + constants.weapons.missile.spawn_offset_x,
 		y = vessel_y + constants.weapons.missile.spawn_offset_y,
@@ -481,17 +481,17 @@ function player:spawn_missile(vessel_id)
 end
 
 function player:spawn_uplaser(vessel_id)
-	local vessel_x, vessel_y = self:get_vessel_snapshot(vessel_id)
+	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
 	local length_units
 	if constants.loadout.uplaser_level >= 2 then
 		length_units = constants.weapons.uplaser.level2_initial_length_units
 	else
 		length_units = constants.weapons.uplaser.level1_length_units
 	end
-	local aligned_x = math.floor((vessel_x + constants.weapons.uplaser.spawn_offset_x) / constants.weapons.uplaser.tile_width)
+	local aligned_x<const> = math.floor((vessel_x + constants.weapons.uplaser.spawn_offset_x) / constants.weapons.uplaser.tile_width)
 		* constants.weapons.uplaser.tile_width
-	local initial_width = length_units * constants.weapons.uplaser.length_unit_px
-	local uplaser = {
+	local initial_width<const> = length_units * constants.weapons.uplaser.length_unit_px
+	local uplaser<const> = {
 		vessel_id = vessel_id,
 		x = aligned_x,
 		center_x = aligned_x + (initial_width * 0.5),
@@ -523,9 +523,9 @@ function player:spawn_uplaser(vessel_id)
 end
 
 function player:fire_weapon_salvo()
-	local vessel_count = self:get_vessel_count()
+	local vessel_count<const> = self:get_vessel_count()
 	for vessel_id = 1, vessel_count do
-		local laser_slots = self.weapon_slots.laser[vessel_id]
+		local laser_slots<const> = self.weapon_slots.laser[vessel_id]
 		if laser_slots < constants.weapons.laser.max_active then
 			self:spawn_laser(vessel_id)
 		else
@@ -535,7 +535,7 @@ function player:fire_weapon_salvo()
 			)
 		end
 
-		local missile_slots = self.weapon_slots.missile[vessel_id]
+		local missile_slots<const> = self.weapon_slots.missile[vessel_id]
 		if missile_slots < constants.weapons.missile.max_active then
 			self:spawn_missile(vessel_id)
 		else
@@ -550,7 +550,7 @@ function player:fire_weapon_salvo()
 			)
 		end
 
-		local uplaser_slots = self.weapon_slots.uplaser[vessel_id]
+		local uplaser_slots<const> = self.weapon_slots.uplaser[vessel_id]
 		if uplaser_slots < constants.weapons.uplaser.max_active then
 			self:spawn_uplaser(vessel_id)
 		else
@@ -568,7 +568,7 @@ function player:fire_weapon_salvo()
 end
 
 function player:despawn_laser(index, reason)
-	local laser = self.lasers[index]
+	local laser<const> = self.lasers[index]
 	swap_remove(self.lasers, index)
 	self.weapon_slots.laser[laser.vessel_id] = self.weapon_slots.laser[laser.vessel_id] - 1
 	self:emit_event(
@@ -585,7 +585,7 @@ function player:despawn_laser(index, reason)
 end
 
 function player:despawn_missile(index, reason)
-	local missile = self.missiles[index]
+	local missile<const> = self.missiles[index]
 	swap_remove(self.missiles, index)
 	self.weapon_slots.missile[missile.vessel_id] = self.weapon_slots.missile[missile.vessel_id] - 1
 	self:emit_event(
@@ -602,7 +602,7 @@ function player:despawn_missile(index, reason)
 end
 
 function player:despawn_uplaser(index, reason)
-	local uplaser = self.uplasers[index]
+	local uplaser<const> = self.uplasers[index]
 	swap_remove(self.uplasers, index)
 	self.weapon_slots.uplaser[uplaser.vessel_id] = self.weapon_slots.uplaser[uplaser.vessel_id] - 1
 	self:emit_event(
@@ -621,10 +621,10 @@ end
 function player:update_lasers()
 	local index = #self.lasers
 	while index >= 1 do
-		local laser = self.lasers[index]
+		local laser<const> = self.lasers[index]
 		local wall_hit_x = -1
 		local scan_x = laser.left_x
-		local scan_end_x = laser.right_x + constants.weapons.laser.movement_speed
+		local scan_end_x<const> = laser.right_x + constants.weapons.laser.movement_speed
 
 		while scan_x <= scan_end_x do
 			if self.stage:is_solid_pixel(scan_x + constants.weapons.laser.tile_width, laser.y + 1) then
@@ -635,7 +635,7 @@ function player:update_lasers()
 			scan_x = scan_x + constants.weapons.laser.tile_width
 		end
 
-		local origin_x, origin_y = self:get_vessel_snapshot(laser.vessel_id)
+		local origin_x<const> , origin_y<const> = self:get_vessel_snapshot(laser.vessel_id)
 		if wall_hit_x < 0 and laser.right_x < constants.machine.game_width then
 			laser.right_x = laser.right_x + constants.weapons.laser.movement_speed
 			if laser.length_expanded < constants.weapons.laser.max_length_px then
@@ -664,8 +664,8 @@ end
 function player:update_missiles()
 	local index = #self.missiles
 	while index >= 1 do
-		local missile = self.missiles[index]
-		local no_floor_below = (not self.stage:is_solid_pixel(missile.x, missile.y + 6))
+		local missile<const> = self.missiles[index]
+		local no_floor_below<const> = (not self.stage:is_solid_pixel(missile.x, missile.y + 6))
 			and (not self.stage:is_solid_pixel(missile.x + 8, missile.y + 6))
 
 		if no_floor_below then
@@ -695,7 +695,7 @@ end
 function player:update_uplasers()
 	local index = #self.uplasers
 	while index >= 1 do
-		local uplaser = self.uplasers[index]
+		local uplaser<const> = self.uplasers[index]
 		local despawn_reason = nil
 
 		uplaser.y = uplaser.y - constants.weapons.uplaser.movement_speed
@@ -725,9 +725,9 @@ function player:update_uplasers()
 		end
 
 		if despawn_reason == nil then
-			local impact_y = uplaser.y - 1
-			local impact_x_left = uplaser.x
-			local impact_x_right = uplaser.x + uplaser.width - 1
+			local impact_y<const> = uplaser.y - 1
+			local impact_x_left<const> = uplaser.x
+			local impact_x_right<const> = uplaser.x + uplaser.width - 1
 			if self.stage:is_solid_pixel(impact_x_left, impact_y) or self.stage:is_solid_pixel(impact_x_right, impact_y) then
 				despawn_reason = 'stage_collision'
 			end
@@ -759,13 +759,13 @@ function player:update_runtime()
 end
 
 function player:ctor()
-	local rc = self:get_component('customvisualcomponent')
+	local rc<const> = self:get_component('customvisualcomponent')
 	rc.producer = function(_ctx)
 		self:draw_visual()
 	end
 end
 
-local function define_player_fsm()
+local define_player_fsm<const> = function()
 	define_fsm(constants.ids.player_fsm, {
 		initial = 'boot',
 		states = {
@@ -848,7 +848,7 @@ local function define_player_fsm()
 	})
 end
 
-local function register_player_definition()
+local register_player_definition<const> = function()
 	define_prefab({
 		def_id = constants.ids.player_def,
 		class = player,

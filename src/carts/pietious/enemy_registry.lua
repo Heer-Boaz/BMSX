@@ -1,9 +1,9 @@
-local enemy_modules_without_bt = {
+local enemy_modules_without_bt<const> = {
 	require('enemies/breakablewall'),
 	require('enemies/disappearingwall'),
 }
 
-local enemy_modules_with_bt = {
+local enemy_modules_with_bt<const> = {
 	{ module = require('enemies/boekfoe'), bt_id = 'enemy_boekfoe' },
 	{ module = require('enemies/cloud'), bt_id = 'enemy_cloud' },
 	{ module = require('enemies/crossfoe'), bt_id = 'enemy_crossfoe' },
@@ -19,7 +19,7 @@ local enemy_modules_with_bt = {
 	{ module = require('enemies/zakfoe'), bt_id = 'enemy_zakfoe' },
 }
 
-local enemy_registry = {}
+local enemy_registry<const> = {}
 
 function enemy_registry.register_all()
 	for i = 1, #enemy_modules_without_bt do
@@ -27,7 +27,7 @@ function enemy_registry.register_all()
 	end
 
 	for i = 1, #enemy_modules_with_bt do
-		local entry = enemy_modules_with_bt[i]
+		local entry<const> = enemy_modules_with_bt[i]
 		entry.module.register_behaviour_tree(entry.bt_id)
 		entry.module.register_enemy_definition()
 	end

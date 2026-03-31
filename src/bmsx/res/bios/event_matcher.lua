@@ -1,9 +1,9 @@
 -- event_matcher.lua
 -- compile payload matchers used by event-driven routers
 
-local event_matcher = {}
+local event_matcher<const> = {}
 
-local function list_contains(list, value)
+local list_contains<const> = function(list, value)
 	for i = 1, #list do
 		if list[i] == value then
 			return true
@@ -12,7 +12,7 @@ local function list_contains(list, value)
 	return false
 end
 
-local function any_matches(list, value)
+local any_matches<const> = function(list, value)
 	if type(value) == 'table' then
 		for i = 1, #value do
 			if list_contains(list, value[i]) then
@@ -31,8 +31,8 @@ function event_matcher.compile(matcher)
 		end
 	end
 
-	local equals = matcher.equals
-	local any_of_entries = {}
+	local equals<const> = matcher.equals
+	local any_of_entries<const> = {}
 	if matcher.any_of then
 		for key, list in pairs(matcher.any_of) do
 			any_of_entries[#any_of_entries + 1] = { key, list }
@@ -43,20 +43,20 @@ function event_matcher.compile(matcher)
 			any_of_entries[#any_of_entries + 1] = { key, list }
 		end
 	end
-	local required_tags = matcher.has_tag
-	local and_predicates = {}
+	local required_tags<const> = matcher.has_tag
+	local and_predicates<const> = {}
 	if matcher['and'] then
 		for i = 1, #matcher['and'] do
 			and_predicates[i] = event_matcher.compile(matcher['and'][i])
 		end
 	end
-	local or_predicates = {}
+	local or_predicates<const> = {}
 	if matcher['or'] then
 		for i = 1, #matcher['or'] do
 			or_predicates[i] = event_matcher.compile(matcher['or'][i])
 		end
 	end
-	local not_predicate = matcher['not'] and event_matcher.compile(matcher['not'])
+	local not_predicate<const> = matcher['not'] and event_matcher.compile(matcher['not'])
 
 	return function(payload)
 		if equals then
@@ -67,13 +67,13 @@ function event_matcher.compile(matcher)
 			end
 		end
 		for i = 1, #any_of_entries do
-			local entry = any_of_entries[i]
+			local entry<const> = any_of_entries[i]
 			if not any_matches(entry[2], payload[entry[1]]) then
 				return false
 			end
 		end
 		if required_tags and #required_tags > 0 then
-			local tags = payload.tags
+			local tags<const> = payload.tags
 			if not tags then
 				return false
 			end

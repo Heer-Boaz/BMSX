@@ -1,21 +1,21 @@
-local constants = require('constants')
-local castle_map = require('castle_map')
+local constants<const> = require('constants')
+local castle_map<const> = require('castle_map')
 
-local item_screen = {}
+local item_screen<const> = {}
 item_screen.__index = item_screen
 
-local item_offset_x = 11
-local item_offset_y = 6
-local selector_blink_frames = 5
-local selector_blink_timeline_id = 'item_screen.blink'
-local map_title_x = 49
+local item_offset_x<const> = 11
+local item_offset_y<const> = 6
+local selector_blink_frames<const> = 5
+local selector_blink_timeline_id<const> = 'item_screen.blink'
+local map_title_x<const> = 49
 
-local secondary_weapon_order = {
+local secondary_weapon_order<const> = {
 	'pepernoot',
 	'spyglass',
 }
 
-local inventory_item_order = {
+local inventory_item_order<const> = {
 	'keyworld1',
 	'spyglass',
 	'halo',
@@ -26,7 +26,7 @@ local inventory_item_order = {
 	'pepernoot',
 }
 
-local item_position_offsets = {
+local item_position_offsets<const> = {
 	halo = { x = 5, y = 0 },
 	keyworld1 = { x = 14, y = 8 },
 	map_world1 = { x = 8, y = 8 },
@@ -37,7 +37,7 @@ local item_position_offsets = {
 	greenvase = { x = 3, y = 2 },
 }
 
-local item_screen_mode_exit_events = {
+local item_screen_mode_exit_events<const> = {
 	'room',
 	'transition',
 	'halo',
@@ -53,7 +53,7 @@ local item_screen_mode_exit_events = {
 }
 
 function item_screen:bind_visual()
-	local rc = self:get_component('customvisualcomponent')
+	local rc<const> = self:get_component('customvisualcomponent')
 	rc.producer = function(_ctx)
 		self:draw_screen()
 	end
@@ -81,7 +81,7 @@ function item_screen:bind()
 		end,
 	})
 	for i = 1, #item_screen_mode_exit_events do
-		local event_name = item_screen_mode_exit_events[i]
+		local event_name<const> = item_screen_mode_exit_events[i]
 		self.events:on({
 			event = event_name,
 			emitter = 'd',
@@ -115,22 +115,22 @@ function item_screen:reset_for_open()
 end
 
 function item_screen:item_position_px(item_type)
-	local offset = item_position_offsets[item_type]
-	local tx = item_offset_x + offset.x
-	local ty = item_offset_y + offset.y + (constants.room.hud_height / constants.room.tile_size)
+	local offset<const> = item_position_offsets[item_type]
+	local tx<const> = item_offset_x + offset.x
+	local ty<const> = item_offset_y + offset.y + (constants.room.hud_height / constants.room.tile_size)
 	return tx * constants.room.tile_size, ty * constants.room.tile_size
 end
 
 function item_screen:draw_inventory_items()
-	local player = object('pietolon')
-	local world_number = object('room').world_number
+	local player<const> = object('pietolon')
+	local world_number<const> = object('room').world_number
 	for i = 1, #inventory_item_order do
-		local item_type = inventory_item_order[i]
+		local item_type<const> = inventory_item_order[i]
 		if player.inventory_items[item_type] then
 			if item_type ~= 'map_world1' or world_number > 0 then
-				local x, y = self:item_position_px(item_type)
-				local handle = assets.img[constants.world_item.sprite[item_type]].handle
-				write_words(
+				local x<const>, y<const> = self:item_position_px(item_type)
+				local handle<const> = assets.img[constants.world_item.sprite[item_type]].handle
+				memwrite(
 					sys_vdp_cmd_arg0,
 					handle,
 					x,
@@ -146,7 +146,7 @@ function item_screen:draw_inventory_items()
 					1,
 					0
 				)
-				write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+				mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 			end
 		end
 	end
@@ -156,9 +156,9 @@ function item_screen:draw_secondary_weapon_selector()
 	if self.selector_hidden then
 		return
 	end
-	local x = (14 * constants.room.tile_size) + (self.secondary_weapon_selection_index * (3 * constants.room.tile_size))
-	local y = constants.room.hud_height + (16 * constants.room.tile_size) + constants.room.tile_half - 1
-	write_words(
+	local x<const> = (14 * constants.room.tile_size) + (self.secondary_weapon_selection_index * (3 * constants.room.tile_size))
+	local y<const> = constants.room.hud_height + (16 * constants.room.tile_size) + constants.room.tile_half - 1
+	memwrite(
 		sys_vdp_cmd_arg0,
 		assets.img['f1_selector_white'].handle,
 		x,
@@ -174,13 +174,13 @@ function item_screen:draw_secondary_weapon_selector()
 		1,
 		0
 	)
-	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 end
 
 function item_screen:draw_map()
-	local player = object('pietolon')
-	local room = object('room')
-	local world_number = room.world_number
+	local player<const> = object('pietolon')
+	local room<const> = object('room')
+	local world_number<const> = room.world_number
 	if world_number <= 0 then
 		return
 	end
@@ -188,9 +188,9 @@ function item_screen:draw_map()
 		return
 	end
 
-	local map_proxies = castle_map.map_world_proxies[world_number]
+	local map_proxies<const> = castle_map.map_world_proxies[world_number]
 
-	write_words(
+	memwrite(
 		sys_vdp_cmd_arg0,
 		assets.img['f1_map_title'].handle,
 		map_title_x,
@@ -206,10 +206,10 @@ function item_screen:draw_map()
 		1,
 		0
 	)
-	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 
 	for i = 1, #map_proxies do
-		local proxy = map_proxies[i]
+		local proxy<const> = map_proxies[i]
 		local sprite_id
 		if self.map_highlight and proxy.room_number == object('c').current_room_number then
 			sprite_id = 'room_proxy_red'
@@ -218,9 +218,9 @@ function item_screen:draw_map()
 		else
 			sprite_id = 'room_proxy'
 		end
-		local proxy_x = (5 * constants.room.tile_size) + (proxy.x * constants.room.tile_size)
-		local proxy_y = constants.room.hud_height + (14 * constants.room.tile_size) + constants.room.tile_half + (proxy.y * constants.room.tile_half)
-		write_words(
+		local proxy_x<const> = (5 * constants.room.tile_size) + (proxy.x * constants.room.tile_size)
+		local proxy_y<const> = constants.room.hud_height + (14 * constants.room.tile_size) + constants.room.tile_half + (proxy.y * constants.room.tile_half)
+		memwrite(
 			sys_vdp_cmd_arg0,
 			assets.img[sprite_id].handle,
 			proxy_x,
@@ -236,21 +236,21 @@ function item_screen:draw_map()
 			1,
 			0
 		)
-		write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
 end
 
 function item_screen:apply_selected_secondary_weapon()
-	local player = object('pietolon')
-	local selected_weapon = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
+	local player<const> = object('pietolon')
+	local selected_weapon<const> = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
 	if selected_weapon ~= nil and player.inventory_items[selected_weapon] then
 		player:equip_subweapon(selected_weapon)
 	end
 end
 
 function item_screen:shift_secondary_weapon_selection(direction)
-	local player = object('pietolon')
-	local previous_index = self.secondary_weapon_selection_index
+	local player<const> = object('pietolon')
+	local previous_index<const> = self.secondary_weapon_selection_index
 	if direction > 0 then
 		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do
 			if player.inventory_items[secondary_weapon_order[i]] then
@@ -273,7 +273,7 @@ function item_screen:shift_secondary_weapon_selection(direction)
 end
 
 function item_screen:draw_screen()
-	write_words(
+	memwrite(
 		sys_vdp_cmd_arg0,
 		assets.img['f1_screen'].handle,
 		0,
@@ -289,13 +289,13 @@ function item_screen:draw_screen()
 		1,
 		0
 	)
-	write_words(sys_vdp_cmd, sys_vdp_cmd_blit)
+	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	self:draw_inventory_items()
 	self:draw_secondary_weapon_selector()
 	self:draw_map()
 end
 
-local function define_item_screen_fsm()
+local define_item_screen_fsm<const> = function()
 	define_fsm('item_screen', {
 		initial = 'active',
 		states = {
@@ -319,7 +319,7 @@ local function define_item_screen_fsm()
 	})
 end
 
-local function register_item_screen_definition()
+local register_item_screen_definition<const> = function()
 	define_prefab({
 		def_id = 'item_screen',
 		class = item_screen,

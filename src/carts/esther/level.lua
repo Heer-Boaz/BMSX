@@ -3,7 +3,7 @@ local constants = require('constants')
 
 local level = {}
 
-local function resolve_level_context_state32(context_key)
+local resolve_level_context_state32<const> = function(context_key)
 	local key = context_key or constants.dkc.default_level_context
 	local value = constants.dkc.level_state32_by_context[key]
 	if value == nil then
@@ -12,11 +12,11 @@ local function resolve_level_context_state32(context_key)
 	return key, value
 end
 
-local function eor_16(a, b)
+local eor_16<const> = function(a, b)
 	return (a ~ b) & 0xFFFF
 end
 
-local function find_top_solid_y(solids, sample_x)
+local find_top_solid_y<const> = function(solids, sample_x)
 	local top = nil
 	for i = 1, #solids do
 		local solid = solids[i]
@@ -29,7 +29,7 @@ local function find_top_solid_y(solids, sample_x)
 	return top
 end
 
-local function build_dummy_asm_collision(level_data)
+local build_dummy_asm_collision<const> = function(level_data)
 	local columns = math.floor((level_data.world_width + 31) / 32) + 1
 	local rows = 16
 	local d3_words = {}

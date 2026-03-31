@@ -42,6 +42,7 @@ import type {
 	LuaSourceRange,
 	LuaStatement,
 	LuaStringLiteralExpression,
+	LuaLocalAttribute,
 	LuaTableArrayField,
 	LuaTableConstructorExpression,
 	LuaTableExpressionField,
@@ -239,17 +240,23 @@ export class LuaParser {
 
 	private parseLocalAssignment(localToken: LuaToken): LuaLocalAssignmentStatement {
 		const names: LuaIdentifierExpression[] = [];
+		const attributes: (LuaLocalAttribute | null)[] = [];
+		let endPosition = this.positionFromToken(localToken);
 		do {
 			const nameToken = this.consume(LuaTokenType.Identifier, 'Expected local variable name.');
 			names.push(this.createIdentifierExpression(nameToken));
+			endPosition = this.positionFromToken(nameToken);
+			const attribute = this.parseLocalAttribute();
+			attributes.push(attribute);
+			if (attribute !== null) {
+				endPosition = this.positionFromToken(this.previous());
+			}
 		} while (this.match(LuaTokenType.Comma));
 		const values: LuaExpression[] = [];
 		if (this.match(LuaTokenType.Equal)) {
 			values.push(...this.parseExpressionList());
+			endPosition = values[values.length - 1].range.end;
 		}
-		const endPosition = values.length > 0
-			? values[values.length - 1].range.end
-			: names[names.length - 1].range.end;
 		return {
 			kind: LuaSyntaxKind.LocalAssignmentStatement,
 			range: {
@@ -258,8 +265,30 @@ export class LuaParser {
 				end: endPosition,
 			},
 			names,
+			attributes,
 			values,
 		};
+	}
+
+	private parseLocalAttribute(): LuaLocalAttribute | null {
+		if (!this.match(LuaTokenType.Less)) {
+			return null;
+		}
+		const attributeToken = this.consume(LuaTokenType.Identifier, 'Expected local attribute name.');
+		const attribute = this.parseLocalAttributeName(attributeToken);
+		this.consume(LuaTokenType.Greater, 'Expected ">" after local attribute name.');
+		return attribute;
+	}
+
+	private parseLocalAttributeName(attributeToken: LuaToken): LuaLocalAttribute {
+		const attribute = attributeToken.lexeme.toLowerCase();
+		if (attribute === 'const') {
+			return 'const';
+		}
+		if (attribute === 'close') {
+			throw this.error(attributeToken, 'To-be-closed locals are not supported.');
+		}
+		throw this.error(attributeToken, `Unsupported local attribute '${attributeToken.lexeme}'.`);
 	}
 
 	private parseFunctionDeclaration(): LuaFunctionDeclarationStatement {
@@ -1257,13 +1286,14 @@ export class LuaParser {
 		};
 		const visitStatement = (statement: LuaStatement, currentScope: LuaSourceRange): void => {
 			switch (statement.kind) {
-				case LuaSyntaxKind.LocalAssignmentStatement: {
-					const localAssignment = statement as LuaLocalAssignmentStatement;
+			case LuaSyntaxKind.LocalAssignmentStatement: {
+				const localAssignment = statement as LuaLocalAssignmentStatement;
 				const mappedValues = mapAssignmentValues(localAssignment.names.length, localAssignment.values);
 				for (let index = 0; index < localAssignment.names.length; index += 1) {
 					const identifier = localAssignment.names[index];
 					const path = [identifier.name];
-					pushDefinition(path, identifier.range, currentScope, 'variable');
+					const kind = localAssignment.attributes[index] === 'const' ? 'constant' : 'variable';
+					pushDefinition(path, identifier.range, currentScope, kind);
 					recordAssignmentValue(path, mappedValues[index], currentScope);
 				}
 					for (const value of localAssignment.values) {

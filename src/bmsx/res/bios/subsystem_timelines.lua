@@ -1,7 +1,7 @@
-local timeline_module = require("timeline")
-local timeline_dispatch = require("timeline_dispatch")
+local timeline_module<const> = require("timeline")
+local timeline_dispatch<const> = require("timeline_dispatch")
 
-local function apply_frame(target, frame)
+local apply_frame<const> = function(target, frame)
 	for k, v in pairs(frame) do
 		if type(v) == "table" then
 			apply_frame(target[k], v)
@@ -11,7 +11,7 @@ local function apply_frame(target, frame)
 	end
 end
 
-local function set_path(target, path, value)
+local set_path<const> = function(target, path, value)
 	local node = target
 	for i = 1, #path - 1 do
 		node = node[path[i]]
@@ -19,8 +19,8 @@ local function set_path(target, path, value)
 	node[path[#path]] = value
 end
 
-local function eval_wave(track, time_seconds)
-	local u = (time_seconds / track.period) + (track.phase or 0)
+local eval_wave<const> = function(track, time_seconds)
+	local u<const> = (time_seconds / track.period) + (track.phase or 0)
 	local w
 	if track.wave == "pingpong" then
 		w = easing.pingpong01(u)
@@ -29,24 +29,24 @@ local function eval_wave(track, time_seconds)
 	else
 		error("[subsystemtimelines] unknown wave '" .. tostring(track.wave) .. "'.")
 	end
-	local ease = track.ease
+	local ease<const> = track.ease
 	if ease ~= nil then
 		w = ease(w)
 	end
 	return w
 end
 
-local function apply_track(target, track, params, event)
+local apply_track<const> = function(target, track, params, event)
 	if type(track) == "function" then
 		track(target, params, event)
 		return
 	end
-	local kind = track.kind
+	local kind<const> = track.kind
 	if kind == "wave" then
-		local base = track.base
-		local base_value = type(base) == "string" and params[base] or base
-		local w = eval_wave(track, event.time_seconds)
-		local value = base_value + ((w - 0.5) * 2 * track.amp)
+		local base<const> = track.base
+		local base_value<const> = type(base) == "string" and params[base] or base
+		local w<const> = eval_wave(track, event.time_seconds)
+		local value<const> = base_value + ((w - 0.5) * 2 * track.amp)
 		set_path(target, track.path, value)
 		return
 	end
@@ -67,22 +67,22 @@ local function apply_track(target, track, params, event)
 	error("[subsystemtimelines] unknown track kind '" .. tostring(kind) .. "'.")
 end
 
-local function apply_tracks(target, tracks, params, event)
+local apply_tracks<const> = function(target, tracks, params, event)
 	for i = 1, #tracks do
 		apply_track(target, tracks[i], params, event)
 	end
 end
 
-local subsystemtimelines = {}
+local subsystemtimelines<const> = {}
 subsystemtimelines.__index = subsystemtimelines
 
-local function process_subsystem_frame_payload(_, entry, owner, payload)
-	local target = entry.target or owner
-	local tracks = entry.tracks
+local process_subsystem_frame_payload<const> = function(_, entry, owner, payload)
+	local target<const> = entry.target or owner
+	local tracks<const> = entry.tracks
 	if tracks ~= nil then
 		apply_tracks(target, tracks, entry.params, payload)
 	end
-	local apply = entry.apply
+	local apply<const> = entry.apply
 	if apply ~= nil then
 		if type(apply) == "function" then
 			apply(target, payload.frame_value, entry.params, payload)
@@ -93,7 +93,7 @@ local function process_subsystem_frame_payload(_, entry, owner, payload)
 end
 
 function subsystemtimelines.new(owner)
-	local self = setmetatable({}, subsystemtimelines)
+	local self<const> = setmetatable({}, subsystemtimelines)
 	self.owner = owner
 	self.registry = {}
 	self.active = {}
@@ -101,7 +101,7 @@ function subsystemtimelines.new(owner)
 end
 
 function subsystemtimelines:define(definition)
-	local id = definition.id
+	local id<const> = definition.id
 	if id == nil then
 		error("[subsystemtimelines] timeline definition is missing id for '" .. tostring(self.owner.id) .. "'.")
 	end
@@ -121,7 +121,7 @@ function subsystemtimelines:define(definition)
 end
 
 function subsystemtimelines:get(id)
-	local entry = self.registry[id]
+	local entry<const> = self.registry[id]
 	if entry == nil then
 		return nil
 	end
@@ -129,7 +129,7 @@ function subsystemtimelines:get(id)
 end
 
 function subsystemtimelines:seek(id, frame)
-	local entry = self.registry[id]
+	local entry<const> = self.registry[id]
 	if not entry then
 		error("[subsystemtimelines] unknown timeline '" .. id .. "' on '" .. self.owner.id .. "'")
 	end
@@ -142,11 +142,11 @@ function subsystemtimelines:force_seek(id, frame)
 end
 
 function subsystemtimelines:advance(id)
-	local entry = self.registry[id]
+	local entry<const> = self.registry[id]
 	if not entry then
 		error("[subsystemtimelines] unknown timeline '" .. id .. "' on '" .. self.owner.id .. "'")
 	end
-	local instance = entry.instance
+	local instance<const> = entry.instance
 	if instance:advance() ~= nil then
 		if timeline_dispatch.process_instance_events(entry, self.owner, 0, process_subsystem_frame_payload) then
 			self.active[instance.id] = nil
@@ -156,12 +156,12 @@ function subsystemtimelines:advance(id)
 end
 
 function subsystemtimelines:play(id, opts)
-	local entry = self.registry[id]
+	local entry<const> = self.registry[id]
 	if not entry then
 		error("[subsystemtimelines] unknown timeline '" .. id .. "' on '" .. self.owner.id .. "'")
 	end
-	local instance = entry.instance
-	local owner = self.owner
+	local instance<const> = entry.instance
+	local owner<const> = self.owner
 	local rewind
 	local snap
 	local params
@@ -200,7 +200,7 @@ function subsystemtimelines:play(id, opts)
 	end
 	timeline_dispatch.init_entry(entry, owner)
 	if rewind then
-		local controlled = entry.markers.controlled_tags
+		local controlled<const> = entry.markers.controlled_tags
 		for i = 1, #controlled do
 			owner:remove_tag(controlled[i])
 		end
@@ -218,10 +218,10 @@ function subsystemtimelines:play(id, opts)
 end
 
 function subsystemtimelines:stop(id)
-	local entry = self.registry[id]
+	local entry<const> = self.registry[id]
 	if entry then
-		local owner = self.owner
-		local controlled = entry.markers.controlled_tags
+		local owner<const> = self.owner
+		local controlled<const> = entry.markers.controlled_tags
 		for i = 1, #controlled do
 			owner:remove_tag(controlled[i])
 		end
@@ -231,7 +231,7 @@ end
 
 function subsystemtimelines:update(dt_ms)
 	for id in pairs(self.active) do
-		local entry = self.registry[id]
+		local entry<const> = self.registry[id]
 		if entry.instance:update(dt_ms) ~= nil then
 			if timeline_dispatch.process_instance_events(entry, self.owner, dt_ms, process_subsystem_frame_payload) then
 				self.active[id] = nil

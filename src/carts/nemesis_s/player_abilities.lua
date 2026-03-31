@@ -1,6 +1,6 @@
-local action_effects = require('action_effects')
+local action_effects<const> = require('action_effects')
 
-local player_abilities = {}
+local player_abilities<const> = {}
 
 player_abilities.effect_ids = {
 	fire_salvo = 'fire_salvo',

@@ -1,21 +1,21 @@
 -- input_action_effect_system.lua
 -- input intent + input action effect ecs system
 
-local ecs = require('ecs')
-local action_effects = require('action_effects')
-local compiler = require('input_action_effect_compiler')
-local dsl = require('input_action_effect_dsl')
-local scratchbatch = require('scratchbatch')
-local world_instance = require('world').instance
-local inputintentcomponent = 'inputintentcomponent'
-local inputactioneffectcomponent = 'inputactioneffectcomponent'
-local actioneffectcomponentid = 'actioneffectcomponent'
-local assigned_value_edges = { ['hold'] = true, ['press'] = true }
-local active_scope = { scope = 'active' }
+local ecs<const> = require('ecs')
+local action_effects<const> = require('action_effects')
+local compiler<const> = require('input_action_effect_compiler')
+local dsl<const> = require('input_action_effect_dsl')
+local scratchbatch<const> = require('scratchbatch')
+local world_instance<const> = require('world').instance
+local inputintentcomponent<const> = 'inputintentcomponent'
+local inputactioneffectcomponent<const> = 'inputactioneffectcomponent'
+local actioneffectcomponentid<const> = 'actioneffectcomponent'
+local assigned_value_edges<const> = { ['hold'] = true, ['press'] = true }
+local active_scope<const> = { scope = 'active' }
 
 local asset_programs_validated = false
 
-local function run_effect(effect, env)
+local run_effect<const> = function(effect, env)
 	if not effect then
 		return false
 	end
@@ -23,7 +23,7 @@ local function run_effect(effect, env)
 	return true
 end
 
-local function validate_primary_assets_on_boot()
+local validate_primary_assets_on_boot<const> = function()
 	if asset_programs_validated then
 		return
 	end
@@ -35,12 +35,12 @@ local function validate_primary_assets_on_boot()
 	asset_programs_validated = true
 end
 
-local inputactioneffectsystem = {}
+local inputactioneffectsystem<const> = {}
 inputactioneffectsystem.__index = inputactioneffectsystem
 setmetatable(inputactioneffectsystem, { __index = ecs.ecsystem })
 
 function inputactioneffectsystem.new(priority)
-	local self = setmetatable(ecs.ecsystem.new(ecs.tickgroup.input, priority or 0), inputactioneffectsystem)
+	local self<const> = setmetatable(ecs.ecsystem.new(ecs.tickgroup.input, priority or 0), inputactioneffectsystem)
 	self.compiled_by_id = {}
 	self.inline_compiled = setmetatable({}, { __mode = 'k' })
 	self.validated_inline = setmetatable({}, { __mode = 'k' })
@@ -70,7 +70,7 @@ function inputactioneffectsystem:process_input_intents()
 		if not component.bindings or #component.bindings == 0 then
 			goto continue
 		end
-		local player_index = self:resolve_intent_player_index(component, obj)
+		local player_index<const> = self:resolve_intent_player_index(component, obj)
 		for i = 1, #component.bindings do
 			self:evaluate_intent_binding(obj, player_index, component.bindings[i])
 		end
@@ -83,33 +83,33 @@ function inputactioneffectsystem:process_input_action_programs()
 		if not (obj.active) then
 			goto continue
 		end
-		local program = self:resolve_compiled_program(component)
-		local program_key = self:resolve_program_key(component, obj)
+		local program<const> = self:resolve_compiled_program(component)
+		local program_key<const> = self:resolve_program_key(component, obj)
 
-		local player_index = obj.player_index or 1
-		local effects = obj:get_component(actioneffectcomponentid)
+		local player_index<const> = obj.player_index or 1
+		local effects<const> = obj:get_component(actioneffectcomponentid)
 		if (not effects) and program.uses_effect_triggers then
 			error('[inputactioneffectsystem] program "' .. program_key .. '" triggers effects but object "' .. obj.id .. '" has no actioneffectcomponent.')
 		end
 
-		local owner_id = effects and effects.parent.id or obj.id
-		local component_runtime = self:resolve_component_runtime(component)
-		local env = component_runtime.env
+		local owner_id<const> = effects and effects.parent.id or obj.id
+		local component_runtime<const> = self:resolve_component_runtime(component)
+		local env<const> = component_runtime.env
 		env.owner = obj
 		env.owner_id = owner_id
 		env.player_index = player_index
 		env.effects = effects
 
 		self:evaluate_program(program, env, program_key, component_runtime)
-		local queued_commands = env.queued_commands
+		local queued_commands<const> = env.queued_commands
 		for i = 1, #queued_commands do
-			local command = queued_commands[i]
+			local command<const> = queued_commands[i]
 			obj:dispatch_command(command.event, command.payload)
 			queued_commands[i] = nil
 		end
-		local queued = env.queued_events
+		local queued<const> = env.queued_events
 		for i = 1, #queued do
-			local evt = queued[i]
+			local evt<const> = queued[i]
 			obj:emit_gameplay_fact(evt)
 			queued[i] = nil
 		end
@@ -118,11 +118,11 @@ function inputactioneffectsystem:process_input_action_programs()
 end
 
 function inputactioneffectsystem:evaluate_intent_binding(owner, player_index, binding)
-	local action = binding.action
+	local action<const> = binding.action
 	if not action then
 		return
 	end
-	local state = $.get_action_state(player_index, action)
+	local state<const> = $.get_action_state(player_index, action)
 	if state.justpressed and binding.press then
 		self:run_intent_assignments(owner, player_index, binding, 'press', binding.press)
 	end
@@ -142,10 +142,10 @@ function inputactioneffectsystem:run_intent_assignments(owner, player_index, bin
 		assignments = spec
 	end
 	for i = 1, #assignments do
-		local assignment = assignments[i]
-		local path = assignment.path
-		local should_clear = assignment.clear or (assignment.value == nil and edge == 'release')
-			local resolved_value = should_clear and nil or (assignment.value == nil and assigned_value_edges[edge] or assignment.value)
+		local assignment<const> = assignments[i]
+		local path<const> = assignment.path
+		local should_clear<const> = assignment.clear or (assignment.value == nil and edge == 'release')
+			local resolved_value<const> = should_clear and nil or (assignment.value == nil and assigned_value_edges[edge] or assignment.value)
 		self:assign_owner_path(owner, path, resolved_value, should_clear)
 		if (assignment.consume) then
 			consume_action(player_index, binding.action)
@@ -154,13 +154,13 @@ function inputactioneffectsystem:run_intent_assignments(owner, player_index, bin
 end
 
 function inputactioneffectsystem:assign_owner_path(owner, path, value, clear)
-	local segments = {}
+	local segments<const> = {}
 	for part in string.gmatch(path, '[^%.]+') do
 		segments[#segments + 1] = part
 	end
 	local target = owner
 	for i = 1, #segments - 1 do
-		local key = segments[i]
+		local key<const> = segments[i]
 		local next_table = target[key]
 		if type(next_table) ~= 'table' then
 			next_table = {}
@@ -168,7 +168,7 @@ function inputactioneffectsystem:assign_owner_path(owner, path, value, clear)
 		end
 		target = next_table
 	end
-	local final_key = segments[#segments]
+	local final_key<const> = segments[#segments]
 	if clear then
 		target[final_key] = nil
 		return
@@ -177,7 +177,7 @@ function inputactioneffectsystem:assign_owner_path(owner, path, value, clear)
 end
 
 function inputactioneffectsystem:resolve_intent_player_index(component, owner)
-	local resolved = component.player_index or owner.player_index
+	local resolved<const> = component.player_index or owner.player_index
 	if not resolved then
 		error('[inputactioneffectsystem] unable to resolve player index for object "' .. (owner.id or '<unknown>') .. '".')
 	end
@@ -192,8 +192,8 @@ function inputactioneffectsystem:resolve_program_key(component, owner)
 end
 
 function inputactioneffectsystem:describe_inline_program(component)
-	local owner_id = component.parent and component.parent.id or '<unattached>'
-	local component_id = component.id or component.id_local or component.type_name or 'component'
+	local owner_id<const> = component.parent and component.parent.id or '<unattached>'
+	local component_id<const> = component.id or component.id_local or component.type_name or 'component'
 	return 'inline:' .. owner_id .. ':' .. component_id
 end
 
@@ -202,8 +202,8 @@ function inputactioneffectsystem:resolve_component_runtime(component)
 	if component_runtime then
 		return component_runtime
 	end
-	local queued_commands = {}
-	local queued_events = {}
+	local queued_commands<const> = {}
+	local queued_events<const> = {}
 	component_runtime = {
 		binding_latch = {},
 		binding_touched = {},
@@ -221,8 +221,8 @@ function inputactioneffectsystem:resolve_component_runtime(component)
 end
 
 function inputactioneffectsystem:reset_component_runtime(component_runtime, binding_count)
-	local latch = component_runtime.binding_latch
-	local touched = component_runtime.binding_touched
+	local latch<const> = component_runtime.binding_latch
+	local touched<const> = component_runtime.binding_touched
 	local clear_count = component_runtime.binding_count
 	if clear_count < binding_count then
 		clear_count = binding_count
@@ -235,7 +235,7 @@ function inputactioneffectsystem:reset_component_runtime(component_runtime, bind
 end
 
 function inputactioneffectsystem:prepare_component_runtime(component_runtime, program, program_key, env)
-	local binding_count = #program.bindings
+	local binding_count<const> = #program.bindings
 	if component_runtime.last_frame ~= self.frame_serial - 1
 		or component_runtime.program ~= program
 		or component_runtime.program_key ~= program_key
@@ -254,30 +254,30 @@ end
 
 function inputactioneffectsystem:evaluate_program(program, env, program_key, component_runtime)
 	self:prepare_component_runtime(component_runtime, program, program_key, env)
-	local bindings = program.bindings
-	local frame = self.frame_serial
-	local latch = component_runtime.binding_latch
-	local touched = component_runtime.binding_touched
+	local bindings<const> = program.bindings
+	local frame<const> = self.frame_serial
+	local latch<const> = component_runtime.binding_latch
+	local touched<const> = component_runtime.binding_touched
 	for i = 1, #bindings do
-		local binding = bindings[i]
+		local binding<const> = bindings[i]
 		if not binding.predicate(env) then
 			goto continue
 		end
 
-		local armed = latch[i]
+		local armed<const> = latch[i]
 		if armed then
 			touched[i] = frame
 		end
 
-		local press_matched = binding.press and binding.press(env) or false
-		local hold_matched = binding.hold and binding.hold(env) or false
-		local release_matched = binding.release and binding.release(env) or false
-		local custom_edges = binding.custom_edges
+		local press_matched<const> = binding.press and binding.press(env) or false
+		local hold_matched<const> = binding.hold and binding.hold(env) or false
+		local release_matched<const> = binding.release and binding.release(env) or false
+		local custom_edges<const> = binding.custom_edges
 		if not armed and not press_matched and not hold_matched and not release_matched and #custom_edges == 0 then
 			goto continue
 		end
 
-		local scratch = self.custom_match_scratch:reserve(#custom_edges, false)
+		local scratch<const> = self.custom_match_scratch:reserve(#custom_edges, false)
 		for j = 1, #custom_edges do
 			scratch[j] = custom_edges[j].match(env)
 		end
@@ -316,7 +316,7 @@ function inputactioneffectsystem:evaluate_program(program, env, program_key, com
 
 		for j = 1, #custom_edges do
 			if scratch[j] then
-				local effect = custom_edges[j].effect
+				local effect<const> = custom_edges[j].effect
 				if effect then
 					if run_effect(effect, env) then
 						matched = true
@@ -342,7 +342,7 @@ end
 
 function inputactioneffectsystem:resolve_compiled_program(component)
 	if component.program then
-		local program = component.program
+		local program<const> = component.program
 		if not self.validated_inline[program] then
 			compiler.validate_program_effects(program, self:describe_inline_program(component))
 			self.validated_inline[program] = true
@@ -357,7 +357,7 @@ function inputactioneffectsystem:resolve_compiled_program(component)
 		return compiled
 	end
 
-	local program_id = component.program_id
+	local program_id<const> = component.program_id
 	if not program_id then
 		error('[inputactioneffectsystem] component on "' .. (component.parent and component.parent.id or '<unknown>') .. '" is missing program_id.')
 	end
@@ -367,7 +367,7 @@ function inputactioneffectsystem:resolve_compiled_program(component)
 		return compiled
 	end
 
-	local program = self:resolve_program_by_id(program_id)
+	local program<const> = self:resolve_program_by_id(program_id)
 	compiled = compiler.compile_program(program, function(pattern)
 		return self:parse_pattern(pattern)
 	end)
@@ -382,7 +382,7 @@ function inputactioneffectsystem:resolve_program_by_id(program_id)
 	if self.missing_program_ids[program_id] then
 		error('[inputactioneffectsystem] program "' .. program_id .. '" is marked as missing.')
 	end
-	local data = assets.data[program_id]
+	local data<const> = assets.data[program_id]
 	if not dsl.is_input_action_effect_program(data) then
 		self.missing_program_ids[program_id] = true
 		error('[inputactioneffectsystem] program "' .. program_id .. '" not found or invalid.')

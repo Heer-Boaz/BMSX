@@ -1,4 +1,4 @@
-local combat_damage = {}
+local combat_damage<const> = {}
 
 function combat_damage.build_weapon_request(target, target_kind, event, weapon_kind)
 	return {
@@ -52,7 +52,7 @@ function combat_damage.build_rejected_result(request, reason)
 end
 
 function combat_damage.resolve(target, request)
-	local result = target:apply_damage(request)
+	local result<const> = target:apply_damage(request)
 	target.events:emit('damage.resolved', result)
 	return result
 end
