@@ -35,7 +35,6 @@ local function draw_usage_bar(label, used, total, x, y, z, font_id)
 	local pct_color = colors.text
 	local label_len = #label
 	local pct_text = tostring(pct) .. '%'
-	-- print(pct_text)
 	local pct_len = #pct_text
 
 	write_words(sys_vdp_cmd_arg0, bar_x, y + 1, bar_x + bar_w, y + 1 + bar_h, z, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a)
