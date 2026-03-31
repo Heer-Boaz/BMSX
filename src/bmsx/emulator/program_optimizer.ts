@@ -776,11 +776,12 @@ const computeBlockConstantIn = (
 						constants.delete(instruction.a);
 						break;
 					}
-					case OpCode.GETG:
-					case OpCode.GETT:
-					case OpCode.NEWT:
-					case OpCode.CONCATN:
-					case OpCode.CLOSURE:
+				case OpCode.GETG:
+				case OpCode.GETT:
+				case OpCode.NEWT:
+				case OpCode.CONCAT:
+				case OpCode.CONCATN:
+				case OpCode.CLOSURE:
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
 					constants.delete(instruction.a);
@@ -1083,7 +1084,15 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 			return operand;
 		}
 		const constant = constants.get(operand);
-		if (constant && constant.constIndex !== null && constant.constIndex <= MAX_EXT_CONST) {
+		if (
+			constant
+			&& constant.constIndex !== null
+			&& constant.constIndex <= MAX_EXT_CONST
+			// Keep RK replacement for non-string constants only.
+			// While the string-producing path in this pass is currently limited (notably CONCAT),
+			// don't emit RK string constants for STORE_MEM_WORDS; those must stay register-based.
+			&& !(instruction.op === OpCode.STORE_MEM_WORDS && isStringValue(constant.value))
+		) {
 			return -1 - constant.constIndex;
 		}
 		return rewriteRegisterOperand(operand, copies);
@@ -1105,7 +1114,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 						changed = true;
 					}
 					const constant = constants.get(instruction.b);
-					if (constant && isConstPoolValue(constant.value)) {
+					if (constant && isConstPoolValue(constant.value) && !isStringValue(constant.value)) {
 						replaceWithConst(instruction, instruction.a, constant.value, context);
 						changed = true;
 					}

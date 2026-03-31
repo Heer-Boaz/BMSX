@@ -1194,6 +1194,9 @@ const collectUsesForSsa = (instruction: Instruction): UseOperand[] => {
 			add('b', instruction.b, null, false);
 			break;
 		case OpCode.STORE_MEM_WORDS:
+			for (let offset = 0; offset < instruction.c; offset += 1) {
+				add('a', instruction.a + offset, null, false);
+			}
 			add('b', instruction.b, RK_B, true);
 			break;
 		default:
@@ -3163,7 +3166,10 @@ export const applyGlobalOptimizations = (
 		let replacedWithConst = false;
 		if (defValue !== null && isValueNumberable(instruction.op)) {
 			const constVal = resolveConst(defValue, valueConst, valueCopy);
-			if (constVal) {
+			// CONCAT is currently the only value-numberable string-producing op in this pass.
+			// If we add new string-producing opcodes, extend this exclusion so we don't
+			// materialize stale or semantically wrong constants through LOADK.
+			if (constVal && !(instruction.op === OpCode.CONCAT && isStringValue(constVal.value))) {
 				replaceWithConst(instruction, instruction.a, constVal.value, context);
 				instrUses[i] = [];
 				replacedWithConst = true;
@@ -3179,7 +3185,19 @@ export const applyGlobalOptimizations = (
 		for (let u = 0; u < uses.length; u += 1) {
 			const slot = uses[u];
 			const constVal = resolveConst(slot.valueId, valueConst, valueCopy);
-			if (constVal && slot.allowRk && constVal.constIndex <= MAX_EXT_CONST && slot.rkMaskBit !== null) {
+			// Keep RK replacement for non-string constants only.
+			// If we add new string-producing opcodes, extend this exclusion too.
+			// (Currently CONCAT is the only such op in this pass.)
+			// When write_words (STORE_MEM_WORDS) sources become string constants,
+			// that would encode the constant literal directly instead of the register
+			// and produces the wrong text.
+			if (
+				constVal
+				&& slot.allowRk
+				&& !isStringValue(constVal.value)
+				&& constVal.constIndex <= MAX_EXT_CONST
+				&& slot.rkMaskBit !== null
+			) {
 				if (slot.field === 'b') {
 					instruction.b = -1 - constVal.constIndex;
 				} else if (slot.field === 'c') {
