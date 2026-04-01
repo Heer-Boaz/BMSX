@@ -5,8 +5,11 @@ export type LuaValue = null | boolean | number | string | LuaTable | LuaFunction
 
 export interface LuaFunctionValue {
 	readonly name: string;
-	call(args: ReadonlyArray<LuaValue>): LuaValue[];
+	call(args: ReadonlyArray<LuaValue>): LuaCallResult;
 }
+
+export type LuaCallSignal = Extract<ExecutionSignal, { kind: 'pause'; }>;
+export type LuaCallResult = ReadonlyArray<LuaValue> | LuaCallSignal;
 
 export class LuaNativeValue {
 	public metatable: LuaTable = null;
@@ -22,21 +25,21 @@ export class LuaNativeMemberHandle implements LuaFunctionValue {
 	public readonly name: string;
 	public readonly target: object | Function;
 	public readonly path: ReadonlyArray<string>;
-	private readonly callImpl: (args: ReadonlyArray<LuaValue>) => LuaValue[];
+	private readonly callImpl: (args: ReadonlyArray<LuaValue>) => LuaCallResult;
 
-	constructor(params: { name?: string; target?: object | Function; path?: ReadonlyArray<string>; callImpl?: (args: ReadonlyArray<LuaValue>) => LuaValue[] }) {
+	constructor(params: { name?: string; target?: object | Function; path?: ReadonlyArray<string>; callImpl?: (args: ReadonlyArray<LuaValue>) => LuaCallResult }) {
 		this.name = (params as { name?: string }).name ?? 'native_member_handle';
 		this.target = (params as { target: object | Function }).target;
 		this.path = Array.from((params as { path?: ReadonlyArray<string> }).path ?? []);
-		this.callImpl = (params as { callImpl?: (args: ReadonlyArray<LuaValue>) => LuaValue[] }).callImpl ?? (() => { throw new Error('Native member handle not bound.'); });
+		this.callImpl = (params as { callImpl?: (args: ReadonlyArray<LuaValue>) => LuaCallResult }).callImpl ?? (() => { throw new Error('Native member handle not bound.'); });
 	}
 
-	public call(args: ReadonlyArray<LuaValue>): LuaValue[] {
+	public call(args: ReadonlyArray<LuaValue>): LuaCallResult {
 		return this.callImpl(args);
 	}
 }
 
-export function createLuaNativeMemberHandle(params: { name: string; target: object | Function; path: ReadonlyArray<string>; callImpl: (args: ReadonlyArray<LuaValue>) => LuaValue[] }): LuaNativeMemberHandle {
+export function createLuaNativeMemberHandle(params: { name: string; target: object | Function; path: ReadonlyArray<string>; callImpl: (args: ReadonlyArray<LuaValue>) => LuaCallResult }): LuaNativeMemberHandle {
 	return new LuaNativeMemberHandle(params);
 }
 
@@ -337,6 +340,14 @@ export function isLuaDebuggerPauseSignal(value: unknown): value is LuaDebuggerPa
 	}
 	const candidate = value as Partial<LuaDebuggerPauseSignal>;
 	return candidate.kind === 'pause' && typeof candidate.resume === 'function';
+}
+
+export function isLuaCallSignal(value: unknown): value is LuaCallSignal {
+	if (typeof value !== 'object' || value === null) {
+		return false;
+	}
+	const candidate = value as { kind?: unknown };
+	return candidate.kind === 'pause';
 }
 
 export function isLuaFunctionValue(value: unknown): value is LuaFunctionValue {

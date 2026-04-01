@@ -49,6 +49,7 @@ constexpr OctaveSpec VRAM_GARBAGE_OCTAVES[] = {
 	{19u, 20, 0xa24baed5U, 0x9e3779b9U},
 	{21u, 24, 0x6a09e667U, 0xbb67ae85U},
 };
+
 uint32_t skyboxFaceBaseByIndex(size_t index) {
 	switch (index) {
 		case 0: return VRAM_SKYBOX_POSX_BASE;
@@ -376,10 +377,42 @@ u32 VDP::nextBlitterSequence() {
 	return seq;
 }
 
+std::vector<VDP::GlyphRunGlyph> VDP::acquireGlyphBuffer() {
+	if (m_glyphBufferPool.empty()) {
+		return {};
+	}
+	std::vector<GlyphRunGlyph> glyphs = std::move(m_glyphBufferPool.back());
+	m_glyphBufferPool.pop_back();
+	return glyphs;
+}
+
+std::vector<VDP::TileRunBlit> VDP::acquireTileBuffer() {
+	if (m_tileBufferPool.empty()) {
+		return {};
+	}
+	std::vector<TileRunBlit> tiles = std::move(m_tileBufferPool.back());
+	m_tileBufferPool.pop_back();
+	return tiles;
+}
+
+void VDP::recycleBlitterBuffers() {
+	for (auto& command : m_blitterQueue) {
+		if (command.type == BlitterCommandType::GlyphRun) {
+			command.glyphs.clear();
+			m_glyphBufferPool.push_back(std::move(command.glyphs));
+		} else if (command.type == BlitterCommandType::TileRun) {
+			command.tiles.clear();
+			m_tileBufferPool.push_back(std::move(command.tiles));
+		}
+	}
+}
+
 void VDP::resetBlitterState() {
+	recycleBlitterBuffers();
 	m_blitterQueue.clear();
 	m_blitterSequence = 0u;
 	m_blitterError = false;
+	m_buildFrameCost = 0;
 }
 
 void VDP::enqueueBlitterCommand(BlitterCommand&& command) {
@@ -387,7 +420,16 @@ void VDP::enqueueBlitterCommand(BlitterCommand&& command) {
 		m_blitterError = true;
 		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Blitter FIFO overflow (4096 commands).");
 	}
+	m_buildFrameCost += command.renderCost;
 	m_blitterQueue.push_back(std::move(command));
+}
+
+int VDP::calculateVisibleRectCost(double width, double height) const {
+	return blitAreaBucket(width * height);
+}
+
+int VDP::calculateAlphaMultiplier(const FrameBufferColor& color) const {
+	return color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
 }
 
 void VDP::initializeFrameBufferSurface() {
@@ -467,18 +509,32 @@ void VDP::enqueueClear(const Color& color) {
 	BlitterCommand command;
 	command.type = BlitterCommandType::Clear;
 	command.seq = nextBlitterSequence();
+	command.renderCost = VDP_RENDER_CLEAR_COST;
 	command.color = packFrameBufferColor(color);
 	enqueueBlitterCommand(std::move(command));
 }
 
 void VDP::enqueueBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight) {
 	(void)parallaxWeight;
+	const BlitterSource source = resolveBlitterSource(handle);
+	const auto clipped = computeClippedRect(
+		static_cast<double>(x),
+		static_cast<double>(y),
+		static_cast<double>(x) + static_cast<double>(source.width) * std::abs(static_cast<double>(scaleX)),
+		static_cast<double>(y) + static_cast<double>(source.height) * std::abs(static_cast<double>(scaleY)),
+		static_cast<double>(m_frameBufferWidth),
+		static_cast<double>(m_frameBufferHeight)
+	);
+	if (clipped.area == 0.0) {
+		return;
+	}
 	BlitterCommand command;
 	command.type = BlitterCommandType::Blit;
 	command.seq = nextBlitterSequence();
+	command.renderCost = calculateVisibleRectCost(clipped.width, clipped.height);
 	command.z = z;
 	command.layer = layer;
-	command.source = resolveBlitterSource(handle);
+	command.source = source;
 	command.dstX = x;
 	command.dstY = y;
 	command.scaleX = scaleX;
@@ -486,13 +542,26 @@ void VDP::enqueueBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX
 	command.flipH = flipH;
 	command.flipV = flipV;
 	command.color = packFrameBufferColor(color);
+	command.renderCost *= calculateAlphaMultiplier(command.color);
 	enqueueBlitterCommand(std::move(command));
 }
 
 void VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 z, Layer2D layer) {
+	const auto clipped = computeClippedRect(
+		static_cast<double>(dstX),
+		static_cast<double>(dstY),
+		static_cast<double>(dstX + width),
+		static_cast<double>(dstY + height),
+		static_cast<double>(m_frameBufferWidth),
+		static_cast<double>(m_frameBufferHeight)
+	);
+	if (clipped.area == 0.0) {
+		return;
+	}
 	BlitterCommand command;
 	command.type = BlitterCommandType::CopyRect;
 	command.seq = nextBlitterSequence();
+	command.renderCost = calculateVisibleRectCost(clipped.width, clipped.height);
 	command.z = z;
 	command.layer = layer;
 	command.srcX = srcX;
@@ -505,9 +574,21 @@ void VDP::enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i
 }
 
 void VDP::enqueueFillRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color) {
+	const auto clipped = computeClippedRect(
+		static_cast<double>(x0),
+		static_cast<double>(y0),
+		static_cast<double>(x1),
+		static_cast<double>(y1),
+		static_cast<double>(m_frameBufferWidth),
+		static_cast<double>(m_frameBufferHeight)
+	);
+	if (clipped.area == 0.0) {
+		return;
+	}
 	BlitterCommand command;
 	command.type = BlitterCommandType::FillRect;
 	command.seq = nextBlitterSequence();
+	command.renderCost = calculateVisibleRectCost(clipped.width, clipped.height);
 	command.x0 = x0;
 	command.y0 = y0;
 	command.x1 = x1;
@@ -515,13 +596,26 @@ void VDP::enqueueFillRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, 
 	command.z = z;
 	command.layer = layer;
 	command.color = packFrameBufferColor(color);
+	command.renderCost *= calculateAlphaMultiplier(command.color);
 	enqueueBlitterCommand(std::move(command));
 }
 
 void VDP::enqueueDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness) {
+	const double span = computeClippedLineSpan(
+		static_cast<double>(x0),
+		static_cast<double>(y0),
+		static_cast<double>(x1),
+		static_cast<double>(y1),
+		static_cast<double>(m_frameBufferWidth),
+		static_cast<double>(m_frameBufferHeight)
+	);
+	if (span == 0.0) {
+		return;
+	}
 	BlitterCommand command;
 	command.type = BlitterCommandType::DrawLine;
 	command.seq = nextBlitterSequence();
+	command.renderCost = blitSpanBucket(span) * (thickness > 1.0f ? 2 : 1);
 	command.x0 = x0;
 	command.y0 = y0;
 	command.x1 = x1;
@@ -530,6 +624,7 @@ void VDP::enqueueDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, 
 	command.layer = layer;
 	command.thickness = thickness;
 	command.color = packFrameBufferColor(color);
+	command.renderCost *= calculateAlphaMultiplier(command.color);
 	enqueueBlitterCommand(std::move(command));
 }
 
@@ -557,6 +652,7 @@ void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f
 	BlitterCommand command;
 	command.type = BlitterCommandType::GlyphRun;
 	command.seq = nextBlitterSequence();
+	command.glyphs = acquireGlyphBuffer();
 	command.z = z;
 	command.layer = layer;
 	command.lineHeight = static_cast<u32>(font->lineHeight());
@@ -565,6 +661,7 @@ void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f
 		? std::optional<FrameBufferColor>(packFrameBufferColor(*backgroundColor))
 		: std::nullopt;
 	f32 cursorY = y;
+	int renderCost = 0;
 	for (const auto& line : lines) {
 		if (line.empty()) {
 			cursorY += static_cast<f32>(font->lineHeight());
@@ -584,21 +681,51 @@ void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f
 			}
 			const FontGlyph& glyph = font->getGlyph(codepoint);
 			const BlitterSource source = resolveBlitterSource(m_memory.resolveAssetHandle(glyph.imgid));
-			GlyphRunGlyph blit;
-			blit.surfaceId = source.surfaceId;
-			blit.srcX = source.srcX;
-			blit.srcY = source.srcY;
-			blit.width = source.width;
-			blit.height = source.height;
-			blit.dstX = cursorX;
-			blit.dstY = cursorY;
-			blit.advance = static_cast<u32>(glyph.advance);
-			command.glyphs.push_back(blit);
+			const auto clipped = computeClippedRect(
+				static_cast<double>(cursorX),
+				static_cast<double>(cursorY),
+				static_cast<double>(cursorX) + static_cast<double>(source.width),
+				static_cast<double>(cursorY) + static_cast<double>(source.height),
+				static_cast<double>(m_frameBufferWidth),
+				static_cast<double>(m_frameBufferHeight)
+			);
+			if (clipped.area > 0.0) {
+				renderCost += calculateVisibleRectCost(clipped.width, clipped.height);
+				if (command.backgroundColor.has_value()) {
+					const auto backgroundRect = computeClippedRect(
+						static_cast<double>(cursorX),
+						static_cast<double>(cursorY),
+						static_cast<double>(cursorX) + static_cast<double>(glyph.advance),
+						static_cast<double>(cursorY) + static_cast<double>(font->lineHeight()),
+						static_cast<double>(m_frameBufferWidth),
+						static_cast<double>(m_frameBufferHeight)
+					);
+					if (backgroundRect.area > 0.0) {
+						renderCost += calculateVisibleRectCost(backgroundRect.width, backgroundRect.height) * calculateAlphaMultiplier(*command.backgroundColor);
+					}
+				}
+				command.glyphs.emplace_back();
+				auto& blit = command.glyphs.back();
+				blit.surfaceId = source.surfaceId;
+				blit.srcX = source.srcX;
+				blit.srcY = source.srcY;
+				blit.width = source.width;
+				blit.height = source.height;
+				blit.dstX = cursorX;
+				blit.dstY = cursorY;
+				blit.advance = static_cast<u32>(glyph.advance);
+			}
 			cursorX += static_cast<f32>(glyph.advance);
 			glyphIndex += 1;
 		}
 		cursorY += static_cast<f32>(font->lineHeight());
 	}
+	if (command.glyphs.empty()) {
+		command.glyphs.clear();
+		m_glyphBufferPool.push_back(std::move(command.glyphs));
+		return;
+	}
+	command.renderCost = renderCost;
 	enqueueBlitterCommand(std::move(command));
 }
 
@@ -637,8 +764,10 @@ void VDP::enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i3
 	BlitterCommand command;
 	command.type = BlitterCommandType::TileRun;
 	command.seq = nextBlitterSequence();
+	command.tiles = acquireTileBuffer();
 	command.z = z;
 	command.layer = layer;
+	int renderCost = 0;
 	for (i32 row = 0; row < rows; row += 1) {
 		const i32 base = row * cols;
 		for (i32 col = 0; col < cols; col += 1) {
@@ -652,12 +781,20 @@ void VDP::enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i3
 			}
 			const i32 tileX = dstX + (col * tileW) - srcClipX;
 			const i32 tileY = dstY + (row * tileH) - srcClipY;
-			const i32 tileRight = tileX + tileW;
-			const i32 tileBottom = tileY + tileH;
-			if (tileRight <= 0 || tileBottom <= 0 || tileX >= frameWidth || tileY >= frameHeight) {
+			const auto clipped = computeClippedRect(
+				static_cast<double>(tileX),
+				static_cast<double>(tileY),
+				static_cast<double>(tileX + tileW),
+				static_cast<double>(tileY + tileH),
+				static_cast<double>(frameWidth),
+				static_cast<double>(frameHeight)
+			);
+			if (clipped.area == 0.0) {
 				continue;
 			}
-			TileRunBlit blit;
+			renderCost += calculateVisibleRectCost(clipped.width, clipped.height);
+			command.tiles.emplace_back();
+			auto& blit = command.tiles.back();
 			blit.surfaceId = source.surfaceId;
 			blit.srcX = source.srcX;
 			blit.srcY = source.srcY;
@@ -665,9 +802,14 @@ void VDP::enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i3
 			blit.height = source.height;
 			blit.dstX = static_cast<f32>(tileX);
 			blit.dstY = static_cast<f32>(tileY);
-			command.tiles.push_back(blit);
 		}
 	}
+	if (command.tiles.empty()) {
+		command.tiles.clear();
+		m_tileBufferPool.push_back(std::move(command.tiles));
+		return;
+	}
+	command.renderCost = renderCost;
 	enqueueBlitterCommand(std::move(command));
 }
 
@@ -837,8 +979,7 @@ void VDP::copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 w
 	}
 }
 
-void VDP::advanceBlitter(int cycles) {
-	(void)cycles;
+void VDP::executeBuildFrame() {
 	if (m_blitterQueue.empty()) {
 		return;
 	}
@@ -898,6 +1039,81 @@ void VDP::advanceBlitter(int cycles) {
 	auto* texmanager = EngineCore::instance().texmanager();
 	TextureHandle handle = EngineCore::instance().view()->textures[FRAMEBUFFER_TEXTURE_KEY];
 	texmanager->updateTexture(handle, pixels.data(), static_cast<i32>(m_frameBufferWidth), static_cast<i32>(m_frameBufferHeight), params);
+	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+}
+
+void VDP::commitSkyboxImages() {
+	if (!m_hasSkybox) {
+		return;
+	}
+	const std::array<const std::string*, 6> faces = {{&m_skyboxFaceIds.posx, &m_skyboxFaceIds.negx, &m_skyboxFaceIds.posy, &m_skyboxFaceIds.negy, &m_skyboxFaceIds.posz, &m_skyboxFaceIds.negz}};
+	for (size_t index = 0; index < faces.size(); ++index) {
+		const std::string& assetId = *faces[index];
+		auto* asset = EngineCore::instance().resolveImgAsset(assetId);
+		if (!asset) {
+			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' not found.");
+		}
+		if (asset->meta.atlassed) {
+			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' must not be atlassed.");
+		}
+		if (!asset->rom.start || !asset->rom.end) {
+			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' missing ROM range.");
+		}
+		const i32 start = *asset->rom.start;
+		const i32 end = *asset->rom.end;
+		if (end <= start) {
+			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' has invalid ROM range.");
+		}
+		uint32_t base = CART_ROM_BASE;
+		if (asset->rom.payloadId.has_value()) {
+			const auto& payload = *asset->rom.payloadId;
+			if (payload == "system") {
+				base = SYSTEM_ROM_BASE;
+			} else if (payload == "overlay") {
+				base = OVERLAY_ROM_BASE;
+			} else if (payload == "cart") {
+				base = CART_ROM_BASE;
+			} else {
+				throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' has unsupported payload_id " + payload + ".");
+			}
+		}
+		const size_t len = static_cast<size_t>(end - start);
+		std::vector<u8> buffer(len);
+		m_memory.readBytes(base + static_cast<uint32_t>(start), buffer.data(), len);
+		auto& slot = m_skyboxSlots[index];
+		m_imgDecController->decodeToVram(std::move(buffer), slot.baseAddr, slot.capacity,
+			[asset](uint32_t width, uint32_t height, bool clipped) {
+				(void)clipped;
+				if (asset->meta.width <= 0) {
+					asset->meta.width = static_cast<i32>(width);
+				}
+				if (asset->meta.height <= 0) {
+					asset->meta.height = static_cast<i32>(height);
+				}
+			});
+	}
+}
+
+void VDP::commitBuildFrame(int renderBudgetPerFrame) {
+	m_lastFrameCost = m_buildFrameCost;
+	m_lastFrameCommitted = m_buildFrameCost <= renderBudgetPerFrame;
+	m_lastFrameOverBudget = !m_lastFrameCommitted;
+	if (!m_lastFrameCommitted) {
+		resetBlitterState();
+		return;
+	}
+	executeBuildFrame();
+	if (m_visualStateDirty) {
+		m_committedDitherType = m_lastDitherType;
+		m_committedSlotAtlasIds = m_slotAtlasIds;
+		if (m_dirtySkybox) {
+			commitSkyboxImages();
+			m_committedSkyboxFaceIds = m_skyboxFaceIds;
+			m_committedHasSkybox = m_hasSkybox;
+		}
+		m_visualStateDirty = false;
+		m_dirtySkybox = false;
+	}
 	resetBlitterState();
 }
 
@@ -969,14 +1185,25 @@ void VDP::initializeRegisters() {
 		m_memory.writeValue(IO_VDP_CMD_ARG0 + static_cast<uint32_t>(index) * IO_WORD_SIZE, valueNumber(0.0));
 	}
 	m_lastDitherType = dither;
-	EngineCore::instance().view()->dither_type = static_cast<GameView::DitherType>(dither);
+	m_committedDitherType = dither;
+	m_visualStateDirty = false;
+	m_dirtySkybox = false;
+	m_skyboxFaceIds = {};
+	m_hasSkybox = false;
+	m_committedSkyboxFaceIds = {};
+	m_committedHasSkybox = false;
+	m_committedSlotAtlasIds = m_slotAtlasIds;
+	m_lastFrameCommitted = true;
+	m_lastFrameCost = 0;
+	m_lastFrameOverBudget = false;
+	commitViewSnapshot(*EngineCore::instance().view());
 }
 
 void VDP::syncRegisters() {
 	const i32 dither = static_cast<i32>(asNumber(m_memory.readValue(IO_VDP_DITHER)));
 	if (dither != m_lastDitherType) {
 		m_lastDitherType = dither;
-		EngineCore::instance().view()->dither_type = static_cast<GameView::DitherType>(dither);
+		m_visualStateDirty = true;
 	}
 	const uint32_t primaryRaw = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_PRIMARY_ATLAS_ID)));
 	const uint32_t secondaryRaw = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_SECONDARY_ATLAS_ID)));
@@ -984,6 +1211,7 @@ void VDP::syncRegisters() {
 	const i32 secondary = secondaryRaw == VDP_ATLAS_ID_NONE ? -1 : static_cast<i32>(secondaryRaw);
 	if (primary != m_slotAtlasIds[0] || secondary != m_slotAtlasIds[1]) {
 		applyAtlasSlotMapping({{primary, secondary}});
+		m_visualStateDirty = true;
 	}
 }
 
@@ -1004,10 +1232,14 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 		cache.width = 0;
 		cache.data.clear();
 	}
-	m_dirtyAtlasBindings = true;
+	m_visualStateDirty = true;
 	m_dirtySkybox = true;
 	m_skyboxFaceIds = {};
 	m_hasSkybox = false;
+	m_committedSkyboxFaceIds = {};
+	m_committedHasSkybox = false;
+	m_committedSlotAtlasIds = {{-1, -1}};
+	m_committedDitherType = m_lastDitherType;
 	m_vramBootSeed = nextVramBootSeed();
 	seedVramStaging();
 	initializeFrameBufferSurface();
@@ -1203,6 +1435,7 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	}
 
 	syncRegisters();
+	commitViewSnapshot(*EngineCore::instance().view());
 
 	if (!keepDecodedData) {
 		for (auto& entry : assets.img) {
@@ -1229,7 +1462,7 @@ void VDP::restoreVramSlotTextures() {
 	const auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 	restoreVramSlotTexture(primaryEntry, ATLAS_PRIMARY_SLOT_ID);
 	restoreVramSlotTexture(secondaryEntry, ATLAS_SECONDARY_SLOT_ID);
-	m_dirtyAtlasBindings = true;
+	m_visualStateDirty = true;
 }
 
 void VDP::captureVramTextureSnapshots() {
@@ -1360,7 +1593,7 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 	if (slots[1] >= 0) {
 		m_atlasSlotById[slots[1]] = 1;
 	}
-	m_dirtyAtlasBindings = true;
+	m_visualStateDirty = true;
 	auto& primaryEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 	auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 	if (slots[0] >= 0) {
@@ -1401,47 +1634,17 @@ void VDP::setSkyboxImages(const SkyboxImageIds& ids) {
 		if (!asset->rom.start || !asset->rom.end) {
 			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' missing ROM range.");
 		}
-		const i32 start = *asset->rom.start;
-		const i32 end = *asset->rom.end;
-		if (end <= start) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' has invalid ROM range.");
-		}
-		uint32_t base = CART_ROM_BASE;
-		if (asset->rom.payloadId.has_value()) {
-			const auto& payload = *asset->rom.payloadId;
-			if (payload == "system") {
-				base = SYSTEM_ROM_BASE;
-			} else if (payload == "overlay") {
-				base = OVERLAY_ROM_BASE;
-			} else if (payload == "cart") {
-				base = CART_ROM_BASE;
-			} else {
-				throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' has unsupported payload_id " + payload + ".");
-			}
-		}
-		const size_t len = static_cast<size_t>(end - start);
-		std::vector<u8> buffer(len);
-		m_memory.readBytes(base + static_cast<uint32_t>(start), buffer.data(), len);
-		auto& slot = m_skyboxSlots[index];
-		m_imgDecController->decodeToVram(std::move(buffer), slot.baseAddr, slot.capacity,
-			[asset](uint32_t width, uint32_t height, bool clipped) {
-				(void)clipped;
-				if (asset->meta.width <= 0) {
-					asset->meta.width = static_cast<i32>(width);
-				}
-				if (asset->meta.height <= 0) {
-					asset->meta.height = static_cast<i32>(height);
-				}
-			});
 	}
 	m_skyboxFaceIds = ids;
 	m_hasSkybox = true;
+	m_visualStateDirty = true;
 	m_dirtySkybox = true;
 }
 
 void VDP::clearSkybox() {
 	m_skyboxFaceIds = {};
 	m_hasSkybox = false;
+	m_visualStateDirty = true;
 	m_dirtySkybox = true;
 }
 
@@ -1819,13 +2022,10 @@ std::vector<u8> VDP::readSurfacePixels(const ReadSurface& surface, uint32_t x, u
 }
 
 void VDP::commitViewSnapshot(GameView& view) {
-	view.primaryAtlasIdInSlot = m_slotAtlasIds[0];
-	view.secondaryAtlasIdInSlot = m_slotAtlasIds[1];
-	m_dirtyAtlasBindings = false;
-	if (m_dirtySkybox) {
-		view.skyboxFaceIds = m_skyboxFaceIds;
-		m_dirtySkybox = false;
-	}
+	view.dither_type = static_cast<GameView::DitherType>(m_committedDitherType);
+	view.primaryAtlasIdInSlot = m_committedSlotAtlasIds[0];
+	view.secondaryAtlasIdInSlot = m_committedSlotAtlasIds[1];
+	view.skyboxFaceIds = m_committedHasSkybox ? m_committedSkyboxFaceIds : SkyboxImageIds{};
 }
 
 } // namespace bmsx

@@ -249,6 +249,8 @@ export function applyAssetMemorySnapshot(runtime: Runtime, snapshot: RuntimeStat
 		runtime.vdp.ditherType = snapshot.vdpDitherType;
 	}
 	runtime.vdp.flushAssetEdits();
+	runtime.vdp.commitBuildFrame(Number.MAX_SAFE_INTEGER);
+	runtime.vdp.commitViewSnapshot();
 }
 
 export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState): Promise<void> {

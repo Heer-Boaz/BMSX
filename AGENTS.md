@@ -217,6 +217,7 @@
         }
     }
     ```
+* Prevent any ad-hoc creation of temporary objects or arrays in performance-critical code paths. Instead, use scratch buffers or object pooling to minimize memory allocations and improve performance!!!
 * No Descriptor-patterns. They suck.
 * No Facade/Host/Provider/Service-patterns. They suck.
 * Use `TaskGate` and `AssetBarrier` for async operations instead of rolling your own solutions.

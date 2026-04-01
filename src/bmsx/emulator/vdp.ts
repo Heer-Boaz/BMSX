@@ -4,7 +4,15 @@ import { Runtime } from './runtime';
 import * as SkyboxPipeline from '../render/3d/skybox_pipeline';
 import { decodePngToRgba } from '../utils/image_decode';
 import type { Layer2D, SkyboxImageIds, color } from '../render/shared/render_types';
-import type { RomAsset, RomImgAsset } from '../rompack/rompack';
+import type { RomAsset, RomImgAsset, TextureSource } from '../rompack/rompack';
+import {
+	VDP_RENDER_ALPHA_COST_MULTIPLIER,
+	VDP_RENDER_CLEAR_COST,
+	blitAreaBucket,
+	blitSpanBucket,
+	computeClippedLineSpan,
+	computeClippedRect,
+} from './vdp_render_budget';
 import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
@@ -454,12 +462,14 @@ export type VdpTileRunBlit = VdpBlitterSource & {
 export type VdpBlitterClearCommand = {
 	opcode: 'clear';
 	seq: number;
+	renderCost: number;
 	color: VdpFrameBufferColor;
 };
 
 export type VdpBlitterBlitCommand = {
 	opcode: 'blit';
 	seq: number;
+	renderCost: number;
 	layer: Layer2D;
 	z: number;
 	source: VdpBlitterSource;
@@ -476,6 +486,7 @@ export type VdpBlitterBlitCommand = {
 export type VdpBlitterCopyRectCommand = {
 	opcode: 'copy_rect';
 	seq: number;
+	renderCost: number;
 	layer: Layer2D;
 	z: number;
 	srcX: number;
@@ -489,6 +500,7 @@ export type VdpBlitterCopyRectCommand = {
 export type VdpBlitterFillRectCommand = {
 	opcode: 'fill_rect';
 	seq: number;
+	renderCost: number;
 	layer: Layer2D;
 	z: number;
 	x0: number;
@@ -501,6 +513,7 @@ export type VdpBlitterFillRectCommand = {
 export type VdpBlitterDrawLineCommand = {
 	opcode: 'draw_line';
 	seq: number;
+	renderCost: number;
 	layer: Layer2D;
 	z: number;
 	x0: number;
@@ -514,6 +527,7 @@ export type VdpBlitterDrawLineCommand = {
 export type VdpBlitterGlyphRunCommand = {
 	opcode: 'glyph_run';
 	seq: number;
+	renderCost: number;
 	layer: Layer2D;
 	z: number;
 	lineHeight: number;
@@ -525,6 +539,7 @@ export type VdpBlitterGlyphRunCommand = {
 export type VdpBlitterTileRunCommand = {
 	opcode: 'tile_run';
 	seq: number;
+	renderCost: number;
 	layer: Layer2D;
 	z: number;
 	tiles: VdpTileRunBlit[];
@@ -554,6 +569,7 @@ export interface VdpBlitterExecutor {
 
 export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
 const BLITTER_FIFO_CAPACITY = 4096;
+type SkyboxLoader = () => Promise<TextureSource>;
 
 export class VDP implements VramWriteSink, VdpIoHandler {
 	private readonly assetUpdateGate = taskGate.group('asset:update');
@@ -574,14 +590,29 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private readOverflow = false;
 	private cpuReadbackByKey = new Map<string, Uint8Array>();
 	private skyboxSlots: SkyboxSlot[] = [];
-	private dirtySkybox = false;
 	private _skyboxFaceIds: SkyboxImageIds | null = null;
+	private buildSkyboxLoaders: readonly SkyboxLoader[] | null = null;
+	private committedSkyboxFaceIds: SkyboxImageIds | null = null;
 	private lastDitherType = 0;
+	private committedDitherType = 0;
+	private visualStateDirty = false;
+	private skyboxDirty = false;
 	private imgDecController: ImgDecController | null = null;
 	private _frameBufferWidth = 0;
 	private _frameBufferHeight = 0;
 	private readonly blitterQueue: VdpBlitterCommand[] = [];
+	private readonly glyphBufferPool: VdpGlyphRunGlyph[][] = [];
+	private readonly tileBufferPool: VdpTileRunBlit[][] = [];
+	private readonly glyphEntryPool: VdpGlyphRunGlyph[] = [];
+	private readonly tileEntryPool: VdpTileRunBlit[] = [];
+	private readonly clippedRectScratchA = { width: 0, height: 0, area: 0 };
+	private readonly clippedRectScratchB = { width: 0, height: 0, area: 0 };
 	private blitterSequence = 0;
+	private buildFrameCost = 0;
+	private readonly committedSlotAtlasIds: Array<number | null> = [null, null];
+	public lastFrameCommitted = true;
+	public lastFrameCost = 0;
+	public lastFrameOverBudget = false;
 	public constructor(
 		private readonly memory: Memory,
 		private readonly blitterExecutor: VdpBlitterExecutor | null,
@@ -614,16 +645,145 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		return seq;
 	}
 
+	private acquireGlyphBuffer(): VdpGlyphRunGlyph[] {
+		const glyphs = this.glyphBufferPool.pop();
+		if (glyphs) {
+			return glyphs;
+		}
+		return [];
+	}
+
+	private acquireGlyphEntry(): VdpGlyphRunGlyph {
+		const glyph = this.glyphEntryPool.pop();
+		if (glyph) {
+			return glyph;
+		}
+		return {
+			surfaceId: 0,
+			srcX: 0,
+			srcY: 0,
+			width: 0,
+			height: 0,
+			dstX: 0,
+			dstY: 0,
+			advance: 0,
+		};
+	}
+
+	private acquireTileBuffer(): VdpTileRunBlit[] {
+		const tiles = this.tileBufferPool.pop();
+		if (tiles) {
+			return tiles;
+		}
+		return [];
+	}
+
+	private acquireTileEntry(): VdpTileRunBlit {
+		const tile = this.tileEntryPool.pop();
+		if (tile) {
+			return tile;
+		}
+		return {
+			surfaceId: 0,
+			srcX: 0,
+			srcY: 0,
+			width: 0,
+			height: 0,
+			dstX: 0,
+			dstY: 0,
+		};
+	}
+
+	private recycleBlitterBuffers(): void {
+		for (let index = 0; index < this.blitterQueue.length; index += 1) {
+			const command = this.blitterQueue[index];
+			if (command.opcode === 'glyph_run') {
+				for (let glyphIndex = 0; glyphIndex < command.glyphs.length; glyphIndex += 1) {
+					this.glyphEntryPool.push(command.glyphs[glyphIndex]);
+				}
+				command.glyphs.length = 0;
+				this.glyphBufferPool.push(command.glyphs);
+			} else if (command.opcode === 'tile_run') {
+				for (let tileIndex = 0; tileIndex < command.tiles.length; tileIndex += 1) {
+					this.tileEntryPool.push(command.tiles[tileIndex]);
+				}
+				command.tiles.length = 0;
+				this.tileBufferPool.push(command.tiles);
+			}
+		}
+	}
+
 	private resetBlitterState(): void {
+		this.recycleBlitterBuffers();
 		this.blitterQueue.length = 0;
 		this.blitterSequence = 0;
+		this.buildFrameCost = 0;
 	}
 
 	private enqueueBlitterCommand(command: VdpBlitterCommand): void {
 		if (this.blitterQueue.length >= BLITTER_FIFO_CAPACITY) {
 			throw new Error(`[BmsxVDP] Blitter FIFO overflow (${BLITTER_FIFO_CAPACITY} commands).`);
 		}
+		this.buildFrameCost += command.renderCost;
 		this.blitterQueue.push(command);
+	}
+
+	private calculateVisibleRectCost(width: number, height: number): number {
+		const area = width * height;
+		return blitAreaBucket(area);
+	}
+
+	private calculateAlphaMultiplier(color: VdpFrameBufferColor): number {
+		return color.a < 255 ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
+	}
+
+	private executeBuildFrame(): void {
+		if (this.blitterQueue.length === 0) {
+			return;
+		}
+		if (this.blitterExecutor === null) {
+			throw new Error(`[BmsxVDP] No JS blitter executor for backend ${$.view.backend.type}.`);
+		}
+		if ($.view.backend.type !== this.blitterExecutor.backendType) {
+			throw new Error(`[BmsxVDP] JS blitter executor mismatch (${this.blitterExecutor.backendType} != ${$.view.backend.type}).`);
+		}
+		const host: VdpBlitterHost = {
+			width: this._frameBufferWidth,
+			height: this._frameBufferHeight,
+			frameBufferTextureKey: FRAMEBUFFER_TEXTURE_KEY,
+			getSurface: (surfaceId) => this.getBlitterSurface(surfaceId),
+			getShaderAtlasId: (surfaceId) => this.getBlitterAtlasId(surfaceId),
+		};
+		this.blitterExecutor.execute(host, this.blitterQueue);
+		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+	}
+
+	public commitBuildFrame(renderBudget: number): void {
+		this.lastFrameCost = this.buildFrameCost;
+		this.lastFrameCommitted = this.buildFrameCost <= renderBudget;
+		this.lastFrameOverBudget = !this.lastFrameCommitted;
+		if (!this.lastFrameCommitted) {
+			this.resetBlitterState();
+			return;
+		}
+		this.executeBuildFrame();
+		if (this.visualStateDirty) {
+			this.committedDitherType = this.lastDitherType;
+			this.committedSlotAtlasIds[0] = this.slotAtlasIds[0];
+			this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
+			if (this.skyboxDirty) {
+				if (this._skyboxFaceIds === null || this.buildSkyboxLoaders === null) {
+					SkyboxPipeline.clearSkyboxSources();
+				} else {
+					const loaders = this.buildSkyboxLoaders;
+					SkyboxPipeline.setSkyboxSources(this._skyboxFaceIds, loaders.map((loader) => loader()));
+				}
+			}
+			this.committedSkyboxFaceIds = this._skyboxFaceIds;
+			this.visualStateDirty = false;
+			this.skyboxDirty = false;
+		}
+		this.resetBlitterState();
 	}
 
 	private initializeFrameBufferSurface(): void {
@@ -682,32 +842,47 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.enqueueBlitterCommand({
 			opcode: 'clear',
 			seq: this.nextBlitterSequence(),
+			renderCost: VDP_RENDER_CLEAR_COST,
 			color: this.packFrameBufferColor(colorValue),
 		});
 	}
 
 	public enqueueBlit(handle: number, x: number, y: number, z: number, layer: Layer2D, scaleX: number, scaleY: number, flipH: boolean, flipV: boolean, colorValue: color, parallaxWeight: number): void {
+		const source = this.resolveBlitterSource(handle);
+		const dstWidth = source.width * Math.abs(scaleX);
+		const dstHeight = source.height * Math.abs(scaleY);
+		const clipped = computeClippedRect(x, y, x + dstWidth, y + dstHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
+		if (clipped.area === 0) {
+			return;
+		}
+		const color = this.packFrameBufferColor(colorValue);
 		this.enqueueBlitterCommand({
 			opcode: 'blit',
 			seq: this.nextBlitterSequence(),
+			renderCost: this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(color),
 			layer,
 			z,
-			source: this.resolveBlitterSource(handle),
+			source,
 			dstX: x,
 			dstY: y,
 			scaleX,
 			scaleY,
 			flipH,
 			flipV,
-			color: this.packFrameBufferColor(colorValue),
+			color,
 			parallaxWeight,
 		});
 	}
 
 	public enqueueCopyRect(srcX: number, srcY: number, width: number, height: number, dstX: number, dstY: number, z: number, layer: Layer2D): void {
+		const clipped = computeClippedRect(dstX, dstY, dstX + width, dstY + height, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
+		if (clipped.area === 0) {
+			return;
+		}
 		this.enqueueBlitterCommand({
 			opcode: 'copy_rect',
 			seq: this.nextBlitterSequence(),
+			renderCost: this.calculateVisibleRectCost(clipped.width, clipped.height),
 			layer,
 			z,
 			srcX,
@@ -720,23 +895,36 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public enqueueFillRect(x0: number, y0: number, x1: number, y1: number, z: number, layer: Layer2D, colorValue: color): void {
+		const clipped = computeClippedRect(x0, y0, x1, y1, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
+		if (clipped.area === 0) {
+			return;
+		}
+		const color = this.packFrameBufferColor(colorValue);
 		this.enqueueBlitterCommand({
 			opcode: 'fill_rect',
 			seq: this.nextBlitterSequence(),
+			renderCost: this.calculateVisibleRectCost(clipped.width, clipped.height) * this.calculateAlphaMultiplier(color),
 			layer,
 			z,
 			x0,
 			y0,
 			x1,
 			y1,
-			color: this.packFrameBufferColor(colorValue),
+			color,
 		});
 	}
 
 	public enqueueDrawLine(x0: number, y0: number, x1: number, y1: number, z: number, layer: Layer2D, colorValue: color, thickness: number): void {
+		const span = computeClippedLineSpan(x0, y0, x1, y1, this._frameBufferWidth, this._frameBufferHeight);
+		if (span === 0) {
+			return;
+		}
+		const color = this.packFrameBufferColor(colorValue);
+		const thicknessMultiplier = thickness > 1 ? 2 : 1;
 		this.enqueueBlitterCommand({
 			opcode: 'draw_line',
 			seq: this.nextBlitterSequence(),
+			renderCost: blitSpanBucket(span) * thicknessMultiplier * this.calculateAlphaMultiplier(color),
 			layer,
 			z,
 			x0,
@@ -744,7 +932,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			x1,
 			y1,
 			thickness,
-			color: this.packFrameBufferColor(colorValue),
+			color,
 		});
 	}
 
@@ -763,11 +951,16 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public enqueueGlyphRun(text: string | string[], x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: Layer2D): void {
-		const lines = Array.isArray(text) ? text : [text];
-		const glyphs: VdpGlyphRunGlyph[] = [];
+		const lines = Array.isArray(text) ? text : null;
+		const singleLine = lines === null ? text as string : '';
+		const glyphs = this.acquireGlyphBuffer();
+		const color = this.packFrameBufferColor(colorValue);
+		const background = backgroundColor ? this.packFrameBufferColor(backgroundColor) : null;
+		let renderCost = 0;
 		let cursorY = y;
-		for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-			const line = lines[lineIndex];
+		const lineCount = lines === null ? 1 : lines.length;
+		for (let lineIndex = 0; lineIndex < lineCount; lineIndex += 1) {
+			const line = lines === null ? singleLine : lines[lineIndex];
 			if (line.length === 0) {
 				cursorY += font.lineHeight;
 				continue;
@@ -777,28 +970,43 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				const glyph = font.getGlyph(line.charAt(glyphIndex));
 				const handle = Runtime.instance.resolveAssetHandle(glyph.imgid);
 				const source = this.resolveBlitterSource(handle);
-				glyphs.push({
-					surfaceId: source.surfaceId,
-					srcX: source.srcX,
-					srcY: source.srcY,
-					width: source.width,
-					height: source.height,
-					dstX: cursorX,
-					dstY: cursorY,
-					advance: glyph.advance,
-				});
+				const clipped = computeClippedRect(cursorX, cursorY, cursorX + source.width, cursorY + source.height, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
+				if (clipped.area > 0) {
+					renderCost += this.calculateVisibleRectCost(clipped.width, clipped.height);
+					if (background !== null) {
+						const backgroundRect = computeClippedRect(cursorX, cursorY, cursorX + glyph.advance, cursorY + font.lineHeight, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchB);
+						if (backgroundRect.area > 0) {
+							renderCost += this.calculateVisibleRectCost(backgroundRect.width, backgroundRect.height) * this.calculateAlphaMultiplier(background);
+						}
+					}
+					const glyphEntry = this.acquireGlyphEntry();
+					glyphEntry.surfaceId = source.surfaceId;
+					glyphEntry.srcX = source.srcX;
+					glyphEntry.srcY = source.srcY;
+					glyphEntry.width = source.width;
+					glyphEntry.height = source.height;
+					glyphEntry.dstX = cursorX;
+					glyphEntry.dstY = cursorY;
+					glyphEntry.advance = glyph.advance;
+					glyphs.push(glyphEntry);
+				}
 				cursorX += glyph.advance;
 			}
 			cursorY += font.lineHeight;
 		}
+		if (glyphs.length === 0) {
+			this.glyphBufferPool.push(glyphs);
+			return;
+		}
 		this.enqueueBlitterCommand({
 			opcode: 'glyph_run',
 			seq: this.nextBlitterSequence(),
+			renderCost,
 			layer,
 			z,
 			lineHeight: font.lineHeight,
-			color: this.packFrameBufferColor(colorValue),
-			backgroundColor: backgroundColor ? this.packFrameBufferColor(backgroundColor) : null,
+			color,
+			backgroundColor: background,
 			glyphs,
 		});
 	}
@@ -835,7 +1043,8 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (writeWidth <= 0 || writeHeight <= 0) {
 			return;
 		}
-		const tiles: VdpTileRunBlit[] = [];
+		const tiles = this.acquireTileBuffer();
+		let renderCost = 0;
 		for (let row = 0; row < desc.rows; row += 1) {
 			const base = row * desc.cols;
 			for (let col = 0; col < desc.cols; col += 1) {
@@ -850,25 +1059,30 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				}
 				const tileX = dstX + (col * desc.tile_w) - srcClipX;
 				const tileY = dstY + (row * desc.tile_h) - srcClipY;
-				const tileRight = tileX + desc.tile_w;
-				const tileBottom = tileY + desc.tile_h;
-				if (tileRight <= 0 || tileBottom <= 0 || tileX >= frameWidth || tileY >= frameHeight) {
+				const clipped = computeClippedRect(tileX, tileY, tileX + desc.tile_w, tileY + desc.tile_h, frameWidth, frameHeight, this.clippedRectScratchA);
+				if (clipped.area === 0) {
 					continue;
 				}
-				tiles.push({
-					surfaceId: source.surfaceId,
-					srcX: source.srcX,
-					srcY: source.srcY,
-					width: source.width,
-					height: source.height,
-					dstX: tileX,
-					dstY: tileY,
-				});
+				renderCost += this.calculateVisibleRectCost(clipped.width, clipped.height);
+				const tileEntry = this.acquireTileEntry();
+				tileEntry.surfaceId = source.surfaceId;
+				tileEntry.srcX = source.srcX;
+				tileEntry.srcY = source.srcY;
+				tileEntry.width = source.width;
+				tileEntry.height = source.height;
+				tileEntry.dstX = tileX;
+				tileEntry.dstY = tileY;
+				tiles.push(tileEntry);
 			}
+		}
+		if (tiles.length === 0) {
+			this.tileBufferPool.push(tiles);
+			return;
 		}
 		this.enqueueBlitterCommand({
 			opcode: 'tile_run',
 			seq: this.nextBlitterSequence(),
+			renderCost,
 			layer: desc.layer,
 			z: desc.z,
 			tiles,
@@ -907,7 +1121,8 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (writeWidth <= 0 || writeHeight <= 0) {
 			return;
 		}
-		const tiles: VdpTileRunBlit[] = [];
+		const tiles = this.acquireTileBuffer();
+		let renderCost = 0;
 		for (let row = 0; row < desc.rows; row += 1) {
 			const base = row * desc.cols;
 			for (let col = 0; col < desc.cols; col += 1) {
@@ -921,25 +1136,30 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				}
 				const tileX = dstX + (col * desc.tile_w) - srcClipX;
 				const tileY = dstY + (row * desc.tile_h) - srcClipY;
-				const tileRight = tileX + desc.tile_w;
-				const tileBottom = tileY + desc.tile_h;
-				if (tileRight <= 0 || tileBottom <= 0 || tileX >= frameWidth || tileY >= frameHeight) {
+				const clipped = computeClippedRect(tileX, tileY, tileX + desc.tile_w, tileY + desc.tile_h, frameWidth, frameHeight, this.clippedRectScratchA);
+				if (clipped.area === 0) {
 					continue;
 				}
-				tiles.push({
-					surfaceId: source.surfaceId,
-					srcX: source.srcX,
-					srcY: source.srcY,
-					width: source.width,
-					height: source.height,
-					dstX: tileX,
-					dstY: tileY,
-				});
+				renderCost += this.calculateVisibleRectCost(clipped.width, clipped.height);
+				const tileEntry = this.acquireTileEntry();
+				tileEntry.surfaceId = source.surfaceId;
+				tileEntry.srcX = source.srcX;
+				tileEntry.srcY = source.srcY;
+				tileEntry.width = source.width;
+				tileEntry.height = source.height;
+				tileEntry.dstX = tileX;
+				tileEntry.dstY = tileY;
+				tiles.push(tileEntry);
 			}
+		}
+		if (tiles.length === 0) {
+			this.tileBufferPool.push(tiles);
+			return;
 		}
 		this.enqueueBlitterCommand({
 			opcode: 'tile_run',
 			seq: this.nextBlitterSequence(),
+			renderCost,
 			layer: desc.layer,
 			z: desc.z,
 			tiles,
@@ -970,28 +1190,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			return 254;
 		}
 		throw new Error(`[BmsxVDP] Surface ${surfaceId} cannot be sampled by the WebGL blitter.`);
-	}
-
-	public advanceBlitter(_cycles: number): void {
-		if (this.blitterQueue.length === 0) {
-			return;
-		}
-		if (this.blitterExecutor === null) {
-			throw new Error(`[BmsxVDP] No JS blitter executor for backend ${$.view.backend.type}.`);
-		}
-		if ($.view.backend.type !== this.blitterExecutor.backendType) {
-			throw new Error(`[BmsxVDP] JS blitter executor mismatch (${this.blitterExecutor.backendType} != ${$.view.backend.type}).`);
-		}
-		const host: VdpBlitterHost = {
-			width: this._frameBufferWidth,
-			height: this._frameBufferHeight,
-			frameBufferTextureKey: FRAMEBUFFER_TEXTURE_KEY,
-			getSurface: (surfaceId) => this.getBlitterSurface(surfaceId),
-			getShaderAtlasId: (surfaceId) => this.getBlitterAtlasId(surfaceId),
-		};
-		this.blitterExecutor.execute(host, this.blitterQueue);
-		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
-		this.resetBlitterState();
 	}
 
 	public get frameBufferTextureKey(): string {
@@ -1193,14 +1391,26 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			this.memory.writeValue(IO_VDP_CMD_ARG0 + index * 4, 0);
 		}
 		this.lastDitherType = dither;
-		$.view.dither_type = dither;
+		this.committedDitherType = dither;
+		this.visualStateDirty = false;
+		this.skyboxDirty = false;
+		this._skyboxFaceIds = null;
+		this.buildSkyboxLoaders = null;
+		this.committedSkyboxFaceIds = null;
+		this.committedSlotAtlasIds[0] = this.slotAtlasIds[0];
+		this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
+		this.lastFrameCommitted = true;
+		this.lastFrameCost = 0;
+		this.lastFrameOverBudget = false;
+		SkyboxPipeline.clearSkyboxSources();
+		this.commitViewSnapshot();
 	}
 
 	public syncRegisters(): void {
 		const dither = this.memory.readValue(IO_VDP_DITHER) as number;
 		if (dither !== this.lastDitherType) {
 			this.lastDitherType = dither;
-			$.view.dither_type = dither;
+			this.visualStateDirty = true;
 		}
 		const primaryRaw = (this.memory.readValue(IO_VDP_PRIMARY_ATLAS_ID) as number) >>> 0;
 		const secondaryRaw = (this.memory.readValue(IO_VDP_SECONDARY_ATLAS_ID) as number) >>> 0;
@@ -1208,6 +1418,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const secondary = secondaryRaw === VDP_ATLAS_ID_NONE ? null : secondaryRaw;
 		if (primary !== this.slotAtlasIds[0] || secondary !== this.slotAtlasIds[1]) {
 			this.applyAtlasSlotMapping(primary, secondary);
+			this.visualStateDirty = true;
 		}
 	}
 
@@ -1226,12 +1437,10 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	public commitViewSnapshot(): void {
 		const view = $.view;
-		view.primaryAtlasIdInSlot = this.slotAtlasIds[0];
-		view.secondaryAtlasIdInSlot = this.slotAtlasIds[1];
-		if (this.dirtySkybox) {
-			view.skyboxFaceIds = this._skyboxFaceIds;
-			this.dirtySkybox = false;
-		}
+		view.dither_type = this.committedDitherType;
+		view.primaryAtlasIdInSlot = this.committedSlotAtlasIds[0];
+		view.secondaryAtlasIdInSlot = this.committedSlotAtlasIds[1];
+		view.skyboxFaceIds = this.committedSkyboxFaceIds;
 	}
 
 	public get atlasSlotMapping(): { primary: number | null; secondary: number | null } {
@@ -1244,6 +1453,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, primaryValue);
 		this.memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, secondaryValue);
 		this.applyAtlasSlotMapping(mapping.primary, mapping.secondary);
+		this.visualStateDirty = true;
 	}
 
 	private applyAtlasSlotMapping(primary: number | null, secondary: number | null): void {
@@ -1306,9 +1516,9 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const source = $.asset_source;
 		const runtime = Runtime.instance;
 		this._skyboxFaceIds = ids;
-		this.dirtySkybox = true;
-		SkyboxPipeline.clearSkyboxSources();
-		const tasks = SKYBOX_FACE_KEYS.map((key, index) => {
+		this.visualStateDirty = true;
+		this.skyboxDirty = true;
+		const tasks = SKYBOX_FACE_KEYS.map<SkyboxLoader>((key, index) => {
 			const assetId = ids[key];
 			const entry = source.getEntry(assetId)!;
 			const asset = runtime.getImageAsset(assetId);
@@ -1317,7 +1527,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				throw new Error(`[BmsxVDP] Skybox image '${assetId}' must not be atlassed.`);
 			}
 			const slot = this.skyboxSlots[index];
-			return this.imgDecController!.decodeToVram({
+			return () => this.imgDecController!.decodeToVram({
 				bytes: source.getBytes(entry),
 				dst: slot.entry.baseAddr,
 				cap: slot.entry.capacity,
@@ -1335,13 +1545,14 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				};
 			});
 		});
-		SkyboxPipeline.setSkyboxSources(ids, tasks);
+		this.buildSkyboxLoaders = tasks;
 	}
 
 	public clearSkybox(): void {
 		this._skyboxFaceIds = null;
-		this.dirtySkybox = true;
-		SkyboxPipeline.clearSkyboxSources();
+		this.buildSkyboxLoaders = null;
+		this.visualStateDirty = true;
+		this.skyboxDirty = true;
 	}
 
 	public async registerImageAssets(source: RawAssetSource): Promise<void> {
@@ -1378,8 +1589,14 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			this.cpuReadbackByKey.clear();
 			this.skyboxSlots = [];
 			this.imgDecController!.clearExternalSlots();
-			this._skyboxFaceIds = null;
-		this.dirtySkybox = true;
+		this._skyboxFaceIds = null;
+		this.buildSkyboxLoaders = null;
+		this.committedSkyboxFaceIds = null;
+		this.committedDitherType = this.lastDitherType;
+		this.committedSlotAtlasIds[0] = null;
+		this.committedSlotAtlasIds[1] = null;
+		this.visualStateDirty = true;
+		this.skyboxDirty = true;
 		SkyboxPipeline.clearSkyboxSources();
 		this.vramBootSeed = this.nextVramBootSeed();
 		this.seedVramStaging();
@@ -1518,6 +1735,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 
 		this.syncRegisters();
+		this.commitViewSnapshot();
 	}
 
 	private async restoreEngineAtlasFromSource(entry: AssetEntry, source: RawAssetSource, asset: RomImgAsset): Promise<void> {

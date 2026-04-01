@@ -41,12 +41,11 @@ import { LuaLexer } from './syntax/lualexer';
 import { type CanonicalizationType } from '../rompack/rompack';
 import { LuaParser } from './syntax/luaparser';
 import { createIdentifierCanonicalizer } from './syntax/identifier_canonicalizer';
-import { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue } from './luavalue';
+import { LuaFunctionValue, LuaValue, LuaTable, LuaNativeValue, type LuaCallResult, isLuaCallSignal } from './luavalue';
 import {
 	createLuaNativeMemberHandle,
 	createLuaTable,
 	extractErrorMessage,
-	isLuaDebuggerPauseSignal,
 	isLuaNativeMemberHandle,
 	isLuaTable,
 	resolveNativeTypeName,
@@ -152,10 +151,6 @@ export class LuaExecutionThread {
 			const signal = this.runImpl(instructionBudget);
 			return this.consumeSignal(signal);
 		} catch (error) {
-			if (isLuaDebuggerPauseSignal(error)) {
-				this.paused = error as PauseSignal;
-				return SliceResult.Pause;
-			}
 			this.fault = error as Error;
 			return SliceResult.Fault;
 		}
@@ -168,10 +163,6 @@ export class LuaExecutionThread {
 			const signal = yielded.resume(instructionBudget);
 			return this.consumeSignal(signal);
 		} catch (error) {
-			if (isLuaDebuggerPauseSignal(error)) {
-				this.paused = error as PauseSignal;
-				return SliceResult.Pause;
-			}
 			this.fault = error as Error;
 			return SliceResult.Fault;
 		}
@@ -218,21 +209,18 @@ export interface LuaHostAdapter {
 
 export class LuaNativeFunction implements LuaFunctionValue {
 	public readonly name: string;
-	private readonly handler: (args: ReadonlyArray<LuaValue>) => ReadonlyArray<LuaValue>;
+	private readonly handler: (args: ReadonlyArray<LuaValue>) => LuaCallResult;
 
-	constructor(name: string, handler: (args: ReadonlyArray<LuaValue>) => ReadonlyArray<LuaValue>) {
+	constructor(name: string, handler: (args: ReadonlyArray<LuaValue>) => LuaCallResult) {
 		this.name = name;
 		this.handler = handler;
 	}
 
-	public call(args: ReadonlyArray<LuaValue>): LuaValue[] {
+	public call(args: ReadonlyArray<LuaValue>): LuaCallResult {
 		try {
 			const result = this.handler(args);
-			return Array.from(result);
+			return Array.isArray(result) ? Array.from(result) : result;
 		} catch (error) {
-			if (isLuaDebuggerPauseSignal(error)) {
-				throw error;
-			}
 			Runtime.instance.interpreter.recordFaultCallStack();
 			throw error;
 		}
@@ -256,7 +244,7 @@ class LuaScriptFunction implements LuaFunctionValue {
 		this.range = expression.range;
 	}
 
-	public call(args: ReadonlyArray<LuaValue>): LuaValue[] {
+	public call(args: ReadonlyArray<LuaValue>): LuaCallResult {
 		return this.interpreter.invokeScriptFunction(this.expression, this.closure, this.name, args, this.implicitSelfName);
 	}
 
@@ -541,7 +529,7 @@ export class LuaInterpreter {
 			}
 			if (signal !== null && signal.kind === 'pause') {
 				suspended = true;
-				const wrapped = this.wrapPauseSignal(signal, (resumed) => {
+				return this.wrapPauseSignal(signal, (resumed) => {
 					if (resumed !== null && resumed.kind === 'pause') {
 						return resumed;
 					}
@@ -550,7 +538,6 @@ export class LuaInterpreter {
 					}
 					return this.handleChunkContinuation(resumed, context);
 				});
-				throw wrapped;
 			}
 			if (signal !== null && signal.kind === 'yield') {
 				suspended = true;
@@ -558,12 +545,7 @@ export class LuaInterpreter {
 			}
 			return NORMAL_SIGNAL;
 		} catch (error) {
-			if (!isLuaDebuggerPauseSignal(error)) {
-				this.recordFaultCallStack();
-			}
-			if (isLuaDebuggerPauseSignal(error)) {
-				suspended = true;
-			}
+			this.recordFaultCallStack();
 			throw error;
 		} finally {
 			if (!suspended) {
@@ -757,9 +739,6 @@ export class LuaInterpreter {
 					try {
 						signal = this.stepFrame(frame);
 					} catch (error) {
-						if (isLuaDebuggerPauseSignal(error)) {
-							return this.bindPauseResume(error as PauseSignal, targetDepth);
-						}
 						if (error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
 							this.markFaultEnvironment();
 							this.markPendingException(error);
@@ -1347,6 +1326,9 @@ public evaluateSingleExpression(expression: LuaExpression, environment: LuaEnvir
 					const lenArgs = this.allocateValueList();
 					lenArgs.push(operand);
 					const metamethodResult = this.invokeMetamethod(operand, '__len', lenArgs);
+					if (isLuaCallSignal(metamethodResult)) {
+						return metamethodResult as any;
+					}
 					if (metamethodResult !== null) {
 						const first = metamethodResult.length > 0 ? metamethodResult[0] : null;
 						return this.expectNumber(first, 'Metamethod __len must return a number.', expression.range);
@@ -1367,6 +1349,9 @@ public evaluateSingleExpression(expression: LuaExpression, environment: LuaEnvir
 							const args = this.allocateValueList();
 							args.push(operand);
 							const values = fn.call(args);
+							if (isLuaCallSignal(values)) {
+								return values as any;
+							}
 							const first = values.length > 0 ? values[0] : null;
 							return this.expectNumber(first, '__len metamethod must return a number.', expression.range);
 						}
@@ -1599,6 +1584,9 @@ public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnv
 		args.push(table);
 		args.push(key);
 		const values = functionValue.call(args);
+		if (isLuaCallSignal(values)) {
+			return values as any;
+		}
 		const first = values.length > 0 ? values[0] : null;
 		visited.delete(table);
 		return first;
@@ -1638,7 +1626,10 @@ public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnv
 		args.push(table);
 		args.push(key);
 		args.push(value);
-		functionValue.call(args);
+		const result = functionValue.call(args);
+		if (isLuaCallSignal(result)) {
+			return;
+		}
 		visited.delete(table);
 	}
 
@@ -1690,7 +1681,7 @@ public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnv
 		return value | 0;
 	}
 
-	private invokeMetamethod(table: LuaTable, name: string, args: ReadonlyArray<LuaValue>): LuaValue[] {
+	private invokeMetamethod(table: LuaTable, name: string, args: ReadonlyArray<LuaValue>): LuaCallResult {
 		const metatable = table.getMetatable();
 		if (metatable === null) {
 			return null;
@@ -1901,6 +1892,9 @@ public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnv
 			args.push(left);
 			args.push(right);
 			const result = handler.call(args);
+			if (isLuaCallSignal(result)) {
+				return result as any;
+			}
 			const first = result.length > 0 ? result[0] : null;
 			return this.expectBoolean(first, '__eq metamethod must return a boolean.', expression.range);
 		}
@@ -1932,6 +1926,9 @@ public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnv
 			args.push(metaLeft);
 			args.push(metaRight);
 			const result = handler.call(args);
+			if (isLuaCallSignal(result)) {
+				return result as any;
+			}
 			const first = result.length > 0 ? result[0] : null;
 			return this.expectBoolean(first, LuaInterpreter.buildMetamethodMustReturnBooleanMessage, metamethodName, expression.range);
 		}
@@ -1950,6 +1947,9 @@ public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnv
 		const args = this.allocateValueList();
 		args.push(operand);
 		const result = handler.call(args);
+		if (isLuaCallSignal(result)) {
+			return result as any;
+		}
 		if (result.length === 0) {
 			return null;
 		}
@@ -1959,24 +1959,30 @@ public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnv
 	private invokeBinaryMetamethod(left: LuaValue, right: LuaValue, name: string, range: LuaSourceRange): LuaValue {
 		const leftHandler = this.extractMetamethodFunction(left, name, range);
 		if (leftHandler !== null) {
-			const args = this.allocateValueList();
-			args.push(left);
-			args.push(right);
-			const result = leftHandler.call(args);
-			if (result.length === 0) {
-				return null;
-			}
+		const args = this.allocateValueList();
+		args.push(left);
+		args.push(right);
+		const result = leftHandler.call(args);
+		if (isLuaCallSignal(result)) {
+			return result as any;
+		}
+		if (result.length === 0) {
+			return null;
+		}
 			return result[0];
 		}
 		const rightHandler = this.extractMetamethodFunction(right, name, range);
 		if (rightHandler !== null) {
-			const args = this.allocateValueList();
-			args.push(left);
-			args.push(right);
-			const result = rightHandler.call(args);
-			if (result.length === 0) {
-				return null;
-			}
+		const args = this.allocateValueList();
+		args.push(left);
+		args.push(right);
+		const result = rightHandler.call(args);
+		if (isLuaCallSignal(result)) {
+			return result as any;
+		}
+		if (result.length === 0) {
+			return null;
+		}
 			return result[0];
 		}
 		return null;
@@ -2296,9 +2302,6 @@ public fallbackSourceRange(): LuaSourceRange {
 				const result = Reflect.apply(callable as (...args: unknown[]) => unknown, thisArg, jsArgs);
 				return this.wrapHostInvocationResult(result);
 			} catch (error) {
-				if (isLuaDebuggerPauseSignal(error)) {
-					throw error;
-				}
 				if (error instanceof LuaRuntimeError) {
 					throw error;
 				}
@@ -2343,9 +2346,6 @@ public fallbackSourceRange(): LuaSourceRange {
 				const result = Reflect.apply(member as (...args: unknown[]) => unknown, options.bindInstance ? target : undefined, jsArgs);
 				return this.wrapHostInvocationResult(result);
 			} catch (error) {
-				if (isLuaDebuggerPauseSignal(error)) {
-					throw error;
-				}
 				if (error instanceof LuaRuntimeError) {
 					throw error;
 				}
@@ -2494,6 +2494,9 @@ public fallbackSourceRange(): LuaSourceRange {
 		args.push(target);
 		args.push(key);
 		const values = functionValue.call(args);
+		if (isLuaCallSignal(values)) {
+			return values as any;
+		}
 		const first = values.length > 0 ? values[0] : null;
 		visited.delete(target);
 		return first;
@@ -2663,17 +2666,19 @@ public fallbackSourceRange(): LuaSourceRange {
 				});
 
 				try {
-					return functionValue.call(args);
-				} catch (error) {
-					if (!isLuaDebuggerPauseSignal(error)) {
-						this.recordFaultCallStack();
+					const result = functionValue.call(args);
+					if (isLuaCallSignal(result)) {
+						return result as any;
 					}
+					return result;
+				} catch (error) {
+					this.recordFaultCallStack();
 					throw error;
 				} finally {
 					this.callStack.pop();
 				}
 			}
-			return functionValue.call(args);
+			return functionValue.call(args) as any;
 		});
 	}
 
@@ -2695,8 +2700,8 @@ public fallbackSourceRange(): LuaSourceRange {
 	public createFunctionExecutionThread(functionValue: LuaFunctionValue, args: ReadonlyArray<LuaValue>): LuaExecutionThread {
 		if (functionValue instanceof LuaNativeFunction) {
 			return new LuaExecutionThread(() => {
-				functionValue.call(args);
-				return NORMAL_SIGNAL;
+				const result = functionValue.call(args);
+				return isLuaCallSignal(result) ? result : NORMAL_SIGNAL;
 			});
 		}
 			if (functionValue instanceof LuaScriptFunction) {
@@ -2769,21 +2774,19 @@ public fallbackSourceRange(): LuaSourceRange {
 								return signal;
 						}
 					} catch (error) {
-						if (!isLuaDebuggerPauseSignal(error)) {
-							this.recordFaultCallStack();
-						}
+						this.recordFaultCallStack();
 						throw error;
 					}
 				});
 			}
 
 		return new LuaExecutionThread(() => {
-			functionValue.call(args);
-			return NORMAL_SIGNAL;
+			const result = functionValue.call(args);
+			return isLuaCallSignal(result) ? result : NORMAL_SIGNAL;
 		});
 	}
 
-	public invokeScriptFunction(expression: LuaFunctionExpression, closure: LuaEnvironment, name: string, args: ReadonlyArray<LuaValue>, implicitSelfName: string): LuaValue[] {
+	public invokeScriptFunction(expression: LuaFunctionExpression, closure: LuaEnvironment, name: string, args: ReadonlyArray<LuaValue>, implicitSelfName: string): LuaCallResult {
 		const activationEnvironment = LuaEnvironment.createChild(closure);
 		const callRange = this._currentCallRange ?? expression.range;
 		const parameters = expression.parameters;
@@ -2822,7 +2825,7 @@ public fallbackSourceRange(): LuaSourceRange {
 			const signal = this.runFrameLoop(startingDepth);
 			if (signal?.kind === 'pause') {
 				suspended = true;
-				const wrapped = this.wrapPauseSignal(signal, (resumed) => {
+				return this.wrapPauseSignal(signal, (resumed) => {
 					if (!resumed) return resumed;
 					switch (resumed.kind) {
 						case 'return':
@@ -2835,16 +2838,10 @@ public fallbackSourceRange(): LuaSourceRange {
 							return resumed;
 					}
 				});
-				throw wrapped;
 			}
 			return this.resolveFunctionSignal(signal, expression, name);
 		} catch (error) {
-			if (!isLuaDebuggerPauseSignal(error)) {
-				this.recordFaultCallStack();
-			}
-			if (isLuaDebuggerPauseSignal(error)) {
-				suspended = true;
-			}
+			this.recordFaultCallStack();
 			throw error;
 		} finally {
 			if (!suspended) {
@@ -3140,6 +3137,9 @@ public fallbackSourceRange(): LuaSourceRange {
 			}
 			try {
 				const result = fn.call(functionArgs);
+				if (isLuaCallSignal(result)) {
+					return result;
+				}
 				const values = this.allocateValueList();
 				values.push(true);
 				for (let index = 0; index < result.length; index += 1) {
@@ -3148,9 +3148,6 @@ public fallbackSourceRange(): LuaSourceRange {
 				return values;
 			}
 			catch (error) {
-				if (isLuaDebuggerPauseSignal(error)) {
-					throw error;
-				}
 				const message = extractErrorMessage(error);
 				const values = this.allocateValueList();
 				values.push(false);
@@ -3168,6 +3165,9 @@ public fallbackSourceRange(): LuaSourceRange {
 			}
 			try {
 				const result = fn.call(functionArgs);
+				if (isLuaCallSignal(result)) {
+					return result;
+				}
 				const values = this.allocateValueList();
 				values.push(true);
 				for (let index = 0; index < result.length; index += 1) {
@@ -3176,13 +3176,13 @@ public fallbackSourceRange(): LuaSourceRange {
 				return values;
 			}
 			catch (error) {
-				if (isLuaDebuggerPauseSignal(error)) {
-					throw error;
-				}
 				const formatted = extractErrorMessage(error);
 				const handlerArgs = this.allocateValueList();
 				handlerArgs.push(formatted);
 				const handlerResult = messageHandler.call(handlerArgs);
+				if (isLuaCallSignal(handlerResult)) {
+					return handlerResult;
+				}
 				const first = handlerResult.length > 0 ? handlerResult[0] : null;
 				const values = this.allocateValueList();
 				values.push(false);
@@ -4558,6 +4558,9 @@ public fallbackSourceRange(): LuaSourceRange {
 					comparatorArgs![0] = left;
 					comparatorArgs![1] = right;
 					const response = comparator.call(comparatorArgs!);
+					if (isLuaCallSignal(response)) {
+						return 1;
+					}
 					const first = response.length > 0 ? response[0] : null;
 					return first === true ? -1 : 1;
 				}
@@ -4635,6 +4638,9 @@ public fallbackSourceRange(): LuaSourceRange {
 				const metaArgs = this.allocateValueList();
 				metaArgs.push(target);
 				const result = pairsMetamethod.call(metaArgs);
+				if (isLuaCallSignal(result)) {
+					return result;
+				}
 				if (result.length < 2) {
 					throw this.runtimeError('__pairs metamethod must return at least two values.');
 				}
@@ -4661,6 +4667,9 @@ public fallbackSourceRange(): LuaSourceRange {
 				const metaArgs = this.allocateValueList();
 				metaArgs.push(target);
 				const result = ipairsMetamethod.call(metaArgs);
+				if (isLuaCallSignal(result)) {
+					return result;
+				}
 				if (result.length < 2) {
 					throw this.runtimeError('__ipairs metamethod must return at least two values.');
 				}

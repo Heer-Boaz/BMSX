@@ -6,7 +6,6 @@ import type { ExecutionSignal, LuaCallFrame } from '../lua/luaruntime';
 import {
 	convertToError,
 	extractErrorMessage,
-	isLuaDebuggerPauseSignal,
 	type LuaDebuggerPauseSignal,
 	type StackTraceFrame,
 } from '../lua/luavalue';
@@ -572,11 +571,6 @@ function extractErrorLocation(runtime: Runtime, error: unknown): { line: number;
 
 export function handleLuaError(runtime: Runtime, whatever: unknown): void {
 	const error = convertToError(whatever);
-	if (isLuaDebuggerPauseSignal(error)) {
-		console.info('[Runtime] Lua debugger pause signal received: ', error);
-		onLuaDebuggerPause(runtime, error);
-		return;
-	}
 	if (runtime.handledLuaErrors.has(error)) {
 		return;
 	}
@@ -790,11 +784,7 @@ export function drawIde(runtime: Runtime): void {
 		runtime.overlayRenderer.setDefaultLayer('ide');
 		runtime.editor!.draw();
 	} catch (error) {
-		if (isLuaDebuggerPauseSignal(error)) {
-			onLuaDebuggerPause(runtime, error);
-		} else {
-			handleLuaError(runtime, error);
-		}
+		handleLuaError(runtime, error);
 	} finally {
 		overlay_api.endFrame();
 		runtime.overlayRenderer.endFrame();
@@ -809,11 +799,7 @@ export function drawTerminal(runtime: Runtime): void {
 		runtime.terminal.draw(runtime.overlayRenderer, runtime.overlayRenderer.viewportSize);
 		runtime.overlayRenderer.setDefaultLayer('world');
 	} catch (error) {
-		if (isLuaDebuggerPauseSignal(error)) {
-			onLuaDebuggerPause(runtime, error);
-		} else {
-			handleLuaError(runtime, error);
-		}
+		handleLuaError(runtime, error);
 	} finally {
 		overlay_api.endFrame();
 		runtime.overlayRenderer.endFrame();

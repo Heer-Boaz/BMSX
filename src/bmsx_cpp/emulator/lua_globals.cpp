@@ -1596,6 +1596,18 @@ void Runtime::setupBuiltins() {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(trackedVramUsedBytes())));
 		}, CHEAP_NATIVE_READ_COST);
+	registerNativeFunction("sys_vdp_render_budget", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		out.push_back(valueNumber(static_cast<double>(renderBudgetPerFrame())));
+	}, CHEAP_NATIVE_READ_COST);
+	registerNativeFunction("sys_vdp_render_cost_last", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		out.push_back(valueNumber(static_cast<double>(lastTickVdpFrameCost())));
+	}, CHEAP_NATIVE_READ_COST);
+	registerNativeFunction("sys_vdp_frame_over_budget", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+		(void)args;
+		out.push_back(valueNumber(lastTickVdpFrameOverBudget() ? 1.0 : 0.0));
+	}, CHEAP_NATIVE_READ_COST);
 	auto findRomAssetInfo = [](RuntimeAssets& assets, const std::string& assetId) -> const RomAssetInfo* {
 		if (const ImgAsset* image = assets.getImg(assetId)) {
 			return &image->rom;
@@ -3518,7 +3530,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			renderSizeTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
 			machineTable->set(key("render_size"), valueTable(renderSizeTable));
 		}
-		auto* specsTable = m_cpu.createTable(0, 4);
+		auto* specsTable = m_cpu.createTable(0, 5);
 		auto* cpuTable = m_cpu.createTable(0, 2);
 		if (manifest.cpuHz) {
 			cpuTable->set(key("cpu_freq_hz"), valueNumber(static_cast<double>(*manifest.cpuHz)));
@@ -3535,6 +3547,9 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 			dmaTable->set(key("dma_bytes_per_sec_bulk"), valueNumber(static_cast<double>(*manifest.dmaBytesPerSecBulk)));
 		}
 		specsTable->set(key("dma"), valueTable(dmaTable));
+		auto* vdpTable = m_cpu.createTable(0, 1);
+		vdpTable->set(key("render_budget_per_frame"), valueNumber(static_cast<double>(manifest.vdpRenderBudgetPerFrame.value_or(DEFAULT_VDP_RENDER_BUDGET_PER_FRAME))));
+		specsTable->set(key("vdp"), valueTable(vdpTable));
 		if (manifest.ramBytes || manifest.stringHandleCount || manifest.stringHeapBytes || manifest.assetTableBytes || manifest.assetDataBytes) {
 			auto* ramTable = m_cpu.createTable(0, 5);
 			if (manifest.ramBytes) {

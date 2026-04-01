@@ -89,6 +89,13 @@ static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& mani
 	const auto& dmaObj = requireObject(specsObj, "dma", "machine.specs.dma");
 	manifest.dmaBytesPerSecIso = parseRequiredPositiveI64(dmaObj, "dma_bytes_per_sec_iso", "machine.specs.dma.dma_bytes_per_sec_iso");
 	manifest.dmaBytesPerSecBulk = parseRequiredPositiveI64(dmaObj, "dma_bytes_per_sec_bulk", "machine.specs.dma.dma_bytes_per_sec_bulk");
+	const BinValue* vdpValue = findObjectField(specsObj, "vdp");
+	if (vdpValue && vdpValue->isObject()) {
+		const auto& vdpObj = vdpValue->asObject();
+		if (vdpObj.count("render_budget_per_frame")) {
+			manifest.vdpRenderBudgetPerFrame = parseRequiredPositiveI64(vdpObj, "render_budget_per_frame", "machine.specs.vdp.render_budget_per_frame");
+		}
+	}
 
 	const BinValue* ramValue = findObjectField(specsObj, "ram");
 	if (ramValue && ramValue->isObject()) {

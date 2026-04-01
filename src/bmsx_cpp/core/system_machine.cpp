@@ -14,6 +14,7 @@ const MachineManifest SYSTEM_MACHINE_MANIFEST = [] {
 	manifest.imgDecBytesPerSec = 26'214'400;
 	manifest.dmaBytesPerSecIso = 8'388'608;
 	manifest.dmaBytesPerSecBulk = 26'214'400;
+	manifest.vdpRenderBudgetPerFrame = DEFAULT_VDP_RENDER_BUDGET_PER_FRAME;
 	return manifest;
 }();
 

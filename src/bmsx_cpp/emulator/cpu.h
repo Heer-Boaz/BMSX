@@ -799,6 +799,8 @@ public:
 	void start(int entryProtoIndex, const std::vector<Value>& args = {});
 	void call(Closure* closure, const std::vector<Value>& args = {}, int returnCount = 0);
 	void callExternal(Closure* closure, const std::vector<Value>& args = {});
+	void requestYield();
+	void clearYieldRequest();
 	RunResult run(int instructionBudget);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget);
 	void unwindToDepth(int targetDepth);
@@ -867,6 +869,7 @@ private:
 	Program* m_program = nullptr;
 	ProgramMetadata* m_metadata = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
+	bool m_yieldRequested = false;
 	Memory& m_memory;
 	StringPool m_stringPool;
 	GcHeap m_heap;

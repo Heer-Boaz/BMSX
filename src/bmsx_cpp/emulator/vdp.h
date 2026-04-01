@@ -3,6 +3,7 @@
 #include "cpu.h"
 #include "io.h"
 #include "memory.h"
+#include "vdp_render_budget.h"
 #include "../rompack/rompack.h"
 #include "../render/shared/render_types.h"
 #include <array>
@@ -30,7 +31,6 @@ public:
 	void writeVram(uint32_t addr, const u8* data, size_t length) override;
 	void readVram(uint32_t addr, u8* out, size_t length) const override;
 	void beginFrame();
-	void advanceBlitter(int cycles);
 	void enqueueClear(const Color& color);
 	void enqueueBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight = 0.0f);
 	void enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 z, Layer2D layer);
@@ -54,9 +54,13 @@ public:
 	void setSkyboxImages(const SkyboxImageIds& ids);
 	void clearSkybox();
 	std::optional<SkyboxImageIds> skyboxFaceIds() const;
+	void commitBuildFrame(int renderBudgetPerFrame);
 	void commitViewSnapshot(GameView& view);
 	uint32_t trackedUsedVramBytes() const;
 	uint32_t trackedTotalVramBytes() const;
+	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
+	int lastFrameCost() const { return m_lastFrameCost; }
+	bool lastFrameOverBudget() const { return m_lastFrameOverBudget; }
 
 	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
 
@@ -127,6 +131,7 @@ private:
 	struct BlitterCommand {
 		BlitterCommandType type = BlitterCommandType::Clear;
 		u32 seq = 0;
+		int renderCost = 0;
 		f32 z = 0.0f;
 		Layer2D layer = Layer2D::World;
 		BlitterSource source{};
@@ -165,14 +170,24 @@ private:
 	uint32_t m_vramBootSeed = 0;
 	uint32_t m_readBudgetBytes = 0;
 	bool m_readOverflow = false;
-	bool m_dirtyAtlasBindings = false;
 	bool m_dirtySkybox = false;
+	bool m_visualStateDirty = false;
 	SkyboxImageIds m_skyboxFaceIds;
 	bool m_hasSkybox = false;
+	SkyboxImageIds m_committedSkyboxFaceIds;
+	bool m_committedHasSkybox = false;
 	i32 m_lastDitherType = 0;
+	i32 m_committedDitherType = 0;
 	std::vector<BlitterCommand> m_blitterQueue;
+	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
+	std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
 	u32 m_blitterSequence = 0;
 	bool m_blitterError = false;
+	int m_buildFrameCost = 0;
+	std::array<i32, 2> m_committedSlotAtlasIds{{-1, -1}};
+	bool m_lastFrameCommitted = true;
+	int m_lastFrameCost = 0;
+	bool m_lastFrameOverBudget = false;
 	uint32_t m_frameBufferWidth = 0;
 	uint32_t m_frameBufferHeight = 0;
 	std::vector<u8> m_frameBufferPriorityLayer;
@@ -203,8 +218,15 @@ private:
 	void restoreVramSlotTexture(const Memory::AssetEntry& entry, const std::string& textureKey);
 	FrameBufferColor packFrameBufferColor(const Color& color) const;
 	u32 nextBlitterSequence();
+	std::vector<GlyphRunGlyph> acquireGlyphBuffer();
+	std::vector<TileRunBlit> acquireTileBuffer();
+	void recycleBlitterBuffers();
 	void resetBlitterState();
 	void enqueueBlitterCommand(BlitterCommand&& command);
+	int calculateVisibleRectCost(double width, double height) const;
+	int calculateAlphaMultiplier(const FrameBufferColor& color) const;
+	void executeBuildFrame();
+	void commitSkyboxImages();
 	void initializeFrameBufferSurface();
 	void resetFrameBufferPriority();
 	BlitterSource resolveBlitterSource(u32 handle) const;

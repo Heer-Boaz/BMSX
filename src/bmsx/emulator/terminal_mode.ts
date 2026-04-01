@@ -396,6 +396,12 @@ export class TerminalMode {
 		this.appendEntry({ color, text });
 	}
 
+	public appendStdoutLines(lines: string[], color: number = 15): void {
+		for (let index = 0; index < lines.length; index += 1) {
+			this.appendStdout(lines[index], color);
+		}
+	}
+
 	public appendStderr(text: string): void {
 		this.appendEntry({ color: 6, text });
 	}

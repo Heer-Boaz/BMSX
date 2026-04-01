@@ -50,6 +50,14 @@ struct FrameState {
 	int cpuStatsGrantedCycles = 0;
 };
 
+struct TickCompletion {
+	i64 sequence = 0;
+	int remaining = 0;
+	bool visualCommitted = true;
+	int vdpFrameCost = 0;
+	bool vdpFrameOverBudget = false;
+};
+
 /**
  * Viewport size configuration.
  */
@@ -68,6 +76,7 @@ struct RuntimeOptions {
 	i64 cpuHz = 0;
 	int cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 	int vblankCycles = 0;
+	int renderBudgetPerFrame = 512;
 };
 
 /**
@@ -273,9 +282,10 @@ public:
 	void setCanonicalization(CanonicalizationType canonicalization);
 	void setCpuHz(i64 hz);
 	void applyActiveMachineTiming(i64 cpuHz);
-	void setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk);
+	void setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int renderBudgetPerFrame);
 	i64 cpuHz() const { return m_cpuHz; }
 	void setVblankCycles(int cycles);
+	void setRenderBudgetPerFrame(int budget);
 	void resetHardwareState();
 	void resetRenderBuffers();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
@@ -284,22 +294,19 @@ public:
 	bool hasActiveTick() const;
 	i64 lastTickSequence() const { return m_lastTickSequence; }
 	int lastTickBudgetRemaining() const { return m_lastTickBudgetRemaining; }
-	int lastTickBudgetGranted() const { return m_lastTickSequence == 0 ? m_cycleBudgetPerFrame : m_lastTickCpuBudgetGranted; }
+	int lastTickBudgetGranted() const { return m_lastTickSequence == 0 ? m_cycleBudgetPerFrame : m_lastTickBudgetGranted; }
 	int cpuUsedCyclesLastTick() const { return m_lastTickSequence == 0 ? 0 : m_lastTickCpuUsedCycles; }
-	int activeCpuCyclesGrantedLastTick() const {
-		const int activeBudget = lastTickBudgetGranted() - m_vblankCycles;
-		return activeBudget > 0 ? activeBudget : 0;
-	}
-	int activeCpuUsedCyclesLastTick() const {
-		const int activeBudget = activeCpuCyclesGrantedLastTick();
-		const int usedCycles = cpuUsedCyclesLastTick();
-		return usedCycles > activeBudget ? activeBudget : usedCycles;
-	}
+	int activeCpuCyclesGrantedLastTick() const { return lastTickBudgetGranted(); }
+	int activeCpuUsedCyclesLastTick() const { return cpuUsedCyclesLastTick(); }
+	int renderBudgetPerFrame() const { return m_renderBudgetPerFrame; }
+	bool lastTickVisualFrameCommitted() const { return m_lastTickVisualFrameCommitted; }
+	int lastTickVdpFrameCost() const { return m_lastTickVdpFrameCost; }
+	bool lastTickVdpFrameOverBudget() const { return m_lastTickVdpFrameOverBudget; }
 	uint32_t trackedRamUsedBytes() const;
 	uint32_t trackedVramUsedBytes() const;
 	uint32_t trackedVramTotalBytes() const { return m_vdp.trackedTotalVramBytes(); }
 	bool didLastTickComplete() const { return m_lastTickCompleted; }
-	bool consumeLastTickCompletion(i64& outSequence, int& outRemaining);
+	bool consumeLastTickCompletion(TickCompletion& outCompletion);
 	bool isDrawPending() const;
 	Value canonicalizeIdentifier(std::string_view value);
 	void refreshMemoryMap();
@@ -431,6 +438,9 @@ private:
 	int m_lastTickCpuBudgetGranted = 0;
 	int m_lastTickCpuUsedCycles = 0;
 	int m_lastTickBudgetRemaining = 0;
+	bool m_lastTickVisualFrameCommitted = true;
+	int m_lastTickVdpFrameCost = 0;
+	bool m_lastTickVdpFrameOverBudget = false;
 	bool m_lastTickCompleted = false;
 	i64 m_lastTickConsumedSequence = 0;
 	int m_pendingCarryBudget = 0;
@@ -441,6 +451,7 @@ private:
 	RateBudget m_imgRate;
 	RateBudget m_dmaIsoRate;
 	RateBudget m_dmaBulkRate;
+	int m_renderBudgetPerFrame = 512;
 	int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 	int m_vblankCycles = 0;
 	int m_vblankStartCycle = 0;

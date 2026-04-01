@@ -22,7 +22,7 @@ import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 import { InputSource, KeyModifier } from '../input/playerinput';
 import { shallowcopy } from '../utils/shallowcopy';
 import { clamp } from '../utils/clamp';
-import { clearAllQueues, clearBackQueues, prepareCompletedRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
+import { clearAllQueues, clearBackQueues, prepareCompletedRenderQueues, prepareHeldRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
 import { clearOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { Table } from '../emulator/cpu';
 import { type StringValue } from '../emulator/string_pool';
@@ -788,7 +788,7 @@ export class EngineCore {
 		runtimeIde.tickTerminalMode(runtime);
 	}
 
-	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: 'partial' | 'completed'): void {
+	private presentFrame(runtime: Runtime, hostDeltaMs: number, mode: 'partial' | 'completed', commitFrame = mode === 'completed'): void {
 		this.deltatime = hostDeltaMs;
 		const overlayActive = runtimeIde.isOverlayActive(runtime);
 		if (overlayActive) {
@@ -798,11 +798,13 @@ export class EngineCore {
 		runtimeIde.tickIDEDraw(runtime);
 		runtimeIde.tickTerminalModeDraw(runtime);
 		this.wasupdated = true;
-		this.view.configurePresentation(mode, mode === 'completed' && !overlayActive);
+		this.view.configurePresentation(mode, commitFrame && !overlayActive);
 		if (overlayActive) {
 			prepareOverlayRenderQueues();
-		} else if (mode === 'completed') {
+		} else if (mode === 'completed' && commitFrame) {
 			prepareCompletedRenderQueues();
+		} else if (mode === 'completed') {
+			prepareHeldRenderQueues();
 		} else {
 			preparePartialRenderQueues();
 		}
@@ -848,9 +850,9 @@ export class EngineCore {
 				presentQueued = true;
 				this.presentFrame(runtime, hostDeltaMs, 'partial');
 			};
-			const runCompletedPresentation = () => {
+			const runCompletedPresentation = (commitFrame = true) => {
 				presentQueued = true;
-				this.presentFrame(runtime, hostDeltaMs, 'completed');
+				this.presentFrame(runtime, hostDeltaMs, 'completed', commitFrame);
 			};
 			if (!runGate.ready || this.paused) {
 				this.accumulated_time = 0;
@@ -891,7 +893,7 @@ export class EngineCore {
 							// A completed tick reached its frame boundary; leftover budget after
 							// wait_vblank belongs to that frame and must not spill into the next one.
 							this.cycleCarry = 0;
-							runCompletedPresentation();
+							runCompletedPresentation(completion.visualCommitted);
 						// Present the completed frame now; any catch-up continuation resumes on the next host frame.
 						break;
 						}

@@ -3,7 +3,7 @@ import { InputMap } from '../input/inputtypes';
 import { LuaEnvironment } from '../lua/luaenvironment';
 import { LuaError, LuaRuntimeError, LuaSyntaxError } from '../lua/luaerrors';
 import { LuaInterpreter, LuaNativeFunction } from '../lua/luaruntime';
-import { extractErrorMessage, LuaFunctionValue, LuaNativeValue } from '../lua/luavalue';
+import { extractErrorMessage, isLuaCallSignal, LuaFunctionValue, LuaNativeValue, type LuaCallResult } from '../lua/luavalue';
 import { isLuaTable, LuaTable, LuaValue } from '../lua/luavalue';
 import { arrayify } from '../utils/arrayify';
 import { API_METHOD_METADATA } from './api_metadata';
@@ -76,10 +76,13 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'print', params: ['...'], signature: 'print(...)' },
 	{ name: 'sys_cpu_cycles_used', params: [], signature: 'sys_cpu_cycles_used()', description: 'Cycles consumed during the last completed tick.' },
 	{ name: 'sys_cpu_cycles_granted', params: [], signature: 'sys_cpu_cycles_granted()', description: 'Cycle budget granted to the last completed tick.' },
-	{ name: 'sys_cpu_active_cycles_used', params: [], signature: 'sys_cpu_active_cycles_used()', description: 'Cycles consumed during the last completed tick, capped to the active display window.' },
-	{ name: 'sys_cpu_active_cycles_granted', params: [], signature: 'sys_cpu_active_cycles_granted()', description: 'Cycle budget granted to the last completed tick, excluding vblank cycles.' },
+	{ name: 'sys_cpu_active_cycles_used', params: [], signature: 'sys_cpu_active_cycles_used()', description: 'Alias of sys_cpu_cycles_used().' },
+	{ name: 'sys_cpu_active_cycles_granted', params: [], signature: 'sys_cpu_active_cycles_granted()', description: 'Alias of sys_cpu_cycles_granted().' },
 	{ name: 'sys_ram_used', params: [], signature: 'sys_ram_used()', description: 'Tracked runtime RAM usage in bytes.' },
 	{ name: 'sys_vram_used', params: [], signature: 'sys_vram_used()', description: 'Tracked VRAM usage in bytes.' },
+	{ name: 'sys_vdp_render_budget', params: [], signature: 'sys_vdp_render_budget()', description: 'Configured VDP render budget per frame.' },
+	{ name: 'sys_vdp_render_cost_last', params: [], signature: 'sys_vdp_render_cost_last()', description: 'Render cost of the last completed VDP frame build.' },
+	{ name: 'sys_vdp_frame_over_budget', params: [], signature: 'sys_vdp_frame_over_budget()', description: 'Returns 1 when the last completed VDP frame exceeded the render budget, else 0.' },
 	{ name: 'wait_vblank', params: [], signature: 'wait_vblank()', description: 'Yields execution until the next VBLANK edge.' },
 	{ name: 'clock_now', params: [], signature: 'clock_now()', description: 'Returns the current platform clock value.' },
 	{ name: 'resolve_cart_rom_asset_range', params: ['asset_id'], signature: 'resolve_cart_rom_asset_range(asset_id)', description: 'Returns the ROM base and byte range for a cart/overlay asset id.' },
@@ -500,9 +503,12 @@ function registerEngineBuiltins(interpreter: LuaInterpreter): void {
 	const runtime = Runtime.instance;
 	const env = interpreter.globalEnvironment;
 	const requireName = runtime.canonicalizeIdentifier('require');
-	const callEngineMember = (name: string, args: ReadonlyArray<LuaValue>): ReadonlyArray<LuaValue> => {
+	const callEngineMember = (name: string, args: ReadonlyArray<LuaValue>): LuaCallResult => {
 		const requireFn = interpreter.getGlobal(requireName) as LuaFunctionValue;
 		const engineValue = requireFn.call(['engine']);
+		if (isLuaCallSignal(engineValue)) {
+			return engineValue;
+		}
 		const engineTable = engineValue[0] as LuaTable;
 		const member = engineTable.get(runtime.canonicalizeIdentifier(name)) as LuaFunctionValue;
 		return member.call(args);

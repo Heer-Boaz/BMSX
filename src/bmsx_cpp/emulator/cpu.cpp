@@ -998,6 +998,7 @@ void CPU::decodeProgram() {
 
 void CPU::start(int entryProtoIndex, const std::vector<Value>& args) {
 	m_frames.clear();
+	m_yieldRequested = false;
 	auto* closure = createRootClosure(entryProtoIndex);
 	pushFrame(closure, args, 0, 0, false, m_program->protos[entryProtoIndex].entryPC);
 }
@@ -1006,6 +1007,7 @@ void CPU::call(Closure* closure, const std::vector<Value>& args, int returnCount
 	if (!closure) {
 		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
+	m_yieldRequested = false;
 	pushFrame(closure, args, 0, returnCount, false, m_program->protos[closure->protoIndex].entryPC);
 }
 
@@ -1013,13 +1015,27 @@ void CPU::callExternal(Closure* closure, const std::vector<Value>& args) {
 	if (!closure) {
 		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
+	m_yieldRequested = false;
 	pushFrame(closure, args, 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
+}
+
+void CPU::requestYield() {
+	m_yieldRequested = true;
+}
+
+void CPU::clearYieldRequest() {
+	m_yieldRequested = false;
 }
 
 RunResult CPU::run(int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	RunResult result = RunResult::Halted;
 	while (!m_frames.empty()) {
+		if (m_yieldRequested) {
+			m_yieldRequested = false;
+			result = RunResult::Yielded;
+			break;
+		}
 		enforceLuaHeapBudget();
 		if (instructionBudgetRemaining <= 0) {
 			result = RunResult::Yielded;
@@ -1034,6 +1050,11 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
 	RunResult result = RunResult::Halted;
 	while (static_cast<int>(m_frames.size()) > targetDepth) {
+		if (m_yieldRequested) {
+			m_yieldRequested = false;
+			result = RunResult::Yielded;
+			break;
+		}
 		enforceLuaHeapBudget();
 		if (instructionBudgetRemaining <= 0) {
 			result = RunResult::Yielded;

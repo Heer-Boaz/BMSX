@@ -84,7 +84,7 @@ function gizmo.draw()
 		colors.panel.a
 	)
 	mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
-	draw_usage_bar('CPU', sys_cpu_active_cycles_used(), sys_cpu_active_cycles_granted(), x, y, z + 1, font_id)
+	draw_usage_bar('CPU', sys_cpu_cycles_used(), sys_cpu_cycles_granted(), x, y, z + 1, font_id)
 	draw_usage_bar('RAM', sys_ram_used(), sys_ram_size, x, y + row_h, z + 1, font_id)
 	draw_usage_bar('VRAM', sys_vram_used(), sys_vram_size, x, y + (row_h * 2), z + 1, font_id)
 end

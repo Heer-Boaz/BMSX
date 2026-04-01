@@ -125,6 +125,10 @@ void prepareOverlayRenderQueues() {
 	s_activeQueueSource = QueueSource::Back;
 }
 
+void prepareHeldRenderQueues() {
+	s_activeQueueSource = QueueSource::Front;
+}
+
 bool hasPendingBackQueueContent() {
 	return s_meshQueue.sizeBack() > 0
 		|| s_particleQueue.sizeBack() > 0;

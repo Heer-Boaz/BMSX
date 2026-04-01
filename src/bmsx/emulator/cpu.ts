@@ -1172,6 +1172,7 @@ export class CPU {
 	private metadata: ProgramMetadata | null = null;
 	private readonly stringPool: StringPool;
 	private indexKey: StringValue = null;
+	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
 	private readonly valueScratch: Value[] = [];
 	private readonly returnScratch: Value[] = [];
@@ -1391,6 +1392,7 @@ export class CPU {
 
 	public start(entryProtoIndex: number, args: Value[] = []): void {
 		this.frames.length = 0;
+		this.yieldRequested = false;
 		const closure: Closure = { protoIndex: entryProtoIndex, upvalues: [] };
 		addTrackedLuaHeapBytes(16);
 		this.pushFrame(closure, args, 0, 0, false, this.program.protos[entryProtoIndex].entryPC);
@@ -1403,6 +1405,7 @@ export class CPU {
 		if (typeof closure.protoIndex !== 'number') {
 			throw new Error('Attempted to call a non-function value.');
 		}
+		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, returnCount, false, this.program.protos[closure.protoIndex].entryPC);
 	}
 
@@ -1413,7 +1416,16 @@ export class CPU {
 		if (typeof closure.protoIndex !== 'number') {
 			throw new Error('Attempted to call a non-function value.');
 		}
+		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, 0, true, this.program.protos[closure.protoIndex].entryPC);
+	}
+
+	public requestYield(): void {
+		this.yieldRequested = true;
+	}
+
+	public clearYieldRequest(): void {
+		this.yieldRequested = false;
 	}
 
 	public getFrameDepth(): number {
@@ -1431,6 +1443,10 @@ export class CPU {
 	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		while (this.frames.length > targetDepth) {
+			if (this.yieldRequested) {
+				this.yieldRequested = false;
+				return RunResult.Yielded;
+			}
 			if (this.instructionBudgetRemaining <= 0) {
 				return RunResult.Yielded;
 			}
@@ -2402,10 +2418,7 @@ export class CPU {
 		return frame.registers.get(rk);
 	}
 
-	public getTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
-		void extraRoots;
-		return getTrackedLuaHeapBytes();
-		/*
+	public collectTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
 		const seen = new WeakSet<object>();
 		let total = 0;
 		const valueStack: Value[] = [];
@@ -2499,7 +2512,7 @@ export class CPU {
 				}
 				seen.add(value);
 				total += 24;
-				if (value.metatable !== null && value.metatable !== undefined) {
+				if (value.metatable !== null) {
 					pushValue(value.metatable);
 				}
 				continue;
@@ -2515,7 +2528,11 @@ export class CPU {
 			}
 		}
 		return total;
-		*/
+	}
+
+	public getTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
+		void extraRoots;
+		return getTrackedLuaHeapBytes();
 	}
 
 	private valueToString(value: Value): string {

@@ -34,13 +34,6 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<double, std::milli>(duration).count();
 }
 
-class WaitForVblankSignal : public std::exception {
-public:
-	const char* what() const noexcept override {
-		return "wait_vblank";
-	}
-};
-
 constexpr size_t CART_ROM_HEADER_SIZE = 64;
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 
@@ -243,6 +236,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
 	, m_cpuHz(options.cpuHz)
+	, m_renderBudgetPerFrame(options.renderBudgetPerFrame)
 	, m_cycleBudgetPerFrame(options.cycleBudgetPerFrame)
 {
 	// Initialize I/O memory region
@@ -279,6 +273,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_vdp.initializeRegisters();
 	m_memory.setIoWriteHandler(this);
 	setVblankCycles(options.vblankCycles);
+	setRenderBudgetPerFrame(options.renderBudgetPerFrame);
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	refreshMemoryMap();
 	m_cpu.setExternalRootMarker([this](GcHeap& heap) {
@@ -451,7 +446,6 @@ void Runtime::advanceHardware(int cycles) {
 	m_dmaController.setChannelBudgets(isoBudget, bulkBudget);
 	m_dmaController.tick();
 	m_imgDecController.tick();
-	m_vdp.advanceBlitter(cycles);
 	advanceVblank(cycles);
 }
 
@@ -526,6 +520,7 @@ void Runtime::enterVblank() {
 void Runtime::commitFrameOnVblankEdge() {
 	// Flush latest VDP register writes before snapshotting atlas/skybox bindings.
 	m_vdp.syncRegisters();
+	m_vdp.commitBuildFrame(m_renderBudgetPerFrame);
 	m_vdp.commitViewSnapshot(*EngineCore::instance().view());
 	if (!m_frameActive) {
 		return;
@@ -554,6 +549,9 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 		m_lastTickCpuUsedCycles = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
 	}
 	m_lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
+	m_lastTickVisualFrameCommitted = m_vdp.lastFrameCommitted();
+	m_lastTickVdpFrameCost = m_vdp.lastFrameCost();
+	m_lastTickVdpFrameOverBudget = m_vdp.lastFrameOverBudget();
 	m_lastTickCompleted = true;
 	m_lastTickSequence += 1;
 }
@@ -602,7 +600,7 @@ void Runtime::requestWaitForVblank() {
 		freezeTickCpuStats(m_frameState);
 		completeTickIfPending(m_frameState, m_vblankSequence);
 	}
-	throw WaitForVblankSignal{};
+	m_cpu.requestYield();
 }
 
 void Runtime::resetTransferCarry() {
@@ -648,6 +646,9 @@ RunResult Runtime::runWithBudget() {
 	const int budgetBefore = m_frameState.cycleBudgetRemaining;
 	RunResult result = m_cpu.run(budgetBefore);
 	const int remaining = m_cpu.instructionBudgetRemaining;
+	if (m_waitingForVblank) {
+		return result;
+	}
 	const int consumed = budgetBefore - remaining;
 	m_frameState.cycleBudgetRemaining = remaining;
 	if (consumed > 0) {
@@ -853,6 +854,7 @@ void Runtime::requestProgramReload() {
 void Runtime::resetFrameState() {
 	m_frameActive = false;
 	m_frameState = FrameState{};
+	m_cpu.clearYieldRequest();
 	m_waitingForVblank = false;
 	m_waitForVblankTargetSequence = 0;
 	m_clearBackQueuesAfterWaitResume = false;
@@ -915,6 +917,8 @@ void Runtime::applyState(const RuntimeState& state) {
 		m_vdp.clearSkybox();
 	}
 	m_vdp.setDitherType(state.vdpDitherType);
+	m_vdp.commitBuildFrame(std::numeric_limits<int>::max());
+	m_vdp.commitViewSnapshot(*EngineCore::instance().view());
 
 	// Restore globals
 	m_cpu.globals->clear();
@@ -968,6 +972,7 @@ void Runtime::applyActiveMachineTiming(i64 cpuHz) {
 	setCpuHz(cpuHz);
 	setCycleBudgetPerFrame(cycleBudget);
 	setVblankCycles(static_cast<int>(vblankCycles));
+	setRenderBudgetPerFrame(static_cast<int>(manifest.vdpRenderBudgetPerFrame.value_or(DEFAULT_VDP_RENDER_BUDGET_PER_FRAME)));
 }
 
 void Runtime::setVblankCycles(int cycles) {
@@ -992,13 +997,21 @@ void Runtime::resetHardwareState() {
 }
 
 void Runtime::resetRenderBuffers() {
-	RenderQueues::clearAllQueues();
+	RenderQueues::clearBackQueues();
 }
 
-void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk) {
+void Runtime::setRenderBudgetPerFrame(int budget) {
+	if (budget <= 0) {
+		throw BMSX_RUNTIME_ERROR("[Runtime] render_budget_per_frame must be greater than 0.");
+	}
+	m_renderBudgetPerFrame = budget;
+}
+
+void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int renderBudgetPerFrame) {
 	m_imgDecBytesPerSec = imgDecBytesPerSec;
 	m_dmaBytesPerSecIso = dmaBytesPerSecIso;
 	m_dmaBytesPerSecBulk = dmaBytesPerSecBulk;
+	setRenderBudgetPerFrame(renderBudgetPerFrame);
 	m_imgRate.setBytesPerSec(imgDecBytesPerSec);
 	m_dmaIsoRate.setBytesPerSec(dmaBytesPerSecIso);
 	m_dmaBulkRate.setBytesPerSec(dmaBytesPerSecBulk);
@@ -1046,7 +1059,7 @@ uint32_t Runtime::trackedVramUsedBytes() const {
 	return m_resourceUsageDetector->vramUsedBytes();
 }
 
-bool Runtime::consumeLastTickCompletion(i64& outSequence, int& outRemaining) {
+bool Runtime::consumeLastTickCompletion(TickCompletion& outCompletion) {
 	if (!m_lastTickCompleted) {
 		return false;
 	}
@@ -1054,8 +1067,11 @@ bool Runtime::consumeLastTickCompletion(i64& outSequence, int& outRemaining) {
 		return false;
 	}
 	m_lastTickConsumedSequence = m_lastTickSequence;
-	outSequence = m_lastTickSequence;
-	outRemaining = m_lastTickBudgetRemaining;
+	outCompletion.sequence = m_lastTickSequence;
+	outCompletion.remaining = m_lastTickBudgetRemaining;
+	outCompletion.visualCommitted = m_lastTickVisualFrameCommitted;
+	outCompletion.vdpFrameCost = m_lastTickVdpFrameCost;
+	outCompletion.vdpFrameOverBudget = m_lastTickVdpFrameOverBudget;
 	return true;
 }
 
@@ -1190,6 +1206,7 @@ void Runtime::executeUpdateCallback() {
 		if (m_waitingForVblank) {
 			processIrqAck();
 			if (m_waitForVblankTargetSequence == 0) {
+				m_cpu.clearYieldRequest();
 				m_waitingForVblank = false;
 				m_clearBackQueuesAfterWaitResume = false;
 			} else {
@@ -1210,6 +1227,7 @@ void Runtime::executeUpdateCallback() {
 						return;
 					}
 				}
+				m_cpu.clearYieldRequest();
 				m_waitingForVblank = false;
 				m_waitForVblankTargetSequence = 0;
 				// Clear queues on the next runnable slice after the completed frame was presented.
@@ -1228,19 +1246,21 @@ void Runtime::executeUpdateCallback() {
 			return;
 		}
 		RunResult result = runWithBudget();
+		if (m_waitingForVblank) {
+			reconcileCycleBudgetAfterSignal(m_frameState);
+			freezeTickCpuStats(m_frameState);
+			processIrqAck();
+			return;
+		}
 		processIrqAck();
 		if (result == RunResult::Halted) {
 			m_pendingCall = PendingCall::None;
 		}
-	} catch (const WaitForVblankSignal&) {
-		reconcileCycleBudgetAfterSignal(m_frameState);
-		freezeTickCpuStats(m_frameState);
-		processIrqAck();
-		return;
 	} catch (const std::exception& e) {
 		std::cerr << "[Runtime] Error in update: " << e.what() << std::endl;
 		logDebugState();
 		logLuaCallStack();
+		m_cpu.clearYieldRequest();
 		m_waitingForVblank = false;
 		m_waitForVblankTargetSequence = 0;
 		m_clearBackQueuesAfterWaitResume = false;

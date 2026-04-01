@@ -32,7 +32,7 @@ import {
 	VRAM_SYSTEM_ATLAS_BASE,
 	VRAM_SYSTEM_ATLAS_SIZE,
 } from './memory_map';
-import { CART_ROM_MAGIC, type CartManifest, type MachineManifest } from '../rompack/rompack';
+import { CART_ROM_MAGIC, DEFAULT_VDP_RENDER_BUDGET_PER_FRAME, type CartManifest, type MachineManifest } from '../rompack/rompack';
 import { BmsxColors } from './vdp';
 import {
 	DMA_CTRL_START,
@@ -174,7 +174,7 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 		renderSize.set(key('height'), manifest.render_size.height);
 		table.set(key('render_size'), renderSize);
 	}
-	const specs = new Table(0, 4);
+	const specs = new Table(0, 5);
 	const cpu = new Table(0, 2);
 	if (manifest.specs.cpu.cpu_freq_hz) {
 		cpu.set(key('cpu_freq_hz'), manifest.specs.cpu.cpu_freq_hz);
@@ -191,6 +191,9 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 		dma.set(key('dma_bytes_per_sec_bulk'), manifest.specs.dma.dma_bytes_per_sec_bulk);
 	}
 	specs.set(key('dma'), dma);
+	const vdp = new Table(0, 1);
+	vdp.set(key('render_budget_per_frame'), manifest.specs.vdp?.render_budget_per_frame ?? DEFAULT_VDP_RENDER_BUDGET_PER_FRAME);
+	specs.set(key('vdp'), vdp);
 	const ram = manifest.specs.ram;
 	if (ram && (ram.ram_bytes || ram.string_handle_count || ram.string_heap_bytes || ram.asset_table_bytes || ram.asset_data_bytes)) {
 		const ramTable = new Table(0, 5);
@@ -1190,6 +1193,15 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}, CHEAP_NATIVE_READ_COST));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_used', createNativeFunction('sys_vram_used', (_args, out) => {
 		out.push(runtime.getTrackedVramUsedBytes());
+	}, CHEAP_NATIVE_READ_COST));
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_render_budget', createNativeFunction('sys_vdp_render_budget', (_args, out) => {
+		out.push(runtime.getRenderBudgetPerFrame());
+	}, CHEAP_NATIVE_READ_COST));
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_render_cost_last', createNativeFunction('sys_vdp_render_cost_last', (_args, out) => {
+		out.push(runtime.lastTickVdpFrameCost);
+	}, CHEAP_NATIVE_READ_COST));
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_frame_over_budget', createNativeFunction('sys_vdp_frame_over_budget', (_args, out) => {
+		out.push(runtime.lastTickVdpFrameOverBudget ? 1 : 0);
 	}, CHEAP_NATIVE_READ_COST));
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_done', IRQ_DMA_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_error', IRQ_DMA_ERROR);

@@ -78,6 +78,11 @@ void preparePartialRenderQueues();
 void prepareOverlayRenderQueues();
 
 /**
+ * Hold the last committed front queues without swapping.
+ */
+void prepareHeldRenderQueues();
+
+/**
  * Returns whether the back queues contain pending submissions.
  */
 bool hasPendingBackQueueContent();

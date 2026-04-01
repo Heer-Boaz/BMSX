@@ -10,7 +10,7 @@ import { LuaInterpreter } from '../lua/luaruntime';
 import type { LuaFunctionValue, LuaValue, StackTraceFrame } from '../lua/luavalue';
 import {
 	convertToError,
-	isLuaDebuggerPauseSignal,
+	isLuaCallSignal,
 	setLuaTableCaseInsensitiveKeys,
 	type LuaDebuggerPauseSignal
 } from '../lua/luavalue';
@@ -163,7 +163,6 @@ type EditorViewOptionsSnapshot = {
 };
 
 type ProgramSource = 'engine' | 'cart';
-type WaitForVblankSignal = { readonly kind: 'wait_vblank' };
 type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'audioevents';
 type RuntimeLayerLookup = Partial<Record<CartridgeLayerId, RuntimeAssetLayer>>;
 
@@ -273,6 +272,10 @@ export class Runtime {
 		return Runtime.resolvePositiveSafeInteger(value, label);
 	}
 
+	private static resolveRenderBudgetPerFrame(value: number | undefined): number {
+		return Runtime.resolvePositiveSafeInteger(value, 'machine.specs.vdp.render_budget_per_frame');
+	}
+
 	private static resolveUfpsScaled(value: number | undefined): number {
 		return Runtime.resolvePositiveSafeInteger(value, 'machine.ufps');
 	}
@@ -328,8 +331,11 @@ export class Runtime {
 	}
 
 	public getActiveCpuCyclesGranted(): number {
-		const activeBudget = this.getLastTickBudgetGranted() - this.vblankCycles;
-		return activeBudget > 0 ? activeBudget : 0;
+		return this.getLastTickBudgetGranted();
+	}
+
+	public getRenderBudgetPerFrame(): number {
+		return this.renderBudgetPerFrame;
 	}
 
 	public getArmedVdpPayloadBaseOffset(): number {
@@ -350,9 +356,7 @@ export class Runtime {
 	}
 
 	public getActiveCpuUsedCyclesLastTick(): number {
-		const activeBudget = this.getActiveCpuCyclesGranted();
-		const usedCycles = this.getCpuUsedCyclesLastTick();
-		return usedCycles > activeBudget ? activeBudget : usedCycles;
+		return this.getCpuUsedCyclesLastTick();
 	}
 
 	public getTrackedRamUsedBytes(): number {
@@ -375,7 +379,7 @@ export class Runtime {
 		return this.currentFrameState !== null;
 	}
 
-	public consumeLastTickCompletion(): { sequence: number; remaining: number } | null {
+	public consumeLastTickCompletion(): { sequence: number; remaining: number; visualCommitted: boolean; vdpFrameCost: number; vdpFrameOverBudget: boolean; } | null {
 		if (!this.lastTickCompleted) {
 			return null;
 		}
@@ -386,6 +390,9 @@ export class Runtime {
 		return {
 			sequence: this.lastTickSequence,
 			remaining: this.lastTickBudgetRemaining,
+			visualCommitted: this.lastTickVisualFrameCommitted,
+			vdpFrameCost: this.lastTickVdpFrameCost,
+			vdpFrameOverBudget: this.lastTickVdpFrameOverBudget,
 		};
 	}
 
@@ -414,11 +421,6 @@ export class Runtime {
 		const budgetBefore = state.cycleBudgetRemaining;
 		const result = this.cpu.run(budgetBefore);
 		const remaining = this.cpu.instructionBudgetRemaining;
-		state.cycleBudgetRemaining = remaining;
-		const consumed = budgetBefore - remaining;
-		if (consumed > 0) {
-			this.advanceHardware(consumed);
-		}
 		if (debugCycle) {
 			if (result === RunResult.Yielded) {
 				this.debugCycleYields += 1;
@@ -439,6 +441,14 @@ export class Runtime {
 				this.debugCycleYields = 0;
 				this.debugCycleRemainingAcc = 0;
 			}
+		}
+		if (this.waitingForVblank) {
+			return result;
+		}
+		state.cycleBudgetRemaining = remaining;
+		const consumed = budgetBefore - remaining;
+		if (consumed > 0) {
+			this.advanceHardware(consumed);
 		}
 		return result;
 	}
@@ -523,17 +533,25 @@ export class Runtime {
 		this.resetTransferCarry();
 	}
 	public applyActiveMachineTiming(cpuHz: number): void {
+		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
 		const cycleBudgetPerFrame = calcCyclesPerFrameScaled(cpuHz, $.ufps_scaled);
 		const renderSize = Runtime.resolveRenderSize($.machine_manifest);
 		const vblankCycles = resolveVblankCycles(cpuHz, $.ufps_scaled, renderSize.height);
 		this.setCpuHz(cpuHz);
 		this.setCycleBudgetPerFrame(cycleBudgetPerFrame);
 		this.setVblankCycles(vblankCycles);
+		this.setRenderBudgetPerFrame(perfSpecs.render_budget_per_frame);
 	}
-	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number }): void {
+
+	public setRenderBudgetPerFrame(value: number): void {
+		this.renderBudgetPerFrame = Runtime.resolveRenderBudgetPerFrame(value);
+	}
+
+	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number; render_budget_per_frame: number; }): void {
 		this.imgDecBytesPerSec = Runtime.resolveBytesPerSec(specs.imgdec_bytes_per_sec, 'machine.specs.cpu.imgdec_bytes_per_sec');
 		this.dmaBytesPerSecIso = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_iso, 'machine.specs.dma.dma_bytes_per_sec_iso');
 		this.dmaBytesPerSecBulk = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
+		this.setRenderBudgetPerFrame(specs.render_budget_per_frame);
 		this.imgRate.set(this.imgDecBytesPerSec);
 		this.dmaIsoRate.set(this.dmaBytesPerSecIso);
 		this.dmaBulkRate.set(this.dmaBytesPerSecBulk);
@@ -554,7 +572,6 @@ export class Runtime {
 		});
 		this.dmaController.tick();
 		this.imgDecController.tick();
-		this.vdp.advanceBlitter(cycles);
 		this.advanceVblank(cycles);
 	}
 
@@ -670,22 +687,20 @@ export class Runtime {
 			this.freezeTickCpuStats(frameState);
 			this.completeTickIfPending(frameState, this.vblankSequence);
 		}
-		throw this.waitForVblankSignal;
+		this.cpu.requestYield();
 	}
 
 	public clearWaitForVblank(): void {
+		this.cpu.clearYieldRequest();
 		this.waitingForVblank = false;
 		this.waitForVblankTargetSequence = 0;
 		this.clearBackQueuesAfterWaitResume = false;
 	}
 
-	private isWaitForVblankSignal(error: unknown): error is WaitForVblankSignal {
-		return error === this.waitForVblankSignal;
-	}
-
 	private commitFrameOnVblankEdge(): void {
 		// Flush latest VDP register writes before snapshotting atlas/skybox bindings.
 		this.vdp.syncRegisters();
+		this.vdp.commitBuildFrame(this.renderBudgetPerFrame);
 		this.vdp.commitViewSnapshot();
 		const frameState = this.currentFrameState;
 		if (frameState === null) {
@@ -715,6 +730,9 @@ export class Runtime {
 			this.lastTickCpuUsedCycles = frameState.cycleBudgetGranted - frameState.cycleBudgetRemaining;
 		}
 		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
+		this.lastTickVisualFrameCommitted = this.vdp.lastFrameCommitted;
+		this.lastTickVdpFrameCost = this.vdp.lastFrameCost;
+		this.lastTickVdpFrameOverBudget = this.vdp.lastFrameOverBudget;
 		this.lastTickCompleted = true;
 		this.lastTickSequence += 1;
 		this.lastCompletedVblankSequence = vblankSequence;
@@ -780,7 +798,6 @@ export class Runtime {
 	private waitingForVblank = false;
 	private waitForVblankTargetSequence = 0;
 	private clearBackQueuesAfterWaitResume = false;
-	private readonly waitForVblankSignal: WaitForVblankSignal = { kind: 'wait_vblank' };
 	private handlingVdpCommandWrite = false;
 	private payloadDataWritePtr = 0;
 	private armedVdpPayloadBaseOffset = 0;
@@ -795,6 +812,7 @@ export class Runtime {
 	private vblankPendingClear = false;
 	private vblankClearOnIrqEnd = false;
 	private vdpStatus = 0;
+	private renderBudgetPerFrame = 0;
 	private _cpuHz: number;
 	private imgDecBytesPerSec = 0;
 	private dmaBytesPerSecIso = 0;
@@ -807,6 +825,9 @@ export class Runtime {
 	public lastTickCpuBudgetGranted: number = 0;
 	public lastTickCpuUsedCycles: number = 0;
 	public lastTickBudgetRemaining: number = 0;
+	public lastTickVisualFrameCommitted: boolean = true;
+	public lastTickVdpFrameCost: number = 0;
+	public lastTickVdpFrameOverBudget: boolean = false;
 	public lastTickCompleted: boolean = false;
 	private debugCycleReportAtMs: number = 0;
 	private debugCycleRuns: number = 0;
@@ -958,6 +979,7 @@ export class Runtime {
 				cpuHz,
 				cycleBudgetPerFrame,
 				vblankCycles,
+				renderBudgetPerFrame: enginePerfSpecs.render_budget_per_frame,
 			});
 			runtime.setTransferRatesFromManifest(enginePerfSpecs);
 			runtime.biosAssetLayer = engineLayer;
@@ -1034,6 +1056,7 @@ export class Runtime {
 			cpuHz,
 			cycleBudgetPerFrame,
 			vblankCycles,
+			renderBudgetPerFrame: cartPerfSpecs.render_budget_per_frame,
 		});
 		runtime.setTransferRatesFromManifest(cartPerfSpecs);
 		runtime.biosAssetLayer = engineLayer;
@@ -1306,6 +1329,7 @@ export class Runtime {
 	private constructor(options: RuntimeOptions) {
 		Runtime._instance = this;
 		this.cycleBudgetPerFrame = options.cycleBudgetPerFrame;
+		this.renderBudgetPerFrame = Runtime.resolveRenderBudgetPerFrame(options.renderBudgetPerFrame);
 		this.storageService = $.platform.storage;
 		this.storage = new RuntimeStorage(this.storageService, $.lua_sources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
@@ -1360,6 +1384,20 @@ export class Runtime {
 		);
 		configureLuaHeapUsage({
 			getBaseRamUsedBytes: () => this.resourceUsageDetector.getBaseRamUsedBytes(),
+			collectTrackedHeapBytes: () => {
+				const extraRoots = this.acquireValueScratch();
+				try {
+					extraRoots.push(this.pairsIterator);
+					extraRoots.push(this.ipairsIterator);
+					for (const value of this.moduleCache.values()) {
+						extraRoots.push(value);
+					}
+					return this.cpu.collectTrackedHeapBytes(extraRoots);
+				}
+				finally {
+					this.releaseValueScratch(extraRoots);
+				}
+			},
 		});
 		this.setCpuHz(options.cpuHz);
 		this.randomSeedValue = $.platform.clock.now();
@@ -1692,23 +1730,21 @@ export class Runtime {
 				return;
 			}
 			const result = this.runWithBudget(state);
+			if (this.waitingForVblank) {
+				this.reconcileCycleBudgetAfterSignal(state);
+				this.freezeTickCpuStats(state);
+				this.processIrqAck();
+				return;
+			}
 			this.processIrqAck();
 			if (result === RunResult.Halted) {
 				this.pendingCall = null;
 			}
 		} catch (error) {
-			if (this.isWaitForVblankSignal(error)) {
-				this.reconcileCycleBudgetAfterSignal(state);
-				this.freezeTickCpuStats(state);
-				this.processIrqAck();
-			} else if (isLuaDebuggerPauseSignal(error)) {
-				runtimeIde.onLuaDebuggerPause(this, error);
-			} else {
-				state.luaFaulted = true;
-				this.clearWaitForVblank();
-				this.pendingCall = null;
-				runtimeIde.handleLuaError(this, error);
-			}
+			state.luaFaulted = true;
+			this.clearWaitForVblank();
+			this.pendingCall = null;
+			runtimeIde.handleLuaError(this, error);
 		}
 	}
 
@@ -2292,6 +2328,9 @@ export class Runtime {
 				luaArgs.push(this.luaJsBridge.toLua(args[index]));
 			}
 			const results = fn.call(luaArgs);
+			if (isLuaCallSignal(results)) {
+				return [];
+			}
 			const output: unknown[] = [];
 			const moduleId = $.lua_sources.path2lua[this._luaPath].source_path;
 			const baseCtx = { moduleId, path: [] };

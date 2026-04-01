@@ -1,11 +1,13 @@
 import { $ } from '../core/engine_core';
 import { Runtime } from './runtime';
 import * as runtimeIde from './runtime_ide';
+import { getTrackedLuaHeapBytes } from './lua_heap_usage';
 import { clearWorkspaceSessionState } from './ide/workspace_storage';
 import { ide_state } from './ide/ide_state';
 import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
 import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from './runtime_error_util';
 import type { LuaSourceRecord } from './lua_sources';
+import { RAM_SIZE } from './memory_map';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 
@@ -36,6 +38,7 @@ const HELP_TEXT = [
 	' SYS              Show system information',
 	' SYS FAULT        Show faulted state',
 	' SYS FAULT CLEAR  Clear faulted state', // SYS CLEAR FAULT is also allowed
+	' SYS RAM          Show RAM usage and heap breakdown',
 	' LS               List assets in current directory',
 	' LS -ROM          List assets in ROM',
 	' LS -DIRTY / -D   List dirty workspace files',
@@ -192,10 +195,18 @@ export class TerminalCommandDispatcher {
 			this.printSystemInfo();
 			return;
 		}
-		if (tokens.length === 2 && tokens[1].toUpperCase() === 'FAULT') {
-			this.printFaultState();
-			return;
+		if (tokens.length === 2) {
+			const second = tokens[1].toUpperCase();
+			switch (second) {
+				case 'FAULT':
+					this.printFaultState();
+					return;
+				case 'RAM':
+					this.printMemoryUsage();
+					return;
+			}
 		}
+
 		if (tokens.length === 3) {
 			const second = tokens[1].toUpperCase();
 			const third = tokens[2].toUpperCase();
@@ -210,22 +221,22 @@ export class TerminalCommandDispatcher {
 	private printSystemInfo(): void {
 		this.runtime.terminal.appendSystem('SYSTEM INFO');
 		const lines = this.getSystemStatusLines();
-		for (let index = 0; index < lines.length; index += 1) {
-			this.runtime.terminal.appendStdout(lines[index]);
-		}
+		this.runtime.terminal.appendStdoutLines(lines);
+		this.printMemoryUsage();
+		this.printFaultState();
 	}
 
 	private printFaultState(): void {
 		const { lines, active } = this.getFaultStatusLines();
 		this.runtime.terminal.appendSystem('FAULT STATE');
-		for (let index = 0; index < lines.length; index += 1) {
-			const line = lines[index];
-			if (index === 0 && active) {
-				this.runtime.terminal.appendStdout(line, 9);
-				continue;
-			}
-			this.runtime.terminal.appendStdout(line);
-		}
+		this.runtime.terminal.appendStdout(lines[0], active ? 9 : undefined);
+		this.runtime.terminal.appendStdoutLines(lines.slice(1));
+	}
+
+	private printMemoryUsage(): void {
+		this.runtime.terminal.appendSystem('MEMORY USAGE');
+		const lines = this.getMemoryStatusLines();
+		this.runtime.terminal.appendStdoutLines(lines);
 	}
 
 	private clearFaultState(): void {
@@ -313,6 +324,22 @@ export class TerminalCommandDispatcher {
 		}
 		lines.push('No fault information recorded.');
 		return { lines, active: faultFlag };
+	}
+
+	public getMemoryStatusLines(): string[] {
+		const totalRamBytes = RAM_SIZE;
+		const usedRamBytes = this.runtime.getTrackedRamUsedBytes();
+		const luaHeapBytes = getTrackedLuaHeapBytes();
+		const baseRamBytes = usedRamBytes - luaHeapBytes;
+		const freeRamBytes = totalRamBytes - usedRamBytes;
+		const usedRamPercent = (usedRamBytes / totalRamBytes) * 100;
+		const lines: string[] = [];
+		lines.push(`Total RAM: ${this.formatByteSize(totalRamBytes)}`);
+		lines.push(`Used RAM: ${this.formatByteSize(usedRamBytes)} (${usedRamPercent.toFixed(1)}%)`);
+		lines.push(`Free RAM: ${this.formatByteSize(freeRamBytes)}`);
+		lines.push(`Base RAM: ${this.formatByteSize(baseRamBytes)}`);
+		lines.push(`Lua heap: ${this.formatByteSize(luaHeapBytes)}`);
+		return lines;
 	}
 
 	private async handleLs(command: string): Promise<void> {
@@ -574,6 +601,23 @@ export class TerminalCommandDispatcher {
 
 	private describeText(text: string): string {
 		return `len=${text.length} hash=${this.hashText(text)}`;
+	}
+
+	// private formatNumberAsHex(n: number, width?: number): string {
+	// 	const hex = n.toString(16).toUpperCase();
+	// 	const padded = width === undefined ? hex : hex.padStart(width, '0');
+	// 	return `${padded}h`;
+	// }
+
+	private formatByteSize(size: number): string {
+		const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+		let i = 0;
+		let n = size;
+		while (n >= 1024 && i < units.length - 1) {
+			n /= 1024;
+			i++;
+		}
+		return i === 0 ? `${size} ${units[0]}` : `${n.toFixed(2)} ${units[i]}`;
 	}
 
 	private hashText(text: string): number {

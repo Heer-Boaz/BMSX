@@ -28,6 +28,8 @@
 
 namespace bmsx {
 
+constexpr i64 DEFAULT_VDP_RENDER_BUDGET_PER_FRAME = 512;
+
 // Program asset ID (matches TypeScript PROGRAM_ASSET_ID)
 constexpr const char* PROGRAM_ASSET_ID = "__program__";
 constexpr const char* PROGRAM_SYMBOLS_ASSET_ID = "__program_symbols__";
@@ -352,6 +354,7 @@ struct MachineManifest {
 	std::optional<i64> imgDecBytesPerSec;
 	std::optional<i64> dmaBytesPerSecIso;
 	std::optional<i64> dmaBytesPerSecBulk;
+	std::optional<i64> vdpRenderBudgetPerFrame;
 	std::optional<i64> ufpsScaled;
 };
 

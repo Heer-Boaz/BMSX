@@ -440,6 +440,9 @@ export type MachineDmaSpecs = {
 	dma_bytes_per_sec_iso: number;
 	dma_bytes_per_sec_bulk: number;
 };
+export type MachineVdpSpecs = {
+	render_budget_per_frame?: number;
+};
 export type MachineRamSpecs = {
 	ram_bytes?: number;
 	string_handle_count?: number;
@@ -460,6 +463,7 @@ export type MachineAudioSpecs = {
 export type MachineSpecs = {
 	cpu: MachineCpuSpecs;
 	dma: MachineDmaSpecs;
+	vdp?: MachineVdpSpecs;
 	audio?: MachineAudioSpecs;
 	ram?: MachineRamSpecs;
 	vram?: MachineVramSpecs;
@@ -496,9 +500,12 @@ export type MachinePerfSpecs = {
 	imgdec_bytes_per_sec: number;
 	dma_bytes_per_sec_iso: number;
 	dma_bytes_per_sec_bulk: number;
+	render_budget_per_frame: number;
 	ufps: number;
 	skybox_face_size?: number;
 };
+
+export const DEFAULT_VDP_RENDER_BUDGET_PER_FRAME = 512;
 
 export type MachineMemorySpecs = {
 	ram_bytes?: number;
@@ -516,12 +523,14 @@ export type MachineMemorySpecs = {
 export function getMachinePerfSpecs(machine: MachineManifest): MachinePerfSpecs {
 	const cpu = machine.specs.cpu;
 	const dma = machine.specs.dma;
+	const vdp = machine.specs.vdp;
 	const vram = machine.specs.vram;
 	return {
 		cpu_freq_hz: cpu.cpu_freq_hz,
 		imgdec_bytes_per_sec: cpu.imgdec_bytes_per_sec,
 		dma_bytes_per_sec_iso: dma.dma_bytes_per_sec_iso,
 		dma_bytes_per_sec_bulk: dma.dma_bytes_per_sec_bulk,
+		render_budget_per_frame: vdp?.render_budget_per_frame ?? DEFAULT_VDP_RENDER_BUDGET_PER_FRAME,
 		ufps: machine.ufps,
 		skybox_face_size: vram?.skybox_face_size,
 	};

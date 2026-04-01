@@ -100,6 +100,10 @@ export function prepareOverlayRenderQueues(): void {
 	activeQueueSource = 'back';
 }
 
+export function prepareHeldRenderQueues(): void {
+	activeQueueSource = 'front';
+}
+
 export function hasPendingBackQueueContent(): boolean {
 	return meshQueue.sizeBack() > 0
 		|| particleQueue.sizeBack() > 0;
