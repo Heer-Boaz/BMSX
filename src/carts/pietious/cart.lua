@@ -27,8 +27,6 @@ local title_screen_module<const> = require('title_screen')
 local collision_profiles<const> = require('collision_profiles')
 local castle_map<const> = require('castle_map')
 
-local create_world
-local start_title_screen
 local init_epoch = 0
 local pending_title_boot_epoch = -1
 
@@ -75,6 +73,51 @@ local grant_starting_loadout<const> = function()
 	progression.set(castle, 'staff1destroyed', true)
 	progression.set(castle, 'staff2destroyed', true)
 	progression.set(castle, 'staff3destroyed', true)
+end
+
+local create_world<const> = function(director_boot_mode)
+	reset()
+	elevator_update_system_module.apply_pipeline()
+	add_space('main')
+	add_space('title')
+	add_space('transition')
+	add_space('shrine')
+	add_space('lithograph')
+	add_space('item')
+	add_space('ui')
+	set_space('main')
+
+	local c<const> = inst('castle', { id = 'c', })
+
+	inst('room', { id = 'room', })
+
+	inst('player', {
+		id = 'pietolon',
+		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
+	})
+	grant_starting_loadout()
+	c:initialize(castle_map.start_room_number, director_boot_mode ~= 'title_screen')
+
+	inst('transition', { id = 'transition', space_id = 'transition', })
+	inst('shrine', { id = 'shrine', space_id = 'shrine', })
+	inst('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
+	inst('item_screen', { id = 'item_screen', space_id = 'item', })
+	inst('ui', { id = 'ui', })
+	inst('title_screen', { id = 'title_screen', space_id = 'title', })
+	inst('director', { id = 'd', boot_mode = director_boot_mode, })
+end
+
+local start_title_screen<const> = function()
+	create_world('title_screen')
+end
+
+local new_game<const> = function()
+	if pending_title_boot_epoch == init_epoch then
+		pending_title_boot_epoch = init_epoch - 1
+		start_title_screen()
+		return
+	end
+	create_world('room')
 end
 
 function init()
@@ -132,51 +175,6 @@ function init()
 	vdp_map_slot(0, 0)
 	init_epoch = init_epoch + 1
 	pending_title_boot_epoch = init_epoch
-end
-
-create_world = function(director_boot_mode)
-	reset()
-	elevator_update_system_module.apply_pipeline()
-	add_space('main')
-	add_space('title')
-	add_space('transition')
-	add_space('shrine')
-	add_space('lithograph')
-	add_space('item')
-	add_space('ui')
-	set_space('main')
-
-	local c<const> = inst('castle', { id = 'c', })
-
-	inst('room', { id = 'room', })
-
-	inst('player', {
-		id = 'pietolon',
-		pos = { x = constants.player.start_x, y = constants.player.start_y, z = 140 },
-	})
-	grant_starting_loadout()
-	c:initialize(castle_map.start_room_number, director_boot_mode ~= 'title_screen')
-
-	inst('transition', { id = 'transition', space_id = 'transition', })
-	inst('shrine', { id = 'shrine', space_id = 'shrine', })
-	inst('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
-	inst('item_screen', { id = 'item_screen', space_id = 'item', })
-	inst('ui', { id = 'ui', })
-	inst('title_screen', { id = 'title_screen', space_id = 'title', })
-	inst('director', { id = 'd', boot_mode = director_boot_mode, })
-end
-
-start_title_screen = function()
-	create_world('title_screen')
-end
-
-function new_game()
-	if pending_title_boot_epoch == init_epoch then
-		pending_title_boot_epoch = init_epoch - 1
-		start_title_screen()
-		return
-	end
-	create_world('room')
 end
 
 while true do

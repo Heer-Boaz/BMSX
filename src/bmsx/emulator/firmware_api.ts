@@ -21,7 +21,6 @@ import { buildDirtyFilePath, hasWorkspaceStorage } from './ide/workspace_storage
 import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtins';
 import { Table } from './cpu';
 import { createLuaTable, type LuaTable } from '../lua/luavalue';
-import { ActionState } from 'bmsx/input/inputtypes';
 import { BmsxColors } from './vdp';
 import type { StringValue } from './string_pool';
 
@@ -350,7 +349,7 @@ export class Api {
 		return $.action_triggered(player === undefined ? 1 : player, actiondefinition)
 	}
 
-	public consume_action(actionToConsume: ActionState | string, player?: number): void {
+	public consume_action(actionToConsume: string, player?: number): void {
 		$.consume_action(player === undefined ? 1 : player, actionToConsume);
 	}
 

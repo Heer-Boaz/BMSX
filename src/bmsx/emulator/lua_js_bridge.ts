@@ -827,31 +827,6 @@ function collectNativeKeys(runtime: Runtime, raw: object): Value[] {
 	return keys;
 }
 
-function buildNativeNextEntry(runtime: Runtime, raw: object): (after: Value) => [Value, Value] | null {
-	return (after: Value): [Value, Value] | null => {
-		const keys = collectNativeKeys(runtime, raw);
-		if (keys.length === 0) {
-			return null;
-		}
-		let nextIndex = 0;
-		if (after !== null) {
-			nextIndex = -1;
-			for (let index = 0; index < keys.length; index += 1) {
-				if (nativeKeysEqual(keys[index], after)) {
-					nextIndex = index + 1;
-					break;
-				}
-			}
-			if (nextIndex < 0 || nextIndex >= keys.length) {
-				return null;
-			}
-		}
-		const key = keys[nextIndex];
-		const value = readNativeRawValue(raw, key);
-		return [key, toRuntimeValue(runtime, value)];
-	};
-}
-
 function readNativeRawValue(raw: object, key: Value): unknown {
 	if (Array.isArray(raw)) {
 		if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
@@ -963,12 +938,12 @@ export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
 				throw new Error(`Asset '${prop}' does not exist.`);
 			}
 			if (assetMapKeys.has(prop)) {
-				return getOrCreateAssetMapNativeObject(runtime, rawValue as Record<string, unknown>);
+				return getOrCreateAssetMapNativeObject(runtime, rawValue as Record<string, unknown>, prop as 'img' | 'audio' | 'model' | 'data' | 'audioevents');
 			}
 			if (typeof rawValue === 'function') {
 				return getOrCreateNativeMethod(runtime, assets, prop);
 			}
-			return toRuntimeValue(runtime, rawValue);
+			return toRuntimeAssetEntryValue(runtime, rawValue);
 		},
 		set: (key, entryValue) => {
 			const prop = resolveNativeKey(key);
@@ -988,7 +963,7 @@ export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
 	return wrapper;
 }
 
-export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<string, unknown>): NativeObject {
+export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<string, unknown>, kind: 'img' | 'audio' | 'model' | 'data' | 'audioevents'): NativeObject {
 	const cached = runtime.nativeObjectCache.get(map);
 	if (cached) {
 		return cached;
@@ -1006,7 +981,7 @@ export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<st
 			if (typeof rawValue === 'function') {
 				return getOrCreateNativeMethod(runtime, map, prop);
 			}
-			return toRuntimeValue(runtime, rawValue);
+			return toRuntimeAssetEntryValue(runtime, rawValue, kind);
 		},
 		set: (key, entryValue) => {
 			const prop = resolveNativeKey(key);
@@ -1020,10 +995,66 @@ export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<st
 			const ctx = buildMarshalContext(runtime);
 			map[prop] = toNativeValue(runtime, entryValue, ctx, new WeakMap());
 		},
-		nextEntry: buildNativeNextEntry(runtime, map),
+		nextEntry: buildNativeNextEntry(runtime, map, kind),
 	});
 	runtime.nativeObjectCache.set(map, wrapper);
 	return wrapper;
+}
+
+function buildNativeNextEntry(runtime: Runtime, raw: object, kind?: 'img' | 'audio' | 'model' | 'data' | 'audioevents'): (after: Value) => [Value, Value] | null {
+	return (after: Value): [Value, Value] | null => {
+		const keys = collectNativeKeys(runtime, raw);
+		if (keys.length === 0) {
+			return null;
+		}
+		let nextIndex = 0;
+		if (after !== null) {
+			nextIndex = -1;
+			for (let index = 0; index < keys.length; index += 1) {
+				if (nativeKeysEqual(keys[index], after)) {
+					nextIndex = index + 1;
+					break;
+				}
+			}
+			if (nextIndex < 0 || nextIndex >= keys.length) {
+				return null;
+			}
+		}
+		const key = keys[nextIndex];
+		const value = readNativeRawValue(raw, key);
+		return [key, toRuntimeAssetEntryValue(runtime, value, kind)];
+	};
+}
+
+function toRuntimeAssetEntryValue(runtime: Runtime, value: unknown, kind?: 'img' | 'audio' | 'model' | 'data' | 'audioevents'): Value {
+	if (kind === 'img' || kind === 'audio' || kind === 'model') {
+		if (value !== undefined && value !== null && typeof value === 'object') {
+			return getOrCreateNativeObject(runtime, value as object);
+		}
+		return toRuntimeValue(runtime, value);
+	}
+	if (value === undefined || value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+		return toRuntimeValue(runtime, value);
+	}
+	if (value instanceof Table || isNativeObject(value as Value) || isNativeFunction(value as Value)) {
+		return value as Value;
+	}
+	const objectValue = value as object;
+	const cached = runtime.luaAssetValueCache.get(objectValue);
+	if (cached !== undefined) {
+		return cached;
+	}
+	const converted = toRuntimeValue(runtime, value);
+	runtime.luaAssetValueCache.set(objectValue, converted);
+	return converted;
+}
+
+export function syncLuaAssetField(runtime: Runtime, asset: object, field: string, value: Value): void {
+	const cached = runtime.luaAssetValueCache.get(asset);
+	if (!(cached instanceof Table)) {
+		return;
+	}
+	cached.set(runtime.canonicalKey(field), value);
 }
 
 export function toRuntimeValue(runtime: Runtime, value: unknown): Value {

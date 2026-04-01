@@ -11,6 +11,9 @@ local inputintentcomponent<const> = 'inputintentcomponent'
 local inputactioneffectcomponent<const> = 'inputactioneffectcomponent'
 local actioneffectcomponentid<const> = 'actioneffectcomponent'
 local assigned_value_edges<const> = { ['hold'] = true, ['press'] = true }
+local action_state_pressed<const> = (1 << 0)
+local action_state_justpressed<const> = (1 << 1)
+local action_state_justreleased<const> = (1 << 2)
 local active_scope<const> = { scope = 'active' }
 
 local asset_programs_validated = false
@@ -122,14 +125,14 @@ function inputactioneffectsystem:evaluate_intent_binding(owner, player_index, bi
 	if not action then
 		return
 	end
-	local state<const> = $.get_action_state(player_index, action)
-	if state.justpressed and binding.press then
+	local state_flags<const> = $.get_action_state(player_index, action)
+	if ((state_flags & action_state_justpressed) ~= 0) and binding.press then
 		self:run_intent_assignments(owner, player_index, binding, 'press', binding.press)
 	end
-	if state.pressed and binding.hold then
+	if ((state_flags & action_state_pressed) ~= 0) and binding.hold then
 		self:run_intent_assignments(owner, player_index, binding, 'hold', binding.hold)
 	end
-	if state.justreleased and binding.release then
+	if ((state_flags & action_state_justreleased) ~= 0) and binding.release then
 		self:run_intent_assignments(owner, player_index, binding, 'release', binding.release)
 	end
 end

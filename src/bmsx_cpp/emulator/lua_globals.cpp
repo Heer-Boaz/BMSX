@@ -40,6 +40,17 @@ AssetToken hashAssetTokenLocal(const std::string& id) {
 }
 
 constexpr uint32_t CART_ROM_MAGIC = 0x58534D42u;
+constexpr uint32_t ACTION_STATE_FLAG_PRESSED = 1u << 0u;
+constexpr uint32_t ACTION_STATE_FLAG_JUSTPRESSED = 1u << 1u;
+constexpr uint32_t ACTION_STATE_FLAG_JUSTRELEASED = 1u << 2u;
+constexpr uint32_t ACTION_STATE_FLAG_WASPRESSED = 1u << 3u;
+constexpr uint32_t ACTION_STATE_FLAG_WASRELEASED = 1u << 4u;
+constexpr uint32_t ACTION_STATE_FLAG_CONSUMED = 1u << 5u;
+constexpr uint32_t ACTION_STATE_FLAG_ALLJUSTPRESSED = 1u << 6u;
+constexpr uint32_t ACTION_STATE_FLAG_ALLWASPRESSED = 1u << 7u;
+constexpr uint32_t ACTION_STATE_FLAG_ALLJUSTRELEASED = 1u << 8u;
+constexpr uint32_t ACTION_STATE_FLAG_GUARDEDJUSTPRESSED = 1u << 9u;
+constexpr uint32_t ACTION_STATE_FLAG_REPEATPRESSED = 1u << 10u;
 
 struct LuaPcallError final : std::exception {
 	const Value value;
@@ -1201,54 +1212,6 @@ void Runtime::setupBuiltins() {
 	};
 	auto asText = [this](Value value) -> const std::string& {
 		return m_cpu.stringPool().toString(asStringId(value));
-	};
-	struct ActionStateKeys {
-		Value action;
-		Value pressed;
-		Value justpressed;
-		Value justreleased;
-		Value waspressed;
-		Value wasreleased;
-		Value consumed;
-		Value alljustpressed;
-		Value allwaspressed;
-		Value alljustreleased;
-		Value guardedjustpressed;
-		Value repeatpressed;
-		Value repeatcount;
-		Value presstime;
-		Value timestamp;
-		Value pressedAtMs;
-		Value releasedAtMs;
-		Value pressId;
-		Value value;
-		Value value2d;
-		Value x;
-		Value y;
-	};
-	const ActionStateKeys actionKeys {
-		key("action"),
-		key("pressed"),
-		key("justpressed"),
-		key("justreleased"),
-		key("waspressed"),
-		key("wasreleased"),
-		key("consumed"),
-		key("alljustpressed"),
-		key("allwaspressed"),
-		key("alljustreleased"),
-		key("guardedjustpressed"),
-		key("repeatpressed"),
-		key("repeatcount"),
-		key("presstime"),
-		key("timestamp"),
-		key("pressedAtMs"),
-		key("releasedAtMs"),
-		key("pressId"),
-		key("value"),
-		key("value2d"),
-		key("x"),
-		key("y"),
 	};
 	auto clamp01 = [](double value) {
 		return clamp(value, 0.0, 1.0);
@@ -3684,57 +3647,27 @@ auto clockPerfNowFn = m_cpu.createNativeFunction("platform.clock.perf_now", [](c
 	auto* platformTable = m_cpu.createTable(0, 1);
 	platformTable->set(key("clock"), valueTable(clockTable));
 
-	auto makeActionStateTable = [this, actionKeys, str](const ActionState& state) -> Table* {
-		auto* table = m_cpu.createTable(0, 18);
-		table->set(actionKeys.action, str(state.action));
-		table->set(actionKeys.pressed, valueBool(state.pressed));
-		table->set(actionKeys.justpressed, valueBool(state.justpressed));
-		table->set(actionKeys.justreleased, valueBool(state.justreleased));
-		table->set(actionKeys.waspressed, valueBool(state.waspressed));
-		table->set(actionKeys.wasreleased, valueBool(state.wasreleased));
-		table->set(actionKeys.consumed, valueBool(state.consumed));
-		table->set(actionKeys.alljustpressed, valueBool(state.alljustpressed));
-		table->set(actionKeys.allwaspressed, valueBool(state.allwaspressed));
-		table->set(actionKeys.alljustreleased, valueBool(state.alljustreleased));
-		if (state.guardedjustpressed.has_value()) {
-			table->set(actionKeys.guardedjustpressed, valueBool(state.guardedjustpressed.value()));
-		}
-		if (state.repeatpressed.has_value()) {
-			table->set(actionKeys.repeatpressed, valueBool(state.repeatpressed.value()));
-		}
-		if (state.repeatcount.has_value()) {
-			table->set(actionKeys.repeatcount, valueNumber(static_cast<double>(state.repeatcount.value())));
-		}
-		if (state.presstime.has_value()) {
-			table->set(actionKeys.presstime, valueNumber(static_cast<double>(state.presstime.value())));
-		}
-		if (state.timestamp.has_value()) {
-			table->set(actionKeys.timestamp, valueNumber(static_cast<double>(state.timestamp.value())));
-		}
-		if (state.pressedAtMs.has_value()) {
-			table->set(actionKeys.pressedAtMs, valueNumber(static_cast<double>(state.pressedAtMs.value())));
-		}
-		if (state.releasedAtMs.has_value()) {
-			table->set(actionKeys.releasedAtMs, valueNumber(static_cast<double>(state.releasedAtMs.value())));
-		}
-		if (state.pressId.has_value()) {
-			table->set(actionKeys.pressId, valueNumber(static_cast<double>(state.pressId.value())));
-		}
-		table->set(actionKeys.value, valueNumber(static_cast<double>(state.value)));
-		if (state.value2d.has_value()) {
-			auto* value2d = m_cpu.createTable(0, 2);
-			value2d->set(actionKeys.x, valueNumber(static_cast<double>(state.value2d->x)));
-			value2d->set(actionKeys.y, valueNumber(static_cast<double>(state.value2d->y)));
-			table->set(actionKeys.value2d, valueTable(value2d));
-		}
-		return table;
+	auto packActionStateFlags = [](const ActionState& state) -> Value {
+		uint32_t flags = 0;
+		if (state.pressed) flags |= ACTION_STATE_FLAG_PRESSED;
+		if (state.justpressed) flags |= ACTION_STATE_FLAG_JUSTPRESSED;
+		if (state.justreleased) flags |= ACTION_STATE_FLAG_JUSTRELEASED;
+		if (state.waspressed) flags |= ACTION_STATE_FLAG_WASPRESSED;
+		if (state.wasreleased) flags |= ACTION_STATE_FLAG_WASRELEASED;
+		if (state.consumed) flags |= ACTION_STATE_FLAG_CONSUMED;
+		if (state.alljustpressed) flags |= ACTION_STATE_FLAG_ALLJUSTPRESSED;
+		if (state.allwaspressed) flags |= ACTION_STATE_FLAG_ALLWASPRESSED;
+		if (state.alljustreleased) flags |= ACTION_STATE_FLAG_ALLJUSTRELEASED;
+		if (state.guardedjustpressed.has_value() && state.guardedjustpressed.value()) flags |= ACTION_STATE_FLAG_GUARDEDJUSTPRESSED;
+		if (state.repeatpressed.has_value() && state.repeatpressed.value()) flags |= ACTION_STATE_FLAG_REPEATPRESSED;
+		return valueNumber(static_cast<double>(flags));
 	};
 
-auto getActionStateFn = m_cpu.createNativeFunction("game.get_action_state", [this, makeActionStateTable](const std::vector<Value>& args, std::vector<Value>& out) {
-	int playerIndex = 1;
-	std::string action;
-	std::optional<f64> windowFrames;
-	if (args.size() == 1) {
+	auto getActionStateFn = m_cpu.createNativeFunction("game.get_action_state", [this, packActionStateFlags](const std::vector<Value>& args, std::vector<Value>& out) {
+		int playerIndex = 1;
+		std::string action;
+		std::optional<f64> windowFrames;
+		if (args.size() == 1) {
 			action = m_cpu.stringPool().toString(asStringId(args.at(0)));
 		} else {
 			playerIndex = static_cast<int>(std::floor(asNumber(args.at(0))));
@@ -3742,11 +3675,11 @@ auto getActionStateFn = m_cpu.createNativeFunction("game.get_action_state", [thi
 			if (args.size() > 2 && !isNil(args.at(2))) {
 				windowFrames = asNumber(args.at(2));
 			}
-	}
-	PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
-	ActionState state = input->getActionState(action, windowFrames);
-	out.push_back(valueTable(makeActionStateTable(state)));
-});
+		}
+		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
+		ActionState state = input->getActionState(action, windowFrames);
+		out.push_back(packActionStateFlags(state));
+	});
 
 auto consumeActionFn = m_cpu.createNativeFunction("game.consume_action", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	int playerIndex = 1;

@@ -48,7 +48,7 @@ import { type CpuFrameSnapshot } from './cpu';
 import { type LuaSemanticModel, type FileSemanticData } from './ide/semantic_model';
 import { registerApiBuiltins } from './lua_builtins';
 import { LuaFunctionRedirectCache } from './lua_handler_registry';
-import { LuaJsBridge, buildMarshalContext, extendMarshalContext, toNativeValue, toRuntimeValue } from './lua_js_bridge';
+import { LuaJsBridge, buildMarshalContext, extendMarshalContext, syncLuaAssetField, toNativeValue, toRuntimeValue } from './lua_js_bridge';
 import { RuntimeStorage } from './storage';
 import type { RuntimeOptions, LuaBuiltinDescriptor, LuaMemberCompletion } from './types';
 import { applyWorkspaceOverridesToCart } from './workspace';
@@ -844,6 +844,7 @@ export class Runtime {
 	public readonly moduleProtos = new Map<string, number>();
 	public readonly moduleCache = new Map<string, Value>();
 	public readonly nativeObjectCache = new WeakMap<object, NativeObject>();
+	public readonly luaAssetValueCache = new WeakMap<object, Value>();
 	public readonly nativeFunctionCache = new WeakMap<Function, NativeFunction>();
 	public readonly nativeMemberCache = new WeakMap<object, Map<string, NativeFunction>>();
 	public readonly tableIds = new WeakMap<Table, number>();
@@ -2145,6 +2146,7 @@ export class Runtime {
 					continue;
 				}
 				entry.handle = this.resolveAssetHandle(entry.resid);
+				syncLuaAssetField(this, entry, 'handle', entry.handle);
 			}
 		}
 	}

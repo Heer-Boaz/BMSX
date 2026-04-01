@@ -32,7 +32,7 @@ import {
 	VRAM_SYSTEM_ATLAS_BASE,
 	VRAM_SYSTEM_ATLAS_SIZE,
 } from './memory_map';
-import { CART_ROM_MAGIC } from '../rompack/rompack';
+import { CART_ROM_MAGIC, type CartManifest, type MachineManifest } from '../rompack/rompack';
 import { BmsxColors } from './vdp';
 import {
 	DMA_CTRL_START,
@@ -156,6 +156,118 @@ export function valueToString(value: Value): string {
 
 export function valueToStringValue(runtime: Runtime, value: Value): StringValue {
 	return runtime.internString(valueToString(value));
+}
+
+function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest): Table {
+	const key = (name: string) => runtime.canonicalKey(name);
+	const table = new Table(0, 5);
+	if (manifest.namespace.length > 0) {
+		table.set(key('namespace'), runtime.internString(manifest.namespace));
+	}
+	table.set(key('canonicalization'), runtime.internString(manifest.canonicalization));
+	if (manifest.ufps) {
+		table.set(key('ufps'), manifest.ufps);
+	}
+	if (manifest.render_size.width > 0 && manifest.render_size.height > 0) {
+		const renderSize = new Table(0, 2);
+		renderSize.set(key('width'), manifest.render_size.width);
+		renderSize.set(key('height'), manifest.render_size.height);
+		table.set(key('render_size'), renderSize);
+	}
+	const specs = new Table(0, 4);
+	const cpu = new Table(0, 2);
+	if (manifest.specs.cpu.cpu_freq_hz) {
+		cpu.set(key('cpu_freq_hz'), manifest.specs.cpu.cpu_freq_hz);
+	}
+	if (manifest.specs.cpu.imgdec_bytes_per_sec) {
+		cpu.set(key('imgdec_bytes_per_sec'), manifest.specs.cpu.imgdec_bytes_per_sec);
+	}
+	specs.set(key('cpu'), cpu);
+	const dma = new Table(0, 2);
+	if (manifest.specs.dma.dma_bytes_per_sec_iso) {
+		dma.set(key('dma_bytes_per_sec_iso'), manifest.specs.dma.dma_bytes_per_sec_iso);
+	}
+	if (manifest.specs.dma.dma_bytes_per_sec_bulk) {
+		dma.set(key('dma_bytes_per_sec_bulk'), manifest.specs.dma.dma_bytes_per_sec_bulk);
+	}
+	specs.set(key('dma'), dma);
+	const ram = manifest.specs.ram;
+	if (ram && (ram.ram_bytes || ram.string_handle_count || ram.string_heap_bytes || ram.asset_table_bytes || ram.asset_data_bytes)) {
+		const ramTable = new Table(0, 5);
+		if (ram.ram_bytes) {
+			ramTable.set(key('ram_bytes'), ram.ram_bytes);
+		}
+		if (ram.string_handle_count) {
+			ramTable.set(key('string_handle_count'), ram.string_handle_count);
+		}
+		if (ram.string_heap_bytes) {
+			ramTable.set(key('string_heap_bytes'), ram.string_heap_bytes);
+		}
+		if (ram.asset_table_bytes) {
+			ramTable.set(key('asset_table_bytes'), ram.asset_table_bytes);
+		}
+		if (ram.asset_data_bytes) {
+			ramTable.set(key('asset_data_bytes'), ram.asset_data_bytes);
+		}
+		specs.set(key('ram'), ramTable);
+	}
+	const vram = manifest.specs.vram;
+	if (vram && (vram.atlas_slot_bytes || vram.system_atlas_slot_bytes || vram.staging_bytes || vram.skybox_face_size > 0 || vram.skybox_face_bytes)) {
+		const vramTable = new Table(0, 5);
+		if (vram.atlas_slot_bytes) {
+			vramTable.set(key('atlas_slot_bytes'), vram.atlas_slot_bytes);
+		}
+		if (vram.system_atlas_slot_bytes) {
+			vramTable.set(key('system_atlas_slot_bytes'), vram.system_atlas_slot_bytes);
+		}
+		if (vram.staging_bytes) {
+			vramTable.set(key('staging_bytes'), vram.staging_bytes);
+		}
+		if (vram.skybox_face_size > 0) {
+			vramTable.set(key('skybox_face_size'), vram.skybox_face_size);
+		}
+		if (vram.skybox_face_bytes) {
+			vramTable.set(key('skybox_face_bytes'), vram.skybox_face_bytes);
+		}
+		specs.set(key('vram'), vramTable);
+	}
+	const voices = manifest.specs.audio?.max_voices;
+	if (voices && (voices.sfx || voices.music || voices.ui)) {
+		const audio = new Table(0, 1);
+		const maxVoices = new Table(0, 3);
+		if (voices.sfx) {
+			maxVoices.set(key('sfx'), voices.sfx);
+		}
+		if (voices.music) {
+			maxVoices.set(key('music'), voices.music);
+		}
+		if (voices.ui) {
+			maxVoices.set(key('ui'), voices.ui);
+		}
+		audio.set(key('max_voices'), maxVoices);
+		specs.set(key('audio'), audio);
+	}
+	table.set(key('specs'), specs);
+	return table;
+}
+
+function buildCartManifestTable(runtime: Runtime, manifest: CartManifest, machine: MachineManifest, entryPath: string): Table {
+	const key = (name: string) => runtime.canonicalKey(name);
+	const table = new Table(0, 4);
+	if (manifest.title !== undefined && manifest.title.length > 0) {
+		table.set(key('title'), runtime.internString(manifest.title));
+	}
+	if (manifest.short_name !== undefined && manifest.short_name.length > 0) {
+		table.set(key('short_name'), runtime.internString(manifest.short_name));
+	}
+	if (manifest.rom_name !== undefined && manifest.rom_name.length > 0) {
+		table.set(key('rom_name'), runtime.internString(manifest.rom_name));
+	}
+	table.set(key('machine'), buildMachineManifestTable(runtime, machine));
+	const lua = new Table(0, 1);
+	lua.set(key('entry_path'), runtime.internString(entryPath));
+	table.set(key('lua'), lua);
+	return table;
 }
 
 class LuaThrownValueError extends Error {
@@ -746,9 +858,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			runtimeLuaPipeline.registerGlobal(runtime, name, getOrCreateNativeObject(runtime, object));
 		}
 		runtimeLuaPipeline.registerGlobal(runtime, 'assets', getOrCreateAssetsNativeObject(runtime));
-		runtimeLuaPipeline.registerGlobal(runtime, 'cart_manifest', toRuntimeValue(runtime, $.cart_manifest));
-		runtimeLuaPipeline.registerGlobal(runtime, 'machine_manifest', toRuntimeValue(runtime, $.machine_manifest));
-		runtimeLuaPipeline.registerGlobal(runtime, 'cart_project_root_path', toRuntimeValue(runtime, $.cart_project_root_path));
+		const cartManifest = $.cart_manifest;
+		runtimeLuaPipeline.registerGlobal(runtime, 'cart_manifest', cartManifest === null ? null : buildCartManifestTable(runtime, cartManifest, $.machine_manifest, cartManifest.lua.entry_path));
+		runtimeLuaPipeline.registerGlobal(runtime, 'machine_manifest', buildMachineManifestTable(runtime, $.machine_manifest));
+		runtimeLuaPipeline.registerGlobal(runtime, 'cart_project_root_path', $.cart_project_root_path === null ? null : runtime.internString($.cart_project_root_path));
 	};
 
 	const mathTable = new Table(0, 0);

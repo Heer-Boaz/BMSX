@@ -1,7 +1,7 @@
 import { StringPool, StringValue, isStringValue, stringValueToString } from './string_pool';
 import type { RuntimeStringPoolState } from './string_pool';
 import type { Memory } from './memory';
-import { addTrackedLuaHeapBytes, replaceTrackedLuaHeapBytes } from './lua_heap_usage';
+import { addTrackedLuaHeapBytes, getTrackedLuaHeapBytes, replaceTrackedLuaHeapBytes } from './lua_heap_usage';
 import { formatNumber } from './number_format';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
 
@@ -2403,6 +2403,9 @@ export class CPU {
 	}
 
 	public getTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
+		void extraRoots;
+		return getTrackedLuaHeapBytes();
+		/*
 		const seen = new WeakSet<object>();
 		let total = 0;
 		const valueStack: Value[] = [];
@@ -2512,6 +2515,7 @@ export class CPU {
 			}
 		}
 		return total;
+		*/
 	}
 
 	private valueToString(value: Value): string {

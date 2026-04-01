@@ -1,7 +1,7 @@
 import { ModulationParams, ModulationPresetResolver, RandomModulationParams, SoundMaster, SoundMasterPlayRequest } from "../audio/soundmaster";
 import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
-import { ActionState, ActionStateQuery } from '../input/inputtypes';
+import { ActionState, ActionStateQuery, type ButtonState } from '../input/inputtypes';
 import { GameView } from "../render/gameview";
 import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
@@ -24,6 +24,8 @@ import { shallowcopy } from '../utils/shallowcopy';
 import { clamp } from '../utils/clamp';
 import { clearAllQueues, clearBackQueues, prepareCompletedRenderQueues, prepareOverlayRenderQueues, preparePartialRenderQueues } from '../render/shared/render_queues';
 import { clearOverlayFrame } from '../render/editor/editor_overlay_queue';
+import { Table } from '../emulator/cpu';
+import { type StringValue } from '../emulator/string_pool';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
@@ -91,6 +93,175 @@ export function resolveVblankCycles(cpuFreqHz: number, ufpsScaled: number, rende
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
 export const renderGate: GateGroup = taskGate.group('render:main');
+
+type ActionStateTableKeys = {
+	action: StringValue;
+	alljustpressed: StringValue;
+	allwaspressed: StringValue;
+	alljustreleased: StringValue;
+	guardedjustpressed: StringValue;
+	repeatpressed: StringValue;
+	repeatcount: StringValue;
+	pressed: StringValue;
+	justpressed: StringValue;
+	justreleased: StringValue;
+	waspressed: StringValue;
+	wasreleased: StringValue;
+	consumed: StringValue;
+	presstime: StringValue;
+	timestamp: StringValue;
+	pressedAtMs: StringValue;
+	releasedAtMs: StringValue;
+	pressId: StringValue;
+	value: StringValue;
+	value2d: StringValue;
+	x: StringValue;
+	y: StringValue;
+};
+
+const ACTION_STATE_FLAG_PRESSED = 1 << 0;
+const ACTION_STATE_FLAG_JUSTPRESSED = 1 << 1;
+const ACTION_STATE_FLAG_JUSTRELEASED = 1 << 2;
+const ACTION_STATE_FLAG_WASPRESSED = 1 << 3;
+const ACTION_STATE_FLAG_WASRELEASED = 1 << 4;
+const ACTION_STATE_FLAG_CONSUMED = 1 << 5;
+const ACTION_STATE_FLAG_ALLJUSTPRESSED = 1 << 6;
+const ACTION_STATE_FLAG_ALLWASPRESSED = 1 << 7;
+const ACTION_STATE_FLAG_ALLJUSTRELEASED = 1 << 8;
+const ACTION_STATE_FLAG_GUARDEDJUSTPRESSED = 1 << 9;
+const ACTION_STATE_FLAG_REPEATPRESSED = 1 << 10;
+
+const actionStateKeysByRuntime = new WeakMap<Runtime, ActionStateTableKeys>();
+
+function getActionStateTableKeys(runtime: Runtime): ActionStateTableKeys {
+	const cached = actionStateKeysByRuntime.get(runtime);
+	if (cached) {
+		return cached;
+	}
+	const keys: ActionStateTableKeys = {
+		action: runtime.canonicalKey('action'),
+		alljustpressed: runtime.canonicalKey('alljustpressed'),
+		allwaspressed: runtime.canonicalKey('allwaspressed'),
+		alljustreleased: runtime.canonicalKey('alljustreleased'),
+		guardedjustpressed: runtime.canonicalKey('guardedjustpressed'),
+		repeatpressed: runtime.canonicalKey('repeatpressed'),
+		repeatcount: runtime.canonicalKey('repeatcount'),
+		pressed: runtime.canonicalKey('pressed'),
+		justpressed: runtime.canonicalKey('justpressed'),
+		justreleased: runtime.canonicalKey('justreleased'),
+		waspressed: runtime.canonicalKey('waspressed'),
+		wasreleased: runtime.canonicalKey('wasreleased'),
+		consumed: runtime.canonicalKey('consumed'),
+		presstime: runtime.canonicalKey('presstime'),
+		timestamp: runtime.canonicalKey('timestamp'),
+		pressedAtMs: runtime.canonicalKey('pressedAtMs'),
+		releasedAtMs: runtime.canonicalKey('releasedAtMs'),
+		pressId: runtime.canonicalKey('pressId'),
+		value: runtime.canonicalKey('value'),
+		value2d: runtime.canonicalKey('value2d'),
+		x: runtime.canonicalKey('x'),
+		y: runtime.canonicalKey('y'),
+	};
+	actionStateKeysByRuntime.set(runtime, keys);
+	return keys;
+}
+
+function packActionStateFlags(state: ActionState): number {
+	let flags = 0;
+	if (state.pressed) flags |= ACTION_STATE_FLAG_PRESSED;
+	if (state.justpressed) flags |= ACTION_STATE_FLAG_JUSTPRESSED;
+	if (state.justreleased) flags |= ACTION_STATE_FLAG_JUSTRELEASED;
+	if (state.waspressed) flags |= ACTION_STATE_FLAG_WASPRESSED;
+	if (state.wasreleased) flags |= ACTION_STATE_FLAG_WASRELEASED;
+	if (state.consumed) flags |= ACTION_STATE_FLAG_CONSUMED;
+	if (state.alljustpressed) flags |= ACTION_STATE_FLAG_ALLJUSTPRESSED;
+	if (state.allwaspressed) flags |= ACTION_STATE_FLAG_ALLWASPRESSED;
+	if (state.alljustreleased) flags |= ACTION_STATE_FLAG_ALLJUSTRELEASED;
+	if (state.guardedjustpressed) flags |= ACTION_STATE_FLAG_GUARDEDJUSTPRESSED;
+	if (state.repeatpressed) flags |= ACTION_STATE_FLAG_REPEATPRESSED;
+	return flags;
+}
+
+function buildActionStateTable(runtime: Runtime, state: ActionState): Table {
+	const keys = getActionStateTableKeys(runtime);
+	const table = new Table(0, 18);
+	table.set(keys.action, runtime.internString(state.action));
+	table.set(keys.alljustpressed, state.alljustpressed);
+	table.set(keys.allwaspressed, state.allwaspressed);
+	table.set(keys.alljustreleased, state.alljustreleased);
+	table.set(keys.guardedjustpressed, state.guardedjustpressed);
+	table.set(keys.repeatpressed, state.repeatpressed);
+	table.set(keys.repeatcount, state.repeatcount);
+	table.set(keys.pressed, state.pressed);
+	table.set(keys.justpressed, state.justpressed);
+	table.set(keys.justreleased, state.justreleased);
+	table.set(keys.waspressed, state.waspressed);
+	table.set(keys.wasreleased, state.wasreleased);
+	table.set(keys.consumed, state.consumed);
+	if (state.presstime !== null) {
+		table.set(keys.presstime, state.presstime);
+	}
+	if (state.timestamp !== null) {
+		table.set(keys.timestamp, state.timestamp);
+	}
+	if (state.pressedAtMs !== null) {
+		table.set(keys.pressedAtMs, state.pressedAtMs);
+	}
+	if (state.releasedAtMs !== null) {
+		table.set(keys.releasedAtMs, state.releasedAtMs);
+	}
+	if (state.pressId !== null) {
+		table.set(keys.pressId, state.pressId);
+	}
+	if (state.value !== null) {
+		table.set(keys.value, state.value);
+	}
+	if (state.value2d !== null) {
+		const value2d = new Table(0, 2);
+		value2d.set(keys.x, state.value2d[0]);
+		value2d.set(keys.y, state.value2d[1]);
+		table.set(keys.value2d, value2d);
+	}
+	return table;
+}
+
+function buildButtonStateTable(runtime: Runtime, state: ButtonState): Table {
+	const keys = getActionStateTableKeys(runtime);
+	const table = new Table(0, 11);
+	table.set(keys.pressed, state.pressed);
+	table.set(keys.justpressed, state.justpressed);
+	table.set(keys.justreleased, state.justreleased);
+	table.set(keys.waspressed, state.waspressed);
+	table.set(keys.wasreleased, state.wasreleased);
+	table.set(keys.repeatpressed, state.repeatpressed);
+	table.set(keys.repeatcount, state.repeatcount);
+	table.set(keys.consumed, state.consumed);
+	if (state.presstime !== null) {
+		table.set(keys.presstime, state.presstime);
+	}
+	if (state.timestamp !== null) {
+		table.set(keys.timestamp, state.timestamp);
+	}
+	if (state.pressedAtMs !== null) {
+		table.set(keys.pressedAtMs, state.pressedAtMs);
+	}
+	if (state.releasedAtMs !== null) {
+		table.set(keys.releasedAtMs, state.releasedAtMs);
+	}
+	if (state.pressId !== null) {
+		table.set(keys.pressId, state.pressId);
+	}
+	if (state.value !== null) {
+		table.set(keys.value, state.value);
+	}
+	if (state.value2d !== null) {
+		const value2d = new Table(0, 2);
+		value2d.set(keys.x, state.value2d[0]);
+		value2d.set(keys.y, state.value2d[1]);
+		table.set(keys.value2d, value2d);
+	}
+	return table;
+}
 
 /**
  * Represents the main game loop and manages the game state.
@@ -290,24 +461,25 @@ export class EngineCore {
 		return this.input.getPlayerInput(playerIndex).checkActionsTriggered(...actions);
 	}
 
-	public get_action_state(playerIndex: number, action: string, window?: number) {
-		return this.input.getPlayerInput(playerIndex).getActionState(action, window);
+	public get_action_state(playerIndex: number, action: string, window?: number): number {
+		return packActionStateFlags(this.input.getPlayerInput(playerIndex).getActionState(action, window));
 	}
 
-	public get_key_state(playerIndex: number, keyCode: string, modifiers: KeyModifier) {
-		return this.input.getPlayerInput(playerIndex).getKeyState(keyCode, modifiers);
+	public get_key_state(playerIndex: number, keyCode: string, modifiers: KeyModifier): Table {
+		return buildButtonStateTable(Runtime.instance, this.input.getPlayerInput(playerIndex).getKeyState(keyCode, modifiers));
 	}
 
 	/** @deprecated Use {@link action_triggered} / {@link actions_triggered} with ActionParser definitions instead. */
-	public get_pressed_actions(playerIndex: number, query?: ActionStateQuery) {
-		return this.input.getPlayerInput(playerIndex).getPressedActions(query);
+	public get_pressed_actions(playerIndex: number, query?: ActionStateQuery): Table[] {
+		const runtime = Runtime.instance;
+		return this.input.getPlayerInput(playerIndex).getPressedActions(query).map(state => buildActionStateTable(runtime, state));
 	}
 
-	public consume_action(playerIndex: number, actionToConsume: ActionState | string) {
+	public consume_action(playerIndex: number, actionToConsume: string) {
 		this.input.getPlayerInput(playerIndex).consumeAction(actionToConsume);
 	}
 
-	public consume_actions(playerIndex: number, ...actionsToConsume: (ActionState | string)[]) {
+	public consume_actions(playerIndex: number, ...actionsToConsume: string[]) {
 		this.input.getPlayerInput(playerIndex).consumeActions(...actionsToConsume);
 	}
 
