@@ -917,8 +917,9 @@ void Runtime::applyState(const RuntimeState& state) {
 
 	// Restore globals
 	m_cpu.globals->clear();
+	m_cpu.setProgram(m_program, m_programMetadata);
 	for (const auto& [key, value] : state.globals) {
-		m_cpu.globals->set(key, value);
+		m_cpu.setGlobalByKey(key, value);
 	}
 	flushAssetEdits();
 	resetRenderBuffers();
@@ -941,12 +942,12 @@ Value Runtime::getGlobal(std::string_view name) {
 }
 
 void Runtime::setGlobal(std::string_view name, const Value& value) {
-	m_cpu.globals->set(canonicalizeIdentifier(name), value);
+	m_cpu.setGlobalByKey(canonicalizeIdentifier(name), value);
 }
 
 void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeFnCost cost) {
 	auto nativeFn = m_cpu.createNativeFunction(name, std::move(fn), cost);
-	m_cpu.globals->set(canonicalizeIdentifier(name), nativeFn);
+	m_cpu.setGlobalByKey(canonicalizeIdentifier(name), nativeFn);
 }
 
 void Runtime::setCanonicalization(CanonicalizationType canonicalization) {

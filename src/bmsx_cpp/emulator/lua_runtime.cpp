@@ -160,7 +160,7 @@ void Runtime::runEngineBuiltinPrelude() {
 		if (isOverrideableBuiltin(name) && !isNil(m_cpu.globals->get(key))) {
 			continue;
 		}
-		m_cpu.globals->set(key, engineModule->get(key));
+		m_cpu.setGlobalByKey(key, engineModule->get(key));
 	}
 	std::cout << "[Runtime] prelude: engine builtins bound" << std::endl;
 }

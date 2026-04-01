@@ -221,7 +221,7 @@ export function restoreFromStateSnapshot(runtime: Runtime, snapshot: RuntimeStat
 
 	runtime.luaRuntimeFailed = false;
 	applyAssetMemorySnapshot(runtime, snapshot);
-	reinitializeLuaProgramFromSnapshot(runtime, snapshot, { runInit: false, hotReload: false });
+	reinitializeLuaProgramFromSnapshot(runtime, snapshot, { runInit: false, hotResume: false });
 	runtime.restoreVblankState(snapshot);
 	runtime.resetRenderBuffers();
 
@@ -271,7 +271,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState):
 	runtime.luaInitialized = true;
 }
 
-export function hotReloadProgramEntry(runtime: Runtime, params: { path: string; source: string; preserveEngineModules?: boolean }): void {
+export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; source: string; preserveEngineModules?: boolean }): void {
 	const preserveRuntimeFailure = runtime.luaRuntimeFailed || (runtime.pauseCoordinator.hasSuspension() && runtime.pauseCoordinator.getPendingException() !== null);
 	const binding = params.path;
 	const baseMetadata = runtime.programMetadata;
@@ -297,7 +297,7 @@ export function hotReloadProgramEntry(runtime: Runtime, params: { path: string; 
 		runtime.moduleAliases.set(entry.alias, entry.path);
 	}
 	if (params.preserveEngineModules) {
-		clearCartModuleCacheForHotReload(runtime);
+		clearCartModuleCacheForHotResume(runtime);
 	} else {
 		runtime.moduleCache.clear();
 	}
@@ -313,7 +313,7 @@ export function hotReloadProgramEntry(runtime: Runtime, params: { path: string; 
 	runtimeIde.clearEditorErrorOverlaysIfNoFault(runtime);
 }
 
-export function clearCartModuleCacheForHotReload(runtime: Runtime): void {
+export function clearCartModuleCacheForHotResume(runtime: Runtime): void {
 	for (const path of Array.from(runtime.moduleCache.keys())) {
 		if (!runtime.engineLuaSources.path2lua[path]) {
 			runtime.moduleCache.delete(path);
@@ -355,7 +355,7 @@ export function reloadLuaProgramState(runtime: Runtime, options: { runInit?: boo
 		}
 	}
 	else {
-		hotReloadProgramEntry(runtime, { source: getSourceForChunk(binding.source_path), path: binding.source_path });
+		hotResumeProgramEntry(runtime, { source: getSourceForChunk(binding.source_path), path: binding.source_path });
 		if (runInit) {
 			queueLifecycleHandlers(runtime, { runInit: true, runNewGame: true });
 		}
@@ -375,7 +375,7 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeState):
 	}
 	runtime._luaPath = binding;
 	try {
-		hotReloadProgramEntry(runtime, { source, path: binding, preserveEngineModules: !runtime.isEngineProgramActive() });
+		hotResumeProgramEntry(runtime, { source, path: binding, preserveEngineModules: !runtime.isEngineProgramActive() });
 	}
 	catch (error) {
 		runtimeIde.handleLuaError(runtime, error);
@@ -389,7 +389,7 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeState):
 	}
 }
 
-export function reinitializeLuaProgramFromSnapshot(runtime: Runtime, snapshot: RuntimeState, options: { runInit: boolean; hotReload: boolean }): void {
+export function reinitializeLuaProgramFromSnapshot(runtime: Runtime, snapshot: RuntimeState, options: { runInit: boolean; hotResume: boolean }): void {
 	const binding = $.lua_sources.path2lua[$.lua_sources.entry_path];
 	const source = resourceSourceForChunk(runtime, binding.source_path);
 
@@ -400,7 +400,7 @@ export function reinitializeLuaProgramFromSnapshot(runtime: Runtime, snapshot: R
 		path: binding.source_path,
 		snapshot,
 		runInit: options.runInit,
-		hotReload: options.hotReload,
+		hotResume: options.hotResume,
 	});
 	clearNativeMemberCompletionCache();
 }
@@ -416,12 +416,12 @@ export function refreshLuaModulesOnResume(runtime: Runtime, resumeModuleId: stri
 	}
 }
 
-export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: { source: string; path: string; snapshot: RuntimeState; runInit: boolean; hotReload: boolean }): void {
+export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: { source: string; path: string; snapshot: RuntimeState; runInit: boolean; hotResume: boolean }): void {
 	const snapshot = params.snapshot;
 	const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
 	const binding = $.lua_sources.path2lua[params.path];
-	if (params.hotReload) {
-		hotReloadProgramEntry(runtime, { source: params.source, path: binding.source_path, preserveEngineModules: !runtime.isEngineProgramActive() });
+	if (params.hotResume) {
+		hotResumeProgramEntry(runtime, { source: params.source, path: binding.source_path, preserveEngineModules: !runtime.isEngineProgramActive() });
 		if (params.runInit && !savedRuntimeFailed) {
 			queueLifecycleHandlers(runtime, { runInit: true, runNewGame: true });
 		}
@@ -630,8 +630,7 @@ export function resetHardwareState(runtime: Runtime): void {
 }
 
 export function registerGlobal(runtime: Runtime, name: string, value: Value): void {
-	const key = runtime.canonicalKey(name);
-	runtime.cpu.globals.set(key, value);
+	runtime.cpu.setGlobalByKey(runtime.canonicalKey(name), value);
 }
 
 export function buildEngineBuiltinPreludeSource(): string {
@@ -1332,7 +1331,7 @@ export function buildConsoleMetadata(baseProgram: Program): ProgramMetadata {
 		protoIds[index] = `proto:${index}`;
 		localSlotsByProto[index] = [];
 	}
-	return { debugRanges, protoIds, localSlotsByProto };
+	return { debugRanges, protoIds, localSlotsByProto, globalNames: [], systemGlobalNames: [] };
 }
 
 export function runConsoleChunk(runtime: Runtime, source: string): Value[] {

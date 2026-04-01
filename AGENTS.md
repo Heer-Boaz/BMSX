@@ -15,7 +15,7 @@
    ```bash
    npm run build:bios -- --force
    npm run build:game -- 2025 --force
-   npm run build:platform:libretro-wsl -- 2025
+   npm run build:platform:libretro-wsl
    npm run run:libretro-host:wsl:sdl -- ./dist/2025.rom
    ```
 * To force-rebuild the headless platform, BIOS, and a game rom before running, use:
@@ -30,9 +30,9 @@
    ```
    This command runs a prebuilt rompack in headless mode (without a graphical interface). If you need a guaranteed fresh build first, use `headless:forcebuildallrun`.
    > Important: The given <romname> must match the name of a directory under `./src/` that contains a `res` subdirectory with the resources for that rompack (game). For example, for the `testrom`, the resources should be located in `./src/testrom/res`. However, the result romfile will be named based on the rommanifest.json file inside the `res` directory!! For example, if the `rommanifest.json` file specifies the name as `yiear`, the resulting romfile will be named `yiear.rom` (or `yiear.debug.rom`) even if the directory is named `ella2023`!
-   Also, you should build and test the libretro core by running:
+   Also, if you updated the C++-version (libretro-version) of the fantasy console/engine, you should build the libretro core by running:
    ```bash
-   npm run build:platform:libretro-wsl -- <gameromname> # WARNING: `<gameromname>` must be replaced with the folder name of the rompack (game) you want to test, e.g. `2025` (`2025` is a great test rom)!
+   npm run build:platform:libretro-wsl
    ```
 * **Project Structure**: Understand the overall structure of the project, including key directories and files.
 * **No legacy fallback**: Avoid adding legacy code or fallbacks.

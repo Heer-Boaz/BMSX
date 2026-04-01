@@ -587,7 +587,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		}
 		validateAudioEventReferences(BIOSResources);
 		const BIOSRomAssets = await runBIOSStep(TASK.ROM_ASSETS, () => generateRomAssets(BIOSResources, message => progress?.setDetail(message)));
-		const BIOSProgramBoot = appendProgramAsset(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: debug, optLevel });
+		const BIOSProgramBoot = appendProgramAsset(BIOSRomAssets, SYSTEM_BOOT_ENTRY_PATH, { includeSymbols: true, optLevel });
 		stripLuaAssets(BIOSRomAssets, debug);
 		await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomAssets, BIOSRomName, { projectRootPath: '', manifest: null, zipRom: false, debug, programBoot: BIOSProgramBoot }));
 		if (progress) {
@@ -735,7 +735,7 @@ async function main() {
 			validateAudioEventReferences(resources);
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-			const programBoot = appendProgramAsset(romAssets, romManifest.lua.entry_path, { includeSymbols: romPackDebug, optLevel });
+			const programBoot = appendProgramAsset(romAssets, romManifest.lua.entry_path, { includeSymbols: true, optLevel });
 			stripLuaAssets(romAssets, romPackDebug);
 			await progress.taskCompleted();
 			if (!isBIOSMode) {

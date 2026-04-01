@@ -1,5 +1,5 @@
 import { OpCode, type Proto, type SourceRange, type UpvalueDesc, type Value } from './cpu';
-import { MAX_EXT_CONST } from './instruction_format';
+import { MAX_EXT_CONST, MAX_SIGNED_BX, MIN_SIGNED_BX } from './instruction_format';
 import { isStringValue, stringValueToString } from './string_pool';
 import { applyGlobalOptimizations } from './program_optimizer_ssa';
 
@@ -47,7 +47,11 @@ const RK_B = 1;
 const RK_C = 2;
 
 const isJump = (instruction: Instruction): boolean =>
-	instruction.op === OpCode.JMP || instruction.op === OpCode.JMPIF || instruction.op === OpCode.JMPIFNOT;
+	instruction.op === OpCode.JMP
+	|| instruction.op === OpCode.JMPIF
+	|| instruction.op === OpCode.JMPIFNOT
+	|| instruction.op === OpCode.BR_TRUE
+	|| instruction.op === OpCode.BR_FALSE;
 
 const isSkipInstruction = (instruction: Instruction): boolean => {
 	if (instruction.op === OpCode.LOADBOOL) {
@@ -71,6 +75,27 @@ const isTruthy = (value: Value): boolean => value !== null && value !== false;
 
 const isConstPoolValue = (value: Value): boolean =>
 	value === null || typeof value === 'boolean' || typeof value === 'number' || isStringValue(value);
+
+const getImmediateConstValue = (instruction: Instruction, context: OptimizationContext): ConstValue | null => {
+	switch (instruction.op) {
+		case OpCode.KNIL:
+			return { value: null, constIndex: context.constIndex(null) };
+		case OpCode.KFALSE:
+			return { value: false, constIndex: context.constIndex(false) };
+		case OpCode.KTRUE:
+			return { value: true, constIndex: context.constIndex(true) };
+		case OpCode.K0:
+			return { value: 0, constIndex: context.constIndex(0) };
+		case OpCode.K1:
+			return { value: 1, constIndex: context.constIndex(1) };
+		case OpCode.KM1:
+			return { value: -1, constIndex: context.constIndex(-1) };
+		case OpCode.KSMI:
+			return { value: instruction.b, constIndex: context.constIndex(instruction.b) };
+		default:
+			return null;
+	}
+};
 
 const replaceWithJump = (instruction: Instruction, target: number): void => {
 	instruction.op = OpCode.JMP;
@@ -99,20 +124,54 @@ const replaceWithConst = (instruction: Instruction, target: number, value: Value
 	instruction.rkMask = 0;
 	instruction.callProtoIndex = null;
 	if (value === null) {
-		instruction.op = OpCode.LOADNIL;
+		instruction.op = OpCode.KNIL;
 		instruction.a = target;
-		instruction.b = 1;
+		instruction.b = 0;
 		instruction.c = 0;
 		instruction.format = 'ABC';
 		return { value, constIndex: context.constIndex(null) };
 	}
 	if (typeof value === 'boolean') {
-		instruction.op = OpCode.LOADBOOL;
+		instruction.op = value ? OpCode.KTRUE : OpCode.KFALSE;
 		instruction.a = target;
-		instruction.b = value ? 1 : 0;
+		instruction.b = 0;
 		instruction.c = 0;
 		instruction.format = 'ABC';
 		return { value, constIndex: context.constIndex(value) };
+	}
+	if (typeof value === 'number' && Number.isInteger(value)) {
+		if (value === 0) {
+			instruction.op = OpCode.K0;
+			instruction.a = target;
+			instruction.b = 0;
+			instruction.c = 0;
+			instruction.format = 'ABC';
+			return { value, constIndex: context.constIndex(value) };
+		}
+		if (value === 1) {
+			instruction.op = OpCode.K1;
+			instruction.a = target;
+			instruction.b = 0;
+			instruction.c = 0;
+			instruction.format = 'ABC';
+			return { value, constIndex: context.constIndex(value) };
+		}
+		if (value === -1) {
+			instruction.op = OpCode.KM1;
+			instruction.a = target;
+			instruction.b = 0;
+			instruction.c = 0;
+			instruction.format = 'ABC';
+			return { value, constIndex: context.constIndex(value) };
+		}
+		if (value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX) {
+			instruction.op = OpCode.KSMI;
+			instruction.a = target;
+			instruction.b = value;
+			instruction.c = 0;
+			instruction.format = 'ABx';
+			return { value, constIndex: context.constIndex(value) };
+		}
 	}
 	const constIndex = context.constIndex(value);
 	instruction.op = OpCode.LOADK;
@@ -158,6 +217,8 @@ const buildBasicBlocks = (instructions: Instruction[]): Block[] => {
 				break;
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
+			case OpCode.BR_TRUE:
+			case OpCode.BR_FALSE:
 				if (instruction.target !== null && instruction.target < count) {
 					leaders.add(instruction.target);
 				}
@@ -258,6 +319,15 @@ const buildBlockGraph = (instructions: Instruction[], blocks: Block[]): {
 			}
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT: {
+				const target = getJumpTarget(instruction);
+				addSuccessor(blockIndex, target < count ? blockForIndex[target] : null);
+				if (nextIndex < count) {
+					addSuccessor(blockIndex, blockForIndex[nextIndex]);
+				}
+				break;
+			}
+			case OpCode.BR_TRUE:
+			case OpCode.BR_FALSE: {
 				const target = getJumpTarget(instruction);
 				addSuccessor(blockIndex, target < count ? blockForIndex[target] : null);
 				if (nextIndex < count) {
@@ -464,6 +534,17 @@ const removeUnreachable = (set: InstructionSet): InstructionSet => {
 				}
 				break;
 			}
+			case OpCode.BR_TRUE:
+			case OpCode.BR_FALSE: {
+				const target = getJumpTarget(instruction);
+				if (target < count) {
+					worklist.push(target);
+				}
+				if (index + 1 < count) {
+					worklist.push(index + 1);
+				}
+				break;
+			}
 			case OpCode.LOADBOOL: {
 				if (index + 1 < count) {
 					worklist.push(index + 1);
@@ -530,10 +611,10 @@ const simplifyCompareBool = (set: InstructionSet): InstructionSet => {
 		const compare = instructions[i + 1];
 		const jump = instructions[i + 2];
 		const loadFalse = instructions[i + 3];
-		if (loadTrue.op !== OpCode.LOADBOOL || loadTrue.b !== 1 || loadTrue.c !== 0) {
+		if (loadTrue.op !== OpCode.KTRUE || loadTrue.b !== 0 || loadTrue.c !== 0) {
 			continue;
 		}
-		if (loadFalse.op !== OpCode.LOADBOOL || loadFalse.b !== 0 || loadFalse.c !== 0) {
+		if (loadFalse.op !== OpCode.KFALSE || loadFalse.b !== 0 || loadFalse.c !== 0) {
 			continue;
 		}
 		if (loadTrue.a !== loadFalse.a) {
@@ -716,6 +797,11 @@ const computeBlockConstantIn = (
 			const block = blocks[blockIndex];
 			for (let i = block.start; i < block.end; i += 1) {
 				const instruction = instructions[i];
+				const immediate = getImmediateConstValue(instruction, context);
+				if (immediate) {
+					constants.set(instruction.a, immediate);
+					continue;
+				}
 				switch (instruction.op) {
 					case OpCode.MOV: {
 						const source = constants.get(instruction.b);
@@ -780,7 +866,9 @@ const computeBlockConstantIn = (
 						constants.delete(instruction.a);
 						break;
 					}
-				case OpCode.GETG:
+					case OpCode.GETG:
+					case OpCode.GETSYS:
+					case OpCode.GETGL:
 				case OpCode.GETT:
 				case OpCode.NEWT:
 				case OpCode.CONCAT:
@@ -835,12 +923,31 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 		const constants = new Map(blockConstIn[blockIndex]);
 		for (let i = block.start; i < block.end; i += 1) {
 			const instruction = instructions[i];
+			const immediate = getImmediateConstValue(instruction, context);
+			if (immediate) {
+				constants.set(instruction.a, immediate);
+				continue;
+			}
 
 			if (instruction.op === OpCode.JMPIF || instruction.op === OpCode.JMPIFNOT) {
 				const value = constants.get(instruction.a);
 				if (value) {
 					const truthy = isTruthy(value.value);
 					const shouldJump = instruction.op === OpCode.JMPIF ? truthy : !truthy;
+					if (shouldJump) {
+						replaceWithJump(instruction, getJumpTarget(instruction));
+					} else {
+						keep[i] = false;
+						removed += 1;
+						continue;
+					}
+				}
+			}
+			if (instruction.op === OpCode.BR_TRUE || instruction.op === OpCode.BR_FALSE) {
+				const value = constants.get(instruction.a);
+				if (value) {
+					const truthy = isTruthy(value.value);
+					const shouldJump = instruction.op === OpCode.BR_TRUE ? truthy : !truthy;
 					if (shouldJump) {
 						replaceWithJump(instruction, getJumpTarget(instruction));
 					} else {
@@ -972,6 +1079,8 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				}
 				case OpCode.TESTSET:
 				case OpCode.GETG:
+				case OpCode.GETSYS:
+				case OpCode.GETGL:
 				case OpCode.GETT:
 				case OpCode.NEWT:
 				case OpCode.CONCAT:
@@ -1109,6 +1218,11 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 
 		for (let i = block.start; i < block.end; i += 1) {
 			const instruction = instructions[i];
+			const immediate = getImmediateConstValue(instruction, context);
+			if (immediate) {
+				setConst(constants, copies, instruction.a, immediate);
+				continue;
+			}
 
 			switch (instruction.op) {
 				case OpCode.MOV: {
@@ -1204,6 +1318,15 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					}
 					break;
 				}
+				case OpCode.BR_TRUE:
+				case OpCode.BR_FALSE: {
+					const nextA = rewriteRegisterOperand(instruction.a, copies);
+					if (nextA !== instruction.a) {
+						instruction.a = nextA;
+						changed = true;
+					}
+					break;
+				}
 				case OpCode.TESTSET: {
 					const nextB = rewriteRegisterOperand(instruction.b, copies);
 					if (nextB !== instruction.b) {
@@ -1213,6 +1336,8 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					break;
 				}
 				case OpCode.SETG:
+				case OpCode.SETSYS:
+				case OpCode.SETGL:
 				case OpCode.SETUP:
 				case OpCode.STORE_MEM: {
 					const nextA = rewriteRegisterOperand(instruction.a, copies);
@@ -1315,6 +1440,8 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					break;
 				}
 				case OpCode.GETG:
+				case OpCode.GETSYS:
+				case OpCode.GETGL:
 				case OpCode.GETT:
 				case OpCode.NEWT:
 				case OpCode.CONCAT:
@@ -1387,20 +1514,33 @@ const computeMaxRegister = (instructions: Instruction[]): number => {
 	};
 	for (const instruction of instructions) {
 		switch (instruction.op) {
+			case OpCode.KNIL:
+			case OpCode.KFALSE:
+			case OpCode.KTRUE:
+			case OpCode.K0:
+			case OpCode.K1:
+			case OpCode.KM1:
+			case OpCode.KSMI:
 			case OpCode.LOADK:
 			case OpCode.LOADNIL:
 			case OpCode.LOADBOOL:
 			case OpCode.GETG:
+			case OpCode.GETSYS:
+			case OpCode.GETGL:
 			case OpCode.NEWT:
 			case OpCode.CLOSURE:
 			case OpCode.GETUP:
 				updateMax(instruction.a);
 				break;
 			case OpCode.SETG:
+			case OpCode.SETSYS:
+			case OpCode.SETGL:
 			case OpCode.SETUP:
 			case OpCode.TEST:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
+			case OpCode.BR_TRUE:
+			case OpCode.BR_FALSE:
 			case OpCode.LOAD_MEM:
 				updateMax(instruction.a);
 				if (instruction.op === OpCode.LOAD_MEM && ((instruction.rkMask & RK_B) === 0 || instruction.b >= 0)) {
@@ -1490,6 +1630,13 @@ const computeMaxRegister = (instructions: Instruction[]): number => {
 const isPureInstruction = (instruction: Instruction): boolean => {
 	switch (instruction.op) {
 		case OpCode.MOV:
+		case OpCode.KNIL:
+		case OpCode.KFALSE:
+		case OpCode.KTRUE:
+		case OpCode.K0:
+		case OpCode.K1:
+		case OpCode.KM1:
+		case OpCode.KSMI:
 		case OpCode.LOADK:
 		case OpCode.LOADNIL:
 		case OpCode.NEWT:
@@ -1573,6 +1720,13 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 			}
 		};
 		switch (instruction.op) {
+			case OpCode.KNIL:
+			case OpCode.KFALSE:
+			case OpCode.KTRUE:
+			case OpCode.K0:
+			case OpCode.K1:
+			case OpCode.KM1:
+			case OpCode.KSMI:
 			case OpCode.MOV:
 			case OpCode.UNM:
 			case OpCode.NOT:
@@ -1581,10 +1735,14 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 				add(instruction.b);
 				break;
 			case OpCode.SETG:
+			case OpCode.SETSYS:
+			case OpCode.SETGL:
 			case OpCode.SETUP:
 			case OpCode.TEST:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
+			case OpCode.BR_TRUE:
+			case OpCode.BR_FALSE:
 				add(instruction.a);
 				break;
 			case OpCode.TESTSET:
@@ -1678,9 +1836,18 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 		};
 		switch (instruction.op) {
 			case OpCode.MOV:
+			case OpCode.KNIL:
+			case OpCode.KFALSE:
+			case OpCode.KTRUE:
+			case OpCode.K0:
+			case OpCode.K1:
+			case OpCode.KM1:
+			case OpCode.KSMI:
 			case OpCode.LOADK:
 			case OpCode.LOADBOOL:
 			case OpCode.GETG:
+			case OpCode.GETSYS:
+			case OpCode.GETGL:
 			case OpCode.GETT:
 			case OpCode.NEWT:
 			case OpCode.ADD:
@@ -2133,6 +2300,8 @@ const applyClosureTransferForInlining = (
 		case OpCode.LOADK:
 		case OpCode.LOADBOOL:
 		case OpCode.GETG:
+		case OpCode.GETSYS:
+		case OpCode.GETGL:
 		case OpCode.GETT:
 		case OpCode.NEWT:
 		case OpCode.ADD:
@@ -2311,6 +2480,8 @@ const buildInlineExpansion = (
 			case OpCode.LOADK:
 			case OpCode.LOADBOOL:
 			case OpCode.GETG:
+			case OpCode.GETSYS:
+			case OpCode.GETGL:
 			case OpCode.NEWT:
 				mapped.a = mapRegister(mapped.a);
 				break;
@@ -2357,6 +2528,8 @@ const buildInlineExpansion = (
 			case OpCode.TEST:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
+			case OpCode.BR_TRUE:
+			case OpCode.BR_FALSE:
 				mapped.a = mapRegister(mapped.a);
 				break;
 			case OpCode.TESTSET:
@@ -2364,6 +2537,8 @@ const buildInlineExpansion = (
 				mapped.b = mapRegister(mapped.b);
 				break;
 			case OpCode.SETG:
+			case OpCode.SETSYS:
+			case OpCode.SETGL:
 				mapped.a = mapRegister(mapped.a);
 				break;
 			case OpCode.JMP:

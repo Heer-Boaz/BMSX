@@ -144,7 +144,7 @@
 			}
 		},
 		{
-			"label": "GAME VALIDATE (+bios+force+debug)",
+			"label": "GAME/BIOS/BROWSER FORCE-VALIDATE (+bios+force+debug)",
 			"type": "shell",
 			"command": "npm",
 			"args": [

@@ -2223,8 +2223,8 @@ export async function attemptPromptSave(action: PendingActionPrompt['action']): 
 
 export function performAction(action: PendingActionPrompt['action']): boolean {
 	switch (action) {
-		case 'hot-reload-and-resume':
-			return performHotReloadAndResume();
+		case 'hot-resume':
+			return performHotResume();
 		case 'reboot':
 			return performReboot();
 		case 'close':
@@ -2238,13 +2238,13 @@ export function performAction(action: PendingActionPrompt['action']): boolean {
 	}
 }
 
-export function performHotReloadAndResume(): boolean {
+export function performHotResume(): boolean {
 	const runtime = Runtime.instance;
 	const targetGeneration = ide_state.saveGeneration;
 	const shouldUpdateGeneration = hasPendingRuntimeReload();
 	clearExecutionStopHighlights();
 	runtimeIde.deactivateEditor(Runtime.instance);
-	console.log('[IDE] Performing hot-reload and resume');
+	console.log('[IDE] Performing hot-resume');
 	scheduleRuntimeTask(async () => {
 		console.log('[IDE] Applying workspace overrides to cart before resume');
 		await applyWorkspaceOverridesToCart({ cart: runtime.cartLuaSources ? runtime.cartLuaSources : $.lua_sources, storage: $.platform.storage, includeServer: true });
@@ -2252,7 +2252,7 @@ export function performHotReloadAndResume(): boolean {
 		const snapshot = runtimeLuaPipeline.captureCurrentState(runtime);
 		console.log('[IDE] Clear execution stop highlights before resume');
 		runtimeIde.clearFaultState(runtime);
-		console.log('[IDE] Resuming from snapshot after hot reload');
+		console.log('[IDE] Resuming from snapshot after hot-resume');
 		await runtimeLuaPipeline.resumeFromSnapshot(runtime, snapshot);
 		if (shouldUpdateGeneration) {
 			console.log('[IDE] Updating applied generation after resume');

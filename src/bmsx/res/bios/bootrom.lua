@@ -50,6 +50,8 @@ local color_ok<const> = 15
 local color_info_total<const> = 15
 
 local boot_status_labels<const> = { 'STATUS', 'BOOT STATUS', 'BITCAST SELFTEST', 'PROGRAM PRECHECK' }
+local program_const_reloc_kind_lookup<const> = { bx = true, rk_b = true, rk_c = true, gl = true, sys = true }
+local program_const_reloc_const_pool_lookup<const> = { bx = true, rk_b = true, rk_c = true }
 
 local system_rom_base<const> = 0x00000000
 local cart_rom_base<const> = 0x01000000
@@ -1368,7 +1370,7 @@ local validate_const_relocs_array<const> = function(reader, prop_names, tag, sum
 		if kind == nil then
 			return make_program_precheck_failure(scope, 'CONSTRELOC ' .. reloc_id .. ' IS MISSING KIND', '[ProgramLinker] ' .. scope .. ' const reloc is missing kind.')
 		end
-		if kind ~= 'bx' and kind ~= 'rk_b' and kind ~= 'rk_c' then
+		if not program_const_reloc_kind_lookup[kind] then
 			return make_program_precheck_failure(scope, 'CONSTRELOC ' .. reloc_id .. ' HAS INVALID KIND ' .. kind, '[ProgramLinker] ' .. scope .. ' const reloc has invalid kind "' .. kind .. '".')
 		end
 		if const_index == nil then
@@ -1381,7 +1383,7 @@ local validate_const_relocs_array<const> = function(reader, prop_names, tag, sum
 				'[ProgramLinker] ' .. scope .. ' const reloc targets a word outside program.code.'
 			)
 		end
-		if const_index >= summary.const_pool_count then
+		if program_const_reloc_const_pool_lookup[kind] and const_index >= summary.const_pool_count then
 			return make_program_precheck_failure(
 				scope,
 				'CONSTRELOC ' .. reloc_id .. ' TARGETS CONST ' .. tostring(const_index) .. ' OUT OF RANGE',
@@ -1701,7 +1703,7 @@ local step_const_relocs_array_state<const> = function(state, job)
 			if state.entry.kind == nil then
 				return nil, make_program_precheck_failure(state.scope, 'CONSTRELOC ' .. reloc_id .. ' IS MISSING KIND', '[ProgramLinker] ' .. state.scope .. ' const reloc is missing kind.')
 			end
-			if state.entry.kind ~= 'bx' and state.entry.kind ~= 'rk_b' and state.entry.kind ~= 'rk_c' then
+			if not program_const_reloc_kind_lookup[state.entry.kind] then
 				return nil, make_program_precheck_failure(state.scope, 'CONSTRELOC ' .. reloc_id .. ' HAS INVALID KIND ' .. state.entry.kind, '[ProgramLinker] ' .. state.scope .. ' const reloc has invalid kind "' .. state.entry.kind .. '".')
 			end
 			if state.entry.const_index == nil then
@@ -1714,7 +1716,7 @@ local step_const_relocs_array_state<const> = function(state, job)
 					'[ProgramLinker] ' .. state.scope .. ' const reloc targets a word outside program.code.'
 				)
 			end
-			if state.entry.const_index >= state.summary.const_pool_count then
+			if program_const_reloc_const_pool_lookup[state.entry.kind] and state.entry.const_index >= state.summary.const_pool_count then
 				return nil, make_program_precheck_failure(
 					state.scope,
 					'CONSTRELOC ' .. reloc_id .. ' TARGETS CONST ' .. tostring(state.entry.const_index) .. ' OUT OF RANGE',

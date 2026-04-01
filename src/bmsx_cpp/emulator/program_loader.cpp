@@ -17,6 +17,12 @@ ProgramAsset::ConstRelocKind parseConstRelocKind(const std::string& kind) {
 	if (kind == "rk_c") {
 		return ProgramAsset::ConstRelocKind::RkC;
 	}
+	if (kind == "gl") {
+		return ProgramAsset::ConstRelocKind::Gl;
+	}
+	if (kind == "sys") {
+		return ProgramAsset::ConstRelocKind::Sys;
+	}
 	throw BMSX_RUNTIME_ERROR("ProgramLoader: unknown const reloc kind '" + kind + "'.");
 }
 
@@ -39,6 +45,16 @@ LocalSlotDebug parseLocalSlotDebug(const BinValue& slotVal) {
 	slot.definition = parseSourceRange(slotVal.require("definition"));
 	slot.scope = parseSourceRange(slotVal.require("scope"));
 	return slot;
+}
+
+std::vector<std::string> parseStringArray(const BinValue& arrayVal) {
+	const auto& array = arrayVal.asArray();
+	std::vector<std::string> values;
+	values.reserve(array.size());
+	for (const auto& entry : array) {
+		values.push_back(entry.asString());
+	}
+	return values;
 }
 
 } // namespace
@@ -116,23 +132,31 @@ std::unique_ptr<ProgramMetadata> extractProgramMetadata(const BinValue& metadata
 		metadata->debugRanges.push_back(parseSourceRange(rangeVal));
 	}
 
-	if (metadataObj.has("localSlotsByProto")) {
-		const auto& slotsByProtoArr = metadataObj.require("localSlotsByProto").asArray();
-		metadata->localSlotsByProto.resize(slotsByProtoArr.size());
-		for (size_t protoIndex = 0; protoIndex < slotsByProtoArr.size(); ++protoIndex) {
-			const auto& protoSlotsArr = slotsByProtoArr[protoIndex].asArray();
-			auto& slots = metadata->localSlotsByProto[protoIndex];
-			slots.reserve(protoSlotsArr.size());
-			for (const auto& slotVal : protoSlotsArr) {
-				slots.push_back(parseLocalSlotDebug(slotVal));
-			}
+	const auto& slotsByProtoArr = metadataObj.require("localSlotsByProto").asArray();
+	metadata->localSlotsByProto.resize(slotsByProtoArr.size());
+	for (size_t protoIndex = 0; protoIndex < slotsByProtoArr.size(); ++protoIndex) {
+		const auto& protoSlotsArr = slotsByProtoArr[protoIndex].asArray();
+		auto& slots = metadata->localSlotsByProto[protoIndex];
+		slots.reserve(protoSlotsArr.size());
+		for (const auto& slotVal : protoSlotsArr) {
+			slots.push_back(parseLocalSlotDebug(slotVal));
 		}
-	} else {
-		metadata->localSlotsByProto.assign(metadata->protoIds.size(), {});
 	}
 	if (metadata->localSlotsByProto.size() != metadata->protoIds.size()) {
 		throw BMSX_RUNTIME_ERROR("ProgramLoader: localSlotsByProto length does not match protoIds length.");
 	}
+
+	const auto& upvalueNamesByProtoArr = metadataObj.require("upvalueNamesByProto").asArray();
+	metadata->upvalueNamesByProto.resize(upvalueNamesByProtoArr.size());
+	for (size_t protoIndex = 0; protoIndex < upvalueNamesByProtoArr.size(); ++protoIndex) {
+		metadata->upvalueNamesByProto[protoIndex] = parseStringArray(upvalueNamesByProtoArr[protoIndex]);
+	}
+	if (metadata->upvalueNamesByProto.size() != metadata->protoIds.size()) {
+		throw BMSX_RUNTIME_ERROR("ProgramLoader: upvalueNamesByProto length does not match protoIds length.");
+	}
+
+	metadata->systemGlobalNames = parseStringArray(metadataObj.require("systemGlobalNames"));
+	metadata->globalNames = parseStringArray(metadataObj.require("globalNames"));
 	return metadata;
 }
 

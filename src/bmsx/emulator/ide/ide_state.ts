@@ -353,7 +353,7 @@ export const ide_state: IdeState = {
 	codeTabContexts: new Map<string, CodeTabContext>(),
 	activeCodeTabContextId: null,
 	topBarButtonBounds: {
-		"hot-reload-and-resume": { left: 0, top: 0, right: 0, bottom: 0 },
+		"hot-resume": { left: 0, top: 0, right: 0, bottom: 0 },
 		reboot: { left: 0, top: 0, right: 0, bottom: 0 },
 		save: { left: 0, top: 0, right: 0, bottom: 0 },
 		resources: { left: 0, top: 0, right: 0, bottom: 0 },

@@ -34,7 +34,8 @@ import { optimizeInstructions, type Instruction, type InstructionSet, type Optim
 import type { ProgramConstReloc } from './program_asset';
 import { StringPool, StringValue, isStringValue } from './string_pool';
 import type { CanonicalizationType } from '../rompack/rompack';
-import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_OPERAND_BITS, writeInstruction } from './instruction_format';
+import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from './instruction_format';
+import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from './lua_system_globals';
 import { LuaSyntaxError } from '../lua/luaerrors';
 
 export type CompiledProgram = {
@@ -95,7 +96,7 @@ type LocalBinding = {
 type AssignmentTarget =
 	| { kind: 'local'; reg: number }
 	| { kind: 'upvalue'; upvalue: number }
-	| { kind: 'global'; keyConst: number }
+	| { kind: 'global'; slot: number; system: boolean }
 	| { kind: 'table'; tableReg: number; keyConst?: number; keyReg?: number }
 	| { kind: 'memory'; accessKind: MemoryAccessKind; addrConst?: number; addrReg?: number };
 
@@ -107,12 +108,28 @@ const isConstBxOp = (op: OpCode): boolean =>
 	|| op === OpCode.GETG
 	|| op === OpCode.SETG;
 
+const isGlobalSlotOp = (op: OpCode): boolean =>
+	op === OpCode.GETSYS
+	|| op === OpCode.SETSYS
+	|| op === OpCode.GETGL
+	|| op === OpCode.SETGL;
+
+const isSignedBxOp = (op: OpCode): boolean => op === OpCode.KSMI;
+
+const isSmallSignedImmediate = (value: number): boolean =>
+	Number.isInteger(value) && value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX;
+
 class ProgramBuilder {
 	public readonly constPool: Value[];
 	public readonly stringPool: StringPool;
 	public readonly canonicalizeIdentifier: (value: string) => string;
 	public readonly optLevel: OptimizationLevel;
 	private readonly constMap: Map<string, number>;
+	private readonly systemGlobalNameSet: Set<string>;
+	private readonly systemGlobalNames: string[] = [];
+	private readonly systemGlobalNameMap: Map<string, number> = new Map();
+	private readonly globalNames: string[] = [];
+	private readonly globalNameMap: Map<string, number> = new Map();
 	public readonly protos: Proto[] = [];
 	public readonly protoCode: Uint8Array[] = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
@@ -129,15 +146,36 @@ class ProgramBuilder {
 		canonicalization: CanonicalizationType = 'none',
 		stringPool: StringPool | null = null,
 		optLevel: OptimizationLevel = 0,
+		baseMetadata: ProgramMetadata | null = null,
 	) {
 		this.constPool = baseConstPool ? Array.from(baseConstPool) : [];
 		this.canonicalizeIdentifier = createIdentifierCanonicalizer(canonicalization);
 		this.stringPool = stringPool ?? new StringPool();
 		this.optLevel = optLevel;
 		this.constMap = new Map<string, number>();
+		this.systemGlobalNameSet = new Set(Array.from(ENGINE_SYSTEM_GLOBAL_NAME_SET, name => this.canonicalizeIdentifier(name)));
 		for (let index = 0; index < this.constPool.length; index += 1) {
 			const value = this.constPool[index];
 			this.constMap.set(this.makeConstKey(value), index);
+		}
+		this.seedGlobalSlots(baseMetadata);
+	}
+
+	private seedGlobalSlots(metadata: ProgramMetadata | null): void {
+		if (!metadata) {
+			return;
+		}
+		const systemNames = metadata.systemGlobalNames;
+		for (let index = 0; index < systemNames.length; index += 1) {
+			const name = this.canonicalizeIdentifier(systemNames[index]);
+			this.systemGlobalNames.push(name);
+			this.systemGlobalNameMap.set(name, index);
+		}
+		const globalNames = metadata.globalNames;
+		for (let index = 0; index < globalNames.length; index += 1) {
+			const name = this.canonicalizeIdentifier(globalNames[index]);
+			this.globalNames.push(name);
+			this.globalNameMap.set(name, index);
 		}
 	}
 
@@ -158,6 +196,36 @@ class ProgramBuilder {
 		const index = this.constPool.length;
 		this.constPool.push(value);
 		this.constMap.set(key, index);
+		return index;
+	}
+
+	public resolveGlobalAccess(name: string): { system: boolean; slot: number } {
+		const canonicalName = this.canonicalizeIdentifier(name);
+		if (this.systemGlobalNameSet.has(canonicalName)) {
+			return { system: true, slot: this.resolveSystemGlobalSlot(canonicalName) };
+		}
+		return { system: false, slot: this.resolveGlobalSlot(canonicalName) };
+	}
+
+	private resolveSystemGlobalSlot(canonicalName: string): number {
+		const existing = this.systemGlobalNameMap.get(canonicalName);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const index = this.systemGlobalNames.length;
+		this.systemGlobalNames.push(canonicalName);
+		this.systemGlobalNameMap.set(canonicalName, index);
+		return index;
+	}
+
+	private resolveGlobalSlot(canonicalName: string): number {
+		const existing = this.globalNameMap.get(canonicalName);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const index = this.globalNames.length;
+		this.globalNames.push(canonicalName);
+		this.globalNameMap.set(canonicalName, index);
 		return index;
 	}
 
@@ -261,6 +329,8 @@ class ProgramBuilder {
 			protoIds: this.protoIds,
 			localSlotsByProto: this.protoLocalSlots,
 			upvalueNamesByProto: this.protoUpvalueNames,
+			globalNames: this.globalNames.slice(),
+			systemGlobalNames: this.systemGlobalNames.slice(),
 		};
 		return {
 			program: {
@@ -524,7 +594,9 @@ class FunctionBuilder {
 					const bxWidthValue = instr.b;
 					const forceWide = isConstBxOp(instr.op);
 					const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
-					const bxWide = needsWideUnsigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS);
+					const bxWide = isSignedBxOp(instr.op)
+						? needsWideSigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS)
+						: needsWideUnsigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS);
 					wideFlags[index] = forceWide || aWide || bxWide;
 					continue;
 				}
@@ -571,9 +643,9 @@ class FunctionBuilder {
 			totalInstr += wideFlags[index] ? 2 : 1;
 		}
 
-		for (let index = 0; index < instructions.length; index += 1) {
-			const instr = instructions[index];
-			if (instr.format === 'ABx' && instr.b < 0) {
+			for (let index = 0; index < instructions.length; index += 1) {
+				const instr = instructions[index];
+			if (instr.format === 'ABx' && instr.op !== OpCode.KSMI && instr.b < 0) {
 				throw new Error(`[FunctionBuilder] Negative Bx operand at ${index} (op=${instr.op}, b=${instr.b}).`);
 			}
 		}
@@ -614,7 +686,9 @@ class FunctionBuilder {
 				}
 				if (instr.format === 'ABx') {
 				const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
-				const bxSplit = splitUnsignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide);
+				const bxSplit = isSignedBxOp(instr.op)
+					? splitSignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide)
+					: splitUnsignedOperand(instr.b, 'Bx', MAX_BX_BITS, EXT_BX_BITS, hasWide);
 				if (hasWide) {
 					writeInstruction(code, cursor, OpCode.WIDE, aSplit.wide, bxSplit.wide, 0);
 					finalRanges[cursor] = range;
@@ -625,6 +699,10 @@ class FunctionBuilder {
 					cursor += 1;
 					if (isConstBxOp(instr.op)) {
 						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'bx', constIndex: instr.b });
+					} else if (instr.op === OpCode.GETSYS || instr.op === OpCode.SETSYS) {
+						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'sys', constIndex: instr.b });
+					} else if (isGlobalSlotOp(instr.op)) {
+						constRelocs.push({ wordIndex: instrWordIndex[index], kind: 'gl', constIndex: instr.b });
 					}
 					continue;
 				}
@@ -944,15 +1022,49 @@ class FunctionBuilder {
 	}
 
 	private emitLoadNil(target: number, count = 1): void {
+		if (count === 1) {
+			this.emitABC(OpCode.KNIL, target, 0, 0);
+			return;
+		}
 		this.emitABC(OpCode.LOADNIL, target, count, 0);
 	}
 
 	private emitLoadBool(target: number, value: boolean): void {
-		this.emitABC(OpCode.LOADBOOL, target, value ? 1 : 0, 0);
+		this.emitABC(value ? OpCode.KTRUE : OpCode.KFALSE, target, 0, 0);
 	}
 
 	private emitLoadConst(target: number, value: Value): void {
 		const normalizedValue = typeof value === 'string' ? this.program.internString(value) : value;
+		if (normalizedValue === null) {
+			this.emitABC(OpCode.KNIL, target, 0, 0);
+			return;
+		}
+		if (normalizedValue === false) {
+			this.emitABC(OpCode.KFALSE, target, 0, 0);
+			return;
+		}
+		if (normalizedValue === true) {
+			this.emitABC(OpCode.KTRUE, target, 0, 0);
+			return;
+		}
+		if (typeof normalizedValue === 'number') {
+			if (normalizedValue === 0) {
+				this.emitABC(OpCode.K0, target, 0, 0);
+				return;
+			}
+			if (normalizedValue === 1) {
+				this.emitABC(OpCode.K1, target, 0, 0);
+				return;
+			}
+			if (normalizedValue === -1) {
+				this.emitABC(OpCode.KM1, target, 0, 0);
+				return;
+			}
+			if (isSmallSignedImmediate(normalizedValue)) {
+				this.emitABx(OpCode.KSMI, target, normalizedValue);
+				return;
+			}
+		}
 		const index = this.program.constIndex(normalizedValue);
 		this.emitABx(OpCode.LOADK, target, index);
 	}
@@ -1365,8 +1477,8 @@ class FunctionBuilder {
 				if (this.isReservedIntrinsicName(name)) {
 					throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${name}(base, ...).`);
 				}
-				const keyConst = this.program.constIndexString(name);
-				targets.push({ kind: 'global', keyConst });
+				const access = this.program.resolveGlobalAccess(name);
+				targets.push({ kind: 'global', slot: access.slot, system: access.system });
 				continue;
 			}
 			if (expr.kind === LuaSyntaxKind.MemberExpression) {
@@ -1440,7 +1552,7 @@ class FunctionBuilder {
 				this.emitABC(OpCode.SETUP, valueReg, target.upvalue, 0);
 				return;
 			case 'global':
-				this.emitABx(OpCode.SETG, valueReg, target.keyConst);
+				this.emitABx(target.system ? OpCode.SETSYS : OpCode.SETGL, valueReg, target.slot);
 				return;
 			case 'table': {
 				const keyOperand = target.keyConst !== undefined ? this.encodeConstOperand(target.keyConst) : target.keyReg;
@@ -1472,9 +1584,9 @@ class FunctionBuilder {
 				this.emitABC(OpCode.SETUP, temp, target.upvalue, 0);
 				return;
 			case 'global': {
-				this.emitABx(OpCode.GETG, temp, target.keyConst);
+				this.emitABx(target.system ? OpCode.GETSYS : OpCode.GETGL, temp, target.slot);
 				this.emitArithmetic(opForAssignment(operator), temp, temp, valueReg);
-				this.emitABx(OpCode.SETG, temp, target.keyConst);
+				this.emitABx(target.system ? OpCode.SETSYS : OpCode.SETGL, temp, target.slot);
 				return;
 			}
 			case 'table': {
@@ -1527,7 +1639,7 @@ class FunctionBuilder {
 			if (clause.condition) {
 				const condReg = this.allocTemp();
 				this.compileExpressionInto(clause.condition, condReg, 1);
-				const jumpToNext = this.emitJumpPlaceholder(OpCode.JMPIFNOT, condReg);
+				const jumpToNext = this.emitJumpPlaceholder(OpCode.BR_FALSE, condReg);
 				this.pushScope(clause.block.range);
 				for (let j = 0; j < clause.block.body.length; j += 1) {
 					this.compileStatement(clause.block.body[j]);
@@ -1555,7 +1667,7 @@ class FunctionBuilder {
 		const loopStart = this.code.length;
 		const condReg = this.allocTemp();
 		this.compileExpressionInto(statement.condition, condReg, 1);
-		const jumpOut = this.emitJumpPlaceholder(OpCode.JMPIFNOT, condReg);
+		const jumpOut = this.emitJumpPlaceholder(OpCode.BR_FALSE, condReg);
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
 		this.pushScope(statement.block.range);
@@ -1585,7 +1697,7 @@ class FunctionBuilder {
 		this.loopStack.pop();
 		const condReg = this.allocTemp();
 		this.compileExpressionInto(statement.condition, condReg, 1);
-		this.emitAsBx(OpCode.JMPIFNOT, condReg, loopStart - (this.code.length + 1));
+		this.emitAsBx(OpCode.BR_FALSE, condReg, loopStart - (this.code.length + 1));
 		for (let i = 0; i < ctx.breakJumps.length; i += 1) {
 			this.patchJump(ctx.breakJumps[i], this.code.length);
 		}
@@ -1752,35 +1864,37 @@ class FunctionBuilder {
 		if (identifiers.length === 0) {
 			throw new Error('Function declaration missing name.');
 		}
-		if (identifiers.length === 1 && !methodName) {
-			const name = identifiers[0];
-			const localReg = this.resolveLocal(name);
-			if (localReg !== null) {
-				this.emitABC(OpCode.MOV, localReg, closureReg, 0);
+			if (identifiers.length === 1 && !methodName) {
+				const name = identifiers[0];
+				const localReg = this.resolveLocal(name);
+				if (localReg !== null) {
+					this.emitABC(OpCode.MOV, localReg, closureReg, 0);
 				return;
 			}
 			const upvalue = this.resolveUpvalue(name);
-			if (upvalue !== null) {
-				this.emitABC(OpCode.SETUP, closureReg, upvalue, 0);
+				if (upvalue !== null) {
+					this.emitABC(OpCode.SETUP, closureReg, upvalue, 0);
+					return;
+				}
+				const access = this.program.resolveGlobalAccess(name);
+				this.emitABx(access.system ? OpCode.SETSYS : OpCode.SETGL, closureReg, access.slot);
 				return;
 			}
-			this.emitABx(OpCode.SETG, closureReg, this.program.constIndexString(name));
-			return;
-		}
 
 		const baseReg = this.allocTemp();
 		const baseName = identifiers[0];
 		const baseLocal = this.resolveLocal(baseName);
-		if (baseLocal !== null) {
-			this.emitABC(OpCode.MOV, baseReg, baseLocal, 0);
-		} else {
-			const baseUpvalue = this.resolveUpvalue(baseName);
-			if (baseUpvalue !== null) {
-				this.emitABC(OpCode.GETUP, baseReg, baseUpvalue, 0);
+			if (baseLocal !== null) {
+				this.emitABC(OpCode.MOV, baseReg, baseLocal, 0);
 			} else {
-				this.emitABx(OpCode.GETG, baseReg, this.program.constIndexString(baseName));
+				const baseUpvalue = this.resolveUpvalue(baseName);
+				if (baseUpvalue !== null) {
+					this.emitABC(OpCode.GETUP, baseReg, baseUpvalue, 0);
+				} else {
+					const access = this.program.resolveGlobalAccess(baseName);
+					this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, baseReg, access.slot);
+				}
 			}
-		}
 
 		const pathEnd = methodName ? identifiers.length : identifiers.length - 1;
 		for (let i = 1; i < pathEnd; i += 1) {
@@ -1872,8 +1986,8 @@ class FunctionBuilder {
 		if (this.isReservedIntrinsicName(name)) {
 			throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${name}(base, ...).`);
 		}
-		const key = this.program.constIndexString(name);
-		this.emitABx(OpCode.GETG, target, key);
+		const access = this.program.resolveGlobalAccess(name);
+		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
 	}
 
 	private compileMemberExpression(expression: any, target: number): void {
@@ -2199,14 +2313,14 @@ class FunctionBuilder {
 
 	private compileAndExpression(expression: any, target: number): void {
 		this.compileExpressionInto(expression.left, target, 1);
-		const jump = this.emitJumpPlaceholder(OpCode.JMPIFNOT, target);
+		const jump = this.emitJumpPlaceholder(OpCode.BR_FALSE, target);
 		this.compileExpressionInto(expression.right, target, 1);
 		this.patchJump(jump, this.code.length);
 	}
 
 	private compileOrExpression(expression: any, target: number): void {
 		this.compileExpressionInto(expression.left, target, 1);
-		const jumpEnd = this.emitJumpPlaceholder(OpCode.JMPIF, target);
+		const jumpEnd = this.emitJumpPlaceholder(OpCode.BR_TRUE, target);
 		this.compileExpressionInto(expression.right, target, 1);
 		this.patchJump(jumpEnd, this.code.length);
 	}
@@ -2472,7 +2586,7 @@ function createProgramBuilderFromProgram(
 	canonicalization: CanonicalizationType,
 	optLevel: OptimizationLevel,
 ): ProgramBuilder {
-	const builder = new ProgramBuilder(base.constPool, canonicalization, base.constPoolStringPool, optLevel);
+	const builder = new ProgramBuilder(base.constPool, canonicalization, base.constPoolStringPool, optLevel, metadata);
 	const protoIds = metadata.protoIds;
 	if (!protoIds || protoIds.length !== base.protos.length) {
 		throw new Error('[ProgramBuilder] Base program proto ids missing or mismatched.');

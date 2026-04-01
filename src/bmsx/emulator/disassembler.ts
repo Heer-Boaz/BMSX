@@ -113,8 +113,19 @@ const getOpName = (op: OpCode): string => {
 		case OpCode.LOADK: return 'LOADK';
 		case OpCode.LOADNIL: return 'LOADNIL';
 		case OpCode.LOADBOOL: return 'LOADBOOL';
+		case OpCode.KNIL: return 'KNIL';
+		case OpCode.KFALSE: return 'KFALSE';
+		case OpCode.KTRUE: return 'KTRUE';
+		case OpCode.K0: return 'K0';
+		case OpCode.K1: return 'K1';
+		case OpCode.KM1: return 'KM1';
+		case OpCode.KSMI: return 'KSMI';
 		case OpCode.GETG: return 'GETG';
 		case OpCode.SETG: return 'SETG';
+		case OpCode.GETSYS: return 'GETSYS';
+		case OpCode.SETSYS: return 'SETSYS';
+		case OpCode.GETGL: return 'GETGL';
+		case OpCode.SETGL: return 'SETGL';
 		case OpCode.GETT: return 'GETT';
 		case OpCode.SETT: return 'SETT';
 		case OpCode.NEWT: return 'NEWT';
@@ -153,6 +164,8 @@ const getOpName = (op: OpCode): string => {
 		case OpCode.LOAD_MEM: return 'LOAD_MEM';
 		case OpCode.STORE_MEM: return 'STORE_MEM';
 		case OpCode.STORE_MEM_WORDS: return 'STORE_MEM_WORDS';
+		case OpCode.BR_TRUE: return 'BR_TRUE';
+		case OpCode.BR_FALSE: return 'BR_FALSE';
 		default:
 			throw new Error(`[Disassembler] Unknown opcode ${op}.`);
 	}
@@ -318,10 +331,16 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 		const usesBx = nextOp === OpCode.LOADK
 			|| nextOp === OpCode.GETG
 			|| nextOp === OpCode.SETG
+			|| nextOp === OpCode.GETSYS
+			|| nextOp === OpCode.SETSYS
+			|| nextOp === OpCode.GETGL
+			|| nextOp === OpCode.SETGL
 			|| nextOp === OpCode.CLOSURE
 			|| nextOp === OpCode.JMP
 			|| nextOp === OpCode.JMPIF
-			|| nextOp === OpCode.JMPIFNOT;
+			|| nextOp === OpCode.JMPIFNOT
+			|| nextOp === OpCode.BR_TRUE
+			|| nextOp === OpCode.BR_FALSE;
 		const extA = usesBx ? 0 : (nextExt >>> 6) & 0x3;
 		const extB = usesBx ? 0 : (nextExt >>> 3) & 0x7;
 		const extC = usesBx ? 0 : (nextExt & 0x7);
@@ -350,12 +369,19 @@ const decodeInstruction = (code: Uint8Array, pc: number): DecodedInstruction => 
 		};
 	}
 	const usesBx = op === OpCode.LOADK
+		|| op === OpCode.KSMI
 		|| op === OpCode.GETG
 		|| op === OpCode.SETG
+		|| op === OpCode.GETSYS
+		|| op === OpCode.SETSYS
+		|| op === OpCode.GETGL
+		|| op === OpCode.SETGL
 		|| op === OpCode.CLOSURE
 		|| op === OpCode.JMP
 		|| op === OpCode.JMPIF
-		|| op === OpCode.JMPIFNOT;
+		|| op === OpCode.JMPIFNOT
+		|| op === OpCode.BR_TRUE
+		|| op === OpCode.BR_FALSE;
 	const extA = usesBx ? 0 : (ext >>> 6) & 0x3;
 	const extB = usesBx ? 0 : (ext >>> 3) & 0x7;
 	const extC = usesBx ? 0 : (ext & 0x7);
@@ -446,6 +472,19 @@ const formatProtoOperand = (metadata: ProgramMetadata | null, bx: number): strin
 	return `p${bx} (${protoId})`;
 };
 
+const formatGlobalSlotOperand = (metadata: ProgramMetadata | null, slot: number, system: boolean): string => {
+	const prefix = system ? 'sys' : 'gl';
+	if (!metadata) {
+		return `${prefix}${slot}`;
+	}
+	const names = system ? metadata.systemGlobalNames : metadata.globalNames;
+	const name = names[slot];
+	if (name === undefined) {
+		throw new Error(`[Disassembler] Missing ${prefix} slot name for index ${slot}.`);
+	}
+	return `${prefix}${slot} (${name})`;
+};
+
 const buildInstructionOperands = (
 	decoded: DecodedInstruction,
 	program: Program,
@@ -457,6 +496,20 @@ const buildInstructionOperands = (
 	switch (op) {
 		case OpCode.MOV:
 			return [registerOperand('a', 'dst', a), registerOperand('b', 'src', b)];
+		case OpCode.KNIL:
+			return [registerOperand('a', 'dst', a)];
+		case OpCode.KFALSE:
+			return [registerOperand('a', 'dst', a)];
+		case OpCode.KTRUE:
+			return [registerOperand('a', 'dst', a)];
+		case OpCode.K0:
+			return [registerOperand('a', 'dst', a)];
+		case OpCode.K1:
+			return [registerOperand('a', 'dst', a)];
+		case OpCode.KM1:
+			return [registerOperand('a', 'dst', a)];
+		case OpCode.KSMI:
+			return [registerOperand('a', 'dst', a), plainOperand('bx', 'imm', formatNumber(sbx))];
 		case OpCode.LOADK:
 			return [registerOperand('a', 'dst', a), plainOperand('bx', 'const', formatConst(program, bx, options))];
 		case OpCode.LOADNIL:
@@ -467,6 +520,14 @@ const buildInstructionOperands = (
 			return [registerOperand('a', 'dst', a), plainOperand('bx', 'global', formatConst(program, bx, options))];
 		case OpCode.SETG:
 			return [registerOperand('a', 'src', a), plainOperand('bx', 'global', formatConst(program, bx, options))];
+		case OpCode.GETSYS:
+			return [registerOperand('a', 'dst', a), plainOperand('bx', 'slot', formatGlobalSlotOperand(metadata, bx, true))];
+		case OpCode.SETSYS:
+			return [registerOperand('a', 'src', a), plainOperand('bx', 'slot', formatGlobalSlotOperand(metadata, bx, true))];
+		case OpCode.GETGL:
+			return [registerOperand('a', 'dst', a), plainOperand('bx', 'slot', formatGlobalSlotOperand(metadata, bx, false))];
+		case OpCode.SETGL:
+			return [registerOperand('a', 'src', a), plainOperand('bx', 'slot', formatGlobalSlotOperand(metadata, bx, false))];
 		case OpCode.GETT:
 			return [registerOperand('a', 'dst', a), registerOperand('b', 'table', b), rkOperand('c', 'key', program, c, decoded.rkBitsC, options)];
 		case OpCode.SETT:
@@ -570,6 +631,20 @@ const formatInstruction = (
 	switch (op) {
 		case OpCode.MOV:
 			return `MOV r${a}, r${b}`;
+		case OpCode.KNIL:
+			return `KNIL r${a}`;
+		case OpCode.KFALSE:
+			return `KFALSE r${a}`;
+		case OpCode.KTRUE:
+			return `KTRUE r${a}`;
+		case OpCode.K0:
+			return `K0 r${a}`;
+		case OpCode.K1:
+			return `K1 r${a}`;
+		case OpCode.KM1:
+			return `KM1 r${a}`;
+		case OpCode.KSMI:
+			return `KSMI r${a}, ${formatNumber(sbx)}`;
 		case OpCode.LOADK:
 			return `LOADK r${a}, ${formatConst(program, bx, options)}`;
 		case OpCode.LOADNIL:
@@ -580,6 +655,14 @@ const formatInstruction = (
 			return `GETG r${a}, ${formatConst(program, bx, options)}`;
 		case OpCode.SETG:
 			return `SETG r${a}, ${formatConst(program, bx, options)}`;
+		case OpCode.GETSYS:
+			return `GETSYS r${a}, ${formatGlobalSlotOperand(metadata, bx, true)}`;
+		case OpCode.SETSYS:
+			return `SETSYS r${a}, ${formatGlobalSlotOperand(metadata, bx, true)}`;
+		case OpCode.GETGL:
+			return `GETGL r${a}, ${formatGlobalSlotOperand(metadata, bx, false)}`;
+		case OpCode.SETGL:
+			return `SETGL r${a}, ${formatGlobalSlotOperand(metadata, bx, false)}`;
 		case OpCode.GETT:
 			return `GETT r${a}, r${b}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.SETT:
@@ -638,6 +721,10 @@ const formatInstruction = (
 			return `JMPIF r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.JMPIFNOT:
 			return `JMPIFNOT r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
+		case OpCode.BR_TRUE:
+			return `BR_TRUE r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
+		case OpCode.BR_FALSE:
+			return `BR_FALSE r${a}, ${formatJump(pc, sbx, pcWidth, options)}`;
 		case OpCode.CLOSURE: {
 			if (!metadata) {
 				return `CLOSURE r${a}, p${bx}`;

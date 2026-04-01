@@ -312,7 +312,7 @@ export type CodeTabContext = {
 };
 
 export type PendingActionPrompt = {
-	action: 'hot-reload-and-resume' | 'reboot' | 'close' | 'theme-toggle';
+	action: 'hot-resume' | 'reboot' | 'close' | 'theme-toggle';
 };
 
 export type EditorContextTokenKind = 'identifier' | 'keyword' | 'number' | 'string' | 'operator';

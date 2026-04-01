@@ -39,7 +39,7 @@ import { getTextSnapshot, splitText } from './text/source_text';
 
 export const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
 export const MENU_COMMANDS = [
-	'hot-reload-and-resume',
+	'hot-resume',
 	'reboot',
 	'save',
 	'resources',
@@ -300,7 +300,7 @@ export function handleEditorInput(): void {
 	if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressed('KeyS')) {
 		consumeIdeKey('KeyS');
 		activateCodeTab();
-		performAction('hot-reload-and-resume');
+		performAction('hot-resume');
 		return;
 	}
 
@@ -693,7 +693,7 @@ export function handleTopBarButtonPress(button: TopBarButtonId): void {
 				void save();
 			}
 			return;
-		case 'hot-reload-and-resume':
+		case 'hot-resume':
 		case 'reboot':
 			activateCodeTab();
 			performAction(button);

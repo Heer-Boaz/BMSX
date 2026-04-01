@@ -508,6 +508,9 @@ struct ProgramMetadata {
 	std::vector<std::optional<SourceRange>> debugRanges;
 	std::vector<std::string> protoIds;
 	std::vector<std::vector<LocalSlotDebug>> localSlotsByProto;
+	std::vector<std::vector<std::string>> upvalueNamesByProto;
+	std::vector<std::string> globalNames;
+	std::vector<std::string> systemGlobalNames;
 };
 
 constexpr int INSTRUCTION_BYTES = 4;
@@ -548,6 +551,13 @@ enum class OpCode : uint8_t {
 	LOADK,
 	LOADNIL,
 	LOADBOOL,
+	KNIL,
+	KFALSE,
+	KTRUE,
+	K0,
+	K1,
+	KM1,
+	KSMI,
 	GETG,
 	SETG,
 	GETT,
@@ -588,6 +598,12 @@ enum class OpCode : uint8_t {
 	LOAD_MEM,
 	STORE_MEM,
 	STORE_MEM_WORDS,
+	BR_TRUE,
+	BR_FALSE,
+	GETSYS,
+	SETSYS,
+	GETGL,
+	SETGL,
 };
 
 enum class MemoryAccessKind : uint8_t {
@@ -753,6 +769,7 @@ public:
 	void reserveStringHandles(StringId minHandle);
 	void setExternalRootMarker(std::function<void(GcHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }
+	void setGlobalByKey(const Value& key, const Value& value);
 
 	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeFnCost cost = {});
 	Value createNativeObject(
@@ -804,6 +821,7 @@ private:
 		bool hasWide
 	);
 	void skipNextInstruction(CallFrame& frame);
+	void initializeGlobalSlots(ProgramMetadata* metadata);
 	void pushFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	void pushFrame(Closure* closure, const std::vector<Value>& args,
@@ -813,7 +831,8 @@ private:
 	const Value& readUpvalue(Upvalue* upvalue);
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
 	void writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values);
-	void setRegister(CallFrame& frame, int index, const Value& value);
+	void setRegister(CallFrame& frame, int index, Value value);
+	std::vector<Value>& ensureRegisterCapacity(CallFrame& frame, int index);
 	Value readMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind) const;
 	void writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, const Value& value);
 	void writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount);
@@ -855,6 +874,12 @@ private:
 
 	std::vector<DecodedInstruction> m_decoded;
 	Value m_indexKey = valueNil();
+	std::vector<StringId> m_systemGlobalNames;
+	std::vector<Value> m_systemGlobalValues;
+	std::unordered_map<StringId, size_t> m_systemGlobalSlotByKey;
+	std::vector<StringId> m_globalNames;
+	std::vector<Value> m_globalValues;
+	std::unordered_map<StringId, size_t> m_globalSlotByKey;
 	Table* m_stringIndexTable = nullptr;
 };
 

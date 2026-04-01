@@ -73,7 +73,7 @@ export interface RomAsset {
 	texture_end?: number;   // End offset of the texture buffer within the ROM
 	source_path?: string; // Relative filesystem path for the asset when applicable (e.g., Lua source files).
 	normalized_source_path?: string; // Normalized absolute-ish source path for this asset.
-	update_timestamp?: number; // Last update timestamp for the asset, used for dev hot-reload.
+	update_timestamp?: number; // Last update timestamp for the asset, used for dev hot-resume.
 	payload_id?: CartridgeLayerId; // Cartridge layer backing this asset's raw bytes.
 }
 

@@ -1,5 +1,5 @@
 import { OpCode, type SourceRange, type Value } from './cpu';
-import { MAX_EXT_CONST } from './instruction_format';
+import { MAX_EXT_CONST, MAX_SIGNED_BX, MIN_SIGNED_BX } from './instruction_format';
 import { isStringValue, stringValueToString } from './string_pool';
 import type { Instruction, InstructionSet, OptimizationContext } from './program_optimizer';
 
@@ -47,7 +47,32 @@ const SCCP_CONST = 1;
 const SCCP_OVERDEFINED = 2;
 
 const isJump = (instruction: Instruction): boolean =>
-	instruction.op === OpCode.JMP || instruction.op === OpCode.JMPIF || instruction.op === OpCode.JMPIFNOT;
+	instruction.op === OpCode.JMP
+	|| instruction.op === OpCode.JMPIF
+	|| instruction.op === OpCode.JMPIFNOT
+	|| instruction.op === OpCode.BR_TRUE
+	|| instruction.op === OpCode.BR_FALSE;
+
+const getImmediateConstValue = (instruction: Instruction, context: OptimizationContext): ConstValue | null => {
+	switch (instruction.op) {
+		case OpCode.KNIL:
+			return { value: null, constIndex: context.constIndex(null) };
+		case OpCode.KFALSE:
+			return { value: false, constIndex: context.constIndex(false) };
+		case OpCode.KTRUE:
+			return { value: true, constIndex: context.constIndex(true) };
+		case OpCode.K0:
+			return { value: 0, constIndex: context.constIndex(0) };
+		case OpCode.K1:
+			return { value: 1, constIndex: context.constIndex(1) };
+		case OpCode.KM1:
+			return { value: -1, constIndex: context.constIndex(-1) };
+		case OpCode.KSMI:
+			return { value: instruction.b, constIndex: context.constIndex(instruction.b) };
+		default:
+			return null;
+	}
+};
 
 const getJumpTarget = (instruction: Instruction): number => {
 	if (instruction.target === null) {
@@ -78,6 +103,8 @@ const buildBasicBlocks = (instructions: Instruction[]): Block[] => {
 				break;
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
+			case OpCode.BR_TRUE:
+			case OpCode.BR_FALSE:
 				if (instruction.target !== null && instruction.target < count) {
 					leaders.add(instruction.target);
 				}
@@ -185,6 +212,15 @@ const buildBlockGraph = (instructions: Instruction[], blocks: Block[]): {
 				}
 				break;
 			}
+			case OpCode.BR_TRUE:
+			case OpCode.BR_FALSE: {
+				const target = getJumpTarget(instruction);
+				addSuccessor(blockIndex, target < count ? blockForIndex[target] : null);
+				if (nextIndex < count) {
+					addSuccessor(blockIndex, blockForIndex[nextIndex]);
+				}
+				break;
+			}
 			case OpCode.LOADBOOL: {
 				if (nextIndex < count) {
 					addSuccessor(blockIndex, blockForIndex[nextIndex]);
@@ -234,20 +270,33 @@ const computeMaxRegister = (instructions: Instruction[]): number => {
 	};
 	for (const instruction of instructions) {
 		switch (instruction.op) {
+			case OpCode.KNIL:
+			case OpCode.KFALSE:
+			case OpCode.KTRUE:
+			case OpCode.K0:
+			case OpCode.K1:
+			case OpCode.KM1:
+			case OpCode.KSMI:
 			case OpCode.LOADK:
 			case OpCode.LOADNIL:
 			case OpCode.LOADBOOL:
 			case OpCode.GETG:
+			case OpCode.GETSYS:
+			case OpCode.GETGL:
 			case OpCode.NEWT:
 			case OpCode.CLOSURE:
 			case OpCode.GETUP:
 				updateMax(instruction.a);
 				break;
 			case OpCode.SETG:
+			case OpCode.SETSYS:
+			case OpCode.SETGL:
 			case OpCode.SETUP:
 			case OpCode.TEST:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
+			case OpCode.BR_TRUE:
+			case OpCode.BR_FALSE:
 			case OpCode.LOAD_MEM:
 				updateMax(instruction.a);
 				if (instruction.op === OpCode.LOAD_MEM) {
@@ -418,6 +467,13 @@ const isValueNumberable = (op: OpCode): boolean => {
 const isPureInstruction = (instruction: Instruction): boolean => {
 	switch (instruction.op) {
 		case OpCode.MOV:
+		case OpCode.KNIL:
+		case OpCode.KFALSE:
+		case OpCode.KTRUE:
+		case OpCode.K0:
+		case OpCode.K1:
+		case OpCode.KM1:
+		case OpCode.KSMI:
 		case OpCode.LOADK:
 		case OpCode.LOADNIL:
 		case OpCode.NEWT:
@@ -532,6 +588,23 @@ const simplifyBranches = (
 				instrUses[i] = [];
 				break;
 			}
+			case OpCode.BR_TRUE:
+			case OpCode.BR_FALSE: {
+				const slot = getSlot(uses, 'a');
+				const value = getRegisterConst(slot);
+				if (!value) {
+					break;
+				}
+				const truthy = isTruthy(value.value);
+				const shouldJump = instruction.op === OpCode.BR_TRUE ? truthy : !truthy;
+				if (shouldJump) {
+					replaceWithJump(instruction, getJumpTarget(instruction));
+				} else {
+					replaceWithNop(instruction);
+				}
+				instrUses[i] = [];
+				break;
+			}
 			case OpCode.TEST: {
 				const slot = getSlot(uses, 'a');
 				const value = getRegisterConst(slot);
@@ -598,20 +671,54 @@ const replaceWithConst = (instruction: Instruction, target: number, value: Value
 	instruction.rkMask = 0;
 	instruction.callProtoIndex = null;
 	if (value === null) {
-		instruction.op = OpCode.LOADNIL;
+		instruction.op = OpCode.KNIL;
 		instruction.a = target;
-		instruction.b = 1;
+		instruction.b = 0;
 		instruction.c = 0;
 		instruction.format = 'ABC';
 		return { value, constIndex: context.constIndex(null) };
 	}
 	if (typeof value === 'boolean') {
-		instruction.op = OpCode.LOADBOOL;
+		instruction.op = value ? OpCode.KTRUE : OpCode.KFALSE;
 		instruction.a = target;
-		instruction.b = value ? 1 : 0;
+		instruction.b = 0;
 		instruction.c = 0;
 		instruction.format = 'ABC';
 		return { value, constIndex: context.constIndex(value) };
+	}
+	if (typeof value === 'number' && Number.isInteger(value)) {
+		if (value === 0) {
+			instruction.op = OpCode.K0;
+			instruction.a = target;
+			instruction.b = 0;
+			instruction.c = 0;
+			instruction.format = 'ABC';
+			return { value, constIndex: context.constIndex(value) };
+		}
+		if (value === 1) {
+			instruction.op = OpCode.K1;
+			instruction.a = target;
+			instruction.b = 0;
+			instruction.c = 0;
+			instruction.format = 'ABC';
+			return { value, constIndex: context.constIndex(value) };
+		}
+		if (value === -1) {
+			instruction.op = OpCode.KM1;
+			instruction.a = target;
+			instruction.b = 0;
+			instruction.c = 0;
+			instruction.format = 'ABC';
+			return { value, constIndex: context.constIndex(value) };
+		}
+		if (value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX) {
+			instruction.op = OpCode.KSMI;
+			instruction.a = target;
+			instruction.b = value;
+			instruction.c = 0;
+			instruction.format = 'ABx';
+			return { value, constIndex: context.constIndex(value) };
+		}
 	}
 	const constIndex = context.constIndex(value);
 	instruction.op = OpCode.LOADK;
@@ -820,6 +927,10 @@ const evaluateSccpDef = (
 	valueKind: Uint8Array,
 	valueConst: Array<ConstValue | null>,
 ): { kind: number; constVal: ConstValue | null } => {
+	const immediate = getImmediateConstValue(instruction, context);
+	if (immediate) {
+		return { kind: SCCP_CONST, constVal: immediate };
+	}
 	switch (instruction.op) {
 		case OpCode.LOADK:
 			return { kind: SCCP_CONST, constVal: { value: context.constPool[instruction.b], constIndex: instruction.b } };
@@ -1060,6 +1171,32 @@ const runSccp = (
 					}
 					break;
 				}
+				case OpCode.BR_TRUE:
+				case OpCode.BR_FALSE: {
+					const uses = instrUses[lastIndex] ?? [];
+					const slot = uses.find(entry => entry.field === 'a');
+					if (!slot) {
+						throw new Error('[ProgramOptimizer] Missing BR operand.');
+					}
+					const kind = valueKind[slot.valueId];
+					if (kind === SCCP_CONST) {
+						const constVal = valueConst[slot.valueId];
+						if (!constVal) {
+							throw new Error('[ProgramOptimizer] Missing SCCP constant.');
+						}
+						const truthy = isTruthy(constVal.value);
+						const takeJump = last.op === OpCode.BR_TRUE ? truthy : !truthy;
+						if (takeJump) {
+							markReachable(last.target !== null && last.target < instructions.length ? blockForIndex[last.target] : null);
+						} else {
+							markReachable(nextBlock);
+						}
+					} else {
+						markReachable(nextBlock);
+						markReachable(last.target !== null && last.target < instructions.length ? blockForIndex[last.target] : null);
+					}
+					break;
+				}
 				case OpCode.TEST: {
 					const uses = instrUses[lastIndex] ?? [];
 					const slot = uses.find(entry => entry.field === 'a');
@@ -1183,7 +1320,11 @@ const collectUsesForSsa = (instruction: Instruction): UseOperand[] => {
 		case OpCode.TEST:
 		case OpCode.JMPIF:
 		case OpCode.JMPIFNOT:
+		case OpCode.BR_TRUE:
+		case OpCode.BR_FALSE:
 		case OpCode.SETG:
+		case OpCode.SETSYS:
+		case OpCode.SETGL:
 		case OpCode.SETUP:
 			add('a', instruction.a, null, false);
 			break;
@@ -1230,10 +1371,14 @@ const collectUsesForLiveness = (instruction: Instruction, maxRegister: number): 
 			add(instruction.b);
 			break;
 		case OpCode.SETG:
+		case OpCode.SETSYS:
+		case OpCode.SETGL:
 		case OpCode.SETUP:
 		case OpCode.TEST:
 		case OpCode.JMPIF:
 		case OpCode.JMPIFNOT:
+		case OpCode.BR_TRUE:
+		case OpCode.BR_FALSE:
 			add(instruction.a);
 			break;
 		case OpCode.TESTSET:
@@ -1321,9 +1466,18 @@ const collectDefs = (instruction: Instruction, maxRegister: number): number[] =>
 	};
 	switch (instruction.op) {
 		case OpCode.MOV:
+		case OpCode.KNIL:
+		case OpCode.KFALSE:
+		case OpCode.KTRUE:
+		case OpCode.K0:
+		case OpCode.K1:
+		case OpCode.KM1:
+		case OpCode.KSMI:
 		case OpCode.LOADK:
 		case OpCode.LOADBOOL:
 		case OpCode.GETG:
+		case OpCode.GETSYS:
+		case OpCode.GETGL:
 		case OpCode.GETT:
 		case OpCode.NEWT:
 		case OpCode.ADD:
@@ -1786,6 +1940,8 @@ const isControlFlowInstruction = (instruction: Instruction): boolean => {
 	return instruction.op === OpCode.JMP
 		|| instruction.op === OpCode.JMPIF
 		|| instruction.op === OpCode.JMPIFNOT
+		|| instruction.op === OpCode.BR_TRUE
+		|| instruction.op === OpCode.BR_FALSE
 		|| instruction.op === OpCode.TEST
 		|| instruction.op === OpCode.TESTSET
 		|| instruction.op === OpCode.EQ
@@ -1796,6 +1952,13 @@ const isControlFlowInstruction = (instruction: Instruction): boolean => {
 const isHoistableInstruction = (instruction: Instruction): boolean => {
 	switch (instruction.op) {
 		case OpCode.MOV:
+		case OpCode.KNIL:
+		case OpCode.KFALSE:
+		case OpCode.KTRUE:
+		case OpCode.K0:
+		case OpCode.K1:
+		case OpCode.KM1:
+		case OpCode.KSMI:
 		case OpCode.LOADK:
 		case OpCode.LOADNIL:
 		case OpCode.LOADBOOL:
@@ -2006,6 +2169,8 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet): InstructionSet => {
 		switch (instruction.op) {
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
+			case OpCode.BR_TRUE:
+			case OpCode.BR_FALSE:
 				if (i + 1 < instructions.length) {
 					pinnedTargets.add(i + 1);
 				}
@@ -2399,6 +2564,27 @@ const unrollNumericForLoops = (set: InstructionSet, context: OptimizationContext
 						}
 						if (instr.op === OpCode.LOADBOOL) {
 							return instr.b !== 0;
+						}
+						if (instr.op === OpCode.KNIL) {
+							return null;
+						}
+						if (instr.op === OpCode.KFALSE) {
+							return false;
+						}
+						if (instr.op === OpCode.KTRUE) {
+							return true;
+						}
+						if (instr.op === OpCode.K0) {
+							return 0;
+						}
+						if (instr.op === OpCode.K1) {
+							return 1;
+						}
+						if (instr.op === OpCode.KM1) {
+							return -1;
+						}
+						if (instr.op === OpCode.KSMI) {
+							return instr.b;
 						}
 						if (instr.op === OpCode.LOADNIL) {
 							return null;

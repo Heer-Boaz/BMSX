@@ -1,4 +1,5 @@
 #include "disassembler.h"
+#include "number_format.h"
 
 #include <algorithm>
 #include <cctype>
@@ -43,12 +44,19 @@ inline int signExtendDebug(uint32_t value, int bits) {
 
 bool opUsesBx(OpCode op) {
 	return op == OpCode::LOADK
+		|| op == OpCode::KSMI
 		|| op == OpCode::GETG
 		|| op == OpCode::SETG
+		|| op == OpCode::GETSYS
+		|| op == OpCode::SETSYS
+		|| op == OpCode::GETGL
+		|| op == OpCode::SETGL
 		|| op == OpCode::CLOSURE
 		|| op == OpCode::JMP
 		|| op == OpCode::JMPIF
-		|| op == OpCode::JMPIFNOT;
+		|| op == OpCode::JMPIFNOT
+		|| op == OpCode::BR_TRUE
+		|| op == OpCode::BR_FALSE;
 }
 
 const char* opCodeName(OpCode op) {
@@ -58,6 +66,13 @@ const char* opCodeName(OpCode op) {
 		case OpCode::LOADK: return "LOADK";
 		case OpCode::LOADNIL: return "LOADNIL";
 		case OpCode::LOADBOOL: return "LOADBOOL";
+		case OpCode::KNIL: return "KNIL";
+		case OpCode::KFALSE: return "KFALSE";
+		case OpCode::KTRUE: return "KTRUE";
+		case OpCode::K0: return "K0";
+		case OpCode::K1: return "K1";
+		case OpCode::KM1: return "KM1";
+		case OpCode::KSMI: return "KSMI";
 		case OpCode::GETG: return "GETG";
 		case OpCode::SETG: return "SETG";
 		case OpCode::GETT: return "GETT";
@@ -98,6 +113,12 @@ const char* opCodeName(OpCode op) {
 		case OpCode::LOAD_MEM: return "LOAD_MEM";
 		case OpCode::STORE_MEM: return "STORE_MEM";
 		case OpCode::STORE_MEM_WORDS: return "STORE_MEM_WORDS";
+		case OpCode::BR_TRUE: return "BR_TRUE";
+		case OpCode::BR_FALSE: return "BR_FALSE";
+		case OpCode::GETSYS: return "GETSYS";
+		case OpCode::SETSYS: return "SETSYS";
+		case OpCode::GETGL: return "GETGL";
+		case OpCode::SETGL: return "SETGL";
 	}
 	return "UNKNOWN";
 }
@@ -159,6 +180,18 @@ std::string formatProtoOperand(const ProgramMetadata* metadata, int bx) {
 		throw BMSX_RUNTIME_ERROR("[Disassembler] Missing proto id for index " + std::to_string(bx) + ".");
 	}
 	return "p" + std::to_string(bx) + " (" + metadata->protoIds[static_cast<size_t>(bx)] + ")";
+}
+
+std::string formatGlobalSlotOperand(const ProgramMetadata* metadata, int slot, bool system) {
+	const char* prefix = system ? "sys" : "gl";
+	if (!metadata) {
+		return std::string(prefix) + std::to_string(slot);
+	}
+	const std::vector<std::string>& names = system ? metadata->systemGlobalNames : metadata->globalNames;
+	if (slot < 0 || slot >= static_cast<int>(names.size())) {
+		throw BMSX_RUNTIME_ERROR(std::string("[Disassembler] Missing ") + prefix + " slot name for index " + std::to_string(slot) + ".");
+	}
+	return std::string(prefix) + std::to_string(slot) + " (" + names[static_cast<size_t>(slot)] + ")";
 }
 
 std::string formatRKOperand(const Program& program, uint32_t raw, int bits) {
@@ -271,6 +304,20 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 	switch (decoded.op) {
 		case OpCode::MOV:
 			return "MOV r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b);
+		case OpCode::KNIL:
+			return "KNIL r" + std::to_string(decoded.a);
+		case OpCode::KFALSE:
+			return "KFALSE r" + std::to_string(decoded.a);
+		case OpCode::KTRUE:
+			return "KTRUE r" + std::to_string(decoded.a);
+		case OpCode::K0:
+			return "K0 r" + std::to_string(decoded.a);
+		case OpCode::K1:
+			return "K1 r" + std::to_string(decoded.a);
+		case OpCode::KM1:
+			return "KM1 r" + std::to_string(decoded.a);
+		case OpCode::KSMI:
+			return "KSMI r" + std::to_string(decoded.a) + ", " + formatNumber(decoded.sbx);
 		case OpCode::LOADK:
 			return "LOADK r" + std::to_string(decoded.a) + ", " + formatConstValue(program, decoded.bx);
 		case OpCode::LOADNIL:
@@ -281,6 +328,14 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "GETG r" + std::to_string(decoded.a) + ", " + formatConstValue(program, decoded.bx);
 		case OpCode::SETG:
 			return "SETG r" + std::to_string(decoded.a) + ", " + formatConstValue(program, decoded.bx);
+		case OpCode::GETSYS:
+			return "GETSYS r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(metadata, decoded.bx, true);
+		case OpCode::SETSYS:
+			return "SETSYS r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(metadata, decoded.bx, true);
+		case OpCode::GETGL:
+			return "GETGL r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(metadata, decoded.bx, false);
+		case OpCode::SETGL:
+			return "SETGL r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(metadata, decoded.bx, false);
 		case OpCode::GETT:
 			return "GETT r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::SETT:
@@ -322,6 +377,10 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "JMPIF r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::JMPIFNOT:
 			return "JMPIFNOT r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
+		case OpCode::BR_TRUE:
+			return "BR_TRUE r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
+		case OpCode::BR_FALSE:
+			return "BR_FALSE r" + std::to_string(decoded.a) + ", " + formatJumpTarget(decoded.pc, decoded.sbx, pcWidth);
 		case OpCode::CLOSURE:
 			return "CLOSURE r" + std::to_string(decoded.a) + ", " + formatProtoOperand(metadata, decoded.bx);
 		case OpCode::GETUP:
@@ -350,6 +409,20 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 	switch (decoded.op) {
 		case OpCode::MOV:
 			return {registerOperand("dst", decoded.a), registerOperand("src", decoded.b)};
+		case OpCode::KNIL:
+			return {registerOperand("dst", decoded.a)};
+		case OpCode::KFALSE:
+			return {registerOperand("dst", decoded.a)};
+		case OpCode::KTRUE:
+			return {registerOperand("dst", decoded.a)};
+		case OpCode::K0:
+			return {registerOperand("dst", decoded.a)};
+		case OpCode::K1:
+			return {registerOperand("dst", decoded.a)};
+		case OpCode::KM1:
+			return {registerOperand("dst", decoded.a)};
+		case OpCode::KSMI:
+			return {registerOperand("dst", decoded.a), plainOperand("imm", formatNumber(decoded.sbx))};
 		case OpCode::LOADK:
 			return {registerOperand("dst", decoded.a), plainOperand("const", formatConstValue(program, decoded.bx))};
 		case OpCode::LOADNIL:
@@ -360,6 +433,14 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("dst", decoded.a), plainOperand("global", formatConstValue(program, decoded.bx))};
 		case OpCode::SETG:
 			return {registerOperand("src", decoded.a), plainOperand("global", formatConstValue(program, decoded.bx))};
+		case OpCode::GETSYS:
+			return {registerOperand("dst", decoded.a), plainOperand("slot", formatGlobalSlotOperand(metadata, decoded.bx, true))};
+		case OpCode::SETSYS:
+			return {registerOperand("src", decoded.a), plainOperand("slot", formatGlobalSlotOperand(metadata, decoded.bx, true))};
+		case OpCode::GETGL:
+			return {registerOperand("dst", decoded.a), plainOperand("slot", formatGlobalSlotOperand(metadata, decoded.bx, false))};
+		case OpCode::SETGL:
+			return {registerOperand("src", decoded.a), plainOperand("slot", formatGlobalSlotOperand(metadata, decoded.bx, false))};
 		case OpCode::GETT:
 			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), rkOperand("key", program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
 		case OpCode::SETT:
@@ -399,6 +480,9 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
 		case OpCode::JMPIF:
 		case OpCode::JMPIFNOT:
+			return {registerOperand("cond", decoded.a), plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
+		case OpCode::BR_TRUE:
+		case OpCode::BR_FALSE:
 			return {registerOperand("cond", decoded.a), plainOperand("jump", formatJumpTarget(decoded.pc, decoded.sbx, pcWidth))};
 		case OpCode::CLOSURE:
 			return {registerOperand("dst", decoded.a), plainOperand("proto", formatProtoOperand(metadata, decoded.bx))};

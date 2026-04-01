@@ -832,7 +832,7 @@ export class Runtime {
 	private readonly valueScratchPool: Value[][] = [];
 	private readonly stringScratchPool: string[][] = [];
 	public readonly luaFunctionRedirectCache = new LuaFunctionRedirectCache();
-	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-reload.
+	// Wrap Lua closures with stable JS stubs so FSM/input/events can hold onto durable references even across hot-resume.
 	private readonly luaHandlerCache = new LuaHandlerCache(
 		(fn, thisArg, args) => this.invokeLuaHandler(fn, thisArg, args),
 		(error, meta) => this.handleLuaHandlerError(error, meta),

@@ -15,7 +15,7 @@ function ecspipelineregistry.new()
 end
 
 function ecspipelineregistry:register(desc)
-	self._descs[desc.id] = desc -- Allow overriding existing descs with the same id, to allow for dynamic changes to the pipeline and hot-reloading.
+	self._descs[desc.id] = desc -- Allow overriding existing descs with the same id, to allow for dynamic changes to the pipeline and hot-resume.
 end
 
 function ecspipelineregistry:register_many(descs)

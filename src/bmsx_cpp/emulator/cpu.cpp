@@ -96,6 +96,13 @@ static constexpr std::array<uint8_t, 64> makeBaseCycles() {
 	setCycle(table, OpCode::LOADK, 1);
 	setCycle(table, OpCode::LOADBOOL, 1);
 	setCycle(table, OpCode::LOADNIL, 1);
+	setCycle(table, OpCode::KNIL, 1);
+	setCycle(table, OpCode::KFALSE, 1);
+	setCycle(table, OpCode::KTRUE, 1);
+	setCycle(table, OpCode::K0, 1);
+	setCycle(table, OpCode::K1, 1);
+	setCycle(table, OpCode::KM1, 1);
+	setCycle(table, OpCode::KSMI, 1);
 
 	setCycle(table, OpCode::GETG, 6);
 	setCycle(table, OpCode::SETG, 7);
@@ -146,6 +153,12 @@ static constexpr std::array<uint8_t, 64> makeBaseCycles() {
 	setCycle(table, OpCode::LOAD_MEM, 5);
 	setCycle(table, OpCode::STORE_MEM, 6);
 	setCycle(table, OpCode::STORE_MEM_WORDS, 6);
+	setCycle(table, OpCode::BR_TRUE, 2);
+	setCycle(table, OpCode::BR_FALSE, 2);
+	setCycle(table, OpCode::GETSYS, 2);
+	setCycle(table, OpCode::SETSYS, 3);
+	setCycle(table, OpCode::GETGL, 4);
+	setCycle(table, OpCode::SETGL, 5);
 
 	return table;
 }
@@ -862,6 +875,7 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 	m_program = program;
 	m_metadata = metadata;
 	if (!m_program) {
+		initializeGlobalSlots(metadata);
 		m_decoded.clear();
 		return;
 	}
@@ -882,7 +896,49 @@ void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
 		throw BMSX_RUNTIME_ERROR("[CPU] Program const pool is canonicalized for a different string pool.");
 	}
 	m_indexKey = valueString(m_stringPool.intern("__index"));
+	initializeGlobalSlots(metadata);
 	decodeProgram();
+}
+
+void CPU::initializeGlobalSlots(ProgramMetadata* metadata) {
+	const std::vector<std::string>* systemNames = metadata ? &metadata->systemGlobalNames : nullptr;
+	const std::vector<std::string>* globalNames = metadata ? &metadata->globalNames : nullptr;
+	const size_t systemCount = systemNames ? systemNames->size() : 0;
+	const size_t globalCount = globalNames ? globalNames->size() : 0;
+
+	m_systemGlobalNames.resize(systemCount);
+	m_systemGlobalValues.resize(systemCount);
+	m_systemGlobalSlotByKey.clear();
+	for (size_t index = 0; index < systemCount; ++index) {
+		const StringId key = m_stringPool.intern((*systemNames)[index]);
+		m_systemGlobalNames[index] = key;
+		m_systemGlobalSlotByKey.emplace(key, index);
+		m_systemGlobalValues[index] = globals->get(valueString(key));
+	}
+
+	m_globalNames.resize(globalCount);
+	m_globalValues.resize(globalCount);
+	m_globalSlotByKey.clear();
+	for (size_t index = 0; index < globalCount; ++index) {
+		const StringId key = m_stringPool.intern((*globalNames)[index]);
+		m_globalNames[index] = key;
+		m_globalSlotByKey.emplace(key, index);
+		m_globalValues[index] = globals->get(valueString(key));
+	}
+}
+
+void CPU::setGlobalByKey(const Value& key, const Value& value) {
+	globals->set(key, value);
+	const StringId keyId = asStringId(key);
+	const auto systemIt = m_systemGlobalSlotByKey.find(keyId);
+	if (systemIt != m_systemGlobalSlotByKey.end()) {
+		m_systemGlobalValues[systemIt->second] = value;
+		return;
+	}
+	const auto globalIt = m_globalSlotByKey.find(keyId);
+	if (globalIt != m_globalSlotByKey.end()) {
+		m_globalValues[globalIt->second] = value;
+	}
 }
 
 void CPU::reserveStringHandles(StringId minHandle) {
@@ -1071,12 +1127,19 @@ void CPU::executeInstruction(
 	bool hasWide
 ) {
 	bool usesBx = op == OpCode::LOADK
+		|| op == OpCode::KSMI
 		|| op == OpCode::GETG
 		|| op == OpCode::SETG
+		|| op == OpCode::GETSYS
+		|| op == OpCode::SETSYS
+		|| op == OpCode::GETGL
+		|| op == OpCode::SETGL
 		|| op == OpCode::CLOSURE
 		|| op == OpCode::JMP
 		|| op == OpCode::JMPIF
-		|| op == OpCode::JMPIFNOT;
+		|| op == OpCode::JMPIFNOT
+		|| op == OpCode::BR_TRUE
+		|| op == OpCode::BR_FALSE;
 	uint8_t extA = usesBx ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
 	uint8_t extB = usesBx ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
 	uint8_t extC = usesBx ? 0 : static_cast<uint8_t>(ext & 0x7);
@@ -1128,6 +1191,34 @@ void CPU::executeInstruction(
 			}
 			return;
 
+		case OpCode::KNIL:
+			setRegister(frame, a, valueNil());
+			return;
+
+		case OpCode::KFALSE:
+			setRegister(frame, a, valueBool(false));
+			return;
+
+		case OpCode::KTRUE:
+			setRegister(frame, a, valueBool(true));
+			return;
+
+		case OpCode::K0:
+			setRegister(frame, a, valueNumber(0.0));
+			return;
+
+		case OpCode::K1:
+			setRegister(frame, a, valueNumber(1.0));
+			return;
+
+		case OpCode::KM1:
+			setRegister(frame, a, valueNumber(-1.0));
+			return;
+
+		case OpCode::KSMI:
+			setRegister(frame, a, valueNumber(static_cast<double>(sbx)));
+			return;
+
 		case OpCode::GETG: {
 			const Value& key = m_program->constPool[bx];
 			setRegister(frame, a, globals->get(key));
@@ -1139,6 +1230,24 @@ void CPU::executeInstruction(
 			globals->set(key, frame.registers[a]);
 			return;
 		}
+
+		case OpCode::GETSYS:
+			setRegister(frame, a, m_systemGlobalValues[static_cast<size_t>(bx)]);
+			return;
+
+		case OpCode::SETSYS:
+			m_systemGlobalValues[static_cast<size_t>(bx)] = frame.registers[a];
+			globals->set(valueString(m_systemGlobalNames[static_cast<size_t>(bx)]), frame.registers[a]);
+			return;
+
+		case OpCode::GETGL:
+			setRegister(frame, a, m_globalValues[static_cast<size_t>(bx)]);
+			return;
+
+		case OpCode::SETGL:
+			m_globalValues[static_cast<size_t>(bx)] = frame.registers[a];
+			globals->set(valueString(m_globalNames[static_cast<size_t>(bx)]), frame.registers[a]);
+			return;
 
 		case OpCode::GETT: {
 			const Value& tableValue = frame.registers[b];
@@ -1529,6 +1638,18 @@ void CPU::executeInstruction(
 			}
 			return;
 
+		case OpCode::BR_TRUE:
+			if (isTruthy(frame.registers[static_cast<size_t>(a)])) {
+				frame.pc += sbx * INSTRUCTION_BYTES;
+			}
+			return;
+
+		case OpCode::BR_FALSE:
+			if (!isTruthy(frame.registers[static_cast<size_t>(a)])) {
+				frame.pc += sbx * INSTRUCTION_BYTES;
+			}
+			return;
+
 		case OpCode::CLOSURE:
 			setRegister(frame, a, valueClosure(createClosure(frame, bx)));
 			return;
@@ -1751,11 +1872,32 @@ void CPU::writeReturnValues(CallFrame& frame, int base, int count, const std::ve
 	frame.top = base + count;
 }
 
-void CPU::setRegister(CallFrame& frame, int index, const Value& value) {
-	frame.registers[static_cast<size_t>(index)] = value;
-	if (index >= frame.top) {
-		frame.top = index + 1;
+void CPU::setRegister(CallFrame& frame, int index, Value value) {
+	std::vector<Value>& registers = ensureRegisterCapacity(frame, index);
+	registers[static_cast<size_t>(index)] = value;
+	const int nextTop = index + 1;
+	if (nextTop > frame.top) {
+		frame.top = nextTop;
 	}
+}
+
+std::vector<Value>& CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
+	std::vector<Value>& registers = frame.registers;
+	if (index >= static_cast<int>(registers.size())) {
+		const size_t needed = static_cast<size_t>(index) + 1;
+		size_t bucket = nextPowerOfTwo(needed);
+		if (bucket < 8) {
+			bucket = 8;
+		}
+		const size_t target = bucket > MAX_REGISTER_ARRAY_SIZE ? needed : bucket;
+		std::vector<Value> next = target > MAX_REGISTER_ARRAY_SIZE
+			? std::vector<Value>(target, valueNil())
+			: acquireRegisters(target);
+		std::copy_n(registers.begin(), static_cast<size_t>(frame.top), next.begin());
+		releaseRegisters(std::move(registers));
+		registers = std::move(next);
+	}
+	return registers;
 }
 
 Value CPU::readMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind) const {

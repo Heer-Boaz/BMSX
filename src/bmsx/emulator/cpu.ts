@@ -113,6 +113,8 @@ export type ProgramMetadata = {
 	protoIds: string[];
 	localSlotsByProto?: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;
 	upvalueNamesByProto?: ReadonlyArray<ReadonlyArray<string>>;
+	globalNames: string[];
+	systemGlobalNames: string[];
 };
 
 export type CpuFrameSnapshot = {
@@ -224,6 +226,13 @@ export const enum OpCode {
 	LOADK,
 	LOADNIL,
 	LOADBOOL,
+	KNIL,
+	KFALSE,
+	KTRUE,
+	K0,
+	K1,
+	KM1,
+	KSMI,
 	GETG,
 	SETG,
 	GETT,
@@ -264,6 +273,12 @@ export const enum OpCode {
 	LOAD_MEM,
 	STORE_MEM,
 	STORE_MEM_WORDS,
+	BR_TRUE,
+	BR_FALSE,
+	GETSYS,
+	SETSYS,
+	GETGL,
+	SETGL,
 }
 
 export const enum MemoryAccessKind {
@@ -298,6 +313,13 @@ const BASE_CYCLES: Uint8Array = (() => {
 	set(OpCode.LOADK, 1);
 	set(OpCode.LOADBOOL, 1);
 	set(OpCode.LOADNIL, 1);
+	set(OpCode.KNIL, 1);
+	set(OpCode.KFALSE, 1);
+	set(OpCode.KTRUE, 1);
+	set(OpCode.K0, 1);
+	set(OpCode.K1, 1);
+	set(OpCode.KM1, 1);
+	set(OpCode.KSMI, 1);
 
 	set(OpCode.GETG, 6);
 	set(OpCode.SETG, 7);
@@ -348,6 +370,12 @@ const BASE_CYCLES: Uint8Array = (() => {
 	set(OpCode.LOAD_MEM, 5);
 	set(OpCode.STORE_MEM, 6);
 	set(OpCode.STORE_MEM_WORDS, 6);
+	set(OpCode.BR_TRUE, 2);
+	set(OpCode.BR_FALSE, 2);
+	set(OpCode.GETSYS, 2);
+	set(OpCode.SETSYS, 3);
+	set(OpCode.GETGL, 4);
+	set(OpCode.SETGL, 5);
 
 	return table;
 })();
@@ -1156,6 +1184,12 @@ export class CPU {
 	private decodedExt: Uint8Array | null = null;
 	private decodedWords: Uint32Array | null = null;
 	private stringIndexTable: Table | null = null;
+	private systemGlobalNames: StringValue[] = [];
+	private systemGlobalValues: Value[] = [];
+	private systemGlobalSlotByKey: Map<StringValue, number> = new Map();
+	private globalNames: StringValue[] = [];
+	private globalValues: Value[] = [];
+	private globalSlotByKey: Map<StringValue, number> = new Map();
 
 	// Frame pooling: avoid allocating new CallFrame objects per call
 	private readonly framePool: CallFrame[] = [];
@@ -1290,7 +1324,31 @@ export class CPU {
 		}
 		program.constPoolStringPool = this.stringPool;
 		this.indexKey = this.stringPool.intern('__index');
+		this.initializeGlobalSlots(metadata);
 		this.decodeProgram(program);
+	}
+
+	private initializeGlobalSlots(metadata: ProgramMetadata | null): void {
+		const systemNames = metadata ? metadata.systemGlobalNames : [];
+		const globalNames = metadata ? metadata.globalNames : [];
+		this.systemGlobalNames = new Array(systemNames.length);
+		this.systemGlobalValues = new Array(systemNames.length);
+		this.systemGlobalSlotByKey = new Map();
+		for (let index = 0; index < systemNames.length; index += 1) {
+			const key = this.stringPool.intern(systemNames[index]);
+			this.systemGlobalNames[index] = key;
+			this.systemGlobalSlotByKey.set(key, index);
+			this.systemGlobalValues[index] = this.globals.get(key);
+		}
+		this.globalNames = new Array(globalNames.length);
+		this.globalValues = new Array(globalNames.length);
+		this.globalSlotByKey = new Map();
+		for (let index = 0; index < globalNames.length; index += 1) {
+			const key = this.stringPool.intern(globalNames[index]);
+			this.globalNames[index] = key;
+			this.globalSlotByKey.set(key, index);
+			this.globalValues[index] = this.globals.get(key);
+		}
 	}
 
 	private decodeProgram(program: Program): void {
@@ -1515,6 +1573,37 @@ export class CPU {
 		return this.program.constPool[index];
 	}
 
+	public setGlobalByKey(key: StringValue, value: Value): void {
+		this.globals.set(key, value);
+		const systemSlot = this.systemGlobalSlotByKey.get(key);
+		if (systemSlot !== undefined) {
+			this.systemGlobalValues[systemSlot] = value;
+			return;
+		}
+		const globalSlot = this.globalSlotByKey.get(key);
+		if (globalSlot !== undefined) {
+			this.globalValues[globalSlot] = value;
+		}
+	}
+
+	private setSystemGlobalBySlot(slot: number, value: Value): void {
+		this.systemGlobalValues[slot] = value;
+		this.globals.set(this.systemGlobalNames[slot], value);
+	}
+
+	private setGlobalBySlot(slot: number, value: Value): void {
+		this.globalValues[slot] = value;
+		this.globals.set(this.globalNames[slot], value);
+	}
+
+	private getSystemGlobalBySlot(slot: number): Value {
+		return this.systemGlobalValues[slot];
+	}
+
+	private getGlobalBySlot(slot: number): Value {
+		return this.globalValues[slot];
+	}
+
 	private skipNextInstruction(frame: CallFrame): void {
 		const pc = frame.pc;
 		const wordIndex = pc / INSTRUCTION_BYTES;
@@ -1545,12 +1634,19 @@ export class CPU {
 		hasWide: boolean,
 	): void {
 		const usesBx = op === OpCode.LOADK
+			|| op === OpCode.KSMI
 			|| op === OpCode.GETG
 			|| op === OpCode.SETG
+			|| op === OpCode.GETSYS
+			|| op === OpCode.SETSYS
+			|| op === OpCode.GETGL
+			|| op === OpCode.SETGL
 			|| op === OpCode.CLOSURE
 			|| op === OpCode.JMP
 			|| op === OpCode.JMPIF
-			|| op === OpCode.JMPIFNOT;
+			|| op === OpCode.JMPIFNOT
+			|| op === OpCode.BR_TRUE
+			|| op === OpCode.BR_FALSE;
 		const extA = usesBx ? 0 : (ext >>> 6) & 0x3;
 		const extB = usesBx ? 0 : (ext >>> 3) & 0x7;
 		const extC = usesBx ? 0 : (ext & 0x7);
@@ -1576,6 +1672,27 @@ export class CPU {
 				this.setRegister(frame, a, this.program.constPool[bx]);
 				return;
 			}
+			case OpCode.KNIL:
+				this.setRegisterNil(frame, a);
+				return;
+			case OpCode.KFALSE:
+				this.setRegisterBool(frame, a, false);
+				return;
+			case OpCode.KTRUE:
+				this.setRegisterBool(frame, a, true);
+				return;
+			case OpCode.K0:
+				this.setRegisterNumber(frame, a, 0);
+				return;
+			case OpCode.K1:
+				this.setRegisterNumber(frame, a, 1);
+				return;
+			case OpCode.KM1:
+				this.setRegisterNumber(frame, a, -1);
+				return;
+			case OpCode.KSMI:
+				this.setRegisterNumber(frame, a, sbx);
+				return;
 			case OpCode.LOADNIL:
 				this.charge(CEIL_DIV4(b));
 				for (let index = 0; index < b; index += 1) {
@@ -1599,6 +1716,18 @@ export class CPU {
 				this.globals.set(key, frame.registers.get(a));
 				return;
 			}
+			case OpCode.GETSYS:
+				this.setRegister(frame, a, this.getSystemGlobalBySlot(bx));
+				return;
+			case OpCode.SETSYS:
+				this.setSystemGlobalBySlot(bx, frame.registers.get(a));
+				return;
+			case OpCode.GETGL:
+				this.setRegister(frame, a, this.getGlobalBySlot(bx));
+				return;
+			case OpCode.SETGL:
+				this.setGlobalBySlot(bx, frame.registers.get(a));
+				return;
 			case OpCode.GETT: {
 				const table = frame.registers.get(b);
 				const key = this.readRK(frame, rkRawC, rkBitsC);
@@ -1860,6 +1989,18 @@ export class CPU {
 				return;
 			}
 			case OpCode.JMPIFNOT: {
+				if (!frame.registers.isTruthy(a)) {
+					frame.pc += sbx * INSTRUCTION_BYTES;
+				}
+				return;
+			}
+			case OpCode.BR_TRUE: {
+				if (frame.registers.isTruthy(a)) {
+					frame.pc += sbx * INSTRUCTION_BYTES;
+				}
+				return;
+			}
+			case OpCode.BR_FALSE: {
 				if (!frame.registers.isTruthy(a)) {
 					frame.pc += sbx * INSTRUCTION_BYTES;
 				}

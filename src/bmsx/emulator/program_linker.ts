@@ -81,6 +81,34 @@ const mergeConstPools = (
 	return { constPool, cartConstRemap };
 };
 
+const mergeNamedSlots = (
+	engineNames: ReadonlyArray<string>,
+	cartNames: ReadonlyArray<string>,
+): { names: string[]; cartRemap: number[] } => {
+	const names: string[] = engineNames.slice();
+	const nameToIndex = new Map<string, number>();
+	for (let index = 0; index < engineNames.length; index += 1) {
+		const name = engineNames[index];
+		if (!nameToIndex.has(name)) {
+			nameToIndex.set(name, index);
+		}
+	}
+	const cartRemap: number[] = new Array(cartNames.length);
+	for (let index = 0; index < cartNames.length; index += 1) {
+		const name = cartNames[index];
+		const existing = nameToIndex.get(name);
+		if (existing !== undefined) {
+			cartRemap[index] = existing;
+			continue;
+		}
+		const mergedIndex = names.length;
+		names.push(name);
+		nameToIndex.set(name, mergedIndex);
+		cartRemap[index] = mergedIndex;
+	}
+	return { names, cartRemap };
+};
+
 const encodeSignedRaw = (value: number, bits: number): number => {
 	const mask = (1 << bits) - 1;
 	return value & mask;
@@ -96,10 +124,11 @@ const rewriteConstRelocations = (
 	code: Uint8Array,
 	relocs: ReadonlyArray<ProgramConstReloc>,
 	cartConstRemap: ReadonlyArray<number>,
+	cartGlobalRemap: ReadonlyArray<number>,
+	cartSystemGlobalRemap: ReadonlyArray<number>,
 ): void => {
 	for (let index = 0; index < relocs.length; index += 1) {
 		const reloc = relocs[index];
-		const mappedConstIndex = cartConstRemap[reloc.constIndex];
 		const wordIndex = reloc.wordIndex;
 		const word = readInstructionWord(code, wordIndex);
 		const op = (word >>> 18) & 0x3f;
@@ -118,13 +147,18 @@ const rewriteConstRelocations = (
 		let cLow = word & 0x3f;
 		let ext = word >>> 24;
 
-		if (reloc.kind === 'bx') {
-			const nextWide = mappedConstIndex >> (MAX_BX_BITS + EXT_BX_BITS);
+		const mappedIndex = reloc.kind === 'gl'
+			? cartGlobalRemap[reloc.constIndex]
+			: reloc.kind === 'sys'
+				? cartSystemGlobalRemap[reloc.constIndex]
+				: cartConstRemap[reloc.constIndex];
+		if (reloc.kind === 'bx' || reloc.kind === 'gl' || reloc.kind === 'sys') {
+			const nextWide = mappedIndex >> (MAX_BX_BITS + EXT_BX_BITS);
 			if (!hasWide && nextWide !== 0) {
-				throw new Error(`[ProgramLinker] Const reloc at word ${wordIndex} requires WIDE prefix.`);
+				throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
 			}
-			const nextExt = (mappedConstIndex >> MAX_BX_BITS) & 0xff;
-			const nextLow = mappedConstIndex & MAX_LOW_BX;
+			const nextExt = (mappedIndex >> MAX_BX_BITS) & 0xff;
+			const nextLow = mappedIndex & MAX_LOW_BX;
 			bLow = (nextLow >>> 6) & 0x3f;
 			cLow = nextLow & 0x3f;
 			ext = nextExt;
@@ -137,11 +171,11 @@ const rewriteConstRelocations = (
 		}
 
 		const relocOnB = reloc.kind === 'rk_b';
-		const rkValue = -mappedConstIndex - 1;
+		const rkValue = -mappedIndex - 1;
 		const extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
 		const baseBits = MAX_OPERAND_BITS + extBits;
 		if (!hasWide && !fitsSignedRaw(rkValue, baseBits)) {
-			throw new Error(`[ProgramLinker] Const reloc at word ${wordIndex} requires WIDE prefix.`);
+			throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
 		}
 		const totalBits = MAX_OPERAND_BITS + extBits + (hasWide ? MAX_OPERAND_BITS : 0);
 		const raw = encodeSignedRaw(rkValue, totalBits);
@@ -269,6 +303,19 @@ const cloneLocalSlotsByProto = (
 	return out;
 };
 
+const cloneUpvalueNamesByProto = (
+	metadata: ProgramMetadata,
+	protoCount: number,
+): string[][] => {
+	const source = metadata.upvalueNamesByProto;
+	const out: string[][] = new Array(protoCount);
+	for (let index = 0; index < protoCount; index += 1) {
+		const names = source && source[index] ? source[index] : [];
+		out[index] = Array.from(names);
+	}
+	return out;
+};
+
 const mergeMetadata = (
 	engine: ProgramMetadata | null,
 	cart: ProgramMetadata | null,
@@ -288,6 +335,8 @@ const mergeMetadata = (
 	if (cart.debugRanges.length !== cartInstructionCount) {
 		throw new Error('[ProgramLinker] Cart debug range length mismatch.');
 	}
+	const mergedSystemGlobals = mergeNamedSlots(engine.systemGlobalNames, cart.systemGlobalNames);
+	const mergedGlobals = mergeNamedSlots(engine.globalNames, cart.globalNames);
 	const engineBaseWord = layout.engineBasePc / INSTRUCTION_BYTES;
 	const cartBaseWord = layout.cartBasePc / INSTRUCTION_BYTES;
 	const totalInstructionCount = Math.max(
@@ -308,6 +357,10 @@ const mergeMetadata = (
 		debugRanges,
 		protoIds: engine.protoIds.concat(cart.protoIds),
 		localSlotsByProto,
+		upvalueNamesByProto: cloneUpvalueNamesByProto(engine, engine.protoIds.length)
+			.concat(cloneUpvalueNamesByProto(cart, cart.protoIds.length)),
+		systemGlobalNames: mergedSystemGlobals.names,
+		globalNames: mergedGlobals.names,
 	};
 };
 
@@ -327,7 +380,15 @@ export const linkProgramAssets = (
 	const cartCode = cartAsset.program.code.slice();
 	rewriteClosureIndices(cartCode, baseProtoCount);
 	const mergedConsts = mergeConstPools(engineAsset.program.constPool, cartAsset.program.constPool);
-	rewriteConstRelocations(cartCode, cartAsset.link.constRelocs, mergedConsts.cartConstRemap);
+	const mergedSystemGlobals = mergeNamedSlots(engineSymbols ? engineSymbols.metadata.systemGlobalNames : [], cartSymbols ? cartSymbols.metadata.systemGlobalNames : []);
+	const mergedGlobals = mergeNamedSlots(engineSymbols ? engineSymbols.metadata.globalNames : [], cartSymbols ? cartSymbols.metadata.globalNames : []);
+	rewriteConstRelocations(
+		cartCode,
+		cartAsset.link.constRelocs,
+		mergedConsts.cartConstRemap,
+		mergedGlobals.cartRemap,
+		mergedSystemGlobals.cartRemap,
+	);
 
 	const protos = engineAsset.program.protos.map(proto => cloneProto(proto, resolvedLayout.engineBasePc))
 		.concat(cartAsset.program.protos.map(proto => cloneProto(proto, resolvedLayout.cartBasePc)));

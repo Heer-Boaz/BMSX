@@ -59,13 +59,13 @@ npm run headless:game -- pietious
 Build libretro WSL artifacts:
 
 ```bash
-npm run build:platform:libretro-wsl -- pietious
+npm run build:platform:libretro-wsl
 ```
 
 Run libretro host on WSL:
 
 ```bash
-npm run run:libretro-host:wsl:sdl -- ./dist/pietious.rom
+npm run run:libretro-host:wsl:sdl -- ./dist/pietious.debug.rom
 ```
 
 <!-- Deploy browser artifacts for a cart:

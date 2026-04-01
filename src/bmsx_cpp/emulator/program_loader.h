@@ -18,6 +18,8 @@ struct ProgramAsset {
 		Bx,
 		RkB,
 		RkC,
+		Gl,
+		Sys,
 	};
 
 	struct ConstReloc {

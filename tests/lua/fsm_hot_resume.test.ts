@@ -19,7 +19,7 @@ test('active FSM instances adopt reloaded blueprint data', () => {
 	const registry = Registry.instance;
 	const initialRegistryIds = new Set(registry.getRegisteredEntityIds());
 
-	const machineId = `fsm_hot_reload_${Date.now()}`;
+	const machineId = `fsm_hot_resume_${Date.now()}`;
 	const blueprintA: StateMachineBlueprint = {
 		id: machineId,
 		initial: '#idle',
@@ -67,7 +67,7 @@ test('active FSM instances adopt reloaded blueprint data', () => {
 	assert.deepEqual(
 		idle.definition.data,
 		{ value: 'updated' },
-		'state data should refresh after hot reload',
+		'state data should refresh after hot-resume',
 	);
 
 	root.dispose();
