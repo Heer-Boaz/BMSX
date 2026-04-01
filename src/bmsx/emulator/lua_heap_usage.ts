@@ -1,7 +1,6 @@
 import { RAM_SIZE } from './memory_map';
 
 type LuaHeapUsageHooks = {
-	collectReachableBytes(): number;
 	getBaseRamUsedBytes(): number;
 };
 
@@ -49,7 +48,6 @@ export function collectTrackedLuaHeapBytes(): void {
 	if (luaHeapUsageHooks === null) {
 		return;
 	}
-	trackedLuaHeapBytes = luaHeapUsageHooks.collectReachableBytes();
 	nextCollectionBytes = Math.max(MIN_COLLECTION_BYTES, trackedLuaHeapBytes * 2);
 	const totalRamUsedBytes = luaHeapUsageHooks.getBaseRamUsedBytes() + trackedLuaHeapBytes;
 	if (totalRamUsedBytes >= RAM_SIZE) {

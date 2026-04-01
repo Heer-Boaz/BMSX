@@ -850,7 +850,6 @@ export class Runtime {
 	public nextTableId = 1;
 	public pairsIterator: Value = null;
 	public ipairsIterator: Value = null;
-	private readonly luaHeapRootScratch: Value[] = [];
 	public randomSeedValue = 0;
 	public nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
 	public readonly pathSemanticCache: Map<string, { source: string; model?: LuaSemanticModel; definitions?: ReadonlyArray<LuaDefinitionInfo>; parsed?: ParsedLuaChunk; lines?: readonly string[]; analysis?: FileSemanticData }> = new Map();
@@ -1359,20 +1358,6 @@ export class Runtime {
 			this.vdp,
 		);
 		configureLuaHeapUsage({
-			collectReachableBytes: () => {
-				const extraRoots = this.luaHeapRootScratch;
-				extraRoots.length = 0;
-				for (const value of this.moduleCache.values()) {
-					extraRoots.push(value);
-				}
-				if (this.pairsIterator !== null) {
-					extraRoots.push(this.pairsIterator);
-				}
-				if (this.ipairsIterator !== null) {
-					extraRoots.push(this.ipairsIterator);
-				}
-				return this.cpu.getTrackedHeapBytes(extraRoots);
-			},
 			getBaseRamUsedBytes: () => this.resourceUsageDetector.getBaseRamUsedBytes(),
 		});
 		this.setCpuHz(options.cpuHz);
