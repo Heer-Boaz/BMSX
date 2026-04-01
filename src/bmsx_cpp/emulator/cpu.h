@@ -405,7 +405,17 @@ struct ValueHash {
 			std::memcpy(&bits, &num, sizeof(double));
 			return static_cast<size_t>(bits ^ (bits >> 32));
 		}
-		return static_cast<size_t>(v ^ (v >> 32));
+		if (valueIsString(v)) {
+			return static_cast<size_t>(static_cast<uint64_t>(asStringId(v)) * 2654435761ULL);
+		}
+		if (valueIsBool(v)) {
+			return valueToBool(v) ? static_cast<size_t>(0x9e3779b9u) : static_cast<size_t>(0x85ebca6bu);
+		}
+		if (isNil(v)) {
+			return static_cast<size_t>(0x27d4eb2du);
+		}
+		const uint64_t payload = valuePayload(v);
+		return static_cast<size_t>(payload * 2654435761ULL);
 	}
 };
 
@@ -770,6 +780,9 @@ public:
 	void setExternalRootMarker(std::function<void(GcHeap&)> marker) { m_externalRootMarker = std::move(marker); }
 	void setStringIndexTable(Table* table) { m_stringIndexTable = table; }
 	void setGlobalByKey(const Value& key, const Value& value);
+	Value getGlobalByKey(const Value& key) const;
+	void clearGlobalSlots();
+	void syncGlobalSlotsToTable();
 
 	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeFnCost cost = {});
 	Value createNativeObject(

@@ -224,7 +224,7 @@ std::optional<Value> resolveRootExpressionValue(
 			return runtime.cpu().readFrameRegister(frameIndex, slot->reg);
 		}
 	}
-	const Value globalValue = runtime.cpu().globals->get(canonicalizeDebugIdentifier(runtime, rootName));
+	const Value globalValue = runtime.cpu().getGlobalByKey(canonicalizeDebugIdentifier(runtime, rootName));
 	if (!isNil(globalValue)) {
 		return globalValue;
 	}

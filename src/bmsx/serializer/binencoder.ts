@@ -1,4 +1,5 @@
 export const VERSION = 0xA1;
+const utf8FatalDecoder = new TextDecoder('utf-8', { fatal: true });
 
 const enum Tag {
 	Null = 0,
@@ -86,8 +87,7 @@ export function encodeBinary(obj: any, opts: EncodeOptions = {}): Uint8Array {
 }
 
 export function decodeuint8arr(to_decode: Uint8Array): string {
-	const decoder = new TextDecoder('utf-8', { fatal: true });
-	return decoder.decode(to_decode);
+	return utf8FatalDecoder.decode(to_decode);
 }
 
 export function typedArrayFromBytes<T extends ArrayBufferView>(u8: Uint8Array, ctor: { new(buffer: ArrayBufferLike, byteOffset: number, length?: number): T; BYTES_PER_ELEMENT: number; }): T {
@@ -334,7 +334,6 @@ export interface DecodeOptions {
 export function decodeBinary(buf: Uint8Array, opts: DecodeOptions = {}) {
 	const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
 	let offset = 0;
-	const textDecoder = new TextDecoder('utf-8', { fatal: true });
 	const {
 		zeroCopyBin = false,
 		maxProps = 1_000_000,
@@ -379,7 +378,7 @@ export function decodeBinary(buf: Uint8Array, opts: DecodeOptions = {}) {
 		need(len);
 		const arr = buf.subarray(offset, offset + len);
 		offset += len;
-		return textDecoder.decode(arr);
+		return utf8FatalDecoder.decode(arr);
 	};
 
 	const version = readUint8();

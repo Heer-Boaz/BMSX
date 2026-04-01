@@ -33,6 +33,31 @@ return fib(5)
 	assert.equal(result[0], 5);
 });
 
+test('does not expose later local declarations to earlier closures', () => {
+	const result = run(`
+local function caller()
+	return later
+end
+local later = 41
+return caller()
+`);
+	assert.equal(result.length, 1);
+	assert.equal(result[0], null);
+});
+
+test('keeps predeclared locals visible to closures after assignment', () => {
+	const result = run(`
+local later
+local function caller()
+	return later
+end
+later = 41
+return caller()
+`);
+	assert.equal(result.length, 1);
+	assert.equal(result[0], 41);
+});
+
 test('handles tables, method calls, and boolean logic', () => {
 	const interpreter = createLuaInterpreter();
 	const result = interpreter.execute(`

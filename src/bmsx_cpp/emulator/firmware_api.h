@@ -67,6 +67,22 @@ public:
 	void reboot();
 
 private:
+	struct HotKeys {
+		Value x = valueNil();
+		Value y = valueNil();
+		Value z = valueNil();
+		Value r = valueNil();
+		Value g = valueNil();
+		Value b = valueNil();
+		Value a = valueNil();
+		Value definition = valueNil();
+		Value action = valueNil();
+		Value name = valueNil();
+		Value valid = valueNil();
+		Value inside = valueNil();
+		Value value = valueNil();
+	} m_keys;
+
 	Runtime& m_runtime;
 	std::unique_ptr<Font> m_font;
 	std::vector<std::unique_ptr<BFont>> m_runtime_fonts;

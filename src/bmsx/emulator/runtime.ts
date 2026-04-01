@@ -2299,18 +2299,22 @@ export class Runtime {
 
 	public callLuaFunction(fn: LuaFunctionValue, args: unknown[]): unknown[] {
 		// Marshal JS→Lua, call, then marshal Lua→JS with path context for error breadcrumbs.
-		const luaArgs: LuaValue[] = [];
-		for (let index = 0; index < args.length; index += 1) {
-			luaArgs.push(this.luaJsBridge.toLua(args[index]));
+		const luaArgs = this.acquireValueScratch() as unknown as LuaValue[];
+		try {
+			for (let index = 0; index < args.length; index += 1) {
+				luaArgs.push(this.luaJsBridge.toLua(args[index]));
+			}
+			const results = fn.call(luaArgs);
+			const output: unknown[] = [];
+			const moduleId = $.lua_sources.path2lua[this._luaPath].source_path;
+			const baseCtx = { moduleId, path: [] };
+			for (let i = 0; i < results.length; i += 1) {
+				output.push(this.luaJsBridge.convertFromLua(results[i], extendMarshalContext(baseCtx, `ret${i}`)));
+			}
+			return output;
+		} finally {
+			this.releaseValueScratch(luaArgs as unknown as Value[]);
 		}
-		const results = fn.call(luaArgs);
-		const output: unknown[] = [];
-		const moduleId = $.lua_sources.path2lua[this._luaPath].source_path;
-		const baseCtx = { moduleId, path: [] };
-		for (let i = 0; i < results.length; i += 1) {
-			output.push(this.luaJsBridge.convertFromLua(results[i], extendMarshalContext(baseCtx, `ret${i}`)));
-		}
-		return output;
 	}
 
 	public runConsoleChunkToNative(source: string): unknown[] {
@@ -2341,19 +2345,23 @@ export class Runtime {
 	}
 
 	private invokeClosureHandler(fn: Closure, thisArg: unknown, args: ReadonlyArray<unknown>): unknown {
-		const callArgs: Value[] = [];
-		if (thisArg !== undefined) {
-			callArgs.push(toRuntimeValue(this, thisArg));
+		const callArgs = this.acquireValueScratch();
+		try {
+			if (thisArg !== undefined) {
+				callArgs.push(toRuntimeValue(this, thisArg));
+			}
+			for (let index = 0; index < args.length; index += 1) {
+				callArgs.push(toRuntimeValue(this, args[index]));
+			}
+			const results = this.callClosure(fn, callArgs);
+			if (results.length === 0) {
+				return undefined;
+			}
+			const ctx = buildMarshalContext(this);
+			return toNativeValue(this, results[0], ctx, new WeakMap());
+		} finally {
+			this.releaseValueScratch(callArgs);
 		}
-		for (let index = 0; index < args.length; index += 1) {
-			callArgs.push(toRuntimeValue(this, args[index]));
-		}
-		const results = this.callClosure(fn, callArgs);
-		if (results.length === 0) {
-			return undefined;
-		}
-		const ctx = buildMarshalContext(this);
-		return toNativeValue(this, results[0], ctx, new WeakMap());
 	}
 
 	private handleClosureHandlerError(error: unknown, meta?: { hid: string; moduleId: string; path?: string }): void {

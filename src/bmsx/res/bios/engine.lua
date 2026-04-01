@@ -540,8 +540,6 @@ end
 function engine.irq(flags)
 	local ack = 0
 	local fatal
-	local has_reinit_handler<const> = cart_irq_handlers[irq_reinit] ~= nil
-	local has_newgame_handler<const> = cart_irq_handlers[irq_newgame] ~= nil
 	if (flags & irq_img_done) ~= 0 then
 		ack = ack | irq_img_done
 		if vdp_active_job == nil then
@@ -587,16 +585,26 @@ function engine.irq(flags)
 			cart_irq_handler(flags)
 		end
 		for mask, handler in pairs(cart_irq_handlers) do
-			if (flags & mask) ~= 0 then
+			if mask ~= irq_reinit and mask ~= irq_newgame and (flags & mask) ~= 0 then
 				handler(flags & mask, flags)
 			end
 		end
-		if (flags & irq_reinit) ~= 0 and not has_reinit_handler then
-			init()
+		if (flags & irq_reinit) ~= 0 then
+			local reinit_handler<const> = cart_irq_handlers[irq_reinit]
+			if reinit_handler ~= nil then
+				reinit_handler(flags & irq_reinit, flags)
+			else
+				init()
+			end
 		end
-		if (flags & irq_newgame) ~= 0 and not has_newgame_handler then
-			engine.reset()
-			new_game()
+		if (flags & irq_newgame) ~= 0 then
+			local newgame_handler<const> = cart_irq_handlers[irq_newgame]
+			if newgame_handler ~= nil then
+				newgame_handler(flags & irq_newgame, flags)
+			else
+				engine.reset()
+				new_game()
+			end
 		end
 	end
 	if ack ~= 0 then

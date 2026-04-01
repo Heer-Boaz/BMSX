@@ -33,6 +33,23 @@ export class LuaEnvironment {
 		return new LuaEnvironment(parentSnapshot, new Map(this.bindings));
 	}
 
+	private isBindingVisible(binding: BindingRecord, accessRange: LuaSourceRange | null): boolean {
+		if (this.parent === null || accessRange === null) {
+			return true;
+		}
+		const definition = binding.definition;
+		if (definition === null || definition.path !== accessRange.path) {
+			return true;
+		}
+		if (accessRange.start.line > definition.start.line) {
+			return true;
+		}
+		if (accessRange.start.line < definition.start.line) {
+			return false;
+		}
+		return accessRange.start.column >= definition.start.column;
+	}
+
 	public set(_name: string, value: LuaValue, range?: LuaSourceRange, isConst = false): void {
 		const name = _name;
 		const existing = this.bindings.get(name);
@@ -60,14 +77,14 @@ export class LuaEnvironment {
 		}
 	}
 
-	public get(_name: string): LuaValue {
+	public get(_name: string, accessRange: LuaSourceRange | null = null): LuaValue {
 		const name = _name;
 		const binding = this.bindings.get(name);
-		if (binding) {
+		if (binding && this.isBindingVisible(binding, accessRange)) {
 			return binding.value;
 		}
 		if (this.parent !== null) {
-			return this.parent.get(name);
+			return this.parent.get(name, accessRange);
 		}
 		return null;
 	}
@@ -89,13 +106,14 @@ export class LuaEnvironment {
 		return this.bindings.has(name);
 	}
 
-	public resolve(_name: string): LuaEnvironment {
+	public resolve(_name: string, accessRange: LuaSourceRange | null = null): LuaEnvironment {
 		const name = _name;
-		if (this.bindings.has(name)) {
+		const binding = this.bindings.get(name);
+		if (binding && this.isBindingVisible(binding, accessRange)) {
 			return this;
 		}
 		if (this.parent !== null) {
-			return this.parent.resolve(name);
+			return this.parent.resolve(name, accessRange);
 		}
 		return null;
 	}

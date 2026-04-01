@@ -5,6 +5,7 @@ export const ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
 export const ROM_TOC_HEADER_SIZE = 48;
 export const ROM_TOC_ENTRY_SIZE = 80;
 export const ROM_TOC_INVALID_U32 = 0xffffffff;
+const utf8Decoder = new TextDecoder();
 
 export type RomTocPayload = {
 	assets: RomAsset[];
@@ -198,8 +199,7 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 	}
 
 	const stringTable = buffer.subarray(stringTableOffset, stringTableOffset + stringTableLength);
-	const decoder = new TextDecoder();
-	const projectRootPath = decodeString(stringTable, projectRootOffset, projectRootLength, decoder);
+	const projectRootPath = decodeString(stringTable, projectRootOffset, projectRootLength, utf8Decoder);
 
 	const assets: RomAsset[] = [];
 	for (let i = 0; i < entryCount; i += 1) {
@@ -226,7 +226,7 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		const updateLo = view.getUint32(base + 72, true);
 		const updateHi = view.getUint32(base + 76, true);
 
-		const resid = decodeString(stringTable, residOffset, residLength, decoder);
+		const resid = decodeString(stringTable, residOffset, residLength, utf8Decoder);
 		if (!resid) {
 			throw new Error('ROM TOC entry is missing resid.');
 		}
@@ -239,8 +239,8 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		if (opId === 1) {
 			asset.op = 'delete';
 		}
-		const sourcePath = decodeString(stringTable, sourceOffset, sourceLength, decoder);
-		const normalizedSourcePath = decodeString(stringTable, normalizedOffset, normalizedLength, decoder);
+		const sourcePath = decodeString(stringTable, sourceOffset, sourceLength, utf8Decoder);
+		const normalizedSourcePath = decodeString(stringTable, normalizedOffset, normalizedLength, utf8Decoder);
 		if (sourcePath) asset.source_path = sourcePath;
 		if (normalizedSourcePath) asset.normalized_source_path = normalizedSourcePath;
 

@@ -547,6 +547,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	const setKey = (table: Table, name: string, value: Value): void => {
 		table.set(key(name), value);
 	};
+	const paletteRKey = key('r');
+	const paletteGKey = key('g');
+	const paletteBKey = key('b');
+	const paletteAKey = key('a');
 	const smoothstep01 = (value: number): number => {
 		const x = clamp01(value);
 		return x * x * (3 - (2 * x));
@@ -1050,10 +1054,10 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			throw runtime.createApiRuntimeError(`sys_palette_color(index) index ${index} is outside the palette range.`);
 		}
 		const table = new Table(0, 4);
-		table.set(runtime.internString('r'), color.r);
-		table.set(runtime.internString('g'), color.g);
-		table.set(runtime.internString('b'), color.b);
-		table.set(runtime.internString('a'), color.a);
+		table.set(paletteRKey, color.r);
+		table.set(paletteGKey, color.g);
+		table.set(paletteBKey, color.b);
+		table.set(paletteAKey, color.a);
 		out.push(table);
 	}, CHEAP_NATIVE_LOOKUP_COST));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_used', createNativeFunction('sys_cpu_cycles_used', (_args, out) => {
@@ -2099,17 +2103,19 @@ export function seedLuaGlobals(runtime: Runtime): void {
 			const native = createNativeFunction(`api.${name}`, (args, out) => {
 				const ctxBase = buildMarshalContext(runtime);
 				const visited = new WeakMap<Table, unknown>();
-				const jsArgs: unknown[] = [];
-				for (let index = 0; index < args.length; index += 1) {
-					const nextCtx = extendMarshalContext(ctxBase, `arg${index}`);
-					jsArgs.push(toNativeValue(runtime, args[index], nextCtx, visited));
-				}
+				const jsArgs = runtime.acquireValueScratch() as unknown[];
 				try {
+					for (let index = 0; index < args.length; index += 1) {
+						const nextCtx = extendMarshalContext(ctxBase, `arg${index}`);
+						jsArgs.push(toNativeValue(runtime, args[index], nextCtx, visited));
+					}
 					const result = callable.apply(runtime.api, jsArgs);
 					wrapNativeResult(runtime, result, out);
 				} catch (error) {
 					const message = extractErrorMessage(error);
 					throw runtime.createApiRuntimeError(`[api.${name}] ${message}`);
+				} finally {
+					runtime.releaseValueScratch(jsArgs as unknown as Value[]);
 				}
 			});
 			runtimeLuaPipeline.registerGlobal(runtime, name, native);

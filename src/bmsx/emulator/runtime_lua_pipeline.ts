@@ -599,6 +599,7 @@ export function resetRuntimeState(runtime: Runtime): void {
 	runtime.pendingCartBoot = false;
 	resetHardwareState(runtime);
 	runtime.cpu.globals.clear();
+	runtime.cpu.clearGlobalSlots();
 	resetTrackedLuaHeapBytes();
 	addTrackedLuaHeapBytes(runtime.cpu.globals.getTrackedHeapBytes());
 	runtime.moduleCache.clear();
@@ -661,6 +662,7 @@ export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, meta
 	runtime.cpu.setProgram(compiled.program, compiled.metadata);
 	runtime.programMetadata = compiled.metadata;
 	runtime.callClosure({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
+	applyEngineBuiltinGlobals(runtime);
 	return { program: compiled.program, metadata: compiled.metadata };
 }
 
@@ -716,6 +718,7 @@ export function describeSymbolValue(value: Value): { kind: SymbolKind; valueType
 }
 
 export function listSymbols(runtime: Runtime): SymbolEntry[] {
+	runtime.cpu.syncGlobalSlotsToTable();
 	const entries = runtime.cpu.globals.entriesArray();
 	const symbols: SymbolEntry[] = [];
 	for (let index = 0; index < entries.length; index += 1) {

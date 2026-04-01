@@ -927,6 +927,15 @@ void CPU::initializeGlobalSlots(ProgramMetadata* metadata) {
 	}
 }
 
+void CPU::clearGlobalSlots() {
+	m_systemGlobalNames.clear();
+	m_systemGlobalValues.clear();
+	m_systemGlobalSlotByKey.clear();
+	m_globalNames.clear();
+	m_globalValues.clear();
+	m_globalSlotByKey.clear();
+}
+
 void CPU::setGlobalByKey(const Value& key, const Value& value) {
 	globals->set(key, value);
 	const StringId keyId = asStringId(key);
@@ -938,6 +947,28 @@ void CPU::setGlobalByKey(const Value& key, const Value& value) {
 	const auto globalIt = m_globalSlotByKey.find(keyId);
 	if (globalIt != m_globalSlotByKey.end()) {
 		m_globalValues[globalIt->second] = value;
+	}
+}
+
+Value CPU::getGlobalByKey(const Value& key) const {
+	const StringId keyId = asStringId(key);
+	const auto systemIt = m_systemGlobalSlotByKey.find(keyId);
+	if (systemIt != m_systemGlobalSlotByKey.end()) {
+		return m_systemGlobalValues[systemIt->second];
+	}
+	const auto globalIt = m_globalSlotByKey.find(keyId);
+	if (globalIt != m_globalSlotByKey.end()) {
+		return m_globalValues[globalIt->second];
+	}
+	return globals->get(key);
+}
+
+void CPU::syncGlobalSlotsToTable() {
+	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
+		globals->set(valueString(m_systemGlobalNames[index]), m_systemGlobalValues[index]);
+	}
+	for (size_t index = 0; index < m_globalNames.size(); ++index) {
+		globals->set(valueString(m_globalNames[index]), m_globalValues[index]);
 	}
 }
 
@@ -1237,7 +1268,6 @@ void CPU::executeInstruction(
 
 		case OpCode::SETSYS:
 			m_systemGlobalValues[static_cast<size_t>(bx)] = frame.registers[a];
-			globals->set(valueString(m_systemGlobalNames[static_cast<size_t>(bx)]), frame.registers[a]);
 			return;
 
 		case OpCode::GETGL:
@@ -1246,7 +1276,6 @@ void CPU::executeInstruction(
 
 		case OpCode::SETGL:
 			m_globalValues[static_cast<size_t>(bx)] = frame.registers[a];
-			globals->set(valueString(m_globalNames[static_cast<size_t>(bx)]), frame.registers[a]);
 			return;
 
 		case OpCode::GETT: {
@@ -2087,6 +2116,12 @@ void CPU::markRoots(GcHeap& heap) {
 		heap.markValue(value);
 	}
 	for (const auto& value : m_returnScratch) {
+		heap.markValue(value);
+	}
+	for (const auto& value : m_systemGlobalValues) {
+		heap.markValue(value);
+	}
+	for (const auto& value : m_globalValues) {
 		heap.markValue(value);
 	}
 	if (m_program) {

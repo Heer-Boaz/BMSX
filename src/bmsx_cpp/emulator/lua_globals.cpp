@@ -1202,6 +1202,54 @@ void Runtime::setupBuiltins() {
 	auto asText = [this](Value value) -> const std::string& {
 		return m_cpu.stringPool().toString(asStringId(value));
 	};
+	struct ActionStateKeys {
+		Value action;
+		Value pressed;
+		Value justpressed;
+		Value justreleased;
+		Value waspressed;
+		Value wasreleased;
+		Value consumed;
+		Value alljustpressed;
+		Value allwaspressed;
+		Value alljustreleased;
+		Value guardedjustpressed;
+		Value repeatpressed;
+		Value repeatcount;
+		Value presstime;
+		Value timestamp;
+		Value pressedAtMs;
+		Value releasedAtMs;
+		Value pressId;
+		Value value;
+		Value value2d;
+		Value x;
+		Value y;
+	};
+	const ActionStateKeys actionKeys {
+		key("action"),
+		key("pressed"),
+		key("justpressed"),
+		key("justreleased"),
+		key("waspressed"),
+		key("wasreleased"),
+		key("consumed"),
+		key("alljustpressed"),
+		key("allwaspressed"),
+		key("alljustreleased"),
+		key("guardedjustpressed"),
+		key("repeatpressed"),
+		key("repeatcount"),
+		key("presstime"),
+		key("timestamp"),
+		key("pressedAtMs"),
+		key("releasedAtMs"),
+		key("pressId"),
+		key("value"),
+		key("value2d"),
+		key("x"),
+		key("y"),
+	};
 	auto clamp01 = [](double value) {
 		return clamp(value, 0.0, 1.0);
 	};
@@ -1495,14 +1543,25 @@ void Runtime::setupBuiltins() {
 	const NativeFnCost CHEAP_NATIVE_READ_COST { 1, 1, 0 };
 	const NativeFnCost CHEAP_NATIVE_WRITE_COST { 1, 1, 0 };
 	const NativeFnCost CHEAP_NATIVE_LOOKUP_COST { 1, 1, 0 };
-	registerNativeFunction("sys_palette_color", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+	const struct PaletteKeys {
+		Value r;
+		Value g;
+		Value b;
+		Value a;
+	} paletteKeys {
+		key("r"),
+		key("g"),
+		key("b"),
+		key("a"),
+	};
+	registerNativeFunction("sys_palette_color", [this, paletteKeys](const std::vector<Value>& args, std::vector<Value>& out) {
 		const int index = static_cast<int>(std::floor(asNumber(args.at(0))));
 		const Color color = api().palette_color(index);
 		Table* table = m_cpu.createTable(0, 4);
-		table->set(key("r"), valueNumber(static_cast<double>(color.r)));
-		table->set(key("g"), valueNumber(static_cast<double>(color.g)));
-		table->set(key("b"), valueNumber(static_cast<double>(color.b)));
-		table->set(key("a"), valueNumber(static_cast<double>(color.a)));
+		table->set(paletteKeys.r, valueNumber(static_cast<double>(color.r)));
+		table->set(paletteKeys.g, valueNumber(static_cast<double>(color.g)));
+		table->set(paletteKeys.b, valueNumber(static_cast<double>(color.b)));
+		table->set(paletteKeys.a, valueNumber(static_cast<double>(color.a)));
 		out.push_back(valueTable(table));
 	}, CHEAP_NATIVE_LOOKUP_COST);
 	refreshMemoryMapGlobals();
@@ -3625,48 +3684,48 @@ auto clockPerfNowFn = m_cpu.createNativeFunction("platform.clock.perf_now", [](c
 	auto* platformTable = m_cpu.createTable(0, 1);
 	platformTable->set(key("clock"), valueTable(clockTable));
 
-	auto makeActionStateTable = [this, key, str](const ActionState& state) -> Table* {
+	auto makeActionStateTable = [this, actionKeys, str](const ActionState& state) -> Table* {
 		auto* table = m_cpu.createTable(0, 18);
-		table->set(key("action"), str(state.action));
-		table->set(key("pressed"), valueBool(state.pressed));
-		table->set(key("justpressed"), valueBool(state.justpressed));
-		table->set(key("justreleased"), valueBool(state.justreleased));
-		table->set(key("waspressed"), valueBool(state.waspressed));
-		table->set(key("wasreleased"), valueBool(state.wasreleased));
-		table->set(key("consumed"), valueBool(state.consumed));
-		table->set(key("alljustpressed"), valueBool(state.alljustpressed));
-		table->set(key("allwaspressed"), valueBool(state.allwaspressed));
-		table->set(key("alljustreleased"), valueBool(state.alljustreleased));
+		table->set(actionKeys.action, str(state.action));
+		table->set(actionKeys.pressed, valueBool(state.pressed));
+		table->set(actionKeys.justpressed, valueBool(state.justpressed));
+		table->set(actionKeys.justreleased, valueBool(state.justreleased));
+		table->set(actionKeys.waspressed, valueBool(state.waspressed));
+		table->set(actionKeys.wasreleased, valueBool(state.wasreleased));
+		table->set(actionKeys.consumed, valueBool(state.consumed));
+		table->set(actionKeys.alljustpressed, valueBool(state.alljustpressed));
+		table->set(actionKeys.allwaspressed, valueBool(state.allwaspressed));
+		table->set(actionKeys.alljustreleased, valueBool(state.alljustreleased));
 		if (state.guardedjustpressed.has_value()) {
-			table->set(key("guardedjustpressed"), valueBool(state.guardedjustpressed.value()));
+			table->set(actionKeys.guardedjustpressed, valueBool(state.guardedjustpressed.value()));
 		}
 		if (state.repeatpressed.has_value()) {
-			table->set(key("repeatpressed"), valueBool(state.repeatpressed.value()));
+			table->set(actionKeys.repeatpressed, valueBool(state.repeatpressed.value()));
 		}
 		if (state.repeatcount.has_value()) {
-			table->set(key("repeatcount"), valueNumber(static_cast<double>(state.repeatcount.value())));
+			table->set(actionKeys.repeatcount, valueNumber(static_cast<double>(state.repeatcount.value())));
 		}
 		if (state.presstime.has_value()) {
-			table->set(key("presstime"), valueNumber(static_cast<double>(state.presstime.value())));
+			table->set(actionKeys.presstime, valueNumber(static_cast<double>(state.presstime.value())));
 		}
 		if (state.timestamp.has_value()) {
-			table->set(key("timestamp"), valueNumber(static_cast<double>(state.timestamp.value())));
+			table->set(actionKeys.timestamp, valueNumber(static_cast<double>(state.timestamp.value())));
 		}
 		if (state.pressedAtMs.has_value()) {
-			table->set(key("pressedAtMs"), valueNumber(static_cast<double>(state.pressedAtMs.value())));
+			table->set(actionKeys.pressedAtMs, valueNumber(static_cast<double>(state.pressedAtMs.value())));
 		}
 		if (state.releasedAtMs.has_value()) {
-			table->set(key("releasedAtMs"), valueNumber(static_cast<double>(state.releasedAtMs.value())));
+			table->set(actionKeys.releasedAtMs, valueNumber(static_cast<double>(state.releasedAtMs.value())));
 		}
 		if (state.pressId.has_value()) {
-			table->set(key("pressId"), valueNumber(static_cast<double>(state.pressId.value())));
+			table->set(actionKeys.pressId, valueNumber(static_cast<double>(state.pressId.value())));
 		}
-		table->set(key("value"), valueNumber(static_cast<double>(state.value)));
+		table->set(actionKeys.value, valueNumber(static_cast<double>(state.value)));
 		if (state.value2d.has_value()) {
 			auto* value2d = m_cpu.createTable(0, 2);
-			value2d->set(key("x"), valueNumber(static_cast<double>(state.value2d->x)));
-			value2d->set(key("y"), valueNumber(static_cast<double>(state.value2d->y)));
-			table->set(key("value2d"), valueTable(value2d));
+			value2d->set(actionKeys.x, valueNumber(static_cast<double>(state.value2d->x)));
+			value2d->set(actionKeys.y, valueNumber(static_cast<double>(state.value2d->y)));
+			table->set(actionKeys.value2d, valueTable(value2d));
 		}
 		return table;
 	};

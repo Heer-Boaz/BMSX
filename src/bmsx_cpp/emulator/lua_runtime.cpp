@@ -157,7 +157,7 @@ void Runtime::runEngineBuiltinPrelude() {
 	auto* engineModule = asTable(requireModule("bios/engine"));
 	for (const char* name : engineBuiltins) {
 		Value key = canonicalizeIdentifier(name);
-		if (isOverrideableBuiltin(name) && !isNil(m_cpu.globals->get(key))) {
+		if (isOverrideableBuiltin(name) && !isNil(m_cpu.getGlobalByKey(key))) {
 			continue;
 		}
 		m_cpu.setGlobalByKey(key, engineModule->get(key));

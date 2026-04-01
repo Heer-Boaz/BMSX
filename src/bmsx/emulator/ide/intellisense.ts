@@ -2693,7 +2693,7 @@ function resolveRuntimeLocalChainValue(
 
 function resolveRuntimeGlobalChainValue(parts: ReadonlyArray<string>): ({ kind: 'value'; value: LuaValue } | { kind: 'not_defined' }) | null {
 	const runtime = Runtime.instance;
-	const rootRaw = runtime.cpu.globals.get(runtime.canonicalKey(parts[0]));
+	const rootRaw = runtime.cpu.getGlobalByKey(runtime.canonicalKey(parts[0]));
 	if (rootRaw === null) {
 		return null;
 	}

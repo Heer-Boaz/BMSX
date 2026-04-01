@@ -523,6 +523,19 @@ Api::Api(Runtime& runtime)
 	: m_runtime(runtime)
 	, m_persistentData(PERSISTENT_DATA_SIZE, 0.0)
 {
+	m_keys.x = m_runtime.canonicalizeIdentifier("x");
+	m_keys.y = m_runtime.canonicalizeIdentifier("y");
+	m_keys.z = m_runtime.canonicalizeIdentifier("z");
+	m_keys.r = m_runtime.canonicalizeIdentifier("r");
+	m_keys.g = m_runtime.canonicalizeIdentifier("g");
+	m_keys.b = m_runtime.canonicalizeIdentifier("b");
+	m_keys.a = m_runtime.canonicalizeIdentifier("a");
+	m_keys.definition = m_runtime.canonicalizeIdentifier("definition");
+	m_keys.action = m_runtime.canonicalizeIdentifier("action");
+	m_keys.name = m_runtime.canonicalizeIdentifier("name");
+	m_keys.valid = m_runtime.canonicalizeIdentifier("valid");
+	m_keys.inside = m_runtime.canonicalizeIdentifier("inside");
+	m_keys.value = m_runtime.canonicalizeIdentifier("value");
 	m_font = std::make_unique<Font>(EngineCore::instance().systemAssets());
 }
 
@@ -775,52 +788,52 @@ m_runtime.registerNativeFunction("mousebtnr", [this](const std::vector<Value>& a
 	out.push_back(valueBool(mousebtnr(button)));
 });
 
-m_runtime.registerNativeFunction("pointer_screen_position", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("pointer_screen_position", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
 	Table* table = m_runtime.cpu().createTable(0, 3);
 	if (!state.value2d.has_value()) {
-		table->set(key("x"), valueNumber(0.0));
-		table->set(key("y"), valueNumber(0.0));
-		table->set(key("valid"), valueBool(false));
+		table->set(m_keys.x, valueNumber(0.0));
+		table->set(m_keys.y, valueNumber(0.0));
+		table->set(m_keys.valid, valueBool(false));
 		out.push_back(valueTable(table));
 		return;
 	}
-	table->set(key("x"), valueNumber(static_cast<double>(state.value2d->x)));
-	table->set(key("y"), valueNumber(static_cast<double>(state.value2d->y)));
-	table->set(key("valid"), valueBool(true));
+	table->set(m_keys.x, valueNumber(static_cast<double>(state.value2d->x)));
+	table->set(m_keys.y, valueNumber(static_cast<double>(state.value2d->y)));
+	table->set(m_keys.valid, valueBool(true));
 	out.push_back(valueTable(table));
 });
 
-m_runtime.registerNativeFunction("pointer_delta", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("pointer_delta", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_delta", InputSource::Pointer);
 	Table* table = m_runtime.cpu().createTable(0, 3);
 	if (!state.value2d.has_value()) {
-		table->set(key("x"), valueNumber(0.0));
-		table->set(key("y"), valueNumber(0.0));
-		table->set(key("valid"), valueBool(false));
+		table->set(m_keys.x, valueNumber(0.0));
+		table->set(m_keys.y, valueNumber(0.0));
+		table->set(m_keys.valid, valueBool(false));
 		out.push_back(valueTable(table));
 		return;
 	}
-	table->set(key("x"), valueNumber(static_cast<double>(state.value2d->x)));
-	table->set(key("y"), valueNumber(static_cast<double>(state.value2d->y)));
-	table->set(key("valid"), valueBool(true));
+	table->set(m_keys.x, valueNumber(static_cast<double>(state.value2d->x)));
+	table->set(m_keys.y, valueNumber(static_cast<double>(state.value2d->y)));
+	table->set(m_keys.valid, valueBool(true));
 	out.push_back(valueTable(table));
 });
 
-m_runtime.registerNativeFunction("pointer_viewport_position", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("pointer_viewport_position", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
 	Table* table = m_runtime.cpu().createTable(0, 4);
 	if (!state.value2d.has_value()) {
-		table->set(key("x"), valueNumber(0.0));
-		table->set(key("y"), valueNumber(0.0));
-		table->set(key("valid"), valueBool(false));
-		table->set(key("inside"), valueBool(false));
+		table->set(m_keys.x, valueNumber(0.0));
+		table->set(m_keys.y, valueNumber(0.0));
+		table->set(m_keys.valid, valueBool(false));
+		table->set(m_keys.inside, valueBool(false));
 		out.push_back(valueTable(table));
 		return;
 	}
@@ -829,23 +842,23 @@ m_runtime.registerNativeFunction("pointer_viewport_position", [this, key](const 
 	const double width = EngineCore::instance().view()->viewportSize.x;
 	const double height = EngineCore::instance().view()->viewportSize.y;
 	const bool inside = x >= 0.0 && x < width && y >= 0.0 && y < height;
-	table->set(key("x"), valueNumber(x));
-	table->set(key("y"), valueNumber(y));
-	table->set(key("valid"), valueBool(true));
-	table->set(key("inside"), valueBool(inside));
+	table->set(m_keys.x, valueNumber(x));
+	table->set(m_keys.y, valueNumber(y));
+	table->set(m_keys.valid, valueBool(true));
+	table->set(m_keys.inside, valueBool(inside));
 	out.push_back(valueTable(table));
 });
 
-m_runtime.registerNativeFunction("mousepos", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("mousepos", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
 	Table* table = m_runtime.cpu().createTable(0, 4);
 	if (!state.value2d.has_value()) {
-		table->set(key("x"), valueNumber(0.0));
-		table->set(key("y"), valueNumber(0.0));
-		table->set(key("valid"), valueBool(false));
-		table->set(key("inside"), valueBool(false));
+		table->set(m_keys.x, valueNumber(0.0));
+		table->set(m_keys.y, valueNumber(0.0));
+		table->set(m_keys.valid, valueBool(false));
+		table->set(m_keys.inside, valueBool(false));
 		out.push_back(valueTable(table));
 		return;
 	}
@@ -854,20 +867,20 @@ m_runtime.registerNativeFunction("mousepos", [this, key](const std::vector<Value
 	const double width = EngineCore::instance().view()->viewportSize.x;
 	const double height = EngineCore::instance().view()->viewportSize.y;
 	const bool inside = x >= 0.0 && x < width && y >= 0.0 && y < height;
-	table->set(key("x"), valueNumber(x));
-	table->set(key("y"), valueNumber(y));
-	table->set(key("valid"), valueBool(true));
-	table->set(key("inside"), valueBool(inside));
+	table->set(m_keys.x, valueNumber(x));
+	table->set(m_keys.y, valueNumber(y));
+	table->set(m_keys.valid, valueBool(true));
+	table->set(m_keys.inside, valueBool(inside));
 	out.push_back(valueTable(table));
 });
 
-m_runtime.registerNativeFunction("mousewheel", [this, key](const std::vector<Value>& args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("mousewheel", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_wheel", InputSource::Pointer);
 	Table* table = m_runtime.cpu().createTable(0, 2);
-	table->set(key("value"), valueNumber(static_cast<double>(state.value)));
-	table->set(key("valid"), valueBool(state.value != 0.0f));
+	table->set(m_keys.value, valueNumber(static_cast<double>(state.value)));
+	table->set(m_keys.valid, valueBool(state.value != 0.0f));
 	out.push_back(valueTable(table));
 });
 
@@ -970,16 +983,15 @@ m_runtime.registerNativeFunction("consume_action", [this, asText](const std::vec
 		action = asText(actionVal);
 	} else if (valueIsTable(actionVal)) {
 		auto* tbl = asTable(actionVal);
-		auto key = [this](std::string_view name) { return m_runtime.canonicalizeIdentifier(name); };
-		Value def = tbl->get(key("definition"));
+		Value def = tbl->get(m_keys.definition);
 		if (!isNil(def) && valueIsString(def)) {
 			action = asText(def);
 		} else {
-			Value act = tbl->get(key("action"));
+			Value act = tbl->get(m_keys.action);
 			if (!isNil(act) && valueIsString(act)) {
 				action = asText(act);
 			} else {
-				Value name = tbl->get(key("name"));
+				Value name = tbl->get(m_keys.name);
 				if (!isNil(name) && valueIsString(name)) {
 					action = asText(name);
 				} else {
@@ -993,12 +1005,11 @@ m_runtime.registerNativeFunction("consume_action", [this, asText](const std::vec
 		if (!isNil(def) && valueIsString(def)) {
 			action = asText(def);
 		} else {
-			auto key = [this](std::string_view name) { return m_runtime.canonicalizeIdentifier(name); };
-			Value def2 = obj->get(key("definition"));
+			Value def2 = obj->get(m_keys.definition);
 			if (!isNil(def2) && valueIsString(def2)) {
 				action = asText(def2);
 			} else {
-				Value act = obj->get(key("action"));
+				Value act = obj->get(m_keys.action);
 				if (!isNil(act) && valueIsString(act)) {
 					action = asText(act);
 				} else {
@@ -1373,10 +1384,10 @@ Color Api::resolve_color(const Value& value) {
 	}
 	auto* tbl = asTable(value);
 	Color color;
-	color.r = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("r"))));
-	color.g = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("g"))));
-	color.b = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("b"))));
-	color.a = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("a"))));
+	color.r = static_cast<f32>(asNumber(tbl->get(m_keys.r)));
+	color.g = static_cast<f32>(asNumber(tbl->get(m_keys.g)));
+	color.b = static_cast<f32>(asNumber(tbl->get(m_keys.b)));
+	color.a = static_cast<f32>(asNumber(tbl->get(m_keys.a)));
 	return color;
 }
 
@@ -1384,9 +1395,9 @@ Vec3 Api::read_vec3(const Value& value) {
 	if (valueIsTable(value)) {
 		auto* tbl = asTable(value);
 		Vec3 out;
-		out.x = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("x"))));
-		out.y = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("y"))));
-		out.z = static_cast<f32>(asNumber(tbl->get(m_runtime.canonicalizeIdentifier("z"))));
+		out.x = static_cast<f32>(asNumber(tbl->get(m_keys.x)));
+		out.y = static_cast<f32>(asNumber(tbl->get(m_keys.y)));
+		out.z = static_cast<f32>(asNumber(tbl->get(m_keys.z)));
 		return out;
 	}
 	if (valueIsNativeObject(value)) {

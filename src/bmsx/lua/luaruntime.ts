@@ -251,7 +251,7 @@ class LuaScriptFunction implements LuaFunctionValue {
 		this.name = name;
 		this.interpreter = interpreter;
 		this.expression = expression;
-		this.closure = closure.snapshot();
+		this.closure = closure;
 		this.implicitSelfName = implicitSelfName;
 		this.range = expression.range;
 	}
@@ -1053,13 +1053,13 @@ export class LuaInterpreter {
 			return;
 		}
 
-			if (functionNameParts.length === 1) {
-				const resolvedEnv = environment.resolve(functionNameParts[0]);
-				if (resolvedEnv !== null) {
-					resolvedEnv.assignExisting(functionNameParts[0], functionValue);
-					return;
-				}
-				this.globals.set(functionNameParts[0], functionValue, statement.range);
+		if (functionNameParts.length === 1) {
+			const resolvedEnv = environment.resolve(functionNameParts[0], statement.range);
+			if (resolvedEnv !== null) {
+				resolvedEnv.assignExisting(functionNameParts[0], functionValue);
+				return;
+			}
+			this.globals.set(functionNameParts[0], functionValue, statement.range);
 			return;
 		}
 
@@ -1090,7 +1090,7 @@ export class LuaInterpreter {
 		if (parts.length === 0) {
 			throw this.runtimeErrorAt(range, `Invalid table path for function '${displayName}'.`);
 		}
-		let currentValue: LuaValue = this.lookupIdentifier(parts[0], environment);
+		let currentValue: LuaValue = this.lookupIdentifier(parts[0], environment, range);
 		if (!(isLuaTable(currentValue))) {
 			throw this.runtimeErrorAt(range, `Expected table for '${parts[0]}' when declaring function '${displayName}'.`);
 		}
@@ -1214,7 +1214,7 @@ export class LuaInterpreter {
 			case LuaSyntaxKind.VarargExpression:
 				return varargs.length > 0 ? varargs[0] : null;
 			case LuaSyntaxKind.IdentifierExpression:
-				return this.lookupIdentifier(expression.name, environment);
+				return this.lookupIdentifier(expression.name, environment, expression.range);
 			case LuaSyntaxKind.FunctionExpression:
 				return new LuaScriptFunction(expression as LuaFunctionExpression, environment, '<anonymous>', null, this);
 			case LuaSyntaxKind.TableConstructorExpression:
@@ -1471,7 +1471,7 @@ public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnv
 	private resolveAssignmentTarget(target: LuaAssignableExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): ResolvedAssignmentTarget {
 		if (target.kind === LuaSyntaxKind.IdentifierExpression) {
 			const identifier = target as LuaIdentifierExpression;
-			const resolvedEnvironment = environment.resolve(identifier.name);
+			const resolvedEnvironment = environment.resolve(identifier.name, identifier.range);
 			return {
 				kind: 'identifier',
 				name: identifier.name,
@@ -1551,7 +1551,7 @@ public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnv
 
 	private getResolvedTargetValue(target: ResolvedAssignmentTarget, range: LuaSourceRange, environment: LuaEnvironment): LuaValue {
 		if (target.kind === 'identifier') {
-			const value = this.lookupIdentifier(target.name, environment);
+			const value = this.lookupIdentifier(target.name, environment, range);
 			return value;
 		}
 		if (target.kind === 'member') {
@@ -1814,12 +1814,12 @@ public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnv
 		return functionValue;
 	}
 
-	private lookupIdentifier(name: string, environment: LuaEnvironment): LuaValue {
-		const value = environment.get(name);
+	private lookupIdentifier(name: string, environment: LuaEnvironment, accessRange: LuaSourceRange | null = null): LuaValue {
+		const value = environment.get(name, accessRange);
 		if (value !== null) {
 			return value;
 		}
-		return this.globals.get(name);
+		return this.globals.get(name, accessRange);
 	}
 
 	private evaluateArithmeticExpression(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, metamethodName: string, operator: (left: number, right: number) => number, message: string): LuaValue {

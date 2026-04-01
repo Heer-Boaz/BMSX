@@ -1586,14 +1586,42 @@ export class CPU {
 		}
 	}
 
+	public clearGlobalSlots(): void {
+		this.systemGlobalNames = [];
+		this.systemGlobalValues = [];
+		this.systemGlobalSlotByKey = new Map();
+		this.globalNames = [];
+		this.globalValues = [];
+		this.globalSlotByKey = new Map();
+	}
+
+	public syncGlobalSlotsToTable(): void {
+		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
+			this.globals.set(this.systemGlobalNames[slot], this.systemGlobalValues[slot]);
+		}
+		for (let slot = 0; slot < this.globalNames.length; slot += 1) {
+			this.globals.set(this.globalNames[slot], this.globalValues[slot]);
+		}
+	}
+
+	public getGlobalByKey(key: StringValue): Value {
+		const systemSlot = this.systemGlobalSlotByKey.get(key);
+		if (systemSlot !== undefined) {
+			return this.systemGlobalValues[systemSlot];
+		}
+		const globalSlot = this.globalSlotByKey.get(key);
+		if (globalSlot !== undefined) {
+			return this.globalValues[globalSlot];
+		}
+		return this.globals.get(key);
+	}
+
 	private setSystemGlobalBySlot(slot: number, value: Value): void {
 		this.systemGlobalValues[slot] = value;
-		this.globals.set(this.systemGlobalNames[slot], value);
 	}
 
 	private setGlobalBySlot(slot: number, value: Value): void {
 		this.globalValues[slot] = value;
-		this.globals.set(this.globalNames[slot], value);
 	}
 
 	private getSystemGlobalBySlot(slot: number): Value {
@@ -2388,6 +2416,12 @@ export class CPU {
 		};
 
 		pushValue(this.globals);
+		for (let slot = 0; slot < this.systemGlobalValues.length; slot += 1) {
+			pushValue(this.systemGlobalValues[slot]);
+		}
+		for (let slot = 0; slot < this.globalValues.length; slot += 1) {
+			pushValue(this.globalValues[slot]);
+		}
 		if (this.stringIndexTable !== null) {
 			pushValue(this.stringIndexTable);
 		}

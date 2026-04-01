@@ -746,7 +746,16 @@ export default function schedule({ logger, schedule: scheduleInput }) {
 			return;
 		}
 
-		const state = getLuaState(engine);
+		let state;
+		try {
+			state = getLuaState(engine);
+		}
+		catch (error) {
+			if (!(error instanceof Error) || !error.message.startsWith('Attempted to call a nil value.')) {
+				throw error;
+			}
+			return;
+		}
 		if (!hasGameplayObjects(state)) {
 			gameplayReadyAt = 0;
 			const now = Date.now();

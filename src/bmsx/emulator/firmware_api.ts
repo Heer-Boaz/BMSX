@@ -19,9 +19,11 @@ import { listResources } from './workspace';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { buildDirtyFilePath, hasWorkspaceStorage } from './ide/workspace_storage';
 import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtins';
+import { Table } from './cpu';
 import { createLuaTable, type LuaTable } from '../lua/luavalue';
 import { ActionState } from 'bmsx/input/inputtypes';
 import { BmsxColors } from './vdp';
+import type { StringValue } from './string_pool';
 
 export type ApiOptions = {
 	storage: RuntimeStorage;
@@ -56,6 +58,12 @@ export class Api {
 	private readonly cameraEyeScratch: vec3arr = [0, 0, 0];
 	private readonly lightColorScratch: vec3arr = [0, 0, 0];
 	private readonly lightVecScratch: vec3arr = [0, 0, 0];
+	private readonly pointerXKey: StringValue;
+	private readonly pointerYKey: StringValue;
+	private readonly pointerValidKey: StringValue;
+	private readonly pointerInsideKey: StringValue;
+	private readonly mousewheelValueKey: StringValue;
+	private readonly mousewheelValidKey: StringValue;
 	private _runtime: Runtime;
 
 	constructor(options: ApiOptions) {
@@ -69,6 +77,12 @@ export class Api {
 		}
 		this.storage = options.storage;
 		this._runtime = options.runtime;
+		this.pointerXKey = this._runtime.canonicalKey('x');
+		this.pointerYKey = this._runtime.canonicalKey('y');
+		this.pointerValidKey = this._runtime.canonicalKey('valid');
+		this.pointerInsideKey = this._runtime.canonicalKey('inside');
+		this.mousewheelValueKey = this._runtime.canonicalKey('value');
+		this.mousewheelValidKey = this._runtime.canonicalKey('valid');
 		this.font = new Font();
 		this.registerFont(this.font);
 	}
@@ -162,58 +176,77 @@ export class Api {
 		return Input.instance.getPlayerInput(1).getButtonState(this.pointerButtonCode(button), 'pointer').justreleased === true;
 	}
 
-	public pointer_screen_position(): { x: number; y: number; valid: boolean } {
+	private buildPointerTable(x: number, y: number, valid: boolean, inside: boolean | null = null): Table {
+		const table = new Table(0, inside === null ? 3 : 4);
+		table.set(this.pointerXKey, x);
+		table.set(this.pointerYKey, y);
+		table.set(this.pointerValidKey, valid);
+		if (inside !== null) {
+			table.set(this.pointerInsideKey, inside);
+		}
+		return table;
+	}
+
+	private buildMousewheelTable(value: number, valid: boolean): Table {
+		const table = new Table(0, 2);
+		table.set(this.mousewheelValueKey, value);
+		table.set(this.mousewheelValidKey, valid);
+		return table;
+	}
+
+	public pointer_screen_position(): Table {
 		const state = Input.instance.getPlayerInput(1).getButtonState('pointer_position', 'pointer');
 		const value = state.value2d;
 		if (!value) {
-			return { x: 0, y: 0, valid: false };
+			return this.buildPointerTable(0, 0, false);
 		}
-		return { x: value[0], y: value[1], valid: true };
+		return this.buildPointerTable(value[0], value[1], true);
 	}
 
-	public pointer_delta(): { x: number; y: number; valid: boolean } {
+	public pointer_delta(): Table {
 		const state = Input.instance.getPlayerInput(1).getButtonState('pointer_delta', 'pointer');
 		const value = state.value2d;
 		if (!value) {
-			return { x: 0, y: 0, valid: false };
+			return this.buildPointerTable(0, 0, false);
 		}
-		return { x: value[0], y: value[1], valid: true };
+		return this.buildPointerTable(value[0], value[1], true);
 	}
 
-	public pointer_viewport_position(): { x: number; y: number; valid: boolean; inside: boolean } {
-		const position = this.pointer_screen_position();
-		if (!position.valid) {
-			return { x: 0, y: 0, valid: false, inside: false };
+	public pointer_viewport_position(): Table {
+		const state = Input.instance.getPlayerInput(1).getButtonState('pointer_position', 'pointer');
+		const value = state.value2d;
+		if (!value) {
+			return this.buildPointerTable(0, 0, false, false);
 		}
 		const view = $.view;
 		const rect = view.surface.measureDisplay();
 		const width = rect.width;
 		const height = rect.height;
 		if (width <= 0 || height <= 0) {
-			return { x: 0, y: 0, valid: false, inside: false };
+			return this.buildPointerTable(0, 0, false, false);
 		}
-		const relativeX = position.x - rect.left;
-		const relativeY = position.y - rect.top;
+		const relativeX = value[0] - rect.left;
+		const relativeY = value[1] - rect.top;
 		const inside = relativeX >= 0 && relativeX < width && relativeY >= 0 && relativeY < height;
 		const viewport = view.viewportSize;
-		return {
-			x: (relativeX / width) * viewport.x,
-			y: (relativeY / height) * viewport.y,
-			valid: true,
+		return this.buildPointerTable(
+			(relativeX / width) * viewport.x,
+			(relativeY / height) * viewport.y,
+			true,
 			inside,
-		};
+		);
 	}
 
-	public mousepos(): { x: number; y: number; valid: boolean; inside: boolean } {
+	public mousepos(): Table {
 		return this.pointer_viewport_position();
 	}
 
-	public mousewheel(): { value: number; valid: boolean } {
+	public mousewheel(): Table {
 		const state = Input.instance.getPlayerInput(1).getButtonState('pointer_wheel', 'pointer');
 		if (state.value === null || state.value === undefined) {
-			return { value: 0, valid: false };
+			return this.buildMousewheelTable(0, false);
 		}
-		return { value: state.value, valid: true };
+		return this.buildMousewheelTable(state.value, true);
 	}
 
 	public stat(index: number): number {

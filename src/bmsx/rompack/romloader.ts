@@ -21,6 +21,8 @@ import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 import { decodeRomToc } from './rom_toc';
 
+const utf8Decoder = new TextDecoder();
+
 export type RomLoadOptions = {
 	loadAudioFromBuffer?: (buffer: Uint8Array) => Promise<any>;
 	loadDataFromBuffer?: (buffer: Uint8Array) => Promise<any>;
@@ -408,7 +410,7 @@ export async function loadModelFromBuffer(asset_id: string, buffer: Uint8Array, 
 			if (typeof uri === 'string') return uri;
 			if (ArrayBuffer.isView(uri)) {
 				const u8 = new Uint8Array(uri.buffer, uri.byteOffset, uri.byteLength);
-				return new TextDecoder().decode(u8);
+				return utf8Decoder.decode(u8);
 			}
 			return undefined;
 		}) : undefined,

@@ -117,6 +117,7 @@ export const ASSET_TABLE_ENTRY_SIZE = 64;
 const ASSET_TABLE_HASH_ALG_ID = 2;
 const ASSET_PAGE_SHIFT = 12;
 export const ASSET_PAGE_SIZE = 1 << ASSET_PAGE_SHIFT;
+const utf8Decoder = new TextDecoder();
 
 const ASSET_TYPE_IMAGE = 1;
 const ASSET_TYPE_AUDIO = 2;
@@ -784,7 +785,6 @@ export class Memory {
 
 		const stringTableOffset = stringTableAddr - RAM_BASE;
 		const stringTableEnd = stringTableOffset + stringTableLength;
-		const decoder = new TextDecoder();
 		const readString = (addr: number): string => {
 			const offset = addr - RAM_BASE;
 			if (offset < stringTableOffset || offset >= stringTableEnd) {
@@ -797,7 +797,7 @@ export class Memory {
 			if (cursor >= stringTableEnd) {
 				throw new Error(`[Memory] Asset string at ${addr} missing terminator.`);
 			}
-			return decoder.decode(this.ram.subarray(offset, cursor));
+			return utf8Decoder.decode(this.ram.subarray(offset, cursor));
 		};
 
 		const entryBaseAddr = ASSET_TABLE_BASE + ASSET_TABLE_HEADER_SIZE;

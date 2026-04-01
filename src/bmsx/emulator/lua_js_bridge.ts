@@ -18,6 +18,13 @@ export interface LuaInteropAdapter {
 }
 type LuaSnapshotContext = { ids: WeakMap<LuaTable, number>; objects: LuaSnapshotObjects; nextId: number };
 
+function reserveTableHashSize(entryCount: number): number {
+	if (entryCount <= 0) {
+		return 0;
+	}
+	return Math.max(4, entryCount * 2);
+}
+
 export class LuaJsBridge implements LuaInteropAdapter {
 	private readonly luaHandlerCache: LuaHandlerCache;
 	private readonly runtime: Runtime;
@@ -1045,14 +1052,33 @@ export function toRuntimeValue(runtime: Runtime, value: unknown): Value {
 		return getOrCreateNativeFunction(runtime, value);
 	}
 	if (isPlainObject(value)) {
-		const table = new Table(0, 0);
-		for (const [prop, entry] of Object.entries(value)) {
+		const record = value as Record<string, unknown>;
+		let entryCount = 0;
+		for (const prop in record) {
+			if (!Object.prototype.hasOwnProperty.call(record, prop)) {
+				continue;
+			}
+			const entry = record[prop];
+			if (entry === undefined || entry === null) {
+				continue;
+			}
+			entryCount += 1;
+		}
+		const table = new Table(0, reserveTableHashSize(entryCount));
+		for (const prop in record) {
+			if (!Object.prototype.hasOwnProperty.call(record, prop)) {
+				continue;
+			}
+			const entry = record[prop];
+			if (entry === undefined || entry === null) {
+				continue;
+			}
 			table.set(runtime.internString(prop), toRuntimeValue(runtime, entry));
 		}
 		return table;
 	}
 	if (value instanceof Map) {
-		const table = new Table(0, 0);
+		const table = new Table(0, reserveTableHashSize(value.size));
 		for (const [key, entry] of value.entries()) {
 			table.set(toRuntimeValue(runtime, key), toRuntimeValue(runtime, entry));
 		}

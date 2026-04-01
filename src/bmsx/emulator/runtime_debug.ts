@@ -187,7 +187,7 @@ function resolveRootExpressionValue(
 			return { found: true, value: runtime.cpu.readFrameUpvalue(frameIndex, upvalueIndex) };
 		}
 	}
-	const globalValue = runtime.cpu.globals.get(runtime.canonicalKey(rootName));
+	const globalValue = runtime.cpu.getGlobalByKey(runtime.canonicalKey(rootName));
 	if (globalValue !== null) {
 		return { found: true, value: globalValue };
 	}

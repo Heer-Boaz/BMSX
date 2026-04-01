@@ -721,7 +721,7 @@ void Runtime::tickUpdate() {
 	m_frameState.cycleCarryGranted = carryBudget;
 	m_frameDeltaMs = static_cast<f64>(EngineCore::instance().deltaTime()) * 1000.0;
 	m_vdp.beginFrame();
-	auto* gameTable = asTable(m_cpu.globals->get(canonicalizeIdentifier("game")));
+	auto* gameTable = asTable(m_cpu.getGlobalByKey(canonicalizeIdentifier("game")));
 	auto* viewportTable = asTable(gameTable->get(canonicalizeIdentifier("viewportsize")));
 	auto viewSize = EngineCore::instance().view()->viewportSize;
 	viewportTable->set(canonicalizeIdentifier("x"), valueNumber(static_cast<double>(viewSize.x)));
@@ -875,6 +875,7 @@ void Runtime::resetCartBootState() {
 RuntimeState Runtime::captureCurrentState() const {
 	RuntimeState state;
 	state.ioMemory = m_memory.ioSlots();
+	const_cast<CPU&>(m_cpu).syncGlobalSlotsToTable();
 	state.globals = m_cpu.globals->entries();
 	state.cartDataNamespace = m_api->cartDataNamespace();
 	state.persistentData = m_api->persistentData();
@@ -917,6 +918,7 @@ void Runtime::applyState(const RuntimeState& state) {
 
 	// Restore globals
 	m_cpu.globals->clear();
+	m_cpu.clearGlobalSlots();
 	m_cpu.setProgram(m_program, m_programMetadata);
 	for (const auto& [key, value] : state.globals) {
 		m_cpu.setGlobalByKey(key, value);
@@ -938,7 +940,7 @@ void Runtime::clearSkybox() {
 }
 
 Value Runtime::getGlobal(std::string_view name) {
-	return m_cpu.globals->get(canonicalizeIdentifier(name));
+	return m_cpu.getGlobalByKey(canonicalizeIdentifier(name));
 }
 
 void Runtime::setGlobal(std::string_view name, const Value& value) {
