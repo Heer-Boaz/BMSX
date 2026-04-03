@@ -513,6 +513,38 @@ export class TextureManager {
 		return this.getTexture(this.makeKey(uri, desc));
 	}
 
+	public swapTextureHandlesByUri(uriA: string, uriB: string, descA: TextureParams = {}, descB: TextureParams = {}): void {
+		const keyA = this.makeKey(uriA, descA);
+		const keyB = this.makeKey(uriB, descB);
+		const entryA = this.gpuCache.get(keyA);
+		const entryB = this.gpuCache.get(keyB);
+		if (!entryA || !entryA.handle) {
+			throw new Error(`TextureManager: texture '${uriA}' is not initialized.`);
+		}
+		if (!entryB || !entryB.handle) {
+			throw new Error(`TextureManager: texture '${uriB}' is not initialized.`);
+		}
+		const handle = entryA.handle;
+		entryA.handle = entryB.handle;
+		entryB.handle = handle;
+		const fallback = entryA.ownedFallback;
+		entryA.ownedFallback = entryB.ownedFallback;
+		entryB.ownedFallback = fallback;
+	}
+
+	public copyTextureByUri(sourceUri: string, destinationUri: string, width: number, height: number, sourceDesc: TextureParams = {}, destinationDesc: TextureParams = {}): void {
+		if (!this.backend) throw new Error('TextureManager backend not set');
+		const sourceEntry = this.gpuCache.get(this.makeKey(sourceUri, sourceDesc));
+		if (!sourceEntry || !sourceEntry.handle) {
+			throw new Error(`TextureManager: texture '${sourceUri}' is not initialized.`);
+		}
+		const destinationEntry = this.gpuCache.get(this.makeKey(destinationUri, destinationDesc));
+		if (!destinationEntry || !destinationEntry.handle) {
+			throw new Error(`TextureManager: texture '${destinationUri}' is not initialized.`);
+		}
+		this.backend.copyTexture(sourceEntry.handle, destinationEntry.handle, width, height);
+	}
+
 	public releaseByUri(uri: string, desc: TextureParams = {}): void {
 		this.releaseByKey(this.makeKey(uri, desc));
 	}
