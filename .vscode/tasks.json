@@ -82,40 +82,12 @@
 			}
 		},
 		{
-			"label": "PLATFORM BUILD: browser (debug, force)",
+			"label": "CLEAN: dist",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"build:platform:browser",
-				"--",
-				"--debug",
-				"--force"
-			],
-			"problemMatcher": [],
-			"group": "build",
-			"icon": {
-				"id": "globe",
-				"color": "terminal.ansiCyan"
-			},
-			"presentation": {
-				"echo": false,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"clear": true,
-				"revealProblems": "onProblem",
-				"group": "PLATFORM BUILD"
-			}
-		},
-		{
-			"label": "CLEAN: dist",
-			"type": "shell",
-			"command": "node",
-			"args": [
-				"-e",
-				"const fs = require('node:fs'); fs.rmSync('dist', { recursive: true, force: true }); fs.mkdirSync('dist', { recursive: true });"
+				"clean:dist"
 			],
 			"problemMatcher": [],
 			"group": "build",
@@ -197,44 +169,12 @@
 			}
 		},
 		{
-			"label": "GAME ROMPACK BUILD (debug, force)",
-			"type": "shell",
-			"command": "npm",
-			"args": [
-				"run",
-				"build:game",
-				"--",
-				"${input:romtobuild}",
-				"--debug",
-				"--force"
-			],
-			"problemMatcher": [
-				"$tsc"
-			],
-			"group": "build",
-			"icon": {
-				"id": "game",
-				"color": "terminal.ansiGreen"
-			},
-			"presentation": {
-				"echo": false,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"clear": true,
-				"revealProblems": "onProblem",
-				"group": "GAME BUILD"
-			}
-		},
-		{
 			"label": "GAME/BIOS/BROWSER FORCE-VALIDATE (+bios+force+debug)",
 			"type": "shell",
-			"dependsOrder": "sequence",
-			"dependsOn": [
-				"PLATFORM BUILD: browser (debug, force)",
-				"BIOS: build (debug, force)",
-				"GAME ROMPACK BUILD (debug, force)"
+			"command": "bash",
+			"args": [
+				"-lc",
+				"npm run build:platform:browser -- --debug --force && npm run build:bios -- --debug --force && npm run build:game -- \"${input:romtobuild}\" --debug --force"
 			],
 			"problemMatcher": [],
 			"group": "build",
@@ -251,10 +191,7 @@
 				"clear": true,
 				"revealProblems": "onProblem",
 				"group": "GAME BUILD"
-			},
-			"dependsOn": [
-				"BIOS: build (debug)"
-			]
+			}
 		},
 		{
 			"label": "PLATFORM BUILD: headless (debug)",
@@ -368,36 +305,6 @@
 			"args": [
 				"run",
 				"build:bios"
-			],
-			"problemMatcher": [
-				"$tsc"
-			],
-			"group": "build",
-			"icon": {
-				"id": "library",
-				"color": "terminal.ansiBlue"
-			},
-			"presentation": {
-				"echo": false,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"clear": true,
-				"revealProblems": "onProblem",
-				"group": "ROMPACKER"
-			}
-		},
-		{
-			"label": "BIOS: build (debug, force)",
-			"type": "shell",
-			"command": "npm",
-			"args": [
-				"run",
-				"build:bios",
-				"--",
-				"--debug",
-				"--force"
 			],
 			"problemMatcher": [
 				"$tsc"

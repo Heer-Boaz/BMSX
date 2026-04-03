@@ -73,6 +73,7 @@
 		"run:retroarch": "bash run-retroarch.sh",
 		"run:libretro-host:wsl:sdl": "./build-libretro-host/bmsx_libretro_host --core ./dist/bmsx_libretro.so --video sdl --backend gles2",
 		"run:libretro-host:wsl:fb": "./build-libretro-host/bmsx_libretro_host --core ./dist/bmsx_libretro.so --video fb --backend software",
+		"clean:dist": "node scripts/clean-dist.mjs",
 		"fix:indent": "node scripts/fix-ts-indentation-safe.js",
 		"check:indent": "node scripts/fix-ts-indentation-safe.js --check"
 	},
