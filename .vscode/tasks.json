@@ -82,6 +82,59 @@
 			}
 		},
 		{
+			"label": "PLATFORM BUILD: browser (debug, force)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build:platform:browser",
+				"--",
+				"--debug",
+				"--force"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"icon": {
+				"id": "globe",
+				"color": "terminal.ansiCyan"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "PLATFORM BUILD"
+			}
+		},
+		{
+			"label": "CLEAN: dist",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"-e",
+				"const fs = require('node:fs'); fs.rmSync('dist', { recursive: true, force: true }); fs.mkdirSync('dist', { recursive: true });"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"icon": {
+				"id": "trash",
+				"color": "terminal.ansiYellow"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "MAINTENANCE"
+			}
+		},
+		{
 			"label": "GAME ROMPACK BUILD",
 			"type": "shell",
 			"command": "npm",
@@ -144,20 +197,46 @@
 			}
 		},
 		{
-			"label": "GAME/BIOS/BROWSER FORCE-VALIDATE (+bios+force+debug)",
+			"label": "GAME ROMPACK BUILD (debug, force)",
 			"type": "shell",
 			"command": "npm",
 			"args": [
 				"run",
-				"validate:game",
+				"build:game",
 				"--",
 				"${input:romtobuild}",
-				"--force",
-				"--debug"
+				"--debug",
+				"--force"
 			],
 			"problemMatcher": [
 				"$tsc"
 			],
+			"group": "build",
+			"icon": {
+				"id": "game",
+				"color": "terminal.ansiGreen"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "GAME BUILD"
+			}
+		},
+		{
+			"label": "GAME/BIOS/BROWSER FORCE-VALIDATE (+bios+force+debug)",
+			"type": "shell",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"PLATFORM BUILD: browser (debug, force)",
+				"BIOS: build (debug, force)",
+				"GAME ROMPACK BUILD (debug, force)"
+			],
+			"problemMatcher": [],
 			"group": "build",
 			"icon": {
 				"id": "loading~spin",
@@ -289,6 +368,36 @@
 			"args": [
 				"run",
 				"build:bios"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build",
+			"icon": {
+				"id": "library",
+				"color": "terminal.ansiBlue"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "ROMPACKER"
+			}
+		},
+		{
+			"label": "BIOS: build (debug, force)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build:bios",
+				"--",
+				"--debug",
+				"--force"
 			],
 			"problemMatcher": [
 				"$tsc"
