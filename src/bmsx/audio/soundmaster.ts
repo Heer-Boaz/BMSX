@@ -337,6 +337,10 @@ export class SoundMaster {
 		this.startMixer();
 	}
 
+	public isRuntimeAudioReady(): boolean {
+		return !!this.audio;
+	}
+
 	public setMaxVoicesByType(specs: Partial<Record<AudioType, number>>): void {
 		for (let index = 0; index < AudioTypes.length; index += 1) {
 			const type = AudioTypes[index];
