@@ -3,7 +3,7 @@
 --
 -- NOTE FOR CART AUTHORS:
 -- Do not `require('engine')` from cart code and do not call `engine.*`.
--- Carts must use cart-facing globals/helpers (`object`, `inst`,
+-- Carts must use cart-facing globals/helpers (`oget`, `rget`, `inst`,
 -- `update`, `reset`, `add_space`, `set_space`, `get_space`, `define_fsm`, `define_effect`,
 -- etc.) that are injected by the runtime.
 -- Keep cart identifier strings compact. Redundant long prefixes in tags/events/effects/
@@ -525,10 +525,16 @@ function engine.inst_subsystem(definition_id, addons)
 	return instance
 end
 
--- Runtime binds global `object(id)` to this function.
--- Cart code must call `object(id)` and must not call `engine.object(id)` directly.
-function engine.object(id)
+-- Runtime binds global `oget(id)` to this function.
+-- Cart code must call `oget(id)` and must not call `engine.oget(id)` directly.
+function engine.oget(id)
 	return world_instance:get(id)
+end
+
+-- Runtime binds global `rget(id)` to this function.
+-- Cart code must call `rget(id)` and must not call `engine.rget(id)` directly.
+function engine.rget(id)
+	return registry.instance:get(id)
 end
 
 function engine.subsystem(id)
@@ -813,6 +819,5 @@ end
 
 engine.eventemitter = eventemitter_module
 engine.eventemitter_module = eventemitter_module
-submit_glyph_lines = engine.submit_glyph_lines
 
 return engine

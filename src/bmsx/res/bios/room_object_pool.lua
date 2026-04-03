@@ -82,7 +82,7 @@ end
 --   Returns the object instance.
 function room_object_pool:use(definition, context)
 	local id<const> = definition.id
-	local instance = object(id)
+	local instance = oget(id)
 	local was_missing<const> = instance == nil
 	local was_active = false
 	if not was_missing then
@@ -107,7 +107,7 @@ end
 --   for objects that no longer exist in the world.
 function room_object_pool:end_cycle()
 	for id in pairs(self.instances_by_id) do
-		local instance<const> = object(id)
+		local instance<const> = oget(id)
 		if instance == nil then
 			self.instances_by_id[id] = nil
 		else
@@ -122,7 +122,7 @@ end
 function room_object_pool:deactivate_id(id)
 	self.active_ids[id] = nil
 	self.instances_by_id[id] = nil
-	local instance<const> = object(id)
+	local instance<const> = oget(id)
 	if instance ~= nil then
 		self.deactivate_instance(instance, id)
 	end

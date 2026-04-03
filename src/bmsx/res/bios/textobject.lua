@@ -3,6 +3,7 @@
 
 local worldobject<const> = require('worldobject')
 local components<const> = require('components')
+local fsmlibrary<const> = require('fsmlibrary')
 local wrap_text_lines<const> = require('util/wrap_text_lines')
 
 local textobject<const> = {}
@@ -11,10 +12,28 @@ setmetatable(textobject, { __index = worldobject })
 
 local highlight_move_timeline_id<const> = 'hmove'
 local highlight_vibe_timeline_id<const> = 'hvibe'
+local typing_timeline_id<const> = 'type'
+local textobject_fsm_id<const> = 'textobject'
+local textobject_state_idle<const> = 'idle'
+local textobject_state_typing<const> = 'typing'
+local typing_command_start<const> = 'type.start'
+local typing_command_step<const> = 'type.step'
+local typing_command_reveal<const> = 'type.reveal'
 local highlight_move_in_frames<const> = 6
 local highlight_move_settle_frames<const> = 3
 local highlight_move_overshoot<const> = 0.12
 local highlight_move_ticks_per_frame<const> = 12
+local typing_step_emit_char<const> = 1
+local typing_step_finish_line<const> = 2
+local state_tags<const> = {
+	variant = {
+		idle = 'v.i',
+		typing = 'v.t',
+	},
+	group = {
+		typing = 'g.t',
+	},
+}
 
 local measure_line_width<const> = function(font, line)
 	local width = 0
@@ -96,6 +115,27 @@ local build_wrapped_lines<const> = function(text_or_lines, max_chars)
 	return wrapped_lines, wrapped_line_to_logical_line
 end
 
+local build_typing_steps<const> = function(lines)
+	local steps<const> = {}
+	for line_index = 1, #lines do
+		local line<const> = lines[line_index]
+		local line_length<const> = string.len(line)
+		for char_index = 1, line_length do
+			steps[#steps + 1] = {
+				op = typing_step_emit_char,
+				l = line_index,
+				c = char_index,
+				v = string.sub(line, char_index, char_index),
+			}
+		end
+		steps[#steps + 1] = {
+			op = typing_step_finish_line,
+			l = line_index,
+		}
+	end
+	return steps
+end
+
 local build_highlight_move_frames<const> = function(params)
 	local frames<const> = {}
 	local from_y<const> = params.from_y
@@ -123,9 +163,115 @@ local build_highlight_move_frames<const> = function(params)
 	return frames
 end
 
+fsmlibrary.register(textobject_fsm_id, {
+	initial = textobject_state_idle,
+	tag_derivations = {
+		[state_tags.group.typing] = { state_tags.variant.typing },
+	},
+	timelines = {
+		[highlight_move_timeline_id] = {
+			def = {
+				frames = build_highlight_move_frames,
+				ticks_per_frame = highlight_move_ticks_per_frame,
+				playback_mode = 'once',
+				apply = true,
+			},
+			autoplay = false,
+		},
+		[highlight_vibe_timeline_id] = {
+			def = {
+				playback_mode = 'loop',
+				tracks = {
+					{
+						kind = 'wave',
+						path = { 'highlight_vibe_scale' },
+						base = 1,
+						amp = 0.12,
+						period = 0.9,
+						phase = 0.12,
+						wave = 'pingpong',
+						ease = easing.smoothstep,
+					},
+					{
+						kind = 'wave',
+						path = { 'highlight_vibe_offset_x' },
+						base = 0,
+						amp = 0.6,
+						period = 0.35,
+						phase = 0.4,
+						wave = 'sin',
+					},
+					{
+						kind = 'wave',
+						path = { 'highlight_vibe_offset_y' },
+						base = 0,
+						amp = 0.5,
+						period = 0.4,
+						phase = 0.08,
+						wave = 'sin',
+					},
+				},
+			},
+			autoplay = true,
+			play_options = {
+				rewind = true,
+				snap_to_start = true,
+			},
+		},
+	},
+	on = {
+		[typing_command_start] = '/' .. textobject_state_typing,
+		[typing_command_reveal] = function(self, state)
+			self:apply_full_text()
+			if state.current_id ~= textobject_state_idle then
+				return '/' .. textobject_state_idle
+			end
+		end,
+	},
+	states = {
+		[textobject_state_idle] = {
+			tags = { state_tags.variant.idle },
+		},
+		[textobject_state_typing] = {
+			tags = { state_tags.variant.typing },
+			entering_state = function(self)
+				self:play_timeline(typing_timeline_id, {
+					rewind = true,
+					snap_to_start = false,
+					params = self.full_text_lines,
+				})
+			end,
+			timelines = {
+				[typing_timeline_id] = {
+					def = {
+						frames = build_typing_steps,
+						playback_mode = 'once',
+						autotick = false,
+					},
+					autoplay = false,
+					stop_on_exit = true,
+					on_frame = function(self, _state, event)
+						self:apply_typing_step(event.frame_value)
+					end,
+					on_end = function(self)
+						self:finish_typing()
+						return '/' .. textobject_state_idle
+					end,
+				},
+			},
+			on = {
+				[typing_command_step] = function(self)
+					self:advance_timeline(typing_timeline_id)
+				end,
+			},
+		},
+	},
+})
+
 function textobject.new(opts)
 	opts = opts or {}
 	opts.type_name = 'textobject'
+	opts.fsm_id = opts.fsm_id or textobject_fsm_id
 	local self<const> = setmetatable(worldobject.new(opts), textobject)
 	self.is_textobject = true
 	self.text = { '' }
@@ -148,7 +294,6 @@ function textobject.new(opts)
 	self.highlight_vibe_offset_x = 0
 	self.highlight_vibe_offset_y = 0
 	self.wrapped_line_to_logical_line = {}
-	self.is_typing = false
 	self.text_color = { r = 1, g = 1, b = 1, a = 1 }
 	self.highlight_color = { r = 0, g = 0, b = 0.5, a = 1 }
 	self.normal_bg_color = { r = 0, g = 0, b = 0, a = 1 }
@@ -175,48 +320,6 @@ function textobject.new(opts)
 		end,
 	})
 	self:add_component(self.custom_visual)
-	self:define_timeline(timeline.new({
-		id = highlight_move_timeline_id,
-		frames = build_highlight_move_frames,
-		ticks_per_frame = highlight_move_ticks_per_frame,
-		playback_mode = 'once',
-		apply = true,
-	}))
-	self:define_timeline(timeline.new({
-		id = highlight_vibe_timeline_id,
-		playback_mode = 'loop',
-		tracks = {
-			{
-				kind = 'wave',
-				path = { 'highlight_vibe_scale' },
-				base = 1,
-				amp = 0.12,
-				period = 0.9,
-				phase = 0.12,
-				wave = 'pingpong',
-				ease = easing.smoothstep,
-			},
-			{
-				kind = 'wave',
-				path = { 'highlight_vibe_offset_x' },
-				base = 0,
-				amp = 0.6,
-				period = 0.35,
-				phase = 0.4,
-				wave = 'sin',
-			},
-			{
-				kind = 'wave',
-				path = { 'highlight_vibe_offset_y' },
-				base = 0,
-				amp = 0.5,
-				period = 0.4,
-				phase = 0.08,
-				wave = 'sin',
-			},
-		},
-	}))
-	self:play_timeline(highlight_vibe_timeline_id, { rewind = true, snap_to_start = true })
 	self:sync_text_component()
 	return self
 end
@@ -326,57 +429,63 @@ function textobject:set_text(text_or_lines, opts)
 	self.full_text_lines, self.wrapped_line_to_logical_line = build_wrapped_lines(text_or_lines, self.maximum_characters_per_line)
 	self:recenter_text_block()
 	if typed and not snap then
-		self.displayed_lines = {}
-		for i = 1, #self.full_text_lines do
-			self.displayed_lines[i] = ''
-		end
-		self.current_line_index = 0
-		self.current_char_index = 0
-		self.is_typing = true
-		self:update_displayed_text()
+		self:reset_typing_buffer()
+		self:dispatch_command(typing_command_start)
 		return
 	end
 	self:reveal_text()
 end
 
-function textobject:reveal_text()
+function textobject:reset_typing_buffer()
+	self.displayed_lines = {}
+	for i = 1, #self.full_text_lines do
+		self.displayed_lines[i] = ''
+	end
+	self.current_line_index = 0
+	self.current_char_index = 0
+	self:update_displayed_text()
+end
+
+function textobject:apply_full_text()
 	self.displayed_lines = {}
 	for i = 1, #self.full_text_lines do
 		self.displayed_lines[i] = self.full_text_lines[i]
 	end
 	self.current_line_index = #self.full_text_lines
 	self.current_char_index = 0
-	self.is_typing = false
 	self:update_displayed_text()
 end
 
-function textobject:type_next()
-	if not self.is_typing then
-		return
-	end
-	if self.current_line_index >= #self.full_text_lines then
-		self.is_typing = false
-		self.events:emit('done', { totallines = #self.full_text_lines })
-		return
-	end
-	local line_index<const> = self.current_line_index + 1
-	local line<const> = self.full_text_lines[line_index]
-	if self.current_char_index < string.len(line) then
-		local char_index<const> = self.current_char_index + 1
-		local char<const> = string.sub(line, char_index, char_index)
-		self.displayed_lines[line_index] = self.displayed_lines[line_index] .. char
-		self.current_char_index = self.current_char_index + 1
+function textobject:reveal_text()
+	self:dispatch_command(typing_command_reveal)
+end
+
+function textobject:apply_typing_step(step)
+	if step.op == typing_step_emit_char then
+		self.current_line_index = step.l - 1
+		self.current_char_index = step.c
+		self.displayed_lines[step.l] = self.displayed_lines[step.l] .. step.v
 		self:update_displayed_text()
-		self.events:emit('char', { char = char, lineindex = self.current_line_index, charindex = self.current_char_index - 1 })
+		self.events:emit('char', { char = step.v, lineindex = step.l - 1, charindex = step.c - 1 })
 		return
 	end
-	self.current_line_index = self.current_line_index + 1
+	self.current_line_index = step.l
 	self.current_char_index = 0
-	if self.current_line_index >= #self.full_text_lines then
-		self.is_typing = false
-		self.events:emit('done', { totallines = #self.full_text_lines })
-	end
 	self:update_displayed_text()
+end
+
+function textobject:finish_typing()
+	self.current_line_index = #self.full_text_lines
+	self.current_char_index = 0
+	self.events:emit('done', { totallines = #self.full_text_lines })
+end
+
+function textobject:is_typing()
+	return self:has_tag(state_tags.group.typing)
+end
+
+function textobject:type_next()
+	self:dispatch_command(typing_command_step)
 end
 
 function textobject:sync_text_component()
