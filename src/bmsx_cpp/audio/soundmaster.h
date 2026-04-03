@@ -128,6 +128,7 @@ public:
 	void setMaxVoicesByType(std::optional<int> sfx, std::optional<int> music, std::optional<int> ui);
 	void resetPlaybackState();
 	void dispose();
+	bool isRuntimeAudioReady() const { return m_assets != nullptr && static_cast<bool>(m_audioResolver); }
 
 	VoiceId play(const AssetId& id, const SoundMasterPlayRequest& request = {});
 	void playWithPolicy(AudioType type, const AssetId& id, const SoundMasterPlayRequest& request = {}, std::optional<AudioPlaybackMode> policy = std::nullopt, std::optional<int> maxVoices = std::nullopt);
