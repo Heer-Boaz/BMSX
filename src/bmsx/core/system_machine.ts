@@ -21,7 +21,7 @@ export const SYSTEM_MACHINE_MANIFEST: MachineManifest = {
 			dma_bytes_per_sec_bulk: 26_214_400,
 		},
 		vdp: {
-			render_budget_per_frame: 512,
+			work_units_per_sec: 25_600,
 		},
 	},
 };
