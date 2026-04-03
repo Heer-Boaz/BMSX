@@ -67,7 +67,7 @@ type WorkletMessageToMain =
 		reason: string;
 	}
 	| {
-		type: 'decoded';
+		type: 'clip_ready';
 		clipId: number;
 		durationSec: number;
 	}
@@ -247,8 +247,8 @@ export class WorkerStreamingAudioService implements AudioService {
 	private readonly coreStreamVoice: WorkerCoreStreamVoice = new WorkerCoreStreamVoice();
 	private nextClipId = 1;
 	private nextVoiceId = 1;
-	private readonly decodeResolves = new Map<number, (clip: AudioClipHandle) => void>();
-	private readonly decodeRejects = new Map<number, (error: Error) => void>();
+	private readonly clipReadyResolves = new Map<number, (clip: AudioClipHandle) => void>();
+	private readonly clipReadyRejects = new Map<number, (error: Error) => void>();
 	private readonly voices = new Map<number, WorkerVoice>();
 	private readonly msgSetMasterGain: { type: 'set_master_gain'; gain: number } = { type: 'set_master_gain', gain: 1 };
 	private readonly msgSetFrameTimeSec: { type: 'set_frame_time'; frameTimeSec: number } = { type: 'set_frame_time', frameTimeSec: DEFAULT_FRAME_TIME_SEC };
@@ -613,6 +613,8 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.concealDecayPerFrame = 1 / this.recoverLength;
 			this.clips = new Map();
 			this.voices = new Map();
+			this.activeVoices = new Array(MAX_ACTIVE_VOICES);
+			this.activeVoiceCount = 0;
 			this.voiceScratch0 = new Int16Array(2);
 			this.voiceScratch1 = new Int16Array(2);
 			this.voiceSampledL = 0;
@@ -634,7 +636,7 @@ export class WorkerStreamingAudioService implements AudioService {
 				rate: 1,
 				mixTimeMs: 0,
 			};
-			this.decodedMessage = { type: 'decoded', clipId: 0, durationSec: 0 };
+			this.clipReadyMessage = { type: 'clip_ready', clipId: 0, durationSec: 0 };
 			this.voiceEndedMessage = { type: 'voice_ended', voiceId: 0 };
 			this.needPortConnectedMessage = { type: 'need_port_connected' };
 			this.needPortErrorMessage = { type: 'need_port_error', reason: '' };
@@ -726,6 +728,7 @@ export class WorkerStreamingAudioService implements AudioService {
 				voiceId: 0,
 				clip: null,
 				decoder: null,
+				activeIndex: -1,
 				positionFrames: 0,
 				stepFrames: 1,
 				loopEnabled: false,
@@ -745,6 +748,7 @@ export class WorkerStreamingAudioService implements AudioService {
 				this.releaseDecoder(decoder);
 				voice.decoder = null;
 			}
+			voice.activeIndex = -1;
 			if (this.voicePoolCount >= MAX_ACTIVE_VOICES) {
 				return;
 			}
@@ -758,6 +762,15 @@ export class WorkerStreamingAudioService implements AudioService {
 				return;
 			}
 			this.voices.delete(voiceId);
+			const lastIndex = this.activeVoiceCount - 1;
+			const removeIndex = voice.activeIndex;
+			if (removeIndex !== lastIndex) {
+				const movedVoice = this.activeVoices[lastIndex];
+				this.activeVoices[removeIndex] = movedVoice;
+				movedVoice.activeIndex = removeIndex;
+			}
+			this.activeVoices[lastIndex] = null;
+			this.activeVoiceCount = lastIndex;
 			this.releaseVoice(voice);
 			this.enqueueEndedVoice(voiceId);
 		}
@@ -827,9 +840,9 @@ export class WorkerStreamingAudioService implements AudioService {
 				seekFrames,
 				seekOffsets,
 			});
-			this.decodedMessage.clipId = clipId;
-			this.decodedMessage.durationSec = frames / sampleRateClip;
-			this.port.postMessage(this.decodedMessage);
+			this.clipReadyMessage.clipId = clipId;
+			this.clipReadyMessage.durationSec = frames / sampleRateClip;
+			this.port.postMessage(this.clipReadyMessage);
 		}
 
 		disposeClip(clipId) {
@@ -838,7 +851,8 @@ export class WorkerStreamingAudioService implements AudioService {
 			}
 			this.clips.delete(clipId);
 			this.voiceRemoveCount = 0;
-			for (const voice of this.voices.values()) {
+			for (let index = 0; index < this.activeVoiceCount; index += 1) {
+				const voice = this.activeVoices[index];
 				if (voice.clip.clipId === clipId) {
 					this.voiceRemoveIds[this.voiceRemoveCount] = voice.voiceId;
 					this.voiceRemoveCount += 1;
@@ -854,10 +868,11 @@ export class WorkerStreamingAudioService implements AudioService {
 			if (!clip) {
 				throw new Error('[WorkerStreamingAudioService.worklet] Clip not registered for voice.');
 			}
-			if (this.voices.size >= MAX_ACTIVE_VOICES) {
+			if (this.activeVoiceCount >= MAX_ACTIVE_VOICES) {
 				let oldestId = -1;
 				let oldestCounter = Infinity;
-				for (const voice of this.voices.values()) {
+				for (let index = 0; index < this.activeVoiceCount; index += 1) {
+					const voice = this.activeVoices[index];
 					if (voice.startedCounter < oldestCounter) {
 						oldestCounter = voice.startedCounter;
 						oldestId = voice.voiceId;
@@ -906,6 +921,9 @@ export class WorkerStreamingAudioService implements AudioService {
 			voice.gainRampRemainingFrames = 0;
 			voice.gainRampDelta = 0;
 			voice.startedCounter = nowCounter;
+			voice.activeIndex = this.activeVoiceCount;
+			this.activeVoices[this.activeVoiceCount] = voice;
+			this.activeVoiceCount += 1;
 			this.voices.set(voice.voiceId, voice);
 		}
 
@@ -1039,6 +1057,8 @@ export class WorkerStreamingAudioService implements AudioService {
 			const left = output[0];
 			const right = output.length > 1 ? output[1] : output[0];
 			const frames = left.length;
+			const masterGain = this.masterGain;
+			const activeVoices = this.activeVoices;
 
 			const mixStartMs = currentTime * 1000;
 			const readPtr = Atomics.load(this.coreControl, CORE_CTRL_READ_PTR) >>> 0;
@@ -1069,8 +1089,8 @@ export class WorkerStreamingAudioService implements AudioService {
 				let outR = 0;
 				if (frame < framesToRead) {
 					const src = (cursor % this.coreCapacityFrames) * 2;
-					const sampleL = this.coreSamples[src] * PCM_SCALE * this.masterGain;
-					const sampleR = this.coreSamples[src + 1] * PCM_SCALE * this.masterGain;
+					const sampleL = this.coreSamples[src] * PCM_SCALE * masterGain;
+					const sampleR = this.coreSamples[src + 1] * PCM_SCALE * masterGain;
 					outL = sampleL;
 					outR = sampleR;
 					if (this.concealMode === 1) {
@@ -1098,14 +1118,17 @@ export class WorkerStreamingAudioService implements AudioService {
 					}
 				}
 				this.voiceRemoveCount = 0;
-				for (const voice of this.voices.values()) {
+				const activeVoiceCount = this.activeVoiceCount;
+				for (let voiceIndex = 0; voiceIndex < activeVoiceCount; voiceIndex += 1) {
+					const voice = activeVoices[voiceIndex];
 					if (!this.sampleVoiceFrame(voice)) {
 						this.voiceRemoveIds[this.voiceRemoveCount] = voice.voiceId;
 						this.voiceRemoveCount += 1;
 						continue;
 					}
-					outL += this.voiceSampledL * voice.gainLinear * this.masterGain;
-					outR += this.voiceSampledR * voice.gainLinear * this.masterGain;
+					const voiceGain = voice.gainLinear * masterGain;
+					outL += this.voiceSampledL * voiceGain;
+					outR += this.voiceSampledR * voiceGain;
 					if (voice.gainRampRemainingFrames > 0) {
 						voice.gainLinear += voice.gainRampDelta;
 						voice.gainRampRemainingFrames -= 1;
@@ -1192,13 +1215,13 @@ export class WorkerStreamingAudioService implements AudioService {
 				return;
 			case 'stats':
 				return;
-			case 'decoded': {
-				const resolve = this.decodeResolves.get(message.clipId);
+			case 'clip_ready': {
+				const resolve = this.clipReadyResolves.get(message.clipId);
 				if (!resolve) {
 					return;
 				}
-				this.decodeResolves.delete(message.clipId);
-				this.decodeRejects.delete(message.clipId);
+				this.clipReadyResolves.delete(message.clipId);
+				this.clipReadyRejects.delete(message.clipId);
 				resolve(new WorkerClip(this, message.clipId, message.durationSec));
 				return;
 			}
@@ -1270,11 +1293,11 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 		this.fatalError = error;
 		this.coreNeedPumping = false;
-		for (const reject of this.decodeRejects.values()) {
+		for (const reject of this.clipReadyRejects.values()) {
 			reject(error);
 		}
-		this.decodeResolves.clear();
-		this.decodeRejects.clear();
+		this.clipReadyResolves.clear();
+		this.clipReadyRejects.clear();
 		if (this.rejectReady !== null) {
 			this.rejectReady(error);
 			this.resolveReady = null;
@@ -1376,12 +1399,12 @@ export class WorkerStreamingAudioService implements AudioService {
 		}
 	}
 
-	public async decode(bytes: ArrayBuffer): Promise<AudioClipHandle> {
+	public async createClipFromBytes(bytes: ArrayBuffer): Promise<AudioClipHandle> {
 		await this.ensureReady();
 		const clipId = this.nextClipId++;
 		const task = new Promise<AudioClipHandle>((resolve, reject) => {
-			this.decodeResolves.set(clipId, resolve);
-			this.decodeRejects.set(clipId, reject);
+			this.clipReadyResolves.set(clipId, resolve);
+			this.clipReadyRejects.set(clipId, reject);
 		});
 		this.postWorkletMessage({
 			type: 'register_badp_clip',

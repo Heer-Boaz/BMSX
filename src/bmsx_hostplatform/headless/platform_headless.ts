@@ -261,7 +261,7 @@ class SilentAudioService implements AudioService {
 	getMasterGain(): number { return 0; }
 	setMasterGain(_v: number): void { }
 	setFrameTimeSec(_seconds: number): void { }
-	async decode(_bytes: ArrayBuffer): Promise<AudioClipHandle> {
+	async createClipFromBytes(_bytes: ArrayBuffer): Promise<AudioClipHandle> {
 		return new SilentClip();
 	}
 	pushCoreFrames(_samples: Int16Array, _channels: number, _sampleRate: number): void { }
