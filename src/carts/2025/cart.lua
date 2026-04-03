@@ -10,6 +10,7 @@ local dialogue_node_kinds<const> = {
 	dialogue = true,
 	dialogue_inline = true,
 }
+local world_events<const> = eventemitter.events_of('world')
 
 local director_def_id<const> = 'p3.director'
 local director_fsm_id<const> = 'p3.director.fsm'
@@ -52,7 +53,7 @@ local build_director_fsm<const> = function()
 			entering_state = function(self)
 				local node<const> = story[self.node_id]
 				local just_finished_combat<const> = self.just_finished_combat
-				$.emit('story.node.enter', 'world', { node_id = self.node_id, node_kind = node.kind, bg = node.bg, label = node.label, just_finished_combat = just_finished_combat, last_combat_monster_imgid = self.last_combat_monster_imgid })
+				world_events:emit('story.node.enter', { node_id = self.node_id, node_kind = node.kind, bg = node.bg, label = node.label, just_finished_combat = just_finished_combat, last_combat_monster_imgid = self.last_combat_monster_imgid })
 				self.just_finished_combat = false
 				if node.kind == 'transition' then
 					return '/transition'
@@ -74,7 +75,7 @@ local build_director_fsm<const> = function()
 				end
 				if node.kind == 'combat' then
 					combat_director_instance:start_combat(self.node_id, { skip_fade_in = self.skip_combat_fade_in })
-					$.emit('combat.start', 'world', { node_id = self.node_id, monster_imgid = node.monster_imgid, skip_fade_in = self.skip_combat_fade_in })
+					world_events:emit('combat.start', { node_id = self.node_id, monster_imgid = node.monster_imgid, skip_fade_in = self.skip_combat_fade_in })
 					self.skip_combat_fade_in = false
 					return '/combat_wait'
 				end
@@ -343,9 +344,19 @@ local service_irqs<const> = function()
 	end
 end
 
-while true do
-	wait_vblank()
-	service_irqs()
-	cart_update()
-	update()
-end
+	while true do
+		wait_vblank()
+		service_irqs()
+		vdp_stream_cursor = sys_vdp_stream_base
+		cart_update()
+		update()
+		do
+			local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
+			if used_bytes ~= 0 then
+				mem[sys_dma_src] = sys_vdp_stream_base
+				mem[sys_dma_dst] = sys_vdp_fifo
+				mem[sys_dma_len] = used_bytes
+				mem[sys_dma_ctrl] = dma_ctrl_start
+			end
+		end
+	end

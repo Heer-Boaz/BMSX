@@ -131,7 +131,10 @@ function item_screen:draw_inventory_items()
 				local x<const>, y<const> = self:item_position_px(item_type)
 				local handle<const> = assets.img[constants.world_item.sprite[item_type]].handle
 				memwrite(
-					sys_vdp_cmd_arg0,
+					vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+					sys_vdp_cmd_blit,
+					 13,
+					0,
 					handle,
 					x,
 					y,
@@ -146,7 +149,6 @@ function item_screen:draw_inventory_items()
 					1,
 					0
 				)
-				mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 			end
 		end
 	end
@@ -159,7 +161,10 @@ function item_screen:draw_secondary_weapon_selector()
 	local x<const> = (14 * constants.room.tile_size) + (self.secondary_weapon_selection_index * (3 * constants.room.tile_size))
 	local y<const> = constants.room.hud_height + (16 * constants.room.tile_size) + constants.room.tile_half - 1
 	memwrite(
-		sys_vdp_cmd_arg0,
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+		sys_vdp_cmd_blit,
+		 13,
+		0,
 		assets.img['f1_selector_white'].handle,
 		x,
 		y,
@@ -174,7 +179,6 @@ function item_screen:draw_secondary_weapon_selector()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 end
 
 function item_screen:draw_map()
@@ -191,7 +195,10 @@ function item_screen:draw_map()
 	local map_proxies<const> = castle_map.map_world_proxies[world_number]
 
 	memwrite(
-		sys_vdp_cmd_arg0,
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+		sys_vdp_cmd_blit,
+		 13,
+		0,
 		assets.img['f1_map_title'].handle,
 		map_title_x,
 		103 + constants.room.hud_height,
@@ -206,7 +213,6 @@ function item_screen:draw_map()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 
 	for i = 1, #map_proxies do
 		local proxy<const> = map_proxies[i]
@@ -221,7 +227,10 @@ function item_screen:draw_map()
 		local proxy_x<const> = (5 * constants.room.tile_size) + (proxy.x * constants.room.tile_size)
 		local proxy_y<const> = constants.room.hud_height + (14 * constants.room.tile_size) + constants.room.tile_half + (proxy.y * constants.room.tile_half)
 		memwrite(
-			sys_vdp_cmd_arg0,
+			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+			sys_vdp_cmd_blit,
+			 13,
+			0,
 			assets.img[sprite_id].handle,
 			proxy_x,
 			proxy_y,
@@ -236,7 +245,6 @@ function item_screen:draw_map()
 			1,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
 end
 
@@ -274,7 +282,10 @@ end
 
 function item_screen:draw_screen()
 	memwrite(
-		sys_vdp_cmd_arg0,
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+		sys_vdp_cmd_blit,
+		 13,
+		0,
 		assets.img['f1_screen'].handle,
 		0,
 		constants.room.hud_height,
@@ -289,7 +300,6 @@ function item_screen:draw_screen()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	self:draw_inventory_items()
 	self:draw_secondary_weapon_selector()
 	self:draw_map()

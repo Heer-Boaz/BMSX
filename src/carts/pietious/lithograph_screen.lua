@@ -26,7 +26,10 @@ end
 
 function lithograph_screen:draw_screen()
 	memwrite(
-		sys_vdp_cmd_arg0,
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+		sys_vdp_cmd_blit,
+		 13,
+		0,
 		assets.img[lithograph_mode_sprite_id].handle,
 		constants.room.tile_size4,
 		constants.room.tile_origin_y + constants.room.tile_size2,
@@ -41,12 +44,14 @@ function lithograph_screen:draw_screen()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	local lines<const> = self.lines
 	if #lines > 0 then
 		local font<const> = self.text_font
 		memwrite(
-			sys_vdp_cmd_arg0,
+			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
+			sys_vdp_cmd_glyph_run,
+			17,
+			0,
 			table.concat(lines, '\n'),
 			0,
 			constants.room.tile_origin_y + (constants.room.tile_size * 6),
@@ -65,7 +70,6 @@ function lithograph_screen:draw_screen()
 			0,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 	end
 end
 

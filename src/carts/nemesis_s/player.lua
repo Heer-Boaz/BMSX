@@ -186,7 +186,10 @@ function player:draw_lasers()
 		local x = start_x
 		while x < end_x do
 			memwrite(
-				sys_vdp_cmd_arg0,
+				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+				sys_vdp_cmd_blit,
+				 13,
+				0,
 				laser_handle,
 				x,
 				visual_y,
@@ -201,7 +204,6 @@ function player:draw_lasers()
 				1,
 				0
 			)
-			mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 			x = x + constants.weapons.laser.tile_width
 		end
 	end
@@ -211,7 +213,10 @@ function player:draw_missiles()
 	for i = 1, #self.missiles do
 		local missile<const> = self.missiles[i]
 		memwrite(
-			sys_vdp_cmd_arg0,
+			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+			sys_vdp_cmd_blit,
+			 13,
+			0,
 			assets.img[missile.sprite_imgid].handle,
 			missile.x,
 			missile.y,
@@ -226,7 +231,6 @@ function player:draw_missiles()
 			1,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
 end
 
@@ -238,7 +242,10 @@ function player:draw_uplasers()
 		local visual_y<const> = self:get_laser_visual_y(uplaser.y, constants.weapons.uplaser)
 		for tile_index = 0, uplaser.tile_count - 1 do
 			memwrite(
-				sys_vdp_cmd_arg0,
+				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+				sys_vdp_cmd_blit,
+				 13,
+				0,
 				laser_handle,
 				base_x + (tile_index * constants.weapons.uplaser.tile_width),
 				visual_y,
@@ -253,7 +260,6 @@ function player:draw_uplasers()
 				1,
 				0
 			)
-			mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 		end
 	end
 end
@@ -264,7 +270,10 @@ function player:draw_visual()
 	for i = 1, #self.options do
 		local option<const> = self.options[i]
 		memwrite(
-			sys_vdp_cmd_arg0,
+			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+			sys_vdp_cmd_blit,
+			 13,
+			0,
 			option_handle,
 			option.x,
 			option.y,
@@ -279,10 +288,12 @@ function player:draw_visual()
 			1,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	end
 	memwrite(
-		sys_vdp_cmd_arg0,
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+		sys_vdp_cmd_blit,
+		 13,
+		0,
 		assets.img[self.sprite_imgid].handle,
 		self.x,
 		self.y,
@@ -297,7 +308,6 @@ function player:draw_visual()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	self:draw_lasers()
 	self:draw_missiles()
 	self:draw_uplasers()

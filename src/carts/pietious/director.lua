@@ -52,6 +52,7 @@
 --    IS the waiting mechanism.
 
 local constants<const> = require('constants')
+
 local halo_teleport_timeline_id<const> = 'director.halo.transition'
 local banner_world_timeline_id<const> = 'director.banner.world'
 local banner_castle_timeline_id<const> = 'director.banner.castle'
@@ -83,7 +84,7 @@ function director:bind_visual()
 		if not self.seal_flash_on then
 			return
 		end
-		local c<const> = {r=1,g=1,b=1,a=0.7};memwrite(sys_vdp_cmd_arg0,0,constants.room.tile_origin_y,display_width(),display_height(),500,sys_vdp_layer_ui,c.r,c.g,c.b,c.a);mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+		local c<const> = {r=1,g=1,b=1,a=0.7};memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),sys_vdp_cmd_fill_rect,10,0,0,constants.room.tile_origin_y,display_width(),display_height(),500,sys_vdp_layer_ui,c.r,c.g,c.b,c.a)
 	end
 end
 

@@ -919,30 +919,36 @@ function room_object:render_tiles()
 	end
 	do
 		local tile_count<const> = self.tile_columns * self.tile_rows
-		mem[sys_vdp_payload_alloc] = tile_count
-		for i = 1, tile_count do
-		local tile<const> = tiles[i]
-			if not tile then
-				mem[sys_vdp_payload_data] = 0xffffffff
-			else
-				mem[sys_vdp_payload_data] = assets.img[tile].handle
+		do
+			local packet_base<const> = vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11 + tile_count)
+			memwrite(
+				packet_base,
+				sys_vdp_cmd_tile_run,
+				11,
+				tile_count,
+				tile_count,
+				self.tile_columns,
+				self.tile_rows,
+				tile_size,
+				tile_size,
+				origin_x,
+				origin_y,
+				0,
+				0,
+				0,
+				sys_vdp_layer_world
+			)
+			local payload_dst<const> = packet_base + ((sys_vdp_stream_packet_header_words + 11) * sys_vdp_arg_stride)
+			for i = 1, tile_count do
+				local tile<const> = tiles[i]
+				local payload_addr<const> = payload_dst + ((i - 1) * sys_vdp_arg_stride)
+				if not tile then
+					mem[payload_addr] = 0xffffffff
+				else
+					mem[payload_addr] = assets.img[tile].handle
+				end
 			end
 		end
-		memwrite(
-			sys_vdp_cmd_arg0,
-			tile_count,
-			self.tile_columns,
-			self.tile_rows,
-			tile_size,
-			tile_size,
-			origin_x,
-			origin_y,
-			0,
-			0,
-			0,
-			sys_vdp_layer_world
-		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_tile_run
 	end
 end
 
@@ -975,30 +981,36 @@ function room_object:render_water(water_surface_frame)
 	end
 	do
 		local tile_count<const> = self.tile_columns * water_rows
-		mem[sys_vdp_payload_alloc] = tile_count
-		for i = 1, tile_count do
-		local tile<const> = tiles[i]
-			if not tile then
-				mem[sys_vdp_payload_data] = 0xffffffff
-			else
-				mem[sys_vdp_payload_data] = assets.img[tile].handle
+		do
+			local packet_base<const> = vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11 + tile_count)
+			memwrite(
+				packet_base,
+				sys_vdp_cmd_tile_run,
+				11,
+				tile_count,
+				tile_count,
+				self.tile_columns,
+				water_rows,
+				self.tile_size,
+				self.tile_size,
+				self.tile_origin_x,
+				self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size),
+				0,
+				0,
+				0,
+				sys_vdp_layer_world
+			)
+			local payload_dst<const> = packet_base + ((sys_vdp_stream_packet_header_words + 11) * sys_vdp_arg_stride)
+			for i = 1, tile_count do
+				local tile<const> = tiles[i]
+				local payload_addr<const> = payload_dst + ((i - 1) * sys_vdp_arg_stride)
+				if not tile then
+					mem[payload_addr] = 0xffffffff
+				else
+					mem[payload_addr] = assets.img[tile].handle
+				end
 			end
 		end
-		memwrite(
-			sys_vdp_cmd_arg0,
-			tile_count,
-			self.tile_columns,
-			water_rows,
-			self.tile_size,
-			self.tile_size,
-			self.tile_origin_x,
-			self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size),
-			0,
-			0,
-			0,
-			sys_vdp_layer_world
-		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_tile_run
 	end
 end
 
@@ -1018,7 +1030,7 @@ function room_object:render_room()
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	local c<const> = {r=1,g=1,b=1,a=0.5};memwrite(sys_vdp_cmd_arg0,0,constants.room.tile_origin_y,display_width(),display_height(),342,sys_vdp_layer_world,c.r,c.g,c.b,c.a);mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+	local c<const> = {r=1,g=1,b=1,a=0.5};memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),sys_vdp_cmd_fill_rect,10,0,0,constants.room.tile_origin_y,display_width(),display_height(),342,sys_vdp_layer_world,c.r,c.g,c.b,c.a)
 end
 
 local room_runtime_state_name<const> = function(room_state)

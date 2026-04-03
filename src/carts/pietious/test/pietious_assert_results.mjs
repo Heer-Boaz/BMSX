@@ -429,40 +429,47 @@ function setupWallSnapScenario(engine, logger) {
 		local room_numbers = {}
 		local candidate = nil
 
+		player:clear_input_state()
+		player:zero_motion()
+		player:reset_fall_substate_sequence()
+		player:cancel_sword()
+		player.jump_substate = 0
+		player.jump_inertia = 0
+		player.on_vertical_elevator = false
+		player.jumping_from_elevator = false
+		player.stairs_landing_sound_pending = false
+		player.events:emit('landed_to_quiet')
+
 		for key in pairs(castle_map.room_templates) do
 			room_numbers[#room_numbers + 1] = key
 		end
 		table.sort(room_numbers)
 
-			for i = 1, #room_numbers do
-				local room_number = room_numbers[i]
-				castle.current_room_number = room_number
-				room:load_room(room_number)
-				for test_y = constants.room.tile_origin_y, constants.room.height - player.height do
-					for test_x = constants.room.tile_size + 1, constants.room.width - player.width do
-						player.x = test_x
-						player.y = test_y
+		for i = 1, #room_numbers do
+			local room_number = room_numbers[i]
+			castle.current_room_number = room_number
+			room:load_room(room_number)
+			for test_y = constants.room.tile_origin_y, constants.room.height - player.height do
+				for test_x = constants.room.tile_size + 1, constants.room.width - player.width do
+					player.x = test_x
+					player.y = test_y
+					player:update_collision_state()
+					if player:collides_at_support_profile(test_x, test_y, false)
+						and player.right_wall_collision
+						and not player:collides_at_jump_ceiling_profile(test_x, test_y, false)
+					then
+						local quiet_expected_x = (math.modf((test_x + constants.room.tile_size) / constants.room.tile_size) * constants.room.tile_size) - constants.room.tile_size
+						player:snap_x_to_current_wall_grid()
 						player:update_collision_state()
-						local snapped_x = test_x
-						local resolved = false
-						if player.right_wall_collision then
-							player:snap_x_to_current_wall_grid()
-							snapped_x = player.x
-							player:update_collision_state()
-							resolved = not player.right_wall_collision
-						end
-						if player:collides_at_support_profile(test_x, test_y, false)
-							and player.right_wall_collision
-							and snapped_x < test_x
-							and resolved
-							and not player:collides_at_jump_ceiling_profile(test_x, test_y, false)
-						then
+						if player.x == quiet_expected_x and not player.right_wall_collision then
 							candidate = {
 								room_number = room_number,
 								x = test_x,
-							y = test_y,
-						}
-						break
+								y = test_y,
+								expected_x = quiet_expected_x,
+							}
+							break
+						end
 					end
 				end
 				if candidate ~= nil then
@@ -501,7 +508,6 @@ function setupWallSnapScenario(engine, logger) {
 			player:update_collision_state()
 			local quiet_after_x = player.x
 			local quiet_after_right_wall = player.right_wall_collision
-			local quiet_expected_x = (math.modf((candidate.x + constants.room.tile_size) / constants.room.tile_size) * constants.room.tile_size) - constants.room.tile_size
 
 			reset_player(candidate.x, candidate.y)
 			player.right_held = true
@@ -513,7 +519,6 @@ function setupWallSnapScenario(engine, logger) {
 			player:update_collision_state()
 			local walking_after_x = player.x
 			local walking_after_right_wall = player.right_wall_collision
-			local walking_expected_x = (math.modf((candidate.x + constants.room.tile_size) / constants.room.tile_size) * constants.room.tile_size) - constants.room.tile_size
 
 			return {
 				room_number = candidate.room_number,
@@ -521,12 +526,12 @@ function setupWallSnapScenario(engine, logger) {
 				quiet_before_right_wall = quiet_before_right_wall,
 				quiet_after_x = quiet_after_x,
 				quiet_after_right_wall = quiet_after_right_wall,
-				quiet_expected_x = quiet_expected_x,
+				quiet_expected_x = candidate.expected_x,
 				walking_before_x = walking_before_x,
 				walking_before_right_wall = walking_before_right_wall,
 				walking_after_x = walking_after_x,
 				walking_after_right_wall = walking_after_right_wall,
-				walking_expected_x = walking_expected_x,
+				walking_expected_x = candidate.expected_x,
 			}
 		`);
 	logger(`[assert] wall snap setup room=${state.room_number} quiet=(${state.quiet_before_x}->${state.quiet_after_x}) walk=(${state.walking_before_x}->${state.walking_after_x})`);
@@ -655,6 +660,8 @@ function updateStepOffScenario(engine, scenario, logger, scheduleInput) {
 		assert(state.player_y === state.expected_floor_y, `stepoff landed at wrong floor y: player.y=${state.player_y} expected=${state.expected_floor_y}`);
 		assert(state.player_y > state.elevator_y - 16, `stepoff never fell below elevator top: player.y=${state.player_y} elevator.y=${state.elevator_y}`);
 		if (!scenario.probe_controls) {
+			engine.input.getPlayerInput(1).reset();
+			evalLua(engine, `object('pietolon'):clear_input_state()`);
 			const scheduledAtMs = Math.round(engine.platform.clock.now());
 			scheduleInput([
 				{

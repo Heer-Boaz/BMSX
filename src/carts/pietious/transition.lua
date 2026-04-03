@@ -45,7 +45,10 @@ function transition:draw_transition_overlay()
 	if #lines > 0 then
 		local font<const> = self.banner_font
 		memwrite(
-			sys_vdp_cmd_arg0,
+			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
+			sys_vdp_cmd_glyph_run,
+			17,
+			0,
 			table.concat(lines, '\n'),
 			0,
 			constants.room.tile_origin_y + (constants.room.tile_size * 9),
@@ -64,7 +67,6 @@ function transition:draw_transition_overlay()
 			0,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 	end
 end
 

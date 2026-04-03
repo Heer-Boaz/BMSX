@@ -1071,7 +1071,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 		self:zero_motion()
 		self:reset_stairs_lock()
 		self:cancel_sword()
-		self:sync_input_state_from_runtime() -- To avoid input buffering during the transition. THIS IS EXTREMELY UGLY AND SHOULD BE FIXED PROPERLY IN THE FUTURE, BUT CODEX IS UNABLE TO WRITE PROPER CODE AND THUS HAVE TO FIX THIS MYSELF
+		self:clear_input_state()
 		self.enter_leave_world_target = nil
 		self.enter_leave_shrine_text_lines = {}
 		self.events:emit('leave_world_start')
@@ -1099,7 +1099,7 @@ function player:try_switch_room(direction, keep_stairs_lock)
 	if not keep_stairs_lock then
 		self:reset_stairs_lock()
 	end
-	self:sync_input_state_from_runtime() -- To avoid input buffering during the transition. THIS IS EXTREMELY UGLY AND SHOULD BE FIXED PROPERLY IN THE FUTURE, BUT CODEX IS UNABLE TO WRITE PROPER CODE AND THUS HAVE TO FIX THIS MYSELF
+	self:clear_input_state()
 	self:emit_room_switched(switch.from_room_number, switch.to_room_number, direction)
 	return true
 end

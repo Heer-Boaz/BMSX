@@ -43,7 +43,10 @@ function breakablewall:ctor()
 			for tx = 0, self.width_tiles - 1 do
 				local draw_x<const> = self.x + (tx * constants.room.tile_size)
 				memwrite(
-					sys_vdp_cmd_arg0,
+					vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+					sys_vdp_cmd_blit,
+					 13,
+					0,
 					assets.img[self.tiletype].handle,
 					draw_x,
 					draw_y,
@@ -58,7 +61,6 @@ function breakablewall:ctor()
 					1,
 					0
 				)
-				mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 			end
 		end
 	end

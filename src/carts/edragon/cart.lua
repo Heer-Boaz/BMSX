@@ -52,8 +52,18 @@ function new_game()
 	})
 end
 
-while true do
-	wait_vblank()
-	service_irqs()
-	update()
-end
+	while true do
+		wait_vblank()
+		service_irqs()
+		vdp_stream_cursor = sys_vdp_stream_base
+		update()
+		do
+			local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
+			if used_bytes ~= 0 then
+				mem[sys_dma_src] = sys_vdp_stream_base
+				mem[sys_dma_dst] = sys_vdp_fifo
+				mem[sys_dma_len] = used_bytes
+				mem[sys_dma_ctrl] = dma_ctrl_start
+			end
+		end
+	end

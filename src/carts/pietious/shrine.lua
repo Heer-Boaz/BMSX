@@ -52,7 +52,10 @@ end
 
 function shrine:render()
 	memwrite(
-		sys_vdp_cmd_arg0,
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+		sys_vdp_cmd_blit,
+		 13,
+		0,
 		assets.img['shrine_inside'].handle,
 		0,
 		constants.room.tile_origin_y,
@@ -67,12 +70,14 @@ function shrine:render()
 		1,
 		0
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 	local lines<const> = self.lines
 	for i = 1, #lines do
 		local font<const> = self.text_font
 		memwrite(
-			sys_vdp_cmd_arg0,
+			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
+			sys_vdp_cmd_glyph_run,
+			17,
+			0,
 			lines[i],
 			constants.shrine.text_x,
 			constants.shrine.text_y + ((i - 1) * constants.room.tile_size),
@@ -91,7 +96,6 @@ function shrine:render()
 			0,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 	end
 end
 
