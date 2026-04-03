@@ -115,7 +115,10 @@ function spriteobject:draw()
 		flip_flags = flip_flags | 2
 	end
 	memwrite(
-		sys_vdp_cmd_arg0,
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+		sys_vdp_cmd_blit,
+		 13,
+		0,
 		assets.img[sc.imgid].handle,
 		self.x + offset.x,
 		self.y + offset.y,
@@ -130,7 +133,6 @@ function spriteobject:draw()
 		sc.colorize.a,
 		sc.parallax_weight
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 end
 
 return spriteobject

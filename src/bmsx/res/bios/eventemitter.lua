@@ -87,15 +87,6 @@ eventport.__index = eventport
 
 local port_cache<const> = setmetatable({}, { __mode = 'k' })
 
-local copy_event_fields<const> = function(dst, src)
-	for k, v in pairs(src) do
-		if k ~= 'type' and k ~= 'emitter' and k ~= 'timestamp' then
-			dst[k] = v
-		end
-	end
-	return dst
-end
-
 function eventemitter.new()
 	return setmetatable({
 		listeners = {},
@@ -109,11 +100,13 @@ eventemitter.instance.type_name = 'eventemitter'
 eventemitter.instance.registrypersistent = true
 require('registry').instance:register(eventemitter.instance)
 
+-- eventemitter:create_gameevent(spec): canonicalize an event spec in place.
+-- Table payloads stay nested and are exposed via the event wrapper.
 function eventemitter:create_gameevent(spec)
-	return copy_event_fields({
-		type = spec.type,
-		emitter = spec.emitter,
-	}, spec)
+	if type(spec.payload) == 'table' then
+		setmetatable(spec, { __index = spec.payload })
+	end
+	return spec
 end
 
 function eventemitter:events_of(emitter)
@@ -183,15 +176,8 @@ end
 
 -- eventemitter:emit(event): fire a pre-built event table directly.
 -- The global bus does not normalize or mutate caller-owned payload tables.
--- Build canonical events at the edge (eventport:emit / emit_event / $.emit).
+-- Build canonical events at the edge (eventport:emit / emit_event).
 function eventemitter:emit(event)
-	if type(event) ~= 'table' then
-		error('eventemitter.emit expects an event table')
-	end
-	if event.emitter and event.emitter.dispose_flag then
-		return
-	end
-
 	local list<const> = self.listeners[event.type]
 	if list then
 		for i = 1, #list do
@@ -249,9 +235,6 @@ end
 -- port's owner if not supplied.  Returns a function that unsubscribes when
 -- called.  Always supply subscriber = <owning_object> for lifecycle cleanup.
 function eventport:on(spec)
-	if spec.persistent then
-		error('Persistent listeners must register on eventemitter.instance directly.')
-	end
 	if spec.subscriber == nil and type(self.emitter) == 'table' then
 		spec.subscriber = self.emitter
 	end
@@ -269,18 +252,13 @@ end
 
 -- eventport:emit(event_name, payload): preferred cart API for emitting events.
 -- Automatically builds a canonical event table with emitter=self.emitter.
+-- Table payloads stay nested and are exposed through the event wrapper.
 function eventport:emit(event_name, payload)
-	local event<const> = {
+	local event<const> = eventemitter.instance:create_gameevent({
 		type = event_name,
 		emitter = self.emitter,
-	}
-	if payload ~= nil then
-		if type(payload) == 'table' then
-			copy_event_fields(event, payload)
-		else
-			event.payload = payload
-		end
-	end
+		payload = payload,
+	})
 	eventemitter.instance:emit(event)
 end
 
@@ -289,6 +267,9 @@ end
 -- Use when you already built the canonical event in a hot path or need to
 -- pass the same event object to another system after emission.
 function eventport:emit_event(event)
+	if type(event.payload) == 'table' and getmetatable(event) == nil then
+		setmetatable(event, { __index = event.payload })
+	end
 	event.emitter = event.emitter or self.emitter
 	eventemitter.instance:emit(event)
 	return event

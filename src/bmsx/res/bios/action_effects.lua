@@ -177,17 +177,11 @@ local invoke_handler<const> = function(definition, context, args)
 end
 
 local create_owner_event<const> = function(owner, event_type, payload)
-	local base<const> = { type = event_type, emitter = owner }
-	if payload ~= nil then
-		if type(payload) == 'table' and payload.type == nil then
-			for k, v in pairs(payload) do
-				base[k] = v
-			end
-		else
-			base.payload = payload
-		end
-	end
-	return eventemitter.eventemitter.instance:create_gameevent(base)
+	return eventemitter.eventemitter.instance:create_gameevent({
+		type = event_type,
+		emitter = owner,
+		payload = payload,
+	})
 end
 
 actioneffects.register_effect(actioneffects.effecttype.move, {

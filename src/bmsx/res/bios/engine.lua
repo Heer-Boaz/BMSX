@@ -61,6 +61,8 @@ local vdp_load_handler
 local cart_irq_handler
 local cart_irq_handlers<const> = {}
 local sys_atlas_id<const> = 254
+vdp_stream_cursor = sys_vdp_stream_base
+vdp_stream_limit = sys_vdp_stream_base + (sys_vdp_stream_capacity_words * sys_vdp_arg_stride)
 
 local excluded_class_keys<const> = {
 	def_id = true,
@@ -184,6 +186,18 @@ local vdp_try_start_next_job<const> = function()
 	vdp_start_job(job)
 end
 
+local vdp_stream_capacity_bytes<const> = sys_vdp_stream_capacity_words * sys_vdp_arg_stride
+local vdp_stream_claim_words<const> = function(word_count)
+	local base<const> = vdp_stream_cursor
+	local bytes<const> = word_count * sys_vdp_arg_stride
+	local next<const> = base + bytes
+	if next > sys_vdp_stream_base + vdp_stream_capacity_bytes then
+		error('vdp_stream overflow (' .. tostring(next - sys_vdp_stream_base) .. ' > ' .. tostring(vdp_stream_capacity_bytes) .. ')')
+	end
+	vdp_stream_cursor = next
+	return base
+end
+
 local ensure_component_type<const> = function(def_id, def)
 	if components.componentregistry[def_id] then
 		return
@@ -195,11 +209,9 @@ local ensure_component_type<const> = function(def_id, def)
 		opts = opts or {}
 		opts.type_name = def_id
 		local self<const> = setmetatable(components.component.new(opts), luacomponent)
-		local class_table<const> = def and def.class
+		local class_table<const> = def.class
 		apply_class_addons(self, class_table)
-		if class_table then
-			apply_ctor(self, class_table, opts, def_id)
-		end
+		apply_ctor(self, class_table, opts, def_id)
 		return self
 	end
 	components.register_component(def_id, luacomponent)
@@ -254,36 +266,28 @@ local attach_bts<const> = function(instance, bts)
 end
 
 local apply_definition<const> = function(instance, def, addons, skip_key)
-	local class_table<const> = def and def.class
-	if def then
-		apply_defaults(instance, def.defaults, skip_key)
-		apply_class_prototype(instance, class_table)
-		attach_components(instance, def.components)
-		attach_fsms(instance, def.fsms)
-		attach_effects(instance, def.effects)
-		attach_bts(instance, def.bts)
-	end
+	local class_table<const> = def.class
+	apply_defaults(instance, def.defaults, skip_key)
+	apply_class_prototype(instance, class_table)
+	attach_components(instance, def.components)
+	attach_fsms(instance, def.fsms)
+	attach_effects(instance, def.effects)
+	attach_bts(instance, def.bts)
 	local skip_keys<const> = { pos = true }
 	if skip_key then
 		skip_keys[skip_key] = true
 	end
 	apply_addons(instance, addons, skip_keys)
-	if class_table then
-		apply_ctor(instance, class_table, addons, def and def.def_id)
-	end
+	apply_ctor(instance, class_table, addons, def.def_id)
 end
 
 local apply_subsystem_definition<const> = function(instance, def, addons)
-	local class_table<const> = def and def.class
-	if def then
-		apply_defaults(instance, def.defaults)
-		apply_class_prototype(instance, class_table)
-		attach_fsms(instance, def.fsms)
-	end
+	local class_table<const> = def.class
+	apply_defaults(instance, def.defaults)
+	apply_class_prototype(instance, class_table)
+	attach_fsms(instance, def.fsms)
 	apply_addons(instance, addons, {})
-	if class_table then
-		apply_ctor(instance, class_table, addons, def and def.def_id)
-	end
+	apply_ctor(instance, class_table, addons, def.def_id)
 end
 
 local engine<const> = {}
@@ -291,6 +295,7 @@ engine.bool01 = bool01
 engine.clear_map = clear_map
 engine.scratchbatch = scratchbatch
 engine.sorted_scratchbatch = sorted_scratchbatch
+engine.vdp_stream_claim_words = vdp_stream_claim_words
 engine.consume_axis_accum = velocity.consume_axis_accum
 engine.deep_clone = deep_clone
 engine.set_velocity = velocity.set_velocity
@@ -420,14 +425,15 @@ end
 
 function engine.inst(definition_id, addons)
 	local def<const> = definitions[definition_id]
-	local object_type<const> = def and def.type
+	local object_type<const> = def.type
 	if object_type == 'sprite' then
-		local class_table<const> = def and def.class
-		local instance_id<const> = (addons and addons.id) or (class_table and class_table.id)
+		local class_table<const> = def.class
+		local instance_id<const> = (addons and addons.id) or class_table.id
 		local instance<const> = spriteobject.new({ id = instance_id })
 		instance.type_name = definition_id
 		apply_definition(instance, def, addons, 'imgid')
-		local imgid<const> = (addons and addons.imgid) or (def and def.defaults and def.defaults.imgid)
+		local defaults<const> = def.defaults
+		local imgid<const> = (addons and addons.imgid) or (defaults and defaults.imgid)
 		if imgid then
 			instance:gfx(imgid)
 		end
@@ -435,20 +441,21 @@ function engine.inst(definition_id, addons)
 		return instance
 	end
 	if object_type == 'textobject' then
-		local class_table<const> = def and def.class
-		local instance_id<const> = (addons and addons.id) or (class_table and class_table.id)
+		local class_table<const> = def.class
+		local instance_id<const> = (addons and addons.id) or class_table.id
 		local instance<const> = textobject.new({ id = instance_id })
 		instance.type_name = definition_id
 		apply_definition(instance, def, addons, 'dimensions')
-		local dimensions<const> = (addons and addons.dimensions) or (def and def.defaults and def.defaults.dimensions)
+		local defaults<const> = def.defaults
+		local dimensions<const> = (addons and addons.dimensions) or (defaults and defaults.dimensions)
 		if dimensions then
 			instance:set_dimensions(dimensions)
 		end
 		world_instance:spawn(instance, addons and addons.pos)
 		return instance
 	end
-	local class_table<const> = def and def.class
-	local instance_id<const> = (addons and addons.id) or (class_table and class_table.id)
+	local class_table<const> = def.class
+	local instance_id<const> = (addons and addons.id) or class_table.id
 	local instance<const> = worldobject.new({ id = instance_id })
 	instance.type_name = definition_id
 	apply_definition(instance, def, addons)
@@ -458,8 +465,8 @@ end
 
 function engine.inst_subsystem(definition_id, addons)
 	local def<const> = subsystem_definitions[definition_id]
-	local class_table<const> = def and def.class
-	local instance_id<const> = (addons and addons.id) or (class_table and class_table.id) or definition_id
+	local class_table<const> = def.class
+	local instance_id<const> = (addons and addons.id) or class_table.id or definition_id
 	local instance<const> = subsystem.subsystem.new({ id = instance_id, type_name = definition_id })
 	apply_subsystem_definition(instance, def, addons)
 	world_instance:spawn_subsystem(instance)
@@ -725,45 +732,6 @@ function engine.trigger_effect(object_id, effect_id, options)
 		return component:trigger(effect_id, { payload = payload })
 	end
 	return component:trigger(effect_id)
-end
-
-function $.emit(name_or_event, emitter, payload, ...)
-	if type(name_or_event) == 'native' and name_or_event.type == nil then
-		name_or_event, emitter, payload = emitter, payload, select(1, ...)
-	end
-	local kind<const> = type(name_or_event)
-	if kind == 'table' then
-		if name_or_event.type == nil then
-			error('engine.emit: event is missing type')
-		end
-		return eventemitter.instance:emit(name_or_event)
-	end
-	if kind == 'native' then
-		local event_type<const> = name_or_event.type
-		if event_type == nil then
-			error('engine.emit: event is missing type')
-		end
-		local event<const> = { type = tostring(event_type) }
-		for k, v in pairs(name_or_event) do
-			if k ~= 'type' and k ~= 'timestamp' then
-				event[k] = v
-			end
-		end
-		return eventemitter.instance:emit(event)
-	end
-	local spec<const> = { type = name_or_event, emitter = emitter }
-	if payload ~= nil then
-		if type(payload) == 'table' then
-			for k, v in pairs(payload) do
-				if k ~= 'type' and k ~= 'emitter' and k ~= 'timestamp' then
-					spec[k] = v
-				end
-			end
-		else
-			spec.payload = payload
-		end
-	end
-	return eventemitter.instance:emit(eventemitter.instance:create_gameevent(spec))
 end
 
 audio_router.init()

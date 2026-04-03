@@ -828,7 +828,10 @@ function customvisualcomponent:submit_sprite(desc)
 		flip_flags = flip_flags | 2
 	end
 	memwrite(
-		sys_vdp_cmd_arg0,
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+		sys_vdp_cmd_blit,
+		 13,
+		0,
 		assets.img[desc.imgid].handle,
 		pos.x,
 		pos.y,
@@ -843,7 +846,6 @@ function customvisualcomponent:submit_sprite(desc)
 		desc.colorize.a,
 		desc.parallax_weight
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 end
 
 function customvisualcomponent:submit_rect(desc)
@@ -852,17 +854,16 @@ function customvisualcomponent:submit_rect(desc)
 	local x0<const>, y0<const>, x1<const>, y1<const>, z<const> = area.left, area.top, area.right, area.bottom, area.z
 	if desc.kind == 'stroke' then
 		local c<const> = color
-		memwrite(sys_vdp_cmd_arg0, x0, y0, x1, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
-		memwrite(sys_vdp_cmd_arg0, x1, y0, x1, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
-		memwrite(sys_vdp_cmd_arg0, x1, y1, x0, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
-		memwrite(sys_vdp_cmd_arg0, x0, y1, x0, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
+		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x0, y0, x1, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
+		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x1, y0, x1, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
+		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x1, y1, x0, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
+		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x0, y1, x0, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
 	else
 		memwrite(
-			sys_vdp_cmd_arg0,
+			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
+			sys_vdp_cmd_fill_rect,
+			10,
+			0,
 			x0,
 			y0,
 			x1,
@@ -874,7 +875,6 @@ function customvisualcomponent:submit_rect(desc)
 			color.b,
 			color.a
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 	end
 end
 
@@ -889,8 +889,7 @@ function customvisualcomponent:submit_poly(desc)
 		local y0<const> = points[i * 2 + 2]
 		local x1<const> = points[((i + 1) % n) * 2 + 1]
 		local y1<const> = points[((i + 1) % n) * 2 + 2]
-		memwrite(sys_vdp_cmd_arg0, x0, y0, x1, y1, z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, thickness)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_draw_line
+		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x0, y0, x1, y1, z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, thickness)
 	end
 end
 
@@ -967,20 +966,6 @@ function inputactioneffectcomponent.new(opts)
 	return self
 end
 
-local merge_ability_payload<const> = function(base, payload)
-	if payload == nil then
-		return base
-	end
-	if type(payload) == 'table' then
-		for k, v in pairs(payload) do
-			base[k] = v
-		end
-		return base
-	end
-	base.payload = payload
-	return base
-end
-
 -- abilitiescomponent: owns ability activation + lifecycle events
 local abilitiescomponent<const> = {}
 abilitiescomponent.__index = abilitiescomponent
@@ -1037,10 +1022,11 @@ function abilitiescomponent:begin(id, payload)
 	local next_seq<const> = (self.instance_seq[id] or 0) + 1
 	self.instance_seq[id] = next_seq
 	self.active_seq[id] = next_seq
-	local event_payload<const> = merge_ability_payload({
+	local event_payload<const> = {
 		ability = id,
 		ability_instance_seq = next_seq,
-	}, payload)
+		payload = payload,
+	}
 	self.parent:emit_gameplay_fact('evt.ability.start.' .. id, event_payload)
 	return next_seq
 end
@@ -1055,11 +1041,12 @@ function abilitiescomponent:end_once(id, reason, payload)
 	end
 	self.ended_seq[id] = active_seq
 	self.active_seq[id] = 0
-	local event_payload<const> = merge_ability_payload({
+	local event_payload<const> = {
 		ability = id,
 		ability_instance_seq = active_seq,
 		reason = reason,
-	}, payload)
+		payload = payload,
+	}
 	self.parent:emit_gameplay_fact('evt.ability.end.' .. id, event_payload)
 	return true
 end

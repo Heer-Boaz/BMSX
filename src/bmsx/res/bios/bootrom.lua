@@ -2453,8 +2453,8 @@ render_boot_screen = function(scroll_delta)
 	local font<const> = get_default_font()
 	local font_id<const> = font.id
 
-	do local c<const> = sys_palette_color(color_bg);memwrite(sys_vdp_cmd_arg0, c.r, c.g, c.b, c.a);mem[sys_vdp_cmd] = sys_vdp_cmd_clear end
-	do local c<const> = sys_palette_color(color_header_bg);memwrite(sys_vdp_cmd_arg0, 0, 0, width, 24, 0, sys_vdp_layer_world, c.r, c.g, c.b, c.a);mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect end
+	do local c<const> = sys_palette_color(color_bg);memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 4), sys_vdp_cmd_clear, 4, 0, c.r, c.g, c.b, c.a) end
+	do local c<const> = sys_palette_color(color_header_bg);memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10), sys_vdp_cmd_fill_rect, 10, 0, 0, 0, width, 24, 0, sys_vdp_layer_world, c.r, c.g, c.b, c.a) end
 	local info<const> = build_info()
 	local cart_present<const> = mem[cart_rom_base] == cart_rom_magic
 	local elapsed<const> = elapsed_seconds()
@@ -2480,7 +2480,10 @@ render_boot_screen = function(scroll_delta)
 		if string.len(text) > 0 then
 			local color<const> = sys_palette_color(line_color or color_text)
 			memwrite(
-				sys_vdp_cmd_arg0,
+				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
+				sys_vdp_cmd_glyph_run,
+				17,
+				0,
 				text,
 				left,
 				y,
@@ -2499,7 +2502,6 @@ render_boot_screen = function(scroll_delta)
 				0,
 				0
 			)
-			mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 		end
 		y = y + line_height
 	end
@@ -2520,5 +2522,14 @@ end
 while true do
 	wait_vblank()
 	service_irqs()
+	vdp_stream_cursor = sys_vdp_stream_base
 	update()
+	do local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
+		if used_bytes ~= 0 then
+			mem[sys_dma_src] = sys_vdp_stream_base
+			mem[sys_dma_dst] = sys_vdp_fifo
+			mem[sys_dma_len] = used_bytes
+			mem[sys_dma_ctrl] = dma_ctrl_start
+		end
+	end
 end

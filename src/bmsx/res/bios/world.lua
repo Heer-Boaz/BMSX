@@ -259,7 +259,7 @@ function world_class:set_space(space_id)
 		error('world.set_space unknown space id "' .. tostring(space_id) .. '".')
 	end
 	if self.active_space_id ~= space_id then
-		do local c<const> = sys_palette_color(1);memwrite(sys_vdp_cmd_arg0, c.r, c.g, c.b, c.a);mem[sys_vdp_cmd] = sys_vdp_cmd_clear end
+		do local c<const> = sys_palette_color(1);memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 4), sys_vdp_cmd_clear, 4, 0, c.r, c.g, c.b, c.a) end
 	end
 	self.active_space_id = space_id
 	return self.active_space_id

@@ -372,19 +372,13 @@ end
 function worldobject:emit_gameplay_fact(event_or_name, payload)
 	local event
 	if type(event_or_name) ~= 'table' then
-		local spec<const> = { type = event_or_name, emitter = self }
-		if payload ~= nil then
-			if type(payload) == 'table' and payload.type == nil then
-				for k, v in pairs(payload) do
-					spec[k] = v
-				end
-			else
-				spec.payload = payload
-			end
-		end
+		local spec<const> = { type = event_or_name, emitter = self, payload = payload }
 		event = eventemitter.eventemitter.instance:create_gameevent(spec)
-	elseif event.emitter == nil then
-		event.emitter = self
+	else
+		event = event_or_name
+		if event.emitter == nil then
+			event.emitter = self
+		end
 	end
 	self.events:emit_event(event)
 	self.sc:dispatch(event)

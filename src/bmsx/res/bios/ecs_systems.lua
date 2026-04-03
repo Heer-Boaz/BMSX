@@ -280,16 +280,13 @@ setmetatable(tilecollisionsystem, { __index = ecsystem })
 
 local emit_tilecollision_event<const> = function(owner, component, suffix, phase, collision_key, payload)
 	local event<const> = component._event
-	clear_map(event)
 	event.type = component.event_base .. '.' .. suffix
 	event.emitter = owner
 	event.phase = phase
 	event.component_id = component.id
 	event.component_local_id = component.id_local
 	event.collision_key = collision_key
-	for key, value in pairs(payload) do
-		event[key] = value
-	end
+	event.payload = payload
 	owner.events:emit_event(event)
 end
 
@@ -804,7 +801,10 @@ function spriterendersystem:update()
 			flip_flags = flip_flags | 2
 		end
 		memwrite(
-			sys_vdp_cmd_arg0,
+			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
+			sys_vdp_cmd_blit,
+			 13,
+			0,
 			assets.img[sc.imgid].handle,
 			x,
 			y,
@@ -819,7 +819,6 @@ function spriterendersystem:update()
 			sc.colorize.a,
 			sc.parallax_weight
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_blit
 		::continue_sprite_render::
 	end
 end

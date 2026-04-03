@@ -524,9 +524,9 @@ local append_trace_entry<const> = function(id, message)
 	end
 end
 
-local resolve_emitter_id<const> = function(event, fallback)
+local resolve_emitter_id<const> = function(event, default_emitter_id)
 	if not event or event.emitter == nil then
-		return fallback
+		return default_emitter_id
 	end
 	if not event.emitter then
 		return false
@@ -536,22 +536,6 @@ local resolve_emitter_id<const> = function(event, fallback)
 		return emitter.id
 	end
 	return emitter
-end
-
-local resolve_event_payload<const> = function(event)
-	if not event then
-		return nil
-	end
-	local payload = nil
-	for k, v in pairs(event) do
-		if k ~= 'type' and k ~= 'emitter' and k ~= 'timestamp' and k ~= 'timestamp' and k ~= 'target' then
-			if not payload then
-				payload = {}
-			end
-			payload[k] = v
-		end
-	end
-	return payload
 end
 
 local is_no_op_string<const> = function(value)
@@ -1028,15 +1012,6 @@ function state:emit_transition_trace(entry)
 	append_trace_entry(self.id, message)
 end
 
-function state:create_fallback_snapshot(trigger, description, payload)
-	return {
-		trigger = trigger,
-		description = description,
-		timestamp = clock_now(),
-		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload),
-	}
-end
-
 function state:hydrate_context(snapshot, trigger, description)
 	if snapshot then
 		local action_evaluations
@@ -1089,7 +1064,6 @@ function state:emit_event_dispatch_trace(event_name, emitter, detail, handled, b
 	if not should_trace_dispatch() then
 		return
 	end
-	local ctx<const> = context or self:create_fallback_snapshot('event', 'event:' .. event_name, detail)
 	local message<const> = fsm_trace.compose_event_dispatch_trace_message({
 		event_name = event_name,
 		emitter = emitter,
@@ -1097,7 +1071,7 @@ function state:emit_event_dispatch_trace(event_name, emitter, detail, handled, b
 		handled = handled,
 		bubbled = bubbled,
 		depth = depth,
-		context = ctx,
+		context = context,
 		current_id = self.current_id,
 	})
 	append_trace_entry(self.id, message)
@@ -1289,12 +1263,12 @@ function state:transition_to_state(state_id)
 	local diag_enabled<const> = should_trace_transitions()
 	local execution<const> = self.is_processing_queue and 'deferred' or 'manual'
 
-	if self.critical_section_counter > 0 then
-		if diag_enabled then
-			local context<const> = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot('manual', 'queued-transition')
-			local outcome<const> = { from = self.current_id, to = state_id, execution = 'queued', status = 'queued', reason = 'critical-section' }
-			self:record_transition_outcome_on_context(outcome)
-			self:emit_transition_trace({
+		if self.critical_section_counter > 0 then
+			if diag_enabled then
+				local context<const> = self:resolve_context_snapshot(nil)
+				local outcome<const> = { from = self.current_id, to = state_id, execution = 'queued', status = 'queued', reason = 'critical-section' }
+				self:record_transition_outcome_on_context(outcome)
+				self:emit_transition_trace({
 				outcome = 'queued',
 				execution = 'queued',
 				from = self.current_id,
@@ -1310,12 +1284,12 @@ function state:transition_to_state(state_id)
 		return
 	end
 
-	if self.current_id == state_id then
-		if diag_enabled then
-			local context<const> = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == 'deferred' and 'queue-drain' or 'manual', 'noop-transition')
-			self:record_transition_outcome_on_context({
-				from = self.current_id,
-				to = state_id,
+		if self.current_id == state_id then
+			if diag_enabled then
+				local context<const> = self:resolve_context_snapshot(nil)
+				self:record_transition_outcome_on_context({
+					from = self.current_id,
+					to = state_id,
 				execution = execution,
 				status = 'noop',
 				reason = 'already-current',
@@ -1332,13 +1306,13 @@ function state:transition_to_state(state_id)
 		return
 	end
 
-	local guard_diagnostics<const> = self:check_state_guard_conditions(state_id)
-	if not guard_diagnostics.allowed then
-		if diag_enabled then
-			local context<const> = self:resolve_context_snapshot(nil) or self:create_fallback_snapshot(execution == 'deferred' and 'queue-drain' or 'manual', 'guard-blocked')
-			local outcome<const> = {
-				from = self.current_id,
-				to = state_id,
+		local guard_diagnostics<const> = self:check_state_guard_conditions(state_id)
+		if not guard_diagnostics.allowed then
+			if diag_enabled then
+				local context<const> = self:resolve_context_snapshot(nil)
+				local outcome<const> = {
+					from = self.current_id,
+					to = state_id,
 				execution = execution,
 				status = 'blocked',
 				guard_summary = fsm_trace.format_guard_diagnostics(guard_diagnostics),
@@ -1900,9 +1874,17 @@ function state:dispatch_event(event_or_name, payload)
 	local trace_transitions<const> = should_trace_transitions()
 	local emitter_id
 	local detail
+	local dispatch_context
 	if trace_dispatch or trace_transitions then
 		emitter_id = resolve_emitter_id(data, self.target_id)
-		detail = resolve_event_payload(data)
+		if type(event_or_name) == 'table' then
+			detail = data.payload
+		else
+			detail = data
+		end
+		if trace_dispatch then
+			dispatch_context = fsm_trace.create_event_context(event_name, emitter_id, detail)
+		end
 	else
 		detail = nil
 	end
@@ -1923,18 +1905,18 @@ function state:dispatch_event(event_or_name, payload)
 		end
 	end
 
-	local current = self
-	local depth = 0
-	while current do
-		local result<const> = current:handle_event(event_name, emitter_id, detail, data)
-		local bubbled<const> = depth > 0 or (not result.handled and current.parent ~= nil)
-		current:emit_event_dispatch_trace(event_name, emitter_id, detail, result.handled, bubbled, depth, result.context)
-		if result.handled then
-			return true
+		local current = self
+		local depth = 0
+		while current do
+			local result<const> = current:handle_event(event_name, emitter_id, detail, data)
+			local bubbled<const> = depth > 0 or (not result.handled and current.parent ~= nil)
+			current:emit_event_dispatch_trace(event_name, emitter_id, detail, result.handled, bubbled, depth, result.context or dispatch_context)
+			if result.handled then
+				return true
+			end
+			current = current.parent
+			depth = depth + 1
 		end
-		current = current.parent
-		depth = depth + 1
-	end
 	return false
 end
 

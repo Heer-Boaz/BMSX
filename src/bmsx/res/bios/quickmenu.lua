@@ -235,7 +235,10 @@ function menu.draw()
 	if y < 0 then y = 0 end
 	local z<const> = 10000
 	memwrite(
-		sys_vdp_cmd_arg0,
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
+		sys_vdp_cmd_fill_rect,
+		10,
+		0,
 		x,
 		y + box_y,
 		x + menu_w,
@@ -247,7 +250,6 @@ function menu.draw()
 		colors.panel.b,
 		colors.panel.a
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 	local font<const> = get_default_font()
 	local font_id<const> = font.id
 	local text_z<const> = z + 1
@@ -256,7 +258,10 @@ function menu.draw()
 	local title_y<const> = y + math.floor((title_h - font_h) / 2)
 	if title_len > 0 then
 		memwrite(
-			sys_vdp_cmd_arg0,
+			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
+			sys_vdp_cmd_glyph_run,
+			17,
+			0,
 			title,
 			title_x,
 			title_y,
@@ -275,7 +280,6 @@ function menu.draw()
 			0,
 			0
 		)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 	end
 
 	local row_y = y + box_y + padding
@@ -283,7 +287,10 @@ function menu.draw()
 		local entry<const> = entries[i]
 		if i == state.selected then
 			memwrite(
-				sys_vdp_cmd_arg0,
+				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
+				sys_vdp_cmd_fill_rect,
+				10,
+				0,
 				x,
 				row_y - 2,
 				x + menu_w,
@@ -295,7 +302,6 @@ function menu.draw()
 				colors.highlight.b,
 				colors.highlight.a
 			)
-			mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 		end
 		local value<const> = entry_value_label(entry)
 		local line = entry.label
@@ -308,7 +314,10 @@ function menu.draw()
 		local line_len<const> = string.len(line)
 		if line_len > 0 then
 			memwrite(
-				sys_vdp_cmd_arg0,
+				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
+				sys_vdp_cmd_glyph_run,
+				17,
+				0,
 				line,
 				text_x,
 				text_y,
@@ -327,7 +336,6 @@ function menu.draw()
 				0,
 				0
 			)
-			mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
 		end
 		row_y = row_y + line_h
 	end

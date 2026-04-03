@@ -100,15 +100,6 @@ function fsm_trace.compose_transition_trace_message(entry)
 	return table.concat(parts, ' ')
 end
 
-function fsm_trace.create_fallback_snapshot(trigger, description, payload)
-	return {
-		trigger = trigger,
-		description = description,
-		timestamp = clock_now(),
-		payload_summary = payload ~= nil and fsm_trace.describe_payload(payload),
-	}
-end
-
 function fsm_trace.create_event_context(event_name, emitter, payload)
 	return {
 		trigger = 'event',

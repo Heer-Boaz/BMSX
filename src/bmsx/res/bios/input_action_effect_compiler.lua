@@ -46,14 +46,11 @@ local compile_effect<const> = function(effect, slot, analysis)
 	if effect['emit.gameplay'] ~= nil then
 		local spec<const> = effect['emit.gameplay']
 		return function(env)
-			local base<const> = { emitter = env.owner, type = spec.event }
-			local payload<const> = spec.payload
-			if payload ~= nil then
-				for k, v in pairs(payload) do
-					base[k] = v
-				end
-			end
-			env.queued_events[#env.queued_events + 1] = eventemitter.eventemitter.instance:create_gameevent(base)
+			env.queued_events[#env.queued_events + 1] = eventemitter.eventemitter.instance:create_gameevent({
+				emitter = env.owner,
+				type = spec.event,
+				payload = spec.payload,
+			})
 		end
 	end
 	if effect['dispatch.command'] ~= nil then

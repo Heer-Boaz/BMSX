@@ -21,7 +21,7 @@ local usage_percent<const> = function(used, total)
 	return math.floor(((used * 100) / total) + 0.5)
 end
 
-local draw_usage_bar<const> = function(label, used, total, x, y, z, font_id)
+local draw_usage_bar<const> = function(label, used, total, x, y, z, font_id, fill_color_override)
 	local label_w<const> = 28
 	local bar_w<const> = 54
 	local bar_h<const> = 5
@@ -33,27 +33,26 @@ local draw_usage_bar<const> = function(label, used, total, x, y, z, font_id)
 	local text_z<const> = z + 2
 	local label_color<const> = colors.text_dim
 	local pct_color<const> = colors.text
+	local fill_color = usage_color(used / total)
+	if fill_color_override then
+		fill_color = fill_color_override
+	end
 	local label_len<const> = #label
 	local pct_text<const> = tostring(pct) .. '%'
 	local pct_len<const> = #pct_text
 
-	memwrite(sys_vdp_cmd_arg0, bar_x, y + 1, bar_x + bar_w, y + 1 + bar_h, z, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+	memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10), sys_vdp_cmd_fill_rect, 10, 0, bar_x, y + 1, bar_x + bar_w, y + 1 + bar_h, z, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a)
 	if fill_w > 0 then
-		local c<const> = usage_color(ratio)
-		memwrite(sys_vdp_cmd_arg0, bar_x, y + 1, bar_x + fill_w, y + 1 + bar_h, z + 1, sys_vdp_layer_ide, c.r, c.g, c.b, c.a)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
+		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10), sys_vdp_cmd_fill_rect, 10, 0, bar_x, y + 1, bar_x + fill_w, y + 1 + bar_h, z + 1, sys_vdp_layer_ide, fill_color.r, fill_color.g, fill_color.b, fill_color.a)
 	end
 
 	if label_len > 0 then
-		memwrite(sys_vdp_cmd_arg0, label, x, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a, 0, 0, 0, 0, 0)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17), sys_vdp_cmd_glyph_run, 17, 0, label, x, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a, 0, 0, 0, 0, 0)
 	end
 
 	if pct_len > 0 then
 		-- print(pct_text)
-		memwrite(sys_vdp_cmd_arg0, pct_text, bar_x + bar_w + 1, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, pct_color.r, pct_color.g, pct_color.b, pct_color.a, 0, 0, 0, 0, 0)
-		mem[sys_vdp_cmd] = sys_vdp_cmd_glyph_run
+		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17), sys_vdp_cmd_glyph_run, 17, 0, pct_text, bar_x + bar_w + 1, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, pct_color.r, pct_color.g, pct_color.b, pct_color.a, 0, 0, 0, 0, 0)
 	end
 end
 
@@ -66,12 +65,19 @@ function gizmo.draw()
 	local y<const> = 8
 	local z<const> = 9000
 	local panel_w<const> = 112
-	local panel_h<const> = 32
+	local panel_h<const> = 42
 	local row_h<const> = 10
 	local font_id<const> = get_default_font().id
+	local vdp_work_last<const> = sys_vdp_work_units_last()
+	local vdp_budget<const> = math.max(1, math.floor(((sys_vdp_work_units_per_sec() * 1000000) / machine_manifest.ufps) + 0.5))
+	local vdp_held<const> = sys_vdp_frame_held() ~= 0
+	local vdp_fill_color
 
 	memwrite(
-		sys_vdp_cmd_arg0,
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
+		sys_vdp_cmd_fill_rect,
+		10,
+		0,
 		x - 4,
 		y - 4,
 		x - 4 + panel_w,
@@ -83,10 +89,13 @@ function gizmo.draw()
 		colors.panel.b,
 		colors.panel.a
 	)
-	mem[sys_vdp_cmd] = sys_vdp_cmd_fill_rect
 	draw_usage_bar('CPU', sys_cpu_cycles_used(), sys_cpu_cycles_granted(), x, y, z + 1, font_id)
 	draw_usage_bar('RAM', sys_ram_used(), sys_ram_size, x, y + row_h, z + 1, font_id)
 	draw_usage_bar('VRAM', sys_vram_used(), sys_vram_size, x, y + (row_h * 2), z + 1, font_id)
+	if vdp_held then
+		vdp_fill_color = colors.danger
+	end
+	draw_usage_bar('VDP', vdp_work_last, vdp_budget, x, y + (row_h * 3), z + 1, font_id, vdp_fill_color)
 end
 
 return gizmo
