@@ -105,6 +105,7 @@ add_library(bmsx_core STATIC
 	utils/mem_snapshot.cpp
 
 	# Audio systems
+	audio/biquad_filter.cpp
 	audio/soundmaster.cpp
 
 	# Input systems
@@ -226,6 +227,7 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 	add_executable(bmsx_libretro_host
 		platform/libretro_host/main.c
 		platform/libretro_host/input_timeline.c
+		platform/libretro_host/screenshot.c
 	)
 
 	# SNES Mini sysroot uses glibc 2.19; the cross toolchain defaults to time64.

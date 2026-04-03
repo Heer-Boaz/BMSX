@@ -555,6 +555,32 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 				const f64 rampFrames = rampRemaining * static_cast<f64>(outputSampleRate);
 				gainStep = (target - gain) / rampFrames;
 			}
+			if (record.params.filter.has_value()) {
+				if (record.filterSampleRate != outputSampleRate) {
+					const auto& filter = record.params.filter.value();
+					configureBiquadFilter(
+						record.filter,
+						filter.type,
+						filter.frequency,
+						filter.q,
+						filter.gain,
+						static_cast<f32>(outputSampleRate)
+					);
+					record.filterSampleRate = outputSampleRate;
+				}
+			} else {
+				record.filter.reset();
+				record.filterSampleRate = 0;
+			}
+
+			auto mixVoiceSample = [&](size_t& outIndex, f32 left, f32 right) {
+				if (record.filter.enabled) {
+					record.filter.processStereo(left, right);
+				}
+				mix[outIndex] += left * gain;
+				mix[outIndex + 1] += right * gain;
+				outIndex += 2;
+			};
 
 			bool ended = false;
 			if (record.usesBadp) {
@@ -612,9 +638,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 					const f32 right1 = static_cast<f32>(right1i) * sampleScale;
 					const f32 left = left0 + (left1 - left0) * static_cast<f32>(frac);
 					const f32 right = right0 + (right1 - right0) * static_cast<f32>(frac);
-					mix[outIndex] += left * gain;
-					mix[outIndex + 1] += right * gain;
-					outIndex += 2;
+					mixVoiceSample(outIndex, left, right);
 
 					position += step;
 					if (hasLoop && position >= loopEnd) {
@@ -651,10 +675,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 						}
 
 						const f32 sample = static_cast<f32>(readSample(posIndex)) * sampleScale;
-						const f32 out = sample * gain;
-						mix[outIndex] += out;
-						mix[outIndex + 1] += out;
-						outIndex += 2;
+						mixVoiceSample(outIndex, sample, sample);
 
 						++posIndex;
 						if (hasLoop && posIndex >= loopEndIndex) {
@@ -683,9 +704,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 						const size_t base = posIndex * static_cast<size_t>(channels);
 						const f32 left = static_cast<f32>(readSample(base)) * sampleScale;
 						const f32 right = static_cast<f32>(readSample(base + 1)) * sampleScale;
-						mix[outIndex] += left * gain;
-						mix[outIndex + 1] += right * gain;
-						outIndex += 2;
+						mixVoiceSample(outIndex, left, right);
 
 						++posIndex;
 						if (hasLoop && posIndex >= loopEndIndex) {
@@ -725,10 +744,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 							const f32 s0 = static_cast<f32>(readSample(static_cast<size_t>(idx))) * sampleScale;
 							const f32 s1 = static_cast<f32>(readSample(static_cast<size_t>(idx1))) * sampleScale;
 							const f32 sample = s0 + (s1 - s0) * static_cast<f32>(frac);
-							const f32 out = sample * gain;
-							mix[outIndex] += out;
-							mix[outIndex + 1] += out;
-							outIndex += 2;
+							mixVoiceSample(outIndex, sample, sample);
 
 							position += step;
 							if (position >= loopEnd) {
@@ -765,10 +781,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 								s1 = static_cast<f32>(readSample(idx1)) * sampleScale;
 							}
 							const f32 sample = s0 + (s1 - s0) * static_cast<f32>(frac);
-							const f32 out = sample * gain;
-							mix[outIndex] += out;
-							mix[outIndex + 1] += out;
-							outIndex += 2;
+							mixVoiceSample(outIndex, sample, sample);
 
 							position += step;
 							if (rampRemaining > 0.0) {
@@ -805,9 +818,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 
 							const f32 left = left0 + (left1 - left0) * static_cast<f32>(frac);
 							const f32 right = right0 + (right1 - right0) * static_cast<f32>(frac);
-							mix[outIndex] += left * gain;
-							mix[outIndex + 1] += right * gain;
-							outIndex += 2;
+							mixVoiceSample(outIndex, left, right);
 
 							position += step;
 							if (position >= loopEnd) {
@@ -851,9 +862,7 @@ void SoundMaster::renderSamples(i16* output, size_t frameCount, i32 outputSample
 
 							const f32 left = left0 + (left1 - left0) * static_cast<f32>(frac);
 							const f32 right = right0 + (right1 - right0) * static_cast<f32>(frac);
-							mix[outIndex] += left * gain;
-							mix[outIndex + 1] += right * gain;
-							outIndex += 2;
+							mixVoiceSample(outIndex, left, right);
 
 							position += step;
 							if (rampRemaining > 0.0) {

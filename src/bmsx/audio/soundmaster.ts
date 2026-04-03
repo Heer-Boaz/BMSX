@@ -182,7 +182,8 @@ class StreamVoiceHandle implements VoiceHandle {
 		this.owner.rampVoiceGainLinear(this.voiceId, target, durationSec);
 	}
 
-	public setFilter(_filter: AudioFilterParams): void {
+	public setFilter(filter: AudioFilterParams): void {
+		this.owner.setVoiceFilter(this.voiceId, filter);
 	}
 
 	public setRate(rate: number): void {
@@ -787,6 +788,20 @@ export class SoundMaster {
 		const record = found.record;
 		record.params.playbackRate = rate;
 		record.backendVoice.setRate(rate);
+	}
+
+	public setVoiceFilter(voiceId: VoiceId, filter: AudioFilterParams): void {
+		const found = this.findRecordByVoiceId(voiceId);
+		if (!found) {
+			return;
+		}
+		found.record.params.filter = {
+			type: filter.type,
+			frequency: filter.frequency,
+			q: filter.q,
+			gain: filter.gain,
+		};
+		found.record.backendVoice.setFilter(filter);
 	}
 
 	public stopVoiceById(voiceId: VoiceId): void {

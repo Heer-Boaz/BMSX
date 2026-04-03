@@ -158,8 +158,8 @@ export interface AudioPlaybackParams {
 	offset: number;
 	rate: number;
 	gainLinear: number;
-	loop: AudioLoop;
-	filter: AudioFilterParams;
+	loop: AudioLoop | null;
+	filter: AudioFilterParams | null;
 }
 
 export interface AudioClipHandle {

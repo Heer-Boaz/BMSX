@@ -126,6 +126,11 @@ type MainToWorkletMessage =
 		rate: number;
 	}
 	| {
+		type: 'voice_set_filter';
+		voiceId: number;
+		filter: AudioFilterParams;
+	}
+	| {
 		type: 'voice_stop';
 		voiceId: number;
 	};
@@ -193,7 +198,8 @@ class WorkerVoice implements VoiceHandle {
 		this.service.rampVoiceGain(this.voiceId, target, durationSec);
 	}
 
-	public setFilter(_filter: AudioFilterParams): void {
+	public setFilter(filter: AudioFilterParams): void {
+		this.service.setVoiceFilter(this.voiceId, filter);
 	}
 
 	public setRate(rate: number): void {
@@ -261,6 +267,11 @@ export class WorkerStreamingAudioService implements AudioService {
 		seconds: 0,
 	};
 	private readonly msgVoiceSetRate: { type: 'voice_set_rate'; voiceId: number; rate: number } = { type: 'voice_set_rate', voiceId: 0, rate: 1 };
+	private readonly msgVoiceSetFilter: { type: 'voice_set_filter'; voiceId: number; filter: AudioFilterParams } = {
+		type: 'voice_set_filter',
+		voiceId: 0,
+		filter: { type: 'lowpass', frequency: 350, q: 1, gain: 0 },
+	};
 	private readonly msgVoiceStop: { type: 'voice_stop'; voiceId: number } = { type: 'voice_stop', voiceId: 0 };
 
 	constructor(context: AudioContext, options: WorkerStreamingAudioOptions = {}) {
@@ -674,6 +685,9 @@ export class WorkerStreamingAudioService implements AudioService {
 						case 'voice_set_rate':
 							this.setVoiceRate(message.voiceId, message.rate);
 							break;
+						case 'voice_set_filter':
+							this.setVoiceFilter(message.voiceId, message.filter);
+							break;
 						case 'voice_stop':
 							this.stopVoice(message.voiceId);
 							break;
@@ -738,6 +752,16 @@ export class WorkerStreamingAudioService implements AudioService {
 				targetGainLinear: 1,
 				gainRampRemainingFrames: 0,
 				gainRampDelta: 0,
+				filterEnabled: false,
+				filterB0: 1,
+				filterB1: 0,
+				filterB2: 0,
+				filterA1: 0,
+				filterA2: 0,
+				filterL1: 0,
+				filterL2: 0,
+				filterR1: 0,
+				filterR2: 0,
 				startedCounter: 0,
 			};
 		}
@@ -749,6 +773,11 @@ export class WorkerStreamingAudioService implements AudioService {
 				voice.decoder = null;
 			}
 			voice.activeIndex = -1;
+			voice.filterEnabled = false;
+			voice.filterL1 = 0;
+			voice.filterL2 = 0;
+			voice.filterR1 = 0;
+			voice.filterR2 = 0;
 			if (this.voicePoolCount >= MAX_ACTIVE_VOICES) {
 				return;
 			}
@@ -773,6 +802,121 @@ export class WorkerStreamingAudioService implements AudioService {
 			this.activeVoiceCount = lastIndex;
 			this.releaseVoice(voice);
 			this.enqueueEndedVoice(voiceId);
+		}
+
+		configureVoiceFilter(voice, filter) {
+			if (!Number.isFinite(filter.frequency) || filter.frequency <= 0) {
+				throw new Error('[WorkerStreamingAudioService.worklet] Voice filter frequency must be positive and finite.');
+			}
+			if (!Number.isFinite(filter.q) || filter.q <= 0) {
+				throw new Error('[WorkerStreamingAudioService.worklet] Voice filter Q must be positive and finite.');
+			}
+			if (!Number.isFinite(filter.gain)) {
+				throw new Error('[WorkerStreamingAudioService.worklet] Voice filter gain must be finite.');
+			}
+			const frequency = clamp(filter.frequency, 0.001, sampleRate * 0.499);
+			const q = filter.q;
+			const gain = filter.gain;
+			const omega = 2 * Math.PI * frequency / sampleRate;
+			const sin = Math.sin(omega);
+			const cos = Math.cos(omega);
+			const alpha = sin / (2 * q);
+			const A = Math.pow(10, gain / 40);
+			const sqrtA = Math.sqrt(A);
+			const twoSqrtAAlpha = 2 * sqrtA * alpha;
+			let b0 = 1;
+			let b1 = 0;
+			let b2 = 0;
+			let a0 = 1;
+			let a1 = 0;
+			let a2 = 0;
+			switch (filter.type) {
+				case 'lowpass':
+					b0 = (1 - cos) * 0.5;
+					b1 = 1 - cos;
+					b2 = (1 - cos) * 0.5;
+					a0 = 1 + alpha;
+					a1 = -2 * cos;
+					a2 = 1 - alpha;
+					break;
+				case 'highpass':
+					b0 = (1 + cos) * 0.5;
+					b1 = -(1 + cos);
+					b2 = (1 + cos) * 0.5;
+					a0 = 1 + alpha;
+					a1 = -2 * cos;
+					a2 = 1 - alpha;
+					break;
+				case 'bandpass':
+					b0 = sin * 0.5;
+					b1 = 0;
+					b2 = -sin * 0.5;
+					a0 = 1 + alpha;
+					a1 = -2 * cos;
+					a2 = 1 - alpha;
+					break;
+				case 'notch':
+					b0 = 1;
+					b1 = -2 * cos;
+					b2 = 1;
+					a0 = 1 + alpha;
+					a1 = -2 * cos;
+					a2 = 1 - alpha;
+					break;
+				case 'allpass':
+					b0 = 1 - alpha;
+					b1 = -2 * cos;
+					b2 = 1 + alpha;
+					a0 = 1 + alpha;
+					a1 = -2 * cos;
+					a2 = 1 - alpha;
+					break;
+				case 'peaking':
+					b0 = 1 + alpha * A;
+					b1 = -2 * cos;
+					b2 = 1 - alpha * A;
+					a0 = 1 + alpha / A;
+					a1 = -2 * cos;
+					a2 = 1 - alpha / A;
+					break;
+				case 'lowshelf':
+					b0 = A * ((A + 1) - (A - 1) * cos + twoSqrtAAlpha);
+					b1 = 2 * A * ((A - 1) - (A + 1) * cos);
+					b2 = A * ((A + 1) - (A - 1) * cos - twoSqrtAAlpha);
+					a0 = (A + 1) + (A - 1) * cos + twoSqrtAAlpha;
+					a1 = -2 * ((A - 1) + (A + 1) * cos);
+					a2 = (A + 1) + (A - 1) * cos - twoSqrtAAlpha;
+					break;
+				case 'highshelf':
+					b0 = A * ((A + 1) + (A - 1) * cos + twoSqrtAAlpha);
+					b1 = -2 * A * ((A - 1) + (A + 1) * cos);
+					b2 = A * ((A + 1) + (A - 1) * cos - twoSqrtAAlpha);
+					a0 = (A + 1) - (A - 1) * cos + twoSqrtAAlpha;
+					a1 = 2 * ((A - 1) - (A + 1) * cos);
+					a2 = (A + 1) - (A - 1) * cos - twoSqrtAAlpha;
+					break;
+				default:
+					throw new Error('[WorkerStreamingAudioService.worklet] Unsupported voice filter type.');
+			}
+			const invA0 = 1 / a0;
+			voice.filterEnabled = true;
+			voice.filterB0 = b0 * invA0;
+			voice.filterB1 = b1 * invA0;
+			voice.filterB2 = b2 * invA0;
+			voice.filterA1 = a1 * invA0;
+			voice.filterA2 = a2 * invA0;
+			voice.filterL1 = 0;
+			voice.filterL2 = 0;
+			voice.filterR1 = 0;
+			voice.filterR2 = 0;
+		}
+
+		setVoiceFilter(voiceId, filter) {
+			const voice = this.voices.get(voiceId);
+			if (!voice) {
+				return;
+			}
+			this.configureVoiceFilter(voice, filter);
 		}
 
 		registerBadpClip(clipId, bytesBuffer) {
@@ -920,6 +1064,14 @@ export class WorkerStreamingAudioService implements AudioService {
 			voice.targetGainLinear = voice.gainLinear;
 			voice.gainRampRemainingFrames = 0;
 			voice.gainRampDelta = 0;
+			voice.filterEnabled = false;
+			voice.filterL1 = 0;
+			voice.filterL2 = 0;
+			voice.filterR1 = 0;
+			voice.filterR2 = 0;
+			if (message.params.filter !== null) {
+				this.configureVoiceFilter(voice, message.params.filter);
+			}
 			voice.startedCounter = nowCounter;
 			voice.activeIndex = this.activeVoiceCount;
 			this.activeVoices[this.activeVoiceCount] = voice;
@@ -997,30 +1149,41 @@ export class WorkerStreamingAudioService implements AudioService {
 			if (frac === 0) {
 				this.voiceSampledL = this.voiceScratch0[0] * PCM_SCALE;
 				this.voiceSampledR = this.voiceScratch0[1] * PCM_SCALE;
-				voice.positionFrames = positionFrames + voice.stepFrames;
-				return true;
-			}
-			let frameNext = frame + 1;
-			if (voice.loopEnabled) {
-				if (frameNext >= voice.loopEndFrames) {
-					frameNext = voice.loopStartFrames + (frameNext - voice.loopEndFrames);
-				}
-			} else if (frameNext >= voice.clip.frames) {
-				frameNext = frame;
-			}
-			if (frameNext !== frame) {
-				if (!voice.decoder.readFrameAt(frameNext, this.voiceScratch1)) {
-					return false;
-				}
-				const left0 = this.voiceScratch0[0];
-				const right0 = this.voiceScratch0[1];
-				this.voiceSampledL = (left0 + (this.voiceScratch1[0] - left0) * frac) * PCM_SCALE;
-				this.voiceSampledR = (right0 + (this.voiceScratch1[1] - right0) * frac) * PCM_SCALE;
 			} else {
-				this.voiceSampledL = this.voiceScratch0[0] * PCM_SCALE;
-				this.voiceSampledR = this.voiceScratch0[1] * PCM_SCALE;
+				let frameNext = frame + 1;
+				if (voice.loopEnabled) {
+					if (frameNext >= voice.loopEndFrames) {
+						frameNext = voice.loopStartFrames + (frameNext - voice.loopEndFrames);
+					}
+				} else if (frameNext >= voice.clip.frames) {
+					frameNext = frame;
+				}
+				if (frameNext !== frame) {
+					if (!voice.decoder.readFrameAt(frameNext, this.voiceScratch1)) {
+						return false;
+					}
+					const left0 = this.voiceScratch0[0];
+					const right0 = this.voiceScratch0[1];
+					this.voiceSampledL = (left0 + (this.voiceScratch1[0] - left0) * frac) * PCM_SCALE;
+					this.voiceSampledR = (right0 + (this.voiceScratch1[1] - right0) * frac) * PCM_SCALE;
+				} else {
+					this.voiceSampledL = this.voiceScratch0[0] * PCM_SCALE;
+					this.voiceSampledR = this.voiceScratch0[1] * PCM_SCALE;
+				}
 			}
 			voice.positionFrames = positionFrames + voice.stepFrames;
+			if (voice.filterEnabled) {
+				const inputL = this.voiceSampledL;
+				const inputR = this.voiceSampledR;
+				const filteredL = voice.filterB0 * inputL + voice.filterL1;
+				const filteredR = voice.filterB0 * inputR + voice.filterR1;
+				voice.filterL1 = voice.filterB1 * inputL - voice.filterA1 * filteredL + voice.filterL2;
+				voice.filterL2 = voice.filterB2 * inputL - voice.filterA2 * filteredL;
+				voice.filterR1 = voice.filterB1 * inputR - voice.filterA1 * filteredR + voice.filterR2;
+				voice.filterR2 = voice.filterB2 * inputR - voice.filterA2 * filteredR;
+				this.voiceSampledL = filteredL;
+				this.voiceSampledR = filteredR;
+			}
 			return true;
 		}
 
@@ -1510,6 +1673,15 @@ export class WorkerStreamingAudioService implements AudioService {
 		this.msgVoiceSetRate.voiceId = voiceId;
 		this.msgVoiceSetRate.rate = rate;
 		this.postWorkletMessage(this.msgVoiceSetRate);
+	}
+
+	public setVoiceFilter(voiceId: number, filter: AudioFilterParams): void {
+		this.msgVoiceSetFilter.voiceId = voiceId;
+		this.msgVoiceSetFilter.filter.type = filter.type;
+		this.msgVoiceSetFilter.filter.frequency = filter.frequency;
+		this.msgVoiceSetFilter.filter.q = filter.q;
+		this.msgVoiceSetFilter.filter.gain = filter.gain;
+		this.postWorkletMessage(this.msgVoiceSetFilter);
 	}
 
 	public stopVoice(voiceId: number): void {

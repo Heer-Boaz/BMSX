@@ -5,6 +5,7 @@
 #pragma once
 
 #include "../rompack/runtime_assets.h"
+#include "biquad_filter.h"
 #include "../core/registry.h"
 #include "../subscription.h"
 #include <array>
@@ -194,6 +195,8 @@ private:
 		f32 targetGain = 1.0f;
 		f64 gainRampRemaining = 0.0;
 		f64 stopAfter = -1.0;
+		i32 filterSampleRate = 0;
+		BiquadFilterState filter;
 		bool finalized = false;
 		bool usesBadp = false;
 		BadpDecoderState badp;
