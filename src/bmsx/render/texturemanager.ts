@@ -1,3 +1,209 @@
+//  sRGB Handling in the TypeScript WebGL Backend
+// 1. TextureParams type
+// pipeline_interfaces.ts — TextureParams has an optional srgb?: boolean field:
+
+// export interface TextureParams {
+//     size?: vec2;
+//     wrapS?: number;
+//     wrapT?: number;
+//     minFilter?: number;
+//     magFilter?: number;
+//     srgb?: boolean;
+// }
+// 2. WebGL Backend — createTexture() (main path)
+// webgl_backend.ts — sRGB is the default. When desc.srgb is undefined (not provided), srgb !== false evaluates to true, so SRGB8_ALPHA8 is used:
+
+// createTexture(src, desc): WebGLTexture {
+//     const srgb = desc.srgb !== false;                              // L53 — default = true
+//     const internalFormat = srgb ? this.gl.SRGB8_ALPHA8 : this.gl.RGBA8;  // L54
+//     ...
+//     this.texInfo.set(tex, { w: source.width, h: source.height, srgb });   // L66
+// }
+// 3. WebGL Backend — updateTexture()
+// webgl_backend.ts — Preserves the original sRGB flag from texInfo. Falls back to srgb: true if info is missing:
+
+// const srgb = info ? info.srgb : true;                            // L84
+// const internalFormat = srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;        // L85
+// 4. WebGL Backend — resizeTexture()
+// webgl_backend.ts — Preserves original flag, falls back to desc.srgb !== false:
+
+// const srgb = info ? info.srgb : _desc.srgb !== false;            // L113
+// const internalFormat = srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8;        // L114
+// 5. WebGL Backend — createSolidTexture2D() — NOT sRGB
+// webgl_backend.ts — Uses raw gl.RGBA (not SRGB8_ALPHA8) and explicitly marks srgb: false:
+
+// gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+// ...
+// this.texInfo.set(tex, { w: width, h: height, srgb: false });     // L183
+// 6. WebGL Backend — createColorTexture() — NOT sRGB
+// webgl_backend.ts — Used by the render graph for FBO color attachments. Defaults to gl.RGBA8, explicitly srgb: false:
+
+// const internal = (desc.format === undefined ? gl.RGBA8 : desc.format) as GLenum;
+// ...
+// this.texInfo.set(tex, { w: desc.width, h: desc.height, srgb: false });  // L284
+// 7. WebGL Backend — Cubemaps — NOT sRGB
+// webgl_backend.ts — createCubemapFromSources, createSolidCubemap, createCubemapEmpty all use raw gl.RGBA as internal format, never SRGB8_ALPHA8. No sRGB tracking for cubemaps.
+
+// 8. gl_resources.ts — Legacy helpers
+// gl_resources.ts — glCreateTexture() always uses SRGB8_ALPHA8 (hardcoded, no option):
+
+// gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);  // L99
+// gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, size.x, size.y, 0, ...);          // L103
+// gl_resources.ts — glCreateTextureFromImage() respects the srgb field, defaulting to SRGB8_ALPHA8:
+
+// gl.texImage2D(gl.TEXTURE_2D, 0, desc.srgb === false ? gl.RGBA8 : gl.SRGB8_ALPHA8, ...);  // L168
+// 9. WebGPU Backend — consistent behavior
+// webgpu_backend.ts — Same default logic:
+
+// const format = _desc.srgb === false ? 'rgba8unorm' : 'rgba8unorm-srgb';              // L44, L100
+// 10. Atlas & Framebuffer Textures — How They're Created
+// Atlas textures (primary, secondary, engine) and framebuffer texture are all created via TextureManager.createTextureFromPixelsSync() at texturemanager.ts, which calls backend.createTexture(source, desc). The callers in vdp.ts pass no desc (empty {}):
+
+// handle = $.texmanager.createTextureFromPixelsSync(textureKey, this.vramSeedPixel, 1, 1);  // L2153
+// // desc defaults to {} — so srgb is undefined
+// Since desc.srgb is undefined, srgb !== false is true → atlas and framebuffer textures are created as SRGB8_ALPHA8.
+
+// They are later resized via resizeTextureForKey(), which calls resizeTexture() on the backend — this preserves the stored srgb flag from texInfo (which will be true from initial creation).
+
+// Summary Table
+// Texture Type	Internal Format	sRGB?
+// Normal textures (createTexture with no srgb field)	SRGB8_ALPHA8	Yes (default)
+// Atlas textures (primary/secondary/engine)	SRGB8_ALPHA8	Yes (no srgb passed → default)
+// Framebuffer render texture	SRGB8_ALPHA8	Yes (no srgb passed → default)
+// Solid color textures (createSolidTexture2D)	RGBA	No
+// Render graph color targets (createColorTexture)	RGBA8	No
+// Cubemaps (all variants)	RGBA	No
+// Shadow maps	DEPTH_COMPONENT16	N/A
+// glCreateTexture (legacy helper)	SRGB8_ALPHA8	Yes (hardcoded)
+
+// ENGINE ATLAS TEXTURE LIFECYCLE — Complete Trace
+// 1. Definition & Key
+// The key is defined as a C string constant:
+
+// rompack.h: constexpr const char* ENGINE_ATLAS_TEXTURE_KEY = "_atlas_engine";
+// Atlas index: ENGINE_ATLAS_INDEX = 254
+// The shader atlas ID: VDP_GLES2_ENGINE_ATLAS_ID = 254.0f (vdp.cpp)
+// 2. Engine Atlas Creation & Upload
+// Initial BIOS boot calls bootEngineStartupProgram() (engine_core.cpp) which calls:
+
+// runtime.buildAssetMemory(m_engine_assets, true) (engine_core.cpp) — mode = Full
+// This calls m_memory.resetAssetMemory() (clears ALL asset entries) then m_vdp.registerImageAssets(assets, keepDecodedData)
+// Inside registerImageAssets (vdp.cpp):
+
+// Line 2702: m_vramSlots.clear() — clears all VRAM slots
+// Line 2703: m_readSurfaces = {} — clears all read surfaces
+// Line 2736: Gets the engine atlas asset from systemAssets
+// Line 2791-2797: Registers a memory slot for the engine atlas at VRAM_SYSTEM_ATLAS_BASE
+// Line 2800-2802: Sets dimensions and calls registerVramSlot(engineEntry, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE)
+// Inside registerVramSlot (vdp.cpp):
+
+// Gets/creates texture via texmanager->getOrCreateTexture(key, ...)
+// Resizes it: texmanager->resizeTextureForKey(textureKey, width, height)
+// Stores handle: view->textures[textureKey] = handle
+// Creates a VramSlot struct and pushes to m_vramSlots
+// Calls registerReadSurface(surfaceId, entry.id, textureKey) — sets m_readSurfaces[0] to map surface 0 → ENGINE_ATLAS_TEXTURE_KEY
+// For engine atlas specifically (vdp.cpp): copies the engine atlas pixel data from engineAsset->pixels into cpuReadback, then uploads to GPU via texmanager->updateTexture()
+// 3. Cart Load — What Happens to Textures
+// When BIOS signals cart boot, Runtime::pollSystemBootRequest() (runtime.cpp) calls EngineCore::bootLoadedCart() (engine_core.cpp).
+
+// bootLoadedCart calls:
+
+// runtime.buildAssetMemory(assets(), false, Runtime::AssetBuildMode::Cart) (engine_core.cpp)
+// Inside buildAssetMemory with AssetBuildMode::Cart (runtime.cpp):
+
+// Calls m_memory.resetCartAssets() (keeps engine entries, resets only cart entries)
+// Then calls m_vdp.registerImageAssets(assets, keepDecodedData) again
+// CRITICAL: registerImageAssets at vdp.cpp line 2702 does m_vramSlots.clear() unconditionally — this wipes ALL slots including the engine atlas slot. It also clears m_readSurfaces = {}.
+
+// But then it re-registers the engine atlas slot at line 2802: registerVramSlot(engineEntry, ENGINE_ATLAS_TEXTURE_KEY, VDP_RD_SURFACE_ENGINE). So the engine atlas is recreated fresh on every registerImageAssets call (both BIOS and cart).
+
+// 4. VramSlot System
+// VramSlot struct (vdp.h):
+
+// struct VramSlot {
+//     VramSlotKind kind;       // Asset or Skybox
+//     uint32_t baseAddr;       // Base address in VRAM
+//     uint32_t capacity;       // Capacity in bytes
+//     std::string assetId;     // Memory asset entry id
+//     std::string textureKey;  // Key in texmanager & view->textures
+//     uint32_t surfaceId;      // 0=ENGINE, 1=PRIMARY, 2=SECONDARY, 3=FRAMEBUFFER
+//     uint32_t textureWidth;
+//     uint32_t textureHeight;
+//     std::vector<u8> cpuReadback;       // CPU-side pixel copy
+//     std::vector<u8> contextSnapshot;   // Saved for GL context loss
+// };
+// Storage: std::vector<VramSlot> m_vramSlots (vdp.h) — linear vector, push_back only, searched by linear scan in findVramSlot and getVramSlotByTextureKey.
+
+// Slots cannot be overwritten — they are cleared entirely via m_vramSlots.clear() and rebuilt.
+
+// 5. VDP Execute — How Engine Texture is Bound
+// Fragment shader (vdp.cpp):
+
+// uniform sampler2D u_texture3;  // engine atlas
+// // ...
+// if (v_atlas_id > 253.5) {
+//     texColor = texture2D(u_texture3, v_texcoord);  // engine atlas at 254
+// }
+// Uniform binding ([vdp.cpp](src/bmsx_cpp/emulator/vdp.cpp#L343, L353)):
+
+// state.uniformTexture3 = glGetUniformLocation(state.program, "u_texture3");
+// // ...
+// glUniform1i(state.uniformTexture3, 3);  // texture unit 3
+// bindVdpStandardTextures (vdp.cpp):
+
+// host.backend->setActiveTextureUnit(3);
+// host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_ENGINE].texture);
+// prepareSurface lambda in the execute function (vdp.cpp):
+
+// auto prepareSurface = [&](uint32_t surfaceId, f32 atlasId) {
+//     auto& info = host.surfaces[surfaceId];
+//     info.atlasId = atlasId;
+//     const auto& surface = vdp.getReadSurface(surfaceId);
+//     if (surface.textureKey.empty()) {
+//         return;  // ← EARLY RETURN IF NO TEXTURE KEY
+//     }
+//     info.texture = texmanager->getTextureByUri(surface.textureKey);
+//     // ...
+// };
+// prepareSurface(VDP_RD_SURFACE_ENGINE, VDP_GLES2_ENGINE_ATLAS_ID);
+// Key finding: prepareSurface resolves the texture LIVE from the texture manager via getTextureByUri(surface.textureKey), NOT from view->textures. If the m_readSurfaces[0].textureKey is empty (was cleared and not re-registered), info.texture stays null.
+
+// Null check (vdp.cpp):
+
+// if (!host.surfaces[VDP_RD_SURFACE_ENGINE].texture) {
+//     throw BMSX_RUNTIME_ERROR("[VDP][GLES2] Missing engine atlas texture.");
+// }
+// 6. GL Context Loss/Restore
+// onContextDestroy (libretro_platform.cpp):
+
+// Captures VRAM snapshots
+// Calls texmanager->clear() — destroys ALL GPU textures
+// Sets m_render_assets_need_refresh = true
+// onContextReset (libretro_platform.cpp):
+
+// Calls m_engine->refreshRenderAssets() when m_render_assets_need_refresh is true
+// refreshRenderAssets (engine_core.cpp):
+
+// Calls view->initializeDefaultTextures() — sets textures[ENGINE_ATLAS_TEXTURE_KEY] to a 1x1 white fallback
+// Calls Runtime::instance().restoreVramSlotTextures()
+// restoreVramSlotTextures (vdp.cpp):
+
+// Recreates the engine atlas texture via restoreVramSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY)
+// Then calls view->loadEngineAtlasTexture() to update view->textures[ENGINE_ATLAS_TEXTURE_KEY]
+// restoreVramSlotTexture (vdp.cpp):
+
+// Creates/resizes the texture in texture manager
+// If a contextSnapshot exists, restores from it
+// Otherwise, for engine atlas specifically, reloads from engineAsset->pixels
+// 7. No Separate resetVram Between Boot and Cart
+// There is no explicit resetVram or clearTextures function called between boot and cart execution. The transition goes:
+
+// BIOS boot: bootEngineStartupProgram → buildAssetMemory(Full) → registerImageAssets (creates engine atlas slot + texture)
+// BIOS runs (boot screen shows overlay text fine)
+// Cart boot request: pollSystemBootRequest → bootLoadedCart → buildAssetMemory(Cart) → registerImageAssets again
+// registerImageAssets calls m_vramSlots.clear() then re-creates engine atlas slot with registerVramSlot
+// The registerVramSlot call at step 4 will call texmanager->getTextureByUri(ENGINE_ATLAS_TEXTURE_KEY), which should find the existing texture in the GPU cache (since texmanager->clear() is only called on GL context loss, not during cart boot). If it finds it, it resizes and re-uploads. If not (e.g. after a context loss that wasn't properly restored), it creates a new 1x1 garbage-seeded texture and resizes.
+
 import { AssetBarrier } from '../core/assetbarrier';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { color_arr, GLTFModel, Index2GpuTexture, type RomImgAsset, type TextureSource } from '../rompack/rompack';
