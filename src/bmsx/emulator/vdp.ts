@@ -1765,6 +1765,8 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				}
 			}
 		}
+		this.syncVramSlotTextureSize(this.getVramSlotByTextureKey(ATLAS_PRIMARY_SLOT_ID));
+		this.syncVramSlotTextureSize(this.getVramSlotByTextureKey(ATLAS_SECONDARY_SLOT_ID));
 	}
 
 	public setSkyboxImages(ids: SkyboxImageIds): void {
@@ -2181,6 +2183,16 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		slot.textureHeight = height;
 		this.invalidateReadCache(slot.surfaceId);
 		this.seedVramSlotTexture(slot);
+	}
+
+	private getVramSlotByTextureKey(textureKey: string): AssetVramSlot {
+		for (let index = 0; index < this.vramSlots.length; index += 1) {
+			const slot = this.vramSlots[index];
+			if (slot.kind === 'asset' && slot.textureKey === textureKey) {
+				return slot;
+			}
+		}
+		throw new Error(`[BmsxVDP] VRAM slot not registered for texture '${textureKey}'.`);
 	}
 
 	private makeVramGarbageStream(addr: number): VramGarbageStream {

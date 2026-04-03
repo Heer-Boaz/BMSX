@@ -808,9 +808,10 @@ export class EngineCore {
 		} else {
 			preparePartialRenderQueues();
 		}
-		if (mode === 'completed') {
-			this.sndmaster.finishFrame();
-		}
+		// Keep audio refills tied to host presentation, not only completed sim frames.
+		// Partial presents happen exactly when an unfinished tick spans host frames, and
+		// skipping the refill there makes the browser worklet hit underruns under load.
+		this.sndmaster.finishFrame();
 		this.view.drawgame();
 		runtime.scheduleDeferredCartBootPreparation();
 	}

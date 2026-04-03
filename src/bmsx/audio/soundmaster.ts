@@ -143,6 +143,7 @@ const MIX_REFILL_REARM_MARGIN_FRAMES = 128;
 const MIX_REFILL_REARM_MARGIN_FRAMES_IOS = 256;
 const MIX_REFILL_REQUEST_AHEAD_FRAMES = 256;
 const MIX_REFILL_REQUEST_AHEAD_FRAMES_IOS = 384;
+const MIX_PUMP_INTERVAL_MS = 2;
 const PCM_SCALE = 1 / 32768;
 const PCM_INT16_MIN = -32768;
 const PCM_INT16_MAX = 32767;
@@ -262,6 +263,9 @@ class BadpDecoderCursor {
 	private decodedFrame = -1;
 	private decodedLeft = 0;
 	private decodedRight = 0;
+	private previousDecodedFrame = -1;
+	private previousDecodedLeft = 0;
+	private previousDecodedRight = 0;
 
 	public constructor(
 		private readonly track: StreamTrackData,
@@ -281,6 +285,11 @@ class BadpDecoderCursor {
 			out[1] = this.decodedRight;
 			return true;
 		}
+		if (frame === this.previousDecodedFrame) {
+			out[0] = this.previousDecodedLeft;
+			out[1] = this.previousDecodedRight;
+			return true;
+		}
 		if (frame < this.nextFrame) {
 			this.seekToFrame(frame);
 		}
@@ -298,9 +307,12 @@ class BadpDecoderCursor {
 		}
 		if (frame === this.track.frames) {
 			this.nextFrame = frame;
-			this.decodedFrame = frame - 1;
+			this.decodedFrame = -1;
 			this.decodedLeft = 0;
 			this.decodedRight = 0;
+			this.previousDecodedFrame = -1;
+			this.previousDecodedLeft = 0;
+			this.previousDecodedRight = 0;
 			return;
 		}
 		let seekIndex = 0;
@@ -324,7 +336,12 @@ class BadpDecoderCursor {
 			this.loadBlock(cursor);
 		}
 		this.nextFrame = currentFrame;
-		this.decodedFrame = currentFrame - 1;
+		this.decodedFrame = -1;
+		this.decodedLeft = 0;
+		this.decodedRight = 0;
+		this.previousDecodedFrame = -1;
+		this.previousDecodedLeft = 0;
+		this.previousDecodedRight = 0;
 		while (this.nextFrame <= frame) {
 			this.decodeNextFrame();
 		}
@@ -371,6 +388,15 @@ class BadpDecoderCursor {
 		}
 		if (this.blockFrameIndex >= this.blockFrames) {
 			this.loadBlock(this.blockEnd);
+		}
+		if (this.decodedFrame >= 0) {
+			this.previousDecodedFrame = this.decodedFrame;
+			this.previousDecodedLeft = this.decodedLeft;
+			this.previousDecodedRight = this.decodedRight;
+		} else {
+			this.previousDecodedFrame = -1;
+			this.previousDecodedLeft = 0;
+			this.previousDecodedRight = 0;
 		}
 		let left = 0;
 		let right = 0;
@@ -493,6 +519,7 @@ export class SoundMaster {
 	private readonly mixDecodeScratch1: Int16Array;
 	private mixSampledL: number;
 	private mixSampledR: number;
+	private mixPumpTimer: ReturnType<typeof setInterval> | null;
 	private readonly onCoreNeed: () => void;
 
 	private constructor() {
@@ -535,6 +562,7 @@ export class SoundMaster {
 		this.mixDecodeScratch1 = new Int16Array(2);
 		this.mixSampledL = 0;
 		this.mixSampledR = 0;
+		this.mixPumpTimer = null;
 		this.onCoreNeed = () => {
 			this.pumpCoreAudio();
 		};
@@ -1261,6 +1289,12 @@ export class SoundMaster {
 		}
 
 		const frac = positionFrames - frame;
+		if (frac === 0) {
+			this.mixSampledL = this.mixDecodeScratch0[0] * PCM_SCALE;
+			this.mixSampledR = this.mixDecodeScratch0[1] * PCM_SCALE;
+			record.positionFrames = positionFrames + record.stepFrames;
+			return true;
+		}
 		let frameNext = frame + 1;
 		if (record.loopEnabled) {
 			if (frameNext >= record.loopEndFrames) {
@@ -1344,11 +1378,14 @@ export class SoundMaster {
 		this.A.clearCoreStream();
 		this.A.setFrameTimeSec(this.mixTargetAheadSec);
 		this.A.setCoreNeedHandler(this.onCoreNeed);
+		this.mixPumpTimer = setInterval(this.onCoreNeed, MIX_PUMP_INTERVAL_MS);
 		this.pumpCoreAudio();
 	}
 
 	private stopMixer(): void {
 		this.A.setCoreNeedHandler(null);
+		clearInterval(this.mixPumpTimer);
+		this.mixPumpTimer = null;
 		this.A.clearCoreStream();
 	}
 
