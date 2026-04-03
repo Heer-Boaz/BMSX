@@ -290,6 +290,16 @@ local apply_subsystem_definition<const> = function(instance, def, addons)
 	apply_ctor(instance, class_table, addons, def.def_id)
 end
 
+local measure_glyph_line_width<const> = function(font, line)
+	local width = 0
+	local line_length<const> = string.len(line)
+	for i = 1, line_length do
+		local glyph<const> = font.glyphs[line:sub(i, i)] or font.glyphs['?']
+		width = width + glyph.advance
+	end
+	return width
+end
+
 local engine<const> = {}
 engine.bool01 = bool01
 engine.clear_map = clear_map
@@ -307,6 +317,48 @@ engine.round_to_nearest = round_to_nearest
 engine.rol8 = rol8
 engine.swap_remove = swap_remove
 engine.timeline = timeline
+
+function engine.submit_glyph_lines(lines, x, y, z, font, color_val, bg_color_val, line_height, center_w, glyph_start, glyph_end, layer)
+	local cursor_y = y
+	local background_enabled<const> = bg_color_val ~= nil and 1 or 0
+	local bg_r<const> = background_enabled ~= 0 and bg_color_val.r or 0
+	local bg_g<const> = background_enabled ~= 0 and bg_color_val.g or 0
+	local bg_b<const> = background_enabled ~= 0 and bg_color_val.b or 0
+	local bg_a<const> = background_enabled ~= 0 and bg_color_val.a or 0
+	for i = 1, #lines do
+		local line<const> = lines[i]
+		if string.len(line) > 0 then
+			local line_x = x
+			if center_w ~= nil then
+				line_x = x + ((center_w - measure_glyph_line_width(font, line)) / 2)
+			end
+			memwrite(
+				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
+				sys_vdp_cmd_glyph_run,
+				17,
+				0,
+				line,
+				line_x,
+				cursor_y,
+				z,
+				font.id,
+				glyph_start,
+				glyph_end,
+				layer,
+				color_val.r,
+				color_val.g,
+				color_val.b,
+				color_val.a,
+				background_enabled,
+				bg_r,
+				bg_g,
+				bg_b,
+				bg_a
+			)
+		end
+		cursor_y = cursor_y + line_height
+	end
+end
 
 function engine.define_fsm(id, blueprint)
 	fsmlibrary.register(id, blueprint)
@@ -761,5 +813,6 @@ end
 
 engine.eventemitter = eventemitter_module
 engine.eventemitter_module = eventemitter_module
+submit_glyph_lines = engine.submit_glyph_lines
 
 return engine

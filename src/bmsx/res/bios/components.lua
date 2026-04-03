@@ -7,10 +7,6 @@ local timeline_dispatch<const> = require('timeline_dispatch')
 local collision_profiles<const> = require('collision_profiles')
 local scratchrecordbatch<const> = require('scratchrecordbatch')
 local wrap_text_lines<const> = require('util/wrap_text_lines')
-
-local submit_glyph_lines<const> = function(lines, x, y, z, font, color_val, bg_color_val, line_height, center_w, glyph_start, glyph_end, layer)
-	-- Direct MMIO glyph rendering would go here, not service calls
-end
 local eventemitter<const> = eventemitter.eventemitter
 local timeline<const> = timeline_module.timeline
 

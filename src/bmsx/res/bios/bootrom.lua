@@ -2438,7 +2438,7 @@ function update()
 
 		if cart_present_and_ready and not boot_requested and elapsed_seconds() >= boot_delay and sys_atlas_ready and not sys_atlas_failed then
 			boot_requested = true
-			print('[BootRom] Requesting cart boot.')
+			print('Cart boot requested.')
 			mem[sys_boot_cart] = 1
 		end
 	end

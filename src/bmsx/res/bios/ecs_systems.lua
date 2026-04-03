@@ -725,6 +725,9 @@ function textrendersystem:update()
 		if not tc.enabled then
 			goto continue_text_render
 		end
+		if obj.is_textobject then
+			obj:sync_text_component()
+		end
 		local offset<const> = tc.offset
 		local x
 		local y

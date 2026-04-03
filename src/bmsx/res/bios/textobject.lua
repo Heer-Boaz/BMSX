@@ -3,19 +3,14 @@
 
 local worldobject<const> = require('worldobject')
 local components<const> = require('components')
-local scratchrecordbatch<const> = require('scratchrecordbatch')
 local wrap_text_lines<const> = require('util/wrap_text_lines')
 
 local textobject<const> = {}
 textobject.__index = textobject
 setmetatable(textobject, { __index = worldobject })
-local textobject_draw_scratch_items<const> = scratchrecordbatch.new(3):reserve(3)
-local normal_bg_color<const> = textobject_draw_scratch_items[1]
-local highlight_bg_color<const> = textobject_draw_scratch_items[2]
-local highlight_rect_options<const> = textobject_draw_scratch_items[3]
 
-local highlight_move_timeline_id<const> = 'textobject.highlight.move'
-local highlight_vibe_timeline_id<const> = 'textobject.highlight.vibe'
+local highlight_move_timeline_id<const> = 'hmove'
+local highlight_vibe_timeline_id<const> = 'hvibe'
 local highlight_move_in_frames<const> = 6
 local highlight_move_settle_frames<const> = 3
 local highlight_move_overshoot<const> = 0.12
@@ -29,6 +24,76 @@ local measure_line_width<const> = function(font, line)
 		width = width + glyph.advance
 	end
 	return width
+end
+
+local append_wrapped_logical_line<const> = function(wrapped_lines, wrapped_line_to_logical_line, logical_line_index, line, max_chars)
+	if string.len(line) == 0 then
+		wrapped_lines[#wrapped_lines + 1] = ''
+		wrapped_line_to_logical_line[#wrapped_line_to_logical_line + 1] = logical_line_index
+		return
+	end
+	local line_chunks<const> = wrap_text_lines(line, max_chars)
+	for i = 1, #line_chunks do
+		wrapped_lines[#wrapped_lines + 1] = line_chunks[i]
+		wrapped_line_to_logical_line[#wrapped_line_to_logical_line + 1] = logical_line_index
+	end
+end
+
+local build_wrapped_lines<const> = function(text_or_lines, max_chars)
+	local wrapped_lines<const> = {}
+	local wrapped_line_to_logical_line<const> = {}
+	if type(text_or_lines) == 'string' then
+		local line_start = 1
+		local logical_line_index = 1
+		local text_length<const> = string.len(text_or_lines)
+		if text_length == 0 then
+			wrapped_lines[1] = ''
+			wrapped_line_to_logical_line[1] = 1
+			return wrapped_lines, wrapped_line_to_logical_line
+		end
+		while true do
+			local newline_index<const> = string.find(text_or_lines, '\n', line_start, true)
+			if newline_index == nil then
+				append_wrapped_logical_line(
+					wrapped_lines,
+					wrapped_line_to_logical_line,
+					logical_line_index,
+					string.sub(text_or_lines, line_start, text_length),
+					max_chars
+				)
+				break
+			end
+			append_wrapped_logical_line(
+				wrapped_lines,
+				wrapped_line_to_logical_line,
+				logical_line_index,
+				string.sub(text_or_lines, line_start, newline_index - 1),
+				max_chars
+			)
+			logical_line_index = logical_line_index + 1
+			line_start = newline_index + 1
+			if line_start > text_length then
+				append_wrapped_logical_line(wrapped_lines, wrapped_line_to_logical_line, logical_line_index, '', max_chars)
+				break
+			end
+		end
+		return wrapped_lines, wrapped_line_to_logical_line
+	end
+	if #text_or_lines == 0 then
+		wrapped_lines[1] = ''
+		wrapped_line_to_logical_line[1] = 1
+		return wrapped_lines, wrapped_line_to_logical_line
+	end
+	for logical_line_index = 1, #text_or_lines do
+		append_wrapped_logical_line(
+			wrapped_lines,
+			wrapped_line_to_logical_line,
+			logical_line_index,
+			text_or_lines[logical_line_index],
+			max_chars
+		)
+	end
+	return wrapped_lines, wrapped_line_to_logical_line
 end
 
 local build_highlight_move_frames<const> = function(params)
@@ -62,6 +127,7 @@ function textobject.new(opts)
 	opts = opts or {}
 	opts.type_name = 'textobject'
 	local self<const> = setmetatable(worldobject.new(opts), textobject)
+	self.is_textobject = true
 	self.text = { '' }
 	self.full_text_lines = { '' }
 	self.displayed_lines = { '' }
@@ -85,15 +151,27 @@ function textobject.new(opts)
 	self.is_typing = false
 	self.text_color = { r = 1, g = 1, b = 1, a = 1 }
 	self.highlight_color = { r = 0, g = 0, b = 0.5, a = 1 }
+	self.normal_bg_color = { r = 0, g = 0, b = 0, a = 1 }
+	self.highlight_bg_color = { r = 0, g = 0, b = 0.5, a = 1 }
 	self.font = opts.font or get_default_font()
-	self.dimensions = opts.dimensions or opts.dims or { left = 0, top = 0, right = display_width(), bottom = display_height() }
+	self.dimensions = opts.dimensions or { left = 0, top = 0, right = display_width(), bottom = display_height() }
 	self.centered_block_x = 0
 	self.char_width = opts.char_width or self.font.glyphs['a'].width
 	self.line_height = opts.line_height or self.font.line_height
+	self.text_offset = { x = 0, y = self.dimensions.top, z = 1 }
 	self:set_dimensions(self.dimensions)
+	self.text_component = components.textcomponent.new({
+		text = self.text,
+		font = self.font,
+		color = self.text_color,
+		background_color = self.normal_bg_color,
+		offset = self.text_offset,
+		layer = self.layer,
+	})
+	self:add_component(self.text_component)
 	self.custom_visual = components.customvisualcomponent.new({
 		producer = function()
-			self:draw()
+			self:submit_highlight()
 		end,
 	})
 	self:add_component(self.custom_visual)
@@ -139,12 +217,14 @@ function textobject.new(opts)
 		},
 	}))
 	self:play_timeline(highlight_vibe_timeline_id, { rewind = true, snap_to_start = true })
+	self:sync_text_component()
 	return self
 end
 
 function textobject:set_dimensions(rect)
 	self.dimensions = rect
 	self.maximum_characters_per_line = math.floor((rect.right - rect.left) / self.char_width)
+	self.text_offset.y = rect.top - self.y
 	self:recenter_text_block()
 end
 
@@ -162,6 +242,7 @@ end
 
 function textobject:update_displayed_text()
 	self.text = self.displayed_lines
+	self.text_component.text = self.displayed_lines
 end
 
 function textobject:compute_highlight_block()
@@ -172,7 +253,7 @@ function textobject:compute_highlight_block()
 	local target_line<const> = highlighted + 1
 	local first = nil
 	local last
-	for i = 1, #self.text do
+	for i = 1, #self.wrapped_line_to_logical_line do
 		if self.wrapped_line_to_logical_line[i] == target_line then
 			if first == nil then
 				first = i
@@ -242,17 +323,12 @@ function textobject:set_text(text_or_lines, opts)
 	if typed == nil then
 		typed = true
 	end
-	if type(text_or_lines) == 'string' then
-		self.full_text_lines, self.wrapped_line_to_logical_line = wrap_text_lines(text_or_lines, self.maximum_characters_per_line)
-	else
-		local joined<const> = table.concat(text_or_lines, '\n')
-		self.full_text_lines, self.wrapped_line_to_logical_line = wrap_text_lines(joined, self.maximum_characters_per_line)
-	end
+	self.full_text_lines, self.wrapped_line_to_logical_line = build_wrapped_lines(text_or_lines, self.maximum_characters_per_line)
 	self:recenter_text_block()
 	if typed and not snap then
 		self.displayed_lines = {}
 		for i = 1, #self.full_text_lines do
-			self.displayed_lines[i] = nil
+			self.displayed_lines[i] = ''
 		end
 		self.current_line_index = 0
 		self.current_char_index = 0
@@ -280,7 +356,7 @@ function textobject:type_next()
 	end
 	if self.current_line_index >= #self.full_text_lines then
 		self.is_typing = false
-		self.events:emit('text.typing.done', { totallines = #self.full_text_lines })
+		self.events:emit('done', { totallines = #self.full_text_lines })
 		return
 	end
 	local line_index<const> = self.current_line_index + 1
@@ -291,36 +367,41 @@ function textobject:type_next()
 		self.displayed_lines[line_index] = self.displayed_lines[line_index] .. char
 		self.current_char_index = self.current_char_index + 1
 		self:update_displayed_text()
-		self.events:emit('text.typing.char', { char = char, lineindex = self.current_line_index, charindex = self.current_char_index - 1 })
+		self.events:emit('char', { char = char, lineindex = self.current_line_index, charindex = self.current_char_index - 1 })
 		return
 	end
 	self.current_line_index = self.current_line_index + 1
 	self.current_char_index = 0
 	if self.current_line_index >= #self.full_text_lines then
 		self.is_typing = false
-		self.events:emit('text.typing.done', { totallines = #self.full_text_lines })
+		self.events:emit('done', { totallines = #self.full_text_lines })
 	end
 	self:update_displayed_text()
 end
 
-function textobject:draw()
-	if not self.visible then
-		return
-	end
+function textobject:sync_text_component()
+	local text_color<const> = self.text_color
+	local normal_bg_color<const> = self.normal_bg_color
+	normal_bg_color.a = text_color.a
+	self.text_offset.x = self.centered_block_x - self.x
+	self.text_offset.y = self.dimensions.top - self.y
+	self.text_component.text = self.text
+	self.text_component.font = self.font
+	self.text_component.color = text_color
+	self.text_component.background_color = normal_bg_color
+	self.text_component.layer = self.layer
+end
+
+function textobject:submit_highlight()
 	self:update_highlight_animation()
 	local dims<const> = self.dimensions
 	local text_color<const> = self.text_color
 	local highlight<const> = self.highlight_color
-	local line_height<const> = self.line_height
-	local bg_alpha<const> = text_color.a
-	normal_bg_color.r = 0
-	normal_bg_color.g = 0
-	normal_bg_color.b = 0
-	normal_bg_color.a = bg_alpha
+	local highlight_bg_color<const> = self.highlight_bg_color
 	highlight_bg_color.r = highlight.r
 	highlight_bg_color.g = highlight.g
 	highlight_bg_color.b = highlight.b
-	highlight_bg_color.a = highlight.a * bg_alpha
+	highlight_bg_color.a = highlight.a * text_color.a
 	local highlighted_logical_line<const> = self.highlighted_line_index
 	if highlighted_logical_line ~= nil and self.highlight_anim_y ~= nil then
 		local margin<const> = self.char_width / 2
@@ -328,7 +409,6 @@ function textobject:draw()
 		local offset_x<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_x or 0
 		local offset_y<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
 		local padded<const> = margin * scale
-		highlight_rect_options.layer = self.layer
 		memwrite(
 			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
 			sys_vdp_cmd_fill_rect,
@@ -337,7 +417,7 @@ function textobject:draw()
 			dims.left - padded + offset_x,
 			self.highlight_anim_y - padded + offset_y,
 			dims.right + padded + offset_x,
-			self.highlight_anim_y + self.highlight_anim_h - padded + offset_y,
+			self.highlight_anim_y + self.highlight_anim_h + padded + offset_y,
 			self.z,
 			self.layer,
 			highlight_bg_color.r,
@@ -346,7 +426,6 @@ function textobject:draw()
 			highlight_bg_color.a
 		)
 	end
-
 end
 
 return textobject
