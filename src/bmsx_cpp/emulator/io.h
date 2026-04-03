@@ -7,8 +7,9 @@ namespace bmsx {
 /**
  * Runtime I/O memory layout constants.
  *
- * The runtime exposes a memory-mapped register bank followed by a payload
- * staging area for variable-length submit data.
+ * The runtime exposes a memory-mapped register bank.
+ * Variable-length VDP submit data lives in CPU RAM and is pushed through
+ * the VDP FIFO or submitted via the fixed VDP command doorbell.
  */
 
 // I/O command codes
@@ -41,8 +42,10 @@ constexpr int IO_VDP_RD_STATUS_INDEX = IO_VDP_BASE_INDEX + 7;
 constexpr int IO_VDP_RD_DATA_INDEX = IO_VDP_BASE_INDEX + 8;
 constexpr int IO_VDP_CMD_INDEX = IO_VDP_BASE_INDEX + 9;
 constexpr int IO_VDP_CMD_ARG0_INDEX = IO_VDP_BASE_INDEX + 10;
-constexpr int IO_VDP_CMD_ARG_COUNT = 18;
-constexpr int IO_VDP_SIZE = 10 + IO_VDP_CMD_ARG_COUNT;
+constexpr int IO_VDP_CMD_ARG_COUNT = static_cast<int>(VDP_CMD_ARG_COUNT);
+constexpr int IO_VDP_FIFO_INDEX = IO_VDP_CMD_ARG0_INDEX + IO_VDP_CMD_ARG_COUNT;
+constexpr int IO_VDP_FIFO_CTRL_INDEX = IO_VDP_FIFO_INDEX + 1;
+constexpr int IO_VDP_SIZE = 12 + IO_VDP_CMD_ARG_COUNT;
 
 constexpr int IO_IRQ_BASE_INDEX = IO_VDP_BASE_INDEX + IO_VDP_SIZE;
 constexpr int IO_IRQ_FLAGS_INDEX = IO_IRQ_BASE_INDEX;
@@ -100,6 +103,8 @@ constexpr uint32_t IO_VDP_RD_STATUS = IO_BASE + IO_VDP_RD_STATUS_INDEX * IO_WORD
 constexpr uint32_t IO_VDP_RD_DATA = IO_BASE + IO_VDP_RD_DATA_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_CMD = IO_BASE + IO_VDP_CMD_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_CMD_ARG0 = IO_BASE + IO_VDP_CMD_ARG0_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_VDP_FIFO = IO_BASE + IO_VDP_FIFO_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_VDP_FIFO_CTRL = IO_BASE + IO_VDP_FIFO_CTRL_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_VDP_STATUS = IO_BASE + IO_VDP_STATUS_INDEX * IO_WORD_SIZE;
 
 constexpr uint32_t IO_IRQ_BASE = IO_BASE + IO_IRQ_BASE_INDEX * IO_WORD_SIZE;
@@ -132,6 +137,10 @@ constexpr uint32_t IRQ_REINIT = 1 << 5;
 constexpr uint32_t IRQ_NEWGAME = 1 << 6;
 
 constexpr uint32_t VDP_STATUS_VBLANK = 1u << 0u;
+constexpr uint32_t VDP_STATUS_SUBMIT_BUSY = 1u << 1u;
+// Sticky latch: set when a VDP submit attempt is rejected because the submit path is busy,
+// and cleared only when a later VDP submit attempt is accepted.
+constexpr uint32_t VDP_STATUS_SUBMIT_REJECTED = 1u << 2u;
 
 constexpr uint32_t DMA_CTRL_START = 1 << 0;
 constexpr uint32_t DMA_CTRL_STRICT = 1 << 1;
@@ -139,6 +148,7 @@ constexpr uint32_t DMA_STATUS_BUSY = 1 << 0;
 constexpr uint32_t DMA_STATUS_DONE = 1 << 1;
 constexpr uint32_t DMA_STATUS_ERROR = 1 << 2;
 constexpr uint32_t DMA_STATUS_CLIPPED = 1 << 3;
+constexpr uint32_t DMA_STATUS_REJECTED = 1 << 4;
 
 constexpr uint32_t IMG_CTRL_START = 1 << 0;
 constexpr uint32_t IMG_STATUS_BUSY = 1 << 0;
@@ -150,5 +160,6 @@ constexpr uint32_t VDP_ATLAS_ID_NONE = 0xffffffffu;
 constexpr uint32_t VDP_RD_MODE_RGBA8888 = 0u;
 constexpr uint32_t VDP_RD_STATUS_READY = 1u << 0u;
 constexpr uint32_t VDP_RD_STATUS_OVERFLOW = 1u << 1u;
+constexpr uint32_t VDP_FIFO_CTRL_SEAL = 1u << 0u;
 
 } // namespace bmsx

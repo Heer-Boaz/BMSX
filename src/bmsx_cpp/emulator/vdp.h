@@ -19,6 +19,7 @@ class GameView;
 struct ImgAsset;
 class ImgDecController;
 class BFont;
+struct VdpGles2Blitter;
 
 class VDP : public Memory::VramWriter, public Memory::VdpIoHandler {
 public:
@@ -31,15 +32,24 @@ public:
 	void writeVram(uint32_t addr, const u8* data, size_t length) override;
 	void readVram(uint32_t addr, u8* out, size_t length) const override;
 	void beginFrame();
+	bool canAcceptSubmittedFrame() const { return !m_pendingFrameOccupied; }
+	void beginSubmittedFrame();
+	void cancelSubmittedFrame();
+	void sealSubmittedFrame();
+	void advanceWork(int workUnits);
+	void presentReadyFrameOnVblankEdge();
 	void enqueueClear(const Color& color);
 	void enqueueBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight = 0.0f);
 	void enqueueCopyRect(i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, f32 z, Layer2D layer);
 	void enqueueFillRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color);
-	void enqueueDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness);
-	void enqueueDrawRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color);
-	void enqueueDrawPoly(const std::vector<f32>& points, f32 z, const Color& color, f32 thickness, Layer2D layer);
-	void enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer);
-	void enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
+		void enqueueDrawLine(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color, f32 thickness);
+		void enqueueDrawRect(f32 x0, f32 y0, f32 x1, f32 y1, f32 z, Layer2D layer, const Color& color);
+		void enqueueDrawPoly(const std::vector<f32>& points, f32 z, const Color& color, f32 thickness, Layer2D layer);
+		void enqueueGlyphRun(const std::string& text, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer);
+		void enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer);
+		void enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
+		void enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
+		void enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer);
 	uint32_t frameBufferWidth() const { return m_frameBufferWidth; }
 	uint32_t frameBufferHeight() const { return m_frameBufferHeight; }
 	uint32_t readVdpStatus() override;
@@ -48,19 +58,20 @@ public:
 	void registerImageAssets(RuntimeAssets& assets, bool keepDecodedData);
 	void restoreVramSlotTextures();
 	void captureVramTextureSnapshots();
+	void shutdownBackendResources();
 	void flushAssetEdits();
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	void attachImgDecController(ImgDecController& controller);
 	void setSkyboxImages(const SkyboxImageIds& ids);
 	void clearSkybox();
 	std::optional<SkyboxImageIds> skyboxFaceIds() const;
-	void commitBuildFrame(int renderBudgetPerFrame);
+	void commitLiveVisualState();
 	void commitViewSnapshot(GameView& view);
 	uint32_t trackedUsedVramBytes() const;
 	uint32_t trackedTotalVramBytes() const;
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
 	int lastFrameCost() const { return m_lastFrameCost; }
-	bool lastFrameOverBudget() const { return m_lastFrameOverBudget; }
+	bool lastFrameHeld() const { return m_lastFrameHeld; }
 
 	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
 
@@ -139,6 +150,7 @@ private:
 		f32 dstY = 0.0f;
 		f32 scaleX = 1.0f;
 		f32 scaleY = 1.0f;
+		f32 parallaxWeight = 0.0f;
 		bool flipH = false;
 		bool flipV = false;
 		i32 srcX = 0;
@@ -170,29 +182,44 @@ private:
 	uint32_t m_vramBootSeed = 0;
 	uint32_t m_readBudgetBytes = 0;
 	bool m_readOverflow = false;
-	bool m_dirtySkybox = false;
-	bool m_visualStateDirty = false;
 	SkyboxImageIds m_skyboxFaceIds;
 	bool m_hasSkybox = false;
 	SkyboxImageIds m_committedSkyboxFaceIds;
 	bool m_committedHasSkybox = false;
 	i32 m_lastDitherType = 0;
 	i32 m_committedDitherType = 0;
-	std::vector<BlitterCommand> m_blitterQueue;
+	std::vector<BlitterCommand> m_buildBlitterQueue;
+	std::vector<BlitterCommand> m_activeBlitterQueue;
+	std::vector<BlitterCommand> m_pendingBlitterQueue;
 	std::vector<std::vector<GlyphRunGlyph>> m_glyphBufferPool;
 	std::vector<std::vector<TileRunBlit>> m_tileBufferPool;
 	u32 m_blitterSequence = 0;
-	bool m_blitterError = false;
 	int m_buildFrameCost = 0;
+	bool m_buildFrameOpen = false;
+	bool m_activeFrameOccupied = false;
+	bool m_activeFrameReady = false;
+	int m_activeFrameCost = 0;
+	int m_activeFrameWorkRemaining = 0;
+	bool m_pendingFrameOccupied = false;
+	int m_pendingFrameCost = 0;
+	std::array<i32, 2> m_activeSlotAtlasIds{{-1, -1}};
+	std::array<i32, 2> m_pendingSlotAtlasIds{{-1, -1}};
+	i32 m_activeDitherType = 0;
+	i32 m_pendingDitherType = 0;
+	SkyboxImageIds m_activeSkyboxFaceIds;
+	bool m_activeHasSkybox = false;
+	SkyboxImageIds m_pendingSkyboxFaceIds;
+	bool m_pendingHasSkybox = false;
 	std::array<i32, 2> m_committedSlotAtlasIds{{-1, -1}};
 	bool m_lastFrameCommitted = true;
 	int m_lastFrameCost = 0;
-	bool m_lastFrameOverBudget = false;
+	bool m_lastFrameHeld = false;
 	uint32_t m_frameBufferWidth = 0;
 	uint32_t m_frameBufferHeight = 0;
 	std::vector<u8> m_frameBufferPriorityLayer;
 	std::vector<f32> m_frameBufferPriorityZ;
 	std::vector<u32> m_frameBufferPrioritySeq;
+	std::vector<u8> m_displayFrameBufferCpuReadback;
 	std::array<Memory::ImageWriteEntry, 6> m_skyboxSlots{};
 	std::array<ReadSurface, 4> m_readSurfaces{};
 	std::array<ReadCache, 4> m_readCaches{};
@@ -220,13 +247,20 @@ private:
 	u32 nextBlitterSequence();
 	std::vector<GlyphRunGlyph> acquireGlyphBuffer();
 	std::vector<TileRunBlit> acquireTileBuffer();
-	void recycleBlitterBuffers();
-	void resetBlitterState();
+	void recycleBlitterBuffers(std::vector<BlitterCommand>& queue);
+	void resetBuildFrameState();
 	void enqueueBlitterCommand(BlitterCommand&& command);
 	int calculateVisibleRectCost(double width, double height) const;
 	int calculateAlphaMultiplier(const FrameBufferColor& color) const;
-	void executeBuildFrame();
-	void commitSkyboxImages();
+	void executeBlitterQueue(const std::vector<BlitterCommand>& queue);
+	void commitSkyboxImages(const SkyboxImageIds& ids);
+	void ensureDisplayFrameBufferTexture();
+	void swapFrameBufferPages();
+	void syncRenderFrameBufferToDisplayPage();
+	void assignBuildToSlot(bool active);
+	void promotePendingFrame();
+	void clearActiveFrame();
+	void commitActiveVisualState();
 	void initializeFrameBufferSurface();
 	void resetFrameBufferPriority();
 	BlitterSource resolveBlitterSource(u32 handle) const;
@@ -235,6 +269,9 @@ private:
 	void rasterizeFrameBufferLine(std::vector<u8>& pixels, f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, const FrameBufferColor& color, Layer2D layer, f32 z, u32 seq);
 	void rasterizeFrameBufferBlit(std::vector<u8>& pixels, const BlitterSource& source, f32 dstX, f32 dstY, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const FrameBufferColor& color, Layer2D layer, f32 z, u32 seq);
 	void copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 width, i32 height, i32 dstX, i32 dstY, Layer2D layer, f32 z, u32 seq);
+
+	friend struct VdpGles2Blitter;
+
 };
 
 } // namespace bmsx

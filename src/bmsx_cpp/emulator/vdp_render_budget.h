@@ -7,6 +7,8 @@ namespace bmsx {
 
 constexpr int VDP_RENDER_CLEAR_COST = 8;
 constexpr int VDP_RENDER_ALPHA_COST_MULTIPLIER = 2;
+constexpr int VDP_RENDER_TILE_RUN_SETUP_COST = 6;
+constexpr int VDP_RENDER_TILE_RUN_DENSITY_DIVISOR = 16;
 
 struct VdpClippedRect {
 	double width = 0.0;
@@ -67,6 +69,13 @@ inline int blitSpanBucket(double spanPx) {
 		return 2;
 	}
 	return 4;
+}
+
+inline int tileRunCost(int visibleRows, int visibleNonEmptyTiles) {
+	if (visibleRows <= 0 || visibleNonEmptyTiles <= 0) {
+		return 0;
+	}
+	return VDP_RENDER_TILE_RUN_SETUP_COST + visibleRows + static_cast<int>(std::ceil(static_cast<double>(visibleNonEmptyTiles) / static_cast<double>(VDP_RENDER_TILE_RUN_DENSITY_DIVISOR)));
 }
 
 inline VdpClippedRect computeClippedRect(double x0, double y0, double x1, double y1, double clipWidth, double clipHeight) {

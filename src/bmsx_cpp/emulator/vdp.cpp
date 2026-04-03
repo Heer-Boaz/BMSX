@@ -3,6 +3,10 @@
 #include "../rompack/runtime_assets.h"
 #include "../core/engine_core.h"
 #include "../core/font.h"
+#if BMSX_ENABLE_GLES2
+#include "../render/backend/gles2_backend.h"
+#endif
+#include "../render/shared/render_queues.h"
 #include "../render/texturemanager.h"
 #include "devices/imgdec_controller.h"
 #include <algorithm>
@@ -34,6 +38,828 @@ constexpr int VRAM_GARBAGE_FORCE_T0 = 120;
 constexpr int VRAM_GARBAGE_FORCE_T1 = 280;
 constexpr int VRAM_GARBAGE_FORCE_T2 = 480;
 constexpr int VRAM_GARBAGE_FORCE_T_DEN = 1000;
+constexpr u8 IMPLICIT_FRAME_CLEAR_RGBA[4] = {0u, 0u, 0u, 255u};
+
+#if BMSX_ENABLE_GLES2
+constexpr float VDP_GLES2_PRIMARY_ATLAS_ID = 0.0f;
+constexpr float VDP_GLES2_SECONDARY_ATLAS_ID = 1.0f;
+constexpr float VDP_GLES2_SOLID_ATLAS_ID = 253.0f;
+constexpr float VDP_GLES2_ENGINE_ATLAS_ID = 254.0f;
+
+struct VdpGles2Vertex {
+	f32 x = 0.0f;
+	f32 y = 0.0f;
+	f32 u = 0.0f;
+	f32 v = 0.0f;
+	f32 atlasId = 0.0f;
+	f32 r = 1.0f;
+	f32 g = 1.0f;
+	f32 b = 1.0f;
+	f32 a = 1.0f;
+};
+
+struct VdpGles2SurfaceInfo {
+	TextureHandle texture = nullptr;
+	f32 invWidth = 0.0f;
+	f32 invHeight = 0.0f;
+	f32 atlasId = 0.0f;
+};
+
+struct VdpGles2Host {
+	OpenGLES2Backend* backend = nullptr;
+	TextureHandle renderTexture = nullptr;
+	i32 width = 0;
+	i32 height = 0;
+	std::array<VdpGles2SurfaceInfo, VDP_RD_SURFACE_COUNT> surfaces{};
+	SpriteParallaxRig parallaxRig{};
+	f64 timeSeconds = 0.0;
+};
+
+struct VdpGles2Runtime {
+	OpenGLES2Backend* backend = nullptr;
+	GLuint program = 0;
+	GLint attribPosition = -1;
+	GLint attribUv = -1;
+	GLint attribAtlasId = -1;
+	GLint attribColor = -1;
+	GLint uniformLogicalSize = -1;
+	GLint uniformTexture0 = -1;
+	GLint uniformTexture1 = -1;
+	GLint uniformTexture2 = -1;
+	GLint uniformTexture3 = -1;
+	GLuint vertexBuffer = 0;
+	GLuint frameBufferObject = 0;
+	GLuint attachedColorTextureId = 0;
+	TextureHandle whiteTexture = nullptr;
+	TextureHandle copySnapshotTexture = nullptr;
+	i32 copySnapshotWidth = 0;
+	i32 copySnapshotHeight = 0;
+	std::vector<VdpGles2Vertex> vertices;
+};
+
+VdpGles2Runtime g_vdpGles2Runtime{};
+
+} // namespace
+
+struct VdpGles2Blitter {
+	static void pushVertex(
+		std::vector<VdpGles2Vertex>& vertices,
+		f32 x,
+		f32 y,
+		f32 u,
+		f32 v,
+		f32 atlasId,
+		const VDP::FrameBufferColor& color
+	);
+	static void appendQuadVertices(
+		std::vector<VdpGles2Vertex>& vertices,
+		f32 x00,
+		f32 y00,
+		f32 x01,
+		f32 y01,
+		f32 x10,
+		f32 y10,
+		f32 x11,
+		f32 y11,
+		f32 u0,
+		f32 v0,
+		f32 u1,
+		f32 v1,
+		f32 atlasId,
+		const VDP::FrameBufferColor& color
+	);
+	static void appendAxisAlignedQuadVertices(
+		std::vector<VdpGles2Vertex>& vertices,
+		f32 x,
+		f32 y,
+		f32 width,
+		f32 height,
+		f32 u0,
+		f32 v0,
+		f32 u1,
+		f32 v1,
+		f32 atlasId,
+		const VDP::FrameBufferColor& color
+	);
+	static void appendLineQuadVertices(
+		std::vector<VdpGles2Vertex>& vertices,
+		const VDP::BlitterCommand& command,
+		const VDP::FrameBufferColor& color
+	);
+	static void computeBlitParallax(
+		const VdpGles2Host& host,
+		const VDP::BlitterCommand& command,
+		f32& outScale,
+		f32& outOffsetY
+	);
+	static void appendBlitVertices(
+		const VdpGles2Host& host,
+		std::vector<VdpGles2Vertex>& vertices,
+		const VDP::BlitterCommand& command,
+		const VDP::BlitterSource& source,
+		f32 atlasId,
+		const VDP::FrameBufferColor& color
+	);
+	static bool execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& queue);
+	static void shutdown();
+};
+
+constexpr const char* kVdpGles2VertexShader = R"(
+precision mediump float;
+
+attribute vec2 a_position;
+attribute vec2 a_uv;
+attribute float a_atlas_id;
+attribute vec4 a_color;
+
+uniform vec2 u_logical_size;
+
+varying vec2 v_texcoord;
+varying vec4 v_color;
+varying float v_atlas_id;
+
+void main() {
+	vec2 clipSpace = ((a_position / u_logical_size) * 2.0 - 1.0) * vec2(1.0, -1.0);
+	gl_Position = vec4(clipSpace, 0.0, 1.0);
+	v_texcoord = a_uv;
+	v_color = a_color;
+	v_atlas_id = a_atlas_id;
+}
+)";
+
+constexpr const char* kVdpGles2FragmentShader = R"(
+precision mediump float;
+
+uniform sampler2D u_texture0;
+uniform sampler2D u_texture1;
+uniform sampler2D u_texture2;
+uniform sampler2D u_texture3;
+
+varying vec2 v_texcoord;
+varying vec4 v_color;
+varying float v_atlas_id;
+
+void main() {
+	vec4 texColor;
+	if (v_atlas_id < 0.5) {
+		texColor = texture2D(u_texture0, v_texcoord);
+	} else if (v_atlas_id < 1.5) {
+		texColor = texture2D(u_texture1, v_texcoord);
+	} else if (v_atlas_id > 253.5) {
+		texColor = texture2D(u_texture2, v_texcoord);
+	} else {
+		texColor = texture2D(u_texture3, v_texcoord);
+	}
+	gl_FragColor = texColor * v_color;
+}
+)";
+
+GLuint compileVdpGles2Shader(GLenum type, const char* source) {
+	const GLuint shader = glCreateShader(type);
+	glShaderSource(shader, 1, &source, nullptr);
+	glCompileShader(shader);
+	GLint ok = 0;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+	if (ok == GL_TRUE) {
+		return shader;
+	}
+	GLint logLength = 0;
+	glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
+	std::string log(static_cast<size_t>(std::max(logLength, 1)), '\0');
+	glGetShaderInfoLog(shader, logLength, nullptr, log.data());
+	glDeleteShader(shader);
+	throw BMSX_RUNTIME_ERROR("[VDP][GLES2] shader compile failed: " + log);
+}
+
+GLuint linkVdpGles2Program(GLuint vs, GLuint fs) {
+	const GLuint program = glCreateProgram();
+	glAttachShader(program, vs);
+	glAttachShader(program, fs);
+	glLinkProgram(program);
+	GLint ok = 0;
+	glGetProgramiv(program, GL_LINK_STATUS, &ok);
+	glDeleteShader(vs);
+	glDeleteShader(fs);
+	if (ok == GL_TRUE) {
+		return program;
+	}
+	GLint logLength = 0;
+	glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
+	std::string log(static_cast<size_t>(std::max(logLength, 1)), '\0');
+	glGetProgramInfoLog(program, logLength, nullptr, log.data());
+	glDeleteProgram(program);
+	throw BMSX_RUNTIME_ERROR("[VDP][GLES2] program link failed: " + log);
+}
+
+f32 smoothstep01(f32 value) {
+	const f32 t = std::clamp(value, 0.0f, 1.0f);
+	return t * t * (3.0f - 2.0f * t);
+}
+
+f32 sign01(f32 value) {
+	if (value > 0.0f) {
+		return 1.0f;
+	}
+	if (value < 0.0f) {
+		return -1.0f;
+	}
+	return 0.0f;
+}
+
+void destroyVdpGles2Runtime() {
+	auto& state = g_vdpGles2Runtime;
+	if (state.backend && state.whiteTexture) {
+		state.backend->destroyTexture(state.whiteTexture);
+		state.whiteTexture = nullptr;
+	}
+	if (state.backend && state.copySnapshotTexture) {
+		state.backend->destroyTexture(state.copySnapshotTexture);
+		state.copySnapshotTexture = nullptr;
+	}
+	state.copySnapshotWidth = 0;
+	state.copySnapshotHeight = 0;
+	if (state.vertexBuffer != 0) {
+		glDeleteBuffers(1, &state.vertexBuffer);
+		state.vertexBuffer = 0;
+	}
+	if (state.frameBufferObject != 0) {
+		glDeleteFramebuffers(1, &state.frameBufferObject);
+		state.frameBufferObject = 0;
+	}
+	if (state.program != 0) {
+		glDeleteProgram(state.program);
+		state.program = 0;
+	}
+	state.backend = nullptr;
+	state.attachedColorTextureId = 0;
+	state.vertices.clear();
+}
+
+void ensureVdpGles2Runtime(OpenGLES2Backend* backend) {
+	auto& state = g_vdpGles2Runtime;
+	if (state.backend == backend && state.program != 0) {
+		return;
+	}
+	if (state.program != 0) {
+		destroyVdpGles2Runtime();
+	}
+	state.backend = backend;
+	const GLuint vs = compileVdpGles2Shader(GL_VERTEX_SHADER, kVdpGles2VertexShader);
+	const GLuint fs = compileVdpGles2Shader(GL_FRAGMENT_SHADER, kVdpGles2FragmentShader);
+	state.program = linkVdpGles2Program(vs, fs);
+	state.attribPosition = glGetAttribLocation(state.program, "a_position");
+	state.attribUv = glGetAttribLocation(state.program, "a_uv");
+	state.attribAtlasId = glGetAttribLocation(state.program, "a_atlas_id");
+	state.attribColor = glGetAttribLocation(state.program, "a_color");
+	state.uniformLogicalSize = glGetUniformLocation(state.program, "u_logical_size");
+	state.uniformTexture0 = glGetUniformLocation(state.program, "u_texture0");
+	state.uniformTexture1 = glGetUniformLocation(state.program, "u_texture1");
+	state.uniformTexture2 = glGetUniformLocation(state.program, "u_texture2");
+	state.uniformTexture3 = glGetUniformLocation(state.program, "u_texture3");
+	glGenBuffers(1, &state.vertexBuffer);
+	glGenFramebuffers(1, &state.frameBufferObject);
+	state.whiteTexture = backend->createSolidTexture2D(1, 1, Color{1.0f, 1.0f, 1.0f, 1.0f});
+	glUseProgram(state.program);
+	glUniform1i(state.uniformTexture0, 0);
+	glUniform1i(state.uniformTexture1, 1);
+	glUniform1i(state.uniformTexture2, 2);
+	glUniform1i(state.uniformTexture3, 3);
+}
+
+TextureHandle ensureVdpGles2CopySnapshot(OpenGLES2Backend* backend, i32 width, i32 height) {
+	auto& state = g_vdpGles2Runtime;
+	if (state.copySnapshotTexture && state.copySnapshotWidth == width && state.copySnapshotHeight == height) {
+		return state.copySnapshotTexture;
+	}
+	TextureParams params;
+	params.srgb = true;
+	if (!state.copySnapshotTexture) {
+		state.copySnapshotTexture = backend->createTexture(nullptr, width, height, params);
+	} else {
+		state.copySnapshotTexture = backend->resizeTexture(state.copySnapshotTexture, width, height, params);
+	}
+	state.copySnapshotWidth = width;
+	state.copySnapshotHeight = height;
+	return state.copySnapshotTexture;
+}
+
+void bindVdpGles2Target(const VdpGles2Host& host) {
+	auto& state = g_vdpGles2Runtime;
+	host.backend->setRenderTarget(state.frameBufferObject, host.width, host.height);
+	auto* renderTexture = OpenGLES2Backend::asTexture(host.renderTexture);
+	if (state.attachedColorTextureId != renderTexture->id) {
+		glBindFramebuffer(GL_FRAMEBUFFER, state.frameBufferObject);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, renderTexture->id, 0);
+		const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+		if (status != GL_FRAMEBUFFER_COMPLETE) {
+			throw BMSX_RUNTIME_ERROR("[VDP][GLES2] framebuffer incomplete.");
+		}
+		state.attachedColorTextureId = renderTexture->id;
+	}
+}
+
+void VdpGles2Blitter::pushVertex(
+	std::vector<VdpGles2Vertex>& vertices,
+	f32 x,
+	f32 y,
+	f32 u,
+	f32 v,
+	f32 atlasId,
+	const VDP::FrameBufferColor& color
+) {
+	vertices.push_back(VdpGles2Vertex{
+		x,
+		y,
+		u,
+		v,
+		atlasId,
+		static_cast<f32>(color.r) / 255.0f,
+		static_cast<f32>(color.g) / 255.0f,
+		static_cast<f32>(color.b) / 255.0f,
+		static_cast<f32>(color.a) / 255.0f,
+	});
+}
+
+void VdpGles2Blitter::appendQuadVertices(
+	std::vector<VdpGles2Vertex>& vertices,
+	f32 x00,
+	f32 y00,
+	f32 x01,
+	f32 y01,
+	f32 x10,
+	f32 y10,
+	f32 x11,
+	f32 y11,
+	f32 u0,
+	f32 v0,
+	f32 u1,
+	f32 v1,
+	f32 atlasId,
+	const VDP::FrameBufferColor& color
+) {
+	pushVertex(vertices, x00, y00, u0, v0, atlasId, color);
+	pushVertex(vertices, x01, y01, u0, v1, atlasId, color);
+	pushVertex(vertices, x10, y10, u1, v0, atlasId, color);
+	pushVertex(vertices, x10, y10, u1, v0, atlasId, color);
+	pushVertex(vertices, x01, y01, u0, v1, atlasId, color);
+	pushVertex(vertices, x11, y11, u1, v1, atlasId, color);
+}
+
+void VdpGles2Blitter::appendAxisAlignedQuadVertices(
+	std::vector<VdpGles2Vertex>& vertices,
+	f32 x,
+	f32 y,
+	f32 width,
+	f32 height,
+	f32 u0,
+	f32 v0,
+	f32 u1,
+	f32 v1,
+	f32 atlasId,
+	const VDP::FrameBufferColor& color
+) {
+	appendQuadVertices(vertices, x, y, x, y + height, x + width, y, x + width, y + height, u0, v0, u1, v1, atlasId, color);
+}
+
+void VdpGles2Blitter::appendLineQuadVertices(
+	std::vector<VdpGles2Vertex>& vertices,
+	const VDP::BlitterCommand& command,
+	const VDP::FrameBufferColor& color
+) {
+	const f32 thickness = std::max(1.0f, std::round(command.thickness));
+	const f32 dx = command.x1 - command.x0;
+	const f32 dy = command.y1 - command.y0;
+	const f32 length = std::hypot(dx, dy);
+	if (length == 0.0f) {
+		const f32 half = thickness * 0.5f;
+		appendAxisAlignedQuadVertices(vertices, command.x0 - half, command.y0 - half, thickness, thickness, 0.0f, 0.0f, 1.0f, 1.0f, VDP_GLES2_SOLID_ATLAS_ID, color);
+		return;
+	}
+	const f32 tangentX = dx / length;
+	const f32 tangentY = dy / length;
+	const f32 normalX = -tangentY;
+	const f32 normalY = tangentX;
+	const f32 half = thickness * 0.5f;
+	const f32 originX = command.x0 - tangentX * half - normalX * half;
+	const f32 originY = command.y0 - tangentY * half - normalY * half;
+	appendQuadVertices(
+		vertices,
+		originX,
+		originY,
+		originX + normalX * thickness,
+		originY + normalY * thickness,
+		originX + dx + tangentX * thickness,
+		originY + dy + tangentY * thickness,
+		originX + dx + tangentX * thickness + normalX * thickness,
+		originY + dy + tangentY * thickness + normalY * thickness,
+		0.0f,
+		0.0f,
+		1.0f,
+		1.0f,
+		VDP_GLES2_SOLID_ATLAS_ID,
+		color
+	);
+}
+
+void VdpGles2Blitter::computeBlitParallax(
+	const VdpGles2Host& host,
+	const VDP::BlitterCommand& command,
+	f32& outScale,
+	f32& outOffsetY
+) {
+	const f32 dir = sign01(command.parallaxWeight);
+	if (dir == 0.0f) {
+		outScale = 1.0f;
+		outOffsetY = 0.0f;
+		return;
+	}
+	const f32 depth = smoothstep01(command.z);
+	const f32 weight = std::abs(command.parallaxWeight) * depth;
+	const f32 wobble = std::sin(static_cast<f32>(host.timeSeconds) * 2.2f) * 0.5f
+		+ std::sin(static_cast<f32>(host.timeSeconds) * 1.1f + 1.7f) * 0.5f;
+	outOffsetY = (host.parallaxRig.bias_px + wobble * host.parallaxRig.vy) * weight * host.parallaxRig.parallax_strength * dir;
+	const f32 flipWindowSeconds = std::max(host.parallaxRig.flip_window, 0.0001f);
+	const f32 hold = 0.2f * flipWindowSeconds;
+	const f32 flipU = std::clamp((host.parallaxRig.impact_t - hold) / std::max(flipWindowSeconds - hold, 0.0001f), 0.0f, 1.0f);
+	const f32 flipWindow = 1.0f - smoothstep01(flipU);
+	const f32 flip = 1.0f + ((-1.0f - 1.0f) * (flipWindow * host.parallaxRig.flip_strength));
+	outOffsetY *= flip;
+	const f32 baseScale = 1.0f + (host.parallaxRig.scale - 1.0f) * weight * host.parallaxRig.scale_strength;
+	const f32 impactSign = sign01(host.parallaxRig.impact);
+	const f32 impactMask = std::max(0.0f, dir * impactSign);
+	const f32 pulse = std::exp(-8.0f * host.parallaxRig.impact_t) * std::abs(host.parallaxRig.impact) * weight * impactMask;
+	outScale = baseScale + pulse;
+}
+
+void VdpGles2Blitter::appendBlitVertices(
+	const VdpGles2Host& host,
+	std::vector<VdpGles2Vertex>& vertices,
+	const VDP::BlitterCommand& command,
+	const VDP::BlitterSource& source,
+	f32 atlasId,
+	const VDP::FrameBufferColor& color
+) {
+	const auto& surface = host.surfaces[source.surfaceId];
+	const f32 dstWidth = std::max(1.0f, std::round(static_cast<f32>(source.width) * command.scaleX));
+	const f32 dstHeight = std::max(1.0f, std::round(static_cast<f32>(source.height) * command.scaleY));
+	f32 u0 = static_cast<f32>(source.srcX) * surface.invWidth;
+	f32 v0 = static_cast<f32>(source.srcY) * surface.invHeight;
+	f32 u1 = static_cast<f32>(source.srcX + source.width) * surface.invWidth;
+	f32 v1 = static_cast<f32>(source.srcY + source.height) * surface.invHeight;
+	if (command.flipH) {
+		std::swap(u0, u1);
+	}
+	if (command.flipV) {
+		std::swap(v0, v1);
+	}
+	const f32 x0 = std::round(command.dstX);
+	const f32 y0 = std::round(command.dstY);
+	const f32 centerX = x0 + dstWidth * 0.5f;
+	const f32 centerY = y0 + dstHeight * 0.5f;
+	f32 scale = 1.0f;
+	f32 offsetY = 0.0f;
+	computeBlitParallax(host, command, scale, offsetY);
+	auto transformPoint = [&](f32 x, f32 y, f32& outX, f32& outY) {
+		outX = (x - centerX) * scale + centerX;
+		outY = (y - centerY) * scale + centerY + offsetY;
+	};
+	f32 px00 = 0.0f;
+	f32 py00 = 0.0f;
+	f32 px01 = 0.0f;
+	f32 py01 = 0.0f;
+	f32 px10 = 0.0f;
+	f32 py10 = 0.0f;
+	f32 px11 = 0.0f;
+	f32 py11 = 0.0f;
+	transformPoint(x0, y0, px00, py00);
+	transformPoint(x0, y0 + dstHeight, px01, py01);
+	transformPoint(x0 + dstWidth, y0, px10, py10);
+	transformPoint(x0 + dstWidth, y0 + dstHeight, px11, py11);
+	appendQuadVertices(vertices, px00, py00, px01, py01, px10, py10, px11, py11, u0, v0, u1, v1, atlasId, color);
+}
+
+void bindVdpVertexLayout(const VdpGles2Runtime& state) {
+	glBindBuffer(GL_ARRAY_BUFFER, state.vertexBuffer);
+	glEnableVertexAttribArray(static_cast<GLuint>(state.attribPosition));
+	glEnableVertexAttribArray(static_cast<GLuint>(state.attribUv));
+	glEnableVertexAttribArray(static_cast<GLuint>(state.attribAtlasId));
+	glEnableVertexAttribArray(static_cast<GLuint>(state.attribColor));
+	glVertexAttribPointer(state.attribPosition, 2, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, x)));
+	glVertexAttribPointer(state.attribUv, 2, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, u)));
+	glVertexAttribPointer(state.attribAtlasId, 1, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, atlasId)));
+	glVertexAttribPointer(state.attribColor, 4, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, r)));
+}
+
+void bindVdpStandardTextures(const VdpGles2Host& host) {
+	host.backend->setActiveTextureUnit(0);
+	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_PRIMARY].texture);
+	host.backend->setActiveTextureUnit(1);
+	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_SECONDARY].texture);
+	host.backend->setActiveTextureUnit(2);
+	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_ENGINE].texture);
+	host.backend->setActiveTextureUnit(3);
+	host.backend->bindTexture2D(g_vdpGles2Runtime.whiteTexture);
+}
+
+void bindVdpSnapshotTextures(const VdpGles2Host& host, TextureHandle snapshotTexture) {
+	host.backend->setActiveTextureUnit(0);
+	host.backend->bindTexture2D(snapshotTexture);
+	host.backend->setActiveTextureUnit(1);
+	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_SECONDARY].texture);
+	host.backend->setActiveTextureUnit(2);
+	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_ENGINE].texture);
+	host.backend->setActiveTextureUnit(3);
+	host.backend->bindTexture2D(g_vdpGles2Runtime.whiteTexture);
+}
+
+void setupVdpDrawState(const VdpGles2Host& host) {
+	auto& state = g_vdpGles2Runtime;
+	bindVdpGles2Target(host);
+	glUseProgram(state.program);
+	glUniform2f(state.uniformLogicalSize, static_cast<f32>(host.width), static_cast<f32>(host.height));
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_STENCIL_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	bindVdpVertexLayout(state);
+}
+
+bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& queue) {
+	auto* view = EngineCore::instance().view();
+	if (view->backendType() != BackendType::OpenGLES2) {
+		return false;
+	}
+	auto* backend = static_cast<OpenGLES2Backend*>(view->backend());
+	ensureVdpGles2Runtime(backend);
+	auto* texmanager = EngineCore::instance().texmanager();
+	VdpGles2Host host;
+	host.backend = backend;
+	host.renderTexture = view->textures[FRAMEBUFFER_RENDER_TEXTURE_KEY];
+	host.width = static_cast<i32>(vdp.m_frameBufferWidth);
+	host.height = static_cast<i32>(vdp.m_frameBufferHeight);
+	host.parallaxRig = RenderQueues::spriteParallaxRig;
+	host.timeSeconds = EngineCore::instance().totalTime();
+	auto prepareSurface = [&](uint32_t surfaceId, f32 atlasId) {
+		auto& info = host.surfaces[surfaceId];
+		info.atlasId = atlasId;
+		const auto& surface = vdp.getReadSurface(surfaceId);
+		if (surface.textureKey.empty()) {
+			return;
+		}
+		info.texture = texmanager->getTextureByUri(surface.textureKey);
+		const auto& entry = vdp.m_memory.getAssetEntry(surface.assetId);
+		info.invWidth = 1.0f / static_cast<f32>(entry.regionW);
+		info.invHeight = 1.0f / static_cast<f32>(entry.regionH);
+	};
+	prepareSurface(VDP_RD_SURFACE_ENGINE, VDP_GLES2_ENGINE_ATLAS_ID);
+	prepareSurface(VDP_RD_SURFACE_PRIMARY, VDP_GLES2_PRIMARY_ATLAS_ID);
+	prepareSurface(VDP_RD_SURFACE_SECONDARY, VDP_GLES2_SECONDARY_ATLAS_ID);
+	prepareSurface(VDP_RD_SURFACE_FRAMEBUFFER, VDP_GLES2_PRIMARY_ATLAS_ID);
+	if (!host.renderTexture) {
+		throw BMSX_RUNTIME_ERROR("[VDP][GLES2] Missing framebuffer render texture.");
+	}
+	if (!host.surfaces[VDP_RD_SURFACE_ENGINE].texture) {
+		throw BMSX_RUNTIME_ERROR("[VDP][GLES2] Missing engine atlas texture.");
+	}
+	if (!host.surfaces[VDP_RD_SURFACE_PRIMARY].texture) {
+		throw BMSX_RUNTIME_ERROR("[VDP][GLES2] Missing primary atlas texture.");
+	}
+	if (!host.surfaces[VDP_RD_SURFACE_SECONDARY].texture) {
+		throw BMSX_RUNTIME_ERROR("[VDP][GLES2] Missing secondary atlas texture.");
+	}
+	auto clearFrame = [&](const VDP::FrameBufferColor& color) {
+		bindVdpGles2Target(host);
+		glDisable(GL_BLEND);
+		glClearColor(
+			static_cast<f32>(color.r) / 255.0f,
+			static_cast<f32>(color.g) / 255.0f,
+			static_cast<f32>(color.b) / 255.0f,
+			static_cast<f32>(color.a) / 255.0f
+		);
+		glClear(GL_COLOR_BUFFER_BIT);
+	};
+	auto& state = g_vdpGles2Runtime;
+	auto drawSortedSegment = [&](size_t start, size_t end) {
+		if (start >= end) {
+			return;
+		}
+		static std::vector<const VDP::BlitterCommand*> sortedCommands;
+		state.vertices.clear();
+		sortedCommands.clear();
+		size_t quadCount = 0;
+		for (size_t index = start; index < end; ++index) {
+			const auto& command = queue[index];
+			if (command.type == VDP::BlitterCommandType::Clear || command.type == VDP::BlitterCommandType::CopyRect) {
+				continue;
+			}
+			sortedCommands.push_back(&command);
+			switch (command.type) {
+				case VDP::BlitterCommandType::Blit:
+				case VDP::BlitterCommandType::FillRect:
+				case VDP::BlitterCommandType::DrawLine:
+					quadCount += 1u;
+					break;
+				case VDP::BlitterCommandType::GlyphRun:
+					quadCount += command.glyphs.size();
+					if (command.backgroundColor.has_value()) {
+						quadCount += command.glyphs.size();
+					}
+					break;
+				case VDP::BlitterCommandType::TileRun:
+					quadCount += command.tiles.size();
+					break;
+				case VDP::BlitterCommandType::Clear:
+				case VDP::BlitterCommandType::CopyRect:
+					break;
+			}
+		}
+		if (sortedCommands.empty()) {
+			return;
+		}
+		std::sort(
+			sortedCommands.begin(),
+			sortedCommands.end(),
+			[](const VDP::BlitterCommand* a, const VDP::BlitterCommand* b) {
+				if (a->layer != b->layer) {
+					return a->layer < b->layer;
+				}
+				if (a->z != b->z) {
+					return a->z < b->z;
+				}
+				return a->seq < b->seq;
+			}
+		);
+		state.vertices.reserve(quadCount * 6u);
+		const VDP::FrameBufferColor white{255u, 255u, 255u, 255u};
+		for (const VDP::BlitterCommand* command : sortedCommands) {
+			switch (command->type) {
+				case VDP::BlitterCommandType::Blit:
+					appendBlitVertices(
+						host,
+						state.vertices,
+						*command,
+						command->source,
+						host.surfaces[command->source.surfaceId].atlasId,
+						command->color
+					);
+					break;
+				case VDP::BlitterCommandType::FillRect: {
+					f32 left = std::round(command->x0);
+					f32 top = std::round(command->y0);
+					f32 right = std::round(command->x1);
+					f32 bottom = std::round(command->y1);
+					if (right < left) {
+						std::swap(left, right);
+					}
+					if (bottom < top) {
+						std::swap(top, bottom);
+					}
+					if (left != right && top != bottom) {
+						appendAxisAlignedQuadVertices(
+							state.vertices,
+							left,
+							top,
+							right - left,
+							bottom - top,
+							0.0f,
+							0.0f,
+							1.0f,
+							1.0f,
+							VDP_GLES2_SOLID_ATLAS_ID,
+							command->color
+						);
+					}
+					break;
+				}
+				case VDP::BlitterCommandType::DrawLine:
+					appendLineQuadVertices(state.vertices, *command, command->color);
+					break;
+				case VDP::BlitterCommandType::GlyphRun:
+					if (command->backgroundColor.has_value()) {
+						for (const auto& glyph : command->glyphs) {
+							appendAxisAlignedQuadVertices(
+								state.vertices,
+								glyph.dstX,
+								glyph.dstY,
+								static_cast<f32>(glyph.advance),
+								static_cast<f32>(command->lineHeight),
+								0.0f,
+								0.0f,
+								1.0f,
+								1.0f,
+								VDP_GLES2_SOLID_ATLAS_ID,
+								*command->backgroundColor
+							);
+						}
+					}
+					for (const auto& glyph : command->glyphs) {
+						appendBlitVertices(
+							host,
+							state.vertices,
+							*command,
+							glyph,
+							host.surfaces[glyph.surfaceId].atlasId,
+							command->color
+						);
+					}
+					break;
+				case VDP::BlitterCommandType::TileRun:
+					for (const auto& tile : command->tiles) {
+						appendBlitVertices(
+							host,
+							state.vertices,
+							*command,
+							tile,
+							host.surfaces[tile.surfaceId].atlasId,
+							white
+						);
+					}
+					break;
+				case VDP::BlitterCommandType::Clear:
+				case VDP::BlitterCommandType::CopyRect:
+					break;
+			}
+		}
+		if (state.vertices.empty()) {
+			return;
+		}
+		setupVdpDrawState(host);
+		bindVdpStandardTextures(host);
+		glBufferData(
+			GL_ARRAY_BUFFER,
+			static_cast<GLsizeiptr>(state.vertices.size() * sizeof(VdpGles2Vertex)),
+			state.vertices.data(),
+			GL_STREAM_DRAW
+		);
+		glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(state.vertices.size()));
+	};
+	auto drawCopyRect = [&](const VDP::BlitterCommand& command) {
+		const VDP::FrameBufferColor white{255u, 255u, 255u, 255u};
+		TextureHandle snapshot = ensureVdpGles2CopySnapshot(backend, host.width, host.height);
+		backend->copyTexture(host.renderTexture, snapshot, host.width, host.height);
+		state.vertices.clear();
+		state.vertices.reserve(6u);
+		appendAxisAlignedQuadVertices(
+			state.vertices,
+			std::round(command.dstX),
+			std::round(command.dstY),
+			static_cast<f32>(command.width),
+			static_cast<f32>(command.height),
+			static_cast<f32>(command.srcX) / static_cast<f32>(host.width),
+			static_cast<f32>(command.srcY) / static_cast<f32>(host.height),
+			static_cast<f32>(command.srcX + command.width) / static_cast<f32>(host.width),
+			static_cast<f32>(command.srcY + command.height) / static_cast<f32>(host.height),
+			VDP_GLES2_PRIMARY_ATLAS_ID,
+			white
+		);
+		setupVdpDrawState(host);
+		bindVdpSnapshotTextures(host, snapshot);
+		glDisable(GL_BLEND);
+		glBufferData(
+			GL_ARRAY_BUFFER,
+			static_cast<GLsizeiptr>(state.vertices.size() * sizeof(VdpGles2Vertex)),
+			state.vertices.data(),
+			GL_STREAM_DRAW
+		);
+		glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(state.vertices.size()));
+	};
+	if (queue.front().type != VDP::BlitterCommandType::Clear) {
+		clearFrame(VDP::FrameBufferColor{
+			IMPLICIT_FRAME_CLEAR_RGBA[0],
+			IMPLICIT_FRAME_CLEAR_RGBA[1],
+			IMPLICIT_FRAME_CLEAR_RGBA[2],
+			IMPLICIT_FRAME_CLEAR_RGBA[3],
+		});
+	}
+	size_t segmentStart = 0u;
+	for (size_t index = 0; index < queue.size(); ++index) {
+		const auto& command = queue[index];
+		if (command.type == VDP::BlitterCommandType::Clear) {
+			drawSortedSegment(segmentStart, index);
+			clearFrame(command.color);
+			segmentStart = index + 1u;
+			continue;
+		}
+		if (command.type == VDP::BlitterCommandType::CopyRect) {
+			drawSortedSegment(segmentStart, index);
+			drawCopyRect(command);
+			segmentStart = index + 1u;
+		}
+	}
+	drawSortedSegment(segmentStart, queue.size());
+	vdp.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+	return true;
+}
+
+void VdpGles2Blitter::shutdown() {
+	destroyVdpGles2Runtime();
+}
+#endif
+
+namespace {
 
 struct OctaveSpec {
 	uint32_t shift;
@@ -261,7 +1087,9 @@ VDP::VDP(Memory& memory)
 	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES) {
 	m_memory.setVramWriter(this);
 	m_memory.setVdpIoHandler(this);
-	m_blitterQueue.reserve(BLITTER_FIFO_CAPACITY);
+	m_buildBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
+	m_activeBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
+	m_pendingBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
 	m_vramMachineSeed = nextVramMachineSeed();
 	m_vramBootSeed = nextVramBootSeed();
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
@@ -395,8 +1223,8 @@ std::vector<VDP::TileRunBlit> VDP::acquireTileBuffer() {
 	return tiles;
 }
 
-void VDP::recycleBlitterBuffers() {
-	for (auto& command : m_blitterQueue) {
+void VDP::recycleBlitterBuffers(std::vector<BlitterCommand>& queue) {
+	for (auto& command : queue) {
 		if (command.type == BlitterCommandType::GlyphRun) {
 			command.glyphs.clear();
 			m_glyphBufferPool.push_back(std::move(command.glyphs));
@@ -407,21 +1235,22 @@ void VDP::recycleBlitterBuffers() {
 	}
 }
 
-void VDP::resetBlitterState() {
-	recycleBlitterBuffers();
-	m_blitterQueue.clear();
-	m_blitterSequence = 0u;
-	m_blitterError = false;
+void VDP::resetBuildFrameState() {
+	recycleBlitterBuffers(m_buildBlitterQueue);
+	m_buildBlitterQueue.clear();
 	m_buildFrameCost = 0;
+	m_buildFrameOpen = false;
 }
 
 void VDP::enqueueBlitterCommand(BlitterCommand&& command) {
-	if (m_blitterQueue.size() >= BLITTER_FIFO_CAPACITY) {
-		m_blitterError = true;
+	if (!m_buildFrameOpen) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] No submitted frame is open.");
+	}
+	if (m_buildBlitterQueue.size() >= BLITTER_FIFO_CAPACITY) {
 		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Blitter FIFO overflow (4096 commands).");
 	}
 	m_buildFrameCost += command.renderCost;
-	m_blitterQueue.push_back(std::move(command));
+	m_buildBlitterQueue.push_back(std::move(command));
 }
 
 int VDP::calculateVisibleRectCost(double width, double height) const {
@@ -432,14 +1261,198 @@ int VDP::calculateAlphaMultiplier(const FrameBufferColor& color) const {
 	return color.a < 255u ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
 }
 
+void VDP::ensureDisplayFrameBufferTexture() {
+	auto* texmanager = EngineCore::instance().texmanager();
+	TextureHandle handle = texmanager->getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
+	if (!handle) {
+		TextureParams params;
+		const TextureKey key = texmanager->makeKey(FRAMEBUFFER_TEXTURE_KEY, params);
+		handle = texmanager->getOrCreateTexture(key, m_vramSeedPixel.data(), 1, 1, params);
+	}
+	handle = texmanager->resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, static_cast<i32>(m_frameBufferWidth), static_cast<i32>(m_frameBufferHeight));
+	EngineCore::instance().view()->textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
+}
+
+void VDP::swapFrameBufferPages() {
+	auto* texmanager = EngineCore::instance().texmanager();
+	texmanager->swapTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	auto* view = EngineCore::instance().view();
+	view->textures[FRAMEBUFFER_TEXTURE_KEY] = texmanager->getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
+	view->textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = texmanager->getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	auto& renderSlot = getVramSlotByTextureKey(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	std::swap(renderSlot.cpuReadback, m_displayFrameBufferCpuReadback);
+	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+}
+
+void VDP::syncRenderFrameBufferToDisplayPage() {
+	auto& renderSlot = getVramSlotByTextureKey(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	if (m_displayFrameBufferCpuReadback.size() != renderSlot.cpuReadback.size()) {
+		m_displayFrameBufferCpuReadback.resize(renderSlot.cpuReadback.size());
+	}
+	std::memcpy(m_displayFrameBufferCpuReadback.data(), renderSlot.cpuReadback.data(), renderSlot.cpuReadback.size());
+	auto* texmanager = EngineCore::instance().texmanager();
+	texmanager->copyTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, static_cast<i32>(m_frameBufferWidth), static_cast<i32>(m_frameBufferHeight));
+}
+
+void VDP::beginSubmittedFrame() {
+	if (m_buildFrameOpen) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Submitted frame already open.");
+	}
+	resetBuildFrameState();
+	m_blitterSequence = 0u;
+	m_buildFrameOpen = true;
+}
+
+void VDP::cancelSubmittedFrame() {
+	resetBuildFrameState();
+}
+
+void VDP::assignBuildToSlot(bool active) {
+	if (!m_buildFrameOpen) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] No submitted frame is open.");
+	}
+	auto& targetQueue = active ? m_activeBlitterQueue : m_pendingBlitterQueue;
+	if (!targetQueue.empty()) {
+		throw BMSX_RUNTIME_ERROR(active
+			? "[BmsxVDP] active frame queue is not empty."
+			: "[BmsxVDP] pending frame queue is not empty.");
+	}
+	targetQueue.swap(m_buildBlitterQueue);
+	const int frameCost = (!targetQueue.empty() && targetQueue.front().type != BlitterCommandType::Clear)
+		? (m_buildFrameCost + VDP_RENDER_CLEAR_COST)
+		: m_buildFrameCost;
+	if (active) {
+		m_activeFrameOccupied = true;
+		m_activeFrameCost = frameCost;
+		m_activeFrameWorkRemaining = frameCost;
+		m_activeFrameReady = frameCost == 0;
+		m_activeDitherType = m_lastDitherType;
+		m_activeSlotAtlasIds = m_slotAtlasIds;
+		m_activeSkyboxFaceIds = m_skyboxFaceIds;
+		m_activeHasSkybox = m_hasSkybox;
+	} else {
+		m_pendingFrameOccupied = true;
+		m_pendingFrameCost = frameCost;
+		m_pendingDitherType = m_lastDitherType;
+		m_pendingSlotAtlasIds = m_slotAtlasIds;
+		m_pendingSkyboxFaceIds = m_skyboxFaceIds;
+		m_pendingHasSkybox = m_hasSkybox;
+	}
+	m_buildFrameCost = 0;
+	m_buildFrameOpen = false;
+}
+
+void VDP::sealSubmittedFrame() {
+	if (!m_buildFrameOpen) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] No submitted frame is open.");
+	}
+	if (!m_activeFrameOccupied) {
+		assignBuildToSlot(true);
+		return;
+	}
+	if (!m_pendingFrameOccupied) {
+		assignBuildToSlot(false);
+		return;
+	}
+	throw BMSX_RUNTIME_ERROR("[BmsxVDP] Submit slot busy.");
+}
+
+void VDP::promotePendingFrame() {
+	if (m_activeFrameOccupied || !m_pendingFrameOccupied) {
+		return;
+	}
+	m_activeBlitterQueue.swap(m_pendingBlitterQueue);
+	m_pendingBlitterQueue.clear();
+	m_activeFrameOccupied = true;
+	m_activeFrameReady = m_pendingFrameCost == 0;
+	m_activeFrameCost = m_pendingFrameCost;
+	m_activeFrameWorkRemaining = m_pendingFrameCost;
+	m_activeDitherType = m_pendingDitherType;
+	m_activeSlotAtlasIds = m_pendingSlotAtlasIds;
+	m_activeSkyboxFaceIds = m_pendingSkyboxFaceIds;
+	m_activeHasSkybox = m_pendingHasSkybox;
+	m_pendingFrameOccupied = false;
+	m_pendingFrameCost = 0;
+	m_pendingDitherType = 0;
+	m_pendingSlotAtlasIds = {{-1, -1}};
+	m_pendingSkyboxFaceIds = {};
+	m_pendingHasSkybox = false;
+}
+
+void VDP::advanceWork(int workUnits) {
+	if (!m_activeFrameOccupied) {
+		promotePendingFrame();
+	}
+	if (!m_activeFrameOccupied || m_activeFrameReady || workUnits <= 0) {
+		return;
+	}
+	if (workUnits >= m_activeFrameWorkRemaining) {
+		m_activeFrameWorkRemaining = 0;
+		executeBlitterQueue(m_activeBlitterQueue);
+		m_activeFrameReady = true;
+		return;
+	}
+	m_activeFrameWorkRemaining -= workUnits;
+}
+
+void VDP::clearActiveFrame() {
+	recycleBlitterBuffers(m_activeBlitterQueue);
+	m_activeBlitterQueue.clear();
+	m_activeFrameOccupied = false;
+	m_activeFrameReady = false;
+	m_activeFrameCost = 0;
+	m_activeFrameWorkRemaining = 0;
+	m_activeDitherType = 0;
+	m_activeSlotAtlasIds = {{-1, -1}};
+	m_activeSkyboxFaceIds = {};
+	m_activeHasSkybox = false;
+}
+
+void VDP::commitActiveVisualState() {
+	m_committedDitherType = m_activeDitherType;
+	m_committedSlotAtlasIds = m_activeSlotAtlasIds;
+	if (!m_activeHasSkybox) {
+		m_committedHasSkybox = false;
+	} else {
+		commitSkyboxImages(m_activeSkyboxFaceIds);
+		m_committedSkyboxFaceIds = m_activeSkyboxFaceIds;
+		m_committedHasSkybox = true;
+	}
+}
+
+void VDP::presentReadyFrameOnVblankEdge() {
+	if (!m_activeFrameOccupied) {
+		m_lastFrameCommitted = false;
+		m_lastFrameCost = 0;
+		m_lastFrameHeld = false;
+		promotePendingFrame();
+		return;
+	}
+	m_lastFrameCost = m_activeFrameCost;
+	if (!m_activeFrameReady) {
+		m_lastFrameCommitted = false;
+		m_lastFrameHeld = true;
+		return;
+	}
+	if (!m_activeBlitterQueue.empty()) {
+		swapFrameBufferPages();
+	}
+	commitActiveVisualState();
+	m_lastFrameCommitted = true;
+	m_lastFrameHeld = false;
+	clearActiveFrame();
+	promotePendingFrame();
+}
+
 void VDP::initializeFrameBufferSurface() {
+	auto* backend = EngineCore::instance().view()->backend();
 	auto* view = EngineCore::instance().view();
 	const uint32_t width = static_cast<uint32_t>(view->viewportSize.x);
 	const uint32_t height = static_cast<uint32_t>(view->viewportSize.y);
-	auto& entry = m_memory.hasAsset(FRAMEBUFFER_TEXTURE_KEY)
-		? m_memory.getAssetEntry(FRAMEBUFFER_TEXTURE_KEY)
+	auto& entry = m_memory.hasAsset(FRAMEBUFFER_RENDER_TEXTURE_KEY)
+		? m_memory.getAssetEntry(FRAMEBUFFER_RENDER_TEXTURE_KEY)
 		: m_memory.registerImageSlotAt(
-			FRAMEBUFFER_TEXTURE_KEY,
+			FRAMEBUFFER_RENDER_TEXTURE_KEY,
 			VRAM_FRAMEBUFFER_BASE,
 			VRAM_FRAMEBUFFER_SIZE,
 			0,
@@ -464,7 +1477,13 @@ void VDP::initializeFrameBufferSurface() {
 	std::fill(m_frameBufferPriorityLayer.begin(), m_frameBufferPriorityLayer.end(), static_cast<u8>(Layer2D::World));
 	std::fill(m_frameBufferPriorityZ.begin(), m_frameBufferPriorityZ.end(), -std::numeric_limits<f32>::infinity());
 	std::fill(m_frameBufferPrioritySeq.begin(), m_frameBufferPrioritySeq.end(), 0u);
-	registerVramSlot(entry, FRAMEBUFFER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
+	m_displayFrameBufferCpuReadback.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+	registerVramSlot(entry, FRAMEBUFFER_RENDER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
+	if (!backend->readyForTextureUpload()) {
+		return;
+	}
+	ensureDisplayFrameBufferTexture();
+	syncRenderFrameBufferToDisplayPage();
 }
 
 void VDP::resetFrameBufferPriority() {
@@ -515,7 +1534,6 @@ void VDP::enqueueClear(const Color& color) {
 }
 
 void VDP::enqueueBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX, f32 scaleY, bool flipH, bool flipV, const Color& color, f32 parallaxWeight) {
-	(void)parallaxWeight;
 	const BlitterSource source = resolveBlitterSource(handle);
 	const auto clipped = computeClippedRect(
 		static_cast<double>(x),
@@ -539,6 +1557,7 @@ void VDP::enqueueBlit(u32 handle, f32 x, f32 y, f32 z, Layer2D layer, f32 scaleX
 	command.dstY = y;
 	command.scaleX = scaleX;
 	command.scaleY = scaleY;
+	command.parallaxWeight = parallaxWeight;
 	command.flipH = flipH;
 	command.flipV = flipV;
 	command.color = packFrameBufferColor(color);
@@ -643,6 +1662,100 @@ void VDP::enqueueDrawPoly(const std::vector<f32>& points, f32 z, const Color& co
 		const size_t next = (index + 2u) % points.size();
 		enqueueDrawLine(points[index], points[index + 1u], points[next], points[next + 1u], z, layer, color, thickness);
 	}
+}
+
+void VDP::enqueueGlyphRun(const std::string& text, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer) {
+	if (!font) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] No font available for glyph rendering.");
+	}
+	BlitterCommand command;
+	command.type = BlitterCommandType::GlyphRun;
+	command.seq = nextBlitterSequence();
+	command.glyphs = acquireGlyphBuffer();
+	command.z = z;
+	command.layer = layer;
+	command.lineHeight = static_cast<u32>(font->lineHeight());
+	command.color = packFrameBufferColor(color);
+	command.backgroundColor = backgroundColor.has_value()
+		? std::optional<FrameBufferColor>(packFrameBufferColor(*backgroundColor))
+		: std::nullopt;
+	f32 cursorY = y;
+	int renderCost = 0;
+	const auto enqueueGlyphLine = [&](const std::string& source, size_t byteStart, size_t byteEnd) {
+		if (byteStart == byteEnd) {
+			cursorY += static_cast<f32>(font->lineHeight());
+			return;
+		}
+		f32 cursorX = x;
+		size_t byteIndex = byteStart;
+		i32 glyphIndex = 0;
+		while (byteIndex < byteEnd) {
+			const u32 codepoint = readUtf8Codepoint(source, byteIndex);
+			if (glyphIndex >= end) {
+				break;
+			}
+			if (glyphIndex < start) {
+				glyphIndex += 1;
+				continue;
+			}
+			const FontGlyph& glyph = font->getGlyph(codepoint);
+			const BlitterSource sourceBlit = resolveBlitterSource(m_memory.resolveAssetHandle(glyph.imgid));
+			const auto clipped = computeClippedRect(
+				static_cast<double>(cursorX),
+				static_cast<double>(cursorY),
+				static_cast<double>(cursorX) + static_cast<double>(sourceBlit.width),
+				static_cast<double>(cursorY) + static_cast<double>(sourceBlit.height),
+				static_cast<double>(m_frameBufferWidth),
+				static_cast<double>(m_frameBufferHeight)
+			);
+			if (clipped.area > 0.0) {
+				renderCost += calculateVisibleRectCost(clipped.width, clipped.height);
+				if (command.backgroundColor.has_value()) {
+					const auto backgroundRect = computeClippedRect(
+						static_cast<double>(cursorX),
+						static_cast<double>(cursorY),
+						static_cast<double>(cursorX) + static_cast<double>(glyph.advance),
+						static_cast<double>(cursorY) + static_cast<double>(font->lineHeight()),
+						static_cast<double>(m_frameBufferWidth),
+						static_cast<double>(m_frameBufferHeight)
+					);
+					if (backgroundRect.area > 0.0) {
+						renderCost += calculateVisibleRectCost(backgroundRect.width, backgroundRect.height) * calculateAlphaMultiplier(*command.backgroundColor);
+					}
+				}
+				command.glyphs.emplace_back();
+				auto& blit = command.glyphs.back();
+				blit.surfaceId = sourceBlit.surfaceId;
+				blit.srcX = sourceBlit.srcX;
+				blit.srcY = sourceBlit.srcY;
+				blit.width = sourceBlit.width;
+				blit.height = sourceBlit.height;
+				blit.dstX = cursorX;
+				blit.dstY = cursorY;
+				blit.advance = static_cast<u32>(glyph.advance);
+			}
+			cursorX += static_cast<f32>(glyph.advance);
+			glyphIndex += 1;
+		}
+		cursorY += static_cast<f32>(font->lineHeight());
+	};
+	size_t lineStart = 0u;
+	while (lineStart <= text.size()) {
+		const size_t lineEnd = text.find('\n', lineStart);
+		if (lineEnd == std::string::npos) {
+			enqueueGlyphLine(text, lineStart, text.size());
+			break;
+		}
+		enqueueGlyphLine(text, lineStart, lineEnd);
+		lineStart = lineEnd + 1u;
+	}
+	if (command.glyphs.empty()) {
+		command.glyphs.clear();
+		m_glyphBufferPool.push_back(std::move(command.glyphs));
+		return;
+	}
+	command.renderCost = renderCost;
+	enqueueBlitterCommand(std::move(command));
 }
 
 void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer) {
@@ -767,9 +1880,11 @@ void VDP::enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i3
 	command.tiles = acquireTileBuffer();
 	command.z = z;
 	command.layer = layer;
-	int renderCost = 0;
+	int visibleRowCount = 0;
+	int visibleNonEmptyTileCount = 0;
 	for (i32 row = 0; row < rows; row += 1) {
 		const i32 base = row * cols;
+		bool rowHasVisibleTile = false;
 		for (i32 col = 0; col < cols; col += 1) {
 			const u32 handle = handles[static_cast<size_t>(base + col)];
 			if (handle == IO_VDP_TILE_HANDLE_NONE) {
@@ -792,7 +1907,11 @@ void VDP::enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i3
 			if (clipped.area == 0.0) {
 				continue;
 			}
-			renderCost += calculateVisibleRectCost(clipped.width, clipped.height);
+			visibleNonEmptyTileCount += 1;
+			if (!rowHasVisibleTile) {
+				rowHasVisibleTile = true;
+				visibleRowCount += 1;
+			}
 			command.tiles.emplace_back();
 			auto& blit = command.tiles.back();
 			blit.surfaceId = source.surfaceId;
@@ -809,7 +1928,193 @@ void VDP::enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i3
 		m_tileBufferPool.push_back(std::move(command.tiles));
 		return;
 	}
-	command.renderCost = renderCost;
+	command.renderCost = tileRunCost(visibleRowCount, visibleNonEmptyTileCount);
+	enqueueBlitterCommand(std::move(command));
+}
+
+void VDP::enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
+	if (tileCount != static_cast<uint32_t>(cols * rows)) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] enqueuePayloadTileRun size mismatch.");
+	}
+	const i32 frameWidth = static_cast<i32>(m_frameBufferWidth);
+	const i32 frameHeight = static_cast<i32>(m_frameBufferHeight);
+	const i32 totalWidth = cols * tileW;
+	const i32 totalHeight = rows * tileH;
+	i32 dstX = originX - scrollX;
+	i32 dstY = originY - scrollY;
+	i32 srcClipX = 0;
+	i32 srcClipY = 0;
+	i32 writeWidth = totalWidth;
+	i32 writeHeight = totalHeight;
+	if (dstX < 0) {
+		srcClipX = -dstX;
+		writeWidth += dstX;
+		dstX = 0;
+	}
+	if (dstY < 0) {
+		srcClipY = -dstY;
+		writeHeight += dstY;
+		dstY = 0;
+	}
+	const i32 overflowX = (dstX + writeWidth) - frameWidth;
+	if (overflowX > 0) {
+		writeWidth -= overflowX;
+	}
+	const i32 overflowY = (dstY + writeHeight) - frameHeight;
+	if (overflowY > 0) {
+		writeHeight -= overflowY;
+	}
+	if (writeWidth <= 0 || writeHeight <= 0) {
+		return;
+	}
+	BlitterCommand command;
+	command.type = BlitterCommandType::TileRun;
+	command.seq = nextBlitterSequence();
+	command.tiles = acquireTileBuffer();
+	command.z = z;
+	command.layer = layer;
+	int visibleRowCount = 0;
+	int visibleNonEmptyTileCount = 0;
+	for (i32 row = 0; row < rows; row += 1) {
+		const i32 base = row * cols;
+		bool rowHasVisibleTile = false;
+		for (i32 col = 0; col < cols; col += 1) {
+			const u32 handle = m_memory.readU32(payloadBase + static_cast<uint32_t>(base + col) * IO_WORD_SIZE);
+			if (handle == IO_VDP_TILE_HANDLE_NONE) {
+				continue;
+			}
+			const BlitterSource source = resolveBlitterSource(handle);
+			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
+				throw BMSX_RUNTIME_ERROR("[BmsxVDP] enqueuePayloadTileRun tile size mismatch.");
+			}
+			const i32 tileX = dstX + (col * tileW) - srcClipX;
+			const i32 tileY = dstY + (row * tileH) - srcClipY;
+			const auto clipped = computeClippedRect(
+				static_cast<double>(tileX),
+				static_cast<double>(tileY),
+				static_cast<double>(tileX + tileW),
+				static_cast<double>(tileY + tileH),
+				static_cast<double>(frameWidth),
+				static_cast<double>(frameHeight)
+			);
+			if (clipped.area == 0.0) {
+				continue;
+			}
+			visibleNonEmptyTileCount += 1;
+			if (!rowHasVisibleTile) {
+				rowHasVisibleTile = true;
+				visibleRowCount += 1;
+			}
+			command.tiles.emplace_back();
+			auto& blit = command.tiles.back();
+			blit.surfaceId = source.surfaceId;
+			blit.srcX = source.srcX;
+			blit.srcY = source.srcY;
+			blit.width = source.width;
+			blit.height = source.height;
+			blit.dstX = static_cast<f32>(tileX);
+			blit.dstY = static_cast<f32>(tileY);
+		}
+	}
+	if (command.tiles.empty()) {
+		command.tiles.clear();
+		m_tileBufferPool.push_back(std::move(command.tiles));
+		return;
+	}
+	command.renderCost = tileRunCost(visibleRowCount, visibleNonEmptyTileCount);
+	enqueueBlitterCommand(std::move(command));
+}
+
+void VDP::enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
+	if (tileCount != static_cast<uint32_t>(cols * rows)) {
+		throw BMSX_RUNTIME_ERROR("[BmsxVDP] enqueuePayloadTileRunWords size mismatch.");
+	}
+	const i32 frameWidth = static_cast<i32>(m_frameBufferWidth);
+	const i32 frameHeight = static_cast<i32>(m_frameBufferHeight);
+	const i32 totalWidth = cols * tileW;
+	const i32 totalHeight = rows * tileH;
+	i32 dstX = originX - scrollX;
+	i32 dstY = originY - scrollY;
+	i32 srcClipX = 0;
+	i32 srcClipY = 0;
+	i32 writeWidth = totalWidth;
+	i32 writeHeight = totalHeight;
+	if (dstX < 0) {
+		srcClipX = -dstX;
+		writeWidth += dstX;
+		dstX = 0;
+	}
+	if (dstY < 0) {
+		srcClipY = -dstY;
+		writeHeight += dstY;
+		dstY = 0;
+	}
+	const i32 overflowX = (dstX + writeWidth) - frameWidth;
+	if (overflowX > 0) {
+		writeWidth -= overflowX;
+	}
+	const i32 overflowY = (dstY + writeHeight) - frameHeight;
+	if (overflowY > 0) {
+		writeHeight -= overflowY;
+	}
+	if (writeWidth <= 0 || writeHeight <= 0) {
+		return;
+	}
+	BlitterCommand command;
+	command.type = BlitterCommandType::TileRun;
+	command.seq = nextBlitterSequence();
+	command.tiles = acquireTileBuffer();
+	command.z = z;
+	command.layer = layer;
+	int visibleRowCount = 0;
+	int visibleNonEmptyTileCount = 0;
+	for (i32 row = 0; row < rows; row += 1) {
+		const i32 base = row * cols;
+		bool rowHasVisibleTile = false;
+		for (i32 col = 0; col < cols; col += 1) {
+			const u32 handle = payloadWords[static_cast<size_t>(base + col)];
+			if (handle == IO_VDP_TILE_HANDLE_NONE) {
+				continue;
+			}
+			const BlitterSource source = resolveBlitterSource(handle);
+			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
+				throw BMSX_RUNTIME_ERROR("[BmsxVDP] enqueuePayloadTileRunWords tile size mismatch.");
+			}
+			const i32 tileX = dstX + (col * tileW) - srcClipX;
+			const i32 tileY = dstY + (row * tileH) - srcClipY;
+			const auto clipped = computeClippedRect(
+				static_cast<double>(tileX),
+				static_cast<double>(tileY),
+				static_cast<double>(tileX + tileW),
+				static_cast<double>(tileY + tileH),
+				static_cast<double>(frameWidth),
+				static_cast<double>(frameHeight)
+			);
+			if (clipped.area == 0.0) {
+				continue;
+			}
+			visibleNonEmptyTileCount += 1;
+			if (!rowHasVisibleTile) {
+				rowHasVisibleTile = true;
+				visibleRowCount += 1;
+			}
+			command.tiles.emplace_back();
+			auto& blit = command.tiles.back();
+			blit.surfaceId = source.surfaceId;
+			blit.srcX = source.srcX;
+			blit.srcY = source.srcY;
+			blit.width = source.width;
+			blit.height = source.height;
+			blit.dstX = static_cast<f32>(tileX);
+			blit.dstY = static_cast<f32>(tileY);
+		}
+	}
+	if (command.tiles.empty()) {
+		command.tiles.clear();
+		m_tileBufferPool.push_back(std::move(command.tiles));
+		return;
+	}
+	command.renderCost = tileRunCost(visibleRowCount, visibleNonEmptyTileCount);
 	enqueueBlitterCommand(std::move(command));
 }
 
@@ -979,13 +2284,26 @@ void VDP::copyFrameBufferRect(std::vector<u8>& pixels, i32 srcX, i32 srcY, i32 w
 	}
 }
 
-void VDP::executeBuildFrame() {
-	if (m_blitterQueue.empty()) {
+void VDP::executeBlitterQueue(const std::vector<BlitterCommand>& queue) {
+	if (queue.empty()) {
 		return;
 	}
+#if BMSX_ENABLE_GLES2
+	if (VdpGles2Blitter::execute(*this, queue)) {
+		return;
+	}
+#endif
 	resetFrameBufferPriority();
-	auto& pixels = getVramSlotByTextureKey(FRAMEBUFFER_TEXTURE_KEY).cpuReadback;
-	for (const auto& command : m_blitterQueue) {
+	auto& pixels = getVramSlotByTextureKey(FRAMEBUFFER_RENDER_TEXTURE_KEY).cpuReadback;
+	if (queue.front().type != BlitterCommandType::Clear) {
+		for (size_t index = 0; index < pixels.size(); index += 4u) {
+			pixels[index + 0u] = IMPLICIT_FRAME_CLEAR_RGBA[0];
+			pixels[index + 1u] = IMPLICIT_FRAME_CLEAR_RGBA[1];
+			pixels[index + 2u] = IMPLICIT_FRAME_CLEAR_RGBA[2];
+			pixels[index + 3u] = IMPLICIT_FRAME_CLEAR_RGBA[3];
+		}
+	}
+	for (const auto& command : queue) {
 		switch (command.type) {
 			case BlitterCommandType::Clear:
 				for (size_t index = 0; index < pixels.size(); index += 4u) {
@@ -1037,16 +2355,19 @@ void VDP::executeBuildFrame() {
 	}
 	TextureParams params;
 	auto* texmanager = EngineCore::instance().texmanager();
-	TextureHandle handle = EngineCore::instance().view()->textures[FRAMEBUFFER_TEXTURE_KEY];
+	TextureHandle handle = EngineCore::instance().view()->textures[FRAMEBUFFER_RENDER_TEXTURE_KEY];
 	texmanager->updateTexture(handle, pixels.data(), static_cast<i32>(m_frameBufferWidth), static_cast<i32>(m_frameBufferHeight), params);
 	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 }
 
-void VDP::commitSkyboxImages() {
-	if (!m_hasSkybox) {
-		return;
-	}
-	const std::array<const std::string*, 6> faces = {{&m_skyboxFaceIds.posx, &m_skyboxFaceIds.negx, &m_skyboxFaceIds.posy, &m_skyboxFaceIds.negy, &m_skyboxFaceIds.posz, &m_skyboxFaceIds.negz}};
+void VDP::shutdownBackendResources() {
+#if BMSX_ENABLE_GLES2
+	VdpGles2Blitter::shutdown();
+#endif
+}
+
+void VDP::commitSkyboxImages(const SkyboxImageIds& ids) {
+	const std::array<const std::string*, 6> faces = {{&ids.posx, &ids.negx, &ids.posy, &ids.negy, &ids.posz, &ids.negz}};
 	for (size_t index = 0; index < faces.size(); ++index) {
 		const std::string& assetId = *faces[index];
 		auto* asset = EngineCore::instance().resolveImgAsset(assetId);
@@ -1094,27 +2415,16 @@ void VDP::commitSkyboxImages() {
 	}
 }
 
-void VDP::commitBuildFrame(int renderBudgetPerFrame) {
-	m_lastFrameCost = m_buildFrameCost;
-	m_lastFrameCommitted = m_buildFrameCost <= renderBudgetPerFrame;
-	m_lastFrameOverBudget = !m_lastFrameCommitted;
-	if (!m_lastFrameCommitted) {
-		resetBlitterState();
+void VDP::commitLiveVisualState() {
+	m_committedDitherType = m_lastDitherType;
+	m_committedSlotAtlasIds = m_slotAtlasIds;
+	if (!m_hasSkybox) {
+		m_committedHasSkybox = false;
 		return;
 	}
-	executeBuildFrame();
-	if (m_visualStateDirty) {
-		m_committedDitherType = m_lastDitherType;
-		m_committedSlotAtlasIds = m_slotAtlasIds;
-		if (m_dirtySkybox) {
-			commitSkyboxImages();
-			m_committedSkyboxFaceIds = m_skyboxFaceIds;
-			m_committedHasSkybox = m_hasSkybox;
-		}
-		m_visualStateDirty = false;
-		m_dirtySkybox = false;
-	}
-	resetBlitterState();
+	commitSkyboxImages(m_skyboxFaceIds);
+	m_committedSkyboxFaceIds = m_skyboxFaceIds;
+	m_committedHasSkybox = true;
 }
 
 uint32_t VDP::readVdpStatus() {
@@ -1178,7 +2488,16 @@ void VDP::initializeRegisters() {
 		m_frameBufferWidth = static_cast<uint32_t>(view->viewportSize.x);
 		m_frameBufferHeight = static_cast<uint32_t>(view->viewportSize.y);
 	}
-	resetBlitterState();
+	resetBuildFrameState();
+	clearActiveFrame();
+	recycleBlitterBuffers(m_pendingBlitterQueue);
+	m_pendingBlitterQueue.clear();
+	m_pendingFrameOccupied = false;
+	m_pendingFrameCost = 0;
+	m_pendingDitherType = 0;
+	m_pendingSlotAtlasIds = {{-1, -1}};
+	m_pendingSkyboxFaceIds = {};
+	m_pendingHasSkybox = false;
 	m_memory.writeValue(IO_VDP_DITHER, valueNumber(static_cast<double>(dither)));
 	m_memory.writeValue(IO_VDP_CMD, valueNumber(0.0));
 	for (int index = 0; index < IO_VDP_CMD_ARG_COUNT; ++index) {
@@ -1186,8 +2505,6 @@ void VDP::initializeRegisters() {
 	}
 	m_lastDitherType = dither;
 	m_committedDitherType = dither;
-	m_visualStateDirty = false;
-	m_dirtySkybox = false;
 	m_skyboxFaceIds = {};
 	m_hasSkybox = false;
 	m_committedSkyboxFaceIds = {};
@@ -1195,7 +2512,10 @@ void VDP::initializeRegisters() {
 	m_committedSlotAtlasIds = m_slotAtlasIds;
 	m_lastFrameCommitted = true;
 	m_lastFrameCost = 0;
-	m_lastFrameOverBudget = false;
+	m_lastFrameHeld = false;
+	if (EngineCore::instance().texmanager()->getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY)) {
+		syncRenderFrameBufferToDisplayPage();
+	}
 	commitViewSnapshot(*EngineCore::instance().view());
 }
 
@@ -1203,7 +2523,6 @@ void VDP::syncRegisters() {
 	const i32 dither = static_cast<i32>(asNumber(m_memory.readValue(IO_VDP_DITHER)));
 	if (dither != m_lastDitherType) {
 		m_lastDitherType = dither;
-		m_visualStateDirty = true;
 	}
 	const uint32_t primaryRaw = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_PRIMARY_ATLAS_ID)));
 	const uint32_t secondaryRaw = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_SECONDARY_ATLAS_ID)));
@@ -1211,7 +2530,6 @@ void VDP::syncRegisters() {
 	const i32 secondary = secondaryRaw == VDP_ATLAS_ID_NONE ? -1 : static_cast<i32>(secondaryRaw);
 	if (primary != m_slotAtlasIds[0] || secondary != m_slotAtlasIds[1]) {
 		applyAtlasSlotMapping({{primary, secondary}});
-		m_visualStateDirty = true;
 	}
 }
 
@@ -1232,8 +2550,16 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 		cache.width = 0;
 		cache.data.clear();
 	}
-	m_visualStateDirty = true;
-	m_dirtySkybox = true;
+	resetBuildFrameState();
+	clearActiveFrame();
+	recycleBlitterBuffers(m_pendingBlitterQueue);
+	m_pendingBlitterQueue.clear();
+	m_pendingFrameOccupied = false;
+	m_pendingFrameCost = 0;
+	m_pendingDitherType = 0;
+	m_pendingSlotAtlasIds = {{-1, -1}};
+	m_pendingSkyboxFaceIds = {};
+	m_pendingHasSkybox = false;
 	m_skyboxFaceIds = {};
 	m_hasSkybox = false;
 	m_committedSkyboxFaceIds = {};
@@ -1452,8 +2778,10 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 }
 
 void VDP::restoreVramSlotTextures() {
-	const auto& frameBufferEntry = m_memory.getAssetEntry(FRAMEBUFFER_TEXTURE_KEY);
-	restoreVramSlotTexture(frameBufferEntry, FRAMEBUFFER_TEXTURE_KEY);
+	const auto& frameBufferEntry = m_memory.getAssetEntry(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	restoreVramSlotTexture(frameBufferEntry, FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	ensureDisplayFrameBufferTexture();
+	syncRenderFrameBufferToDisplayPage();
 	const auto& engineEntry = m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
 	restoreVramSlotTexture(engineEntry, ENGINE_ATLAS_TEXTURE_KEY);
 	auto* view = EngineCore::instance().view();
@@ -1462,7 +2790,6 @@ void VDP::restoreVramSlotTextures() {
 	const auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 	restoreVramSlotTexture(primaryEntry, ATLAS_PRIMARY_SLOT_ID);
 	restoreVramSlotTexture(secondaryEntry, ATLAS_SECONDARY_SLOT_ID);
-	m_visualStateDirty = true;
 }
 
 void VDP::captureVramTextureSnapshots() {
@@ -1593,7 +2920,6 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 	if (slots[1] >= 0) {
 		m_atlasSlotById[slots[1]] = 1;
 	}
-	m_visualStateDirty = true;
 	auto& primaryEntry = m_memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 	auto& secondaryEntry = m_memory.getAssetEntry(ATLAS_SECONDARY_SLOT_ID);
 	if (slots[0] >= 0) {
@@ -1637,15 +2963,11 @@ void VDP::setSkyboxImages(const SkyboxImageIds& ids) {
 	}
 	m_skyboxFaceIds = ids;
 	m_hasSkybox = true;
-	m_visualStateDirty = true;
-	m_dirtySkybox = true;
 }
 
 void VDP::clearSkybox() {
 	m_skyboxFaceIds = {};
 	m_hasSkybox = false;
-	m_visualStateDirty = true;
-	m_dirtySkybox = true;
 }
 
 std::optional<SkyboxImageIds> VDP::skyboxFaceIds() const {

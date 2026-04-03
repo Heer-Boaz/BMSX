@@ -1453,8 +1453,13 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(m_cycleBudgetPerFrame)));
 	setGlobal("sys_vdp_dither", valueNumber(static_cast<double>(IO_VDP_DITHER)));
 	setGlobal("sys_vdp_cmd", valueNumber(static_cast<double>(IO_VDP_CMD)));
-	setGlobal("sys_vdp_cmd_arg0", valueNumber(static_cast<double>(IO_VDP_CMD_ARG0)));
 	setGlobal("sys_vdp_cmd_arg_count", valueNumber(static_cast<double>(IO_VDP_CMD_ARG_COUNT)));
+	setGlobal("sys_vdp_stream_base", valueNumber(static_cast<double>(VDP_STREAM_BUFFER_BASE)));
+	setGlobal("sys_vdp_stream_capacity_words", valueNumber(static_cast<double>(VDP_STREAM_CAPACITY_WORDS)));
+	setGlobal("sys_vdp_stream_packet_header_words", valueNumber(static_cast<double>(VDP_STREAM_PACKET_HEADER_WORDS)));
+	setGlobal("sys_vdp_fifo", valueNumber(static_cast<double>(IO_VDP_FIFO)));
+	setGlobal("sys_vdp_fifo_ctrl", valueNumber(static_cast<double>(IO_VDP_FIFO_CTRL)));
+	setGlobal("sys_vdp_fifo_ctrl_seal", valueNumber(static_cast<double>(VDP_FIFO_CTRL_SEAL)));
 	setGlobal("sys_vdp_primary_atlas_id", valueNumber(static_cast<double>(IO_VDP_PRIMARY_ATLAS_ID)));
 	setGlobal("sys_vdp_secondary_atlas_id", valueNumber(static_cast<double>(IO_VDP_SECONDARY_ATLAS_ID)));
 	setGlobal("sys_vdp_atlas_none", valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
@@ -1469,15 +1474,12 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_vdp_rd_status_ready", valueNumber(static_cast<double>(VDP_RD_STATUS_READY)));
 	setGlobal("sys_vdp_rd_status_overflow", valueNumber(static_cast<double>(VDP_RD_STATUS_OVERFLOW)));
 	setGlobal("sys_vdp_status_vblank", valueNumber(static_cast<double>(VDP_STATUS_VBLANK)));
+	setGlobal("sys_vdp_status_submit_busy", valueNumber(static_cast<double>(VDP_STATUS_SUBMIT_BUSY)));
+	setGlobal("sys_vdp_status_submit_rejected", valueNumber(static_cast<double>(VDP_STATUS_SUBMIT_REJECTED)));
 	setGlobal("sys_vdp_layer_world", valueNumber(0.0));
 	setGlobal("sys_vdp_layer_ui", valueNumber(1.0));
 	setGlobal("sys_vdp_layer_ide", valueNumber(2.0));
 	setGlobal("sys_vdp_arg_stride", valueNumber(static_cast<double>(IO_ARG_STRIDE)));
-	setGlobal("sys_vdp_payload_write_ptr", valueNumber(static_cast<double>(IO_PAYLOAD_WRITE_PTR_ADDR)));
-	setGlobal("sys_vdp_payload_alloc", valueNumber(static_cast<double>(IO_PAYLOAD_ALLOC_ADDR)));
-	setGlobal("sys_vdp_payload_data", valueNumber(static_cast<double>(IO_PAYLOAD_DATA_ADDR)));
-	setGlobal("sys_vdp_payload_buffer_base", valueNumber(static_cast<double>(IO_PAYLOAD_BUFFER_BASE)));
-	setGlobal("sys_vdp_payload_capacity", valueNumber(static_cast<double>(IO_PAYLOAD_CAPACITY)));
 	setGlobal("sys_vdp_cmd_clear", valueNumber(static_cast<double>(IO_CMD_VDP_CLEAR)));
 	setGlobal("sys_vdp_cmd_fill_rect", valueNumber(static_cast<double>(IO_CMD_VDP_FILL_RECT)));
 		setGlobal("sys_vdp_cmd_blit", valueNumber(static_cast<double>(IO_CMD_VDP_BLIT)));
@@ -1541,6 +1543,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("dma_status_done", valueNumber(static_cast<double>(DMA_STATUS_DONE)));
 	setGlobal("dma_status_error", valueNumber(static_cast<double>(DMA_STATUS_ERROR)));
 	setGlobal("dma_status_clipped", valueNumber(static_cast<double>(DMA_STATUS_CLIPPED)));
+	setGlobal("dma_status_rejected", valueNumber(static_cast<double>(DMA_STATUS_REJECTED)));
 	setGlobal("img_ctrl_start", valueNumber(static_cast<double>(IMG_CTRL_START)));
 	setGlobal("img_status_busy", valueNumber(static_cast<double>(IMG_STATUS_BUSY)));
 	setGlobal("img_status_done", valueNumber(static_cast<double>(IMG_STATUS_DONE)));
@@ -1596,17 +1599,17 @@ void Runtime::setupBuiltins() {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(trackedVramUsedBytes())));
 		}, CHEAP_NATIVE_READ_COST);
-	registerNativeFunction("sys_vdp_render_budget", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	registerNativeFunction("sys_vdp_work_units_per_sec", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
-		out.push_back(valueNumber(static_cast<double>(renderBudgetPerFrame())));
+		out.push_back(valueNumber(static_cast<double>(vdpWorkUnitsPerSec())));
 	}, CHEAP_NATIVE_READ_COST);
-	registerNativeFunction("sys_vdp_render_cost_last", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	registerNativeFunction("sys_vdp_work_units_last", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(lastTickVdpFrameCost())));
 	}, CHEAP_NATIVE_READ_COST);
-	registerNativeFunction("sys_vdp_frame_over_budget", [this](const std::vector<Value>& args, std::vector<Value>& out) {
+	registerNativeFunction("sys_vdp_frame_held", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
-		out.push_back(valueNumber(lastTickVdpFrameOverBudget() ? 1.0 : 0.0));
+		out.push_back(valueNumber(lastTickVdpFrameHeld() ? 1.0 : 0.0));
 	}, CHEAP_NATIVE_READ_COST);
 	auto findRomAssetInfo = [](RuntimeAssets& assets, const std::string& assetId) -> const RomAssetInfo* {
 		if (const ImgAsset* image = assets.getImg(assetId)) {
@@ -3548,7 +3551,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		}
 		specsTable->set(key("dma"), valueTable(dmaTable));
 		auto* vdpTable = m_cpu.createTable(0, 1);
-		vdpTable->set(key("render_budget_per_frame"), valueNumber(static_cast<double>(manifest.vdpRenderBudgetPerFrame.value_or(DEFAULT_VDP_RENDER_BUDGET_PER_FRAME))));
+		vdpTable->set(key("work_units_per_sec"), valueNumber(static_cast<double>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC))));
 		specsTable->set(key("vdp"), valueTable(vdpTable));
 		if (manifest.ramBytes || manifest.stringHandleCount || manifest.stringHeapBytes || manifest.assetTableBytes || manifest.assetDataBytes) {
 			auto* ramTable = m_cpu.createTable(0, 5);

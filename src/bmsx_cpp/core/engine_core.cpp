@@ -48,6 +48,7 @@ void collectAssetIds(const RuntimeAssets& engineAssets, const RuntimeAssets& ass
 	ids.insert(ATLAS_PRIMARY_SLOT_ID);
 	ids.insert(ATLAS_SECONDARY_SLOT_ID);
 	ids.insert(FRAMEBUFFER_TEXTURE_KEY);
+	ids.insert(FRAMEBUFFER_RENDER_TEXTURE_KEY);
 
 	for (const auto& entry : engineAssets.img) {
 		const auto& imgAsset = entry.second;
@@ -241,7 +242,8 @@ MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const Mac
 		+ static_cast<uint64_t>(stringHandleTableBytes)
 		+ static_cast<uint64_t>(config.stringHeapBytes)
 		+ static_cast<uint64_t>(config.assetTableBytes)
-		+ static_cast<uint64_t>(config.assetDataBytes);
+		+ static_cast<uint64_t>(config.assetDataBytes)
+		+ static_cast<uint64_t>(VDP_STREAM_BUFFER_SIZE);
 	if (computedRamBytes > std::numeric_limits<uint32_t>::max()) {
 		throw std::runtime_error("[EngineCore] ram_bytes exceeds addressable range.");
 	}
@@ -268,6 +270,7 @@ MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const Mac
 		<< ", string_heap=" << config.stringHeapBytes
 		<< ", asset_table=" << config.assetTableBytes
 		<< ", asset_data=" << config.assetDataBytes
+		<< ", vdp_stream=" << VDP_STREAM_BUFFER_SIZE
 		<< ", vram_staging=" << config.stagingBytes
 		<< ", framebuffer=" << config.frameBufferBytes
 		<< ", engine_atlas_slot=" << config.engineAtlasSlotBytes
@@ -337,10 +340,10 @@ i64 resolveDmaBytesPerSecBulk(const MachineManifest& manifest) {
 	return value;
 }
 
-i64 resolveVdpRenderBudgetPerFrame(const MachineManifest& manifest) {
-	const i64 value = manifest.vdpRenderBudgetPerFrame.value_or(DEFAULT_VDP_RENDER_BUDGET_PER_FRAME);
+i64 resolveVdpWorkUnitsPerSec(const MachineManifest& manifest) {
+	const i64 value = manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC);
 	if (value <= 0) {
-		throw std::runtime_error("[EngineCore] machine.specs.vdp.render_budget_per_frame must be a positive integer.");
+		throw std::runtime_error("[EngineCore] machine.specs.vdp.work_units_per_sec must be a positive integer.");
 	}
 	return value;
 }
@@ -945,7 +948,7 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(runtimeMachine);
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(runtimeMachine);
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(runtimeMachine);
-	const int renderBudgetPerFrame = static_cast<int>(resolveVdpRenderBudgetPerFrame(runtimeMachine));
+	const int vdpWorkUnitsPerSec = static_cast<int>(resolveVdpWorkUnitsPerSec(runtimeMachine));
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
 	const i64 vblankCycles = resolveVblankCycles(cpuHz, m_ufps_scaled, runtimeMachine.viewportHeight);
 
@@ -958,7 +961,7 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
 		options.vblankCycles = static_cast<int>(vblankCycles);
-		options.renderBudgetPerFrame = renderBudgetPerFrame;
+		options.vdpWorkUnitsPerSec = vdpWorkUnitsPerSec;
 		Runtime::createInstance(options);
 	}
 
@@ -966,7 +969,7 @@ bool EngineCore::bootEngineStartupProgram(const MachineManifest& runtimeMachine,
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
 	runtime.setVblankCycles(static_cast<int>(vblankCycles));
-	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, renderBudgetPerFrame);
+	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Engine);
 	runtime.setCanonicalization(m_engine_assets.machine.canonicalization);
@@ -1053,7 +1056,7 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(transferMachine);
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(transferMachine);
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(transferMachine);
-	const int renderBudgetPerFrame = static_cast<int>(resolveVdpRenderBudgetPerFrame(transferMachine));
+	const int vdpWorkUnitsPerSec = static_cast<int>(resolveVdpWorkUnitsPerSec(transferMachine));
 
 	configureViewForMachine(cartMachine);
 
@@ -1083,14 +1086,14 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
 				options.vblankCycles = static_cast<int>(vblankCycles);
-				options.renderBudgetPerFrame = renderBudgetPerFrame;
+				options.vdpWorkUnitsPerSec = vdpWorkUnitsPerSec;
 				Runtime::createInstance(options);
 			}
 			Runtime& runtime = Runtime::instance();
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
 			runtime.setVblankCycles(static_cast<int>(vblankCycles));
-			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, renderBudgetPerFrame);
+			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(assets(), false);
 			refreshAudioAssets();
@@ -1105,14 +1108,14 @@ bool EngineCore::loadRomInternal(const u8* data, size_t size) {
 				options.cpuHz = cpuHz;
 				options.cycleBudgetPerFrame = cycleBudget;
 				options.vblankCycles = static_cast<int>(vblankCycles);
-				options.renderBudgetPerFrame = renderBudgetPerFrame;
+				options.vdpWorkUnitsPerSec = vdpWorkUnitsPerSec;
 				Runtime::createInstance(options);
 			}
 			Runtime& runtime = Runtime::instance();
 			runtime.setCpuHz(cpuHz);
 			runtime.setCycleBudgetPerFrame(cycleBudget);
 			runtime.setVblankCycles(static_cast<int>(vblankCycles));
-			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, renderBudgetPerFrame);
+			runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec);
 			runtime.refreshMemoryMap();
 			runtime.buildAssetMemory(assets(), false);
 			refreshAudioAssets();
@@ -1150,7 +1153,7 @@ bool EngineCore::bootLoadedCart() {
 	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(assets().machine);
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(assets().machine);
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(assets().machine);
-	const int renderBudgetPerFrame = static_cast<int>(resolveVdpRenderBudgetPerFrame(assets().machine));
+	const int vdpWorkUnitsPerSec = static_cast<int>(resolveVdpWorkUnitsPerSec(assets().machine));
 	setUfpsScaled(ufpsScaled);
 	applyManifestMemorySpecs(assets().machine, m_engine_assets.machine, assets(), m_engine_assets);
 	configureViewForMachine(assets().machine);
@@ -1166,7 +1169,7 @@ bool EngineCore::bootLoadedCart() {
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
 		options.vblankCycles = static_cast<int>(vblankCycles);
-		options.renderBudgetPerFrame = renderBudgetPerFrame;
+		options.vdpWorkUnitsPerSec = vdpWorkUnitsPerSec;
 		Runtime::createInstance(options);
 	}
 
@@ -1174,7 +1177,7 @@ bool EngineCore::bootLoadedCart() {
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
 	runtime.setVblankCycles(static_cast<int>(vblankCycles));
-	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, renderBudgetPerFrame);
+	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec);
 	runtime.refreshMemoryMap();
 	runtime.buildAssetMemory(assets(), false, Runtime::AssetBuildMode::Cart);
 	refreshAudioAssets();
@@ -1320,7 +1323,7 @@ void EngineCore::bootRuntimeFromProgram() {
 	const i64 imgDecBytesPerSec = resolveImgDecBytesPerSec(activeAssets.machine);
 	const i64 dmaBytesPerSecIso = resolveDmaBytesPerSecIso(activeAssets.machine);
 	const i64 dmaBytesPerSecBulk = resolveDmaBytesPerSecBulk(activeAssets.machine);
-	const int renderBudgetPerFrame = static_cast<int>(resolveVdpRenderBudgetPerFrame(activeAssets.machine));
+	const int vdpWorkUnitsPerSec = static_cast<int>(resolveVdpWorkUnitsPerSec(activeAssets.machine));
 	const i64 ufpsScaled = resolveUfpsScaled(activeAssets.machine);
 	setUfpsScaled(ufpsScaled);
 	const int cycleBudget = calcCyclesPerFrame(cpuHz, m_ufps_scaled);
@@ -1336,7 +1339,7 @@ void EngineCore::bootRuntimeFromProgram() {
 		options.cpuHz = cpuHz;
 		options.cycleBudgetPerFrame = cycleBudget;
 		options.vblankCycles = static_cast<int>(vblankCycles);
-		options.renderBudgetPerFrame = renderBudgetPerFrame;
+		options.vdpWorkUnitsPerSec = vdpWorkUnitsPerSec;
 		Runtime::createInstance(options);
 	}
 
@@ -1345,7 +1348,7 @@ void EngineCore::bootRuntimeFromProgram() {
 	runtime.setCpuHz(cpuHz);
 	runtime.setCycleBudgetPerFrame(cycleBudget);
 	runtime.setVblankCycles(static_cast<int>(vblankCycles));
-	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, renderBudgetPerFrame);
+	runtime.setTransferRates(imgDecBytesPerSec, dmaBytesPerSecIso, dmaBytesPerSecBulk, vdpWorkUnitsPerSec);
 	runtime.refreshMemoryMap();
 	runtime.setProgramSource(Runtime::ProgramSource::Cart);
 	runtime.setCanonicalization(activeAssets.machine.canonicalization);

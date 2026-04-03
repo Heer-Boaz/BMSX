@@ -2,6 +2,7 @@
 #include "lua_heap_usage.h"
 #include "memory.h"
 #include "number_format.h"
+#include "vdp_packet_schema.h"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -69,6 +70,57 @@ static inline int ceilDiv8(int value) {
 
 static inline int ceilDiv16(int value) {
 	return (value + 15) >> 4;
+}
+
+static inline bool isVdpPacketSequenceWrite(uint32_t baseAddr, int wordCount) {
+	const uint32_t byteLength = static_cast<uint32_t>(wordCount) * IO_WORD_SIZE;
+	return baseAddr >= VDP_STREAM_BUFFER_BASE && (baseAddr + byteLength) <= (VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE);
+}
+
+static inline uint32_t encodeVdpPacketU32Word(Value value, const char* label) {
+	if (valueIsNumber(value)) {
+		return static_cast<uint32_t>(asNumber(value));
+	}
+	if (valueIsString(value)) {
+		return asStringId(value);
+	}
+	if (value == valueBool(true)) {
+		return 1u;
+	}
+	if (value == valueBool(false) || value == valueNil()) {
+		return 0u;
+	}
+	throw std::runtime_error(std::string("[VDP] ") + label + " expects a numeric or string word.");
+}
+
+static inline uint32_t encodeVdpPacketF32Word(Value value, const char* label) {
+	if (!valueIsNumber(value)) {
+		throw std::runtime_error(std::string("[VDP] ") + label + " expects a numeric word.");
+	}
+	const float f32 = static_cast<float>(asNumber(value));
+	uint32_t bits = 0;
+	std::memcpy(&bits, &f32, sizeof(bits));
+	return bits;
+}
+
+static inline uint32_t encodeVdpPacketArgWord(uint32_t cmd, int index, Value value) {
+	return getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) == VdpPacketWordKind::F32
+		? encodeVdpPacketF32Word(value, "packet arg")
+		: encodeVdpPacketU32Word(value, "packet arg");
+}
+
+static inline bool tryGetVdpPacketPrefixWordCounts(const std::vector<Value>& registers, int valueBase, uint32_t& outCmd, uint32_t& outArgWords, uint32_t& outPayloadWords) {
+	outCmd = encodeVdpPacketU32Word(registers[static_cast<size_t>(valueBase)], "packet cmd");
+	const VdpPacketSchema* schema = findVdpPacketSchema(outCmd);
+	if (!schema) {
+		return false;
+	}
+	outArgWords = encodeVdpPacketU32Word(registers[static_cast<size_t>(valueBase + 1)], "packet arg_words");
+	if (outArgWords != schema->argWords) {
+		return false;
+	}
+	outPayloadWords = encodeVdpPacketU32Word(registers[static_cast<size_t>(valueBase + 2)], "packet payload_words");
+	return true;
 }
 
 static std::string formatNonFunctionCallError(Value callee, const StringPool& stringPool,
@@ -2008,6 +2060,34 @@ void CPU::writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, con
 }
 
 void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount) {
+	if (valueCount >= 3 && isVdpPacketSequenceWrite(addr, valueCount)) {
+		uint32_t cmd = 0;
+		uint32_t argWords = 0;
+		uint32_t payloadWords = 0;
+		if (tryGetVdpPacketPrefixWordCounts(frame.registers, valueBase, cmd, argWords, payloadWords)) {
+			const int packetWordCount = 3 + static_cast<int>(argWords) + static_cast<int>(payloadWords);
+			if (valueCount > packetWordCount) {
+				throw BMSX_RUNTIME_ERROR("[VDP] Packet prefix overflow (" + std::to_string(valueCount) + " > " + std::to_string(packetWordCount) + ").");
+			}
+			m_memory.writeMappedU32LE(addr, cmd);
+			m_memory.writeMappedU32LE(addr + 4u, argWords);
+			m_memory.writeMappedU32LE(addr + 8u, payloadWords);
+			uint32_t writeAddr = addr + 12u;
+			const uint32_t encodedArgWords = std::min<uint32_t>(argWords, static_cast<uint32_t>(valueCount - 3));
+			for (uint32_t index = 0; index < encodedArgWords; ++index) {
+				const uint32_t raw = encodeVdpPacketArgWord(cmd, static_cast<int>(index), frame.registers[static_cast<size_t>(valueBase + 3 + static_cast<int>(index))]);
+				m_memory.writeMappedU32LE(writeAddr, raw);
+				writeAddr += 4u;
+			}
+			const uint32_t encodedPayloadWords = static_cast<uint32_t>(valueCount - 3) - encodedArgWords;
+			for (uint32_t index = 0; index < encodedPayloadWords; ++index) {
+				const uint32_t raw = encodeVdpPacketU32Word(frame.registers[static_cast<size_t>(valueBase + 3 + static_cast<int>(argWords + index))], "packet payload");
+				m_memory.writeMappedU32LE(writeAddr, raw);
+				writeAddr += 4u;
+			}
+			return;
+		}
+	}
 	uint32_t writeAddr = addr;
 	for (int offset = 0; offset < valueCount; ++offset) {
 		writeMappedMemoryValue(writeAddr, MemoryAccessKind::Word, frame.registers[static_cast<size_t>(valueBase + offset)]);

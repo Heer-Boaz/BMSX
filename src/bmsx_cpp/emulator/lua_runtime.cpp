@@ -96,7 +96,7 @@ void Runtime::handleLuaError(const std::string& message) {
 
 void Runtime::runEngineBuiltinPrelude() {
 	std::cout << "[Runtime] prelude: binding engine builtins" << std::endl;
-	static const std::array<const char*, 44> engineBuiltins = {
+	static const std::array engineBuiltins = {
 		"define_fsm",
 		"define_prefab",
 		"define_component",
@@ -116,10 +116,11 @@ void Runtime::runEngineBuiltinPrelude() {
 		"delist",
 		"grant_effect",
 		"trigger_effect",
-		"vdp_map_slot",
-		"vdp_load_slot",
-		"vdp_load_sys_atlas",
-		"irq",
+			"vdp_map_slot",
+			"vdp_load_slot",
+			"vdp_load_sys_atlas",
+			"vdp_stream_claim_words",
+			"irq",
 		"on_irq",
 		"on_vdp_load",
 		"bool01",
@@ -143,7 +144,7 @@ void Runtime::runEngineBuiltinPrelude() {
 		"eventemitter",
 	};
 	// Keep this in sync with TS Runtime.LUA_OVERRIDEABLE_GLOBALS.
-	static const std::array<const char*, 1> overrideableEngineBuiltins = {
+	static const std::array overrideableEngineBuiltins = {
 		"update",
 	};
 	const auto isOverrideableBuiltin = [](const char* builtinName) {

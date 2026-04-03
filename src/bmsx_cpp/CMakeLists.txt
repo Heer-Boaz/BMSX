@@ -225,6 +225,7 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 
 	add_executable(bmsx_libretro_host
 		platform/libretro_host/main.c
+		platform/libretro_host/input_timeline.c
 	)
 
 	# SNES Mini sysroot uses glibc 2.19; the cross toolchain defaults to time64.

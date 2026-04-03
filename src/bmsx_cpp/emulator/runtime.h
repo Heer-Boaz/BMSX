@@ -55,7 +55,7 @@ struct TickCompletion {
 	int remaining = 0;
 	bool visualCommitted = true;
 	int vdpFrameCost = 0;
-	bool vdpFrameOverBudget = false;
+	bool vdpFrameHeld = false;
 };
 
 /**
@@ -76,7 +76,7 @@ struct RuntimeOptions {
 	i64 cpuHz = 0;
 	int cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 	int vblankCycles = 0;
-	int renderBudgetPerFrame = 512;
+	int vdpWorkUnitsPerSec = 25'600;
 };
 
 /**
@@ -251,8 +251,6 @@ public:
 	const VDP& vdp() const { return m_vdp; }
 	DmaController& dmaController() { return m_dmaController; }
 	const DmaController& dmaController() const { return m_dmaController; }
-	u32 armedVdpPayloadBaseOffset() const { return m_armedVdpPayloadBaseOffset; }
-	u32 armedVdpPayloadWordCount() const { return m_armedVdpPayloadWordCount; }
 
 	/**
 	 * Get the API instance.
@@ -282,10 +280,10 @@ public:
 	void setCanonicalization(CanonicalizationType canonicalization);
 	void setCpuHz(i64 hz);
 	void applyActiveMachineTiming(i64 cpuHz);
-	void setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int renderBudgetPerFrame);
+	void setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec);
 	i64 cpuHz() const { return m_cpuHz; }
 	void setVblankCycles(int cycles);
-	void setRenderBudgetPerFrame(int budget);
+	void setVdpWorkUnitsPerSec(int workUnitsPerSec);
 	void resetHardwareState();
 	void resetRenderBuffers();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
@@ -298,10 +296,10 @@ public:
 	int cpuUsedCyclesLastTick() const { return m_lastTickSequence == 0 ? 0 : m_lastTickCpuUsedCycles; }
 	int activeCpuCyclesGrantedLastTick() const { return lastTickBudgetGranted(); }
 	int activeCpuUsedCyclesLastTick() const { return cpuUsedCyclesLastTick(); }
-	int renderBudgetPerFrame() const { return m_renderBudgetPerFrame; }
+	int vdpWorkUnitsPerSec() const { return m_vdpWorkUnitsPerSec; }
 	bool lastTickVisualFrameCommitted() const { return m_lastTickVisualFrameCommitted; }
 	int lastTickVdpFrameCost() const { return m_lastTickVdpFrameCost; }
-	bool lastTickVdpFrameOverBudget() const { return m_lastTickVdpFrameOverBudget; }
+	bool lastTickVdpFrameHeld() const { return m_lastTickVdpFrameHeld; }
 	uint32_t trackedRamUsedBytes() const;
 	uint32_t trackedVramUsedBytes() const;
 	uint32_t trackedVramTotalBytes() const { return m_vdp.trackedTotalVramBytes(); }
@@ -316,12 +314,12 @@ public:
 
 private:
 	struct RateBudget {
-		i64 bytesPerSec = 0;
+		i64 unitsPerSec = 0;
 		i64 carry = 0;
 
-		void setBytesPerSec(i64 value) { bytesPerSec = value; }
+		void setUnitsPerSec(i64 value) { unitsPerSec = value; }
 		void resetCarry() { carry = 0; }
-		uint32_t calcBytesForCycles(i64 cpuHz, i64 cycles);
+		uint32_t calcUnitsForCycles(i64 cpuHz, i64 cycles);
 	};
 
 	enum class PendingCall {
@@ -364,12 +362,26 @@ private:
 	void setCartBootReadyFlag(bool value);
 	void prepareCartBootIfNeeded();
 	bool pollSystemBootRequest();
+	void setVdpSubmitBusyStatus(bool active);
+	void refreshVdpSubmitBusyStatus();
+	void setVdpSubmitRejectedStatus(bool active);
+	void noteRejectedVdpSubmitAttempt();
+	void noteAcceptedVdpSubmitAttempt();
+	void syncVdpSubmitAttemptStatusFromDma(uint32_t dst);
 	void flushAssetEdits();
 	void applyAtlasSlotMapping(const std::array<i32, 2>& slots);
 	std::vector<Value> acquireValueScratch();
 	void releaseValueScratch(std::vector<Value>&& values);
 	bool hasEntryContinuation() const;
-	void resetVdpPayloadState();
+	void resetVdpIngressState();
+	bool hasOpenDirectVdpFifoIngress() const;
+	bool hasBlockedVdpSubmitPath() const;
+	void consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength);
+	void consumeDirectVdpCommand(u32 cmd);
+	void writeVdpFifoBytes(const u8* data, size_t length);
+	void sealVdpFifoTransfer();
+	void sealVdpDmaTransfer(uint32_t src, size_t byteLength);
+	void pushVdpFifoWord(u32 word);
 
 	static Runtime* s_instance;
 	static constexpr size_t MAX_POOLED_RUNTIME_SCRATCH = 32;
@@ -440,7 +452,7 @@ private:
 	int m_lastTickBudgetRemaining = 0;
 	bool m_lastTickVisualFrameCommitted = true;
 	int m_lastTickVdpFrameCost = 0;
-	bool m_lastTickVdpFrameOverBudget = false;
+	bool m_lastTickVdpFrameHeld = false;
 	bool m_lastTickCompleted = false;
 	i64 m_lastTickConsumedSequence = 0;
 	int m_pendingCarryBudget = 0;
@@ -451,16 +463,18 @@ private:
 	RateBudget m_imgRate;
 	RateBudget m_dmaIsoRate;
 	RateBudget m_dmaBulkRate;
-	int m_renderBudgetPerFrame = 512;
+	RateBudget m_vdpRate;
+	int m_vdpWorkUnitsPerSec = 25'600;
 	int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 	int m_vblankCycles = 0;
 	int m_vblankStartCycle = 0;
 	int m_cyclesIntoFrame = 0;
 	bool m_waitingForVblank = false;
 	bool m_handlingVdpCommandWrite = false;
-	u32 m_payloadDataWritePtr = 0;
-	u32 m_armedVdpPayloadBaseOffset = 0;
-	u32 m_armedVdpPayloadWordCount = 0;
+	std::array<u8, 4> m_vdpFifoWordScratch{{0, 0, 0, 0}};
+	int m_vdpFifoWordByteCount = 0;
+	std::array<u32, VDP_STREAM_CAPACITY_WORDS> m_vdpFifoStreamWords{};
+	u32 m_vdpFifoStreamWordCount = 0;
 	uint64_t m_vblankSequence = 0;
 	uint64_t m_lastCompletedVblankSequence = 0;
 	uint64_t m_waitForVblankTargetSequence = 0;
@@ -468,7 +482,7 @@ private:
 	bool m_vblankActive = false;
 	bool m_vblankPendingClear = false;
 	bool m_vblankClearOnIrqEnd = false;
-		u32 m_vdpStatus = 0;
+	u32 m_vdpStatus = 0;
 };
 
 } // namespace bmsx

@@ -217,6 +217,9 @@ void LibretroPlatform::onContextDestroy() {
 	if (!m_render_assets_need_refresh && Runtime::hasInstance()) {
 		Runtime::instance().captureVramTextureSnapshots();
 	}
+	if (Runtime::hasInstance()) {
+		Runtime::instance().vdp().shutdownBackendResources();
+	}
 	m_engine->texmanager()->clear();
 	m_render_assets_need_refresh = true;
 	CRTPipeline::shutdownGLES2(backend);

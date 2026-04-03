@@ -31,6 +31,7 @@
 #include <ucontext.h>
 
 #include "libretro.h"
+#include "input_timeline.h"
 
 typedef struct LibretroCore {
 	void* handle;
@@ -4764,8 +4765,8 @@ static void load_core(LibretroCore* core, const char* path) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./bmsx_libretro.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--input-debug]\n"
-			"  %s --core ./bmsx_libretro.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--input-debug]\n",
+			"  %s --core ./bmsx_libretro.so --no-game [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--input-debug]\n"
+			"  %s --core ./bmsx_libretro.so GAME.rom [--backend software|gles2] [--video fb|sdl] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--input-debug]\n",
 			argv0, argv0);
 	exit(2);
 }
@@ -4777,6 +4778,8 @@ int main(int argc, char** argv) {
 	bool no_game = false;
 	const char* system_dir = "";
 	const char* save_dir = "";
+	const char* rom_folder = "";
+	const char* input_timeline = "";
 	const char* backend = "software";
 	const char* video_backend = "fb";
 
@@ -4812,6 +4815,16 @@ int main(int argc, char** argv) {
 		}
 		if (strcmp(argv[i], "--input-debug") == 0) {
 			g_input_debug = true;
+			continue;
+		}
+		if (strcmp(argv[i], "--rom-folder") == 0) {
+			if (i + 1 >= argc) usage(argv[0]);
+			rom_folder = argv[++i];
+			continue;
+		}
+		if (strcmp(argv[i], "--input-timeline") == 0) {
+			if (i + 1 >= argc) usage(argv[0]);
+			input_timeline = argv[++i];
 			continue;
 		}
 		if (argv[i][0] == '-') {
@@ -4928,6 +4941,9 @@ int main(int argc, char** argv) {
 	g_frame_usec = frame_time_usec_from_scaled(ufps_scaled);
 	core.bmsx_set_frame_time_usec((retro_usec_t)g_frame_usec);
 	g_frame_ns = frame_time_ns_from_scaled(ufps_scaled);
+	input_timeline_bind_keyboard_event(core_keyboard_event);
+	input_timeline_configure((input_timeline && input_timeline[0]) ? input_timeline : NULL,
+			(rom_folder && rom_folder[0]) ? rom_folder : NULL, game_path, g_frame_usec);
 	uint64_t next_frame_ns = monotonic_ns();
 
 	while (!g_should_quit) {
@@ -4949,8 +4965,8 @@ int main(int argc, char** argv) {
 		if (g_has_frame_time_cb) {
 			g_frame_time_cb.callback((retro_usec_t)g_frame_usec);
 		}
-			if (g_menu_active) {
-				input_poll_cb();
+		if (g_menu_active) {
+			input_poll_cb();
 				if (g_use_hw_render) {
 #ifdef BMSX_LIBRETRO_HOST_SDL
 					if (g_use_sdl) {
@@ -4975,6 +4991,7 @@ int main(int argc, char** argv) {
 #endif
 			}
 		} else {
+			input_timeline_tick_frame();
 			core.retro_run();
 		}
 		g_drop_video = false;
@@ -4986,6 +5003,7 @@ int main(int argc, char** argv) {
 	core.retro_unload_game();
 	core.retro_deinit();
 	audio_shutdown();
+	input_timeline_shutdown();
 
 	for (size_t i = 0; i < g_input_dev_count; ++i) {
 		if (g_input_devs[i].fd >= 0) {

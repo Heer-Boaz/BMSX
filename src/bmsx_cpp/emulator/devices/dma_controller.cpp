@@ -8,9 +8,28 @@
 
 namespace bmsx {
 
-DmaController::DmaController(Memory& memory, std::function<void(uint32_t)> raiseIrq)
+DmaController::DmaController(
+	Memory& memory,
+	std::function<void(uint32_t)> raiseIrq,
+	std::function<void(uint32_t src, size_t length)> sealVdpFifoDma
+)
 	: m_memory(memory)
-	, m_raiseIrq(std::move(raiseIrq)) {}
+	, m_raiseIrq(std::move(raiseIrq))
+	, m_sealVdpFifoDma(std::move(sealVdpFifoDma)) {}
+
+bool DmaController::hasPendingVdpSubmit() const {
+	for (const auto& state : m_channels) {
+		if (state.hasActive && state.active.kind == DmaJob::Kind::Io && state.active.dst == IO_VDP_FIFO) {
+			return true;
+		}
+		for (const auto& job : state.queue) {
+			if (job.kind == DmaJob::Kind::Io && job.dst == IO_VDP_FIFO) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
 
 void DmaController::setChannelBudgets(uint32_t isoBytesPerTick, uint32_t bulkBytesPerTick) {
 	m_channels[static_cast<int>(Channel::Iso)].budget = isoBytesPerTick;
@@ -34,7 +53,6 @@ void DmaController::enqueueImageCopy(const Memory::ImageWritePlan& plan, std::ve
 }
 
 void DmaController::tick() {
-	tryStartIo();
 	bool ioWrittenDirty = false;
 	bool imgWrittenDirty = false;
 	tickChannel(Channel::Iso, ioWrittenDirty, imgWrittenDirty);
@@ -52,7 +70,6 @@ void DmaController::reset() {
 		m_channels[i].queue.clear();
 		m_channels[i].hasActive = false;
 	}
-	m_ioJobActive = false;
 	m_ioWrittenValue = 0;
 	m_imgWrittenValue = 0;
 	m_buffer.clear();
@@ -106,6 +123,11 @@ uint32_t DmaController::processJob(DmaJob& job, uint32_t budget) {
 		uint32_t chunk = job.remaining > budget ? budget : job.remaining;
 		if (chunk == 0) {
 			return 0;
+		}
+		if (job.dst == IO_VDP_FIFO) {
+			job.remaining -= chunk;
+			job.written += chunk;
+			return chunk;
 		}
 		if (m_memory.isVramRange(job.dst, 1)) {
 			chunk &= ~3u;
@@ -188,16 +210,16 @@ void DmaController::tryStartIo() {
 		return;
 	}
 	const uint32_t ctrl = ctrlValue;
-	if (m_ioJobActive) {
-		m_memory.writeValue(IO_DMA_CTRL, valueNumber(static_cast<double>(ctrl & ~DMA_CTRL_START)));
-		return;
-	}
 	const uint32_t src = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_DMA_SRC)));
 	const uint32_t dst = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_DMA_DST)));
 	const uint32_t len = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_DMA_LEN)));
 	const bool strict = (ctrl & DMA_CTRL_STRICT) != 0;
-	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_CTRL, valueNumber(static_cast<double>(ctrl & ~DMA_CTRL_START)));
+	if (dst == IO_VDP_FIFO && hasPendingVdpSubmit()) {
+		finishIoRejected();
+		return;
+	}
+	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
 
 	const uint32_t maxWritable = resolveMaxWritable(dst);
 	if (maxWritable == 0) {
@@ -231,21 +253,26 @@ void DmaController::tryStartIo() {
 	job.strict = strict;
 	job.error = false;
 	m_ioWrittenValue = 0;
-	m_ioJobActive = true;
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
 }
 
 void DmaController::finishIoJob(DmaJob& job) {
-	m_ioJobActive = false;
 	if (job.error) {
 		finishIoError(job.clipped);
 		return;
+	}
+	if (job.dst == IO_VDP_FIFO) {
+		try {
+			m_sealVdpFifoDma(job.src, job.written);
+		} catch (...) {
+			finishIoError(job.clipped);
+			return;
+		}
 	}
 	finishIoSuccess(job.clipped);
 }
 
 void DmaController::finishIoSuccess(bool clipped) {
-	m_ioJobActive = false;
 	uint32_t status = DMA_STATUS_DONE;
 	if (clipped) {
 		status |= DMA_STATUS_CLIPPED;
@@ -255,7 +282,6 @@ void DmaController::finishIoSuccess(bool clipped) {
 }
 
 void DmaController::finishIoError(bool clipped) {
-	m_ioJobActive = false;
 	uint32_t status = DMA_STATUS_DONE | DMA_STATUS_ERROR;
 	if (clipped) {
 		status |= DMA_STATUS_CLIPPED;
@@ -264,7 +290,15 @@ void DmaController::finishIoError(bool clipped) {
 	m_raiseIrq(IRQ_DMA_ERROR);
 }
 
+void DmaController::finishIoRejected() {
+	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
+	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(DMA_STATUS_REJECTED)));
+}
+
 uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {
+	if (dst == IO_VDP_FIFO) {
+		return VDP_STREAM_BUFFER_SIZE;
+	}
 	if (dst >= VRAM_SYSTEM_ATLAS_BASE && dst < VRAM_SYSTEM_ATLAS_BASE + VRAM_SYSTEM_ATLAS_SIZE) {
 		return (VRAM_SYSTEM_ATLAS_BASE + VRAM_SYSTEM_ATLAS_SIZE) - dst;
 	}

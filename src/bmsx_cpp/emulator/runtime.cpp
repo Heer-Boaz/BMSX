@@ -4,6 +4,7 @@
 #include "lua_heap_usage.h"
 #include "program_loader.h"
 #include "resource_usage_detector.h"
+#include "vdp_packet_schema.h"
 #include "../core/engine_core.h"
 #include "../rompack/rompack.h"
 #include "../input/input.h"
@@ -37,131 +38,194 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 constexpr size_t CART_ROM_HEADER_SIZE = 64;
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 
-inline double readIoArg(const Runtime& runtime, uint32_t base, int index) {
-	return asNumber(runtime.memory().readValue(base + static_cast<uint32_t>(index) * IO_ARG_STRIDE));
+struct MemoryPacketWordReader {
+	static constexpr bool kMemoryBacked = true;
+	const Runtime* runtime = nullptr;
+	uint32_t base = 0u;
+
+	inline uint32_t readU32(int index) const {
+		return runtime->memory().readU32(base + static_cast<uint32_t>(index) * IO_ARG_STRIDE);
+	}
+};
+
+struct BufferPacketWordReader {
+	static constexpr bool kMemoryBacked = false;
+	const u32* words = nullptr;
+	uint32_t wordOffset = 0u;
+
+	inline uint32_t readU32(int index) const {
+		return words[wordOffset + static_cast<uint32_t>(index)];
+	}
+};
+
+template<typename Reader>
+inline uint32_t readPacketU32(const Reader& reader, int index) {
+	return reader.readU32(index);
 }
 
-inline Color readIoColor(const Runtime& runtime, uint32_t base, int offset) {
+template<typename Reader>
+inline int32_t readPacketI32(const Reader& reader, int index) {
+	return static_cast<int32_t>(reader.readU32(index));
+}
+
+template<typename Reader>
+inline float readPacketF32(const Reader& reader, int index) {
+	const uint32_t bits = reader.readU32(index);
+	float value = 0.0f;
+	std::memcpy(&value, &bits, sizeof(value));
+	return value;
+}
+
+template<typename Reader>
+inline uint32_t readPacketArgU32(const Reader& reader, uint32_t cmd, int index) {
+	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != VdpPacketWordKind::U32) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Packet arg " + std::to_string(index) + " is not encoded as u32.");
+	}
+	return readPacketU32(reader, index);
+}
+
+template<typename Reader>
+inline int32_t readPacketArgI32(const Reader& reader, uint32_t cmd, int index) {
+	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != VdpPacketWordKind::U32) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Packet arg " + std::to_string(index) + " is not encoded as u32.");
+	}
+	return readPacketI32(reader, index);
+}
+
+template<typename Reader>
+inline float readPacketArgF32(const Reader& reader, uint32_t cmd, int index) {
+	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != VdpPacketWordKind::F32) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Packet arg " + std::to_string(index) + " is not encoded as f32.");
+	}
+	return readPacketF32(reader, index);
+}
+
+template<typename Reader>
+inline Color readPacketColor(const Reader& reader, uint32_t cmd, int offset) {
 	return Color{
-		static_cast<f32>(readIoArg(runtime, base, offset + 0)),
-		static_cast<f32>(readIoArg(runtime, base, offset + 1)),
-		static_cast<f32>(readIoArg(runtime, base, offset + 2)),
-		static_cast<f32>(readIoArg(runtime, base, offset + 3)),
+		readPacketArgF32(reader, cmd, offset + 0),
+		readPacketArgF32(reader, cmd, offset + 1),
+		readPacketArgF32(reader, cmd, offset + 2),
+		readPacketArgF32(reader, cmd, offset + 3),
 	};
 }
 
-inline uint32_t requireArmedPayloadBaseOffset(const Runtime& runtime, uint32_t requiredWords, const char* label) {
-	if (requiredWords > runtime.armedVdpPayloadWordCount()) {
-		throw BMSX_RUNTIME_ERROR(std::string("[VDP] ") + label + " payload underrun (" + std::to_string(requiredWords) + " > " + std::to_string(runtime.armedVdpPayloadWordCount()) + ").");
-	}
-	return runtime.armedVdpPayloadBaseOffset();
-}
-
-void processVdpCommand(Runtime& runtime, uint32_t cmdBase, uint32_t cmd) {
-	auto& memory = runtime.memory();
+template<typename ArgReader, typename PayloadReader>
+void processVdpCommand(Runtime& runtime, uint32_t cmd, uint32_t argWords, const ArgReader& argReader, const PayloadReader& payloadReader, uint32_t payloadWords) {
 	switch (cmd) {
 		case IO_CMD_VDP_CLEAR: {
-			runtime.vdp().enqueueClear(readIoColor(runtime, cmdBase, 1));
+			assertVdpPacketArgWords(cmd, argWords);
+			runtime.vdp().enqueueClear(readPacketColor(argReader, cmd, 0));
 			break;
 		}
 		case IO_CMD_VDP_FILL_RECT: {
+			assertVdpPacketArgWords(cmd, argWords);
 			runtime.vdp().enqueueFillRect(
-				static_cast<f32>(readIoArg(runtime, cmdBase, 1)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 2)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 3)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 4)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 5)),
-				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 6))),
-				readIoColor(runtime, cmdBase, 7)
+				readPacketArgF32(argReader, cmd, 0),
+				readPacketArgF32(argReader, cmd, 1),
+				readPacketArgF32(argReader, cmd, 2),
+				readPacketArgF32(argReader, cmd, 3),
+				readPacketArgF32(argReader, cmd, 4),
+				static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 5)),
+				readPacketColor(argReader, cmd, 6)
 			);
 			break;
 		}
 		case IO_CMD_VDP_DRAW_LINE: {
+			assertVdpPacketArgWords(cmd, argWords);
 			runtime.vdp().enqueueDrawLine(
-				static_cast<f32>(readIoArg(runtime, cmdBase, 1)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 2)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 3)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 4)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 5)),
-				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 6))),
-				readIoColor(runtime, cmdBase, 7),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 11))
+				readPacketArgF32(argReader, cmd, 0),
+				readPacketArgF32(argReader, cmd, 1),
+				readPacketArgF32(argReader, cmd, 2),
+				readPacketArgF32(argReader, cmd, 3),
+				readPacketArgF32(argReader, cmd, 4),
+				static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 5)),
+				readPacketColor(argReader, cmd, 6),
+				readPacketArgF32(argReader, cmd, 10)
 			);
 			break;
 		}
 		case IO_CMD_VDP_BLIT: {
-			const uint32_t flipFlags = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 8));
+			assertVdpPacketArgWords(cmd, argWords);
+			const uint32_t flipFlags = readPacketArgU32(argReader, cmd, 7);
 			runtime.vdp().enqueueBlit(
-				static_cast<u32>(readIoArg(runtime, cmdBase, 1)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 2)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 3)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 4)),
-				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 5))),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 6)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 7)),
+				readPacketArgU32(argReader, cmd, 0),
+				readPacketArgF32(argReader, cmd, 1),
+				readPacketArgF32(argReader, cmd, 2),
+				readPacketArgF32(argReader, cmd, 3),
+				static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 4)),
+				readPacketArgF32(argReader, cmd, 5),
+				readPacketArgF32(argReader, cmd, 6),
 				(flipFlags & 1u) != 0u,
 				(flipFlags & 2u) != 0u,
-				readIoColor(runtime, cmdBase, 9),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 13))
+				readPacketColor(argReader, cmd, 8),
+				readPacketArgF32(argReader, cmd, 12)
 			);
 			break;
 		}
 		case IO_CMD_VDP_GLYPH_RUN: {
-			const Value textValue = memory.readValue(cmdBase + IO_ARG_STRIDE);
-			if (!valueIsString(textValue)) {
-				throw BMSX_RUNTIME_ERROR("[VDP] Glyph text expects a string.");
-			}
-			const std::string& text = runtime.cpu().stringPool().toString(asStringId(textValue));
-			std::vector<std::string> lines;
-			lines.reserve(1u + static_cast<size_t>(std::count(text.begin(), text.end(), '\n')));
-			size_t lineStart = 0u;
-			while (lineStart <= text.size()) {
-				const size_t lineEnd = text.find('\n', lineStart);
-				if (lineEnd == std::string::npos) {
-					lines.emplace_back(text.substr(lineStart));
-					break;
-				}
-				lines.emplace_back(text.substr(lineStart, lineEnd - lineStart));
-				lineStart = lineEnd + 1u;
-			}
-			const bool backgroundEnabled = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 13)) != 0u;
+			assertVdpPacketArgWords(cmd, argWords);
+			const std::string& text = runtime.cpu().stringPool().toString(readPacketArgU32(argReader, cmd, 0));
+			const bool backgroundEnabled = readPacketArgU32(argReader, cmd, 12) != 0u;
 			const std::optional<Color> backgroundColor = backgroundEnabled
-				? std::optional<Color>(readIoColor(runtime, cmdBase, 14))
+				? std::optional<Color>(readPacketColor(argReader, cmd, 13))
 				: std::nullopt;
 			runtime.vdp().enqueueGlyphRun(
-				lines,
-				static_cast<f32>(readIoArg(runtime, cmdBase, 2)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 3)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 4)),
-				runtime.api().resolveFontId(static_cast<uint32_t>(readIoArg(runtime, cmdBase, 5))),
-				readIoColor(runtime, cmdBase, 9),
+				text,
+				readPacketArgF32(argReader, cmd, 1),
+				readPacketArgF32(argReader, cmd, 2),
+				readPacketArgF32(argReader, cmd, 3),
+				runtime.api().resolveFontId(readPacketArgU32(argReader, cmd, 4)),
+				readPacketColor(argReader, cmd, 8),
 				backgroundColor,
-				static_cast<i32>(readIoArg(runtime, cmdBase, 6)),
-				static_cast<i32>(readIoArg(runtime, cmdBase, 7)),
-				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 8)))
+				readPacketArgI32(argReader, cmd, 5),
+				readPacketArgI32(argReader, cmd, 6),
+				static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 7))
 			);
 			break;
 		}
 		case IO_CMD_VDP_TILE_RUN: {
-			const uint32_t tileCount = static_cast<uint32_t>(readIoArg(runtime, cmdBase, 1));
-			const uint32_t payloadOffset = requireArmedPayloadBaseOffset(runtime, tileCount, "Tile");
-			std::vector<u32> handles(tileCount, IO_VDP_TILE_HANDLE_NONE);
-			for (uint32_t tileIndex = 0; tileIndex < tileCount; tileIndex += 1u) {
-				handles[tileIndex] = static_cast<u32>(asNumber(memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + tileIndex) * IO_ARG_STRIDE)));
+			assertVdpPacketArgWords(cmd, argWords);
+			const uint32_t tileCount = readPacketArgU32(argReader, cmd, 0);
+			if (tileCount > payloadWords) {
+				throw BMSX_RUNTIME_ERROR(std::string("[VDP] Tile payload underrun (") + std::to_string(tileCount) + " > " + std::to_string(payloadWords) + ").");
 			}
-			runtime.vdp().enqueueTileRun(
-				handles,
-				static_cast<i32>(readIoArg(runtime, cmdBase, 2)),
-				static_cast<i32>(readIoArg(runtime, cmdBase, 3)),
-				static_cast<i32>(readIoArg(runtime, cmdBase, 4)),
-				static_cast<i32>(readIoArg(runtime, cmdBase, 5)),
-				static_cast<i32>(readIoArg(runtime, cmdBase, 6)),
-				static_cast<i32>(readIoArg(runtime, cmdBase, 7)),
-				static_cast<i32>(readIoArg(runtime, cmdBase, 8)),
-				static_cast<i32>(readIoArg(runtime, cmdBase, 9)),
-				static_cast<f32>(readIoArg(runtime, cmdBase, 10)),
-				static_cast<Layer2D>(static_cast<int>(readIoArg(runtime, cmdBase, 11)))
-			);
+			const i32 cols = readPacketArgI32(argReader, cmd, 1);
+			const i32 rows = readPacketArgI32(argReader, cmd, 2);
+			if (tileCount != static_cast<uint32_t>(cols * rows)) {
+				throw BMSX_RUNTIME_ERROR(std::string("[VDP] Tile payload size mismatch (") + std::to_string(tileCount) + " != " + std::to_string(cols * rows) + ").");
+			}
+			if constexpr (PayloadReader::kMemoryBacked) {
+				runtime.vdp().enqueuePayloadTileRun(
+					payloadReader.base,
+					tileCount,
+					cols,
+					rows,
+					readPacketArgI32(argReader, cmd, 3),
+					readPacketArgI32(argReader, cmd, 4),
+					readPacketArgI32(argReader, cmd, 5),
+					readPacketArgI32(argReader, cmd, 6),
+					readPacketArgI32(argReader, cmd, 7),
+					readPacketArgI32(argReader, cmd, 8),
+					readPacketArgF32(argReader, cmd, 9),
+					static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 10))
+				);
+			} else {
+				runtime.vdp().enqueuePayloadTileRunWords(
+					payloadReader.words + payloadReader.wordOffset,
+					tileCount,
+					cols,
+					rows,
+					readPacketArgI32(argReader, cmd, 3),
+					readPacketArgI32(argReader, cmd, 4),
+					readPacketArgI32(argReader, cmd, 5),
+					readPacketArgI32(argReader, cmd, 6),
+					readPacketArgI32(argReader, cmd, 7),
+					readPacketArgI32(argReader, cmd, 8),
+					readPacketArgF32(argReader, cmd, 9),
+					static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 10))
+				);
+			}
 			break;
 		}
 		default:
@@ -170,11 +234,11 @@ void processVdpCommand(Runtime& runtime, uint32_t cmdBase, uint32_t cmd) {
 }
 }
 
-uint32_t Runtime::RateBudget::calcBytesForCycles(i64 cpuHz, i64 cycles) {
-	const i64 wholeBytesPerCycle = bytesPerSec / cpuHz;
-	const i64 remainderBytesPerCycle = bytesPerSec % cpuHz;
-	const i64 baseOut = wholeBytesPerCycle * cycles;
-	const i64 remainderNumerator = remainderBytesPerCycle * cycles + carry;
+uint32_t Runtime::RateBudget::calcUnitsForCycles(i64 cpuHz, i64 cycles) {
+	const i64 wholeUnitsPerCycle = unitsPerSec / cpuHz;
+	const i64 remainderUnitsPerCycle = unitsPerSec % cpuHz;
+	const i64 baseOut = wholeUnitsPerCycle * cycles;
+	const i64 remainderNumerator = remainderUnitsPerCycle * cycles + carry;
 	const i64 out = baseOut + (remainderNumerator / cpuHz);
 	carry = remainderNumerator % cpuHz;
 	const i64 maxValue = static_cast<i64>(std::numeric_limits<uint32_t>::max());
@@ -231,17 +295,21 @@ Runtime::Runtime(const RuntimeOptions& options)
 	, m_vdp(m_memory)
 	, m_stringHandles(m_memory)
 	, m_cpu(m_memory, &m_stringHandles)
-	, m_dmaController(m_memory, [this](uint32_t mask) { raiseIrqFlags(mask); })
+	, m_dmaController(
+			m_memory,
+			[this](uint32_t mask) { raiseIrqFlags(mask); },
+			[this](uint32_t src, size_t byteLength) { sealVdpDmaTransfer(src, byteLength); }
+		)
 	, m_imgDecController(m_memory, m_dmaController, [this](uint32_t mask) { raiseIrqFlags(mask); })
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
 	, m_cpuHz(options.cpuHz)
-	, m_renderBudgetPerFrame(options.renderBudgetPerFrame)
+	, m_vdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec)
 	, m_cycleBudgetPerFrame(options.cycleBudgetPerFrame)
 {
 	// Initialize I/O memory region
 	m_memory.clearIoSlots();
-	resetVdpPayloadState();
+	resetVdpIngressState();
 	// System flags
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
@@ -273,7 +341,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_vdp.initializeRegisters();
 	m_memory.setIoWriteHandler(this);
 	setVblankCycles(options.vblankCycles);
-	setRenderBudgetPerFrame(options.renderBudgetPerFrame);
+	setVdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec);
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	refreshMemoryMap();
 	m_cpu.setExternalRootMarker([this](GcHeap& heap) {
@@ -311,13 +379,161 @@ Runtime::~Runtime() {
 	m_api.reset();
 }
 
-void Runtime::resetVdpPayloadState() {
-	m_memory.writeIoValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(0.0));
-	m_memory.writeIoValue(IO_PAYLOAD_ALLOC_ADDR, valueNumber(0.0));
-	m_memory.writeIoValue(IO_PAYLOAD_DATA_ADDR, valueNumber(0.0));
-	m_payloadDataWritePtr = 0;
-	m_armedVdpPayloadBaseOffset = 0;
-	m_armedVdpPayloadWordCount = 0;
+void Runtime::resetVdpIngressState() {
+	m_vdpFifoWordByteCount = 0;
+	m_vdpFifoStreamWordCount = 0;
+}
+
+bool Runtime::hasOpenDirectVdpFifoIngress() const {
+	return m_vdpFifoWordByteCount != 0 || m_vdpFifoStreamWordCount != 0u;
+}
+
+bool Runtime::hasBlockedVdpSubmitPath() const {
+	return hasOpenDirectVdpFifoIngress() || m_dmaController.hasPendingVdpSubmit() || !m_vdp.canAcceptSubmittedFrame();
+}
+
+void Runtime::pushVdpFifoWord(u32 word) {
+	if (m_vdpFifoStreamWordCount >= VDP_STREAM_CAPACITY_WORDS) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Stream overflow (" + std::to_string(m_vdpFifoStreamWordCount + 1u) + " > " + std::to_string(VDP_STREAM_CAPACITY_WORDS) + ").");
+	}
+	m_vdpFifoStreamWords[static_cast<size_t>(m_vdpFifoStreamWordCount)] = word;
+	m_vdpFifoStreamWordCount += 1u;
+}
+
+void Runtime::writeVdpFifoBytes(const u8* data, size_t length) {
+	for (size_t index = 0; index < length; index += 1u) {
+		m_vdpFifoWordScratch[static_cast<size_t>(m_vdpFifoWordByteCount)] = data[index];
+		m_vdpFifoWordByteCount += 1;
+		if (m_vdpFifoWordByteCount != 4) {
+			continue;
+		}
+		const u32 word = static_cast<u32>(m_vdpFifoWordScratch[0])
+			| (static_cast<u32>(m_vdpFifoWordScratch[1]) << 8)
+			| (static_cast<u32>(m_vdpFifoWordScratch[2]) << 16)
+			| (static_cast<u32>(m_vdpFifoWordScratch[3]) << 24);
+		m_vdpFifoWordByteCount = 0;
+		pushVdpFifoWord(word);
+	}
+}
+
+void Runtime::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
+	if ((byteLength & 3u) != 0u) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Sealed stream length must be word-aligned.");
+	}
+	if (byteLength > VDP_STREAM_BUFFER_SIZE) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Sealed stream overflow (" + std::to_string(byteLength) + " > " + std::to_string(VDP_STREAM_BUFFER_SIZE) + ").");
+	}
+	uint32_t cursor = baseAddr;
+	const uint32_t end = baseAddr + static_cast<uint32_t>(byteLength);
+	m_vdp.beginSubmittedFrame();
+	try {
+		while (cursor < end) {
+			if (cursor + VDP_STREAM_PACKET_HEADER_WORDS * IO_WORD_SIZE > end) {
+				throw BMSX_RUNTIME_ERROR("[VDP] Stream ended mid-packet header.");
+			}
+			const u32 cmd = m_memory.readU32(cursor);
+			const u32 argWords = m_memory.readU32(cursor + IO_WORD_SIZE);
+			const u32 payloadWords = m_memory.readU32(cursor + IO_WORD_SIZE * 2u);
+			if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
+				throw BMSX_RUNTIME_ERROR("[VDP] Submit payload overflow (" + std::to_string(payloadWords) + " > " + std::to_string(VDP_STREAM_PAYLOAD_CAPACITY_WORDS) + ").");
+			}
+			const u32 packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
+			const u32 packetByteCount = packetWordCount * IO_WORD_SIZE;
+			if (cursor + packetByteCount > end) {
+				throw BMSX_RUNTIME_ERROR("[VDP] Stream ended mid-packet payload.");
+			}
+			m_vdp.syncRegisters();
+			const MemoryPacketWordReader argReader{this, cursor + VDP_STREAM_PACKET_HEADER_WORDS * IO_WORD_SIZE};
+			const MemoryPacketWordReader payloadReader{this, cursor + (VDP_STREAM_PACKET_HEADER_WORDS + argWords) * IO_WORD_SIZE};
+			processVdpCommand(
+				*this,
+				cmd,
+				argWords,
+				argReader,
+				payloadReader,
+				payloadWords
+			);
+			cursor += packetByteCount;
+		}
+		m_vdp.sealSubmittedFrame();
+	} catch (...) {
+		m_vdp.cancelSubmittedFrame();
+		throw;
+	}
+	refreshVdpSubmitBusyStatus();
+}
+
+void Runtime::sealVdpFifoTransfer() {
+	if (m_vdpFifoWordByteCount != 0) {
+		throw BMSX_RUNTIME_ERROR("[VDP] FIFO transfer ended on a partial word.");
+	}
+	if (m_vdpFifoStreamWordCount == 0u) {
+		return;
+	}
+	u32 cursor = 0u;
+	m_vdp.beginSubmittedFrame();
+	try {
+		while (cursor < m_vdpFifoStreamWordCount) {
+			if (cursor + VDP_STREAM_PACKET_HEADER_WORDS > m_vdpFifoStreamWordCount) {
+				throw BMSX_RUNTIME_ERROR("[VDP] Stream ended mid-packet header.");
+			}
+			const u32 cmd = m_vdpFifoStreamWords[static_cast<size_t>(cursor)];
+			const u32 argWords = m_vdpFifoStreamWords[static_cast<size_t>(cursor + 1u)];
+			const u32 payloadWords = m_vdpFifoStreamWords[static_cast<size_t>(cursor + 2u)];
+			if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
+				throw BMSX_RUNTIME_ERROR("[VDP] Submit payload overflow (" + std::to_string(payloadWords) + " > " + std::to_string(VDP_STREAM_PAYLOAD_CAPACITY_WORDS) + ").");
+			}
+			const u32 packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
+			if (cursor + packetWordCount > m_vdpFifoStreamWordCount) {
+				throw BMSX_RUNTIME_ERROR("[VDP] Stream ended mid-packet payload.");
+			}
+			m_vdp.syncRegisters();
+			const BufferPacketWordReader argReader{m_vdpFifoStreamWords.data(), cursor + VDP_STREAM_PACKET_HEADER_WORDS};
+			const BufferPacketWordReader payloadReader{m_vdpFifoStreamWords.data(), cursor + VDP_STREAM_PACKET_HEADER_WORDS + argWords};
+			processVdpCommand(
+				*this,
+				cmd,
+				argWords,
+				argReader,
+				payloadReader,
+				payloadWords
+			);
+			cursor += packetWordCount;
+		}
+		m_vdp.sealSubmittedFrame();
+	} catch (...) {
+		m_vdp.cancelSubmittedFrame();
+		throw;
+	}
+	refreshVdpSubmitBusyStatus();
+	resetVdpIngressState();
+}
+
+void Runtime::sealVdpDmaTransfer(uint32_t src, size_t byteLength) {
+	consumeSealedVdpStream(src, byteLength);
+}
+
+void Runtime::consumeDirectVdpCommand(u32 cmd) {
+	const VdpPacketSchema& schema = getVdpPacketSchema(cmd);
+	m_vdp.beginSubmittedFrame();
+	try {
+		m_vdp.syncRegisters();
+		const MemoryPacketWordReader argReader{this, IO_VDP_CMD_ARG0};
+		const MemoryPacketWordReader payloadReader{this, 0u};
+		processVdpCommand(
+			*this,
+			cmd,
+			schema.argWords,
+			argReader,
+			payloadReader,
+			0u
+		);
+		m_vdp.sealSubmittedFrame();
+	} catch (...) {
+		m_vdp.cancelSubmittedFrame();
+		throw;
+	}
+	refreshVdpSubmitBusyStatus();
 }
 
 Api& Runtime::api() {
@@ -347,7 +563,7 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_pendingCall = PendingCall::None;
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
-	resetVdpPayloadState();
+	resetVdpIngressState();
 	m_memory.writeValue(IO_SYS_BOOT_CART, valueNumber(0.0));
 	m_memory.writeValue(IO_SYS_CART_BOOTREADY, valueNumber(0.0));
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
@@ -434,40 +650,44 @@ bool Runtime::pollSystemBootRequest() {
 }
 
 void Runtime::advanceHardware(int cycles) {
-	if (cycles <= 0) {
-		return;
+	int remaining = cycles;
+	while (remaining > 0) {
+		int step = 0;
+		if (!m_vblankActive && m_cyclesIntoFrame < m_vblankStartCycle) {
+			const int untilVblank = m_vblankStartCycle - m_cyclesIntoFrame;
+			step = remaining < untilVblank ? remaining : untilVblank;
+		} else {
+			const int untilFrameEnd = m_cycleBudgetPerFrame - m_cyclesIntoFrame;
+			step = remaining < untilFrameEnd ? remaining : untilFrameEnd;
+		}
+		const i64 cycleCount = static_cast<i64>(step);
+		const uint32_t imgBudget = m_imgRate.calcUnitsForCycles(m_cpuHz, cycleCount);
+		const uint32_t isoBudget = m_dmaIsoRate.calcUnitsForCycles(m_cpuHz, cycleCount);
+		const uint32_t bulkBudget = m_dmaBulkRate.calcUnitsForCycles(m_cpuHz, cycleCount);
+		const uint32_t vdpWork = m_vdpRate.calcUnitsForCycles(m_cpuHz, cycleCount);
+		m_imgDecController.setDecodeBudget(imgBudget);
+		m_dmaController.setChannelBudgets(isoBudget, bulkBudget);
+		m_dmaController.tick();
+		m_imgDecController.tick();
+		m_vdp.advanceWork(vdpWork);
+		refreshVdpSubmitBusyStatus();
+		advanceVblank(step);
+		remaining -= step;
 	}
-	// Hardware advances in discrete steps; interrupt sources raised in the same step are observed together.
-	const i64 cycleCount = static_cast<i64>(cycles);
-	const uint32_t imgBudget = m_imgRate.calcBytesForCycles(m_cpuHz, cycleCount);
-	const uint32_t isoBudget = m_dmaIsoRate.calcBytesForCycles(m_cpuHz, cycleCount);
-	const uint32_t bulkBudget = m_dmaBulkRate.calcBytesForCycles(m_cpuHz, cycleCount);
-	m_imgDecController.setDecodeBudget(imgBudget);
-	m_dmaController.setChannelBudgets(isoBudget, bulkBudget);
-	m_dmaController.tick();
-	m_imgDecController.tick();
-	advanceVblank(cycles);
 }
 
 void Runtime::advanceVblank(int cycles) {
-	int remaining = cycles;
-	while (remaining > 0) {
-		const int frameRemaining = m_cycleBudgetPerFrame - m_cyclesIntoFrame;
-		const int step = remaining < frameRemaining ? remaining : frameRemaining;
-		const int previous = m_cyclesIntoFrame;
-		m_cyclesIntoFrame += step;
-		if (!m_vblankActive && previous < m_vblankStartCycle && m_cyclesIntoFrame >= m_vblankStartCycle) {
-			enterVblank();
-		}
-		remaining -= step;
-		if (m_cyclesIntoFrame >= m_cycleBudgetPerFrame) {
-			m_cyclesIntoFrame = 0;
-			if (m_vblankStartCycle == 0) {
-				raiseIrqFlags(IRQ_VBLANK);
-			} else if (m_vblankActive) {
-				// Defer clear until the VBLANK IRQ handler has a chance to observe the status.
-				m_vblankPendingClear = true;
-			}
+	const int previous = m_cyclesIntoFrame;
+	m_cyclesIntoFrame += cycles;
+	if (!m_vblankActive && previous < m_vblankStartCycle && m_cyclesIntoFrame >= m_vblankStartCycle) {
+		enterVblank();
+	}
+	if (m_cyclesIntoFrame >= m_cycleBudgetPerFrame) {
+		m_cyclesIntoFrame = 0;
+		if (m_vblankStartCycle == 0) {
+			raiseIrqFlags(IRQ_VBLANK);
+		} else if (m_vblankActive) {
+			m_vblankPendingClear = true;
 		}
 	}
 }
@@ -509,6 +729,52 @@ void Runtime::setVblankStatus(bool active) {
 	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
 }
 
+void Runtime::setVdpSubmitBusyStatus(bool active) {
+	const uint32_t mask = VDP_STATUS_SUBMIT_BUSY;
+	const uint32_t nextStatus = active ? (m_vdpStatus | mask) : (m_vdpStatus & ~mask);
+	if (nextStatus == m_vdpStatus) {
+		return;
+	}
+	m_vdpStatus = nextStatus;
+	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
+}
+
+void Runtime::refreshVdpSubmitBusyStatus() {
+	setVdpSubmitBusyStatus(hasBlockedVdpSubmitPath());
+}
+
+void Runtime::setVdpSubmitRejectedStatus(bool active) {
+	const uint32_t mask = VDP_STATUS_SUBMIT_REJECTED;
+	const uint32_t nextStatus = active ? (m_vdpStatus | mask) : (m_vdpStatus & ~mask);
+	if (nextStatus == m_vdpStatus) {
+		return;
+	}
+	m_vdpStatus = nextStatus;
+	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
+}
+
+void Runtime::noteRejectedVdpSubmitAttempt() {
+	setVdpSubmitRejectedStatus(true);
+	refreshVdpSubmitBusyStatus();
+}
+
+void Runtime::noteAcceptedVdpSubmitAttempt() {
+	setVdpSubmitRejectedStatus(false);
+	refreshVdpSubmitBusyStatus();
+}
+
+void Runtime::syncVdpSubmitAttemptStatusFromDma(uint32_t dst) {
+	if (dst != IO_VDP_FIFO) {
+		return;
+	}
+	const uint32_t dmaStatus = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_DMA_STATUS)));
+	if ((dmaStatus & DMA_STATUS_REJECTED) != 0u) {
+		noteRejectedVdpSubmitAttempt();
+		return;
+	}
+	noteAcceptedVdpSubmitAttempt();
+}
+
 void Runtime::enterVblank() {
 	// IRQ flags are level/pending; multiple VBLANK edges while pending coalesce.
 	m_vblankSequence += 1;
@@ -518,10 +784,10 @@ void Runtime::enterVblank() {
 }
 
 void Runtime::commitFrameOnVblankEdge() {
-	// Flush latest VDP register writes before snapshotting atlas/skybox bindings.
 	m_vdp.syncRegisters();
-	m_vdp.commitBuildFrame(m_renderBudgetPerFrame);
+	m_vdp.presentReadyFrameOnVblankEdge();
 	m_vdp.commitViewSnapshot(*EngineCore::instance().view());
+	refreshVdpSubmitBusyStatus();
 	if (!m_frameActive) {
 		return;
 	}
@@ -551,7 +817,7 @@ void Runtime::completeTickIfPending(FrameState& frameState, uint64_t vblankSeque
 	m_lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 	m_lastTickVisualFrameCommitted = m_vdp.lastFrameCommitted();
 	m_lastTickVdpFrameCost = m_vdp.lastFrameCost();
-	m_lastTickVdpFrameOverBudget = m_vdp.lastFrameOverBudget();
+	m_lastTickVdpFrameHeld = m_vdp.lastFrameHeld();
 	m_lastTickCompleted = true;
 	m_lastTickSequence += 1;
 }
@@ -607,6 +873,7 @@ void Runtime::resetTransferCarry() {
 	m_imgRate.resetCarry();
 	m_dmaIsoRate.resetCarry();
 	m_dmaBulkRate.resetCarry();
+	m_vdpRate.resetCarry();
 }
 
 void Runtime::raiseIrqFlags(uint32_t mask) {
@@ -800,45 +1067,62 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 	if (m_handlingVdpCommandWrite || !valueIsNumber(value)) {
 		return;
 	}
-	if (addr == IO_PAYLOAD_ALLOC_ADDR) {
-		const uint32_t words = static_cast<uint32_t>(asNumber(value));
-		const uint32_t writePtr = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_PAYLOAD_WRITE_PTR_ADDR)));
-		const uint32_t next = writePtr + words;
-		if (next > IO_PAYLOAD_CAPACITY) {
-			throw BMSX_RUNTIME_ERROR("[VDP] IO payload buffer overflow (" + std::to_string(next) + " > " + std::to_string(IO_PAYLOAD_CAPACITY) + ").");
+	if (addr == IO_DMA_CTRL) {
+		if ((static_cast<uint32_t>(asNumber(value)) & DMA_CTRL_START) != 0u) {
+			const uint32_t dst = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_DMA_DST)));
+			if (dst == IO_VDP_FIFO && hasBlockedVdpSubmitPath()) {
+				m_memory.writeValue(IO_DMA_CTRL, valueNumber(static_cast<double>(static_cast<uint32_t>(asNumber(value)) & ~DMA_CTRL_START)));
+				m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
+				m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(DMA_STATUS_REJECTED)));
+				noteRejectedVdpSubmitAttempt();
+				return;
+			}
+			m_dmaController.tryStartIo();
+			syncVdpSubmitAttemptStatusFromDma(dst);
 		}
-		m_memory.writeIoValue(IO_PAYLOAD_WRITE_PTR_ADDR, valueNumber(static_cast<double>(next)));
-		m_memory.writeIoValue(IO_PAYLOAD_ALLOC_ADDR, valueNumber(static_cast<double>(writePtr)));
-		m_payloadDataWritePtr = writePtr;
-		m_armedVdpPayloadBaseOffset = writePtr;
-		m_armedVdpPayloadWordCount = words;
 		return;
 	}
-	if (addr == IO_PAYLOAD_DATA_ADDR) {
-		const uint32_t writeLimit = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_PAYLOAD_WRITE_PTR_ADDR)));
-		if (m_payloadDataWritePtr >= writeLimit) {
-			throw BMSX_RUNTIME_ERROR("[VDP] IO payload data write exceeds allocated payload (" + std::to_string(m_payloadDataWritePtr) + " >= " + std::to_string(writeLimit) + ").");
+	if (addr == IO_VDP_FIFO) {
+		if (m_dmaController.hasPendingVdpSubmit() || (!hasOpenDirectVdpFifoIngress() && !m_vdp.canAcceptSubmittedFrame())) {
+			noteRejectedVdpSubmitAttempt();
+			return;
 		}
-		const double numericValue = static_cast<double>(static_cast<uint32_t>(asNumber(value)));
-		m_memory.writeIoValue(IO_PAYLOAD_BUFFER_BASE + m_payloadDataWritePtr * IO_ARG_STRIDE, valueNumber(numericValue));
-		m_memory.writeIoValue(IO_PAYLOAD_DATA_ADDR, valueNumber(numericValue));
-		m_payloadDataWritePtr += 1u;
+		noteAcceptedVdpSubmitAttempt();
+		pushVdpFifoWord(static_cast<uint32_t>(asNumber(value)));
+		return;
+	}
+	if (addr == IO_VDP_FIFO_CTRL) {
+		if ((static_cast<uint32_t>(asNumber(value)) & VDP_FIFO_CTRL_SEAL) == 0u) {
+			return;
+		}
+		if (m_dmaController.hasPendingVdpSubmit()) {
+			noteRejectedVdpSubmitAttempt();
+			return;
+		}
+		sealVdpFifoTransfer();
+		refreshVdpSubmitBusyStatus();
+		return;
+	}
+	if (addr == IO_PAYLOAD_ALLOC_ADDR || addr == IO_PAYLOAD_DATA_ADDR) {
+		throw BMSX_RUNTIME_ERROR("[VDP] Payload staging IO is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.");
 		return;
 	}
 	if (addr == IO_VDP_CMD) {
 		if (asNumber(value) == 0.0) {
 			return;
 		}
+		if (hasBlockedVdpSubmitPath()) {
+			noteRejectedVdpSubmitAttempt();
+			return;
+		}
+		noteAcceptedVdpSubmitAttempt();
 		m_handlingVdpCommandWrite = true;
 		try {
-			m_vdp.syncRegisters();
-			processVdpCommand(*this, IO_VDP_CMD, static_cast<uint32_t>(asNumber(value)));
+			consumeDirectVdpCommand(static_cast<uint32_t>(asNumber(value)));
 		} catch (...) {
-			resetVdpPayloadState();
 			m_handlingVdpCommandWrite = false;
 			throw;
 		}
-		resetVdpPayloadState();
 		m_handlingVdpCommandWrite = false;
 		return;
 	}
@@ -917,7 +1201,7 @@ void Runtime::applyState(const RuntimeState& state) {
 		m_vdp.clearSkybox();
 	}
 	m_vdp.setDitherType(state.vdpDitherType);
-	m_vdp.commitBuildFrame(std::numeric_limits<int>::max());
+	m_vdp.commitLiveVisualState();
 	m_vdp.commitViewSnapshot(*EngineCore::instance().view());
 
 	// Restore globals
@@ -972,7 +1256,7 @@ void Runtime::applyActiveMachineTiming(i64 cpuHz) {
 	setCpuHz(cpuHz);
 	setCycleBudgetPerFrame(cycleBudget);
 	setVblankCycles(static_cast<int>(vblankCycles));
-	setRenderBudgetPerFrame(static_cast<int>(manifest.vdpRenderBudgetPerFrame.value_or(DEFAULT_VDP_RENDER_BUDGET_PER_FRAME)));
+	setVdpWorkUnitsPerSec(static_cast<int>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC)));
 }
 
 void Runtime::setVblankCycles(int cycles) {
@@ -1000,21 +1284,22 @@ void Runtime::resetRenderBuffers() {
 	RenderQueues::clearBackQueues();
 }
 
-void Runtime::setRenderBudgetPerFrame(int budget) {
-	if (budget <= 0) {
-		throw BMSX_RUNTIME_ERROR("[Runtime] render_budget_per_frame must be greater than 0.");
+void Runtime::setVdpWorkUnitsPerSec(int workUnitsPerSec) {
+	if (workUnitsPerSec <= 0) {
+		throw BMSX_RUNTIME_ERROR("[Runtime] work_units_per_sec must be greater than 0.");
 	}
-	m_renderBudgetPerFrame = budget;
+	m_vdpWorkUnitsPerSec = workUnitsPerSec;
 }
 
-void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int renderBudgetPerFrame) {
+void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec) {
 	m_imgDecBytesPerSec = imgDecBytesPerSec;
 	m_dmaBytesPerSecIso = dmaBytesPerSecIso;
 	m_dmaBytesPerSecBulk = dmaBytesPerSecBulk;
-	setRenderBudgetPerFrame(renderBudgetPerFrame);
-	m_imgRate.setBytesPerSec(imgDecBytesPerSec);
-	m_dmaIsoRate.setBytesPerSec(dmaBytesPerSecIso);
-	m_dmaBulkRate.setBytesPerSec(dmaBytesPerSecBulk);
+	setVdpWorkUnitsPerSec(vdpWorkUnitsPerSec);
+	m_imgRate.setUnitsPerSec(imgDecBytesPerSec);
+	m_dmaIsoRate.setUnitsPerSec(dmaBytesPerSecIso);
+	m_dmaBulkRate.setUnitsPerSec(dmaBytesPerSecBulk);
+	m_vdpRate.setUnitsPerSec(vdpWorkUnitsPerSec);
 	resetTransferCarry();
 }
 
@@ -1071,7 +1356,7 @@ bool Runtime::consumeLastTickCompletion(TickCompletion& outCompletion) {
 	outCompletion.remaining = m_lastTickBudgetRemaining;
 	outCompletion.visualCommitted = m_lastTickVisualFrameCommitted;
 	outCompletion.vdpFrameCost = m_lastTickVdpFrameCost;
-	outCompletion.vdpFrameOverBudget = m_lastTickVdpFrameOverBudget;
+	outCompletion.vdpFrameHeld = m_lastTickVdpFrameHeld;
 	return true;
 }
 

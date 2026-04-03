@@ -74,6 +74,8 @@ public:
 	TextureSource getImage(const ImageKey& key) const;
 	TextureHandle getTexture(const TextureKey& key) const;
 	TextureHandle getTextureByUri(const std::string& uri, const TextureParams& desc = {}) const;
+	void swapTextureHandlesByUri(const std::string& uriA, const std::string& uriB, const TextureParams& descA = {}, const TextureParams& descB = {});
+	void copyTextureByUri(const std::string& sourceUri, const std::string& destinationUri, i32 width, i32 height, const TextureParams& sourceDesc = {}, const TextureParams& destinationDesc = {});
 	void releaseByUri(const std::string& uri, const TextureParams& desc = {});
 
 	TextureHandle getOrCreateTexture(const TextureKey& key,

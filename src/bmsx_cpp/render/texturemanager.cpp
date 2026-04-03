@@ -165,6 +165,38 @@ TextureHandle TextureManager::getTextureByUri(const std::string& uri,
 	return getTexture(makeKey(uri, desc));
 }
 
+void TextureManager::swapTextureHandlesByUri(const std::string& uriA, const std::string& uriB, const TextureParams& descA, const TextureParams& descB) {
+	const TextureKey keyA = makeKey(uriA, descA);
+	const TextureKey keyB = makeKey(uriB, descB);
+	auto itA = m_gpuCache.find(keyA);
+	if (itA == m_gpuCache.end() || !itA->second.handle) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: texture '" + uriA + "' is not initialized.");
+	}
+	auto itB = m_gpuCache.find(keyB);
+	if (itB == m_gpuCache.end() || !itB->second.handle) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: texture '" + uriB + "' is not initialized.");
+	}
+	std::swap(itA->second.handle, itB->second.handle);
+	std::swap(itA->second.ownedFallback, itB->second.ownedFallback);
+}
+
+void TextureManager::copyTextureByUri(const std::string& sourceUri, const std::string& destinationUri, i32 width, i32 height, const TextureParams& sourceDesc, const TextureParams& destinationDesc) {
+	if (!m_backend) {
+		throw BMSX_RUNTIME_ERROR("TextureManager backend not set");
+	}
+	const TextureKey sourceKey = makeKey(sourceUri, sourceDesc);
+	const TextureKey destinationKey = makeKey(destinationUri, destinationDesc);
+	auto sourceIt = m_gpuCache.find(sourceKey);
+	if (sourceIt == m_gpuCache.end() || !sourceIt->second.handle) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: texture '" + sourceUri + "' is not initialized.");
+	}
+	auto destinationIt = m_gpuCache.find(destinationKey);
+	if (destinationIt == m_gpuCache.end() || !destinationIt->second.handle) {
+		throw BMSX_RUNTIME_ERROR("TextureManager: texture '" + destinationUri + "' is not initialized.");
+	}
+	m_backend->copyTexture(sourceIt->second.handle, destinationIt->second.handle, width, height);
+}
+
 void TextureManager::releaseByUri(const std::string& uri, const TextureParams& desc) {
 	releaseByKey(makeKey(uri, desc));
 }

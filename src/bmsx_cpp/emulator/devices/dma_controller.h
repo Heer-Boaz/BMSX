@@ -16,9 +16,15 @@ public:
 		Bulk = 1,
 	};
 
-	DmaController(Memory& memory, std::function<void(uint32_t)> raiseIrq);
+	DmaController(
+		Memory& memory,
+		std::function<void(uint32_t)> raiseIrq,
+		std::function<void(uint32_t src, size_t length)> sealVdpFifoDma
+	);
 
 	void tick();
+	void tryStartIo();
+	bool hasPendingVdpSubmit() const;
 	void setChannelBudgets(uint32_t isoBytesPerTick, uint32_t bulkBytesPerTick);
 	void enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped)> onComplete);
 	void reset();
@@ -32,13 +38,13 @@ private:
 		bool clipped = false;
 		bool error = false;
 
-		uint32_t src = 0;
-		uint32_t dst = 0;
-		uint32_t remaining = 0;
-		bool strict = false;
+			uint32_t src = 0;
+			uint32_t dst = 0;
+			uint32_t remaining = 0;
+			bool strict = false;
 
-		Memory::ImageWritePlan plan;
-		std::vector<uint8_t> pixels;
+			Memory::ImageWritePlan plan;
+			std::vector<uint8_t> pixels;
 		uint32_t row = 0;
 		uint32_t rowOffset = 0;
 		bool vramTarget = false;
@@ -52,7 +58,6 @@ private:
 		DmaJob active;
 	};
 
-	void tryStartIo();
 	void tickChannel(Channel channel, bool& ioWrittenDirty, bool& imgWrittenDirty);
 	uint32_t processJob(DmaJob& job, uint32_t budget);
 	uint32_t processImageJob(DmaJob& job, uint32_t budget);
@@ -61,15 +66,16 @@ private:
 	void finishIoJob(DmaJob& job);
 	void finishIoSuccess(bool clipped);
 	void finishIoError(bool clipped);
+	void finishIoRejected();
 	uint32_t resolveMaxWritable(uint32_t dst) const;
 
-	DmaChannelState m_channels[2];
-	bool m_ioJobActive = false;
-	uint32_t m_ioWrittenValue = 0;
-	uint32_t m_imgWrittenValue = 0;
-	Memory& m_memory;
-	std::function<void(uint32_t)> m_raiseIrq;
-	std::vector<uint8_t> m_buffer;
-};
+		DmaChannelState m_channels[2];
+		uint32_t m_ioWrittenValue = 0;
+		uint32_t m_imgWrittenValue = 0;
+		Memory& m_memory;
+		std::function<void(uint32_t)> m_raiseIrq;
+		std::function<void(uint32_t src, size_t length)> m_sealVdpFifoDma;
+		std::vector<uint8_t> m_buffer;
+	};
 
 } // namespace bmsx

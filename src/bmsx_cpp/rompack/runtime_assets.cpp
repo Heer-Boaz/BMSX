@@ -92,8 +92,8 @@ static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& mani
 	const BinValue* vdpValue = findObjectField(specsObj, "vdp");
 	if (vdpValue && vdpValue->isObject()) {
 		const auto& vdpObj = vdpValue->asObject();
-		if (vdpObj.count("render_budget_per_frame")) {
-			manifest.vdpRenderBudgetPerFrame = parseRequiredPositiveI64(vdpObj, "render_budget_per_frame", "machine.specs.vdp.render_budget_per_frame");
+		if (vdpObj.count("work_units_per_sec")) {
+			manifest.vdpWorkUnitsPerSec = parseRequiredPositiveI64(vdpObj, "work_units_per_sec", "machine.specs.vdp.work_units_per_sec");
 		}
 	}
 
