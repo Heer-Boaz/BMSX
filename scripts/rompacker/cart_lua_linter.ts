@@ -179,6 +179,20 @@ type ConstLocalContext = {
 	readonly scopeStack: ConstLocalScope[];
 };
 
+type ConstantCopyBinding = {
+	isConstantSource: boolean;
+};
+
+type ConstantCopyScope = {
+	readonly names: string[];
+};
+
+type ConstantCopyContext = {
+	readonly issues: LuaLintIssue[];
+	readonly bindingStacksByName: Map<string, ConstantCopyBinding[]>;
+	readonly scopeStack: ConstantCopyScope[];
+};
+
 type DuplicateInitializerBinding = {
 	readonly declaration: LuaIdentifierExpression;
 	initializerSignature: string;
@@ -795,15 +809,126 @@ function lintStringOrChainComparisonPattern(expression: LuaExpression, issues: L
 	);
 }
 
-function isConstantAccessExpression(expression: LuaExpression): boolean {
+function isConstantModulePath(path: string): boolean {
+	return path === 'constants' || path === 'globals' || path.endsWith('/constants') || path.endsWith('/globals');
+}
+
+function getRequiredModulePath(expression: LuaExpression): string | undefined {
+	if (expression.kind !== LuaSyntaxKind.CallExpression) {
+		return undefined;
+	}
+	if (expression.callee.kind !== LuaSyntaxKind.IdentifierExpression || expression.callee.name !== 'require') {
+		return undefined;
+	}
+	if (expression.arguments.length === 0) {
+		return undefined;
+	}
+	const firstArgument = expression.arguments[0];
+	if (firstArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return undefined;
+	}
+	return firstArgument.value;
+}
+
+function isConstantModuleRequireExpression(expression: LuaExpression): boolean {
+	const requiredModulePath = getRequiredModulePath(expression);
+	return requiredModulePath !== undefined && isConstantModulePath(requiredModulePath);
+}
+
+function createConstantCopyContext(issues: LuaLintIssue[]): ConstantCopyContext {
+	return {
+		issues,
+		bindingStacksByName: new Map<string, ConstantCopyBinding[]>(),
+		scopeStack: [],
+	};
+}
+
+function enterConstantCopyScope(context: ConstantCopyContext): void {
+	context.scopeStack.push({ names: [] });
+}
+
+function leaveConstantCopyScope(context: ConstantCopyContext): void {
+	const scope = context.scopeStack.pop();
+	if (!scope) {
+		return;
+	}
+	for (let index = scope.names.length - 1; index >= 0; index -= 1) {
+		const name = scope.names[index];
+		const stack = context.bindingStacksByName.get(name);
+		if (!stack || stack.length === 0) {
+			continue;
+		}
+		stack.pop();
+		if (stack.length === 0) {
+			context.bindingStacksByName.delete(name);
+		}
+	}
+}
+
+function declareConstantCopyBinding(
+	context: ConstantCopyContext,
+	declaration: LuaIdentifierExpression,
+	isConstantSource: boolean,
+): void {
+	const scope = context.scopeStack[context.scopeStack.length - 1];
+	scope.names.push(declaration.name);
+	let stack = context.bindingStacksByName.get(declaration.name);
+	if (!stack) {
+		stack = [];
+		context.bindingStacksByName.set(declaration.name, stack);
+	}
+	stack.push({ isConstantSource });
+}
+
+function setConstantCopyBindingByName(context: ConstantCopyContext, name: string, isConstantSource: boolean): void {
+	const stack = context.bindingStacksByName.get(name);
+	if (!stack || stack.length === 0) {
+		return;
+	}
+	stack[stack.length - 1].isConstantSource = isConstantSource;
+}
+
+function getConstantCopyBinding(context: ConstantCopyContext, name: string): ConstantCopyBinding | undefined {
+	const stack = context.bindingStacksByName.get(name);
+	if (!stack || stack.length === 0) {
+		return undefined;
+	}
+	return stack[stack.length - 1];
+}
+
+function isConstantSourceIdentifierName(name: string, context: ConstantCopyContext): boolean {
+	const binding = getConstantCopyBinding(context, name);
+	if (binding) {
+		return binding.isConstantSource;
+	}
+	return name === 'constants';
+}
+
+function isConstantSourceExpression(expression: LuaExpression, context: ConstantCopyContext): boolean {
+	if (isConstantModuleRequireExpression(expression)) {
+		return true;
+	}
 	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
-		return expression.name === 'constants';
+		return isConstantSourceIdentifierName(expression.name, context);
 	}
 	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		return isConstantAccessExpression(expression.base);
+		return isConstantSourceExpression(expression.base, context);
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
-		return isConstantAccessExpression(expression.base);
+		return isConstantSourceExpression(expression.base, context);
+	}
+	return false;
+}
+
+function isForbiddenConstantCopyExpression(expression: LuaExpression, context: ConstantCopyContext): boolean {
+	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+		return isConstantSourceIdentifierName(expression.name, context);
+	}
+	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+		return isConstantSourceExpression(expression.base, context);
+	}
+	if (expression.kind === LuaSyntaxKind.IndexExpression) {
+		return isConstantSourceExpression(expression.base, context);
 	}
 	return false;
 }
@@ -5295,15 +5420,220 @@ function lintLocalAssignment(statement: LuaLocalAssignmentStatement, issues: Lua
 				`Local alias of self state-data is forbidden (${localName}). Read state values directly from self instead of caching them in locals.`,
 			);
 		}
-		if (!isConstantAccessExpression(value)) {
-			continue;
+	}
+}
+
+function lintConstantCopyInExpression(expression: LuaExpression | null, context: ConstantCopyContext): void {
+	if (!expression) {
+		return;
+	}
+	switch (expression.kind) {
+		case LuaSyntaxKind.MemberExpression:
+			lintConstantCopyInExpression(expression.base, context);
+			return;
+		case LuaSyntaxKind.IndexExpression:
+			lintConstantCopyInExpression(expression.base, context);
+			lintConstantCopyInExpression(expression.index, context);
+			return;
+		case LuaSyntaxKind.BinaryExpression:
+			lintConstantCopyInExpression(expression.left, context);
+			lintConstantCopyInExpression(expression.right, context);
+			return;
+		case LuaSyntaxKind.UnaryExpression:
+			lintConstantCopyInExpression(expression.operand, context);
+			return;
+		case LuaSyntaxKind.CallExpression:
+			lintConstantCopyInExpression(expression.callee, context);
+			for (const argument of expression.arguments) {
+				lintConstantCopyInExpression(argument, context);
+			}
+			return;
+		case LuaSyntaxKind.TableConstructorExpression:
+			for (const field of expression.fields) {
+				if (field.kind === LuaTableFieldKind.ExpressionKey) {
+					lintConstantCopyInExpression(field.key, context);
+				}
+				lintConstantCopyInExpression(field.value, context);
+			}
+			return;
+		case LuaSyntaxKind.FunctionExpression:
+			enterConstantCopyScope(context);
+			for (const parameter of expression.parameters) {
+				declareConstantCopyBinding(context, parameter, false);
+			}
+			lintConstantCopyInStatements(expression.body.body, context);
+			leaveConstantCopyScope(context);
+			return;
+		default:
+			return;
+	}
+}
+
+function lintConstantCopyInAssignmentTarget(target: LuaExpression | null, context: ConstantCopyContext): void {
+	if (!target) {
+		return;
+	}
+	if (target.kind === LuaSyntaxKind.MemberExpression) {
+		lintConstantCopyInExpression(target.base, context);
+		return;
+	}
+	if (target.kind === LuaSyntaxKind.IndexExpression) {
+		lintConstantCopyInExpression(target.base, context);
+		lintConstantCopyInExpression(target.index, context);
+	}
+}
+
+function lintConstantCopyInStatements(statements: ReadonlyArray<LuaStatement>, context: ConstantCopyContext): void {
+	for (const statement of statements) {
+		switch (statement.kind) {
+			case LuaSyntaxKind.LocalAssignmentStatement: {
+				const valueCount = Math.min(statement.names.length, statement.values.length);
+				const isConstantSourceByValue: boolean[] = [];
+				const isForbiddenCopyByValue: boolean[] = [];
+				for (let index = 0; index < valueCount; index += 1) {
+					const value = statement.values[index];
+					lintConstantCopyInExpression(value, context);
+					isConstantSourceByValue[index] = isConstantSourceExpression(value, context);
+					isForbiddenCopyByValue[index] = isForbiddenConstantCopyExpression(value, context);
+				}
+				for (let index = 0; index < statement.names.length; index += 1) {
+					if (index < valueCount && isForbiddenCopyByValue[index]) {
+						pushIssue(
+							context.issues,
+							'constant_copy_pattern',
+							statement.values[index],
+							`Local copies of constants are forbidden ("${statement.names[index].name}").`,
+						);
+					}
+					declareConstantCopyBinding(context, statement.names[index], isConstantSourceByValue[index] ?? false);
+				}
+				break;
+			}
+			case LuaSyntaxKind.LocalFunctionStatement: {
+				const localFunction = statement as LuaLocalFunctionStatement;
+				declareConstantCopyBinding(context, localFunction.name, false);
+				enterConstantCopyScope(context);
+				for (const parameter of localFunction.functionExpression.parameters) {
+					declareConstantCopyBinding(context, parameter, false);
+				}
+				lintConstantCopyInStatements(localFunction.functionExpression.body.body, context);
+				leaveConstantCopyScope(context);
+				break;
+			}
+			case LuaSyntaxKind.FunctionDeclarationStatement: {
+				const declaration = statement as LuaFunctionDeclarationStatement;
+				if (declaration.name.identifiers.length === 1 && declaration.name.methodName === null) {
+					setConstantCopyBindingByName(context, declaration.name.identifiers[0], false);
+				}
+				enterConstantCopyScope(context);
+				for (const parameter of declaration.functionExpression.parameters) {
+					declareConstantCopyBinding(context, parameter, false);
+				}
+				lintConstantCopyInStatements(declaration.functionExpression.body.body, context);
+				leaveConstantCopyScope(context);
+				break;
+			}
+			case LuaSyntaxKind.AssignmentStatement: {
+				for (const right of statement.right) {
+					lintConstantCopyInExpression(right, context);
+				}
+				if (statement.operator === LuaAssignmentOperator.Assign) {
+					const assignedConstantSources: boolean[] = [];
+					for (let index = 0; index < statement.left.length; index += 1) {
+						const right = index < statement.right.length ? statement.right[index] : null;
+						assignedConstantSources[index] = right ? isConstantSourceExpression(right, context) : false;
+					}
+					for (let index = 0; index < statement.left.length; index += 1) {
+						const left = statement.left[index];
+						if (left.kind === LuaSyntaxKind.IdentifierExpression) {
+							setConstantCopyBindingByName(context, left.name, assignedConstantSources[index]);
+							continue;
+						}
+						lintConstantCopyInAssignmentTarget(left, context);
+					}
+					break;
+				}
+				for (const left of statement.left) {
+					if (left.kind === LuaSyntaxKind.IdentifierExpression) {
+						setConstantCopyBindingByName(context, left.name, false);
+						continue;
+					}
+					lintConstantCopyInAssignmentTarget(left, context);
+				}
+				break;
+			}
+			case LuaSyntaxKind.ReturnStatement:
+				for (const expression of statement.expressions) {
+					lintConstantCopyInExpression(expression, context);
+				}
+				break;
+			case LuaSyntaxKind.IfStatement:
+				for (const clause of statement.clauses) {
+					if (clause.condition) {
+						lintConstantCopyInExpression(clause.condition, context);
+					}
+					enterConstantCopyScope(context);
+					lintConstantCopyInStatements(clause.block.body, context);
+					leaveConstantCopyScope(context);
+				}
+				break;
+			case LuaSyntaxKind.WhileStatement:
+				lintConstantCopyInExpression(statement.condition, context);
+				enterConstantCopyScope(context);
+				lintConstantCopyInStatements(statement.block.body, context);
+				leaveConstantCopyScope(context);
+				break;
+			case LuaSyntaxKind.RepeatStatement:
+				enterConstantCopyScope(context);
+				lintConstantCopyInStatements(statement.block.body, context);
+				leaveConstantCopyScope(context);
+				lintConstantCopyInExpression(statement.condition, context);
+				break;
+			case LuaSyntaxKind.ForNumericStatement:
+				lintConstantCopyInExpression(statement.start, context);
+				lintConstantCopyInExpression(statement.limit, context);
+				lintConstantCopyInExpression(statement.step, context);
+				enterConstantCopyScope(context);
+				declareConstantCopyBinding(context, statement.variable, false);
+				lintConstantCopyInStatements(statement.block.body, context);
+				leaveConstantCopyScope(context);
+				break;
+			case LuaSyntaxKind.ForGenericStatement:
+				for (const iterator of statement.iterators) {
+					lintConstantCopyInExpression(iterator, context);
+				}
+				enterConstantCopyScope(context);
+				for (const variable of statement.variables) {
+					declareConstantCopyBinding(context, variable, false);
+				}
+				lintConstantCopyInStatements(statement.block.body, context);
+				leaveConstantCopyScope(context);
+				break;
+			case LuaSyntaxKind.DoStatement:
+				enterConstantCopyScope(context);
+				lintConstantCopyInStatements(statement.block.body, context);
+				leaveConstantCopyScope(context);
+				break;
+			case LuaSyntaxKind.CallStatement:
+				lintConstantCopyInExpression(statement.expression, context);
+				break;
+			case LuaSyntaxKind.BreakStatement:
+			case LuaSyntaxKind.GotoStatement:
+			case LuaSyntaxKind.LabelStatement:
+				break;
+			default:
+				break;
 		}
-		pushIssue(
-			issues,
-			'constant_copy_pattern',
-			value,
-		`Local copies of constants are forbidden ("${statement.names[index].name}").`,
-	);
+	}
+}
+
+function lintConstantCopyPattern(statements: ReadonlyArray<LuaStatement>, issues: LuaLintIssue[]): void {
+	const context = createConstantCopyContext(issues);
+	enterConstantCopyScope(context);
+	try {
+		lintConstantCopyInStatements(statements, context);
+	} finally {
+		leaveConstantCopyScope(context);
 	}
 }
 
@@ -7456,7 +7786,16 @@ function lintStatements(statements: ReadonlyArray<LuaStatement>, issues: LuaLint
 		switch (statement.kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement:
 				lintLocalAssignment(statement, issues);
-				for (const value of statement.values) {
+				for (let index = 0; index < statement.values.length; index += 1) {
+					const value = statement.values[index];
+					if (index < statement.names.length && value.kind === LuaSyntaxKind.FunctionExpression) {
+						lintFunctionBody(statement.names[index].name, value, issues, {
+							isMethodDeclaration: false,
+							usageInfo: functionUsageInfo,
+						});
+						lintStatements(value.body.body, issues);
+						continue;
+					}
 					lintExpression(value, issues);
 				}
 				break;
@@ -7647,6 +7986,7 @@ export async function lintCartLuaSources(options: LuaCartLintOptions): Promise<v
 			lintRuntimeTagTableAccessPattern(chunk.body, issues);
 			lintFsmEnteringStateVisualSetupPattern(chunk.body, issues);
 			lintConstLocalPattern(chunk.body, issues);
+			lintConstantCopyPattern(chunk.body, issues);
 			lintStatements(chunk.body, issues);
 			lintSingleUseHasTagPattern(chunk.body, issues);
 			lintSingleUseLocalPattern(chunk.body, issues);
