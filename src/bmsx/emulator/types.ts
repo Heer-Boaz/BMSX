@@ -111,7 +111,7 @@ export type RuntimeOptions = {
 	cpuHz: number;
 	cycleBudgetPerFrame: number;
 	vblankCycles: number;
-	renderBudgetPerFrame: number;
+	vdpWorkUnitsPerSec: number;
 };
 
 export type RuntimeState = {

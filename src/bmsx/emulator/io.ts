@@ -1,4 +1,4 @@
-import { IO_BASE, IO_WORD_SIZE } from './memory_map';
+import { IO_BASE, IO_WORD_SIZE, VDP_CMD_ARG_COUNT } from './memory_map';
 
 export const IO_CMD_VDP_CLEAR = 0x10;
 export const IO_CMD_VDP_FILL_RECT = 0x11;
@@ -25,8 +25,10 @@ export const IO_VDP_RD_STATUS_INDEX = IO_VDP_BASE_INDEX + 7;
 export const IO_VDP_RD_DATA_INDEX = IO_VDP_BASE_INDEX + 8;
 export const IO_VDP_CMD_INDEX = IO_VDP_BASE_INDEX + 9;
 export const IO_VDP_CMD_ARG0_INDEX = IO_VDP_BASE_INDEX + 10;
-export const IO_VDP_CMD_ARG_COUNT = 18;
-export const IO_VDP_SIZE = 10 + IO_VDP_CMD_ARG_COUNT;
+export const IO_VDP_CMD_ARG_COUNT = VDP_CMD_ARG_COUNT;
+export const IO_VDP_FIFO_INDEX = IO_VDP_CMD_ARG0_INDEX + IO_VDP_CMD_ARG_COUNT;
+export const IO_VDP_FIFO_CTRL_INDEX = IO_VDP_FIFO_INDEX + 1;
+export const IO_VDP_SIZE = 12 + IO_VDP_CMD_ARG_COUNT;
 
 export const IO_IRQ_BASE_INDEX = IO_VDP_BASE_INDEX + IO_VDP_SIZE;
 export const IO_IRQ_FLAGS_INDEX = IO_IRQ_BASE_INDEX;
@@ -83,6 +85,8 @@ export const IO_VDP_RD_STATUS = IO_BASE + IO_VDP_RD_STATUS_INDEX * IO_WORD_SIZE;
 export const IO_VDP_RD_DATA = IO_BASE + IO_VDP_RD_DATA_INDEX * IO_WORD_SIZE;
 export const IO_VDP_CMD = IO_BASE + IO_VDP_CMD_INDEX * IO_WORD_SIZE;
 export const IO_VDP_CMD_ARG0 = IO_BASE + IO_VDP_CMD_ARG0_INDEX * IO_WORD_SIZE;
+export const IO_VDP_FIFO = IO_BASE + IO_VDP_FIFO_INDEX * IO_WORD_SIZE;
+export const IO_VDP_FIFO_CTRL = IO_BASE + IO_VDP_FIFO_CTRL_INDEX * IO_WORD_SIZE;
 
 export const IO_IRQ_BASE = IO_BASE + IO_IRQ_BASE_INDEX * IO_WORD_SIZE;
 export const IO_IRQ_FLAGS = IO_BASE + IO_IRQ_FLAGS_INDEX * IO_WORD_SIZE;
@@ -120,6 +124,7 @@ export const DMA_STATUS_BUSY = 1 << 0;
 export const DMA_STATUS_DONE = 1 << 1;
 export const DMA_STATUS_ERROR = 1 << 2;
 export const DMA_STATUS_CLIPPED = 1 << 3;
+export const DMA_STATUS_REJECTED = 1 << 4;
 
 export const IMG_CTRL_START = 1 << 0;
 export const IMG_STATUS_BUSY = 1 << 0;
@@ -131,4 +136,9 @@ export const VDP_ATLAS_ID_NONE = 0xffffffff >>> 0;
 export const VDP_RD_MODE_RGBA8888 = 0;
 export const VDP_RD_STATUS_READY = 1 << 0;
 export const VDP_RD_STATUS_OVERFLOW = 1 << 1;
+export const VDP_FIFO_CTRL_SEAL = 1 << 0;
 export const VDP_STATUS_VBLANK = 1 << 0;
+export const VDP_STATUS_SUBMIT_BUSY = 1 << 1;
+// Sticky latch: set when a VDP submit attempt is rejected because the submit path is busy,
+// and cleared only when a later VDP submit attempt is accepted.
+export const VDP_STATUS_SUBMIT_REJECTED = 1 << 2;

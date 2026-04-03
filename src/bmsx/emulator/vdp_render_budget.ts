@@ -1,5 +1,7 @@
 export const VDP_RENDER_CLEAR_COST = 8;
 export const VDP_RENDER_ALPHA_COST_MULTIPLIER = 2;
+export const VDP_RENDER_TILE_RUN_SETUP_COST = 6;
+export const VDP_RENDER_TILE_RUN_DENSITY_DIVISOR = 16;
 
 export type VdpClippedRect = {
 	width: number;
@@ -62,6 +64,13 @@ export function blitSpanBucket(spanPx: number): number {
 		return 2;
 	}
 	return 4;
+}
+
+export function tileRunCost(visibleRows: number, visibleNonEmptyTiles: number): number {
+	if (visibleRows <= 0 || visibleNonEmptyTiles <= 0) {
+		return 0;
+	}
+	return VDP_RENDER_TILE_RUN_SETUP_COST + visibleRows + Math.ceil(visibleNonEmptyTiles / VDP_RENDER_TILE_RUN_DENSITY_DIVISOR);
 }
 
 export function computeClippedRect(x0: number, y0: number, x1: number, y1: number, clipWidth: number, clipHeight: number, out?: VdpClippedRect): VdpClippedRect {

@@ -61,6 +61,8 @@ import type { ParsedLuaChunk } from './ide/lua/lua_parse';
 import { ResourceUsageDetector } from './resource_usage_detector';
 import { configureLuaHeapUsage } from './lua_heap_usage';
 import {
+	DMA_CTRL_START,
+	DMA_STATUS_REJECTED,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -76,16 +78,15 @@ import {
 	IO_IMG_WRITTEN,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
-	IO_ARG_STRIDE,
 	IO_PAYLOAD_ALLOC_ADDR,
-	IO_PAYLOAD_CAPACITY,
 	IO_PAYLOAD_DATA_ADDR,
-	IO_PAYLOAD_BUFFER_BASE,
-	IO_PAYLOAD_WRITE_PTR_ADDR,
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
 	IO_VDP_PRIMARY_ATLAS_ID,
 	IO_VDP_CMD,
+	IO_VDP_CMD_ARG0,
+	IO_VDP_FIFO,
+	IO_VDP_FIFO_CTRL,
 	IO_VDP_RD_MODE,
 	IO_VDP_RD_SURFACE,
 	IO_VDP_RD_X,
@@ -96,7 +97,10 @@ import {
 	IRQ_REINIT,
 	IRQ_VBLANK,
 	VDP_ATLAS_ID_NONE,
+	VDP_FIFO_CTRL_SEAL,
 	VDP_RD_MODE_RGBA8888,
+	VDP_STATUS_SUBMIT_BUSY,
+	VDP_STATUS_SUBMIT_REJECTED,
 	VDP_STATUS_VBLANK,
 } from './io';
 import { HandlerCache } from './handler_cache';
@@ -113,12 +117,17 @@ import {
 	OVERLAY_ROM_BASE,
 	SYSTEM_ROM_BASE,
 	STRING_HANDLE_ENTRY_SIZE,
+	VDP_STREAM_BUFFER_SIZE,
+	VDP_STREAM_CAPACITY_WORDS,
+	VDP_STREAM_PACKET_HEADER_WORDS,
+	VDP_STREAM_PAYLOAD_CAPACITY_WORDS,
 	configureMemoryMap,
 	type MemoryMapSpecs as MemoryMapSpecs,
 } from './memory_map';
-import { FRAMEBUFFER_TEXTURE_KEY, VDP } from './vdp';
+import { FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, VDP } from './vdp';
 import { PROGRAM_ASSET_ID } from './program_asset';
 import { createVdpBlitterExecutor } from '../render/vdp/vdp_blitter';
+import { getVdpPacketSchema } from './vdp_packet_schema';
 
 export const BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'left',
@@ -272,8 +281,8 @@ export class Runtime {
 		return Runtime.resolvePositiveSafeInteger(value, label);
 	}
 
-	private static resolveRenderBudgetPerFrame(value: number | undefined): number {
-		return Runtime.resolvePositiveSafeInteger(value, 'machine.specs.vdp.render_budget_per_frame');
+	private static resolveVdpWorkUnitsPerSec(value: number | undefined): number {
+		return Runtime.resolvePositiveSafeInteger(value, 'machine.specs.vdp.work_units_per_sec');
 	}
 
 	private static resolveUfpsScaled(value: number | undefined): number {
@@ -334,25 +343,163 @@ export class Runtime {
 		return this.getLastTickBudgetGranted();
 	}
 
-	public getRenderBudgetPerFrame(): number {
-		return this.renderBudgetPerFrame;
+	public getVdpWorkUnitsPerSec(): number {
+		return this.vdpWorkUnitsPerSec;
 	}
 
-	public getArmedVdpPayloadBaseOffset(): number {
-		return this.armedVdpPayloadBaseOffset;
+	public resetVdpIngressState(): void {
+		this.vdpFifoWordByteCount = 0;
+		this.vdpFifoStreamWordCount = 0;
 	}
 
-	public getArmedVdpPayloadWordCount(): number {
-		return this.armedVdpPayloadWordCount;
+	private hasOpenDirectVdpFifoIngress(): boolean {
+		return this.vdpFifoWordByteCount !== 0 || this.vdpFifoStreamWordCount !== 0;
 	}
 
-	public resetVdpPayloadState(): void {
-		this.memory.writeIoValue(IO_PAYLOAD_WRITE_PTR_ADDR, 0);
-		this.memory.writeIoValue(IO_PAYLOAD_ALLOC_ADDR, 0);
-		this.memory.writeIoValue(IO_PAYLOAD_DATA_ADDR, 0);
-		this.payloadDataWritePtr = 0;
-		this.armedVdpPayloadBaseOffset = 0;
-		this.armedVdpPayloadWordCount = 0;
+	private hasBlockedVdpSubmitPath(): boolean {
+		return this.hasOpenDirectVdpFifoIngress() || this.dmaController.hasPendingVdpSubmit() || !this.vdp.canAcceptSubmittedFrame();
+	}
+
+	private pushVdpFifoWord(word: number): void {
+		if (this.vdpFifoStreamWordCount >= VDP_STREAM_CAPACITY_WORDS) {
+			throw new Error(`[VDP] Stream overflow (${this.vdpFifoStreamWordCount + 1} > ${VDP_STREAM_CAPACITY_WORDS}).`);
+		}
+		this.vdpFifoStreamWords[this.vdpFifoStreamWordCount] = word >>> 0;
+		this.vdpFifoStreamWordCount += 1;
+	}
+
+	public writeVdpFifoBytes(bytes: Uint8Array): void {
+		for (let index = 0; index < bytes.byteLength; index += 1) {
+			this.vdpFifoWordScratch[this.vdpFifoWordByteCount] = bytes[index]!;
+			this.vdpFifoWordByteCount += 1;
+			if (this.vdpFifoWordByteCount !== 4) {
+				continue;
+			}
+			const word = (
+				this.vdpFifoWordScratch[0]
+				| (this.vdpFifoWordScratch[1] << 8)
+				| (this.vdpFifoWordScratch[2] << 16)
+				| (this.vdpFifoWordScratch[3] << 24)
+			) >>> 0;
+			this.vdpFifoWordByteCount = 0;
+			this.pushVdpFifoWord(word);
+		}
+	}
+
+	private consumeSealedVdpStream(baseAddr: number, byteLength: number): void {
+		if ((byteLength & 3) !== 0) {
+			throw new Error('[VDP] Sealed stream length must be word-aligned.');
+		}
+		if (byteLength > VDP_STREAM_BUFFER_SIZE) {
+			throw new Error(`[VDP] Sealed stream overflow (${byteLength} > ${VDP_STREAM_BUFFER_SIZE}).`);
+		}
+		let cursor = baseAddr;
+		const end = baseAddr + byteLength;
+		this.vdp.beginSubmittedFrame();
+		try {
+			while (cursor < end) {
+				if (cursor + VDP_STREAM_PACKET_HEADER_WORDS * 4 > end) {
+					throw new Error('[VDP] Stream ended mid-packet header.');
+				}
+				const cmd = this.memory.readU32(cursor) >>> 0;
+				const argWords = this.memory.readU32(cursor + 4) >>> 0;
+				const payloadWords = this.memory.readU32(cursor + 8) >>> 0;
+				if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
+					throw new Error(`[VDP] Submit payload overflow (${payloadWords} > ${VDP_STREAM_PAYLOAD_CAPACITY_WORDS}).`);
+				}
+				const packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
+				const packetByteCount = packetWordCount * 4;
+				if (cursor + packetByteCount > end) {
+					throw new Error('[VDP] Stream ended mid-packet payload.');
+				}
+				this.vdp.syncRegisters();
+				runtimeLuaPipeline.processVdpCommand(this, {
+					cmd,
+					argWords,
+					argsBase: cursor + VDP_STREAM_PACKET_HEADER_WORDS * 4,
+					payloadBase: cursor + (VDP_STREAM_PACKET_HEADER_WORDS + argWords) * 4,
+					payloadWords,
+				});
+				cursor += packetByteCount;
+			}
+			this.vdp.sealSubmittedFrame();
+		} catch (error) {
+			this.vdp.cancelSubmittedFrame();
+			throw error;
+		}
+		this.refreshVdpSubmitBusyStatus();
+	}
+
+	private consumeSealedVdpWordStream(wordCount: number): void {
+		let cursor = 0;
+		this.vdp.beginSubmittedFrame();
+		try {
+			while (cursor < wordCount) {
+				if (cursor + VDP_STREAM_PACKET_HEADER_WORDS > wordCount) {
+					throw new Error('[VDP] Stream ended mid-packet header.');
+				}
+				const cmd = this.vdpFifoStreamWords[cursor] >>> 0;
+				const argWords = this.vdpFifoStreamWords[cursor + 1] >>> 0;
+				const payloadWords = this.vdpFifoStreamWords[cursor + 2] >>> 0;
+				if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
+					throw new Error(`[VDP] Submit payload overflow (${payloadWords} > ${VDP_STREAM_PAYLOAD_CAPACITY_WORDS}).`);
+				}
+				const packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
+				if (cursor + packetWordCount > wordCount) {
+					throw new Error('[VDP] Stream ended mid-packet payload.');
+				}
+				this.vdp.syncRegisters();
+				runtimeLuaPipeline.processVdpBufferedCommand(this, {
+					cmd,
+					argWords,
+					argsWordOffset: cursor + VDP_STREAM_PACKET_HEADER_WORDS,
+					payloadWordOffset: cursor + VDP_STREAM_PACKET_HEADER_WORDS + argWords,
+					payloadWords,
+					words: this.vdpFifoStreamWords,
+				});
+				cursor += packetWordCount;
+			}
+			this.vdp.sealSubmittedFrame();
+		} catch (error) {
+			this.vdp.cancelSubmittedFrame();
+			throw error;
+		}
+		this.refreshVdpSubmitBusyStatus();
+	}
+
+	public sealVdpFifoTransfer(): void {
+		if (this.vdpFifoWordByteCount !== 0) {
+			throw new Error('[VDP] FIFO transfer ended on a partial word.');
+		}
+		if (this.vdpFifoStreamWordCount === 0) {
+			return;
+		}
+		this.consumeSealedVdpWordStream(this.vdpFifoStreamWordCount);
+		this.resetVdpIngressState();
+	}
+
+	public sealVdpDmaTransfer(src: number, byteLength: number): void {
+		this.consumeSealedVdpStream(src, byteLength);
+	}
+
+	private consumeDirectVdpCommand(cmd: number): void {
+		const schema = getVdpPacketSchema(cmd);
+		this.vdp.beginSubmittedFrame();
+		try {
+			this.vdp.syncRegisters();
+			runtimeLuaPipeline.processVdpCommand(this, {
+				cmd,
+				argWords: schema.argWords,
+				argsBase: IO_VDP_CMD_ARG0,
+				payloadBase: 0,
+				payloadWords: 0,
+			});
+			this.vdp.sealSubmittedFrame();
+		} catch (error) {
+			this.vdp.cancelSubmittedFrame();
+			throw error;
+		}
+		this.refreshVdpSubmitBusyStatus();
 	}
 
 	public getActiveCpuUsedCyclesLastTick(): number {
@@ -379,7 +526,7 @@ export class Runtime {
 		return this.currentFrameState !== null;
 	}
 
-	public consumeLastTickCompletion(): { sequence: number; remaining: number; visualCommitted: boolean; vdpFrameCost: number; vdpFrameOverBudget: boolean; } | null {
+	public consumeLastTickCompletion(): { sequence: number; remaining: number; visualCommitted: boolean; vdpFrameCost: number; vdpFrameHeld: boolean; } | null {
 		if (!this.lastTickCompleted) {
 			return null;
 		}
@@ -392,7 +539,7 @@ export class Runtime {
 			remaining: this.lastTickBudgetRemaining,
 			visualCommitted: this.lastTickVisualFrameCommitted,
 			vdpFrameCost: this.lastTickVdpFrameCost,
-			vdpFrameOverBudget: this.lastTickVdpFrameOverBudget,
+			vdpFrameHeld: this.lastTickVdpFrameHeld,
 		};
 	}
 
@@ -540,31 +687,51 @@ export class Runtime {
 		this.setCpuHz(cpuHz);
 		this.setCycleBudgetPerFrame(cycleBudgetPerFrame);
 		this.setVblankCycles(vblankCycles);
-		this.setRenderBudgetPerFrame(perfSpecs.render_budget_per_frame);
+		this.setVdpWorkUnitsPerSec(perfSpecs.work_units_per_sec);
 	}
 
-	public setRenderBudgetPerFrame(value: number): void {
-		this.renderBudgetPerFrame = Runtime.resolveRenderBudgetPerFrame(value);
+	public setVdpWorkUnitsPerSec(value: number): void {
+		this.vdpWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(value);
 	}
 
-	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number; render_budget_per_frame: number; }): void {
+	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number; work_units_per_sec: number; }): void {
 		this.imgDecBytesPerSec = Runtime.resolveBytesPerSec(specs.imgdec_bytes_per_sec, 'machine.specs.cpu.imgdec_bytes_per_sec');
 		this.dmaBytesPerSecIso = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_iso, 'machine.specs.dma.dma_bytes_per_sec_iso');
 		this.dmaBytesPerSecBulk = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
-		this.setRenderBudgetPerFrame(specs.render_budget_per_frame);
+		this.setVdpWorkUnitsPerSec(specs.work_units_per_sec);
 		this.imgRate.set(this.imgDecBytesPerSec);
 		this.dmaIsoRate.set(this.dmaBytesPerSecIso);
 		this.dmaBulkRate.set(this.dmaBytesPerSecBulk);
+		this.vdpRate.set(this.vdpWorkUnitsPerSec);
 		this.resetTransferCarry();
 	}
+
 	private advanceHardware(cycles: number): void {
+		let remaining = cycles;
+		while (remaining > 0) {
+			const step = this.resolveHardwareStepCycles(remaining);
+			this.advanceHardwareStep(step);
+			remaining -= step;
+		}
+	}
+
+	private resolveHardwareStepCycles(remaining: number): number {
+		if (!this.vblankActive && this.cyclesIntoFrame < this.vblankStartCycle) {
+			const untilVblank = this.vblankStartCycle - this.cyclesIntoFrame;
+			return remaining < untilVblank ? remaining : untilVblank;
+		}
+		const untilFrameEnd = this.cycleBudgetPerFrame - this.cyclesIntoFrame;
+		return remaining < untilFrameEnd ? remaining : untilFrameEnd;
+	}
+
+	private advanceHardwareStep(cycles: number): void {
 		if (cycles <= 0) {
 			return;
 		}
-		// Hardware advances in discrete steps; interrupt sources raised in the same step are observed together.
 		const imgBudget = this.imgRate.calcBytesForCycles(this._cpuHz, cycles);
 		const isoBudget = this.dmaIsoRate.calcBytesForCycles(this._cpuHz, cycles);
 		const bulkBudget = this.dmaBulkRate.calcBytesForCycles(this._cpuHz, cycles);
+		const vdpWork = this.vdpRate.calcBytesForCycles(this._cpuHz, cycles);
 		this.imgDecController.setDecodeBudget(imgBudget);
 		this.dmaController.setChannelBudgets({
 			iso: isoBudget,
@@ -572,28 +739,23 @@ export class Runtime {
 		});
 		this.dmaController.tick();
 		this.imgDecController.tick();
-		this.advanceVblank(cycles);
+		this.vdp.advanceWork(vdpWork);
+		this.refreshVdpSubmitBusyStatus();
+		this.advanceVblankStep(cycles);
 	}
 
-	private advanceVblank(cycles: number): void {
-		let remaining = cycles;
-		while (remaining > 0) {
-			const frameRemaining = this.cycleBudgetPerFrame - this.cyclesIntoFrame;
-			const step = remaining < frameRemaining ? remaining : frameRemaining;
-			const previous = this.cyclesIntoFrame;
-			this.cyclesIntoFrame += step;
-			if (!this.vblankActive && previous < this.vblankStartCycle && this.cyclesIntoFrame >= this.vblankStartCycle) {
-				this.enterVblank();
-			}
-			remaining -= step;
-			if (this.cyclesIntoFrame >= this.cycleBudgetPerFrame) {
-				this.cyclesIntoFrame = 0;
-				if (this.vblankStartCycle === 0) {
-					this.raiseIrqFlags(IRQ_VBLANK);
-				} else if (this.vblankActive) {
-					// Defer clear until the VBLANK IRQ handler has a chance to observe the status.
-					this.vblankPendingClear = true;
-				}
+	private advanceVblankStep(cycles: number): void {
+		const previous = this.cyclesIntoFrame;
+		this.cyclesIntoFrame += cycles;
+		if (!this.vblankActive && previous < this.vblankStartCycle && this.cyclesIntoFrame >= this.vblankStartCycle) {
+			this.enterVblank();
+		}
+		if (this.cyclesIntoFrame >= this.cycleBudgetPerFrame) {
+			this.cyclesIntoFrame = 0;
+			if (this.vblankStartCycle === 0) {
+				this.raiseIrqFlags(IRQ_VBLANK);
+			} else if (this.vblankActive) {
+				this.vblankPendingClear = true;
 			}
 		}
 	}
@@ -655,6 +817,55 @@ export class Runtime {
 		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
 	}
 
+	private setVdpSubmitBusyStatus(active: boolean): void {
+		const mask = VDP_STATUS_SUBMIT_BUSY;
+		const nextStatus = active ? (this.vdpStatus | mask) : (this.vdpStatus & ~mask);
+		if (nextStatus === this.vdpStatus) {
+			return;
+		}
+		this.vdpStatus = nextStatus >>> 0;
+		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
+	}
+
+	private refreshVdpSubmitBusyStatus(): void {
+		this.setVdpSubmitBusyStatus(this.hasBlockedVdpSubmitPath());
+	}
+
+	private setVdpSubmitRejectedStatus(active: boolean): void {
+		const mask = VDP_STATUS_SUBMIT_REJECTED;
+		const nextStatus = active ? (this.vdpStatus | mask) : (this.vdpStatus & ~mask);
+		if (nextStatus === this.vdpStatus) {
+			return;
+		}
+		this.vdpStatus = nextStatus >>> 0;
+		this.memory.writeValue(IO_VDP_STATUS, this.vdpStatus);
+	}
+
+	// Sticky reject latch: set when a VDP submit attempt is rejected because the submit path
+	// is busy, and cleared only when a later VDP submit attempt is accepted. Stream building
+	// in RAM does not affect it.
+	private noteRejectedVdpSubmitAttempt(): void {
+		this.setVdpSubmitRejectedStatus(true);
+		this.refreshVdpSubmitBusyStatus();
+	}
+
+	private noteAcceptedVdpSubmitAttempt(): void {
+		this.setVdpSubmitRejectedStatus(false);
+		this.refreshVdpSubmitBusyStatus();
+	}
+
+	private syncVdpSubmitAttemptStatusFromDma(dst: number): void {
+		if (dst !== IO_VDP_FIFO) {
+			return;
+		}
+		const dmaStatus = (this.memory.readValue(IO_DMA_STATUS) as number) >>> 0;
+		if ((dmaStatus & DMA_STATUS_REJECTED) !== 0) {
+			this.noteRejectedVdpSubmitAttempt();
+			return;
+		}
+		this.noteAcceptedVdpSubmitAttempt();
+	}
+
 	private enterVblank(): void {
 		// IRQ flags are level/pending; multiple VBLANK edges while pending coalesce.
 		this.vblankSequence += 1;
@@ -698,10 +909,10 @@ export class Runtime {
 	}
 
 	private commitFrameOnVblankEdge(): void {
-		// Flush latest VDP register writes before snapshotting atlas/skybox bindings.
 		this.vdp.syncRegisters();
-		this.vdp.commitBuildFrame(this.renderBudgetPerFrame);
+		this.vdp.presentReadyFrameOnVblankEdge();
 		this.vdp.commitViewSnapshot();
+		this.refreshVdpSubmitBusyStatus();
 		const frameState = this.currentFrameState;
 		if (frameState === null) {
 			return;
@@ -732,7 +943,7 @@ export class Runtime {
 		this.lastTickBudgetRemaining = frameState.cycleBudgetRemaining;
 		this.lastTickVisualFrameCommitted = this.vdp.lastFrameCommitted;
 		this.lastTickVdpFrameCost = this.vdp.lastFrameCost;
-		this.lastTickVdpFrameOverBudget = this.vdp.lastFrameOverBudget;
+		this.lastTickVdpFrameHeld = this.vdp.lastFrameHeld;
 		this.lastTickCompleted = true;
 		this.lastTickSequence += 1;
 		this.lastCompletedVblankSequence = vblankSequence;
@@ -789,6 +1000,7 @@ export class Runtime {
 		this.imgRate.resetCarry();
 		this.dmaIsoRate.resetCarry();
 		this.dmaBulkRate.resetCarry();
+		this.vdpRate.resetCarry();
 	}
 	private includeJsStackTraces = false;
 	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
@@ -799,9 +1011,10 @@ export class Runtime {
 	private waitForVblankTargetSequence = 0;
 	private clearBackQueuesAfterWaitResume = false;
 	private handlingVdpCommandWrite = false;
-	private payloadDataWritePtr = 0;
-	private armedVdpPayloadBaseOffset = 0;
-	private armedVdpPayloadWordCount = 0;
+	private readonly vdpFifoWordScratch = new Uint8Array(4);
+	private vdpFifoWordByteCount = 0;
+	private readonly vdpFifoStreamWords = new Uint32Array(VDP_STREAM_CAPACITY_WORDS);
+	private vdpFifoStreamWordCount = 0;
 	private vblankSequence = 0;
 	private lastCompletedVblankSequence = 0;
 	public cycleBudgetPerFrame: number;
@@ -812,7 +1025,7 @@ export class Runtime {
 	private vblankPendingClear = false;
 	private vblankClearOnIrqEnd = false;
 	private vdpStatus = 0;
-	private renderBudgetPerFrame = 0;
+	private vdpWorkUnitsPerSec = 0;
 	private _cpuHz: number;
 	private imgDecBytesPerSec = 0;
 	private dmaBytesPerSecIso = 0;
@@ -820,6 +1033,7 @@ export class Runtime {
 	private readonly imgRate = new RateBudget();
 	private readonly dmaIsoRate = new RateBudget();
 	private readonly dmaBulkRate = new RateBudget();
+	private readonly vdpRate = new RateBudget();
 	public lastTickSequence: number = 0;
 	public lastTickBudgetGranted: number = 0;
 	public lastTickCpuBudgetGranted: number = 0;
@@ -827,7 +1041,7 @@ export class Runtime {
 	public lastTickBudgetRemaining: number = 0;
 	public lastTickVisualFrameCommitted: boolean = true;
 	public lastTickVdpFrameCost: number = 0;
-	public lastTickVdpFrameOverBudget: boolean = false;
+	public lastTickVdpFrameHeld: boolean = false;
 	public lastTickCompleted: boolean = false;
 	private debugCycleReportAtMs: number = 0;
 	private debugCycleRuns: number = 0;
@@ -979,7 +1193,7 @@ export class Runtime {
 				cpuHz,
 				cycleBudgetPerFrame,
 				vblankCycles,
-				renderBudgetPerFrame: enginePerfSpecs.render_budget_per_frame,
+				vdpWorkUnitsPerSec: enginePerfSpecs.work_units_per_sec,
 			});
 			runtime.setTransferRatesFromManifest(enginePerfSpecs);
 			runtime.biosAssetLayer = engineLayer;
@@ -1056,7 +1270,7 @@ export class Runtime {
 			cpuHz,
 			cycleBudgetPerFrame,
 			vblankCycles,
-			renderBudgetPerFrame: cartPerfSpecs.render_budget_per_frame,
+			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
 		});
 		runtime.setTransferRatesFromManifest(cartPerfSpecs);
 		runtime.biosAssetLayer = engineLayer;
@@ -1150,6 +1364,7 @@ export class Runtime {
 	private static computeAssetTableBytes(engineSource: RawAssetSource, assetSource: RawAssetSource, assetLayers: ReadonlyArray<RuntimeAssetLayer>): { bytes: number; entryCount: number; stringBytes: number } {
 		const ids = this.collectAssetEntryIds(engineSource, assetSource, assetLayers);
 		ids.add(FRAMEBUFFER_TEXTURE_KEY);
+		ids.add(FRAMEBUFFER_RENDER_TEXTURE_KEY);
 		const encoder = new TextEncoder();
 		let stringBytes = 0;
 		for (const id of ids) {
@@ -1256,7 +1471,8 @@ export class Runtime {
 			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
 			+ stringHeapBytes
 			+ assetTableBytes
-			+ assetDataBytes;
+			+ assetDataBytes
+			+ VDP_STREAM_BUFFER_SIZE;
 		const ramBytes = memorySpecs.ram_bytes ?? computedRamBytes;
 		if (memorySpecs.ram_bytes !== undefined && ramBytes !== computedRamBytes) {
 			throw new Error(`[Runtime] machine.specs.ram.ram_bytes (${ramBytes}) must match required size ${computedRamBytes}.`);
@@ -1266,7 +1482,7 @@ export class Runtime {
 			`[Runtime] memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
 			+ `(io=${IO_REGION_SIZE}, string_handles=${stringHandleCount}, string_heap=${stringHeapBytes}, `
 			+ `asset_table=${assetTableBytes} (${assetTableInfo.entryCount} entries, ${assetTableInfo.stringBytes} string bytes), `
-			+ `asset_data=${assetDataBytes}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes} (${frameBufferWidth}x${frameBufferHeight}), `
+			+ `asset_data=${assetDataBytes}, vdp_stream=${VDP_STREAM_BUFFER_SIZE}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes} (${frameBufferWidth}x${frameBufferHeight}), `
 			+ `engine_atlas_slot=${engineAtlasSlotBytes}, atlas_slot=${atlasSlotBytes}x2=${atlasSlotBytes * 2}).`,
 		);
 		return {
@@ -1329,7 +1545,7 @@ export class Runtime {
 	private constructor(options: RuntimeOptions) {
 		Runtime._instance = this;
 		this.cycleBudgetPerFrame = options.cycleBudgetPerFrame;
-		this.renderBudgetPerFrame = Runtime.resolveRenderBudgetPerFrame(options.renderBudgetPerFrame);
+		this.vdpWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec);
 		this.storageService = $.platform.storage;
 		this.storage = new RuntimeStorage(this.storageService, $.lua_sources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
@@ -1345,7 +1561,7 @@ export class Runtime {
 		);
 		this.stringHandles = new StringHandleTable(this.memory);
 		this.runtimeStringPool = new StringPool(this.stringHandles);
-		this.resetVdpPayloadState();
+		this.resetVdpIngressState();
 		this.memory.writeValue(IO_SYS_BOOT_CART, 0);
 		this.memory.writeValue(IO_SYS_CART_BOOTREADY, 0);
 		this.memory.writeValue(IO_IRQ_FLAGS, 0);
@@ -1373,7 +1589,11 @@ export class Runtime {
 		this.vdp.initializeRegisters();
 		this.memory.setIoWriteHandler(this as IoWriteHandler);
 		this.setVblankCycles(options.vblankCycles);
-		this.dmaController = new DmaController(this.memory, (mask) => this.raiseIrqFlags(mask));
+		this.dmaController = new DmaController(
+			this.memory,
+			(mask) => this.raiseIrqFlags(mask),
+			(src, byteLength) => this.sealVdpDmaTransfer(src, byteLength),
+		);
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, (mask) => this.raiseIrqFlags(mask));
 		this.vdp.attachImgDecController(this.imgDecController);
 		this.cpu = new CPU(this.memory, this.runtimeStringPool);
@@ -1663,40 +1883,59 @@ export class Runtime {
 		if (this.handlingVdpCommandWrite || typeof value !== 'number') {
 			return;
 		}
-		if (addr === IO_PAYLOAD_ALLOC_ADDR) {
-			const words = value >>> 0;
-			const writePtr = (this.memory.readValue(IO_PAYLOAD_WRITE_PTR_ADDR) as number) >>> 0;
-			const next = writePtr + words;
-			if (next > IO_PAYLOAD_CAPACITY) {
-				throw new Error(`[VDP] IO payload buffer overflow (${next} > ${IO_PAYLOAD_CAPACITY}).`);
+		if (addr === IO_DMA_CTRL) {
+			if ((value & DMA_CTRL_START) !== 0) {
+				const dst = (this.memory.readValue(IO_DMA_DST) as number) >>> 0;
+				if (dst === IO_VDP_FIFO && this.hasBlockedVdpSubmitPath()) {
+					this.memory.writeValue(IO_DMA_CTRL, (value >>> 0) & ~DMA_CTRL_START);
+					this.memory.writeValue(IO_DMA_WRITTEN, 0);
+					this.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_REJECTED);
+					this.noteRejectedVdpSubmitAttempt();
+					return;
+				}
+				this.dmaController.tryStartIo();
+				this.syncVdpSubmitAttemptStatusFromDma(dst);
 			}
-			this.memory.writeIoValue(IO_PAYLOAD_WRITE_PTR_ADDR, next >>> 0);
-			this.memory.writeIoValue(IO_PAYLOAD_ALLOC_ADDR, writePtr >>> 0);
-			this.payloadDataWritePtr = writePtr >>> 0;
-			this.armedVdpPayloadBaseOffset = writePtr >>> 0;
-			this.armedVdpPayloadWordCount = words >>> 0;
 			return;
 		}
-		if (addr === IO_PAYLOAD_DATA_ADDR) {
-			const writeLimit = (this.memory.readValue(IO_PAYLOAD_WRITE_PTR_ADDR) as number) >>> 0;
-			if (this.payloadDataWritePtr >= writeLimit) {
-				throw new Error(`[VDP] IO payload data write exceeds allocated payload (${this.payloadDataWritePtr} >= ${writeLimit}).`);
+		if (addr === IO_VDP_FIFO) {
+			if (this.dmaController.hasPendingVdpSubmit() || (!this.hasOpenDirectVdpFifoIngress() && !this.vdp.canAcceptSubmittedFrame())) {
+				this.noteRejectedVdpSubmitAttempt();
+				return;
 			}
-			this.memory.writeIoValue(IO_PAYLOAD_BUFFER_BASE + this.payloadDataWritePtr * IO_ARG_STRIDE, value >>> 0);
-			this.memory.writeIoValue(IO_PAYLOAD_DATA_ADDR, value >>> 0);
-			this.payloadDataWritePtr += 1;
+			this.noteAcceptedVdpSubmitAttempt();
+			this.pushVdpFifoWord(value >>> 0);
+			return;
+		}
+		if (addr === IO_VDP_FIFO_CTRL) {
+			if ((value & VDP_FIFO_CTRL_SEAL) === 0) {
+				return;
+			}
+			if (this.dmaController.hasPendingVdpSubmit()) {
+				this.noteRejectedVdpSubmitAttempt();
+				return;
+			}
+			this.sealVdpFifoTransfer();
+			this.refreshVdpSubmitBusyStatus();
+			return;
+		}
+		if (addr === IO_PAYLOAD_ALLOC_ADDR || addr === IO_PAYLOAD_DATA_ADDR) {
+			throw new Error('[VDP] Payload staging IO is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.');
 			return;
 		}
 		if (addr === IO_VDP_CMD) {
 			if (value === 0) {
 				return;
 			}
+			if (this.hasBlockedVdpSubmitPath()) {
+				this.noteRejectedVdpSubmitAttempt();
+				return;
+			}
+			this.noteAcceptedVdpSubmitAttempt();
 			this.handlingVdpCommandWrite = true;
 			try {
-				this.vdp.syncRegisters();
-				runtimeLuaPipeline.processVdpCommand(this, IO_VDP_CMD, value);
+				this.consumeDirectVdpCommand(value >>> 0);
 			} finally {
-				this.resetVdpPayloadState();
 				this.handlingVdpCommandWrite = false;
 			}
 			return;

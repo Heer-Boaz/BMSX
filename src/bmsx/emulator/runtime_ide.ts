@@ -74,6 +74,8 @@ type RenderTargetState = {
 };
 
 export const EDITOR_TARGET: RenderTargetVec2 = { x: 384, y: 288 };
+// export const EDITOR_TARGET: RenderTargetVec2 = { x: 768, y: 576 };
+// export const EDITOR_TARGET: RenderTargetVec2 = { x: 512, y: 384 };
 const RT_STATE = new WeakMap<Runtime, RenderTargetState>();
 
 function getRenderTargetState(runtime: Runtime): RenderTargetState {

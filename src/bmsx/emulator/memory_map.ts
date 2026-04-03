@@ -26,6 +26,11 @@ export const DEFAULT_ASSET_TABLE_SIZE = 0x00100000; // 1 MB
 export const DEFAULT_VRAM_ATLAS_SLOT_SIZE = 0x01000000; // 16 MB
 export const DEFAULT_VRAM_STAGING_SIZE = 0x00400000; // 4 MB
 export const DEFAULT_VRAM_FRAMEBUFFER_SIZE = 256 * 212 * 4;
+export const VDP_CMD_ARG_COUNT = 18;
+export const VDP_STREAM_PACKET_HEADER_WORDS = 3;
+export const VDP_STREAM_CAPACITY_WORDS = 16384;
+export const VDP_STREAM_BUFFER_SIZE = VDP_STREAM_CAPACITY_WORDS * IO_WORD_SIZE;
+export const VDP_STREAM_PAYLOAD_CAPACITY_WORDS = VDP_STREAM_CAPACITY_WORDS - VDP_STREAM_PACKET_HEADER_WORDS;
 
 export let RAM_SIZE = DEFAULT_RAM_SIZE;
 export let STRING_HANDLE_COUNT = DEFAULT_STRING_HANDLE_COUNT;
@@ -45,6 +50,7 @@ export let ASSET_TABLE_BASE = ASSET_RAM_BASE;
 export let ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
 export let ASSET_RAM_SIZE = RAM_SIZE - (ASSET_RAM_BASE - RAM_BASE);
 export let ASSET_DATA_END = ASSET_RAM_BASE + ASSET_RAM_SIZE;
+export let VDP_STREAM_BUFFER_BASE = 0;
 export let VRAM_SECONDARY_ATLAS_BASE = 0;
 export let VRAM_PRIMARY_ATLAS_BASE = 0;
 export let VRAM_SYSTEM_ATLAS_BASE = 0;
@@ -131,8 +137,9 @@ function recomputeMemoryLayout(config: {
 	ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
 	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes;
 	ASSET_RAM_SIZE = ASSET_DATA_END - ASSET_RAM_BASE;
+	VDP_STREAM_BUFFER_BASE = ASSET_DATA_END;
 
-	VRAM_STAGING_BASE = ASSET_DATA_END;
+	VRAM_STAGING_BASE = VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE;
 	VRAM_SKYBOX_FACE_BYTES = config.skyboxFaceBytes;
 	VRAM_SKYBOX_SIZE = VRAM_SKYBOX_FACE_BYTES * 6;
 	VRAM_SKYBOX_BASE = VRAM_STAGING_BASE + VRAM_STAGING_SIZE;
@@ -150,7 +157,7 @@ function recomputeMemoryLayout(config: {
 	VRAM_PRIMARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
 	VRAM_SECONDARY_ATLAS_SIZE = VRAM_ATLAS_SLOT_SIZE;
 	ASSET_DATA_ALLOC_END = ASSET_DATA_END;
-	RAM_USED_END = ASSET_DATA_END;
+	RAM_USED_END = VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE;
 }
 
 export function configureMemoryMap(specs?: MemoryMapSpecs): void {
@@ -169,13 +176,14 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 		})();
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
 	const defaultAssetDataBytes = DEFAULT_RAM_SIZE
-		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes);
+		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes + VDP_STREAM_BUFFER_SIZE);
 	const assetDataBytes = resolveNonNegativeInteger(specs?.asset_data_bytes ?? defaultAssetDataBytes, 'asset_data_bytes');
 	const computedRamBytes = IO_REGION_SIZE
 		+ stringHandleTableBytes
 		+ stringHeapBytes
 		+ assetTableBytes
-		+ assetDataBytes;
+		+ assetDataBytes
+		+ VDP_STREAM_BUFFER_SIZE;
 	if (specs?.ram_bytes !== undefined) {
 		const ramBytes = resolvePositiveInteger(specs.ram_bytes, 'ram_bytes');
 		if (ramBytes !== computedRamBytes) {

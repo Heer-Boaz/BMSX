@@ -138,7 +138,6 @@ export class Memory {
 	private readonly vramReadScratch = new Uint8Array(4);
 	private readonly mappedFloatBuffer = new ArrayBuffer(8);
 	private readonly mappedFloatView = new DataView(this.mappedFloatBuffer);
-
 	private assetEntries: AssetEntry[] = [];
 	private assetIndexById = new Map<string, number>();
 	private assetIndexByToken = new Map<string, number>();

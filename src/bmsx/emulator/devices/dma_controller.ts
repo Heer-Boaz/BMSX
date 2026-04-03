@@ -5,6 +5,7 @@ import {
 	DMA_STATUS_CLIPPED,
 	DMA_STATUS_DONE,
 	DMA_STATUS_ERROR,
+	DMA_STATUS_REJECTED,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -12,6 +13,7 @@ import {
 	IO_DMA_STATUS,
 	IO_DMA_WRITTEN,
 	IO_IMG_WRITTEN,
+	IO_VDP_FIFO,
 	IRQ_DMA_DONE,
 	IRQ_DMA_ERROR,
 } from '../io';
@@ -20,6 +22,7 @@ import {
 	OVERLAY_ROM_SIZE,
 	RAM_BASE,
 	RAM_USED_END,
+	VDP_STREAM_BUFFER_SIZE,
 	VRAM_SYSTEM_ATLAS_BASE,
 	VRAM_SYSTEM_ATLAS_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
@@ -79,7 +82,6 @@ export class DmaController {
 		{ budget: 0, queue: [], active: null },
 		{ budget: 0, queue: [], active: null },
 	];
-	private ioJobActive = false;
 	private ioWrittenValue = 0;
 	private ioWrittenDirty = false;
 	private imgWrittenValue = 0;
@@ -88,7 +90,24 @@ export class DmaController {
 	public constructor(
 		private readonly memory: Memory,
 		private readonly raiseIrq: (mask: number) => void,
+		private readonly sealVdpFifoDma: (src: number, length: number) => void,
 	) {}
+
+	public hasPendingVdpSubmit(): boolean {
+		for (let channelIndex = 0; channelIndex < this.channels.length; channelIndex += 1) {
+			const state = this.channels[channelIndex]!;
+			if (state.active !== null && state.active.kind === 'io' && state.active.dst === IO_VDP_FIFO) {
+				return true;
+			}
+			for (let queueIndex = 0; queueIndex < state.queue.length; queueIndex += 1) {
+				const job = state.queue[queueIndex]!;
+				if (job.kind === 'io' && job.dst === IO_VDP_FIFO) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
 
 	public setChannelBudgets(params: { iso: number; bulk: number }): void {
 		this.channels[DMA_CH_ISO].budget = params.iso;
@@ -100,7 +119,6 @@ export class DmaController {
 		this.channels[DMA_CH_ISO].active = null;
 		this.channels[DMA_CH_BULK].queue.length = 0;
 		this.channels[DMA_CH_BULK].active = null;
-		this.ioJobActive = false;
 		this.ioWrittenValue = 0;
 		this.ioWrittenDirty = false;
 		this.imgWrittenValue = 0;
@@ -132,7 +150,6 @@ export class DmaController {
 	}
 
 	public tick(): void {
-		this.tryStartIo();
 		this.tickChannel(DMA_CH_ISO);
 		this.tickChannel(DMA_CH_BULK);
 		if (this.ioWrittenDirty) {
@@ -143,6 +160,59 @@ export class DmaController {
 			this.memory.writeValue(IO_IMG_WRITTEN, this.imgWrittenValue);
 			this.imgWrittenDirty = false;
 		}
+	}
+
+	public tryStartIo(): void {
+		const ctrlValue = this.memory.readValue(IO_DMA_CTRL) as number;
+		if ((ctrlValue & DMA_CTRL_START) === 0) {
+			return;
+		}
+		const ctrl = ctrlValue >>> 0;
+		const src = (this.memory.readValue(IO_DMA_SRC) as number) >>> 0;
+		const dst = (this.memory.readValue(IO_DMA_DST) as number) >>> 0;
+		const len = (this.memory.readValue(IO_DMA_LEN) as number) >>> 0;
+		const strict = (ctrl & DMA_CTRL_STRICT) !== 0;
+		this.memory.writeValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
+		if (dst === IO_VDP_FIFO && this.hasPendingVdpSubmit()) {
+			this.finishIoRejected();
+			return;
+		}
+		this.memory.writeValue(IO_DMA_WRITTEN, 0);
+		const maxWritable = this.resolveMaxWritable(dst);
+		if (maxWritable <= 0) {
+			this.finishIoError(false);
+			return;
+		}
+		let transferLen = len;
+		let clipped = false;
+		if (transferLen > maxWritable) {
+			clipped = true;
+			if (strict) {
+				this.finishIoError(true);
+				return;
+			}
+			transferLen = maxWritable;
+		}
+		const status = DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0);
+		this.memory.writeValue(IO_DMA_STATUS, status);
+		if (transferLen === 0) {
+			this.finishIoSuccess(clipped);
+			return;
+		}
+		const job: DmaIoJob = {
+			kind: 'io',
+			channel: DMA_CH_BULK,
+			src,
+			dst,
+			remaining: transferLen,
+			written: 0,
+			clipped,
+			strict,
+			error: false,
+		};
+		this.ioWrittenValue = 0;
+		this.ioWrittenDirty = true;
+		this.channels[DMA_CH_BULK].queue.push(job);
 	}
 
 	private tickChannel(channel: DmaChannelId): void {
@@ -186,6 +256,11 @@ export class DmaController {
 			let chunk = job.remaining > budget ? budget : job.remaining;
 			if (chunk === 0) {
 				return 0;
+			}
+			if (job.dst === IO_VDP_FIFO) {
+				job.remaining -= chunk;
+				job.written += chunk;
+				return chunk;
 			}
 			if (this.memory.isVramRange(job.dst, 1)) {
 				chunk &= ~3;
@@ -257,61 +332,10 @@ export class DmaController {
 		job.onComplete({ error: job.error, clipped: job.clipped });
 	}
 
-	private tryStartIo(): void {
-		const ctrlValue = this.memory.readValue(IO_DMA_CTRL) as number;
-		if ((ctrlValue & DMA_CTRL_START) === 0) {
-			return;
-		}
-		const ctrl = ctrlValue >>> 0;
-		if (this.ioJobActive) {
-			this.memory.writeValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
-			return;
-		}
-		const src = (this.memory.readValue(IO_DMA_SRC) as number) >>> 0;
-		const dst = (this.memory.readValue(IO_DMA_DST) as number) >>> 0;
-		const len = (this.memory.readValue(IO_DMA_LEN) as number) >>> 0;
-		const strict = (ctrl & DMA_CTRL_STRICT) !== 0;
-		this.memory.writeValue(IO_DMA_WRITTEN, 0);
-		this.memory.writeValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
-		const maxWritable = this.resolveMaxWritable(dst);
-		if (maxWritable <= 0) {
-			this.finishIoError(false);
-			return;
-		}
-		let transferLen = len;
-		let clipped = false;
-		if (transferLen > maxWritable) {
-			clipped = true;
-			if (strict) {
-				this.finishIoError(true);
-				return;
-			}
-			transferLen = maxWritable;
-		}
-		const status = DMA_STATUS_BUSY | (clipped ? DMA_STATUS_CLIPPED : 0);
-		this.memory.writeValue(IO_DMA_STATUS, status);
-		if (transferLen === 0) {
-			this.finishIoSuccess(clipped);
-			return;
-		}
-		const job: DmaIoJob = {
-			kind: 'io',
-			channel: DMA_CH_BULK,
-			src,
-			dst,
-			remaining: transferLen,
-			written: 0,
-			clipped,
-			strict,
-			error: false,
-		};
-		this.ioWrittenValue = 0;
-		this.ioWrittenDirty = true;
-		this.ioJobActive = true;
-		this.channels[DMA_CH_BULK].queue.push(job);
-	}
-
 	private resolveMaxWritable(dst: number): number {
+		if (dst === IO_VDP_FIFO) {
+			return VDP_STREAM_BUFFER_SIZE;
+		}
 		if (dst >= VRAM_SYSTEM_ATLAS_BASE && dst < VRAM_SYSTEM_ATLAS_BASE + VRAM_SYSTEM_ATLAS_SIZE) {
 			return (VRAM_SYSTEM_ATLAS_BASE + VRAM_SYSTEM_ATLAS_SIZE) - dst;
 		}
@@ -340,10 +364,17 @@ export class DmaController {
 	}
 
 	private finishIoJob(job: DmaIoJob): void {
-		this.ioJobActive = false;
 		if (job.error) {
 			this.finishIoError(job.clipped);
 			return;
+		}
+		if (job.dst === IO_VDP_FIFO) {
+			try {
+				this.sealVdpFifoDma(job.src, job.written);
+			} catch {
+				this.finishIoError(job.clipped);
+				return;
+			}
 		}
 		this.finishIoSuccess(job.clipped);
 	}
@@ -358,12 +389,16 @@ export class DmaController {
 	}
 
 	private finishIoError(clipped: boolean): void {
-		this.ioJobActive = false;
 		let status = DMA_STATUS_DONE | DMA_STATUS_ERROR;
 		if (clipped) {
 			status |= DMA_STATUS_CLIPPED;
 		}
 		this.memory.writeValue(IO_DMA_STATUS, status);
 		this.raiseIrq(IRQ_DMA_ERROR);
+	}
+
+	private finishIoRejected(): void {
+		this.memory.writeValue(IO_DMA_WRITTEN, 0);
+		this.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_REJECTED);
 	}
 }

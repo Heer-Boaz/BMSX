@@ -38,12 +38,12 @@ import {
 	IO_CMD_VDP_FILL_RECT,
 	IO_CMD_VDP_GLYPH_RUN,
 	IO_CMD_VDP_TILE_RUN,
-	IO_PAYLOAD_BUFFER_BASE,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
 	IRQ_NEWGAME,
 	IRQ_REINIT,
 } from './io';
+import { assertVdpPacketArgWords, getVdpPacketArgKind, VdpPacketWordKind } from './vdp_packet_schema';
 import { CanonicalizationType, getMachinePerfSpecs } from '../rompack/rompack';
 import type { RawAssetSource } from '../rompack/asset_source';
 import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from './cpu';
@@ -249,7 +249,7 @@ export function applyAssetMemorySnapshot(runtime: Runtime, snapshot: RuntimeStat
 		runtime.vdp.ditherType = snapshot.vdpDitherType;
 	}
 	runtime.vdp.flushAssetEdits();
-	runtime.vdp.commitBuildFrame(Number.MAX_SAFE_INTEGER);
+	runtime.vdp.commitLiveVisualState();
 	runtime.vdp.commitViewSnapshot();
 }
 
@@ -303,7 +303,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	} else {
 		runtime.moduleCache.clear();
 	}
-	runtime.resetVdpPayloadState();
+	runtime.resetVdpIngressState();
 	const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 	const finalizedMetadata = prelude.metadata;
 	beginEntryExecution(runtime, entryProtoIndex);
@@ -454,7 +454,7 @@ export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: {
 		runtime.moduleAliases.set(entry.alias, entry.path);
 	}
 	runtime.moduleCache.clear();
-	runtime.resetVdpPayloadState();
+	runtime.resetVdpIngressState();
 	const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 	runtime.programMetadata = prelude.metadata;
 	beginEntryExecution(runtime, entryProtoIndex);
@@ -745,128 +745,255 @@ export function requireString(value: Value): string {
 	return stringValueToString(value as StringValue);
 }
 
-function readIoArg(runtime: Runtime, base: number, index: number): number {
-	return runtime.memory.readValue(base + index * IO_ARG_STRIDE) as number;
+const VDP_PACKET_F32_BUFFER = new ArrayBuffer(4);
+const VDP_PACKET_F32_VIEW = new DataView(VDP_PACKET_F32_BUFFER);
+
+type PacketWordReaderKind = 'memory' | 'buffer';
+
+type PacketWordReader = {
+	readonly kind: PacketWordReaderKind;
+	readU32(index: number): number;
+};
+
+class MemoryPacketWordReader implements PacketWordReader {
+	public readonly kind = 'memory';
+	public runtime!: Runtime;
+	public base = 0;
+
+	public set(runtime: Runtime, base: number): this {
+		this.runtime = runtime;
+		this.base = base;
+		return this;
+	}
+
+	public readU32(index: number): number {
+		return this.runtime.memory.readU32(this.base + index * IO_ARG_STRIDE) >>> 0;
+	}
 }
 
-function readIoColor(runtime: Runtime, base: number, offset: number): { r: number; g: number; b: number; a: number } {
+class BufferPacketWordReader implements PacketWordReader {
+	public readonly kind = 'buffer';
+	public words!: Uint32Array;
+	public wordOffset = 0;
+
+	public set(words: Uint32Array, wordOffset: number): this {
+		this.words = words;
+		this.wordOffset = wordOffset;
+		return this;
+	}
+
+	public readU32(index: number): number {
+		return this.words[this.wordOffset + index] >>> 0;
+	}
+}
+
+const VDP_PACKET_MEMORY_ARGS = new MemoryPacketWordReader();
+const VDP_PACKET_MEMORY_PAYLOAD = new MemoryPacketWordReader();
+const VDP_PACKET_BUFFER_ARGS = new BufferPacketWordReader();
+const VDP_PACKET_BUFFER_PAYLOAD = new BufferPacketWordReader();
+
+function readPacketU32(reader: PacketWordReader, index: number): number {
+	return reader.readU32(index);
+}
+
+function readPacketI32(reader: PacketWordReader, index: number): number {
+	return reader.readU32(index) | 0;
+}
+
+function readPacketF32(reader: PacketWordReader, index: number): number {
+	VDP_PACKET_F32_VIEW.setUint32(0, reader.readU32(index) >>> 0, true);
+	return VDP_PACKET_F32_VIEW.getFloat32(0, true);
+}
+
+function readPacketArgU32(reader: PacketWordReader, cmd: number, index: number): number {
+	if (getVdpPacketArgKind(cmd, index) !== VdpPacketWordKind.U32) {
+		throw new Error(`[VDP] Packet arg ${index} for command ${cmd >>> 0} is not encoded as u32.`);
+	}
+	return readPacketU32(reader, index);
+}
+
+function readPacketArgI32(reader: PacketWordReader, cmd: number, index: number): number {
+	if (getVdpPacketArgKind(cmd, index) !== VdpPacketWordKind.U32) {
+		throw new Error(`[VDP] Packet arg ${index} for command ${cmd >>> 0} is not encoded as u32.`);
+	}
+	return readPacketI32(reader, index);
+}
+
+function readPacketArgF32(reader: PacketWordReader, cmd: number, index: number): number {
+	if (getVdpPacketArgKind(cmd, index) !== VdpPacketWordKind.F32) {
+		throw new Error(`[VDP] Packet arg ${index} for command ${cmd >>> 0} is not encoded as f32.`);
+	}
+	return readPacketF32(reader, index);
+}
+
+function readPacketColor(reader: PacketWordReader, cmd: number, offset: number): { r: number; g: number; b: number; a: number } {
 	return {
-		r: readIoArg(runtime, base, offset + 0),
-		g: readIoArg(runtime, base, offset + 1),
-		b: readIoArg(runtime, base, offset + 2),
-		a: readIoArg(runtime, base, offset + 3),
+		r: readPacketArgF32(reader, cmd, offset + 0),
+		g: readPacketArgF32(reader, cmd, offset + 1),
+		b: readPacketArgF32(reader, cmd, offset + 2),
+		a: readPacketArgF32(reader, cmd, offset + 3),
 	};
 }
 
-export function processVdpCommand(runtime: Runtime, cmdBase: number, cmd: number): void {
-	const memory = runtime.memory;
-	switch (cmd) {
+function processVdpCommandCore(runtime: Runtime, params: {
+	cmd: number;
+	argWords: number;
+	argReader: PacketWordReader;
+	payloadReader: PacketWordReader;
+	payloadWords: number;
+}): void {
+	switch (params.cmd) {
 		case IO_CMD_VDP_CLEAR: {
-			runtime.vdp.enqueueClear(readIoColor(runtime, cmdBase, 1));
+			assertVdpPacketArgWords(params.cmd, params.argWords);
+			runtime.vdp.enqueueClear(readPacketColor(params.argReader, params.cmd, 0));
 			break;
 		}
 		case IO_CMD_VDP_FILL_RECT: {
+			assertVdpPacketArgWords(params.cmd, params.argWords);
 			runtime.vdp.enqueueFillRect(
-				readIoArg(runtime, cmdBase, 1),
-				readIoArg(runtime, cmdBase, 2),
-				readIoArg(runtime, cmdBase, 3),
-				readIoArg(runtime, cmdBase, 4),
-				readIoArg(runtime, cmdBase, 5),
-				readIoArg(runtime, cmdBase, 6) as 0 | 1 | 2,
-				readIoColor(runtime, cmdBase, 7),
+				readPacketArgF32(params.argReader, params.cmd, 0),
+				readPacketArgF32(params.argReader, params.cmd, 1),
+				readPacketArgF32(params.argReader, params.cmd, 2),
+				readPacketArgF32(params.argReader, params.cmd, 3),
+				readPacketArgF32(params.argReader, params.cmd, 4),
+				readPacketArgU32(params.argReader, params.cmd, 5) as 0 | 1 | 2,
+				readPacketColor(params.argReader, params.cmd, 6),
 			);
 			break;
 		}
 		case IO_CMD_VDP_DRAW_LINE: {
+			assertVdpPacketArgWords(params.cmd, params.argWords);
 			runtime.vdp.enqueueDrawLine(
-				readIoArg(runtime, cmdBase, 1),
-				readIoArg(runtime, cmdBase, 2),
-				readIoArg(runtime, cmdBase, 3),
-				readIoArg(runtime, cmdBase, 4),
-				readIoArg(runtime, cmdBase, 5),
-				readIoArg(runtime, cmdBase, 6) as 0 | 1 | 2,
-				readIoColor(runtime, cmdBase, 7),
-				readIoArg(runtime, cmdBase, 11),
+				readPacketArgF32(params.argReader, params.cmd, 0),
+				readPacketArgF32(params.argReader, params.cmd, 1),
+				readPacketArgF32(params.argReader, params.cmd, 2),
+				readPacketArgF32(params.argReader, params.cmd, 3),
+				readPacketArgF32(params.argReader, params.cmd, 4),
+				readPacketArgU32(params.argReader, params.cmd, 5) as 0 | 1 | 2,
+				readPacketColor(params.argReader, params.cmd, 6),
+				readPacketArgF32(params.argReader, params.cmd, 10),
 			);
 			break;
 		}
 		case IO_CMD_VDP_BLIT: {
-			const flipFlags = readIoArg(runtime, cmdBase, 8) >>> 0;
+			assertVdpPacketArgWords(params.cmd, params.argWords);
+			const flipFlags = readPacketArgU32(params.argReader, params.cmd, 7);
 			runtime.vdp.enqueueBlit(
-				readIoArg(runtime, cmdBase, 1) >>> 0,
-				readIoArg(runtime, cmdBase, 2),
-				readIoArg(runtime, cmdBase, 3),
-				readIoArg(runtime, cmdBase, 4),
-				readIoArg(runtime, cmdBase, 5) as 0 | 1 | 2,
-				readIoArg(runtime, cmdBase, 6),
-				readIoArg(runtime, cmdBase, 7),
+				readPacketArgU32(params.argReader, params.cmd, 0),
+				readPacketArgF32(params.argReader, params.cmd, 1),
+				readPacketArgF32(params.argReader, params.cmd, 2),
+				readPacketArgF32(params.argReader, params.cmd, 3),
+				readPacketArgU32(params.argReader, params.cmd, 4) as 0 | 1 | 2,
+				readPacketArgF32(params.argReader, params.cmd, 5),
+				readPacketArgF32(params.argReader, params.cmd, 6),
 				(flipFlags & 1) !== 0,
 				(flipFlags & 2) !== 0,
-				readIoColor(runtime, cmdBase, 9),
-				readIoArg(runtime, cmdBase, 13),
+				readPacketColor(params.argReader, params.cmd, 8),
+				readPacketArgF32(params.argReader, params.cmd, 12),
 			);
 			break;
 		}
 		case IO_CMD_VDP_GLYPH_RUN: {
-			const textValue = runtime.memory.readValue(cmdBase + IO_ARG_STRIDE);
-			if (!isStringValue(textValue)) {
-				throw new Error('[VDP] Glyph text expects a string.');
-			}
-			const text = stringValueToString(textValue);
-			const lines: string[] = [];
-			let lineStart = 0;
-			while (lineStart <= text.length) {
-				const lineEnd = text.indexOf('\n', lineStart);
-				if (lineEnd === -1) {
-					lines.push(text.slice(lineStart));
-					break;
-				}
-				lines.push(text.slice(lineStart, lineEnd));
-				lineStart = lineEnd + 1;
-			}
-			const backgroundEnabled = (readIoArg(runtime, cmdBase, 13) >>> 0) !== 0;
+			assertVdpPacketArgWords(params.cmd, params.argWords);
+			const text = runtime.cpu.getStringPool().getById(readPacketArgU32(params.argReader, params.cmd, 0)).text;
+			const backgroundEnabled = readPacketArgU32(params.argReader, params.cmd, 12) !== 0;
 			runtime.vdp.enqueueGlyphRun(
-				lines,
-				readIoArg(runtime, cmdBase, 2),
-				readIoArg(runtime, cmdBase, 3),
-				readIoArg(runtime, cmdBase, 4),
-				runtime.api.resolveFontId(readIoArg(runtime, cmdBase, 5) >>> 0),
-				readIoColor(runtime, cmdBase, 9),
-				backgroundEnabled ? readIoColor(runtime, cmdBase, 14) : undefined,
-				readIoArg(runtime, cmdBase, 6),
-				readIoArg(runtime, cmdBase, 7),
-				readIoArg(runtime, cmdBase, 8) as 0 | 1 | 2,
+				text,
+				readPacketArgF32(params.argReader, params.cmd, 1),
+				readPacketArgF32(params.argReader, params.cmd, 2),
+				readPacketArgF32(params.argReader, params.cmd, 3),
+				runtime.api.resolveFontId(readPacketArgU32(params.argReader, params.cmd, 4)),
+				readPacketColor(params.argReader, params.cmd, 8),
+				backgroundEnabled ? readPacketColor(params.argReader, params.cmd, 13) : undefined,
+				readPacketArgI32(params.argReader, params.cmd, 5),
+				readPacketArgI32(params.argReader, params.cmd, 6),
+				readPacketArgU32(params.argReader, params.cmd, 7) as 0 | 1 | 2,
 			);
 			break;
 		}
 		case IO_CMD_VDP_TILE_RUN: {
-			const tileCount = readIoArg(runtime, cmdBase, 1) >>> 0;
-			const payloadOffset = runtime.getArmedVdpPayloadBaseOffset();
-			if (tileCount > runtime.getArmedVdpPayloadWordCount()) {
-				throw new Error(`[VDP] Tile payload underrun (${tileCount} > ${runtime.getArmedVdpPayloadWordCount()}).`);
+			assertVdpPacketArgWords(params.cmd, params.argWords);
+			const tileCount = readPacketArgU32(params.argReader, params.cmd, 0);
+			if (tileCount > params.payloadWords) {
+				throw new Error(`[VDP] Tile payload underrun (${tileCount} > ${params.payloadWords}).`);
 			}
-			const handles = new Array<number>(tileCount);
-			for (let tileIndex = 0; tileIndex < tileCount; tileIndex += 1) {
-				handles[tileIndex] = (memory.readValue(IO_PAYLOAD_BUFFER_BASE + (payloadOffset + tileIndex) * IO_ARG_STRIDE) as number) >>> 0;
+			const cols = readPacketArgI32(params.argReader, params.cmd, 1);
+			const rows = readPacketArgI32(params.argReader, params.cmd, 2);
+			if (tileCount !== cols * rows) {
+				throw new Error(`[VDP] Tile payload size mismatch (${tileCount} != ${cols * rows}).`);
 			}
-			runtime.vdp.enqueueResolvedTileRun({
-				handles,
-				cols: readIoArg(runtime, cmdBase, 2),
-				rows: readIoArg(runtime, cmdBase, 3),
-				tile_w: readIoArg(runtime, cmdBase, 4),
-				tile_h: readIoArg(runtime, cmdBase, 5),
-				origin_x: readIoArg(runtime, cmdBase, 6),
-				origin_y: readIoArg(runtime, cmdBase, 7),
-				scroll_x: readIoArg(runtime, cmdBase, 8),
-				scroll_y: readIoArg(runtime, cmdBase, 9),
-				z: readIoArg(runtime, cmdBase, 10),
-				layer: readIoArg(runtime, cmdBase, 11) as 0 | 1 | 2,
+			if (params.payloadReader.kind === 'memory') {
+				const payloadReader = params.payloadReader as MemoryPacketWordReader;
+				runtime.vdp.enqueuePayloadTileRun({
+					payload_base: payloadReader.base,
+					tile_count: tileCount,
+					cols,
+					rows,
+					tile_w: readPacketArgI32(params.argReader, params.cmd, 3),
+					tile_h: readPacketArgI32(params.argReader, params.cmd, 4),
+					origin_x: readPacketArgI32(params.argReader, params.cmd, 5),
+					origin_y: readPacketArgI32(params.argReader, params.cmd, 6),
+					scroll_x: readPacketArgI32(params.argReader, params.cmd, 7),
+					scroll_y: readPacketArgI32(params.argReader, params.cmd, 8),
+					z: readPacketArgF32(params.argReader, params.cmd, 9),
+					layer: readPacketArgU32(params.argReader, params.cmd, 10) as 0 | 1 | 2,
+				});
+				break;
+			}
+			const payloadReader = params.payloadReader as BufferPacketWordReader;
+			runtime.vdp.enqueuePayloadTileRunWords({
+				payload_words: payloadReader.words,
+				payload_word_offset: payloadReader.wordOffset,
+				tile_count: tileCount,
+				cols,
+				rows,
+				tile_w: readPacketArgI32(params.argReader, params.cmd, 3),
+				tile_h: readPacketArgI32(params.argReader, params.cmd, 4),
+				origin_x: readPacketArgI32(params.argReader, params.cmd, 5),
+				origin_y: readPacketArgI32(params.argReader, params.cmd, 6),
+				scroll_x: readPacketArgI32(params.argReader, params.cmd, 7),
+				scroll_y: readPacketArgI32(params.argReader, params.cmd, 8),
+				z: readPacketArgF32(params.argReader, params.cmd, 9),
+				layer: readPacketArgU32(params.argReader, params.cmd, 10) as 0 | 1 | 2,
 			});
 			break;
 		}
 		default:
-			throw new Error(`Unknown IO command: ${cmd}.`);
+			throw new Error(`Unknown IO command: ${params.cmd}.`);
 	}
+}
+
+export function processVdpCommand(runtime: Runtime, params: {
+	cmd: number;
+	argWords: number;
+	argsBase: number;
+	payloadBase: number;
+	payloadWords: number;
+}): void {
+	processVdpCommandCore(runtime, {
+		cmd: params.cmd,
+		argWords: params.argWords,
+		argReader: VDP_PACKET_MEMORY_ARGS.set(runtime, params.argsBase),
+		payloadReader: VDP_PACKET_MEMORY_PAYLOAD.set(runtime, params.payloadBase),
+		payloadWords: params.payloadWords,
+	});
+}
+
+export function processVdpBufferedCommand(runtime: Runtime, params: {
+	cmd: number;
+	argWords: number;
+	argsWordOffset: number;
+	payloadWordOffset: number;
+	payloadWords: number;
+	words: Uint32Array;
+}): void {
+	processVdpCommandCore(runtime, {
+		cmd: params.cmd,
+		argWords: params.argWords,
+		argReader: VDP_PACKET_BUFFER_ARGS.set(params.words, params.argsWordOffset),
+		payloadReader: VDP_PACKET_BUFFER_PAYLOAD.set(params.words, params.payloadWordOffset),
+		payloadWords: params.payloadWords,
+	});
 }
 
 export function resolveProgramAssetSource(runtime: Runtime): RawAssetSource {
@@ -1048,7 +1175,7 @@ export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: b
 		runtime.moduleAliases.set(alias, path);
 	}
 	runtime.moduleCache.clear();
-	runtime.resetVdpPayloadState();
+	runtime.resetVdpIngressState();
 
 	const inflated = inflateProgram(programAsset.program);
 	try {
@@ -1092,7 +1219,7 @@ export function bootPreparedCartProgram(runtime: Runtime, options?: { preserveSt
 		runtime.moduleAliases.set(entry.alias, entry.path);
 	}
 	runtime.moduleCache.clear();
-	runtime.resetVdpPayloadState();
+	runtime.resetVdpIngressState();
 	const prelude = runEngineBuiltinPrelude(runtime, prepared.program, prepared.metadata);
 	runtime.programMetadata = prelude.metadata;
 	beginEntryExecution(runtime, prepared.entryProtoIndex);
@@ -1152,7 +1279,7 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 			runtime.moduleAliases.set(entry.alias, entry.path);
 		}
 		runtime.moduleCache.clear();
-		runtime.resetVdpPayloadState();
+		runtime.resetVdpIngressState();
 		const prelude = runEngineBuiltinPrelude(runtime, program, metadata);
 		runtime.programMetadata = prelude.metadata;
 		beginEntryExecution(runtime, entryProtoIndex);

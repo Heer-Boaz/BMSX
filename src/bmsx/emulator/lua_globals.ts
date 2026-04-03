@@ -21,6 +21,9 @@ import {
 	RAM_SIZE,
 	STRING_HANDLE_COUNT,
 	SYSTEM_ROM_BASE,
+	VDP_STREAM_BUFFER_BASE,
+	VDP_STREAM_CAPACITY_WORDS,
+	VDP_STREAM_PACKET_HEADER_WORDS,
 	VRAM_FRAMEBUFFER_BASE,
 	VRAM_FRAMEBUFFER_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
@@ -32,7 +35,7 @@ import {
 	VRAM_SYSTEM_ATLAS_BASE,
 	VRAM_SYSTEM_ATLAS_SIZE,
 } from './memory_map';
-import { CART_ROM_MAGIC, DEFAULT_VDP_RENDER_BUDGET_PER_FRAME, type CartManifest, type MachineManifest } from '../rompack/rompack';
+import { CART_ROM_MAGIC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../rompack/rompack';
 import { BmsxColors } from './vdp';
 import {
 	DMA_CTRL_START,
@@ -41,6 +44,7 @@ import {
 	DMA_STATUS_CLIPPED,
 	DMA_STATUS_DONE,
 	DMA_STATUS_ERROR,
+	DMA_STATUS_REJECTED,
 	IMG_CTRL_START,
 	IMG_STATUS_BUSY,
 	IMG_STATUS_CLIPPED,
@@ -68,17 +72,13 @@ import {
 	IO_IMG_WRITTEN,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
-	IO_PAYLOAD_ALLOC_ADDR,
-	IO_PAYLOAD_DATA_ADDR,
-	IO_PAYLOAD_BUFFER_BASE,
-	IO_PAYLOAD_CAPACITY,
-	IO_PAYLOAD_WRITE_PTR_ADDR,
 	IO_SYS_BOOT_CART,
 	IO_SYS_CART_BOOTREADY,
 	IO_VDP_DITHER,
 	IO_VDP_CMD,
-	IO_VDP_CMD_ARG0,
 	IO_VDP_CMD_ARG_COUNT,
+	IO_VDP_FIFO,
+	IO_VDP_FIFO_CTRL,
 	IO_VDP_PRIMARY_ATLAS_ID,
 	IO_VDP_RD_DATA,
 	IO_VDP_RD_MODE,
@@ -96,9 +96,12 @@ import {
 	IRQ_REINIT,
 	IRQ_VBLANK,
 	VDP_ATLAS_ID_NONE,
+	VDP_FIFO_CTRL_SEAL,
 	VDP_RD_MODE_RGBA8888,
 	VDP_RD_STATUS_OVERFLOW,
 	VDP_RD_STATUS_READY,
+	VDP_STATUS_SUBMIT_BUSY,
+	VDP_STATUS_SUBMIT_REJECTED,
 	VDP_STATUS_VBLANK,
 } from './io';
 import {
@@ -192,7 +195,7 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 	}
 	specs.set(key('dma'), dma);
 	const vdp = new Table(0, 1);
-	vdp.set(key('render_budget_per_frame'), manifest.specs.vdp?.render_budget_per_frame ?? DEFAULT_VDP_RENDER_BUDGET_PER_FRAME);
+	vdp.set(key('work_units_per_sec'), manifest.specs.vdp?.work_units_per_sec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC);
 	specs.set(key('vdp'), vdp);
 	const ram = manifest.specs.ram;
 	if (ram && (ram.ram_bytes || ram.string_handle_count || ram.string_heap_bytes || ram.asset_table_bytes || ram.asset_data_bytes)) {
@@ -1078,8 +1081,13 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.cycleBudgetPerFrame);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_dither', IO_VDP_DITHER);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd', IO_VDP_CMD);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_arg0', IO_VDP_CMD_ARG0);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_arg_count', IO_VDP_CMD_ARG_COUNT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_stream_base', VDP_STREAM_BUFFER_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_stream_capacity_words', VDP_STREAM_CAPACITY_WORDS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_stream_packet_header_words', VDP_STREAM_PACKET_HEADER_WORDS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_fifo', IO_VDP_FIFO);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl', IO_VDP_FIFO_CTRL);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_fifo_ctrl_seal', VDP_FIFO_CTRL_SEAL);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_primary_atlas_id', IO_VDP_PRIMARY_ATLAS_ID);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_secondary_atlas_id', IO_VDP_SECONDARY_ATLAS_ID);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_atlas_none', VDP_ATLAS_ID_NONE);
@@ -1094,15 +1102,12 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_ready', VDP_RD_STATUS_READY);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_rd_status_overflow', VDP_RD_STATUS_OVERFLOW);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_status_vblank', VDP_STATUS_VBLANK);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_status_submit_busy', VDP_STATUS_SUBMIT_BUSY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_status_submit_rejected', VDP_STATUS_SUBMIT_REJECTED);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_layer_world', 0);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ui', 1);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_layer_ide', 2);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_arg_stride', IO_ARG_STRIDE);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_payload_write_ptr', IO_PAYLOAD_WRITE_PTR_ADDR);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_payload_alloc', IO_PAYLOAD_ALLOC_ADDR);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_payload_data', IO_PAYLOAD_DATA_ADDR);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_payload_buffer_base', IO_PAYLOAD_BUFFER_BASE);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_payload_capacity', IO_PAYLOAD_CAPACITY);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_clear', IO_CMD_VDP_CLEAR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_fill_rect', IO_CMD_VDP_FILL_RECT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd_blit', IO_CMD_VDP_BLIT);
@@ -1194,14 +1199,14 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_used', createNativeFunction('sys_vram_used', (_args, out) => {
 		out.push(runtime.getTrackedVramUsedBytes());
 	}, CHEAP_NATIVE_READ_COST));
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_render_budget', createNativeFunction('sys_vdp_render_budget', (_args, out) => {
-		out.push(runtime.getRenderBudgetPerFrame());
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_per_sec', createNativeFunction('sys_vdp_work_units_per_sec', (_args, out) => {
+		out.push(runtime.getVdpWorkUnitsPerSec());
 	}, CHEAP_NATIVE_READ_COST));
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_render_cost_last', createNativeFunction('sys_vdp_render_cost_last', (_args, out) => {
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_last', createNativeFunction('sys_vdp_work_units_last', (_args, out) => {
 		out.push(runtime.lastTickVdpFrameCost);
 	}, CHEAP_NATIVE_READ_COST));
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_frame_over_budget', createNativeFunction('sys_vdp_frame_over_budget', (_args, out) => {
-		out.push(runtime.lastTickVdpFrameOverBudget ? 1 : 0);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_frame_held', createNativeFunction('sys_vdp_frame_held', (_args, out) => {
+		out.push(runtime.lastTickVdpFrameHeld ? 1 : 0);
 	}, CHEAP_NATIVE_READ_COST));
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_done', IRQ_DMA_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_error', IRQ_DMA_ERROR);
@@ -1216,6 +1221,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_done', DMA_STATUS_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_error', DMA_STATUS_ERROR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_clipped', DMA_STATUS_CLIPPED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_rejected', DMA_STATUS_REJECTED);
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_ctrl_start', IMG_CTRL_START);
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_busy', IMG_STATUS_BUSY);
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_done', IMG_STATUS_DONE);

@@ -12,6 +12,7 @@ import {
 	blitSpanBucket,
 	computeClippedLineSpan,
 	computeClippedRect,
+	tileRunCost,
 } from './vdp_render_budget';
 import {
 	ATLAS_PRIMARY_SLOT_ID,
@@ -568,6 +569,7 @@ export interface VdpBlitterExecutor {
 }
 
 export const FRAMEBUFFER_TEXTURE_KEY = '_framebuffer_2d';
+export const FRAMEBUFFER_RENDER_TEXTURE_KEY = '_framebuffer_render_2d';
 const BLITTER_FIFO_CAPACITY = 4096;
 type SkyboxLoader = () => Promise<TextureSource>;
 
@@ -595,24 +597,46 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private committedSkyboxFaceIds: SkyboxImageIds | null = null;
 	private lastDitherType = 0;
 	private committedDitherType = 0;
-	private visualStateDirty = false;
-	private skyboxDirty = false;
 	private imgDecController: ImgDecController | null = null;
 	private _frameBufferWidth = 0;
 	private _frameBufferHeight = 0;
-	private readonly blitterQueue: VdpBlitterCommand[] = [];
+	private buildBlitterQueue: VdpBlitterCommand[] = [];
+	private activeBlitterQueue: VdpBlitterCommand[] = [];
+	private pendingBlitterQueue: VdpBlitterCommand[] = [];
 	private readonly glyphBufferPool: VdpGlyphRunGlyph[][] = [];
 	private readonly tileBufferPool: VdpTileRunBlit[][] = [];
 	private readonly glyphEntryPool: VdpGlyphRunGlyph[] = [];
 	private readonly tileEntryPool: VdpTileRunBlit[] = [];
 	private readonly clippedRectScratchA = { width: 0, height: 0, area: 0 };
 	private readonly clippedRectScratchB = { width: 0, height: 0, area: 0 };
+	private readonly implicitClearCommand: VdpBlitterClearCommand = {
+		opcode: 'clear',
+		seq: 0,
+		renderCost: VDP_RENDER_CLEAR_COST,
+		color: { r: 0, g: 0, b: 0, a: 255 },
+	};
+	private readonly implicitClearQueue: readonly VdpBlitterCommand[] = [this.implicitClearCommand];
 	private blitterSequence = 0;
 	private buildFrameCost = 0;
+	private buildFrameOpen = false;
+	private activeFrameOccupied = false;
+	private activeFrameReady = false;
+	private activeFrameCost = 0;
+	private activeFrameWorkRemaining = 0;
+	private pendingFrameOccupied = false;
+	private pendingFrameCost = 0;
+	private readonly activeSlotAtlasIds: Array<number | null> = [null, null];
+	private readonly pendingSlotAtlasIds: Array<number | null> = [null, null];
+	private activeDitherType = 0;
+	private pendingDitherType = 0;
+	private activeSkyboxFaceIds: SkyboxImageIds | null = null;
+	private pendingSkyboxFaceIds: SkyboxImageIds | null = null;
+	private activeSkyboxLoaders: readonly SkyboxLoader[] | null = null;
+	private pendingSkyboxLoaders: readonly SkyboxLoader[] | null = null;
 	private readonly committedSlotAtlasIds: Array<number | null> = [null, null];
 	public lastFrameCommitted = true;
 	public lastFrameCost = 0;
-	public lastFrameOverBudget = false;
+	public lastFrameHeld = false;
 	public constructor(
 		private readonly memory: Memory,
 		private readonly blitterExecutor: VdpBlitterExecutor | null,
@@ -694,9 +718,9 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		};
 	}
 
-	private recycleBlitterBuffers(): void {
-		for (let index = 0; index < this.blitterQueue.length; index += 1) {
-			const command = this.blitterQueue[index];
+	private recycleBlitterBuffers(queue: VdpBlitterCommand[]): void {
+		for (let index = 0; index < queue.length; index += 1) {
+			const command = queue[index];
 			if (command.opcode === 'glyph_run') {
 				for (let glyphIndex = 0; glyphIndex < command.glyphs.length; glyphIndex += 1) {
 					this.glyphEntryPool.push(command.glyphs[glyphIndex]);
@@ -711,21 +735,24 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				this.tileBufferPool.push(command.tiles);
 			}
 		}
+		queue.length = 0;
 	}
 
-	private resetBlitterState(): void {
-		this.recycleBlitterBuffers();
-		this.blitterQueue.length = 0;
-		this.blitterSequence = 0;
+	private resetBuildFrameState(): void {
+		this.recycleBlitterBuffers(this.buildBlitterQueue);
 		this.buildFrameCost = 0;
+		this.buildFrameOpen = false;
 	}
 
 	private enqueueBlitterCommand(command: VdpBlitterCommand): void {
-		if (this.blitterQueue.length >= BLITTER_FIFO_CAPACITY) {
+		if (!this.buildFrameOpen) {
+			throw new Error('[BmsxVDP] No submitted frame is open.');
+		}
+		if (this.buildBlitterQueue.length >= BLITTER_FIFO_CAPACITY) {
 			throw new Error(`[BmsxVDP] Blitter FIFO overflow (${BLITTER_FIFO_CAPACITY} commands).`);
 		}
 		this.buildFrameCost += command.renderCost;
-		this.blitterQueue.push(command);
+		this.buildBlitterQueue.push(command);
 	}
 
 	private calculateVisibleRectCost(width: number, height: number): number {
@@ -737,8 +764,15 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		return color.a < 255 ? VDP_RENDER_ALPHA_COST_MULTIPLIER : 1;
 	}
 
-	private executeBuildFrame(): void {
-		if (this.blitterQueue.length === 0) {
+	private submittedFrameCost(queue: readonly VdpBlitterCommand[], baseCost: number): number {
+		if (queue.length === 0 || queue[0].opcode === 'clear') {
+			return baseCost;
+		}
+		return baseCost + VDP_RENDER_CLEAR_COST;
+	}
+
+	private executeBlitterQueue(queue: readonly VdpBlitterCommand[]): void {
+		if (queue.length === 0) {
 			return;
 		}
 		if (this.blitterExecutor === null) {
@@ -750,49 +784,229 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const host: VdpBlitterHost = {
 			width: this._frameBufferWidth,
 			height: this._frameBufferHeight,
-			frameBufferTextureKey: FRAMEBUFFER_TEXTURE_KEY,
+			frameBufferTextureKey: FRAMEBUFFER_RENDER_TEXTURE_KEY,
 			getSurface: (surfaceId) => this.getBlitterSurface(surfaceId),
 			getShaderAtlasId: (surfaceId) => this.getBlitterAtlasId(surfaceId),
 		};
-		this.blitterExecutor.execute(host, this.blitterQueue);
+		if (queue[0].opcode !== 'clear') {
+			this.blitterExecutor.execute(host, this.implicitClearQueue);
+		}
+		this.blitterExecutor.execute(host, queue);
+	}
+
+	private ensureDisplayFrameBufferTexture(): void {
+		let handle = $.texmanager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
+		if (!handle) {
+			handle = $.texmanager.createTextureFromPixelsSync(FRAMEBUFFER_TEXTURE_KEY, this.vramSeedPixel, 1, 1);
+		}
+		handle = $.texmanager.resizeTextureForKey(FRAMEBUFFER_TEXTURE_KEY, this._frameBufferWidth, this._frameBufferHeight);
+		$.view.textures[FRAMEBUFFER_TEXTURE_KEY] = handle;
+	}
+
+	private swapFrameBufferPages(): void {
+		$.texmanager.swapTextureHandlesByUri(FRAMEBUFFER_TEXTURE_KEY, FRAMEBUFFER_RENDER_TEXTURE_KEY);
+		$.view.textures[FRAMEBUFFER_TEXTURE_KEY] = $.texmanager.getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
+		$.view.textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = $.texmanager.getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+		const displayReadback = this.cpuReadbackByKey.get(FRAMEBUFFER_TEXTURE_KEY);
+		const renderReadback = this.cpuReadbackByKey.get(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+		if (displayReadback || renderReadback) {
+			if (displayReadback) {
+				this.cpuReadbackByKey.set(FRAMEBUFFER_RENDER_TEXTURE_KEY, displayReadback);
+			} else {
+				this.cpuReadbackByKey.delete(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+			}
+			if (renderReadback) {
+				this.cpuReadbackByKey.set(FRAMEBUFFER_TEXTURE_KEY, renderReadback);
+			} else {
+				this.cpuReadbackByKey.delete(FRAMEBUFFER_TEXTURE_KEY);
+			}
+		}
 		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
 	}
 
-	public commitBuildFrame(renderBudget: number): void {
-		this.lastFrameCost = this.buildFrameCost;
-		this.lastFrameCommitted = this.buildFrameCost <= renderBudget;
-		this.lastFrameOverBudget = !this.lastFrameCommitted;
-		if (!this.lastFrameCommitted) {
-			this.resetBlitterState();
+	private syncRenderFrameBufferToDisplayPage(): void {
+		$.texmanager.copyTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY, FRAMEBUFFER_TEXTURE_KEY, this._frameBufferWidth, this._frameBufferHeight);
+		const renderReadback = this.cpuReadbackByKey.get(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+		if (renderReadback) {
+			let displayReadback = this.cpuReadbackByKey.get(FRAMEBUFFER_TEXTURE_KEY);
+			if (!displayReadback || displayReadback.byteLength !== renderReadback.byteLength) {
+				displayReadback = new Uint8Array(renderReadback.byteLength);
+				this.cpuReadbackByKey.set(FRAMEBUFFER_TEXTURE_KEY, displayReadback);
+			}
+			displayReadback.set(renderReadback);
+		} else {
+			this.cpuReadbackByKey.delete(FRAMEBUFFER_TEXTURE_KEY);
+		}
+		this.invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
+	}
+
+	public canAcceptSubmittedFrame(): boolean {
+		return !this.pendingFrameOccupied;
+	}
+
+	public beginSubmittedFrame(): void {
+		if (this.buildFrameOpen) {
+			throw new Error('[BmsxVDP] Submitted frame already open.');
+		}
+		this.resetBuildFrameState();
+		this.blitterSequence = 0;
+		this.buildFrameOpen = true;
+	}
+
+	public cancelSubmittedFrame(): void {
+		this.resetBuildFrameState();
+	}
+
+	private assignBuildToSlot(slot: 'active' | 'pending'): void {
+		if (!this.buildFrameOpen) {
+			throw new Error('[BmsxVDP] No submitted frame is open.');
+		}
+		const queue = slot === 'active' ? this.activeBlitterQueue : this.pendingBlitterQueue;
+		if (queue.length !== 0) {
+			throw new Error(`[BmsxVDP] ${slot} frame queue is not empty.`);
+		}
+		const buildQueue = this.buildBlitterQueue;
+		const frameCost = this.submittedFrameCost(buildQueue, this.buildFrameCost);
+		this.buildBlitterQueue = queue;
+		if (slot === 'active') {
+			this.activeBlitterQueue = buildQueue;
+			this.activeFrameOccupied = true;
+			this.activeFrameCost = frameCost;
+			this.activeFrameWorkRemaining = frameCost;
+			this.activeFrameReady = frameCost === 0;
+			this.activeDitherType = this.lastDitherType;
+			this.activeSlotAtlasIds[0] = this.slotAtlasIds[0];
+			this.activeSlotAtlasIds[1] = this.slotAtlasIds[1];
+			this.activeSkyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
+			this.activeSkyboxLoaders = this.buildSkyboxLoaders;
+		} else {
+			this.pendingBlitterQueue = buildQueue;
+			this.pendingFrameOccupied = true;
+			this.pendingFrameCost = frameCost;
+			this.pendingDitherType = this.lastDitherType;
+			this.pendingSlotAtlasIds[0] = this.slotAtlasIds[0];
+			this.pendingSlotAtlasIds[1] = this.slotAtlasIds[1];
+			this.pendingSkyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
+			this.pendingSkyboxLoaders = this.buildSkyboxLoaders;
+		}
+		this.buildBlitterQueue.length = 0;
+		this.buildFrameCost = 0;
+		this.buildFrameOpen = false;
+	}
+
+	public sealSubmittedFrame(): void {
+		if (!this.buildFrameOpen) {
+			throw new Error('[BmsxVDP] No submitted frame is open.');
+		}
+		if (!this.activeFrameOccupied) {
+			this.assignBuildToSlot('active');
 			return;
 		}
-		this.executeBuildFrame();
-		if (this.visualStateDirty) {
-			this.committedDitherType = this.lastDitherType;
-			this.committedSlotAtlasIds[0] = this.slotAtlasIds[0];
-			this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
-			if (this.skyboxDirty) {
-				if (this._skyboxFaceIds === null || this.buildSkyboxLoaders === null) {
-					SkyboxPipeline.clearSkyboxSources();
-				} else {
-					const loaders = this.buildSkyboxLoaders;
-					SkyboxPipeline.setSkyboxSources(this._skyboxFaceIds, loaders.map((loader) => loader()));
-				}
-			}
-			this.committedSkyboxFaceIds = this._skyboxFaceIds;
-			this.visualStateDirty = false;
-			this.skyboxDirty = false;
+		if (!this.pendingFrameOccupied) {
+			this.assignBuildToSlot('pending');
+			return;
 		}
-		this.resetBlitterState();
+		throw new Error('[BmsxVDP] Submit slot busy.');
+	}
+
+	private promotePendingFrame(): void {
+		if (this.activeFrameOccupied || !this.pendingFrameOccupied) {
+			return;
+		}
+		const activeQueue = this.activeBlitterQueue;
+		this.activeBlitterQueue = this.pendingBlitterQueue;
+		this.pendingBlitterQueue = activeQueue;
+		this.pendingBlitterQueue.length = 0;
+		this.activeFrameOccupied = true;
+		this.activeFrameReady = this.pendingFrameCost === 0;
+		this.activeFrameCost = this.pendingFrameCost;
+		this.activeFrameWorkRemaining = this.pendingFrameCost;
+		this.activeDitherType = this.pendingDitherType;
+		this.activeSlotAtlasIds[0] = this.pendingSlotAtlasIds[0];
+		this.activeSlotAtlasIds[1] = this.pendingSlotAtlasIds[1];
+		this.activeSkyboxFaceIds = this.pendingSkyboxFaceIds;
+		this.activeSkyboxLoaders = this.pendingSkyboxLoaders;
+		this.pendingFrameOccupied = false;
+		this.pendingFrameCost = 0;
+		this.pendingDitherType = 0;
+		this.pendingSlotAtlasIds[0] = null;
+		this.pendingSlotAtlasIds[1] = null;
+		this.pendingSkyboxFaceIds = null;
+		this.pendingSkyboxLoaders = null;
+	}
+
+	public advanceWork(workUnits: number): void {
+		if (!this.activeFrameOccupied) {
+			this.promotePendingFrame();
+		}
+		if (!this.activeFrameOccupied || this.activeFrameReady || workUnits <= 0) {
+			return;
+		}
+		if (workUnits >= this.activeFrameWorkRemaining) {
+			this.activeFrameWorkRemaining = 0;
+			this.executeBlitterQueue(this.activeBlitterQueue);
+			this.activeFrameReady = true;
+			return;
+		}
+		this.activeFrameWorkRemaining -= workUnits;
+	}
+
+	private clearActiveFrame(): void {
+		this.recycleBlitterBuffers(this.activeBlitterQueue);
+		this.activeFrameOccupied = false;
+		this.activeFrameReady = false;
+		this.activeFrameCost = 0;
+		this.activeFrameWorkRemaining = 0;
+		this.activeDitherType = 0;
+		this.activeSlotAtlasIds[0] = null;
+		this.activeSlotAtlasIds[1] = null;
+		this.activeSkyboxFaceIds = null;
+		this.activeSkyboxLoaders = null;
+	}
+
+	private commitActiveVisualState(): void {
+		this.committedDitherType = this.activeDitherType;
+		this.committedSlotAtlasIds[0] = this.activeSlotAtlasIds[0];
+		this.committedSlotAtlasIds[1] = this.activeSlotAtlasIds[1];
+		if (this.activeSkyboxFaceIds === null || this.activeSkyboxLoaders === null) {
+			SkyboxPipeline.clearSkyboxSources();
+		} else {
+			SkyboxPipeline.setSkyboxSources(this.activeSkyboxFaceIds, this.activeSkyboxLoaders.map((loader) => loader()));
+		}
+		this.committedSkyboxFaceIds = this.activeSkyboxFaceIds;
+	}
+
+	public presentReadyFrameOnVblankEdge(): void {
+		if (!this.activeFrameOccupied) {
+			this.lastFrameCommitted = false;
+			this.lastFrameCost = 0;
+			this.lastFrameHeld = false;
+			this.promotePendingFrame();
+			return;
+		}
+		this.lastFrameCost = this.activeFrameCost;
+		if (!this.activeFrameReady) {
+			this.lastFrameCommitted = false;
+			this.lastFrameHeld = true;
+			return;
+		}
+		if (this.activeBlitterQueue.length > 0) {
+			this.swapFrameBufferPages();
+		}
+		this.commitActiveVisualState();
+		this.lastFrameCommitted = true;
+		this.lastFrameHeld = false;
+		this.clearActiveFrame();
+		this.promotePendingFrame();
 	}
 
 	private initializeFrameBufferSurface(): void {
 		const width = $.view.viewportSize.x;
 		const height = $.view.viewportSize.y;
-		const entry = this.memory.hasAsset(FRAMEBUFFER_TEXTURE_KEY)
-			? this.memory.getAssetEntry(FRAMEBUFFER_TEXTURE_KEY)
+		const entry = this.memory.hasAsset(FRAMEBUFFER_RENDER_TEXTURE_KEY)
+			? this.memory.getAssetEntry(FRAMEBUFFER_RENDER_TEXTURE_KEY)
 			: this.memory.registerImageSlotAt({
-				id: FRAMEBUFFER_TEXTURE_KEY,
+				id: FRAMEBUFFER_RENDER_TEXTURE_KEY,
 				baseAddr: VRAM_FRAMEBUFFER_BASE,
 				capacityBytes: VRAM_FRAMEBUFFER_SIZE,
 				clear: false,
@@ -809,7 +1023,10 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		entry.regionH = height;
 		this._frameBufferWidth = width;
 		this._frameBufferHeight = height;
-		this.registerVramSlot(entry, FRAMEBUFFER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
+		this.registerVramSlot(entry, FRAMEBUFFER_RENDER_TEXTURE_KEY, VDP_RD_SURFACE_FRAMEBUFFER);
+		this.ensureDisplayFrameBufferTexture();
+		this.registerReadSurface(VDP_RD_SURFACE_FRAMEBUFFER, entry, FRAMEBUFFER_RENDER_TEXTURE_KEY);
+		this.syncRenderFrameBufferToDisplayPage();
 	}
 
 	private resolveBlitterSource(handle: number): VdpBlitterSource {
@@ -951,23 +1168,20 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	}
 
 	public enqueueGlyphRun(text: string | string[], x: number, y: number, z: number, font: BFont, colorValue: color, backgroundColor: color | undefined, start: number, end: number, layer: Layer2D): void {
-		const lines = Array.isArray(text) ? text : null;
-		const singleLine = lines === null ? text as string : '';
 		const glyphs = this.acquireGlyphBuffer();
 		const color = this.packFrameBufferColor(colorValue);
 		const background = backgroundColor ? this.packFrameBufferColor(backgroundColor) : null;
 		let renderCost = 0;
 		let cursorY = y;
-		const lineCount = lines === null ? 1 : lines.length;
-		for (let lineIndex = 0; lineIndex < lineCount; lineIndex += 1) {
-			const line = lines === null ? singleLine : lines[lineIndex];
-			if (line.length === 0) {
+
+		const enqueueGlyphLine = (line: string, baseIndex: number, lineLength: number): void => {
+			if (lineLength === 0) {
 				cursorY += font.lineHeight;
-				continue;
+				return;
 			}
 			let cursorX = x;
-			for (let glyphIndex = start; glyphIndex < line.length && glyphIndex < end; glyphIndex += 1) {
-				const glyph = font.getGlyph(line.charAt(glyphIndex));
+			for (let glyphIndex = start; glyphIndex < lineLength && glyphIndex < end; glyphIndex += 1) {
+				const glyph = font.getGlyph(line.charAt(baseIndex + glyphIndex));
 				const handle = Runtime.instance.resolveAssetHandle(glyph.imgid);
 				const source = this.resolveBlitterSource(handle);
 				const clipped = computeClippedRect(cursorX, cursorY, cursorX + source.width, cursorY + source.height, this._frameBufferWidth, this._frameBufferHeight, this.clippedRectScratchA);
@@ -993,6 +1207,24 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				cursorX += glyph.advance;
 			}
 			cursorY += font.lineHeight;
+		};
+
+		if (Array.isArray(text)) {
+			for (let lineIndex = 0; lineIndex < text.length; lineIndex += 1) {
+				const line = text[lineIndex];
+				enqueueGlyphLine(line, 0, line.length);
+			}
+		} else {
+			let lineStart = 0;
+			while (lineStart <= text.length) {
+				const lineEnd = text.indexOf('\n', lineStart);
+				if (lineEnd === -1) {
+					enqueueGlyphLine(text, lineStart, text.length - lineStart);
+					break;
+				}
+				enqueueGlyphLine(text, lineStart, lineEnd - lineStart);
+				lineStart = lineEnd + 1;
+			}
 		}
 		if (glyphs.length === 0) {
 			this.glyphBufferPool.push(glyphs);
@@ -1011,7 +1243,20 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		});
 	}
 
-	public enqueueTileRun(desc: { tiles: Array<string | false>; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
+	private enqueueTileRunInternal(desc: {
+		cols: number;
+		rows: number;
+		tile_w: number;
+		tile_h: number;
+		origin_x: number;
+		origin_y: number;
+		scroll_x: number;
+		scroll_y: number;
+		z: number;
+		layer: Layer2D;
+		resolveTileHandle: (index: number) => number;
+		mismatchMessage: (source: VdpBlitterSource) => string;
+	}): void {
 		const frameWidth = this._frameBufferWidth;
 		const frameHeight = this._frameBufferHeight;
 		const totalWidth = desc.cols * desc.tile_w;
@@ -1044,18 +1289,19 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			return;
 		}
 		const tiles = this.acquireTileBuffer();
-		let renderCost = 0;
+		let visibleRowCount = 0;
+		let visibleNonEmptyTileCount = 0;
 		for (let row = 0; row < desc.rows; row += 1) {
 			const base = row * desc.cols;
+			let rowHasVisibleTile = false;
 			for (let col = 0; col < desc.cols; col += 1) {
-				const tile = desc.tiles[base + col];
-				if (tile === false) {
+				const handle = desc.resolveTileHandle(base + col);
+				if (handle === IO_VDP_TILE_HANDLE_NONE) {
 					continue;
 				}
-				const handle = Runtime.instance.resolveAssetHandle(tile);
 				const source = this.resolveBlitterSource(handle);
 				if (source.width !== desc.tile_w || source.height !== desc.tile_h) {
-					throw new Error(`dma_blit_tiles asset '${tile}' size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`);
+					throw new Error(desc.mismatchMessage(source));
 				}
 				const tileX = dstX + (col * desc.tile_w) - srcClipX;
 				const tileY = dstY + (row * desc.tile_h) - srcClipY;
@@ -1063,7 +1309,11 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				if (clipped.area === 0) {
 					continue;
 				}
-				renderCost += this.calculateVisibleRectCost(clipped.width, clipped.height);
+				visibleNonEmptyTileCount += 1;
+				if (!rowHasVisibleTile) {
+					rowHasVisibleTile = true;
+					visibleRowCount += 1;
+				}
 				const tileEntry = this.acquireTileEntry();
 				tileEntry.surfaceId = source.surfaceId;
 				tileEntry.srcX = source.srcX;
@@ -1082,87 +1332,72 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.enqueueBlitterCommand({
 			opcode: 'tile_run',
 			seq: this.nextBlitterSequence(),
-			renderCost,
+			renderCost: tileRunCost(visibleRowCount, visibleNonEmptyTileCount),
 			layer: desc.layer,
 			z: desc.z,
 			tiles,
 		});
 	}
 
+	public enqueueTileRun(desc: { tiles: Array<string | false>; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
+		this.enqueueTileRunInternal({
+			...desc,
+			resolveTileHandle: (index) => {
+				const tile = desc.tiles[index];
+				if (tile === false) {
+					return IO_VDP_TILE_HANDLE_NONE;
+				}
+				return Runtime.instance.resolveAssetHandle(tile);
+			},
+			mismatchMessage: (source) => `dma_blit_tiles size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
+		});
+	}
+
 	public enqueueResolvedTileRun(desc: { handles: number[]; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
-		const frameWidth = this._frameBufferWidth;
-		const frameHeight = this._frameBufferHeight;
-		const totalWidth = desc.cols * desc.tile_w;
-		const totalHeight = desc.rows * desc.tile_h;
-		let dstX = desc.origin_x - desc.scroll_x;
-		let dstY = desc.origin_y - desc.scroll_y;
-		let srcClipX = 0;
-		let srcClipY = 0;
-		let writeWidth = totalWidth;
-		let writeHeight = totalHeight;
-		if (dstX < 0) {
-			srcClipX = -dstX;
-			writeWidth += dstX;
-			dstX = 0;
+		this.enqueueTileRunInternal({
+			...desc,
+			resolveTileHandle: (index) => desc.handles[index]!,
+			mismatchMessage: (source) => `[BmsxVDP] enqueueResolvedTileRun tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
+		});
+	}
+
+	public enqueuePayloadTileRun(desc: { payload_base: number; tile_count: number; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
+		if (desc.tile_count !== desc.cols * desc.rows) {
+			throw new Error(`[BmsxVDP] enqueuePayloadTileRun size mismatch (${desc.tile_count} != ${desc.cols * desc.rows}).`);
 		}
-		if (dstY < 0) {
-			srcClipY = -dstY;
-			writeHeight += dstY;
-			dstY = 0;
-		}
-		const overflowX = (dstX + writeWidth) - frameWidth;
-		if (overflowX > 0) {
-			writeWidth -= overflowX;
-		}
-		const overflowY = (dstY + writeHeight) - frameHeight;
-		if (overflowY > 0) {
-			writeHeight -= overflowY;
-		}
-		if (writeWidth <= 0 || writeHeight <= 0) {
-			return;
-		}
-		const tiles = this.acquireTileBuffer();
-		let renderCost = 0;
-		for (let row = 0; row < desc.rows; row += 1) {
-			const base = row * desc.cols;
-			for (let col = 0; col < desc.cols; col += 1) {
-				const handle = desc.handles[base + col];
-				if (handle === IO_VDP_TILE_HANDLE_NONE) {
-					continue;
-				}
-				const source = this.resolveBlitterSource(handle);
-				if (source.width !== desc.tile_w || source.height !== desc.tile_h) {
-					throw new Error(`[BmsxVDP] enqueueResolvedTileRun tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`);
-				}
-				const tileX = dstX + (col * desc.tile_w) - srcClipX;
-				const tileY = dstY + (row * desc.tile_h) - srcClipY;
-				const clipped = computeClippedRect(tileX, tileY, tileX + desc.tile_w, tileY + desc.tile_h, frameWidth, frameHeight, this.clippedRectScratchA);
-				if (clipped.area === 0) {
-					continue;
-				}
-				renderCost += this.calculateVisibleRectCost(clipped.width, clipped.height);
-				const tileEntry = this.acquireTileEntry();
-				tileEntry.surfaceId = source.surfaceId;
-				tileEntry.srcX = source.srcX;
-				tileEntry.srcY = source.srcY;
-				tileEntry.width = source.width;
-				tileEntry.height = source.height;
-				tileEntry.dstX = tileX;
-				tileEntry.dstY = tileY;
-				tiles.push(tileEntry);
-			}
-		}
-		if (tiles.length === 0) {
-			this.tileBufferPool.push(tiles);
-			return;
-		}
-		this.enqueueBlitterCommand({
-			opcode: 'tile_run',
-			seq: this.nextBlitterSequence(),
-			renderCost,
-			layer: desc.layer,
+		this.enqueueTileRunInternal({
+			cols: desc.cols,
+			rows: desc.rows,
+			tile_w: desc.tile_w,
+			tile_h: desc.tile_h,
+			origin_x: desc.origin_x,
+			origin_y: desc.origin_y,
+			scroll_x: desc.scroll_x,
+			scroll_y: desc.scroll_y,
 			z: desc.z,
-			tiles,
+			layer: desc.layer,
+			resolveTileHandle: (index) => this.memory.readU32(desc.payload_base + index * 4) >>> 0,
+			mismatchMessage: (source) => `[BmsxVDP] enqueuePayloadTileRun tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
+		});
+	}
+
+	public enqueuePayloadTileRunWords(desc: { payload_words: Uint32Array; payload_word_offset: number; tile_count: number; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
+		if (desc.tile_count !== desc.cols * desc.rows) {
+			throw new Error(`[BmsxVDP] enqueuePayloadTileRunWords size mismatch (${desc.tile_count} != ${desc.cols * desc.rows}).`);
+		}
+		this.enqueueTileRunInternal({
+			cols: desc.cols,
+			rows: desc.rows,
+			tile_w: desc.tile_w,
+			tile_h: desc.tile_h,
+			origin_x: desc.origin_x,
+			origin_y: desc.origin_y,
+			scroll_x: desc.scroll_x,
+			scroll_y: desc.scroll_y,
+			z: desc.z,
+			layer: desc.layer,
+			resolveTileHandle: (index) => desc.payload_words[desc.payload_word_offset + index] >>> 0,
+			mismatchMessage: (source) => `[BmsxVDP] enqueuePayloadTileRunWords tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
 		});
 	}
 
@@ -1384,7 +1619,17 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			this._frameBufferWidth = $.view.viewportSize.x;
 			this._frameBufferHeight = $.view.viewportSize.y;
 		}
-		this.resetBlitterState();
+		this.resetBuildFrameState();
+		this.clearActiveFrame();
+		this.recycleBlitterBuffers(this.pendingBlitterQueue);
+		this.pendingFrameOccupied = false;
+		this.pendingFrameCost = 0;
+		this.pendingDitherType = 0;
+		this.pendingSlotAtlasIds[0] = null;
+		this.pendingSlotAtlasIds[1] = null;
+		this.pendingSkyboxFaceIds = null;
+		this.pendingSkyboxLoaders = null;
+		this.blitterSequence = 0;
 		this.memory.writeValue(IO_VDP_DITHER, dither);
 		this.memory.writeValue(IO_VDP_CMD, 0);
 		for (let index = 0; index < IO_VDP_CMD_ARG_COUNT; index += 1) {
@@ -1392,8 +1637,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		}
 		this.lastDitherType = dither;
 		this.committedDitherType = dither;
-		this.visualStateDirty = false;
-		this.skyboxDirty = false;
 		this._skyboxFaceIds = null;
 		this.buildSkyboxLoaders = null;
 		this.committedSkyboxFaceIds = null;
@@ -1401,8 +1644,11 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
 		this.lastFrameCommitted = true;
 		this.lastFrameCost = 0;
-		this.lastFrameOverBudget = false;
+		this.lastFrameHeld = false;
 		SkyboxPipeline.clearSkyboxSources();
+		if ($.texmanager.getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY)) {
+			this.syncRenderFrameBufferToDisplayPage();
+		}
 		this.commitViewSnapshot();
 	}
 
@@ -1410,7 +1656,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const dither = this.memory.readValue(IO_VDP_DITHER) as number;
 		if (dither !== this.lastDitherType) {
 			this.lastDitherType = dither;
-			this.visualStateDirty = true;
 		}
 		const primaryRaw = (this.memory.readValue(IO_VDP_PRIMARY_ATLAS_ID) as number) >>> 0;
 		const secondaryRaw = (this.memory.readValue(IO_VDP_SECONDARY_ATLAS_ID) as number) >>> 0;
@@ -1418,7 +1663,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const secondary = secondaryRaw === VDP_ATLAS_ID_NONE ? null : secondaryRaw;
 		if (primary !== this.slotAtlasIds[0] || secondary !== this.slotAtlasIds[1]) {
 			this.applyAtlasSlotMapping(primary, secondary);
-			this.visualStateDirty = true;
 		}
 	}
 
@@ -1443,6 +1687,18 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		view.skyboxFaceIds = this.committedSkyboxFaceIds;
 	}
 
+	public commitLiveVisualState(): void {
+		this.committedDitherType = this.lastDitherType;
+		this.committedSlotAtlasIds[0] = this.slotAtlasIds[0];
+		this.committedSlotAtlasIds[1] = this.slotAtlasIds[1];
+		if (this._skyboxFaceIds === null || this.buildSkyboxLoaders === null) {
+			SkyboxPipeline.clearSkyboxSources();
+		} else {
+			SkyboxPipeline.setSkyboxSources(this._skyboxFaceIds, this.buildSkyboxLoaders.map((loader) => loader()));
+		}
+		this.committedSkyboxFaceIds = this._skyboxFaceIds === null ? null : { ...this._skyboxFaceIds };
+	}
+
 	public get atlasSlotMapping(): { primary: number | null; secondary: number | null } {
 		return { primary: this.slotAtlasIds[0], secondary: this.slotAtlasIds[1] };
 	}
@@ -1453,7 +1709,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, primaryValue);
 		this.memory.writeValue(IO_VDP_SECONDARY_ATLAS_ID, secondaryValue);
 		this.applyAtlasSlotMapping(mapping.primary, mapping.secondary);
-		this.visualStateDirty = true;
 	}
 
 	private applyAtlasSlotMapping(primary: number | null, secondary: number | null): void {
@@ -1516,8 +1771,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const source = $.asset_source;
 		const runtime = Runtime.instance;
 		this._skyboxFaceIds = ids;
-		this.visualStateDirty = true;
-		this.skyboxDirty = true;
 		const tasks = SKYBOX_FACE_KEYS.map<SkyboxLoader>((key, index) => {
 			const assetId = ids[key];
 			const entry = source.getEntry(assetId)!;
@@ -1551,8 +1804,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	public clearSkybox(): void {
 		this._skyboxFaceIds = null;
 		this.buildSkyboxLoaders = null;
-		this.visualStateDirty = true;
-		this.skyboxDirty = true;
 	}
 
 	public async registerImageAssets(source: RawAssetSource): Promise<void> {
@@ -1579,6 +1830,16 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.atlasResourcesById.clear();
 		this.atlasViewsById.clear();
 		this.atlasSlotById.clear();
+		this.resetBuildFrameState();
+		this.clearActiveFrame();
+		this.recycleBlitterBuffers(this.pendingBlitterQueue);
+		this.pendingFrameOccupied = false;
+		this.pendingFrameCost = 0;
+		this.pendingDitherType = 0;
+		this.pendingSlotAtlasIds[0] = null;
+		this.pendingSlotAtlasIds[1] = null;
+		this.pendingSkyboxFaceIds = null;
+		this.pendingSkyboxLoaders = null;
 		this.slotAtlasIds[0] = null;
 			this.slotAtlasIds[1] = null;
 			this.vramSlots = [];
@@ -1595,8 +1856,6 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.committedDitherType = this.lastDitherType;
 		this.committedSlotAtlasIds[0] = null;
 		this.committedSlotAtlasIds[1] = null;
-		this.visualStateDirty = true;
-		this.skyboxDirty = true;
 		SkyboxPipeline.clearSkyboxSources();
 		this.vramBootSeed = this.nextVramBootSeed();
 		this.seedVramStaging();
