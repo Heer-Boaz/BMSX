@@ -129,17 +129,8 @@ precision highp float;
 uniform sampler2D u_texture;
 varying vec2 v_texcoord;
 
-vec3 linear_to_srgb(vec3 c) {
-	c = max(c, vec3(0.0));
-	bvec3 cutoff = lessThanEqual(c, vec3(0.0031308));
-	vec3 lo = c * 12.92;
-	vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
-	return mix(hi, lo, vec3(cutoff));
-}
-
 void main() {
-	vec3 color = texture2D(u_texture, v_texcoord).rgb;
-	gl_FragColor = vec4(linear_to_srgb(color), 1.0);
+	gl_FragColor = texture2D(u_texture, v_texcoord);
 }
 )";
 

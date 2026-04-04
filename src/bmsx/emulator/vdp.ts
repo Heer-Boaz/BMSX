@@ -143,6 +143,10 @@ export function invertColorIndex(colorIndex: number): number {
 	return luminance > 0.5 ? 0 : 15;
 }
 
+function vdpFault(message: string): Error {
+	return new Error(`VDP fault: ${message}`);
+}
+
 function skyboxFaceBaseByIndex(index: number): number {
 	switch (index) {
 		case 0: return VRAM_SKYBOX_POSX_BASE;
@@ -153,7 +157,7 @@ function skyboxFaceBaseByIndex(index: number): number {
 		case 5: return VRAM_SKYBOX_NEGZ_BASE;
 		default: break;
 	}
-	throw new Error(`[BmsxVDP] Skybox face index out of range: ${index}.`);
+	throw vdpFault(`skybox face index out of range: ${index}.`);
 }
 
 const VDP_RD_SURFACE_ENGINE = 0;
@@ -746,10 +750,10 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	private enqueueBlitterCommand(command: VdpBlitterCommand): void {
 		if (!this.buildFrameOpen) {
-			throw new Error('[BmsxVDP] No submitted frame is open.');
+			throw vdpFault('no submitted frame is open.');
 		}
 		if (this.buildBlitterQueue.length >= BLITTER_FIFO_CAPACITY) {
-			throw new Error(`[BmsxVDP] Blitter FIFO overflow (${BLITTER_FIFO_CAPACITY} commands).`);
+			throw vdpFault(`blitter FIFO overflow (${BLITTER_FIFO_CAPACITY} commands).`);
 		}
 		this.buildFrameCost += command.renderCost;
 		this.buildBlitterQueue.push(command);
@@ -776,10 +780,10 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			return;
 		}
 		if (this.blitterExecutor === null) {
-			throw new Error(`[BmsxVDP] No JS blitter executor for backend ${$.view.backend.type}.`);
+			throw vdpFault(`no JS blitter executor for backend ${$.view.backend.type}.`);
 		}
 		if ($.view.backend.type !== this.blitterExecutor.backendType) {
-			throw new Error(`[BmsxVDP] JS blitter executor mismatch (${this.blitterExecutor.backendType} != ${$.view.backend.type}).`);
+			throw vdpFault(`JS blitter executor mismatch (${this.blitterExecutor.backendType} != ${$.view.backend.type}).`);
 		}
 		const host: VdpBlitterHost = {
 			width: this._frameBufferWidth,
@@ -846,7 +850,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	public beginSubmittedFrame(): void {
 		if (this.buildFrameOpen) {
-			throw new Error('[BmsxVDP] Submitted frame already open.');
+			throw vdpFault('submitted frame already open.');
 		}
 		this.resetBuildFrameState();
 		this.blitterSequence = 0;
@@ -859,11 +863,11 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	private assignBuildToSlot(slot: 'active' | 'pending'): void {
 		if (!this.buildFrameOpen) {
-			throw new Error('[BmsxVDP] No submitted frame is open.');
+			throw vdpFault('no submitted frame is open.');
 		}
 		const queue = slot === 'active' ? this.activeBlitterQueue : this.pendingBlitterQueue;
 		if (queue.length !== 0) {
-			throw new Error(`[BmsxVDP] ${slot} frame queue is not empty.`);
+			throw vdpFault(`${slot} frame queue is not empty.`);
 		}
 		const buildQueue = this.buildBlitterQueue;
 		const frameCost = this.submittedFrameCost(buildQueue, this.buildFrameCost);
@@ -896,7 +900,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	public sealSubmittedFrame(): void {
 		if (!this.buildFrameOpen) {
-			throw new Error('[BmsxVDP] No submitted frame is open.');
+			throw vdpFault('no submitted frame is open.');
 		}
 		if (!this.activeFrameOccupied) {
 			this.assignBuildToSlot('active');
@@ -906,7 +910,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			this.assignBuildToSlot('pending');
 			return;
 		}
-		throw new Error('[BmsxVDP] Submit slot busy.');
+		throw vdpFault('submit slot busy.');
 	}
 
 	private promotePendingFrame(): void {
@@ -1013,7 +1017,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			});
 		const size = width * height * 4;
 		if (size > entry.capacity) {
-			throw new Error(`[BmsxVDP] Framebuffer surface exceeds VRAM capacity (${size} > ${entry.capacity}).`);
+			throw vdpFault(`framebuffer surface exceeds VRAM capacity (${size} > ${entry.capacity}).`);
 		}
 		entry.baseSize = size;
 		entry.baseStride = width * 4;
@@ -1032,7 +1036,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 	private resolveBlitterSource(handle: number): VdpBlitterSource {
 		const entry = Runtime.instance.getAssetEntryByHandle(handle);
 		if (entry.type !== 'image') {
-			throw new Error(`[BmsxVDP] Asset handle ${handle} is not an image.`);
+			throw vdpFault(`asset handle ${handle} is not an image.`);
 		}
 		if ((entry.flags & ASSET_FLAG_VIEW) !== 0) {
 			const baseEntry = Runtime.instance.getAssetEntryByHandle(entry.ownerIndex);
@@ -1357,13 +1361,13 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.enqueueTileRunInternal({
 			...desc,
 			resolveTileHandle: (index) => desc.handles[index]!,
-			mismatchMessage: (source) => `[BmsxVDP] enqueueResolvedTileRun tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
+			mismatchMessage: (source) => `VDP fault: enqueueResolvedTileRun tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
 		});
 	}
 
 	public enqueuePayloadTileRun(desc: { payload_base: number; tile_count: number; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
 		if (desc.tile_count !== desc.cols * desc.rows) {
-			throw new Error(`[BmsxVDP] enqueuePayloadTileRun size mismatch (${desc.tile_count} != ${desc.cols * desc.rows}).`);
+			throw vdpFault(`enqueuePayloadTileRun size mismatch (${desc.tile_count} != ${desc.cols * desc.rows}).`);
 		}
 		this.enqueueTileRunInternal({
 			cols: desc.cols,
@@ -1377,13 +1381,13 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			z: desc.z,
 			layer: desc.layer,
 			resolveTileHandle: (index) => this.memory.readU32(desc.payload_base + index * 4) >>> 0,
-			mismatchMessage: (source) => `[BmsxVDP] enqueuePayloadTileRun tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
+			mismatchMessage: (source) => `VDP fault: enqueuePayloadTileRun tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
 		});
 	}
 
 	public enqueuePayloadTileRunWords(desc: { payload_words: Uint32Array; payload_word_offset: number; tile_count: number; cols: number; rows: number; tile_w: number; tile_h: number; origin_x: number; origin_y: number; scroll_x: number; scroll_y: number; z: number; layer: Layer2D }): void {
 		if (desc.tile_count !== desc.cols * desc.rows) {
-			throw new Error(`[BmsxVDP] enqueuePayloadTileRunWords size mismatch (${desc.tile_count} != ${desc.cols * desc.rows}).`);
+			throw vdpFault(`enqueuePayloadTileRunWords size mismatch (${desc.tile_count} != ${desc.cols * desc.rows}).`);
 		}
 		this.enqueueTileRunInternal({
 			cols: desc.cols,
@@ -1397,7 +1401,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			z: desc.z,
 			layer: desc.layer,
 			resolveTileHandle: (index) => desc.payload_words[desc.payload_word_offset + index] >>> 0,
-			mismatchMessage: (source) => `[BmsxVDP] enqueuePayloadTileRunWords tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
+			mismatchMessage: (source) => `VDP fault: enqueuePayloadTileRunWords tile size mismatch (${source.width}x${source.height} != ${desc.tile_w}x${desc.tile_h}).`,
 		});
 	}
 
@@ -1424,7 +1428,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		if (surfaceId === VDP_RD_SURFACE_ENGINE) {
 			return 254;
 		}
-		throw new Error(`[BmsxVDP] Surface ${surfaceId} cannot be sampled by the WebGL blitter.`);
+		throw vdpFault(`surface ${surfaceId} cannot be sampled by the WebGL blitter.`);
 	}
 
 	public get frameBufferTextureKey(): string {
@@ -1472,7 +1476,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const slot = this.findVramSlot(addr, bytes.byteLength);
 		const entry = slot.entry;
 		if (entry.baseStride === 0 || entry.regionW === 0 || entry.regionH === 0) {
-			throw new Error('[BmsxVDP] VRAM slot is not initialized.');
+			throw vdpFault('VRAM slot is not initialized.');
 		}
 		if (slot.kind === 'asset') {
 			this.syncVramSlotTextureSize(slot);
@@ -1482,10 +1486,10 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const rowCount = entry.regionH;
 		const totalBytes = rowCount * stride;
 		if (offset + bytes.byteLength > totalBytes) {
-			throw new Error('[BmsxVDP] VRAM write out of bounds.');
+			throw vdpFault('VRAM write out of bounds.');
 		}
 		if ((offset & 3) !== 0 || (bytes.byteLength & 3) !== 0) {
-			throw new Error('[BmsxVDP] VRAM writes must be 32-bit aligned.');
+			throw vdpFault('VRAM writes must be 32-bit aligned.');
 		}
 		let remaining = bytes.byteLength;
 		let cursor = 0;
@@ -1525,7 +1529,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const stride = entry.baseStride;
 		const totalBytes = entry.regionH * stride;
 		if (offset + out.byteLength > totalBytes) {
-			throw new Error('[BmsxVDP] VRAM read out of bounds.');
+			throw vdpFault('VRAM read out of bounds.');
 		}
 		let remaining = out.byteLength;
 		let cursor = 0;
@@ -1578,13 +1582,13 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const y = (this.memory.readValue(IO_VDP_RD_Y) as number) >>> 0;
 		const mode = (this.memory.readValue(IO_VDP_RD_MODE) as number) >>> 0;
 		if (mode !== VDP_RD_MODE_RGBA8888) {
-			throw new Error(`[BmsxVDP] Unsupported VDP read mode ${mode}.`);
+			throw vdpFault(`unsupported VDP read mode ${mode}.`);
 		}
 		const surface = this.getReadSurface(surfaceId);
 		const width = surface.entry.regionW;
 		const height = surface.entry.regionH;
 		if (x >= width || y >= height) {
-			throw new Error(`[BmsxVDP] VDP read out of bounds (${x}, ${y}) for surface ${surfaceId}.`);
+			throw vdpFault(`VDP read out of bounds (${x}, ${y}) for surface ${surfaceId}.`);
 		}
 		if (this.readBudgetBytes < 4) {
 			this.readOverflow = true;
@@ -1729,7 +1733,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			const { width, height } = atlasAsset.imgmeta!;
 			const size = width * height * 4;
 			if (size > slotEntry.capacity) {
-				throw new Error(`[BmsxVDP] Atlas ${atlasId} (${width}x${height}) exceeds slot capacity ${slotEntry.capacity}.`);
+				throw vdpFault(`atlas ${atlasId} (${width}x${height}) exceeds slot capacity ${slotEntry.capacity}.`);
 			}
 			slotEntry.baseSize = size;
 			slotEntry.baseStride = width * 4;
@@ -1779,7 +1783,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			const asset = runtime.getImageAsset(assetId);
 			const meta = asset.imgmeta!;
 			if (meta.atlassed) {
-				throw new Error(`[BmsxVDP] Skybox image '${assetId}' must not be atlassed.`);
+				throw vdpFault(`skybox image '${assetId}' must not be atlassed.`);
 			}
 			const slot = this.skyboxSlots[index];
 			return () => this.imgDecController!.decodeToVram({
@@ -1815,7 +1819,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const setAtlasEntryDimensions = (slotEntry: AssetEntry, width: number, height: number): void => {
 			const size = width * height * 4;
 			if (size > slotEntry.capacity) {
-				throw new Error(`[BmsxVDP] Atlas entry '${slotEntry.id}' (${width}x${height}) exceeds capacity ${slotEntry.capacity}.`);
+				throw vdpFault(`atlas entry '${slotEntry.id}' (${width}x${height}) exceeds capacity ${slotEntry.capacity}.`);
 			}
 			slotEntry.baseSize = size;
 			slotEntry.baseStride = width * 4;
@@ -1873,7 +1877,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			if (entry.type === 'atlas') {
 				const atlasId = meta.atlasid!;
 				if (meta.width <= 0 || meta.height <= 0) {
-					throw new Error(`[BmsxVDP] Atlas '${entry.resid}' missing dimensions.`);
+					throw vdpFault(`atlas '${entry.resid}' missing dimensions.`);
 				}
 				this.atlasResourcesById.set(atlasId, entry);
 				continue;
@@ -1887,7 +1891,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		const engineAtlasAsset = Runtime.instance.getImageAsset(engineAtlasName, source);
 		const engineAtlasMeta = engineAtlasAsset.imgmeta!;
 		if (engineAtlasMeta.width <= 0 || engineAtlasMeta.height <= 0) {
-			throw new Error(`[BmsxVDP] Engine atlas '${engineAtlasName}' missing dimensions.`);
+			throw vdpFault(`engine atlas '${engineAtlasName}' missing dimensions.`);
 		}
 		const engineEntryRecord = this.memory.hasAsset(engineAtlasName)
 			? this.memory.getAssetEntry(engineAtlasName)
@@ -2001,7 +2005,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 
 	private async restoreEngineAtlasFromSource(entry: AssetEntry, source: RawAssetSource, asset: RomImgAsset): Promise<void> {
 		if (typeof asset.start !== 'number' || typeof asset.end !== 'number') {
-			throw new Error(`[BmsxVDP] Engine atlas '${asset.resid}' missing ROM buffer offsets.`);
+			throw vdpFault(`engine atlas '${asset.resid}' missing ROM buffer offsets.`);
 		}
 		const decoded = await decodePngToRgba(source.getBytes(asset));
 		const plan = this.memory.planImageSlotWrite(entry, {
@@ -2011,7 +2015,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 			capacity: entry.capacity,
 		});
 		if (plan.clipped) {
-			throw new Error(`[BmsxVDP] Engine atlas '${asset.resid}' does not fit in system atlas slot.`);
+			throw vdpFault(`engine atlas '${asset.resid}' does not fit in system atlas slot.`);
 		}
 		this.memory.writeBytes(entry.baseAddr, decoded.pixels.subarray(0, plan.writeSize));
 	}
@@ -2192,7 +2196,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				return slot;
 			}
 		}
-		throw new Error(`[BmsxVDP] VRAM slot not registered for texture '${textureKey}'.`);
+		throw vdpFault(`VRAM slot not registered for texture '${textureKey}'.`);
 	}
 
 	private makeVramGarbageStream(addr: number): VramGarbageStream {
@@ -2266,7 +2270,7 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 				return slot;
 			}
 		}
-		throw new Error(`[BmsxVDP] VRAM write has no mapped slot (addr=${addr}, len=${length}).`);
+		throw vdpFault(`VRAM write has no mapped slot (addr=${addr}, len=${length}).`);
 	}
 
 }

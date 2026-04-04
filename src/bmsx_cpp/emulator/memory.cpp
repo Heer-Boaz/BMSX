@@ -1,5 +1,6 @@
 #include "memory.h"
 #include "lua_heap_usage.h"
+#include "../utils/byte_hex_string.h"
 
 #include <algorithm>
 #include <cstring>
@@ -706,25 +707,25 @@ void Memory::writeValue(uint32_t addr, Value value) {
 		return;
 	}
 	if (!valueIsNumber(value)) {
-		throw std::runtime_error("[Memory] STORE_MEM expects a number outside IO space.");
+		throw std::runtime_error("Bus fault: non-numeric store @ " + formatNumberAsHex(addr, 8) + ".");
 	}
 	writeU32(addr, static_cast<uint32_t>(asNumber(value)));
 }
 
 void Memory::writeIoValue(uint32_t addr, Value value) {
 	if (!isIoAddress(addr)) {
-		throw std::runtime_error("[Memory] writeIoValue expects an IO address.");
+		throw std::runtime_error("I/O fault @ " + formatNumberAsHex(addr, 8) + ": invalid register.");
 	}
 	m_ioSlots[ioIndex(addr)] = value;
 }
 
 void Memory::writeMappedValue(uint32_t addr, Value value) {
 	if (!isMappedWritableRange(addr, 4)) {
-		return;
+		throw std::runtime_error("Bus fault @ " + formatNumberAsHex(addr, 8) + ": write word.");
 	}
 	if (isVramRange(addr, 4)) {
 		if (!valueIsNumber(value)) {
-			throw std::runtime_error("[Memory] mem[addr] expects a number for VRAM writes.");
+			throw std::runtime_error("VRAM write fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric value.");
 		}
 		writeMappedU32LE(addr, static_cast<uint32_t>(asNumber(value)));
 		return;
@@ -747,12 +748,12 @@ u8 Memory::readMappedU8(uint32_t addr) const {
 	if (isIoAddress(addr)) {
 		const Value value = readValue(addr);
 		if (!valueIsNumber(value)) {
-			throw std::runtime_error("[Memory] mem8[addr] expects a numeric IO register.");
+			throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": non-numeric register.");
 		}
 		return static_cast<u8>(static_cast<uint32_t>(asNumber(value)) & 0xffu);
 	}
 	if (isIoRegionRange(addr, 1)) {
-		return 0;
+		throw std::runtime_error("I/O read fault @ " + formatNumberAsHex(addr, 8) + ": unaligned.");
 	}
 	return readU8(addr);
 }
@@ -770,7 +771,7 @@ void Memory::writeU8(uint32_t addr, u8 value) {
 
 void Memory::writeMappedU8(uint32_t addr, u8 value) {
 	if (!isMappedWritableRange(addr, 1)) {
-		return;
+		throw std::runtime_error("Bus fault @ " + formatNumberAsHex(addr, 8) + ": write byte.");
 	}
 	if (isIoAddress(addr)) {
 		writeValue(addr, valueNumber(static_cast<double>(value)));
@@ -781,7 +782,7 @@ void Memory::writeMappedU8(uint32_t addr, u8 value) {
 
 uint32_t Memory::readU32(uint32_t addr) const {
 	if (isVramRange(addr, 4)) {
-		throw std::runtime_error("[Memory] VRAM is write-only.");
+		throw std::runtime_error("VRAM read fault @ " + formatNumberAsHex(addr, 8) + ": write-only len=4.");
 	}
 	const size_t offset = ramOffset(addr, 4);
 	uint32_t value = 0;
@@ -846,7 +847,7 @@ void Memory::writeU32(uint32_t addr, uint32_t value) {
 
 void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
 	if (!isMappedWritableRange(addr, 2)) {
-		return;
+		throw std::runtime_error("Bus fault @ " + formatNumberAsHex(addr, 8) + ": write halfword.");
 	}
 	writeMappedU8(addr, static_cast<u8>(value & 0xffu));
 	writeMappedU8(addr + 1, static_cast<u8>((value >> 8) & 0xffu));
@@ -854,7 +855,7 @@ void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
 
 void Memory::writeMappedU32LE(uint32_t addr, uint32_t value) {
 	if (!isMappedWritableRange(addr, 4)) {
-		return;
+		throw std::runtime_error("Bus fault @ " + formatNumberAsHex(addr, 8) + ": write word.");
 	}
 	if (isIoAddress(addr)) {
 		writeValue(addr, valueNumber(static_cast<double>(value)));
@@ -874,7 +875,7 @@ void Memory::writeMappedF32LE(uint32_t addr, float value) {
 
 void Memory::writeMappedF64LE(uint32_t addr, double value) {
 	if (!isMappedWritableRange(addr, 8)) {
-		return;
+		throw std::runtime_error("Bus fault @ " + formatNumberAsHex(addr, 8) + ": write doubleword.");
 	}
 	uint64_t bits = 0;
 	std::memcpy(&bits, &value, sizeof(bits));
@@ -931,11 +932,11 @@ bool Memory::isIoRegionRange(uint32_t addr, size_t length) const {
 size_t Memory::ioIndex(uint32_t addr) const {
 	const uint32_t delta = addr - IO_BASE;
 	if ((delta % IO_WORD_SIZE) != 0) {
-		throw std::runtime_error("[Memory] Unaligned IO address.");
+		throw std::runtime_error("I/O fault @ " + formatNumberAsHex(addr, 8) + ": unaligned.");
 	}
 	const size_t slot = static_cast<size_t>(delta / IO_WORD_SIZE);
 	if (slot >= m_ioSlots.size()) {
-		throw std::runtime_error("[Memory] IO address out of range.");
+		throw std::runtime_error("I/O fault @ " + formatNumberAsHex(addr, 8) + ": out of range.");
 	}
 	return slot;
 }
@@ -977,14 +978,14 @@ bool Memory::isMappedWritableRange(uint32_t addr, size_t length) const {
 
 size_t Memory::ramOffset(uint32_t addr, size_t length) const {
 	if (addr < RAM_BASE || addr + length > RAM_USED_END) {
-		throw std::runtime_error("[Memory] Address out of RAM bounds.");
+		throw std::runtime_error("Bus fault @ " + formatNumberAsHex(addr, 8) + ": RAM range len=" + std::to_string(length) + ".");
 	}
 	return static_cast<size_t>(addr - RAM_BASE);
 }
 
 const u8* Memory::readRegion(uint32_t addr, size_t length, size_t& outOffset) const {
 	if (isVramRange(addr, length)) {
-		throw std::runtime_error("[Memory] VRAM is write-only.");
+		throw std::runtime_error("VRAM read fault @ " + formatNumberAsHex(addr, 8) + ": write-only len=" + std::to_string(length) + ".");
 	}
 	if (m_engineRom.size > 0 && addr >= SYSTEM_ROM_BASE && addr + length <= SYSTEM_ROM_BASE + m_engineRom.size) {
 		outOffset = static_cast<size_t>(addr - SYSTEM_ROM_BASE);

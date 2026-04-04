@@ -244,8 +244,15 @@ function collectSourceExpressionDebug(runtime: Runtime, range: SourceRange, sour
 }
 
 export function logDebugState(runtime: Runtime): void {
+	const program = runtime.cpu.getProgram();
+	if (!program || program.code.length === 0) {
+		return;
+	}
 	const debug = runtime.cpu.getDebugState();
-	const instruction = describeInstructionAtPc(runtime.cpu.getProgram(), debug.pc, runtime.programMetadata, { formatStyle: 'assembly' });
+	if (debug.pc < 0 || debug.pc >= program.code.length) {
+		return;
+	}
+	const instruction = describeInstructionAtPc(program, debug.pc, runtime.programMetadata, { formatStyle: 'assembly' });
 	const operandSummary = instruction.operands.map(operand => formatInstructionOperandDebug(operand, debug.registers)).join(' ');
 	console.error(`[Runtime] debug: pc=${instruction.pcText} op=${instruction.opName}${operandSummary.length > 0 ? ` ${operandSummary}` : ''}`);
 	console.error(`[Runtime] debug: instr=${instruction.pcText}: ${instruction.instructionText}`);

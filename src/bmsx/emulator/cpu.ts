@@ -1442,7 +1442,7 @@ export class CPU {
 		this.stringIndexTable = table;
 	}
 
-	public getProgram(): Program {
+	public getProgram(): Program | null {
 		return this.program;
 	}
 

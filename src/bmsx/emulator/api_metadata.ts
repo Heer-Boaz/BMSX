@@ -330,7 +330,7 @@ export const API_METHOD_METADATA = {
 		returnType: 'World',
 		returnDescription: 'Native World instance.',
 	},
-	world_object: {
+	oget: {
 		description: 'Fetches a world object by id from the current space.',
 		parameters: [
 			{ name: 'id', description: 'World object id.' },

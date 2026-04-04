@@ -7,6 +7,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <stdexcept>
@@ -14,6 +15,7 @@
 namespace bmsx {
 
 namespace {
+int g_vdpPacketWriteLogRemaining = 0;
 
 static inline uint32_t readInstructionWord(const std::vector<uint8_t>& code, int pc) {
 	size_t offset = static_cast<size_t>(pc) * INSTRUCTION_BYTES;
@@ -2065,6 +2067,18 @@ void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase
 		uint32_t argWords = 0;
 		uint32_t payloadWords = 0;
 		if (tryGetVdpPacketPrefixWordCounts(frame.registers, valueBase, cmd, argWords, payloadWords)) {
+			if (g_vdpPacketWriteLogRemaining > 0) {
+				g_vdpPacketWriteLogRemaining -= 1;
+				std::fprintf(
+					stderr,
+					"[VDP][WRITE] addr=%u cmd=%u argWords=%u payloadWords=%u valueCount=%d\n",
+					addr,
+					cmd,
+					argWords,
+					payloadWords,
+					valueCount
+				);
+			}
 			const int packetWordCount = 3 + static_cast<int>(argWords) + static_cast<int>(payloadWords);
 			if (valueCount > packetWordCount) {
 				throw BMSX_RUNTIME_ERROR("[VDP] Packet prefix overflow (" + std::to_string(valueCount) + " > " + std::to_string(packetWordCount) + ").");

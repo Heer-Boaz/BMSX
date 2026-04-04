@@ -62,7 +62,10 @@ import { ResourceUsageDetector } from './resource_usage_detector';
 import { configureLuaHeapUsage } from './lua_heap_usage';
 import {
 	DMA_CTRL_START,
+	DMA_STATUS_BUSY,
+	DMA_STATUS_DONE,
 	DMA_STATUS_REJECTED,
+	DMA_STATUS_ERROR,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
@@ -146,6 +149,18 @@ export const BUTTON_ACTIONS: ReadonlyArray<string> = [
 	'lb',
 ];
 
+function runtimeFault(message: string): Error {
+	return new Error(`Runtime fault: ${message}`);
+}
+
+function vdpFault(message: string): Error {
+	return new Error(`VDP fault: ${message}`);
+}
+
+function vdpStreamFault(message: string): Error {
+	return new Error(`VDP stream fault: ${message}`);
+}
+
 
 // Flip back to 'msx' to restore default font in emulator/editor
 export const EDITOR_FONT_VARIANT: FontVariant = 'tiny';
@@ -223,7 +238,7 @@ function getRuntimeLayerAssets(layer: RuntimeAssetLayer, kind: RuntimeAssetColle
 function resolveLayerForPayload(lookup: RuntimeLayerLookup, payloadId: CartridgeLayerId): RuntimeAssetLayer {
 	const layer = lookup[payloadId];
 	if (!layer) {
-		throw new Error(`[Runtime] Asset layer '${payloadId}' not configured.`);
+		throw runtimeFault(`asset layer '${payloadId}' not configured.`);
 	}
 	return layer;
 }
@@ -231,13 +246,13 @@ function resolveLayerForPayload(lookup: RuntimeLayerLookup, payloadId: Cartridge
 function resolveRuntimeLayerAssetFromEntry<T>(lookup: RuntimeLayerLookup, kind: RuntimeAssetCollectionKey, entry: RomAsset): T {
 	const payloadId = entry.payload_id;
 	if (!payloadId) {
-		throw new Error(`[Runtime] Asset '${entry.resid}' missing payload_id.`);
+		throw runtimeFault(`asset '${entry.resid}' missing payload_id.`);
 	}
 	const layer = resolveLayerForPayload(lookup, payloadId);
 	const assets = getRuntimeLayerAssets(layer, kind) as Record<string, T>;
 	const asset = assets[entry.resid];
 	if (!asset) {
-		throw new Error(`[Runtime] ${kind} asset '${entry.resid}' missing from '${payloadId}' layer.`);
+		throw runtimeFault(`${kind} asset '${entry.resid}' missing from '${payloadId}' layer.`);
 	}
 	return asset;
 }
@@ -245,7 +260,7 @@ function resolveRuntimeLayerAssetFromEntry<T>(lookup: RuntimeLayerLookup, kind: 
 function resolveRuntimeLayerAssetById<T>(lookup: RuntimeLayerLookup, source: RawAssetSource, kind: RuntimeAssetCollectionKey, id: string): T {
 	const entry = source.getEntry(id);
 	if (!entry) {
-		throw new Error(`[Runtime] ${kind} asset '${id}' not found.`);
+		throw runtimeFault(`${kind} asset '${id}' not found.`);
 	}
 	return resolveRuntimeLayerAssetFromEntry<T>(lookup, kind, entry);
 }
@@ -258,17 +273,17 @@ export class Runtime {
 	public static createInstance(options: RuntimeOptions): Runtime {
 		const existing = Runtime._instance;
 		if (existing) {
-			throw new Error('[Runtime] Instance already exists.');
+			throw runtimeFault('instance already exists.');
 		}
 		return new Runtime(options);
 	}
 
 	private static resolvePositiveSafeInteger(value: number | undefined, label: string): number {
 		if (value === undefined) {
-			throw new Error(`[Runtime] ${label} is required.`);
+			throw runtimeFault(`${label} is required.`);
 		}
 		if (!Number.isSafeInteger(value) || value <= 0) {
-			throw new Error(`[Runtime] ${label} must be a positive safe integer.`);
+			throw runtimeFault(`${label} must be a positive safe integer.`);
 		}
 		return value;
 	}
@@ -310,7 +325,7 @@ export class Runtime {
 		this.resetTransferCarry();
 		if (this.vblankCycles > 0) {
 			if (this.vblankCycles > this.cycleBudgetPerFrame) {
-				throw new Error('[Runtime] vblank_cycles must be less than or equal to cycles_per_frame.');
+				throw runtimeFault('vblank_cycles must be less than or equal to cycles_per_frame.');
 			}
 			this.vblankStartCycle = this.cycleBudgetPerFrame - this.vblankCycles;
 			this.resetVblankState();
@@ -362,7 +377,7 @@ export class Runtime {
 
 	private pushVdpFifoWord(word: number): void {
 		if (this.vdpFifoStreamWordCount >= VDP_STREAM_CAPACITY_WORDS) {
-			throw new Error(`[VDP] Stream overflow (${this.vdpFifoStreamWordCount + 1} > ${VDP_STREAM_CAPACITY_WORDS}).`);
+			throw vdpStreamFault(`stream overflow (${this.vdpFifoStreamWordCount + 1} > ${VDP_STREAM_CAPACITY_WORDS}).`);
 		}
 		this.vdpFifoStreamWords[this.vdpFifoStreamWordCount] = word >>> 0;
 		this.vdpFifoStreamWordCount += 1;
@@ -388,10 +403,10 @@ export class Runtime {
 
 	private consumeSealedVdpStream(baseAddr: number, byteLength: number): void {
 		if ((byteLength & 3) !== 0) {
-			throw new Error('[VDP] Sealed stream length must be word-aligned.');
+			throw vdpStreamFault('sealed stream length must be word-aligned.');
 		}
 		if (byteLength > VDP_STREAM_BUFFER_SIZE) {
-			throw new Error(`[VDP] Sealed stream overflow (${byteLength} > ${VDP_STREAM_BUFFER_SIZE}).`);
+			throw vdpStreamFault(`sealed stream overflow (${byteLength} > ${VDP_STREAM_BUFFER_SIZE}).`);
 		}
 		let cursor = baseAddr;
 		const end = baseAddr + byteLength;
@@ -399,18 +414,18 @@ export class Runtime {
 		try {
 			while (cursor < end) {
 				if (cursor + VDP_STREAM_PACKET_HEADER_WORDS * 4 > end) {
-					throw new Error('[VDP] Stream ended mid-packet header.');
+					throw vdpStreamFault('stream ended mid-packet header.');
 				}
 				const cmd = this.memory.readU32(cursor) >>> 0;
 				const argWords = this.memory.readU32(cursor + 4) >>> 0;
 				const payloadWords = this.memory.readU32(cursor + 8) >>> 0;
 				if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
-					throw new Error(`[VDP] Submit payload overflow (${payloadWords} > ${VDP_STREAM_PAYLOAD_CAPACITY_WORDS}).`);
+					throw vdpStreamFault(`submit payload overflow (${payloadWords} > ${VDP_STREAM_PAYLOAD_CAPACITY_WORDS}).`);
 				}
 				const packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
 				const packetByteCount = packetWordCount * 4;
 				if (cursor + packetByteCount > end) {
-					throw new Error('[VDP] Stream ended mid-packet payload.');
+					throw vdpStreamFault('stream ended mid-packet payload.');
 				}
 				this.vdp.syncRegisters();
 				runtimeLuaPipeline.processVdpCommand(this, {
@@ -436,17 +451,17 @@ export class Runtime {
 		try {
 			while (cursor < wordCount) {
 				if (cursor + VDP_STREAM_PACKET_HEADER_WORDS > wordCount) {
-					throw new Error('[VDP] Stream ended mid-packet header.');
+					throw vdpStreamFault('stream ended mid-packet header.');
 				}
 				const cmd = this.vdpFifoStreamWords[cursor] >>> 0;
 				const argWords = this.vdpFifoStreamWords[cursor + 1] >>> 0;
 				const payloadWords = this.vdpFifoStreamWords[cursor + 2] >>> 0;
 				if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
-					throw new Error(`[VDP] Submit payload overflow (${payloadWords} > ${VDP_STREAM_PAYLOAD_CAPACITY_WORDS}).`);
+					throw vdpStreamFault(`submit payload overflow (${payloadWords} > ${VDP_STREAM_PAYLOAD_CAPACITY_WORDS}).`);
 				}
 				const packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
 				if (cursor + packetWordCount > wordCount) {
-					throw new Error('[VDP] Stream ended mid-packet payload.');
+					throw vdpStreamFault('stream ended mid-packet payload.');
 				}
 				this.vdp.syncRegisters();
 				runtimeLuaPipeline.processVdpBufferedCommand(this, {
@@ -469,7 +484,7 @@ export class Runtime {
 
 	public sealVdpFifoTransfer(): void {
 		if (this.vdpFifoWordByteCount !== 0) {
-			throw new Error('[VDP] FIFO transfer ended on a partial word.');
+			throw vdpStreamFault('FIFO transfer ended on a partial word.');
 		}
 		if (this.vdpFifoStreamWordCount === 0) {
 			return;
@@ -772,10 +787,10 @@ export class Runtime {
 
 	public setVblankCycles(cycles: number): void {
 		if (cycles <= 0) {
-			throw new Error('[Runtime] vblank_cycles must be greater than 0.');
+			throw runtimeFault('vblank_cycles must be greater than 0.');
 		}
 		if (cycles > this.cycleBudgetPerFrame) {
-			throw new Error('[Runtime] vblank_cycles must be less than or equal to cycles_per_frame.');
+			throw runtimeFault('vblank_cycles must be less than or equal to cycles_per_frame.');
 		}
 		this.vblankCycles = cycles;
 		this.vblankStartCycle = this.cycleBudgetPerFrame - this.vblankCycles;
@@ -863,7 +878,12 @@ export class Runtime {
 			this.noteRejectedVdpSubmitAttempt();
 			return;
 		}
-		this.noteAcceptedVdpSubmitAttempt();
+		if ((dmaStatus & DMA_STATUS_ERROR) !== 0) {
+			return;
+		}
+		if ((dmaStatus & (DMA_STATUS_BUSY | DMA_STATUS_DONE)) !== 0) {
+			this.noteAcceptedVdpSubmitAttempt();
+		}
 	}
 
 	private enterVblank(): void {
@@ -892,7 +912,7 @@ export class Runtime {
 		if (resumeOnCurrentEdge) {
 			const frameState = this.currentFrameState;
 			if (frameState === null) {
-				throw new Error('[Runtime] wait_vblank resumed without an active frame state.');
+				throw runtimeFault('wait_vblank resumed without an active frame state.');
 			}
 			this.reconcileCycleBudgetAfterSignal(frameState);
 			this.freezeTickCpuStats(frameState);
@@ -1323,7 +1343,7 @@ export class Runtime {
 		const engineAtlasId = generateAtlasName(ENGINE_ATLAS_INDEX);
 		const engineAtlas = resolveRuntimeLayerAssetById<RomImgAsset>(layerLookup, engineSource, 'img', engineAtlasId);
 		if (!engineAtlas) {
-			throw new Error(`[Runtime] Engine atlas '${engineAtlasId}' not found for memory sizing.`);
+			throw runtimeFault(`engine atlas '${engineAtlasId}' not found for memory sizing.`);
 		}
 		ids.add(engineAtlasId);
 		ids.add(ATLAS_PRIMARY_SLOT_ID);
@@ -1338,11 +1358,11 @@ export class Runtime {
 				}
 				const asset = resolveRuntimeLayerAssetFromEntry<RomImgAsset>(layerLookup, 'img', entry);
 				if (!asset) {
-					throw new Error(`[Runtime] Image asset '${entry.resid}' not found for memory sizing.`);
+					throw runtimeFault(`image asset '${entry.resid}' not found for memory sizing.`);
 				}
 				const meta = asset.imgmeta;
 				if (!meta) {
-					throw new Error(`[Runtime] Image asset '${entry.resid}' missing metadata for memory sizing.`);
+					throw runtimeFault(`image asset '${entry.resid}' missing metadata for memory sizing.`);
 				}
 				if (meta.atlassed) {
 					ids.add(entry.resid);
@@ -1352,7 +1372,7 @@ export class Runtime {
 			for (let index = 0; index < audioEntries.length; index += 1) {
 				const entry = audioEntries[index];
 				if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-					throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
+					throw runtimeFault(`audio asset '${entry.resid}' missing ROM buffer offsets for memory sizing.`);
 				}
 				ids.add(entry.resid);
 			}
@@ -1413,7 +1433,7 @@ export class Runtime {
 	private static resolveEngineAtlasSlotBytes(engineSource: RawAssetSource): number {
 		const engineAtlas = engineSource.getEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
 		if (!engineAtlas || !engineAtlas.imgmeta) {
-			throw new Error('[Runtime] Engine atlas metadata is missing.');
+			throw runtimeFault('engine atlas metadata is missing.');
 		}
 		const width = Runtime.resolvePositiveSafeInteger(engineAtlas.imgmeta.width, 'engine_atlas.width');
 		const height = Runtime.resolvePositiveSafeInteger(engineAtlas.imgmeta.height, 'engine_atlas.height');
@@ -1440,32 +1460,32 @@ export class Runtime {
 		const frameBufferHeight = renderSize.height;
 		const frameBufferBytes = frameBufferWidth * frameBufferHeight * 4;
 		if (!Number.isSafeInteger(engineAtlasSlotBytes) || engineAtlasSlotBytes <= 0) {
-			throw new Error('[Runtime] system atlas slot bytes must be a positive integer.');
+			throw runtimeFault('system atlas slot bytes must be a positive integer.');
 		}
 		const stagingBytes = memorySpecs.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
 		const assetTableInfo = this.computeAssetTableBytes(params.engineSource, params.assetSource, params.assetLayers);
 		const requiredAssetTableBytes = assetTableInfo.bytes;
 		const assetTableBytes = memorySpecs.asset_table_bytes ?? requiredAssetTableBytes;
 		if (memorySpecs.asset_table_bytes !== undefined && assetTableBytes !== requiredAssetTableBytes) {
-			throw new Error(`[Runtime] machine.specs.ram.asset_table_bytes (${assetTableBytes}) must match required size ${requiredAssetTableBytes}.`);
+			throw runtimeFault(`machine.specs.ram.asset_table_bytes (${assetTableBytes}) must match required size ${requiredAssetTableBytes}.`);
 		}
 		const skyboxFaceBytes = memorySpecs.skybox_face_bytes;
 		if (skyboxFaceBytes !== undefined) {
 			if (!Number.isSafeInteger(skyboxFaceBytes) || skyboxFaceBytes <= 0) {
-				throw new Error(`[Runtime] machine.specs.vram.skybox_face_bytes must be a positive integer (got ${skyboxFaceBytes}).`);
+				throw runtimeFault(`machine.specs.vram.skybox_face_bytes must be a positive integer (got ${skyboxFaceBytes}).`);
 			}
 		}
 		const skyboxFaceSize = memorySpecs.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
 		if (skyboxFaceBytes === undefined && skyboxFaceSize <= 0) {
-			throw new Error(`[Runtime] Invalid skybox_face_size: ${skyboxFaceSize}.`);
+			throw runtimeFault(`invalid skybox_face_size: ${skyboxFaceSize}.`);
 		}
 		const requiredAssetDataBytes = this.computeRequiredAssetDataBytes(params.assetSource, params.assetLayers);
 		const assetDataBytes = memorySpecs.asset_data_bytes ?? requiredAssetDataBytes;
 		if (!Number.isSafeInteger(assetDataBytes) || assetDataBytes < 0) {
-			throw new Error(`[Runtime] machine.specs.ram.asset_data_bytes must be a non-negative integer (got ${assetDataBytes}).`);
+			throw runtimeFault(`machine.specs.ram.asset_data_bytes must be a non-negative integer (got ${assetDataBytes}).`);
 		}
 		if (assetDataBytes < requiredAssetDataBytes) {
-			throw new Error(`[Runtime] machine.specs.ram.asset_data_bytes (${assetDataBytes}) must be at least required size ${requiredAssetDataBytes}.`);
+			throw runtimeFault(`machine.specs.ram.asset_data_bytes (${assetDataBytes}) must be at least required size ${requiredAssetDataBytes}.`);
 		}
 		const computedRamBytes = IO_REGION_SIZE
 			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
@@ -1475,7 +1495,7 @@ export class Runtime {
 			+ VDP_STREAM_BUFFER_SIZE;
 		const ramBytes = memorySpecs.ram_bytes ?? computedRamBytes;
 		if (memorySpecs.ram_bytes !== undefined && ramBytes !== computedRamBytes) {
-			throw new Error(`[Runtime] machine.specs.ram.ram_bytes (${ramBytes}) must match required size ${computedRamBytes}.`);
+			throw runtimeFault(`machine.specs.ram.ram_bytes (${ramBytes}) must match required size ${computedRamBytes}.`);
 		}
 		const footprintMiB = (ramBytes / (1024 * 1024)).toFixed(2);
 		console.info(
@@ -1711,7 +1731,7 @@ export class Runtime {
 			this.hasCompletedInitialBoot = true;
 		}
 		catch (error) {
-			throw new Error('[Runtime]: Failed to boot runtime: ' + error);
+			throw runtimeFault(`failed to boot runtime: ${error}`);
 		}
 		finally {
 			this.luaGate.end(gateToken);
@@ -1758,10 +1778,10 @@ export class Runtime {
 	}
 
 	// Frame state is owned by the runtime: it is created per-frame, kept intact for debugger inspection on faults,
-	// and only cleared via finalize/abandon during explicit reboot/reset flows.
+		// and only cleared via finalize/abandon during explicit reboot/reset flows.
 	public beginFrameState(): FrameState {
 		if (this.currentFrameState) {
-			throw new Error('[Runtime] Attempted to begin a new frame while another frame is active.');
+			throw runtimeFault('attempted to begin a new frame while another frame is active.');
 		}
 		clearHardwareLighting();
 		this.frameDeltaMs = $.deltatime;
@@ -1849,11 +1869,11 @@ export class Runtime {
 	public raiseEngineIrq(mask: number): void {
 		const normalized = mask >>> 0;
 		if (normalized === 0) {
-			throw new Error('[Runtime] Engine IRQ mask must be non-zero.');
+			throw runtimeFault('engine IRQ mask must be non-zero.');
 		}
 		const unsupported = normalized & ~Runtime.ENGINE_IRQ_MASK;
 		if (unsupported !== 0) {
-			throw new Error(`[Runtime] Unsupported engine IRQ mask: 0x${unsupported.toString(16)}.`);
+			throw runtimeFault(`unsupported engine IRQ mask 0x${unsupported.toString(16)}.`);
 		}
 		this.raiseIrqFlags(normalized);
 	}
@@ -1920,8 +1940,7 @@ export class Runtime {
 			return;
 		}
 		if (addr === IO_PAYLOAD_ALLOC_ADDR || addr === IO_PAYLOAD_DATA_ADDR) {
-			throw new Error('[VDP] Payload staging IO is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.');
-			return;
+			throw vdpFault('payload staging I/O is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.');
 		}
 		if (addr === IO_VDP_CMD) {
 			if (value === 0) {
@@ -1991,7 +2010,7 @@ export class Runtime {
 		const remaining = this.cpu.instructionBudgetRemaining;
 		const consumed = state.cycleBudgetRemaining - remaining;
 		if (consumed < 0) {
-			throw new Error(`[Runtime] Negative cycle reconciliation (${consumed}).`);
+			throw runtimeFault(`negative cycle reconciliation (${consumed}).`);
 		}
 		state.cycleBudgetRemaining = remaining;
 		if (consumed > 0) {
@@ -2066,7 +2085,7 @@ export class Runtime {
 	public getImageMetaByHandle(handle: number): ImgMeta {
 		const meta = this.imageMetaByHandle.get(handle);
 		if (!meta) {
-			throw new Error(`[Runtime] Image metadata missing for handle ${handle}.`);
+			throw runtimeFault(`image metadata missing for handle ${handle}.`);
 		}
 		return meta;
 	}
@@ -2098,7 +2117,7 @@ export class Runtime {
 					return { found: true, deleted: true, romBase: 0, start: 0, end: 0 };
 				}
 				if (entry.start === undefined || entry.end === undefined) {
-					throw new Error(`[Runtime] Asset '${assetId}' is missing ROM range.`);
+					throw runtimeFault(`asset '${assetId}' is missing ROM range.`);
 				}
 				const romBase = layer.id === 'system'
 					? SYSTEM_ROM_BASE
@@ -2120,7 +2139,7 @@ export class Runtime {
 			const overlayResult = resolveFromLayer(this.overlayAssetLayer);
 			if (overlayResult.found) {
 				if (overlayResult.deleted) {
-					throw new Error(`[Runtime] Asset '${assetId}' does not exist.`);
+					throw runtimeFault(`asset '${assetId}' does not exist.`);
 				}
 				return overlayResult;
 			}
@@ -2130,7 +2149,7 @@ export class Runtime {
 			const cartResult = resolveFromLayer(this.cartAssetLayer);
 			if (cartResult.found) {
 				if (cartResult.deleted) {
-					throw new Error(`[Runtime] Asset '${assetId}' does not exist.`);
+					throw runtimeFault(`asset '${assetId}' does not exist.`);
 				}
 				return cartResult;
 			}
@@ -2140,13 +2159,13 @@ export class Runtime {
 			const systemResult = resolveFromLayer(this.biosAssetLayer);
 			if (systemResult.found) {
 				if (systemResult.deleted) {
-					throw new Error(`[Runtime] Asset '${assetId}' does not exist.`);
+					throw runtimeFault(`asset '${assetId}' does not exist.`);
 				}
 				return systemResult;
 			}
 		}
 
-		throw new Error(`[Runtime] Asset '${assetId}' does not exist.`);
+		throw runtimeFault(`asset '${assetId}' does not exist.`);
 	}
 
 	private getAudioAssetByEntry(entry: RomAsset): RomAsset {
@@ -2173,7 +2192,7 @@ export class Runtime {
 	public getAudioMetaByHandle(handle: number): AudioMeta {
 		const meta = this.audioMetaByHandle.get(handle);
 		if (!meta) {
-			throw new Error(`[Runtime] Audio metadata missing for handle ${handle}.`);
+			throw runtimeFault(`audio metadata missing for handle ${handle}.`);
 		}
 		return meta;
 	}
@@ -2186,16 +2205,16 @@ export class Runtime {
 		const resources: id2res = {};
 		const source = $.asset_source;
 		if (!source) {
-			throw new Error('[Runtime] Asset source not configured.');
+			throw runtimeFault('asset source not configured.');
 		}
 		const entries = source.list('audio');
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
 			if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing ROM buffer offsets.`);
+				throw runtimeFault(`audio asset '${entry.resid}' missing ROM buffer offsets.`);
 			}
 			if (typeof entry.metabuffer_start !== 'number' || typeof entry.metabuffer_end !== 'number') {
-				throw new Error(`[Runtime] Audio asset '${entry.resid}' missing metadata offsets.`);
+				throw runtimeFault(`audio asset '${entry.resid}' missing metadata offsets.`);
 			}
 			const metaBytes = source.getBytes({
 				...entry,
@@ -2231,14 +2250,14 @@ export class Runtime {
 
 	public getImagePixels(entry: AssetEntry): Uint8Array {
 		if (entry.type !== 'image') {
-			throw new Error(`[Runtime] Asset '${entry.id}' is not an image.`);
+			throw runtimeFault(`asset '${entry.id}' is not an image.`);
 		}
 		return this.memory.getImagePixels(entry);
 	}
 
 	public getAudioBytes(entry: AssetEntry): Uint8Array {
 		if (entry.type !== 'audio') {
-			throw new Error(`[Runtime] Asset '${entry.id}' is not audio.`);
+			throw runtimeFault(`asset '${entry.id}' is not audio.`);
 		}
 		return this.memory.getAudioBytes(entry);
 	}
@@ -2252,14 +2271,14 @@ export class Runtime {
 		}
 		const source = $.asset_source;
 		if (!source) {
-			throw new Error('[Runtime] Asset source not configured.');
+			throw runtimeFault('asset source not configured.');
 		}
 		const entry = source.getEntry(id);
 		if (!entry) {
-			throw new Error(`[Runtime] Audio asset '${id}' not found in ROM.`);
+			throw runtimeFault(`audio asset '${id}' not found in ROM.`);
 		}
 		if (typeof entry.start !== 'number' || typeof entry.end !== 'number') {
-			throw new Error(`[Runtime] Audio asset '${id}' missing ROM buffer offsets.`);
+			throw runtimeFault(`audio asset '${id}' missing ROM buffer offsets.`);
 		}
 		return source.getBytesView(entry);
 	}
@@ -2354,7 +2373,7 @@ export class Runtime {
 			const mode = params?.mode ?? 'full';
 			const assetSource = params?.source ?? $.asset_source;
 			if (!assetSource) {
-				throw new Error('[Runtime] Asset source not configured.');
+				throw runtimeFault('asset source not configured.');
 			}
 			if (mode === 'cart') {
 				this.memory.resetCartAssets();
@@ -2392,7 +2411,7 @@ export class Runtime {
 			}
 			const meta = asset.imgmeta;
 			if (!meta) {
-				throw new Error(`[Runtime] Image asset '${asset.resid}' missing metadata.`);
+				throw runtimeFault(`image asset '${asset.resid}' missing metadata.`);
 			}
 			const handle = this.resolveAssetHandle(asset.resid);
 			this.imageMetaByHandle.set(handle, meta);
@@ -2402,7 +2421,7 @@ export class Runtime {
 			const asset = this.getAudioAssetByEntry(audioEntries[index]!);
 			const meta = asset.audiometa;
 			if (!meta) {
-				throw new Error(`[Runtime] Audio asset '${asset.resid}' missing metadata.`);
+				throw runtimeFault(`audio asset '${asset.resid}' missing metadata.`);
 			}
 			const handle = this.resolveAssetHandle(asset.resid);
 			this.audioMetaByHandle.set(handle, meta);

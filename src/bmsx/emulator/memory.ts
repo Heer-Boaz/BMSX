@@ -42,6 +42,7 @@ import {
 import { enforceLuaHeapBudget } from './lua_heap_usage';
 import { hashAssetId, tokenKey } from '../rompack/asset_tokens';
 import { ScratchBatch } from '../utils/scratchbatch';
+import { formatNumberAsHex } from '../utils/byte_hex_string';
 
 export type AssetType = 'image' | 'audio';
 
@@ -968,25 +969,25 @@ export class Memory {
 			return;
 		}
 		if (typeof value !== 'number') {
-			throw new Error(`[Memory] STORE_MEM expects a number outside IO space. Got ${typeof value}.`);
+			throw new Error(`Bus fault: non-numeric store @ ${formatNumberAsHex(addr >>> 0, 8)}.`);
 		}
 		this.writeU32(addr, value);
 	}
 
 	public writeIoValue(addr: number, value: Value): void {
 		if (!this.isIoAddress(addr)) {
-			throw new Error(`[Memory] writeIoValue expects an IO address. Got ${addr}.`);
+			throw new Error(`I/O fault @ ${formatNumberAsHex(addr >>> 0, 8)}: invalid register.`);
 		}
 		this.ioSlots[this.ioIndex(addr)] = value;
 	}
 
 	public writeMappedValue(addr: number, value: Value): void {
 		if (!this.isMappedWritableRange(addr, 4)) {
-			return;
+			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write word.`);
 		}
 		if (this.isVramRange(addr, 4)) {
 			if (typeof value !== 'number') {
-				throw new Error(`[Memory] mem[addr] expects a number for VRAM writes. Got ${typeof value}.`);
+				throw new Error(`VRAM write fault @ ${formatNumberAsHex(addr >>> 0, 8)}: non-numeric value.`);
 			}
 			this.writeMappedU32LE(addr, value);
 			return;
@@ -1008,12 +1009,12 @@ export class Memory {
 		if (this.isIoAddress(addr)) {
 			const value = this.readValue(addr);
 			if (typeof value !== 'number') {
-				throw new Error(`[Memory] mem8[addr] expects a numeric IO register. Got ${typeof value}.`);
+				throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: non-numeric register.`);
 			}
 			return value & 0xff;
 		}
 		if (this.isIoRegionRange(addr, 1)) {
-			return 0;
+			throw new Error(`I/O read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: unaligned.`);
 		}
 		return this.readU8(addr);
 	}
@@ -1034,7 +1035,7 @@ export class Memory {
 
 	public writeMappedU8(addr: number, value: number): void {
 		if (!this.isMappedWritableRange(addr, 1)) {
-			return;
+			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write byte.`);
 		}
 		if (this.isIoAddress(addr)) {
 			this.writeValue(addr, value & 0xff);
@@ -1100,7 +1101,7 @@ export class Memory {
 
 	public writeMappedU16LE(addr: number, value: number): void {
 		if (!this.isMappedWritableRange(addr, 2)) {
-			return;
+			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write halfword.`);
 		}
 		this.writeMappedU8(addr, value);
 		this.writeMappedU8(addr + 1, value >>> 8);
@@ -1108,7 +1109,7 @@ export class Memory {
 
 	public writeMappedU32LE(addr: number, value: number): void {
 		if (!this.isMappedWritableRange(addr, 4)) {
-			return;
+			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write word.`);
 		}
 		if (this.isIoAddress(addr)) {
 			this.writeValue(addr, value >>> 0);
@@ -1127,7 +1128,7 @@ export class Memory {
 
 	public writeMappedF64LE(addr: number, value: number): void {
 		if (!this.isMappedWritableRange(addr, 8)) {
-			return;
+			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write doubleword.`);
 		}
 		this.mappedFloatView.setFloat64(0, value, true);
 		this.writeMappedU32LE(addr, this.mappedFloatView.getUint32(0, true));
@@ -1173,11 +1174,11 @@ export class Memory {
 	private ioIndex(addr: number): number {
 		const index = addr - IO_BASE;
 		if (index < 0 || (index % IO_WORD_SIZE) !== 0) {
-			throw new Error(`[Memory] Unaligned IO address: ${addr}.`);
+			throw new Error(`I/O fault @ ${formatNumberAsHex(addr >>> 0, 8)}: unaligned.`);
 		}
 		const slot = index / IO_WORD_SIZE;
 		if (slot < 0 || slot >= this.ioSlots.length) {
-			throw new Error(`[Memory] IO address out of range: ${addr}.`);
+			throw new Error(`I/O fault @ ${formatNumberAsHex(addr >>> 0, 8)}: out of range.`);
 		}
 		return slot;
 	}
@@ -1207,14 +1208,14 @@ export class Memory {
 
 	private resolveRamOffset(addr: number, length: number): number {
 		if (addr < RAM_BASE || addr + length > RAM_USED_END) {
-			throw new Error(`[Memory] Address out of RAM bounds: ${addr} (len=${length}).`);
+			throw new Error(`Bus fault @ ${formatNumberAsHex(addr >>> 0, 8)}: RAM range len=${length}.`);
 		}
 		return addr - RAM_BASE;
 	}
 
 	private assertReadableRange(addr: number, length: number): void {
 		if (this.isVramRange(addr, length)) {
-			throw new Error(`[Memory] VRAM is write-only: ${addr} (len=${length}).`);
+			throw new Error(`VRAM read fault @ ${formatNumberAsHex(addr >>> 0, 8)}: write-only len=${length}.`);
 		}
 	}
 

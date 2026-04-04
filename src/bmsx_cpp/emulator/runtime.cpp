@@ -35,6 +35,18 @@ inline double to_ms(std::chrono::steady_clock::duration duration) {
 	return std::chrono::duration<double, std::milli>(duration).count();
 }
 
+inline std::runtime_error runtimeFault(const std::string& message) {
+	return BMSX_RUNTIME_ERROR("Runtime fault: " + message);
+}
+
+inline std::runtime_error vdpFault(const std::string& message) {
+	return BMSX_RUNTIME_ERROR("VDP fault: " + message);
+}
+
+inline std::runtime_error vdpStreamFault(const std::string& message) {
+	return BMSX_RUNTIME_ERROR("VDP stream fault: " + message);
+}
+
 constexpr size_t CART_ROM_HEADER_SIZE = 64;
 constexpr std::array<u8, CART_ROM_HEADER_SIZE> CART_ROM_EMPTY_HEADER = {};
 
@@ -79,7 +91,7 @@ inline float readPacketF32(const Reader& reader, int index) {
 template<typename Reader>
 inline uint32_t readPacketArgU32(const Reader& reader, uint32_t cmd, int index) {
 	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != VdpPacketWordKind::U32) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Packet arg " + std::to_string(index) + " is not encoded as u32.");
+		throw vdpFault("packet arg " + std::to_string(index) + " is not encoded as u32.");
 	}
 	return readPacketU32(reader, index);
 }
@@ -87,7 +99,7 @@ inline uint32_t readPacketArgU32(const Reader& reader, uint32_t cmd, int index) 
 template<typename Reader>
 inline int32_t readPacketArgI32(const Reader& reader, uint32_t cmd, int index) {
 	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != VdpPacketWordKind::U32) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Packet arg " + std::to_string(index) + " is not encoded as u32.");
+		throw vdpFault("packet arg " + std::to_string(index) + " is not encoded as u32.");
 	}
 	return readPacketI32(reader, index);
 }
@@ -95,7 +107,7 @@ inline int32_t readPacketArgI32(const Reader& reader, uint32_t cmd, int index) {
 template<typename Reader>
 inline float readPacketArgF32(const Reader& reader, uint32_t cmd, int index) {
 	if (getVdpPacketArgKind(cmd, static_cast<uint32_t>(index)) != VdpPacketWordKind::F32) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Packet arg " + std::to_string(index) + " is not encoded as f32.");
+		throw vdpFault("packet arg " + std::to_string(index) + " is not encoded as f32.");
 	}
 	return readPacketF32(reader, index);
 }
@@ -108,6 +120,17 @@ inline Color readPacketColor(const Reader& reader, uint32_t cmd, int offset) {
 		readPacketArgF32(reader, cmd, offset + 2),
 		readPacketArgF32(reader, cmd, offset + 3),
 	};
+}
+
+std::string dumpStreamWords(const Memory& memory, uint32_t baseAddr, uint32_t wordCount) {
+	std::ostringstream out;
+	for (uint32_t index = 0; index < wordCount; ++index) {
+		if (index != 0u) {
+			out << ' ';
+		}
+		out << memory.readU32(baseAddr + index * IO_WORD_SIZE);
+	}
+	return out.str();
 }
 
 template<typename ArgReader, typename PayloadReader>
@@ -148,18 +171,27 @@ void processVdpCommand(Runtime& runtime, uint32_t cmd, uint32_t argWords, const 
 		case IO_CMD_VDP_BLIT: {
 			assertVdpPacketArgWords(cmd, argWords);
 			const uint32_t flipFlags = readPacketArgU32(argReader, cmd, 7);
+			const u32 handle = readPacketArgU32(argReader, cmd, 0);
+			const f32 x = readPacketArgF32(argReader, cmd, 1);
+			const f32 y = readPacketArgF32(argReader, cmd, 2);
+			const f32 z = readPacketArgF32(argReader, cmd, 3);
+			const Layer2D layer = static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 4));
+			const f32 scaleX = readPacketArgF32(argReader, cmd, 5);
+			const f32 scaleY = readPacketArgF32(argReader, cmd, 6);
+			const Color color = readPacketColor(argReader, cmd, 8);
+			const f32 parallaxWeight = readPacketArgF32(argReader, cmd, 12);
 			runtime.vdp().enqueueBlit(
-				readPacketArgU32(argReader, cmd, 0),
-				readPacketArgF32(argReader, cmd, 1),
-				readPacketArgF32(argReader, cmd, 2),
-				readPacketArgF32(argReader, cmd, 3),
-				static_cast<Layer2D>(readPacketArgU32(argReader, cmd, 4)),
-				readPacketArgF32(argReader, cmd, 5),
-				readPacketArgF32(argReader, cmd, 6),
+				handle,
+				x,
+				y,
+				z,
+				layer,
+				scaleX,
+				scaleY,
 				(flipFlags & 1u) != 0u,
 				(flipFlags & 2u) != 0u,
-				readPacketColor(argReader, cmd, 8),
-				readPacketArgF32(argReader, cmd, 12)
+				color,
+				parallaxWeight
 			);
 			break;
 		}
@@ -188,12 +220,12 @@ void processVdpCommand(Runtime& runtime, uint32_t cmd, uint32_t argWords, const 
 			assertVdpPacketArgWords(cmd, argWords);
 			const uint32_t tileCount = readPacketArgU32(argReader, cmd, 0);
 			if (tileCount > payloadWords) {
-				throw BMSX_RUNTIME_ERROR(std::string("[VDP] Tile payload underrun (") + std::to_string(tileCount) + " > " + std::to_string(payloadWords) + ").");
+				throw vdpFault("tile payload underrun (" + std::to_string(tileCount) + " > " + std::to_string(payloadWords) + ").");
 			}
 			const i32 cols = readPacketArgI32(argReader, cmd, 1);
 			const i32 rows = readPacketArgI32(argReader, cmd, 2);
 			if (tileCount != static_cast<uint32_t>(cols * rows)) {
-				throw BMSX_RUNTIME_ERROR(std::string("[VDP] Tile payload size mismatch (") + std::to_string(tileCount) + " != " + std::to_string(cols * rows) + ").");
+				throw vdpFault("tile payload size mismatch (" + std::to_string(tileCount) + " != " + std::to_string(cols * rows) + ").");
 			}
 			if constexpr (PayloadReader::kMemoryBacked) {
 				runtime.vdp().enqueuePayloadTileRun(
@@ -229,7 +261,7 @@ void processVdpCommand(Runtime& runtime, uint32_t cmd, uint32_t argWords, const 
 			break;
 		}
 		default:
-			throw BMSX_RUNTIME_ERROR("Unknown IO command: " + std::to_string(cmd) + ".");
+			throw vdpFault("unknown I/O command " + std::to_string(cmd) + ".");
 	}
 }
 }
@@ -269,7 +301,7 @@ Runtime* Runtime::s_instance = nullptr;
 
 Runtime& Runtime::createInstance(const RuntimeOptions& options) {
 	if (s_instance) {
-		throw BMSX_RUNTIME_ERROR("[Runtime] Instance already exists.");
+		throw runtimeFault("instance already exists.");
 	}
 	configureLuaHeapUsage({});
 	resetTrackedLuaHeapBytes();
@@ -394,7 +426,7 @@ bool Runtime::hasBlockedVdpSubmitPath() const {
 
 void Runtime::pushVdpFifoWord(u32 word) {
 	if (m_vdpFifoStreamWordCount >= VDP_STREAM_CAPACITY_WORDS) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Stream overflow (" + std::to_string(m_vdpFifoStreamWordCount + 1u) + " > " + std::to_string(VDP_STREAM_CAPACITY_WORDS) + ").");
+		throw vdpStreamFault("stream overflow (" + std::to_string(m_vdpFifoStreamWordCount + 1u) + " > " + std::to_string(VDP_STREAM_CAPACITY_WORDS) + ").");
 	}
 	m_vdpFifoStreamWords[static_cast<size_t>(m_vdpFifoStreamWordCount)] = word;
 	m_vdpFifoStreamWordCount += 1u;
@@ -418,29 +450,53 @@ void Runtime::writeVdpFifoBytes(const u8* data, size_t length) {
 
 void Runtime::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 	if ((byteLength & 3u) != 0u) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Sealed stream length must be word-aligned.");
+		throw vdpStreamFault("sealed stream length must be word-aligned.");
 	}
 	if (byteLength > VDP_STREAM_BUFFER_SIZE) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Sealed stream overflow (" + std::to_string(byteLength) + " > " + std::to_string(VDP_STREAM_BUFFER_SIZE) + ").");
+		throw vdpStreamFault("sealed stream overflow (" + std::to_string(byteLength) + " > " + std::to_string(VDP_STREAM_BUFFER_SIZE) + ").");
 	}
 	uint32_t cursor = baseAddr;
 	const uint32_t end = baseAddr + static_cast<uint32_t>(byteLength);
+	uint32_t packetIndex = 0u;
 	m_vdp.beginSubmittedFrame();
 	try {
 		while (cursor < end) {
 			if (cursor + VDP_STREAM_PACKET_HEADER_WORDS * IO_WORD_SIZE > end) {
-				throw BMSX_RUNTIME_ERROR("[VDP] Stream ended mid-packet header.");
+				throw vdpStreamFault("stream ended mid-packet header.");
 			}
 			const u32 cmd = m_memory.readU32(cursor);
 			const u32 argWords = m_memory.readU32(cursor + IO_WORD_SIZE);
 			const u32 payloadWords = m_memory.readU32(cursor + IO_WORD_SIZE * 2u);
 			if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
-				throw BMSX_RUNTIME_ERROR("[VDP] Submit payload overflow (" + std::to_string(payloadWords) + " > " + std::to_string(VDP_STREAM_PAYLOAD_CAPACITY_WORDS) + ").");
+				const uint32_t dumpBase = cursor >= (IO_WORD_SIZE * 6u) ? (cursor - IO_WORD_SIZE * 6u) : baseAddr;
+				const uint32_t dumpWords = ((cursor + IO_WORD_SIZE * 6u) <= end) ? 12u : ((end - dumpBase) / IO_WORD_SIZE);
+				throw vdpStreamFault(
+					"submit payload overflow at addr="
+					+ std::to_string(cursor)
+					+ " cmd=" + std::to_string(cmd)
+					+ " argWords=" + std::to_string(argWords)
+					+ " payloadWords=" + std::to_string(payloadWords)
+					+ " dump=[" + dumpStreamWords(m_memory, dumpBase, dumpWords) + "]"
+					+ " (" + std::to_string(payloadWords)
+					+ " > " + std::to_string(VDP_STREAM_PAYLOAD_CAPACITY_WORDS) + ")."
+				);
 			}
 			const u32 packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
 			const u32 packetByteCount = packetWordCount * IO_WORD_SIZE;
 			if (cursor + packetByteCount > end) {
-				throw BMSX_RUNTIME_ERROR("[VDP] Stream ended mid-packet payload.");
+				const uint32_t dumpBase = cursor >= (IO_WORD_SIZE * 6u) ? (cursor - IO_WORD_SIZE * 6u) : baseAddr;
+				const uint32_t dumpWords = ((cursor + IO_WORD_SIZE * 6u) <= end) ? 12u : ((end - dumpBase) / IO_WORD_SIZE);
+				throw vdpStreamFault(
+					"stream ended mid-packet payload at addr="
+					+ std::to_string(cursor)
+					+ " packet=" + std::to_string(packetIndex)
+					+ " cmd=" + std::to_string(cmd)
+					+ " argWords=" + std::to_string(argWords)
+					+ " payloadWords=" + std::to_string(payloadWords)
+					+ " packetWords=" + std::to_string(packetWordCount)
+					+ " remainingWords=" + std::to_string((end - cursor) / IO_WORD_SIZE)
+					+ " dump=[" + dumpStreamWords(m_memory, dumpBase, dumpWords) + "]"
+				);
 			}
 			m_vdp.syncRegisters();
 			const MemoryPacketWordReader argReader{this, cursor + VDP_STREAM_PACKET_HEADER_WORDS * IO_WORD_SIZE};
@@ -454,6 +510,7 @@ void Runtime::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 				payloadWords
 			);
 			cursor += packetByteCount;
+			packetIndex += 1u;
 		}
 		m_vdp.sealSubmittedFrame();
 	} catch (...) {
@@ -465,7 +522,7 @@ void Runtime::consumeSealedVdpStream(uint32_t baseAddr, size_t byteLength) {
 
 void Runtime::sealVdpFifoTransfer() {
 	if (m_vdpFifoWordByteCount != 0) {
-		throw BMSX_RUNTIME_ERROR("[VDP] FIFO transfer ended on a partial word.");
+		throw vdpStreamFault("FIFO transfer ended on a partial word.");
 	}
 	if (m_vdpFifoStreamWordCount == 0u) {
 		return;
@@ -475,17 +532,25 @@ void Runtime::sealVdpFifoTransfer() {
 	try {
 		while (cursor < m_vdpFifoStreamWordCount) {
 			if (cursor + VDP_STREAM_PACKET_HEADER_WORDS > m_vdpFifoStreamWordCount) {
-				throw BMSX_RUNTIME_ERROR("[VDP] Stream ended mid-packet header.");
+				throw vdpStreamFault("stream ended mid-packet header.");
 			}
 			const u32 cmd = m_vdpFifoStreamWords[static_cast<size_t>(cursor)];
 			const u32 argWords = m_vdpFifoStreamWords[static_cast<size_t>(cursor + 1u)];
 			const u32 payloadWords = m_vdpFifoStreamWords[static_cast<size_t>(cursor + 2u)];
 			if (payloadWords > VDP_STREAM_PAYLOAD_CAPACITY_WORDS) {
-				throw BMSX_RUNTIME_ERROR("[VDP] Submit payload overflow (" + std::to_string(payloadWords) + " > " + std::to_string(VDP_STREAM_PAYLOAD_CAPACITY_WORDS) + ").");
+				throw vdpStreamFault(
+					"submit payload overflow at word="
+					+ std::to_string(cursor)
+					+ " cmd=" + std::to_string(cmd)
+					+ " argWords=" + std::to_string(argWords)
+					+ " payloadWords=" + std::to_string(payloadWords)
+					+ " (" + std::to_string(payloadWords)
+					+ " > " + std::to_string(VDP_STREAM_PAYLOAD_CAPACITY_WORDS) + ")."
+				);
 			}
 			const u32 packetWordCount = VDP_STREAM_PACKET_HEADER_WORDS + argWords + payloadWords;
 			if (cursor + packetWordCount > m_vdpFifoStreamWordCount) {
-				throw BMSX_RUNTIME_ERROR("[VDP] Stream ended mid-packet payload.");
+				throw vdpStreamFault("stream ended mid-packet payload.");
 			}
 			m_vdp.syncRegisters();
 			const BufferPacketWordReader argReader{m_vdpFifoStreamWords.data(), cursor + VDP_STREAM_PACKET_HEADER_WORDS};
@@ -554,9 +619,6 @@ void Runtime::boot(const ProgramAsset& asset, ProgramMetadata* metadata) {
 }
 
 void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIndex) {
-	std::cout << "[Runtime] boot: program=" << program << " entryProtoIndex=" << entryProtoIndex << std::endl;
-	std::cout << "[Runtime] boot: module protos=" << m_moduleProtos.size()
-				<< " aliases=" << m_moduleAliases.size() << std::endl;
 	resetFrameState();
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
@@ -598,14 +660,11 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	runEngineBuiltinPrelude();
 	enforceLuaHeapBudget();
 
-	// Start execution at entry point
-	std::cout << "[Runtime] boot: starting CPU at entry point..." << std::endl;
 	m_cpu.start(entryProtoIndex);
 	enforceLuaHeapBudget();
 	m_pendingCall = PendingCall::Entry;
 	queueLifecycleHandlers(true, true);
 	m_luaInitialized = true;
-	std::cout << "[Runtime] boot: runtime initialized!" << std::endl;
 }
 
 void Runtime::setCartBootReadyFlag(bool value) {
@@ -638,12 +697,12 @@ bool Runtime::pollSystemBootRequest() {
 		if (!EngineCore::instance().bootLoadedCart()) {
 			setCartBootReadyFlag(false);
 			EngineCore::instance().log(LogLevel::Error,
-				"[Runtime] Cart boot request failed while leaving system boot screen active.\n");
+				"Runtime fault: cart boot request failed while leaving system boot screen active.\n");
 		}
 	} catch (const std::exception& error) {
 		setCartBootReadyFlag(false);
 		EngineCore::instance().log(LogLevel::Error,
-			"[Runtime] Cart boot request failed while leaving system boot screen active: %s\n",
+			"Runtime fault: cart boot request failed while leaving system boot screen active: %s\n",
 			error.what());
 	}
 	return true;
@@ -772,7 +831,12 @@ void Runtime::syncVdpSubmitAttemptStatusFromDma(uint32_t dst) {
 		noteRejectedVdpSubmitAttempt();
 		return;
 	}
-	noteAcceptedVdpSubmitAttempt();
+	if ((dmaStatus & DMA_STATUS_ERROR) != 0u) {
+		return;
+	}
+	if ((dmaStatus & (DMA_STATUS_BUSY | DMA_STATUS_DONE)) != 0u) {
+		noteAcceptedVdpSubmitAttempt();
+	}
 }
 
 void Runtime::enterVblank() {
@@ -826,7 +890,7 @@ void Runtime::reconcileCycleBudgetAfterSignal(FrameState& frameState) {
 	const int remaining = m_cpu.instructionBudgetRemaining;
 	const int consumed = frameState.cycleBudgetRemaining - remaining;
 	if (consumed < 0) {
-		throw BMSX_RUNTIME_ERROR("[Runtime] Negative cycle reconciliation.");
+		throw runtimeFault("negative cycle reconciliation.");
 	}
 	frameState.cycleBudgetRemaining = remaining;
 	if (consumed > 0) {
@@ -860,7 +924,7 @@ void Runtime::requestWaitForVblank() {
 		: nextVblankSequence;
 	if (resumeOnCurrentEdge) {
 		if (!m_frameActive) {
-			throw BMSX_RUNTIME_ERROR("[Runtime] wait_vblank resumed without an active frame state.");
+			throw runtimeFault("wait_vblank resumed without an active frame state.");
 		}
 		reconcileCycleBudgetAfterSignal(m_frameState);
 		freezeTickCpuStats(m_frameState);
@@ -900,11 +964,11 @@ void Runtime::processIrqAck() {
 void Runtime::raiseEngineIrq(uint32_t mask) {
 	constexpr uint32_t kAllowedMask = IRQ_REINIT | IRQ_NEWGAME;
 	if (mask == 0) {
-		throw BMSX_RUNTIME_ERROR("[Runtime] Engine IRQ mask must be non-zero.");
+		throw runtimeFault("engine IRQ mask must be non-zero.");
 	}
 	const uint32_t unsupported = mask & ~kAllowedMask;
 	if (unsupported != 0) {
-		throw BMSX_RUNTIME_ERROR("[Runtime] Unsupported engine IRQ mask: " + std::to_string(unsupported) + ".");
+		throw runtimeFault("unsupported engine IRQ mask " + std::to_string(unsupported) + ".");
 	}
 	raiseIrqFlags(mask);
 }
@@ -941,7 +1005,7 @@ void Runtime::tickUpdate() {
 	if (m_rebootRequested) {
 		m_rebootRequested = false;
 		if (!EngineCore::instance().rebootLoadedRom()) {
-			EngineCore::instance().log(LogLevel::Error, "[Runtime] Reboot to bootrom failed.\n");
+			EngineCore::instance().log(LogLevel::Error, "Runtime fault: reboot to bootrom failed.\n");
 		}
 		return;
 	}
@@ -1104,8 +1168,7 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 		return;
 	}
 	if (addr == IO_PAYLOAD_ALLOC_ADDR || addr == IO_PAYLOAD_DATA_ADDR) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Payload staging IO is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.");
-		return;
+		throw vdpFault("payload staging I/O is obsolete. Write payload words directly into the claimed VDP stream packet in RAM.");
 	}
 	if (addr == IO_VDP_CMD) {
 		if (asNumber(value) == 0.0) {
@@ -1261,10 +1324,10 @@ void Runtime::applyActiveMachineTiming(i64 cpuHz) {
 
 void Runtime::setVblankCycles(int cycles) {
 	if (cycles <= 0) {
-		throw BMSX_RUNTIME_ERROR("[Runtime] vblank_cycles must be greater than 0.");
+		throw runtimeFault("vblank_cycles must be greater than 0.");
 	}
 	if (cycles > m_cycleBudgetPerFrame) {
-		throw BMSX_RUNTIME_ERROR("[Runtime] vblank_cycles must be less than or equal to cycles_per_frame.");
+		throw runtimeFault("vblank_cycles must be less than or equal to cycles_per_frame.");
 	}
 	m_vblankCycles = cycles;
 	m_vblankStartCycle = m_cycleBudgetPerFrame - m_vblankCycles;
@@ -1286,7 +1349,7 @@ void Runtime::resetRenderBuffers() {
 
 void Runtime::setVdpWorkUnitsPerSec(int workUnitsPerSec) {
 	if (workUnitsPerSec <= 0) {
-		throw BMSX_RUNTIME_ERROR("[Runtime] work_units_per_sec must be greater than 0.");
+		throw runtimeFault("work_units_per_sec must be greater than 0.");
 	}
 	m_vdpWorkUnitsPerSec = workUnitsPerSec;
 }
@@ -1312,7 +1375,7 @@ void Runtime::setCycleBudgetPerFrame(int budget) {
 	resetTransferCarry();
 	if (m_vblankCycles > 0) {
 		if (m_vblankCycles > m_cycleBudgetPerFrame) {
-			throw BMSX_RUNTIME_ERROR("[Runtime] vblank_cycles must be less than or equal to cycles_per_frame.");
+			throw runtimeFault("vblank_cycles must be less than or equal to cycles_per_frame.");
 		}
 		m_vblankStartCycle = m_cycleBudgetPerFrame - m_vblankCycles;
 		resetVblankState();
@@ -1542,7 +1605,7 @@ void Runtime::executeUpdateCallback() {
 			m_pendingCall = PendingCall::None;
 		}
 	} catch (const std::exception& e) {
-		std::cerr << "[Runtime] Error in update: " << e.what() << std::endl;
+		std::cerr << "Runtime fault: " << e.what() << std::endl;
 		logDebugState();
 		logLuaCallStack();
 		m_cpu.clearYieldRequest();

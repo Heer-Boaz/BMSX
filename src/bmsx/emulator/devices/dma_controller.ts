@@ -49,6 +49,7 @@ type DmaJobBase = {
 	written: number;
 	clipped: boolean;
 	error: boolean;
+	fault: unknown;
 };
 
 type DmaIoJob = DmaJobBase & {
@@ -66,7 +67,7 @@ type DmaImageJob = DmaJobBase & {
 	row: number;
 	rowOffset: number;
 	vramTarget: boolean;
-	onComplete: (result: { error: boolean; clipped: boolean }) => void;
+	onComplete: (result: { error: boolean; clipped: boolean; fault: unknown }) => void;
 };
 
 type DmaJob = DmaIoJob | DmaImageJob;
@@ -131,7 +132,7 @@ export class DmaController {
 		this.memory.writeValue(IO_DMA_WRITTEN, 0);
 	}
 
-	public enqueueImageCopy(plan: ImageWritePlan, pixels: Uint8Array, onComplete: (result: { error: boolean; clipped: boolean }) => void): void {
+	public enqueueImageCopy(plan: ImageWritePlan, pixels: Uint8Array, onComplete: (result: { error: boolean; clipped: boolean; fault: unknown }) => void): void {
 		const vramTarget = this.memory.isVramRange(plan.baseAddr, plan.writeSize > 0 ? plan.writeSize : 1);
 		const job: DmaImageJob = {
 			kind: 'image',
@@ -144,6 +145,7 @@ export class DmaController {
 			written: 0,
 			clipped: plan.clipped,
 			error: false,
+			fault: null,
 			onComplete,
 		};
 		this.channels[DMA_CH_BULK].queue.push(job);
@@ -171,13 +173,18 @@ export class DmaController {
 		const src = (this.memory.readValue(IO_DMA_SRC) as number) >>> 0;
 		const dst = (this.memory.readValue(IO_DMA_DST) as number) >>> 0;
 		const len = (this.memory.readValue(IO_DMA_LEN) as number) >>> 0;
+		const vdpSubmit = dst === IO_VDP_FIFO;
 		const strict = (ctrl & DMA_CTRL_STRICT) !== 0;
 		this.memory.writeValue(IO_DMA_CTRL, ctrl & ~DMA_CTRL_START);
-		if (dst === IO_VDP_FIFO && this.hasPendingVdpSubmit()) {
+		if (vdpSubmit && this.hasPendingVdpSubmit()) {
 			this.finishIoRejected();
 			return;
 		}
 		this.memory.writeValue(IO_DMA_WRITTEN, 0);
+		if (vdpSubmit && (len & 3) !== 0) {
+			this.finishIoError(false);
+			return;
+		}
 		const maxWritable = this.resolveMaxWritable(dst);
 		if (maxWritable <= 0) {
 			this.finishIoError(false);
@@ -187,7 +194,7 @@ export class DmaController {
 		let clipped = false;
 		if (transferLen > maxWritable) {
 			clipped = true;
-			if (strict) {
+			if (strict || vdpSubmit) {
 				this.finishIoError(true);
 				return;
 			}
@@ -209,6 +216,7 @@ export class DmaController {
 			clipped,
 			strict,
 			error: false,
+			fault: null,
 		};
 		this.ioWrittenValue = 0;
 		this.ioWrittenDirty = true;
@@ -271,8 +279,9 @@ export class DmaController {
 			try {
 				const bytes = this.memory.readBytes(job.src, chunk);
 				this.memory.writeBytes(job.dst, bytes);
-			} catch {
+			} catch (error) {
 				job.error = true;
+				job.fault = error;
 				return 0;
 			}
 			job.src += chunk;
@@ -299,8 +308,9 @@ export class DmaController {
 			const dstAddr = job.plan.baseAddr + (job.row * job.plan.targetStride) + job.rowOffset;
 			try {
 				this.memory.writeBytesFrom(job.pixels, srcOffset, dstAddr, toCopy);
-			} catch {
+			} catch (error) {
 				job.error = true;
+				job.fault = error;
 				return budget - remaining;
 			}
 			remaining -= toCopy;
@@ -329,7 +339,7 @@ export class DmaController {
 			this.finishIoJob(job);
 			return;
 		}
-		job.onComplete({ error: job.error, clipped: job.clipped });
+		job.onComplete({ error: job.error, clipped: job.clipped, fault: job.fault });
 	}
 
 	private resolveMaxWritable(dst: number): number {

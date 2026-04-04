@@ -102,6 +102,7 @@ add_library(bmsx_core STATIC
 	rompack/rompack.cpp
 	core/font.cpp
 	core/taskgate.cpp
+	utils/byte_hex_string.cpp
 	utils/mem_snapshot.cpp
 
 	# Audio systems

@@ -131,6 +131,7 @@ export const IMG_STATUS_BUSY = 1 << 0;
 export const IMG_STATUS_DONE = 1 << 1;
 export const IMG_STATUS_ERROR = 1 << 2;
 export const IMG_STATUS_CLIPPED = 1 << 3;
+export const IMG_STATUS_REJECTED = 1 << 4;
 
 export const VDP_ATLAS_ID_NONE = 0xffffffff >>> 0;
 export const VDP_RD_MODE_RGBA8888 = 0;

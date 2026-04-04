@@ -50,6 +50,7 @@ import {
 	IMG_STATUS_CLIPPED,
 	IMG_STATUS_DONE,
 	IMG_STATUS_ERROR,
+	IMG_STATUS_REJECTED,
 	IO_ARG_STRIDE,
 	IO_CMD_VDP_BLIT,
 	IO_CMD_VDP_CLEAR,
@@ -1227,6 +1228,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_done', IMG_STATUS_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_error', IMG_STATUS_ERROR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_clipped', IMG_STATUS_CLIPPED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_rejected', IMG_STATUS_REJECTED);
 	const bitcastBuffer = new ArrayBuffer(8);
 	const bitcastView = new DataView(bitcastBuffer);
 	runtimeLuaPipeline.registerGlobal(runtime, 'u32_to_f32', createNativeFunction('u32_to_f32', (args, out) => {
@@ -1451,30 +1453,70 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		return unitIndex;
 	};
 
+	const isWrapWhitespace = (char: string): boolean => char === ' ' || char === '\t';
+
 	const wrapTextLines = (text: string, maxChars: number, firstPrefix: string = '', nextPrefix: string = firstPrefix): { lines: string[]; lineMap: number[] } => {
-		const textLength = utf8CodepointCount(text);
 		const firstPrefixLength = utf8CodepointCount(firstPrefix);
 		const nextPrefixLength = utf8CodepointCount(nextPrefix);
 		const lines: string[] = [];
 		const lineMap: number[] = [];
-		if (textLength === 0) {
+		if (text.length === 0) {
 			return { lines, lineMap };
 		}
-		let startIndex = 1;
-		let isFirstLine = true;
-		while (startIndex <= textLength) {
-			const prefix = isFirstLine ? firstPrefix : nextPrefix;
-			const available = maxChars - (isFirstLine ? firstPrefixLength : nextPrefixLength);
-			if (available <= 0) {
-				throw runtime.createApiRuntimeError('wrap_text_lines prefix exceeds max_chars.');
+		const logicalLines = text.split('\n');
+		let isFirstOutputLine = true;
+		for (let logicalLineIndex = 0; logicalLineIndex < logicalLines.length; logicalLineIndex += 1) {
+			const codepoints = Array.from(logicalLines[logicalLineIndex]);
+			if (codepoints.length === 0) {
+				const prefix = isFirstOutputLine ? firstPrefix : nextPrefix;
+				const available = maxChars - (isFirstOutputLine ? firstPrefixLength : nextPrefixLength);
+				if (available <= 0) {
+					throw runtime.createApiRuntimeError('wrap_text_lines prefix exceeds max_chars.');
+				}
+				lines.push(prefix);
+				lineMap.push(logicalLineIndex + 1);
+				isFirstOutputLine = false;
+				continue;
 			}
-			const endIndex = Math.min(textLength, startIndex + available - 1);
-			const startUnit = utf8CodepointIndexToUnitIndex(text, startIndex);
-			const endUnit = utf8CodepointIndexToUnitIndex(text, endIndex + 1);
-			lines.push(prefix + text.slice(startUnit, endUnit));
-			lineMap.push(1);
-			startIndex = endIndex + 1;
-			isFirstLine = false;
+			let startIndex = 0;
+			while (startIndex < codepoints.length) {
+				const prefix = isFirstOutputLine ? firstPrefix : nextPrefix;
+				const available = maxChars - (isFirstOutputLine ? firstPrefixLength : nextPrefixLength);
+				if (available <= 0) {
+					throw runtime.createApiRuntimeError('wrap_text_lines prefix exceeds max_chars.');
+				}
+				if (codepoints.length - startIndex <= available) {
+					lines.push(prefix + codepoints.slice(startIndex).join(''));
+					lineMap.push(logicalLineIndex + 1);
+					isFirstOutputLine = false;
+					break;
+				}
+				let breakIndex = -1;
+				const limit = startIndex + available;
+				for (let index = startIndex; index < limit; index += 1) {
+					if (isWrapWhitespace(codepoints[index])) {
+						breakIndex = index;
+					}
+				}
+				if (breakIndex > startIndex) {
+					let endIndex = breakIndex;
+					while (endIndex > startIndex && isWrapWhitespace(codepoints[endIndex - 1])) {
+						endIndex -= 1;
+					}
+					lines.push(prefix + codepoints.slice(startIndex, endIndex).join(''));
+					lineMap.push(logicalLineIndex + 1);
+					startIndex = breakIndex + 1;
+					while (startIndex < codepoints.length && isWrapWhitespace(codepoints[startIndex])) {
+						startIndex += 1;
+					}
+					isFirstOutputLine = false;
+					continue;
+				}
+				lines.push(prefix + codepoints.slice(startIndex, limit).join(''));
+				lineMap.push(logicalLineIndex + 1);
+				startIndex = limit;
+				isFirstOutputLine = false;
+			}
 		}
 		return { lines, lineMap };
 	};

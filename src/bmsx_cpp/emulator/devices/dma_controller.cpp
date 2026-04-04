@@ -36,7 +36,7 @@ void DmaController::setChannelBudgets(uint32_t isoBytesPerTick, uint32_t bulkByt
 	m_channels[static_cast<int>(Channel::Bulk)].budget = bulkBytesPerTick;
 }
 
-void DmaController::enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped)> onComplete) {
+void DmaController::enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete) {
 	DmaJob job;
 	job.kind = DmaJob::Kind::Image;
 	job.channel = Channel::Bulk;
@@ -48,6 +48,7 @@ void DmaController::enqueueImageCopy(const Memory::ImageWritePlan& plan, std::ve
 	job.written = 0;
 	job.clipped = plan.clipped;
 	job.error = false;
+	job.fault = nullptr;
 	job.onComplete = std::move(onComplete);
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
 }
@@ -143,6 +144,7 @@ uint32_t DmaController::processJob(DmaJob& job, uint32_t budget) {
 			m_memory.writeBytes(job.dst, m_buffer.data(), chunk);
 		} catch (...) {
 			job.error = true;
+			job.fault = std::current_exception();
 			return 0;
 		}
 		job.src += chunk;
@@ -171,6 +173,7 @@ uint32_t DmaController::processImageJob(DmaJob& job, uint32_t budget) {
 			m_memory.writeBytes(dstAddr, job.pixels.data() + srcOffset, toCopy);
 		} catch (...) {
 			job.error = true;
+			job.fault = std::current_exception();
 			return budget - remaining;
 		}
 		remaining -= toCopy;
@@ -200,7 +203,7 @@ void DmaController::finishJob(DmaJob& job) {
 		return;
 	}
 	if (job.onComplete) {
-		job.onComplete(job.error, job.clipped);
+		job.onComplete(job.error, job.clipped, job.fault);
 	}
 }
 
@@ -213,13 +216,18 @@ void DmaController::tryStartIo() {
 	const uint32_t src = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_DMA_SRC)));
 	const uint32_t dst = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_DMA_DST)));
 	const uint32_t len = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_DMA_LEN)));
+	const bool vdpSubmit = dst == IO_VDP_FIFO;
 	const bool strict = (ctrl & DMA_CTRL_STRICT) != 0;
 	m_memory.writeValue(IO_DMA_CTRL, valueNumber(static_cast<double>(ctrl & ~DMA_CTRL_START)));
-	if (dst == IO_VDP_FIFO && hasPendingVdpSubmit()) {
+	if (vdpSubmit && hasPendingVdpSubmit()) {
 		finishIoRejected();
 		return;
 	}
 	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
+	if (vdpSubmit && (len & 3u) != 0u) {
+		finishIoError(false);
+		return;
+	}
 
 	const uint32_t maxWritable = resolveMaxWritable(dst);
 	if (maxWritable == 0) {
@@ -230,7 +238,7 @@ void DmaController::tryStartIo() {
 	bool clipped = false;
 	if (transferLen > maxWritable) {
 		clipped = true;
-		if (strict) {
+		if (strict || vdpSubmit) {
 			finishIoError(true);
 			return;
 		}

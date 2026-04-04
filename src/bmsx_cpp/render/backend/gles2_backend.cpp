@@ -63,6 +63,11 @@ OpenGLES2Backend::OpenGLES2Backend(i32 width, i32 height)
 
 OpenGLES2Backend::~OpenGLES2Backend() = default;
 
+void OpenGLES2Backend::invalidateTextureBindingCache() {
+	m_active_texture_unit = -1;
+	m_bound_texture_2d_by_unit.fill(0);
+}
+
 TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 												i32 height,
 												const TextureParams& params) {
@@ -96,6 +101,7 @@ TextureHandle OpenGLES2Backend::createTexture(const u8* data, i32 width,
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA,
 					GL_UNSIGNED_BYTE, uploadData);
+	invalidateTextureBindingCache();
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
 					"[BMSX][GLES2] createTexture id=%u size=%dx%d data=%p\n",
@@ -137,6 +143,7 @@ void OpenGLES2Backend::updateTexture(TextureHandle handle, const u8* data, i32 w
 	tex->height = height;
 	tex->logicalSrgb = logicalSrgb;
 	tex->srgb = useSrgbTexture;
+	invalidateTextureBindingCache();
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
 					"[BMSX][GLES2] updateTexture id=%u size=%dx%d data=%p\n",
@@ -161,6 +168,7 @@ TextureHandle OpenGLES2Backend::resizeTexture(TextureHandle handle, i32 width, i
 	tex->height = height;
 	tex->logicalSrgb = logicalSrgb;
 	tex->srgb = useSrgbTexture;
+	invalidateTextureBindingCache();
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
 					"[BMSX][GLES2] resizeTexture id=%u size=%dx%d\n",
@@ -183,6 +191,7 @@ void OpenGLES2Backend::updateTextureRegion(TextureHandle handle, const u8* data,
 	glBindTexture(GL_TEXTURE_2D, tex->id);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, uploadData);
+	invalidateTextureBindingCache();
 	if (kGLES2VerboseLog) {
 	std::fprintf(stderr,
 					"[BMSX][GLES2] updateTextureRegion id=%u size=%dx%d offset=%d,%d data=%p\n",
@@ -247,6 +256,7 @@ void OpenGLES2Backend::destroyTexture(TextureHandle handle) {
 					static_cast<unsigned>(tex->id));
 	}
 	glDeleteTextures(1, &tex->id);
+	invalidateTextureBindingCache();
 	delete tex;
 }
 
@@ -269,7 +279,7 @@ void OpenGLES2Backend::copyTexture(TextureHandle source, TextureHandle destinati
 	if (prevActiveUnit >= 0) {
 		glActiveTexture(GL_TEXTURE0 + prevActiveUnit);
 	}
-	m_active_texture_unit = prevActiveUnit;
+	invalidateTextureBindingCache();
 }
 
 void OpenGLES2Backend::clear(const Color* color, const f32* depth) {
@@ -338,8 +348,7 @@ void OpenGLES2Backend::beginFrame() {
 	m_stats = FrameStats{};
 	// RetroArch can mutate GL state between frames; reset caches so bindings are
 	// refreshed.
-	m_active_texture_unit = -1;
-	m_bound_texture_2d_by_unit.fill(0);
+	invalidateTextureBindingCache();
 	m_backbuffer_fbo = static_cast<GLuint>(m_get_framebuffer());
 	if (kGLES2VerboseLog) {
 	static u32 frameIndex = 0;
@@ -388,8 +397,7 @@ void OpenGLES2Backend::setFramebufferGetter(FramebufferGetter getter) {
 
 void OpenGLES2Backend::onContextReset() {
 	m_context_ready = true;
-	m_active_texture_unit = -1;
-	m_bound_texture_2d_by_unit.fill(0);
+	invalidateTextureBindingCache();
 	const char* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
 	m_supports_srgb_textures = hasExtensionToken(extensions, "GL_EXT_sRGB");
 	glGenFramebuffers(1, &m_readback_fbo);
@@ -400,8 +408,7 @@ void OpenGLES2Backend::onContextReset() {
 
 void OpenGLES2Backend::onContextDestroy() {
 	m_context_ready = false;
-	m_active_texture_unit = -1;
-	m_bound_texture_2d_by_unit.fill(0);
+	invalidateTextureBindingCache();
 	m_supports_srgb_textures = false;
 	if (m_readback_fbo != 0) {
 		glDeleteFramebuffers(1, &m_readback_fbo);
@@ -444,12 +451,16 @@ void OpenGLES2Backend::setRenderTarget(GLuint fbo, i32 width, i32 height) {
 	if (fboChanged) {
 		glBindFramebuffer(GL_FRAMEBUFFER, m_current_fbo);
 	}
-	if (sizeChanged) {
+	// CRITICAL FIX: Always update viewport when FBO changes OR size changes
+	// Previously, viewport was only updated on size change, which broke rendering
+	// when switching between FBOs of same size (e.g., framebuffer text rendering)
+	if (fboChanged || sizeChanged) {
 		glViewport(0, 0, m_width, m_height);
 	}
 	if (kGLES2VerboseLog) {
-	std::fprintf(stderr, "[BMSX][GLES2] setRenderTarget fbo=%u size=%dx%d\n",
-					static_cast<unsigned>(fbo), width, height);
+	std::fprintf(stderr, "[BMSX][GLES2] setRenderTarget fbo=%u size=%dx%d%s\n",
+					static_cast<unsigned>(fbo), width, height,
+					fboChanged ? " (FBO changed)" : sizeChanged ? " (size changed)" : "");
 	}
 }
 

@@ -22,6 +22,9 @@ TaskGate& imgdecGate() {
 	return gate;
 }
 
+inline std::runtime_error imageDecoderFault(const std::string& message) {
+	return std::runtime_error("Image decoder fault: " + message);
+}
 }
 
 ImgDecController::ImgDecController(Memory& memory, DmaController& dma, std::function<void(uint32_t)> raiseIrq)
@@ -115,6 +118,8 @@ void ImgDecController::tryStart() {
 		const uint32_t ctrl = ctrlValue;
 		if (m_active) {
 			m_memory.writeValue(IO_IMG_CTRL, valueNumber(static_cast<double>(ctrl & ~IMG_CTRL_START)));
+			m_status |= IMG_STATUS_REJECTED;
+			m_memory.writeValue(IO_IMG_STATUS, valueNumber(static_cast<double>(m_status)));
 			return;
 		}
 		const uint32_t src = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IMG_SRC)));
@@ -174,7 +179,7 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 	const uint32_t entryCap = entry.isAsset ? entry.asset->capacity : entry.external->capacity;
 	const uint32_t effectiveCap = std::min(cap, entryCap);
 	if (effectiveCap == 0) {
-		finishError(std::make_exception_ptr(std::runtime_error("[ImgDec] Invalid destination capacity.")));
+		finishError(std::make_exception_ptr(imageDecoderFault("invalid destination capacity.")));
 		return;
 	}
 	m_pendingCap = effectiveCap;
@@ -212,7 +217,7 @@ void ImgDecController::startJob(std::vector<uint8_t>&& buffer, uint32_t dst, uin
 				if (pixels) {
 					stbi_image_free(pixels);
 				}
-				throw std::runtime_error("[ImgDec] PNG decode failed.");
+				throw imageDecoderFault("PNG decode failed.");
 			}
 			const size_t byteCount = static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
 			DecodedImage result;
@@ -260,7 +265,7 @@ ImgDecController::ImgDecEntry ImgDecController::resolveSlotEntry(uint32_t dst) {
 		entry.asset = &m_memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
 		return entry;
 	}
-	throw std::runtime_error("[ImgDec] Unsupported destination address " + std::to_string(dst) + ".");
+	throw imageDecoderFault("unsupported destination address " + std::to_string(dst) + ".");
 }
 
 void ImgDecController::beginDecode(DecodedImage&& result, const ImgDecEntry& entry) {
@@ -299,9 +304,9 @@ void ImgDecController::advanceDecode() {
 	const auto plan = m_decodePlan;
 	auto pixels = std::move(m_decodePixels);
 	m_decodePixels.clear();
-	m_dma.enqueueImageCopy(plan, std::move(pixels), [this](bool error, bool clipped) {
+	m_dma.enqueueImageCopy(plan, std::move(pixels), [this](bool error, bool clipped, std::exception_ptr fault) {
 		if (error) {
-			finishError(std::make_exception_ptr(std::runtime_error("[ImgDec] DMA transfer failed.")));
+			finishError(fault);
 			return;
 		}
 		finishSuccess(clipped);
@@ -347,7 +352,7 @@ void ImgDecController::finishError(std::exception_ptr error) {
 	}
 	m_signalIrq = false;
 	if (!error) {
-		error = std::make_exception_ptr(std::runtime_error("[ImgDec] Decode failed."));
+		error = std::make_exception_ptr(imageDecoderFault("decode failed."));
 	}
 	if (activeJob && activeJob->reject) {
 		activeJob->reject(error);

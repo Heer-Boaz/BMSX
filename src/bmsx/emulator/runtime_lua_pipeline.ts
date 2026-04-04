@@ -91,12 +91,24 @@ const ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
 const getRealtimeOptLevel = (runtime: Runtime): 0 | 1 | 2 | 3 =>
 	runtime.realtimeCompileOptLevel;
 
+function runtimeFault(message: string): Error {
+	return new Error(`Runtime fault: ${message}`);
+}
+
+function vdpFault(message: string): Error {
+	return new Error(`VDP fault: ${message}`);
+}
+
+function snapshotFault(message: string): Error {
+	return new Error(`Snapshot fault: ${message}`);
+}
+
 function resolvePositiveSafeInteger(value: number | undefined, label: string): number {
 	if (value === undefined) {
-		throw new Error(`[Runtime] ${label} is required.`);
+		throw runtimeFault(`${label} is required.`);
 	}
 	if (!Number.isSafeInteger(value) || value <= 0) {
-		throw new Error(`[Runtime] ${label} must be a positive safe integer.`);
+		throw runtimeFault(`${label} must be a positive safe integer.`);
 	}
 	return value;
 }
@@ -118,7 +130,7 @@ function applyUfpsScaled(ufps: number): number {
 function resolveRenderHeight(value: number | undefined): number {
 	const renderHeight = resolvePositiveSafeInteger(value, 'machine.render_size.height');
 	if (renderHeight <= 0) {
-		throw new Error('[Runtime] machine.render_size.height must be a positive integer.');
+		throw runtimeFault('machine.render_size.height must be a positive integer.');
 	}
 	return renderHeight;
 }
@@ -257,7 +269,7 @@ export async function resumeFromSnapshot(runtime: Runtime, state: RuntimeState):
 	runtimeIde.clearActiveDebuggerPause(runtime);
 	if (!state) {
 		runtime.luaRuntimeFailed = false;
-		throw new Error('[Runtime] Cannot resume from invalid state snapshot.');
+		throw runtimeFault('cannot resume from invalid state snapshot.');
 	}
 	const snapshot: RuntimeState = { ...state, luaRuntimeFailed: false };
 	runtime.interpreter.clearLastFaultEnvironment();
@@ -278,14 +290,18 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 	const binding = params.path;
 	const baseMetadata = runtime.programMetadata;
 	if (!baseMetadata) {
-		throw new Error('[Runtime] Hot reload requires program symbols.');
+		throw runtimeFault('hot reload requires program symbols.');
 	}
 	const interpreter = runtime.interpreter;
 	interpreter.clearLastFaultEnvironment();
 	const chunk = interpreter.compileChunk(params.source, binding);
 	const { modules, modulePaths } = buildModuleChunks(runtime, binding);
+	const baseProgram = runtime.cpu.getProgram();
+	if (!baseProgram) {
+		throw runtimeFault('hot reload requires active program.');
+	}
 	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
-		baseProgram: runtime.cpu.getProgram(),
+		baseProgram,
 		baseMetadata,
 		canonicalization: runtime.canonicalization,
 		optLevel: getRealtimeOptLevel(runtime),
@@ -381,6 +397,7 @@ export function resumeLuaProgramState(runtime: Runtime, snapshot: RuntimeState):
 	}
 	catch (error) {
 		runtimeIde.handleLuaError(runtime, error);
+		throw convertToError(error);
 	}
 	refreshLuaModulesOnResume(runtime, binding);
 	clearNativeMemberCompletionCache();
@@ -504,7 +521,7 @@ export function captureLuaEntryCollection(runtime: Runtime, entries: ReadonlyArr
 			count += 1;
 		}
 		catch (error) {
-			console.warn(`[Runtime] Skipped Lua snapshot entry '${name}':`, error);
+			throw snapshotFault(`failed to serialize Lua entry '${name}': ${convertToError(error).message}`);
 		}
 	}
 	return count > 0 ? { root: snapshotRoot, objects: ctx.objects } : null;
@@ -555,9 +572,7 @@ export function restoreLuaGlobals(runtime: Runtime, globals: LuaEntrySnapshot): 
 			interpreter.setGlobal(name, value);
 		}
 		catch (error) {
-			if ($.debug) {
-				console.warn(`[Runtime] Failed to restore Lua global '${name}':`, error);
-			}
+			throw snapshotFault(`failed to restore Lua global '${name}': ${convertToError(error).message}`);
 		}
 	}
 }
@@ -581,9 +596,7 @@ export function restoreLuaLocals(runtime: Runtime, locals: LuaEntrySnapshot): vo
 			interpreter.assignChunkValue(name, value);
 		}
 		catch (error) {
-			if ($.debug) {
-				console.warn(`[Runtime] Failed to restore Lua local '${name}':`, error);
-			}
+			throw snapshotFault(`failed to restore Lua local '${name}': ${convertToError(error).message}`);
 		}
 	}
 }
@@ -807,21 +820,21 @@ function readPacketF32(reader: PacketWordReader, index: number): number {
 
 function readPacketArgU32(reader: PacketWordReader, cmd: number, index: number): number {
 	if (getVdpPacketArgKind(cmd, index) !== VdpPacketWordKind.U32) {
-		throw new Error(`[VDP] Packet arg ${index} for command ${cmd >>> 0} is not encoded as u32.`);
+		throw vdpFault(`packet arg ${index} for command ${cmd >>> 0} is not encoded as u32.`);
 	}
 	return readPacketU32(reader, index);
 }
 
 function readPacketArgI32(reader: PacketWordReader, cmd: number, index: number): number {
 	if (getVdpPacketArgKind(cmd, index) !== VdpPacketWordKind.U32) {
-		throw new Error(`[VDP] Packet arg ${index} for command ${cmd >>> 0} is not encoded as u32.`);
+		throw vdpFault(`packet arg ${index} for command ${cmd >>> 0} is not encoded as u32.`);
 	}
 	return readPacketI32(reader, index);
 }
 
 function readPacketArgF32(reader: PacketWordReader, cmd: number, index: number): number {
 	if (getVdpPacketArgKind(cmd, index) !== VdpPacketWordKind.F32) {
-		throw new Error(`[VDP] Packet arg ${index} for command ${cmd >>> 0} is not encoded as f32.`);
+		throw vdpFault(`packet arg ${index} for command ${cmd >>> 0} is not encoded as f32.`);
 	}
 	return readPacketF32(reader, index);
 }
@@ -915,12 +928,12 @@ function processVdpCommandCore(runtime: Runtime, params: {
 			assertVdpPacketArgWords(params.cmd, params.argWords);
 			const tileCount = readPacketArgU32(params.argReader, params.cmd, 0);
 			if (tileCount > params.payloadWords) {
-				throw new Error(`[VDP] Tile payload underrun (${tileCount} > ${params.payloadWords}).`);
+				throw vdpFault(`tile payload underrun (${tileCount} > ${params.payloadWords}).`);
 			}
 			const cols = readPacketArgI32(params.argReader, params.cmd, 1);
 			const rows = readPacketArgI32(params.argReader, params.cmd, 2);
 			if (tileCount !== cols * rows) {
-				throw new Error(`[VDP] Tile payload size mismatch (${tileCount} != ${cols * rows}).`);
+				throw vdpFault(`tile payload size mismatch (${tileCount} != ${cols * rows}).`);
 			}
 			if (params.payloadReader.kind === 'memory') {
 				const payloadReader = params.payloadReader as MemoryPacketWordReader;
@@ -959,7 +972,7 @@ function processVdpCommandCore(runtime: Runtime, params: {
 			break;
 		}
 		default:
-			throw new Error(`Unknown IO command: ${params.cmd}.`);
+			throw vdpFault(`unknown I/O command ${params.cmd}.`);
 	}
 }
 
@@ -999,7 +1012,7 @@ export function processVdpBufferedCommand(runtime: Runtime, params: {
 export function resolveProgramAssetSource(runtime: Runtime): RawAssetSource {
 	const source = runtime.isEngineProgramActive() ? runtime.engineAssetSource : runtime.cartAssetSource;
 	if (!source) {
-		throw new Error('[Runtime] Program asset source not configured.');
+		throw runtimeFault('program asset source not configured.');
 	}
 	return source;
 }
@@ -1016,12 +1029,12 @@ export function shouldBootLuaProgramFromSources(runtime: Runtime): boolean {
 export function resolveProgramAssetSourceFor(runtime: Runtime, source: 'engine' | 'cart'): RawAssetSource {
 	if (source === 'engine') {
 		if (!runtime.engineAssetSource) {
-			throw new Error('[Runtime] Engine asset source is not configured.');
+			throw runtimeFault('engine asset source is not configured.');
 		}
 		return runtime.engineAssetSource;
 	}
 	if (!runtime.cartAssetSource) {
-		throw new Error('[Runtime] Cart asset source is not configured.');
+		throw runtimeFault('cart asset source is not configured.');
 	}
 	return runtime.cartAssetSource;
 }
@@ -1030,7 +1043,7 @@ export function loadProgramAssetsForSource(runtime: Runtime, source: 'engine' | 
 	const assetSource = resolveProgramAssetSourceFor(runtime, source);
 	const programEntry = assetSource.getEntry(PROGRAM_ASSET_ID);
 	if (!programEntry) {
-		throw new Error('[Runtime] Program asset not found.');
+		throw runtimeFault('program asset not found.');
 	}
 	const program = decodeProgramAsset(assetSource.getBytes(programEntry));
 	const symbolsEntry = assetSource.getEntry(PROGRAM_SYMBOLS_ASSET_ID);
@@ -1125,7 +1138,7 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 } {
 	const entryAsset = runtime.cartLuaSources.path2lua[runtime.cartLuaSources.entry_path];
 	if (!entryAsset) {
-		throw new Error('[Runtime] Cannot prepare cart boot: entry Lua source is missing.');
+		throw runtimeFault('cannot prepare cart boot: entry Lua source is missing.');
 	}
 	const entryPath = entryAsset.source_path;
 	const entrySource = resourceSourceForChunk(runtime, entryPath);
@@ -1253,7 +1266,7 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 	}
 	const path = entryAsset.source_path;
 	if (!path || path.length === 0) {
-		throw new Error('[Runtime] Cannot boot Lua program: entry asset has no path name.');
+		throw runtimeFault('cannot boot Lua program: entry asset has no path name.');
 	}
 
 	runtime._luaPath = path;
@@ -1469,6 +1482,9 @@ export function buildConsoleMetadata(baseProgram: Program): ProgramMetadata {
 export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	const chunk = runtime.interpreter.compileChunk(source, 'console');
 	const currentProgram = runtime.cpu.getProgram();
+	if (!currentProgram) {
+		throw runtimeFault('console execution requires active program.');
+	}
 	const baseMetadata = runtime.programMetadata ?? runtime.consoleMetadata ?? buildConsoleMetadata(currentProgram);
 	const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, {
 		canonicalization: runtime.canonicalization,

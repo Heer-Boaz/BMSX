@@ -1638,7 +1638,7 @@ class SemanticBuilder {
 			return null;
 		}
 		const calleeName = resolveDirectCallName(callExpression.callee);
-		if (calleeName === 'object') {
+		if (calleeName === 'oget' || calleeName === 'rget') {
 			const objectId = tryExtractStringLiteral(callExpression.arguments[0]);
 			return objectId ? buildObjectHintKey(objectId) : null;
 		}

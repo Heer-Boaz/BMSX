@@ -66,6 +66,8 @@ public:
 	static GLES2Texture* asTexture(TextureHandle handle) { return static_cast<GLES2Texture*>(handle); }
 
 private:
+	void invalidateTextureBindingCache();
+
 	static constexpr i32 kTrackedTextureUnits = 16;
 	FramebufferGetter m_get_framebuffer = nullptr;
 	GLuint m_current_fbo = 0;

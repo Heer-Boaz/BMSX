@@ -195,6 +195,9 @@ export function updateGamePipelineExts(runtime: Runtime): void {
 }
 
 export function updateOverlayAudioSuspension(runtime: Runtime): void {
+	if (!$.sndmaster.isRuntimeAudioReady()) {
+		return;
+	}
 	if (isOverlayActive(runtime)) {
 		$.sndmaster.suspendAll('overlay');
 	} else {

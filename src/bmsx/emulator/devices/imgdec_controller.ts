@@ -6,6 +6,7 @@ import {
 	IMG_STATUS_CLIPPED,
 	IMG_STATUS_DONE,
 	IMG_STATUS_ERROR,
+	IMG_STATUS_REJECTED,
 	IO_IMG_CAP,
 	IO_IMG_CTRL,
 	IO_IMG_DST,
@@ -38,6 +39,10 @@ type ImgDecJob = {
 type ImgDecEntry = AssetEntry | ImageWriteEntry;
 
 const isAssetEntry = (entry: ImgDecEntry): entry is AssetEntry => (entry as AssetEntry).id !== undefined;
+
+function imageDecoderFault(message: string): Error {
+	return new Error(`Image decoder fault: ${message}`);
+}
 
 export class ImgDecController {
 	private readonly gate = taskGate.group('imgdec');
@@ -140,6 +145,8 @@ export class ImgDecController {
 		if ((ctrl & IMG_CTRL_START) !== 0) {
 			if (this.active) {
 				this.memory.writeValue(IO_IMG_CTRL, ctrl & ~IMG_CTRL_START);
+				this.status |= IMG_STATUS_REJECTED;
+				this.memory.writeValue(IO_IMG_STATUS, this.status);
 				return;
 			}
 			const src = (this.memory.readValue(IO_IMG_SRC) as number) >>> 0;
@@ -184,7 +191,7 @@ export class ImgDecController {
 		if (dst === VRAM_SYSTEM_ATLAS_BASE) {
 			return this.memory.getAssetEntry(generateAtlasName(ENGINE_ATLAS_INDEX));
 		}
-		throw new Error(`[ImgDec] Unsupported destination address ${dst}.`);
+		throw imageDecoderFault(`unsupported destination address ${dst}.`);
 	}
 
 	private startJob(params: { buffer: Uint8Array; dst: number; cap: number; src: number; len: number; job: ImgDecJob | null; signalIrq: boolean }): void {
@@ -209,7 +216,7 @@ export class ImgDecController {
 		}
 		const effectiveCap = Math.min(params.cap, entry.capacity);
 		if (effectiveCap === 0) {
-			this.finishError(new Error(`[ImgDec] Invalid destination capacity ${params.cap}.`));
+			this.finishError(imageDecoderFault(`invalid destination capacity ${params.cap}.`));
 			return;
 		}
 		this.pendingCap = effectiveCap;
@@ -271,7 +278,7 @@ export class ImgDecController {
 		this.decodePixels = null;
 		this.dma.enqueueImageCopy(plan, pixels, (result) => {
 			if (result.error) {
-				this.finishError();
+				this.finishError(result.fault);
 				return;
 			}
 			this.finishSuccess(result.clipped);
@@ -317,7 +324,7 @@ export class ImgDecController {
 		}
 		this.signalIrq = false;
 		if (job) {
-			job.reject(error ?? new Error('[ImgDec] Decode failed.'));
+			job.reject(error ?? imageDecoderFault('decode failed.'));
 		}
 	}
 }

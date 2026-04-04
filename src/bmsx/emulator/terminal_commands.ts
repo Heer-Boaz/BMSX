@@ -8,6 +8,7 @@ import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceSt
 import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from './runtime_error_util';
 import type { LuaSourceRecord } from './lua_sources';
 import { RAM_SIZE } from './memory_map';
+import { formatByteSize, lenAndHash } from '../utils/byte_hex_string';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 
@@ -334,11 +335,11 @@ export class TerminalCommandDispatcher {
 		const freeRamBytes = totalRamBytes - usedRamBytes;
 		const usedRamPercent = (usedRamBytes / totalRamBytes) * 100;
 		const lines: string[] = [];
-		lines.push(`Total RAM: ${this.formatByteSize(totalRamBytes)}`);
-		lines.push(`Used RAM: ${this.formatByteSize(usedRamBytes)} (${usedRamPercent.toFixed(1)}%)`);
-		lines.push(`Free RAM: ${this.formatByteSize(freeRamBytes)}`);
-		lines.push(`Base RAM: ${this.formatByteSize(baseRamBytes)}`);
-		lines.push(`Lua heap: ${this.formatByteSize(luaHeapBytes)}`);
+		lines.push(`Total RAM: ${formatByteSize(totalRamBytes)}`);
+		lines.push(`Used RAM: ${formatByteSize(usedRamBytes)} (${usedRamPercent.toFixed(1)}%)`);
+		lines.push(`Free RAM: ${formatByteSize(freeRamBytes)}`);
+		lines.push(`Base RAM: ${formatByteSize(baseRamBytes)}`);
+		lines.push(`Lua heap: ${formatByteSize(luaHeapBytes)}`);
 		return lines;
 	}
 
@@ -434,12 +435,12 @@ export class TerminalCommandDispatcher {
 		const dirtyDiffersFromBase = dirtyEntry !== null && dirtyEntry.contents !== asset.base_src;
 		this.runtime.terminal.appendSystem(`LS -L ${normalizedPath}`);
 		this.runtime.terminal.appendStdout(`cart.updatedAt=${cartUpdatedAt}`);
-		this.runtime.terminal.appendStdout(`cart.src=${this.describeText(asset.src)}`);
-		this.runtime.terminal.appendStdout(`cart.base=${this.describeText(asset.base_src)}`);
+		this.runtime.terminal.appendStdout(`cart.src=${lenAndHash(asset.src)}`);
+		this.runtime.terminal.appendStdout(`cart.base=${lenAndHash(asset.base_src)}`);
 		this.runtime.terminal.appendStdout(`saved.exists=${savedEntry !== null} updatedAt=${savedEntry?.updatedAt ?? 'null'} current=${savedIsCurrent} matchCart=${savedMatchesCart}`);
-		this.runtime.terminal.appendStdout(`saved.value=${savedEntry ? this.describeText(savedEntry.contents) : '<none>'}`);
+		this.runtime.terminal.appendStdout(`saved.value=${savedEntry ? lenAndHash(savedEntry.contents) : '<none>'}`);
 		this.runtime.terminal.appendStdout(`dirty.exists=${dirtyEntry !== null} updatedAt=${dirtyEntry?.updatedAt ?? 'null'} current=${dirtyIsCurrent} matchCart=${dirtyMatchesCart}`);
-		this.runtime.terminal.appendStdout(`dirty.value=${dirtyEntry ? this.describeText(dirtyEntry.contents) : '<none>'}`);
+		this.runtime.terminal.appendStdout(`dirty.value=${dirtyEntry ? lenAndHash(dirtyEntry.contents) : '<none>'}`);
 		this.runtime.terminal.appendStdout(`dirty.diffSaved=${dirtyDiffersFromSaved} dirty.diffBase=${dirtyDiffersFromBase}`);
 		const flags = this.collectWorkspaceEntryFlags([asset]).get(normalizedPath);
 		this.runtime.terminal.appendStdout(`flags: saved=${flags?.hasSaved ?? false} dirty=${flags?.hasDirty ?? false} unsaved=${flags?.hasUnsaved ?? false}`);
@@ -599,35 +600,6 @@ export class TerminalCommandDispatcher {
 		return null;
 	}
 
-	private describeText(text: string): string {
-		return `len=${text.length} hash=${this.hashText(text)}`;
-	}
-
-	// private formatNumberAsHex(n: number, width?: number): string {
-	// 	const hex = n.toString(16).toUpperCase();
-	// 	const padded = width === undefined ? hex : hex.padStart(width, '0');
-	// 	return `${padded}h`;
-	// }
-
-	private formatByteSize(size: number): string {
-		const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-		let i = 0;
-		let n = size;
-		while (n >= 1024 && i < units.length - 1) {
-			n /= 1024;
-			i++;
-		}
-		return i === 0 ? `${size} ${units[0]}` : `${n.toFixed(2)} ${units[i]}`;
-	}
-
-	private hashText(text: string): number {
-		let hash = 2166136261;
-		for (let index = 0; index < text.length; index += 1) {
-			hash ^= text.charCodeAt(index);
-			hash = Math.imul(hash, 16777619);
-		}
-		return hash >>> 0;
-	}
 
 	private parseWorkspaceStoredEntry(raw: string): WorkspaceStoredEntry | null {
 		if (raw === null || raw === undefined) {

@@ -155,6 +155,7 @@ constexpr uint32_t IMG_STATUS_BUSY = 1 << 0;
 constexpr uint32_t IMG_STATUS_DONE = 1 << 1;
 constexpr uint32_t IMG_STATUS_ERROR = 1 << 2;
 constexpr uint32_t IMG_STATUS_CLIPPED = 1 << 3;
+constexpr uint32_t IMG_STATUS_REJECTED = 1 << 4;
 
 constexpr uint32_t VDP_ATLAS_ID_NONE = 0xffffffffu;
 constexpr uint32_t VDP_RD_MODE_RGBA8888 = 0u;

@@ -126,24 +126,6 @@ int utf8_codepoint_count(const std::string& text) {
 	return count;
 }
 
-std::string utf8_slice_by_codepoints(const std::string& text, int startIndex, int endIndex) {
-	if (startIndex > endIndex) {
-		return std::string();
-	}
-	size_t startByte = utf8_byte_index_from_codepoint(text, startIndex);
-	if (startByte >= text.size()) {
-		return std::string();
-	}
-	size_t endByte = utf8_byte_index_from_codepoint(text, endIndex + 1);
-	if (endByte > text.size()) {
-		endByte = text.size();
-	}
-	if (endByte < startByte) {
-		return std::string();
-	}
-	return text.substr(startByte, endByte - startByte);
-}
-
 uint32_t utf8_codepoint_at(const std::string& text, size_t index) {
 	unsigned char c0 = static_cast<unsigned char>(text[index]);
 	if (c0 < 0x80) {
@@ -1549,6 +1531,7 @@ void Runtime::setupBuiltins() {
 	setGlobal("img_status_done", valueNumber(static_cast<double>(IMG_STATUS_DONE)));
 	setGlobal("img_status_error", valueNumber(static_cast<double>(IMG_STATUS_ERROR)));
 	setGlobal("img_status_clipped", valueNumber(static_cast<double>(IMG_STATUS_CLIPPED)));
+	setGlobal("img_status_rejected", valueNumber(static_cast<double>(IMG_STATUS_REJECTED)));
 
 	registerNativeFunction("u32_to_f32", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint32_t bits = static_cast<uint32_t>(asNumber(args.at(0)));
@@ -2056,24 +2039,102 @@ void Runtime::setupBuiltins() {
 		const int maxChars = static_cast<int>(std::floor(asNumber(args.at(1))));
 		const std::string firstPrefix = args.size() > 2 && !isNil(args.at(2)) ? m_cpu.stringPool().toString(asStringId(args.at(2))) : std::string();
 		const std::string nextPrefix = args.size() > 3 && !isNil(args.at(3)) ? m_cpu.stringPool().toString(asStringId(args.at(3))) : firstPrefix;
-		const int textLength = utf8_codepoint_count(text);
 		const int firstPrefixLength = utf8_codepoint_count(firstPrefix);
 		const int nextPrefixLength = utf8_codepoint_count(nextPrefix);
 		std::vector<std::string> lines;
 		std::vector<int> lineMap;
-		int startIndex = 1;
-		bool isFirstLine = true;
-		while (startIndex <= textLength) {
-			const std::string& prefix = isFirstLine ? firstPrefix : nextPrefix;
-			const int available = maxChars - (isFirstLine ? firstPrefixLength : nextPrefixLength);
-			if (available <= 0) {
-				throw BMSX_RUNTIME_ERROR("wrap_text_lines prefix exceeds max_chars.");
+		if (!text.empty()) {
+			const auto isWrapWhitespace = [](const std::string& codepoint) {
+				return codepoint == " " || codepoint == "\t";
+			};
+			const auto splitCodepoints = [](const std::string& value) {
+				std::vector<std::string> codepoints;
+				codepoints.reserve(static_cast<size_t>(utf8_codepoint_count(value)));
+				size_t index = 0;
+				while (index < value.size()) {
+					const size_t next = utf8_next_index(value, index);
+					codepoints.push_back(value.substr(index, next - index));
+					index = next;
+				}
+				return codepoints;
+			};
+			size_t lineStart = 0;
+			int logicalLineIndex = 1;
+			bool isFirstOutputLine = true;
+			while (lineStart <= text.size()) {
+				const size_t newline = text.find('\n', lineStart);
+				const std::string logicalLine = newline == std::string::npos
+					? text.substr(lineStart)
+					: text.substr(lineStart, newline - lineStart);
+				const std::vector<std::string> codepoints = splitCodepoints(logicalLine);
+				if (codepoints.empty()) {
+					const std::string& prefix = isFirstOutputLine ? firstPrefix : nextPrefix;
+					const int available = maxChars - (isFirstOutputLine ? firstPrefixLength : nextPrefixLength);
+					if (available <= 0) {
+						throw BMSX_RUNTIME_ERROR("wrap_text_lines prefix exceeds max_chars.");
+					}
+					lines.push_back(prefix);
+					lineMap.push_back(logicalLineIndex);
+					isFirstOutputLine = false;
+				} else {
+					size_t startIndex = 0;
+					while (startIndex < codepoints.size()) {
+						const std::string& prefix = isFirstOutputLine ? firstPrefix : nextPrefix;
+						const int available = maxChars - (isFirstOutputLine ? firstPrefixLength : nextPrefixLength);
+						if (available <= 0) {
+							throw BMSX_RUNTIME_ERROR("wrap_text_lines prefix exceeds max_chars.");
+						}
+						if (static_cast<int>(codepoints.size() - startIndex) <= available) {
+							std::string wrapped = prefix;
+							for (size_t index = startIndex; index < codepoints.size(); ++index) {
+								wrapped += codepoints[index];
+							}
+							lines.push_back(std::move(wrapped));
+							lineMap.push_back(logicalLineIndex);
+							isFirstOutputLine = false;
+							break;
+						}
+						size_t breakIndex = std::string::npos;
+						const size_t limit = startIndex + static_cast<size_t>(available);
+						for (size_t index = startIndex; index < limit; ++index) {
+							if (isWrapWhitespace(codepoints[index])) {
+								breakIndex = index;
+							}
+						}
+						if (breakIndex != std::string::npos && breakIndex > startIndex) {
+							size_t endIndex = breakIndex;
+							while (endIndex > startIndex && isWrapWhitespace(codepoints[endIndex - 1])) {
+								endIndex -= 1;
+							}
+							std::string wrapped = prefix;
+							for (size_t index = startIndex; index < endIndex; ++index) {
+								wrapped += codepoints[index];
+							}
+							lines.push_back(std::move(wrapped));
+							lineMap.push_back(logicalLineIndex);
+							startIndex = breakIndex + 1;
+							while (startIndex < codepoints.size() && isWrapWhitespace(codepoints[startIndex])) {
+								startIndex += 1;
+							}
+							isFirstOutputLine = false;
+							continue;
+						}
+						std::string wrapped = prefix;
+						for (size_t index = startIndex; index < limit; ++index) {
+							wrapped += codepoints[index];
+						}
+						lines.push_back(std::move(wrapped));
+						lineMap.push_back(logicalLineIndex);
+						startIndex = limit;
+						isFirstOutputLine = false;
+					}
+				}
+				if (newline == std::string::npos) {
+					break;
+				}
+				lineStart = newline + 1;
+				logicalLineIndex += 1;
 			}
-			const int endIndex = std::min(textLength, startIndex + available - 1);
-			lines.push_back(prefix + utf8_slice_by_codepoints(text, startIndex, endIndex));
-			lineMap.push_back(1);
-			startIndex = endIndex + 1;
-			isFirstLine = false;
 		}
 		auto* linesTable = m_cpu.createTable(static_cast<int>(lines.size()), 0);
 		for (size_t index = 0; index < lines.size(); ++index) {

@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <vector>
 
@@ -26,7 +27,7 @@ public:
 	void tryStartIo();
 	bool hasPendingVdpSubmit() const;
 	void setChannelBudgets(uint32_t isoBytesPerTick, uint32_t bulkBytesPerTick);
-	void enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped)> onComplete);
+	void enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete);
 	void reset();
 
 private:
@@ -37,6 +38,7 @@ private:
 		uint32_t written = 0;
 		bool clipped = false;
 		bool error = false;
+		std::exception_ptr fault = nullptr;
 
 			uint32_t src = 0;
 			uint32_t dst = 0;
@@ -48,7 +50,7 @@ private:
 		uint32_t row = 0;
 		uint32_t rowOffset = 0;
 		bool vramTarget = false;
-		std::function<void(bool error, bool clipped)> onComplete;
+		std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete;
 	};
 
 	struct DmaChannelState {

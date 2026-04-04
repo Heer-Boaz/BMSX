@@ -43,7 +43,6 @@ constexpr u8 IMPLICIT_FRAME_CLEAR_RGBA[4] = {0u, 0u, 0u, 255u};
 #if BMSX_ENABLE_GLES2
 constexpr float VDP_GLES2_PRIMARY_ATLAS_ID = 0.0f;
 constexpr float VDP_GLES2_SECONDARY_ATLAS_ID = 1.0f;
-constexpr float VDP_GLES2_SOLID_ATLAS_ID = 253.0f;
 constexpr float VDP_GLES2_ENGINE_ATLAS_ID = 254.0f;
 
 struct VdpGles2Vertex {
@@ -86,7 +85,6 @@ struct VdpGles2Runtime {
 	GLint uniformTexture0 = -1;
 	GLint uniformTexture1 = -1;
 	GLint uniformTexture2 = -1;
-	GLint uniformTexture3 = -1;
 	GLuint vertexBuffer = 0;
 	GLuint frameBufferObject = 0;
 	GLuint attachedColorTextureId = 0;
@@ -98,6 +96,13 @@ struct VdpGles2Runtime {
 };
 
 VdpGles2Runtime g_vdpGles2Runtime{};
+inline std::runtime_error vdpFault(const std::string& message) {
+	return BMSX_RUNTIME_ERROR("VDP fault: " + message);
+}
+
+inline std::runtime_error vdpBackendFault(const std::string& message) {
+	return BMSX_RUNTIME_ERROR("VDP backend fault: " + message);
+}
 
 } // namespace
 
@@ -179,7 +184,7 @@ varying vec4 v_color;
 varying float v_atlas_id;
 
 void main() {
-	vec2 clipSpace = ((a_position / u_logical_size) * 2.0 - 1.0) * vec2(1.0, -1.0);
+	vec2 clipSpace = (a_position / u_logical_size) * 2.0 - 1.0;
 	gl_Position = vec4(clipSpace, 0.0, 1.0);
 	v_texcoord = a_uv;
 	v_color = a_color;
@@ -193,7 +198,6 @@ precision mediump float;
 uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
 uniform sampler2D u_texture2;
-uniform sampler2D u_texture3;
 
 varying vec2 v_texcoord;
 varying vec4 v_color;
@@ -203,12 +207,10 @@ void main() {
 	vec4 texColor;
 	if (v_atlas_id < 0.5) {
 		texColor = texture2D(u_texture0, v_texcoord);
-	} else if (v_atlas_id < 1.5) {
-		texColor = texture2D(u_texture1, v_texcoord);
 	} else if (v_atlas_id > 253.5) {
 		texColor = texture2D(u_texture2, v_texcoord);
 	} else {
-		texColor = texture2D(u_texture3, v_texcoord);
+		texColor = texture2D(u_texture1, v_texcoord);
 	}
 	gl_FragColor = texColor * v_color;
 }
@@ -228,7 +230,7 @@ GLuint compileVdpGles2Shader(GLenum type, const char* source) {
 	std::string log(static_cast<size_t>(std::max(logLength, 1)), '\0');
 	glGetShaderInfoLog(shader, logLength, nullptr, log.data());
 	glDeleteShader(shader);
-	throw BMSX_RUNTIME_ERROR("[VDP][GLES2] shader compile failed: " + log);
+	throw vdpBackendFault("shader compile failed: " + log);
 }
 
 GLuint linkVdpGles2Program(GLuint vs, GLuint fs) {
@@ -248,7 +250,7 @@ GLuint linkVdpGles2Program(GLuint vs, GLuint fs) {
 	std::string log(static_cast<size_t>(std::max(logLength, 1)), '\0');
 	glGetProgramInfoLog(program, logLength, nullptr, log.data());
 	glDeleteProgram(program);
-	throw BMSX_RUNTIME_ERROR("[VDP][GLES2] program link failed: " + log);
+	throw vdpBackendFault("program link failed: " + log);
 }
 
 f32 smoothstep01(f32 value) {
@@ -315,7 +317,10 @@ void ensureVdpGles2Runtime(OpenGLES2Backend* backend) {
 	state.uniformTexture0 = glGetUniformLocation(state.program, "u_texture0");
 	state.uniformTexture1 = glGetUniformLocation(state.program, "u_texture1");
 	state.uniformTexture2 = glGetUniformLocation(state.program, "u_texture2");
-	state.uniformTexture3 = glGetUniformLocation(state.program, "u_texture3");
+	if (state.attribPosition < 0 || state.attribUv < 0 || state.attribAtlasId < 0 || state.attribColor < 0
+		|| state.uniformLogicalSize < 0 || state.uniformTexture0 < 0 || state.uniformTexture1 < 0 || state.uniformTexture2 < 0) {
+		throw vdpBackendFault("missing shader attribute or uniform location.");
+	}
 	glGenBuffers(1, &state.vertexBuffer);
 	glGenFramebuffers(1, &state.frameBufferObject);
 	state.whiteTexture = backend->createSolidTexture2D(1, 1, Color{1.0f, 1.0f, 1.0f, 1.0f});
@@ -323,7 +328,6 @@ void ensureVdpGles2Runtime(OpenGLES2Backend* backend) {
 	glUniform1i(state.uniformTexture0, 0);
 	glUniform1i(state.uniformTexture1, 1);
 	glUniform1i(state.uniformTexture2, 2);
-	glUniform1i(state.uniformTexture3, 3);
 }
 
 TextureHandle ensureVdpGles2CopySnapshot(OpenGLES2Backend* backend, i32 width, i32 height) {
@@ -332,7 +336,6 @@ TextureHandle ensureVdpGles2CopySnapshot(OpenGLES2Backend* backend, i32 width, i
 		return state.copySnapshotTexture;
 	}
 	TextureParams params;
-	params.srgb = true;
 	if (!state.copySnapshotTexture) {
 		state.copySnapshotTexture = backend->createTexture(nullptr, width, height, params);
 	} else {
@@ -352,7 +355,7 @@ void bindVdpGles2Target(const VdpGles2Host& host) {
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, renderTexture->id, 0);
 		const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 		if (status != GL_FRAMEBUFFER_COMPLETE) {
-			throw BMSX_RUNTIME_ERROR("[VDP][GLES2] framebuffer incomplete.");
+			throw vdpBackendFault("framebuffer incomplete.");
 		}
 		state.attachedColorTextureId = renderTexture->id;
 	}
@@ -432,7 +435,7 @@ void VdpGles2Blitter::appendLineQuadVertices(
 	const f32 length = std::hypot(dx, dy);
 	if (length == 0.0f) {
 		const f32 half = thickness * 0.5f;
-		appendAxisAlignedQuadVertices(vertices, command.x0 - half, command.y0 - half, thickness, thickness, 0.0f, 0.0f, 1.0f, 1.0f, VDP_GLES2_SOLID_ATLAS_ID, color);
+		appendAxisAlignedQuadVertices(vertices, command.x0 - half, command.y0 - half, thickness, thickness, 0.0f, 0.0f, 1.0f, 1.0f, VDP_GLES2_PRIMARY_ATLAS_ID, color);
 		return;
 	}
 	const f32 tangentX = dx / length;
@@ -456,7 +459,7 @@ void VdpGles2Blitter::appendLineQuadVertices(
 		0.0f,
 		1.0f,
 		1.0f,
-		VDP_GLES2_SOLID_ATLAS_ID,
+		VDP_GLES2_PRIMARY_ATLAS_ID,
 		color
 	);
 }
@@ -550,26 +553,24 @@ void bindVdpVertexLayout(const VdpGles2Runtime& state) {
 	glVertexAttribPointer(state.attribColor, 4, GL_FLOAT, GL_FALSE, sizeof(VdpGles2Vertex), reinterpret_cast<const void*>(offsetof(VdpGles2Vertex, r)));
 }
 
-void bindVdpStandardTextures(const VdpGles2Host& host) {
+enum class VdpDrawMode { None, Solid, Atlas };
+
+void bindVdpSolidMode(const VdpGles2Host& host, VdpDrawMode& boundMode) {
+	if (boundMode == VdpDrawMode::Solid) return;
+	host.backend->setActiveTextureUnit(0);
+	host.backend->bindTexture2D(g_vdpGles2Runtime.whiteTexture);
+	boundMode = VdpDrawMode::Solid;
+}
+
+void bindVdpAtlasMode(const VdpGles2Host& host, VdpDrawMode& boundMode) {
+	if (boundMode == VdpDrawMode::Atlas) return;
 	host.backend->setActiveTextureUnit(0);
 	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_PRIMARY].texture);
 	host.backend->setActiveTextureUnit(1);
 	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_SECONDARY].texture);
 	host.backend->setActiveTextureUnit(2);
 	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_ENGINE].texture);
-	host.backend->setActiveTextureUnit(3);
-	host.backend->bindTexture2D(g_vdpGles2Runtime.whiteTexture);
-}
-
-void bindVdpSnapshotTextures(const VdpGles2Host& host, TextureHandle snapshotTexture) {
-	host.backend->setActiveTextureUnit(0);
-	host.backend->bindTexture2D(snapshotTexture);
-	host.backend->setActiveTextureUnit(1);
-	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_SECONDARY].texture);
-	host.backend->setActiveTextureUnit(2);
-	host.backend->bindTexture2D(host.surfaces[VDP_RD_SURFACE_ENGINE].texture);
-	host.backend->setActiveTextureUnit(3);
-	host.backend->bindTexture2D(g_vdpGles2Runtime.whiteTexture);
+	boundMode = VdpDrawMode::Atlas;
 }
 
 void setupVdpDrawState(const VdpGles2Host& host) {
@@ -619,16 +620,16 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 	prepareSurface(VDP_RD_SURFACE_SECONDARY, VDP_GLES2_SECONDARY_ATLAS_ID);
 	prepareSurface(VDP_RD_SURFACE_FRAMEBUFFER, VDP_GLES2_PRIMARY_ATLAS_ID);
 	if (!host.renderTexture) {
-		throw BMSX_RUNTIME_ERROR("[VDP][GLES2] Missing framebuffer render texture.");
+		throw vdpBackendFault("missing framebuffer render texture.");
 	}
 	if (!host.surfaces[VDP_RD_SURFACE_ENGINE].texture) {
-		throw BMSX_RUNTIME_ERROR("[VDP][GLES2] Missing engine atlas texture.");
+		throw vdpBackendFault("missing engine atlas texture.");
 	}
 	if (!host.surfaces[VDP_RD_SURFACE_PRIMARY].texture) {
-		throw BMSX_RUNTIME_ERROR("[VDP][GLES2] Missing primary atlas texture.");
+		throw vdpBackendFault("missing primary atlas texture.");
 	}
 	if (!host.surfaces[VDP_RD_SURFACE_SECONDARY].texture) {
-		throw BMSX_RUNTIME_ERROR("[VDP][GLES2] Missing secondary atlas texture.");
+		throw vdpBackendFault("missing secondary atlas texture.");
 	}
 	auto clearFrame = [&](const VDP::FrameBufferColor& color) {
 		bindVdpGles2Target(host);
@@ -647,34 +648,13 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 			return;
 		}
 		static std::vector<const VDP::BlitterCommand*> sortedCommands;
-		state.vertices.clear();
 		sortedCommands.clear();
-		size_t quadCount = 0;
 		for (size_t index = start; index < end; ++index) {
 			const auto& command = queue[index];
 			if (command.type == VDP::BlitterCommandType::Clear || command.type == VDP::BlitterCommandType::CopyRect) {
 				continue;
 			}
 			sortedCommands.push_back(&command);
-			switch (command.type) {
-				case VDP::BlitterCommandType::Blit:
-				case VDP::BlitterCommandType::FillRect:
-				case VDP::BlitterCommandType::DrawLine:
-					quadCount += 1u;
-					break;
-				case VDP::BlitterCommandType::GlyphRun:
-					quadCount += command.glyphs.size();
-					if (command.backgroundColor.has_value()) {
-						quadCount += command.glyphs.size();
-					}
-					break;
-				case VDP::BlitterCommandType::TileRun:
-					quadCount += command.tiles.size();
-					break;
-				case VDP::BlitterCommandType::Clear:
-				case VDP::BlitterCommandType::CopyRect:
-					break;
-			}
 		}
 		if (sortedCommands.empty()) {
 			return;
@@ -692,11 +672,27 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 				return a->seq < b->seq;
 			}
 		);
-		state.vertices.reserve(quadCount * 6u);
+		setupVdpDrawState(host);
+		VdpDrawMode boundMode = VdpDrawMode::None;
+		auto flushVertices = [&]() {
+			if (state.vertices.empty()) {
+				return;
+			}
+			glBufferData(
+				GL_ARRAY_BUFFER,
+				static_cast<GLsizeiptr>(state.vertices.size() * sizeof(VdpGles2Vertex)),
+				state.vertices.data(),
+				GL_STREAM_DRAW
+			);
+			glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(state.vertices.size()));
+			state.vertices.clear();
+		};
 		const VDP::FrameBufferColor white{255u, 255u, 255u, 255u};
 		for (const VDP::BlitterCommand* command : sortedCommands) {
 			switch (command->type) {
-				case VDP::BlitterCommandType::Blit:
+				case VDP::BlitterCommandType::Blit: {
+					bindVdpAtlasMode(host, boundMode);
+					state.vertices.clear();
 					appendBlitVertices(
 						host,
 						state.vertices,
@@ -705,8 +701,12 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 						host.surfaces[command->source.surfaceId].atlasId,
 						command->color
 					);
+					flushVertices();
 					break;
+				}
 				case VDP::BlitterCommandType::FillRect: {
+					bindVdpSolidMode(host, boundMode);
+					state.vertices.clear();
 					f32 left = std::round(command->x0);
 					f32 top = std::round(command->y0);
 					f32 right = std::round(command->x1);
@@ -728,17 +728,24 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 							0.0f,
 							1.0f,
 							1.0f,
-							VDP_GLES2_SOLID_ATLAS_ID,
+							VDP_GLES2_PRIMARY_ATLAS_ID,
 							command->color
 						);
 					}
+					flushVertices();
 					break;
 				}
-				case VDP::BlitterCommandType::DrawLine:
+				case VDP::BlitterCommandType::DrawLine: {
+					bindVdpSolidMode(host, boundMode);
+					state.vertices.clear();
 					appendLineQuadVertices(state.vertices, *command, command->color);
+					flushVertices();
 					break;
-				case VDP::BlitterCommandType::GlyphRun:
+				}
+				case VDP::BlitterCommandType::GlyphRun: {
 					if (command->backgroundColor.has_value()) {
+						bindVdpSolidMode(host, boundMode);
+						state.vertices.clear();
 						for (const auto& glyph : command->glyphs) {
 							appendAxisAlignedQuadVertices(
 								state.vertices,
@@ -750,51 +757,68 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 								0.0f,
 								1.0f,
 								1.0f,
-								VDP_GLES2_SOLID_ATLAS_ID,
+								VDP_GLES2_PRIMARY_ATLAS_ID,
 								*command->backgroundColor
 							);
 						}
+						flushVertices();
 					}
+					bindVdpAtlasMode(host, boundMode);
+					state.vertices.clear();
 					for (const auto& glyph : command->glyphs) {
-						appendBlitVertices(
-							host,
+						const auto& surface = host.surfaces[glyph.surfaceId];
+						const f32 u0 = static_cast<f32>(glyph.srcX) * surface.invWidth;
+						const f32 v0 = static_cast<f32>(glyph.srcY) * surface.invHeight;
+						const f32 u1 = static_cast<f32>(glyph.srcX + glyph.width) * surface.invWidth;
+						const f32 v1 = static_cast<f32>(glyph.srcY + glyph.height) * surface.invHeight;
+						appendAxisAlignedQuadVertices(
 							state.vertices,
-							*command,
-							glyph,
-							host.surfaces[glyph.surfaceId].atlasId,
+							std::round(glyph.dstX),
+							std::round(glyph.dstY),
+							static_cast<f32>(glyph.width),
+							static_cast<f32>(glyph.height),
+							u0,
+							v0,
+							u1,
+							v1,
+							surface.atlasId,
 							command->color
 						);
 					}
+					flushVertices();
 					break;
-				case VDP::BlitterCommandType::TileRun:
+				}
+				case VDP::BlitterCommandType::TileRun: {
+					bindVdpAtlasMode(host, boundMode);
+					state.vertices.clear();
 					for (const auto& tile : command->tiles) {
-						appendBlitVertices(
-							host,
+						const auto& surface = host.surfaces[tile.surfaceId];
+						const f32 u0 = static_cast<f32>(tile.srcX) * surface.invWidth;
+						const f32 v0 = static_cast<f32>(tile.srcY) * surface.invHeight;
+						const f32 u1 = static_cast<f32>(tile.srcX + tile.width) * surface.invWidth;
+						const f32 v1 = static_cast<f32>(tile.srcY + tile.height) * surface.invHeight;
+						appendAxisAlignedQuadVertices(
 							state.vertices,
-							*command,
-							tile,
-							host.surfaces[tile.surfaceId].atlasId,
+							std::round(tile.dstX),
+							std::round(tile.dstY),
+							static_cast<f32>(tile.width),
+							static_cast<f32>(tile.height),
+							u0,
+							v0,
+							u1,
+							v1,
+							surface.atlasId,
 							white
 						);
 					}
+					flushVertices();
 					break;
+				}
 				case VDP::BlitterCommandType::Clear:
 				case VDP::BlitterCommandType::CopyRect:
 					break;
 			}
 		}
-		if (state.vertices.empty()) {
-			return;
-		}
-		setupVdpDrawState(host);
-		bindVdpStandardTextures(host);
-		glBufferData(
-			GL_ARRAY_BUFFER,
-			static_cast<GLsizeiptr>(state.vertices.size() * sizeof(VdpGles2Vertex)),
-			state.vertices.data(),
-			GL_STREAM_DRAW
-		);
-		glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(state.vertices.size()));
 	};
 	auto drawCopyRect = [&](const VDP::BlitterCommand& command) {
 		const VDP::FrameBufferColor white{255u, 255u, 255u, 255u};
@@ -816,7 +840,8 @@ bool VdpGles2Blitter::execute(VDP& vdp, const std::vector<VDP::BlitterCommand>& 
 			white
 		);
 		setupVdpDrawState(host);
-		bindVdpSnapshotTextures(host, snapshot);
+		host.backend->setActiveTextureUnit(0);
+		host.backend->bindTexture2D(snapshot);
 		glDisable(GL_BLEND);
 		glBufferData(
 			GL_ARRAY_BUFFER,
@@ -886,7 +911,7 @@ uint32_t skyboxFaceBaseByIndex(size_t index) {
 		case 5: return VRAM_SKYBOX_NEGZ_BASE;
 		default: break;
 	}
-	throw BMSX_RUNTIME_ERROR("[VDP] Skybox face index out of range.");
+	throw vdpFault("skybox face index out of range.");
 }
 
 bool isAtlasName(const std::string& name) {
@@ -1104,20 +1129,20 @@ void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
 	auto& slot = findVramSlot(addr, length);
 	const uint32_t offset = addr - slot.baseAddr;
 	if ((offset & 3u) != 0u || (length & 3u) != 0u) {
-		throw BMSX_RUNTIME_ERROR("[VDP] VRAM writes must be 32-bit aligned.");
+		throw vdpFault("VRAM writes must be 32-bit aligned.");
 	}
 	if (slot.kind == VramSlotKind::Skybox) {
 		return;
 	}
 	auto& entry = m_memory.getAssetEntry(slot.assetId);
 	if (entry.baseStride == 0 || entry.regionW == 0 || entry.regionH == 0) {
-		throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not initialized for writes.");
+		throw vdpFault("VRAM slot not initialized for writes.");
 	}
 	syncVramSlotTextureSize(slot);
 	const uint32_t stride = entry.baseStride;
 	const uint32_t totalBytes = entry.regionH * stride;
 	if (offset + length > totalBytes) {
-		throw BMSX_RUNTIME_ERROR("[VDP] VRAM write exceeds slot bounds.");
+		throw vdpFault("VRAM write exceeds slot bounds.");
 	}
 	auto* texmanager = EngineCore::instance().texmanager();
 	size_t remaining = length;
@@ -1167,7 +1192,7 @@ void VDP::readVram(uint32_t addr, u8* out, size_t length) const {
 	const uint32_t stride = entry.baseStride;
 	const uint32_t totalBytes = entry.regionH * stride;
 	if (offset + length > totalBytes) {
-		throw BMSX_RUNTIME_ERROR("[VDP] VRAM read exceeds slot bounds.");
+		throw vdpFault("VRAM read exceeds slot bounds.");
 	}
 	size_t remaining = length;
 	size_t cursor = 0;
@@ -1244,10 +1269,10 @@ void VDP::resetBuildFrameState() {
 
 void VDP::enqueueBlitterCommand(BlitterCommand&& command) {
 	if (!m_buildFrameOpen) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] No submitted frame is open.");
+		throw vdpFault("no submitted frame is open.");
 	}
 	if (m_buildBlitterQueue.size() >= BLITTER_FIFO_CAPACITY) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Blitter FIFO overflow (4096 commands).");
+		throw vdpFault("blitter FIFO overflow (4096 commands).");
 	}
 	m_buildFrameCost += command.renderCost;
 	m_buildBlitterQueue.push_back(std::move(command));
@@ -1279,6 +1304,11 @@ void VDP::swapFrameBufferPages() {
 	auto* view = EngineCore::instance().view();
 	view->textures[FRAMEBUFFER_TEXTURE_KEY] = texmanager->getTextureByUri(FRAMEBUFFER_TEXTURE_KEY);
 	view->textures[FRAMEBUFFER_RENDER_TEXTURE_KEY] = texmanager->getTextureByUri(FRAMEBUFFER_RENDER_TEXTURE_KEY);
+	
+	// CRITICAL: After swapping texture handles, invalidate the FBO attachment cache
+	// so that the next render pass re-attaches to the correct (new) render texture
+	g_vdpGles2Runtime.attachedColorTextureId = 0;
+	
 	auto& renderSlot = getVramSlotByTextureKey(FRAMEBUFFER_RENDER_TEXTURE_KEY);
 	std::swap(renderSlot.cpuReadback, m_displayFrameBufferCpuReadback);
 	invalidateReadCache(VDP_RD_SURFACE_FRAMEBUFFER);
@@ -1296,7 +1326,7 @@ void VDP::syncRenderFrameBufferToDisplayPage() {
 
 void VDP::beginSubmittedFrame() {
 	if (m_buildFrameOpen) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Submitted frame already open.");
+		throw vdpFault("submitted frame already open.");
 	}
 	resetBuildFrameState();
 	m_blitterSequence = 0u;
@@ -1309,13 +1339,13 @@ void VDP::cancelSubmittedFrame() {
 
 void VDP::assignBuildToSlot(bool active) {
 	if (!m_buildFrameOpen) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] No submitted frame is open.");
+		throw vdpFault("no submitted frame is open.");
 	}
 	auto& targetQueue = active ? m_activeBlitterQueue : m_pendingBlitterQueue;
 	if (!targetQueue.empty()) {
-		throw BMSX_RUNTIME_ERROR(active
-			? "[BmsxVDP] active frame queue is not empty."
-			: "[BmsxVDP] pending frame queue is not empty.");
+		throw vdpFault(active
+			? "active frame queue is not empty."
+			: "pending frame queue is not empty.");
 	}
 	targetQueue.swap(m_buildBlitterQueue);
 	const int frameCost = (!targetQueue.empty() && targetQueue.front().type != BlitterCommandType::Clear)
@@ -1344,7 +1374,7 @@ void VDP::assignBuildToSlot(bool active) {
 
 void VDP::sealSubmittedFrame() {
 	if (!m_buildFrameOpen) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] No submitted frame is open.");
+		throw vdpFault("no submitted frame is open.");
 	}
 	if (!m_activeFrameOccupied) {
 		assignBuildToSlot(true);
@@ -1354,7 +1384,7 @@ void VDP::sealSubmittedFrame() {
 		assignBuildToSlot(false);
 		return;
 	}
-	throw BMSX_RUNTIME_ERROR("[BmsxVDP] Submit slot busy.");
+	throw vdpFault("submit slot busy.");
 }
 
 void VDP::promotePendingFrame() {
@@ -1460,7 +1490,7 @@ void VDP::initializeFrameBufferSurface() {
 		);
 	const uint32_t size = width * height * 4u;
 	if (size > entry.capacity) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Framebuffer surface exceeds VRAM capacity.");
+		throw vdpFault("framebuffer surface exceeds VRAM capacity.");
 	}
 	entry.baseSize = size;
 	entry.baseStride = width * 4u;
@@ -1495,13 +1525,16 @@ void VDP::resetFrameBufferPriority() {
 VDP::BlitterSource VDP::resolveBlitterSource(u32 handle) const {
 	const auto& entry = m_memory.getAssetEntryByHandle(handle);
 	if (entry.type != Memory::AssetType::Image) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] Asset handle is not an image.");
+		throw vdpFault("asset handle is not an image.");
 	}
 	if ((entry.flags & ASSET_FLAG_VIEW) != 0u) {
 		const auto& base = m_memory.getAssetEntryByHandle(entry.ownerIndex);
 		const auto slotIt = std::find_if(m_vramSlots.begin(), m_vramSlots.end(), [this, &base](const VramSlot& candidate) {
 			return candidate.kind == VramSlotKind::Asset && m_memory.getAssetEntry(candidate.assetId).ownerIndex == base.ownerIndex;
 		});
+		if (slotIt == m_vramSlots.end()) {
+			throw vdpFault("VIEW asset handle not found in VRAM slots.");
+		}
 		const auto& slot = *slotIt;
 		return BlitterSource{
 			slot.surfaceId,
@@ -1514,6 +1547,9 @@ VDP::BlitterSource VDP::resolveBlitterSource(u32 handle) const {
 	const auto slotIt = std::find_if(m_vramSlots.begin(), m_vramSlots.end(), [this, &entry](const VramSlot& candidate) {
 		return candidate.kind == VramSlotKind::Asset && m_memory.getAssetEntry(candidate.assetId).ownerIndex == entry.ownerIndex;
 	});
+	if (slotIt == m_vramSlots.end()) {
+		throw vdpFault("asset handle not found in VRAM slots.");
+	}
 	const auto& slot = *slotIt;
 	return BlitterSource{
 		slot.surfaceId,
@@ -1666,7 +1702,7 @@ void VDP::enqueueDrawPoly(const std::vector<f32>& points, f32 z, const Color& co
 
 void VDP::enqueueGlyphRun(const std::string& text, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer) {
 	if (!font) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] No font available for glyph rendering.");
+		throw vdpFault("no font available for glyph rendering.");
 	}
 	BlitterCommand command;
 	command.type = BlitterCommandType::GlyphRun;
@@ -1760,7 +1796,7 @@ void VDP::enqueueGlyphRun(const std::string& text, f32 x, f32 y, f32 z, BFont* f
 
 void VDP::enqueueGlyphRun(const std::vector<std::string>& lines, f32 x, f32 y, f32 z, BFont* font, const Color& color, const std::optional<Color>& backgroundColor, i32 start, i32 end, Layer2D layer) {
 	if (!font) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] No font available for glyph rendering.");
+		throw vdpFault("no font available for glyph rendering.");
 	}
 	BlitterCommand command;
 	command.type = BlitterCommandType::GlyphRun;
@@ -1892,7 +1928,7 @@ void VDP::enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i3
 			}
 			const BlitterSource source = resolveBlitterSource(handle);
 			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
-				throw BMSX_RUNTIME_ERROR("[BmsxVDP] enqueueTileRun tile size mismatch.");
+				throw vdpFault("enqueueTileRun tile size mismatch.");
 			}
 			const i32 tileX = dstX + (col * tileW) - srcClipX;
 			const i32 tileY = dstY + (row * tileH) - srcClipY;
@@ -1934,7 +1970,7 @@ void VDP::enqueueTileRun(const std::vector<u32>& handles, i32 cols, i32 rows, i3
 
 void VDP::enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
 	if (tileCount != static_cast<uint32_t>(cols * rows)) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] enqueuePayloadTileRun size mismatch.");
+		throw vdpFault("enqueuePayloadTileRun size mismatch.");
 	}
 	const i32 frameWidth = static_cast<i32>(m_frameBufferWidth);
 	const i32 frameHeight = static_cast<i32>(m_frameBufferHeight);
@@ -1985,7 +2021,7 @@ void VDP::enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 co
 			}
 			const BlitterSource source = resolveBlitterSource(handle);
 			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
-				throw BMSX_RUNTIME_ERROR("[BmsxVDP] enqueuePayloadTileRun tile size mismatch.");
+				throw vdpFault("enqueuePayloadTileRun tile size mismatch.");
 			}
 			const i32 tileX = dstX + (col * tileW) - srcClipX;
 			const i32 tileY = dstY + (row * tileH) - srcClipY;
@@ -2027,7 +2063,7 @@ void VDP::enqueuePayloadTileRun(uint32_t payloadBase, uint32_t tileCount, i32 co
 
 void VDP::enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount, i32 cols, i32 rows, i32 tileW, i32 tileH, i32 originX, i32 originY, i32 scrollX, i32 scrollY, f32 z, Layer2D layer) {
 	if (tileCount != static_cast<uint32_t>(cols * rows)) {
-		throw BMSX_RUNTIME_ERROR("[BmsxVDP] enqueuePayloadTileRunWords size mismatch.");
+		throw vdpFault("enqueuePayloadTileRunWords size mismatch.");
 	}
 	const i32 frameWidth = static_cast<i32>(m_frameBufferWidth);
 	const i32 frameHeight = static_cast<i32>(m_frameBufferHeight);
@@ -2078,7 +2114,7 @@ void VDP::enqueuePayloadTileRunWords(const u32* payloadWords, uint32_t tileCount
 			}
 			const BlitterSource source = resolveBlitterSource(handle);
 			if (source.width != static_cast<u32>(tileW) || source.height != static_cast<u32>(tileH)) {
-				throw BMSX_RUNTIME_ERROR("[BmsxVDP] enqueuePayloadTileRunWords tile size mismatch.");
+				throw vdpFault("enqueuePayloadTileRunWords tile size mismatch.");
 			}
 			const i32 tileX = dstX + (col * tileW) - srcClipX;
 			const i32 tileY = dstY + (row * tileH) - srcClipY;
@@ -2372,18 +2408,18 @@ void VDP::commitSkyboxImages(const SkyboxImageIds& ids) {
 		const std::string& assetId = *faces[index];
 		auto* asset = EngineCore::instance().resolveImgAsset(assetId);
 		if (!asset) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' not found.");
+			throw vdpFault("skybox image '" + assetId + "' not found.");
 		}
 		if (asset->meta.atlassed) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' must not be atlassed.");
+			throw vdpFault("skybox image '" + assetId + "' must not be atlassed.");
 		}
 		if (!asset->rom.start || !asset->rom.end) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' missing ROM range.");
+			throw vdpFault("skybox image '" + assetId + "' missing ROM range.");
 		}
 		const i32 start = *asset->rom.start;
 		const i32 end = *asset->rom.end;
 		if (end <= start) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' has invalid ROM range.");
+			throw vdpFault("skybox image '" + assetId + "' has invalid ROM range.");
 		}
 		uint32_t base = CART_ROM_BASE;
 		if (asset->rom.payloadId.has_value()) {
@@ -2395,7 +2431,7 @@ void VDP::commitSkyboxImages(const SkyboxImageIds& ids) {
 			} else if (payload == "cart") {
 				base = CART_ROM_BASE;
 			} else {
-				throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' has unsupported payload_id " + payload + ".");
+				throw vdpFault("skybox image '" + assetId + "' has unsupported payload_id " + payload + ".");
 			}
 		}
 		const size_t len = static_cast<size_t>(end - start);
@@ -2444,14 +2480,14 @@ uint32_t VDP::readVdpData() {
 	const uint32_t y = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_RD_Y)));
 	const uint32_t mode = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_RD_MODE)));
 	if (mode != VDP_RD_MODE_RGBA8888) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Unsupported VDP read mode.");
+		throw vdpFault("unsupported VDP read mode.");
 	}
 	const auto& surface = getReadSurface(surfaceId);
 	auto& entry = m_memory.getAssetEntry(surface.assetId);
 	const uint32_t width = entry.regionW;
 	const uint32_t height = entry.regionH;
 	if (x >= width || y >= height) {
-		throw BMSX_RUNTIME_ERROR("[VDP] VDP read out of bounds.");
+		throw vdpFault("VDP read out of bounds.");
 	}
 	if (m_readBudgetBytes < 4u) {
 		m_readOverflow = true;
@@ -2613,12 +2649,12 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	}
 
 	if (engineAtlasAsset->meta.width <= 0 || engineAtlasAsset->meta.height <= 0) {
-		throw BMSX_RUNTIME_ERROR("[VDP] Engine atlas missing dimensions.");
+		throw vdpFault("engine atlas missing dimensions.");
 	}
 	auto setAtlasEntryDimensions = [](Memory::AssetEntry& slotEntry, uint32_t width, uint32_t height) {
 		const uint32_t size = width * height * 4u;
 		if (size > slotEntry.capacity) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Atlas entry '" + slotEntry.id + "' exceeds capacity.");
+			throw vdpFault("atlas entry '" + slotEntry.id + "' exceeds capacity.");
 		}
 		slotEntry.baseSize = size;
 		slotEntry.baseStride = width * 4u;
@@ -2693,11 +2729,11 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 	for (const auto& id : viewAssets) {
 		const auto viewAssetIt = viewAssetById.find(id);
 		if (viewAssetIt == viewAssetById.end()) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Image asset '" + id + "' not found.");
+			throw vdpFault("image asset '" + id + "' not found.");
 		}
 		ImgAsset* imgAsset = viewAssetIt->second;
 		if (!imgAsset->meta.atlassed) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Image asset '" + id + "' expected to be atlassed.");
+			throw vdpFault("image asset '" + id + "' expected to be atlassed.");
 		}
 		const i32 atlasId = imgAsset->meta.atlasid;
 		const auto& tc = imgAsset->meta.texcoords;
@@ -2716,7 +2752,7 @@ void VDP::registerImageAssets(RuntimeAssets& assets, bool keepDecodedData) {
 		} else {
 			const auto atlasNameIt = m_atlasResourceById.find(atlasId);
 			if (atlasNameIt == m_atlasResourceById.end()) {
-				throw BMSX_RUNTIME_ERROR("[VDP] Atlas " + std::to_string(atlasId) + " missing for image '" + id + "'.");
+				throw vdpFault("atlas " + std::to_string(atlasId) + " missing for image '" + id + "'.");
 			}
 			const auto* atlasAsset = assets.getImg(atlasNameIt->second);
 			atlasWidth = atlasAsset->meta.width;
@@ -2892,14 +2928,14 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 		}
 		const auto atlasIt = m_atlasResourceById.find(atlasId);
 		if (atlasIt == m_atlasResourceById.end()) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Atlas " + std::to_string(atlasId) + " not registered.");
+			throw vdpFault("atlas " + std::to_string(atlasId) + " not registered.");
 		}
 		ImgAsset* atlasAsset = EngineCore::instance().resolveImgAsset(atlasIt->second);
 		const uint32_t width = static_cast<uint32_t>(atlasAsset->meta.width);
 		const uint32_t height = static_cast<uint32_t>(atlasAsset->meta.height);
 		const uint32_t size = width * height * 4u;
 		if (size > slotEntry.capacity) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Atlas " + std::to_string(atlasId) + " exceeds slot capacity.");
+			throw vdpFault("atlas " + std::to_string(atlasId) + " exceeds slot capacity.");
 		}
 		slotEntry.baseSize = size;
 		slotEntry.baseStride = width * 4u;
@@ -2940,6 +2976,11 @@ void VDP::applyAtlasSlotMapping(const std::array<i32, 2>& slots) {
 			}
 		}
 	}
+	auto* backend = EngineCore::instance().view()->backend();
+	if (backend->readyForTextureUpload()) {
+		syncVramSlotTextureSize(getVramSlotByTextureKey(ATLAS_PRIMARY_SLOT_ID));
+		syncVramSlotTextureSize(getVramSlotByTextureKey(ATLAS_SECONDARY_SLOT_ID));
+	}
 }
 
 void VDP::attachImgDecController(ImgDecController& controller) {
@@ -2952,13 +2993,13 @@ void VDP::setSkyboxImages(const SkyboxImageIds& ids) {
 		const std::string& assetId = *faces[index];
 		auto* asset = EngineCore::instance().resolveImgAsset(assetId);
 		if (!asset) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' not found.");
+			throw vdpFault("skybox image '" + assetId + "' not found.");
 		}
 		if (asset->meta.atlassed) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' must not be atlassed.");
+			throw vdpFault("skybox image '" + assetId + "' must not be atlassed.");
 		}
 		if (!asset->rom.start || !asset->rom.end) {
-			throw BMSX_RUNTIME_ERROR("[VDP] Skybox image '" + assetId + "' missing ROM range.");
+			throw vdpFault("skybox image '" + assetId + "' missing ROM range.");
 		}
 	}
 	m_skyboxFaceIds = ids;
@@ -3045,7 +3086,7 @@ VDP::VramSlot& VDP::findVramSlot(uint32_t addr, size_t length) {
 			return slot;
 		}
 	}
-	throw BMSX_RUNTIME_ERROR("[VDP] VRAM write has no mapped slot.");
+	throw vdpFault("VRAM write has no mapped slot.");
 }
 
 const VDP::VramSlot& VDP::findVramSlot(uint32_t addr, size_t length) const {
@@ -3055,7 +3096,7 @@ const VDP::VramSlot& VDP::findVramSlot(uint32_t addr, size_t length) const {
 			return slot;
 		}
 	}
-	throw BMSX_RUNTIME_ERROR("[VDP] VRAM write has no mapped slot.");
+	throw vdpFault("VRAM write has no mapped slot.");
 }
 
 void VDP::syncVramSlotTextureSize(VramSlot& slot) {
@@ -3083,7 +3124,7 @@ VDP::VramSlot& VDP::getVramSlotByTextureKey(const std::string& textureKey) {
 			return slot;
 		}
 	}
-	throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not registered for texture '" + textureKey + "'.");
+	throw vdpFault("VRAM slot not registered for texture '" + textureKey + "'.");
 }
 
 const VDP::VramSlot& VDP::getVramSlotByTextureKey(const std::string& textureKey) const {
@@ -3092,7 +3133,7 @@ const VDP::VramSlot& VDP::getVramSlotByTextureKey(const std::string& textureKey)
 			return slot;
 		}
 	}
-	throw BMSX_RUNTIME_ERROR("[VDP] VRAM slot not registered for texture '" + textureKey + "'.");
+	throw vdpFault("VRAM slot not registered for texture '" + textureKey + "'.");
 }
 
 uint32_t VDP::nextVramMachineSeed() const {
