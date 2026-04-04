@@ -1,5 +1,5 @@
 local stagger<const> = {}
-
+local globals<const> = require('globals')
 local stagger_timeline_prefix<const> = 'p3.stagger.'
 
 local presets<const> = {
@@ -110,7 +110,7 @@ local stagger_track<const> = function(target, params, event)
 	local bg_ease<const> = params.bg_ease
 	local pose_ease<const> = params.pose_ease
 	local text_ease<const> = params.text_ease
-	local text_active<const> = text_main ~= nil and text_main.is_typing
+	local text_active<const> = text_main ~= nil and text_main:is_typing()
 
 	target.stagger_blocked = t < cfg.text_start
 
@@ -132,13 +132,13 @@ local stagger_track<const> = function(target, params, event)
 
 	if not params.text_started and t >= cfg.text_start then
 		if params.text_lines then
-			set_text_lines(text_main.id, params.text_lines, params.text_typed)
+			text_main:set_text(params.text_lines, { typed = params.text_typed, snap = not params.text_typed })
 		end
 		if params.text_choice_lines then
-			set_text_lines(text_choice.id, params.text_choice_lines, false)
+			text_choice:set_text(params.text_choice_lines, { typed = false, snap = true })
 		end
 		if params.text_prompt_line then
-			set_text_lines(text_prompt.id, { params.text_prompt_line }, false)
+			text_prompt:set_text({ params.text_prompt_line }, { typed = false, snap = true })
 		end
 		params.text_started = true
 	end
@@ -242,7 +242,8 @@ function stagger.play(owner, preset_id, opts)
 	end
 
 	if opts.text_lines == nil and text_main then
-		clear_text(text_main.id)
+		text_main:set_text({}, { typed = false, snap = true })
+		text_main.highlighted_line_index = nil
 	end
 
 	owner.stagger_blocked = timeline_cfg.text_start > 0

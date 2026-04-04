@@ -1,43 +1,45 @@
 local dialogue<const> = {}
+local globals<const> = require('globals')
+local story<const> = require('story')
 local stagger<const> = require('stagger')
 
 function dialogue.register_methods(director)
 
 	function director:show_dialogue_page(typed)
 		local page<const> = self.pages[self.page_index]
-		clear_text(text_choice_id)
+		oget(globals.text_choice_id):clear_text()
 		stagger.play(self, 'calm', {
-			bg = object(bg_id),
+			bg = oget(globals.bg_id),
 			bg_dim = false,
-			text_main = object(text_main_id),
-			text_choice = object(text_choice_id),
-			text_prompt = object(text_prompt_id),
+			text_main = oget(globals.text_main_id),
+			text_choice = oget(globals.text_choice_id),
+			text_prompt = oget(globals.text_prompt_id),
 			text_lines = page,
 			text_typed = typed,
 		})
 	end
 
-	function director:skip_typing()
-		if object(text_main_id).is_typing then
-			finish_text(text_main_id)
-			self:update_dialogue_prompt()
-			consume_action('b')
+		function director:skip_typing()
+			if oget(globals.text_main_id):is_typing() then
+				oget(globals.text_main_id):reveal_text()
+				self:update_dialogue_prompt()
+				consume_action('b')
 			return true
 		end
 		return false
 	end
 
-	function director:update_dialogue_prompt()
-		local main<const> = object(text_main_id)
-		if main.is_typing then
-			set_prompt_line('(B) skip')
-			return
-		end
+		function director:update_dialogue_prompt()
+			local main<const> = oget(globals.text_main_id)
+			if main:is_typing() then
+				oget(globals.text_prompt_id):set_text({ '(B) skip' }, { typed = false, snap = true })
+				return
+			end
 		if self.page_index < #self.pages then
-			set_prompt_line('(A) Next')
+			oget(globals.text_prompt_id):set_text({ '(A) Next' }, { typed = false, snap = true })
 			return
 		end
-		set_prompt_line('(A) Continue')
+		oget(globals.text_prompt_id):set_text({ '(A) Continue' }, { typed = false, snap = true })
 	end
 
 	function director:setup_choice_menu(node)
@@ -46,11 +48,11 @@ function dialogue.register_methods(director)
 			choice_lines[i] = node.options[i].label
 		end
 		stagger.play(self, 'calm', {
-			bg = object(bg_id),
+			bg = oget(globals.bg_id),
 			bg_dim = false,
-			text_main = object(text_main_id),
-			text_choice = object(text_choice_id),
-			text_prompt = object(text_prompt_id),
+			text_main = oget(globals.text_main_id),
+			text_choice = oget(globals.text_choice_id),
+			text_prompt = oget(globals.text_prompt_id),
 			text_lines = node.prompt,
 			text_choice_lines = choice_lines,
 			text_typed = true,
@@ -64,13 +66,10 @@ function dialogue.register_states(states)
 	states.bg_only = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			apply_background(node.bg)
-			local bg<const> = object(bg_id)
-			bg.visible = true
-			bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-			hide_combat_sprites()
-			clear_texts(text_ids_all)
-			reset_text_colors()
+			globals.show_background(node.bg)
+			globals.hide_combat_sprites()
+			globals.clear_texts(globals.text_ids_all)
+			globals.reset_text_colors()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -87,16 +86,15 @@ function dialogue.register_states(states)
 	states.dialogue = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			apply_background(node.bg)
-			object(bg_id).visible = true
-			reset_text_colors()
+			globals.show_background(node.bg)
+			globals.reset_text_colors()
 			if node.kind == 'dialogue_inline' then
 				self.pages = self.inline_pages
 			else
 				self.pages = node.pages
 			end
 			self.page_index = 1
-			clear_text(text_transition_id)
+			oget(globals.text_transition_id):clear_text()
 			self:show_dialogue_page(node.typed)
 			self:update_dialogue_prompt()
 		end,
@@ -105,11 +103,11 @@ function dialogue.register_states(states)
 				return
 			end
 
-			local main<const> = object(text_main_id)
-			if main.is_typing then
-				main:type_next()
-			end
-			self:update_dialogue_prompt()
+				local main<const> = oget(globals.text_main_id)
+				if main:is_typing() then
+					main:type_next()
+				end
+				self:update_dialogue_prompt()
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -120,11 +118,11 @@ function dialogue.register_states(states)
 				end
 			},
 			['a[jp]'] = {
-				go = function(self)
-					if self.stagger_blocked then return end
-						if object(text_main_id).is_typing then return end
+					go = function(self)
+						if self.stagger_blocked then return end
+						if oget(globals.text_main_id):is_typing() then return end
 
-					if self.page_index < #self.pages then
+						if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
 						local node<const> = story[self.node_id]
 						self:show_dialogue_page(node.typed)
@@ -148,12 +146,11 @@ function dialogue.register_states(states)
 	states.ending = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			apply_background(node.bg)
-			object(bg_id).visible = true
-			reset_text_colors()
-			clear_text(text_transition_id)
-			clear_text(text_choice_id)
-			clear_text(text_prompt_id)
+			globals.show_background(node.bg)
+			globals.reset_text_colors()
+			oget(globals.text_transition_id):clear_text()
+			oget(globals.text_choice_id):clear_text()
+			oget(globals.text_prompt_id):clear_text()
 			local total<const> = self.stats.planning + self.stats.opdekin + self.stats.rust + self.stats.makeup
 			local title = nil
 			local total_line = nil
@@ -192,16 +189,16 @@ function dialogue.register_states(states)
 			if self.stagger_blocked then
 				return
 			end
-			local main<const> = object(text_main_id)
-			if main.is_typing then
-				main:type_next()
-				return
-			end
+				local main<const> = oget(globals.text_main_id)
+				if main:is_typing() then
+					main:type_next()
+					return
+				end
 			if self.page_index < #self.pages then
-				set_prompt_line('(A) next')
+				oget(globals.text_prompt_id):set_text({ '(A) next' }, { typed = false, snap = true })
 				return
 			end
-			set_prompt_line('EINDE')
+			oget(globals.text_prompt_id):set_text({ 'EINDE' }, { typed = false, snap = true })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -212,10 +209,10 @@ function dialogue.register_states(states)
 				end
 			},
 			['a[jp]'] = {
-				go = function(self)
-					if self.stagger_blocked then return end
-						if object(text_main_id).is_typing then return end
-					if self.page_index < #self.pages then
+					go = function(self)
+						if self.stagger_blocked then return end
+						if oget(globals.text_main_id):is_typing() then return end
+						if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
 						local node<const> = story[self.node_id]
 						self:show_dialogue_page(node.typed)
@@ -229,22 +226,21 @@ function dialogue.register_states(states)
 	states.choice = {
 		entering_state = function(self)
 			local node<const> = story[self.node_id]
-			apply_background(node.bg)
-			object(bg_id).visible = true
-			reset_text_colors()
+			globals.show_background(node.bg)
+			globals.reset_text_colors()
 			self:setup_choice_menu(node)
 		end,
 		update = function(self)
 			if self.stagger_blocked then
 				return
 			end
-			local main<const> = object(text_main_id)
-			local choice_text<const> = object(text_choice_id)
-			if main.is_typing then
-				main:type_next()
-				choice_text.highlighted_line_index = nil
-			else
-				set_prompt_line('(A) select')
+				local main<const> = oget(globals.text_main_id)
+				local choice_text<const> = oget(globals.text_choice_id)
+				if main:is_typing() then
+					main:type_next()
+					choice_text.highlighted_line_index = nil
+				else
+				oget(globals.text_prompt_id):set_text({ '(A) select' }, { typed = false, snap = true })
 				choice_text.highlighted_line_index = self.choice_index - 1
 			end
 		end,
@@ -270,10 +266,10 @@ function dialogue.register_states(states)
 				end
 			},
 			['a[jp]'] = {
-				go = function(self)
-					if self.stagger_blocked then return end
-						if object(text_main_id).is_typing then return end
-					local node<const> = story[self.node_id]
+					go = function(self)
+						if self.stagger_blocked then return end
+						if oget(globals.text_main_id):is_typing() then return end
+						local node<const> = story[self.node_id]
 					local option<const> = node.options[self.choice_index]
 					self:apply_effects(option.effects)
 					self.inline_pages = option.result_pages

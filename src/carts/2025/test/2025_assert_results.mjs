@@ -3,17 +3,28 @@ export default function schedule({ logger, test }) {
 		await test.waitForCartActive({
 			timeoutMs: 6000,
 			pollMs: 100,
-			settleMs: 500,
+			settleMs: 100,
 		});
 
 		const objectState = await test.pollUntil(() => {
 			const [state] = test.evalLua(`
-				local main = object(text_main_id)
-				local choice = object(text_choice_id)
-				local prompt = object(text_prompt_id)
-				local transition = object(text_transition_id)
-				local results = object(text_results_id)
+				local globals = require('globals')
+				local main_id = globals.text_main_id
+				local choice_id = globals.text_choice_id
+				local prompt_id = globals.text_prompt_id
+				local transition_id = globals.text_transition_id
+				local results_id = globals.text_results_id
+				local main = main_id ~= nil and oget(main_id) or nil
+				local choice = choice_id ~= nil and oget(choice_id) or nil
+				local prompt = prompt_id ~= nil and oget(prompt_id) or nil
+				local transition = transition_id ~= nil and oget(transition_id) or nil
+				local results = results_id ~= nil and oget(results_id) or nil
 				return {
+					main_id = main_id,
+					choice_id = choice_id,
+					prompt_id = prompt_id,
+					transition_id = transition_id,
+					results_id = results_id,
 					has_main = main ~= nil,
 					has_choice = choice ~= nil,
 					has_prompt = prompt ~= nil,
@@ -36,71 +47,71 @@ export default function schedule({ logger, test }) {
 			description: '2025 textobjects',
 		});
 
+		test.assert(objectState.main_id != null, 'expected text_main_id global to exist');
+		test.assert(objectState.choice_id != null, 'expected text_choice_id global to exist');
+		test.assert(objectState.prompt_id != null, 'expected text_prompt_id global to exist');
+		test.assert(objectState.transition_id != null, 'expected text_transition_id global to exist');
+		test.assert(objectState.results_id != null, 'expected text_results_id global to exist');
 		test.assert(objectState.main_font, 'expected p3.text.main to have a font');
 		test.assert(objectState.choice_font, 'expected p3.text.choice to have a font');
 		test.assert(objectState.prompt_font, 'expected p3.text.prompt to have a font');
 		test.assert(objectState.transition_font, 'expected p3.text.transition to have a font');
 		test.assert(objectState.results_font, 'expected p3.text.results to have a font');
 
-		const textState = await test.pollUntil(() => {
-			const [state] = test.evalLua(`
-				local function table_has_text(lines)
-					if lines == nil or #lines <= 0 then
-						return false
-					end
-					for i = 1, #lines do
-						local line = lines[i]
-						if line ~= nil and line ~= '' then
-							return true
-						end
-					end
-					return false
-				end
-				local function has_text(id)
-					local obj = object(id)
-					if obj == nil then
-						return false
-					end
-					if table_has_text(obj.text) then
-						return true
-					end
-					if table_has_text(obj.displayed_lines) then
-						return true
-					end
-					return table_has_text(obj.full_text_lines)
-				end
-				local director = object('p3.director')
-				return {
-					node_id = director and director.node_id or nil,
-					main = has_text(text_main_id),
-					choice = has_text(text_choice_id),
-					prompt = has_text(text_prompt_id),
-					transition = has_text(text_transition_id),
-					results = has_text(text_results_id),
-				}
-			`);
-			if (state.node_id == null || state.node_id == 'intro') {
-				return null;
+		const [textProbeState] = test.evalLua(`
+			local globals = require('globals')
+			local main = oget(globals.text_main_id)
+			main:clear_text()
+			main:set_text({ 'AB' }, { typed = true, snap = false })
+			main:type_next()
+			local step1 = main.displayed_lines[1]
+			main:type_next()
+			local step2 = main.displayed_lines[1]
+			main:type_next()
+			local step3 = main.displayed_lines[1]
+			main:reveal_text()
+			local final_line = main.displayed_lines[1]
+			local original_max<const> = main.maximum_characters_per_line
+			main.maximum_characters_per_line = 7
+			main:set_text({ 'AB CD EF' }, { typed = false, snap = true })
+			local wrap_count = #main.full_text_lines
+			local wrap_line_1 = main.full_text_lines[1]
+			local wrap_line_2 = main.full_text_lines[2]
+			main.maximum_characters_per_line = original_max
+			main:set_text({ 'AB', '', 'CD' }, { typed = false, snap = true })
+			return {
+				step1 = step1,
+				step2 = step2,
+				step3 = step3,
+				final_line = final_line,
+				wrap_count = wrap_count,
+				wrap_line_1 = wrap_line_1,
+				wrap_line_2 = wrap_line_2,
+				line_height = main.line_height,
+				component_line_height = main.text_component.line_height,
+				full_count = #main.full_text_lines,
+				displayed_count = #main.displayed_lines,
+				blank_line = main.displayed_lines[2],
+				logical_map_1 = main.wrapped_line_to_logical_line[1],
+				logical_map_2 = main.wrapped_line_to_logical_line[2],
+				logical_map_3 = main.wrapped_line_to_logical_line[3],
 			}
-			if (state.main || state.choice || state.prompt || state.transition || state.results) {
-				return state;
-			}
-			return null;
-		}, {
-			timeoutMs: 7000,
-			pollMs: 100,
-			description: '2025 story text',
-		});
+		`);
 
-		test.assert(textState.node_id !== 'intro', `expected 2025 story to progress beyond intro, got node_id=${textState.node_id}`);
-		test.assert(
-			textState.main || textState.choice || textState.prompt || textState.transition || textState.results,
-			'expected at least one 2025 textobject to contain rendered text'
-		);
-
-		logger(
-			`[assert] 2025 text ok main=${textState.main} choice=${textState.choice} prompt=${textState.prompt} transition=${textState.transition} results=${textState.results}`
-		);
+		test.assert(textProbeState.step1 === 'A', `expected first typing step to reveal "A", got ${JSON.stringify(textProbeState.step1)}`);
+		test.assert(textProbeState.step2 === 'AB', `expected second typing step to reveal "AB", got ${JSON.stringify(textProbeState.step2)}`);
+		test.assert(textProbeState.step3 === 'AB', `expected finish-line step to keep "AB", got ${JSON.stringify(textProbeState.step3)}`);
+		test.assert(textProbeState.final_line === 'AB', `expected reveal_text() to preserve final line "AB", got ${JSON.stringify(textProbeState.final_line)}`);
+		test.assert(textProbeState.wrap_count === 2, `expected word-wrapped text to produce two lines, got ${textProbeState.wrap_count}`);
+		test.assert(textProbeState.wrap_line_1 === 'AB CD', `expected first wrapped line to stop at word boundary, got ${JSON.stringify(textProbeState.wrap_line_1)}`);
+		test.assert(textProbeState.wrap_line_2 === 'EF', `expected second wrapped line to contain remaining word, got ${JSON.stringify(textProbeState.wrap_line_2)}`);
+		test.assert(textProbeState.line_height === 16, `expected 2025 text line_height to be 16, got ${textProbeState.line_height}`);
+			test.assert(textProbeState.line_height === textProbeState.component_line_height, `expected textcomponent line_height to mirror textobject line_height, got ${textProbeState.component_line_height} vs ${textProbeState.line_height}`);
+			test.assert(textProbeState.full_count === 3, `expected three wrapped lines for explicit blank line case, got ${textProbeState.full_count}`);
+		test.assert(textProbeState.displayed_count === 3, `expected displayed blank-line case to keep three lines, got ${textProbeState.displayed_count}`);
+		test.assert(textProbeState.blank_line === '', `expected middle line to stay empty, got ${JSON.stringify(textProbeState.blank_line)}`);
+		test.assert(textProbeState.logical_map_1 === 1 && textProbeState.logical_map_2 === 2 && textProbeState.logical_map_3 === 3, `expected logical line map [1,2,3], got [${textProbeState.logical_map_1},${textProbeState.logical_map_2},${textProbeState.logical_map_3}]`);
+		logger(`[assert] textobject typing ok step1=${JSON.stringify(textProbeState.step1)} step2=${JSON.stringify(textProbeState.step2)} blank_line=${JSON.stringify(textProbeState.blank_line)}`);
 		test.finish('[assert] 2025 assertions passed');
 	});
 }

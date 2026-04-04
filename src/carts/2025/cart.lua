@@ -1,5 +1,5 @@
-require('globals')
-require('story')
+local globals<const> = require('globals')
+local story<const> = require('story')
 local start_node<const> = 'title'
 -- local start_node = 'combat_wekker'
 
@@ -19,6 +19,55 @@ local combat_director_instance = nil
 local director<const> = {}
 director.__index = director
 
+local create_rect_state<const> = function(z)
+	return {
+		visible = false,
+		x = 0,
+		y = 0,
+		width = 0,
+		height = 0,
+		z = z,
+		r = 0,
+		g = 0,
+		b = 0,
+		a = 0,
+	}
+end
+
+local submit_rect_state<const> = function(rect)
+	if not rect.visible or rect.a <= 0 or rect.width <= 0 or rect.height <= 0 then
+		return
+	end
+	memwrite(
+		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
+		sys_vdp_cmd_fill_rect,
+		10,
+		0,
+		rect.x,
+		rect.y,
+		rect.x + rect.width,
+		rect.y + rect.height,
+		rect.z,
+		sys_vdp_layer_world,
+		rect.r,
+		rect.g,
+		rect.b,
+		rect.a
+	)
+end
+
+local create_transition_visuals<const> = function()
+	return {
+		overlay = create_rect_state(850),
+		panels = {
+			create_rect_state(860),
+			create_rect_state(861),
+			create_rect_state(862),
+		},
+		accent = create_rect_state(870),
+	}
+end
+
 -- Example: optional hook for atlas load completion (return true to skip BIOS mapping).
 local on_vdp_load_example<const> = function(job_id, slot, atlas_id, status)
 	-- Example: handle "done"/"error" and optionally call vdp_map_slot(slot, atlas_id).
@@ -37,6 +86,17 @@ local build_director_fsm<const> = function()
 	local states<const> = {
 		boot = {
 			entering_state = function(self)
+					self.transition_visual = create_transition_visuals()
+					self.combat_results_visual = create_rect_state(10)
+					self.transition_rc = attach_component(self, 'customvisualcomponent')
+					self.transition_rc:add_producer(function(ctx)
+						submit_rect_state(ctx.parent.combat_results_visual)
+						submit_rect_state(ctx.parent.transition_visual.overlay)
+						for i = 1, #ctx.parent.transition_visual.panels do
+							submit_rect_state(ctx.parent.transition_visual.panels[i])
+						end
+						submit_rect_state(ctx.parent.transition_visual.accent)
+					end)
 				self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
 				self.inline_pages = {}
 				self.inline_next = nil
@@ -44,8 +104,8 @@ local build_director_fsm<const> = function()
 				self.skip_combat_fade_in = false
 				self.skip_transition_fade = false
 				self.fade_hold_black = false
-				clear_texts(text_ids_all)
-				hide_combat_sprites()
+				globals.clear_texts(globals.text_ids_all)
+				globals.hide_combat_sprites()
 				return '/run_node'
 			end,
 		},
@@ -122,11 +182,10 @@ local register_director<const> = function()
 			transition_center_x = 0,
 			transition_target_bg = story.title.bg,
 			transition_style = 'dialogue',
-			transition_palette = p3_transition_palette_dialogue,
+			transition_palette = globals.p3_transition_palette_dialogue,
 			transition_panels = {},
 			transition_accent = {
-				id = transition_accent_id,
-				color = p3_transition_palette_dialogue.accent,
+				color = globals.p3_transition_palette_dialogue.accent,
 				width = 0,
 				height = 0,
 				y = 0,
@@ -138,7 +197,7 @@ local register_director<const> = function()
 			transition_needs_post_fade = false,
 			fade_target_bg = story.title.bg,
 			fade_style = 'dialogue',
-			fade_palette = p3_transition_palette_dialogue,
+			fade_palette = globals.p3_transition_palette_dialogue,
 			skip_combat_fade_in = false,
 			skip_transition_fade = false,
 			fade_hold_black = false,
@@ -226,115 +285,80 @@ function new_game()
 	local main_top<const> = h - (line_height * (prompt_lines + choice_lines + main_lines))
 
 	inst('p3.bg', {
-		id = bg_id,
+		id = globals.bg_id,
 		pos = { x = 0, y = 0, z = 0 },
-		visible = false,
-	})
-	inst('p3.bg', {
-		id = transition_overlay_id,
-		pos = { x = 0, y = 0, z = 850 },
-		imgid = 'whitepixel',
-		visible = false,
-	})
-	inst('p3.bg', {
-		id = transition_panel_ids[1],
-		pos = { x = 0, y = 0, z = 860 },
-		imgid = 'whitepixel',
-		visible = false,
-	})
-	inst('p3.bg', {
-		id = transition_panel_ids[2],
-		pos = { x = 0, y = 0, z = 861 },
-		imgid = 'whitepixel',
-		visible = false,
-	})
-	inst('p3.bg', {
-		id = transition_panel_ids[3],
-		pos = { x = 0, y = 0, z = 862 },
-		imgid = 'whitepixel',
-		visible = false,
-	})
-	inst('p3.bg', {
-		id = transition_accent_id,
-		pos = { x = 0, y = 0, z = 870 },
-		imgid = 'whitepixel',
 		visible = false,
 	})
 
 	local horizontal_margin<const> = w / 10
-	inst('p3.text.main', {
-		id = text_main_id,
-		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
-		pos = { z = 1000 },
-		layer = sys_vdp_layer_ui,
-	})
-	inst('p3.text.choice', {
-		id = text_choice_id,
-		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
-		pos = { z = 1001 },
-		highlight_move_enabled = true,
-		highlight_pulse_enabled = true,
-		highlight_jitter_enabled = false,
-		layer = sys_vdp_layer_ui,
-	})
-	inst('p3.text.prompt', {
-		id = text_prompt_id,
-		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
-		pos = { z = 1002 },
-		layer = sys_vdp_layer_ui,
-	})
-	inst('p3.text.transition', {
-		id = text_transition_id,
-		dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
-		pos = { z = 900 },
-		layer = sys_vdp_layer_ui,
-	})
-	inst('p3.text.results', {
-		id = text_results_id,
-		dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
-		pos = { z = 1003 },
-		layer = sys_vdp_layer_ui,
-	})
+		inst('p3.text.main', {
+			id = globals.text_main_id,
+			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
+			line_height = line_height,
+			pos = { z = 1000 },
+			layer = sys_vdp_layer_ui,
+		})
+		inst('p3.text.choice', {
+			id = globals.text_choice_id,
+			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
+			line_height = line_height,
+			pos = { z = 1001 },
+			highlight_move_enabled = true,
+			highlight_pulse_enabled = true,
+			highlight_jitter_enabled = false,
+			layer = sys_vdp_layer_ui,
+		})
+		inst('p3.text.prompt', {
+			id = globals.text_prompt_id,
+			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
+			line_height = line_height,
+			pos = { z = 1002 },
+			layer = sys_vdp_layer_ui,
+		})
+		inst('p3.text.transition', {
+			id = globals.text_transition_id,
+			dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
+			line_height = line_height,
+			pos = { z = 900 },
+			layer = sys_vdp_layer_ui,
+		})
+		inst('p3.text.results', {
+			id = globals.text_results_id,
+			dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
+			line_height = line_height,
+			pos = { z = 1003 },
+			layer = sys_vdp_layer_ui,
+		})
 
-	clear_texts(text_ids_all)
+	globals.clear_texts(globals.text_ids_all)
 
 	inst('p3.combat.monster', {
-		id = combat_monster_id,
+		id = globals.combat_monster_id,
 		pos = { x = 0, y = 0, z = 200 },
 		imgid = 'monster_snoozer',
 		visible = false,
 	})
 	inst('p3.combat.maya_a', {
-		id = combat_maya_a_id,
+		id = globals.combat_maya_a_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_a',
 		visible = false,
 	})
 	inst('p3.combat.maya_b', {
-		id = combat_maya_b_id,
+		id = globals.combat_maya_b_id,
 		pos = { x = 0, y = 0, z = 300 },
 		imgid = 'maya_b',
 		visible = false,
 	})
 	inst('p3.combat.all_out', {
-		id = combat_all_out_id,
+		id = globals.combat_all_out_id,
 		pos = { x = 0, y = 0, z = 800 },
 		imgid = 'all_out',
 		visible = false,
 	})
 
-	combat_director_instance = inst(combat_director_def_id, { id = combat_director_instance_id })
-	inst(director_def_id, { id = director_instance_id })
-end
-
-local test<const> = function()
-	-- assert(false)
-end
-
-local cart_update<const> = function(_dt)
-	-- assert(false)
-	-- print(_dt)
-	test()
+	combat_director_instance = inst(globals.combat_director_def_id, { id = globals.combat_director_instance_id })
+	inst(director_def_id, { id = globals.director_instance_id })
 end
 
 local service_irqs<const> = function()
@@ -348,7 +372,6 @@ end
 		wait_vblank()
 		service_irqs()
 		vdp_stream_cursor = sys_vdp_stream_base
-		cart_update()
 		update()
 		do
 			local used_bytes<const> = vdp_stream_cursor - sys_vdp_stream_base
