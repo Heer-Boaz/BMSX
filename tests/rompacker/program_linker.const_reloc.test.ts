@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LuaLexer } from '../../src/bmsx/lua/lualexer';
-import { LuaParser } from '../../src/bmsx/lua/luaparser';
+import { LuaLexer } from '../../src/bmsx/lua/syntax/lualexer';
+import { LuaParser } from '../../src/bmsx/lua/syntax/luaparser';
 import { OpCode, type Proto } from '../../src/bmsx/emulator/cpu';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../src/bmsx/emulator/instruction_format';
 import { compileLuaChunkToProgram } from '../../src/bmsx/emulator/program_compiler';
@@ -99,8 +99,9 @@ function decodeSignedRkB(code: Uint8Array, wordIndex: number): number {
 }
 
 test('ProgramCompiler emits WIDE before LOADK const sites', () => {
-	const chunk = parseChunk('local a = "hello"\nreturn a');
-	const compiled = compileLuaChunkToProgram(chunk, []);
+	const source = 'local a = "hello"\nreturn a';
+	const chunk = parseChunk(source);
+	const compiled = compileLuaChunkToProgram(chunk, [], { entrySource: source });
 	const code = compiled.program.code;
 	const instructionCount = code.length / INSTRUCTION_BYTES;
 	let foundLoadK = false;
@@ -118,8 +119,9 @@ test('ProgramCompiler emits WIDE before LOADK const sites', () => {
 });
 
 test('ProgramCompiler emits WIDE before RK const reloc sites', () => {
-	const chunk = parseChunk('local a = 1\nreturn a + 2');
-	const compiled = compileLuaChunkToProgram(chunk, []);
+	const source = 'local a = 1\nreturn a + 2';
+	const chunk = parseChunk(source);
+	const compiled = compileLuaChunkToProgram(chunk, [], { entrySource: source });
 	const rkRelocs = compiled.constRelocs.filter(reloc => reloc.kind === 'rk_b' || reloc.kind === 'rk_c');
 	assert.ok(rkRelocs.length > 0);
 	for (const reloc of rkRelocs) {
@@ -127,6 +129,37 @@ test('ProgramCompiler emits WIDE before RK const reloc sites', () => {
 		const prevOp = (readInstructionWord(compiled.program.code, reloc.wordIndex - 1) >>> 18) & 0x3f;
 		assert.equal(prevOp, OpCode.WIDE);
 	}
+});
+
+test('ProgramCompiler rejects undefined identifiers when source is provided', () => {
+	const source = 'return missing_value';
+	const chunk = parseChunk(source);
+	assert.throws(
+		() => compileLuaChunkToProgram(chunk, [], { entrySource: source }),
+		/error\(s\):[\s\S]*'missing_value' is not defined\./,
+	);
+});
+
+test('ProgramCompiler accepts shared runtime globals when source is provided', () => {
+	const source = 'return assets, sys_vdp_stream_base, cart_manifest';
+	const chunk = parseChunk(source);
+	const compiled = compileLuaChunkToProgram(chunk, [], { entrySource: source });
+	assert.ok(compiled.program.code.length > 0);
+});
+
+test('ProgramCompiler does not confuse shadowed locals with outer const bindings', () => {
+	const source = [
+		'local outer<const> = 1',
+		'local function read_shadow()',
+		'\tlocal outer = 2',
+		'\touter = outer + 1',
+		'\treturn outer',
+		'end',
+		'return read_shadow()',
+	].join('\n');
+	const chunk = parseChunk(source);
+	const compiled = compileLuaChunkToProgram(chunk, [], { entrySource: source });
+	assert.ok(compiled.program.code.length > 0);
 });
 
 test('ProgramLinker patches Bx relocations against large engine const pools', () => {

@@ -161,3 +161,19 @@ test('cart lua linter treats local const function expressions as named functions
 		);
 	}
 });
+
+test('cart lua linter explains direct guard alternative for or-nil fallback pattern', async () => {
+	await withLuaLintFixture(
+		'cart_lua_linter_or_nil_message',
+		[
+			'local result<const> = source ~= nil and build(source) or nil',
+			'return result',
+		].join('\n'),
+		async root => {
+			await assert.rejects(
+				lintCartLuaSources({ roots: [root], profile: 'cart' }),
+				/"or nil" fallback pattern is forbidden[\s\S]*guard on that value directly[\s\S]*tracks and compile_tracks\(tracks\)[\s\S]*real if\/else/,
+			);
+		},
+	);
+});

@@ -122,6 +122,35 @@ export default function schedule({ logger, test }) {
 			local combat_fade_frames = timeline_builders.build_combat_fade_frames()
 			local combat_fade_overlay = combat_fade_frames[1].overlay
 			local combat_fade_sprite_component = combat_fade_frames[1].sprite_component
+			local timeline = require('timeline')
+			local catchup = timeline.new({
+				id = 'catchup',
+				frames = timeline.range(4),
+				ticks_per_frame = 24,
+				playback_mode = 'once',
+			})
+			catchup:update(20)
+			local catchup_after_20 = catchup:value()
+			local catchup_events_after_20 = catchup.step_event_count
+			catchup:update(20)
+			local catchup_after_40 = catchup:value()
+			local catchup_events_after_40 = catchup.step_event_count
+			local catchup_event_40 = catchup.step_events[1] ~= nil and catchup.step_events[1].current or nil
+			catchup:update(20)
+			local catchup_after_60 = catchup:value()
+			local catchup_events_after_60 = catchup.step_event_count
+			local catchup_event_60 = catchup.step_events[1] ~= nil and catchup.step_events[1].current or nil
+			local catchup_multi = timeline.new({
+				id = 'catchup_multi',
+				frames = timeline.range(5),
+				ticks_per_frame = 24,
+				playback_mode = 'once',
+			})
+			catchup_multi:update(60)
+			local catchup_multi_value = catchup_multi:value()
+			local catchup_multi_events = catchup_multi.step_event_count
+			local catchup_multi_event_1 = catchup_multi.step_events[1] ~= nil and catchup_multi.step_events[1].current or nil
+			local catchup_multi_event_2 = catchup_multi.step_events[2] ~= nil and catchup_multi.step_events[2].current or nil
 			local original_max<const> = main.maximum_characters_per_line
 			main.maximum_characters_per_line = 7
 			main:set_text({ 'AB CD EF' }, { typed = false, snap = true })
@@ -152,6 +181,18 @@ export default function schedule({ logger, test }) {
 						combat_fade_overlay_a = combat_fade_overlay.a,
 						combat_fade_overlay_r = combat_fade_overlay.r,
 						combat_fade_has_sprite_component = combat_fade_sprite_component ~= nil,
+						catchup_after_20 = catchup_after_20,
+						catchup_events_after_20 = catchup_events_after_20,
+						catchup_after_40 = catchup_after_40,
+						catchup_events_after_40 = catchup_events_after_40,
+						catchup_event_40 = catchup_event_40,
+						catchup_after_60 = catchup_after_60,
+						catchup_events_after_60 = catchup_events_after_60,
+						catchup_event_60 = catchup_event_60,
+						catchup_multi_value = catchup_multi_value,
+						catchup_multi_events = catchup_multi_events,
+						catchup_multi_event_1 = catchup_multi_event_1,
+						catchup_multi_event_2 = catchup_multi_event_2,
 					line_height = main.line_height,
 					component_line_height = main.text_component.line_height,
 				full_count = #main.full_text_lines,
@@ -179,6 +220,10 @@ export default function schedule({ logger, test }) {
 			test.assert(textProbeState.exchange_overlay_color == null, `expected combat exchange overlay frame to not use nested color table, got ${JSON.stringify(textProbeState.exchange_overlay_color)}`);
 			test.assert(textProbeState.combat_fade_overlay_r === 0 && textProbeState.combat_fade_overlay_a === 0, `expected combat fade to start as transparent black overlay, got ${JSON.stringify({ r: textProbeState.combat_fade_overlay_r, a: textProbeState.combat_fade_overlay_a })}`);
 			test.assert(!textProbeState.combat_fade_has_sprite_component, 'expected combat fade frames to target overlay state instead of sprite_component');
+			test.assert(textProbeState.catchup_after_20 == null && textProbeState.catchup_events_after_20 === 0, `expected 24ms timeline to not advance on first 20ms update, got value=${JSON.stringify(textProbeState.catchup_after_20)} events=${textProbeState.catchup_events_after_20}`);
+			test.assert(textProbeState.catchup_after_40 === 0 && textProbeState.catchup_events_after_40 === 1 && textProbeState.catchup_event_40 === 0, `expected 24ms timeline to advance to frame 0 after 40ms accumulated, got value=${JSON.stringify(textProbeState.catchup_after_40)} events=${textProbeState.catchup_events_after_40} event=${JSON.stringify(textProbeState.catchup_event_40)}`);
+			test.assert(textProbeState.catchup_after_60 === 1 && textProbeState.catchup_events_after_60 === 1 && textProbeState.catchup_event_60 === 1, `expected 24ms timeline remainder to carry and reach frame 1 on the third 20ms update, got value=${JSON.stringify(textProbeState.catchup_after_60)} events=${textProbeState.catchup_events_after_60} event=${JSON.stringify(textProbeState.catchup_event_60)}`);
+			test.assert(textProbeState.catchup_multi_value === 1 && textProbeState.catchup_multi_events === 2 && textProbeState.catchup_multi_event_1 === 0 && textProbeState.catchup_multi_event_2 === 1, `expected single 60ms update to catch up two timeline frames, got value=${JSON.stringify(textProbeState.catchup_multi_value)} events=${textProbeState.catchup_multi_events} seq=[${textProbeState.catchup_multi_event_1},${textProbeState.catchup_multi_event_2}]`);
 			test.assert(textProbeState.line_height === 16, `expected 2025 text line_height to be 16, got ${textProbeState.line_height}`);
 			test.assert(textProbeState.line_height === textProbeState.component_line_height, `expected textcomponent line_height to mirror textobject line_height, got ${textProbeState.component_line_height} vs ${textProbeState.line_height}`);
 			test.assert(textProbeState.full_count === 3, `expected three wrapped lines for explicit blank line case, got ${textProbeState.full_count}`);

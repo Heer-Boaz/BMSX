@@ -2,7 +2,7 @@ local scratchrecordbatch<const> = require('scratchrecordbatch')
 
 local timeline_dispatch<const> = {}
 
-local bind_slot<const> = function(slot, owner, timeline_id)
+local bind_slot<const> = function(slot, owner, timeline_id, scoped_frame_event_type, scoped_end_event_type)
 	local frame_payload = slot.frame_payload
 	if frame_payload == nil then
 		frame_payload = {}
@@ -30,7 +30,7 @@ local bind_slot<const> = function(slot, owner, timeline_id)
 		scoped_frame_event = {}
 		slot.scoped_frame_event = scoped_frame_event
 	end
-	scoped_frame_event.type = 'timeline.frame.' .. timeline_id
+	scoped_frame_event.type = scoped_frame_event_type
 	scoped_frame_event.emitter = owner
 	scoped_frame_event.timeline_id = timeline_id
 
@@ -48,7 +48,7 @@ local bind_slot<const> = function(slot, owner, timeline_id)
 		scoped_end_event = {}
 		slot.scoped_end_event = scoped_end_event
 	end
-	scoped_end_event.type = 'timeline.end.' .. timeline_id
+	scoped_end_event.type = scoped_end_event_type
 	scoped_end_event.emitter = owner
 	scoped_end_event.timeline_id = timeline_id
 
@@ -62,7 +62,9 @@ end
 
 local ensure_slot<const> = function(state, depth)
 	local slot<const> = state.slots:get(depth)
-	bind_slot(slot, state.owner, state.timeline_id)
+	if slot.base_frame_event == nil then
+		bind_slot(slot, state.owner, state.timeline_id, state.scoped_frame_event_type, state.scoped_end_event_type)
+	end
 	return slot
 end
 
@@ -90,7 +92,7 @@ local fill_marker_event<const> = function(slot, marker)
 end
 
 local apply_markers<const> = function(entry, owner, slot, frame_index)
-	local bucket<const> = entry.markers.by_frame[frame_index]
+	local bucket<const> = entry.markers.by_frame[frame_index + 1]
 	if bucket == nil then
 		return
 	end
@@ -117,16 +119,14 @@ end
 local dispatch_frame<const> = function(entry, owner, evt, dt_ms, on_frame_payload, context)
 	local slot<const> = acquire_slot(entry)
 	local payload<const> = slot.frame_payload
-	local time_ms<const> = entry.instance.time_ms
+	local time_ms<const> = evt.time_ms
 	payload.frame_index = evt.current
 	payload.frame_value = evt.value
 	payload.rewound = evt.rewound
 	payload.reason = evt.reason
 	payload.direction = evt.direction
 	payload.dt = dt_ms
-	payload.dt_seconds = dt_ms / 1000
 	payload.time_ms = time_ms
-	payload.time_seconds = time_ms / 1000
 	apply_markers(entry, owner, slot, evt.current)
 	on_frame_payload(context, entry, owner, payload)
 
@@ -159,26 +159,39 @@ end
 
 function timeline_dispatch.init_entry(entry, owner)
 	local state = entry.timeline_dispatch_state
+	local timeline_id<const> = entry.instance.id
 	if state == nil then
 		state = {
 			slots = scratchrecordbatch.new(1),
 			depth = 0,
+			timeline_id = timeline_id,
+			scoped_frame_event_type = 'timeline.frame.' .. timeline_id,
+			scoped_end_event_type = 'timeline.end.' .. timeline_id,
 		}
 		entry.timeline_dispatch_state = state
+	else
+		state.timeline_id = timeline_id
+		state.scoped_frame_event_type = 'timeline.frame.' .. timeline_id
+		state.scoped_end_event_type = 'timeline.end.' .. timeline_id
 	end
 	state.owner = owner
-	state.timeline_id = entry.instance.id
 end
 
 function timeline_dispatch.process_instance_events(entry, owner, dt_ms, on_frame_payload, context)
 	local instance<const> = entry.instance
-	if instance.step_has_frame_event then
-		dispatch_frame(entry, owner, instance.step_frame_event, dt_ms, on_frame_payload, context)
+	local stop = false
+	for i = 1, instance.step_event_count do
+		local evt<const> = instance.step_events[i]
+		if evt.kind == 'frame' then
+			dispatch_frame(entry, owner, evt, dt_ms, on_frame_payload, context)
+		else
+			if dispatch_end(entry, owner, evt) then
+				stop = true
+				break
+			end
+		end
 	end
-	if instance.step_has_end_event then
-		return dispatch_end(entry, owner, instance.step_end_event)
-	end
-	return false
+	return stop
 end
 
 return timeline_dispatch

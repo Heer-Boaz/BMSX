@@ -80,6 +80,7 @@ registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.frag.glsl');
 registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.vert.glsl');
 
 const intellisenseModulePromise = import('../../src/bmsx/emulator/ide/intellisense');
+const luaStaticDiagnosticsModulePromise = import('../../src/bmsx/emulator/lua_static_diagnostics');
 const semanticModelModulePromise = import('../../src/bmsx/emulator/ide/semantic_model');
 const referenceSourcesModulePromise = import('../../src/bmsx/emulator/ide/reference_sources');
 const workspaceModulePromise = import('../../src/bmsx/emulator/ide/semantic_workspace');
@@ -145,6 +146,47 @@ tracker:add()
 `);
 	assert.equal(diagnostics.length, 1);
 	assert.match(diagnostics[0].message, /tracker:add/);
+});
+
+test('allows omitted trailing optional arguments for local functions', async () => {
+	const diagnostics = await runDiagnostics(`
+local function add(a, b, c)
+	if c then
+		return a + b + c
+	end
+	return a + b
+end
+return add(1, 2)
+`);
+	assert.equal(diagnostics.length, 0);
+});
+
+test('intellisense recognizes shared runtime globals without false positives', async () => {
+	const { computeLuaDiagnostics, getApiCompletionData } = await intellisenseModulePromise;
+	const { getDefaultLuaBuiltinDescriptors } = await luaStaticDiagnosticsModulePromise;
+	const apiData = getApiCompletionData();
+	const diagnostics = computeLuaDiagnostics({
+		source: 'return assets, cart_manifest, sys_vdp_stream_base',
+		path: 'testpath',
+		localSymbols: [],
+		globalSymbols: [],
+		builtinDescriptors: getDefaultLuaBuiltinDescriptors(),
+		apiSignatures: apiData.signatures,
+	});
+	assert.equal(diagnostics.length, 0);
+});
+
+test('intellisense preserves shadowed local bindings during workspace retargeting', async () => {
+	const diagnostics = await runDiagnostics(`
+local outer<const> = 1
+local function read_shadow()
+	local outer = 2
+	outer = outer + 1
+	return outer
+end
+return read_shadow()
+`);
+	assert.equal(diagnostics.length, 0);
 });
 
 // Semantic model behavior tests

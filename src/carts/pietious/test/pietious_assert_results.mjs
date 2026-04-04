@@ -43,10 +43,10 @@ function getLuaState(engine) {
 	const [state] = evalLua(engine, `
 		local collision2d = require('collision2d')
 		local constants = require('constants')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local elevator = object('e.p1')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local elevator = oget('e.p1')
 		local expected_floor_y = -1
 		local standing_on_top = false
 		if player ~= nil then
@@ -116,10 +116,10 @@ function hasGameplayObjects(state) {
 
 function prepareElevatorRoom(engine) {
 	evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local elevator = object('e.p1')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local elevator = oget('e.p1')
 		castle.current_room_number = ${ELEVATOR_ROOM_NUMBER}
 		room:load_room(${ELEVATOR_ROOM_NUMBER})
 		local start = elevator.path[1]
@@ -146,10 +146,10 @@ function prepareElevatorRoom(engine) {
 
 function prepareLowerElevatorRoom(engine) {
 	evalLua(engine, `
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
-		local elevator = object('e.p1')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
+		local elevator = oget('e.p1')
 		castle.current_room_number = ${ELEVATOR_LOWER_ROOM_NUMBER}
 		room:load_room(${ELEVATOR_LOWER_ROOM_NUMBER})
 		local start = elevator.path[2]
@@ -177,8 +177,8 @@ function prepareLowerElevatorRoom(engine) {
 function setupCarryScenario(engine, logger) {
 	prepareElevatorRoom(engine);
 	const [state] = evalLua(engine, `
-		local player = object('pietolon')
-		local elevator = object('e.p1')
+		local player = oget('pietolon')
+		local elevator = oget('e.p1')
 		player.x = elevator.x
 		player.y = elevator.y - player.height
 		player.on_vertical_elevator = true
@@ -201,8 +201,8 @@ function setupCarryScenario(engine, logger) {
 function setupLandingScenario(engine, logger) {
 	prepareElevatorRoom(engine);
 	const [state] = evalLua(engine, `
-		local player = object('pietolon')
-		local elevator = object('e.p1')
+		local player = oget('pietolon')
+		local elevator = oget('e.p1')
 		player.x = elevator.x
 		player.y = (elevator.y - player.height) - 8
 		player.events:emit('falling')
@@ -225,8 +225,8 @@ function setupLandingScenario(engine, logger) {
 function setupCeilingScenario(engine, logger) {
 	prepareElevatorRoom(engine);
 	const [state] = evalLua(engine, `
-		local player = object('pietolon')
-		local elevator = object('e.p1')
+		local player = oget('pietolon')
+		local elevator = oget('e.p1')
 		player.x = elevator.x
 		player.y = elevator.y + 16
 		player:start_jump(0)
@@ -250,8 +250,8 @@ function setupStepOffScenario(engine, logger, variantIndex = 0) {
 	prepareLowerElevatorRoom(engine);
 	const variant = STEPOFF_VARIANTS[variantIndex];
 	const [state] = evalLua(engine, `
-		local player = object('pietolon')
-		local elevator = object('e.p1')
+		local player = oget('pietolon')
+		local elevator = oget('e.p1')
 		player.x = elevator.x + ${variant.xOffset}
 		player.y = elevator.y - player.height
 		player.on_vertical_elevator = true
@@ -285,9 +285,9 @@ function setupLadderSwordScenario(engine, logger) {
 		local constants = require('constants')
 		local abilities = require('player_abilities')
 		local castle_map = require('castle_map')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		local stair = nil
 		local room_number = -1
 
@@ -373,9 +373,9 @@ function setupLadderSwordScenario(engine, logger) {
 function setupRoomSwitchInputSyncScenario(engine, logger) {
 	const [state] = evalLua(engine, `
 		local castle_map = require('castle_map')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		local room_numbers = {}
 		local source_room_number = -1
 
@@ -423,9 +423,9 @@ function setupWallSnapScenario(engine, logger) {
 	const [state] = evalLua(engine, `
 		local constants = require('constants')
 		local castle_map = require('castle_map')
-		local castle = object('c')
-		local room = object('room')
-		local player = object('pietolon')
+		local castle = oget('c')
+		local room = oget('room')
+		local player = oget('pietolon')
 		local room_numbers = {}
 		local candidate = nil
 
@@ -661,7 +661,7 @@ function updateStepOffScenario(engine, scenario, logger, scheduleInput) {
 		assert(state.player_y > state.elevator_y - 16, `stepoff never fell below elevator top: player.y=${state.player_y} elevator.y=${state.elevator_y}`);
 		if (!scenario.probe_controls) {
 			engine.input.getPlayerInput(1).reset();
-			evalLua(engine, `object('pietolon'):clear_input_state()`);
+			evalLua(engine, `oget('pietolon'):clear_input_state()`);
 			const scheduledAtMs = Math.round(engine.platform.clock.now());
 			scheduleInput([
 				{
