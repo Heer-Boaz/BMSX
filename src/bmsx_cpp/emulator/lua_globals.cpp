@@ -1,5 +1,6 @@
 #include "runtime.h"
 #include "firmware_api.h"
+#include "lua_load_compiler.h"
 #include "number_format.h"
 #include "../core/engine_core.h"
 #include "../rompack/rompack.h"
@@ -1868,6 +1869,56 @@ void Runtime::setupBuiltins() {
 			handlerArgs.push_back(str("error"));
 			callClosureValue(handler, handlerArgs, out);
 			out.insert(out.begin(), valueBool(false));
+		}
+	});
+
+	registerNativeFunction("loadstring", [this, str](const std::vector<Value>& args, std::vector<Value>& out) {
+		if (args.empty() || !valueIsString(args.at(0))) {
+			throw BMSX_RUNTIME_ERROR("loadstring(source [, chunkname]) requires a string source.");
+		}
+		if (args.size() > 1 && !isNil(args.at(1)) && !valueIsString(args.at(1))) {
+			throw BMSX_RUNTIME_ERROR("loadstring(source [, chunkname]) requires a string chunkname.");
+		}
+		const std::string& source = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const std::string chunkName = args.size() > 1 && !isNil(args.at(1))
+			? m_cpu.stringPool().toString(asStringId(args.at(1)))
+			: std::string("loadstring");
+		try {
+			out.push_back(compileLoadChunk(*this, source, chunkName));
+		} catch (const std::exception& e) {
+			out.push_back(valueNil());
+			out.push_back(str(e.what()));
+		}
+	});
+
+	registerNativeFunction("load", [this, str](const std::vector<Value>& args, std::vector<Value>& out) {
+		if (args.empty() || !valueIsString(args.at(0))) {
+			throw BMSX_RUNTIME_ERROR("load(source [, chunkname [, mode]]) requires a string source.");
+		}
+		if (args.size() > 1 && !isNil(args.at(1)) && !valueIsString(args.at(1))) {
+			throw BMSX_RUNTIME_ERROR("load(source [, chunkname [, mode]]) requires chunkname to be a string.");
+		}
+		if (args.size() > 2 && !isNil(args.at(2))) {
+			if (!valueIsString(args.at(2))) {
+				throw BMSX_RUNTIME_ERROR("load(source [, chunkname [, mode]]) requires mode to be a string.");
+			}
+			const std::string& mode = m_cpu.stringPool().toString(asStringId(args.at(2)));
+			if (mode != "t" && mode != "bt") {
+				throw BMSX_RUNTIME_ERROR("load only supports text mode ('t' or 'bt').");
+			}
+		}
+		if (args.size() > 3 && !isNil(args.at(3))) {
+			throw BMSX_RUNTIME_ERROR("load does not support the environment argument.");
+		}
+		const std::string& source = m_cpu.stringPool().toString(asStringId(args.at(0)));
+		const std::string chunkName = args.size() > 1 && !isNil(args.at(1))
+			? m_cpu.stringPool().toString(asStringId(args.at(1)))
+			: std::string("load");
+		try {
+			out.push_back(compileLoadChunk(*this, source, chunkName));
+		} catch (const std::exception& e) {
+			out.push_back(valueNil());
+			out.push_back(str(e.what()));
 		}
 	});
 

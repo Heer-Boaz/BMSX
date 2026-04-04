@@ -131,10 +131,13 @@ add_library(bmsx_core STATIC
 	# Emulator runtime (Lua bytecode interpreter)
 	emulator/cpu.cpp
 	emulator/font.cpp
+	lua/syntax/lualexer.cpp
+	lua/syntax/luaparser.cpp
 	emulator/devices/dma_controller.cpp
 	emulator/devices/imgdec_controller.cpp
 	emulator/firmware_api.cpp
 	emulator/disassembler.cpp
+	emulator/lua_load_compiler.cpp
 	emulator/lua_globals.cpp
 	emulator/lua_heap_usage.cpp
 	emulator/lua_runtime.cpp
