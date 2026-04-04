@@ -1,7 +1,7 @@
 import type { SemanticAnnotations, SymbolKind } from '../semantic_model';
 import type { HighlightLine } from '../types';
 import * as constants from '../constants';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../lua_builtins';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../lua_builtin_descriptors';
 import { LuaLexer } from '../../../lua/syntax/lualexer';
 import { KEYWORDS } from '../../../lua/syntax/luatoken';
 import { clamp } from '../../../utils/clamp';

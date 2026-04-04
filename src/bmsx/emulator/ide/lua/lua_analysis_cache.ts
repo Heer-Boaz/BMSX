@@ -1,3 +1,4 @@
+import type { CanonicalizationType } from '../../../rompack/rompack';
 import type { LuaSyntaxError } from '../../../lua/luaerrors';
 import type { ParsedLuaChunk } from './lua_parse';
 import { parseLuaChunkWithRecovery } from './lua_parse';
@@ -23,8 +24,10 @@ export function getCachedLuaParse(options: {
 	version?: number;
 	parsed?: ParsedLuaChunk;
 	withSyntaxError?: boolean;
+	canonicalization?: CanonicalizationType;
 }): LuaAnalysisEntry {
-	const cacheKey = options.path;
+	const canonicalization = options.canonicalization ?? 'none';
+	const cacheKey = `${options.path}\x00${canonicalization}`;
 	const version = options.version;
 	const cached = analysisCache.get(cacheKey);
 	if (cached) {
@@ -35,7 +38,7 @@ export function getCachedLuaParse(options: {
 		}
 	}
 	const resolvedLines = options.lines ?? splitText(options.source);
-	const parsed = options.parsed ?? parseLuaChunkWithRecovery(options.source, options.path, resolvedLines);
+	const parsed = options.parsed ?? parseLuaChunkWithRecovery(options.source, options.path, resolvedLines, canonicalization);
 	const syntaxError = parsed.syntaxError;
 	const entry: LuaAnalysisEntry = {
 		path: options.path,

@@ -3,7 +3,7 @@ import { LuaSyntaxError } from '../../../lua/luaerrors';
 import { LuaLexer } from '../../../lua/syntax/lualexer';
 import { LuaParser } from '../../../lua/syntax/luaparser';
 import type { LuaToken } from '../../../lua/syntax/luatoken';
-import { ide_state } from '../ide_state';
+import type { CanonicalizationType } from '../../../rompack/rompack';
 import { splitText } from '../text/source_text';
 
 export type ParsedLuaChunk = {
@@ -12,17 +12,17 @@ export type ParsedLuaChunk = {
 	syntaxError?: LuaSyntaxError | null;
 };
 
-export function parseLuaChunk(source: string, path: string, lines?: readonly string[]): ParsedLuaChunk {
-	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
+export function parseLuaChunk(source: string, path: string, lines?: readonly string[], canonicalization: CanonicalizationType = 'none'): ParsedLuaChunk {
+	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: canonicalization });
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, path, source, lines);
 	const chunk = parser.parseChunk();
 	return { chunk, tokens, syntaxError: null };
 }
 
-export function parseLuaChunkWithRecovery(source: string, path: string, lines?: readonly string[]): ParsedLuaChunk {
+export function parseLuaChunkWithRecovery(source: string, path: string, lines?: readonly string[], canonicalization: CanonicalizationType = 'none'): ParsedLuaChunk {
 	const resolvedLines: readonly string[] = lines ?? splitText(source);
-	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: ide_state.caseInsensitive ? ide_state.canonicalization : 'none' });
+	const lexer = new LuaLexer(source, path, { canonicalizeIdentifiers: canonicalization });
 	const lexed = lexer.scanTokensWithRecovery();
 	const tokens = lexed.tokens;
 	const parser = new LuaParser(tokens, path, source, resolvedLines);
