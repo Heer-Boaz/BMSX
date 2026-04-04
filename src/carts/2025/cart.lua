@@ -1,7 +1,7 @@
 local globals<const> = require('globals')
 local story<const> = require('story')
-local start_node<const> = 'title'
--- local start_node = 'combat_wekker'
+-- local start_node<const> = 'title'
+local start_node<const> = 'combat_wekker'
 
 local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')

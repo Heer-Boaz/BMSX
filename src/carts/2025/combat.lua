@@ -223,33 +223,30 @@ function combat.define_fsm()
 						return
 					end
 					local points<const> = frame.slash_points
+					local x0<const> = points[1]
+					local y0<const> = points[2]
+					local x1<const> = points[3]
+					local y1<const> = points[4]
 					local z<const> = frame.slash_z
 					local color<const> = frame.slash_color
 					local thickness<const> = frame.slash_thickness
-					local n<const> = #points / 2
-					for i = 0, n - 1 do
-						local x0<const> = points[i * 2 + 1]
-						local y0<const> = points[i * 2 + 2]
-						local x1<const> = points[((i + 1) % n) * 2 + 1]
-						local y1<const> = points[((i + 1) % n) * 2 + 2]
-						memwrite(
-							vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11),
-							sys_vdp_cmd_draw_line,
-							11,
-							0,
-							x0,
-							y0,
-							x1,
-							y1,
-							z,
-							sys_vdp_layer_world,
-							color.r,
-							color.g,
-							color.b,
-							color.a,
-							thickness
-						)
-					end
+					memwrite(
+						vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11),
+						sys_vdp_cmd_draw_line,
+						11,
+						0,
+						x0,
+						y0,
+						x1,
+						y1,
+						z,
+						sys_vdp_layer_world,
+						color.r,
+						color.g,
+						color.b,
+						color.a,
+						thickness
+					)
 				end)
 			globals.hide_combat_sprites()
 			return '/idle'
@@ -394,10 +391,17 @@ function combat.define_fsm()
 			globals.clear_texts(globals.text_ids_all)
 			globals.hide_combat_sprites()
 			globals.hide_transition_layers()
-			local bg<const> = oget(globals.bg_id)
-			bg.visible = true
-			bg.sprite_component.colorize = { r = 1, g = 1, b = 1, a = 1 }
-			self:play_timeline(globals.combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = bg })
+			local overlay<const> = oget(globals.director_instance_id).transition_visual.overlay
+			overlay.visible = true
+			overlay.x = 0
+			overlay.y = 0
+			overlay.width = display_width()
+			overlay.height = display_height()
+			overlay.r = 0
+			overlay.g = 0
+			overlay.b = 0
+			overlay.a = 0
+			self:play_timeline(globals.combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -408,8 +412,12 @@ function combat.define_fsm()
 			},
 		},
 		leaving_state = function(self)
-			local bg<const> = oget(globals.bg_id)
-			bg.sprite_component.colorize = { r = 0, g = 0, b = 0, a = 1 }
+			local overlay<const> = oget(globals.director_instance_id).transition_visual.overlay
+			overlay.visible = false
+			overlay.r = 0
+			overlay.g = 0
+			overlay.b = 0
+			overlay.a = 0
 		end,
 	}
 
@@ -427,7 +435,18 @@ function combat.define_fsm()
 		},
 		entering_state = function(self)
 			globals.clear_texts(globals.text_ids_core)
-			self:play_timeline(globals.combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = oget(globals.bg_id) })
+			globals.hide_transition_layers()
+			local overlay<const> = oget(globals.director_instance_id).transition_visual.overlay
+			overlay.visible = true
+			overlay.x = 0
+			overlay.y = 0
+			overlay.width = display_width()
+			overlay.height = display_height()
+			overlay.r = 0
+			overlay.g = 0
+			overlay.b = 0
+			overlay.a = 0
+			self:play_timeline(globals.combat_fade_timeline_id, { rewind = true, snap_to_start = true, target = { overlay = overlay } })
 		end,
 		input_eval = 'first',
 		input_event_handlers = {

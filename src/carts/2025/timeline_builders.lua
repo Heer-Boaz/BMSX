@@ -131,15 +131,13 @@ end
 function builders.build_combat_fade_frames()
 	local frames<const> = {}
 	for frame_index = 0, globals.combat_fade_frame_count - 1 do
-		local c = 0
+		local a = 1
 		if frame_index < globals.combat_fade_out_frames then
 			local u<const> = frame_index / (globals.combat_fade_out_frames - 1)
-			c = 1 - easing.smoothstep(u)
+			a = easing.smoothstep(u)
 		end
 		frames[#frames + 1] = {
-			sprite_component = {
-				colorize = { r = c, g = c, b = c, a = 1 },
-			},
+			overlay = { r = 0, g = 0, b = 0, a = a },
 		}
 	end
 	return frames
@@ -505,7 +503,7 @@ function builders.build_combat_exchange_frames(params)
 					scale = maya_scale,
 				},
 			},
-			overlay = { color = overlay_colorize },
+			overlay = overlay_colorize,
 		}
 	end
 

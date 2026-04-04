@@ -92,6 +92,36 @@ export default function schedule({ logger, test }) {
 			local choice_offset_2 = choice.wrapped_line_y_offsets[2]
 			local choice_offset_3 = choice.wrapped_line_y_offsets[3]
 			choice.maximum_characters_per_line = original_choice_max
+			local timeline_builders = require('timeline_builders')
+			local exchange_frames = timeline_builders.build_combat_exchange_frames({
+				frame_count = 4,
+				monster_base_x = 100,
+				monster_base_y = 60,
+				maya_base_x = 140,
+				maya_base_y = 60,
+				maya_offset_x = 8,
+				maya_offset_y = -4,
+				maya_hold_frames = 1,
+				maya_recover_frames = 1,
+				maya_bob_amp = 1,
+				maya_bob_period_frames = 2,
+				maya_react_scale_x = 0.1,
+				maya_react_scale_y = -0.1,
+				maya_impact_scale_x = 0.2,
+				maya_impact_scale_y = -0.2,
+				flash = true,
+				flash_r = 1,
+				flash_g = 0.5,
+				flash_b = 0.5,
+				squash = true,
+				cam_shake_x = 1,
+				cam_shake_y = 1,
+				overlay_alpha = 0.35,
+			})
+			local exchange_overlay = exchange_frames[1].overlay
+			local combat_fade_frames = timeline_builders.build_combat_fade_frames()
+			local combat_fade_overlay = combat_fade_frames[1].overlay
+			local combat_fade_sprite_component = combat_fade_frames[1].sprite_component
 			local original_max<const> = main.maximum_characters_per_line
 			main.maximum_characters_per_line = 7
 			main:set_text({ 'AB CD EF' }, { typed = false, snap = true })
@@ -114,6 +144,14 @@ export default function schedule({ logger, test }) {
 					choice_offset_1 = choice_offset_1,
 					choice_offset_2 = choice_offset_2,
 					choice_offset_3 = choice_offset_3,
+					exchange_overlay_r = exchange_overlay.r,
+					exchange_overlay_g = exchange_overlay.g,
+						exchange_overlay_b = exchange_overlay.b,
+						exchange_overlay_a = exchange_overlay.a,
+						exchange_overlay_color = exchange_overlay.color,
+						combat_fade_overlay_a = combat_fade_overlay.a,
+						combat_fade_overlay_r = combat_fade_overlay.r,
+						combat_fade_has_sprite_component = combat_fade_sprite_component ~= nil,
 					line_height = main.line_height,
 					component_line_height = main.text_component.line_height,
 				full_count = #main.full_text_lines,
@@ -137,6 +175,10 @@ export default function schedule({ logger, test }) {
 			test.assert(textProbeState.choice_offset_1 === 0, `expected first wrapped option line offset to be 0, got ${textProbeState.choice_offset_1}`);
 			test.assert(textProbeState.choice_offset_2 === 8, `expected wrapped line inside same option to stay tight, got ${textProbeState.choice_offset_2}`);
 			test.assert(textProbeState.choice_offset_3 === 24, `expected next option to include one blank line gap, got ${textProbeState.choice_offset_3}`);
+			test.assert(typeof textProbeState.exchange_overlay_r === 'number' && typeof textProbeState.exchange_overlay_g === 'number' && typeof textProbeState.exchange_overlay_b === 'number' && typeof textProbeState.exchange_overlay_a === 'number', `expected combat exchange overlay frame to be flat rgba, got ${JSON.stringify({ r: textProbeState.exchange_overlay_r, g: textProbeState.exchange_overlay_g, b: textProbeState.exchange_overlay_b, a: textProbeState.exchange_overlay_a, color: textProbeState.exchange_overlay_color })}`);
+			test.assert(textProbeState.exchange_overlay_color == null, `expected combat exchange overlay frame to not use nested color table, got ${JSON.stringify(textProbeState.exchange_overlay_color)}`);
+			test.assert(textProbeState.combat_fade_overlay_r === 0 && textProbeState.combat_fade_overlay_a === 0, `expected combat fade to start as transparent black overlay, got ${JSON.stringify({ r: textProbeState.combat_fade_overlay_r, a: textProbeState.combat_fade_overlay_a })}`);
+			test.assert(!textProbeState.combat_fade_has_sprite_component, 'expected combat fade frames to target overlay state instead of sprite_component');
 			test.assert(textProbeState.line_height === 16, `expected 2025 text line_height to be 16, got ${textProbeState.line_height}`);
 			test.assert(textProbeState.line_height === textProbeState.component_line_height, `expected textcomponent line_height to mirror textobject line_height, got ${textProbeState.component_line_height} vs ${textProbeState.line_height}`);
 			test.assert(textProbeState.full_count === 3, `expected three wrapped lines for explicit blank line case, got ${textProbeState.full_count}`);
