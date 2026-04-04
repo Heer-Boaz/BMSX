@@ -1337,7 +1337,7 @@ function state:transition_to_state(state_id)
 		local prev_states<const> = self:states_or_throw()
 		local prev_instance<const> = prev_states[prev_id]
 		if not prev_instance then
-			error('previous state '' .. tostring(prev_id) .. '' not found in '' .. tostring(self.id) .. ''.')
+			error('previous state "' .. tostring(prev_id) .. '" not found in "' .. tostring(self.id) .. '".')
 		end
 
 		local exit_handler<const> = prev_def.exiting_state
@@ -1467,7 +1467,7 @@ function state:transition_to_path(path)
 	local ctx = spec.abs and self.root or self
 	for i = 1, spec.up do
 		if not ctx.parent then
-			error('path '' .. path .. '' attempts to go above root.')
+			error('path "' .. path .. '" attempts to go above root.')
 		end
 		ctx = ctx.parent
 	end
@@ -1577,14 +1577,14 @@ function state.parse_fs_path(input)
 						closed = true
 						break
 					else
-						error('unterminated quoted segment in path '' .. input .. ''.')
+						error('unterminated quoted segment in path "' .. input .. '".')
 					end
 				else
 					seg = seg .. ch
 				end
 			end
 			if not closed then
-				error('unterminated quoted segment in path '' .. input .. ''.')
+				error('unterminated quoted segment in path "' .. input .. '".')
 			end
 			push_seg(seg)
 		else

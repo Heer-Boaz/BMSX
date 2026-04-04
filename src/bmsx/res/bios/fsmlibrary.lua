@@ -61,7 +61,7 @@ end
 --   Prefer the @assign_fsm decorator over calling this directly.
 function fsmlibrary.instantiate(machine_name, target)
 	local definition<const> = statedefinitions[machine_name]
-	assert(definition, 'fsm '' .. machine_name .. '' not registered')
+	assert(definition, 'fsm "' .. machine_name .. '" not registered')
 	local controller<const> = fsm.statemachinecontroller.new({ target = target, definition = definition, fsm_id = machine_name })
 	local list = activemachines[machine_name]
 	if not list then
