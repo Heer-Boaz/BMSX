@@ -43,7 +43,7 @@ end
 
 function ui:ctor()
 	self:bind_visual()
-	local player<const> = object('pietolon')
+	local player<const> = oget('pietolon')
 	local health<const> = clamp_int(math.modf(player.health), 0, constants.damage.max_health)
 	local weapon<const> = clamp_int(math.modf(player.weapon_level), 0, constants.hud.weapon_level)
 	self.hud_visible = true
@@ -89,7 +89,7 @@ function ui:draw_ui()
 	if not self.hud_visible then
 		return
 	end
-	local player<const> = object('pietolon')
+	local player<const> = oget('pietolon')
 	memwrite(
 		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
 		sys_vdp_cmd_blit,

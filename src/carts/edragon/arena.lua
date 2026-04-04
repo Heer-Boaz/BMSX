@@ -20,8 +20,8 @@ function arena:draw()
 	fill_rect_color(0, 0, constants.machine.width, constants.machine.height, constants.z.background, constants.palette.bg)
 	fill_rect_color(0, constants.physics.floor_y, constants.machine.width, constants.physics.floor_y + 6, constants.z.background + 1, constants.palette.floor)
 
-	local player = object(constants.ids.player_instance)
-	local enemy = object(constants.ids.enemy_instance)
+	local player = oget(constants.ids.player_instance)
+	local enemy = oget(constants.ids.enemy_instance)
 	self:draw_hp_bar(8, 8, 84, player.health, constants.player.max_health, constants.palette.player)
 	self:draw_hp_bar(164, 8, 84, enemy.health, constants.enemy.max_health, constants.palette.enemy)
 

@@ -38,7 +38,7 @@ function crossfoe:ctor()
 end
 
 function crossfoe.bt_tick_waiting(self, blackboard)
-	local player<const> = object('pietolon')
+	local player<const> = oget('pietolon')
 	local node<const> = blackboard.nodedata
 	apply_spin_visual(self)
 	local wait_ticks = node.cross_wait_ticks or constants.enemy.cross_wait_before_fly_steps
@@ -57,12 +57,12 @@ function crossfoe.bt_tick_waiting(self, blackboard)
 	end
 	self.cross_spin_direction = 'left'
 	apply_spin_visual(self)
-	object('c').events:emit('cross')
+	oget('c').events:emit('cross')
 	return behaviourtree.running
 end
 
 function crossfoe.bt_tick_flying(self, blackboard)
-	local player<const> = object('pietolon')
+	local player<const> = oget('pietolon')
 	local node<const> = blackboard.nodedata
 	apply_spin_visual(self)
 	local direction_mod<const> = self.cross_state == 'flying_left' and -1 or 1
@@ -73,14 +73,14 @@ function crossfoe.bt_tick_flying(self, blackboard)
 	if (self.cross_state == 'flying_left' and self.x < (player.x - player.width))
 		or (self.cross_state == 'flying_right' and self.x > (player.x + (player.width * 2)))
 		or next_left < 0
-		or next_right > object('room').world_width
+		or next_right > oget('room').world_width
 	then
 		self.cross_state = 'waiting'
 		self.cross_spin_direction = 'down'
 		self.x = self.x - (constants.enemy.cross_horizontal_speed_px * direction_mod)
 		node.cross_wait_ticks = constants.enemy.cross_wait_before_fly_steps
 		node.cross_turn_ticks = constants.enemy.cross_turn_steps
-		object('c').events:emit('crossland')
+		oget('c').events:emit('crossland')
 		return behaviourtree.running
 	end
 

@@ -34,8 +34,8 @@ local move_vertical<const> = function(self, target, vertical)
 end
 
 function elevator:update_motion()
-	local player<const> = object('pietolon')
-	local current_room_number<const> = object('c').current_room_number
+	local player<const> = oget('pietolon')
+	local current_room_number<const> = oget('c').current_room_number
 	self.visible = self.current_room_number == current_room_number
 	self.collider.enabled = self.visible
 	local previous_y<const> = self.y

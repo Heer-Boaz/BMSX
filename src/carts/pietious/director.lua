@@ -101,7 +101,7 @@ end
 function director:set_active_space(space_id)
 	set_space(space_id)
 	self:set_space(space_id)
-	object('ui'):set_space(space_id)
+	oget('ui'):set_space(space_id)
 end
 
 function director:begin_black_wait()

@@ -6,7 +6,7 @@ local room_spawner<const> = {}
 local spawn_rocks<const> = function(room)
 	for i = 1, #room.rocks do
 		local def<const> = room.rocks[i]
-		local existing<const> = object(def.id)
+		local existing<const> = oget(def.id)
 		if not room.destroyed_rock_ids[def.id] then
 			if existing == nil then
 				local obj<const> = inst('rock', {
@@ -25,14 +25,14 @@ end
 local spawn_lithographs<const> = function(room)
 	for i = 1, #room.lithographs do
 		local def<const> = room.lithographs[i]
-		local existing<const> = object(def.id)
+		local existing<const> = oget(def.id)
 		if existing == nil then
 			local obj<const> = inst('lithograph', {
 				id = def.id,
 				space_id = 'main',
 				pos = { x = def.x, y = def.y, z = 10 },
 				text = def.text,
-				room_number = object('c').current_room_number,
+				room_number = oget('c').current_room_number,
 				rs_room_number = room.room_number,
 			})
 			obj:add_tag('rs')
@@ -43,7 +43,7 @@ end
 local spawn_shrines<const> = function(room)
 	for i = 1, #room.shrines do
 		local def<const> = room.shrines[i]
-		local existing<const> = object(def.id)
+		local existing<const> = oget(def.id)
 		if existing == nil then
 			local obj<const> = inst('room_shrine', {
 				id = def.id,
@@ -59,7 +59,7 @@ end
 local spawn_draaideuren<const> = function(room)
 	for i = 1, #room.draaideuren do
 		local def<const> = room.draaideuren[i]
-		local existing<const> = object(def.id)
+		local existing<const> = oget(def.id)
 		if existing == nil then
 			local obj<const> = inst('draaideur', {
 				id = def.id,
@@ -74,10 +74,10 @@ local spawn_draaideuren<const> = function(room)
 end
 
 local spawn_world_entrances<const> = function(room)
-	local castle<const> = object('c')
+	local castle<const> = oget('c')
 	for i = 1, #room.world_entrances do
 		local def<const> = room.world_entrances[i]
-		local existing<const> = object(def.id)
+		local existing<const> = oget(def.id)
 		if existing == nil then
 			local entrance<const> = inst('world_entrance', {
 				id = def.id,
@@ -93,8 +93,8 @@ local spawn_world_entrances<const> = function(room)
 end
 
 local spawn_items<const> = function(room)
-	local castle<const> = object('c')
-	local player<const> = object('pietolon')
+	local castle<const> = oget('c')
+	local player<const> = oget('pietolon')
 	for i = 1, #room.items do
 		local def<const> = room.items[i]
 		local picked<const> = progression.get(castle, 'item_picked_' .. def.id)
@@ -102,7 +102,7 @@ local spawn_items<const> = function(room)
 		local already_owned<const> = player.inventory_items and player.inventory_items[def.item_type]
 
 		local should_spawn<const> = not picked and matches_conditions and not already_owned
-		local existing<const> = object(def.id)
+		local existing<const> = oget(def.id)
 		if should_spawn then
 			if existing == nil then
 				local obj<const> = inst('world_item', {
@@ -124,14 +124,14 @@ local spawn_items<const> = function(room)
 end
 
 local spawn_enemies<const> = function(room)
-	local castle<const> = object('c')
+	local castle<const> = oget('c')
 	for i = 1, #room.enemies do
 		local def<const> = room.enemies[i]
 		local defeated<const> = progression.get(castle, def.id)
 		local matches_conditions<const> = progression.matches(castle, def.conditions)
 
 		local should_spawn<const> = not defeated and matches_conditions
-		local existing<const> = object(def.id)
+		local existing<const> = oget(def.id)
 		if should_spawn then
 			if existing == nil then
 				local obj<const> = inst('enemy.' .. def.kind, {

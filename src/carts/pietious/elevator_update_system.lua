@@ -14,7 +14,7 @@ local pipeline_registered = false
 local pipeline_ref<const> = 'pt.eup'
 
 function elevator_update_system:update()
-	local player<const> = object('pietolon')
+	local player<const> = oget('pietolon')
 	player.next_vertical_elevator = false
 	player.next_vertical_elevator_id = nil
 	for elevator in world_instance:objects_by_type('elevator_platform', { scope = 'active' }) do

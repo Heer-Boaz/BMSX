@@ -369,7 +369,7 @@ function director:update_stomp_targets(player)
 end
 
 function director:update(dt)
-	local player = object(self.player_id)
+	local player = oget(self.player_id)
 	self.player_ref = player
 
 	if player:consume_reset_request() then
@@ -614,7 +614,7 @@ local define_director_fsm<const> = function()
 			boot = {
 					entering_state = function(self)
 						self:bind_visual()
-						self.player_ref = object(self.player_id)
+						self.player_ref = oget(self.player_id)
 						self:reset_barrels()
 						self:define_timeline(timeline.new({
 						id = goal_pulse_timeline_id,

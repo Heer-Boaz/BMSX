@@ -98,7 +98,7 @@ function draaideur:try_begin_open(player, walking_left, walking_right)
 	else
 		self.player_was_right = false
 	end
-	object('c').events:emit('rotatedoor')
+	oget('c').events:emit('rotatedoor')
 	player:start_slow_doorpass()
 end
 
@@ -109,7 +109,7 @@ function draaideur:update_active()
 		return
 	end
 
-	local player<const> = object('pietolon')
+	local player<const> = oget('pietolon')
 	local walking_left<const> = player:has_tag('v.wl')
 	local walking_right<const> = player:has_tag('v.wr')
 	local touches<const> = self:touches_player(player, walking_left, walking_right)

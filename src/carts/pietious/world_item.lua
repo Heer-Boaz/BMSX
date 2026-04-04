@@ -63,7 +63,7 @@ local define_world_item_fsm<const> = function()
 					if combat_overlap.classify_player_contact(event) ~= 'body' then
 						return
 					end
-				local player<const> = object('pietolon')
+				local player<const> = oget('pietolon')
 				if player.health <= 0 then
 					return
 				end
@@ -75,7 +75,7 @@ local define_world_item_fsm<const> = function()
 				if item_id == nil then
 					item_id = self.id
 				end
-				progression.set(object('c'), 'item_picked_' .. item_id, true)
+				progression.set(oget('c'), 'item_picked_' .. item_id, true)
 				self.events:emit('picked')
 			end,
 		},

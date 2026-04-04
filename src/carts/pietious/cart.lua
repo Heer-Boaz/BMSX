@@ -57,7 +57,7 @@ local dispatch_irqs<const> = function()
 end
 
 local grant_starting_loadout<const> = function()
-	local player<const> = object('pietolon')
+	local player<const> = oget('pietolon')
 	player.inventory_items['keyworld1'] = true
 	player.inventory_items['spyglass'] = true
 	player.inventory_items['halo'] = true
@@ -67,9 +67,9 @@ local grant_starting_loadout<const> = function()
 	player.inventory_items['map_world1'] = true
 	player.inventory_items['pepernoot'] = true
 	player:equip_subweapon('pepernoot')
-	object('pietolon').weapon_level = constants.hud.weapon_level
-	object('pietolon'):emit_weapon_changed()
-	local castle<const> = object('c')
+	oget('pietolon').weapon_level = constants.hud.weapon_level
+	oget('pietolon'):emit_weapon_changed()
+	local castle<const> = oget('c')
 	progression.set(castle, 'staff1destroyed', true)
 	progression.set(castle, 'staff2destroyed', true)
 	progression.set(castle, 'staff3destroyed', true)

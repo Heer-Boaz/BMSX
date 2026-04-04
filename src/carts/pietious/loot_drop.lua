@@ -28,7 +28,7 @@ local define_loot_drop_fsm<const> = function()
 				if combat_overlap.classify_player_contact(event) ~= 'body' then
 					return
 				end
-				local player<const> = object(event.other_id)
+				local player<const> = oget(event.other_id)
 				if player:collect_loot(self.loot_type, self.loot_value) then
 					if self.loot_type == 'life' then
 						player.events:emit('healing')

@@ -38,12 +38,12 @@ function muziekfoe.bt_tick(self, blackboard)
 	node.muziek_move_accum = move_accum
 
 	if self.direction == 'left' then
-		local rm<const> = object('room')
+		local rm<const> = oget('room')
 		if self.x < 0 or rm:has_collision_flags_at_world(self.x, self.y, constants.collision_flags.solid_mask) then
 			self.direction = 'right'
 		end
 	else
-		local rm<const> = object('room')
+		local rm<const> = oget('room')
 		if self.x + 24 >= rm.world_width or rm:has_collision_flags_at_world(self.x + 24, self.y + 16, constants.collision_flags.solid_mask) then
 			self.direction = 'left'
 		end
@@ -52,7 +52,7 @@ function muziekfoe.bt_tick(self, blackboard)
 	local noot_ticks = node.muziek_noot_ticks or constants.enemy.muziek_spawn_noot_steps
 	noot_ticks = noot_ticks - 1
 	if noot_ticks <= 0 then
-		local player<const> = object('pietolon')
+		local player<const> = oget('pietolon')
 		local source_x<const> = self.x + 12
 		local source_y<const> = self.y + 8
 		local target_x<const> = player.x

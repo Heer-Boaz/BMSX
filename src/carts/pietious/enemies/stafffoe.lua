@@ -46,7 +46,7 @@ function stafffoe.bt_tick(self, blackboard)
 		return behaviourtree.running
 	end
 
-	local player<const> = object('pietolon')
+	local player<const> = oget('pietolon')
 	local bullets_dangerous<const> = not player.inventory_items.greenvase
 	local base_angle<const> = math.random(0, 359)
 	for i = 0, 3 do
@@ -67,7 +67,7 @@ function stafffoe.bt_tick(self, blackboard)
 			},
 		})
 	end
-	object('c').events:emit('staffspawn')
+	oget('c').events:emit('staffspawn')
 	self.staff_spawn_count = self.staff_spawn_count + 1
 	node.staff_wait_ticks = constants.enemy.staff_wait_before_spawn_steps
 	return behaviourtree.running

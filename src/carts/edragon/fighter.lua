@@ -102,7 +102,7 @@ function fighter:sample_player_input()
 end
 
 function fighter:sample_enemy_input()
-	local enemy_target = object(self.target_id)
+	local enemy_target = oget(self.target_id)
 	self.left_held = enemy_target.x < self.x
 	self.right_held = enemy_target.x > self.x
 	local wants_attack = self.step % constants.enemy.think_every == 0 and (math.abs(enemy_target.x - self.x) <= constants.attack.range_x * 2)
@@ -252,7 +252,7 @@ function fighter:perform_attack()
 end
 
 function fighter:check_attack_connect()
-	local target = object(self.target_id)
+	local target = oget(self.target_id)
 	local profile = self.attack_profile
 	local range = constants.attack.range_x + (profile and profile.range_bonus or 0)
 	local hit_min_x = self.x

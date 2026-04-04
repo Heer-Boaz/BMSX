@@ -49,12 +49,12 @@ function rock:process_damage_result(result)
 end
 
 function rock:begin_break()
-		local room<const> = object('room')
+		local room<const> = oget('room')
 		room:mark_rock_destroyed(self.id)
 		if self.item_type == nil then
 				return
 		end
-		local player<const> = object('pietolon')
+		local player<const> = oget('pietolon')
 		if player and player.inventory_items and player.inventory_items[self.item_type] then
 				return
 		end

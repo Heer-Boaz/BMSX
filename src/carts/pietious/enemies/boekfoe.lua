@@ -36,7 +36,7 @@ function boekfoe.bt_tick(self, blackboard)
 
 	if spawn_ticks <= 0 then
 		local y_speed_num<const> = math.random(-5, 4)
-		object('c').events:emit('paperspawn')
+		oget('c').events:emit('paperspawn')
 		inst('enemy.paperfoe', {
 			direction = self.direction == 'left' and 'left' or 'right',
 			speed_x_num = (self.direction == 'left' and -constants.enemy.paper_speed_x or constants.enemy.paper_speed_x) * 5,

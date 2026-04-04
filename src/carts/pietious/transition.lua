@@ -38,7 +38,7 @@ function transition:bind_visual()
 end
 
 function transition:draw_transition_overlay()
-	if not object('d'):has_tag('d.bt') then
+	if not oget('d'):has_tag('d.bt') then
 		return
 	end
 	local lines<const> = self.banner_lines
@@ -55,7 +55,7 @@ function transition:draw_transition_overlay()
 			341,
 			font.id,
 			0,
-			2147483647,
+			0x7fffffff,
 			sys_vdp_layer_ui,
 			1,
 			1,

@@ -53,7 +53,7 @@ action_effects.register_effect('pepernoot', {
 	end,
 	handler = function(context)
 		local owner<const> = context.owner
-		local room<const> = object('room')
+		local room<const> = oget('room')
 		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 		local projectile_id<const> = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
 		local spawn_x = owner.x + (owner.facing < 0 and -constants.secondary_weapon.pepernoot_spawn_offset_x or constants.secondary_weapon.pepernoot_spawn_offset_x)
@@ -62,7 +62,7 @@ action_effects.register_effect('pepernoot', {
 		inst('pepernoot_projectile', {
 			id = projectile_id,
 			room = room,
-			room_number = object('c').current_room_number,
+			room_number = oget('c').current_room_number,
 			owner_id = owner.id,
 			direction = owner.facing,
 			pos = { x = spawn_x, y = spawn_y, z = 113 },
@@ -77,10 +77,10 @@ action_effects.register_effect('spyglass', {
 	id = 'spyglass',
 	blocked_tags = { 'g.dl' },
 	can_trigger = function(context)
-		return object('room'):find_near_lithograph(context.owner) ~= nil
+		return oget('room'):find_near_lithograph(context.owner) ~= nil
 	end,
 	handler = function(context)
-		local lithograph<const> = object('room'):find_near_lithograph(context.owner)
+		local lithograph<const> = oget('room'):find_near_lithograph(context.owner)
 		context.owner.events:emit('lithograph.request', {
 			text_line = lithograph.text,
 		})
@@ -91,7 +91,7 @@ action_effects.register_effect('halo', {
 	id = 'halo',
 	blocked_tags = { 'g.tr' },
 	can_trigger = function(context)
-		local castle<const> = object('c')
+		local castle<const> = oget('c')
 		if not context.owner.inventory_items.halo then
 			return false
 		end
@@ -101,8 +101,8 @@ action_effects.register_effect('halo', {
 		return true
 	end,
 	handler = function(context)
-		local castle<const> = object('c')
-		local from_world<const> = (object('room').world_number or 0) ~= 0
+		local castle<const> = oget('c')
+		local from_world<const> = (oget('room').world_number or 0) ~= 0
 		if from_world then
 			castle:halo_teleport_to_room_1(false)
 			context.owner:begin_waiting_halo_banner()

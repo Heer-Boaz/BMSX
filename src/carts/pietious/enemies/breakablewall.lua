@@ -22,7 +22,7 @@ function breakablewall:process_damage_result(result)
 		return
 	end
 	if result.destroyed then
-		object('c').events:emit('room.condition_set', {
+		oget('c').events:emit('room.condition_set', {
 			room_number = result.room_number,
 			condition = self.trigger,
 			play_appearance = true,

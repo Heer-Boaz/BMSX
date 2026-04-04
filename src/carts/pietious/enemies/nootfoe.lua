@@ -18,7 +18,7 @@ function nootfoe:ctor()
 	self.noot_color = noot_colors[math.random(1, #noot_colors)]
 	self:gfx('muzieknootfoe')
 	self.sprite_component.colorize = self.noot_color
-	object('c').events:emit('muzieknootspawn')
+	oget('c').events:emit('muzieknootspawn')
 	enemy_base.setup_projectile_boundary(self)
 end
 

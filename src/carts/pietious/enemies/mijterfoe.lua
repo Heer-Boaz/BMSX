@@ -126,7 +126,7 @@ function mijterfoe.bt_tick_waiting(self, blackboard)
 	end
 	blackboard.nodedata.mijter_entry_lock_ticks = 0
 
-	local player<const> = object('pietolon')
+	local player<const> = oget('pietolon')
 	if player_triggered_takeoff(self, player) then
 		return start_flying(self, blackboard)
 	end
@@ -152,12 +152,12 @@ function mijterfoe.bt_tick_flying(self, blackboard)
 
 	if self.x <= 0 then
 		self.horizontal_dir_mod = 1
-	elseif self.x + 14 >= object('room').world_width then
+	elseif self.x + 14 >= oget('room').world_width then
 		self.horizontal_dir_mod = -1
 	end
-	if self.y <= object('room').world_top then
+	if self.y <= oget('room').world_top then
 		self.vertical_dir_mod = 1
-	elseif self.y + 14 >= object('room').world_height then
+	elseif self.y + 14 >= oget('room').world_height then
 		self.vertical_dir_mod = -1
 	end
 

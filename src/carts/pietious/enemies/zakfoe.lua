@@ -42,7 +42,7 @@ function zakfoe.bt_tick(self, blackboard)
 		self.current_vertical_speed = self.current_vertical_speed + constants.enemy.zak_vertical_speed_step
 
 		if self.direction == 'left' then
-			local rm<const> = object('room')
+			local rm<const> = oget('room')
 			if self.x < 0
 				or rm:has_collision_flags_at_world(self.x + 2, self.y + 2, constants.collision_flags.solid_mask)
 				or not rm:has_collision_flags_at_world(self.x + 2 - constants.room.tile_half, self.y + 14 + constants.room.tile_size, constants.collision_flags.solid_mask)
@@ -50,7 +50,7 @@ function zakfoe.bt_tick(self, blackboard)
 				self.direction = 'right'
 			end
 		else
-			local rm<const> = object('room')
+			local rm<const> = oget('room')
 			if self.x + 14 >= rm.world_width
 				or rm:has_collision_flags_at_world(self.x + 14, self.y + 2, constants.collision_flags.solid_mask)
 				or not rm:has_collision_flags_at_world(self.x + 14 + constants.room.tile_half, self.y + 14 + constants.room.tile_size, constants.collision_flags.solid_mask)

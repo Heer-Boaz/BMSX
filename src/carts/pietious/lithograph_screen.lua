@@ -58,7 +58,7 @@ function lithograph_screen:draw_screen()
 			341,
 			font.id,
 			0,
-			2147483647,
+			0x7fffffff,
 			sys_vdp_layer_ui,
 			1,
 			1,

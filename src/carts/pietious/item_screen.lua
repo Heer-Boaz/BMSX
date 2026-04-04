@@ -122,8 +122,8 @@ function item_screen:item_position_px(item_type)
 end
 
 function item_screen:draw_inventory_items()
-	local player<const> = object('pietolon')
-	local world_number<const> = object('room').world_number
+	local player<const> = oget('pietolon')
+	local world_number<const> = oget('room').world_number
 	for i = 1, #inventory_item_order do
 		local item_type<const> = inventory_item_order[i]
 		if player.inventory_items[item_type] then
@@ -182,8 +182,8 @@ function item_screen:draw_secondary_weapon_selector()
 end
 
 function item_screen:draw_map()
-	local player<const> = object('pietolon')
-	local room<const> = object('room')
+	local player<const> = oget('pietolon')
+	local room<const> = oget('room')
 	local world_number<const> = room.world_number
 	if world_number <= 0 then
 		return
@@ -217,7 +217,7 @@ function item_screen:draw_map()
 	for i = 1, #map_proxies do
 		local proxy<const> = map_proxies[i]
 		local sprite_id
-		if self.map_highlight and proxy.room_number == object('c').current_room_number then
+		if self.map_highlight and proxy.room_number == oget('c').current_room_number then
 			sprite_id = 'room_proxy_red'
 		elseif self.map_highlight and proxy.is_boss_room and player.inventory_items['lamp'] then
 			sprite_id = 'room_proxy_blue'
@@ -249,7 +249,7 @@ function item_screen:draw_map()
 end
 
 function item_screen:apply_selected_secondary_weapon()
-	local player<const> = object('pietolon')
+	local player<const> = oget('pietolon')
 	local selected_weapon<const> = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
 	if selected_weapon ~= nil and player.inventory_items[selected_weapon] then
 		player:equip_subweapon(selected_weapon)
@@ -257,7 +257,7 @@ function item_screen:apply_selected_secondary_weapon()
 end
 
 function item_screen:shift_secondary_weapon_selection(direction)
-	local player<const> = object('pietolon')
+	local player<const> = oget('pietolon')
 	local previous_index<const> = self.secondary_weapon_selection_index
 	if direction > 0 then
 		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do

@@ -12,7 +12,7 @@ end
 function marspeinenaardappel.bt_tick(self, _blackboard)
 	local speed_x<const> = self.speed_x_num
 	local speed_y<const> = self.speed_y_num
-	local rm<const> = object('room')
+	local rm<const> = oget('room')
 
 	self.x = self.x + speed_x
 	self.y = self.y + speed_y
