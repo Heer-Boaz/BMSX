@@ -395,6 +395,13 @@ function statedefinition.new(id, def, root, parent)
 				.. '". expected "first" or "all", but got ' .. type(self.input_eval) .. '.'
 		)
 	end
+	if self.input_eval ~= nil then
+		self.effective_input_eval = self.input_eval
+	elseif parent then
+		self.effective_input_eval = parent.effective_input_eval
+	else
+		self.effective_input_eval = 'all'
+	end
 	validate_optional_state_function(self.def_id, 'update', self.update)
 	validate_optional_state_function(self.def_id, 'entering_state', self.entering_state)
 	validate_optional_state_function(self.def_id, 'exiting_state', self.exiting_state)
@@ -430,6 +437,8 @@ function statedefinition.new(id, def, root, parent)
 	if self.root == self then
 		self._resolved_path_cache = {}
 		self._resolved_path_cache_count = 0
+		self._event_handler_chain_cache = {}
+		self._event_handler_chain_cache_count = 0
 		local list<const> = {}
 		local seen<const> = {}
 		collect_event_list(self, list, seen)
@@ -444,6 +453,7 @@ state.__index = state
 state.trace_map = {}
 state.path_config = { cache_size = 256 }
 state._path_cache_count = 0
+state.event_handler_chain_cache_size = 256
 state.diagnostics = {
 	trace_transitions = false,
 	trace_dispatch = false,
@@ -629,10 +639,13 @@ function state.new(definition, target, parent)
 	self.in_update = false
 	self._transitions_this_update = 0
 	self.paused = false
+	self.tag_list = definition.tags
 	self.tag_lookup = build_state_tag_lookup(definition.tags)
 	self._applied_state_tags = nil
 	self._tag_sync_scratch = nil
 	self._tag_remove_scratch = nil
+	self._active_state_tag_refs = nil
+	self._active_state_tags = nil
 	self:populate_states()
 	self:reset(true)
 	return self
@@ -1344,6 +1357,7 @@ function state:transition_to_state(state_id)
 		end
 		prev_instance:deactivate_timelines()
 		self:push_history(prev_id)
+		prev_instance:remove_active_subtree_tags()
 
 		self.current_id = state_id
 		local cur<const> = self.states[state_id]
@@ -1354,6 +1368,7 @@ function state:transition_to_state(state_id)
 		if cur_def.is_concurrent then
 			error('cannot transition to parallel state "' .. tostring(state_id) .. '".')
 		end
+		cur:add_active_subtree_tags()
 
 		cur:activate_timelines()
 		local enter_handler<const> = cur_def.entering_state
@@ -1397,7 +1412,9 @@ function state:transition_to_state(state_id)
 
 	local entered<const> = self.states[state_id]
 	if entered.definition.initial then
+		entered:remove_active_subtree_tags()
 		entered:reset_submachine(true)
+		entered:add_active_subtree_tags()
 		entered:enter_initial_substate_chain()
 	end
 end
@@ -1541,6 +1558,44 @@ local matches_cached_path_plan<const> = function(start_state, plan)
 		ctx = ctx.states[key]
 	end
 	return true
+end
+
+local compile_definition_event_handler_chain<const> = function(origin_definition, event_name)
+	local depths<const> = {}
+	local count = 0
+	local definition = origin_definition
+	local depth = 0
+	while definition do
+		if definition.on[event_name] ~= nil then
+			count = count + 1
+			depths[count] = depth
+		end
+		definition = definition.parent
+		depth = depth + 1
+	end
+	return { count = count, depths = depths }
+end
+
+local get_cached_definition_event_handler_chain<const> = function(origin_definition, event_name)
+	local root<const> = origin_definition.root
+	local cache_key<const> = origin_definition.def_id .. '\n' .. event_name
+	local cache<const> = root._event_handler_chain_cache
+	local cached<const> = cache[cache_key]
+	if cached then
+		return cached
+	end
+	local cache_size<const> = state.event_handler_chain_cache_size
+	if root._event_handler_chain_cache_count >= cache_size then
+		for key in pairs(cache) do
+			cache[key] = nil
+			root._event_handler_chain_cache_count = root._event_handler_chain_cache_count - 1
+			break
+		end
+	end
+	local chain<const> = compile_definition_event_handler_chain(origin_definition, event_name)
+	cache[cache_key] = chain
+	root._event_handler_chain_cache_count = root._event_handler_chain_cache_count + 1
+	return chain
 end
 
 function state:transition_to_path(path)
@@ -1747,10 +1802,10 @@ end
 -- collect_active_state_tags: walk the current state tree (including concurrent
 -- regions) and collect all tags from active states into the output table.
 function state:collect_active_state_tags(out)
-	local tags<const> = self.tag_lookup
+	local tags<const> = self.tag_list
 	if tags then
-		for tag in pairs(tags) do
-			out[tag] = true
+		for i = 1, #tags do
+			out[tags[i]] = true
 		end
 	end
 	if self.current_id then
@@ -1764,6 +1819,88 @@ function state:collect_active_state_tags(out)
 			concurrent_states[i]:collect_active_state_tags(out)
 		end
 	end
+end
+
+local increment_active_state_tag_ref<const> = function(root, tag)
+	local refs<const> = root._active_state_tag_refs
+	local count<const> = refs[tag]
+	if count then
+		refs[tag] = count + 1
+		return
+	end
+	refs[tag] = 1
+	root._active_state_tags[tag] = true
+end
+
+local decrement_active_state_tag_ref<const> = function(root, tag)
+	local refs<const> = root._active_state_tag_refs
+	local count<const> = refs[tag]
+	if count == 1 then
+		refs[tag] = nil
+		root._active_state_tags[tag] = nil
+		return
+	end
+	refs[tag] = count - 1
+end
+
+function state:add_active_subtree_tags()
+	local root<const> = self.root
+	local tags<const> = self.tag_list
+	if tags then
+		for i = 1, #tags do
+			increment_active_state_tag_ref(root, tags[i])
+		end
+	end
+	if self.current_id then
+		local child<const> = self.states[self.current_id]
+		if not child then
+			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
+		end
+		child:add_active_subtree_tags()
+		local concurrent_states<const> = self.concurrent_states
+		for i = 1, self.concurrent_state_count do
+			concurrent_states[i]:add_active_subtree_tags()
+		end
+	end
+end
+
+function state:remove_active_subtree_tags()
+	local root<const> = self.root
+	local tags<const> = self.tag_list
+	if tags then
+		for i = 1, #tags do
+			decrement_active_state_tag_ref(root, tags[i])
+		end
+	end
+	if self.current_id then
+		local child<const> = self.states[self.current_id]
+		if not child then
+			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
+		end
+		child:remove_active_subtree_tags()
+		local concurrent_states<const> = self.concurrent_states
+		for i = 1, self.concurrent_state_count do
+			concurrent_states[i]:remove_active_subtree_tags()
+		end
+	end
+end
+
+function state:rebuild_active_subtree_tags()
+	local refs = self._active_state_tag_refs
+	if not refs then
+		refs = {}
+		self._active_state_tag_refs = refs
+	else
+		clear_map(refs)
+	end
+	local tags = self._active_state_tags
+	if not tags then
+		tags = {}
+		self._active_state_tags = tags
+	else
+		clear_map(tags)
+	end
+	self:add_active_subtree_tags()
 end
 
 -- matches_tag_derivation_rule: evaluate a single derivation rule against the
@@ -1842,7 +1979,10 @@ function state:sync_target_state_tags()
 	else
 		clear_map(next_tags)
 	end
-	root:collect_active_state_tags(next_tags)
+	local active_tags<const> = root._active_state_tags
+	for tag in pairs(active_tags) do
+		next_tags[tag] = true
+	end
 	root:collect_derived_state_tags(next_tags)
 	local prev_tags = root._applied_state_tags
 	if not prev_tags then
@@ -1876,49 +2016,59 @@ end
 
 function state:handle_event(event_name, emitter_id, detail, event)
 	if self.paused then
-		return { handled = false }
+		return false
 	end
-	local trace_transitions<const> = should_trace_transitions()
-	local captured_context = nil
-	local handled
-	if trace_transitions then
-		handled = self:with_critical_section(function()
+	local handlers<const> = self.definition.on
+	local spec<const> = handlers[event_name]
+	if not spec then
+		return false
+	end
+	if should_trace_transitions() then
+		return self:with_critical_section(function()
 			return self:run_with_transition_context(
 				function()
 					return fsm_trace.create_event_context(event_name, emitter_id, detail)
 				end,
 				function(ctx)
-					captured_context = ctx
-					local handlers<const> = self.definition.on
-					if not handlers then
-						return false
-					end
-					local spec<const> = handlers[event_name]
-					if not spec then
-						return false
-					end
 					ctx.handler_name = fsm_trace.describe_transition_handler(spec)
 					return self:handle_state_transition(spec, event)
 				end
 			)
 		end)
-	else
-		handled = self:with_critical_section(function()
-			local handlers<const> = self.definition.on
-			if not handlers then
-				return false
-			end
-			local spec<const> = handlers[event_name]
-			if not spec then
-				return false
-			end
-			return self:handle_state_transition(spec, event)
-		end)
 	end
-	if not should_trace_dispatch() and not trace_transitions then
-		return { handled = handled }
+	return self:with_critical_section(function()
+		return self:handle_state_transition(spec, event)
+	end)
+end
+
+function state:handle_event_with_dispatch_context(event_name, emitter_id, detail, event)
+	if self.paused then
+		return false, nil
 	end
-	return { handled = handled, context = captured_context }
+	local handlers<const> = self.definition.on
+	local spec<const> = handlers[event_name]
+	if not spec then
+		return false, nil
+	end
+	local captured_context = nil
+	if should_trace_transitions() then
+		return self:with_critical_section(function()
+			local handled<const> = self:run_with_transition_context(
+				function()
+					return fsm_trace.create_event_context(event_name, emitter_id, detail)
+				end,
+				function(ctx)
+					captured_context = ctx
+					ctx.handler_name = fsm_trace.describe_transition_handler(spec)
+					return self:handle_state_transition(spec, event)
+				end
+			)
+			return handled
+		end), captured_context
+	end
+	return self:with_critical_section(function()
+		return self:handle_state_transition(spec, event)
+	end), nil
 end
 
 -- dispatch_event: delivers an event through the state hierarchy.
@@ -1939,7 +2089,7 @@ function state:dispatch_event(event_or_name, payload)
 		data = payload
 	end
 	local trace_dispatch<const> = should_trace_dispatch()
-	local trace_transitions<const> = should_trace_transitions()
+	local trace_transitions<const> = trace_dispatch or should_trace_transitions()
 	local emitter_id
 	local detail
 	local dispatch_context
@@ -1972,31 +2122,40 @@ function state:dispatch_event(event_or_name, payload)
 		end
 	end
 
+	if not trace_dispatch then
+		local chain<const> = get_cached_definition_event_handler_chain(self.definition, event_name)
+		if chain.count == 0 then
+			return false
+		end
 		local current = self
 		local depth = 0
-		while current do
-			local result<const> = current:handle_event(event_name, emitter_id, detail, data)
-			local bubbled<const> = depth > 0 or (not result.handled and current.parent ~= nil)
-			current:emit_event_dispatch_trace(event_name, emitter_id, detail, result.handled, bubbled, depth, result.context or dispatch_context)
-			if result.handled then
+		local depths<const> = chain.depths
+		for i = 1, chain.count do
+			local target_depth<const> = depths[i]
+			while depth < target_depth do
+				current = current.parent
+				depth = depth + 1
+			end
+			if current:handle_event(event_name, emitter_id, detail, data) then
 				return true
 			end
-			current = current.parent
-			depth = depth + 1
 		end
-	return false
-end
-
-function state:resolve_input_eval_mode()
-	local node = self
-	while node do
-		local mode<const> = node.definition.input_eval
-		if mode and input_eval_modes[mode] then
-			return mode
-		end
-		node = node.parent
+		return false
 	end
-	return 'all'
+
+	local current = self
+	local depth = 0
+	while current do
+		local handled<const>, context<const> = current:handle_event_with_dispatch_context(event_name, emitter_id, detail, data)
+		local bubbled<const> = depth > 0 or (not handled and current.parent ~= nil)
+		current:emit_event_dispatch_trace(event_name, emitter_id, detail, handled, bubbled, depth, context or dispatch_context)
+		if handled then
+			return true
+		end
+		current = current.parent
+		depth = depth + 1
+	end
+	return false
 end
 
 function state:process_input_events()
@@ -2006,7 +2165,7 @@ function state:process_input_events()
 	end
 	local trace_transitions<const> = should_trace_transitions()
 	local player_index<const> = self.target.player_index or 1
-	local eval_mode<const> = self:resolve_input_eval_mode()
+	local eval_mode<const> = self.definition.effective_input_eval
 	for i = 1, #handlers do
 		local entry<const> = handlers[i]
 		local pattern<const> = entry.pattern
@@ -2156,6 +2315,7 @@ function state:reset_submachine(reset_tree)
 		end
 	end
 	if self:is_root() then
+		self:rebuild_active_subtree_tags()
 		self:sync_target_state_tags()
 	end
 end
@@ -2172,6 +2332,8 @@ function state:dispose()
 			self._applied_state_tags = nil
 			self._tag_sync_scratch = nil
 			self._tag_remove_scratch = nil
+			self._active_state_tag_refs = nil
+			self._active_state_tags = nil
 		end
 	if self.states then
 		local states<const> = self.states
