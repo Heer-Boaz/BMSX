@@ -697,7 +697,7 @@ function lintOrNilFallbackPattern(expression: LuaExpression, issues: LuaLintIssu
 		issues,
 		'or_nil_fallback_pattern',
 		expression,
-		'"or nil" fallback pattern is forbidden. Lua has no undefined; remove the nil fallback and keep direct truthy semantics.',
+		'"or nil" fallback pattern is forbidden. Lua has no undefined; remove JS-style nil normalization. If you mean "only compute/use this when a source value exists", guard on that value directly (for example "tracks and compile_tracks(tracks)"). If you truly need an explicit nil branch, use a real if/else.',
 	);
 }
 

@@ -1330,14 +1330,14 @@ export function appendProgramAsset(
 		}
 	}
 
-	const modules: Array<{ path: string; chunk: LuaChunk }> = [];
+	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
 	for (const asset of luaAssets) {
 		if (asset === entryAsset) {
 			continue;
 		}
 		const path = asset.source_path;
 		const chunk = chunksByPath.get(path);
-		modules.push({ path, chunk });
+		modules.push({ path, chunk, source: asset.buffer.toString('utf8') });
 	}
 
 	const optLevel = options.optLevel ?? 3;
@@ -1345,6 +1345,7 @@ export function appendProgramAsset(
 	const compiled = compileLuaChunkToProgram(entryChunk, modules, {
 		canonicalization: LUA_CANONICALIZATION,
 		optLevel,
+		entrySource: entryAsset.buffer.toString('utf8'),
 	});
 	const program = compiled.program;
 	const programAsset = {
