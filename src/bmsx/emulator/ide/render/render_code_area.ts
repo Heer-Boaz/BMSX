@@ -3,7 +3,7 @@ import type { CachedHighlight, CursorScreenInfo } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
 import { drawHoverTooltip, getDiagnosticsForRow } from '../cart_editor';
-import { computeMaximumScrollColumn, getCodeAreaBounds, maximumLineLength } from '../editor_view';
+import { computeMaximumScrollColumn, getBreakpointLaneWidth, getCodeAreaBounds, maximumLineLength } from '../editor_view';
 import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from './render_error_overlay';
 import { renderEditorContextMenu } from './render_context_menu';
 import * as constants from '../constants';
@@ -110,6 +110,7 @@ export function renderCodeArea(): void {
 	const useUppercase = ide_state.caseInsensitive;
 	const renderFont = ide_state.font.renderFont();
 	const textLeftFloor = Math.floor(bounds.textLeft);
+	const breakpointLaneWidth = getBreakpointLaneWidth();
 	let cursorEntry: CachedHighlight = null;
 	let cursorInfo: CursorScreenInfo = null;
 	const sliceWidth = columnCapacity + 2;
@@ -131,22 +132,32 @@ export function renderCodeArea(): void {
 		}
 		const lineIndex = segment.row;
 		const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, lineIndex);
+		const isPrimaryVisualSegment = segment.startColumn === 0;
 		const hasBreakpointForRow = breakpointsForChunk?.has(lineIndex + 1) ?? false;
-		if (hasBreakpointForRow && bounds.gutterRight > bounds.gutterLeft) {
-			const markerLeft = bounds.gutterLeft;
-			const gutterWidth = Math.max(1, bounds.gutterRight - bounds.gutterLeft);
-			const markerRight = Math.max(markerLeft + 1, markerLeft + gutterWidth);
-			const markerHeight = Math.max(2, ide_state.lineHeight - 2);
-			const markerTop = rowY + Math.max(1, Math.floor((ide_state.lineHeight - markerHeight) / 2));
-			const markerBottom = Math.min(rowY + ide_state.lineHeight - 1, markerTop + markerHeight);
-			api.fill_rect_color(markerLeft, markerTop, markerRight, markerBottom, undefined, constants.COLOR_BREAKPOINT_BORDER);
-		}
 		const isExecutionStopRow = ide_state.executionStopRow !== null && lineIndex === ide_state.executionStopRow;
 		const isCursorLine = lineIndex === ide_state.cursorRow;
 		if (isExecutionStopRow) {
+			api.fill_rect_color(bounds.gutterLeft, rowY, bounds.gutterRight, rowY + ide_state.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
 			api.fill_rect_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined, constants.EXECUTION_STOP_OVERLAY);
 		} else if (isCursorLine) {
+			api.fill_rect_color(bounds.gutterLeft, rowY, bounds.gutterRight, rowY + ide_state.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
 			api.fill_rect_color(bounds.gutterRight, rowY, contentRight, rowY + ide_state.lineHeight, undefined, constants.HIGHLIGHT_OVERLAY);
+		}
+		if (bounds.gutterRight > bounds.gutterLeft && isPrimaryVisualSegment) {
+			const lineNumberText = `${lineIndex + 1}`;
+			const lineNumberX = bounds.gutterRight - 1 - ide_state.font.measure(lineNumberText);
+			const lineNumberColor = isExecutionStopRow || isCursorLine
+				? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT
+				: constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
+			api.blit_text_inline_with_font(lineNumberText, lineNumberX, rowY, undefined, lineNumberColor, renderFont);
+		}
+		if (hasBreakpointForRow && bounds.gutterRight > bounds.gutterLeft && isPrimaryVisualSegment) {
+			const markerLeft = bounds.gutterLeft + 1;
+			const markerRight = bounds.gutterLeft + breakpointLaneWidth - 1;
+			const markerTop = rowY + 1;
+			const markerBottom = rowY + ide_state.lineHeight - 1;
+			api.fill_rect_color(markerLeft, markerTop, markerRight, markerBottom, undefined, constants.COLOR_BREAKPOINT_BORDER);
+			api.fill_rect_color(markerLeft + 1, markerTop + 1, markerRight - 1, markerBottom - 1, undefined, constants.COLOR_BREAKPOINT_FILL);
 		}
 		const highlight = entry.hi;
 		const renderText = useUppercase ? highlight.upperText : highlight.text;

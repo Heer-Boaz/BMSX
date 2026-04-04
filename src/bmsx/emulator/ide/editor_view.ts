@@ -26,6 +26,27 @@ import {
 } from './text_utils';
 import { getBuiltinIdentifiersSnapshot, updateDesiredColumn } from './cart_editor';
 
+function decimalDigitCount(value: number): number {
+	let digits = 1;
+	let remaining = Math.max(1, value);
+	while (remaining >= 10) {
+		remaining = Math.floor(remaining / 10);
+		digits += 1;
+	}
+	return digits;
+}
+
+export function getBreakpointLaneWidth(): number {
+	return Math.max(6, Math.floor(ide_state.charAdvance + 2));
+}
+
+export function updateGutterWidth(): number {
+	const lineCount = ide_state.buffer.getLineCount();
+	const digitCount = Math.max(2, decimalDigitCount(lineCount));
+	ide_state.gutterWidth = getBreakpointLaneWidth() + 4 + digitCount * ide_state.font.advance('0');
+	return ide_state.gutterWidth;
+}
+
 export function maximumLineLength(): number {
 	if (!ide_state.maxLineLengthDirty) {
 		return ide_state.maxLineLength;
@@ -225,7 +246,7 @@ export function codeViewportTop(): number {
 export function getCodeAreaBounds(): { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number } {
 	const codeLeft = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
 	const gutterLeft = codeLeft;
-	const gutterRight = gutterLeft + ide_state.gutterWidth;
+	const gutterRight = gutterLeft + updateGutterWidth();
 	return {
 		codeTop: codeViewportTop(),
 		codeBottom: ide_state.viewportHeight - bottomMargin(),
@@ -530,7 +551,7 @@ export function configureFontVariant(variant: FontVariant): void {
 		spaceAdvance: ide_state.spaceAdvance,
 		tabSpaces: constants.TAB_SPACES,
 	};
-	ide_state.gutterWidth = 2;
+	updateGutterWidth();
 	ide_state.headerHeight = ide_state.lineHeight + 4;
 	ide_state.tabBarHeight = ide_state.lineHeight + 3;
 	ide_state.baseBottomMargin = ide_state.lineHeight + 6;

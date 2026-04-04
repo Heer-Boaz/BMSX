@@ -1,4 +1,4 @@
-import { getResourcePanelWidth } from './editor_view';
+import { getResourcePanelWidth, updateGutterWidth } from './editor_view';
 import * as constants from './constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
 import { startSearchJob } from './editor_search';
@@ -568,7 +568,7 @@ export function ensureVisualLines(): void {
 
 export function computeWrapWidth(): number {
 	const resourceWidth = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
-	const gutterSpace = ide_state.gutterWidth + 2;
+	const gutterSpace = updateGutterWidth() + 2;
 	const verticalScrollbarSpace = 0;
 	const available = ide_state.viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
 	return Math.max(ide_state.charAdvance, available - 2);
@@ -594,7 +594,7 @@ export function positionToVisualIndex(row: number, column: number): number {
 }
 export function computeRuntimeErrorOverlayMaxWidth(): number {
 	const resourceWidth = ide_state.resourcePanelVisible ? getResourcePanelWidth() : 0;
-	const gutterSpace = ide_state.gutterWidth + 2;
+	const gutterSpace = updateGutterWidth() + 2;
 	const scrollbarSpace = ide_state.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0;
 	const rightMargin = constants.CODE_AREA_RIGHT_MARGIN;
 	const connectorOffset = ERROR_OVERLAY_CONNECTOR_OFFSET + ERROR_OVERLAY_PADDING_X * 2;

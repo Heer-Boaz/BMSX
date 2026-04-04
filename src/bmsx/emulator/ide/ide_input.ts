@@ -10,7 +10,7 @@ import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCurs
 import { isResourceViewActive, isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, cycleTab, activateCodeTab, beginTabDrag, closeTab, endTabDrag, setActiveTab, getActiveCodeTabContext, updateTabDrag } from './editor_tabs';
 import { prepareDebuggerStepOverlay } from './ide_debugger';
 import { computeRuntimeErrorOverlayMaxWidth } from './text_utils';
-import { drawProblemsPanel, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from './problems_panel';
+import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from './problems_panel';
 import { measureText } from './text_utils';
 import { clampResourceViewerScroll, getActiveResourceViewer, resourceViewerTextCapacity } from './resource_viewer';
 import { applyScrollbarScroll } from './scrollbar';
@@ -902,7 +902,7 @@ export function handlePointerWheel(): void {
 		return;
 	}
 	if (ide_state.problemsPanel.isVisible) {
-		const bounds = drawProblemsPanel();
+		const bounds = getProblemsPanelBounds();
 		if (bounds) {
 			let allowScroll = false;
 			if (!activePointer) {
@@ -1193,7 +1193,7 @@ export function handleTextEditorPointerInput(): void {
 	if (ide_state.resourcePanelVisible && !snapshot.primaryPressed) {
 		ide_state.resourcePanel.setHoverIndex(-1);
 	}
-	const problemsBounds = drawProblemsPanel();
+	const problemsBounds = getProblemsPanelBounds();
 	if (ide_state.problemsPanel.isVisible && problemsBounds) {
 		const insideProblems = point_in_rect(snapshot.viewportX, snapshot.viewportY, problemsBounds);
 		if (insideProblems) {
