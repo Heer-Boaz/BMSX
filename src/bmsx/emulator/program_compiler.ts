@@ -35,6 +35,7 @@ import type { ProgramConstReloc } from './program_asset';
 import { StringPool, StringValue, isStringValue } from './string_pool';
 import type { CanonicalizationType } from '../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from './instruction_format';
+import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './lua_semantic_frontend';
 import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from './lua_system_globals';
 import { LuaSyntaxError } from '../lua/luaerrors';
 
@@ -62,6 +63,7 @@ type CompileError = {
 export type ProgramModule = {
 	path: string;
 	chunk: LuaChunk;
+	source?: string;
 };
 
 export const isLuaCompileError = (value: unknown): value is LuaCompileError =>
@@ -72,6 +74,7 @@ type CompileOptions = {
 	baseMetadata?: ProgramMetadata;
 	canonicalization?: CanonicalizationType;
 	optLevel?: OptimizationLevel;
+	entrySource?: string;
 };
 
 type LoopContext = {
@@ -79,19 +82,23 @@ type LoopContext = {
 };
 
 type ScopeFrame = {
-	names: string[];
+	locals: LocalBinding[];
 	range: SourceRange;
 };
 
 type LocalBindingKind = 'local' | 'const' | 'parameter';
 
 type LocalBinding = {
+	symbolHandle: string;
+	canonicalName: string;
 	reg: number;
 	kind: LocalBindingKind;
 	constValue: Value | null;
 	hasConstValue: boolean;
 	constClosureProtoIndex: number | null;
 };
+
+const IMPLICIT_SELF_SYMBOL_HANDLE = '$implicit:self';
 
 type AssignmentTarget =
 	| { kind: 'local'; reg: number }
@@ -447,6 +454,7 @@ const cloneLocalSlotDebug = (slot: LocalSlotDebug): LocalSlotDebug => ({
 class FunctionBuilder {
 	private readonly program: ProgramBuilder;
 	private readonly parent: FunctionBuilder | null;
+	private readonly semantics: LuaSemanticFrontendFile;
 	private readonly moduleId: string;
 	private readonly protoId: string;
 	private readonly canonicalizeIdentifier: (value: string) => string;
@@ -455,7 +463,7 @@ class FunctionBuilder {
 	private finalizedCode: Uint8Array | null = null;
 	private finalizedRanges: Array<SourceRange | null> | null = null;
 	private finalizedConstRelocs: ProgramConstReloc[] | null = null;
-	private readonly localStacks = new Map<string, LocalBinding[]>();
+	private readonly localBindings = new Map<string, LocalBinding>();
 	private readonly scopeStack: ScopeFrame[] = [];
 	private readonly localDebugSlots: LocalSlotDebug[] = [];
 	private readonly upvalueDescs: UpvalueDesc[] = [];
@@ -470,9 +478,10 @@ class FunctionBuilder {
 	private maxStack = 0;
 	private localFunctionCounters = new Map<string, number>();
 
-	constructor(program: ProgramBuilder, parent: FunctionBuilder | null, params: { moduleId: string; protoId: string }) {
+	constructor(program: ProgramBuilder, parent: FunctionBuilder | null, params: { moduleId: string; protoId: string; semantics: LuaSemanticFrontendFile }) {
 		this.program = program;
 		this.parent = parent;
+		this.semantics = params.semantics;
 		this.moduleId = params.moduleId;
 		this.protoId = params.protoId;
 		this.canonicalizeIdentifier = program.canonicalizeIdentifier;
@@ -492,10 +501,12 @@ class FunctionBuilder {
 	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean): void {
 		this.pushScope(expression.body.range);
 		if (implicitSelf) {
-			this.declareLocal('self', expression.range, expression.range, 'parameter');
+			this.declareImplicitSelf(expression.range, expression.range);
 		}
 		for (let i = 0; i < expression.parameters.length; i += 1) {
-			this.declareLocal(expression.parameters[i].name, expression.parameters[i].range, expression.range, 'parameter');
+			const parameter = expression.parameters[i];
+			const decl = this.requireBoundDeclaration(parameter.range, `parameter '${parameter.name}'`);
+			this.declareLocalFromDecl(decl, parameter.range, expression.range);
 		}
 		for (let i = 0; i < expression.body.body.length; i += 1) {
 			this.compileStatement(expression.body.body[i]);
@@ -743,20 +754,15 @@ class FunctionBuilder {
 
 	private pushScope(range: LuaSourceRange): void {
 		this.scopeStack.push({
-			names: [],
+			locals: [],
 			range: cloneSourceRange(range),
 		});
 	}
 
 	private popScope(): void {
 		const scope = this.scopeStack.pop()!;
-		for (let i = scope.names.length - 1; i >= 0; i -= 1) {
-			const name = scope.names[i];
-			const stack = this.localStacks.get(name);
-			stack.pop();
-			if (stack.length === 0) {
-				this.localStacks.delete(name);
-			}
+		for (let i = scope.locals.length - 1; i >= 0; i -= 1) {
+			this.localBindings.delete(scope.locals[i].symbolHandle);
 		}
 	}
 
@@ -776,7 +782,24 @@ class FunctionBuilder {
 		throw new Error(`Missing label(s): ${labels.join(', ')}`);
 	}
 
+	private requireBoundDeclaration(range: LuaSourceRange, context: string): Decl {
+		const decl = this.semantics.getDeclaration(range);
+		if (!decl) {
+			throw new Error(`[Compiler] Missing bound declaration for ${context}.`);
+		}
+		return decl;
+	}
+
+	private requireBoundReference(range: LuaSourceRange, context: string): LuaBoundReference {
+		const reference = this.semantics.getReference(range);
+		if (!reference) {
+			throw new Error(`[Compiler] Missing bound reference for ${context}.`);
+		}
+		return reference;
+	}
+
 	private declareLocal(
+		symbolHandle: string,
 		name: string,
 		definitionRange: LuaSourceRange,
 		scopeRange?: LuaSourceRange,
@@ -800,20 +823,18 @@ class FunctionBuilder {
 		if (this.tempTop > this.maxStack) {
 			this.maxStack = this.tempTop;
 		}
-		let stack = this.localStacks.get(canonicalName);
-		if (!stack) {
-			stack = [];
-			this.localStacks.set(canonicalName, stack);
-		}
-		stack.push({
+		const binding: LocalBinding = {
+			symbolHandle,
+			canonicalName,
 			reg,
 			kind,
 			constValue,
 			hasConstValue,
 			constClosureProtoIndex,
-		});
+		};
+		this.localBindings.set(symbolHandle, binding);
 		const scope = this.scopeStack[this.scopeStack.length - 1];
-		scope.names.push(canonicalName);
+		scope.locals.push(binding);
 		const effectiveScopeRange = scopeRange ?? scope.range;
 		this.localDebugSlots.push({
 			name: canonicalName,
@@ -824,88 +845,231 @@ class FunctionBuilder {
 		return reg;
 	}
 
-	private resolveLocal(name: string): number | null {
-		const canonicalName = this.canonicalizeName(name);
-		const stack = this.localStacks.get(canonicalName);
-		if (!stack || stack.length === 0) {
-			return null;
-		}
-		return stack[stack.length - 1].reg;
+	private declareLocalFromDecl(
+		decl: Decl,
+		definitionRange: LuaSourceRange,
+		scopeRange?: LuaSourceRange,
+		constValue: Value | null = null,
+		hasConstValue = false,
+		constClosureProtoIndex: number | null = null,
+	): number {
+		const kind = decl.kind === 'constant'
+			? 'const'
+			: (decl.kind === 'parameter' ? 'parameter' : 'local');
+		return this.declareLocal(decl.id, decl.name, definitionRange, scopeRange, kind, constValue, hasConstValue, constClosureProtoIndex);
 	}
 
-	private resolveLocalBinding(name: string): LocalBinding | null {
-		const canonicalName = this.canonicalizeName(name);
-		const stack = this.localStacks.get(canonicalName);
-		if (!stack || stack.length === 0) {
-			return null;
-		}
-		return stack[stack.length - 1];
+	private declareImplicitSelf(definitionRange: LuaSourceRange, scopeRange?: LuaSourceRange): number {
+		return this.declareLocal(IMPLICIT_SELF_SYMBOL_HANDLE, 'self', definitionRange, scopeRange, 'parameter');
 	}
 
-	private resolveUpvalue(name: string): number | null {
-		const canonicalName = this.canonicalizeName(name);
-		const existing = this.upvalueMap.get(canonicalName);
+	private resolveLocalBinding(symbolHandle: string): LocalBinding | null {
+		return this.localBindings.get(symbolHandle) ?? null;
+	}
+
+	private resolveLocal(symbolHandle: string): number | null {
+		const binding = this.resolveLocalBinding(symbolHandle);
+		return binding ? binding.reg : null;
+	}
+
+	private resolveUpvalue(symbolHandle: string, canonicalName: string): number | null {
+		const existing = this.upvalueMap.get(symbolHandle);
 		if (existing !== undefined) {
 			return existing;
 		}
 		if (!this.parent) {
 			return null;
 		}
-		const parentLocal = this.parent.resolveLocal(canonicalName);
+		const parentLocal = this.parent.resolveLocalBinding(symbolHandle);
 		if (parentLocal !== null) {
 			const index = this.upvalueDescs.length;
-			this.upvalueDescs.push({ inStack: true, index: parentLocal });
+			this.upvalueDescs.push({ inStack: true, index: parentLocal.reg });
 			this.upvalueNames.push(canonicalName);
-			this.upvalueMap.set(canonicalName, index);
+			this.upvalueMap.set(symbolHandle, index);
 			return index;
 		}
-		const parentUpvalue = this.parent.resolveUpvalue(canonicalName);
+		const parentUpvalue = this.parent.resolveUpvalue(symbolHandle, canonicalName);
 		if (parentUpvalue !== null) {
 			const index = this.upvalueDescs.length;
 			this.upvalueDescs.push({ inStack: false, index: parentUpvalue });
 			this.upvalueNames.push(canonicalName);
-			this.upvalueMap.set(canonicalName, index);
+			this.upvalueMap.set(symbolHandle, index);
 			return index;
 		}
 		return null;
 	}
 
-	private hasLexicalBindingCanonical(canonicalName: string): boolean {
-		const stack = this.localStacks.get(canonicalName);
-		if (stack && stack.length > 0) {
-			return true;
-		}
-		if (this.upvalueMap.has(canonicalName)) {
-			return true;
-		}
-		return this.parent !== null && this.parent.hasLexicalBindingCanonical(canonicalName);
-	}
-
-	private resolveVisibleBinding(name: string): LocalBinding | null {
-		const localBinding = this.resolveLocalBinding(name);
+	private resolveVisibleBinding(symbolHandle: string): LocalBinding | null {
+		const localBinding = this.resolveLocalBinding(symbolHandle);
 		if (localBinding) {
 			return localBinding;
 		}
 		if (!this.parent) {
 			return null;
 		}
-		return this.parent.resolveVisibleBinding(name);
+		return this.parent.resolveVisibleBinding(symbolHandle);
 	}
 
-	private resolveCompileTimeConstBinding(name: string): LocalBinding | null {
-		const binding = this.resolveVisibleBinding(name);
+	private resolveCompileTimeConstBinding(symbolHandle: string): LocalBinding | null {
+		const binding = this.resolveVisibleBinding(symbolHandle);
 		if (!binding || binding.kind !== 'const' || !binding.hasConstValue) {
 			return null;
 		}
 		return binding;
 	}
 
-	private resolveCompileTimeConstClosureBinding(name: string): LocalBinding | null {
-		const binding = this.resolveVisibleBinding(name);
+	private resolveCompileTimeConstClosureBinding(symbolHandle: string): LocalBinding | null {
+		const binding = this.resolveVisibleBinding(symbolHandle);
 		if (!binding || binding.kind !== 'const' || binding.constClosureProtoIndex === null) {
 			return null;
 		}
 		return binding;
+	}
+
+	private getIdentifierReference(expression: LuaIdentifierExpression): LuaBoundReference {
+		const reference = this.semantics.getReference(expression.range);
+		if (reference) {
+			return reference;
+		}
+		const decl = this.semantics.getDeclaration(expression.range);
+		if (!decl) {
+			throw new Error(`[Compiler] Missing bound reference for identifier '${expression.name}'.`);
+		}
+		return {
+			kind: decl.isGlobal ? 'global' : 'lexical',
+			ref: {
+				file: decl.file,
+				name: decl.name,
+				namePath: decl.namePath,
+				symbolKey: decl.symbolKey,
+				range: expression.range,
+				target: decl.id,
+				lexicalTarget: decl.isGlobal ? null : decl.id,
+				isWrite: true,
+				referenceKind: 'identifier',
+			},
+			decl,
+			isImplicitGlobal: false,
+		};
+	}
+
+	private getReferenceSymbolHandle(reference: LuaBoundReference): string | null {
+		if (reference.kind === 'lexical' && reference.decl) {
+			return reference.decl.id;
+		}
+		if (reference.kind === 'unresolved' && reference.ref.name === 'self') {
+			return IMPLICIT_SELF_SYMBOL_HANDLE;
+		}
+		return null;
+	}
+
+	private getReferenceCanonicalName(reference: LuaBoundReference): string {
+		return this.canonicalizeName(reference.ref.name);
+	}
+
+	private resolveReferenceVisibleBinding(reference: LuaBoundReference): LocalBinding | null {
+		const symbolHandle = this.getReferenceSymbolHandle(reference);
+		if (!symbolHandle) {
+			return null;
+		}
+		return this.resolveVisibleBinding(symbolHandle);
+	}
+
+	private resolveReferenceLocal(reference: LuaBoundReference): number | null {
+		const symbolHandle = this.getReferenceSymbolHandle(reference);
+		if (!symbolHandle) {
+			return null;
+		}
+		return this.resolveLocal(symbolHandle);
+	}
+
+	private resolveReferenceUpvalue(reference: LuaBoundReference): number | null {
+		const symbolHandle = this.getReferenceSymbolHandle(reference);
+		if (!symbolHandle) {
+			return null;
+		}
+		return this.resolveUpvalue(symbolHandle, this.getReferenceCanonicalName(reference));
+	}
+
+	private resolveReferenceConstBinding(reference: LuaBoundReference): LocalBinding | null {
+		const symbolHandle = this.getReferenceSymbolHandle(reference);
+		if (!symbolHandle) {
+			return null;
+		}
+		return this.resolveCompileTimeConstBinding(symbolHandle);
+	}
+
+	private resolveReferenceConstClosureBinding(reference: LuaBoundReference): LocalBinding | null {
+		const symbolHandle = this.getReferenceSymbolHandle(reference);
+		if (!symbolHandle) {
+			return null;
+		}
+		return this.resolveCompileTimeConstClosureBinding(symbolHandle);
+	}
+
+	private emitReferenceLoad(reference: LuaBoundReference, target: number): void {
+		const name = this.getReferenceCanonicalName(reference);
+		const constBinding = this.resolveReferenceConstBinding(reference);
+		if (constBinding !== null) {
+			this.emitLoadConst(target, constBinding.constValue);
+			return;
+		}
+		const localReg = this.resolveReferenceLocal(reference);
+		if (localReg !== null) {
+			if (localReg !== target) {
+				this.emitABC(OpCode.MOV, target, localReg, 0);
+			}
+			return;
+		}
+		const upvalue = this.resolveReferenceUpvalue(reference);
+		if (upvalue !== null) {
+			this.emitABC(OpCode.GETUP, target, upvalue, 0);
+			return;
+		}
+		if (reference.kind === 'memory_map') {
+			throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
+		}
+		if (reference.kind === 'reserved_intrinsic') {
+			throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${name}(base, ...).`);
+		}
+		if (reference.kind === 'unresolved') {
+			throw new Error(`[Compiler] '${name}' is not defined.`);
+		}
+		const access = this.program.resolveGlobalAccess(name);
+		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
+	}
+
+	private emitReferenceStore(reference: LuaBoundReference, valueReg: number): void {
+		const name = this.getReferenceCanonicalName(reference);
+		const symbolHandle = this.getReferenceSymbolHandle(reference);
+		const localBinding = symbolHandle ? this.resolveLocalBinding(symbolHandle) : null;
+		if (localBinding !== null) {
+			if (localBinding.kind === 'const') {
+				throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
+			}
+			this.emitABC(OpCode.MOV, localBinding.reg, valueReg, 0);
+			return;
+		}
+		const visibleBinding = this.resolveReferenceVisibleBinding(reference);
+		if (visibleBinding !== null && visibleBinding.kind === 'const') {
+			throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
+		}
+		const upvalue = this.resolveReferenceUpvalue(reference);
+		if (upvalue !== null) {
+			this.emitABC(OpCode.SETUP, valueReg, upvalue, 0);
+			return;
+		}
+		if (reference.kind === 'memory_map') {
+			throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
+		}
+		if (reference.kind === 'reserved_intrinsic') {
+			throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${name}(base, ...).`);
+		}
+		if (reference.kind === 'unresolved') {
+			throw new Error(`[Compiler] '${name}' is not defined.`);
+		}
+		const access = this.program.resolveGlobalAccess(name);
+		this.emitABx(access.system ? OpCode.SETSYS : OpCode.SETGL, valueReg, access.slot);
 	}
 
 	private allocTemp(): number {
@@ -1074,12 +1238,12 @@ class FunctionBuilder {
 		this.withRange(expression.range, () => {
 			if (expression.kind === LuaSyntaxKind.FunctionExpression) {
 				const protoId = this.createChildProtoId(protoIdHint ?? buildAnonymousHint(expression.range));
-				closureProtoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId);
+				closureProtoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId, this.semantics);
 				this.emitABx(OpCode.CLOSURE, target, closureProtoIndex);
 				return;
 			}
 			if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
-				const binding = this.resolveCompileTimeConstClosureBinding((expression as LuaIdentifierExpression).name);
+				const binding = this.resolveReferenceConstClosureBinding(this.getIdentifierReference(expression as LuaIdentifierExpression));
 				if (binding !== null) {
 					closureProtoIndex = binding.constClosureProtoIndex;
 				}
@@ -1100,7 +1264,7 @@ class FunctionBuilder {
 			case LuaSyntaxKind.NilLiteralExpression:
 				return null;
 			case LuaSyntaxKind.IdentifierExpression: {
-				const binding = this.resolveCompileTimeConstBinding((expression as LuaIdentifierExpression).name);
+				const binding = this.resolveReferenceConstBinding(this.getIdentifierReference(expression as LuaIdentifierExpression));
 				return binding ? binding.constValue : undefined;
 			}
 			case LuaSyntaxKind.UnaryExpression:
@@ -1332,11 +1496,12 @@ class FunctionBuilder {
 		const attributes = statement.attributes;
 		const values = statement.values;
 		if (names.length === 1 && attributes[0] === 'const' && values.length === 1 && values[0].kind === LuaSyntaxKind.FunctionExpression) {
-			const name = this.canonicalizeName(names[0].name);
-			const target = this.declareLocal(name, names[0].range, undefined, 'const', null, false);
+			const decl = this.requireBoundDeclaration(names[0].range, `local '${names[0].name}'`);
+			const name = this.canonicalizeName(decl.name);
+			const target = this.declareLocalFromDecl(decl, names[0].range);
 			const hint = this.createLocalFunctionHint(name);
 			const closureProtoIndex = this.compileExpressionWithStaticClosureProto(values[0], target, 1, hint);
-			const binding = this.resolveLocalBinding(name);
+			const binding = this.resolveLocalBinding(decl.id);
 			if (binding !== null) {
 				binding.constClosureProtoIndex = closureProtoIndex;
 			}
@@ -1358,7 +1523,9 @@ class FunctionBuilder {
 					continue;
 				}
 				const reg = this.allocTemp();
-				const name = i < names.length ? this.canonicalizeName(names[i].name) : '';
+				const name = i < names.length
+					? this.canonicalizeName(this.requireBoundDeclaration(names[i].range, `local '${names[i].name}'`).name)
+					: '';
 				const hint = expr.kind === LuaSyntaxKind.FunctionExpression && i < names.length
 					? this.createLocalFunctionHint(name)
 					: null;
@@ -1380,7 +1547,9 @@ class FunctionBuilder {
 				}
 			} else {
 				const lastReg = this.allocTemp();
-				const lastName = lastIndex < names.length ? this.canonicalizeName(names[lastIndex].name) : '';
+				const lastName = lastIndex < names.length
+					? this.canonicalizeName(this.requireBoundDeclaration(names[lastIndex].range, `local '${names[lastIndex].name}'`).name)
+					: '';
 				const resultCount = wantsMulti ? remaining : 1;
 				const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastIndex < names.length
 					? this.createLocalFunctionHint(lastName)
@@ -1401,7 +1570,8 @@ class FunctionBuilder {
 			}
 		}
 		for (let i = 0; i < names.length; i += 1) {
-			const name = this.canonicalizeName(names[i].name);
+			const decl = this.requireBoundDeclaration(names[i].range, `local '${names[i].name}'`);
+			const name = this.canonicalizeName(decl.name);
 			const attribute = attributes[i];
 			const lastIndex = values.length - 1;
 			const hasInitializer = values.length > 0 && (i < lastIndex || i === lastIndex || (i > lastIndex && this.isMultiReturnExpression(values[lastIndex])));
@@ -1411,7 +1581,8 @@ class FunctionBuilder {
 			const initializerValue = initializerValues[i];
 			const initializerClosureProtoIndex = attribute === 'const' ? initializerClosureProtoIndices[i] ?? null : null;
 			const target = this.declareLocal(
-				name,
+				decl.id,
+				decl.name,
 				names[i].range,
 				undefined,
 				attribute === 'const' ? 'const' : 'local',
@@ -1453,8 +1624,11 @@ class FunctionBuilder {
 		for (let i = 0; i < expressions.length; i += 1) {
 			const expr = expressions[i];
 			if (expr.kind === LuaSyntaxKind.IdentifierExpression) {
-				const name = this.canonicalizeName((expr as LuaIdentifierExpression).name);
-				const localBinding = this.resolveLocalBinding(name);
+				const identifier = expr as LuaIdentifierExpression;
+				const reference = this.getIdentifierReference(identifier);
+				const symbolHandle = this.getReferenceSymbolHandle(reference);
+				const name = this.getReferenceCanonicalName(reference);
+				const localBinding = symbolHandle ? this.resolveLocalBinding(symbolHandle) : null;
 				if (localBinding !== null) {
 					if (localBinding.kind === 'const') {
 						throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
@@ -1462,20 +1636,23 @@ class FunctionBuilder {
 					targets.push({ kind: 'local', reg: localBinding.reg });
 					continue;
 				}
-				const visibleBinding = this.resolveVisibleBinding(name);
+				const visibleBinding = this.resolveReferenceVisibleBinding(reference);
 				if (visibleBinding !== null && visibleBinding.kind === 'const') {
 					throw new Error(`[Compiler] '${name}' is a constant local and cannot be assigned.`);
 				}
-				const upvalue = this.resolveUpvalue(name);
+				const upvalue = this.resolveReferenceUpvalue(reference);
 				if (upvalue !== null) {
 					targets.push({ kind: 'upvalue', upvalue });
 					continue;
 				}
-				if (this.getMemoryAccessKindForCanonicalName(name) !== null) {
+				if (reference.kind === 'memory_map') {
 					throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
 				}
-				if (this.isReservedIntrinsicName(name)) {
+				if (reference.kind === 'reserved_intrinsic') {
 					throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${name}(base, ...).`);
+				}
+				if (reference.kind === 'unresolved') {
+					throw new Error(`[Compiler] '${name}' is not defined.`);
 				}
 				const access = this.program.resolveGlobalAccess(name);
 				targets.push({ kind: 'global', slot: access.slot, system: access.system });
@@ -1705,7 +1882,8 @@ class FunctionBuilder {
 
 	private compileForNumeric(statement: any): void {
 		this.pushScope(statement.block.range);
-		const indexReg = this.declareLocal(statement.variable.name, statement.variable.range);
+		const loopDecl = this.requireBoundDeclaration(statement.variable.range, `loop variable '${statement.variable.name}'`);
+		const indexReg = this.declareLocalFromDecl(loopDecl, statement.variable.range);
 		this.compileExpressionInto(statement.start, indexReg, 1);
 		const limitReg = this.allocLocal();
 		this.compileExpressionInto(statement.limit, limitReg, 1);
@@ -1764,7 +1942,9 @@ class FunctionBuilder {
 
 		const loopVars: number[] = [];
 		for (let i = 0; i < statement.variables.length; i += 1) {
-			loopVars.push(this.declareLocal(statement.variables[i].name, statement.variables[i].range));
+			const variable = statement.variables[i];
+			const decl = this.requireBoundDeclaration(variable.range, `loop variable '${variable.name}'`);
+			loopVars.push(this.declareLocalFromDecl(decl, variable.range));
 		}
 
 		const resultCount = loopVars.length;
@@ -1844,11 +2024,12 @@ class FunctionBuilder {
 	}
 
 	private compileLocalFunction(statement: any): void {
-		const name = this.canonicalizeName(statement.name.name);
-		const reg = this.declareLocal(name, statement.name.range);
+		const decl = this.requireBoundDeclaration(statement.name.range, `local function '${statement.name.name}'`);
+		const name = this.canonicalizeName(decl.name);
+		const reg = this.declareLocalFromDecl(decl, statement.name.range);
 		const hint = this.createLocalFunctionHint(name);
 		const protoId = this.createChildProtoId(hint);
-		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, this.moduleId);
+		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, this.moduleId, this.semantics);
 		this.emitABx(OpCode.CLOSURE, reg, protoIndex);
 	}
 
@@ -1856,45 +2037,30 @@ class FunctionBuilder {
 		const fnExpr = statement.functionExpression as LuaFunctionExpression;
 		const methodName = statement.name.methodName !== null ? this.canonicalizeName(statement.name.methodName) : null;
 		const identifiers = (statement.name.identifiers as string[]).map(name => this.canonicalizeName(name));
+		const headerEnd = statement.functionExpression.body.range.start;
+		const baseReference = this.semantics.findFirstReferenceByStartRange(statement.range.start, headerEnd);
+		const finalReference = this.semantics.findLastReferenceByStartRange(statement.range.start, headerEnd);
 		const hint = buildDeclarationHint(identifiers, methodName);
 		const protoId = this.createChildProtoId(hint);
-		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, methodName && methodName.length > 0, protoId, this.moduleId);
+		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, methodName && methodName.length > 0, protoId, this.moduleId, this.semantics);
 		const closureReg = this.allocTemp();
 		this.emitABx(OpCode.CLOSURE, closureReg, protoIndex);
 		if (identifiers.length === 0) {
 			throw new Error('Function declaration missing name.');
 		}
-			if (identifiers.length === 1 && !methodName) {
-				const name = identifiers[0];
-				const localReg = this.resolveLocal(name);
-				if (localReg !== null) {
-					this.emitABC(OpCode.MOV, localReg, closureReg, 0);
-				return;
+		if (identifiers.length === 1 && !methodName) {
+			if (!finalReference) {
+				throw new Error(`[Compiler] Missing bound function target for '${identifiers[0]}'.`);
 			}
-			const upvalue = this.resolveUpvalue(name);
-				if (upvalue !== null) {
-					this.emitABC(OpCode.SETUP, closureReg, upvalue, 0);
-					return;
-				}
-				const access = this.program.resolveGlobalAccess(name);
-				this.emitABx(access.system ? OpCode.SETSYS : OpCode.SETGL, closureReg, access.slot);
-				return;
-			}
+			this.emitReferenceStore(finalReference, closureReg);
+			return;
+		}
 
 		const baseReg = this.allocTemp();
-		const baseName = identifiers[0];
-		const baseLocal = this.resolveLocal(baseName);
-			if (baseLocal !== null) {
-				this.emitABC(OpCode.MOV, baseReg, baseLocal, 0);
-			} else {
-				const baseUpvalue = this.resolveUpvalue(baseName);
-				if (baseUpvalue !== null) {
-					this.emitABC(OpCode.GETUP, baseReg, baseUpvalue, 0);
-				} else {
-					const access = this.program.resolveGlobalAccess(baseName);
-					this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, baseReg, access.slot);
-				}
-			}
+		if (!baseReference) {
+			throw new Error(`[Compiler] Missing bound function base for '${identifiers[0]}'.`);
+		}
+		this.emitReferenceLoad(baseReference, baseReg);
 
 		const pathEnd = methodName ? identifiers.length : identifiers.length - 1;
 		for (let i = 1; i < pathEnd; i += 1) {
@@ -1949,7 +2115,7 @@ class FunctionBuilder {
 					return;
 				case LuaSyntaxKind.FunctionExpression: {
 					const protoId = this.createChildProtoId(protoIdHint ?? buildAnonymousHint(expression.range));
-					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId);
+					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId, this.semantics);
 					this.emitABx(OpCode.CLOSURE, target, protoIndex);
 					return;
 				}
@@ -1962,32 +2128,7 @@ class FunctionBuilder {
 	}
 
 	private compileIdentifier(expression: LuaIdentifierExpression, target: number): void {
-		const name = this.canonicalizeName(expression.name);
-		const constBinding = this.resolveCompileTimeConstBinding(name);
-		if (constBinding !== null) {
-			this.emitLoadConst(target, constBinding.constValue);
-			return;
-		}
-		const localReg = this.resolveLocal(name);
-		if (localReg !== null) {
-			if (localReg !== target) {
-				this.emitABC(OpCode.MOV, target, localReg, 0);
-			}
-			return;
-		}
-		const upvalue = this.resolveUpvalue(name);
-		if (upvalue !== null) {
-			this.emitABC(OpCode.GETUP, target, upvalue, 0);
-			return;
-		}
-		if (this.getMemoryAccessKindForCanonicalName(name) !== null) {
-			throw new Error(`[Compiler] '${name}' is a reserved memory map. Use direct indexing syntax like ${name}[addr].`);
-		}
-		if (this.isReservedIntrinsicName(name)) {
-			throw new Error(`[Compiler] '${name}' is a reserved intrinsic. Use ${name}(base, ...).`);
-		}
-		const access = this.program.resolveGlobalAccess(name);
-		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
+		this.emitReferenceLoad(this.getIdentifierReference(expression), target);
 	}
 
 	private compileMemberExpression(expression: any, target: number): void {
@@ -2108,11 +2249,11 @@ class FunctionBuilder {
 		if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
 			return null;
 		}
-		const name = this.canonicalizeName((expression as LuaIdentifierExpression).name);
-		if (this.hasLexicalBindingCanonical(name)) {
+		const reference = this.getIdentifierReference(expression as LuaIdentifierExpression);
+		if (reference.kind !== 'memory_map') {
 			return null;
 		}
-		return this.getMemoryAccessKindForCanonicalName(name);
+		return this.getMemoryAccessKindForCanonicalName(this.getReferenceCanonicalName(reference));
 	}
 
 	private tryCompileMemoryTarget(expression: LuaIndexExpression): Extract<AssignmentTarget, { kind: 'memory' }> | null {
@@ -2152,11 +2293,8 @@ class FunctionBuilder {
 		if (expression.methodName !== null || expression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
 			return false;
 		}
-		const name = this.canonicalizeName((expression.callee as LuaIdentifierExpression).name);
-		if (this.hasLexicalBindingCanonical(name)) {
-			return false;
-		}
-		if (name === 'memwrite') {
+		const reference = this.getIdentifierReference(expression.callee as LuaIdentifierExpression);
+		if (reference.kind === 'reserved_intrinsic' && this.getReferenceCanonicalName(reference) === 'memwrite') {
 			this.compileMemWriteIntrinsic(expression, target, resultCount);
 			return true;
 		}
@@ -2366,7 +2504,7 @@ class FunctionBuilder {
 		const methodName = expression.methodName !== null ? this.canonicalizeName(expression.methodName) : null;
 		const hasMethod = methodName && methodName.length > 0;
 		const constClosureBinding = !hasMethod && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
-			? this.resolveCompileTimeConstClosureBinding((expression.callee as LuaIdentifierExpression).name)
+			? this.resolveReferenceConstClosureBinding(this.getIdentifierReference(expression.callee as LuaIdentifierExpression))
 			: null;
 		const callProtoIndex = constClosureBinding !== null ? constClosureBinding.constClosureProtoIndex : null;
 		const argCount = expression.arguments.length;
@@ -2545,8 +2683,74 @@ const buildCompileFailureMessage = (errors: ReadonlyArray<CompileError>): string
 	return lines.join('\n');
 };
 
-function compileFunctionExpression(program: ProgramBuilder, expression: LuaFunctionExpression, parent: FunctionBuilder | null, implicitSelf: boolean, protoId: string, moduleId: string): number {
-	const builder = new FunctionBuilder(program, parent, { moduleId, protoId });
+function requireEntrySource(options: CompileOptions, path: string): string {
+	if (options.entrySource === undefined) {
+		throw new Error(`[ProgramCompiler] Semantic binding requires source text for '${path}'.`);
+	}
+	return options.entrySource;
+}
+
+function requireModuleSource(module: ProgramModule): string {
+	if (module.source === undefined) {
+		throw new Error(`[ProgramCompiler] Semantic binding requires source text for module '${module.path}'.`);
+	}
+	return module.source;
+}
+
+function buildCompilerSemanticFrontend(
+	entryChunk: LuaChunk,
+	modules: ReadonlyArray<ProgramModule>,
+	options: CompileOptions,
+): LuaSemanticFrontend {
+	const extraGlobalNames = options.baseMetadata
+		? [...options.baseMetadata.systemGlobalNames, ...options.baseMetadata.globalNames]
+		: [];
+	const sources = [{
+		path: entryChunk.range.path,
+		source: requireEntrySource(options, entryChunk.range.path),
+	}];
+	for (let index = 0; index < modules.length; index += 1) {
+		const module = modules[index];
+		sources.push({
+			path: module.path,
+			source: requireModuleSource(module),
+		});
+	}
+	return buildLuaSemanticFrontend(sources, {
+		canonicalization: options.canonicalization ?? 'none',
+		extraGlobalNames,
+	});
+}
+
+function collectSemanticCompileErrors(frontend: LuaSemanticFrontend, entryPath: string): CompileError[] {
+	const compileErrors: CompileError[] = [];
+	for (const [path, file] of frontend.files) {
+		if (file.diagnostics.length === 0) {
+			continue;
+		}
+		const stage: CompileError['stage'] = path === entryPath ? 'entry' : 'module';
+		for (let diagnosticIndex = 0; diagnosticIndex < file.diagnostics.length; diagnosticIndex += 1) {
+			const diagnostic = file.diagnostics[diagnosticIndex];
+			compileErrors.push({
+				path,
+				stage,
+				message: `${diagnostic.row + 1}:${diagnostic.startColumn + 1}: ${diagnostic.message}`,
+			});
+		}
+	}
+	return compileErrors;
+}
+
+function compileFunctionExpression(
+	program: ProgramBuilder,
+	expression: LuaFunctionExpression,
+	parent: FunctionBuilder | null,
+	implicitSelf: boolean,
+	protoId: string,
+	moduleId: string,
+	semantics: LuaSemanticFrontendFile,
+): number {
+	const builder = new FunctionBuilder(program, parent, { moduleId, protoId, semantics });
 	builder.compileFunctionExpression(expression, implicitSelf);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
@@ -2612,6 +2816,11 @@ function createProgramBuilderFromProgram(
 export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = [], options: CompileOptions = {}): CompiledProgram {
 	const canonicalization = options.canonicalization ?? 'none';
 	const optLevel = options.optLevel ?? 0;
+	const frontend = buildCompilerSemanticFrontend(chunk, modules, options);
+	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
+	if (semanticErrors.length > 0) {
+		throw new Error(buildCompileFailureMessage(semanticErrors));
+	}
 	const compileErrors: CompileError[] = [];
 	let programBuilder: ProgramBuilder;
 	if (options.baseProgram) {
@@ -2625,7 +2834,11 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
 	let entryProtoIndex = -1;
-	const entryBuilder = new FunctionBuilder(programBuilder, null, { moduleId, protoId: entryProtoId });
+	const entryBuilder = new FunctionBuilder(programBuilder, null, {
+		moduleId,
+		protoId: entryProtoId,
+		semantics: frontend.getFile(chunk.range.path),
+	});
 	try {
 		entryBuilder.compileChunk(chunk);
 		const entryCode = entryBuilder.getCode();
@@ -2652,7 +2865,11 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 	for (let i = 0; i < modules.length; i += 1) {
 		const module = modules[i];
 		const moduleProtoId = buildModuleProtoId(module.path);
-		const builder = new FunctionBuilder(programBuilder, null, { moduleId: module.path, protoId: moduleProtoId });
+		const builder = new FunctionBuilder(programBuilder, null, {
+			moduleId: module.path,
+			protoId: moduleProtoId,
+			semantics: frontend.getFile(module.path),
+		});
 		try {
 			builder.compileChunk(module.chunk);
 			const code = builder.getCode();
@@ -2687,12 +2904,21 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 export function appendLuaChunkToProgram(base: Program, metadata: ProgramMetadata, chunk: LuaChunk, options: CompileOptions = {}): { program: Program; metadata: ProgramMetadata; entryProtoIndex: number } {
 	const canonicalization = options.canonicalization ?? 'none';
 	const optLevel = options.optLevel ?? 0;
+	const frontend = buildCompilerSemanticFrontend(chunk, [], { ...options, baseMetadata: metadata });
+	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
+	if (semanticErrors.length > 0) {
+		throw new Error(buildCompileFailureMessage(semanticErrors));
+	}
 	const programBuilder = createProgramBuilderFromProgram(base, metadata, canonicalization, optLevel);
 	const compileErrors: CompileError[] = [];
 	const moduleId = chunk.range.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
 	let entryProtoIndex = -1;
-	const entryBuilder = new FunctionBuilder(programBuilder, null, { moduleId, protoId: entryProtoId });
+	const entryBuilder = new FunctionBuilder(programBuilder, null, {
+		moduleId,
+		protoId: entryProtoId,
+		semantics: frontend.getFile(chunk.range.path),
+	});
 	try {
 		entryBuilder.compileChunk(chunk);
 		const entryCode = entryBuilder.getCode();

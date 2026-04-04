@@ -127,6 +127,7 @@ import type { StringValue } from './string_pool';
 import type { LuaMarshalContext } from './types';
 import type { Runtime } from './runtime';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
+import { compileLoadChunk } from './lua_load_compiler';
 
 export function valueToString(value: Value): string {
 	if (value === null) {
@@ -1398,6 +1399,50 @@ export function seedLuaGlobals(runtime: Runtime): void {
 					: error as Value];
 			callClosureValue(handler, handlerArgs, out);
 			out.unshift(false);
+		}
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'loadstring', createNativeFunction('loadstring', (args, out) => {
+		if (!isStringValue(args[0])) {
+			throw runtime.createApiRuntimeError('loadstring(source [, chunkname]) requires a string source.');
+		}
+		if (args.length > 1 && args[1] !== null && !isStringValue(args[1])) {
+			throw runtime.createApiRuntimeError('loadstring(source [, chunkname]) requires a string chunkname.');
+		}
+		const source = runtimeLuaPipeline.requireString(args[0]);
+		const chunkName = args.length > 1 && args[1] !== null ? runtimeLuaPipeline.requireString(args[1]) : 'loadstring';
+		try {
+			out.push(compileLoadChunk(runtime, source, chunkName));
+		} catch (error) {
+			out.push(null);
+			out.push(runtime.internString(extractErrorMessage(error)));
+		}
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'load', createNativeFunction('load', (args, out) => {
+		if (!isStringValue(args[0])) {
+			throw runtime.createApiRuntimeError('load(source [, chunkname [, mode]]) requires a string source.');
+		}
+		if (args.length > 2 && args[2] !== null) {
+			if (!isStringValue(args[2])) {
+				throw runtime.createApiRuntimeError('load(source [, chunkname [, mode]]) requires mode to be a string.');
+			}
+			const mode = runtimeLuaPipeline.requireString(args[2]);
+			if (mode !== 't' && mode !== 'bt') {
+				throw runtime.createApiRuntimeError("load only supports text mode ('t' or 'bt').");
+			}
+		}
+		if (args.length > 1 && args[1] !== null && !isStringValue(args[1])) {
+			throw runtime.createApiRuntimeError('load(source [, chunkname [, mode]]) requires chunkname to be a string.');
+		}
+		if (args.length > 3 && args[3] !== null) {
+			throw runtime.createApiRuntimeError('load does not support the environment argument.');
+		}
+		const source = runtimeLuaPipeline.requireString(args[0]);
+		const chunkName = args.length > 1 && args[1] !== null ? runtimeLuaPipeline.requireString(args[1]) : 'load';
+		try {
+			out.push(compileLoadChunk(runtime, source, chunkName));
+		} catch (error) {
+			out.push(null);
+			out.push(runtime.internString(extractErrorMessage(error)));
 		}
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'require', createNativeFunction('require', (args, out) => {

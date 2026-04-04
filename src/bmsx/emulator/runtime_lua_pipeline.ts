@@ -6,7 +6,7 @@ import { convertToError, isLuaFunctionValue, isLuaTable, setLuaTableCaseInsensit
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clearNativeMemberCompletionCache } from './ide/intellisense';
 import { getSourceForChunk } from './ide/cart_editor';
-import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from './lua_builtins';
+import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from './lua_builtin_descriptors';
 import { seedLuaGlobals } from './lua_globals';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
@@ -305,6 +305,7 @@ export function hotResumeProgramEntry(runtime: Runtime, params: { path: string; 
 		baseMetadata,
 		canonicalization: runtime.canonicalization,
 		optLevel: getRealtimeOptLevel(runtime),
+		entrySource: params.source,
 	});
 	runtime.moduleProtos.clear();
 	for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
@@ -362,13 +363,13 @@ export function reloadLuaProgramState(runtime: Runtime, options: { runInit?: boo
 	const runInit = options.runInit !== false;
 	let binding = $.lua_sources.path2lua[$.lua_sources.entry_path] as any;
 	if (!binding) {
-		console.info(`[Runtime] No Lua entry point defined; cannot reload program. Please save the entry point and try again.`);
+		console.info('[Runtime] No Lua entry point defined; cannot reload program. Please save the entry point and try again.');
 		return;
 	}
 	runtime._luaPath = binding.source_path;
 	if (!runtime.interpreter) {
 		if (!bootLuaProgram(runtime)) {
-			console.info(`[Runtime] Lua boot failed.`);
+			console.info('[Runtime] Lua boot failed.');
 			return;
 		}
 	}
@@ -461,6 +462,7 @@ export function initializeLuaInterpreterFromSnapshot(runtime: Runtime, params: {
 	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(chunk, modules, {
 		canonicalization: runtime.canonicalization,
 		optLevel: getRealtimeOptLevel(runtime),
+		entrySource: params.source,
 	});
 	runtime.moduleProtos.clear();
 	for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
@@ -673,6 +675,7 @@ export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, meta
 	const compiled = appendLuaChunkToProgram(program, metadata, chunk, {
 		canonicalization: runtime.canonicalization,
 		optLevel: getRealtimeOptLevel(runtime),
+		entrySource: source,
 	});
 	runtime.cpu.setProgram(compiled.program, compiled.metadata);
 	runtime.programMetadata = compiled.metadata;
@@ -1056,10 +1059,10 @@ export function loadProgramAssets(runtime: Runtime): { program: ProgramAsset; sy
 	return loadProgramAssetsForSource(runtime, source);
 }
 
-export function buildModuleChunks(runtime: Runtime, entryPath: string, registries?: LuaSourceRegistry[]): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
+export function buildModuleChunks(runtime: Runtime, entryPath: string, registries?: LuaSourceRegistry[]): { modules: Array<{ path: string; chunk: LuaChunk; source: string }>; modulePaths: string[] } {
 	const entryAsset = resolveLuaSourceRecord(runtime, entryPath);
 	const entryKey = entryAsset ? entryAsset.source_path : entryPath;
-	const modules: Array<{ path: string; chunk: LuaChunk }> = [];
+	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
 	const modulePaths: string[] = [];
 	const seen = new Set<string>();
 	const resolvedRegistries = registries ?? resolveModuleRegistries(runtime);
@@ -1083,7 +1086,7 @@ export function buildModuleChunks(runtime: Runtime, entryPath: string, registrie
 			}
 			const source = resourceSourceForChunk(runtime, key);
 			const chunk = runtime.interpreter.compileChunk(source, key);
-			modules.push({ path: key, chunk });
+			modules.push({ path: key, chunk, source });
 		}
 	}
 	return { modules, modulePaths };
@@ -1094,10 +1097,10 @@ export function buildModuleChunksForInterpreter(
 	entryPath: string,
 	interpreter: LuaInterpreter,
 	registries?: LuaSourceRegistry[],
-): { modules: Array<{ path: string; chunk: LuaChunk }>; modulePaths: string[] } {
+): { modules: Array<{ path: string; chunk: LuaChunk; source: string }>; modulePaths: string[] } {
 	const entryAsset = resolveLuaSourceRecord(runtime, entryPath);
 	const entryKey = entryAsset ? entryAsset.source_path : entryPath;
-	const modules: Array<{ path: string; chunk: LuaChunk }> = [];
+	const modules: Array<{ path: string; chunk: LuaChunk; source: string }> = [];
 	const modulePaths: string[] = [];
 	const seen = new Set<string>();
 	const resolvedRegistries = registries ?? resolveModuleRegistries(runtime);
@@ -1121,7 +1124,7 @@ export function buildModuleChunksForInterpreter(
 			}
 			const source = resourceSourceForChunk(runtime, key);
 			const chunk = interpreter.compileChunk(source, key);
-			modules.push({ path: key, chunk });
+			modules.push({ path: key, chunk, source });
 		}
 	}
 	return { modules, modulePaths };
@@ -1148,6 +1151,7 @@ export function compileCartLuaProgramForBoot(runtime: Runtime): {
 	const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, {
 		canonicalization: runtime.cartCanonicalization,
 		optLevel: getRealtimeOptLevel(runtime),
+		entrySource: entrySource,
 	});
 	return {
 		program,
@@ -1205,7 +1209,7 @@ export function bootProgramAsset(runtime: Runtime, options?: { preserveState?: b
 		queueLifecycleHandlers(runtime, { runInit: true, runNewGame: true });
 		return true;
 	} catch (error) {
-		console.info(`[Runtime] Program-asset boot failed.`);
+		console.info('[Runtime] Program-asset boot failed.');
 		logDebugState(runtime);
 		throw error;
 	}
@@ -1282,6 +1286,7 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 		const { program, metadata, entryProtoIndex, moduleProtoMap } = compileLuaChunkToProgram(entryChunk, modules, {
 			canonicalization: runtime.canonicalization,
 			optLevel: getRealtimeOptLevel(runtime),
+			entrySource: entrySource,
 		});
 		runtime.moduleProtos.clear();
 		for (const [modulePath, protoIndex] of moduleProtoMap.entries()) {
@@ -1299,7 +1304,7 @@ export function bootLuaProgram(runtime: Runtime, options?: { preserveState?: boo
 		runtime.luaInitialized = true;
 	}
 	catch (error) {
-		console.info(`[Runtime] Lua boot '${path}' failed.`);
+			console.info(`[Runtime] Lua boot '${path}' failed.`);
 		logDebugState(runtime);
 		runtimeIde.handleLuaError(runtime, error);
 		return false;
@@ -1489,6 +1494,7 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	const compiled = appendLuaChunkToProgram(currentProgram, baseMetadata, chunk, {
 		canonicalization: runtime.canonicalization,
 		optLevel: getRealtimeOptLevel(runtime),
+		entrySource: source,
 	});
 	runtime.cpu.setProgram(compiled.program, compiled.metadata);
 	if (runtime.programMetadata) {

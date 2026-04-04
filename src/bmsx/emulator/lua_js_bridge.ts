@@ -275,7 +275,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 	public parseSnapshotObjectId(text: string): number {
 		const id = Number.parseInt(text, 10);
 		if (!Number.isFinite(id)) {
-			throw new Error(`[Runtime] Invalid Lua snapshot object id '${text}'.`);
+			throw new Error(`Invalid Lua snapshot object id '${text}'.`);
 		}
 		return id;
 	}
@@ -283,7 +283,7 @@ export class LuaJsBridge implements LuaInteropAdapter {
 	public parseSnapshotReferenceId(raw: unknown): number {
 		const id = Number(raw);
 		if (!Number.isFinite(id)) {
-			throw new Error(`[Runtime] Invalid Lua snapshot reference id '${String(raw)}'.`);
+			throw new Error(`Invalid Lua snapshot reference id '${String(raw)}'.`);
 		}
 		return id;
 	}

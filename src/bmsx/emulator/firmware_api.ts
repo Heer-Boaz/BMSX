@@ -18,7 +18,7 @@ import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointL
 import { listResources } from './workspace';
 import { getWorkspaceCachedSource } from './workspace_cache';
 import { buildDirtyFilePath, hasWorkspaceStorage } from './ide/workspace_storage';
-import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtins';
+import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtin_descriptors';
 import { Table } from './cpu';
 import { createLuaTable, type LuaTable } from '../lua/luavalue';
 import { BmsxColors } from './vdp';
