@@ -31,7 +31,12 @@ export default function schedule({ logger, test }) {
 					has_transition = transition ~= nil,
 					has_results = results ~= nil,
 					main_font = main ~= nil and main.font ~= nil,
-					choice_font = choice ~= nil and choice.font ~= nil,
+						main_blank_lines = main ~= nil and main.blank_lines or nil,
+						main_line_height = main ~= nil and main.line_height or nil,
+						choice_font = choice ~= nil and choice.font ~= nil,
+						choice_blank_lines = choice ~= nil and choice.blank_lines or nil,
+						choice_line_height = choice ~= nil and choice.line_height or nil,
+						choice_font_line_height = choice ~= nil and choice.font.line_height or nil,
 					prompt_font = prompt ~= nil and prompt.font ~= nil,
 					transition_font = transition ~= nil and transition.font ~= nil,
 					results_font = results ~= nil and results.font ~= nil,
@@ -53,7 +58,11 @@ export default function schedule({ logger, test }) {
 		test.assert(objectState.transition_id != null, 'expected text_transition_id global to exist');
 		test.assert(objectState.results_id != null, 'expected text_results_id global to exist');
 		test.assert(objectState.main_font, 'expected p3.text.main to have a font');
+		test.assert(objectState.main_blank_lines === 1, `expected p3.text.main blank_lines to be 1, got ${objectState.main_blank_lines}`);
+		test.assert(objectState.main_line_height === 16, `expected p3.text.main line_height to be 16, got ${objectState.main_line_height}`);
 		test.assert(objectState.choice_font, 'expected p3.text.choice to have a font');
+		test.assert(objectState.choice_blank_lines === 1, `expected p3.text.choice blank_lines to be 1, got ${objectState.choice_blank_lines}`);
+		test.assert(objectState.choice_line_height === objectState.choice_font_line_height * (objectState.choice_blank_lines + 1), `expected p3.text.choice line_height to reflect blank_lines, got ${objectState.choice_line_height} vs ${objectState.choice_font_line_height}`);
 		test.assert(objectState.prompt_font, 'expected p3.text.prompt to have a font');
 		test.assert(objectState.transition_font, 'expected p3.text.transition to have a font');
 		test.assert(objectState.results_font, 'expected p3.text.results to have a font');
@@ -75,6 +84,14 @@ export default function schedule({ logger, test }) {
 			main.highlighted_line_index = 0
 			local highlight_y<const>, highlight_h<const> = main:compute_highlight_block()
 			main.highlighted_line_index = nil
+			local choice = oget(globals.text_choice_id)
+			local original_choice_max<const> = choice.maximum_characters_per_line
+			choice.maximum_characters_per_line = 7
+			choice:set_text({ 'AB CD EF', 'GH' }, { typed = false, snap = true })
+			local choice_offset_1 = choice.wrapped_line_y_offsets[1]
+			local choice_offset_2 = choice.wrapped_line_y_offsets[2]
+			local choice_offset_3 = choice.wrapped_line_y_offsets[3]
+			choice.maximum_characters_per_line = original_choice_max
 			local original_max<const> = main.maximum_characters_per_line
 			main.maximum_characters_per_line = 7
 			main:set_text({ 'AB CD EF' }, { typed = false, snap = true })
@@ -91,11 +108,14 @@ export default function schedule({ logger, test }) {
 				wrap_count = wrap_count,
 				wrap_line_1 = wrap_line_1,
 				wrap_line_2 = wrap_line_2,
-				highlight_y = highlight_y,
-				highlight_h = highlight_h,
-				font_line_height = main.font.line_height,
-				line_height = main.line_height,
-				component_line_height = main.text_component.line_height,
+					highlight_y = highlight_y,
+					highlight_h = highlight_h,
+					font_line_height = main.font.line_height,
+					choice_offset_1 = choice_offset_1,
+					choice_offset_2 = choice_offset_2,
+					choice_offset_3 = choice_offset_3,
+					line_height = main.line_height,
+					component_line_height = main.text_component.line_height,
 				full_count = #main.full_text_lines,
 				displayed_count = #main.displayed_lines,
 				blank_line = main.displayed_lines[2],
@@ -112,8 +132,11 @@ export default function schedule({ logger, test }) {
 			test.assert(textProbeState.wrap_count === 2, `expected word-wrapped text to produce two lines, got ${textProbeState.wrap_count}`);
 			test.assert(textProbeState.wrap_line_1 === 'AB CD', `expected first wrapped line to stop at word boundary, got ${JSON.stringify(textProbeState.wrap_line_1)}`);
 			test.assert(textProbeState.wrap_line_2 === 'EF', `expected second wrapped line to contain remaining word, got ${JSON.stringify(textProbeState.wrap_line_2)}`);
-			test.assert(textProbeState.highlight_y === 96, `expected first highlight block to start at top 96, got ${textProbeState.highlight_y}`);
-			test.assert(textProbeState.highlight_h === textProbeState.font_line_height, `expected single-line highlight height to match font line height, got ${textProbeState.highlight_h} vs ${textProbeState.font_line_height}`);
+			test.assert(textProbeState.highlight_y === 92, `expected first highlight block to include top padding, got ${textProbeState.highlight_y}`);
+			test.assert(textProbeState.highlight_h === 16, `expected single-line highlight height to include top/bottom padding, got ${textProbeState.highlight_h}`);
+			test.assert(textProbeState.choice_offset_1 === 0, `expected first wrapped option line offset to be 0, got ${textProbeState.choice_offset_1}`);
+			test.assert(textProbeState.choice_offset_2 === 8, `expected wrapped line inside same option to stay tight, got ${textProbeState.choice_offset_2}`);
+			test.assert(textProbeState.choice_offset_3 === 24, `expected next option to include one blank line gap, got ${textProbeState.choice_offset_3}`);
 			test.assert(textProbeState.line_height === 16, `expected 2025 text line_height to be 16, got ${textProbeState.line_height}`);
 			test.assert(textProbeState.line_height === textProbeState.component_line_height, `expected textcomponent line_height to mirror textobject line_height, got ${textProbeState.component_line_height} vs ${textProbeState.line_height}`);
 			test.assert(textProbeState.full_count === 3, `expected three wrapped lines for explicit blank line case, got ${textProbeState.full_count}`);

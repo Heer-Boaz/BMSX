@@ -163,6 +163,27 @@ local build_highlight_move_frames<const> = function(params)
 	return frames
 end
 
+local line_advance<const> = function(font, blank_lines)
+	return font.line_height * (blank_lines + 1)
+end
+
+local build_wrapped_line_y_offsets<const> = function(font, blank_lines, wrapped_line_to_logical_line)
+	local wrapped_line_y_offsets<const> = {}
+	if #wrapped_line_to_logical_line == 0 then
+		return wrapped_line_y_offsets
+	end
+	local cursor_y = 0
+	wrapped_line_y_offsets[1] = 0
+	for i = 2, #wrapped_line_to_logical_line do
+		cursor_y = cursor_y + font.line_height
+		if wrapped_line_to_logical_line[i] ~= wrapped_line_to_logical_line[i - 1] then
+			cursor_y = cursor_y + (font.line_height * blank_lines)
+		end
+		wrapped_line_y_offsets[i] = cursor_y
+	end
+	return wrapped_line_y_offsets
+end
+
 fsmlibrary.register(textobject_fsm_id, {
 	initial = textobject_state_idle,
 	tag_derivations = {
@@ -294,6 +315,7 @@ function textobject.new(opts)
 	self.highlight_vibe_offset_x = 0
 	self.highlight_vibe_offset_y = 0
 	self.wrapped_line_to_logical_line = {}
+	self.wrapped_line_y_offsets = { 0 }
 	self.text_color = { r = 1, g = 1, b = 1, a = 1 }
 	self.highlight_color = { r = 0, g = 0, b = 0.5, a = 1 }
 	self.normal_bg_color = { r = 0, g = 0, b = 0, a = 1 }
@@ -302,16 +324,18 @@ function textobject.new(opts)
 	self.dimensions = opts.dimensions or { left = 0, top = 0, right = display_width(), bottom = display_height() }
 	self.centered_block_x = 0
 	self.char_width = opts.char_width or self.font.glyphs['a'].width
-	self.line_height = opts.line_height or self.font.line_height
+	self.blank_lines = opts.blank_lines or 0
+	self.line_height = line_advance(self.font, self.blank_lines)
 	self.text_offset = { x = 0, y = self.dimensions.top, z = 1 }
 	self:set_dimensions(self.dimensions)
 	self.text_component = components.textcomponent.new({
-		text = self.text,
-		font = self.font,
-		line_height = self.line_height,
-		color = self.text_color,
-		background_color = self.normal_bg_color,
-		offset = self.text_offset,
+			text = self.text,
+			font = self.font,
+			line_height = self.line_height,
+			line_offsets = self.wrapped_line_y_offsets,
+			color = self.text_color,
+			background_color = self.normal_bg_color,
+			offset = self.text_offset,
 		layer = self.layer,
 	})
 	self:add_component(self.text_component)
@@ -365,13 +389,16 @@ function textobject:compute_highlight_block()
 			last = i
 		end
 	end
-		if first == nil then
-			return nil
-		end
-		local y<const> = self.dimensions.top + (self.line_height * (first - 1))
-		local h<const> = self.font.line_height + (self.line_height * (last - first))
-		return y, h
+	if first == nil then
+		return nil
 	end
+	local highlight_padding_y<const> = (self.line_height - self.font.line_height) / 2
+	local first_y<const> = self.wrapped_line_y_offsets[first]
+	local last_y<const> = self.wrapped_line_y_offsets[last]
+	local y<const> = self.dimensions.top + first_y - highlight_padding_y
+	local h<const> = (last_y - first_y) + self.font.line_height + (highlight_padding_y * 2)
+	return y, h
+end
 
 function textobject:update_highlight_animation()
 	if self.highlighted_line_index == nil then
@@ -428,6 +455,7 @@ function textobject:set_text(text_or_lines, opts)
 		typed = true
 	end
 	self.full_text_lines, self.wrapped_line_to_logical_line = build_wrapped_lines(text_or_lines, self.maximum_characters_per_line)
+	self.wrapped_line_y_offsets = build_wrapped_line_y_offsets(self.font, self.blank_lines, self.wrapped_line_to_logical_line)
 	self:recenter_text_block()
 	if typed and not snap then
 		self:reset_typing_buffer()
@@ -503,6 +531,7 @@ function textobject:sync_text_component()
 	self.text_component.text = self.text
 	self.text_component.font = self.font
 	self.text_component.line_height = self.line_height
+	self.text_component.line_offsets = self.wrapped_line_y_offsets
 	self.text_component.color = text_color
 	self.text_component.background_color = normal_bg_color
 	self.text_component.layer = self.layer
@@ -520,20 +549,20 @@ function textobject:submit_highlight()
 	highlight_bg_color.a = highlight.a * text_color.a
 	local highlighted_logical_line<const> = self.highlighted_line_index
 	if highlighted_logical_line ~= nil and self.highlight_anim_y ~= nil then
-		local margin<const> = self.char_width / 2
+		local horizontal_margin<const> = self.char_width / 2
 		local scale<const> = self.highlight_pulse_enabled and self.highlight_vibe_scale or 1
 		local offset_x<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_x or 0
 		local offset_y<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
-		local padded<const> = margin * scale
+		local padded_x<const> = horizontal_margin * scale
 		memwrite(
 			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
 			sys_vdp_cmd_fill_rect,
 			10,
 			0,
-			dims.left - padded + offset_x,
-			self.highlight_anim_y - padded + offset_y,
-			dims.right + padded + offset_x,
-			self.highlight_anim_y + self.highlight_anim_h + padded + offset_y,
+			dims.left - padded_x + offset_x,
+			self.highlight_anim_y + offset_y,
+			dims.right + padded_x + offset_x,
+			self.highlight_anim_y + self.highlight_anim_h + offset_y,
 			self.z,
 			self.layer,
 			highlight_bg_color.r,

@@ -443,10 +443,14 @@ function engine.inst(definition_id, addons)
 	if object_type == 'textobject' then
 		local class_table<const> = def.class
 		local instance_id<const> = (addons and addons.id) or class_table.id
-		local instance<const> = textobject.new({ id = instance_id })
+		local ctor_opts<const> = {}
+		local defaults<const> = def.defaults
+		apply_defaults(ctor_opts, defaults)
+		apply_addons(ctor_opts, addons, { pos = true })
+		ctor_opts.id = instance_id
+		local instance<const> = textobject.new(ctor_opts)
 		instance.type_name = definition_id
 		apply_definition(instance, def, addons, 'dimensions')
-		local defaults<const> = def.defaults
 		local dimensions<const> = (addons and addons.dimensions) or (defaults and defaults.dimensions)
 		if dimensions then
 			instance:set_dimensions(dimensions)

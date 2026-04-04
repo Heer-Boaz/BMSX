@@ -294,14 +294,14 @@ function new_game()
 		inst('p3.text.main', {
 			id = globals.text_main_id,
 			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
-			line_height = line_height,
+			blank_lines = 1,
 			pos = { z = 1000 },
 			layer = sys_vdp_layer_ui,
 		})
 		inst('p3.text.choice', {
 			id = globals.text_choice_id,
 			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
-			line_height = line_height,
+			blank_lines = 1,
 			pos = { z = 1001 },
 			highlight_move_enabled = true,
 			highlight_pulse_enabled = true,
@@ -311,21 +311,21 @@ function new_game()
 		inst('p3.text.prompt', {
 			id = globals.text_prompt_id,
 			dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
-			line_height = line_height,
+			blank_lines = 1,
 			pos = { z = 1002 },
 			layer = sys_vdp_layer_ui,
 		})
 		inst('p3.text.transition', {
 			id = globals.text_transition_id,
 			dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
-			line_height = line_height,
+			blank_lines = 1,
 			pos = { z = 900 },
 			layer = sys_vdp_layer_ui,
 		})
 		inst('p3.text.results', {
 			id = globals.text_results_id,
 			dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
-			line_height = line_height,
+			blank_lines = 1,
 			pos = { z = 1003 },
 			layer = sys_vdp_layer_ui,
 		})

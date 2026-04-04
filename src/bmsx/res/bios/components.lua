@@ -703,6 +703,7 @@ function textcomponent.new(opts)
 	self.color = opts.color or { r = 1, g = 1, b = 1, a = 1 }
 	self.background_color = opts.background_color
 	self.wrap_chars = opts.wrap_chars
+	self.line_offsets = opts.line_offsets
 	self.center_block_width = opts.center_block_width
 	self.align = opts.align
 	self.baseline = opts.baseline

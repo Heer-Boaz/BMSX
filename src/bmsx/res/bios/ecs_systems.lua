@@ -752,14 +752,16 @@ function textrendersystem:update()
 			end
 		end
 		local cursor_y = y
+		local line_offsets<const> = tc.line_offsets
 		local background_enabled<const> = tc.background_color ~= nil and 1 or 0
 		local bg_r<const> = background_enabled ~= 0 and tc.background_color.r or 0
 		local bg_g<const> = background_enabled ~= 0 and tc.background_color.g or 0
 		local bg_b<const> = background_enabled ~= 0 and tc.background_color.b or 0
 		local bg_a<const> = background_enabled ~= 0 and tc.background_color.a or 0
-		for i = 1, #glyphs do
-			local line<const> = glyphs[i]
-			if string.len(line) > 0 then
+			for i = 1, #glyphs do
+				local line<const> = glyphs[i]
+				local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
+				if string.len(line) > 0 then
 				local line_x = x
 				if tc.center_block_width ~= nil then
 					line_x = x + ((tc.center_block_width - font_module.measure_line_width(tc.font, line)) / 2)
@@ -768,13 +770,13 @@ function textrendersystem:update()
 					vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
 					sys_vdp_cmd_glyph_run,
 					17,
-					0,
-					line,
-					line_x,
-					cursor_y,
-					z,
-					tc.font.id,
-					0,
+						0,
+						line,
+						line_x,
+						line_y,
+						z,
+						tc.font.id,
+						0,
 					0x7fffffff,
 					tc.layer,
 					tc.color.r,
@@ -785,11 +787,13 @@ function textrendersystem:update()
 					bg_r,
 					bg_g,
 					bg_b,
-					bg_a
-				)
+						bg_a
+					)
+				end
+				if line_offsets == nil then
+					cursor_y = cursor_y + tc.line_height
+				end
 			end
-			cursor_y = cursor_y + tc.line_height
-		end
 		::continue_text_render::
 	end
 end
