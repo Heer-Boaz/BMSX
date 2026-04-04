@@ -1,4 +1,5 @@
-import { resolveReferenceLookup, type ReferenceLookupOptions, type ReferenceMatchInfo, ReferenceState } from './code_reference';
+import { resolveReferenceLookup, type ReferenceLookupOptions } from './code_reference';
+import { ReferenceState, type ReferenceMatchInfo } from './reference_state';
 import type { CodeTabContext, InlineInputOptions, TextField, SearchMatch } from './types';
 import { createInlineTextField, getFieldText, setFieldText } from './inline_text_field';
 import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';

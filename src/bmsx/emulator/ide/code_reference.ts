@@ -7,12 +7,14 @@ import {
 	type LuaMemberExpression,
 	type LuaSourceRange,
 } from '../../lua/syntax/lua_ast';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../lua_builtin_descriptors';
 import { listResources } from '../workspace';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { parseLuaIdentifierChain, resolveLuaIdentifierChainRoot } from './lua/lua_identifier_chain';
 import { LuaSemanticWorkspace, Decl, type Ref, type SymbolID } from './semantic_model';
 import { prepareSemanticWorkspaceForEditorBuffer, syncSemanticWorkspacePath } from './semantic_workspace_sync';
+import { ReferenceState, type ReferenceMatchInfo } from './reference_state';
 import type { TextBuffer } from './text/text_buffer';
 import { getTextSnapshot, splitText } from './text/source_text';
 
@@ -68,7 +70,16 @@ function isBuiltinContextExpression(expression: string): boolean {
 	if (!root || root.length === 0) {
 		return false;
 	}
-	return Runtime.instance.luaBuiltinMetadata.has(root.trim().toLowerCase());
+	const canonical = Runtime.instance.canonicalizeIdentifier(root.trim());
+	if (Runtime.instance.luaBuiltinMetadata.has(canonical)) {
+		return true;
+	}
+	for (let index = 0; index < DEFAULT_LUA_BUILTIN_NAMES.length; index += 1) {
+		if (Runtime.instance.canonicalizeIdentifier(DEFAULT_LUA_BUILTIN_NAMES[index]) === canonical) {
+			return true;
+		}
+	}
+	return false;
 }
 
 type CallerScope = {
@@ -929,65 +940,8 @@ export type ReferenceLookupOptions = {
 	path: string;
 };
 
-export type ReferenceMatchInfo = {
-	matches: SearchMatch[];
-	expression: string;
-	definitionKey: string;
-	documentVersion: number;
-};
-
 export type ReferenceLookupResult = { kind: 'success'; info: ReferenceMatchInfo; initialIndex: number; } |
 { kind: 'error'; message: string; duration: number; };
-
-export class ReferenceState {
-	private matches: SearchMatch[] = [];
-	private activeIndex = -1;
-	private expression: string = null;
-	private definitionKey: string = null;
-
-	public clear(): void {
-		this.matches = [];
-		this.activeIndex = -1;
-		this.expression = null;
-		this.definitionKey = null;
-	}
-
-	public getMatches(): readonly SearchMatch[] {
-		return this.matches;
-	}
-
-	public getActiveIndex(): number {
-		return this.activeIndex;
-	}
-
-	public getExpression(): string {
-		return this.expression;
-	}
-
-	public getDefinitionKey(): string {
-		return this.definitionKey;
-	}
-
-	public apply(info: ReferenceMatchInfo, activeIndex: number): void {
-		this.matches = info.matches.slice();
-		if (this.matches.length === 0) {
-			this.activeIndex = -1;
-		} else {
-			const clampedIndex = clamp(activeIndex, 0, this.matches.length - 1);
-			this.activeIndex = clampedIndex;
-		}
-		this.expression = info.expression;
-		this.definitionKey = info.definitionKey;
-	}
-
-	public setActiveIndex(index: number): void {
-		if (this.matches.length === 0) {
-			this.activeIndex = -1;
-			return;
-		}
-		this.activeIndex = clamp(index, 0, this.matches.length - 1);
-	}
-}
 
 export function resolveReferenceLookup(options: ReferenceLookupOptions): ReferenceLookupResult {
 	const {

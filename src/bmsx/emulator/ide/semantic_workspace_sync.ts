@@ -61,10 +61,11 @@ export function syncSemanticWorkspacePath(input: SemanticWorkspacePathInput, wor
 		version: input.version,
 		withSyntaxError: false,
 		parsed: input.parsed,
+		canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
 	});
 	const existing = workspace.getFileData(input.path);
 	if (!existing || existing.source !== parseEntry.source) {
-		workspace.updateFile(input.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, input.version);
+		workspace.updateFile(input.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, input.version, ide_state.caseInsensitive ? ide_state.canonicalization : 'none');
 	}
 	const data = workspace.getFileData(input.path);
 	cacheSemanticAnalysis(input.path, parseEntry.source, data, parseEntry.parsed);
@@ -86,7 +87,7 @@ export function primeSemanticWorkspaceProjectSources(workspace: LuaSemanticWorks
 		}
 		const lines = cacheEntry?.lines ?? splitText(source);
 		const parsed = cacheEntry?.parsed;
-		workspace.updateFile(path, source, lines, parsed);
+		workspace.updateFile(path, source, lines, parsed, undefined, ide_state.caseInsensitive ? ide_state.canonicalization : 'none');
 		const data = workspace.getFileData(path);
 		cacheSemanticAnalysis(path, source, data, parsed);
 	}

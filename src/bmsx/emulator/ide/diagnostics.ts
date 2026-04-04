@@ -38,6 +38,7 @@ export function computeAggregatedEditorDiagnostics(
 			source,
 			lines: ctx.lines,
 			version: ctx.version,
+			canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
 		});
 		const baseLines = parseEntry.lines;
 		const parsed = parseEntry.parsed;

@@ -12,7 +12,7 @@ import type { RenameController } from './rename_controller';
 import { type LuaSemanticWorkspace } from './semantic_model';
 import type { CompletionController } from './completion_controller';
 import { createMessageController } from './message_controller';
-import { ReferenceState } from './code_reference';
+import { ReferenceState } from './reference_state';
 import { CHARACTER_CODES } from './character_map';
 import type {
 	Position,

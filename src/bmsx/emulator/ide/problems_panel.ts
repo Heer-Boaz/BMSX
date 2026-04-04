@@ -19,6 +19,13 @@ type PanelLayout = {
 	visibleHeight: number;
 };
 
+const panelBoundsScratch: RectBounds = {
+	left: 0,
+	top: 0,
+	right: 0,
+	bottom: 0,
+};
+
 export class ProblemsPanelController {
 	private visible = false;
 	private focused = false;
@@ -466,7 +473,7 @@ export class ProblemsPanelController {
 	}
 }
 
-export function drawProblemsPanel() {
+export function getProblemsPanelBounds(): RectBounds | null {
 	const panelHeight = getVisibleProblemsPanelHeight();
 	if (panelHeight <= 0) {
 		return null;
@@ -477,13 +484,24 @@ export function drawProblemsPanel() {
 	if (bottom <= top) {
 		return null;
 	}
-	const bounds = { left: 0, top, right: ide_state.viewportWidth, bottom };
+	panelBoundsScratch.left = 0;
+	panelBoundsScratch.top = top;
+	panelBoundsScratch.right = ide_state.viewportWidth;
+	panelBoundsScratch.bottom = bottom;
+	return panelBoundsScratch;
+}
+
+export function drawProblemsPanel() {
+	const bounds = getProblemsPanelBounds();
+	if (!bounds) {
+		return null;
+	}
 	ide_state.problemsPanel.draw(bounds);
 	return bounds;
 }
 
 export function isPointerOverProblemsPanelDivider(x: number, y: number): boolean {
-	const bounds = drawProblemsPanel();
+	const bounds = getProblemsPanelBounds();
 	if (!bounds) {
 		return false;
 	}
