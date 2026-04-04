@@ -32,6 +32,7 @@
 
 #include "libretro.h"
 #include "input_timeline.h"
+#include "screenshot.h"
 
 typedef struct LibretroCore {
 	void* handle;
@@ -145,6 +146,9 @@ static char g_opt_crt_postprocessing[8] = "off";
 static char g_opt_postprocess_detail[8] = "off";
 static bool g_vars_updated = false;
 static LibretroCore* g_core = NULL;
+
+static ScreenshotConfig g_screenshot_config = {0};
+static uint32_t g_frame_number = 0;
 
 static const char* kMenuKeyRenderBackend = "bmsx_render_backend";
 static const char* kMenuKeyCrtPostprocessing = "bmsx_crt_postprocessing";
@@ -409,6 +413,7 @@ static PFNGLUSEPROGRAMPROC glUseProgram_ptr = NULL;
 static PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer_ptr = NULL;
 static PFNGLVIEWPORTPROC glViewport_ptr = NULL;
 static PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus_ptr = NULL;
+static PFNGLREADPIXELSPROC glReadPixels_ptr = NULL;
 
 static FbDev g_fb;
 enum { kMaxInputDevs = 16 };
@@ -708,6 +713,7 @@ static bool gl_load(void) {
 	GL_LOAD(glVertexAttribPointer, PFNGLVERTEXATTRIBPOINTERPROC);
 	GL_LOAD(glViewport, PFNGLVIEWPORTPROC);
 	GL_LOAD(glCheckFramebufferStatus, PFNGLCHECKFRAMEBUFFERSTATUSPROC);
+	GL_LOAD(glReadPixels, PFNGLREADPIXELSPROC);
 #undef GL_LOAD
 	g_gl_loaded = true;
 	return true;
@@ -2391,6 +2397,21 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	msg_render_hw();
 	fps_render_hw();
 	menu_render_hw();
+	
+	// Capture screenshot if needed
+	if (g_screenshot_config.frame_count > 0 && screenshot_should_capture(&g_screenshot_config, g_frame_number)) {
+		fprintf(stderr, "[SCREENSHOT] Capturing frame %u (%ux%u)\n", g_frame_number, g_fb.width, g_fb.height);
+		uint8_t* pixels = malloc(g_fb.width * g_fb.height * 4);
+		if (pixels) {
+			glReadPixels_ptr(0, 0, g_fb.width, g_fb.height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+			char filename[128];
+			snprintf(filename, sizeof(filename), "frame_%05u.ppm", g_frame_number);
+			screenshot_save_ppm(filename, g_fb.width, g_fb.height, pixels);
+			free(pixels);
+		}
+	}
+	
+	g_frame_number++;
 	return true;
 }
 
@@ -4931,6 +4952,13 @@ int main(int argc, char** argv) {
 		die("retro_load_game failed");
 	}
 
+	// Try to load screenshot config
+	if (screenshot_config_load("capture.json", &g_screenshot_config)) {
+		fprintf(stderr, "[SCREENSHOT] Config loaded successfully\n");
+	} else {
+		fprintf(stderr, "[SCREENSHOT] No capture.json or invalid format (skipping screenshot capture)\n");
+	}
+
 	const int64_t ufps_scaled = core.bmsx_get_ufps();
 	g_target_fps = (double)ufps_scaled / (double)kHzScale;
 	int audio_rate = (int)(av.timing.sample_rate + 0.5);
@@ -5028,6 +5056,7 @@ int main(int argc, char** argv) {
 	if (game_buf) {
 		free(game_buf);
 	}
+	screenshot_config_free(&g_screenshot_config);
 	if (core.handle) {
 		dlclose(core.handle);
 	}
