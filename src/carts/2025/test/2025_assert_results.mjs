@@ -71,6 +71,10 @@ export default function schedule({ logger, test }) {
 			local step3 = main.displayed_lines[1]
 			main:reveal_text()
 			local final_line = main.displayed_lines[1]
+			main:set_text({ 'AB' }, { typed = false, snap = true })
+			main.highlighted_line_index = 0
+			local highlight_y<const>, highlight_h<const> = main:compute_highlight_block()
+			main.highlighted_line_index = nil
 			local original_max<const> = main.maximum_characters_per_line
 			main.maximum_characters_per_line = 7
 			main:set_text({ 'AB CD EF' }, { typed = false, snap = true })
@@ -87,6 +91,9 @@ export default function schedule({ logger, test }) {
 				wrap_count = wrap_count,
 				wrap_line_1 = wrap_line_1,
 				wrap_line_2 = wrap_line_2,
+				highlight_y = highlight_y,
+				highlight_h = highlight_h,
+				font_line_height = main.font.line_height,
 				line_height = main.line_height,
 				component_line_height = main.text_component.line_height,
 				full_count = #main.full_text_lines,
@@ -101,11 +108,13 @@ export default function schedule({ logger, test }) {
 		test.assert(textProbeState.step1 === 'A', `expected first typing step to reveal "A", got ${JSON.stringify(textProbeState.step1)}`);
 		test.assert(textProbeState.step2 === 'AB', `expected second typing step to reveal "AB", got ${JSON.stringify(textProbeState.step2)}`);
 		test.assert(textProbeState.step3 === 'AB', `expected finish-line step to keep "AB", got ${JSON.stringify(textProbeState.step3)}`);
-		test.assert(textProbeState.final_line === 'AB', `expected reveal_text() to preserve final line "AB", got ${JSON.stringify(textProbeState.final_line)}`);
-		test.assert(textProbeState.wrap_count === 2, `expected word-wrapped text to produce two lines, got ${textProbeState.wrap_count}`);
-		test.assert(textProbeState.wrap_line_1 === 'AB CD', `expected first wrapped line to stop at word boundary, got ${JSON.stringify(textProbeState.wrap_line_1)}`);
-		test.assert(textProbeState.wrap_line_2 === 'EF', `expected second wrapped line to contain remaining word, got ${JSON.stringify(textProbeState.wrap_line_2)}`);
-		test.assert(textProbeState.line_height === 16, `expected 2025 text line_height to be 16, got ${textProbeState.line_height}`);
+			test.assert(textProbeState.final_line === 'AB', `expected reveal_text() to preserve final line "AB", got ${JSON.stringify(textProbeState.final_line)}`);
+			test.assert(textProbeState.wrap_count === 2, `expected word-wrapped text to produce two lines, got ${textProbeState.wrap_count}`);
+			test.assert(textProbeState.wrap_line_1 === 'AB CD', `expected first wrapped line to stop at word boundary, got ${JSON.stringify(textProbeState.wrap_line_1)}`);
+			test.assert(textProbeState.wrap_line_2 === 'EF', `expected second wrapped line to contain remaining word, got ${JSON.stringify(textProbeState.wrap_line_2)}`);
+			test.assert(textProbeState.highlight_y === 96, `expected first highlight block to start at top 96, got ${textProbeState.highlight_y}`);
+			test.assert(textProbeState.highlight_h === textProbeState.font_line_height, `expected single-line highlight height to match font line height, got ${textProbeState.highlight_h} vs ${textProbeState.font_line_height}`);
+			test.assert(textProbeState.line_height === 16, `expected 2025 text line_height to be 16, got ${textProbeState.line_height}`);
 			test.assert(textProbeState.line_height === textProbeState.component_line_height, `expected textcomponent line_height to mirror textobject line_height, got ${textProbeState.component_line_height} vs ${textProbeState.line_height}`);
 			test.assert(textProbeState.full_count === 3, `expected three wrapped lines for explicit blank line case, got ${textProbeState.full_count}`);
 		test.assert(textProbeState.displayed_count === 3, `expected displayed blank-line case to keep three lines, got ${textProbeState.displayed_count}`);
