@@ -107,14 +107,10 @@ end
 
 function behaviortreesystem:update()
 	for obj in world_instance:objects(active_scope) do
-		if not (obj.active) then
-			goto continue_behavior_tree
-		end
 		local bts<const> = obj.btreecontexts
 		for id in pairs(bts) do
 			obj:tick_tree(id)
 		end
-		::continue_behavior_tree::
 	end
 end
 
@@ -144,11 +140,7 @@ end
 
 function statemachinesystem:update(dt_ms)
 	for obj in world_instance:objects(active_scope) do
-		if not (obj.active) then
-			goto continue_state_machine
-		end
 		obj.sc:update(dt_ms)
-		::continue_state_machine::
 	end
 end
 
@@ -298,7 +290,7 @@ end
 
 function tilecollisionsystem:update()
 	for obj, component in world_instance:objects_with_components(tilecollisioncomponent, active_scope) do
-		if component.enabled and not obj.dispose_flag and obj.active then
+		if component.enabled then
 			local current_payload<const> = component.current_payload
 			local previous_payload<const> = component.previous_payload
 			clear_map(current_payload)
@@ -519,7 +511,7 @@ function overlap2dsystem:update()
 	local event_colliders<const> = self.event_colliders
 	clear_array(event_colliders)
 	for obj, collider in world_instance:objects_with_components(collider2dcomponent, active_scope) do
-		if collider.enabled and not obj.dispose_flag then
+		if collider.enabled then
 			broadphase:add_or_update(collider)
 			collider_lookup[collider.id] = collider
 			event_colliders[#event_colliders + 1] = collider
@@ -535,24 +527,12 @@ function overlap2dsystem:update()
 	for i = 1, #event_colliders do
 		local collider<const> = event_colliders[i]
 		local owner<const> = collider.parent
-		-- if owner == nil then
-		-- 	error('[overlap2dsystem] collider '' .. tostring(collider.id) .. '' has no parent')
-		-- end
-		if owner.dispose_flag or not owner.active then
-			goto continue_event_collider
-		end
 		local owner_space<const> = owner.space_id
 		local candidates<const> = broadphase:query_aabb(collider:get_world_area(), self.candidate_colliders, self.candidate_seen)
 		for j = 1, #candidates do
 			local other<const> = candidates[j]
 			if other ~= collider then
 				local other_owner<const> = other.parent
-				-- if other_owner == nil then
-				-- 	error('[overlap2dsystem] collider '' .. tostring(other.id) .. '' has no parent')
-				-- end
-				if other_owner.dispose_flag or not other_owner.active then
-					goto continue_candidate
-				end
 				local a_hits_b<const> = (collider.mask & other.layer) ~= 0
 				local b_hits_a<const> = (other.mask & collider.layer) ~= 0
 				if a_hits_b and b_hits_a then
@@ -566,9 +546,7 @@ function overlap2dsystem:update()
 						end
 				end
 			end
-			::continue_candidate::
 		end
-		::continue_event_collider::
 	end
 
 	local begins<const> = self.begins
@@ -616,9 +594,6 @@ function overlap2dsystem:update()
 		local owner_b<const> = col_b.parent
 		if owner_a == nil or owner_b == nil then
 			error('[overlap2dsystem] attempted to emit overlap event without collider parents')
-		end
-		if owner_a.dispose_flag or owner_b.dispose_flag then
-			return
 		end
 		if not owner_a.active or not owner_b.active then
 			return contact

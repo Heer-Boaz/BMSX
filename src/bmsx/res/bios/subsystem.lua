@@ -56,7 +56,6 @@ function subsystem.new(opts)
 	self.type_name = opts.type_name or 'subsystem'
 	self.id = opts.id or generate_subsystem_id(self.type_name)
 	self.active = false
-	self.update_enabled = false
 	self.fsm_dispatch_enabled = false
 	self.visible = true
 	if opts.visible ~= nil then
@@ -123,7 +122,6 @@ end
 
 function subsystem:activate()
 	self.active = true
-	self.update_enabled = true
 	self.fsm_dispatch_enabled = true
 	self:bind()
 	self.sc:start()
@@ -131,7 +129,6 @@ end
 
 function subsystem:deactivate()
 	self.active = false
-	self.update_enabled = false
 	self.fsm_dispatch_enabled = false
 	self.sc:pause()
 end
@@ -245,7 +242,7 @@ end
 
 function subsystemupdatesystem:update(dt_ms)
 	local owner<const> = self.owner
-	if owner == nil or owner.dispose_flag or not owner.active or not owner.update_enabled then
+	if not owner.active then
 		return
 	end
 	owner.sc:update(dt_ms)
@@ -271,7 +268,7 @@ end
 
 function subsystemanimationsystem:update(dt_ms)
 	local owner<const> = self.owner
-	if owner == nil or owner.dispose_flag or not owner.active or not owner.update_enabled then
+	if not owner.active then
 		return
 	end
 	owner.timelines:update(dt_ms)
@@ -293,7 +290,7 @@ end
 
 function subsystempresentationsystem:update()
 	local owner<const> = self.owner
-	if owner == nil or owner.dispose_flag or not owner.active or not owner.visible then
+	if not owner.active or not owner.visible then
 		return
 	end
 	owner:draw()

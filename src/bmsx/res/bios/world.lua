@@ -312,26 +312,20 @@ function world_class:set_object_space(obj, space_id)
 end
 
 function world_class:_object_in_scope(obj, scope)
-	if obj.dispose_flag then
-		return false
-	end
 	if scope == 'active' then
 		if not obj.active then
 			return false
 		end
 		return self._obj_to_space[obj.id] == self.active_space_id
 	end
-	return true
+	return not obj.dispose_flag
 end
 
 function world_class:_subsystem_in_scope(subsys, scope)
-	if subsys.dispose_flag then
-		return false
-	end
 	if scope == 'active' then
 		return subsys.active
 	end
-	return true
+	return not subsys.dispose_flag
 end
 
 function world_class:_remove_subsystem_systems(subsys)
