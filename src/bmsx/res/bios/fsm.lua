@@ -144,6 +144,13 @@ local start_state_prefixes<const> = { ['_'] = true, ['#'] = true }
 local no_op_aliases<const> = { ['no-op'] = true, ['noop'] = true, ['no_op'] = true }
 local ignored_relative_segments<const> = { [''] = true, ['.'] = true }
 local input_eval_modes<const> = { ['first'] = true, ['all'] = true }
+local build_input_event_handler_list<const> = function(handlers)
+	local list<const> = {}
+	for pattern, handler in pairs(handlers) do
+		list[#list + 1] = { pattern = pattern, handler = handler }
+	end
+	return list
+end
 
 local make_def_id<const> = function(id, parent)
 	if not parent then
@@ -393,6 +400,7 @@ function statedefinition.new(id, def, root, parent)
 	validate_optional_state_function(self.def_id, 'exiting_state', self.exiting_state)
 	validate_transition_spec_map(self.def_id, 'on', self.on)
 	validate_transition_spec_map(self.def_id, 'input_event_handlers', self.input_event_handlers)
+	self.input_event_handler_list = build_input_event_handler_list(self.input_event_handlers)
 	self.event_list = def and def.event_list
 	self.timelines = def and def.timelines
 	self.transition_guards = def and def.transition_guards
@@ -420,6 +428,8 @@ function statedefinition.new(id, def, root, parent)
 		end
 	end
 	if self.root == self then
+		self._resolved_path_cache = {}
+		self._resolved_path_cache_count = 0
 		local list<const> = {}
 		local seen<const> = {}
 		collect_event_list(self, list, seen)
@@ -433,6 +443,7 @@ state.__index = state
 
 state.trace_map = {}
 state.path_config = { cache_size = 256 }
+state._path_cache_count = 0
 state.diagnostics = {
 	trace_transitions = false,
 	trace_dispatch = false,
@@ -602,6 +613,10 @@ function state.new(definition, target, parent)
 	self.id = self:make_id()
 	self.data = clone_defaults(definition.data or {})
 	self.states = {}
+	self.state_ids = {}
+	self.concurrent_states = {}
+	self.state_count = 0
+	self.concurrent_state_count = 0
 	self.current_id = nil
 	self.timeline_bindings = nil
 	self.transition_queue = {}
@@ -671,14 +686,14 @@ end
 
 function state:states_or_throw(ctx)
 	local container<const> = ctx or self
-	if not container.states or next(container.states) == nil then
+	if container.state_count == 0 then
 		error('state "' .. tostring(container.id) .. '" does not define substates.')
 	end
 	return container.states
 end
 
 function state:current_state_definition()
-	local current<const> = self.states and self.states[self.current_id]
+	local current<const> = self.states[self.current_id]
 	if not current then
 		error('current state "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 	end
@@ -693,17 +708,15 @@ end
 function state:ensure_child(ctx, seg)
 	local child<const>, key<const> = self:find_child(ctx, seg)
 	if not child then
-		if not ctx.states then
+		if ctx.state_count == 0 then
 			error('state "' .. tostring(ctx.id) .. '" does not define substates.')
 		end
 		local children<const> = {}
-		for id in pairs(ctx.states) do
-			children[#children + 1] = id
+		local child_ids<const> = ctx.state_ids
+		for i = 1, ctx.state_count do
+			children[i] = child_ids[i]
 		end
 		error('no state "' .. seg .. '" under "' .. tostring(ctx.id) .. '". children: ' .. table.concat(children, ', '))
-		if type(child) ~= 'table' then
-			error('state "' .. tostring(ctx.id) .. '" has non-state child "' .. tostring(seg) .. '" (type ' .. type(child) .. ').')
-		end
 	end
 	return child, key
 end
@@ -791,28 +804,6 @@ function state:deactivate_timelines()
 	end
 end
 
-local append_active_child_states<const> = function(ctx, out)
-	local states<const> = ctx.states
-	if not states or next(states) == nil then
-		return out
-	end
-	local current_id<const> = ctx.current_id
-	if not current_id then
-		return out
-	end
-	local current<const> = states[current_id]
-	if not current then
-		error('current child "' .. tostring(current_id) .. '" not found in "' .. tostring(ctx.id) .. '".')
-	end
-	out[#out + 1] = current
-	for id, child in pairs(states) do
-		if id ~= current_id and child.definition.is_concurrent then
-			out[#out + 1] = child
-		end
-	end
-	return out
-end
-
 function state:enter_child_state(child)
 	local child_def<const> = child.definition
 	self:with_critical_section(function()
@@ -841,22 +832,26 @@ function state:enter_initial_substate_chain()
 	if not self:is_active() then
 		return
 	end
-	if not self.states or next(self.states) == nil then
+	if self.state_count == 0 then
 		return
 	end
 	if not self.current_id then
 		return
 	end
-	local active_children<const> = append_active_child_states(self, {})
-	for i = 1, #active_children do
+	local current<const> = self.states[self.current_id]
+	if not current then
+		error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
+	end
+	self:enter_child_state(current)
+	current:enter_initial_substate_chain()
+	local concurrent_states<const> = self.concurrent_states
+	for i = 1, self.concurrent_state_count do
 		if not self:is_active() then
 			return
 		end
-		local child<const> = active_children[i]
-		if child.definition.is_concurrent or self.current_id == child.localdef_id then
-			self:enter_child_state(child)
-			child:enter_initial_substate_chain()
-		end
+		local child<const> = concurrent_states[i]
+		self:enter_child_state(child)
+		child:enter_initial_substate_chain()
 	end
 	self.root:sync_target_state_tags()
 end
@@ -883,7 +878,7 @@ function state:with_critical_section(fn)
 	return r1, r2, r3, r4, r5, r6, r7, r8
 end
 
-	function state:process_transition_queue()
+function state:process_transition_queue()
 		if self.is_processing_queue then
 			return
 		end
@@ -906,7 +901,10 @@ end
 				end
 				i = i + 1
 			end
-			self.transition_queue = {}
+			local queue<const> = self.transition_queue
+			for j = 1, #queue do
+				queue[j] = nil
+			end
 		end)
 		self.is_processing_queue = false
 		if not ok then
@@ -1443,6 +1441,108 @@ function state:get_history_snapshot()
 	return out
 end
 
+local compile_definition_path_plan<const> = function(origin_definition, path)
+	local spec<const> = state.parse_fs_path(path)
+	if not spec.abs and spec.up == 0 and #spec.segs == 0 then
+		error('empty path is invalid.')
+	end
+	local ctx = spec.abs and origin_definition.root or origin_definition
+	for i = 1, spec.up do
+		if not ctx.parent then
+			error('path "' .. path .. '" attempts to go above root.')
+		end
+		ctx = ctx.parent
+	end
+	local count<const> = #spec.segs
+	local keys<const> = {}
+	local concurrent<const> = {}
+	for i = 1, count do
+		local seg<const> = spec.segs[i]
+		local key<const> = resolve_state_key(ctx, seg)
+		if not key then
+			local states<const> = ctx.states
+			if not states then
+				error('state "' .. tostring(ctx.id) .. '" does not define substates.')
+			end
+			local children<const> = {}
+			for child_id in pairs(states) do
+				children[#children + 1] = child_id
+			end
+			error('no state "' .. seg .. '" under "' .. tostring(ctx.def_id) .. '". children: ' .. table.concat(children, ', '))
+		end
+		local child<const> = ctx.states[key]
+		keys[i] = key
+		concurrent[i] = child.is_concurrent
+		ctx = child
+	end
+	return {
+		abs = spec.abs,
+		up = spec.up,
+		count = count,
+		keys = keys,
+		concurrent = concurrent,
+	}
+end
+
+local get_cached_definition_path_plan<const> = function(origin_definition, path)
+	local root<const> = origin_definition.root
+	local cache_key<const> = origin_definition.def_id .. '\n' .. path
+	local cache<const> = root._resolved_path_cache
+	local cached<const> = cache[cache_key]
+	if cached then
+		return cached
+	end
+	local cache_size<const> = state.path_config.cache_size
+	if root._resolved_path_cache_count >= cache_size then
+		for key in pairs(cache) do
+			cache[key] = nil
+			root._resolved_path_cache_count = root._resolved_path_cache_count - 1
+			break
+		end
+	end
+	local plan<const> = compile_definition_path_plan(origin_definition, path)
+	cache[cache_key] = plan
+	root._resolved_path_cache_count = root._resolved_path_cache_count + 1
+	return plan
+end
+
+local apply_cached_path_plan<const> = function(start_state, plan)
+	local ctx = plan.abs and start_state.root or start_state
+	for i = 1, plan.up do
+		ctx = ctx.parent
+	end
+	local keys<const> = plan.keys
+	local concurrent<const> = plan.concurrent
+	for i = 1, plan.count do
+		local key<const> = keys[i]
+		local child<const> = ctx.states[key]
+		if not concurrent[i] and ctx.current_id ~= key then
+			ctx:transition_to_state(key)
+		end
+		ctx = child
+	end
+end
+
+local matches_cached_path_plan<const> = function(start_state, plan)
+	if plan.count == 0 then
+		return false
+	end
+	local ctx = plan.abs and start_state.root or start_state
+	for i = 1, plan.up do
+		ctx = ctx.parent
+	end
+	local keys<const> = plan.keys
+	local concurrent<const> = plan.concurrent
+	for i = 1, plan.count do
+		local key<const> = keys[i]
+		if not concurrent[i] and ctx.current_id ~= key then
+			return false
+		end
+		ctx = ctx.states[key]
+	end
+	return true
+end
+
 function state:transition_to_path(path)
 	if type(path) == 'table' then
 		if #path == 0 then
@@ -1459,26 +1559,7 @@ function state:transition_to_path(path)
 		end
 		return
 	end
-
-	local spec<const> = state.parse_fs_path(path)
-	if not spec.abs and spec.up == 0 and #spec.segs == 0 then
-		error('empty path is invalid.')
-	end
-	local ctx = spec.abs and self.root or self
-	for i = 1, spec.up do
-		if not ctx.parent then
-			error('path "' .. path .. '" attempts to go above root.')
-		end
-		ctx = ctx.parent
-	end
-	for i = 1, #spec.segs do
-		local seg<const> = spec.segs[i]
-		local child<const>, key<const> = self:ensure_child(ctx, seg)
-		if not child.definition.is_concurrent and ctx.current_id ~= key then
-			ctx:transition_to_state(key)
-		end
-		ctx = child
-	end
+	apply_cached_path_plan(self, get_cached_definition_path_plan(self.definition, path))
 end
 
 function state:transition_to(state_id)
@@ -1597,18 +1678,16 @@ function state.parse_fs_path(input)
 	end
 
 	local cache_size<const> = state.path_config.cache_size
-	local cache_count = 0
-	for _ in pairs(state._path_cache) do
-		cache_count = cache_count + 1
-	end
-	if cache_count >= cache_size then
+	if state._path_cache_count >= cache_size then
 		for key in pairs(state._path_cache) do
 			state._path_cache[key] = nil
+			state._path_cache_count = state._path_cache_count - 1
 			break
 		end
 	end
 	local rec<const> = { abs = abs, up = up, segs = segs }
 	state._path_cache[input] = rec
+	state._path_cache_count = state._path_cache_count + 1
 	return rec
 end
 
@@ -1638,16 +1717,7 @@ function state:matches_state_path(path)
 	if type(path) == 'table' then
 		return match_segments(self, path)
 	end
-
-	local spec<const> = state.parse_fs_path(path)
-	local ctx = spec.abs and self.root or self
-	for i = 1, spec.up do
-		if not ctx.parent then
-			return false
-		end
-		ctx = ctx.parent
-	end
-	return match_segments(ctx, spec.segs)
+	return matches_cached_path_plan(self, get_cached_definition_path_plan(self.definition, path))
 end
 
 function state:matches_state_tag(tag)
@@ -1664,11 +1734,10 @@ function state:matches_state_tag(tag)
 		if child:matches_state_tag(tag) then
 			return true
 		end
-		for id, concurrent in pairs(self.states) do
-			if concurrent.definition.is_concurrent and id ~= self.current_id then
-				if concurrent:matches_state_tag(tag) then
-					return true
-				end
+		local concurrent_states<const> = self.concurrent_states
+		for i = 1, self.concurrent_state_count do
+			if concurrent_states[i]:matches_state_tag(tag) then
+				return true
 			end
 		end
 	end
@@ -1690,10 +1759,9 @@ function state:collect_active_state_tags(out)
 			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 		end
 		child:collect_active_state_tags(out)
-		for id, concurrent in pairs(self.states) do
-			if concurrent.definition.is_concurrent and id ~= self.current_id then
-				concurrent:collect_active_state_tags(out)
-			end
+		local concurrent_states<const> = self.concurrent_states
+		for i = 1, self.concurrent_state_count do
+			concurrent_states[i]:collect_active_state_tags(out)
 		end
 	end
 end
@@ -1889,16 +1957,15 @@ function state:dispatch_event(event_or_name, payload)
 		detail = nil
 	end
 
-	if self.states and next(self.states) ~= nil and self.current_id then
+	if self.state_count ~= 0 and self.current_id then
 		local child<const> = self.states[self.current_id]
 		if not child then
 			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 		end
 		local handled = child:dispatch_event(event_name, data)
-		for _, concurrent in pairs(self.states) do
-			if concurrent.definition.is_concurrent and concurrent ~= child then
-				handled = concurrent:dispatch_event(event_name, data) or handled
-			end
+		local concurrent_states<const> = self.concurrent_states
+		for i = 1, self.concurrent_state_count do
+			handled = concurrent_states[i]:dispatch_event(event_name, data) or handled
 		end
 		if handled then
 			return true
@@ -1933,14 +2000,17 @@ function state:resolve_input_eval_mode()
 end
 
 function state:process_input_events()
-	local handlers<const> = self.definition.input_event_handlers
-	if not handlers then
+	local handlers<const> = self.definition.input_event_handler_list
+	if #handlers == 0 then
 		return
 	end
 	local trace_transitions<const> = should_trace_transitions()
 	local player_index<const> = self.target.player_index or 1
 	local eval_mode<const> = self:resolve_input_eval_mode()
-	for pattern, handler in pairs(handlers) do
+	for i = 1, #handlers do
+		local entry<const> = handlers[i]
+		local pattern<const> = entry.pattern
+		local handler<const> = entry.handler
 		if action_triggered(pattern, player_index) then
 			local handled
 			if trace_transitions then
@@ -1985,7 +2055,7 @@ function state:run_current_state()
 end
 
 function state:run_substate_machines()
-	if not self.states or not self.current_id then
+	if self.state_count == 0 or not self.current_id then
 		return
 	end
 	local states<const> = self.states
@@ -1994,10 +2064,9 @@ function state:run_substate_machines()
 		error('current state "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 	end
 	cur:update()
-	for id, s in pairs(states) do
-		if id ~= self.current_id and s.definition.is_concurrent then
-			s:update()
-		end
+	local concurrent_states<const> = self.concurrent_states
+	for i = 1, self.concurrent_state_count do
+		concurrent_states[i]:update()
 	end
 end
 
@@ -2019,6 +2088,10 @@ function state:populate_states()
 	local sdef<const> = self.definition
 	if not sdef or not sdef.states then
 		self.states = {}
+		self.state_ids = {}
+		self.concurrent_states = {}
+		self.state_count = 0
+		self.concurrent_state_count = 0
 		return
 	end
 	local state_ids<const> = {}
@@ -2027,14 +2100,29 @@ function state:populate_states()
 	end
 	if #state_ids == 0 then
 		self.states = {}
+		self.state_ids = {}
+		self.concurrent_states = {}
+		self.state_count = 0
+		self.concurrent_state_count = 0
 		return
 	end
 	self.states = {}
+	self.state_ids = {}
+	self.concurrent_states = {}
+	self.state_count = 0
+	self.concurrent_state_count = 0
 	for i = 1, #state_ids do
 		local sdef_id<const> = state_ids[i]
 		local child_def<const> = sdef.states[sdef_id]
 		local child<const> = state.new(child_def, self.target, self)
 		self.states[sdef_id] = child
+		self.state_ids[i] = sdef_id
+		self.state_count = i
+		if child.definition.is_concurrent then
+			local concurrent_index<const> = self.concurrent_state_count + 1
+			self.concurrent_state_count = concurrent_index
+			self.concurrent_states[concurrent_index] = child
+		end
 	end
 	if not self.current_id then
 		self.current_id = state_ids[1]
@@ -2060,9 +2148,11 @@ function state:reset_submachine(reset_tree)
 	self._hist_size = 0
 	self.paused = false
 	self.data = def.data and clone_defaults(def.data) or {}
-	if (reset_tree == nil or reset_tree) and self.states then
-		for _, child in pairs(self.states) do
-			child:reset(reset_tree)
+	if reset_tree == nil or reset_tree then
+		local states<const> = self.states
+		local state_ids<const> = self.state_ids
+		for i = 1, self.state_count do
+			states[state_ids[i]]:reset(reset_tree)
 		end
 	end
 	if self:is_root() then
@@ -2084,11 +2174,17 @@ function state:dispose()
 			self._tag_remove_scratch = nil
 		end
 	if self.states then
-		for _, child in pairs(self.states) do
-			child:dispose()
+		local states<const> = self.states
+		local state_ids<const> = self.state_ids
+		for i = 1, self.state_count do
+			states[state_ids[i]]:dispose()
 		end
 	end
 	self.states = {}
+	self.state_ids = {}
+	self.concurrent_states = {}
+	self.state_count = 0
+	self.concurrent_state_count = 0
 	self.current_id = nil
 end
 
@@ -2100,6 +2196,10 @@ function statemachinecontroller.new(opts)
 	opts = opts or {}
 	self.target = opts.target
 	self.statemachines = {}
+	self.statemachine_ids = {}
+	self.statemachine_keys = {}
+	self.statemachine_list = {}
+	self.statemachine_count = 0
 	self.update_enabled = true
 	if opts.update_enabled ~= nil then
 		self.update_enabled = opts.update_enabled
@@ -2122,6 +2222,17 @@ function statemachinecontroller:add_statemachine(id, definition)
 		def = statedefinition.new(id, definition)
 	end
 	local machine<const> = state.new(def, self.target)
+	local existing_index<const> = self.statemachine_ids[id]
+	if existing_index then
+		self.statemachine_keys[existing_index] = id
+		self.statemachine_list[existing_index] = machine
+	else
+		local index<const> = self.statemachine_count + 1
+		self.statemachine_count = index
+		self.statemachine_ids[id] = index
+		self.statemachine_keys[index] = id
+		self.statemachine_list[index] = machine
+	end
 	self.statemachines[id] = machine
 	return machine
 end
@@ -2151,8 +2262,9 @@ function statemachinecontroller:bind_machine(machine)
 end
 
 function statemachinecontroller:bind()
-	for _, machine in pairs(self.statemachines) do
-		self:bind_machine(machine)
+	local list<const> = self.statemachine_list
+	for i = 1, self.statemachine_count do
+		self:bind_machine(list[i])
 	end
 end
 
@@ -2193,8 +2305,9 @@ function statemachinecontroller:start()
 		return
 	end
 	self:bind()
-	for _, machine in pairs(self.statemachines) do
-		machine:start()
+	local list<const> = self.statemachine_list
+	for i = 1, self.statemachine_count do
+		list[i]:start()
 	end
 	self._started = true
 	self:resume()
@@ -2204,8 +2317,9 @@ function statemachinecontroller:update()
 	if not self.update_enabled then
 		return
 	end
-	for _, machine in pairs(self.statemachines) do
-		machine:update()
+	local list<const> = self.statemachine_list
+	for i = 1, self.statemachine_count do
+		list[i]:update()
 	end
 end
 
@@ -2225,8 +2339,9 @@ function statemachinecontroller:dispatch(event_or_name, payload)
 		data = payload
 	end
 	local handled
-	for _, machine in pairs(self.statemachines) do
-		if machine:dispatch_event(event_name, data) then
+	local list<const> = self.statemachine_list
+	for i = 1, self.statemachine_count do
+		if list[i]:dispatch_event(event_name, data) then
 			handled = true
 		end
 	end
@@ -2267,8 +2382,9 @@ function statemachinecontroller:matches_state_path(path)
 		end
 		return machine:matches_state_path(state_path)
 	end
-	for _, machine in pairs(self.statemachines) do
-		if machine:matches_state_path(path) then
+	local list<const> = self.statemachine_list
+	for i = 1, self.statemachine_count do
+		if list[i]:matches_state_path(path) then
 			return true
 		end
 	end
@@ -2292,8 +2408,9 @@ function statemachinecontroller:run_statemachine(id)
 end
 
 function statemachinecontroller:run_all_statemachines()
-	for id in pairs(self.statemachines) do
-		self:run_statemachine(id)
+	local list<const> = self.statemachine_list
+	for i = 1, self.statemachine_count do
+		list[i]:update()
 	end
 end
 
@@ -2306,8 +2423,9 @@ function statemachinecontroller:reset_statemachine(id)
 end
 
 function statemachinecontroller:reset_all_statemachines()
-	for id in pairs(self.statemachines) do
-		self:reset_statemachine(id)
+	local list<const> = self.statemachine_list
+	for i = 1, self.statemachine_count do
+		list[i]:reset()
 	end
 end
 
@@ -2320,8 +2438,9 @@ function statemachinecontroller:pop_statemachine(id)
 end
 
 function statemachinecontroller:pop_all_statemachines()
-	for id in pairs(self.statemachines) do
-		self:pop_statemachine(id)
+	local list<const> = self.statemachine_list
+	for i = 1, self.statemachine_count do
+		list[i]:pop_and_transition()
 	end
 end
 
@@ -2350,22 +2469,26 @@ function statemachinecontroller:resume_statemachine(id)
 end
 
 function statemachinecontroller:pause_all_statemachines()
-	for id in pairs(self.statemachines) do
-		self:pause_statemachine(id)
+	local list<const> = self.statemachine_list
+	for i = 1, self.statemachine_count do
+		list[i].paused = true
 	end
 end
 
 function statemachinecontroller:pause_all_except(to_exclude_id)
-	for id in pairs(self.statemachines) do
-		if id ~= to_exclude_id then
-			self:pause_statemachine(id)
+	local list<const> = self.statemachine_list
+	local keys<const> = self.statemachine_keys
+	for i = 1, self.statemachine_count do
+		if keys[i] ~= to_exclude_id then
+			list[i].paused = true
 		end
 	end
 end
 
 function statemachinecontroller:resume_all_statemachines()
-	for id in pairs(self.statemachines) do
-		self:resume_statemachine(id)
+	local list<const> = self.statemachine_list
+	for i = 1, self.statemachine_count do
+		list[i].paused = false
 	end
 end
 
@@ -2384,11 +2507,16 @@ end
 function statemachinecontroller:dispose()
 	self:pause()
 	self._started = false
-	for _, machine in pairs(self.statemachines) do
-		machine:dispose()
+	local list<const> = self.statemachine_list
+	for i = 1, self.statemachine_count do
+		list[i]:dispose()
 	end
 	self:unbind()
 	self.statemachines = {}
+	self.statemachine_ids = {}
+	self.statemachine_keys = {}
+	self.statemachine_list = {}
+	self.statemachine_count = 0
 end
 
 return {

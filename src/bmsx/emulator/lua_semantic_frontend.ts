@@ -4,7 +4,7 @@ import type { CanonicalizationType } from '../rompack/rompack';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from './types';
 import type { ParsedLuaChunk } from './ide/lua/lua_parse';
 import { getCachedLuaParse } from './ide/lua/lua_analysis_cache';
-import { type Decl, type FileSemanticData, type Ref, type SymbolID, LuaSemanticWorkspace } from './ide/semantic_model';
+import { type Decl, type FileSemanticData, type Ref, LuaSemanticWorkspace } from './ide/semantic_model';
 import {
 	computeLuaDiagnosticsFromAnalysis,
 	getDefaultLuaBuiltinDescriptors,

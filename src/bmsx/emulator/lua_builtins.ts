@@ -10,7 +10,6 @@ import { API_METHOD_METADATA } from './api_metadata';
 import {
 	DEFAULT_LUA_BUILTIN_FUNCTIONS,
 	ENGINE_LUA_BUILTIN_FUNCTIONS,
-	ENGINE_LUA_BUILTIN_GLOBALS,
 } from './lua_builtin_descriptors';
 import { extendMarshalContext } from './lua_js_bridge';
 import { api, Runtime } from './runtime';

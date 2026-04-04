@@ -38,6 +38,7 @@ import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './lua_semantic_frontend';
 import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from './lua_system_globals';
 import { LuaSyntaxError } from '../lua/luaerrors';
+import { Decl } from './ide/semantic_model';
 
 export type CompiledProgram = {
 	program: Program;
@@ -788,14 +789,6 @@ class FunctionBuilder {
 			throw new Error(`[Compiler] Missing bound declaration for ${context}.`);
 		}
 		return decl;
-	}
-
-	private requireBoundReference(range: LuaSourceRange, context: string): LuaBoundReference {
-		const reference = this.semantics.getReference(range);
-		if (!reference) {
-			throw new Error(`[Compiler] Missing bound reference for ${context}.`);
-		}
-		return reference;
 	}
 
 	private declareLocal(

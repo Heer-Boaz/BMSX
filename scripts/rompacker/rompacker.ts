@@ -23,6 +23,7 @@ const ui = createCliUi({ bannerTitle: 'BMSX BUILDER', labelWidth: 14 });
 const writeOut = ui.writeOut;
 const printBanner = ui.printBanner;
 const logInfo = ui.info;
+// @ts-ignore
 const logWarn = ui.warn;
 const logOk = ui.ok;
 const logBullet = ui.bullet;
@@ -60,7 +61,7 @@ const TASK = {
 	RESOURCE_LOAD: 'Resources laden en metadata genereren',
 	ATLAS_BUILD: 'Atlassen puzellen (indien nodig)',
 	ROM_ASSETS: 'Rom-assets genereren',
-	ROM_FINALIZE: 'Rompakket finaliseren', 
+	ROM_FINALIZE: 'Rompakket finaliseren',
 	BIOS_REBUILD_CHECK: 'Checken of BIOS rebuild nodig is',
 	BIOS_LINT: 'BIOS Lua linten',
 	BIOS_FINALIZE: 'BIOS ROM finaliseren',
@@ -621,7 +622,7 @@ async function main() {
 		}
 
 		progress = new ProgressReporter(taskList);
-		const isBIOSMode = mode === 'bios';
+		const isBIOSMode = false; // We keep this flag around for some options that still apply to the cart build (e.g. resource roots) and to avoid accidentally skipping code that should run in both modes. We know we are not in BIOS mode if we are in this branch, but we keep the flag for clarity.
 		const romPackDebug = debug;
 		const normalizedBootloader = normalizePathKey(bootloader_path);
 		const cartRootFromRes = respath ? normalizePathKey(join(respath, '..')) : null;

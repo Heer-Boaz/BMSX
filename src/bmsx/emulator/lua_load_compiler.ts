@@ -147,10 +147,13 @@ const compileParamPath = (
 
 const compileKeyLiteral = (runtime: Runtime, chunkName: string, expression: LuaExpression): Value => {
 	if (expression.kind === LuaSyntaxKind.UnaryExpression) {
-		if (expression.operator !== LuaUnaryOperator.Negate || expression.operand.kind !== LuaSyntaxKind.NumericLiteralExpression) {
-			fail(runtime, chunkName, 'index expressions must use string or numeric literals', expression.range);
+		if (expression.operator === LuaUnaryOperator.Negate) {
+			const operand = expression.operand;
+			if (operand.kind === LuaSyntaxKind.NumericLiteralExpression) {
+				return -operand.value;
+			}
 		}
-		return -expression.operand.value;
+		fail(runtime, chunkName, 'index expressions must use string or numeric literals', expression.range);
 	}
 	if (expression.kind === LuaSyntaxKind.NumericLiteralExpression) {
 		return expression.value;
@@ -163,10 +166,13 @@ const compileKeyLiteral = (runtime: Runtime, chunkName: string, expression: LuaE
 
 const compileLiteralExpr = (runtime: Runtime, chunkName: string, expression: LuaExpression): Value => {
 	if (expression.kind === LuaSyntaxKind.UnaryExpression) {
-		if (expression.operator !== LuaUnaryOperator.Negate || expression.operand.kind !== LuaSyntaxKind.NumericLiteralExpression) {
-			fail(runtime, chunkName, 'unsupported literal expression', expression.range);
+		if (expression.operator === LuaUnaryOperator.Negate) {
+			const operand = expression.operand;
+			if (operand.kind === LuaSyntaxKind.NumericLiteralExpression) {
+				return -operand.value;
+			}
 		}
-		return -expression.operand.value;
+		fail(runtime, chunkName, 'unsupported literal expression', expression.range);
 	}
 	if (expression.kind === LuaSyntaxKind.NilLiteralExpression) {
 		return null;

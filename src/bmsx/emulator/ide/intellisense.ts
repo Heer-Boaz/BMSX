@@ -1,5 +1,5 @@
-import type { LuaChunk, LuaDefinitionInfo, LuaDefinitionKind, LuaMemberExpression, LuaSourceRange, LuaStringLiteralExpression } from '../../lua/syntax/lua_ast';
-import { LuaSyntaxKind, LuaTableFieldKind, type LuaAssignmentStatement, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaIndexExpression, type LuaLocalAssignmentStatement, type LuaStatement } from '../../lua/syntax/lua_ast';
+import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange, LuaStringLiteralExpression } from '../../lua/syntax/lua_ast';
+import { LuaSyntaxKind, type LuaAssignmentStatement, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaLocalAssignmentStatement, type LuaStatement } from '../../lua/syntax/lua_ast';
 import { LuaEnvironment } from '../../lua/luaenvironment';
 import { LuaLexer } from '../../lua/syntax/lualexer';
 import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
@@ -27,7 +27,7 @@ import * as constants from './constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
 import { ide_state } from './ide_state';
 import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from './lua/lua_identifier_chain';
-import { buildLuaSemanticModel, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type FunctionSignatureInfo } from './semantic_model';
+import { buildLuaSemanticModel, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData } from './semantic_model';
 import { cacheSemanticWorkspaceAnalysis, getOrCreateSemanticWorkspace, prepareSemanticWorkspaceForEditorBuffer, primeSemanticWorkspaceProjectSources, syncSemanticWorkspacePath } from './semantic_workspace_sync';
 import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaCompletionItem, PointerSnapshot } from './types';

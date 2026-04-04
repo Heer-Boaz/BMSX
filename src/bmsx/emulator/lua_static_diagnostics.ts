@@ -96,10 +96,9 @@ export function getStaticLuaApiSignatureMap(): ReadonlyMap<string, LuaApiSignatu
 		return cachedStaticApiSignatureMap;
 	}
 	for (const [name, metadata] of Object.entries(API_METHOD_METADATA)) {
-		const params = metadata.parameters ? metadata.parameters.map(parameter => parameter.name) : [];
-		const optionalParams = metadata.parameters
-			? metadata.parameters.filter(parameter => parameter.optional).map(parameter => parameter.name)
-			: [];
+		const parameters = 'parameters' in metadata ? (metadata.parameters ?? []) : [];
+		const params = parameters.map(parameter => parameter.name);
+		const optionalParams = parameters.filter(parameter => parameter.optional).map(parameter => parameter.name);
 		const optionalList = optionalParams.length > 0 ? optionalParams : undefined;
 		const descriptor: LuaApiSignatureMetadata = {
 			params,
