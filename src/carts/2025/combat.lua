@@ -216,19 +216,41 @@ function combat.define_fsm()
 				slash_color = { r = 1, g = 1, b = 1, a = 0 },
 				slash_z = globals.combat_hit_slash_z,
 			}
-			self.combat_hit_slash_rc = attach_component(self, 'customvisualcomponent')
-			self.combat_hit_slash_rc:add_producer(function(ctx)
-				local frame<const> = ctx.parent.combat_hit_slash_frame
-				if not frame.slash_active then
-					return
-				end
-				ctx.rc:submit_poly({
-					points = frame.slash_points,
-					z = frame.slash_z,
-					color = frame.slash_color,
-					thickness = frame.slash_thickness,
-				})
-			end)
+				self.combat_hit_slash_rc = attach_component(self, 'customvisualcomponent')
+				self.combat_hit_slash_rc:add_producer(function(ctx)
+					local frame<const> = ctx.parent.combat_hit_slash_frame
+					if not frame.slash_active then
+						return
+					end
+					local points<const> = frame.slash_points
+					local z<const> = frame.slash_z
+					local color<const> = frame.slash_color
+					local thickness<const> = frame.slash_thickness
+					local n<const> = #points / 2
+					for i = 0, n - 1 do
+						local x0<const> = points[i * 2 + 1]
+						local y0<const> = points[i * 2 + 2]
+						local x1<const> = points[((i + 1) % n) * 2 + 1]
+						local y1<const> = points[((i + 1) % n) * 2 + 2]
+						memwrite(
+							vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11),
+							sys_vdp_cmd_draw_line,
+							11,
+							0,
+							x0,
+							y0,
+							x1,
+							y1,
+							z,
+							sys_vdp_layer_world,
+							color.r,
+							color.g,
+							color.b,
+							color.a,
+							thickness
+						)
+					end
+				end)
 			globals.hide_combat_sprites()
 			return '/idle'
 		end,
