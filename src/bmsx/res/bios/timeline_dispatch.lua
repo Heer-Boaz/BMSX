@@ -80,7 +80,6 @@ end
 
 local emit_and_dispatch<const> = function(owner, event)
 	owner.events:emit_event(event)
-	owner.sc:dispatch(event)
 end
 
 local fill_marker_event<const> = function(slot, marker)

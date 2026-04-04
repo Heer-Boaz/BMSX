@@ -308,6 +308,7 @@ function textobject.new(opts)
 	self.text_component = components.textcomponent.new({
 		text = self.text,
 		font = self.font,
+		line_height = self.line_height,
 		color = self.text_color,
 		background_color = self.normal_bg_color,
 		offset = self.text_offset,
@@ -436,6 +437,11 @@ function textobject:set_text(text_or_lines, opts)
 	self:reveal_text()
 end
 
+function textobject:clear_text()
+	self:set_text({}, { typed = false, snap = true })
+	self.highlighted_line_index = nil
+end
+
 function textobject:reset_typing_buffer()
 	self.displayed_lines = {}
 	for i = 1, #self.full_text_lines do
@@ -496,6 +502,7 @@ function textobject:sync_text_component()
 	self.text_offset.y = self.dimensions.top - self.y
 	self.text_component.text = self.text
 	self.text_component.font = self.font
+	self.text_component.line_height = self.line_height
 	self.text_component.color = text_color
 	self.text_component.background_color = normal_bg_color
 	self.text_component.layer = self.layer

@@ -69,7 +69,7 @@ local registry_instance<const> = require('registry').instance
 local worldobject<const> = {}
 worldobject.__index = worldobject
 
-local world_id_max<const> = 2147483647
+local world_id_max<const> = 0x7fffffff
 
 local component_key<const> = function(type_or_name)
 	local t<const> = type(type_or_name)

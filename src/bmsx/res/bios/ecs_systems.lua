@@ -2,6 +2,7 @@
 -- built-in ecs systems for lua engine
 
 local wrap_text_lines<const> = require('util/wrap_text_lines')
+local font_module<const> = require('font')
 --
 -- DESIGN PRINCIPLES — collision handling via overlap2dsystem
 --
@@ -750,20 +751,45 @@ function textrendersystem:update()
 				glyphs = { glyphs }
 			end
 		end
-		submit_glyph_lines(
-			glyphs,
-			x,
-			y,
-			z,
-			tc.font,
-			tc.color,
-			tc.background_color,
-			tc.font.line_height,
-			tc.center_block_width,
-			0,
-			2147483647,
-			tc.layer
-		)
+		local cursor_y = y
+		local background_enabled<const> = tc.background_color ~= nil and 1 or 0
+		local bg_r<const> = background_enabled ~= 0 and tc.background_color.r or 0
+		local bg_g<const> = background_enabled ~= 0 and tc.background_color.g or 0
+		local bg_b<const> = background_enabled ~= 0 and tc.background_color.b or 0
+		local bg_a<const> = background_enabled ~= 0 and tc.background_color.a or 0
+		for i = 1, #glyphs do
+			local line<const> = glyphs[i]
+			if string.len(line) > 0 then
+				local line_x = x
+				if tc.center_block_width ~= nil then
+					line_x = x + ((tc.center_block_width - font_module.measure_line_width(tc.font, line)) / 2)
+				end
+				memwrite(
+					vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
+					sys_vdp_cmd_glyph_run,
+					17,
+					0,
+					line,
+					line_x,
+					cursor_y,
+					z,
+					tc.font.id,
+					0,
+					0x7fffffff,
+					tc.layer,
+					tc.color.r,
+					tc.color.g,
+					tc.color.b,
+					tc.color.a,
+					background_enabled,
+					bg_r,
+					bg_g,
+					bg_b,
+					bg_a
+				)
+			end
+			cursor_y = cursor_y + tc.line_height
+		end
 		::continue_text_render::
 	end
 end

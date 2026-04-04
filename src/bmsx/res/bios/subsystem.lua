@@ -17,7 +17,7 @@ for _, value in pairs(tickgroup) do
 	subsystem_group_lookup[value] = true
 end
 
-local subsystem_id_max<const> = 2147483647
+local subsystem_id_max<const> = 0x7fffffff
 
 local generate_subsystem_id<const> = function(type_name)
 	local baseid<const> = type_name or 'subsystem'

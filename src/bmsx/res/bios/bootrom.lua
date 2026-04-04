@@ -2490,7 +2490,7 @@ render_boot_screen = function(scroll_delta)
 				text_z,
 				font_id,
 				0,
-				2147483647,
+				0x7fffffff,
 				sys_vdp_layer_world,
 				color.r,
 				color.g,

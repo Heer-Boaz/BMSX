@@ -6,7 +6,6 @@ local timeline_module<const> = require('timeline')
 local timeline_dispatch<const> = require('timeline_dispatch')
 local collision_profiles<const> = require('collision_profiles')
 local scratchrecordbatch<const> = require('scratchrecordbatch')
-local wrap_text_lines<const> = require('util/wrap_text_lines')
 local eventemitter<const> = eventemitter.eventemitter
 local timeline<const> = timeline_module.timeline
 
@@ -700,6 +699,7 @@ function textcomponent.new(opts)
 	local self<const> = setmetatable(component.new(opts), textcomponent)
 	self.text = (opts.text)
 	self.font = opts.font or get_default_font()
+	self.line_height = opts.line_height or self.font.line_height
 	self.color = opts.color or { r = 1, g = 1, b = 1, a = 1 }
 	self.background_color = opts.background_color
 	self.wrap_chars = opts.wrap_chars
@@ -813,124 +813,34 @@ function customvisualcomponent:flush()
 	self.producer({ parent = self.parent, rc = self })
 end
 
-function customvisualcomponent:submit_sprite(desc)
-	local pos<const> = desc.pos or desc.position
-	local flip<const> = desc.flip
-	local flip_flags = 0
-	if flip.flip_h then
-		flip_flags = flip_flags | 1
-	end
-	if flip.flip_v then
-		flip_flags = flip_flags | 2
-	end
-	memwrite(
-		vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 13),
-		sys_vdp_cmd_blit,
-		 13,
-		0,
-		assets.img[desc.imgid].handle,
-		pos.x,
-		pos.y,
-		pos.z,
-		desc.layer,
-		desc.scale.x,
-		desc.scale.y,
-		flip_flags,
-		desc.colorize.r,
-		desc.colorize.g,
-		desc.colorize.b,
-		desc.colorize.a,
-		desc.parallax_weight
-	)
-end
+-- function customvisualcomponent:submit_poly(desc)
+-- 	local points<const> = desc.points
+-- 	local z<const> = desc.z
+-- 	local color<const> = desc.color
+-- 	local thickness<const> = desc.thickness or 1
+-- 	local n<const> = #points / 2
+-- 	for i = 0, n - 1 do
+-- 		local x0<const> = points[i * 2 + 1]
+-- 		local y0<const> = points[i * 2 + 2]
+-- 		local x1<const> = points[((i + 1) % n) * 2 + 1]
+-- 		local y1<const> = points[((i + 1) % n) * 2 + 2]
+-- 		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x0, y0, x1, y1, z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, thickness)
+-- 	end
+-- end
 
-function customvisualcomponent:submit_rect(desc)
-	local area<const> = desc.area
-	local color<const> = desc.color
-	local x0<const>, y0<const>, x1<const>, y1<const>, z<const> = area.left, area.top, area.right, area.bottom, area.z
-	if desc.kind == 'stroke' then
-		local c<const> = color
-		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x0, y0, x1, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x1, y0, x1, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x1, y1, x0, y1, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x0, y1, x0, y0, z, sys_vdp_layer_world, c.r, c.g, c.b, c.a, 1)
-	else
-		memwrite(
-			vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 10),
-			sys_vdp_cmd_fill_rect,
-			10,
-			0,
-			x0,
-			y0,
-			x1,
-			y1,
-			z,
-			sys_vdp_layer_world,
-			color.r,
-			color.g,
-			color.b,
-			color.a
-		)
-	end
-end
+-- function customvisualcomponent:submit_mesh(desc)
+-- 	customvisual_mesh_options.joint_matrices = desc.joint_matrices
+-- 	customvisual_mesh_options.morph_weights = desc.morph_weights
+-- 	customvisual_mesh_options.receive_shadow = desc.receive_shadow
+-- 	put_mesh(desc.mesh, desc.matrix, customvisual_mesh_options)
+-- end
 
-function customvisualcomponent:submit_poly(desc)
-	local points<const> = desc.points
-	local z<const> = desc.z
-	local color<const> = desc.color
-	local thickness<const> = desc.thickness or 1
-	local n<const> = #points / 2
-	for i = 0, n - 1 do
-		local x0<const> = points[i * 2 + 1]
-		local y0<const> = points[i * 2 + 2]
-		local x1<const> = points[((i + 1) % n) * 2 + 1]
-		local y1<const> = points[((i + 1) % n) * 2 + 2]
-		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 11), sys_vdp_cmd_draw_line, 11, 0, x0, y0, x1, y1, z, sys_vdp_layer_world, color.r, color.g, color.b, color.a, thickness)
-	end
-end
-
-function customvisualcomponent:submit_mesh(desc)
-	customvisual_mesh_options.joint_matrices = desc.joint_matrices
-	customvisual_mesh_options.morph_weights = desc.morph_weights
-	customvisual_mesh_options.receive_shadow = desc.receive_shadow
-	put_mesh(desc.mesh, desc.matrix, customvisual_mesh_options)
-end
-
-function customvisualcomponent:submit_particle(desc)
-	customvisual_particle_options.texture = desc.texture
-	customvisual_particle_options.ambient_mode = desc.ambient_mode
-	customvisual_particle_options.ambient_factor = desc.ambient_factor
-	put_particle(desc.position, desc.size, desc.color, customvisual_particle_options)
-end
-
-function customvisualcomponent:submit_glyphs(desc)
-	local render_font<const> = desc.font or get_default_font()
-	local color<const> = desc.color
-	local background_color<const> = desc.background_color
-	local layer<const> = desc.layer or sys_vdp_layer_world
-	local glyphs = desc.glyphs
-	if type(glyphs) == 'string' then
-		if desc.wrap_chars ~= nil and desc.wrap_chars > 0 then
-			glyphs = wrap_text_lines(glyphs, desc.wrap_chars)
-		else
-			glyphs = { glyphs }
-		end
-	end
-	submit_glyph_lines(
-		glyphs,
-		desc.x,
-		desc.y,
-		desc.z,
-		render_font,
-		color,
-		background_color,
-		render_font.line_height,
-		desc.center_block_width,
-		desc.glyph_start or 0,
-		desc.glyph_end or 2147483647,
-		layer
-	)
-end
+-- function customvisualcomponent:submit_particle(desc)
+-- 	customvisual_particle_options.texture = desc.texture
+-- 	customvisual_particle_options.ambient_mode = desc.ambient_mode
+-- 	customvisual_particle_options.ambient_factor = desc.ambient_factor
+-- 	put_particle(desc.position, desc.size, desc.color, customvisual_particle_options)
+-- end
 
 -- inputintentcomponent: declarative input -> state bindings
 local inputintentcomponent<const> = {}

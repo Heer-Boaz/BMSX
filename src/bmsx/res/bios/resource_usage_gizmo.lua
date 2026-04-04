@@ -47,12 +47,12 @@ local draw_usage_bar<const> = function(label, used, total, x, y, z, font_id, fil
 	end
 
 	if label_len > 0 then
-		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17), sys_vdp_cmd_glyph_run, 17, 0, label, x, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a, 0, 0, 0, 0, 0)
+		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17), sys_vdp_cmd_glyph_run, 17, 0, label, x, text_y, text_z, font_id, 0, 0x7fffffff, sys_vdp_layer_ide, label_color.r, label_color.g, label_color.b, label_color.a, 0, 0, 0, 0, 0)
 	end
 
 	if pct_len > 0 then
 		-- print(pct_text)
-		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17), sys_vdp_cmd_glyph_run, 17, 0, pct_text, bar_x + bar_w + 1, text_y, text_z, font_id, 0, 2147483647, sys_vdp_layer_ide, pct_color.r, pct_color.g, pct_color.b, pct_color.a, 0, 0, 0, 0, 0)
+		memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17), sys_vdp_cmd_glyph_run, 17, 0, pct_text, bar_x + bar_w + 1, text_y, text_z, font_id, 0, 0x7fffffff, sys_vdp_layer_ide, pct_color.r, pct_color.g, pct_color.b, pct_color.a, 0, 0, 0, 0, 0)
 	end
 end
 
