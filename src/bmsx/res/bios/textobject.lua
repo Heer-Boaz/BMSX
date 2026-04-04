@@ -365,13 +365,13 @@ function textobject:compute_highlight_block()
 			last = i
 		end
 	end
-	if first == nil then
-		return nil
+		if first == nil then
+			return nil
+		end
+		local y<const> = self.dimensions.top + (self.line_height * (first - 1))
+		local h<const> = self.font.line_height + (self.line_height * (last - first))
+		return y, h
 	end
-	local y<const> = self.dimensions.top + (self.line_height * (first - 1))
-	local h<const> = self.line_height * (last - first + 1)
-	return y, h
-end
 
 function textobject:update_highlight_animation()
 	if self.highlighted_line_index == nil then
