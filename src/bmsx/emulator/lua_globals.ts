@@ -19,7 +19,6 @@ import {
 	CART_ROM_SIZE,
 	OVERLAY_ROM_BASE,
 	RAM_SIZE,
-	STRING_HANDLE_COUNT,
 	SYSTEM_ROM_BASE,
 	VDP_STREAM_BUFFER_BASE,
 	VDP_STREAM_CAPACITY_WORDS,
@@ -200,23 +199,9 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 	vdp.set(key('work_units_per_sec'), manifest.specs.vdp?.work_units_per_sec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC);
 	specs.set(key('vdp'), vdp);
 	const ram = manifest.specs.ram;
-	if (ram && (ram.ram_bytes || ram.string_handle_count || ram.string_heap_bytes || ram.asset_table_bytes || ram.asset_data_bytes)) {
-		const ramTable = new Table(0, 5);
-		if (ram.ram_bytes) {
-			ramTable.set(key('ram_bytes'), ram.ram_bytes);
-		}
-		if (ram.string_handle_count) {
-			ramTable.set(key('string_handle_count'), ram.string_handle_count);
-		}
-		if (ram.string_heap_bytes) {
-			ramTable.set(key('string_heap_bytes'), ram.string_heap_bytes);
-		}
-		if (ram.asset_table_bytes) {
-			ramTable.set(key('asset_table_bytes'), ram.asset_table_bytes);
-		}
-		if (ram.asset_data_bytes) {
-			ramTable.set(key('asset_data_bytes'), ram.asset_data_bytes);
-		}
+	if (ram?.ram_bytes) {
+		const ramTable = new Table(0, 1);
+		ramTable.set(key('ram_bytes'), ram.ram_bytes);
 		specs.set(key('ram'), ramTable);
 	}
 	const vram = manifest.specs.vram;
@@ -1079,7 +1064,6 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_ram_size', RAM_SIZE);
 	const maxAssets = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_assets', maxAssets);
-	runtimeLuaPipeline.registerGlobal(runtime, 'sys_string_handle_count', STRING_HANDLE_COUNT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.cycleBudgetPerFrame);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_dither', IO_VDP_DITHER);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_cmd', IO_VDP_CMD);

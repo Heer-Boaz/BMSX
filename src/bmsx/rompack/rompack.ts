@@ -445,10 +445,6 @@ export type MachineVdpSpecs = {
 };
 export type MachineRamSpecs = {
 	ram_bytes?: number;
-	string_handle_count?: number;
-	string_heap_bytes?: number;
-	asset_table_bytes?: number;
-	asset_data_bytes?: number;
 };
 export type MachineVramSpecs = {
 	atlas_slot_bytes?: number;
@@ -509,16 +505,32 @@ export const DEFAULT_VDP_WORK_UNITS_PER_SEC = 25_600;
 
 export type MachineMemorySpecs = {
 	ram_bytes?: number;
-	string_handle_count?: number;
-	string_heap_bytes?: number;
-	asset_table_bytes?: number;
-	asset_data_bytes?: number;
 	atlas_slot_bytes?: number;
 	system_atlas_slot_bytes?: number;
 	staging_bytes?: number;
 	skybox_face_size?: number;
 	skybox_face_bytes?: number;
 };
+
+const REMOVED_MACHINE_RAM_FIELDS = [
+	'string_handle_count',
+	'string_heap_bytes',
+	'asset_table_bytes',
+	'asset_data_bytes',
+] as const;
+
+export function assertMachineManifestUsesRamOnly(machine: MachineManifest): void {
+	const ram = machine.specs.ram as Record<string, unknown> | undefined;
+	if (!ram) {
+		return;
+	}
+	for (let index = 0; index < REMOVED_MACHINE_RAM_FIELDS.length; index += 1) {
+		const field = REMOVED_MACHINE_RAM_FIELDS[index];
+		if (Object.prototype.hasOwnProperty.call(ram, field)) {
+			throw new Error(`machine.specs.ram.${field} is no longer supported. Use machine.specs.ram.ram_bytes.`);
+		}
+	}
+}
 
 export function getMachinePerfSpecs(machine: MachineManifest): MachinePerfSpecs {
 	const cpu = machine.specs.cpu;
@@ -541,10 +553,6 @@ export function getMachineMemorySpecs(machine: MachineManifest): MachineMemorySp
 	const vram = machine.specs.vram;
 	return {
 		ram_bytes: ram?.ram_bytes,
-		string_handle_count: ram?.string_handle_count,
-		string_heap_bytes: ram?.string_heap_bytes,
-		asset_table_bytes: ram?.asset_table_bytes,
-		asset_data_bytes: ram?.asset_data_bytes,
 		atlas_slot_bytes: vram?.atlas_slot_bytes,
 		system_atlas_slot_bytes: vram?.system_atlas_slot_bytes,
 		staging_bytes: vram?.staging_bytes,

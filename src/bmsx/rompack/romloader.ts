@@ -15,6 +15,7 @@ import type {
 	color_arr,
 	CartRomHeader,
 } from './rompack';
+import { assertMachineManifestUsesRamOnly } from './rompack';
 import { decodeBinary, toF32, typedArrayFromBytes } from '../serializer/binencoder';
 import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from './rompack';
 import { inflate } from 'pako';
@@ -194,6 +195,7 @@ function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): Cartri
 	}
 	const manifestSlice = rom.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength);
 	const cart_manifest = decodeBinary(manifestSlice) as CartManifest;
+	assertMachineManifestUsesRamOnly(cart_manifest.machine);
 	return {
 		cart_manifest,
 		machine: cart_manifest.machine,

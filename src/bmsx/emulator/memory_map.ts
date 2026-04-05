@@ -161,6 +161,9 @@ function recomputeMemoryLayout(config: {
 }
 
 export function configureMemoryMap(specs?: MemoryMapSpecs): void {
+	const ramBytes = specs?.ram_bytes === undefined
+		? undefined
+		: resolvePositiveInteger(specs.ram_bytes, 'ram_bytes');
 	const stringHandleCount = resolvePositiveInteger(specs?.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT, 'string_handle_count');
 	const stringHeapBytes = resolvePositiveInteger(specs?.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE, 'string_heap_bytes');
 	const assetTableBytes = resolvePositiveInteger(specs?.asset_table_bytes ?? DEFAULT_ASSET_TABLE_SIZE, 'asset_table_bytes');
@@ -175,19 +178,25 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 			return skyboxFaceSize * skyboxFaceSize * 4;
 		})();
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
-	const defaultAssetDataBytes = DEFAULT_RAM_SIZE
-		- (IO_REGION_SIZE + stringHandleTableBytes + stringHeapBytes + assetTableBytes + VDP_STREAM_BUFFER_SIZE);
-	const assetDataBytes = resolveNonNegativeInteger(specs?.asset_data_bytes ?? defaultAssetDataBytes, 'asset_data_bytes');
-	const computedRamBytes = IO_REGION_SIZE
+	const fixedRamBytes = IO_REGION_SIZE
 		+ stringHandleTableBytes
 		+ stringHeapBytes
 		+ assetTableBytes
-		+ assetDataBytes
 		+ VDP_STREAM_BUFFER_SIZE;
-	if (specs?.ram_bytes !== undefined) {
-		const ramBytes = resolvePositiveInteger(specs.ram_bytes, 'ram_bytes');
-		if (ramBytes !== computedRamBytes) {
-			throw new Error(`[MemoryMap] ram_bytes mismatch (${ramBytes} != ${computedRamBytes}).`);
+	const assetDataBytes = specs?.asset_data_bytes !== undefined
+		? resolveNonNegativeInteger(specs.asset_data_bytes, 'asset_data_bytes')
+		: ramBytes !== undefined
+			? (() => {
+				if (ramBytes < fixedRamBytes) {
+					throw new Error(`[MemoryMap] ram_bytes (${ramBytes}) must be at least fixed memory size ${fixedRamBytes}.`);
+				}
+				return ramBytes - fixedRamBytes;
+			})()
+			: resolveNonNegativeInteger(DEFAULT_RAM_SIZE - fixedRamBytes, 'asset_data_bytes');
+	const computedRamBytes = fixedRamBytes + assetDataBytes;
+	if (ramBytes !== undefined) {
+		if (ramBytes < computedRamBytes) {
+			throw new Error(`[MemoryMap] ram_bytes (${ramBytes}) must be at least ${computedRamBytes}.`);
 		}
 		recomputeMemoryLayout({
 			ramBytes,

@@ -1451,8 +1451,8 @@ export class Runtime {
 		const engineMachine = params.engineMachine;
 		const memorySpecs = getMachineMemorySpecs(machineConfig);
 		const engineMemorySpecs = getMachineMemorySpecs(engineMachine);
-		const stringHandleCount = memorySpecs.string_handle_count ?? DEFAULT_STRING_HANDLE_COUNT;
-		const stringHeapBytes = memorySpecs.string_heap_bytes ?? DEFAULT_STRING_HEAP_SIZE;
+		const stringHandleCount = DEFAULT_STRING_HANDLE_COUNT;
+		const stringHeapBytes = DEFAULT_STRING_HEAP_SIZE;
 		const atlasSlotBytes = memorySpecs.atlas_slot_bytes ?? DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 		const engineAtlasSlotBytes = engineMemorySpecs.system_atlas_slot_bytes ?? this.resolveEngineAtlasSlotBytes(params.engineSource);
 		const renderSize = this.resolveRenderSize(machineConfig);
@@ -1465,10 +1465,7 @@ export class Runtime {
 		const stagingBytes = memorySpecs.staging_bytes ?? DEFAULT_VRAM_STAGING_SIZE;
 		const assetTableInfo = this.computeAssetTableBytes(params.engineSource, params.assetSource, params.assetLayers);
 		const requiredAssetTableBytes = assetTableInfo.bytes;
-		const assetTableBytes = memorySpecs.asset_table_bytes ?? requiredAssetTableBytes;
-		if (memorySpecs.asset_table_bytes !== undefined && assetTableBytes !== requiredAssetTableBytes) {
-			throw runtimeFault(`machine.specs.ram.asset_table_bytes (${assetTableBytes}) must match required size ${requiredAssetTableBytes}.`);
-		}
+		const assetTableBytes = requiredAssetTableBytes;
 		const skyboxFaceBytes = memorySpecs.skybox_face_bytes;
 		if (skyboxFaceBytes !== undefined) {
 			if (!Number.isSafeInteger(skyboxFaceBytes) || skyboxFaceBytes <= 0) {
@@ -1480,23 +1477,19 @@ export class Runtime {
 			throw runtimeFault(`invalid skybox_face_size: ${skyboxFaceSize}.`);
 		}
 		const requiredAssetDataBytes = this.computeRequiredAssetDataBytes(params.assetSource, params.assetLayers);
-		const assetDataBytes = memorySpecs.asset_data_bytes ?? requiredAssetDataBytes;
-		if (!Number.isSafeInteger(assetDataBytes) || assetDataBytes < 0) {
-			throw runtimeFault(`machine.specs.ram.asset_data_bytes must be a non-negative integer (got ${assetDataBytes}).`);
-		}
-		if (assetDataBytes < requiredAssetDataBytes) {
-			throw runtimeFault(`machine.specs.ram.asset_data_bytes (${assetDataBytes}) must be at least required size ${requiredAssetDataBytes}.`);
-		}
-		const computedRamBytes = IO_REGION_SIZE
+		const fixedRamBytes = IO_REGION_SIZE
 			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
 			+ stringHeapBytes
 			+ assetTableBytes
-			+ assetDataBytes
 			+ VDP_STREAM_BUFFER_SIZE;
-		const ramBytes = memorySpecs.ram_bytes ?? computedRamBytes;
-		if (memorySpecs.ram_bytes !== undefined && ramBytes !== computedRamBytes) {
-			throw runtimeFault(`machine.specs.ram.ram_bytes (${ramBytes}) must match required size ${computedRamBytes}.`);
+		const requiredRamBytes = fixedRamBytes + requiredAssetDataBytes;
+		const ramBytes = memorySpecs.ram_bytes === undefined
+			? requiredRamBytes
+			: Runtime.resolvePositiveSafeInteger(memorySpecs.ram_bytes, 'machine.specs.ram.ram_bytes');
+		if (ramBytes < requiredRamBytes) {
+			throw runtimeFault(`machine.specs.ram.ram_bytes (${ramBytes}) must be at least required size ${requiredRamBytes}.`);
 		}
+		const assetDataBytes = ramBytes - fixedRamBytes;
 		const footprintMiB = (ramBytes / (1024 * 1024)).toFixed(2);
 		console.info(
 			`[Runtime] memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `

@@ -2194,7 +2194,6 @@ local build_info<const> = function()
 		hw_ram_total = format_bytes(sys_ram_size),
 		hw_vram_total = format_bytes(vram_total),
 		hw_max_assets = format_bignumbers(sys_max_assets),
-		hw_max_strings = format_bignumbers(sys_string_handle_count),
 		hw_max_cycles = format_bignumbers(sys_max_cycles_per_frame),
 		bitcast_selftest_ok = bitcast_selftest_ok,
 		bitcast_selftest_status = bitcast_selftest_status,
@@ -2277,7 +2276,6 @@ local build_boot_content_lines<const> = function(info, cart_present, cursor, ela
 		{ label = 'TOTAL VRAM', value = info.hw_vram_total, color = color_info_total },
 		{ label = 'VIEWPORT', value = info.machine_view, color = color_info_total },
 		-- { label = 'MAX ASSETS', value = info.hw_max_assets, color = color_accent },
-		-- { label = 'MAX STRING ENTRIES', value = info.hw_max_strings, color = color_accent },
 		-- { label = 'MAX CYCLES/FRAME', value = info.hw_max_cycles, color = color_accent },
 	}
 	local cart_specs<const> = {

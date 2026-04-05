@@ -80,6 +80,12 @@ static i64 parseRequiredPositiveI64(const BinObject& obj, const char* key, const
 	return value;
 }
 
+static void rejectRemovedMachineRamField(const BinObject& ramObj, const char* key) {
+	if (ramObj.count(key)) {
+		throw std::runtime_error(std::string("[RuntimeAssets] machine.specs.ram.") + key + " is no longer supported. Use machine.specs.ram.ram_bytes.");
+	}
+}
+
 static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& manifest) {
 	manifest.ufpsScaled = parseRequiredPositiveI64(machineObj, "ufps", "machine.ufps");
 	const auto& specsObj = requireObject(machineObj, "specs", "machine.specs");
@@ -103,18 +109,10 @@ static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& mani
 		if (ramObj.count("ram_bytes")) {
 			manifest.ramBytes = ramObj.at("ram_bytes").toI32();
 		}
-		if (ramObj.count("string_handle_count")) {
-			manifest.stringHandleCount = ramObj.at("string_handle_count").toI32();
-		}
-		if (ramObj.count("string_heap_bytes")) {
-			manifest.stringHeapBytes = ramObj.at("string_heap_bytes").toI32();
-		}
-		if (ramObj.count("asset_table_bytes")) {
-			manifest.assetTableBytes = ramObj.at("asset_table_bytes").toI32();
-		}
-		if (ramObj.count("asset_data_bytes")) {
-			manifest.assetDataBytes = ramObj.at("asset_data_bytes").toI32();
-		}
+		rejectRemovedMachineRamField(ramObj, "string_handle_count");
+		rejectRemovedMachineRamField(ramObj, "string_heap_bytes");
+		rejectRemovedMachineRamField(ramObj, "asset_table_bytes");
+		rejectRemovedMachineRamField(ramObj, "asset_data_bytes");
 	}
 	const BinValue* vramValue = findObjectField(specsObj, "vram");
 	if (vramValue && vramValue->isObject()) {

@@ -1432,7 +1432,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_cart_rom_size", valueNumber(static_cast<double>(CART_ROM_SIZE)));
 	setGlobal("sys_ram_size", valueNumber(static_cast<double>(RAM_SIZE)));
 	setGlobal("sys_max_assets", valueNumber(static_cast<double>(maxAssets)));
-	setGlobal("sys_string_handle_count", valueNumber(static_cast<double>(STRING_HANDLE_COUNT)));
 	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(m_cycleBudgetPerFrame)));
 	setGlobal("sys_vdp_dither", valueNumber(static_cast<double>(IO_VDP_DITHER)));
 	setGlobal("sys_vdp_cmd", valueNumber(static_cast<double>(IO_VDP_CMD)));
@@ -3665,23 +3664,9 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](const std::v
 		auto* vdpTable = m_cpu.createTable(0, 1);
 		vdpTable->set(key("work_units_per_sec"), valueNumber(static_cast<double>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC))));
 		specsTable->set(key("vdp"), valueTable(vdpTable));
-		if (manifest.ramBytes || manifest.stringHandleCount || manifest.stringHeapBytes || manifest.assetTableBytes || manifest.assetDataBytes) {
-			auto* ramTable = m_cpu.createTable(0, 5);
-			if (manifest.ramBytes) {
-				ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));
-			}
-			if (manifest.stringHandleCount) {
-				ramTable->set(key("string_handle_count"), valueNumber(static_cast<double>(*manifest.stringHandleCount)));
-			}
-			if (manifest.stringHeapBytes) {
-				ramTable->set(key("string_heap_bytes"), valueNumber(static_cast<double>(*manifest.stringHeapBytes)));
-			}
-			if (manifest.assetTableBytes) {
-				ramTable->set(key("asset_table_bytes"), valueNumber(static_cast<double>(*manifest.assetTableBytes)));
-			}
-			if (manifest.assetDataBytes) {
-				ramTable->set(key("asset_data_bytes"), valueNumber(static_cast<double>(*manifest.assetDataBytes)));
-			}
+		if (manifest.ramBytes) {
+			auto* ramTable = m_cpu.createTable(0, 1);
+			ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));
 			specsTable->set(key("ram"), valueTable(ramTable));
 		}
 		if (manifest.atlasSlotBytes || manifest.engineAtlasSlotBytes || manifest.stagingBytes || manifest.skyboxFaceSize > 0 || manifest.skyboxFaceBytes) {

@@ -340,10 +340,6 @@ struct MachineManifest {
 	std::optional<i32> skyboxFaceBytes;
 	CanonicalizationType canonicalization = CanonicalizationType::None;
 	std::optional<i32> ramBytes;
-	std::optional<i32> stringHandleCount;
-	std::optional<i32> stringHeapBytes;
-	std::optional<i32> assetTableBytes;
-	std::optional<i32> assetDataBytes;
 	std::optional<i32> atlasSlotBytes;
 	std::optional<i32> engineAtlasSlotBytes;
 	std::optional<i32> stagingBytes;

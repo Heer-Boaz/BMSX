@@ -151,20 +151,6 @@ uint32_t resolveSystemAtlasSlotBytes(const RuntimeAssets& engineAssets) {
 
 MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const MachineManifest& systemMachine, const RuntimeAssets& assets, const RuntimeAssets& engineAssets) {
 	MemoryMapConfig config;
-	if (machine.stringHandleCount) {
-		const i32 value = *machine.stringHandleCount;
-		if (value <= 0) {
-			throw std::runtime_error("[EngineCore] string_handle_count must be greater than 0.");
-		}
-		config.stringHandleCount = static_cast<uint32_t>(value);
-	}
-	if (machine.stringHeapBytes) {
-		const i32 value = *machine.stringHeapBytes;
-		if (value <= 0) {
-			throw std::runtime_error("[EngineCore] string_heap_bytes must be greater than 0.");
-		}
-		config.stringHeapBytes = static_cast<uint32_t>(value);
-	}
 	if (machine.atlasSlotBytes) {
 		const i32 value = *machine.atlasSlotBytes;
 		if (value <= 0) {
@@ -208,58 +194,33 @@ MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const Mac
 	}
 
 	const uint32_t requiredAssetTableBytes = computeAssetTableBytes(engineAssets, assets);
-	if (machine.assetTableBytes) {
-		const i32 value = *machine.assetTableBytes;
-		if (value <= 0) {
-			throw std::runtime_error("[EngineCore] asset_table_bytes must be greater than 0.");
-		}
-		const uint32_t resolved = static_cast<uint32_t>(value);
-		if (resolved != requiredAssetTableBytes) {
-			throw std::runtime_error("[EngineCore] asset_table_bytes must match required size.");
-		}
-		config.assetTableBytes = resolved;
-	} else {
-		config.assetTableBytes = requiredAssetTableBytes;
-	}
-
+	config.assetTableBytes = requiredAssetTableBytes;
 	const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
 	const uint32_t requiredAssetDataBytes = computeRequiredAssetDataBytes(engineAssets, assets);
-	if (machine.assetDataBytes) {
-		const i32 value = *machine.assetDataBytes;
-		if (value < 0) {
-			throw std::runtime_error("[EngineCore] asset_data_bytes must be greater than or equal to 0.");
-		}
-		const uint32_t resolved = static_cast<uint32_t>(value);
-		if (resolved < requiredAssetDataBytes) {
-			throw std::runtime_error("[EngineCore] asset_data_bytes must be at least required size.");
-		}
-		config.assetDataBytes = resolved;
-	} else {
-		config.assetDataBytes = requiredAssetDataBytes;
-	}
-
-	const uint64_t computedRamBytes = static_cast<uint64_t>(IO_REGION_SIZE)
+	const uint64_t fixedRamBytes = static_cast<uint64_t>(IO_REGION_SIZE)
 		+ static_cast<uint64_t>(stringHandleTableBytes)
 		+ static_cast<uint64_t>(config.stringHeapBytes)
 		+ static_cast<uint64_t>(config.assetTableBytes)
-		+ static_cast<uint64_t>(config.assetDataBytes)
 		+ static_cast<uint64_t>(VDP_STREAM_BUFFER_SIZE);
-	if (computedRamBytes > std::numeric_limits<uint32_t>::max()) {
+	const uint64_t requiredRamBytes = fixedRamBytes + static_cast<uint64_t>(requiredAssetDataBytes);
+	if (requiredRamBytes > std::numeric_limits<uint32_t>::max()) {
 		throw std::runtime_error("[EngineCore] ram_bytes exceeds addressable range.");
 	}
-	const uint32_t requiredRamBytes = static_cast<uint32_t>(computedRamBytes);
+	const uint32_t minimumRamBytes = static_cast<uint32_t>(requiredRamBytes);
 	if (machine.ramBytes) {
 		const i32 value = *machine.ramBytes;
 		if (value <= 0) {
 			throw std::runtime_error("[EngineCore] ram_bytes must be greater than 0.");
 		}
 		const uint32_t resolved = static_cast<uint32_t>(value);
-		if (resolved != requiredRamBytes) {
-			throw std::runtime_error("[EngineCore] ram_bytes must match required size.");
+		if (resolved < minimumRamBytes) {
+			throw std::runtime_error("[EngineCore] ram_bytes must be at least required size.");
 		}
 		config.ramBytes = resolved;
+		config.assetDataBytes = resolved - static_cast<uint32_t>(fixedRamBytes);
 	} else {
-		config.ramBytes = requiredRamBytes;
+		config.ramBytes = minimumRamBytes;
+		config.assetDataBytes = requiredAssetDataBytes;
 	}
 	const double ramMiB = static_cast<double>(config.ramBytes) / (1024.0 * 1024.0);
 	std::cerr

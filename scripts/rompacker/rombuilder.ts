@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, assertMachineManifestUsesRamOnly } from '../../src/bmsx/rompack/rompack';
 import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../src/bmsx/core/system_machine';
 import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
@@ -224,11 +224,14 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
 	else if (files.length === 1) {
 		const res = (await readFile(files[0])).toString();
 		// Read and return the rommanifest file
+		let manifest: RomManifest;
 		try {
-			return JSON.parse(res) as RomManifest;
+			manifest = JSON.parse(res) as RomManifest;
 		} catch {
-			return yaml.load(res) as RomManifest;
+			manifest = yaml.load(res) as RomManifest;
 		}
+		assertMachineManifestUsesRamOnly(manifest.machine);
+		return manifest;
 	}
 	else return null;
 }
