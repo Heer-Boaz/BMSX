@@ -68,6 +68,8 @@ Run libretro host on WSL:
 npm run run:libretro-host:wsl:sdl -- ./dist/pietious.debug.rom
 ```
 
+Input timelines can now carry `capture: true` markers. When the libretro host sees them, it writes screenshots to a `screenshots/` subfolder next to the timeline JSON file.
+
 <!-- Deploy browser artifacts for a cart:
 
 ```bash

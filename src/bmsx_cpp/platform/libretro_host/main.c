@@ -147,7 +147,6 @@ static char g_opt_postprocess_detail[8] = "off";
 static bool g_vars_updated = false;
 static LibretroCore* g_core = NULL;
 
-static ScreenshotConfig g_screenshot_config = {0};
 static uint32_t g_frame_number = 0;
 
 static const char* kMenuKeyRenderBackend = "bmsx_render_backend";
@@ -2398,8 +2397,8 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	fps_render_hw();
 	menu_render_hw();
 	
-	// Capture screenshot if needed
-	if (g_screenshot_config.frame_count > 0 && screenshot_should_capture(&g_screenshot_config, g_frame_number)) {
+	// Capture screenshot if requested by the active input timeline.
+	if (input_timeline_should_capture_frame(g_frame_number)) {
 		fprintf(stderr, "[SCREENSHOT] Capturing frame %u (%ux%u)\n", g_frame_number, g_fb.width, g_fb.height);
 		uint8_t* pixels = malloc(g_fb.width * g_fb.height * 4);
 		if (pixels) {
@@ -4952,13 +4951,6 @@ int main(int argc, char** argv) {
 		die("retro_load_game failed");
 	}
 
-	// Try to load screenshot config
-	if (screenshot_config_load("capture.json", &g_screenshot_config)) {
-		fprintf(stderr, "[SCREENSHOT] Config loaded successfully\n");
-	} else {
-		fprintf(stderr, "[SCREENSHOT] No capture.json or invalid format (skipping screenshot capture)\n");
-	}
-
 	const int64_t ufps_scaled = core.bmsx_get_ufps();
 	g_target_fps = (double)ufps_scaled / (double)kHzScale;
 	int audio_rate = (int)(av.timing.sample_rate + 0.5);
@@ -5056,7 +5048,6 @@ int main(int argc, char** argv) {
 	if (game_buf) {
 		free(game_buf);
 	}
-	screenshot_config_free(&g_screenshot_config);
 	if (core.handle) {
 		dlclose(core.handle);
 	}

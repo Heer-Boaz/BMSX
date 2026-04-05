@@ -2,6 +2,7 @@
 	{
 		"description": "press right",
 		"frame": 2,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -44,6 +45,7 @@
 	{
 		"description": "release a",
 		"frame": 12,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",

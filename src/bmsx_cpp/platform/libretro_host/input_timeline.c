@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "input_timeline.h"
+#include "screenshot.h"
 
 enum { kTestInputCodeMax = 64 };
 enum { kInputTimelinePathBuffer = 1024 };
@@ -35,12 +36,20 @@ typedef struct {
 	bool down;
 } TimelineEvent;
 
+typedef struct {
+	uint64_t frame;
+} TimelineCaptureEvent;
+
 static void timeline_logf(const char* format, ...);
 
 static TestInputEvent* g_test_input_events = NULL;
 static size_t g_test_input_event_count = 0;
 static size_t g_test_input_event_capacity = 0;
 static size_t g_test_input_event_next = 0;
+static TimelineCaptureEvent* g_test_capture_events = NULL;
+static size_t g_test_capture_event_count = 0;
+static size_t g_test_capture_event_capacity = 0;
+static size_t g_test_capture_event_next = 0;
 static uint64_t g_frame_counter = 0;
 static void (*g_emit_keyboard_event)(const char* code, bool down) = NULL;
 
@@ -63,6 +72,18 @@ static uint64_t frame_to_ms_rounded(uint64_t frame, uint64_t frame_usec) {
 static int compare_test_input_events(const void* a, const void* b) {
 	const TestInputEvent* lhs = (const TestInputEvent*)a;
 	const TestInputEvent* rhs = (const TestInputEvent*)b;
+	if (lhs->frame < rhs->frame) {
+		return -1;
+	}
+	if (lhs->frame > rhs->frame) {
+		return 1;
+	}
+	return 0;
+}
+
+static int compare_test_capture_events(const void* a, const void* b) {
+	const TimelineCaptureEvent* lhs = (const TimelineCaptureEvent*)a;
+	const TimelineCaptureEvent* rhs = (const TimelineCaptureEvent*)b;
 	if (lhs->frame < rhs->frame) {
 		return -1;
 	}
@@ -177,6 +198,21 @@ static void add_test_input_event(uint64_t frame, const char* code, bool down) {
 	g_test_input_events[g_test_input_event_count].frame = frame;
 	g_test_input_events[g_test_input_event_count].down = down;
 	++g_test_input_event_count;
+}
+
+static void add_test_capture_event(uint64_t frame) {
+	if (g_test_capture_event_count >= g_test_capture_event_capacity) {
+		size_t next = g_test_capture_event_capacity > 0 ? (g_test_capture_event_capacity * 2ull) : 64ull;
+		void* next_buf = realloc(g_test_capture_events, next * sizeof(TimelineCaptureEvent));
+		if (!next_buf) {
+			timeline_logf("Failed to allocate capture events");
+			exit(1);
+		}
+		g_test_capture_events = (TimelineCaptureEvent*)next_buf;
+		g_test_capture_event_capacity = next;
+	}
+	g_test_capture_events[g_test_capture_event_count].frame = frame;
+	++g_test_capture_event_count;
 }
 
 static void json_cursor_skip_ws(JsonCursor* cursor) {
@@ -467,6 +503,7 @@ static bool parse_timeline_entry(JsonCursor* cursor, uint64_t frame_usec, uint64
 	bool has_repeat = false;
 	bool has_repeat_every_frames = false;
 	bool has_repeat_every_ms = false;
+	bool has_capture = false;
 	TimelineEvent event_entry;
 	char key[kJsonKeyBuffer];
 
@@ -485,7 +522,7 @@ static bool parse_timeline_entry(JsonCursor* cursor, uint64_t frame_usec, uint64
 		if (!json_cursor_ensure(cursor, ':')) {
 			return false;
 		}
-			if (strcmp(key, "frame") == 0 || strcmp(key, "ms") == 0 || strcmp(key, "timeMs") == 0 ||
+		if (strcmp(key, "frame") == 0 || strcmp(key, "ms") == 0 || strcmp(key, "timeMs") == 0 ||
 				strcmp(key, "delayMs") == 0 || strcmp(key, "repeat") == 0 ||
 				strcmp(key, "repeatEveryFrames") == 0 || strcmp(key, "repeatEveryMs") == 0) {
 			double number = 0.0;
@@ -513,6 +550,13 @@ static bool parse_timeline_entry(JsonCursor* cursor, uint64_t frame_usec, uint64
 				has_repeat_every_ms = true;
 				repeat_every_ms = rounded;
 			}
+		} else if (strcmp(key, "capture") == 0) {
+			bool capture = false;
+			if (!json_parse_bool(cursor, &capture)) {
+				timeline_parse_errorf(cursor, "entry %zu: failed to parse boolean field '%s'", index, key);
+				return false;
+			}
+			has_capture = capture;
 		} else if (strcmp(key, "event") == 0) {
 			if (!parse_timeline_event(cursor, &event_entry)) {
 				timeline_parse_errorf(cursor, "entry %zu has unsupported or malformed event", index);
@@ -533,7 +577,7 @@ static bool parse_timeline_entry(JsonCursor* cursor, uint64_t frame_usec, uint64
 		break;
 	}
 
-	if (!event_entry.code[0]) {
+	if (!event_entry.code[0] && !has_capture) {
 		return true;
 	}
 
@@ -562,7 +606,12 @@ static bool parse_timeline_entry(JsonCursor* cursor, uint64_t frame_usec, uint64
 	for (uint64_t step = 0; step < repeats; ++step) {
 		const uint64_t scheduled_ms = base_ms + (step * interval_ms);
 		const uint64_t frame_index = ms_to_frame_index(scheduled_ms, frame_usec);
-		add_test_input_event(frame_index, event_entry.code, event_entry.down);
+		if (event_entry.code[0]) {
+			add_test_input_event(frame_index, event_entry.code, event_entry.down);
+		}
+		if (has_capture) {
+			add_test_capture_event(frame_index);
+		}
 	}
 	*out_last_ms = base_ms;
 	*out_has_last_ms = true;
@@ -582,6 +631,11 @@ static void parse_input_timeline_file(const char* timeline_path, uint64_t frame_
 	free(g_test_input_events);
 	g_test_input_events = NULL;
 	g_test_input_event_capacity = 0;
+	g_test_capture_event_count = 0;
+	g_test_capture_event_next = 0;
+	free(g_test_capture_events);
+	g_test_capture_events = NULL;
+	g_test_capture_event_capacity = 0;
 
 	json_cursor_skip_ws(&cursor);
 	if (!json_cursor_ensure(&cursor, '[')) {
@@ -613,10 +667,13 @@ static void parse_input_timeline_file(const char* timeline_path, uint64_t frame_
 		}
 		break;
 	}
-	if (g_test_input_event_count == 0) {
-		timeline_logf("Timeline '%s' contains no key events.", timeline_path);
+	if (g_test_input_event_count == 0 && g_test_capture_event_count == 0) {
+		timeline_logf("Timeline '%s' contains no input events or captures.", timeline_path);
 	}
 	sort_test_input_events();
+	if (g_test_capture_event_count > 1) {
+		qsort(g_test_capture_events, g_test_capture_event_count, sizeof(g_test_capture_events[0]), compare_test_capture_events);
+	}
 	free(timeline_raw);
 }
 
@@ -625,6 +682,20 @@ static bool derive_input_timeline_path(const char* rom_folder, char* out, size_t
 		return false;
 	}
 	int written = snprintf(out, out_size, "src/carts/%s/test/%s_demo.json", rom_folder, rom_folder);
+	return written > 0 && (size_t)written < out_size;
+}
+
+static bool derive_screenshot_output_dir(const char* timeline_path, char* out, size_t out_size) {
+	const char* slash = strrchr(timeline_path, '/');
+	if (!slash) {
+		int written = snprintf(out, out_size, "./screenshots");
+		return written > 0 && (size_t)written < out_size;
+	}
+	if (slash == timeline_path) {
+		int written = snprintf(out, out_size, "/screenshots");
+		return written > 0 && (size_t)written < out_size;
+	}
+	int written = snprintf(out, out_size, "%.*s/screenshots", (int)(slash - timeline_path), timeline_path);
 	return written > 0 && (size_t)written < out_size;
 }
 
@@ -699,6 +770,12 @@ void input_timeline_configure(const char* explicit_timeline_path, const char* ro
 	}
 
 	if (selected_path) {
+		char screenshot_dir[kInputTimelinePathBuffer];
+		if (!derive_screenshot_output_dir(selected_path, screenshot_dir, sizeof(screenshot_dir))) {
+			timeline_logf("Could not derive screenshot output directory from timeline '%s'.", selected_path);
+			exit(1);
+		}
+		screenshot_set_output_dir(screenshot_dir);
 		parse_input_timeline_file(selected_path, frame_usec);
 	}
 }
@@ -715,10 +792,25 @@ void input_timeline_tick_frame(void) {
 	++g_frame_counter;
 }
 
+bool input_timeline_should_capture_frame(uint32_t frame_number) {
+	bool should_capture = false;
+	while (g_test_capture_event_next < g_test_capture_event_count &&
+			g_test_capture_events[g_test_capture_event_next].frame <= frame_number) {
+		should_capture = true;
+		++g_test_capture_event_next;
+	}
+	return should_capture;
+}
+
 void input_timeline_shutdown(void) {
 	free(g_test_input_events);
 	g_test_input_events = NULL;
 	g_test_input_event_count = 0;
 	g_test_input_event_capacity = 0;
 	g_test_input_event_next = 0;
+	free(g_test_capture_events);
+	g_test_capture_events = NULL;
+	g_test_capture_event_count = 0;
+	g_test_capture_event_capacity = 0;
+	g_test_capture_event_next = 0;
 }

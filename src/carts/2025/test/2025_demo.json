@@ -86,6 +86,7 @@
 	{
 		"description": "round 2: skip typing",
 		"frame": 120,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -166,6 +167,11 @@
 			"pressId": 6,
 			"modifiers": { "ctrl": false, "shift": false, "alt": false, "meta": false }
 		}
+	},
+	{
+		"description": "capture_160",
+		"frame": 160,
+		"capture": true
 	},
 	{
 		"description": "round 3: skip typing",

@@ -2,6 +2,7 @@
 	{
 		"description": "segment_01_move_right_down",
 		"timeMs": 8000,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -520,6 +521,7 @@
 	{
 		"description": "segment_09_barrel_move_right_up",
 		"timeMs": 20800,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",

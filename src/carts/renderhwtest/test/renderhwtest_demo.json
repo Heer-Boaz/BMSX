@@ -2,6 +2,7 @@
 	{
 		"description": "press F2 (toggle terminal)",
 		"frame": 120,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -16,6 +17,7 @@
 	{
 		"description": "release F2",
 		"frame": 124,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",

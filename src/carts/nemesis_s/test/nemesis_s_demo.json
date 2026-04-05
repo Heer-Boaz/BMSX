@@ -2,6 +2,7 @@
 	{
 		"description": "move_right_start",
 		"frame": 600,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",
@@ -240,6 +241,7 @@
 	{
 		"description": "fire_hold_release",
 		"frame": 970,
+		"capture": true,
 		"event": {
 			"type": "button",
 			"deviceId": "keyboard:0",

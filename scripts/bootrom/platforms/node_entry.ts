@@ -37,7 +37,8 @@ interface InputTimelineEntry {
 	timeMs?: number;
 	ms?: number;
 	delayMs?: number;
-	event: InputEvt;
+	event?: InputEvt;
+	capture?: boolean;
 	repeat?: number;
 	repeatEveryFrames?: number;
 	repeatEveryMs?: number;
@@ -234,7 +235,7 @@ function printHelp(): void {
 	console.log('  --debug                  Force debug mode.');
 	console.log('  --no-debug               Force non-debug mode.');
 	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
-	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule.');
+	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule; capture markers are ignored in headless mode for now.');
 	console.log('  --input-module <file>    JS/TS module exporting a scheduler for custom input logic.');
 	console.log('  --engine-runtime <path>  JS runtime bundle for the engine (defaults to dist/engine(.debug).js).');
 	console.log('  --engine-assets <path>   Engine asset pack ROM (defaults to dist/bmsx-bios(.debug).rom).');
@@ -778,11 +779,20 @@ function scheduleTimelineEntries(entries: InputTimelineEntry[], frameIntervalMs:
 		if (!entry || typeof entry !== 'object') {
 			throw new Error(`Timeline entry ${idx} is not an object.`);
 		}
-		if (!entry.event) {
-			throw new Error(`Timeline entry ${idx} is missing an 'event'.`);
+		const hasEvent = entry.event !== undefined && entry.event !== null;
+		const hasCapture = entry.capture === true;
+		if (!hasEvent && !hasCapture) {
+			throw new Error(`Timeline entry ${idx} is missing an 'event' or 'capture'.`);
 		}
 		const baseMs = resolveBaseTime(entry, frameIntervalMs, lastAbsoluteMs, idx);
 		lastAbsoluteMs = baseMs;
+		if (hasCapture && !hasEvent) {
+			const delay = Math.max(0, Math.round(baseMs));
+			if (delay > maxScheduledMs) maxScheduledMs = delay;
+			const description = entry.description ? `${entry.description}` : `entry#${idx}`;
+			logger(`[${source}] ignore capture marker ${description} at ${delay}ms in headless mode`);
+			return;
+		}
 		const executionTimes = expandExecutionTimes(entry, baseMs, frameIntervalMs, idx);
 		executionTimes.forEach((timeMs) => {
 			const delay = Math.max(0, Math.round(timeMs));

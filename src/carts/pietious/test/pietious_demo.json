@@ -1,5 +1,15 @@
 [
 	{
+		"description": "capture_120",
+		"frame": 120,
+		"capture": true
+	},
+	{
+		"description": "capture_160",
+		"frame": 160,
+		"capture": true
+	},
+	{
 		"description": "segment_01_short_hop_press",
 		"frame": 600,
 		"event": {
