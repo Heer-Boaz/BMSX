@@ -66,14 +66,6 @@ static inline int ceilDiv4(int value) {
 	return (value + 3) >> 2;
 }
 
-static inline int ceilDiv8(int value) {
-	return (value + 7) >> 3;
-}
-
-static inline int ceilDiv16(int value) {
-	return (value + 15) >> 4;
-}
-
 static inline bool isVdpPacketSequenceWrite(uint32_t baseAddr, int wordCount) {
 	const uint32_t byteLength = static_cast<uint32_t>(wordCount) * IO_WORD_SIZE;
 	return baseAddr >= VDP_STREAM_BUFFER_BASE && (baseAddr + byteLength) <= (VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE);
@@ -125,6 +117,175 @@ static inline bool tryGetVdpPacketPrefixWordCounts(const std::vector<Value>& reg
 	return true;
 }
 
+static constexpr NativeFnCost kNativeCostTier0 { 0, 0, 0 };
+static constexpr NativeFnCost kNativeCostTier1 { 1, 0, 0 };
+static constexpr NativeFnCost kNativeCostTier2 { 2, 0, 0 };
+static constexpr NativeFnCost kNativeCostTier4 { 4, 0, 0 };
+static constexpr NativeFnCost kDefaultNativeCost = kNativeCostTier1;
+
+static inline NativeFnCost resolveNativeFunctionCost(std::string_view name) {
+	if (name == "sys_cpu_cycles_used"
+		|| name == "sys_cpu_cycles_granted"
+		|| name == "sys_cpu_active_cycles_used"
+		|| name == "sys_cpu_active_cycles_granted"
+		|| name == "sys_ram_used"
+		|| name == "sys_vram_used"
+		|| name == "sys_vdp_work_units_per_sec"
+		|| name == "sys_vdp_work_units_last"
+		|| name == "sys_vdp_frame_held"
+		|| name == "clock_now"
+		|| name == "display_width"
+		|| name == "display_height"
+		|| name == "get_cpu_freq_hz"
+		|| name == "get_default_font"
+		|| name == "get_lua_entry_path"
+		|| name == "platform.clock.now"
+		|| name == "platform.clock.perf_now"
+		|| name == "game.get_frame_delta_ms") {
+		return kNativeCostTier0;
+	}
+	if (name == "math.abs"
+		|| name == "math.acos"
+		|| name == "math.asin"
+		|| name == "math.atan"
+		|| name == "math.ceil"
+		|| name == "math.cos"
+		|| name == "math.deg"
+		|| name == "math.exp"
+		|| name == "math.floor"
+		|| name == "math.fmod"
+		|| name == "math.log"
+		|| name == "math.max"
+		|| name == "math.min"
+		|| name == "math.rad"
+		|| name == "math.sin"
+		|| name == "math.sign"
+		|| name == "math.sqrt"
+		|| name == "math.tan"
+		|| name == "math.tointeger"
+		|| name == "math.type"
+		|| name == "math.ult"
+		|| name == "math.random"
+		|| name == "easing.linear"
+		|| name == "easing.ease_in_quad"
+		|| name == "easing.ease_out_quad"
+		|| name == "easing.ease_in_out_quad"
+		|| name == "easing.ease_out_back"
+		|| name == "easing.smoothstep"
+		|| name == "easing.pingpong01"
+		|| name == "easing.arc01"
+		|| name == "type"
+		|| name == "tonumber"
+		|| name == "tostring"
+		|| name == "rawequal"
+		|| name == "rawget"
+		|| name == "rawset"
+		|| name == "select"
+		|| name == "next"
+		|| name == "sys_palette_color"
+		|| name == "resolve_cart_rom_asset_range"
+		|| name == "resolve_sys_rom_asset_range"
+		|| name == "resolve_rom_asset_range"
+		|| name == "u32_to_f32"
+		|| name == "u64_to_f64"
+		|| name == "os.clock"
+		|| name == "os.difftime"
+		|| name == "mousebtn"
+		|| name == "mousebtnp"
+		|| name == "mousebtnr"
+		|| name == "action_triggered"
+		|| name == "stat"
+		|| name == "dget"
+		|| name == "get_player_input"
+		|| name == "sfx"
+		|| name == "stop_sfx"
+		|| name == "music"
+		|| name == "stop_music"
+		|| name == "put_mesh"
+		|| name == "put_particle"
+		|| name == "skybox"
+		|| name == "put_ambient_light"
+		|| name == "put_directional_light"
+		|| name == "put_point_light"
+		|| name == "reboot"
+		|| name == "game.get_action_state"
+		|| name == "game.emit") {
+		return kNativeCostTier1;
+	}
+	if (name == "pairs"
+		|| name == "ipairs"
+		|| name == "pairs.iterator"
+		|| name == "ipairs.iterator"
+		|| name == "string.gmatch.iterator"
+		|| name == "getmetatable"
+		|| name == "setmetatable"
+		|| name == "table.insert"
+		|| name == "table.remove"
+		|| name == "table.pack"
+		|| name == "table.unpack"
+		|| name == "string.len"
+		|| name == "string.byte"
+		|| name == "string.char"
+		|| name == "string.sub"
+		|| name == "string.upper"
+		|| name == "string.lower"
+		|| name == "string.rep"
+		|| name == "array"
+		|| name == "assert"
+		|| name == "error"
+		|| name == "math.modf"
+		|| name == "math.randomseed"
+		|| name == "consume_action"
+		|| name == "dset"
+		|| name == "wait_vblank"
+		|| name == "set_cpu_freq_hz"
+		|| name == "pointer_screen_position"
+		|| name == "pointer_delta"
+		|| name == "pointer_viewport_position"
+		|| name == "mousepos"
+		|| name == "mousewheel"
+		|| name == "set_master_volume"
+		|| name == "pause_audio"
+		|| name == "resume_audio"
+		|| name == "os.time"
+		|| name == "game.consume_action"
+		|| name == "player_input.getModifiersState"
+		|| name == "player_input.getButtonState"
+		|| name == "player_input.getButtonRepeatState"
+		|| name == "player_input.consumeButton") {
+		return kNativeCostTier2;
+	}
+	if (name == "string.find"
+		|| name == "string.match"
+		|| name == "string.gsub"
+		|| name == "string.gmatch"
+		|| name == "string.format"
+		|| name == "string.pack"
+		|| name == "string.packsize"
+		|| name == "string.unpack"
+		|| name == "table.concat"
+		|| name == "table.sort"
+		|| name == "wrap_text_lines"
+		|| name == "pcall"
+		|| name == "xpcall"
+		|| name == "loadstring"
+		|| name == "load"
+		|| name == "require"
+		|| name == "print"
+		|| name == "set_camera"
+		|| name == "set_sprite_parallax_rig"
+		|| name == "cartdata"
+		|| name == "create_font"
+		|| name == "taskgate"
+		|| name == "os.date"
+		|| name == "list_lua_resources"
+		|| name == "get_lua_resource_source"
+		|| name == "list_lua_builtins") {
+		return kNativeCostTier4;
+	}
+	return kDefaultNativeCost;
+}
+
 static std::string formatNonFunctionCallError(Value callee, const StringPool& stringPool,
 													const std::optional<SourceRange>& range) {
 	std::string message = "Attempted to call a non-function value.";
@@ -141,9 +302,7 @@ static constexpr void setCycle(std::array<uint8_t, 64>& table, OpCode op, uint8_
 
 static constexpr std::array<uint8_t, 64> makeBaseCycles() {
 	std::array<uint8_t, 64> table{};
-	for (size_t i = 0; i < table.size(); ++i) {
-		table[i] = 2;
-	}
+	table.fill(1);
 	setCycle(table, OpCode::WIDE, 0);
 
 	setCycle(table, OpCode::MOV, 1);
@@ -158,66 +317,36 @@ static constexpr std::array<uint8_t, 64> makeBaseCycles() {
 	setCycle(table, OpCode::KM1, 1);
 	setCycle(table, OpCode::KSMI, 1);
 
-	setCycle(table, OpCode::GETG, 6);
-	setCycle(table, OpCode::SETG, 7);
-	setCycle(table, OpCode::GETT, 8);
-	setCycle(table, OpCode::SETT, 10);
-	setCycle(table, OpCode::NEWT, 10);
+	setCycle(table, OpCode::GETG, 1);
+	setCycle(table, OpCode::SETG, 2);
+	setCycle(table, OpCode::GETT, 1);
+	setCycle(table, OpCode::SETT, 2);
+	setCycle(table, OpCode::NEWT, 1);
 
-	setCycle(table, OpCode::ADD, 2);
-	setCycle(table, OpCode::SUB, 2);
-	setCycle(table, OpCode::MUL, 3);
-	setCycle(table, OpCode::DIV, 4);
-	setCycle(table, OpCode::MOD, 6);
-	setCycle(table, OpCode::FLOORDIV, 6);
-	setCycle(table, OpCode::POW, 12);
+	setCycle(table, OpCode::CONCATN, 2);
 
-	setCycle(table, OpCode::BAND, 2);
-	setCycle(table, OpCode::BOR, 2);
-	setCycle(table, OpCode::BXOR, 2);
-	setCycle(table, OpCode::SHL, 2);
-	setCycle(table, OpCode::SHR, 2);
-	setCycle(table, OpCode::BNOT, 2);
+	setCycle(table, OpCode::TESTSET, 2);
 
-	setCycle(table, OpCode::CONCAT, 12);
-	setCycle(table, OpCode::CONCATN, 14);
-
-	setCycle(table, OpCode::UNM, 1);
-	setCycle(table, OpCode::NOT, 1);
-	setCycle(table, OpCode::LEN, 4);
-
-	setCycle(table, OpCode::EQ, 3);
-	setCycle(table, OpCode::LT, 6);
-	setCycle(table, OpCode::LE, 6);
-	setCycle(table, OpCode::TEST, 2);
-	setCycle(table, OpCode::TESTSET, 3);
-
-	setCycle(table, OpCode::JMP, 1);
-	setCycle(table, OpCode::JMPIF, 2);
-	setCycle(table, OpCode::JMPIFNOT, 2);
-
-	setCycle(table, OpCode::CLOSURE, 20);
-	setCycle(table, OpCode::GETUP, 3);
-	setCycle(table, OpCode::SETUP, 3);
+	setCycle(table, OpCode::CLOSURE, 1);
+	setCycle(table, OpCode::GETUP, 1);
+	setCycle(table, OpCode::SETUP, 2);
 	setCycle(table, OpCode::VARARG, 2);
 
-	setCycle(table, OpCode::CALL, 18);
-	setCycle(table, OpCode::RET, 18);
+	setCycle(table, OpCode::CALL, 2);
+	setCycle(table, OpCode::RET, 2);
 
-	setCycle(table, OpCode::LOAD_MEM, 5);
-	setCycle(table, OpCode::STORE_MEM, 6);
-	setCycle(table, OpCode::STORE_MEM_WORDS, 6);
-	setCycle(table, OpCode::BR_TRUE, 2);
-	setCycle(table, OpCode::BR_FALSE, 2);
-	setCycle(table, OpCode::GETSYS, 2);
-	setCycle(table, OpCode::SETSYS, 3);
-	setCycle(table, OpCode::GETGL, 4);
-	setCycle(table, OpCode::SETGL, 5);
-	setCycle(table, OpCode::GETI, 5);
-	setCycle(table, OpCode::SETI, 7);
-	setCycle(table, OpCode::GETFIELD, 5);
-	setCycle(table, OpCode::SETFIELD, 7);
-	setCycle(table, OpCode::SELF, 6);
+	setCycle(table, OpCode::LOAD_MEM, 1);
+	setCycle(table, OpCode::STORE_MEM, 2);
+	setCycle(table, OpCode::STORE_MEM_WORDS, 2);
+	setCycle(table, OpCode::GETSYS, 1);
+	setCycle(table, OpCode::SETSYS, 2);
+	setCycle(table, OpCode::GETGL, 1);
+	setCycle(table, OpCode::SETGL, 2);
+	setCycle(table, OpCode::GETI, 1);
+	setCycle(table, OpCode::SETI, 2);
+	setCycle(table, OpCode::GETFIELD, 1);
+	setCycle(table, OpCode::SETFIELD, 2);
+	setCycle(table, OpCode::SELF, 1);
 
 	return table;
 }
@@ -958,13 +1087,14 @@ CPU::CPU(Memory& memory, StringHandleTable* handleTable)
 	m_indexKey = valueString(m_stringPool.intern("__index"));
 }
 
-Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeFnCost cost) {
+Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
+	const NativeFnCost resolvedCost = cost.value_or(resolveNativeFunctionCost(name));
 	auto* native = m_heap.allocate<NativeFunction>(ObjType::NativeFunction);
 	addTrackedLuaHeapBytes(16);
 	native->name = std::string(name);
-	native->cycleBase = cost.base;
-	native->cyclePerArg = cost.perArg;
-	native->cyclePerRet = cost.perRet;
+	native->cycleBase = resolvedCost.base;
+	native->cyclePerArg = resolvedCost.perArg;
+	native->cyclePerRet = resolvedCost.perRet;
 	native->invoke = [invoke = std::move(fn)](const std::vector<Value>& args, std::vector<Value>& out) {
 		out.clear();
 		invoke(args, out);
@@ -1241,7 +1371,7 @@ void CPU::step() {
 	frame.pc = pc + INSTRUCTION_BYTES;
 	lastPc = pc;
 	lastInstruction = decoded->word;
-	instructionBudgetRemaining -= static_cast<int>(kBaseCycles[op]) + (hasWide ? 1 : 0);
+	instructionBudgetRemaining -= static_cast<int>(kBaseCycles[op]);
 	executeInstruction(frame, static_cast<OpCode>(op), decoded->a, decoded->b, decoded->c, ext, wideA, wideB, wideC, hasWide);
 }
 
@@ -1361,7 +1491,6 @@ void CPU::executeInstruction(
 			return;
 
 		case OpCode::LOADNIL:
-			CYCLES_ADD(ceilDiv4(b));
 			for (int i = 0; i < b; ++i) {
 				setRegister(frame, a + i, valueNil());
 			}
@@ -1370,7 +1499,6 @@ void CPU::executeInstruction(
 		case OpCode::LOADBOOL:
 			setRegister(frame, a, valueBool(b != 0));
 			if (c != 0) {
-				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -1467,7 +1595,6 @@ void CPU::executeInstruction(
 			return;
 
 		case OpCode::NEWT: {
-			CYCLES_ADD(ceilDiv4(b) + ceilDiv4(c));
 			auto* table = m_heap.allocate<Table>(ObjType::Table, b, c);
 			setRegister(frame, a, valueTable(table));
 			return;
@@ -1565,21 +1692,16 @@ void CPU::executeInstruction(
 			std::string text = valueToString(readRK(frame, rkRawB, rkBitsB), m_stringPool);
 			text += valueToString(readRK(frame, rkRawC, rkBitsC), m_stringPool);
 			const StringId textId = m_stringPool.intern(text);
-			const int cp = m_stringPool.codepointCount(textId);
-			CYCLES_ADD(ceilDiv8(cp));
 			setRegister(frame, a, valueString(textId));
 			return;
 		}
 
 		case OpCode::CONCATN: {
 			std::string text;
-			CYCLES_ADD(c << 1);
 			for (int index = 0; index < c; ++index) {
 				text += valueToString(frame.registers[static_cast<size_t>(b + index)], m_stringPool);
 			}
 			const StringId textId = m_stringPool.intern(text);
-			const int cp = m_stringPool.codepointCount(textId);
-			CYCLES_ADD(ceilDiv8(cp));
 			setRegister(frame, a, valueString(textId));
 			return;
 		}
@@ -1598,7 +1720,6 @@ void CPU::executeInstruction(
 			const Value& val = frame.registers[b];
 			if (valueIsString(val)) {
 				int cp = static_cast<int>(m_stringPool.codepointCount(asStringId(val)));
-				CYCLES_ADD(ceilDiv16(cp));
 				setRegister(frame, a, valueNumber(static_cast<double>(cp)));
 				return;
 			}
@@ -1625,7 +1746,6 @@ void CPU::executeInstruction(
 					}
 					throw BMSX_RUNTIME_ERROR("Length operator expects a native object with a length. stack=" + stack);
 				}
-				CYCLES_ADD(12);
 				setRegister(frame, a, valueNumber(static_cast<double>(obj->len())));
 				return;
 			}
@@ -1663,7 +1783,6 @@ void CPU::executeInstruction(
 				eq = left == right;
 			}
 			if (eq != (a != 0)) {
-				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -1705,7 +1824,6 @@ void CPU::executeInstruction(
 				ok = left < right;
 			}
 			if (ok != (a != 0)) {
-				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -1747,7 +1865,6 @@ void CPU::executeInstruction(
 				ok = left <= right;
 			}
 			if (ok != (a != 0)) {
-				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -1756,7 +1873,6 @@ void CPU::executeInstruction(
 		case OpCode::TEST: {
 			const Value& val = frame.registers[a];
 			if (isTruthy(val) != (c != 0)) {
-				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -1767,7 +1883,6 @@ void CPU::executeInstruction(
 			if (isTruthy(val) == (c != 0)) {
 				setRegister(frame, a, val);
 			} else {
-				CYCLES_ADD(1);
 				skipNextInstruction(frame);
 			}
 			return;
@@ -1819,7 +1934,6 @@ void CPU::executeInstruction(
 
 		case OpCode::VARARG: {
 			int count = b == 0 ? static_cast<int>(frame.varargs.size()) : b;
-			CYCLES_ADD(ceilDiv4(count));
 			for (int i = 0; i < count; ++i) {
 				Value value = i < static_cast<int>(frame.varargs.size()) ? frame.varargs[static_cast<size_t>(i)] : valueNil();
 				setRegister(frame, a + i, value);
@@ -1833,19 +1947,12 @@ void CPU::executeInstruction(
 			const Value& callee = frame.registers[a];
 			if (valueIsClosure(callee)) {
 				Closure* closure = asClosure(callee);
-				const Proto& proto = m_program->protos[closure->protoIndex];
-				CYCLES_ADD(argCount);
-				CYCLES_ADD(ceilDiv4(proto.maxStack));
-				if (proto.isVararg && argCount > proto.numParams) {
-					CYCLES_ADD(ceilDiv4(argCount - proto.numParams));
-				}
 				pushFrame(closure, &frame.registers[a + 1], static_cast<size_t>(argCount), a, retCount, false, frame.pc - INSTRUCTION_BYTES);
 				return;
 			}
 			if (valueIsNativeFunction(callee)) {
 				NativeFunction* fn = asNativeFunction(callee);
-				CYCLES_ADD(static_cast<int>(fn->cycleBase)
-					+ static_cast<int>(fn->cyclePerArg) * argCount);
+				CYCLES_ADD(static_cast<int>(fn->cycleBase));
 				std::vector<Value> args = acquireArgScratch();
 				args.resize(static_cast<size_t>(argCount));
 				for (int i = 0; i < argCount; ++i) {
@@ -1853,8 +1960,6 @@ void CPU::executeInstruction(
 				}
 				std::vector<Value> out = acquireNativeReturnScratch();
 				fn->invoke(args, out);
-				const int returnSlots = retCount == 0 ? static_cast<int>(out.size()) : retCount;
-				CYCLES_ADD(static_cast<int>(fn->cyclePerRet) * returnSlots);
 				writeReturnValues(frame, a, retCount, out);
 				releaseNativeReturnScratch(std::move(out));
 				releaseArgScratch(std::move(args));
@@ -1871,8 +1976,6 @@ void CPU::executeInstruction(
 			auto& results = m_returnScratch;
 			results.clear();
 			int count = b == 0 ? std::max(frame.top - a, 0) : b;
-			CYCLES_ADD(count);
-			CYCLES_ADD(static_cast<int>(frame.openUpvalues.size()) * 3);
 			results.reserve(static_cast<size_t>(count));
 			for (int i = 0; i < count; ++i) {
 				results.push_back(frame.registers[a + i]);
@@ -1909,7 +2012,7 @@ void CPU::executeInstruction(
 
 		case OpCode::STORE_MEM_WORDS: {
 			const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			CYCLES_ADD(ceilDiv16(c));
+			CYCLES_ADD(ceilDiv4(c));
 			writeMappedWordSequence(frame, addr, a, c);
 			return;
 		}

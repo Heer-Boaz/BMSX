@@ -41,9 +41,9 @@ struct SourceRange {
 using StringId = uint32_t;
 
 struct NativeFnCost {
-	uint16_t base = 20;
-	uint8_t perArg = 2;
-	uint8_t perRet = 1;
+	uint16_t base = 1;
+	uint8_t perArg = 0;
+	uint8_t perRet = 0;
 };
 
 struct InternedString {
@@ -458,9 +458,9 @@ struct GCObject {
 struct NativeFunction : GCObject {
 	std::string name;
 	NativeFunctionInvoke invoke;
-	uint16_t cycleBase = 20;
-	uint8_t cyclePerArg = 2;
-	uint8_t cyclePerRet = 1;
+	uint16_t cycleBase = 1;
+	uint8_t cyclePerArg = 0;
+	uint8_t cyclePerRet = 0;
 };
 
 /**
@@ -793,7 +793,7 @@ public:
 	void clearGlobalSlots();
 	void syncGlobalSlotsToTable();
 
-	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeFnCost cost = {});
+	Value createNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost = std::nullopt);
 	Value createNativeObject(
 		void* raw,
 		std::function<Value(const Value&)> get,

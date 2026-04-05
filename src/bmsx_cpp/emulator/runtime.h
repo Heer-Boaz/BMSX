@@ -275,7 +275,7 @@ public:
 	/**
 	 * Register a native function as a global.
 	 */
-	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeFnCost cost = {});
+	void registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost = std::nullopt);
 
 	void setCanonicalization(CanonicalizationType canonicalization);
 	void setCpuHz(i64 hz);

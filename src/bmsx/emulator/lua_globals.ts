@@ -7,7 +7,6 @@ import {
 	isNativeObject,
 	Table,
 	type Closure,
-	type NativeFnCost,
 	type Value,
 } from './cpu';
 import { formatNumber } from './number_format';
@@ -119,9 +118,6 @@ import {
 import { buildLuaFrameRawLabel } from './runtime_error_util';
 import { isStringValue, stringValueToString } from './string_pool';
 
-const CHEAP_NATIVE_READ_COST: NativeFnCost = { base: 1, perArg: 1, perRet: 0 };
-const CHEAP_NATIVE_WRITE_COST: NativeFnCost = { base: 1, perArg: 1, perRet: 0 };
-const CHEAP_NATIVE_LOOKUP_COST: NativeFnCost = { base: 1, perArg: 1, perRet: 0 };
 import type { StringValue } from './string_pool';
 import type { LuaMarshalContext } from './types';
 import type { Runtime } from './runtime';
@@ -1125,21 +1121,21 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		out.push(range.romBase);
 		out.push(range.start);
 		out.push(range.end);
-	}, CHEAP_NATIVE_LOOKUP_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'resolve_sys_rom_asset_range', createNativeFunction('resolve_sys_rom_asset_range', (args, out) => {
 		const assetId = stringValueToString(args[0] as StringValue);
 		const range = runtime.resolveRomAssetRange(assetId, 'sys');
 		out.push(range.romBase);
 		out.push(range.start);
 		out.push(range.end);
-	}, CHEAP_NATIVE_LOOKUP_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'resolve_rom_asset_range', createNativeFunction('resolve_rom_asset_range', (args, out) => {
 		const assetId = stringValueToString(args[0] as StringValue);
 		const range = runtime.resolveRomAssetRange(assetId, 'sys');
 		out.push(range.romBase);
 		out.push(range.start);
 		out.push(range.end);
-	}, CHEAP_NATIVE_LOOKUP_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_system_atlas_base', VRAM_SYSTEM_ATLAS_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_primary_atlas_base', VRAM_PRIMARY_ATLAS_BASE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_secondary_atlas_base', VRAM_SECONDARY_ATLAS_BASE);
@@ -1166,34 +1162,34 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		table.set(paletteBKey, color.b);
 		table.set(paletteAKey, color.a);
 		out.push(table);
-	}, CHEAP_NATIVE_LOOKUP_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_used', createNativeFunction('sys_cpu_cycles_used', (_args, out) => {
 		out.push(runtime.getCpuUsedCyclesLastTick());
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_cycles_granted', createNativeFunction('sys_cpu_cycles_granted', (_args, out) => {
 		out.push(runtime.getLastTickBudgetGranted());
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_used', createNativeFunction('sys_cpu_active_cycles_used', (_args, out) => {
 		out.push(runtime.getActiveCpuUsedCyclesLastTick());
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cpu_active_cycles_granted', createNativeFunction('sys_cpu_active_cycles_granted', (_args, out) => {
 		out.push(runtime.getActiveCpuCyclesGranted());
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_ram_used', createNativeFunction('sys_ram_used', (_args, out) => {
 		out.push(runtime.getTrackedRamUsedBytes());
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vram_used', createNativeFunction('sys_vram_used', (_args, out) => {
 		out.push(runtime.getTrackedVramUsedBytes());
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_per_sec', createNativeFunction('sys_vdp_work_units_per_sec', (_args, out) => {
 		out.push(runtime.getVdpWorkUnitsPerSec());
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_work_units_last', createNativeFunction('sys_vdp_work_units_last', (_args, out) => {
 		out.push(runtime.lastTickVdpFrameCost);
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_vdp_frame_held', createNativeFunction('sys_vdp_frame_held', (_args, out) => {
 		out.push(runtime.lastTickVdpFrameHeld ? 1 : 0);
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_done', IRQ_DMA_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_error', IRQ_DMA_ERROR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_img_done', IRQ_IMG_DONE);
@@ -1220,20 +1216,20 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const bits = (args[0] as number) >>> 0;
 		bitcastView.setUint32(0, bits, true);
 		out.push(bitcastView.getFloat32(0, true));
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'u64_to_f64', createNativeFunction('u64_to_f64', (args, out) => {
 		const hi = (args[0] as number) >>> 0;
 		const lo = (args[1] as number) >>> 0;
 		bitcastView.setUint32(0, lo, true);
 		bitcastView.setUint32(4, hi, true);
 		out.push(bitcastView.getFloat64(0, true));
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'wait_vblank', createNativeFunction('wait_vblank', (_args, _out) => {
 		runtime.requestWaitForVblank();
-	}, CHEAP_NATIVE_WRITE_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'clock_now', createNativeFunction('clock_now', (_args, out) => {
 		out.push($.platform.clock.now());
-	}, CHEAP_NATIVE_READ_COST));
+	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'type', createNativeFunction('type', (args, out) => {
 		const value = args.length > 0 ? args[0] : null;
 		out.push(typeOfValue(value));
@@ -1565,7 +1561,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		}
 		out.push(linesTable);
 		out.push(lineMapTable);
-	}, CHEAP_NATIVE_LOOKUP_COST));
+	}));
 	setKey(stringTable, 'len', createNativeFunction('string.len', (args, out) => {
 		const value = args[0] as StringValue;
 		out.push(runtime.cpu.getStringPool().codepointCount(value));

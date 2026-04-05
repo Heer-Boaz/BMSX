@@ -1487,9 +1487,6 @@ void Runtime::setupBuiltins() {
 	setGlobal("sys_rom_cart_base", valueNumber(static_cast<double>(CART_ROM_BASE)));
 	setGlobal("sys_rom_overlay_base", valueNumber(static_cast<double>(OVERLAY_ROM_BASE)));
 	setGlobal("sys_rom_overlay_size", valueNumber(static_cast<double>(m_memory.overlayRomSize())));
-	const NativeFnCost CHEAP_NATIVE_READ_COST { 1, 1, 0 };
-	const NativeFnCost CHEAP_NATIVE_WRITE_COST { 1, 1, 0 };
-	const NativeFnCost CHEAP_NATIVE_LOOKUP_COST { 1, 1, 0 };
 	const struct PaletteKeys {
 		Value r;
 		Value g;
@@ -1510,7 +1507,7 @@ void Runtime::setupBuiltins() {
 		table->set(paletteKeys.b, valueNumber(static_cast<double>(color.b)));
 		table->set(paletteKeys.a, valueNumber(static_cast<double>(color.a)));
 		out.push_back(valueTable(table));
-	}, CHEAP_NATIVE_LOOKUP_COST);
+	});
 	refreshMemoryMapGlobals();
 	setGlobal("irq_dma_done", valueNumber(static_cast<double>(IRQ_DMA_DONE)));
 	setGlobal("irq_dma_error", valueNumber(static_cast<double>(IRQ_DMA_ERROR)));
@@ -1538,7 +1535,7 @@ void Runtime::setupBuiltins() {
 		float value = 0.0f;
 		std::memcpy(&value, &bits, sizeof(value));
 		out.push_back(valueNumber(static_cast<double>(value)));
-	}, CHEAP_NATIVE_READ_COST);
+	});
 
 	registerNativeFunction("u64_to_f64", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		const uint64_t hi = static_cast<uint64_t>(static_cast<uint32_t>(asNumber(args.at(0))));
@@ -1547,53 +1544,53 @@ void Runtime::setupBuiltins() {
 		double value = 0.0;
 		std::memcpy(&value, &bits, sizeof(value));
 		out.push_back(valueNumber(value));
-	}, CHEAP_NATIVE_READ_COST);
+	});
 
 	registerNativeFunction("wait_vblank", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		(void)out;
 		requestWaitForVblank();
-	}, CHEAP_NATIVE_WRITE_COST);
+	});
 	registerNativeFunction("clock_now", [](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(EngineCore::instance().clock()->now()));
-	}, CHEAP_NATIVE_READ_COST);
+	});
 	registerNativeFunction("sys_cpu_cycles_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(cpuUsedCyclesLastTick())));
-	}, CHEAP_NATIVE_READ_COST);
+	});
 	registerNativeFunction("sys_cpu_cycles_granted", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(lastTickBudgetGranted())));
-	}, CHEAP_NATIVE_READ_COST);
+	});
 	registerNativeFunction("sys_cpu_active_cycles_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(activeCpuUsedCyclesLastTick())));
-	}, CHEAP_NATIVE_READ_COST);
+	});
 	registerNativeFunction("sys_cpu_active_cycles_granted", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(activeCpuCyclesGrantedLastTick())));
-	}, CHEAP_NATIVE_READ_COST);
+	});
 	registerNativeFunction("sys_ram_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(trackedRamUsedBytes())));
-	}, CHEAP_NATIVE_READ_COST);
+	});
 	registerNativeFunction("sys_vram_used", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(trackedVramUsedBytes())));
-		}, CHEAP_NATIVE_READ_COST);
+		});
 	registerNativeFunction("sys_vdp_work_units_per_sec", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(vdpWorkUnitsPerSec())));
-	}, CHEAP_NATIVE_READ_COST);
+	});
 	registerNativeFunction("sys_vdp_work_units_last", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(static_cast<double>(lastTickVdpFrameCost())));
-	}, CHEAP_NATIVE_READ_COST);
+	});
 	registerNativeFunction("sys_vdp_frame_held", [this](const std::vector<Value>& args, std::vector<Value>& out) {
 		(void)args;
 		out.push_back(valueNumber(lastTickVdpFrameHeld() ? 1.0 : 0.0));
-	}, CHEAP_NATIVE_READ_COST);
+	});
 	auto findRomAssetInfo = [](RuntimeAssets& assets, const std::string& assetId) -> const RomAssetInfo* {
 		if (const ImgAsset* image = assets.getImg(assetId)) {
 			return &image->rom;
@@ -1645,21 +1642,21 @@ void Runtime::setupBuiltins() {
 		out.push_back(valueNumber(static_cast<double>(romBase)));
 		out.push_back(valueNumber(static_cast<double>(start)));
 		out.push_back(valueNumber(static_cast<double>(end)));
-	}, CHEAP_NATIVE_LOOKUP_COST);
+	});
 	registerNativeFunction("resolve_sys_rom_asset_range", [resolveRomAssetRange, this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const std::string& assetId = m_cpu.stringPool().toString(asStringId(args.at(0)));
 		const auto [romBase, start, end] = resolveRomAssetRange(assetId, true);
 		out.push_back(valueNumber(static_cast<double>(romBase)));
 		out.push_back(valueNumber(static_cast<double>(start)));
 		out.push_back(valueNumber(static_cast<double>(end)));
-	}, CHEAP_NATIVE_LOOKUP_COST);
+	});
 	registerNativeFunction("resolve_rom_asset_range", [resolveRomAssetRange, this](const std::vector<Value>& args, std::vector<Value>& out) {
 		const std::string& assetId = m_cpu.stringPool().toString(asStringId(args.at(0)));
 		const auto [romBase, start, end] = resolveRomAssetRange(assetId, true);
 		out.push_back(valueNumber(static_cast<double>(romBase)));
 		out.push_back(valueNumber(static_cast<double>(start)));
 		out.push_back(valueNumber(static_cast<double>(end)));
-	}, CHEAP_NATIVE_LOOKUP_COST);
+	});
 
 	registerNativeFunction("type", [str](const std::vector<Value>& args, std::vector<Value>& out) {
 		const Value& v = args.empty() ? valueNil() : args.at(0);

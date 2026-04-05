@@ -1298,7 +1298,7 @@ void Runtime::setGlobal(std::string_view name, const Value& value) {
 	m_cpu.setGlobalByKey(canonicalizeIdentifier(name), value);
 }
 
-void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, NativeFnCost cost) {
+void Runtime::registerNativeFunction(std::string_view name, NativeFunctionInvoke fn, std::optional<NativeFnCost> cost) {
 	auto nativeFn = m_cpu.createNativeFunction(name, std::move(fn), cost);
 	m_cpu.setGlobalByKey(canonicalizeIdentifier(name), nativeFn);
 }

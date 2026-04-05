@@ -1,7 +1,7 @@
 import { StringPool, StringValue, isStringValue, stringValueToString } from './string_pool';
 import type { RuntimeStringPoolState } from './string_pool';
 import type { Memory } from './memory';
-import { addTrackedLuaHeapBytes, getTrackedLuaHeapBytes, replaceTrackedLuaHeapBytes } from './lua_heap_usage';
+import { addTrackedLuaHeapBytes, replaceTrackedLuaHeapBytes } from './lua_heap_usage';
 import { formatNumber } from './number_format';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
 import { findVdpPacketSchema, getVdpPacketArgKind, VdpPacketWordKind } from './vdp_packet_schema';
@@ -67,9 +67,179 @@ function valueTypeName(value: Value): string {
 	return 'closure';
 }
 
-const DEFAULT_NATIVE_COST: NativeFnCost = { base: 20, perArg: 2, perRet: 1 };
+const NATIVE_COST_TIER0: NativeFnCost = { base: 0, perArg: 0, perRet: 0 };
+const NATIVE_COST_TIER1: NativeFnCost = { base: 1, perArg: 0, perRet: 0 };
+const NATIVE_COST_TIER2: NativeFnCost = { base: 2, perArg: 0, perRet: 0 };
+const NATIVE_COST_TIER4: NativeFnCost = { base: 4, perArg: 0, perRet: 0 };
+const DEFAULT_NATIVE_COST = NATIVE_COST_TIER1;
 const VDP_PACKET_F32_BUFFER = new ArrayBuffer(4);
 const VDP_PACKET_F32_VIEW = new DataView(VDP_PACKET_F32_BUFFER);
+
+function resolveApiNativeCost(name: string): NativeFnCost {
+	switch (name) {
+		case 'display_width':
+		case 'display_height':
+		case 'get_cpu_freq_hz':
+		case 'get_default_font':
+		case 'get_lua_entry_path':
+		case 'keyboard':
+		case 'rungate':
+		case 'runtime':
+			return NATIVE_COST_TIER0;
+		case 'mousebtn':
+		case 'mousebtnp':
+		case 'mousebtnr':
+		case 'stat':
+		case 'put_mesh':
+		case 'put_particle':
+		case 'skybox':
+		case 'put_ambient_light':
+		case 'put_directional_light':
+		case 'put_point_light':
+		case 'action_triggered':
+		case 'resolveFontId':
+		case 'dget':
+		case 'sfx':
+		case 'stop_sfx':
+		case 'music':
+		case 'stop_music':
+		case 'reboot':
+			return NATIVE_COST_TIER1;
+		case 'pointer_screen_position':
+		case 'pointer_delta':
+		case 'pointer_viewport_position':
+		case 'mousepos':
+		case 'mousewheel':
+		case 'consume_action':
+		case 'set_cpu_freq_hz':
+		case 'dset':
+		case 'set_master_volume':
+		case 'pause_audio':
+		case 'resume_audio':
+			return NATIVE_COST_TIER2;
+		case 'set_camera':
+		case 'cartdata':
+		case 'list_lua_resources':
+		case 'get_lua_resource_source':
+		case 'list_lua_builtins':
+		case 'create_font':
+		case 'set_sprite_parallax_rig':
+		case 'taskgate':
+			return NATIVE_COST_TIER4;
+		default:
+			return DEFAULT_NATIVE_COST;
+	}
+}
+
+function resolveNativeFunctionCost(name: string): NativeFnCost {
+	switch (name) {
+		case 'sys_cpu_cycles_used':
+		case 'sys_cpu_cycles_granted':
+		case 'sys_cpu_active_cycles_used':
+		case 'sys_cpu_active_cycles_granted':
+		case 'sys_ram_used':
+		case 'sys_vram_used':
+		case 'sys_vdp_work_units_per_sec':
+		case 'sys_vdp_work_units_last':
+		case 'sys_vdp_frame_held':
+		case 'clock_now':
+			return NATIVE_COST_TIER0;
+		case 'math.abs':
+		case 'math.acos':
+		case 'math.asin':
+		case 'math.atan':
+		case 'math.ceil':
+		case 'math.cos':
+		case 'math.deg':
+		case 'math.exp':
+		case 'math.floor':
+		case 'math.fmod':
+		case 'math.log':
+		case 'math.max':
+		case 'math.min':
+		case 'math.rad':
+		case 'math.sin':
+		case 'math.sign':
+		case 'math.sqrt':
+		case 'math.tan':
+		case 'math.tointeger':
+		case 'math.type':
+		case 'math.ult':
+		case 'math.random':
+		case 'easing.linear':
+		case 'easing.ease_in_quad':
+		case 'easing.ease_out_quad':
+		case 'easing.ease_in_out_quad':
+		case 'easing.ease_out_back':
+		case 'easing.smoothstep':
+		case 'easing.pingpong01':
+		case 'easing.arc01':
+		case 'type':
+		case 'tonumber':
+		case 'tostring':
+		case 'rawequal':
+		case 'rawget':
+		case 'rawset':
+		case 'select':
+		case 'next':
+		case 'sys_palette_color':
+		case 'resolve_cart_rom_asset_range':
+		case 'resolve_sys_rom_asset_range':
+		case 'resolve_rom_asset_range':
+		case 'u32_to_f32':
+		case 'u64_to_f64':
+		case 'os.clock':
+		case 'os.difftime':
+			return NATIVE_COST_TIER1;
+		case 'pairs':
+		case 'ipairs':
+		case 'pairs.iterator':
+		case 'ipairs.iterator':
+		case 'string.gmatch.iterator':
+		case 'getmetatable':
+		case 'setmetatable':
+		case 'table.insert':
+		case 'table.remove':
+		case 'table.pack':
+		case 'table.unpack':
+		case 'string.len':
+		case 'string.byte':
+		case 'string.char':
+		case 'string.sub':
+		case 'string.upper':
+		case 'string.lower':
+		case 'string.rep':
+		case 'array':
+		case 'assert':
+		case 'error':
+		case 'math.modf':
+		case 'math.randomseed':
+		case 'wait_vblank':
+		case 'os.time':
+			return NATIVE_COST_TIER2;
+		case 'string.find':
+		case 'string.match':
+		case 'string.gsub':
+		case 'string.gmatch':
+		case 'string.format':
+		case 'table.concat':
+		case 'table.sort':
+		case 'wrap_text_lines':
+		case 'pcall':
+		case 'xpcall':
+		case 'loadstring':
+		case 'load':
+		case 'require':
+		case 'print':
+		case 'os.date':
+			return NATIVE_COST_TIER4;
+		default:
+			if (name.startsWith('api.')) {
+				return resolveApiNativeCost(name.slice(4));
+			}
+			return DEFAULT_NATIVE_COST;
+	}
+}
 
 function isVdpPacketSequenceWrite(baseAddr: number, wordCount: number): boolean {
 	const byteLength = wordCount * 4;
@@ -123,13 +293,14 @@ function tryGetVdpPacketPrefixWordCounts(registers: { get(index: number): Value;
 export function createNativeFunction(
 	name: string,
 	invoke: (args: ReadonlyArray<Value>, out: Value[]) => void,
-	cost: NativeFnCost = DEFAULT_NATIVE_COST,
+	cost?: NativeFnCost,
 ): NativeFunction {
+	const resolvedCost = cost ?? resolveNativeFunctionCost(name);
 	addTrackedLuaHeapBytes(16);
 	return {
 		kind: NATIVE_FUNCTION_KIND,
 		name,
-		cost,
+		cost: resolvedCost,
 		// Keep diagnostics aligned with the C++ runtime when native calls receive wrong arg types.
 		invoke: (args, out) => {
 			out.length = 0;
@@ -357,12 +528,10 @@ export const enum RunResult {
 }
 
 const CEIL_DIV4 = (value: number) => (value + 3) >> 2;
-const CEIL_DIV8 = (value: number) => (value + 7) >> 3;
-const CEIL_DIV16 = (value: number) => (value + 15) >> 4;
 
 const BASE_CYCLES: Uint8Array = (() => {
 	const table = new Uint8Array(64);
-	table.fill(2);
+	table.fill(1);
 
 	const set = (op: OpCode, cost: number) => {
 		table[op] = cost;
@@ -382,66 +551,36 @@ const BASE_CYCLES: Uint8Array = (() => {
 	set(OpCode.KM1, 1);
 	set(OpCode.KSMI, 1);
 
-	set(OpCode.GETG, 6);
-	set(OpCode.SETG, 7);
-	set(OpCode.GETT, 8);
-	set(OpCode.SETT, 10);
-	set(OpCode.NEWT, 10);
+	set(OpCode.GETG, 1);
+	set(OpCode.SETG, 2);
+	set(OpCode.GETT, 1);
+	set(OpCode.SETT, 2);
+	set(OpCode.NEWT, 1);
 
-	set(OpCode.ADD, 2);
-	set(OpCode.SUB, 2);
-	set(OpCode.MUL, 3);
-	set(OpCode.DIV, 4);
-	set(OpCode.MOD, 6);
-	set(OpCode.FLOORDIV, 6);
-	set(OpCode.POW, 12);
+	set(OpCode.CONCATN, 2);
 
-	set(OpCode.BAND, 2);
-	set(OpCode.BOR, 2);
-	set(OpCode.BXOR, 2);
-	set(OpCode.SHL, 2);
-	set(OpCode.SHR, 2);
-	set(OpCode.BNOT, 2);
+	set(OpCode.TESTSET, 2);
 
-	set(OpCode.CONCAT, 12);
-	set(OpCode.CONCATN, 14);
-
-	set(OpCode.UNM, 1);
-	set(OpCode.NOT, 1);
-	set(OpCode.LEN, 4);
-
-	set(OpCode.EQ, 3);
-	set(OpCode.LT, 6);
-	set(OpCode.LE, 6);
-	set(OpCode.TEST, 2);
-	set(OpCode.TESTSET, 3);
-
-	set(OpCode.JMP, 1);
-	set(OpCode.JMPIF, 2);
-	set(OpCode.JMPIFNOT, 2);
-
-	set(OpCode.CLOSURE, 20);
-	set(OpCode.GETUP, 3);
-	set(OpCode.SETUP, 3);
+	set(OpCode.CLOSURE, 1);
+	set(OpCode.GETUP, 1);
+	set(OpCode.SETUP, 2);
 	set(OpCode.VARARG, 2);
 
-	set(OpCode.CALL, 18);
-	set(OpCode.RET, 18);
+	set(OpCode.CALL, 2);
+	set(OpCode.RET, 2);
 
-	set(OpCode.LOAD_MEM, 5);
-	set(OpCode.STORE_MEM, 6);
-	set(OpCode.STORE_MEM_WORDS, 6);
-	set(OpCode.BR_TRUE, 2);
-	set(OpCode.BR_FALSE, 2);
-	set(OpCode.GETSYS, 2);
-	set(OpCode.SETSYS, 3);
-	set(OpCode.GETGL, 4);
-	set(OpCode.SETGL, 5);
-	set(OpCode.GETI, 5);
-	set(OpCode.SETI, 7);
-	set(OpCode.GETFIELD, 5);
-	set(OpCode.SETFIELD, 7);
-	set(OpCode.SELF, 6);
+	set(OpCode.LOAD_MEM, 1);
+	set(OpCode.STORE_MEM, 2);
+	set(OpCode.STORE_MEM_WORDS, 2);
+	set(OpCode.GETSYS, 1);
+	set(OpCode.SETSYS, 2);
+	set(OpCode.GETGL, 1);
+	set(OpCode.SETGL, 2);
+	set(OpCode.GETI, 1);
+	set(OpCode.SETI, 2);
+	set(OpCode.GETFIELD, 1);
+	set(OpCode.SETFIELD, 2);
+	set(OpCode.SELF, 1);
 
 	return table;
 })();
@@ -1783,7 +1922,7 @@ export class CPU {
 		frame.pc = pc + INSTRUCTION_BYTES;
 		this.lastPc = pc;
 		this.lastInstruction = instr;
-		this.charge(BASE_CYCLES[op] + (hasWide ? 1 : 0));
+		this.charge(BASE_CYCLES[op]);
 		this.executeInstruction(frame, op, decodedA[wordIndex], decodedB[wordIndex], decodedC[wordIndex], ext, wideA, wideB, wideC, hasWide);
 	}
 
@@ -2023,7 +2162,6 @@ export class CPU {
 				this.setRegisterNumber(frame, a, sbx);
 				return;
 			case OpCode.LOADNIL:
-				this.charge(CEIL_DIV4(b));
 				for (let index = 0; index < b; index += 1) {
 					this.setRegisterNil(frame, a + index);
 				}
@@ -2031,7 +2169,6 @@ export class CPU {
 			case OpCode.LOADBOOL:
 				this.setRegisterBool(frame, a, b !== 0);
 				if (c !== 0) {
-					this.charge(1);
 					this.skipNextInstruction(frame);
 				}
 				return;
@@ -2084,7 +2221,6 @@ export class CPU {
 				this.storeTableIndex(frame.registers.get(a), this.readRK(frame, rkRawB, rkBitsB), this.readRK(frame, rkRawC, rkBitsC));
 				return;
 			case OpCode.NEWT:
-				this.charge(CEIL_DIV4(b) + CEIL_DIV4(c));
 				this.setRegisterTable(frame, a, new Table(b, c));
 				return;
 			case OpCode.ADD: {
@@ -2164,20 +2300,15 @@ export class CPU {
 				const right = this.readRK(frame, rkRawC, rkBitsC);
 				const text = this.valueToString(left) + this.valueToString(right);
 				const handle = this.stringPool.intern(text);
-				const cp = this.stringPool.codepointCount(handle);
-				this.charge(CEIL_DIV8(cp));
 				this.setRegisterString(frame, a, handle);
 				return;
 			}
 			case OpCode.CONCATN: {
 				let text = '';
-				this.charge(c << 1);
 				for (let index = 0; index < c; index += 1) {
 					text += this.valueToString(frame.registers.get(b + index));
 				}
 				const handle = this.stringPool.intern(text);
-				const cp = this.stringPool.codepointCount(handle);
-				this.charge(CEIL_DIV8(cp));
 				this.setRegisterString(frame, a, handle);
 				return;
 			}
@@ -2191,12 +2322,11 @@ export class CPU {
 				return;
 			case OpCode.LEN: {
 				const value = frame.registers.get(b);
-			if (isStringValue(value)) {
-				const cp = this.stringPool.codepointCount(value);
-				this.charge(CEIL_DIV16(cp));
-				this.setRegisterNumber(frame, a, cp);
-				return;
-			}
+				if (isStringValue(value)) {
+					const cp = this.stringPool.codepointCount(value);
+					this.setRegisterNumber(frame, a, cp);
+					return;
+				}
 				if (value instanceof Table) {
 					this.setRegisterNumber(frame, a, value.length());
 					return;
@@ -2213,7 +2343,6 @@ export class CPU {
 						.join(' <- ');
 					throw new Error(`Length operator expects a native object with a length. stack=${stack}`);
 				}
-				this.charge(12);
 				this.setRegisterNumber(frame, a, value.len());
 				return;
 			}
@@ -2237,7 +2366,6 @@ export class CPU {
 				const right = this.readRK(frame, rkRawC, rkBitsC);
 				const eq = left === right;
 				if (eq !== (a !== 0)) {
-					this.charge(1);
 					this.skipNextInstruction(frame);
 				}
 				return;
@@ -2249,7 +2377,6 @@ export class CPU {
 					? stringValueToString(left) < stringValueToString(right)
 					: (left as number) < (right as number);
 				if (ok !== (a !== 0)) {
-					this.charge(1);
 					this.skipNextInstruction(frame);
 				}
 				return;
@@ -2261,7 +2388,6 @@ export class CPU {
 					? stringValueToString(left) <= stringValueToString(right)
 					: (left as number) <= (right as number);
 				if (ok !== (a !== 0)) {
-					this.charge(1);
 					this.skipNextInstruction(frame);
 				}
 				return;
@@ -2269,7 +2395,6 @@ export class CPU {
 			case OpCode.TEST: {
 				const ok = frame.registers.isTruthy(a);
 				if (ok !== (c !== 0)) {
-					this.charge(1);
 					this.skipNextInstruction(frame);
 				}
 				return;
@@ -2280,7 +2405,6 @@ export class CPU {
 					this.copyRegister(frame, a, b);
 					return;
 				}
-				this.charge(1);
 				this.skipNextInstruction(frame);
 				return;
 			}
@@ -2328,7 +2452,6 @@ export class CPU {
 			}
 			case OpCode.VARARG: {
 				const count = b === 0 ? frame.varargs.length : b;
-				this.charge(CEIL_DIV4(count));
 				for (let index = 0; index < count; index += 1) {
 					const value = index < frame.varargs.length ? frame.varargs[index] : null;
 					this.setRegister(frame, a + index, value);
@@ -2350,12 +2473,10 @@ export class CPU {
 				}
 				if (isNativeFunction(callee)) {
 					const cost = callee.cost ?? DEFAULT_NATIVE_COST;
-					this.charge(cost.base + cost.perArg * argCount);
+					this.charge(cost.base);
 					const results = this.acquireNativeReturnScratch();
 					try {
 						callee.invoke(args, results);
-						const returnSlotCount = c === 0 ? results.length : c;
-						this.charge(cost.perRet * returnSlotCount);
 						this.writeReturnValues(frame, a, c, results);
 					} finally {
 						this.releaseNativeReturnScratch(results);
@@ -2370,13 +2491,8 @@ export class CPU {
 						? ` value=${stringValueToString(callee)}`
 						: (typeof callee === 'number' || typeof callee === 'boolean')
 							? ` value=${String(callee)}`
-							: '';
+						: '';
 					throw new Error(`Attempted to call a non-function value (${calleeType}${calleeValue}). at ${location}`);
-				}
-				const proto = this.program.protos[(callee as Closure).protoIndex];
-				this.charge(argCount + CEIL_DIV4(proto.maxStack));
-				if (proto.isVararg && argCount > proto.numParams) {
-					this.charge(CEIL_DIV4(argCount - proto.numParams));
 				}
 				this.pushFrame(callee as Closure, args, a, c, false, frame.pc - INSTRUCTION_BYTES);
 				return;
@@ -2385,7 +2501,6 @@ export class CPU {
 				const scratch = this.returnScratch;
 				scratch.length = 0;
 				const total = b === 0 ? Math.max(frame.top - a, 0) : b;
-				this.charge(total + frame.openUpvalues.size * 3);
 				for (let index = 0; index < total; index += 1) {
 					scratch.push(frame.registers.get(a + index));
 				}
@@ -2418,7 +2533,7 @@ export class CPU {
 			}
 			case OpCode.STORE_MEM_WORDS: {
 				const addr = this.readRKNumber(frame, rkRawB, rkBitsB);
-				this.charge(CEIL_DIV16(c));
+				this.charge(CEIL_DIV4(c));
 				this.writeMappedWordSequence(frame, addr, a, c);
 				return;
 			}
@@ -2820,8 +2935,7 @@ export class CPU {
 	}
 
 	public getTrackedHeapBytes(extraRoots: ReadonlyArray<Value> = []): number {
-		void extraRoots;
-		return getTrackedLuaHeapBytes();
+		return this.collectTrackedHeapBytes(extraRoots);
 	}
 
 	private valueToString(value: Value): string {
