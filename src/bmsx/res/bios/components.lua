@@ -6,6 +6,7 @@ local timeline_module<const> = require('timeline')
 local timeline_dispatch<const> = require('timeline_dispatch')
 local collision_profiles<const> = require('collision_profiles')
 local scratchrecordbatch<const> = require('scratchrecordbatch')
+local font_module<const> = require('font')
 local eventemitter<const> = eventemitter.eventemitter
 local timeline<const> = timeline_module.timeline
 
@@ -674,12 +675,72 @@ function textcomponent.new(opts)
 	self.background_color = opts.background_color
 	self.wrap_chars = opts.wrap_chars
 	self.line_offsets = opts.line_offsets
+	self.line_widths = opts.line_widths
+	self.line_x_offsets = opts.line_x_offsets
 	self.center_block_width = opts.center_block_width
 	self.align = opts.align
 	self.baseline = opts.baseline
 	self.offset = opts.offset or { x = 0, y = 0, z = 0 }
 	self.layer = opts.layer or sys_vdp_layer_world
 	return self
+end
+
+function textcomponent:prepare_render()
+end
+
+function textcomponent:submit_glyph_lines(x, y, z, glyphs, background_enabled, bg_r, bg_g, bg_b, bg_a)
+	local cursor_y = y
+	local line_offsets<const> = self.line_offsets
+	local line_widths<const> = self.line_widths
+	local line_x_offsets<const> = self.line_x_offsets
+	for i = 1, #glyphs do
+		local line<const> = glyphs[i]
+		local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
+		if string.len(line) > 0 then
+			local line_x = x
+			if line_x_offsets ~= nil then
+				line_x = x + line_x_offsets[i]
+			elseif self.center_block_width ~= nil then
+				local line_width<const> = line_widths ~= nil and line_widths[i] or font_module.measure_line_width(self.font, line)
+				line_x = x + ((self.center_block_width - line_width) / 2)
+			end
+			memwrite(
+				vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
+				sys_vdp_cmd_glyph_run,
+				17,
+				0,
+				line,
+				line_x,
+				line_y,
+				z,
+				self.font.id,
+				0,
+				0x7fffffff,
+				self.layer,
+				self.color.r,
+				self.color.g,
+				self.color.b,
+				self.color.a,
+				background_enabled,
+				bg_r,
+				bg_g,
+				bg_b,
+				bg_a
+			)
+		end
+		if line_offsets == nil then
+			cursor_y = cursor_y + self.line_height
+		end
+	end
+end
+
+function textcomponent:render(x, y, z, glyphs)
+	local background_enabled<const> = self.background_color ~= nil and 1 or 0
+	local bg_r<const> = background_enabled ~= 0 and self.background_color.r or 0
+	local bg_g<const> = background_enabled ~= 0 and self.background_color.g or 0
+	local bg_b<const> = background_enabled ~= 0 and self.background_color.b or 0
+	local bg_a<const> = background_enabled ~= 0 and self.background_color.a or 0
+	self:submit_glyph_lines(x, y, z, glyphs, background_enabled, bg_r, bg_g, bg_b, bg_a)
 end
 
 -- meshcomponent: minimal render descriptor

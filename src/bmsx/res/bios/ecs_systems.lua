@@ -2,7 +2,6 @@
 -- built-in ecs systems for lua engine
 
 local wrap_text_lines<const> = require('util/wrap_text_lines')
-local font_module<const> = require('font')
 --
 -- DESIGN PRINCIPLES — collision handling via overlap2dsystem
 --
@@ -82,6 +81,34 @@ local active_scope<const> = { scope = 'active' }
 local render_scratch_items<const> = scratchrecordbatch.new(2):reserve(2)
 local mesh_render_options<const> = render_scratch_items[1]
 local point_light_position<const> = render_scratch_items[2]
+
+local resolve_text_draw_position<const> = function(obj, offset)
+	local x
+	local y
+	local z
+	local t<const> = obj:get_component(transformcomponent)
+	if t then
+		x = t.position.x + offset.x
+		y = t.position.y + offset.y
+		z = t.position.z + offset.z
+	else
+		x = obj.x + offset.x
+		y = obj.y + offset.y
+		z = obj.z + offset.z
+	end
+	return x, y, z
+end
+
+local resolve_text_lines<const> = function(tc)
+	local glyphs<const> = tc.text
+	if type(glyphs) == 'string' then
+		if tc.wrap_chars ~= nil and tc.wrap_chars > 0 then
+			return wrap_text_lines(glyphs, tc.wrap_chars)
+		end
+		return { glyphs }
+	end
+	return glyphs
+end
 
 local behaviortreesystem<const> = {}
 behaviortreesystem.__index = behaviortreesystem
@@ -701,74 +728,9 @@ function textrendersystem:update()
 		if not tc.enabled then
 			goto continue_text_render
 		end
-		if obj.is_textobject then
-			obj:sync_text_component()
-		end
-		local offset<const> = tc.offset
-		local x
-		local y
-		local z
-		local t<const> = obj:get_component(transformcomponent)
-		if t then
-			x = t.position.x + offset.x
-			y = t.position.y + offset.y
-			z = t.position.z + offset.z
-		else
-			x = obj.x + offset.x
-			y = obj.y + offset.y
-			z = obj.z + offset.z
-		end
-		local glyphs = tc.text
-		if type(glyphs) == 'string' then
-			if tc.wrap_chars ~= nil and tc.wrap_chars > 0 then
-				glyphs = wrap_text_lines(glyphs, tc.wrap_chars)
-			else
-				glyphs = { glyphs }
-			end
-		end
-		local cursor_y = y
-		local line_offsets<const> = tc.line_offsets
-		local background_enabled<const> = tc.background_color ~= nil and 1 or 0
-		local bg_r<const> = background_enabled ~= 0 and tc.background_color.r or 0
-		local bg_g<const> = background_enabled ~= 0 and tc.background_color.g or 0
-		local bg_b<const> = background_enabled ~= 0 and tc.background_color.b or 0
-		local bg_a<const> = background_enabled ~= 0 and tc.background_color.a or 0
-			for i = 1, #glyphs do
-				local line<const> = glyphs[i]
-				local line_y<const> = line_offsets ~= nil and (y + line_offsets[i]) or cursor_y
-				if string.len(line) > 0 then
-				local line_x = x
-				if tc.center_block_width ~= nil then
-					line_x = x + ((tc.center_block_width - font_module.measure_line_width(tc.font, line)) / 2)
-				end
-				memwrite(
-					vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 17),
-					sys_vdp_cmd_glyph_run,
-					17,
-						0,
-						line,
-						line_x,
-						line_y,
-						z,
-						tc.font.id,
-						0,
-					0x7fffffff,
-					tc.layer,
-					tc.color.r,
-					tc.color.g,
-					tc.color.b,
-					tc.color.a,
-					background_enabled,
-					bg_r,
-					bg_g,
-					bg_b,
-						bg_a
-					)
-				end
-				if line_offsets == nil then
-					cursor_y = cursor_y + tc.line_height
-				end
-			end
+		tc:prepare_render()
+		local x<const>, y<const>, z<const> = resolve_text_draw_position(obj, tc.offset)
+		tc:render(x, y, z, resolve_text_lines(tc))
 		::continue_text_render::
 	end
 end
