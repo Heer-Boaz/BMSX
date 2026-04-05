@@ -482,6 +482,21 @@ export interface OnscreenGamepadHandleProvider {
 	getHandles(): OnscreenGamepadHandles;
 }
 
+export interface PresentedFrameBuffer {
+	pixels: Uint8Array;
+	srcWidth: number;
+	srcHeight: number;
+	dstWidth: number;
+	dstHeight: number;
+}
+
+export interface PresentedFrameInfo {
+	frameIndex: number;
+	timeMs: number;
+	width: number;
+	height: number;
+}
+
 export type GameViewHostCapabilityId =
 	| 'viewport-metrics'
 	| 'overlay'
@@ -509,6 +524,8 @@ export interface GameViewHost {
 	readonly surface: GameViewCanvas;
 	createBackend(): Promise<unknown>;
 	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T];
+	presentFrameBuffer?(frame: PresentedFrameBuffer): void;
+	onPresentedFrame?(frame: PresentedFrameInfo): void;
 	getSize(viewportSize: vec2, canvasSize: vec2): ViewportDimensions;
 	onResize(handler: (size: ViewportDimensions) => void): SubscriptionHandle;
 	onFocusChange(handler: (focused: boolean) => void): SubscriptionHandle;

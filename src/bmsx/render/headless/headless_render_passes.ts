@@ -287,8 +287,8 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 		stateOnly: true,
 		prepare: () => {
 			registry.setState('framebuffer_2d', {
-				width: $.view.offscreenCanvasSize.x,
-				height: $.view.offscreenCanvasSize.y,
+				width: $.view.canvasSize.x,
+				height: $.view.canvasSize.y,
 				baseWidth: $.view.viewportSize.x,
 				baseHeight: $.view.viewportSize.y,
 				colorTex: $.view.textures[Runtime.instance.vdp.frameBufferTextureKey],
@@ -308,6 +308,16 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			if (pixels.byteLength !== expectedByteLength) {
 				throw new Error(`[HeadlessFramebuffer2D] Framebuffer byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);
 			}
+			if (!$.view.host.presentFrameBuffer) {
+				throw new Error('[HeadlessFramebuffer2D] Active host does not implement presentFrameBuffer().');
+			}
+			$.view.host.presentFrameBuffer({
+				pixels,
+				srcWidth: frameBufferWidth,
+				srcHeight: frameBufferHeight,
+				dstWidth: state.width,
+				dstHeight: state.height,
+			});
 			let active = 0;
 			for (let index = 3; index < pixels.length; index += 4) {
 				if (pixels[index] !== 0) {

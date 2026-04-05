@@ -35,6 +35,6 @@ Options:
 - `--video fb|sdl`: `fb` uses `/dev/fb0` + evdev, `sdl` opens a window and uses SDL input (software-only)
 - `--input-debug`: logs evdev events and the resulting RETRO_DEVICE_JOYPAD state
 
-Input timelines may include `capture: true` entries. The host saves screenshots into a `screenshots/` subfolder next to the timeline JSON file. Headless runs currently ignore those capture markers.
+Input timelines may include `capture: true` entries. Both the libretro host and headless runner save `.png` screenshots into a `screenshots/` subfolder next to the timeline JSON file.
 
 SDL video support is enabled when SDL2 is available during the host build (non-cross builds only).

@@ -2,6 +2,8 @@ import type { vec2 } from '../../rompack/rompack';
 import type {
 	GameViewHost,
 	GameViewCanvas,
+	PresentedFrameBuffer,
+	PresentedFrameInfo,
 	ViewportMetrics,
 	OverlayHandle,
 	ViewportMetricsProvider,
@@ -19,6 +21,7 @@ import type {
 } from '../../platform';
 import { createSubscriptionHandle } from '../../platform';
 import { HeadlessGPUBackend } from './headless_backend';
+import { HeadlessPresentSurface } from './headless_present_surface';
 
 class HeadlessOverlay implements OverlayHandle {
 	private readonly classes = new Set<string>();
@@ -91,6 +94,8 @@ class HeadlessDisplayModeController implements DisplayModeController {
 export class HeadlessGameViewHost implements GameViewHost {
 	public readonly surface: HeadlessGameViewCanvas;
 	private readonly overlays = new Map<string, HeadlessOverlay>();
+	private readonly presentedFrameListeners = new Set<(frame: PresentedFrameInfo) => void>();
+	private readonly presentSurface = new HeadlessPresentSurface();
 	private readonly viewportCapability: ViewportMetricsProvider;
 	private readonly overlayCapability: OverlayManager;
 	private readonly gamepadCapability: OnscreenGamepadHandleProvider;
@@ -147,6 +152,35 @@ export class HeadlessGameViewHost implements GameViewHost {
 
 	async createBackend(): Promise<HeadlessGPUBackend> {
 		return new HeadlessGPUBackend();
+	}
+
+	public presentFrameBuffer(frame: PresentedFrameBuffer): void {
+		this.presentSurface.present2D(frame.pixels, frame.srcWidth, frame.srcHeight, frame.dstWidth, frame.dstHeight);
+	}
+
+	public onPresentedFrame(frame: PresentedFrameInfo): void {
+		for (const listener of this.presentedFrameListeners) {
+			listener(frame);
+		}
+	}
+
+	public addPresentedFrameListener(listener: (frame: PresentedFrameInfo) => void): SubscriptionHandle {
+		this.presentedFrameListeners.add(listener);
+		return createSubscriptionHandle(() => {
+			this.presentedFrameListeners.delete(listener);
+		});
+	}
+
+	public copyPresentedFramePixels(): Uint8Array {
+		return this.presentSurface.copyPixels();
+	}
+
+	public get presentedFrameWidth(): number {
+		return this.presentSurface.width;
+	}
+
+	public get presentedFrameHeight(): number {
+		return this.presentSurface.height;
 	}
 
 	public getSize(viewportSize: vec2, canvasSize: vec2): ViewportDimensions {

@@ -2404,8 +2404,8 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 		if (pixels) {
 			glReadPixels_ptr(0, 0, g_fb.width, g_fb.height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 			char filename[128];
-			snprintf(filename, sizeof(filename), "frame_%05u.ppm", g_frame_number);
-			screenshot_save_ppm(filename, g_fb.width, g_fb.height, pixels);
+			snprintf(filename, sizeof(filename), "frame_%05u.png", g_frame_number);
+			screenshot_save_png(filename, g_fb.width, g_fb.height, pixels);
 			free(pixels);
 		}
 	}

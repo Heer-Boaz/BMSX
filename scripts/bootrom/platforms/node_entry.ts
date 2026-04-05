@@ -8,6 +8,8 @@ import { type BootArgs } from '../../../src/bmsx/rompack/rompack';
 import { HeadlessPlatformServices } from '../../../src/bmsx_hostplatform/headless/platform_headless';
 import { CLIPlatformServices } from '../../../src/bmsx_hostplatform/cli/platform_cli';
 import type { Platform, InputEvt } from '../../../src/bmsx_hostplatform/platform';
+import { HeadlessGameViewHost } from '../../../src/bmsx/render/headless/headless_view';
+import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture } from './headless_capture';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
 declare const __BOOTROM_DEBUG__: boolean;
@@ -115,9 +117,31 @@ type HeadlessAssertionRunState = {
 	finished: boolean;
 };
 
-let maxScheduledMs = 0;
+type TimelineExecutionPoint = {
+	timeMs: number;
+	frame?: number;
+};
+
+const HEADLESS_EXIT_SIGNAL = Symbol('headless-exit');
+let processExitController: ((code: number) => void) | null = null;
+
+let maxScheduledDeadlineMs = 0;
 const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 let workspaceFetchBridgeInstalled = false;
+
+function trackScheduledDeadline(delayMs: number): void {
+	const deadlineMs = Date.now() + delayMs;
+	if (deadlineMs > maxScheduledDeadlineMs) {
+		maxScheduledDeadlineMs = deadlineMs;
+	}
+}
+
+function getPendingScheduledDelayMs(settleMs = 0): number {
+	if (maxScheduledDeadlineMs <= 0) {
+		return 0;
+	}
+	return Math.max(0, maxScheduledDeadlineMs + settleMs - Date.now());
+}
 
 if (typeof (globalThis as any).Image === 'undefined') {
 	(globalThis as any).Image = Image;
@@ -235,7 +259,7 @@ function printHelp(): void {
 	console.log('  --debug                  Force debug mode.');
 	console.log('  --no-debug               Force non-debug mode.');
 	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
-	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule; capture markers are ignored in headless mode for now.');
+	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule; headless capture markers write screenshots next to the timeline.');
 	console.log('  --input-module <file>    JS/TS module exporting a scheduler for custom input logic.');
 	console.log('  --engine-runtime <path>  JS runtime bundle for the engine (defaults to dist/engine(.debug).js).');
 	console.log('  --engine-assets <path>   Engine asset pack ROM (defaults to dist/bmsx-bios(.debug).rom).');
@@ -550,7 +574,13 @@ async function readRomFile(filePath: string): Promise<Uint8Array> {
 	}
 }
 
-async function scheduleInputTimelineFromFile(filePath: string, frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void): Promise<void> {
+async function scheduleInputTimelineFromFile(
+	filePath: string,
+	frameIntervalMs: number,
+	postInput: (evt: InputEvt) => void,
+	scheduleCapture: ((capture: ScheduledHeadlessCapture) => void) | null,
+	logger: (msg: string) => void,
+): Promise<void> {
 	const resolved = path.resolve(filePath);
 	const content = await fs.readFile(resolved, 'utf8');
 	let parsed: unknown;
@@ -562,7 +592,7 @@ async function scheduleInputTimelineFromFile(filePath: string, frameIntervalMs: 
 	if (!Array.isArray(parsed)) {
 		throw new Error(`Input timeline '${filePath}' must be a JSON array.`);
 	}
-	scheduleTimelineEntries(parsed as InputTimelineEntry[], frameIntervalMs, postInput, logger, `timeline:${path.basename(resolved)}`);
+	scheduleTimelineEntries(parsed as InputTimelineEntry[], frameIntervalMs, postInput, scheduleCapture, logger, `timeline:${path.basename(resolved)}`);
 }
 
 function createHeadlessTestApi(
@@ -571,6 +601,7 @@ function createHeadlessTestApi(
 	logger: (msg: string) => void,
 	scheduleInput: (entries: InputTimelineEntry[]) => void,
 	runState: HeadlessAssertionRunState | null,
+	requestExit: (code: number) => void,
 ): HeadlessTestApi {
 	const fail = (message: string): never => {
 		throw new Error(`[assert] ${message}`);
@@ -708,6 +739,9 @@ function createHeadlessTestApi(
 			void Promise.resolve()
 				.then(task)
 				.catch(err => {
+					if (err === HEADLESS_EXIT_SIGNAL) {
+						return;
+					}
 					setTimeout(() => {
 						throw err;
 					}, 0);
@@ -720,7 +754,16 @@ function createHeadlessTestApi(
 			if (message) {
 				logger(`module:${moduleLabel} ${message}`);
 			}
-			process.exit(0);
+			const pendingDelayMs = getPendingScheduledDelayMs(frameIntervalMs);
+			if (pendingDelayMs > 0) {
+				logger(`module:${moduleLabel} waiting ${pendingDelayMs}ms for scheduled inputs/captures before exit`);
+				setTimeout(() => {
+					requestExit(0);
+				}, pendingDelayMs);
+				throw HEADLESS_EXIT_SIGNAL;
+			}
+			requestExit(0);
+			throw HEADLESS_EXIT_SIGNAL;
 		},
 		fail,
 		assert,
@@ -741,7 +784,15 @@ function createHeadlessTestApi(
 	};
 }
 
-async function runInputModuleScheduler(modulePath: string, frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void, runState: HeadlessAssertionRunState | null): Promise<void> {
+async function runInputModuleScheduler(
+	modulePath: string,
+	frameIntervalMs: number,
+	postInput: (evt: InputEvt) => void,
+	scheduleCapture: ((capture: ScheduledHeadlessCapture) => void) | null,
+	logger: (msg: string) => void,
+	runState: HeadlessAssertionRunState | null,
+	requestExit: (code: number) => void,
+): Promise<void> {
 	const resolved = path.resolve(modulePath);
 	const moduleUrl = pathToFileURL(resolved).href;
 	const imported = await import(moduleUrl);
@@ -750,15 +801,23 @@ async function runInputModuleScheduler(modulePath: string, frameIntervalMs: numb
 		throw new Error(`Input module '${modulePath}' must export a function (default or named 'schedule').`);
 	}
 	const moduleLabel = path.basename(resolved);
-	const scheduleInput = (entries: InputTimelineEntry[]) => scheduleTimelineEntries(entries, frameIntervalMs, postInput, logger, `module:${moduleLabel}`);
+	const scheduleInput = (entries: InputTimelineEntry[]) => scheduleTimelineEntries(entries, frameIntervalMs, postInput, scheduleCapture, logger, `module:${moduleLabel}`);
 	const context = {
 		postInput: (evt: InputEvt) => postInput(evt),
 		frameIntervalMs,
 		logger: (message: string) => logger(`module:${moduleLabel} ${message}`),
 		schedule: scheduleInput,
-		test: createHeadlessTestApi(moduleLabel, frameIntervalMs, logger, scheduleInput, runState),
+		test: createHeadlessTestApi(moduleLabel, frameIntervalMs, logger, scheduleInput, runState, requestExit),
 	};
-	const result = await scheduler(context);
+	let result: unknown;
+	try {
+		result = await scheduler(context);
+	} catch (error) {
+		if (error === HEADLESS_EXIT_SIGNAL) {
+			return;
+		}
+		throw error;
+	}
 	if (Array.isArray(result)) {
 		scheduleInput(result as InputTimelineEntry[]);
 	}
@@ -773,7 +832,14 @@ function assertHeadlessAssertionRunState(runState: HeadlessAssertionRunState): v
 	}
 }
 
-function scheduleTimelineEntries(entries: InputTimelineEntry[], frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void, source: string): void {
+function scheduleTimelineEntries(
+	entries: InputTimelineEntry[],
+	frameIntervalMs: number,
+	postInput: (evt: InputEvt) => void,
+	scheduleCapture: ((capture: ScheduledHeadlessCapture) => void) | null,
+	logger: (msg: string) => void,
+	source: string,
+): void {
 	let lastAbsoluteMs = 0;
 	entries.forEach((entry, idx) => {
 		if (!entry || typeof entry !== 'object') {
@@ -784,20 +850,29 @@ function scheduleTimelineEntries(entries: InputTimelineEntry[], frameIntervalMs:
 		if (!hasEvent && !hasCapture) {
 			throw new Error(`Timeline entry ${idx} is missing an 'event' or 'capture'.`);
 		}
-		const baseMs = resolveBaseTime(entry, frameIntervalMs, lastAbsoluteMs, idx);
-		lastAbsoluteMs = baseMs;
-		if (hasCapture && !hasEvent) {
-			const delay = Math.max(0, Math.round(baseMs));
-			if (delay > maxScheduledMs) maxScheduledMs = delay;
-			const description = entry.description ? `${entry.description}` : `entry#${idx}`;
-			logger(`[${source}] ignore capture marker ${description} at ${delay}ms in headless mode`);
+		const basePoint = resolveBaseSchedule(entry, frameIntervalMs, lastAbsoluteMs, idx);
+		lastAbsoluteMs = basePoint.timeMs;
+		const executionPoints = expandExecutionPoints(entry, basePoint, frameIntervalMs, idx);
+		const description = entry.description ? `${entry.description}` : `entry#${idx}`;
+		if (hasCapture) {
+			executionPoints.forEach((point) => {
+				const delay = Math.max(0, Math.round(point.timeMs));
+				trackScheduledDeadline(delay);
+				logger(`[${source}] capture ${description} at ${delay}ms`);
+				scheduleCapture?.({
+					dueTimeMs: point.timeMs,
+					targetFrame: point.frame,
+					description,
+					source,
+				});
+			});
+		}
+		if (!hasEvent) {
 			return;
 		}
-		const executionTimes = expandExecutionTimes(entry, baseMs, frameIntervalMs, idx);
-		executionTimes.forEach((timeMs) => {
-			const delay = Math.max(0, Math.round(timeMs));
-			if (delay > maxScheduledMs) maxScheduledMs = delay;
-			const description = entry.description ? `${entry.description}` : `entry#${idx}`;
+		executionPoints.forEach((point) => {
+			const delay = Math.max(0, Math.round(point.timeMs));
+			trackScheduledDeadline(delay);
 			logger(`[${source}] schedule ${description} at ${delay}ms`);
 			setTimeout(() => {
 				const cloned = typeof structuredClone === 'function' ? structuredClone(entry.event) : JSON.parse(JSON.stringify(entry.event));
@@ -807,32 +882,40 @@ function scheduleTimelineEntries(entries: InputTimelineEntry[], frameIntervalMs:
 	});
 }
 
-function resolveBaseTime(entry: InputTimelineEntry, frameIntervalMs: number, lastAbsoluteMs: number, index: number): number {
-	if (typeof entry.timeMs === 'number') return sanitizeTime(entry.timeMs, index);
-	if (typeof entry.ms === 'number') return sanitizeTime(entry.ms, index);
+function resolveBaseSchedule(entry: InputTimelineEntry, frameIntervalMs: number, lastAbsoluteMs: number, index: number): TimelineExecutionPoint {
+	if (typeof entry.timeMs === 'number') return { timeMs: sanitizeTime(entry.timeMs, index) };
+	if (typeof entry.ms === 'number') return { timeMs: sanitizeTime(entry.ms, index) };
 	if (typeof entry.frame === 'number') {
-		return sanitizeTime(entry.frame * frameIntervalMs, index);
+		return {
+			timeMs: sanitizeTime(entry.frame * frameIntervalMs, index),
+			frame: entry.frame,
+		};
 	}
 	if (typeof entry.delayMs === 'number') {
-		return sanitizeTime(lastAbsoluteMs + entry.delayMs, index);
+		return { timeMs: sanitizeTime(lastAbsoluteMs + entry.delayMs, index) };
 	}
 	throw new Error(`Timeline entry ${index} must specify 'frame', 'ms'/'timeMs', or 'delayMs'.`);
 }
 
-function expandExecutionTimes(entry: InputTimelineEntry, baseMs: number, frameIntervalMs: number, index: number): number[] {
-	const times = [baseMs];
+function expandExecutionPoints(entry: InputTimelineEntry, basePoint: TimelineExecutionPoint, frameIntervalMs: number, index: number): TimelineExecutionPoint[] {
+	const points = [basePoint];
 	const repeatCount = entry.repeat ?? 0;
 	if (repeatCount <= 0) {
-		return times;
+		return points;
 	}
 	const intervalMs = entry.repeatEveryMs ?? (entry.repeatEveryFrames !== undefined ? entry.repeatEveryFrames * frameIntervalMs : undefined);
 	if (intervalMs === undefined || intervalMs <= 0) {
 		throw new Error(`Timeline entry ${index} specifies repeat without a valid repeat interval.`);
 	}
 	for (let i = 1; i <= repeatCount; i++) {
-		times.push(baseMs + i * intervalMs);
+		points.push({
+			timeMs: basePoint.timeMs + i * intervalMs,
+			frame: basePoint.frame !== undefined && entry.repeatEveryFrames !== undefined
+				? basePoint.frame + i * entry.repeatEveryFrames
+				: undefined,
+		});
 	}
-	return times;
+	return points;
 }
 
 function sanitizeTime(value: number, index: number): number {
@@ -860,6 +943,57 @@ function ensureHostEnvironment(): void {
 	if (globals.navigator === undefined) {
 		globals.navigator = { userAgent: 'node' };
 	}
+}
+
+function createProcessExitController(getCaptureCoordinator: () => HeadlessCaptureCoordinator | null): (code: number) => void {
+	let exitRequested = false;
+	let exitCode = 0;
+	return (code: number): void => {
+		if (code !== 0) {
+			exitCode = code;
+		}
+		if (exitRequested) {
+			return;
+		}
+		exitRequested = true;
+		void (async () => {
+			const coordinator = getCaptureCoordinator();
+			try {
+				if (coordinator) {
+					await coordinator.flushWrites(exitCode === 0);
+				}
+			} catch (error) {
+				console.error(`[bootrom:${__BOOTROM_TARGET__}] Failed to flush screenshots:`, error);
+				exitCode = 1;
+			} finally {
+				coordinator?.dispose();
+			}
+			process.exit(exitCode);
+		})();
+	};
+}
+
+function createHeadlessCaptureScheduler(
+	host: HeadlessGameViewHost | null,
+	sourcePath: string,
+	logger: (msg: string) => void,
+	getCoordinator: () => HeadlessCaptureCoordinator | null,
+	setCoordinator: (coordinator: HeadlessCaptureCoordinator) => void,
+): ((capture: ScheduledHeadlessCapture) => void) | null {
+	if (!host) {
+		return null;
+	}
+	const resolvedSourcePath = path.resolve(sourcePath);
+	return (capture: ScheduledHeadlessCapture): void => {
+		let coordinator = getCoordinator();
+		if (!coordinator) {
+			const outputDir = deriveHeadlessCaptureOutputDir(resolvedSourcePath);
+			logger(`[capture] screenshots -> ${outputDir}`);
+			coordinator = new HeadlessCaptureCoordinator(host, outputDir, logger);
+			setCoordinator(coordinator);
+		}
+		coordinator.schedule(capture);
+	};
 }
 
 function createPlatform(frameIntervalMs: number): Platform {
@@ -918,6 +1052,16 @@ async function main(): Promise<void> {
 	installWorkspaceFetchBridge(workspaceRoot);
 
 	const platform = createPlatform(frameInterval);
+	let headlessHost: HeadlessGameViewHost | null = null;
+	if (__BOOTROM_TARGET__ === 'headless') {
+		if (!(platform.gameviewHost instanceof HeadlessGameViewHost)) {
+			throw new Error('[bootrom:headless] Expected HeadlessGameViewHost for headless target.');
+		}
+		headlessHost = platform.gameviewHost;
+	}
+	let captureCoordinator: HeadlessCaptureCoordinator | null = null;
+	const requestExit = createProcessExitController(() => captureCoordinator);
+	processExitController = requestExit;
 	const postInput = (event: InputEvt) => {
 		platform.input.post(event);
 	};
@@ -929,21 +1073,43 @@ async function main(): Promise<void> {
 	const romFolder = cliOptions.romFolder;
 	let cartRoot: string | null = null;
 	let assertionRunState: HeadlessAssertionRunState | null = null;
+	let captureScheduler: ((capture: ScheduledHeadlessCapture) => void) | null = null;
+	const ensureCaptureScheduler = (sourcePath: string): ((capture: ScheduledHeadlessCapture) => void) | null => {
+		return createHeadlessCaptureScheduler(
+			headlessHost,
+			sourcePath,
+			inputLogger,
+			() => captureCoordinator,
+			(coordinator: HeadlessCaptureCoordinator) => {
+				captureCoordinator = coordinator;
+			},
+		);
+	};
 	if (romFolder) {
 		cartRoot = await resolveCartRoot(romFolder);
 	}
 	if (cliOptions.inputTimelinePath) {
-		await scheduleInputTimelineFromFile(cliOptions.inputTimelinePath, frameInterval, postInput, inputLogger);
+		captureScheduler = ensureCaptureScheduler(cliOptions.inputTimelinePath);
+		await scheduleInputTimelineFromFile(cliOptions.inputTimelinePath, frameInterval, postInput, captureScheduler, inputLogger);
 	} else if (cartRoot && romFolder) {
 		const timelinePath = path.join(cartRoot, 'test', `${romFolder}_demo.json`);
 		if (await fileExists(timelinePath)) {
-			await scheduleInputTimelineFromFile(timelinePath, frameInterval, postInput, inputLogger);
+			captureScheduler = ensureCaptureScheduler(timelinePath);
+			await scheduleInputTimelineFromFile(timelinePath, frameInterval, postInput, captureScheduler, inputLogger);
 		} else {
 			console.warn(`[bootrom:${__BOOTROM_TARGET__}:input] Optional input timeline not found at ${timelinePath}.`);
 		}
 	}
 	if (cliOptions.inputModulePath) {
-		await runInputModuleScheduler(cliOptions.inputModulePath, frameInterval, postInput, inputLogger, null);
+		await runInputModuleScheduler(
+			cliOptions.inputModulePath,
+			frameInterval,
+			postInput,
+			captureScheduler ?? ensureCaptureScheduler(cliOptions.inputModulePath),
+			inputLogger,
+			null,
+			requestExit,
+		);
 	} else if (cartRoot && romFolder) {
 		const modulePath = path.join(cartRoot, 'test', `${romFolder}_assert_results.mjs`);
 		if (await fileExists(modulePath)) {
@@ -953,11 +1119,19 @@ async function main(): Promise<void> {
 				assertCount: 0,
 				finished: false,
 			};
-			await runInputModuleScheduler(modulePath, frameInterval, postInput, inputLogger, assertionRunState);
+			await runInputModuleScheduler(
+				modulePath,
+				frameInterval,
+				postInput,
+				captureScheduler ?? ensureCaptureScheduler(modulePath),
+				inputLogger,
+				assertionRunState,
+				requestExit,
+			);
 		}
 	}
 	const defaultTtl = 1_000; // minimum 1 second default TTL to allow gameboot and graceful shutdown
-	const minTtl = maxScheduledMs > 0 ? maxScheduledMs + 5_000 : defaultTtl;
+	const minTtl = Math.max(defaultTtl, getPendingScheduledDelayMs(5_000));
 	const requestedTtl = typeof cliOptions.ttlMs === 'number' && cliOptions.ttlMs > 0 ? Math.round(cliOptions.ttlMs) : defaultTtl;
 	const ttlMs = Math.max(requestedTtl, minTtl);
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL set to ${ttlMs}ms (min required ${minTtl}ms).`);
@@ -968,11 +1142,11 @@ async function main(): Promise<void> {
 			}
 		} catch (error) {
 			console.error(`[bootrom:${__BOOTROM_TARGET__}] Fatal error:`, error);
-			process.exit(1);
+			requestExit(1);
 			return;
 		}
 		console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL reached (${ttlMs}ms). Terminating.`);
-		process.exit(0);
+		requestExit(0);
 	}, ttlMs);
 
 	const bootArgs: BootArgs = {
@@ -992,5 +1166,9 @@ async function main(): Promise<void> {
 
 main().catch(err => {
 	console.error(`[bootrom:${__BOOTROM_TARGET__}] Fatal error:`, err);
+	if (processExitController) {
+		processExitController(1);
+		return;
+	}
 	process.exitCode = 1;
 });

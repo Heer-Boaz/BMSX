@@ -227,6 +227,9 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 	if(NOT UNIX OR APPLE)
 		message(FATAL_ERROR "BMSX_BUILD_LIBRETRO_HOST is supported only on Linux-like UNIX platforms.")
 	endif()
+	if(NOT BMSX_ENABLE_ZLIB)
+		message(FATAL_ERROR "BMSX_BUILD_LIBRETRO_HOST requires BMSX_ENABLE_ZLIB for PNG screenshot output.")
+	endif()
 
 	add_executable(bmsx_libretro_host
 		platform/libretro_host/main.c
@@ -238,7 +241,7 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 	if(CMAKE_CROSSCOMPILING)
 		target_compile_definitions(bmsx_libretro_host PRIVATE _TIME_BITS=32)
 	endif()
-	target_link_libraries(bmsx_libretro_host PRIVATE dl rt pthread m)
+	target_link_libraries(bmsx_libretro_host PRIVATE dl rt pthread m ZLIB::ZLIB)
 	target_include_directories(bmsx_libretro_host PRIVATE
 		${CMAKE_CURRENT_SOURCE_DIR}/platform/libretro
 	)

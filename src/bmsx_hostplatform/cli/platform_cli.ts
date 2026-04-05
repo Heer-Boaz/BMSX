@@ -11,6 +11,8 @@ import {
 	StorageService,
 	ClipboardService,
 	GameViewHost,
+	PresentedFrameBuffer,
+	PresentedFrameInfo,
 	ViewportMetrics,
 	ViewportMetricsProvider,
 	OverlayManager,
@@ -107,6 +109,14 @@ export class CLIGameViewHost implements GameViewHost {
 			default:
 				return null;
 		}
+	}
+
+	presentFrameBuffer(frame: PresentedFrameBuffer): void {
+		this.delegate.presentFrameBuffer(frame);
+	}
+
+	onPresentedFrame(frame: PresentedFrameInfo): void {
+		this.delegate.onPresentedFrame(frame);
 	}
 
 	private computeMetrics(): ViewportMetrics {
