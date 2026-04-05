@@ -40,6 +40,7 @@ import type { Value } from './cpu';
 import { LuaMemberCompletionRequest, SymbolEntry } from './types';
 import type { MutableTextPosition, TextBuffer } from './ide/text/text_buffer';
 import { clamp } from '../utils/clamp';
+import type { ModuleAliasEntry } from './ide/semantic_model';
 
 type TerminalOutputKind =
 	| 'prompt'
@@ -2106,7 +2107,7 @@ export class TerminalMode {
 		this.completion.drawParameterHintOverlay(bounds);
 	}
 
-	private buildTerminalModuleAliases(): Map<string, string> {
+	private buildTerminalModuleAliases(): Map<string, ModuleAliasEntry> {
 		if (this.fieldText().trim().length === 0) {
 			return new Map();
 		}

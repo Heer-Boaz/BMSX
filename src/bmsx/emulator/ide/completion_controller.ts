@@ -19,6 +19,7 @@ import { consumeIdeKey } from './ide_input';
 import { point_in_rect } from '../../utils/rect_operations';
 import { LuaLexer } from '../../lua/syntax/lualexer';
 import type { TextBuffer } from './text/text_buffer';
+import type { ModuleAliasEntry } from './semantic_model';
 
 export interface CompletionHost {
 	// Editor state accessors
@@ -47,7 +48,7 @@ export interface CompletionHost {
 	getActiveCodeTabContext(): unknown;
 	resolveHoverPath(context: unknown): string;
 	getSemanticDefinitions(): readonly LuaDefinitionInfo[];
-	getLuaModuleAliases(path: string): Map<string, string>;
+	getLuaModuleAliases(path: string): Map<string, ModuleAliasEntry>;
 	getMemberCompletionItems(request: LuaMemberCompletionRequest): LuaCompletionItem[];
 	// Utilities
 	charAt(row: number, column: number): string;
@@ -60,7 +61,7 @@ type LocalCompletionCacheEntry = {
 	parsedVersion: number;
 	path: string;
 	symbols: LuaScopedSymbol[];
-	moduleAliases: Map<string, string>;
+	moduleAliases: Map<string, ModuleAliasEntry>;
 };
 
 const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
@@ -877,27 +878,72 @@ export class CompletionController {
 		if (!cached || cached.moduleAliases.size === 0) {
 			return [];
 		}
-		const moduleName = cached.moduleAliases.get(context.objectName);
-		if (!moduleName) {
+		const moduleAlias = cached.moduleAliases.get(context.objectName);
+		if (!moduleAlias) {
 			return [];
 		}
 		let symbols: LuaSymbolEntry[] = [];
 		try {
-			symbols = listLuaModuleSymbols(moduleName);
+			symbols = listLuaModuleSymbols(moduleAlias.module);
 		} catch {
 			symbols = [];
 		}
+		symbols = this.filterModuleAliasSymbols(symbols, moduleAlias);
 		if (!symbols || symbols.length === 0) {
 			return [];
 		}
 		const items = this.buildSymbolCompletionItems(symbols, 'module');
+		const aliasSource = this.formatModuleAliasSource(moduleAlias);
 		for (let index = 0; index < items.length; index += 1) {
 			const item = items[index];
-			const escaped = moduleName.replace(/'/g, "\\'");
-			const detail = item.detail ? `${item.detail} • require('${escaped}')` : `module export • require('${escaped}')`;
+			const detail = item.detail ? `${item.detail} • ${aliasSource}` : `module export • ${aliasSource}`;
 			item.detail = detail;
 		}
 		return items;
+	}
+
+	private filterModuleAliasSymbols(symbols: LuaSymbolEntry[], moduleAlias: ModuleAliasEntry): LuaSymbolEntry[] {
+		const memberPath = moduleAlias.memberPath ?? [];
+		if (memberPath.length === 0) {
+			return symbols;
+		}
+		const prefix = memberPath.join('.');
+		const directPrefix = `${prefix}.`;
+		const filtered: LuaSymbolEntry[] = [];
+		for (let index = 0; index < symbols.length; index += 1) {
+			const symbol = symbols[index]!;
+			if (this.symbolMatchesModuleAliasPath(symbol.path, prefix, directPrefix)) {
+				filtered.push(symbol);
+			}
+		}
+		return filtered;
+	}
+
+	private symbolMatchesModuleAliasPath(path: string, prefix: string, directPrefix: string): boolean {
+		if (path.length <= prefix.length) {
+			return false;
+		}
+		if (path.startsWith(directPrefix)) {
+			return true;
+		}
+		const firstSeparator = path.indexOf('.');
+		if (firstSeparator === -1 || firstSeparator + 1 >= path.length) {
+			return false;
+		}
+		const nestedPath = path.slice(firstSeparator + 1);
+		if (nestedPath.length <= prefix.length) {
+			return false;
+		}
+		return nestedPath.startsWith(directPrefix);
+	}
+
+	private formatModuleAliasSource(moduleAlias: ModuleAliasEntry): string {
+		const escaped = moduleAlias.module.replace(/'/g, "\\'");
+		const memberPath = moduleAlias.memberPath ?? [];
+		if (memberPath.length === 0) {
+			return `require('${escaped}')`;
+		}
+		return `require('${escaped}').${memberPath.join('.')}`;
 	}
 
 	private isLocalDefinitionKind(kind: LuaScopedSymbol['kind']): boolean {

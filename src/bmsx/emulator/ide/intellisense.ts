@@ -1,5 +1,4 @@
-import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange, LuaStringLiteralExpression } from '../../lua/syntax/lua_ast';
-import { LuaSyntaxKind, type LuaAssignmentStatement, type LuaCallExpression, type LuaExpression, type LuaIdentifierExpression, type LuaLocalAssignmentStatement, type LuaStatement } from '../../lua/syntax/lua_ast';
+import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange } from '../../lua/syntax/lua_ast';
 import { LuaEnvironment } from '../../lua/luaenvironment';
 import { LuaLexer } from '../../lua/syntax/lualexer';
 import { createIdentifierCanonicalizer } from '../../lua/syntax/identifier_canonicalizer';
@@ -27,7 +26,7 @@ import * as constants from './constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
 import { ide_state } from './ide_state';
 import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from './lua/lua_identifier_chain';
-import { buildLuaSemanticModel, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData } from './semantic_model';
+import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type ModuleAliasEntry } from './semantic_model';
 import { cacheSemanticWorkspaceAnalysis, getOrCreateSemanticWorkspace, prepareSemanticWorkspaceForEditorBuffer, primeSemanticWorkspaceProjectSources, syncSemanticWorkspacePath } from './semantic_workspace_sync';
 import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaCompletionItem, PointerSnapshot } from './types';
@@ -136,89 +135,19 @@ export type LuaScopedSymbolOptions = {
 	path: string;
 };
 
-export function collectLuaModuleAliases(options: LuaScopedSymbolOptions): Map<string, string> {
+export function collectLuaModuleAliases(options: LuaScopedSymbolOptions): Map<string, ModuleAliasEntry> {
 	const parsed = getCachedLuaParse({
 		path: options.path,
 		source: options.source,
 		canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
 	}).parsed;
-	const path = parsed.chunk;
-	const aliases = new Map<string, string>();
-	collectRequireAliasesFromStatements(path.body, aliases);
+	const aliases = new Map<string, ModuleAliasEntry>();
+	const entries = collectModuleAliasEntriesFromChunk(parsed.chunk);
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index]!;
+		aliases.set(entry.alias, entry);
+	}
 	return aliases;
-}
-
-function collectRequireAliasesFromStatements(statements: ReadonlyArray<LuaStatement>, aliases: Map<string, string>): void {
-	for (let index = 0; index < statements.length; index += 1) {
-		const statement = statements[index];
-		switch (statement.kind) {
-			case LuaSyntaxKind.LocalAssignmentStatement:
-				recordLocalRequireAliases(statement as LuaLocalAssignmentStatement, aliases);
-				break;
-			case LuaSyntaxKind.AssignmentStatement:
-				recordGlobalRequireAliases(statement as LuaAssignmentStatement, aliases);
-				break;
-			default:
-				break;
-		}
-	}
-}
-
-function recordLocalRequireAliases(statement: LuaLocalAssignmentStatement, aliases: Map<string, string>): void {
-	if (statement.values.length === 0) {
-		return;
-	}
-	for (let index = 0; index < statement.names.length; index += 1) {
-		const identifier = statement.names[index];
-		const valueIndex = index < statement.values.length ? index : statement.values.length - 1;
-		const moduleName = tryExtractRequireModuleName(statement.values[valueIndex]);
-		if (moduleName) {
-			aliases.set(identifier.name, moduleName);
-		}
-	}
-}
-
-function recordGlobalRequireAliases(statement: LuaAssignmentStatement, aliases: Map<string, string>): void {
-	if (statement.right.length === 0) {
-		return;
-	}
-	for (let index = 0; index < statement.left.length; index += 1) {
-		const target = statement.left[index];
-		if (target.kind !== LuaSyntaxKind.IdentifierExpression) {
-			continue;
-		}
-		const valueIndex = index < statement.right.length ? index : statement.right.length - 1;
-		const moduleName = tryExtractRequireModuleName(statement.right[valueIndex]);
-		if (moduleName) {
-			aliases.set((target as LuaIdentifierExpression).name, moduleName);
-		}
-	}
-}
-
-function tryExtractRequireModuleName(expression: LuaExpression): string {
-	if (expression.kind !== LuaSyntaxKind.CallExpression) {
-		return null;
-	}
-	const call = expression as LuaCallExpression;
-	if (call.methodName) {
-		return null;
-	}
-	const callee = call.callee;
-	if (callee.kind !== LuaSyntaxKind.IdentifierExpression) {
-		return null;
-	}
-	if ((callee as LuaIdentifierExpression).name.toLowerCase() !== 'require') {
-		return null;
-	}
-	if (call.arguments.length === 0) {
-		return null;
-	}
-	const firstArg = call.arguments[0];
-	if (firstArg.kind !== LuaSyntaxKind.StringLiteralExpression) {
-		return null;
-	}
-	const moduleName = (firstArg as LuaStringLiteralExpression).value.trim();
-	return moduleName.length > 0 ? moduleName : null;
 }
 
 export function getKeywordCompletions(): LuaCompletionItem[] {

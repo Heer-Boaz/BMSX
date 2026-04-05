@@ -129,8 +129,12 @@ let maxScheduledDeadlineMs = 0;
 const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 let workspaceFetchBridgeInstalled = false;
 
+function monotonicNowMs(): number {
+	return performance.now();
+}
+
 function trackScheduledDeadline(delayMs: number): void {
-	const deadlineMs = Date.now() + delayMs;
+	const deadlineMs = monotonicNowMs() + delayMs;
 	if (deadlineMs > maxScheduledDeadlineMs) {
 		maxScheduledDeadlineMs = deadlineMs;
 	}
@@ -140,7 +144,7 @@ function getPendingScheduledDelayMs(settleMs = 0): number {
 	if (maxScheduledDeadlineMs <= 0) {
 		return 0;
 	}
-	return Math.max(0, maxScheduledDeadlineMs + settleMs - Date.now());
+	return Math.max(0, maxScheduledDeadlineMs + settleMs - monotonicNowMs());
 }
 
 if (typeof (globalThis as any).Image === 'undefined') {
@@ -648,14 +652,14 @@ function createHeadlessTestApi(
 		check: () => T | false | null | undefined | Promise<T | false | null | undefined>,
 		options: HeadlessPollOptions,
 	): Promise<T> => {
-		const startedAt = Date.now();
+		const startedAt = monotonicNowMs();
 		const pollMs = options.pollMs ?? frameIntervalMs;
 		for (;;) {
 			const result = await check();
 			if (result) {
 				return result;
 			}
-			if (Date.now() - startedAt >= options.timeoutMs) {
+			if (monotonicNowMs() - startedAt >= options.timeoutMs) {
 				fail(`timeout while waiting for ${options.description}`);
 			}
 			await sleep(pollMs);
@@ -1130,7 +1134,8 @@ async function main(): Promise<void> {
 		}
 	}
 	const defaultTtl = 1_000; // minimum 1 second default TTL to allow gameboot and graceful shutdown
-	const minTtl = Math.max(defaultTtl, getPendingScheduledDelayMs(5_000));
+	const pendingExitSettleMs = assertionRunState ? 15_000 : 5_000;
+	const minTtl = Math.max(defaultTtl, getPendingScheduledDelayMs(pendingExitSettleMs));
 	const requestedTtl = typeof cliOptions.ttlMs === 'number' && cliOptions.ttlMs > 0 ? Math.round(cliOptions.ttlMs) : defaultTtl;
 	const ttlMs = Math.max(requestedTtl, minTtl);
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL set to ${ttlMs}ms (min required ${minTtl}ms).`);

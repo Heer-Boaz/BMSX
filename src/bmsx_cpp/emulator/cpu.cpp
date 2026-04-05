@@ -1134,6 +1134,10 @@ Closure* CPU::createRootClosure(int protoIndex) {
 }
 
 void CPU::setProgram(Program* program, ProgramMetadata* metadata) {
+	// Keep slot-backed globals materialized in the globals table before swapping programs.
+	// SETGL/SETSYS write into the slot arrays directly, and append/reload paths rebuild the next
+	// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
+	syncGlobalSlotsToTable();
 	m_program = program;
 	m_metadata = metadata;
 	if (!m_program) {

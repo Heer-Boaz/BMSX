@@ -3,11 +3,13 @@ import { test } from 'node:test';
 
 import { LuaLexer } from '../../src/bmsx/lua/syntax/lualexer';
 import { LuaParser } from '../../src/bmsx/lua/syntax/luaparser';
-import { OpCode, type Proto } from '../../src/bmsx/emulator/cpu';
+import { CPU, OpCode, RunResult, Table, createNativeFunction, type Proto } from '../../src/bmsx/emulator/cpu';
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../src/bmsx/emulator/instruction_format';
-import { compileLuaChunkToProgram } from '../../src/bmsx/emulator/program_compiler';
+import { appendLuaChunkToProgram, compileLuaChunkToProgram } from '../../src/bmsx/emulator/program_compiler';
 import type { ProgramAsset, ProgramConstReloc } from '../../src/bmsx/emulator/program_asset';
 import { linkProgramAssets } from '../../src/bmsx/emulator/program_linker';
+import { Memory } from '../../src/bmsx/emulator/memory';
+import { isStringValue, stringValueToString } from '../../src/bmsx/emulator/string_pool';
 
 type EncodedWord = {
 	op: OpCode;
@@ -17,9 +19,9 @@ type EncodedWord = {
 	ext?: number;
 };
 
-function parseChunk(source: string) {
-	const lexer = new LuaLexer(source, 'test.lua');
-	const parser = new LuaParser(lexer.scanTokens(), 'test.lua', source);
+function parseChunk(source: string, path: string = 'test.lua') {
+	const lexer = new LuaLexer(source, path);
+	const parser = new LuaParser(lexer.scanTokens(), path, source);
 	return parser.parseChunk();
 }
 
@@ -127,6 +129,51 @@ function collectOps(code: Uint8Array): OpCode[] {
 	return ops;
 }
 
+function collectProtoOps(program: { code: Uint8Array; protos: Proto[] }, protoIndex: number): OpCode[] {
+	const proto = program.protos[protoIndex];
+	const startWord = proto.entryPC / INSTRUCTION_BYTES;
+	const wordCount = proto.codeLen / INSTRUCTION_BYTES;
+	const ops: OpCode[] = [];
+	for (let index = 0; index < wordCount; index += 1) {
+		ops.push(((readInstructionWord(program.code, startWord + index) >>> 18) & 0x3f) as OpCode);
+	}
+	return ops;
+}
+
+function collectProtoGlobalNames(
+	program: { code: Uint8Array; protos: Proto[] },
+	globalNames: ReadonlyArray<string>,
+	protoIndex: number,
+	opcode: OpCode,
+): string[] {
+	const proto = program.protos[protoIndex];
+	const startWord = proto.entryPC / INSTRUCTION_BYTES;
+	const wordCount = proto.codeLen / INSTRUCTION_BYTES;
+	const names: string[] = [];
+	for (let index = 0; index < wordCount; index += 1) {
+		const wordIndex = startWord + index;
+		const word = readInstructionWord(program.code, wordIndex);
+		const op = ((word >>> 18) & 0x3f) as OpCode;
+		if (op !== opcode) {
+			continue;
+		}
+		const ext = word >>> 24;
+		const bLow = (word >>> 6) & 0x3f;
+		const cLow = word & 0x3f;
+		let wideB = 0;
+		if (wordIndex > startWord) {
+			const prevWord = readInstructionWord(program.code, wordIndex - 1);
+			const prevOp = ((prevWord >>> 18) & 0x3f) as OpCode;
+			if (prevOp === OpCode.WIDE) {
+				wideB = (prevWord >>> 6) & 0x3f;
+			}
+		}
+		const slot = (wideB << 20) | (ext << 12) | ((bLow << 6) | cLow);
+		names.push(globalNames[slot]);
+	}
+	return names;
+}
+
 test('ProgramCompiler emits WIDE before LOADK const sites', () => {
 	const source = 'local a = "hello"\nreturn a';
 	const chunk = parseChunk(source);
@@ -220,6 +267,141 @@ test('ProgramCompiler does not confuse shadowed locals with outer const bindings
 	const chunk = parseChunk(source);
 	const compiled = compileLuaChunkToProgram(chunk, [], { entrySource: source });
 	assert.ok(compiled.program.code.length > 0);
+});
+
+test('ProgramCompiler rewrites const require member access to flattened GETGL slots', () => {
+	const moduleSource = [
+		'local mod<const> = {}',
+		'function mod.foo()',
+		'\treturn 1',
+		'end',
+		'return mod',
+	].join('\n');
+	const entrySource = [
+		'local mod<const> = require("mod")',
+		'return mod.foo()',
+	].join('\n');
+	const compiled = compileLuaChunkToProgram(
+		parseChunk(entrySource, 'cart.lua'),
+		[{ path: 'mod.lua', chunk: parseChunk(moduleSource, 'mod.lua'), source: moduleSource }],
+		{ entrySource },
+	);
+	const entryLoads = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, compiled.entryProtoIndex, OpCode.GETGL);
+	const entryOps = collectProtoOps(compiled.program, compiled.entryProtoIndex);
+	assert.ok(entryLoads.includes('mod__foo'));
+	assert.equal(entryOps.includes(OpCode.GETFIELD), false);
+	assert.equal(entryOps.includes(OpCode.SELF), false);
+});
+
+test('ProgramCompiler emits module export slot stores from module returns', () => {
+	const moduleSource = [
+		'local constants<const> = {}',
+		'constants.room = { tile_size = 8 }',
+		'return constants',
+	].join('\n');
+	const entrySource = [
+		'local constants<const> = require("constants")',
+		'local room<const> = constants.room',
+		'return room.tile_size',
+	].join('\n');
+	const compiled = compileLuaChunkToProgram(
+		parseChunk(entrySource, 'cart.lua'),
+		[{ path: 'constants.lua', chunk: parseChunk(moduleSource, 'constants.lua'), source: moduleSource }],
+		{ entrySource },
+	);
+	const moduleProtoIndex = compiled.moduleProtoMap.get('constants.lua');
+	assert.notEqual(moduleProtoIndex, undefined);
+	const moduleStores = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, moduleProtoIndex!, OpCode.SETGL);
+	const entryLoads = collectProtoGlobalNames(compiled.program, compiled.metadata.globalNames, compiled.entryProtoIndex, OpCode.GETGL);
+	const entryOps = collectProtoOps(compiled.program, compiled.entryProtoIndex);
+	assert.ok(moduleStores.includes('constants__room'));
+	assert.ok(moduleStores.includes('constants__room__tile_size'));
+	assert.ok(entryLoads.includes('constants__room'));
+	assert.ok(entryLoads.includes('constants__room__tile_size'));
+	assert.equal(entryOps.includes(OpCode.GETFIELD), false);
+});
+
+test('flattened module export slots stay in sync with runtime require results', () => {
+	const moduleSource = [
+		'local constants<const> = {}',
+		'constants.room = { tile_size = 8 }',
+		'return constants',
+	].join('\n');
+	const entrySource = [
+		'local constants<const> = require("constants")',
+		'local room<const> = constants.room',
+		'return room.tile_size, constants.room',
+	].join('\n');
+	const compiled = compileLuaChunkToProgram(
+		parseChunk(entrySource, 'cart.lua'),
+		[{ path: 'constants.lua', chunk: parseChunk(moduleSource, 'constants.lua'), source: moduleSource }],
+		{ entrySource },
+	);
+	const memory = new Memory({ engineRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	cpu.setProgram(compiled.program, compiled.metadata);
+	const requireFn = createNativeFunction('require', (args, out) => {
+		assert.ok(isStringValue(args[0]));
+		const moduleName = stringValueToString(args[0]);
+		assert.equal(moduleName, 'constants');
+		const protoIndex = compiled.moduleProtoMap.get('constants.lua');
+		assert.notEqual(protoIndex, undefined);
+		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
+		assert.equal(cpu.run(100000), RunResult.Halted);
+		out.push(cpu.lastReturnValues[0] ?? null);
+	});
+	cpu.setGlobalByKey(cpu.getStringPool().intern('require'), requireFn);
+	cpu.start(compiled.entryProtoIndex);
+	assert.equal(cpu.run(100000), RunResult.Halted);
+	assert.equal(cpu.lastReturnValues[0], 8);
+	const room = cpu.lastReturnValues[1];
+	assert.ok(room instanceof Table);
+	assert.equal(room.getStringKey(cpu.getStringPool().intern('tile_size')), 8);
+	assert.equal(cpu.getGlobalByKey(cpu.getStringPool().intern('constants__room__tile_size')), 8);
+});
+
+test('flattened module export slots survive program append swaps', () => {
+	const moduleSource = [
+		'local constants<const> = {}',
+		'constants.room = { tile_size = 8 }',
+		'return constants',
+	].join('\n');
+	const entrySource = [
+		'local constants<const> = require("constants")',
+		'return constants.room.tile_size',
+	].join('\n');
+	const compiled = compileLuaChunkToProgram(
+		parseChunk(entrySource, 'cart.lua'),
+		[{ path: 'constants.lua', chunk: parseChunk(moduleSource, 'constants.lua'), source: moduleSource }],
+		{ entrySource },
+	);
+	const memory = new Memory({ engineRom: new Uint8Array(0) });
+	const cpu = new CPU(memory);
+	cpu.setProgram(compiled.program, compiled.metadata);
+	const requireFn = createNativeFunction('require', (args, out) => {
+		assert.ok(isStringValue(args[0]));
+		assert.equal(stringValueToString(args[0]), 'constants');
+		const protoIndex = compiled.moduleProtoMap.get('constants.lua');
+		assert.notEqual(protoIndex, undefined);
+		cpu.call({ protoIndex: protoIndex!, upvalues: [] }, []);
+		assert.equal(cpu.run(100000), RunResult.Halted);
+		out.push(cpu.lastReturnValues[0] ?? null);
+	});
+	cpu.setGlobalByKey(cpu.getStringPool().intern('require'), requireFn);
+	cpu.start(compiled.entryProtoIndex);
+	assert.equal(cpu.run(100000), RunResult.Halted);
+	const slotKey = cpu.getStringPool().intern('constants__room__tile_size');
+	assert.equal(cpu.getGlobalByKey(slotKey), 8);
+
+	const consoleSource = 'return 1';
+	const appended = appendLuaChunkToProgram(
+		compiled.program,
+		compiled.metadata,
+		parseChunk(consoleSource, 'console'),
+		{ entrySource: consoleSource },
+	);
+	cpu.setProgram(appended.program, appended.metadata);
+	assert.equal(cpu.getGlobalByKey(slotKey), 8);
 });
 
 test('ProgramLinker patches Bx relocations against large engine const pools', () => {

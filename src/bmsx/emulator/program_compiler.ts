@@ -11,17 +11,20 @@ import {
 	type LuaChunk,
 	type LuaExpression,
 	type LuaForGenericStatement,
+	type LuaFunctionDeclarationStatement,
 	type LuaFunctionExpression,
 	type LuaIdentifierExpression,
 	type LuaIfStatement,
 	type LuaIndexExpression,
 	type LuaLabelStatement,
 	type LuaLocalAssignmentStatement,
+	type LuaLocalFunctionStatement,
 	type LuaMemberExpression,
 	type LuaNumericLiteralExpression,
 	type LuaStatement,
 	type LuaBooleanLiteralExpression,
 	type LuaStringLiteralExpression,
+	type LuaReturnStatement,
 	type LuaUnaryExpression,
 	type LuaSourceRange,
 	type LuaTableConstructorExpression,
@@ -31,7 +34,7 @@ import {
 import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
 import { MemoryAccessKind, OpCode, type Program, type ProgramMetadata, type Proto, type UpvalueDesc, type Value, type SourceRange, type LocalSlotDebug } from './cpu';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './program_optimizer';
-import type { ProgramConstReloc } from './program_asset';
+import { buildModuleAliasesFromPaths, type ProgramConstReloc } from './program_asset';
 import { StringPool, StringValue, isStringValue } from './string_pool';
 import type { CanonicalizationType } from '../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from './instruction_format';
@@ -97,6 +100,29 @@ type LocalBinding = {
 	constValue: Value | null;
 	hasConstValue: boolean;
 	constClosureProtoIndex: number | null;
+	moduleBinding: ModuleBinding | null;
+};
+
+type ModuleBinding = {
+	modulePath: string;
+	exportPath: string[];
+};
+
+type ModuleExportNode = {
+	slotName: string | null;
+	children: Map<string, ModuleExportNode>;
+};
+
+type ModuleCompileInfo = {
+	path: string;
+	returnExpression: LuaExpression;
+	exportRoot: ModuleExportNode;
+	exportSlotsByPathKey: Map<string, string>;
+};
+
+type ModuleCompileContext = {
+	moduleAliasMap: Map<string, string>;
+	modulesByPath: Map<string, ModuleCompileInfo>;
 };
 
 const IMPLICIT_SELF_SYMBOL_HANDLE = '$implicit:self';
@@ -465,6 +491,8 @@ class FunctionBuilder {
 	private readonly semantics: LuaSemanticFrontendFile;
 	private readonly moduleId: string;
 	private readonly protoId: string;
+	private readonly moduleCompileContext: ModuleCompileContext | null;
+	private readonly moduleCompileInfo: ModuleCompileInfo | null;
 	private readonly canonicalizeIdentifier: (value: string) => string;
 	private readonly code: Instruction[] = [];
 	private readonly ranges: Array<SourceRange | null> = [];
@@ -486,12 +514,24 @@ class FunctionBuilder {
 	private maxStack = 0;
 	private localFunctionCounters = new Map<string, number>();
 
-	constructor(program: ProgramBuilder, parent: FunctionBuilder | null, params: { moduleId: string; protoId: string; semantics: LuaSemanticFrontendFile }) {
+	constructor(
+		program: ProgramBuilder,
+		parent: FunctionBuilder | null,
+		params: {
+			moduleId: string;
+			protoId: string;
+			semantics: LuaSemanticFrontendFile;
+			moduleCompileContext?: ModuleCompileContext | null;
+			moduleCompileInfo?: ModuleCompileInfo | null;
+		},
+	) {
 		this.program = program;
 		this.parent = parent;
 		this.semantics = params.semantics;
 		this.moduleId = params.moduleId;
 		this.protoId = params.protoId;
+		this.moduleCompileContext = params.moduleCompileContext ?? parent?.moduleCompileContext ?? null;
+		this.moduleCompileInfo = params.moduleCompileInfo ?? null;
 		this.canonicalizeIdentifier = program.canonicalizeIdentifier;
 	}
 
@@ -814,6 +854,7 @@ class FunctionBuilder {
 		constValue: Value | null = null,
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
+		moduleBinding: ModuleBinding | null = null,
 	): number {
 		const canonicalName = this.canonicalizeName(name);
 		if (this.getMemoryAccessKindForCanonicalName(canonicalName) !== null) {
@@ -838,6 +879,7 @@ class FunctionBuilder {
 			constValue,
 			hasConstValue,
 			constClosureProtoIndex,
+			moduleBinding,
 		};
 		this.localBindings.set(symbolHandle, binding);
 		const scope = this.scopeStack[this.scopeStack.length - 1];
@@ -859,11 +901,12 @@ class FunctionBuilder {
 		constValue: Value | null = null,
 		hasConstValue = false,
 		constClosureProtoIndex: number | null = null,
+		moduleBinding: ModuleBinding | null = null,
 	): number {
 		const kind = decl.kind === 'constant'
 			? 'const'
 			: (decl.kind === 'parameter' ? 'parameter' : 'local');
-		return this.declareLocal(decl.id, decl.name, definitionRange, scopeRange, kind, constValue, hasConstValue, constClosureProtoIndex);
+		return this.declareLocal(decl.id, decl.name, definitionRange, scopeRange, kind, constValue, hasConstValue, constClosureProtoIndex, moduleBinding);
 	}
 
 	private declareImplicitSelf(definitionRange: LuaSourceRange, scopeRange?: LuaSourceRange): number {
@@ -1014,6 +1057,117 @@ class FunctionBuilder {
 		return this.resolveCompileTimeConstClosureBinding(symbolHandle);
 	}
 
+	private resolveRequiredModulePath(moduleName: string): string | null {
+		if (!this.moduleCompileContext) {
+			return null;
+		}
+		const canonicalName = this.canonicalizeName(moduleName);
+		return this.moduleCompileContext.moduleAliasMap.get(moduleName)
+			?? this.moduleCompileContext.moduleAliasMap.get(canonicalName)
+			?? null;
+	}
+
+	private resolveModuleCompileInfo(path: string): ModuleCompileInfo | null {
+		if (!this.moduleCompileContext) {
+			return null;
+		}
+		return this.moduleCompileContext.modulesByPath.get(path) ?? null;
+	}
+
+	private resolveModuleExportSlotName(modulePath: string, exportPath: ReadonlyArray<string>): string | null {
+		const moduleInfo = this.resolveModuleCompileInfo(modulePath);
+		if (!moduleInfo) {
+			return null;
+		}
+		return moduleInfo.exportSlotsByPathKey.get(buildModuleExportPathKey(exportPath)) ?? null;
+	}
+
+	private tryResolveRequireModuleBinding(expression: LuaExpression): ModuleBinding | null {
+		if (expression.kind !== LuaSyntaxKind.CallExpression) {
+			return null;
+		}
+		const call = expression as LuaCallExpression;
+		if (call.methodName !== null || call.arguments.length !== 1 || call.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return null;
+		}
+		const callee = call.callee as LuaIdentifierExpression;
+		if (this.canonicalizeName(callee.name) !== 'require') {
+			return null;
+		}
+		if (call.arguments[0].kind !== LuaSyntaxKind.StringLiteralExpression) {
+			return null;
+		}
+		const modulePath = this.resolveRequiredModulePath((call.arguments[0] as LuaStringLiteralExpression).value);
+		if (!modulePath) {
+			return null;
+		}
+		return {
+			modulePath,
+			exportPath: [],
+		};
+	}
+
+	private tryResolveStaticModuleBinding(expression: LuaExpression, allowRequireRoot: boolean): ModuleBinding | null {
+		if (allowRequireRoot) {
+			const requireBinding = this.tryResolveRequireModuleBinding(expression);
+			if (requireBinding !== null) {
+				return requireBinding;
+			}
+		}
+		if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+			const binding = this.resolveReferenceVisibleBinding(this.getIdentifierReference(expression as LuaIdentifierExpression));
+			if (!binding || binding.moduleBinding === null) {
+				return null;
+			}
+			return binding.moduleBinding;
+		}
+		if (expression.kind !== LuaSyntaxKind.MemberExpression && expression.kind !== LuaSyntaxKind.IndexExpression) {
+			return null;
+		}
+		const baseExpression = expression.kind === LuaSyntaxKind.MemberExpression
+			? (expression as LuaMemberExpression).base
+			: (expression as LuaIndexExpression).base;
+		const baseBinding = this.tryResolveStaticModuleBinding(baseExpression, allowRequireRoot);
+		if (!baseBinding) {
+			return null;
+		}
+		const key = expression.kind === LuaSyntaxKind.MemberExpression
+			? this.canonicalizeName((expression as LuaMemberExpression).identifier)
+			: this.tryGetModuleExportStaticKey((expression as LuaIndexExpression).index);
+		if (!key) {
+			return null;
+		}
+		const exportPath = baseBinding.exportPath.concat(key);
+		if (!this.resolveModuleExportSlotName(baseBinding.modulePath, exportPath)) {
+			return null;
+		}
+		return {
+			modulePath: baseBinding.modulePath,
+			exportPath,
+		};
+	}
+
+	private tryGetModuleExportStaticKey(expression: LuaExpression): string | null {
+		const key = extractTableKeyFromExpression(expression);
+		return key ? this.canonicalizeName(key) : null;
+	}
+
+	private tryResolveModuleExportSlotFromExpression(expression: LuaExpression): string | null {
+		const binding = this.tryResolveStaticModuleBinding(expression, false);
+		if (!binding || binding.exportPath.length === 0) {
+			return null;
+		}
+		return this.resolveModuleExportSlotName(binding.modulePath, binding.exportPath);
+	}
+
+	private tryResolveModuleExportMethodSlot(baseExpression: LuaExpression, methodName: string): string | null {
+		const binding = this.tryResolveStaticModuleBinding(baseExpression, false);
+		if (!binding) {
+			return null;
+		}
+		return this.resolveModuleExportSlotName(binding.modulePath, binding.exportPath.concat(methodName));
+	}
+
 	private emitReferenceLoad(reference: LuaBoundReference, target: number): void {
 		const name = this.getReferenceCanonicalName(reference);
 		const constBinding = this.resolveReferenceConstBinding(reference);
@@ -1044,6 +1198,36 @@ class FunctionBuilder {
 		}
 		const access = this.program.resolveGlobalAccess(name);
 		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
+	}
+
+	private emitModuleExportLoad(slotName: string, target: number): void {
+		const access = this.program.resolveGlobalAccess(slotName);
+		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
+	}
+
+	private emitModuleExportStore(slotName: string, valueReg: number): void {
+		const access = this.program.resolveGlobalAccess(slotName);
+		this.emitABx(access.system ? OpCode.SETSYS : OpCode.SETGL, valueReg, access.slot);
+	}
+
+	private emitModuleExportGlobalStores(baseReg: number, exportRoot: ModuleExportNode): void {
+		const tempBase = this.tempTop;
+		this.emitModuleExportGlobalStoreChildren(baseReg, exportRoot);
+		this.tempTop = tempBase;
+	}
+
+	private emitModuleExportGlobalStoreChildren(baseReg: number, node: ModuleExportNode): void {
+		for (const [key, child] of node.children) {
+			const childReg = this.allocTemp();
+			const keyConst = this.program.constIndexString(key);
+			this.emitTableGetConst(childReg, baseReg, keyConst);
+			if (child.slotName !== null) {
+				this.emitModuleExportStore(child.slotName, childReg);
+			}
+			if (child.children.size > 0) {
+				this.emitModuleExportGlobalStoreChildren(childReg, child);
+			}
+		}
 	}
 
 	private emitReferenceStore(reference: LuaBoundReference, valueReg: number): void {
@@ -1553,10 +1737,17 @@ class FunctionBuilder {
 		const valueRegs: Array<number | undefined> = new Array(names.length);
 		const initializerValues: Array<Value | undefined> = new Array(names.length);
 		const initializerClosureProtoIndices: Array<number | undefined> = new Array(names.length);
+		const initializerModuleBindings: Array<ModuleBinding | undefined> = new Array(names.length);
 		if (values.length > 0) {
 			const lastIndex = values.length - 1;
 			for (let i = 0; i < lastIndex; i += 1) {
 				const expr = values[i];
+				if (i < names.length && attributes[i] === 'const') {
+					const moduleBinding = this.tryResolveStaticModuleBinding(expr, true);
+					if (moduleBinding !== null) {
+						initializerModuleBindings[i] = moduleBinding;
+					}
+				}
 				const constantValue = this.evaluateCompileTimeExpression(expr);
 				if (constantValue !== undefined) {
 					if (i < names.length) {
@@ -1582,6 +1773,12 @@ class FunctionBuilder {
 			const lastExpr = values[lastIndex];
 			const remaining = names.length - lastIndex;
 			const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);
+			if (lastIndex < names.length && attributes[lastIndex] === 'const' && !wantsMulti) {
+				const moduleBinding = this.tryResolveStaticModuleBinding(lastExpr, true);
+				if (moduleBinding !== null) {
+					initializerModuleBindings[lastIndex] = moduleBinding;
+				}
+			}
 			const constantValue = this.evaluateCompileTimeExpression(lastExpr);
 			if (constantValue !== undefined && !wantsMulti) {
 				if (lastIndex < names.length) {
@@ -1622,6 +1819,7 @@ class FunctionBuilder {
 			}
 			const initializerValue = initializerValues[i];
 			const initializerClosureProtoIndex = attribute === 'const' ? initializerClosureProtoIndices[i] ?? null : null;
+			const initializerModuleBinding = attribute === 'const' ? initializerModuleBindings[i] ?? null : null;
 			const target = this.declareLocal(
 				decl.id,
 				decl.name,
@@ -1631,6 +1829,7 @@ class FunctionBuilder {
 				initializerValue ?? null,
 				initializerValue !== undefined && attribute === 'const',
 				initializerClosureProtoIndex,
+				initializerModuleBinding,
 			);
 			if (initializerValue !== undefined) {
 				this.emitLoadConst(target, initializerValue);
@@ -1851,6 +2050,9 @@ class FunctionBuilder {
 		const wantsMulti = expressions.length === 1 && this.isMultiReturnExpression(expressions[0]);
 		if (expressions.length === 1) {
 			this.compileExpressionInto(expressions[0], base, wantsMulti ? 0 : 1);
+			if (!wantsMulti && this.moduleCompileInfo !== null && expressions[0] === this.moduleCompileInfo.returnExpression) {
+				this.emitModuleExportGlobalStores(base, this.moduleCompileInfo.exportRoot);
+			}
 			this.emitABC(OpCode.RET, base, wantsMulti ? 0 : 1, 0);
 			return;
 		}
@@ -2184,6 +2386,11 @@ class FunctionBuilder {
 	}
 
 	private compileMemberExpression(expression: any, target: number): void {
+		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaMemberExpression);
+		if (slotName !== null) {
+			this.emitModuleExportLoad(slotName, target);
+			return;
+		}
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
 		const key = this.program.constIndexString(this.canonicalizeName(expression.identifier));
@@ -2191,6 +2398,11 @@ class FunctionBuilder {
 	}
 
 	private compileIndexExpression(expression: any, target: number): void {
+		const slotName = this.tryResolveModuleExportSlotFromExpression(expression as LuaIndexExpression);
+		if (slotName !== null) {
+			this.emitModuleExportLoad(slotName, target);
+			return;
+		}
 		const memoryTarget = this.tryCompileMemoryTarget(expression as LuaIndexExpression);
 		if (memoryTarget !== null) {
 			this.emitMemoryLoad(target, memoryTarget.accessKind, memoryTarget.addrConst, memoryTarget.addrReg);
@@ -2559,6 +2771,7 @@ class FunctionBuilder {
 		}
 		const methodName = expression.methodName !== null ? this.canonicalizeName(expression.methodName) : null;
 		const hasMethod = methodName && methodName.length > 0;
+		const moduleMethodSlot = hasMethod ? this.tryResolveModuleExportMethodSlot(expression.callee, methodName) : null;
 		const constClosureBinding = !hasMethod && expression.callee.kind === LuaSyntaxKind.IdentifierExpression
 			? this.resolveReferenceConstClosureBinding(this.getIdentifierReference(expression.callee as LuaIdentifierExpression))
 			: null;
@@ -2576,7 +2789,14 @@ class FunctionBuilder {
 		if (useTarget) {
 			this.reserveTempRange(callBase, requiredSlots);
 		}
-		if (hasMethod) {
+		if (moduleMethodSlot !== null) {
+			this.emitModuleExportLoad(moduleMethodSlot, callBase);
+			const selfReg = this.allocTemp();
+			this.compileExpressionInto(expression.callee, selfReg, 1);
+			if (selfReg !== callBase + 1) {
+				this.emitABC(OpCode.MOV, callBase + 1, selfReg, 0);
+			}
+		} else if (hasMethod) {
 			this.reserveTempRange(callBase, 2);
 			this.compileExpressionInto(expression.callee, callBase, 1);
 			const methodKey = this.program.constIndexString(methodName);
@@ -2721,6 +2941,295 @@ const extractAssignmentPath = (expression: LuaAssignableExpression): string[] | 
 		default:
 			return null;
 	}
+};
+
+const createModuleExportNode = (slotName: string | null = null): ModuleExportNode => ({
+	slotName,
+	children: new Map<string, ModuleExportNode>(),
+});
+
+const cloneModuleExportNode = (node: ModuleExportNode): ModuleExportNode => {
+	const clone = createModuleExportNode(node.slotName);
+	for (const [key, child] of node.children) {
+		clone.children.set(key, cloneModuleExportNode(child));
+	}
+	return clone;
+};
+
+const buildModuleExportPathKey = (path: ReadonlyArray<string>): string =>
+	path.join('.');
+
+const stripLuaExtension = (path: string): string =>
+	path.toLowerCase().endsWith('.lua') ? path.slice(0, path.length - 4) : path;
+
+const stripModuleSourcePrefix = (path: string): string => {
+	const normalized = stripLuaExtension(path.replace(/\\/g, '/'));
+	if (normalized.startsWith('src/carts/')) {
+		const parts = normalized.split('/');
+		return parts.length > 3 ? parts.slice(3).join('/') : parts[parts.length - 1];
+	}
+	if (normalized.startsWith('src/bmsx/res/')) {
+		return normalized.slice('src/bmsx/res/'.length);
+	}
+	return normalized;
+};
+
+const sanitizeModuleSlotSegment = (value: string, canonicalizeName: (value: string) => string): string => {
+	const canonical = canonicalizeName(value);
+	return canonical.replace(/[^A-Za-z0-9_]/g, '_');
+};
+
+const buildModuleSlotPrefix = (modulePath: string, canonicalizeName: (value: string) => string): string => {
+	const compactPath = stripModuleSourcePrefix(modulePath);
+	const parts = compactPath.split('/').filter(part => part.length > 0);
+	const normalizedParts = parts.length > 0 ? parts : [compactPath];
+	return normalizedParts.map(part => sanitizeModuleSlotSegment(part, canonicalizeName)).join('__');
+};
+
+const buildModuleExportSlotName = (
+	modulePath: string,
+	exportPath: ReadonlyArray<string>,
+	canonicalizeName: (value: string) => string,
+): string =>
+	[buildModuleSlotPrefix(modulePath, canonicalizeName), ...exportPath.map(part => sanitizeModuleSlotSegment(part, canonicalizeName))].join('__');
+
+const resolveStaticModuleShapePath = (
+	expression: LuaExpression,
+	localShapes: ReadonlyMap<string, ModuleExportNode>,
+	canonicalizeName: (value: string) => string,
+): ModuleExportNode | null => {
+	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+		const identifier = expression as LuaIdentifierExpression;
+		const shape = localShapes.get(canonicalizeName(identifier.name));
+		return shape ? cloneModuleExportNode(shape) : null;
+	}
+	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+		const member = expression as LuaMemberExpression;
+		const baseShape = resolveStaticModuleShapePath(member.base, localShapes, canonicalizeName);
+		if (!baseShape) {
+			return null;
+		}
+		const child = baseShape.children.get(canonicalizeName(member.identifier));
+		return child ? cloneModuleExportNode(child) : null;
+	}
+	if (expression.kind === LuaSyntaxKind.IndexExpression) {
+		const indexExpr = expression as LuaIndexExpression;
+		const baseShape = resolveStaticModuleShapePath(indexExpr.base, localShapes, canonicalizeName);
+		if (!baseShape) {
+			return null;
+		}
+		const key = extractTableKeyFromExpression(indexExpr.index);
+		if (!key) {
+			return null;
+		}
+		const child = baseShape.children.get(canonicalizeName(key));
+		return child ? cloneModuleExportNode(child) : null;
+	}
+	return null;
+};
+
+const buildModuleShapeFromExpression = (
+	expression: LuaExpression,
+	localShapes: ReadonlyMap<string, ModuleExportNode>,
+	canonicalizeName: (value: string) => string,
+): ModuleExportNode | null => {
+	if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
+		const table = expression as LuaTableConstructorExpression;
+		const node = createModuleExportNode();
+		for (let index = 0; index < table.fields.length; index += 1) {
+			const field = table.fields[index];
+			if (field.kind === LuaTableFieldKind.Array) {
+				continue;
+			}
+			const key = field.kind === LuaTableFieldKind.IdentifierKey
+				? field.name
+				: extractTableKeyFromExpression(field.key);
+			if (!key) {
+				continue;
+			}
+			node.children.set(
+				canonicalizeName(key),
+				buildModuleShapeFromExpression(field.value, localShapes, canonicalizeName) ?? createModuleExportNode(),
+			);
+		}
+		return node;
+	}
+	return resolveStaticModuleShapePath(expression, localShapes, canonicalizeName);
+};
+
+const assignModuleShapePath = (
+	root: ModuleExportNode,
+	path: ReadonlyArray<string>,
+	value: ModuleExportNode,
+): void => {
+	if (path.length === 0) {
+		root.children = cloneModuleExportNode(value).children;
+		return;
+	}
+	let cursor = root;
+	for (let index = 0; index < path.length - 1; index += 1) {
+		const key = path[index];
+		let child = cursor.children.get(key);
+		if (!child) {
+			child = createModuleExportNode();
+			cursor.children.set(key, child);
+		}
+		cursor = child;
+	}
+	cursor.children.set(path[path.length - 1], cloneModuleExportNode(value));
+};
+
+const buildTopLevelLocalModuleShapes = (
+	chunk: LuaChunk,
+	canonicalizeName: (value: string) => string,
+): Map<string, ModuleExportNode> => {
+	const localShapes = new Map<string, ModuleExportNode>();
+	for (let index = 0; index < chunk.body.length; index += 1) {
+		const statement = chunk.body[index];
+		if (statement.kind === LuaSyntaxKind.LocalAssignmentStatement) {
+			const localAssignment = statement as LuaLocalAssignmentStatement;
+			const values = localAssignment.values;
+			for (let nameIndex = 0; nameIndex < localAssignment.names.length; nameIndex += 1) {
+				const value = values[nameIndex];
+				if (!value) {
+					continue;
+				}
+				const shape = buildModuleShapeFromExpression(value, localShapes, canonicalizeName);
+				if (!shape) {
+					continue;
+				}
+				localShapes.set(canonicalizeName(localAssignment.names[nameIndex].name), shape);
+			}
+			continue;
+		}
+		if (statement.kind === LuaSyntaxKind.AssignmentStatement) {
+			const assignment = statement as LuaAssignmentStatement;
+			if (assignment.operator !== LuaAssignmentOperator.Assign) {
+				continue;
+			}
+			for (let targetIndex = 0; targetIndex < assignment.left.length; targetIndex += 1) {
+				const left = assignment.left[targetIndex];
+				const path = extractAssignmentPath(left);
+				if (!path || path.length === 0) {
+					continue;
+				}
+				const rootName = canonicalizeName(path[0]);
+				const rootShape = localShapes.get(rootName);
+				if (!rootShape) {
+					continue;
+				}
+				const right = assignment.right[targetIndex];
+				if (!right) {
+					continue;
+				}
+				const shape = buildModuleShapeFromExpression(right, localShapes, canonicalizeName) ?? createModuleExportNode();
+				assignModuleShapePath(rootShape, path.slice(1).map(canonicalizeName), shape);
+			}
+			continue;
+		}
+		if (statement.kind === LuaSyntaxKind.FunctionDeclarationStatement) {
+			const declaration = statement as LuaFunctionDeclarationStatement;
+			if (declaration.name.identifiers.length === 0) {
+				continue;
+			}
+			const rootName = canonicalizeName(declaration.name.identifiers[0]);
+			const rootShape = localShapes.get(rootName);
+			if (!rootShape) {
+				continue;
+			}
+			const path = declaration.name.identifiers.slice(1).map(canonicalizeName);
+			if (declaration.name.methodName && declaration.name.methodName.length > 0) {
+				path.push(canonicalizeName(declaration.name.methodName));
+			}
+			if (path.length === 0) {
+				continue;
+			}
+			assignModuleShapePath(rootShape, path, createModuleExportNode());
+			continue;
+		}
+		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
+			const declaration = statement as LuaLocalFunctionStatement;
+			const existing = localShapes.get(canonicalizeName(declaration.name.name));
+			if (existing) {
+				localShapes.set(canonicalizeName(declaration.name.name), existing);
+			}
+		}
+	}
+	return localShapes;
+};
+
+const buildModuleCompileInfo = (
+	modulePath: string,
+	chunk: LuaChunk,
+	canonicalizeName: (value: string) => string,
+): ModuleCompileInfo | null => {
+	if (chunk.body.length === 0) {
+		return null;
+	}
+	const lastStatement = chunk.body[chunk.body.length - 1];
+	if (lastStatement.kind !== LuaSyntaxKind.ReturnStatement) {
+		return null;
+	}
+	const returnStatement = lastStatement as LuaReturnStatement;
+	if (returnStatement.expressions.length !== 1) {
+		return null;
+	}
+	const localShapes = buildTopLevelLocalModuleShapes(chunk, canonicalizeName);
+	const exportRoot = buildModuleShapeFromExpression(returnStatement.expressions[0], localShapes, canonicalizeName);
+	if (!exportRoot || exportRoot.children.size === 0) {
+		return null;
+	}
+	const exportSlotsByPathKey = new Map<string, string>();
+	const assignSlots = (node: ModuleExportNode, path: string[]): void => {
+		for (const [key, child] of node.children) {
+			const childPath = path.concat(key);
+			child.slotName = buildModuleExportSlotName(modulePath, childPath, canonicalizeName);
+			exportSlotsByPathKey.set(buildModuleExportPathKey(childPath), child.slotName);
+			assignSlots(child, childPath);
+		}
+	};
+	assignSlots(exportRoot, []);
+	return {
+		path: modulePath,
+		returnExpression: returnStatement.expressions[0],
+		exportRoot,
+		exportSlotsByPathKey,
+	};
+};
+
+const buildModuleCompileContext = (
+	entryChunk: LuaChunk,
+	modules: ReadonlyArray<ProgramModule>,
+	canonicalizeName: (value: string) => string,
+): ModuleCompileContext => {
+	const modulePaths = [entryChunk.range.path];
+	for (let index = 0; index < modules.length; index += 1) {
+		modulePaths.push(modules[index].path);
+	}
+	const moduleAliasEntries = buildModuleAliasesFromPaths(modulePaths);
+	const moduleAliasMap = new Map<string, string>();
+	for (let index = 0; index < moduleAliasEntries.length; index += 1) {
+		const entry = moduleAliasEntries[index];
+		if (!moduleAliasMap.has(entry.alias)) {
+			moduleAliasMap.set(entry.alias, entry.path);
+		}
+		const canonicalAlias = canonicalizeName(entry.alias);
+		if (!moduleAliasMap.has(canonicalAlias)) {
+			moduleAliasMap.set(canonicalAlias, entry.path);
+		}
+	}
+	const modulesByPath = new Map<string, ModuleCompileInfo>();
+	for (let index = 0; index < modules.length; index += 1) {
+		const module = modules[index];
+		const info = buildModuleCompileInfo(module.path, module.chunk, canonicalizeName);
+		if (info) {
+			modulesByPath.set(module.path, info);
+		}
+	}
+	return {
+		moduleAliasMap,
+		modulesByPath,
+	};
 };
 
 const extractCompileErrorMessage = (error: unknown, path: string): string => {
@@ -2872,7 +3381,9 @@ function createProgramBuilderFromProgram(
 export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray<ProgramModule> = [], options: CompileOptions = {}): CompiledProgram {
 	const canonicalization = options.canonicalization ?? 'none';
 	const optLevel = options.optLevel ?? 0;
+	const canonicalizeName = createIdentifierCanonicalizer(canonicalization);
 	const frontend = buildCompilerSemanticFrontend(chunk, modules, options);
+	const moduleCompileContext = buildModuleCompileContext(chunk, modules, canonicalizeName);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
@@ -2894,6 +3405,7 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 		moduleId,
 		protoId: entryProtoId,
 		semantics: frontend.getFile(chunk.range.path),
+		moduleCompileContext,
 	});
 	try {
 		entryBuilder.compileChunk(chunk);
@@ -2925,6 +3437,8 @@ export function compileLuaChunkToProgram(chunk: LuaChunk, modules: ReadonlyArray
 			moduleId: module.path,
 			protoId: moduleProtoId,
 			semantics: frontend.getFile(module.path),
+			moduleCompileContext,
+			moduleCompileInfo: moduleCompileContext.modulesByPath.get(module.path) ?? null,
 		});
 		try {
 			builder.compileChunk(module.chunk);

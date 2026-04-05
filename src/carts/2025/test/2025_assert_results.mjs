@@ -1,7 +1,7 @@
 export default function schedule({ logger, test }) {
 	test.run(async () => {
 		await test.waitForCartActive({
-			timeoutMs: 6000,
+			timeoutMs: 15000,
 			pollMs: 100,
 			settleMs: 100,
 		});

@@ -82,7 +82,7 @@ import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import * as runtimeIde from '../runtime_ide';
 import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './render/render_error_overlay';
 import { point_in_rect } from '../../utils/rect_operations';
-import { symbolPriority } from './semantic_model';
+import { symbolPriority, type ModuleAliasEntry } from './semantic_model';
 import { refreshSymbolCatalog } from './symbol_catalog';
 import { extractErrorMessage } from '../../lua/luavalue';
 import {
@@ -1047,7 +1047,7 @@ export function getActiveSemanticDefinitions(): readonly LuaDefinitionInfo[] {
 	return ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, path);
 }
 
-export function getLuaModuleAliases(path: string): Map<string, string> {
+export function getLuaModuleAliases(path: string): Map<string, ModuleAliasEntry> {
 	const activeContext = getActiveCodeTabContext();
 	const targetChunk = path || activeContext.descriptor.path;
 	ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, targetChunk);
@@ -1055,10 +1055,10 @@ export function getLuaModuleAliases(path: string): Map<string, string> {
 	if (!data || data.moduleAliases.length === 0) {
 		return new Map();
 	}
-	const aliases = new Map<string, string>();
+	const aliases = new Map<string, ModuleAliasEntry>();
 	for (let index = 0; index < data.moduleAliases.length; index += 1) {
-		const entry = data.moduleAliases[index];
-		aliases.set(entry.alias, entry.module);
+		const entry = data.moduleAliases[index]!;
+		aliases.set(entry.alias, entry);
 	}
 	return aliases;
 }

@@ -75,6 +75,7 @@ export type ObjectBindingEntry = {
 export type ModuleAliasEntry = {
 	alias: string;
 	module: string;
+	memberPath?: readonly string[];
 };
 
 export type LuaSemanticModel = {
@@ -155,6 +156,7 @@ export function hydrateFileSemanticData(data: SerializedFileSemanticData): FileS
 			minimumArgumentCount: value.minimumArgumentCount ?? value.params.length,
 		}]))
 		: new Map<string, FunctionSignatureInfo>();
+	const moduleAliases = data.moduleAliases.map(normalizeModuleAliasEntry);
 	const refs = data.refs.map(ref => ({
 		...ref,
 		referenceKind: ref.referenceKind ?? (ref.receiverSymbolKey || ref.receiverHintKey ? 'member' : 'identifier'),
@@ -175,7 +177,7 @@ export function hydrateFileSemanticData(data: SerializedFileSemanticData): FileS
 		annotations: data.annotations,
 		decls: data.decls,
 		refs,
-		moduleAliases: data.moduleAliases,
+		moduleAliases,
 		callExpressions: data.callExpressions ?? [],
 		functionSignatures: signatureEntries,
 		declValueHints: data.declValueHints ?? [],
@@ -268,11 +270,7 @@ export function buildLuaFileSemanticData(
 	definitions.sort(compareDefinitionInfo);
 	const refs = result.refs.slice();
 	const annotations = finalizeAnnotations(result.annotations);
-	const moduleAliasEntries = collectModuleAliasesFromChunk(chunk);
-	const moduleAliases: ModuleAliasEntry[] = [];
-	for (const [alias, moduleName] of moduleAliasEntries) {
-		moduleAliases.push({ alias, module: moduleName });
-	}
+	const moduleAliases = collectModuleAliasEntriesFromChunk(chunk);
 	const model: LuaSemanticModel = createSemanticModel({
 		file: path,
 		decls,
@@ -303,8 +301,13 @@ export function buildLuaSemanticModel(source: string, path: string, lines?: read
 	return data.model;
 }
 
-function collectModuleAliasesFromChunk(path: LuaChunk): Map<string, string> {
-	const aliases = new Map<string, string>();
+type ModuleAliasResolution = {
+	module: string;
+	memberPath: string[];
+};
+
+export function collectModuleAliasEntriesFromChunk(path: LuaChunk): ModuleAliasEntry[] {
+	const aliases = new Map<string, ModuleAliasEntry>();
 	const statements = path.body;
 	for (let index = 0; index < statements.length; index += 1) {
 		const statement = statements[index];
@@ -316,24 +319,36 @@ function collectModuleAliasesFromChunk(path: LuaChunk): Map<string, string> {
 			recordGlobalRequireAliases(statement as LuaAssignmentStatement, aliases);
 		}
 	}
-	return aliases;
+	return Array.from(aliases.values(), normalizeModuleAliasEntry);
 }
 
-function recordLocalRequireAliases(statement: LuaLocalAssignmentStatement, aliases: Map<string, string>): void {
+function normalizeModuleAliasEntry(entry: ModuleAliasEntry): ModuleAliasEntry {
+	return {
+		alias: entry.alias,
+		module: entry.module,
+		memberPath: entry.memberPath ? entry.memberPath.slice() : [],
+	};
+}
+
+function recordLocalRequireAliases(statement: LuaLocalAssignmentStatement, aliases: Map<string, ModuleAliasEntry>): void {
 	if (statement.values.length === 0) {
 		return;
 	}
 	for (let index = 0; index < statement.names.length; index += 1) {
 		const identifier = statement.names[index];
 		const valueIndex = index < statement.values.length ? index : statement.values.length - 1;
-		const moduleName = tryExtractRequireModuleName(statement.values[valueIndex]);
-		if (moduleName) {
-			aliases.set(identifier.name, moduleName);
+		const alias = tryResolveModuleAliasExpression(statement.values[valueIndex], aliases);
+		if (alias) {
+			aliases.set(identifier.name, {
+				alias: identifier.name,
+				module: alias.module,
+				memberPath: alias.memberPath,
+			});
 		}
 	}
 }
 
-function recordGlobalRequireAliases(statement: LuaAssignmentStatement, aliases: Map<string, string>): void {
+function recordGlobalRequireAliases(statement: LuaAssignmentStatement, aliases: Map<string, ModuleAliasEntry>): void {
 	if (statement.right.length === 0) {
 		return;
 	}
@@ -343,11 +358,56 @@ function recordGlobalRequireAliases(statement: LuaAssignmentStatement, aliases: 
 			continue;
 		}
 		const valueIndex = index < statement.right.length ? index : statement.right.length - 1;
-		const moduleName = tryExtractRequireModuleName(statement.right[valueIndex]);
-		if (moduleName) {
-			aliases.set((target as LuaIdentifierExpression).name, moduleName);
+		const alias = tryResolveModuleAliasExpression(statement.right[valueIndex], aliases);
+		if (alias) {
+			aliases.set((target as LuaIdentifierExpression).name, {
+				alias: (target as LuaIdentifierExpression).name,
+				module: alias.module,
+				memberPath: alias.memberPath,
+			});
 		}
 	}
+}
+
+function tryResolveModuleAliasExpression(expression: LuaExpression, aliases: ReadonlyMap<string, ModuleAliasEntry>): ModuleAliasResolution | null {
+	const moduleName = tryExtractRequireModuleName(expression);
+	if (moduleName) {
+		return {
+			module: moduleName,
+			memberPath: [],
+		};
+	}
+	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+		const alias = aliases.get(expression.name);
+		if (!alias) {
+			return null;
+		}
+		return {
+			module: alias.module,
+			memberPath: alias.memberPath ? alias.memberPath.slice() : [],
+		};
+	}
+	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+		const base = tryResolveModuleAliasExpression(expression.base, aliases);
+		if (!base) {
+			return null;
+		}
+		base.memberPath.push(expression.identifier);
+		return base;
+	}
+	if (expression.kind === LuaSyntaxKind.IndexExpression) {
+		const base = tryResolveModuleAliasExpression(expression.base, aliases);
+		if (!base) {
+			return null;
+		}
+		const key = tryExtractStringLiteral(expression.index);
+		if (!key) {
+			return null;
+		}
+		base.memberPath.push(key);
+		return base;
+	}
+	return null;
 }
 
 function tryExtractRequireModuleName(expression: LuaExpression): string {

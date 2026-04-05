@@ -1738,6 +1738,10 @@ export class CPU {
 	}
 
 	public setProgram(program: Program, metadata: ProgramMetadata | null = null): void {
+		// Keep slot-backed globals materialized in the globals table before swapping programs.
+		// SETGL/SETSYS mutate the slot arrays directly, and append/reload paths rebuild the next
+		// slot layout from `globals`, so without this sync flattened module exports can fall back to nil.
+		this.syncGlobalSlotsToTable();
 		this.program = program;
 		this.metadata = metadata;
 		const constPool = program.constPool;

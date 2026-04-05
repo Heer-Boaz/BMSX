@@ -653,7 +653,7 @@ export function registerGlobal(runtime: Runtime, name: string, value: Value): vo
 
 export function buildEngineBuiltinPreludeSource(): string {
 	const lines: string[] = [
-		'local engine = require("bios/engine")',
+		'local engine<const> = require("bios/engine")',
 	];
 	for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
 		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
