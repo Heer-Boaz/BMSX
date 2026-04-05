@@ -1,3 +1,76 @@
+-- ╔══════════════════════════════════════════════════════════════════════════════╗
+-- ║  CYCLE COST ANALYSIS — constants access pattern                           ║
+-- ╠══════════════════════════════════════════════════════════════════════════════╣
+-- ║                                                                            ║
+-- ║  This module initialises once (5048 static cycles, 81% SETT), which is     ║
+-- ║  fine. The problem is how CONSUMERS read these values at runtime.           ║
+-- ║                                                                            ║
+-- ║  Every `constants.physics.walk_dx` in a consumer compiles to:              ║
+-- ║                                                                            ║
+-- ║      GETUP  rN, uK              ;  3 cycles  — load 'constants' upvalue   ║
+-- ║      GETT   rN, rN, k("physics");  8 cycles  — table lookup 'physics'    ║
+-- ║      GETT   rN, rN, k("walk_dx");  8 cycles  — table lookup 'walk_dx'   ║
+-- ║                                                                     ───── ║
+-- ║                                              Total: 19 cycles / read      ║
+-- ║                                                                            ║
+-- ║  Cost reference for the engine's CPU opcodes:                              ║
+-- ║      KSMI / LOADK  =  1 cycle   (inline constant)                         ║
+-- ║      GETSYS        =  2 cycles  (system global slot — engine reserved)     ║
+-- ║      GETGL         =  4 cycles  (cart global slot — flat array lookup)     ║
+-- ║      GETG          =  6 cycles  (named global — Map lookup, slow)         ║
+-- ║      GETT          =  8 cycles  (table field lookup)                       ║
+-- ║                                                                            ║
+-- ║  In per-frame hot paths (player tick, enemy bt_tick, room tile draw),      ║
+-- ║  80+ of these 19-cycle lookups fire every frame × every active entity.     ║
+-- ║                                                                            ║
+-- ╠══════════════════════════════════════════════════════════════════════════════╣
+-- ║  REFACTORING STRATEGY                                                      ║
+-- ╠══════════════════════════════════════════════════════════════════════════════╣
+-- ║                                                                            ║
+-- ║  Replace nested tables with bare <const> globals. The engine has no        ║
+-- ║  real _G; every bare global gets a GETGL slot (a flat Value[] array        ║
+-- ║  indexed by compile-time slot number). This costs 4 cycles/read.           ║
+-- ║                                                                            ║
+-- ║  BEFORE (19 cycles/read — GETUP + 2×GETT):                                ║
+-- ║                                                                            ║
+-- ║      -- constants.lua                                                      ║
+-- ║      local constants<const> = {}                                           ║
+-- ║      constants.physics = { walk_dx = 2 }                                   ║
+-- ║      return constants                                                      ║
+-- ║                                                                            ║
+-- ║      -- player.lua                                                         ║
+-- ║      local constants<const> = require('constants')                         ║
+-- ║      local dx = constants.physics.walk_dx  -- 19 cycles                    ║
+-- ║                                                                            ║
+-- ║  AFTER (4 cycles/read — single GETGL):                                     ║
+-- ║                                                                            ║
+-- ║      -- constants.lua                                                      ║
+-- ║      PHYSICS_WALK_DX = 2                                                   ║
+-- ║      PHYSICS_WALK_DX_SCHOENTJES_NUM = 5                                    ║
+-- ║      PHYSICS_WALK_DX_SCHOENTJES_DEN = 2                                    ║
+-- ║      ROOM_TILE_SIZE = 8                                                    ║
+-- ║      -- ...etc, one flat global per constant                               ║
+-- ║                                                                            ║
+-- ║      -- player.lua  (no require needed!)                                   ║
+-- ║      local dx = PHYSICS_WALK_DX  -- 4 cycles (GETGL)                       ║
+-- ║                                                                            ║
+-- ║  Consumers that cache a global into a <const> local at module top          ║
+-- ║  pay the 4-cycle GETGL exactly once; subsequent reads in the same          ║
+-- ║  scope are free (register / KSMI / LOADK at 0-1 cycle) after the          ║
+-- ║  optimizer folds the constant value:                                       ║
+-- ║                                                                            ║
+-- ║      -- player.lua                                                         ║
+-- ║      local WALK_DX<const> = PHYSICS_WALK_DX   -- GETGL once (4 cyc)       ║
+-- ║      -- ... later in a hot loop:                                           ║
+-- ║      x = x + WALK_DX   -- KSMI/LOADK (1 cycle, folded by optimizer)       ║
+-- ║                                                                            ║
+-- ║  SAVINGS ESTIMATE (player.lua alone):                                      ║
+-- ║      ~80 lookups × (19→4 cycles) = 1200 cycles saved/frame                ║
+-- ║      With <const> local caching:   ~80 × (19→1) = 1440 cycles saved       ║
+-- ║      With enemies + room: likely 3000–5000 cycles saved per frame total.   ║
+-- ║                                                                            ║
+-- ╚══════════════════════════════════════════════════════════════════════════════╝
+
 local constants<const> = {}
 
 constants.flow = {
