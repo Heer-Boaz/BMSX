@@ -16,6 +16,7 @@ import {
 	sortAssetsById,
 } from './inspector_shared';
 import { runNativeInspectorUI } from './native_ui';
+import { generateCycleCostReport } from './cycle_cost_analysis';
 
 let assetList: RomAsset[] = [];
 let romManifest: RomManifest | null = null;
@@ -258,16 +259,18 @@ async function main() {
 	const listAssetsFlag = args.includes('--list-assets');
 	const manifestFlag = args.includes('--manifest');
 	const programAsmFlag = args.includes('--program-asm');
+	const cycleCostFlag = args.includes('--cycle-cost');
 	const programAsmBias = parseProgramAsmBias(args);
 	const romfile = args.find(arg => !arg.startsWith('--'));
 
 	if (!romfile) {
-		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--ui-native] [--list-assets] [--program-asm] [--program-asm-bias <value>]');
+		console.error('Usage: npx tsx scripts/rominspector.ts <romfile> [--ui] [--ui-native] [--list-assets] [--program-asm] [--program-asm-bias <value>] [--cycle-cost]');
 		console.error('Options:');
 		console.error('  --ui            Open the native interactive UI');
 		console.error('  --ui-native     Alias for the native interactive UI');
 		console.error('  --list-assets   Print asset list to stdout (default)');
 		console.error('  --manifest      Print cart manifest details to stdout');
+		console.error('  --cycle-cost    Print fantasy CPU cycle cost analysis');
 		console.error('  --program-asm   Print program disassembly and exit');
 		console.error('  --program-asm-bias  Base PC to add (e.g. 0x80000 or 80000h)');
 		process.exit(1);
@@ -303,6 +306,12 @@ async function main() {
 		const { program, metadata, sourceTextForPath } = loadProgramFromAssets(rombin, assetList);
 		const pcBias = programAsmBias === null ? undefined : programAsmBias;
 		console.log(disassembleProgramAsset(program, metadata, sourceTextForPath, { assembly: true, pcBias }));
+		process.exit(0);
+	}
+
+	if (cycleCostFlag) {
+		const { program, metadata } = loadProgramFromAssets(rombin, assetList);
+		console.log(generateCycleCostReport(program, metadata));
 		process.exit(0);
 	}
 
