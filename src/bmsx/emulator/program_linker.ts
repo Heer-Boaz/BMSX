@@ -170,6 +170,48 @@ const rewriteConstRelocations = (
 			continue;
 		}
 
+		if (reloc.kind === 'const_b' || reloc.kind === 'const_c') {
+			const relocOnB = reloc.kind === 'const_b';
+			const extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
+			const baseBits = MAX_OPERAND_BITS + extBits;
+			const maxBase = (1 << baseBits) - 1;
+			if (!hasWide && mappedIndex > maxBase) {
+				throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} requires WIDE prefix.`);
+			}
+			const totalBits = MAX_OPERAND_BITS + extBits + (hasWide ? MAX_OPERAND_BITS : 0);
+			const maxValue = (1 << totalBits) - 1;
+			if (mappedIndex > maxValue) {
+				throw new Error(`[ProgramLinker] Reloc at word ${wordIndex} exceeds operand range.`);
+			}
+			const low = mappedIndex & 0x3f;
+			const extPartMask = (1 << extBits) - 1;
+			const extPart = (mappedIndex >> MAX_OPERAND_BITS) & extPartMask;
+			const widePart = mappedIndex >> (MAX_OPERAND_BITS + extBits);
+
+			const extA = (ext >>> 6) & 0x3;
+			let extB = (ext >>> 3) & 0x7;
+			let extC = ext & 0x7;
+			if (relocOnB) {
+				bLow = low;
+				extB = extPart;
+				if (hasWide) {
+					wideB = widePart & 0x3f;
+				}
+			} else {
+				cLow = low;
+				extC = extPart;
+				if (hasWide) {
+					wideC = widePart & 0x3f;
+				}
+			}
+			ext = (extA << 6) | (extB << 3) | extC;
+			if (hasWide) {
+				writeInstruction(code, wordIndex - 1, OpCode.WIDE, wideA, wideB, wideC);
+			}
+			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
+			continue;
+		}
+
 		const relocOnB = reloc.kind === 'rk_b';
 		const rkValue = -mappedIndex - 1;
 		const extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;

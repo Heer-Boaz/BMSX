@@ -2,6 +2,8 @@
 #include "runtime.h"
 #include "../lua/syntax/lualexer.h"
 #include "../lua/syntax/luaparser.h"
+#include <cmath>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
@@ -16,13 +18,26 @@ struct LoadSubsetValueExpr {
 
 	Kind kind = Kind::Literal;
 	int rootParamIndex = 0;
-	std::vector<Value> path;
+	std::vector<struct LoadSubsetPathStep> path;
 	Value literal = valueNil();
+};
+
+struct LoadSubsetPathStep {
+	enum class Kind {
+		Key,
+		Field,
+		Index,
+	};
+
+	Kind kind = Kind::Key;
+	Value key = valueNil();
+	StringId fieldKey = 0;
+	int index = 0;
 };
 
 struct LoadSubsetOp {
 	int rootParamIndex = 0;
-	std::vector<Value> path;
+	std::vector<LoadSubsetPathStep> path;
 	LoadSubsetValueExpr valueExpr;
 };
 
@@ -52,24 +67,60 @@ std::string describeValueType(Value value) {
 	return "function";
 }
 
-Value getIndexedValue(Value target, Value key) {
+Value getPathStepValue(Value target, const LoadSubsetPathStep& step) {
 	if (valueIsTable(target)) {
-		return asTable(target)->get(key);
+		Table* table = asTable(target);
+		switch (step.kind) {
+			case LoadSubsetPathStep::Kind::Index:
+				return table->getInteger(step.index);
+			case LoadSubsetPathStep::Kind::Field:
+				return table->getStringKey(step.fieldKey);
+			case LoadSubsetPathStep::Kind::Key:
+				return table->get(step.key);
+		}
 	}
 	if (valueIsNativeObject(target)) {
-		return asNativeObject(target)->get(key);
+		NativeObject* object = asNativeObject(target);
+		switch (step.kind) {
+			case LoadSubsetPathStep::Kind::Index:
+				return object->get(valueNumber(static_cast<double>(step.index)));
+			case LoadSubsetPathStep::Kind::Field:
+				return object->get(valueString(step.fieldKey));
+			case LoadSubsetPathStep::Kind::Key:
+				return object->get(step.key);
+		}
 	}
 	throw BMSX_RUNTIME_ERROR("[loadstring] attempted to index a non-table value (" + describeValueType(target) + ").");
 }
 
-void setIndexedValue(Value target, Value key, Value value) {
+void setPathStepValue(Value target, const LoadSubsetPathStep& step, Value value) {
 	if (valueIsTable(target)) {
-		asTable(target)->set(key, value);
-		return;
+		Table* table = asTable(target);
+		switch (step.kind) {
+			case LoadSubsetPathStep::Kind::Index:
+				table->setInteger(step.index, value);
+				return;
+			case LoadSubsetPathStep::Kind::Field:
+				table->setStringKey(step.fieldKey, value);
+				return;
+			case LoadSubsetPathStep::Kind::Key:
+				table->set(step.key, value);
+				return;
+		}
 	}
 	if (valueIsNativeObject(target)) {
-		asNativeObject(target)->set(key, value);
-		return;
+		NativeObject* object = asNativeObject(target);
+		switch (step.kind) {
+			case LoadSubsetPathStep::Kind::Index:
+				object->set(valueNumber(static_cast<double>(step.index)), value);
+				return;
+			case LoadSubsetPathStep::Kind::Field:
+				object->set(valueString(step.fieldKey), value);
+				return;
+			case LoadSubsetPathStep::Kind::Key:
+				object->set(step.key, value);
+				return;
+		}
 	}
 	throw BMSX_RUNTIME_ERROR("[loadstring] attempted to assign through a non-table value (" + describeValueType(target) + ").");
 }
@@ -80,7 +131,7 @@ Value resolveValueExpr(const std::vector<Value>& args, const LoadSubsetValueExpr
 	}
 	Value node = expr.rootParamIndex < static_cast<int>(args.size()) ? args[static_cast<size_t>(expr.rootParamIndex)] : valueNil();
 	for (size_t index = 0; index < expr.path.size(); ++index) {
-		node = getIndexedValue(node, expr.path[index]);
+		node = getPathStepValue(node, expr.path[index]);
 	}
 	return node;
 }
@@ -92,25 +143,44 @@ Value resolveValueExpr(const std::vector<Value>& args, const LoadSubsetValueExpr
 	throw BMSX_RUNTIME_ERROR("[loadstring:" + chunkName + "] " + message + ".");
 }
 
-Value compileKeyLiteral(Runtime& runtime, const std::string& chunkName, const LuaExpression& expression) {
+LoadSubsetPathStep compilePathStep(Runtime& runtime, const std::string& chunkName, const LuaExpression& expression) {
 	if (expression.kind == LuaSyntaxKind::UnaryExpression) {
 		if (expression.unaryOperator != LuaUnaryOperator::Negate || expression.operand == nullptr || expression.operand->kind != LuaSyntaxKind::NumericLiteralExpression) {
 			fail(chunkName, "index expressions must use string or numeric literals", &expression.range);
 		}
-		return valueNumber(-expression.operand->numberValue);
+		return {
+			.kind = LoadSubsetPathStep::Kind::Key,
+			.key = valueNumber(-expression.operand->numberValue),
+		};
 	}
 	if (expression.kind == LuaSyntaxKind::NumericLiteralExpression) {
-		return valueNumber(expression.numberValue);
+		if (
+			std::floor(expression.numberValue) == expression.numberValue
+			&& expression.numberValue >= 1.0
+			&& expression.numberValue <= static_cast<double>(std::numeric_limits<int>::max())
+		) {
+			return {
+				.kind = LoadSubsetPathStep::Kind::Index,
+				.index = static_cast<int>(expression.numberValue),
+			};
+		}
+		return {
+			.kind = LoadSubsetPathStep::Kind::Key,
+			.key = valueNumber(expression.numberValue),
+		};
 	}
 	if (expression.kind == LuaSyntaxKind::StringLiteralExpression) {
-		return valueString(runtime.cpu().internString(expression.stringValue));
+		return {
+			.kind = LoadSubsetPathStep::Kind::Field,
+			.fieldKey = runtime.cpu().internString(expression.stringValue),
+		};
 	}
 	fail(chunkName, "index expressions must use string or numeric literals", &expression.range);
 }
 
 struct CompiledParamPath {
 	int rootParamIndex = 0;
-	std::vector<Value> path;
+	std::vector<LoadSubsetPathStep> path;
 };
 
 CompiledParamPath compileParamPath(
@@ -131,12 +201,15 @@ CompiledParamPath compileParamPath(
 	}
 	if (expression.kind == LuaSyntaxKind::MemberExpression) {
 		CompiledParamPath base = compileParamPath(runtime, chunkName, *expression.base, paramIndexByName);
-		base.path.push_back(valueString(runtime.cpu().internString(expression.name)));
+		base.path.push_back({
+			.kind = LoadSubsetPathStep::Kind::Field,
+			.fieldKey = runtime.cpu().internString(expression.name),
+		});
 		return base;
 	}
 	if (expression.kind == LuaSyntaxKind::IndexExpression) {
 		CompiledParamPath base = compileParamPath(runtime, chunkName, *expression.base, paramIndexByName);
-		base.path.push_back(compileKeyLiteral(runtime, chunkName, *expression.index));
+		base.path.push_back(compilePathStep(runtime, chunkName, *expression.index));
 		return base;
 	}
 	fail(chunkName, "expected a parameter path expression", &expression.range);
@@ -271,9 +344,9 @@ Value buildNativeFunction(Runtime& runtime, const LoadSubsetCompiledFunction& co
 			for (const LoadSubsetOp& op : compiled.ops) {
 				Value node = op.rootParamIndex < static_cast<int>(innerArgs.size()) ? innerArgs[static_cast<size_t>(op.rootParamIndex)] : valueNil();
 				for (size_t pathIndex = 0; pathIndex + 1 < op.path.size(); ++pathIndex) {
-					node = getIndexedValue(node, op.path[pathIndex]);
+					node = getPathStepValue(node, op.path[pathIndex]);
 				}
-				setIndexedValue(node, op.path.back(), resolveValueExpr(innerArgs, op.valueExpr));
+				setPathStepValue(node, op.path.back(), resolveValueExpr(innerArgs, op.valueExpr));
 			}
 		}));
 	});

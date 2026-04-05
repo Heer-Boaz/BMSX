@@ -98,6 +98,35 @@ function decodeSignedRkB(code: Uint8Array, wordIndex: number): number {
 	return (raw & (1 << 14)) !== 0 ? raw - (1 << 15) : raw;
 }
 
+function decodeUnsignedB(code: Uint8Array, wordIndex: number): number {
+	const word = readInstructionWord(code, wordIndex);
+	const bLow = (word >>> 6) & 0x3f;
+	const ext = word >>> 24;
+	const extB = (ext >>> 3) & 0x7;
+	const wideWord = readInstructionWord(code, wordIndex - 1);
+	const wideB = (wideWord >>> 6) & 0x3f;
+	return (wideB << 9) | (extB << 6) | bLow;
+}
+
+function decodeUnsignedC(code: Uint8Array, wordIndex: number): number {
+	const word = readInstructionWord(code, wordIndex);
+	const cLow = word & 0x3f;
+	const ext = word >>> 24;
+	const extC = ext & 0x7;
+	const wideWord = readInstructionWord(code, wordIndex - 1);
+	const wideC = wideWord & 0x3f;
+	return (wideC << 9) | (extC << 6) | cLow;
+}
+
+function collectOps(code: Uint8Array): OpCode[] {
+	const ops: OpCode[] = [];
+	const instructionCount = code.length / INSTRUCTION_BYTES;
+	for (let index = 0; index < instructionCount; index += 1) {
+		ops.push(((readInstructionWord(code, index) >>> 18) & 0x3f) as OpCode);
+	}
+	return ops;
+}
+
 test('ProgramCompiler emits WIDE before LOADK const sites', () => {
 	const source = 'local a = "hello"\nreturn a';
 	const chunk = parseChunk(source);
@@ -129,6 +158,37 @@ test('ProgramCompiler emits WIDE before RK const reloc sites', () => {
 		const prevOp = (readInstructionWord(compiled.program.code, reloc.wordIndex - 1) >>> 18) & 0x3f;
 		assert.equal(prevOp, OpCode.WIDE);
 	}
+});
+
+test('ProgramCompiler emits specialized table opcodes for constant field and integer access', () => {
+	const source = [
+		'local t = {}',
+		't.foo = 1',
+		't[2] = 3',
+		'local a = t.foo',
+		'local b = t[2]',
+		'return a, b',
+	].join('\n');
+	const chunk = parseChunk(source);
+	const compiled = compileLuaChunkToProgram(chunk, [], { entrySource: source });
+	const ops = collectOps(compiled.program.code);
+	assert.ok(ops.includes(OpCode.SETFIELD));
+	assert.ok(ops.includes(OpCode.GETFIELD));
+	assert.ok(ops.includes(OpCode.SETI));
+	assert.ok(ops.includes(OpCode.GETI));
+});
+
+test('ProgramCompiler emits SELF for method calls with constant method names', () => {
+	const source = [
+		'local function call_method(obj)',
+		'\treturn obj:ping()',
+		'end',
+		'return call_method',
+	].join('\n');
+	const chunk = parseChunk(source);
+	const compiled = compileLuaChunkToProgram(chunk, [], { entrySource: source });
+	const ops = collectOps(compiled.program.code);
+	assert.ok(ops.includes(OpCode.SELF));
 });
 
 test('ProgramCompiler rejects undefined identifiers when source is provided', () => {
@@ -196,4 +256,32 @@ test('ProgramLinker patches RK(B) relocations against large engine const pools',
 	const linkedCode = linked.programAsset.program.code;
 	const cartBaseWord = (0x80000 / INSTRUCTION_BYTES);
 	assert.equal(decodeSignedRkB(linkedCode, cartBaseWord + 1), -5001);
+});
+
+test('ProgramLinker patches direct field const relocations against large engine const pools', () => {
+	const engineAsset = makeEngineAsset(5000);
+	const cartAsset = makeProgramAsset(
+		[
+			{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+			{ op: OpCode.GETFIELD, a: 0, b: 1, c: 0, ext: 0 },
+			{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+			{ op: OpCode.SETFIELD, a: 1, b: 1, c: 0, ext: 0 },
+			{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
+			{ op: OpCode.SELF, a: 2, b: 1, c: 2, ext: 0 },
+			{ op: OpCode.RET, a: 0, b: 1, c: 0 },
+		],
+		['field_get', 'field_set', 'field_self'],
+		[
+			{ wordIndex: 1, kind: 'const_c', constIndex: 0 },
+			{ wordIndex: 3, kind: 'const_b', constIndex: 1 },
+			{ wordIndex: 5, kind: 'const_c', constIndex: 2 },
+		],
+	);
+
+	const linked = linkProgramAssets(engineAsset, null, cartAsset, null);
+	const linkedCode = linked.programAsset.program.code;
+	const cartBaseWord = (0x80000 / INSTRUCTION_BYTES);
+	assert.equal(decodeUnsignedC(linkedCode, cartBaseWord + 1), 5000);
+	assert.equal(decodeUnsignedB(linkedCode, cartBaseWord + 3), 5001);
+	assert.equal(decodeUnsignedC(linkedCode, cartBaseWord + 5), 5002);
 });

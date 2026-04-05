@@ -126,6 +126,11 @@ const getOpName = (op: OpCode): string => {
 		case OpCode.SETSYS: return 'SETSYS';
 		case OpCode.GETGL: return 'GETGL';
 		case OpCode.SETGL: return 'SETGL';
+		case OpCode.GETI: return 'GETI';
+		case OpCode.SETI: return 'SETI';
+		case OpCode.GETFIELD: return 'GETFIELD';
+		case OpCode.SETFIELD: return 'SETFIELD';
+		case OpCode.SELF: return 'SELF';
 		case OpCode.GETT: return 'GETT';
 		case OpCode.SETT: return 'SETT';
 		case OpCode.NEWT: return 'NEWT';
@@ -528,6 +533,16 @@ const buildInstructionOperands = (
 			return [registerOperand('a', 'dst', a), plainOperand('bx', 'slot', formatGlobalSlotOperand(metadata, bx, false))];
 		case OpCode.SETGL:
 			return [registerOperand('a', 'src', a), plainOperand('bx', 'slot', formatGlobalSlotOperand(metadata, bx, false))];
+		case OpCode.GETI:
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'table', b), plainOperand('c', 'index', c.toString())];
+		case OpCode.SETI:
+			return [registerOperand('a', 'table', a), plainOperand('b', 'index', b.toString()), rkOperand('c', 'value', program, c, decoded.rkBitsC, options)];
+		case OpCode.GETFIELD:
+			return [registerOperand('a', 'dst', a), registerOperand('b', 'table', b), plainOperand('c', 'field', formatConst(program, c, options))];
+		case OpCode.SETFIELD:
+			return [registerOperand('a', 'table', a), plainOperand('b', 'field', formatConst(program, b, options)), rkOperand('c', 'value', program, c, decoded.rkBitsC, options)];
+		case OpCode.SELF:
+			return [registerOperand('a', 'fn_dst', a), plainOperand('a', 'self_dst', `r${a + 1}`), registerOperand('b', 'table', b), plainOperand('c', 'field', formatConst(program, c, options))];
 		case OpCode.GETT:
 			return [registerOperand('a', 'dst', a), registerOperand('b', 'table', b), rkOperand('c', 'key', program, c, decoded.rkBitsC, options)];
 		case OpCode.SETT:
@@ -663,6 +678,16 @@ const formatInstruction = (
 			return `GETGL r${a}, ${formatGlobalSlotOperand(metadata, bx, false)}`;
 		case OpCode.SETGL:
 			return `SETGL r${a}, ${formatGlobalSlotOperand(metadata, bx, false)}`;
+		case OpCode.GETI:
+			return `GETI r${a}, r${b}, ${c}`;
+		case OpCode.SETI:
+			return `SETI r${a}, ${b}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
+		case OpCode.GETFIELD:
+			return `GETFIELD r${a}, r${b}, ${formatConst(program, c, options)}`;
+		case OpCode.SETFIELD:
+			return `SETFIELD r${a}, ${formatConst(program, b, options)}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
+		case OpCode.SELF:
+			return `SELF r${a}, r${a + 1}, r${b}, ${formatConst(program, c, options)}`;
 		case OpCode.GETT:
 			return `GETT r${a}, r${b}, ${formatRK(program, c, decoded.rkBitsC, options)}`;
 		case OpCode.SETT:

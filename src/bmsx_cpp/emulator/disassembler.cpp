@@ -75,6 +75,11 @@ const char* opCodeName(OpCode op) {
 		case OpCode::KSMI: return "KSMI";
 		case OpCode::GETG: return "GETG";
 		case OpCode::SETG: return "SETG";
+		case OpCode::GETI: return "GETI";
+		case OpCode::SETI: return "SETI";
+		case OpCode::GETFIELD: return "GETFIELD";
+		case OpCode::SETFIELD: return "SETFIELD";
+		case OpCode::SELF: return "SELF";
 		case OpCode::GETT: return "GETT";
 		case OpCode::SETT: return "SETT";
 		case OpCode::NEWT: return "NEWT";
@@ -336,6 +341,16 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "GETGL r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(metadata, decoded.bx, false);
 		case OpCode::SETGL:
 			return "SETGL r" + std::to_string(decoded.a) + ", " + formatGlobalSlotOperand(metadata, decoded.bx, false);
+		case OpCode::GETI:
+			return "GETI r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c);
+		case OpCode::SETI:
+			return "SETI r" + std::to_string(decoded.a) + ", " + std::to_string(decoded.b) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+		case OpCode::GETFIELD:
+			return "GETFIELD r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + formatConstValue(program, decoded.c);
+		case OpCode::SETFIELD:
+			return "SETFIELD r" + std::to_string(decoded.a) + ", " + formatConstValue(program, decoded.b) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
+		case OpCode::SELF:
+			return "SELF r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.a + 1) + ", r" + std::to_string(decoded.b) + ", " + formatConstValue(program, decoded.c);
 		case OpCode::GETT:
 			return "GETT r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + describeRkValue(program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::SETT:
@@ -441,6 +456,16 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("dst", decoded.a), plainOperand("slot", formatGlobalSlotOperand(metadata, decoded.bx, false))};
 		case OpCode::SETGL:
 			return {registerOperand("src", decoded.a), plainOperand("slot", formatGlobalSlotOperand(metadata, decoded.bx, false))};
+		case OpCode::GETI:
+			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), plainOperand("index", std::to_string(decoded.c))};
+		case OpCode::SETI:
+			return {registerOperand("table", decoded.a), plainOperand("index", std::to_string(decoded.b)), rkOperand("value", program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
+		case OpCode::GETFIELD:
+			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), plainOperand("field", formatConstValue(program, decoded.c))};
+		case OpCode::SETFIELD:
+			return {registerOperand("table", decoded.a), plainOperand("field", formatConstValue(program, decoded.b)), rkOperand("value", program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
+		case OpCode::SELF:
+			return {registerOperand("fn_dst", decoded.a), plainOperand("self_dst", "r" + std::to_string(decoded.a + 1)), registerOperand("table", decoded.b), plainOperand("field", formatConstValue(program, decoded.c))};
 		case OpCode::GETT:
 			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), rkOperand("key", program, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
 		case OpCode::SETT:

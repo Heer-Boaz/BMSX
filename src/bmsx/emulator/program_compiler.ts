@@ -34,7 +34,7 @@ import { optimizeInstructions, type Instruction, type InstructionSet, type Optim
 import type { ProgramConstReloc } from './program_asset';
 import { StringPool, StringValue, isStringValue } from './string_pool';
 import type { CanonicalizationType } from '../rompack/rompack';
-import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from './instruction_format';
+import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from './instruction_format';
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './lua_semantic_frontend';
 import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from './lua_system_globals';
 import { LuaSyntaxError } from '../lua/luaerrors';
@@ -123,6 +123,13 @@ const isGlobalSlotOp = (op: OpCode): boolean =>
 	|| op === OpCode.SETGL;
 
 const isSignedBxOp = (op: OpCode): boolean => op === OpCode.KSMI;
+
+const isFieldConstOp = (op: OpCode): boolean =>
+	op === OpCode.GETFIELD
+	|| op === OpCode.SETFIELD
+	|| op === OpCode.SELF;
+
+const MAX_SPECIALIZED_TABLE_OPERAND = MAX_EXT_REGISTER_BC;
 
 const isSmallSignedImmediate = (value: number): boolean =>
 	Number.isInteger(value) && value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX;
@@ -592,6 +599,7 @@ class FunctionBuilder {
 					const cWidthValue = instr.c;
 					const forceWide = ((instr.rkMask & RK_B) !== 0 && instr.b < 0)
 						|| ((instr.rkMask & RK_C) !== 0 && instr.c < 0);
+					const forceFieldWide = isFieldConstOp(instr.op);
 					const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, EXT_A_BITS);
 					const bWide = (instr.rkMask & RK_B) !== 0
 						? needsWideSigned(bWidthValue, MAX_OPERAND_BITS, EXT_B_BITS)
@@ -599,7 +607,7 @@ class FunctionBuilder {
 					const cWide = (instr.rkMask & RK_C) !== 0
 						? needsWideSigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS)
 						: needsWideUnsigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS);
-					wideFlags[index] = forceWide || aWide || bWide || cWide;
+					wideFlags[index] = forceWide || forceFieldWide || aWide || bWide || cWide;
 					continue;
 				}
 				if (instr.format === 'ABx') {
@@ -693,6 +701,12 @@ class FunctionBuilder {
 					}
 					if ((instr.rkMask & RK_C) !== 0 && instr.c < 0) {
 						constRelocs.push({ wordIndex, kind: 'rk_c', constIndex: -instr.c - 1 });
+					}
+					if (instr.op === OpCode.SETFIELD) {
+						constRelocs.push({ wordIndex, kind: 'const_b', constIndex: instr.b });
+					}
+					if (instr.op === OpCode.GETFIELD || instr.op === OpCode.SELF) {
+						constRelocs.push({ wordIndex, kind: 'const_c', constIndex: instr.c });
 					}
 					continue;
 				}
@@ -1156,6 +1170,41 @@ class FunctionBuilder {
 			target,
 		});
 		this.ranges.push(this.currentRange);
+	}
+
+	private emitTableGetConst(target: number, tableReg: number, keyConst: number): void {
+		const keyValue = this.program.constPool[keyConst];
+		if (typeof keyValue === 'number' && Number.isInteger(keyValue) && keyValue >= 1 && keyValue <= MAX_SPECIALIZED_TABLE_OPERAND) {
+			this.emitABC(OpCode.GETI, target, tableReg, keyValue);
+			return;
+		}
+		if (isStringValue(keyValue) && keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
+			this.emitABC(OpCode.GETFIELD, target, tableReg, keyConst);
+			return;
+		}
+		this.emitABC(OpCode.GETT, target, tableReg, this.encodeConstOperand(keyConst), RK_C);
+	}
+
+	private emitTableSetConst(tableReg: number, keyConst: number, valueReg: number): void {
+		const keyValue = this.program.constPool[keyConst];
+		if (typeof keyValue === 'number' && Number.isInteger(keyValue) && keyValue >= 1 && keyValue <= MAX_SPECIALIZED_TABLE_OPERAND) {
+			this.emitABC(OpCode.SETI, tableReg, keyValue, valueReg, RK_C);
+			return;
+		}
+		if (isStringValue(keyValue) && keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
+			this.emitABC(OpCode.SETFIELD, tableReg, keyConst, valueReg, RK_C);
+			return;
+		}
+		this.emitABC(OpCode.SETT, tableReg, this.encodeConstOperand(keyConst), valueReg, RK_B | RK_C);
+	}
+
+	private emitSelf(target: number, baseReg: number, keyConst: number): void {
+		if (keyConst <= MAX_SPECIALIZED_TABLE_OPERAND) {
+			this.emitABC(OpCode.SELF, target, baseReg, keyConst);
+			return;
+		}
+		this.emitABC(OpCode.MOV, target + 1, baseReg, 0);
+		this.emitABC(OpCode.GETT, target, baseReg, this.encodeConstOperand(keyConst), RK_C);
 	}
 
 	private emitJumpPlaceholder(op: OpCode = OpCode.JMP, a: number = 0): number {
@@ -1725,8 +1774,11 @@ class FunctionBuilder {
 				this.emitABx(target.system ? OpCode.SETSYS : OpCode.SETGL, valueReg, target.slot);
 				return;
 			case 'table': {
-				const keyOperand = target.keyConst !== undefined ? this.encodeConstOperand(target.keyConst) : target.keyReg;
-				this.emitABC(OpCode.SETT, target.tableReg, keyOperand, valueReg, RK_B | RK_C);
+				if (target.keyConst !== undefined) {
+					this.emitTableSetConst(target.tableReg, target.keyConst, valueReg);
+					return;
+				}
+				this.emitABC(OpCode.SETT, target.tableReg, target.keyReg, valueReg, RK_B | RK_C);
 				return;
 			}
 			case 'memory':
@@ -1760,10 +1812,17 @@ class FunctionBuilder {
 				return;
 			}
 			case 'table': {
-				const keyOperand = target.keyConst !== undefined ? this.encodeConstOperand(target.keyConst) : target.keyReg;
-				this.emitABC(OpCode.GETT, temp, target.tableReg, keyOperand, RK_C);
+				if (target.keyConst !== undefined) {
+					this.emitTableGetConst(temp, target.tableReg, target.keyConst);
+				} else {
+					this.emitABC(OpCode.GETT, temp, target.tableReg, target.keyReg, RK_C);
+				}
 				this.emitArithmetic(opForAssignment(operator), temp, temp, valueReg);
-				this.emitABC(OpCode.SETT, target.tableReg, keyOperand, temp, RK_B | RK_C);
+				if (target.keyConst !== undefined) {
+					this.emitTableSetConst(target.tableReg, target.keyConst, temp);
+					return;
+				}
+				this.emitABC(OpCode.SETT, target.tableReg, target.keyReg, temp, RK_B | RK_C);
 				return;
 			}
 			case 'memory':
@@ -2059,12 +2118,12 @@ class FunctionBuilder {
 		for (let i = 1; i < pathEnd; i += 1) {
 			const key = this.program.constIndexString(identifiers[i]);
 			const nextReg = this.allocTemp();
-			this.emitABC(OpCode.GETT, nextReg, baseReg, this.encodeConstOperand(key), RK_C);
+			this.emitTableGetConst(nextReg, baseReg, key);
 			this.emitABC(OpCode.MOV, baseReg, nextReg, 0);
 		}
 		const keyName = methodName && methodName.length > 0 ? methodName : identifiers[identifiers.length - 1];
 		const keyConst = this.program.constIndexString(keyName);
-		this.emitABC(OpCode.SETT, baseReg, this.encodeConstOperand(keyConst), closureReg, RK_B | RK_C);
+		this.emitTableSetConst(baseReg, keyConst, closureReg);
 	}
 
 	private compileExpressionInto(expression: LuaExpression, target: number, resultCount: number, protoIdHint: string | null = null): void {
@@ -2128,7 +2187,7 @@ class FunctionBuilder {
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
 		const key = this.program.constIndexString(this.canonicalizeName(expression.identifier));
-		this.emitABC(OpCode.GETT, target, baseReg, this.encodeConstOperand(key), RK_C);
+		this.emitTableGetConst(target, baseReg, key);
 	}
 
 	private compileIndexExpression(expression: any, target: number): void {
@@ -2141,7 +2200,7 @@ class FunctionBuilder {
 		this.compileExpressionInto(expression.base, baseReg, 1);
 		const keyConst = this.tryGetConstIndex(expression.index);
 		if (keyConst !== null) {
-			this.emitABC(OpCode.GETT, target, baseReg, this.encodeConstOperand(keyConst), RK_C);
+			this.emitTableGetConst(target, baseReg, keyConst);
 			return;
 		}
 		const keyReg = this.allocTemp();
@@ -2168,8 +2227,12 @@ class FunctionBuilder {
 			if (field.kind === LuaTableFieldKind.Array) {
 				const valueReg = this.allocTemp();
 				this.compileExpressionInto(field.value, valueReg, 1);
-				const keyConst = this.program.constIndex(arrayIndex);
-				this.emitABC(OpCode.SETT, target, this.encodeConstOperand(keyConst), valueReg, RK_B | RK_C);
+				if (arrayIndex <= MAX_SPECIALIZED_TABLE_OPERAND) {
+					this.emitABC(OpCode.SETI, target, arrayIndex, valueReg, RK_C);
+				} else {
+					const keyConst = this.program.constIndex(arrayIndex);
+					this.emitTableSetConst(target, keyConst, valueReg);
+				}
 				arrayIndex += 1;
 				this.tempTop = tempBase;
 				continue;
@@ -2178,7 +2241,7 @@ class FunctionBuilder {
 				const valueReg = this.allocTemp();
 				this.compileExpressionInto(field.value, valueReg, 1);
 				const keyConst = this.program.constIndexString(this.canonicalizeName(field.name));
-				this.emitABC(OpCode.SETT, target, this.encodeConstOperand(keyConst), valueReg, RK_B | RK_C);
+				this.emitTableSetConst(target, keyConst, valueReg);
 				this.tempTop = tempBase;
 				continue;
 			}
@@ -2186,7 +2249,7 @@ class FunctionBuilder {
 			if (keyConst !== null) {
 				const valueReg = this.allocTemp();
 				this.compileExpressionInto(field.value, valueReg, 1);
-				this.emitABC(OpCode.SETT, target, this.encodeConstOperand(keyConst), valueReg, RK_B | RK_C);
+				this.emitTableSetConst(target, keyConst, valueReg);
 				this.tempTop = tempBase;
 				continue;
 			}
@@ -2515,9 +2578,9 @@ class FunctionBuilder {
 		}
 		if (hasMethod) {
 			this.reserveTempRange(callBase, 2);
-			this.compileExpressionInto(expression.callee, callBase + 1, 1);
+			this.compileExpressionInto(expression.callee, callBase, 1);
 			const methodKey = this.program.constIndexString(methodName);
-			this.emitABC(OpCode.GETT, callBase, callBase + 1, this.encodeConstOperand(methodKey), RK_C);
+			this.emitSelf(callBase, callBase, methodKey);
 		} else {
 			this.compileExpressionInto(expression.callee, callBase, 1);
 		}

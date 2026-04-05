@@ -335,6 +335,11 @@ export const enum OpCode {
 	SETSYS,
 	GETGL,
 	SETGL,
+	GETI,
+	SETI,
+	GETFIELD,
+	SETFIELD,
+	SELF,
 }
 
 export const enum MemoryAccessKind {
@@ -432,6 +437,11 @@ const BASE_CYCLES: Uint8Array = (() => {
 	set(OpCode.SETSYS, 3);
 	set(OpCode.GETGL, 4);
 	set(OpCode.SETGL, 5);
+	set(OpCode.GETI, 5);
+	set(OpCode.SETI, 7);
+	set(OpCode.GETFIELD, 5);
+	set(OpCode.SETFIELD, 7);
+	set(OpCode.SELF, 6);
 
 	return table;
 })();
@@ -550,6 +560,77 @@ export class Table {
 			this.rawSet(key, value);
 			return;
 		}
+		if (value === null) {
+			this.removeFromHash(key);
+			return;
+		}
+		const nodeIndex = this.findNodeIndex(key);
+		if (nodeIndex >= 0) {
+			this.hash[nodeIndex].value = value;
+			return;
+		}
+		if (this.hash.length === 0 || this.hashFree < 0) {
+			this.rehash(key);
+		}
+		this.rawSet(key, value);
+	}
+
+	public getInteger(indexValue: number): Value {
+		const index = indexValue - 1;
+		if (index >= 0 && index < this.array.length) {
+			const value = this.array[index];
+			return value === undefined ? null : value;
+		}
+		const nodeIndex = this.findNodeIndex(indexValue);
+		if (nodeIndex >= 0) {
+			return this.hash[nodeIndex].value;
+		}
+		return null;
+	}
+
+	public setInteger(indexValue: number, value: Value): void {
+		const index = indexValue - 1;
+		if (index >= 0 && index < this.array.length) {
+			if (value === null) {
+				this.array[index] = value;
+				if (index < this.arrayLength) {
+					this.arrayLength = index;
+				}
+				return;
+			}
+			this.array[index] = value;
+			if (index === this.arrayLength) {
+				this.updateArrayLengthFrom(this.arrayLength);
+			}
+			return;
+		}
+		if (value === null) {
+			this.removeFromHash(indexValue);
+			if (index >= 0 && index < this.arrayLength) {
+				this.arrayLength = index;
+			}
+			return;
+		}
+		const nodeIndex = this.findNodeIndex(indexValue);
+		if (nodeIndex >= 0) {
+			this.hash[nodeIndex].value = value;
+			return;
+		}
+		if (this.hash.length === 0 || this.hashFree < 0) {
+			this.rehash(indexValue);
+		}
+		this.rawSet(indexValue, value);
+	}
+
+	public getStringKey(key: StringValue): Value {
+		const nodeIndex = this.findNodeIndex(key);
+		if (nodeIndex >= 0) {
+			return this.hash[nodeIndex].value;
+		}
+		return null;
+	}
+
+	public setStringKey(key: StringValue, value: Value): void {
 		if (value === null) {
 			this.removeFromHash(key);
 			return;
@@ -1308,16 +1389,164 @@ export class CPU {
 			if (metatable === null) {
 				return null;
 			}
-			if (!(metatable instanceof Table)) {
-				throw new Error('Metatable must be a table value.');
-			}
-			const indexer = metatable.get(this.indexKey);
+			const indexer = metatable.getStringKey(this.indexKey);
 			if (!(indexer instanceof Table)) {
 				return null;
 			}
 			current = indexer;
 		}
 		throw new Error('Metatable __index loop detected.');
+	}
+
+	private resolveTableIntegerIndex(table: Table, index: number): Value {
+		let current = table;
+		for (let depth = 0; depth < 32; depth += 1) {
+			const value = current.getInteger(index);
+			if (value !== null) {
+				return value;
+			}
+			const metatable = current.getMetatable();
+			if (metatable === null) {
+				return null;
+			}
+			const indexer = metatable.getStringKey(this.indexKey);
+			if (!(indexer instanceof Table)) {
+				return null;
+			}
+			current = indexer;
+		}
+		throw new Error('Metatable __index loop detected.');
+	}
+
+	private resolveTableFieldIndex(table: Table, key: StringValue): Value {
+		let current = table;
+		for (let depth = 0; depth < 32; depth += 1) {
+			const value = current.getStringKey(key);
+			if (value !== null) {
+				return value;
+			}
+			const metatable = current.getMetatable();
+			if (metatable === null) {
+				return null;
+			}
+			const indexer = metatable.getStringKey(this.indexKey);
+			if (!(indexer instanceof Table)) {
+				return null;
+			}
+			current = indexer;
+		}
+		throw new Error('Metatable __index loop detected.');
+	}
+
+	private loadTableIndex(base: Value, key: Value): Value {
+		if (base instanceof Table) {
+			return this.resolveTableIndex(base, key);
+		}
+		if (isStringValue(base)) {
+			const indexTable = this.stringIndexTable;
+			return indexTable === null ? null : this.resolveTableIndex(indexTable, key);
+		}
+		if (isNativeObject(base)) {
+			const directValue = base.get(key);
+			if (directValue !== null) {
+				return directValue;
+			}
+			const metatable = base.metatable ?? null;
+			if (metatable !== null) {
+				const indexer = metatable.getStringKey(this.indexKey);
+				if (indexer instanceof Table) {
+					return this.resolveTableIndex(indexer, key);
+				}
+			}
+			return null;
+		}
+		throw new Error('Attempted to index field on a non-table value.');
+	}
+
+	private loadTableIntegerIndex(base: Value, index: number): Value {
+		if (base instanceof Table) {
+			return this.resolveTableIntegerIndex(base, index);
+		}
+		if (isStringValue(base)) {
+			const indexTable = this.stringIndexTable;
+			return indexTable === null ? null : this.resolveTableIntegerIndex(indexTable, index);
+		}
+		if (isNativeObject(base)) {
+			const directValue = base.get(index);
+			if (directValue !== null) {
+				return directValue;
+			}
+			const metatable = base.metatable ?? null;
+			if (metatable !== null) {
+				const indexer = metatable.getStringKey(this.indexKey);
+				if (indexer instanceof Table) {
+					return this.resolveTableIntegerIndex(indexer, index);
+				}
+			}
+			return null;
+		}
+		throw new Error('Attempted to index field on a non-table value.');
+	}
+
+	private loadTableFieldIndex(base: Value, key: StringValue): Value {
+		if (base instanceof Table) {
+			return this.resolveTableFieldIndex(base, key);
+		}
+		if (isStringValue(base)) {
+			const indexTable = this.stringIndexTable;
+			return indexTable === null ? null : this.resolveTableFieldIndex(indexTable, key);
+		}
+		if (isNativeObject(base)) {
+			const directValue = base.get(key);
+			if (directValue !== null) {
+				return directValue;
+			}
+			const metatable = base.metatable ?? null;
+			if (metatable !== null) {
+				const indexer = metatable.getStringKey(this.indexKey);
+				if (indexer instanceof Table) {
+					return this.resolveTableFieldIndex(indexer, key);
+				}
+			}
+			return null;
+		}
+		throw new Error('Attempted to index field on a non-table value.');
+	}
+
+	private storeTableIndex(base: Value, key: Value, value: Value): void {
+		if (base instanceof Table) {
+			base.set(key, value);
+			return;
+		}
+		if (isNativeObject(base)) {
+			base.set(key, value);
+			return;
+		}
+		throw new Error('Attempted to assign to a non-table value.');
+	}
+
+	private storeTableIntegerIndex(base: Value, index: number, value: Value): void {
+		if (base instanceof Table) {
+			base.setInteger(index, value);
+			return;
+		}
+		if (isNativeObject(base)) {
+			base.set(index, value);
+			return;
+		}
+		throw new Error('Attempted to assign to a non-table value.');
+	}
+
+	private storeTableFieldIndex(base: Value, key: StringValue, value: Value): void {
+		if (base instanceof Table) {
+			base.setStringKey(key, value);
+			return;
+		}
+		if (isNativeObject(base)) {
+			base.set(key, value);
+			return;
+		}
+		throw new Error('Attempted to assign to a non-table value.');
 	}
 
 	// Release a register array back to the pool
@@ -1828,55 +2057,32 @@ export class CPU {
 			case OpCode.SETGL:
 				this.setGlobalBySlot(bx, frame.registers.get(a));
 				return;
+			case OpCode.GETI:
+				this.setRegister(frame, a, this.loadTableIntegerIndex(frame.registers.get(b), c));
+				return;
+			case OpCode.SETI:
+				this.storeTableIntegerIndex(frame.registers.get(a), b, this.readRK(frame, rkRawC, rkBitsC));
+				return;
+			case OpCode.GETFIELD:
+				this.setRegister(frame, a, this.loadTableFieldIndex(frame.registers.get(b), this.program.constPool[c] as StringValue));
+				return;
+			case OpCode.SETFIELD:
+				this.storeTableFieldIndex(frame.registers.get(a), this.program.constPool[b] as StringValue, this.readRK(frame, rkRawC, rkBitsC));
+				return;
+			case OpCode.SELF: {
+				const base = frame.registers.get(b);
+				const key = this.program.constPool[c] as StringValue;
+				this.setRegister(frame, a + 1, base);
+				this.setRegister(frame, a, this.loadTableFieldIndex(base, key));
+				return;
+			}
 			case OpCode.GETT: {
-				const table = frame.registers.get(b);
-				const key = this.readRK(frame, rkRawC, rkBitsC);
-				if (table instanceof Table) {
-					this.setRegister(frame, a, this.resolveTableIndex(table, key));
-					return;
-				}
-				if (isStringValue(table)) {
-					const indexTable = this.stringIndexTable;
-					if (indexTable !== null) {
-						this.setRegister(frame, a, this.resolveTableIndex(indexTable, key));
-					} else {
-						this.setRegisterNil(frame, a);
-					}
-					return;
-				}
-				if (isNativeObject(table)) {
-					const directValue = table.get(key);
-					if (directValue !== null) {
-						this.setRegister(frame, a, directValue);
-						return;
-					}
-					const metatable = table.metatable ?? null;
-					if (metatable !== null) {
-						const indexer = metatable.get(this.indexKey);
-						if (indexer instanceof Table) {
-							this.setRegister(frame, a, this.resolveTableIndex(indexer, key));
-							return;
-						}
-					}
-					this.setRegisterNil(frame, a);
-					return;
-				}
-				throw new Error('Attempted to index field on a non-table value.');
+				this.setRegister(frame, a, this.loadTableIndex(frame.registers.get(b), this.readRK(frame, rkRawC, rkBitsC)));
+				return;
 			}
-			case OpCode.SETT: {
-				const table = frame.registers.get(a);
-				const key = this.readRK(frame, rkRawB, rkBitsB);
-				const value = this.readRK(frame, rkRawC, rkBitsC);
-				if (table instanceof Table) {
-					table.set(key, value);
-					return;
-				}
-				if (isNativeObject(table)) {
-					table.set(key, value);
-					return;
-				}
-				throw new Error('Attempted to assign to a non-table value.');
-			}
+			case OpCode.SETT:
+				this.storeTableIndex(frame.registers.get(a), this.readRK(frame, rkRawB, rkBitsB), this.readRK(frame, rkRawC, rkBitsC));
+				return;
 			case OpCode.NEWT:
 				this.charge(CEIL_DIV4(b) + CEIL_DIV4(c));
 				this.setRegisterTable(frame, a, new Table(b, c));

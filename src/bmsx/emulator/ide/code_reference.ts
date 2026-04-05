@@ -18,6 +18,8 @@ import { ReferenceState, type ReferenceMatchInfo } from './reference_state';
 import type { TextBuffer } from './text/text_buffer';
 import { getTextSnapshot, splitText } from './text/source_text';
 
+export type { ReferenceMatchInfo } from './reference_state';
+
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext;
 	activeLines: readonly string[];

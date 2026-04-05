@@ -37,6 +37,11 @@ local world_instance
 local world_class<const> = {}
 world_class.__index = world_class
 
+local emit_space_clear<const> = function()
+	local c<const> = sys_palette_color(1)
+	memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 4), sys_vdp_cmd_clear, 4, 0, c.r, c.g, c.b, c.a)
+end
+
 local tickgroup_names<const> = {}
 for name, value in pairs(tickgroup) do
 	tickgroup_names[value] = name
@@ -220,6 +225,7 @@ function world_class.new()
 	self._space_order = {}
 	self._obj_to_space = {}
 	self.active_space_id = 'main'
+	self.space_clear_pending = false
 	self.systems = ecs.ecsystemmanager.new()
 	self.current_phase = nil
 	self.paused = false
@@ -259,7 +265,7 @@ function world_class:set_space(space_id)
 		error('world.set_space unknown space id "' .. tostring(space_id) .. '".')
 	end
 	if self.active_space_id ~= space_id then
-		do local c<const> = sys_palette_color(1);memwrite(vdp_stream_claim_words(sys_vdp_stream_packet_header_words + 4), sys_vdp_cmd_clear, 4, 0, c.r, c.g, c.b, c.a) end
+		self.space_clear_pending = true
 	end
 	self.active_space_id = space_id
 	return self.active_space_id
@@ -653,6 +659,10 @@ function world_class:update()
 end
 
 function world_class:draw()
+	if self.space_clear_pending then
+		emit_space_clear()
+		self.space_clear_pending = false
+	end
 	self.current_phase = tickgroup.presentation
 	self.systems:update_phase(tickgroup.presentation)
 	-- perf.acc_draw_ms = perf.acc_draw_ms + record_phase_stats(perf, self.systems, tickgroup.presentation)
@@ -686,6 +696,7 @@ function world_class:clear()
 	registry.instance:clear()
 	self:add_space('main')
 	self.active_space_id = 'main'
+	self.space_clear_pending = false
 end
 world_instance = world_class.new()
 world_instance.id = 'world'

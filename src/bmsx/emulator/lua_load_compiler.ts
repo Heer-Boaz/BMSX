@@ -12,7 +12,7 @@ import {
 } from '../lua/syntax/lua_ast';
 import { LuaLexer } from '../lua/syntax/lualexer';
 import { createNativeFunction, isNativeObject, Table, type NativeFunction, type Value } from './cpu';
-import { isStringValue } from './string_pool';
+import { isStringValue, type StringValue } from './string_pool';
 import type { Runtime } from './runtime';
 
 type LoadSubsetValueExpr =
@@ -23,12 +23,26 @@ type LoadSubsetValueExpr =
 	| {
 		kind: 'param';
 		rootParamIndex: number;
-		path: Value[];
+		path: LoadSubsetPathStep[];
+	};
+
+type LoadSubsetPathStep =
+	| {
+		kind: 'key';
+		key: Value;
+	}
+	| {
+		kind: 'field';
+		key: StringValue;
+	}
+	| {
+		kind: 'index';
+		index: number;
 	};
 
 type LoadSubsetOp = {
 	rootParamIndex: number;
-	path: Value[];
+	path: LoadSubsetPathStep[];
 	valueExpr: LoadSubsetValueExpr;
 };
 
@@ -58,23 +72,51 @@ const describeValue = (value: Value): string => {
 	return 'function';
 };
 
-const getIndexedValue = (runtime: Runtime, target: Value, key: Value): Value => {
+const getPathStepValue = (runtime: Runtime, target: Value, step: LoadSubsetPathStep): Value => {
 	if (target instanceof Table) {
-		return target.get(key);
+		if (step.kind === 'index') {
+			return target.getInteger(step.index);
+		}
+		if (step.kind === 'field') {
+			return target.getStringKey(step.key);
+		}
+		return target.get(step.key);
 	}
 	if (isNativeObject(target)) {
-		return target.get(key);
+		if (step.kind === 'index') {
+			return target.get(step.index);
+		}
+		if (step.kind === 'field') {
+			return target.get(step.key);
+		}
+		return target.get(step.key);
 	}
 	throw runtime.createApiRuntimeError(`[loadstring] attempted to index a non-table value (${describeValue(target)}).`);
 };
 
-const setIndexedValue = (runtime: Runtime, target: Value, key: Value, value: Value): void => {
+const setPathStepValue = (runtime: Runtime, target: Value, step: LoadSubsetPathStep, value: Value): void => {
 	if (target instanceof Table) {
-		target.set(key, value);
+		if (step.kind === 'index') {
+			target.setInteger(step.index, value);
+			return;
+		}
+		if (step.kind === 'field') {
+			target.setStringKey(step.key, value);
+			return;
+		}
+		target.set(step.key, value);
 		return;
 	}
 	if (isNativeObject(target)) {
-		target.set(key, value);
+		if (step.kind === 'index') {
+			target.set(step.index, value);
+			return;
+		}
+		if (step.kind === 'field') {
+			target.set(step.key, value);
+			return;
+		}
+		target.set(step.key, value);
 		return;
 	}
 	throw runtime.createApiRuntimeError(`[loadstring] attempted to assign through a non-table value (${describeValue(target)}).`);
@@ -86,7 +128,7 @@ const resolveValueExpr = (runtime: Runtime, args: ReadonlyArray<Value>, expr: Lo
 	}
 	let node: Value = expr.rootParamIndex < args.length ? args[expr.rootParamIndex]! : null;
 	for (let index = 0; index < expr.path.length; index += 1) {
-		node = getIndexedValue(runtime, node, expr.path[index]!);
+		node = getPathStepValue(runtime, node, expr.path[index]!);
 	}
 	return node;
 };
@@ -98,9 +140,9 @@ const buildNativeFunction = (runtime: Runtime, compiled: LoadSubsetCompiledFunct
 			const op = compiled.ops[index]!;
 			let node: Value = op.rootParamIndex < args.length ? args[op.rootParamIndex]! : null;
 			for (let pathIndex = 0; pathIndex < op.path.length - 1; pathIndex += 1) {
-				node = getIndexedValue(runtime, node, op.path[pathIndex]!);
+				node = getPathStepValue(runtime, node, op.path[pathIndex]!);
 			}
-			setIndexedValue(
+			setPathStepValue(
 				runtime,
 				node,
 				op.path[op.path.length - 1]!,
@@ -121,7 +163,7 @@ const compileParamPath = (
 	chunkName: string,
 	expression: LuaExpression,
 	paramIndexByName: ReadonlyMap<string, number>,
-): { rootParamIndex: number; path: Value[] } => {
+): { rootParamIndex: number; path: LoadSubsetPathStep[] } => {
 	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
 		const rootParamIndex = paramIndexByName.get(expression.name);
 		if (rootParamIndex === undefined) {
@@ -134,32 +176,35 @@ const compileParamPath = (
 	}
 	if (expression.kind === LuaSyntaxKind.MemberExpression) {
 		const base = compileParamPath(runtime, chunkName, expression.base, paramIndexByName);
-		base.path.push(runtime.internString(expression.identifier));
+		base.path.push({ kind: 'field', key: runtime.internString(expression.identifier) });
 		return base;
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
 		const base = compileParamPath(runtime, chunkName, expression.base, paramIndexByName);
-		base.path.push(compileKeyLiteral(runtime, chunkName, expression.index));
+		base.path.push(compilePathStep(runtime, chunkName, expression.index));
 		return base;
 	}
 	fail(runtime, chunkName, 'expected a parameter path expression', expression.range);
 };
 
-const compileKeyLiteral = (runtime: Runtime, chunkName: string, expression: LuaExpression): Value => {
+const compilePathStep = (runtime: Runtime, chunkName: string, expression: LuaExpression): LoadSubsetPathStep => {
 	if (expression.kind === LuaSyntaxKind.UnaryExpression) {
 		if (expression.operator === LuaUnaryOperator.Negate) {
 			const operand = expression.operand;
 			if (operand.kind === LuaSyntaxKind.NumericLiteralExpression) {
-				return -operand.value;
+				return { kind: 'key', key: -operand.value };
 			}
 		}
 		fail(runtime, chunkName, 'index expressions must use string or numeric literals', expression.range);
 	}
 	if (expression.kind === LuaSyntaxKind.NumericLiteralExpression) {
-		return expression.value;
+		if (Number.isSafeInteger(expression.value) && expression.value >= 1) {
+			return { kind: 'index', index: expression.value };
+		}
+		return { kind: 'key', key: expression.value };
 	}
 	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
-		return runtime.internString(expression.value);
+		return { kind: 'field', key: runtime.internString(expression.value) };
 	}
 	fail(runtime, chunkName, 'index expressions must use string or numeric literals', expression.range);
 };

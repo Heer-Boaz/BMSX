@@ -213,6 +213,11 @@ static constexpr std::array<uint8_t, 64> makeBaseCycles() {
 	setCycle(table, OpCode::SETSYS, 3);
 	setCycle(table, OpCode::GETGL, 4);
 	setCycle(table, OpCode::SETGL, 5);
+	setCycle(table, OpCode::GETI, 5);
+	setCycle(table, OpCode::SETI, 7);
+	setCycle(table, OpCode::GETFIELD, 5);
+	setCycle(table, OpCode::SETFIELD, 7);
+	setCycle(table, OpCode::SELF, 6);
 
 	return table;
 }
@@ -611,6 +616,79 @@ void Table::set(const Value& key, const Value& value) {
 		rehash(key);
 	}
 	rawSet(key, value);
+}
+
+Value Table::getInteger(int indexValue) const {
+	const int index = indexValue - 1;
+	if (index >= 0 && index < static_cast<int>(m_array.size())) {
+		return m_array[static_cast<size_t>(index)];
+	}
+	const int nodeIndex = findNodeIndex(valueNumber(static_cast<double>(indexValue)));
+	if (nodeIndex >= 0) {
+		return m_hash[static_cast<size_t>(nodeIndex)].value;
+	}
+	return valueNil();
+}
+
+void Table::setInteger(int indexValue, const Value& value) {
+	const int index = indexValue - 1;
+	if (index >= 0 && index < static_cast<int>(m_array.size())) {
+		const size_t idx = static_cast<size_t>(index);
+		if (isNil(value)) {
+			m_array[idx] = value;
+			if (idx < m_arrayLength) {
+				m_arrayLength = idx;
+			}
+			return;
+		}
+		m_array[idx] = value;
+		if (idx == m_arrayLength) {
+			updateArrayLengthFrom(m_arrayLength);
+		}
+		return;
+	}
+	const Value key = valueNumber(static_cast<double>(indexValue));
+	if (isNil(value)) {
+		removeFromHash(key);
+		if (index >= 0 && static_cast<size_t>(index) < m_arrayLength) {
+			m_arrayLength = static_cast<size_t>(index);
+		}
+		return;
+	}
+	const int nodeIndex = findNodeIndex(key);
+	if (nodeIndex >= 0) {
+		m_hash[static_cast<size_t>(nodeIndex)].value = value;
+		return;
+	}
+	if (m_hash.empty() || m_hashFree < 0) {
+		rehash(key);
+	}
+	rawSet(key, value);
+}
+
+Value Table::getStringKey(StringId key) const {
+	const int nodeIndex = findNodeIndex(valueString(key));
+	if (nodeIndex >= 0) {
+		return m_hash[static_cast<size_t>(nodeIndex)].value;
+	}
+	return valueNil();
+}
+
+void Table::setStringKey(StringId key, const Value& value) {
+	const Value keyValue = valueString(key);
+	if (isNil(value)) {
+		removeFromHash(keyValue);
+		return;
+	}
+	const int nodeIndex = findNodeIndex(keyValue);
+	if (nodeIndex >= 0) {
+		m_hash[static_cast<size_t>(nodeIndex)].value = value;
+		return;
+	}
+	if (m_hash.empty() || m_hashFree < 0) {
+		rehash(keyValue);
+	}
+	rawSet(keyValue, value);
 }
 
 int Table::length() const {
@@ -1353,71 +1431,40 @@ void CPU::executeInstruction(
 			m_globalValues[static_cast<size_t>(bx)] = frame.registers[a];
 			return;
 
-		case OpCode::GETT: {
-			const Value& tableValue = frame.registers[b];
-			const Value& key = readRK(frame, rkRawC, rkBitsC);
-			if (valueIsTable(tableValue)) {
-				setRegister(frame, a, resolveTableIndex(asTable(tableValue), key));
-				return;
-			}
-			if (valueIsString(tableValue)) {
-				if (m_stringIndexTable) {
-					setRegister(frame, a, resolveTableIndex(m_stringIndexTable, key));
-				} else {
-					setRegister(frame, a, valueNil());
-				}
-				return;
-			}
-			if (valueIsNativeObject(tableValue)) {
-				auto* native = asNativeObject(tableValue);
-				Value nativeResult = native->get ? native->get(key) : valueNil();
-				if (!isNil(nativeResult)) {
-					setRegister(frame, a, nativeResult);
-					return;
-				}
-				Table* metatable = native->metatable;
-				if (metatable) {
-					Value indexerValue = metatable->get(m_indexKey);
-					if (valueIsTable(indexerValue)) {
-						setRegister(frame, a, resolveTableIndex(asTable(indexerValue), key));
-						return;
-					}
-				}
-				setRegister(frame, a, nativeResult);
-				return;
-			}
-			std::string message = "Attempted to index field on a non-table value.";
-			message += " base=" + std::string(valueTypeName(tableValue)) + "(" + valueToString(tableValue, m_stringPool) + ")";
-			message += " key=" + std::string(valueTypeName(key)) + "(" + valueToString(key, m_stringPool) + ")";
-			auto range = getDebugRange(frame.pc - INSTRUCTION_BYTES);
-			if (range.has_value()) {
-				message += " at " + range->path + ":" + std::to_string(range->startLine);
-			}
-			throw BMSX_RUNTIME_ERROR(message);
+		case OpCode::GETI:
+			setRegister(frame, a, loadTableIntegerIndex(frame.registers[static_cast<size_t>(b)], c));
+			return;
+
+		case OpCode::SETI:
+			storeTableIntegerIndex(frame.registers[static_cast<size_t>(a)], b, readRK(frame, rkRawC, rkBitsC));
+			return;
+
+		case OpCode::GETFIELD:
+			setRegister(frame, a, loadTableFieldIndex(frame.registers[static_cast<size_t>(b)], asStringId(m_program->constPool[static_cast<size_t>(c)])));
+			return;
+
+		case OpCode::SETFIELD:
+			storeTableFieldIndex(frame.registers[static_cast<size_t>(a)], asStringId(m_program->constPool[static_cast<size_t>(b)]), readRK(frame, rkRawC, rkBitsC));
+			return;
+
+		case OpCode::SELF: {
+			const Value base = frame.registers[static_cast<size_t>(b)];
+			const StringId key = asStringId(m_program->constPool[static_cast<size_t>(c)]);
+			setRegister(frame, a + 1, base);
+			setRegister(frame, a, loadTableFieldIndex(base, key));
+			return;
 		}
 
-		case OpCode::SETT: {
-			const Value& tableValue = frame.registers[a];
-			const Value& key = readRK(frame, rkRawB, rkBitsB);
-			const Value& value = readRK(frame, rkRawC, rkBitsC);
-			if (valueIsTable(tableValue)) {
-				asTable(tableValue)->set(key, value);
-				return;
-			}
-			if (valueIsNativeObject(tableValue)) {
-				asNativeObject(tableValue)->set(key, value);
-				return;
-			}
-			std::string message = "Attempted to assign to a non-table value.";
-			message += " base=" + std::string(valueTypeName(tableValue)) + "(" + valueToString(tableValue, m_stringPool) + ")";
-			message += " key=" + std::string(valueTypeName(key)) + "(" + valueToString(key, m_stringPool) + ")";
-			message += " value=" + std::string(valueTypeName(value)) + "(" + valueToString(value, m_stringPool) + ")";
-			auto range = getDebugRange(frame.pc - INSTRUCTION_BYTES);
-			if (range.has_value()) {
-				message += " at " + range->path + ":" + std::to_string(range->startLine);
-			}
-			throw BMSX_RUNTIME_ERROR(message);
+		case OpCode::GETT: {
+			const Value& tableValue = frame.registers[static_cast<size_t>(b)];
+			const Value& key = readRK(frame, rkRawC, rkBitsC);
+			setRegister(frame, a, loadTableIndex(tableValue, key));
+			return;
 		}
+
+		case OpCode::SETT:
+			storeTableIndex(frame.registers[static_cast<size_t>(a)], readRK(frame, rkRawB, rkBitsB), readRK(frame, rkRawC, rkBitsC));
+			return;
 
 		case OpCode::NEWT: {
 			CYCLES_ADD(ceilDiv4(b) + ceilDiv4(c));
@@ -2129,13 +2176,164 @@ Value CPU::resolveTableIndex(Table* table, const Value& key) {
 		if (!metatable) {
 			return valueNil();
 		}
-		Value indexerValue = metatable->get(m_indexKey);
+		Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
 		if (!valueIsTable(indexerValue)) {
 			return valueNil();
 		}
 		current = asTable(indexerValue);
 	}
 	throw BMSX_RUNTIME_ERROR("Metatable __index loop detected.");
+}
+
+Value CPU::resolveTableIntegerIndex(Table* table, int index) {
+	Table* current = table;
+	for (int depth = 0; depth < 32; depth += 1) {
+		Value value = current->getInteger(index);
+		if (!isNil(value)) {
+			return value;
+		}
+		Table* metatable = current->getMetatable();
+		if (!metatable) {
+			return valueNil();
+		}
+		Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
+		if (!valueIsTable(indexerValue)) {
+			return valueNil();
+		}
+		current = asTable(indexerValue);
+	}
+	throw BMSX_RUNTIME_ERROR("Metatable __index loop detected.");
+}
+
+Value CPU::resolveTableFieldIndex(Table* table, StringId key) {
+	Table* current = table;
+	for (int depth = 0; depth < 32; depth += 1) {
+		Value value = current->getStringKey(key);
+		if (!isNil(value)) {
+			return value;
+		}
+		Table* metatable = current->getMetatable();
+		if (!metatable) {
+			return valueNil();
+		}
+		Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
+		if (!valueIsTable(indexerValue)) {
+			return valueNil();
+		}
+		current = asTable(indexerValue);
+	}
+	throw BMSX_RUNTIME_ERROR("Metatable __index loop detected.");
+}
+
+Value CPU::loadTableIndex(const Value& base, const Value& key) {
+	if (valueIsTable(base)) {
+		return resolveTableIndex(asTable(base), key);
+	}
+	if (valueIsString(base)) {
+		return m_stringIndexTable ? resolveTableIndex(m_stringIndexTable, key) : valueNil();
+	}
+	if (valueIsNativeObject(base)) {
+		auto* native = asNativeObject(base);
+		Value directValue = native->get ? native->get(key) : valueNil();
+		if (!isNil(directValue)) {
+			return directValue;
+		}
+		Table* metatable = native->metatable;
+		if (metatable) {
+			Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
+			if (valueIsTable(indexerValue)) {
+				return resolveTableIndex(asTable(indexerValue), key);
+			}
+		}
+		return directValue;
+	}
+	throw BMSX_RUNTIME_ERROR("Attempted to index field on a non-table value.");
+}
+
+Value CPU::loadTableIntegerIndex(const Value& base, int index) {
+	if (valueIsTable(base)) {
+		return resolveTableIntegerIndex(asTable(base), index);
+	}
+	if (valueIsString(base)) {
+		return m_stringIndexTable ? resolveTableIntegerIndex(m_stringIndexTable, index) : valueNil();
+	}
+	if (valueIsNativeObject(base)) {
+		auto* native = asNativeObject(base);
+		Value directValue = native->get ? native->get(valueNumber(static_cast<double>(index))) : valueNil();
+		if (!isNil(directValue)) {
+			return directValue;
+		}
+		Table* metatable = native->metatable;
+		if (metatable) {
+			Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
+			if (valueIsTable(indexerValue)) {
+				return resolveTableIntegerIndex(asTable(indexerValue), index);
+			}
+		}
+		return directValue;
+	}
+	throw BMSX_RUNTIME_ERROR("Attempted to index field on a non-table value.");
+}
+
+Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
+	if (valueIsTable(base)) {
+		return resolveTableFieldIndex(asTable(base), key);
+	}
+	if (valueIsString(base)) {
+		return m_stringIndexTable ? resolveTableFieldIndex(m_stringIndexTable, key) : valueNil();
+	}
+	if (valueIsNativeObject(base)) {
+		auto* native = asNativeObject(base);
+		Value directValue = native->get ? native->get(valueString(key)) : valueNil();
+		if (!isNil(directValue)) {
+			return directValue;
+		}
+		Table* metatable = native->metatable;
+		if (metatable) {
+			Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
+			if (valueIsTable(indexerValue)) {
+				return resolveTableFieldIndex(asTable(indexerValue), key);
+			}
+		}
+		return directValue;
+	}
+	throw BMSX_RUNTIME_ERROR("Attempted to index field on a non-table value.");
+}
+
+void CPU::storeTableIndex(const Value& base, const Value& key, const Value& value) {
+	if (valueIsTable(base)) {
+		asTable(base)->set(key, value);
+		return;
+	}
+	if (valueIsNativeObject(base)) {
+		asNativeObject(base)->set(key, value);
+		return;
+	}
+	throw BMSX_RUNTIME_ERROR("Attempted to assign to a non-table value.");
+}
+
+void CPU::storeTableIntegerIndex(const Value& base, int index, const Value& value) {
+	if (valueIsTable(base)) {
+		asTable(base)->setInteger(index, value);
+		return;
+	}
+	if (valueIsNativeObject(base)) {
+		asNativeObject(base)->set(valueNumber(static_cast<double>(index)), value);
+		return;
+	}
+	throw BMSX_RUNTIME_ERROR("Attempted to assign to a non-table value.");
+}
+
+void CPU::storeTableFieldIndex(const Value& base, StringId key, const Value& value) {
+	if (valueIsTable(base)) {
+		asTable(base)->setStringKey(key, value);
+		return;
+	}
+	if (valueIsNativeObject(base)) {
+		asNativeObject(base)->set(valueString(key), value);
+		return;
+	}
+	throw BMSX_RUNTIME_ERROR("Attempted to assign to a non-table value.");
 }
 
 std::unique_ptr<CallFrame> CPU::acquireFrame() {

@@ -393,12 +393,6 @@ export class GameView implements RenderContext {
 			const frame = buildFrameData(this);
 			renderGraph.execute(frame);
 			this.finalizePresentation();
-			this.host.onPresentedFrame?.({
-				frameIndex: frame.frameIndex,
-				timeMs: nowSeconds * 1000,
-				width: this.canvasSize.x,
-				height: this.canvasSize.y,
-			});
 		} finally {
 			backend.endFrame();
 			renderGate.end(token);

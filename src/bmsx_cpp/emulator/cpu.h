@@ -614,6 +614,11 @@ enum class OpCode : uint8_t {
 	SETSYS,
 	GETGL,
 	SETGL,
+	GETI,
+	SETI,
+	GETFIELD,
+	SETFIELD,
+	SELF,
 };
 
 enum class MemoryAccessKind : uint8_t {
@@ -664,6 +669,10 @@ public:
 
 	Value get(const Value& key) const;
 	void set(const Value& key, const Value& value);
+	Value getInteger(int index) const;
+	void setInteger(int index, const Value& value);
+	Value getStringKey(StringId key) const;
+	void setStringKey(StringId key, const Value& value);
 	int length() const;
 	void clear();
 	template <typename Fn>
@@ -853,6 +862,14 @@ private:
 	void writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount);
 	const Value& readRK(CallFrame& frame, uint32_t raw, int bits);
 	Value resolveTableIndex(Table* table, const Value& key);
+	Value resolveTableIntegerIndex(Table* table, int index);
+	Value resolveTableFieldIndex(Table* table, StringId key);
+	Value loadTableIndex(const Value& base, const Value& key);
+	Value loadTableIntegerIndex(const Value& base, int index);
+	Value loadTableFieldIndex(const Value& base, StringId key);
+	void storeTableIndex(const Value& base, const Value& key, const Value& value);
+	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
+	void storeTableFieldIndex(const Value& base, StringId key, const Value& value);
 
 	std::unique_ptr<CallFrame> acquireFrame();
 	void releaseFrame(std::unique_ptr<CallFrame> frame);

@@ -283,6 +283,8 @@ const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.GETG:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
+			case OpCode.GETI:
+			case OpCode.GETFIELD:
 			case OpCode.NEWT:
 			case OpCode.CLOSURE:
 			case OpCode.GETUP:
@@ -338,6 +340,19 @@ const computeMaxRegister = (instructions: Instruction[]): number => {
 				}
 				break;
 			}
+			case OpCode.SETI:
+			case OpCode.SETFIELD: {
+				updateMax(instruction.a);
+				if (instruction.c >= 0) {
+					updateMax(instruction.c);
+				}
+				break;
+			}
+			case OpCode.SELF:
+				updateMax(instruction.a);
+				updateMax(instruction.a + 1);
+				updateMax(instruction.b);
+				break;
 			case OpCode.CONCATN: {
 				updateMax(instruction.a);
 				updateMax(instruction.b);
@@ -425,6 +440,8 @@ const supportsRkC = (op: OpCode): boolean => {
 		case OpCode.LE:
 		case OpCode.GETT:
 		case OpCode.SETT:
+		case OpCode.SETI:
+		case OpCode.SETFIELD:
 			return true;
 		default:
 			return false;
@@ -1283,8 +1300,18 @@ const collectUsesForSsa = (instruction: Instruction): UseOperand[] => {
 		case OpCode.MOV:
 			add('b', instruction.b, null, false);
 			break;
+		case OpCode.GETI:
+		case OpCode.GETFIELD:
+		case OpCode.SELF:
+			add('b', instruction.b, null, false);
+			break;
 		case OpCode.GETT:
 			add('b', instruction.b, null, false);
+			add('c', instruction.c, RK_C, supportsRkC(instruction.op));
+			break;
+		case OpCode.SETI:
+		case OpCode.SETFIELD:
+			add('a', instruction.a, null, false);
 			add('c', instruction.c, RK_C, supportsRkC(instruction.op));
 			break;
 		case OpCode.SETT:
@@ -1384,8 +1411,20 @@ const collectUsesForLiveness = (instruction: Instruction, maxRegister: number): 
 		case OpCode.TESTSET:
 			add(instruction.b);
 			break;
+		case OpCode.GETI:
+		case OpCode.GETFIELD:
+		case OpCode.SELF:
+			add(instruction.b);
+			break;
 		case OpCode.GETT:
 			add(instruction.b);
+			if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
+				add(instruction.c);
+			}
+			break;
+		case OpCode.SETI:
+		case OpCode.SETFIELD:
+			add(instruction.a);
 			if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
 				add(instruction.c);
 			}
@@ -1478,6 +1517,8 @@ const collectDefs = (instruction: Instruction, maxRegister: number): number[] =>
 		case OpCode.GETG:
 		case OpCode.GETSYS:
 		case OpCode.GETGL:
+		case OpCode.GETI:
+		case OpCode.GETFIELD:
 		case OpCode.GETT:
 		case OpCode.NEWT:
 		case OpCode.ADD:
@@ -1503,8 +1544,14 @@ const collectDefs = (instruction: Instruction, maxRegister: number): number[] =>
 		case OpCode.LOAD_MEM:
 			add(instruction.a);
 			break;
+		case OpCode.SELF:
+			addRange(instruction.a, 2);
+			break;
 		case OpCode.TESTSET:
 			add(instruction.a);
+			break;
+		case OpCode.SETI:
+		case OpCode.SETFIELD:
 			break;
 		case OpCode.LOADNIL:
 			addRange(instruction.a, instruction.b);

@@ -869,15 +869,21 @@ const computeBlockConstantIn = (
 					case OpCode.GETG:
 					case OpCode.GETSYS:
 					case OpCode.GETGL:
-				case OpCode.GETT:
-				case OpCode.NEWT:
-				case OpCode.CONCAT:
-				case OpCode.CONCATN:
-				case OpCode.CLOSURE:
-				case OpCode.GETUP:
-				case OpCode.LOAD_MEM:
-					constants.delete(instruction.a);
-					break;
+					case OpCode.GETT:
+					case OpCode.GETI:
+					case OpCode.GETFIELD:
+					case OpCode.NEWT:
+					case OpCode.CONCAT:
+					case OpCode.CONCATN:
+					case OpCode.CLOSURE:
+					case OpCode.GETUP:
+					case OpCode.LOAD_MEM:
+						constants.delete(instruction.a);
+						break;
+					case OpCode.SELF:
+						constants.delete(instruction.a);
+						constants.delete(instruction.a + 1);
+						break;
 					case OpCode.VARARG: {
 						const countValue = instruction.b === 0 ? null : instruction.b;
 						clearConstRange(constants, instruction.a, countValue);
@@ -1082,6 +1088,8 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				case OpCode.GETSYS:
 				case OpCode.GETGL:
 				case OpCode.GETT:
+				case OpCode.GETI:
+				case OpCode.GETFIELD:
 				case OpCode.NEWT:
 				case OpCode.CONCAT:
 				case OpCode.CONCATN:
@@ -1105,6 +1113,10 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				case OpCode.SHL:
 				case OpCode.SHR:
 					constants.delete(instruction.a);
+					break;
+				case OpCode.SELF:
+					constants.delete(instruction.a);
+					constants.delete(instruction.a + 1);
 					break;
 				default:
 					break;
@@ -1251,6 +1263,16 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					}
 					break;
 				}
+				case OpCode.GETI:
+				case OpCode.GETFIELD:
+				case OpCode.SELF: {
+					const nextB = rewriteRegisterOperand(instruction.b, copies);
+					if (nextB !== instruction.b) {
+						instruction.b = nextB;
+						changed = true;
+					}
+					break;
+				}
 				case OpCode.SETT: {
 					const nextA = rewriteRegisterOperand(instruction.a, copies);
 					if (nextA !== instruction.a) {
@@ -1260,6 +1282,20 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					const nextB = rewriteRkOperand(instruction, instruction.b, RK_B, constants, copies);
 					if (nextB !== instruction.b) {
 						instruction.b = nextB;
+						changed = true;
+					}
+					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
+					if (nextC !== instruction.c) {
+						instruction.c = nextC;
+						changed = true;
+					}
+					break;
+				}
+				case OpCode.SETI:
+				case OpCode.SETFIELD: {
+					const nextA = rewriteRegisterOperand(instruction.a, copies);
+					if (nextA !== instruction.a) {
+						instruction.a = nextA;
 						changed = true;
 					}
 					const nextC = rewriteRkOperand(instruction, instruction.c, RK_C, constants, copies);
@@ -1443,6 +1479,8 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.GETSYS:
 				case OpCode.GETGL:
 				case OpCode.GETT:
+				case OpCode.GETI:
+				case OpCode.GETFIELD:
 				case OpCode.NEWT:
 				case OpCode.CONCAT:
 				case OpCode.CONCATN:
@@ -1450,6 +1488,10 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
 					killRegister(constants, copies, instruction.a);
+					break;
+				case OpCode.SELF:
+					killRegister(constants, copies, instruction.a);
+					killRegister(constants, copies, instruction.a + 1);
 					break;
 				case OpCode.VARARG: {
 					const countValue = instruction.b === 0 ? null : instruction.b;
@@ -1527,6 +1569,8 @@ const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.GETG:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
+			case OpCode.GETI:
+			case OpCode.GETFIELD:
 			case OpCode.NEWT:
 			case OpCode.CLOSURE:
 			case OpCode.GETUP:
@@ -1589,6 +1633,19 @@ const computeMaxRegister = (instructions: Instruction[]): number => {
 				}
 				break;
 			}
+			case OpCode.SETI:
+			case OpCode.SETFIELD: {
+				updateMax(instruction.a);
+				if (instruction.c >= 0) {
+					updateMax(instruction.c);
+				}
+				break;
+			}
+			case OpCode.SELF:
+				updateMax(instruction.a);
+				updateMax(instruction.a + 1);
+				updateMax(instruction.b);
+				break;
 			case OpCode.CONCATN: {
 				updateMax(instruction.a);
 				updateMax(instruction.b);
@@ -1748,8 +1805,20 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 			case OpCode.TESTSET:
 				add(instruction.b);
 				break;
+			case OpCode.GETI:
+			case OpCode.GETFIELD:
+			case OpCode.SELF:
+				add(instruction.b);
+				break;
 			case OpCode.GETT:
 				add(instruction.b);
+				if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
+					add(instruction.c);
+				}
+				break;
+			case OpCode.SETI:
+			case OpCode.SETFIELD:
+				add(instruction.a);
 				if ((instruction.rkMask & RK_C) === 0 || instruction.c >= 0) {
 					add(instruction.c);
 				}
@@ -1848,6 +1917,8 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 			case OpCode.GETG:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
+			case OpCode.GETI:
+			case OpCode.GETFIELD:
 			case OpCode.GETT:
 			case OpCode.NEWT:
 			case OpCode.ADD:
@@ -1873,8 +1944,14 @@ const eliminateDeadStores = (set: InstructionSet, context: OptimizationContext):
 			case OpCode.LOAD_MEM:
 				add(instruction.a);
 				break;
+			case OpCode.SELF:
+				addRange(instruction.a, 2);
+				break;
 			case OpCode.TESTSET:
 				add(instruction.a);
+				break;
+			case OpCode.SETI:
+			case OpCode.SETFIELD:
 				break;
 			case OpCode.LOADNIL:
 				addRange(instruction.a, instruction.b);
@@ -2302,6 +2379,8 @@ const applyClosureTransferForInlining = (
 		case OpCode.GETG:
 		case OpCode.GETSYS:
 		case OpCode.GETGL:
+		case OpCode.GETI:
+		case OpCode.GETFIELD:
 		case OpCode.GETT:
 		case OpCode.NEWT:
 		case OpCode.ADD:
@@ -2326,6 +2405,10 @@ const applyClosureTransferForInlining = (
 		case OpCode.LOAD_MEM:
 		case OpCode.TESTSET:
 			closures.delete(instruction.a);
+			return;
+		case OpCode.SELF:
+			closures.delete(instruction.a);
+			closures.delete(instruction.a + 1);
 			return;
 		default:
 			return;
@@ -2482,8 +2565,17 @@ const buildInlineExpansion = (
 			case OpCode.GETG:
 			case OpCode.GETSYS:
 			case OpCode.GETGL:
+			case OpCode.GETI:
+			case OpCode.GETFIELD:
 			case OpCode.NEWT:
 				mapped.a = mapRegister(mapped.a);
+				if (mapped.op === OpCode.GETI || mapped.op === OpCode.GETFIELD) {
+					mapped.b = mapRegister(mapped.b);
+				}
+				break;
+			case OpCode.SELF:
+				mapped.a = mapRegister(mapped.a);
+				mapped.b = mapRegister(mapped.b);
 				break;
 			case OpCode.LOADNIL:
 				mapped.a = mapRegister(mapped.a);
@@ -2496,6 +2588,11 @@ const buildInlineExpansion = (
 			case OpCode.SETT:
 				mapped.a = mapRegister(mapped.a);
 				mapped.b = remapRkOperand(mapped.b);
+				mapped.c = remapRkOperand(mapped.c);
+				break;
+			case OpCode.SETI:
+			case OpCode.SETFIELD:
+				mapped.a = mapRegister(mapped.a);
 				mapped.c = remapRkOperand(mapped.c);
 				break;
 			case OpCode.ADD:
