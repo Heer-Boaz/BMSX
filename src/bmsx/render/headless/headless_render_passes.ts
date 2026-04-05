@@ -17,6 +17,7 @@ import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { VRAM_ATLAS_SLOT_SIZE, VRAM_SKYBOX_FACE_BYTES, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../emulator/memory_map';
 import type { Mesh } from '../3d/mesh';
 import { Runtime } from '../../emulator/runtime';
+import type { HeadlessPresentHost } from './headless_view';
 
 export function registerHeadlessPasses(registry: RenderPassLibrary): void {
 	registerFramePasses(registry);
@@ -308,10 +309,8 @@ function registerFrameBuffer2DPass(registry: RenderPassLibrary): void {
 			if (pixels.byteLength !== expectedByteLength) {
 				throw new Error(`[HeadlessFramebuffer2D] Framebuffer byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);
 			}
-			if (!$.view.host.presentFrameBuffer) {
-				throw new Error('[HeadlessFramebuffer2D] Active host does not implement presentFrameBuffer().');
-			}
-			$.view.host.presentFrameBuffer({
+			const host = $.view.host as unknown as HeadlessPresentHost;
+			host.presentFrameBuffer({
 				pixels,
 				srcWidth: frameBufferWidth,
 				srcHeight: frameBufferHeight,

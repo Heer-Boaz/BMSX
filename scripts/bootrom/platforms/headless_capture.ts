@@ -3,12 +3,16 @@ import * as path from 'node:path';
 import { PNG } from 'pngjs';
 
 import { taskGate } from '../../../src/bmsx/core/taskgate';
-import type { PresentedFrameInfo } from '../../../src/bmsx/platform/platform';
-import { HeadlessGameViewHost } from '../../../src/bmsx/render/headless/headless_view';
+import { HeadlessGameViewHost, type HeadlessPresentedFrame } from '../../../src/bmsx/render/headless/headless_view';
 
 export interface ScheduledHeadlessCapture {
 	dueTimeMs: number;
-	targetFrame?: number;
+	description: string;
+	source: string;
+}
+
+interface PendingHeadlessCapture {
+	deadlineMs: number;
 	description: string;
 	source: string;
 }
@@ -33,7 +37,7 @@ export function deriveHeadlessCaptureOutputDir(sourcePath: string): string {
 
 export class HeadlessCaptureCoordinator {
 	private readonly gate = taskGate.group('headless:capture');
-	private readonly pending: ScheduledHeadlessCapture[] = [];
+	private readonly pending: PendingHeadlessCapture[] = [];
 	private readonly frameCaptureCounts = new Map<number, number>();
 	private readonly writeFailures: unknown[] = [];
 	private readonly frameSubscription;
@@ -47,7 +51,11 @@ export class HeadlessCaptureCoordinator {
 	}
 
 	public schedule(capture: ScheduledHeadlessCapture): void {
-		this.pending.push(capture);
+		this.pending.push({
+			deadlineMs: Date.now() + capture.dueTimeMs,
+			description: capture.description,
+			source: capture.source,
+		});
 	}
 
 	public async flushWrites(drainPendingCaptures = false): Promise<void> {
@@ -63,7 +71,7 @@ export class HeadlessCaptureCoordinator {
 		this.frameSubscription.unsubscribe();
 	}
 
-	private handlePresentedFrame = (frame: PresentedFrameInfo): void => {
+	private handlePresentedFrame = (frame: HeadlessPresentedFrame): void => {
 		let writeIndex = 0;
 		for (let readIndex = 0; readIndex < this.pending.length; readIndex += 1) {
 			const pending = this.pending[readIndex]!;
@@ -77,21 +85,21 @@ export class HeadlessCaptureCoordinator {
 		this.pending.length = writeIndex;
 	};
 
-	private shouldCapture(capture: ScheduledHeadlessCapture, frame: PresentedFrameInfo): boolean {
-		return frame.timeMs >= capture.dueTimeMs;
+	private shouldCapture(capture: PendingHeadlessCapture): boolean {
+		return Date.now() >= capture.deadlineMs;
 	}
 
-	private captureFrame(frame: PresentedFrameInfo, capture: ScheduledHeadlessCapture): void {
+	private captureFrame(frame: HeadlessPresentedFrame, capture: PendingHeadlessCapture): void {
 		const pixels = this.host.copyPresentedFramePixels();
 		const filename = this.buildFilename(frame.frameIndex);
 		const outputPath = path.join(this.outputDir, filename);
 		this.logger(`[${capture.source}] capture ${capture.description} -> ${outputPath}`);
-			const writePromise = this.gate.trackFn(async () => {
-				await fs.mkdir(this.outputDir, { recursive: true });
-				await fs.writeFile(outputPath, encodePng(frame.width, frame.height, pixels));
-			}, {
-				blocking: true,
-				category: 'screenshot',
+		const writePromise = this.gate.trackFn(async () => {
+			await fs.mkdir(this.outputDir, { recursive: true });
+			await fs.writeFile(outputPath, encodePng(frame.width, frame.height, pixels));
+		}, {
+			blocking: true,
+			category: 'screenshot',
 			tag: filename,
 		});
 		void writePromise.catch((error: unknown) => {

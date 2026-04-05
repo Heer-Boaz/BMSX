@@ -2,8 +2,6 @@ import type { vec2 } from '../../rompack/rompack';
 import type {
 	GameViewHost,
 	GameViewCanvas,
-	PresentedFrameBuffer,
-	PresentedFrameInfo,
 	ViewportMetrics,
 	OverlayHandle,
 	ViewportMetricsProvider,
@@ -22,6 +20,24 @@ import type {
 import { createSubscriptionHandle } from '../../platform';
 import { HeadlessGPUBackend } from './headless_backend';
 import { HeadlessPresentSurface } from './headless_present_surface';
+
+export interface HeadlessPresentedFrameBuffer {
+	pixels: Uint8Array;
+	srcWidth: number;
+	srcHeight: number;
+	dstWidth: number;
+	dstHeight: number;
+}
+
+export interface HeadlessPresentedFrame {
+	frameIndex: number;
+	width: number;
+	height: number;
+}
+
+export interface HeadlessPresentHost {
+	presentFrameBuffer(frame: HeadlessPresentedFrameBuffer): void;
+}
 
 class HeadlessOverlay implements OverlayHandle {
 	private readonly classes = new Set<string>();
@@ -94,8 +110,9 @@ class HeadlessDisplayModeController implements DisplayModeController {
 export class HeadlessGameViewHost implements GameViewHost {
 	public readonly surface: HeadlessGameViewCanvas;
 	private readonly overlays = new Map<string, HeadlessOverlay>();
-	private readonly presentedFrameListeners = new Set<(frame: PresentedFrameInfo) => void>();
+	private readonly presentedFrameListeners = new Set<(frame: HeadlessPresentedFrame) => void>();
 	private readonly presentSurface = new HeadlessPresentSurface();
+	private presentedFrameIndex = 0;
 	private readonly viewportCapability: ViewportMetricsProvider;
 	private readonly overlayCapability: OverlayManager;
 	private readonly gamepadCapability: OnscreenGamepadHandleProvider;
@@ -154,17 +171,20 @@ export class HeadlessGameViewHost implements GameViewHost {
 		return new HeadlessGPUBackend();
 	}
 
-	public presentFrameBuffer(frame: PresentedFrameBuffer): void {
+	public presentFrameBuffer(frame: HeadlessPresentedFrameBuffer): void {
 		this.presentSurface.present2D(frame.pixels, frame.srcWidth, frame.srcHeight, frame.dstWidth, frame.dstHeight);
-	}
-
-	public onPresentedFrame(frame: PresentedFrameInfo): void {
+		const presentedFrame: HeadlessPresentedFrame = {
+			frameIndex: this.presentedFrameIndex,
+			width: frame.dstWidth,
+			height: frame.dstHeight,
+		};
+		this.presentedFrameIndex += 1;
 		for (const listener of this.presentedFrameListeners) {
-			listener(frame);
+			listener(presentedFrame);
 		}
 	}
 
-	public addPresentedFrameListener(listener: (frame: PresentedFrameInfo) => void): SubscriptionHandle {
+	public addPresentedFrameListener(listener: (frame: HeadlessPresentedFrame) => void): SubscriptionHandle {
 		this.presentedFrameListeners.add(listener);
 		return createSubscriptionHandle(() => {
 			this.presentedFrameListeners.delete(listener);

@@ -861,7 +861,6 @@ function scheduleTimelineEntries(
 				logger(`[${source}] capture ${description} at ${delay}ms`);
 				scheduleCapture?.({
 					dueTimeMs: point.timeMs,
-					targetFrame: point.frame,
 					description,
 					source,
 				});
