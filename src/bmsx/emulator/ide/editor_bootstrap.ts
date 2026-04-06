@@ -34,6 +34,7 @@ import { applyCreateResourceFieldText } from './create_resource';
 import { getActiveSemanticDefinitions, getLuaModuleAliases } from './diagnostics_controller';
 import { applySearchFieldText } from './editor_search';
 import { createNavigationEntry } from './navigation_history';
+import { prepareUndo } from './undo_controller';
 
 const editorCompletionContext: CompletionContextSource = {
 	isCompletionReady: () => intellisenseUiReady(),
@@ -71,6 +72,9 @@ const editorCompletionContext: CompletionContextSource = {
 		}
 		target.row = anchor.row;
 		target.column = anchor.column;
+	},
+	prepareUndo: (): void => {
+		prepareUndo('completion', false);
 	},
 	replaceSelectionWithText: (text: string): void => {
 		TextEditing.replaceSelectionWith(text);

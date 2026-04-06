@@ -51,6 +51,7 @@ export type CompletionContextSource = {
 	getCharAt: (row: number, column: number) => string;
 	setCursorPosition: (row: number, column: number) => void;
 	setSelectionAnchor: (anchor: { row: number; column: number }) => void;
+	prepareUndo: () => void;
 	replaceSelectionWithText: (text: string) => void;
 	clampBufferPosition: (position: { row: number; column: number }) => { row: number; column: number };
 	afterCompletionApplied: () => void;
@@ -63,10 +64,6 @@ export function setCompletionContextSource(source: CompletionContextSource | nul
 	const previous = completionContextSource;
 	completionContextSource = source;
 	return previous;
-}
-
-export function getCompletionContextSource(): CompletionContextSource | null {
-	return completionContextSource;
 }
 
 type LocalCompletionCacheEntry = {
@@ -1381,6 +1378,7 @@ export class CompletionController {
 		const replaceEnd = clamp(context.replaceToColumn, replaceStart, line.length);
 		this.source.setCursorPosition(row, replaceEnd);
 		this.source.setSelectionAnchor({ row, column: replaceStart });
+		this.source.prepareUndo();
 		this.suppressNextAutoCompletion = true;
 		let insertion = item.insertText;
 		if (addParentheses) insertion = `${item.insertText}()`;
