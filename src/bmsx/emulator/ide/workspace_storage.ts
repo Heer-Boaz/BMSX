@@ -22,7 +22,8 @@ import {
 	fetchWorkspaceFile,
 	WORKSPACE_DIRTY_DIR,
 } from '../workspace';
-import { openLuaCodeTab, restoreSnapshot, setFontVariant } from './cart_editor';
+import { openLuaCodeTab, restoreSnapshot } from './cart_editor';
+import { setFontVariant } from './editor_view';
 import { initializeTabs, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { FontVariant } from '../font';
 import { getTextSnapshot } from './text/source_text';
