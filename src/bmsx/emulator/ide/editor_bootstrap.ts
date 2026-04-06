@@ -13,7 +13,6 @@ import { Runtime } from '../runtime';
 import { renameController } from './rename_controller';
 import { resetSemanticWorkspace } from './semantic_workspace_sync';
 import { assertMonospace } from './text_utils';
-import { intellisenseUiReady, shouldAutoTriggerCompletions } from './intellisense';
 import * as constants from './constants';
 import type { Viewport } from '../../rompack/rompack';
 import {
@@ -25,7 +24,6 @@ import { applyLineJumpFieldText, applyResourceSearchFieldText, applySymbolSearch
 import { applyCreateResourceFieldText } from './create_resource';
 import { applySearchFieldText } from './editor_search';
 import { createNavigationEntry } from './navigation_history';
-import { EditorCompletionContext } from './completion_context';
 
 export function initializeCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();
@@ -63,10 +61,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 		resourceVertical: ide_state.scrollbars.resourceVertical,
 		resourceHorizontal: ide_state.scrollbars.resourceHorizontal,
 	});
-	ide_state.completion = new CompletionController(new EditorCompletionContext(
-		() => intellisenseUiReady(),
-		() => shouldAutoTriggerCompletions(),
-	));
+	ide_state.completion = new CompletionController();
 	ide_state.completion.closeSession();
 	ide_state.completion.enterCommitsCompletion = false;
 	ide_state.input = new InputController();

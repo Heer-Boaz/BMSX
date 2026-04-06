@@ -25,7 +25,6 @@ import {
 	isMetaDown,
 	isAltDown
 } from './ide/ide_input';
-import { completionController, setCompletionContextSource, type CompletionContextSource } from './ide/completion_controller';
 import { resolveSnapshotExpression, describeLuaValueForInspector } from './ide/intellisense';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
 import type { Viewport } from '../rompack/rompack';
@@ -247,8 +246,8 @@ export class TerminalMode {
 	private readonly terminalPath = '<terminal>';
 	private readonly completion = completionController;
 	private readonly buffer: TextBuffer;
-	private readonly completionContextSource: CompletionContextSource;
-	private previousCompletionContextSource: CompletionContextSource | null = null;
+	private readonly completionContextSource: CompletionContext;
+	private previousCompletionContextSource: CompletionContext | null = null;
 	private blinkTimer = 0;
 	private caretVisible = true;
 	private active = false;

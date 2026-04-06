@@ -2,12 +2,14 @@ import { clamp } from '../../utils/clamp';
 import {
 	getApiCompletionData,
 	getKeywordCompletions,
+	intellisenseUiReady,
 	isReservedMemoryMapName,
 	listGlobalLuaSymbols,
 	listLuaBuiltinFunctions,
 	listLuaModuleSymbols,
 	buildMemberCompletionItems,
 	type LuaScopedSymbol,
+	shouldAutoTriggerCompletions,
 } from './intellisense';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/syntax/lua_ast';
 import {
@@ -15,7 +17,6 @@ import {
 	CompletionSession,
 	CompletionTrigger,
 	EditContext,
-	CursorScreenInfo,
 	LuaCompletionItem,
 	LuaCompletionKind,
 	ParameterHintState,
@@ -23,12 +24,20 @@ import {
 import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../types';
 import * as constants from './constants';
 import { isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
-import { isLuaCommentContext, wrapTextDynamic } from './text_utils';
+import { isLuaCommentContext, measureText, wrapTextDynamic } from './text_utils';
 import { consumeIdeKey } from './ide_input';
 import { point_in_rect } from '../../utils/rect_operations';
 import { LuaLexer } from '../../lua/syntax/lualexer';
 import { api } from '../overlay_api';
-import type { CompletionContextSource } from './completion_context';
+import { ide_state } from './ide_state';
+import * as TextEditing from './text_editing_and_selection';
+import { getActiveCodeTabContext } from './editor_tabs';
+import { prepareUndo } from './undo_controller';
+import { updateDesiredColumn, revealCursor } from './caret';
+import { resetBlink } from './render/render_caret';
+import { ModuleAliasEntry } from './semantic_model';
+import { drawEditorText } from './render/text_renderer';
+import { getActiveSemanticDefinitions, getLuaModuleAliases } from './diagnostics_controller';
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;
@@ -40,11 +49,39 @@ type LocalCompletionCacheEntry = {
 const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
 
 export class CompletionController {
-	public constructor(private readonly source: CompletionContextSource) {}
+	public constructor() {}
 
-	private getLineHeightFromSource(): number {
-		return this.source.getLineHeight();
+	private getCursorPosition(): { row: number; column: number } {
+		return { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	}
+
+	private setCursorPosition(row: number, column: number): void {
+		const rowCount = ide_state.buffer.getLineCount();
+		const clampedRow = clamp(row, 0, Math.max(0, rowCount - 1));
+		const line = ide_state.buffer.getLineContent(clampedRow);
+		ide_state.cursorRow = clampedRow;
+		ide_state.cursorColumn = clamp(column, 0, line.length);
+	}
+
+	private setSelectionAnchor(anchor: { row: number; column: number }): void {
+		const target = ide_state.selectionAnchor;
+		if (!target) {
+			ide_state.selectionAnchor = {
+				row: anchor.row,
+				column: anchor.column,
+			};
+			return;
+		}
+		target.row = anchor.row;
+		target.column = anchor.column;
+	}
+
+	private afterCompletionApplied(): void {
+		updateDesiredColumn();
+		resetBlink();
+		revealCursor();
+	}
+
 	private completionSession: CompletionSession = null;
 	private readonly localCompletionCache: Map<string, LocalCompletionCacheEntry> = new Map();
 	private cachedGlobalCompletionItems: LuaCompletionItem[] = null;
@@ -64,7 +101,6 @@ export class CompletionController {
 	private readonly builtinDescriptorMap: Map<string, LuaBuiltinDescriptor> = new Map();
 	private completionPopupBounds: { left: number; top: number; right: number; bottom: number } = null;
 	public enterCommitsCompletion = false;
-
 
 	// Public API for editor integration
 	public closeSession(): void {
@@ -179,8 +215,8 @@ export class CompletionController {
 		this.updateParameterHintIdle(deltaSeconds);
 		const pending = this.pendingCompletionRequest;
 		if (!pending) return;
-		if (!this.source.isCompletionReady()) { this.cancelPendingCompletion(); return; }
-		if (!this.source.shouldAutoTriggerCompletions()) { this.cancelPendingCompletion(); return; }
+		if (!intellisenseUiReady()) { this.cancelPendingCompletion(); return; }
+		if (!shouldAutoTriggerCompletions()) { this.cancelPendingCompletion(); return; }
 		if (this.completionSession) { this.cancelPendingCompletion(); return; }
 		pending.elapsed += deltaSeconds;
 		if (pending.elapsed < constants.COMPLETION_AUTO_TRIGGER_DELAY_SECONDS) return;
@@ -200,14 +236,14 @@ export class CompletionController {
 		this.parameterHintTriggerPending = false;
 		this.parameterHintIdleElapsed = 0;
 		const session = this.completionSession;
-		const cursor = this.source.getCursorPosition();
+		const cursor = this.getCursorPosition();
 		if (session && session.trigger !== 'manual') {
 			this.closeSession();
 			this.refreshParameterHint();
 			return;
 		}
 		this.lastCursorPosition = { row: cursor.row, column: cursor.column };
-		this.lastTextVersion = this.source.getTextVersion();
+		this.lastTextVersion = ide_state.textVersion;
 		if (session) {
 			const context = this.analyzeCompletionContext();
 			if (!context) this.closeSession();
@@ -218,9 +254,9 @@ export class CompletionController {
 
 	public updateAfterEdit(edit: EditContext): void {
 		this.parameterHintIdleElapsed = 0;
-		const cursor = this.source.getCursorPosition();
+		const cursor = this.getCursorPosition();
 		this.lastCursorPosition = { row: cursor.row, column: cursor.column };
-		this.lastTextVersion = this.source.getTextVersion();
+		this.lastTextVersion = ide_state.textVersion;
 		if (edit && edit.kind === 'insert') {
 			if (edit.text.indexOf('(') !== -1 || edit.text.indexOf(',') !== -1) {
 				this.parameterHintTriggerPending = true;
@@ -238,7 +274,7 @@ export class CompletionController {
 
 	public handleKeybindings(): boolean {
 		const { ctrlDown, altDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
-		if ((ctrlDown || metaDown) && !altDown && this.source.isCompletionReady() && isKeyJustPressed('Space')) {
+		if ((ctrlDown || metaDown) && !altDown && intellisenseUiReady() && isKeyJustPressed('Space')) {
 			consumeIdeKey('Space');
 			const session = this.completionSession;
 			if (session) {
@@ -300,11 +336,11 @@ export class CompletionController {
 
 	public drawCompletionPopup(bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
 		const session = this.completionSession;
-		const cursorInfo = this.source.getCursorScreenInfo();
-		const font = this.source.getFont();
-		const lineHeight = this.getLineHeightFromSource();
-		const measure = (value: string): number => this.source.measureText(value);
-		const draw = (value: string, x: number, y: number, color: number): void => this.source.drawText(font, value, x, y, color);
+		const cursorInfo = ide_state.cursorScreenInfo;
+		const font = ide_state.font;
+		const lineHeight = ide_state.lineHeight;
+		const measure = (value: string): number => measureText(value);
+		const draw = (value: string, x: number, y: number, color: number): void => drawEditorText(font, value, x, y, undefined, color);
 		this.completionPopupBounds = null;
 		if (!session || !cursorInfo) return;
 		if (session.filteredItems.length === 0) return;
@@ -393,10 +429,10 @@ export class CompletionController {
 
 	public drawParameterHintOverlay(bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
 		const hint = this.parameterHint;
-		const cursorInfo = this.source.getCursorScreenInfo();
-		const font = this.source.getFont();
-		const measureText = (value: string): number => this.source.measureText(value);
-		const draw = (value: string, x: number, y: number, color: number): void => this.source.drawText(font, value, x, y, color);
+		const cursorInfo = ide_state.cursorScreenInfo;
+		const font = ide_state.font;
+		const measureText = (value: string): number => measureText(value);
+		const draw = (value: string, x: number, y: number, color: number): void => drawEditorText(font, value, x, y, undefined, color);
 		if (!hint || !cursorInfo) return;
 		const params = hint.params;
 		const baseColor = constants.COLOR_PARAMETER_HINT_TEXT;
@@ -475,7 +511,7 @@ export class CompletionController {
 				maxLineWidth = width;
 			}
 		}
-		const lineHeight = this.getLineHeightFromSource();
+		const lineHeight = ide_state.lineHeight;
 		const lineSpacing = 2;
 		const totalLines = 1 + wrappedDescriptionLines.length;
 		const popupWidth = Math.min(maxAllowedWidth, maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2);
@@ -509,9 +545,9 @@ export class CompletionController {
 
 	// Internal helpers and logic
 	private analyzeCompletionContext(): CompletionContext {
-		if (!this.source.isCompletionReady()) return null;
-		const buffer = this.source.getBuffer();
-		const cursor = this.source.getCursorPosition();
+		if (!intellisenseUiReady()) return null;
+		const buffer = ide_state.buffer;
+		const cursor = this.getCursorPosition();
 		const lineCount = buffer.getLineCount();
 		const row = clamp(cursor.row, 0, Math.max(0, lineCount - 1));
 		const line = buffer.getLineContent(row);
@@ -633,7 +669,7 @@ export class CompletionController {
 				}
 			};
 			appendItems(this.getModuleMemberCompletionItems(context));
-			const path = this.source.getActivePath();
+			const path = getActiveCodeTabContext().descriptor.path;
 			const runtimeItems = buildMemberCompletionItems({
 				objectName: context.objectName,
 				operator: context.operator,
@@ -665,32 +701,32 @@ export class CompletionController {
 		const cached = this.ensureLocalCompletionCache();
 		if (!cached) return [];
 		const column = context.replaceToColumn;
-		const buffer = this.source.getBuffer();
+		const buffer = ide_state.buffer;
 		const lineCount = buffer.getLineCount();
 		const lastLine = buffer.getLineContent(Math.max(0, lineCount - 1));
 		const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, lineCount, lastLine.length, context.row, column);
 		if (filtered.length === 0) {
 			return [];
 		}
-		const path = cached.path || this.source.getActivePath();
+		const path = cached.path || getActiveCodeTabContext().descriptor.path;
 		return this.buildLocalCompletionItems(filtered, path );
 	}
 
 	private ensureLocalCompletionCache(): LocalCompletionCacheEntry {
-		const key = this.activeCompletionCacheKey();
+		const key = getActiveCodeTabContext().descriptor.path;
 		if (!key) return null;
-		const path = this.source.getActivePath();
-		const currentVersion = this.source.getTextVersion();
+		const path = getActiveCodeTabContext().descriptor.path;
+		const currentVersion = ide_state.textVersion;
 		const cached = this.localCompletionCache.get(key);
 		if (cached && cached.path === path && cached.parsedVersion === currentVersion) {
 			return cached;
 		}
-		const definitions = this.source.getActiveSemanticDefinitions();
+		const definitions = getActiveSemanticDefinitions();
 		if (!definitions) {
 			return cached;
 		}
 		const symbols = definitions.length > 0 ? this.convertDefinitionsToLocalSymbols(definitions) : [];
-		const moduleAliases = this.source.getLuaModuleAliases(path);
+		const moduleAliases = getLuaModuleAliases(path);
 		const updated: LocalCompletionCacheEntry = {
 			parsedVersion: currentVersion,
 			path,
@@ -702,7 +738,7 @@ export class CompletionController {
 	}
 
 	private getGlobalCompletionItems(): LuaCompletionItem[] {
-		const version = this.source.getTextVersion();
+		const version = ide_state.textVersion;
 		if (this.cachedGlobalCompletionItems && this.cachedGlobalCompletionVersion === version) {
 			return this.cachedGlobalCompletionItems;
 		}
@@ -1073,7 +1109,7 @@ export class CompletionController {
 	}
 
 	private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger {
-		if (!this.source.shouldAutoTriggerCompletions()) return null;
+		if (!shouldAutoTriggerCompletions()) return null;
 		if (!edit || edit.kind === 'delete') return null;
 		if (edit.text.length === 0) return null;
 		const lastChar = edit.text.charAt(edit.text.length - 1);
@@ -1088,19 +1124,19 @@ export class CompletionController {
 	}
 
 	private updateCompletionSessionAfterMutation(edit: EditContext): void {
-		if (!this.source.isCompletionReady()) { this.closeSession(); return; }
+		if (!intellisenseUiReady()) { this.closeSession(); return; }
 		const analyzed = this.analyzeCompletionContext();
 		if (this.completionSession) {
 			this.cancelPendingCompletion();
 			if (!analyzed) { this.closeSession(); return; }
-			const cursor = this.source.getCursorPosition();
-			const previousChar = this.source.getCharAt(cursor.row, cursor.column - 1);
+			const cursor = this.getCursorPosition();
+			const previousChar = TextEditing.charAt(cursor.row, cursor.column - 1);
 			if (analyzed.prefix.length === 0 && previousChar !== '.' && previousChar !== ':' && !LuaLexer.isIdentifierPart(previousChar)) { this.closeSession(); return; }
 			this.refreshCompletionSessionFromContext(analyzed);
 			return;
 		}
 		if (!edit || !analyzed) { this.cancelPendingCompletion(); return; }
-		if (!this.source.shouldAutoTriggerCompletions()) { this.cancelPendingCompletion(); return; }
+		if (!shouldAutoTriggerCompletions()) { this.cancelPendingCompletion(); return; }
 		const trigger = this.determineAutoCompletionTrigger(analyzed, edit);
 		if (!trigger) { this.cancelPendingCompletion(); return; }
 		this.pendingCompletionRequest = { context: analyzed, trigger, elapsed: 0 };
@@ -1119,8 +1155,8 @@ export class CompletionController {
 					filteredItems: [],
 					selectionIndex: -1,
 					displayOffset: 0,
-					anchorRow: this.source.getCursorPosition().row,
-					anchorColumn: this.source.getCursorPosition().column,
+					anchorRow: this.getCursorPosition().row,
+					anchorColumn: this.getCursorPosition().column,
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
 					filterCache: new Map(),
 					trigger,
@@ -1134,8 +1170,8 @@ export class CompletionController {
 					filteredItems: [],
 					selectionIndex: -1,
 					displayOffset: 0,
-					anchorRow: this.source.getCursorPosition().row,
-					anchorColumn: this.source.getCursorPosition().column,
+					anchorRow: this.getCursorPosition().row,
+					anchorColumn: this.getCursorPosition().column,
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
 					filterCache: new Map(),
 					trigger,
@@ -1149,8 +1185,8 @@ export class CompletionController {
 					filteredItems: [],
 					selectionIndex: -1,
 					displayOffset: 0,
-					anchorRow: this.source.getCursorPosition().row,
-					anchorColumn: this.source.getCursorPosition().column,
+					anchorRow: this.getCursorPosition().row,
+					anchorColumn: this.getCursorPosition().column,
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
 					filterCache: new Map(),
 					trigger,
@@ -1180,7 +1216,7 @@ export class CompletionController {
 		}
 		session.items = items;
 		session.filterCache.clear();
-		const cursor = this.source.getCursorPosition();
+		const cursor = this.getCursorPosition();
 		session.anchorRow = cursor.row;
 		session.anchorColumn = cursor.column;
 		this.applyCompletionFilter(session);
@@ -1330,28 +1366,28 @@ export class CompletionController {
 	}
 
 	private applyCompletionItemForContext(context: CompletionContext, item: LuaCompletionItem, addParentheses: boolean): void {
-		const buffer = this.source.getBuffer();
+		const buffer = ide_state.buffer;
 		const lineCount = buffer.getLineCount();
 		const row = clamp(context.row, 0, Math.max(0, lineCount - 1));
 		const line = buffer.getLineContent(row);
 		const replaceStart = clamp(context.replaceFromColumn, 0, line.length);
 		const replaceEnd = clamp(context.replaceToColumn, replaceStart, line.length);
-		this.source.setCursorPosition(row, replaceEnd);
-		this.source.setSelectionAnchor({ row, column: replaceStart });
-		this.source.prepareUndo();
+		this.setCursorPosition(row, replaceEnd);
+		this.setSelectionAnchor({ row, column: replaceStart });
+		prepareUndo('completion', false);
 		this.suppressNextAutoCompletion = true;
 		let insertion = item.insertText;
 		if (addParentheses) insertion = `${item.insertText}()`;
-		this.source.replaceSelectionWithText(insertion);
+		TextEditing.replaceSelectionWith(insertion);
 		const targetColumn = addParentheses
 			? replaceStart + item.insertText.length + 1
 			: insertion.endsWith('[]')
 				? replaceStart + insertion.length - 1
 				: replaceStart + insertion.length;
-		const clamped = this.source.clampBufferPosition({ row, column: targetColumn });
-		this.source.setCursorPosition(clamped.row, clamped.column);
-		this.source.clearSelectionAnchor();
-		this.source.afterCompletionApplied();
+		const clamped = ide_state.layout.clampBufferPosition(ide_state.buffer, { row, column: targetColumn });
+		this.setCursorPosition(clamped.row, clamped.column);
+		ide_state.selectionAnchor = null
+		this.afterCompletionApplied();
 	}
 
 	private cancelPendingCompletion(): void {
@@ -1359,7 +1395,7 @@ export class CompletionController {
 	}
 
 	private refreshParameterHint(): void {
-		if (!this.source.isCompletionReady()) {
+		if (!intellisenseUiReady()) {
 			this.parameterHint = null;
 			this.parameterHintAnchor = null;
 			this.parameterHintTriggerPending = false;
@@ -1392,14 +1428,14 @@ export class CompletionController {
 	}
 
 	private updateParameterHintIdle(deltaSeconds: number): void {
-		if (!this.source.isCompletionReady()) {
+		if (!intellisenseUiReady()) {
 			this.parameterHintIdleElapsed = 0;
 			return;
 		}
-		const cursor = this.source.getCursorPosition();
+		const cursor = this.getCursorPosition();
 		const currentRow = cursor.row;
 		const currentColumn = cursor.column;
-		const currentVersion = this.source.getTextVersion();
+		const currentVersion = ide_state.textVersion;
 		const last = this.lastCursorPosition;
 		if (!last || last.row !== currentRow || last.column !== currentColumn || this.lastTextVersion !== currentVersion) {
 			this.lastCursorPosition = { row: currentRow, column: currentColumn };
@@ -1416,9 +1452,9 @@ export class CompletionController {
 	}
 
 	private resolveParameterHintContext(): ParameterHintState {
-		if (!this.source.isCompletionReady()) return null;
-		const buffer = this.source.getBuffer();
-		const cursor = this.source.getCursorPosition();
+		if (!intellisenseUiReady()) return null;
+		const buffer = ide_state.buffer;
+		const cursor = this.getCursorPosition();
 		const lineCount = buffer.getLineCount();
 		const safeRow = clamp(cursor.row, 0, Math.max(0, lineCount - 1));
 		const line = buffer.getLineContent(safeRow);
@@ -1539,9 +1575,5 @@ export class CompletionController {
 			}
 		}
 		return null;
-	}
-
-	private activeCompletionCacheKey(): string {
-		return this.source.getActivePath();
 	}
 }
