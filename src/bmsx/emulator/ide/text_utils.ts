@@ -2,7 +2,7 @@ import { getResourcePanelWidth, updateGutterWidth } from './editor_view';
 import * as constants from './constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
 import { startSearchJob } from './editor_search';
-import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from './editor_tabs';
+import { getActiveCodeTabContext, findCodeTabContext, updateActiveContextDirtyFlag } from './editor_tabs';
 import { caretNavigation, ide_state } from './ide_state';
 import { rebuildRuntimeErrorOverlayView } from './runtime_error_overlay';
 import * as TextEditing from './text_editing_and_selection';
@@ -12,6 +12,10 @@ import { markDiagnosticsDirty } from './diagnostics';
 import { requestSemanticRefresh, clearReferenceHighlights } from './intellisense';
 import { getTextSnapshot, splitText } from './text/source_text';
 import type { TextBuffer } from './text/text_buffer';
+import { Runtime } from '../runtime';
+import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
+import { buildDirtyFilePath } from './workspace_storage';
+import { getWorkspaceCachedSource } from '../workspace_cache';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -706,4 +710,50 @@ export function markTextMutated(): void {
 }
 export function bumpTextVersion(): void {
 	ide_state.textVersion = ide_state.buffer.version;
+}
+
+export function getSourceForChunk(path: string): string {
+	const asset = runtimeLuaPipeline.resolveLuaSourceRecord(Runtime.instance, path);
+	const context = findCodeTabContext(path);
+	if (context) {
+		if (context.id === ide_state.activeCodeTabContextId) {
+			return getTextSnapshot(ide_state.buffer);
+		}
+		return getTextSnapshot(context.buffer);
+	}
+	const dirtyPath = buildDirtyFilePath(asset.source_path);
+	const cached = getWorkspaceCachedSource(asset.source_path) ?? getWorkspaceCachedSource(dirtyPath);
+	if (cached !== null) {
+		return cached;
+	}
+	return asset.src;
+}
+
+export function invalidateLineRange(startRow: number, endRow: number): void {
+	let from = Math.min(startRow, endRow);
+	let to = Math.max(startRow, endRow);
+	from = ide_state.layout.clampBufferRow(ide_state.buffer, from);
+	to = ide_state.layout.clampBufferRow(ide_state.buffer, to);
+	for (let row = from; row <= to; row += 1) {
+		ide_state.layout.invalidateLine(row);
+	}
+}
+
+export function getLineRangeForMovement(): { startRow: number; endRow: number } {
+	const range = TextEditing.getSelectionRange();
+	if (!range) {
+		return { startRow: ide_state.cursorRow, endRow: ide_state.cursorRow };
+	}
+	let endRow = range.end.row;
+	if (range.end.column === 0 && endRow > range.start.row) {
+		endRow -= 1;
+	}
+	return { startRow: range.start.row, endRow };
+}
+
+export function currentLine(): string {
+	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.buffer.getLineCount()) {
+		return '';
+	}
+	return ide_state.buffer.getLineContent(ide_state.cursorRow);
 }

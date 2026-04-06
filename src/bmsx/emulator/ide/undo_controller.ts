@@ -6,10 +6,11 @@ import { ide_state } from './ide_state';
 import { capturePreMutationSource, invalidateLuaCommentContextFromRow } from './text_utils';
 import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from './editor_tabs';
 import { notifyReadOnlyEdit } from './editor_view';
-import { updateDesiredColumn } from './cart_editor';
+import { updateDesiredColumn } from './caret';
 import { resetBlink } from './render/render_caret';
 import { ensureCursorVisible } from './caret';
 import { requestSemanticRefresh } from './intellisense';
+import type { EditorSnapshot, Position } from './types';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
 	if (ide_state.activeContextReadOnly) {
@@ -273,4 +274,43 @@ export function applySourceToDocument(source: string): void {
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.invalidateHighlightsFromRow(0);
 	ide_state.layout.markVisualLinesDirty();
+}
+
+export function captureSnapshot(): EditorSnapshot {
+	let selectionCopy: Position = null;
+	const anchor = ide_state.selectionAnchor;
+	if (anchor) {
+		selectionCopy = { row: anchor.row, column: anchor.column };
+	}
+	return {
+		cursorRow: ide_state.cursorRow,
+		cursorColumn: ide_state.cursorColumn,
+		scrollRow: ide_state.scrollRow,
+		scrollColumn: ide_state.scrollColumn,
+		selectionAnchor: selectionCopy,
+		textVersion: ide_state.textVersion,
+	};
+}
+
+export type RestoreSnapshotOptions = {
+	preserveScroll?: boolean;
+};
+
+export function restoreSnapshot(snapshot: EditorSnapshot, options?: RestoreSnapshotOptions): void {
+	ide_state.maxLineLengthDirty = true;
+	ide_state.layout.markVisualLinesDirty();
+	ide_state.layout.invalidateHighlightsFromRow(0);
+	ide_state.cursorRow = snapshot.cursorRow;
+	ide_state.cursorColumn = snapshot.cursorColumn;
+	ide_state.scrollRow = snapshot.scrollRow;
+	ide_state.scrollColumn = snapshot.scrollColumn;
+	ide_state.selectionAnchor = snapshot.selectionAnchor;
+	ide_state.textVersion = ide_state.buffer.version;
+	updateDesiredColumn();
+	resetBlink();
+	ide_state.cursorRevealSuspended = false;
+	if (options?.preserveScroll !== true) {
+		ensureCursorVisible();
+	}
+	requestSemanticRefresh();
 }

@@ -1,4 +1,6 @@
 import { Runtime } from '../runtime';
+import * as runtimeIde from '../runtime_ide';
+import { $ } from '../../core/engine_core';
 import { api } from '../overlay_api';
 import * as constants from './constants';
 import { activateCodeTab, getActiveCodeTabContext, isResourceViewActive, setActiveTab, storeActiveCodeTabContext } from './editor_tabs';
@@ -33,11 +35,10 @@ import { hideResourcePanel } from './editor_view';
 import {
 	applySearchFieldText,
 	cancelSearchJob,
-	clearExecutionStopHighlights,
-	processDiagnosticsQueue,
-	syncRuntimeErrorOverlayFromContext,
-	updateDesiredColumn,
-} from './cart_editor';
+} from './editor_search';
+import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from './runtime_error_navigation';
+import { processDiagnosticsQueue } from './diagnostics_controller';
+import { updateDesiredColumn } from './caret';
 import { resetActionPromptState } from './action_prompt';
 import { applyLineJumpFieldText } from './search_bars';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt } from './create_resource';
@@ -236,4 +237,13 @@ export function deactivateRuntimeEditor(): void {
 	clearBackgroundTasks();
 	ide_state.diagnosticsTaskPending = false;
 	ide_state.lastReportedSemanticError = null;
+}
+
+export function handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
+	const errormsg = error instanceof Error ? error.message : String(error);
+	$.paused = true;
+	runtimeIde.activateEditor(Runtime.instance);
+	const message = `${fallbackMessage}: ${errormsg}`;
+	Runtime.instance.terminal.appendStderr(message);
+	ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 2.0);
 }

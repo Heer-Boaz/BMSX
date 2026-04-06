@@ -1,6 +1,7 @@
 import { clamp } from '../../utils/clamp';
 import { getCodeAreaBounds, maximumLineLength } from './editor_view';
-import { updateDesiredColumn, breakUndoSequence, currentLine } from './cart_editor';
+import { breakUndoSequence } from './undo_controller';
+import { currentLine } from './text_utils';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from './text_utils';
 import { caretNavigation, ide_state } from './ide_state';
 import { isShiftDown, isCtrlDown } from './ide_input';
@@ -599,6 +600,36 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	} else {
 		ide_state.desiredColumn = ide_state.cursorColumn;
 	}
+	if (ide_state.desiredDisplayOffset < 0) {
+		ide_state.desiredDisplayOffset = 0;
+	}
+}
+
+export function updateDesiredColumn(): void {
+	ide_state.desiredColumn = ide_state.cursorColumn;
+	ide_state.desiredDisplayOffset = 0;
+	if (ide_state.cursorRow < 0 || ide_state.cursorRow >= ide_state.buffer.getLineCount()) {
+		return;
+	}
+	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, ide_state.cursorRow);
+	const highlight = entry.hi;
+	const cursorDisplay = ide_state.layout.columnToDisplay(highlight, ide_state.cursorColumn);
+	let segmentStartColumn = 0;
+	if (ide_state.wordWrapEnabled) {
+		ensureVisualLines();
+		const override = caretNavigation.lookup(ide_state.cursorRow, ide_state.cursorColumn);
+		if (override) {
+			segmentStartColumn = override.segmentStartColumn;
+		} else {
+			const visualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
+			const segment = visualIndexToSegment(visualIndex);
+			if (segment) {
+				segmentStartColumn = segment.startColumn;
+			}
+		}
+	}
+	const segmentDisplayStart = ide_state.layout.columnToDisplay(highlight, segmentStartColumn);
+	ide_state.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
 	if (ide_state.desiredDisplayOffset < 0) {
 		ide_state.desiredDisplayOffset = 0;
 	}

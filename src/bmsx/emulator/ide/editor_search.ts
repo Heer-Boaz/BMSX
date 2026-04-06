@@ -2,25 +2,22 @@ import { ide_state } from './ide_state';
 import * as constants from './constants';
 import { clamp, clamp_wrap } from '../../utils/clamp';
 import { getSelectionRange, getSelectionText } from './text_editing_and_selection';
-import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch } from './types';
+import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch, TextField } from './types';
 import type { ResourceDescriptor } from '../types';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { enqueueBackgroundTask } from './background_tasks';
-import {
-	applySearchFieldText,
-	beginNavigationCapture,
-	completeNavigation,
-	updateDesiredColumn,
-	listResourcesStrict,
-	openLuaCodeTab,
-} from './cart_editor';
+import { beginNavigationCapture, completeNavigation } from './navigation_history';
+import { updateDesiredColumn } from './caret';
+import { listResources } from '../workspace';
+import { openLuaCodeTab } from './editor_tabs';
 import { closeSymbolSearch, closeResourceSearch, closeLineJump } from './search_bars';
 import { clearReferenceHighlights } from './intellisense';
 import { ensureCursorVisible, revealCursor } from './caret';
 import { resetBlink } from './render/render_caret';
 import { scheduleMicrotask } from '../../platform';
 import { textFromLines } from './text/source_text';
+import { applyInlineFieldPointer, setFieldText } from './inline_text_field';
 
 const LOCAL_ROWS_PER_SLICE = 256;
 const GLOBAL_ROWS_PER_SLICE = 128;
@@ -281,7 +278,7 @@ function ensureLocalJobCompleted(): void {
 function startGlobalSearchJob(): void {
 	cancelGlobalSearchJob();
 
-	const descriptors = listResourcesStrict().filter(entry => entry.type === 'lua');
+	const descriptors = listResources().filter(entry => entry.type === 'lua');
 	const job: GlobalSearchJob = {
 		query: normalizeQuery(ide_state.searchQuery),
 		descriptors,
@@ -541,4 +538,23 @@ function buildSearchResultEntry(index: number): { primary: string; secondary?: s
 		primary: `Line ${match.row + 1}`,
 		secondary: buildSnippet(lineText, match.start, match.end),
 	};
+}
+
+export function applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
+	ide_state.searchQuery = value;
+	setFieldText(ide_state.searchField, value, moveCursorToEnd);
+}
+
+export function processInlineFieldPointer(field: TextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
+	const result = applyInlineFieldPointer(field, {
+		metrics: ide_state.inlineFieldMetricsRef,
+		textLeft,
+		pointerX,
+		justPressed,
+		pointerPressed,
+		doubleClickInterval: constants.DOUBLE_CLICK_MAX_INTERVAL_MS,
+	});
+	if (result.requestBlinkReset) {
+		resetBlink();
+	}
 }

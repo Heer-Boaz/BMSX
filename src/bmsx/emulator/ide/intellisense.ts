@@ -19,7 +19,11 @@ import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { isStringValue, stringValueToString } from '../string_pool';
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry, LuaSymbolKind } from '../types';
 import { ScratchBatchPooled } from '../../utils/scratchbatch';
-import { applyDefinitionSelection, beginNavigationCapture, completeNavigation, focusChunkSource, safeInspectLuaExpression } from './cart_editor';
+import { beginNavigationCapture, completeNavigation } from './navigation_history';
+import { focusChunkSource } from './editor_tabs';
+import { ensureCursorVisible, updateDesiredColumn } from './caret';
+import { resetBlink } from './render/render_caret';
+import { tryShowLuaErrorOverlay } from './runtime_error_navigation';
 import { resolvePointerColumn, resolvePointerRow } from './editor_view';
 import * as constants from './constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
@@ -2592,4 +2596,98 @@ function formatLuaValuePreview(value: LuaValue, depth = 0, visited: Set<unknown>
 		return describeLuaFunctionValue(value);
 	}
 	return 'function';
+}
+
+let builtinIdentifierEpoch = 0;
+
+export function getBuiltinIdentifiersSnapshot(): { epoch: number; ids: ReadonlySet<string> } {
+	const cached = ide_state.builtinIdentifierCache;
+	if (cached && cached.caseInsensitive === ide_state.caseInsensitive && cached.canonicalization === ide_state.canonicalization) {
+		return cached;
+	}
+	const descriptors = listLuaBuiltinFunctions();
+	const names: string[] = [];
+	for (let index = 0; index < descriptors.length; index += 1) {
+		names.push(descriptors[index].name);
+	}
+	names.sort((a, b) => a.localeCompare(b));
+	const canonicalize = ide_state.caseInsensitive
+		? (ide_state.canonicalization === 'upper'
+			? (value: string) => value.toUpperCase()
+			: (value: string) => value.toLowerCase())
+		: (value: string) => value;
+	const ids = new Set<string>();
+	for (let i = 0; i < names.length; i += 1) {
+		const name = names[i];
+		const canonical = canonicalize(name);
+		ids.add(canonical);
+		ids.add(name);
+	}
+	builtinIdentifierEpoch += 1;
+	const entry = {
+		epoch: builtinIdentifierEpoch,
+		ids,
+		canonicalization: ide_state.canonicalization,
+		caseInsensitive: ide_state.caseInsensitive,
+	};
+	ide_state.builtinIdentifierCache = entry;
+	return entry;
+}
+
+export function getBuiltinIdentifierSet(): ReadonlySet<string> {
+	return getBuiltinIdentifiersSnapshot().ids;
+}
+
+export function safeInspectLuaExpression(request: LuaHoverRequest): LuaHoverResult {
+	ide_state.inspectorRequestFailed = false;
+	try {
+		return inspectLuaExpression(request);
+	} catch (error) {
+		ide_state.inspectorRequestFailed = true;
+		const handled = tryShowLuaErrorOverlay(error);
+		if (!handled) {
+			const message = extractErrorMessage(error);
+			ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 3.2);
+		}
+		return null;
+	}
+}
+
+export function applyDefinitionSelection(range: LuaDefinitionLocation['range']): void {
+	const lastRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
+	const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
+	const startLine = ide_state.buffer.getLineContent(startRow);
+	const startColumn = clamp(range.startColumn - 1, 0, startLine.length);
+	ide_state.cursorRow = startRow;
+	ide_state.cursorColumn = startColumn;
+	ide_state.selectionAnchor = null;
+	ide_state.pointerSelecting = false;
+	ide_state.pointerPrimaryWasPressed = false;
+	ide_state.pointerAuxWasPressed = false;
+	updateDesiredColumn();
+	resetBlink();
+	ide_state.cursorRevealSuspended = false;
+	ensureCursorVisible();
+}
+
+export function findFunctionDefinitionRowInActiveFile(functionName: string): number {
+	if (typeof functionName !== 'string' || functionName.length === 0) {
+		return null;
+	}
+	const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const patterns = [
+		new RegExp(`^\\s*function\\s+${escaped}\\b`),
+		new RegExp(`^\\s*local\\s+function\\s+${escaped}\\b`),
+		new RegExp(`\\b${escaped}\\s*=\\s*function\\b`),
+	];
+	const lineCount = ide_state.buffer.getLineCount();
+	for (let row = 0; row < lineCount; row += 1) {
+		const line = ide_state.buffer.getLineContent(row);
+		for (let index = 0; index < patterns.length; index += 1) {
+			if (patterns[index].test(line)) {
+				return row;
+			}
+		}
+	}
+	return null;
 }

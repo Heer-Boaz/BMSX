@@ -8,25 +8,30 @@ import type {
 import type { ResourceDescriptor } from '../types';
 import * as constants from './constants';
 import { clamp } from '../../utils/clamp';
-import {
-	syncRuntimeErrorOverlayFromContext,
-	updateDesiredColumn,
-	refreshActiveDiagnostics,
-	beginNavigationCapture,
-	completeNavigation,
-} from './cart_editor';
+import { syncRuntimeErrorOverlayFromContext } from './runtime_error_navigation';
+import { updateDesiredColumn, ensureCursorVisible } from './caret';
+import { refreshActiveDiagnostics } from './diagnostics_controller';
+import { beginNavigationCapture, completeNavigation } from './navigation_history';
 import { closeLineJump, closeSymbolSearch } from './search_bars';
-import { getCodeAreaBounds, hideResourcePanel, getTabBarTotalHeight, resetPointerClickTracking } from './editor_view';
-import { markDiagnosticsDirty } from './diagnostics';
+import { getCodeAreaBounds, hideResourcePanel, getTabBarTotalHeight, resetPointerClickTracking, selectResourceInPanel } from './editor_view';
+import { markDiagnosticsDirty, markAllDiagnosticsDirty } from './diagnostics';
 import { closeSearch } from './editor_search';
-import { clampResourceViewerScroll } from './resource_viewer';
-import { measureText } from './text_utils';
+import { clampResourceViewerScroll, openResourceViewerTab } from './resource_viewer';
+import { measureText, bumpTextVersion, invalidateLuaCommentContextFromRow } from './text_utils';
 import { requestSemanticRefresh } from './intellisense';
 import { resetBlink } from './render/render_caret';
-import { listResources } from '../workspace';
 import { Runtime } from '../runtime';
+import * as runtimeIde from '../runtime_ide';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
+import { getTextSnapshot } from './text/source_text';
 import { PieceTreeBuffer } from './text/piece_tree_buffer';
+import { listResources, saveLuaResourceSource } from '../workspace';
+import { buildDirtyFilePath } from './workspace_storage';
+import { setWorkspaceCachedSources } from '../workspace_cache';
+import { breakUndoSequence } from './undo_controller';
+import { tryShowLuaErrorOverlay } from './runtime_error_navigation';
+import { extractErrorMessage } from '../../lua/luavalue';
+import { findResourceDescriptorForChunk, closeResourceSearch } from './search_bars';
 
 function resolvePath(descriptor: ResourceDescriptor): string {
 	return descriptor.path;
@@ -444,4 +449,127 @@ export function computeResourceTabTitle(descriptor: ResourceDescriptor): string 
 		return parts[parts.length - 1];
 	}
 	return descriptor.type.toUpperCase();
+}
+
+export function focusChunkSource(path: string): void {
+	if (!ide_state.active) {
+		runtimeIde.activateEditor(Runtime.instance);
+	}
+	closeSymbolSearch(true);
+	closeResourceSearch(true);
+	closeLineJump(true);
+	closeSearch(true);
+	if (!path) {
+		return;
+	}
+	const descriptor = findResourceDescriptorForChunk(path);
+	if (!descriptor) {
+		return;
+	}
+	openResourceDescriptor(descriptor);
+}
+
+export function listResourcesStrict(): ResourceDescriptor[] {
+	return listResources();
+}
+
+export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
+	selectResourceInPanel(descriptor);
+	if (descriptor.type === 'atlas') {
+		ide_state.showMessage('Atlas resources cannot be previewed in the IDE.', constants.COLOR_STATUS_WARNING, 3.2);
+		focusEditorFromResourcePanel();
+		return;
+	}
+	if (descriptor.type === 'lua') {
+		openLuaCodeTab(descriptor);
+	} else {
+		openResourceViewerTab(descriptor);
+	}
+	focusEditorFromResourcePanel();
+}
+
+export function isActive(): boolean {
+	return ide_state.active;
+}
+
+export function focusEditorFromResourcePanel(): void {
+	if (!ide_state.resourcePanelFocused) {
+		return;
+	}
+	ide_state.resourcePanelFocused = false;
+	resetBlink();
+}
+
+export function closeActiveTab(): void {
+	if (!ide_state.activeTabId) {
+		return;
+	}
+	closeTab(ide_state.activeTabId);
+}
+
+export function resetEditorContent(): void {
+	ide_state.buffer = new PieceTreeBuffer('');
+	ide_state.layout.markVisualLinesDirty();
+	markAllDiagnosticsDirty();
+	ide_state.cursorRow = 0;
+	ide_state.cursorColumn = 0;
+	ide_state.scrollRow = 0;
+	ide_state.scrollColumn = 0;
+	ide_state.selectionAnchor = null;
+	ide_state.lastSavedSource = '';
+	ide_state.undoStack = [];
+	ide_state.redoStack = [];
+	ide_state.lastHistoryKey = null;
+	ide_state.lastHistoryTimestamp = 0;
+	ide_state.savePointDepth = 0;
+	ide_state.layout.invalidateAllHighlights();
+	bumpTextVersion();
+	ide_state.dirty = false;
+	updateActiveContextDirtyFlag();
+	syncRuntimeErrorOverlayFromContext(null);
+	updateDesiredColumn();
+	resetBlink();
+	ensureCursorVisible();
+	requestSemanticRefresh();
+}
+
+export async function save(): Promise<void> {
+	const context = getActiveCodeTabContext();
+	const source = getTextSnapshot(ide_state.buffer);
+	const targetPath = context.descriptor.path;
+	try {
+		await saveLuaResourceSource(targetPath, source);
+		setWorkspaceCachedSources([targetPath, buildDirtyFilePath(targetPath)], source);
+		ide_state.dirty = false;
+		ide_state.savePointDepth = ide_state.undoStack.length;
+		context.savePointDepth = ide_state.savePointDepth;
+		breakUndoSequence();
+		ide_state.saveGeneration = ide_state.saveGeneration + 1;
+		context.lastSavedSource = source;
+		context.saveGeneration = ide_state.saveGeneration;
+		ide_state.lastSavedSource = source;
+		updateActiveContextDirtyFlag();
+		const message = `${context.title} saved (restart pending)`;
+		ide_state.showMessage(message, constants.COLOR_STATUS_SUCCESS, 2.5);
+	} catch (error) {
+		if (tryShowLuaErrorOverlay(error)) {
+			return;
+		}
+		const message = extractErrorMessage(error);
+		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
+	}
+}
+
+export function recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
+	ide_state.lastContentEditAtMs = ide_state.clockNow();
+	ide_state.pendingEditContext = { kind, text };
+}
+
+export function applySourceToDocument(source: string): void {
+	ide_state.buffer.replace(0, ide_state.buffer.length, source);
+	invalidateLuaCommentContextFromRow(ide_state.buffer, 0);
+	ide_state.textVersion = ide_state.buffer.version;
+	ide_state.maxLineLengthDirty = true;
+	ide_state.layout.invalidateHighlightsFromRow(0);
+	ide_state.layout.markVisualLinesDirty();
 }

@@ -67,6 +67,7 @@ temp/**
 # Temporary files
 **.log
 **.tmp
+**/screenshots
 
 # CMake generated files
 # CMakeCache.txt
