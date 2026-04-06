@@ -699,7 +699,7 @@ export function markTextMutated(): void {
 	bumpTextVersion();
 	clearReferenceHighlights();
 	updateActiveContextDirtyFlag();
-	ide_state.layout.markVisualLinesDirty();
+	ide_state.layout.ensureVisualLinesDirty();
 	requestSemanticRefresh();
 	ide_state.navigationHistory.forward.length = 0;
 	handlePostEditMutation();
