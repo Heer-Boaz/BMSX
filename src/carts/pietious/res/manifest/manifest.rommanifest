@@ -10,10 +10,11 @@ machine:
     ufps: 50000000
     specs:
         cpu:
-            cpu_freq_hz: 100000000 # 100 MHz
+            cpu_freq_hz: 10000000 # 10 MHz
             imgdec_bytes_per_sec: 26214400
         dma:
             dma_bytes_per_sec_iso: 8388608
             dma_bytes_per_sec_bulk: 26214400
+            
 lua:
     entry_path: cart.lua

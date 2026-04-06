@@ -18,6 +18,11 @@ struct ProgramAsset {
 		Bx,
 		RkB,
 		RkC,
+		// Specialized table ops store a direct const index in operand B/C instead of an RK encoding.
+		// The C++ loader/linker must recognize these kinds so release/libretro can load ROMs emitted
+		// by the current TS compiler without rejecting them or patching the wrong operand shape.
+		ConstB,
+		ConstC,
 		Gl,
 		Sys,
 	};

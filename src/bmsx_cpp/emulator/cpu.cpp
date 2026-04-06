@@ -1416,6 +1416,28 @@ Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
 	return frame.registers[static_cast<size_t>(registerIndex)];
 }
 
+bool CPU::hasFrameUpvalue(int frameIndex, int upvalueIndex) const {
+	if (frameIndex < 0 || frameIndex >= static_cast<int>(m_frames.size())) {
+		throw BMSX_RUNTIME_ERROR("[CPU] Frame index out of range: " + std::to_string(frameIndex) + ".");
+	}
+	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
+	if (upvalueIndex < 0) {
+		return false;
+	}
+	return upvalueIndex < static_cast<int>(frame.closure->upvalues.size());
+}
+
+Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
+	if (frameIndex < 0 || frameIndex >= static_cast<int>(m_frames.size())) {
+		throw BMSX_RUNTIME_ERROR("[CPU] Frame index out of range: " + std::to_string(frameIndex) + ".");
+	}
+	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
+	if (upvalueIndex < 0 || upvalueIndex >= static_cast<int>(frame.closure->upvalues.size())) {
+		throw BMSX_RUNTIME_ERROR("[CPU] Upvalue index out of range: " + std::to_string(upvalueIndex) + ".");
+	}
+	return const_cast<CPU*>(this)->readUpvalue(frame.closure->upvalues[static_cast<size_t>(upvalueIndex)]);
+}
+
 void CPU::skipNextInstruction(CallFrame& frame) {
 	int pc = frame.pc;
 	int wordIndex = pc / INSTRUCTION_BYTES;

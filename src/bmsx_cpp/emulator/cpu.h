@@ -824,6 +824,8 @@ public:
 	std::vector<std::pair<int, int>> getCallStack() const;
 	int getFrameRegisterCount(int frameIndex) const;
 	Value readFrameRegister(int frameIndex, int registerIndex) const;
+	bool hasFrameUpvalue(int frameIndex, int upvalueIndex) const;
+	Value readFrameUpvalue(int frameIndex, int upvalueIndex) const;
 
 	int instructionBudgetRemaining = 0;
 	std::vector<Value> lastReturnValues;

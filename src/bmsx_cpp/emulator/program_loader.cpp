@@ -17,6 +17,14 @@ ProgramAsset::ConstRelocKind parseConstRelocKind(const std::string& kind) {
 	if (kind == "rk_c") {
 		return ProgramAsset::ConstRelocKind::RkC;
 	}
+	// Lua 5.4-style specialized table ops such as GETFIELD/SETFIELD/GETI/SETI patch a plain
+	// const operand in B/C. Treating them as legacy RK relocations corrupts the linked bytecode.
+	if (kind == "const_b") {
+		return ProgramAsset::ConstRelocKind::ConstB;
+	}
+	if (kind == "const_c") {
+		return ProgramAsset::ConstRelocKind::ConstC;
+	}
 	if (kind == "gl") {
 		return ProgramAsset::ConstRelocKind::Gl;
 	}

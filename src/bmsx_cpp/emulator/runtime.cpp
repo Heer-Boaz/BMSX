@@ -623,6 +623,12 @@ void Runtime::boot(Program* program, ProgramMetadata* metadata, int entryProtoIn
 	m_runtimeFailed = false;
 	m_luaInitialized = false;
 	m_pendingCall = PendingCall::None;
+	// The globals table alone is not enough to reset the Lua environment here.
+	// CPU::setProgram() rebuilds the slot-backed globals from the cached slot arrays,
+	// so stale values would otherwise get written straight back into the new globals table.
+	// That specifically resurrected the previous bootrom/cart `update` closure across cart boot,
+	// and the runtime later called a dead closure whose captured upvalues pointed at freed state.
+	m_cpu.clearGlobalSlots();
 	m_cpu.globals->clear();
 	m_memory.clearIoSlots();
 	resetVdpIngressState();

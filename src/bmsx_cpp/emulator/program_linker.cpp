@@ -291,6 +291,52 @@ void rewriteConstRelocations(
 			continue;
 		}
 
+		if (reloc.kind == ProgramAsset::ConstRelocKind::ConstB
+			|| reloc.kind == ProgramAsset::ConstRelocKind::ConstC) {
+			// These are direct const operands for specialized opcodes, not signed RK encodings.
+			// Rewriting them with the RK path silently mangles the operand bits and only shows up
+			// later in release/libretro when the linked program executes the wrong instruction data.
+			const bool relocOnB = reloc.kind == ProgramAsset::ConstRelocKind::ConstB;
+			const int extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;
+			const int baseBits = MAX_OPERAND_BITS + extBits;
+			const uint32_t maxBase = (1u << baseBits) - 1u;
+			if (!hasWide && static_cast<uint32_t>(mappedIndex) > maxBase) {
+				throw std::runtime_error("[ProgramLinker] Const reloc requires WIDE prefix.");
+			}
+			const int totalBits = MAX_OPERAND_BITS + extBits + (hasWide ? MAX_OPERAND_BITS : 0);
+			const uint32_t maxValue = (1u << totalBits) - 1u;
+			if (static_cast<uint32_t>(mappedIndex) > maxValue) {
+				throw std::runtime_error("[ProgramLinker] Const reloc exceeds operand range.");
+			}
+			const uint8_t low = static_cast<uint8_t>(mappedIndex & 0x3f);
+			const uint32_t extMask = static_cast<uint32_t>((1 << extBits) - 1);
+			const uint8_t extPart = static_cast<uint8_t>((static_cast<uint32_t>(mappedIndex) >> MAX_OPERAND_BITS) & extMask);
+			const uint32_t widePart = static_cast<uint32_t>(mappedIndex) >> (MAX_OPERAND_BITS + extBits);
+
+			const uint8_t extA = static_cast<uint8_t>((ext >> 6) & 0x3);
+			uint8_t extB = static_cast<uint8_t>((ext >> 3) & 0x7);
+			uint8_t extC = static_cast<uint8_t>(ext & 0x7);
+			if (relocOnB) {
+				bLow = low;
+				extB = extPart;
+				if (hasWide) {
+					wideB = static_cast<uint8_t>(widePart & 0x3f);
+				}
+			} else {
+				cLow = low;
+				extC = extPart;
+				if (hasWide) {
+					wideC = static_cast<uint8_t>(widePart & 0x3f);
+				}
+			}
+			ext = static_cast<uint8_t>((extA << 6) | (extB << 3) | extC);
+			if (hasWide) {
+				writeInstruction(code, wordIndex - 1, static_cast<uint8_t>(OpCode::WIDE), wideA, wideB, wideC);
+			}
+			writeInstruction(code, wordIndex, op, aLow, bLow, cLow, ext);
+			continue;
+		}
+
 		const bool relocOnB = reloc.kind == ProgramAsset::ConstRelocKind::RkB;
 		const int rkValue = -mappedIndex - 1;
 		const int extBits = relocOnB ? EXT_B_BITS : EXT_C_BITS;

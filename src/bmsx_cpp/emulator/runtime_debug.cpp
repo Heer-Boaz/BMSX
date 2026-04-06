@@ -224,6 +224,21 @@ std::optional<Value> resolveRootExpressionValue(
 			return runtime.cpu().readFrameRegister(frameIndex, slot->reg);
 		}
 	}
+	if (metadata && protoIndex >= 0 && protoIndex < static_cast<int>(metadata->upvalueNamesByProto.size())) {
+		// Mirror the TS debugger: when the current source line refers to a captured local,
+		// resolve it through the live closure upvalues instead of falling back to globals.
+		// Without this, C++ fault logs hide stale-closure bugs behind unrelated nil/number output.
+		const std::vector<std::string>& upvalueNames = metadata->upvalueNamesByProto[static_cast<size_t>(protoIndex)];
+		for (size_t index = 0; index < upvalueNames.size(); ++index) {
+			if (upvalueNames[index] != canonicalName) {
+				continue;
+			}
+			if (runtime.cpu().hasFrameUpvalue(frameIndex, static_cast<int>(index))) {
+				return runtime.cpu().readFrameUpvalue(frameIndex, static_cast<int>(index));
+			}
+			break;
+		}
+	}
 	const Value globalValue = runtime.cpu().getGlobalByKey(canonicalizeDebugIdentifier(runtime, rootName));
 	if (!isNil(globalValue)) {
 		return globalValue;
