@@ -389,12 +389,15 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 				const payload = ctx.projectRootPath ? { project_root_path: ctx.projectRootPath, manifest: ctx.manifest } : { manifest: ctx.manifest };
 				preview = JSON.stringify(payload, null, 2);
 			} else if (selected.resid === PROGRAM_ASSET_ID) {
-				const { programAsset, program, metadata, sourceTextForPath } = loadProgramFromAssets(ctx.rombin, ctx.assetList);
+				const { programAsset, program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(ctx.rombin, ctx.assetList);
 				disassembly = disassembleProgramAsset(program, metadata, sourceTextForPath);
 				metadataLines.push(`Program entry proto: ${programAsset.entryProtoIndex}`);
 				metadataLines.push(`Program protos: ${program.protos.length}`);
 				metadataLines.push(`Program consts: ${program.constPool.length}`);
 				metadataLines.push(`Program code bytes: ${program.code.length}`);
+				if (missingSourcePaths.length > 0) {
+					metadataLines.push(`Source comments: unavailable (${missingSourcePaths.length} missing Lua paths)`);
+				}
 				preview = '[Program asset: open Details tab for disassembly]';
 			} else if (selected.resid === PROGRAM_SYMBOLS_ASSET_ID) {
 				const symbols = decodeProgramSymbolsAsset(new Uint8Array(ctx.rombin.slice(selected.start, selected.end)));

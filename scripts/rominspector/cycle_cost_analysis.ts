@@ -66,13 +66,18 @@ const OPCODE_NAMES: string[] = (() => {
 	names[OpCode.SETSYS] = 'SETSYS';
 	names[OpCode.GETGL] = 'GETGL';
 	names[OpCode.SETGL] = 'SETGL';
+	names[OpCode.GETI] = 'GETI';
+	names[OpCode.SETI] = 'SETI';
+	names[OpCode.GETFIELD] = 'GETFIELD';
+	names[OpCode.SETFIELD] = 'SETFIELD';
+	names[OpCode.SELF] = 'SELF';
 	return names;
 })();
 
 // ── Base cycle costs (mirrors cpu.ts BASE_CYCLES) ──────────────────────
 
 const BASE_CYCLES = new Uint8Array(64);
-BASE_CYCLES.fill(2);
+BASE_CYCLES.fill(1);
 
 BASE_CYCLES[OpCode.WIDE] = 0;
 BASE_CYCLES[OpCode.MOV] = 1;
@@ -86,58 +91,37 @@ BASE_CYCLES[OpCode.K0] = 1;
 BASE_CYCLES[OpCode.K1] = 1;
 BASE_CYCLES[OpCode.KM1] = 1;
 BASE_CYCLES[OpCode.KSMI] = 1;
-BASE_CYCLES[OpCode.GETG] = 6;
-BASE_CYCLES[OpCode.SETG] = 7;
-BASE_CYCLES[OpCode.GETT] = 8;
-BASE_CYCLES[OpCode.SETT] = 10;
-BASE_CYCLES[OpCode.NEWT] = 10;
-BASE_CYCLES[OpCode.ADD] = 2;
-BASE_CYCLES[OpCode.SUB] = 2;
-BASE_CYCLES[OpCode.MUL] = 3;
-BASE_CYCLES[OpCode.DIV] = 4;
-BASE_CYCLES[OpCode.MOD] = 6;
-BASE_CYCLES[OpCode.FLOORDIV] = 6;
-BASE_CYCLES[OpCode.POW] = 12;
-BASE_CYCLES[OpCode.BAND] = 2;
-BASE_CYCLES[OpCode.BOR] = 2;
-BASE_CYCLES[OpCode.BXOR] = 2;
-BASE_CYCLES[OpCode.SHL] = 2;
-BASE_CYCLES[OpCode.SHR] = 2;
-BASE_CYCLES[OpCode.BNOT] = 2;
-BASE_CYCLES[OpCode.CONCAT] = 12;
-BASE_CYCLES[OpCode.CONCATN] = 14;
-BASE_CYCLES[OpCode.UNM] = 1;
-BASE_CYCLES[OpCode.NOT] = 1;
-BASE_CYCLES[OpCode.LEN] = 4;
-BASE_CYCLES[OpCode.EQ] = 3;
-BASE_CYCLES[OpCode.LT] = 6;
-BASE_CYCLES[OpCode.LE] = 6;
-BASE_CYCLES[OpCode.TEST] = 2;
-BASE_CYCLES[OpCode.TESTSET] = 3;
-BASE_CYCLES[OpCode.JMP] = 1;
-BASE_CYCLES[OpCode.JMPIF] = 2;
-BASE_CYCLES[OpCode.JMPIFNOT] = 2;
-BASE_CYCLES[OpCode.CLOSURE] = 20;
-BASE_CYCLES[OpCode.GETUP] = 3;
-BASE_CYCLES[OpCode.SETUP] = 3;
+BASE_CYCLES[OpCode.GETG] = 1;
+BASE_CYCLES[OpCode.SETG] = 2;
+BASE_CYCLES[OpCode.GETT] = 1;
+BASE_CYCLES[OpCode.SETT] = 2;
+BASE_CYCLES[OpCode.NEWT] = 1;
+BASE_CYCLES[OpCode.CONCATN] = 2;
+BASE_CYCLES[OpCode.TESTSET] = 2;
+BASE_CYCLES[OpCode.CLOSURE] = 1;
+BASE_CYCLES[OpCode.GETUP] = 1;
+BASE_CYCLES[OpCode.SETUP] = 2;
 BASE_CYCLES[OpCode.VARARG] = 2;
-BASE_CYCLES[OpCode.CALL] = 18;
-BASE_CYCLES[OpCode.RET] = 18;
-BASE_CYCLES[OpCode.LOAD_MEM] = 5;
-BASE_CYCLES[OpCode.STORE_MEM] = 6;
-BASE_CYCLES[OpCode.STORE_MEM_WORDS] = 6;
-BASE_CYCLES[OpCode.BR_TRUE] = 2;
-BASE_CYCLES[OpCode.BR_FALSE] = 2;
-BASE_CYCLES[OpCode.GETSYS] = 2;
-BASE_CYCLES[OpCode.SETSYS] = 3;
-BASE_CYCLES[OpCode.GETGL] = 4;
-BASE_CYCLES[OpCode.SETGL] = 5;
+BASE_CYCLES[OpCode.CALL] = 2;
+BASE_CYCLES[OpCode.RET] = 2;
+BASE_CYCLES[OpCode.LOAD_MEM] = 1;
+BASE_CYCLES[OpCode.STORE_MEM] = 2;
+BASE_CYCLES[OpCode.STORE_MEM_WORDS] = 2;
+BASE_CYCLES[OpCode.GETSYS] = 1;
+BASE_CYCLES[OpCode.SETSYS] = 2;
+BASE_CYCLES[OpCode.GETGL] = 1;
+BASE_CYCLES[OpCode.SETGL] = 2;
+BASE_CYCLES[OpCode.GETI] = 1;
+BASE_CYCLES[OpCode.SETI] = 2;
+BASE_CYCLES[OpCode.GETFIELD] = 1;
+BASE_CYCLES[OpCode.SETFIELD] = 2;
+BASE_CYCLES[OpCode.SELF] = 1;
 
 // ── Opcode category mapping ────────────────────────────────────────────
 
 const OPCODE_CATEGORY: string[] = new Array<string>(64).fill('?');
 for (const op of [OpCode.MOV, OpCode.LOADK, OpCode.LOADBOOL, OpCode.LOADNIL, OpCode.KNIL, OpCode.KFALSE, OpCode.KTRUE, OpCode.K0, OpCode.K1, OpCode.KM1, OpCode.KSMI]) OPCODE_CATEGORY[op] = 'load/move';
-for (const op of [OpCode.GETG, OpCode.SETG, OpCode.GETT, OpCode.SETT]) OPCODE_CATEGORY[op] = 'table get/set';
+for (const op of [OpCode.GETG, OpCode.SETG, OpCode.GETT, OpCode.SETT, OpCode.GETI, OpCode.SETI, OpCode.GETFIELD, OpCode.SETFIELD, OpCode.SELF]) OPCODE_CATEGORY[op] = 'table get/set';
 for (const op of [OpCode.GETGL, OpCode.SETGL, OpCode.GETSYS, OpCode.SETSYS]) OPCODE_CATEGORY[op] = 'global/sys access';
 for (const op of [OpCode.GETUP, OpCode.SETUP]) OPCODE_CATEGORY[op] = 'upvalue';
 for (const op of [OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.MOD, OpCode.FLOORDIV, OpCode.POW, OpCode.UNM]) OPCODE_CATEGORY[op] = 'arithmetic';
@@ -421,35 +405,35 @@ export function generateCycleCostReport(program: Program, metadata: ProgramMetad
 
 	// ── Section 5: Closure-heavy protos ────────────────────────────
 	printOpcodeGroupTable(
-		'TOP 20 PROTOS WITH MOST CLOSURE INSTRUCTIONS (expensive at 20 cycles each)',
+		'TOP 20 PROTOS WITH MOST CLOSURE INSTRUCTIONS',
 		op => op === OpCode.CLOSURE, 20,
 		'CLOSUREs', 'ClosureCyc', '%Closure',
 	);
 
 	// ── Section 6: Table access heavy protos ───────────────────────
 	printOpcodeGroupTable(
-		'TOP 20 PROTOS WITH MOST TABLE ACCESS CYCLES (GETT 8 + SETT 10 cycles each)',
-		op => op === OpCode.GETT || op === OpCode.SETT, 20,
+		'TOP 20 PROTOS WITH MOST TABLE ACCESS CYCLES (generic + specialized table ops)',
+		op => op === OpCode.GETT || op === OpCode.SETT || op === OpCode.GETI || op === OpCode.SETI || op === OpCode.GETFIELD || op === OpCode.SETFIELD || op === OpCode.SELF, 20,
 		'TableOps', 'TblCycles', '%Table',
 	);
 
 	// ── Section 7: CALL-heavy protos ───────────────────────────────
 	printOpcodeGroupTable(
-		'TOP 20 PROTOS WITH MOST CALL+RET CYCLES (18 cycles each + additional dynamic costs)',
+		'TOP 20 PROTOS WITH MOST CALL+RET CYCLES',
 		op => op === OpCode.CALL || op === OpCode.RET, 20,
 		'Call/Ret', 'CallCycles', '%Call',
 	);
 
 	// ── Section 8: Memory I/O heavy protos ─────────────────────────
 	printOpcodeGroupTable(
-		'TOP 20 PROTOS WITH MOST MEMORY I/O (LOAD_MEM 5 + STORE_MEM 6 + STORE_MEM_WORDS 6)',
+		'TOP 20 PROTOS WITH MOST MEMORY I/O',
 		op => op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_WORDS, 20,
 		'MemOps', 'MemCycles', '%Mem',
 	);
 
 	// ── Section 9: CONCAT heavy protos ─────────────────────────────
 	printOpcodeGroupTable(
-		'TOP 15 PROTOS WITH MOST STRING CONCAT CYCLES (CONCAT 12 + CONCATN 14 per instruction)',
+		'TOP 15 PROTOS WITH MOST STRING CONCAT CYCLES',
 		op => op === OpCode.CONCAT || op === OpCode.CONCATN, 15,
 		'ConcatOps', 'ConcatCyc', '%Concat',
 	);
@@ -475,14 +459,10 @@ export function generateCycleCostReport(program: Program, metadata: ProgramMetad
 	}
 	w('');
 
-	w('NOTE: These are STATIC costs (per-instruction base cycles as defined in the ISA).');
-	w('DYNAMIC costs are higher for:');
-	w('  - CALL: +argCount + ceil(maxStack/4) + possible vararg overhead');
-	w('  - RET: +returnCount + openUpvalues*3 upvalue closing cost');
-	w('  - Native function CALL: +cost.base + cost.perArg*argCount + cost.perRet*returnSlotCount');
-	w('  - STORE_MEM_WORDS: +ceil(wordCount/16) for VDP packets');
-	w('  - CONCAT/CONCATN: cost scales with operand count');
-	w('  - VARARG: +ceil(count/4) for copying');
+	w('NOTE: These are STATIC costs from the current flat-cost ISA.');
+	w('Only a small number of dynamic add-ons remain visible in runtime execution:');
+	w('  - Native CALL: +native tier cost (0, 1, 2, or 4)');
+	w('  - STORE_MEM_WORDS: +ceil(wordCount/4)');
 	w('');
 	w('Runtime hotspots depend on call frequency. Protos inside tight update loops');
 	w('(e.g. per-frame tick, physics step, render prep) multiply their static cost');

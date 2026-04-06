@@ -48,7 +48,7 @@ export function sortAssetsById(assets: RomAsset[]): RomAsset[] {
 	return [...assets].sort((left, right) => ASSET_ID_COLLATOR.compare(left.resid, right.resid));
 }
 
-export function buildLuaSourceLookup(rombin: Uint8Array, assets: RomAsset[]): (path: string) => string {
+export function buildLuaSourceLookup(rombin: Uint8Array, assets: RomAsset[]): Map<string, string> {
 	const sources = new Map<string, string>();
 	for (const asset of assets) {
 		if (asset.type !== 'lua') {
@@ -66,13 +66,7 @@ export function buildLuaSourceLookup(rombin: Uint8Array, assets: RomAsset[]): (p
 		}
 		sources.set(path, Buffer.from(rombin.slice(asset.start, asset.end)).toString('utf8'));
 	}
-	return (path: string) => {
-		const text = sources.get(path);
-		if (text === undefined) {
-			throw new Error(`[RomInspector] Lua source '${path}' not found in ROM pack.`);
-		}
-		return text;
-	};
+	return sources;
 }
 
 export function loadProgramFromAssets(rombin: Uint8Array, assets: RomAsset[]) {
@@ -96,8 +90,31 @@ export function loadProgramFromAssets(rombin: Uint8Array, assets: RomAsset[]) {
 			return decodeProgramSymbolsAsset(symbolsBytes).metadata;
 		})()
 		: null;
-	const sourceTextForPath = metadata ? buildLuaSourceLookup(rombin, assets) : null;
-	return { programAsset, program, metadata, sourceTextForPath };
+	const sourceMap = metadata ? buildLuaSourceLookup(rombin, assets) : null;
+	const missingSourcePaths = new Set<string>();
+	if (metadata && sourceMap && sourceMap.size > 0) {
+		for (const range of metadata.debugRanges) {
+			if (range !== null && !sourceMap.has(range.path)) {
+				missingSourcePaths.add(range.path);
+			}
+		}
+	}
+	const sourceTextForPath = metadata && sourceMap && sourceMap.size > 0 && missingSourcePaths.size === 0
+		? (path: string) => {
+			const text = sourceMap.get(path);
+			if (text === undefined) {
+				throw new Error(`[RomInspector] Lua source '${path}' not found in ROM pack.`);
+			}
+			return text;
+		}
+		: null;
+	return {
+		programAsset,
+		program,
+		metadata,
+		sourceTextForPath,
+		missingSourcePaths: Array.from(missingSourcePaths.values()).sort(),
+	};
 }
 
 export function disassembleProgramAsset(
@@ -106,16 +123,13 @@ export function disassembleProgramAsset(
 	sourceTextForPath: ((path: string) => string) | null,
 	options: { assembly?: boolean; pcBias?: number } = {},
 ): string {
-	if (metadata && !sourceTextForPath) {
-		throw new Error('[RomInspector] Program symbols found but Lua sources were not resolved.');
-	}
 	const assembly = options.assembly === true;
 	return disassembleProgram(program, metadata, {
 		formatStyle: assembly ? 'assembly' : 'default',
 		pcRadix: 16,
 		pcFormatter: assembly ? undefined : (pc, width) => formatNumberAsHex(pc, width),
 		pcBias: options.pcBias,
-		showSourceComments: metadata !== null,
+		showSourceComments: metadata !== null && sourceTextForPath !== null,
 		sourceTextForPath: sourceTextForPath ?? undefined,
 	});
 }

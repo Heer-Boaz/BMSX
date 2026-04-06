@@ -303,8 +303,11 @@ async function main() {
 	}
 
 	if (programAsmFlag) {
-		const { program, metadata, sourceTextForPath } = loadProgramFromAssets(rombin, assetList);
+		const { program, metadata, sourceTextForPath, missingSourcePaths } = loadProgramFromAssets(rombin, assetList);
 		const pcBias = programAsmBias === null ? undefined : programAsmBias;
+		if (missingSourcePaths.length > 0) {
+			console.warn(`[RomInspector] Source comments unavailable for ${missingSourcePaths.length} Lua path(s); ROM is stripped or partial.`);
+		}
 		console.log(disassembleProgramAsset(program, metadata, sourceTextForPath, { assembly: true, pcBias }));
 		process.exit(0);
 	}
