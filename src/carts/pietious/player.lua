@@ -1024,9 +1024,9 @@ function player:consume_aphrodite_water_vertical_dy()
 		return 0
 	end
 	local dy<const>, next_accum<const> = consume_axis_accum(
-		self.vertical_motion_dy_accum,
-		constants.physics.aphrodite_water_vertical_dy_by_substate[self.vertical_motion_substate - 1],
-		constants.physics.aphrodite_water_vertical_scale_den
+	self.vertical_motion_dy_accum,
+	constants.physics.aphrodite_water_vertical_dy_by_substate[self.vertical_motion_substate - 1],
+	constants.physics.aphrodite_water_vertical_scale_den
 	)
 	self.vertical_motion_dy_accum = next_accum
 	return dy
@@ -1323,9 +1323,9 @@ function player:collides_at_right_wall_stairs_step_off_profile(x, y)
 	local upper_probe_y<const> = (y + self.height) - constants.room.tile_size - 1
 	local lower_probe_y<const> = (y + self.height) - 1
 	return self:collides_at_probe(center_x, upper_probe_y, false)
-		or self:collides_at_probe(center_x, lower_probe_y, false)
-		or self:collides_at_probe(wall_x, upper_probe_y, false)
-		or self:collides_at_probe(wall_x, lower_probe_y, false)
+	or self:collides_at_probe(center_x, lower_probe_y, false)
+	or self:collides_at_probe(wall_x, upper_probe_y, false)
+	or self:collides_at_probe(wall_x, lower_probe_y, false)
 end
 
 function player:collides_at_left_wall_stairs_step_off_profile(x, y)
@@ -1335,11 +1335,11 @@ function player:collides_at_left_wall_stairs_step_off_profile(x, y)
 	local upper_probe_y<const> = (y + self.height) - constants.room.tile_size - 1
 	local lower_probe_y<const> = (y + self.height) - 1
 	return self:collides_at_probe(center_x, upper_probe_y, false)
-		or self:collides_at_probe(center_x, lower_probe_y, false)
-		or self:collides_at_probe(wall_x, upper_probe_y, false)
-		or self:collides_at_probe(wall_x, lower_probe_y, false)
-		or self:collides_at_probe(wall_x_secondary, upper_probe_y, false)
-		or self:collides_at_probe(wall_x_secondary, lower_probe_y, false)
+	or self:collides_at_probe(center_x, lower_probe_y, false)
+	or self:collides_at_probe(wall_x, upper_probe_y, false)
+	or self:collides_at_probe(wall_x, lower_probe_y, false)
+	or self:collides_at_probe(wall_x_secondary, upper_probe_y, false)
+	or self:collides_at_probe(wall_x_secondary, lower_probe_y, false)
 end
 
 function player:try_step_off_stairs()
@@ -1374,10 +1374,10 @@ function player:try_step_off_stairs()
 	end
 	local support_probe_y<const> = self.y + self.height + constants.stairs.step_off_probe_extra_y
 	if not oget('room'):has_collision_flags_at_world(
-		support_probe_x,
-		support_probe_y,
-		constants.collision_flags.solid_mask,
-		false
+	support_probe_x,
+	support_probe_y,
+	constants.collision_flags.solid_mask,
+	false
 	) then
 		return false
 	end
@@ -1424,10 +1424,10 @@ function player:collides_with_elevator_probe(x, y)
 	for i = 1, count do
 		local platform<const> = oget('e.p' .. tostring(i))
 		if platform.current_room_number == current_room_number
-			and x >= platform.x
-			and x < (platform.x + constants.room.tile_size4)
-			and y >= platform.y
-			and y < (platform.y + constants.room.tile_size2)
+		and x >= platform.x
+		and x < (platform.x + constants.room.tile_size4)
+		and y >= platform.y
+		and y < (platform.y + constants.room.tile_size2)
 		then
 			return true
 		end
@@ -1446,7 +1446,7 @@ function player:collides_with_elevator_at(x, y)
 	for i = 1, count do
 		local platform<const> = oget('e.p' .. tostring(i))
 		if platform.current_room_number == current_room_number
-			and collision2d.collides(self.collider, platform.collider)
+		and collision2d.collides(self.collider, platform.collider)
 		then
 			self.x = old_x
 			self.y = old_y
@@ -1464,8 +1464,8 @@ function player:has_feet_over_elevator_top(platform, x)
 	local mid_foot_x<const> = x + (self.width / 2)
 	local right_foot_x<const> = (x + self.width) - constants.room.tile_half
 	return (left_foot_x >= platform.x and left_foot_x < (platform.x + constants.room.tile_size4))
-		or (mid_foot_x >= platform.x and mid_foot_x < (platform.x + constants.room.tile_size4))
-		or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
+	or (mid_foot_x >= platform.x and mid_foot_x < (platform.x + constants.room.tile_size4))
+	or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
 end
 
 function player:resolve_overlap_with_elevator(platform, previous_platform_y)
@@ -1523,11 +1523,11 @@ function player:is_support_below_at(x, y, include_elevator)
 		local platform<const> = oget('e.p' .. tostring(i))
 		if platform.current_room_number == current_room_number then
 			if player_bottom >= platform.y
-				and player_bottom <= (platform.y + 1)
-				and (
-					(left_foot_x >= platform.x and left_foot_x < (platform.x + constants.room.tile_size4))
-					or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
-				)
+			and player_bottom <= (platform.y + 1)
+			and (
+			(left_foot_x >= platform.x and left_foot_x < (platform.x + constants.room.tile_size4))
+			or (right_foot_x >= platform.x and right_foot_x < (platform.x + constants.room.tile_size4))
+			)
 			then
 				return true
 			end
@@ -1564,14 +1564,14 @@ function player:collides_at_support_profile(x, y, include_elevator)
 	local left_foot_x<const> = x + constants.room.tile_half
 	local right_foot_x<const> = (x + self.width) - constants.room.tile_half
 	return self:collides_at_probe(left_foot_x, feet_y, include_elevator)
-		or self:collides_at_probe(right_foot_x, feet_y, include_elevator)
+	or self:collides_at_probe(right_foot_x, feet_y, include_elevator)
 end
 
 function player:collides_at_jump_ceiling_profile(x, y, include_elevator)
 	local left_probe_x<const> = x + constants.room.tile_half
 	local right_probe_x<const> = (x + self.width) - constants.room.tile_half
 	return self:collides_at_probe(left_probe_x, y, include_elevator)
-		or self:collides_at_probe(right_probe_x, y, include_elevator)
+	or self:collides_at_probe(right_probe_x, y, include_elevator)
 end
 
 function player:collides_at_right_wall_profile(x, y, include_elevator)
@@ -1579,14 +1579,14 @@ function player:collides_at_right_wall_profile(x, y, include_elevator)
 	local first_probe_y<const> = (y + self.height) - constants.room.tile_size
 	local second_probe_y<const> = first_probe_y - 1
 	return self:collides_at_probe(wall_x, first_probe_y, include_elevator)
-		or self:collides_at_probe(wall_x, second_probe_y, include_elevator)
+	or self:collides_at_probe(wall_x, second_probe_y, include_elevator)
 end
 
 function player:collides_at_left_wall_primary_profile(x, y, include_elevator)
 	local first_probe_y<const> = (y + self.height) - constants.room.tile_size
 	local second_probe_y<const> = first_probe_y - 1
 	return self:collides_at_probe(x, first_probe_y, include_elevator)
-		or self:collides_at_probe(x, second_probe_y, include_elevator)
+	or self:collides_at_probe(x, second_probe_y, include_elevator)
 end
 
 function player:collides_at_left_wall_secondary_profile(x, y, include_elevator)
@@ -1594,7 +1594,7 @@ function player:collides_at_left_wall_secondary_profile(x, y, include_elevator)
 	local first_probe_y<const> = (y + self.height) - constants.room.tile_size
 	local second_probe_y<const> = first_probe_y - 1
 	return self:collides_at_probe(wall_x, first_probe_y, include_elevator)
-		or self:collides_at_probe(wall_x, second_probe_y, include_elevator)
+	or self:collides_at_probe(wall_x, second_probe_y, include_elevator)
 end
 
 function player:snap_feet_y_to_floor_grid()
@@ -2601,7 +2601,7 @@ local define_player_fsm<const> = function()
 		end,
 	}
 	-- wrap_state_update: wraps every state's update handler with common per-frame
-		-- logic (collision state, room switching, presentation,
+	-- logic (collision state, room switching, presentation,
 	-- invulnerability updates).  This avoids duplicating the same trailing calls
 	-- in every update function.  The wrapper also handles elevator-on-jump reset
 	-- and sword cooldown decrement.
@@ -2758,44 +2758,44 @@ local define_player_fsm<const> = function()
 			},
 			update = player.update_entering_world,
 		},
-			waiting_world_banner = {
-				tags = {
-					state_tags.variant.waiting_world_banner,
-					state_tags.group.transition_lock,
-					state_tags.group.damage_lock,
-				},
-				on = {
-					['world_banner_done'] = {
-						emitter = 'd',
-						go = function(self)
-							self:complete_enter_world_after_banner()
-							return '/quiet'
-						end,
-					},
-				},
-				update = player.reset_motion_for_transition_lock,
+		waiting_world_banner = {
+			tags = {
+				state_tags.variant.waiting_world_banner,
+				state_tags.group.transition_lock,
+				state_tags.group.damage_lock,
 			},
-			waiting_halo_banner = {
-				tags = {
-					state_tags.variant.waiting_halo_banner,
-					state_tags.group.transition_lock,
-					state_tags.group.damage_lock,
+			on = {
+				['world_banner_done'] = {
+					emitter = 'd',
+					go = function(self)
+						self:complete_enter_world_after_banner()
+						return '/quiet'
+					end,
 				},
-				on = {
-					['halo_banner_done'] = {
-						emitter = 'd',
-						go = function(self)
-							self:complete_halo_return_after_banner()
-							return '/quiet'
-						end,
-					},
-				},
-				update = player.reset_motion_for_transition_lock,
 			},
-			waiting_world_emerge = {
-				tags = {
-					state_tags.variant.waiting_world_emerge,
-					state_tags.group.transition_lock,
+			update = player.reset_motion_for_transition_lock,
+		},
+		waiting_halo_banner = {
+			tags = {
+				state_tags.variant.waiting_halo_banner,
+				state_tags.group.transition_lock,
+				state_tags.group.damage_lock,
+			},
+			on = {
+				['halo_banner_done'] = {
+					emitter = 'd',
+					go = function(self)
+						self:complete_halo_return_after_banner()
+						return '/quiet'
+					end,
+				},
+			},
+			update = player.reset_motion_for_transition_lock,
+		},
+		waiting_world_emerge = {
+			tags = {
+				state_tags.variant.waiting_world_emerge,
+				state_tags.group.transition_lock,
 				state_tags.group.damage_lock,
 			},
 			on = {
@@ -2836,30 +2836,30 @@ local define_player_fsm<const> = function()
 			},
 			update = player.reset_motion_for_transition_lock,
 		},
-			leaving_shrine = {
-				tags = {
-					state_tags.variant.leaving_shrine,
-					state_tags.group.transition_lock,
-					state_tags.group.damage_lock,
-				},
-				timelines = {
-					[player_shrine_exit_timeline_id] = {
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = {
-							rewind = true,
-							snap_to_start = true,
-						},
-						on_end = function(self)
-							local castle<const> = oget('c')
-							self.to_enter_cut = 0
-							oget('d').events:emit('shrine_exit_done', castle:create_room_enter_payload(false))
-							return '/quiet'
-						end,
-					},
-				},
-				update = player.reset_motion_for_transition_lock,
+		leaving_shrine = {
+			tags = {
+				state_tags.variant.leaving_shrine,
+				state_tags.group.transition_lock,
+				state_tags.group.damage_lock,
 			},
+			timelines = {
+				[player_shrine_exit_timeline_id] = {
+					autoplay = true,
+					stop_on_exit = true,
+					play_options = {
+						rewind = true,
+						snap_to_start = true,
+					},
+					on_end = function(self)
+						local castle<const> = oget('c')
+						self.to_enter_cut = 0
+						oget('d').events:emit('shrine_exit_done', castle:create_room_enter_payload(false))
+						return '/quiet'
+					end,
+				},
+			},
+			update = player.reset_motion_for_transition_lock,
+		},
 		-- FREEZE — entered on 'seal_dissolution' from root on handler.
 		-- Cancels any active sword swing, then waits for 'seal_flash_done'.
 		-- On unfreeze: pop_and_transition() restores the previous state from
@@ -2964,12 +2964,12 @@ local define_player_fsm<const> = function()
 		-- These derivations replace scattered `if state == 'x' or state == 'y'`
 		-- checks throughout the codebase.  Code instead uses has_tag(group_tag).
 		tag_derivations = {
-				[state_tags.group.world_transition_waiting] = {
-					state_tags.variant.waiting_world_banner,
-					state_tags.variant.waiting_halo_banner,
-					state_tags.variant.waiting_world_emerge,
-					state_tags.variant.waiting_shrine,
-				},
+			[state_tags.group.world_transition_waiting] = {
+				state_tags.variant.waiting_world_banner,
+				state_tags.variant.waiting_halo_banner,
+				state_tags.variant.waiting_world_emerge,
+				state_tags.variant.waiting_shrine,
+			},
 			[state_tags.group.world_transition] = {
 				state_tags.variant.entering_world,
 				state_tags.variant.emerging_world,
@@ -3062,44 +3062,44 @@ local define_player_fsm<const> = function()
 		-- 'seal_dissolution' → /freeze: entered on seal break, restores via
 		-- pop_and_transition() on 'seal_flash_done' (see freeze state above).
 		on = {
-					[player_abilities.command_ids.activate_sword] = function(self)
-						player_abilities.activate_sword(self)
-					end,
-					['player.world_emerge'] = {
-						emitter = 'd',
-						go = function(self)
-							self:begin_world_emerge_from_door_midpoint()
-						end,
-					},
-					['player.shrine_overlay_exit'] = {
-						emitter = 'd',
-						go = function(self)
-							self:leave_shrine_overlay()
-						end,
-					},
-					['player.halo_trigger'] = {
-						emitter = 'd',
-						go = function(self)
-							local result<const> = self.actioneffects:trigger('halo')
-							if result ~= 'ok' then
-								self.events:emit('halo_trigger_cancelled')
-							end
-						end,
-					},
-					['enemy.contact_damage'] = function(self, _state, event)
-						-- self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
-					end,
-					['room.switched'] = function(self)
-						self:set_space('main')
-					end,
-				['dying'] = '/dying',
-				['damage'] = '/hit_fall',
+			[player_abilities.command_ids.activate_sword] = function(self)
+				player_abilities.activate_sword(self)
+			end,
+			['player.world_emerge'] = {
+				emitter = 'd',
+				go = function(self)
+					self:begin_world_emerge_from_door_midpoint()
+				end,
+			},
+			['player.shrine_overlay_exit'] = {
+				emitter = 'd',
+				go = function(self)
+					self:leave_shrine_overlay()
+				end,
+			},
+			['player.halo_trigger'] = {
+				emitter = 'd',
+				go = function(self)
+					local result<const> = self.actioneffects:trigger('halo')
+					if result ~= 'ok' then
+						self.events:emit('halo_trigger_cancelled')
+					end
+				end,
+			},
+			['enemy.contact_damage'] = function(self, _state, event)
+				-- self:take_hit(event.amount, event.source_x, event.source_y, event.reason)
+			end,
+			['room.switched'] = function(self)
+				self:set_space('main')
+			end,
+			['dying'] = '/dying',
+			['damage'] = '/hit_fall',
 			['damage_on_stairs'] = '/hit_collision',
-				['stairs_lock_lost_after_room_switch'] = '/quiet',
-				['enter_world_start'] = '/entering_world',
-				['halo_wait_start'] = '/waiting_halo_banner',
-				['leave_world_start'] = '/waiting_world_emerge',
-				['enter_shrine_start'] = '/entering_shrine',
+			['stairs_lock_lost_after_room_switch'] = '/quiet',
+			['enter_world_start'] = '/entering_world',
+			['halo_wait_start'] = '/waiting_halo_banner',
+			['leave_world_start'] = '/waiting_world_emerge',
+			['enter_shrine_start'] = '/entering_shrine',
 			['title_wait'] = {
 				emitter = 'd',
 				go = '/freeze',
@@ -3151,9 +3151,9 @@ local register_player_definition<const> = function()
 			jumping_from_elevator = false,
 			walk_frame = 0,
 			walk_distance_accum = 0,
-				walk_speed_accum = 0,
-				walk_state = 0,
-				walk_move_dx = 0,
+			walk_speed_accum = 0,
+			walk_state = 0,
+			walk_move_dx = 0,
 			walk_move_collided_x = false,
 			stairs_direction = 0,
 			stairs_x = -1,
@@ -3178,12 +3178,12 @@ local register_player_definition<const> = function()
 			hit_substate = 0,
 			hit_direction = 0,
 			hit_recovery_timer = 0,
-				death_timer = 0,
-				transition_step = 0,
-				to_enter_cut = 0,
-				enter_leave_anim_frame = 0,
-				enter_leave_world_target = nil,
-				enter_leave_shrine_text_lines = {},
+			death_timer = 0,
+			transition_step = 0,
+			to_enter_cut = 0,
+			enter_leave_anim_frame = 0,
+			enter_leave_world_target = nil,
+			enter_leave_shrine_text_lines = {},
 			inventory_items = nil,
 			secondary_weapon = nil,
 			weapon_level = 0,
