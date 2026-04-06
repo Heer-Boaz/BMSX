@@ -420,101 +420,35 @@ export function getLineJumpBarHeight(): number {
 	return ide_state.lineHeight + constants.LINE_JUMP_BAR_MARGIN_Y * 2;
 }
 
-export function getCreateResourceBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getCreateResourceBarHeight();
+type BarBounds = { top: number; bottom: number; left: number; right: number };
+
+const barHeightGetters = [
+	getCreateResourceBarHeight,
+	getSearchBarHeight,
+	getResourceSearchBarHeight,
+	getSymbolSearchBarHeight,
+	getRenameBarHeight,
+	getLineJumpBarHeight,
+] as const;
+
+function computeBarBounds(barIndex: number): BarBounds {
+	const height = barHeightGetters[barIndex]();
 	if (height <= 0) {
 		return null;
 	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
+	let top = ide_state.headerHeight + getTabBarTotalHeight();
+	for (let i = 0; i < barIndex; i++) {
+		top += barHeightGetters[i]();
+	}
+	return { top, bottom: top + height, left: 0, right: ide_state.viewportWidth };
 }
 
-export function getSearchBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getSearchBarHeight();
-	if (height <= 0) {
-		return null;
-	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight() + getCreateResourceBarHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
-}
-
-export function getResourceSearchBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getResourceSearchBarHeight();
-	if (height <= 0) {
-		return null;
-	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight() + getCreateResourceBarHeight() + getSearchBarHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
-}
-
-export function getSymbolSearchBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getSymbolSearchBarHeight();
-	if (height <= 0) {
-		return null;
-	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight()
-		+ getCreateResourceBarHeight()
-		+ getSearchBarHeight()
-		+ getResourceSearchBarHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
-}
-
-export function getRenameBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getRenameBarHeight();
-	if (height <= 0) {
-		return null;
-	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight()
-		+ getCreateResourceBarHeight()
-		+ getSearchBarHeight()
-		+ getResourceSearchBarHeight()
-		+ getSymbolSearchBarHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
-}
-
-export function getLineJumpBarBounds(): { top: number; bottom: number; left: number; right: number } {
-	const height = getLineJumpBarHeight();
-	if (height <= 0) {
-		return null;
-	}
-	const top = ide_state.headerHeight + getTabBarTotalHeight()
-		+ getCreateResourceBarHeight()
-		+ getSearchBarHeight()
-		+ getResourceSearchBarHeight()
-		+ getSymbolSearchBarHeight()
-		+ getRenameBarHeight();
-	return {
-		top,
-		bottom: top + height,
-		left: 0,
-		right: ide_state.viewportWidth,
-	};
-}
+export function getCreateResourceBarBounds(): BarBounds { return computeBarBounds(0); }
+export function getSearchBarBounds(): BarBounds { return computeBarBounds(1); }
+export function getResourceSearchBarBounds(): BarBounds { return computeBarBounds(2); }
+export function getSymbolSearchBarBounds(): BarBounds { return computeBarBounds(3); }
+export function getRenameBarBounds(): BarBounds { return computeBarBounds(4); }
+export function getLineJumpBarBounds(): BarBounds { return computeBarBounds(5); }
 
 export function configureFontVariant(variant: FontVariant): void {
 	ide_state.fontVariant = variant;

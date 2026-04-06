@@ -4,8 +4,7 @@ import * as constants from './constants';
 import { activateCodeTab, getActiveCodeTabContext, isResourceViewActive, setActiveTab, storeActiveCodeTabContext } from './editor_tabs';
 import { cancelGlobalSearchJob, startSearchJob } from './editor_search';
 import { ide_state, captureKeys } from './ide_state';
-import { drawEditorText } from './render/text_renderer';
-import { bumpTextVersion, measureText } from './text_utils';
+import { bumpTextVersion } from './text_utils';
 import { ensureCursorVisible } from './caret';
 import { drawProblemsPanel } from './problems_panel';
 import { renderTopBar, renderTopBarDropdown } from './render/render_top_bar';
@@ -32,17 +31,16 @@ import { clearGotoHoverHighlight } from './intellisense';
 import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
 import { hideResourcePanel } from './editor_view';
 import {
-	applyCreateResourceFieldText,
-	applyLineJumpFieldText,
 	applySearchFieldText,
 	cancelSearchJob,
 	clearExecutionStopHighlights,
-	closeCreateResourcePrompt,
 	processDiagnosticsQueue,
-	resetActionPromptState,
 	syncRuntimeErrorOverlayFromContext,
 	updateDesiredColumn,
 } from './cart_editor';
+import { resetActionPromptState } from './action_prompt';
+import { applyLineJumpFieldText } from './search_bars';
+import { applyCreateResourceFieldText, closeCreateResourcePrompt } from './create_resource';
 
 export function tickInput(): void {
 	handlePointerWheel();
@@ -78,20 +76,7 @@ export function draw(): void {
 
 	renderTopBar();
 
-	ide_state.tabBarRowCount = renderTabBar(api, {
-		viewportWidth: ide_state.viewportWidth,
-		headerHeight: ide_state.headerHeight,
-		rowHeight: ide_state.tabBarHeight,
-		lineHeight: ide_state.lineHeight,
-		tabs: ide_state.tabs,
-		activeTabId: ide_state.activeTabId,
-		tabHoverId: ide_state.tabHoverId,
-		measureText: (text: string) => measureText(text),
-		drawText: (text, x, y, color) => drawEditorText(ide_state.font, text, x, y, undefined, color),
-		getDirtyMarkerMetrics: () => constants.TAB_DIRTY_MARKER_METRICS,
-		tabButtonBounds: ide_state.tabButtonBounds,
-		tabCloseButtonBounds: ide_state.tabCloseButtonBounds,
-	});
+	ide_state.tabBarRowCount = renderTabBar();
 	drawResourcePanel();
 	if (isResourceViewActive()) {
 		drawResourceViewer();

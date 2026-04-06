@@ -1,9 +1,12 @@
-import type { OverlayApi as Api } from '../../overlay_api';
+import { api } from '../../overlay_api';
 import * as constants from '../constants';
 import type { EditorTabDescriptor } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../constants';
 import { ScratchBuffer } from '../../../utils/scratchbuffer';
+import { ide_state } from '../ide_state';
+import { measureText } from '../text_utils';
+import { drawEditorText } from './text_renderer';
 
 type TabMetrics = {
 	tab: EditorTabDescriptor;
@@ -44,44 +47,28 @@ const closeBoundsScratch = new ScratchBuffer<RectBounds>(createRectBounds, 8);
 const costsScratch = new ScratchBuffer<number>(createNumber, 8);
 const nextBreakScratch = new ScratchBuffer<number>(createNumber, 8);
 
-export interface TabBarHost {
-	viewportWidth: number;
-	headerHeight: number;
-	rowHeight: number;
-	lineHeight: number;
-	tabs: EditorTabDescriptor[];
-	activeTabId: string;
-	tabHoverId: string;
-	measureText: (text: string) => number;
-	drawText: (text: string, x: number, y: number, color: number) => void;
-	getDirtyMarkerMetrics: () => { width: number; height: number };
-	tabButtonBounds: Map<string, RectBounds>;
-	tabCloseButtonBounds: Map<string, RectBounds>;
-}
-
-export function renderTabBar(api: Api, host: TabBarHost): number {
+export function renderTabBar(): number {
 	tabMetricsScratch.clear();
 	tabBoundsScratch.clear();
 	closeBoundsScratch.clear();
 	costsScratch.clear();
 	nextBreakScratch.clear();
-	host.tabButtonBounds.clear();
-	host.tabCloseButtonBounds.clear();
+	ide_state.tabButtonBounds.clear();
+	ide_state.tabCloseButtonBounds.clear();
 
-	const rowHeight = Math.max(1, host.rowHeight);
-	const closeButtonWidth = host.measureText(constants.TAB_CLOSE_BUTTON_SYMBOL);
-	const markerMetrics = host.getDirtyMarkerMetrics();
-	const markerWidth = markerMetrics.width;
-	const markerHeight = markerMetrics.height;
+	const rowHeight = Math.max(1, ide_state.tabBarHeight);
+	const closeButtonWidth = measureText(constants.TAB_CLOSE_BUTTON_SYMBOL);
+	const markerWidth = constants.TAB_DIRTY_MARKER_METRICS.width;
+	const markerHeight = constants.TAB_DIRTY_MARKER_METRICS.height;
 
-	const tabs = host.tabs;
+	const tabs = ide_state.tabs;
 	const tabCount = tabs.length;
 	const rowHeightTotal = rowHeight;
 	if (tabCount === 0) {
-		const barTop = host.headerHeight;
+		const barTop = ide_state.headerHeight;
 		const barBottom = barTop + rowHeightTotal;
-		api.fill_rect(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
-		api.fill_rect(0, Math.max(barTop, barBottom - 1), host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
+		api.fill_rect(0, barTop, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
+		api.fill_rect(0, Math.max(barTop, barBottom - 1), ide_state.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
 		return 1;
 	}
 
@@ -94,7 +81,7 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 	for (let index = 0; index < tabCount; index += 1) {
 		const tab = tabs[index];
 		const metric = tabMetricsScratch.get(index);
-		const textWidth = host.measureText(tab.title);
+		const textWidth = measureText(tab.title);
 		const dirty = tab.dirty === true;
 		const closable = tab.closable === true;
 		const closeWidth = closable
@@ -116,7 +103,7 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 
 	const n = tabCount;
 	const spacing = constants.TAB_BUTTON_SPACING;
-	const maxWidth = Math.max(TAB_DIRTY_LEFT_MARGIN + TAB_DIRTY_RIGHT_MARGIN + 1, host.viewportWidth - TAB_DIRTY_RIGHT_MARGIN);
+	const maxWidth = Math.max(TAB_DIRTY_LEFT_MARGIN + TAB_DIRTY_RIGHT_MARGIN + 1, ide_state.viewportWidth - TAB_DIRTY_RIGHT_MARGIN);
 	const costs = costsScratch;
 	const nextBreak = nextBreakScratch;
 	costs.set(n, 0);
@@ -156,12 +143,12 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 	}
 
 	const totalRows = Math.max(costs.peek(0) ?? 0, 1);
-	const barTop = host.headerHeight;
+	const barTop = ide_state.headerHeight;
 	const totalHeight = totalRows * rowHeightTotal;
 	const barBottom = barTop + totalHeight;
 
-	api.fill_rect(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
-	api.fill_rect(0, Math.max(barTop, barBottom - 1), host.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
+	api.fill_rect(0, barTop, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BAR_BACKGROUND);
+	api.fill_rect(0, Math.max(barTop, barBottom - 1), ide_state.viewportWidth, barBottom, undefined, constants.COLOR_TAB_BORDER);
 
 	let rowStart = 0;
 	let rowIndex = 0;
@@ -181,9 +168,9 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 			bounds.top = boundsTop;
 			bounds.right = right;
 			bounds.bottom = boundsBottom;
-			host.tabButtonBounds.set(tab.id, bounds);
+			ide_state.tabButtonBounds.set(tab.id, bounds);
 
-			const active = host.activeTabId === tab.id;
+			const active = ide_state.activeTabId === tab.id;
 			const fillColor = active ? constants.COLOR_TAB_ACTIVE_BACKGROUND : constants.COLOR_TAB_INACTIVE_BACKGROUND;
 			const textColor = active ? constants.COLOR_TAB_ACTIVE_TEXT : constants.COLOR_TAB_INACTIVE_TEXT;
 
@@ -192,11 +179,11 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 
 			const textX = bounds.left + constants.TAB_BUTTON_PADDING_X;
 			const textY = bounds.top + constants.TAB_BUTTON_PADDING_Y;
-			host.drawText(tab.title, textX, textY, textColor);
+			drawEditorText(ide_state.font, tab.title, textX, textY, undefined, textColor);
 
 			const indicatorLeft = bounds.right - entry.indicatorWidth;
 			const indicatorWidth = entry.indicatorWidth;
-			const hovered = tab.id === host.tabHoverId;
+			const hovered = tab.id === ide_state.tabHoverId;
 
 			if (entry.closable) {
 				const closeBounds = closeBoundsScratch.get(i);
@@ -205,12 +192,12 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 				closeBounds.right = bounds.right;
 				closeBounds.bottom = bounds.bottom;
 				if (hovered) {
-					host.tabCloseButtonBounds.set(tab.id, closeBounds);
+					ide_state.tabCloseButtonBounds.set(tab.id, closeBounds);
 					const closeX = closeBounds.left + constants.TAB_CLOSE_BUTTON_PADDING_X;
 					const closeY = closeBounds.top + constants.TAB_CLOSE_BUTTON_PADDING_Y;
-					host.drawText(constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, textColor);
+					drawEditorText(ide_state.font, constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, undefined, textColor);
 				} else {
-					host.tabCloseButtonBounds.delete(tab.id);
+					ide_state.tabCloseButtonBounds.delete(tab.id);
 					if (entry.dirty && entry.markerWidth > 0) {
 						const markerX = closeBounds.left + Math.floor((entry.closeWidth - entry.markerWidth) / 2);
 						const markerY = bounds.top + Math.floor((bounds.bottom - bounds.top - entry.markerHeight) / 2);
@@ -220,7 +207,7 @@ export function renderTabBar(api: Api, host: TabBarHost): number {
 					}
 				}
 			} else {
-				host.tabCloseButtonBounds.delete(tab.id);
+				ide_state.tabCloseButtonBounds.delete(tab.id);
 				if (entry.dirty && entry.markerWidth > 0) {
 					const spacing = Math.max(0, constants.TAB_DIRTY_MARKER_SPACING);
 					const markerX = indicatorWidth > 0

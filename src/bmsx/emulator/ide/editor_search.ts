@@ -10,14 +10,12 @@ import { enqueueBackgroundTask } from './background_tasks';
 import {
 	applySearchFieldText,
 	beginNavigationCapture,
-	closeSymbolSearch,
-	closeResourceSearch,
-	closeLineJump,
 	completeNavigation,
 	updateDesiredColumn,
 	listResourcesStrict,
 	openLuaCodeTab,
 } from './cart_editor';
+import { closeSymbolSearch, closeResourceSearch, closeLineJump } from './search_bars';
 import { clearReferenceHighlights } from './intellisense';
 import { ensureCursorVisible, revealCursor } from './caret';
 import { resetBlink } from './render/render_caret';

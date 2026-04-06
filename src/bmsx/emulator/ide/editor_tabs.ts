@@ -14,9 +14,8 @@ import {
 	refreshActiveDiagnostics,
 	beginNavigationCapture,
 	completeNavigation,
-	closeLineJump,
-	closeSymbolSearch,
 } from './cart_editor';
+import { closeLineJump, closeSymbolSearch } from './search_bars';
 import { getCodeAreaBounds, hideResourcePanel, getTabBarTotalHeight, resetPointerClickTracking } from './editor_view';
 import { markDiagnosticsDirty } from './diagnostics';
 import { closeSearch } from './editor_search';

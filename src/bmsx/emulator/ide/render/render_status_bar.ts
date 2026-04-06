@@ -1,5 +1,5 @@
 import * as constants from '../constants';
-import { getActiveSymbolSearchMatch } from '../cart_editor';
+import { getActiveSymbolSearchMatch } from '../search_bars';
 import { statusAreaHeight, getStatusMessageLines } from '../editor_view';
 import { isResourceViewActive } from '../editor_tabs';
 import { ide_state } from '../ide_state';
