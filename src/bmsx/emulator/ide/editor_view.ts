@@ -16,7 +16,6 @@ import { splitText } from './text/source_text';
 import {
 	ensureVisualLines,
 	getVisualLineCount,
-	measureText,
 	positionToVisualIndex,
 	rewrapRuntimeErrorOverlays,
 	visibleColumnCount,
@@ -546,7 +545,6 @@ export function configureFontVariant(variant: FontVariant): void {
 	ide_state.charAdvance = ide_state.font.advance('M');
 	ide_state.spaceAdvance = ide_state.font.advance(' ');
 	ide_state.inlineFieldMetricsRef = {
-		measureText: (text: string) => measureText(text),
 		advanceChar: (ch: string) => ide_state.font.advance(ch),
 		spaceAdvance: ide_state.spaceAdvance,
 		tabSpaces: constants.TAB_SPACES,

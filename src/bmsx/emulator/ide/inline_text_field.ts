@@ -9,7 +9,6 @@ import { LuaLexer } from '../../lua/syntax/lualexer';
 import { splitText, textFromLines } from './text/source_text';
 
 export type InlineFieldMetrics = {
-	measureText: (text: string) => number;
 	advanceChar: (ch: string) => number;
 	spaceAdvance: number;
 	tabSpaces: number;
@@ -591,7 +590,9 @@ export function applyInlineFieldEditing(
 			}
 			if (insertion.length > 0) {
 				if (maxLength !== null) {
-					const remaining = Math.max(0, maxLength - (totalLength(field) - selectionLength(field)));
+					const currentLength = totalLength(field);
+					const selectedLength = selectionLength(field);
+					const remaining = maxLength - (currentLength - selectedLength);
 					if (remaining <= 0) {
 						insertion = '';
 					} else if (insertion.length > remaining) {
@@ -654,8 +655,14 @@ export function applyInlineFieldEditing(
 
 	if (allowSpace && !useCtrl && !metaDown && !altDown && shouldRepeatKeyFromPlayer('Space')) {
 		consumeIdeKey('Space');
-		if (maxLength === null || maxLength - (totalLength(field) - selectionLength(field)) > 0) {
+		if (maxLength === null) {
 			textChanged = insertValue(field, ' ') || textChanged;
+		} else {
+			const currentLength = totalLength(field);
+			const selectedLength = selectionLength(field);
+			if (maxLength - (currentLength - selectedLength) > 0) {
+				textChanged = insertValue(field, ' ') || textChanged;
+			}
 		}
 	}
 
@@ -671,15 +678,17 @@ export function applyInlineFieldEditing(
 				consumeIdeKey(code);
 				continue;
 			}
-			if (characterFilter && !characterFilter(value)) {
-				consumeIdeKey(code);
-				continue;
-			}
-			if (maxLength !== null) {
-				const available = maxLength - (totalLength(field) - selectionLength(field));
-				if (available <= 0) {
+				if (characterFilter && !characterFilter(value)) {
 					consumeIdeKey(code);
 					continue;
+				}
+				if (maxLength !== null) {
+					const currentLength = totalLength(field);
+					const selectedLength = selectionLength(field);
+					const available = maxLength - (currentLength - selectedLength);
+					if (available <= 0) {
+						consumeIdeKey(code);
+						continue;
 				}
 			}
 			textChanged = insertValue(field, value) || textChanged;

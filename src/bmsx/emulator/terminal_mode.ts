@@ -10,7 +10,6 @@ import {
 	selectionRange,
 	deleteSelection,
 	insertValue,
-	getFieldText,
 	getCursorOffset,
 	setCursorFromOffset,
 	selectionAnchorOffset,
@@ -41,6 +40,7 @@ import { LuaMemberCompletionRequest, SymbolEntry } from './types';
 import type { MutableTextPosition, TextBuffer } from './ide/text/text_buffer';
 import { clamp } from '../utils/clamp';
 import type { ModuleAliasEntry } from './ide/semantic_model';
+import { textFromLines } from './ide/text/source_text';
 
 type TerminalOutputKind =
 	| 'prompt'
@@ -266,25 +266,6 @@ export class TerminalMode {
 	private lastSurfaceWidth = 0;
 	private lastSurfaceHeight = 0;
 
-	private fieldText(): string {
-		return getFieldText(this.field);
-	}
-
-	private cursorOffset(): number {
-		return getCursorOffset(this.field);
-	}
-
-	private setCursorOffset(offset: number): void {
-		setCursorFromOffset(this.field, offset);
-	}
-
-	private anchorOffset(): number {
-		return selectionAnchorOffset(this.field);
-	}
-
-	private setSelectionAnchor(offset: number): void {
-		setSelectionAnchorFromOffset(this.field, offset);
-	}
 	private cachedLines: string[] = [''];
 	private cachedLinesVersion = -1;
 	private promptPrefix = '> ';
@@ -472,14 +453,14 @@ export class TerminalMode {
 		if (historyHandled) {
 			this.resetBlink();
 		}
-		const previousText = this.fieldText();
-		const previousCursor = this.cursorOffset();
-		const previousAnchor = this.anchorOffset();
+		const previousText = textFromLines(this.field.lines);
+		const previousCursor = getCursorOffset(this.field);
+		const previousAnchor = selectionAnchorOffset(this.field);
 		const textChanged = applyInlineFieldEditing(this.field, options);
 		if (textChanged) {
-			const editContext = this.buildEditContext(previousText, this.fieldText());
+			const editContext = this.buildEditContext(previousText, textFromLines(this.field.lines));
 			this.handleTextMutation(previousText, editContext);
-		} else if (previousCursor !== this.cursorOffset() || previousAnchor !== this.anchorOffset()) {
+		} else if (previousCursor !== getCursorOffset(this.field) || previousAnchor !== selectionAnchorOffset(this.field)) {
 			if (this.completionPanel) {
 				this.refreshCompletionPanelFilter();
 			} else if (this.symbolPanel) {
@@ -709,8 +690,8 @@ export class TerminalMode {
 	}
 
 	private resolveSymbolCompletionContext(): TerminalSymbolQueryContext {
-		const text = this.fieldText();
-		const cursor = this.cursorOffset();
+		const text = textFromLines(this.field.lines);
+		const cursor = getCursorOffset(this.field);
 		const bounds = this.findSymbolCompletionBounds(text, cursor);
 		return {
 			prefix: text.slice(bounds.start, cursor),
@@ -767,8 +748,8 @@ export class TerminalMode {
 			displayRowOffset: 0,
 			queryStart: query ? query.replaceStart : 0,
 			queryEnd: query ? query.replaceEnd : 0,
-			originalText: this.fieldText(),
-			originalCursor: this.cursorOffset(),
+			originalText: textFromLines(this.field.lines),
+			originalCursor: getCursorOffset(this.field),
 		};
 		this.symbolPanelLayout = null;
 		this.completion.closeSession();
@@ -782,9 +763,9 @@ export class TerminalMode {
 		this.symbolPanel = null;
 		this.symbolPanelLayout = null;
 		if (restoreInput) {
-			const previous = this.fieldText();
+			const previous = textFromLines(this.field.lines);
 			setFieldText(this.field, panel.originalText, false);
-			this.setCursorOffset(panel.originalCursor);
+			setCursorFromOffset(this.field, panel.originalCursor);
 			this.onExternalFieldMutation(previous, panel.originalText);
 		}
 	}
@@ -800,8 +781,8 @@ export class TerminalMode {
 			selectionIndex,
 			displayRowOffset: 0,
 			context,
-			originalText: this.fieldText(),
-			originalCursor: this.cursorOffset(),
+			originalText: textFromLines(this.field.lines),
+			originalCursor: getCursorOffset(this.field),
 		};
 		this.completionPanelLayout = null;
 		this.completion.closeSession();
@@ -815,9 +796,9 @@ export class TerminalMode {
 		this.completionPanel = null;
 		this.completionPanelLayout = null;
 		if (restoreInput) {
-			const previous = this.fieldText();
+			const previous = textFromLines(this.field.lines);
 			setFieldText(this.field, panel.originalText, false);
-			this.setCursorOffset(panel.originalCursor);
+			setCursorFromOffset(this.field, panel.originalCursor);
 			this.onExternalFieldMutation(previous, panel.originalText);
 		}
 	}
@@ -972,7 +953,7 @@ export class TerminalMode {
 			panel.queryEnd = context.replaceEnd;
 			filter = context.prefix;
 		} else {
-			filter = this.fieldText().trim();
+			filter = textFromLines(this.field.lines).trim();
 		}
 		panel.filter = filter;
 		panel.filtered = this.filterSymbolEntries(panel.entries, filter);
@@ -1104,10 +1085,10 @@ export class TerminalMode {
 	}
 
 	private replaceInputRange(start: number, end: number, value: string): void {
-		const previous = this.fieldText();
+		const previous = textFromLines(this.field.lines);
 		const next = previous.slice(0, start) + value + previous.slice(end);
 		setFieldText(this.field, next, false);
-		this.setCursorOffset(start + value.length);
+		setCursorFromOffset(this.field, start + value.length);
 		this.onExternalFieldMutation(previous, next);
 	}
 
@@ -1538,7 +1519,7 @@ export class TerminalMode {
 			const promptWidth = this.measureDisplayText(this.promptPrefix, uppercaseDisplay);
 			const firstLineMax = Math.max(8, contentWidth - promptWidth);
 			const otherLineMax = Math.max(8, contentWidth);
-			const displayInput = this.toDisplayText(this.fieldText(), uppercaseDisplay);
+			const displayInput = this.toDisplayText(textFromLines(this.field.lines), uppercaseDisplay);
 			const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
 
 			// space available for output lines above the input area
@@ -1688,7 +1669,7 @@ export class TerminalMode {
 		}
 		consumeIdeKey('Enter');
 		consumeIdeKey('NumpadEnter');
-		const command = this.fieldText().trimEnd();
+		const command = textFromLines(this.field.lines).trimEnd();
 		if (command.length === 0) {
 			this.resetBlink();
 			return null;
@@ -1699,7 +1680,7 @@ export class TerminalMode {
 	}
 
 	private resetInputField(value: string): void {
-		const previous = this.fieldText();
+		const previous = textFromLines(this.field.lines);
 		setFieldText(this.field, value, true);
 		this.onExternalFieldMutation(previous, value);
 	}
@@ -1831,7 +1812,7 @@ export class TerminalMode {
 		const promptWidth = this.measureDisplayText(this.promptPrefix, uppercaseDisplay);
 		const firstLineMax = Math.max(8, contentWidth - promptWidth);
 		const otherLineMax = Math.max(8, contentWidth);
-		const displayInput = this.toDisplayText(this.fieldText(), uppercaseDisplay);
+		const displayInput = this.toDisplayText(textFromLines(this.field.lines), uppercaseDisplay);
 		const inputWrap = this.wrapDisplayWithFirstWidth(displayInput, firstLineMax, otherLineMax);
 		const availableHeight = surfaceHeight - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
 		const baseMaxLines = Math.max(1, Math.floor(availableHeight / lineHeight));
@@ -1996,24 +1977,24 @@ export class TerminalMode {
 
 	private setCursorFromPosition(row: number, column: number): void {
 		const index = this.positionToIndex(row, column);
-		this.setCursorOffset(index);
+		setCursorFromOffset(this.field, index);
 		this.field.selectionAnchor = null;
 		this.completion.onCursorMoved();
 	}
 
 	private setSelectionAnchorFromPosition(row: number, column: number): void {
 		const index = this.positionToIndex(row, column);
-		this.setSelectionAnchor(index);
+		setSelectionAnchorFromOffset(this.field, index);
 		this.completion.onCursorMoved();
 	}
 
 	private replaceSelectionWithText(text: string): void {
-		const previous = this.fieldText();
+		const previous = textFromLines(this.field.lines);
 		deleteSelection(this.field);
 		if (text.length > 0) {
 			insertValue(this.field, text);
 		}
-		const context = text.length > 0 ? { kind: 'insert', text } as EditContext : this.buildEditContext(previous, this.fieldText());
+		const context = text.length > 0 ? { kind: 'insert', text } as EditContext : this.buildEditContext(previous, textFromLines(this.field.lines));
 		this.handleTextMutation(previous, context);
 	}
 
@@ -2041,15 +2022,15 @@ export class TerminalMode {
 
 	private handleTextMutation(previousText: string, editContext: EditContext): void {
 		if (this.runtime.canonicalization !== 'none') {
-			const before = this.fieldText();
+			const before = textFromLines(this.field.lines);
 			const normalized = this.normalizeInputCase(before);
 			if (normalized !== before) {
-				const offset = this.cursorOffset();
+				const offset = getCursorOffset(this.field);
 				setFieldText(this.field, normalized, false);
-				this.setCursorOffset(Math.min(offset, getFieldText(this.field).length));
+				setCursorFromOffset(this.field, Math.min(offset, textFromLines(this.field.lines).length));
 			}
 		}
-		const context = previousText !== null ? this.buildEditContext(previousText, this.fieldText()) : editContext;
+		const context = previousText !== null ? this.buildEditContext(previousText, textFromLines(this.field.lines)) : editContext;
 		this.textVersion += 1;
 		this.cachedLinesVersion = -1;
 		invalidateLuaCommentContextFromRow(this.buffer, 0);
@@ -2108,10 +2089,10 @@ export class TerminalMode {
 	}
 
 	private buildTerminalModuleAliases(): Map<string, ModuleAliasEntry> {
-		if (this.fieldText().trim().length === 0) {
+		if (textFromLines(this.field.lines).trim().length === 0) {
 			return new Map();
 		}
-		return collectLuaModuleAliases({ source: this.fieldText(), path: this.terminalPath });
+		return collectLuaModuleAliases({ source: textFromLines(this.field.lines), path: this.terminalPath });
 	}
 
 	private buildMemberCompletionItems(request: LuaMemberCompletionRequest): LuaCompletionItem[] {
@@ -2205,9 +2186,9 @@ export class TerminalMode {
 	private drawMultilineInput(renderer: OverlayRenderer, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
 		const inputColor = BmsxColors[OUTPUT_COLORS.stdout];
 		const sel = selectionRange(this.field);
-		const cursorIndex = this.cursorOffset();
+		const cursorIndex = getCursorOffset(this.field);
 		const uppercaseDisplay = this.useUppercaseDisplay();
-		const displayText = this.toDisplayText(this.fieldText(), uppercaseDisplay);
+		const displayText = this.toDisplayText(textFromLines(this.field.lines), uppercaseDisplay);
 		const inlinePreview = sel ? null : this.completion.getInlineCompletionPreview();
 		let nextCursorInfo: CursorScreenInfo = null;
 		const cursorPosition = this.getCursorPosition();
