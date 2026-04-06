@@ -12,7 +12,8 @@ import { drawEditorText } from './text_renderer';
 import { getBreakpointsForChunk } from '../ide_debugger';
 import { getActiveCodeTabContext } from '../editor_tabs';
 import { api } from '../../overlay_api';
-import { computeSelectionSlice, ensureVisualLines, getVisualLineCount, visualIndexToSegment } from '../text_utils';
+import { computeSelectionSlice, ensureVisualLines, getVisualLineCount, visualIndexToSegment, measureText } from '../text_utils';
+import { drawCompletionPopup, drawParameterHintOverlay } from './render_completion';
 import { drawCursor } from './render_caret';
 import type { Font } from '../../font';
 import { getDiagnosticsForRow } from '../diagnostics_controller';
@@ -331,8 +332,9 @@ export function renderCodeArea(): void {
 	if (ide_state.cursorVisible && cursorEntry && cursorInfo) {
 		drawCursor(cursorInfo, bounds.textLeft);
 	}
-	ide_state.completion.drawCompletionPopup(bounds);
-	ide_state.completion.drawParameterHintOverlay(bounds);
+	const editorDraw = (text: string, x: number, y: number, color: number): void => drawEditorText(ide_state.font, text, x, y, undefined, color);
+	ide_state.completion.popupBounds = drawCompletionPopup(ide_state.completion.session, ide_state.cursorScreenInfo, ide_state.lineHeight, bounds, measureText, editorDraw);
+	drawParameterHintOverlay(ide_state.completion.hint, ide_state.cursorScreenInfo, ide_state.lineHeight, bounds, measureText, editorDraw);
 	if (ide_state.codeVerticalScrollbarVisible) {
 		ide_state.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}

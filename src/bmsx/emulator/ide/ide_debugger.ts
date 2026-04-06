@@ -146,17 +146,6 @@ function ensureBucket(pathKey: string): Set<number> {
 	return bucket;
 }
 
-export function hasBreakpoint(path: string, line: number): boolean {
-	if (!path) {
-		return false;
-	}
-	if (line === null) {
-		return false;
-	}
-	const bucket = ide_state.breakpoints.get(path);
-	return bucket?.has(line) === true;
-}
-
 export function getBreakpointsForChunk(path: string): ReadonlySet<number> {
 	if (!path) {
 		return null;

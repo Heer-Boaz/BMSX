@@ -4,6 +4,7 @@ import { EditorFont } from './editor_font';
 import type { FontVariant } from './font';
 import { invalidateLuaCommentContextFromRow, applyCaseOutsideStrings } from './ide/text_utils';
 import { drawEditorText } from './ide/render/text_renderer';
+import { drawCompletionPopup, drawParameterHintOverlay } from './ide/render/render_completion';
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,
@@ -2088,8 +2089,13 @@ export class TerminalMode {
 			codeRight: surface.width - PADDING_X,
 			textLeft: PADDING_X + promptWidth,
 		};
-		this.completion.drawCompletionPopup(bounds);
-		this.completion.drawParameterHintOverlay(bounds);
+		const uppercaseDisplay = this.useUppercaseDisplay();
+		const measure = (text: string): number => this.measureDisplayText(text, uppercaseDisplay);
+		const draw = (text: string, x: number, y: number, color: number): void => {
+			drawEditorText(this.font, this.toRenderedGlyphText(text, uppercaseDisplay), x, y, undefined, color);
+		};
+		this.completion.popupBounds = drawCompletionPopup(this.completion.session, this.cursorScreenInfo, this.font.lineHeight, bounds, measure, draw);
+		drawParameterHintOverlay(this.completion.hint, this.cursorScreenInfo, this.font.lineHeight, bounds, measure, draw);
 	}
 
 	// New helper: wraps display text with a smaller first-line width (after prompt) and full width for following lines.

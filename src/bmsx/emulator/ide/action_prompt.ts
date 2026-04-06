@@ -7,19 +7,9 @@ import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import * as runtimeIde from '../runtime_ide';
 import type { PendingActionPrompt } from './types';
-import { activateCodeTab, save } from './editor_tabs';
+import { save } from './editor_tabs';
 import { handleRuntimeTaskError } from './editor_runtime';
 import { clearExecutionStopHighlights } from './runtime_error_navigation';
-
-export function openActionPrompt(action: PendingActionPrompt['action']): void {
-	activateCodeTab();
-	ide_state.pendingActionPrompt = { action };
-	ide_state.actionPromptButtons.saveAndContinue = null;
-	ide_state.actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
-	ide_state.pointerSelecting = false;
-	ide_state.pointerPrimaryWasPressed = false;
-}
 
 export async function handleActionPromptSelection(choice: 'save-continue' | 'continue' | 'cancel'): Promise<void> {
 	if (!ide_state.pendingActionPrompt) {
