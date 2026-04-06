@@ -9,10 +9,10 @@ import { enqueueBackgroundTask, scheduleIdeOnce } from './background_tasks';
 import { getActiveCodeTabContext, findCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab } from './editor_tabs';
 import { setCursorPosition, ensureCursorVisible } from './caret';
 import * as TextEditing from './text_editing_and_selection';
-import { beginNavigationCapture, completeNavigation } from './cart_editor';
 import { getOrCreateSemanticWorkspace } from './semantic_workspace_sync';
 import type { LuaDefinitionInfo } from '../../lua/syntax/lua_ast';
 import type { ModuleAliasEntry } from './semantic_model';
+import { beginNavigationCapture, completeNavigation } from './navigation_history';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;

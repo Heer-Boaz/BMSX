@@ -9,8 +9,8 @@ import { CodeLayout } from './code_layout';
 import { markDiagnosticsDirty } from './diagnostics';
 import { computeSearchPageStats } from './editor_search';
 import { ide_state } from './ide_state';
-import { requestSemanticRefresh } from './intellisense';
-import { ensureCursorVisible } from './caret';
+import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from './intellisense';
+import { ensureCursorVisible, updateDesiredColumn } from './caret';
 import { splitText } from './text/source_text';
 import {
 	ensureVisualLines,
@@ -22,7 +22,6 @@ import {
 	visualIndexToSegment,
 	wrapOverlayLine,
 } from './text_utils';
-import { getBuiltinIdentifiersSnapshot, updateDesiredColumn } from './cart_editor';
 
 function decimalDigitCount(value: number): number {
 	let digits = 1;

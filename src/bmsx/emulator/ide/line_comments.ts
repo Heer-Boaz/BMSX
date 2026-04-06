@@ -1,11 +1,10 @@
 import { ide_state } from './ide_state';
 import { isEditableCodeTab } from './editor_tabs';
 import { notifyReadOnlyEdit } from './editor_view';
-import { getLineRangeForMovement, updateDesiredColumn } from './cart_editor';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
 import { markTextMutated } from './text_utils';
 import { resetBlink } from './render/render_caret';
-import { revealCursor } from './caret';
+import { revealCursor, updateDesiredColumn } from './caret';
 import * as TextEditing from './text_editing_and_selection';
 
 export function toggleLineComments(): void {
@@ -13,7 +12,7 @@ export function toggleLineComments(): void {
 		notifyReadOnlyEdit();
 		return;
 	}
-	const range = getLineRangeForMovement();
+	const range = TextEditing.getLineRangeForMovement();
 	if (range.startRow < 0 || range.endRow < range.startRow) {
 		return;
 	}
@@ -42,7 +41,7 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 		notifyReadOnlyEdit();
 		return;
 	}
-	const target = range ?? getLineRangeForMovement();
+	const target = range ?? TextEditing.getLineRangeForMovement();
 	if (target.startRow < 0 || target.endRow < target.startRow) {
 		return;
 	}
@@ -82,7 +81,7 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 		notifyReadOnlyEdit();
 		return;
 	}
-	const target = range ?? getLineRangeForMovement();
+	const target = range ?? TextEditing.getLineRangeForMovement();
 	if (target.startRow < 0 || target.endRow < target.startRow) {
 		return;
 	}

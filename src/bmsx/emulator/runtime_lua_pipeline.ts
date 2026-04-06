@@ -5,7 +5,6 @@ import type { LuaValue } from '../lua/luavalue';
 import { convertToError, isLuaFunctionValue, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/luavalue';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clearNativeMemberCompletionCache } from './ide/intellisense';
-import { getSourceForChunk } from './ide/cart_editor';
 import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from './lua_builtin_descriptors';
 import { seedLuaGlobals } from './lua_globals';
 import { ENGINE_SYSTEM_HELPER_NAMES } from './lua_system_globals';
@@ -50,6 +49,7 @@ import type { RawAssetSource } from '../rompack/asset_source';
 import { Table, type Closure, type Program, type ProgramMetadata, type Value, isNativeFunction, isNativeObject } from './cpu';
 import { StringValue, isStringValue, stringValueToString } from './string_pool';
 import type { Runtime } from './runtime';
+import { getSourceForChunk } from './ide/text_utils';
 
 const LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 	'print',

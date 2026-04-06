@@ -9,12 +9,12 @@ import type { LuaSourceRange } from '../../lua/syntax/lua_ast';
 import { clamp } from '../../utils/clamp';
 import { LuaLexer } from '../../lua/syntax/lualexer';
 import { createLuaCodeTabContext, findCodeTabContext } from './editor_tabs';
-import { redo, undo } from './cart_editor';
 import { commitRename, findResourceDescriptorForChunk, focusEditorFromRename } from './search_bars';
 import { getTextSnapshot, splitText, textFromLines } from './text/source_text';
 import { syncSemanticWorkspacePath } from './semantic_workspace_sync';
 import { ide_state } from './ide_state';
 import { getOrCreateSemanticWorkspace } from './semantic_workspace_sync';
+import { redo, undo } from './undo_controller';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];

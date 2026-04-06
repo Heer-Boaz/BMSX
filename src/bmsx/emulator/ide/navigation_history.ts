@@ -1,7 +1,6 @@
 import { clamp } from '../../utils/clamp';
 import { ide_state, type NavigationHistoryEntry, NAVIGATION_HISTORY_LIMIT } from './ide_state';
-import { getActiveCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab } from './editor_tabs';
-import { focusChunkSource } from './cart_editor';
+import { getActiveCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab, focusChunkSource } from './editor_tabs';
 import { setCursorPosition, ensureCursorVisible } from './caret';
 import * as TextEditing from './text_editing_and_selection';
 

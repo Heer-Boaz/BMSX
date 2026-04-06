@@ -6,7 +6,6 @@ import type { CodeTabContext, RuntimeErrorOverlay } from './types';
 import { resetBlink } from './render/render_caret';
 import { showRuntimeErrorInChunk } from './render/render_error_overlay';
 import * as constants from './constants';
-import { extractErrorMessage } from '../../lua/luavalue';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 

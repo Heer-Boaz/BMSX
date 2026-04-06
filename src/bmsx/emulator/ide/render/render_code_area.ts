@@ -2,7 +2,6 @@ import type { OverlayApi as Api } from '../../overlay_api';
 import type { CachedHighlight, CursorScreenInfo } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
-import { getDiagnosticsForRow } from '../cart_editor';
 import { drawHoverTooltip } from '../hover_tooltip';
 import { computeMaximumScrollColumn, getBreakpointLaneWidth, getCodeAreaBounds, maximumLineLength } from '../editor_view';
 import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from './render_error_overlay';
@@ -16,6 +15,7 @@ import { api } from '../../overlay_api';
 import { computeSelectionSlice, ensureVisualLines, getVisualLineCount, visualIndexToSegment } from '../text_utils';
 import { drawCursor } from './render_caret';
 import type { Font } from '../../font';
+import { getDiagnosticsForRow } from '../diagnostics_controller';
 
 function drawHighlightSlice(
 	renderFont: Font,

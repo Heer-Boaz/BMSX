@@ -9,7 +9,7 @@ import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './ide_input';
 import { ide_state } from './ide_state';
 import * as TextEditing from './text_editing_and_selection';
-import { revealCursor } from './caret';
+import { revealCursor, updateDesiredColumn } from './caret';
 import { resetBlink } from './render/render_caret';
 import { initializeDebuggerUiState } from './ide_debugger';
 import { initializeWorkspaceStorage } from './workspace_storage';
@@ -19,7 +19,6 @@ import { resetSemanticWorkspace } from './semantic_workspace_sync';
 import { assertMonospace } from './text_utils';
 import { measureText } from './text_utils';
 import { drawEditorText } from './render/text_renderer';
-import { getActiveSemanticDefinitions, getLuaModuleAliases, updateDesiredColumn, applySearchFieldText, createNavigationEntry } from './cart_editor';
 import { intellisenseUiReady, shouldAutoTriggerCompletions } from './intellisense';
 import * as constants from './constants';
 import { clamp } from '../../utils/clamp';
@@ -32,6 +31,9 @@ import {
 } from './editor_view';
 import { applyLineJumpFieldText, applyResourceSearchFieldText, applySymbolSearchFieldText } from './search_bars';
 import { applyCreateResourceFieldText } from './create_resource';
+import { getActiveSemanticDefinitions, getLuaModuleAliases } from './diagnostics_controller';
+import { applySearchFieldText } from './editor_search';
+import { createNavigationEntry } from './navigation_history';
 
 const editorCompletionContext: CompletionContextSource = {
 	isCompletionReady: () => intellisenseUiReady(),

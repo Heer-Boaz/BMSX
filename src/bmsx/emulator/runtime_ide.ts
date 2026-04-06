@@ -13,7 +13,6 @@ import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clamp_fallback } from '../utils/clamp';
 import * as constants from './ide/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
-import { createCartEditor, setExecutionStopHighlight, clearExecutionStopHighlights } from './ide/cart_editor';
 import { ide_state } from './ide/ide_state';
 import type { RuntimeErrorDetails } from './ide/types';
 import { setEditorCaseInsensitivity } from './ide/render/text_renderer';
@@ -33,6 +32,8 @@ import type { RuntimeOptions } from './types';
 import { resolveWorkspacePath } from './workspace_path';
 import { shallowcopy } from '../utils/shallowcopy';
 import { api as overlay_api } from './overlay_api';
+import { createCartEditor } from './ide/cart_editor';
+import { clearExecutionStopHighlights, setExecutionStopHighlight } from './ide/runtime_error_navigation';
 
 class DebugPauseCoordinator {
 	private suspension: LuaDebuggerPauseSignal = null;

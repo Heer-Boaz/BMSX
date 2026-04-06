@@ -2,15 +2,16 @@ import { Runtime } from '../runtime';
 import * as runtimeIde from '../runtime_ide';
 import { type LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { ide_state } from './ide_state';
-import { getActiveCodeTabContext } from './editor_tabs';
+import { focusChunkSource, getActiveCodeTabContext } from './editor_tabs';
 import { clamp, clamp_fallback } from '../../utils/clamp';
-import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from './caret';
-import { clearExecutionStopHighlights, focusChunkSource, setExecutionStopHighlight, clearRuntimeErrorOverlay, updateDesiredColumn, findFunctionDefinitionRowInActiveFile } from './cart_editor';
+import { centerCursorVertically, ensureCursorVisible, setCursorPosition, updateDesiredColumn } from './caret';
 import { resetPointerClickTracking } from './editor_view';
 import { resetBlink } from './render/render_caret';
 import type { LuaCallFrame } from '../../lua/luaruntime';
 import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame } from '../../lua/luavalue';
 import * as constants from './constants';
+import { findFunctionDefinitionRowInActiveFile } from './intellisense';
+import { clearExecutionStopHighlights, setExecutionStopHighlight, clearRuntimeErrorOverlay } from './runtime_error_navigation';
 
 type DebuggerResumeCommand = 'continue' | 'step_over' | 'step_into' | 'step_out' | 'ignore_exception' | 'step_out_exception';
 

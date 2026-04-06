@@ -5,8 +5,8 @@ import type {
 } from './types';
 import type { StackTraceFrame } from '../../lua/luavalue';
 import { ide_state } from './ide_state';
-import { setActiveRuntimeErrorOverlay } from './cart_editor';
 import { collectRuntimeStackFrames, formatRuntimeStackFrame } from '../runtime_error_util';
+import { setActiveRuntimeErrorOverlay } from './runtime_error_navigation';
 
 export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails): RuntimeErrorDetails {
 	if (!details) {

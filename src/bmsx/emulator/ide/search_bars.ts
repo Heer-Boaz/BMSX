@@ -4,7 +4,7 @@ import * as constants from './constants';
 import { ide_state } from './ide_state';
 import { clearReferenceHighlights, extractHoverExpression, navigateToLuaDefinition } from './intellisense';
 import { closeSearch } from './editor_search';
-import { getActiveCodeTabContext } from './editor_tabs';
+import { getActiveCodeTabContext, listResourcesStrict, openResourceDescriptor } from './editor_tabs';
 import { resetBlink } from './render/render_caret';
 import { setFieldText } from './inline_text_field';
 import {
@@ -29,10 +29,9 @@ import type { ResourceDescriptor } from '../types';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { beginNavigationCapture, completeNavigation } from './navigation_history';
-import { ensureCursorVisible, setCursorPosition } from './caret';
+import { ensureCursorVisible, setCursorPosition, updateDesiredColumn } from './caret';
 import { breakUndoSequence } from './undo_controller';
 import * as TextEditing from './text_editing_and_selection';
-import { openResourceDescriptor, listResourcesStrict, updateDesiredColumn } from './cart_editor';
 import { $ } from '../../core/engine_core';
 
 // ── Resource search lifecycle ────────────────────────────────────

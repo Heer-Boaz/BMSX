@@ -39,6 +39,7 @@ import { SymbolEntry } from './types';
 import type { MutableTextPosition, TextBuffer } from './ide/text/text_buffer';
 import { clamp } from '../utils/clamp';
 import { textFromLines } from './ide/text/source_text';
+import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from './ide/constants';
 
 type TerminalOutputKind =
 	| 'prompt'

@@ -7,8 +7,9 @@ import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import * as runtimeIde from '../runtime_ide';
 import type { PendingActionPrompt } from './types';
-import { activateCodeTab } from './editor_tabs';
-import { save, clearExecutionStopHighlights, handleRuntimeTaskError } from './cart_editor';
+import { activateCodeTab, save } from './editor_tabs';
+import { handleRuntimeTaskError } from './editor_runtime';
+import { clearExecutionStopHighlights } from './runtime_error_navigation';
 
 export function openActionPrompt(action: PendingActionPrompt['action']): void {
 	activateCodeTab();

@@ -9,11 +9,12 @@ import type { ResourceDescriptor } from '../types';
 import { Runtime } from '../runtime';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 import { ide_state } from './ide_state';
-import { applyDefinitionSelection, focusChunkSource, focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab } from './cart_editor';
 import { bottomMargin, codeViewportTop } from './editor_view';
 import { openResourceViewerTab } from './resource_viewer';
 import { measureText } from './text_utils';
 import type { CallHierarchyView, CallHierarchyViewNode } from './reference_navigation';
+import { focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab, focusChunkSource } from './editor_tabs';
+import { applyDefinitionSelection } from './intellisense';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: Scrollbar;
