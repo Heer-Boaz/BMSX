@@ -7,7 +7,7 @@ import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight }
 import * as constants from './constants';
 import { ide_state } from './ide_state';
 import { api } from '../overlay_api';
-import { drawEditorText } from './text_renderer';
+import { drawEditorText } from './render/text_renderer';
 import { markAllDiagnosticsDirty } from './diagnostics';
 import { resetBlink } from './render/render_caret';
 

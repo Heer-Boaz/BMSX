@@ -2,7 +2,7 @@ import type { TextBuffer } from './text_buffer';
 
 export const NEWLINE = '\n';
 
-export function textFromLines(lines: readonly string[]): string {
+export function textFromLines(lines: string[]): string {
 	return lines.join(NEWLINE);
 }
 

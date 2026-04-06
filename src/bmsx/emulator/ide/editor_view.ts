@@ -555,7 +555,7 @@ export function configureFontVariant(variant: FontVariant): void {
 	ide_state.headerHeight = ide_state.lineHeight + 4;
 	ide_state.tabBarHeight = ide_state.lineHeight + 3;
 	ide_state.baseBottomMargin = ide_state.lineHeight + 6;
-	ide_state.layout = new CodeLayout(ide_state.font, ide_state.semanticWorkspace, {
+	ide_state.layout = new CodeLayout(ide_state.font, {
 		maxHighlightCache: 512,
 		semanticDebounceMs: 200,
 		clockNow: ide_state.clockNow,

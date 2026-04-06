@@ -1,5 +1,5 @@
 import { $ } from '../../core/engine_core';
-import { drawEditorText } from './text_renderer';
+import { drawEditorText } from './render/text_renderer';
 import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
 import { createEntryTabContext, getActiveCodeTabContext, initializeTabs, isCodeTabActive } from './editor_tabs';
@@ -18,7 +18,7 @@ import { Runtime } from '../runtime';
 import { api } from '../overlay_api';
 import { RenameController } from './rename_controller';
 import type { CodeTabContext } from './types';
-import { LuaSemanticWorkspace } from './semantic_model';
+import { resetSemanticWorkspace } from './semantic_workspace_sync';
 import { assertMonospace, measureText } from './text_utils';
 import * as constants from './constants';
 import type { Viewport } from '../../rompack/rompack';
@@ -54,7 +54,7 @@ export function initializeCartEditor(viewport: Viewport): void {
 	ide_state.preMutationSource = null;
 	applyViewportSize(viewport);
 	ide_state.clockNow = $.platform.clock.now;
-	ide_state.semanticWorkspace = new LuaSemanticWorkspace();
+	resetSemanticWorkspace();
 	configureFontVariant(ide_state.fontVariant);
 	ide_state.searchField = createInlineTextField();
 	ide_state.symbolSearchField = createInlineTextField();

@@ -3,10 +3,11 @@ import { BmsxColors, resolvePaletteIndex, invertColorIndex } from '../../vdp';
 import type { OverlayApi as Api } from '../../overlay_api';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
-import { drawEditorText } from '../text_renderer';
+import { drawEditorText } from './text_renderer';
 import type { CursorScreenInfo, TextField } from '../types';
-import { getCursorOffset, getFieldText } from '../inline_text_field';
+import { getCursorOffset } from '../inline_text_field';
 import { api } from '../../overlay_api';
+import { textFromLines } from '../text/source_text';
 
 export interface CaretDrawOps {
 	fillRect(x0: number, y0: number, x1: number, y1: number, color: color): void;
@@ -64,7 +65,7 @@ export function drawInlineCaret(
 	baseTextColor: number = constants.COLOR_STATUS_TEXT
 ): void {
 	if (!ide_state.cursorVisible) return;
-	const text = getFieldText(field);
+	const text = textFromLines(field.lines);
 	const cursorIndex = getCursorOffset(field);
 	const rawGlyph = cursorIndex < text.length ? text.charAt(cursorIndex) : ' ';
 	const caretGlyph = getCaretGlyphForDisplay(rawGlyph);

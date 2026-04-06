@@ -17,7 +17,13 @@ import type { CanonicalizationType } from '../rompack/rompack';
 import { API_METHOD_METADATA } from './api_metadata';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from './lua_builtin_descriptors';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from './types';
-import { type Decl, type FileSemanticData, type FunctionSignatureInfo, LuaSemanticWorkspace } from './ide/semantic_model';
+import {
+	buildLuaSemanticWorkspaceSnapshot,
+	type Decl,
+	type FileSemanticData,
+	type FunctionSignatureInfo,
+	type LuaSemanticWorkspaceSnapshotInput,
+} from './ide/semantic_model';
 import { getCachedLuaParse } from './ide/lua/lua_analysis_cache';
 
 const identityCanonicalizer = (value: string): string => value;
@@ -148,8 +154,8 @@ export function computeLuaProjectDiagnostics(
 	const builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
 	const apiSignatures = options.apiSignatures ?? getStaticLuaApiSignatureMap();
 	const canonicalize = createIdentifierCanonicalizer(options.canonicalization ?? 'none');
-	const workspace = new LuaSemanticWorkspace();
 	const validSources: MutableProjectSource[] = [];
+	const snapshotInputs: LuaSemanticWorkspaceSnapshotInput[] = [];
 	for (let index = 0; index < sources.length; index += 1) {
 		const source = sources[index];
 		const parseEntry = getCachedLuaParse({
@@ -163,17 +169,27 @@ export function computeLuaProjectDiagnostics(
 			results.set(source.path, [toSyntaxDiagnostic(parseEntry.syntaxError.message, parseEntry.syntaxError.line, parseEntry.syntaxError.column)]);
 			continue;
 		}
-		workspace.updateFile(source.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, source.version, options.canonicalization ?? 'none');
-		validSources.push({
+		snapshotInputs.push({
 			path: source.path,
-			chunk: parseEntry.parsed.chunk,
-			analysis: workspace.getFileData(source.path),
+			source: parseEntry.source,
+			lines: parseEntry.lines,
+			parsed: parseEntry.parsed,
+			version: source.version,
 		});
 	}
-	if (validSources.length === 0) {
+	if (snapshotInputs.length === 0) {
 		return results;
 	}
-	const globalSymbols = buildGlobalSymbols(workspace.listGlobalDecls());
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(snapshotInputs, options.canonicalization ?? 'none');
+	for (let index = 0; index < snapshot.sources.length; index += 1) {
+		const source = snapshot.sources[index];
+		validSources.push({
+			path: source.path,
+			chunk: source.chunk,
+			analysis: source.analysis,
+		});
+	}
+	const globalSymbols = buildGlobalSymbols(snapshot.listGlobalDecls());
 	for (let index = 0; index < validSources.length; index += 1) {
 		const source = validSources[index];
 		results.set(source.path, computeLuaDiagnosticsFromAnalysis({

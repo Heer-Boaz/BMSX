@@ -5,7 +5,7 @@ import * as constants from './constants';
 import { activateCodeTab, getActiveCodeTabContext, isResourceViewActive, setActiveTab, storeActiveCodeTabContext } from './editor_tabs';
 import { cancelGlobalSearchJob, startSearchJob } from './editor_search';
 import { ide_state, captureKeys } from './ide_state';
-import { drawEditorText } from './text_renderer';
+import { drawEditorText } from './render/text_renderer';
 import { bumpTextVersion, measureText } from './text_utils';
 import { ensureCursorVisible } from './caret';
 import { drawProblemsPanel } from './problems_panel';

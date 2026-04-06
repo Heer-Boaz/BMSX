@@ -1,6 +1,6 @@
 import type { OverlayApi as Api } from '../../overlay_api';
 import type { EditorFont } from '../../editor_font';
-import { drawEditorText } from '../text_renderer';
+import { drawEditorText } from './text_renderer';
 import { clamp } from '../../../utils/clamp';
 import { activate, editorFacade, focusChunkSource, setActiveRuntimeErrorOverlay, setExecutionStopHighlight, updateDesiredColumn } from '../cart_editor';
 import { bottomMargin } from '../editor_view';

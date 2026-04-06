@@ -1,7 +1,7 @@
-import { resolveReferenceLookup, type ReferenceLookupOptions } from './code_reference';
+import { resolveReferenceLookup, type ReferenceLookupOptions } from './reference_navigation';
 import { ReferenceState, type ReferenceMatchInfo } from './reference_state';
 import type { CodeTabContext, InlineInputOptions, TextField, SearchMatch } from './types';
-import { createInlineTextField, getFieldText, setFieldText } from './inline_text_field';
+import { createInlineTextField, setFieldText } from './inline_text_field';
 import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
 import * as constants from './constants';
 import { consumeIdeKey } from './ide_input';
@@ -12,7 +12,7 @@ import type { LuaSemanticWorkspace } from './semantic_model';
 import { LuaLexer } from '../../lua/syntax/lualexer';
 import { findCodeTabContext } from './editor_tabs';
 import { findResourceDescriptorForChunk } from './cart_editor';
-import { getTextSnapshot, splitText } from './text/source_text';
+import { getTextSnapshot, splitText, textFromLines } from './text/source_text';
 import { syncSemanticWorkspacePath } from './semantic_workspace_sync';
 
 export type RenameCommitPayload = {
@@ -186,7 +186,7 @@ export class RenameController {
 		if (!this.active || !this.info) {
 			return;
 		}
-		const nextName = getFieldText(this.field).trim();
+		const nextName = textFromLines(this.field.lines).trim();
 		if (nextName.length === 0) {
 			this.host.showMessage('Identifier cannot be empty', constants.COLOR_STATUS_WARNING, 1.6);
 			return;

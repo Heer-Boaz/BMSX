@@ -21,8 +21,8 @@ import {
 import { clearReferenceHighlights } from './intellisense';
 import { ensureCursorVisible, revealCursor } from './caret';
 import { resetBlink } from './render/render_caret';
-import { getFieldText } from './inline_text_field';
 import { scheduleMicrotask } from '../../platform';
+import { textFromLines } from './text/source_text';
 
 const LOCAL_ROWS_PER_SLICE = 256;
 const GLOBAL_ROWS_PER_SLICE = 128;
@@ -106,7 +106,7 @@ export function openSearch(useSelection: boolean, scope: 'local' | 'global' = 'l
 		}
 	}
 
-	ide_state.searchQuery = getFieldText(ide_state.searchField);
+	ide_state.searchQuery = textFromLines(ide_state.searchField.lines);
 	onSearchQueryChanged();
 	resetBlink();
 }
@@ -119,7 +119,7 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 	if (clearQuery) {
 		applySearchFieldText('', true);
 	}
-	ide_state.searchQuery = getFieldText(ide_state.searchField);
+	ide_state.searchQuery = textFromLines(ide_state.searchField.lines);
 
 	const hide = forceHide || clearQuery || ide_state.searchQuery.length === 0;
 	if (hide) {

@@ -4,7 +4,7 @@ import { statusAreaHeight, getStatusMessageLines } from '../editor_view';
 import { isResourceViewActive } from '../editor_tabs';
 import { ide_state } from '../ide_state';
 import { getActiveResourceViewer } from '../resource_viewer';
-import { drawEditorText } from '../text_renderer';
+import { drawEditorText } from './text_renderer';
 import { measureText, truncateTextToWidth } from '../text_utils';
 import { Runtime } from '../../runtime';
 import { api } from '../../overlay_api';

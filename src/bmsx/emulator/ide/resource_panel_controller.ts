@@ -13,7 +13,7 @@ import { applyDefinitionSelection, focusChunkSource, focusEditorFromResourcePane
 import { bottomMargin, codeViewportTop } from './editor_view';
 import { openResourceViewerTab } from './resource_viewer';
 import { measureText } from './text_utils';
-import type { CallHierarchyView, CallHierarchyViewNode } from './code_reference';
+import type { CallHierarchyView, CallHierarchyViewNode } from './reference_navigation';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: Scrollbar;

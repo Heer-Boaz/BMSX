@@ -6,7 +6,7 @@ import type {
 	LuaHoverResult,
 	ResourceDescriptor,
 } from '../types';
-import { drawEditorText } from './text_renderer';
+import { drawEditorText } from './render/text_renderer';
 import { clamp } from '../../utils/clamp';
 import { computeAggregatedEditorDiagnostics, markAllDiagnosticsDirty, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
 import {
@@ -28,13 +28,12 @@ import { bumpTextVersion, capturePreMutationSource, ensureVisualLines, invalidat
 import {
 	applyInlineFieldEditing,
 	applyInlineFieldPointer,
-	getFieldText,
 	setFieldText,
 } from './inline_text_field';
 import { clearReferenceHighlights, extractHoverExpression, inspectLuaExpression, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaSymbols, navigateToLuaDefinition, requestSemanticRefresh } from './intellisense';
 import { isKeyJustPressed, toggleThemeMode } from './ide_input';
 import { consumeIdeKey } from './ide_input';
-import { getTextSnapshot, splitText } from './text/source_text';
+import { getTextSnapshot, splitText, textFromLines } from './text/source_text';
 import { EditorUndoRecord, TextUndoOp } from './text/editor_undo';
 import { PieceTreeBuffer } from './text/piece_tree_buffer';
 import type {
@@ -49,14 +48,14 @@ import type {
 	RuntimeErrorOverlay,
 	SymbolSearchResult,
 } from './types';
-import { resolveReferenceLookup, type ReferenceMatchInfo } from './code_reference';
+import { resolveReferenceLookup } from './reference_navigation';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
 	type ProjectReferenceEnvironment,
-	filterReferenceCatalog,
 	type ReferenceCatalogEntry,
 	type ReferenceSymbolEntry,
-} from './code_reference';
+	filterReferenceCatalog,
+} from './reference_sources';
 import { enqueueBackgroundTask, scheduleIdeOnce, scheduleRuntimeTask } from './background_tasks';
 
 import type { RenameCommitPayload, RenameCommitResult } from './rename_controller';
@@ -78,11 +77,13 @@ import * as TextEditing from './text_editing_and_selection';
 import { resetBlink } from './render/render_caret';
 import { Runtime } from '../runtime';
 import { api } from '../overlay_api';
+import { getOrCreateSemanticWorkspace } from './semantic_workspace_sync';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import * as runtimeIde from '../runtime_ide';
 import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './render/render_error_overlay';
 import { point_in_rect } from '../../utils/rect_operations';
 import { symbolPriority, type ModuleAliasEntry } from './semantic_model';
+import type { ReferenceMatchInfo } from './reference_state';
 import { refreshSymbolCatalog } from './symbol_catalog';
 import { extractErrorMessage } from '../../lua/luavalue';
 import {
@@ -1051,7 +1052,7 @@ export function getLuaModuleAliases(path: string): Map<string, ModuleAliasEntry>
 	const activeContext = getActiveCodeTabContext();
 	const targetChunk = path || activeContext.descriptor.path;
 	ide_state.layout.getSemanticDefinitions(ide_state.buffer, ide_state.textVersion, targetChunk);
-	const data = ide_state.semanticWorkspace.getFileData(targetChunk);
+	const data = getOrCreateSemanticWorkspace().getSnapshot().getFileData(targetChunk);
 	if (!data || data.moduleAliases.length === 0) {
 		return new Map();
 	}
@@ -1117,7 +1118,7 @@ export function handleCreateResourceInput(): void {
 		ide_state.createResourceError = null;
 		resetBlink();
 	}
-	ide_state.createResourcePath = getFieldText(ide_state.createResourceField);
+	ide_state.createResourcePath = textFromLines(ide_state.createResourceField.lines);
 }
 
 export function openCreateResourcePrompt(): void {
@@ -1342,7 +1343,6 @@ export function openReferenceSearchPopup(): void {
 	ide_state.renameController.cancel();
 	const referenceContext = buildProjectReferenceContext(context);
 	const result = resolveReferenceLookup({
-		workspace: ide_state.semanticWorkspace,
 		buffer: ide_state.buffer,
 		textVersion: ide_state.textVersion,
 		cursorRow: ide_state.cursorRow,
@@ -1387,7 +1387,6 @@ export function openRenamePrompt(): void {
 	const context = getActiveCodeTabContext();
 	const referenceContext = buildProjectReferenceContext(context);
 	const started = ide_state.renameController.begin({
-		workspace: ide_state.semanticWorkspace,
 		buffer: ide_state.buffer,
 		textVersion: ide_state.textVersion,
 		cursorRow: ide_state.cursorRow,
@@ -1406,7 +1405,8 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	const activeContext = getActiveCodeTabContext();
 	const referenceContext = buildProjectReferenceContext(activeContext);
 	const activePath = referenceContext.path;
-	const renameManager = new CrossFileRenameManager(getCrossFileRenameDependencies(), ide_state.semanticWorkspace);
+	const workspace = getOrCreateSemanticWorkspace();
+	const renameManager = new CrossFileRenameManager(getCrossFileRenameDependencies(), workspace);
 	const sortedMatches = matches.slice();
 	sortedMatches.sort((a, b) => {
 		if (a.row !== b.row) {
@@ -1416,8 +1416,9 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	});
 	let updatedTotal = 0;
 
-	const decl = info.definitionKey ? ide_state.semanticWorkspace.getDecl(info.definitionKey) : null;
-	const references = info.definitionKey ? ide_state.semanticWorkspace.getReferences(info.definitionKey) : [];
+	const snapshot = workspace.getSnapshot();
+	const decl = info.definitionKey ? snapshot.getDecl(info.definitionKey) : null;
+	const references = info.definitionKey ? snapshot.getReferences(info.definitionKey) : [];
 	type RangeBucket = { path: string; ranges: LuaSourceRange[]; seen: Set<string> };
 	const rangeMap = new Map<string, RangeBucket>();
 	const addRange = (range: LuaSourceRange): void => {
@@ -1551,7 +1552,7 @@ export function buildReferenceCatalogForExpression(info: ReferenceMatchInfo, con
 		codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
 	};
 	return buildProjectReferenceCatalog({
-		workspace: ide_state.semanticWorkspace,
+		workspace: getOrCreateSemanticWorkspace(),
 		info,
 		lines: activeLines,
 		path,

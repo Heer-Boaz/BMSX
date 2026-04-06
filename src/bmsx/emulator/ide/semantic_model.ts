@@ -122,6 +122,8 @@ export type FileSemanticData = {
 	model: LuaSemanticModel;
 	source: string;
 	lines: readonly string[];
+	parsed: ParsedLuaChunk;
+	chunk: LuaChunk;
 	annotations: SemanticAnnotations;
 	decls: readonly Decl[];
 	refs: readonly Ref[];
@@ -149,7 +151,170 @@ export type SerializedFileSemanticData = {
 	objectBindings?: readonly ObjectBindingEntry[];
 };
 
+export type LuaSemanticWorkspaceSourceSnapshot = {
+	path: string;
+	source: string;
+	lines: readonly string[];
+	parsed: ParsedLuaChunk;
+	chunk: LuaChunk;
+	analysis: FileSemanticData;
+};
+
+export type LuaSemanticWorkspaceSnapshotInput = {
+	path: string;
+	source: string;
+	version?: number;
+	lines?: readonly string[];
+	parsed?: ParsedLuaChunk;
+	chunk?: LuaChunk;
+	analysis?: FileSemanticData;
+};
+
+export class LuaSemanticWorkspaceSnapshot {
+	public readonly version: number;
+	public readonly files: readonly string[];
+	public readonly sources: readonly LuaSemanticWorkspaceSourceSnapshot[];
+	private readonly dataByPath: ReadonlyMap<string, FileSemanticData>;
+	private readonly declById: ReadonlyMap<SymbolID, Decl>;
+	private readonly refsBySymbol: ReadonlyMap<SymbolID, readonly Ref[]>;
+	private readonly globalDecls: readonly Decl[];
+
+	constructor(version: number, files: readonly string[], sources: readonly LuaSemanticWorkspaceSourceSnapshot[]) {
+		this.version = version;
+		this.files = files;
+		this.sources = sources;
+		const dataByPath = new Map<string, FileSemanticData>();
+		const declById = new Map<SymbolID, Decl>();
+		const refsBySymbol = new Map<SymbolID, Ref[]>();
+		const globalDecls: Decl[] = [];
+		for (let index = 0; index < sources.length; index += 1) {
+			const source = sources[index];
+			dataByPath.set(source.path, source.analysis);
+			for (let declIndex = 0; declIndex < source.analysis.decls.length; declIndex += 1) {
+				const decl = source.analysis.decls[declIndex];
+				declById.set(decl.id, decl);
+				if (decl.isGlobal) {
+					globalDecls.push(decl);
+				}
+			}
+			for (let refIndex = 0; refIndex < source.analysis.refs.length; refIndex += 1) {
+				const ref = source.analysis.refs[refIndex];
+				if (!ref.target) {
+					continue;
+				}
+				let bucket = refsBySymbol.get(ref.target);
+				if (!bucket) {
+					bucket = [];
+					refsBySymbol.set(ref.target, bucket);
+				}
+				bucket.push(ref);
+			}
+		}
+		this.dataByPath = dataByPath;
+		this.declById = declById;
+		this.refsBySymbol = refsBySymbol;
+		this.globalDecls = globalDecls;
+	}
+
+	public getFileData(path: string): FileSemanticData {
+		return this.dataByPath.get(path) ?? null;
+	}
+
+	public getDecl(symbolId: SymbolID): Decl {
+		return this.declById.get(symbolId) ?? null;
+	}
+
+	public getReferences(symbolId: SymbolID): readonly Ref[] {
+		return this.refsBySymbol.get(symbolId) ?? [];
+	}
+
+	public listGlobalDecls(): readonly Decl[] {
+		return this.globalDecls;
+	}
+
+	public symbolAt(path: string, row: number, column: number): { id: SymbolID; decl: Decl } {
+		const data = this.dataByPath.get(path);
+		if (!data) {
+			return null;
+		}
+		for (let declIndex = 0; declIndex < data.decls.length; declIndex += 1) {
+			const decl = data.decls[declIndex];
+			if (!positionInRange(row, column, decl.range)) {
+				continue;
+			}
+			return { id: decl.id, decl };
+		}
+		for (let refIndex = 0; refIndex < data.refs.length; refIndex += 1) {
+			const ref = data.refs[refIndex];
+			if (!ref.target || !positionInRange(row, column, ref.range)) {
+				continue;
+			}
+			const decl = this.declById.get(ref.target);
+			if (!decl) {
+				continue;
+			}
+			return { id: ref.target, decl };
+		}
+		return null;
+	}
+}
+
+function createWorkspaceSnapshotFromIndex(index: LuaProjectIndex): LuaSemanticWorkspaceSnapshot {
+	const files = index.listFiles();
+	const sources = new Array<LuaSemanticWorkspaceSourceSnapshot>(files.length);
+	for (let indexInFiles = 0; indexInFiles < files.length; indexInFiles += 1) {
+		const path = files[indexInFiles];
+		const data = index.getFileData(path);
+		if (!data) {
+			throw new Error(`[LuaSemanticWorkspace] Missing file data for '${path}'.`);
+		}
+		sources[indexInFiles] = {
+			path,
+			source: data.source,
+			lines: data.lines,
+			parsed: data.parsed,
+			chunk: data.chunk,
+			analysis: data,
+		};
+	}
+	return new LuaSemanticWorkspaceSnapshot(index.getVersion(), files, sources);
+}
+
+export function buildLuaSemanticWorkspaceSnapshot(
+	sources: ReadonlyArray<LuaSemanticWorkspaceSnapshotInput>,
+	canonicalization: CanonicalizationType = 'none',
+): LuaSemanticWorkspaceSnapshot {
+	const workspace = new LuaSemanticWorkspace();
+	for (let index = 0; index < sources.length; index += 1) {
+		const source = sources[index];
+		if (source.analysis) {
+			workspace.publishFileData(source.path, source.analysis);
+			continue;
+		}
+		const parseEntry = getCachedLuaParse({
+			path: source.path,
+			source: source.source,
+			lines: source.lines,
+			version: source.version,
+			parsed: source.parsed,
+			canonicalization,
+			withSyntaxError: true,
+		});
+		if (parseEntry.syntaxError) {
+			throw new Error(`[LuaSemanticWorkspace] Syntax error in ${source.path}: ${parseEntry.syntaxError.message}`);
+		}
+		workspace.updateFile(source.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, source.version, canonicalization);
+	}
+	return workspace.getSnapshot();
+}
+
 export function hydrateFileSemanticData(data: SerializedFileSemanticData): FileSemanticData {
+	const parseEntry = getCachedLuaParse({
+		path: data.file,
+		source: data.source,
+		lines: data.lines,
+		withSyntaxError: false,
+	});
 	const signatureEntries = data.functionSignatures
 		? new Map<string, FunctionSignatureInfo>(data.functionSignatures.map(([key, value]) => [key, {
 			...value,
@@ -174,6 +339,8 @@ export function hydrateFileSemanticData(data: SerializedFileSemanticData): FileS
 		model,
 		source: data.source,
 		lines: data.lines,
+		parsed: parseEntry.parsed,
+		chunk: parseEntry.parsed.chunk,
 		annotations: data.annotations,
 		decls: data.decls,
 		refs,
@@ -284,6 +451,8 @@ export function buildLuaFileSemanticData(
 		model,
 		source,
 		lines: fileLines,
+		parsed: parseEntry.parsed,
+		chunk,
 		annotations,
 		decls,
 		refs,
@@ -439,16 +608,26 @@ function tryExtractRequireModuleName(expression: LuaExpression): string {
 export class LuaProjectIndex {
 	private readonly files: Map<string, FileRecord> = new Map();
 	private readonly symbols: Map<SymbolID, Decl> = new Map();
+	private readonly declByFileAndKey: Map<string, SymbolID> = new Map();
 	private readonly globalsByKey: Map<string, SymbolID> = new Map();
 	private readonly refsBySymbol: Map<SymbolID, Ref[]> = new Map();
 	private readonly globalsSources: Map<string, Map<SymbolID, number>> = new Map();
 	private readonly refsByGlobalKey: Map<string, Set<Ref>> = new Map();
+	private readonly refsByReceiverSymbolKey: Map<string, Set<Ref>> = new Map();
+	private readonly refsByReceiverHintKey: Map<string, Set<Ref>> = new Map();
 	private readonly fileOrder: Map<string, number> = new Map();
+	private declPathHints: Map<SymbolID, SemanticHintKey> = new Map();
+	private prefabHintsById: Map<string, SemanticHintKey> = new Map();
+	private objectHintsById: Map<string, SemanticHintKey> = new Map();
 	private version = 0;
 	private nextFileOrder = 1;
 
 	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number, canonicalization: CanonicalizationType = 'none'): LuaSemanticModel {
 		const data = buildLuaFileSemanticData(source, file, lines, parsed, version, canonicalization);
+		return this.storeFileData(file, data);
+	}
+
+	public publishFileData(file: string, data: FileSemanticData): LuaSemanticModel {
 		return this.storeFileData(file, data);
 	}
 
@@ -466,12 +645,12 @@ export class LuaProjectIndex {
 		return this.version;
 	}
 
-	public symbolAt(file: string, position: Position): { id: SymbolID; decl: Decl } {
+	public symbolAt(file: string, row: number, column: number): { id: SymbolID; decl: Decl } {
 		const record = this.files.get(file);
 		if (!record) {
 			return null;
 		}
-		return this.findSymbolAt(record, position);
+		return this.findSymbolAt(record, row, column);
 	}
 
 	public getReferences(symbolId: SymbolID): readonly Ref[] {
@@ -551,6 +730,7 @@ export class LuaProjectIndex {
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
 			this.symbols.set(decl.id, decl);
+			this.declByFileAndKey.set(fileSymbolKey(decl.file, decl.symbolKey), decl.id);
 		}
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
@@ -570,6 +750,7 @@ export class LuaProjectIndex {
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
 			this.symbols.delete(decl.id);
+			this.declByFileAndKey.delete(fileSymbolKey(decl.file, decl.symbolKey));
 			if (decl.isGlobal) {
 				this.removeGlobalDecl(decl);
 			}
@@ -595,7 +776,6 @@ export class LuaProjectIndex {
 			} else {
 				this.globalsByKey.delete(key);
 			}
-			this.retargetGlobalReferences(key, selected);
 		}
 	}
 
@@ -605,7 +785,6 @@ export class LuaProjectIndex {
 		if (!bucket) {
 			if (this.globalsByKey.get(key) === decl.id) {
 				this.globalsByKey.delete(key);
-				this.retargetGlobalReferences(key, null);
 			}
 			return;
 		}
@@ -614,7 +793,6 @@ export class LuaProjectIndex {
 			this.globalsSources.delete(key);
 			if (this.globalsByKey.get(key) === decl.id) {
 				this.globalsByKey.delete(key);
-				this.retargetGlobalReferences(key, null);
 			}
 			return;
 		}
@@ -626,7 +804,6 @@ export class LuaProjectIndex {
 			} else {
 				this.globalsByKey.delete(key);
 			}
-			this.retargetGlobalReferences(key, selected);
 		}
 	}
 
@@ -644,24 +821,6 @@ export class LuaProjectIndex {
 		return selected;
 	}
 
-	private retargetGlobalReferences(key: string, symbolId: SymbolID): void {
-		const bucket = this.refsByGlobalKey.get(key);
-		if (!bucket || bucket.size === 0) {
-			return;
-		}
-		for (const ref of bucket) {
-			if (ref.target) {
-				this.unregisterReference(ref.target, ref);
-			}
-			if (symbolId) {
-				ref.target = symbolId;
-				this.registerReference(symbolId, ref);
-			} else {
-				ref.target = null;
-			}
-		}
-	}
-
 	private getOrCreateGlobalRefSet(key: string): Set<Ref> {
 		let bucket = this.refsByGlobalKey.get(key);
 		if (!bucket) {
@@ -671,29 +830,69 @@ export class LuaProjectIndex {
 		return bucket;
 	}
 
+	private getOrCreateReceiverSymbolRefSet(key: string): Set<Ref> {
+		let bucket = this.refsByReceiverSymbolKey.get(key);
+		if (!bucket) {
+			bucket = new Set<Ref>();
+			this.refsByReceiverSymbolKey.set(key, bucket);
+		}
+		return bucket;
+	}
+
+	private getOrCreateReceiverHintRefSet(key: string): Set<Ref> {
+		let bucket = this.refsByReceiverHintKey.get(key);
+		if (!bucket) {
+			bucket = new Set<Ref>();
+			this.refsByReceiverHintKey.set(key, bucket);
+		}
+		return bucket;
+	}
+
+	private indexReferenceDependencies(ref: Ref): void {
+		if (ref.receiverSymbolKey && ref.receiverSymbolKey.length > 0) {
+			this.getOrCreateReceiverSymbolRefSet(ref.receiverSymbolKey).add(ref);
+		}
+		if (ref.receiverHintKey && ref.receiverHintKey.length > 0) {
+			this.getOrCreateReceiverHintRefSet(ref.receiverHintKey).add(ref);
+		}
+	}
+
+	private unindexReferenceDependencies(ref: Ref): void {
+		if (ref.receiverSymbolKey && ref.receiverSymbolKey.length > 0) {
+			const bucket = this.refsByReceiverSymbolKey.get(ref.receiverSymbolKey);
+			if (bucket) {
+				bucket.delete(ref);
+				if (bucket.size === 0) {
+					this.refsByReceiverSymbolKey.delete(ref.receiverSymbolKey);
+				}
+			}
+		}
+		if (ref.receiverHintKey && ref.receiverHintKey.length > 0) {
+			const bucket = this.refsByReceiverHintKey.get(ref.receiverHintKey);
+			if (bucket) {
+				bucket.delete(ref);
+				if (bucket.size === 0) {
+					this.refsByReceiverHintKey.delete(ref.receiverHintKey);
+				}
+			}
+		}
+	}
+
 	private addReference(ref: Ref): void {
+		this.indexReferenceDependencies(ref);
 		if (ref.symbolKey.length > 0) {
 			this.getOrCreateGlobalRefSet(ref.symbolKey).add(ref);
 		}
 		if (ref.target) {
 			this.registerReference(ref.target, ref);
-			return;
 		}
-		if (ref.symbolKey.length === 0) {
-			return;
-		}
-		const target = this.globalsByKey.get(ref.symbolKey);
-		if (!target) {
-			return;
-		}
-		ref.target = target;
-		this.registerReference(target, ref);
 	}
 
 	private removeReference(ref: Ref): void {
 		if (ref.target) {
 			this.unregisterReference(ref.target, ref);
 		}
+		this.unindexReferenceDependencies(ref);
 		if (ref.symbolKey.length > 0) {
 			const bucket = this.refsByGlobalKey.get(ref.symbolKey);
 			if (bucket) {
@@ -716,12 +915,248 @@ export class LuaProjectIndex {
 		return order;
 	}
 
+	private collectDirtySymbolKeysForFile(data: FileSemanticData, dirtyKeys: Set<string>): void {
+		for (let index = 0; index < data.decls.length; index += 1) {
+			const decl = data.decls[index];
+			if (decl.isGlobal) {
+				dirtyKeys.add(decl.symbolKey);
+			}
+		}
+		const declsById = new Map<SymbolID, Decl>();
+		for (let index = 0; index < data.decls.length; index += 1) {
+			const decl = data.decls[index];
+			declsById.set(decl.id, decl);
+		}
+		for (let index = 0; index < data.declValueHints.length; index += 1) {
+			const entry = data.declValueHints[index];
+			const decl = declsById.get(entry.declId);
+			if (decl) {
+				dirtyKeys.add(decl.symbolKey);
+			}
+		}
+	}
+
+	private collectFilesForGlobalKeys(keys: ReadonlySet<string>, files: Set<string>): void {
+		for (const key of keys) {
+			const bucket = this.refsByGlobalKey.get(key);
+			if (!bucket) {
+				continue;
+			}
+			for (const ref of bucket) {
+				files.add(ref.file);
+			}
+		}
+	}
+
+	private collectFilesForReceiverSymbolKeys(keys: ReadonlySet<string>, files: Set<string>): void {
+		for (const key of keys) {
+			const bucket = this.refsByReceiverSymbolKey.get(key);
+			if (!bucket) {
+				continue;
+			}
+			for (const ref of bucket) {
+				files.add(ref.file);
+			}
+		}
+	}
+
+	private collectFilesForReceiverHintKeys(keys: ReadonlySet<SemanticHintKey>, files: Set<string>): void {
+		for (const key of keys) {
+			const bucket = this.refsByReceiverHintKey.get(key);
+			if (!bucket) {
+				continue;
+			}
+			for (const ref of bucket) {
+				files.add(ref.file);
+			}
+		}
+	}
+
+	private resolveReferenceTarget(file: string, ref: Ref): SymbolID {
+		let targetId = ref.lexicalTarget ?? null;
+		if (!targetId && ref.symbolKey.length > 0) {
+			targetId = this.declByFileAndKey.get(fileSymbolKey(file, ref.symbolKey))
+				?? this.globalsByKey.get(ref.symbolKey)
+				?? null;
+		}
+		if (targetId) {
+			return targetId;
+		}
+		const receiverPathHintKey = resolveReferenceReceiverPathHintKey(
+			ref,
+			file,
+			this.declByFileAndKey,
+			this.declPathHints,
+			this.prefabHintsById,
+			this.objectHintsById,
+			this.globalsByKey,
+		);
+		if (!receiverPathHintKey) {
+			return null;
+		}
+		const targetKey = appendSymbolKey(getPathHintSymbolKey(receiverPathHintKey), ref.name);
+		return this.declByFileAndKey.get(fileSymbolKey(getPathHintFile(receiverPathHintKey), targetKey)) ?? null;
+	}
+
+	private refreshResolvedHintMaps(
+		dirtyReceiverSymbolKeys: Set<string>,
+		dirtyReceiverHintKeys: Set<SemanticHintKey>,
+	): void {
+		const previousPrefabHintsById = this.prefabHintsById;
+		const previousObjectHintsById = this.objectHintsById;
+		const previousDeclPathHints = this.declPathHints;
+		const orderedFiles = this.listFiles();
+		orderedFiles.sort((left, right) => this.fileOrder.get(left)! - this.fileOrder.get(right)!);
+
+		const nextPrefabHintsById = new Map<string, SemanticHintKey>();
+		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
+			const data = this.files.get(orderedFiles[fileIndex])!.data;
+			for (let entryIndex = 0; entryIndex < data.prefabClasses.length; entryIndex += 1) {
+				const entry = data.prefabClasses[entryIndex];
+				if (!nextPrefabHintsById.has(entry.defId)) {
+					nextPrefabHintsById.set(entry.defId, entry.classHintKey);
+				}
+			}
+		}
+
+		const nextObjectHintsById = new Map<string, SemanticHintKey>();
+		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
+			const data = this.files.get(orderedFiles[fileIndex])!.data;
+			for (let entryIndex = 0; entryIndex < data.objectBindings.length; entryIndex += 1) {
+				const entry = data.objectBindings[entryIndex];
+				if (nextObjectHintsById.has(entry.objectId)) {
+					continue;
+				}
+				const classHintKey = nextPrefabHintsById.get(entry.prefabId);
+				if (classHintKey) {
+					nextObjectHintsById.set(entry.objectId, classHintKey);
+				}
+			}
+		}
+
+		const nextDeclPathHints = new Map<SymbolID, SemanticHintKey>();
+		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
+			const data = this.files.get(orderedFiles[fileIndex])!.data;
+			for (let entryIndex = 0; entryIndex < data.declValueHints.length; entryIndex += 1) {
+				const entry = data.declValueHints[entryIndex];
+				const pathHintKey = resolveHintKeyToPathHintKey(entry.hintKey, nextPrefabHintsById, nextObjectHintsById);
+				if (pathHintKey) {
+					nextDeclPathHints.set(entry.declId, pathHintKey);
+				}
+			}
+		}
+
+		this.collectDirtyHintKeys(previousPrefabHintsById, nextPrefabHintsById, buildPrefabHintKey, dirtyReceiverHintKeys);
+		this.collectDirtyHintKeys(previousObjectHintsById, nextObjectHintsById, buildObjectHintKey, dirtyReceiverHintKeys);
+		this.collectDirtyDeclHintSymbolKeys(previousDeclPathHints, nextDeclPathHints, dirtyReceiverSymbolKeys);
+		this.prefabHintsById = nextPrefabHintsById;
+		this.objectHintsById = nextObjectHintsById;
+		this.declPathHints = nextDeclPathHints;
+	}
+
+	private collectDirtyHintKeys(
+		previous: ReadonlyMap<string, SemanticHintKey>,
+		next: ReadonlyMap<string, SemanticHintKey>,
+		buildHintKey: (key: string) => SemanticHintKey,
+		dirtyKeys: Set<SemanticHintKey>,
+	): void {
+		for (const [key, value] of previous) {
+			if (next.get(key) !== value) {
+				dirtyKeys.add(buildHintKey(key));
+			}
+		}
+		for (const [key, value] of next) {
+			if (previous.get(key) !== value) {
+				dirtyKeys.add(buildHintKey(key));
+			}
+		}
+	}
+
+	private collectDirtyDeclHintSymbolKeys(
+		previous: ReadonlyMap<SymbolID, SemanticHintKey>,
+		next: ReadonlyMap<SymbolID, SemanticHintKey>,
+		dirtyKeys: Set<string>,
+	): void {
+		for (const [symbolId, value] of previous) {
+			if (next.get(symbolId) === value) {
+				continue;
+			}
+			const decl = this.symbols.get(symbolId);
+			if (decl) {
+				dirtyKeys.add(decl.symbolKey);
+			}
+		}
+		for (const [symbolId, value] of next) {
+			if (previous.get(symbolId) === value) {
+				continue;
+			}
+			const decl = this.symbols.get(symbolId);
+			if (decl) {
+				dirtyKeys.add(decl.symbolKey);
+			}
+		}
+	}
+
+	private rebuildFileTargets(data: FileSemanticData): FileSemanticData {
+		let nextRefs: Ref[] = null;
+		for (let index = 0; index < data.refs.length; index += 1) {
+			const ref = data.refs[index];
+			const nextTarget = this.resolveReferenceTarget(data.model.file, ref);
+			if (nextTarget === ref.target) {
+				if (nextRefs) {
+					nextRefs.push(ref);
+				}
+				continue;
+			}
+			if (!nextRefs) {
+				nextRefs = data.refs.slice(0, index);
+			}
+			nextRefs.push({
+				...ref,
+				target: nextTarget,
+			});
+		}
+		return nextRefs ? replaceFileSemanticDataRefs(data, nextRefs) : data;
+	}
+
+	private rebindAffectedFiles(files: ReadonlySet<string>): void {
+		const replacements = new Map<string, FileSemanticData>();
+		for (const file of files) {
+			const record = this.files.get(file);
+			if (!record) {
+				continue;
+			}
+			const nextData = this.rebuildFileTargets(record.data);
+			if (nextData !== record.data) {
+				replacements.set(file, nextData);
+			}
+		}
+		if (replacements.size === 0) {
+			return;
+		}
+		// Older semantic frontends may still hold the previous FileSemanticData snapshot.
+		// Re-publish affected files instead of mutating stored Ref objects in place.
+		for (const [file, nextData] of replacements) {
+			const current = this.files.get(file)!;
+			this.removeFileData(current.data);
+			this.files.set(file, {
+				source: nextData.source,
+				data: nextData,
+			});
+		}
+		for (const nextData of replacements.values()) {
+			this.applyFileData(nextData);
+		}
+	}
+
 	private storeFileData(file: string, data: FileSemanticData): LuaSemanticModel {
 		const current = this.files.get(file);
 		if (current && current.source === data.source) {
 			return current.data.model;
 		}
+		const dirtySymbolKeys = new Set<string>();
 		if (current) {
+			this.collectDirtySymbolKeysForFile(current.data, dirtySymbolKeys);
 			this.removeFileData(current.data);
 		}
 		this.files.set(file, {
@@ -729,72 +1164,24 @@ export class LuaProjectIndex {
 			data,
 		});
 		this.ensureFileOrder(file);
+		this.collectDirtySymbolKeysForFile(data, dirtySymbolKeys);
 		this.applyFileData(data);
-		this.rebuildReferenceTargets();
+		const dirtyReceiverHintKeys = new Set<SemanticHintKey>();
+		this.refreshResolvedHintMaps(dirtySymbolKeys, dirtyReceiverHintKeys);
+		const filesToRebind = new Set<string>([file]);
+		this.collectFilesForGlobalKeys(dirtySymbolKeys, filesToRebind);
+		this.collectFilesForReceiverSymbolKeys(dirtySymbolKeys, filesToRebind);
+		this.collectFilesForReceiverHintKeys(dirtyReceiverHintKeys, filesToRebind);
+		this.rebindAffectedFiles(filesToRebind);
 		this.version += 1;
-		return data.model;
+		return this.files.get(file)!.data.model;
 	}
 
-	private rebuildReferenceTargets(): void {
-		this.refsBySymbol.clear();
-		const declByFileAndKey = new Map<string, SymbolID>();
-		for (const decl of this.symbols.values()) {
-			declByFileAndKey.set(fileSymbolKey(decl.file, decl.symbolKey), decl.id);
-		}
-		const prefabClasses = new Map<string, SemanticHintKey>();
-		for (const record of this.files.values()) {
-			for (const entry of record.data.prefabClasses) {
-				if (!prefabClasses.has(entry.defId)) {
-					prefabClasses.set(entry.defId, entry.classHintKey);
-				}
-			}
-		}
-		const objectClasses = new Map<string, SemanticHintKey>();
-		for (const record of this.files.values()) {
-			for (const entry of record.data.objectBindings) {
-				const classHintKey = prefabClasses.get(entry.prefabId);
-				if (!classHintKey || objectClasses.has(entry.objectId)) {
-					continue;
-				}
-				objectClasses.set(entry.objectId, classHintKey);
-			}
-		}
-		const declHints = new Map<SymbolID, SemanticHintKey>();
-		for (const record of this.files.values()) {
-			for (const entry of record.data.declValueHints) {
-				const pathHintKey = resolveHintKeyToPathHintKey(entry.hintKey, prefabClasses, objectClasses);
-				if (pathHintKey) {
-					declHints.set(entry.declId, pathHintKey);
-				}
-			}
-		}
-		for (const [file, record] of this.files) {
-			for (const ref of record.data.refs) {
-				let targetId = ref.lexicalTarget ?? null;
-				if (!targetId && ref.symbolKey.length > 0) {
-					targetId = declByFileAndKey.get(fileSymbolKey(file, ref.symbolKey))
-						?? this.globalsByKey.get(ref.symbolKey);
-				}
-				if (!targetId) {
-					const receiverPathHintKey = resolveReferenceReceiverPathHintKey(ref, file, declByFileAndKey, declHints, prefabClasses, objectClasses, this.globalsByKey);
-					if (receiverPathHintKey) {
-						const targetKey = appendSymbolKey(getPathHintSymbolKey(receiverPathHintKey), ref.name);
-						targetId = declByFileAndKey.get(fileSymbolKey(getPathHintFile(receiverPathHintKey), targetKey));
-					}
-				}
-				ref.target = targetId;
-				if (targetId) {
-					this.registerReference(targetId, ref);
-				}
-			}
-		}
-	}
-
-	private findSymbolAt(record: FileRecord, position: Position): { id: SymbolID; decl: Decl } {
+	private findSymbolAt(record: FileRecord, row: number, column: number): { id: SymbolID; decl: Decl } {
 		const data = record.data;
 		for (let declIndex = 0; declIndex < data.decls.length; declIndex += 1) {
 			const decl = data.decls[declIndex]!;
-			if (!positionInRange(position.line, position.column, decl.range)) {
+			if (!positionInRange(row, column, decl.range)) {
 				continue;
 			}
 			const stored = this.symbols.get(decl.id) ?? decl;
@@ -802,7 +1189,7 @@ export class LuaProjectIndex {
 		}
 		for (let refIndex = 0; refIndex < data.refs.length; refIndex += 1) {
 			const ref = data.refs[refIndex]!;
-			if (!positionInRange(position.line, position.column, ref.range)) {
+			if (!positionInRange(row, column, ref.range)) {
 				continue;
 			}
 			const targetId = ref.target ?? (ref.symbolKey.length > 0 ? this.globalsByKey.get(ref.symbolKey)  : null);
@@ -823,6 +1210,23 @@ type FileRecord = {
 	source: string;
 	data: FileSemanticData;
 };
+
+function replaceFileSemanticDataRefs(data: FileSemanticData, refs: readonly Ref[]): FileSemanticData {
+	const model = createSemanticModel({
+		file: data.model.file,
+		decls: data.decls,
+		definitions: data.model.definitions,
+		refs,
+		annotations: data.annotations,
+		callExpressions: data.callExpressions,
+		functionSignatures: data.functionSignatures,
+	});
+	return {
+		...data,
+		model,
+		refs,
+	};
+}
 
 function createSemanticModel(options: {
 	file: string;
@@ -2902,6 +3306,7 @@ function findMethodToken(callExpression: LuaCallExpression, tokens: readonly Lua
 
 export class LuaSemanticWorkspace {
 	private readonly index: LuaProjectIndex;
+	private snapshot: LuaSemanticWorkspaceSnapshot = null;
 	constructor() {
 		this.index = new LuaProjectIndex();
 	}
@@ -2911,40 +3316,31 @@ export class LuaSemanticWorkspace {
 	}
 
 	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number, canonicalization: CanonicalizationType = 'none'): LuaSemanticModel {
-		return this.index.updateFile(file, source, lines, parsed, version, canonicalization);
+		const model = this.index.updateFile(file, source, lines, parsed, version, canonicalization);
+		this.snapshot = null;
+		return model;
+	}
+
+	public publishFileData(file: string, data: FileSemanticData): LuaSemanticModel {
+		const model = this.index.publishFileData(file, data);
+		this.snapshot = null;
+		return model;
 	}
 
 	public getModel(file: string): LuaSemanticModel {
 		return this.index.getFileModel(file);
 	}
 
-	public symbolAt(file: string, row: number, column: number): { id: SymbolID; decl: Decl; } {
-		return this.index.symbolAt(file, { line: row, column });
-	}
-
-	public findReferencesByPosition(file: string, row: number, column: number): { id: SymbolID; decl: Decl; references: readonly Ref[]; } {
-		const symbol = this.symbolAt(file, row, column);
-		if (!symbol) {
-			return null;
-		}
-		const references = this.index.getReferences(symbol.id);
-		return { id: symbol.id, decl: symbol.decl, references };
-	}
-
-	public getReferences(symbolId: SymbolID): readonly Ref[] {
-		return this.index.getReferences(symbolId);
-	}
-
-	public getDecl(symbolId: SymbolID): Decl {
-		return this.index.getDecl(symbolId);
-	}
-
 	public getFileData(file: string): FileSemanticData {
 		return this.index.getFileData(file);
 	}
 
-	public listGlobalDecls(): readonly Decl[] {
-		return this.index.listGlobalDecls();
+	public getSnapshot(): LuaSemanticWorkspaceSnapshot {
+		if (this.snapshot && this.snapshot.version === this.index.getVersion()) {
+			return this.snapshot;
+		}
+		this.snapshot = createWorkspaceSnapshotFromIndex(this.index);
+		return this.snapshot;
 	}
 
 	public listFiles(): string[] {

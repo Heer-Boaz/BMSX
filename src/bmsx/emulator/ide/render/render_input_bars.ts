@@ -7,7 +7,7 @@ import { ide_state } from '../ide_state';
 import { selectionRange as inlineFieldSelectionRange, type InlineFieldMetrics, measureRange as inlineFieldMeasureRange, caretX as inlineFieldCaretX } from '../inline_text_field';
 import { drawInlineCaret } from './render_caret';
 import { type InlineBarsHost, renderCreateResourceBar, renderLineJumpBar, renderRenameBar, renderSearchBar, renderSymbolSearchBar } from './render_inline_bars';
-import { drawEditorText } from '../text_renderer';
+import { drawEditorText } from './text_renderer';
 import { measureText } from '../text_utils';
 import type { TextField } from '../types';
 
@@ -48,7 +48,7 @@ export function drawSearchBar(): void {
 		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
 		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		inlineFieldCaretX: (f: TextField, ox: number, m: InlineFieldMetrics) => inlineFieldCaretX(f, ox, m),
 		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
 		searchActive: ide_state.searchActive,
 		searchField: ide_state.searchField,
@@ -105,7 +105,7 @@ export function drawSymbolSearchBar(): void {
 		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
 		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		inlineFieldCaretX: (f: TextField, ox: number, m: InlineFieldMetrics) => inlineFieldCaretX(f, ox, m),
 		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
 		symbolSearchGlobal: ide_state.symbolSearchGlobal,
 		symbolSearchActive: ide_state.symbolSearchActive,
@@ -157,7 +157,7 @@ export function drawSymbolSearchBar(): void {
 		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
 		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		inlineFieldCaretX: (f: TextField, ox: number, m: InlineFieldMetrics) => inlineFieldCaretX(f, ox, m),
 		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
 		lineJumpActive: ide_state.lineJumpActive,
 		lineJumpField: ide_state.lineJumpField,
@@ -201,7 +201,7 @@ export function drawRenameBar(): void {
 		) => drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
 		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		inlineFieldCaretX: (f: TextField, ox: number, m: InlineFieldMetrics) => inlineFieldCaretX(f, ox, m),
 		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
 		renameActive: ide_state.renameController.isActive(),
 		renameField: ide_state.renameController.getField(),
@@ -249,7 +249,7 @@ export function drawCreateResourceBar(): void {
 		) => drawInlineCaret(api3, field, l, t, r, b, baseX, active, caretColor, textColor),
 		inlineFieldSelectionRange: (f: TextField) => inlineFieldSelectionRange(f),
 		inlineFieldMeasureRange: (f: TextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
-		inlineFieldCaretX: (f: TextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		inlineFieldCaretX: (f: TextField, ox: number, m: InlineFieldMetrics) => inlineFieldCaretX(f, ox, m),
 		blockActiveCarets: (ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused),
 	};
 	renderCreateResourceBar(api, host);

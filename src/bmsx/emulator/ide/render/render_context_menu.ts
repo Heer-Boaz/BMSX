@@ -3,7 +3,7 @@ import { point_in_rect } from '../../../utils/rect_operations';
 import { api } from '../../overlay_api';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
-import { drawEditorText } from '../text_renderer';
+import { drawEditorText } from './text_renderer';
 import { measureText } from '../text_utils';
 import type { EditorContextMenuEntry, EditorContextToken } from '../types';
 

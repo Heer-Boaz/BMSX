@@ -8,7 +8,7 @@ import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from 
 import { renderEditorContextMenu } from './render_context_menu';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
-import { drawEditorColoredText } from '../text_renderer';
+import { drawEditorColoredText } from './text_renderer';
 import { getBreakpointsForChunk } from '../ide_debugger';
 import { getActiveCodeTabContext } from '../editor_tabs';
 import { api } from '../../overlay_api';

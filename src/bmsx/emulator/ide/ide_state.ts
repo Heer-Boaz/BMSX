@@ -9,7 +9,6 @@ import type { InputController } from './ide_input';
 import type { ProblemsPanelController } from './problems_panel';
 import { ResourcePanelController } from './resource_panel_controller';
 import type { RenameController } from './rename_controller';
-import { type LuaSemanticWorkspace } from './semantic_model';
 import type { CompletionController } from './completion_controller';
 import { createMessageController } from './message_controller';
 import { ReferenceState } from './reference_state';
@@ -46,7 +45,7 @@ import type { TextBuffer } from './text/text_buffer';
 import { PieceTreeBuffer } from './text/piece_tree_buffer';
 import type { EditorUndoRecord } from './text/editor_undo';
 import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
-import type { ReferenceCatalogEntry } from './code_reference';
+import type { ReferenceCatalogEntry } from './reference_sources';
 import { CodeLayout } from './code_layout';
 import type { TimerHandle, SubscriptionHandle } from '../../platform';
 import type { DebuggerExecutionState } from './ide_debugger';
@@ -269,7 +268,6 @@ export interface IdeState {
 	resourcePanelResizing: boolean;
 	resourcePanel: ResourcePanelController;
 	renameController: RenameController;
-	semanticWorkspace: LuaSemanticWorkspace;
 	layout: CodeLayout;
 	codeVerticalScrollbarVisible: boolean;
 	codeHorizontalScrollbarVisible: boolean;
@@ -490,7 +488,6 @@ export const ide_state: IdeState = {
 	resourcePanelResizing: false,
 	resourcePanel: undefined!,
 	renameController: undefined!,
-	semanticWorkspace: undefined!,
 	layout: undefined!,
 	codeVerticalScrollbarVisible: false,
 	codeHorizontalScrollbarVisible: false,

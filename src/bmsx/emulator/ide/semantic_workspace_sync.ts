@@ -1,7 +1,7 @@
 import type { ParsedLuaChunk } from './lua/lua_parse';
 import { getCachedLuaParse } from './lua/lua_analysis_cache';
 import { ide_state } from './ide_state';
-import { LuaSemanticWorkspace, type FileSemanticData } from './semantic_model';
+import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from './semantic_model';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { splitText } from './text/source_text';
@@ -15,15 +15,20 @@ export type SemanticWorkspacePathInput = {
 };
 
 let primedProjectWorkspace: LuaSemanticWorkspace = null;
+let semanticWorkspace: LuaSemanticWorkspace = null;
 
 export function getOrCreateSemanticWorkspace(): LuaSemanticWorkspace {
-	const workspace = ide_state.semanticWorkspace;
-	if (workspace) {
-		return workspace;
+	if (semanticWorkspace) {
+		return semanticWorkspace;
 	}
-	const created = new LuaSemanticWorkspace();
-	ide_state.semanticWorkspace = created;
-	return created;
+	semanticWorkspace = new LuaSemanticWorkspace();
+	return semanticWorkspace;
+}
+
+export function resetSemanticWorkspace(): LuaSemanticWorkspace {
+	primedProjectWorkspace = null;
+	semanticWorkspace = new LuaSemanticWorkspace();
+	return semanticWorkspace;
 }
 
 function cacheSemanticAnalysis(path: string, source: string, data: FileSemanticData, parsed?: ParsedLuaChunk): void {
@@ -71,6 +76,16 @@ export function syncSemanticWorkspacePath(input: SemanticWorkspacePathInput, wor
 	return data;
 }
 
+export function syncSemanticWorkspacePaths(
+	inputs: ReadonlyArray<SemanticWorkspacePathInput>,
+	workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace(),
+): LuaSemanticWorkspaceSnapshot {
+	for (let index = 0; index < inputs.length; index += 1) {
+		syncSemanticWorkspacePath(inputs[index], workspace);
+	}
+	return workspace.getSnapshot();
+}
+
 export function primeSemanticWorkspaceProjectSources(workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace()): LuaSemanticWorkspace {
 	if (primedProjectWorkspace === workspace) {
 		return workspace;
@@ -97,9 +112,9 @@ export function primeSemanticWorkspaceProjectSources(workspace: LuaSemanticWorks
 	return workspace;
 }
 
-export function prepareSemanticWorkspaceForEditorBuffer(input: SemanticWorkspacePathInput): LuaSemanticWorkspace {
+export function prepareSemanticWorkspaceForEditorBuffer(input: SemanticWorkspacePathInput): LuaSemanticWorkspaceSnapshot {
 	const workspace = getOrCreateSemanticWorkspace();
 	syncSemanticWorkspacePath(input, workspace);
 	primeSemanticWorkspaceProjectSources(workspace);
-	return workspace;
+	return workspace.getSnapshot();
 }

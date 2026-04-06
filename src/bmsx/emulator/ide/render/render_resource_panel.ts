@@ -5,7 +5,7 @@ import { getCodeAreaBounds } from '../editor_view';
 import { resourceViewerClampScroll } from '../ide_input';
 import { ide_state } from '../ide_state';
 import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity } from '../resource_viewer';
-import { drawEditorText, drawEditorColoredText } from '../text_renderer';
+import { drawEditorText, drawEditorColoredText } from './text_renderer';
 import { api } from '../../overlay_api';
 import { measureText, wrapOverlayLine } from '../text_utils';
 import * as constants from '../constants';

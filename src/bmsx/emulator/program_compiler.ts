@@ -3282,7 +3282,6 @@ function buildCompilerSemanticFrontend(
 		});
 	}
 	return buildLuaSemanticFrontend(sources, {
-		canonicalization: options.canonicalization ?? 'none',
 		extraGlobalNames,
 	});
 }

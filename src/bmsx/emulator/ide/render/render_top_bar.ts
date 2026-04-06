@@ -2,7 +2,7 @@ import * as constants from '../constants';
 import type { RectBounds } from '../../../rompack/rompack';
 import { ide_state } from '../ide_state';
 import { measureText } from '../text_utils';
-import { drawEditorText } from '../text_renderer';
+import { drawEditorText } from './text_renderer';
 import { MenuId, TopBarButtonId } from '../types';
 import { api } from '../../overlay_api';
 import { MENU_COMMANDS, MENU_IDS } from '../ide_input';

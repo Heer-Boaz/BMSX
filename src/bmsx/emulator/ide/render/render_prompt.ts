@@ -2,7 +2,7 @@ import type { RectBounds } from '../../../rompack/rompack';
 import { api } from '../../overlay_api';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
-import { drawEditorText } from '../text_renderer';
+import { drawEditorText } from './text_renderer';
 import { measureText } from '../text_utils';
 
 

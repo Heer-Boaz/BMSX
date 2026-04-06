@@ -2,13 +2,12 @@ import type { TimerHandle } from '../../platform/platform';
 import { clamp } from '../../utils/clamp';
 import { highlightTextLine as highlightTextLineExternal } from './lua/syntax_highlight';
 import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from './semantic_model';
-import { LuaSemanticWorkspace } from './semantic_model';
 import type { LuaDefinitionInfo } from '../../lua/syntax/lua_ast';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
 import { scheduleIdeOnce } from './background_tasks';
 import { EditorFont } from '../editor_font';
 import { getTextSnapshot, splitText } from './text/source_text';
-import { syncSemanticWorkspacePath } from './semantic_workspace_sync';
+import { syncSemanticWorkspacePaths } from './semantic_workspace_sync';
 import type { TextBuffer } from './text/text_buffer';
 
 interface VisualLinesContext {
@@ -78,7 +77,6 @@ export class CodeLayout {
 
 	constructor(
 		private readonly font: EditorFont,
-		private readonly workspace: LuaSemanticWorkspace,
 		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot },
 	) {
 		this.maxHighlightCache = options.maxHighlightCache;
@@ -651,12 +649,13 @@ export class CodeLayout {
 		let errorMessage: string = null;
 		try {
 			const source = this.materializeSemanticSource(pending);
-			model = syncSemanticWorkspacePath({
+			const snapshot = syncSemanticWorkspacePaths([{
 				path: pending.path,
 				source,
 				lines: pending.lines,
 				version: pending.version,
-			}, this.workspace).model;
+			}]);
+			model = snapshot.getFileData(pending.path).model;
 		} catch (error) {
 			model = null;
 			errorMessage = error instanceof Error ? error.message : String(error);

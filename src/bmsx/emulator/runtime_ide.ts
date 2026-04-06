@@ -15,7 +15,7 @@ import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, 
 import { createCartEditor, setExecutionStopHighlight, clearExecutionStopHighlights } from './ide/cart_editor';
 import { ide_state } from './ide/ide_state';
 import type { RuntimeErrorDetails } from './ide/types';
-import { setEditorCaseInsensitivity } from './ide/text_renderer';
+import { setEditorCaseInsensitivity } from './ide/render/text_renderer';
 import { buildLuaStackFrames } from './lua_globals';
 import { seedDefaultLuaBuiltins } from './lua_builtins';
 import {

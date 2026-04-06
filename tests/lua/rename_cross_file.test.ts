@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import type { CodeTabContext, SearchMatch } from '../../src/bmsx/emulator/ide/types';
 import type { ResourceDescriptor } from '../../src/bmsx/emulator/types';
-import { LuaSemanticWorkspace } from '../../src/bmsx/emulator/ide/semantic_workspace';
+import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../src/bmsx/emulator/ide/semantic_workspace';
 import { CrossFileRenameManager, convertRangeToSearchMatch, type CrossFileRenameDependencies } from '../../src/bmsx/emulator/ide/rename_controller';
 
 function normalizeSource(source: string): string[] {
@@ -94,7 +94,7 @@ test('cross file rename updates other paths and workspace', () => {
 	const manager = new CrossFileRenameManager(dependencies, workspace);
 
 	const definitionCol = files.get('main.lua')!.indexOf('state') + 1;
-	const resolution = workspace.findReferencesByPosition('main.lua', 1, definitionCol);
+	const resolution = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition('main.lua', 1, definitionCol);
 	assert.ok(resolution);
 
 	const otherRanges = resolution!.references

@@ -3,11 +3,12 @@ import { drawInlineCaret } from './render_caret';
 import * as constants from '../constants';
 import type { TextField } from '../types';
 import { ide_state } from '../ide_state';
-import { caretX, getFieldText, measureRange, selectionRange } from '../inline_text_field';
+import { caretX, type InlineFieldMetrics, measureRange, selectionRange } from '../inline_text_field';
 import { api } from '../../overlay_api';
-import { drawEditorText } from '../text_renderer';
+import { drawEditorText } from './text_renderer';
 import { getCreateResourceBarHeight, getResourceSearchBarHeight, getSearchBarHeight, isResourceSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../editor_view';
 import { measureText } from '../text_utils';
+import { textFromLines } from '../text/source_text';
 
 type InlineResultListOptions<T> = {
 	entries: readonly T[];
@@ -31,7 +32,7 @@ export interface InlineBarsHost {
 	charAdvance?: number;
 	measureText: (text: string) => number;
 	drawText: (text: string, x: number, y: number, color: number) => void;
-	inlineFieldMetrics: () => { spaceAdvance: number };
+	inlineFieldMetrics: () => InlineFieldMetrics;
 	createResourceActive: boolean;
 	createResourceVisible: boolean;
 	createResourceField: TextField;
@@ -47,8 +48,8 @@ export interface InlineBarsHost {
 	getLineJumpBarHeight: () => number;
 	drawInlineCaret: typeof drawInlineCaret;
 	inlineFieldSelectionRange: (field: unknown) => { start: number; end: number };
-	inlineFieldMeasureRange: (field: unknown, metrics: { spaceAdvance: number }, start: number, end: number) => number;
-	inlineFieldCaretX: (field: unknown, originX: number, measureText: (text: string) => number) => number;
+	inlineFieldMeasureRange: (field: unknown, metrics: InlineFieldMetrics, start: number, end: number) => number;
+	inlineFieldCaretX: (field: unknown, originX: number, metrics: InlineFieldMetrics) => number;
 
 	// When true, all inline carets should render as outlines (not active),
 	// e.g. when another panel has focus (Problems panel).
@@ -122,7 +123,7 @@ export function renderCreateResourceBar(api: Api, host: InlineBarsHost): void {
 
 	const field = host.createResourceField;
 	const pathX = labelX + host.measureText(label + ' ');
-	const fieldText = getFieldText(field);
+	const fieldText = textFromLines(field.lines);
 	let displayPath = fieldText;
 	let pathColor = constants.COLOR_CREATE_RESOURCE_TEXT;
 	if (displayPath.length === 0 && !host.createResourceActive) {
@@ -141,7 +142,7 @@ export function renderCreateResourceBar(api: Api, host: InlineBarsHost): void {
 
 	host.drawText(displayPath, pathX, labelY, pathColor);
 
-	const caretBaseX = host.inlineFieldCaretX(field, pathX, host.measureText);
+	const caretBaseX = host.inlineFieldCaretX(field, pathX, host.inlineFieldMetrics());
 	const caretLeft = Math.floor(caretBaseX);
 	const caretRight = Math.max(caretLeft + 1, Math.floor(caretBaseX + host.spaceAdvance));
 	const caretTop = Math.floor(labelY);
@@ -175,7 +176,7 @@ export function renderSearchBar(host: InlineBarsHost): void {
 	host.drawText(label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
 
 	const active = !!host.searchActive && !host.blockActiveCarets;
-	const fieldText = field ? getFieldText(field) : '';
+	const fieldText = field ? textFromLines(field.lines) : '';
 	let queryText = fieldText;
 	let queryColor = constants.COLOR_SEARCH_TEXT;
 	if (queryText.length === 0 && !active) {
@@ -196,7 +197,7 @@ export function renderSearchBar(host: InlineBarsHost): void {
 	host.drawText(queryText, queryX, labelY, queryColor);
 
 	if (field) {
-		const caretX = host.inlineFieldCaretX(field, queryX, host.measureText);
+		const caretX = host.inlineFieldCaretX(field, queryX, host.inlineFieldMetrics());
 		const caretLeft = Math.floor(caretX);
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
 		const caretTop = Math.floor(labelY);
@@ -273,7 +274,7 @@ export function renderResourceSearchBar(): void {
 	drawEditorText(ide_state.font, label, labelX, labelY, undefined, constants.COLOR_QUICK_OPEN_TEXT);
 
 	const active = !!ide_state.resourceSearchActive && !ide_state.problemsPanel.isVisible && !ide_state.problemsPanel.isFocused;
-	const fieldText = field ? getFieldText(field) : '';
+	const fieldText = field ? textFromLines(field.lines) : '';
 	let queryText = fieldText;
 	let queryColor = constants.COLOR_QUICK_OPEN_TEXT;
 	if (queryText.length === 0 && !active) {
@@ -294,7 +295,7 @@ export function renderResourceSearchBar(): void {
 	drawEditorText(ide_state.font, queryText, queryX, labelY, undefined, queryColor);
 
 	if (field) {
-		const caretLeft = caretX(field, queryX, measureText);
+		const caretLeft = caretX(field, queryX, ide_state.inlineFieldMetricsRef);
 		const caretRight = Math.max(caretLeft + 1, caretLeft + (ide_state.charAdvance));
 		const caretTop = labelY;
 		const caretBottom = caretTop + ide_state.lineHeight;
@@ -359,7 +360,7 @@ export function renderSymbolSearchBar(api: Api, host: InlineBarsHost): void {
 	host.drawText(label, labelX, labelY, constants.COLOR_SYMBOL_SEARCH_TEXT);
 
 	const active = !!host.symbolSearchActive;
-	const fieldText = field ? getFieldText(field) : '';
+	const fieldText = field ? textFromLines(field.lines) : '';
 	let queryText = fieldText;
 	let queryColor = constants.COLOR_SYMBOL_SEARCH_TEXT;
 	const placeholder = mode === 'references' ? 'FILTER REFERENCES' : 'TYPE TO FILTER';
@@ -381,7 +382,7 @@ export function renderSymbolSearchBar(api: Api, host: InlineBarsHost): void {
 	host.drawText(queryText, queryX, labelY, queryColor);
 
 	if (field) {
-		const caretX = host.inlineFieldCaretX(field, queryX, host.measureText);
+		const caretX = host.inlineFieldCaretX(field, queryX, host.inlineFieldMetrics());
 		const caretLeft = Math.floor(caretX);
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
 		const caretTop = Math.floor(labelY);
@@ -495,7 +496,7 @@ export function renderRenameBar(api: Api, host: InlineBarsHost): void {
 	host.drawText(label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
 
 	const active = !!host.renameActive && !host.blockActiveCarets;
-	const fieldText = field ? getFieldText(field) : '';
+	const fieldText = field ? textFromLines(field.lines) : '';
 	let valueText = fieldText;
 	let valueColor = constants.COLOR_SEARCH_TEXT;
 	if (valueText.length === 0 && !active) {
@@ -516,7 +517,7 @@ export function renderRenameBar(api: Api, host: InlineBarsHost): void {
 	host.drawText(valueText, valueX, labelY, valueColor);
 
 	if (field) {
-		const caretX = host.inlineFieldCaretX(field, valueX, host.measureText);
+		const caretX = host.inlineFieldCaretX(field, valueX, host.inlineFieldMetrics());
 		const caretLeft = Math.floor(caretX);
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
 		const caretTop = Math.floor(labelY);
@@ -561,7 +562,7 @@ export function renderLineJumpBar(api: Api, host: InlineBarsHost): void {
 
 	const field = host.lineJumpField as TextField;
 	const active = !!host.lineJumpActive;
-	const fieldText = field ? getFieldText(field) : '';
+	const fieldText = field ? textFromLines(field.lines) : '';
 	let valueText = fieldText;
 	let valueColor = constants.COLOR_LINE_JUMP_TEXT;
 	if (valueText.length === 0 && !active) {
@@ -582,7 +583,7 @@ export function renderLineJumpBar(api: Api, host: InlineBarsHost): void {
 	host.drawText(valueText, valueX, labelY, valueColor);
 
 	if (field) {
-		const caretX = host.inlineFieldCaretX(field, valueX, host.measureText);
+		const caretX = host.inlineFieldCaretX(field, valueX, host.inlineFieldMetrics());
 		const caretLeft = Math.floor(caretX);
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
 		const caretTop = Math.floor(labelY);

@@ -24,18 +24,20 @@ import { navigateToRuntimeErrorFrameTarget } from './ide_debugger';
 import { focusRuntimeErrorOverlay } from './runtime_error_navigation';
 import { toggleProblemsPanel } from './problems_panel';
 import { point_in_rect } from '../../utils/rect_operations';
-import { applyInlineFieldEditing, getFieldText } from './inline_text_field';
-import { setEditorCaseInsensitivity } from './text_renderer';
+import { applyInlineFieldEditing } from './inline_text_field';
+import { setEditorCaseInsensitivity } from './render/text_renderer';
 import { computeRuntimeErrorOverlayGeometry, resolveRuntimeErrorOverlayAnchor, computeRuntimeErrorOverlayLayout, findRuntimeErrorOverlayLineAtPosition, RuntimeErrorOverlayClickResult } from './render/render_error_overlay';
 import { rebuildRuntimeErrorOverlayView, buildRuntimeErrorOverlayCopyText } from './runtime_error_overlay';
 import * as constants from './constants';
 import { RuntimeDebuggerCommandExecutor } from './ide_debugger';
 import { toggleBreakpointForEditorRow } from './ide_debugger';
-import { buildEditorContextMenuEntries, buildIncomingCallHierarchyView } from './code_reference';
+import { buildEditorContextMenuEntries, buildIncomingCallHierarchyView } from './reference_navigation';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from './render/render_context_menu';
 import { listResources } from '../workspace';
+import { Runtime } from '../runtime';
 import { prepareSemanticWorkspaceForEditorBuffer } from './semantic_workspace_sync';
-import { getTextSnapshot, splitText } from './text/source_text';
+import { createLuaSemanticFrontendFromSnapshot } from './semantic_workspace';
+import { getTextSnapshot, splitText, textFromLines } from './text/source_text';
 
 export const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
 export const MENU_COMMANDS = [
@@ -1676,13 +1678,16 @@ function executeEditorContextMenuAction(action: EditorContextMenuAction, token: 
 			}
 			const path = context.descriptor.path;
 			const source = getTextSnapshot(ide_state.buffer);
-			prepareSemanticWorkspaceForEditorBuffer({
+			const snapshot = prepareSemanticWorkspaceForEditorBuffer({
 				path,
 				source,
 				lines: splitText(source),
 				version: ide_state.textVersion,
 			});
-			const resolution = ide_state.semanticWorkspace.findReferencesByPosition(path, token.row + 1, token.startColumn + 1);
+			const frontend = createLuaSemanticFrontendFromSnapshot(snapshot, {
+				extraGlobalNames: Array.from(Runtime.instance.interpreter.globalEnvironment.keys()),
+			});
+			const resolution = frontend.findReferencesByPosition(path, token.row + 1, token.startColumn + 1);
 			if (!resolution) {
 				ide_state.showMessage(`Definition not found for ${token.expression ?? token.text}`, constants.COLOR_STATUS_WARNING, 1.8);
 				return;
@@ -1707,7 +1712,7 @@ function executeEditorContextMenuAction(action: EditorContextMenuAction, token: 
 			}
 			allowedPaths.add(path);
 			const view = buildIncomingCallHierarchyView({
-				workspace: ide_state.semanticWorkspace,
+				snapshot,
 				rootSymbolId: resolution.id,
 				rootExpression: expression,
 				allowedPaths,
@@ -1890,7 +1895,7 @@ export function handleSymbolSearchInput(): void {
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	ide_state.symbolSearchQuery = getFieldText(ide_state.symbolSearchField);
+	ide_state.symbolSearchQuery = textFromLines(ide_state.symbolSearchField.lines);
 	if (textChanged) {
 		updateSymbolSearchMatches();
 	}
@@ -1962,7 +1967,7 @@ export function handleResourceSearchInput(): void {
 		characterFilter: undefined,
 		maxLength: null,
 	});
-	ide_state.resourceSearchQuery = getFieldText(ide_state.resourceSearchField);
+	ide_state.resourceSearchQuery = textFromLines(ide_state.resourceSearchField.lines);
 	if (textChanged) {
 		if (ide_state.resourceSearchQuery.startsWith('@')) {
 			const query = ide_state.resourceSearchQuery.slice(1).trimStart();
@@ -2085,7 +2090,7 @@ export function handleSearchInput(): void {
 		maxLength: null,
 	});
 
-	ide_state.searchQuery = getFieldText(ide_state.searchField);
+	ide_state.searchQuery = textFromLines(ide_state.searchField.lines);
 	if (textChanged) {
 		onSearchQueryChanged();
 	}
@@ -2116,7 +2121,7 @@ export function handleLineJumpInput(): void {
 		characterFilter: digitFilter,
 		maxLength: 6,
 	});
-	ide_state.lineJumpValue = getFieldText(ide_state.lineJumpField);
+	ide_state.lineJumpValue = textFromLines(ide_state.lineJumpField.lines);
 	if (textChanged) {
 		// keep value in sync; no additional processing required
 	}
