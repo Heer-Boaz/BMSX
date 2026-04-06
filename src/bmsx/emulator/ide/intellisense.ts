@@ -168,6 +168,7 @@ export function getKeywordCompletions(): LuaCompletionItem[] {
 }
 
 let cachedApiCompletionData: { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } | null = null;
+let cachedProjectSemanticFrontend: { workspaceVersion: number; frontend: ReturnType<typeof buildLuaSemanticFrontend> } = null;
 
 export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } {
 	if (cachedApiCompletionData) {
@@ -699,23 +700,63 @@ export function resolveSemanticDefinitionLocation(
 	usageRow: number,
 	usageColumn: number,
 ): LuaDefinitionLocation {
+	const frontend = getProjectSemanticFrontendForEditorBuffer(context);
+	const hoverPath = context.descriptor.path;
+	const file = frontend.files.get(hoverPath);
+	if (!file) {
+		return null;
+	}
+	const target = file.getNavigationTargetAt({ line: usageRow, column: usageColumn });
+	if (!target) {
+		return null;
+	}
+	return buildDefinitionLocationFromRange(target.range);
+}
+
+function getProjectSemanticFrontendForEditorBuffer(context: CodeTabContext): ReturnType<typeof buildLuaSemanticFrontend> {
 	const hoverPath = context.descriptor.path;
 	const source = getTextSnapshot(ide_state.buffer);
-	prepareSemanticWorkspaceForEditorBuffer({
+	const workspace = prepareSemanticWorkspaceForEditorBuffer({
 		path: hoverPath,
 		source,
 		lines: splitText(source),
 		version: ide_state.textVersion,
 	});
-	const workspaceSymbol = ide_state.semanticWorkspace.symbolAt(hoverPath, usageRow, usageColumn);
-	if (!workspaceSymbol) {
-		return null;
+	const workspaceVersion = workspace.version;
+	if (cachedProjectSemanticFrontend && cachedProjectSemanticFrontend.workspaceVersion === workspaceVersion) {
+		return cachedProjectSemanticFrontend.frontend;
 	}
-	return buildDefinitionLocationFromRange({
-		path: workspaceSymbol.decl.file,
-		start: workspaceSymbol.decl.range.start,
-		end: workspaceSymbol.decl.range.end,
+	const files = workspace.listFiles();
+	const sources = new Array(files.length);
+	for (let index = 0; index < files.length; index += 1) {
+		const path = files[index];
+		const data = workspace.getFileData(path);
+		const parseEntry = getCachedLuaParse({
+			path,
+			source: data.source,
+			lines: data.lines,
+			withSyntaxError: false,
+			canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
+		});
+		sources[index] = {
+			path,
+			source: data.source,
+			lines: data.lines,
+			parsed: parseEntry.parsed,
+			chunk: parseEntry.parsed.chunk,
+			analysis: data,
+		};
+	}
+	const frontend = buildLuaSemanticFrontend(sources, {
+		workspace,
+		canonicalization: ide_state.caseInsensitive ? ide_state.canonicalization : 'none',
+		extraGlobalNames: Array.from(Runtime.instance.interpreter.globalEnvironment.keys()),
 	});
+	cachedProjectSemanticFrontend = {
+		workspaceVersion,
+		frontend,
+	};
+	return frontend;
 }
 
 export function findDefinitionAtPosition(
@@ -1071,27 +1112,31 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 }
 
 export function refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext): void {
+	const path = context.descriptor.path;
+	const semanticDefinition = resolveSemanticDefinitionLocation(context, row + 1, column + 1);
 	const token = extractHoverExpression(row, column);
-	if (!token) {
+	if (!semanticDefinition && !token) {
 		clearGotoHoverHighlight();
 		return;
 	}
+	const highlightStart = token ? token.startColumn : column;
+	const highlightEnd = token ? token.endColumn : column;
+	const highlightExpression = token ? token.expression : '';
 	const existing = ide_state.gotoHoverHighlight;
 	if (existing
 		&& existing.row === row
 		&& column >= existing.startColumn
 		&& column <= existing.endColumn
-		&& existing.expression === token.expression) {
+		&& existing.expression === highlightExpression) {
 		return;
 	}
-	const path = context.descriptor.path;
-	let definition = resolveSemanticDefinitionLocation(context, row + 1, token.startColumn + 1);
+	let definition = semanticDefinition;
 	if (!definition) {
 		const inspection = safeInspectLuaExpression({
 			expression: token.expression,
 			path,
 			row: row + 1,
-			column: token.startColumn + 1,
+			column: column + 1,
 		});
 		definition = inspection?.definition;
 	}
@@ -1101,9 +1146,9 @@ export function refreshGotoHoverHighlight(row: number, column: number, context: 
 	}
 	ide_state.gotoHoverHighlight = {
 		row,
-		startColumn: token.startColumn,
-		endColumn: token.endColumn,
-		expression: token.expression,
+		startColumn: highlightStart,
+		endColumn: highlightEnd,
+		expression: highlightExpression,
 	};
 }
 
@@ -1117,19 +1162,23 @@ export function clearReferenceHighlights(): void {
 
 export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	const context = getActiveCodeTabContext();
+	let definition = resolveSemanticDefinitionLocation(context, row + 1, column + 1);
+	if (definition) {
+		navigateToLuaDefinition(definition);
+		return true;
+	}
 	const token = extractHoverExpression(row, column);
 	if (!token) {
 		ide_state.showMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
 		return false;
 	}
 	const path = context.descriptor.path;
-	let definition = resolveSemanticDefinitionLocation(context, row + 1, token.startColumn + 1);
 	if (!definition) {
 		const inspection = safeInspectLuaExpression({
 			expression: token.expression,
 			path,
 			row: row + 1,
-			column: token.startColumn + 1,
+			column: column + 1,
 		});
 		definition = inspection?.definition;
 	}

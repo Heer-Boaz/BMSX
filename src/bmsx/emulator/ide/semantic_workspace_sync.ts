@@ -5,7 +5,6 @@ import { LuaSemanticWorkspace, type FileSemanticData } from './semantic_model';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { splitText } from './text/source_text';
-import { $ } from '../../core/engine_core';
 
 export type SemanticWorkspacePathInput = {
 	path: string;
@@ -77,19 +76,22 @@ export function primeSemanticWorkspaceProjectSources(workspace: LuaSemanticWorks
 		return workspace;
 	}
 	const runtime = Runtime.instance;
-	const path2lua = runtime.cartLuaSources ? runtime.cartLuaSources.path2lua : $.lua_sources.path2lua;
-	for (const path in path2lua) {
-		const cacheEntry = runtime.pathSemanticCache.get(path);
-		const source = cacheEntry ? cacheEntry.source : runtimeLuaPipeline.resourceSourceForChunk(runtime, path);
-		const existing = workspace.getFileData(path);
-		if (existing && existing.source === source) {
-			continue;
+	const registries = runtimeLuaPipeline.listLuaSourceRegistries(runtime);
+	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
+		const path2lua = registries[registryIndex]!.registry.path2lua;
+		for (const path in path2lua) {
+			const cacheEntry = runtime.pathSemanticCache.get(path);
+			const source = cacheEntry ? cacheEntry.source : runtimeLuaPipeline.resourceSourceForChunk(runtime, path);
+			const existing = workspace.getFileData(path);
+			if (existing && existing.source === source) {
+				continue;
+			}
+			const lines = cacheEntry?.lines ?? splitText(source);
+			const parsed = cacheEntry?.parsed;
+			workspace.updateFile(path, source, lines, parsed, undefined, ide_state.caseInsensitive ? ide_state.canonicalization : 'none');
+			const data = workspace.getFileData(path);
+			cacheSemanticAnalysis(path, source, data, parsed);
 		}
-		const lines = cacheEntry?.lines ?? splitText(source);
-		const parsed = cacheEntry?.parsed;
-		workspace.updateFile(path, source, lines, parsed, undefined, ide_state.caseInsensitive ? ide_state.canonicalization : 'none');
-		const data = workspace.getFileData(path);
-		cacheSemanticAnalysis(path, source, data, parsed);
 	}
 	primedProjectWorkspace = workspace;
 	return workspace;

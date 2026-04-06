@@ -1,10 +1,12 @@
 import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
-import type { LuaChunk, LuaSourceRange } from '../lua/syntax/lua_ast';
+import { LuaSyntaxKind, type LuaCallExpression, type LuaChunk, type LuaIdentifierExpression, type LuaSourcePosition, type LuaSourceRange, type LuaStringLiteralExpression } from '../lua/syntax/lua_ast';
+import { LuaTokenType } from '../lua/syntax/luatoken';
 import type { CanonicalizationType } from '../rompack/rompack';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from './types';
 import type { ParsedLuaChunk } from './ide/lua/lua_parse';
 import { getCachedLuaParse } from './ide/lua/lua_analysis_cache';
 import { type Decl, type FileSemanticData, type Ref, LuaSemanticWorkspace } from './ide/semantic_model';
+import { buildModuleAliasesFromPaths } from './program_asset';
 import {
 	computeLuaDiagnosticsFromAnalysis,
 	getDefaultLuaBuiltinDescriptors,
@@ -44,10 +46,17 @@ export type LuaBoundReference = {
 	isImplicitGlobal: boolean;
 };
 
+export type LuaSemanticNavigationTarget = {
+	kind: 'declaration' | 'require_module';
+	range: LuaSourceRange;
+	moduleName?: string;
+};
+
 export type LuaSemanticFrontendFile = {
 	diagnostics: readonly LuaStaticDiagnostic[];
 	getDeclaration(range: LuaSourceRange): Decl;
 	getReference(range: LuaSourceRange): LuaBoundReference;
+	getNavigationTargetAt(position: LuaSourcePosition): LuaSemanticNavigationTarget;
 	findFirstReferenceByStartRange(
 		start: LuaSourceRange['start'],
 		endExclusive: LuaSourceRange['start'],
@@ -67,6 +76,7 @@ type PreparedSource = {
 	path: string;
 	chunk: LuaChunk;
 	analysis: FileSemanticData;
+	parsed: ParsedLuaChunk;
 };
 
 export function buildLuaSemanticFrontend(
@@ -79,14 +89,25 @@ export function buildLuaSemanticFrontend(
 	const apiSignatures = options.apiSignatures ?? getStaticLuaApiSignatureMap();
 	const canonicalize = createIdentifierCanonicalizer(canonicalization);
 	const preparedSources: PreparedSource[] = [];
+	const sourceByPath = new Map<string, PreparedSource>();
 	for (let index = 0; index < sources.length; index += 1) {
 		const source = sources[index];
 		if (source.analysis && source.chunk) {
-			preparedSources.push({
+			const prepared = {
 				path: source.path,
 				chunk: source.chunk,
 				analysis: source.analysis,
-			});
+				parsed: source.parsed ?? getCachedLuaParse({
+					path: source.path,
+					source: source.source,
+					lines: source.lines,
+					version: source.version,
+					withSyntaxError: true,
+					canonicalization,
+				}).parsed,
+			};
+			preparedSources.push(prepared);
+			sourceByPath.set(prepared.path, prepared);
 			continue;
 		}
 		const parseEntry = getCachedLuaParse({
@@ -102,14 +123,18 @@ export function buildLuaSemanticFrontend(
 			throw new Error(`[LuaSemanticFrontend] Syntax error in ${source.path}: ${parseEntry.syntaxError.message}`);
 		}
 		workspace.updateFile(source.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, source.version, canonicalization);
-		preparedSources.push({
+		const prepared = {
 			path: source.path,
 			chunk: parseEntry.parsed.chunk,
 			analysis: workspace.getFileData(source.path),
-		});
+			parsed: parseEntry.parsed,
+		};
+		preparedSources.push(prepared);
+		sourceByPath.set(prepared.path, prepared);
 	}
 	const globalSymbols = buildCombinedGlobalSymbols(workspace.listGlobalDecls(), options.externalGlobalSymbols);
 	const knownGlobalNames = buildKnownGlobalNameSet(globalSymbols, builtinDescriptors, apiSignatures, canonicalize, options.extraGlobalNames);
+	const moduleTargetsByAlias = buildModuleTargetAliasMap(preparedSources, canonicalize);
 	const files = new Map<string, LuaSemanticFrontendFile>();
 	for (let index = 0; index < preparedSources.length; index += 1) {
 		const source = preparedSources[index];
@@ -122,7 +147,7 @@ export function buildLuaSemanticFrontend(
 			canonicalize,
 			extraGlobalNames: options.extraGlobalNames,
 		});
-		files.set(source.path, createBoundFile(source, workspace, diagnostics, knownGlobalNames, canonicalize));
+		files.set(source.path, createBoundFile(source, workspace, diagnostics, knownGlobalNames, moduleTargetsByAlias, sourceByPath, canonicalize));
 	}
 	return {
 		files,
@@ -141,11 +166,14 @@ function createBoundFile(
 	workspace: LuaSemanticWorkspace,
 	diagnostics: readonly LuaStaticDiagnostic[],
 	knownGlobalNames: ReadonlySet<string>,
+	moduleTargetsByAlias: ReadonlyMap<string, string>,
+	sourceByPath: ReadonlyMap<string, PreparedSource>,
 	canonicalize: (value: string) => string,
 ): LuaSemanticFrontendFile {
 	const decls = source.analysis.decls;
 	const refsByStart = source.analysis.refs.map(ref => classifyReference(ref, workspace, knownGlobalNames, canonicalize));
 	refsByStart.sort((left, right) => comparePosition(left.ref.range.start, right.ref.range.start));
+	const requireTargetsByStart = collectRequireNavigationTargets(source, moduleTargetsByAlias, sourceByPath, canonicalize);
 	const declarationsByRange = new Map<string, Decl>();
 	const declarationsByStart = new Map<string, Decl>();
 	const referencesByRange = new Map<string, LuaBoundReference>();
@@ -178,6 +206,42 @@ function createBoundFile(
 				?? referencesByStart.get(buildStartKey(range))
 				?? null;
 		},
+		getNavigationTargetAt(position: LuaSourcePosition): LuaSemanticNavigationTarget {
+			for (let index = 0; index < decls.length; index += 1) {
+				const decl = decls[index];
+				if (positionInRange(position, decl.range)) {
+					return {
+						kind: 'declaration',
+						range: decl.range,
+					};
+				}
+			}
+			for (let index = 0; index < refsByStart.length; index += 1) {
+				const reference = refsByStart[index];
+				if (!positionInRange(position, reference.ref.range)) {
+					continue;
+				}
+				if (!reference.decl) {
+					return null;
+				}
+				return {
+					kind: 'declaration',
+					range: reference.decl.range,
+				};
+			}
+			for (let index = 0; index < requireTargetsByStart.length; index += 1) {
+				const target = requireTargetsByStart[index];
+				if (!positionInRange(position, target.range)) {
+					continue;
+				}
+				return {
+					kind: 'require_module',
+					range: target.target,
+					moduleName: target.moduleName,
+				};
+			}
+			return null;
+		},
 		findFirstReferenceByStartRange(
 			start: LuaSourceRange['start'],
 			endExclusive: LuaSourceRange['start'],
@@ -195,6 +259,107 @@ function createBoundFile(
 			return startIndex < endIndex ? refsByStart[endIndex - 1] : null;
 		},
 	};
+}
+
+type LuaRequireNavigationTarget = {
+	range: LuaSourceRange;
+	moduleName: string;
+	target: LuaSourceRange;
+};
+
+function collectRequireNavigationTargets(
+	source: PreparedSource,
+	moduleTargetsByAlias: ReadonlyMap<string, string>,
+	sourceByPath: ReadonlyMap<string, PreparedSource>,
+	canonicalize: (value: string) => string,
+): LuaRequireNavigationTarget[] {
+	const targets: LuaRequireNavigationTarget[] = [];
+	for (let index = 0; index < source.analysis.callExpressions.length; index += 1) {
+		const callExpression = source.analysis.callExpressions[index];
+		const requireArgument = tryExtractRequireStringArgument(callExpression, canonicalize);
+		if (!requireArgument) {
+			continue;
+		}
+		const moduleName = requireArgument.value;
+		const targetPath = moduleTargetsByAlias.get(moduleName) ?? moduleTargetsByAlias.get(canonicalize(moduleName));
+		if (!targetPath) {
+			continue;
+		}
+		const targetSource = sourceByPath.get(targetPath);
+		if (!targetSource) {
+			continue;
+		}
+		targets.push({
+			range: resolveStringLiteralNavigationRange(source, requireArgument),
+			moduleName,
+			target: targetSource.chunk.range,
+		});
+	}
+	targets.sort((left, right) => comparePosition(left.range.start, right.range.start));
+	return targets;
+}
+
+function tryExtractRequireStringArgument(
+	callExpression: LuaCallExpression,
+	canonicalize: (value: string) => string,
+): LuaStringLiteralExpression {
+	if (callExpression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
+		return null;
+	}
+	if (canonicalize((callExpression.callee as LuaIdentifierExpression).name) !== canonicalize('require')) {
+		return null;
+	}
+	if (callExpression.arguments.length === 0) {
+		return null;
+	}
+	const firstArgument = callExpression.arguments[0];
+	if (firstArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		return null;
+	}
+	return firstArgument as LuaStringLiteralExpression;
+}
+
+function resolveStringLiteralNavigationRange(
+	source: PreparedSource,
+	literal: LuaStringLiteralExpression,
+): LuaSourceRange {
+	for (let index = 0; index < source.parsed.tokens.length; index += 1) {
+		const token = source.parsed.tokens[index];
+		if (token.type !== LuaTokenType.String) {
+			continue;
+		}
+		if (token.line !== literal.range.start.line || token.column !== literal.range.start.column) {
+			continue;
+		}
+		return {
+			path: literal.range.path,
+			start: literal.range.start,
+			end: {
+				line: token.line,
+				column: token.column + token.lexeme.length - 1,
+			},
+		};
+	}
+	return literal.range;
+}
+
+function buildModuleTargetAliasMap(
+	sources: readonly PreparedSource[],
+	canonicalize: (value: string) => string,
+): Map<string, string> {
+	const aliases = new Map<string, string>();
+	const entries = buildModuleAliasesFromPaths(sources.map(source => source.path));
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
+		if (!aliases.has(entry.alias)) {
+			aliases.set(entry.alias, entry.path);
+		}
+		const canonicalAlias = canonicalize(entry.alias);
+		if (!aliases.has(canonicalAlias)) {
+			aliases.set(canonicalAlias, entry.path);
+		}
+	}
+	return aliases;
 }
 
 function classifyReference(
@@ -355,6 +520,14 @@ function comparePosition(
 		return left.line - right.line;
 	}
 	return left.column - right.column;
+}
+
+function positionInRange(
+	position: LuaSourcePosition,
+	range: LuaSourceRange,
+): boolean {
+	return comparePosition(position, range.start) >= 0
+		&& comparePosition(position, range.end) <= 0;
 }
 
 function lowerBoundReferenceStart(

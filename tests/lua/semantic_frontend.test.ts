@@ -90,3 +90,93 @@ test('LuaSemanticFrontend does not bind method self to an out-of-scope sibling l
 	});
 	assert.equal(ref.kind, 'unresolved');
 });
+
+test('LuaSemanticFrontend resolves navigation targets by lexical scope instead of first textual occurrence', () => {
+	const source = [
+		'local value = 1',
+		'local function outer()',
+		'\tlocal value = 2',
+		'\treturn value',
+		'end',
+		'return value',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'scope.lua', source }]);
+	const file = frontend.getFile('scope.lua');
+	const innerTarget = file.getNavigationTargetAt(findPosition(source, '\treturn value', 'value'));
+	assert.deepEqual(innerTarget.range, {
+		path: 'scope.lua',
+		start: { line: 3, column: 8 },
+		end: { line: 3, column: 12 },
+	});
+	const outerTarget = file.getNavigationTargetAt({ line: 6, column: 8 });
+	assert.deepEqual(outerTarget.range, {
+		path: 'scope.lua',
+		start: { line: 1, column: 7 },
+		end: { line: 1, column: 11 },
+	});
+});
+
+test('LuaSemanticFrontend keeps ordinary strings and comments out of identifier navigation', () => {
+	const source = [
+		'local target = 1',
+		'-- target',
+		'local text = "target"',
+		'return target',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'literals.lua', source }]);
+	const file = frontend.getFile('literals.lua');
+	assert.equal(file.getNavigationTargetAt(findPosition(source, '-- target', 'target')), null);
+	assert.equal(file.getNavigationTargetAt(findPosition(source, 'local text = "target"', 'target')), null);
+	const liveTarget = file.getNavigationTargetAt(findPosition(source, 'return target', 'target'));
+	assert.deepEqual(liveTarget.range, {
+		path: 'literals.lua',
+		start: { line: 1, column: 7 },
+		end: { line: 1, column: 12 },
+	});
+});
+
+test('LuaSemanticFrontend resolves require strings to their target module files', () => {
+	const entrySource = [
+		'local util<const> = require("lib/util")',
+		'return util',
+	].join('\n');
+	const utilSource = [
+		'local M = {}',
+		'return M',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([
+		{ path: 'main.lua', source: entrySource },
+		{ path: 'lib/util.lua', source: utilSource },
+	]);
+	const file = frontend.getFile('main.lua');
+	const target = file.getNavigationTargetAt(findPosition(entrySource, 'require("lib/util")', 'lib/util'));
+	assert.deepEqual(target, {
+		kind: 'require_module',
+		moduleName: 'lib/util',
+		range: {
+			path: 'lib/util.lua',
+			start: { line: 1, column: 1 },
+			end: { line: 2, column: 9 },
+		},
+	});
+});
+
+function findPosition(source: string, lineFragment: string, needle: string): { line: number; column: number } {
+	const lines = source.split('\n');
+	for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+		const line = lines[lineIndex];
+		const fragmentIndex = line.indexOf(lineFragment);
+		if (fragmentIndex === -1) {
+			continue;
+		}
+		const needleIndex = line.indexOf(needle, fragmentIndex);
+		if (needleIndex === -1) {
+			break;
+		}
+		return {
+			line: lineIndex + 1,
+			column: needleIndex + 1,
+		};
+	}
+	throw new Error(`Unable to find '${needle}' inside '${lineFragment}'.`);
+}
