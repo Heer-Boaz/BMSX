@@ -1,28 +1,20 @@
 import { $ } from '../../core/engine_core';
-import { completionController, setCompletionContextSource, type CompletionContextSource } from './completion_controller';
+import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
 import { createEntryTabContext, initializeTabs } from './editor_tabs';
-import { getActiveCodeTabContext } from './editor_tabs';
 import { createInlineTextField } from './inline_text_field';
 import { Scrollbar, ScrollbarController } from './scrollbar';
 import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './ide_input';
 import { ide_state } from './ide_state';
-import * as TextEditing from './text_editing_and_selection';
-import { revealCursor, updateDesiredColumn } from './caret';
-import { resetBlink } from './render/render_caret';
 import { initializeDebuggerUiState } from './ide_debugger';
 import { initializeWorkspaceStorage } from './workspace_storage';
 import { Runtime } from '../runtime';
 import { renameController } from './rename_controller';
 import { resetSemanticWorkspace } from './semantic_workspace_sync';
 import { assertMonospace } from './text_utils';
-import { measureText } from './text_utils';
-import { drawEditorText } from './render/text_renderer';
 import { intellisenseUiReady, shouldAutoTriggerCompletions } from './intellisense';
 import * as constants from './constants';
-import { clamp } from '../../utils/clamp';
-import type { ModuleAliasEntry } from './semantic_model';
 import type { Viewport } from '../../rompack/rompack';
 import {
 	applyViewportSize,
@@ -31,66 +23,9 @@ import {
 } from './editor_view';
 import { applyLineJumpFieldText, applyResourceSearchFieldText, applySymbolSearchFieldText } from './search_bars';
 import { applyCreateResourceFieldText } from './create_resource';
-import { getActiveSemanticDefinitions, getLuaModuleAliases } from './diagnostics_controller';
 import { applySearchFieldText } from './editor_search';
 import { createNavigationEntry } from './navigation_history';
-import { prepareUndo } from './undo_controller';
-
-const editorCompletionContext: CompletionContextSource = {
-	isCompletionReady: () => intellisenseUiReady(),
-	shouldAutoTriggerCompletions: () => shouldAutoTriggerCompletions(),
-	getBuffer: () => ide_state.buffer,
-	getCursorPosition: () => ({ row: ide_state.cursorRow, column: ide_state.cursorColumn }),
-	getTextVersion: () => ide_state.textVersion,
-	getCursorScreenInfo: () => ide_state.cursorScreenInfo,
-	getLineHeight: () => ide_state.lineHeight,
-	getFont: () => ide_state.font,
-	measureText: (value: string): number => measureText(value),
-	drawText: (font, text, x, y, color): void => drawEditorText(font, text, x, y, undefined, color),
-	getActivePath: () => {
-		const context = getActiveCodeTabContext();
-		return context.descriptor.path;
-	},
-	getActiveSemanticDefinitions: () => getActiveSemanticDefinitions(),
-	getLuaModuleAliases: (path: string): Map<string, ModuleAliasEntry> => getLuaModuleAliases(path),
-	getCharAt: (row: number, column: number): string => TextEditing.charAt(row, column),
-	setCursorPosition: (row: number, column: number): void => {
-		const rowCount = ide_state.buffer.getLineCount();
-		const clampedRow = clamp(row, 0, Math.max(0, rowCount - 1));
-		const line = ide_state.buffer.getLineContent(clampedRow);
-		ide_state.cursorRow = clampedRow;
-		ide_state.cursorColumn = clamp(column, 0, line.length);
-	},
-	setSelectionAnchor: (anchor: { row: number; column: number }): void => {
-		const target = ide_state.selectionAnchor;
-		if (!target) {
-			ide_state.selectionAnchor = {
-				row: anchor.row,
-				column: anchor.column,
-			};
-			return;
-		}
-		target.row = anchor.row;
-		target.column = anchor.column;
-	},
-	prepareUndo: (): void => {
-		prepareUndo('completion', false);
-	},
-	replaceSelectionWithText: (text: string): void => {
-		TextEditing.replaceSelectionWith(text);
-	},
-	clampBufferPosition: (position: { row: number; column: number }): { row: number; column: number } => {
-		return ide_state.layout.clampBufferPosition(ide_state.buffer, position);
-	},
-	afterCompletionApplied: () => {
-		updateDesiredColumn();
-		resetBlink();
-		revealCursor();
-	},
-	clearSelectionAnchor: () => {
-		ide_state.selectionAnchor = null;
-	},
-};
+import { EditorCompletionContext } from './completion_context';
 
 export function initializeCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();
@@ -128,8 +63,10 @@ export function initializeCartEditor(viewport: Viewport): void {
 		resourceVertical: ide_state.scrollbars.resourceVertical,
 		resourceHorizontal: ide_state.scrollbars.resourceHorizontal,
 	});
-	setCompletionContextSource(editorCompletionContext);
-	ide_state.completion = completionController;
+	ide_state.completion = new CompletionController(new EditorCompletionContext(
+		() => intellisenseUiReady(),
+		() => shouldAutoTriggerCompletions(),
+	));
 	ide_state.completion.closeSession();
 	ide_state.completion.enterCommitsCompletion = false;
 	ide_state.input = new InputController();

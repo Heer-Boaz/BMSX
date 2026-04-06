@@ -28,43 +28,7 @@ import { consumeIdeKey } from './ide_input';
 import { point_in_rect } from '../../utils/rect_operations';
 import { LuaLexer } from '../../lua/syntax/lualexer';
 import { api } from '../overlay_api';
-import { EditorFont } from '../editor_font';
-import type { ModuleAliasEntry } from './semantic_model';
-import type { TextBuffer } from './text/text_buffer';
-
-type CompletionSourceCursorInfo = CursorScreenInfo;
-
-export type CompletionContextSource = {
-	isCompletionReady: () => boolean;
-	shouldAutoTriggerCompletions: () => boolean;
-	getBuffer: () => TextBuffer;
-	getCursorPosition: () => { row: number; column: number };
-	getTextVersion: () => number;
-	getCursorScreenInfo: () => CompletionSourceCursorInfo;
-	getLineHeight: () => number;
-	getFont: () => EditorFont;
-	measureText: (value: string) => number;
-	drawText: (font: EditorFont, text: string, x: number, y: number, color: number) => void;
-	getActivePath: () => string;
-	getActiveSemanticDefinitions: () => readonly LuaDefinitionInfo[];
-	getLuaModuleAliases: (path: string) => Map<string, ModuleAliasEntry>;
-	getCharAt: (row: number, column: number) => string;
-	setCursorPosition: (row: number, column: number) => void;
-	setSelectionAnchor: (anchor: { row: number; column: number }) => void;
-	prepareUndo: () => void;
-	replaceSelectionWithText: (text: string) => void;
-	clampBufferPosition: (position: { row: number; column: number }) => { row: number; column: number };
-	afterCompletionApplied: () => void;
-	clearSelectionAnchor: () => void;
-};
-
-let completionContextSource: CompletionContextSource | null = null;
-
-export function setCompletionContextSource(source: CompletionContextSource | null): CompletionContextSource | null {
-	const previous = completionContextSource;
-	completionContextSource = source;
-	return previous;
-}
+import type { CompletionContextSource } from './completion_context';
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;
@@ -76,11 +40,7 @@ type LocalCompletionCacheEntry = {
 const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
 
 export class CompletionController {
-	constructor() {}
-
-	private get source(): CompletionContextSource {
-		return completionContextSource as CompletionContextSource;
-	}
+	public constructor(private readonly source: CompletionContextSource) {}
 
 	private getLineHeightFromSource(): number {
 		return this.source.getLineHeight();
@@ -1585,5 +1545,3 @@ export class CompletionController {
 		return this.source.getActivePath();
 	}
 }
-
-export const completionController = new CompletionController();
