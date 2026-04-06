@@ -200,7 +200,8 @@ export function resolveRuntimeErrorOverlayAnchor(
 	const sliceEndDisplay = ide_state.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
 	const anchorDisplay = ide_state.layout.columnToDisplay(highlight, overlay.column);
 	const clampedAnchorDisplay = clamp(anchorDisplay, sliceStartDisplay, sliceEndDisplay);
-	const anchorX = textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedAnchorDisplay);
+	const advancePrefix = entry.advancePrefix;
+	const anchorX = textLeft + advancePrefix[clampedAnchorDisplay] - advancePrefix[sliceStartDisplay];
 	const rowTop = codeTop + relativeRow * ide_state.lineHeight;
 	return {
 		anchorX,

@@ -224,7 +224,10 @@ export function clampResourceViewerScroll(viewer: ResourceViewerState, bounds: R
 
 function appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
 	for (const entry of additions) {
-		target.push(...splitText(entry));
+		const parts = splitText(entry);
+		for (let index = 0; index < parts.length; index += 1) {
+			target.push(parts[index]);
+		}
 	}
 }
 

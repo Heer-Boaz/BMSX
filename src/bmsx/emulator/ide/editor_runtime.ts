@@ -15,8 +15,14 @@ import { renderCodeArea } from './render/render_code_area';
 import { renderStatusBar } from './render/render_status_bar';
 import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
 import { drawActionPromptOverlay } from './render/render_prompt';
-import { drawCreateResourceBar, drawLineJumpBar, drawRenameBar, drawSearchBar, drawSymbolSearchBar } from './render/render_input_bars';
-import { renderResourceSearchBar } from './render/render_inline_bars';
+import {
+	renderCreateResourceBar,
+	renderLineJumpBar,
+	renderRenameBar,
+	renderSearchBar,
+	renderSymbolSearchBar,
+	renderResourceSearchBar,
+} from './render/render_inline_bars';
 import { renderRuntimeFaultOverlay } from './render/render_error_overlay';
 import { handleActionPromptInput, handleEditorInput, handlePointerWheel, handleTextEditorPointerInput } from './ide_input';
 import { updateBlink } from './inline_text_field';
@@ -92,12 +98,12 @@ export function draw(): void {
 	if (isResourceViewActive()) {
 		drawResourceViewer();
 	} else {
-		drawCreateResourceBar();
-		drawSearchBar();
+		renderCreateResourceBar();
+		renderSearchBar();
 		renderResourceSearchBar();
-		drawSymbolSearchBar();
-		drawRenameBar();
-		drawLineJumpBar();
+		renderSymbolSearchBar();
+		renderRenameBar();
+		renderLineJumpBar();
 		renderCodeArea();
 	}
 	drawProblemsPanel();

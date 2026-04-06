@@ -556,8 +556,9 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	const endDisplay = ide_state.layout.columnToDisplay(highlight, tooltip.endColumn);
 	const clampedStartDisplay = clamp(startDisplay, sliceStartDisplay, sliceEndDisplay);
 	const clampedEndDisplay = clamp(endDisplay, clampedStartDisplay, sliceEndDisplay);
-	const expressionStartX = textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
-	const expressionEndX = textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
+	const advancePrefix = entry.advancePrefix;
+	const expressionStartX = textLeft + advancePrefix[clampedStartDisplay] - advancePrefix[sliceStartDisplay];
+	const expressionEndX = textLeft + advancePrefix[clampedEndDisplay] - advancePrefix[sliceStartDisplay];
 	const maxVisible = Math.max(1, Math.min(constants.HOVER_TOOLTIP_MAX_VISIBLE_LINES, content.length));
 	const maxOffset = Math.max(0, content.length - maxVisible);
 	tooltip.scrollOffset = clamp(tooltip.scrollOffset, 0, maxOffset);
@@ -2467,7 +2468,6 @@ export function processInlineFieldPointer(field: TextField, textLeft: number, po
 		pointerX,
 		justPressed,
 		pointerPressed,
-		now: () => $.platform.clock.now(),
 		doubleClickInterval: constants.DOUBLE_CLICK_MAX_INTERVAL_MS,
 	});
 	if (result.requestBlinkReset) {

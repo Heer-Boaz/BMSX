@@ -15,7 +15,6 @@ export type InlineFieldMetrics = {
 };
 
 const scratchPosition: Position = { row: 0, column: 0 };
-const scratchSelectionRange: { start: number; end: number } = { start: 0, end: 0 };
 
 const positionToOffset = (lines: string[], row: number, column: number): number => {
 	let offset = 0;
@@ -55,6 +54,12 @@ const clampRowColumn = (field: TextField, row: number, column: number): Position
 	scratchPosition.column = clamp(column, 0, line.length);
 	return scratchPosition;
 };
+
+const charAdvance = (metrics: InlineFieldMetrics, ch: string): number => (
+	ch === '\t'
+		? metrics.spaceAdvance * metrics.tabSpaces
+		: metrics.advanceChar(ch)
+);
 
 const setSelectionAnchorPosition = (field: TextField, row: number, column: number): void => {
 	const anchor = field.selectionAnchor;
@@ -124,7 +129,7 @@ export function setCursorFromOffset(field: TextField, offset: number): void {
 	field.desiredColumn = field.cursorColumn;
 }
 
-export function selectionAnchorOffset(field: TextField): number {
+export function selectionAnchorOffset(field: TextField): number | null {
 	if (!field.selectionAnchor) {
 		return null;
 	}
@@ -132,40 +137,99 @@ export function selectionAnchorOffset(field: TextField): number {
 }
 
 export function setSelectionAnchorFromOffset(field: TextField, offset: number): void {
-	if (offset === null) {
-		field.selectionAnchor = null;
-		return;
-	}
 	const length = totalLength(field);
 	const clamped = clamp(offset, 0, length);
 	offsetToPosition(field.lines, clamped, scratchPosition);
 	setSelectionAnchorPosition(field, scratchPosition.row, scratchPosition.column);
 }
 
+export type InlineFieldDecoration = {
+	hasSelection: boolean;
+	selectionLeft: number;
+	selectionWidth: number;
+	caretBaseX: number;
+};
+
+const scratchInlineFieldDecoration: InlineFieldDecoration = {
+	hasSelection: false,
+	selectionLeft: 0,
+	selectionWidth: 0,
+	caretBaseX: 0,
+};
+
+export function measureInlineFieldDecoration(field: TextField, metrics: InlineFieldMetrics, textLeft: number, out: InlineFieldDecoration = scratchInlineFieldDecoration): InlineFieldDecoration {
+	const cursor = cursorOffset(field);
+	const anchor = selectionAnchorOffset(field);
+	const hasSelection = anchor !== null && anchor !== cursor;
+	const selectionStart = hasSelection && anchor < cursor ? anchor : cursor;
+	const selectionEnd = hasSelection && anchor > cursor ? anchor : cursor;
+
+	let offset = 0;
+	let width = 0;
+	let selectionStartWidth = 0;
+	let selectionEndWidth = 0;
+	let selectionStartCaptured = selectionStart === 0;
+	let selectionEndCaptured = selectionEnd === 0;
+
+	for (let row = 0; row < field.lines.length; row += 1) {
+		const line = field.lines[row];
+		for (let index = 0; index < line.length; index += 1) {
+			if (!selectionStartCaptured && offset === selectionStart) {
+				selectionStartWidth = width;
+				selectionStartCaptured = true;
+			}
+			if (!selectionEndCaptured && offset === selectionEnd) {
+				selectionEndWidth = width;
+				selectionEndCaptured = true;
+			}
+			width += charAdvance(metrics, line.charAt(index));
+			offset += 1;
+		}
+		if (!selectionStartCaptured && offset === selectionStart) {
+			selectionStartWidth = width;
+			selectionStartCaptured = true;
+		}
+		if (!selectionEndCaptured && offset === selectionEnd) {
+			selectionEndWidth = width;
+			selectionEndCaptured = true;
+		}
+		if (selectionStartCaptured && selectionEndCaptured) {
+			break;
+		}
+		if (row < field.lines.length - 1) {
+			offset += 1;
+			if (!selectionStartCaptured && offset === selectionStart) {
+				selectionStartWidth = width;
+				selectionStartCaptured = true;
+			}
+			if (!selectionEndCaptured && offset === selectionEnd) {
+				selectionEndWidth = width;
+				selectionEndCaptured = true;
+			}
+			if (selectionStartCaptured && selectionEndCaptured) {
+				break;
+			}
+		}
+	}
+
+	if (!selectionStartCaptured) {
+		selectionStartWidth = width;
+	}
+	if (!selectionEndCaptured) {
+		selectionEndWidth = width;
+	}
+
+	out.hasSelection = hasSelection;
+	out.selectionLeft = textLeft + selectionStartWidth;
+	out.selectionWidth = hasSelection ? selectionEndWidth - selectionStartWidth : 0;
+	out.caretBaseX = textLeft + (cursor === selectionStart ? selectionStartWidth : selectionEndWidth);
+	return out;
+}
+
 export function clampCursor(field: TextField): void {
 	const clamped = clampRowColumn(field, field.cursorRow, field.cursorColumn);
 	field.cursorRow = clamped.row;
 	field.cursorColumn = clamped.column;
-}
-
-export function selectionRange(field: TextField): { start: number; end: number } {
-	const anchor = field.selectionAnchor;
-	if (!anchor) {
-		return null;
-	}
-	const start = positionToOffset(field.lines, anchor.row, anchor.column);
-	const end = cursorOffset(field);
-	if (start === end) {
-		return null;
-	}
-	if (start < end) {
-		scratchSelectionRange.start = start;
-		scratchSelectionRange.end = end;
-		return scratchSelectionRange;
-	}
-	scratchSelectionRange.start = end;
-	scratchSelectionRange.end = start;
-	return scratchSelectionRange;
 }
 
 export function clampSelectionAnchor(field: TextField): void {
@@ -177,24 +241,34 @@ export function clampSelectionAnchor(field: TextField): void {
 }
 
 export function deleteSelection(field: TextField): boolean {
-	const range = selectionRange(field);
-	if (!range) {
+	const anchorOffset = selectionAnchorOffset(field);
+	if (anchorOffset === null) {
 		return false;
 	}
+	const cursorOffsetValue = cursorOffset(field);
+	if (anchorOffset === cursorOffsetValue) {
+		return false;
+	}
+	const start = anchorOffset < cursorOffsetValue ? anchorOffset : cursorOffsetValue;
+	const end = anchorOffset < cursorOffsetValue ? cursorOffsetValue : anchorOffset;
 	const text = textFromLines(field.lines);
-	const start = range.start;
-	const end = range.end;
 	const nextText = text.slice(0, start) + text.slice(end);
 	applyTextUpdate(field, nextText, start);
 	return true;
 }
 
 export function selectionLength(field: TextField): number {
-	const range = selectionRange(field);
-	if (!range) {
+	const anchorOffset = selectionAnchorOffset(field);
+	if (anchorOffset === null) {
 		return 0;
 	}
-	return range.end - range.start;
+	const cursorOffsetValue = cursorOffset(field);
+	if (anchorOffset === cursorOffsetValue) {
+		return 0;
+	}
+	return anchorOffset < cursorOffsetValue
+		? cursorOffsetValue - anchorOffset
+		: anchorOffset - cursorOffsetValue;
 }
 
 export function insertValue(field: TextField, value: string): boolean {
@@ -382,12 +456,18 @@ export function selectAll(field: TextField): void {
 }
 
 export function selectedText(field: TextField): string {
-	const range = selectionRange(field);
-	if (!range) {
+	const anchorOffset = selectionAnchorOffset(field);
+	if (anchorOffset === null) {
 		return null;
 	}
+	const cursorOffsetValue = cursorOffset(field);
+	if (anchorOffset === cursorOffsetValue) {
+		return null;
+	}
+	const start = anchorOffset < cursorOffsetValue ? anchorOffset : cursorOffsetValue;
+	const end = anchorOffset < cursorOffsetValue ? cursorOffsetValue : anchorOffset;
 	const text = textFromLines(field.lines);
-	return text.slice(range.start, range.end);
+	return text.slice(start, end);
 }
 
 export function selectWordAt(field: TextField, row: number, column: number): void {
@@ -447,31 +527,6 @@ export function selectWordAt(field: TextField, row: number, column: number): voi
 	field.desiredColumn = field.cursorColumn;
 }
 
-export function measureRange(field: TextField, metrics: InlineFieldMetrics, start: number, end: number): number {
-	const length = totalLength(field);
-	const clampedStart = clamp(start, 0, length);
-	const clampedEnd = clamp(end, clampedStart, length);
-	if (clampedEnd <= clampedStart) {
-		return 0;
-	}
-	let width = 0;
-	let offset = 0;
-	for (let row = 0; row < field.lines.length && offset < clampedEnd; row += 1) {
-		const line = field.lines[row];
-		const lineEnd = offset + line.length;
-		const from = clampedStart > offset ? clampedStart - offset : 0;
-		const to = clampedEnd < lineEnd ? clampedEnd - offset : line.length;
-		if (to > from) {
-			width += measureLineRange(line, from, to, metrics);
-		}
-		if (clampedEnd <= lineEnd) {
-			return width;
-		}
-		offset = lineEnd + 1;
-	}
-	return width;
-}
-
 export function resolveColumn(field: TextField, metrics: InlineFieldMetrics, textLeft: number, pointerX: number): number {
 	const relative = pointerX - textLeft;
 	if (relative <= 0) {
@@ -492,13 +547,6 @@ export function resolveColumn(field: TextField, metrics: InlineFieldMetrics, tex
 		}
 	}
 	return line.length;
-}
-
-export function caretX(field: TextField, textLeft: number, metrics: InlineFieldMetrics): number {
-	if (field.cursorColumn <= 0) {
-		return textLeft;
-	}
-	return textLeft + measureRange(field, metrics, 0, cursorOffset(field));
 }
 
 export function registerPointerClick(field: TextField, column: number, doubleClickInterval: number): boolean {
@@ -705,7 +753,6 @@ export type InlineFieldPointerOptions = {
 	pointerX: number;
 	justPressed: boolean;
 	pointerPressed: boolean;
-	now: () => number;
 	doubleClickInterval: number;
 };
 

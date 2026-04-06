@@ -5,6 +5,7 @@ import { DEFAULT_LUA_BUILTIN_NAMES } from '../../lua_builtin_descriptors';
 import { LuaLexer } from '../../../lua/syntax/lualexer';
 import { KEYWORDS } from '../../../lua/syntax/luatoken';
 import { clamp } from '../../../utils/clamp';
+import { ScratchBuffer } from '../../../utils/scratchbuffer';
 
 // Lightweight Lua syntax highlighter used by the IDE.
 // Pure functions with no runtime/editor state dependencies beyond provided inputs.
@@ -77,32 +78,34 @@ function readIdentifier(line: string, start: number): number {
 	return index;
 }
 
-type IdentifierPath = {
-	segments: Array<{ start: number; end: number }>;
-	delimiters: number[];
-	end: number;
-};
+const createNumber = (): number => 0;
+const identifierPathStartScratch = new ScratchBuffer<number>(createNumber, 8);
+const identifierPathEndScratch = new ScratchBuffer<number>(createNumber, 8);
+const identifierPathDelimiterScratch = new ScratchBuffer<number>(createNumber, 8);
+const functionNamePathStartScratch = new ScratchBuffer<number>(createNumber, 8);
+const functionNamePathEndScratch = new ScratchBuffer<number>(createNumber, 8);
 
-function readIdentifierPath(line: string, start: number): IdentifierPath {
-	const segments: Array<{ start: number; end: number }> = [];
-	const delimiters: number[] = [];
+function readIdentifierPath(line: string, start: number): void {
+	identifierPathStartScratch.clear();
+	identifierPathEndScratch.clear();
+	identifierPathDelimiterScratch.clear();
 	let index = start;
 	while (index < line.length && isIdentifierStart(line.charAt(index))) {
 		const segmentStart = index;
 		index = readIdentifier(line, index);
-		segments.push({ start: segmentStart, end: index });
+		identifierPathStartScratch.push(segmentStart);
+		identifierPathEndScratch.push(index);
 		if (index >= line.length) {
 			break;
 		}
 		const separator = line.charAt(index);
 		if ((separator === '.' || separator === ':') && index + 1 < line.length && isIdentifierStart(line.charAt(index + 1))) {
-			delimiters.push(index);
+			identifierPathDelimiterScratch.push(index);
 			index += 1;
 			continue;
 		}
 		break;
 	}
-	return { segments, delimiters, end: index };
 }
 
 function skipWhitespace(line: string, start: number): number {
@@ -248,14 +251,16 @@ function resolveIdentifierPathAt(line: string, column: number): string {
 	if (!isIdentifierStart(line.charAt(start))) {
 		return null;
 	}
-	const path = readIdentifierPath(line, start);
-	if (path.segments.length === 0) {
+	readIdentifierPath(line, start);
+	const segmentCount = identifierPathStartScratch.size;
+	if (segmentCount === 0) {
 		return null;
 	}
 	let inside = false;
-	for (let index = 0; index < path.segments.length; index += 1) {
-		const segment = path.segments[index];
-		if (column >= segment.start && column < segment.end) {
+	for (let index = 0; index < segmentCount; index += 1) {
+		const segmentStart = identifierPathStartScratch.peek(index);
+		const segmentEnd = identifierPathEndScratch.peek(index);
+		if (column >= segmentStart && column < segmentEnd) {
 			inside = true;
 			break;
 		}
@@ -263,12 +268,7 @@ function resolveIdentifierPathAt(line: string, column: number): string {
 	if (!inside) {
 		return null;
 	}
-	const names: string[] = [];
-	for (let index = 0; index < path.segments.length; index += 1) {
-		const segment = path.segments[index];
-		names.push(line.slice(segment.start, segment.end));
-	}
-	return names.join('.');
+	return line.slice(identifierPathStartScratch.peek(0), identifierPathEndScratch.peek(segmentCount - 1));
 }
 
 function resolveColorForSymbolKind(kind: SymbolKind): number {
@@ -346,12 +346,14 @@ function highlightScopedLabel(line: string, start: number, columnColors: number[
 }
 
 function highlightFunctionNamePath(line: string, start: number, columnColors: number[]): number {
+	functionNamePathStartScratch.clear();
+	functionNamePathEndScratch.clear();
 	let index = start;
-	const segments: Array<{ start: number; end: number }> = [];
 	while (index < line.length && isIdentifierStart(line.charAt(index))) {
 		const segmentStart = index;
 		index = readIdentifier(line, index);
-		segments.push({ start: segmentStart, end: index });
+		functionNamePathStartScratch.push(segmentStart);
+		functionNamePathEndScratch.push(index);
 		if (index < line.length && (line.charAt(index) === '.' || line.charAt(index) === ':')) {
 			columnColors[index] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
 			index += 1;
@@ -359,9 +361,10 @@ function highlightFunctionNamePath(line: string, start: number, columnColors: nu
 		}
 		break;
 	}
-	for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
-		const segment = segments[segmentIndex];
-		for (let column = segment.start; column < segment.end; column += 1) {
+	for (let segmentIndex = 0; segmentIndex < functionNamePathStartScratch.size; segmentIndex += 1) {
+		const segmentStart = functionNamePathStartScratch.peek(segmentIndex);
+		const segmentEnd = functionNamePathEndScratch.peek(segmentIndex);
+		for (let column = segmentStart; column < segmentEnd; column += 1) {
 			columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_NAME;
 		}
 	}
@@ -417,40 +420,39 @@ function highlightGotoLabel(line: string, start: number, columnColors: number[])
 	return labelEnd;
 }
 
-function highlightBuiltinIdentifierPath(line: string, path: IdentifierPath, builtinLookup: BuiltinLookup, columnColors: number[]): number {
-	const names: string[] = [];
-	for (let index = 0; index < path.segments.length; index += 1) {
-		const segment = path.segments[index];
-		names.push(line.slice(segment.start, segment.end));
-	}
-	for (let length = names.length; length >= 1; length -= 1) {
-		const candidate = names.slice(0, length).join('.');
+function highlightBuiltinIdentifierPath(line: string, builtinLookup: BuiltinLookup, columnColors: number[]): number {
+	const segmentCount = identifierPathStartScratch.size;
+	for (let length = segmentCount; length >= 1; length -= 1) {
+		const candidate = line.slice(identifierPathStartScratch.peek(0), identifierPathEndScratch.peek(length - 1));
 		if (!builtinLookup(candidate)) {
 			continue;
 		}
 		for (let segmentIndex = 0; segmentIndex < length; segmentIndex += 1) {
-			const segment = path.segments[segmentIndex];
-			for (let column = segment.start; column < segment.end; column += 1) {
+			const segmentStart = identifierPathStartScratch.peek(segmentIndex);
+			const segmentEnd = identifierPathEndScratch.peek(segmentIndex);
+			for (let column = segmentStart; column < segmentEnd; column += 1) {
 				columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN;
 			}
 			if (segmentIndex < length - 1) {
-				const delimiterColumn = path.delimiters[segmentIndex];
+				const delimiterColumn = identifierPathDelimiterScratch.peek(segmentIndex);
 				columnColors[delimiterColumn] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
 			}
 		}
-		return path.segments[length - 1].end;
+		return identifierPathEndScratch.peek(length - 1);
 	}
-	if (names.length > 1 && builtinLookup(names[0])) {
-		for (let segmentIndex = 0; segmentIndex < names.length; segmentIndex += 1) {
-			const segment = path.segments[segmentIndex];
-			for (let column = segment.start; column < segment.end; column += 1) {
+	const head = line.slice(identifierPathStartScratch.peek(0), identifierPathEndScratch.peek(0));
+	if (segmentCount > 1 && builtinLookup(head)) {
+		for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+			const segmentStart = identifierPathStartScratch.peek(segmentIndex);
+			const segmentEnd = identifierPathEndScratch.peek(segmentIndex);
+			for (let column = segmentStart; column < segmentEnd; column += 1) {
 				columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN;
 			}
-			if (segmentIndex < path.delimiters.length) {
-				columnColors[path.delimiters[segmentIndex]] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
+			if (segmentIndex < identifierPathDelimiterScratch.size) {
+				columnColors[identifierPathDelimiterScratch.peek(segmentIndex)] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_OPERATOR;
 			}
 		}
-		return path.segments[path.segments.length - 1].end;
+		return identifierPathEndScratch.peek(segmentCount - 1);
 	}
 	return null;
 }
@@ -475,10 +477,10 @@ function applySemanticAnnotations(
 			continue;
 		}
 		const end = Math.min(rawEnd, columnColors.length);
-		const path = resolveIdentifierPathAt(line, start);
-		const tokenText = line.slice(start, Math.min(rawEnd, line.length)).trim();
-		const isBuiltin = (path && builtinLookup(path)) || (tokenText.length > 0 && builtinLookup(tokenText));
-		const color = isBuiltin ? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN : resolveColorForSymbolKind(annotation.kind);
+			const path = resolveIdentifierPathAt(line, start);
+			const tokenText = line.slice(start, Math.min(rawEnd, line.length)).trim();
+			const isBuiltin = (path && builtinLookup(path)) || (tokenText.length > 0 && builtinLookup(tokenText));
+			const color = isBuiltin ? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_BUILTIN : resolveColorForSymbolKind(annotation.kind);
 		for (let column = start; column < end && column < columnColors.length; column += 1) {
 			columnColors[column] = color;
 		}
@@ -524,7 +526,8 @@ export function highlightTextLine(
 	builtinIdentifiers?: Iterable<string>,
 ): HighlightLine {
 	const length = line.length;
-	const columnColors: number[] = new Array(length).fill(constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+	const defaultColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
+	const columnColors: number[] = new Array(length);
 	const builtinLookup = getBuiltinLookup(builtinIdentifiers);
 	let i = 0;
 	while (i < length) {
@@ -595,33 +598,34 @@ export function highlightTextLine(
 			continue;
 		}
 		if (isIdentifierStart(ch)) {
-			const path = readIdentifierPath(line, i);
-			const first = path.segments[0];
-			const word = line.slice(first.start, first.end);
+			readIdentifierPath(line, i);
+			const firstStart = identifierPathStartScratch.peek(0);
+			const firstEnd = identifierPathEndScratch.peek(0);
+			const word = line.slice(firstStart, firstEnd);
 			const lowerWord = word.toLowerCase();
 			if (KEYWORDS.has(lowerWord)) {
-				for (let column = first.start; column < first.end; column += 1) {
+				for (let column = firstStart; column < firstEnd; column += 1) {
 					columnColors[column] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD;
 				}
 			}
-			const builtinEnd = highlightBuiltinIdentifierPath(line, path, builtinLookup, columnColors);
+			const builtinEnd = highlightBuiltinIdentifierPath(line, builtinLookup, columnColors);
 			if (builtinEnd !== null) {
 				i = builtinEnd;
 				continue;
 			}
 			if (lowerWord === 'function') {
-				i = highlightFunctionSignature(line, first.end, columnColors);
+				i = highlightFunctionSignature(line, firstEnd, columnColors);
 				continue;
 			}
 			if (lowerWord === 'goto') {
-				i = highlightGotoLabel(line, first.end, columnColors);
+				i = highlightGotoLabel(line, firstEnd, columnColors);
 				continue;
 			}
 			if (lowerWord === '::') {
-				i = highlightScopedLabel(line, first.end, columnColors);
+				i = highlightScopedLabel(line, firstEnd, columnColors);
 				continue;
 			}
-			i = first.end;
+			i = firstEnd;
 			continue;
 		}
 		if (isOperatorChar(ch)) {
@@ -641,7 +645,7 @@ export function highlightTextLine(
 	for (let column = 0; column < length; column += 1) {
 		columnToDisplay.push(displayIndex);
 		const ch = line.charAt(column);
-		const color = columnColors[column];
+		const color = columnColors[column] ?? defaultColor;
 		if (ch === '\t') {
 			textParts.push(TAB_EXPANSION);
 			for (let tab = 0; tab < constants.TAB_SPACES; tab += 1) colors.push(color);

@@ -104,6 +104,7 @@ add_library(bmsx_core STATIC
 	core/taskgate.cpp
 	utils/byte_hex_string.cpp
 	utils/mem_snapshot.cpp
+	utils/scratchbuffer.cpp
 
 	# Audio systems
 	audio/biquad_filter.cpp

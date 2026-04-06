@@ -5,7 +5,7 @@ import { getCodeAreaBounds } from '../editor_view';
 import { resourceViewerClampScroll } from '../ide_input';
 import { ide_state } from '../ide_state';
 import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity } from '../resource_viewer';
-import { drawEditorText, drawEditorColoredText } from './text_renderer';
+import { drawEditorText } from './text_renderer';
 import { api } from '../../overlay_api';
 import { measureText, wrapOverlayLine } from '../text_utils';
 import * as constants from '../constants';
@@ -98,9 +98,8 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 				if (visibleRight > visibleLeft) {
 					api.fill_rect_color(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);
 				}
-				const colors = new Array<number>(contentText.length).fill(constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
 				if (contentText.length > 0) {
-					drawEditorColoredText(ide_state.font, contentText, colors, contentX, y, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+					drawEditorText(ide_state.font, contentText, contentX, y, undefined, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
 				}
 			} else if (visibleRight > visibleLeft) {
 				drawRectOutlineColor(visibleLeft, caretTop, visibleRight, caretBottom, undefined, highlightColor);

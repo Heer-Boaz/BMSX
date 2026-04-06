@@ -8,7 +8,7 @@ import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from 
 import { renderEditorContextMenu } from './render_context_menu';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
-import { drawEditorColoredText } from './text_renderer';
+import { drawEditorText } from './text_renderer';
 import { getBreakpointsForChunk } from '../ide_debugger';
 import { getActiveCodeTabContext } from '../editor_tabs';
 import { api } from '../../overlay_api';
@@ -122,12 +122,12 @@ export function renderCodeArea(): void {
 			break;
 		}
 		if (visualIndex >= visualCount) {
-			drawEditorColoredText(ide_state.font, '~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+			drawEditorText(ide_state.font, '~', bounds.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
 			continue;
 		}
 		const segment = visualIndexToSegment(visualIndex);
 		if (!segment) {
-			drawEditorColoredText(ide_state.font, '~', [constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM], bounds.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
+			drawEditorText(ide_state.font, '~', bounds.textLeft, rowY, undefined, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM);
 			continue;
 		}
 		const lineIndex = segment.row;
@@ -161,6 +161,7 @@ export function renderCodeArea(): void {
 		}
 		const highlight = entry.hi;
 		const renderText = useUppercase ? highlight.upperText : highlight.text;
+		const advancePrefix = entry.advancePrefix;
 		let columnStart = wrapEnabled ? segment.startColumn : ide_state.scrollColumn;
 		if (wrapEnabled) {
 			if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
@@ -178,8 +179,8 @@ export function renderCodeArea(): void {
 		drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
 		const selectionSlice = computeSelectionSlice(lineIndex, highlight, sliceStartDisplay, sliceEndDisplay);
 		if (selectionSlice) {
-			const selectionStartX = bounds.textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, selectionSlice.startDisplay);
-			const selectionEndX = bounds.textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, selectionSlice.endDisplay);
+			const selectionStartX = bounds.textLeft + advancePrefix[selectionSlice.startDisplay] - advancePrefix[sliceStartDisplay];
+			const selectionEndX = bounds.textLeft + advancePrefix[selectionSlice.endDisplay] - advancePrefix[sliceStartDisplay];
 			const clampedLeft = clamp(selectionStartX, bounds.textLeft, contentRight);
 			const clampedRight = clamp(selectionEndX, clampedLeft, contentRight);
 			if (clampedRight > clampedLeft) {
@@ -244,8 +245,8 @@ export function renderCodeArea(): void {
 			if (clampedEndDisplay <= clampedStartDisplay) {
 				continue;
 			}
-			const underlineStartX = bounds.textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
-			const underlineEndX = bounds.textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
+			const underlineStartX = bounds.textLeft + advancePrefix[clampedStartDisplay] - advancePrefix[sliceStartDisplay];
+			const underlineEndX = bounds.textLeft + advancePrefix[clampedEndDisplay] - advancePrefix[sliceStartDisplay];
 			let drawLeft = Math.floor(underlineStartX);
 			let drawRight = Math.ceil(underlineEndX);
 			if (drawRight <= drawLeft) {
@@ -269,8 +270,8 @@ export function renderCodeArea(): void {
 			const clampedStartDisplay = clamp(startDisplayFull, sliceStartDisplay, sliceEndDisplay);
 			const clampedEndDisplay = clamp(endDisplayFull, clampedStartDisplay, sliceEndDisplay);
 			if (clampedEndDisplay > clampedStartDisplay) {
-				const underlineStartX = bounds.textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
-				const underlineEndX = bounds.textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
+				const underlineStartX = bounds.textLeft + advancePrefix[clampedStartDisplay] - advancePrefix[sliceStartDisplay];
+				const underlineEndX = bounds.textLeft + advancePrefix[clampedEndDisplay] - advancePrefix[sliceStartDisplay];
 				let drawLeft = Math.floor(underlineStartX);
 				let drawRight = Math.ceil(underlineEndX);
 				if (drawRight <= drawLeft) {
@@ -374,7 +375,8 @@ function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTo
 		: 0;
 	const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
 	const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
-	const cursorX = textLeft + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
+	const advancePrefix = entry.advancePrefix;
+	const cursorX = textLeft + advancePrefix[limitedDisplayIndex] - advancePrefix[sliceStartDisplay];
 	let cursorWidth = ide_state.charAdvance;
 	let baseChar = ' ';
 	let baseColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
@@ -414,6 +416,7 @@ export function drawReferenceHighlightsForRow(api: Api, rowIndex: number, entry:
 	}
 	const activeIndex = ide_state.referenceState.getActiveIndex();
 	const highlight = entry.hi;
+	const advancePrefix = entry.advancePrefix;
 	for (let i = 0; i < matches.length; i += 1) {
 		const match = matches[i];
 		if (match.row !== rowIndex) {
@@ -426,8 +429,8 @@ export function drawReferenceHighlightsForRow(api: Api, rowIndex: number, entry:
 		if (visibleEnd <= visibleStart) {
 			continue;
 		}
-		const startX = originX + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, visibleStart);
-		const endX = originX + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, visibleEnd);
+		const startX = originX + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
+		const endX = originX + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
 		const overlay = i === activeIndex ? constants.REFERENCES_MATCH_ACTIVE_OVERLAY : constants.REFERENCES_MATCH_OVERLAY;
 		api.fill_rect_color(startX, originY, endX, originY + ide_state.lineHeight, undefined, overlay);
 	}
@@ -438,6 +441,7 @@ export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: Ca
 		return;
 	}
 	const highlight = entry.hi;
+	const advancePrefix = entry.advancePrefix;
 	for (let i = 0; i < ide_state.searchMatches.length; i++) {
 		const match = ide_state.searchMatches[i];
 		if (match.row !== rowIndex) {
@@ -450,8 +454,8 @@ export function drawSearchHighlightsForRow(api: Api, rowIndex: number, entry: Ca
 		if (visibleEnd <= visibleStart) {
 			continue;
 		}
-		const startX = originX + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, visibleStart);
-		const endX = originX + ide_state.layout.measureRangeFast(entry, sliceStartDisplay, visibleEnd);
+		const startX = originX + advancePrefix[visibleStart] - advancePrefix[sliceStartDisplay];
+		const endX = originX + advancePrefix[visibleEnd] - advancePrefix[sliceStartDisplay];
 		const overlay = i === ide_state.searchCurrentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
 		api.fill_rect_color(startX, originY, endX, originY + ide_state.lineHeight, undefined, overlay);
 	}

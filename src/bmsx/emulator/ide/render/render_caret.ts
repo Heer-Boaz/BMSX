@@ -1,4 +1,3 @@
-import type { color } from '../../../render/shared/render_types';
 import { BmsxColors, resolvePaletteIndex, invertColorIndex } from '../../vdp';
 import type { OverlayApi as Api } from '../../overlay_api';
 import * as constants from '../constants';
@@ -8,49 +7,6 @@ import type { CursorScreenInfo, TextField } from '../types';
 import { getCursorOffset } from '../inline_text_field';
 import { api } from '../../overlay_api';
 import { textFromLines } from '../text/source_text';
-
-export interface CaretDrawOps {
-	fillRect(x0: number, y0: number, x1: number, y1: number, color: color): void;
-	strokeRect(x0: number, y0: number, x1: number, y1: number, color: color): void;
-	drawGlyph(text: string, x: number, y: number, color: color): void;
-}
-
-/**
- * Draws a simple block caret using the provided renderer.
- * This helper is intentionally generic so it can be reused in the IDE and other modules (e.g. console).
- *
- * Contract:
- * - x, y: top-left caret position in pixels
- * - height: caret height in pixels
- * - color: fill color for the caret block
- * - width: optional caret width (defaults to 1 px if not specified or invalid)
- */
-/**
- * Shared inline caret renderer (single entry point for IDE and console).
- * - When active, draws a filled caret plus the underlying glyph in the given glyphColor.
- * - When inactive, draws an outline only.
- */
-export function renderInlineCaret(
-	ops: CaretDrawOps,
-	left: number,
-	top: number,
-	right: number,
-	bottom: number,
-	cursorX: number,
-	active: boolean,
-	caretColor: color,
-	glyph?: string,
-	glyphColor?: color,
-): void {
-	if (active) {
-		ops.fillRect(left, top, right, bottom, caretColor);
-		if (glyph && glyphColor) {
-			ops.drawGlyph(glyph, cursorX, top, glyphColor);
-		}
-		return;
-	}
-	ops.strokeRect(left, top, right, bottom, caretColor);
-}
 
 export function drawInlineCaret(
 	api: Api,
@@ -71,14 +27,14 @@ export function drawInlineCaret(
 	const caretGlyph = getCaretGlyphForDisplay(rawGlyph);
 	const caretIndex = resolvePaletteIndex(caretColor);
 	const caretColorIndex = caretIndex ?? baseTextColor;
-	const inverseColorIndex = invertColorIndex(caretColorIndex);
 	const caretValue = BmsxColors[caretColorIndex];
-	const inverseColor = BmsxColors[inverseColorIndex];
-	renderInlineCaret({
-		fillRect: (x0, y0, x1, y1, col) => api.fill_rect_color(x0, y0, x1, y1, undefined, col),
-		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(x0, y0, x1, y1, undefined, col),
-		drawGlyph: (text, x, y, col) => drawEditorText(ide_state.font, text, x, y, undefined, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
-	}, left, top, right, bottom, cursorX, active, caretValue, caretGlyph, inverseColor);
+	const inverseColorIndex = invertColorIndex(caretColorIndex);
+	if (active) {
+		api.fill_rect_color(left, top, right, bottom, undefined, caretValue);
+		drawEditorText(ide_state.font, caretGlyph, cursorX, top, undefined, inverseColorIndex, { preserveCase: true });
+		return;
+	}
+	drawRectOutlineColor(left, top, right, bottom, undefined, caretValue);
 }
 
 export function getCaretGlyphForDisplay(baseChar: string, baseColor?: number): string {
@@ -100,13 +56,14 @@ export function drawCursor(info: CursorScreenInfo, textX: number): void {
 	const caretBottom = caretTop + info.height;
 	const problemsPanelHasFocus = ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused;
 	const active = !(ide_state.searchActive || ide_state.lineJumpActive || ide_state.resourcePanelFocused || ide_state.createResourceActive || problemsPanelHasFocus);
-	const glyphColor = BmsxColors[1];
 	const caretGlyph = getCaretGlyphForDisplay(info.baseChar, info.baseColor);
-	renderInlineCaret({
-		fillRect: (x0, y0, x1, y1, col) => api.fill_rect_color(x0, y0, x1, y1, undefined,col),
-		strokeRect: (x0, y0, x1, y1, col) => drawRectOutlineColor(x0, y0, x1, y1, undefined, col),
-		drawGlyph: (text, x, y, col) => drawEditorText(ide_state.font, text, x, y, undefined, resolvePaletteIndex(col) ?? 0, { preserveCase: true }),
-	}, caretLeft, caretTop, caretRight, caretBottom, cursorX, active, BmsxColors[constants.CARET_COLOR], caretGlyph, glyphColor);
+	const caretValue = BmsxColors[constants.CARET_COLOR];
+	if (active) {
+		api.fill_rect_color(caretLeft, caretTop, caretRight, caretBottom, undefined, caretValue);
+		drawEditorText(ide_state.font, caretGlyph, cursorX, caretTop, undefined, 1, { preserveCase: true });
+		return;
+	}
+	drawRectOutlineColor(caretLeft, caretTop, caretRight, caretBottom, undefined, caretValue);
 }
 
 export function resetBlink(): void {

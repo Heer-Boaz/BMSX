@@ -7,7 +7,6 @@ import {
 	createInlineTextField,
 	applyInlineFieldEditing,
 	setFieldText,
-	selectionRange,
 	deleteSelection,
 	insertValue,
 	getCursorOffset,
@@ -18,7 +17,6 @@ import {
 import type { InlineInputOptions, TextField, CursorScreenInfo, CompletionContext, EditContext, LuaCompletionItem } from './ide/types';
 import { COLOR_COMPLETION_BACKGROUND, COLOR_COMPLETION_BORDER, COLOR_COMPLETION_HIGHLIGHT, COLOR_COMPLETION_HIGHLIGHT_TEXT, COLOR_COMPLETION_PREVIEW_TEXT, COLOR_COMPLETION_TEXT, TAB_SPACES } from './ide/constants';
 import { OverlayRenderer } from './overlay_renderer';
-import { renderInlineCaret, type CaretDrawOps } from './ide/render/render_caret';
 import {
 	isKeyJustPressed as isKeyJustPressed,
 	isCtrlDown,
@@ -2185,11 +2183,14 @@ export class TerminalMode {
 	// Replace single-line drawInputField with multi-line aware renderer
 	private drawMultilineInput(renderer: OverlayRenderer, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
 		const inputColor = BmsxColors[OUTPUT_COLORS.stdout];
-		const sel = selectionRange(this.field);
+		const anchorOffset = selectionAnchorOffset(this.field);
 		const cursorIndex = getCursorOffset(this.field);
+		const hasSelection = anchorOffset !== null && anchorOffset !== cursorIndex;
+		const selectionStart = hasSelection && anchorOffset < cursorIndex ? anchorOffset : cursorIndex;
+		const selectionEnd = hasSelection && anchorOffset > cursorIndex ? anchorOffset : cursorIndex;
 		const uppercaseDisplay = this.useUppercaseDisplay();
 		const displayText = this.toDisplayText(textFromLines(this.field.lines), uppercaseDisplay);
-		const inlinePreview = sel ? null : this.completion.getInlineCompletionPreview();
+		const inlinePreview = hasSelection ? null : this.completion.getInlineCompletionPreview();
 		let nextCursorInfo: CursorScreenInfo = null;
 		const cursorPosition = this.getCursorPosition();
 
@@ -2233,9 +2234,9 @@ export class TerminalMode {
 				this.drawGlyphBackgrounds(renderer, seg, x, y, uppercaseDisplay);
 
 				// draw selection background for this segment if selection overlaps
-				if (sel) {
-					const selStart = Math.max(sel.start, segStart);
-					const selEnd = Math.min(sel.end, segStart + segLen);
+				if (hasSelection) {
+					const selStart = Math.max(selectionStart, segStart);
+					const selEnd = Math.min(selectionEnd, segStart + segLen);
 					if (selStart < selEnd) {
 						const before = displayText.slice(segStart, selStart);
 						const selected = displayText.slice(selStart, selEnd);
@@ -2278,20 +2279,12 @@ export class TerminalMode {
 				};
 				if (this.caretVisible) {
 					const renderFont = this.font.renderFont();
-					const ops: CaretDrawOps = {
-						fillRect: (x0, y0, x1, y1, color) => renderer.rect({
-							kind: 'fill',
-							area: { left: x0, top: y0, right: x1, bottom: y1 },
-							color,
-						}),
-						strokeRect: (x0, y0, x1, y1, color) => renderer.rect({
-							kind: 'rect',
-							area: { left: x0, top: y0, right: x1, bottom: y1 },
-							color,
-						}),
-						drawGlyph: (text, gx, gy, color) => renderer.glyphs({ glyphs: text, x: gx, y: gy, z: 0, color, font: renderFont }),
-					};
-					renderInlineCaret(ops, left, topY, right, bottom, left, true, this.caretColor, nextChar, this.characterBackgroundColor);
+					renderer.rect({
+						kind: 'fill',
+						area: { left, top: topY, right, bottom },
+						color: this.caretColor,
+					});
+					renderer.glyphs({ glyphs: nextChar, x: left, y: topY, z: 0, color: this.characterBackgroundColor, font: renderFont });
 				}
 			}
 		}

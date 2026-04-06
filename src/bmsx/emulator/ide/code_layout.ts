@@ -1,5 +1,6 @@
 import type { TimerHandle } from '../../platform/platform';
 import { clamp } from '../../utils/clamp';
+import { ScratchBuffer } from '../../utils/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from './lua/syntax_highlight';
 import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from './semantic_model';
 import type { LuaDefinitionInfo } from '../../lua/syntax/lua_ast';
@@ -21,11 +22,11 @@ interface VisualLinesContext {
 }
 
 interface SliceResult {
-	text: string;
-	colors: number[];
 	startDisplay: number;
 	endDisplay: number;
 }
+
+type VisualLineSegmentTarget = VisualLineSegment[] | ScratchBuffer<VisualLineSegment>;
 
 type BuiltinIdentifierSnapshot = { epoch: number; ids: Iterable<string> };
 
@@ -37,6 +38,25 @@ type PendingSemanticUpdate = {
 	source?: string;
 	lines?: readonly string[];
 };
+
+const createVisualLineSegment = (): VisualLineSegment => ({
+	row: 0,
+	startColumn: 0,
+	endColumn: 0,
+});
+
+function ensureVisualLineSegment(target: VisualLineSegmentTarget, index: number): VisualLineSegment {
+	if (target instanceof ScratchBuffer) {
+		return target.get(index);
+	}
+	const existing = target[index];
+	if (existing) {
+		return existing;
+	}
+	const created = createVisualLineSegment();
+	target[index] = created;
+	return created;
+}
 
 /**
  * CodeLayout owns syntax highlight caching and visual line layout for the cart editor.
@@ -62,11 +82,17 @@ export class CodeLayout {
 	private annotationRowSig: Uint32Array = null;
 	private nextSemanticRequestId = 1;
 	private semanticDispatchHandle: TimerHandle = null;
-	private lastHotRowRange: { start: number; end: number } = null;
+	private lastHotRowStart = 0;
+	private lastHotRowEnd = -1;
 	private lastHotGuardRows = 0;
 	private readonly viewportRowMargin = 64;
 	private readonly averageCharAdvance: number;
 	private rowVisualLineCounts: number[] = [];
+	private readonly rowSegmentsScratch: ScratchBuffer<VisualLineSegment> = new ScratchBuffer<VisualLineSegment>(createVisualLineSegment, 8);
+	private readonly sliceScratch: SliceResult = {
+		startDisplay: 0,
+		endDisplay: 0,
+	};
 	private lastViewportRowEstimate = 120;
 	private semanticTimer: TimerHandle = null;
 	private lastSemanticError: string = null;
@@ -143,7 +169,7 @@ export class CodeLayout {
 			return;
 		}
 		const threshold = Math.max(0, row);
-		for (const key of Array.from(this.highlightCache.keys())) {
+		for (const key of this.highlightCache.keys()) {
 			if (key >= threshold) {
 				this.highlightCache.delete(key);
 			}
@@ -168,9 +194,13 @@ export class CodeLayout {
 			this.semanticTimer = null;
 		}
 		this.annotationRowSig = null;
-		this.lastHotRowRange = null;
+		this.lastHotRowStart = 0;
+		this.lastHotRowEnd = -1;
 		this.lastHotGuardRows = 0;
-		this.rowVisualLineCounts = [];
+		this.visualLines.length = 0;
+		this.rowToFirstVisualLine.length = 0;
+		this.rowVisualLineCounts.length = 0;
+		this.rowSegmentsScratch.clear();
 	}
 
 	public requestSemanticUpdate(buffer: TextBuffer, documentVersion: number, path: string): void {
@@ -205,6 +235,35 @@ export class CodeLayout {
 		}
 		const lineAnnotations = annotations ? annotations[row] : undefined;
 		const highlight = highlightTextLineExternal(source, lineAnnotations, builtinIdentifiers);
+		const cachedEntry = cached;
+		if (cachedEntry) {
+			const displayToColumn = cachedEntry.displayToColumn;
+			displayToColumn.length = highlight.text.length + 1;
+			for (let index = 0; index < displayToColumn.length; index += 1) {
+				displayToColumn[index] = 0;
+			}
+			for (let column = 0; column < source.length; column += 1) {
+				const startDisplay = highlight.columnToDisplay[column];
+				const endDisplay = highlight.columnToDisplay[column + 1];
+				for (let display = startDisplay; display < endDisplay; display += 1) {
+					displayToColumn[display] = column;
+				}
+			}
+			displayToColumn[highlight.text.length] = source.length;
+			const advancePrefix = cachedEntry.advancePrefix;
+			advancePrefix.length = highlight.text.length + 1;
+			advancePrefix[0] = 0;
+			for (let i = 0; i < highlight.text.length; i += 1) {
+				advancePrefix[i + 1] = advancePrefix[i] + this.font.advance(highlight.text.charAt(i));
+			}
+			cachedEntry.src = source;
+			cachedEntry.hi = highlight;
+			cachedEntry.textVersion = textVersion;
+			cachedEntry.lineSignature = lineSignature;
+			cachedEntry.builtinEpoch = builtinEpoch;
+			cachedEntry.rowSignature = rowSignature;
+			return cachedEntry;
+		}
 		const displayToColumn: number[] = new Array(highlight.text.length + 1);
 		for (let index = 0; index < displayToColumn.length; index += 1) {
 			displayToColumn[index] = 0;
@@ -244,16 +303,6 @@ export class CodeLayout {
 		return entry;
 	}
 
-	public measureRangeFast(entry: CachedHighlight, startDisplay: number, endDisplay: number): number {
-		const length = entry.hi.text.length;
-		if (length === 0) {
-			return 0;
-		}
-		const clampedStart = clamp(startDisplay, 0, length);
-		const clampedEnd = clamp(endDisplay, clampedStart, length);
-		return entry.advancePrefix[clampedEnd] - entry.advancePrefix[clampedStart];
-	}
-
 	public columnToDisplay(highlight: HighlightLine, column: number): number {
 		if (column <= 0) {
 			return 0;
@@ -266,20 +315,18 @@ export class CodeLayout {
 
 	public sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): SliceResult {
 		if (highlight.text.length === 0) {
-			return { text: '', colors: [], startDisplay: 0, endDisplay: 0 };
+			this.sliceScratch.startDisplay = 0;
+			this.sliceScratch.endDisplay = 0;
+			return this.sliceScratch;
 		}
 		const columnToDisplay = highlight.columnToDisplay;
 		const clampedStart = Math.min(columnStart, columnToDisplay.length - 1);
 		const clampedEndColumn = Math.min(columnStart + columnCount, columnToDisplay.length - 1);
 		const startDisplay = columnToDisplay[clampedStart];
 		const endDisplay = columnToDisplay[clampedEndColumn];
-		const sliceColors = highlight.colors.slice(startDisplay, endDisplay);
-		return {
-			text: highlight.text.slice(startDisplay, endDisplay),
-			colors: sliceColors,
-			startDisplay,
-			endDisplay,
-		};
+		this.sliceScratch.startDisplay = startDisplay;
+		this.sliceScratch.endDisplay = endDisplay;
+		return this.sliceScratch;
 	}
 
 	public markVisualLinesDirty(): void {
@@ -373,14 +420,21 @@ export class CodeLayout {
 	): void {
 		const lineCount = buffer.getLineCount();
 		if (lineCount === 0) {
-			this.visualLines = [{
-				row: 0,
-				startColumn: 0,
-				endColumn: 0,
-			}];
-			this.rowToFirstVisualLine = [0];
-			this.rowVisualLineCounts = [1];
-			this.lastHotRowRange = null;
+			const segment = this.visualLines[0];
+			if (segment) {
+				segment.row = 0;
+				segment.startColumn = 0;
+				segment.endColumn = 0;
+			} else {
+				this.visualLines[0] = { row: 0, startColumn: 0, endColumn: 0 };
+			}
+			this.visualLines.length = 1;
+			this.rowToFirstVisualLine[0] = 0;
+			this.rowToFirstVisualLine.length = 1;
+			this.rowVisualLineCounts[0] = 1;
+			this.rowVisualLineCounts.length = 1;
+			this.lastHotRowStart = 0;
+			this.lastHotRowEnd = -1;
 			this.lastHotGuardRows = 0;
 			return;
 		}
@@ -389,13 +443,30 @@ export class CodeLayout {
 			|| this.rowVisualLineCounts.length !== lineCount;
 		if (needsFullRebuild) {
 			this.rebuildAllVisualLines(buffer, wordWrapEnabled, wrapWidth);
-			this.lastHotRowRange = { start: 0, end: lineCount - 1 };
+			this.lastHotRowStart = 0;
+			this.lastHotRowEnd = lineCount - 1;
 			this.lastHotGuardRows = Math.max(8, Math.floor(visibleRowEstimate / 2));
 			return;
 		}
-		const hotRows = this.computeHotRowWindow(lineCount, scrollRow, visibleRowEstimate);
-		this.rebuildRowRange(buffer, wordWrapEnabled, wrapWidth, hotRows.start, hotRows.end);
-		this.lastHotRowRange = hotRows;
+		let hotStart = 0;
+		let hotEnd = lineCount - 1;
+		const totalVisual = this.visualLines.length;
+		if (totalVisual > 0) {
+			const startSegment = this.visualIndexToSegment(clamp(scrollRow, 0, totalVisual - 1));
+			const endSegment = this.visualIndexToSegment(clamp(scrollRow + Math.max(1, visibleRowEstimate), 0, totalVisual - 1));
+			if (startSegment) {
+				hotStart = startSegment.row;
+			}
+			if (endSegment) {
+				hotEnd = endSegment.row;
+			}
+		}
+		const margin = Math.max(this.viewportRowMargin, visibleRowEstimate * 2);
+		hotStart = clamp(hotStart - margin, 0, lineCount - 1);
+		hotEnd = clamp(hotEnd + margin, 0, lineCount - 1);
+		this.rebuildRowRange(buffer, wordWrapEnabled, wrapWidth, hotStart, hotEnd);
+		this.lastHotRowStart = hotStart;
+		this.lastHotRowEnd = hotEnd;
 		this.lastHotGuardRows = Math.max(8, Math.floor(visibleRowEstimate / 2));
 	}
 
@@ -405,26 +476,24 @@ export class CodeLayout {
 		wrapWidth: number,
 	): void {
 		const lineCount = buffer.getLineCount();
-		const segments: VisualLineSegment[] = [];
-		const rowIndexLookup: number[] = new Array(lineCount).fill(-1);
-		const counts: number[] = new Array(lineCount).fill(0);
+		const segments = this.visualLines;
+		const rowIndexLookup = this.rowToFirstVisualLine;
+		const counts = this.rowVisualLineCounts;
 		const effectiveWrapWidth = wordWrapEnabled ? wrapWidth : Number.POSITIVE_INFINITY;
 		const approxWrapColumns = !wordWrapEnabled || wrapWidth === Number.POSITIVE_INFINITY
 			? Number.POSITIVE_INFINITY
 			: Math.max(1, Math.floor(wrapWidth / Math.max(1, this.averageCharAdvance)));
+		let writeIndex = 0;
 		for (let row = 0; row < lineCount; row += 1) {
-			rowIndexLookup[row] = segments.length;
+			rowIndexLookup[row] = writeIndex;
 			const entry = this.getCachedHighlight(buffer, row);
-			const rowSegments = this.buildSegmentsForRow(entry.src, row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
-			segments.push(...rowSegments);
-			counts[row] = rowSegments.length;
+			const segmentStart = writeIndex;
+			writeIndex = this.appendSegmentsForRow(segments, writeIndex, entry.src, row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
+			counts[row] = writeIndex - segmentStart;
 		}
-		if (segments.length === 0) {
-			segments.push({ row: 0, startColumn: 0, endColumn: 0 });
-		}
-		this.visualLines = segments;
-		this.rowToFirstVisualLine = rowIndexLookup;
-		this.rowVisualLineCounts = counts;
+		segments.length = writeIndex;
+		rowIndexLookup.length = lineCount;
+		counts.length = lineCount;
 	}
 
 	private rebuildRowRange(
@@ -446,9 +515,11 @@ export class CodeLayout {
 			const startIndex = this.rowToFirstVisualLine[row];
 			const oldCount = this.rowVisualLineCounts[row] ?? 0;
 			const entry = this.getCachedHighlight(buffer, row);
-			const rowSegments = this.buildSegmentsForRow(entry.src, row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
-			this.visualLines.splice(startIndex, oldCount, ...rowSegments);
-			const newCount = rowSegments.length;
+			this.rowSegmentsScratch.clear();
+			const newEnd = this.appendSegmentsForRow(this.rowSegmentsScratch, 0, entry.src, row, entry, wordWrapEnabled, effectiveWrapWidth, approxWrapColumns);
+			this.replaceScratchSegmentsIntoVisualLines(startIndex, oldCount);
+			this.rowSegmentsScratch.clear();
+			const newCount = newEnd;
 			this.rowVisualLineCounts[row] = newCount;
 			this.rowToFirstVisualLine[row] = startIndex;
 			const delta = newCount - oldCount;
@@ -457,6 +528,31 @@ export class CodeLayout {
 					this.rowToFirstVisualLine[adjust] = (this.rowToFirstVisualLine[adjust] ?? 0) + delta;
 				}
 			}
+		}
+	}
+
+	private replaceScratchSegmentsIntoVisualLines(startIndex: number, deleteCount: number): void {
+		const insertCount = this.rowSegmentsScratch.size;
+		const oldLength = this.visualLines.length;
+		const shift = insertCount - deleteCount;
+		const newLength = oldLength + shift;
+		if (shift > 0) {
+			this.visualLines.length = newLength;
+			for (let index = oldLength; index-- > startIndex + deleteCount; ) {
+				this.visualLines[index + shift] = this.visualLines[index];
+			}
+		} else if (shift < 0) {
+			for (let index = startIndex + deleteCount; index < oldLength; index += 1) {
+				this.visualLines[index + shift] = this.visualLines[index];
+			}
+			this.visualLines.length = newLength;
+		}
+		for (let index = 0; index < insertCount; index += 1) {
+			const source = this.rowSegmentsScratch.peek(index);
+			const target = ensureVisualLineSegment(this.visualLines, startIndex + index);
+			target.row = source.row;
+			target.startColumn = source.startColumn;
+			target.endColumn = source.endColumn;
 		}
 	}
 
@@ -495,7 +591,13 @@ export class CodeLayout {
 		const highlight = entry.hi;
 		const startDisplay = this.columnToDisplay(highlight, startColumn);
 		const endDisplay = this.columnToDisplay(highlight, endColumn);
-		return this.measureRangeFast(entry, startDisplay, endDisplay);
+		const length = highlight.text.length;
+		if (length === 0) {
+			return 0;
+		}
+		const clampedStart = clamp(startDisplay, 0, length);
+		const clampedEnd = clamp(endDisplay, clampedStart, length);
+		return entry.advancePrefix[clampedEnd] - entry.advancePrefix[clampedStart];
 	}
 
 	private findApproximateWrapBreak(lineLength: number, startColumn: number, approxColumns: number): number {
@@ -505,18 +607,27 @@ export class CodeLayout {
 		return Math.min(lineLength, startColumn + approxColumns);
 	}
 
-	private buildSegmentsForRow(
+	private appendSegment(target: VisualLineSegmentTarget, index: number, row: number, startColumn: number, endColumn: number): void {
+		const segment = ensureVisualLineSegment(target, index);
+		segment.row = row;
+		segment.startColumn = startColumn;
+		segment.endColumn = endColumn;
+	}
+
+	private appendSegmentsForRow(
+		target: VisualLineSegmentTarget,
+		writeIndex: number,
 		line: string,
 		row: number,
 		entry: CachedHighlight,
 		wordWrapEnabled: boolean,
 		effectiveWrapWidth: number,
 		approxWrapColumns: number,
-	): VisualLineSegment[] {
+	): number {
 		if (!line || line.length === 0) {
-			return [{ row, startColumn: 0, endColumn: 0 }];
+			this.appendSegment(target, writeIndex, row, 0, 0);
+			return writeIndex + 1;
 		}
-		const segments: VisualLineSegment[] = [];
 		const length = line.length;
 		let column = 0;
 		while (column < length) {
@@ -525,10 +636,11 @@ export class CodeLayout {
 					: this.findApproximateWrapBreak(length, column, approxWrapColumns))
 				: length;
 			const endColumn = Math.max(column + 1, Math.min(length, nextBreak));
-			segments.push({ row, startColumn: column, endColumn });
+			this.appendSegment(target, writeIndex, row, column, endColumn);
+			writeIndex += 1;
 			column = endColumn;
 		}
-		return segments;
+		return writeIndex;
 	}
 
 	public getSemanticModel(buffer: TextBuffer, documentVersion: number, path: string): LuaSemanticModel {
@@ -763,32 +875,8 @@ export class CodeLayout {
 		}
 	}
 
-	private computeHotRowWindow(lineCount: number, scrollRow: number, visibleRows: number): { start: number; end: number } {
-		if (lineCount === 0) {
-			return { start: 0, end: -1 };
-		}
-		let startRow = 0;
-		let endRow = lineCount - 1;
-		const totalVisual = this.visualLines.length;
-		if (totalVisual > 0) {
-			const startSegment = this.visualIndexToSegment(clamp(scrollRow, 0, totalVisual - 1));
-			const endSegment = this.visualIndexToSegment(clamp(scrollRow + Math.max(1, visibleRows), 0, totalVisual - 1));
-			if (startSegment) {
-				startRow = startSegment.row;
-			}
-			if (endSegment) {
-				endRow = endSegment.row;
-			}
-		}
-		const margin = Math.max(this.viewportRowMargin, visibleRows * 2);
-		startRow = clamp(startRow - margin, 0, lineCount - 1);
-		endRow = clamp(endRow + margin, 0, lineCount - 1);
-		return { start: startRow, end: endRow };
-	}
-
 	private viewportWithinHotWindow(context: VisualLinesContext, visibleRows: number): boolean {
-		const hot = this.lastHotRowRange;
-		if (!hot || this.visualLines.length === 0) {
+		if (this.lastHotRowEnd < this.lastHotRowStart || this.visualLines.length === 0) {
 			return false;
 		}
 		const startSegment = this.visualLines[clamp(context.scrollRow, 0, this.visualLines.length - 1)];
@@ -800,10 +888,10 @@ export class CodeLayout {
 		const viewportStartRow = Math.min(startSegment.row, endSegment.row);
 		const viewportEndRow = Math.max(startSegment.row, endSegment.row);
 		const maxRow = this.rowToFirstVisualLine.length > 0 ? this.rowToFirstVisualLine.length - 1 : 0;
-		const guardStart = hot.start === 0 ? 0 : this.lastHotGuardRows;
-		const guardEnd = hot.end >= maxRow ? 0 : this.lastHotGuardRows;
-		const guardedStart = Math.max(0, hot.start + guardStart);
-		const guardedEnd = Math.max(guardedStart, hot.end - guardEnd);
+		const guardStart = this.lastHotRowStart === 0 ? 0 : this.lastHotGuardRows;
+		const guardEnd = this.lastHotRowEnd >= maxRow ? 0 : this.lastHotGuardRows;
+		const guardedStart = Math.max(0, this.lastHotRowStart + guardStart);
+		const guardedEnd = Math.max(guardedStart, this.lastHotRowEnd - guardEnd);
 		if (viewportStartRow < guardedStart) return false;
 		if (viewportEndRow > guardedEnd) return false;
 		return true;

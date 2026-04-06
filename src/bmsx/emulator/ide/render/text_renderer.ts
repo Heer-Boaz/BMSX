@@ -3,6 +3,7 @@ import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from '../te
 import * as constants from '../constants';
 import { api } from '../../overlay_api';
 import { splitText } from '../text/source_text';
+import { ScratchBuffer } from '../../../utils/scratchbuffer';
 
 let CASE_INSENSITIVE_EDITOR = true;
 
@@ -14,6 +15,9 @@ type DrawEditorTextOptions = {
 	preserveCase?: boolean;
 	forceUppercase?: boolean;
 };
+
+const createStringSlot = (): string => '';
+const uppercaseScratch = new ScratchBuffer<string>(createStringSlot, 32);
 
 export function drawEditorText(font: EditorFont, text: string, originX: number, originY: number, z: number, color: number, options?: DrawEditorTextOptions): void {
 	const baseX = originX;
@@ -68,11 +72,16 @@ function toUpperExceptStrings(text: string, colors: readonly number[], fallbackC
 	if (text.length === 0) {
 		return text;
 	}
-	const buffer: string[] = new Array(text.length);
+	uppercaseScratch.clear();
+	uppercaseScratch.reserve(text.length);
 	for (let i = 0; i < text.length; i += 1) {
 		const ch = text.charAt(i);
 		const color = colors[i] ?? fallbackColor;
-		buffer[i] = color === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING ? ch : ch.toUpperCase();
+		uppercaseScratch.set(i, color === constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING ? ch : ch.toUpperCase());
 	}
-	return buffer.join('');
+	let result = '';
+	for (let i = 0; i < text.length; i += 1) {
+		result += uppercaseScratch.peek(i);
+	}
+	return result;
 }

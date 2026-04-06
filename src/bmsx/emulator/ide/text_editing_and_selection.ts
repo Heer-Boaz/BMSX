@@ -923,7 +923,6 @@ export function copySelectionLines(delta: number): void {
 	}
 	const buffer = ide_state.buffer;
 	const lineCount = buffer.getLineCount();
-	const selectionRange = getSelectionRange();
 	const lineRange = getLineRangeForMovement();
 	const insertionStart = delta < 0 ? lineRange.startRow : lineRange.endRow + 1;
 	const rowOffset = insertionStart - lineRange.startRow;
@@ -945,19 +944,12 @@ export function copySelectionLines(delta: number): void {
 	invalidateLineRange(insertionStart, insertionStart + blockLines.length - 1);
 	ide_state.layout.invalidateHighlightsFromRow(insertionStart);
 
-	if (selectionRange) {
-		const anchorIsStart = comparePositions(ide_state.selectionAnchor, selectionRange.start) === 0;
-		const newStart = { row: selectionRange.start.row + rowOffset, column: selectionRange.start.column };
-		const newEnd = { row: selectionRange.end.row + rowOffset, column: selectionRange.end.column };
-		if (anchorIsStart) {
-			ide_state.selectionAnchor = newStart;
-			ide_state.cursorRow = newEnd.row;
-			ide_state.cursorColumn = clamp(newEnd.column, 0, buffer.getLineEndOffset(newEnd.row) - buffer.getLineStartOffset(newEnd.row));
-		} else {
-			ide_state.selectionAnchor = newEnd;
-			ide_state.cursorRow = newStart.row;
-			ide_state.cursorColumn = clamp(newStart.column, 0, buffer.getLineEndOffset(newStart.row) - buffer.getLineStartOffset(newStart.row));
-		}
+	const anchor = ide_state.selectionAnchor;
+	if (anchor && (anchor.row !== ide_state.cursorRow || anchor.column !== ide_state.cursorColumn)) {
+		const cursorRow = ide_state.cursorRow + rowOffset;
+		anchor.row += rowOffset;
+		ide_state.cursorRow = cursorRow;
+		ide_state.cursorColumn = clamp(ide_state.cursorColumn, 0, buffer.getLineEndOffset(cursorRow) - buffer.getLineStartOffset(cursorRow));
 	} else {
 		const targetRow = clamp(ide_state.cursorRow + rowOffset, 0, buffer.getLineCount() - 1);
 		ide_state.cursorRow = targetRow;

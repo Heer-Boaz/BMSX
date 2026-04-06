@@ -1,181 +1,180 @@
-import type { OverlayApi as Api } from '../../overlay_api';
 import { drawInlineCaret } from './render_caret';
 import * as constants from '../constants';
 import type { TextField } from '../types';
 import { ide_state } from '../ide_state';
-import { caretX, type InlineFieldMetrics, measureRange, selectionRange } from '../inline_text_field';
+import { measureInlineFieldDecoration } from '../inline_text_field';
 import { api } from '../../overlay_api';
 import { drawEditorText } from './text_renderer';
-import { getCreateResourceBarHeight, getResourceSearchBarHeight, getSearchBarHeight, isResourceSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../editor_view';
+import { drawCreateResourceErrorDialog } from './render_resource_panel';
+import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../editor_search';
+import { getCreateResourceBarHeight, getLineJumpBarHeight, getRenameBarHeight, getResourceSearchBarHeight, getSearchBarHeight, getSymbolSearchBarHeight, isResourceSearchCompactMode, isSymbolSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount, searchResultEntryHeight, searchVisibleResultCount, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../editor_view';
 import { measureText } from '../text_utils';
 import { textFromLines } from '../text/source_text';
 
-type InlineResultListOptions<T> = {
-	entries: readonly T[];
-	visibleCount: number;
-	displayOffset: number;
-	entriesBaseOffset?: number;
-	rowHeight: number;
-	rowTop: number;
-	viewportWidth: number;
-	selectionIndex: number;
-	hoverIndex: number;
-	drawRow: (entry: T, rowTop: number) => void;
+type InlineSearchResultEntry = {
+	primary: string;
+	secondary?: string;
+	detail?: string;
 };
 
-export interface InlineBarsHost {
-	viewportWidth: number;
-	headerHeight: number;
-	tabBarHeight: number;
-	lineHeight: number;
-	spaceAdvance: number;
-	charAdvance?: number;
-	measureText: (text: string) => number;
-	drawText: (text: string, x: number, y: number, color: number) => void;
-	inlineFieldMetrics: () => InlineFieldMetrics;
-	createResourceActive: boolean;
-	createResourceVisible: boolean;
-	createResourceField: TextField;
-	createResourceWorking: boolean;
-	createResourceError: string;
-	drawCreateResourceErrorDialog: (api: Api, errorText: string) => void;
-	getCreateResourceBarHeight: () => number;
-	// Additional height getters for other bars (editor will supply these)
-	getSearchBarHeight: () => number;
-	getResourceSearchBarHeight: () => number;
-	getSymbolSearchBarHeight: () => number;
-	getRenameBarHeight: () => number;
-	getLineJumpBarHeight: () => number;
-	drawInlineCaret: typeof drawInlineCaret;
-	inlineFieldSelectionRange: (field: unknown) => { start: number; end: number };
-	inlineFieldMeasureRange: (field: unknown, metrics: InlineFieldMetrics, start: number, end: number) => number;
-	inlineFieldCaretX: (field: unknown, originX: number, metrics: InlineFieldMetrics) => number;
+type InlineResourceSearchResult = {
+	entry: {
+		typeLabel: string;
+		displayPath: string;
+		assetLabel?: string;
+	};
+};
 
-	// When true, all inline carets should render as outlines (not active),
-	// e.g. when another panel has focus (Problems panel).
-	blockActiveCarets?: boolean;
+type InlineSymbolSearchResult = {
+	entry: {
+		kindLabel: string;
+		displayName: string;
+		line: number;
+		sourceLabel?: string;
+		symbol: unknown;
+	};
+};
 
-	// Search bar state
-	searchActive?: boolean;
-	searchField?: unknown;
-	searchQuery?: string;
-	searchMatchesCount?: number;
-	searchCurrentIndex?: number;
-	searchScope?: 'local' | 'global';
-	searchWorking?: boolean;
-	searchVisibleResultCount?: () => number;
-	searchResultEntryHeight?: () => number;
-	searchResultEntries?: Array<{ primary: string; secondary?: string; detail?: string }>;
-	searchResultEntriesBaseOffset?: number;
-	searchSelectionIndex?: number;
-	searchHoverIndex?: number;
-	searchDisplayOffset?: number;
+const drawSearchResultRow = (entry: InlineSearchResultEntry, rowTop: number): void => {
+	const paddingX = constants.QUICK_OPEN_RESULT_PADDING_X;
+	const secondaryY = rowTop + ide_state.lineHeight;
+	if (entry.primary) {
+		drawEditorText(ide_state.font, entry.primary, paddingX, rowTop, undefined, constants.COLOR_SEARCH_TEXT);
+	}
+	if (entry.detail) {
+		const detailWidth = measureText(entry.detail);
+		const detailX = ide_state.viewportWidth - detailWidth - paddingX;
+		drawEditorText(ide_state.font, entry.detail, detailX, rowTop, undefined, constants.COLOR_SEARCH_SECONDARY_TEXT);
+	}
+	if (entry.secondary) {
+		drawEditorText(ide_state.font, entry.secondary, paddingX, secondaryY, undefined, constants.COLOR_SEARCH_SECONDARY_TEXT);
+	}
+};
 
-	// Resource search bar state and helpers
-	resourceSearchActive?: boolean;
-	resourceSearchField?: unknown;
-	resourceSearchVisibleResultCount?: () => number;
-	resourceSearchEntryHeight?: () => number;
-	isResourceSearchCompactMode?: () => boolean;
-	resourceSearchMatches?: Array<{ entry: { typeLabel: string; displayPath: string; assetLabel?: string } }>;
-	resourceSearchSelectionIndex?: number;
-	resourceSearchHoverIndex?: number;
-	resourceSearchDisplayOffset?: number;
+const drawResourceSearchResultRow = (match: InlineResourceSearchResult, rowTop: number): void => {
+	let textX = constants.QUICK_OPEN_RESULT_PADDING_X;
+	const kindText = match.entry.typeLabel;
+	const detail = match.entry.assetLabel ?? '';
+	if (kindText.length > 0) {
+		drawEditorText(ide_state.font, kindText, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
+		textX += measureText(kindText) + ide_state.spaceAdvance;
+	}
+	drawEditorText(ide_state.font, match.entry.displayPath, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_TEXT);
+	if (isResourceSearchCompactMode()) {
+		const secondaryY = rowTop + ide_state.lineHeight;
+		if (detail.length > 0) {
+			drawEditorText(ide_state.font, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_QUICK_OPEN_KIND);
+		}
+	} else if (detail.length > 0) {
+		const detailWidth = measureText(detail);
+		const detailX = ide_state.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
+		drawEditorText(ide_state.font, detail, detailX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
+	}
+};
 
-	// Symbol search bar state and helpers
-	symbolSearchGlobal?: boolean;
-	symbolSearchActive?: boolean;
-	symbolSearchMode?: 'symbols' | 'references';
-	symbolSearchField?: unknown;
-	symbolSearchVisibleResultCount?: () => number;
-	symbolSearchEntryHeight?: () => number;
-	isSymbolSearchCompactMode?: () => boolean;
-	symbolSearchMatches?: Array<{ entry: { kindLabel: string; displayName: string; line: number; sourceLabel?: string; symbol?: unknown } }>;
-	symbolSearchSelectionIndex?: number;
-	symbolSearchHoverIndex?: number;
-	symbolSearchDisplayOffset?: number;
+const drawSymbolSearchResultRow = (match: InlineSymbolSearchResult, rowTop: number): void => {
+	const mode = ide_state.symbolSearchMode ?? 'symbols';
+	const compactMode = mode === 'references'
+		? true
+		: (ide_state.symbolSearchGlobal && isSymbolSearchCompactMode());
+	let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
+	const kindText = match.entry.kindLabel;
+	const symbol = match.entry.symbol as { __referenceColumn?: number };
+	const referenceColumn = symbol.__referenceColumn;
+	const lineValue = match.entry.line;
+	const lineText = mode === 'references' && typeof referenceColumn === 'number'
+		? `:${lineValue}:${referenceColumn}`
+		: `:${lineValue}`;
+	const lineWidth = measureText(lineText);
+	if (kindText.length > 0) {
+		drawEditorText(ide_state.font, kindText, textX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
+		textX += measureText(kindText) + ide_state.spaceAdvance;
+	}
+	drawEditorText(ide_state.font, match.entry.displayName, textX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
+	if (compactMode) {
+		const secondaryY = rowTop + ide_state.lineHeight;
+		const lineX = ide_state.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
+		drawEditorText(ide_state.font, lineText, lineX, secondaryY, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
+		const sourceLabel = match.entry.sourceLabel ?? '';
+		if (sourceLabel) {
+			drawEditorText(ide_state.font, sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
+		}
+	} else {
+		const lineX = ide_state.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
+		drawEditorText(ide_state.font, lineText, lineX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
+		const sourceLabel = match.entry.sourceLabel ?? '';
+		if (sourceLabel) {
+			const sourceWidth = measureText(sourceLabel);
+			const sourceX = Math.max(textX, lineX - ide_state.spaceAdvance - sourceWidth);
+			drawEditorText(ide_state.font, sourceLabel, sourceX, rowTop, undefined, constants.COLOR_SYMBOL_SEARCH_KIND);
+		}
+	}
+};
 
-	// Line jump bar state
-	lineJumpActive?: boolean;
-	lineJumpField?: unknown;
-
-	// Rename bar state
-	renameActive?: boolean;
-	renameField?: unknown;
-	renameMatchCount?: number;
-	renameExpression?: string;
-	renameOriginalName?: string;
-}
-
-export function renderCreateResourceBar(api: Api, host: InlineBarsHost): void {
-	const height = host.getCreateResourceBarHeight();
+export function renderCreateResourceBar(): void {
+	const height = getCreateResourceBarHeight();
 	if (height <= 0) return;
-	const barTop = host.headerHeight + host.tabBarHeight;
+	const barTop = ide_state.headerHeight + ide_state.tabBarHeight;
 	const barBottom = barTop + height;
-	api.fill_rect(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_CREATE_RESOURCE_BACKGROUND);
-	api.fill_rect(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_CREATE_RESOURCE_OUTLINE);
-	api.fill_rect(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_CREATE_RESOURCE_OUTLINE);
+	api.fill_rect(0, barTop, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_CREATE_RESOURCE_BACKGROUND);
+	api.fill_rect(0, barTop, ide_state.viewportWidth, barTop + 1, undefined, constants.COLOR_CREATE_RESOURCE_OUTLINE);
+	api.fill_rect(0, barBottom - 1, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_CREATE_RESOURCE_OUTLINE);
 
 	const label = 'NEW FILE:';
 	const labelX = 4;
 	const labelY = barTop + constants.CREATE_RESOURCE_BAR_MARGIN_Y;
-	host.drawText(label, labelX, labelY, constants.COLOR_CREATE_RESOURCE_TEXT);
+	drawEditorText(ide_state.font, label, labelX, labelY, undefined, constants.COLOR_CREATE_RESOURCE_TEXT);
 
-	const field = host.createResourceField;
-	const pathX = labelX + host.measureText(label + ' ');
+	const field = ide_state.createResourceField;
+	const pathX = labelX + measureText(label) + ide_state.spaceAdvance;
 	const fieldText = textFromLines(field.lines);
 	let displayPath = fieldText;
 	let pathColor = constants.COLOR_CREATE_RESOURCE_TEXT;
-	if (displayPath.length === 0 && !host.createResourceActive) {
+	const blockActiveCarets = ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused;
+	if (displayPath.length === 0 && !ide_state.createResourceActive) {
 		displayPath = 'ENTER LUA PATH';
 		pathColor = constants.COLOR_CREATE_RESOURCE_PLACEHOLDER;
 	}
 
-	const selection = host.inlineFieldSelectionRange(field);
-	if (selection && fieldText.length > 0) {
-		const selectionLeft = pathX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
-		if (selectionWidth > 0) {
-			api.fill_rect_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
-		}
+	const decoration = measureInlineFieldDecoration(field, ide_state.inlineFieldMetricsRef, pathX);
+	if (decoration.hasSelection && decoration.selectionWidth > 0) {
+		api.fill_rect_color(decoration.selectionLeft, labelY, decoration.selectionLeft + decoration.selectionWidth, labelY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
 	}
+	drawEditorText(ide_state.font, displayPath, pathX, labelY, undefined, pathColor);
 
-	host.drawText(displayPath, pathX, labelY, pathColor);
-
-	const caretBaseX = host.inlineFieldCaretX(field, pathX, host.inlineFieldMetrics());
-	const caretLeft = Math.floor(caretBaseX);
-	const caretRight = Math.max(caretLeft + 1, Math.floor(caretBaseX + host.spaceAdvance));
-	const caretTop = Math.floor(labelY);
-	const caretBottom = caretTop + host.lineHeight;
-	host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretBaseX, (host.createResourceActive && !host.blockActiveCarets), constants.INLINE_CARET_COLOR, pathColor);
+	const caretLeft = Math.floor(decoration.caretBaseX);
+	const caretRight = Math.max(caretLeft + 1, Math.floor(decoration.caretBaseX + ide_state.spaceAdvance));
+	drawInlineCaret(api, field, caretLeft, labelY, caretRight, labelY + ide_state.lineHeight, decoration.caretBaseX, (ide_state.createResourceActive && !blockActiveCarets), constants.INLINE_CARET_COLOR, pathColor);
 
 	// Status or error overlay on the right
-	if (host.createResourceWorking) {
+	if (ide_state.createResourceWorking) {
 		const status = 'CREATING...';
-		const statusWidth = host.measureText(status);
-		const statusX = Math.max(pathX + host.measureText(displayPath) + host.spaceAdvance, host.viewportWidth - statusWidth - 4);
-		host.drawText(status, statusX, labelY, constants.COLOR_CREATE_RESOURCE_TEXT);
-	} else if (host.createResourceError && host.createResourceError.length > 0) {
-		host.drawCreateResourceErrorDialog(api, host.createResourceError);
+		const statusWidth = measureText(status);
+		const displayWidth = measureText(displayPath);
+		const statusX = Math.max(pathX + displayWidth + ide_state.spaceAdvance, ide_state.viewportWidth - statusWidth - 4);
+		drawEditorText(ide_state.font, status, statusX, labelY, undefined, constants.COLOR_CREATE_RESOURCE_TEXT);
+	} else if (ide_state.createResourceError && ide_state.createResourceError.length > 0) {
+		drawCreateResourceErrorDialog(ide_state.createResourceError);
 	}
 }
 
-export function renderSearchBar(host: InlineBarsHost): void {
-	const height = host.getSearchBarHeight();
+export function renderSearchBar(): void {
+	const height = getSearchBarHeight();
 	if (height <= 0) return;
-	const barTop = host.headerHeight + host.tabBarHeight + host.getCreateResourceBarHeight();
+	const barTop = ide_state.headerHeight + ide_state.tabBarHeight + getCreateResourceBarHeight();
 	const barBottom = barTop + height;
-	api.fill_rect(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_BACKGROUND);
-	api.fill_rect(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_SEARCH_OUTLINE);
-	api.fill_rect(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_OUTLINE);
+	api.fill_rect(0, barTop, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_BACKGROUND);
+	api.fill_rect(0, barTop, ide_state.viewportWidth, barTop + 1, undefined, constants.COLOR_SEARCH_OUTLINE);
+	api.fill_rect(0, barBottom - 1, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_OUTLINE);
 
-	const field = host.searchField as TextField;
-	const label = host.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
+	const field = ide_state.searchField as TextField;
+	const label = ide_state.searchScope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
 	const labelX = 4;
 	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
-	host.drawText(label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
+	drawEditorText(ide_state.font, label, labelX, labelY, undefined, constants.COLOR_SEARCH_TEXT);
 
-	const active = !!host.searchActive && !host.blockActiveCarets;
+	const blockActiveCarets = ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused;
+	const active = !!ide_state.searchActive && !blockActiveCarets;
 	const fieldText = field ? textFromLines(field.lines) : '';
 	let queryText = fieldText;
 	let queryColor = constants.COLOR_SEARCH_TEXT;
@@ -183,79 +182,49 @@ export function renderSearchBar(host: InlineBarsHost): void {
 		queryText = 'TYPE TO SEARCH';
 		queryColor = constants.COLOR_SEARCH_PLACEHOLDER;
 	}
-	const queryX = labelX + host.measureText(label + ' ');
+	const queryX = labelX + measureText(label) + ide_state.spaceAdvance;
 
-	const selection = field ? host.inlineFieldSelectionRange(field) : null;
-	if (selection && fieldText.length > 0) {
-		const selectionLeft = queryX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
-		if (selectionWidth > 0) {
-			api.fill_rect_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
-		}
+	const decoration = measureInlineFieldDecoration(field, ide_state.inlineFieldMetricsRef, queryX);
+	if (fieldText.length > 0 && decoration.hasSelection && decoration.selectionWidth > 0) {
+		api.fill_rect_color(decoration.selectionLeft, labelY, decoration.selectionLeft + decoration.selectionWidth, labelY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
 	}
 
-	host.drawText(queryText, queryX, labelY, queryColor);
+	drawEditorText(ide_state.font, queryText, queryX, labelY, undefined, queryColor);
 
 	if (field) {
-		const caretX = host.inlineFieldCaretX(field, queryX, host.inlineFieldMetrics());
-		const caretLeft = Math.floor(caretX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
-		const caretTop = Math.floor(labelY);
-		const caretBottom = caretTop + host.lineHeight;
-		host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, queryColor);
+		const caretLeft = Math.floor(decoration.caretBaseX);
+		const caretRight = Math.max(caretLeft + 1, Math.floor(decoration.caretBaseX + ide_state.charAdvance));
+		drawInlineCaret(api, field, caretLeft, labelY, caretRight, labelY + ide_state.lineHeight, decoration.caretBaseX, active, constants.INLINE_CARET_COLOR, queryColor);
 	}
 
-	const infoX = host.viewportWidth - 4;
-	const total = host.searchMatchesCount ?? 0;
-	const current = host.searchCurrentIndex ?? -1;
-	if (host.searchWorking) {
+	const infoX = ide_state.viewportWidth - 4;
+	const total = activeSearchMatchCount();
+	const current = ide_state.searchCurrentIndex ?? -1;
+	const searchWorking = ide_state.searchScope === 'global'
+		? ide_state.globalSearchJob !== null
+		: ide_state.searchJob !== null;
+	if (searchWorking) {
 		const workingText = 'SEARCHING...';
-		const workingWidth = host.measureText(workingText);
-		host.drawText(workingText, infoX - workingWidth, labelY, constants.COLOR_SEARCH_TEXT);
-	} else if (total > 0 || (host.searchQuery && host.searchQuery.length > 0)) {
+		const workingWidth = measureText(workingText);
+		drawEditorText(ide_state.font, workingText, infoX - workingWidth, labelY, undefined, constants.COLOR_SEARCH_TEXT);
+	} else if (total > 0 || (ide_state.searchQuery && ide_state.searchQuery.length > 0)) {
 		const infoText = total === 0 ? '0/0' : `${(current >= 0 ? current + 1 : 0)}/${total}`;
 		const infoColor = total === 0 ? constants.COLOR_STATUS_WARNING : constants.COLOR_SEARCH_TEXT;
-		const infoWidth = host.measureText(infoText);
-		host.drawText(infoText, infoX - infoWidth, labelY, infoColor);
+		const infoWidth = measureText(infoText);
+		drawEditorText(ide_state.font, infoText, infoX - infoWidth, labelY, undefined, infoColor);
 	}
 
-	const visible = host.searchVisibleResultCount ? host.searchVisibleResultCount() : 0;
+	const visible = searchVisibleResultCount();
 	if (visible <= 0) {
 		return;
 	}
-	const baseHeight = host.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	const baseHeight = ide_state.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 	const separatorTop = barTop + baseHeight;
-	api.fill_rect(0, separatorTop, host.viewportWidth, separatorTop + constants.SEARCH_RESULT_SPACING, undefined, constants.COLOR_SEARCH_OUTLINE);
+	api.fill_rect(0, separatorTop, ide_state.viewportWidth, separatorTop + constants.SEARCH_RESULT_SPACING, undefined, constants.COLOR_SEARCH_OUTLINE);
 	const resultsTop = separatorTop + constants.SEARCH_RESULT_SPACING;
-	const rowHeight = host.searchResultEntryHeight ? host.searchResultEntryHeight() : host.lineHeight * 2;
+	const rowHeight = searchResultEntryHeight();
 
-	renderResultList({
-		entries: host.searchResultEntries,
-		visibleCount: visible,
-		displayOffset: host.searchDisplayOffset ?? 0,
-		entriesBaseOffset: host.searchResultEntriesBaseOffset ?? 0,
-		rowHeight,
-		rowTop: resultsTop,
-		viewportWidth: host.viewportWidth,
-		selectionIndex: host.searchSelectionIndex ?? -1,
-		hoverIndex: host.searchHoverIndex ?? -1,
-		drawRow: (entry, rowTop) => {
-			const paddingX = constants.QUICK_OPEN_RESULT_PADDING_X;
-			const primaryY = rowTop;
-			const secondaryY = rowTop + host.lineHeight;
-			if (entry.primary) {
-				host.drawText(entry.primary, paddingX, primaryY, constants.COLOR_SEARCH_TEXT);
-			}
-			if (entry.detail) {
-				const detailWidth = host.measureText(entry.detail);
-				const detailX = host.viewportWidth - detailWidth - paddingX;
-				host.drawText(entry.detail, detailX, primaryY, constants.COLOR_SEARCH_SECONDARY_TEXT);
-			}
-			if (entry.secondary) {
-				host.drawText(entry.secondary, paddingX, secondaryY, constants.COLOR_SEARCH_SECONDARY_TEXT);
-			}
-		},
-	});
+	renderResultList(getVisibleSearchResultEntries(), visible, ide_state.searchDisplayOffset ?? 0, ide_state.searchDisplayOffset ?? 0, rowHeight, resultsTop, ide_state.viewportWidth, ide_state.searchCurrentIndex ?? -1, ide_state.searchHoverIndex ?? -1, drawSearchResultRow);
 }
 
 export function renderResourceSearchBar(): void {
@@ -281,25 +250,18 @@ export function renderResourceSearchBar(): void {
 		queryText = 'TYPE TO FILTER (@/# PREFIX)';
 		queryColor = constants.COLOR_QUICK_OPEN_PLACEHOLDER;
 	}
-	const queryX = labelX + measureText(label + ' ');
-
-	const selection = field ? selectionRange(field) : null;
-	if (selection && fieldText.length > 0) {
-		const selectionLeft = queryX + measureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = measureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
-		if (selectionWidth > 0) {
-			api.fill_rect_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
-		}
+	const queryX = labelX + measureText(label) + ide_state.spaceAdvance;
+	const decoration = measureInlineFieldDecoration(field, ide_state.inlineFieldMetricsRef, queryX);
+	if (fieldText.length > 0 && decoration.hasSelection && decoration.selectionWidth > 0) {
+		api.fill_rect_color(decoration.selectionLeft, labelY, decoration.selectionLeft + decoration.selectionWidth, labelY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
 	}
 
 	drawEditorText(ide_state.font, queryText, queryX, labelY, undefined, queryColor);
 
 	if (field) {
-		const caretLeft = caretX(field, queryX, ide_state.inlineFieldMetricsRef);
-		const caretRight = Math.max(caretLeft + 1, caretLeft + (ide_state.charAdvance));
-		const caretTop = labelY;
-		const caretBottom = caretTop + ide_state.lineHeight;
-		drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretLeft, active, constants.INLINE_CARET_COLOR, queryColor);
+		const caretLeft = Math.floor(decoration.caretBaseX);
+		const caretRight = Math.max(caretLeft + 1, Math.floor(decoration.caretBaseX + ide_state.charAdvance));
+		drawInlineCaret(api, field, caretLeft, labelY, caretRight, labelY + ide_state.lineHeight, decoration.caretBaseX, active, constants.INLINE_CARET_COLOR, queryColor);
 	}
 
 	const visible = resourceSearchVisibleResultCount();
@@ -309,57 +271,27 @@ export function renderResourceSearchBar(): void {
 	api.fill_rect(0, separatorTop, ide_state.viewportWidth, separatorTop + constants.QUICK_OPEN_RESULT_SPACING, undefined, constants.COLOR_QUICK_OPEN_OUTLINE);
 	const resultsTop = separatorTop + constants.QUICK_OPEN_RESULT_SPACING;
 	const rowHeight = resourceSearchEntryHeight();
-	const compactMode = isResourceSearchCompactMode();
 
-	renderResultList({
-		entries: ide_state.resourceSearchMatches,
-		visibleCount: visible,
-		displayOffset: ide_state.resourceSearchDisplayOffset ?? 0,
-		rowHeight,
-		rowTop: resultsTop,
-		viewportWidth: ide_state.viewportWidth,
-		selectionIndex: ide_state.resourceSearchSelectionIndex ?? -1,
-		hoverIndex: ide_state.resourceSearchHoverIndex ?? -1,
-		drawRow: (match, rowTop) => {
-			let textX = constants.QUICK_OPEN_RESULT_PADDING_X;
-			const kindText = match?.entry.typeLabel ?? '';
-			const detail = match?.entry.assetLabel ?? '';
-			if (kindText.length > 0) {
-				drawEditorText(ide_state.font, kindText, textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
-				textX += measureText(kindText + ' ');
-			}
-			drawEditorText(ide_state.font, match?.entry.displayPath ?? '', textX, rowTop, undefined, constants.COLOR_QUICK_OPEN_TEXT);
-			if (compactMode) {
-				const secondaryY = rowTop + ide_state.lineHeight;
-				if (detail.length > 0) {
-					drawEditorText(ide_state.font, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, undefined, constants.COLOR_QUICK_OPEN_KIND);
-				}
-			} else if (detail.length > 0) {
-				const detailWidth = measureText(detail);
-				const detailX = ide_state.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
-				drawEditorText(ide_state.font, detail, detailX, rowTop, undefined, constants.COLOR_QUICK_OPEN_KIND);
-			}
-		},
-	});
+	renderResultList(ide_state.resourceSearchMatches, visible, ide_state.resourceSearchDisplayOffset ?? 0, 0, rowHeight, resultsTop, ide_state.viewportWidth, ide_state.resourceSearchSelectionIndex ?? -1, ide_state.resourceSearchHoverIndex ?? -1, drawResourceSearchResultRow);
 }
 
-export function renderSymbolSearchBar(api: Api, host: InlineBarsHost): void {
-	const height = host.getSymbolSearchBarHeight();
+export function renderSymbolSearchBar(): void {
+	const height = getSymbolSearchBarHeight();
 	if (height <= 0) return;
-	const barTop = host.headerHeight + host.tabBarHeight + host.getCreateResourceBarHeight() + host.getSearchBarHeight() + host.getResourceSearchBarHeight();
+	const barTop = ide_state.headerHeight + ide_state.tabBarHeight + getCreateResourceBarHeight() + getSearchBarHeight() + getResourceSearchBarHeight();
 	const barBottom = barTop + height;
-	api.fill_rect(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_SYMBOL_SEARCH_BACKGROUND);
-	api.fill_rect(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
-	api.fill_rect(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
+	api.fill_rect(0, barTop, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_SYMBOL_SEARCH_BACKGROUND);
+	api.fill_rect(0, barTop, ide_state.viewportWidth, barTop + 1, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
+	api.fill_rect(0, barBottom - 1, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 
-	const field = host.symbolSearchField as TextField;
-	const mode = host.symbolSearchMode ?? 'symbols';
-	const label = mode === 'references' ? 'REFS :' : host.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
+	const field = ide_state.symbolSearchField as TextField;
+	const mode = ide_state.symbolSearchMode ?? 'symbols';
+	const label = mode === 'references' ? 'REFS :' : ide_state.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
 	const labelX = 4;
 	const labelY = barTop + constants.SYMBOL_SEARCH_BAR_MARGIN_Y;
-	host.drawText(label, labelX, labelY, constants.COLOR_SYMBOL_SEARCH_TEXT);
+	drawEditorText(ide_state.font, label, labelX, labelY, undefined, constants.COLOR_SYMBOL_SEARCH_TEXT);
 
-	const active = !!host.symbolSearchActive;
+	const active = !!ide_state.symbolSearchActive;
 	const fieldText = field ? textFromLines(field.lines) : '';
 	let queryText = fieldText;
 	let queryColor = constants.COLOR_SYMBOL_SEARCH_TEXT;
@@ -368,95 +300,50 @@ export function renderSymbolSearchBar(api: Api, host: InlineBarsHost): void {
 		queryText = placeholder;
 		queryColor = constants.COLOR_SYMBOL_SEARCH_PLACEHOLDER;
 	}
-	const queryX = labelX + host.measureText(label + ' ');
-
-	const selection = field ? host.inlineFieldSelectionRange(field) : null;
-	if (selection && fieldText.length > 0) {
-		const selectionLeft = queryX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
-		if (selectionWidth > 0) {
-			api.fill_rect_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
-		}
+	const queryX = labelX + measureText(label) + ide_state.spaceAdvance;
+	const decoration = measureInlineFieldDecoration(field, ide_state.inlineFieldMetricsRef, queryX);
+	if (fieldText.length > 0 && decoration.hasSelection && decoration.selectionWidth > 0) {
+		api.fill_rect_color(decoration.selectionLeft, labelY, decoration.selectionLeft + decoration.selectionWidth, labelY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
 	}
 
-	host.drawText(queryText, queryX, labelY, queryColor);
+	drawEditorText(ide_state.font, queryText, queryX, labelY, undefined, queryColor);
 
 	if (field) {
-		const caretX = host.inlineFieldCaretX(field, queryX, host.inlineFieldMetrics());
-		const caretLeft = Math.floor(caretX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
-		const caretTop = Math.floor(labelY);
-		const caretBottom = caretTop + host.lineHeight;
-		host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, queryColor);
+		const caretLeft = Math.floor(decoration.caretBaseX);
+		const caretRight = Math.max(caretLeft + 1, Math.floor(decoration.caretBaseX + ide_state.charAdvance));
+		drawInlineCaret(api, field, caretLeft, labelY, caretRight, labelY + ide_state.lineHeight, decoration.caretBaseX, active, constants.INLINE_CARET_COLOR, queryColor);
 	}
 
-	const visible = host.symbolSearchVisibleResultCount ? host.symbolSearchVisibleResultCount() : 0;
+	const visible = symbolSearchVisibleResultCount();
 	if (visible <= 0) {
 		return;
 	}
-	const baseHeight = host.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+	const baseHeight = ide_state.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
 	const separatorTop = barTop + baseHeight;
-	api.fill_rect(0, separatorTop, host.viewportWidth, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
+	api.fill_rect(0, separatorTop, ide_state.viewportWidth, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, undefined, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 	const resultsTop = separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING;
-	const entryHeight = host.symbolSearchEntryHeight ? host.symbolSearchEntryHeight() : host.lineHeight * 2;
-	const compactMode = mode === 'references'
-		? true
-		: (host.symbolSearchGlobal && host.isSymbolSearchCompactMode ? host.isSymbolSearchCompactMode() : false) as boolean;
-	renderResultList({
-		entries: host.symbolSearchMatches,
-		visibleCount: visible,
-		displayOffset: host.symbolSearchDisplayOffset ?? 0,
-		rowHeight: entryHeight,
-		rowTop: resultsTop,
-		viewportWidth: host.viewportWidth,
-		selectionIndex: host.symbolSearchSelectionIndex ?? -1,
-		hoverIndex: host.symbolSearchHoverIndex ?? -1,
-		drawRow: (match, rowTop) => {
-			let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-			const kindText = match?.entry.kindLabel ?? '';
-			const symbol = match?.entry.symbol as { __referenceColumn?: number };
-			const referenceColumn = symbol?.__referenceColumn;
-			const lineValue = match?.entry.line ?? 0;
-			const lineText = mode === 'references' && typeof referenceColumn === 'number'
-				? `:${lineValue}:${referenceColumn}`
-				: `:${lineValue}`;
-			const lineWidth = host.measureText(lineText);
-			if (kindText.length > 0) {
-				host.drawText(kindText, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
-				textX += host.measureText(kindText + ' ');
-			}
-			host.drawText(match?.entry.displayName ?? '', textX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
-			if (compactMode) {
-				const secondaryY = rowTop + host.lineHeight;
-				const lineX = host.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-				host.drawText(lineText, lineX, secondaryY, constants.COLOR_SYMBOL_SEARCH_TEXT);
-				const sourceLabel = match?.entry.sourceLabel ?? '';
-				if (sourceLabel) {
-					host.drawText(sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, constants.COLOR_SYMBOL_SEARCH_KIND);
-				}
-			} else {
-				const lineX = host.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-				host.drawText(lineText, lineX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
-				const sourceLabel = match?.entry.sourceLabel ?? '';
-				if (sourceLabel) {
-					const sourceWidth = host.measureText(sourceLabel);
-					const sourceX = Math.max(textX, lineX - host.spaceAdvance - sourceWidth);
-					host.drawText(sourceLabel, sourceX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
-				}
-			}
-		},
-	});
+	const entryHeight = symbolSearchEntryHeight();
+	renderResultList(ide_state.symbolSearchMatches, visible, ide_state.symbolSearchDisplayOffset ?? 0, 0, entryHeight, resultsTop, ide_state.viewportWidth, ide_state.symbolSearchSelectionIndex ?? -1, ide_state.symbolSearchHoverIndex ?? -1, drawSymbolSearchResultRow);
 }
 
-function renderResultList<T>(options: InlineResultListOptions<T>): void {
-	const { entries, visibleCount } = options;
-	if (!entries || visibleCount <= 0) {
+function renderResultList<T>(
+	entries: readonly T[],
+	visibleCount: number,
+	displayOffset: number,
+	entriesBaseOffset: number,
+	rowHeight: number,
+	rowTop: number,
+	viewportWidth: number,
+	selectionIndex: number,
+	hoverIndex: number,
+	drawRow: (entry: T, rowTop: number) => void,
+): void {
+	if (visibleCount <= 0) {
 		return;
 	}
-	const baseOffset = options.entriesBaseOffset ?? 0;
 	for (let i = 0; i < visibleCount; i += 1) {
-		const matchIndex = options.displayOffset + i;
-		const entryIndex = matchIndex - baseOffset;
+		const matchIndex = displayOffset + i;
+		const entryIndex = matchIndex - entriesBaseOffset;
 		if (entryIndex < 0 || entryIndex >= entries.length) {
 			continue;
 		}
@@ -464,38 +351,39 @@ function renderResultList<T>(options: InlineResultListOptions<T>): void {
 		if (!entry) {
 			continue;
 		}
-		const rowTop = options.rowTop + i * options.rowHeight;
-		const rowBottom = rowTop + options.rowHeight;
-		if (matchIndex === options.selectionIndex) {
-			api.fill_rect_color(0, rowTop, options.viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_SELECTION_OVERLAY);
-		} else if (matchIndex === options.hoverIndex) {
-			api.fill_rect_color(0, rowTop, options.viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_HOVER_OVERLAY);
+		const rowTopValue = rowTop + i * rowHeight;
+		const rowBottom = rowTopValue + rowHeight;
+		if (matchIndex === selectionIndex) {
+			api.fill_rect_color(0, rowTopValue, viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_SELECTION_OVERLAY);
+		} else if (matchIndex === hoverIndex) {
+			api.fill_rect_color(0, rowTopValue, viewportWidth, rowBottom, undefined, constants.SEARCH_RESULT_HOVER_OVERLAY);
 		}
-		options.drawRow(entry, rowTop);
+		drawRow(entry, rowTopValue);
 	}
 }
 
-export function renderRenameBar(api: Api, host: InlineBarsHost): void {
-	const height = host.getRenameBarHeight();
+export function renderRenameBar(): void {
+	const height = getRenameBarHeight();
 	if (height <= 0) return;
-	const barTop = host.headerHeight + host.tabBarHeight
-		+ host.getCreateResourceBarHeight()
-		+ host.getSearchBarHeight()
-		+ host.getResourceSearchBarHeight()
-		+ host.getSymbolSearchBarHeight()
-		+ host.getRenameBarHeight();
+	const barTop = ide_state.headerHeight + ide_state.tabBarHeight
+		+ getCreateResourceBarHeight()
+		+ getSearchBarHeight()
+		+ getResourceSearchBarHeight()
+		+ getSymbolSearchBarHeight()
+		+ getRenameBarHeight();
 	const barBottom = barTop + height;
-	api.fill_rect(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_BACKGROUND);
-	api.fill_rect(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_SEARCH_OUTLINE);
-	api.fill_rect(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_OUTLINE);
+	api.fill_rect(0, barTop, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_BACKGROUND);
+	api.fill_rect(0, barTop, ide_state.viewportWidth, barTop + 1, undefined, constants.COLOR_SEARCH_OUTLINE);
+	api.fill_rect(0, barBottom - 1, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_SEARCH_OUTLINE);
 
-	const field = host.renameField as TextField;
+	const field = ide_state.renameController.getField() as TextField;
 	const label = 'RENAME:';
 	const labelX = 4;
 	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
-	host.drawText(label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
+	drawEditorText(ide_state.font, label, labelX, labelY, undefined, constants.COLOR_SEARCH_TEXT);
 
-	const active = !!host.renameActive && !host.blockActiveCarets;
+	const blockActiveCarets = ide_state.problemsPanel.isVisible && ide_state.problemsPanel.isFocused;
+	const active = !!ide_state.renameController.isActive() && !blockActiveCarets;
 	const fieldText = field ? textFromLines(field.lines) : '';
 	let valueText = fieldText;
 	let valueColor = constants.COLOR_SEARCH_TEXT;
@@ -503,30 +391,23 @@ export function renderRenameBar(api: Api, host: InlineBarsHost): void {
 		valueText = 'TYPE NEW NAME';
 		valueColor = constants.COLOR_SEARCH_PLACEHOLDER;
 	}
-	const valueX = labelX + host.measureText(label + ' ');
-
-	const selection = field ? host.inlineFieldSelectionRange(field) : null;
-	if (selection && fieldText.length > 0) {
-		const selectionLeft = valueX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
-		if (selectionWidth > 0) {
-			api.fill_rect_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
-		}
+	const valueX = labelX + measureText(label) + ide_state.spaceAdvance;
+	const decoration = measureInlineFieldDecoration(field, ide_state.inlineFieldMetricsRef, valueX);
+	if (fieldText.length > 0 && decoration.hasSelection && decoration.selectionWidth > 0) {
+		api.fill_rect_color(decoration.selectionLeft, labelY, decoration.selectionLeft + decoration.selectionWidth, labelY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
 	}
 
-	host.drawText(valueText, valueX, labelY, valueColor);
+	drawEditorText(ide_state.font, valueText, valueX, labelY, undefined, valueColor);
 
 	if (field) {
-		const caretX = host.inlineFieldCaretX(field, valueX, host.inlineFieldMetrics());
-		const caretLeft = Math.floor(caretX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
-		const caretTop = Math.floor(labelY);
-		const caretBottom = caretTop + host.lineHeight;
-		host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, valueColor);
+		const caretLeft = Math.floor(decoration.caretBaseX);
+		const caretRight = Math.max(caretLeft + 1, Math.floor(decoration.caretBaseX + ide_state.charAdvance));
+		drawInlineCaret(api, field, caretLeft, labelY, caretRight, labelY + ide_state.lineHeight, decoration.caretBaseX, active, constants.INLINE_CARET_COLOR, valueColor);
 	}
 
-	const matchCount = host.renameMatchCount ?? 0;
-	const expression = host.renameExpression ?? host.renameOriginalName ?? '';
+	const matchCount = ide_state.renameController.getMatchCount() ?? 0;
+	const expression = ide_state.renameController.getExpressionLabel() ?? ide_state.renameController.getOriginalName() ?? '';
+	const valueWidth = measureText(valueText);
 	let status = '';
 	if (expression && expression.length > 0) {
 		status = expression;
@@ -536,32 +417,32 @@ export function renderRenameBar(api: Api, host: InlineBarsHost): void {
 		status = status.length > 0 ? `${status} · ${countLabel}` : countLabel;
 	}
 	if (status.length > 0) {
-		const statusWidth = host.measureText(status);
-		const statusX = Math.max(valueX + host.measureText(valueText) + host.spaceAdvance, host.viewportWidth - statusWidth - 4);
-		host.drawText(status, statusX, labelY, constants.COLOR_SEARCH_TEXT);
+		const statusWidth = measureText(status);
+		const statusX = Math.max(valueX + valueWidth + ide_state.spaceAdvance, ide_state.viewportWidth - statusWidth - 4);
+		drawEditorText(ide_state.font, status, statusX, labelY, undefined, constants.COLOR_SEARCH_TEXT);
 	}
 }
 
-export function renderLineJumpBar(api: Api, host: InlineBarsHost): void {
-	const height = host.getLineJumpBarHeight();
+export function renderLineJumpBar(): void {
+	const height = getLineJumpBarHeight();
 	if (height <= 0) return;
-	const barTop = host.headerHeight + host.tabBarHeight
-		+ host.getCreateResourceBarHeight()
-		+ host.getSearchBarHeight()
-		+ host.getResourceSearchBarHeight()
-		+ host.getSymbolSearchBarHeight();
+	const barTop = ide_state.headerHeight + ide_state.tabBarHeight
+		+ getCreateResourceBarHeight()
+		+ getSearchBarHeight()
+		+ getResourceSearchBarHeight()
+		+ getSymbolSearchBarHeight();
 	const barBottom = barTop + height;
-	api.fill_rect(0, barTop, host.viewportWidth, barBottom, undefined, constants.COLOR_LINE_JUMP_BACKGROUND);
-	api.fill_rect(0, barTop, host.viewportWidth, barTop + 1, undefined, constants.COLOR_LINE_JUMP_OUTLINE);
-	api.fill_rect(0, barBottom - 1, host.viewportWidth, barBottom, undefined, constants.COLOR_LINE_JUMP_OUTLINE);
+	api.fill_rect(0, barTop, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_LINE_JUMP_BACKGROUND);
+	api.fill_rect(0, barTop, ide_state.viewportWidth, barTop + 1, undefined, constants.COLOR_LINE_JUMP_OUTLINE);
+	api.fill_rect(0, barBottom - 1, ide_state.viewportWidth, barBottom, undefined, constants.COLOR_LINE_JUMP_OUTLINE);
 
 	const label = 'LINE #:';
 	const labelX = 4;
 	const labelY = barTop + constants.LINE_JUMP_BAR_MARGIN_Y;
-	host.drawText(label, labelX, labelY, constants.COLOR_LINE_JUMP_TEXT);
+	drawEditorText(ide_state.font, label, labelX, labelY, undefined, constants.COLOR_LINE_JUMP_TEXT);
 
-	const field = host.lineJumpField as TextField;
-	const active = !!host.lineJumpActive;
+	const field = ide_state.lineJumpField as TextField;
+	const active = !!ide_state.lineJumpActive;
 	const fieldText = field ? textFromLines(field.lines) : '';
 	let valueText = fieldText;
 	let valueColor = constants.COLOR_LINE_JUMP_TEXT;
@@ -569,25 +450,17 @@ export function renderLineJumpBar(api: Api, host: InlineBarsHost): void {
 		valueText = 'ENTER LINE NUMBER';
 		valueColor = constants.COLOR_LINE_JUMP_PLACEHOLDER;
 	}
-	const valueX = labelX + host.measureText(label + ' ');
-
-	const selection = field ? host.inlineFieldSelectionRange(field) : null;
-	if (selection && fieldText.length > 0) {
-		const selectionLeft = valueX + host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, 0, selection.start);
-		const selectionWidth = host.inlineFieldMeasureRange(field, ide_state.inlineFieldMetricsRef, selection.start, selection.end);
-		if (selectionWidth > 0) {
-			api.fill_rect_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, undefined, constants.SELECTION_OVERLAY);
-		}
+	const valueX = labelX + measureText(label) + ide_state.spaceAdvance;
+	const decoration = measureInlineFieldDecoration(field, ide_state.inlineFieldMetricsRef, valueX);
+	if (fieldText.length > 0 && decoration.hasSelection && decoration.selectionWidth > 0) {
+		api.fill_rect_color(decoration.selectionLeft, labelY, decoration.selectionLeft + decoration.selectionWidth, labelY + ide_state.lineHeight, undefined, constants.SELECTION_OVERLAY);
 	}
 
-	host.drawText(valueText, valueX, labelY, valueColor);
+	drawEditorText(ide_state.font, valueText, valueX, labelY, undefined, valueColor);
 
 	if (field) {
-		const caretX = host.inlineFieldCaretX(field, valueX, host.inlineFieldMetrics());
-		const caretLeft = Math.floor(caretX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
-		const caretTop = Math.floor(labelY);
-		const caretBottom = caretTop + host.lineHeight;
-		host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, valueColor);
+		const caretLeft = Math.floor(decoration.caretBaseX);
+		const caretRight = Math.max(caretLeft + 1, Math.floor(decoration.caretBaseX + ide_state.charAdvance));
+		drawInlineCaret(api, field, caretLeft, labelY, caretRight, labelY + ide_state.lineHeight, decoration.caretBaseX, active, constants.INLINE_CARET_COLOR, valueColor);
 	}
 }
