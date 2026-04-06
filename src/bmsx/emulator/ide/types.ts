@@ -4,6 +4,8 @@ import type {
 	LuaDefinitionLocation,
 	LuaSymbolEntry,
 	ResourceDescriptor,
+	ResourceBacking,
+	ResourceLanguage,
 } from '../types';
 import type { StackTraceFrame } from '../../lua/luavalue';
 import { MENU_COMMANDS } from './ide_input';
@@ -215,8 +217,9 @@ export type VisualLineSegment = {
 export type TopBarButtonId = typeof MENU_COMMANDS[number];
 export type MenuId = 'file' | 'run' | 'view' | 'debug';
 
-export type EditorTabId = `resource:${string}` | `lua:${string}`;
-export type EditorTabKind = 'resource_view' | 'lua_editor';
+export type EditorTabId = `resource:${string}` | `code:${string}`;
+export type EditorTabKind = 'resource_view' | 'code_editor';
+export type EditorRuntimeSyncState = 'synced' | 'restart_pending' | 'diverged';
 
 export type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
 
@@ -258,6 +261,10 @@ export type EditorTabDescriptor = {
 	title: string;
 	closable: boolean;
 	dirty: boolean;
+	backing?: ResourceBacking;
+	language?: ResourceLanguage;
+	runtimeSyncState?: EditorRuntimeSyncState;
+	runtimeSyncMessage?: string;
 	resource?: ResourceViewerState;
 };
 
@@ -290,6 +297,8 @@ export type CodeTabContext = {
 	id: string;
 	title: string;
 	descriptor: ResourceDescriptor;
+	backing: ResourceBacking;
+	language: ResourceLanguage;
 	buffer: TextBuffer;
 	cursorRow: number;
 	cursorColumn: number;
@@ -307,6 +316,8 @@ export type CodeTabContext = {
 	dirty: boolean;
 	runtimeErrorOverlay: RuntimeErrorOverlay;
 	executionStopRow: number;
+	runtimeSyncState: EditorRuntimeSyncState;
+	runtimeSyncMessage: string;
 	readOnly?: boolean;
 	textVersion: number;
 };

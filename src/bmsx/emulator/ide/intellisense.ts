@@ -26,7 +26,7 @@ import { resetBlink } from './render/render_caret';
 import { tryShowLuaErrorOverlay } from './runtime_error_navigation';
 import { resolvePointerColumn, resolvePointerRow } from './editor_view';
 import * as constants from './constants';
-import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isCodeTabActive, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
+import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
 import { ide_state } from './ide_state';
 import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from './lua/lua_identifier_chain';
 import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type ModuleAliasEntry } from './semantic_model';
@@ -564,7 +564,7 @@ export function buildHoverContentLines(result: LuaHoverResult): string[] {
 }
 
 export function intellisenseUiReady(): boolean {
-	if (!isCodeTabActive()) {
+	if (!isActiveLuaCodeTab()) {
 		return false;
 	}
 	if (isReadOnlyCodeTab()) {
@@ -587,6 +587,10 @@ export function shouldAutoTriggerCompletions(): boolean {
 	const now = ide_state.clockNow();
 	return now - lastEditAt <= constants.COMPLETION_TYPING_GRACE_MS;
 } export function updateHoverTooltip(snapshot: PointerSnapshot): void {
+	if (!isActiveLuaCodeTab()) {
+		clearHoverTooltip();
+		return;
+	}
 	const context = getActiveCodeTabContext();
 	const row = resolvePointerRow(snapshot.viewportY);
 	const column = resolvePointerColumn(row, snapshot.viewportX);
@@ -692,6 +696,9 @@ export function buildMemberCompletionItems(request: LuaMemberCompletionRequest):
 
 export function requestSemanticRefresh(context?: CodeTabContext): void {
 	const activeContext = context ?? getActiveCodeTabContext();
+	if (activeContext.language !== 'lua') {
+		return;
+	}
 	const path = activeContext.descriptor.path;
 	ide_state.layout.requestSemanticUpdate(ide_state.buffer, ide_state.textVersion, path);
 }
@@ -1080,6 +1087,10 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 }
 
 export function refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext): void {
+	if (context.language !== 'lua') {
+		clearGotoHoverHighlight();
+		return;
+	}
 	const path = context.descriptor.path;
 	const semanticDefinition = resolveSemanticDefinitionLocation(context, row + 1, column + 1);
 	const token = extractHoverExpression(row, column);
@@ -1130,6 +1141,9 @@ export function clearReferenceHighlights(): void {
 
 export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	const context = getActiveCodeTabContext();
+	if (context.language !== 'lua') {
+		return false;
+	}
 	let definition = resolveSemanticDefinitionLocation(context, row + 1, column + 1);
 	if (definition) {
 		navigateToLuaDefinition(definition);

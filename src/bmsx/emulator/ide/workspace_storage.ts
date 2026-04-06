@@ -23,7 +23,7 @@ import {
 	WORKSPACE_DIRTY_DIR,
 } from '../workspace';
 import { setFontVariant } from './editor_view';
-import { initializeTabs, openLuaCodeTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
+import { findCodeTabContext, initializeTabs, openLuaCodeTab, openTextCodeTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { FontVariant } from '../font';
 import { getTextSnapshot } from './text/source_text';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../workspace_cache';
@@ -48,6 +48,10 @@ type SnapshotMetadata = {
 export type SerializedDescriptor = {
 	path: string;
 	type: string;
+	asset_id?: string;
+	readOnly?: boolean;
+	backing?: 'text' | 'binary' | 'viewer';
+	language?: 'lua' | 'yaml' | 'plain_text';
 };
 
 export type PersistedDirtyEntry = {
@@ -359,11 +363,24 @@ export function serializeDescriptor(descriptor: ResourceDescriptor): SerializedD
 	return {
 		path: descriptor.path,
 		type: descriptor.type,
+		asset_id: descriptor.asset_id,
+		readOnly: descriptor.readOnly,
+		backing: descriptor.backing,
+		language: descriptor.language,
 	};
 }
 
 export function resolveSerializedDescriptor(serialized: SerializedDescriptor): ResourceDescriptor {
-	return { path: serialized.path, type: serialized.type };
+	const backing = serialized.backing ?? (serialized.type === 'lua' || serialized.type === 'aem' ? 'text' : 'viewer');
+	const language = serialized.language ?? (serialized.type === 'lua' ? 'lua' : serialized.type === 'aem' ? 'yaml' : 'plain_text');
+	return {
+		path: serialized.path,
+		type: serialized.type,
+		asset_id: serialized.asset_id,
+		readOnly: serialized.readOnly,
+		backing,
+		language,
+	};
 }
 
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {
@@ -371,8 +388,18 @@ export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise
 		const descriptor = resolveSerializedDescriptor(entry.descriptor);
 		let context = ide_state.codeTabContexts.get(entry.contextId);
 		if (!context) {
-			openLuaCodeTab(descriptor);
-			context = ide_state.codeTabContexts.get(entry.contextId);
+			context = findCodeTabContext(descriptor.path);
+		}
+		if (!context) {
+			if (descriptor.language === 'lua') {
+				openLuaCodeTab(descriptor);
+			} else {
+				await openTextCodeTab(descriptor);
+			}
+			context = findCodeTabContext(descriptor.path);
+		}
+		if (!context) {
+			continue;
 		}
 		const contents = await readDirtyBuffer(entry.dirtyPath);
 		if (contents === null) {
@@ -682,6 +709,10 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 }
 
 export function loadCleanSrc(path: string) {
+	const context = findCodeTabContext(path);
+	if (context && context.language !== 'lua') {
+		return context.lastSavedSource;
+	}
 	return runtimeLuaPipeline.resourceSourceForChunk(Runtime.instance, path);
 }
 

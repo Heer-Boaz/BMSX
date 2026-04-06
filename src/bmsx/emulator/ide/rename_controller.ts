@@ -329,8 +329,7 @@ export class CrossFileRenameManager {
 			return existing;
 		}
 		const descriptor = findResourceDescriptorForChunk(path)!;
-		const contextId: string = `lua:${descriptor.path}`;
-		let context = ide_state.codeTabContexts.get(contextId);
+		let context = findCodeTabContext(descriptor.path);
 		if (!context) {
 			context = createLuaCodeTabContext(descriptor);
 			ide_state.codeTabContexts.set(context.id, context);

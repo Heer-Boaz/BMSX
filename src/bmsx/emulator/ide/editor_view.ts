@@ -469,6 +469,13 @@ export function configureFontVariant(variant: FontVariant): void {
 		semanticDebounceMs: 200,
 		clockNow: ide_state.clockNow,
 		getBuiltinIdentifiers: () => getBuiltinIdentifiersSnapshot(),
+		getActiveLanguage: () => {
+			const contextId = ide_state.activeCodeTabContextId;
+			if (!contextId) {
+				return 'lua';
+			}
+			return ide_state.codeTabContexts.get(contextId)?.language ?? 'lua';
+		},
 	});
 	if (ide_state.resourcePanel) {
 		ide_state.resourcePanel.setFontMetrics(ide_state.lineHeight, ide_state.charAdvance);

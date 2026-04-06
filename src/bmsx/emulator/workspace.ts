@@ -7,6 +7,7 @@ import * as runtimeIde from './runtime_ide';
 import { $ } from '../core/engine_core';
 import { LuaResourceCreationRequest, ResourceDescriptor } from './types';
 import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './workspace_path';
+import { getWorkspaceCachedSource } from './workspace_cache';
 export { joinWorkspacePaths } from './workspace_path';
 
 export const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
@@ -29,7 +30,7 @@ export async function saveLuaResourceSource(path: string, source: string): Promi
 	const cart = resolveEditableCartLuaSources();
 	const asset = cart.path2lua[path];
 	const sourcePath = asset.source_path;
-	await persistLuaSourceToFilesystem(sourcePath, source);
+	await persistTextSourceToFilesystem(sourcePath, source, 'Lua source');
 	asset.src = source;
 	asset.update_timestamp = $.platform.clock.dateNow();
 	cart.path2lua![sourcePath] = asset;
@@ -154,8 +155,16 @@ function resolveOverrideUpdatedAt(record: WorkspaceOverrideRecord, fallback: num
 }
 
 export async function persistLuaSourceToFilesystem(path: string, source: string): Promise<void> {
+	await persistTextSourceToFilesystem(path, source, 'Lua source');
+}
+
+export async function saveTextResourceSource(path: string, source: string): Promise<void> {
+	await persistTextSourceToFilesystem(path, source, 'text resource');
+}
+
+export async function persistTextSourceToFilesystem(path: string, source: string, resourceLabel: string = 'text resource'): Promise<void> {
 	if (typeof fetch !== 'function') {
-		throw new Error('[Runtime] Fetch API unavailable; cannot persist Lua source.');
+		throw new Error(`[Runtime] Fetch API unavailable; cannot persist ${resourceLabel}.`);
 	}
 	let response: HttpResponse;
 	try {
@@ -165,7 +174,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 			body: JSON.stringify({ path: resolveWorkspacePath(path), contents: source }),
 		});
 	} catch (error) {
-		handleLuaPersistenceFailure('persist', `[Runtime] Failed to reach Lua save endpoint for '${path}': ${error}`);
+		handleTextPersistenceFailure('persist', resourceLabel, `[Runtime] Failed to reach save endpoint for '${path}': ${error}`);
 		return;
 	}
 	if (!response.ok) {
@@ -173,7 +182,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 		try {
 			detail = await response.text();
 		} catch (textError) {
-			handleLuaPersistenceFailure('persist', `[Runtime] Save rejected for '${path}' (response body read failed): ${textError}`);
+			handleTextPersistenceFailure('persist', resourceLabel, `[Runtime] Save rejected for '${path}' (response body read failed): ${textError}`);
 			return;
 		}
 		let finalDetail = response.statusText;
@@ -183,7 +192,7 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 				parsed = JSON.parse(detail);
 			} catch (parseError) {
 				const parseMessage = extractErrorMessage(parseError);
-				handleLuaPersistenceFailure('persist', { detail: `[Runtime] Save rejected for '${path}' (error payload parse failed): ${parseMessage}`, error: parseError });
+				handleTextPersistenceFailure('persist', resourceLabel, { detail: `[Runtime] Save rejected for '${path}' (error payload parse failed): ${parseMessage}`, error: parseError });
 				return;
 			}
 			if (parsed && typeof parsed === 'object' && 'error' in parsed) {
@@ -197,12 +206,24 @@ export async function persistLuaSourceToFilesystem(path: string, source: string)
 				finalDetail = detail;
 			}
 		}
-		handleLuaPersistenceFailure('persist', `[Runtime] Save rejected for '${path}': ${finalDetail}`);
+		handleTextPersistenceFailure('persist', resourceLabel, `[Runtime] Save rejected for '${path}': ${finalDetail}`);
 		return;
 	}
 }
 
 export async function fetchLuaSourceFromFilesystem(path: string): Promise<string> {
+	return fetchTextSourceFromFilesystem(path, 'Lua source');
+}
+
+export async function loadTextResourceSource(path: string): Promise<string> {
+	const cached = getWorkspaceCachedSource(path);
+	if (cached !== null) {
+		return cached;
+	}
+	return fetchTextSourceFromFilesystem(path, 'text resource');
+}
+
+export async function fetchTextSourceFromFilesystem(path: string, resourceLabel: string = 'text resource'): Promise<string> {
 	if (typeof fetch !== 'function') {
 		return null;
 	}
@@ -212,7 +233,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 	try {
 		response = await fetch(url, { method: 'GET', cache: 'no-store' });
 	} catch (error) {
-		handleLuaPersistenceFailure('fetch', { detail: `[Runtime] Failed to load Lua source from filesystem (${path})`, error });
+		handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Failed to load ${resourceLabel} from filesystem (${path})`, error });
 		return null;
 	}
 	if (response.status === 404) {
@@ -224,7 +245,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 			detail = await response.text();
 		} catch (textError) {
 			const message = extractErrorMessage(textError);
-			handleLuaPersistenceFailure('fetch', { detail: `[Runtime] Failed to load Lua source from '${path}' (response body read failed): ${message}`, error: textError });
+			handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Failed to load ${resourceLabel} from '${path}' (response body read failed): ${message}`, error: textError });
 			return null;
 		}
 		let finalDetail = response.statusText;
@@ -234,7 +255,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 				parsed = JSON.parse(detail);
 			} catch (parseError) {
 				const parseMessage = extractErrorMessage(parseError);
-				handleLuaPersistenceFailure('fetch', { detail: `[Runtime] Failed to load Lua source from '${path}' (error payload parse failed): ${parseMessage}`, error: parseError });
+				handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Failed to load ${resourceLabel} from '${path}' (error payload parse failed): ${parseMessage}`, error: parseError });
 				return null;
 			}
 			if (parsed && typeof parsed === 'object' && 'error' in parsed) {
@@ -248,7 +269,7 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 				finalDetail = detail;
 			}
 		}
-		handleLuaPersistenceFailure('fetch', { detail: `[Runtime] Failed to load Lua source from '${path}': ${finalDetail}` });
+		handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Failed to load ${resourceLabel} from '${path}': ${finalDetail}` });
 		return null;
 	}
 	let payload: unknown;
@@ -256,31 +277,32 @@ export async function fetchLuaSourceFromFilesystem(path: string): Promise<string
 		payload = await response.json();
 	} catch (parseError) {
 		const message = extractErrorMessage(parseError);
-		handleLuaPersistenceFailure('fetch', { detail: `[Runtime] Invalid response while loading Lua source from '${path}': ${message}`, error: parseError });
+		handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Invalid response while loading ${resourceLabel} from '${path}': ${message}`, error: parseError });
 		return null;
 	}
 	if (!payload || typeof payload !== 'object') {
-		handleLuaPersistenceFailure('fetch', { detail: `[Runtime] Response for '${path}' missing Lua contents` });
+		handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Response for '${path}' missing contents` });
 		return null;
 	}
 	const record = payload as { contents?: unknown };
 	if (typeof record.contents !== 'string') {
-		handleLuaPersistenceFailure('fetch', { detail: `[Runtime] Response for '${path}' missing Lua contents` });
+		handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Response for '${path}' missing contents` });
 		return null;
 	}
 	return record.contents;
 }
 
-function handleLuaPersistenceFailure(
+function handleTextPersistenceFailure(
 	context: string,
+	resourceLabel: string,
 	options: string | { detail?: string; error?: unknown } = {}
 ): void {
 	const runtime = Runtime.instance;
 	if (typeof options === 'string') {
-	runtimeIde.recordLuaWarning(runtime, options);
+		runtimeIde.recordLuaWarning(runtime, options);
 		return;
 	}
-	const parts: string[] = [context];
+	const parts: string[] = [context, resourceLabel];
 	if (options.detail && options.detail.length > 0) {
 		parts.push(options.detail);
 	}
@@ -727,6 +749,45 @@ export function listResources(): ResourceDescriptor[] {
 				continue;
 			}
 			descriptorsByPath.set(path, { path, type: asset.type, asset_id: asset.resid, readOnly });
+		}
+	}
+	const descriptors = Array.from(descriptorsByPath.values());
+	descriptors.sort((left, right) => left.path.localeCompare(right.path));
+	return descriptors;
+}
+
+export function listIdeResources(): ResourceDescriptor[] {
+	const descriptorsByPath = new Map<string, ResourceDescriptor>();
+	const luaDescriptors = listResources();
+	for (let index = 0; index < luaDescriptors.length; index += 1) {
+		const descriptor = luaDescriptors[index]!;
+		descriptorsByPath.set(descriptor.path, {
+			path: descriptor.path,
+			type: descriptor.type,
+			asset_id: descriptor.asset_id,
+			readOnly: descriptor.readOnly,
+			backing: 'text',
+			language: 'lua',
+		});
+	}
+	const assetSource = $.asset_source;
+	if (assetSource) {
+		const audioEventEntries = assetSource.list('aem');
+		for (let index = 0; index < audioEventEntries.length; index += 1) {
+			const asset = audioEventEntries[index]!;
+			if (!asset.source_path) {
+				continue;
+			}
+			if (descriptorsByPath.has(asset.source_path)) {
+				continue;
+			}
+			descriptorsByPath.set(asset.source_path, {
+				path: asset.source_path,
+				type: asset.type,
+				asset_id: asset.resid,
+				backing: 'text',
+				language: asset.source_path.endsWith('.json') ? 'plain_text' : 'yaml',
+			});
 		}
 	}
 	const descriptors = Array.from(descriptorsByPath.values());

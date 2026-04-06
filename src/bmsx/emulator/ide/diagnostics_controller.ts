@@ -161,6 +161,18 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
+		if (context.language !== 'lua') {
+			const source = contextId === activeId ? getTextSnapshot(ide_state.buffer) : getTextSnapshot(context.buffer);
+			ide_state.diagnosticsCache.set(context.id, {
+				contextId: context.id,
+				path: context.descriptor.path,
+				diagnostics: [],
+				version: contextId === activeId ? ide_state.buffer.version : context.buffer.version,
+				source,
+			});
+			ide_state.dirtyDiagnosticContexts.delete(contextId);
+			continue;
+		}
 		const path = context.descriptor.path;
 		const isActive = activeId && contextId === activeId;
 		const cached = ide_state.diagnosticsCache.get(contextId);

@@ -309,6 +309,12 @@ local build_merged_events<const> = function()
 	return merged
 end
 
+local unbind_events<const> = function()
+	eventemitter.instance:remove_subscriber(router)
+	router._bound = false
+	router._events = nil
+end
+
 local bind_events<const> = function(merged)
 	router._events = merged
 	for event_name in pairs(merged) do
@@ -330,6 +336,20 @@ function router.try_bind()
 	return router._bound
 end
 
+function router.reload()
+	if not router._inited then
+		router._inited = true
+	end
+	unbind_events()
+	local merged<const> = build_merged_events()
+	bind_events(merged)
+	return router._events
+end
+
+function router.snapshot()
+	return router._events
+end
+
 function router.tick()
 	-- Binding is deterministic during init; no per-tick binding attempts.
 end
@@ -338,9 +358,7 @@ function router.init()
 	if router._inited then
 		return
 	end
-	router._inited = true
-	local merged<const> = build_merged_events()
-	bind_events(merged)
+	router.reload()
 end
 
 return router

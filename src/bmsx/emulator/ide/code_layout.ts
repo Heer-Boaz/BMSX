@@ -2,9 +2,11 @@ import type { TimerHandle } from '../../platform/platform';
 import { clamp } from '../../utils/clamp';
 import { ScratchBuffer } from '../../utils/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from './lua/syntax_highlight';
+import * as constants from './constants';
 import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from './semantic_model';
 import type { LuaDefinitionInfo } from '../../lua/syntax/lua_ast';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
+import type { ResourceLanguage } from '../types';
 import { scheduleIdeOnce } from './background_tasks';
 import { EditorFont } from '../editor_font';
 import { getTextSnapshot, splitText } from './text/source_text';
@@ -90,6 +92,24 @@ type VisualLineSegmentTarget = VisualLineSegment[] | ScratchBuffer<VisualLineSeg
 
 type BuiltinIdentifierSnapshot = { epoch: number; ids: Iterable<string> };
 
+function highlightPlainTextLine(source: string): HighlightLine {
+	const text = source;
+	const colors = new Array<number>(text.length);
+	for (let index = 0; index < text.length; index += 1) {
+		colors[index] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
+	}
+	const columnToDisplay = new Array<number>(source.length + 1);
+	for (let index = 0; index <= source.length; index += 1) {
+		columnToDisplay[index] = index;
+	}
+	return {
+		text,
+		upperText: text,
+		colors,
+		columnToDisplay,
+	};
+}
+
 type PendingSemanticUpdate = {
 	version: number;
 	path: string;
@@ -166,7 +186,7 @@ export class CodeLayout {
 
 	constructor(
 		private readonly font: EditorFont,
-		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot },
+		private readonly options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot; getActiveLanguage: () => ResourceLanguage },
 	) {
 		this.maxHighlightCache = options.maxHighlightCache;
 		this.semanticDebounceMs = Math.max(0, options.semanticDebounceMs);
@@ -268,6 +288,13 @@ export class CodeLayout {
 	}
 
 	public requestSemanticUpdate(buffer: TextBuffer, documentVersion: number, path: string): void {
+		if (this.options.getActiveLanguage() !== 'lua') {
+			this.pendingSemantic = null;
+			this.semanticDueAtMs = null;
+			this.semanticModel = null;
+			this.annotationRowSig = null;
+			return;
+		}
 		this.ensureSemanticModel(buffer, documentVersion, path, 'background');
 	}
 
@@ -298,7 +325,9 @@ export class CodeLayout {
 			lineSignature = buffer.getLineSignature(row);
 		}
 		const lineAnnotations = annotations ? annotations[row] : undefined;
-		const highlight = highlightTextLineExternal(source, lineAnnotations, builtinIdentifiers);
+		const highlight = this.options.getActiveLanguage() === 'lua'
+			? highlightTextLineExternal(source, lineAnnotations, builtinIdentifiers)
+			: highlightPlainTextLine(source);
 		const cachedEntry = cached;
 		if (cachedEntry) {
 			const displayToColumn = cachedEntry.displayToColumn;

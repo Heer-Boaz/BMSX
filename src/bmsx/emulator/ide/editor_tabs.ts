@@ -4,6 +4,7 @@ import type {
 	EditorTabId,
 	EditorTabDescriptor,
 	EditorTabKind,
+	EditorRuntimeSyncState,
 } from './types';
 import type { ResourceDescriptor } from '../types';
 import * as constants from './constants';
@@ -25,22 +26,175 @@ import * as runtimeIde from '../runtime_ide';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { getTextSnapshot } from './text/source_text';
 import { PieceTreeBuffer } from './text/piece_tree_buffer';
-import { listResources, saveLuaResourceSource } from '../workspace';
+import { listIdeResources, loadTextResourceSource, listResources, saveLuaResourceSource, saveTextResourceSource } from '../workspace';
 import { buildDirtyFilePath } from './workspace_storage';
 import { setWorkspaceCachedSources } from '../workspace_cache';
 import { breakUndoSequence } from './undo_controller';
 import { tryShowLuaErrorOverlay } from './runtime_error_navigation';
 import { extractErrorMessage } from '../../lua/luavalue';
 import { findResourceDescriptorForChunk, closeResourceSearch } from './search_bars';
+import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../audio/aem_definition';
+import { $ } from '../../core/engine_core';
 
 function resolvePath(descriptor: ResourceDescriptor): string {
 	return descriptor.path;
 }
 
-function resolveSource(descriptor: ResourceDescriptor): string {
+function resolveLuaSource(descriptor: ResourceDescriptor): string {
 	const runtime = Runtime.instance;
 	const path = resolvePath(descriptor);
 	return runtimeLuaPipeline.resourceSourceForChunk(runtime, path);
+}
+
+function buildCodeTabId(descriptor: ResourceDescriptor): EditorTabId {
+	return `code:${descriptor.path}`;
+}
+
+function setTabRuntimeSyncState(tabId: string, runtimeSyncState: EditorRuntimeSyncState, runtimeSyncMessage: string): void {
+	const tab = ide_state.tabs.find(candidate => candidate.id === tabId);
+	if (!tab) {
+		return;
+	}
+	tab.runtimeSyncState = runtimeSyncState;
+	tab.runtimeSyncMessage = runtimeSyncMessage;
+}
+
+function setContextRuntimeSyncState(context: CodeTabContext, runtimeSyncState: EditorRuntimeSyncState, runtimeSyncMessage: string): void {
+	context.runtimeSyncState = runtimeSyncState;
+	context.runtimeSyncMessage = runtimeSyncMessage;
+	setTabRuntimeSyncState(context.id, runtimeSyncState, runtimeSyncMessage);
+}
+
+function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: string): CodeTabContext {
+	const title = computeResourceTabTitle(descriptor);
+	const buffer = new PieceTreeBuffer(initialSource);
+	return {
+		id: buildCodeTabId(descriptor),
+		title,
+		descriptor,
+		backing: descriptor.backing!,
+		language: descriptor.language!,
+		buffer,
+		cursorRow: 0,
+		cursorColumn: 0,
+		scrollRow: 0,
+		scrollColumn: 0,
+		selectionAnchor: null,
+		lastSavedSource: initialSource,
+		saveGeneration: 0,
+		appliedGeneration: 0,
+		undoStack: [],
+		redoStack: [],
+		lastHistoryKey: null,
+		lastHistoryTimestamp: 0,
+		savePointDepth: 0,
+		dirty: false,
+		runtimeErrorOverlay: null,
+		executionStopRow: null,
+		runtimeSyncState: 'synced',
+		runtimeSyncMessage: null,
+		readOnly: descriptor.readOnly === true,
+		textVersion: buffer.version,
+	};
+}
+
+function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescriptor {
+	let tab = ide_state.tabs.find(candidate => candidate.id === context.id);
+	if (!tab) {
+		tab = {
+			id: context.id,
+			kind: 'code_editor',
+			title: '',
+			closable: true,
+			dirty: false,
+		};
+		ide_state.tabs.push(tab);
+	}
+	tab.kind = 'code_editor';
+	tab.title = context.title;
+	tab.dirty = context.dirty;
+	tab.backing = context.backing;
+	tab.language = context.language;
+	tab.runtimeSyncState = context.runtimeSyncState;
+	tab.runtimeSyncMessage = context.runtimeSyncMessage;
+	tab.resource = undefined;
+	return tab;
+}
+
+function setCodeTabDiagnosticsState(context: CodeTabContext): void {
+	if (context.language === 'lua') {
+		const cached = ide_state.diagnosticsCache.get(context.id);
+		const cachedVersion = cached?.version ?? -1;
+		const cachedChunk = cached?.path;
+		const path = resolvePath(context.descriptor);
+		if (!cached || cachedVersion !== ide_state.textVersion || cachedChunk !== path) {
+			markDiagnosticsDirty(context.id);
+		}
+		return;
+	}
+	ide_state.dirtyDiagnosticContexts.delete(context.id);
+	ide_state.diagnosticsCache.set(context.id, {
+		contextId: context.id,
+		path: context.descriptor.path,
+		diagnostics: [],
+		version: ide_state.textVersion,
+		source: getTextSnapshot(ide_state.buffer),
+	});
+}
+
+function resolveAemSourceFormat(descriptor: ResourceDescriptor): StructuredTextDocumentFormat {
+	if (descriptor.language === 'yaml') {
+		return 'yaml';
+	}
+	const normalizedPath = descriptor.path.toLowerCase();
+	if (normalizedPath.endsWith('.json')) {
+		return 'json';
+	}
+	return 'yaml';
+}
+
+function buildRuntimeAemValidationLookup() {
+	const audioIds = Object.keys($.assets.audio);
+	const dataAssetNames = Object.keys($.assets.data);
+	const dataAssets: Array<{ name: string; value: unknown }> = [];
+	for (let index = 0; index < dataAssetNames.length; index += 1) {
+		const name = dataAssetNames[index]!;
+		dataAssets.push({ name, value: $.assets.data[name] });
+	}
+	return buildAemValidationLookup({
+		audioIds,
+		dataAssets,
+	});
+}
+
+function reloadAudioRouter(): void {
+	$.evaluate_lua(`rget('audiorouter'):reload()`);
+}
+
+function applyAemSourceToRuntime(descriptor: ResourceDescriptor, source: string): void {
+	const assetId = descriptor.asset_id;
+	if (!assetId) {
+		throw new Error(`AEM resource '${descriptor.path}' is missing an asset id.`);
+	}
+	const doc = parseStructuredTextDocument(source, resolveAemSourceFormat(descriptor), `AEM file '${descriptor.path}'`);
+	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(), descriptor.path);
+	const previousDoc = $.assets.audioevents[assetId];
+	try {
+		$.assets.audioevents[assetId] = doc as Record<string, unknown>;
+		reloadAudioRouter();
+	} catch (error) {
+		let rollbackError: unknown = null;
+		$.assets.audioevents[assetId] = previousDoc;
+		try {
+			reloadAudioRouter();
+		} catch (restoreError) {
+			rollbackError = restoreError;
+		}
+		if (rollbackError) {
+			throw new Error(`${extractErrorMessage(error)}; rollback failed: ${extractErrorMessage(rollbackError)}`);
+		}
+		throw error;
+	}
 }
 
 function activateResourceViewerTab(tab: EditorTabDescriptor): void {
@@ -63,33 +217,18 @@ export function createEntryTabContext(): CodeTabContext {
 }
 
 export function createLuaCodeTabContext(descriptor: ResourceDescriptor): CodeTabContext {
-	const title = computeResourceTabTitle(descriptor);
-	const initialSource = resolveSource(descriptor);
-	const buffer = new PieceTreeBuffer(initialSource);
-	return {
-		id: `lua:${descriptor.path}`,
-		title,
-		descriptor,
-		buffer,
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
-		lastSavedSource: initialSource,
-		saveGeneration: 0,
-		appliedGeneration: 0,
-		undoStack: [],
-		redoStack: [],
-		lastHistoryKey: null,
-		lastHistoryTimestamp: 0,
-		savePointDepth: 0,
-		dirty: false,
-		runtimeErrorOverlay: null,
-		executionStopRow: null,
-		readOnly: descriptor.readOnly === true,
-		textVersion: buffer.version,
-	};
+	return createCodeTabContext({
+		path: descriptor.path,
+		type: descriptor.type,
+		asset_id: descriptor.asset_id,
+		readOnly: descriptor.readOnly,
+		backing: 'text',
+		language: 'lua',
+	}, resolveLuaSource(descriptor));
+}
+
+export function createTextCodeTabContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
+	return createCodeTabContext(descriptor, source);
 }
 
 export function getActiveCodeTabContext(): CodeTabContext {
@@ -116,6 +255,7 @@ export function storeActiveCodeTabContext(): void {
 	context.runtimeErrorOverlay = ide_state.runtimeErrorOverlay;
 	context.executionStopRow = ide_state.executionStopRow;
 	setTabDirty(context.id, context.dirty);
+	setTabRuntimeSyncState(context.id, context.runtimeSyncState, context.runtimeSyncMessage);
 }
 
 export function activateCodeEditorTab(tabId: string): void {
@@ -139,14 +279,7 @@ export function activateCodeEditorTab(tabId: string): void {
 	ide_state.maxLineLengthDirty = true;
 	ide_state.layout.markVisualLinesDirty();
 	ide_state.layout.invalidateAllHighlights();
-
-	const cached = ide_state.diagnosticsCache.get(context.id);
-	const cachedVersion = cached?.version ?? -1;
-	const cachedChunk = cached?.path;
-	const path = resolvePath(context.descriptor);
-	if (!cached || cachedVersion !== ide_state.textVersion || cachedChunk !== path) {
-		markDiagnosticsDirty(context.id);
-	}
+	setCodeTabDiagnosticsState(context);
 
 	ide_state.dirty = ide_state.undoStack.length !== ide_state.savePointDepth;
 	ide_state.saveGeneration = context.saveGeneration;
@@ -171,13 +304,7 @@ export function initializeTabs(initialContext: CodeTabContext = null): void {
 	ide_state.tabCloseButtonBounds.clear();
 	const context = initialContext ?? createEntryTabContext();
 	ide_state.codeTabContexts.set(context.id, context);
-	ide_state.tabs.push({
-		id: context.id,
-		kind: 'lua_editor',
-		title: context.title,
-		closable: true,
-		dirty: context.dirty,
-	});
+	upsertCodeEditorTab(context);
 	ide_state.activeTabId = context.id;
 	ide_state.activeCodeTabContextId = context.id;
 	activateCodeEditorTab(context.id);
@@ -200,7 +327,11 @@ export function getActiveTabKind(): EditorTabKind {
 }
 
 export function isCodeTabActive(): boolean {
-	return getActiveTabKind() === 'lua_editor';
+	return getActiveTabKind() === 'code_editor';
+}
+
+export function isActiveLuaCodeTab(): boolean {
+	return isCodeTabActive() && getActiveCodeTabContext().language === 'lua';
 }
 
 export function isReadOnlyCodeTab(): boolean {
@@ -218,11 +349,11 @@ export function isResourceViewActive(): boolean {
 export function setActiveTab(tabId: string): void {
 	const tab = ide_state.tabs.find(candidate => candidate.id === tabId)!;
 	const isSameTab = ide_state.activeTabId === tabId;
-	const navigationCheckpoint = !isSameTab && tab.kind === 'lua_editor'
+	const navigationCheckpoint = !isSameTab && tab.kind === 'code_editor'
 		? beginNavigationCapture()
 		: null;
 	closeSymbolSearch(true);
-	if (!isSameTab && getActiveTabKind() === 'lua_editor') {
+	if (!isSameTab && getActiveTabKind() === 'code_editor') {
 		storeActiveCodeTabContext();
 	}
 	if (isSameTab) {
@@ -240,7 +371,7 @@ export function setActiveTab(tabId: string): void {
 		ide_state.runtimeErrorOverlay = null;
 		return;
 	}
-	if (tab.kind === 'lua_editor') {
+	if (tab.kind === 'code_editor') {
 		hideResourcePanel();
 		activateCodeEditorTab(tab.id);
 		if (navigationCheckpoint) {
@@ -250,36 +381,61 @@ export function setActiveTab(tabId: string): void {
 }
 
 export function activateCodeTab(): void {
-	const codeTab = ide_state.tabs.find(candidate => candidate.kind === 'lua_editor')!;
+	const codeTab = ide_state.tabs.find(candidate => candidate.kind === 'code_editor')!;
 	setActiveTab(codeTab.id);
 }
 
 export function openLuaCodeTab(descriptor: ResourceDescriptor): void {
 	const navigationCheckpoint = beginNavigationCapture();
-	const tabId: EditorTabId = `lua:${descriptor.path}`;
-	let tab = ide_state.tabs.find(candidate => candidate.id === tabId);
+	const resolvedDescriptor: ResourceDescriptor = {
+		path: descriptor.path,
+		type: descriptor.type,
+		asset_id: descriptor.asset_id,
+		readOnly: descriptor.readOnly,
+		backing: 'text',
+		language: 'lua',
+	};
+	const tabId = buildCodeTabId(resolvedDescriptor);
 	if (!ide_state.codeTabContexts.has(tabId)) {
-		const context = createLuaCodeTabContext(descriptor);
+		const context = createLuaCodeTabContext(resolvedDescriptor);
 		ide_state.codeTabContexts.set(tabId, context);
 	}
 	const context = ide_state.codeTabContexts.get(tabId)!;
-	context.readOnly = descriptor.readOnly === true;
-	if (!tab) {
-		tab = {
-			id: tabId,
-			kind: 'lua_editor',
-			title: computeResourceTabTitle(descriptor),
-			closable: true,
-			dirty: context.dirty,
-			resource: undefined,
-		};
-		ide_state.tabs.push(tab);
-	} else {
-		tab.title = computeResourceTabTitle(descriptor);
-		tab.dirty = context.dirty;
-	}
+	context.descriptor = resolvedDescriptor;
+	context.readOnly = resolvedDescriptor.readOnly === true;
+	context.backing = 'text';
+	context.language = 'lua';
+	context.title = computeResourceTabTitle(resolvedDescriptor);
+	upsertCodeEditorTab(context);
 	setActiveTab(tabId);
 	completeNavigation(navigationCheckpoint);
+}
+
+export async function openTextCodeTab(descriptor: ResourceDescriptor): Promise<void> {
+	const tabId = buildCodeTabId(descriptor);
+	try {
+		let context = ide_state.codeTabContexts.get(tabId);
+		if (!context) {
+			const source = await loadTextResourceSource(descriptor.path);
+			if (source === null) {
+				throw new Error(`Text resource '${descriptor.path}' is unavailable.`);
+			}
+			context = createTextCodeTabContext(descriptor, source);
+			ide_state.codeTabContexts.set(tabId, context);
+		}
+		context.descriptor = descriptor;
+		context.readOnly = descriptor.readOnly === true;
+		context.backing = descriptor.backing!;
+		context.language = descriptor.language!;
+		context.title = computeResourceTabTitle(descriptor);
+		upsertCodeEditorTab(context);
+		const navigationCheckpoint = beginNavigationCapture();
+		setActiveTab(tabId);
+		completeNavigation(navigationCheckpoint);
+	} catch (error) {
+		const message = extractErrorMessage(error);
+		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
+	}
 }
 
 export function closeTab(tabId: string): void {
@@ -295,11 +451,11 @@ export function closeTab(tabId: string): void {
 	if (isActive && ide_state.tabs.length > 1) {
 		const fallback = ide_state.tabs[index - 1] ?? ide_state.tabs[index + 1];
 		setActiveTab(fallback.id);
-	} else if (isActive && tab.kind === 'lua_editor') {
+	} else if (isActive && tab.kind === 'code_editor') {
 		storeActiveCodeTabContext();
 	}
 	ide_state.tabs.splice(index, 1);
-	if (tab.kind === 'lua_editor') {
+	if (tab.kind === 'code_editor') {
 		ide_state.dirtyDiagnosticContexts.delete(tab.id);
 		ide_state.diagnosticsCache.delete(tab.id);
 	}
@@ -470,7 +626,7 @@ export function focusChunkSource(path: string): void {
 }
 
 export function listResourcesStrict(): ResourceDescriptor[] {
-	return listResources();
+	return listIdeResources();
 }
 
 export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
@@ -480,8 +636,19 @@ export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
 		focusEditorFromResourcePanel();
 		return;
 	}
-	if (descriptor.type === 'lua') {
+	const backing = descriptor.backing ?? (descriptor.type === 'lua' || descriptor.type === 'aem' ? 'text' : 'viewer');
+	const language = descriptor.language ?? (descriptor.type === 'lua' ? 'lua' : descriptor.type === 'aem' ? 'yaml' : 'plain_text');
+	if (backing === 'text' && language === 'lua') {
 		openLuaCodeTab(descriptor);
+	} else if (backing === 'text') {
+		void openTextCodeTab({
+			path: descriptor.path,
+			type: descriptor.type,
+			asset_id: descriptor.asset_id,
+			readOnly: descriptor.readOnly,
+			backing,
+			language,
+		});
 	} else {
 		openResourceViewerTab(descriptor);
 	}
@@ -538,7 +705,11 @@ export async function save(): Promise<void> {
 	const source = getTextSnapshot(ide_state.buffer);
 	const targetPath = context.descriptor.path;
 	try {
-		await saveLuaResourceSource(targetPath, source);
+		if (context.language === 'lua') {
+			await saveLuaResourceSource(targetPath, source);
+		} else {
+			await saveTextResourceSource(targetPath, source);
+		}
 		setWorkspaceCachedSources([targetPath, buildDirtyFilePath(targetPath)], source);
 		ide_state.dirty = false;
 		ide_state.savePointDepth = ide_state.undoStack.length;
@@ -549,10 +720,32 @@ export async function save(): Promise<void> {
 		context.saveGeneration = ide_state.saveGeneration;
 		ide_state.lastSavedSource = source;
 		updateActiveContextDirtyFlag();
-		const message = `${context.title} saved (restart pending)`;
-		ide_state.showMessage(message, constants.COLOR_STATUS_SUCCESS, 2.5);
+		if (context.language === 'lua') {
+			setContextRuntimeSyncState(context, 'restart_pending', null);
+			ide_state.appliedGeneration = Math.max(0, ide_state.saveGeneration - 1);
+			context.appliedGeneration = ide_state.appliedGeneration;
+			ide_state.showMessage(`${context.title} saved (restart pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
+			return;
+		}
+		ide_state.appliedGeneration = ide_state.saveGeneration;
+		context.appliedGeneration = ide_state.appliedGeneration;
+		if (context.descriptor.type !== 'aem') {
+			setContextRuntimeSyncState(context, 'synced', null);
+			ide_state.showMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
+			return;
+		}
+		try {
+			applyAemSourceToRuntime(context.descriptor, source);
+			setContextRuntimeSyncState(context, 'synced', null);
+			ide_state.showMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
+		} catch (applyError) {
+			const applyMessage = extractErrorMessage(applyError);
+			setContextRuntimeSyncState(context, 'diverged', applyMessage);
+			ide_state.showMessage(`${context.title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
+			ide_state.showWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
+		}
 	} catch (error) {
-		if (tryShowLuaErrorOverlay(error)) {
+		if (context.language === 'lua' && tryShowLuaErrorOverlay(error)) {
 			return;
 		}
 		const message = extractErrorMessage(error);

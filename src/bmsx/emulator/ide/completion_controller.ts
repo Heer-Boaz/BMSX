@@ -27,9 +27,9 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 import { isLuaCommentContext } from './text_utils';
 import { point_in_rect } from '../../utils/rect_operations';
 import { LuaLexer } from '../../lua/syntax/lualexer';
-import { ide_state } from './ide_state';
+import { assignRowColumn, ide_state } from './ide_state';
 import * as TextEditing from './text_editing_and_selection';
-import { getActiveCodeTabContext } from './editor_tabs';
+import { getActiveCodeTabContext, isActiveLuaCodeTab } from './editor_tabs';
 import { prepareUndo } from './undo_controller';
 import { updateDesiredColumn, revealCursor } from './caret';
 import { resetBlink } from './render/render_caret';
@@ -53,6 +53,9 @@ export class CompletionController {
 
 	private readonly cursorPositionScratch = { row: 0, column: 0 };
 	private readonly clampPositionScratch = { row: 0, column: 0 };
+	private readonly selectionAnchorScratch = { row: 0, column: 0 };
+	private readonly lastCursorPositionScratch = { row: 0, column: 0 };
+	private readonly parameterHintAnchorScratch = { row: 0, column: 0 };
 
 	private getCursorPosition(): { row: number; column: number } {
 		this.cursorPositionScratch.row = ide_state.cursorRow;
@@ -69,36 +72,15 @@ export class CompletionController {
 	}
 
 	private setSelectionAnchor(row: number, column: number): void {
-		const target = ide_state.selectionAnchor;
-		if (!target) {
-			ide_state.selectionAnchor = {
-				row,
-				column,
-			};
-			return;
-		}
-		target.row = row;
-		target.column = column;
+		ide_state.selectionAnchor = assignRowColumn(ide_state.selectionAnchor, row, column, this.selectionAnchorScratch);
 	}
 
 	private setLastCursorPosition(row: number, column: number): void {
-		const pos = this.lastCursorPosition;
-		if (!pos) {
-			this.lastCursorPosition = { row, column };
-			return;
-		}
-		pos.row = row;
-		pos.column = column;
+		this.lastCursorPosition = assignRowColumn(this.lastCursorPosition, row, column, this.lastCursorPositionScratch);
 	}
 
 	private setParameterHintAnchor(row: number, column: number): void {
-		const anchor = this.parameterHintAnchor;
-		if (!anchor) {
-			this.parameterHintAnchor = { row, column };
-			return;
-		}
-		anchor.row = row;
-		anchor.column = column;
+		this.parameterHintAnchor = assignRowColumn(this.parameterHintAnchor, row, column, this.parameterHintAnchorScratch);
 	}
 
 	private afterCompletionApplied(): void {
@@ -237,6 +219,12 @@ export class CompletionController {
 	}
 
 	public processPending(deltaSeconds: number): void {
+		if (!isActiveLuaCodeTab()) {
+			this.closeSession();
+			this.cancelPendingCompletion();
+			this.parameterHint = null;
+			return;
+		}
 		this.updateParameterHintIdle(deltaSeconds);
 		const pending = this.pendingCompletionRequest;
 		if (!pending) return;
@@ -255,6 +243,15 @@ export class CompletionController {
 	}
 
 	public onCursorMoved(): void {
+		if (!isActiveLuaCodeTab()) {
+			this.closeSession();
+			this.cancelPendingCompletion();
+			this.parameterHint = null;
+			this.parameterHintAnchor = null;
+			this.parameterHintTriggerPending = false;
+			this.parameterHintIdleElapsed = 0;
+			return;
+		}
 		this.cancelPendingCompletion();
 		this.parameterHint = null;
 		this.parameterHintAnchor = null;
@@ -278,6 +275,12 @@ export class CompletionController {
 	}
 
 	public updateAfterEdit(edit: EditContext): void {
+		if (!isActiveLuaCodeTab()) {
+			this.closeSession();
+			this.cancelPendingCompletion();
+			this.parameterHint = null;
+			return;
+		}
 		this.parameterHintIdleElapsed = 0;
 		const cursor = this.getCursorPosition();
 		this.setLastCursorPosition(cursor.row, cursor.column);
@@ -298,6 +301,12 @@ export class CompletionController {
 	}
 
 	public handleKeybindings(): boolean {
+		if (!isActiveLuaCodeTab()) {
+			this.closeSession();
+			this.cancelPendingCompletion();
+			this.parameterHint = null;
+			return false;
+		}
 		const { ctrlDown, altDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
 		if ((ctrlDown || metaDown) && !altDown && intellisenseUiReady() && isKeyJustPressed('Space')) {
 			consumeIdeKey('Space');

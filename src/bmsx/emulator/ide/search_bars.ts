@@ -250,6 +250,9 @@ export function applyResourceSearchFieldText(value: string, moveCursorToEnd: boo
 // ── Symbol search lifecycle ──────────────────────────────────────
 
 export function openSymbolSearch(initialQuery: string = ''): void {
+	if (getActiveCodeTabContext().language !== 'lua') {
+		return;
+	}
 	clearReferenceHighlights();
 	closeSearch(false, true);
 	closeLineJump(false);
@@ -268,6 +271,9 @@ export function openSymbolSearch(initialQuery: string = ''): void {
 }
 
 export function openGlobalSymbolSearch(initialQuery: string = ''): void {
+	if (getActiveCodeTabContext().language !== 'lua') {
+		return;
+	}
 	clearReferenceHighlights();
 	closeSearch(false, true);
 	closeLineJump(false);
@@ -287,6 +293,9 @@ export function openGlobalSymbolSearch(initialQuery: string = ''): void {
 
 export function openReferenceSearchPopup(): void {
 	const context = getActiveCodeTabContext();
+	if (context.language !== 'lua') {
+		return;
+	}
 	if (ide_state.symbolSearchVisible || ide_state.symbolSearchActive) {
 		closeSymbolSearch(false);
 	}
@@ -624,6 +633,9 @@ export function openRenamePrompt(): void {
 	closeSymbolSearch(false);
 	ide_state.createResourceActive = false;
 	const context = getActiveCodeTabContext();
+	if (context.language !== 'lua') {
+		return;
+	}
 	const referenceContext = buildProjectReferenceContext(context);
 	const started = ide_state.renameController.begin({
 		buffer: ide_state.buffer,

@@ -10,10 +10,9 @@ import { Runtime } from '../runtime';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
 import { ide_state } from './ide_state';
 import { bottomMargin, codeViewportTop } from './editor_view';
-import { openResourceViewerTab } from './resource_viewer';
 import { measureText } from './text_utils';
 import type { CallHierarchyView, CallHierarchyViewNode } from './reference_navigation';
-import { focusEditorFromResourcePanel, listResourcesStrict, openLuaCodeTab, focusChunkSource } from './editor_tabs';
+import { focusEditorFromResourcePanel, listResourcesStrict, openResourceDescriptor, focusChunkSource } from './editor_tabs';
 import { applyDefinitionSelection } from './intellisense';
 
 export interface ResourcePanelScrollbars {
@@ -553,7 +552,7 @@ export class ResourcePanelController {
 			focusEditorFromResourcePanel();
 			return;
 		}
-		if (d.type === 'lua') openLuaCodeTab(d); else openResourceViewerTab(d);
+		openResourceDescriptor(d);
 		focusEditorFromResourcePanel();
 	}
 

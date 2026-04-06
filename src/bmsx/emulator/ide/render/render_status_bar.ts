@@ -1,7 +1,7 @@
 import * as constants from '../constants';
 import { getActiveSymbolSearchMatch } from '../search_bars';
 import { statusAreaHeight, getStatusMessageLines } from '../editor_view';
-import { isResourceViewActive } from '../editor_tabs';
+import { getActiveCodeTabContext, isCodeTabActive, isResourceViewActive } from '../editor_tabs';
 import { ide_state } from '../ide_state';
 import { getActiveResourceViewer } from '../resource_viewer';
 import { drawEditorText } from './text_renderer';
@@ -93,6 +93,22 @@ export function renderStatusBar(): void {
 	let textX = leftX + glyphSize;
 	if (statusLeftInfo && statusLeftInfo.length > 0) {
 		drawEditorText(ide_state.font, statusLeftInfo, textX, statusTop + 2, undefined, statusTextColor);
+	}
+	if (isCodeTabActive()) {
+		const context = getActiveCodeTabContext();
+		let detail = '';
+		let detailColor = statusTextColor;
+		if (context.runtimeSyncState === 'diverged') {
+			detail = 'SAVED, RUNTIME NOT APPLIED';
+			detailColor = constants.COLOR_STATUS_WARNING;
+		} else if (context.runtimeSyncState === 'restart_pending') {
+			detail = 'RESTART PENDING';
+		} else if (context.language === 'yaml') {
+			detail = 'YAML';
+		}
+		if (detail.length > 0) {
+			drawEditorText(ide_state.font, detail, ide_state.viewportWidth - measureText(detail) - 4, statusTop + 2, undefined, detailColor);
+		}
 	}
 	// drawEditorText(api, ide_state.font, filenameInfo, ide_state.viewportWidth - measureText(filenameInfo) - 4, statusTop + 2, undefined, constants.COLOR_STATUS_TEXT);
 }
