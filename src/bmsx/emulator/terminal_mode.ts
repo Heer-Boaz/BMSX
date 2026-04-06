@@ -3,6 +3,7 @@ import { BmsxColors } from './vdp';
 import { EditorFont } from './editor_font';
 import type { FontVariant } from './font';
 import { invalidateLuaCommentContextFromRow, applyCaseOutsideStrings } from './ide/text_utils';
+import { drawEditorText } from './ide/render/text_renderer';
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,
@@ -15,7 +16,7 @@ import {
 	setSelectionAnchorFromOffset,
 } from './ide/inline_text_field';
 import type { InlineInputOptions, TextField, CursorScreenInfo, CompletionContext, EditContext, LuaCompletionItem } from './ide/types';
-import { COLOR_COMPLETION_BACKGROUND, COLOR_COMPLETION_BORDER, COLOR_COMPLETION_HIGHLIGHT, COLOR_COMPLETION_HIGHLIGHT_TEXT, COLOR_COMPLETION_PREVIEW_TEXT, COLOR_COMPLETION_TEXT, TAB_SPACES } from './ide/constants';
+import * as constants from './ide/constants';
 import { OverlayRenderer } from './overlay_renderer';
 import {
 	isKeyJustPressed as isKeyJustPressed,
@@ -24,8 +25,8 @@ import {
 	isMetaDown,
 	isAltDown
 } from './ide/ide_input';
-import { CompletionController } from './ide/completion_controller';
-import { collectLuaModuleAliases, listLuaObjectMembers, resolveSnapshotExpression, describeLuaValueForInspector } from './ide/intellisense';
+import { completionController, setCompletionContextSource, type CompletionContextSource } from './ide/completion_controller';
+import { resolveSnapshotExpression, describeLuaValueForInspector } from './ide/intellisense';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
 import type { Viewport } from '../rompack/rompack';
 import { Runtime } from './runtime';
@@ -34,10 +35,9 @@ import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './termin
 import { extractErrorMessage } from '../lua/luavalue';
 import { valueToString } from './lua_globals';
 import type { Value } from './cpu';
-import { LuaMemberCompletionRequest, SymbolEntry } from './types';
+import { SymbolEntry } from './types';
 import type { MutableTextPosition, TextBuffer } from './ide/text/text_buffer';
 import { clamp } from '../utils/clamp';
-import type { ModuleAliasEntry } from './ide/semantic_model';
 import { textFromLines } from './ide/text/source_text';
 
 type TerminalOutputKind =
@@ -244,9 +244,10 @@ export class TerminalMode {
 	private readonly history: string[] = [];
 	private historyIndex: number = null;
 	private readonly terminalPath = '<terminal>';
-	private readonly completionContextToken = { path: this.terminalPath };
-	private readonly completion: CompletionController;
+	private readonly completion = completionController;
 	private readonly buffer: TextBuffer;
+	private readonly completionContextSource: CompletionContextSource;
+	private previousCompletionContextSource: CompletionContextSource | null = null;
 	private blinkTimer = 0;
 	private caretVisible = true;
 	private active = false;
@@ -276,53 +277,45 @@ export class TerminalMode {
 		this.font = new EditorFont(runtime.activeIdeFontVariant);
 		this.uppercaseDisplayOverride = false;
 		this.maxEntries = MAX_OUTPUT_ENTRIES;
-		const terminal = this;
 		this.buffer = new InlineFieldTextBuffer(() => this.getLinesSnapshot(), () => this.textVersion);
-		this.completion = new CompletionController({
-			isCodeTabActive: () => this.active,
+		this.completionContextSource = {
+			isCompletionReady: () => this.active && !this.symbolPanel && !this.completionPanel,
+			shouldAutoTriggerCompletions: () => this.active && !this.symbolPanel && !this.completionPanel,
 			getBuffer: () => this.buffer,
-			getCursorRow: () => this.getCursorPosition().row,
-			getCursorColumn: () => this.getCursorPosition().column,
-			setCursorPosition: (row, column) => { this.setCursorFromPosition(row, column); },
-			setSelectionAnchor: (row, column) => { this.setSelectionAnchorFromPosition(row, column); },
-			replaceSelectionWith: (text) => { this.replaceSelectionWithText(text); },
-			updateDesiredColumn: () => { this.field.desiredColumn = this.field.cursorColumn; },
-			resetBlink: () => { this.resetBlink(); },
-			revealCursor: () => { },
-			characterAdvance: (char) => this.font.advance(char),
-			get lineHeight(): number { return terminal.font.lineHeight; },
-			measureText: (text) => this.measureDisplayText(text, this.useUppercaseDisplay()),
-			drawText: (text, x, y, color) => {
-				const uppercaseDisplay = terminal.useUppercaseDisplay();
-				const display = terminal.toRenderedGlyphText(text, uppercaseDisplay);
-				terminal.currentRenderer.glyphs({ glyphs: display, x, y, z: 0, color: BmsxColors[color], font: terminal.font.renderFont() });
-			},
-			fillRect: (left, top, right, bottom, color) => {
-				terminal.currentRenderer.rect({
-					kind: 'fill',
-					area: { left, top, right, bottom },
-					color: BmsxColors[color],
-				});
-			},
-			strokeRect: (left, top, right, bottom, color) => {
-				terminal.currentRenderer.rect({
-					kind: 'rect',
-					area: { left, top, right, bottom },
-					color: BmsxColors[color],
-				});
-			},
-			getCursorScreenInfo: () => this.cursorScreenInfo,
-			getActiveCodeTabContext: () => (this.active ? this.completionContextToken : null),
-			resolveHoverPath: () => this.terminalPath,
-			getSemanticDefinitions: () => null,
-			getLuaModuleAliases: () => this.buildTerminalModuleAliases(),
-			getMemberCompletionItems: (request) => this.buildMemberCompletionItems(request),
-			charAt: (row, column) => this.charAt(row, column),
+			getCursorPosition: () => this.getCursorPosition(),
 			getTextVersion: () => this.textVersion,
-			shouldFireRepeat: (code) => this.shouldRepeatKey(code),
-			shouldAutoTriggerCompletions: () => true,
-			shouldShowParameterHints: () => false,
-		});
+			getCursorScreenInfo: () => this.cursorScreenInfo,
+			getLineHeight: () => this.font.lineHeight,
+			getFont: () => this.font,
+			measureText: (value: string): number => this.measureDisplayText(value, this.useUppercaseDisplay()),
+			drawText: (font, text, x, y, color): void => {
+				const display = this.toRenderedGlyphText(text, this.useUppercaseDisplay());
+				drawEditorText(font, display, x, y, undefined, color);
+			},
+			getActivePath: () => this.terminalPath,
+			getActiveSemanticDefinitions: () => [],
+			getLuaModuleAliases: () => new Map(),
+			getCharAt: (row: number, column: number): string => this.charAt(row, column),
+			setCursorPosition: (row: number, column: number): void => {
+				this.setCursorFromPosition(row, column);
+			},
+			setSelectionAnchor: (anchor: { row: number; column: number }): void => {
+				this.setSelectionAnchorFromPosition(anchor.row, anchor.column);
+			},
+			replaceSelectionWithText: (text: string): void => {
+				this.replaceSelectionWithText(text);
+			},
+			clampBufferPosition: (position: { row: number; column: number }) => this.clampBufferPosition(position),
+			afterCompletionApplied: () => {
+				this.resetBlink();
+				if (this.cursorScreenInfo) {
+					this.cursorScreenInfo.baseColor = OUTPUT_COLORS.stdout;
+				}
+			},
+			clearSelectionAnchor: () => {
+				this.field.selectionAnchor = null;
+			},
+		};
 		this.completion.enterCommitsCompletion = true;
 	}
 
@@ -338,6 +331,7 @@ export class TerminalMode {
 		this.resetPagerState();
 		this.blinkTimer = 0;
 		this.caretVisible = true;
+		this.previousCompletionContextSource = setCompletionContextSource(this.completionContextSource);
 	}
 
 	public deactivate(): void {
@@ -347,6 +341,8 @@ export class TerminalMode {
 		this.completionPanel = null;
 		this.completionPanelLayout = null;
 		this.resetPagerState();
+		setCompletionContextSource(this.previousCompletionContextSource);
+		this.previousCompletionContextSource = null;
 	}
 
 	public setFontVariant(variant: FontVariant): void {
@@ -1115,12 +1111,12 @@ export class TerminalMode {
 		this.currentRenderer.rect({
 			kind: 'fill',
 			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: BmsxColors[COLOR_COMPLETION_BACKGROUND],
+			color: BmsxColors[constants.COLOR_COMPLETION_BACKGROUND],
 		});
 		this.currentRenderer.rect({
 			kind: 'rect',
 			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: BmsxColors[COLOR_COMPLETION_BORDER],
+			color: BmsxColors[constants.COLOR_COMPLETION_BORDER],
 		});
 
 		const charWidth = this.font.advance(' ');
@@ -1129,7 +1125,7 @@ export class TerminalMode {
 		const cellWidthPx = layout.cellWidth * charWidth;
 		const gapWidthPx = layout.gap * charWidth;
 		const strideX = cellWidthPx + gapWidthPx;
-		const textColor = BmsxColors[COLOR_COMPLETION_TEXT];
+		const textColor = BmsxColors[constants.COLOR_COMPLETION_TEXT];
 
 		if (panel.filtered.length === 0) {
 			const message = panel.filter.length > 0 ? 'No matches' : 'No symbols';
@@ -1160,10 +1156,10 @@ export class TerminalMode {
 							right: cellX + cellWidthPx + 1,
 							bottom: cellY + lineHeight + 1,
 						},
-						color: BmsxColors[COLOR_COMPLETION_HIGHLIGHT],
+						color: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT],
 					});
 				}
-				const color = isSelected ? BmsxColors[COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
+				const color = isSelected ? BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
 				this.drawGlyphRun(this.currentRenderer, label, cellX, cellY, color, uppercaseDisplay);
 			}
 		}
@@ -1189,12 +1185,12 @@ export class TerminalMode {
 		this.currentRenderer.rect({
 			kind: 'fill',
 			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: BmsxColors[COLOR_COMPLETION_BACKGROUND],
+			color: BmsxColors[constants.COLOR_COMPLETION_BACKGROUND],
 		});
 		this.currentRenderer.rect({
 			kind: 'rect',
 			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: BmsxColors[COLOR_COMPLETION_BORDER],
+			color: BmsxColors[constants.COLOR_COMPLETION_BORDER],
 		});
 
 		const charWidth = this.font.advance(' ');
@@ -1203,7 +1199,7 @@ export class TerminalMode {
 		const cellWidthPx = layout.cellWidth * charWidth;
 		const gapWidthPx = layout.gap * charWidth;
 		const strideX = cellWidthPx + gapWidthPx;
-		const textColor = BmsxColors[COLOR_COMPLETION_TEXT];
+		const textColor = BmsxColors[constants.COLOR_COMPLETION_TEXT];
 
 		if (panel.filtered.length === 0) {
 			const message = panel.filter.length > 0 ? 'No matches' : 'No completions';
@@ -1234,10 +1230,10 @@ export class TerminalMode {
 							right: cellX + cellWidthPx + 1,
 							bottom: cellY + lineHeight + 1,
 						},
-						color: BmsxColors[COLOR_COMPLETION_HIGHLIGHT],
+						color: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT],
 					});
 				}
-				const color = isSelected ? BmsxColors[COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
+				const color = isSelected ? BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
 				this.drawGlyphRun(this.currentRenderer, label, cellX, cellY, color, uppercaseDisplay);
 			}
 		}
@@ -1713,7 +1709,7 @@ export class TerminalMode {
 		const uppercaseDisplay = this.useUppercaseDisplay();
 		const normalized = this.toDisplayText(text, uppercaseDisplay);
 		const limit = Math.max(8, maxWidth);
-		const measure = (value: string): number => this.font.measure(value.replace(/\t/g, ' '.repeat(TAB_SPACES)));
+		const measure = (value: string): number => this.font.measure(value.replace(/\t/g, ' '.repeat(constants.TAB_SPACES)));
 		const segments: string[] = [];
 		let segmentStart = 0;
 		let lastBreak = -1;
@@ -1957,6 +1953,16 @@ export class TerminalMode {
 		return this.cachedLines;
 	}
 
+	private clampBufferPosition(position: { row: number; column: number }): { row: number; column: number } {
+		const lines = this.getLinesSnapshot();
+		const clampedRow = clamp(position.row, 0, Math.max(0, lines.length - 1));
+		const lineLength = lines[clampedRow]?.length ?? 0;
+		return {
+			row: clampedRow,
+			column: clamp(position.column, 0, lineLength),
+		};
+	}
+
 	private getCursorPosition(): { row: number; column: number } {
 		return { row: this.field.cursorRow, column: this.field.cursorColumn };
 	}
@@ -2086,46 +2092,6 @@ export class TerminalMode {
 		this.completion.drawParameterHintOverlay(bounds);
 	}
 
-	private buildTerminalModuleAliases(): Map<string, ModuleAliasEntry> {
-		if (textFromLines(this.field.lines).trim().length === 0) {
-			return new Map();
-		}
-		return collectLuaModuleAliases({ source: textFromLines(this.field.lines), path: this.terminalPath });
-	}
-
-	private buildMemberCompletionItems(request: LuaMemberCompletionRequest): LuaCompletionItem[] {
-		if (request.objectName.length === 0) {
-			return [];
-		}
-		const response = listLuaObjectMembers({
-			path: request.path,
-			expression: request.objectName,
-			operator: request.operator,
-		});
-		if (response.length === 0) {
-			return [];
-		}
-		const items: LuaCompletionItem[] = [];
-		for (let index = 0; index < response.length; index += 1) {
-			const entry = response[index];
-			if (!entry || entry.name.length === 0) {
-				continue;
-			}
-			const kind = entry.kind === 'method' ? 'native_method' : 'native_property';
-			const parameters = entry.parameters.length > 0 ? entry.parameters.slice() : undefined;
-			items.push({
-				label: entry.name,
-				insertText: entry.name,
-				sortKey: `${kind}:${entry.name.toLowerCase()}`,
-				kind,
-				detail: entry.detail,
-				parameters,
-			});
-		}
-		items.sort((a, b) => a.label.localeCompare(b.label));
-		return items;
-	}
-
 	// New helper: wraps display text with a smaller first-line width (after prompt) and full width for following lines.
 	private wrapDisplayWithFirstWidth(text: string, firstWidth: number, otherWidth: number): { segments: string[]; starts: number[] } {
 		const segments: string[] = [];
@@ -2147,7 +2113,7 @@ export class TerminalMode {
 				widthLimit = otherWidth;
 				continue;
 			}
-			const adv = ch === '\t' ? this.font.advance(' ') * TAB_SPACES : this.font.advance(ch);
+			const adv = ch === '\t' ? this.font.advance(' ') * constants.TAB_SPACES : this.font.measure(ch);
 			if (currentWidth + adv > widthLimit) {
 				if (current.length > 0) {
 					segments.push(current);

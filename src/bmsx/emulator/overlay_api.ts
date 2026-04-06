@@ -31,16 +31,27 @@ export class OverlayApi {
 
 	private resolveColor(value: number | color): color {
 		if (typeof value === 'number') {
-			return BmsxColors[value];
+			return this.resolvePaletteIndex(value);
 		}
 		return value;
+	}
+
+	private resolvePaletteIndex(value: number): color {
+		if (!Number.isFinite(value) || value < 0 || value > 255) {
+			throw new Error(`[overlay_api] Invalid palette index: ${value}`);
+		}
+		const color = BmsxColors[value];
+		if (!color) {
+			throw new Error(`[overlay_api] Palette index has no color: ${value}`);
+		}
+		return color;
 	}
 
 	public fill_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
 		this.activeRenderer.rect({
 			kind: 'fill',
 			area: { left: x0, top: y0, right: x1, bottom: y1, z },
-			color: BmsxColors[colorindex],
+			color: this.resolvePaletteIndex(colorindex),
 			layer: 'ide',
 		});
 	}
@@ -58,7 +69,7 @@ export class OverlayApi {
 		this.activeRenderer.rect({
 			kind: 'rect',
 			area: { left: x0, top: y0, right: x1, bottom: y1, z },
-			color: BmsxColors[colorindex],
+			color: this.resolvePaletteIndex(colorindex),
 			layer: 'ide',
 		});
 	}
@@ -96,7 +107,7 @@ export class OverlayApi {
 			x,
 			y,
 			z,
-			color: BmsxColors[colorindex],
+			color: this.resolvePaletteIndex(colorindex),
 			font,
 			layer: 'ide',
 		});
@@ -110,7 +121,7 @@ export class OverlayApi {
 			x,
 			y,
 			z,
-			color: BmsxColors[colorindex],
+			color: this.resolvePaletteIndex(colorindex),
 			font,
 			layer: 'ide',
 		});

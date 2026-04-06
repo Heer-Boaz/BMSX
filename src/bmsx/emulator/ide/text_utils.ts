@@ -12,7 +12,6 @@ import { markDiagnosticsDirty } from './diagnostics';
 import { requestSemanticRefresh, clearReferenceHighlights } from './intellisense';
 import { getTextSnapshot, splitText } from './text/source_text';
 import type { TextBuffer } from './text/text_buffer';
-import { clamp } from '../../utils/clamp';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;
@@ -290,7 +289,7 @@ export function invalidateLuaCommentContextFromRow(buffer: TextBuffer, row: numb
 		luaCommentContextCache.set(buffer, cache);
 	}
 	const lineCount = buffer.getLineCount();
-	const clampedRow = clamp(row, 0, lineCount);
+	const clampedRow = Math.max(0, Math.min(row, lineCount));
 	if (cache.lineCount !== lineCount) {
 		const validThroughRow = Math.min(cache.validThroughRow, clampedRow);
 		const nextModeState = new Uint8Array(lineCount + 1);
@@ -552,6 +551,7 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 export function ensureVisualLines(): void {
 	const activeContext = getActiveCodeTabContext();
 	const path = activeContext.descriptor.path;
+	const estimatedVisibleRowCount = Math.max(1, ide_state.cachedVisibleRowCount);
 	ide_state.scrollRow = ide_state.layout.ensureVisualLines({
 		buffer: ide_state.buffer,
 		wordWrapEnabled: ide_state.wordWrapEnabled,
@@ -559,11 +559,10 @@ export function ensureVisualLines(): void {
 		documentVersion: ide_state.textVersion,
 		path,
 		computeWrapWidth: () => computeWrapWidth(),
-		estimatedVisibleRowCount: Math.max(1, ide_state.cachedVisibleRowCount),
+		estimatedVisibleRowCount,
 	});
-	if (ide_state.scrollRow < 0) {
-		ide_state.scrollRow = 0;
-	}
+	const visualLineCount = ide_state.layout.getVisualLineCount();
+	ide_state.scrollRow = ide_state.layout.clampVisualScroll(ide_state.scrollRow, visualLineCount, estimatedVisibleRowCount);
 }
 
 export function computeWrapWidth(): number {

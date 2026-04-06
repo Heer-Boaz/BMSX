@@ -230,9 +230,7 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 	switch (kind) {
 		case 'codeVertical': {
 			ensureVisualLines();
-			const rowCount = Math.max(1, ide_state.cachedVisibleRowCount);
-			const maxScroll = Math.max(0, getVisualLineCount() - rowCount);
-			ide_state.scrollRow = clamp(Math.round(scroll), 0, maxScroll);
+			ide_state.scrollRow = ide_state.layout.clampVisualScroll(Math.round(scroll), getVisualLineCount(), Math.max(1, ide_state.cachedVisibleRowCount));
 			ide_state.cursorRevealSuspended = true;
 			break;
 		}
@@ -241,8 +239,7 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 				ide_state.scrollColumn = 0;
 				break;
 			}
-			const maxScroll = computeMaximumScrollColumn();
-			ide_state.scrollColumn = clamp(Math.round(scroll), 0, maxScroll);
+			ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(Math.round(scroll), computeMaximumScrollColumn());
 			ide_state.cursorRevealSuspended = true;
 			break;
 		}
@@ -266,8 +263,7 @@ export function applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void 
 				break;
 			}
 			const capacity = resourceViewerTextCapacity(viewer, getCodeAreaBounds(), ide_state.lineHeight);
-			const maxScroll = Math.max(0, viewer.lines.length - capacity);
-			viewer.scroll = clamp(scroll, 0, maxScroll);
+			viewer.scroll = ide_state.layout.clampHorizontalScroll(scroll, Math.max(0, viewer.lines.length - capacity));
 			break;
 		}
 	}

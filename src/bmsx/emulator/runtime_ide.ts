@@ -11,6 +11,7 @@ import {
 } from '../lua/luavalue';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clamp_fallback } from '../utils/clamp';
+import * as constants from './ide/constants';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/constants';
 import { createCartEditor, setExecutionStopHighlight, clearExecutionStopHighlights } from './ide/cart_editor';
 import { ide_state } from './ide/ide_state';
@@ -169,6 +170,7 @@ export function createPauseCoordinator(): DebugPauseCoordinator {
 }
 
 export function initializeIdeFeatures(runtime: Runtime, options: RuntimeOptions): void {
+	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	runtime.terminal = new TerminalMode(runtime);
 	runtime.editor = createCartEditor(options.viewport);
 	runtime.overlayResolutionMode = 'viewport';

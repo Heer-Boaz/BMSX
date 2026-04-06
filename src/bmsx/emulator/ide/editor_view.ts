@@ -1,5 +1,4 @@
 import { $ } from '../../core/engine_core';
-import { clamp } from '../../utils/clamp';
 import { lower_bound } from '../../utils/lower_bound';
 import { EditorFont } from '../editor_font';
 import type { FontVariant } from '../font';
@@ -262,16 +261,11 @@ export function resolvePointerRow(viewportY: number): number {
 	const relativeY = viewportY - getCodeAreaBounds().codeTop;
 	let visualIndex = ide_state.scrollRow + Math.floor(relativeY / ide_state.lineHeight);
 	const visualCount = getVisualLineCount();
-	if (visualIndex < 0) {
-		visualIndex = 0;
-	}
-	if (visualCount > 0 && visualIndex > visualCount - 1) {
-		visualIndex = visualCount - 1;
-	}
+	visualIndex = ide_state.layout.clampVisualIndex(Math.max(1, visualCount), visualIndex);
 	const segment = visualIndexToSegment(visualIndex);
 	if (!segment) {
 		ide_state.lastPointerRowResolution = null;
-		return clamp(visualIndex, 0, Math.max(0, ide_state.buffer.getLineCount() - 1));
+		return ide_state.layout.clampBufferRow(ide_state.buffer, visualIndex);
 	}
 	ide_state.lastPointerRowResolution = { visualIndex, segment };
 	return segment.row;
@@ -285,25 +279,16 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 		return 0;
 	}
 	const highlight = entry.hi;
-	let segmentStartColumn = ide_state.scrollColumn;
+	let segmentStartColumn = ide_state.layout.clampLineLength(line.length, ide_state.scrollColumn);
 	let segmentEndColumn = line.length;
 	const resolvedSegment = ide_state.lastPointerRowResolution?.segment;
 	if (ide_state.wordWrapEnabled && resolvedSegment && resolvedSegment.row === row) {
 		segmentStartColumn = resolvedSegment.startColumn;
 		segmentEndColumn = resolvedSegment.endColumn;
 	}
-	if (ide_state.wordWrapEnabled) {
-		if (segmentStartColumn < 0) {
-			segmentStartColumn = 0;
-		}
-		if (segmentEndColumn < segmentStartColumn) {
-			segmentEndColumn = segmentStartColumn;
-		}
-	} else {
-		segmentStartColumn = Math.min(segmentStartColumn, line.length);
-		segmentEndColumn = line.length;
-	}
-	const effectiveStartColumn = clamp(segmentStartColumn, 0, line.length);
+	const segmentStart = ide_state.layout.clampSegmentStart(line.length, segmentStartColumn);
+	const segmentEnd = ide_state.layout.clampSegmentEnd(line.length, segmentStart, segmentEndColumn);
+	const effectiveStartColumn = segmentStart;
 	const startDisplay = ide_state.layout.columnToDisplay(highlight, effectiveStartColumn);
 	const offset = viewportX - bounds.textLeft;
 	if (offset <= 0) {
@@ -316,7 +301,7 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 		displayIndex = startDisplay;
 	}
 	if (displayIndex >= highlight.text.length) {
-		return ide_state.wordWrapEnabled ? Math.min(segmentEndColumn, line.length) : line.length;
+		return ide_state.wordWrapEnabled ? segmentEnd : line.length;
 	}
 	const midpoint = entry.advancePrefix[displayIndex] + (entry.advancePrefix[displayIndex + 1] - entry.advancePrefix[displayIndex]) * 0.5;
 	let column = entry.displayToColumn[displayIndex];
@@ -327,14 +312,13 @@ export function resolvePointerColumn(row: number, viewportX: number): number {
 		column += 1;
 	}
 	if (ide_state.wordWrapEnabled) {
-		column = clamp(column, segmentStartColumn, segmentEndColumn);
-	} else if (column > line.length) {
-		column = line.length;
+		column = ide_state.layout.clampLineLength(line.length, column);
+		column = ide_state.layout.clampSegmentEnd(line.length, segmentStart, column);
 	}
-	if (column < effectiveStartColumn) {
-		column = effectiveStartColumn;
+	if (column < segmentStart) {
+		column = segmentStart;
 	}
-	return Math.max(0, column);
+	return ide_state.layout.clampLineLength(line.length, column);
 }
 
 export function handlePointerAutoScroll(viewportX: number, viewportY: number): void {
@@ -343,31 +327,25 @@ export function handlePointerAutoScroll(viewportX: number, viewportY: number): v
 	}
 	const bounds = getCodeAreaBounds();
 	ensureVisualLines();
-	if (viewportY < bounds.codeTop && ide_state.scrollRow > 0) {
-		ide_state.scrollRow -= 1;
-	} else if (viewportY >= bounds.codeBottom && ide_state.scrollRow < getVisualLineCount() - 1) {
-		ide_state.scrollRow += 1;
+	let rowDelta = 0;
+	if (viewportY < bounds.codeTop) {
+		rowDelta = -1;
+	} else if (viewportY >= bounds.codeBottom) {
+		rowDelta = 1;
 	}
+	const rows = visibleRowCount();
+	ide_state.scrollRow = ide_state.layout.clampVisualScroll(ide_state.scrollRow + rowDelta, getVisualLineCount(), rows);
 	const maxScrollColumn = computeMaximumScrollColumn();
 	if (viewportX >= bounds.gutterLeft && !ide_state.wordWrapEnabled) {
-		if (viewportX < bounds.textLeft && ide_state.scrollColumn > 0) {
+		if (viewportX < bounds.textLeft) {
 			ide_state.scrollColumn -= 1;
-		} else if (viewportX >= bounds.codeRight && ide_state.scrollColumn < maxScrollColumn) {
+		} else if (viewportX >= bounds.codeRight) {
 			ide_state.scrollColumn += 1;
 		}
-	}
-	if (ide_state.scrollRow < 0) {
-		ide_state.scrollRow = 0;
-	}
-	if (ide_state.scrollColumn < 0) {
-		ide_state.scrollColumn = 0;
+		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(ide_state.scrollColumn, maxScrollColumn);
 	}
 	if (ide_state.wordWrapEnabled) {
 		ide_state.scrollColumn = 0;
-	}
-	ide_state.scrollRow = clamp(ide_state.scrollRow, 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
-	if (!ide_state.wordWrapEnabled) {
-		ide_state.scrollColumn = clamp(ide_state.scrollColumn, 0, maxScrollColumn);
 	}
 }
 
@@ -382,7 +360,7 @@ export function scrollRows(deltaRows: number): void {
 		return;
 	}
 	ensureVisualLines();
-	ide_state.scrollRow = clamp(ide_state.scrollRow + deltaRows, 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
+	ide_state.scrollRow = ide_state.layout.clampVisualScroll(ide_state.scrollRow + deltaRows, getVisualLineCount(), visibleRowCount());
 }
 
 export function getCreateResourceBarHeight(): number {
@@ -579,7 +557,7 @@ export function setFontVariant(variant: FontVariant): void {
 export function toggleWordWrap(): void {
 	ensureVisualLines();
 	const previousWrap = ide_state.wordWrapEnabled;
-	const previousTopIndex = clamp(ide_state.scrollRow, 0, Math.max(0, getVisualLineCount() - 1));
+	const previousTopIndex = ide_state.layout.clampVisualIndex(getVisualLineCount(), ide_state.scrollRow);
 	const previousTopSegment = visualIndexToSegment(previousTopIndex);
 	const anchorRow = previousTopSegment ? previousTopSegment.row : ide_state.cursorRow;
 	const anchorColumnForWrap = previousTopSegment ? previousTopSegment.startColumn : 0;
@@ -595,17 +573,17 @@ export function toggleWordWrap(): void {
 	ide_state.layout.markVisualLinesDirty();
 	ensureVisualLines();
 
-	ide_state.cursorRow = clamp(previousCursorRow, 0, Math.max(0, ide_state.buffer.getLineCount() - 1));
+	ide_state.cursorRow = ide_state.layout.clampBufferRow(ide_state.buffer, previousCursorRow);
 	const currentLine = ide_state.buffer.getLineContent(ide_state.cursorRow);
-	ide_state.cursorColumn = clamp(previousCursorColumn, 0, currentLine.length);
+	ide_state.cursorColumn = ide_state.layout.clampLineLength(currentLine.length, previousCursorColumn);
 	ide_state.desiredColumn = previousDesiredColumn;
 
 	if (ide_state.wordWrapEnabled) {
 		ide_state.scrollColumn = 0;
-		ide_state.scrollRow = clamp(positionToVisualIndex(anchorRow, anchorColumnForWrap), 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
+		ide_state.scrollRow = ide_state.layout.clampVisualScroll(positionToVisualIndex(anchorRow, anchorColumnForWrap), getVisualLineCount(), visibleRowCount());
 	} else {
-		ide_state.scrollColumn = clamp(anchorColumnForUnwrap, 0, computeMaximumScrollColumn());
-		ide_state.scrollRow = clamp(positionToVisualIndex(anchorRow, ide_state.scrollColumn), 0, Math.max(0, getVisualLineCount() - visibleRowCount()));
+		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(anchorColumnForUnwrap, computeMaximumScrollColumn());
+		ide_state.scrollRow = ide_state.layout.clampVisualScroll(positionToVisualIndex(anchorRow, ide_state.scrollColumn), getVisualLineCount(), visibleRowCount());
 	}
 	ide_state.lastPointerRowResolution = null;
 	ensureCursorVisible();

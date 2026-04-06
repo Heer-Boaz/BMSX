@@ -1,26 +1,29 @@
 import { $ } from '../../core/engine_core';
-import { drawEditorText } from './render/text_renderer';
-import { CompletionController } from './completion_controller';
+import { completionController, setCompletionContextSource, type CompletionContextSource } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
-import { createEntryTabContext, getActiveCodeTabContext, initializeTabs, isCodeTabActive } from './editor_tabs';
-import { applyInlineFieldEditing, createInlineTextField } from './inline_text_field';
-import { buildMemberCompletionItems, intellisenseUiReady, shouldAutoTriggerCompletions } from './intellisense';
+import { createEntryTabContext, initializeTabs } from './editor_tabs';
+import { getActiveCodeTabContext } from './editor_tabs';
+import { createInlineTextField } from './inline_text_field';
 import { Scrollbar, ScrollbarController } from './scrollbar';
 import { ResourcePanelController } from './resource_panel_controller';
-import { InputController, shouldRepeatKeyFromPlayer } from './ide_input';
+import { InputController } from './ide_input';
 import { ide_state } from './ide_state';
-import { initializeDebuggerUiState } from './ide_debugger';
-import { revealCursor } from './caret';
-import { initializeWorkspaceStorage } from './workspace_storage';
 import * as TextEditing from './text_editing_and_selection';
+import { revealCursor } from './caret';
 import { resetBlink } from './render/render_caret';
+import { initializeDebuggerUiState } from './ide_debugger';
+import { initializeWorkspaceStorage } from './workspace_storage';
 import { Runtime } from '../runtime';
-import { api } from '../overlay_api';
-import { RenameController } from './rename_controller';
-import type { CodeTabContext } from './types';
+import { renameController } from './rename_controller';
 import { resetSemanticWorkspace } from './semantic_workspace_sync';
-import { assertMonospace, measureText } from './text_utils';
+import { assertMonospace } from './text_utils';
+import { measureText } from './text_utils';
+import { drawEditorText } from './render/text_renderer';
+import { getActiveSemanticDefinitions, getLuaModuleAliases, updateDesiredColumn } from './cart_editor';
+import { intellisenseUiReady, shouldAutoTriggerCompletions } from './intellisense';
 import * as constants from './constants';
+import { clamp } from '../../utils/clamp';
+import type { ModuleAliasEntry } from './semantic_model';
 import type { Viewport } from '../../rompack/rompack';
 import {
 	applyViewportSize,
@@ -33,15 +36,61 @@ import {
 	applyResourceSearchFieldText,
 	applySearchFieldText,
 	applySymbolSearchFieldText,
-	commitRename,
 	createNavigationEntry,
-	focusEditorFromRename,
-	getActiveSemanticDefinitions,
-	getLuaModuleAliases,
-	redo,
-	undo,
-	updateDesiredColumn,
 } from './cart_editor';
+
+const editorCompletionContext: CompletionContextSource = {
+	isCompletionReady: () => intellisenseUiReady(),
+	shouldAutoTriggerCompletions: () => shouldAutoTriggerCompletions(),
+	getBuffer: () => ide_state.buffer,
+	getCursorPosition: () => ({ row: ide_state.cursorRow, column: ide_state.cursorColumn }),
+	getTextVersion: () => ide_state.textVersion,
+	getCursorScreenInfo: () => ide_state.cursorScreenInfo,
+	getLineHeight: () => ide_state.lineHeight,
+	getFont: () => ide_state.font,
+	measureText: (value: string): number => measureText(value),
+	drawText: (font, text, x, y, color): void => drawEditorText(font, text, x, y, undefined, color),
+	getActivePath: () => {
+		const context = getActiveCodeTabContext();
+		return context.descriptor.path;
+	},
+	getActiveSemanticDefinitions: () => getActiveSemanticDefinitions(),
+	getLuaModuleAliases: (path: string): Map<string, ModuleAliasEntry> => getLuaModuleAliases(path),
+	getCharAt: (row: number, column: number): string => TextEditing.charAt(row, column),
+	setCursorPosition: (row: number, column: number): void => {
+		const rowCount = ide_state.buffer.getLineCount();
+		const clampedRow = clamp(row, 0, Math.max(0, rowCount - 1));
+		const line = ide_state.buffer.getLineContent(clampedRow);
+		ide_state.cursorRow = clampedRow;
+		ide_state.cursorColumn = clamp(column, 0, line.length);
+	},
+	setSelectionAnchor: (anchor: { row: number; column: number }): void => {
+		const target = ide_state.selectionAnchor;
+		if (!target) {
+			ide_state.selectionAnchor = {
+				row: anchor.row,
+				column: anchor.column,
+			};
+			return;
+		}
+		target.row = anchor.row;
+		target.column = anchor.column;
+	},
+	replaceSelectionWithText: (text: string): void => {
+		TextEditing.replaceSelectionWith(text);
+	},
+	clampBufferPosition: (position: { row: number; column: number }): { row: number; column: number } => {
+		return ide_state.layout.clampBufferPosition(ide_state.buffer, position);
+	},
+	afterCompletionApplied: () => {
+		updateDesiredColumn();
+		resetBlink();
+		revealCursor();
+	},
+	clearSelectionAnchor: () => {
+		ide_state.selectionAnchor = null;
+	},
+};
 
 export function initializeCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();
@@ -79,53 +128,14 @@ export function initializeCartEditor(viewport: Viewport): void {
 		resourceVertical: ide_state.scrollbars.resourceVertical,
 		resourceHorizontal: ide_state.scrollbars.resourceHorizontal,
 	});
-	ide_state.completion = new CompletionController({
-		isCodeTabActive: () => isCodeTabActive(),
-		getBuffer: () => ide_state.buffer,
-		getCursorRow: () => ide_state.cursorRow,
-		getCursorColumn: () => ide_state.cursorColumn,
-		setCursorPosition: (row, column) => {
-			ide_state.cursorRow = row;
-			ide_state.cursorColumn = column;
-		},
-		setSelectionAnchor: (row, column) => {
-			ide_state.selectionAnchor = { row, column };
-		},
-		replaceSelectionWith: (text) => TextEditing.replaceSelectionWith(text),
-		updateDesiredColumn: () => updateDesiredColumn(),
-		resetBlink: () => resetBlink(),
-		revealCursor: () => revealCursor(),
-		measureText: (text) => measureText(text),
-		drawText: (text, x, y, color) => drawEditorText(ide_state.font, text, x, y, undefined, color),
-		fillRect: (left, top, right, bottom, color) => api.fill_rect(left, top, right, bottom, undefined, color),
-		strokeRect: (left, top, right, bottom, color) => api.blit_rect(left, top, right, bottom, undefined, color),
-		getCursorScreenInfo: () => ide_state.cursorScreenInfo,
-		characterAdvance: (char) => ide_state.font.advance(char),
-		get lineHeight(): number { return ide_state.font.lineHeight; },
-		getActiveCodeTabContext: () => getActiveCodeTabContext(),
-		resolveHoverPath: (ctx: CodeTabContext) => ctx.descriptor.path,
-		getSemanticDefinitions: () => getActiveSemanticDefinitions(),
-		getLuaModuleAliases: (path) => getLuaModuleAliases(path),
-		getMemberCompletionItems: (request) => buildMemberCompletionItems(request),
-		charAt: (r, c) => TextEditing.charAt(r, c),
-		getTextVersion: () => ide_state.textVersion,
-		shouldFireRepeat: (code) => shouldRepeatKeyFromPlayer(code),
-		shouldAutoTriggerCompletions: () => shouldAutoTriggerCompletions(),
-		shouldShowParameterHints: () => intellisenseUiReady(),
-	});
+	setCompletionContextSource(editorCompletionContext);
+	ide_state.completion = completionController;
+	ide_state.completion.closeSession();
 	ide_state.completion.enterCommitsCompletion = false;
 	ide_state.input = new InputController();
 	ide_state.problemsPanel = new ProblemsPanelController();
 	ide_state.problemsPanel.setDiagnostics(ide_state.diagnostics);
-	ide_state.renameController = new RenameController({
-		processFieldEdit: (field, options) => applyInlineFieldEditing(field, options),
-		shouldFireRepeat: (code) => shouldRepeatKeyFromPlayer(code),
-		undo: () => undo(),
-		redo: () => redo(),
-		showMessage: (text, color, duration) => ide_state.showMessage(text, color, duration),
-		commitRename: (payload) => commitRename(payload),
-		onRenameSessionClosed: () => focusEditorFromRename(),
-	}, ide_state.referenceState);
+	ide_state.renameController = renameController;
 	ide_state.codeVerticalScrollbarVisible = false;
 	ide_state.codeHorizontalScrollbarVisible = false;
 	ide_state.cachedVisibleRowCount = 1;

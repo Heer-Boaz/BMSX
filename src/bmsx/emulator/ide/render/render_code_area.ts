@@ -302,7 +302,7 @@ export function renderCodeArea(): void {
 	};
 
 	ide_state.scrollbars.codeVertical.layout(verticalTrack, visualCount, rowCapacity, ide_state.scrollRow);
-	ide_state.scrollRow = clamp(ide_state.scrollbars.codeVertical.getScroll(), 0, visualCount - rowCapacity);
+	ide_state.scrollRow = ide_state.layout.clampVisualScroll(ide_state.scrollbars.codeVertical.getScroll(), visualCount, rowCapacity);
 	ide_state.codeVerticalScrollbarVisible = ide_state.scrollbars.codeVertical.isVisible();
 
 	if (!wrapEnabled) {
@@ -314,7 +314,7 @@ export function renderCodeArea(): void {
 		};
 		const maxColumns = columnCapacity + computeMaximumScrollColumn();
 		ide_state.scrollbars.codeHorizontal.layout(horizontalTrack, maxColumns, columnCapacity, ide_state.scrollColumn);
-		ide_state.scrollColumn = clamp(~~(ide_state.scrollbars.codeHorizontal.getScroll()), 0, computeMaximumScrollColumn());
+		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(ide_state.scrollbars.codeHorizontal.getScroll(), computeMaximumScrollColumn());
 		ide_state.codeHorizontalScrollbarVisible = ide_state.scrollbars.codeHorizontal.isVisible();
 	} else {
 		ide_state.scrollColumn = 0;

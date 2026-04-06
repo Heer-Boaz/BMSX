@@ -52,7 +52,7 @@ const ENGINE_LUA_BUILTIN_GLOBAL_NAMES = [
 	'sorted_scratchbatch',
 ] as const;
 
-const ENGINE_SYSTEM_HELPER_NAMES = [
+export const ENGINE_SYSTEM_HELPER_NAMES = [
 	'game',
 	'$',
 	'assets',

@@ -742,6 +742,9 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_PARAMETER_HINT_TEXT = parameterHint.text;
 	COLOR_PARAMETER_HINT_ACTIVE = parameterHint.active;
 }
+
+applyThemeDefinition(THEME_DEFINITIONS[DEFAULT_THEME_VARIANT]);
+
 export const PROBLEMS_PANEL_HEADER_PADDING_X = 6;
 export const PROBLEMS_PANEL_HEADER_PADDING_Y = 2;
 export const PROBLEMS_PANEL_CONTENT_PADDING_X = 6;

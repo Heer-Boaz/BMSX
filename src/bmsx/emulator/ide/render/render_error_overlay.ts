@@ -1,8 +1,7 @@
 import type { OverlayApi as Api } from '../../overlay_api';
 import type { EditorFont } from '../../editor_font';
 import { drawEditorText } from './text_renderer';
-import { clamp } from '../../../utils/clamp';
-import { activate, editorFacade, focusChunkSource, setActiveRuntimeErrorOverlay, setExecutionStopHighlight, updateDesiredColumn } from '../cart_editor';
+import { activate, focusChunkSource, setActiveRuntimeErrorOverlay, setExecutionStopHighlight, updateDesiredColumn } from '../cart_editor';
 import { bottomMargin } from '../editor_view';
 import { ide_state } from '../ide_state';
 import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapOverlayLine } from '../text_utils';
@@ -12,7 +11,7 @@ import type { RectBounds } from '../../../rompack/rompack';
 import { point_in_rect } from '../../../utils/rect_operations';
 import { Runtime } from '../../runtime';
 import { api } from '../../overlay_api';
-import { clampCursorColumn, centerCursorVertically, revealCursor } from '../caret';
+import { centerCursorVertically, revealCursor } from '../caret';
 import * as constants from '../constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay';
 import { resetBlink } from './render_caret';
@@ -199,7 +198,9 @@ export function resolveRuntimeErrorOverlayAnchor(
 	const sliceEndLimit = ide_state.wordWrapEnabled ? ide_state.layout.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
 	const sliceEndDisplay = ide_state.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
 	const anchorDisplay = ide_state.layout.columnToDisplay(highlight, overlay.column);
-	const clampedAnchorDisplay = clamp(anchorDisplay, sliceStartDisplay, sliceEndDisplay);
+	const clampedAnchorDisplay = anchorDisplay < sliceStartDisplay
+		? sliceStartDisplay
+		: (anchorDisplay > sliceEndDisplay ? sliceEndDisplay : anchorDisplay);
 	const advancePrefix = entry.advancePrefix;
 	const anchorX = textLeft + advancePrefix[clampedAnchorDisplay] - advancePrefix[sliceStartDisplay];
 	const rowTop = codeTop + relativeRow * ide_state.lineHeight;
@@ -506,7 +507,7 @@ export function renderRuntimeFaultOverlay(options: {
 	force?: boolean;
 }): boolean {
 	const { snapshot } = options;
-	if (!editorFacade.exists) return false;
+	if (!ide_state.initialized) return false;
 	if (!options.force && (!options.luaRuntimeFailed || !options.needsFlush)) return false;
 	if (!snapshot) return false;
 	showRuntimeErrorInChunk(
@@ -543,20 +544,20 @@ export function showRuntimeError(
 	const normalizedLine = Number.isFinite(line) ? line : null;
 	const normalizedColumn = Number.isFinite(column) ? column : null;
 	const processedLine = normalizedLine;
+	const buffer = ide_state.buffer;
+	const targetRow = normalizedLine !== null
+		? ide_state.layout.clampBufferRow(buffer, normalizedLine - 1)
+		: ide_state.layout.clampBufferRow(buffer, ide_state.cursorRow);
 	const processedColumn = normalizedColumn !== null ? normalizedColumn - 1 : null;
-	let targetRow = ide_state.cursorRow;
-	if (processedLine !== null) {
-		targetRow = clamp(processedLine - 1, 0, ide_state.buffer.getLineCount() - 1);
-		ide_state.cursorRow = targetRow;
-	}
-	const currentLine = ide_state.buffer.getLineContent(targetRow);
+	const currentLine = buffer.getLineContent(targetRow);
 	let targetColumn = ide_state.cursorColumn;
 	if (processedColumn !== null) {
-		targetColumn = clamp(processedColumn, 0, currentLine.length);
-		ide_state.cursorColumn = targetColumn;
+		targetColumn = ide_state.layout.clampLineLength(currentLine.length, processedColumn);
+	} else {
+		targetColumn = ide_state.layout.clampLineLength(currentLine.length, targetColumn);
 	}
-	clampCursorColumn();
-	targetColumn = ide_state.cursorColumn;
+	ide_state.cursorRow = targetRow;
+	ide_state.cursorColumn = targetColumn;
 	ide_state.selectionAnchor = null;
 	ide_state.pointerSelecting = false;
 	ide_state.pointerPrimaryWasPressed = false;

@@ -1,60 +1,72 @@
 import { clamp } from '../../utils/clamp';
-import { getApiCompletionData, getKeywordCompletions, isReservedMemoryMapName, listGlobalLuaSymbols, listLuaBuiltinFunctions, listLuaModuleSymbols, type LuaScopedSymbol } from './intellisense';
+import {
+	getApiCompletionData,
+	getKeywordCompletions,
+	isReservedMemoryMapName,
+	listGlobalLuaSymbols,
+	listLuaBuiltinFunctions,
+	listLuaModuleSymbols,
+	buildMemberCompletionItems,
+	type LuaScopedSymbol,
+} from './intellisense';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/syntax/lua_ast';
 import {
 	CompletionContext,
 	CompletionSession,
 	CompletionTrigger,
-	CursorScreenInfo,
 	EditContext,
+	CursorScreenInfo,
 	LuaCompletionItem,
 	LuaCompletionKind,
 	ParameterHintState,
 } from './types';
-import type { LuaMemberCompletionRequest, LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../types';
+import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../types';
 import * as constants from './constants';
 import { isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
 import { isLuaCommentContext, wrapTextDynamic } from './text_utils';
 import { consumeIdeKey } from './ide_input';
 import { point_in_rect } from '../../utils/rect_operations';
 import { LuaLexer } from '../../lua/syntax/lualexer';
-import type { TextBuffer } from './text/text_buffer';
+import { api } from '../overlay_api';
+import { EditorFont } from '../editor_font';
 import type { ModuleAliasEntry } from './semantic_model';
+import type { TextBuffer } from './text/text_buffer';
 
-export interface CompletionHost {
-	// Editor state accessors
-	isCodeTabActive(): boolean;
-	getBuffer(): TextBuffer;
-	getCursorRow(): number;
-	getCursorColumn(): number;
-	setCursorPosition(row: number, column: number): void;
-	setSelectionAnchor(row: number, column: number): void;
-	// Text operations
-	replaceSelectionWith(text: string): void;
-	updateDesiredColumn(): void;
-	resetBlink(): void;
-	revealCursor(): void;
-	// Geometry/metrics
-	characterAdvance: (char: string) => number;
-	get lineHeight(): number;
-	measureText(text: string): number;
-	drawText(text: string, x: number, y: number, color: number): void;
-	getCursorScreenInfo(): CursorScreenInfo;
-	shouldShowParameterHints(): boolean;
-	// Rendering primitives
-	fillRect(left: number, top: number, right: number, bottom: number, color: number): void;
-	strokeRect(left: number, top: number, right: number, bottom: number, color: number): void;
-	// Symbol/source helpers
-	getActiveCodeTabContext(): unknown;
-	resolveHoverPath(context: unknown): string;
-	getSemanticDefinitions(): readonly LuaDefinitionInfo[];
-	getLuaModuleAliases(path: string): Map<string, ModuleAliasEntry>;
-	getMemberCompletionItems(request: LuaMemberCompletionRequest): LuaCompletionItem[];
-	// Utilities
-	charAt(row: number, column: number): string;
-	getTextVersion(): number;
-	shouldFireRepeat(code: string): boolean;
-	shouldAutoTriggerCompletions(): boolean;
+type CompletionSourceCursorInfo = CursorScreenInfo;
+
+export type CompletionContextSource = {
+	isCompletionReady: () => boolean;
+	shouldAutoTriggerCompletions: () => boolean;
+	getBuffer: () => TextBuffer;
+	getCursorPosition: () => { row: number; column: number };
+	getTextVersion: () => number;
+	getCursorScreenInfo: () => CompletionSourceCursorInfo;
+	getLineHeight: () => number;
+	getFont: () => EditorFont;
+	measureText: (value: string) => number;
+	drawText: (font: EditorFont, text: string, x: number, y: number, color: number) => void;
+	getActivePath: () => string;
+	getActiveSemanticDefinitions: () => readonly LuaDefinitionInfo[];
+	getLuaModuleAliases: (path: string) => Map<string, ModuleAliasEntry>;
+	getCharAt: (row: number, column: number) => string;
+	setCursorPosition: (row: number, column: number) => void;
+	setSelectionAnchor: (anchor: { row: number; column: number }) => void;
+	replaceSelectionWithText: (text: string) => void;
+	clampBufferPosition: (position: { row: number; column: number }) => { row: number; column: number };
+	afterCompletionApplied: () => void;
+	clearSelectionAnchor: () => void;
+};
+
+let completionContextSource: CompletionContextSource | null = null;
+
+export function setCompletionContextSource(source: CompletionContextSource | null): CompletionContextSource | null {
+	const previous = completionContextSource;
+	completionContextSource = source;
+	return previous;
+}
+
+export function getCompletionContextSource(): CompletionContextSource | null {
+	return completionContextSource;
 }
 
 type LocalCompletionCacheEntry = {
@@ -67,7 +79,15 @@ type LocalCompletionCacheEntry = {
 const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
 
 export class CompletionController {
-	private readonly host: CompletionHost;
+	constructor() {}
+
+	private get source(): CompletionContextSource {
+		return completionContextSource as CompletionContextSource;
+	}
+
+	private getLineHeightFromSource(): number {
+		return this.source.getLineHeight();
+	}
 	private completionSession: CompletionSession = null;
 	private readonly localCompletionCache: Map<string, LocalCompletionCacheEntry> = new Map();
 	private cachedGlobalCompletionItems: LuaCompletionItem[] = null;
@@ -88,9 +108,6 @@ export class CompletionController {
 	private completionPopupBounds: { left: number; top: number; right: number; bottom: number } = null;
 	public enterCommitsCompletion = false;
 
-	constructor(host: CompletionHost) {
-		this.host = host;
-	}
 
 	// Public API for editor integration
 	public closeSession(): void {
@@ -205,8 +222,8 @@ export class CompletionController {
 		this.updateParameterHintIdle(deltaSeconds);
 		const pending = this.pendingCompletionRequest;
 		if (!pending) return;
-		if (!this.host.isCodeTabActive()) { this.cancelPendingCompletion(); return; }
-		if (!this.host.shouldAutoTriggerCompletions()) { this.cancelPendingCompletion(); return; }
+		if (!this.source.isCompletionReady()) { this.cancelPendingCompletion(); return; }
+		if (!this.source.shouldAutoTriggerCompletions()) { this.cancelPendingCompletion(); return; }
 		if (this.completionSession) { this.cancelPendingCompletion(); return; }
 		pending.elapsed += deltaSeconds;
 		if (pending.elapsed < constants.COMPLETION_AUTO_TRIGGER_DELAY_SECONDS) return;
@@ -226,13 +243,14 @@ export class CompletionController {
 		this.parameterHintTriggerPending = false;
 		this.parameterHintIdleElapsed = 0;
 		const session = this.completionSession;
+		const cursor = this.source.getCursorPosition();
 		if (session && session.trigger !== 'manual') {
 			this.closeSession();
 			this.refreshParameterHint();
 			return;
 		}
-		this.lastCursorPosition = { row: this.host.getCursorRow(), column: this.host.getCursorColumn() };
-		this.lastTextVersion = this.host.getTextVersion();
+		this.lastCursorPosition = { row: cursor.row, column: cursor.column };
+		this.lastTextVersion = this.source.getTextVersion();
 		if (session) {
 			const context = this.analyzeCompletionContext();
 			if (!context) this.closeSession();
@@ -243,8 +261,9 @@ export class CompletionController {
 
 	public updateAfterEdit(edit: EditContext): void {
 		this.parameterHintIdleElapsed = 0;
-		this.lastCursorPosition = { row: this.host.getCursorRow(), column: this.host.getCursorColumn() };
-		this.lastTextVersion = this.host.getTextVersion();
+		const cursor = this.source.getCursorPosition();
+		this.lastCursorPosition = { row: cursor.row, column: cursor.column };
+		this.lastTextVersion = this.source.getTextVersion();
 		if (edit && edit.kind === 'insert') {
 			if (edit.text.indexOf('(') !== -1 || edit.text.indexOf(',') !== -1) {
 				this.parameterHintTriggerPending = true;
@@ -262,7 +281,7 @@ export class CompletionController {
 
 	public handleKeybindings(): boolean {
 		const { ctrlDown, altDown, metaDown, shiftDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown(), shiftDown: isShiftDown() };
-		if ((ctrlDown || metaDown) && !altDown && this.host.isCodeTabActive() && isKeyJustPressed('Space')) {
+		if ((ctrlDown || metaDown) && !altDown && this.source.isCompletionReady() && isKeyJustPressed('Space')) {
 			consumeIdeKey('Space');
 			const session = this.completionSession;
 			if (session) {
@@ -324,7 +343,11 @@ export class CompletionController {
 
 	public drawCompletionPopup(bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
 		const session = this.completionSession;
-		const cursorInfo = this.host.getCursorScreenInfo();
+		const cursorInfo = this.source.getCursorScreenInfo();
+		const font = this.source.getFont();
+		const lineHeight = this.getLineHeightFromSource();
+		const measure = (value: string): number => this.source.measureText(value);
+		const draw = (value: string, x: number, y: number, color: number): void => this.source.drawText(font, value, x, y, color);
 		this.completionPopupBounds = null;
 		if (!session || !cursorInfo) return;
 		if (session.filteredItems.length === 0) return;
@@ -341,7 +364,7 @@ export class CompletionController {
 		}
 		const maxVisibleByHeight = (() => {
 			const available = maxAllowedHeight - constants.COMPLETION_POPUP_PADDING_Y * 2 + constants.COMPLETION_POPUP_ITEM_SPACING;
-			const stride = this.host.lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING;
+			const stride = lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING;
 			return Math.max(1, Math.floor(available / stride));
 		})();
 		session.maxVisibleItems = Math.min(constants.COMPLETION_POPUP_MAX_VISIBLE, maxVisibleByHeight);
@@ -364,7 +387,7 @@ export class CompletionController {
 		let maxLineWidth = 0;
 		for (let i = 0; i < session.filteredItems.length; i += 1) {
 			const item = session.filteredItems[i];
-			const labelWidth = this.host.measureText(item.label);
+			const labelWidth = measure(item.label);
 			const clamped = Math.min(labelWidth, maxTextWidth);
 			if (clamped > maxLineWidth) {
 				maxLineWidth = clamped;
@@ -378,7 +401,7 @@ export class CompletionController {
 		if (popupWidth > maxAllowedWidth) {
 			popupWidth = maxAllowedWidth;
 		}
-		const popupHeight = Math.floor(constants.COMPLETION_POPUP_PADDING_Y * 2 + visibleCount * this.host.lineHeight + Math.max(0, visibleCount - 1) * constants.COMPLETION_POPUP_ITEM_SPACING);
+		const popupHeight = Math.floor(constants.COMPLETION_POPUP_PADDING_Y * 2 + visibleCount * lineHeight + Math.max(0, visibleCount - 1) * constants.COMPLETION_POPUP_ITEM_SPACING);
 		let popupLeft = Math.floor(cursorInfo.x);
 		if (popupLeft + popupWidth > bounds.codeRight) popupLeft = bounds.codeRight - popupWidth;
 		if (popupLeft < bounds.textLeft) popupLeft = bounds.textLeft;
@@ -390,30 +413,33 @@ export class CompletionController {
 		}
 		const popupRight = popupLeft + popupWidth;
 		const popupBottom = popupTop + popupHeight;
-		this.host.fillRect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BACKGROUND);
-		this.host.strokeRect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BORDER);
+		api.fill_rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BACKGROUND);
+		api.blit_rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BORDER);
 		this.completionPopupBounds = { left: popupLeft, top: popupTop, right: popupRight, bottom: popupBottom };
 		const maxLabelWidth = Math.max(0, popupWidth - constants.COMPLETION_POPUP_PADDING_X * 2);
 		for (let drawIndex = 0; drawIndex < visibleCount; drawIndex += 1) {
 			const itemIndex = startIndex + drawIndex;
 			const item = session.filteredItems[itemIndex];
-			const lineTop = popupTop + constants.COMPLETION_POPUP_PADDING_Y + drawIndex * (this.host.lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING);
+			const lineTop = popupTop + constants.COMPLETION_POPUP_PADDING_Y + drawIndex * (lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING);
 			const isSelected = itemIndex === session.selectionIndex;
 			const labelColor = isSelected ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT : constants.COLOR_COMPLETION_TEXT;
 			if (isSelected) {
 				const highlightTop = lineTop - 1;
-				const highlightBottom = highlightTop + this.host.lineHeight + 2;
-				this.host.fillRect(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, constants.COLOR_COMPLETION_HIGHLIGHT);
+				const highlightBottom = highlightTop + lineHeight + 2;
+				api.fill_rect(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, constants.COLOR_COMPLETION_HIGHLIGHT);
 			}
 			const textX = popupLeft + constants.COMPLETION_POPUP_PADDING_X;
-			const label = wrapTextDynamic(item.label, maxLabelWidth, maxLabelWidth, (value) => this.host.measureText(value), 1)[0];
-			this.host.drawText(label, textX, lineTop, labelColor);
+			const label = wrapTextDynamic(item.label, maxLabelWidth, maxLabelWidth, measure, 1)[0];
+			draw(label, textX, lineTop, labelColor);
 		}
 	}
 
 	public drawParameterHintOverlay(bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
 		const hint = this.parameterHint;
-		const cursorInfo = this.host.getCursorScreenInfo();
+		const cursorInfo = this.source.getCursorScreenInfo();
+		const font = this.source.getFont();
+		const measureText = (value: string): number => this.source.measureText(value);
+		const draw = (value: string, x: number, y: number, color: number): void => this.source.drawText(font, value, x, y, color);
 		if (!hint || !cursorInfo) return;
 		const params = hint.params;
 		const baseColor = constants.COLOR_PARAMETER_HINT_TEXT;
@@ -455,7 +481,7 @@ export class CompletionController {
 		for (let i = 0; i < segments.length; i += 1) {
 			const part = segments[i];
 			if (part.text.length === 0) continue;
-			const width = this.host.measureText(part.text);
+			const width = measureText(part.text);
 			if (signatureWidth + width <= maxTextWidth) {
 				clippedSegments.push(part);
 				signatureWidth += width;
@@ -465,10 +491,10 @@ export class CompletionController {
 			if (remainingWidth <= 0) {
 				break;
 			}
-			const clipped = wrapTextDynamic(part.text, remainingWidth, remainingWidth, (value) => this.host.measureText(value), 1)[0];
+			const clipped = wrapTextDynamic(part.text, remainingWidth, remainingWidth, (value) => measureText(value), 1)[0];
 			if (clipped.length > 0) {
 				clippedSegments.push({ text: clipped, color: part.color });
-				signatureWidth += this.host.measureText(clipped);
+				signatureWidth += measureText(clipped);
 			}
 			break;
 		}
@@ -480,19 +506,19 @@ export class CompletionController {
 			}
 			const line = descriptionLines[i];
 			const remaining = maxDescriptionLines - wrappedDescriptionLines.length;
-			const wrapped = wrapTextDynamic(line.text, maxTextWidth, maxTextWidth, (value) => this.host.measureText(value), remaining);
+			const wrapped = wrapTextDynamic(line.text, maxTextWidth, maxTextWidth, (value) => measureText(value), remaining);
 			for (let segIndex = 0; segIndex < wrapped.length; segIndex += 1) {
 				wrappedDescriptionLines.push({ text: wrapped[segIndex], color: line.color });
 			}
 		}
 		let maxLineWidth = signatureWidth;
 		for (let i = 0; i < wrappedDescriptionLines.length; i += 1) {
-			const width = this.host.measureText(wrappedDescriptionLines[i].text);
+			const width = measureText(wrappedDescriptionLines[i].text);
 			if (width > maxLineWidth) {
 				maxLineWidth = width;
 			}
 		}
-		const lineHeight = this.host.lineHeight;
+		const lineHeight = this.getLineHeightFromSource();
 		const lineSpacing = 2;
 		const totalLines = 1 + wrappedDescriptionLines.length;
 		const popupWidth = Math.min(maxAllowedWidth, maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2);
@@ -507,31 +533,32 @@ export class CompletionController {
 		}
 		const popupRight = popupLeft + popupWidth;
 		const popupBottom = popupTop + popupHeight;
-		this.host.strokeRect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BORDER);
-		this.host.fillRect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BACKGROUND);
+		api.blit_rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BORDER);
+		api.fill_rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BACKGROUND);
 		let textX = popupLeft + constants.PARAMETER_HINT_PADDING_X;
 		let currentY = popupTop + constants.PARAMETER_HINT_PADDING_Y;
 		for (let i = 0; i < clippedSegments.length; i += 1) {
 			const part = clippedSegments[i];
 			if (part.text.length === 0) continue;
-			this.host.drawText(part.text, textX, currentY, part.color);
-			textX += this.host.measureText(part.text);
+			draw(part.text, textX, currentY, part.color);
+			textX += measureText(part.text);
 		}
 		for (let i = 0; i < wrappedDescriptionLines.length; i += 1) {
 			const line = wrappedDescriptionLines[i];
 			currentY += lineHeight + lineSpacing;
-			this.host.drawText(line.text, popupLeft + constants.PARAMETER_HINT_PADDING_X, currentY, line.color);
+			draw(line.text, popupLeft + constants.PARAMETER_HINT_PADDING_X, currentY, line.color);
 		}
 	}
 
 	// Internal helpers and logic
 	private analyzeCompletionContext(): CompletionContext {
-		if (!this.host.isCodeTabActive()) return null;
-		const buffer = this.host.getBuffer();
+		if (!this.source.isCompletionReady()) return null;
+		const buffer = this.source.getBuffer();
+		const cursor = this.source.getCursorPosition();
 		const lineCount = buffer.getLineCount();
-		const row = clamp(this.host.getCursorRow(), 0, Math.max(0, lineCount - 1));
+		const row = clamp(cursor.row, 0, Math.max(0, lineCount - 1));
 		const line = buffer.getLineContent(row);
-		const column = clamp(this.host.getCursorColumn(), 0, line.length);
+		const column = clamp(cursor.column, 0, line.length);
 		let start = column;
 		while (start > 0 && LuaLexer.isIdentifierPart(line.charAt(start - 1))) start -= 1;
 		const prefix = line.slice(start, column);
@@ -649,9 +676,8 @@ export class CompletionController {
 				}
 			};
 			appendItems(this.getModuleMemberCompletionItems(context));
-			const activeContext = this.host.getActiveCodeTabContext();
-			const path = this.host.resolveHoverPath(activeContext);
-			const runtimeItems = this.host.getMemberCompletionItems({
+			const path = this.source.getActivePath();
+			const runtimeItems = buildMemberCompletionItems({
 				objectName: context.objectName,
 				operator: context.operator,
 				prefix: context.prefix,
@@ -682,34 +708,32 @@ export class CompletionController {
 		const cached = this.ensureLocalCompletionCache();
 		if (!cached) return [];
 		const column = context.replaceToColumn;
-		const buffer = this.host.getBuffer();
+		const buffer = this.source.getBuffer();
 		const lineCount = buffer.getLineCount();
 		const lastLine = buffer.getLineContent(Math.max(0, lineCount - 1));
 		const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, lineCount, lastLine.length, context.row, column);
 		if (filtered.length === 0) {
 			return [];
 		}
-		const activeCodeContext = this.host.getActiveCodeTabContext();
-		const path = cached.path || this.host.resolveHoverPath(activeCodeContext);
+		const path = cached.path || this.source.getActivePath();
 		return this.buildLocalCompletionItems(filtered, path );
 	}
 
 	private ensureLocalCompletionCache(): LocalCompletionCacheEntry {
 		const key = this.activeCompletionCacheKey();
 		if (!key) return null;
-		const activeCodeContext = this.host.getActiveCodeTabContext();
-		const path = this.host.resolveHoverPath(activeCodeContext);
-		const currentVersion = this.host.getTextVersion();
+		const path = this.source.getActivePath();
+		const currentVersion = this.source.getTextVersion();
 		const cached = this.localCompletionCache.get(key);
 		if (cached && cached.path === path && cached.parsedVersion === currentVersion) {
 			return cached;
 		}
-		const definitions = this.host.getSemanticDefinitions();
+		const definitions = this.source.getActiveSemanticDefinitions();
 		if (!definitions) {
 			return cached;
 		}
 		const symbols = definitions.length > 0 ? this.convertDefinitionsToLocalSymbols(definitions) : [];
-		const moduleAliases = this.host.getLuaModuleAliases(path);
+		const moduleAliases = this.source.getLuaModuleAliases(path);
 		const updated: LocalCompletionCacheEntry = {
 			parsedVersion: currentVersion,
 			path,
@@ -721,7 +745,7 @@ export class CompletionController {
 	}
 
 	private getGlobalCompletionItems(): LuaCompletionItem[] {
-		const version = this.host.getTextVersion();
+		const version = this.source.getTextVersion();
 		if (this.cachedGlobalCompletionItems && this.cachedGlobalCompletionVersion === version) {
 			return this.cachedGlobalCompletionItems;
 		}
@@ -1092,7 +1116,7 @@ export class CompletionController {
 	}
 
 	private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger {
-		if (!this.host.shouldAutoTriggerCompletions()) return null;
+		if (!this.source.shouldAutoTriggerCompletions()) return null;
 		if (!edit || edit.kind === 'delete') return null;
 		if (edit.text.length === 0) return null;
 		const lastChar = edit.text.charAt(edit.text.length - 1);
@@ -1107,18 +1131,19 @@ export class CompletionController {
 	}
 
 	private updateCompletionSessionAfterMutation(edit: EditContext): void {
-		if (!this.host.isCodeTabActive()) { this.closeSession(); return; }
+		if (!this.source.isCompletionReady()) { this.closeSession(); return; }
 		const analyzed = this.analyzeCompletionContext();
 		if (this.completionSession) {
 			this.cancelPendingCompletion();
 			if (!analyzed) { this.closeSession(); return; }
-			const previousChar = this.host.charAt(this.host.getCursorRow(), this.host.getCursorColumn() - 1);
+			const cursor = this.source.getCursorPosition();
+			const previousChar = this.source.getCharAt(cursor.row, cursor.column - 1);
 			if (analyzed.prefix.length === 0 && previousChar !== '.' && previousChar !== ':' && !LuaLexer.isIdentifierPart(previousChar)) { this.closeSession(); return; }
 			this.refreshCompletionSessionFromContext(analyzed);
 			return;
 		}
 		if (!edit || !analyzed) { this.cancelPendingCompletion(); return; }
-		if (!this.host.shouldAutoTriggerCompletions()) { this.cancelPendingCompletion(); return; }
+		if (!this.source.shouldAutoTriggerCompletions()) { this.cancelPendingCompletion(); return; }
 		const trigger = this.determineAutoCompletionTrigger(analyzed, edit);
 		if (!trigger) { this.cancelPendingCompletion(); return; }
 		this.pendingCompletionRequest = { context: analyzed, trigger, elapsed: 0 };
@@ -1137,8 +1162,8 @@ export class CompletionController {
 					filteredItems: [],
 					selectionIndex: -1,
 					displayOffset: 0,
-					anchorRow: this.host.getCursorRow(),
-					anchorColumn: this.host.getCursorColumn(),
+					anchorRow: this.source.getCursorPosition().row,
+					anchorColumn: this.source.getCursorPosition().column,
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
 					filterCache: new Map(),
 					trigger,
@@ -1152,8 +1177,8 @@ export class CompletionController {
 					filteredItems: [],
 					selectionIndex: -1,
 					displayOffset: 0,
-					anchorRow: this.host.getCursorRow(),
-					anchorColumn: this.host.getCursorColumn(),
+					anchorRow: this.source.getCursorPosition().row,
+					anchorColumn: this.source.getCursorPosition().column,
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
 					filterCache: new Map(),
 					trigger,
@@ -1167,8 +1192,8 @@ export class CompletionController {
 					filteredItems: [],
 					selectionIndex: -1,
 					displayOffset: 0,
-					anchorRow: this.host.getCursorRow(),
-					anchorColumn: this.host.getCursorColumn(),
+					anchorRow: this.source.getCursorPosition().row,
+					anchorColumn: this.source.getCursorPosition().column,
 					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
 					filterCache: new Map(),
 					trigger,
@@ -1198,8 +1223,9 @@ export class CompletionController {
 		}
 		session.items = items;
 		session.filterCache.clear();
-		session.anchorRow = this.host.getCursorRow();
-		session.anchorColumn = this.host.getCursorColumn();
+		const cursor = this.source.getCursorPosition();
+		session.anchorRow = cursor.row;
+		session.anchorColumn = cursor.column;
 		this.applyCompletionFilter(session);
 	}
 
@@ -1347,28 +1373,27 @@ export class CompletionController {
 	}
 
 	private applyCompletionItemForContext(context: CompletionContext, item: LuaCompletionItem, addParentheses: boolean): void {
-		const buffer = this.host.getBuffer();
+		const buffer = this.source.getBuffer();
 		const lineCount = buffer.getLineCount();
 		const row = clamp(context.row, 0, Math.max(0, lineCount - 1));
 		const line = buffer.getLineContent(row);
 		const replaceStart = clamp(context.replaceFromColumn, 0, line.length);
 		const replaceEnd = clamp(context.replaceToColumn, replaceStart, line.length);
-		this.host.setCursorPosition(row, replaceEnd);
-		this.host.setSelectionAnchor(row, replaceStart);
+		this.source.setCursorPosition(row, replaceEnd);
+		this.source.setSelectionAnchor({ row, column: replaceStart });
 		this.suppressNextAutoCompletion = true;
 		let insertion = item.insertText;
 		if (addParentheses) insertion = `${item.insertText}()`;
-		this.host.replaceSelectionWith(insertion);
-		if (addParentheses) {
-			this.host.setCursorPosition(row, replaceStart + item.insertText.length + 1);
-		} else if (insertion.endsWith('[]')) {
-			this.host.setCursorPosition(row, replaceStart + insertion.length - 1);
-		} else {
-			this.host.setCursorPosition(row, replaceStart + insertion.length);
-		}
-		this.host.updateDesiredColumn();
-		this.host.resetBlink();
-		this.host.revealCursor();
+		this.source.replaceSelectionWithText(insertion);
+		const targetColumn = addParentheses
+			? replaceStart + item.insertText.length + 1
+			: insertion.endsWith('[]')
+				? replaceStart + insertion.length - 1
+				: replaceStart + insertion.length;
+		const clamped = this.source.clampBufferPosition({ row, column: targetColumn });
+		this.source.setCursorPosition(clamped.row, clamped.column);
+		this.source.clearSelectionAnchor();
+		this.source.afterCompletionApplied();
 	}
 
 	private cancelPendingCompletion(): void {
@@ -1376,7 +1401,7 @@ export class CompletionController {
 	}
 
 	private refreshParameterHint(): void {
-		if (!this.host.shouldShowParameterHints()) {
+		if (!this.source.isCompletionReady()) {
 			this.parameterHint = null;
 			this.parameterHintAnchor = null;
 			this.parameterHintTriggerPending = false;
@@ -1409,13 +1434,14 @@ export class CompletionController {
 	}
 
 	private updateParameterHintIdle(deltaSeconds: number): void {
-		if (!this.host.shouldShowParameterHints()) {
+		if (!this.source.isCompletionReady()) {
 			this.parameterHintIdleElapsed = 0;
 			return;
 		}
-		const currentRow = this.host.getCursorRow();
-		const currentColumn = this.host.getCursorColumn();
-		const currentVersion = this.host.getTextVersion();
+		const cursor = this.source.getCursorPosition();
+		const currentRow = cursor.row;
+		const currentColumn = cursor.column;
+		const currentVersion = this.source.getTextVersion();
 		const last = this.lastCursorPosition;
 		if (!last || last.row !== currentRow || last.column !== currentColumn || this.lastTextVersion !== currentVersion) {
 			this.lastCursorPosition = { row: currentRow, column: currentColumn };
@@ -1432,13 +1458,14 @@ export class CompletionController {
 	}
 
 	private resolveParameterHintContext(): ParameterHintState {
-		if (!this.host.isCodeTabActive()) return null;
-		const buffer = this.host.getBuffer();
+		if (!this.source.isCompletionReady()) return null;
+		const buffer = this.source.getBuffer();
+		const cursor = this.source.getCursorPosition();
 		const lineCount = buffer.getLineCount();
-		const safeRow = clamp(this.host.getCursorRow(), 0, Math.max(0, lineCount - 1));
+		const safeRow = clamp(cursor.row, 0, Math.max(0, lineCount - 1));
 		const line = buffer.getLineContent(safeRow);
 		if (line.length === 0) return null;
-		const safeColumn = clamp(this.host.getCursorColumn(), 0, line.length);
+		const safeColumn = clamp(cursor.column, 0, line.length);
 		let depth = 0;
 		let lastOpen = -1;
 		for (let index = 0; index < safeColumn; index += 1) {
@@ -1557,7 +1584,8 @@ export class CompletionController {
 	}
 
 	private activeCompletionCacheKey(): string {
-		const context = this.host.getActiveCodeTabContext();
-		return this.host.resolveHoverPath(context);
+		return this.source.getActivePath();
 	}
 }
+
+export const completionController = new CompletionController();

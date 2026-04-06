@@ -1,19 +1,19 @@
 import { resolveReferenceLookup, type ReferenceLookupOptions } from './reference_navigation';
-import { ReferenceState, type ReferenceMatchInfo } from './reference_state';
+import { type ReferenceMatchInfo } from './reference_state';
 import type { CodeTabContext, InlineInputOptions, TextField, SearchMatch } from './types';
-import { createInlineTextField, setFieldText } from './inline_text_field';
+import { applyInlineFieldEditing, createInlineTextField, setFieldText } from './inline_text_field';
 import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
 import * as constants from './constants';
 import { consumeIdeKey } from './ide_input';
 import type { LuaSourceRange } from '../../lua/syntax/lua_ast';
 import { clamp } from '../../utils/clamp';
-import type { ResourceDescriptor } from '../types';
-import type { LuaSemanticWorkspace } from './semantic_model';
 import { LuaLexer } from '../../lua/syntax/lualexer';
-import { findCodeTabContext } from './editor_tabs';
-import { findResourceDescriptorForChunk } from './cart_editor';
+import { createLuaCodeTabContext, findCodeTabContext } from './editor_tabs';
+import { commitRename, findResourceDescriptorForChunk, focusEditorFromRename, redo, undo } from './cart_editor';
 import { getTextSnapshot, splitText, textFromLines } from './text/source_text';
 import { syncSemanticWorkspacePath } from './semantic_workspace_sync';
+import { ide_state } from './ide_state';
+import { getOrCreateSemanticWorkspace } from './semantic_workspace_sync';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];
@@ -27,22 +27,10 @@ export type RenameCommitResult = {
 	updatedMatches: number;
 };
 
-export type RenameControllerHost = {
-	processFieldEdit(field: TextField, options: InlineInputOptions): boolean;
-	shouldFireRepeat(code: string): boolean;
-	undo(): void;
-	redo(): void;
-	showMessage(text: string, color: number, duration: number): void;
-	commitRename(payload: RenameCommitPayload): RenameCommitResult;
-	onRenameSessionClosed(): void;
-};
-
 export type RenameStartOptions = ReferenceLookupOptions & {
 };
 
 export class RenameController {
-	private readonly host: RenameControllerHost;
-	private readonly referenceState: ReferenceState;
 	private readonly field: TextField = createInlineTextField();
 	private active = false;
 	private visible = false;
@@ -58,30 +46,27 @@ export class RenameController {
 		return LuaLexer.isIdentifierPart(value.charAt(0));
 	};
 
-	public constructor(host: RenameControllerHost, referenceState: ReferenceState) {
-		this.host = host;
-		this.referenceState = referenceState;
-	}
+	public constructor() {}
 
 	public begin(options: RenameStartOptions): boolean {
 		const lookup = resolveReferenceLookup(options);
 		if (lookup.kind === 'error') {
-			this.host.showMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
+			ide_state.showMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
 			return false;
 		}
 		const { info, initialIndex } = lookup;
 		if (info.matches.length === 0) {
-			this.host.showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
+			ide_state.showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 			return false;
 		}
 		const firstMatch = info.matches[clamp(initialIndex, 0, info.matches.length - 1)];
 		const activeLine = options.buffer.getLineContent(firstMatch.row);
 		const currentName = activeLine.slice(firstMatch.start, firstMatch.end);
 		if (currentName.length === 0) {
-			this.host.showMessage('Unable to determine identifier name', constants.COLOR_STATUS_WARNING, 1.6);
+			ide_state.showMessage('Unable to determine identifier name', constants.COLOR_STATUS_WARNING, 1.6);
 			return false;
 		}
-		this.referenceState.apply(info, initialIndex);
+		ide_state.referenceState.apply(info, initialIndex);
 		this.matches = info.matches.slice();
 		this.info = info;
 		this.originalName = currentName;
@@ -97,7 +82,7 @@ export class RenameController {
 		if (!this.active) {
 			return;
 		}
-		this.referenceState.clear();
+		ide_state.referenceState.clear();
 		this.active = false;
 		this.visible = false;
 		this.matches = [];
@@ -105,7 +90,7 @@ export class RenameController {
 		this.originalName = '';
 		this.activeIndex = -1;
 		this.expressionLabel = null;
-		this.host.onRenameSessionClosed();
+		focusEditorFromRename();
 	}
 
 	public handleInput(): void {
@@ -117,15 +102,15 @@ export class RenameController {
 		if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ')) {
 			consumeIdeKey('KeyZ');
 			if (shiftDown) {
-				this.host.redo();
+				redo();
 			} else {
-				this.host.undo();
+				undo();
 			}
 			return;
 		}
 		if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyY')) {
 			consumeIdeKey('KeyY');
-			this.host.redo();
+			redo();
 			return;
 		}
 		if (isKeyJustPressed('Escape')) {
@@ -148,7 +133,7 @@ export class RenameController {
 			characterFilter: this.identifierFilter,
 			maxLength: null,
 		};
-		const changed = this.host.processFieldEdit(this.field, options);
+		const changed = applyInlineFieldEditing(this.field, options);
 		if (!changed) {
 			return;
 		}
@@ -188,16 +173,16 @@ export class RenameController {
 		}
 		const nextName = textFromLines(this.field.lines).trim();
 		if (nextName.length === 0) {
-			this.host.showMessage('Identifier cannot be empty', constants.COLOR_STATUS_WARNING, 1.6);
+			ide_state.showMessage('Identifier cannot be empty', constants.COLOR_STATUS_WARNING, 1.6);
 			return;
 		}
 		if (!LuaLexer.isIdentifierStart(nextName.charAt(0))) {
-			this.host.showMessage('Identifier must start with a letter or underscore', constants.COLOR_STATUS_WARNING, 1.8);
+			ide_state.showMessage('Identifier must start with a letter or underscore', constants.COLOR_STATUS_WARNING, 1.8);
 			return;
 		}
 		for (let index = 1; index < nextName.length; index += 1) {
 			if (!LuaLexer.isIdentifierPart(nextName.charAt(index))) {
-				this.host.showMessage('Identifier contains invalid characters', constants.COLOR_STATUS_WARNING, 1.8);
+				ide_state.showMessage('Identifier contains invalid characters', constants.COLOR_STATUS_WARNING, 1.8);
 				return;
 			}
 		}
@@ -212,9 +197,9 @@ export class RenameController {
 			originalName: this.originalName,
 			info: this.info,
 		};
-		const result = this.host.commitRename(payload);
-		this.host.showMessage(`Renamed ${result.updatedMatches} reference${result.updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
-		this.referenceState.clear();
+		const result = commitRename(payload);
+		ide_state.showMessage(`Renamed ${result.updatedMatches} reference${result.updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+		ide_state.referenceState.clear();
 		this.active = false;
 		this.visible = false;
 		this.matches = [];
@@ -222,7 +207,7 @@ export class RenameController {
 		this.originalName = '';
 		this.activeIndex = -1;
 		this.expressionLabel = null;
-		this.host.onRenameSessionClosed();
+		focusEditorFromRename();
 	}
 
 	private resetInlineField(value: string): void {
@@ -272,20 +257,8 @@ export function planRenameLineEdits(lines: readonly string[], matches: readonly 
 	return edits;
 }
 
-export type CrossFileRenameDependencies = {
-	createLuaCodeTabContext(descriptor: ResourceDescriptor): CodeTabContext;
-	createEntryTabContext(): CodeTabContext;
-	getCodeTabContext(id: string): CodeTabContext;
-	setCodeTabContext(context: CodeTabContext): void;
-	listCodeTabContexts(): Iterable<CodeTabContext>;
-	setTabDirty(tabId: string, dirty: boolean): void;
-};
-
 export class CrossFileRenameManager {
-	public constructor(
-		private readonly deps: CrossFileRenameDependencies,
-		private readonly workspace: LuaSemanticWorkspace
-	) { }
+	public constructor() { }
 
 	public applyRenameToChunk(path: string, ranges: readonly LuaSourceRange[], newName: string, activePath: string): number {
 		const context = this.ensureCodeTabContextForChunk(path);
@@ -309,23 +282,24 @@ export class CrossFileRenameManager {
 			}
 			return a.start - b.start;
 		});
-			const edits = planRenameLineEdits(lines, matches, newName);
-			if (edits.length === 0) {
-				return 0;
-			}
-			for (let index = 0; index < edits.length; index += 1) {
-				const edit = edits[index];
-				lines[edit.row] = edit.text;
-			}
-			this.applyLinesToContextSnapshot(context, lines);
-			syncSemanticWorkspacePath({
-				path,
-				source: lines.join('\n'),
-				lines,
-				version: context.textVersion,
-			}, this.workspace);
-			return matches.length;
+		const edits = planRenameLineEdits(lines, matches, newName);
+		if (edits.length === 0) {
+			return 0;
 		}
+		for (let index = 0; index < edits.length; index += 1) {
+			const edit = edits[index];
+			lines[edit.row] = edit.text;
+		}
+		this.applyLinesToContextSnapshot(context, lines);
+		const workspace = getOrCreateSemanticWorkspace();
+		syncSemanticWorkspacePath({
+			path,
+			source: lines.join('\n'),
+			lines,
+			version: context.textVersion,
+		}, workspace);
+		return matches.length;
+	}
 
 	private getContextLinesForRename(context: CodeTabContext): string[] {
 		return splitText(getTextSnapshot(context.buffer));
@@ -345,7 +319,7 @@ export class CrossFileRenameManager {
 		const cursorLength = context.buffer.getLineEndOffset(context.cursorRow) - context.buffer.getLineStartOffset(context.cursorRow);
 		context.cursorColumn = clamp(context.cursorColumn, 0, cursorLength);
 		context.scrollRow = clamp(context.scrollRow, 0, lineCount - 1);
-		this.deps.setTabDirty(context.id, context.dirty);
+		this.markContextTabDirty(context.id, context.dirty);
 	}
 
 	private ensureCodeTabContextForChunk(path: string): CodeTabContext {
@@ -355,14 +329,26 @@ export class CrossFileRenameManager {
 		}
 		const descriptor = findResourceDescriptorForChunk(path)!;
 		const contextId: string = `lua:${descriptor.path}`;
-		let context = this.deps.getCodeTabContext(contextId) ;
+		let context = ide_state.codeTabContexts.get(contextId);
 		if (!context) {
-			context = this.deps.createLuaCodeTabContext(descriptor);
-			this.deps.setCodeTabContext(context);
+			context = createLuaCodeTabContext(descriptor);
+			ide_state.codeTabContexts.set(context.id, context);
+			this.markContextTabDirty(context.id, context.dirty);
 		}
 		return context;
 	}
+
+	private markContextTabDirty(contextId: string, dirty: boolean): void {
+		const tab = ide_state.tabs.find(candidate => candidate.id === contextId);
+		if (!tab) {
+			return;
+		}
+		tab.dirty = dirty;
+	}
 }
+
+export const crossFileRenameManager = new CrossFileRenameManager();
+export const renameController = new RenameController();
 
 export function convertRangeToSearchMatch(range: LuaSourceRange): SearchMatch {
 	const row = range.start.line - 1;

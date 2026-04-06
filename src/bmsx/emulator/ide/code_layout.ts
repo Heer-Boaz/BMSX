@@ -10,6 +10,7 @@ import { EditorFont } from '../editor_font';
 import { getTextSnapshot, splitText } from './text/source_text';
 import { syncSemanticWorkspacePaths } from './semantic_workspace_sync';
 import type { TextBuffer } from './text/text_buffer';
+import type { Position } from './types';
 
 interface VisualLinesContext {
 	buffer: TextBuffer;
@@ -397,6 +398,51 @@ export class CodeLayout {
 		this.visualLinesDirtyByViewport = true;
 		this.dirtyVisualStartRow = 0;
 		this.dirtyVisualEndRow = -1;
+	}
+
+	public clampBufferRow(buffer: TextBuffer, row: number): number {
+		return clamp(row, 0, Math.max(0, buffer.getLineCount() - 1));
+	}
+
+	public clampBufferPosition(buffer: TextBuffer, position: Position): Position {
+		const row = this.clampBufferRow(buffer, position.row);
+		const lineLength = buffer.getLineEndOffset(row) - buffer.getLineStartOffset(row);
+		const column = this.clampLineLength(lineLength, position.column);
+		return { row, column };
+	}
+
+	public clampLineLength(lineLength: number, value: number): number {
+		return clamp(value, 0, Math.max(0, lineLength));
+	}
+
+	public clampBufferColumn(buffer: TextBuffer, row: number, column: number): number {
+		const safeRow = this.clampBufferRow(buffer, row);
+		return this.clampLineLength(buffer.getLineEndOffset(safeRow) - buffer.getLineStartOffset(safeRow), column);
+	}
+
+	public clampBufferOffset(buffer: TextBuffer, offset: number): number {
+		return clamp(offset, 0, Math.max(0, buffer.length));
+	}
+
+	public clampVisualIndex(visualLineCount: number, index: number): number {
+		return clamp(index, 0, Math.max(0, visualLineCount - 1));
+	}
+
+	public clampSegmentStart(lineLength: number, segmentStartColumn: number): number {
+		return this.clampLineLength(lineLength, segmentStartColumn);
+	}
+
+	public clampSegmentEnd(lineLength: number, segmentStartColumn: number, segmentEndColumn: number): number {
+		return clamp(Math.max(segmentEndColumn, segmentStartColumn), segmentStartColumn, Math.max(0, lineLength));
+	}
+
+	public clampVisualScroll(scrollRow: number, visualLineCount: number, visibleRows: number): number {
+		const maxScrollRow = Math.max(0, visualLineCount - Math.max(1, visibleRows));
+		return clamp(scrollRow, 0, maxScrollRow);
+	}
+
+	public clampHorizontalScroll(scrollColumn: number, maxScrollColumn: number): number {
+		return clamp(scrollColumn, 0, Math.max(0, maxScrollColumn));
 	}
 
 	public markVisualLinesDirtyForRows(startRow: number, endRow: number): void {

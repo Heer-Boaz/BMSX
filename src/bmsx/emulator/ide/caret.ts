@@ -49,17 +49,17 @@ export class CaretNavigationState {
 
 export function resolveIndentAwareHome(line: string, segment: VisualLineSegment, currentColumn: number): number {
 	const lineLength = line.length;
-	const segmentStart = clamp(segment.startColumn, 0, lineLength);
-	const segmentEnd = clamp(Math.max(segment.endColumn, segmentStart), segmentStart, lineLength);
+	const segmentStart = ide_state.layout.clampSegmentStart(lineLength, segment.startColumn);
+	const segmentEnd = ide_state.layout.clampSegmentEnd(lineLength, segmentStart, segment.endColumn);
 	const preferred = findFirstNonWhitespace(line, segmentStart, segmentEnd);
 	const targetColumn = currentColumn === preferred ? segmentStart : preferred;
-	return clamp(targetColumn, segmentStart, lineLength);
+	return ide_state.layout.clampSegmentEnd(lineLength, segmentStart, targetColumn);
 }
 
 export function resolveSegmentEnd(line: string, segment: VisualLineSegment): number {
 	const lineLength = line.length;
-	const segmentStart = clamp(segment.startColumn, 0, lineLength);
-	const segmentEnd = clamp(Math.max(segment.endColumn, segmentStart), segmentStart, lineLength);
+	const segmentStart = ide_state.layout.clampSegmentStart(lineLength, segment.startColumn);
+	const segmentEnd = ide_state.layout.clampSegmentEnd(lineLength, segmentStart, segment.endColumn);
 	if (segmentEnd >= lineLength) {
 		return lineLength;
 	}
@@ -85,22 +85,8 @@ export function findFirstNonWhitespace(line: string, startColumn: number, endCol
 export function setCursorPosition(row: number, column: number): void {
 	caretNavigation.clear();
 	const buffer = ide_state.buffer;
-	let targetRow = row;
-	if (targetRow < 0) {
-		targetRow = 0;
-	}
-	const lastRow = buffer.getLineCount() - 1;
-	if (targetRow > lastRow) {
-		targetRow = lastRow;
-	}
-	let targetColumn = column;
-	if (targetColumn < 0) {
-		targetColumn = 0;
-	}
-	const lineLength = buffer.getLineEndOffset(targetRow) - buffer.getLineStartOffset(targetRow);
-	if (targetColumn > lineLength) {
-		targetColumn = lineLength;
-	}
+	const targetRow = ide_state.layout.clampBufferRow(buffer, row);
+	const targetColumn = ide_state.layout.clampBufferColumn(buffer, targetRow, column);
 	ide_state.cursorRow = targetRow;
 	ide_state.cursorColumn = targetColumn;
 	updateDesiredColumn();
@@ -128,7 +114,7 @@ export function moveCursorVertical(delta: number): void {
 		return;
 	}
 	const currentIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-	const targetIndex = clamp(currentIndex + delta, 0, visualCount - 1);
+	const targetIndex = ide_state.layout.clampVisualIndex(visualCount, currentIndex + delta);
 	const desired = ide_state.desiredColumn;
 	const desiredDisplay = ide_state.desiredDisplayOffset;
 	setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
@@ -163,17 +149,17 @@ export function moveCursorHorizontal(delta: number): void {
 			ide_state.cursorColumn -= 1;
 		} else {
 			let moved = false;
-			if (ide_state.wordWrapEnabled && visualIndex > 0) {
-				const prevSegment = visualIndexToSegment(visualIndex - 1);
-				if (prevSegment && prevSegment.row === segment.row) {
-					ide_state.cursorRow = prevSegment.row;
-					const prevLine = buffer.getLineContent(prevSegment.row);
-					const prevEnd = Math.max(prevSegment.endColumn, prevSegment.startColumn);
-					const hasMoreBefore = prevEnd > prevSegment.startColumn;
-					const targetColumn = hasMoreBefore && prevEnd < prevLine.length
+				if (ide_state.wordWrapEnabled && visualIndex > 0) {
+					const prevSegment = visualIndexToSegment(visualIndex - 1);
+					if (prevSegment && prevSegment.row === segment.row) {
+						ide_state.cursorRow = prevSegment.row;
+						const prevLine = buffer.getLineContent(prevSegment.row);
+						const prevEnd = Math.max(prevSegment.endColumn, prevSegment.startColumn);
+						const hasMoreBefore = prevEnd > prevSegment.startColumn;
+						const targetColumn = hasMoreBefore && prevEnd < prevLine.length
 						? Math.max(prevSegment.startColumn, prevEnd - 1)
 						: Math.min(prevEnd, prevLine.length);
-					ide_state.cursorColumn = clamp(targetColumn, 0, prevLine.length);
+					ide_state.cursorColumn = ide_state.layout.clampLineLength(prevLine.length, targetColumn);
 					moved = true;
 				}
 			}
@@ -203,7 +189,7 @@ export function moveCursorHorizontal(delta: number): void {
 		}
 	}
 	const cursorLength = buffer.getLineEndOffset(ide_state.cursorRow) - buffer.getLineStartOffset(ide_state.cursorRow);
-	ide_state.cursorColumn = clamp(ide_state.cursorColumn, 0, cursorLength);
+	ide_state.cursorColumn = ide_state.layout.clampLineLength(cursorLength, ide_state.cursorColumn);
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -422,7 +408,7 @@ export function pageUp(): void {
 	const { rows } = resolveViewportCapacity();
 	const visualCount = getVisualLineCount();
 	const currentVisual = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-	const targetVisual = clamp(currentVisual - rows, 0, Math.max(0, visualCount - 1));
+	const targetVisual = ide_state.layout.clampVisualScroll(currentVisual - rows, visualCount, rows);
 	setCursorFromVisualIndex(targetVisual, ide_state.desiredColumn, ide_state.desiredDisplayOffset);
 	resetBlink();
 	breakUndoSequence();
@@ -443,38 +429,11 @@ export function pageDown(): void {
 	const { rows } = resolveViewportCapacity();
 	const visualCount = getVisualLineCount();
 	const currentVisual = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-	const targetVisual = clamp(currentVisual + rows, 0, Math.max(0, visualCount - 1));
+	const targetVisual = ide_state.layout.clampVisualIndex(visualCount, currentVisual + rows);
 	setCursorFromVisualIndex(targetVisual, ide_state.desiredColumn, ide_state.desiredDisplayOffset);
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();
-}
-
-/**
- * Clamp cursor row to valid range
- */
-export function clampCursorRow(): void {
-	const lineCount = ide_state.buffer.getLineCount();
-	if (ide_state.cursorRow < 0) {
-		ide_state.cursorRow = 0;
-	} else if (ide_state.cursorRow >= lineCount) {
-		ide_state.cursorRow = lineCount - 1;
-	}
-}
-
-/**
- * Clamp cursor column to valid range for current line
- */
-export function clampCursorColumn(): void {
-	const line = currentLine();
-	if (ide_state.cursorColumn < 0) {
-		ide_state.cursorColumn = 0;
-		return;
-	}
-	const length = line.length;
-	if (ide_state.cursorColumn > length) {
-		ide_state.cursorColumn = length;
-	}
 }
 
 function resolveViewportCapacity(): { rows: number; columns: number } {
@@ -521,24 +480,18 @@ export function centerCursorVertically(): void {
 	const { rows } = resolveViewportCapacity();
 	const totalVisual = getVisualLineCount();
 	const cursorVisualIndex = positionToVisualIndex(ide_state.cursorRow, ide_state.cursorColumn);
-	const maxScroll = Math.max(0, totalVisual - rows);
 	if (rows <= 1) {
-		ide_state.scrollRow = clamp(cursorVisualIndex, 0, maxScroll);
+		ide_state.scrollRow = ide_state.layout.clampVisualScroll(cursorVisualIndex, totalVisual, rows);
 		return;
 	}
 	let target = cursorVisualIndex - Math.floor(rows / 2);
-	if (target < 0) {
-		target = 0;
-	}
-	if (target > maxScroll) {
-		target = maxScroll;
-	}
-	ide_state.scrollRow = target;
+	ide_state.scrollRow = ide_state.layout.clampVisualScroll(target, totalVisual, rows);
 }
 
 export function ensureCursorVisible(): void {
-	clampCursorRow();
-	clampCursorColumn();
+	ide_state.cursorRow = ide_state.layout.clampBufferRow(ide_state.buffer, ide_state.cursorRow);
+	const clampedLine = ide_state.buffer.getLineContent(ide_state.cursorRow);
+	ide_state.cursorColumn = ide_state.layout.clampLineLength(clampedLine.length, ide_state.cursorColumn);
 
 	const { rows, columns } = resolveViewportCapacity();
 	const totalVisual = getVisualLineCount();
@@ -549,14 +502,11 @@ export function ensureCursorVisible(): void {
 	const bottomGuard = ide_state.scrollRow + rows - 1 - verticalMargin;
 
 	if (cursorVisualIndex < topGuard) {
-		ide_state.scrollRow = clamp(cursorVisualIndex - verticalMargin, 0, maxScrollRow);
+		ide_state.scrollRow = ide_state.layout.clampVisualScroll(cursorVisualIndex - verticalMargin, totalVisual, rows);
 	} else if (cursorVisualIndex > bottomGuard) {
-		ide_state.scrollRow = clamp(cursorVisualIndex - rows + 1 + verticalMargin, 0, maxScrollRow);
+		ide_state.scrollRow = ide_state.layout.clampVisualScroll(cursorVisualIndex - rows + 1 + verticalMargin, totalVisual, rows);
 	} else if (ide_state.scrollRow > maxScrollRow) {
-		ide_state.scrollRow = maxScrollRow;
-	}
-	if (ide_state.scrollRow < 0) {
-		ide_state.scrollRow = 0;
+		ide_state.scrollRow = ide_state.layout.clampVisualScroll(ide_state.scrollRow, totalVisual, rows);
 	}
 
 	if (ide_state.wordWrapEnabled) {
@@ -564,7 +514,7 @@ export function ensureCursorVisible(): void {
 		return;
 	}
 
-	const lineLength = currentLine().length;
+	const lineLength = clampedLine.length;
 	const docMaxScrollColumn = Math.max(0, maximumLineLength() - columns);
 	const lineMaxScrollColumn = Math.max(0, lineLength - columns);
 	const maxScrollColumn = Math.min(docMaxScrollColumn, lineMaxScrollColumn);
@@ -573,14 +523,11 @@ export function ensureCursorVisible(): void {
 	const rightGuard = ide_state.scrollColumn + columns - 1 - horizontalMargin;
 
 	if (ide_state.cursorColumn < leftGuard) {
-		ide_state.scrollColumn = clamp(ide_state.cursorColumn - horizontalMargin, 0, maxScrollColumn);
+		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(ide_state.cursorColumn - horizontalMargin, maxScrollColumn);
 	} else if (ide_state.cursorColumn > rightGuard) {
-		ide_state.scrollColumn = clamp(ide_state.cursorColumn - columns + 1 + horizontalMargin, 0, maxScrollColumn);
-	} else if (ide_state.scrollColumn > maxScrollColumn) {
-		ide_state.scrollColumn = maxScrollColumn;
-	}
-	if (ide_state.scrollColumn < 0) {
-		ide_state.scrollColumn = 0;
+		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(ide_state.cursorColumn - columns + 1 + horizontalMargin, maxScrollColumn);
+	} else {
+		ide_state.scrollColumn = ide_state.layout.clampHorizontalScroll(ide_state.scrollColumn, maxScrollColumn);
 	}
 }
 
@@ -594,7 +541,7 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 		updateDesiredColumn();
 		return;
 	}
-	const clampedIndex = clamp(visualIndex, 0, visualLines.length - 1);
+	const clampedIndex = ide_state.layout.clampVisualIndex(visualLines.length, visualIndex);
 	const segment = visualLines[clampedIndex];
 	if (!segment) {
 		return;
@@ -602,13 +549,14 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	const entry = ide_state.layout.getCachedHighlight(ide_state.buffer, segment.row);
 	const highlight = entry.hi;
 	const line = ide_state.buffer.getLineContent(segment.row);
+	const segmentStart = ide_state.layout.clampSegmentStart(line.length, segment.startColumn);
+	const segmentEnd = ide_state.layout.clampSegmentEnd(line.length, segmentStart, segment.endColumn);
 	const hasDesiredHint = desiredColumnHint !== undefined;
 	const hasOffsetHint = desiredOffsetHint !== undefined;
 	let targetColumn = hasDesiredHint ? desiredColumnHint! : ide_state.cursorColumn;
 	if (ide_state.wordWrapEnabled) {
-		const segmentEndColumn = Math.max(segment.endColumn, segment.startColumn);
-		const segmentDisplayStart = ide_state.layout.columnToDisplay(highlight, segment.startColumn);
-		const segmentDisplayEnd = ide_state.layout.columnToDisplay(highlight, segmentEndColumn);
+		const segmentDisplayStart = ide_state.layout.columnToDisplay(highlight, segmentStart);
+		const segmentDisplayEnd = ide_state.layout.columnToDisplay(highlight, segmentEnd);
 		const segmentWidth = Math.max(0, segmentDisplayEnd - segmentDisplayStart);
 		if (hasOffsetHint) {
 			const clampedOffset = clamp(desiredOffsetHint, 0, segmentWidth);
@@ -617,33 +565,31 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 			if (columnFromOffset === undefined) {
 				columnFromOffset = line.length;
 			}
-			targetColumn = clamp(columnFromOffset, segment.startColumn, segmentEndColumn);
+			targetColumn = ide_state.layout.clampLineLength(line.length, columnFromOffset);
+			targetColumn = ide_state.layout.clampSegmentEnd(line.length, segmentStart, targetColumn);
 		} else {
-			targetColumn = clamp(targetColumn, segment.startColumn, segmentEndColumn);
-			if (targetColumn > line.length) {
-				targetColumn = line.length;
-			}
+			targetColumn = ide_state.layout.clampLineLength(line.length, targetColumn);
+			targetColumn = ide_state.layout.clampSegmentEnd(line.length, segmentStart, targetColumn);
 		}
 	} else {
-		targetColumn = clamp(targetColumn, 0, line.length);
+		targetColumn = ide_state.layout.clampLineLength(line.length, targetColumn);
 	}
 	ide_state.cursorRow = segment.row;
-	ide_state.cursorColumn = clamp(targetColumn, 0, line.length);
+	ide_state.cursorColumn = ide_state.layout.clampLineLength(line.length, targetColumn);
 	const cursorDisplay = ide_state.layout.columnToDisplay(highlight, ide_state.cursorColumn);
 	if (ide_state.wordWrapEnabled) {
 		const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
 			&& visualLines[clampedIndex + 1].row === segment.row;
-		const segmentEnd = Math.max(segment.endColumn, segment.startColumn);
-		if (ide_state.cursorColumn < segment.startColumn) {
-			ide_state.cursorColumn = segment.startColumn;
+		if (ide_state.cursorColumn < segmentStart) {
+			ide_state.cursorColumn = segmentStart;
 		}
-		if (segmentEnd >= segment.startColumn && ide_state.cursorColumn > segmentEnd) {
-			ide_state.cursorColumn = Math.min(segmentEnd, line.length);
+		if (segmentEnd >= segmentStart && ide_state.cursorColumn > segmentEnd) {
+			ide_state.cursorColumn = segmentEnd;
 		}
 		if (hasNextSegmentSameRow && ide_state.cursorColumn >= segmentEnd) {
-			ide_state.cursorColumn = Math.max(segment.startColumn, segmentEnd - 1);
+			ide_state.cursorColumn = Math.max(segmentStart, segmentEnd - 1);
 		}
-		const segmentDisplayStart = ide_state.layout.columnToDisplay(highlight, segment.startColumn);
+		const segmentDisplayStart = ide_state.layout.columnToDisplay(highlight, segmentStart);
 		ide_state.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
 	} else {
 		ide_state.desiredDisplayOffset = cursorDisplay;

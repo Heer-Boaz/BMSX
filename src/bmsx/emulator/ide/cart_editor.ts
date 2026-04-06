@@ -58,14 +58,13 @@ import {
 } from './reference_sources';
 import { enqueueBackgroundTask, scheduleIdeOnce, scheduleRuntimeTask } from './background_tasks';
 
-import type { RenameCommitPayload, RenameCommitResult } from './rename_controller';
-import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_controller';
+import { crossFileRenameManager, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/syntax/lua_ast';
 // Search logic moved to editor_search
 import { closeSearch, focusEditorFromSearch } from './editor_search';
 import * as constants from './constants';
 import { ide_state, type NavigationHistoryEntry, EMPTY_DIAGNOSTICS, NAVIGATION_HISTORY_LIMIT, diagnosticsDebounceMs, caretNavigation } from './ide_state';
-import { clampCursorColumn, ensureCursorVisible, revealCursor, setCursorPosition } from './caret';
+import { ensureCursorVisible, revealCursor, setCursorPosition } from './caret';
 import {
 	clearWorkspaceDirtyBuffers,
 	buildDirtyFilePath,
@@ -167,12 +166,32 @@ export {
 	updateViewport,
 } from './editor_view';
 
-export const editorFacade = {
-	activate,
-	deactivate,
+export type CartEditor = {
+	readonly blocksRuntimePipeline: true;
+	isActive: boolean;
+	activate: typeof activate;
+	deactivate: typeof deactivate;
+	tickInput: typeof tickInput;
+	update: typeof update;
+	draw: typeof draw;
+	shutdown: typeof shutdown;
+	updateViewport: typeof updateViewport;
+	setFontVariant: typeof setFontVariant;
+	showRuntimeErrorInChunk: typeof showRuntimeErrorInChunk;
+	showRuntimeError: typeof showRuntimeError;
+	clearRuntimeErrorOverlay: typeof clearRuntimeErrorOverlay;
+	clearAllRuntimeErrorOverlays: typeof clearAllRuntimeErrorOverlays;
+	getSourceForChunk: typeof getSourceForChunk;
+	clearWorkspaceDirtyBuffers: typeof clearWorkspaceDirtyBuffers;
+	renderFaultOverlay: typeof renderFaultOverlay;
+	renderRuntimeFaultOverlay: typeof renderRuntimeFaultOverlay;
+};
+
+const editorRuntimeApi: CartEditor = {
 	blocksRuntimePipeline: true,
 	get isActive(): boolean { return ide_state.active; },
-	get exists(): boolean { return ide_state.initialized; },
+	activate,
+	deactivate,
 	tickInput,
 	update,
 	draw,
@@ -189,11 +208,9 @@ export const editorFacade = {
 	renderRuntimeFaultOverlay,
 };
 
-export type CartEditor = typeof editorFacade;
-
 export function createCartEditor(viewport: Viewport): CartEditor {
 	initializeCartEditor(viewport);
-	return editorFacade;
+	return editorRuntimeApi;
 }
 
 export function getSourceForChunk(path: string): string {
@@ -216,9 +233,8 @@ export function getSourceForChunk(path: string): string {
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	let from = Math.min(startRow, endRow);
 	let to = Math.max(startRow, endRow);
-	const lastRow = ide_state.buffer.getLineCount() - 1;
-	from = clamp(from, 0, lastRow);
-	to = clamp(to, 0, lastRow);
+	from = ide_state.layout.clampBufferRow(ide_state.buffer, from);
+	to = ide_state.layout.clampBufferRow(ide_state.buffer, to);
 	for (let row = from; row <= to; row += 1) {
 		ide_state.layout.invalidateLine(row);
 	}
@@ -241,26 +257,6 @@ export function currentLine(): string {
 		return '';
 	}
 	return ide_state.buffer.getLineContent(ide_state.cursorRow);
-}
-
-export function clampSelectionPosition(position: Position): Position {
-	if (!position) {
-		return null;
-	}
-	let row = position.row;
-	if (row < 0) {
-		row = 0;
-	} else if (row >= ide_state.buffer.getLineCount()) {
-		row = ide_state.buffer.getLineCount() - 1;
-	}
-	const lineLength = ide_state.buffer.getLineEndOffset(row) - ide_state.buffer.getLineStartOffset(row);
-	let column = position.column;
-	if (column < 0) {
-		column = 0;
-	} else if (column > lineLength) {
-		column = lineLength;
-	}
-	return { row, column };
 }
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
@@ -674,8 +670,7 @@ export function setExecutionStopHighlight(row: number): void {
 	}
 	let nextRow = row;
 	if (nextRow !== null) {
-		const maxRow = Math.max(0, ide_state.buffer.getLineCount() - 1);
-		nextRow = clamp(nextRow, 0, maxRow);
+		nextRow = ide_state.layout.clampBufferRow(ide_state.buffer, nextRow);
 	}
 	context.executionStopRow = nextRow;
 	ide_state.executionStopRow = nextRow;
@@ -1407,7 +1402,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	const referenceContext = buildProjectReferenceContext(activeContext);
 	const activePath = referenceContext.path;
 	const workspace = getOrCreateSemanticWorkspace();
-	const renameManager = new CrossFileRenameManager(getCrossFileRenameDependencies(), workspace);
+	const renameManager = crossFileRenameManager;
 	const sortedMatches = matches.slice();
 	sortedMatches.sort((a, b) => {
 		if (a.row !== b.row) {
@@ -1488,19 +1483,6 @@ export function findResourceDescriptorForChunk(path: string): ResourceDescriptor
 		}
 	}
 	return null;
-}
-
-export function getCrossFileRenameDependencies(): CrossFileRenameDependencies {
-	return {
-		createLuaCodeTabContext: (descriptor: ResourceDescriptor) => createLuaCodeTabContext(descriptor),
-		createEntryTabContext: () => createEntryTabContext(),
-		getCodeTabContext: (id: string) => ide_state.codeTabContexts.get(id),
-		setCodeTabContext: (context: CodeTabContext) => {
-			ide_state.codeTabContexts.set(context.id, context);
-		},
-		listCodeTabContexts: () => ide_state.codeTabContexts.values(),
-		setTabDirty: (tabId: string, dirty: boolean) => setTabDirty(tabId, dirty),
-	};
 }
 
 export function closeSymbolSearch(clearQuery: boolean): void {
@@ -2343,8 +2325,10 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 	if (!changed) {
 		return;
 	}
-	clampCursorColumn();
-	ide_state.selectionAnchor = clampSelectionPosition(ide_state.selectionAnchor);
+	ide_state.cursorRow = ide_state.layout.clampBufferRow(ide_state.buffer, ide_state.cursorRow);
+	const cursorLine = ide_state.buffer.getLineContent(ide_state.cursorRow);
+	ide_state.cursorColumn = ide_state.layout.clampLineLength(cursorLine.length, ide_state.cursorColumn);
+	ide_state.selectionAnchor = TextEditing.clampSelectionPosition(ide_state.selectionAnchor);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -2386,8 +2370,10 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 	if (!changed) {
 		return;
 	}
-	clampCursorColumn();
-	ide_state.selectionAnchor = clampSelectionPosition(ide_state.selectionAnchor);
+	ide_state.cursorRow = ide_state.layout.clampBufferRow(ide_state.buffer, ide_state.cursorRow);
+	const cursorLine = ide_state.buffer.getLineContent(ide_state.cursorRow);
+	ide_state.cursorColumn = ide_state.layout.clampLineLength(cursorLine.length, ide_state.cursorColumn);
+	ide_state.selectionAnchor = TextEditing.clampSelectionPosition(ide_state.selectionAnchor);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();

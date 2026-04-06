@@ -8,6 +8,7 @@ import { clearNativeMemberCompletionCache } from './ide/intellisense';
 import { getSourceForChunk } from './ide/cart_editor';
 import { ENGINE_LUA_BUILTIN_FUNCTIONS, ENGINE_LUA_BUILTIN_GLOBALS } from './lua_builtin_descriptors';
 import { seedLuaGlobals } from './lua_globals';
+import { ENGINE_SYSTEM_HELPER_NAMES } from './lua_system_globals';
 import { LuaEntrySnapshot } from './lua_js_bridge';
 import { compileLuaChunkToProgram, appendLuaChunkToProgram } from './program_compiler';
 import { linkProgramAssets } from './program_linker';
@@ -90,6 +91,7 @@ const LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
 const ENGINE_BUILTIN_PRELUDE_PATH = '__engine_builtin_prelude__';
 const getRealtimeOptLevel = (runtime: Runtime): 0 | 1 | 2 | 3 =>
 	runtime.realtimeCompileOptLevel;
+const REQUIRED_ENGINE_SYSTEM_HELPERS: ReadonlyArray<string> = ['wait_vblank', 'clock_now'];
 
 function runtimeFault(message: string): Error {
 	return new Error(`Runtime fault: ${message}`);
@@ -685,6 +687,15 @@ export function runEngineBuiltinPrelude(runtime: Runtime, program: Program, meta
 }
 
 export function applyEngineBuiltinGlobals(runtime: Runtime): void {
+	const helperCount = ENGINE_SYSTEM_HELPER_NAMES.length;
+	for (let index = 0; index < REQUIRED_ENGINE_SYSTEM_HELPERS.length; index += 1) {
+		const name = REQUIRED_ENGINE_SYSTEM_HELPERS[index];
+		const key = runtime.canonicalKey(name);
+		if (runtime.cpu.globals.get(key) === null) {
+			seedLuaGlobals(runtime);
+			break;
+		}
+	}
 	const engine = requireModule(runtime, 'engine') as Table;
 	for (let index = 0; index < ENGINE_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
 		const name = ENGINE_LUA_BUILTIN_FUNCTIONS[index].name;
@@ -694,6 +705,14 @@ export function applyEngineBuiltinGlobals(runtime: Runtime): void {
 	for (let index = 0; index < ENGINE_LUA_BUILTIN_GLOBALS.length; index += 1) {
 		const name = ENGINE_LUA_BUILTIN_GLOBALS[index].name;
 		registerGlobal(runtime, name, engine.get(runtime.canonicalKey(name)));
+	}
+	for (let index = 0; index < helperCount; index += 1) {
+		const name = ENGINE_SYSTEM_HELPER_NAMES[index];
+		const key = runtime.canonicalKey(name);
+		const value = runtime.cpu.globals.get(key);
+		if (value !== null) {
+			registerGlobal(runtime, name, value);
+		}
 	}
 }
 
