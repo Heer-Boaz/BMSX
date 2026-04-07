@@ -22,12 +22,13 @@ import { OverlayRenderer } from './overlay_renderer';
 import {
 	isKeyJustPressed as isKeyJustPressed,
 	isCtrlDown,
-	isShiftDown,
 	isMetaDown,
 	isAltDown
 } from './ide/ide_input';
 import { resolveSnapshotExpression, describeLuaValueForInspector } from './ide/intellisense';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
+import { CompletionController } from './ide/completion_controller';
+import type { ModuleAliasEntry } from './ide/semantic_model';
 import type { Viewport } from '../rompack/rompack';
 import { Runtime } from './runtime';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
@@ -36,6 +37,26 @@ import { extractErrorMessage } from '../lua/luavalue';
 import { valueToString } from './lua_globals';
 import type { Value } from './cpu';
 import { SymbolEntry } from './types';
+import {
+	computePanelGridLayout,
+	findSymbolCompletionBounds,
+	matchesAnySymbolSegment,
+	matchesSymbolSegmentChain,
+	splitSymbolQuerySegments,
+	truncatePanelLabel,
+} from './terminal_completion_panel_model';
+import { drawTerminalGridPanel } from './terminal_completion_panels_renderer';
+import {
+	handleCompletionPanelKeybindings as panelHandleCompletionPanelKeybindings,
+	handleCompletionPanelTrigger as panelHandleCompletionPanelTrigger,
+	handleCtrlTabTrigger as panelHandleCtrlTabTrigger,
+	handleInlineCompletionAccept as panelHandleInlineCompletionAccept,
+	handleSymbolPanelKeybindings as panelHandleSymbolPanelKeybindings,
+	type TerminalCompletionPanelState,
+	type TerminalSymbolPanelMode,
+	type TerminalSymbolPanelState,
+	type TerminalSymbolQueryContext,
+} from './terminal_completion_panels_input';
 import type { MutableTextPosition, TextBuffer } from './ide/text/text_buffer';
 import { clamp } from '../utils/clamp';
 import { textFromLines } from './ide/text/source_text';
@@ -55,26 +76,6 @@ type TerminalOutputEntry = {
 	color: number;
 };
 
-type TerminalSymbolPanelMode = 'browse' | 'complete';
-
-type TerminalSymbolQueryContext = {
-	prefix: string;
-	replaceStart: number;
-	replaceEnd: number;
-};
-
-type TerminalSymbolPanelState = {
-	mode: TerminalSymbolPanelMode;
-	entries: SymbolEntry[];
-	filtered: SymbolEntry[];
-	filter: string;
-	selectionIndex: number;
-	displayRowOffset: number;
-	queryStart: number;
-	queryEnd: number;
-	originalText: string;
-	originalCursor: number;
-};
 
 type TerminalSymbolGridLayout = {
 	columns: number;
@@ -84,17 +85,6 @@ type TerminalSymbolGridLayout = {
 	visibleRows: number;
 	paddingX: number;
 	paddingY: number;
-};
-
-type TerminalCompletionPanelState = {
-	entries: LuaCompletionItem[];
-	filtered: LuaCompletionItem[];
-	filter: string;
-	selectionIndex: number;
-	displayRowOffset: number;
-	context: CompletionContext;
-	originalText: string;
-	originalCursor: number;
 };
 
 class InlineFieldTextBuffer implements TextBuffer {
@@ -244,11 +234,8 @@ export class TerminalMode {
 	private readonly output: TerminalOutputEntry[] = [];
 	private readonly history: string[] = [];
 	private historyIndex: number = null;
-	private readonly terminalPath = '<terminal>';
-	private readonly completion = completionController;
+	private readonly completion: CompletionController;
 	private readonly buffer: TextBuffer;
-	private readonly completionContextSource: CompletionContext;
-	private previousCompletionContextSource: CompletionContext | null = null;
 	private blinkTimer = 0;
 	private caretVisible = true;
 	private active = false;
@@ -279,44 +266,122 @@ export class TerminalMode {
 		this.uppercaseDisplayOverride = false;
 		this.maxEntries = MAX_OUTPUT_ENTRIES;
 		this.buffer = new InlineFieldTextBuffer(() => this.getLinesSnapshot(), () => this.textVersion);
-		this.completionContextSource = {
-			isCompletionReady: () => this.active && !this.symbolPanel && !this.completionPanel,
-			shouldAutoTriggerCompletions: () => this.active && !this.symbolPanel && !this.completionPanel,
-			getBuffer: () => this.buffer,
-			getCursorPosition: () => this.getCursorPosition(),
-			getTextVersion: () => this.textVersion,
-			getCursorScreenInfo: () => this.cursorScreenInfo,
-			getLineHeight: () => this.font.lineHeight,
-			getFont: () => this.font,
-			measureText: (value: string): number => this.measureDisplayText(value, this.useUppercaseDisplay()),
-			drawText: (font, text, x, y, color): void => {
-				const display = this.toRenderedGlyphText(text, this.useUppercaseDisplay());
-				drawEditorText(font, display, x, y, undefined, color);
-			},
-			getActivePath: () => this.terminalPath,
-			getActiveSemanticDefinitions: () => [],
-			getLuaModuleAliases: () => new Map(),
-			getCharAt: (row: number, column: number): string => this.charAt(row, column),
-			setCursorPosition: (row: number, column: number): void => {
-				this.setCursorFromPosition(row, column);
-			},
-			setSelectionAnchor: (anchor: { row: number; column: number }): void => {
-				this.setSelectionAnchorFromPosition(anchor.row, anchor.column);
-			},
-			replaceSelectionWithText: (text: string): void => {
-				this.replaceSelectionWithText(text);
-			},
-			clampBufferPosition: (position: { row: number; column: number }) => this.clampBufferPosition(position),
-			afterCompletionApplied: () => {
-				this.resetBlink();
-				if (this.cursorScreenInfo) {
-					this.cursorScreenInfo.baseColor = OUTPUT_COLORS.stdout;
+		const owner = this;
+		this.completion = new class extends CompletionController {
+			private readonly cursorScratch = { row: 0, column: 0 };
+			private readonly clampScratch = { row: 0, column: 0 };
+
+			protected override isCompletionContextActive(): boolean {
+				return owner.active && !owner.symbolPanel && !owner.completionPanel;
+			}
+
+			protected override isCompletionReady(): boolean {
+				return this.isCompletionContextActive();
+			}
+
+			protected override shouldAutoTrigger(): boolean {
+				return this.isCompletionContextActive();
+			}
+
+			protected override getBuffer() {
+				return owner.buffer;
+			}
+
+			protected override getTextVersion(): number {
+				return owner.textVersion;
+			}
+
+			protected override getActivePath(): string {
+				return '<terminal>';
+			}
+
+			protected override getSemanticDefinitions() {
+				return [];
+			}
+
+			protected override getModuleAliases(_path: string): Map<string, ModuleAliasEntry> {
+				return new Map<string, ModuleAliasEntry>();
+			}
+
+			protected override getCursorPosition(): { row: number; column: number } {
+				this.cursorScratch.row = owner.field.cursorRow;
+				this.cursorScratch.column = owner.field.cursorColumn;
+				return this.cursorScratch;
+			}
+
+			private positionToIndex(row: number, column: number): number {
+				const lines = owner.getLinesSnapshot();
+				let index = 0;
+				for (let current = 0; current < row && current < lines.length; current += 1) {
+					index += lines[current].length + 1;
 				}
-			},
-			clearSelectionAnchor: () => {
-				this.field.selectionAnchor = null;
-			},
-		};
+				const targetRow = Math.min(row, lines.length - 1);
+				const rowText = lines[targetRow] ?? '';
+				const clampedColumn = Math.max(0, Math.min(column, rowText.length));
+				return index + clampedColumn;
+			}
+
+			protected override setCursorPosition(row: number, column: number): void {
+				const index = this.positionToIndex(row, column);
+				setCursorFromOffset(owner.field, index);
+				owner.field.selectionAnchor = null;
+				owner.completion.onCursorMoved();
+			}
+
+			protected override setSelectionAnchor(row: number, column: number): void {
+				const index = this.positionToIndex(row, column);
+				setSelectionAnchorFromOffset(owner.field, index);
+				owner.completion.onCursorMoved();
+			}
+
+			protected override getCharAt(row: number, column: number): string {
+				const lines = owner.getLinesSnapshot();
+				if (row < 0 || row >= lines.length) {
+					return '';
+				}
+				const line = lines[row];
+				if (column < 0 || column >= line.length) {
+					return '';
+				}
+				return line.charAt(column);
+			}
+
+			protected override prepareUndoRecord(): void {
+				// Terminal inline field does not use IDE undo stack.
+			}
+
+			protected override replaceSelection(text: string): void {
+				const previous = textFromLines(owner.field.lines);
+				deleteSelection(owner.field);
+				if (text.length > 0) {
+					insertValue(owner.field, text);
+				}
+				const context = text.length > 0
+					? { kind: 'insert', text } as EditContext
+					: owner.buildEditContext(previous, textFromLines(owner.field.lines));
+				owner.handleTextMutation(previous, context);
+			}
+
+			protected override clampBufferPosition(row: number, column: number): { row: number; column: number } {
+				const lines = owner.getLinesSnapshot();
+				const clampedRow = clamp(row, 0, Math.max(0, lines.length - 1));
+				const lineLength = lines[clampedRow]?.length ?? 0;
+				this.clampScratch.row = clampedRow;
+				this.clampScratch.column = clamp(column, 0, lineLength);
+				return this.clampScratch;
+			}
+
+			protected override afterCompletionApplied(): void {
+				owner.resetBlink();
+				if (owner.cursorScreenInfo) {
+					owner.cursorScreenInfo.baseColor = OUTPUT_COLORS.stdout;
+				}
+			}
+
+			protected override clearSelectionAnchor(): void {
+				owner.field.selectionAnchor = null;
+			}
+		}();
 		this.completion.enterCommitsCompletion = true;
 	}
 
@@ -332,7 +397,6 @@ export class TerminalMode {
 		this.resetPagerState();
 		this.blinkTimer = 0;
 		this.caretVisible = true;
-		this.previousCompletionContextSource = setCompletionContextSource(this.completionContextSource);
 	}
 
 	public deactivate(): void {
@@ -342,8 +406,6 @@ export class TerminalMode {
 		this.completionPanel = null;
 		this.completionPanelLayout = null;
 		this.resetPagerState();
-		setCompletionContextSource(this.previousCompletionContextSource);
-		this.previousCompletionContextSource = null;
 	}
 
 	public setFontVariant(variant: FontVariant): void {
@@ -485,9 +547,11 @@ export class TerminalMode {
 		if (trimmed.length > 0) {
 			this.recordHistory(trimmed);
 		}
-		if (trimmed.length === 0) {
+		else {
+			this.historyIndex = null;
 			return;
 		}
+
 		this.beginPagerSession();
 		try {
 			if (await this.terminalCommands.handle(trimmed)) {
@@ -557,172 +621,49 @@ export class TerminalMode {
 	}
 
 	private handleInlineCompletionAccept(): boolean {
-		if (!isKeyJustPressed('ArrowRight')) {
-			return false;
-		}
-		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
-		if (ctrlDown || altDown || metaDown) {
-			return false;
-		}
-		const accepted = this.completion.tryAcceptSelectedCompletion();
-		if (!accepted) {
-			return false;
-		}
-		consumeIdeKey('ArrowRight');
-		return true;
+		return panelHandleInlineCompletionAccept(this.completion);
 	}
 
 	private handleCompletionPanelTrigger(): boolean {
-		if (!isKeyJustPressed('Tab')) {
-			return false;
-		}
-		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
-		if (ctrlDown || altDown || metaDown) {
-			return false;
-		}
-		consumeIdeKey('Tab');
-		const snapshot = this.completion.listCompletionCandidates();
-		if (!snapshot) {
-			return true;
-		}
-		if (snapshot.filteredItems.length === 0) {
-			return true;
-		}
-		this.openCompletionPanel(snapshot.context, snapshot.items, snapshot.filteredItems);
-		return true;
+		return panelHandleCompletionPanelTrigger({
+			completion: this.completion,
+			openCompletionPanel: (context, entries, filtered) => this.openCompletionPanel(context, entries, filtered),
+		});
 	}
 
 	private handleCtrlTabTrigger(): boolean {
-		if (!isKeyJustPressed('Tab')) {
-			return false;
-		}
-		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
-		if (!ctrlDown || altDown || metaDown) {
-			return false;
-		}
-		consumeIdeKey('Tab');
-		const completionSnapshot = this.completion.listCompletionCandidates();
-		if (completionSnapshot && completionSnapshot.context.kind === 'member' && completionSnapshot.filteredItems.length > 0) {
-			this.openCompletionPanel(completionSnapshot.context, completionSnapshot.items, completionSnapshot.filteredItems);
-			return true;
-		}
-		const symbolContext = this.resolveSymbolCompletionContext();
-		const entries = this.buildSymbolCatalog();
-		const filtered = this.filterSymbolEntries(entries, symbolContext.prefix);
-		if (filtered.length === 0) {
-			return true;
-		}
-		if (filtered.length === 1) {
-			this.applySymbolCompletion(symbolContext, filtered[0].name);
-			return true;
-		}
-		this.openSymbolPanel('complete', entries, filtered, symbolContext);
-		return true;
+		return panelHandleCtrlTabTrigger({
+			completion: this.completion,
+			openCompletionPanel: (context, entries, filtered) => this.openCompletionPanel(context, entries, filtered),
+			resolveSymbolCompletionContext: () => this.resolveSymbolCompletionContext(),
+			buildSymbolCatalog: () => this.buildSymbolCatalog(),
+			filterSymbolEntries: (entries, prefix) => this.filterSymbolEntries(entries, prefix),
+			applySymbolCompletion: (context, name) => this.applySymbolCompletion(context, name),
+			openSymbolPanel: (mode, entries, filtered, query) => this.openSymbolPanel(mode, entries, filtered, query),
+		});
 	}
 
 	private handleSymbolPanelKeybindings(): boolean {
-		const panel = this.symbolPanel;
-		if (!panel) {
-			return false;
-		}
-		if (isKeyJustPressed('Escape')) {
-			consumeIdeKey('Escape');
-			this.closeSymbolPanel(true);
-			return true;
-		}
-		if (isKeyJustPressed('Tab')) {
-			consumeIdeKey('Tab');
-			const shiftDown = isShiftDown();
-			this.moveSymbolSelectionRow(shiftDown ? -1 : 1);
-			return true;
-		}
-		const enterPressed = isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter');
-		if (enterPressed) {
-			consumeIdeKey('Enter');
-			consumeIdeKey('NumpadEnter');
-			if (panel.mode === 'complete') {
-				this.acceptSymbolPanelSelection();
-			} else {
-				this.closeSymbolPanel(false);
-			}
-			return true;
-		}
-		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
-		if (ctrlDown || altDown || metaDown) {
-			return false;
-		}
-		if (this.shouldRepeatKey('ArrowDown')) {
-			consumeIdeKey('ArrowDown');
-			this.moveSymbolSelectionRow(1);
-			return true;
-		}
-		if (this.shouldRepeatKey('ArrowUp')) {
-			consumeIdeKey('ArrowUp');
-			this.moveSymbolSelectionRow(-1);
-			return true;
-		}
-		if (this.shouldRepeatKey('ArrowRight')) {
-			consumeIdeKey('ArrowRight');
-			this.moveSymbolSelectionColumn(1);
-			return true;
-		}
-		if (this.shouldRepeatKey('ArrowLeft')) {
-			consumeIdeKey('ArrowLeft');
-			this.moveSymbolSelectionColumn(-1);
-			return true;
-		}
-		if (this.shouldRepeatKey('PageDown')) {
-			consumeIdeKey('PageDown');
-			this.moveSymbolSelectionPage(1);
-			return true;
-		}
-		if (this.shouldRepeatKey('PageUp')) {
-			consumeIdeKey('PageUp');
-			this.moveSymbolSelectionPage(-1);
-			return true;
-		}
-		return false;
+		return panelHandleSymbolPanelKeybindings({
+			panel: this.symbolPanel,
+			closeSymbolPanel: (restoreInput) => this.closeSymbolPanel(restoreInput),
+			moveSymbolSelectionRow: (delta) => this.moveSymbolSelectionRow(delta),
+			moveSymbolSelectionColumn: (delta) => this.moveSymbolSelectionColumn(delta),
+			moveSymbolSelectionPage: (delta) => this.moveSymbolSelectionPage(delta),
+			acceptSymbolPanelSelection: () => this.acceptSymbolPanelSelection(),
+			shouldRepeatKey: (code) => this.shouldRepeatKey(code),
+		});
 	}
 
 	private resolveSymbolCompletionContext(): TerminalSymbolQueryContext {
 		const text = textFromLines(this.field.lines);
 		const cursor = getCursorOffset(this.field);
-		const bounds = this.findSymbolCompletionBounds(text, cursor);
+		const bounds = findSymbolCompletionBounds(text, cursor);
 		return {
 			prefix: text.slice(bounds.start, cursor),
 			replaceStart: bounds.start,
 			replaceEnd: bounds.end,
 		};
-	}
-
-	private findSymbolCompletionBounds(text: string, cursor: number): { start: number; end: number } {
-		let start = cursor;
-		while (start > 0 && !this.isSymbolCompletionBoundary(text.charAt(start - 1))) {
-			start -= 1;
-		}
-		let end = cursor;
-		while (end < text.length && !this.isSymbolCompletionBoundary(text.charAt(end))) {
-			end += 1;
-		}
-		return { start, end };
-	}
-
-	private isSymbolCompletionBoundary(ch: string): boolean {
-		return !this.isSymbolQueryChar(ch);
-	}
-
-	private isSymbolQueryChar(ch: string): boolean {
-		const code = ch.charCodeAt(0);
-		if (code >= 48 && code <= 57) {
-			return true;
-		}
-		if (code >= 65 && code <= 90) {
-			return true;
-		}
-		if (code >= 97 && code <= 122) {
-			return true;
-		}
-		return ch === '_' || ch === '.' || ch === ':';
 	}
 
 	private openSymbolPanel(
@@ -851,63 +792,15 @@ export class TerminalMode {
 	}
 
 	private handleCompletionPanelKeybindings(): boolean {
-		const panel = this.completionPanel;
-		if (!panel) {
-			return false;
-		}
-		if (isKeyJustPressed('Escape')) {
-			consumeIdeKey('Escape');
-			this.closeCompletionPanel(false);
-			return true;
-		}
-		if (isKeyJustPressed('Tab')) {
-			consumeIdeKey('Tab');
-			const shiftDown = isShiftDown();
-			this.moveCompletionSelectionRow(shiftDown ? -1 : 1);
-			return true;
-		}
-		const enterPressed = isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter');
-		if (enterPressed) {
-			consumeIdeKey('Enter');
-			consumeIdeKey('NumpadEnter');
-			this.acceptCompletionPanelSelection();
-			return true;
-		}
-		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
-		if (ctrlDown || altDown || metaDown) {
-			return false;
-		}
-		if (this.shouldRepeatKey('ArrowDown')) {
-			consumeIdeKey('ArrowDown');
-			this.moveCompletionSelectionRow(1);
-			return true;
-		}
-		if (this.shouldRepeatKey('ArrowUp')) {
-			consumeIdeKey('ArrowUp');
-			this.moveCompletionSelectionRow(-1);
-			return true;
-		}
-		if (this.shouldRepeatKey('ArrowRight')) {
-			consumeIdeKey('ArrowRight');
-			this.moveCompletionSelectionColumn(1);
-			return true;
-		}
-		if (this.shouldRepeatKey('ArrowLeft')) {
-			consumeIdeKey('ArrowLeft');
-			this.moveCompletionSelectionColumn(-1);
-			return true;
-		}
-		if (this.shouldRepeatKey('PageDown')) {
-			consumeIdeKey('PageDown');
-			this.moveCompletionSelectionPage(1);
-			return true;
-		}
-		if (this.shouldRepeatKey('PageUp')) {
-			consumeIdeKey('PageUp');
-			this.moveCompletionSelectionPage(-1);
-			return true;
-		}
-		return false;
+		return panelHandleCompletionPanelKeybindings({
+			panel: this.completionPanel,
+			closeCompletionPanel: (restoreInput) => this.closeCompletionPanel(restoreInput),
+			moveCompletionSelectionRow: (delta) => this.moveCompletionSelectionRow(delta),
+			moveCompletionSelectionColumn: (delta) => this.moveCompletionSelectionColumn(delta),
+			moveCompletionSelectionPage: (delta) => this.moveCompletionSelectionPage(delta),
+			acceptCompletionPanelSelection: () => this.acceptCompletionPanelSelection(),
+			shouldRepeatKey: (code) => this.shouldRepeatKey(code),
+		});
 	}
 
 	private acceptSymbolPanelSelection(): void {
@@ -999,7 +892,7 @@ export class TerminalMode {
 			return entries.slice();
 		}
 		const needle = prefix.toLowerCase();
-		const needleSegments = this.splitSymbolQuerySegments(needle);
+		const needleSegments = splitSymbolQuerySegments(needle);
 		const filtered: SymbolEntry[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
@@ -1008,61 +901,15 @@ export class TerminalMode {
 				filtered.push(entry);
 				continue;
 			}
-			if (this.matchesSymbolSegmentChain(nameLower, needleSegments)) {
+			if (matchesSymbolSegmentChain(nameLower, needleSegments)) {
 				filtered.push(entry);
 				continue;
 			}
-			if (this.matchesAnySymbolSegment(nameLower, needleSegments)) {
+			if (matchesAnySymbolSegment(nameLower, needleSegments)) {
 				filtered.push(entry);
 			}
 		}
 		return filtered;
-	}
-
-	private splitSymbolQuerySegments(value: string): string[] {
-		const rawSegments = value.split(/[.:]/);
-		const segments: string[] = [];
-		for (let index = 0; index < rawSegments.length; index += 1) {
-			const segment = rawSegments[index];
-			if (segment.length > 0) {
-				segments.push(segment);
-			}
-		}
-		return segments;
-	}
-
-	private matchesSymbolSegmentChain(nameLower: string, needleSegments: string[]): boolean {
-		if (needleSegments.length <= 1) {
-			return false;
-		}
-		const nameSegments = this.splitSymbolQuerySegments(nameLower);
-		if (needleSegments.length > nameSegments.length) {
-			return false;
-		}
-		for (let index = 0; index < needleSegments.length; index += 1) {
-			if (!nameSegments[index].startsWith(needleSegments[index])) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private matchesAnySymbolSegment(nameLower: string, needleSegments: string[]): boolean {
-		if (needleSegments.length === 0) {
-			return false;
-		}
-		const tailNeedle = needleSegments[needleSegments.length - 1];
-		if (tailNeedle.length === 0) {
-			return false;
-		}
-		const nameSegments = this.splitSymbolQuerySegments(nameLower);
-		for (let index = 0; index < nameSegments.length; index += 1) {
-			const segment = nameSegments[index];
-			if (segment.startsWith(tailNeedle) || segment.includes(tailNeedle)) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	private resolveSymbolSelectionIndex(entries: SymbolEntry[], preferredName: string): number {
@@ -1104,66 +951,29 @@ export class TerminalMode {
 			return;
 		}
 		this.ensureSymbolPanelSelectionVisible(layout);
-
-		const panelRows = layout.visibleRows + layout.paddingY * 2;
-		const panelLeft = PADDING_X;
-		const panelRight = panelLeft + contentWidth;
-		const panelBottom = panelTop + panelRows * lineHeight;
-		this.currentRenderer.rect({
-			kind: 'fill',
-			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: BmsxColors[constants.COLOR_COMPLETION_BACKGROUND],
-		});
-		this.currentRenderer.rect({
-			kind: 'rect',
-			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: BmsxColors[constants.COLOR_COMPLETION_BORDER],
-		});
-
 		const charWidth = this.font.advance(' ');
-		const gridStartX = panelLeft + layout.paddingX * charWidth;
-		const gridStartY = panelTop + layout.paddingY * lineHeight;
-		const cellWidthPx = layout.cellWidth * charWidth;
-		const gapWidthPx = layout.gap * charWidth;
-		const strideX = cellWidthPx + gapWidthPx;
-		const textColor = BmsxColors[constants.COLOR_COMPLETION_TEXT];
-
-		if (panel.filtered.length === 0) {
-			const message = panel.filter.length > 0 ? 'No matches' : 'No symbols';
-			this.drawGlyphRun(this.currentRenderer, message, gridStartX, gridStartY, textColor, uppercaseDisplay);
-			return;
-		}
-
-		const startRow = panel.displayRowOffset;
-		const endRow = Math.min(layout.rows, startRow + layout.visibleRows);
-		for (let row = startRow; row < endRow; row += 1) {
-			const drawRow = row - startRow;
-			const cellY = gridStartY + drawRow * lineHeight;
-			for (let col = 0; col < layout.columns; col += 1) {
-				const index = row + col * layout.rows;
-				if (index >= panel.filtered.length) {
-					continue;
-				}
-				const entry = panel.filtered[index];
-				const label = this.truncateSymbolName(entry.name, layout.cellWidth);
-				const cellX = gridStartX + col * strideX;
-				const isSelected = index === panel.selectionIndex;
-				if (isSelected) {
-					this.currentRenderer.rect({
-						kind: 'fill',
-						area: {
-							left: cellX - 1,
-							top: cellY - 1,
-							right: cellX + cellWidthPx + 1,
-							bottom: cellY + lineHeight + 1,
-						},
-						color: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT],
-					});
-				}
-				const color = isSelected ? BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
-				this.drawGlyphRun(this.currentRenderer, label, cellX, cellY, color, uppercaseDisplay);
-			}
-		}
+		drawTerminalGridPanel({
+			renderer: this.currentRenderer,
+			contentWidth,
+			lineHeight,
+			charWidth,
+			panelTop,
+			layout,
+			entriesCount: panel.filtered.length,
+			getLabel: (index) => truncatePanelLabel(panel.filtered[index].name, layout.cellWidth),
+			filter: panel.filter,
+			selectionIndex: panel.selectionIndex,
+			displayRowOffset: panel.displayRowOffset,
+			emptyMessageNoFilter: 'No symbols',
+			emptyMessageWithFilter: 'No matches',
+			paddingX: PADDING_X,
+			backgroundColor: BmsxColors[constants.COLOR_COMPLETION_BACKGROUND],
+			borderColor: BmsxColors[constants.COLOR_COMPLETION_BORDER],
+			highlightColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT],
+			textColor: BmsxColors[constants.COLOR_COMPLETION_TEXT],
+			highlightTextColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT_TEXT],
+			drawText: (text, x, y, color) => this.drawGlyphRun(this.currentRenderer, text, x, y, color, uppercaseDisplay),
+		});
 	}
 
 	private drawCompletionPanel(params: { contentWidth: number; lineHeight: number; panelLayout: TerminalSymbolGridLayout; panelTop: number; uppercaseDisplay: boolean; }): void {
@@ -1178,97 +988,33 @@ export class TerminalMode {
 			return;
 		}
 		this.ensureCompletionPanelSelectionVisible(layout);
-
-		const panelRows = layout.visibleRows + layout.paddingY * 2;
-		const panelLeft = PADDING_X;
-		const panelRight = panelLeft + contentWidth;
-		const panelBottom = panelTop + panelRows * lineHeight;
-		this.currentRenderer.rect({
-			kind: 'fill',
-			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: BmsxColors[constants.COLOR_COMPLETION_BACKGROUND],
-		});
-		this.currentRenderer.rect({
-			kind: 'rect',
-			area: { left: panelLeft, top: panelTop, right: panelRight, bottom: panelBottom },
-			color: BmsxColors[constants.COLOR_COMPLETION_BORDER],
-		});
-
 		const charWidth = this.font.advance(' ');
-		const gridStartX = panelLeft + layout.paddingX * charWidth;
-		const gridStartY = panelTop + layout.paddingY * lineHeight;
-		const cellWidthPx = layout.cellWidth * charWidth;
-		const gapWidthPx = layout.gap * charWidth;
-		const strideX = cellWidthPx + gapWidthPx;
-		const textColor = BmsxColors[constants.COLOR_COMPLETION_TEXT];
-
-		if (panel.filtered.length === 0) {
-			const message = panel.filter.length > 0 ? 'No matches' : 'No completions';
-			this.drawGlyphRun(this.currentRenderer, message, gridStartX, gridStartY, textColor, uppercaseDisplay);
-			return;
-		}
-
-		const startRow = panel.displayRowOffset;
-		const endRow = Math.min(layout.rows, startRow + layout.visibleRows);
-		for (let row = startRow; row < endRow; row += 1) {
-			const drawRow = row - startRow;
-			const cellY = gridStartY + drawRow * lineHeight;
-			for (let col = 0; col < layout.columns; col += 1) {
-				const index = row + col * layout.rows;
-				if (index >= panel.filtered.length) {
-					continue;
-				}
-				const entry = panel.filtered[index];
-				const label = this.truncateSymbolName(entry.label, layout.cellWidth);
-				const cellX = gridStartX + col * strideX;
-				const isSelected = index === panel.selectionIndex;
-				if (isSelected) {
-					this.currentRenderer.rect({
-						kind: 'fill',
-						area: {
-							left: cellX - 1,
-							top: cellY - 1,
-							right: cellX + cellWidthPx + 1,
-							bottom: cellY + lineHeight + 1,
-						},
-						color: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT],
-					});
-				}
-				const color = isSelected ? BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT_TEXT] : textColor;
-				this.drawGlyphRun(this.currentRenderer, label, cellX, cellY, color, uppercaseDisplay);
-			}
-		}
+		drawTerminalGridPanel({
+			renderer: this.currentRenderer,
+			contentWidth,
+			lineHeight,
+			charWidth,
+			panelTop,
+			layout,
+			entriesCount: panel.filtered.length,
+			getLabel: (index) => truncatePanelLabel(panel.filtered[index].label, layout.cellWidth),
+			filter: panel.filter,
+			selectionIndex: panel.selectionIndex,
+			displayRowOffset: panel.displayRowOffset,
+			emptyMessageNoFilter: 'No completions',
+			emptyMessageWithFilter: 'No matches',
+			paddingX: PADDING_X,
+			backgroundColor: BmsxColors[constants.COLOR_COMPLETION_BACKGROUND],
+			borderColor: BmsxColors[constants.COLOR_COMPLETION_BORDER],
+			highlightColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT],
+			textColor: BmsxColors[constants.COLOR_COMPLETION_TEXT],
+			highlightTextColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT_TEXT],
+			drawText: (text, x, y, color) => this.drawGlyphRun(this.currentRenderer, text, x, y, color, uppercaseDisplay),
+		});
 	}
 
 	private computeSymbolGridLayout(total: number, maxColumns: number, maxRows: number, maxLabelLength: number): TerminalSymbolGridLayout {
-		const paddingX = clamp(SYMBOL_PANEL_PADDING_X, 0, Math.max(0, Math.floor((maxColumns - 1) / 2)));
-		const paddingY = clamp(SYMBOL_PANEL_PADDING_Y, 0, Math.max(0, Math.floor((maxRows - 1) / 2)));
-		const gap = SYMBOL_PANEL_COLUMN_GAP;
-		const availableColumns = Math.max(1, maxColumns - paddingX * 2);
-		const availableRows = Math.max(1, maxRows - paddingY * 2);
-		const fullCell = clamp(Math.max(1, maxLabelLength), 1, availableColumns);
-		const maxByFull = Math.max(1, Math.floor((availableColumns + gap) / (fullCell + gap)));
-		let columns = Math.max(1, total > 0 ? Math.min(total, maxByFull) : 1);
-		let cellWidth = Math.max(1, Math.floor((availableColumns - gap * (columns - 1)) / columns));
-		if (columns < 2 && total > 1) {
-			const compactCell = clamp(SYMBOL_PANEL_MIN_CELL_WIDTH, 1, availableColumns);
-			const maxByCompact = Math.max(1, Math.floor((availableColumns + gap) / (compactCell + gap)));
-			if (maxByCompact > columns) {
-				columns = Math.min(total, maxByCompact);
-				cellWidth = Math.max(1, Math.floor((availableColumns - gap * (columns - 1)) / columns));
-			}
-		}
-		const rows = Math.max(1, Math.ceil(total / columns));
-		const visibleRows = Math.max(1, Math.min(rows, availableRows));
-		return {
-			columns,
-			rows,
-			cellWidth,
-			gap,
-			visibleRows,
-			paddingX,
-			paddingY,
-		};
+		return computePanelGridLayout(total, maxColumns, maxRows, maxLabelLength, SYMBOL_PANEL_MIN_CELL_WIDTH, SYMBOL_PANEL_COLUMN_GAP, SYMBOL_PANEL_PADDING_X, SYMBOL_PANEL_PADDING_Y);
 	}
 
 	private measureSymbolMaxLabelLength(entries: SymbolEntry[]): number {
@@ -1491,16 +1237,6 @@ export class TerminalMode {
 		this.ensureCompletionPanelSelectionVisible(layout);
 	}
 
-	private truncateSymbolName(name: string, cellWidth: number): string {
-		if (name.length <= cellWidth) {
-			return name;
-		}
-		if (cellWidth <= 3) {
-			return name.slice(0, cellWidth);
-		}
-		return `${name.slice(0, cellWidth - 3)}...`;
-	}
-
 	public draw(renderer: OverlayRenderer, surface: Viewport): void {
 		this.currentRenderer = renderer;
 		this.lastSurfaceWidth = surface.width;
@@ -1593,10 +1329,6 @@ export class TerminalMode {
 	}
 
 	public recordHistory(command: string): void {
-		if (!command || command.trim().length === 0) {
-			this.historyIndex = null;
-			return;
-		}
 		this.history.push(command);
 		if (this.history.length > MAX_HISTORY_ENTRIES) {
 			this.history.shift();
@@ -1954,54 +1686,10 @@ export class TerminalMode {
 		return this.cachedLines;
 	}
 
-	private clampBufferPosition(position: { row: number; column: number }): { row: number; column: number } {
-		const lines = this.getLinesSnapshot();
-		const clampedRow = clamp(position.row, 0, Math.max(0, lines.length - 1));
-		const lineLength = lines[clampedRow]?.length ?? 0;
-		return {
-			row: clampedRow,
-			column: clamp(position.column, 0, lineLength),
-		};
-	}
-
 	private getCursorPosition(): { row: number; column: number } {
 		return { row: this.field.cursorRow, column: this.field.cursorColumn };
 	}
 
-	private positionToIndex(row: number, column: number): number {
-		const lines = this.getLinesSnapshot();
-		let index = 0;
-		for (let current = 0; current < row && current < lines.length; current += 1) {
-			index += lines[current].length + 1;
-		}
-		const targetRow = Math.min(row, lines.length - 1);
-		const rowText = lines[targetRow] ?? '';
-		const clampedColumn = Math.max(0, Math.min(column, rowText.length));
-		return index + clampedColumn;
-	}
-
-	private setCursorFromPosition(row: number, column: number): void {
-		const index = this.positionToIndex(row, column);
-		setCursorFromOffset(this.field, index);
-		this.field.selectionAnchor = null;
-		this.completion.onCursorMoved();
-	}
-
-	private setSelectionAnchorFromPosition(row: number, column: number): void {
-		const index = this.positionToIndex(row, column);
-		setSelectionAnchorFromOffset(this.field, index);
-		this.completion.onCursorMoved();
-	}
-
-	private replaceSelectionWithText(text: string): void {
-		const previous = textFromLines(this.field.lines);
-		deleteSelection(this.field);
-		if (text.length > 0) {
-			insertValue(this.field, text);
-		}
-		const context = text.length > 0 ? { kind: 'insert', text } as EditContext : this.buildEditContext(previous, textFromLines(this.field.lines));
-		this.handleTextMutation(previous, context);
-	}
 
 	private buildEditContext(previous: string, next: string): EditContext {
 		if (previous === next) {
@@ -2053,18 +1741,6 @@ export class TerminalMode {
 			return;
 		}
 		this.handleTextMutation(previous, null);
-	}
-
-	private charAt(row: number, column: number): string {
-		const lines = this.getLinesSnapshot();
-		if (row < 0 || row >= lines.length) {
-			return '';
-		}
-		const line = lines[row];
-		if (column < 0 || column >= line.length) {
-			return '';
-		}
-		return line.charAt(column);
 	}
 
 	private normalizeInputCase(text: string): string {
