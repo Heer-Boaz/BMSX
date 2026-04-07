@@ -12,6 +12,12 @@
 #include <limits>
 #include <stdexcept>
 
+#if defined(__GNUC__) || defined(__clang__)
+#define BMSX_USE_COMPUTED_GOTO 1
+#else
+#define BMSX_USE_COMPUTED_GOTO 0
+#endif
+
 namespace bmsx {
 
 namespace {
@@ -65,6 +71,27 @@ static inline size_t ceilLog2(size_t value) {
 static inline int ceilDiv4(int value) {
 	return (value + 3) >> 2;
 }
+
+static constexpr std::array<uint8_t, 64> makeUsesBxTable() {
+	std::array<uint8_t, 64> usesBx = {};
+	usesBx[static_cast<size_t>(OpCode::LOADK)] = 1;
+	usesBx[static_cast<size_t>(OpCode::KSMI)] = 1;
+	usesBx[static_cast<size_t>(OpCode::GETG)] = 1;
+	usesBx[static_cast<size_t>(OpCode::SETG)] = 1;
+	usesBx[static_cast<size_t>(OpCode::GETSYS)] = 1;
+	usesBx[static_cast<size_t>(OpCode::SETSYS)] = 1;
+	usesBx[static_cast<size_t>(OpCode::GETGL)] = 1;
+	usesBx[static_cast<size_t>(OpCode::SETGL)] = 1;
+	usesBx[static_cast<size_t>(OpCode::CLOSURE)] = 1;
+	usesBx[static_cast<size_t>(OpCode::JMP)] = 1;
+	usesBx[static_cast<size_t>(OpCode::JMPIF)] = 1;
+	usesBx[static_cast<size_t>(OpCode::JMPIFNOT)] = 1;
+	usesBx[static_cast<size_t>(OpCode::BR_TRUE)] = 1;
+	usesBx[static_cast<size_t>(OpCode::BR_FALSE)] = 1;
+	return usesBx;
+}
+
+static constexpr std::array<uint8_t, 64> kUsesBx = makeUsesBxTable();
 
 static inline bool isVdpPacketSequenceWrite(uint32_t baseAddr, int wordCount) {
 	const uint32_t byteLength = static_cast<uint32_t>(wordCount) * IO_WORD_SIZE;
@@ -1249,16 +1276,57 @@ void CPU::decodeProgram() {
 	}
 	size_t instructionCount = m_program->code.size() / INSTRUCTION_BYTES;
 	m_decoded.resize(instructionCount);
-	for (size_t pc = 0; pc < instructionCount; ++pc) {
-		uint32_t instr = readInstructionWord(m_program->code, static_cast<int>(pc));
+	for (size_t wordIndex = 0; wordIndex < instructionCount; ++wordIndex) {
+		int width = 1;
+		uint8_t wideA = 0;
+		uint8_t wideB = 0;
+		uint8_t wideC = 0;
+		uint32_t instr = readInstructionWord(m_program->code, static_cast<int>(wordIndex));
+		uint8_t op = static_cast<uint8_t>((instr >> 18) & 0x3f);
+		uint8_t ext = static_cast<uint8_t>(instr >> 24);
+		if (static_cast<OpCode>(op) == OpCode::WIDE) {
+			if (wordIndex + 1 >= instructionCount) {
+				throw BMSX_RUNTIME_ERROR("Malformed program: WIDE instruction at end of program.");
+			}
+			width = 2;
+			wideA = static_cast<uint8_t>((instr >> 12) & 0x3f);
+			wideB = static_cast<uint8_t>((instr >> 6) & 0x3f);
+			wideC = static_cast<uint8_t>(instr & 0x3f);
+			instr = readInstructionWord(m_program->code, static_cast<int>(wordIndex + 1));
+			op = static_cast<uint8_t>((instr >> 18) & 0x3f);
+			ext = static_cast<uint8_t>(instr >> 24);
+		}
+		const uint8_t aLow = static_cast<uint8_t>((instr >> 12) & 0x3f);
+		const uint8_t bLow = static_cast<uint8_t>((instr >> 6) & 0x3f);
+		const uint8_t cLow = static_cast<uint8_t>(instr & 0x3f);
+		const bool usesBx = kUsesBx[static_cast<size_t>(op)] != 0;
+		const uint8_t extA = usesBx ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
+		const uint8_t extB = usesBx ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
+		const uint8_t extC = usesBx ? 0 : static_cast<uint8_t>(ext & 0x7);
+		const int aShift = MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+		const int bShift = MAX_OPERAND_BITS + EXT_B_BITS;
+		const int cShift = MAX_OPERAND_BITS + EXT_C_BITS;
+		const uint32_t bxLow = (static_cast<uint32_t>(bLow) << MAX_OPERAND_BITS) | static_cast<uint32_t>(cLow);
+		const uint32_t rkRawB = (static_cast<uint32_t>(wideB) << bShift)
+			| (static_cast<uint32_t>(extB) << MAX_OPERAND_BITS)
+			| static_cast<uint32_t>(bLow);
+		const uint32_t rkRawC = (static_cast<uint32_t>(wideC) << cShift)
+			| (static_cast<uint32_t>(extC) << MAX_OPERAND_BITS)
+			| static_cast<uint32_t>(cLow);
 		DecodedInstruction decoded;
 		decoded.word = instr;
-		decoded.ext = static_cast<uint8_t>(instr >> 24);
-		decoded.op = static_cast<uint8_t>((instr >> 18) & 0x3f);
-		decoded.a = static_cast<uint8_t>((instr >> 12) & 0x3f);
-		decoded.b = static_cast<uint8_t>((instr >> 6) & 0x3f);
-		decoded.c = static_cast<uint8_t>(instr & 0x3f);
-		m_decoded[pc] = decoded;
+		decoded.op = op;
+		decoded.width = static_cast<uint8_t>(width);
+		decoded.a = static_cast<uint16_t>((static_cast<int>(wideA) << aShift) | (static_cast<int>(extA) << MAX_OPERAND_BITS) | aLow);
+		decoded.b = static_cast<uint16_t>((static_cast<int>(wideB) << bShift) | (static_cast<int>(extB) << MAX_OPERAND_BITS) | bLow);
+		decoded.c = static_cast<uint16_t>((static_cast<int>(wideC) << cShift) | (static_cast<int>(extC) << MAX_OPERAND_BITS) | cLow);
+		decoded.bx = (static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
+			| (static_cast<uint32_t>(usesBx ? ext : 0) << MAX_BX_BITS)
+			| bxLow;
+		decoded.sbx = signExtend(decoded.bx, MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
+		decoded.rkB = signExtend(rkRawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
+		decoded.rkC = signExtend(rkRawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
+		m_decoded[wordIndex] = decoded;
 	}
 }
 
@@ -1267,6 +1335,7 @@ void CPU::start(int entryProtoIndex, const std::vector<Value>& args) {
 	m_yieldRequested = false;
 	auto* closure = createRootClosure(entryProtoIndex);
 	pushFrame(closure, args, 0, 0, false, m_program->protos[entryProtoIndex].entryPC);
+	runHousekeeping();
 }
 
 void CPU::call(Closure* closure, const std::vector<Value>& args, int returnCount) {
@@ -1295,40 +1364,224 @@ void CPU::clearYieldRequest() {
 
 RunResult CPU::run(int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
-	RunResult result = RunResult::Halted;
-	while (!m_frames.empty()) {
-		if (m_yieldRequested) {
-			m_yieldRequested = false;
-			result = RunResult::Yielded;
-			break;
-		}
-		enforceLuaHeapBudget();
-		if (instructionBudgetRemaining <= 0) {
-			result = RunResult::Yielded;
-			break;
-		}
-		step();
+	auto& frames = m_frames;
+	const DecodedInstruction* decodedProgram = m_decoded.data();
+	CallFrame* frame = nullptr;
+	const DecodedInstruction* decoded = nullptr;
+	int pc = 0;
+	int wordIndex = 0;
+	int a = 0;
+	int b = 0;
+	int c = 0;
+	uint32_t bx = 0;
+	int sbx = 0;
+	int rkB = 0;
+	int rkC = 0;
+#if BMSX_USE_COMPUTED_GOTO
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+	static void* const kDispatchTargets[64] = {
+#define OP(name) &&dispatch_##name,
+#include "cpu_opcode_list.inl"
+#undef OP
+		&&dispatch_INVALID
+	};
+#pragma GCC diagnostic pop
+#endif
+	runHousekeeping();
+dispatch_loop_check:
+	if (frames.empty()) {
+		return RunResult::Halted;
 	}
-	return result;
+	if (m_yieldRequested) {
+		m_yieldRequested = false;
+		return RunResult::Yielded;
+	}
+	if (instructionBudgetRemaining <= 0) {
+		return RunResult::Yielded;
+	}
+	frame = frames.back().get();
+	pc = frame->pc;
+	wordIndex = pc / INSTRUCTION_BYTES;
+	decoded = &decodedProgram[wordIndex];
+	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
+	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
+	lastInstruction = decoded->word;
+	instructionBudgetRemaining -= static_cast<int>(kBaseCycles[decoded->op]);
+	a = decoded->a;
+	b = decoded->b;
+	c = decoded->c;
+	bx = decoded->bx;
+	sbx = decoded->sbx;
+	rkB = decoded->rkB;
+	rkC = decoded->rkC;
+
+#define FRAME (*frame)
+#define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
+#define SET_REGISTER_FAST(index, valueExpr) do { \
+	FRAME.registers[static_cast<size_t>(index)] = (valueExpr); \
+	const int nextTop = (index) + 1; \
+	if (nextTop > FRAME.top) { \
+		FRAME.top = nextTop; \
+	} \
+} while (0)
+#define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
+
+#if BMSX_USE_COMPUTED_GOTO
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+	goto *kDispatchTargets[decoded->op];
+#pragma GCC diagnostic pop
+#else
+	switch (static_cast<OpCode>(decoded->op)) {
+#define DISPATCH_LABEL(name) case OpCode::name:
+#include "cpu_dispatch.inl"
+#undef DISPATCH_LABEL
+		default:
+			throw BMSX_RUNTIME_ERROR("Unknown opcode.");
+	}
+#endif
+
+dispatch_continue:
+#undef DISPATCH_CONTINUE
+#undef SET_REGISTER_FAST
+#undef CYCLES_ADD
+#undef FRAME
+	tickHotLoopHousekeeping();
+	goto dispatch_loop_check;
+
+#if BMSX_USE_COMPUTED_GOTO
+#define FRAME (*frame)
+#define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
+#define SET_REGISTER_FAST(index, valueExpr) do { \
+	FRAME.registers[static_cast<size_t>(index)] = (valueExpr); \
+	const int nextTop = (index) + 1; \
+	if (nextTop > FRAME.top) { \
+		FRAME.top = nextTop; \
+	} \
+} while (0)
+#define DISPATCH_LABEL(name) dispatch_##name:
+#define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
+#include "cpu_dispatch.inl"
+dispatch_INVALID:
+	throw BMSX_RUNTIME_ERROR("Unknown opcode.");
+#undef DISPATCH_CONTINUE
+#undef DISPATCH_LABEL
+#undef SET_REGISTER_FAST
+#undef CYCLES_ADD
+#undef FRAME
+#endif
 }
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	instructionBudgetRemaining = instructionBudget;
-	RunResult result = RunResult::Halted;
-	while (static_cast<int>(m_frames.size()) > targetDepth) {
-		if (m_yieldRequested) {
-			m_yieldRequested = false;
-			result = RunResult::Yielded;
-			break;
-		}
-		enforceLuaHeapBudget();
-		if (instructionBudgetRemaining <= 0) {
-			result = RunResult::Yielded;
-			break;
-		}
-		step();
+	auto& frames = m_frames;
+	const DecodedInstruction* decodedProgram = m_decoded.data();
+	CallFrame* frame = nullptr;
+	const DecodedInstruction* decoded = nullptr;
+	int pc = 0;
+	int wordIndex = 0;
+	int a = 0;
+	int b = 0;
+	int c = 0;
+	uint32_t bx = 0;
+	int sbx = 0;
+	int rkB = 0;
+	int rkC = 0;
+#if BMSX_USE_COMPUTED_GOTO
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+	static void* const kDispatchTargets[64] = {
+#define OP(name) &&dispatch_##name,
+#include "cpu_opcode_list.inl"
+#undef OP
+		&&dispatch_INVALID
+	};
+#pragma GCC diagnostic pop
+#endif
+	runHousekeeping();
+dispatch_loop_check:
+	if (static_cast<int>(frames.size()) <= targetDepth) {
+		return RunResult::Halted;
 	}
-	return result;
+	if (m_yieldRequested) {
+		m_yieldRequested = false;
+		return RunResult::Yielded;
+	}
+	if (instructionBudgetRemaining <= 0) {
+		return RunResult::Yielded;
+	}
+	frame = frames.back().get();
+	pc = frame->pc;
+	wordIndex = pc / INSTRUCTION_BYTES;
+	decoded = &decodedProgram[wordIndex];
+	frame->pc = pc + (static_cast<int>(decoded->width) * INSTRUCTION_BYTES);
+	lastPc = pc + ((static_cast<int>(decoded->width) - 1) * INSTRUCTION_BYTES);
+	lastInstruction = decoded->word;
+	instructionBudgetRemaining -= static_cast<int>(kBaseCycles[decoded->op]);
+	a = decoded->a;
+	b = decoded->b;
+	c = decoded->c;
+	bx = decoded->bx;
+	sbx = decoded->sbx;
+	rkB = decoded->rkB;
+	rkC = decoded->rkC;
+
+#define FRAME (*frame)
+#define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
+#define SET_REGISTER_FAST(index, valueExpr) do { \
+	FRAME.registers[static_cast<size_t>(index)] = (valueExpr); \
+	const int nextTop = (index) + 1; \
+	if (nextTop > FRAME.top) { \
+		FRAME.top = nextTop; \
+	} \
+} while (0)
+#define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
+
+#if BMSX_USE_COMPUTED_GOTO
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+	goto *kDispatchTargets[decoded->op];
+#pragma GCC diagnostic pop
+#else
+	switch (static_cast<OpCode>(decoded->op)) {
+#define DISPATCH_LABEL(name) case OpCode::name:
+#include "cpu_dispatch.inl"
+#undef DISPATCH_LABEL
+		default:
+			throw BMSX_RUNTIME_ERROR("Unknown opcode.");
+	}
+#endif
+
+dispatch_continue:
+#undef DISPATCH_CONTINUE
+#undef SET_REGISTER_FAST
+#undef CYCLES_ADD
+#undef FRAME
+	tickHotLoopHousekeeping();
+	goto dispatch_loop_check;
+
+#if BMSX_USE_COMPUTED_GOTO
+#define FRAME (*frame)
+#define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
+#define SET_REGISTER_FAST(index, valueExpr) do { \
+	FRAME.registers[static_cast<size_t>(index)] = (valueExpr); \
+	const int nextTop = (index) + 1; \
+	if (nextTop > FRAME.top) { \
+		FRAME.top = nextTop; \
+	} \
+} while (0)
+#define DISPATCH_LABEL(name) dispatch_##name:
+#define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
+#include "cpu_dispatch.inl"
+dispatch_INVALID:
+	throw BMSX_RUNTIME_ERROR("Unknown opcode.");
+#undef DISPATCH_CONTINUE
+#undef DISPATCH_LABEL
+#undef SET_REGISTER_FAST
+#undef CYCLES_ADD
+#undef FRAME
+#endif
 }
 
 void CPU::unwindToDepth(int targetDepth) {
@@ -1345,38 +1598,33 @@ void CPU::collectHeap() {
 	m_heap.collect();
 }
 
-void CPU::step() {
-	if (m_frames.empty()) return;
+void CPU::runHousekeeping() {
 	enforceLuaHeapBudget();
 	if (m_heap.needsCollection()) {
 		m_heap.collect();
 	}
+	m_hotLoopHousekeepingCountdown = HOT_LOOP_HOUSEKEEPING_STRIDE;
+}
+
+void CPU::tickHotLoopHousekeeping() {
+	m_hotLoopHousekeepingCountdown -= 1;
+	if (m_hotLoopHousekeepingCountdown <= 0) {
+		runHousekeeping();
+	}
+}
+
+void CPU::step() {
+	if (m_frames.empty()) return;
+	runHousekeeping();
 	CallFrame& frame = *m_frames.back();
 	int pc = frame.pc;
 	int wordIndex = pc / INSTRUCTION_BYTES;
-	const DecodedInstruction* decoded = &m_decoded[static_cast<size_t>(wordIndex)];
-	uint8_t op = decoded->op;
-	uint8_t ext = decoded->ext;
-	uint8_t wideA = 0;
-	uint8_t wideB = 0;
-	uint8_t wideC = 0;
-	bool hasWide = false;
-	if (static_cast<OpCode>(op) == OpCode::WIDE) {
-		hasWide = true;
-		wideA = decoded->a;
-		wideB = decoded->b;
-		wideC = decoded->c;
-		pc += INSTRUCTION_BYTES;
-		wordIndex += 1;
-		decoded = &m_decoded[static_cast<size_t>(wordIndex)];
-		op = decoded->op;
-		ext = decoded->ext;
-	}
-	frame.pc = pc + INSTRUCTION_BYTES;
-	lastPc = pc;
-	lastInstruction = decoded->word;
-	instructionBudgetRemaining -= static_cast<int>(kBaseCycles[op]);
-	executeInstruction(frame, static_cast<OpCode>(op), decoded->a, decoded->b, decoded->c, ext, wideA, wideB, wideC, hasWide);
+	const DecodedInstruction& decoded = m_decoded[static_cast<size_t>(wordIndex)];
+	frame.pc = pc + (static_cast<int>(decoded.width) * INSTRUCTION_BYTES);
+	lastPc = pc + ((static_cast<int>(decoded.width) - 1) * INSTRUCTION_BYTES);
+	lastInstruction = decoded.word;
+	instructionBudgetRemaining -= static_cast<int>(kBaseCycles[decoded.op]);
+	executeInstruction(frame, decoded);
 }
 
 std::optional<SourceRange> CPU::getDebugRange(int pc) const {
@@ -1444,607 +1692,39 @@ void CPU::skipNextInstruction(CallFrame& frame) {
 	if (wordIndex < 0 || wordIndex >= static_cast<int>(m_decoded.size())) {
 		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program.");
 	}
-	if (static_cast<OpCode>(m_decoded[static_cast<size_t>(wordIndex)].op) == OpCode::WIDE) {
-		if (wordIndex + 1 >= static_cast<int>(m_decoded.size())) {
-			throw BMSX_RUNTIME_ERROR("Malformed program: WIDE instruction at end of program.");
-		}
-		frame.pc += INSTRUCTION_BYTES * 2;
-		return;
-	}
-	frame.pc += INSTRUCTION_BYTES;
+	frame.pc += static_cast<int>(m_decoded[static_cast<size_t>(wordIndex)].width) * INSTRUCTION_BYTES;
 }
 
-void CPU::executeInstruction(
-	CallFrame& frame,
-	OpCode op,
-	uint8_t aLow,
-	uint8_t bLow,
-	uint8_t cLow,
-	uint8_t ext,
-	uint8_t wideA,
-	uint8_t wideB,
-	uint8_t wideC,
-	bool hasWide
-) {
-	bool usesBx = op == OpCode::LOADK
-		|| op == OpCode::KSMI
-		|| op == OpCode::GETG
-		|| op == OpCode::SETG
-		|| op == OpCode::GETSYS
-		|| op == OpCode::SETSYS
-		|| op == OpCode::GETGL
-		|| op == OpCode::SETGL
-		|| op == OpCode::CLOSURE
-		|| op == OpCode::JMP
-		|| op == OpCode::JMPIF
-		|| op == OpCode::JMPIFNOT
-		|| op == OpCode::BR_TRUE
-		|| op == OpCode::BR_FALSE;
-	uint8_t extA = usesBx ? 0 : static_cast<uint8_t>((ext >> 6) & 0x3);
-	uint8_t extB = usesBx ? 0 : static_cast<uint8_t>((ext >> 3) & 0x7);
-	uint8_t extC = usesBx ? 0 : static_cast<uint8_t>(ext & 0x7);
-	int aShift = MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-	int a = (static_cast<int>(wideA) << aShift) | (static_cast<int>(extA) << MAX_OPERAND_BITS) | aLow;
-	int b = (static_cast<int>(wideB) << (MAX_OPERAND_BITS + EXT_B_BITS)) | (static_cast<int>(extB) << MAX_OPERAND_BITS) | bLow;
-	int c = (static_cast<int>(wideC) << (MAX_OPERAND_BITS + EXT_C_BITS)) | (static_cast<int>(extC) << MAX_OPERAND_BITS) | cLow;
-	uint32_t bxLow = (static_cast<uint32_t>(bLow) << MAX_OPERAND_BITS) | static_cast<uint32_t>(cLow);
-	uint32_t bx = (static_cast<uint32_t>(wideB) << (MAX_BX_BITS + EXT_BX_BITS))
-		| (static_cast<uint32_t>(usesBx ? ext : 0) << MAX_BX_BITS)
-		| bxLow;
-	int sbxBits = MAX_BX_BITS + EXT_BX_BITS + (hasWide ? MAX_OPERAND_BITS : 0);
-	int sbx = signExtend(bx, sbxBits);
-	int rkBitsB = MAX_OPERAND_BITS + EXT_B_BITS + (hasWide ? MAX_OPERAND_BITS : 0);
-	int rkBitsC = MAX_OPERAND_BITS + EXT_C_BITS + (hasWide ? MAX_OPERAND_BITS : 0);
-	uint32_t rkRawB = (static_cast<uint32_t>(wideB) << (MAX_OPERAND_BITS + EXT_B_BITS))
-		| (static_cast<uint32_t>(extB) << MAX_OPERAND_BITS)
-		| bLow;
-	uint32_t rkRawC = (static_cast<uint32_t>(wideC) << (MAX_OPERAND_BITS + EXT_C_BITS))
-		| (static_cast<uint32_t>(extC) << MAX_OPERAND_BITS)
-		| cLow;
+void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded) {
+	const int a = decoded.a;
+	const int b = decoded.b;
+	const int c = decoded.c;
+	const uint32_t bx = decoded.bx;
+	const int sbx = decoded.sbx;
+	const int rkB = decoded.rkB;
+	const int rkC = decoded.rkC;
 
+#define FRAME frame
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
-
-	switch (op) {
-		case OpCode::WIDE:
-			throw BMSX_RUNTIME_ERROR("Unexpected WIDE opcode.");
-
-		case OpCode::MOV:
-			setRegister(frame, a, frame.registers[b]);
-			return;
-
-		case OpCode::LOADK:
-			setRegister(frame, a, m_program->constPool[bx]);
-			return;
-
-		case OpCode::LOADNIL:
-			for (int i = 0; i < b; ++i) {
-				setRegister(frame, a + i, valueNil());
-			}
-			return;
-
-		case OpCode::LOADBOOL:
-			setRegister(frame, a, valueBool(b != 0));
-			if (c != 0) {
-				skipNextInstruction(frame);
-			}
-			return;
-
-		case OpCode::KNIL:
-			setRegister(frame, a, valueNil());
-			return;
-
-		case OpCode::KFALSE:
-			setRegister(frame, a, valueBool(false));
-			return;
-
-		case OpCode::KTRUE:
-			setRegister(frame, a, valueBool(true));
-			return;
-
-		case OpCode::K0:
-			setRegister(frame, a, valueNumber(0.0));
-			return;
-
-		case OpCode::K1:
-			setRegister(frame, a, valueNumber(1.0));
-			return;
-
-		case OpCode::KM1:
-			setRegister(frame, a, valueNumber(-1.0));
-			return;
-
-		case OpCode::KSMI:
-			setRegister(frame, a, valueNumber(static_cast<double>(sbx)));
-			return;
-
-		case OpCode::GETG: {
-			const Value& key = m_program->constPool[bx];
-			setRegister(frame, a, globals->get(key));
-			return;
-		}
-
-		case OpCode::SETG: {
-			const Value& key = m_program->constPool[bx];
-			globals->set(key, frame.registers[a]);
-			return;
-		}
-
-		case OpCode::GETSYS:
-			setRegister(frame, a, m_systemGlobalValues[static_cast<size_t>(bx)]);
-			return;
-
-		case OpCode::SETSYS:
-			m_systemGlobalValues[static_cast<size_t>(bx)] = frame.registers[a];
-			return;
-
-		case OpCode::GETGL:
-			setRegister(frame, a, m_globalValues[static_cast<size_t>(bx)]);
-			return;
-
-		case OpCode::SETGL:
-			m_globalValues[static_cast<size_t>(bx)] = frame.registers[a];
-			return;
-
-		case OpCode::GETI:
-			setRegister(frame, a, loadTableIntegerIndex(frame.registers[static_cast<size_t>(b)], c));
-			return;
-
-		case OpCode::SETI:
-			storeTableIntegerIndex(frame.registers[static_cast<size_t>(a)], b, readRK(frame, rkRawC, rkBitsC));
-			return;
-
-		case OpCode::GETFIELD:
-			setRegister(frame, a, loadTableFieldIndex(frame.registers[static_cast<size_t>(b)], asStringId(m_program->constPool[static_cast<size_t>(c)])));
-			return;
-
-		case OpCode::SETFIELD:
-			storeTableFieldIndex(frame.registers[static_cast<size_t>(a)], asStringId(m_program->constPool[static_cast<size_t>(b)]), readRK(frame, rkRawC, rkBitsC));
-			return;
-
-		case OpCode::SELF: {
-			const Value base = frame.registers[static_cast<size_t>(b)];
-			const StringId key = asStringId(m_program->constPool[static_cast<size_t>(c)]);
-			setRegister(frame, a + 1, base);
-			setRegister(frame, a, loadTableFieldIndex(base, key));
-			return;
-		}
-
-		case OpCode::GETT: {
-			const Value& tableValue = frame.registers[static_cast<size_t>(b)];
-			const Value& key = readRK(frame, rkRawC, rkBitsC);
-			setRegister(frame, a, loadTableIndex(tableValue, key));
-			return;
-		}
-
-		case OpCode::SETT:
-			storeTableIndex(frame.registers[static_cast<size_t>(a)], readRK(frame, rkRawB, rkBitsB), readRK(frame, rkRawC, rkBitsC));
-			return;
-
-		case OpCode::NEWT: {
-			auto* table = m_heap.allocate<Table>(ObjType::Table, b, c);
-			setRegister(frame, a, valueTable(table));
-			return;
-		}
-
-		case OpCode::ADD: {
-			double left = asNumber(readRK(frame, rkRawB, rkBitsB));
-			double right = asNumber(readRK(frame, rkRawC, rkBitsC));
-			setRegister(frame, a, valueNumber(left + right));
-			return;
-		}
-
-		case OpCode::SUB: {
-			double left = asNumber(readRK(frame, rkRawB, rkBitsB));
-			double right = asNumber(readRK(frame, rkRawC, rkBitsC));
-			setRegister(frame, a, valueNumber(left - right));
-			return;
-		}
-
-		case OpCode::MUL: {
-			double left = asNumber(readRK(frame, rkRawB, rkBitsB));
-			double right = asNumber(readRK(frame, rkRawC, rkBitsC));
-			setRegister(frame, a, valueNumber(left * right));
-			return;
-		}
-
-		case OpCode::DIV: {
-			double left = asNumber(readRK(frame, rkRawB, rkBitsB));
-			double right = asNumber(readRK(frame, rkRawC, rkBitsC));
-			setRegister(frame, a, valueNumber(left / right));
-			return;
-		}
-
-		case OpCode::MOD: {
-			double left = asNumber(readRK(frame, rkRawB, rkBitsB));
-			double right = asNumber(readRK(frame, rkRawC, rkBitsC));
-			setRegister(frame, a, valueNumber(std::fmod(left, right)));
-			return;
-		}
-
-		case OpCode::FLOORDIV: {
-			double left = asNumber(readRK(frame, rkRawB, rkBitsB));
-			double right = asNumber(readRK(frame, rkRawC, rkBitsC));
-			setRegister(frame, a, valueNumber(std::floor(left / right)));
-			return;
-		}
-
-		case OpCode::POW: {
-			double left = asNumber(readRK(frame, rkRawB, rkBitsB));
-			double right = asNumber(readRK(frame, rkRawC, rkBitsC));
-			setRegister(frame, a, valueNumber(std::pow(left, right)));
-			return;
-		}
-
-		case OpCode::BAND: {
-			const uint32_t left = toU32(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			const uint32_t right = toU32(asNumber(readRK(frame, rkRawC, rkBitsC)));
-			const int32_t result = static_cast<int32_t>(left & right);
-			setRegister(frame, a, valueNumber(static_cast<double>(result)));
-			return;
-		}
-
-		case OpCode::BOR: {
-			const uint32_t left = toU32(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			const uint32_t right = toU32(asNumber(readRK(frame, rkRawC, rkBitsC)));
-			const int32_t result = static_cast<int32_t>(left | right);
-			setRegister(frame, a, valueNumber(static_cast<double>(result)));
-			return;
-		}
-
-		case OpCode::BXOR: {
-			const uint32_t left = toU32(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			const uint32_t right = toU32(asNumber(readRK(frame, rkRawC, rkBitsC)));
-			const int32_t result = static_cast<int32_t>(left ^ right);
-			setRegister(frame, a, valueNumber(static_cast<double>(result)));
-			return;
-		}
-
-		case OpCode::SHL: {
-			const uint32_t left = toU32(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			const uint32_t right = toU32(asNumber(readRK(frame, rkRawC, rkBitsC))) & 31u;
-			const uint32_t result = left << right;
-			setRegister(frame, a, valueNumber(static_cast<double>(static_cast<int32_t>(result))));
-			return;
-		}
-
-		case OpCode::SHR: {
-			const int32_t left = toI32(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			const uint32_t right = toU32(asNumber(readRK(frame, rkRawC, rkBitsC))) & 31u;
-			setRegister(frame, a, valueNumber(static_cast<double>(left >> right)));
-			return;
-		}
-
-		case OpCode::CONCAT: {
-			std::string text = valueToString(readRK(frame, rkRawB, rkBitsB), m_stringPool);
-			text += valueToString(readRK(frame, rkRawC, rkBitsC), m_stringPool);
-			const StringId textId = m_stringPool.intern(text);
-			setRegister(frame, a, valueString(textId));
-			return;
-		}
-
-		case OpCode::CONCATN: {
-			std::string text;
-			for (int index = 0; index < c; ++index) {
-				text += valueToString(frame.registers[static_cast<size_t>(b + index)], m_stringPool);
-			}
-			const StringId textId = m_stringPool.intern(text);
-			setRegister(frame, a, valueString(textId));
-			return;
-		}
-
-		case OpCode::UNM: {
-			double val = asNumber(frame.registers[b]);
-			setRegister(frame, a, valueNumber(-val));
-			return;
-		}
-
-		case OpCode::NOT:
-			setRegister(frame, a, valueBool(!isTruthy(frame.registers[b])));
-			return;
-
-		case OpCode::LEN: {
-			const Value& val = frame.registers[b];
-			if (valueIsString(val)) {
-				int cp = static_cast<int>(m_stringPool.codepointCount(asStringId(val)));
-				setRegister(frame, a, valueNumber(static_cast<double>(cp)));
-				return;
-			}
-			if (valueIsTable(val)) {
-				setRegister(frame, a, valueNumber(static_cast<double>(asTable(val)->length())));
-				return;
-			}
-			if (valueIsNativeObject(val)) {
-				auto* obj = asNativeObject(val);
-				if (!obj->len) {
-					std::string stack;
-					auto callStack = getCallStack();
-					for (auto it = callStack.rbegin(); it != callStack.rend(); ++it) {
-						const auto& entry = *it;
-						const auto range = getDebugRange(entry.second);
-						if (!stack.empty()) {
-							stack += " <- ";
-						}
-						if (range.has_value()) {
-							stack += range->path + ":" + std::to_string(range->startLine) + ":" + std::to_string(range->startColumn);
-						} else {
-							stack += "<unknown>";
-						}
-					}
-					throw BMSX_RUNTIME_ERROR("Length operator expects a native object with a length. stack=" + stack);
-				}
-				setRegister(frame, a, valueNumber(static_cast<double>(obj->len())));
-				return;
-			}
-			std::string stack;
-			auto callStack = getCallStack();
-			for (auto it = callStack.rbegin(); it != callStack.rend(); ++it) {
-				const auto& entry = *it;
-				const auto range = getDebugRange(entry.second);
-				if (!stack.empty()) {
-					stack += " <- ";
-				}
-				if (range.has_value()) {
-					stack += range->path + ":" + std::to_string(range->startLine) + ":" + std::to_string(range->startColumn);
-				} else {
-					stack += "<unknown>";
-				}
-			}
-			throw BMSX_RUNTIME_ERROR("Length operator expects a string or table. stack=" + stack);
-		}
-
-		case OpCode::BNOT: {
-			const uint32_t val = toU32(asNumber(frame.registers[b]));
-			const int32_t result = static_cast<int32_t>(~val);
-			setRegister(frame, a, valueNumber(static_cast<double>(result)));
-			return;
-		}
-
-		case OpCode::EQ: {
-			const Value& left = readRK(frame, rkRawB, rkBitsB);
-			const Value& right = readRK(frame, rkRawC, rkBitsC);
-			bool eq = false;
-			if (valueIsNumber(left) && valueIsNumber(right)) {
-				eq = valueToNumber(left) == valueToNumber(right);
-			} else if (valueIsTagged(left) && valueIsTagged(right)) {
-				eq = left == right;
-			}
-			if (eq != (a != 0)) {
-				skipNextInstruction(frame);
-			}
-			return;
-		}
-
-		case OpCode::LT: {
-			const Value& leftValue = readRK(frame, rkRawB, rkBitsB);
-			const Value& rightValue = readRK(frame, rkRawC, rkBitsC);
-			bool ok = false;
-			if (valueIsString(leftValue) && valueIsString(rightValue)) {
-				ok = m_stringPool.toString(asStringId(leftValue)) < m_stringPool.toString(asStringId(rightValue));
-			} else {
-				auto toNumber = [this](const Value& value) -> double {
-					if (valueIsNumber(value)) {
-						return valueToNumber(value);
-					}
-					if (valueIsTagged(value)) {
-						switch (valueTag(value)) {
-							case ValueTag::False: return 0.0;
-							case ValueTag::True: return 1.0;
-							case ValueTag::Nil: return 0.0;
-							case ValueTag::String: {
-								const std::string& text = m_stringPool.toString(asStringId(value));
-								char* end = nullptr;
-								double parsed = std::strtod(text.c_str(), &end);
-								if (end == text.c_str()) {
-									return std::numeric_limits<double>::quiet_NaN();
-								}
-								return parsed;
-							}
-							default:
-								return std::numeric_limits<double>::quiet_NaN();
-						}
-					}
-					return std::numeric_limits<double>::quiet_NaN();
-				};
-				double left = toNumber(leftValue);
-				double right = toNumber(rightValue);
-				ok = left < right;
-			}
-			if (ok != (a != 0)) {
-				skipNextInstruction(frame);
-			}
-			return;
-		}
-
-		case OpCode::LE: {
-			const Value& leftValue = readRK(frame, rkRawB, rkBitsB);
-			const Value& rightValue = readRK(frame, rkRawC, rkBitsC);
-			bool ok = false;
-			if (valueIsString(leftValue) && valueIsString(rightValue)) {
-				ok = m_stringPool.toString(asStringId(leftValue)) <= m_stringPool.toString(asStringId(rightValue));
-			} else {
-				auto toNumber = [this](const Value& value) -> double {
-					if (valueIsNumber(value)) {
-						return valueToNumber(value);
-					}
-					if (valueIsTagged(value)) {
-						switch (valueTag(value)) {
-							case ValueTag::False: return 0.0;
-							case ValueTag::True: return 1.0;
-							case ValueTag::Nil: return 0.0;
-							case ValueTag::String: {
-								const std::string& text = m_stringPool.toString(asStringId(value));
-								char* end = nullptr;
-								double parsed = std::strtod(text.c_str(), &end);
-								if (end == text.c_str()) {
-									return std::numeric_limits<double>::quiet_NaN();
-								}
-								return parsed;
-							}
-							default:
-								return std::numeric_limits<double>::quiet_NaN();
-						}
-					}
-					return std::numeric_limits<double>::quiet_NaN();
-				};
-				double left = toNumber(leftValue);
-				double right = toNumber(rightValue);
-				ok = left <= right;
-			}
-			if (ok != (a != 0)) {
-				skipNextInstruction(frame);
-			}
-			return;
-		}
-
-		case OpCode::TEST: {
-			const Value& val = frame.registers[a];
-			if (isTruthy(val) != (c != 0)) {
-				skipNextInstruction(frame);
-			}
-			return;
-		}
-
-		case OpCode::TESTSET: {
-			const Value& val = frame.registers[b];
-			if (isTruthy(val) == (c != 0)) {
-				setRegister(frame, a, val);
-			} else {
-				skipNextInstruction(frame);
-			}
-			return;
-		}
-
-		case OpCode::JMP:
-			frame.pc += sbx * INSTRUCTION_BYTES;
-			return;
-
-		case OpCode::JMPIF:
-			if (isTruthy(frame.registers[static_cast<size_t>(a)])) {
-				frame.pc += sbx * INSTRUCTION_BYTES;
-			}
-			return;
-
-		case OpCode::JMPIFNOT:
-			if (!isTruthy(frame.registers[static_cast<size_t>(a)])) {
-				frame.pc += sbx * INSTRUCTION_BYTES;
-			}
-			return;
-
-		case OpCode::BR_TRUE:
-			if (isTruthy(frame.registers[static_cast<size_t>(a)])) {
-				frame.pc += sbx * INSTRUCTION_BYTES;
-			}
-			return;
-
-		case OpCode::BR_FALSE:
-			if (!isTruthy(frame.registers[static_cast<size_t>(a)])) {
-				frame.pc += sbx * INSTRUCTION_BYTES;
-			}
-			return;
-
-		case OpCode::CLOSURE:
-			setRegister(frame, a, valueClosure(createClosure(frame, bx)));
-			return;
-
-		case OpCode::GETUP: {
-			Upvalue* upvalue = frame.closure->upvalues[b];
-			setRegister(frame, a, readUpvalue(upvalue));
-			return;
-		}
-
-		case OpCode::SETUP: {
-			Upvalue* upvalue = frame.closure->upvalues[b];
-			writeUpvalue(upvalue, frame.registers[a]);
-			return;
-		}
-
-		case OpCode::VARARG: {
-			int count = b == 0 ? static_cast<int>(frame.varargs.size()) : b;
-			for (int i = 0; i < count; ++i) {
-				Value value = i < static_cast<int>(frame.varargs.size()) ? frame.varargs[static_cast<size_t>(i)] : valueNil();
-				setRegister(frame, a + i, value);
-			}
-			return;
-		}
-
-		case OpCode::CALL: {
-			int argCount = b == 0 ? std::max(frame.top - a - 1, 0) : b;
-			int retCount = c;
-			const Value& callee = frame.registers[a];
-			if (valueIsClosure(callee)) {
-				Closure* closure = asClosure(callee);
-				pushFrame(closure, &frame.registers[a + 1], static_cast<size_t>(argCount), a, retCount, false, frame.pc - INSTRUCTION_BYTES);
-				return;
-			}
-			if (valueIsNativeFunction(callee)) {
-				NativeFunction* fn = asNativeFunction(callee);
-				CYCLES_ADD(static_cast<int>(fn->cycleBase));
-				std::vector<Value> args = acquireArgScratch();
-				args.resize(static_cast<size_t>(argCount));
-				for (int i = 0; i < argCount; ++i) {
-					args[static_cast<size_t>(i)] = frame.registers[a + 1 + i];
-				}
-				std::vector<Value> out = acquireNativeReturnScratch();
-				fn->invoke(args, out);
-				writeReturnValues(frame, a, retCount, out);
-				releaseNativeReturnScratch(std::move(out));
-				releaseArgScratch(std::move(args));
-				return;
-			}
-			throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(
-				callee,
-				m_stringPool,
-				getDebugRange(frame.pc - INSTRUCTION_BYTES)
-			));
-		}
-
-		case OpCode::RET: {
-			auto& results = m_returnScratch;
-			results.clear();
-			int count = b == 0 ? std::max(frame.top - a, 0) : b;
-			results.reserve(static_cast<size_t>(count));
-			for (int i = 0; i < count; ++i) {
-				results.push_back(frame.registers[a + i]);
-			}
-			lastReturnValues.assign(results.begin(), results.end());
-			closeUpvalues(frame);
-			auto finished = std::move(m_frames.back());
-			m_frames.pop_back();
-			if (m_frames.empty()) {
-				releaseFrame(std::move(finished));
-				return;
-			}
-			if (finished->captureReturns) {
-				releaseFrame(std::move(finished));
-				return;
-			}
-			CallFrame& caller = *m_frames.back();
-			writeReturnValues(caller, finished->returnBase, finished->returnCount, results);
-			releaseFrame(std::move(finished));
-			return;
-		}
-
-		case OpCode::LOAD_MEM: {
-			const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			setRegister(frame, a, readMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c)));
-			return;
-		}
-
-		case OpCode::STORE_MEM: {
-			const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			writeMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c), frame.registers[a]);
-			return;
-		}
-
-		case OpCode::STORE_MEM_WORDS: {
-			const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(frame, rkRawB, rkBitsB)));
-			CYCLES_ADD(ceilDiv4(c));
-			writeMappedWordSequence(frame, addr, a, c);
-			return;
-		}
+#define SET_REGISTER_FAST(index, valueExpr) do { \
+	FRAME.registers[static_cast<size_t>(index)] = (valueExpr); \
+	const int nextTop = (index) + 1; \
+	if (nextTop > FRAME.top) { \
+		FRAME.top = nextTop; \
+	} \
+} while (0)
+#define DISPATCH_LABEL(name) case OpCode::name:
+#define DISPATCH_CONTINUE() do { return; } while (0)
+	switch (static_cast<OpCode>(decoded.op)) {
+#include "cpu_dispatch.inl"
+		default:
+			throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 	}
-
+#undef DISPATCH_CONTINUE
+#undef DISPATCH_LABEL
+#undef SET_REGISTER_FAST
 #undef CYCLES_ADD
+#undef FRAME
 }
 
 Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
@@ -2285,8 +1965,7 @@ void CPU::writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase
 	}
 }
 
-const Value& CPU::readRK(CallFrame& frame, uint32_t raw, int bits) {
-	int rk = signExtend(raw, bits);
+const Value& CPU::readRK(CallFrame& frame, int rk) {
 	if (rk < 0) {
 		int index = -1 - rk;
 		return m_program->constPool[static_cast<size_t>(index)];

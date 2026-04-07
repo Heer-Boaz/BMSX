@@ -1436,6 +1436,22 @@ const signExtend = (value: number, bits: number): number => {
 	return (value << shift) >> shift;
 };
 
+const USES_BX = new Uint8Array(64);
+USES_BX[OpCode.LOADK] = 1;
+USES_BX[OpCode.KSMI] = 1;
+USES_BX[OpCode.GETG] = 1;
+USES_BX[OpCode.SETG] = 1;
+USES_BX[OpCode.GETSYS] = 1;
+USES_BX[OpCode.SETSYS] = 1;
+USES_BX[OpCode.GETGL] = 1;
+USES_BX[OpCode.SETGL] = 1;
+USES_BX[OpCode.CLOSURE] = 1;
+USES_BX[OpCode.JMP] = 1;
+USES_BX[OpCode.JMPIF] = 1;
+USES_BX[OpCode.JMPIFNOT] = 1;
+USES_BX[OpCode.BR_TRUE] = 1;
+USES_BX[OpCode.BR_FALSE] = 1;
+
 export class CPU {
 	public instructionBudgetRemaining: number = 0;
 	public lastReturnValues: Value[] = [];
@@ -1454,11 +1470,15 @@ export class CPU {
 	private readonly returnScratch: Value[] = [];
 	private readonly debugRegistersScratch: Value[] = [];
 	private readonly nativeReturnPool: Value[][] = [];
+	private decodedWidths: Uint8Array | null = null;
 	private decodedOps: Uint8Array | null = null;
-	private decodedA: Uint8Array | null = null;
-	private decodedB: Uint8Array | null = null;
-	private decodedC: Uint8Array | null = null;
-	private decodedExt: Uint8Array | null = null;
+	private decodedA: Uint16Array | null = null;
+	private decodedB: Uint16Array | null = null;
+	private decodedC: Uint16Array | null = null;
+	private decodedBx: Uint32Array | null = null;
+	private decodedSbx: Int32Array | null = null;
+	private decodedRkB: Int32Array | null = null;
+	private decodedRkC: Int32Array | null = null;
 	private decodedWords: Uint32Array | null = null;
 	private stringIndexTable: Table | null = null;
 	private systemGlobalNames: StringValue[] = [];
@@ -1783,26 +1803,69 @@ export class CPU {
 	private decodeProgram(program: Program): void {
 		const code = program.code;
 		const instructionCount = Math.floor(code.length / INSTRUCTION_BYTES);
+		const decodedWidths = new Uint8Array(instructionCount);
 		const decodedOps = new Uint8Array(instructionCount);
-		const decodedA = new Uint8Array(instructionCount);
-		const decodedB = new Uint8Array(instructionCount);
-		const decodedC = new Uint8Array(instructionCount);
-		const decodedExt = new Uint8Array(instructionCount);
+		const decodedA = new Uint16Array(instructionCount);
+		const decodedB = new Uint16Array(instructionCount);
+		const decodedC = new Uint16Array(instructionCount);
+		const decodedBx = new Uint32Array(instructionCount);
+		const decodedSbx = new Int32Array(instructionCount);
+		const decodedRkB = new Int32Array(instructionCount);
+		const decodedRkC = new Int32Array(instructionCount);
 		const decodedWords = new Uint32Array(instructionCount);
-		for (let pc = 0; pc < instructionCount; pc += 1) {
-			const instr = readInstructionWord(code, pc);
-			decodedWords[pc] = instr;
-			decodedExt[pc] = instr >>> 24;
-			decodedOps[pc] = (instr >>> 18) & 0x3f;
-			decodedA[pc] = (instr >>> 12) & 0x3f;
-			decodedB[pc] = (instr >>> 6) & 0x3f;
-			decodedC[pc] = instr & 0x3f;
+		for (let wordIndex = 0; wordIndex < instructionCount; wordIndex += 1) {
+			let width = 1;
+			let wideA = 0;
+			let wideB = 0;
+			let wideC = 0;
+			let instr = readInstructionWord(code, wordIndex);
+			let op = (instr >>> 18) & 0x3f;
+			let ext = instr >>> 24;
+			if (op === OpCode.WIDE) {
+				if (wordIndex + 1 >= instructionCount) {
+					throw new Error('Malformed program: WIDE instruction at end of program.');
+				}
+				width = 2;
+				wideA = (instr >>> 12) & 0x3f;
+				wideB = (instr >>> 6) & 0x3f;
+				wideC = instr & 0x3f;
+				instr = readInstructionWord(code, wordIndex + 1);
+				op = (instr >>> 18) & 0x3f;
+				ext = instr >>> 24;
+			}
+			const aLow = (instr >>> 12) & 0x3f;
+			const bLow = (instr >>> 6) & 0x3f;
+			const cLow = instr & 0x3f;
+			const usesBx = USES_BX[op] !== 0;
+			const extA = usesBx ? 0 : (ext >>> 6) & 0x3;
+			const extB = usesBx ? 0 : (ext >>> 3) & 0x7;
+			const extC = usesBx ? 0 : (ext & 0x7);
+			const aShift = MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
+			const bShift = MAX_OPERAND_BITS + EXT_B_BITS;
+			const cShift = MAX_OPERAND_BITS + EXT_C_BITS;
+			const bxLow = (bLow << MAX_OPERAND_BITS) | cLow;
+			const rkRawB = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
+			const rkRawC = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
+			decodedWidths[wordIndex] = width;
+			decodedWords[wordIndex] = instr;
+			decodedOps[wordIndex] = op;
+			decodedA[wordIndex] = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
+			decodedB[wordIndex] = (wideB << bShift) | (extB << MAX_OPERAND_BITS) | bLow;
+			decodedC[wordIndex] = (wideC << cShift) | (extC << MAX_OPERAND_BITS) | cLow;
+			decodedBx[wordIndex] = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | ((usesBx ? ext : 0) << MAX_BX_BITS) | bxLow;
+			decodedSbx[wordIndex] = signExtend(decodedBx[wordIndex], MAX_BX_BITS + EXT_BX_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			decodedRkB[wordIndex] = signExtend(rkRawB, MAX_OPERAND_BITS + EXT_B_BITS + ((width - 1) * MAX_OPERAND_BITS));
+			decodedRkC[wordIndex] = signExtend(rkRawC, MAX_OPERAND_BITS + EXT_C_BITS + ((width - 1) * MAX_OPERAND_BITS));
 		}
+		this.decodedWidths = decodedWidths;
 		this.decodedOps = decodedOps;
 		this.decodedA = decodedA;
 		this.decodedB = decodedB;
 		this.decodedC = decodedC;
-		this.decodedExt = decodedExt;
+		this.decodedBx = decodedBx;
+		this.decodedSbx = decodedSbx;
+		this.decodedRkB = decodedRkB;
+		this.decodedRkC = decodedRkC;
 		this.decodedWords = decodedWords;
 	}
 
@@ -1870,7 +1933,19 @@ export class CPU {
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
-		while (this.frames.length > targetDepth) {
+		const frames = this.frames;
+		const baseCycles = BASE_CYCLES;
+		const decodedWidths = this.decodedWidths!;
+		const decodedOps = this.decodedOps!;
+		const decodedA = this.decodedA!;
+		const decodedB = this.decodedB!;
+		const decodedC = this.decodedC!;
+		const decodedBx = this.decodedBx!;
+		const decodedSbx = this.decodedSbx!;
+		const decodedRkB = this.decodedRkB!;
+		const decodedRkC = this.decodedRkC!;
+		const decodedWords = this.decodedWords!;
+		while (frames.length > targetDepth) {
 			if (this.yieldRequested) {
 				this.yieldRequested = false;
 				return RunResult.Yielded;
@@ -1878,7 +1953,26 @@ export class CPU {
 			if (this.instructionBudgetRemaining <= 0) {
 				return RunResult.Yielded;
 			}
-			this.step();
+			const frame = frames[frames.length - 1];
+			const pc = frame.pc;
+			const wordIndex = pc / INSTRUCTION_BYTES;
+			const width = decodedWidths[wordIndex];
+			const op = decodedOps[wordIndex];
+			frame.pc = pc + (width * INSTRUCTION_BYTES);
+			this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
+			this.lastInstruction = decodedWords[wordIndex];
+			this.instructionBudgetRemaining -= baseCycles[op];
+			this.executeInstruction(
+				frame,
+				op,
+				decodedA[wordIndex],
+				decodedB[wordIndex],
+				decodedC[wordIndex],
+				decodedBx[wordIndex],
+				decodedSbx[wordIndex],
+				decodedRkB[wordIndex],
+				decodedRkC[wordIndex],
+			);
 		}
 		return RunResult.Halted;
 	}
@@ -1899,35 +1993,33 @@ export class CPU {
 		const frame = this.frames[this.frames.length - 1];
 		let pc = frame.pc;
 		let wordIndex = pc / INSTRUCTION_BYTES;
+		const decodedWidths = this.decodedWidths!;
 		const decodedOps = this.decodedOps!;
 		const decodedA = this.decodedA!;
 		const decodedB = this.decodedB!;
 		const decodedC = this.decodedC!;
-		const decodedExt = this.decodedExt!;
+		const decodedBx = this.decodedBx!;
+		const decodedSbx = this.decodedSbx!;
+		const decodedRkB = this.decodedRkB!;
+		const decodedRkC = this.decodedRkC!;
 		const decodedWords = this.decodedWords!;
-		let instr = decodedWords[wordIndex];
-		let op = decodedOps[wordIndex];
-		let ext = decodedExt[wordIndex];
-		let wideA = 0;
-		let wideB = 0;
-		let wideC = 0;
-		let hasWide = false;
-		if (op === OpCode.WIDE) {
-			hasWide = true;
-			wideA = decodedA[wordIndex];
-			wideB = decodedB[wordIndex];
-			wideC = decodedC[wordIndex];
-			pc += INSTRUCTION_BYTES;
-			wordIndex += 1;
-			instr = decodedWords[wordIndex];
-			op = decodedOps[wordIndex];
-			ext = decodedExt[wordIndex];
-		}
-		frame.pc = pc + INSTRUCTION_BYTES;
-		this.lastPc = pc;
-		this.lastInstruction = instr;
+		const width = decodedWidths[wordIndex];
+		const op = decodedOps[wordIndex];
+		frame.pc = pc + (width * INSTRUCTION_BYTES);
+		this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
+		this.lastInstruction = decodedWords[wordIndex];
 		this.charge(BASE_CYCLES[op]);
-		this.executeInstruction(frame, op, decodedA[wordIndex], decodedB[wordIndex], decodedC[wordIndex], ext, wideA, wideB, wideC, hasWide);
+		this.executeInstruction(
+			frame,
+			op,
+			decodedA[wordIndex],
+			decodedB[wordIndex],
+			decodedC[wordIndex],
+			decodedBx[wordIndex],
+			decodedSbx[wordIndex],
+			decodedRkB[wordIndex],
+			decodedRkC[wordIndex],
+		);
 	}
 
 	public getDebugState(): { pc: number; instr: number; registers: Value[] } {
@@ -2079,263 +2171,227 @@ export class CPU {
 	private skipNextInstruction(frame: CallFrame): void {
 		const pc = frame.pc;
 		const wordIndex = pc / INSTRUCTION_BYTES;
-		const decodedOps = this.decodedOps!;
-		if (wordIndex >= decodedOps.length) {
+		const decodedWidths = this.decodedWidths!;
+		if (wordIndex >= decodedWidths.length) {
 			throw new Error('Attempted to skip beyond end of program.');
 		}
-		if (decodedOps[wordIndex] === OpCode.WIDE) {
-			if (wordIndex + 1 >= decodedOps.length) {
-				throw new Error('Malformed program: WIDE instruction at end of program.');
-			}
-			frame.pc += INSTRUCTION_BYTES * 2;
-			return;
-		}
-		frame.pc += INSTRUCTION_BYTES;
+		frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
 	}
 
 	private executeInstruction(
 		frame: CallFrame,
 		op: number,
-		aLow: number,
-		bLow: number,
-		cLow: number,
-		ext: number,
-		wideA: number,
-		wideB: number,
-		wideC: number,
-		hasWide: boolean,
+		a: number,
+		b: number,
+		c: number,
+		bx: number,
+		sbx: number,
+		rkB: number,
+		rkC: number,
 	): void {
-		const usesBx = op === OpCode.LOADK
-			|| op === OpCode.KSMI
-			|| op === OpCode.GETG
-			|| op === OpCode.SETG
-			|| op === OpCode.GETSYS
-			|| op === OpCode.SETSYS
-			|| op === OpCode.GETGL
-			|| op === OpCode.SETGL
-			|| op === OpCode.CLOSURE
-			|| op === OpCode.JMP
-			|| op === OpCode.JMPIF
-			|| op === OpCode.JMPIFNOT
-			|| op === OpCode.BR_TRUE
-			|| op === OpCode.BR_FALSE;
-		const extA = usesBx ? 0 : (ext >>> 6) & 0x3;
-		const extB = usesBx ? 0 : (ext >>> 3) & 0x7;
-		const extC = usesBx ? 0 : (ext & 0x7);
-		const aShift = MAX_OPERAND_BITS + (usesBx ? 0 : EXT_A_BITS);
-		const a = (wideA << aShift) | (extA << MAX_OPERAND_BITS) | aLow;
-		const b = (wideB << (MAX_OPERAND_BITS + EXT_B_BITS)) | (extB << MAX_OPERAND_BITS) | bLow;
-		const c = (wideC << (MAX_OPERAND_BITS + EXT_C_BITS)) | (extC << MAX_OPERAND_BITS) | cLow;
-		const bxLow = (bLow << MAX_OPERAND_BITS) | cLow;
-		const bx = (wideB << (MAX_BX_BITS + EXT_BX_BITS)) | ((usesBx ? ext : 0) << MAX_BX_BITS) | bxLow;
-		const sbxBits = MAX_BX_BITS + EXT_BX_BITS + (hasWide ? MAX_OPERAND_BITS : 0);
-		const sbx = signExtend(bx, sbxBits);
-		const rkBitsB = MAX_OPERAND_BITS + EXT_B_BITS + (hasWide ? MAX_OPERAND_BITS : 0);
-		const rkBitsC = MAX_OPERAND_BITS + EXT_C_BITS + (hasWide ? MAX_OPERAND_BITS : 0);
-		const rkRawB = (wideB << (MAX_OPERAND_BITS + EXT_B_BITS)) | (extB << MAX_OPERAND_BITS) | bLow;
-		const rkRawC = (wideC << (MAX_OPERAND_BITS + EXT_C_BITS)) | (extC << MAX_OPERAND_BITS) | cLow;
-		switch (op) {
-			case OpCode.WIDE:
-				throw new Error('Unknown opcode.');
-			case OpCode.MOV:
-				this.copyRegister(frame, a, b);
-				return;
-			case OpCode.LOADK: {
-				this.setRegister(frame, a, this.program.constPool[bx]);
-				return;
-			}
-			case OpCode.KNIL:
-				this.setRegisterNil(frame, a);
-				return;
-			case OpCode.KFALSE:
-				this.setRegisterBool(frame, a, false);
-				return;
-			case OpCode.KTRUE:
-				this.setRegisterBool(frame, a, true);
-				return;
-			case OpCode.K0:
-				this.setRegisterNumber(frame, a, 0);
-				return;
-			case OpCode.K1:
-				this.setRegisterNumber(frame, a, 1);
-				return;
-			case OpCode.KM1:
-				this.setRegisterNumber(frame, a, -1);
-				return;
-			case OpCode.KSMI:
-				this.setRegisterNumber(frame, a, sbx);
-				return;
-			case OpCode.LOADNIL:
-				for (let index = 0; index < b; index += 1) {
-					this.setRegisterNil(frame, a + index);
-				}
-				return;
-			case OpCode.LOADBOOL:
-				this.setRegisterBool(frame, a, b !== 0);
-				if (c !== 0) {
-					this.skipNextInstruction(frame);
-				}
-				return;
-			case OpCode.GETG: {
-				const key = this.program.constPool[bx];
-				this.setRegister(frame, a, this.globals.get(key));
-				return;
-			}
-			case OpCode.SETG: {
-				const key = this.program.constPool[bx];
-				this.globals.set(key, frame.registers.get(a));
-				return;
-			}
-			case OpCode.GETSYS:
-				this.setRegister(frame, a, this.getSystemGlobalBySlot(bx));
-				return;
-			case OpCode.SETSYS:
-				this.setSystemGlobalBySlot(bx, frame.registers.get(a));
-				return;
-			case OpCode.GETGL:
-				this.setRegister(frame, a, this.getGlobalBySlot(bx));
-				return;
-			case OpCode.SETGL:
-				this.setGlobalBySlot(bx, frame.registers.get(a));
-				return;
-			case OpCode.GETI:
-				this.setRegister(frame, a, this.loadTableIntegerIndex(frame.registers.get(b), c));
-				return;
-			case OpCode.SETI:
-				this.storeTableIntegerIndex(frame.registers.get(a), b, this.readRK(frame, rkRawC, rkBitsC));
-				return;
-			case OpCode.GETFIELD:
-				this.setRegister(frame, a, this.loadTableFieldIndex(frame.registers.get(b), this.program.constPool[c] as StringValue));
-				return;
-			case OpCode.SETFIELD:
-				this.storeTableFieldIndex(frame.registers.get(a), this.program.constPool[b] as StringValue, this.readRK(frame, rkRawC, rkBitsC));
-				return;
-			case OpCode.SELF: {
-				const base = frame.registers.get(b);
-				const key = this.program.constPool[c] as StringValue;
-				this.setRegister(frame, a + 1, base);
-				this.setRegister(frame, a, this.loadTableFieldIndex(base, key));
-				return;
-			}
-			case OpCode.GETT: {
-				this.setRegister(frame, a, this.loadTableIndex(frame.registers.get(b), this.readRK(frame, rkRawC, rkBitsC)));
-				return;
-			}
-			case OpCode.SETT:
-				this.storeTableIndex(frame.registers.get(a), this.readRK(frame, rkRawB, rkBitsB), this.readRK(frame, rkRawC, rkBitsC));
-				return;
-			case OpCode.NEWT:
-				this.setRegisterTable(frame, a, new Table(b, c));
-				return;
-			case OpCode.ADD: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, left + right);
-				return;
-			}
-			case OpCode.SUB: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, left - right);
-				return;
-			}
-			case OpCode.MUL: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, left * right);
-				return;
-			}
-			case OpCode.DIV: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, left / right);
-				return;
-			}
-			case OpCode.MOD: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, left % right);
-				return;
-			}
-			case OpCode.FLOORDIV: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, Math.floor(left / right));
-				return;
-			}
-			case OpCode.POW: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, Math.pow(left, right));
-				return;
-			}
-			case OpCode.BAND: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, left & right);
-				return;
-			}
-			case OpCode.BOR: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, left | right);
-				return;
-			}
-			case OpCode.BXOR: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, left ^ right);
-				return;
-			}
-			case OpCode.SHL: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, left << (right & 31));
-				return;
-			}
-			case OpCode.SHR: {
-				const left = this.readRKNumber(frame, rkRawB, rkBitsB);
-				const right = this.readRKNumber(frame, rkRawC, rkBitsC);
-				this.setRegisterNumber(frame, a, left >> (right & 31));
-				return;
-			}
-			case OpCode.CONCAT: {
-				const left = this.readRK(frame, rkRawB, rkBitsB);
-				const right = this.readRK(frame, rkRawC, rkBitsC);
-				const text = this.valueToString(left) + this.valueToString(right);
-				const handle = this.stringPool.intern(text);
-				this.setRegisterString(frame, a, handle);
-				return;
-			}
-			case OpCode.CONCATN: {
-				let text = '';
-				for (let index = 0; index < c; index += 1) {
-					text += this.valueToString(frame.registers.get(b + index));
-				}
-				const handle = this.stringPool.intern(text);
-				this.setRegisterString(frame, a, handle);
-				return;
-			}
-			case OpCode.UNM: {
-				const value = this.readRegisterNumber(frame, b);
-				this.setRegisterNumber(frame, a, -value);
-				return;
-			}
-			case OpCode.NOT:
-				this.setRegisterBool(frame, a, !frame.registers.isTruthy(b));
-				return;
-			case OpCode.LEN: {
-				const value = frame.registers.get(b);
-				if (isStringValue(value)) {
-					const cp = this.stringPool.codepointCount(value);
-					this.setRegisterNumber(frame, a, cp);
+		const registers = frame.registers;
+			switch (op) {
+				case OpCode.WIDE:
+					throw new Error('Unknown opcode.');
+				case OpCode.MOV:
+					this.copyRegisterFast(frame, registers, a, b);
+					return;
+				case OpCode.LOADK: {
+					this.setRegisterFast(frame, registers, a, this.program.constPool[bx]);
 					return;
 				}
-				if (value instanceof Table) {
-					this.setRegisterNumber(frame, a, value.length());
+				case OpCode.KNIL:
+					this.setRegisterNilFast(frame, registers, a);
+					return;
+				case OpCode.KFALSE:
+					this.setRegisterBoolFast(frame, registers, a, false);
+					return;
+				case OpCode.KTRUE:
+					this.setRegisterBoolFast(frame, registers, a, true);
+					return;
+				case OpCode.K0:
+					this.setRegisterNumberFast(frame, registers, a, 0);
+					return;
+				case OpCode.K1:
+					this.setRegisterNumberFast(frame, registers, a, 1);
+					return;
+				case OpCode.KM1:
+					this.setRegisterNumberFast(frame, registers, a, -1);
+					return;
+				case OpCode.KSMI:
+					this.setRegisterNumberFast(frame, registers, a, sbx);
+					return;
+				case OpCode.LOADNIL:
+					for (let index = 0; index < b; index += 1) {
+						this.setRegisterNilFast(frame, registers, a + index);
+					}
+					return;
+				case OpCode.LOADBOOL:
+					this.setRegisterBoolFast(frame, registers, a, b !== 0);
+					if (c !== 0) {
+						this.skipNextInstruction(frame);
+					}
+					return;
+				case OpCode.GETG: {
+					const key = this.program.constPool[bx];
+					this.setRegisterFast(frame, registers, a, this.globals.get(key));
 					return;
 				}
-				if (isNativeObject(value)) {
+				case OpCode.SETG: {
+					const key = this.program.constPool[bx];
+					this.globals.set(key, registers.get(a));
+					return;
+				}
+				case OpCode.GETSYS:
+					this.setRegisterFast(frame, registers, a, this.getSystemGlobalBySlot(bx));
+					return;
+				case OpCode.SETSYS:
+					this.setSystemGlobalBySlot(bx, registers.get(a));
+					return;
+				case OpCode.GETGL:
+					this.setRegisterFast(frame, registers, a, this.getGlobalBySlot(bx));
+					return;
+				case OpCode.SETGL:
+					this.setGlobalBySlot(bx, registers.get(a));
+					return;
+				case OpCode.GETI:
+					this.setRegisterFast(frame, registers, a, this.loadTableIntegerIndex(registers.get(b), c));
+					return;
+				case OpCode.SETI:
+					this.storeTableIntegerIndex(registers.get(a), b, this.readRK(frame, rkC));
+					return;
+				case OpCode.GETFIELD:
+					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndex(registers.get(b), this.program.constPool[c] as StringValue));
+					return;
+				case OpCode.SETFIELD:
+					this.storeTableFieldIndex(registers.get(a), this.program.constPool[b] as StringValue, this.readRK(frame, rkC));
+					return;
+				case OpCode.SELF: {
+					const base = registers.get(b);
+					const key = this.program.constPool[c] as StringValue;
+					this.setRegisterFast(frame, registers, a + 1, base);
+					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndex(base, key));
+					return;
+				}
+				case OpCode.GETT: {
+					this.setRegisterFast(frame, registers, a, this.loadTableIndex(registers.get(b), this.readRK(frame, rkC)));
+					return;
+				}
+				case OpCode.SETT:
+					this.storeTableIndex(registers.get(a), this.readRK(frame, rkB), this.readRK(frame, rkC));
+					return;
+				case OpCode.NEWT:
+					this.setRegisterTableFast(frame, registers, a, new Table(b, c));
+					return;
+				case OpCode.ADD: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left + right);
+					return;
+				}
+				case OpCode.SUB: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left - right);
+					return;
+				}
+				case OpCode.MUL: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left * right);
+					return;
+				}
+				case OpCode.DIV: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left / right);
+					return;
+				}
+				case OpCode.MOD: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left % right);
+					return;
+				}
+				case OpCode.FLOORDIV: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, Math.floor(left / right));
+					return;
+				}
+				case OpCode.POW: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, Math.pow(left, right));
+					return;
+				}
+				case OpCode.BAND: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left & right);
+					return;
+				}
+				case OpCode.BOR: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left | right);
+					return;
+				}
+				case OpCode.BXOR: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left ^ right);
+					return;
+				}
+				case OpCode.SHL: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left << (right & 31));
+					return;
+				}
+				case OpCode.SHR: {
+					const left = this.readRKNumber(frame, rkB);
+					const right = this.readRKNumber(frame, rkC);
+					this.setRegisterNumberFast(frame, registers, a, left >> (right & 31));
+					return;
+				}
+				case OpCode.CONCAT: {
+					const left = this.readRK(frame, rkB);
+					const right = this.readRK(frame, rkC);
+					const text = this.valueToString(left) + this.valueToString(right);
+					const handle = this.stringPool.intern(text);
+					this.setRegisterStringFast(frame, registers, a, handle);
+					return;
+				}
+				case OpCode.CONCATN: {
+					let text = '';
+					for (let index = 0; index < c; index += 1) {
+						text += this.valueToString(registers.get(b + index));
+					}
+					const handle = this.stringPool.intern(text);
+					this.setRegisterStringFast(frame, registers, a, handle);
+					return;
+				}
+				case OpCode.UNM: {
+					const value = this.readRegisterNumber(frame, b);
+					this.setRegisterNumberFast(frame, registers, a, -value);
+					return;
+				}
+				case OpCode.NOT:
+					this.setRegisterBoolFast(frame, registers, a, !registers.isTruthy(b));
+					return;
+				case OpCode.LEN: {
+					const value = registers.get(b);
+					if (isStringValue(value)) {
+						const cp = this.stringPool.codepointCount(value);
+						this.setRegisterNumberFast(frame, registers, a, cp);
+						return;
+					}
+					if (value instanceof Table) {
+						this.setRegisterNumberFast(frame, registers, a, value.length());
+						return;
+					}
+					if (isNativeObject(value)) {
 					if (!value.len) {
 						const stack = this.getCallStack()
 							.map(entry => {
@@ -2345,11 +2401,11 @@ export class CPU {
 							})
 						.reverse()
 						.join(' <- ');
-					throw new Error(`Length operator expects a native object with a length. stack=${stack}`);
+						throw new Error(`Length operator expects a native object with a length. stack=${stack}`);
+					}
+					this.setRegisterNumberFast(frame, registers, a, value.len());
+					return;
 				}
-				this.setRegisterNumber(frame, a, value.len());
-				return;
-			}
 				const stack = this.getCallStack()
 					.map(entry => {
 						const range = this.getDebugRange(entry.pc);
@@ -2359,119 +2415,119 @@ export class CPU {
 					.reverse()
 					.join(' <- ');
 				throw new Error(`Length operator expects a string or table. stack=${stack}`);
-			}
-			case OpCode.BNOT: {
-				const value = this.readRegisterNumber(frame, b);
-				this.setRegisterNumber(frame, a, ~value);
-				return;
-			}
-			case OpCode.EQ: {
-				const left = this.readRK(frame, rkRawB, rkBitsB);
-				const right = this.readRK(frame, rkRawC, rkBitsC);
-				const eq = left === right;
-				if (eq !== (a !== 0)) {
-					this.skipNextInstruction(frame);
 				}
-				return;
-			}
-			case OpCode.LT: {
-				const left = this.readRK(frame, rkRawB, rkBitsB);
-				const right = this.readRK(frame, rkRawC, rkBitsC);
-				const ok = (isStringValue(left) && isStringValue(right))
-					? stringValueToString(left) < stringValueToString(right)
-					: (left as number) < (right as number);
-				if (ok !== (a !== 0)) {
-					this.skipNextInstruction(frame);
-				}
-				return;
-			}
-			case OpCode.LE: {
-				const left = this.readRK(frame, rkRawB, rkBitsB);
-				const right = this.readRK(frame, rkRawC, rkBitsC);
-				const ok = (isStringValue(left) && isStringValue(right))
-					? stringValueToString(left) <= stringValueToString(right)
-					: (left as number) <= (right as number);
-				if (ok !== (a !== 0)) {
-					this.skipNextInstruction(frame);
-				}
-				return;
-			}
-			case OpCode.TEST: {
-				const ok = frame.registers.isTruthy(a);
-				if (ok !== (c !== 0)) {
-					this.skipNextInstruction(frame);
-				}
-				return;
-			}
-			case OpCode.TESTSET: {
-				const ok = frame.registers.isTruthy(b);
-				if (ok === (c !== 0)) {
-					this.copyRegister(frame, a, b);
+				case OpCode.BNOT: {
+					const value = this.readRegisterNumber(frame, b);
+					this.setRegisterNumberFast(frame, registers, a, ~value);
 					return;
 				}
-				this.skipNextInstruction(frame);
+				case OpCode.EQ: {
+					const left = this.readRK(frame, rkB);
+					const right = this.readRK(frame, rkC);
+					const eq = left === right;
+					if (eq !== (a !== 0)) {
+						this.skipNextInstruction(frame);
+				}
+				return;
+				}
+				case OpCode.LT: {
+					const left = this.readRK(frame, rkB);
+					const right = this.readRK(frame, rkC);
+					const ok = (isStringValue(left) && isStringValue(right))
+						? stringValueToString(left) < stringValueToString(right)
+						: (left as number) < (right as number);
+				if (ok !== (a !== 0)) {
+					this.skipNextInstruction(frame);
+				}
+				return;
+				}
+				case OpCode.LE: {
+					const left = this.readRK(frame, rkB);
+					const right = this.readRK(frame, rkC);
+					const ok = (isStringValue(left) && isStringValue(right))
+						? stringValueToString(left) <= stringValueToString(right)
+						: (left as number) <= (right as number);
+				if (ok !== (a !== 0)) {
+					this.skipNextInstruction(frame);
+				}
+				return;
+				}
+				case OpCode.TEST: {
+					const ok = registers.isTruthy(a);
+					if (ok !== (c !== 0)) {
+						this.skipNextInstruction(frame);
+					}
+					return;
+				}
+				case OpCode.TESTSET: {
+					const ok = registers.isTruthy(b);
+					if (ok === (c !== 0)) {
+						this.copyRegisterFast(frame, registers, a, b);
+						return;
+					}
+					this.skipNextInstruction(frame);
 				return;
 			}
 			case OpCode.JMP: {
 				frame.pc += sbx * INSTRUCTION_BYTES;
 				return;
-			}
-			case OpCode.JMPIF: {
-				if (frame.registers.isTruthy(a)) {
-					frame.pc += sbx * INSTRUCTION_BYTES;
 				}
-				return;
-			}
-			case OpCode.JMPIFNOT: {
-				if (!frame.registers.isTruthy(a)) {
-					frame.pc += sbx * INSTRUCTION_BYTES;
+				case OpCode.JMPIF: {
+					if (registers.isTruthy(a)) {
+						frame.pc += sbx * INSTRUCTION_BYTES;
+					}
+					return;
 				}
-				return;
-			}
-			case OpCode.BR_TRUE: {
-				if (frame.registers.isTruthy(a)) {
-					frame.pc += sbx * INSTRUCTION_BYTES;
+				case OpCode.JMPIFNOT: {
+					if (!registers.isTruthy(a)) {
+						frame.pc += sbx * INSTRUCTION_BYTES;
+					}
+					return;
 				}
-				return;
-			}
-			case OpCode.BR_FALSE: {
-				if (!frame.registers.isTruthy(a)) {
-					frame.pc += sbx * INSTRUCTION_BYTES;
+				case OpCode.BR_TRUE: {
+					if (registers.isTruthy(a)) {
+						frame.pc += sbx * INSTRUCTION_BYTES;
+					}
+					return;
 				}
-				return;
-			}
-			case OpCode.CLOSURE: {
-				this.setRegisterClosure(frame, a, this.createClosure(frame, bx));
-				return;
-			}
-			case OpCode.GETUP: {
-				const upvalue = frame.closure.upvalues[b];
-				this.setRegister(frame, a, this.readUpvalue(upvalue));
-				return;
-			}
-			case OpCode.SETUP: {
-				const upvalue = frame.closure.upvalues[b];
-				this.writeUpvalue(upvalue, frame.registers.get(a));
-				return;
-			}
-			case OpCode.VARARG: {
-				const count = b === 0 ? frame.varargs.length : b;
-				for (let index = 0; index < count; index += 1) {
-					const value = index < frame.varargs.length ? frame.varargs[index] : null;
-					this.setRegister(frame, a + index, value);
+				case OpCode.BR_FALSE: {
+					if (!registers.isTruthy(a)) {
+						frame.pc += sbx * INSTRUCTION_BYTES;
+					}
+					return;
 				}
-				return;
-			}
-			case OpCode.CALL: {
-				const callee = frame.registers.get(a);
-				const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b;
-				const args = this.valueScratch;
-				args.length = 0;
-				for (let index = 0; index < argCount; index += 1) {
-					args.push(frame.registers.get(a + 1 + index));
+				case OpCode.CLOSURE: {
+					this.setRegisterClosureFast(frame, registers, a, this.createClosure(frame, bx));
+					return;
 				}
-				if (callee === null) {
-					const range = this.metadata ? this.getDebugRange(this.lastPc) : null;
+				case OpCode.GETUP: {
+					const upvalue = frame.closure.upvalues[b];
+					this.setRegisterFast(frame, registers, a, this.readUpvalue(upvalue));
+					return;
+				}
+				case OpCode.SETUP: {
+					const upvalue = frame.closure.upvalues[b];
+					this.writeUpvalue(upvalue, registers.get(a));
+					return;
+				}
+				case OpCode.VARARG: {
+					const count = b === 0 ? frame.varargs.length : b;
+					for (let index = 0; index < count; index += 1) {
+						const value = index < frame.varargs.length ? frame.varargs[index] : null;
+						this.setRegisterFast(frame, registers, a + index, value);
+					}
+					return;
+				}
+				case OpCode.CALL: {
+					const callee = registers.get(a);
+					const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b;
+					const args = this.valueScratch;
+					args.length = argCount;
+					for (let index = 0; index < argCount; index += 1) {
+						args[index] = registers.get(a + 1 + index);
+					}
+					if (callee === null) {
+						const range = this.metadata ? this.getDebugRange(this.lastPc) : null;
 					const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
 					throw new Error(`Attempted to call a nil value. at ${location}`);
 				}
@@ -2501,15 +2557,15 @@ export class CPU {
 				this.pushFrame(callee as Closure, args, a, c, false, frame.pc - INSTRUCTION_BYTES);
 				return;
 			}
-			case OpCode.RET: {
-				const scratch = this.returnScratch;
-				scratch.length = 0;
-				const total = b === 0 ? Math.max(frame.top - a, 0) : b;
-				for (let index = 0; index < total; index += 1) {
-					scratch.push(frame.registers.get(a + index));
-				}
-				this.lastReturnValues.length = scratch.length;
-				for (let i = 0; i < scratch.length; i++) {
+				case OpCode.RET: {
+					const scratch = this.returnScratch;
+					const total = b === 0 ? Math.max(frame.top - a, 0) : b;
+					scratch.length = total;
+					for (let index = 0; index < total; index += 1) {
+						scratch[index] = registers.get(a + index);
+					}
+					this.lastReturnValues.length = scratch.length;
+					for (let i = 0; i < scratch.length; i++) {
 					this.lastReturnValues[i] = scratch[i];
 				}
 				this.closeUpvalues(frame);
@@ -2524,22 +2580,22 @@ export class CPU {
 				const caller = this.frames[this.frames.length - 1];
 				this.writeReturnValues(caller, frame.returnBase, frame.returnCount, scratch);
 				return;
-			}
-			case OpCode.LOAD_MEM: {
-				const addr = this.readRKNumber(frame, rkRawB, rkBitsB);
-				this.setRegister(frame, a, this.readMappedMemoryValue(addr, c));
-				return;
-			}
-			case OpCode.STORE_MEM: {
-				const addr = this.readRKNumber(frame, rkRawB, rkBitsB);
-				this.writeMappedMemoryValue(addr, c, frame.registers.get(a));
-				return;
-			}
-			case OpCode.STORE_MEM_WORDS: {
-				const addr = this.readRKNumber(frame, rkRawB, rkBitsB);
-				this.charge(CEIL_DIV4(c));
-				this.writeMappedWordSequence(frame, addr, a, c);
-				return;
+				}
+				case OpCode.LOAD_MEM: {
+					const addr = this.readRKNumber(frame, rkB);
+					this.setRegisterFast(frame, registers, a, this.readMappedMemoryValue(addr, c));
+					return;
+				}
+				case OpCode.STORE_MEM: {
+					const addr = this.readRKNumber(frame, rkB);
+					this.writeMappedMemoryValue(addr, c, registers.get(a));
+					return;
+				}
+				case OpCode.STORE_MEM_WORDS: {
+					const addr = this.readRKNumber(frame, rkB);
+					this.charge(CEIL_DIV4(c));
+					this.writeMappedWordSequence(frame, addr, a, c);
+					return;
 			}
 			default:
 				throw new Error('Unknown opcode.');
@@ -2658,52 +2714,49 @@ export class CPU {
 		}
 	}
 
-	private copyRegister(frame: CallFrame, dst: number, src: number): void {
-		const registers = this.ensureRegisterCapacity(frame, dst);
+	private copyRegisterFast(frame: CallFrame, registers: RegisterFile, dst: number, src: number): void {
 		registers.copySlot(dst, src);
 		this.bumpRegisterTop(frame, dst);
 	}
 
-	private setRegisterNil(frame: CallFrame, index: number): void {
-		const registers = this.ensureRegisterCapacity(frame, index);
+	private setRegisterNilFast(frame: CallFrame, registers: RegisterFile, index: number): void {
 		registers.setNil(index);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterBool(frame: CallFrame, index: number, value: boolean): void {
-		const registers = this.ensureRegisterCapacity(frame, index);
+	private setRegisterBoolFast(frame: CallFrame, registers: RegisterFile, index: number, value: boolean): void {
 		registers.setBool(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterNumber(frame: CallFrame, index: number, value: number): void {
-		const registers = this.ensureRegisterCapacity(frame, index);
+	private setRegisterNumberFast(frame: CallFrame, registers: RegisterFile, index: number, value: number): void {
 		registers.setNumber(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterString(frame: CallFrame, index: number, value: StringValue): void {
-		const registers = this.ensureRegisterCapacity(frame, index);
+	private setRegisterStringFast(frame: CallFrame, registers: RegisterFile, index: number, value: StringValue): void {
 		registers.setString(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterTable(frame: CallFrame, index: number, value: Table): void {
-		const registers = this.ensureRegisterCapacity(frame, index);
+	private setRegisterTableFast(frame: CallFrame, registers: RegisterFile, index: number, value: Table): void {
 		registers.setTable(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
-	private setRegisterClosure(frame: CallFrame, index: number, value: Closure): void {
-		const registers = this.ensureRegisterCapacity(frame, index);
+	private setRegisterClosureFast(frame: CallFrame, registers: RegisterFile, index: number, value: Closure): void {
 		registers.setClosure(index, value);
+		this.bumpRegisterTop(frame, index);
+	}
+
+	private setRegisterFast(frame: CallFrame, registers: RegisterFile, index: number, value: Value): void {
+		registers.set(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
 	private setRegister(frame: CallFrame, index: number, value: Value): void {
 		const registers = this.ensureRegisterCapacity(frame, index);
-		registers.set(index, value);
-		this.bumpRegisterTop(frame, index);
+		this.setRegisterFast(frame, registers, index, value);
 	}
 
 	private readRegisterNumber(frame: CallFrame, index: number): number {
@@ -2808,8 +2861,7 @@ export class CPU {
 		}
 	}
 
-	private readRKNumber(frame: CallFrame, raw: number, bits: number): number {
-		const rk = signExtend(raw, bits);
+	private readRKNumber(frame: CallFrame, rk: number): number {
 		if (rk < 0) {
 			const index = -1 - rk;
 			return this.program.constPool[index] as number;
@@ -2817,8 +2869,7 @@ export class CPU {
 		return this.readRegisterNumber(frame, rk);
 	}
 
-	private readRK(frame: CallFrame, raw: number, bits: number): Value {
-		const rk = signExtend(raw, bits);
+	private readRK(frame: CallFrame, rk: number): Value {
 		if (rk < 0) {
 			const index = -1 - rk;
 			return this.program.constPool[index];

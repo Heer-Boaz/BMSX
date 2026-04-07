@@ -108,7 +108,7 @@ export class TerminalSuggestModel {
 	}
 
 	public buildSortedSymbolCatalog(): SymbolEntry[] {
-		return this.sortSymbolEntries(this.options.buildSymbolCatalog());
+		return this.sortSymbolEntries(this.dedupeSymbolEntries(this.options.buildSymbolCatalog()));
 	}
 
 	public resolveSymbolCompletionContext(): TerminalSymbolQueryContext {
@@ -178,7 +178,9 @@ export class TerminalSuggestModel {
 	}
 
 	public openCompletionPanel(context: CompletionContext, entries: LuaCompletionItem[], filtered: LuaCompletionItem[]): void {
-		const base = this.createPanelState(entries, filtered, context.prefix);
+		const dedupedEntries = this.dedupeCompletionItems(entries);
+		const dedupedFiltered = this.dedupeCompletionItems(filtered);
+		const base = this.createPanelState(dedupedEntries, dedupedFiltered, context.prefix);
 		this.clearSymbolPanel();
 		this.completionPanel = {
 			entries: base.entries,
@@ -380,12 +382,40 @@ export class TerminalSuggestModel {
 			this.closeCompletionPanel(false);
 			return;
 		}
-		panel.entries = snapshot.items;
-		panel.filtered = snapshot.filteredItems;
+		panel.entries = this.dedupeCompletionItems(snapshot.items);
+		panel.filtered = this.dedupeCompletionItems(snapshot.filteredItems);
 		panel.filter = snapshot.context.prefix;
 		panel.context = snapshot.context;
 		panel.selectionIndex = this.resolveSelectionIndex(panel.filtered, previousLabel, item => item.label);
 		panel.displayRowOffset = 0;
+	}
+
+	private dedupeCompletionItems(items: LuaCompletionItem[]): LuaCompletionItem[] {
+		const seen = new Set<string>();
+		const deduped: LuaCompletionItem[] = [];
+		for (let index = 0; index < items.length; index += 1) {
+			const item = items[index];
+			if (seen.has(item.label)) {
+				continue;
+			}
+			seen.add(item.label);
+			deduped.push(item);
+		}
+		return deduped;
+	}
+
+	private dedupeSymbolEntries(entries: SymbolEntry[]): SymbolEntry[] {
+		const seen = new Set<string>();
+		const deduped: SymbolEntry[] = [];
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (seen.has(entry.name)) {
+				continue;
+			}
+			seen.add(entry.name);
+			deduped.push(entry);
+		}
+		return deduped;
 	}
 
 	private refreshSymbolPanelFilter(): void {

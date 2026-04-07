@@ -714,7 +714,7 @@ export function applyInlineFieldEditing(
 		}
 	}
 
-	if (!altDown) {
+	if (!useCtrl && !altDown) {
 		for (let i = 0; i < CHARACTER_CODES.length; i += 1) {
 			const code = CHARACTER_CODES[i];
 			if (!isKeyJustPressed(code)) {

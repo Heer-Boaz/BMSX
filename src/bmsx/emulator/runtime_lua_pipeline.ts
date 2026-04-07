@@ -754,10 +754,63 @@ export function describeSymbolValue(value: Value): { kind: SymbolKind; valueType
 	return { kind: 'function', valueType: 'function' };
 }
 
+function stripSymbolModuleLuaExtension(path: string): string {
+	return path.toLowerCase().endsWith('.lua') ? path.slice(0, path.length - 4) : path;
+}
+
+function stripSymbolModuleSourcePrefix(path: string): string {
+	const normalized = stripSymbolModuleLuaExtension(path.replace(/\\/g, '/'));
+	if (normalized.startsWith('src/carts/')) {
+		const parts = normalized.split('/');
+		return parts.length > 3 ? parts.slice(3).join('/') : parts[parts.length - 1];
+	}
+	if (normalized.startsWith('src/bmsx/res/')) {
+		return normalized.slice('src/bmsx/res/'.length);
+	}
+	return normalized;
+}
+
+function sanitizeSymbolModuleSlotSegment(value: string, runtime: Runtime): string {
+	return runtime.canonicalizeIdentifier(value).replace(/[^A-Za-z0-9_]/g, '_');
+}
+
+function buildSymbolModuleSlotPrefix(modulePath: string, runtime: Runtime): string {
+	const compactPath = stripSymbolModuleSourcePrefix(modulePath);
+	const parts = compactPath.split('/').filter(part => part.length > 0);
+	const normalizedParts = parts.length > 0 ? parts : [compactPath];
+	return normalizedParts.map(part => sanitizeSymbolModuleSlotSegment(part, runtime)).join('__');
+}
+
+function collectHiddenSymbolPrefixes(runtime: Runtime): Set<string> {
+	const prefixes = new Set<string>();
+	const registries = [runtime.engineLuaSources, runtime.cartLuaSources];
+	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
+		const registry = registries[registryIndex];
+		if (!registry) {
+			continue;
+		}
+		const luaAssets = Object.values(registry.path2lua);
+		for (let assetIndex = 0; assetIndex < luaAssets.length; assetIndex += 1) {
+			prefixes.add(buildSymbolModuleSlotPrefix(luaAssets[assetIndex].source_path, runtime));
+		}
+	}
+	return prefixes;
+}
+
+function shouldHideTerminalSymbolName(name: string, hiddenPrefixes: ReadonlySet<string>): boolean {
+	for (const prefix of hiddenPrefixes) {
+		if (name === prefix || name.startsWith(`${prefix}__`)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 export function listSymbols(runtime: Runtime): SymbolEntry[] {
 	runtime.cpu.syncGlobalSlotsToTable();
 	const entries = runtime.cpu.globals.entriesArray();
-	const symbols: SymbolEntry[] = [];
+	const hiddenPrefixes = collectHiddenSymbolPrefixes(runtime);
+	const symbolsByName = new Map<string, SymbolEntry>();
 	for (let index = 0; index < entries.length; index += 1) {
 		const entry = entries[index];
 		const key = entry[0];
@@ -765,15 +818,18 @@ export function listSymbols(runtime: Runtime): SymbolEntry[] {
 			continue;
 		}
 		const name = stringValueToString(key);
+		if (shouldHideTerminalSymbolName(name, hiddenPrefixes) || symbolsByName.has(name)) {
+			continue;
+		}
 		const classification = describeSymbolValue(entry[1]);
-		symbols.push({
+		symbolsByName.set(name, {
 			name,
 			kind: classification.kind,
 			valueType: classification.valueType,
 			origin: 'global',
 		});
 	}
-	return symbols;
+	return Array.from(symbolsByName.values());
 }
 
 export function requireString(value: Value): string {

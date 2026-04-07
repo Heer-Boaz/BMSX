@@ -533,11 +533,15 @@ constexpr int EXT_BX_BITS = 8;
 
 struct DecodedInstruction {
 	uint32_t word = 0;
+	uint32_t bx = 0;
+	int32_t sbx = 0;
+	int32_t rkB = 0;
+	int32_t rkC = 0;
+	uint16_t a = 0;
+	uint16_t b = 0;
+	uint16_t c = 0;
 	uint8_t op = 0;
-	uint8_t a = 0;
-	uint8_t b = 0;
-	uint8_t c = 0;
-	uint8_t ext = 0;
+	uint8_t width = 1;
 };
 
 struct Upvalue : GCObject {
@@ -834,19 +838,10 @@ public:
 	Table* globals = nullptr;
 
 private:
-	void executeInstruction(
-		CallFrame& frame,
-		OpCode op,
-		uint8_t aLow,
-		uint8_t bLow,
-		uint8_t cLow,
-		uint8_t ext,
-		uint8_t wideA,
-		uint8_t wideB,
-		uint8_t wideC,
-		bool hasWide
-	);
+	void executeInstruction(CallFrame& frame, const DecodedInstruction& decoded);
 	void skipNextInstruction(CallFrame& frame);
+	void runHousekeeping();
+	void tickHotLoopHousekeeping();
 	void initializeGlobalSlots(ProgramMetadata* metadata);
 	void pushFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
@@ -862,7 +857,7 @@ private:
 	Value readMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind) const;
 	void writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, const Value& value);
 	void writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount);
-	const Value& readRK(CallFrame& frame, uint32_t raw, int bits);
+	const Value& readRK(CallFrame& frame, int rk);
 	Value resolveTableIndex(Table* table, const Value& key);
 	Value resolveTableIntegerIndex(Table* table, int index);
 	Value resolveTableFieldIndex(Table* table, StringId key);
@@ -906,6 +901,7 @@ private:
 	std::unordered_map<size_t, std::vector<std::vector<Value>>> m_registerPool;
 	static constexpr size_t MAX_POOLED_REGISTER_ARRAYS = 64;
 	static constexpr size_t MAX_REGISTER_ARRAY_SIZE = 256;
+	static constexpr int HOT_LOOP_HOUSEKEEPING_STRIDE = 16;
 
 	std::vector<DecodedInstruction> m_decoded;
 	Value m_indexKey = valueNil();
@@ -916,6 +912,7 @@ private:
 	std::vector<Value> m_globalValues;
 	std::unordered_map<StringId, size_t> m_globalSlotByKey;
 	Table* m_stringIndexTable = nullptr;
+	int m_hotLoopHousekeepingCountdown = HOT_LOOP_HOUSEKEEPING_STRIDE;
 };
 
 std::string valueToString(const Value& v, const StringPool& stringPool);
