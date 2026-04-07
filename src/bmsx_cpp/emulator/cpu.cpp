@@ -1137,7 +1137,7 @@ Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, 
 	native->cycleBase = resolvedCost.base;
 	native->cyclePerArg = resolvedCost.perArg;
 	native->cyclePerRet = resolvedCost.perRet;
-	native->invoke = [invoke = std::move(fn)](NativeArgsView args, std::vector<Value>& out) {
+	native->invoke = [invoke = std::move(fn)](NativeArgsView args, NativeResults& out) {
 		out.clear();
 		invoke(args, out);
 	};
@@ -2475,17 +2475,17 @@ void CPU::refreshFrameRegisterPointers() {
 	}
 }
 
-std::vector<Value> CPU::acquireNativeReturnScratch() {
+NativeResults CPU::acquireNativeReturnScratch() {
 	if (!m_nativeReturnPool.empty()) {
-		std::vector<Value> out = std::move(m_nativeReturnPool.back());
+		NativeResults out = std::move(m_nativeReturnPool.back());
 		m_nativeReturnPool.pop_back();
 		out.clear();
 		return out;
 	}
-	return {};
+	return NativeResults{};
 }
 
-void CPU::releaseNativeReturnScratch(std::vector<Value>&& out) {
+void CPU::releaseNativeReturnScratch(NativeResults&& out) {
 	if (m_nativeReturnPool.size() < MAX_POOLED_NATIVE_RETURN_ARRAYS) {
 		m_nativeReturnPool.push_back(std::move(out));
 	}

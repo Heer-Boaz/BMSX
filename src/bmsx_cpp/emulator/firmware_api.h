@@ -22,7 +22,7 @@ public:
 
 	void registerAllFunctions();
 	void markRoots(GcHeap& heap);
-	void appendRootValues(std::vector<Value>& out) const;
+	void appendRootValues(NativeResults& out) const;
 	const std::string& cartDataNamespace() const { return m_cartDataNamespace; }
 	const std::vector<double>& persistentData() const { return m_persistentData; }
 	void restorePersistentData(const std::string& ns, const std::vector<double>& values);

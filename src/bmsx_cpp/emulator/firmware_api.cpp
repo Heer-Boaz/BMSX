@@ -549,7 +549,7 @@ void Api::markRoots(GcHeap& heap) {
 	}
 }
 
-void Api::appendRootValues(std::vector<Value>& out) const {
+void Api::appendRootValues(NativeResults& out) const {
 	for (Value handle : m_playerInputHandles) {
 		if (!isNil(handle)) {
 			out.push_back(handle);
@@ -682,12 +682,12 @@ Value Api::get_player_input_handle(int playerIndex) {
 		return valueTable(table);
 	};
 
-	const Value getModifiersStateFn = m_runtime.cpu().createNativeFunction("player_input.getModifiersState", [this, playerIndex, makeModifierStateTable](NativeArgsView args, std::vector<Value>& out) {
+	const Value getModifiersStateFn = m_runtime.cpu().createNativeFunction("player_input.getModifiersState", [this, playerIndex, makeModifierStateTable](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		PlayerInput* input = Input::instance().getPlayerInput(playerIndex);
 		out.push_back(makeModifierStateTable(input->getModifiersState()));
 	});
-	const Value getButtonStateFn = m_runtime.cpu().createNativeFunction("player_input.getButtonState", [this, playerIndex, makeButtonStateTable](NativeArgsView args, std::vector<Value>& out) {
+	const Value getButtonStateFn = m_runtime.cpu().createNativeFunction("player_input.getButtonState", [this, playerIndex, makeButtonStateTable](NativeArgsView args, NativeResults& out) {
 		const size_t offset = args.size() >= 3 ? 1 : 0;
 		const std::string& button = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset)));
 		const std::string& source = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset + 1)));
@@ -695,7 +695,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 		const ButtonState state = input->getButtonState(button, parseInputSource(source));
 		out.push_back(makeButtonStateTable(state, false, 0));
 	});
-	const Value getButtonRepeatStateFn = m_runtime.cpu().createNativeFunction("player_input.getButtonRepeatState", [this, playerIndex, makeButtonStateTable](NativeArgsView args, std::vector<Value>& out) {
+	const Value getButtonRepeatStateFn = m_runtime.cpu().createNativeFunction("player_input.getButtonRepeatState", [this, playerIndex, makeButtonStateTable](NativeArgsView args, NativeResults& out) {
 		const size_t offset = args.size() >= 3 ? 1 : 0;
 		const std::string& button = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset)));
 		const std::string& source = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset + 1)));
@@ -703,7 +703,7 @@ Value Api::get_player_input_handle(int playerIndex) {
 		const ActionState state = input->getButtonRepeatState(button, parseInputSource(source));
 		out.push_back(makeButtonStateTable(state, state.repeatpressed.value_or(false), state.repeatcount.value_or(0)));
 	});
-	const Value consumeButtonFn = m_runtime.cpu().createNativeFunction("player_input.consumeButton", [this, playerIndex](NativeArgsView args, std::vector<Value>& out) {
+	const Value consumeButtonFn = m_runtime.cpu().createNativeFunction("player_input.consumeButton", [this, playerIndex](NativeArgsView args, NativeResults& out) {
 		const size_t offset = args.size() >= 3 ? 1 : 0;
 		const std::string& button = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset)));
 		const std::string& source = m_runtime.cpu().stringPool().toString(asStringId(args.at(offset + 1)));
@@ -755,17 +755,17 @@ void Api::registerAllFunctions() {
 		return m_runtime.cpu().stringPool().toString(asStringId(value));
 	};
 
-m_runtime.registerNativeFunction("display_width", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("display_width", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	out.push_back(valueNumber(static_cast<double>(display_width())));
 });
 
-m_runtime.registerNativeFunction("display_height", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("display_height", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	out.push_back(valueNumber(static_cast<double>(display_height())));
 });
 
-m_runtime.registerNativeFunction("get_player_input", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("get_player_input", [this](NativeArgsView args, NativeResults& out) {
 	std::optional<int> playerIndex;
 	if (!args.empty() && !isNil(args.at(0))) {
 		playerIndex = static_cast<int>(std::floor(asNumber(args.at(0))));
@@ -773,22 +773,22 @@ m_runtime.registerNativeFunction("get_player_input", [this](NativeArgsView args,
 	out.push_back(get_player_input(playerIndex));
 });
 
-m_runtime.registerNativeFunction("mousebtn", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("mousebtn", [this](NativeArgsView args, NativeResults& out) {
 	const int button = static_cast<int>(std::floor(asNumber(args.at(0))));
 	out.push_back(valueBool(mousebtn(button)));
 });
 
-m_runtime.registerNativeFunction("mousebtnp", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("mousebtnp", [this](NativeArgsView args, NativeResults& out) {
 	const int button = static_cast<int>(std::floor(asNumber(args.at(0))));
 	out.push_back(valueBool(mousebtnp(button)));
 });
 
-m_runtime.registerNativeFunction("mousebtnr", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("mousebtnr", [this](NativeArgsView args, NativeResults& out) {
 	const int button = static_cast<int>(std::floor(asNumber(args.at(0))));
 	out.push_back(valueBool(mousebtnr(button)));
 });
 
-m_runtime.registerNativeFunction("pointer_screen_position", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("pointer_screen_position", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
@@ -806,7 +806,7 @@ m_runtime.registerNativeFunction("pointer_screen_position", [this](NativeArgsVie
 	out.push_back(valueTable(table));
 });
 
-m_runtime.registerNativeFunction("pointer_delta", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("pointer_delta", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_delta", InputSource::Pointer);
@@ -824,7 +824,7 @@ m_runtime.registerNativeFunction("pointer_delta", [this](NativeArgsView args, st
 	out.push_back(valueTable(table));
 });
 
-m_runtime.registerNativeFunction("pointer_viewport_position", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("pointer_viewport_position", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
@@ -849,7 +849,7 @@ m_runtime.registerNativeFunction("pointer_viewport_position", [this](NativeArgsV
 	out.push_back(valueTable(table));
 });
 
-m_runtime.registerNativeFunction("mousepos", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("mousepos", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_position", InputSource::Pointer);
@@ -874,7 +874,7 @@ m_runtime.registerNativeFunction("mousepos", [this](NativeArgsView args, std::ve
 	out.push_back(valueTable(table));
 });
 
-m_runtime.registerNativeFunction("mousewheel", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("mousewheel", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	PlayerInput* input = Input::instance().getPlayerInput(1);
 	const ButtonState state = input->getButtonState("pointer_wheel", InputSource::Pointer);
@@ -884,32 +884,32 @@ m_runtime.registerNativeFunction("mousewheel", [this](NativeArgsView args, std::
 	out.push_back(valueTable(table));
 });
 
-m_runtime.registerNativeFunction("get_lua_entry_path", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("get_lua_entry_path", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	out.push_back(valueString(m_runtime.cpu().internString(get_lua_entry_path())));
 });
 
-m_runtime.registerNativeFunction("get_lua_resource_source", [this, asText](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("get_lua_resource_source", [this, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& path = asText(args.at(0));
 	out.push_back(valueString(m_runtime.cpu().internString(get_lua_resource_source(path))));
 });
 
-m_runtime.registerNativeFunction("get_cpu_freq_hz", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("get_cpu_freq_hz", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	out.push_back(valueNumber(get_cpu_freq_hz()));
 });
 
-m_runtime.registerNativeFunction("set_cpu_freq_hz", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("set_cpu_freq_hz", [this](NativeArgsView args, NativeResults& out) {
 	set_cpu_freq_hz(asNumber(args.at(0)));
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("stat", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("stat", [this](NativeArgsView args, NativeResults& out) {
 	int index = static_cast<int>(std::floor(asNumber(args.at(0))));
 	out.push_back(valueNumber(stat(index)));
 });
 
-m_runtime.registerNativeFunction("put_mesh", [this, key](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("put_mesh", [this, key](NativeArgsView args, NativeResults& out) {
 	MeshRenderSubmission submission;
 	submission.matrix = read_matrix(args.at(1));
 	if (args.size() > 2 && valueIsTable(args[2])) {
@@ -923,7 +923,7 @@ m_runtime.registerNativeFunction("put_mesh", [this, key](NativeArgsView args, st
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("put_particle", [this, key](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("put_particle", [this, key](NativeArgsView args, NativeResults& out) {
 	ParticleRenderSubmission submission;
 	submission.position = read_vec3(args.at(0));
 	submission.size = static_cast<float>(asNumber(args.at(1)));
@@ -943,18 +943,18 @@ m_runtime.registerNativeFunction("put_particle", [this, key](NativeArgsView args
 	(void)out;
 });
 
-	m_runtime.registerNativeFunction("get_default_font", [this](NativeArgsView args, std::vector<Value>& out) {
+	m_runtime.registerNativeFunction("get_default_font", [this](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		out.push_back(build_font_descriptor(m_font.get()));
 	});
 
-	m_runtime.registerNativeFunction("create_font", [this](NativeArgsView args, std::vector<Value>& out) {
+	m_runtime.registerNativeFunction("create_font", [this](NativeArgsView args, NativeResults& out) {
 		BFont* font = create_font(args.at(0));
 		out.push_back(build_font_descriptor(font));
 		(void)out;
 	});
 
-m_runtime.registerNativeFunction("action_triggered", [this, asText](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("action_triggered", [this, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& action = asText(args.at(0));
 	std::optional<int> playerIndex;
 	if (args.size() > 1 && !isNil(args[1])) {
@@ -963,7 +963,7 @@ m_runtime.registerNativeFunction("action_triggered", [this, asText](NativeArgsVi
 	out.push_back(valueBool(action_triggered(action, playerIndex)));
 });
 
-m_runtime.registerNativeFunction("consume_action", [this, asText](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("consume_action", [this, asText](NativeArgsView args, NativeResults& out) {
 	(void)out;
 	std::optional<int> playerIndex;
 	Value actionVal;
@@ -1023,25 +1023,25 @@ m_runtime.registerNativeFunction("consume_action", [this, asText](NativeArgsView
 	consume_action(action, playerIndex);
 });
 
-m_runtime.registerNativeFunction("cartdata", [this, asText](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("cartdata", [this, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& ns = asText(args.at(0));
 	cartdata(ns);
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("dset", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("dset", [this](NativeArgsView args, NativeResults& out) {
 	int index = static_cast<int>(std::floor(asNumber(args.at(0))));
 	double value = asNumber(args.at(1));
 	dset(index, value);
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("dget", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("dget", [this](NativeArgsView args, NativeResults& out) {
 	int index = static_cast<int>(std::floor(asNumber(args.at(0))));
 	out.push_back(valueNumber(dget(index)));
 });
 
-m_runtime.registerNativeFunction("sfx", [this, asText](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("sfx", [this, asText](NativeArgsView args, NativeResults& out) {
 	const std::string& id = asText(args.at(0));
 	Value optionsValue = args.size() > 1 ? args.at(1) : valueNil();
 	ParsedAudioOptions options = parseAudioOptions(optionsValue);
@@ -1053,13 +1053,13 @@ m_runtime.registerNativeFunction("sfx", [this, asText](NativeArgsView args, std:
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("stop_sfx", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("stop_sfx", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	stop_sfx();
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("music", [this, asText](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("music", [this, asText](NativeArgsView args, NativeResults& out) {
 	std::string id;
 	if (!args.empty() && !isNil(args.at(0))) {
 		id = asText(args.at(0));
@@ -1084,19 +1084,19 @@ m_runtime.registerNativeFunction("music", [this, asText](NativeArgsView args, st
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("stop_music", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("stop_music", [this](NativeArgsView args, NativeResults& out) {
 	const Value optionsValue = args.empty() ? valueNil() : args.at(0);
 	stop_music(parseStopMusicFadeMs(optionsValue));
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("set_master_volume", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("set_master_volume", [this](NativeArgsView args, NativeResults& out) {
 	double volume = asNumber(args.at(0));
 	set_master_volume(volume);
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("set_sprite_parallax_rig", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("set_sprite_parallax_rig", [this](NativeArgsView args, NativeResults& out) {
 	if (args.size() != 9) {
 		throw BMSX_RUNTIME_ERROR("set_sprite_parallax_rig expects 9 arguments.");
 	}
@@ -1113,19 +1113,19 @@ m_runtime.registerNativeFunction("set_sprite_parallax_rig", [this](NativeArgsVie
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("pause_audio", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("pause_audio", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	pause_audio();
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("resume_audio", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("resume_audio", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	resume_audio();
 	(void)out;
 });
 
-m_runtime.registerNativeFunction("reboot", [this](NativeArgsView args, std::vector<Value>& out) {
+m_runtime.registerNativeFunction("reboot", [this](NativeArgsView args, NativeResults& out) {
 	(void)args;
 	reboot();
 	(void)out;

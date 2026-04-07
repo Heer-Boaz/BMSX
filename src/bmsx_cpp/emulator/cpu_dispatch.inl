@@ -504,9 +504,9 @@ DISPATCH_LABEL(CALL) {
 		NativeFunction* fn = asNativeFunction(callee);
 		CYCLES_ADD(static_cast<int>(fn->cycleBase));
 		const NativeArgsView args(FRAME.registers + static_cast<size_t>(a + 1), static_cast<size_t>(argCount));
-		std::vector<Value> out = acquireNativeReturnScratch();
+		NativeResults out = acquireNativeReturnScratch();
 		fn->invoke(args, out);
-		writeReturnValues(FRAME, a, retCount, out);
+		writeReturnValues(FRAME, a, retCount, out.data(), static_cast<int>(out.size()));
 		runHousekeeping();
 		releaseNativeReturnScratch(std::move(out));
 		DISPATCH_CONTINUE();

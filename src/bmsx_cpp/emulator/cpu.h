@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <iterator>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -469,9 +471,118 @@ private:
 };
 
 /**
+ * Pooled result buffer for native call returns. This keeps the native API
+ * append-oriented without routing through std::vector.
+ */
+class NativeResults {
+public:
+	class iterator {
+	public:
+		enum class Position : uint8_t {
+			Begin,
+			End,
+		};
+
+		explicit iterator(Position position)
+			: m_position(position) {
+		}
+
+		Position position() const noexcept { return m_position; }
+
+	private:
+		Position m_position;
+	};
+
+	NativeResults() = default;
+	NativeResults(NativeResults&&) noexcept = default;
+	NativeResults& operator=(NativeResults&&) noexcept = default;
+	NativeResults(const NativeResults&) = delete;
+	NativeResults& operator=(const NativeResults&) = delete;
+
+	void clear() noexcept { m_size = 0; }
+	size_t size() const noexcept { return m_size; }
+	bool empty() const noexcept { return m_size == 0; }
+	const Value* data() const noexcept { return m_data.get(); }
+	Value* data() noexcept { return m_data.get(); }
+	const Value& operator[](size_t index) const noexcept { return m_data[index]; }
+	Value& operator[](size_t index) noexcept { return m_data[index]; }
+	iterator begin() const noexcept { return iterator(iterator::Position::Begin); }
+	iterator end() const noexcept { return iterator(iterator::Position::End); }
+
+	void push_back(Value value) {
+		ensureCapacity(m_size + 1);
+		m_data[m_size++] = value;
+	}
+
+	template <typename T>
+	void emplace_back(T&& value) {
+		push_back(static_cast<Value>(std::forward<T>(value)));
+	}
+
+	void insert(iterator position, Value value) {
+		if (position.position() == iterator::Position::Begin) {
+			prepend(value);
+			return;
+		}
+		push_back(value);
+	}
+
+	template <typename InputIt>
+	void insert(iterator position, InputIt first, InputIt last) {
+		const size_t count = static_cast<size_t>(std::distance(first, last));
+		if (count == 0) {
+			return;
+		}
+		ensureCapacity(m_size + count);
+		if (position.position() == iterator::Position::Begin) {
+			std::memmove(m_data.get() + count, m_data.get(), m_size * sizeof(Value));
+			size_t index = 0;
+			for (; first != last; ++first, ++index) {
+				m_data[index] = static_cast<Value>(*first);
+			}
+			m_size += count;
+			return;
+		}
+		for (; first != last; ++first) {
+			m_data[m_size++] = static_cast<Value>(*first);
+		}
+	}
+
+private:
+	void ensureCapacity(size_t needed) {
+		if (needed <= m_capacity) {
+			return;
+		}
+		size_t nextCapacity = m_capacity == 0 ? 8 : m_capacity;
+		while (nextCapacity < needed) {
+			nextCapacity <<= 1;
+		}
+		std::unique_ptr<Value[]> next = std::make_unique<Value[]>(nextCapacity);
+		if (m_size > 0) {
+			std::memcpy(next.get(), m_data.get(), m_size * sizeof(Value));
+		}
+		m_data = std::move(next);
+		m_capacity = nextCapacity;
+	}
+
+	void prepend(Value value) {
+		ensureCapacity(m_size + 1);
+		if (m_size > 0) {
+			std::memmove(m_data.get() + 1, m_data.get(), m_size * sizeof(Value));
+		}
+		m_data[0] = value;
+		++m_size;
+	}
+
+	std::unique_ptr<Value[]> m_data;
+	size_t m_size = 0;
+	size_t m_capacity = 0;
+};
+
+/**
  * Native function signature - takes args, writes results into out buffer.
  */
-using NativeFunctionInvoke = std::function<void(NativeArgsView, std::vector<Value>&)>;
+using NativeFunctionInvoke = std::function<void(NativeArgsView, NativeResults&)>;
 
 enum class ObjType : uint8_t {
 	Table,
@@ -940,8 +1051,8 @@ private:
 	void releaseFrame(std::unique_ptr<CallFrame> frame);
 	void ensureStackSize(size_t size);
 	void refreshFrameRegisterPointers();
-	std::vector<Value> acquireNativeReturnScratch();
-	void releaseNativeReturnScratch(std::vector<Value>&& out);
+	NativeResults acquireNativeReturnScratch();
+	void releaseNativeReturnScratch(NativeResults&& out);
 
 	void decodeProgram();
 	void markRoots(GcHeap& heap);
@@ -956,7 +1067,7 @@ private:
 	GcHeap m_heap;
 	std::function<void(GcHeap&)> m_externalRootMarker;
 
-	std::vector<std::vector<Value>> m_nativeReturnPool;
+	std::vector<NativeResults> m_nativeReturnPool;
 	static constexpr size_t MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;
 
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;

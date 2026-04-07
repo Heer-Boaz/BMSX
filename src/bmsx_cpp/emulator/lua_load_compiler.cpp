@@ -336,10 +336,10 @@ LoadSubsetCompiledFunction compileChunk(Runtime& runtime, const std::string& chu
 }
 
 Value buildNativeFunction(Runtime& runtime, const LoadSubsetCompiledFunction& compiled, const std::string& chunkName) {
-	return runtime.cpu().createNativeFunction("loadstring:" + chunkName, [&runtime, chunkName, compiled](NativeArgsView args, std::vector<Value>& out) {
+	return runtime.cpu().createNativeFunction("loadstring:" + chunkName, [&runtime, chunkName, compiled](NativeArgsView args, NativeResults& out) {
 		(void)args;
 		out.clear();
-		out.push_back(runtime.cpu().createNativeFunction(chunkName + ":inner", [compiled](NativeArgsView innerArgs, std::vector<Value>& innerOut) {
+		out.push_back(runtime.cpu().createNativeFunction(chunkName + ":inner", [compiled](NativeArgsView innerArgs, NativeResults& innerOut) {
 			innerOut.clear();
 			for (const LoadSubsetOp& op : compiled.ops) {
 				Value node = op.rootParamIndex < static_cast<int>(innerArgs.size()) ? innerArgs[static_cast<size_t>(op.rootParamIndex)] : valueNil();
