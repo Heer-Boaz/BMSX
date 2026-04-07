@@ -47,6 +47,7 @@ import type { MutableTextPosition, TextBuffer } from './ide/text/text_buffer';
 import { clamp } from '../utils/clamp';
 import { textFromLines } from './ide/text/source_text';
 import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from './ide/constants';
+import { advancePhaseBlink, resetBlinkState } from './ide/caret_blink';
 
 type TerminalOutputKind =
 	| 'prompt'
@@ -213,8 +214,7 @@ export class TerminalMode {
 	private readonly suggestModel: TerminalSuggestModel;
 	private readonly suggestController: TerminalSuggestController;
 	private readonly buffer: TextBuffer;
-	private blinkTimer = 0;
-	private caretVisible = true;
+	private readonly blink = { blinkTimer: 0, cursorVisible: true };
 	private active = false;
 	private textVersion = 0;
 	private readonly terminalCommands: TerminalCommandDispatcher;
@@ -380,8 +380,8 @@ export class TerminalMode {
 		this.completion.closeSession();
 		this.suggestModel.clear();
 		this.resetPagerState();
-		this.blinkTimer = 0;
-		this.caretVisible = true;
+		this.blink.blinkTimer = 0;
+		this.blink.cursorVisible = true;
 	}
 
 	public deactivate(): void {
@@ -445,11 +445,7 @@ export class TerminalMode {
 		if (!this.active) {
 			return;
 		}
-		this.blinkTimer += deltaSeconds; // TODO: REPLACE WITH TIMELINE!!
-		if (this.blinkTimer >= CURSOR_BLINK_PERIOD) {
-			this.blinkTimer -= CURSOR_BLINK_PERIOD;
-		}
-		this.caretVisible = this.blinkTimer < CURSOR_BLINK_PERIOD * 0.5;
+		advancePhaseBlink(this.blink, deltaSeconds, CURSOR_BLINK_PERIOD);
 		this.completion.processPending(deltaSeconds);
 	}
 
@@ -837,8 +833,7 @@ export class TerminalMode {
 	}
 
 	private resetBlink(): void {
-		this.blinkTimer = 0;
-		this.caretVisible = true;
+		resetBlinkState(this.blink);
 	}
 
 	private buildWrappedLines(maxWidth: number, maxLines: number): Array<{ text: string; color: number }> {
@@ -1345,7 +1340,7 @@ export class TerminalMode {
 					baseChar: nextChar,
 					baseColor: OUTPUT_COLORS.stdout,
 				};
-				if (this.caretVisible) {
+				if (this.blink.cursorVisible) {
 					const renderFont = this.font.renderFont();
 					renderer.rect({
 						kind: 'fill',
