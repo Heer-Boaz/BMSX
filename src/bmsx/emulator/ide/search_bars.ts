@@ -250,7 +250,7 @@ export function applyResourceSearchFieldText(value: string, moveCursorToEnd: boo
 // ── Symbol search lifecycle ──────────────────────────────────────
 
 export function openSymbolSearch(initialQuery: string = ''): void {
-	if (getActiveCodeTabContext().language !== 'lua') {
+	if (getActiveCodeTabContext().mode !== 'lua') {
 		return;
 	}
 	clearReferenceHighlights();
@@ -271,7 +271,7 @@ export function openSymbolSearch(initialQuery: string = ''): void {
 }
 
 export function openGlobalSymbolSearch(initialQuery: string = ''): void {
-	if (getActiveCodeTabContext().language !== 'lua') {
+	if (getActiveCodeTabContext().mode !== 'lua') {
 		return;
 	}
 	clearReferenceHighlights();
@@ -293,7 +293,7 @@ export function openGlobalSymbolSearch(initialQuery: string = ''): void {
 
 export function openReferenceSearchPopup(): void {
 	const context = getActiveCodeTabContext();
-	if (context.language !== 'lua') {
+	if (context.mode !== 'lua') {
 		return;
 	}
 	if (ide_state.symbolSearchVisible || ide_state.symbolSearchActive) {
@@ -633,7 +633,7 @@ export function openRenamePrompt(): void {
 	closeSymbolSearch(false);
 	ide_state.createResourceActive = false;
 	const context = getActiveCodeTabContext();
-	if (context.language !== 'lua') {
+	if (context.mode !== 'lua') {
 		return;
 	}
 	const referenceContext = buildProjectReferenceContext(context);

@@ -1,6 +1,7 @@
 import { ide_state } from './ide_state';
 import type {
 	CodeTabContext,
+	CodeTabMode,
 	EditorTabId,
 	EditorTabDescriptor,
 	EditorTabKind,
@@ -26,15 +27,14 @@ import * as runtimeIde from '../runtime_ide';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { getTextSnapshot } from './text/source_text';
 import { PieceTreeBuffer } from './text/piece_tree_buffer';
-import { listIdeResources, loadTextResourceSource, listResources, saveLuaResourceSource, saveTextResourceSource } from '../workspace';
+import { listResources, saveLuaResourceSource } from '../workspace';
 import { buildDirtyFilePath } from './workspace_storage';
 import { setWorkspaceCachedSources } from '../workspace_cache';
 import { breakUndoSequence } from './undo_controller';
 import { tryShowLuaErrorOverlay } from './runtime_error_navigation';
 import { extractErrorMessage } from '../../lua/luavalue';
 import { findResourceDescriptorForChunk, closeResourceSearch } from './search_bars';
-import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../audio/aem_definition';
-import { $ } from '../../core/engine_core';
+import { applyAemSourceToRuntime, listAemResourceDescriptors, loadAemResourceSource, saveAemResourceSource } from './aem_editor';
 
 function resolvePath(descriptor: ResourceDescriptor): string {
 	return descriptor.path;
@@ -65,15 +65,14 @@ function setContextRuntimeSyncState(context: CodeTabContext, runtimeSyncState: E
 	setTabRuntimeSyncState(context.id, runtimeSyncState, runtimeSyncMessage);
 }
 
-function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: string): CodeTabContext {
+function createCodeTabContext(descriptor: ResourceDescriptor, initialSource: string, mode: CodeTabMode): CodeTabContext {
 	const title = computeResourceTabTitle(descriptor);
 	const buffer = new PieceTreeBuffer(initialSource);
 	return {
 		id: buildCodeTabId(descriptor),
 		title,
 		descriptor,
-		backing: descriptor.backing!,
-		language: descriptor.language!,
+		mode,
 		buffer,
 		cursorRow: 0,
 		cursorColumn: 0,
@@ -113,8 +112,6 @@ function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescriptor {
 	tab.kind = 'code_editor';
 	tab.title = context.title;
 	tab.dirty = context.dirty;
-	tab.backing = context.backing;
-	tab.language = context.language;
 	tab.runtimeSyncState = context.runtimeSyncState;
 	tab.runtimeSyncMessage = context.runtimeSyncMessage;
 	tab.resource = undefined;
@@ -122,7 +119,7 @@ function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescriptor {
 }
 
 function setCodeTabDiagnosticsState(context: CodeTabContext): void {
-	if (context.language === 'lua') {
+	if (context.mode === 'lua') {
 		const cached = ide_state.diagnosticsCache.get(context.id);
 		const cachedVersion = cached?.version ?? -1;
 		const cachedChunk = cached?.path;
@@ -140,61 +137,6 @@ function setCodeTabDiagnosticsState(context: CodeTabContext): void {
 		version: ide_state.textVersion,
 		source: getTextSnapshot(ide_state.buffer),
 	});
-}
-
-function resolveAemSourceFormat(descriptor: ResourceDescriptor): StructuredTextDocumentFormat {
-	if (descriptor.language === 'yaml') {
-		return 'yaml';
-	}
-	const normalizedPath = descriptor.path.toLowerCase();
-	if (normalizedPath.endsWith('.json')) {
-		return 'json';
-	}
-	return 'yaml';
-}
-
-function buildRuntimeAemValidationLookup() {
-	const audioIds = Object.keys($.assets.audio);
-	const dataAssetNames = Object.keys($.assets.data);
-	const dataAssets: Array<{ name: string; value: unknown }> = [];
-	for (let index = 0; index < dataAssetNames.length; index += 1) {
-		const name = dataAssetNames[index]!;
-		dataAssets.push({ name, value: $.assets.data[name] });
-	}
-	return buildAemValidationLookup({
-		audioIds,
-		dataAssets,
-	});
-}
-
-function reloadAudioRouter(): void {
-	$.evaluate_lua(`rget('audiorouter'):reload()`);
-}
-
-function applyAemSourceToRuntime(descriptor: ResourceDescriptor, source: string): void {
-	const assetId = descriptor.asset_id;
-	if (!assetId) {
-		throw new Error(`AEM resource '${descriptor.path}' is missing an asset id.`);
-	}
-	const doc = parseStructuredTextDocument(source, resolveAemSourceFormat(descriptor), `AEM file '${descriptor.path}'`);
-	assertValidAemDocument(doc, buildRuntimeAemValidationLookup(), descriptor.path);
-	const previousDoc = $.assets.audioevents[assetId];
-	try {
-		$.assets.audioevents[assetId] = doc as Record<string, unknown>;
-		reloadAudioRouter();
-	} catch (error) {
-		let rollbackError: unknown = null;
-		$.assets.audioevents[assetId] = previousDoc;
-		try {
-			reloadAudioRouter();
-		} catch (restoreError) {
-			rollbackError = restoreError;
-		}
-		if (rollbackError) {
-			throw new Error(`${extractErrorMessage(error)}; rollback failed: ${extractErrorMessage(rollbackError)}`);
-		}
-		throw error;
-	}
 }
 
 function activateResourceViewerTab(tab: EditorTabDescriptor): void {
@@ -217,18 +159,11 @@ export function createEntryTabContext(): CodeTabContext {
 }
 
 export function createLuaCodeTabContext(descriptor: ResourceDescriptor): CodeTabContext {
-	return createCodeTabContext({
-		path: descriptor.path,
-		type: descriptor.type,
-		asset_id: descriptor.asset_id,
-		readOnly: descriptor.readOnly,
-		backing: 'text',
-		language: 'lua',
-	}, resolveLuaSource(descriptor));
+	return createCodeTabContext(descriptor, resolveLuaSource(descriptor), 'lua');
 }
 
-export function createTextCodeTabContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
-	return createCodeTabContext(descriptor, source);
+function createAemCodeTabContext(descriptor: ResourceDescriptor, source: string): CodeTabContext {
+	return createCodeTabContext(descriptor, source, 'aem');
 }
 
 export function getActiveCodeTabContext(): CodeTabContext {
@@ -277,6 +212,7 @@ export function activateCodeEditorTab(tabId: string): void {
 	context.textVersion = ide_state.textVersion;
 
 	ide_state.maxLineLengthDirty = true;
+	ide_state.layout.setCodeTabMode(context.mode);
 	ide_state.layout.markVisualLinesDirty();
 	ide_state.layout.invalidateAllHighlights();
 	setCodeTabDiagnosticsState(context);
@@ -331,7 +267,7 @@ export function isCodeTabActive(): boolean {
 }
 
 export function isActiveLuaCodeTab(): boolean {
-	return isCodeTabActive() && getActiveCodeTabContext().language === 'lua';
+	return isCodeTabActive() && getActiveCodeTabContext().mode === 'lua';
 }
 
 export function isReadOnlyCodeTab(): boolean {
@@ -387,55 +323,58 @@ export function activateCodeTab(): void {
 
 export function openLuaCodeTab(descriptor: ResourceDescriptor): void {
 	const navigationCheckpoint = beginNavigationCapture();
-	const resolvedDescriptor: ResourceDescriptor = {
-		path: descriptor.path,
-		type: descriptor.type,
-		asset_id: descriptor.asset_id,
-		readOnly: descriptor.readOnly,
-		backing: 'text',
-		language: 'lua',
-	};
-	const tabId = buildCodeTabId(resolvedDescriptor);
+	const tabId = buildCodeTabId(descriptor);
 	if (!ide_state.codeTabContexts.has(tabId)) {
-		const context = createLuaCodeTabContext(resolvedDescriptor);
+		const context = createLuaCodeTabContext(descriptor);
 		ide_state.codeTabContexts.set(tabId, context);
 	}
 	const context = ide_state.codeTabContexts.get(tabId)!;
-	context.descriptor = resolvedDescriptor;
-	context.readOnly = resolvedDescriptor.readOnly === true;
-	context.backing = 'text';
-	context.language = 'lua';
-	context.title = computeResourceTabTitle(resolvedDescriptor);
+	context.descriptor = descriptor;
+	context.readOnly = descriptor.readOnly === true;
+	context.mode = 'lua';
+	context.title = computeResourceTabTitle(descriptor);
 	upsertCodeEditorTab(context);
 	setActiveTab(tabId);
 	completeNavigation(navigationCheckpoint);
 }
 
-export async function openTextCodeTab(descriptor: ResourceDescriptor): Promise<void> {
+export async function openAemCodeTab(descriptor: ResourceDescriptor): Promise<void> {
+	const navigationCheckpoint = beginNavigationCapture();
 	const tabId = buildCodeTabId(descriptor);
 	try {
 		let context = ide_state.codeTabContexts.get(tabId);
 		if (!context) {
-			const source = await loadTextResourceSource(descriptor.path);
+			const source = await loadAemResourceSource(descriptor.path);
 			if (source === null) {
-				throw new Error(`Text resource '${descriptor.path}' is unavailable.`);
+				throw new Error(`AEM resource '${descriptor.path}' is unavailable.`);
 			}
-			context = createTextCodeTabContext(descriptor, source);
+			context = createAemCodeTabContext(descriptor, source);
 			ide_state.codeTabContexts.set(tabId, context);
 		}
 		context.descriptor = descriptor;
 		context.readOnly = descriptor.readOnly === true;
-		context.backing = descriptor.backing!;
-		context.language = descriptor.language!;
+		context.mode = 'aem';
 		context.title = computeResourceTabTitle(descriptor);
 		upsertCodeEditorTab(context);
-		const navigationCheckpoint = beginNavigationCapture();
 		setActiveTab(tabId);
 		completeNavigation(navigationCheckpoint);
 	} catch (error) {
+		completeNavigation(navigationCheckpoint);
 		const message = extractErrorMessage(error);
 		ide_state.showMessage(message, constants.COLOR_STATUS_ERROR, 4.0);
 	}
+}
+
+export async function openCodeTabForDescriptor(descriptor: ResourceDescriptor): Promise<void> {
+	if (descriptor.type === 'lua') {
+		openLuaCodeTab(descriptor);
+		return;
+	}
+	if (descriptor.type === 'aem') {
+		await openAemCodeTab(descriptor);
+		return;
+	}
+	throw new Error(`Unsupported code tab resource type '${descriptor.type}' for '${descriptor.path}'.`);
 }
 
 export function closeTab(tabId: string): void {
@@ -626,7 +565,20 @@ export function focusChunkSource(path: string): void {
 }
 
 export function listResourcesStrict(): ResourceDescriptor[] {
-	return listIdeResources();
+	const descriptorsByPath = new Map<string, ResourceDescriptor>();
+	const luaDescriptors = listResources();
+	for (let index = 0; index < luaDescriptors.length; index += 1) {
+		const descriptor = luaDescriptors[index]!;
+		descriptorsByPath.set(descriptor.path, descriptor);
+	}
+	const aemDescriptors = listAemResourceDescriptors();
+	for (let index = 0; index < aemDescriptors.length; index += 1) {
+		const descriptor = aemDescriptors[index]!;
+		descriptorsByPath.set(descriptor.path, descriptor);
+	}
+	const descriptors = Array.from(descriptorsByPath.values());
+	descriptors.sort((left, right) => left.path.localeCompare(right.path));
+	return descriptors;
 }
 
 export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
@@ -636,19 +588,8 @@ export function openResourceDescriptor(descriptor: ResourceDescriptor): void {
 		focusEditorFromResourcePanel();
 		return;
 	}
-	const backing = descriptor.backing ?? (descriptor.type === 'lua' || descriptor.type === 'aem' ? 'text' : 'viewer');
-	const language = descriptor.language ?? (descriptor.type === 'lua' ? 'lua' : descriptor.type === 'aem' ? 'yaml' : 'plain_text');
-	if (backing === 'text' && language === 'lua') {
-		openLuaCodeTab(descriptor);
-	} else if (backing === 'text') {
-		void openTextCodeTab({
-			path: descriptor.path,
-			type: descriptor.type,
-			asset_id: descriptor.asset_id,
-			readOnly: descriptor.readOnly,
-			backing,
-			language,
-		});
+	if (descriptor.type === 'lua' || descriptor.type === 'aem') {
+		void openCodeTabForDescriptor(descriptor);
 	} else {
 		openResourceViewerTab(descriptor);
 	}
@@ -704,11 +645,12 @@ export async function save(): Promise<void> {
 	const context = getActiveCodeTabContext();
 	const source = getTextSnapshot(ide_state.buffer);
 	const targetPath = context.descriptor.path;
+	const previousAppliedGeneration = ide_state.appliedGeneration;
 	try {
-		if (context.language === 'lua') {
+		if (context.mode === 'lua') {
 			await saveLuaResourceSource(targetPath, source);
 		} else {
-			await saveTextResourceSource(targetPath, source);
+			await saveAemResourceSource(targetPath, source);
 		}
 		setWorkspaceCachedSources([targetPath, buildDirtyFilePath(targetPath)], source);
 		ide_state.dirty = false;
@@ -720,32 +662,28 @@ export async function save(): Promise<void> {
 		context.saveGeneration = ide_state.saveGeneration;
 		ide_state.lastSavedSource = source;
 		updateActiveContextDirtyFlag();
-		if (context.language === 'lua') {
-			setContextRuntimeSyncState(context, 'restart_pending', null);
-			ide_state.appliedGeneration = Math.max(0, ide_state.saveGeneration - 1);
+		if (context.mode === 'lua') {
 			context.appliedGeneration = ide_state.appliedGeneration;
+			setContextRuntimeSyncState(context, 'restart_pending', null);
 			ide_state.showMessage(`${context.title} saved (restart pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
-			return;
-		}
-		ide_state.appliedGeneration = ide_state.saveGeneration;
-		context.appliedGeneration = ide_state.appliedGeneration;
-		if (context.descriptor.type !== 'aem') {
-			setContextRuntimeSyncState(context, 'synced', null);
-			ide_state.showMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
 			return;
 		}
 		try {
 			applyAemSourceToRuntime(context.descriptor, source);
+			ide_state.appliedGeneration = ide_state.saveGeneration;
+			context.appliedGeneration = ide_state.appliedGeneration;
 			setContextRuntimeSyncState(context, 'synced', null);
 			ide_state.showMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		} catch (applyError) {
 			const applyMessage = extractErrorMessage(applyError);
+			ide_state.appliedGeneration = previousAppliedGeneration;
+			context.appliedGeneration = previousAppliedGeneration;
 			setContextRuntimeSyncState(context, 'diverged', applyMessage);
 			ide_state.showMessage(`${context.title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
 			ide_state.showWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
 		}
 	} catch (error) {
-		if (context.language === 'lua' && tryShowLuaErrorOverlay(error)) {
+		if (context.mode === 'lua' && tryShowLuaErrorOverlay(error)) {
 			return;
 		}
 		const message = extractErrorMessage(error);

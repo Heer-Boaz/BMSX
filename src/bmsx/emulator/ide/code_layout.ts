@@ -5,8 +5,7 @@ import { highlightTextLine as highlightTextLineExternal } from './lua/syntax_hig
 import * as constants from './constants';
 import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from './semantic_model';
 import type { LuaDefinitionInfo } from '../../lua/syntax/lua_ast';
-import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
-import type { ResourceLanguage } from '../types';
+import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } from './types';
 import { scheduleIdeOnce } from './background_tasks';
 import { EditorFont } from '../editor_font';
 import { getTextSnapshot, splitText } from './text/source_text';
@@ -183,10 +182,11 @@ export class CodeLayout {
 	private lastSemanticErrorChunk: string = null;
 	private builtinEpoch = 0;
 	private builtinIdentifiers: Iterable<string> = null;
+	private codeTabMode: CodeTabMode = 'lua';
 
 	constructor(
 		private readonly font: EditorFont,
-		private readonly options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot; getActiveLanguage: () => ResourceLanguage },
+		options: { maxHighlightCache: number; semanticDebounceMs: number; clockNow: () => number; getBuiltinIdentifiers: () => BuiltinIdentifierSnapshot },
 	) {
 		this.maxHighlightCache = options.maxHighlightCache;
 		this.semanticDebounceMs = Math.max(0, options.semanticDebounceMs);
@@ -196,6 +196,10 @@ export class CodeLayout {
 		const probeAdvance = this.font.advance('M');
 		const fallbackAdvance = this.font.advance(' ');
 		this.averageCharAdvance = Math.max(1, Number.isFinite(probeAdvance) && probeAdvance > 0 ? probeAdvance : (Number.isFinite(fallbackAdvance) && fallbackAdvance > 0 ? fallbackAdvance : 1));
+	}
+
+	public setCodeTabMode(mode: CodeTabMode): void {
+		this.codeTabMode = mode;
 	}
 
 	private refreshBuiltinIdentifiers(): void {
@@ -288,7 +292,7 @@ export class CodeLayout {
 	}
 
 	public requestSemanticUpdate(buffer: TextBuffer, documentVersion: number, path: string): void {
-		if (this.options.getActiveLanguage() !== 'lua') {
+		if (this.codeTabMode !== 'lua') {
 			this.pendingSemantic = null;
 			this.semanticDueAtMs = null;
 			this.semanticModel = null;
@@ -325,7 +329,7 @@ export class CodeLayout {
 			lineSignature = buffer.getLineSignature(row);
 		}
 		const lineAnnotations = annotations ? annotations[row] : undefined;
-		const highlight = this.options.getActiveLanguage() === 'lua'
+		const highlight = this.codeTabMode === 'lua'
 			? highlightTextLineExternal(source, lineAnnotations, builtinIdentifiers)
 			: highlightPlainTextLine(source);
 		const cachedEntry = cached;

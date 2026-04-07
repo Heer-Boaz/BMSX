@@ -161,7 +161,7 @@ export function runDiagnosticsForContexts(contextIds: readonly string[]): void {
 			ide_state.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
-		if (context.language !== 'lua') {
+		if (context.mode !== 'lua') {
 			const source = contextId === activeId ? getTextSnapshot(ide_state.buffer) : getTextSnapshot(context.buffer);
 			ide_state.diagnosticsCache.set(context.id, {
 				contextId: context.id,

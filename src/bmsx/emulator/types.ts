@@ -9,13 +9,7 @@ export type ResourceDescriptor = {
 	type: string;
 	asset_id?: asset_id;
 	readOnly?: boolean;
-	backing?: ResourceBacking;
-	language?: ResourceLanguage;
 };
-
-export type ResourceBacking = 'text' | 'binary' | 'viewer';
-
-export type ResourceLanguage = 'lua' | 'yaml' | 'plain_text';
 
 export type LuaResourceCreationRequest = {
 	path: string;

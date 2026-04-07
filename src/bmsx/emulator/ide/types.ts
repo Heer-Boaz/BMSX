@@ -4,8 +4,6 @@ import type {
 	LuaDefinitionLocation,
 	LuaSymbolEntry,
 	ResourceDescriptor,
-	ResourceBacking,
-	ResourceLanguage,
 } from '../types';
 import type { StackTraceFrame } from '../../lua/luavalue';
 import { MENU_COMMANDS } from './ide_input';
@@ -216,6 +214,7 @@ export type VisualLineSegment = {
 
 export type TopBarButtonId = typeof MENU_COMMANDS[number];
 export type MenuId = 'file' | 'run' | 'view' | 'debug';
+export type CodeTabMode = 'lua' | 'aem';
 
 export type EditorTabId = `resource:${string}` | `code:${string}`;
 export type EditorTabKind = 'resource_view' | 'code_editor';
@@ -261,8 +260,6 @@ export type EditorTabDescriptor = {
 	title: string;
 	closable: boolean;
 	dirty: boolean;
-	backing?: ResourceBacking;
-	language?: ResourceLanguage;
 	runtimeSyncState?: EditorRuntimeSyncState;
 	runtimeSyncMessage?: string;
 	resource?: ResourceViewerState;
@@ -297,8 +294,7 @@ export type CodeTabContext = {
 	id: string;
 	title: string;
 	descriptor: ResourceDescriptor;
-	backing: ResourceBacking;
-	language: ResourceLanguage;
+	mode: CodeTabMode;
 	buffer: TextBuffer;
 	cursorRow: number;
 	cursorColumn: number;

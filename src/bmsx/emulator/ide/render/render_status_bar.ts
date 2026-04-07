@@ -103,8 +103,6 @@ export function renderStatusBar(): void {
 			detailColor = constants.COLOR_STATUS_WARNING;
 		} else if (context.runtimeSyncState === 'restart_pending') {
 			detail = 'RESTART PENDING';
-		} else if (context.language === 'yaml') {
-			detail = 'YAML';
 		}
 		if (detail.length > 0) {
 			drawEditorText(ide_state.font, detail, ide_state.viewportWidth - measureText(detail) - 4, statusTop + 2, undefined, detailColor);

@@ -3,7 +3,6 @@ import type { HttpResponse, StorageService } from '../platform';
 import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
 import { Runtime } from './runtime';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';
-import * as runtimeIde from './runtime_ide';
 import { $ } from '../core/engine_core';
 import { LuaResourceCreationRequest, ResourceDescriptor } from './types';
 import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './workspace_path';
@@ -30,7 +29,7 @@ export async function saveLuaResourceSource(path: string, source: string): Promi
 	const cart = resolveEditableCartLuaSources();
 	const asset = cart.path2lua[path];
 	const sourcePath = asset.source_path;
-	await persistTextSourceToFilesystem(sourcePath, source, 'Lua source');
+	await persistWorkspaceSourceFile(sourcePath, source);
 	asset.src = source;
 	asset.update_timestamp = $.platform.clock.dateNow();
 	cart.path2lua![sourcePath] = asset;
@@ -59,7 +58,7 @@ export async function createLuaResource(request: LuaResourceCreationRequest): Pr
 	registerAsset(resolveEditableCartLuaSources());
 	runtimeLuaPipeline.invalidateModuleAliases(Runtime.instance);
 	const filesystemPath = asset.source_path;
-	await persistLuaSourceToFilesystem(filesystemPath, contents);
+	await persistWorkspaceSourceFile(filesystemPath, contents);
 	runtimeLuaPipeline.markSourceChunkAsDirty(Runtime.instance, asset.source_path);
 	const descriptor: ResourceDescriptor = { path: asset.source_path, type: 'lua' };
 	return descriptor;
@@ -155,16 +154,12 @@ function resolveOverrideUpdatedAt(record: WorkspaceOverrideRecord, fallback: num
 }
 
 export async function persistLuaSourceToFilesystem(path: string, source: string): Promise<void> {
-	await persistTextSourceToFilesystem(path, source, 'Lua source');
+	await persistWorkspaceSourceFile(path, source);
 }
 
-export async function saveTextResourceSource(path: string, source: string): Promise<void> {
-	await persistTextSourceToFilesystem(path, source, 'text resource');
-}
-
-export async function persistTextSourceToFilesystem(path: string, source: string, resourceLabel: string = 'text resource'): Promise<void> {
+export async function persistWorkspaceSourceFile(path: string, source: string): Promise<void> {
 	if (typeof fetch !== 'function') {
-		throw new Error(`[Runtime] Fetch API unavailable; cannot persist ${resourceLabel}.`);
+		throw new Error('[Runtime] Fetch API unavailable; cannot persist workspace source.');
 	}
 	let response: HttpResponse;
 	try {
@@ -174,16 +169,14 @@ export async function persistTextSourceToFilesystem(path: string, source: string
 			body: JSON.stringify({ path: resolveWorkspacePath(path), contents: source }),
 		});
 	} catch (error) {
-		handleTextPersistenceFailure('persist', resourceLabel, `[Runtime] Failed to reach save endpoint for '${path}': ${error}`);
-		return;
+		throw new Error(`[Runtime] Failed to reach save endpoint for '${path}': ${extractErrorMessage(error)}`);
 	}
 	if (!response.ok) {
 		let detail = '';
 		try {
 			detail = await response.text();
 		} catch (textError) {
-			handleTextPersistenceFailure('persist', resourceLabel, `[Runtime] Save rejected for '${path}' (response body read failed): ${textError}`);
-			return;
+			throw new Error(`[Runtime] Save rejected for '${path}' (response body read failed): ${extractErrorMessage(textError)}`);
 		}
 		let finalDetail = response.statusText;
 		if (detail && detail.length > 0) {
@@ -191,9 +184,7 @@ export async function persistTextSourceToFilesystem(path: string, source: string
 			try {
 				parsed = JSON.parse(detail);
 			} catch (parseError) {
-				const parseMessage = extractErrorMessage(parseError);
-				handleTextPersistenceFailure('persist', resourceLabel, { detail: `[Runtime] Save rejected for '${path}' (error payload parse failed): ${parseMessage}`, error: parseError });
-				return;
+				throw new Error(`[Runtime] Save rejected for '${path}' (error payload parse failed): ${extractErrorMessage(parseError)}`);
 			}
 			if (parsed && typeof parsed === 'object' && 'error' in parsed) {
 				const record = parsed as { error?: unknown };
@@ -206,114 +197,21 @@ export async function persistTextSourceToFilesystem(path: string, source: string
 				finalDetail = detail;
 			}
 		}
-		handleTextPersistenceFailure('persist', resourceLabel, `[Runtime] Save rejected for '${path}': ${finalDetail}`);
-		return;
+		throw new Error(`[Runtime] Save rejected for '${path}': ${finalDetail}`);
 	}
 }
 
 export async function fetchLuaSourceFromFilesystem(path: string): Promise<string> {
-	return fetchTextSourceFromFilesystem(path, 'Lua source');
+	return loadWorkspaceSourceFile(path);
 }
 
-export async function loadTextResourceSource(path: string): Promise<string> {
+export async function loadWorkspaceSourceFile(path: string): Promise<string> {
 	const cached = getWorkspaceCachedSource(path);
 	if (cached !== null) {
 		return cached;
 	}
-	return fetchTextSourceFromFilesystem(path, 'text resource');
-}
-
-export async function fetchTextSourceFromFilesystem(path: string, resourceLabel: string = 'text resource'): Promise<string> {
-	if (typeof fetch !== 'function') {
-		return null;
-	}
-	let response: HttpResponse;
-	const resolvedPath = resolveWorkspacePath(path);
-	const url = `${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(resolvedPath)}`;
-	try {
-		response = await fetch(url, { method: 'GET', cache: 'no-store' });
-	} catch (error) {
-		handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Failed to load ${resourceLabel} from filesystem (${path})`, error });
-		return null;
-	}
-	if (response.status === 404) {
-		return null;
-	}
-	if (!response.ok) {
-		let detail = '';
-		try {
-			detail = await response.text();
-		} catch (textError) {
-			const message = extractErrorMessage(textError);
-			handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Failed to load ${resourceLabel} from '${path}' (response body read failed): ${message}`, error: textError });
-			return null;
-		}
-		let finalDetail = response.statusText;
-		if (detail && detail.length > 0) {
-			let parsed: unknown;
-			try {
-				parsed = JSON.parse(detail);
-			} catch (parseError) {
-				const parseMessage = extractErrorMessage(parseError);
-				handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Failed to load ${resourceLabel} from '${path}' (error payload parse failed): ${parseMessage}`, error: parseError });
-				return null;
-			}
-			if (parsed && typeof parsed === 'object' && 'error' in parsed) {
-				const record = parsed as { error?: unknown };
-				if (typeof record.error === 'string' && record.error.length > 0) {
-					finalDetail = record.error;
-				} else {
-					finalDetail = detail;
-				}
-			} else {
-				finalDetail = detail;
-			}
-		}
-		handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Failed to load ${resourceLabel} from '${path}': ${finalDetail}` });
-		return null;
-	}
-	let payload: unknown;
-	try {
-		payload = await response.json();
-	} catch (parseError) {
-		const message = extractErrorMessage(parseError);
-		handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Invalid response while loading ${resourceLabel} from '${path}': ${message}`, error: parseError });
-		return null;
-	}
-	if (!payload || typeof payload !== 'object') {
-		handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Response for '${path}' missing contents` });
-		return null;
-	}
-	const record = payload as { contents?: unknown };
-	if (typeof record.contents !== 'string') {
-		handleTextPersistenceFailure('fetch', resourceLabel, { detail: `[Runtime] Response for '${path}' missing contents` });
-		return null;
-	}
-	return record.contents;
-}
-
-function handleTextPersistenceFailure(
-	context: string,
-	resourceLabel: string,
-	options: string | { detail?: string; error?: unknown } = {}
-): void {
-	const runtime = Runtime.instance;
-	if (typeof options === 'string') {
-		runtimeIde.recordLuaWarning(runtime, options);
-		return;
-	}
-	const parts: string[] = [context, resourceLabel];
-	if (options.detail && options.detail.length > 0) {
-		parts.push(options.detail);
-	}
-	if (options.error !== undefined) {
-		const reason = extractErrorMessage(options.error);
-		if (reason.length > 0) {
-			parts.push(reason);
-		}
-	}
-	const message = parts.join(': ');
-	runtimeIde.recordLuaWarning(runtime, message);
+	const payload = await fetchWorkspaceFile(resolveWorkspacePath(path));
+	return payload ? payload.contents : null;
 }
 
 // StorageService is injected because the workspace merge runs during boot before $.platform is fully wired;
@@ -749,45 +647,6 @@ export function listResources(): ResourceDescriptor[] {
 				continue;
 			}
 			descriptorsByPath.set(path, { path, type: asset.type, asset_id: asset.resid, readOnly });
-		}
-	}
-	const descriptors = Array.from(descriptorsByPath.values());
-	descriptors.sort((left, right) => left.path.localeCompare(right.path));
-	return descriptors;
-}
-
-export function listIdeResources(): ResourceDescriptor[] {
-	const descriptorsByPath = new Map<string, ResourceDescriptor>();
-	const luaDescriptors = listResources();
-	for (let index = 0; index < luaDescriptors.length; index += 1) {
-		const descriptor = luaDescriptors[index]!;
-		descriptorsByPath.set(descriptor.path, {
-			path: descriptor.path,
-			type: descriptor.type,
-			asset_id: descriptor.asset_id,
-			readOnly: descriptor.readOnly,
-			backing: 'text',
-			language: 'lua',
-		});
-	}
-	const assetSource = $.asset_source;
-	if (assetSource) {
-		const audioEventEntries = assetSource.list('aem');
-		for (let index = 0; index < audioEventEntries.length; index += 1) {
-			const asset = audioEventEntries[index]!;
-			if (!asset.source_path) {
-				continue;
-			}
-			if (descriptorsByPath.has(asset.source_path)) {
-				continue;
-			}
-			descriptorsByPath.set(asset.source_path, {
-				path: asset.source_path,
-				type: asset.type,
-				asset_id: asset.resid,
-				backing: 'text',
-				language: asset.source_path.endsWith('.json') ? 'plain_text' : 'yaml',
-			});
 		}
 	}
 	const descriptors = Array.from(descriptorsByPath.values());

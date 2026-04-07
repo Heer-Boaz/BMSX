@@ -23,7 +23,7 @@ import {
 	WORKSPACE_DIRTY_DIR,
 } from '../workspace';
 import { setFontVariant } from './editor_view';
-import { findCodeTabContext, initializeTabs, openLuaCodeTab, openTextCodeTab, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
+import { findCodeTabContext, initializeTabs, openCodeTabForDescriptor, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
 import { FontVariant } from '../font';
 import { getTextSnapshot } from './text/source_text';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../workspace_cache';
@@ -50,8 +50,6 @@ export type SerializedDescriptor = {
 	type: string;
 	asset_id?: string;
 	readOnly?: boolean;
-	backing?: 'text' | 'binary' | 'viewer';
-	language?: 'lua' | 'yaml' | 'plain_text';
 };
 
 export type PersistedDirtyEntry = {
@@ -359,59 +357,35 @@ export async function applyWorkspaceAutosavePayload(payload: WorkspaceAutosavePa
 	restoreBreakpointsFromPayload(payload.breakpoints );
 }
 
-export function serializeDescriptor(descriptor: ResourceDescriptor): SerializedDescriptor {
-	return {
-		path: descriptor.path,
-		type: descriptor.type,
-		asset_id: descriptor.asset_id,
-		readOnly: descriptor.readOnly,
-		backing: descriptor.backing,
-		language: descriptor.language,
-	};
-}
-
-export function resolveSerializedDescriptor(serialized: SerializedDescriptor): ResourceDescriptor {
-	const backing = serialized.backing ?? (serialized.type === 'lua' || serialized.type === 'aem' ? 'text' : 'viewer');
-	const language = serialized.language ?? (serialized.type === 'lua' ? 'lua' : serialized.type === 'aem' ? 'yaml' : 'plain_text');
-	return {
-		path: serialized.path,
-		type: serialized.type,
-		asset_id: serialized.asset_id,
-		readOnly: serialized.readOnly,
-		backing,
-		language,
-	};
-}
-
 export async function hydrateDirtyFiles(entries: PersistedDirtyEntry[]): Promise<void> {
 	for (const entry of entries) {
-		const descriptor = resolveSerializedDescriptor(entry.descriptor);
+		const descriptor: ResourceDescriptor = {
+			path: entry.descriptor.path,
+			type: entry.descriptor.type,
+			asset_id: entry.descriptor.asset_id,
+			readOnly: entry.descriptor.readOnly,
+		};
 		let context = ide_state.codeTabContexts.get(entry.contextId);
 		if (!context) {
 			context = findCodeTabContext(descriptor.path);
 		}
 		if (!context) {
-			if (descriptor.language === 'lua') {
-				openLuaCodeTab(descriptor);
-			} else {
-				await openTextCodeTab(descriptor);
-			}
+			await openCodeTabForDescriptor(descriptor);
 			context = findCodeTabContext(descriptor.path);
 		}
 		if (!context) {
-			continue;
+			throw new Error(`Failed to restore code tab context for '${descriptor.path}'.`);
 		}
 		const contents = await readDirtyBuffer(entry.dirtyPath);
 		if (contents === null) {
 			continue;
 		}
 		const saved = await fetchWorkspaceFile(descriptor.path);
-		const savedContents = saved?.contents;
-		if (savedContents !== null && savedContents !== contents) {
+		if (saved && saved.contents !== contents) {
 			await deleteDirtyBuffer(entry.dirtyPath);
 			deleteWorkspaceCachedSources([entry.dirtyPath, descriptor.path]);
-			applySourceToContext(context, savedContents, entry);
-			context.lastSavedSource = savedContents;
+			applySourceToContext(context, saved.contents, entry);
+			context.lastSavedSource = saved.contents;
 			context.dirty = false;
 			context.savePointDepth = context.undoStack.length;
 			setTabDirty(context.id, false);
@@ -580,7 +554,12 @@ export function collectDirtyContextEntries(): Map<string, DirtyContextEntry> {
 		if (!context.dirty) {
 			continue;
 		}
-		const descriptor = serializeDescriptor(context.descriptor);
+		const descriptor: SerializedDescriptor = {
+			path: context.descriptor.path,
+			type: context.descriptor.type,
+			asset_id: context.descriptor.asset_id,
+			readOnly: context.descriptor.readOnly,
+		};
 		const metadata = captureContextSnapshotMetadata(context);
 		const dirtyPath = buildDirtyFilePath(descriptor.path);
 		const text = captureContextText(context);
@@ -710,7 +689,7 @@ export async function persistDirtyContextEntries(entries: Map<string, DirtyConte
 
 export function loadCleanSrc(path: string) {
 	const context = findCodeTabContext(path);
-	if (context && context.language !== 'lua') {
+	if (context && context.mode === 'aem') {
 		return context.lastSavedSource;
 	}
 	return runtimeLuaPipeline.resourceSourceForChunk(Runtime.instance, path);

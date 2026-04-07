@@ -696,7 +696,7 @@ export function buildMemberCompletionItems(request: LuaMemberCompletionRequest):
 
 export function requestSemanticRefresh(context?: CodeTabContext): void {
 	const activeContext = context ?? getActiveCodeTabContext();
-	if (activeContext.language !== 'lua') {
+	if (activeContext.mode !== 'lua') {
 		return;
 	}
 	const path = activeContext.descriptor.path;
@@ -1087,7 +1087,7 @@ export function resolveContextMenuToken(row: number, column: number): EditorCont
 }
 
 export function refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext): void {
-	if (context.language !== 'lua') {
+	if (context.mode !== 'lua') {
 		clearGotoHoverHighlight();
 		return;
 	}
@@ -1141,7 +1141,7 @@ export function clearReferenceHighlights(): void {
 
 export function tryGotoDefinitionAt(row: number, column: number): boolean {
 	const context = getActiveCodeTabContext();
-	if (context.language !== 'lua') {
+	if (context.mode !== 'lua') {
 		return false;
 	}
 	let definition = resolveSemanticDefinitionLocation(context, row + 1, column + 1);
