@@ -539,6 +539,7 @@ function overlap2dsystem:update()
 	clear_array(event_colliders)
 	for obj, collider in world_instance:objects_with_components(collider2dcomponent, active_scope) do
 		if collider.enabled then
+			collider:prepare_overlap_cache()
 			broadphase:add_or_update(collider)
 			collider_lookup[collider.id] = collider
 			event_colliders[#event_colliders + 1] = collider
@@ -661,6 +662,9 @@ function overlap2dsystem:update()
 	self.next_pairs = prev_pairs
 	self.prev_collider_lookup = collider_lookup
 	self.next_collider_lookup = prev_collider_lookup
+	for i = 1, #event_colliders do
+		event_colliders[i]:clear_overlap_cache()
+	end
 end
 
 local transformsystem<const> = {}

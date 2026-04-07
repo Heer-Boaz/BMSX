@@ -189,20 +189,10 @@ local get_driving_sprite_for_collider<const> = function(collider)
 	if owner == nil then
 		return nil
 	end
-	if owner.collider ~= nil and owner.collider == collider then
-		if owner.sprite_component ~= nil then
-			return owner.sprite_component
-		end
-		return owner:get_component('spritecomponent')
+	if owner._collision_primary_collider == collider then
+		return owner._collision_primary_sprite
 	end
-	local sprites<const> = owner:get_components('spritecomponent')
-	for i = 1, #sprites do
-		local sprite<const> = sprites[i]
-		if sprite.collider_local_id == collider.id_local then
-			return sprite
-		end
-	end
-	return nil
+	return owner._collision_driving_sprites[collider.id_local]
 end
 
 local get_sprite_collision_geometry<const> = function(sprite)
@@ -210,14 +200,24 @@ local get_sprite_collision_geometry<const> = function(sprite)
 	if id == nil then
 		return nil, nil
 	end
+	local flip_h<const> = sprite.flip.flip_h
+	local flip_v<const> = sprite.flip.flip_v
+	if sprite._collision_geometry_imgid == id and sprite._collision_geometry_flip_h == flip_h and sprite._collision_geometry_flip_v == flip_v then
+		return sprite._collision_geometry_area, sprite._collision_geometry_polys
+	end
 	local image_asset<const> = assets.img[id]
 	if image_asset == nil or image_asset.imgmeta == nil then
 		error('[spritecomponent] image metadata missing for "' .. tostring(id) .. '"')
 	end
 	local imgmeta<const> = image_asset.imgmeta
-	local flip_h<const> = sprite.flip.flip_h
-	local flip_v<const> = sprite.flip.flip_v
-	return select_bounding_box(flip_h, flip_v, imgmeta.boundingbox), select_hit_polygons(flip_h, flip_v, imgmeta.hitpolygons)
+	local area<const> = select_bounding_box(flip_h, flip_v, imgmeta.boundingbox)
+	local polys<const> = select_hit_polygons(flip_h, flip_v, imgmeta.hitpolygons)
+	sprite._collision_geometry_imgid = id
+	sprite._collision_geometry_flip_h = flip_h
+	sprite._collision_geometry_flip_v = flip_v
+	sprite._collision_geometry_area = area
+	sprite._collision_geometry_polys = polys
+	return area, polys
 end
 
 local update_world_area_cache<const> = function(collider)
@@ -254,6 +254,90 @@ local update_world_area_cache<const> = function(collider)
 	area_poly[7] = area.left
 	area_poly[8] = area.bottom
 	return area
+end
+
+local prepare_overlap_cache<const> = function(collider)
+	local parent<const> = collider.parent
+	local sprite<const> = get_driving_sprite_for_collider(collider)
+	local shape_offset_x = collider.shape_offset_x
+	local shape_offset_y = collider.shape_offset_y
+	local local_area = collider.local_area
+	local local_polys = collider.local_polys
+	local shape_kind
+	if sprite ~= nil then
+		local sprite_area<const>, sprite_polys<const> = get_sprite_collision_geometry(sprite)
+		local_area = sprite_area
+		local_polys = sprite_polys
+		shape_offset_x, shape_offset_y = get_sprite_offset_xy(sprite)
+		if local_polys ~= nil and #local_polys > 0 then
+			shape_kind = 'poly'
+		else
+			shape_kind = 'aabb'
+		end
+	elseif collider.local_circle ~= nil then
+		shape_kind = 'circle'
+	elseif local_polys ~= nil and #local_polys > 0 then
+		shape_kind = 'poly'
+	else
+		shape_kind = 'aabb'
+	end
+
+	local area<const> = collider._world_area_cache
+	if local_area == nil then
+		local sx<const> = parent.sx or 0
+		local sy<const> = parent.sy or 0
+		area.left = parent.x + shape_offset_x
+		area.top = parent.y + shape_offset_y
+		area.right = area.left + sx
+		area.bottom = area.top + sy
+	else
+		area.left = parent.x + shape_offset_x + local_area.left
+		area.top = parent.y + shape_offset_y + local_area.top
+		area.right = parent.x + shape_offset_x + local_area.right
+		area.bottom = parent.y + shape_offset_y + local_area.bottom
+	end
+	local area_poly<const> = collider._world_area_poly_cache
+	area_poly[1] = area.left
+	area_poly[2] = area.top
+	area_poly[3] = area.right
+	area_poly[4] = area.top
+	area_poly[5] = area.right
+	area_poly[6] = area.bottom
+	area_poly[7] = area.left
+	area_poly[8] = area.bottom
+
+	if shape_kind == 'poly' then
+		local px<const> = parent.x + shape_offset_x
+		local py<const> = parent.y + shape_offset_y
+		local out<const> = collider._world_polys_cache
+		for i = 1, #local_polys do
+			local poly<const> = local_polys[i]
+			local out_poly = out[i]
+			if out_poly == nil then
+				out_poly = {}
+				out[i] = out_poly
+			end
+			local old_len<const> = #out_poly
+			for j = 1, #poly, 2 do
+				out_poly[j] = poly[j] + px
+				out_poly[j + 1] = poly[j + 1] + py
+			end
+			for j = #poly + 1, old_len do
+				out_poly[j] = nil
+			end
+		end
+		for i = #local_polys + 1, #out do
+			out[i] = nil
+		end
+	elseif shape_kind == 'circle' then
+		local circle<const> = collider.local_circle
+		local out<const> = collider._world_circle_cache
+		out.x = parent.x + shape_offset_x + circle.x
+		out.y = parent.y + shape_offset_y + circle.y
+		out.r = circle.r
+	end
+	collider._overlap_shape_kind = shape_kind
+	collider._overlap_cache_valid = true
 end
 
 -- collider2dcomponent.new(opts)
@@ -305,6 +389,8 @@ function collider2dcomponent.new(opts)
 	self._world_area_polys_cache = { self._world_area_poly_cache }
 	self._world_circle_cache = { x = 0, y = 0, r = 0 }
 	self._world_polys_cache = {}
+	self._overlap_shape_kind = nil
+	self._overlap_cache_valid = false
 	return self
 end
 
@@ -332,20 +418,32 @@ function collider2dcomponent:set_shape_offset(offset_x, offset_y)
 end
 
 function collider2dcomponent:get_world_area()
+	if self._overlap_cache_valid then
+		return self._world_area_cache
+	end
 	return update_world_area_cache(self)
 end
 
 function collider2dcomponent:get_world_area_poly()
+	if self._overlap_cache_valid then
+		return self._world_area_poly_cache
+	end
 	update_world_area_cache(self)
 	return self._world_area_poly_cache
 end
 
 function collider2dcomponent:get_world_area_polys()
+	if self._overlap_cache_valid then
+		return self._world_area_polys_cache
+	end
 	update_world_area_cache(self)
 	return self._world_area_polys_cache
 end
 
 function collider2dcomponent:get_shape_kind()
+	if self._overlap_cache_valid then
+		return self._overlap_shape_kind
+	end
 	local sprite<const> = get_driving_sprite_for_collider(self)
 	if sprite ~= nil then
 		local _<const>, local_polys<const> = get_sprite_collision_geometry(sprite)
@@ -365,6 +463,12 @@ function collider2dcomponent:get_shape_kind()
 end
 
 function collider2dcomponent:get_world_polys()
+	if self._overlap_cache_valid then
+		if self._overlap_shape_kind ~= 'poly' then
+			return nil
+		end
+		return self._world_polys_cache
+	end
 	local sprite<const> = get_driving_sprite_for_collider(self)
 	local local_polys = self.local_polys
 	local px = self.parent.x + self.shape_offset_x
@@ -405,6 +509,12 @@ function collider2dcomponent:get_world_polys()
 end
 
 function collider2dcomponent:get_world_circle()
+	if self._overlap_cache_valid then
+		if self._overlap_shape_kind ~= 'circle' then
+			return nil
+		end
+		return self._world_circle_cache
+	end
 	if get_driving_sprite_for_collider(self) ~= nil then
 		return nil
 	end
@@ -419,6 +529,14 @@ function collider2dcomponent:get_world_circle()
 	out.y = py + circle.y
 	out.r = circle.r
 	return out
+end
+
+function collider2dcomponent:prepare_overlap_cache()
+	prepare_overlap_cache(self)
+end
+
+function collider2dcomponent:clear_overlap_cache()
+	self._overlap_cache_valid = false
 end
 
 -- collider2dcomponent:apply_collision_profile(profile_name)

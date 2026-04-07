@@ -70,6 +70,10 @@ local worldobject<const> = {}
 worldobject.__index = worldobject
 
 local world_id_max<const> = 0x7fffffff
+local collision_linked_component_types<const> = {
+	spritecomponent = true,
+	collider2dcomponent = true,
+}
 
 local component_key<const> = function(type_or_name)
 	local t<const> = type(type_or_name)
@@ -84,6 +88,43 @@ local component_key<const> = function(type_or_name)
 		return string.lower(name)
 	end
 	return string.lower(tostring(type_or_name))
+end
+
+local rebuild_collision_sprite_links<const> = function(self)
+	local sprite_bucket<const> = self.component_map.spritecomponent
+	local collider_bucket<const> = self.component_map.collider2dcomponent
+	local primary_sprite = self.sprite_component
+	local primary_collider = self.collider
+	if primary_sprite == nil or primary_sprite.parent ~= self then
+		if sprite_bucket ~= nil then
+			primary_sprite = sprite_bucket[1]
+		else
+			primary_sprite = nil
+		end
+	end
+	if primary_collider == nil or primary_collider.parent ~= self then
+		if collider_bucket ~= nil then
+			primary_collider = collider_bucket[1]
+		else
+			primary_collider = nil
+		end
+	end
+	self._collision_primary_sprite = primary_sprite
+	self._collision_primary_collider = primary_collider
+	local map<const> = self._collision_driving_sprites
+	for key in pairs(map) do
+		map[key] = nil
+	end
+	if sprite_bucket == nil then
+		return
+	end
+	for i = 1, #sprite_bucket do
+		local sprite<const> = sprite_bucket[i]
+		local collider_local_id<const> = sprite.collider_local_id
+		if collider_local_id ~= nil then
+			map[collider_local_id] = sprite
+		end
+	end
 end
 
 function worldobject.new(opts)
@@ -113,6 +154,9 @@ function worldobject.new(opts)
 	local definition<const> = opts.definition or (opts.fsm_id and fsmlibrary.get(opts.fsm_id))
 	self.sc = opts.sc or fsm.statemachinecontroller.new({ target = self, definition = definition, fsm_id = opts.fsm_id })
 	self.btreecontexts = {}
+	self._collision_primary_sprite = nil
+	self._collision_primary_collider = nil
+	self._collision_driving_sprites = {}
 
 	self.timelines = components.timelinecomponent.new({})
 	self:add_component(self.timelines)
@@ -201,6 +245,9 @@ function worldobject:add_component(comp)
 	end
 	if comp.type_name == 'abilitiescomponent' then
 		self.abilities = comp
+	end
+	if collision_linked_component_types[comp.type_name] then
+		rebuild_collision_sprite_links(self)
 	end
 
 	return comp
@@ -315,6 +362,15 @@ function worldobject:remove_component_instance(comp)
 	comp:unbind()
 	registry_instance:deregister(comp, true)
 	comp.parent = nil
+	if comp == self.sprite_component then
+		self.sprite_component = nil
+	end
+	if comp == self.collider then
+		self.collider = nil
+	end
+	if collision_linked_component_types[comp.type_name] then
+		rebuild_collision_sprite_links(self)
+	end
 end
 
 function worldobject:remove_all_components()
