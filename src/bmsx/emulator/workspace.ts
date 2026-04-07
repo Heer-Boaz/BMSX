@@ -1,5 +1,5 @@
 import { extractErrorMessage } from '../lua/luavalue';
-import type { HttpResponse, StorageService } from '../platform';
+import type { HttpResponse, StorageService } from '../platform/index';
 import type { LuaSourceRecord, LuaSourceRegistry } from './lua_sources';
 import { Runtime } from './runtime';
 import * as runtimeLuaPipeline from './runtime_lua_pipeline';

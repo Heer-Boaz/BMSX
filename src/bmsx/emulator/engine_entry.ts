@@ -1,7 +1,10 @@
 import { startCart } from './start_cart';
+import { Runtime } from './runtime';
 
 type BmsxGlobal = {
 	startCart: typeof startCart;
+	setCpuProfilerEnabled(enabled: boolean): void;
+	formatCpuProfilerReport(): string;
 };
 
 declare global {
@@ -10,4 +13,13 @@ declare global {
 }
 
 const globalTarget = globalThis as typeof globalThis & { bmsx?: BmsxGlobal };
-globalTarget.bmsx = { startCart };
+
+function setCpuProfilerEnabled(enabled: boolean): void {
+	Runtime.instance.cpu.setProfilerEnabled(enabled);
+}
+
+function formatCpuProfilerReport(): string {
+	return Runtime.instance.cpu.formatProfilerReport();
+}
+
+globalTarget.bmsx = { startCart, setCpuProfilerEnabled, formatCpuProfilerReport };

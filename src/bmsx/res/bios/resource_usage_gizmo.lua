@@ -57,9 +57,9 @@ local draw_usage_bar<const> = function(label, used, total, x, y, z, font_id, fil
 end
 
 function gizmo.draw()
-	-- if not $.view.show_resource_usage_gizmo then
-	-- 	return
-	-- end
+	if not $.view.show_resource_usage_gizmo then
+		return
+	end
 
 	local x<const> = 8
 	local y<const> = 8

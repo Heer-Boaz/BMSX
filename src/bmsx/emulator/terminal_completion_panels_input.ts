@@ -1,4 +1,4 @@
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide/key_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide/input/key_input';
 import type { CompletionContext, LuaCompletionItem } from './ide/types';
 import type { CompletionController } from './ide/completion_controller';
 import type { SymbolEntry } from './types';

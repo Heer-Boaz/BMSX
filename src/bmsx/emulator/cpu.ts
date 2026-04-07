@@ -3,12 +3,16 @@ import type { RuntimeStringPoolState } from './string_pool';
 import type { Memory } from './memory';
 import { addTrackedLuaHeapBytes, replaceTrackedLuaHeapBytes } from './lua_heap_usage';
 import { formatNumber } from './number_format';
+import { BASE_CYCLES, OpCode } from './cpu_opcode_info';
+import { CpuExecutionProfiler, formatCpuProfilerReport, type CpuProfilerReportOptions, type CpuProfilerSnapshot } from './cpu_profiler';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_OPERAND_BITS, readInstructionWord } from './instruction_format';
 import { findVdpPacketSchema, getVdpPacketArgKind, VdpPacketWordKind } from './vdp_packet_schema';
 import {
 	VDP_STREAM_BUFFER_BASE,
 	VDP_STREAM_BUFFER_SIZE,
 } from './memory_map';
+
+export { OpCode } from './cpu_opcode_info';
 
 export type Value = null | boolean | number | StringValue | Table | Closure | NativeFunction | NativeObject;
 
@@ -449,72 +453,6 @@ export type Closure = {
 	upvalues: Upvalue[];
 };
 
-export const enum OpCode {
-	WIDE,
-	MOV,
-	LOADK,
-	LOADNIL,
-	LOADBOOL,
-	KNIL,
-	KFALSE,
-	KTRUE,
-	K0,
-	K1,
-	KM1,
-	KSMI,
-	GETG,
-	SETG,
-	GETT,
-	SETT,
-	NEWT,
-	ADD,
-	SUB,
-	MUL,
-	DIV,
-	MOD,
-	FLOORDIV,
-	POW,
-	BAND,
-	BOR,
-	BXOR,
-	SHL,
-	SHR,
-	CONCAT,
-	CONCATN,
-	UNM,
-	NOT,
-	LEN,
-	BNOT,
-	EQ,
-	LT,
-	LE,
-	TEST,
-	TESTSET,
-	JMP,
-	JMPIF,
-	JMPIFNOT,
-	CLOSURE,
-	GETUP,
-	SETUP,
-	VARARG,
-	CALL,
-	RET,
-	LOAD_MEM,
-	STORE_MEM,
-	STORE_MEM_WORDS,
-	BR_TRUE,
-	BR_FALSE,
-	GETSYS,
-	SETSYS,
-	GETGL,
-	SETGL,
-	GETI,
-	SETI,
-	GETFIELD,
-	SETFIELD,
-	SELF,
-}
-
 export const enum MemoryAccessKind {
 	Word,
 	U8,
@@ -530,62 +468,6 @@ export const enum RunResult {
 }
 
 const CEIL_DIV4 = (value: number) => (value + 3) >> 2;
-
-const BASE_CYCLES: Uint8Array = (() => {
-	const table = new Uint8Array(64);
-	table.fill(1);
-
-	const set = (op: OpCode, cost: number) => {
-		table[op] = cost;
-	};
-
-	set(OpCode.WIDE, 0);
-
-	set(OpCode.MOV, 1);
-	set(OpCode.LOADK, 1);
-	set(OpCode.LOADBOOL, 1);
-	set(OpCode.LOADNIL, 1);
-	set(OpCode.KNIL, 1);
-	set(OpCode.KFALSE, 1);
-	set(OpCode.KTRUE, 1);
-	set(OpCode.K0, 1);
-	set(OpCode.K1, 1);
-	set(OpCode.KM1, 1);
-	set(OpCode.KSMI, 1);
-
-	set(OpCode.GETG, 1);
-	set(OpCode.SETG, 2);
-	set(OpCode.GETT, 1);
-	set(OpCode.SETT, 2);
-	set(OpCode.NEWT, 1);
-
-	set(OpCode.CONCATN, 2);
-
-	set(OpCode.TESTSET, 2);
-
-	set(OpCode.CLOSURE, 1);
-	set(OpCode.GETUP, 1);
-	set(OpCode.SETUP, 2);
-	set(OpCode.VARARG, 2);
-
-	set(OpCode.CALL, 2);
-	set(OpCode.RET, 2);
-
-	set(OpCode.LOAD_MEM, 1);
-	set(OpCode.STORE_MEM, 2);
-	set(OpCode.STORE_MEM_WORDS, 2);
-	set(OpCode.GETSYS, 1);
-	set(OpCode.SETSYS, 2);
-	set(OpCode.GETGL, 1);
-	set(OpCode.SETGL, 2);
-	set(OpCode.GETI, 1);
-	set(OpCode.SETI, 2);
-	set(OpCode.GETFIELD, 1);
-	set(OpCode.SETFIELD, 2);
-	set(OpCode.SELF, 1);
-
-	return table;
-})();
 
 type Upvalue = {
 	open: boolean;
@@ -1642,6 +1524,8 @@ export class CPU {
 	private readonly nativeArgsPool: NativeArgsProxyHandle[] = [];
 	private readonly debugRegistersScratch: Value[] = [];
 	private readonly nativeReturnPool: Value[][] = [];
+	private readonly profiler = new CpuExecutionProfiler();
+	private profilerEnabled = false;
 	private externalReturnSink: Value[] | null = null;
 	private decodedWidths: Uint8Array | null = null;
 	private decodedOps: Uint8Array | null = null;
@@ -2013,6 +1897,7 @@ export class CPU {
 		this.indexKey = this.stringPool.intern('__index');
 		this.initializeGlobalSlots(metadata);
 		this.decodeProgram(program);
+		this.profiler.configureProgram(program, metadata, this.decodedOps!);
 	}
 
 	private initializeGlobalSlots(metadata: ProgramMetadata | null): void {
@@ -2187,6 +2072,7 @@ export class CPU {
 	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.frames;
+		const profiler = this.profilerEnabled ? this.profiler : null;
 		const baseCycles = BASE_CYCLES;
 		const decodedWidths = this.decodedWidths!;
 		const decodedOps = this.decodedOps!;
@@ -2214,6 +2100,9 @@ export class CPU {
 			frame.pc = pc + (width * INSTRUCTION_BYTES);
 			this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 			this.lastInstruction = decodedWords[wordIndex];
+			if (profiler !== null) {
+				profiler.record(wordIndex, op);
+			}
 			this.instructionBudgetRemaining -= baseCycles[op];
 			this.executeInstruction(
 				frame,
@@ -2248,6 +2137,7 @@ export class CPU {
 		const frame = this.frames[this.frames.length - 1];
 		let pc = frame.pc;
 		let wordIndex = pc / INSTRUCTION_BYTES;
+		const profiler = this.profilerEnabled ? this.profiler : null;
 		const decodedWidths = this.decodedWidths!;
 		const decodedOps = this.decodedOps!;
 		const decodedA = this.decodedA!;
@@ -2263,6 +2153,9 @@ export class CPU {
 		frame.pc = pc + (width * INSTRUCTION_BYTES);
 		this.lastPc = pc + ((width - 1) * INSTRUCTION_BYTES);
 		this.lastInstruction = decodedWords[wordIndex];
+		if (profiler !== null) {
+			profiler.record(wordIndex, op);
+		}
 		this.charge(BASE_CYCLES[op]);
 		this.executeInstruction(
 			frame,
@@ -2294,6 +2187,29 @@ export class CPU {
 			instr: this.lastInstruction,
 			registers,
 		};
+	}
+
+	public setProfilerEnabled(enabled: boolean): void {
+		this.profilerEnabled = enabled;
+		if (enabled) {
+			this.profiler.reset();
+		}
+	}
+
+	public isProfilerEnabled(): boolean {
+		return this.profilerEnabled;
+	}
+
+	public resetProfiler(): void {
+		this.profiler.reset();
+	}
+
+	public getProfilerSnapshot(): CpuProfilerSnapshot {
+		return this.profiler.snapshot();
+	}
+
+	public formatProfilerReport(options: CpuProfilerReportOptions = {}): string {
+		return formatCpuProfilerReport(this.profiler.snapshot(), options);
 	}
 
 	public getDebugRange(pc: number): SourceRange | null {

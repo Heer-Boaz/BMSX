@@ -10,6 +10,7 @@ import { CLIPlatformServices } from '../../../src/bmsx_hostplatform/cli/platform
 import type { Platform, InputEvt } from '../../../src/bmsx_hostplatform/platform';
 import { HeadlessGameViewHost } from '../../../src/bmsx/render/headless/headless_view';
 import { HeadlessCaptureCoordinator, deriveHeadlessCaptureOutputDir, type ScheduledHeadlessCapture } from './headless_capture';
+import { printHeadlessCpuProfile } from './cpu_profile_report';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
 declare const __BOOTROM_DEBUG__: boolean;
@@ -24,6 +25,7 @@ interface LaunchOptions {
 	ttlMs?: number;
 	engineRuntimePath?: string;
 	engineAssetsPath?: string;
+	cpuProfile?: boolean;
 }
 
 interface BootGlobals {
@@ -32,6 +34,8 @@ interface BootGlobals {
 
 type EngineNamespace = {
 	startCart: typeof import('../../../src/bmsx/emulator/start_cart').startCart;
+	setCpuProfilerEnabled(enabled: boolean): void;
+	formatCpuProfilerReport(): string;
 };
 
 interface InputTimelineEntry {
@@ -267,6 +271,7 @@ function printHelp(): void {
 	console.log('  --input-module <file>    JS/TS module exporting a scheduler for custom input logic.');
 	console.log('  --engine-runtime <path>  JS runtime bundle for the engine (defaults to dist/engine(.debug).js).');
 	console.log('  --engine-assets <path>   Engine asset pack ROM (defaults to dist/bmsx-bios(.debug).rom).');
+	console.log('  --cpu-profile            Enable fantasy CPU profiling and print a report on exit.');
 	console.log('  --help, -h               Show this help message.');
 	console.log('');
 	console.log('romFolder:');
@@ -342,6 +347,11 @@ function parseArgs(argv: string[]): LaunchOptions {
 			if (!next) throw new Error('Expected path after --engine-runtime.');
 			options.engineRuntimePath = next;
 			index += 2;
+			continue;
+		}
+		if (arg === '--cpu-profile') {
+			options.cpuProfile = true;
+			index += 1;
 			continue;
 		}
 		if (arg === '--engine-assets') {
@@ -1063,7 +1073,16 @@ async function main(): Promise<void> {
 		headlessHost = platform.gameviewHost;
 	}
 	let captureCoordinator: HeadlessCaptureCoordinator | null = null;
-	const requestExit = createProcessExitController(() => captureCoordinator);
+	let cpuProfileDumped = false;
+	let cpuProfileActive = false;
+	const baseRequestExit = createProcessExitController(() => captureCoordinator);
+	const requestExit = (code: number): void => {
+		if (!cpuProfileDumped && cpuProfileActive) {
+			cpuProfileDumped = true;
+			printHeadlessCpuProfile(runtime, __BOOTROM_TARGET__);
+		}
+		baseRequestExit(code);
+	};
 	processExitController = requestExit;
 	const postInput = (event: InputEvt) => {
 		platform.input.post(event);
@@ -1165,6 +1184,11 @@ async function main(): Promise<void> {
 
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Starting game (debug=${debugFlag}, frameIntervalMs=${frameInterval}).`);
 	await runtime.startCart(bootArgs);
+	if (cliOptions.cpuProfile) {
+		runtime.setCpuProfilerEnabled(true);
+		cpuProfileActive = true;
+		console.log(`[bootrom:${__BOOTROM_TARGET__}] Fantasy CPU profiler enabled.`);
+	}
 	console.log(`[bootrom:${__BOOTROM_TARGET__}] Game loop running. Press Ctrl+C to exit.`);
 }
 
