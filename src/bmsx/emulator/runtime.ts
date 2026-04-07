@@ -2604,10 +2604,12 @@ export class Runtime {
 		return output;
 	}
 
-	public callClosure(fn: Closure, args: Value[]): Value[] {
+	public callClosureInto(fn: Closure, args: Value[], out: Value[]): void {
 		const depth = this.cpu.getFrameDepth();
 		const previousBudget = this.cpu.instructionBudgetRemaining;
 		const budgetSentinel = Number.MAX_SAFE_INTEGER;
+		const previousSink = this.cpu.swapExternalReturnSink(out);
+		out.length = 0;
 		try {
 			this.cpu.callExternal(fn, args);
 			this.cpu.runUntilDepth(depth, budgetSentinel);
@@ -2615,14 +2617,20 @@ export class Runtime {
 			this.cpu.unwindToDepth(depth);
 			throw error;
 		} finally {
+			this.cpu.swapExternalReturnSink(previousSink);
 			const remaining = this.cpu.instructionBudgetRemaining;
 			this.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 		}
+	}
+
+	public callClosure(fn: Closure, args: Value[]): Value[] {
+		this.callClosureInto(fn, args, this.cpu.lastReturnValues);
 		return this.cpu.lastReturnValues;
 	}
 
 	private invokeClosureHandler(fn: Closure, thisArg: unknown, args: ReadonlyArray<unknown>): unknown {
 		const callArgs = this.acquireValueScratch();
+		const results = this.acquireValueScratch();
 		try {
 			if (thisArg !== undefined) {
 				callArgs.push(toRuntimeValue(this, thisArg));
@@ -2630,13 +2638,14 @@ export class Runtime {
 			for (let index = 0; index < args.length; index += 1) {
 				callArgs.push(toRuntimeValue(this, args[index]));
 			}
-			const results = this.callClosure(fn, callArgs);
+			this.callClosureInto(fn, callArgs, results);
 			if (results.length === 0) {
 				return undefined;
 			}
 			const ctx = buildMarshalContext(this);
 			return toNativeValue(this, results[0], ctx, new WeakMap());
 		} finally {
+			this.releaseValueScratch(results);
 			this.releaseValueScratch(callArgs);
 		}
 	}

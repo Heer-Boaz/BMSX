@@ -514,6 +514,24 @@ public:
 		m_data[m_size++] = value;
 	}
 
+	void prepend(Value value) {
+		ensureCapacity(m_size + 1);
+		if (m_size > 0) {
+			std::memmove(m_data.get() + 1, m_data.get(), m_size * sizeof(Value));
+		}
+		m_data[0] = value;
+		++m_size;
+	}
+
+	void append(const Value* values, size_t count) {
+		if (count == 0) {
+			return;
+		}
+		ensureCapacity(m_size + count);
+		std::memcpy(m_data.get() + m_size, values, count * sizeof(Value));
+		m_size += count;
+	}
+
 	template <typename T>
 	void emplace_back(T&& value) {
 		push_back(static_cast<Value>(std::forward<T>(value)));
@@ -548,7 +566,6 @@ public:
 		}
 	}
 
-private:
 	void ensureCapacity(size_t needed) {
 		if (needed <= m_capacity) {
 			return;
@@ -563,15 +580,6 @@ private:
 		}
 		m_data = std::move(next);
 		m_capacity = nextCapacity;
-	}
-
-	void prepend(Value value) {
-		ensureCapacity(m_size + 1);
-		if (m_size > 0) {
-			std::memmove(m_data.get() + 1, m_data.get(), m_size * sizeof(Value));
-		}
-		m_data[0] = value;
-		++m_size;
 	}
 
 	std::unique_ptr<Value[]> m_data;
@@ -986,6 +994,7 @@ public:
 	void call(Closure* closure, NativeArgsView args, int returnCount = 0);
 	void callExternal(Closure* closure, const std::vector<Value>& args = {});
 	void callExternal(Closure* closure, NativeArgsView args);
+	NativeResults* swapExternalReturnSink(NativeResults* sink);
 	void requestYield();
 	void clearYieldRequest();
 	RunResult run(int instructionBudget);
@@ -1027,8 +1036,8 @@ private:
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
 	const Value& readUpvalue(Upvalue* upvalue);
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
+	void captureLastReturnValues(const Value* values, int count);
 	void writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount);
-	void writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values);
 	void setRegister(CallFrame& frame, int index, Value value);
 	Value* ensureRegisterCapacity(CallFrame& frame, int index);
 	Value readMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind) const;
@@ -1066,6 +1075,7 @@ private:
 	StringPool m_stringPool;
 	GcHeap m_heap;
 	std::function<void(GcHeap&)> m_externalRootMarker;
+	NativeResults* m_externalReturnSink = nullptr;
 
 	std::vector<NativeResults> m_nativeReturnPool;
 	static constexpr size_t MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;

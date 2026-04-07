@@ -1167,22 +1167,7 @@ void Runtime::setupBuiltins() {
 			return;
 		}
 		if (valueIsClosure(callee)) {
-			int depthBefore = m_cpu.getFrameDepth();
-			const int previousBudget = m_cpu.instructionBudgetRemaining;
-			const int budgetSentinel = std::numeric_limits<int>::max();
-			try {
-				m_cpu.callExternal(asClosure(callee), args);
-				m_cpu.runUntilDepth(depthBefore, budgetSentinel);
-			} catch (...) {
-				const int remaining = m_cpu.instructionBudgetRemaining;
-				m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
-				throw;
-			}
-			const int remaining = m_cpu.instructionBudgetRemaining;
-			m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
-			out.clear();
-			const auto& results = m_cpu.lastReturnValues;
-			out.insert(out.end(), results.begin(), results.end());
+			callLuaFunctionInto(asClosure(callee), args, out);
 			return;
 		}
 		throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(callee, m_cpu));
@@ -1729,7 +1714,7 @@ void Runtime::setupBuiltins() {
 			const Value message = args.size() > 1 ? args.at(1) : valueString(m_cpu.internString("assertion failed!"));
 			throw LuaPcallError(message);
 		}
-		out.insert(out.end(), args.begin(), args.end());
+		out.append(args.data(), args.size());
 	});
 
 	registerNativeFunction("error", [this](NativeArgsView args, NativeResults& out) {
@@ -1813,13 +1798,10 @@ void Runtime::setupBuiltins() {
 
 	registerNativeFunction("pcall", [callClosureValue, logPcallError, str](NativeArgsView args, NativeResults& out) {
 		Value fn = args.at(0);
-		std::vector<Value> callArgs;
-		for (size_t i = 1; i < args.size(); ++i) {
-			callArgs.push_back(args[i]);
-		}
+		const NativeArgsView callArgs(args.data() + 1, args.size() - 1);
 		try {
 			callClosureValue(fn, callArgs, out);
-			out.insert(out.begin(), valueBool(true));
+			out.prepend(valueBool(true));
 		} catch (const LuaPcallError& e) {
 			out.clear();
 			out.push_back(valueBool(false));
@@ -1840,31 +1822,28 @@ void Runtime::setupBuiltins() {
 	registerNativeFunction("xpcall", [callClosureValue, logPcallError, str](NativeArgsView args, NativeResults& out) {
 		Value fn = args.at(0);
 		Value handler = args.at(1);
-		std::vector<Value> callArgs;
-		for (size_t i = 2; i < args.size(); ++i) {
-			callArgs.push_back(args[i]);
-		}
+		const NativeArgsView callArgs(args.data() + 2, args.size() - 2);
 		try {
 			callClosureValue(fn, callArgs, out);
-			out.insert(out.begin(), valueBool(true));
+			out.prepend(valueBool(true));
 		} catch (const LuaPcallError& e) {
 			out.clear();
-			std::vector<Value> handlerArgs;
-			handlerArgs.push_back(e.value);
+			const Value handlerArg = e.value;
+			const NativeArgsView handlerArgs(&handlerArg, 1);
 			callClosureValue(handler, handlerArgs, out);
-			out.insert(out.begin(), valueBool(false));
+			out.prepend(valueBool(false));
 		} catch (const std::exception& e) {
 			logPcallError(e.what());
-			std::vector<Value> handlerArgs;
-			handlerArgs.push_back(str(e.what()));
+			const Value handlerArg = str(e.what());
+			const NativeArgsView handlerArgs(&handlerArg, 1);
 			callClosureValue(handler, handlerArgs, out);
-			out.insert(out.begin(), valueBool(false));
+			out.prepend(valueBool(false));
 		} catch (...) {
 			logPcallError("error");
-			std::vector<Value> handlerArgs;
-			handlerArgs.push_back(str("error"));
+			const Value handlerArg = str("error");
+			const NativeArgsView handlerArgs(&handlerArg, 1);
 			callClosureValue(handler, handlerArgs, out);
-			out.insert(out.begin(), valueBool(false));
+			out.prepend(valueBool(false));
 		}
 	});
 

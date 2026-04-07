@@ -261,6 +261,7 @@ public:
 	 * Call a Lua function from native code.
 	 */
 	std::vector<Value> callLuaFunction(Closure* fn, const std::vector<Value>& args);
+	void callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResults& out);
 
 	/**
 	 * Get a global variable by name.

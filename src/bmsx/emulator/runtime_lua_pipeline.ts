@@ -1532,8 +1532,14 @@ export function requireModule(runtime: Runtime, moduleName: string): Value {
 		throw runtime.createApiRuntimeError(`require('${moduleName}') failed: module not compiled.`);
 	}
 	runtime.moduleCache.set(path, true);
-	const results = runtime.callClosure({ protoIndex, upvalues: [] }, []);
-	const value = results.length > 0 ? results[0] : null;
+	const results = runtime.acquireValueScratch();
+	let value: Value = null;
+	try {
+		runtime.callClosureInto({ protoIndex, upvalues: [] }, [], results);
+		value = results.length > 0 ? results[0] : null;
+	} finally {
+		runtime.releaseValueScratch(results);
+	}
 	const cachedValue = value === null ? true : value;
 	runtime.moduleCache.set(path, cachedValue);
 	return cachedValue;
@@ -1577,6 +1583,7 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 	} else {
 		runtime.consoleMetadata = compiled.metadata;
 	}
-	const results = runtime.callClosure({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, []);
-	return results;
+	const results = runtime.acquireValueScratch();
+	runtime.callClosureInto({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, [], results);
+	return results.slice();
 }

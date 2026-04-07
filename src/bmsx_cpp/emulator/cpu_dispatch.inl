@@ -506,7 +506,9 @@ DISPATCH_LABEL(CALL) {
 		const NativeArgsView args(FRAME.registers + static_cast<size_t>(a + 1), static_cast<size_t>(argCount));
 		NativeResults out = acquireNativeReturnScratch();
 		fn->invoke(args, out);
-		writeReturnValues(FRAME, a, retCount, out.data(), static_cast<int>(out.size()));
+		if (!m_frames.empty() && m_frames.back().get() == &FRAME) {
+			writeReturnValues(FRAME, a, retCount, out.data(), static_cast<int>(out.size()));
+		}
 		runHousekeeping();
 		releaseNativeReturnScratch(std::move(out));
 		DISPATCH_CONTINUE();
@@ -521,17 +523,28 @@ DISPATCH_LABEL(CALL) {
 DISPATCH_LABEL(RET) {
 	int count = b == 0 ? std::max(FRAME.top - a, 0) : b;
 	const Value* results = FRAME.registers + a;
-	lastReturnValues.assign(results, results + count);
 	closeUpvalues(FRAME);
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();
 	if (finished->captureReturns) {
+		if (m_externalReturnSink) {
+			m_externalReturnSink->clear();
+			m_externalReturnSink->append(results, static_cast<size_t>(count));
+		} else {
+			captureLastReturnValues(results, count);
+		}
 		m_stackTop = finished->varargBase;
 		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));
 		DISPATCH_CONTINUE();
 	}
 	if (m_frames.empty()) {
+		if (m_externalReturnSink) {
+			m_externalReturnSink->clear();
+			m_externalReturnSink->append(results, static_cast<size_t>(count));
+		} else {
+			captureLastReturnValues(results, count);
+		}
 		m_stackTop = finished->varargBase;
 		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));

@@ -26,9 +26,9 @@ import {
 	isCtrlDown,
 	isMetaDown,
 	isAltDown
-} from './ide/ide_input';
+} from './ide/key_input';
 import { resolveSnapshotExpression, describeLuaValueForInspector } from './ide/intellisense';
-import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/ide_input';
+import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/key_input';
 import { CompletionController } from './ide/completion_controller';
 import type { ModuleAliasEntry } from './ide/semantic_model';
 import type { Viewport } from '../rompack/rompack';

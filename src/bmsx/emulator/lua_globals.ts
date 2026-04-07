@@ -633,16 +633,20 @@ export function buildLuaStackFrames(runtime: Runtime): StackTraceFrame[] {
 
 export function seedLuaGlobals(runtime: Runtime): void {
 	const isTruthy = (value: Value): boolean => value !== null && value !== false;
+	const prependValue = (out: Value[], value: Value): void => {
+		const length = out.length;
+		out.length = length + 1;
+		for (let index = length; index > 0; index -= 1) {
+			out[index] = out[index - 1];
+		}
+		out[0] = value;
+	};
 	const callClosureValue = (callee: Value, args: Value[], out: Value[]): void => {
 		if (isNativeFunction(callee)) {
 			callee.invoke(args, out);
 			return;
 		}
-		const results = runtime.callClosure(callee as Closure, args);
-		out.length = 0;
-		for (let index = 0; index < results.length; index += 1) {
-			out.push(results[index]);
-		}
+		runtime.callClosureInto(callee as Closure, args, out);
 	};
 	const key = (name: string): StringValue => runtime.internString(name);
 	const setKey = (table: Table, name: string, value: Value): void => {
@@ -1342,13 +1346,13 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'pcall', createNativeFunction('pcall', (args, out) => {
 		const fn = args[0];
-		const callArgs: Value[] = [];
-		for (let index = 1; index < args.length; index += 1) {
-			callArgs.push(args[index]);
-		}
+		const callArgs = runtime.acquireValueScratch();
 		try {
+			for (let index = 1; index < args.length; index += 1) {
+				callArgs.push(args[index]);
+			}
 			callClosureValue(fn, callArgs, out);
-			out.unshift(true);
+			prependValue(out, true);
 		} catch (error) {
 			out.length = 0;
 			out.push(
@@ -1359,26 +1363,32 @@ export function seedLuaGlobals(runtime: Runtime): void {
 						? runtime.internString(extractErrorMessage(error))
 						: error as Value,
 			);
+		} finally {
+			runtime.releaseValueScratch(callArgs);
 		}
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'xpcall', createNativeFunction('xpcall', (args, out) => {
 		const fn = args[0];
 		const handler = args[1];
-		const callArgs: Value[] = [];
-		for (let index = 2; index < args.length; index += 1) {
-			callArgs.push(args[index]);
-		}
+		const callArgs = runtime.acquireValueScratch();
+		const handlerArgs = runtime.acquireValueScratch();
 		try {
+			for (let index = 2; index < args.length; index += 1) {
+				callArgs.push(args[index]);
+			}
 			callClosureValue(fn, callArgs, out);
-			out.unshift(true);
+			prependValue(out, true);
 		} catch (error) {
-			const handlerArgs: Value[] = [error instanceof LuaThrownValueError
+			handlerArgs.push(error instanceof LuaThrownValueError
 				? error.value
 				: error instanceof Error
 					? runtime.internString(extractErrorMessage(error))
-					: error as Value];
+					: error as Value);
 			callClosureValue(handler, handlerArgs, out);
-			out.unshift(false);
+			prependValue(out, false);
+		} finally {
+			runtime.releaseValueScratch(handlerArgs);
+			runtime.releaseValueScratch(callArgs);
 		}
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'loadstring', createNativeFunction('loadstring', (args, out) => {

@@ -24,22 +24,31 @@ std::string canonicalizeModuleAlias(std::string moduleName, CanonicalizationType
 
 } // namespace
 
-std::vector<Value> Runtime::callLuaFunction(Closure* fn, const std::vector<Value>& args) {
+void Runtime::callLuaFunctionInto(Closure* fn, NativeArgsView args, NativeResults& out) {
 	int depthBefore = m_cpu.getFrameDepth();
 	const int previousBudget = m_cpu.instructionBudgetRemaining;
 	const int budgetSentinel = std::numeric_limits<int>::max();
+	NativeResults* previousSink = m_cpu.swapExternalReturnSink(&out);
+	out.clear();
 	try {
 		m_cpu.callExternal(fn, args);
 		m_cpu.runUntilDepth(depthBefore, budgetSentinel);
 	} catch (...) {
+		m_cpu.swapExternalReturnSink(previousSink);
 		m_cpu.unwindToDepth(depthBefore);
 		const int remaining = m_cpu.instructionBudgetRemaining;
 		m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
 		throw;
 	}
+	m_cpu.swapExternalReturnSink(previousSink);
 	const int remaining = m_cpu.instructionBudgetRemaining;
 	m_cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
-	return m_cpu.lastReturnValues;
+}
+
+std::vector<Value> Runtime::callLuaFunction(Closure* fn, const std::vector<Value>& args) {
+	NativeResults out;
+	callLuaFunctionInto(fn, NativeArgsView(args), out);
+	return std::vector<Value>(out.data(), out.data() + out.size());
 }
 
 Value Runtime::requireModule(const std::string& moduleName) {
@@ -62,7 +71,8 @@ Value Runtime::requireModule(const std::string& moduleName) {
 	}
 	m_moduleCache[path] = valueBool(true);
 	auto* closure = m_cpu.createRootClosure(protoIt->second);
-	std::vector<Value> results = callLuaFunction(closure, {});
+	NativeResults results;
+	callLuaFunctionInto(closure, NativeArgsView(), results);
 	Value value = results.empty() ? valueNil() : results[0];
 	Value cachedValue = isNil(value) ? valueBool(true) : value;
 	m_moduleCache[path] = cachedValue;

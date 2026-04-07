@@ -1352,6 +1352,7 @@ void CPU::start(int entryProtoIndex, const std::vector<Value>& args) {
 }
 
 void CPU::start(int entryProtoIndex, NativeArgsView args) {
+	lastReturnValues.clear();
 	m_frames.clear();
 	m_openUpvalues.clear();
 	m_stack.clear();
@@ -1370,6 +1371,7 @@ void CPU::call(Closure* closure, NativeArgsView args, int returnCount) {
 	if (!closure) {
 		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
+	lastReturnValues.clear();
 	m_yieldRequested = false;
 	pushFrame(closure, args.data(), args.size(), 0, returnCount, false, m_program->protos[closure->protoIndex].entryPC);
 }
@@ -1382,8 +1384,15 @@ void CPU::callExternal(Closure* closure, NativeArgsView args) {
 	if (!closure) {
 		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
+	lastReturnValues.clear();
 	m_yieldRequested = false;
 	pushFrame(closure, args.data(), args.size(), 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
+}
+
+NativeResults* CPU::swapExternalReturnSink(NativeResults* sink) {
+	NativeResults* previous = m_externalReturnSink;
+	m_externalReturnSink = sink;
+	return previous;
 }
 
 void CPU::requestYield() {
@@ -1966,6 +1975,10 @@ void CPU::pushFrame(Closure* closure, const std::vector<Value>& args,
 	pushFrame(closure, args.data(), args.size(), returnBase, returnCount, captureReturns, callSitePc);
 }
 
+void CPU::captureLastReturnValues(const Value* values, int count) {
+	lastReturnValues.assign(values, values + count);
+}
+
 void CPU::writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount) {
 	if (count == 0) {
 		for (int i = 0; i < valueCount; ++i) {
@@ -1979,10 +1992,6 @@ void CPU::writeReturnValues(CallFrame& frame, int base, int count, const Value* 
 		setRegister(frame, base + i, value);
 	}
 	frame.top = base + count;
-}
-
-void CPU::writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values) {
-	writeReturnValues(frame, base, count, values.data(), static_cast<int>(values.size()));
 }
 
 void CPU::setRegister(CallFrame& frame, int index, Value value) {
@@ -2503,6 +2512,11 @@ void CPU::markRoots(GcHeap& heap) {
 	}
 	for (const auto& value : lastReturnValues) {
 		heap.markValue(value);
+	}
+	if (m_externalReturnSink) {
+		for (size_t i = 0; i < m_externalReturnSink->size(); ++i) {
+			heap.markValue((*m_externalReturnSink)[i]);
+		}
 	}
 	for (const auto& value : m_systemGlobalValues) {
 		heap.markValue(value);

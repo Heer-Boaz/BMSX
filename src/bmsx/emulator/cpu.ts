@@ -1642,6 +1642,7 @@ export class CPU {
 	private readonly nativeArgsPool: NativeArgsProxyHandle[] = [];
 	private readonly debugRegistersScratch: Value[] = [];
 	private readonly nativeReturnPool: Value[][] = [];
+	private externalReturnSink: Value[] | null = null;
 	private decodedWidths: Uint8Array | null = null;
 	private decodedOps: Uint8Array | null = null;
 	private decodedA: Uint16Array | null = null;
@@ -2123,6 +2124,7 @@ export class CPU {
 	}
 
 	public start(entryProtoIndex: number, args: Value[] = []): void {
+		this.lastReturnValues.length = 0;
 		this.frames.length = 0;
 		this.openUpvalues.length = 0;
 		this.stackTop = 0;
@@ -2139,6 +2141,7 @@ export class CPU {
 		if (typeof closure.protoIndex !== 'number') {
 			throw new Error('Attempted to call a non-function value.');
 		}
+		this.lastReturnValues.length = 0;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, returnCount, false, this.program.protos[closure.protoIndex].entryPC);
 	}
@@ -2150,6 +2153,7 @@ export class CPU {
 		if (typeof closure.protoIndex !== 'number') {
 			throw new Error('Attempted to call a non-function value.');
 		}
+		this.lastReturnValues.length = 0;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, 0, true, this.program.protos[closure.protoIndex].entryPC);
 	}
@@ -2160,6 +2164,12 @@ export class CPU {
 
 	public clearYieldRequest(): void {
 		this.yieldRequested = false;
+	}
+
+	public swapExternalReturnSink(sink: Value[] | null): Value[] | null {
+		const previous = this.externalReturnSink;
+		this.externalReturnSink = sink;
+		return previous;
 	}
 
 	public getFrameDepth(): number {
@@ -2796,9 +2806,8 @@ export class CPU {
 						try {
 							argsHandle.view.bindRegisters(registers, a + 1, argCount);
 							callee.invoke(argsHandle.proxy, results);
-							const targetFrameIndex = this.frames.indexOf(frame);
-							if (targetFrameIndex >= 0) {
-								this.writeReturnValues(this.frames[targetFrameIndex], a, c, results);
+							if (this.frames.length > 0 && this.frames[this.frames.length - 1] === frame) {
+								this.writeReturnValues(frame, a, c, results);
 							}
 						} finally {
 							this.releaseNativeArgsProxy(argsHandle);
@@ -2822,19 +2831,25 @@ export class CPU {
 				}
 				case OpCode.RET: {
 					const total = b === 0 ? Math.max(frame.top - a, 0) : b;
-					this.lastReturnValues.length = total;
-					for (let index = 0; index < total; index += 1) {
-						this.lastReturnValues[index] = registers.get(a + index);
-					}
 					this.closeUpvalues(frame);
 					const frameIndex = this.frames.length - 1;
 					if (frame.captureReturns) {
+						if (this.externalReturnSink !== null) {
+							this.captureValuesIntoArrayFromRegisters(this.externalReturnSink, registers, a, total);
+						} else {
+							this.captureLastReturnValuesFromRegisters(registers, a, total);
+						}
 						this.frames.pop();
 						this.stackTop = frame.varargBase;
 						this.releaseFrame(frame);
 						return;
 					}
 					if (frameIndex === 0) {
+						if (this.externalReturnSink !== null) {
+							this.captureValuesIntoArrayFromRegisters(this.externalReturnSink, registers, a, total);
+						} else {
+							this.captureLastReturnValuesFromRegisters(registers, a, total);
+						}
 						this.frames.pop();
 						this.stackTop = frame.varargBase;
 						this.releaseFrame(frame);
@@ -3014,6 +3029,17 @@ export class CPU {
 			}
 		}
 		frame.top = base + targetCount;
+	}
+
+	private captureLastReturnValuesFromRegisters(source: RegisterFile, sourceBase: number, sourceCount: number): void {
+		this.captureValuesIntoArrayFromRegisters(this.lastReturnValues, source, sourceBase, sourceCount);
+	}
+
+	private captureValuesIntoArrayFromRegisters(target: Value[], source: RegisterFile, sourceBase: number, sourceCount: number): void {
+		target.length = sourceCount;
+		for (let index = 0; index < sourceCount; index += 1) {
+			target[index] = source.get(sourceBase + index);
+		}
 	}
 
 	private writeReturnValues(frame: CallFrame, base: number, count: number, values: Value[]): void {
@@ -3264,6 +3290,11 @@ export class CPU {
 		}
 		for (let index = 0; index < this.lastReturnValues.length; index += 1) {
 			pushValue(this.lastReturnValues[index]);
+		}
+		if (this.externalReturnSink !== null) {
+			for (let index = 0; index < this.externalReturnSink.length; index += 1) {
+				pushValue(this.externalReturnSink[index]);
+			}
 		}
 		if (this.program !== null) {
 			for (let index = 0; index < this.program.constPool.length; index += 1) {
