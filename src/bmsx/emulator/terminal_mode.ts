@@ -8,13 +8,15 @@ import { drawCompletionPopup, drawParameterHintOverlay } from './ide/render/rend
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,
+	clearSelection,
 	setFieldText,
 	deleteSelection,
 	insertValue,
 	getCursorOffset,
+	setCursorPosition,
 	setCursorFromOffset,
 	selectionAnchorOffset,
-	setSelectionAnchorFromOffset,
+	setSelectionAnchorPosition,
 } from './ide/inline_text_field';
 import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext } from './ide/types';
 import * as constants from './ide/constants';
@@ -48,6 +50,7 @@ import { clamp } from '../utils/clamp';
 import { textFromLines } from './ide/text/source_text';
 import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from './ide/constants';
 import { advancePhaseBlink, resetBlinkState } from './ide/caret_blink';
+import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from './ide/inline_field_view';
 
 type TerminalOutputKind =
 	| 'prompt'
@@ -230,6 +233,7 @@ export class TerminalMode {
 	private cachedLinesVersion = -1;
 	private promptPrefix = '> ';
 	private cursorScreenInfo: CursorScreenInfo = null;
+	private readonly cursorScreenInfoScratch: CursorScreenInfo = { row: 0, column: 0, x: 0, y: 0, width: 0, height: 0, baseChar: ' ', baseColor: 0 };
 	private currentRenderer: OverlayRenderer = null;
 	constructor(private readonly runtime: Runtime) {
 		this.terminalCommands = new TerminalCommandDispatcher(this.runtime);
@@ -282,28 +286,13 @@ export class TerminalMode {
 				return this.cursorScratch;
 			}
 
-			private positionToIndex(row: number, column: number): number {
-				const lines = owner.getLinesSnapshot();
-				let index = 0;
-				for (let current = 0; current < row && current < lines.length; current += 1) {
-					index += lines[current].length + 1;
-				}
-				const targetRow = Math.min(row, lines.length - 1);
-				const rowText = lines[targetRow] ?? '';
-				const clampedColumn = Math.max(0, Math.min(column, rowText.length));
-				return index + clampedColumn;
-			}
-
 			protected override setCursorPosition(row: number, column: number): void {
-				const index = this.positionToIndex(row, column);
-				setCursorFromOffset(owner.field, index);
-				owner.field.selectionAnchor = null;
+				setCursorPosition(owner.field, row, column);
 				owner.completion.onCursorMoved();
 			}
 
 			protected override setSelectionAnchor(row: number, column: number): void {
-				const index = this.positionToIndex(row, column);
-				setSelectionAnchorFromOffset(owner.field, index);
+				setSelectionAnchorPosition(owner.field, row, column);
 				owner.completion.onCursorMoved();
 			}
 
@@ -352,7 +341,7 @@ export class TerminalMode {
 			}
 
 			protected override clearSelectionAnchor(): void {
-				owner.field.selectionAnchor = null;
+				clearSelection(owner.field);
 			}
 		}();
 		this.completion.enterCommitsCompletion = true;
@@ -1105,11 +1094,6 @@ export class TerminalMode {
 		return this.cachedLines;
 	}
 
-	private getCursorPosition(): { row: number; column: number } {
-		return { row: this.field.cursorRow, column: this.field.cursorColumn };
-	}
-
-
 	private buildEditContext(previous: string, next: string): EditContext {
 		if (previous === next) {
 			return null;
@@ -1246,42 +1230,44 @@ export class TerminalMode {
 	// Replace single-line drawInputField with multi-line aware renderer
 	private drawMultilineInput(renderer: OverlayRenderer, baseX: number, baseY: number, promptWidth: number, wrap: { segments: string[]; starts: number[] }): void {
 		const inputColor = BmsxColors[OUTPUT_COLORS.stdout];
-		const anchorOffset = selectionAnchorOffset(this.field);
-		const cursorIndex = getCursorOffset(this.field);
-		const hasSelection = anchorOffset !== null && anchorOffset !== cursorIndex;
-		const selectionStart = hasSelection && anchorOffset < cursorIndex ? anchorOffset : cursorIndex;
-		const selectionEnd = hasSelection && anchorOffset > cursorIndex ? anchorOffset : cursorIndex;
+		const selectionState = resolveInlineFieldSelectionState(this.field);
 		const uppercaseDisplay = this.useUppercaseDisplay();
 		const displayText = this.toDisplayText(textFromLines(this.field.lines), uppercaseDisplay);
-		const inlinePreview = hasSelection ? null : this.completion.getInlineCompletionPreview();
+		const inlinePreview = selectionState.hasSelection ? null : this.completion.getInlineCompletionPreview();
 		let nextCursorInfo: CursorScreenInfo = null;
-		const cursorPosition = this.getCursorPosition();
+		const cursorRow = this.field.cursorRow;
+		const cursorColumn = this.field.cursorColumn;
+		const segmentCount = wrap.segments.length;
+		const measureText = (text: string): number => this.measureDisplayText(text, uppercaseDisplay);
 
-		for (let si = 0; si < wrap.segments.length; si += 1) {
+		for (let si = 0; si < segmentCount; si += 1) {
 			const seg = wrap.segments[si];
 			const segStart = wrap.starts[si];
 			const segLen = seg.length;
-			const y = baseY + si * this.font.lineHeight;
-			let x = baseX;
-			// first segment is placed after the prompt
-			if (si === 0) {
-				x += promptWidth;
-			}
-
-			// caret rendering: use shared caret style from console_cart_editor
-			const segEnd = segStart + segLen;
-			const isLastSegment = si === wrap.segments.length - 1;
-			const caretInSeg = cursorIndex >= segStart && (cursorIndex < segEnd || (isLastSegment && cursorIndex === segEnd));
-			const shouldRenderInlineGhost = caretInSeg
+			const segmentDecoration = measureWrappedInlineSegmentDecoration(
+				displayText,
+				selectionState,
+				segStart,
+				segLen,
+				si,
+				segmentCount,
+				baseX,
+				baseY,
+				promptWidth,
+				this.font.lineHeight,
+				measureText,
+			);
+			const x = segmentDecoration.x;
+			const y = segmentDecoration.y;
+			const shouldRenderInlineGhost = segmentDecoration.caretInSegment
 				&& inlinePreview !== null
-				&& inlinePreview.row === cursorPosition.row
-				&& inlinePreview.column === cursorPosition.column;
+				&& inlinePreview.row === cursorRow
+				&& inlinePreview.column === cursorColumn;
 			if (shouldRenderInlineGhost) {
-				const localIndex = cursorIndex - segStart;
-				const prefixText = seg.slice(0, localIndex);
-				const suffixText = seg.slice(localIndex);
+				const prefixText = seg.slice(0, segmentDecoration.caretLocalIndex);
+				const suffixText = seg.slice(segmentDecoration.caretLocalIndex);
 				const ghostWidth = this.measureDisplayText(inlinePreview.suffix, uppercaseDisplay);
-				const prefixWidth = this.measureDisplayText(prefixText, uppercaseDisplay);
+				const prefixWidth = segmentDecoration.caretBaseX - x;
 
 				// draw glyph backgrounds before overlays/text so selection remains visible
 				this.drawGlyphBackgrounds(renderer, prefixText, x, y, uppercaseDisplay);
@@ -1297,49 +1283,37 @@ export class TerminalMode {
 				this.drawGlyphBackgrounds(renderer, seg, x, y, uppercaseDisplay);
 
 				// draw selection background for this segment if selection overlaps
-				if (hasSelection) {
-					const selStart = Math.max(selectionStart, segStart);
-					const selEnd = Math.min(selectionEnd, segStart + segLen);
-					if (selStart < selEnd) {
-						const before = displayText.slice(segStart, selStart);
-						const selected = displayText.slice(selStart, selEnd);
-						const startWidth = this.measureDisplayText(before, uppercaseDisplay);
-						const selWidth = this.measureDisplayText(selected, uppercaseDisplay);
-						renderer.rect({
-							kind: 'fill',
-							area: {
-								left: x + startWidth,
-								top: y,
-								right: x + startWidth + selWidth,
-								bottom: y + this.font.lineHeight,
-							},
-							color: this.selectionColor,
-						});
-					}
+				if (segmentDecoration.hasSelection && segmentDecoration.selectionWidth > 0) {
+					renderer.rect({
+						kind: 'fill',
+						area: {
+							left: segmentDecoration.selectionLeft,
+							top: y,
+							right: segmentDecoration.selectionLeft + segmentDecoration.selectionWidth,
+							bottom: y + this.font.lineHeight,
+						},
+						color: this.selectionColor,
+					});
 				}
 
 				// draw the glyph run for this segment
 				this.drawGlyphRun(renderer, seg, x, y, inputColor, uppercaseDisplay);
 			}
-			if (caretInSeg) {
-				const local = displayText.slice(segStart, cursorIndex);
-				const caretOffset = this.measureDisplayText(local, uppercaseDisplay);
-				const nextChar = cursorIndex < displayText.length ? displayText.charAt(cursorIndex) : ' ';
-				const caretWidth = this.font.advance(nextChar);
-				const left = Math.floor(x + caretOffset);
+			if (segmentDecoration.caretInSegment) {
+				const nextChar = segmentDecoration.caretChar;
+				const left = segmentDecoration.caretLeft;
 				const topY = y;
-				const right = left + Math.max(1, Math.floor(caretWidth));
+				const right = left + Math.max(1, Math.floor(segmentDecoration.caretWidth));
 				const bottom = topY + this.font.lineHeight;
-				nextCursorInfo = {
-					row: cursorPosition.row,
-					column: cursorPosition.column,
-					x: left,
-					y: topY,
-					width: Math.max(1, Math.floor(caretWidth)),
-					height: this.font.lineHeight,
-					baseChar: nextChar,
-					baseColor: OUTPUT_COLORS.stdout,
-				};
+				nextCursorInfo = this.cursorScreenInfo ?? this.cursorScreenInfoScratch;
+				nextCursorInfo.row = cursorRow;
+				nextCursorInfo.column = cursorColumn;
+				nextCursorInfo.x = left;
+				nextCursorInfo.y = topY;
+				nextCursorInfo.width = Math.max(1, Math.floor(segmentDecoration.caretWidth));
+				nextCursorInfo.height = this.font.lineHeight;
+				nextCursorInfo.baseChar = nextChar;
+				nextCursorInfo.baseColor = OUTPUT_COLORS.stdout;
 				if (this.blink.cursorVisible) {
 					const renderFont = this.font.renderFont();
 					renderer.rect({
