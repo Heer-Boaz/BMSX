@@ -12,6 +12,7 @@ import { getTextSnapshot, splitText } from './text/source_text';
 import { syncSemanticWorkspacePaths } from './semantic_workspace_sync';
 import type { TextBuffer } from './text/text_buffer';
 import type { Position } from './types';
+import { applyCaseOutsideStrings } from './text_utils';
 
 interface VisualLinesContext {
 	buffer: TextBuffer;
@@ -103,7 +104,7 @@ function highlightPlainTextLine(source: string): HighlightLine {
 	}
 	return {
 		text,
-		upperText: text,
+		upperText: applyCaseOutsideStrings(text, (ch) => ch.toUpperCase()),
 		colors,
 		columnToDisplay,
 	};

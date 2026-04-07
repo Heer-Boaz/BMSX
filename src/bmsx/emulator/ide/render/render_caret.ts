@@ -7,6 +7,7 @@ import type { CursorScreenInfo, TextField } from '../types';
 import { getCursorOffset } from '../inline_text_field';
 import { api } from '../../overlay_api';
 import { textFromLines } from '../text/source_text';
+import { resetBlinkState } from '../caret_blink';
 
 export function drawInlineCaret(
 	api: Api,
@@ -67,8 +68,7 @@ export function drawCursor(info: CursorScreenInfo, textX: number): void {
 }
 
 export function resetBlink(): void {
-	ide_state.blinkTimer = 0;
-	ide_state.cursorVisible = true;
+	resetBlinkState(ide_state);
 }
 
 export function drawRectOutlineColor(left: number, top: number, right: number, bottom: number, z: number, color: { r: number; g: number; b: number; a: number; } | number): void {

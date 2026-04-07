@@ -7,6 +7,7 @@ import type { InlineInputOptions, Position, TextField } from './types';
 import { clamp } from '../../utils/clamp';
 import { LuaLexer } from '../../lua/syntax/lualexer';
 import { splitText, textFromLines } from './text/source_text';
+import { advanceToggleBlink } from './caret_blink';
 
 export type InlineFieldMetrics = {
 	advanceChar: (ch: string) => number;
@@ -789,9 +790,5 @@ export function applyInlineFieldPointer(field: TextField, options: InlineFieldPo
 	return POINTER_NO_BLINK_RESET;
 }
 export function updateBlink(deltaSeconds: number): void {
-	ide_state.blinkTimer += deltaSeconds;
-	if (ide_state.blinkTimer >= constants.CURSOR_BLINK_INTERVAL) {
-		ide_state.blinkTimer -= constants.CURSOR_BLINK_INTERVAL;
-		ide_state.cursorVisible = !ide_state.cursorVisible;
-	}
+	advanceToggleBlink(ide_state, deltaSeconds, constants.CURSOR_BLINK_INTERVAL);
 }

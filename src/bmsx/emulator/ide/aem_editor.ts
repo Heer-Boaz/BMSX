@@ -1,4 +1,5 @@
 import { $ } from '../../core/engine_core';
+import { dump as dumpYaml } from 'js-yaml';
 import { extractErrorMessage } from '../../lua/luavalue';
 import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../audio/aem_definition';
 import type { ResourceDescriptor } from '../types';
@@ -54,6 +55,35 @@ export async function loadAemResourceSource(path: string): Promise<string> {
 
 export async function saveAemResourceSource(path: string, source: string): Promise<void> {
 	await persistWorkspaceSourceFile(path, source);
+}
+
+export function formatAemDocument(source: string, path: string): string {
+	if (source.length === 0) {
+		return '';
+	}
+	const format = resolveAemSourceFormat(path);
+	const doc = parseStructuredTextDocument(source, format, `AEM file '${path}'`);
+	const newline = source.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
+	const hadTrailingNewline = source.endsWith('\n');
+	const formatted = format === 'json'
+		? JSON.stringify(doc, null, 2)
+		: dumpYaml(doc, {
+			indent: 2,
+			noRefs: true,
+			lineWidth: -1,
+			flowLevel: -1,
+			sortKeys: false,
+		});
+	const normalized = newline === '\n'
+		? formatted
+		: formatted.replace(/\n/g, '\r\n');
+	if (hadTrailingNewline) {
+		return normalized.endsWith(newline) ? normalized : `${normalized}${newline}`;
+	}
+	if (normalized.endsWith(newline)) {
+		return normalized.slice(0, normalized.length - newline.length);
+	}
+	return normalized;
 }
 
 export function applyAemSourceToRuntime(descriptor: ResourceDescriptor, source: string): void {

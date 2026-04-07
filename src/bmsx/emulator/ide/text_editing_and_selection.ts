@@ -27,6 +27,7 @@ import { LuaLexer } from '../../lua/syntax/lualexer';
 import { getTextSnapshot } from './text/source_text';
 import type { MutableTextPosition, TextBuffer } from './text/text_buffer';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
+import { formatAemDocument } from './aem_editor';
 
 const tmpPosition: MutableTextPosition = { row: 0, column: 0 };
 
@@ -1166,8 +1167,11 @@ export async function writeClipboard(text: string, successMessage: string): Prom
 export function applyDocumentFormatting(): void {
 	const buffer = ide_state.buffer;
 	const originalSource = getTextSnapshot(buffer);
+	const context = getActiveCodeTabContext();
 	try {
-		const formatted = formatLuaDocument(originalSource);
+		const formatted = context.mode === 'lua'
+			? formatLuaDocument(originalSource)
+			: formatAemDocument(originalSource, context.descriptor.path);
 		if (formatted === originalSource) {
 			ide_state.showMessage('Document already formatted', constants.COLOR_STATUS_TEXT, 1.5);
 			return;
