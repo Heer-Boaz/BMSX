@@ -389,6 +389,7 @@ export type TextField = {
 	cursorRow: number;
 	cursorColumn: number;
 	selectionAnchor?: Position;
+	selectionAnchorScratch: Position;
 	desiredColumn?: number;
 	pointerSelecting?: boolean;
 	lastPointerClickTimeMs?: number;

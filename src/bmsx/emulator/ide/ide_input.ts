@@ -44,6 +44,7 @@ import { getTextSnapshot, splitText, textFromLines } from './text/source_text';
 import { toggleLineComments } from './line_comments';
 import { goBackwardInNavigationHistory, goForwardInNavigationHistory } from './navigation_history';
 import { redo, undo } from './undo_controller';
+import { ensureSingleCursorSelectionAnchor, selectAllSingleCursor, setSingleCursorSelectionAnchor } from './cursor_state';
 
 export const MENU_IDS: MenuId[] = ['file', 'run', 'view', 'debug'];
 export const MENU_COMMANDS = [
@@ -419,11 +420,9 @@ export function handleEditorInput(): void {
 		&& isCodeTabActive()
 		&& isKeyJustPressed('KeyA')) {
 		consumeIdeKey('KeyA');
-		ide_state.selectionAnchor = { row: 0, column: 0 };
 		const lastRowIndex = Math.max(0, ide_state.buffer.getLineCount() - 1);
 		const lastColumn = ide_state.buffer.getLineEndOffset(lastRowIndex) - ide_state.buffer.getLineStartOffset(lastRowIndex);
-		ide_state.cursorRow = lastRowIndex;
-		ide_state.cursorColumn = lastColumn;
+		selectAllSingleCursor(ide_state, lastRowIndex, lastColumn);
 		updateDesiredColumn();
 		resetBlink();
 		revealCursor();
@@ -1568,7 +1567,7 @@ export function handleTextEditorPointerInput(): void {
 			TextEditing.selectWordAtPosition(targetRow, targetColumn);
 			ide_state.pointerSelecting = false;
 		} else {
-			ide_state.selectionAnchor = { row: targetRow, column: targetColumn };
+			setSingleCursorSelectionAnchor(ide_state, targetRow, targetColumn);
 			setCursorPosition(targetRow, targetColumn);
 			ide_state.pointerSelecting = true;
 		}
@@ -1578,9 +1577,7 @@ export function handleTextEditorPointerInput(): void {
 		handlePointerAutoScroll(snapshot.viewportX, snapshot.viewportY);
 		const targetRow = resolvePointerRow(snapshot.viewportY);
 		const targetColumn = resolvePointerColumn(targetRow, snapshot.viewportX);
-		if (!ide_state.selectionAnchor) {
-			ide_state.selectionAnchor = { row: targetRow, column: targetColumn };
-		}
+		ensureSingleCursorSelectionAnchor(ide_state, targetRow, targetColumn);
 		setCursorPosition(targetRow, targetColumn);
 	}
 	if (isCodeTabActive() && !snapshot.primaryPressed && !ide_state.pointerSelecting && insideCodeArea && gotoModifierActive) {
@@ -1753,7 +1750,7 @@ function focusEditorAtContextToken(row: number, column: number): void {
 	focusEditorFromResourceSearch();
 	focusEditorFromSymbolSearch();
 	ide_state.completion.closeSession();
-	ide_state.selectionAnchor = { row, column };
+	setSingleCursorSelectionAnchor(ide_state, row, column);
 	setCursorPosition(row, column);
 	resetBlink();
 }

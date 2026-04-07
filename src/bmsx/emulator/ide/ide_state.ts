@@ -137,6 +137,7 @@ export interface IdeState {
 	desiredColumn: number;
 	desiredDisplayOffset: number;
 	selectionAnchor: Position;
+	selectionAnchorScratch: Position;
 	undoStack: EditorUndoRecord[];
 	redoStack: EditorUndoRecord[];
 	lastHistoryKey: string;
@@ -324,6 +325,7 @@ export const ide_state: IdeState = {
 	desiredColumn: 0,
 	desiredDisplayOffset: 0,
 	selectionAnchor: null,
+	selectionAnchorScratch: { row: 0, column: 0 },
 	undoStack: [],
 	redoStack: [],
 	lastHistoryKey: null,

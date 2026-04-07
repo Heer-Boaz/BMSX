@@ -35,6 +35,7 @@ import { updateDesiredColumn, revealCursor } from './caret';
 import { resetBlink } from './render/render_caret';
 import { ModuleAliasEntry } from './semantic_model';
 import { getActiveSemanticDefinitions, getLuaModuleAliases } from './diagnostics_controller';
+import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from './cursor_state';
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;
@@ -53,7 +54,7 @@ export class CompletionController {
 
 	private readonly cursorPositionScratch = { row: 0, column: 0 };
 	private readonly clampPositionScratch = { row: 0, column: 0 };
-	private readonly selectionAnchorScratch = { row: 0, column: 0 };
+	private readonly inlineCompletionPreviewScratch = { row: 0, column: 0, suffix: '' };
 	private readonly lastCursorPositionScratch = { row: 0, column: 0 };
 	private readonly parameterHintAnchorScratch = { row: 0, column: 0 };
 
@@ -108,7 +109,7 @@ export class CompletionController {
 	}
 
 	protected clearSelectionAnchor(): void {
-		ide_state.selectionAnchor = null;
+		clearSingleCursorSelection(ide_state);
 	}
 
 	protected getCursorPosition(): { row: number; column: number } {
@@ -122,12 +123,11 @@ export class CompletionController {
 		const rowCount = buffer.getLineCount();
 		const clampedRow = clamp(row, 0, Math.max(0, rowCount - 1));
 		const line = buffer.getLineContent(clampedRow);
-		ide_state.cursorRow = clampedRow;
-		ide_state.cursorColumn = clamp(column, 0, line.length);
+		setSingleCursorPosition(ide_state, clampedRow, clamp(column, 0, line.length));
 	}
 
 	protected setSelectionAnchor(row: number, column: number): void {
-		ide_state.selectionAnchor = assignRowColumn(ide_state.selectionAnchor, row, column, this.selectionAnchorScratch);
+		setSingleCursorSelectionAnchor(ide_state, row, column);
 	}
 
 	private setLastCursorPosition(row: number, column: number): void {
@@ -218,8 +218,11 @@ export class CompletionController {
 		if (prefix.length >= insertion.length) {
 			return null;
 		}
-		const suffix = insertion.slice(prefix.length);
-		return { row: session.context.row, column: session.context.replaceToColumn, suffix };
+		const preview = this.inlineCompletionPreviewScratch;
+		preview.row = session.context.row;
+		preview.column = session.context.replaceToColumn;
+		preview.suffix = insertion.slice(prefix.length);
+		return preview;
 	}
 
 	public handlePointerWheel(direction: number, steps: number, pointer: { x: number; y: number }): boolean {

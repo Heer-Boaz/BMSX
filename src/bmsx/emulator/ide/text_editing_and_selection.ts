@@ -23,13 +23,22 @@ import { resetBlink } from './render/render_caret';
 import * as constants from './constants';
 import { formatLuaDocument } from './lua/lua_formatter';
 import { extractErrorMessage } from '../../lua/luavalue';
-import { LuaLexer } from '../../lua/syntax/lualexer';
 import { getTextSnapshot } from './text/source_text';
 import type { MutableTextPosition, TextBuffer } from './text/text_buffer';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
 import { formatAemDocument } from './aem_editor';
+import {
+	clearSingleCursorSelection,
+	collapseSingleCursorSelection,
+	comparePositions,
+	getSingleCursorSelectionRange,
+	setSingleCursorPosition,
+	setSingleCursorSelectionAnchor,
+} from './cursor_state';
+import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor_words';
 
 const tmpPosition: MutableTextPosition = { row: 0, column: 0 };
+const wordPositionScratch: MutableTextPosition = { row: 0, column: 0 };
 
 function bufferCharAtOffset(buffer: TextBuffer, offset: number): string {
 	const code = buffer.charCodeAt(offset);
@@ -48,7 +57,7 @@ function editorAllowsMutation(): boolean {
  * Clears the current selection by removing the anchor.
  */
 export function clearSelection(): void {
-	ide_state.selectionAnchor = null;
+	clearSingleCursorSelection(ide_state);
 }
 
 /**
@@ -65,30 +74,14 @@ export function hasSelection(): boolean {
  * @param b Second position
  * @returns Negative if a < b, positive if a > b, zero if equal
  */
-export function comparePositions(a: Position, b: Position): number {
-	if (a.row !== b.row) {
-		return a.row - b.row;
-	}
-	return a.column - b.column;
-}
+export { comparePositions };
 
 /**
  * Gets the current selection range with normalized start/end positions.
  * @returns The selection range with start <= end, or null if no selection
  */
 export function getSelectionRange(): { start: Position; end: Position } {
-	const anchor = ide_state.selectionAnchor;
-	if (!anchor) {
-		return null;
-	}
-	const cursor: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
-	if (anchor.row === cursor.row && anchor.column === cursor.column) {
-		return null;
-	}
-	if (comparePositions(cursor, anchor) < 0) {
-		return { start: cursor, end: anchor };
-	}
-	return { start: anchor, end: cursor };
+	return getSingleCursorSelectionRange(ide_state);
 }
 
 /**
@@ -109,29 +102,13 @@ export function getSelectionText(): string {
 }
 
 /**
- * Ensures that a selection anchor exists at the specified position.
- * Does nothing if an anchor is already set.
- * @param anchor The position to use as the anchor
- */
-export function ensureSelectionAnchor(anchor: Position): void {
-	if (!ide_state.selectionAnchor) {
-		ide_state.selectionAnchor = { row: anchor.row, column: anchor.column };
-	}
-}
-
-/**
  * Collapses the selection to either its start or end position.
  * @param target 'start' to move cursor to selection start, 'end' for selection end
  */
 export function collapseSelectionTo(target: 'start' | 'end'): void {
-	const range = getSelectionRange();
-	if (!range) {
+	if (!collapseSingleCursorSelection(ide_state, target)) {
 		return;
 	}
-	const destination = target === 'start' ? range.start : range.end;
-	ide_state.cursorRow = destination.row;
-	ide_state.cursorColumn = destination.column;
-	ide_state.selectionAnchor = null;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -154,60 +131,16 @@ export function selectWordAtPosition(row: number, column: number): void {
 	}
 	const line = buffer.getLineContent(targetRow);
 	if (line.length === 0) {
-		ide_state.selectionAnchor = null;
-		ide_state.cursorRow = targetRow;
-		ide_state.cursorColumn = 0;
+		clearSingleCursorSelection(ide_state);
+		setSingleCursorPosition(ide_state, targetRow, 0);
 		updateDesiredColumn();
 		resetBlink();
 		revealCursor();
 		return;
 	}
-	let index = column;
-	if (index >= line.length) {
-		index = line.length - 1;
-	}
-	if (index < 0) {
-		index = 0;
-	}
-	let start = index;
-	let end = index + 1;
-	const current = line.charAt(index);
-	if (LuaLexer.isIdentifierPart(current)) {
-		while (start > 0 && LuaLexer.isIdentifierPart(line.charAt(start - 1))) {
-			start -= 1;
-		}
-		while (end < line.length && LuaLexer.isIdentifierPart(line.charAt(end))) {
-			end += 1;
-		}
-	} else if (LuaLexer.isWhitespace(current)) {
-		while (start > 0 && LuaLexer.isWhitespace(line.charAt(start - 1))) {
-			start -= 1;
-		}
-		while (end < line.length && LuaLexer.isWhitespace(line.charAt(end))) {
-			end += 1;
-		}
-	} else {
-		while (start > 0) {
-			const previous = line.charAt(start - 1);
-			if (LuaLexer.isIdentifierPart(previous) || LuaLexer.isWhitespace(previous)) {
-				break;
-			}
-			start -= 1;
-		}
-		while (end < line.length) {
-			const next = line.charAt(end);
-			if (LuaLexer.isIdentifierPart(next) || LuaLexer.isWhitespace(next)) {
-				break;
-			}
-			end += 1;
-		}
-	}
-	if (end < start) {
-		end = start;
-	}
-	ide_state.selectionAnchor = { row: targetRow, column: start };
-	ide_state.cursorRow = targetRow;
-	ide_state.cursorColumn = end;
+	const bounds = findWordBoundsInLine(line, column);
+	setSingleCursorSelectionAnchor(ide_state, targetRow, bounds.start);
+	setSingleCursorPosition(ide_state, targetRow, bounds.end);
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -235,43 +168,6 @@ export function clampSelectionPosition(position: Position): Position {
  * @param column Current column
  * @returns The new position, or null if at the start of the document
  */
-export function stepLeft(row: number, column: number): { row: number; column: number } {
-	if (column > 0) {
-		return { row, column: column - 1 };
-	}
-	if (row > 0) {
-		const previousRow = row - 1;
-		const buffer = ide_state.buffer;
-		const length = buffer.getLineEndOffset(previousRow) - buffer.getLineStartOffset(previousRow);
-		return { row: previousRow, column: length };
-	}
-	return null;
-}
-
-/**
- * Moves one position to the right in the document.
- * @param row Current row
- * @param column Current column
- * @returns The new position, or null if at the end of the document
- */
-export function stepRight(row: number, column: number): { row: number; column: number } {
-	const buffer = ide_state.buffer;
-	const length = buffer.getLineEndOffset(row) - buffer.getLineStartOffset(row);
-	if (column < length) {
-		return { row, column: column + 1 };
-	}
-	if (row < buffer.getLineCount() - 1) {
-		return { row: row + 1, column: 0 };
-	}
-	return null;
-}
-
-/**
- * Gets the character at the specified position.
- * @param row Row index
- * @param column Column index
- * @returns The character, or empty string if position is out of bounds
- */
 export function charAt(row: number, column: number): string {
 	const buffer = ide_state.buffer;
 	const lineCount = buffer.getLineCount();
@@ -294,41 +190,12 @@ export function charAt(row: number, column: number): string {
  * @param column Current column
  * @returns The position of the word start
  */
-export function findWordLeft(row: number, column: number): { row: number; column: number } {
-	let currentRow = row;
-	let currentColumn = column;
-	let step = stepLeft(currentRow, currentColumn);
-	if (!step) {
-		return { row: 0, column: 0 };
-	}
-	currentRow = step.row;
-	currentColumn = step.column;
-	let currentChar = charAt(currentRow, currentColumn);
-	while (LuaLexer.isWhitespace(currentChar)) {
-		const previous = stepLeft(currentRow, currentColumn);
-		if (!previous) {
-			return { row: 0, column: 0 };
-		}
-		currentRow = previous.row;
-		currentColumn = previous.column;
-		currentChar = charAt(currentRow, currentColumn);
-	}
-	const word = LuaLexer.isIdentifierPart(currentChar);
-	while (true) {
-		const previous = stepLeft(currentRow, currentColumn);
-		if (!previous) {
-			currentRow = 0;
-			currentColumn = 0;
-			break;
-		}
-		const previousChar = charAt(previous.row, previous.column);
-		if (LuaLexer.isWhitespace(previousChar) || LuaLexer.isIdentifierPart(previousChar) !== word) {
-			break;
-		}
-		currentRow = previous.row;
-		currentColumn = previous.column;
-	}
-	return { row: currentRow, column: currentColumn };
+export function findWordLeft(row: number, column: number, out: MutableTextPosition = wordPositionScratch): Position {
+	const buffer = ide_state.buffer;
+	const offset = buffer.offsetAt(row, column);
+	const targetOffset = findWordLeftOffset(offset, index => buffer.charCodeAt(index));
+	buffer.positionAt(targetOffset, out);
+	return out;
 }
 
 /**
@@ -337,63 +204,12 @@ export function findWordLeft(row: number, column: number): { row: number; column
  * @param column Current column
  * @returns The position of the word end
  */
-export function findWordRight(row: number, column: number): { row: number; column: number } {
-	let currentRow = row;
-	let currentColumn = column;
-	let step = stepRight(currentRow, currentColumn);
-	if (!step) {
-		const buffer = ide_state.buffer;
-		const lastRow = buffer.getLineCount() - 1;
-		const length = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
-		return { row: lastRow, column: length };
-	}
-	currentRow = step.row;
-	currentColumn = step.column;
-	let currentChar = charAt(currentRow, currentColumn);
-	while (LuaLexer.isWhitespace(currentChar)) {
-		const next = stepRight(currentRow, currentColumn);
-		if (!next) {
-			const buffer = ide_state.buffer;
-			const lastRow = buffer.getLineCount() - 1;
-			const length = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
-			return { row: lastRow, column: length };
-		}
-		currentRow = next.row;
-		currentColumn = next.column;
-		currentChar = charAt(currentRow, currentColumn);
-	}
-	const word = LuaLexer.isIdentifierPart(currentChar);
-	while (true) {
-		const next = stepRight(currentRow, currentColumn);
-		if (!next) {
-			const buffer = ide_state.buffer;
-			const lastRow = buffer.getLineCount() - 1;
-			currentRow = lastRow;
-			currentColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
-			break;
-		}
-		const nextChar = charAt(next.row, next.column);
-		if (LuaLexer.isWhitespace(nextChar) || LuaLexer.isIdentifierPart(nextChar) !== word) {
-			currentRow = next.row;
-			currentColumn = next.column;
-			break;
-		}
-		currentRow = next.row;
-		currentColumn = next.column;
-	}
-	while (LuaLexer.isWhitespace(charAt(currentRow, currentColumn))) {
-		const next = stepRight(currentRow, currentColumn);
-		if (!next) {
-			const buffer = ide_state.buffer;
-			const lastRow = buffer.getLineCount() - 1;
-			currentRow = lastRow;
-			currentColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
-			break;
-		}
-		currentRow = next.row;
-		currentColumn = next.column;
-	}
-	return { row: currentRow, column: currentColumn };
+export function findWordRight(row: number, column: number, out: MutableTextPosition = wordPositionScratch): Position {
+	const buffer = ide_state.buffer;
+	const offset = buffer.offsetAt(row, column);
+	const targetOffset = findWordRightOffset(buffer.length, offset, index => buffer.charCodeAt(index));
+	buffer.positionAt(targetOffset, out);
+	return out;
 }
 
 // ============================================================================
@@ -874,8 +690,9 @@ export function moveSelectionLines(delta: number): void {
 	invalidateLineRange(regionStartRow, regionEndRow);
 	ide_state.layout.invalidateHighlightsFromRow(regionStartRow);
 	ide_state.cursorRow += delta;
-	if (ide_state.selectionAnchor) {
-		ide_state.selectionAnchor = { row: ide_state.selectionAnchor.row + delta, column: ide_state.selectionAnchor.column };
+	const anchor = ide_state.selectionAnchor;
+	if (anchor) {
+		anchor.row += delta;
 	}
 	const cursorRow = ide_state.layout.clampBufferRow(ide_state.buffer, ide_state.cursorRow);
 	ide_state.cursorRow = cursorRow;
@@ -973,8 +790,9 @@ export function indentSelectionOrLine(): void {
 		applyUndoableReplace(offset, 0, '\t');
 		ide_state.layout.invalidateLine(row);
 	}
-	if (ide_state.selectionAnchor) {
-		ide_state.selectionAnchor = { row: ide_state.selectionAnchor.row, column: ide_state.selectionAnchor.column + 1 };
+	const anchor = ide_state.selectionAnchor;
+	if (anchor) {
+		anchor.column += 1;
 	}
 	ide_state.cursorColumn += 1;
 	recordEditContext('insert', '\t');
@@ -1028,8 +846,9 @@ export function unindentSelectionOrLine(): void {
 		applyUndoableReplace(offset, 1, '');
 		ide_state.layout.invalidateLine(row);
 	}
-	if (ide_state.selectionAnchor) {
-		ide_state.selectionAnchor = { row: ide_state.selectionAnchor.row, column: Math.max(0, ide_state.selectionAnchor.column - 1) };
+	const anchor = ide_state.selectionAnchor;
+	if (anchor) {
+		anchor.column = Math.max(0, anchor.column - 1);
 	}
 	ide_state.cursorColumn = Math.max(0, ide_state.cursorColumn - 1);
 	recordEditContext('delete', '\t');

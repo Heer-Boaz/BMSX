@@ -8,6 +8,14 @@ import { clamp } from '../../utils/clamp';
 import { LuaLexer } from '../../lua/syntax/lualexer';
 import { splitText, textFromLines } from './text/source_text';
 import { advanceToggleBlink } from './caret_blink';
+import {
+	clearSingleCursorSelection,
+	moveSingleCursor,
+	selectAllSingleCursor,
+	setSingleCursorPosition,
+	setSingleCursorSelectionAnchor,
+} from './cursor_state';
+import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor_words';
 
 export type InlineFieldMetrics = {
 	advanceChar: (ch: string) => number;
@@ -62,15 +70,9 @@ const charAdvance = (metrics: InlineFieldMetrics, ch: string): number => (
 		: metrics.advanceChar(ch)
 );
 
-const setSelectionAnchorPosition = (field: TextField, row: number, column: number): void => {
-	const anchor = field.selectionAnchor;
-	if (anchor) {
-		anchor.row = row;
-		anchor.column = column;
-		return;
-	}
-	field.selectionAnchor = { row, column };
-};
+export function setSelectionAnchorPosition(field: TextField, row: number, column: number): void {
+	setSingleCursorSelectionAnchor(field, row, column);
+}
 
 const writeInlineFieldClipboard = (payload: string): void => {
 	ide_state.customClipboard = payload;
@@ -85,10 +87,8 @@ const applyTextUpdate = (field: TextField, nextText: string, nextCursorOffset: n
 	const lines = splitText(nextText);
 	field.lines = lines;
 	offsetToPosition(lines, nextCursorOffset, scratchPosition);
-	field.cursorRow = scratchPosition.row;
-	field.cursorColumn = scratchPosition.column;
-	field.desiredColumn = field.cursorColumn;
-	field.selectionAnchor = null;
+	setSingleCursorPosition(field, scratchPosition.row, scratchPosition.column);
+	clearSingleCursorSelection(field);
 };
 
 const totalLength = (field: TextField): number => {
@@ -108,6 +108,7 @@ export function createInlineTextField(): TextField {
 		cursorRow: 0,
 		cursorColumn: 0,
 		selectionAnchor: null,
+		selectionAnchorScratch: { row: 0, column: 0 },
 		desiredColumn: 0,
 		pointerSelecting: false,
 		lastPointerClickTimeMs: 0,
@@ -125,9 +126,11 @@ export function setCursorFromOffset(field: TextField, offset: number): void {
 	const length = totalLength(field);
 	const clamped = clamp(offset, 0, length);
 	offsetToPosition(field.lines, clamped, scratchPosition);
-	field.cursorRow = scratchPosition.row;
-	field.cursorColumn = scratchPosition.column;
-	field.desiredColumn = field.cursorColumn;
+	setSingleCursorPosition(field, scratchPosition.row, scratchPosition.column);
+}
+
+export function clearSelection(field: TextField): void {
+	clearSingleCursorSelection(field);
 }
 
 export function selectionAnchorOffset(field: TextField): number | null {
@@ -142,89 +145,6 @@ export function setSelectionAnchorFromOffset(field: TextField, offset: number): 
 	const clamped = clamp(offset, 0, length);
 	offsetToPosition(field.lines, clamped, scratchPosition);
 	setSelectionAnchorPosition(field, scratchPosition.row, scratchPosition.column);
-}
-
-export type InlineFieldDecoration = {
-	hasSelection: boolean;
-	selectionLeft: number;
-	selectionWidth: number;
-	caretBaseX: number;
-};
-
-const scratchInlineFieldDecoration: InlineFieldDecoration = {
-	hasSelection: false,
-	selectionLeft: 0,
-	selectionWidth: 0,
-	caretBaseX: 0,
-};
-
-export function measureInlineFieldDecoration(field: TextField, metrics: InlineFieldMetrics, textLeft: number, out: InlineFieldDecoration = scratchInlineFieldDecoration): InlineFieldDecoration {
-	const cursor = cursorOffset(field);
-	const anchor = selectionAnchorOffset(field);
-	const hasSelection = anchor !== null && anchor !== cursor;
-	const selectionStart = hasSelection && anchor < cursor ? anchor : cursor;
-	const selectionEnd = hasSelection && anchor > cursor ? anchor : cursor;
-
-	let offset = 0;
-	let width = 0;
-	let selectionStartWidth = 0;
-	let selectionEndWidth = 0;
-	let selectionStartCaptured = selectionStart === 0;
-	let selectionEndCaptured = selectionEnd === 0;
-
-	for (let row = 0; row < field.lines.length; row += 1) {
-		const line = field.lines[row];
-		for (let index = 0; index < line.length; index += 1) {
-			if (!selectionStartCaptured && offset === selectionStart) {
-				selectionStartWidth = width;
-				selectionStartCaptured = true;
-			}
-			if (!selectionEndCaptured && offset === selectionEnd) {
-				selectionEndWidth = width;
-				selectionEndCaptured = true;
-			}
-			width += charAdvance(metrics, line.charAt(index));
-			offset += 1;
-		}
-		if (!selectionStartCaptured && offset === selectionStart) {
-			selectionStartWidth = width;
-			selectionStartCaptured = true;
-		}
-		if (!selectionEndCaptured && offset === selectionEnd) {
-			selectionEndWidth = width;
-			selectionEndCaptured = true;
-		}
-		if (selectionStartCaptured && selectionEndCaptured) {
-			break;
-		}
-		if (row < field.lines.length - 1) {
-			offset += 1;
-			if (!selectionStartCaptured && offset === selectionStart) {
-				selectionStartWidth = width;
-				selectionStartCaptured = true;
-			}
-			if (!selectionEndCaptured && offset === selectionEnd) {
-				selectionEndWidth = width;
-				selectionEndCaptured = true;
-			}
-			if (selectionStartCaptured && selectionEndCaptured) {
-				break;
-			}
-		}
-	}
-
-	if (!selectionStartCaptured) {
-		selectionStartWidth = width;
-	}
-	if (!selectionEndCaptured) {
-		selectionEndWidth = width;
-	}
-
-	out.hasSelection = hasSelection;
-	out.selectionLeft = textLeft + selectionStartWidth;
-	out.selectionWidth = hasSelection ? selectionEndWidth - selectionStartWidth : 0;
-	out.caretBaseX = textLeft + (cursor === selectionStart ? selectionStartWidth : selectionEndWidth);
-	return out;
 }
 
 export function clampCursor(field: TextField): void {
@@ -369,18 +289,11 @@ export function deleteWordForward(field: TextField): boolean {
 
 export function moveCursor(field: TextField, row: number, column: number, extendSelection: boolean): void {
 	const clamped = clampRowColumn(field, row, column);
-	const nextRow = clamped.row;
-	const nextColumn = clamped.column;
-	if (extendSelection) {
-		if (!field.selectionAnchor) {
-			setSelectionAnchorPosition(field, field.cursorRow, field.cursorColumn);
-		}
-	} else {
-		field.selectionAnchor = null;
-	}
-	field.cursorRow = nextRow;
-	field.cursorColumn = nextColumn;
-	field.desiredColumn = field.cursorColumn;
+	moveSingleCursor(field, clamped.row, clamped.column, extendSelection);
+}
+
+export function setCursorPosition(field: TextField, row: number, column: number): void {
+	moveCursor(field, row, column, false);
 }
 
 export function moveCursorRelative(field: TextField, delta: number, extendSelection: boolean): void {
@@ -394,22 +307,7 @@ export function moveCursorRelative(field: TextField, delta: number, extendSelect
 export function moveWordLeft(field: TextField, extendSelection: boolean): void {
 	const text = textFromLines(field.lines);
 	const offset = cursorOffset(field);
-	if (offset === 0) {
-		if (!extendSelection) {
-			field.selectionAnchor = null;
-		}
-		return;
-	}
-	let index = offset;
-	while (index > 0 && LuaLexer.isWhitespace(text.charAt(index - 1))) {
-		index -= 1;
-	}
-	while (index > 0 && !LuaLexer.isWhitespace(text.charAt(index - 1)) && !LuaLexer.isIdentifierPart(text.charAt(index - 1))) {
-		index -= 1;
-	}
-	while (index > 0 && LuaLexer.isIdentifierPart(text.charAt(index - 1))) {
-		index -= 1;
-	}
+	const index = findWordLeftOffset(offset, index => text.charCodeAt(index));
 	offsetToPosition(field.lines, index, scratchPosition);
 	moveCursor(field, scratchPosition.row, scratchPosition.column, extendSelection);
 }
@@ -417,22 +315,7 @@ export function moveWordLeft(field: TextField, extendSelection: boolean): void {
 export function moveWordRight(field: TextField, extendSelection: boolean): void {
 	const text = textFromLines(field.lines);
 	const offset = cursorOffset(field);
-	if (offset >= text.length) {
-		if (!extendSelection) {
-			field.selectionAnchor = null;
-		}
-		return;
-	}
-	let index = offset;
-	while (index < text.length && LuaLexer.isWhitespace(text.charAt(index))) {
-		index += 1;
-	}
-	while (index < text.length && !LuaLexer.isWhitespace(text.charAt(index)) && !LuaLexer.isIdentifierPart(text.charAt(index))) {
-		index += 1;
-	}
-	while (index < text.length && LuaLexer.isIdentifierPart(text.charAt(index))) {
-		index += 1;
-	}
+	const index = findWordRightOffset(text.length, offset, index => text.charCodeAt(index));
 	offsetToPosition(field.lines, index, scratchPosition);
 	moveCursor(field, scratchPosition.row, scratchPosition.column, extendSelection);
 }
@@ -448,12 +331,9 @@ export function moveToEnd(field: TextField, extendSelection: boolean): void {
 }
 
 export function selectAll(field: TextField): void {
-	setSelectionAnchorPosition(field, 0, 0);
 	const lastRow = field.lines.length - 1;
 	const lastColumn = field.lines[lastRow].length;
-	field.cursorRow = lastRow;
-	field.cursorColumn = lastColumn;
-	field.desiredColumn = field.cursorColumn;
+	selectAllSingleCursor(field, lastRow, lastColumn);
 }
 
 export function selectedText(field: TextField): string {
@@ -473,59 +353,15 @@ export function selectedText(field: TextField): string {
 
 export function selectWordAt(field: TextField, row: number, column: number): void {
 	const clamped = clampRowColumn(field, row, column);
-	const text = textFromLines(field.lines);
-	if (text.length === 0) {
-		field.selectionAnchor = null;
-		field.cursorRow = 0;
-		field.cursorColumn = 0;
-		field.desiredColumn = 0;
+	const line = field.lines[clamped.row];
+	if (line.length === 0) {
+		clearSingleCursorSelection(field);
+		setSingleCursorPosition(field, clamped.row, 0);
 		return;
 	}
-	let index = positionToOffset(field.lines, clamped.row, clamped.column);
-	if (index >= text.length) {
-		index = text.length - 1;
-	}
-	const ch = text.charAt(index);
-	let start = index;
-	let end = index + 1;
-	if (LuaLexer.isIdentifierPart(ch)) {
-		while (start > 0 && LuaLexer.isIdentifierPart(text.charAt(start - 1))) {
-			start -= 1;
-		}
-		while (end < text.length && LuaLexer.isIdentifierPart(text.charAt(end))) {
-			end += 1;
-		}
-	} else if (LuaLexer.isWhitespace(ch)) {
-		while (start > 0 && LuaLexer.isWhitespace(text.charAt(start - 1))) {
-			start -= 1;
-		}
-		while (end < text.length && LuaLexer.isWhitespace(text.charAt(end))) {
-			end += 1;
-		}
-	} else {
-		while (start > 0) {
-			const previous = text.charAt(start - 1);
-			if (LuaLexer.isIdentifierPart(previous) || LuaLexer.isWhitespace(previous)) {
-				break;
-			}
-			start -= 1;
-		}
-		while (end < text.length) {
-			const next = text.charAt(end);
-			if (LuaLexer.isIdentifierPart(next) || LuaLexer.isWhitespace(next)) {
-				break;
-			}
-			end += 1;
-		}
-	}
-	offsetToPosition(field.lines, start, scratchPosition);
-	const startRow = scratchPosition.row;
-	const startColumn = scratchPosition.column;
-	offsetToPosition(field.lines, end, scratchPosition);
-	setSelectionAnchorPosition(field, startRow, startColumn);
-	field.cursorRow = scratchPosition.row;
-	field.cursorColumn = scratchPosition.column;
-	field.desiredColumn = field.cursorColumn;
+	const bounds = findWordBoundsInLine(line, clamped.column);
+	setSingleCursorSelectionAnchor(field, clamped.row, bounds.start);
+	setSingleCursorPosition(field, clamped.row, bounds.end);
 }
 
 export function resolveColumn(field: TextField, metrics: InlineFieldMetrics, textLeft: number, pointerX: number): number {
@@ -567,12 +403,11 @@ export function setFieldText(field: TextField, value: string, moveCursorToEnd: b
 	field.lines = lines;
 	if (moveCursorToEnd) {
 		const lastRow = lines.length - 1;
-		field.cursorRow = lastRow;
-		field.cursorColumn = lines[lastRow].length;
+		setSingleCursorPosition(field, lastRow, lines[lastRow].length);
 	} else {
 		clampCursor(field);
 	}
-	field.selectionAnchor = null;
+	clearSingleCursorSelection(field);
 	field.desiredColumn = field.cursorColumn;
 	field.pointerSelecting = false;
 	field.lastPointerClickTimeMs = 0;

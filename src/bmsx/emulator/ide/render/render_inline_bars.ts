@@ -2,7 +2,7 @@ import { drawInlineCaret } from './render_caret';
 import * as constants from '../constants';
 import type { TextField } from '../types';
 import { ide_state } from '../ide_state';
-import { measureInlineFieldDecoration } from '../inline_text_field';
+import { measureInlineFieldDecoration } from '../inline_field_view';
 import { api } from '../../overlay_api';
 import { drawEditorText } from './text_renderer';
 import { drawCreateResourceErrorDialog } from './render_resource_panel';

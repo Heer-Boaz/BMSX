@@ -15,6 +15,7 @@ import { syncSemanticWorkspacePath } from './semantic_workspace_sync';
 import { ide_state } from './ide_state';
 import { getOrCreateSemanticWorkspace } from './semantic_workspace_sync';
 import { redo, undo } from './undo_controller';
+import { setSingleCursorSelectionAnchor } from './cursor_state';
 
 export type RenameCommitPayload = {
 	matches: readonly SearchMatch[];
@@ -213,7 +214,7 @@ export class RenameController {
 
 	private resetInlineField(value: string): void {
 		setFieldText(this.field, value, true);
-		this.field.selectionAnchor = { row: 0, column: 0 };
+		setSingleCursorSelectionAnchor(this.field, 0, 0);
 		this.field.desiredColumn = this.field.cursorColumn;
 		this.field.pointerSelecting = false;
 		this.field.lastPointerClickTimeMs = 0;

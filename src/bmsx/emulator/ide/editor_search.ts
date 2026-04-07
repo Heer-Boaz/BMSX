@@ -18,6 +18,7 @@ import { resetBlink } from './render/render_caret';
 import { scheduleMicrotask } from '../../platform';
 import { textFromLines } from './text/source_text';
 import { applyInlineFieldPointer, setFieldText } from './inline_text_field';
+import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from './cursor_state';
 
 const LOCAL_ROWS_PER_SLICE = 256;
 const GLOBAL_ROWS_PER_SLICE = 128;
@@ -374,9 +375,8 @@ export function cancelGlobalSearchJob(): void {
 function focusLocalMatch(index: number, recordNavigation: boolean): void {
 	const match = ide_state.searchMatches[index];
 	const navigationCheckpoint = recordNavigation ? beginNavigationCapture() : null;
-	ide_state.cursorRow = match.row;
-	ide_state.cursorColumn = match.start;
-	ide_state.selectionAnchor = { row: match.row, column: match.end };
+	setSingleCursorPosition(ide_state, match.row, match.start);
+	setSingleCursorSelectionAnchor(ide_state, match.row, match.end);
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
@@ -394,9 +394,8 @@ function focusGlobalMatch(index: number): void {
 		const line = ide_state.buffer.getLineContent(row);
 		const startColumn = clamp(match.start, 0, line.length);
 		const endColumn = clamp(match.end, 0, line.length);
-		ide_state.cursorRow = row;
-		ide_state.cursorColumn = startColumn;
-		ide_state.selectionAnchor = { row, column: endColumn };
+		setSingleCursorPosition(ide_state, row, startColumn);
+		setSingleCursorSelectionAnchor(ide_state, row, endColumn);
 		ensureCursorVisible();
 		resetBlink();
 		completeNavigation(navigationCheckpoint);

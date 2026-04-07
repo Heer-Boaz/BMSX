@@ -4,8 +4,9 @@ import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualInd
 import { caretNavigation, ide_state } from './ide_state';
 import { isShiftDown, isCtrlDown } from './ide_input';
 import { resetBlink } from './render/render_caret';
-import { findWordLeft, findWordRight, ensureSelectionAnchor, hasSelection, collapseSelectionTo, clearSelection } from './text_editing_and_selection';
-import type { Position, VisualLineSegment } from './types';
+import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSelection } from './text_editing_and_selection';
+import { ensureSingleCursorSelectionAnchor } from './cursor_state';
+import type { VisualLineSegment } from './types';
 import { revealCursor, resolveViewportCapacity, setCursorFromVisualIndex, updateDesiredColumn } from './caret_view';
 
 export type VisualCursorOverride = {
@@ -219,11 +220,10 @@ export function moveWordRight(): void {
  * Move cursor left by character or word
  */
 export function moveCursorLeft(): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	const select = isShiftDown();
 	const byWord = isCtrlDown();
 	if (select) {
-		ensureSelectionAnchor(previous);
+		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('start');
 		breakUndoSequence();
@@ -245,12 +245,11 @@ export function moveCursorLeft(): void {
  * Move cursor right by character or word
  */
 export function moveCursorRight(): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	const select = isShiftDown();
 	const byWord = isCtrlDown();
 
 	if (select) {
-		ensureSelectionAnchor(previous);
+		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('end');
 		breakUndoSequence();
@@ -272,10 +271,9 @@ export function moveCursorRight(): void {
  * Move cursor up one line
  */
 export function moveCursorUp(): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	const select = isShiftDown();
 	if (select) {
-		ensureSelectionAnchor(previous);
+		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('start');
 		breakUndoSequence();
@@ -293,10 +291,9 @@ export function moveCursorUp(): void {
  * Move cursor down one line
  */
 export function moveCursorDown(): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	const select = isShiftDown();
 	if (select) {
-		ensureSelectionAnchor(previous);
+		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('end');
 		breakUndoSequence();
@@ -317,10 +314,9 @@ export function moveCursorHome(): void {
 	const previousOverride = caretNavigation.lookup(ide_state.cursorRow, ide_state.cursorColumn);
 	caretNavigation.clear();
 	const buffer = ide_state.buffer;
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	const select = isShiftDown();
 	if (select) {
-		ensureSelectionAnchor(previous);
+		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
 	} else {
 		clearSelection();
 	}
@@ -354,10 +350,9 @@ export function moveCursorEnd(): void {
 	const previousOverride = caretNavigation.lookup(ide_state.cursorRow, ide_state.cursorColumn);
 	caretNavigation.clear();
 	const buffer = ide_state.buffer;
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	const select = isShiftDown();
 	if (select) {
-		ensureSelectionAnchor(previous);
+		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
 	} else {
 		clearSelection();
 	}
@@ -389,10 +384,9 @@ export function moveCursorEnd(): void {
  * Move cursor up one page
  */
 export function pageUp(): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	const select = isShiftDown();
 	if (select) {
-		ensureSelectionAnchor(previous);
+		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
 	} else {
 		clearSelection();
 	}
@@ -410,10 +404,9 @@ export function pageUp(): void {
  * Move cursor down one page
  */
 export function pageDown(): void {
-	const previous: Position = { row: ide_state.cursorRow, column: ide_state.cursorColumn };
 	const select = isShiftDown();
 	if (select) {
-		ensureSelectionAnchor(previous);
+		ensureSingleCursorSelectionAnchor(ide_state, ide_state.cursorRow, ide_state.cursorColumn);
 	} else {
 		clearSelection();
 	}

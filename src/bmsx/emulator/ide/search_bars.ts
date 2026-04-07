@@ -33,6 +33,7 @@ import { ensureCursorVisible, setCursorPosition, updateDesiredColumn } from './c
 import { breakUndoSequence } from './undo_controller';
 import * as TextEditing from './text_editing_and_selection';
 import { $ } from '../../core/engine_core';
+import { setSingleCursorSelectionAnchor } from './cursor_state';
 
 // ── Resource search lifecycle ────────────────────────────────────
 
@@ -726,7 +727,7 @@ export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 		const focused = sortedMatches[clampedIndex];
 		ide_state.cursorRow = focused.row;
 		ide_state.cursorColumn = focused.start;
-		ide_state.selectionAnchor = { row: focused.row, column: focused.start + newName.length };
+		setSingleCursorSelectionAnchor(ide_state, focused.row, focused.start + newName.length);
 		updateDesiredColumn();
 		resetBlink();
 		ide_state.cursorRevealSuspended = false;
