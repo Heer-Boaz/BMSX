@@ -16,7 +16,7 @@ import {
 	selectionAnchorOffset,
 	setSelectionAnchorFromOffset,
 } from './ide/inline_text_field';
-import type { InlineInputOptions, TextField, CursorScreenInfo, CompletionContext, EditContext, LuaCompletionItem } from './ide/types';
+import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext } from './ide/types';
 import * as constants from './ide/constants';
 import { OverlayRenderer } from './overlay_renderer';
 import {
@@ -36,27 +36,13 @@ import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './termin
 import { extractErrorMessage } from '../lua/luavalue';
 import { valueToString } from './lua_globals';
 import type { Value } from './cpu';
-import { SymbolEntry } from './types';
 import {
-	computePanelGridLayout,
-	findSymbolCompletionBounds,
-	matchesAnySymbolSegment,
-	matchesSymbolSegmentChain,
-	splitSymbolQuerySegments,
 	truncatePanelLabel,
+	type TerminalPanelGridLayout,
 } from './terminal_completion_panel_model';
 import { drawTerminalGridPanel } from './terminal_completion_panels_renderer';
-import {
-	handleCompletionPanelKeybindings as panelHandleCompletionPanelKeybindings,
-	handleCompletionPanelTrigger as panelHandleCompletionPanelTrigger,
-	handleCtrlTabTrigger as panelHandleCtrlTabTrigger,
-	handleInlineCompletionAccept as panelHandleInlineCompletionAccept,
-	handleSymbolPanelKeybindings as panelHandleSymbolPanelKeybindings,
-	type TerminalCompletionPanelState,
-	type TerminalSymbolPanelMode,
-	type TerminalSymbolPanelState,
-	type TerminalSymbolQueryContext,
-} from './terminal_completion_panels_input';
+import { TerminalSuggestController } from './terminal_suggest_controller';
+import { TerminalSuggestModel } from './terminal_suggest_model';
 import type { MutableTextPosition, TextBuffer } from './ide/text/text_buffer';
 import { clamp } from '../utils/clamp';
 import { textFromLines } from './ide/text/source_text';
@@ -74,17 +60,6 @@ type TerminalOutputKind =
 type TerminalOutputEntry = {
 	text: string;
 	color: number;
-};
-
-
-type TerminalSymbolGridLayout = {
-	columns: number;
-	rows: number;
-	cellWidth: number;
-	gap: number;
-	visibleRows: number;
-	paddingX: number;
-	paddingY: number;
 };
 
 class InlineFieldTextBuffer implements TextBuffer {
@@ -235,16 +210,14 @@ export class TerminalMode {
 	private readonly history: string[] = [];
 	private historyIndex: number = null;
 	private readonly completion: CompletionController;
+	private readonly suggestModel: TerminalSuggestModel;
+	private readonly suggestController: TerminalSuggestController;
 	private readonly buffer: TextBuffer;
 	private blinkTimer = 0;
 	private caretVisible = true;
 	private active = false;
 	private textVersion = 0;
 	private readonly terminalCommands: TerminalCommandDispatcher;
-	private symbolPanel: TerminalSymbolPanelState = null;
-	private symbolPanelLayout: TerminalSymbolGridLayout = null;
-	private completionPanel: TerminalCompletionPanelState = null;
-	private completionPanelLayout: TerminalSymbolGridLayout = null;
 	private pagerSessionActive = false;
 	private pagerActive = false;
 	private pagerQueue: TerminalOutputEntry[] = [];
@@ -272,7 +245,7 @@ export class TerminalMode {
 			private readonly clampScratch = { row: 0, column: 0 };
 
 			protected override isCompletionContextActive(): boolean {
-				return owner.active && !owner.symbolPanel && !owner.completionPanel;
+				return owner.active && !owner.suggestModel.hasOpenPanel;
 			}
 
 			protected override isCompletionReady(): boolean {
@@ -383,6 +356,21 @@ export class TerminalMode {
 			}
 		}();
 		this.completion.enterCommitsCompletion = true;
+		this.suggestModel = new TerminalSuggestModel({
+			getInputText: () => textFromLines(this.field.lines),
+			getCursorOffset: () => getCursorOffset(this.field),
+			restoreInput: (text, cursor) => this.restoreInputState(text, cursor),
+			replaceInputRange: (start, end, value) => this.replaceInputRange(start, end, value),
+			listCompletionCandidates: () => this.completion.listCompletionCandidates(),
+			closeCompletionSession: () => this.completion.closeSession(),
+			applyCompletionItem: (context, item) => this.completion.applyCompletionItem(context, item),
+			buildSymbolCatalog: () => runtimeLuaPipeline.listSymbols(this.runtime),
+		});
+		this.suggestController = new TerminalSuggestController({
+			completion: this.completion,
+			model: this.suggestModel,
+			shouldRepeatKey: code => this.shouldRepeatKey(code),
+		});
 	}
 
 	public activate(): void {
@@ -390,10 +378,7 @@ export class TerminalMode {
 		this.resetInputField('');
 		this.historyIndex = null;
 		this.completion.closeSession();
-		this.symbolPanel = null;
-		this.symbolPanelLayout = null;
-		this.completionPanel = null;
-		this.completionPanelLayout = null;
+		this.suggestModel.clear();
 		this.resetPagerState();
 		this.blinkTimer = 0;
 		this.caretVisible = true;
@@ -401,10 +386,7 @@ export class TerminalMode {
 
 	public deactivate(): void {
 		this.active = false;
-		this.symbolPanel = null;
-		this.symbolPanelLayout = null;
-		this.completionPanel = null;
-		this.completionPanelLayout = null;
+		this.suggestModel.clear();
 		this.resetPagerState();
 	}
 
@@ -481,29 +463,9 @@ export class TerminalMode {
 			}
 			return null;
 		}
-		if (this.symbolPanel) {
-			if (this.handleSymbolPanelKeybindings()) {
-				this.resetBlink();
-				return null;
-			}
-		} else if (this.completionPanel) {
-			if (this.handleCompletionPanelKeybindings()) {
-				this.resetBlink();
-				return null;
-			}
-		} else {
-			if (this.handleInlineCompletionAccept()) {
-				this.resetBlink();
-				return null;
-			}
-			if (this.handleCompletionPanelTrigger()) {
-				this.resetBlink();
-				return null;
-			}
-			if (this.handleCtrlTabTrigger()) {
-				this.resetBlink();
-				return null;
-			}
+		if (this.suggestController.handleInput()) {
+			this.resetBlink();
+			return null;
 		}
 		const options: InlineInputOptions = { allowSpace: true };
 		const historyHandled = this.handleHistoryNavigation();
@@ -518,23 +480,14 @@ export class TerminalMode {
 			const editContext = this.buildEditContext(previousText, textFromLines(this.field.lines));
 			this.handleTextMutation(previousText, editContext);
 		} else if (previousCursor !== getCursorOffset(this.field) || previousAnchor !== selectionAnchorOffset(this.field)) {
-			if (this.completionPanel) {
-				this.refreshCompletionPanelFilter();
-			} else if (this.symbolPanel) {
-				this.refreshSymbolPanelFilter();
-			} else {
+			if (!this.suggestModel.refreshOpenPanelFilter()) {
 				this.completion.onCursorMoved();
 			}
 		}
 		const submit = this.trySubmitCommand();
 		if (submit !== null) {
 			this.completion.closeSession();
-			if (this.symbolPanel) {
-				this.closeSymbolPanel(false);
-			}
-			if (this.completionPanel) {
-				this.closeCompletionPanel(false);
-			}
+			this.suggestModel.clear();
 			await this.handleTerminalCommand(submit);
 		}
 	}
@@ -615,315 +568,14 @@ export class TerminalMode {
 	}
 
 	public openSymbolBrowser(): void {
-		const entries = this.buildSymbolCatalog();
-		const filtered = entries.slice();
-		this.openSymbolPanel('browse', entries, filtered, null);
+		this.suggestModel.openSymbolBrowser();
 	}
 
-	private handleInlineCompletionAccept(): boolean {
-		return panelHandleInlineCompletionAccept(this.completion);
-	}
-
-	private handleCompletionPanelTrigger(): boolean {
-		return panelHandleCompletionPanelTrigger({
-			completion: this.completion,
-			openCompletionPanel: (context, entries, filtered) => this.openCompletionPanel(context, entries, filtered),
-		});
-	}
-
-	private handleCtrlTabTrigger(): boolean {
-		return panelHandleCtrlTabTrigger({
-			completion: this.completion,
-			openCompletionPanel: (context, entries, filtered) => this.openCompletionPanel(context, entries, filtered),
-			resolveSymbolCompletionContext: () => this.resolveSymbolCompletionContext(),
-			buildSymbolCatalog: () => this.buildSymbolCatalog(),
-			filterSymbolEntries: (entries, prefix) => this.filterSymbolEntries(entries, prefix),
-			applySymbolCompletion: (context, name) => this.applySymbolCompletion(context, name),
-			openSymbolPanel: (mode, entries, filtered, query) => this.openSymbolPanel(mode, entries, filtered, query),
-		});
-	}
-
-	private handleSymbolPanelKeybindings(): boolean {
-		return panelHandleSymbolPanelKeybindings({
-			panel: this.symbolPanel,
-			closeSymbolPanel: (restoreInput) => this.closeSymbolPanel(restoreInput),
-			moveSymbolSelectionRow: (delta) => this.moveSymbolSelectionRow(delta),
-			moveSymbolSelectionColumn: (delta) => this.moveSymbolSelectionColumn(delta),
-			moveSymbolSelectionPage: (delta) => this.moveSymbolSelectionPage(delta),
-			acceptSymbolPanelSelection: () => this.acceptSymbolPanelSelection(),
-			shouldRepeatKey: (code) => this.shouldRepeatKey(code),
-		});
-	}
-
-	private resolveSymbolCompletionContext(): TerminalSymbolQueryContext {
-		const text = textFromLines(this.field.lines);
-		const cursor = getCursorOffset(this.field);
-		const bounds = findSymbolCompletionBounds(text, cursor);
-		return {
-			prefix: text.slice(bounds.start, cursor),
-			replaceStart: bounds.start,
-			replaceEnd: bounds.end,
-		};
-	}
-
-	private openSymbolPanel(
-		mode: TerminalSymbolPanelMode,
-		entries: SymbolEntry[],
-		filtered: SymbolEntry[],
-		query: TerminalSymbolQueryContext | null,
-	): void {
-		const selectionIndex = filtered.length > 0 ? 0 : -1;
-		this.completionPanel = null;
-		this.completionPanelLayout = null;
-		this.symbolPanel = {
-			mode,
-			entries,
-			filtered,
-			filter: query ? query.prefix : '',
-			selectionIndex,
-			displayRowOffset: 0,
-			queryStart: query ? query.replaceStart : 0,
-			queryEnd: query ? query.replaceEnd : 0,
-			originalText: textFromLines(this.field.lines),
-			originalCursor: getCursorOffset(this.field),
-		};
-		this.symbolPanelLayout = null;
-		this.completion.closeSession();
-	}
-
-	private closeSymbolPanel(restoreInput: boolean): void {
-		const panel = this.symbolPanel;
-		if (!panel) {
-			return;
-		}
-		this.symbolPanel = null;
-		this.symbolPanelLayout = null;
-		if (restoreInput) {
-			const previous = textFromLines(this.field.lines);
-			setFieldText(this.field, panel.originalText, false);
-			setCursorFromOffset(this.field, panel.originalCursor);
-			this.onExternalFieldMutation(previous, panel.originalText);
-		}
-	}
-
-	private openCompletionPanel(context: CompletionContext, entries: LuaCompletionItem[], filtered: LuaCompletionItem[]): void {
-		const selectionIndex = filtered.length > 0 ? 0 : -1;
-		this.symbolPanel = null;
-		this.symbolPanelLayout = null;
-		this.completionPanel = {
-			entries,
-			filtered,
-			filter: context.prefix,
-			selectionIndex,
-			displayRowOffset: 0,
-			context,
-			originalText: textFromLines(this.field.lines),
-			originalCursor: getCursorOffset(this.field),
-		};
-		this.completionPanelLayout = null;
-		this.completion.closeSession();
-	}
-
-	private closeCompletionPanel(restoreInput: boolean): void {
-		const panel = this.completionPanel;
-		if (!panel) {
-			return;
-		}
-		this.completionPanel = null;
-		this.completionPanelLayout = null;
-		if (restoreInput) {
-			const previous = textFromLines(this.field.lines);
-			setFieldText(this.field, panel.originalText, false);
-			setCursorFromOffset(this.field, panel.originalCursor);
-			this.onExternalFieldMutation(previous, panel.originalText);
-		}
-	}
-
-	private acceptCompletionPanelSelection(): void {
-		const panel = this.completionPanel;
-		if (!panel) {
-			return;
-		}
-		if (panel.selectionIndex < 0 || panel.selectionIndex >= panel.filtered.length) {
-			this.closeCompletionPanel(false);
-			return;
-		}
-		const item = panel.filtered[panel.selectionIndex];
-		const context = panel.context;
-		this.closeCompletionPanel(false);
-		this.completion.applyCompletionItem(context, item);
-	}
-
-	private resolveCompletionSelectionIndex(items: LuaCompletionItem[], preferredLabel: string): number {
-		if (items.length === 0) {
-			return -1;
-		}
-		if (preferredLabel) {
-			for (let index = 0; index < items.length; index += 1) {
-				if (items[index].label === preferredLabel) {
-					return index;
-				}
-			}
-		}
-		return 0;
-	}
-
-	private refreshCompletionPanelFilter(): void {
-		const panel = this.completionPanel;
-		if (!panel) {
-			return;
-		}
-		const previousLabel = panel.selectionIndex >= 0 && panel.selectionIndex < panel.filtered.length
-			? panel.filtered[panel.selectionIndex].label
-			: null;
-		const snapshot = this.completion.listCompletionCandidates();
-		if (!snapshot) {
-			this.closeCompletionPanel(false);
-			return;
-		}
-		panel.entries = snapshot.items;
-		panel.filtered = snapshot.filteredItems;
-		panel.filter = snapshot.context.prefix;
-		panel.context = snapshot.context;
-		panel.selectionIndex = panel.filtered.length > 0
-			? this.resolveCompletionSelectionIndex(panel.filtered, previousLabel)
-			: -1;
-		panel.displayRowOffset = 0;
-	}
-
-	private handleCompletionPanelKeybindings(): boolean {
-		return panelHandleCompletionPanelKeybindings({
-			panel: this.completionPanel,
-			closeCompletionPanel: (restoreInput) => this.closeCompletionPanel(restoreInput),
-			moveCompletionSelectionRow: (delta) => this.moveCompletionSelectionRow(delta),
-			moveCompletionSelectionColumn: (delta) => this.moveCompletionSelectionColumn(delta),
-			moveCompletionSelectionPage: (delta) => this.moveCompletionSelectionPage(delta),
-			acceptCompletionPanelSelection: () => this.acceptCompletionPanelSelection(),
-			shouldRepeatKey: (code) => this.shouldRepeatKey(code),
-		});
-	}
-
-	private acceptSymbolPanelSelection(): void {
-		const panel = this.symbolPanel;
-		if (!panel) {
-			return;
-		}
-		if (panel.selectionIndex < 0 || panel.selectionIndex >= panel.filtered.length) {
-			this.closeSymbolPanel(false);
-			return;
-		}
-		const entry = panel.filtered[panel.selectionIndex];
-		if (panel.mode === 'complete') {
-			const context: TerminalSymbolQueryContext = {
-				prefix: panel.filter,
-				replaceStart: panel.queryStart,
-				replaceEnd: panel.queryEnd,
-			};
-			this.closeSymbolPanel(false);
-			this.applySymbolCompletion(context, entry.name);
-			return;
-		}
-		this.closeSymbolPanel(false);
-	}
-
-	private refreshSymbolPanelFilter(): void {
-		const panel = this.symbolPanel;
-		if (!panel) {
-			return;
-		}
-		const previousName = panel.selectionIndex >= 0 && panel.selectionIndex < panel.filtered.length
-			? panel.filtered[panel.selectionIndex].name
-			: null;
-		let filter = panel.filter;
-		if (panel.mode === 'complete') {
-			const context = this.resolveSymbolCompletionContext();
-			panel.queryStart = context.replaceStart;
-			panel.queryEnd = context.replaceEnd;
-			filter = context.prefix;
-		} else {
-			filter = textFromLines(this.field.lines).trim();
-		}
-		panel.filter = filter;
-		panel.filtered = this.filterSymbolEntries(panel.entries, filter);
-		panel.selectionIndex = this.resolveSymbolSelectionIndex(panel.filtered, previousName);
-		panel.displayRowOffset = 0;
-	}
-
-	private buildSymbolCatalog(): SymbolEntry[] {
-		const entries = runtimeLuaPipeline.listSymbols(this.runtime);
-		return this.sortSymbolEntries(entries);
-	}
-
-	private sortSymbolEntries(entries: SymbolEntry[]): SymbolEntry[] {
-		const kindOrder: Record<SymbolEntry['kind'], number> = {
-			function: 0,
-			table: 1,
-			constant: 2,
-		};
-		const indexed = entries.map((entry, index) => ({
-			entry,
-			index,
-			normalized: entry.name.toLowerCase(),
-		}));
-		indexed.sort((a, b) => {
-			const kindDelta = kindOrder[a.entry.kind] - kindOrder[b.entry.kind];
-			if (kindDelta !== 0) {
-				return kindDelta;
-			}
-			if (a.normalized < b.normalized) {
-				return -1;
-			}
-			if (a.normalized > b.normalized) {
-				return 1;
-			}
-			if (a.entry.name < b.entry.name) {
-				return -1;
-			}
-			if (a.entry.name > b.entry.name) {
-				return 1;
-			}
-			return a.index - b.index;
-		});
-		return indexed.map(item => item.entry);
-	}
-
-	private filterSymbolEntries(entries: SymbolEntry[], prefix: string): SymbolEntry[] {
-		if (prefix.length === 0) {
-			return entries.slice();
-		}
-		const needle = prefix.toLowerCase();
-		const needleSegments = splitSymbolQuerySegments(needle);
-		const filtered: SymbolEntry[] = [];
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
-			const nameLower = entry.name.toLowerCase();
-			if (nameLower.startsWith(needle)) {
-				filtered.push(entry);
-				continue;
-			}
-			if (matchesSymbolSegmentChain(nameLower, needleSegments)) {
-				filtered.push(entry);
-				continue;
-			}
-			if (matchesAnySymbolSegment(nameLower, needleSegments)) {
-				filtered.push(entry);
-			}
-		}
-		return filtered;
-	}
-
-	private resolveSymbolSelectionIndex(entries: SymbolEntry[], preferredName: string): number {
-		if (entries.length === 0) {
-			return -1;
-		}
-		if (preferredName) {
-			for (let index = 0; index < entries.length; index += 1) {
-				if (entries[index].name === preferredName) {
-					return index;
-				}
-			}
-		}
-		return 0;
+	private restoreInputState(text: string, cursor: number): void {
+		const previous = textFromLines(this.field.lines);
+		setFieldText(this.field, text, false);
+		setCursorFromOffset(this.field, cursor);
+		this.onExternalFieldMutation(previous, text);
 	}
 
 	private replaceInputRange(start: number, end: number, value: string): void {
@@ -934,30 +586,20 @@ export class TerminalMode {
 		this.onExternalFieldMutation(previous, next);
 	}
 
-	private applySymbolCompletion(context: TerminalSymbolQueryContext, name: string): void {
-		this.replaceInputRange(context.replaceStart, context.replaceEnd, name);
-		this.resetBlink();
-	}
-
-	private drawSymbolPanel(params: { contentWidth: number; lineHeight: number; panelLayout: TerminalSymbolGridLayout; panelTop: number; uppercaseDisplay: boolean; }): void {
-		const panel = this.symbolPanel;
-		if (!panel) {
-			this.symbolPanelLayout = null;
+	private drawSymbolPanel(params: { contentWidth: number; lineHeight: number; panelLayout: TerminalPanelGridLayout | null; panelTop: number; uppercaseDisplay: boolean; }): void {
+		const panel = this.suggestModel.symbolPanelState;
+		const layout = params.panelLayout ?? this.suggestModel.symbolPanelGridLayout;
+		if (!panel || !layout) {
 			return;
 		}
-		const { contentWidth, lineHeight, panelLayout, panelTop, uppercaseDisplay } = params;
-		const layout = panelLayout ?? this.symbolPanelLayout;
-		if (!layout) {
-			return;
-		}
-		this.ensureSymbolPanelSelectionVisible(layout);
+		this.suggestModel.ensureSymbolPanelSelectionVisible(layout);
 		const charWidth = this.font.advance(' ');
 		drawTerminalGridPanel({
 			renderer: this.currentRenderer,
-			contentWidth,
-			lineHeight,
+			contentWidth: params.contentWidth,
+			lineHeight: params.lineHeight,
 			charWidth,
-			panelTop,
+			panelTop: params.panelTop,
 			layout,
 			entriesCount: panel.filtered.length,
 			getLabel: (index) => truncatePanelLabel(panel.filtered[index].name, layout.cellWidth),
@@ -972,29 +614,24 @@ export class TerminalMode {
 			highlightColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT],
 			textColor: BmsxColors[constants.COLOR_COMPLETION_TEXT],
 			highlightTextColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT_TEXT],
-			drawText: (text, x, y, color) => this.drawGlyphRun(this.currentRenderer, text, x, y, color, uppercaseDisplay),
+			drawText: (text, x, y, color) => this.drawGlyphRun(this.currentRenderer, text, x, y, color, params.uppercaseDisplay),
 		});
 	}
 
-	private drawCompletionPanel(params: { contentWidth: number; lineHeight: number; panelLayout: TerminalSymbolGridLayout; panelTop: number; uppercaseDisplay: boolean; }): void {
-		const panel = this.completionPanel;
-		if (!panel) {
-			this.completionPanelLayout = null;
+	private drawCompletionPanel(params: { contentWidth: number; lineHeight: number; panelLayout: TerminalPanelGridLayout | null; panelTop: number; uppercaseDisplay: boolean; }): void {
+		const panel = this.suggestModel.completionPanelState;
+		const layout = params.panelLayout ?? this.suggestModel.completionPanelGridLayout;
+		if (!panel || !layout) {
 			return;
 		}
-		const { contentWidth, lineHeight, panelLayout, panelTop, uppercaseDisplay } = params;
-		const layout = panelLayout ?? this.completionPanelLayout;
-		if (!layout) {
-			return;
-		}
-		this.ensureCompletionPanelSelectionVisible(layout);
+		this.suggestModel.ensureCompletionPanelSelectionVisible(layout);
 		const charWidth = this.font.advance(' ');
 		drawTerminalGridPanel({
 			renderer: this.currentRenderer,
-			contentWidth,
-			lineHeight,
+			contentWidth: params.contentWidth,
+			lineHeight: params.lineHeight,
 			charWidth,
-			panelTop,
+			panelTop: params.panelTop,
 			layout,
 			entriesCount: panel.filtered.length,
 			getLabel: (index) => truncatePanelLabel(panel.filtered[index].label, layout.cellWidth),
@@ -1009,232 +646,8 @@ export class TerminalMode {
 			highlightColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT],
 			textColor: BmsxColors[constants.COLOR_COMPLETION_TEXT],
 			highlightTextColor: BmsxColors[constants.COLOR_COMPLETION_HIGHLIGHT_TEXT],
-			drawText: (text, x, y, color) => this.drawGlyphRun(this.currentRenderer, text, x, y, color, uppercaseDisplay),
+			drawText: (text, x, y, color) => this.drawGlyphRun(this.currentRenderer, text, x, y, color, params.uppercaseDisplay),
 		});
-	}
-
-	private computeSymbolGridLayout(total: number, maxColumns: number, maxRows: number, maxLabelLength: number): TerminalSymbolGridLayout {
-		return computePanelGridLayout(total, maxColumns, maxRows, maxLabelLength, SYMBOL_PANEL_MIN_CELL_WIDTH, SYMBOL_PANEL_COLUMN_GAP, SYMBOL_PANEL_PADDING_X, SYMBOL_PANEL_PADDING_Y);
-	}
-
-	private measureSymbolMaxLabelLength(entries: SymbolEntry[]): number {
-		let maxLength = 0;
-		for (let index = 0; index < entries.length; index += 1) {
-			const length = entries[index].name.length;
-			if (length > maxLength) {
-				maxLength = length;
-			}
-		}
-		return maxLength;
-	}
-
-	private resolveSymbolLayoutForNavigation(): TerminalSymbolGridLayout {
-		if (this.symbolPanelLayout) {
-			return this.symbolPanelLayout;
-		}
-		const panel = this.symbolPanel;
-		if (!panel) {
-			return null;
-		}
-		const rows = Math.max(1, panel.filtered.length);
-		return {
-			columns: 1,
-			rows,
-			cellWidth: SYMBOL_PANEL_MIN_CELL_WIDTH,
-			gap: SYMBOL_PANEL_COLUMN_GAP,
-			visibleRows: rows,
-			paddingX: 0,
-			paddingY: 0,
-		};
-	}
-
-	private ensureSymbolPanelSelectionVisible(layout: TerminalSymbolGridLayout): void {
-		const panel = this.symbolPanel;
-		if (!panel || panel.filtered.length === 0 || panel.selectionIndex < 0) {
-			if (panel) {
-				panel.displayRowOffset = 0;
-			}
-			return;
-		}
-		const row = panel.selectionIndex % layout.rows;
-		const maxOffset = Math.max(0, layout.rows - layout.visibleRows);
-		let offset = clamp(panel.displayRowOffset, 0, maxOffset);
-		if (row < offset) {
-			offset = row;
-		}
-		if (row >= offset + layout.visibleRows) {
-			offset = row - layout.visibleRows + 1;
-		}
-		panel.displayRowOffset = clamp(offset, 0, maxOffset);
-	}
-
-	private moveSymbolSelectionRow(delta: number): void {
-		const panel = this.symbolPanel;
-		const layout = this.resolveSymbolLayoutForNavigation();
-		if (!layout) {
-			return;
-		}
-		const total = panel.filtered.length;
-		if (total === 0) {
-			panel.selectionIndex = -1;
-			return;
-		}
-		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
-		const next = clamp(current + delta, 0, total - 1);
-		panel.selectionIndex = next;
-		this.ensureSymbolPanelSelectionVisible(layout);
-	}
-
-	private moveSymbolSelectionColumn(delta: number): void {
-		const panel = this.symbolPanel;
-		const layout = this.resolveSymbolLayoutForNavigation();
-		if (!layout) {
-			return;
-		}
-		const total = panel.filtered.length;
-		if (total === 0) {
-			panel.selectionIndex = -1;
-			return;
-		}
-		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
-		const rows = layout.rows;
-		const columns = layout.columns;
-		const row = current % rows;
-		const col = Math.floor(current / rows);
-		const nextCol = clamp(col + delta, 0, Math.max(0, columns - 1));
-		const columnStart = nextCol * rows;
-		const columnEnd = Math.min(total - 1, columnStart + rows - 1);
-		const next = clamp(columnStart + row, columnStart, columnEnd);
-		panel.selectionIndex = next;
-		this.ensureSymbolPanelSelectionVisible(layout);
-	}
-
-	private moveSymbolSelectionPage(delta: number): void {
-		const panel = this.symbolPanel;
-		const layout = this.resolveSymbolLayoutForNavigation();
-		if (!layout) {
-			return;
-		}
-		const total = panel.filtered.length;
-		if (total === 0) {
-			panel.selectionIndex = -1;
-			return;
-		}
-		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
-		const step = Math.max(1, layout.visibleRows);
-		const next = clamp(current + step * delta, 0, total - 1);
-		panel.selectionIndex = next;
-		this.ensureSymbolPanelSelectionVisible(layout);
-	}
-
-	private measureCompletionMaxLabelLength(items: LuaCompletionItem[]): number {
-		let maxLength = 0;
-		for (let index = 0; index < items.length; index += 1) {
-			const length = items[index].label.length;
-			if (length > maxLength) {
-				maxLength = length;
-			}
-		}
-		return maxLength;
-	}
-
-	private resolveCompletionLayoutForNavigation(): TerminalSymbolGridLayout {
-		if (this.completionPanelLayout) {
-			return this.completionPanelLayout;
-		}
-		const panel = this.completionPanel;
-		if (!panel) {
-			return null;
-		}
-		const rows = Math.max(1, panel.filtered.length);
-		return {
-			columns: 1,
-			rows,
-			cellWidth: SYMBOL_PANEL_MIN_CELL_WIDTH,
-			gap: SYMBOL_PANEL_COLUMN_GAP,
-			visibleRows: rows,
-			paddingX: 0,
-			paddingY: 0,
-		};
-	}
-
-	private ensureCompletionPanelSelectionVisible(layout: TerminalSymbolGridLayout): void {
-		const panel = this.completionPanel;
-		if (!panel || panel.filtered.length === 0 || panel.selectionIndex < 0) {
-			if (panel) {
-				panel.displayRowOffset = 0;
-			}
-			return;
-		}
-		const row = panel.selectionIndex % layout.rows;
-		const maxOffset = Math.max(0, layout.rows - layout.visibleRows);
-		let offset = clamp(panel.displayRowOffset, 0, maxOffset);
-		if (row < offset) {
-			offset = row;
-		}
-		if (row >= offset + layout.visibleRows) {
-			offset = row - layout.visibleRows + 1;
-		}
-		panel.displayRowOffset = clamp(offset, 0, maxOffset);
-	}
-
-	private moveCompletionSelectionRow(delta: number): void {
-		const panel = this.completionPanel;
-		const layout = this.resolveCompletionLayoutForNavigation();
-		if (!layout) {
-			return;
-		}
-		const total = panel.filtered.length;
-		if (total === 0) {
-			panel.selectionIndex = -1;
-			return;
-		}
-		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
-		const next = clamp(current + delta, 0, total - 1);
-		panel.selectionIndex = next;
-		this.ensureCompletionPanelSelectionVisible(layout);
-	}
-
-	private moveCompletionSelectionColumn(delta: number): void {
-		const panel = this.completionPanel;
-		const layout = this.resolveCompletionLayoutForNavigation();
-		if (!layout) {
-			return;
-		}
-		const total = panel.filtered.length;
-		if (total === 0) {
-			panel.selectionIndex = -1;
-			return;
-		}
-		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
-		const rows = layout.rows;
-		const columns = layout.columns;
-		const row = current % rows;
-		const col = Math.floor(current / rows);
-		const nextCol = clamp(col + delta, 0, Math.max(0, columns - 1));
-		const columnStart = nextCol * rows;
-		const columnEnd = Math.min(total - 1, columnStart + rows - 1);
-		const next = clamp(columnStart + row, columnStart, columnEnd);
-		panel.selectionIndex = next;
-		this.ensureCompletionPanelSelectionVisible(layout);
-	}
-
-	private moveCompletionSelectionPage(delta: number): void {
-		const panel = this.completionPanel;
-		const layout = this.resolveCompletionLayoutForNavigation();
-		if (!layout) {
-			return;
-		}
-		const total = panel.filtered.length;
-		if (total === 0) {
-			panel.selectionIndex = -1;
-			return;
-		}
-		const current = panel.selectionIndex < 0 ? 0 : panel.selectionIndex;
-		const step = Math.max(1, layout.visibleRows);
-		const next = clamp(current + step * delta, 0, total - 1);
-		panel.selectionIndex = next;
-		this.ensureCompletionPanelSelectionVisible(layout);
 	}
 
 	public draw(renderer: OverlayRenderer, surface: Viewport): void {
@@ -1256,22 +669,33 @@ export class TerminalMode {
 			// space available for output lines above the input area
 			const availableHeight = surface.height - PADDING_Y * 2 - (inputWrap.segments.length * lineHeight);
 			const baseMaxLines = Math.max(1, Math.floor(availableHeight / lineHeight));
-			let panelLayout: TerminalSymbolGridLayout = null;
+			let panelLayout: TerminalPanelGridLayout = null;
 			let panelRows = 0;
-			if (this.completionPanel) {
+			if (this.suggestModel.completionPanelState) {
 				const charWidth = this.font.advance(' ');
 				const maxColumns = Math.max(1, Math.floor(contentWidth / charWidth));
-				const maxLabelLength = this.measureCompletionMaxLabelLength(this.completionPanel.filtered);
-				panelLayout = this.computeSymbolGridLayout(this.completionPanel.filtered.length, maxColumns, baseMaxLines, maxLabelLength);
-				panelRows = panelLayout.visibleRows + panelLayout.paddingY * 2;
-				this.completionPanelLayout = panelLayout;
-			} else if (this.symbolPanel) {
+				panelLayout = this.suggestModel.updateCompletionPanelLayout(
+					maxColumns,
+					baseMaxLines,
+					SYMBOL_PANEL_MIN_CELL_WIDTH,
+					SYMBOL_PANEL_COLUMN_GAP,
+					SYMBOL_PANEL_PADDING_X,
+					SYMBOL_PANEL_PADDING_Y,
+				);
+			} else if (this.suggestModel.symbolPanelState) {
 				const charWidth = this.font.advance(' ');
 				const maxColumns = Math.max(1, Math.floor(contentWidth / charWidth));
-				const maxLabelLength = this.measureSymbolMaxLabelLength(this.symbolPanel.filtered);
-				panelLayout = this.computeSymbolGridLayout(this.symbolPanel.filtered.length, maxColumns, baseMaxLines, maxLabelLength);
+				panelLayout = this.suggestModel.updateSymbolPanelLayout(
+					maxColumns,
+					baseMaxLines,
+					SYMBOL_PANEL_MIN_CELL_WIDTH,
+					SYMBOL_PANEL_COLUMN_GAP,
+					SYMBOL_PANEL_PADDING_X,
+					SYMBOL_PANEL_PADDING_Y,
+				);
+			}
+			if (panelLayout) {
 				panelRows = panelLayout.visibleRows + panelLayout.paddingY * 2;
-				this.symbolPanelLayout = panelLayout;
 			}
 			const maxContentLines = Math.max(0, baseMaxLines - panelRows);
 
@@ -1296,7 +720,7 @@ export class TerminalMode {
 			// so the input moves upward as output fills the viewport — terminal-like behavior)
 			const panelTop = PADDING_Y + visibleLines.length * lineHeight;
 			const inputStartY = panelTop + panelRows * lineHeight;
-			if (this.completionPanel) {
+			if (this.suggestModel.completionPanelState) {
 				this.drawCompletionPanel({
 					contentWidth,
 					lineHeight,
@@ -1304,7 +728,7 @@ export class TerminalMode {
 					panelTop,
 					uppercaseDisplay,
 				});
-			} else {
+			} else if (this.suggestModel.symbolPanelState) {
 				this.drawSymbolPanel({
 					contentWidth,
 					lineHeight,
@@ -1350,7 +774,7 @@ export class TerminalMode {
 	}
 
 	private handleHistoryNavigation(): boolean {
-		if (this.symbolPanel || this.completionPanel) {
+		if (this.suggestModel.hasOpenPanel) {
 			return false;
 		}
 		const { ctrlDown, altDown, metaDown } = { ctrlDown: isCtrlDown(), altDown: isAltDown(), metaDown: isMetaDown() };
@@ -1727,11 +1151,7 @@ export class TerminalMode {
 		this.textVersion += 1;
 		this.cachedLinesVersion = -1;
 		invalidateLuaCommentContextFromRow(this.buffer, 0);
-		if (this.completionPanel) {
-			this.refreshCompletionPanelFilter();
-		} else if (this.symbolPanel) {
-			this.refreshSymbolPanelFilter();
-		} else {
+		if (!this.suggestModel.refreshOpenPanelFilter()) {
 			this.completion.updateAfterEdit(context);
 		}
 	}
@@ -1755,7 +1175,7 @@ export class TerminalMode {
 	}
 
 	private drawCompletionOverlays(surface: Viewport, promptWidth: number): void {
-		if (this.symbolPanel || this.completionPanel) {
+		if (this.suggestModel.hasOpenPanel) {
 			return;
 		}
 		const bounds = {

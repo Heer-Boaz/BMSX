@@ -2,38 +2,12 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 import type { CompletionContext, LuaCompletionItem } from './ide/types';
 import type { CompletionController } from './ide/completion_controller';
 import type { SymbolEntry } from './types';
-
-export type TerminalSymbolPanelMode = 'browse' | 'complete';
-
-export type TerminalSymbolQueryContext = {
-	prefix: string;
-	replaceStart: number;
-	replaceEnd: number;
-};
-
-export type TerminalSymbolPanelState = {
-	mode: TerminalSymbolPanelMode;
-	entries: SymbolEntry[];
-	filtered: SymbolEntry[];
-	filter: string;
-	selectionIndex: number;
-	displayRowOffset: number;
-	queryStart: number;
-	queryEnd: number;
-	originalText: string;
-	originalCursor: number;
-};
-
-export type TerminalCompletionPanelState = {
-	entries: LuaCompletionItem[];
-	filtered: LuaCompletionItem[];
-	filter: string;
-	selectionIndex: number;
-	displayRowOffset: number;
-	context: CompletionContext;
-	originalText: string;
-	originalCursor: number;
-};
+import type {
+	TerminalCompletionPanelState,
+	TerminalSymbolPanelMode,
+	TerminalSymbolPanelState,
+	TerminalSymbolQueryContext,
+} from './terminal_suggest_model';
 
 export function handleInlineCompletionAccept(completion: CompletionController): boolean {
 	if (!isKeyJustPressed('ArrowRight')) return false;
