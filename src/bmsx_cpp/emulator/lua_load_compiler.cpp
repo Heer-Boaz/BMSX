@@ -125,7 +125,7 @@ void setPathStepValue(Value target, const LoadSubsetPathStep& step, Value value)
 	throw BMSX_RUNTIME_ERROR("[loadstring] attempted to assign through a non-table value (" + describeValueType(target) + ").");
 }
 
-Value resolveValueExpr(const std::vector<Value>& args, const LoadSubsetValueExpr& expr) {
+Value resolveValueExpr(NativeArgsView args, const LoadSubsetValueExpr& expr) {
 	if (expr.kind == LoadSubsetValueExpr::Kind::Literal) {
 		return expr.literal;
 	}
@@ -336,10 +336,10 @@ LoadSubsetCompiledFunction compileChunk(Runtime& runtime, const std::string& chu
 }
 
 Value buildNativeFunction(Runtime& runtime, const LoadSubsetCompiledFunction& compiled, const std::string& chunkName) {
-	return runtime.cpu().createNativeFunction("loadstring:" + chunkName, [&runtime, chunkName, compiled](const std::vector<Value>& args, std::vector<Value>& out) {
+	return runtime.cpu().createNativeFunction("loadstring:" + chunkName, [&runtime, chunkName, compiled](NativeArgsView args, std::vector<Value>& out) {
 		(void)args;
 		out.clear();
-		out.push_back(runtime.cpu().createNativeFunction(chunkName + ":inner", [compiled](const std::vector<Value>& innerArgs, std::vector<Value>& innerOut) {
+		out.push_back(runtime.cpu().createNativeFunction(chunkName + ":inner", [compiled](NativeArgsView innerArgs, std::vector<Value>& innerOut) {
 			innerOut.clear();
 			for (const LoadSubsetOp& op : compiled.ops) {
 				Value node = op.rootParamIndex < static_cast<int>(innerArgs.size()) ? innerArgs[static_cast<size_t>(op.rootParamIndex)] : valueNil();

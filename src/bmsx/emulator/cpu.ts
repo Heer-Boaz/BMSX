@@ -42,9 +42,11 @@ export type NativeFnCost = {
 export type NativeFunction = {
 	readonly kind: typeof NATIVE_FUNCTION_KIND;
 	readonly name: string;
-	invoke(args: ReadonlyArray<Value>, out: Value[]): void;
+	invoke(args: NativeArgs, out: Value[]): void;
 	cost?: NativeFnCost;
 };
+
+export type NativeArgs = ReadonlyArray<Value>;
 
 export type NativeObject = {
 	readonly kind: typeof NATIVE_OBJECT_KIND;
@@ -592,13 +594,21 @@ type Upvalue = {
 	value: Value;
 };
 
+type OpenUpvalueSlot = {
+	frame: CallFrame;
+	index: number;
+	upvalue: Upvalue;
+};
+
 type CallFrame = {
 	protoIndex: number;
 	pc: number;
+	varargBase: number;
+	varargCount: number;
+	stackBase: number;
+	stackCapacity: number;
 	registers: RegisterFile;
-	varargs: Value[];
 	closure: Closure;
-	openUpvalues: Map<number, Upvalue>;
 	returnBase: number;
 	returnCount: number;
 	top: number;
@@ -626,6 +636,7 @@ export class Table {
 	private hash: HashNode[];
 	private hashFree = -1;
 	private metatable: Table | null = null;
+	private version = 1;
 
 	private static readonly numberBuffer = new ArrayBuffer(8);
 	private static readonly float64View = new Float64Array(Table.numberBuffer);
@@ -673,12 +684,14 @@ export class Table {
 					if (index < this.arrayLength) {
 						this.arrayLength = index;
 					}
+					this.bumpVersion();
 					return;
 				}
 				this.array[index] = value;
 				if (index === this.arrayLength) {
 					this.updateArrayLengthFrom(this.arrayLength);
 				}
+				this.bumpVersion();
 				return;
 			}
 			if (value === null) {
@@ -686,32 +699,38 @@ export class Table {
 				if (index < this.arrayLength) {
 					this.arrayLength = index;
 				}
+				this.bumpVersion();
 				return;
 			}
 			const nodeIndex = this.findNodeIndex(key);
 			if (nodeIndex >= 0) {
 				this.hash[nodeIndex].value = value;
+				this.bumpVersion();
 				return;
 			}
 			if (this.hash.length === 0 || this.hashFree < 0) {
 				this.rehash(key);
 			}
 			this.rawSet(key, value);
+			this.bumpVersion();
 			return;
 		}
 		if (value === null) {
 			this.removeFromHash(key);
+			this.bumpVersion();
 			return;
 		}
 		const nodeIndex = this.findNodeIndex(key);
 		if (nodeIndex >= 0) {
 			this.hash[nodeIndex].value = value;
+			this.bumpVersion();
 			return;
 		}
 		if (this.hash.length === 0 || this.hashFree < 0) {
 			this.rehash(key);
 		}
 		this.rawSet(key, value);
+		this.bumpVersion();
 	}
 
 	public getInteger(indexValue: number): Value {
@@ -735,12 +754,14 @@ export class Table {
 				if (index < this.arrayLength) {
 					this.arrayLength = index;
 				}
+				this.bumpVersion();
 				return;
 			}
 			this.array[index] = value;
 			if (index === this.arrayLength) {
 				this.updateArrayLengthFrom(this.arrayLength);
 			}
+			this.bumpVersion();
 			return;
 		}
 		if (value === null) {
@@ -748,17 +769,20 @@ export class Table {
 			if (index >= 0 && index < this.arrayLength) {
 				this.arrayLength = index;
 			}
+			this.bumpVersion();
 			return;
 		}
 		const nodeIndex = this.findNodeIndex(indexValue);
 		if (nodeIndex >= 0) {
 			this.hash[nodeIndex].value = value;
+			this.bumpVersion();
 			return;
 		}
 		if (this.hash.length === 0 || this.hashFree < 0) {
 			this.rehash(indexValue);
 		}
 		this.rawSet(indexValue, value);
+		this.bumpVersion();
 	}
 
 	public getStringKey(key: StringValue): Value {
@@ -772,17 +796,20 @@ export class Table {
 	public setStringKey(key: StringValue, value: Value): void {
 		if (value === null) {
 			this.removeFromHash(key);
+			this.bumpVersion();
 			return;
 		}
 		const nodeIndex = this.findNodeIndex(key);
 		if (nodeIndex >= 0) {
 			this.hash[nodeIndex].value = value;
+			this.bumpVersion();
 			return;
 		}
 		if (this.hash.length === 0 || this.hashFree < 0) {
 			this.rehash(key);
 		}
 		this.rawSet(key, value);
+		this.bumpVersion();
 	}
 
 	public length(): number {
@@ -795,6 +822,7 @@ export class Table {
 		this.arrayLength = 0;
 		this.hash.length = 0;
 		this.hashFree = -1;
+		this.bumpVersion();
 		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
 	}
 
@@ -818,6 +846,10 @@ export class Table {
 
 	public getMetatable(): Table | null {
 		return this.metatable;
+	}
+
+	public getVersion(): number {
+		return this.version;
 	}
 
 	public captureRuntimeState(): TableRuntimeState {
@@ -847,6 +879,7 @@ export class Table {
 		}
 		this.hashFree = state.hashFree;
 		this.metatable = state.metatable;
+		this.bumpVersion();
 		replaceTrackedLuaHeapBytes(previousBytes, this.getTrackedHeapBytes());
 	}
 
@@ -873,6 +906,7 @@ export class Table {
 			throw new Error('setmetatable expects a table or nil as the second argument.');
 		}
 		this.metatable = metatable;
+		this.bumpVersion();
 	}
 
 	public nextEntry(after: Value): [Value, Value] | null {
@@ -1258,6 +1292,13 @@ export class Table {
 		}
 		this.arrayLength = newLength;
 	}
+
+	private bumpVersion(): void {
+		this.version = (this.version + 1) >>> 0;
+		if (this.version === 0) {
+			this.version = 1;
+		}
+	}
 }
 
 const enum RegisterTag {
@@ -1273,35 +1314,52 @@ const enum RegisterTag {
 }
 
 class RegisterFile {
-	private readonly tags: Uint8Array;
-	private readonly numbers: Float64Array;
-	private readonly refs: Value[];
+	private tags: Uint8Array;
+	private numbers: Float64Array;
+	private refs: Value[];
+	private base = 0;
+	private size: number;
 
 	constructor(size: number) {
 		this.tags = new Uint8Array(size);
 		this.numbers = new Float64Array(size);
 		this.refs = new Array<Value>(size);
+		this.size = size;
 		for (let index = 0; index < size; index += 1) {
 			this.refs[index] = null;
 		}
 	}
 
 	public capacity(): number {
-		return this.tags.length;
+		return this.size;
+	}
+
+	public rebind(source: RegisterFile, base: number, size: number): void {
+		this.tags = source.tags;
+		this.numbers = source.numbers;
+		this.refs = source.refs;
+		this.base = base;
+		this.size = size;
 	}
 
 	public clear(count: number): void {
-		this.tags.fill(RegisterTag.Nil, 0, count);
-		for (let index = 0; index < count; index += 1) {
-			this.refs[index] = null;
+		const start = this.base;
+		const end = start + count;
+		this.tags.fill(RegisterTag.Nil, start, end);
+		for (let slot = start; slot < end; slot += 1) {
+			this.refs[slot] = null;
 		}
 	}
 
 	public copyFrom(source: RegisterFile, count: number): void {
+		const dstBase = this.base;
+		const srcBase = source.base;
 		for (let index = 0; index < count; index += 1) {
-			this.tags[index] = source.tags[index];
-			this.numbers[index] = source.numbers[index];
-			this.refs[index] = source.refs[index];
+			const dst = dstBase + index;
+			const src = srcBase + index;
+			this.tags[dst] = source.tags[src];
+			this.numbers[dst] = source.numbers[src];
+			this.refs[dst] = source.refs[src];
 		}
 	}
 
@@ -1313,26 +1371,65 @@ class RegisterFile {
 	}
 
 	public copySlot(dst: number, src: number): void {
-		this.tags[dst] = this.tags[src];
-		this.numbers[dst] = this.numbers[src];
-		this.refs[dst] = this.refs[src];
+		const dstSlot = this.base + dst;
+		const srcSlot = this.base + src;
+		this.tags[dstSlot] = this.tags[srcSlot];
+		this.numbers[dstSlot] = this.numbers[srcSlot];
+		this.refs[dstSlot] = this.refs[srcSlot];
+	}
+
+	public copyRangeFrom(source: RegisterFile, dstBase: number, srcBase: number, count: number): void {
+		const dstOffset = this.base;
+		const srcOffset = source.base;
+		for (let index = 0; index < count; index += 1) {
+			const dst = dstOffset + dstBase + index;
+			const src = srcOffset + srcBase + index;
+			this.tags[dst] = source.tags[src];
+			this.numbers[dst] = source.numbers[src];
+			this.refs[dst] = source.refs[src];
+		}
+	}
+
+	public moveRange(dstBase: number, srcBase: number, count: number): void {
+		const base = this.base;
+		if (count <= 0 || dstBase === srcBase) {
+			return;
+		}
+		if (dstBase > srcBase) {
+			for (let index = count - 1; index >= 0; index -= 1) {
+				const dst = base + dstBase + index;
+				const src = base + srcBase + index;
+				this.tags[dst] = this.tags[src];
+				this.numbers[dst] = this.numbers[src];
+				this.refs[dst] = this.refs[src];
+			}
+			return;
+		}
+		for (let index = 0; index < count; index += 1) {
+			const dst = base + dstBase + index;
+			const src = base + srcBase + index;
+			this.tags[dst] = this.tags[src];
+			this.numbers[dst] = this.numbers[src];
+			this.refs[dst] = this.refs[src];
+		}
 	}
 
 	public isNumber(index: number): boolean {
-		return this.tags[index] === RegisterTag.Number;
+		return this.tags[this.base + index] === RegisterTag.Number;
 	}
 
 	public getNumber(index: number): number {
-		return this.numbers[index];
+		return this.numbers[this.base + index];
 	}
 
 	public isTruthy(index: number): boolean {
-		const tag = this.tags[index];
+		const tag = this.tags[this.base + index];
 		return tag !== RegisterTag.Nil && tag !== RegisterTag.False;
 	}
 
 	public get(index: number): Value {
-		switch (this.tags[index]) {
+		const slot = this.base + index;
+		switch (this.tags[slot]) {
 			case RegisterTag.Nil:
 				return null;
 			case RegisterTag.False:
@@ -1340,57 +1437,65 @@ class RegisterFile {
 			case RegisterTag.True:
 				return true;
 			case RegisterTag.Number:
-				return this.numbers[index];
+				return this.numbers[slot];
 			case RegisterTag.String:
 			case RegisterTag.Table:
 			case RegisterTag.Closure:
 			case RegisterTag.NativeFunction:
 			case RegisterTag.NativeObject:
-				return this.refs[index];
+				return this.refs[slot];
 			default:
 				throw new Error('Invalid register tag.');
 		}
 	}
 
 	public setNil(index: number): void {
-		this.tags[index] = RegisterTag.Nil;
-		this.refs[index] = null;
+		const slot = this.base + index;
+		this.tags[slot] = RegisterTag.Nil;
+		this.refs[slot] = null;
 	}
 
 	public setBool(index: number, value: boolean): void {
-		this.tags[index] = value ? RegisterTag.True : RegisterTag.False;
-		this.refs[index] = null;
+		const slot = this.base + index;
+		this.tags[slot] = value ? RegisterTag.True : RegisterTag.False;
+		this.refs[slot] = null;
 	}
 
 	public setNumber(index: number, value: number): void {
-		this.tags[index] = RegisterTag.Number;
-		this.numbers[index] = value;
-		this.refs[index] = null;
+		const slot = this.base + index;
+		this.tags[slot] = RegisterTag.Number;
+		this.numbers[slot] = value;
+		this.refs[slot] = null;
 	}
 
 	public setString(index: number, value: StringValue): void {
-		this.tags[index] = RegisterTag.String;
-		this.refs[index] = value;
+		const slot = this.base + index;
+		this.tags[slot] = RegisterTag.String;
+		this.refs[slot] = value;
 	}
 
 	public setTable(index: number, value: Table): void {
-		this.tags[index] = RegisterTag.Table;
-		this.refs[index] = value;
+		const slot = this.base + index;
+		this.tags[slot] = RegisterTag.Table;
+		this.refs[slot] = value;
 	}
 
 	public setClosure(index: number, value: Closure): void {
-		this.tags[index] = RegisterTag.Closure;
-		this.refs[index] = value;
+		const slot = this.base + index;
+		this.tags[slot] = RegisterTag.Closure;
+		this.refs[slot] = value;
 	}
 
 	public setNativeFunction(index: number, value: NativeFunction): void {
-		this.tags[index] = RegisterTag.NativeFunction;
-		this.refs[index] = value;
+		const slot = this.base + index;
+		this.tags[slot] = RegisterTag.NativeFunction;
+		this.refs[slot] = value;
 	}
 
 	public setNativeObject(index: number, value: NativeObject): void {
-		this.tags[index] = RegisterTag.NativeObject;
-		this.refs[index] = value;
+		const slot = this.base + index;
+		this.tags[slot] = RegisterTag.NativeObject;
+		this.refs[slot] = value;
 	}
 
 	public set(index: number, value: Value): void {
@@ -1426,10 +1531,77 @@ class RegisterFile {
 	}
 }
 
-// Pool constants for frame/register reuse
+type NativeArgsProxyHandle = {
+	view: NativeArgsView;
+	proxy: NativeArgs;
+};
+
+class NativeArgsView {
+	private registers: RegisterFile | null = null;
+	private values: ReadonlyArray<Value> | null = null;
+	private base = 0;
+	public length = 0;
+
+	public bindRegisters(registers: RegisterFile, base: number, length: number): void {
+		this.registers = registers;
+		this.values = null;
+		this.base = base;
+		this.length = length;
+	}
+
+	public bindArray(values: ReadonlyArray<Value>): void {
+		this.registers = null;
+		this.values = values;
+		this.base = 0;
+		this.length = values.length;
+	}
+
+	public clear(): void {
+		this.registers = null;
+		this.values = null;
+		this.base = 0;
+		this.length = 0;
+	}
+
+	public at(index: number): Value | undefined {
+		if (index < 0 || index >= this.length) {
+			return undefined;
+		}
+		if (this.values !== null) {
+			return this.values[index];
+		}
+		return this.registers!.get(this.base + index);
+	}
+
+	public map<U>(callback: (value: Value, index: number, array: NativeArgs) => U): U[] {
+		const output = new Array<U>(this.length);
+		const proxy = this as unknown as NativeArgs;
+		for (let index = 0; index < this.length; index += 1) {
+			output[index] = callback(this.at(index)!, index, proxy);
+		}
+		return output;
+	}
+}
+
+const nativeArgsIndexPattern = /^(0|[1-9]\d*)$/;
+const nativeArgsProxyHandler: ProxyHandler<NativeArgsView> = {
+	get(target, property) {
+		if (typeof property === 'string' && nativeArgsIndexPattern.test(property)) {
+			return target.at(property.length === 1 ? (property.charCodeAt(0) - 48) : Number(property));
+		}
+		const value = Reflect.get(target, property, target);
+		return typeof value === 'function' ? value.bind(target) : value;
+	},
+};
+
+type TableLoadInlineCache = {
+	table: Table | null;
+	version: number;
+	value: Value;
+};
+
+// Pool constants for frame/native-return reuse
 const MAX_POOLED_FRAMES = 32;
-const MAX_POOLED_REGISTER_ARRAYS = 64;
-const MAX_REGISTER_ARRAY_SIZE = 256;
 const MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;
 const signExtend = (value: number, bits: number): number => {
 	const shift = 32 - bits;
@@ -1466,8 +1638,8 @@ export class CPU {
 	private indexKey: StringValue = null;
 	private yieldRequested = false;
 	private readonly frames: CallFrame[] = [];
-	private readonly valueScratch: Value[] = [];
-	private readonly returnScratch: Value[] = [];
+	private readonly openUpvalues: OpenUpvalueSlot[] = [];
+	private readonly nativeArgsPool: NativeArgsProxyHandle[] = [];
 	private readonly debugRegistersScratch: Value[] = [];
 	private readonly nativeReturnPool: Value[][] = [];
 	private decodedWidths: Uint8Array | null = null;
@@ -1480,6 +1652,7 @@ export class CPU {
 	private decodedRkB: Int32Array | null = null;
 	private decodedRkC: Int32Array | null = null;
 	private decodedWords: Uint32Array | null = null;
+	private tableLoadCaches: TableLoadInlineCache[] = [];
 	private stringIndexTable: Table | null = null;
 	private systemGlobalNames: StringValue[] = [];
 	private systemGlobalValues: Value[] = [];
@@ -1487,12 +1660,9 @@ export class CPU {
 	private globalNames: StringValue[] = [];
 	private globalValues: Value[] = [];
 	private globalSlotByKey: Map<StringValue, number> = new Map();
-
-	// Frame pooling: avoid allocating new CallFrame objects per call
 	private readonly framePool: CallFrame[] = [];
-
-	// Register array pooling: keyed by size bucket (power of 2)
-	private readonly registerPool: Map<number, RegisterFile[]> = new Map();
+	private stackRegisters = new RegisterFile(8);
+	private stackTop = 0;
 
 	constructor(memory: Memory, stringPool: StringPool | null = null) {
 		this.memory = memory;
@@ -1501,24 +1671,42 @@ export class CPU {
 		this.indexKey = this.stringPool.intern('__index');
 	}
 
-	// Acquire a register array of at least `size` slots, reusing pooled arrays when possible
-	private acquireRegisters(size: number): RegisterFile {
-		if (size > MAX_REGISTER_ARRAY_SIZE) {
-			const regs = new RegisterFile(size);
-			regs.clear(size);
-			return regs;
+	private ensureStackCapacity(size: number): void {
+		const stack = this.stackRegisters;
+		if (size <= stack.capacity()) {
+			return;
 		}
-		// Round up to next power of 2 for bucketing (min 8)
-		const bucket = Math.max(8, 1 << (32 - Math.clz32(size - 1)));
-		let pool = this.registerPool.get(bucket);
-		if (pool && pool.length > 0) {
-			const regs = pool.pop()!;
-			regs.clear(size);
-			return regs;
+		let nextCapacity = 1 << (32 - Math.clz32(size - 1));
+		if (nextCapacity < 8) {
+			nextCapacity = 8;
 		}
-		const regs = new RegisterFile(bucket);
-		regs.clear(size);
-		return regs;
+		const next = new RegisterFile(nextCapacity);
+		next.copyRangeFrom(stack, 0, 0, this.stackTop);
+		this.stackRegisters = next;
+		this.refreshFrameRegisterViews();
+	}
+
+	private refreshFrameRegisterViews(): void {
+		const stack = this.stackRegisters;
+		const frames = this.frames;
+		for (let index = 0; index < frames.length; index += 1) {
+			const frame = frames[index];
+			frame.registers.rebind(stack, frame.stackBase, frame.stackCapacity);
+		}
+	}
+
+	private acquireNativeArgsProxy(): NativeArgsProxyHandle {
+		const pool = this.nativeArgsPool;
+		if (pool.length > 0) {
+			return pool.pop()!;
+		}
+		const view = new NativeArgsView();
+		return { view, proxy: new Proxy(view, nativeArgsProxyHandler) as unknown as NativeArgs };
+	}
+
+	private releaseNativeArgsProxy(handle: NativeArgsProxyHandle): void {
+		handle.view.clear();
+		this.nativeArgsPool.push(handle);
 	}
 
 	private acquireNativeReturnScratch(): Value[] {
@@ -1535,6 +1723,17 @@ export class CPU {
 		if (this.nativeReturnPool.length < MAX_POOLED_NATIVE_RETURN_ARRAYS) {
 			this.nativeReturnPool.push(out);
 		}
+	}
+
+	private findOpenUpvalue(frame: CallFrame, index: number): Upvalue | null {
+		const openUpvalues = this.openUpvalues;
+		for (let slot = 0; slot < openUpvalues.length; slot += 1) {
+			const entry = openUpvalues[slot];
+			if (entry.frame === frame && entry.index === index) {
+				return entry.upvalue;
+			}
+		}
+		return null;
 	}
 
 	private resolveTableIndex(table: Table, key: Value): Value {
@@ -1599,75 +1798,130 @@ export class CPU {
 
 	private loadTableIndex(base: Value, key: Value): Value {
 		if (base instanceof Table) {
+			if (base.getMetatable() === null) {
+				return base.get(key);
+			}
 			return this.resolveTableIndex(base, key);
 		}
 		if (isStringValue(base)) {
 			const indexTable = this.stringIndexTable;
-			return indexTable === null ? null : this.resolveTableIndex(indexTable, key);
+			if (indexTable === null) {
+				return null;
+			}
+			if (indexTable.getMetatable() === null) {
+				return indexTable.get(key);
+			}
+			return this.resolveTableIndex(indexTable, key);
 		}
 		if (isNativeObject(base)) {
 			const directValue = base.get(key);
-			if (directValue !== null) {
+			const metatable = base.metatable ?? null;
+			if (directValue !== null || metatable === null) {
 				return directValue;
 			}
-			const metatable = base.metatable ?? null;
-			if (metatable !== null) {
-				const indexer = metatable.getStringKey(this.indexKey);
-				if (indexer instanceof Table) {
-					return this.resolveTableIndex(indexer, key);
-				}
+			const indexer = metatable.getStringKey(this.indexKey);
+			if (indexer instanceof Table) {
+				return this.resolveTableIndex(indexer, key);
 			}
 			return null;
 		}
 		throw new Error('Attempted to index field on a non-table value.');
 	}
 
-	private loadTableIntegerIndex(base: Value, index: number): Value {
+	private loadTableIntegerIndexCached(cacheIndex: number, base: Value, index: number): Value {
 		if (base instanceof Table) {
+			if (base.getMetatable() === null) {
+				const cache = this.tableLoadCaches[cacheIndex];
+				const version = base.getVersion();
+				if (cache.table === base && cache.version === version) {
+					return cache.value;
+				}
+				const value = base.getInteger(index);
+				cache.table = base;
+				cache.version = version;
+				cache.value = value;
+				return value;
+			}
 			return this.resolveTableIntegerIndex(base, index);
 		}
 		if (isStringValue(base)) {
-			const indexTable = this.stringIndexTable;
-			return indexTable === null ? null : this.resolveTableIntegerIndex(indexTable, index);
+			const table = this.stringIndexTable;
+			if (table === null) {
+				return null;
+			}
+			if (table.getMetatable() === null) {
+				const cache = this.tableLoadCaches[cacheIndex];
+				const version = table.getVersion();
+				if (cache.table === table && cache.version === version) {
+					return cache.value;
+				}
+				const value = table.getInteger(index);
+				cache.table = table;
+				cache.version = version;
+				cache.value = value;
+				return value;
+			}
+			return this.resolveTableIntegerIndex(table, index);
 		}
 		if (isNativeObject(base)) {
 			const directValue = base.get(index);
-			if (directValue !== null) {
+			if (directValue !== null || base.metatable === null) {
 				return directValue;
 			}
-			const metatable = base.metatable ?? null;
-			if (metatable !== null) {
-				const indexer = metatable.getStringKey(this.indexKey);
-				if (indexer instanceof Table) {
-					return this.resolveTableIntegerIndex(indexer, index);
-				}
+			const indexer = base.metatable.getStringKey(this.indexKey);
+			if (indexer instanceof Table) {
+				return this.resolveTableIntegerIndex(indexer, index);
 			}
-			return null;
+			return directValue;
 		}
 		throw new Error('Attempted to index field on a non-table value.');
 	}
 
-	private loadTableFieldIndex(base: Value, key: StringValue): Value {
+	private loadTableFieldIndexCached(cacheIndex: number, base: Value, key: StringValue): Value {
 		if (base instanceof Table) {
+			if (base.getMetatable() === null) {
+				const cache = this.tableLoadCaches[cacheIndex];
+				const version = base.getVersion();
+				if (cache.table === base && cache.version === version) {
+					return cache.value;
+				}
+				const value = base.getStringKey(key);
+				cache.table = base;
+				cache.version = version;
+				cache.value = value;
+				return value;
+			}
 			return this.resolveTableFieldIndex(base, key);
 		}
 		if (isStringValue(base)) {
-			const indexTable = this.stringIndexTable;
-			return indexTable === null ? null : this.resolveTableFieldIndex(indexTable, key);
+			const table = this.stringIndexTable;
+			if (table === null) {
+				return null;
+			}
+			if (table.getMetatable() === null) {
+				const cache = this.tableLoadCaches[cacheIndex];
+				const version = table.getVersion();
+				if (cache.table === table && cache.version === version) {
+					return cache.value;
+				}
+				const value = table.getStringKey(key);
+				cache.table = table;
+				cache.version = version;
+				cache.value = value;
+				return value;
+			}
+			return this.resolveTableFieldIndex(table, key);
 		}
 		if (isNativeObject(base)) {
 			const directValue = base.get(key);
-			if (directValue !== null) {
+			if (directValue !== null || base.metatable === null) {
 				return directValue;
 			}
-			const metatable = base.metatable ?? null;
-			if (metatable !== null) {
-				const indexer = metatable.getStringKey(this.indexKey);
-				if (indexer instanceof Table) {
-					return this.resolveTableFieldIndex(indexer, key);
-				}
+			const indexer = base.metatable.getStringKey(this.indexKey);
+			if (indexer instanceof Table) {
+				return this.resolveTableFieldIndex(indexer, key);
 			}
-			return null;
+			return directValue;
 		}
 		throw new Error('Attempted to index field on a non-table value.');
 	}
@@ -1708,22 +1962,6 @@ export class CPU {
 		throw new Error('Attempted to assign to a non-table value.');
 	}
 
-	// Release a register array back to the pool
-	private releaseRegisters(regs: RegisterFile): void {
-		const bucket = regs.capacity();
-		if (bucket > MAX_REGISTER_ARRAY_SIZE) return; // Don't pool oversized arrays
-		regs.clear(bucket);
-		let pool = this.registerPool.get(bucket);
-		if (!pool) {
-			pool = [];
-			this.registerPool.set(bucket, pool);
-		}
-		if (pool.length < MAX_POOLED_REGISTER_ARRAYS) {
-			pool.push(regs);
-		}
-	}
-
-	// Acquire a CallFrame from pool or create new
 	private acquireFrame(): CallFrame {
 		if (this.framePool.length > 0) {
 			return this.framePool.pop()!;
@@ -1731,10 +1969,12 @@ export class CPU {
 		return {
 			protoIndex: 0,
 			pc: 0,
-			registers: null!,
-			varargs: [],
+			varargBase: 0,
+			varargCount: 0,
+			stackBase: 0,
+			stackCapacity: 0,
+			registers: new RegisterFile(0),
 			closure: null!,
-			openUpvalues: new Map<number, Upvalue>(),
 			returnBase: 0,
 			returnCount: 0,
 			top: 0,
@@ -1743,15 +1983,12 @@ export class CPU {
 		};
 	}
 
-	// Release a CallFrame back to pool
 	private releaseFrame(frame: CallFrame): void {
-		// Release register array
-		this.releaseRegisters(frame.registers);
-		// Clear varargs (reuse array)
-		frame.varargs.length = 0;
-		// Clear upvalues map (reuse map)
-		frame.openUpvalues.clear();
-		// Pool the frame if not at capacity
+		frame.varargBase = 0;
+		frame.varargCount = 0;
+		frame.stackBase = 0;
+		frame.stackCapacity = 0;
+		frame.registers.rebind(this.stackRegisters, 0, 0);
 		if (this.framePool.length < MAX_POOLED_FRAMES) {
 			this.framePool.push(frame);
 		}
@@ -1867,6 +2104,10 @@ export class CPU {
 		this.decodedRkB = decodedRkB;
 		this.decodedRkC = decodedRkC;
 		this.decodedWords = decodedWords;
+		this.tableLoadCaches = new Array<TableLoadInlineCache>(instructionCount);
+		for (let index = 0; index < instructionCount; index += 1) {
+			this.tableLoadCaches[index] = { table: null, version: 0, value: null };
+		}
 	}
 
 	public getStringPool(): StringPool {
@@ -1883,6 +2124,8 @@ export class CPU {
 
 	public start(entryProtoIndex: number, args: Value[] = []): void {
 		this.frames.length = 0;
+		this.openUpvalues.length = 0;
+		this.stackTop = 0;
 		this.yieldRequested = false;
 		const closure: Closure = { protoIndex: entryProtoIndex, upvalues: [] };
 		addTrackedLuaHeapBytes(16);
@@ -1964,6 +2207,7 @@ export class CPU {
 			this.instructionBudgetRemaining -= baseCycles[op];
 			this.executeInstruction(
 				frame,
+				wordIndex,
 				op,
 				decodedA[wordIndex],
 				decodedB[wordIndex],
@@ -1981,6 +2225,7 @@ export class CPU {
 		while (this.frames.length > targetDepth) {
 			const frame = this.frames.pop()!;
 			this.closeUpvalues(frame);
+			this.stackTop = frame.varargBase;
 			this.releaseFrame(frame);
 		}
 	}
@@ -2011,6 +2256,7 @@ export class CPU {
 		this.charge(BASE_CYCLES[op]);
 		this.executeInstruction(
 			frame,
+			wordIndex,
 			op,
 			decodedA[wordIndex],
 			decodedB[wordIndex],
@@ -2168,18 +2414,9 @@ export class CPU {
 		return this.globalValues[slot];
 	}
 
-	private skipNextInstruction(frame: CallFrame): void {
-		const pc = frame.pc;
-		const wordIndex = pc / INSTRUCTION_BYTES;
-		const decodedWidths = this.decodedWidths!;
-		if (wordIndex >= decodedWidths.length) {
-			throw new Error('Attempted to skip beyond end of program.');
-		}
-		frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
-	}
-
 	private executeInstruction(
 		frame: CallFrame,
+		wordIndex: number,
 		op: number,
 		a: number,
 		b: number,
@@ -2190,6 +2427,7 @@ export class CPU {
 		rkC: number,
 	): void {
 		const registers = frame.registers;
+		const decodedWidths = this.decodedWidths!;
 			switch (op) {
 				case OpCode.WIDE:
 					throw new Error('Unknown opcode.');
@@ -2229,7 +2467,11 @@ export class CPU {
 				case OpCode.LOADBOOL:
 					this.setRegisterBoolFast(frame, registers, a, b !== 0);
 					if (c !== 0) {
-						this.skipNextInstruction(frame);
+						const wordIndex = frame.pc / INSTRUCTION_BYTES;
+						if (wordIndex >= decodedWidths.length) {
+							throw new Error('Attempted to skip beyond end of program.');
+						}
+						frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
 					}
 					return;
 				case OpCode.GETG: {
@@ -2255,13 +2497,13 @@ export class CPU {
 					this.setGlobalBySlot(bx, registers.get(a));
 					return;
 				case OpCode.GETI:
-					this.setRegisterFast(frame, registers, a, this.loadTableIntegerIndex(registers.get(b), c));
+					this.setRegisterFast(frame, registers, a, this.loadTableIntegerIndexCached(wordIndex, registers.get(b), c));
 					return;
 				case OpCode.SETI:
 					this.storeTableIntegerIndex(registers.get(a), b, this.readRK(frame, rkC));
 					return;
 				case OpCode.GETFIELD:
-					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndex(registers.get(b), this.program.constPool[c] as StringValue));
+					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(wordIndex, registers.get(b), this.program.constPool[c] as StringValue));
 					return;
 				case OpCode.SETFIELD:
 					this.storeTableFieldIndex(registers.get(a), this.program.constPool[b] as StringValue, this.readRK(frame, rkC));
@@ -2270,7 +2512,7 @@ export class CPU {
 					const base = registers.get(b);
 					const key = this.program.constPool[c] as StringValue;
 					this.setRegisterFast(frame, registers, a + 1, base);
-					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndex(base, key));
+					this.setRegisterFast(frame, registers, a, this.loadTableFieldIndexCached(wordIndex, base, key));
 					return;
 				}
 				case OpCode.GETT: {
@@ -2426,9 +2668,13 @@ export class CPU {
 					const right = this.readRK(frame, rkC);
 					const eq = left === right;
 					if (eq !== (a !== 0)) {
-						this.skipNextInstruction(frame);
-				}
-				return;
+						const wordIndex = frame.pc / INSTRUCTION_BYTES;
+						if (wordIndex >= decodedWidths.length) {
+							throw new Error('Attempted to skip beyond end of program.');
+						}
+						frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+					}
+					return;
 				}
 				case OpCode.LT: {
 					const left = this.readRK(frame, rkB);
@@ -2436,10 +2682,14 @@ export class CPU {
 					const ok = (isStringValue(left) && isStringValue(right))
 						? stringValueToString(left) < stringValueToString(right)
 						: (left as number) < (right as number);
-				if (ok !== (a !== 0)) {
-					this.skipNextInstruction(frame);
-				}
-				return;
+					if (ok !== (a !== 0)) {
+						const wordIndex = frame.pc / INSTRUCTION_BYTES;
+						if (wordIndex >= decodedWidths.length) {
+							throw new Error('Attempted to skip beyond end of program.');
+						}
+						frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+					}
+					return;
 				}
 				case OpCode.LE: {
 					const left = this.readRK(frame, rkB);
@@ -2447,15 +2697,23 @@ export class CPU {
 					const ok = (isStringValue(left) && isStringValue(right))
 						? stringValueToString(left) <= stringValueToString(right)
 						: (left as number) <= (right as number);
-				if (ok !== (a !== 0)) {
-					this.skipNextInstruction(frame);
-				}
-				return;
+					if (ok !== (a !== 0)) {
+						const wordIndex = frame.pc / INSTRUCTION_BYTES;
+						if (wordIndex >= decodedWidths.length) {
+							throw new Error('Attempted to skip beyond end of program.');
+						}
+						frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+					}
+					return;
 				}
 				case OpCode.TEST: {
 					const ok = registers.isTruthy(a);
 					if (ok !== (c !== 0)) {
-						this.skipNextInstruction(frame);
+						const wordIndex = frame.pc / INSTRUCTION_BYTES;
+						if (wordIndex >= decodedWidths.length) {
+							throw new Error('Attempted to skip beyond end of program.');
+						}
+						frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
 					}
 					return;
 				}
@@ -2465,12 +2723,16 @@ export class CPU {
 						this.copyRegisterFast(frame, registers, a, b);
 						return;
 					}
-					this.skipNextInstruction(frame);
-				return;
-			}
-			case OpCode.JMP: {
-				frame.pc += sbx * INSTRUCTION_BYTES;
-				return;
+					const wordIndex = frame.pc / INSTRUCTION_BYTES;
+					if (wordIndex >= decodedWidths.length) {
+						throw new Error('Attempted to skip beyond end of program.');
+					}
+					frame.pc += decodedWidths[wordIndex] * INSTRUCTION_BYTES;
+					return;
+				}
+				case OpCode.JMP: {
+					frame.pc += sbx * INSTRUCTION_BYTES;
+					return;
 				}
 				case OpCode.JMPIF: {
 					if (registers.isTruthy(a)) {
@@ -2511,9 +2773,9 @@ export class CPU {
 					return;
 				}
 				case OpCode.VARARG: {
-					const count = b === 0 ? frame.varargs.length : b;
+					const count = b === 0 ? frame.varargCount : b;
 					for (let index = 0; index < count; index += 1) {
-						const value = index < frame.varargs.length ? frame.varargs[index] : null;
+						const value = index < frame.varargCount ? this.stackRegisters.get(frame.varargBase + index) : null;
 						this.setRegisterFast(frame, registers, a + index, value);
 					}
 					return;
@@ -2521,65 +2783,73 @@ export class CPU {
 				case OpCode.CALL: {
 					const callee = registers.get(a);
 					const argCount = b === 0 ? Math.max(frame.top - a - 1, 0) : b;
-					const args = this.valueScratch;
-					args.length = argCount;
-					for (let index = 0; index < argCount; index += 1) {
-						args[index] = registers.get(a + 1 + index);
-					}
 					if (callee === null) {
 						const range = this.metadata ? this.getDebugRange(this.lastPc) : null;
-					const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
-					throw new Error(`Attempted to call a nil value. at ${location}`);
-				}
-				if (isNativeFunction(callee)) {
-					const cost = callee.cost ?? DEFAULT_NATIVE_COST;
-					this.charge(cost.base);
-					const results = this.acquireNativeReturnScratch();
-					try {
-						callee.invoke(args, results);
-						this.writeReturnValues(frame, a, c, results);
-					} finally {
-						this.releaseNativeReturnScratch(results);
+						const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
+						throw new Error(`Attempted to call a nil value. at ${location}`);
 					}
+					if (isNativeFunction(callee)) {
+						const cost = callee.cost ?? DEFAULT_NATIVE_COST;
+						this.charge(cost.base);
+						const argsHandle = this.acquireNativeArgsProxy();
+						const results = this.acquireNativeReturnScratch();
+						try {
+							argsHandle.view.bindRegisters(registers, a + 1, argCount);
+							callee.invoke(argsHandle.proxy, results);
+							const targetFrameIndex = this.frames.indexOf(frame);
+							if (targetFrameIndex >= 0) {
+								this.writeReturnValues(this.frames[targetFrameIndex], a, c, results);
+							}
+						} finally {
+							this.releaseNativeArgsProxy(argsHandle);
+							this.releaseNativeReturnScratch(results);
+						}
+						return;
+					}
+					if (typeof (callee as Closure).protoIndex !== 'number') {
+						const range = this.metadata ? this.getDebugRange(this.lastPc) : null;
+						const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
+						const calleeType = valueTypeName(callee as Value);
+						const calleeValue = isStringValue(callee)
+							? ` value=${stringValueToString(callee)}`
+							: (typeof callee === 'number' || typeof callee === 'boolean')
+								? ` value=${String(callee)}`
+								: '';
+						throw new Error(`Attempted to call a non-function value (${calleeType}${calleeValue}). at ${location}`);
+					}
+					this.pushFrameFromCaller(frame, callee as Closure, a + 1, argCount, a, c, false, frame.pc - INSTRUCTION_BYTES);
 					return;
 				}
-				if (typeof (callee as Closure).protoIndex !== 'number') {
-					const range = this.metadata ? this.getDebugRange(this.lastPc) : null;
-					const location = range ? `${range.path}:${range.start.line}:${range.start.column}` : 'unknown';
-					const calleeType = valueTypeName(callee as Value);
-					const calleeValue = isStringValue(callee)
-						? ` value=${stringValueToString(callee)}`
-						: (typeof callee === 'number' || typeof callee === 'boolean')
-							? ` value=${String(callee)}`
-						: '';
-					throw new Error(`Attempted to call a non-function value (${calleeType}${calleeValue}). at ${location}`);
-				}
-				this.pushFrame(callee as Closure, args, a, c, false, frame.pc - INSTRUCTION_BYTES);
-				return;
-			}
 				case OpCode.RET: {
-					const scratch = this.returnScratch;
 					const total = b === 0 ? Math.max(frame.top - a, 0) : b;
-					scratch.length = total;
+					this.lastReturnValues.length = total;
 					for (let index = 0; index < total; index += 1) {
-						scratch[index] = registers.get(a + index);
+						this.lastReturnValues[index] = registers.get(a + index);
 					}
-					this.lastReturnValues.length = scratch.length;
-					for (let i = 0; i < scratch.length; i++) {
-					this.lastReturnValues[i] = scratch[i];
-				}
-				this.closeUpvalues(frame);
-				this.frames.pop();
-				this.releaseFrame(frame);
-				if (this.frames.length === 0) {
+					this.closeUpvalues(frame);
+					const frameIndex = this.frames.length - 1;
+					if (frame.captureReturns) {
+						this.frames.pop();
+						this.stackTop = frame.varargBase;
+						this.releaseFrame(frame);
+						return;
+					}
+					if (frameIndex === 0) {
+						this.frames.pop();
+						this.stackTop = frame.varargBase;
+						this.releaseFrame(frame);
+						return;
+					}
+					const caller = this.frames[frameIndex - 1];
+					const writeCount = frame.returnCount === 0 ? total : frame.returnCount;
+					if (writeCount > 0) {
+						this.ensureRegisterCapacity(caller, frame.returnBase + writeCount - 1);
+					}
+					this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, total);
+					this.frames.pop();
+					this.stackTop = frame.varargBase;
+					this.releaseFrame(frame);
 					return;
-				}
-				if (frame.captureReturns) {
-					return;
-				}
-				const caller = this.frames[this.frames.length - 1];
-				this.writeReturnValues(caller, frame.returnBase, frame.returnCount, scratch);
-				return;
 				}
 				case OpCode.LOAD_MEM: {
 					const addr = this.readRKNumber(frame, rkB);
@@ -2602,31 +2872,76 @@ export class CPU {
 		}
 	}
 
+	private prepareFrameRegisters(frame: CallFrame, registerCount: number): RegisterFile {
+		const needed = Math.max(registerCount, 1);
+		let capacity = 1 << (32 - Math.clz32(needed - 1));
+		if (capacity < 8) {
+			capacity = 8;
+		}
+		frame.stackBase = frame.varargBase + frame.varargCount;
+		frame.stackCapacity = capacity;
+		this.stackTop = frame.stackBase + capacity;
+		this.ensureStackCapacity(this.stackTop);
+		const registers = frame.registers;
+		registers.rebind(this.stackRegisters, frame.stackBase, frame.stackCapacity);
+		registers.clear(frame.stackCapacity);
+		return registers;
+	}
+
 	private pushFrame(closure: Closure, args: Value[], returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): void {
 		const proto = this.program.protos[closure.protoIndex];
 		const frame = this.acquireFrame();
 		frame.protoIndex = closure.protoIndex;
 		frame.pc = proto.entryPC;
-		frame.registers = this.acquireRegisters(proto.maxStack);
 		frame.closure = closure;
 		frame.returnBase = returnBase;
 		frame.returnCount = returnCount;
 		frame.top = proto.numParams;
 		frame.captureReturns = captureReturns;
 		frame.callSitePc = callSitePc;
+		frame.varargBase = this.stackTop;
+		frame.varargCount = proto.isVararg ? Math.max(args.length - proto.numParams, 0) : 0;
+		const registers = this.prepareFrameRegisters(frame, proto.maxStack);
 
-		// Copy args into registers
-		const registers = frame.registers;
 		let argIndex = 0;
 		for (let index = 0; index < proto.numParams; index += 1) {
 			registers.set(index, argIndex < args.length ? args[argIndex] : null);
 			argIndex += 1;
 		}
-		// Handle varargs
 		if (proto.isVararg) {
-			const varargs = frame.varargs;
-			for (let index = argIndex; index < args.length; index += 1) {
-				varargs.push(args[index]);
+			for (let index = 0; index < frame.varargCount; index += 1) {
+				this.stackRegisters.set(frame.varargBase + index, args[argIndex + index]);
+			}
+		}
+		this.frames.push(frame);
+	}
+
+	private pushFrameFromCaller(caller: CallFrame, closure: Closure, argBase: number, argCount: number, returnBase: number, returnCount: number, captureReturns: boolean, callSitePc: number): void {
+		const proto = this.program.protos[closure.protoIndex];
+		const frame = this.acquireFrame();
+		frame.protoIndex = closure.protoIndex;
+		frame.pc = proto.entryPC;
+		frame.closure = closure;
+		frame.returnBase = returnBase;
+		frame.returnCount = returnCount;
+		frame.top = proto.numParams;
+		frame.captureReturns = captureReturns;
+		frame.callSitePc = callSitePc;
+		frame.varargBase = this.stackTop;
+		frame.varargCount = proto.isVararg ? Math.max(argCount - proto.numParams, 0) : 0;
+
+		const callerRegisters = caller.registers;
+		const registers = this.prepareFrameRegisters(frame, proto.maxStack);
+		const copiedCount = Math.min(proto.numParams, argCount);
+		if (copiedCount > 0) {
+			registers.copyRangeFrom(callerRegisters, 0, argBase, copiedCount);
+		}
+		for (let index = copiedCount; index < proto.numParams; index += 1) {
+			registers.setNil(index);
+		}
+		if (proto.isVararg) {
+			for (let index = 0; index < frame.varargCount; index += 1) {
+				this.stackRegisters.set(frame.varargBase + index, callerRegisters.get(argBase + proto.numParams + index));
 			}
 		}
 		this.frames.push(frame);
@@ -2638,10 +2953,10 @@ export class CPU {
 		for (let index = 0; index < proto.upvalueDescs.length; index += 1) {
 			const desc = proto.upvalueDescs[index];
 			if (desc.inStack) {
-				let upvalue = frame.openUpvalues.get(desc.index);
+				let upvalue = this.findOpenUpvalue(frame, desc.index);
 				if (!upvalue) {
 					upvalue = { open: true, index: desc.index, frame, value: null };
-					frame.openUpvalues.set(desc.index, upvalue);
+					this.openUpvalues.push({ frame, index: desc.index, upvalue });
 					addTrackedLuaHeapBytes(24);
 				}
 				upvalues[index] = upvalue;
@@ -2654,12 +2969,21 @@ export class CPU {
 	}
 
 	private closeUpvalues(frame: CallFrame): void {
-		for (const upvalue of frame.openUpvalues.values()) {
-			upvalue.value = frame.registers.get(upvalue.index);
-			upvalue.open = false;
-			upvalue.frame = null;
+		const openUpvalues = this.openUpvalues;
+		let write = 0;
+		for (let index = 0; index < openUpvalues.length; index += 1) {
+			const entry = openUpvalues[index];
+			if (entry.frame === frame) {
+				const upvalue = entry.upvalue;
+				upvalue.value = frame.registers.get(upvalue.index);
+				upvalue.open = false;
+				upvalue.frame = null;
+				continue;
+			}
+			openUpvalues[write] = entry;
+			write += 1;
 		}
-		frame.openUpvalues.clear();
+		openUpvalues.length = write;
 	}
 
 	private readUpvalue(upvalue: Upvalue): Value {
@@ -2675,6 +2999,21 @@ export class CPU {
 			return;
 		}
 		upvalue.value = value;
+	}
+
+	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: RegisterFile, sourceBase: number, sourceCount: number): void {
+		const targetCount = count === 0 ? sourceCount : count;
+		if (targetCount > 0) {
+			const registers = this.ensureRegisterCapacity(frame, base + targetCount - 1);
+			const copiedCount = Math.min(sourceCount, targetCount);
+			if (copiedCount > 0) {
+				registers.copyRangeFrom(source, base, sourceBase, copiedCount);
+			}
+			for (let index = copiedCount; index < targetCount; index += 1) {
+				registers.setNil(base + index);
+			}
+		}
+		frame.top = base + targetCount;
 	}
 
 	private writeReturnValues(frame: CallFrame, base: number, count: number, values: Value[]): void {
@@ -2693,16 +3032,35 @@ export class CPU {
 	}
 
 	private ensureRegisterCapacity(frame: CallFrame, index: number): RegisterFile {
-		let registers = frame.registers;
-		if (index >= registers.capacity()) {
+		const registers = frame.registers;
+		if (index >= frame.stackCapacity) {
+			const frameIndex = this.frames.indexOf(frame);
+			if (frameIndex < 0) {
+				throw new Error('[CPU] Attempted to grow registers for a released frame.');
+			}
 			const needed = index + 1;
-			const bucket = Math.max(8, 1 << (32 - Math.clz32(needed - 1)));
-			const target = bucket > MAX_REGISTER_ARRAY_SIZE ? needed : bucket;
-			const next = target > MAX_REGISTER_ARRAY_SIZE ? new RegisterFile(target) : this.acquireRegisters(target);
-			next.copyFrom(registers, frame.top);
-			this.releaseRegisters(registers);
-			registers = next;
-			frame.registers = next;
+			const previousCapacity = frame.stackCapacity;
+			let capacity = 1 << (32 - Math.clz32(needed - 1));
+			if (capacity < 8) {
+				capacity = 8;
+			}
+			const delta = capacity - previousCapacity;
+			frame.stackCapacity = capacity;
+			this.ensureStackCapacity(this.stackTop + delta);
+			if (delta > 0) {
+				const stack = this.stackRegisters;
+				for (let i = this.frames.length - 1; i > frameIndex; i -= 1) {
+					const shifted = this.frames[i];
+					stack.moveRange(shifted.varargBase + delta, shifted.varargBase, shifted.varargCount + shifted.stackCapacity);
+					shifted.varargBase += delta;
+					shifted.stackBase += delta;
+				}
+			}
+			this.stackTop += delta;
+			this.refreshFrameRegisterViews();
+			for (let slot = previousCapacity; slot < frame.stackCapacity; slot += 1) {
+				registers.setNil(slot);
+			}
 		}
 		return registers;
 	}
@@ -2907,9 +3265,6 @@ export class CPU {
 		for (let index = 0; index < this.lastReturnValues.length; index += 1) {
 			pushValue(this.lastReturnValues[index]);
 		}
-		for (let index = 0; index < this.returnScratch.length; index += 1) {
-			pushValue(this.returnScratch[index]);
-		}
 		if (this.program !== null) {
 			for (let index = 0; index < this.program.constPool.length; index += 1) {
 				pushValue(this.program.constPool[index]);
@@ -2921,12 +3276,12 @@ export class CPU {
 			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
 				pushValue(frame.registers.get(registerIndex));
 			}
-			for (let index = 0; index < frame.varargs.length; index += 1) {
-				pushValue(frame.varargs[index]);
+			for (let index = 0; index < frame.varargCount; index += 1) {
+				pushValue(this.stackRegisters.get(frame.varargBase + index));
 			}
-			for (const upvalue of frame.openUpvalues.values()) {
-				upvalueStack.push(upvalue);
-			}
+		}
+		for (let index = 0; index < this.openUpvalues.length; index += 1) {
+			upvalueStack.push(this.openUpvalues[index].upvalue);
 		}
 		for (let index = 0; index < extraRoots.length; index += 1) {
 			pushValue(extraRoots[index]);

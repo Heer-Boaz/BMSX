@@ -434,9 +434,44 @@ struct ValueEq {
 };
 
 /**
+ * Borrowed view over call arguments. Native functions read directly from the
+ * caller register window, so the hot path does not need to materialize a
+ * temporary vector per CALL.
+ */
+class NativeArgsView {
+public:
+	NativeArgsView() = default;
+	NativeArgsView(const Value* data, size_t size)
+		: m_data(data)
+		, m_size(size) {
+	}
+	NativeArgsView(const std::vector<Value>& values)
+		: m_data(values.data())
+		, m_size(values.size()) {
+	}
+
+	size_t size() const noexcept { return m_size; }
+	bool empty() const noexcept { return m_size == 0; }
+	const Value* data() const noexcept { return m_data; }
+	const Value* begin() const noexcept { return m_data; }
+	const Value* end() const noexcept { return m_data ? (m_data + m_size) : nullptr; }
+	const Value& operator[](size_t index) const noexcept { return m_data[index]; }
+	const Value& at(size_t index) const {
+		if (index >= m_size) {
+			throw std::out_of_range("NativeArgsView index out of range");
+		}
+		return m_data[index];
+	}
+
+private:
+	const Value* m_data = nullptr;
+	size_t m_size = 0;
+};
+
+/**
  * Native function signature - takes args, writes results into out buffer.
  */
-using NativeFunctionInvoke = std::function<void(const std::vector<Value>&, std::vector<Value>&)>;
+using NativeFunctionInvoke = std::function<void(NativeArgsView, std::vector<Value>&)>;
 
 enum class ObjType : uint8_t {
 	Table,
@@ -556,6 +591,18 @@ struct Closure : GCObject {
 	std::vector<Upvalue*> upvalues;
 };
 
+struct OpenUpvalueSlot {
+	CallFrame* frame = nullptr;
+	int index = 0;
+	Upvalue* upvalue = nullptr;
+};
+
+struct TableLoadInlineCache {
+	Table* table = nullptr;
+	uint32_t version = 0;
+	Value value = valueNil();
+};
+
 /**
  * Runtime opcodes - instruction set for the bytecode interpreter.
  */
@@ -642,10 +689,12 @@ enum class RunResult {
 struct CallFrame {
 	int protoIndex = 0;
 	int pc = 0;
-	std::vector<Value> registers;
-	std::vector<Value> varargs;
+	int varargBase = 0;
+	int varargCount = 0;
+	Value* registers = nullptr;
+	int stackBase = 0;
+	int stackCapacity = 0;
 	Closure* closure = nullptr;
-	std::unordered_map<int, Upvalue*> openUpvalues;
 	int returnBase = 0;
 	int returnCount = 0;
 	int top = 0;
@@ -700,7 +749,11 @@ public:
 	size_t trackedHeapBytes() const;
 
 	Table* getMetatable() const { return m_metatable; }
-	void setMetatable(Table* mt) { m_metatable = mt; }
+	void setMetatable(Table* mt) {
+		m_metatable = mt;
+		bumpVersion();
+	}
+	uint32_t version() const { return m_version; }
 
 private:
 	struct HashNode {
@@ -723,12 +776,19 @@ private:
 	void rawSet(const Value& key, const Value& value);
 	void insertHash(const Value& key, const Value& value);
 	void removeFromHash(const Value& key);
+	void bumpVersion() {
+		++m_version;
+		if (m_version == 0) {
+			m_version = 1;
+		}
+	}
 
 	std::vector<Value> m_array;
 	size_t m_arrayLength = 0;
 	std::vector<HashNode> m_hash;
 	int m_hashFree = -1;
 	Table* m_metatable = nullptr;
+	uint32_t m_version = 1;
 };
 
 class GcHeap {
@@ -810,8 +870,11 @@ public:
 	Closure* createRootClosure(int protoIndex);
 
 	void start(int entryProtoIndex, const std::vector<Value>& args = {});
+	void start(int entryProtoIndex, NativeArgsView args);
 	void call(Closure* closure, const std::vector<Value>& args = {}, int returnCount = 0);
+	void call(Closure* closure, NativeArgsView args, int returnCount = 0);
 	void callExternal(Closure* closure, const std::vector<Value>& args = {});
+	void callExternal(Closure* closure, NativeArgsView args);
 	void requestYield();
 	void clearYieldRequest();
 	RunResult run(int instructionBudget);
@@ -839,21 +902,24 @@ public:
 
 private:
 	void executeInstruction(CallFrame& frame, const DecodedInstruction& decoded);
-	void skipNextInstruction(CallFrame& frame);
 	void runHousekeeping();
 	void tickHotLoopHousekeeping();
 	void initializeGlobalSlots(ProgramMetadata* metadata);
+	void pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
+		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	void pushFrame(Closure* closure, const Value* args, size_t argCount,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	void pushFrame(Closure* closure, const std::vector<Value>& args,
 		int returnBase, int returnCount, bool captureReturns, int callSitePc);
 	Closure* createClosure(CallFrame& frame, int protoIndex);
 	void closeUpvalues(CallFrame& frame);
+	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
 	const Value& readUpvalue(Upvalue* upvalue);
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
+	void writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount);
 	void writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values);
 	void setRegister(CallFrame& frame, int index, Value value);
-	std::vector<Value>& ensureRegisterCapacity(CallFrame& frame, int index);
+	Value* ensureRegisterCapacity(CallFrame& frame, int index);
 	Value readMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind) const;
 	void writeMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind, const Value& value);
 	void writeMappedWordSequence(CallFrame& frame, uint32_t addr, int valueBase, int valueCount);
@@ -862,7 +928,9 @@ private:
 	Value resolveTableIntegerIndex(Table* table, int index);
 	Value resolveTableFieldIndex(Table* table, StringId key);
 	Value loadTableIndex(const Value& base, const Value& key);
+	Value loadTableIntegerIndexCached(int cacheIndex, const Value& base, int index);
 	Value loadTableIntegerIndex(const Value& base, int index);
+	Value loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId key);
 	Value loadTableFieldIndex(const Value& base, StringId key);
 	void storeTableIndex(const Value& base, const Value& key, const Value& value);
 	void storeTableIntegerIndex(const Value& base, int index, const Value& value);
@@ -870,12 +938,10 @@ private:
 
 	std::unique_ptr<CallFrame> acquireFrame();
 	void releaseFrame(std::unique_ptr<CallFrame> frame);
-	std::vector<Value> acquireRegisters(size_t size);
-	void releaseRegisters(std::vector<Value>&& regs);
+	void ensureStackSize(size_t size);
+	void refreshFrameRegisterPointers();
 	std::vector<Value> acquireNativeReturnScratch();
 	void releaseNativeReturnScratch(std::vector<Value>&& out);
-	std::vector<Value> acquireArgScratch();
-	void releaseArgScratch(std::vector<Value>&& args);
 
 	void decodeProgram();
 	void markRoots(GcHeap& heap);
@@ -883,27 +949,24 @@ private:
 	Program* m_program = nullptr;
 	ProgramMetadata* m_metadata = nullptr;
 	std::vector<std::unique_ptr<CallFrame>> m_frames;
+	std::vector<OpenUpvalueSlot> m_openUpvalues;
 	bool m_yieldRequested = false;
 	Memory& m_memory;
 	StringPool m_stringPool;
 	GcHeap m_heap;
 	std::function<void(GcHeap&)> m_externalRootMarker;
 
-	std::vector<Value> m_returnScratch;
 	std::vector<std::vector<Value>> m_nativeReturnPool;
 	static constexpr size_t MAX_POOLED_NATIVE_RETURN_ARRAYS = 32;
-	std::vector<std::vector<Value>> m_nativeArgPool;
-	static constexpr size_t MAX_POOLED_NATIVE_ARG_ARRAYS = 32;
 
 	std::vector<std::unique_ptr<CallFrame>> m_framePool;
 	static constexpr int MAX_POOLED_FRAMES = 32;
-
-	std::unordered_map<size_t, std::vector<std::vector<Value>>> m_registerPool;
-	static constexpr size_t MAX_POOLED_REGISTER_ARRAYS = 64;
-	static constexpr size_t MAX_REGISTER_ARRAY_SIZE = 256;
+	std::vector<Value> m_stack;
+	int m_stackTop = 0;
 	static constexpr int HOT_LOOP_HOUSEKEEPING_STRIDE = 16;
 
 	std::vector<DecodedInstruction> m_decoded;
+	std::vector<TableLoadInlineCache> m_tableLoadCaches;
 	Value m_indexKey = valueNil();
 	std::vector<StringId> m_systemGlobalNames;
 	std::vector<Value> m_systemGlobalValues;

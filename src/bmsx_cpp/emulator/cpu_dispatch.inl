@@ -3,7 +3,7 @@ DISPATCH_LABEL(WIDE) {
 }
 
 DISPATCH_LABEL(MOV) {
-	SET_REGISTER_FAST(a, FRAME.registers[static_cast<size_t>(b)]);
+	SET_REGISTER_FAST(a, REG(b));
 	DISPATCH_CONTINUE();
 }
 
@@ -22,7 +22,7 @@ DISPATCH_LABEL(LOADNIL) {
 DISPATCH_LABEL(LOADBOOL) {
 	SET_REGISTER_FAST(a, valueBool(b != 0));
 	if (c != 0) {
-		skipNextInstruction(FRAME);
+		SKIP_NEXT_INSTRUCTION();
 	}
 	DISPATCH_CONTINUE();
 }
@@ -70,7 +70,7 @@ DISPATCH_LABEL(GETG) {
 
 DISPATCH_LABEL(SETG) {
 	const Value& key = m_program->constPool[static_cast<size_t>(bx)];
-	globals->set(key, FRAME.registers[static_cast<size_t>(a)]);
+	globals->set(key, REG(a));
 	DISPATCH_CONTINUE();
 }
 
@@ -80,7 +80,7 @@ DISPATCH_LABEL(GETSYS) {
 }
 
 DISPATCH_LABEL(SETSYS) {
-	m_systemGlobalValues[static_cast<size_t>(bx)] = FRAME.registers[static_cast<size_t>(a)];
+	m_systemGlobalValues[static_cast<size_t>(bx)] = REG(a);
 	DISPATCH_CONTINUE();
 }
 
@@ -90,47 +90,47 @@ DISPATCH_LABEL(GETGL) {
 }
 
 DISPATCH_LABEL(SETGL) {
-	m_globalValues[static_cast<size_t>(bx)] = FRAME.registers[static_cast<size_t>(a)];
+	m_globalValues[static_cast<size_t>(bx)] = REG(a);
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(GETI) {
-	SET_REGISTER_FAST(a, loadTableIntegerIndex(FRAME.registers[static_cast<size_t>(b)], c));
+	SET_REGISTER_FAST(a, loadTableIntegerIndexCached(TABLE_CACHE_INDEX(), REG(b), c));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SETI) {
-	storeTableIntegerIndex(FRAME.registers[static_cast<size_t>(a)], b, readRK(FRAME, rkC));
+	storeTableIntegerIndex(REG(a), b, readRK(FRAME, rkC));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(GETFIELD) {
-	SET_REGISTER_FAST(a, loadTableFieldIndex(FRAME.registers[static_cast<size_t>(b)], asStringId(m_program->constPool[static_cast<size_t>(c)])));
+	SET_REGISTER_FAST(a, loadTableFieldIndexCached(TABLE_CACHE_INDEX(), REG(b), asStringId(m_program->constPool[static_cast<size_t>(c)])));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SETFIELD) {
-	storeTableFieldIndex(FRAME.registers[static_cast<size_t>(a)], asStringId(m_program->constPool[static_cast<size_t>(b)]), readRK(FRAME, rkC));
+	storeTableFieldIndex(REG(a), asStringId(m_program->constPool[static_cast<size_t>(b)]), readRK(FRAME, rkC));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SELF) {
-	const Value base = FRAME.registers[static_cast<size_t>(b)];
+	const Value base = REG(b);
 	const StringId key = asStringId(m_program->constPool[static_cast<size_t>(c)]);
 	SET_REGISTER_FAST(a + 1, base);
-	SET_REGISTER_FAST(a, loadTableFieldIndex(base, key));
+	SET_REGISTER_FAST(a, loadTableFieldIndexCached(TABLE_CACHE_INDEX(), base, key));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(GETT) {
-	const Value& tableValue = FRAME.registers[static_cast<size_t>(b)];
+	const Value& tableValue = REG(b);
 	const Value& key = readRK(FRAME, rkC);
 	SET_REGISTER_FAST(a, loadTableIndex(tableValue, key));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(SETT) {
-	storeTableIndex(FRAME.registers[static_cast<size_t>(a)], readRK(FRAME, rkB), readRK(FRAME, rkC));
+	storeTableIndex(REG(a), readRK(FRAME, rkB), readRK(FRAME, rkC));
 	DISPATCH_CONTINUE();
 }
 
@@ -240,7 +240,7 @@ DISPATCH_LABEL(CONCAT) {
 DISPATCH_LABEL(CONCATN) {
 	std::string text;
 	for (int index = 0; index < c; ++index) {
-		text += valueToString(FRAME.registers[static_cast<size_t>(b + index)], m_stringPool);
+		text += valueToString(REG(b + index), m_stringPool);
 	}
 	const StringId textId = m_stringPool.intern(text);
 	SET_REGISTER_FAST(a, valueString(textId));
@@ -248,18 +248,18 @@ DISPATCH_LABEL(CONCATN) {
 }
 
 DISPATCH_LABEL(UNM) {
-	double val = asNumber(FRAME.registers[static_cast<size_t>(b)]);
+	double val = asNumber(REG(b));
 	SET_REGISTER_FAST(a, valueNumber(-val));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(NOT) {
-	SET_REGISTER_FAST(a, valueBool(!isTruthy(FRAME.registers[static_cast<size_t>(b)])));
+	SET_REGISTER_FAST(a, valueBool(!isTruthy(REG(b))));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(LEN) {
-	const Value& val = FRAME.registers[static_cast<size_t>(b)];
+	const Value& val = REG(b);
 	if (valueIsString(val)) {
 		int cp = static_cast<int>(m_stringPool.codepointCount(asStringId(val)));
 		SET_REGISTER_FAST(a, valueNumber(static_cast<double>(cp)));
@@ -309,7 +309,7 @@ DISPATCH_LABEL(LEN) {
 }
 
 DISPATCH_LABEL(BNOT) {
-	const uint32_t val = toU32(asNumber(FRAME.registers[static_cast<size_t>(b)]));
+	const uint32_t val = toU32(asNumber(REG(b)));
 	const int32_t result = static_cast<int32_t>(~val);
 	SET_REGISTER_FAST(a, valueNumber(static_cast<double>(result)));
 	DISPATCH_CONTINUE();
@@ -325,7 +325,7 @@ DISPATCH_LABEL(EQ) {
 		eq = left == right;
 	}
 	if (eq != (a != 0)) {
-		skipNextInstruction(FRAME);
+		SKIP_NEXT_INSTRUCTION();
 	}
 	DISPATCH_CONTINUE();
 }
@@ -366,7 +366,7 @@ DISPATCH_LABEL(LT) {
 		ok = left < right;
 	}
 	if (ok != (a != 0)) {
-		skipNextInstruction(FRAME);
+		SKIP_NEXT_INSTRUCTION();
 	}
 	DISPATCH_CONTINUE();
 }
@@ -407,25 +407,25 @@ DISPATCH_LABEL(LE) {
 		ok = left <= right;
 	}
 	if (ok != (a != 0)) {
-		skipNextInstruction(FRAME);
+		SKIP_NEXT_INSTRUCTION();
 	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(TEST) {
-	const Value& val = FRAME.registers[static_cast<size_t>(a)];
+	const Value& val = REG(a);
 	if (isTruthy(val) != (c != 0)) {
-		skipNextInstruction(FRAME);
+		SKIP_NEXT_INSTRUCTION();
 	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(TESTSET) {
-	const Value& val = FRAME.registers[static_cast<size_t>(b)];
+	const Value& val = REG(b);
 	if (isTruthy(val) == (c != 0)) {
 		SET_REGISTER_FAST(a, val);
 	} else {
-		skipNextInstruction(FRAME);
+		SKIP_NEXT_INSTRUCTION();
 	}
 	DISPATCH_CONTINUE();
 }
@@ -436,28 +436,28 @@ DISPATCH_LABEL(JMP) {
 }
 
 DISPATCH_LABEL(JMPIF) {
-	if (isTruthy(FRAME.registers[static_cast<size_t>(a)])) {
+	if (isTruthy(REG(a))) {
 		FRAME.pc += sbx * INSTRUCTION_BYTES;
 	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(JMPIFNOT) {
-	if (!isTruthy(FRAME.registers[static_cast<size_t>(a)])) {
+	if (!isTruthy(REG(a))) {
 		FRAME.pc += sbx * INSTRUCTION_BYTES;
 	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(BR_TRUE) {
-	if (isTruthy(FRAME.registers[static_cast<size_t>(a)])) {
+	if (isTruthy(REG(a))) {
 		FRAME.pc += sbx * INSTRUCTION_BYTES;
 	}
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(BR_FALSE) {
-	if (!isTruthy(FRAME.registers[static_cast<size_t>(a)])) {
+	if (!isTruthy(REG(a))) {
 		FRAME.pc += sbx * INSTRUCTION_BYTES;
 	}
 	DISPATCH_CONTINUE();
@@ -478,14 +478,14 @@ DISPATCH_LABEL(GETUP) {
 
 DISPATCH_LABEL(SETUP) {
 	Upvalue* upvalue = FRAME.closure->upvalues[static_cast<size_t>(b)];
-	writeUpvalue(upvalue, FRAME.registers[static_cast<size_t>(a)]);
+	writeUpvalue(upvalue, REG(a));
 	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(VARARG) {
-	int count = b == 0 ? static_cast<int>(FRAME.varargs.size()) : b;
+	int count = b == 0 ? FRAME.varargCount : b;
 	for (int i = 0; i < count; ++i) {
-		Value value = i < static_cast<int>(FRAME.varargs.size()) ? FRAME.varargs[static_cast<size_t>(i)] : valueNil();
+		Value value = i < FRAME.varargCount ? m_stack[static_cast<size_t>(FRAME.varargBase + i)] : valueNil();
 		SET_REGISTER_FAST(a + i, value);
 	}
 	DISPATCH_CONTINUE();
@@ -494,26 +494,21 @@ DISPATCH_LABEL(VARARG) {
 DISPATCH_LABEL(CALL) {
 	int argCount = b == 0 ? std::max(FRAME.top - a - 1, 0) : b;
 	int retCount = c;
-	const Value& callee = FRAME.registers[static_cast<size_t>(a)];
+	const Value& callee = REG(a);
 	if (valueIsClosure(callee)) {
 		Closure* closure = asClosure(callee);
-		pushFrame(closure, &FRAME.registers[static_cast<size_t>(a + 1)], static_cast<size_t>(argCount), a, retCount, false, FRAME.pc - INSTRUCTION_BYTES);
+		pushFrame(FRAME, closure, a + 1, argCount, a, retCount, false, FRAME.pc - INSTRUCTION_BYTES);
 		DISPATCH_CONTINUE();
 	}
 	if (valueIsNativeFunction(callee)) {
 		NativeFunction* fn = asNativeFunction(callee);
 		CYCLES_ADD(static_cast<int>(fn->cycleBase));
-		std::vector<Value> args = acquireArgScratch();
-		args.resize(static_cast<size_t>(argCount));
-		for (int i = 0; i < argCount; ++i) {
-			args[static_cast<size_t>(i)] = FRAME.registers[static_cast<size_t>(a + 1 + i)];
-		}
+		const NativeArgsView args(FRAME.registers + static_cast<size_t>(a + 1), static_cast<size_t>(argCount));
 		std::vector<Value> out = acquireNativeReturnScratch();
 		fn->invoke(args, out);
 		writeReturnValues(FRAME, a, retCount, out);
 		runHousekeeping();
 		releaseNativeReturnScratch(std::move(out));
-		releaseArgScratch(std::move(args));
 		DISPATCH_CONTINUE();
 	}
 	throw BMSX_RUNTIME_ERROR(formatNonFunctionCallError(
@@ -524,27 +519,33 @@ DISPATCH_LABEL(CALL) {
 }
 
 DISPATCH_LABEL(RET) {
-	auto& results = m_returnScratch;
-	results.clear();
 	int count = b == 0 ? std::max(FRAME.top - a, 0) : b;
-	results.reserve(static_cast<size_t>(count));
-	for (int i = 0; i < count; ++i) {
-		results.push_back(FRAME.registers[static_cast<size_t>(a + i)]);
-	}
-	lastReturnValues.assign(results.begin(), results.end());
+	const Value* results = FRAME.registers + a;
+	lastReturnValues.assign(results, results + count);
 	closeUpvalues(FRAME);
 	auto finished = std::move(m_frames.back());
 	m_frames.pop_back();
-	if (m_frames.empty()) {
+	if (finished->captureReturns) {
+		m_stackTop = finished->varargBase;
+		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));
 		DISPATCH_CONTINUE();
 	}
-	if (finished->captureReturns) {
+	if (m_frames.empty()) {
+		m_stackTop = finished->varargBase;
+		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));
 		DISPATCH_CONTINUE();
 	}
 	CallFrame& caller = *m_frames.back();
-	writeReturnValues(caller, finished->returnBase, finished->returnCount, results);
+	const int writeCount = finished->returnCount == 0 ? count : finished->returnCount;
+	if (writeCount > 0) {
+		ensureRegisterCapacity(caller, finished->returnBase + writeCount - 1);
+		results = finished->registers + a;
+	}
+	writeReturnValues(caller, finished->returnBase, finished->returnCount, results, count);
+	m_stackTop = finished->varargBase;
+	m_stack.resize(static_cast<size_t>(m_stackTop));
 	releaseFrame(std::move(finished));
 	DISPATCH_CONTINUE();
 }
@@ -557,7 +558,7 @@ DISPATCH_LABEL(LOAD_MEM) {
 
 DISPATCH_LABEL(STORE_MEM) {
 	const uint32_t addr = static_cast<uint32_t>(asNumber(readRK(FRAME, rkB)));
-	writeMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c), FRAME.registers[static_cast<size_t>(a)]);
+	writeMappedMemoryValue(addr, static_cast<MemoryAccessKind>(c), REG(a));
 	DISPATCH_CONTINUE();
 }
 

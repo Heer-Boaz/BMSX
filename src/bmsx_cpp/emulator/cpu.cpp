@@ -130,7 +130,7 @@ static inline uint32_t encodeVdpPacketArgWord(uint32_t cmd, int index, Value val
 		: encodeVdpPacketU32Word(value, "packet arg");
 }
 
-static inline bool tryGetVdpPacketPrefixWordCounts(const std::vector<Value>& registers, int valueBase, uint32_t& outCmd, uint32_t& outArgWords, uint32_t& outPayloadWords) {
+static inline bool tryGetVdpPacketPrefixWordCounts(const Value* registers, int valueBase, uint32_t& outCmd, uint32_t& outArgWords, uint32_t& outPayloadWords) {
 	outCmd = encodeVdpPacketU32Word(registers[static_cast<size_t>(valueBase)], "packet cmd");
 	const VdpPacketSchema* schema = findVdpPacketSchema(outCmd);
 	if (!schema) {
@@ -741,6 +741,7 @@ void Table::set(const Value& key, const Value& value) {
 				if (idx < m_arrayLength) {
 					m_arrayLength = idx;
 				}
+				bumpVersion();
 				return;
 			}
 		} else if (idx < m_array.size()) {
@@ -752,6 +753,7 @@ void Table::set(const Value& key, const Value& value) {
 				}
 				m_arrayLength = newLength;
 			}
+			bumpVersion();
 			return;
 		}
 	}
@@ -761,17 +763,20 @@ void Table::set(const Value& key, const Value& value) {
 		if (isArrayKey && static_cast<size_t>(index) < m_arrayLength) {
 			m_arrayLength = static_cast<size_t>(index);
 		}
+		bumpVersion();
 		return;
 	}
 	int nodeIndex = findNodeIndex(key);
 	if (nodeIndex >= 0) {
 		m_hash[static_cast<size_t>(nodeIndex)].value = value;
+		bumpVersion();
 		return;
 	}
 	if (m_hash.empty() || m_hashFree < 0) {
 		rehash(key);
 	}
 	rawSet(key, value);
+	bumpVersion();
 }
 
 Value Table::getInteger(int indexValue) const {
@@ -795,12 +800,14 @@ void Table::setInteger(int indexValue, const Value& value) {
 			if (idx < m_arrayLength) {
 				m_arrayLength = idx;
 			}
+			bumpVersion();
 			return;
 		}
 		m_array[idx] = value;
 		if (idx == m_arrayLength) {
 			updateArrayLengthFrom(m_arrayLength);
 		}
+		bumpVersion();
 		return;
 	}
 	const Value key = valueNumber(static_cast<double>(indexValue));
@@ -809,17 +816,20 @@ void Table::setInteger(int indexValue, const Value& value) {
 		if (index >= 0 && static_cast<size_t>(index) < m_arrayLength) {
 			m_arrayLength = static_cast<size_t>(index);
 		}
+		bumpVersion();
 		return;
 	}
 	const int nodeIndex = findNodeIndex(key);
 	if (nodeIndex >= 0) {
 		m_hash[static_cast<size_t>(nodeIndex)].value = value;
+		bumpVersion();
 		return;
 	}
 	if (m_hash.empty() || m_hashFree < 0) {
 		rehash(key);
 	}
 	rawSet(key, value);
+	bumpVersion();
 }
 
 Value Table::getStringKey(StringId key) const {
@@ -834,17 +844,20 @@ void Table::setStringKey(StringId key, const Value& value) {
 	const Value keyValue = valueString(key);
 	if (isNil(value)) {
 		removeFromHash(keyValue);
+		bumpVersion();
 		return;
 	}
 	const int nodeIndex = findNodeIndex(keyValue);
 	if (nodeIndex >= 0) {
 		m_hash[static_cast<size_t>(nodeIndex)].value = value;
+		bumpVersion();
 		return;
 	}
 	if (m_hash.empty() || m_hashFree < 0) {
 		rehash(keyValue);
 	}
 	rawSet(keyValue, value);
+	bumpVersion();
 }
 
 int Table::length() const {
@@ -857,6 +870,7 @@ void Table::clear() {
 	m_arrayLength = 0;
 	m_hash.clear();
 	m_hashFree = -1;
+	bumpVersion();
 	replaceTrackedLuaHeapBytes(previousBytes, trackedHeapBytes());
 }
 
@@ -959,6 +973,7 @@ void Table::restoreRuntimeState(const TableRuntimeState& state) {
 	}
 	m_hashFree = state.hashFree;
 	m_metatable = state.metatable;
+	bumpVersion();
 	replaceTrackedLuaHeapBytes(previousBytes, trackedHeapBytes());
 }
 
@@ -1122,7 +1137,7 @@ Value CPU::createNativeFunction(std::string_view name, NativeFunctionInvoke fn, 
 	native->cycleBase = resolvedCost.base;
 	native->cyclePerArg = resolvedCost.perArg;
 	native->cyclePerRet = resolvedCost.perRet;
-	native->invoke = [invoke = std::move(fn)](const std::vector<Value>& args, std::vector<Value>& out) {
+	native->invoke = [invoke = std::move(fn)](NativeArgsView args, std::vector<Value>& out) {
 		out.clear();
 		invoke(args, out);
 	};
@@ -1271,11 +1286,13 @@ void CPU::reserveStringHandles(StringId minHandle) {
 
 void CPU::decodeProgram() {
 	m_decoded.clear();
+	m_tableLoadCaches.clear();
 	if (!m_program) {
 		return;
 	}
 	size_t instructionCount = m_program->code.size() / INSTRUCTION_BYTES;
 	m_decoded.resize(instructionCount);
+	m_tableLoadCaches.resize(instructionCount);
 	for (size_t wordIndex = 0; wordIndex < instructionCount; ++wordIndex) {
 		int width = 1;
 		uint8_t wideA = 0;
@@ -1331,27 +1348,42 @@ void CPU::decodeProgram() {
 }
 
 void CPU::start(int entryProtoIndex, const std::vector<Value>& args) {
+	start(entryProtoIndex, NativeArgsView(args));
+}
+
+void CPU::start(int entryProtoIndex, NativeArgsView args) {
 	m_frames.clear();
+	m_openUpvalues.clear();
+	m_stack.clear();
+	m_stackTop = 0;
 	m_yieldRequested = false;
 	auto* closure = createRootClosure(entryProtoIndex);
-	pushFrame(closure, args, 0, 0, false, m_program->protos[entryProtoIndex].entryPC);
+	pushFrame(closure, args.data(), args.size(), 0, 0, false, m_program->protos[entryProtoIndex].entryPC);
 	runHousekeeping();
 }
 
 void CPU::call(Closure* closure, const std::vector<Value>& args, int returnCount) {
+	call(closure, NativeArgsView(args), returnCount);
+}
+
+void CPU::call(Closure* closure, NativeArgsView args, int returnCount) {
 	if (!closure) {
 		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
 	m_yieldRequested = false;
-	pushFrame(closure, args, 0, returnCount, false, m_program->protos[closure->protoIndex].entryPC);
+	pushFrame(closure, args.data(), args.size(), 0, returnCount, false, m_program->protos[closure->protoIndex].entryPC);
 }
 
 void CPU::callExternal(Closure* closure, const std::vector<Value>& args) {
+	callExternal(closure, NativeArgsView(args));
+}
+
+void CPU::callExternal(Closure* closure, NativeArgsView args) {
 	if (!closure) {
 		throw BMSX_RUNTIME_ERROR("Attempted to call a nil value.");
 	}
 	m_yieldRequested = false;
-	pushFrame(closure, args, 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
+	pushFrame(closure, args.data(), args.size(), 0, 0, true, m_program->protos[closure->protoIndex].entryPC);
 }
 
 void CPU::requestYield() {
@@ -1377,6 +1409,7 @@ RunResult CPU::run(int instructionBudget) {
 	int sbx = 0;
 	int rkB = 0;
 	int rkC = 0;
+	Value* registers = nullptr;
 #if BMSX_USE_COMPUTED_GOTO
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
@@ -1401,6 +1434,7 @@ dispatch_loop_check:
 		return RunResult::Yielded;
 	}
 	frame = frames.back().get();
+	registers = frame->registers;
 	pc = frame->pc;
 	wordIndex = pc / INSTRUCTION_BYTES;
 	decoded = &decodedProgram[wordIndex];
@@ -1417,14 +1451,23 @@ dispatch_loop_check:
 	rkC = decoded->rkC;
 
 #define FRAME (*frame)
+#define REG(index) registers[static_cast<size_t>(index)]
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
-	FRAME.registers[static_cast<size_t>(index)] = (valueExpr); \
+	REG(index) = (valueExpr); \
 	const int nextTop = (index) + 1; \
 	if (nextTop > FRAME.top) { \
 		FRAME.top = nextTop; \
 	} \
 } while (0)
+#define SKIP_NEXT_INSTRUCTION() do { \
+	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
+	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decoded.size())) { \
+		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
+	} \
+	FRAME.pc += static_cast<int>(decodedProgram[static_cast<size_t>(skipWordIndex)].width) * INSTRUCTION_BYTES; \
+} while (0)
+#define TABLE_CACHE_INDEX() (wordIndex)
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 
 #if BMSX_USE_COMPUTED_GOTO
@@ -1444,31 +1487,46 @@ dispatch_loop_check:
 
 dispatch_continue:
 #undef DISPATCH_CONTINUE
+#undef SKIP_NEXT_INSTRUCTION
+#undef TABLE_CACHE_INDEX
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
+#undef REG
 #undef FRAME
 	tickHotLoopHousekeeping();
 	goto dispatch_loop_check;
 
 #if BMSX_USE_COMPUTED_GOTO
 #define FRAME (*frame)
+#define REG(index) registers[static_cast<size_t>(index)]
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
-	FRAME.registers[static_cast<size_t>(index)] = (valueExpr); \
+	REG(index) = (valueExpr); \
 	const int nextTop = (index) + 1; \
 	if (nextTop > FRAME.top) { \
 		FRAME.top = nextTop; \
 	} \
 } while (0)
+#define SKIP_NEXT_INSTRUCTION() do { \
+	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
+	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decoded.size())) { \
+		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
+	} \
+	FRAME.pc += static_cast<int>(decodedProgram[static_cast<size_t>(skipWordIndex)].width) * INSTRUCTION_BYTES; \
+} while (0)
+#define TABLE_CACHE_INDEX() (wordIndex)
 #define DISPATCH_LABEL(name) dispatch_##name:
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 #include "cpu_dispatch.inl"
 dispatch_INVALID:
 	throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 #undef DISPATCH_CONTINUE
+#undef SKIP_NEXT_INSTRUCTION
+#undef TABLE_CACHE_INDEX
 #undef DISPATCH_LABEL
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
+#undef REG
 #undef FRAME
 #endif
 }
@@ -1488,6 +1546,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget) {
 	int sbx = 0;
 	int rkB = 0;
 	int rkC = 0;
+	Value* registers = nullptr;
 #if BMSX_USE_COMPUTED_GOTO
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
@@ -1512,6 +1571,7 @@ dispatch_loop_check:
 		return RunResult::Yielded;
 	}
 	frame = frames.back().get();
+	registers = frame->registers;
 	pc = frame->pc;
 	wordIndex = pc / INSTRUCTION_BYTES;
 	decoded = &decodedProgram[wordIndex];
@@ -1528,14 +1588,23 @@ dispatch_loop_check:
 	rkC = decoded->rkC;
 
 #define FRAME (*frame)
+#define REG(index) registers[static_cast<size_t>(index)]
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
-	FRAME.registers[static_cast<size_t>(index)] = (valueExpr); \
+	REG(index) = (valueExpr); \
 	const int nextTop = (index) + 1; \
 	if (nextTop > FRAME.top) { \
 		FRAME.top = nextTop; \
 	} \
 } while (0)
+#define SKIP_NEXT_INSTRUCTION() do { \
+	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
+	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decoded.size())) { \
+		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
+	} \
+	FRAME.pc += static_cast<int>(decodedProgram[static_cast<size_t>(skipWordIndex)].width) * INSTRUCTION_BYTES; \
+} while (0)
+#define TABLE_CACHE_INDEX() (wordIndex)
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 
 #if BMSX_USE_COMPUTED_GOTO
@@ -1555,31 +1624,46 @@ dispatch_loop_check:
 
 dispatch_continue:
 #undef DISPATCH_CONTINUE
+#undef SKIP_NEXT_INSTRUCTION
+#undef TABLE_CACHE_INDEX
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
+#undef REG
 #undef FRAME
 	tickHotLoopHousekeeping();
 	goto dispatch_loop_check;
 
 #if BMSX_USE_COMPUTED_GOTO
 #define FRAME (*frame)
+#define REG(index) registers[static_cast<size_t>(index)]
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
-	FRAME.registers[static_cast<size_t>(index)] = (valueExpr); \
+	REG(index) = (valueExpr); \
 	const int nextTop = (index) + 1; \
 	if (nextTop > FRAME.top) { \
 		FRAME.top = nextTop; \
 	} \
 } while (0)
+#define SKIP_NEXT_INSTRUCTION() do { \
+	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
+	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decoded.size())) { \
+		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
+	} \
+	FRAME.pc += static_cast<int>(decodedProgram[static_cast<size_t>(skipWordIndex)].width) * INSTRUCTION_BYTES; \
+} while (0)
+#define TABLE_CACHE_INDEX() (wordIndex)
 #define DISPATCH_LABEL(name) dispatch_##name:
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 #include "cpu_dispatch.inl"
 dispatch_INVALID:
 	throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 #undef DISPATCH_CONTINUE
+#undef SKIP_NEXT_INSTRUCTION
+#undef TABLE_CACHE_INDEX
 #undef DISPATCH_LABEL
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
+#undef REG
 #undef FRAME
 #endif
 }
@@ -1589,6 +1673,8 @@ void CPU::unwindToDepth(int targetDepth) {
 		auto finished = std::move(m_frames.back());
 		m_frames.pop_back();
 		closeUpvalues(*finished);
+		m_stackTop = finished->varargBase;
+		m_stack.resize(static_cast<size_t>(m_stackTop));
 		releaseFrame(std::move(finished));
 	}
 }
@@ -1658,7 +1744,7 @@ Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
 		throw BMSX_RUNTIME_ERROR("[CPU] Frame index out of range: " + std::to_string(frameIndex) + ".");
 	}
 	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
-	if (registerIndex < 0 || registerIndex >= static_cast<int>(frame.registers.size())) {
+	if (registerIndex < 0 || registerIndex >= frame.stackCapacity) {
 		throw BMSX_RUNTIME_ERROR("[CPU] Register index out of range: " + std::to_string(registerIndex) + ".");
 	}
 	return frame.registers[static_cast<size_t>(registerIndex)];
@@ -1686,15 +1772,6 @@ Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
 	return const_cast<CPU*>(this)->readUpvalue(frame.closure->upvalues[static_cast<size_t>(upvalueIndex)]);
 }
 
-void CPU::skipNextInstruction(CallFrame& frame) {
-	int pc = frame.pc;
-	int wordIndex = pc / INSTRUCTION_BYTES;
-	if (wordIndex < 0 || wordIndex >= static_cast<int>(m_decoded.size())) {
-		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program.");
-	}
-	frame.pc += static_cast<int>(m_decoded[static_cast<size_t>(wordIndex)].width) * INSTRUCTION_BYTES;
-}
-
 void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded) {
 	const int a = decoded.a;
 	const int b = decoded.b;
@@ -1703,16 +1780,26 @@ void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded
 	const int sbx = decoded.sbx;
 	const int rkB = decoded.rkB;
 	const int rkC = decoded.rkC;
+	Value* registers = frame.registers;
 
 #define FRAME frame
+#define REG(index) registers[static_cast<size_t>(index)]
 #define CYCLES_ADD(n) do { instructionBudgetRemaining -= (n); } while (0)
 #define SET_REGISTER_FAST(index, valueExpr) do { \
-	FRAME.registers[static_cast<size_t>(index)] = (valueExpr); \
+	REG(index) = (valueExpr); \
 	const int nextTop = (index) + 1; \
 	if (nextTop > FRAME.top) { \
 		FRAME.top = nextTop; \
 	} \
 } while (0)
+#define SKIP_NEXT_INSTRUCTION() do { \
+	const int skipWordIndex = FRAME.pc / INSTRUCTION_BYTES; \
+	if (skipWordIndex < 0 || skipWordIndex >= static_cast<int>(m_decoded.size())) { \
+		throw BMSX_RUNTIME_ERROR("Attempted to skip beyond end of program."); \
+	} \
+	FRAME.pc += static_cast<int>(m_decoded[static_cast<size_t>(skipWordIndex)].width) * INSTRUCTION_BYTES; \
+} while (0)
+#define TABLE_CACHE_INDEX() ((FRAME.pc / INSTRUCTION_BYTES) - static_cast<int>(decoded.width))
 #define DISPATCH_LABEL(name) case OpCode::name:
 #define DISPATCH_CONTINUE() do { return; } while (0)
 	switch (static_cast<OpCode>(decoded.op)) {
@@ -1721,10 +1808,22 @@ void CPU::executeInstruction(CallFrame& frame, const DecodedInstruction& decoded
 			throw BMSX_RUNTIME_ERROR("Unknown opcode.");
 	}
 #undef DISPATCH_CONTINUE
+#undef SKIP_NEXT_INSTRUCTION
+#undef TABLE_CACHE_INDEX
 #undef DISPATCH_LABEL
 #undef SET_REGISTER_FAST
 #undef CYCLES_ADD
+#undef REG
 #undef FRAME
+}
+
+Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
+	for (const OpenUpvalueSlot& entry : m_openUpvalues) {
+		if (entry.frame == &frame && entry.index == index) {
+			return entry.upvalue;
+		}
+	}
+	return nullptr;
 }
 
 Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
@@ -1736,17 +1835,14 @@ Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
 	for (size_t i = 0; i < proto.upvalues.size(); ++i) {
 		const UpvalueDesc& uv = proto.upvalues[i];
 		if (uv.isLocal) {
-			Upvalue* upvalue = nullptr;
-			auto it = frame.openUpvalues.find(uv.index);
-			if (it != frame.openUpvalues.end()) {
-				upvalue = it->second;
-			} else {
+			Upvalue* upvalue = findOpenUpvalue(frame, uv.index);
+			if (!upvalue) {
 				upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
 				addTrackedLuaHeapBytes(24);
 				upvalue->open = true;
 				upvalue->index = uv.index;
 				upvalue->frame = &frame;
-				frame.openUpvalues.emplace(uv.index, upvalue);
+				m_openUpvalues.push_back(OpenUpvalueSlot{ &frame, uv.index, upvalue });
 			}
 			closure->upvalues[i] = upvalue;
 		} else {
@@ -1757,13 +1853,19 @@ Closure* CPU::createClosure(CallFrame& frame, int protoIndex) {
 }
 
 void CPU::closeUpvalues(CallFrame& frame) {
-	for (auto& entry : frame.openUpvalues) {
-		Upvalue* upvalue = entry.second;
-		upvalue->value = frame.registers[upvalue->index];
-		upvalue->open = false;
-		upvalue->frame = nullptr;
+	size_t write = 0;
+	for (size_t index = 0; index < m_openUpvalues.size(); ++index) {
+		OpenUpvalueSlot entry = m_openUpvalues[index];
+		if (entry.frame == &frame) {
+			Upvalue* upvalue = entry.upvalue;
+			upvalue->value = frame.registers[static_cast<size_t>(upvalue->index)];
+			upvalue->open = false;
+			upvalue->frame = nullptr;
+			continue;
+		}
+		m_openUpvalues[write++] = entry;
 	}
-	frame.openUpvalues.clear();
+	m_openUpvalues.resize(write);
 }
 
 const Value& CPU::readUpvalue(Upvalue* upvalue) {
@@ -1781,6 +1883,45 @@ void CPU::writeUpvalue(Upvalue* upvalue, const Value& value) {
 	upvalue->value = value;
 }
 
+void CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int argCount,
+	int returnBase, int returnCount, bool captureReturns, int callSitePc) {
+	const Proto& proto = m_program->protos[closure->protoIndex];
+	auto frame = acquireFrame();
+	frame->protoIndex = closure->protoIndex;
+	frame->pc = proto.entryPC;
+	frame->closure = closure;
+	frame->returnBase = returnBase;
+	frame->returnCount = returnCount;
+	frame->captureReturns = captureReturns;
+	frame->callSitePc = callSitePc;
+	frame->varargBase = m_stackTop;
+	frame->varargCount = proto.isVararg ? std::max(argCount - proto.numParams, 0) : 0;
+	frame->stackBase = frame->varargBase + frame->varargCount;
+	size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(proto.maxStack, 1)));
+	if (targetCapacity < 8) {
+		targetCapacity = 8;
+	}
+	frame->stackCapacity = static_cast<int>(targetCapacity);
+	m_stackTop = frame->stackBase + frame->stackCapacity;
+	ensureStackSize(static_cast<size_t>(m_stackTop));
+	frame->registers = m_stack.data() + frame->stackBase;
+	frame->top = proto.numParams;
+
+	for (int i = 0; i < proto.numParams; ++i) {
+		if (i < argCount) {
+			frame->registers[static_cast<size_t>(i)] = caller.registers[static_cast<size_t>(argBase + i)];
+		} else {
+			frame->registers[static_cast<size_t>(i)] = valueNil();
+		}
+	}
+	if (proto.isVararg) {
+		for (int i = 0; i < frame->varargCount; ++i) {
+			m_stack[static_cast<size_t>(frame->varargBase + i)] = caller.registers[static_cast<size_t>(argBase + proto.numParams + i)];
+		}
+	}
+	m_frames.push_back(std::move(frame));
+}
+
 void CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	int returnBase, int returnCount, bool captureReturns, int callSitePc) {
 	const Proto& proto = m_program->protos[closure->protoIndex];
@@ -1792,7 +1933,17 @@ void CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 	frame->returnCount = returnCount;
 	frame->captureReturns = captureReturns;
 	frame->callSitePc = callSitePc;
-	frame->registers = acquireRegisters(static_cast<size_t>(proto.maxStack));
+	frame->varargBase = m_stackTop;
+	frame->varargCount = proto.isVararg ? std::max(static_cast<int>(argCount) - proto.numParams, 0) : 0;
+	frame->stackBase = frame->varargBase + frame->varargCount;
+	size_t targetCapacity = nextPowerOfTwo(static_cast<size_t>(std::max(proto.maxStack, 1)));
+	if (targetCapacity < 8) {
+		targetCapacity = 8;
+	}
+	frame->stackCapacity = static_cast<int>(targetCapacity);
+	m_stackTop = frame->stackBase + frame->stackCapacity;
+	ensureStackSize(static_cast<size_t>(m_stackTop));
+	frame->registers = m_stack.data() + frame->stackBase;
 	frame->top = proto.numParams;
 
 	for (int i = 0; i < proto.numParams; ++i) {
@@ -1803,9 +1954,8 @@ void CPU::pushFrame(Closure* closure, const Value* args, size_t argCount,
 		}
 	}
 	if (proto.isVararg) {
-		frame->varargs.clear();
-		for (size_t i = static_cast<size_t>(proto.numParams); i < argCount; ++i) {
-			frame->varargs.push_back(args[i]);
+		for (int i = 0; i < frame->varargCount; ++i) {
+			m_stack[static_cast<size_t>(frame->varargBase + i)] = args[static_cast<size_t>(proto.numParams + i)];
 		}
 	}
 	m_frames.push_back(std::move(frame));
@@ -1816,24 +1966,27 @@ void CPU::pushFrame(Closure* closure, const std::vector<Value>& args,
 	pushFrame(closure, args.data(), args.size(), returnBase, returnCount, captureReturns, callSitePc);
 }
 
-void CPU::writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values) {
+void CPU::writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount) {
 	if (count == 0) {
-		int writeCount = static_cast<int>(values.size());
-		for (int i = 0; i < writeCount; ++i) {
-			setRegister(frame, base + i, values[static_cast<size_t>(i)]);
+		for (int i = 0; i < valueCount; ++i) {
+			setRegister(frame, base + i, values[i]);
 		}
-		frame.top = base + writeCount;
+		frame.top = base + valueCount;
 		return;
 	}
 	for (int i = 0; i < count; ++i) {
-		Value value = i < static_cast<int>(values.size()) ? values[static_cast<size_t>(i)] : valueNil();
+		const Value value = i < valueCount ? values[i] : valueNil();
 		setRegister(frame, base + i, value);
 	}
 	frame.top = base + count;
 }
 
+void CPU::writeReturnValues(CallFrame& frame, int base, int count, const std::vector<Value>& values) {
+	writeReturnValues(frame, base, count, values.data(), static_cast<int>(values.size()));
+}
+
 void CPU::setRegister(CallFrame& frame, int index, Value value) {
-	std::vector<Value>& registers = ensureRegisterCapacity(frame, index);
+	Value* registers = ensureRegisterCapacity(frame, index);
 	registers[static_cast<size_t>(index)] = value;
 	const int nextTop = index + 1;
 	if (nextTop > frame.top) {
@@ -1841,23 +1994,47 @@ void CPU::setRegister(CallFrame& frame, int index, Value value) {
 	}
 }
 
-std::vector<Value>& CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
-	std::vector<Value>& registers = frame.registers;
-	if (index >= static_cast<int>(registers.size())) {
-		const size_t needed = static_cast<size_t>(index) + 1;
-		size_t bucket = nextPowerOfTwo(needed);
-		if (bucket < 8) {
-			bucket = 8;
-		}
-		const size_t target = bucket > MAX_REGISTER_ARRAY_SIZE ? needed : bucket;
-		std::vector<Value> next = target > MAX_REGISTER_ARRAY_SIZE
-			? std::vector<Value>(target, valueNil())
-			: acquireRegisters(target);
-		std::copy_n(registers.begin(), static_cast<size_t>(frame.top), next.begin());
-		releaseRegisters(std::move(registers));
-		registers = std::move(next);
+Value* CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
+	if (index < frame.stackCapacity) {
+		return frame.registers;
 	}
-	return registers;
+	int frameIndex = -1;
+	for (size_t i = 0; i < m_frames.size(); ++i) {
+		if (m_frames[i].get() == &frame) {
+			frameIndex = static_cast<int>(i);
+			break;
+		}
+	}
+	if (frameIndex < 0) {
+		throw BMSX_RUNTIME_ERROR("[CPU] Attempted to grow registers for a non-top frame.");
+	}
+	const size_t needed = static_cast<size_t>(index) + 1;
+	size_t bucket = nextPowerOfTwo(needed);
+	if (bucket < 8) {
+		bucket = 8;
+	}
+	const int previousCapacity = frame.stackCapacity;
+	frame.stackCapacity = static_cast<int>(bucket);
+	const int delta = frame.stackCapacity - previousCapacity;
+	ensureStackSize(static_cast<size_t>(m_stackTop + delta));
+	if (delta > 0) {
+		for (int i = static_cast<int>(m_frames.size()) - 1; i > frameIndex; --i) {
+			CallFrame* shifted = m_frames[static_cast<size_t>(i)].get();
+			const int rangeBase = shifted->varargBase;
+			const int rangeCount = shifted->varargCount + shifted->stackCapacity;
+			for (int slot = rangeCount - 1; slot >= 0; --slot) {
+				m_stack[static_cast<size_t>(rangeBase + delta + slot)] = m_stack[static_cast<size_t>(rangeBase + slot)];
+			}
+			shifted->varargBase += delta;
+			shifted->stackBase += delta;
+		}
+	}
+	m_stackTop += delta;
+	refreshFrameRegisterPointers();
+	for (int i = previousCapacity; i < frame.stackCapacity; ++i) {
+		frame.registers[static_cast<size_t>(i)] = valueNil();
+	}
+	return frame.registers;
 }
 
 Value CPU::readMappedMemoryValue(uint32_t addr, MemoryAccessKind accessKind) const {
@@ -2035,23 +2212,78 @@ Value CPU::resolveTableFieldIndex(Table* table, StringId key) {
 
 Value CPU::loadTableIndex(const Value& base, const Value& key) {
 	if (valueIsTable(base)) {
-		return resolveTableIndex(asTable(base), key);
+		Table* table = asTable(base);
+		if (!table->getMetatable()) {
+			return table->get(key);
+		}
+		return resolveTableIndex(table, key);
 	}
 	if (valueIsString(base)) {
-		return m_stringIndexTable ? resolveTableIndex(m_stringIndexTable, key) : valueNil();
+		if (!m_stringIndexTable) {
+			return valueNil();
+		}
+		if (!m_stringIndexTable->getMetatable()) {
+			return m_stringIndexTable->get(key);
+		}
+		return resolveTableIndex(m_stringIndexTable, key);
 	}
 	if (valueIsNativeObject(base)) {
 		auto* native = asNativeObject(base);
 		Value directValue = native->get ? native->get(key) : valueNil();
-		if (!isNil(directValue)) {
+		if (!isNil(directValue) || !native->metatable) {
 			return directValue;
 		}
-		Table* metatable = native->metatable;
-		if (metatable) {
-			Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
-			if (valueIsTable(indexerValue)) {
-				return resolveTableIndex(asTable(indexerValue), key);
+		Value indexerValue = native->metatable->getStringKey(asStringId(m_indexKey));
+		if (valueIsTable(indexerValue)) {
+			return resolveTableIndex(asTable(indexerValue), key);
+		}
+		return directValue;
+	}
+	throw BMSX_RUNTIME_ERROR("Attempted to index field on a non-table value.");
+}
+
+Value CPU::loadTableIntegerIndexCached(int cacheIndex, const Value& base, int index) {
+	if (valueIsTable(base)) {
+		Table* table = asTable(base);
+		if (!table->getMetatable()) {
+			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			if (cache.table == table && cache.version == table->version()) {
+				return cache.value;
 			}
+			const Value value = table->getInteger(index);
+			cache.table = table;
+			cache.version = table->version();
+			cache.value = value;
+			return value;
+		}
+		return resolveTableIntegerIndex(table, index);
+	}
+	if (valueIsString(base)) {
+		if (!m_stringIndexTable) {
+			return valueNil();
+		}
+		if (!m_stringIndexTable->getMetatable()) {
+			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
+				return cache.value;
+			}
+			const Value value = m_stringIndexTable->getInteger(index);
+			cache.table = m_stringIndexTable;
+			cache.version = m_stringIndexTable->version();
+			cache.value = value;
+			return value;
+		}
+		return resolveTableIntegerIndex(m_stringIndexTable, index);
+	}
+	if (valueIsNativeObject(base)) {
+		auto* native = asNativeObject(base);
+		Value directValue = native->get ? native->get(valueNumber(static_cast<double>(index))) : valueNil();
+		if (!isNil(directValue) || !native->metatable) {
+			return directValue;
+		}
+		Value indexerValue = native->metatable->getStringKey(asStringId(m_indexKey));
+		if (valueIsTable(indexerValue)) {
+			return resolveTableIntegerIndex(asTable(indexerValue), index);
 		}
 		return directValue;
 	}
@@ -2060,23 +2292,78 @@ Value CPU::loadTableIndex(const Value& base, const Value& key) {
 
 Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 	if (valueIsTable(base)) {
-		return resolveTableIntegerIndex(asTable(base), index);
+		Table* table = asTable(base);
+		if (!table->getMetatable()) {
+			return table->getInteger(index);
+		}
+		return resolveTableIntegerIndex(table, index);
 	}
 	if (valueIsString(base)) {
-		return m_stringIndexTable ? resolveTableIntegerIndex(m_stringIndexTable, index) : valueNil();
+		if (!m_stringIndexTable) {
+			return valueNil();
+		}
+		if (!m_stringIndexTable->getMetatable()) {
+			return m_stringIndexTable->getInteger(index);
+		}
+		return resolveTableIntegerIndex(m_stringIndexTable, index);
 	}
 	if (valueIsNativeObject(base)) {
 		auto* native = asNativeObject(base);
 		Value directValue = native->get ? native->get(valueNumber(static_cast<double>(index))) : valueNil();
-		if (!isNil(directValue)) {
+		if (!isNil(directValue) || !native->metatable) {
 			return directValue;
 		}
-		Table* metatable = native->metatable;
-		if (metatable) {
-			Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
-			if (valueIsTable(indexerValue)) {
-				return resolveTableIntegerIndex(asTable(indexerValue), index);
+		Value indexerValue = native->metatable->getStringKey(asStringId(m_indexKey));
+		if (valueIsTable(indexerValue)) {
+			return resolveTableIntegerIndex(asTable(indexerValue), index);
+		}
+		return directValue;
+	}
+	throw BMSX_RUNTIME_ERROR("Attempted to index field on a non-table value.");
+}
+
+Value CPU::loadTableFieldIndexCached(int cacheIndex, const Value& base, StringId key) {
+	if (valueIsTable(base)) {
+		Table* table = asTable(base);
+		if (!table->getMetatable()) {
+			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			if (cache.table == table && cache.version == table->version()) {
+				return cache.value;
 			}
+			const Value value = table->getStringKey(key);
+			cache.table = table;
+			cache.version = table->version();
+			cache.value = value;
+			return value;
+		}
+		return resolveTableFieldIndex(table, key);
+	}
+	if (valueIsString(base)) {
+		if (!m_stringIndexTable) {
+			return valueNil();
+		}
+		if (!m_stringIndexTable->getMetatable()) {
+			TableLoadInlineCache& cache = m_tableLoadCaches[static_cast<size_t>(cacheIndex)];
+			if (cache.table == m_stringIndexTable && cache.version == m_stringIndexTable->version()) {
+				return cache.value;
+			}
+			const Value value = m_stringIndexTable->getStringKey(key);
+			cache.table = m_stringIndexTable;
+			cache.version = m_stringIndexTable->version();
+			cache.value = value;
+			return value;
+		}
+		return resolveTableFieldIndex(m_stringIndexTable, key);
+	}
+	if (valueIsNativeObject(base)) {
+		auto* native = asNativeObject(base);
+		Value directValue = native->get ? native->get(valueString(key)) : valueNil();
+		if (!isNil(directValue) || !native->metatable) {
+			return directValue;
+		}
+		Value indexerValue = native->metatable->getStringKey(asStringId(m_indexKey));
+		if (valueIsTable(indexerValue)) {
+			return resolveTableFieldIndex(asTable(indexerValue), key);
 		}
 		return directValue;
 	}
@@ -2085,23 +2372,30 @@ Value CPU::loadTableIntegerIndex(const Value& base, int index) {
 
 Value CPU::loadTableFieldIndex(const Value& base, StringId key) {
 	if (valueIsTable(base)) {
-		return resolveTableFieldIndex(asTable(base), key);
+		Table* table = asTable(base);
+		if (!table->getMetatable()) {
+			return table->getStringKey(key);
+		}
+		return resolveTableFieldIndex(table, key);
 	}
 	if (valueIsString(base)) {
-		return m_stringIndexTable ? resolveTableFieldIndex(m_stringIndexTable, key) : valueNil();
+		if (!m_stringIndexTable) {
+			return valueNil();
+		}
+		if (!m_stringIndexTable->getMetatable()) {
+			return m_stringIndexTable->getStringKey(key);
+		}
+		return resolveTableFieldIndex(m_stringIndexTable, key);
 	}
 	if (valueIsNativeObject(base)) {
 		auto* native = asNativeObject(base);
 		Value directValue = native->get ? native->get(valueString(key)) : valueNil();
-		if (!isNil(directValue)) {
+		if (!isNil(directValue) || !native->metatable) {
 			return directValue;
 		}
-		Table* metatable = native->metatable;
-		if (metatable) {
-			Value indexerValue = metatable->getStringKey(asStringId(m_indexKey));
-			if (valueIsTable(indexerValue)) {
-				return resolveTableFieldIndex(asTable(indexerValue), key);
-			}
+		Value indexerValue = native->metatable->getStringKey(asStringId(m_indexKey));
+		if (valueIsTable(indexerValue)) {
+			return resolveTableFieldIndex(asTable(indexerValue), key);
 		}
 		return directValue;
 	}
@@ -2154,40 +2448,30 @@ std::unique_ptr<CallFrame> CPU::acquireFrame() {
 }
 
 void CPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
-	releaseRegisters(std::move(frame->registers));
-	frame->varargs.clear();
-	frame->openUpvalues.clear();
+	frame->varargBase = 0;
+	frame->varargCount = 0;
+	frame->registers = nullptr;
+	frame->stackBase = 0;
+	frame->stackCapacity = 0;
 	if (m_framePool.size() < static_cast<size_t>(MAX_POOLED_FRAMES)) {
 		m_framePool.push_back(std::move(frame));
 	}
 }
 
-std::vector<Value> CPU::acquireRegisters(size_t size) {
-	size_t bucket = 8;
-	while (bucket < size) {
-		bucket <<= 1;
+void CPU::ensureStackSize(size_t size) {
+	Value* previousBase = m_stack.data();
+	if (size > m_stack.size()) {
+		m_stack.resize(size, valueNil());
 	}
-	auto& pool = m_registerPool[bucket];
-	if (!pool.empty()) {
-		std::vector<Value> regs = std::move(pool.back());
-		pool.pop_back();
-		for (size_t i = 0; i < size; ++i) {
-			regs[i] = valueNil();
-		}
-		return regs;
+	if (m_stack.data() != previousBase) {
+		refreshFrameRegisterPointers();
 	}
-	std::vector<Value> regs(bucket, valueNil());
-	return regs;
 }
 
-void CPU::releaseRegisters(std::vector<Value>&& regs) {
-	size_t bucket = regs.size();
-	if (bucket > MAX_REGISTER_ARRAY_SIZE) {
-		return;
-	}
-	auto& pool = m_registerPool[bucket];
-	if (pool.size() < MAX_POOLED_REGISTER_ARRAYS) {
-		pool.push_back(std::move(regs));
+void CPU::refreshFrameRegisterPointers() {
+	Value* base = m_stack.data();
+	for (const auto& framePtr : m_frames) {
+		framePtr->registers = base + framePtr->stackBase;
 	}
 }
 
@@ -2207,22 +2491,6 @@ void CPU::releaseNativeReturnScratch(std::vector<Value>&& out) {
 	}
 }
 
-std::vector<Value> CPU::acquireArgScratch() {
-	if (!m_nativeArgPool.empty()) {
-		std::vector<Value> args = std::move(m_nativeArgPool.back());
-		m_nativeArgPool.pop_back();
-		args.clear();
-		return args;
-	}
-	return {};
-}
-
-void CPU::releaseArgScratch(std::vector<Value>&& args) {
-	if (m_nativeArgPool.size() < MAX_POOLED_NATIVE_ARG_ARRAYS) {
-		m_nativeArgPool.push_back(std::move(args));
-	}
-}
-
 void CPU::markRoots(GcHeap& heap) {
 	if (globals) {
 		heap.markObject(globals);
@@ -2234,9 +2502,6 @@ void CPU::markRoots(GcHeap& heap) {
 		heap.markValue(value);
 	}
 	for (const auto& value : lastReturnValues) {
-		heap.markValue(value);
-	}
-	for (const auto& value : m_returnScratch) {
 		heap.markValue(value);
 	}
 	for (const auto& value : m_systemGlobalValues) {
@@ -2256,13 +2521,13 @@ void CPU::markRoots(GcHeap& heap) {
 		for (int i = 0; i < frame->top; ++i) {
 			heap.markValue(frame->registers[static_cast<size_t>(i)]);
 		}
-		for (const auto& value : frame->varargs) {
-			heap.markValue(value);
+		for (int i = 0; i < frame->varargCount; ++i) {
+			heap.markValue(m_stack[static_cast<size_t>(frame->varargBase + i)]);
 		}
-		for (const auto& entry : frame->openUpvalues) {
-			heap.markObject(entry.second);
-			heap.markValue(frame->registers[static_cast<size_t>(entry.first)]);
-		}
+	}
+	for (const auto& entry : m_openUpvalues) {
+		heap.markObject(entry.upvalue);
+		heap.markValue(entry.frame->registers[static_cast<size_t>(entry.index)]);
 	}
 	m_externalRootMarker(heap);
 }

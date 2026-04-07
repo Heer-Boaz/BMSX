@@ -355,7 +355,7 @@ private:
 	std::string translateLuaPatternEscape(char token, bool inClass) const;
 	std::string valueToString(const Value& value) const;
 	double nextRandom();
-	std::string formatLuaString(const std::string& templateStr, const std::vector<Value>& args, size_t argStart) const;
+	std::string formatLuaString(const std::string& templateStr, NativeArgsView args, size_t argStart) const;
 	void logDebugState() const;
 	void logLuaCallStack() const;
 	void refreshMemoryMapGlobals();
