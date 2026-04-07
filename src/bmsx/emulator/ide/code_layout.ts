@@ -2,7 +2,7 @@ import type { TimerHandle } from '../../platform/platform';
 import { clamp } from '../../utils/clamp';
 import { ScratchBuffer } from '../../utils/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from './lua/syntax_highlight';
-import * as constants from './constants';
+import { highlightAemTextLine } from './aem_syntax_highlight';
 import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from './semantic_model';
 import type { LuaDefinitionInfo } from '../../lua/syntax/lua_ast';
 import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } from './types';
@@ -12,7 +12,6 @@ import { getTextSnapshot, splitText } from './text/source_text';
 import { syncSemanticWorkspacePaths } from './semantic_workspace_sync';
 import type { TextBuffer } from './text/text_buffer';
 import type { Position } from './types';
-import { applyCaseOutsideStrings } from './text_utils';
 
 interface VisualLinesContext {
 	buffer: TextBuffer;
@@ -91,24 +90,6 @@ class FenwickPrefix {
 type VisualLineSegmentTarget = VisualLineSegment[] | ScratchBuffer<VisualLineSegment>;
 
 type BuiltinIdentifierSnapshot = { epoch: number; ids: Iterable<string> };
-
-function highlightPlainTextLine(source: string): HighlightLine {
-	const text = source;
-	const colors = new Array<number>(text.length);
-	for (let index = 0; index < text.length; index += 1) {
-		colors[index] = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
-	}
-	const columnToDisplay = new Array<number>(source.length + 1);
-	for (let index = 0; index <= source.length; index += 1) {
-		columnToDisplay[index] = index;
-	}
-	return {
-		text,
-		upperText: applyCaseOutsideStrings(text, (ch) => ch.toUpperCase()),
-		colors,
-		columnToDisplay,
-	};
-}
 
 type PendingSemanticUpdate = {
 	version: number;
@@ -332,7 +313,7 @@ export class CodeLayout {
 		const lineAnnotations = annotations ? annotations[row] : undefined;
 		const highlight = this.codeTabMode === 'lua'
 			? highlightTextLineExternal(source, lineAnnotations, builtinIdentifiers)
-			: highlightPlainTextLine(source);
+			: highlightAemTextLine(source);
 		const cachedEntry = cached;
 		if (cachedEntry) {
 			const displayToColumn = cachedEntry.displayToColumn;

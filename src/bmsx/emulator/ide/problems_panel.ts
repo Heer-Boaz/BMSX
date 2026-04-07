@@ -10,6 +10,7 @@ import { drawEditorText } from './render/text_renderer';
 import { markAllDiagnosticsDirty } from './diagnostics';
 import { resetBlink } from './render/render_caret';
 import { gotoDiagnostic } from './diagnostics_controller';
+import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from './input/key_input';
 
 type PanelLayout = {
 	headerTop: number;
@@ -274,6 +275,41 @@ export class ProblemsPanelController {
 		this.scrollIndex = newScroll;
 		// Do not force selection into view on wheel scroll; allow free scrolling
 		return true;
+	}
+
+	public handleKeyboard(): void {
+		if (shouldRepeatKeyFromPlayer('ArrowUp')) {
+			consumeIdeKey('ArrowUp');
+			this.handleKeyboardCommand('up');
+		} else if (shouldRepeatKeyFromPlayer('ArrowDown')) {
+			consumeIdeKey('ArrowDown');
+			this.handleKeyboardCommand('down');
+		} else if (shouldRepeatKeyFromPlayer('PageUp')) {
+			consumeIdeKey('PageUp');
+			this.handleKeyboardCommand('page-up');
+		} else if (shouldRepeatKeyFromPlayer('PageDown')) {
+			consumeIdeKey('PageDown');
+			this.handleKeyboardCommand('page-down');
+		} else if (shouldRepeatKeyFromPlayer('Home')) {
+			consumeIdeKey('Home');
+			this.handleKeyboardCommand('home');
+		} else if (shouldRepeatKeyFromPlayer('End')) {
+			consumeIdeKey('End');
+			this.handleKeyboardCommand('end');
+		} else if (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter')) {
+			if (isKeyJustPressed('Enter')) {
+				consumeIdeKey('Enter');
+			} else {
+				consumeIdeKey('NumpadEnter');
+			}
+			this.handleKeyboardCommand('activate');
+		}
+		if (shouldRepeatKeyFromPlayer('ArrowLeft')) {
+			consumeIdeKey('ArrowLeft');
+		}
+		if (shouldRepeatKeyFromPlayer('ArrowRight')) {
+			consumeIdeKey('ArrowRight');
+		}
 	}
 
 	public handleKeyboardCommand(command: 'up' | 'down' | 'page-up' | 'page-down' | 'home' | 'end' | 'activate'): boolean {

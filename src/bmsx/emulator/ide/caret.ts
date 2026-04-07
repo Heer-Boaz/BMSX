@@ -2,7 +2,7 @@ import { breakUndoSequence } from './undo_controller';
 import { currentLine } from './text_utils';
 import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from './text_utils';
 import { caretNavigation, ide_state } from './ide_state';
-import { isShiftDown, isCtrlDown } from './ide_input';
+import { isShiftDown, isCtrlDown } from './input/key_input';
 import { resetBlink } from './render/render_caret';
 import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSelection } from './text_editing_and_selection';
 import { ensureSingleCursorSelectionAnchor } from './cursor_state';

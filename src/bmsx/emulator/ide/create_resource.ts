@@ -1,6 +1,6 @@
 import * as constants from './constants';
 import { ide_state } from './ide_state';
-import { isKeyJustPressed, consumeIdeKey } from './ide_input';
+import { isKeyJustPressed, consumeIdeKey } from './input/key_input';
 import { applyInlineFieldEditing } from './inline_text_field';
 import { setFieldText } from './inline_text_field';
 import { getActiveCodeTabContext } from './editor_tabs';

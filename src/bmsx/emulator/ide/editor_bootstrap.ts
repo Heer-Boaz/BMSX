@@ -5,7 +5,7 @@ import { createEntryTabContext, initializeTabs } from './editor_tabs';
 import { createInlineTextField } from './inline_text_field';
 import { Scrollbar, ScrollbarController } from './scrollbar';
 import { ResourcePanelController } from './resource_panel_controller';
-import { InputController } from './ide_input';
+import { InputController } from './input/editor_text_input';
 import { ide_state } from './ide_state';
 import { initializeDebuggerUiState } from './ide_debugger';
 import { initializeWorkspaceStorage } from './workspace_storage';

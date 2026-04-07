@@ -23,7 +23,7 @@ import {
 } from './types';
 import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../types';
 import * as constants from './constants';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './input/key_input';
 import { isLuaCommentContext } from './text_utils';
 import { point_in_rect } from '../../utils/rect_operations';
 import { LuaLexer } from '../../lua/syntax/lualexer';

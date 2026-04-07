@@ -7,7 +7,7 @@ import type { ResourceBrowserItem } from './types';
 import type { RectBounds } from '../../rompack/rompack';
 import type { ResourceDescriptor } from '../types';
 import { Runtime } from '../runtime';
-import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './ide_input';
+import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './input/key_input';
 import { ide_state } from './ide_state';
 import { bottomMargin, codeViewportTop } from './editor_view';
 import { measureText } from './text_utils';
@@ -172,19 +172,18 @@ export class ResourcePanelController {
 				return;
 			}
 		} else {
-			// Horizontal scroll with ArrowLeft/Right
 			const horizontalStep = this.charAdvance * 4;
-			const horizontalMoves: Array<{ key: string; predicate: boolean; delta: number }> = [
-				{ key: 'ArrowLeft', predicate: isKeyJustPressed('ArrowLeft'), delta: -horizontalStep },
-				{ key: 'ArrowRight', predicate: isKeyJustPressed('ArrowRight'), delta: horizontalStep },
-			];
-			for (const entry of horizontalMoves) {
-				if (entry.predicate) {
-					consumeIdeKey(entry.key);
-					this.scrollHorizontal(entry.delta);
-					this.ensureSelectionVisible();
-					return;
-				}
+			if (isKeyJustPressed('ArrowLeft')) {
+				consumeIdeKey('ArrowLeft');
+				this.scrollHorizontal(-horizontalStep);
+				this.ensureSelectionVisible();
+				return;
+			}
+			if (isKeyJustPressed('ArrowRight')) {
+				consumeIdeKey('ArrowRight');
+				this.scrollHorizontal(horizontalStep);
+				this.ensureSelectionVisible();
+				return;
 			}
 		}
 		if (isKeyJustPressed('Enter')) {
@@ -201,21 +200,35 @@ export class ResourcePanelController {
 			this.openSelected();
 			return;
 		}
-		const moves: Array<{ code: string; action: () => void }> = [
-			{ code: 'ArrowUp', action: () => this.moveSelection(-1) },
-			{ code: 'ArrowDown', action: () => this.moveSelection(1) },
-			{ code: 'PageUp', action: () => this.moveSelection(-this.lineCapacity()) },
-			{ code: 'PageDown', action: () => this.moveSelection(this.lineCapacity()) },
-			{ code: 'Home', action: () => this.moveSelection(Number.NEGATIVE_INFINITY) },
-			{ code: 'End', action: () => this.moveSelection(Number.POSITIVE_INFINITY) },
-		];
-		for (const entry of moves) {
-			const triggered = isKeyJustPressed(entry.code);
-			if (triggered) {
-				consumeIdeKey(entry.code);
-				entry.action();
-				return;
-			}
+		if (isKeyJustPressed('ArrowUp')) {
+			consumeIdeKey('ArrowUp');
+			this.moveSelection(-1);
+			return;
+		}
+		if (isKeyJustPressed('ArrowDown')) {
+			consumeIdeKey('ArrowDown');
+			this.moveSelection(1);
+			return;
+		}
+		if (isKeyJustPressed('PageUp')) {
+			consumeIdeKey('PageUp');
+			this.moveSelection(-this.lineCapacity());
+			return;
+		}
+		if (isKeyJustPressed('PageDown')) {
+			consumeIdeKey('PageDown');
+			this.moveSelection(this.lineCapacity());
+			return;
+		}
+		if (isKeyJustPressed('Home')) {
+			consumeIdeKey('Home');
+			this.moveSelection(Number.NEGATIVE_INFINITY);
+			return;
+		}
+		if (isKeyJustPressed('End')) {
+			consumeIdeKey('End');
+			this.moveSelection(Number.POSITIVE_INFINITY);
+			return;
 		}
 	}
 

@@ -15,7 +15,7 @@ import { closeSymbolSearch, closeResourceSearch, closeLineJump } from './search_
 import { clearReferenceHighlights } from './intellisense';
 import { ensureCursorVisible, revealCursor } from './caret';
 import { resetBlink } from './render/render_caret';
-import { scheduleMicrotask } from '../../platform';
+import { scheduleMicrotask } from '../../platform/index';
 import { textFromLines } from './text/source_text';
 import { applyInlineFieldPointer, setFieldText } from './inline_text_field';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from './cursor_state';

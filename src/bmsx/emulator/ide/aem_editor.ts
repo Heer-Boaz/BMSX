@@ -1,9 +1,9 @@
 import { $ } from '../../core/engine_core';
-import { dump as dumpYaml } from 'js-yaml';
 import { extractErrorMessage } from '../../lua/luavalue';
 import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../audio/aem_definition';
 import type { ResourceDescriptor } from '../types';
 import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../workspace';
+import { formatAemYamlDocument } from './aem_yaml_formatter';
 
 function resolveAemSourceFormat(path: string): StructuredTextDocumentFormat {
 	return path.endsWith('.json') ? 'json' : 'yaml';
@@ -62,18 +62,20 @@ export function formatAemDocument(source: string, path: string): string {
 		return '';
 	}
 	const format = resolveAemSourceFormat(path);
+	if (format === 'yaml') {
+		try {
+			parseStructuredTextDocument(source, format, `AEM file '${path}'`);
+			return source;
+		} catch {
+			const repaired = formatAemYamlDocument(source);
+			parseStructuredTextDocument(repaired, format, `AEM file '${path}'`);
+			return repaired;
+		}
+	}
 	const doc = parseStructuredTextDocument(source, format, `AEM file '${path}'`);
 	const newline = source.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
 	const hadTrailingNewline = source.endsWith('\n');
-	const formatted = format === 'json'
-		? JSON.stringify(doc, null, 2)
-		: dumpYaml(doc, {
-			indent: 2,
-			noRefs: true,
-			lineWidth: -1,
-			flowLevel: -1,
-			sortKeys: false,
-		});
+	const formatted = JSON.stringify(doc, null, 2);
 	const normalized = newline === '\n'
 		? formatted
 		: formatted.replace(/\n/g, '\r\n');

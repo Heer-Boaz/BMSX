@@ -2,9 +2,9 @@ import { resolveReferenceLookup, type ReferenceLookupOptions } from './reference
 import { type ReferenceMatchInfo } from './reference_state';
 import type { CodeTabContext, InlineInputOptions, TextField, SearchMatch } from './types';
 import { applyInlineFieldEditing, createInlineTextField, setFieldText } from './inline_text_field';
-import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './ide_input';
+import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './input/key_input';
 import * as constants from './constants';
-import { consumeIdeKey } from './ide_input';
+import { consumeIdeKey } from './input/key_input';
 import type { LuaSourceRange } from '../../lua/syntax/lua_ast';
 import { clamp } from '../../utils/clamp';
 import { LuaLexer } from '../../lua/syntax/lualexer';
