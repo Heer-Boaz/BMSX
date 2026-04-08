@@ -27,6 +27,7 @@ constexpr uint32_t DEFAULT_STRING_HANDLE_COUNT = 0x40000u; // 256k handles
 constexpr uint32_t STRING_HANDLE_ENTRY_SIZE = 16;
 constexpr uint32_t DEFAULT_STRING_HEAP_SIZE = 0x02000000u; // 32 MB
 constexpr uint32_t DEFAULT_ASSET_TABLE_SIZE = 0x00100000u; // 1 MB
+constexpr uint32_t DEFAULT_GEO_SCRATCH_SIZE = 0x00080000u; // 512 KB
 constexpr uint32_t DEFAULT_VRAM_FRAMEBUFFER_SIZE = 256u * 212u * 4u;
 constexpr uint32_t VDP_CMD_ARG_COUNT = 18u;
 constexpr uint32_t VDP_STREAM_PACKET_HEADER_WORDS = 3u;
@@ -48,6 +49,8 @@ extern uint32_t ASSET_TABLE_BASE;
 extern uint32_t ASSET_TABLE_SIZE;
 extern uint32_t ASSET_DATA_BASE;
 extern uint32_t ASSET_DATA_END;
+extern uint32_t GEO_SCRATCH_BASE;
+extern uint32_t GEO_SCRATCH_SIZE;
 extern uint32_t VDP_STREAM_BUFFER_BASE;
 constexpr uint32_t DEFAULT_VRAM_ATLAS_SLOT_SIZE = 0x01000000u; // 16 MB
 constexpr uint32_t DEFAULT_VRAM_STAGING_SIZE = 0x00400000u; // 4 MB

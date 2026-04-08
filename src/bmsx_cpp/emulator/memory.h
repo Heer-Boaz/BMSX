@@ -74,6 +74,8 @@ public:
 	void writeBytes(uint32_t addr, const u8* data, size_t length);
 	void readBytes(uint32_t addr, u8* out, size_t length) const;
 	bool isVramRange(uint32_t addr, size_t length) const;
+	bool isReadableMainMemoryRange(uint32_t addr, size_t length) const;
+	bool isRamRange(uint32_t addr, size_t length) const;
 
 	enum class AssetType {
 		Image,

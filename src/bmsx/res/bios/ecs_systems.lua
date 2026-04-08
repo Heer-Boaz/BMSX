@@ -513,6 +513,7 @@ function overlap2dsystem.new(priority)
 	self.event_colliders = {}
 	self.candidate_colliders = {}
 	self.candidate_seen = {}
+	self.candidate_pairs = scratchrecordbatch.new(64)
 	self.pair_row_pool = {}
 	self.begins = {}
 	self.stays = {}
@@ -528,6 +529,7 @@ function overlap2dsystem:update()
 	local prev_collider_lookup<const> = self.prev_collider_lookup
 	local collider_lookup<const> = self.next_collider_lookup
 	local pair_row_pool<const> = self.pair_row_pool
+	local candidate_pairs<const> = self.candidate_pairs
 	clear_pair_set(new_pairs, pair_row_pool)
 	clear_map(collider_lookup)
 
@@ -552,6 +554,7 @@ function overlap2dsystem:update()
 		return
 	end
 
+	local candidate_pair_count = 0
 	for i = 1, #event_colliders do
 		local collider<const> = event_colliders[i]
 		local owner<const> = collider.parent
@@ -564,16 +567,28 @@ function overlap2dsystem:update()
 				local a_hits_b<const> = (collider.mask & other.layer) ~= 0
 				local b_hits_a<const> = (other.mask & collider.layer) ~= 0
 				if a_hits_b and b_hits_a then
-						local other_space<const> = other_owner.space_id
-						if self:space_match(collider.spaceevents, owner_space, other_space) then
-							if not (other.id < collider.id) then
-								if collision2d.collides(collider, other) then
-									add_pair(new_pairs, pair_row_pool, collider.id, other.id)
-								end
-							end
+					local other_space<const> = other_owner.space_id
+					if self:space_match(collider.spaceevents, owner_space, other_space) then
+						if not (other.id < collider.id) then
+							candidate_pair_count = candidate_pair_count + 1
+							local pair<const> = candidate_pairs:get(candidate_pair_count)
+							pair.a = collider
+							pair.b = other
+							pair.hit = false
+							pair.geo_pair_start = 0
+							pair.geo_pair_count = 0
 						end
+					end
 				end
 			end
+		end
+	end
+
+	collision2d.batch_collides(candidate_pairs.items, candidate_pair_count)
+	for i = 1, candidate_pair_count do
+		local pair<const> = candidate_pairs.items[i]
+		if pair.hit then
+			add_pair(new_pairs, pair_row_pool, pair.a.id, pair.b.id)
 		end
 	end
 

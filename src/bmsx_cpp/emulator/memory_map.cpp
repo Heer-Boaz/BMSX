@@ -5,6 +5,13 @@
 
 namespace bmsx {
 
+namespace {
+inline uint32_t alignUp(uint32_t value, uint32_t alignment) {
+	const uint32_t mask = alignment - 1u;
+	return (value + mask) & ~mask;
+}
+}
+
 uint32_t RAM_SIZE = DEFAULT_RAM_SIZE;
 uint32_t STRING_HANDLE_COUNT = DEFAULT_STRING_HANDLE_COUNT;
 uint32_t STRING_HANDLE_TABLE_SIZE = DEFAULT_STRING_HANDLE_COUNT * STRING_HANDLE_ENTRY_SIZE;
@@ -17,6 +24,8 @@ uint32_t ASSET_RAM_SIZE = RAM_SIZE - (ASSET_RAM_BASE - RAM_BASE);
 uint32_t ASSET_TABLE_BASE = ASSET_RAM_BASE;
 uint32_t ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
 uint32_t ASSET_DATA_END = ASSET_RAM_BASE + ASSET_RAM_SIZE;
+uint32_t GEO_SCRATCH_BASE = 0;
+uint32_t GEO_SCRATCH_SIZE = DEFAULT_GEO_SCRATCH_SIZE;
 uint32_t VDP_STREAM_BUFFER_BASE = 0;
 uint32_t VRAM_ATLAS_SLOT_SIZE = DEFAULT_VRAM_ATLAS_SLOT_SIZE;
 uint32_t VRAM_STAGING_SIZE = DEFAULT_VRAM_STAGING_SIZE;
@@ -55,10 +64,12 @@ static void recomputeMemoryLayout(const MemoryMapConfig& config) {
 	STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
 	ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
 	ASSET_TABLE_BASE = ASSET_RAM_BASE;
-	ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
+	ASSET_DATA_BASE = alignUp(ASSET_TABLE_BASE + ASSET_TABLE_SIZE, IO_WORD_SIZE);
 	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes;
 	ASSET_RAM_SIZE = ASSET_DATA_END - ASSET_RAM_BASE;
-	VDP_STREAM_BUFFER_BASE = ASSET_DATA_END;
+	GEO_SCRATCH_BASE = ASSET_DATA_END;
+	GEO_SCRATCH_SIZE = DEFAULT_GEO_SCRATCH_SIZE;
+	VDP_STREAM_BUFFER_BASE = GEO_SCRATCH_BASE + GEO_SCRATCH_SIZE;
 
 	VRAM_STAGING_BASE = VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE;
 	VRAM_SKYBOX_FACE_BYTES = config.skyboxFaceBytes;
@@ -116,8 +127,13 @@ struct MemoryMapInitializer {
 	MemoryMapInitializer() {
 		MemoryMapConfig config;
 		const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
+		const uint32_t assetDataBaseOffset = IO_REGION_SIZE
+			+ stringHandleTableBytes
+			+ DEFAULT_STRING_HEAP_SIZE
+			+ DEFAULT_ASSET_TABLE_SIZE;
+		const uint32_t assetDataBasePadding = alignUp(assetDataBaseOffset, IO_WORD_SIZE) - assetDataBaseOffset;
 		const uint32_t assetDataBytes = DEFAULT_RAM_SIZE
-			- (IO_REGION_SIZE + stringHandleTableBytes + DEFAULT_STRING_HEAP_SIZE + DEFAULT_ASSET_TABLE_SIZE + VDP_STREAM_BUFFER_SIZE);
+			- (assetDataBaseOffset + assetDataBasePadding + DEFAULT_GEO_SCRATCH_SIZE + VDP_STREAM_BUFFER_SIZE);
 		const uint32_t skyboxFaceBytes = static_cast<uint32_t>(SKYBOX_FACE_DEFAULT_SIZE)
 			* static_cast<uint32_t>(SKYBOX_FACE_DEFAULT_SIZE)
 			* 4u;

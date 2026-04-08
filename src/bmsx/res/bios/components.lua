@@ -391,6 +391,11 @@ function collider2dcomponent.new(opts)
 	self._world_polys_cache = {}
 	self._overlap_shape_kind = nil
 	self._overlap_cache_valid = false
+	self._geo_sat_count_token = 0
+	self._geo_sat_stage_token = 0
+	self._geo_sat_desc_first = 0
+	self._geo_sat_desc_count = 0
+	self._geo_sat_vertex_bytes = 0
 	return self
 end
 

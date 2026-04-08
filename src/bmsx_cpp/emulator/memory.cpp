@@ -904,6 +904,17 @@ bool Memory::isVramRange(uint32_t addr, size_t length) const {
 	return isVramRangeLocal(addr, length);
 }
 
+bool Memory::isReadableMainMemoryRange(uint32_t addr, size_t length) const {
+	return isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, static_cast<uint32_t>(m_engineRom.size))
+		|| (m_cartRom.data != nullptr && isRangeWithinRegion(addr, length, CART_ROM_BASE, static_cast<uint32_t>(m_cartRom.size)))
+		|| (m_overlayRom.data != nullptr && isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, static_cast<uint32_t>(m_overlayRom.size)))
+		|| isRangeWithinRegion(addr, length, RAM_BASE, RAM_USED_END - RAM_BASE);
+}
+
+bool Memory::isRamRange(uint32_t addr, size_t length) const {
+	return isRangeWithinRegion(addr, length, RAM_BASE, RAM_USED_END - RAM_BASE);
+}
+
 void Memory::loadIoSlots(const std::vector<Value>& slots) {
 	m_ioSlots = slots;
 	if (m_ioSlots.size() < IO_SLOT_COUNT) {
@@ -950,6 +961,9 @@ bool Memory::isLuaReadOnlyIoAddress(uint32_t addr) const {
 		|| addr == IO_IRQ_FLAGS
 		|| addr == IO_DMA_STATUS
 		|| addr == IO_DMA_WRITTEN
+		|| addr == IO_GEO_STATUS
+		|| addr == IO_GEO_PROCESSED
+		|| addr == IO_GEO_FAULT
 		|| addr == IO_IMG_STATUS
 		|| addr == IO_IMG_WRITTEN
 		|| addr == IO_VDP_RD_STATUS

@@ -16,6 +16,8 @@ import {
 	CART_ROM_BASE,
 	CART_ROM_MAGIC_ADDR,
 	CART_ROM_SIZE,
+	GEO_SCRATCH_BASE,
+	GEO_SCRATCH_SIZE,
 	OVERLAY_ROM_BASE,
 	RAM_SIZE,
 	SYSTEM_ROM_BASE,
@@ -43,6 +45,32 @@ import {
 	DMA_STATUS_DONE,
 	DMA_STATUS_ERROR,
 	DMA_STATUS_REJECTED,
+	GEO_CTRL_ABORT,
+	GEO_CTRL_START,
+	GEO_FAULT_ABORTED_BY_HOST,
+	GEO_FAULT_BAD_RECORD_ALIGNMENT,
+	GEO_FAULT_BAD_RECORD_FLAGS,
+	GEO_FAULT_BAD_VERTEX_COUNT,
+	GEO_FAULT_DESCRIPTOR_KIND,
+	GEO_FAULT_DST_RANGE,
+	GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL,
+	GEO_FAULT_REJECT_BAD_CMD,
+	GEO_FAULT_REJECT_BAD_REGISTER_COMBO,
+	GEO_FAULT_REJECT_BAD_STRIDE,
+	GEO_FAULT_REJECT_DST_NOT_RAM,
+		GEO_FAULT_REJECT_MISALIGNED_REGS,
+		GEO_FAULT_REJECT_BUSY,
+		GEO_FAULT_SRC_RANGE,
+		GEO_INDEX_NONE,
+		GEO_SAT_META_AXIS_MASK,
+		GEO_SAT_META_SHAPE_AUX,
+		GEO_SAT_META_SHAPE_SHIFT,
+		GEO_SAT_META_SHAPE_SRC,
+		GEO_SHAPE_CONVEX_POLY,
+		GEO_STATUS_BUSY,
+		GEO_STATUS_DONE,
+		GEO_STATUS_ERROR,
+		GEO_STATUS_REJECTED,
 	IMG_CTRL_START,
 	IMG_STATUS_BUSY,
 	IMG_STATUS_CLIPPED,
@@ -56,12 +84,32 @@ import {
 	IO_CMD_VDP_FILL_RECT,
 	IO_CMD_VDP_GLYPH_RUN,
 	IO_CMD_VDP_TILE_RUN,
+	IO_CMD_GEO_PROJECT3_BATCH,
+	IO_CMD_GEO_SAT2_BATCH,
+	IO_CMD_GEO_XFORM2_BATCH,
+	IO_CMD_GEO_XFORM3_BATCH,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
 	IO_DMA_SRC,
 	IO_DMA_STATUS,
 	IO_DMA_WRITTEN,
+	IO_GEO_CMD,
+	IO_GEO_COUNT,
+	IO_GEO_CTRL,
+	IO_GEO_DST0,
+	IO_GEO_DST1,
+	IO_GEO_FAULT,
+	IO_GEO_PARAM0,
+	IO_GEO_PARAM1,
+	IO_GEO_PROCESSED,
+	IO_GEO_SRC0,
+	IO_GEO_SRC1,
+	IO_GEO_SRC2,
+	IO_GEO_STATUS,
+	IO_GEO_STRIDE0,
+	IO_GEO_STRIDE1,
+	IO_GEO_STRIDE2,
 	IO_IMG_CAP,
 	IO_IMG_CTRL,
 	IO_IMG_DST,
@@ -89,6 +137,8 @@ import {
 	IO_VDP_STATUS,
 	IRQ_DMA_DONE,
 	IRQ_DMA_ERROR,
+	IRQ_GEO_DONE,
+	IRQ_GEO_ERROR,
 	IRQ_IMG_DONE,
 	IRQ_IMG_ERROR,
 	IRQ_NEWGAME,
@@ -1062,6 +1112,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cart_magic', CART_ROM_MAGIC);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_cart_rom_size', CART_ROM_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_ram_size', RAM_SIZE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_scratch_base', GEO_SCRATCH_BASE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_scratch_size', GEO_SCRATCH_SIZE);
 	const maxAssets = Math.floor((ASSET_TABLE_SIZE - ASSET_TABLE_HEADER_SIZE) / ASSET_TABLE_ENTRY_SIZE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_assets', maxAssets);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_max_cycles_per_frame', runtime.cycleBudgetPerFrame);
@@ -1108,6 +1160,22 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_ctrl', IO_DMA_CTRL);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_status', IO_DMA_STATUS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_dma_written', IO_DMA_WRITTEN);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_src0', IO_GEO_SRC0);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_src1', IO_GEO_SRC1);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_src2', IO_GEO_SRC2);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_dst0', IO_GEO_DST0);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_dst1', IO_GEO_DST1);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_count', IO_GEO_COUNT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd', IO_GEO_CMD);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_ctrl', IO_GEO_CTRL);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status', IO_GEO_STATUS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_param0', IO_GEO_PARAM0);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_param1', IO_GEO_PARAM1);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_stride0', IO_GEO_STRIDE0);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_stride1', IO_GEO_STRIDE1);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_stride2', IO_GEO_STRIDE2);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_processed', IO_GEO_PROCESSED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault', IO_GEO_FAULT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_src', IO_IMG_SRC);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_len', IO_IMG_LEN);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_img_dst', IO_IMG_DST);
@@ -1196,6 +1264,8 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_done', IRQ_DMA_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_dma_error', IRQ_DMA_ERROR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'irq_geo_done', IRQ_GEO_DONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'irq_geo_error', IRQ_GEO_ERROR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_img_done', IRQ_IMG_DONE);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_img_error', IRQ_IMG_ERROR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'irq_vblank', IRQ_VBLANK);
@@ -1208,6 +1278,36 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_error', DMA_STATUS_ERROR);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_clipped', DMA_STATUS_CLIPPED);
 	runtimeLuaPipeline.registerGlobal(runtime, 'dma_status_rejected', DMA_STATUS_REJECTED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_ctrl_start', GEO_CTRL_START);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_ctrl_abort', GEO_CTRL_ABORT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status_busy', GEO_STATUS_BUSY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status_done', GEO_STATUS_DONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status_error', GEO_STATUS_ERROR);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status_rejected', GEO_STATUS_REJECTED);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_xform2_batch', IO_CMD_GEO_XFORM2_BATCH);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_sat2_batch', IO_CMD_GEO_SAT2_BATCH);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_xform3_batch', IO_CMD_GEO_XFORM3_BATCH);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_project3_batch', IO_CMD_GEO_PROJECT3_BATCH);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_index_none', GEO_INDEX_NONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_shape_convex_poly', GEO_SHAPE_CONVEX_POLY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_axis_mask', GEO_SAT_META_AXIS_MASK);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_shape_shift', GEO_SAT_META_SHAPE_SHIFT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_shape_src', GEO_SAT_META_SHAPE_SRC);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_shape_aux', GEO_SAT_META_SHAPE_AUX);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_aborted_by_host', GEO_FAULT_ABORTED_BY_HOST);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_bad_record_alignment', GEO_FAULT_BAD_RECORD_ALIGNMENT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_bad_vertex_count', GEO_FAULT_BAD_VERTEX_COUNT);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_src_range', GEO_FAULT_SRC_RANGE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_dst_range', GEO_FAULT_DST_RANGE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_descriptor_kind', GEO_FAULT_DESCRIPTOR_KIND);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_numeric_overflow_internal', GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_bad_record_flags', GEO_FAULT_BAD_RECORD_FLAGS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_busy', GEO_FAULT_REJECT_BUSY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_bad_cmd', GEO_FAULT_REJECT_BAD_CMD);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_bad_stride', GEO_FAULT_REJECT_BAD_STRIDE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_dst_not_ram', GEO_FAULT_REJECT_DST_NOT_RAM);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_misaligned_regs', GEO_FAULT_REJECT_MISALIGNED_REGS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_bad_register_combo', GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_ctrl_start', IMG_CTRL_START);
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_busy', IMG_STATUS_BUSY);
 	runtimeLuaPipeline.registerGlobal(runtime, 'img_status_done', IMG_STATUS_DONE);

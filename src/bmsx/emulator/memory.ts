@@ -30,6 +30,9 @@ import {
 import {
 	IO_DMA_STATUS,
 	IO_DMA_WRITTEN,
+	IO_GEO_FAULT,
+	IO_GEO_PROCESSED,
+	IO_GEO_STATUS,
 	IO_IMG_STATUS,
 	IO_IMG_WRITTEN,
 	IO_IRQ_FLAGS,
@@ -1140,6 +1143,17 @@ export class Memory {
 		return data.subarray(offset, offset + length);
 	}
 
+	public isReadableMainMemoryRange(addr: number, length: number): boolean {
+		return this.isRangeWithinRegion(addr, length, SYSTEM_ROM_BASE, this.engineRom.byteLength)
+			|| (this.cartRom !== null && this.isRangeWithinRegion(addr, length, CART_ROM_BASE, this.cartRom.byteLength))
+			|| (this.overlayRom !== null && this.isRangeWithinRegion(addr, length, OVERLAY_ROM_BASE, this.overlayRom.byteLength))
+			|| this.isRangeWithinRegion(addr, length, RAM_BASE, RAM_USED_END - RAM_BASE);
+	}
+
+	public isRamRange(addr: number, length: number): boolean {
+		return this.isRangeWithinRegion(addr, length, RAM_BASE, RAM_USED_END - RAM_BASE);
+	}
+
 	public writeBytes(addr: number, bytes: Uint8Array): void {
 		if (this.isVramRange(addr, bytes.byteLength)) {
 			this.writeVram(addr, bytes);
@@ -1228,6 +1242,9 @@ export class Memory {
 			|| addr === IO_IRQ_FLAGS
 			|| addr === IO_DMA_STATUS
 			|| addr === IO_DMA_WRITTEN
+			|| addr === IO_GEO_STATUS
+			|| addr === IO_GEO_PROCESSED
+			|| addr === IO_GEO_FAULT
 			|| addr === IO_IMG_STATUS
 			|| addr === IO_IMG_WRITTEN
 			|| addr === IO_VDP_RD_STATUS

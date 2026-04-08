@@ -2,6 +2,7 @@
 
 #include "cpu.h"
 #include "devices/dma_controller.h"
+#include "devices/geometry_controller.h"
 #include "devices/imgdec_controller.h"
 #include "io.h"
 #include "memory.h"
@@ -77,6 +78,7 @@ struct RuntimeOptions {
 	int cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 	int vblankCycles = 0;
 	int vdpWorkUnitsPerSec = 25'600;
+	int geoWorkUnitsPerSec = 25'600;
 };
 
 /**
@@ -285,6 +287,7 @@ public:
 	i64 cpuHz() const { return m_cpuHz; }
 	void setVblankCycles(int cycles);
 	void setVdpWorkUnitsPerSec(int workUnitsPerSec);
+	void setGeoWorkUnitsPerSec(int workUnitsPerSec);
 	void resetHardwareState();
 	void resetRenderBuffers();
 	i64 updateCountTotal() const { return m_debugUpdateCountTotal; }
@@ -394,6 +397,7 @@ private:
 	CPU m_cpu;
 	std::unique_ptr<ResourceUsageDetector> m_resourceUsageDetector;
 	DmaController m_dmaController;
+	GeometryController m_geometryController;
 	ImgDecController m_imgDecController;
 	Program* m_program = nullptr;
 	ProgramMetadata* m_programMetadata = nullptr;
@@ -464,8 +468,10 @@ private:
 	RateBudget m_imgRate;
 	RateBudget m_dmaIsoRate;
 	RateBudget m_dmaBulkRate;
+	RateBudget m_geoRate;
 	RateBudget m_vdpRate;
 	int m_vdpWorkUnitsPerSec = 25'600;
+	int m_geoWorkUnitsPerSec = 25'600;
 	int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 	int m_vblankCycles = 0;
 	int m_vblankStartCycle = 0;

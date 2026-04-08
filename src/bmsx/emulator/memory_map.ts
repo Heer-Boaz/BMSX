@@ -23,6 +23,7 @@ export const DEFAULT_STRING_HANDLE_COUNT = 0x40000; // 256k handles
 export const STRING_HANDLE_ENTRY_SIZE = 16;
 export const DEFAULT_STRING_HEAP_SIZE = 0x02000000; // 32 MB
 export const DEFAULT_ASSET_TABLE_SIZE = 0x00100000; // 1 MB
+export const DEFAULT_GEO_SCRATCH_SIZE = 0x00080000; // 512 KB
 export const DEFAULT_VRAM_ATLAS_SLOT_SIZE = 0x01000000; // 16 MB
 export const DEFAULT_VRAM_STAGING_SIZE = 0x00400000; // 4 MB
 export const DEFAULT_VRAM_FRAMEBUFFER_SIZE = 256 * 212 * 4;
@@ -50,6 +51,8 @@ export let ASSET_TABLE_BASE = ASSET_RAM_BASE;
 export let ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
 export let ASSET_RAM_SIZE = RAM_SIZE - (ASSET_RAM_BASE - RAM_BASE);
 export let ASSET_DATA_END = ASSET_RAM_BASE + ASSET_RAM_SIZE;
+export let GEO_SCRATCH_BASE = 0;
+export let GEO_SCRATCH_SIZE = DEFAULT_GEO_SCRATCH_SIZE;
 export let VDP_STREAM_BUFFER_BASE = 0;
 export let VRAM_SECONDARY_ATLAS_BASE = 0;
 export let VRAM_PRIMARY_ATLAS_BASE = 0;
@@ -107,6 +110,11 @@ function resolveNonNegativeInteger(value: number, label: string): number {
 	return resolved;
 }
 
+function alignUp(value: number, alignment: number): number {
+	const mask = alignment - 1;
+	return (value + mask) & ~mask;
+}
+
 function recomputeMemoryLayout(config: {
 	ramBytes: number;
 	stringHandleCount: number;
@@ -134,10 +142,12 @@ function recomputeMemoryLayout(config: {
 	STRING_HEAP_BASE = STRING_HANDLE_TABLE_BASE + STRING_HANDLE_TABLE_SIZE;
 	ASSET_RAM_BASE = STRING_HEAP_BASE + STRING_HEAP_SIZE;
 	ASSET_TABLE_BASE = ASSET_RAM_BASE;
-	ASSET_DATA_BASE = ASSET_TABLE_BASE + ASSET_TABLE_SIZE;
+	ASSET_DATA_BASE = alignUp(ASSET_TABLE_BASE + ASSET_TABLE_SIZE, IO_WORD_SIZE);
 	ASSET_DATA_END = ASSET_DATA_BASE + config.assetDataBytes;
 	ASSET_RAM_SIZE = ASSET_DATA_END - ASSET_RAM_BASE;
-	VDP_STREAM_BUFFER_BASE = ASSET_DATA_END;
+	GEO_SCRATCH_BASE = ASSET_DATA_END;
+	GEO_SCRATCH_SIZE = DEFAULT_GEO_SCRATCH_SIZE;
+	VDP_STREAM_BUFFER_BASE = GEO_SCRATCH_BASE + GEO_SCRATCH_SIZE;
 
 	VRAM_STAGING_BASE = VDP_STREAM_BUFFER_BASE + VDP_STREAM_BUFFER_SIZE;
 	VRAM_SKYBOX_FACE_BYTES = config.skyboxFaceBytes;
@@ -178,10 +188,14 @@ export function configureMemoryMap(specs?: MemoryMapSpecs): void {
 			return skyboxFaceSize * skyboxFaceSize * 4;
 		})();
 	const stringHandleTableBytes = stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
-	const fixedRamBytes = IO_REGION_SIZE
+	const assetDataBaseOffset = IO_REGION_SIZE
 		+ stringHandleTableBytes
 		+ stringHeapBytes
-		+ assetTableBytes
+		+ assetTableBytes;
+	const assetDataBasePadding = alignUp(assetDataBaseOffset, IO_WORD_SIZE) - assetDataBaseOffset;
+	const fixedRamBytes = assetDataBaseOffset
+		+ assetDataBasePadding
+		+ DEFAULT_GEO_SCRATCH_SIZE
 		+ VDP_STREAM_BUFFER_SIZE;
 	const assetDataBytes = specs?.asset_data_bytes !== undefined
 		? resolveNonNegativeInteger(specs.asset_data_bytes, 'asset_data_bytes')

@@ -74,7 +74,26 @@ constexpr int IO_IMG_SIZE = 7;
 constexpr int IO_VDP_STATUS_INDEX = IO_IMG_BASE_INDEX + IO_IMG_SIZE;
 constexpr int IO_VDP_STATUS_SIZE = 1;
 
-constexpr int IO_PAYLOAD_WRITE_PTR_INDEX = IO_VDP_STATUS_INDEX + IO_VDP_STATUS_SIZE;
+constexpr int IO_GEO_BASE_INDEX = IO_VDP_STATUS_INDEX + IO_VDP_STATUS_SIZE;
+constexpr int IO_GEO_SRC0_INDEX = IO_GEO_BASE_INDEX;
+constexpr int IO_GEO_SRC1_INDEX = IO_GEO_BASE_INDEX + 1;
+constexpr int IO_GEO_SRC2_INDEX = IO_GEO_BASE_INDEX + 2;
+constexpr int IO_GEO_DST0_INDEX = IO_GEO_BASE_INDEX + 3;
+constexpr int IO_GEO_DST1_INDEX = IO_GEO_BASE_INDEX + 4;
+constexpr int IO_GEO_COUNT_INDEX = IO_GEO_BASE_INDEX + 5;
+constexpr int IO_GEO_CMD_INDEX = IO_GEO_BASE_INDEX + 6;
+constexpr int IO_GEO_CTRL_INDEX = IO_GEO_BASE_INDEX + 7;
+constexpr int IO_GEO_STATUS_INDEX = IO_GEO_BASE_INDEX + 8;
+constexpr int IO_GEO_PARAM0_INDEX = IO_GEO_BASE_INDEX + 9;
+constexpr int IO_GEO_PARAM1_INDEX = IO_GEO_BASE_INDEX + 10;
+constexpr int IO_GEO_STRIDE0_INDEX = IO_GEO_BASE_INDEX + 11;
+constexpr int IO_GEO_STRIDE1_INDEX = IO_GEO_BASE_INDEX + 12;
+constexpr int IO_GEO_STRIDE2_INDEX = IO_GEO_BASE_INDEX + 13;
+constexpr int IO_GEO_PROCESSED_INDEX = IO_GEO_BASE_INDEX + 14;
+constexpr int IO_GEO_FAULT_INDEX = IO_GEO_BASE_INDEX + 15;
+constexpr int IO_GEO_SIZE = 16;
+
+constexpr int IO_PAYLOAD_WRITE_PTR_INDEX = IO_GEO_BASE_INDEX + IO_GEO_SIZE;
 constexpr int IO_PAYLOAD_ALLOC_INDEX = IO_PAYLOAD_WRITE_PTR_INDEX + 1;
 constexpr int IO_PAYLOAD_DATA_INDEX = IO_PAYLOAD_ALLOC_INDEX + 1;
 constexpr int IO_PAYLOAD_BUFFER_BASE_INDEX = IO_PAYLOAD_DATA_INDEX + 1;
@@ -127,6 +146,23 @@ constexpr uint32_t IO_IMG_CAP = IO_BASE + IO_IMG_CAP_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_IMG_CTRL = IO_BASE + IO_IMG_CTRL_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_IMG_STATUS = IO_BASE + IO_IMG_STATUS_INDEX * IO_WORD_SIZE;
 constexpr uint32_t IO_IMG_WRITTEN = IO_BASE + IO_IMG_WRITTEN_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_BASE = IO_BASE + IO_GEO_BASE_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_SRC0 = IO_BASE + IO_GEO_SRC0_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_SRC1 = IO_BASE + IO_GEO_SRC1_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_SRC2 = IO_BASE + IO_GEO_SRC2_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_DST0 = IO_BASE + IO_GEO_DST0_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_DST1 = IO_BASE + IO_GEO_DST1_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_COUNT = IO_BASE + IO_GEO_COUNT_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_CMD = IO_BASE + IO_GEO_CMD_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_CTRL = IO_BASE + IO_GEO_CTRL_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_STATUS = IO_BASE + IO_GEO_STATUS_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_PARAM0 = IO_BASE + IO_GEO_PARAM0_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_PARAM1 = IO_BASE + IO_GEO_PARAM1_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_STRIDE0 = IO_BASE + IO_GEO_STRIDE0_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_STRIDE1 = IO_BASE + IO_GEO_STRIDE1_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_STRIDE2 = IO_BASE + IO_GEO_STRIDE2_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_PROCESSED = IO_BASE + IO_GEO_PROCESSED_INDEX * IO_WORD_SIZE;
+constexpr uint32_t IO_GEO_FAULT = IO_BASE + IO_GEO_FAULT_INDEX * IO_WORD_SIZE;
 
 constexpr uint32_t IRQ_DMA_DONE = 1 << 0;
 constexpr uint32_t IRQ_DMA_ERROR = 1 << 1;
@@ -135,6 +171,8 @@ constexpr uint32_t IRQ_IMG_ERROR = 1 << 3;
 constexpr uint32_t IRQ_VBLANK = 1 << 4;
 constexpr uint32_t IRQ_REINIT = 1 << 5;
 constexpr uint32_t IRQ_NEWGAME = 1 << 6;
+constexpr uint32_t IRQ_GEO_DONE = 1 << 7;
+constexpr uint32_t IRQ_GEO_ERROR = 1 << 8;
 
 constexpr uint32_t VDP_STATUS_VBLANK = 1u << 0u;
 constexpr uint32_t VDP_STATUS_SUBMIT_BUSY = 1u << 1u;
@@ -156,6 +194,41 @@ constexpr uint32_t IMG_STATUS_DONE = 1 << 1;
 constexpr uint32_t IMG_STATUS_ERROR = 1 << 2;
 constexpr uint32_t IMG_STATUS_CLIPPED = 1 << 3;
 constexpr uint32_t IMG_STATUS_REJECTED = 1 << 4;
+
+constexpr uint32_t GEO_CTRL_START = 1 << 0;
+constexpr uint32_t GEO_CTRL_ABORT = 1 << 1;
+constexpr uint32_t GEO_STATUS_BUSY = 1 << 0;
+constexpr uint32_t GEO_STATUS_DONE = 1 << 1;
+constexpr uint32_t GEO_STATUS_ERROR = 1 << 2;
+constexpr uint32_t GEO_STATUS_REJECTED = 1 << 3;
+
+constexpr int IO_CMD_GEO_XFORM2_BATCH = 0x20;
+constexpr int IO_CMD_GEO_SAT2_BATCH = 0x21;
+constexpr int IO_CMD_GEO_XFORM3_BATCH = 0x30;
+constexpr int IO_CMD_GEO_PROJECT3_BATCH = 0x31;
+
+constexpr uint32_t GEO_INDEX_NONE = 0xffffffffu;
+constexpr uint32_t GEO_SHAPE_CONVEX_POLY = 1u << 0u;
+constexpr uint32_t GEO_SAT_META_AXIS_MASK = 0xffffu;
+constexpr uint32_t GEO_SAT_META_SHAPE_SHIFT = 16u;
+constexpr uint32_t GEO_SAT_META_SHAPE_SRC = 0u;
+constexpr uint32_t GEO_SAT_META_SHAPE_AUX = 1u;
+
+constexpr uint32_t GEO_FAULT_ABORTED_BY_HOST = 0x0001u;
+constexpr uint32_t GEO_FAULT_BAD_RECORD_ALIGNMENT = 0x0002u;
+constexpr uint32_t GEO_FAULT_BAD_VERTEX_COUNT = 0x0003u;
+constexpr uint32_t GEO_FAULT_SRC_RANGE = 0x0004u;
+constexpr uint32_t GEO_FAULT_DST_RANGE = 0x0005u;
+constexpr uint32_t GEO_FAULT_DESCRIPTOR_KIND = 0x0006u;
+constexpr uint32_t GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL = 0x0007u;
+constexpr uint32_t GEO_FAULT_BAD_RECORD_FLAGS = 0x0008u;
+
+constexpr uint32_t GEO_FAULT_REJECT_BUSY = 0x8001u;
+constexpr uint32_t GEO_FAULT_REJECT_BAD_CMD = 0x8002u;
+constexpr uint32_t GEO_FAULT_REJECT_BAD_STRIDE = 0x8003u;
+constexpr uint32_t GEO_FAULT_REJECT_DST_NOT_RAM = 0x8004u;
+constexpr uint32_t GEO_FAULT_REJECT_MISALIGNED_REGS = 0x8005u;
+constexpr uint32_t GEO_FAULT_REJECT_BAD_REGISTER_COMBO = 0x8006u;
 
 constexpr uint32_t VDP_ATLAS_ID_NONE = 0xffffffffu;
 constexpr uint32_t VDP_RD_MODE_RGBA8888 = 0u;

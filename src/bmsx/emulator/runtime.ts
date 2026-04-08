@@ -22,6 +22,7 @@ import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
 	CART_ROM_HEADER_SIZE,
+	DEFAULT_VDP_WORK_UNITS_PER_SEC,
 	ENGINE_ATLAS_INDEX,
 	SKYBOX_FACE_DEFAULT_SIZE,
 	getMachineMemorySpecs,
@@ -66,12 +67,30 @@ import {
 	DMA_STATUS_DONE,
 	DMA_STATUS_REJECTED,
 	DMA_STATUS_ERROR,
+	GEO_CTRL_ABORT,
+	GEO_CTRL_START,
 	IO_DMA_CTRL,
 	IO_DMA_DST,
 	IO_DMA_LEN,
 	IO_DMA_SRC,
 	IO_DMA_STATUS,
 	IO_DMA_WRITTEN,
+	IO_GEO_CMD,
+	IO_GEO_COUNT,
+	IO_GEO_CTRL,
+	IO_GEO_DST0,
+	IO_GEO_DST1,
+	IO_GEO_FAULT,
+	IO_GEO_PARAM0,
+	IO_GEO_PARAM1,
+	IO_GEO_PROCESSED,
+	IO_GEO_SRC0,
+	IO_GEO_SRC1,
+	IO_GEO_SRC2,
+	IO_GEO_STATUS,
+	IO_GEO_STRIDE0,
+	IO_GEO_STRIDE1,
+	IO_GEO_STRIDE2,
 	IO_IMG_CAP,
 	IO_IMG_CTRL,
 	IO_IMG_DST,
@@ -109,14 +128,17 @@ import {
 import { HandlerCache } from './handler_cache';
 import { Memory, ASSET_TABLE_ENTRY_SIZE, ASSET_TABLE_HEADER_SIZE, type AssetEntry, type IoWriteHandler } from './memory';
 import { DmaController } from './devices/dma_controller';
+import { GeometryController } from './devices/geometry_controller';
 import { ImgDecController } from './devices/imgdec_controller';
 import {
 	CART_ROM_BASE,
+	DEFAULT_GEO_SCRATCH_SIZE,
 	DEFAULT_STRING_HANDLE_COUNT,
 	DEFAULT_STRING_HEAP_SIZE,
 	DEFAULT_VRAM_ATLAS_SLOT_SIZE,
 	DEFAULT_VRAM_STAGING_SIZE,
 	IO_REGION_SIZE,
+	IO_WORD_SIZE,
 	OVERLAY_ROM_BASE,
 	SYSTEM_ROM_BASE,
 	STRING_HANDLE_ENTRY_SIZE,
@@ -703,10 +725,15 @@ export class Runtime {
 		this.setCycleBudgetPerFrame(cycleBudgetPerFrame);
 		this.setVblankCycles(vblankCycles);
 		this.setVdpWorkUnitsPerSec(perfSpecs.work_units_per_sec);
+		this.setGeoWorkUnitsPerSec(perfSpecs.work_units_per_sec);
 	}
 
 	public setVdpWorkUnitsPerSec(value: number): void {
 		this.vdpWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(value);
+	}
+
+	public setGeoWorkUnitsPerSec(value: number): void {
+		this.geoWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(value);
 	}
 
 	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number; work_units_per_sec: number; }): void {
@@ -714,10 +741,12 @@ export class Runtime {
 		this.dmaBytesPerSecIso = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_iso, 'machine.specs.dma.dma_bytes_per_sec_iso');
 		this.dmaBytesPerSecBulk = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
 		this.setVdpWorkUnitsPerSec(specs.work_units_per_sec);
+		this.setGeoWorkUnitsPerSec(specs.work_units_per_sec);
 		this.imgRate.set(this.imgDecBytesPerSec);
 		this.dmaIsoRate.set(this.dmaBytesPerSecIso);
 		this.dmaBulkRate.set(this.dmaBytesPerSecBulk);
 		this.vdpRate.set(this.vdpWorkUnitsPerSec);
+		this.geoRate.set(this.geoWorkUnitsPerSec);
 		this.resetTransferCarry();
 	}
 
@@ -746,6 +775,7 @@ export class Runtime {
 		const imgBudget = this.imgRate.calcBytesForCycles(this._cpuHz, cycles);
 		const isoBudget = this.dmaIsoRate.calcBytesForCycles(this._cpuHz, cycles);
 		const bulkBudget = this.dmaBulkRate.calcBytesForCycles(this._cpuHz, cycles);
+		const geoWork = this.geoRate.calcBytesForCycles(this._cpuHz, cycles);
 		const vdpWork = this.vdpRate.calcBytesForCycles(this._cpuHz, cycles);
 		this.imgDecController.setDecodeBudget(imgBudget);
 		this.dmaController.setChannelBudgets({
@@ -754,6 +784,8 @@ export class Runtime {
 		});
 		this.dmaController.tick();
 		this.imgDecController.tick();
+		this.geometryController.setWorkBudget(geoWork);
+		this.geometryController.tick();
 		this.vdp.advanceWork(vdpWork);
 		this.refreshVdpSubmitBusyStatus();
 		this.advanceVblankStep(cycles);
@@ -1020,6 +1052,7 @@ export class Runtime {
 		this.imgRate.resetCarry();
 		this.dmaIsoRate.resetCarry();
 		this.dmaBulkRate.resetCarry();
+		this.geoRate.resetCarry();
 		this.vdpRate.resetCarry();
 	}
 	private includeJsStackTraces = false;
@@ -1046,6 +1079,7 @@ export class Runtime {
 	private vblankClearOnIrqEnd = false;
 	private vdpStatus = 0;
 	private vdpWorkUnitsPerSec = 0;
+	private geoWorkUnitsPerSec = 0;
 	private _cpuHz: number;
 	private imgDecBytesPerSec = 0;
 	private dmaBytesPerSecIso = 0;
@@ -1053,6 +1087,7 @@ export class Runtime {
 	private readonly imgRate = new RateBudget();
 	private readonly dmaIsoRate = new RateBudget();
 	private readonly dmaBulkRate = new RateBudget();
+	private readonly geoRate = new RateBudget();
 	private readonly vdpRate = new RateBudget();
 	public lastTickSequence: number = 0;
 	public lastTickBudgetGranted: number = 0;
@@ -1140,6 +1175,7 @@ export class Runtime {
 	private readonly resourceUsageDetector: ResourceUsageDetector;
 	private editorViewOptionsSnapshot: EditorViewOptionsSnapshot = null;
 	public readonly dmaController: DmaController;
+	public readonly geometryController: GeometryController;
 	public readonly imgDecController: ImgDecController;
 	private engineCanonicalization: CanonicalizationType = null;
 	public cartCanonicalization: CanonicalizationType = null;
@@ -1477,10 +1513,14 @@ export class Runtime {
 			throw runtimeFault(`invalid skybox_face_size: ${skyboxFaceSize}.`);
 		}
 		const requiredAssetDataBytes = this.computeRequiredAssetDataBytes(params.assetSource, params.assetLayers);
-		const fixedRamBytes = IO_REGION_SIZE
+		const assetDataBaseOffset = IO_REGION_SIZE
 			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
 			+ stringHeapBytes
-			+ assetTableBytes
+			+ assetTableBytes;
+		const assetDataBasePadding = Runtime.alignUp(assetDataBaseOffset, IO_WORD_SIZE) - assetDataBaseOffset;
+		const fixedRamBytes = assetDataBaseOffset
+			+ assetDataBasePadding
+			+ DEFAULT_GEO_SCRATCH_SIZE
 			+ VDP_STREAM_BUFFER_SIZE;
 		const requiredRamBytes = fixedRamBytes + requiredAssetDataBytes;
 		const ramBytes = memorySpecs.ram_bytes === undefined
@@ -1495,7 +1535,7 @@ export class Runtime {
 			`[Runtime] memory footprint: ram=${ramBytes} bytes (${footprintMiB} MiB) `
 			+ `(io=${IO_REGION_SIZE}, string_handles=${stringHandleCount}, string_heap=${stringHeapBytes}, `
 			+ `asset_table=${assetTableBytes} (${assetTableInfo.entryCount} entries, ${assetTableInfo.stringBytes} string bytes), `
-			+ `asset_data=${assetDataBytes}, vdp_stream=${VDP_STREAM_BUFFER_SIZE}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes} (${frameBufferWidth}x${frameBufferHeight}), `
+			+ `asset_data=${assetDataBytes}, geo_scratch=${DEFAULT_GEO_SCRATCH_SIZE}, vdp_stream=${VDP_STREAM_BUFFER_SIZE}, vram_staging=${stagingBytes}, framebuffer=${frameBufferBytes} (${frameBufferWidth}x${frameBufferHeight}), `
 			+ `engine_atlas_slot=${engineAtlasSlotBytes}, atlas_slot=${atlasSlotBytes}x2=${atlasSlotBytes * 2}).`,
 		);
 		return {
@@ -1557,8 +1597,11 @@ export class Runtime {
 
 	private constructor(options: RuntimeOptions) {
 		Runtime._instance = this;
+		const initialVdpWorkUnits = options.vdpWorkUnitsPerSec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC;
+		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? initialVdpWorkUnits;
 		this.cycleBudgetPerFrame = options.cycleBudgetPerFrame;
-		this.vdpWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec);
+		this.vdpWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(initialVdpWorkUnits);
+		this.geoWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(initialGeoWorkUnits);
 		this.storageService = $.platform.storage;
 		this.storage = new RuntimeStorage(this.storageService, $.lua_sources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
@@ -1585,6 +1628,22 @@ export class Runtime {
 		this.memory.writeValue(IO_DMA_CTRL, 0);
 		this.memory.writeValue(IO_DMA_STATUS, 0);
 		this.memory.writeValue(IO_DMA_WRITTEN, 0);
+		this.memory.writeValue(IO_GEO_SRC0, 0);
+		this.memory.writeValue(IO_GEO_SRC1, 0);
+		this.memory.writeValue(IO_GEO_SRC2, 0);
+		this.memory.writeValue(IO_GEO_DST0, 0);
+		this.memory.writeValue(IO_GEO_DST1, 0);
+		this.memory.writeValue(IO_GEO_COUNT, 0);
+		this.memory.writeValue(IO_GEO_CMD, 0);
+		this.memory.writeValue(IO_GEO_CTRL, 0);
+		this.memory.writeValue(IO_GEO_STATUS, 0);
+		this.memory.writeValue(IO_GEO_PARAM0, 0);
+		this.memory.writeValue(IO_GEO_PARAM1, 0);
+		this.memory.writeValue(IO_GEO_STRIDE0, 0);
+		this.memory.writeValue(IO_GEO_STRIDE1, 0);
+		this.memory.writeValue(IO_GEO_STRIDE2, 0);
+		this.memory.writeValue(IO_GEO_PROCESSED, 0);
+		this.memory.writeValue(IO_GEO_FAULT, 0);
 		this.memory.writeValue(IO_IMG_SRC, 0);
 		this.memory.writeValue(IO_IMG_LEN, 0);
 		this.memory.writeValue(IO_IMG_DST, 0);
@@ -1608,6 +1667,7 @@ export class Runtime {
 			(src, byteLength) => this.sealVdpDmaTransfer(src, byteLength),
 		);
 		this.imgDecController = new ImgDecController(this.memory, this.dmaController, (mask) => this.raiseIrqFlags(mask));
+		this.geometryController = new GeometryController(this.memory, (mask) => this.raiseIrqFlags(mask));
 		this.vdp.attachImgDecController(this.imgDecController);
 		this.cpu = new CPU(this.memory, this.runtimeStringPool);
 		this.resourceUsageDetector = new ResourceUsageDetector(
@@ -1712,9 +1772,9 @@ export class Runtime {
 			this.luaChunkEnvironmentsByPath.clear();
 			this.luaChunkEnvironmentsByPath.clear();
 			this.luaGenericChunksExecuted.clear();
-				if (this.editor !== null) {
-					this.editor.clearRuntimeErrorOverlay();
-				}
+			if (this.editor !== null) {
+				this.editor.clearRuntimeErrorOverlay();
+			}
 			if (this.hasCompletedInitialBoot) { // Subsequent boot: reset the runtime state
 				await $.resetRuntime();
 				await $.refresh_audio_assets();
@@ -1771,7 +1831,7 @@ export class Runtime {
 	}
 
 	// Frame state is owned by the runtime: it is created per-frame, kept intact for debugger inspection on faults,
-		// and only cleared via finalize/abandon during explicit reboot/reset flows.
+	// and only cleared via finalize/abandon during explicit reboot/reset flows.
 	public beginFrameState(): FrameState {
 		if (this.currentFrameState) {
 			throw runtimeFault('attempted to begin a new frame while another frame is active.');
@@ -1908,6 +1968,12 @@ export class Runtime {
 				}
 				this.dmaController.tryStartIo();
 				this.syncVdpSubmitAttemptStatusFromDma(dst);
+			}
+			return;
+		}
+		if (addr === IO_GEO_CTRL) {
+			if ((value & (GEO_CTRL_START | GEO_CTRL_ABORT)) !== 0) {
+				this.geometryController.onCtrlWrite();
 			}
 			return;
 		}
@@ -2373,13 +2439,13 @@ export class Runtime {
 			} else {
 				this.memory.resetAssetMemory();
 			}
-				await this.vdp.registerImageAssets(assetSource);
-				this.registerAudioAssets(assetSource);
-				this.rebuildAssetMetaCaches(assetSource);
-				this.memory.finalizeAssetTable();
-				this.applyAssetHandlesToActiveLayers();
-				this.memory.markAllAssetsDirty();
-			} finally {
+			await this.vdp.registerImageAssets(assetSource);
+			this.registerAudioAssets(assetSource);
+			this.rebuildAssetMetaCaches(assetSource);
+			this.memory.finalizeAssetTable();
+			this.applyAssetHandlesToActiveLayers();
+			this.memory.markAllAssetsDirty();
+		} finally {
 			this.assetMemoryGate.end(token);
 		}
 	}

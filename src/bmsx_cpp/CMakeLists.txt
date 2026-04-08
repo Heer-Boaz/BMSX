@@ -135,6 +135,7 @@ add_library(bmsx_core STATIC
 	lua/syntax/lualexer.cpp
 	lua/syntax/luaparser.cpp
 	emulator/devices/dma_controller.cpp
+	emulator/devices/geometry_controller.cpp
 	emulator/devices/imgdec_controller.cpp
 	emulator/firmware_api.cpp
 	emulator/disassembler.cpp

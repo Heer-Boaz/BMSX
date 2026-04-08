@@ -197,10 +197,14 @@ MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const Mac
 	config.assetTableBytes = requiredAssetTableBytes;
 	const uint32_t stringHandleTableBytes = config.stringHandleCount * STRING_HANDLE_ENTRY_SIZE;
 	const uint32_t requiredAssetDataBytes = computeRequiredAssetDataBytes(engineAssets, assets);
-	const uint64_t fixedRamBytes = static_cast<uint64_t>(IO_REGION_SIZE)
+	const uint64_t assetDataBaseOffset = static_cast<uint64_t>(IO_REGION_SIZE)
 		+ static_cast<uint64_t>(stringHandleTableBytes)
 		+ static_cast<uint64_t>(config.stringHeapBytes)
-		+ static_cast<uint64_t>(config.assetTableBytes)
+		+ static_cast<uint64_t>(config.assetTableBytes);
+	const uint64_t assetDataBasePadding = alignUpU64(assetDataBaseOffset, static_cast<uint64_t>(IO_WORD_SIZE)) - assetDataBaseOffset;
+	const uint64_t fixedRamBytes = assetDataBaseOffset
+		+ assetDataBasePadding
+		+ static_cast<uint64_t>(DEFAULT_GEO_SCRATCH_SIZE)
 		+ static_cast<uint64_t>(VDP_STREAM_BUFFER_SIZE);
 	const uint64_t requiredRamBytes = fixedRamBytes + static_cast<uint64_t>(requiredAssetDataBytes);
 	if (requiredRamBytes > std::numeric_limits<uint32_t>::max()) {
@@ -231,6 +235,7 @@ MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const Mac
 		<< ", string_heap=" << config.stringHeapBytes
 		<< ", asset_table=" << config.assetTableBytes
 		<< ", asset_data=" << config.assetDataBytes
+		<< ", geo_scratch=" << DEFAULT_GEO_SCRATCH_SIZE
 		<< ", vdp_stream=" << VDP_STREAM_BUFFER_SIZE
 		<< ", vram_staging=" << config.stagingBytes
 		<< ", framebuffer=" << config.frameBufferBytes

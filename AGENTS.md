@@ -14,18 +14,19 @@
    Example:
    ```bash
    npm run build:bios -- --force
-   npm run build:game -- 2025 --force
+   npm run build:game -- pietous --force
    npm run build:platform:libretro-wsl
-   npm run run:libretro-host:wsl:sdl -- ./dist/2025.rom
+   npm run run:libretro-host:wsl:sdl -- ./dist/pietous.rom
    ```
 * To force-rebuild the headless platform, BIOS, and a game rom before running, use:
    ```bash
-   npm run headless:forcebuildallrun -- <gameromname> # Example: npm run headless:forcebuildallrun -- 2025
+   npm run headless:forcebuildallrun -- <gameromname> # Example: npm run headless:forcebuildallrun -- pietous
+	# N.B. `--debug` flag is implicit for headless mode and cli mode!
    ```
    This command does a forced debug rebuild of the headless platform, engine BIOS assets, and the specified rompack, then runs it in headless mode.
 * To run an already-built rompack in headless mode (without forcing rebuild), use:
    ```bash
-   npm run headless:game -- <gameromname> # WARNING: `<gameromname>` must be replaced with the folder name of the rompack (game) you want to test, e.g. `2025` (`2025` is a great test rom)! This is different from the rom name specified in the `rommanifest.json` file inside the `res` directory! The `rominspector` tool uses the rom name specified in the `rommanifest.json` file, so that is different from this!
+   npm run headless:game -- <gameromname> # WARNING: `<gameromname>` must be replaced with the folder name of the rompack (game) you want to test, e.g. `pietous` (`pietous` is a great test rom)! This is different from the rom name specified in the `rommanifest.json` file inside the `res` directory! The `rominspector` tool uses the rom name specified in the `rommanifest.json` file, so that is different from this!
        # N.B. `--debug` flag is implicit for headless mode and cli mode!
    ```
    This command runs a prebuilt rompack in headless mode (without a graphical interface). If you need a guaranteed fresh build first, use `headless:forcebuildallrun`.
@@ -223,26 +224,13 @@
 * Use `TaskGate` and `AssetBarrier` for async operations instead of rolling your own solutions.
 * Don't worry about indentation styles. I will take care of formatting the code using Prettier before committing.
 * `clamp` is a utility function available that you can find in the folder `/src/bmsx/util/`; use it instead of writing your own!
-* Scratch buffers are available in `/src/bmsx/util/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
 * Look at other utility functions available in `/src/bmsx/util/` before writing your own utility functions!
+* Scratch buffers are available in `/src/bmsx/util/scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
 * Don't use `require` in non-script code (e.g. `rombuilder.ts` and `rominspector.ts` can have `require`, but core engine files or game source files cannot).
 * In cart code, `engine` is forbidden. Do not call `engine.*` (for example: `engine.object(id)`). Use the cart-facing globals/helpers instead (such as `object(...)`, `service(...)`, `inst(...)`, `update(...)`, `reset(...)`, `add_space(...)`, `set_space(...)`, `get_space(...)`, etc.).
 * In cart code, avoid wasteful long identifier strings. Redundant prefixes in tags/events/effect IDs/timeline IDs (for example full cart/object namespaces repeated on every value) are forbidden when shorter local identifiers work. Treat string memory and string-compare CPU cost as a hard budget.
 * In cart code, creating local copies/aliases of global constants is forbidden (for example `local p = constants.physics` or `local foo = SOME_GLOBAL_CONST`). Read constants directly from their source table/global.
 * Ensure that registry persistent objects are not serialized.
-* Use the annotations provided in the codebase to maintain consistency, these include:
-    * `@attach_components`: Indicates that the decorated class should have `Component`s automatically attached.
-    * `@update_tagged_components`: Indicates that the decorated function should update all its components that are subscribed to one or more given tags.
-    * `@build_fsm`: Indicates that the decorated function should build a finite state machine (FSM) for the associated class. Note that, when using this decorator, the instances of the class will be automatically assigned the FSM, as long as no arguments are passed to the decorator.
-    * `@assign_fsm`: Indicates that the decorated class should be assigned an existing FSM with the given ID.
-    * `@onsave`: Indicates that the decorated function should be called when the object is saved.
-    * `@onload`: Indicates that the decorated function should be called when the object is loaded.
-    * `@insavegame`: Indicates that the decorated class is included in the serialized game state.
-    * `@excludefromsavegame`: Indicates that the decorated class is excluded from the serialized game state.
-    * `@excludepropfromsavegame`: Indicates that the decorated class-property is excluded from the serialized game state.
 * When introducing new features, consider how they can be serialized and deserialized as part of the game state. Also consider that many objects/properties should be *excluded* from serialization.
-* When working on the code file `console_cart_editor.ts`, ensure that the functionality you work on is moved into its own code file, to ensure that the `console_cart_editor.ts` file becomes smaller and more manageable.
-* Don't unnecessarily override methods.
 * **Performance**:
   - Consider the performance implications of generated code, especially in critical areas of the application, noting that the engine is supposed to perform well on lower-end hardware such as iPhone 10/11/12.
-  - Use scratch buffers and object pooling to minimize memory allocations and improve performance. There are several scratch buffers available in `src/bmsx/core/scratchbuffer.ts` that can be used for temporary data storage to avoid frequent allocations.

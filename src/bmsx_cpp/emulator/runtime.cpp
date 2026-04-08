@@ -332,11 +332,13 @@ Runtime::Runtime(const RuntimeOptions& options)
 			[this](uint32_t mask) { raiseIrqFlags(mask); },
 			[this](uint32_t src, size_t byteLength) { sealVdpDmaTransfer(src, byteLength); }
 		)
+	, m_geometryController(m_memory, [this](uint32_t mask) { raiseIrqFlags(mask); })
 	, m_imgDecController(m_memory, m_dmaController, [this](uint32_t mask) { raiseIrqFlags(mask); })
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
 	, m_cpuHz(options.cpuHz)
 	, m_vdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec)
+	, m_geoWorkUnitsPerSec(options.geoWorkUnitsPerSec)
 	, m_cycleBudgetPerFrame(options.cycleBudgetPerFrame)
 {
 	// Initialize I/O memory region
@@ -353,6 +355,22 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_memory.writeValue(IO_DMA_CTRL, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_STATUS, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_SRC0, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_SRC1, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_SRC2, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_DST0, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_DST1, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_COUNT, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_CMD, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_CTRL, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_STATUS, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_PARAM0, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_PARAM1, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_STRIDE0, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_STRIDE1, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_STRIDE2, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_PROCESSED, valueNumber(0.0));
+	m_memory.writeValue(IO_GEO_FAULT, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_LEN, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_DST, valueNumber(0.0));
@@ -361,6 +379,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_memory.writeValue(IO_IMG_STATUS, valueNumber(0.0));
 	m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(0.0));
 	m_dmaController.reset();
+	m_geometryController.reset();
 	m_imgDecController.reset();
 	m_vdp.attachImgDecController(m_imgDecController);
 	m_memory.writeValue(IO_VDP_PRIMARY_ATLAS_ID, valueNumber(static_cast<double>(VDP_ATLAS_ID_NONE)));
@@ -374,6 +393,7 @@ Runtime::Runtime(const RuntimeOptions& options)
 	m_memory.setIoWriteHandler(this);
 	setVblankCycles(options.vblankCycles);
 	setVdpWorkUnitsPerSec(options.vdpWorkUnitsPerSec);
+	setGeoWorkUnitsPerSec(options.geoWorkUnitsPerSec);
 	m_randomSeedValue = static_cast<uint32_t>(EngineCore::instance().clock()->now());
 	refreshMemoryMap();
 	m_cpu.setExternalRootMarker([this](GcHeap& heap) {
@@ -726,17 +746,20 @@ void Runtime::advanceHardware(int cycles) {
 			step = remaining < untilFrameEnd ? remaining : untilFrameEnd;
 		}
 		const i64 cycleCount = static_cast<i64>(step);
-		const uint32_t imgBudget = m_imgRate.calcUnitsForCycles(m_cpuHz, cycleCount);
-		const uint32_t isoBudget = m_dmaIsoRate.calcUnitsForCycles(m_cpuHz, cycleCount);
-		const uint32_t bulkBudget = m_dmaBulkRate.calcUnitsForCycles(m_cpuHz, cycleCount);
-		const uint32_t vdpWork = m_vdpRate.calcUnitsForCycles(m_cpuHz, cycleCount);
-		m_imgDecController.setDecodeBudget(imgBudget);
-		m_dmaController.setChannelBudgets(isoBudget, bulkBudget);
-		m_dmaController.tick();
-		m_imgDecController.tick();
-		m_vdp.advanceWork(vdpWork);
-		refreshVdpSubmitBusyStatus();
-		advanceVblank(step);
+			const uint32_t imgBudget = m_imgRate.calcUnitsForCycles(m_cpuHz, cycleCount);
+			const uint32_t isoBudget = m_dmaIsoRate.calcUnitsForCycles(m_cpuHz, cycleCount);
+			const uint32_t bulkBudget = m_dmaBulkRate.calcUnitsForCycles(m_cpuHz, cycleCount);
+			const uint32_t geoWork = m_geoRate.calcUnitsForCycles(m_cpuHz, cycleCount);
+			const uint32_t vdpWork = m_vdpRate.calcUnitsForCycles(m_cpuHz, cycleCount);
+			m_imgDecController.setDecodeBudget(imgBudget);
+			m_dmaController.setChannelBudgets(isoBudget, bulkBudget);
+			m_dmaController.tick();
+			m_imgDecController.tick();
+			m_geometryController.setWorkBudget(geoWork);
+			m_geometryController.tick();
+			m_vdp.advanceWork(vdpWork);
+			refreshVdpSubmitBusyStatus();
+			advanceVblank(step);
 		remaining -= step;
 	}
 }
@@ -943,6 +966,7 @@ void Runtime::resetTransferCarry() {
 	m_imgRate.resetCarry();
 	m_dmaIsoRate.resetCarry();
 	m_dmaBulkRate.resetCarry();
+	m_geoRate.resetCarry();
 	m_vdpRate.resetCarry();
 }
 
@@ -1152,6 +1176,12 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 		}
 		return;
 	}
+	if (addr == IO_GEO_CTRL) {
+		if ((static_cast<uint32_t>(asNumber(value)) & (GEO_CTRL_START | GEO_CTRL_ABORT)) != 0u) {
+			m_geometryController.onCtrlWrite();
+		}
+		return;
+	}
 	if (addr == IO_VDP_FIFO) {
 		if (m_dmaController.hasPendingVdpSubmit() || (!hasOpenDirectVdpFifoIngress() && !m_vdp.canAcceptSubmittedFrame())) {
 			noteRejectedVdpSubmitAttempt();
@@ -1249,6 +1279,7 @@ RuntimeState Runtime::captureCurrentState() const {
 void Runtime::applyState(const RuntimeState& state) {
 	// Restore memory
 	m_memory.loadIoSlots(state.ioMemory);
+	m_geometryController.normalizeAfterStateRestore();
 	m_vdp.syncRegisters();
 	m_cyclesIntoFrame = state.cyclesIntoFrame;
 	m_vblankPendingClear = state.vblankPendingClear;
@@ -1326,6 +1357,7 @@ void Runtime::applyActiveMachineTiming(i64 cpuHz) {
 	setCycleBudgetPerFrame(cycleBudget);
 	setVblankCycles(static_cast<int>(vblankCycles));
 	setVdpWorkUnitsPerSec(static_cast<int>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC)));
+	setGeoWorkUnitsPerSec(static_cast<int>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC)));
 }
 
 void Runtime::setVblankCycles(int cycles) {
@@ -1344,6 +1376,7 @@ void Runtime::resetHardwareState() {
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(0.0));
 	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
 	m_dmaController.reset();
+	m_geometryController.reset();
 	m_imgDecController.reset();
 	resetVblankState();
 	resetRenderBuffers();
@@ -1360,14 +1393,23 @@ void Runtime::setVdpWorkUnitsPerSec(int workUnitsPerSec) {
 	m_vdpWorkUnitsPerSec = workUnitsPerSec;
 }
 
+void Runtime::setGeoWorkUnitsPerSec(int workUnitsPerSec) {
+	if (workUnitsPerSec <= 0) {
+		throw runtimeFault("geo_work_units_per_sec must be greater than 0.");
+	}
+	m_geoWorkUnitsPerSec = workUnitsPerSec;
+}
+
 void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec) {
 	m_imgDecBytesPerSec = imgDecBytesPerSec;
 	m_dmaBytesPerSecIso = dmaBytesPerSecIso;
 	m_dmaBytesPerSecBulk = dmaBytesPerSecBulk;
 	setVdpWorkUnitsPerSec(vdpWorkUnitsPerSec);
+	setGeoWorkUnitsPerSec(vdpWorkUnitsPerSec);
 	m_imgRate.setUnitsPerSec(imgDecBytesPerSec);
 	m_dmaIsoRate.setUnitsPerSec(dmaBytesPerSecIso);
 	m_dmaBulkRate.setUnitsPerSec(dmaBytesPerSecBulk);
+	m_geoRate.setUnitsPerSec(m_geoWorkUnitsPerSec);
 	m_vdpRate.setUnitsPerSec(vdpWorkUnitsPerSec);
 	resetTransferCarry();
 }
