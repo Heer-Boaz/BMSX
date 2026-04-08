@@ -47,7 +47,7 @@ import { clearHardwareLighting } from '../render/shared/hardware_lighting';
 import type { CartEditor } from './ide/cart_editor';
 import { type FaultSnapshot } from './ide/render/render_error_overlay';
 import { type CpuFrameSnapshot } from './cpu';
-import { type LuaSemanticModel, type FileSemanticData } from './ide/semantic_model';
+import { type LuaSemanticModel, type FileSemanticData } from './ide/contrib/intellisense/semantic_model';
 import { registerApiBuiltins } from './lua_builtins';
 import { LuaFunctionRedirectCache } from './lua_handler_registry';
 import { LuaJsBridge, buildMarshalContext, extendMarshalContext, syncLuaAssetField, toNativeValue, toRuntimeValue } from './lua_js_bridge';

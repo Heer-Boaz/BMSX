@@ -9,7 +9,7 @@ import {
 	type LuaSemanticWorkspaceSnapshot,
 	type Ref,
 	type SymbolID,
-} from './ide/semantic_model';
+} from './ide/contrib/intellisense/semantic_model';
 import { buildModuleAliasesFromPaths } from './program_asset';
 import {
 	computeLuaDiagnosticsFromAnalysis,

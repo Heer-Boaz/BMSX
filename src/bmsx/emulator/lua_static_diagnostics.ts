@@ -23,7 +23,7 @@ import {
 	type FileSemanticData,
 	type FunctionSignatureInfo,
 	type LuaSemanticWorkspaceSnapshotInput,
-} from './ide/semantic_model';
+} from './ide/contrib/intellisense/semantic_model';
 import { getCachedLuaParse } from './ide/lua/lua_analysis_cache';
 
 const identityCanonicalizer = (value: string): string => value;
