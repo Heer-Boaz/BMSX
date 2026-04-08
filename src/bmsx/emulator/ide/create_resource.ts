@@ -1,44 +1,14 @@
 import * as constants from './constants';
 import { ide_state } from './ide_state';
-import { isKeyJustPressed, consumeIdeKey } from './input/key_input';
-import { applyInlineFieldEditing } from './inline_text_field';
 import { setFieldText } from './inline_text_field';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { resetBlink } from './render/render_caret';
-import { textFromLines } from './text/source_text';
 import { focusEditorFromSearch } from './editor_search';
 import { focusEditorFromLineJump } from './search_bars';
 import { refreshResourcePanelContents } from './editor_view';
 import { openLuaCodeTab } from './editor_tabs';
 import { createLuaResource, listResources } from '../workspace';
 import { extractErrorMessage } from '../../lua/luavalue';
-
-export function handleCreateResourceInput(): void {
-	if (isKeyJustPressed('Escape')) {
-		consumeIdeKey('Escape');
-		closeCreateResourcePrompt(true);
-		return;
-	}
-	if (!ide_state.createResourceWorking && (isKeyJustPressed('Enter') || isKeyJustPressed('NumpadEnter'))) {
-		consumeIdeKey('Enter');
-		consumeIdeKey('NumpadEnter');
-		void confirmCreateResourcePrompt();
-		return;
-	}
-	if (ide_state.createResourceWorking) {
-		return;
-	}
-	const textChanged = applyInlineFieldEditing(ide_state.createResourceField, {
-		allowSpace: true,
-		characterFilter: (value: string): boolean => isValidCreateResourceCharacter(value),
-		maxLength: constants.CREATE_RESOURCE_MAX_PATH_LENGTH,
-	});
-	if (textChanged) {
-		ide_state.createResourceError = null;
-		resetBlink();
-	}
-	ide_state.createResourcePath = textFromLines(ide_state.createResourceField.lines);
-}
 
 export function openCreateResourcePrompt(): void {
 	if (ide_state.createResourceWorking) {

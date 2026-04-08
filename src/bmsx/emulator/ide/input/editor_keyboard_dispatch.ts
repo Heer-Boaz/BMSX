@@ -1,6 +1,6 @@
 import { ide_state } from '../ide_state';
 import { isResourceViewActive } from '../editor_tabs';
-import { handleCreateResourceInput } from '../create_resource';
+import { handleCreateResourceInput } from './editor_create_resource_input';
 import { handleLineJumpInput, handleResourceSearchInput, handleSearchInput, handleSymbolSearchInput } from './editor_quick_input';
 import { handleResourceViewerInput } from './resource_viewer_input';
 import { handleEditorGlobalBindings } from './editor_global_bindings';
