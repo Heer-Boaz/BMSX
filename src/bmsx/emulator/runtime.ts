@@ -99,6 +99,7 @@ import {
 	IO_IMG_SRC,
 	IO_IMG_STATUS,
 	IO_IMG_WRITTEN,
+	IMG_CTRL_START,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
 	IO_PAYLOAD_ALLOC_ADDR,
@@ -213,51 +214,16 @@ type ProgramSource = 'engine' | 'cart';
 type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'audioevents';
 type RuntimeLayerLookup = Partial<Record<CartridgeLayerId, RuntimeAssetLayer>>;
 
+const TIMER_KIND_VBLANK_ENTER = 1;
+const TIMER_KIND_FRAME_END = 2;
+const TIMER_KIND_DEVICE_SERVICE = 3;
+const DEVICE_SERVICE_GEO = 1;
+const DEVICE_SERVICE_DMA = 2;
+const DEVICE_SERVICE_IMG = 3;
+const DEVICE_SERVICE_VDP = 4;
+const DEVICE_SERVICE_KIND_COUNT = DEVICE_SERVICE_VDP + 1;
+
 export var api: Api; // Initialized in Runtime constructor
-
-class RateBudget {
-	private bytesPerSec: bigint = 0n;
-	private carry: bigint = 0n;
-
-	public set(bytesPerSec: number): void {
-		this.bytesPerSec = BigInt(bytesPerSec);
-	}
-
-	public resetCarry(): void {
-		this.carry = 0n;
-	}
-
-	public calcBytesForCycles(cpuHz: number, cycles: number): number {
-		const hz = BigInt(cpuHz);
-		const cycleCount = BigInt(cycles);
-		const numerator = this.bytesPerSec * cycleCount + this.carry;
-		const out = numerator / hz;
-		this.carry = numerator % hz;
-		const max = 0xFFFF_FFFFn;
-		const clamped = out > max ? max : out;
-		return Number(clamped);
-	}
-
-	public cyclesUntilUnits(cpuHz: number, units: number): number {
-		if (units <= 0) {
-			return 0;
-		}
-		if (this.bytesPerSec <= 0n) {
-			return Number.MAX_SAFE_INTEGER;
-		}
-		const hz = BigInt(cpuHz);
-		const targetUnits = BigInt(units);
-		const needed = targetUnits * hz - this.carry;
-		if (needed <= 0n) {
-			return 1;
-		}
-		const cycles = (needed + this.bytesPerSec - 1n) / this.bytesPerSec;
-		const max = BigInt(Number.MAX_SAFE_INTEGER);
-		const clamped = cycles > max ? max : cycles;
-		const out = Number(clamped);
-		return out <= 0 ? 1 : out;
-	}
-}
 
 function buildRuntimeLayerLookup(layers: ReadonlyArray<RuntimeAssetLayer>): RuntimeLayerLookup {
 	const lookup: RuntimeLayerLookup = {};
@@ -369,7 +335,7 @@ export class Runtime {
 		}
 		this.cycleBudgetPerFrame = value;
 		runtimeLuaPipeline.registerGlobal(this, 'sys_max_cycles_per_frame', value);
-		this.resetTransferCarry();
+		this.refreshDeviceTimings(this.currentSchedulerNowCycles());
 		if (this.vblankCycles > 0) {
 			if (this.vblankCycles > this.cycleBudgetPerFrame) {
 				throw runtimeFault('vblank_cycles must be less than or equal to cycles_per_frame.');
@@ -630,14 +596,31 @@ export class Runtime {
 		const budgetBefore = state.cycleBudgetRemaining;
 		let remaining = budgetBefore;
 		let result = RunResult.Yielded;
+		this.runDueTimers();
 		while (remaining > 0) {
-			const sliceBudget = this.resolveCpuSliceBudget(remaining);
+			let sliceBudget = remaining;
+			const nextDeadline = this.nextTimerDeadline();
+			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
+				const deadlineBudget = nextDeadline - this.schedulerNowCycles;
+				if (deadlineBudget <= 0) {
+					this.runDueTimers();
+					continue;
+				}
+				if (deadlineBudget < sliceBudget) {
+					sliceBudget = deadlineBudget;
+				}
+			}
+			this.schedulerSliceActive = true;
+			this.activeSliceBaseCycle = this.schedulerNowCycles;
+			this.activeSliceBudgetCycles = sliceBudget;
+			this.activeSliceTargetCycle = this.schedulerNowCycles + sliceBudget;
 			result = this.cpu.run(sliceBudget);
+			this.schedulerSliceActive = false;
 			const sliceRemaining = this.cpu.instructionBudgetRemaining;
 			const consumed = sliceBudget - sliceRemaining;
 			if (consumed > 0) {
 				remaining -= consumed;
-				this.advanceHardware(consumed);
+				this.advanceTime(consumed);
 			}
 			if (this.waitingForVblank || result === RunResult.Halted) {
 				break;
@@ -671,31 +654,270 @@ export class Runtime {
 		return result;
 	}
 
-	private resolveCpuSliceBudget(remaining: number): number {
-		let sliceBudget = this.limitSliceDeadline(remaining, this.cyclesUntilNextVblankEdge());
-		if (this.vdp.requiresSchedulerService() || this.imgDecController.requiresService()) {
-			return 1;
-		}
-		sliceBudget = this.limitSliceDeadline(sliceBudget, this.resolveRateDeadline(this.geoRate, this.geometryController.hasPendingWork(), this.geometryController.getPendingWorkUnits()));
-		sliceBudget = this.limitSliceDeadline(sliceBudget, this.resolveRateDeadline(this.vdpRate, this.vdp.hasPendingRenderWork(), this.vdp.getPendingRenderWorkUnits()));
-		sliceBudget = this.limitSliceDeadline(sliceBudget, this.resolveRateDeadline(this.imgRate, this.imgDecController.hasPendingDecodeWork(), this.imgDecController.getPendingDecodeBytes()));
-		sliceBudget = this.limitSliceDeadline(sliceBudget, this.resolveRateDeadline(this.dmaIsoRate, this.dmaController.hasPendingIsoTransfer(), this.dmaController.getPendingIsoBytes()));
-		sliceBudget = this.limitSliceDeadline(sliceBudget, this.resolveRateDeadline(this.dmaBulkRate, this.dmaController.hasPendingBulkTransfer(), this.dmaController.getPendingBulkBytes()));
-		return sliceBudget <= 0 ? 1 : sliceBudget;
+	private refreshDeviceTimings(nowCycles: number): void {
+		this.dmaController.setTiming(this._cpuHz, this.dmaBytesPerSecIso, this.dmaBytesPerSecBulk, nowCycles);
+		this.imgDecController.setTiming(this._cpuHz, this.imgDecBytesPerSec, nowCycles);
+		this.geometryController.setTiming(this._cpuHz, this.geoWorkUnitsPerSec, nowCycles);
+		this.vdp.setTiming(this._cpuHz, this.vdpWorkUnitsPerSec, nowCycles);
 	}
 
-	private resolveRateDeadline(rate: RateBudget, pending: boolean, units: number): number {
-		if (!pending || units <= 0) {
-			return 0;
+	private advanceTime(cycles: number): void {
+		if (cycles <= 0) {
+			return;
 		}
-		return rate.cyclesUntilUnits(this._cpuHz, units);
+		const nextNow = this.schedulerNowCycles + cycles;
+		this.dmaController.accrueCycles(cycles, nextNow);
+		this.imgDecController.accrueCycles(cycles, nextNow);
+		this.geometryController.accrueCycles(cycles, nextNow);
+		this.vdp.accrueCycles(cycles, nextNow);
+		this.schedulerNowCycles = nextNow;
+		this.runDueTimers();
+		this.refreshVdpSubmitBusyStatus();
 	}
 
-	private limitSliceDeadline(current: number, candidate: number): number {
-		if (candidate <= 0 || candidate >= current) {
-			return current;
+	private currentSchedulerNowCycles(): number {
+		if (!this.schedulerSliceActive) {
+			return this.schedulerNowCycles;
 		}
-		return candidate;
+		const consumed = this.activeSliceBudgetCycles - this.cpu.instructionBudgetRemaining;
+		return this.activeSliceBaseCycle + consumed;
+	}
+
+	private getCyclesIntoFrame(): number {
+		return this.schedulerNowCycles - this.frameStartCycle;
+	}
+
+	private resetSchedulerState(): void {
+		this.clearTimerHeap();
+		this.schedulerNowCycles = 0;
+		this.frameStartCycle = 0;
+		this.schedulerSliceActive = false;
+		this.activeSliceBaseCycle = 0;
+		this.activeSliceBudgetCycles = 0;
+		this.activeSliceTargetCycle = 0;
+		this.vblankEnterTimerGeneration = 0;
+		this.frameEndTimerGeneration = 0;
+		this.deviceServiceTimerGeneration.fill(0);
+	}
+
+	private clearTimerHeap(): void {
+		this.timerCount = 0;
+		this.timerDeadlines.length = 0;
+		this.timerKinds.length = 0;
+		this.timerPayloads.length = 0;
+		this.timerGenerations.length = 0;
+	}
+
+	private nextTimerGeneration(value: number): number {
+		const next = (value + 1) >>> 0;
+		return next === 0 ? 1 : next;
+	}
+
+	private pushTimer(deadline: number, kind: number, payload: number, generation: number): void {
+		let index = this.timerCount;
+		this.timerCount += 1;
+		this.timerDeadlines[index] = deadline;
+		this.timerKinds[index] = kind;
+		this.timerPayloads[index] = payload;
+		this.timerGenerations[index] = generation;
+		while (index > 0) {
+			const parent = (index - 1) >> 1;
+			if (this.timerDeadlines[parent]! <= deadline) {
+				break;
+			}
+			this.timerDeadlines[index] = this.timerDeadlines[parent]!;
+			this.timerKinds[index] = this.timerKinds[parent]!;
+			this.timerPayloads[index] = this.timerPayloads[parent]!;
+			this.timerGenerations[index] = this.timerGenerations[parent]!;
+			index = parent;
+		}
+		this.timerDeadlines[index] = deadline;
+		this.timerKinds[index] = kind;
+		this.timerPayloads[index] = payload;
+		this.timerGenerations[index] = generation;
+	}
+
+	private removeTopTimer(): void {
+		const lastIndex = this.timerCount - 1;
+		if (lastIndex < 0) {
+			return;
+		}
+		const deadline = this.timerDeadlines[lastIndex]!;
+		const kind = this.timerKinds[lastIndex]!;
+		const payload = this.timerPayloads[lastIndex]!;
+		const generation = this.timerGenerations[lastIndex]!;
+		this.timerCount = lastIndex;
+		this.timerDeadlines.length = lastIndex;
+		this.timerKinds.length = lastIndex;
+		this.timerPayloads.length = lastIndex;
+		this.timerGenerations.length = lastIndex;
+		if (lastIndex === 0) {
+			return;
+		}
+		let index = 0;
+		const half = lastIndex >> 1;
+		while (index < half) {
+			let child = (index << 1) + 1;
+			if (child + 1 < lastIndex && this.timerDeadlines[child + 1]! < this.timerDeadlines[child]!) {
+				child += 1;
+			}
+			if (this.timerDeadlines[child]! >= deadline) {
+				break;
+			}
+			this.timerDeadlines[index] = this.timerDeadlines[child]!;
+			this.timerKinds[index] = this.timerKinds[child]!;
+			this.timerPayloads[index] = this.timerPayloads[child]!;
+			this.timerGenerations[index] = this.timerGenerations[child]!;
+			index = child;
+		}
+		this.timerDeadlines[index] = deadline;
+		this.timerKinds[index] = kind;
+		this.timerPayloads[index] = payload;
+		this.timerGenerations[index] = generation;
+	}
+
+	private isTimerCurrent(kind: number, payload: number, generation: number): boolean {
+		switch (kind) {
+			case TIMER_KIND_VBLANK_ENTER:
+				return generation === this.vblankEnterTimerGeneration;
+			case TIMER_KIND_FRAME_END:
+				return generation === this.frameEndTimerGeneration;
+			case TIMER_KIND_DEVICE_SERVICE:
+				return generation === this.deviceServiceTimerGeneration[payload];
+			default:
+				throw runtimeFault(`unknown timer kind ${kind}.`);
+		}
+	}
+
+	private discardStaleTopTimers(): void {
+		while (this.timerCount > 0) {
+			const kind = this.timerKinds[0]!;
+			const payload = this.timerPayloads[0]!;
+			const generation = this.timerGenerations[0]!;
+			if (this.isTimerCurrent(kind, payload, generation)) {
+				return;
+			}
+			this.removeTopTimer();
+		}
+	}
+
+	private nextTimerDeadline(): number {
+		this.discardStaleTopTimers();
+		if (this.timerCount === 0) {
+			return Number.MAX_SAFE_INTEGER;
+		}
+		return this.timerDeadlines[0]!;
+	}
+
+	private runDueTimers(): void {
+		this.discardStaleTopTimers();
+		while (this.timerCount > 0 && this.timerDeadlines[0]! <= this.schedulerNowCycles) {
+			const kind = this.timerKinds[0]!;
+			const payload = this.timerPayloads[0]!;
+			this.removeTopTimer();
+			this.dispatchTimer(kind, payload);
+			this.discardStaleTopTimers();
+		}
+	}
+
+	private dispatchTimer(kind: number, payload: number): void {
+		switch (kind) {
+			case TIMER_KIND_VBLANK_ENTER:
+				this.handleVblankEnterTimer();
+				return;
+			case TIMER_KIND_FRAME_END:
+				this.handleFrameEndTimer();
+				return;
+			case TIMER_KIND_DEVICE_SERVICE:
+				this.runDeviceService(payload);
+				return;
+			default:
+				throw runtimeFault(`unknown timer kind ${kind}.`);
+		}
+	}
+
+	private scheduleVblankEnterTimer(deadlineCycles: number): void {
+		const generation = this.nextTimerGeneration(this.vblankEnterTimerGeneration);
+		this.vblankEnterTimerGeneration = generation;
+		this.pushTimer(deadlineCycles, TIMER_KIND_VBLANK_ENTER, 0, generation);
+		this.requestYieldForEarlierDeadline(deadlineCycles);
+	}
+
+	private scheduleFrameEndTimer(deadlineCycles: number): void {
+		const generation = this.nextTimerGeneration(this.frameEndTimerGeneration);
+		this.frameEndTimerGeneration = generation;
+		this.pushTimer(deadlineCycles, TIMER_KIND_FRAME_END, 0, generation);
+		this.requestYieldForEarlierDeadline(deadlineCycles);
+	}
+
+	private scheduleCurrentFrameTimers(): void {
+		this.scheduleFrameEndTimer(this.frameStartCycle + this.cycleBudgetPerFrame);
+		if (this.vblankStartCycle > 0 && this.getCyclesIntoFrame() < this.vblankStartCycle) {
+			this.scheduleVblankEnterTimer(this.frameStartCycle + this.vblankStartCycle);
+		}
+	}
+
+	private handleVblankEnterTimer(): void {
+		if (!this.vblankActive) {
+			this.enterVblank();
+		}
+	}
+
+	private handleFrameEndTimer(): void {
+		if (this.vblankStartCycle === 0) {
+			this.frameStartCycle = this.schedulerNowCycles;
+			this.scheduleCurrentFrameTimers();
+			this.enterVblank();
+			return;
+		}
+		if (this.vblankActive) {
+			this.vblankPendingClear = true;
+		}
+		this.frameStartCycle = this.schedulerNowCycles;
+		this.scheduleCurrentFrameTimers();
+	}
+
+	private scheduleDeviceService(deviceKind: number, deadlineCycles: number): void {
+		const generation = this.nextTimerGeneration(this.deviceServiceTimerGeneration[deviceKind]!);
+		this.deviceServiceTimerGeneration[deviceKind] = generation;
+		this.pushTimer(deadlineCycles, TIMER_KIND_DEVICE_SERVICE, deviceKind, generation);
+		this.requestYieldForEarlierDeadline(deadlineCycles);
+	}
+
+	private cancelDeviceService(deviceKind: number): void {
+		this.deviceServiceTimerGeneration[deviceKind] = this.nextTimerGeneration(this.deviceServiceTimerGeneration[deviceKind]!);
+	}
+
+	private requestYieldForEarlierDeadline(deadlineCycles: number): void {
+		if (!this.schedulerSliceActive) {
+			return;
+		}
+		if (deadlineCycles > this.activeSliceTargetCycle) {
+			return;
+		}
+		this.cpu.requestYield();
+	}
+
+	private runDeviceService(deviceKind: number): void {
+		const nowCycles = this.schedulerNowCycles;
+		switch (deviceKind) {
+			case DEVICE_SERVICE_GEO:
+				this.geometryController.onService(nowCycles);
+				return;
+			case DEVICE_SERVICE_DMA:
+				this.dmaController.onService(nowCycles);
+				this.refreshVdpSubmitBusyStatus();
+				return;
+			case DEVICE_SERVICE_IMG:
+				this.imgDecController.onService(nowCycles);
+				return;
+			case DEVICE_SERVICE_VDP:
+				this.vdp.onService(nowCycles);
+				this.refreshVdpSubmitBusyStatus();
+				return;
+			default:
+				throw runtimeFault(`unknown device service kind ${deviceKind}.`);
+		}
 	}
 
 	public readonly storage: RuntimeStorage;
@@ -775,7 +997,7 @@ export class Runtime {
 	}
 	public setCpuHz(value: number): void {
 		this._cpuHz = value;
-		this.resetTransferCarry();
+		this.refreshDeviceTimings(this.currentSchedulerNowCycles());
 	}
 	public applyActiveMachineTiming(cpuHz: number): void {
 		const perfSpecs = getMachinePerfSpecs($.machine_manifest);
@@ -791,10 +1013,12 @@ export class Runtime {
 
 	public setVdpWorkUnitsPerSec(value: number): void {
 		this.vdpWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(value);
+		this.vdp.setTiming(this._cpuHz, this.vdpWorkUnitsPerSec, this.currentSchedulerNowCycles());
 	}
 
 	public setGeoWorkUnitsPerSec(value: number): void {
 		this.geoWorkUnitsPerSec = Runtime.resolveGeoWorkUnitsPerSec(value);
+		this.geometryController.setTiming(this._cpuHz, this.geoWorkUnitsPerSec, this.currentSchedulerNowCycles());
 	}
 
 	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number; work_units_per_sec: number; geo_work_units_per_sec: number; }): void {
@@ -803,79 +1027,7 @@ export class Runtime {
 		this.dmaBytesPerSecBulk = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
 		this.setVdpWorkUnitsPerSec(specs.work_units_per_sec);
 		this.setGeoWorkUnitsPerSec(specs.geo_work_units_per_sec);
-		this.imgRate.set(this.imgDecBytesPerSec);
-		this.dmaIsoRate.set(this.dmaBytesPerSecIso);
-		this.dmaBulkRate.set(this.dmaBytesPerSecBulk);
-		this.vdpRate.set(this.vdpWorkUnitsPerSec);
-		this.geoRate.set(this.geoWorkUnitsPerSec);
-		this.resetTransferCarry();
-	}
-
-	private advanceHardware(cycles: number): void {
-		let remaining = cycles;
-		while (remaining > 0) {
-			const step = this.resolveHardwareStepCycles(remaining);
-			this.advanceHardwareStep(step);
-			remaining -= step;
-		}
-	}
-
-	private resolveHardwareStepCycles(remaining: number): number {
-		if (!this.vblankActive && this.cyclesIntoFrame < this.vblankStartCycle) {
-			const untilVblank = this.vblankStartCycle - this.cyclesIntoFrame;
-			return remaining < untilVblank ? remaining : untilVblank;
-		}
-		const untilFrameEnd = this.cycleBudgetPerFrame - this.cyclesIntoFrame;
-		return remaining < untilFrameEnd ? remaining : untilFrameEnd;
-	}
-
-	private advanceHardwareStep(cycles: number): void {
-		if (cycles <= 0) {
-			return;
-		}
-		const imgBudget = this.imgRate.calcBytesForCycles(this._cpuHz, cycles);
-		const isoBudget = this.dmaIsoRate.calcBytesForCycles(this._cpuHz, cycles);
-		const bulkBudget = this.dmaBulkRate.calcBytesForCycles(this._cpuHz, cycles);
-		const geoWork = this.geoRate.calcBytesForCycles(this._cpuHz, cycles);
-		const vdpWork = this.vdpRate.calcBytesForCycles(this._cpuHz, cycles);
-		this.imgDecController.setDecodeBudget(imgBudget);
-		this.dmaController.setChannelBudgets({
-			iso: isoBudget,
-			bulk: bulkBudget,
-		});
-		this.dmaController.tick();
-		this.imgDecController.tick();
-		this.geometryController.setWorkBudget(geoWork);
-		this.geometryController.tick();
-		this.vdp.advanceWork(vdpWork);
-		this.refreshVdpSubmitBusyStatus();
-		this.advanceVblankStep(cycles);
-	}
-
-	private advanceVblankStep(cycles: number): void {
-		const previous = this.cyclesIntoFrame;
-		this.cyclesIntoFrame += cycles;
-		if (!this.vblankActive && previous < this.vblankStartCycle && this.cyclesIntoFrame >= this.vblankStartCycle) {
-			this.enterVblank();
-		}
-		if (this.cyclesIntoFrame >= this.cycleBudgetPerFrame) {
-			this.cyclesIntoFrame = 0;
-			if (this.vblankStartCycle === 0) {
-				this.raiseIrqFlags(IRQ_VBLANK);
-			} else if (this.vblankActive) {
-				this.vblankPendingClear = true;
-			}
-		}
-	}
-
-	private cyclesUntilNextVblankEdge(): number {
-		if (this.vblankStartCycle === 0) {
-			return this.cycleBudgetPerFrame - this.cyclesIntoFrame;
-		}
-		if (!this.vblankActive && this.cyclesIntoFrame < this.vblankStartCycle) {
-			return this.vblankStartCycle - this.cyclesIntoFrame;
-		}
-		return (this.cycleBudgetPerFrame - this.cyclesIntoFrame) + this.vblankStartCycle;
+		this.refreshDeviceTimings(this.currentSchedulerNowCycles());
 	}
 
 	public setVblankCycles(cycles: number): void {
@@ -891,7 +1043,7 @@ export class Runtime {
 	}
 
 	public resetVblankState(): void {
-		this.cyclesIntoFrame = 0;
+		this.resetSchedulerState();
 		this.vblankActive = false;
 		this.vblankPendingClear = false;
 		this.vblankClearOnIrqEnd = false;
@@ -902,6 +1054,8 @@ export class Runtime {
 		if (this.vblankStartCycle === 0) {
 			this.setVblankStatus(true);
 		}
+		this.scheduleCurrentFrameTimers();
+		this.refreshDeviceTimings(this.schedulerNowCycles);
 	}
 
 	public resetRenderBuffers(): void {
@@ -1094,27 +1248,26 @@ export class Runtime {
 
 	public captureVblankState(): { cyclesIntoFrame: number; vblankPendingClear: boolean; vblankClearOnIrqEnd: boolean } {
 		return {
-			cyclesIntoFrame: this.cyclesIntoFrame,
+			cyclesIntoFrame: this.getCyclesIntoFrame(),
 			vblankPendingClear: this.vblankPendingClear,
 			vblankClearOnIrqEnd: this.vblankClearOnIrqEnd,
 		};
 	}
 
 	public restoreVblankState(state: { cyclesIntoFrame: number; vblankPendingClear: boolean; vblankClearOnIrqEnd: boolean }): void {
-		this.cyclesIntoFrame = state.cyclesIntoFrame;
+		this.resetSchedulerState();
+		this.schedulerNowCycles = state.cyclesIntoFrame;
+		this.frameStartCycle = 0;
 		this.vblankPendingClear = state.vblankPendingClear;
 		this.vblankClearOnIrqEnd = state.vblankClearOnIrqEnd;
+		this.vblankSequence = 0;
+		this.lastCompletedVblankSequence = 0;
 		const vblankActive = (this.vblankStartCycle === 0)
 			|| this.vblankPendingClear
-			|| (this.cyclesIntoFrame >= this.vblankStartCycle);
+			|| (this.getCyclesIntoFrame() >= this.vblankStartCycle);
 		this.setVblankStatus(vblankActive);
-	}
-	private resetTransferCarry(): void {
-		this.imgRate.resetCarry();
-		this.dmaIsoRate.resetCarry();
-		this.dmaBulkRate.resetCarry();
-		this.geoRate.resetCarry();
-		this.vdpRate.resetCarry();
+		this.scheduleCurrentFrameTimers();
+		this.refreshDeviceTimings(this.schedulerNowCycles);
 	}
 	private includeJsStackTraces = false;
 	public realtimeCompileOptLevel: 0 | 1 | 2 | 3 = 3;
@@ -1134,7 +1287,6 @@ export class Runtime {
 	public cycleBudgetPerFrame: number;
 	private vblankCycles = 0;
 	private vblankStartCycle = 0;
-	private cyclesIntoFrame = 0;
 	private vblankActive = false;
 	private vblankPendingClear = false;
 	private vblankClearOnIrqEnd = false;
@@ -1145,11 +1297,20 @@ export class Runtime {
 	private imgDecBytesPerSec = 0;
 	private dmaBytesPerSecIso = 0;
 	private dmaBytesPerSecBulk = 0;
-	private readonly imgRate = new RateBudget();
-	private readonly dmaIsoRate = new RateBudget();
-	private readonly dmaBulkRate = new RateBudget();
-	private readonly geoRate = new RateBudget();
-	private readonly vdpRate = new RateBudget();
+	private schedulerNowCycles = 0;
+	private frameStartCycle = 0;
+	private schedulerSliceActive = false;
+	private activeSliceBaseCycle = 0;
+	private activeSliceBudgetCycles = 0;
+	private activeSliceTargetCycle = 0;
+	private readonly timerDeadlines: number[] = [];
+	private readonly timerKinds: number[] = [];
+	private readonly timerPayloads: number[] = [];
+	private readonly timerGenerations: number[] = [];
+	private timerCount = 0;
+	private vblankEnterTimerGeneration = 0;
+	private frameEndTimerGeneration = 0;
+	private readonly deviceServiceTimerGeneration = new Uint32Array(DEVICE_SERVICE_KIND_COUNT);
 	public lastTickSequence: number = 0;
 	public lastTickBudgetGranted: number = 0;
 	public lastTickCpuBudgetGranted: number = 0;
@@ -1677,6 +1838,9 @@ export class Runtime {
 		this.vdp = new VDP(
 			this.memory,
 			createVdpBlitterExecutor($.view.backend),
+			() => this.currentSchedulerNowCycles(),
+			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_VDP, deadlineCycles),
+			() => this.cancelDeviceService(DEVICE_SERVICE_VDP),
 		);
 		this.stringHandles = new StringHandleTable(this.memory);
 		this.runtimeStringPool = new StringPool(this.stringHandles);
@@ -1723,14 +1887,28 @@ export class Runtime {
 		this.memory.writeValue(IO_VDP_STATUS, 0);
 		this.vdp.initializeRegisters();
 		this.memory.setIoWriteHandler(this as IoWriteHandler);
-		this.setVblankCycles(options.vblankCycles);
 		this.dmaController = new DmaController(
 			this.memory,
 			(mask) => this.raiseIrqFlags(mask),
 			(src, byteLength) => this.sealVdpDmaTransfer(src, byteLength),
+			() => this.currentSchedulerNowCycles(),
+			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_DMA, deadlineCycles),
+			() => this.cancelDeviceService(DEVICE_SERVICE_DMA),
 		);
-		this.imgDecController = new ImgDecController(this.memory, this.dmaController, (mask) => this.raiseIrqFlags(mask));
-		this.geometryController = new GeometryController(this.memory, (mask) => this.raiseIrqFlags(mask));
+		this.imgDecController = new ImgDecController(
+			this.memory,
+			this.dmaController,
+			(mask) => this.raiseIrqFlags(mask),
+			() => this.currentSchedulerNowCycles(),
+			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_IMG, deadlineCycles),
+			() => this.cancelDeviceService(DEVICE_SERVICE_IMG),
+		);
+		this.geometryController = new GeometryController(
+			this.memory,
+			(mask) => this.raiseIrqFlags(mask),
+			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_GEO, deadlineCycles),
+			() => this.cancelDeviceService(DEVICE_SERVICE_GEO),
+		);
 		this.vdp.attachImgDecController(this.imgDecController);
 		this.cpu = new CPU(this.memory, this.runtimeStringPool);
 		this.resourceUsageDetector = new ResourceUsageDetector(
@@ -1756,6 +1934,7 @@ export class Runtime {
 			},
 		});
 		this.setCpuHz(options.cpuHz);
+		this.setVblankCycles(options.vblankCycles);
 		this.randomSeedValue = $.platform.clock.now();
 
 		api = new Api({
@@ -2034,9 +2213,15 @@ export class Runtime {
 			}
 			return;
 		}
+		if (addr === IO_IMG_CTRL) {
+			if ((value & IMG_CTRL_START) !== 0) {
+				this.imgDecController.onCtrlWrite(this.currentSchedulerNowCycles());
+			}
+			return;
+		}
 		if (addr === IO_GEO_CTRL) {
 			if ((value & (GEO_CTRL_START | GEO_CTRL_ABORT)) !== 0) {
-				this.geometryController.onCtrlWrite();
+				this.geometryController.onCtrlWrite(this.currentSchedulerNowCycles());
 			}
 			return;
 		}
@@ -2136,7 +2321,7 @@ export class Runtime {
 		}
 		state.cycleBudgetRemaining = remaining;
 		if (consumed > 0) {
-			this.advanceHardware(consumed);
+			this.advanceTime(consumed);
 		}
 	}
 
@@ -2151,6 +2336,7 @@ export class Runtime {
 
 	private runWaitForVblank(state: FrameState): boolean {
 		this.processIrqAck();
+		this.runDueTimers();
 		const targetSequence = this.waitForVblankTargetSequence;
 		if (targetSequence === 0) {
 			this.clearWaitForVblank();
@@ -2163,11 +2349,17 @@ export class Runtime {
 		}
 		if (this.vblankSequence < targetSequence) {
 			if (state.cycleBudgetRemaining > 0) {
-				const cyclesToTarget = this.cyclesUntilNextVblankEdge();
+				const cyclesToTarget = this.nextTimerDeadline() - this.schedulerNowCycles;
+				if (cyclesToTarget <= 0) {
+					this.runDueTimers();
+					this.processIrqAck();
+				}
+				else {
 				const idleCycles = cyclesToTarget < state.cycleBudgetRemaining ? cyclesToTarget : state.cycleBudgetRemaining;
 				state.cycleBudgetRemaining -= idleCycles;
-				this.advanceHardware(idleCycles);
+				this.advanceTime(idleCycles);
 				this.processIrqAck();
+				}
 			}
 			if (this.vblankSequence < targetSequence) {
 				return true;

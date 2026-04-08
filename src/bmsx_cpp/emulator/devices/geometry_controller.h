@@ -10,15 +10,21 @@ namespace bmsx {
 
 class GeometryController {
 public:
-	GeometryController(Memory& memory, std::function<void(uint32_t)> raiseIrq);
+	GeometryController(
+		Memory& memory,
+		std::function<void(uint32_t)> raiseIrq,
+		std::function<void(int64_t deadlineCycles)> scheduleService,
+		std::function<void()> cancelService
+	);
 
-	void setWorkBudget(uint32_t workUnits);
+	void setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles);
+	void accrueCycles(int cycles, int64_t nowCycles);
 	bool hasPendingWork() const;
-	uint32_t pendingWorkUnits() const;
-	void tick();
+	uint32_t getPendingWorkUnits() const;
+	void onService(int64_t nowCycles);
 	void reset();
 	void normalizeAfterStateRestore();
-	void onCtrlWrite();
+	void onCtrlWrite(int64_t nowCycles);
 
 private:
 	struct GeoJob {
@@ -37,10 +43,12 @@ private:
 		uint32_t processed = 0;
 	};
 
-		void tryStart();
-		bool validateXform2Submission(const GeoJob& job);
-		bool validateSat2Submission(const GeoJob& job);
-		void processXform2Record(GeoJob& job);
+	void tryStart(int64_t nowCycles);
+	void maybeScheduleNextService(int64_t nowCycles);
+	int64_t cyclesUntilWorkUnits(uint32_t targetUnits) const;
+	bool validateXform2Submission(const GeoJob& job);
+	bool validateSat2Submission(const GeoJob& job);
+	void processXform2Record(GeoJob& job);
 		void processSat2Record(GeoJob& job);
 		void completeRecord(GeoJob& job);
 		void finishSuccess(uint32_t processed);
@@ -55,10 +63,15 @@ private:
 		static int32_t roundToI32Clamped(double value);
 		static int32_t transformFixed16(int32_t m0, int32_t m1, int32_t tx, int32_t x, int32_t y);
 
-	uint32_t m_workBudget = 0;
+	int64_t m_cpuHz = 1;
+	int64_t m_workUnitsPerSec = 1;
+	int64_t m_workCarry = 0;
+	uint32_t m_availableWorkUnits = 0;
 	std::optional<GeoJob> m_activeJob;
 	Memory& m_memory;
 	std::function<void(uint32_t)> m_raiseIrq;
+	std::function<void(int64_t deadlineCycles)> m_scheduleService;
+	std::function<void()> m_cancelService;
 };
 
 } // namespace bmsx

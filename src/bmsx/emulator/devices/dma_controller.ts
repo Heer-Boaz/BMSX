@@ -42,6 +42,7 @@ import { Memory } from '../memory';
 type DmaChannelId = 0 | 1;
 const DMA_CH_ISO: DmaChannelId = 0;
 const DMA_CH_BULK: DmaChannelId = 1;
+const DMA_SERVICE_BATCH_BYTES = 64;
 
 type DmaJobBase = {
 	kind: 'io' | 'image';
@@ -83,6 +84,11 @@ export class DmaController {
 		{ budget: 0, queue: [], active: null },
 		{ budget: 0, queue: [], active: null },
 	];
+	private cpuHz: bigint = 1n;
+	private isoBytesPerSec: bigint = 1n;
+	private bulkBytesPerSec: bigint = 1n;
+	private isoCarry: bigint = 0n;
+	private bulkCarry: bigint = 0n;
 	private ioWrittenValue = 0;
 	private ioWrittenDirty = false;
 	private imgWrittenValue = 0;
@@ -92,7 +98,30 @@ export class DmaController {
 		private readonly memory: Memory,
 		private readonly raiseIrq: (mask: number) => void,
 		private readonly sealVdpFifoDma: (src: number, length: number) => void,
+		private readonly getNowCycles: () => number,
+		private readonly scheduleService: (deadlineCycles: number) => void,
+		private readonly cancelService: () => void,
 	) {}
+
+	public setTiming(cpuHz: number, isoBytesPerSec: number, bulkBytesPerSec: number, nowCycles: number): void {
+		this.cpuHz = BigInt(cpuHz);
+		this.isoBytesPerSec = BigInt(isoBytesPerSec);
+		this.bulkBytesPerSec = BigInt(bulkBytesPerSec);
+		this.isoCarry = 0n;
+		this.bulkCarry = 0n;
+		this.channels[DMA_CH_ISO].budget = 0;
+		this.channels[DMA_CH_BULK].budget = 0;
+		this.maybeScheduleNextService(nowCycles);
+	}
+
+	public accrueCycles(cycles: number, nowCycles: number): void {
+		if (cycles <= 0) {
+			return;
+		}
+		this.accrueChannel(DMA_CH_ISO, this.isoBytesPerSec, 'isoCarry', cycles);
+		this.accrueChannel(DMA_CH_BULK, this.bulkBytesPerSec, 'bulkCarry', cycles);
+		this.maybeScheduleNextService(nowCycles);
+	}
 
 	public hasPendingVdpSubmit(): boolean {
 		for (let channelIndex = 0; channelIndex < this.channels.length; channelIndex += 1) {
@@ -128,32 +157,38 @@ export class DmaController {
 		return this.getPendingBytesForChannel(DMA_CH_BULK);
 	}
 
-	public setChannelBudgets(params: { iso: number; bulk: number }): void {
-		this.channels[DMA_CH_ISO].budget = params.iso;
-		this.channels[DMA_CH_BULK].budget = params.bulk;
-	}
-
 	private getPendingBytesForChannel(channel: DmaChannelId): number {
 		const state = this.channels[channel];
-		const job = state.active ?? state.queue[0] ?? null;
-		if (job === null) {
-			return 0;
+		let pendingBytes = 0;
+		const activeJob = state.active;
+		if (activeJob !== null) {
+			pendingBytes += activeJob.kind === 'io'
+				? activeJob.remaining
+				: activeJob.plan.writeSize - activeJob.written;
 		}
-		if (job.kind === 'io') {
-			return job.remaining;
+		for (let index = 0; index < state.queue.length; index += 1) {
+			const job = state.queue[index]!;
+			pendingBytes += job.kind === 'io'
+				? job.remaining
+				: job.plan.writeSize - job.written;
 		}
-		return job.plan.writeSize - job.written;
+		return pendingBytes;
 	}
 
 	public reset(): void {
+		this.isoCarry = 0n;
+		this.bulkCarry = 0n;
 		this.channels[DMA_CH_ISO].queue.length = 0;
+		this.channels[DMA_CH_ISO].budget = 0;
 		this.channels[DMA_CH_ISO].active = null;
 		this.channels[DMA_CH_BULK].queue.length = 0;
+		this.channels[DMA_CH_BULK].budget = 0;
 		this.channels[DMA_CH_BULK].active = null;
 		this.ioWrittenValue = 0;
 		this.ioWrittenDirty = false;
 		this.imgWrittenValue = 0;
 		this.imgWrittenDirty = false;
+		this.cancelService();
 		this.memory.writeValue(IO_DMA_SRC, 0);
 		this.memory.writeValue(IO_DMA_DST, 0);
 		this.memory.writeValue(IO_DMA_LEN, 0);
@@ -179,9 +214,14 @@ export class DmaController {
 			onComplete,
 		};
 		this.channels[DMA_CH_BULK].queue.push(job);
+		this.maybeScheduleNextService(this.getNowCycles());
 	}
 
-	public tick(): void {
+	public onService(nowCycles: number): void {
+		if (!this.hasPendingIsoTransfer() && !this.hasPendingBulkTransfer()) {
+			this.cancelService();
+			return;
+		}
 		this.tickChannel(DMA_CH_ISO);
 		this.tickChannel(DMA_CH_BULK);
 		if (this.ioWrittenDirty) {
@@ -192,6 +232,7 @@ export class DmaController {
 			this.memory.writeValue(IO_IMG_WRITTEN, this.imgWrittenValue);
 			this.imgWrittenDirty = false;
 		}
+		this.maybeScheduleNextService(nowCycles);
 	}
 
 	public tryStartIo(): void {
@@ -251,6 +292,7 @@ export class DmaController {
 		this.ioWrittenValue = 0;
 		this.ioWrittenDirty = true;
 		this.channels[DMA_CH_BULK].queue.push(job);
+		this.maybeScheduleNextService(this.getNowCycles());
 	}
 
 	private tickChannel(channel: DmaChannelId): void {
@@ -281,9 +323,11 @@ export class DmaController {
 				continue;
 			}
 			if (written === 0) {
+				state.budget = budget;
 				return;
 			}
 		}
+		state.budget = budget;
 	}
 
 	private processJob(job: DmaJob, budget: number): number {
@@ -440,5 +484,75 @@ export class DmaController {
 	private finishIoRejected(): void {
 		this.memory.writeValue(IO_DMA_WRITTEN, 0);
 		this.memory.writeValue(IO_DMA_STATUS, DMA_STATUS_REJECTED);
+	}
+
+	private accrueChannel(channel: DmaChannelId, bytesPerSec: bigint, carryKey: 'isoCarry' | 'bulkCarry', cycles: number): void {
+		const pendingBytes = this.getPendingBytesForChannel(channel);
+		if (pendingBytes <= 0) {
+			if (carryKey === 'isoCarry') {
+				this.isoCarry = 0n;
+			} else {
+				this.bulkCarry = 0n;
+			}
+			this.channels[channel].budget = 0;
+			return;
+		}
+		const state = this.channels[channel];
+		const carry = carryKey === 'isoCarry' ? this.isoCarry : this.bulkCarry;
+		const numerator = bytesPerSec * BigInt(cycles) + carry;
+		const wholeBytes = numerator / this.cpuHz;
+		const nextCarry = numerator % this.cpuHz;
+		if (carryKey === 'isoCarry') {
+			this.isoCarry = nextCarry;
+		} else {
+			this.bulkCarry = nextCarry;
+		}
+		if (wholeBytes <= 0n) {
+			return;
+		}
+		const maxGrant = BigInt(pendingBytes - state.budget);
+		const granted = wholeBytes > maxGrant ? maxGrant : wholeBytes;
+		state.budget += Number(granted);
+	}
+
+	private maybeScheduleNextService(nowCycles: number): void {
+		const pendingIso = this.hasPendingIsoTransfer();
+		const pendingBulk = this.hasPendingBulkTransfer();
+		if (!pendingIso && !pendingBulk) {
+			this.cancelService();
+			return;
+		}
+		let nextDeadline = Number.MAX_SAFE_INTEGER;
+		if (pendingIso) {
+			const pendingBytes = this.getPendingBytesForChannel(DMA_CH_ISO);
+			const targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
+			if (this.channels[DMA_CH_ISO].budget >= targetBytes) {
+				this.scheduleService(nowCycles);
+				return;
+			}
+			nextDeadline = Math.min(nextDeadline, nowCycles + this.cyclesUntilBytes(this.isoBytesPerSec, this.isoCarry, targetBytes - this.channels[DMA_CH_ISO].budget));
+		}
+		if (pendingBulk) {
+			const pendingBytes = this.getPendingBytesForChannel(DMA_CH_BULK);
+			const targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
+			if (this.channels[DMA_CH_BULK].budget >= targetBytes) {
+				this.scheduleService(nowCycles);
+				return;
+			}
+			nextDeadline = Math.min(nextDeadline, nowCycles + this.cyclesUntilBytes(this.bulkBytesPerSec, this.bulkCarry, targetBytes - this.channels[DMA_CH_BULK].budget));
+		}
+		this.scheduleService(nextDeadline);
+	}
+
+	private cyclesUntilBytes(bytesPerSec: bigint, carry: bigint, targetBytes: number): number {
+		const needed = BigInt(targetBytes) * this.cpuHz - carry;
+		if (needed <= 0n) {
+			return 1;
+		}
+		const cycles = (needed + bytesPerSec - 1n) / bytesPerSec;
+		const max = BigInt(Number.MAX_SAFE_INTEGER);
+		const clamped = cycles > max ? max : cycles;
+		const out = Number(clamped);
+		return out <= 0 ? 1 : out;
 	}
 }

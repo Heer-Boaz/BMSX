@@ -266,35 +266,6 @@ void processVdpCommand(Runtime& runtime, uint32_t cmd, uint32_t argWords, const 
 }
 }
 
-uint32_t Runtime::RateBudget::calcUnitsForCycles(i64 cpuHz, i64 cycles) {
-	const i64 wholeUnitsPerCycle = unitsPerSec / cpuHz;
-	const i64 remainderUnitsPerCycle = unitsPerSec % cpuHz;
-	const i64 baseOut = wholeUnitsPerCycle * cycles;
-	const i64 remainderNumerator = remainderUnitsPerCycle * cycles + carry;
-	const i64 out = baseOut + (remainderNumerator / cpuHz);
-	carry = remainderNumerator % cpuHz;
-	const i64 maxValue = static_cast<i64>(std::numeric_limits<uint32_t>::max());
-	const i64 clamped = out > maxValue ? maxValue : out;
-	return static_cast<uint32_t>(clamped);
-}
-
-int Runtime::RateBudget::cyclesUntilUnits(i64 cpuHz, i64 units) const {
-	if (units <= 0) {
-		return 0;
-	}
-	if (unitsPerSec <= 0) {
-		return std::numeric_limits<int>::max();
-	}
-	const i64 needed = units * cpuHz - carry;
-	if (needed <= 0) {
-		return 1;
-	}
-	const i64 cycles = (needed + unitsPerSec - 1) / unitsPerSec;
-	const i64 maxValue = static_cast<i64>(std::numeric_limits<int>::max());
-	const i64 clamped = cycles > maxValue ? maxValue : cycles;
-	return clamped <= 0 ? 1 : static_cast<int>(clamped);
-}
-
 // Button actions for standard gamepad/keyboard mapping
 const std::vector<std::string> BUTTON_ACTIONS = {
 	"left",
@@ -341,16 +312,36 @@ void Runtime::destroy() {
 
 Runtime::Runtime(const RuntimeOptions& options)
 	: m_memory()
-	, m_vdp(m_memory)
+	, m_vdp(
+			m_memory,
+			[this]() { return currentSchedulerNowCycles(); },
+			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceVdp, deadlineCycles); },
+			[this]() { cancelDeviceService(DeviceServiceVdp); }
+		)
 	, m_stringHandles(m_memory)
 	, m_cpu(m_memory, &m_stringHandles)
 	, m_dmaController(
 			m_memory,
 			[this](uint32_t mask) { raiseIrqFlags(mask); },
-			[this](uint32_t src, size_t byteLength) { sealVdpDmaTransfer(src, byteLength); }
+			[this](uint32_t src, size_t byteLength) { sealVdpDmaTransfer(src, byteLength); },
+			[this]() { return currentSchedulerNowCycles(); },
+			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceDma, deadlineCycles); },
+			[this]() { cancelDeviceService(DeviceServiceDma); }
 		)
-	, m_geometryController(m_memory, [this](uint32_t mask) { raiseIrqFlags(mask); })
-	, m_imgDecController(m_memory, m_dmaController, [this](uint32_t mask) { raiseIrqFlags(mask); })
+	, m_geometryController(
+			m_memory,
+			[this](uint32_t mask) { raiseIrqFlags(mask); },
+			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceGeo, deadlineCycles); },
+			[this]() { cancelDeviceService(DeviceServiceGeo); }
+		)
+	, m_imgDecController(
+			m_memory,
+			m_dmaController,
+			[this](uint32_t mask) { raiseIrqFlags(mask); },
+			[this]() { return currentSchedulerNowCycles(); },
+			[this](int64_t deadlineCycles) { scheduleDeviceService(DeviceServiceImg, deadlineCycles); },
+			[this]() { cancelDeviceService(DeviceServiceImg); }
+		)
 	, m_viewport(options.viewport)
 	, m_canonicalization(options.canonicalization)
 	, m_cpuHz(options.cpuHz)
@@ -751,74 +742,286 @@ bool Runtime::pollSystemBootRequest() {
 	return true;
 }
 
-void Runtime::advanceHardware(int cycles) {
-	int remaining = cycles;
-	while (remaining > 0) {
-		int step = 0;
-		if (!m_vblankActive && m_cyclesIntoFrame < m_vblankStartCycle) {
-			const int untilVblank = m_vblankStartCycle - m_cyclesIntoFrame;
-			step = remaining < untilVblank ? remaining : untilVblank;
-		} else {
-			const int untilFrameEnd = m_cycleBudgetPerFrame - m_cyclesIntoFrame;
-			step = remaining < untilFrameEnd ? remaining : untilFrameEnd;
+void Runtime::refreshDeviceTimings(i64 nowCycles) {
+	m_dmaController.setTiming(m_cpuHz, m_dmaBytesPerSecIso, m_dmaBytesPerSecBulk, nowCycles);
+	m_imgDecController.setTiming(m_cpuHz, m_imgDecBytesPerSec, nowCycles);
+	m_geometryController.setTiming(m_cpuHz, m_geoWorkUnitsPerSec, nowCycles);
+	m_vdp.setTiming(m_cpuHz, m_vdpWorkUnitsPerSec, nowCycles);
+}
+
+void Runtime::advanceTime(int cycles) {
+	if (cycles <= 0) {
+		return;
+	}
+	const i64 nextNow = m_schedulerNowCycles + cycles;
+	m_dmaController.accrueCycles(cycles, nextNow);
+	m_imgDecController.accrueCycles(cycles, nextNow);
+	m_geometryController.accrueCycles(cycles, nextNow);
+	m_vdp.accrueCycles(cycles, nextNow);
+	m_schedulerNowCycles = nextNow;
+	runDueTimers();
+	refreshVdpSubmitBusyStatus();
+}
+
+i64 Runtime::currentSchedulerNowCycles() const {
+	if (!m_schedulerSliceActive) {
+		return m_schedulerNowCycles;
+	}
+	const int consumed = m_activeSliceBudgetCycles - m_cpu.instructionBudgetRemaining;
+	return m_activeSliceBaseCycle + consumed;
+}
+
+int Runtime::getCyclesIntoFrame() const {
+	return static_cast<int>(m_schedulerNowCycles - m_frameStartCycle);
+}
+
+void Runtime::resetSchedulerState() {
+	clearTimerHeap();
+	m_schedulerNowCycles = 0;
+	m_frameStartCycle = 0;
+	m_schedulerSliceActive = false;
+	m_activeSliceBaseCycle = 0;
+	m_activeSliceBudgetCycles = 0;
+	m_activeSliceTargetCycle = 0;
+	m_vblankEnterTimerGeneration = 0;
+	m_frameEndTimerGeneration = 0;
+	m_deviceServiceTimerGeneration.fill(0);
+}
+
+void Runtime::clearTimerHeap() {
+	m_timerCount = 0;
+	m_timerDeadlines.clear();
+	m_timerKinds.clear();
+	m_timerPayloads.clear();
+	m_timerGenerations.clear();
+}
+
+uint32_t Runtime::nextTimerGeneration(uint32_t value) {
+	const uint32_t next = value + 1u;
+	return next == 0u ? 1u : next;
+}
+
+void Runtime::pushTimer(i64 deadline, uint8_t kind, uint8_t payload, uint32_t generation) {
+	size_t index = m_timerCount;
+	m_timerCount += 1;
+	m_timerDeadlines.push_back(deadline);
+	m_timerKinds.push_back(kind);
+	m_timerPayloads.push_back(payload);
+	m_timerGenerations.push_back(generation);
+	while (index > 0) {
+		const size_t parent = (index - 1u) >> 1u;
+		if (m_timerDeadlines[parent] <= deadline) {
+			break;
 		}
-		const i64 cycleCount = static_cast<i64>(step);
-			const uint32_t imgBudget = m_imgRate.calcUnitsForCycles(m_cpuHz, cycleCount);
-			const uint32_t isoBudget = m_dmaIsoRate.calcUnitsForCycles(m_cpuHz, cycleCount);
-			const uint32_t bulkBudget = m_dmaBulkRate.calcUnitsForCycles(m_cpuHz, cycleCount);
-			const uint32_t geoWork = m_geoRate.calcUnitsForCycles(m_cpuHz, cycleCount);
-			const uint32_t vdpWork = m_vdpRate.calcUnitsForCycles(m_cpuHz, cycleCount);
-			m_imgDecController.setDecodeBudget(imgBudget);
-			m_dmaController.setChannelBudgets(isoBudget, bulkBudget);
-			m_dmaController.tick();
-			m_imgDecController.tick();
-			m_geometryController.setWorkBudget(geoWork);
-			m_geometryController.tick();
-			m_vdp.advanceWork(vdpWork);
-			refreshVdpSubmitBusyStatus();
-			advanceVblank(step);
-		remaining -= step;
+		m_timerDeadlines[index] = m_timerDeadlines[parent];
+		m_timerKinds[index] = m_timerKinds[parent];
+		m_timerPayloads[index] = m_timerPayloads[parent];
+		m_timerGenerations[index] = m_timerGenerations[parent];
+		index = parent;
+	}
+	m_timerDeadlines[index] = deadline;
+	m_timerKinds[index] = kind;
+	m_timerPayloads[index] = payload;
+	m_timerGenerations[index] = generation;
+}
+
+void Runtime::removeTopTimer() {
+	if (m_timerCount == 0) {
+		return;
+	}
+	const size_t lastIndex = m_timerCount - 1u;
+	const i64 deadline = m_timerDeadlines[lastIndex];
+	const uint8_t kind = m_timerKinds[lastIndex];
+	const uint8_t payload = m_timerPayloads[lastIndex];
+	const uint32_t generation = m_timerGenerations[lastIndex];
+	m_timerCount = lastIndex;
+	m_timerDeadlines.pop_back();
+	m_timerKinds.pop_back();
+	m_timerPayloads.pop_back();
+	m_timerGenerations.pop_back();
+	if (lastIndex == 0u) {
+		return;
+	}
+	size_t index = 0u;
+	const size_t half = lastIndex >> 1u;
+	while (index < half) {
+		size_t child = (index << 1u) + 1u;
+		if (child + 1u < lastIndex && m_timerDeadlines[child + 1u] < m_timerDeadlines[child]) {
+			child += 1u;
+		}
+		if (m_timerDeadlines[child] >= deadline) {
+			break;
+		}
+		m_timerDeadlines[index] = m_timerDeadlines[child];
+		m_timerKinds[index] = m_timerKinds[child];
+		m_timerPayloads[index] = m_timerPayloads[child];
+		m_timerGenerations[index] = m_timerGenerations[child];
+		index = child;
+	}
+	m_timerDeadlines[index] = deadline;
+	m_timerKinds[index] = kind;
+	m_timerPayloads[index] = payload;
+	m_timerGenerations[index] = generation;
+}
+
+bool Runtime::isTimerCurrent(uint8_t kind, uint8_t payload, uint32_t generation) const {
+	switch (kind) {
+		case TimerKindVblankEnter:
+			return generation == m_vblankEnterTimerGeneration;
+		case TimerKindFrameEnd:
+			return generation == m_frameEndTimerGeneration;
+		case TimerKindDeviceService:
+			return generation == m_deviceServiceTimerGeneration[payload];
+		default:
+			throw runtimeFault("unknown timer kind " + std::to_string(kind) + ".");
 	}
 }
 
-void Runtime::advanceVblank(int cycles) {
-	const int previous = m_cyclesIntoFrame;
-	m_cyclesIntoFrame += cycles;
-	if (!m_vblankActive && previous < m_vblankStartCycle && m_cyclesIntoFrame >= m_vblankStartCycle) {
+void Runtime::discardStaleTopTimers() {
+	while (m_timerCount > 0u) {
+		const uint8_t kind = m_timerKinds[0];
+		const uint8_t payload = m_timerPayloads[0];
+		const uint32_t generation = m_timerGenerations[0];
+		if (isTimerCurrent(kind, payload, generation)) {
+			return;
+		}
+		removeTopTimer();
+	}
+}
+
+i64 Runtime::nextTimerDeadline() {
+	discardStaleTopTimers();
+	if (m_timerCount == 0u) {
+		return std::numeric_limits<i64>::max();
+	}
+	return m_timerDeadlines[0];
+}
+
+void Runtime::runDueTimers() {
+	discardStaleTopTimers();
+	while (m_timerCount > 0u && m_timerDeadlines[0] <= m_schedulerNowCycles) {
+		const uint8_t kind = m_timerKinds[0];
+		const uint8_t payload = m_timerPayloads[0];
+		removeTopTimer();
+		dispatchTimer(kind, payload);
+		discardStaleTopTimers();
+	}
+}
+
+void Runtime::dispatchTimer(uint8_t kind, uint8_t payload) {
+	switch (kind) {
+		case TimerKindVblankEnter:
+			handleVblankEnterTimer();
+			return;
+		case TimerKindFrameEnd:
+			handleFrameEndTimer();
+			return;
+		case TimerKindDeviceService:
+			runDeviceService(payload);
+			return;
+		default:
+			throw runtimeFault("unknown timer kind " + std::to_string(kind) + ".");
+	}
+}
+
+void Runtime::scheduleVblankEnterTimer(i64 deadlineCycles) {
+	const uint32_t generation = nextTimerGeneration(m_vblankEnterTimerGeneration);
+	m_vblankEnterTimerGeneration = generation;
+	pushTimer(deadlineCycles, TimerKindVblankEnter, 0u, generation);
+	requestYieldForEarlierDeadline(deadlineCycles);
+}
+
+void Runtime::scheduleFrameEndTimer(i64 deadlineCycles) {
+	const uint32_t generation = nextTimerGeneration(m_frameEndTimerGeneration);
+	m_frameEndTimerGeneration = generation;
+	pushTimer(deadlineCycles, TimerKindFrameEnd, 0u, generation);
+	requestYieldForEarlierDeadline(deadlineCycles);
+}
+
+void Runtime::scheduleCurrentFrameTimers() {
+	scheduleFrameEndTimer(m_frameStartCycle + m_cycleBudgetPerFrame);
+	if (m_vblankStartCycle > 0 && getCyclesIntoFrame() < m_vblankStartCycle) {
+		scheduleVblankEnterTimer(m_frameStartCycle + m_vblankStartCycle);
+	}
+}
+
+void Runtime::handleVblankEnterTimer() {
+	if (!m_vblankActive) {
 		enterVblank();
 	}
-	if (m_cyclesIntoFrame >= m_cycleBudgetPerFrame) {
-		m_cyclesIntoFrame = 0;
-		if (m_vblankStartCycle == 0) {
-			raiseIrqFlags(IRQ_VBLANK);
-		} else if (m_vblankActive) {
-			m_vblankPendingClear = true;
-		}
-	}
 }
 
-int Runtime::cyclesUntilNextVblankEdge() const {
+void Runtime::handleFrameEndTimer() {
 	if (m_vblankStartCycle == 0) {
-		return m_cycleBudgetPerFrame - m_cyclesIntoFrame;
+		m_frameStartCycle = m_schedulerNowCycles;
+		scheduleCurrentFrameTimers();
+		enterVblank();
+		return;
 	}
-	if (!m_vblankActive && m_cyclesIntoFrame < m_vblankStartCycle) {
-		return m_vblankStartCycle - m_cyclesIntoFrame;
+	if (m_vblankActive) {
+		m_vblankPendingClear = true;
 	}
-	return (m_cycleBudgetPerFrame - m_cyclesIntoFrame) + m_vblankStartCycle;
+	m_frameStartCycle = m_schedulerNowCycles;
+	scheduleCurrentFrameTimers();
+}
+
+void Runtime::scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles) {
+	const uint32_t generation = nextTimerGeneration(m_deviceServiceTimerGeneration[deviceKind]);
+	m_deviceServiceTimerGeneration[deviceKind] = generation;
+	pushTimer(deadlineCycles, TimerKindDeviceService, deviceKind, generation);
+	requestYieldForEarlierDeadline(deadlineCycles);
+}
+
+void Runtime::cancelDeviceService(uint8_t deviceKind) {
+	m_deviceServiceTimerGeneration[deviceKind] = nextTimerGeneration(m_deviceServiceTimerGeneration[deviceKind]);
+}
+
+void Runtime::requestYieldForEarlierDeadline(i64 deadlineCycles) {
+	if (!m_schedulerSliceActive) {
+		return;
+	}
+	if (deadlineCycles > m_activeSliceTargetCycle) {
+		return;
+	}
+	m_cpu.requestYield();
+}
+
+void Runtime::runDeviceService(uint8_t deviceKind) {
+	const i64 nowCycles = m_schedulerNowCycles;
+	switch (deviceKind) {
+		case DeviceServiceGeo:
+			m_geometryController.onService(nowCycles);
+			return;
+		case DeviceServiceDma:
+			m_dmaController.onService(nowCycles);
+			refreshVdpSubmitBusyStatus();
+			return;
+		case DeviceServiceImg:
+			m_imgDecController.onService(nowCycles);
+			return;
+		case DeviceServiceVdp:
+			m_vdp.onService(nowCycles);
+			refreshVdpSubmitBusyStatus();
+			return;
+		default:
+			throw runtimeFault("unknown device service kind " + std::to_string(deviceKind) + ".");
+	}
 }
 
 void Runtime::resetVblankState() {
-	m_cyclesIntoFrame = 0;
-	m_vblankSequence = 0;
-	m_lastCompletedVblankSequence = 0;
+	resetSchedulerState();
 	m_vblankActive = false;
 	m_vblankPendingClear = false;
 	m_vblankClearOnIrqEnd = false;
+	m_vblankSequence = 0;
+	m_lastCompletedVblankSequence = 0;
 	m_vdpStatus = 0;
 	m_memory.writeValue(IO_VDP_STATUS, valueNumber(static_cast<double>(m_vdpStatus)));
 	if (m_vblankStartCycle == 0) {
 		setVblankStatus(true);
 	}
+	scheduleCurrentFrameTimers();
+	refreshDeviceTimings(m_schedulerNowCycles);
 }
 
 void Runtime::setVblankStatus(bool active) {
@@ -886,7 +1089,6 @@ void Runtime::syncVdpSubmitAttemptStatusFromDma(uint32_t dst) {
 }
 
 void Runtime::enterVblank() {
-	// IRQ flags are level/pending; multiple VBLANK edges while pending coalesce.
 	m_vblankSequence += 1;
 	commitFrameOnVblankEdge();
 	setVblankStatus(true);
@@ -940,7 +1142,7 @@ void Runtime::reconcileCycleBudgetAfterSignal(FrameState& frameState) {
 	}
 	frameState.cycleBudgetRemaining = remaining;
 	if (consumed > 0) {
-		advanceHardware(consumed);
+		advanceTime(consumed);
 	}
 }
 
@@ -962,12 +1164,7 @@ void Runtime::requestWaitForVblank() {
 		&& m_lastCompletedVblankSequence != m_vblankSequence;
 	m_waitingForVblank = true;
 	const uint64_t nextVblankSequence = m_vblankSequence + 1;
-	// Only reuse the current VBLANK edge when this tick has not already completed
-	// on that same edge. Otherwise fast carts can "re-wait" the current VBLANK and
-	// effectively skip the next frame boundary.
-	m_waitForVblankTargetSequence = resumeOnCurrentEdge
-		? m_vblankSequence
-		: nextVblankSequence;
+	m_waitForVblankTargetSequence = resumeOnCurrentEdge ? m_vblankSequence : nextVblankSequence;
 	if (resumeOnCurrentEdge) {
 		if (!m_frameActive) {
 			throw runtimeFault("wait_vblank resumed without an active frame state.");
@@ -979,14 +1176,6 @@ void Runtime::requestWaitForVblank() {
 	m_cpu.requestYield();
 }
 
-void Runtime::resetTransferCarry() {
-	m_imgRate.resetCarry();
-	m_dmaIsoRate.resetCarry();
-	m_dmaBulkRate.resetCarry();
-	m_geoRate.resetCarry();
-	m_vdpRate.resetCarry();
-}
-
 void Runtime::raiseIrqFlags(uint32_t mask) {
 	const uint32_t current = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(current | mask)));
@@ -994,14 +1183,14 @@ void Runtime::raiseIrqFlags(uint32_t mask) {
 
 void Runtime::processIrqAck() {
 	const uint32_t ack = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_ACK)));
-	if (ack == 0) {
+	if (ack == 0u) {
 		return;
 	}
 	uint32_t flags = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_IRQ_FLAGS)));
 	flags &= ~ack;
 	m_memory.writeValue(IO_IRQ_FLAGS, valueNumber(static_cast<double>(flags)));
 	m_memory.writeValue(IO_IRQ_ACK, valueNumber(0.0));
-	if ((ack & IRQ_VBLANK) != 0 && m_vblankPendingClear) {
+	if ((ack & IRQ_VBLANK) != 0u && m_vblankPendingClear) {
 		setVblankStatus(false);
 		m_vblankPendingClear = false;
 		m_vblankClearOnIrqEnd = false;
@@ -1014,50 +1203,40 @@ void Runtime::raiseEngineIrq(uint32_t mask) {
 		throw runtimeFault("engine IRQ mask must be non-zero.");
 	}
 	const uint32_t unsupported = mask & ~kAllowedMask;
-	if (unsupported != 0) {
+	if (unsupported != 0u) {
 		throw runtimeFault("unsupported engine IRQ mask " + std::to_string(unsupported) + ".");
 	}
 	raiseIrqFlags(mask);
 }
 
-int Runtime::resolveCpuSliceBudget(int remaining) const {
-	int sliceBudget = limitSliceDeadline(remaining, cyclesUntilNextVblankEdge());
-	if (m_vdp.requiresSchedulerService() || m_imgDecController.requiresService()) {
-		return 1;
-	}
-	sliceBudget = limitSliceDeadline(sliceBudget, resolveRateDeadline(m_geoRate, m_geometryController.hasPendingWork(), m_geometryController.pendingWorkUnits()));
-	sliceBudget = limitSliceDeadline(sliceBudget, resolveRateDeadline(m_vdpRate, m_vdp.hasPendingRenderWork(), m_vdp.pendingRenderWorkUnits()));
-	sliceBudget = limitSliceDeadline(sliceBudget, resolveRateDeadline(m_imgRate, m_imgDecController.hasPendingDecodeWork(), m_imgDecController.pendingDecodeBytes()));
-	sliceBudget = limitSliceDeadline(sliceBudget, resolveRateDeadline(m_dmaIsoRate, m_dmaController.hasPendingIsoTransfer(), m_dmaController.pendingIsoBytes()));
-	sliceBudget = limitSliceDeadline(sliceBudget, resolveRateDeadline(m_dmaBulkRate, m_dmaController.hasPendingBulkTransfer(), m_dmaController.pendingBulkBytes()));
-	return sliceBudget <= 0 ? 1 : sliceBudget;
-}
-
-int Runtime::resolveRateDeadline(const RateBudget& rate, bool pending, i64 units) const {
-	if (!pending || units <= 0) {
-		return 0;
-	}
-	return rate.cyclesUntilUnits(m_cpuHz, units);
-}
-
-int Runtime::limitSliceDeadline(int current, int candidate) {
-	if (candidate <= 0 || candidate >= current) {
-		return current;
-	}
-	return candidate;
-}
-
 RunResult Runtime::runWithBudget() {
 	int remaining = m_frameState.cycleBudgetRemaining;
 	RunResult result = RunResult::Yielded;
+	runDueTimers();
 	while (remaining > 0) {
-		const int sliceBudget = resolveCpuSliceBudget(remaining);
+		int sliceBudget = remaining;
+		const i64 nextDeadline = nextTimerDeadline();
+		if (nextDeadline != std::numeric_limits<i64>::max()) {
+			const i64 deadlineBudget = nextDeadline - m_schedulerNowCycles;
+			if (deadlineBudget <= 0) {
+				runDueTimers();
+				continue;
+			}
+			if (deadlineBudget < sliceBudget) {
+				sliceBudget = static_cast<int>(deadlineBudget);
+			}
+		}
+		m_schedulerSliceActive = true;
+		m_activeSliceBaseCycle = m_schedulerNowCycles;
+		m_activeSliceBudgetCycles = sliceBudget;
+		m_activeSliceTargetCycle = m_schedulerNowCycles + sliceBudget;
 		result = m_cpu.run(sliceBudget);
+		m_schedulerSliceActive = false;
 		const int sliceRemaining = m_cpu.instructionBudgetRemaining;
 		const int consumed = sliceBudget - sliceRemaining;
 		if (consumed > 0) {
 			remaining -= consumed;
-			advanceHardware(consumed);
+			advanceTime(consumed);
 		}
 		if (m_waitingForVblank || result == RunResult::Halted) {
 			break;
@@ -1230,7 +1409,13 @@ void Runtime::onIoWrite(uint32_t addr, Value value) {
 	}
 	if (addr == IO_GEO_CTRL) {
 		if ((static_cast<uint32_t>(asNumber(value)) & (GEO_CTRL_START | GEO_CTRL_ABORT)) != 0u) {
-			m_geometryController.onCtrlWrite();
+			m_geometryController.onCtrlWrite(currentSchedulerNowCycles());
+		}
+		return;
+	}
+	if (addr == IO_IMG_CTRL) {
+		if ((static_cast<uint32_t>(asNumber(value)) & IMG_CTRL_START) != 0u) {
+			m_imgDecController.onCtrlWrite(currentSchedulerNowCycles());
 		}
 		return;
 	}
@@ -1322,7 +1507,7 @@ RuntimeState Runtime::captureCurrentState() const {
 	state.atlasSlots = m_vdp.atlasSlots();
 	state.skyboxFaceIds = m_vdp.skyboxFaceIds();
 	state.vdpDitherType = m_vdp.getDitherType();
-	state.cyclesIntoFrame = m_cyclesIntoFrame;
+	state.cyclesIntoFrame = getCyclesIntoFrame();
 	state.vblankPendingClear = m_vblankPendingClear;
 	state.vblankClearOnIrqEnd = m_vblankClearOnIrqEnd;
 	return state;
@@ -1333,13 +1518,20 @@ void Runtime::applyState(const RuntimeState& state) {
 	m_memory.loadIoSlots(state.ioMemory);
 	m_geometryController.normalizeAfterStateRestore();
 	m_vdp.syncRegisters();
-	m_cyclesIntoFrame = state.cyclesIntoFrame;
+	resetSchedulerState();
+	m_schedulerNowCycles = state.cyclesIntoFrame;
+	m_frameStartCycle = 0;
+	m_vdpStatus = static_cast<uint32_t>(asNumber(m_memory.readValue(IO_VDP_STATUS)));
+	m_vdpStatus &= ~VDP_STATUS_VBLANK;
+	m_vblankActive = false;
 	m_vblankPendingClear = state.vblankPendingClear;
 	m_vblankClearOnIrqEnd = state.vblankClearOnIrqEnd;
 	const bool vblankActive = (m_vblankStartCycle == 0)
 		|| m_vblankPendingClear
-		|| (m_cyclesIntoFrame >= m_vblankStartCycle);
+		|| (getCyclesIntoFrame() >= m_vblankStartCycle);
 	setVblankStatus(vblankActive);
+	scheduleCurrentFrameTimers();
+	refreshDeviceTimings(m_schedulerNowCycles);
 	if (!state.assetMemory.empty()) {
 		m_memory.restoreAssetMemory(state.assetMemory.data(), state.assetMemory.size());
 	}
@@ -1398,7 +1590,7 @@ void Runtime::setCanonicalization(CanonicalizationType canonicalization) {
 
 void Runtime::setCpuHz(i64 hz) {
 	m_cpuHz = hz;
-	resetTransferCarry();
+	refreshDeviceTimings(currentSchedulerNowCycles());
 }
 
 void Runtime::applyActiveMachineTiming(i64 cpuHz) {
@@ -1443,6 +1635,7 @@ void Runtime::setVdpWorkUnitsPerSec(int workUnitsPerSec) {
 		throw runtimeFault("work_units_per_sec must be greater than 0.");
 	}
 	m_vdpWorkUnitsPerSec = workUnitsPerSec;
+	m_vdp.setTiming(m_cpuHz, m_vdpWorkUnitsPerSec, currentSchedulerNowCycles());
 }
 
 void Runtime::setGeoWorkUnitsPerSec(int workUnitsPerSec) {
@@ -1450,6 +1643,7 @@ void Runtime::setGeoWorkUnitsPerSec(int workUnitsPerSec) {
 		throw runtimeFault("geo_work_units_per_sec must be greater than 0.");
 	}
 	m_geoWorkUnitsPerSec = workUnitsPerSec;
+	m_geometryController.setTiming(m_cpuHz, m_geoWorkUnitsPerSec, currentSchedulerNowCycles());
 }
 
 void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec, int geoWorkUnitsPerSec) {
@@ -1458,12 +1652,7 @@ void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64
 	m_dmaBytesPerSecBulk = dmaBytesPerSecBulk;
 	setVdpWorkUnitsPerSec(vdpWorkUnitsPerSec);
 	setGeoWorkUnitsPerSec(geoWorkUnitsPerSec);
-	m_imgRate.setUnitsPerSec(imgDecBytesPerSec);
-	m_dmaIsoRate.setUnitsPerSec(dmaBytesPerSecIso);
-	m_dmaBulkRate.setUnitsPerSec(dmaBytesPerSecBulk);
-	m_geoRate.setUnitsPerSec(m_geoWorkUnitsPerSec);
-	m_vdpRate.setUnitsPerSec(vdpWorkUnitsPerSec);
-	resetTransferCarry();
+	refreshDeviceTimings(currentSchedulerNowCycles());
 }
 
 void Runtime::setCycleBudgetPerFrame(int budget) {
@@ -1472,7 +1661,7 @@ void Runtime::setCycleBudgetPerFrame(int budget) {
 	}
 	m_cycleBudgetPerFrame = budget;
 	setGlobal("sys_max_cycles_per_frame", valueNumber(static_cast<double>(budget)));
-	resetTransferCarry();
+	refreshDeviceTimings(currentSchedulerNowCycles());
 	if (m_vblankCycles > 0) {
 		if (m_vblankCycles > m_cycleBudgetPerFrame) {
 			throw runtimeFault("vblank_cycles must be less than or equal to cycles_per_frame.");
@@ -1652,6 +1841,7 @@ void Runtime::releaseValueScratch(std::vector<Value>&& values) {
 void Runtime::executeUpdateCallback() {
 	try {
 		if (m_waitingForVblank) {
+			runDueTimers();
 			processIrqAck();
 			if (m_waitForVblankTargetSequence == 0) {
 				m_cpu.clearYieldRequest();
@@ -1665,10 +1855,11 @@ void Runtime::executeUpdateCallback() {
 				}
 				if (m_vblankSequence < m_waitForVblankTargetSequence) {
 					if (m_frameState.cycleBudgetRemaining > 0) {
-						const int cyclesToTarget = cyclesUntilNextVblankEdge();
-						const int idleCycles = std::min(m_frameState.cycleBudgetRemaining, cyclesToTarget);
+						const i64 cyclesToTarget = nextTimerDeadline() - m_schedulerNowCycles;
+						const int idleCycles = static_cast<int>(std::min<i64>(m_frameState.cycleBudgetRemaining, cyclesToTarget));
 						m_frameState.cycleBudgetRemaining -= idleCycles;
-						advanceHardware(idleCycles);
+						advanceTime(idleCycles);
+						runDueTimers();
 						processIrqAck();
 					}
 					if (m_vblankSequence < m_waitForVblankTargetSequence) {

@@ -7,6 +7,7 @@
 #include "../rompack/rompack.h"
 #include "../render/shared/render_types.h"
 #include <array>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -23,7 +24,12 @@ struct VdpGles2Blitter;
 
 class VDP : public Memory::VramWriter, public Memory::VdpIoHandler {
 public:
-	explicit VDP(Memory& memory);
+	VDP(
+		Memory& memory,
+		std::function<int64_t()> getNowCycles,
+		std::function<void(int64_t deadlineCycles)> scheduleService,
+		std::function<void()> cancelService
+	);
 
 	void initializeRegisters();
 	void syncRegisters();
@@ -36,6 +42,9 @@ public:
 	void beginSubmittedFrame();
 	void cancelSubmittedFrame();
 	void sealSubmittedFrame();
+	void setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles);
+	void accrueCycles(int cycles, int64_t nowCycles);
+	void onService(int64_t nowCycles);
 	void advanceWork(int workUnits);
 	void presentReadyFrameOnVblankEdge();
 	void enqueueClear(const Color& color);
@@ -72,14 +81,9 @@ public:
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
 	int lastFrameCost() const { return m_lastFrameCost; }
 	bool lastFrameHeld() const { return m_lastFrameHeld; }
-	bool requiresSchedulerService() const { return !m_activeFrameOccupied && m_pendingFrameOccupied; }
+	bool needsImmediateSchedulerService() const { return !m_activeFrameOccupied && m_pendingFrameOccupied; }
 	bool hasPendingRenderWork() const { return m_activeFrameOccupied ? !m_activeFrameReady : (m_pendingFrameOccupied && m_pendingFrameCost > 0); }
-	int pendingRenderWorkUnits() const {
-		if (!m_activeFrameOccupied) {
-			return m_pendingFrameCost;
-		}
-		return m_activeFrameReady ? 0 : m_activeFrameWorkRemaining;
-	}
+	int getPendingRenderWorkUnits() const;
 
 	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
 
@@ -196,6 +200,10 @@ private:
 	bool m_committedHasSkybox = false;
 	i32 m_lastDitherType = 0;
 	i32 m_committedDitherType = 0;
+	int64_t m_cpuHz = 1;
+	int64_t m_workUnitsPerSec = 1;
+	int64_t m_workCarry = 0;
+	int m_availableWorkUnits = 0;
 	std::vector<BlitterCommand> m_buildBlitterQueue;
 	std::vector<BlitterCommand> m_activeBlitterQueue;
 	std::vector<BlitterCommand> m_pendingBlitterQueue;
@@ -231,6 +239,9 @@ private:
 	std::array<Memory::ImageWriteEntry, 6> m_skyboxSlots{};
 	std::array<ReadSurface, 4> m_readSurfaces{};
 	std::array<ReadCache, 4> m_readCaches{};
+	std::function<int64_t()> m_getNowCycles;
+	std::function<void(int64_t deadlineCycles)> m_scheduleService;
+	std::function<void()> m_cancelService;
 
 	void registerVramSlot(const Memory::AssetEntry& entry, const std::string& textureKey, uint32_t surfaceId);
 	void registerReadSurface(uint32_t surfaceId, const std::string& assetId, const std::string& textureKey);
@@ -267,6 +278,8 @@ private:
 	void syncRenderFrameBufferToDisplayPage();
 	void assignBuildToSlot(bool active);
 	void promotePendingFrame();
+	void maybeScheduleNextService(int64_t nowCycles);
+	int64_t cyclesUntilWorkUnits(int targetUnits) const;
 	void clearActiveFrame();
 	void commitActiveVisualState();
 	void initializeFrameBufferSurface();

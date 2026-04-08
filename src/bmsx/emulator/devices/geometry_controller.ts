@@ -84,6 +84,7 @@ const SAT2_DESC_WORDS = 4;
 const SAT2_DESC_BYTES = SAT2_DESC_WORDS * 4;
 const SAT2_RESULT_WORDS = 5;
 const SAT2_RESULT_BYTES = SAT2_RESULT_WORDS * 4;
+const GEO_SERVICE_BATCH_RECORDS = 1;
 
 function packFault(code: number, recordIndex: number): number {
 	return (((code & 0xffff) << 16) | (recordIndex & 0xffff)) >>> 0;
@@ -127,16 +128,42 @@ function transformFixed16(m0: number, m1: number, tx: number, x: number, y: numb
 }
 
 export class GeometryController {
-	private workBudget = 0;
 	private activeJob: GeoJob | null = null;
+	private cpuHz: bigint = 1n;
+	private workUnitsPerSec: bigint = 1n;
+	private workCarry: bigint = 0n;
+	private availableWorkUnits = 0;
 
 	public constructor(
 		private readonly memory: Memory,
 		private readonly raiseIrq: (mask: number) => void,
+		private readonly scheduleService: (deadlineCycles: number) => void,
+		private readonly cancelService: () => void,
 	) {}
 
-	public setWorkBudget(workUnits: number): void {
-		this.workBudget = workUnits >>> 0;
+	public setTiming(cpuHz: number, workUnitsPerSec: number, nowCycles: number): void {
+		this.cpuHz = BigInt(cpuHz);
+		this.workUnitsPerSec = BigInt(workUnitsPerSec);
+		this.workCarry = 0n;
+		this.availableWorkUnits = 0;
+		this.maybeScheduleNextService(nowCycles);
+	}
+
+	public accrueCycles(cycles: number, nowCycles: number): void {
+		const job = this.activeJob;
+		if (job === null || cycles <= 0) {
+			return;
+		}
+		const numerator = this.workUnitsPerSec * BigInt(cycles) + this.workCarry;
+		const wholeUnits = numerator / this.cpuHz;
+		this.workCarry = numerator % this.cpuHz;
+		if (wholeUnits > 0n) {
+			const remainingRecords = job.count - job.processed;
+			const maxGrant = BigInt(remainingRecords - this.availableWorkUnits);
+			const granted = wholeUnits > maxGrant ? maxGrant : wholeUnits;
+			this.availableWorkUnits += Number(granted);
+		}
+		this.maybeScheduleNextService(nowCycles);
 	}
 
 	public hasPendingWork(): boolean {
@@ -148,9 +175,37 @@ export class GeometryController {
 		return job === null ? 0 : (job.count - job.processed) >>> 0;
 	}
 
+	public onService(nowCycles: number): void {
+		const job = this.activeJob;
+		if (job === null || this.availableWorkUnits === 0) {
+			this.maybeScheduleNextService(nowCycles);
+			return;
+		}
+		let remaining = this.availableWorkUnits;
+		this.availableWorkUnits = 0;
+		while (this.activeJob !== null && remaining > 0) {
+			switch (job.cmd) {
+				case IO_CMD_GEO_XFORM2_BATCH:
+					this.processXform2Record(job);
+					break;
+				case IO_CMD_GEO_SAT2_BATCH:
+					this.processSat2Record(job);
+					break;
+				default:
+					this.finishRejected(GEO_FAULT_REJECT_BAD_CMD);
+					return;
+			}
+			remaining -= 1;
+		}
+		this.availableWorkUnits = remaining;
+		this.maybeScheduleNextService(nowCycles);
+	}
+
 	public reset(): void {
-		this.workBudget = 0;
+		this.workCarry = 0n;
+		this.availableWorkUnits = 0;
 		this.activeJob = null;
+		this.cancelService();
 		this.memory.writeValue(IO_GEO_SRC0, 0);
 		this.memory.writeValue(IO_GEO_SRC1, 0);
 		this.memory.writeValue(IO_GEO_SRC2, 0);
@@ -170,8 +225,10 @@ export class GeometryController {
 	}
 
 	public normalizeAfterStateRestore(): void {
-		this.workBudget = 0;
+		this.workCarry = 0n;
+		this.availableWorkUnits = 0;
 		this.activeJob = null;
+		this.cancelService();
 		const ctrl = this.readRegister(IO_GEO_CTRL);
 		const status = this.readRegister(IO_GEO_STATUS);
 		const processed = this.readRegister(IO_GEO_PROCESSED);
@@ -183,7 +240,7 @@ export class GeometryController {
 		}
 	}
 
-	public onCtrlWrite(): void {
+	public onCtrlWrite(nowCycles: number): void {
 		const ctrl = this.readRegister(IO_GEO_CTRL);
 		const start = (ctrl & GEO_CTRL_START) !== 0;
 		const abort = (ctrl & GEO_CTRL_ABORT) !== 0;
@@ -205,33 +262,10 @@ export class GeometryController {
 			this.finishRejected(GEO_FAULT_REJECT_BUSY);
 			return;
 		}
-		this.tryStart();
+		this.tryStart(nowCycles);
 	}
 
-	public tick(): void {
-		const job = this.activeJob;
-		if (job === null || this.workBudget === 0) {
-			return;
-		}
-		let remaining = this.workBudget;
-		this.workBudget = 0;
-			while (this.activeJob !== null && remaining > 0) {
-				switch (job.cmd) {
-					case IO_CMD_GEO_XFORM2_BATCH:
-						this.processXform2Record(job);
-						break;
-					case IO_CMD_GEO_SAT2_BATCH:
-						this.processSat2Record(job);
-						break;
-					default:
-						this.finishRejected(GEO_FAULT_REJECT_BAD_CMD);
-						return;
-				}
-			remaining -= 1;
-		}
-	}
-
-	private tryStart(): void {
+	private tryStart(nowCycles: number): void {
 		const job: GeoJob = {
 			cmd: this.readRegister(IO_GEO_CMD),
 			src0: this.readRegister(IO_GEO_SRC0),
@@ -269,8 +303,38 @@ export class GeometryController {
 			this.finishSuccess(0);
 			return;
 		}
+		this.workCarry = 0n;
+		this.availableWorkUnits = 0;
 		this.activeJob = job;
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_BUSY);
+		this.maybeScheduleNextService(nowCycles);
+	}
+
+	private maybeScheduleNextService(nowCycles: number): void {
+		const job = this.activeJob;
+		if (job === null) {
+			this.cancelService();
+			return;
+		}
+		const remainingRecords = job.count - job.processed;
+		const targetUnits = remainingRecords < GEO_SERVICE_BATCH_RECORDS ? remainingRecords : GEO_SERVICE_BATCH_RECORDS;
+		if (this.availableWorkUnits >= targetUnits) {
+			this.scheduleService(nowCycles);
+			return;
+		}
+		this.scheduleService(nowCycles + this.cyclesUntilWorkUnits(targetUnits - this.availableWorkUnits));
+	}
+
+	private cyclesUntilWorkUnits(targetUnits: number): number {
+		const needed = BigInt(targetUnits) * this.cpuHz - this.workCarry;
+		if (needed <= 0n) {
+			return 1;
+		}
+		const cycles = (needed + this.workUnitsPerSec - 1n) / this.workUnitsPerSec;
+		const max = BigInt(Number.MAX_SAFE_INTEGER);
+		const clamped = cycles > max ? max : cycles;
+		const out = Number(clamped);
+		return out <= 0 ? 1 : out;
 	}
 
 	private validateXform2Submission(job: GeoJob): boolean {
@@ -646,6 +710,9 @@ export class GeometryController {
 
 	private finishSuccess(processed: number): void {
 		this.activeJob = null;
+		this.workCarry = 0n;
+		this.availableWorkUnits = 0;
+		this.cancelService();
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE);
 		this.memory.writeValue(IO_GEO_PROCESSED, processed >>> 0);
 		this.memory.writeValue(IO_GEO_FAULT, 0);
@@ -654,6 +721,9 @@ export class GeometryController {
 
 	private finishError(code: number, recordIndex: number): void {
 		this.activeJob = null;
+		this.workCarry = 0n;
+		this.availableWorkUnits = 0;
+		this.cancelService();
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
 		this.memory.writeValue(IO_GEO_FAULT, packFault(code, recordIndex));
 		this.raiseIrq(IRQ_GEO_ERROR);
@@ -661,6 +731,9 @@ export class GeometryController {
 
 	private finishRejected(code: number): void {
 		this.activeJob = null;
+		this.workCarry = 0n;
+		this.availableWorkUnits = 0;
+		this.cancelService();
 		this.memory.writeValue(IO_GEO_STATUS, GEO_STATUS_REJECTED);
 		this.memory.writeValue(IO_GEO_PROCESSED, 0);
 		this.memory.writeValue(IO_GEO_FAULT, packFault(code, GEO_RECORD_INDEX_NONE));

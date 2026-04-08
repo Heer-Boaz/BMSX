@@ -24,6 +24,7 @@ constexpr uint32_t SAT2_DESC_WORDS = 4u;
 constexpr uint32_t SAT2_DESC_BYTES = SAT2_DESC_WORDS * 4u;
 constexpr uint32_t SAT2_RESULT_WORDS = 5u;
 constexpr uint32_t SAT2_RESULT_BYTES = SAT2_RESULT_WORDS * 4u;
+constexpr uint32_t GEO_SERVICE_BATCH_RECORDS = 1u;
 constexpr int FIX16_SHIFT = 16;
 constexpr double FIX16_SCALE = 65536.0;
 
@@ -49,19 +50,46 @@ inline int64_t saturatingAdd64(int64_t lhs, int64_t rhs) {
 
 } // namespace
 
-GeometryController::GeometryController(Memory& memory, std::function<void(uint32_t)> raiseIrq)
+GeometryController::GeometryController(
+	Memory& memory,
+	std::function<void(uint32_t)> raiseIrq,
+	std::function<void(int64_t deadlineCycles)> scheduleService,
+	std::function<void()> cancelService
+)
 	: m_memory(memory)
-	, m_raiseIrq(std::move(raiseIrq)) {}
+	, m_raiseIrq(std::move(raiseIrq))
+	, m_scheduleService(std::move(scheduleService))
+	, m_cancelService(std::move(cancelService)) {}
 
-void GeometryController::setWorkBudget(uint32_t workUnits) {
-	m_workBudget = workUnits;
+void GeometryController::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
+	m_cpuHz = cpuHz;
+	m_workUnitsPerSec = workUnitsPerSec;
+	m_workCarry = 0;
+	m_availableWorkUnits = 0;
+	maybeScheduleNextService(nowCycles);
+}
+
+void GeometryController::accrueCycles(int cycles, int64_t nowCycles) {
+	if (!m_activeJob.has_value() || cycles <= 0) {
+		return;
+	}
+	const int64_t numerator = m_workUnitsPerSec * static_cast<int64_t>(cycles) + m_workCarry;
+	const int64_t wholeUnits = numerator / m_cpuHz;
+	m_workCarry = numerator % m_cpuHz;
+	if (wholeUnits > 0) {
+		const uint32_t remainingRecords = m_activeJob->count - m_activeJob->processed;
+		const int64_t maxGrant = static_cast<int64_t>(remainingRecords - m_availableWorkUnits);
+		const int64_t granted = wholeUnits > maxGrant ? maxGrant : wholeUnits;
+		m_availableWorkUnits += static_cast<uint32_t>(granted);
+	}
+	maybeScheduleNextService(nowCycles);
 }
 
 bool GeometryController::hasPendingWork() const {
 	return m_activeJob.has_value();
 }
 
-uint32_t GeometryController::pendingWorkUnits() const {
+uint32_t GeometryController::getPendingWorkUnits() const {
 	if (!m_activeJob.has_value()) {
 		return 0u;
 	}
@@ -69,8 +97,10 @@ uint32_t GeometryController::pendingWorkUnits() const {
 }
 
 void GeometryController::reset() {
-	m_workBudget = 0;
+	m_workCarry = 0;
+	m_availableWorkUnits = 0;
 	m_activeJob.reset();
+	m_cancelService();
 	writeRegister(IO_GEO_SRC0, 0);
 	writeRegister(IO_GEO_SRC1, 0);
 	writeRegister(IO_GEO_SRC2, 0);
@@ -90,8 +120,10 @@ void GeometryController::reset() {
 }
 
 void GeometryController::normalizeAfterStateRestore() {
-	m_workBudget = 0;
+	m_workCarry = 0;
+	m_availableWorkUnits = 0;
 	m_activeJob.reset();
+	m_cancelService();
 	const uint32_t ctrl = readRegister(IO_GEO_CTRL);
 	const uint32_t status = readRegister(IO_GEO_STATUS);
 	const uint32_t processed = readRegister(IO_GEO_PROCESSED);
@@ -103,7 +135,7 @@ void GeometryController::normalizeAfterStateRestore() {
 	}
 }
 
-void GeometryController::onCtrlWrite() {
+void GeometryController::onCtrlWrite(int64_t nowCycles) {
 	const uint32_t ctrl = readRegister(IO_GEO_CTRL);
 	const bool start = (ctrl & GEO_CTRL_START) != 0u;
 	const bool abort = (ctrl & GEO_CTRL_ABORT) != 0u;
@@ -125,15 +157,16 @@ void GeometryController::onCtrlWrite() {
 		finishRejected(GEO_FAULT_REJECT_BUSY);
 		return;
 	}
-	tryStart();
+	tryStart(nowCycles);
 }
 
-void GeometryController::tick() {
-	if (!m_activeJob.has_value() || m_workBudget == 0u) {
+void GeometryController::onService(int64_t nowCycles) {
+	if (!m_activeJob.has_value() || m_availableWorkUnits == 0u) {
+		maybeScheduleNextService(nowCycles);
 		return;
 	}
-	uint32_t remaining = m_workBudget;
-	m_workBudget = 0;
+	uint32_t remaining = m_availableWorkUnits;
+	m_availableWorkUnits = 0u;
 	while (m_activeJob.has_value() && remaining > 0u) {
 		switch (m_activeJob->cmd) {
 			case IO_CMD_GEO_XFORM2_BATCH:
@@ -148,9 +181,11 @@ void GeometryController::tick() {
 		}
 		remaining -= 1u;
 	}
+	m_availableWorkUnits = remaining;
+	maybeScheduleNextService(nowCycles);
 }
 
-void GeometryController::tryStart() {
+void GeometryController::tryStart(int64_t nowCycles) {
 	GeoJob job;
 	job.cmd = readRegister(IO_GEO_CMD);
 	job.src0 = readRegister(IO_GEO_SRC0);
@@ -186,8 +221,34 @@ void GeometryController::tryStart() {
 		finishSuccess(0u);
 		return;
 	}
+	m_workCarry = 0;
+	m_availableWorkUnits = 0;
 	m_activeJob = job;
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_BUSY);
+	maybeScheduleNextService(nowCycles);
+}
+
+void GeometryController::maybeScheduleNextService(int64_t nowCycles) {
+	if (!m_activeJob.has_value()) {
+		m_cancelService();
+		return;
+	}
+	const uint32_t remainingRecords = m_activeJob->count - m_activeJob->processed;
+	const uint32_t targetUnits = remainingRecords < GEO_SERVICE_BATCH_RECORDS ? remainingRecords : GEO_SERVICE_BATCH_RECORDS;
+	if (m_availableWorkUnits >= targetUnits) {
+		m_scheduleService(nowCycles);
+		return;
+	}
+	m_scheduleService(nowCycles + cyclesUntilWorkUnits(targetUnits - m_availableWorkUnits));
+}
+
+int64_t GeometryController::cyclesUntilWorkUnits(uint32_t targetUnits) const {
+	const int64_t needed = static_cast<int64_t>(targetUnits) * m_cpuHz - m_workCarry;
+	if (needed <= 0) {
+		return 1;
+	}
+	const int64_t cycles = (needed + m_workUnitsPerSec - 1) / m_workUnitsPerSec;
+	return cycles <= 0 ? 1 : cycles;
 }
 
 bool GeometryController::validateXform2Submission(const GeoJob& job) {

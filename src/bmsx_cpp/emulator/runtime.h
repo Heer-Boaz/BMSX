@@ -18,6 +18,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace bmsx {
@@ -317,19 +318,21 @@ public:
 	void captureVramTextureSnapshots();
 
 private:
-	struct RateBudget {
-		i64 unitsPerSec = 0;
-		i64 carry = 0;
-
-		void setUnitsPerSec(i64 value) { unitsPerSec = value; }
-		void resetCarry() { carry = 0; }
-		uint32_t calcUnitsForCycles(i64 cpuHz, i64 cycles);
-		int cyclesUntilUnits(i64 cpuHz, i64 units) const;
-	};
-
 	enum class PendingCall {
 		None,
 		Entry,
+	};
+	enum TimerKind : uint8_t {
+		TimerKindVblankEnter = 1,
+		TimerKindFrameEnd = 2,
+		TimerKindDeviceService = 3,
+	};
+	enum DeviceServiceKind : uint8_t {
+		DeviceServiceGeo = 1,
+		DeviceServiceDma = 2,
+		DeviceServiceImg = 3,
+		DeviceServiceVdp = 4,
+		DeviceServiceKindCount = 5,
 	};
 
 	explicit Runtime(const RuntimeOptions& options);
@@ -339,9 +342,29 @@ private:
 	void runEngineBuiltinPrelude();
 	void resetFrameState();
 	void executeUpdateCallback();
-	void advanceHardware(int cycles);
-	void advanceVblank(int cycles);
-	int cyclesUntilNextVblankEdge() const;
+	void refreshDeviceTimings(i64 nowCycles);
+	void advanceTime(int cycles);
+	i64 currentSchedulerNowCycles() const;
+	int getCyclesIntoFrame() const;
+	void resetSchedulerState();
+	void clearTimerHeap();
+	static uint32_t nextTimerGeneration(uint32_t value);
+	void pushTimer(i64 deadline, uint8_t kind, uint8_t payload, uint32_t generation);
+	void removeTopTimer();
+	bool isTimerCurrent(uint8_t kind, uint8_t payload, uint32_t generation) const;
+	void discardStaleTopTimers();
+	i64 nextTimerDeadline();
+	void runDueTimers();
+	void dispatchTimer(uint8_t kind, uint8_t payload);
+	void scheduleVblankEnterTimer(i64 deadlineCycles);
+	void scheduleFrameEndTimer(i64 deadlineCycles);
+	void scheduleCurrentFrameTimers();
+	void handleVblankEnterTimer();
+	void handleFrameEndTimer();
+	void scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles);
+	void cancelDeviceService(uint8_t deviceKind);
+	void requestYieldForEarlierDeadline(i64 deadlineCycles);
+	void runDeviceService(uint8_t deviceKind);
 	void resetVblankState();
 	void setVblankStatus(bool active);
 	void enterVblank();
@@ -350,12 +373,8 @@ private:
 	void reconcileCycleBudgetAfterSignal(FrameState& frameState);
 	void freezeTickCpuStats(FrameState& frameState);
 	void requestWaitForVblank();
-	void resetTransferCarry();
 	void processIrqAck();
 	void raiseIrqFlags(uint32_t mask);
-	int resolveCpuSliceBudget(int remaining) const;
-	int resolveRateDeadline(const RateBudget& rate, bool pending, i64 units) const;
-	static int limitSliceDeadline(int current, int candidate);
 	RunResult runWithBudget();
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
 	Value requireModule(const std::string& moduleName);
@@ -469,17 +488,25 @@ private:
 	i64 m_imgDecBytesPerSec = 0;
 	i64 m_dmaBytesPerSecIso = 0;
 	i64 m_dmaBytesPerSecBulk = 0;
-	RateBudget m_imgRate;
-	RateBudget m_dmaIsoRate;
-	RateBudget m_dmaBulkRate;
-	RateBudget m_geoRate;
-	RateBudget m_vdpRate;
 	int m_vdpWorkUnitsPerSec = 25'600;
 	int m_geoWorkUnitsPerSec = 16'384'000;
 	int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 	int m_vblankCycles = 0;
 	int m_vblankStartCycle = 0;
-	int m_cyclesIntoFrame = 0;
+	i64 m_schedulerNowCycles = 0;
+	i64 m_frameStartCycle = 0;
+	bool m_schedulerSliceActive = false;
+	i64 m_activeSliceBaseCycle = 0;
+	int m_activeSliceBudgetCycles = 0;
+	i64 m_activeSliceTargetCycle = 0;
+	std::vector<i64> m_timerDeadlines;
+	std::vector<uint8_t> m_timerKinds;
+	std::vector<uint8_t> m_timerPayloads;
+	std::vector<uint32_t> m_timerGenerations;
+	size_t m_timerCount = 0;
+	uint32_t m_vblankEnterTimerGeneration = 0;
+	uint32_t m_frameEndTimerGeneration = 0;
+	std::array<uint32_t, static_cast<size_t>(DeviceServiceKindCount)> m_deviceServiceTimerGeneration{};
 	bool m_waitingForVblank = false;
 	bool m_handlingVdpCommandWrite = false;
 	std::array<u8, 4> m_vdpFifoWordScratch{{0, 0, 0, 0}};

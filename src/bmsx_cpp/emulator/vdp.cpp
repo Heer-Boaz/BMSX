@@ -28,6 +28,7 @@ constexpr uint32_t VDP_RD_SURFACE_FRAMEBUFFER = 3u;
 constexpr uint32_t VDP_RD_SURFACE_COUNT = 4u;
 constexpr uint32_t VDP_RD_BUDGET_BYTES = 4096u;
 constexpr uint32_t VDP_RD_MAX_CHUNK_PIXELS = 256u;
+constexpr int VDP_SERVICE_BATCH_WORK_UNITS = 128;
 constexpr size_t BLITTER_FIFO_CAPACITY = 4096u;
 constexpr size_t VRAM_GARBAGE_CHUNK_BYTES = 64u * 1024u;
 constexpr uint32_t VRAM_GARBAGE_SPACE_SALT = 0x5652414dU;
@@ -1106,10 +1107,18 @@ uint32_t nextWord(BlockGen& gen) {
 
 }
 
-VDP::VDP(Memory& memory)
+VDP::VDP(
+	Memory& memory,
+	std::function<int64_t()> getNowCycles,
+	std::function<void(int64_t deadlineCycles)> scheduleService,
+	std::function<void()> cancelService
+)
 	: m_memory(memory)
 	, m_vramStaging(VRAM_STAGING_SIZE)
-	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES) {
+	, m_vramGarbageScratch(VRAM_GARBAGE_CHUNK_BYTES)
+	, m_getNowCycles(std::move(getNowCycles))
+	, m_scheduleService(std::move(scheduleService))
+	, m_cancelService(std::move(cancelService)) {
 	m_memory.setVramWriter(this);
 	m_memory.setVdpIoHandler(this);
 	m_buildBlitterQueue.reserve(BLITTER_FIFO_CAPACITY);
@@ -1118,6 +1127,46 @@ VDP::VDP(Memory& memory)
 	m_vramMachineSeed = nextVramMachineSeed();
 	m_vramBootSeed = nextVramBootSeed();
 	m_readBudgetBytes = VDP_RD_BUDGET_BYTES;
+}
+
+void VDP::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
+	m_cpuHz = cpuHz;
+	m_workUnitsPerSec = workUnitsPerSec;
+	m_workCarry = 0;
+	m_availableWorkUnits = 0;
+	maybeScheduleNextService(nowCycles);
+}
+
+void VDP::accrueCycles(int cycles, int64_t nowCycles) {
+	if (!hasPendingRenderWork() || cycles <= 0) {
+		return;
+	}
+	const int64_t numerator = m_workUnitsPerSec * static_cast<int64_t>(cycles) + m_workCarry;
+	const int64_t wholeUnits = numerator / m_cpuHz;
+	m_workCarry = numerator % m_cpuHz;
+	if (wholeUnits > 0) {
+		const int remainingWork = getPendingRenderWorkUnits() - m_availableWorkUnits;
+		const int64_t maxGrant = remainingWork <= 0 ? 0 : remainingWork;
+		const int64_t granted = wholeUnits > maxGrant ? maxGrant : wholeUnits;
+		m_availableWorkUnits += static_cast<int>(granted);
+	}
+	maybeScheduleNextService(nowCycles);
+}
+
+void VDP::onService(int64_t nowCycles) {
+	if (needsImmediateSchedulerService()) {
+		promotePendingFrame();
+	}
+	if (hasPendingRenderWork() && m_availableWorkUnits > 0) {
+		const int pendingBefore = getPendingRenderWorkUnits();
+		advanceWork(m_availableWorkUnits);
+		const int pendingAfter = getPendingRenderWorkUnits();
+		const int consumed = pendingBefore - pendingAfter;
+		if (consumed > 0) {
+			m_availableWorkUnits -= consumed;
+		}
+	}
+	maybeScheduleNextService(nowCycles);
 }
 
 void VDP::writeVram(uint32_t addr, const u8* data, size_t length) {
@@ -1335,6 +1384,7 @@ void VDP::beginSubmittedFrame() {
 
 void VDP::cancelSubmittedFrame() {
 	resetBuildFrameState();
+	maybeScheduleNextService(m_getNowCycles());
 }
 
 void VDP::assignBuildToSlot(bool active) {
@@ -1370,6 +1420,7 @@ void VDP::assignBuildToSlot(bool active) {
 	}
 	m_buildFrameCost = 0;
 	m_buildFrameOpen = false;
+	maybeScheduleNextService(m_getNowCycles());
 }
 
 void VDP::sealSubmittedFrame() {
@@ -1407,6 +1458,7 @@ void VDP::promotePendingFrame() {
 	m_pendingSlotAtlasIds = {{-1, -1}};
 	m_pendingSkyboxFaceIds = {};
 	m_pendingHasSkybox = false;
+	maybeScheduleNextService(m_getNowCycles());
 }
 
 void VDP::advanceWork(int workUnits) {
@@ -1420,9 +1472,44 @@ void VDP::advanceWork(int workUnits) {
 		m_activeFrameWorkRemaining = 0;
 		executeBlitterQueue(m_activeBlitterQueue);
 		m_activeFrameReady = true;
+		maybeScheduleNextService(m_getNowCycles());
 		return;
 	}
 	m_activeFrameWorkRemaining -= workUnits;
+}
+
+int VDP::getPendingRenderWorkUnits() const {
+	if (!m_activeFrameOccupied) {
+		return m_pendingFrameCost;
+	}
+	return m_activeFrameReady ? 0 : m_activeFrameWorkRemaining;
+}
+
+void VDP::maybeScheduleNextService(int64_t nowCycles) {
+	if (needsImmediateSchedulerService()) {
+		m_scheduleService(nowCycles);
+		return;
+	}
+	if (!hasPendingRenderWork()) {
+		m_cancelService();
+		return;
+	}
+	const int pendingWork = getPendingRenderWorkUnits();
+	const int targetUnits = pendingWork < VDP_SERVICE_BATCH_WORK_UNITS ? pendingWork : VDP_SERVICE_BATCH_WORK_UNITS;
+	if (m_availableWorkUnits >= targetUnits) {
+		m_scheduleService(nowCycles);
+		return;
+	}
+	m_scheduleService(nowCycles + cyclesUntilWorkUnits(targetUnits - m_availableWorkUnits));
+}
+
+int64_t VDP::cyclesUntilWorkUnits(int targetUnits) const {
+	const int64_t needed = static_cast<int64_t>(targetUnits) * m_cpuHz - m_workCarry;
+	if (needed <= 0) {
+		return 1;
+	}
+	const int64_t cycles = (needed + m_workUnitsPerSec - 1) / m_workUnitsPerSec;
+	return cycles <= 0 ? 1 : cycles;
 }
 
 void VDP::clearActiveFrame() {
@@ -1456,6 +1543,7 @@ void VDP::presentReadyFrameOnVblankEdge() {
 		m_lastFrameCost = 0;
 		m_lastFrameHeld = false;
 		promotePendingFrame();
+		maybeScheduleNextService(m_getNowCycles());
 		return;
 	}
 	m_lastFrameCost = m_activeFrameCost;
@@ -1472,6 +1560,7 @@ void VDP::presentReadyFrameOnVblankEdge() {
 	m_lastFrameHeld = false;
 	clearActiveFrame();
 	promotePendingFrame();
+	maybeScheduleNextService(m_getNowCycles());
 }
 
 void VDP::initializeFrameBufferSurface() {

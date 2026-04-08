@@ -4,18 +4,30 @@
 #include "../memory_map.h"
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace bmsx {
+namespace {
+
+constexpr uint32_t DMA_SERVICE_BATCH_BYTES = 64u;
+
+}
 
 DmaController::DmaController(
 	Memory& memory,
 	std::function<void(uint32_t)> raiseIrq,
-	std::function<void(uint32_t src, size_t length)> sealVdpFifoDma
+	std::function<void(uint32_t src, size_t length)> sealVdpFifoDma,
+	std::function<int64_t()> getNowCycles,
+	std::function<void(int64_t deadlineCycles)> scheduleService,
+	std::function<void()> cancelService
 )
 	: m_memory(memory)
 	, m_raiseIrq(std::move(raiseIrq))
-	, m_sealVdpFifoDma(std::move(sealVdpFifoDma)) {}
+	, m_sealVdpFifoDma(std::move(sealVdpFifoDma))
+	, m_getNowCycles(std::move(getNowCycles))
+	, m_scheduleService(std::move(scheduleService))
+	, m_cancelService(std::move(cancelService)) {}
 
 bool DmaController::hasPendingVdpSubmit() const {
 	for (const auto& state : m_channels) {
@@ -49,22 +61,59 @@ uint32_t DmaController::pendingBulkBytes() const {
 	return pendingBytesForChannel(Channel::Bulk);
 }
 
-void DmaController::setChannelBudgets(uint32_t isoBytesPerTick, uint32_t bulkBytesPerTick) {
-	m_channels[static_cast<int>(Channel::Iso)].budget = isoBytesPerTick;
-	m_channels[static_cast<int>(Channel::Bulk)].budget = bulkBytesPerTick;
+void DmaController::setTiming(int64_t cpuHz, int64_t isoBytesPerSec, int64_t bulkBytesPerSec, int64_t nowCycles) {
+	m_cpuHz = cpuHz;
+	m_isoBytesPerSec = isoBytesPerSec;
+	m_bulkBytesPerSec = bulkBytesPerSec;
+	m_isoCarry = 0;
+	m_bulkCarry = 0;
+	m_channels[static_cast<int>(Channel::Iso)].budget = 0;
+	m_channels[static_cast<int>(Channel::Bulk)].budget = 0;
+	maybeScheduleNextService(nowCycles);
+}
+
+void DmaController::accrueCycles(int cycles, int64_t nowCycles) {
+	if (cycles <= 0) {
+		return;
+	}
+	accrueChannel(Channel::Iso, m_isoBytesPerSec, m_isoCarry, cycles);
+	accrueChannel(Channel::Bulk, m_bulkBytesPerSec, m_bulkCarry, cycles);
+	maybeScheduleNextService(nowCycles);
+}
+
+void DmaController::onService(int64_t nowCycles) {
+	if (!hasPendingIsoTransfer() && !hasPendingBulkTransfer()) {
+		m_cancelService();
+		return;
+	}
+	bool ioWrittenDirty = false;
+	bool imgWrittenDirty = false;
+	tickChannel(Channel::Iso, ioWrittenDirty, imgWrittenDirty);
+	tickChannel(Channel::Bulk, ioWrittenDirty, imgWrittenDirty);
+	if (ioWrittenDirty) {
+		m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(static_cast<double>(m_ioWrittenValue)));
+	}
+	if (imgWrittenDirty) {
+		m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(static_cast<double>(m_imgWrittenValue)));
+	}
+	maybeScheduleNextService(nowCycles);
 }
 
 uint32_t DmaController::pendingBytesForChannel(Channel channel) const {
 	const auto& state = m_channels[static_cast<int>(channel)];
-	const DmaJob* job = state.hasActive ? &state.active : (state.queue.empty() ? nullptr : &state.queue.front());
-	if (job == nullptr) {
-		return 0u;
+	uint32_t pendingBytes = 0u;
+	if (state.hasActive) {
+		const DmaJob& job = state.active;
+		pendingBytes += job.kind == DmaJob::Kind::Io
+			? job.remaining
+			: (static_cast<uint32_t>(job.plan.writeLen) - job.written);
 	}
-	if (job->kind == DmaJob::Kind::Io) {
-		return job->remaining;
+	for (const DmaJob& job : state.queue) {
+		pendingBytes += job.kind == DmaJob::Kind::Io
+			? job.remaining
+			: (static_cast<uint32_t>(job.plan.writeLen) - job.written);
 	}
-	const uint32_t writeSize = static_cast<uint32_t>(job->plan.writeLen);
-	return writeSize - job->written;
+	return pendingBytes;
 }
 
 void DmaController::enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete) {
@@ -82,29 +131,21 @@ void DmaController::enqueueImageCopy(const Memory::ImageWritePlan& plan, std::ve
 	job.fault = nullptr;
 	job.onComplete = std::move(onComplete);
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
-}
-
-void DmaController::tick() {
-	bool ioWrittenDirty = false;
-	bool imgWrittenDirty = false;
-	tickChannel(Channel::Iso, ioWrittenDirty, imgWrittenDirty);
-	tickChannel(Channel::Bulk, ioWrittenDirty, imgWrittenDirty);
-	if (ioWrittenDirty) {
-		m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(static_cast<double>(m_ioWrittenValue)));
-	}
-	if (imgWrittenDirty) {
-		m_memory.writeValue(IO_IMG_WRITTEN, valueNumber(static_cast<double>(m_imgWrittenValue)));
-	}
+	maybeScheduleNextService(m_getNowCycles());
 }
 
 void DmaController::reset() {
+	m_isoCarry = 0;
+	m_bulkCarry = 0;
 	for (int i = 0; i < 2; i += 1) {
 		m_channels[i].queue.clear();
 		m_channels[i].hasActive = false;
+		m_channels[i].budget = 0;
 	}
 	m_ioWrittenValue = 0;
 	m_imgWrittenValue = 0;
 	m_buffer.clear();
+	m_cancelService();
 	m_memory.writeValue(IO_DMA_SRC, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_DST, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_LEN, valueNumber(0.0));
@@ -142,9 +183,11 @@ void DmaController::tickChannel(Channel channel, bool& ioWrittenDirty, bool& img
 			continue;
 		}
 		if (written == 0) {
+			state.budget = budget;
 			return;
 		}
 	}
+	state.budget = budget;
 }
 
 uint32_t DmaController::processJob(DmaJob& job, uint32_t budget) {
@@ -293,6 +336,7 @@ void DmaController::tryStartIo() {
 	job.error = false;
 	m_ioWrittenValue = 0;
 	m_channels[static_cast<int>(Channel::Bulk)].queue.push_back(std::move(job));
+	maybeScheduleNextService(m_getNowCycles());
 }
 
 void DmaController::finishIoJob(DmaJob& job) {
@@ -332,6 +376,65 @@ void DmaController::finishIoError(bool clipped) {
 void DmaController::finishIoRejected() {
 	m_memory.writeValue(IO_DMA_WRITTEN, valueNumber(0.0));
 	m_memory.writeValue(IO_DMA_STATUS, valueNumber(static_cast<double>(DMA_STATUS_REJECTED)));
+}
+
+void DmaController::accrueChannel(Channel channel, int64_t bytesPerSec, int64_t& carry, int cycles) {
+	const uint32_t pendingBytes = pendingBytesForChannel(channel);
+	auto& state = m_channels[static_cast<int>(channel)];
+	if (pendingBytes == 0u) {
+		carry = 0;
+		state.budget = 0;
+		return;
+	}
+	const int64_t numerator = bytesPerSec * static_cast<int64_t>(cycles) + carry;
+	const int64_t wholeBytes = numerator / m_cpuHz;
+	carry = numerator % m_cpuHz;
+	if (wholeBytes <= 0) {
+		return;
+	}
+	const int64_t maxGrant = static_cast<int64_t>(pendingBytes - state.budget);
+	const int64_t granted = wholeBytes > maxGrant ? maxGrant : wholeBytes;
+	state.budget += static_cast<uint32_t>(granted);
+}
+
+void DmaController::maybeScheduleNextService(int64_t nowCycles) {
+	const bool pendingIso = hasPendingIsoTransfer();
+	const bool pendingBulk = hasPendingBulkTransfer();
+	if (!pendingIso && !pendingBulk) {
+		m_cancelService();
+		return;
+	}
+	int64_t nextDeadline = std::numeric_limits<int64_t>::max();
+	if (pendingIso) {
+		const uint32_t pendingBytes = pendingBytesForChannel(Channel::Iso);
+		const uint32_t targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
+		if (m_channels[static_cast<int>(Channel::Iso)].budget >= targetBytes) {
+			m_scheduleService(nowCycles);
+			return;
+		}
+		const int64_t deadline = nowCycles + cyclesUntilBytes(m_isoBytesPerSec, m_isoCarry, targetBytes - m_channels[static_cast<int>(Channel::Iso)].budget);
+		nextDeadline = deadline < nextDeadline ? deadline : nextDeadline;
+	}
+	if (pendingBulk) {
+		const uint32_t pendingBytes = pendingBytesForChannel(Channel::Bulk);
+		const uint32_t targetBytes = pendingBytes < DMA_SERVICE_BATCH_BYTES ? pendingBytes : DMA_SERVICE_BATCH_BYTES;
+		if (m_channels[static_cast<int>(Channel::Bulk)].budget >= targetBytes) {
+			m_scheduleService(nowCycles);
+			return;
+		}
+		const int64_t deadline = nowCycles + cyclesUntilBytes(m_bulkBytesPerSec, m_bulkCarry, targetBytes - m_channels[static_cast<int>(Channel::Bulk)].budget);
+		nextDeadline = deadline < nextDeadline ? deadline : nextDeadline;
+	}
+	m_scheduleService(nextDeadline);
+}
+
+int64_t DmaController::cyclesUntilBytes(int64_t bytesPerSec, int64_t carry, uint32_t targetBytes) const {
+	const int64_t needed = static_cast<int64_t>(targetBytes) * m_cpuHz - carry;
+	if (needed <= 0) {
+		return 1;
+	}
+	const int64_t cycles = (needed + bytesPerSec - 1) / bytesPerSec;
+	return cycles <= 0 ? 1 : cycles;
 }
 
 uint32_t DmaController::resolveMaxWritable(uint32_t dst) const {

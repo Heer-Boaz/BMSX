@@ -20,17 +20,21 @@ public:
 	DmaController(
 		Memory& memory,
 		std::function<void(uint32_t)> raiseIrq,
-		std::function<void(uint32_t src, size_t length)> sealVdpFifoDma
+		std::function<void(uint32_t src, size_t length)> sealVdpFifoDma,
+		std::function<int64_t()> getNowCycles,
+		std::function<void(int64_t deadlineCycles)> scheduleService,
+		std::function<void()> cancelService
 	);
 
-	void tick();
+	void setTiming(int64_t cpuHz, int64_t isoBytesPerSec, int64_t bulkBytesPerSec, int64_t nowCycles);
+	void accrueCycles(int cycles, int64_t nowCycles);
+	void onService(int64_t nowCycles);
 	void tryStartIo();
 	bool hasPendingVdpSubmit() const;
 	bool hasPendingIsoTransfer() const;
 	bool hasPendingBulkTransfer() const;
 	uint32_t pendingIsoBytes() const;
 	uint32_t pendingBulkBytes() const;
-	void setChannelBudgets(uint32_t isoBytesPerTick, uint32_t bulkBytesPerTick);
 	void enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete);
 	void reset();
 
@@ -64,6 +68,9 @@ private:
 		DmaJob active;
 	};
 
+	void accrueChannel(Channel channel, int64_t bytesPerSec, int64_t& carry, int cycles);
+	void maybeScheduleNextService(int64_t nowCycles);
+	int64_t cyclesUntilBytes(int64_t bytesPerSec, int64_t carry, uint32_t targetBytes) const;
 	void tickChannel(Channel channel, bool& ioWrittenDirty, bool& imgWrittenDirty);
 	uint32_t processJob(DmaJob& job, uint32_t budget);
 	uint32_t processImageJob(DmaJob& job, uint32_t budget);
@@ -76,13 +83,21 @@ private:
 	uint32_t resolveMaxWritable(uint32_t dst) const;
 	uint32_t pendingBytesForChannel(Channel channel) const;
 
-		DmaChannelState m_channels[2];
-		uint32_t m_ioWrittenValue = 0;
-		uint32_t m_imgWrittenValue = 0;
-		Memory& m_memory;
-		std::function<void(uint32_t)> m_raiseIrq;
-		std::function<void(uint32_t src, size_t length)> m_sealVdpFifoDma;
-		std::vector<uint8_t> m_buffer;
-	};
+	DmaChannelState m_channels[2];
+	int64_t m_cpuHz = 1;
+	int64_t m_isoBytesPerSec = 1;
+	int64_t m_bulkBytesPerSec = 1;
+	int64_t m_isoCarry = 0;
+	int64_t m_bulkCarry = 0;
+	uint32_t m_ioWrittenValue = 0;
+	uint32_t m_imgWrittenValue = 0;
+	Memory& m_memory;
+	std::function<void(uint32_t)> m_raiseIrq;
+	std::function<void(uint32_t src, size_t length)> m_sealVdpFifoDma;
+	std::function<int64_t()> m_getNowCycles;
+	std::function<void(int64_t deadlineCycles)> m_scheduleService;
+	std::function<void()> m_cancelService;
+	std::vector<uint8_t> m_buffer;
+};
 
 } // namespace bmsx
