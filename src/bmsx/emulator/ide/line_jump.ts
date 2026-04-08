@@ -1,0 +1,71 @@
+import * as constants from './constants';
+import { ide_state } from './ide_state';
+import { clearReferenceHighlights } from './intellisense';
+import { closeSearch } from './editor_search';
+import { resetBlink } from './render/render_caret';
+import { setFieldText } from './inline_text_field';
+import { beginNavigationCapture, completeNavigation } from './navigation_history';
+import { setCursorPosition } from './caret';
+import { breakUndoSequence } from './undo_controller';
+import * as TextEditing from './text_editing_and_selection';
+import { closeSymbolSearch } from './symbol_search_shared';
+import { closeResourceSearch } from './resource_search';
+
+export function openLineJump(): void {
+	clearReferenceHighlights();
+	closeSymbolSearch(false);
+	closeResourceSearch(false);
+	closeSearch(false, true);
+	ide_state.renameController.cancel();
+	ide_state.lineJumpVisible = true;
+	ide_state.lineJumpActive = true;
+	applyLineJumpFieldText('', true);
+	resetBlink();
+}
+
+export function closeLineJump(clearValue: boolean): void {
+	ide_state.lineJumpActive = false;
+	ide_state.lineJumpVisible = false;
+	if (clearValue) {
+		applyLineJumpFieldText('', true);
+	}
+	ide_state.lineJumpField.selectionAnchor = null;
+	ide_state.lineJumpField.pointerSelecting = false;
+	resetBlink();
+}
+
+export function focusEditorFromLineJump(): void {
+	if (!ide_state.lineJumpActive && !ide_state.lineJumpVisible) {
+		return;
+	}
+	ide_state.lineJumpActive = false;
+	ide_state.lineJumpVisible = false;
+	ide_state.lineJumpField.selectionAnchor = null;
+	ide_state.lineJumpField.pointerSelecting = false;
+	resetBlink();
+}
+
+export function applyLineJump(): void {
+	if (ide_state.lineJumpValue.length === 0) {
+		ide_state.showMessage('Enter a line number', constants.COLOR_STATUS_WARNING, 1.5);
+		return;
+	}
+	const target = Number.parseInt(ide_state.lineJumpValue, 10);
+	const lineCount = ide_state.buffer.getLineCount();
+	if (!Number.isFinite(target) || target < 1 || target > lineCount) {
+		ide_state.showMessage(`Line must be between 1 and ${lineCount}`, constants.COLOR_STATUS_WARNING, 1.8);
+		return;
+	}
+	const navigationCheckpoint = beginNavigationCapture();
+	setCursorPosition(target - 1, 0);
+	TextEditing.clearSelection();
+	breakUndoSequence();
+	closeLineJump(true);
+	ide_state.showMessage(`Jumped to line ${target}`, constants.COLOR_STATUS_SUCCESS, 1.5);
+	completeNavigation(navigationCheckpoint);
+}
+
+export function applyLineJumpFieldText(value: string, moveCursorToEnd: boolean): void {
+	ide_state.lineJumpValue = value;
+	setFieldText(ide_state.lineJumpField, value, moveCursorToEnd);
+}

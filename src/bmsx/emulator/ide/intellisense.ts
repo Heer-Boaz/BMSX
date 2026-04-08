@@ -27,10 +27,10 @@ import { tryShowLuaErrorOverlay } from './runtime_error_navigation';
 import { resolvePointerColumn, resolvePointerRow } from './editor_view';
 import * as constants from './constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';
+import { buildEditorSemanticFrontend } from './editor_semantic_frontend';
 import { ide_state } from './ide_state';
 import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from './lua/lua_identifier_chain';
 import { buildLuaSemanticModel, collectModuleAliasEntriesFromChunk, Decl, LuaSemanticModel, LuaSemanticWorkspace, type FileSemanticData, type ModuleAliasEntry } from './semantic_model';
-import { createLuaSemanticFrontendFromSnapshot } from './semantic_workspace';
 import { cacheSemanticWorkspaceAnalysis, getOrCreateSemanticWorkspace, prepareSemanticWorkspaceForEditorBuffer, primeSemanticWorkspaceProjectSources, syncSemanticWorkspacePath } from './semantic_workspace_sync';
 import { isLuaCommentContext, wrapOverlayLine } from './text_utils';
 import type { ApiCompletionMetadata, CodeTabContext, EditorContextToken, LuaCompletionItem, PointerSnapshot } from './types';
@@ -721,17 +721,7 @@ export function resolveSemanticDefinitionLocation(
 }
 
 function getProjectSemanticFrontendForEditorBuffer(context: CodeTabContext): ReturnType<typeof buildLuaSemanticFrontend> {
-	const hoverPath = context.descriptor.path;
-	const source = getTextSnapshot(ide_state.buffer);
-	const snapshot = prepareSemanticWorkspaceForEditorBuffer({
-		path: hoverPath,
-		source,
-		lines: splitText(source),
-		version: ide_state.textVersion,
-	});
-	return createLuaSemanticFrontendFromSnapshot(snapshot, {
-		extraGlobalNames: Array.from(Runtime.instance.interpreter.globalEnvironment.keys()),
-	});
+	return buildEditorSemanticFrontend(context.descriptor.path, ide_state.buffer, ide_state.textVersion);
 }
 
 export function findDefinitionAtPosition(

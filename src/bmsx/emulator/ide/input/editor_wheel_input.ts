@@ -6,7 +6,7 @@ import { isCodeTabActive, isResourceViewActive } from '../editor_tabs';
 import { getProblemsPanelBounds } from '../problems_panel';
 import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../hover_tooltip';
 import { getCodeAreaBounds, getResourceSearchBarBounds, scrollResourceBrowser, scrollRows } from '../editor_view';
-import { moveResourceSearchSelection } from '../search_bars';
+import { moveResourceSearchSelection } from '../resource_search_catalog';
 import { isShiftDown } from './key_input';
 import { scrollResourceBrowserHorizontal, scrollResourceViewer } from './resource_viewer_input';
 

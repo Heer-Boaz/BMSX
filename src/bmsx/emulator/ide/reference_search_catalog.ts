@@ -1,0 +1,53 @@
+import * as constants from './constants';
+import { ide_state } from './ide_state';
+import type { ReferenceMatchInfo } from './reference_state';
+import type { CodeTabContext } from './types';
+import { symbolSearchPageSize } from './editor_view';
+import { getTextSnapshot, splitText } from './text/source_text';
+import {
+	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
+	filterReferenceCatalog,
+	type ProjectReferenceEnvironment,
+	type ReferenceCatalogEntry,
+} from './reference_sources';
+import { getOrCreateSemanticWorkspace } from './semantic_workspace_sync';
+
+export function buildReferenceSearchCatalog(info: ReferenceMatchInfo, context: CodeTabContext): ReferenceCatalogEntry[] {
+	const path = context.descriptor.path;
+	const activeLines = splitText(getTextSnapshot(ide_state.buffer));
+	const environment: ProjectReferenceEnvironment = {
+		activeContext: context,
+		activeLines,
+		codeTabContexts: Array.from(ide_state.codeTabContexts.values()),
+	};
+	return buildProjectReferenceCatalog({
+		workspace: getOrCreateSemanticWorkspace(),
+		info,
+		lines: activeLines,
+		path,
+		environment,
+	});
+}
+
+export function updateReferenceSearchMatches(): void {
+	const { matches, selectionIndex, displayOffset } = filterReferenceCatalog({
+		catalog: ide_state.referenceCatalog,
+		query: ide_state.symbolSearchQuery,
+		state: ide_state.referenceState,
+		pageSize: symbolSearchPageSize(),
+	});
+	ide_state.symbolSearchMatches = matches;
+	ide_state.symbolSearchSelectionIndex = selectionIndex;
+	ide_state.symbolSearchDisplayOffset = displayOffset;
+	ide_state.symbolSearchHoverIndex = -1;
+}
+
+export function showReferenceSearchStatusMessage(): void {
+	const matches = ide_state.referenceState.getMatches();
+	const activeIndex = ide_state.referenceState.getActiveIndex();
+	if (matches.length === 0 || activeIndex < 0) {
+		return;
+	}
+	const label = ide_state.referenceState.getExpression() ?? '';
+	ide_state.showMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+}

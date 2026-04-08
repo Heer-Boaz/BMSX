@@ -11,7 +11,7 @@ import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } 
 import { ide_state } from './ide_state';
 import { bottomMargin, codeViewportTop } from './editor_view';
 import { measureText } from './text_utils';
-import type { CallHierarchyView, CallHierarchyViewNode } from './reference_navigation';
+import type { CallHierarchyView, CallHierarchyViewNode } from './call_hierarchy_view';
 import { focusEditorFromResourcePanel, listResourcesStrict, openResourceDescriptor, focusChunkSource } from './editor_tabs';
 import { applyDefinitionSelection } from './intellisense';
 

@@ -1,6 +1,6 @@
 import { ide_state } from '../ide_state';
 import { applyInlineFieldEditing } from '../inline_text_field';
-import { applyLineJump, closeLineJump, openLineJump } from '../search_bars';
+import { applyLineJump, closeLineJump, openLineJump } from '../line_jump';
 import { textFromLines } from '../text/source_text';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 

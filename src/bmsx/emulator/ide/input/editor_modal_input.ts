@@ -1,7 +1,9 @@
 import { closeSearch } from '../editor_search';
 import { ide_state } from '../ide_state';
 import { closeCreateResourcePrompt } from '../create_resource';
-import { closeSymbolSearch, closeResourceSearch, closeLineJump } from '../search_bars';
+import { closeResourceSearch } from '../resource_search';
+import { closeLineJump } from '../line_jump';
+import { closeSymbolSearch } from '../symbol_search_shared';
 import { resetActionPromptState } from './action_prompt';
 import { closeEditorContextMenu } from '../render/render_context_menu';
 

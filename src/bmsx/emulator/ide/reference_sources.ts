@@ -4,7 +4,8 @@ import type { CodeTabContext, SearchMatch, SymbolSearchResult } from './types';
 import { parseLuaIdentifierChain } from './lua/lua_identifier_chain';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
-import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from './semantic_workspace';
+import { createEditorSemanticFrontend } from './editor_semantic_frontend';
+import { LuaSemanticWorkspace } from './semantic_workspace';
 import { syncSemanticWorkspacePaths, type SemanticWorkspacePathInput } from './semantic_workspace_sync';
 import { ReferenceState, type ReferenceMatchInfo } from './reference_state';
 import { getTextSnapshot, splitText } from './text/source_text';
@@ -199,7 +200,7 @@ function prepareProjectSemanticFrontend(
 ): {
 	metadata: Map<string, FileMetadata>;
 	snapshot: LuaSemanticWorkspaceSnapshot;
-	frontend: ReturnType<typeof createLuaSemanticFrontendFromSnapshot>;
+	frontend: ReturnType<typeof createEditorSemanticFrontend>;
 } {
 	const metadata = new Map<string, FileMetadata>();
 	const inputs: SemanticWorkspacePathInput[] = [];
@@ -235,9 +236,7 @@ function prepareProjectSemanticFrontend(
 	return {
 		metadata,
 		snapshot,
-		frontend: createLuaSemanticFrontendFromSnapshot(snapshot, {
-			extraGlobalNames: Runtime.instance ? Array.from(Runtime.instance.interpreter.globalEnvironment.keys()) : [],
-		}),
+		frontend: createEditorSemanticFrontend(snapshot),
 	};
 }
 

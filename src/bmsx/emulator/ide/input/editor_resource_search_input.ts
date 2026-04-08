@@ -1,10 +1,13 @@
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { applyInlineFieldEditing } from '../inline_text_field';
-import { applyLineJumpFieldText, applyResourceSearchSelection, closeResourceSearch, ensureResourceSearchSelectionVisible, focusEditorFromResourceSearch, moveResourceSearchSelection, openGlobalSymbolSearch, openLineJump, openSymbolSearch, updateResourceSearchMatches } from '../search_bars';
+import { applyResourceSearchSelection, closeResourceSearch, focusEditorFromResourceSearch } from '../resource_search';
+import { applyLineJumpFieldText, openLineJump } from '../line_jump';
 import { textFromLines } from '../text/source_text';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
 import { resourceSearchWindowCapacity } from '../editor_view';
+import { ensureResourceSearchSelectionVisible, moveResourceSearchSelection, updateResourceSearchMatches } from '../resource_search_catalog';
+import { openGlobalSymbolSearch, openSymbolSearch } from '../symbol_search';
 
 export function handleResourceSearchInput(): void {
 	const shiftDown = isShiftDown();

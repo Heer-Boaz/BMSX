@@ -43,7 +43,7 @@ import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from
 import { processDiagnosticsQueue } from './diagnostics_controller';
 import { updateDesiredColumn } from './caret';
 import { resetActionPromptState } from './input/action_prompt';
-import { applyLineJumpFieldText } from './search_bars';
+import { applyLineJumpFieldText } from './line_jump';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt } from './create_resource';
 
 export function tickInput(): void {

@@ -4,7 +4,7 @@ import { setFieldText } from './inline_text_field';
 import { getActiveCodeTabContext } from './editor_tabs';
 import { resetBlink } from './render/render_caret';
 import { focusEditorFromSearch } from './editor_search';
-import { focusEditorFromLineJump } from './search_bars';
+import { focusEditorFromLineJump } from './line_jump';
 import { listResources } from '../workspace';
 
 export function openCreateResourcePrompt(): void {

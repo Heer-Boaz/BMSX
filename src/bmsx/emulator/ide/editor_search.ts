@@ -11,7 +11,9 @@ import { beginNavigationCapture, completeNavigation } from './navigation_history
 import { updateDesiredColumn } from './caret';
 import { listResources } from '../workspace';
 import { openLuaCodeTab } from './editor_tabs';
-import { closeSymbolSearch, closeResourceSearch, closeLineJump } from './search_bars';
+import { closeResourceSearch } from './resource_search';
+import { closeLineJump } from './line_jump';
+import { closeSymbolSearch } from './symbol_search_shared';
 import { clearReferenceHighlights } from './intellisense';
 import { ensureCursorVisible, revealCursor } from './caret';
 import { resetBlink } from './render/render_caret';

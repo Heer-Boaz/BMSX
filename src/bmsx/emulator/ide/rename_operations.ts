@@ -3,7 +3,7 @@ import type { ReferenceMatchInfo } from './reference_state';
 import type { LuaSourceRange } from '../../lua/syntax/lua_ast';
 import { clamp } from '../../utils/clamp';
 import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from './editor_tabs';
-import { findResourceDescriptorForChunk, buildProjectReferenceContext } from './search_bars';
+import { findResourceDescriptorForChunk } from './resource_lookup';
 import { getTextSnapshot, splitText } from './text/source_text';
 import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from './semantic_workspace_sync';
 import { ide_state } from './ide_state';
@@ -34,8 +34,7 @@ export type RenameLineEdit = {
 export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
 	const { matches, newName, activeIndex, info } = payload;
 	const activeContext = getActiveCodeTabContext();
-	const referenceContext = buildProjectReferenceContext(activeContext);
-	const activePath = referenceContext.path;
+	const activePath = activeContext.descriptor.path;
 	const workspace = getOrCreateSemanticWorkspace();
 	const sortedMatches = matches.slice();
 	sortedMatches.sort((a, b) => a.row !== b.row ? a.row - b.row : a.start - b.start);

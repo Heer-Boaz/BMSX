@@ -14,7 +14,8 @@ import { syncRuntimeErrorOverlayFromContext } from './runtime_error_navigation';
 import { updateDesiredColumn, ensureCursorVisible } from './caret';
 import { refreshActiveDiagnostics } from './diagnostics_controller';
 import { beginNavigationCapture, completeNavigation } from './navigation_history';
-import { closeLineJump, closeSymbolSearch } from './search_bars';
+import { closeLineJump } from './line_jump';
+import { closeSymbolSearch } from './symbol_search_shared';
 import { getCodeAreaBounds, hideResourcePanel, getTabBarTotalHeight, resetPointerClickTracking, selectResourceInPanel } from './editor_view';
 import { markDiagnosticsDirty, markAllDiagnosticsDirty } from './diagnostics';
 import { closeSearch } from './editor_search';
@@ -33,7 +34,8 @@ import { setWorkspaceCachedSources } from '../workspace_cache';
 import { breakUndoSequence } from './undo_controller';
 import { tryShowLuaErrorOverlay } from './runtime_error_navigation';
 import { extractErrorMessage } from '../../lua/luavalue';
-import { findResourceDescriptorForChunk, closeResourceSearch } from './search_bars';
+import { closeResourceSearch } from './resource_search';
+import { findResourceDescriptorForChunk } from './resource_lookup';
 import { applyAemSourceToRuntime, listAemResourceDescriptors, loadAemResourceSource, saveAemResourceSource } from './aem_editor';
 
 function resolvePath(descriptor: ResourceDescriptor): string {

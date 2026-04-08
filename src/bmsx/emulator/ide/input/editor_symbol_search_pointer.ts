@@ -4,7 +4,9 @@ import { closeSearch, processInlineFieldPointer } from '../editor_search';
 import { getSymbolSearchBarBounds, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../editor_view';
 import { ide_state } from '../ide_state';
 import type { PointerSnapshot } from '../types';
-import { applySymbolSearchSelection, closeLineJump, ensureSymbolSearchSelectionVisible } from '../search_bars';
+import { closeLineJump } from '../line_jump';
+import { applySymbolSearchSelection } from '../symbol_search';
+import { ensureSymbolSearchSelectionVisible } from '../symbol_search_shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from './editor_quick_input_pointer_common';
 
 export function handleSymbolSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {

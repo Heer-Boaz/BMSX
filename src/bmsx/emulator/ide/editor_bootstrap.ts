@@ -20,10 +20,12 @@ import {
 	configureFontVariant,
 	resetResourcePanelState,
 } from './editor_view';
-import { applyLineJumpFieldText, applyResourceSearchFieldText, applySymbolSearchFieldText } from './search_bars';
+import { applyResourceSearchFieldText } from './resource_search';
+import { applyLineJumpFieldText } from './line_jump';
 import { applyCreateResourceFieldText } from './create_resource';
 import { applySearchFieldText } from './editor_search';
 import { createNavigationEntry } from './navigation_history';
+import { applySymbolSearchFieldText } from './symbol_search_shared';
 
 export function initializeCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();

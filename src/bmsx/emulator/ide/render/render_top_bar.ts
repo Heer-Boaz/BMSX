@@ -3,23 +3,8 @@ import type { RectBounds } from '../../../rompack/rompack';
 import { ide_state } from '../ide_state';
 import { measureText } from '../text_utils';
 import { drawEditorText } from './text_renderer';
-import { MenuId, TopBarButtonId } from '../types';
 import { api } from '../../overlay_api';
-import { MENU_COMMANDS, MENU_IDS } from '../input/editor_commands';
-
-type MenuSeparator = { type: 'separator' };
-type MenuItem = {
-	type: 'command';
-	command: TopBarButtonId;
-	label: string;
-	active: boolean;
-	disabled: boolean;
-};
-type MenuEntry = {
-	id: MenuId;
-	label: string;
-	items: Array<MenuItem | MenuSeparator>;
-};
+import { buildTopBarMenuEntries, MENU_COMMANDS, MENU_IDS, TopBarMenuEntry } from '../editor_top_bar_menu';
 
 const Z_TOP_BAR_BACKGROUND = 10;
 const Z_MENU_BUTTON = 14;
@@ -35,17 +20,17 @@ export function renderTopBar(): void {
 	const primaryBarHeight = ide_state.headerHeight;
 	api.fill_rect(0, 0, ide_state.viewportWidth, primaryBarHeight, Z_TOP_BAR_BACKGROUND, constants.COLOR_TOP_BAR);
 
-	const menuEntries = buildMenuEntries();
+	const menuEntries = buildTopBarMenuEntries();
 	renderMenuRow(menuEntries);
 }
 
 export function renderTopBarDropdown(): void {
-	const menuEntries = buildMenuEntries();
+	const menuEntries = buildTopBarMenuEntries();
 	const menuButtonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
 	renderOpenMenuDropdown(menuEntries, menuButtonHeight);
 }
 
-function renderMenuRow(menuEntries: MenuEntry[]): number {
+function renderMenuRow(menuEntries: TopBarMenuEntry[]): number {
 	const buttonTop = 1;
 	const buttonHeight = ide_state.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
 	let buttonX = 4;
@@ -74,7 +59,7 @@ function renderMenuRow(menuEntries: MenuEntry[]): number {
 	return buttonHeight;
 }
 
-function renderOpenMenuDropdown(menuEntries: MenuEntry[], buttonHeight: number): void {
+function renderOpenMenuDropdown(menuEntries: TopBarMenuEntry[], buttonHeight: number): void {
 	const openMenu = menuEntries.find((entry) => entry.id === ide_state.openMenuId);
 	if (!openMenu) {
 		ide_state.menuDropdownBounds = null;
@@ -88,7 +73,7 @@ function renderOpenMenuDropdown(menuEntries: MenuEntry[], buttonHeight: number):
 	renderMenuDropdown(openMenu, anchor, buttonHeight);
 }
 
-function renderMenuDropdown(menu: MenuEntry, anchor: RectBounds, itemHeight: number): void {
+function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeight: number): void {
 	const markerSize = Math.max(2, Math.floor(ide_state.lineHeight / 2));
 	const paddingX = constants.HEADER_BUTTON_PADDING_X;
 	const dropdownWidth = computeDropdownWidth(menu, markerSize, paddingX, anchor.right - anchor.left);
@@ -140,66 +125,7 @@ function renderMenuDropdown(menu: MenuEntry, anchor: RectBounds, itemHeight: num
 	ide_state.menuDropdownBounds = { left: dropdownLeft, top: dropdownTop, right: dropdownRight, bottom: dropdownTop + totalHeight };
 }
 
-function buildMenuEntries(): MenuEntry[] {
-	const resourcePanelActive = ide_state.resourcePanelVisible;
-	const resourcePanelMode = ide_state.resourcePanel.getMode();
-	const resourceFilesMode = resourcePanelMode === 'resources';
-	const filterMode = ide_state.resourcePanel.getFilterMode();
-	const debuggerPaused = ide_state.debuggerControls.executionState === 'paused';
-	const problemsActive = ide_state.problemsPanel.isVisible;
-	const filterActive = filterMode === 'lua_only';
-	return [
-		{
-			id: 'file',
-			label: 'FILE',
-			items: [
-				{ type: 'command', command: 'save', label: 'Save', active: false, disabled: !ide_state.dirty },
-				{
-					type: 'command',
-					command: 'resources',
-					label: resourcePanelActive ? 'Hide Files' : 'Show Files',
-					active: resourcePanelActive,
-					disabled: false,
-				},
-			],
-		},
-		{
-			id: 'run',
-			label: 'RUN',
-			items: [
-				{ type: 'command', command: 'hot-resume', label: 'Hot Resume', active: false, disabled: false },
-				{ type: 'command', command: 'reboot', label: 'Reboot', active: false, disabled: false },
-			],
-		},
-		{
-			id: 'view',
-			label: 'VIEW',
-			items: [
-				{ type: 'command', command: 'problems', label: 'Problems Panel', active: problemsActive, disabled: false },
-				{ type: 'command', command: 'wrap', label: 'Word Wrap', active: ide_state.wordWrapEnabled, disabled: false },
-				{
-					type: 'command',
-					command: 'filter',
-					label: filterActive ? 'Lua Files Only' : 'All Resources',
-					active: filterActive,
-					disabled: !resourcePanelActive || !resourceFilesMode,
-				},
-			],
-		},
-		{
-			id: 'debug',
-			label: 'DEBUG',
-			items: [
-				{ type: 'command', command: 'debugContinue', label: 'Continue', active: false, disabled: !debuggerPaused },
-				{ type: 'command', command: 'debugStepOver', label: 'Step Over', active: false, disabled: !debuggerPaused },
-				{ type: 'command', command: 'debugStepInto', label: 'Step Into', active: false, disabled: !debuggerPaused },
-				{ type: 'command', command: 'debugStepOut', label: 'Step Out', active: false, disabled: !debuggerPaused },
-			],
-		},
-	];
-}
-
-function computeDropdownWidth(menu: MenuEntry, markerSize: number, paddingX: number, anchorWidth: number): number {
+function computeDropdownWidth(menu: TopBarMenuEntry, markerSize: number, paddingX: number, anchorWidth: number): number {
 	let maxLabelWidth = 0;
 	for (let index = 0; index < menu.items.length; index += 1) {
 		const item = menu.items[index];
@@ -215,7 +141,7 @@ function computeDropdownWidth(menu: MenuEntry, markerSize: number, paddingX: num
 	return Math.max(labelWidth, anchorWidth + paddingX * 2);
 }
 
-function computeDropdownHeight(menu: MenuEntry, itemHeight: number, separatorHeight: number): number {
+function computeDropdownHeight(menu: TopBarMenuEntry, itemHeight: number, separatorHeight: number): number {
 	let total = 0;
 	for (let index = 0; index < menu.items.length; index += 1) {
 		const item = menu.items[index];

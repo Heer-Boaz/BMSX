@@ -1,26 +1,12 @@
+import type { TopBarButtonId } from '../editor_top_bar_menu';
 import { executeEditorDebugCommand, isEditorDebugCommand } from './editor_debug_commands';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './editor_search_commands';
 import { executeEditorSymbolNavigationCommand, isEditorSymbolNavigationCommand } from './editor_symbol_navigation_commands';
 import { executeEditorViewCommand, isEditorViewCommand } from './editor_view_commands';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './editor_workspace_commands';
 
-export const MENU_IDS = ['file', 'run', 'view', 'debug'] as const;
-export const MENU_COMMANDS = [
-	'hot-resume',
-	'reboot',
-	'save',
-	'resources',
-	'problems',
-	'filter',
-	'wrap',
-	'debugContinue',
-	'debugStepOver',
-	'debugStepInto',
-	'debugStepOut',
-] as const;
-
 export type EditorCommandId =
-	| (typeof MENU_COMMANDS)[number]
+	| TopBarButtonId
 	| 'theme-toggle'
 	| 'goToDefinition'
 	| 'callHierarchy'
@@ -35,7 +21,7 @@ export type EditorCommandId =
 	| 'referenceSearch'
 	| 'rename';
 
-export function executeTopBarCommand(command: (typeof MENU_COMMANDS)[number]): void {
+export function executeTopBarCommand(command: TopBarButtonId): void {
 	executeEditorCommand(command);
 }
 

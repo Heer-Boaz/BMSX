@@ -6,7 +6,6 @@ import type {
 	ResourceDescriptor,
 } from '../types';
 import type { StackTraceFrame } from '../../lua/luavalue';
-import { MENU_COMMANDS } from './input/editor_commands';
 import type { EditorCommandId } from './input/editor_commands';
 import { RectBounds } from '../../rompack/rompack';
 import type { TextBuffer } from './text/text_buffer';
@@ -213,8 +212,8 @@ export type VisualLineSegment = {
 	endColumn: number;
 };
 
-export type TopBarButtonId = typeof MENU_COMMANDS[number];
-export type MenuId = 'file' | 'run' | 'view' | 'debug';
+export type TopBarButtonId = import('./editor_top_bar_menu').TopBarButtonId;
+export type MenuId = import('./editor_top_bar_menu').MenuId;
 export type CodeTabMode = 'lua' | 'aem';
 
 export type EditorTabId = `resource:${string}` | `code:${string}`;

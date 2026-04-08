@@ -4,7 +4,10 @@ import { closeSearch, processInlineFieldPointer } from '../editor_search';
 import { getResourceSearchBarBounds, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../editor_view';
 import { ide_state } from '../ide_state';
 import type { PointerSnapshot } from '../types';
-import { applyResourceSearchSelection, closeLineJump, closeSymbolSearch, ensureResourceSearchSelectionVisible } from '../search_bars';
+import { applyResourceSearchSelection } from '../resource_search';
+import { ensureResourceSearchSelectionVisible } from '../resource_search_catalog';
+import { closeLineJump } from '../line_jump';
+import { closeSymbolSearch } from '../symbol_search_shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from './editor_quick_input_pointer_common';
 
 export function handleResourceSearchPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {

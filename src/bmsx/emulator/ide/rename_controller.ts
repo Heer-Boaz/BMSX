@@ -1,4 +1,4 @@
-import { resolveReferenceLookup, type ReferenceLookupOptions } from './reference_navigation';
+import { resolveReferenceLookup, type ReferenceLookupOptions } from './reference_lookup';
 import { type ReferenceMatchInfo } from './reference_state';
 import type { InlineInputOptions, TextField, SearchMatch } from './types';
 import { applyInlineFieldEditing, createInlineTextField, setFieldText } from './inline_text_field';
@@ -7,7 +7,7 @@ import * as constants from './constants';
 import { consumeIdeKey } from './input/key_input';
 import { clamp } from '../../utils/clamp';
 import { LuaLexer } from '../../lua/syntax/lualexer';
-import { focusEditorFromRename } from './search_bars';
+import { focusEditorFromRename } from './rename_prompt';
 import { textFromLines } from './text/source_text';
 import { ide_state } from './ide_state';
 import { redo, undo } from './undo_controller';

@@ -1,7 +1,9 @@
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { applyInlineFieldEditing } from '../inline_text_field';
-import { applySymbolSearchSelection, closeSymbolSearch, ensureSymbolSearchSelectionVisible, moveSymbolSearchSelection, updateSymbolSearchMatches } from '../search_bars';
+import { applySymbolSearchSelection } from '../symbol_search';
+import { moveSymbolSearchSelection, updateSymbolSearchMatches } from '../symbol_search_catalog';
+import { closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../symbol_search_shared';
 import { textFromLines } from '../text/source_text';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
 import { symbolSearchPageSize } from '../editor_view';

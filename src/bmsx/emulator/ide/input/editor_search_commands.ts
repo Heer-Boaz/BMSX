@@ -1,7 +1,11 @@
 import { focusRuntimeErrorOverlay } from '../runtime_error_navigation';
 import { openSearch } from '../editor_search';
-import { openGlobalSymbolSearch, openLineJump, openReferenceSearchPopup, openResourceSearch, openSymbolSearch, openRenamePrompt } from '../search_bars';
+import { openResourceSearch } from '../resource_search';
+import { openLineJump } from '../line_jump';
 import { openCreateResourcePrompt } from '../create_resource';
+import { openReferenceSearchPopup } from '../reference_search';
+import { openRenamePrompt } from '../rename_prompt';
+import { openGlobalSymbolSearch, openSymbolSearch } from '../symbol_search';
 import type { EditorCommandId } from './editor_commands';
 
 export type EditorSearchCommandId =
