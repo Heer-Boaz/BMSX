@@ -57,6 +57,17 @@ void GeometryController::setWorkBudget(uint32_t workUnits) {
 	m_workBudget = workUnits;
 }
 
+bool GeometryController::hasPendingWork() const {
+	return m_activeJob.has_value();
+}
+
+uint32_t GeometryController::pendingWorkUnits() const {
+	if (!m_activeJob.has_value()) {
+		return 0u;
+	}
+	return m_activeJob->count - m_activeJob->processed;
+}
+
 void GeometryController::reset() {
 	m_workBudget = 0;
 	m_activeJob.reset();

@@ -33,6 +33,18 @@ ImgDecController::ImgDecController(Memory& memory, DmaController& dma, std::func
 	, m_dma(dma)
 	, m_raiseIrq(std::move(raiseIrq)) {}
 
+bool ImgDecController::requiresService() const {
+	return static_cast<bool>(m_pendingError) || (m_pendingResult.has_value() && m_pendingEntry.has_value());
+}
+
+bool ImgDecController::hasPendingDecodeWork() const {
+	return m_active && m_decodeActive && !m_decodeQueued && m_decodeRemaining > 0;
+}
+
+uint32_t ImgDecController::pendingDecodeBytes() const {
+	return static_cast<uint32_t>(m_decodeRemaining);
+}
+
 void ImgDecController::setDecodeBudget(uint32_t bytesPerTick) {
 	m_decodeBudget = bytesPerTick;
 }

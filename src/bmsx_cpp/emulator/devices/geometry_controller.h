@@ -13,6 +13,8 @@ public:
 	GeometryController(Memory& memory, std::function<void(uint32_t)> raiseIrq);
 
 	void setWorkBudget(uint32_t workUnits);
+	bool hasPendingWork() const;
+	uint32_t pendingWorkUnits() const;
 	void tick();
 	void reset();
 	void normalizeAfterStateRestore();

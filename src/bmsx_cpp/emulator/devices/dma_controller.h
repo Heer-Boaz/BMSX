@@ -26,6 +26,10 @@ public:
 	void tick();
 	void tryStartIo();
 	bool hasPendingVdpSubmit() const;
+	bool hasPendingIsoTransfer() const;
+	bool hasPendingBulkTransfer() const;
+	uint32_t pendingIsoBytes() const;
+	uint32_t pendingBulkBytes() const;
 	void setChannelBudgets(uint32_t isoBytesPerTick, uint32_t bulkBytesPerTick);
 	void enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete);
 	void reset();
@@ -70,6 +74,7 @@ private:
 	void finishIoError(bool clipped);
 	void finishIoRejected();
 	uint32_t resolveMaxWritable(uint32_t dst) const;
+	uint32_t pendingBytesForChannel(Channel channel) const;
 
 		DmaChannelState m_channels[2];
 		uint32_t m_ioWrittenValue = 0;

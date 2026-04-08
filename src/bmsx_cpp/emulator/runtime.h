@@ -78,7 +78,7 @@ struct RuntimeOptions {
 	int cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 	int vblankCycles = 0;
 	int vdpWorkUnitsPerSec = 25'600;
-	int geoWorkUnitsPerSec = 25'600;
+	int geoWorkUnitsPerSec = 16'384'000;
 };
 
 /**
@@ -283,7 +283,7 @@ public:
 	void setCanonicalization(CanonicalizationType canonicalization);
 	void setCpuHz(i64 hz);
 	void applyActiveMachineTiming(i64 cpuHz);
-	void setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec);
+	void setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec, int geoWorkUnitsPerSec);
 	i64 cpuHz() const { return m_cpuHz; }
 	void setVblankCycles(int cycles);
 	void setVdpWorkUnitsPerSec(int workUnitsPerSec);
@@ -324,6 +324,7 @@ private:
 		void setUnitsPerSec(i64 value) { unitsPerSec = value; }
 		void resetCarry() { carry = 0; }
 		uint32_t calcUnitsForCycles(i64 cpuHz, i64 cycles);
+		int cyclesUntilUnits(i64 cpuHz, i64 units) const;
 	};
 
 	enum class PendingCall {
@@ -352,6 +353,9 @@ private:
 	void resetTransferCarry();
 	void processIrqAck();
 	void raiseIrqFlags(uint32_t mask);
+	int resolveCpuSliceBudget(int remaining) const;
+	int resolveRateDeadline(const RateBudget& rate, bool pending, i64 units) const;
+	static int limitSliceDeadline(int current, int candidate);
 	RunResult runWithBudget();
 	void queueLifecycleHandlers(bool runInit, bool runNewGame);
 	Value requireModule(const std::string& moduleName);
@@ -471,7 +475,7 @@ private:
 	RateBudget m_geoRate;
 	RateBudget m_vdpRate;
 	int m_vdpWorkUnitsPerSec = 25'600;
-	int m_geoWorkUnitsPerSec = 25'600;
+	int m_geoWorkUnitsPerSec = 16'384'000;
 	int m_cycleBudgetPerFrame = DEFAULT_CYCLE_BUDGET;
 	int m_vblankCycles = 0;
 	int m_vblankStartCycle = 0;

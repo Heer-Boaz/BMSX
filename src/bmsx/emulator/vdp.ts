@@ -955,6 +955,27 @@ export class VDP implements VramWriteSink, VdpIoHandler {
 		this.activeFrameWorkRemaining -= workUnits;
 	}
 
+	public requiresSchedulerService(): boolean {
+		return !this.activeFrameOccupied && this.pendingFrameOccupied;
+	}
+
+	public hasPendingRenderWork(): boolean {
+		if (!this.activeFrameOccupied) {
+			return this.pendingFrameOccupied && this.pendingFrameCost > 0;
+		}
+		return !this.activeFrameReady;
+	}
+
+	public getPendingRenderWorkUnits(): number {
+		if (!this.activeFrameOccupied) {
+			return this.pendingFrameCost;
+		}
+		if (this.activeFrameReady) {
+			return 0;
+		}
+		return this.activeFrameWorkRemaining;
+	}
+
 	private clearActiveFrame(): void {
 		this.recycleBlitterBuffers(this.activeBlitterQueue);
 		this.activeFrameOccupied = false;

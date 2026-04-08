@@ -29,6 +29,7 @@
 namespace bmsx {
 
 constexpr i64 DEFAULT_VDP_WORK_UNITS_PER_SEC = 25'600;
+constexpr i64 DEFAULT_GEO_WORK_UNITS_PER_SEC = 16'384'000;
 
 // Program asset ID (matches TypeScript PROGRAM_ASSET_ID)
 constexpr const char* PROGRAM_ASSET_ID = "__program__";
@@ -351,6 +352,7 @@ struct MachineManifest {
 	std::optional<i64> dmaBytesPerSecIso;
 	std::optional<i64> dmaBytesPerSecBulk;
 	std::optional<i64> vdpWorkUnitsPerSec;
+	std::optional<i64> geoWorkUnitsPerSec;
 	std::optional<i64> ufpsScaled;
 };
 

@@ -3668,7 +3668,7 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 			renderSizeTable->set(key("height"), valueNumber(static_cast<double>(manifest.viewportHeight)));
 			machineTable->set(key("render_size"), valueTable(renderSizeTable));
 		}
-		auto* specsTable = m_cpu.createTable(0, 5);
+		auto* specsTable = m_cpu.createTable(0, 6);
 		auto* cpuTable = m_cpu.createTable(0, 2);
 		if (manifest.cpuHz) {
 			cpuTable->set(key("cpu_freq_hz"), valueNumber(static_cast<double>(*manifest.cpuHz)));
@@ -3688,6 +3688,9 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 		auto* vdpTable = m_cpu.createTable(0, 1);
 		vdpTable->set(key("work_units_per_sec"), valueNumber(static_cast<double>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC))));
 		specsTable->set(key("vdp"), valueTable(vdpTable));
+		auto* geoTable = m_cpu.createTable(0, 1);
+		geoTable->set(key("work_units_per_sec"), valueNumber(static_cast<double>(manifest.geoWorkUnitsPerSec.value_or(DEFAULT_GEO_WORK_UNITS_PER_SEC))));
+		specsTable->set(key("geo"), valueTable(geoTable));
 		if (manifest.ramBytes) {
 			auto* ramTable = m_cpu.createTable(0, 1);
 			ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));

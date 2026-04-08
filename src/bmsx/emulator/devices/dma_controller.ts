@@ -110,9 +110,39 @@ export class DmaController {
 		return false;
 	}
 
+	public hasPendingIsoTransfer(): boolean {
+		const state = this.channels[DMA_CH_ISO];
+		return state.active !== null || state.queue.length !== 0;
+	}
+
+	public hasPendingBulkTransfer(): boolean {
+		const state = this.channels[DMA_CH_BULK];
+		return state.active !== null || state.queue.length !== 0;
+	}
+
+	public getPendingIsoBytes(): number {
+		return this.getPendingBytesForChannel(DMA_CH_ISO);
+	}
+
+	public getPendingBulkBytes(): number {
+		return this.getPendingBytesForChannel(DMA_CH_BULK);
+	}
+
 	public setChannelBudgets(params: { iso: number; bulk: number }): void {
 		this.channels[DMA_CH_ISO].budget = params.iso;
 		this.channels[DMA_CH_BULK].budget = params.bulk;
+	}
+
+	private getPendingBytesForChannel(channel: DmaChannelId): number {
+		const state = this.channels[channel];
+		const job = state.active ?? state.queue[0] ?? null;
+		if (job === null) {
+			return 0;
+		}
+		if (job.kind === 'io') {
+			return job.remaining;
+		}
+		return job.plan.writeSize - job.written;
 	}
 
 	public reset(): void {

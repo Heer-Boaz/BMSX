@@ -139,6 +139,15 @@ export class GeometryController {
 		this.workBudget = workUnits >>> 0;
 	}
 
+	public hasPendingWork(): boolean {
+		return this.activeJob !== null;
+	}
+
+	public getPendingWorkUnits(): number {
+		const job = this.activeJob;
+		return job === null ? 0 : (job.count - job.processed) >>> 0;
+	}
+
 	public reset(): void {
 		this.workBudget = 0;
 		this.activeJob = null;

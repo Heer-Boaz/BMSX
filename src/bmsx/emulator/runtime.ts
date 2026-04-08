@@ -22,6 +22,7 @@ import {
 	ATLAS_PRIMARY_SLOT_ID,
 	ATLAS_SECONDARY_SLOT_ID,
 	CART_ROM_HEADER_SIZE,
+	DEFAULT_GEO_WORK_UNITS_PER_SEC,
 	DEFAULT_VDP_WORK_UNITS_PER_SEC,
 	ENGINE_ATLAS_INDEX,
 	SKYBOX_FACE_DEFAULT_SIZE,
@@ -236,6 +237,26 @@ class RateBudget {
 		const clamped = out > max ? max : out;
 		return Number(clamped);
 	}
+
+	public cyclesUntilUnits(cpuHz: number, units: number): number {
+		if (units <= 0) {
+			return 0;
+		}
+		if (this.bytesPerSec <= 0n) {
+			return Number.MAX_SAFE_INTEGER;
+		}
+		const hz = BigInt(cpuHz);
+		const targetUnits = BigInt(units);
+		const needed = targetUnits * hz - this.carry;
+		if (needed <= 0n) {
+			return 1;
+		}
+		const cycles = (needed + this.bytesPerSec - 1n) / this.bytesPerSec;
+		const max = BigInt(Number.MAX_SAFE_INTEGER);
+		const clamped = cycles > max ? max : cycles;
+		const out = Number(clamped);
+		return out <= 0 ? 1 : out;
+	}
 }
 
 function buildRuntimeLayerLookup(layers: ReadonlyArray<RuntimeAssetLayer>): RuntimeLayerLookup {
@@ -320,6 +341,10 @@ export class Runtime {
 
 	private static resolveVdpWorkUnitsPerSec(value: number | undefined): number {
 		return Runtime.resolvePositiveSafeInteger(value, 'machine.specs.vdp.work_units_per_sec');
+	}
+
+	private static resolveGeoWorkUnitsPerSec(value: number | undefined): number {
+		return Runtime.resolvePositiveSafeInteger(value, 'machine.specs.geo.work_units_per_sec');
 	}
 
 	private static resolveUfpsScaled(value: number | undefined): number {
@@ -603,8 +628,25 @@ export class Runtime {
 			this.debugCycleRunsTotal += 1;
 		}
 		const budgetBefore = state.cycleBudgetRemaining;
-		const result = this.cpu.run(budgetBefore);
-		const remaining = this.cpu.instructionBudgetRemaining;
+		let remaining = budgetBefore;
+		let result = RunResult.Yielded;
+		while (remaining > 0) {
+			const sliceBudget = this.resolveCpuSliceBudget(remaining);
+			result = this.cpu.run(sliceBudget);
+			const sliceRemaining = this.cpu.instructionBudgetRemaining;
+			const consumed = sliceBudget - sliceRemaining;
+			if (consumed > 0) {
+				remaining -= consumed;
+				this.advanceHardware(consumed);
+			}
+			if (this.waitingForVblank || result === RunResult.Halted) {
+				break;
+			}
+			if (consumed <= 0) {
+				throw runtimeFault('CPU yielded without consuming cycles.');
+			}
+		}
+		state.cycleBudgetRemaining = remaining;
 		if (debugCycle) {
 			if (result === RunResult.Yielded) {
 				this.debugCycleYields += 1;
@@ -626,15 +668,34 @@ export class Runtime {
 				this.debugCycleRemainingAcc = 0;
 			}
 		}
-		if (this.waitingForVblank) {
-			return result;
-		}
-		state.cycleBudgetRemaining = remaining;
-		const consumed = budgetBefore - remaining;
-		if (consumed > 0) {
-			this.advanceHardware(consumed);
-		}
 		return result;
+	}
+
+	private resolveCpuSliceBudget(remaining: number): number {
+		let sliceBudget = this.limitSliceDeadline(remaining, this.cyclesUntilNextVblankEdge());
+		if (this.vdp.requiresSchedulerService() || this.imgDecController.requiresService()) {
+			return 1;
+		}
+		sliceBudget = this.limitSliceDeadline(sliceBudget, this.resolveRateDeadline(this.geoRate, this.geometryController.hasPendingWork(), this.geometryController.getPendingWorkUnits()));
+		sliceBudget = this.limitSliceDeadline(sliceBudget, this.resolveRateDeadline(this.vdpRate, this.vdp.hasPendingRenderWork(), this.vdp.getPendingRenderWorkUnits()));
+		sliceBudget = this.limitSliceDeadline(sliceBudget, this.resolveRateDeadline(this.imgRate, this.imgDecController.hasPendingDecodeWork(), this.imgDecController.getPendingDecodeBytes()));
+		sliceBudget = this.limitSliceDeadline(sliceBudget, this.resolveRateDeadline(this.dmaIsoRate, this.dmaController.hasPendingIsoTransfer(), this.dmaController.getPendingIsoBytes()));
+		sliceBudget = this.limitSliceDeadline(sliceBudget, this.resolveRateDeadline(this.dmaBulkRate, this.dmaController.hasPendingBulkTransfer(), this.dmaController.getPendingBulkBytes()));
+		return sliceBudget <= 0 ? 1 : sliceBudget;
+	}
+
+	private resolveRateDeadline(rate: RateBudget, pending: boolean, units: number): number {
+		if (!pending || units <= 0) {
+			return 0;
+		}
+		return rate.cyclesUntilUnits(this._cpuHz, units);
+	}
+
+	private limitSliceDeadline(current: number, candidate: number): number {
+		if (candidate <= 0 || candidate >= current) {
+			return current;
+		}
+		return candidate;
 	}
 
 	public readonly storage: RuntimeStorage;
@@ -725,7 +786,7 @@ export class Runtime {
 		this.setCycleBudgetPerFrame(cycleBudgetPerFrame);
 		this.setVblankCycles(vblankCycles);
 		this.setVdpWorkUnitsPerSec(perfSpecs.work_units_per_sec);
-		this.setGeoWorkUnitsPerSec(perfSpecs.work_units_per_sec);
+		this.setGeoWorkUnitsPerSec(perfSpecs.geo_work_units_per_sec);
 	}
 
 	public setVdpWorkUnitsPerSec(value: number): void {
@@ -733,15 +794,15 @@ export class Runtime {
 	}
 
 	public setGeoWorkUnitsPerSec(value: number): void {
-		this.geoWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(value);
+		this.geoWorkUnitsPerSec = Runtime.resolveGeoWorkUnitsPerSec(value);
 	}
 
-	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number; work_units_per_sec: number; }): void {
+	public setTransferRatesFromManifest(specs: { imgdec_bytes_per_sec: number; dma_bytes_per_sec_iso: number; dma_bytes_per_sec_bulk: number; work_units_per_sec: number; geo_work_units_per_sec: number; }): void {
 		this.imgDecBytesPerSec = Runtime.resolveBytesPerSec(specs.imgdec_bytes_per_sec, 'machine.specs.cpu.imgdec_bytes_per_sec');
 		this.dmaBytesPerSecIso = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_iso, 'machine.specs.dma.dma_bytes_per_sec_iso');
 		this.dmaBytesPerSecBulk = Runtime.resolveBytesPerSec(specs.dma_bytes_per_sec_bulk, 'machine.specs.dma.dma_bytes_per_sec_bulk');
 		this.setVdpWorkUnitsPerSec(specs.work_units_per_sec);
-		this.setGeoWorkUnitsPerSec(specs.work_units_per_sec);
+		this.setGeoWorkUnitsPerSec(specs.geo_work_units_per_sec);
 		this.imgRate.set(this.imgDecBytesPerSec);
 		this.dmaIsoRate.set(this.dmaBytesPerSecIso);
 		this.dmaBulkRate.set(this.dmaBytesPerSecBulk);
@@ -1250,6 +1311,7 @@ export class Runtime {
 				cycleBudgetPerFrame,
 				vblankCycles,
 				vdpWorkUnitsPerSec: enginePerfSpecs.work_units_per_sec,
+				geoWorkUnitsPerSec: enginePerfSpecs.geo_work_units_per_sec,
 			});
 			runtime.setTransferRatesFromManifest(enginePerfSpecs);
 			runtime.biosAssetLayer = engineLayer;
@@ -1327,6 +1389,7 @@ export class Runtime {
 			cycleBudgetPerFrame,
 			vblankCycles,
 			vdpWorkUnitsPerSec: cartPerfSpecs.work_units_per_sec,
+			geoWorkUnitsPerSec: cartPerfSpecs.geo_work_units_per_sec,
 		});
 		runtime.setTransferRatesFromManifest(cartPerfSpecs);
 		runtime.biosAssetLayer = engineLayer;
@@ -1598,10 +1661,10 @@ export class Runtime {
 	private constructor(options: RuntimeOptions) {
 		Runtime._instance = this;
 		const initialVdpWorkUnits = options.vdpWorkUnitsPerSec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC;
-		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? initialVdpWorkUnits;
+		const initialGeoWorkUnits = options.geoWorkUnitsPerSec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC;
 		this.cycleBudgetPerFrame = options.cycleBudgetPerFrame;
 		this.vdpWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(initialVdpWorkUnits);
-		this.geoWorkUnitsPerSec = Runtime.resolveVdpWorkUnitsPerSec(initialGeoWorkUnits);
+		this.geoWorkUnitsPerSec = Runtime.resolveGeoWorkUnitsPerSec(initialGeoWorkUnits);
 		this.storageService = $.platform.storage;
 		this.storage = new RuntimeStorage(this.storageService, $.lua_sources.namespace);
 		const resolvedCanonicalization = options.canonicalization ?? 'none';
@@ -2057,7 +2120,7 @@ export class Runtime {
 			if (result === RunResult.Halted) {
 				this.pendingCall = null;
 			}
-		} catch (error) {
+			} catch (error) {
 			state.luaFaulted = true;
 			this.clearWaitForVblank();
 			this.pendingCall = null;

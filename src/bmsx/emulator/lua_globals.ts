@@ -35,7 +35,7 @@ import {
 	VRAM_SYSTEM_ATLAS_BASE,
 	VRAM_SYSTEM_ATLAS_SIZE,
 } from './memory_map';
-import { CART_ROM_MAGIC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../rompack/rompack';
+import { CART_ROM_MAGIC, DEFAULT_GEO_WORK_UNITS_PER_SEC, DEFAULT_VDP_WORK_UNITS_PER_SEC, type CartManifest, type MachineManifest } from '../rompack/rompack';
 import { BmsxColors } from './vdp';
 import {
 	DMA_CTRL_START,
@@ -244,6 +244,9 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 	const vdp = new Table(0, 1);
 	vdp.set(key('work_units_per_sec'), manifest.specs.vdp?.work_units_per_sec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC);
 	specs.set(key('vdp'), vdp);
+	const geo = new Table(0, 1);
+	geo.set(key('work_units_per_sec'), manifest.specs.geo?.work_units_per_sec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC);
+	specs.set(key('geo'), geo);
 	const ram = manifest.specs.ram;
 	if (ram?.ram_bytes) {
 		const ramTable = new Table(0, 1);

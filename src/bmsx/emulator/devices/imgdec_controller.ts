@@ -75,6 +75,18 @@ export class ImgDecController {
 		this.decodeBudget = bytesPerTick;
 	}
 
+	public requiresService(): boolean {
+		return (this.pendingError !== null || (this.pendingResult !== null && this.pendingEntry !== null));
+	}
+
+	public hasPendingDecodeWork(): boolean {
+		return this.active && this.decodeActive && !this.decodeQueued && this.decodeRemaining > 0;
+	}
+
+	public getPendingDecodeBytes(): number {
+		return this.decodeRemaining;
+	}
+
 	public registerExternalSlot(baseAddr: number, entry: ImageWriteEntry): void {
 		this.externalSlots.set(baseAddr, entry);
 	}

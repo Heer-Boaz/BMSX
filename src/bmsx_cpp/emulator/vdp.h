@@ -72,6 +72,14 @@ public:
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
 	int lastFrameCost() const { return m_lastFrameCost; }
 	bool lastFrameHeld() const { return m_lastFrameHeld; }
+	bool requiresSchedulerService() const { return !m_activeFrameOccupied && m_pendingFrameOccupied; }
+	bool hasPendingRenderWork() const { return m_activeFrameOccupied ? !m_activeFrameReady : (m_pendingFrameOccupied && m_pendingFrameCost > 0); }
+	int pendingRenderWorkUnits() const {
+		if (!m_activeFrameOccupied) {
+			return m_pendingFrameCost;
+		}
+		return m_activeFrameReady ? 0 : m_activeFrameWorkRemaining;
+	}
 
 	const std::array<i32, 2>& atlasSlots() const { return m_slotAtlasIds; }
 

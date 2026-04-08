@@ -443,6 +443,9 @@ export type MachineDmaSpecs = {
 export type MachineVdpSpecs = {
 	work_units_per_sec?: number;
 };
+export type MachineGeoSpecs = {
+	work_units_per_sec?: number;
+};
 export type MachineRamSpecs = {
 	ram_bytes?: number;
 };
@@ -460,6 +463,7 @@ export type MachineSpecs = {
 	cpu: MachineCpuSpecs;
 	dma: MachineDmaSpecs;
 	vdp?: MachineVdpSpecs;
+	geo?: MachineGeoSpecs;
 	audio?: MachineAudioSpecs;
 	ram?: MachineRamSpecs;
 	vram?: MachineVramSpecs;
@@ -497,11 +501,13 @@ export type MachinePerfSpecs = {
 	dma_bytes_per_sec_iso: number;
 	dma_bytes_per_sec_bulk: number;
 	work_units_per_sec: number;
+	geo_work_units_per_sec: number;
 	ufps: number;
 	skybox_face_size?: number;
 };
 
 export const DEFAULT_VDP_WORK_UNITS_PER_SEC = 25_600;
+export const DEFAULT_GEO_WORK_UNITS_PER_SEC = 16_384_000;
 
 export type MachineMemorySpecs = {
 	ram_bytes?: number;
@@ -536,6 +542,7 @@ export function getMachinePerfSpecs(machine: MachineManifest): MachinePerfSpecs 
 	const cpu = machine.specs.cpu;
 	const dma = machine.specs.dma;
 	const vdp = machine.specs.vdp;
+	const geo = machine.specs.geo;
 	const vram = machine.specs.vram;
 	return {
 		cpu_freq_hz: cpu.cpu_freq_hz,
@@ -543,6 +550,7 @@ export function getMachinePerfSpecs(machine: MachineManifest): MachinePerfSpecs 
 		dma_bytes_per_sec_iso: dma.dma_bytes_per_sec_iso,
 		dma_bytes_per_sec_bulk: dma.dma_bytes_per_sec_bulk,
 		work_units_per_sec: vdp?.work_units_per_sec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC,
+		geo_work_units_per_sec: geo?.work_units_per_sec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC,
 		ufps: machine.ufps,
 		skybox_face_size: vram?.skybox_face_size,
 	};

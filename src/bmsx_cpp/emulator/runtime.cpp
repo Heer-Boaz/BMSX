@@ -278,6 +278,23 @@ uint32_t Runtime::RateBudget::calcUnitsForCycles(i64 cpuHz, i64 cycles) {
 	return static_cast<uint32_t>(clamped);
 }
 
+int Runtime::RateBudget::cyclesUntilUnits(i64 cpuHz, i64 units) const {
+	if (units <= 0) {
+		return 0;
+	}
+	if (unitsPerSec <= 0) {
+		return std::numeric_limits<int>::max();
+	}
+	const i64 needed = units * cpuHz - carry;
+	if (needed <= 0) {
+		return 1;
+	}
+	const i64 cycles = (needed + unitsPerSec - 1) / unitsPerSec;
+	const i64 maxValue = static_cast<i64>(std::numeric_limits<int>::max());
+	const i64 clamped = cycles > maxValue ? maxValue : cycles;
+	return clamped <= 0 ? 1 : static_cast<int>(clamped);
+}
+
 // Button actions for standard gamepad/keyboard mapping
 const std::vector<std::string> BUTTON_ACTIONS = {
 	"left",
@@ -1003,18 +1020,53 @@ void Runtime::raiseEngineIrq(uint32_t mask) {
 	raiseIrqFlags(mask);
 }
 
+int Runtime::resolveCpuSliceBudget(int remaining) const {
+	int sliceBudget = limitSliceDeadline(remaining, cyclesUntilNextVblankEdge());
+	if (m_vdp.requiresSchedulerService() || m_imgDecController.requiresService()) {
+		return 1;
+	}
+	sliceBudget = limitSliceDeadline(sliceBudget, resolveRateDeadline(m_geoRate, m_geometryController.hasPendingWork(), m_geometryController.pendingWorkUnits()));
+	sliceBudget = limitSliceDeadline(sliceBudget, resolveRateDeadline(m_vdpRate, m_vdp.hasPendingRenderWork(), m_vdp.pendingRenderWorkUnits()));
+	sliceBudget = limitSliceDeadline(sliceBudget, resolveRateDeadline(m_imgRate, m_imgDecController.hasPendingDecodeWork(), m_imgDecController.pendingDecodeBytes()));
+	sliceBudget = limitSliceDeadline(sliceBudget, resolveRateDeadline(m_dmaIsoRate, m_dmaController.hasPendingIsoTransfer(), m_dmaController.pendingIsoBytes()));
+	sliceBudget = limitSliceDeadline(sliceBudget, resolveRateDeadline(m_dmaBulkRate, m_dmaController.hasPendingBulkTransfer(), m_dmaController.pendingBulkBytes()));
+	return sliceBudget <= 0 ? 1 : sliceBudget;
+}
+
+int Runtime::resolveRateDeadline(const RateBudget& rate, bool pending, i64 units) const {
+	if (!pending || units <= 0) {
+		return 0;
+	}
+	return rate.cyclesUntilUnits(m_cpuHz, units);
+}
+
+int Runtime::limitSliceDeadline(int current, int candidate) {
+	if (candidate <= 0 || candidate >= current) {
+		return current;
+	}
+	return candidate;
+}
+
 RunResult Runtime::runWithBudget() {
-	const int budgetBefore = m_frameState.cycleBudgetRemaining;
-	RunResult result = m_cpu.run(budgetBefore);
-	const int remaining = m_cpu.instructionBudgetRemaining;
-	if (m_waitingForVblank) {
-		return result;
+	int remaining = m_frameState.cycleBudgetRemaining;
+	RunResult result = RunResult::Yielded;
+	while (remaining > 0) {
+		const int sliceBudget = resolveCpuSliceBudget(remaining);
+		result = m_cpu.run(sliceBudget);
+		const int sliceRemaining = m_cpu.instructionBudgetRemaining;
+		const int consumed = sliceBudget - sliceRemaining;
+		if (consumed > 0) {
+			remaining -= consumed;
+			advanceHardware(consumed);
+		}
+		if (m_waitingForVblank || result == RunResult::Halted) {
+			break;
+		}
+		if (consumed <= 0) {
+			throw runtimeFault("CPU yielded without consuming cycles.");
+		}
 	}
-	const int consumed = budgetBefore - remaining;
 	m_frameState.cycleBudgetRemaining = remaining;
-	if (consumed > 0) {
-		advanceHardware(consumed);
-	}
 	return result;
 }
 
@@ -1357,7 +1409,7 @@ void Runtime::applyActiveMachineTiming(i64 cpuHz) {
 	setCycleBudgetPerFrame(cycleBudget);
 	setVblankCycles(static_cast<int>(vblankCycles));
 	setVdpWorkUnitsPerSec(static_cast<int>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC)));
-	setGeoWorkUnitsPerSec(static_cast<int>(manifest.vdpWorkUnitsPerSec.value_or(DEFAULT_VDP_WORK_UNITS_PER_SEC)));
+	setGeoWorkUnitsPerSec(static_cast<int>(manifest.geoWorkUnitsPerSec.value_or(DEFAULT_GEO_WORK_UNITS_PER_SEC)));
 }
 
 void Runtime::setVblankCycles(int cycles) {
@@ -1400,12 +1452,12 @@ void Runtime::setGeoWorkUnitsPerSec(int workUnitsPerSec) {
 	m_geoWorkUnitsPerSec = workUnitsPerSec;
 }
 
-void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec) {
+void Runtime::setTransferRates(i64 imgDecBytesPerSec, i64 dmaBytesPerSecIso, i64 dmaBytesPerSecBulk, int vdpWorkUnitsPerSec, int geoWorkUnitsPerSec) {
 	m_imgDecBytesPerSec = imgDecBytesPerSec;
 	m_dmaBytesPerSecIso = dmaBytesPerSecIso;
 	m_dmaBytesPerSecBulk = dmaBytesPerSecBulk;
 	setVdpWorkUnitsPerSec(vdpWorkUnitsPerSec);
-	setGeoWorkUnitsPerSec(vdpWorkUnitsPerSec);
+	setGeoWorkUnitsPerSec(geoWorkUnitsPerSec);
 	m_imgRate.setUnitsPerSec(imgDecBytesPerSec);
 	m_dmaIsoRate.setUnitsPerSec(dmaBytesPerSecIso);
 	m_dmaBulkRate.setUnitsPerSec(dmaBytesPerSecBulk);

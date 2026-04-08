@@ -556,8 +556,7 @@ local submit_geo_sat_batch<const> = function(pair_base, desc_base, vertex_base, 
 	mem[sys_geo_stride2] = geo_sat_vertex_bytes
 	mem[sys_geo_cmd] = sys_geo_cmd_sat2_batch
 	mem[sys_geo_ctrl] = sys_geo_ctrl_start
-	local status<const> = mem[sys_geo_status]
-	local current_status = status
+	local current_status = mem[sys_geo_status]
 	while (current_status & sys_geo_status_busy) ~= 0 do
 		current_status = mem[sys_geo_status]
 	end

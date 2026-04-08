@@ -102,6 +102,13 @@ static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& mani
 			manifest.vdpWorkUnitsPerSec = parseRequiredPositiveI64(vdpObj, "work_units_per_sec", "machine.specs.vdp.work_units_per_sec");
 		}
 	}
+	const BinValue* geoValue = findObjectField(specsObj, "geo");
+	if (geoValue && geoValue->isObject()) {
+		const auto& geoObj = geoValue->asObject();
+		if (geoObj.count("work_units_per_sec")) {
+			manifest.geoWorkUnitsPerSec = parseRequiredPositiveI64(geoObj, "work_units_per_sec", "machine.specs.geo.work_units_per_sec");
+		}
+	}
 
 	const BinValue* ramValue = findObjectField(specsObj, "ram");
 	if (ramValue && ramValue->isObject()) {

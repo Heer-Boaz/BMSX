@@ -31,9 +31,40 @@ bool DmaController::hasPendingVdpSubmit() const {
 	return false;
 }
 
+bool DmaController::hasPendingIsoTransfer() const {
+	const auto& state = m_channels[static_cast<int>(Channel::Iso)];
+	return state.hasActive || !state.queue.empty();
+}
+
+bool DmaController::hasPendingBulkTransfer() const {
+	const auto& state = m_channels[static_cast<int>(Channel::Bulk)];
+	return state.hasActive || !state.queue.empty();
+}
+
+uint32_t DmaController::pendingIsoBytes() const {
+	return pendingBytesForChannel(Channel::Iso);
+}
+
+uint32_t DmaController::pendingBulkBytes() const {
+	return pendingBytesForChannel(Channel::Bulk);
+}
+
 void DmaController::setChannelBudgets(uint32_t isoBytesPerTick, uint32_t bulkBytesPerTick) {
 	m_channels[static_cast<int>(Channel::Iso)].budget = isoBytesPerTick;
 	m_channels[static_cast<int>(Channel::Bulk)].budget = bulkBytesPerTick;
+}
+
+uint32_t DmaController::pendingBytesForChannel(Channel channel) const {
+	const auto& state = m_channels[static_cast<int>(channel)];
+	const DmaJob* job = state.hasActive ? &state.active : (state.queue.empty() ? nullptr : &state.queue.front());
+	if (job == nullptr) {
+		return 0u;
+	}
+	if (job->kind == DmaJob::Kind::Io) {
+		return job->remaining;
+	}
+	const uint32_t writeSize = static_cast<uint32_t>(job->plan.writeLen);
+	return writeSize - job->written;
 }
 
 void DmaController::enqueueImageCopy(const Memory::ImageWritePlan& plan, std::vector<uint8_t>&& pixels, std::function<void(bool error, bool clipped, std::exception_ptr fault)> onComplete) {

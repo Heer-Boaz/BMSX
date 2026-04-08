@@ -20,6 +20,9 @@ public:
 
 	void tick();
 	void setDecodeBudget(uint32_t bytesPerTick);
+	bool requiresService() const;
+	bool hasPendingDecodeWork() const;
+	uint32_t pendingDecodeBytes() const;
 	void reset();
 	void registerExternalSlot(uint32_t baseAddr, Memory::ImageWriteEntry* entry);
 	void clearExternalSlots();

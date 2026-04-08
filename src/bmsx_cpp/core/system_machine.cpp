@@ -15,6 +15,7 @@ const MachineManifest SYSTEM_MACHINE_MANIFEST = [] {
 	manifest.dmaBytesPerSecIso = 8'388'608;
 	manifest.dmaBytesPerSecBulk = 26'214'400;
 	manifest.vdpWorkUnitsPerSec = DEFAULT_VDP_WORK_UNITS_PER_SEC;
+	manifest.geoWorkUnitsPerSec = DEFAULT_GEO_WORK_UNITS_PER_SEC;
 	return manifest;
 }();
 
