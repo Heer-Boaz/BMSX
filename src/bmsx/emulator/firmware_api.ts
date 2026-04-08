@@ -17,7 +17,7 @@ import { setHardwareCamera } from '../render/shared/hardware_camera';
 import { putHardwareAmbientLight, putHardwareDirectionalLight, putHardwarePointLight } from '../render/shared/hardware_lighting';
 import { listResources } from './workspace';
 import { getWorkspaceCachedSource } from './workspace_cache';
-import { buildDirtyFilePath, hasWorkspaceStorage } from './ide/workspace_storage';
+import { buildDirtyFilePath, hasWorkspaceStorage } from '../ide/core/workspace_storage';
 import { DEFAULT_LUA_BUILTIN_NAMES } from './lua_builtin_descriptors';
 import { Table } from './cpu';
 import { createLuaTable, type LuaTable } from '../lua/luavalue';
