@@ -1,10 +1,10 @@
-import type { EditorDiagnostic, PointerSnapshot } from '../../types';
+import type { EditorDiagnostic, PointerSnapshot } from '../../core/types';
 import type { RectBounds } from '../../../../rompack/rompack';
-import { measureText, truncateTextToWidth, wrapTextDynamic as wrapMessageLinesGeneric } from '../../text_utils';
+import { measureText, truncateTextToWidth, wrapTextDynamic as wrapMessageLinesGeneric } from '../../core/text_utils';
 import { clamp } from '../../../../utils/clamp';
 import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from '../../browser/editor_view';
-import * as constants from '../../constants';
-import { ide_state } from '../../ide_state';
+import * as constants from '../../core/constants';
+import { ide_state } from '../../core/ide_state';
 import { api } from '../../../overlay_api';
 import { drawEditorText } from '../../render/text_renderer';
 import { markAllDiagnosticsDirty } from './diagnostics';

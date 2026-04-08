@@ -1,11 +1,11 @@
-import * as constants from '../constants';
+import * as constants from '../core/constants';
 import { getActiveSymbolSearchMatch } from '../contrib/symbols/symbol_search_shared';
 import { statusAreaHeight, getStatusMessageLines } from '../browser/editor_view';
 import { getActiveCodeTabContext, isCodeTabActive, isResourceViewActive } from '../browser/editor_tabs';
-import { ide_state } from '../ide_state';
+import { ide_state } from '../core/ide_state';
 import { getActiveResourceViewer } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from './text_renderer';
-import { measureText, truncateTextToWidth } from '../text_utils';
+import { measureText, truncateTextToWidth } from '../core/text_utils';
 import { Runtime } from '../../runtime';
 import { api } from '../../overlay_api';
 

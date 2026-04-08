@@ -1,13 +1,13 @@
-import * as constants from '../../constants';
-import { ide_state } from '../../ide_state';
-import { clearReferenceHighlights } from '../../intellisense';
+import * as constants from '../../core/constants';
+import { ide_state } from '../../core/ide_state';
+import { clearReferenceHighlights } from '../intellisense/intellisense';
 import { closeSearch } from './editor_search';
 import { resetBlink } from '../../render/render_caret';
 import { setFieldText } from '../../browser/inline_text_field';
-import { beginNavigationCapture, completeNavigation } from '../../navigation_history';
+import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { setCursorPosition } from '../../browser/caret';
-import { breakUndoSequence } from '../../undo_controller';
-import * as TextEditing from '../../text_editing_and_selection';
+import { breakUndoSequence } from '../../editing/undo_controller';
+import * as TextEditing from '../../editing/text_editing_and_selection';
 import { closeSymbolSearch } from '../symbols/symbol_search_shared';
 import { closeResourceSearch } from '../resources/resource_search';
 

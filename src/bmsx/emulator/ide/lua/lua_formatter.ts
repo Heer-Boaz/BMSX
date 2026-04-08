@@ -1,7 +1,7 @@
 import { LuaLexer } from '../../../lua/syntax/lualexer';
 import type { LuaToken } from '../../../lua/syntax/luatoken';
 import { LuaTokenType } from '../../../lua/syntax/luatoken';
-import { ide_state } from '../ide_state';
+import { ide_state } from '../core/ide_state';
 
 type LineMetadata = {
 	decreaseBefore: number;

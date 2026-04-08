@@ -1,5 +1,5 @@
 import { clamp } from '../../../../utils/clamp';
-import type { SearchMatch } from '../../types';
+import type { SearchMatch } from '../../core/types';
 
 export type ReferenceMatchInfo = {
 	matches: SearchMatch[];

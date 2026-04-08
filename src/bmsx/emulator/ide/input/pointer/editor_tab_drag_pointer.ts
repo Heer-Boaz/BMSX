@@ -1,7 +1,7 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { endTabDrag, updateTabDrag } from '../../browser/editor_tabs';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../intellisense';
-import type { PointerSnapshot } from '../../types';
+import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
+import type { PointerSnapshot } from '../../core/types';
 
 export function handleEditorTabDragPointer(snapshot: PointerSnapshot): boolean {
 	if (!ide_state.tabDragState) {

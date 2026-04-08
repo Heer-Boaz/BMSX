@@ -1,5 +1,5 @@
 import { closeSearch } from '../../contrib/find/editor_search';
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { closeCreateResourcePrompt } from '../../contrib/resources/create_resource';
 import { closeResourceSearch } from '../../contrib/resources/resource_search';
 import { closeLineJump } from '../../contrib/find/line_jump';

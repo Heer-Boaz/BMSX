@@ -1,7 +1,7 @@
 import { executeEditorCommand } from '../commands/editor_commands';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 import { handleEscapeKey } from './editor_modal_input';
-import { ESCAPE_KEY } from '../../constants';
+import { ESCAPE_KEY } from '../../core/constants';
 import { runEditorKeyHandlers, type EditorKeyHandler } from './editor_binding_utils';
 
 function handleEscapeBinding(): boolean {

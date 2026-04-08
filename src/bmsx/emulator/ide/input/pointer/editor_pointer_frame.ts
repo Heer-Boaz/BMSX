@@ -1,10 +1,10 @@
 import { $ } from '../../../../core/engine_core';
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { applyScrollbarScroll } from '../../browser/scrollbar';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../intellisense';
+import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { mapScreenPointToViewport } from '../../browser/editor_view';
 import { updateTabHoverState } from './editor_tab_bar_pointer';
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 
 export function readEditorPointerSnapshot(): PointerSnapshot {
 	const playerInput = $.input.getPlayerInput(1);

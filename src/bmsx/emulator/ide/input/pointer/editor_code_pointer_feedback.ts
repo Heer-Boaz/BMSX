@@ -1,7 +1,7 @@
 import { isCodeTabActive } from '../../browser/editor_tabs';
-import { clearHoverTooltip, clearGotoHoverHighlight, refreshGotoHoverHighlight, updateHoverTooltip } from '../../intellisense';
+import { clearHoverTooltip, clearGotoHoverHighlight, refreshGotoHoverHighlight, updateHoverTooltip } from '../../contrib/intellisense/intellisense';
 import { resolvePointerColumn, resolvePointerRow } from '../../browser/editor_view';
-import type { CodeTabContext, PointerSnapshot } from '../../types';
+import type { CodeTabContext, PointerSnapshot } from '../../core/types';
 import { isAltDown } from '../keyboard/key_input';
 
 export function updateCodeAreaPointerFeedback(

@@ -1,9 +1,9 @@
-import { Runtime } from '../runtime';
+import { Runtime } from '../../../runtime';
 import { createLuaSemanticFrontendFromSnapshot } from './semantic_workspace';
 import type { LuaSemanticWorkspaceSnapshot } from './semantic_model';
 import { prepareSemanticWorkspaceForEditorBuffer } from './semantic_workspace_sync';
-import { getTextSnapshot, splitText } from './text/source_text';
-import type { TextBuffer } from './text/text_buffer';
+import { getTextSnapshot, splitText } from '../../text/source_text';
+import type { TextBuffer } from '../../text/text_buffer';
 
 export function runtimeSemanticExtraGlobalNames(): string[] {
 	return Array.from(Runtime.instance.interpreter.globalEnvironment.keys());

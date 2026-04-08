@@ -1,10 +1,10 @@
 import { clamp } from '../../../utils/clamp';
-import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../constants';
-import type { ScrollbarKind } from '../types';
+import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../core/constants';
+import type { ScrollbarKind } from '../core/types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { computeMaximumScrollColumn, getCodeAreaBounds } from './editor_view';
-import { ensureVisualLines, getVisualLineCount } from '../text_utils';
-import { ide_state } from '../ide_state';
+import { ensureVisualLines, getVisualLineCount } from '../core/text_utils';
+import { ide_state } from '../core/ide_state';
 import { api } from '../../overlay_api';
 import { getActiveResourceViewer, resourceViewerTextCapacity } from '../contrib/resources/resource_viewer';
 

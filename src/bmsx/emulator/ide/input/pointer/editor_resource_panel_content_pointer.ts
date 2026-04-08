@@ -1,7 +1,7 @@
 import { point_in_rect } from '../../../../utils/rect_operations';
-import { ide_state } from '../../ide_state';
-import type { PointerSnapshot } from '../../types';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../intellisense';
+import { ide_state } from '../../core/ide_state';
+import type { PointerSnapshot } from '../../core/types';
+import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { resetPointerClickTracking } from '../../browser/editor_view';
 
 export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {

@@ -1,4 +1,4 @@
-import type { Position } from './types';
+import type { Position } from '../core/types';
 
 export type MutableSingleCursorState = {
 	cursorRow: number;

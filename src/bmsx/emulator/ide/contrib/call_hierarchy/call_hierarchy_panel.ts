@@ -1,4 +1,4 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import type { CallHierarchyView } from './call_hierarchy_view';
 import { closeSymbolSearch } from '../symbols/symbol_search_shared';
 

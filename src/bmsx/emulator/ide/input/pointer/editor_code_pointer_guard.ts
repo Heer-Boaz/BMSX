@@ -1,6 +1,6 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { processRuntimeErrorOverlayPointer } from '../overlays/runtime_error_overlay_input';
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 
 export function handleCodeAreaPointerGuards(
 	snapshot: PointerSnapshot,

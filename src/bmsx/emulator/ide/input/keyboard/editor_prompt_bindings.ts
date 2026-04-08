@@ -1,6 +1,6 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { cycleTab, isCodeTabActive } from '../../browser/editor_tabs';
-import { selectAllSingleCursor } from '../../cursor_state';
+import { selectAllSingleCursor } from '../../editing/cursor_state';
 import { revealCursor, updateDesiredColumn } from '../../browser/caret';
 import { resetBlink } from '../../render/render_caret';
 import { executeEditorCommand } from '../commands/editor_commands';

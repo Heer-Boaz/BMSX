@@ -1,9 +1,9 @@
 import type { RectBounds } from '../../../rompack/rompack';
 import { api } from '../../overlay_api';
-import * as constants from '../constants';
-import { ide_state } from '../ide_state';
+import * as constants from '../core/constants';
+import { ide_state } from '../core/ide_state';
 import { drawEditorText } from './text_renderer';
-import { measureText } from '../text_utils';
+import { measureText } from '../core/text_utils';
 
 
 export function drawActionPromptOverlay(): void {

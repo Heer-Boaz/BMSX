@@ -1,8 +1,8 @@
 import { clamp } from '../../../utils/clamp';
-import * as constants from '../constants';
+import * as constants from '../core/constants';
 import { getCodeAreaBounds, maximumLineLength } from './editor_view';
-import { caretNavigation, ide_state } from '../ide_state';
-import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../text_utils';
+import { caretNavigation, ide_state } from '../core/ide_state';
+import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../core/text_utils';
 
 export function revealCursor(): void {
 	ide_state.cursorRevealSuspended = false;

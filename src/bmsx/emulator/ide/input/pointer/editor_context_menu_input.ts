@@ -1,6 +1,6 @@
 import { $ } from '../../../../core/engine_core';
 import { CONTEXT_MENU_POINTER_CONSUME_PRIMARY, CONTEXT_MENU_POINTER_CONSUME_SECONDARY, CONTEXT_MENU_POINTER_IGNORED, handleEditorContextMenuPointerSession, openEditorContextMenuAtPointer } from './editor_context_menu_session';
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 
 export function handleEditorContextMenuPointer(
 	snapshot: PointerSnapshot,

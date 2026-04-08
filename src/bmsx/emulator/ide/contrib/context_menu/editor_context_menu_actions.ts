@@ -1,7 +1,7 @@
-import { focusEditorAtPosition } from './browser/editor_focus';
-import { writeClipboard } from './text_editing_and_selection';
-import type { EditorContextMenuAction, EditorContextToken } from './types';
-import { executeEditorCommand } from './input/commands/editor_commands';
+import { focusEditorAtPosition } from '../../browser/editor_focus';
+import { writeClipboard } from '../../editing/text_editing_and_selection';
+import type { EditorContextMenuAction, EditorContextToken } from '../../core/types';
+import { executeEditorCommand } from '../../input/commands/editor_commands';
 
 export function executeEditorContextMenuAction(action: EditorContextMenuAction, token: EditorContextToken): void {
 	switch (action) {

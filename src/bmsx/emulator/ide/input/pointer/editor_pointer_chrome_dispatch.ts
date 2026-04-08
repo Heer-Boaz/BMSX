@@ -5,7 +5,7 @@ import { handleEditorScrollbarPointer } from './editor_scrollbar_pointer';
 import { handleTopBarPointer } from './editor_top_bar_pointer';
 import { handleTabBarMiddleClick, handleTabBarPointer } from './editor_tab_bar_pointer';
 import { handleEditorTabDragPointer } from './editor_tab_drag_pointer';
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 
 export function handleEditorChromePointerDispatch(
 	snapshot: PointerSnapshot,

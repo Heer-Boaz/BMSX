@@ -1,4 +1,4 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 export { handleSymbolSearchInput } from './editor_symbol_search_input';
 export { handleResourceSearchInput } from './editor_resource_search_input';
 export { handleSearchInput } from './editor_search_input';

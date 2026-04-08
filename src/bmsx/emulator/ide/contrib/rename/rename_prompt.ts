@@ -1,5 +1,5 @@
-import { ide_state } from '../../ide_state';
-import { extractHoverExpression } from '../../intellisense';
+import { ide_state } from '../../core/ide_state';
+import { extractHoverExpression } from '../intellisense/intellisense';
 import { closeSearch } from '../find/editor_search';
 import { getActiveCodeTabContext, isEditableCodeTab } from '../../browser/editor_tabs';
 import { closeResourceSearch } from '../resources/resource_search';

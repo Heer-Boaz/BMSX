@@ -1,7 +1,7 @@
-import { buildEditorSemanticFrontend } from '../../editor_semantic_frontend';
+import { buildEditorSemanticFrontend } from '../intellisense/editor_semantic_frontend';
 import type { ReferenceMatchInfo } from './reference_state';
 import type { TextBuffer } from '../../text/text_buffer';
-import type { SearchMatch } from '../../types';
+import type { SearchMatch } from '../../core/types';
 
 export type ExtractIdentifierExpression = (row: number, column: number) => { expression: string; startColumn: number; endColumn: number };
 

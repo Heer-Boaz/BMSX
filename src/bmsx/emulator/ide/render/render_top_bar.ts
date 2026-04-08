@@ -1,7 +1,7 @@
-import * as constants from '../constants';
+import * as constants from '../core/constants';
 import type { RectBounds } from '../../../rompack/rompack';
-import { ide_state } from '../ide_state';
-import { measureText } from '../text_utils';
+import { ide_state } from '../core/ide_state';
+import { measureText } from '../core/text_utils';
 import { drawEditorText } from './text_renderer';
 import { api } from '../../overlay_api';
 import { buildTopBarMenuEntries, MENU_COMMANDS, MENU_IDS, TopBarMenuEntry } from '../browser/editor_top_bar_menu';

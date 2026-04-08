@@ -1,6 +1,6 @@
 import { getCursorOffset, selectionAnchorOffset } from './inline_text_field';
 import type { InlineFieldMetrics } from './inline_text_field';
-import type { TextField } from '../types';
+import type { TextField } from '../core/types';
 
 export type InlineFieldSelectionState = {
 	cursorOffset: number;

@@ -1,4 +1,4 @@
-import { clamp } from '../../utils/clamp';
+import { clamp } from '../../../utils/clamp';
 
 export function advanceQuickInputSelection(currentIndex: number, itemCount: number, delta: number): number {
 	if (itemCount <= 0) {

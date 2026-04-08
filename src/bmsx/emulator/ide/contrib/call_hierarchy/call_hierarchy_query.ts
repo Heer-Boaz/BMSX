@@ -1,8 +1,8 @@
 import { listResources } from '../../../workspace';
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { getActiveCodeTabContext } from '../../browser/editor_tabs';
-import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../../editor_semantic_frontend';
-import { extractHoverExpression } from '../../intellisense';
+import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../intellisense/editor_semantic_frontend';
+import { extractHoverExpression } from '../intellisense/intellisense';
 import { buildIncomingCallHierarchyView, type CallHierarchyView } from './call_hierarchy_view';
 
 export type CallHierarchyQueryResult =

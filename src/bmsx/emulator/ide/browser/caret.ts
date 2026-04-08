@@ -1,12 +1,12 @@
-import { breakUndoSequence } from '../undo_controller';
-import { currentLine } from '../text_utils';
-import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../text_utils';
-import { caretNavigation, ide_state } from '../ide_state';
+import { breakUndoSequence } from '../editing/undo_controller';
+import { currentLine } from '../core/text_utils';
+import { ensureVisualLines, getVisualLineCount, positionToVisualIndex, visualIndexToSegment } from '../core/text_utils';
+import { caretNavigation, ide_state } from '../core/ide_state';
 import { isShiftDown, isCtrlDown } from '../input/keyboard/key_input';
 import { resetBlink } from '../render/render_caret';
-import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSelection } from '../text_editing_and_selection';
-import { ensureSingleCursorSelectionAnchor } from '../cursor_state';
-import type { VisualLineSegment } from '../types';
+import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSelection } from '../editing/text_editing_and_selection';
+import { ensureSingleCursorSelectionAnchor } from '../editing/cursor_state';
+import type { VisualLineSegment } from '../core/types';
 import { revealCursor, resolveViewportCapacity, setCursorFromVisualIndex, updateDesiredColumn } from './caret_view';
 
 export type VisualCursorOverride = {

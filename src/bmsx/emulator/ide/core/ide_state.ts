@@ -1,17 +1,17 @@
 import type {
 	LuaHoverResult,
-} from '../types';
-import type { FontVariant } from '../font';
+} from '../../types';
+import type { FontVariant } from '../../font';
 import type { TextField, ScrollbarKind, MessageState } from './types';
-import type { InlineFieldMetrics } from './browser/inline_text_field';
-import { Scrollbar, ScrollbarController } from './browser/scrollbar';
-import type { InputController } from './input/keyboard/editor_text_input';
-import type { ProblemsPanelController } from './contrib/problems/problems_panel';
-import { ResourcePanelController } from './contrib/resources/resource_panel_controller';
-import type { RenameController } from './contrib/rename/rename_controller';
-import type { CompletionController } from './contrib/suggest/completion_controller';
-import { createMessageController } from './browser/message_controller';
-import { ReferenceState } from './contrib/references/reference_state';
+import type { InlineFieldMetrics } from '../browser/inline_text_field';
+import { Scrollbar, ScrollbarController } from '../browser/scrollbar';
+import type { InputController } from '../input/keyboard/editor_text_input';
+import type { ProblemsPanelController } from '../contrib/problems/problems_panel';
+import { ResourcePanelController } from '../contrib/resources/resource_panel_controller';
+import type { RenameController } from '../contrib/rename/rename_controller';
+import type { CompletionController } from '../contrib/suggest/completion_controller';
+import { createMessageController } from '../browser/message_controller';
+import { ReferenceState } from '../contrib/references/reference_state';
 import { CHARACTER_CODES } from './character_map';
 import type {
 	Position,
@@ -41,18 +41,18 @@ import type {
 	VisualLineSegment,
 	EditorContextMenuState,
 } from './types';
-import type { TextBuffer } from './text/text_buffer';
-import { PieceTreeBuffer } from './text/piece_tree_buffer';
-import type { EditorUndoRecord } from './text/editor_undo';
-import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
-import type { ReferenceCatalogEntry } from './contrib/references/reference_sources';
-import { CodeLayout } from './browser/code_layout';
-import type { TimerHandle, SubscriptionHandle } from '../../platform/index';
-import type { DebuggerExecutionState } from './contrib/debugger/ide_debugger';
-import type { LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
+import type { TextBuffer } from '../text/text_buffer';
+import { PieceTreeBuffer } from '../text/piece_tree_buffer';
+import type { EditorUndoRecord } from '../text/editor_undo';
+import type { CanonicalizationType, RectBounds } from '../../../rompack/rompack';
+import type { ReferenceCatalogEntry } from '../contrib/references/reference_sources';
+import { CodeLayout } from '../browser/code_layout';
+import type { TimerHandle, SubscriptionHandle } from '../../../platform/index';
+import type { DebuggerExecutionState } from '../contrib/debugger/ide_debugger';
+import type { LuaDebuggerSessionMetrics } from '../../../lua/luadebugger';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant } from './constants';
-import { CaretNavigationState } from './browser/caret';
-import { EditorFont } from '../editor_font';
+import { CaretNavigationState } from '../browser/caret';
+import { EditorFont } from '../../editor_font';
 
 type BuiltinIdentifierCache = {
 	epoch: number;

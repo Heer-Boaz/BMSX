@@ -1,6 +1,6 @@
-import * as constants from '../../constants';
-import { ide_state } from '../../ide_state';
-import { extractHoverExpression, navigateToLuaDefinition } from '../../intellisense';
+import * as constants from '../../core/constants';
+import { ide_state } from '../../core/ide_state';
+import { extractHoverExpression, navigateToLuaDefinition } from '../intellisense/intellisense';
 import { getActiveCodeTabContext } from '../../browser/editor_tabs';
 import { resetBlink } from '../../render/render_caret';
 import { applySymbolSearchFieldText, closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../symbols/symbol_search_shared';

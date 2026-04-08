@@ -1,4 +1,4 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { isResourceViewActive } from '../../browser/editor_tabs';
 import { handleCreateResourceInput } from '../quick_input/editor_create_resource_input';
 import { handleLineJumpInput, handleResourceSearchInput, handleSearchInput, handleSymbolSearchInput } from '../quick_input/editor_quick_input';

@@ -1,7 +1,7 @@
-import * as constants from '../../constants';
-import { ide_state } from '../../ide_state';
+import * as constants from '../../core/constants';
+import { ide_state } from '../../core/ide_state';
 import type { ReferenceMatchInfo } from './reference_state';
-import type { CodeTabContext } from '../../types';
+import type { CodeTabContext } from '../../core/types';
 import { symbolSearchPageSize } from '../../browser/editor_view';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import {
@@ -10,7 +10,7 @@ import {
 	type ProjectReferenceEnvironment,
 	type ReferenceCatalogEntry,
 } from './reference_sources';
-import { getOrCreateSemanticWorkspace } from '../../semantic_workspace_sync';
+import { getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
 
 export function buildReferenceSearchCatalog(info: ReferenceMatchInfo, context: CodeTabContext): ReferenceCatalogEntry[] {
 	const path = context.descriptor.path;

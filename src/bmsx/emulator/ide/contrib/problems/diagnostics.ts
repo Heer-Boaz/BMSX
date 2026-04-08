@@ -1,9 +1,9 @@
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../types';
-import type { EditorDiagnostic } from '../../types';
-import { computeLuaDiagnostics, getApiCompletionData } from '../../intellisense';
+import type { EditorDiagnostic } from '../../core/types';
+import { computeLuaDiagnostics, getApiCompletionData } from '../intellisense/intellisense';
 import { getCachedLuaParse } from '../../lua/lua_analysis_cache';
-import { ide_state, diagnosticsDebounceMs } from '../../ide_state';
-import { cacheSemanticParseState } from '../../semantic_workspace_sync';
+import { ide_state, diagnosticsDebounceMs } from '../../core/ide_state';
+import { cacheSemanticParseState } from '../intellisense/semantic_workspace_sync';
 
 export type DiagnosticContextInput = {
 	id: string;

@@ -3,11 +3,11 @@ import { clamp } from '../../../../utils/clamp';
 import { Runtime } from '../../../runtime';
 import * as runtimeLuaPipeline from '../../../runtime_lua_pipeline';
 import type { ResourceDescriptor } from '../../../types';
-import * as constants from '../../constants';
+import * as constants from '../../core/constants';
 import { computeResourceTabTitle, setActiveTab } from '../../browser/editor_tabs';
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { splitText } from '../../text/source_text';
-import type { EditorTabId, ResourceViewerState } from '../../types';
+import type { EditorTabId, ResourceViewerState } from '../../core/types';
 
 export type ResourceViewerBounds = {
 	codeTop: number;

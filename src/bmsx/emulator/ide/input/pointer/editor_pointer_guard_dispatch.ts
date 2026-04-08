@@ -1,8 +1,8 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { isResourceViewActive } from '../../browser/editor_tabs';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../intellisense';
+import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { resetPointerClickTracking } from '../../browser/editor_view';
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 import { handleActionPromptPointer } from '../overlays/action_prompt';
 
 export function handleEditorPointerGuards(snapshot: PointerSnapshot, justPressed: boolean): boolean {

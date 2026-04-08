@@ -1,4 +1,4 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { activateCodeTab, save } from '../../browser/editor_tabs';
 import { performEditorAction } from './editor_actions';
 import type { EditorCommandId } from './editor_commands';

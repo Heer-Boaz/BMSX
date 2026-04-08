@@ -1,11 +1,11 @@
 import { centerCursorVertically, setCursorPosition } from '../../browser/caret';
-import { beginNavigationCapture, completeNavigation } from '../../navigation_history';
+import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { activateCodeTab, getActiveCodeTabContext, setActiveTab } from '../../browser/editor_tabs';
-import { ide_state } from '../../ide_state';
-import type { CodeTabContext, RuntimeErrorOverlay } from '../../types';
+import { ide_state } from '../../core/ide_state';
+import type { CodeTabContext, RuntimeErrorOverlay } from '../../core/types';
 import { resetBlink } from '../../render/render_caret';
 import { showRuntimeErrorInChunk } from '../../render/render_error_overlay';
-import * as constants from '../../constants';
+import * as constants from '../../core/constants';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 

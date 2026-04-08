@@ -3,15 +3,15 @@ import { clamp } from '../../../utils/clamp';
 import { ScratchBuffer } from '../../../utils/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from '../lua/syntax_highlight';
 import { highlightAemTextLine } from '../language/aem/aem_syntax_highlight';
-import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from '../semantic_model';
+import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type TokenAnnotation } from '../contrib/intellisense/semantic_model';
 import type { LuaDefinitionInfo } from '../../../lua/syntax/lua_ast';
-import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } from '../types';
-import { scheduleIdeOnce } from '../background_tasks';
+import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } from '../core/types';
+import { scheduleIdeOnce } from '../core/background_tasks';
 import { EditorFont } from '../../editor_font';
 import { getTextSnapshot, splitText } from '../text/source_text';
-import { syncSemanticWorkspacePaths } from '../semantic_workspace_sync';
+import { syncSemanticWorkspacePaths } from '../contrib/intellisense/semantic_workspace_sync';
 import type { TextBuffer } from '../text/text_buffer';
-import type { Position } from '../types';
+import type { Position } from '../core/types';
 
 interface VisualLinesContext {
 	buffer: TextBuffer;

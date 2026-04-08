@@ -1,7 +1,7 @@
-import { ide_state } from '../../ide_state';
-import { clearGotoHoverHighlight } from '../../intellisense';
+import { ide_state } from '../../core/ide_state';
+import { clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { resetPointerClickTracking } from '../../browser/editor_view';
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 
 export function consumeChromePointerPress(snapshot: PointerSnapshot): void {
 	ide_state.pointerSelecting = false;

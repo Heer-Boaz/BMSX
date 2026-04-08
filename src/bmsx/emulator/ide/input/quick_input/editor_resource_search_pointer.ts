@@ -1,9 +1,9 @@
 import { point_in_rect } from '../../../../utils/rect_operations';
-import * as constants from '../../constants';
+import * as constants from '../../core/constants';
 import { closeSearch, processInlineFieldPointer } from '../../contrib/find/editor_search';
 import { getResourceSearchBarBounds, resourceSearchEntryHeight, resourceSearchVisibleResultCount } from '../../browser/editor_view';
-import { ide_state } from '../../ide_state';
-import type { PointerSnapshot } from '../../types';
+import { ide_state } from '../../core/ide_state';
+import type { PointerSnapshot } from '../../core/types';
 import { applyResourceSearchSelection } from '../../contrib/resources/resource_search';
 import { ensureResourceSearchSelectionVisible } from '../../contrib/resources/resource_search_catalog';
 import { closeLineJump } from '../../contrib/find/line_jump';

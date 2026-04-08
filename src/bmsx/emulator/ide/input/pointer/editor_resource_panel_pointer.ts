@@ -1,4 +1,4 @@
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 import { handleResourcePanelPointer as handleResourcePanelContentPointer } from './editor_resource_panel_content_pointer';
 import { handleResourcePanelResizePointer as handleResourcePanelResizeInteraction } from './editor_resource_panel_resize_pointer';
 

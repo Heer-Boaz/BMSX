@@ -1,18 +1,18 @@
 import { clamp } from '../../../../utils/clamp';
 import type { TimerHandle } from '../../../../platform/platform';
 import { computeAggregatedEditorDiagnostics, markDiagnosticsDirty, type DiagnosticContextInput, type DiagnosticProviders } from './diagnostics';
-import { ide_state, diagnosticsDebounceMs, EMPTY_DIAGNOSTICS } from '../../ide_state';
-import type { EditorDiagnostic, CodeTabContext } from '../../types';
-import { listLuaSymbols, listGlobalLuaSymbols, listLuaBuiltinFunctions } from '../../intellisense';
+import { ide_state, diagnosticsDebounceMs, EMPTY_DIAGNOSTICS } from '../../core/ide_state';
+import type { EditorDiagnostic, CodeTabContext } from '../../core/types';
+import { listLuaSymbols, listGlobalLuaSymbols, listLuaBuiltinFunctions } from '../intellisense/intellisense';
 import { getTextSnapshot, splitText } from '../../text/source_text';
-import { enqueueBackgroundTask, scheduleIdeOnce } from '../../background_tasks';
+import { enqueueBackgroundTask, scheduleIdeOnce } from '../../core/background_tasks';
 import { getActiveCodeTabContext, findCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab } from '../../browser/editor_tabs';
 import { setCursorPosition, ensureCursorVisible } from '../../browser/caret';
-import * as TextEditing from '../../text_editing_and_selection';
-import { getOrCreateSemanticWorkspace } from '../../semantic_workspace_sync';
+import * as TextEditing from '../../editing/text_editing_and_selection';
+import { getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
 import type { LuaDefinitionInfo } from '../../../../lua/syntax/lua_ast';
-import type { ModuleAliasEntry } from '../../semantic_model';
-import { beginNavigationCapture, completeNavigation } from '../../navigation_history';
+import type { ModuleAliasEntry } from '../intellisense/semantic_model';
+import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;

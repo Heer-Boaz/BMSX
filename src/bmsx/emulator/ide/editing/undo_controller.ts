@@ -1,16 +1,16 @@
-import { $ } from '../../core/engine_core';
-import { EditorUndoRecord, TextUndoOp } from './text/editor_undo';
-import { PieceTreeBuffer } from './text/piece_tree_buffer';
-import * as constants from './constants';
-import { ide_state } from './ide_state';
-import { capturePreMutationSource, invalidateLuaCommentContextFromRow } from './text_utils';
-import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from './browser/editor_tabs';
-import { notifyReadOnlyEdit } from './browser/editor_view';
-import { updateDesiredColumn } from './browser/caret';
-import { resetBlink } from './render/render_caret';
-import { ensureCursorVisible } from './browser/caret';
-import { requestSemanticRefresh } from './intellisense';
-import type { EditorSnapshot, Position } from './types';
+import { $ } from '../../../core/engine_core';
+import { EditorUndoRecord, TextUndoOp } from '../text/editor_undo';
+import { PieceTreeBuffer } from '../text/piece_tree_buffer';
+import * as constants from '../core/constants';
+import { ide_state } from '../core/ide_state';
+import { capturePreMutationSource, invalidateLuaCommentContextFromRow } from '../core/text_utils';
+import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../browser/editor_tabs';
+import { notifyReadOnlyEdit } from '../browser/editor_view';
+import { updateDesiredColumn } from '../browser/caret';
+import { resetBlink } from '../render/render_caret';
+import { ensureCursorVisible } from '../browser/caret';
+import { requestSemanticRefresh } from '../contrib/intellisense/intellisense';
+import type { EditorSnapshot, Position } from '../core/types';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
 	if (ide_state.activeContextReadOnly) {

@@ -1,8 +1,8 @@
 import { setCursorPosition } from './caret';
-import { setSingleCursorSelectionAnchor } from '../cursor_state';
+import { setSingleCursorSelectionAnchor } from '../editing/cursor_state';
 import { focusEditorFromSearch } from '../contrib/find/editor_search';
-import { ide_state } from '../ide_state';
-import { clearReferenceHighlights } from '../intellisense';
+import { ide_state } from '../core/ide_state';
+import { clearReferenceHighlights } from '../contrib/intellisense/intellisense';
 import { focusEditorFromLineJump } from '../contrib/find/line_jump';
 import { resetBlink } from '../render/render_caret';
 import { focusEditorFromResourceSearch } from '../contrib/resources/resource_search';

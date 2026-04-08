@@ -1,5 +1,5 @@
-import { CHARACTER_CODES, CHARACTER_MAP } from '../../character_map';
-import { insertText } from '../../text_editing_and_selection';
+import { CHARACTER_CODES, CHARACTER_MAP } from '../../core/character_map';
+import { insertText } from '../../editing/text_editing_and_selection';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown } from './key_input';
 
 export function handleEditorCharacterInput(): void {

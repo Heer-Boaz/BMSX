@@ -1,11 +1,11 @@
 import { api } from '../../overlay_api';
-import * as constants from '../constants';
-import type { EditorTabDescriptor } from '../types';
+import * as constants from '../core/constants';
+import type { EditorTabDescriptor } from '../core/types';
 import type { RectBounds } from '../../../rompack/rompack';
-import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../constants';
+import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../core/constants';
 import { ScratchBuffer } from '../../../utils/scratchbuffer';
-import { ide_state } from '../ide_state';
-import { measureText } from '../text_utils';
+import { ide_state } from '../core/ide_state';
+import { measureText } from '../core/text_utils';
 import { drawEditorText } from './text_renderer';
 
 type TabMetrics = {

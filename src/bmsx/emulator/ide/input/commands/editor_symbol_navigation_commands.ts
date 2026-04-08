@@ -1,5 +1,5 @@
-import { ide_state } from '../../ide_state';
-import { tryGotoDefinitionAt } from '../../intellisense';
+import { ide_state } from '../../core/ide_state';
+import { tryGotoDefinitionAt } from '../../contrib/intellisense/intellisense';
 import type { EditorCommandId } from './editor_commands';
 import { executeEditorCallHierarchyAt } from '../../contrib/call_hierarchy/call_hierarchy';
 

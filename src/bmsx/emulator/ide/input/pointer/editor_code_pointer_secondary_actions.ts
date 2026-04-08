@@ -1,9 +1,9 @@
 import { $ } from '../../../../core/engine_core';
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { toggleBreakpointForEditorRow } from '../../contrib/debugger/ide_debugger';
 import { resetPointerClickTracking, resolvePointerRow } from '../../browser/editor_view';
 import { openEditorContextMenuFromPointer } from './editor_context_menu_input';
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 
 export function handleCodeAreaSecondaryPointer(
 	snapshot: PointerSnapshot,

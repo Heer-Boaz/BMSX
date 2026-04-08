@@ -1,9 +1,9 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch, onSearchQueryChanged, openSearch, searchPageSize, stepSearchSelection } from '../../contrib/find/editor_search';
 import { applyInlineFieldEditing } from '../../browser/inline_text_field';
 import { textFromLines } from '../../text/source_text';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../keyboard/key_input';
-import { redo, undo } from '../../undo_controller';
+import { redo, undo } from '../../editing/undo_controller';
 import { save } from '../../browser/editor_tabs';
 
 export function handleSearchInput(): void {

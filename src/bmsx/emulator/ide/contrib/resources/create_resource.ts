@@ -1,5 +1,5 @@
-import * as constants from '../../constants';
-import { ide_state } from '../../ide_state';
+import * as constants from '../../core/constants';
+import { ide_state } from '../../core/ide_state';
 import { setFieldText } from '../../browser/inline_text_field';
 import { getActiveCodeTabContext } from '../../browser/editor_tabs';
 import { resetBlink } from '../../render/render_caret';

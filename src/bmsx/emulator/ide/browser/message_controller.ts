@@ -1,6 +1,6 @@
-import * as constants from '../constants';
-import { ide_state } from '../ide_state';
-import type { MessageState } from '../types';
+import * as constants from '../core/constants';
+import { ide_state } from '../core/ide_state';
+import type { MessageState } from '../core/types';
 
 export function createMessageController(){
 	const message: MessageState = {

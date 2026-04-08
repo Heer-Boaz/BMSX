@@ -1,4 +1,4 @@
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 import { handleProblemsPanelPointer, handleProblemsPanelResizePointer } from './editor_problems_panel_pointer';
 import { handleResourcePanelPointer, handleResourcePanelResizePointer } from './editor_resource_panel_pointer';
 

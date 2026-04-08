@@ -1,8 +1,8 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { applyScrollbarScroll } from '../../browser/scrollbar';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../intellisense';
+import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { bottomMargin } from '../../browser/editor_view';
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 
 export function handleEditorScrollbarPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	if (!justPressed) {

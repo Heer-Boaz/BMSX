@@ -6,14 +6,14 @@ import { createInlineTextField } from './inline_text_field';
 import { Scrollbar, ScrollbarController } from './scrollbar';
 import { ResourcePanelController } from '../contrib/resources/resource_panel_controller';
 import { InputController } from '../input/keyboard/editor_text_input';
-import { ide_state } from '../ide_state';
+import { ide_state } from '../core/ide_state';
 import { initializeDebuggerUiState } from '../contrib/debugger/ide_debugger';
-import { initializeWorkspaceStorage } from '../workspace_storage';
+import { initializeWorkspaceStorage } from '../core/workspace_storage';
 import { Runtime } from '../../runtime';
 import { renameController } from '../contrib/rename/rename_controller';
-import { resetSemanticWorkspace } from '../semantic_workspace_sync';
-import { assertMonospace } from '../text_utils';
-import * as constants from '../constants';
+import { resetSemanticWorkspace } from '../contrib/intellisense/semantic_workspace_sync';
+import { assertMonospace } from '../core/text_utils';
+import * as constants from '../core/constants';
 import type { Viewport } from '../../../rompack/rompack';
 import {
 	applyViewportSize,
@@ -24,7 +24,7 @@ import { applyResourceSearchFieldText } from '../contrib/resources/resource_sear
 import { applyLineJumpFieldText } from '../contrib/find/line_jump';
 import { applyCreateResourceFieldText } from '../contrib/resources/create_resource';
 import { applySearchFieldText } from '../contrib/find/editor_search';
-import { createNavigationEntry } from '../navigation_history';
+import { createNavigationEntry } from '../navigation/navigation_history';
 import { applySymbolSearchFieldText } from '../contrib/symbols/symbol_search_shared';
 
 export function initializeCartEditor(viewport: Viewport): void {

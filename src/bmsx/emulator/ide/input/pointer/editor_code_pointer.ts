@@ -1,6 +1,6 @@
 import { $ } from '../../../../core/engine_core';
-import { ide_state } from '../../ide_state';
-import type { CodeTabContext, PointerSnapshot } from '../../types';
+import { ide_state } from '../../core/ide_state';
+import type { CodeTabContext, PointerSnapshot } from '../../core/types';
 import { getCodeAreaBounds } from '../../browser/editor_view';
 import { handleCodeAreaPointerGuards } from './editor_code_pointer_guard';
 import { handleCodeAreaPrimaryPressPointer } from './editor_code_pointer_primary_press';

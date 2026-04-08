@@ -1,4 +1,4 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { applyInlineFieldEditing } from '../../browser/inline_text_field';
 import { applyLineJump, closeLineJump, openLineJump } from '../../contrib/find/line_jump';
 import { textFromLines } from '../../text/source_text';

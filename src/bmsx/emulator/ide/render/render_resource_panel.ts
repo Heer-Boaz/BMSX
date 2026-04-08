@@ -3,12 +3,12 @@ import type { ResourcePanelController } from '../contrib/resources/resource_pane
 import { clamp } from '../../../utils/clamp';
 import { getCodeAreaBounds } from '../browser/editor_view';
 import { resourceViewerClampScroll } from '../input/keyboard/resource_viewer_input';
-import { ide_state } from '../ide_state';
+import { ide_state } from '../core/ide_state';
 import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from './text_renderer';
 import { api } from '../../overlay_api';
-import { measureText, wrapOverlayLine } from '../text_utils';
-import * as constants from '../constants';
+import { measureText, wrapOverlayLine } from '../core/text_utils';
+import * as constants from '../core/constants';
 import { BmsxColors } from '../../vdp';
 import { renderErrorOverlayText } from './render_error_overlay';
 import { drawRectOutlineColor } from './render_caret';

@@ -1,17 +1,17 @@
 import { resolveReferenceLookup, type ReferenceLookupOptions } from '../references/reference_lookup';
 import { type ReferenceMatchInfo } from '../references/reference_state';
-import type { InlineInputOptions, TextField, SearchMatch } from '../../types';
+import type { InlineInputOptions, TextField, SearchMatch } from '../../core/types';
 import { applyInlineFieldEditing, createInlineTextField, setFieldText } from '../../browser/inline_text_field';
 import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
-import * as constants from '../../constants';
+import * as constants from '../../core/constants';
 import { consumeIdeKey } from '../../input/keyboard/key_input';
 import { clamp } from '../../../../utils/clamp';
 import { LuaLexer } from '../../../../lua/syntax/lualexer';
 import { focusEditorFromRename } from './rename_prompt';
 import { textFromLines } from '../../text/source_text';
-import { ide_state } from '../../ide_state';
-import { redo, undo } from '../../undo_controller';
-import { setSingleCursorSelectionAnchor } from '../../cursor_state';
+import { ide_state } from '../../core/ide_state';
+import { redo, undo } from '../../editing/undo_controller';
+import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { commitRename, type RenameCommitPayload } from './rename_operations';
 
 export type RenameStartOptions = ReferenceLookupOptions & {

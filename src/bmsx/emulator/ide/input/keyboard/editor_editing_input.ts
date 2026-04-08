@@ -1,5 +1,5 @@
-import { insertText } from '../../text_editing_and_selection';
-import * as TextEditing from '../../text_editing_and_selection';
+import { insertText } from '../../editing/text_editing_and_selection';
+import * as TextEditing from '../../editing/text_editing_and_selection';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
 
 export function handleEditorEditingKeys(): void {

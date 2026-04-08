@@ -1,7 +1,7 @@
 import { scheduleMicrotask } from '../../../../platform/platform';
-import * as constants from '../../constants';
-import { ide_state } from '../../ide_state';
-import { clearReferenceHighlights } from '../../intellisense';
+import * as constants from '../../core/constants';
+import { ide_state } from '../../core/ide_state';
+import { clearReferenceHighlights } from '../intellisense/intellisense';
 import { closeSearch } from '../find/editor_search';
 import { openResourceDescriptor } from '../../browser/editor_tabs';
 import { resetBlink } from '../../render/render_caret';

@@ -1,7 +1,7 @@
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../lua_builtin_descriptors';
-import { Runtime } from '../runtime';
-import { resolveLuaIdentifierChainRoot } from './lua/lua_identifier_chain';
-import type { EditorContextMenuEntry, EditorContextToken } from './types';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../lua_builtin_descriptors';
+import { Runtime } from '../../../runtime';
+import { resolveLuaIdentifierChainRoot } from '../../lua/lua_identifier_chain';
+import type { EditorContextMenuEntry, EditorContextToken } from '../../core/types';
 
 export function buildEditorContextMenuEntries(token: EditorContextToken, editable: boolean): EditorContextMenuEntry[] {
 	if (token.kind !== 'identifier' || !token.expression || token.expression.length === 0) {

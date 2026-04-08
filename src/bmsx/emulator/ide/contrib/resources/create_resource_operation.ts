@@ -1,5 +1,5 @@
-import * as constants from '../../constants';
-import { ide_state } from '../../ide_state';
+import * as constants from '../../core/constants';
+import { ide_state } from '../../core/ide_state';
 import { resetBlink } from '../../render/render_caret';
 import { refreshResourcePanelContents } from '../../browser/editor_view';
 import { openLuaCodeTab } from '../../browser/editor_tabs';

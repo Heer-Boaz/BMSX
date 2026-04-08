@@ -1,9 +1,9 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { setCursorPosition } from '../../browser/caret';
-import { ensureSingleCursorSelectionAnchor } from '../../cursor_state';
-import { clearGotoHoverHighlight } from '../../intellisense';
+import { ensureSingleCursorSelectionAnchor } from '../../editing/cursor_state';
+import { clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { handlePointerAutoScroll, resolvePointerColumn, resolvePointerRow } from '../../browser/editor_view';
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 
 export function handleCodeAreaSelectionPointer(snapshot: PointerSnapshot): void {
 	if (!ide_state.pointerSelecting || !snapshot.primaryPressed) {

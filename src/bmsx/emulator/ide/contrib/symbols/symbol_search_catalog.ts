@@ -1,10 +1,10 @@
-import { ide_state } from '../../ide_state';
-import { advanceQuickInputSelection } from '../../quick_input_navigation';
+import { ide_state } from '../../core/ide_state';
+import { advanceQuickInputSelection } from '../../navigation/quick_input_navigation';
 import { updateReferenceSearchMatches } from '../references/reference_search_catalog';
 import { resetBlink } from '../../render/render_caret';
-import { symbolPriority } from '../../semantic_model';
+import { symbolPriority } from '../intellisense/semantic_model';
 import { refreshSymbolCatalog } from './symbol_catalog';
-import type { SymbolSearchResult } from '../../types';
+import type { SymbolSearchResult } from '../../core/types';
 import { ensureSymbolSearchSelectionVisible } from './symbol_search_shared';
 
 export function updateSymbolSearchMatches(): void {

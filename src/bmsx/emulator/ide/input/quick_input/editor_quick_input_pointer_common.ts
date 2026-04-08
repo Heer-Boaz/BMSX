@@ -1,8 +1,8 @@
-import { ide_state } from '../../ide_state';
-import type { PointerSnapshot } from '../../types';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../intellisense';
+import { ide_state } from '../../core/ide_state';
+import type { PointerSnapshot } from '../../core/types';
+import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { resetBlink } from '../../render/render_caret';
-import { measureText } from '../../text_utils';
+import { measureText } from '../../core/text_utils';
 
 export function activateQuickInputField(): void {
 	ide_state.resourcePanelFocused = false;

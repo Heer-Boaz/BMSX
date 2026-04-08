@@ -1,6 +1,6 @@
 import type { EditorFont } from '../../editor_font';
-import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from '../text_utils';
-import * as constants from '../constants';
+import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from '../core/text_utils';
+import * as constants from '../core/constants';
 import { api } from '../../overlay_api';
 import { splitText } from '../text/source_text';
 import { ScratchBuffer } from '../../../utils/scratchbuffer';

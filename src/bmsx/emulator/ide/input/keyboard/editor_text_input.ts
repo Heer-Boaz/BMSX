@@ -1,5 +1,5 @@
 import { $ } from '../../../../core/engine_core';
-import { insertText } from '../../text_editing_and_selection';
+import { insertText } from '../../editing/text_editing_and_selection';
 import { handleEditorDebuggerInput } from './editor_debug_input';
 import { handleEditorNavigationKeys } from './editor_navigation_input';
 import { handleEditorEditingKeys } from './editor_editing_input';

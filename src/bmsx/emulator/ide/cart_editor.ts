@@ -1,5 +1,5 @@
-import { ide_state } from './ide_state';
-import { clearWorkspaceDirtyBuffers } from './workspace_storage';
+import { ide_state } from './core/ide_state';
+import { clearWorkspaceDirtyBuffers } from './core/workspace_storage';
 
 import { renderFaultOverlay, renderRuntimeFaultOverlay, showRuntimeError, showRuntimeErrorInChunk } from './render/render_error_overlay';
 import {
@@ -17,7 +17,7 @@ import {
 } from './browser/editor_view';
 import { Viewport } from '../../rompack/rompack';
 import { clearRuntimeErrorOverlay, clearAllRuntimeErrorOverlays } from './contrib/runtime_error/runtime_error_navigation';
-import { getSourceForChunk } from './text_utils';
+import { getSourceForChunk } from './core/text_utils';
 
 export { activate, deactivate, draw, shutdown, tickInput, update };
 

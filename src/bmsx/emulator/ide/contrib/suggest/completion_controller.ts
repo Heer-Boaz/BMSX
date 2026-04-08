@@ -10,7 +10,7 @@ import {
 	buildMemberCompletionItems,
 	type LuaScopedSymbol,
 	shouldAutoTriggerCompletions,
-} from '../../intellisense';
+} from '../intellisense/intellisense';
 import type { LuaDefinitionInfo, LuaSourceRange } from '../../../../lua/syntax/lua_ast';
 import {
 	CompletionContext,
@@ -20,22 +20,22 @@ import {
 	LuaCompletionItem,
 	LuaCompletionKind,
 	ParameterHintState,
-} from '../../types';
+} from '../../core/types';
 import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../../../types';
-import * as constants from '../../constants';
+import * as constants from '../../core/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
-import { isLuaCommentContext } from '../../text_utils';
+import { isLuaCommentContext } from '../../core/text_utils';
 import { point_in_rect } from '../../../../utils/rect_operations';
 import { LuaLexer } from '../../../../lua/syntax/lualexer';
-import { assignRowColumn, ide_state } from '../../ide_state';
-import * as TextEditing from '../../text_editing_and_selection';
+import { assignRowColumn, ide_state } from '../../core/ide_state';
+import * as TextEditing from '../../editing/text_editing_and_selection';
 import { getActiveCodeTabContext, isActiveLuaCodeTab } from '../../browser/editor_tabs';
-import { prepareUndo } from '../../undo_controller';
+import { prepareUndo } from '../../editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../browser/caret';
 import { resetBlink } from '../../render/render_caret';
-import { ModuleAliasEntry } from '../../semantic_model';
+import { ModuleAliasEntry } from '../intellisense/semantic_model';
 import { getActiveSemanticDefinitions, getLuaModuleAliases } from '../problems/diagnostics_controller';
-import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../cursor_state';
+import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;

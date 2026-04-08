@@ -1,7 +1,7 @@
 import { $ } from '../../../../core/engine_core';
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { getActiveCodeTabContext } from '../../browser/editor_tabs';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../intellisense';
+import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { handleEditorContextMenuPointer } from './editor_context_menu_input';
 import { isCtrlDown, isMetaDown } from '../keyboard/key_input';
 import { computeEditorPointerButtonMask, POINTER_AUX_JUST_PRESSED, POINTER_PRIMARY_JUST_PRESSED, POINTER_PRIMARY_JUST_RELEASED, POINTER_SECONDARY_JUST_PRESSED } from './editor_pointer_buttons';

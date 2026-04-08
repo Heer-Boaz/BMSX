@@ -1,7 +1,7 @@
 import { $ } from '../../../../core/engine_core';
 import { point_in_rect } from '../../../../utils/rect_operations';
-import * as constants from '../../constants';
-import { ide_state } from '../../ide_state';
+import * as constants from '../../core/constants';
+import { ide_state } from '../../core/ide_state';
 import { isCodeTabActive, isResourceViewActive } from '../../browser/editor_tabs';
 import { getProblemsPanelBounds } from '../../contrib/problems/problems_panel';
 import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../../browser/hover_tooltip';

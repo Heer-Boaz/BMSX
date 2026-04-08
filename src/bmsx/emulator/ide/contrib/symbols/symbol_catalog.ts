@@ -1,10 +1,10 @@
 import type { LuaSymbolEntry } from '../../../types';
-import * as constants from '../../constants';
+import * as constants from '../../core/constants';
 import { computeSourceLabel } from '../references/reference_sources';
 import { getActiveCodeTabContext } from '../../browser/editor_tabs';
-import { ide_state } from '../../ide_state';
-import { listGlobalLuaSymbols, listLuaSymbols } from '../../intellisense';
-import { symbolKindLabel } from '../../semantic_model';
+import { ide_state } from '../../core/ide_state';
+import { listGlobalLuaSymbols, listLuaSymbols } from '../intellisense/intellisense';
+import { symbolKindLabel } from '../intellisense/semantic_model';
 import { extractErrorMessage } from '../../../../lua/luavalue';
 
 export function symbolCatalogDedupKey(entry: LuaSymbolEntry): string {

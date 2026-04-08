@@ -1,7 +1,7 @@
 import { Runtime } from '../../../runtime';
 import * as runtimeIde from '../../../runtime_ide';
 import { type LuaDebuggerSessionMetrics } from '../../../../lua/luadebugger';
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { focusChunkSource, getActiveCodeTabContext } from '../../browser/editor_tabs';
 import { clamp, clamp_fallback } from '../../../../utils/clamp';
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition, updateDesiredColumn } from '../../browser/caret';
@@ -9,8 +9,8 @@ import { resetPointerClickTracking } from '../../browser/editor_view';
 import { resetBlink } from '../../render/render_caret';
 import type { LuaCallFrame } from '../../../../lua/luaruntime';
 import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame } from '../../../../lua/luavalue';
-import * as constants from '../../constants';
-import { findFunctionDefinitionRowInActiveFile } from '../../intellisense';
+import * as constants from '../../core/constants';
+import { findFunctionDefinitionRowInActiveFile } from '../intellisense/intellisense';
 import { clearExecutionStopHighlights, setExecutionStopHighlight, clearRuntimeErrorOverlay } from '../runtime_error/runtime_error_navigation';
 
 type DebuggerResumeCommand = 'continue' | 'step_over' | 'step_into' | 'step_out' | 'ignore_exception' | 'step_out_exception';

@@ -1,11 +1,11 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../contrib/find/editor_search';
 import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, closeActiveTab } from '../../browser/editor_tabs';
 import { notifyReadOnlyEdit } from '../../browser/editor_view';
-import { toggleLineComments } from '../../line_comments';
-import { redo, undo } from '../../undo_controller';
-import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, pasteFromClipboard } from '../../text_editing_and_selection';
-import * as TextEditing from '../../text_editing_and_selection';
+import { toggleLineComments } from '../../editing/line_comments';
+import { redo, undo } from '../../editing/undo_controller';
+import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, pasteFromClipboard } from '../../editing/text_editing_and_selection';
+import * as TextEditing from '../../editing/text_editing_and_selection';
 import { executeEditorCommand } from '../commands/editor_commands';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
 import { isInlineFieldFocused } from '../quick_input/editor_quick_input';

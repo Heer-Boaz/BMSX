@@ -1,5 +1,5 @@
-import { $ } from '../../core/engine_core';
-import { scheduleMicrotask, type TimerHandle } from '../../platform/platform';
+import { $ } from '../../../core/engine_core';
+import { scheduleMicrotask, type TimerHandle } from '../../../platform/platform';
 
 export type BackgroundTask = () => boolean;
 

@@ -1,8 +1,8 @@
 import { point_in_rect } from '../../../../utils/rect_operations';
-import * as constants from '../../constants';
-import { ide_state } from '../../ide_state';
-import { computeRuntimeErrorOverlayMaxWidth } from '../../text_utils';
-import type { PointerSnapshot, RuntimeErrorOverlay } from '../../types';
+import * as constants from '../../core/constants';
+import { ide_state } from '../../core/ide_state';
+import { computeRuntimeErrorOverlayMaxWidth } from '../../core/text_utils';
+import type { PointerSnapshot, RuntimeErrorOverlay } from '../../core/types';
 import {
 	computeRuntimeErrorOverlayGeometry,
 	computeRuntimeErrorOverlayLayout,

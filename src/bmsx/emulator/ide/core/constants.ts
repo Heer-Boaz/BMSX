@@ -1,4 +1,4 @@
-import type { BGamepadButton } from '../../input/inputtypes';
+import type { BGamepadButton } from '../../../input/inputtypes';
 
 /**
  * IMPORTANT: MSX PALETTE INDEX DESCRIPTIONS!

@@ -1,14 +1,14 @@
 import { $ } from '../../../../core/engine_core';
-import { ide_state } from '../../ide_state';
-import { scheduleRuntimeTask } from '../../background_tasks';
+import { ide_state } from '../../core/ide_state';
+import { scheduleRuntimeTask } from '../../core/background_tasks';
 import { applyWorkspaceOverridesToCart } from '../../../workspace';
 import { Runtime } from '../../../runtime';
 import * as runtimeLuaPipeline from '../../../runtime_lua_pipeline';
 import * as runtimeIde from '../../../runtime_ide';
-import type { PendingActionPrompt } from '../../types';
+import type { PendingActionPrompt } from '../../core/types';
 import { handleRuntimeTaskError } from '../../browser/editor_runtime';
 import { clearExecutionStopHighlights } from '../../contrib/runtime_error/runtime_error_navigation';
-import * as constants from '../../constants';
+import * as constants from '../../core/constants';
 import { setEditorCaseInsensitivity } from '../../render/text_renderer';
 
 export function performEditorAction(action: PendingActionPrompt['action']): boolean {

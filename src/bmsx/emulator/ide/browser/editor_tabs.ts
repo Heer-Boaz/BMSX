@@ -1,4 +1,4 @@
-import { ide_state } from '../ide_state';
+import { ide_state } from '../core/ide_state';
 import type {
 	CodeTabContext,
 	CodeTabMode,
@@ -6,22 +6,22 @@ import type {
 	EditorTabDescriptor,
 	EditorTabKind,
 	EditorRuntimeSyncState,
-} from '../types';
-import type { ResourceDescriptor } from '../types';
-import * as constants from '../constants';
+} from '../core/types';
+import type { ResourceDescriptor } from '../core/types';
+import * as constants from '../core/constants';
 import { clamp } from '../../../utils/clamp';
 import { syncRuntimeErrorOverlayFromContext } from '../contrib/runtime_error/runtime_error_navigation';
 import { updateDesiredColumn, ensureCursorVisible } from './caret';
 import { refreshActiveDiagnostics } from '../contrib/problems/diagnostics_controller';
-import { beginNavigationCapture, completeNavigation } from '../navigation_history';
+import { beginNavigationCapture, completeNavigation } from '../navigation/navigation_history';
 import { closeLineJump } from '../contrib/find/line_jump';
 import { closeSymbolSearch } from '../contrib/symbols/symbol_search_shared';
 import { getCodeAreaBounds, hideResourcePanel, getTabBarTotalHeight, resetPointerClickTracking, selectResourceInPanel } from './editor_view';
 import { markDiagnosticsDirty, markAllDiagnosticsDirty } from '../contrib/problems/diagnostics';
 import { closeSearch } from '../contrib/find/editor_search';
 import { clampResourceViewerScroll, openResourceViewerTab } from '../contrib/resources/resource_viewer';
-import { measureText, bumpTextVersion, invalidateLuaCommentContextFromRow } from '../text_utils';
-import { requestSemanticRefresh } from '../intellisense';
+import { measureText, bumpTextVersion, invalidateLuaCommentContextFromRow } from '../core/text_utils';
+import { requestSemanticRefresh } from '../contrib/intellisense/intellisense';
 import { resetBlink } from '../render/render_caret';
 import { Runtime } from '../../runtime';
 import * as runtimeIde from '../../runtime_ide';
@@ -29,9 +29,9 @@ import * as runtimeLuaPipeline from '../../runtime_lua_pipeline';
 import { getTextSnapshot } from '../text/source_text';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import { listResources, saveLuaResourceSource } from '../../workspace';
-import { buildDirtyFilePath } from '../workspace_storage';
+import { buildDirtyFilePath } from '../core/workspace_storage';
 import { setWorkspaceCachedSources } from '../../workspace_cache';
-import { breakUndoSequence } from '../undo_controller';
+import { breakUndoSequence } from '../editing/undo_controller';
 import { tryShowLuaErrorOverlay } from '../contrib/runtime_error/runtime_error_navigation';
 import { extractErrorMessage } from '../../../lua/luavalue';
 import { closeResourceSearch } from '../contrib/resources/resource_search';

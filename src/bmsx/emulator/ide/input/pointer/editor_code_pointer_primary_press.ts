@@ -1,13 +1,13 @@
 import { $ } from '../../../../core/engine_core';
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { setCursorPosition } from '../../browser/caret';
-import { setSingleCursorSelectionAnchor } from '../../cursor_state';
+import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
 import { focusPrimaryEditorSurface } from '../../browser/editor_focus';
 import { resolvePointerColumn, resolvePointerRow, resetPointerClickTracking } from '../../browser/editor_view';
 import { executeEditorGoToDefinitionAt } from '../commands/editor_symbol_navigation_commands';
-import type { PointerSnapshot } from '../../types';
-import * as TextEditing from '../../text_editing_and_selection';
-import * as constants from '../../constants';
+import type { PointerSnapshot } from '../../core/types';
+import * as TextEditing from '../../editing/text_editing_and_selection';
+import * as constants from '../../core/constants';
 
 export function handleCodeAreaPrimaryPressPointer(
 	snapshot: PointerSnapshot,

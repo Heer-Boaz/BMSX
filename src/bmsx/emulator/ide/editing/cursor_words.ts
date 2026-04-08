@@ -1,4 +1,4 @@
-import { LuaLexer } from '../../lua/syntax/lualexer';
+import { LuaLexer } from '../../../lua/syntax/lualexer';
 
 export type WordBounds = {
 	start: number;

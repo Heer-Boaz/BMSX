@@ -1,5 +1,5 @@
-import { ide_state } from '../../ide_state';
-import type { PendingActionPrompt, PointerSnapshot } from '../../types';
+import { ide_state } from '../../core/ide_state';
+import type { PendingActionPrompt, PointerSnapshot } from '../../core/types';
 import { save } from '../../browser/editor_tabs';
 import { performEditorAction } from '../commands/editor_actions';
 import { consumeIdeKey, isKeyJustPressed } from '../keyboard/key_input';

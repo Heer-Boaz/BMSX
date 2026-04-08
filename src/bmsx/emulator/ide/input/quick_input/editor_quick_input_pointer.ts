@@ -1,4 +1,4 @@
-import type { PointerSnapshot } from '../../types';
+import type { PointerSnapshot } from '../../core/types';
 import { handleCreateResourcePointer } from './editor_create_resource_pointer';
 import { handleResourceSearchPointer } from './editor_resource_search_pointer';
 import { handleSymbolSearchPointer } from './editor_symbol_search_pointer';

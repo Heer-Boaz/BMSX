@@ -1,21 +1,21 @@
-import { getResourcePanelWidth, updateGutterWidth } from './browser/editor_view';
+import { getResourcePanelWidth, updateGutterWidth } from '../browser/editor_view';
 import * as constants from './constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
-import { startSearchJob } from './contrib/find/editor_search';
-import { getActiveCodeTabContext, findCodeTabContext, updateActiveContextDirtyFlag } from './browser/editor_tabs';
+import { startSearchJob } from '../contrib/find/editor_search';
+import { getActiveCodeTabContext, findCodeTabContext, updateActiveContextDirtyFlag } from '../browser/editor_tabs';
 import { caretNavigation, ide_state } from './ide_state';
-import { rebuildRuntimeErrorOverlayView } from './contrib/runtime_error/runtime_error_overlay';
-import * as TextEditing from './text_editing_and_selection';
-import { handlePostEditMutation } from './text_editing_and_selection';
+import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/runtime_error_overlay';
+import * as TextEditing from '../editing/text_editing_and_selection';
+import { handlePostEditMutation } from '../editing/text_editing_and_selection';
 import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';
-import { markDiagnosticsDirty } from './contrib/problems/diagnostics';
-import { requestSemanticRefresh, clearReferenceHighlights } from './intellisense';
-import { getTextSnapshot, splitText } from './text/source_text';
-import type { TextBuffer } from './text/text_buffer';
-import { Runtime } from '../runtime';
-import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
+import { markDiagnosticsDirty } from '../contrib/problems/diagnostics';
+import { requestSemanticRefresh, clearReferenceHighlights } from '../contrib/intellisense/intellisense';
+import { getTextSnapshot, splitText } from '../text/source_text';
+import type { TextBuffer } from '../text/text_buffer';
+import { Runtime } from '../../runtime';
+import * as runtimeLuaPipeline from '../../runtime_lua_pipeline';
 import { buildDirtyFilePath } from './workspace_storage';
-import { getWorkspaceCachedSource } from '../workspace_cache';
+import { getWorkspaceCachedSource } from '../../workspace_cache';
 
 export function expandTabs(source: string): string {
 	if (source.indexOf('\t') === -1) return source;

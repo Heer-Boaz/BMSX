@@ -1,5 +1,5 @@
 import { $ } from '../../../../core/engine_core';
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 
 export const POINTER_PRIMARY_JUST_PRESSED = 1;
 export const POINTER_PRIMARY_JUST_RELEASED = 2;

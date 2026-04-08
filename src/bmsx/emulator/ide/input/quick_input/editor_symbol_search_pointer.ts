@@ -1,9 +1,9 @@
 import { point_in_rect } from '../../../../utils/rect_operations';
-import * as constants from '../../constants';
+import * as constants from '../../core/constants';
 import { closeSearch, processInlineFieldPointer } from '../../contrib/find/editor_search';
 import { getSymbolSearchBarBounds, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../../browser/editor_view';
-import { ide_state } from '../../ide_state';
-import type { PointerSnapshot } from '../../types';
+import { ide_state } from '../../core/ide_state';
+import type { PointerSnapshot } from '../../core/types';
 import { closeLineJump } from '../../contrib/find/line_jump';
 import { applySymbolSearchSelection } from '../../contrib/symbols/symbol_search';
 import { ensureSymbolSearchSelectionVisible } from '../../contrib/symbols/symbol_search_shared';

@@ -1,7 +1,7 @@
 import { point_in_rect } from '../../../../utils/rect_operations';
 import { isTopBarCommandEnabled, MENU_COMMANDS, MENU_IDS, type MenuId, type TopBarButtonId } from '../../browser/editor_top_bar_menu';
-import { ide_state } from '../../ide_state';
-import type { PointerSnapshot } from '../../types';
+import { ide_state } from '../../core/ide_state';
+import type { PointerSnapshot } from '../../core/types';
 import { executeTopBarCommand } from '../commands/editor_commands';
 import { consumeChromePointerPress } from './editor_chrome_pointer_press';
 

@@ -1,5 +1,5 @@
-import * as constants from '../../constants';
-import { ide_state } from '../../ide_state';
+import * as constants from '../../core/constants';
+import { ide_state } from '../../core/ide_state';
 import { showCallHierarchyView } from './call_hierarchy_panel';
 import { resolveCallHierarchyViewAt } from './call_hierarchy_query';
 

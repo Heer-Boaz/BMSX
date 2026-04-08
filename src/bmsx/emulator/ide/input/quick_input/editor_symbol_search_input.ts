@@ -1,5 +1,5 @@
-import * as constants from '../../constants';
-import { ide_state } from '../../ide_state';
+import * as constants from '../../core/constants';
+import { ide_state } from '../../core/ide_state';
 import { applyInlineFieldEditing } from '../../browser/inline_text_field';
 import { applySymbolSearchSelection } from '../../contrib/symbols/symbol_search';
 import { moveSymbolSearchSelection, updateSymbolSearchMatches } from '../../contrib/symbols/symbol_search_catalog';

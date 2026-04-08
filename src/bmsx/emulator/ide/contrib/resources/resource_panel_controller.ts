@@ -1,19 +1,19 @@
 import { $ } from '../../../../core/engine_core';
-import * as constants from '../../constants';
+import * as constants from '../../core/constants';
 import { clamp } from '../../../../utils/clamp';
 import { Scrollbar } from '../../browser/scrollbar';
 import { renderResourcePanel } from '../../render/render_resource_panel';
-import type { ResourceBrowserItem } from '../../types';
+import type { ResourceBrowserItem } from '../../core/types';
 import type { RectBounds } from '../../../../rompack/rompack';
 import type { ResourceDescriptor } from '../../../types';
 import { Runtime } from '../../../runtime';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../input/keyboard/key_input';
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { bottomMargin, codeViewportTop } from '../../browser/editor_view';
-import { measureText } from '../../text_utils';
+import { measureText } from '../../core/text_utils';
 import type { CallHierarchyView, CallHierarchyViewNode } from '../call_hierarchy/call_hierarchy_view';
 import { focusEditorFromResourcePanel, listResourcesStrict, openResourceDescriptor, focusChunkSource } from '../../browser/editor_tabs';
-import { applyDefinitionSelection } from '../../intellisense';
+import { applyDefinitionSelection } from '../intellisense/intellisense';
 
 export interface ResourcePanelScrollbars {
 	resourceVertical: Scrollbar;

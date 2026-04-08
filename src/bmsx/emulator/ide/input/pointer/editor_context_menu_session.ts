@@ -1,11 +1,11 @@
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { isEditableCodeTab } from '../../browser/editor_tabs';
-import { resolveContextMenuToken } from '../../intellisense';
-import { buildEditorContextMenuEntries } from '../../editor_context_menu_entries';
+import { resolveContextMenuToken } from '../../contrib/intellisense/intellisense';
+import { buildEditorContextMenuEntries } from '../../contrib/context_menu/editor_context_menu_entries';
 import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from '../../browser/editor_view';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from '../../render/render_context_menu';
-import { executeEditorContextMenuAction } from '../../editor_context_menu_actions';
-import type { PointerSnapshot } from '../../types';
+import { executeEditorContextMenuAction } from '../../contrib/context_menu/editor_context_menu_actions';
+import type { PointerSnapshot } from '../../core/types';
 
 export const CONTEXT_MENU_POINTER_IGNORED = 0;
 export const CONTEXT_MENU_POINTER_HANDLED = 1;

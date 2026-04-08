@@ -1,9 +1,9 @@
 import { clamp } from '../../../../utils/clamp';
 import { getCodeAreaBounds } from '../../browser/editor_view';
-import { ide_state } from '../../ide_state';
+import { ide_state } from '../../core/ide_state';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './key_input';
 import { clampResourceViewerScroll, getActiveResourceViewer, resourceViewerTextCapacity } from '../../contrib/resources/resource_viewer';
-import type { ResourceViewerState } from '../../types';
+import type { ResourceViewerState } from '../../core/types';
 
 export function handleResourceViewerInput(): void {
 	const viewer = getActiveResourceViewer();

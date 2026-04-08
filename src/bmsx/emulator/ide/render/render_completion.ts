@@ -1,8 +1,8 @@
 import { clamp } from '../../../utils/clamp';
 import { api } from '../../overlay_api';
-import * as constants from '../constants';
-import { wrapTextDynamic } from '../text_utils';
-import type { CompletionSession, CursorScreenInfo, ParameterHintState } from '../types';
+import * as constants from '../core/constants';
+import { wrapTextDynamic } from '../core/text_utils';
+import type { CompletionSession, CursorScreenInfo, ParameterHintState } from '../core/types';
 
 export type CompletionRenderBounds = {
 	codeTop: number;
