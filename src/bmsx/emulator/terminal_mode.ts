@@ -17,7 +17,7 @@ import {
 	setCursorFromOffset,
 	selectionAnchorOffset,
 	setSelectionAnchorPosition,
-} from './ide/inline_text_field';
+} from './ide/browser/inline_text_field';
 import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext } from './ide/types';
 import * as constants from './ide/constants';
 import { OverlayRenderer } from './overlay_renderer';
@@ -29,7 +29,7 @@ import {
 } from './ide/input/keyboard/key_input';
 import { resolveSnapshotExpression, describeLuaValueForInspector } from './ide/intellisense';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './ide/input/keyboard/key_input';
-import { CompletionController } from './ide/completion_controller';
+import { CompletionController } from './ide/contrib/suggest/completion_controller';
 import type { ModuleAliasEntry } from './ide/semantic_model';
 import type { Viewport } from '../rompack/rompack';
 import { Runtime } from './runtime';
@@ -49,8 +49,8 @@ import type { MutableTextPosition, TextBuffer } from './ide/text/text_buffer';
 import { clamp } from '../utils/clamp';
 import { textFromLines } from './ide/text/source_text';
 import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from './ide/constants';
-import { advancePhaseBlink, resetBlinkState } from './ide/caret_blink';
-import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from './ide/inline_field_view';
+import { advancePhaseBlink, resetBlinkState } from './ide/browser/caret_blink';
+import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from './ide/browser/inline_field_view';
 
 type TerminalOutputKind =
 	| 'prompt'
