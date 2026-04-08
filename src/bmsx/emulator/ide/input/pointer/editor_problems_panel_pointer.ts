@@ -1,9 +1,9 @@
 import { point_in_rect } from '../../../../utils/rect_operations';
 import { ide_state } from '../../ide_state';
 import type { PointerSnapshot } from '../../types';
-import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from '../../problems_panel';
+import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from '../../contrib/problems/problems_panel';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../intellisense';
-import { resetPointerClickTracking } from '../../editor_view';
+import { resetPointerClickTracking } from '../../browser/editor_view';
 
 export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	if (ide_state.problemsPanelResizing) {

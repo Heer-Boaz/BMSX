@@ -1,4 +1,4 @@
-import { navigateToRuntimeErrorFrameTarget } from '../../ide_debugger';
+import { navigateToRuntimeErrorFrameTarget } from '../../contrib/debugger/ide_debugger';
 import { rebuildRuntimeErrorOverlayView } from '../../contrib/runtime_error/runtime_error_overlay';
 import type { RuntimeErrorOverlay } from '../../types';
 import type { RuntimeErrorOverlayClickResult } from '../../render/render_error_overlay';

@@ -1,7 +1,7 @@
 import * as constants from '../../constants';
 import { ide_state } from '../../ide_state';
 import { extractHoverExpression, navigateToLuaDefinition } from '../../intellisense';
-import { getActiveCodeTabContext } from '../../editor_tabs';
+import { getActiveCodeTabContext } from '../../browser/editor_tabs';
 import { resetBlink } from '../../render/render_caret';
 import { applySymbolSearchFieldText, closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../symbols/symbol_search_shared';
 import { resolveReferenceLookup } from './reference_lookup';

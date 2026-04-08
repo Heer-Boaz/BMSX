@@ -1,8 +1,8 @@
 import { ide_state } from '../../ide_state';
-import { isEditableCodeTab } from '../../editor_tabs';
+import { isEditableCodeTab } from '../../browser/editor_tabs';
 import { resolveContextMenuToken } from '../../intellisense';
 import { buildEditorContextMenuEntries } from '../../editor_context_menu_entries';
-import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from '../../editor_view';
+import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from '../../browser/editor_view';
 import { closeEditorContextMenu, findEditorContextMenuEntryAt, layoutEditorContextMenu, openEditorContextMenu, updateEditorContextMenuHover } from '../../render/render_context_menu';
 import { executeEditorContextMenuAction } from '../../editor_context_menu_actions';
 import type { PointerSnapshot } from '../../types';

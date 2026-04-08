@@ -1,7 +1,7 @@
 import { focusRuntimeErrorOverlay } from '../../contrib/runtime_error/runtime_error_navigation';
-import { openSearch } from '../../editor_search';
+import { openSearch } from '../../contrib/find/editor_search';
 import { openResourceSearch } from '../../contrib/resources/resource_search';
-import { openLineJump } from '../../line_jump';
+import { openLineJump } from '../../contrib/find/line_jump';
 import { openCreateResourcePrompt } from '../../contrib/resources/create_resource';
 import { openReferenceSearchPopup } from '../../contrib/references/reference_search';
 import { openRenamePrompt } from '../../contrib/rename/rename_prompt';

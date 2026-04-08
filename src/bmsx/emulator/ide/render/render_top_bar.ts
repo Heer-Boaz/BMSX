@@ -4,7 +4,7 @@ import { ide_state } from '../ide_state';
 import { measureText } from '../text_utils';
 import { drawEditorText } from './text_renderer';
 import { api } from '../../overlay_api';
-import { buildTopBarMenuEntries, MENU_COMMANDS, MENU_IDS, TopBarMenuEntry } from '../editor_top_bar_menu';
+import { buildTopBarMenuEntries, MENU_COMMANDS, MENU_IDS, TopBarMenuEntry } from '../browser/editor_top_bar_menu';
 
 const Z_TOP_BAR_BACKGROUND = 10;
 const Z_MENU_BUTTON = 14;

@@ -4,7 +4,7 @@ import { ide_state, WORKSPACE_AUTOSAVE_INTERVAL_MS } from './ide_state';
 import type { CodeTabContext, Position, EditorSnapshot } from './types';
 import { clamp_safe } from '../../utils/clamp';
 import type { StorageService, TimerHandle } from '../../platform/platform';
-import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './ide_debugger';
+import { restoreBreakpointsFromPayload, serializeBreakpoints, type SerializedBreakpointMap } from './contrib/debugger/ide_debugger';
 import { scheduleIdeOnce } from './background_tasks';
 import { taskGate } from '../../core/taskgate';
 import { Runtime } from '../runtime';
@@ -22,8 +22,8 @@ import {
 	fetchWorkspaceFile,
 	WORKSPACE_DIRTY_DIR,
 } from '../workspace';
-import { setFontVariant } from './editor_view';
-import { findCodeTabContext, initializeTabs, openCodeTabForDescriptor, setTabDirty, updateActiveContextDirtyFlag } from './editor_tabs';
+import { setFontVariant } from './browser/editor_view';
+import { findCodeTabContext, initializeTabs, openCodeTabForDescriptor, setTabDirty, updateActiveContextDirtyFlag } from './browser/editor_tabs';
 import { FontVariant } from '../font';
 import { getTextSnapshot } from './text/source_text';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../workspace_cache';

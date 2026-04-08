@@ -4,7 +4,7 @@ import { Runtime } from '../../../runtime';
 import * as runtimeLuaPipeline from '../../../runtime_lua_pipeline';
 import type { ResourceDescriptor } from '../../../types';
 import * as constants from '../../constants';
-import { computeResourceTabTitle, setActiveTab } from '../../editor_tabs';
+import { computeResourceTabTitle, setActiveTab } from '../../browser/editor_tabs';
 import { ide_state } from '../../ide_state';
 import { splitText } from '../../text/source_text';
 import type { EditorTabId, ResourceViewerState } from '../../types';

@@ -1,10 +1,10 @@
 import { point_in_rect } from '../../../../utils/rect_operations';
 import * as constants from '../../constants';
-import { closeSearch, processInlineFieldPointer } from '../../editor_search';
-import { getSymbolSearchBarBounds, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../../editor_view';
+import { closeSearch, processInlineFieldPointer } from '../../contrib/find/editor_search';
+import { getSymbolSearchBarBounds, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../../browser/editor_view';
 import { ide_state } from '../../ide_state';
 import type { PointerSnapshot } from '../../types';
-import { closeLineJump } from '../../line_jump';
+import { closeLineJump } from '../../contrib/find/line_jump';
 import { applySymbolSearchSelection } from '../../contrib/symbols/symbol_search';
 import { ensureSymbolSearchSelectionVisible } from '../../contrib/symbols/symbol_search_shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from './editor_quick_input_pointer_common';

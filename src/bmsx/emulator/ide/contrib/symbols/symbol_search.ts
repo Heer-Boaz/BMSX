@@ -2,12 +2,12 @@ import { scheduleMicrotask } from '../../../../platform/platform';
 import * as constants from '../../constants';
 import { ide_state } from '../../ide_state';
 import { clearReferenceHighlights, navigateToLuaDefinition } from '../../intellisense';
-import { closeSearch } from '../../editor_search';
-import { getActiveCodeTabContext } from '../../editor_tabs';
+import { closeSearch } from '../find/editor_search';
+import { getActiveCodeTabContext } from '../../browser/editor_tabs';
 import { resetBlink } from '../../render/render_caret';
 import { refreshSymbolCatalog } from './symbol_catalog';
 import { closeResourceSearch } from '../resources/resource_search';
-import { closeLineJump } from '../../line_jump';
+import { closeLineJump } from '../find/line_jump';
 import { applyReferenceSearchSelection } from '../references/reference_search';
 import { updateSymbolSearchMatches } from './symbol_search_catalog';
 import {

@@ -1,7 +1,7 @@
 import { ide_state } from '../../ide_state';
-import { isResourceViewActive } from '../../editor_tabs';
+import { isResourceViewActive } from '../../browser/editor_tabs';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../intellisense';
-import { resetPointerClickTracking } from '../../editor_view';
+import { resetPointerClickTracking } from '../../browser/editor_view';
 import type { PointerSnapshot } from '../../types';
 import { handleActionPromptPointer } from '../overlays/action_prompt';
 

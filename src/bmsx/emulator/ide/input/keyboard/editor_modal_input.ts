@@ -1,8 +1,8 @@
-import { closeSearch } from '../../editor_search';
+import { closeSearch } from '../../contrib/find/editor_search';
 import { ide_state } from '../../ide_state';
 import { closeCreateResourcePrompt } from '../../contrib/resources/create_resource';
 import { closeResourceSearch } from '../../contrib/resources/resource_search';
-import { closeLineJump } from '../../line_jump';
+import { closeLineJump } from '../../contrib/find/line_jump';
 import { closeSymbolSearch } from '../../contrib/symbols/symbol_search_shared';
 import { resetActionPromptState } from '../overlays/action_prompt';
 import { closeEditorContextMenu } from '../../render/render_context_menu';

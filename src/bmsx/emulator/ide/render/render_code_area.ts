@@ -2,21 +2,21 @@ import type { OverlayApi as Api } from '../../overlay_api';
 import type { CachedHighlight, CursorScreenInfo } from '../types';
 import type { RectBounds } from '../../../rompack/rompack';
 import { clamp } from '../../../utils/clamp';
-import { drawHoverTooltip } from '../hover_tooltip';
-import { computeMaximumScrollColumn, getBreakpointLaneWidth, getCodeAreaBounds, maximumLineLength } from '../editor_view';
+import { drawHoverTooltip } from '../browser/hover_tooltip';
+import { computeMaximumScrollColumn, getBreakpointLaneWidth, getCodeAreaBounds, maximumLineLength } from '../browser/editor_view';
 import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from './render_error_overlay';
 import { renderEditorContextMenu } from './render_context_menu';
 import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from './text_renderer';
-import { getBreakpointsForChunk } from '../ide_debugger';
-import { getActiveCodeTabContext } from '../editor_tabs';
+import { getBreakpointsForChunk } from '../contrib/debugger/ide_debugger';
+import { getActiveCodeTabContext } from '../browser/editor_tabs';
 import { api } from '../../overlay_api';
 import { computeSelectionSlice, ensureVisualLines, getVisualLineCount, visualIndexToSegment, measureText } from '../text_utils';
 import { drawCompletionPopup, drawParameterHintOverlay } from './render_completion';
 import { drawCursor } from './render_caret';
 import type { Font } from '../../font';
-import { getDiagnosticsForRow } from '../diagnostics_controller';
+import { getDiagnosticsForRow } from '../contrib/problems/diagnostics_controller';
 
 function drawHighlightSlice(
 	renderFont: Font,

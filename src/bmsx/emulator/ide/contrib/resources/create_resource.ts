@@ -1,10 +1,10 @@
 import * as constants from '../../constants';
 import { ide_state } from '../../ide_state';
-import { setFieldText } from '../../inline_text_field';
-import { getActiveCodeTabContext } from '../../editor_tabs';
+import { setFieldText } from '../../browser/inline_text_field';
+import { getActiveCodeTabContext } from '../../browser/editor_tabs';
 import { resetBlink } from '../../render/render_caret';
-import { focusEditorFromSearch } from '../../editor_search';
-import { focusEditorFromLineJump } from '../../line_jump';
+import { focusEditorFromSearch } from '../find/editor_search';
+import { focusEditorFromLineJump } from '../find/line_jump';
 import { listResources } from '../../../workspace';
 
 export function openCreateResourcePrompt(): void {

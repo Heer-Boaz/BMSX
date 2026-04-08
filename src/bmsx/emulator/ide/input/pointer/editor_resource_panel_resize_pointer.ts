@@ -1,7 +1,7 @@
 import { ide_state } from '../../ide_state';
 import type { PointerSnapshot } from '../../types';
 import { clearGotoHoverHighlight } from '../../intellisense';
-import { getResourcePanelWidth, hideResourcePanel, resetPointerClickTracking } from '../../editor_view';
+import { getResourcePanelWidth, hideResourcePanel, resetPointerClickTracking } from '../../browser/editor_view';
 import * as constants from '../../constants';
 
 export function handleResourcePanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {

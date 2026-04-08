@@ -2,8 +2,8 @@ import { $ } from '../../../../core/engine_core';
 import { point_in_rect } from '../../../../utils/rect_operations';
 import { ide_state } from '../../ide_state';
 import type { PointerSnapshot } from '../../types';
-import { beginTabDrag, closeTab, endTabDrag, setActiveTab } from '../../editor_tabs';
-import { getTabBarTotalHeight } from '../../editor_view';
+import { beginTabDrag, closeTab, endTabDrag, setActiveTab } from '../../browser/editor_tabs';
+import { getTabBarTotalHeight } from '../../browser/editor_view';
 import { consumeChromePointerPress } from './editor_chrome_pointer_press';
 
 export function handleTabBarPointer(snapshot: PointerSnapshot): boolean {

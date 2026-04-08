@@ -2,12 +2,12 @@ import { scheduleMicrotask } from '../../../../platform/platform';
 import * as constants from '../../constants';
 import { ide_state } from '../../ide_state';
 import { clearReferenceHighlights } from '../../intellisense';
-import { closeSearch } from '../../editor_search';
-import { openResourceDescriptor } from '../../editor_tabs';
+import { closeSearch } from '../find/editor_search';
+import { openResourceDescriptor } from '../../browser/editor_tabs';
 import { resetBlink } from '../../render/render_caret';
-import { setFieldText } from '../../inline_text_field';
+import { setFieldText } from '../../browser/inline_text_field';
 import { closeSymbolSearch } from '../symbols/symbol_search_shared';
-import { closeLineJump } from '../../line_jump';
+import { closeLineJump } from '../find/line_jump';
 import { refreshResourceCatalog, updateResourceSearchMatches } from './resource_search_catalog';
 
 export function openResourceSearch(initialQuery: string = ''): void {

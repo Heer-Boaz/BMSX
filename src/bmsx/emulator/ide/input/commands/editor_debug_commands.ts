@@ -1,4 +1,4 @@
-import { RuntimeDebuggerCommandExecutor } from '../../ide_debugger';
+import { RuntimeDebuggerCommandExecutor } from '../../contrib/debugger/ide_debugger';
 import type { EditorCommandId } from './editor_commands';
 
 export type EditorDebugCommandId =

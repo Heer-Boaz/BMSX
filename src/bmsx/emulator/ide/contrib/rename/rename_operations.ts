@@ -2,16 +2,16 @@ import type { CodeTabContext, SearchMatch } from '../../types';
 import type { ReferenceMatchInfo } from '../references/reference_state';
 import type { LuaSourceRange } from '../../../../lua/syntax/lua_ast';
 import { clamp } from '../../../../utils/clamp';
-import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../editor_tabs';
+import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../browser/editor_tabs';
 import { findResourceDescriptorForChunk } from '../resources/resource_lookup';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../../semantic_workspace_sync';
 import { ide_state } from '../../ide_state';
 import { markTextMutated } from '../../text_utils';
-import { markDiagnosticsDirtyForChunk } from '../../diagnostics_controller';
+import { markDiagnosticsDirtyForChunk } from '../problems/diagnostics_controller';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from '../../undo_controller';
 import { setSingleCursorSelectionAnchor } from '../../cursor_state';
-import { updateDesiredColumn, ensureCursorVisible } from '../../caret';
+import { updateDesiredColumn, ensureCursorVisible } from '../../browser/caret';
 import { resetBlink } from '../../render/render_caret';
 
 export type RenameCommitPayload = {

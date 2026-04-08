@@ -2,7 +2,7 @@ import {
 	type YamlLineToken as LineToken,
 	type YamlMappingLineToken as MappingLineToken,
 	tokenizeYamlStructureLine,
-} from './yaml_syntax_parser';
+} from '../yaml/yaml_syntax_parser';
 
 const BLOCK_INDENT = 4;
 const SEQUENCE_ITEM_KEY_OFFSET = 2;

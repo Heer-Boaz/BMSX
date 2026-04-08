@@ -1,31 +1,31 @@
-import { $ } from '../../core/engine_core';
-import { CompletionController } from './completion_controller';
-import { ProblemsPanelController } from './problems_panel';
+import { $ } from '../../../core/engine_core';
+import { CompletionController } from '../contrib/suggest/completion_controller';
+import { ProblemsPanelController } from '../contrib/problems/problems_panel';
 import { createEntryTabContext, initializeTabs } from './editor_tabs';
 import { createInlineTextField } from './inline_text_field';
 import { Scrollbar, ScrollbarController } from './scrollbar';
-import { ResourcePanelController } from './contrib/resources/resource_panel_controller';
-import { InputController } from './input/keyboard/editor_text_input';
-import { ide_state } from './ide_state';
-import { initializeDebuggerUiState } from './ide_debugger';
-import { initializeWorkspaceStorage } from './workspace_storage';
-import { Runtime } from '../runtime';
-import { renameController } from './contrib/rename/rename_controller';
-import { resetSemanticWorkspace } from './semantic_workspace_sync';
-import { assertMonospace } from './text_utils';
-import * as constants from './constants';
-import type { Viewport } from '../../rompack/rompack';
+import { ResourcePanelController } from '../contrib/resources/resource_panel_controller';
+import { InputController } from '../input/keyboard/editor_text_input';
+import { ide_state } from '../ide_state';
+import { initializeDebuggerUiState } from '../contrib/debugger/ide_debugger';
+import { initializeWorkspaceStorage } from '../workspace_storage';
+import { Runtime } from '../../runtime';
+import { renameController } from '../contrib/rename/rename_controller';
+import { resetSemanticWorkspace } from '../semantic_workspace_sync';
+import { assertMonospace } from '../text_utils';
+import * as constants from '../constants';
+import type { Viewport } from '../../../rompack/rompack';
 import {
 	applyViewportSize,
 	configureFontVariant,
 	resetResourcePanelState,
 } from './editor_view';
-import { applyResourceSearchFieldText } from './contrib/resources/resource_search';
-import { applyLineJumpFieldText } from './line_jump';
-import { applyCreateResourceFieldText } from './contrib/resources/create_resource';
-import { applySearchFieldText } from './editor_search';
-import { createNavigationEntry } from './navigation_history';
-import { applySymbolSearchFieldText } from './contrib/symbols/symbol_search_shared';
+import { applyResourceSearchFieldText } from '../contrib/resources/resource_search';
+import { applyLineJumpFieldText } from '../contrib/find/line_jump';
+import { applyCreateResourceFieldText } from '../contrib/resources/create_resource';
+import { applySearchFieldText } from '../contrib/find/editor_search';
+import { createNavigationEntry } from '../navigation_history';
+import { applySymbolSearchFieldText } from '../contrib/symbols/symbol_search_shared';
 
 export function initializeCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();

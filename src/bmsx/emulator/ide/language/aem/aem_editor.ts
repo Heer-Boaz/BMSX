@@ -1,8 +1,8 @@
-import { $ } from '../../core/engine_core';
-import { extractErrorMessage } from '../../lua/luavalue';
-import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../audio/aem_definition';
-import type { ResourceDescriptor } from '../types';
-import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../workspace';
+import { $ } from '../../../../core/engine_core';
+import { extractErrorMessage } from '../../../../lua/luavalue';
+import { assertValidAemDocument, buildAemValidationLookup, parseStructuredTextDocument, type StructuredTextDocumentFormat } from '../../../../audio/aem_definition';
+import type { ResourceDescriptor } from '../../../types';
+import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../../workspace';
 import { formatAemYamlDocument } from './aem_yaml_formatter';
 
 function resolveAemSourceFormat(path: string): StructuredTextDocumentFormat {

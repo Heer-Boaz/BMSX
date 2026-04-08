@@ -1,20 +1,20 @@
-import { Runtime } from '../runtime';
-import * as runtimeIde from '../runtime_ide';
-import { $ } from '../../core/engine_core';
-import { api } from '../overlay_api';
-import * as constants from './constants';
+import { Runtime } from '../../runtime';
+import * as runtimeIde from '../../runtime_ide';
+import { $ } from '../../../core/engine_core';
+import { api } from '../../overlay_api';
+import * as constants from '../constants';
 import { activateCodeTab, getActiveCodeTabContext, isResourceViewActive, setActiveTab, storeActiveCodeTabContext } from './editor_tabs';
-import { cancelGlobalSearchJob, startSearchJob } from './editor_search';
-import { ide_state, captureKeys } from './ide_state';
-import { bumpTextVersion } from './text_utils';
+import { cancelGlobalSearchJob, startSearchJob } from '../contrib/find/editor_search';
+import { ide_state, captureKeys } from '../ide_state';
+import { bumpTextVersion } from '../text_utils';
 import { ensureCursorVisible } from './caret';
-import { drawProblemsPanel } from './problems_panel';
-import { renderTopBar, renderTopBarDropdown } from './render/render_top_bar';
-import { renderTabBar } from './render/render_tab_bar';
-import { renderCodeArea } from './render/render_code_area';
-import { renderStatusBar } from './render/render_status_bar';
-import { drawResourcePanel, drawResourceViewer } from './render/render_resource_panel';
-import { drawActionPromptOverlay } from './render/render_prompt';
+import { drawProblemsPanel } from '../contrib/problems/problems_panel';
+import { renderTopBar, renderTopBarDropdown } from '../render/render_top_bar';
+import { renderTabBar } from '../render/render_tab_bar';
+import { renderCodeArea } from '../render/render_code_area';
+import { renderStatusBar } from '../render/render_status_bar';
+import { drawResourcePanel, drawResourceViewer } from '../render/render_resource_panel';
+import { drawActionPromptOverlay } from '../render/render_prompt';
 import {
 	renderCreateResourceBar,
 	renderLineJumpBar,
@@ -22,29 +22,29 @@ import {
 	renderSearchBar,
 	renderSymbolSearchBar,
 	renderResourceSearchBar,
-} from './render/render_inline_bars';
-import { renderRuntimeFaultOverlay } from './render/render_error_overlay';
-import { handleEditorInput } from './input/keyboard/editor_keyboard_dispatch';
-import { handleActionPromptInput } from './input/overlays/action_prompt';
-import { handleTextEditorPointerInput } from './input/pointer/editor_pointer_dispatch';
-import { handleEditorWheelInput } from './input/pointer/editor_wheel_input';
+} from '../render/render_inline_bars';
+import { renderRuntimeFaultOverlay } from '../render/render_error_overlay';
+import { handleEditorInput } from '../input/keyboard/editor_keyboard_dispatch';
+import { handleActionPromptInput } from '../input/overlays/action_prompt';
+import { handleTextEditorPointerInput } from '../input/pointer/editor_pointer_dispatch';
+import { handleEditorWheelInput } from '../input/pointer/editor_wheel_input';
 import { updateBlink } from './inline_text_field';
-import { stopWorkspaceAutosaveLoop, runWorkspaceAutosaveTick, initializeWorkspaceStorage } from './workspace_storage';
-import { clearWorkspaceCachedSources } from '../workspace_cache';
-import { clearBackgroundTasks } from './background_tasks';
-import { clearGotoHoverHighlight } from './intellisense';
-import { updateRuntimeErrorOverlay } from './contrib/runtime_error/runtime_error_overlay';
+import { stopWorkspaceAutosaveLoop, runWorkspaceAutosaveTick, initializeWorkspaceStorage } from '../workspace_storage';
+import { clearWorkspaceCachedSources } from '../../workspace_cache';
+import { clearBackgroundTasks } from '../background_tasks';
+import { clearGotoHoverHighlight } from '../intellisense';
+import { updateRuntimeErrorOverlay } from '../contrib/runtime_error/runtime_error_overlay';
 import { hideResourcePanel } from './editor_view';
 import {
 	applySearchFieldText,
 	cancelSearchJob,
-} from './editor_search';
-import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from './contrib/runtime_error/runtime_error_navigation';
-import { processDiagnosticsQueue } from './diagnostics_controller';
+} from '../contrib/find/editor_search';
+import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from '../contrib/runtime_error/runtime_error_navigation';
+import { processDiagnosticsQueue } from '../contrib/problems/diagnostics_controller';
 import { updateDesiredColumn } from './caret';
-import { resetActionPromptState } from './input/overlays/action_prompt';
-import { applyLineJumpFieldText } from './line_jump';
-import { applyCreateResourceFieldText, closeCreateResourcePrompt } from './contrib/resources/create_resource';
+import { resetActionPromptState } from '../input/overlays/action_prompt';
+import { applyLineJumpFieldText } from '../contrib/find/line_jump';
+import { applyCreateResourceFieldText, closeCreateResourcePrompt } from '../contrib/resources/create_resource';
 
 export function tickInput(): void {
 	handleEditorWheelInput();

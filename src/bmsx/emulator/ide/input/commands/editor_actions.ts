@@ -6,7 +6,7 @@ import { Runtime } from '../../../runtime';
 import * as runtimeLuaPipeline from '../../../runtime_lua_pipeline';
 import * as runtimeIde from '../../../runtime_ide';
 import type { PendingActionPrompt } from '../../types';
-import { handleRuntimeTaskError } from '../../editor_runtime';
+import { handleRuntimeTaskError } from '../../browser/editor_runtime';
 import { clearExecutionStopHighlights } from '../../contrib/runtime_error/runtime_error_navigation';
 import * as constants from '../../constants';
 import { setEditorCaseInsensitivity } from '../../render/text_renderer';

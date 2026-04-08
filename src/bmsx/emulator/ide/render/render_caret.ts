@@ -4,10 +4,10 @@ import * as constants from '../constants';
 import { ide_state } from '../ide_state';
 import { drawEditorText } from './text_renderer';
 import type { CursorScreenInfo, TextField } from '../types';
-import { getCursorOffset } from '../inline_text_field';
+import { getCursorOffset } from '../browser/inline_text_field';
 import { api } from '../../overlay_api';
 import { textFromLines } from '../text/source_text';
-import { resetBlinkState } from '../caret_blink';
+import { resetBlinkState } from '../browser/caret_blink';
 
 export function drawInlineCaret(
 	api: Api,

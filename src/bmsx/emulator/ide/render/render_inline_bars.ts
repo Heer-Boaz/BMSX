@@ -2,12 +2,12 @@ import { drawInlineCaret } from './render_caret';
 import * as constants from '../constants';
 import type { TextField } from '../types';
 import { ide_state } from '../ide_state';
-import { measureInlineFieldDecoration } from '../inline_field_view';
+import { measureInlineFieldDecoration } from '../browser/inline_field_view';
 import { api } from '../../overlay_api';
 import { drawEditorText } from './text_renderer';
 import { drawCreateResourceErrorDialog } from './render_resource_panel';
-import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../editor_search';
-import { getCreateResourceBarHeight, getLineJumpBarHeight, getRenameBarHeight, getResourceSearchBarHeight, getSearchBarHeight, getSymbolSearchBarHeight, isResourceSearchCompactMode, isSymbolSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount, searchResultEntryHeight, searchVisibleResultCount, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../editor_view';
+import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../contrib/find/editor_search';
+import { getCreateResourceBarHeight, getLineJumpBarHeight, getRenameBarHeight, getResourceSearchBarHeight, getSearchBarHeight, getSymbolSearchBarHeight, isResourceSearchCompactMode, isSymbolSearchCompactMode, resourceSearchEntryHeight, resourceSearchVisibleResultCount, searchResultEntryHeight, searchVisibleResultCount, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../browser/editor_view';
 import { measureText } from '../text_utils';
 import { textFromLines } from '../text/source_text';
 

@@ -1,4 +1,4 @@
-import { ide_state } from './ide_state';
+import { ide_state } from '../ide_state';
 
 export const MENU_IDS = ['file', 'run', 'view', 'debug'] as const;
 export type MenuId = typeof MENU_IDS[number];

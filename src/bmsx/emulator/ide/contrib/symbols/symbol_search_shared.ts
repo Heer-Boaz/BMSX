@@ -1,8 +1,8 @@
 import { ide_state } from '../../ide_state';
 import { clampQuickInputDisplayOffset } from '../../quick_input_navigation';
 import { resetBlink } from '../../render/render_caret';
-import { setFieldText } from '../../inline_text_field';
-import { symbolSearchPageSize } from '../../editor_view';
+import { setFieldText } from '../../browser/inline_text_field';
+import { symbolSearchPageSize } from '../../browser/editor_view';
 import type { SymbolSearchResult } from '../../types';
 
 export function closeSymbolSearch(clearQuery: boolean): void {

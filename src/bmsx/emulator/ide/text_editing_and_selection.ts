@@ -14,9 +14,9 @@
 import { $ } from '../../core/engine_core';
 import { ide_state } from './ide_state';
 import type { EditContext, Position } from './types';
-import { getActiveCodeTabContext, recordEditContext } from './editor_tabs';
-import { revealCursor, updateDesiredColumn } from './caret';
-import { markDiagnosticsDirty } from './diagnostics';
+import { getActiveCodeTabContext, recordEditContext } from './browser/editor_tabs';
+import { revealCursor, updateDesiredColumn } from './browser/caret';
+import { markDiagnosticsDirty } from './contrib/problems/diagnostics';
 import { currentLine, invalidateLineRange, markTextMutated } from './text_utils';
 import { capturePreMutationSource } from './text_utils';
 import { resetBlink } from './render/render_caret';
@@ -26,7 +26,7 @@ import { extractErrorMessage } from '../../lua/luavalue';
 import { getTextSnapshot } from './text/source_text';
 import type { MutableTextPosition, TextBuffer } from './text/text_buffer';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
-import { formatAemDocument } from './aem_editor';
+import { formatAemDocument } from './language/aem/aem_editor';
 import {
 	clearSingleCursorSelection,
 	collapseSingleCursorSelection,

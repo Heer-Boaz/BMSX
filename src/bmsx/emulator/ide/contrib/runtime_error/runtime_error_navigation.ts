@@ -1,6 +1,6 @@
-import { centerCursorVertically, setCursorPosition } from '../../caret';
+import { centerCursorVertically, setCursorPosition } from '../../browser/caret';
 import { beginNavigationCapture, completeNavigation } from '../../navigation_history';
-import { activateCodeTab, getActiveCodeTabContext, setActiveTab } from '../../editor_tabs';
+import { activateCodeTab, getActiveCodeTabContext, setActiveTab } from '../../browser/editor_tabs';
 import { ide_state } from '../../ide_state';
 import type { CodeTabContext, RuntimeErrorOverlay } from '../../types';
 import { resetBlink } from '../../render/render_caret';

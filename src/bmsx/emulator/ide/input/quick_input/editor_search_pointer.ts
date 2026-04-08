@@ -1,8 +1,8 @@
 import { point_in_rect } from '../../../../utils/rect_operations';
 import * as constants from '../../constants';
-import { applySearchSelection, ensureSearchSelectionVisible, processInlineFieldPointer } from '../../editor_search';
-import { closeLineJump } from '../../line_jump';
-import { getSearchBarBounds, searchResultEntryHeight, searchVisibleResultCount } from '../../editor_view';
+import { applySearchSelection, ensureSearchSelectionVisible, processInlineFieldPointer } from '../../contrib/find/editor_search';
+import { closeLineJump } from '../../contrib/find/line_jump';
+import { getSearchBarBounds, searchResultEntryHeight, searchVisibleResultCount } from '../../browser/editor_view';
 import { ide_state } from '../../ide_state';
 import type { PointerSnapshot } from '../../types';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from './editor_quick_input_pointer_common';

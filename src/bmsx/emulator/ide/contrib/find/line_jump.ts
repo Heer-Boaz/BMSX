@@ -1,15 +1,15 @@
-import * as constants from './constants';
-import { ide_state } from './ide_state';
-import { clearReferenceHighlights } from './intellisense';
+import * as constants from '../../constants';
+import { ide_state } from '../../ide_state';
+import { clearReferenceHighlights } from '../../intellisense';
 import { closeSearch } from './editor_search';
-import { resetBlink } from './render/render_caret';
-import { setFieldText } from './inline_text_field';
-import { beginNavigationCapture, completeNavigation } from './navigation_history';
-import { setCursorPosition } from './caret';
-import { breakUndoSequence } from './undo_controller';
-import * as TextEditing from './text_editing_and_selection';
-import { closeSymbolSearch } from './contrib/symbols/symbol_search_shared';
-import { closeResourceSearch } from './contrib/resources/resource_search';
+import { resetBlink } from '../../render/render_caret';
+import { setFieldText } from '../../browser/inline_text_field';
+import { beginNavigationCapture, completeNavigation } from '../../navigation_history';
+import { setCursorPosition } from '../../browser/caret';
+import { breakUndoSequence } from '../../undo_controller';
+import * as TextEditing from '../../text_editing_and_selection';
+import { closeSymbolSearch } from '../symbols/symbol_search_shared';
+import { closeResourceSearch } from '../resources/resource_search';
 
 export function openLineJump(): void {
 	clearReferenceHighlights();

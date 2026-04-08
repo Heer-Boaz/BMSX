@@ -1,12 +1,12 @@
-import { $ } from '../../core/engine_core';
-import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
-import * as constants from './constants';
-import { ide_state } from './ide_state';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './input/keyboard/key_input';
-import type { InlineInputOptions, Position, TextField } from './types';
-import { clamp } from '../../utils/clamp';
-import { LuaLexer } from '../../lua/syntax/lualexer';
-import { splitText, textFromLines } from './text/source_text';
+import { $ } from '../../../core/engine_core';
+import { CHARACTER_CODES, CHARACTER_MAP } from '../character_map';
+import * as constants from '../constants';
+import { ide_state } from '../ide_state';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../input/keyboard/key_input';
+import type { InlineInputOptions, Position, TextField } from '../types';
+import { clamp } from '../../../utils/clamp';
+import { LuaLexer } from '../../../lua/syntax/lualexer';
+import { splitText, textFromLines } from '../text/source_text';
 import { advanceToggleBlink } from './caret_blink';
 import {
 	clearSingleCursorSelection,
@@ -14,8 +14,8 @@ import {
 	selectAllSingleCursor,
 	setSingleCursorPosition,
 	setSingleCursorSelectionAnchor,
-} from './cursor_state';
-import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor_words';
+} from '../cursor_state';
+import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from '../cursor_words';
 
 export type InlineFieldMetrics = {
 	advanceChar: (ch: string) => number;

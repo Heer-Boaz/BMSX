@@ -1,4 +1,4 @@
-import { clamp } from '../../utils/clamp';
+import { clamp } from '../../../../utils/clamp';
 import {
 	getApiCompletionData,
 	getKeywordCompletions,
@@ -10,8 +10,8 @@ import {
 	buildMemberCompletionItems,
 	type LuaScopedSymbol,
 	shouldAutoTriggerCompletions,
-} from './intellisense';
-import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/syntax/lua_ast';
+} from '../../intellisense';
+import type { LuaDefinitionInfo, LuaSourceRange } from '../../../../lua/syntax/lua_ast';
 import {
 	CompletionContext,
 	CompletionSession,
@@ -20,22 +20,22 @@ import {
 	LuaCompletionItem,
 	LuaCompletionKind,
 	ParameterHintState,
-} from './types';
-import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../types';
-import * as constants from './constants';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './input/keyboard/key_input';
-import { isLuaCommentContext } from './text_utils';
-import { point_in_rect } from '../../utils/rect_operations';
-import { LuaLexer } from '../../lua/syntax/lualexer';
-import { assignRowColumn, ide_state } from './ide_state';
-import * as TextEditing from './text_editing_and_selection';
-import { getActiveCodeTabContext, isActiveLuaCodeTab } from './editor_tabs';
-import { prepareUndo } from './undo_controller';
-import { updateDesiredColumn, revealCursor } from './caret';
-import { resetBlink } from './render/render_caret';
-import { ModuleAliasEntry } from './semantic_model';
-import { getActiveSemanticDefinitions, getLuaModuleAliases } from './diagnostics_controller';
-import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from './cursor_state';
+} from '../../types';
+import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../../../types';
+import * as constants from '../../constants';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
+import { isLuaCommentContext } from '../../text_utils';
+import { point_in_rect } from '../../../../utils/rect_operations';
+import { LuaLexer } from '../../../../lua/syntax/lualexer';
+import { assignRowColumn, ide_state } from '../../ide_state';
+import * as TextEditing from '../../text_editing_and_selection';
+import { getActiveCodeTabContext, isActiveLuaCodeTab } from '../../browser/editor_tabs';
+import { prepareUndo } from '../../undo_controller';
+import { updateDesiredColumn, revealCursor } from '../../browser/caret';
+import { resetBlink } from '../../render/render_caret';
+import { ModuleAliasEntry } from '../../semantic_model';
+import { getActiveSemanticDefinitions, getLuaModuleAliases } from '../problems/diagnostics_controller';
+import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../cursor_state';
 
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;

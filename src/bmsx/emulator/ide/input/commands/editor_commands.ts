@@ -1,4 +1,4 @@
-import type { TopBarButtonId } from '../../editor_top_bar_menu';
+import type { TopBarButtonId } from '../../browser/editor_top_bar_menu';
 import { executeEditorDebugCommand, isEditorDebugCommand } from './editor_debug_commands';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './editor_search_commands';
 import { executeEditorSymbolNavigationCommand, isEditorSymbolNavigationCommand } from './editor_symbol_navigation_commands';

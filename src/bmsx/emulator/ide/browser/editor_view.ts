@@ -1,17 +1,17 @@
-import { $ } from '../../core/engine_core';
-import { lower_bound } from '../../utils/lower_bound';
-import { EditorFont } from '../editor_font';
-import type { FontVariant } from '../font';
-import type { Viewport } from '../../rompack/rompack';
+import { $ } from '../../../core/engine_core';
+import { lower_bound } from '../../../utils/lower_bound';
+import { EditorFont } from '../../editor_font';
+import type { FontVariant } from '../../font';
+import type { Viewport } from '../../../rompack/rompack';
 import type { ResourceDescriptor } from '../types';
-import * as constants from './constants';
+import * as constants from '../constants';
 import { CodeLayout } from './code_layout';
-import { markDiagnosticsDirty } from './diagnostics';
-import { computeSearchPageStats } from './editor_search';
-import { ide_state } from './ide_state';
-import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from './intellisense';
+import { markDiagnosticsDirty } from '../contrib/problems/diagnostics';
+import { computeSearchPageStats } from '../contrib/find/editor_search';
+import { ide_state } from '../ide_state';
+import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../intellisense';
 import { ensureCursorVisible, updateDesiredColumn } from './caret';
-import { splitText } from './text/source_text';
+import { splitText } from '../text/source_text';
 import {
 	ensureVisualLines,
 	getVisualLineCount,
@@ -21,7 +21,7 @@ import {
 	visibleRowCount,
 	visualIndexToSegment,
 	wrapOverlayLine,
-} from './text_utils';
+} from '../text_utils';
 
 function decimalDigitCount(value: number): number {
 	let digits = 1;

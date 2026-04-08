@@ -1,7 +1,7 @@
 import type { LuaSymbolEntry } from '../../../types';
 import * as constants from '../../constants';
 import { computeSourceLabel } from '../references/reference_sources';
-import { getActiveCodeTabContext } from '../../editor_tabs';
+import { getActiveCodeTabContext } from '../../browser/editor_tabs';
 import { ide_state } from '../../ide_state';
 import { listGlobalLuaSymbols, listLuaSymbols } from '../../intellisense';
 import { symbolKindLabel } from '../../semantic_model';

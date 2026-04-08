@@ -1,5 +1,5 @@
 import * as TextEditing from '../../text_editing_and_selection';
-import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp } from '../../caret';
+import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp } from '../../browser/caret';
 import { goBackwardInNavigationHistory, goForwardInNavigationHistory } from '../../navigation_history';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
 

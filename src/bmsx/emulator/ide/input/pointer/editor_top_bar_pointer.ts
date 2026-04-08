@@ -1,5 +1,5 @@
 import { point_in_rect } from '../../../../utils/rect_operations';
-import { isTopBarCommandEnabled, MENU_COMMANDS, MENU_IDS, type MenuId, type TopBarButtonId } from '../../editor_top_bar_menu';
+import { isTopBarCommandEnabled, MENU_COMMANDS, MENU_IDS, type MenuId, type TopBarButtonId } from '../../browser/editor_top_bar_menu';
 import { ide_state } from '../../ide_state';
 import type { PointerSnapshot } from '../../types';
 import { executeTopBarCommand } from '../commands/editor_commands';

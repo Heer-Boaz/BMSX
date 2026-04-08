@@ -1,4 +1,4 @@
-import { prepareDebuggerStepOverlay, RuntimeDebuggerCommandExecutor, toggleBreakpointForEditorRow } from '../../ide_debugger';
+import { prepareDebuggerStepOverlay, RuntimeDebuggerCommandExecutor, toggleBreakpointForEditorRow } from '../../contrib/debugger/ide_debugger';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 
 export function handleEditorDebuggerInput(): boolean {

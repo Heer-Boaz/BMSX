@@ -1,7 +1,7 @@
 import type { RectBounds } from '../../../rompack/rompack';
 import type { ResourcePanelController } from '../contrib/resources/resource_panel_controller';
 import { clamp } from '../../../utils/clamp';
-import { getCodeAreaBounds } from '../editor_view';
+import { getCodeAreaBounds } from '../browser/editor_view';
 import { resourceViewerClampScroll } from '../input/keyboard/resource_viewer_input';
 import { ide_state } from '../ide_state';
 import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity } from '../contrib/resources/resource_viewer';

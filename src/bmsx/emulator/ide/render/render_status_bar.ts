@@ -1,7 +1,7 @@
 import * as constants from '../constants';
 import { getActiveSymbolSearchMatch } from '../contrib/symbols/symbol_search_shared';
-import { statusAreaHeight, getStatusMessageLines } from '../editor_view';
-import { getActiveCodeTabContext, isCodeTabActive, isResourceViewActive } from '../editor_tabs';
+import { statusAreaHeight, getStatusMessageLines } from '../browser/editor_view';
+import { getActiveCodeTabContext, isCodeTabActive, isResourceViewActive } from '../browser/editor_tabs';
 import { ide_state } from '../ide_state';
 import { getActiveResourceViewer } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from './text_renderer';

@@ -10,6 +10,7 @@ import type { EditorCommandId } from './input/commands/editor_commands';
 import { RectBounds } from '../../rompack/rompack';
 import type { TextBuffer } from './text/text_buffer';
 import type { EditorUndoRecord } from './text/editor_undo';
+export type { ResourceDescriptor } from '../types';
 
 export type Position = { row: number; column: number };
 
@@ -212,8 +213,8 @@ export type VisualLineSegment = {
 	endColumn: number;
 };
 
-export type TopBarButtonId = import('./editor_top_bar_menu').TopBarButtonId;
-export type MenuId = import('./editor_top_bar_menu').MenuId;
+export type TopBarButtonId = import('./browser/editor_top_bar_menu').TopBarButtonId;
+export type MenuId = import('./browser/editor_top_bar_menu').MenuId;
 export type CodeTabMode = 'lua' | 'aem';
 
 export type EditorTabId = `resource:${string}` | `code:${string}`;

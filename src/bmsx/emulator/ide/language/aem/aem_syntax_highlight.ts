@@ -1,5 +1,5 @@
-import type { HighlightLine } from './types';
-import { highlightYamlTextLine } from './yaml_syntax_highlight';
+import type { HighlightLine } from '../../types';
+import { highlightYamlTextLine } from '../yaml/yaml_syntax_highlight';
 
 const AEM_VALUE_KEYWORDS = new Set([
 	'loop',
