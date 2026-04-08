@@ -11,11 +11,11 @@ import {
 } from '../lua/luavalue';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { clamp_fallback } from '../utils/clamp';
-import * as constants from './ide/core/constants';
-import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from './ide/core/constants';
-import { ide_state } from './ide/core/ide_state';
-import type { RuntimeErrorDetails } from './ide/core/types';
-import { setEditorCaseInsensitivity } from './ide/render/text_renderer';
+import * as constants from '../ide/core/constants';
+import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_GAMEPAD_BUTTONS, EDITOR_TOGGLE_KEY, GAME_PAUSE_KEY } from '../ide/core/constants';
+import { ide_state } from '../ide/core/ide_state';
+import type { RuntimeErrorDetails } from '../ide/core/types';
+import { setEditorCaseInsensitivity } from '../ide/render/text_renderer';
 import { buildLuaStackFrames } from './lua_globals';
 import { seedDefaultLuaBuiltins } from './lua_builtins';
 import {
@@ -32,8 +32,8 @@ import type { RuntimeOptions } from './types';
 import { resolveWorkspacePath } from './workspace_path';
 import { shallowcopy } from '../utils/shallowcopy';
 import { api as overlay_api } from './overlay_api';
-import { createCartEditor } from './ide/cart_editor';
-import { clearExecutionStopHighlights, setExecutionStopHighlight } from './ide/contrib/runtime_error/runtime_error_navigation';
+import { createCartEditor } from '../ide/cart_editor';
+import { clearExecutionStopHighlights, setExecutionStopHighlight } from '../ide/contrib/runtime_error/runtime_error_navigation';
 
 class DebugPauseCoordinator {
 	private suspension: LuaDebuggerPauseSignal = null;

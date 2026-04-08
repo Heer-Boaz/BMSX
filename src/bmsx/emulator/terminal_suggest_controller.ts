@@ -1,4 +1,4 @@
-import type { CompletionController } from './ide/contrib/suggest/completion_controller';
+import type { CompletionController } from '../ide/contrib/suggest/completion_controller';
 import {
 	handleCompletionPanelKeybindings as panelHandleCompletionPanelKeybindings,
 	handleCompletionPanelTrigger as panelHandleCompletionPanelTrigger,
