@@ -49,12 +49,12 @@ export function buildEditorContextMenuEntries(token: EditorContextToken, editabl
 		return [];
 	}
 	const entries: EditorContextMenuEntry[] = [
-		{ action: 'go_to_definition', label: 'Go to Definition', enabled: true },
-		{ action: 'go_to_references', label: 'Go to References', enabled: true },
-		{ action: 'call_hierarchy', label: 'Show Call Hierarchy', enabled: true },
+		{ action: 'goToDefinition', label: 'Go to Definition', enabled: true },
+		{ action: 'referenceSearch', label: 'Go to References', enabled: true },
+		{ action: 'callHierarchy', label: 'Show Call Hierarchy', enabled: true },
 	];
 	if (editable) {
-		entries.push({ action: 'rename_symbol', label: 'Rename Symbol', enabled: true });
+		entries.push({ action: 'rename', label: 'Rename Symbol', enabled: true });
 	}
 	return entries;
 }

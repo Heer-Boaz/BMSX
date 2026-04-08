@@ -29,11 +29,10 @@ import type { ResourceDescriptor } from '../types';
 import { Runtime } from '../runtime';
 import * as runtimeLuaPipeline from '../runtime_lua_pipeline';
 import { beginNavigationCapture, completeNavigation } from './navigation_history';
-import { ensureCursorVisible, setCursorPosition, updateDesiredColumn } from './caret';
+import { setCursorPosition } from './caret';
 import { breakUndoSequence } from './undo_controller';
 import * as TextEditing from './text_editing_and_selection';
 import { $ } from '../../core/engine_core';
-import { setSingleCursorSelectionAnchor } from './cursor_state';
 
 // ── Resource search lifecycle ────────────────────────────────────
 
@@ -662,85 +661,3 @@ export function focusEditorFromRename(): void {
 import { isEditableCodeTab } from './editor_tabs';
 import { notifyReadOnlyEdit } from './editor_view';
 import { revealCursor } from './caret';
-import { markTextMutated } from './text_utils';
-import { markDiagnosticsDirtyForChunk } from './diagnostics_controller';
-import { prepareUndo, applyUndoableReplace, recordEditContext } from './undo_controller';
-import { crossFileRenameManager, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
-import type { LuaSourceRange } from '../../lua/syntax/lua_ast';
-
-export function commitRename(payload: RenameCommitPayload): RenameCommitResult {
-	const { matches, newName, activeIndex, info } = payload;
-	const activeContext = getActiveCodeTabContext();
-	const referenceContext = buildProjectReferenceContext(activeContext);
-	const activePath = referenceContext.path;
-	const workspace = getOrCreateSemanticWorkspace();
-	const renameManager = crossFileRenameManager;
-	const sortedMatches = matches.slice();
-	sortedMatches.sort((a, b) => {
-		if (a.row !== b.row) {
-			return a.row - b.row;
-		}
-		return a.start - b.start;
-	});
-	let updatedTotal = 0;
-
-	const snapshot = workspace.getSnapshot();
-	const decl = info.definitionKey ? snapshot.getDecl(info.definitionKey) : null;
-	const references = info.definitionKey ? snapshot.getReferences(info.definitionKey) : [];
-	type RangeBucket = { path: string; ranges: LuaSourceRange[]; seen: Set<string> };
-	const rangeMap = new Map<string, RangeBucket>();
-	const addRange = (range: LuaSourceRange): void => {
-		const path = range.path ?? activePath;
-		let bucket = rangeMap.get(path);
-		if (!bucket) {
-			bucket = { path: path, ranges: [], seen: new Set<string>() };
-			rangeMap.set(path, bucket);
-		}
-		const key = `${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
-		if (bucket.seen.has(key)) {
-			return;
-		}
-		bucket.seen.add(key);
-		bucket.ranges.push(range);
-	};
-	if (decl) {
-		addRange(decl.range);
-	}
-	for (let index = 0; index < references.length; index += 1) {
-		addRange(references[index].range);
-	}
-	rangeMap.delete(activePath);
-
-	if (sortedMatches.length > 0) {
-		prepareUndo('rename', false);
-		recordEditContext('replace', newName);
-		for (let index = sortedMatches.length - 1; index >= 0; index -= 1) {
-			const match = sortedMatches[index];
-			const startOffset = ide_state.buffer.offsetAt(match.row, match.start);
-			const endOffset = ide_state.buffer.offsetAt(match.row, match.end);
-			applyUndoableReplace(startOffset, endOffset - startOffset, newName);
-			ide_state.layout.invalidateLine(match.row);
-		}
-		markTextMutated();
-
-		const clampedIndex = clamp(activeIndex, 0, sortedMatches.length - 1);
-		const focused = sortedMatches[clampedIndex];
-		ide_state.cursorRow = focused.row;
-		ide_state.cursorColumn = focused.start;
-		setSingleCursorSelectionAnchor(ide_state, focused.row, focused.start + newName.length);
-		updateDesiredColumn();
-		resetBlink();
-		ide_state.cursorRevealSuspended = false;
-		ensureCursorVisible();
-		updatedTotal += sortedMatches.length;
-	}
-
-	for (const bucket of rangeMap.values()) {
-		const replacements = renameManager.applyRenameToChunk(bucket.path, bucket.ranges, newName, activePath);
-		updatedTotal += replacements;
-		if (replacements > 0) {
-			markDiagnosticsDirtyForChunk(bucket.path);
-		}
-	}
-	return { updatedMatches: updatedTotal };
-}

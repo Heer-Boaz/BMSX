@@ -3,7 +3,8 @@ import { ide_state } from '../ide_state';
 import { applyInlineFieldEditing } from '../inline_text_field';
 import { resetBlink } from '../render/render_caret';
 import { textFromLines } from '../text/source_text';
-import { closeCreateResourcePrompt, confirmCreateResourcePrompt, isValidCreateResourceCharacter } from '../create_resource';
+import { closeCreateResourcePrompt } from '../create_resource';
+import { confirmCreateResourcePrompt, isValidCreateResourceCharacter } from '../create_resource_operation';
 import { consumeIdeKey, isKeyJustPressed } from './key_input';
 
 export function handleCreateResourceInput(): void {

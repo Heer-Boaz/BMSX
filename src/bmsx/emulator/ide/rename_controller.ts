@@ -1,33 +1,18 @@
 import { resolveReferenceLookup, type ReferenceLookupOptions } from './reference_navigation';
 import { type ReferenceMatchInfo } from './reference_state';
-import type { CodeTabContext, InlineInputOptions, TextField, SearchMatch } from './types';
+import type { InlineInputOptions, TextField, SearchMatch } from './types';
 import { applyInlineFieldEditing, createInlineTextField, setFieldText } from './inline_text_field';
 import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './input/key_input';
 import * as constants from './constants';
 import { consumeIdeKey } from './input/key_input';
-import type { LuaSourceRange } from '../../lua/syntax/lua_ast';
 import { clamp } from '../../utils/clamp';
 import { LuaLexer } from '../../lua/syntax/lualexer';
-import { createLuaCodeTabContext, findCodeTabContext } from './editor_tabs';
-import { commitRename, findResourceDescriptorForChunk, focusEditorFromRename } from './search_bars';
-import { getTextSnapshot, splitText, textFromLines } from './text/source_text';
-import { syncSemanticWorkspacePath } from './semantic_workspace_sync';
+import { focusEditorFromRename } from './search_bars';
+import { textFromLines } from './text/source_text';
 import { ide_state } from './ide_state';
-import { getOrCreateSemanticWorkspace } from './semantic_workspace_sync';
 import { redo, undo } from './undo_controller';
 import { setSingleCursorSelectionAnchor } from './cursor_state';
-
-export type RenameCommitPayload = {
-	matches: readonly SearchMatch[];
-	newName: string;
-	activeIndex: number;
-	originalName: string;
-	info: ReferenceMatchInfo;
-};
-
-export type RenameCommitResult = {
-	updatedMatches: number;
-};
+import { commitRename, type RenameCommitPayload } from './rename_operations';
 
 export type RenameStartOptions = ReferenceLookupOptions & {
 };
@@ -222,138 +207,4 @@ export class RenameController {
 	}
 }
 
-export type RenameLineEdit = {
-	row: number;
-	text: string;
-};
-
-export function planRenameLineEdits(lines: readonly string[], matches: readonly SearchMatch[], newName: string): RenameLineEdit[] {
-	if (matches.length === 0) {
-		return [];
-	}
-	const edits: RenameLineEdit[] = [];
-	let currentRow = matches[0].row;
-	let source = lines[currentRow] ?? '';
-	let builder = '';
-	let sliceStart = 0;
-	for (let index = 0; index < matches.length; index += 1) {
-		const match = matches[index];
-		if (match.row !== currentRow) {
-			builder += source.slice(sliceStart);
-			if (builder !== source) {
-				edits.push({ row: currentRow, text: builder });
-			}
-			currentRow = match.row;
-			source = lines[currentRow] ?? '';
-			builder = '';
-			sliceStart = 0;
-		}
-		builder += source.slice(sliceStart, match.start);
-		builder += newName;
-		sliceStart = match.end;
-	}
-	builder += source.slice(sliceStart);
-	if (builder !== source) {
-		edits.push({ row: currentRow, text: builder });
-	}
-	return edits;
-}
-
-export class CrossFileRenameManager {
-	public constructor() { }
-
-	public applyRenameToChunk(path: string, ranges: readonly LuaSourceRange[], newName: string, activePath: string): number {
-		const context = this.ensureCodeTabContextForChunk(path);
-		if (path === activePath) {
-			return 0;
-		}
-		if (context.readOnly === true) {
-			return 0;
-		}
-		const lines = this.getContextLinesForRename(context);
-		const matches: SearchMatch[] = [];
-		for (let index = 0; index < ranges.length; index += 1) {
-			matches.push(convertRangeToSearchMatch(ranges[index]));
-		}
-		if (matches.length === 0) {
-			return 0;
-		}
-		matches.sort((a, b) => {
-			if (a.row !== b.row) {
-				return a.row - b.row;
-			}
-			return a.start - b.start;
-		});
-		const edits = planRenameLineEdits(lines, matches, newName);
-		if (edits.length === 0) {
-			return 0;
-		}
-		for (let index = 0; index < edits.length; index += 1) {
-			const edit = edits[index];
-			lines[edit.row] = edit.text;
-		}
-		this.applyLinesToContextSnapshot(context, lines);
-		const workspace = getOrCreateSemanticWorkspace();
-		syncSemanticWorkspacePath({
-			path,
-			source: lines.join('\n'),
-			lines,
-			version: context.textVersion,
-		}, workspace);
-		return matches.length;
-	}
-
-	private getContextLinesForRename(context: CodeTabContext): string[] {
-		return splitText(getTextSnapshot(context.buffer));
-	}
-
-	private applyLinesToContextSnapshot(context: CodeTabContext, lines: readonly string[]): void {
-		const source = lines.join('\n');
-		context.buffer.replace(0, context.buffer.length, source);
-		context.textVersion = context.buffer.version;
-		context.dirty = true;
-		context.savePointDepth = -1;
-		const lineCount = context.buffer.getLineCount();
-		if (context.cursorRow >= lineCount) {
-			context.cursorRow = lineCount - 1;
-			context.cursorColumn = 0;
-		}
-		const cursorLength = context.buffer.getLineEndOffset(context.cursorRow) - context.buffer.getLineStartOffset(context.cursorRow);
-		context.cursorColumn = clamp(context.cursorColumn, 0, cursorLength);
-		context.scrollRow = clamp(context.scrollRow, 0, lineCount - 1);
-		this.markContextTabDirty(context.id, context.dirty);
-	}
-
-	private ensureCodeTabContextForChunk(path: string): CodeTabContext {
-		const existing = findCodeTabContext(path);
-		if (existing) {
-			return existing;
-		}
-		const descriptor = findResourceDescriptorForChunk(path)!;
-		let context = findCodeTabContext(descriptor.path);
-		if (!context) {
-			context = createLuaCodeTabContext(descriptor);
-			ide_state.codeTabContexts.set(context.id, context);
-			this.markContextTabDirty(context.id, context.dirty);
-		}
-		return context;
-	}
-
-	private markContextTabDirty(contextId: string, dirty: boolean): void {
-		const tab = ide_state.tabs.find(candidate => candidate.id === contextId);
-		if (!tab) {
-			return;
-		}
-		tab.dirty = dirty;
-	}
-}
-
-export const crossFileRenameManager = new CrossFileRenameManager();
 export const renameController = new RenameController();
-
-export function convertRangeToSearchMatch(range: LuaSourceRange): SearchMatch {
-	const row = range.start.line - 1;
-	const start = range.start.column - 1;
-	const end = range.end.column;
-	return { row, start, end };
-}

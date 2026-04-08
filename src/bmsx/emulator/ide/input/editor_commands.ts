@@ -1,5 +1,6 @@
 import { executeEditorDebugCommand, isEditorDebugCommand } from './editor_debug_commands';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './editor_search_commands';
+import { executeEditorSymbolNavigationCommand, isEditorSymbolNavigationCommand } from './editor_symbol_navigation_commands';
 import { executeEditorViewCommand, isEditorViewCommand } from './editor_view_commands';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './editor_workspace_commands';
 
@@ -21,6 +22,8 @@ export const MENU_COMMANDS = [
 export type EditorCommandId =
 	| (typeof MENU_COMMANDS)[number]
 	| 'theme-toggle'
+	| 'goToDefinition'
+	| 'callHierarchy'
 	| 'symbolSearch'
 	| 'symbolSearchGlobal'
 	| 'resourceSearch'
@@ -39,6 +42,10 @@ export function executeTopBarCommand(command: (typeof MENU_COMMANDS)[number]): v
 export function executeEditorCommand(command: EditorCommandId): void {
 	if (isEditorDebugCommand(command)) {
 		executeEditorDebugCommand(command);
+		return;
+	}
+	if (isEditorSymbolNavigationCommand(command)) {
+		executeEditorSymbolNavigationCommand(command);
 		return;
 	}
 	if (isEditorSearchCommand(command)) {

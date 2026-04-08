@@ -7,6 +7,7 @@ import type {
 } from '../types';
 import type { StackTraceFrame } from '../../lua/luavalue';
 import { MENU_COMMANDS } from './input/editor_commands';
+import type { EditorCommandId } from './input/editor_commands';
 import { RectBounds } from '../../rompack/rompack';
 import type { TextBuffer } from './text/text_buffer';
 import type { EditorUndoRecord } from './text/editor_undo';
@@ -324,7 +325,7 @@ export type PendingActionPrompt = {
 
 export type EditorContextTokenKind = 'identifier' | 'keyword' | 'number' | 'string' | 'operator';
 
-export type EditorContextMenuAction = 'go_to_definition' | 'go_to_references' | 'call_hierarchy' | 'rename_symbol' | 'copy_token';
+export type EditorContextMenuAction = Extract<EditorCommandId, 'goToDefinition' | 'referenceSearch' | 'callHierarchy' | 'rename'> | 'copy_token';
 
 export type EditorContextToken = {
 	kind: EditorContextTokenKind;

@@ -5,7 +5,7 @@ import { setCursorPosition } from '../caret';
 import { ensureSingleCursorSelectionAnchor, setSingleCursorSelectionAnchor } from '../cursor_state';
 import { isCodeTabActive } from '../editor_tabs';
 import { toggleBreakpointForEditorRow } from '../ide_debugger';
-import { clearHoverTooltip, updateHoverTooltip, clearGotoHoverHighlight, clearReferenceHighlights, tryGotoDefinitionAt, refreshGotoHoverHighlight } from '../intellisense';
+import { clearHoverTooltip, updateHoverTooltip, clearGotoHoverHighlight, clearReferenceHighlights, refreshGotoHoverHighlight } from '../intellisense';
 import * as TextEditing from '../text_editing_and_selection';
 import { openEditorContextMenuFromPointer } from './editor_context_menu_input';
 import { getCodeAreaBounds, resetPointerClickTracking, resolvePointerRow, resolvePointerColumn, handlePointerAutoScroll } from '../editor_view';
@@ -13,6 +13,7 @@ import { focusEditorFromSearch } from '../editor_search';
 import { focusEditorFromLineJump, focusEditorFromResourceSearch, focusEditorFromSymbolSearch } from '../search_bars';
 import { isAltDown } from './key_input';
 import { processRuntimeErrorOverlayPointer } from './runtime_error_overlay_input';
+import { executeEditorGoToDefinitionAt } from './editor_symbol_navigation_commands';
 import * as constants from '../constants';
 
 export function handleCodeAreaPointerInput(
@@ -62,7 +63,7 @@ export function handleCodeAreaPointerInput(
 		ide_state.completion.closeSession();
 		const targetRow = resolvePointerRow(snapshot.viewportY);
 		const targetColumn = resolvePointerColumn(targetRow, snapshot.viewportX);
-		if (gotoModifierActive && tryGotoDefinitionAt(targetRow, targetColumn)) {
+		if (gotoModifierActive && executeEditorGoToDefinitionAt(targetRow, targetColumn)) {
 			ide_state.pointerSelecting = false;
 			ide_state.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			resetPointerClickTracking();

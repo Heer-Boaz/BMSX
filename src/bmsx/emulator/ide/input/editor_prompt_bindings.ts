@@ -44,15 +44,16 @@ function handleCycleTabBinding(): boolean {
 	return true;
 }
 
-function handleReferenceSearchBinding(): boolean {
+function handleDefinitionAndReferenceBinding(): boolean {
 	if (isInlineFieldFocused() || !isKeyJustPressed('F12')) {
 		return false;
 	}
 	consumeIdeKey('F12');
 	if (isShiftDown()) {
+		executeEditorCommand('referenceSearch');
 		return true;
 	}
-	executeEditorCommand('referenceSearch');
+	executeEditorCommand('goToDefinition');
 	return true;
 }
 
@@ -93,7 +94,7 @@ const editorPromptKeyHandlers: readonly EditorKeyHandler[] = [
 	handleGlobalFindBinding,
 	handleLocalFindBinding,
 	handleCycleTabBinding,
-	handleReferenceSearchBinding,
+	handleDefinitionAndReferenceBinding,
 	handleRenameBinding,
 	handleSelectAllBinding,
 	handleLineJumpBinding,
