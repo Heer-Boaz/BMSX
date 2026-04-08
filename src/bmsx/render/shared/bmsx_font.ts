@@ -1,5 +1,6 @@
-import { BFont, GlyphMap } from '../../../render/shared/bitmap_font';
-import { DEFAULT_FONT_VARIANT } from '../../../emulator/start_cart';
+import { BFont, GlyphMap } from './bitmap_font';
+
+export const DEFAULT_FONT_VARIANT = 'msx' as const;
 
 export type FontVariant = 'msx' | 'tiny';
 

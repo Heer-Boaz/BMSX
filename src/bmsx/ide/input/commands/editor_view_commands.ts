@@ -1,6 +1,6 @@
 import { ide_state } from '../../core/ide_state';
 import { toggleProblemsPanel } from '../../contrib/problems/problems_panel';
-import { toggleWordWrap } from '../../browser/editor_view';
+import { toggleWordWrap } from '../../ui/editor_view';
 import type { EditorCommandId } from './editor_commands';
 
 export type EditorViewCommandId =

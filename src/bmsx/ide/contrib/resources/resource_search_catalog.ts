@@ -1,9 +1,9 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
-import { listResourcesStrict } from '../../browser/editor_tabs';
+import { listResourcesStrict } from '../../ui/editor_tabs';
 import { clampQuickInputDisplayOffset, advanceQuickInputSelection } from '../../navigation/quick_input_navigation';
 import { resetBlink } from '../../render/render_caret';
-import { resourceSearchWindowCapacity } from '../../browser/editor_view';
+import { resourceSearchWindowCapacity } from '../../ui/editor_view';
 import { $ } from '../../../core/engine_core';
 
 export function refreshResourceCatalog(): void {

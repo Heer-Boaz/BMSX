@@ -3,7 +3,7 @@ import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
 import { clearReferenceHighlights, navigateToLuaDefinition } from '../intellisense/intellisense';
 import { closeSearch } from '../find/editor_search';
-import { getActiveCodeTabContext } from '../../browser/editor_tabs';
+import { getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { resetBlink } from '../../render/render_caret';
 import { refreshSymbolCatalog } from './symbol_catalog';
 import { closeResourceSearch } from '../resources/resource_search';

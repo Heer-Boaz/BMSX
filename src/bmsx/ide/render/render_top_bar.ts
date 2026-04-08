@@ -3,8 +3,8 @@ import type { RectBounds } from '../../rompack/rompack';
 import { ide_state } from '../core/ide_state';
 import { measureText } from '../core/text_utils';
 import { drawEditorText } from './text_renderer';
-import { api } from '../browser/view/overlay_api';
-import { buildTopBarMenuEntries, MENU_COMMANDS, MENU_IDS, TopBarMenuEntry } from '../browser/editor_top_bar_menu';
+import { api } from '../ui/view/overlay_api';
+import { buildTopBarMenuEntries, MENU_COMMANDS, MENU_IDS, TopBarMenuEntry } from '../ui/editor_top_bar_menu';
 
 const Z_TOP_BAR_BACKGROUND = 10;
 const Z_MENU_BUTTON = 14;

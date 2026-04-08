@@ -1,10 +1,10 @@
 import { ide_state } from '../../core/ide_state';
 import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch, onSearchQueryChanged, openSearch, searchPageSize, stepSearchSelection } from '../../contrib/find/editor_search';
-import { applyInlineFieldEditing } from '../../browser/inline_text_field';
+import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { textFromLines } from '../../text/source_text';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../keyboard/key_input';
 import { redo, undo } from '../../editing/undo_controller';
-import { save } from '../../browser/editor_tabs';
+import { save } from '../../ui/editor_tabs';
 
 export function handleSearchInput(): void {
 	const shiftDown = isShiftDown();

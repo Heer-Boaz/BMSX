@@ -2,7 +2,7 @@ import type { CodeTabContext, SearchMatch } from '../../core/types';
 import type { ReferenceMatchInfo } from '../references/reference_state';
 import type { LuaSourceRange } from '../../../lua/syntax/lua_ast';
 import { clamp } from '../../../utils/clamp';
-import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../browser/editor_tabs';
+import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { findResourceDescriptorForChunk } from '../resources/resource_lookup';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../intellisense/semantic_workspace_sync';
@@ -11,7 +11,7 @@ import { markTextMutated } from '../../core/text_utils';
 import { markDiagnosticsDirtyForChunk } from '../problems/diagnostics_controller';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from '../../editing/undo_controller';
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
-import { updateDesiredColumn, ensureCursorVisible } from '../../browser/caret';
+import { updateDesiredColumn, ensureCursorVisible } from '../../ui/caret';
 import { resetBlink } from '../../render/render_caret';
 
 export type RenameCommitPayload = {

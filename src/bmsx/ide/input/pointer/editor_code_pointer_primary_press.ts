@@ -1,9 +1,9 @@
 import { $ } from '../../../core/engine_core';
 import { ide_state } from '../../core/ide_state';
-import { setCursorPosition } from '../../browser/caret';
+import { setCursorPosition } from '../../ui/caret';
 import { setSingleCursorSelectionAnchor } from '../../editing/cursor_state';
-import { focusPrimaryEditorSurface } from '../../browser/editor_focus';
-import { resolvePointerColumn, resolvePointerRow, resetPointerClickTracking } from '../../browser/editor_view';
+import { focusPrimaryEditorSurface } from '../../ui/editor_focus';
+import { resolvePointerColumn, resolvePointerRow, resetPointerClickTracking } from '../../ui/editor_view';
 import { executeEditorGoToDefinitionAt } from '../commands/editor_symbol_navigation_commands';
 import type { PointerSnapshot } from '../../core/types';
 import * as TextEditing from '../../editing/text_editing_and_selection';

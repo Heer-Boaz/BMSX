@@ -3,7 +3,7 @@ import { ide_state } from '../../core/ide_state';
 import type { PointerSnapshot } from '../../core/types';
 import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, setProblemsPanelHeightFromViewportY } from '../../contrib/problems/problems_panel';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
-import { resetPointerClickTracking } from '../../browser/editor_view';
+import { resetPointerClickTracking } from '../../ui/editor_view';
 
 export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	if (ide_state.problemsPanelResizing) {

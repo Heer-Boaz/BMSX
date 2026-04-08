@@ -9,12 +9,12 @@ import {
 	shutdownRuntimeEditor as shutdown,
 	tickInput,
 	update,
-} from './browser/editor_runtime';
-import { initializeCartEditor } from './browser/editor_bootstrap';
+} from './ui/editor_runtime';
+import { initializeCartEditor } from './ui/editor_bootstrap';
 import {
 	setFontVariant,
 	updateViewport,
-} from './browser/editor_view';
+} from './ui/editor_view';
 import { Viewport } from '../rompack/rompack';
 import { clearRuntimeErrorOverlay, clearAllRuntimeErrorOverlays } from './contrib/runtime_error/runtime_error_navigation';
 import { getSourceForChunk } from './core/text_utils';

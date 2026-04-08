@@ -1,6 +1,6 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
-import { applyInlineFieldEditing } from '../../browser/inline_text_field';
+import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { resetBlink } from '../../render/render_caret';
 import { textFromLines } from '../../text/source_text';
 import { closeCreateResourcePrompt } from '../../contrib/resources/create_resource';

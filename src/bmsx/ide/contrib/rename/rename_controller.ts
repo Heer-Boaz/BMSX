@@ -1,7 +1,7 @@
 import { resolveReferenceLookup, type ReferenceLookupOptions } from '../references/reference_lookup';
 import { type ReferenceMatchInfo } from '../references/reference_state';
 import type { InlineInputOptions, TextField, SearchMatch } from '../../core/types';
-import { applyInlineFieldEditing, createInlineTextField, setFieldText } from '../../browser/inline_text_field';
+import { applyInlineFieldEditing, createInlineTextField, setFieldText } from '../../ui/inline_text_field';
 import { isCtrlDown, isKeyJustPressed as isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
 import * as constants from '../../core/constants';
 import { consumeIdeKey } from '../../input/keyboard/key_input';

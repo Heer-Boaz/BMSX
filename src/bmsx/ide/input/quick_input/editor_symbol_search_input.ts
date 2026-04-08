@@ -1,12 +1,12 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
-import { applyInlineFieldEditing } from '../../browser/inline_text_field';
+import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { applySymbolSearchSelection } from '../../contrib/symbols/symbol_search';
 import { moveSymbolSearchSelection, updateSymbolSearchMatches } from '../../contrib/symbols/symbol_search_catalog';
 import { closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../../contrib/symbols/symbol_search_shared';
 import { textFromLines } from '../../text/source_text';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../keyboard/key_input';
-import { symbolSearchPageSize } from '../../browser/editor_view';
+import { symbolSearchPageSize } from '../../ui/editor_view';
 
 export function handleSymbolSearchInput(): void {
 	const shiftDown = isShiftDown();

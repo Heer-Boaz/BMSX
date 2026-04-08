@@ -1,7 +1,7 @@
-import type { OverlayApi as Api } from '../browser/view/overlay_api';
-import type { EditorFont } from '../browser/view/editor_font';
+import type { OverlayApi as Api } from '../ui/view/overlay_api';
+import type { EditorFont } from '../ui/view/editor_font';
 import { drawEditorText } from './text_renderer';
-import { bottomMargin } from '../browser/editor_view';
+import { bottomMargin } from '../ui/editor_view';
 import { ide_state } from '../core/ide_state';
 import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, positionToVisualIndex, visualIndexToSegment, wrapOverlayLine } from '../core/text_utils';
 import type { RuntimeErrorDetails, RuntimeErrorOverlay } from '../core/types';
@@ -9,8 +9,8 @@ import type { StackTraceFrame } from '../../lua/luavalue';
 import type { RectBounds } from '../../rompack/rompack';
 import { point_in_rect } from '../../utils/rect_operations';
 import { Runtime } from '../../emulator/runtime';
-import { api } from '../browser/view/overlay_api';
-import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../browser/caret';
+import { api } from '../ui/view/overlay_api';
+import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../ui/caret';
 import * as constants from '../core/constants';
 import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/runtime_error_overlay';
 import { resetBlink } from './render_caret';
@@ -18,7 +18,7 @@ import { formatRuntimeErrorLocation } from '../contrib/runtime_error/runtime_err
 import { splitText } from '../text/source_text';
 import { BmsxColors } from '../../emulator/vdp';
 import { activate } from '../cart_editor';
-import { focusChunkSource } from '../browser/editor_tabs';
+import { focusChunkSource } from '../ui/editor_tabs';
 import { setActiveRuntimeErrorOverlay, setExecutionStopHighlight } from '../contrib/runtime_error/runtime_error_navigation';
 
 export interface ErrorOverlayBounds {

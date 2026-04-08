@@ -1,7 +1,7 @@
 import { point_in_rect } from '../../../utils/rect_operations';
 import * as constants from '../../core/constants';
 import { closeSearch, processInlineFieldPointer } from '../../contrib/find/editor_search';
-import { getSymbolSearchBarBounds, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../../browser/editor_view';
+import { getSymbolSearchBarBounds, symbolSearchEntryHeight, symbolSearchVisibleResultCount } from '../../ui/editor_view';
 import { ide_state } from '../../core/ide_state';
 import type { PointerSnapshot } from '../../core/types';
 import { closeLineJump } from '../../contrib/find/line_jump';

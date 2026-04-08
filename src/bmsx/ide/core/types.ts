@@ -213,8 +213,8 @@ export type VisualLineSegment = {
 	endColumn: number;
 };
 
-export type TopBarButtonId = import('../browser/editor_top_bar_menu').TopBarButtonId;
-export type MenuId = import('../browser/editor_top_bar_menu').MenuId;
+export type TopBarButtonId = import('../ui/editor_top_bar_menu').TopBarButtonId;
+export type MenuId = import('../ui/editor_top_bar_menu').MenuId;
 export type CodeTabMode = 'lua' | 'aem';
 
 export type EditorTabId = `resource:${string}` | `code:${string}`;

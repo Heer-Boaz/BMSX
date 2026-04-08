@@ -1,6 +1,6 @@
 import { listResources } from '../../../emulator/workspace';
 import { ide_state } from '../../core/ide_state';
-import { getActiveCodeTabContext } from '../../browser/editor_tabs';
+import { getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../intellisense/editor_semantic_frontend';
 import { extractHoverExpression } from '../intellisense/intellisense';
 import { buildIncomingCallHierarchyView, type CallHierarchyView } from './call_hierarchy_view';

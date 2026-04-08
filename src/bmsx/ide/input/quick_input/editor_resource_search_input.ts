@@ -1,11 +1,11 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
-import { applyInlineFieldEditing } from '../../browser/inline_text_field';
+import { applyInlineFieldEditing } from '../../ui/inline_text_field';
 import { applyResourceSearchSelection, closeResourceSearch, focusEditorFromResourceSearch } from '../../contrib/resources/resource_search';
 import { applyLineJumpFieldText, openLineJump } from '../../contrib/find/line_jump';
 import { textFromLines } from '../../text/source_text';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../keyboard/key_input';
-import { resourceSearchWindowCapacity } from '../../browser/editor_view';
+import { resourceSearchWindowCapacity } from '../../ui/editor_view';
 import { ensureResourceSearchSelectionVisible, moveResourceSearchSelection, updateResourceSearchMatches } from '../../contrib/resources/resource_search_catalog';
 import { openGlobalSymbolSearch, openSymbolSearch } from '../../contrib/symbols/symbol_search';
 

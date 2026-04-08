@@ -2,7 +2,7 @@ import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
 import type { ReferenceMatchInfo } from './reference_state';
 import type { CodeTabContext } from '../../core/types';
-import { symbolSearchPageSize } from '../../browser/editor_view';
+import { symbolSearchPageSize } from '../../ui/editor_view';
 import { getTextSnapshot, splitText } from '../../text/source_text';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,

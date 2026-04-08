@@ -20,13 +20,13 @@ import { isStringValue, stringValueToString } from '../../../emulator/string_poo
 import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverRequest, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaMemberCompletionRequest, LuaSymbolEntry, LuaSymbolKind } from '../../../emulator/types';
 import { ScratchBatchPooled } from '../../../utils/scratchbatch';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
-import { focusChunkSource } from '../../browser/editor_tabs';
-import { ensureCursorVisible, updateDesiredColumn } from '../../browser/caret';
+import { focusChunkSource } from '../../ui/editor_tabs';
+import { ensureCursorVisible, updateDesiredColumn } from '../../ui/caret';
 import { resetBlink } from '../../render/render_caret';
 import { tryShowLuaErrorOverlay } from '../runtime_error/runtime_error_navigation';
-import { resolvePointerColumn, resolvePointerRow } from '../../browser/editor_view';
+import { resolvePointerColumn, resolvePointerRow } from '../../ui/editor_view';
 import * as constants from '../../core/constants';
-import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab, setActiveTab } from '../../browser/editor_tabs';
+import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab, setActiveTab } from '../../ui/editor_tabs';
 import { buildEditorSemanticFrontend } from './editor_semantic_frontend';
 import { ide_state } from '../../core/ide_state';
 import { parseLuaIdentifierChain as parseLuaIdentifierChainShared } from '../../lua/lua_identifier_chain';

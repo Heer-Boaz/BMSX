@@ -1,5 +1,5 @@
 import { ide_state } from '../../core/ide_state';
-import { endTabDrag, updateTabDrag } from '../../browser/editor_tabs';
+import { endTabDrag, updateTabDrag } from '../../ui/editor_tabs';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import type { PointerSnapshot } from '../../core/types';
 

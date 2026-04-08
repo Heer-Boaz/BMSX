@@ -1,7 +1,7 @@
 import { ide_state } from '../../core/ide_state';
-import { cycleTab, isCodeTabActive } from '../../browser/editor_tabs';
+import { cycleTab, isCodeTabActive } from '../../ui/editor_tabs';
 import { selectAllSingleCursor } from '../../editing/cursor_state';
-import { revealCursor, updateDesiredColumn } from '../../browser/caret';
+import { revealCursor, updateDesiredColumn } from '../../ui/caret';
 import { resetBlink } from '../../render/render_caret';
 import { executeEditorCommand } from '../commands/editor_commands';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';

@@ -1,8 +1,8 @@
 import { $ } from '../../../core/engine_core';
 import { ide_state } from '../../core/ide_state';
-import { applyScrollbarScroll } from '../../browser/scrollbar';
+import { applyScrollbarScroll } from '../../ui/scrollbar';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
-import { mapScreenPointToViewport } from '../../browser/editor_view';
+import { mapScreenPointToViewport } from '../../ui/editor_view';
 import { updateTabHoverState } from './editor_tab_bar_pointer';
 import type { PointerSnapshot } from '../../core/types';
 

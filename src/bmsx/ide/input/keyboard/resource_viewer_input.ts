@@ -1,5 +1,5 @@
 import { clamp } from '../../../utils/clamp';
-import { getCodeAreaBounds } from '../../browser/editor_view';
+import { getCodeAreaBounds } from '../../ui/editor_view';
 import { ide_state } from '../../core/ide_state';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from './key_input';
 import { clampResourceViewerScroll, getActiveResourceViewer, resourceViewerTextCapacity } from '../../contrib/resources/resource_viewer';

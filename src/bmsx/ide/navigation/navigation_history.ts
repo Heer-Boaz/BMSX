@@ -1,7 +1,7 @@
 import { clamp } from '../../utils/clamp';
 import { ide_state, type NavigationHistoryEntry, NAVIGATION_HISTORY_LIMIT } from '../core/ide_state';
-import { getActiveCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab, focusChunkSource } from '../browser/editor_tabs';
-import { setCursorPosition, ensureCursorVisible } from '../browser/caret';
+import { getActiveCodeTabContext, setActiveTab, isCodeTabActive, activateCodeTab, focusChunkSource } from '../ui/editor_tabs';
+import { setCursorPosition, ensureCursorVisible } from '../ui/caret';
 import * as TextEditing from '../editing/text_editing_and_selection';
 
 export function beginNavigationCapture(): NavigationHistoryEntry {

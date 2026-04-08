@@ -1,5 +1,5 @@
 import { ide_state } from '../../core/ide_state';
-import { resetPointerClickTracking } from '../../browser/editor_view';
+import { resetPointerClickTracking } from '../../ui/editor_view';
 import { writeClipboard } from '../../editing/text_editing_and_selection';
 import { buildRuntimeErrorOverlayCopyText } from '../../contrib/runtime_error/runtime_error_overlay';
 import type { PointerSnapshot } from '../../core/types';

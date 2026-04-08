@@ -14,8 +14,8 @@
 import { $ } from '../../core/engine_core';
 import { ide_state } from '../core/ide_state';
 import type { EditContext, Position } from '../core/types';
-import { getActiveCodeTabContext, recordEditContext } from '../browser/editor_tabs';
-import { revealCursor, updateDesiredColumn } from '../browser/caret';
+import { getActiveCodeTabContext, recordEditContext } from '../ui/editor_tabs';
+import { revealCursor, updateDesiredColumn } from '../ui/caret';
 import { markDiagnosticsDirty } from '../contrib/problems/diagnostics';
 import { currentLine, invalidateLineRange, markTextMutated } from '../core/text_utils';
 import { capturePreMutationSource } from '../core/text_utils';

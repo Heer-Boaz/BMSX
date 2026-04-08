@@ -1,8 +1,8 @@
-import { getResourcePanelWidth, updateGutterWidth } from '../browser/editor_view';
+import { getResourcePanelWidth, updateGutterWidth } from '../ui/editor_view';
 import * as constants from './constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './constants';
 import { startSearchJob } from '../contrib/find/editor_search';
-import { getActiveCodeTabContext, findCodeTabContext, updateActiveContextDirtyFlag } from '../browser/editor_tabs';
+import { getActiveCodeTabContext, findCodeTabContext, updateActiveContextDirtyFlag } from '../ui/editor_tabs';
 import { caretNavigation, ide_state } from './ide_state';
 import { rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/runtime_error_overlay';
 import * as TextEditing from '../editing/text_editing_and_selection';

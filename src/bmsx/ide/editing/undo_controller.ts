@@ -4,11 +4,11 @@ import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import * as constants from '../core/constants';
 import { ide_state } from '../core/ide_state';
 import { capturePreMutationSource, invalidateLuaCommentContextFromRow } from '../core/text_utils';
-import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../browser/editor_tabs';
-import { notifyReadOnlyEdit } from '../browser/editor_view';
-import { updateDesiredColumn } from '../browser/caret';
+import { getActiveCodeTabContext, updateActiveContextDirtyFlag } from '../ui/editor_tabs';
+import { notifyReadOnlyEdit } from '../ui/editor_view';
+import { updateDesiredColumn } from '../ui/caret';
 import { resetBlink } from '../render/render_caret';
-import { ensureCursorVisible } from '../browser/caret';
+import { ensureCursorVisible } from '../ui/caret';
 import { requestSemanticRefresh } from '../contrib/intellisense/intellisense';
 import type { EditorSnapshot, Position } from '../core/types';
 

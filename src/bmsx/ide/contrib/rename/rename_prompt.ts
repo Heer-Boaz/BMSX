@@ -1,12 +1,12 @@
 import { ide_state } from '../../core/ide_state';
 import { extractHoverExpression } from '../intellisense/intellisense';
 import { closeSearch } from '../find/editor_search';
-import { getActiveCodeTabContext, isEditableCodeTab } from '../../browser/editor_tabs';
+import { getActiveCodeTabContext, isEditableCodeTab } from '../../ui/editor_tabs';
 import { closeResourceSearch } from '../resources/resource_search';
 import { closeLineJump } from '../find/line_jump';
-import { notifyReadOnlyEdit } from '../../browser/editor_view';
+import { notifyReadOnlyEdit } from '../../ui/editor_view';
 import { resetBlink } from '../../render/render_caret';
-import { revealCursor } from '../../browser/caret';
+import { revealCursor } from '../../ui/caret';
 import { closeSymbolSearch } from '../symbols/symbol_search_shared';
 
 export function openRenamePrompt(): void {

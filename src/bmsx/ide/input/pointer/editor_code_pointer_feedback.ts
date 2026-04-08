@@ -1,6 +1,6 @@
-import { isCodeTabActive } from '../../browser/editor_tabs';
+import { isCodeTabActive } from '../../ui/editor_tabs';
 import { clearHoverTooltip, clearGotoHoverHighlight, refreshGotoHoverHighlight, updateHoverTooltip } from '../../contrib/intellisense/intellisense';
-import { resolvePointerColumn, resolvePointerRow } from '../../browser/editor_view';
+import { resolvePointerColumn, resolvePointerRow } from '../../ui/editor_view';
 import type { CodeTabContext, PointerSnapshot } from '../../core/types';
 import { isAltDown } from '../keyboard/key_input';
 

@@ -1,8 +1,6 @@
 import { $ } from '../core/engine_core';
 import type { BootArgs } from '../rompack/rompack';
 
-export const DEFAULT_FONT_VARIANT = 'msx';
-
 export async function startCart(args: BootArgs): Promise<void> {
 	await $.init({
 		engineRom: args.engineAssets,

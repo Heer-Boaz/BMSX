@@ -1,7 +1,7 @@
 import { ide_state } from '../../core/ide_state';
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../contrib/find/editor_search';
-import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, closeActiveTab } from '../../browser/editor_tabs';
-import { notifyReadOnlyEdit } from '../../browser/editor_view';
+import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab, closeActiveTab } from '../../ui/editor_tabs';
+import { notifyReadOnlyEdit } from '../../ui/editor_view';
 import { toggleLineComments } from '../../editing/line_comments';
 import { redo, undo } from '../../editing/undo_controller';
 import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, pasteFromClipboard } from '../../editing/text_editing_and_selection';

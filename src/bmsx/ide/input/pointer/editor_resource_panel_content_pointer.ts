@@ -2,7 +2,7 @@ import { point_in_rect } from '../../../utils/rect_operations';
 import { ide_state } from '../../core/ide_state';
 import type { PointerSnapshot } from '../../core/types';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
-import { resetPointerClickTracking } from '../../browser/editor_view';
+import { resetPointerClickTracking } from '../../ui/editor_view';
 
 export function handleResourcePanelPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const panelBounds = ide_state.resourcePanel.getBounds();

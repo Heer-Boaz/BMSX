@@ -1,16 +1,16 @@
 import type {
 	LuaHoverResult,
 } from '../../emulator/types';
-import type { FontVariant } from '../browser/view/font';
+import type { FontVariant } from '../../render/shared/bmsx_font';
 import type { TextField, ScrollbarKind, MessageState } from './types';
-import type { InlineFieldMetrics } from '../browser/inline_text_field';
-import { Scrollbar, ScrollbarController } from '../browser/scrollbar';
+import type { InlineFieldMetrics } from '../ui/inline_text_field';
+import { Scrollbar, ScrollbarController } from '../ui/scrollbar';
 import type { InputController } from '../input/keyboard/editor_text_input';
 import type { ProblemsPanelController } from '../contrib/problems/problems_panel';
 import { ResourcePanelController } from '../contrib/resources/resource_panel_controller';
 import type { RenameController } from '../contrib/rename/rename_controller';
 import type { CompletionController } from '../contrib/suggest/completion_controller';
-import { createMessageController } from '../browser/message_controller';
+import { createMessageController } from '../ui/message_controller';
 import { ReferenceState } from '../contrib/references/reference_state';
 import { CHARACTER_CODES } from './character_map';
 import type {
@@ -46,13 +46,13 @@ import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import type { EditorUndoRecord } from '../text/editor_undo';
 import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
 import type { ReferenceCatalogEntry } from '../contrib/references/reference_sources';
-import { CodeLayout } from '../browser/code_layout';
+import { CodeLayout } from '../ui/code_layout';
 import type { TimerHandle, SubscriptionHandle } from '../../platform/index';
 import type { DebuggerExecutionState } from '../contrib/debugger/ide_debugger';
 import type { LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant } from './constants';
-import { CaretNavigationState } from '../browser/caret';
-import { EditorFont } from '../browser/view/editor_font';
+import { CaretNavigationState } from '../ui/caret';
+import { EditorFont } from '../ui/view/editor_font';
 
 type BuiltinIdentifierCache = {
 	epoch: number;

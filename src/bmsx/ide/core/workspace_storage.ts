@@ -22,9 +22,9 @@ import {
 	fetchWorkspaceFile,
 	WORKSPACE_DIRTY_DIR,
 } from '../../emulator/workspace';
-import { setFontVariant } from '../browser/editor_view';
-import { findCodeTabContext, initializeTabs, openCodeTabForDescriptor, setTabDirty, updateActiveContextDirtyFlag } from '../browser/editor_tabs';
-import { FontVariant } from '../browser/view/font';
+import { setFontVariant } from '../ui/editor_view';
+import { findCodeTabContext, initializeTabs, openCodeTabForDescriptor, setTabDirty, updateActiveContextDirtyFlag } from '../ui/editor_tabs';
+import { type FontVariant } from '../../render/shared/bmsx_font';
 import { getTextSnapshot } from '../text/source_text';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../../emulator/workspace_cache';
 import { restoreSnapshot } from '../editing/undo_controller';

@@ -1,10 +1,10 @@
 import { ide_state } from '../core/ide_state';
-import { isEditableCodeTab } from '../browser/editor_tabs';
-import { notifyReadOnlyEdit } from '../browser/editor_view';
+import { isEditableCodeTab } from '../ui/editor_tabs';
+import { notifyReadOnlyEdit } from '../ui/editor_view';
 import { prepareUndo, applyUndoableReplace } from './undo_controller';
 import { markTextMutated } from '../core/text_utils';
 import { resetBlink } from '../render/render_caret';
-import { revealCursor, updateDesiredColumn } from '../browser/caret';
+import { revealCursor, updateDesiredColumn } from '../ui/caret';
 import * as TextEditing from './text_editing_and_selection';
 
 export function toggleLineComments(): void {

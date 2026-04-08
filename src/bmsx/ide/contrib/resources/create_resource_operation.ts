@@ -1,8 +1,8 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
 import { resetBlink } from '../../render/render_caret';
-import { refreshResourcePanelContents } from '../../browser/editor_view';
-import { openLuaCodeTab } from '../../browser/editor_tabs';
+import { refreshResourcePanelContents } from '../../ui/editor_view';
+import { openLuaCodeTab } from '../../ui/editor_tabs';
 import { createLuaResource } from '../../../emulator/workspace';
 import { extractErrorMessage } from '../../../lua/luavalue';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt, ensureDirectorySuffix } from './create_resource';

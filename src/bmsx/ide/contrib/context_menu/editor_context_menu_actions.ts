@@ -1,4 +1,4 @@
-import { focusEditorAtPosition } from '../../browser/editor_focus';
+import { focusEditorAtPosition } from '../../ui/editor_focus';
 import { writeClipboard } from '../../editing/text_editing_and_selection';
 import type { EditorContextMenuAction, EditorContextToken } from '../../core/types';
 import { executeEditorCommand } from '../../input/commands/editor_commands';

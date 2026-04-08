@@ -26,12 +26,12 @@ import {
 	sanitizeLuaErrorMessage,
 } from '../ide/contrib/runtime_error/runtime_error_util';
 import { logDebugState } from './runtime_debug';
-import { TerminalMode } from './terminal/browser/terminal_mode';
+import { TerminalMode } from './terminal/ui/terminal_mode';
 import type { Runtime } from './runtime';
 import type { RuntimeOptions } from './types';
 import { resolveWorkspacePath } from './workspace_path';
 import { shallowcopy } from '../utils/shallowcopy';
-import { api as overlay_api } from '../ide/browser/view/overlay_api';
+import { api as overlay_api } from '../ide/ui/view/overlay_api';
 import { createCartEditor } from '../ide/cart_editor';
 import { clearExecutionStopHighlights, setExecutionStopHighlight } from '../ide/contrib/runtime_error/runtime_error_navigation';
 

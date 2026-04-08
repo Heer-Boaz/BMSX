@@ -1,6 +1,6 @@
 import { $ } from '../../../core/engine_core';
 import { ide_state } from '../../core/ide_state';
-import { getActiveCodeTabContext } from '../../browser/editor_tabs';
+import { getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { clearHoverTooltip, clearGotoHoverHighlight } from '../../contrib/intellisense/intellisense';
 import { handleEditorContextMenuPointer } from './editor_context_menu_input';
 import { isCtrlDown, isMetaDown } from '../keyboard/key_input';

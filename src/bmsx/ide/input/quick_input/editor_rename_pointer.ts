@@ -1,6 +1,6 @@
 import { point_in_rect } from '../../../utils/rect_operations';
 import { processInlineFieldPointer } from '../../contrib/find/editor_search';
-import { getRenameBarBounds } from '../../browser/editor_view';
+import { getRenameBarBounds } from '../../ui/editor_view';
 import { ide_state } from '../../core/ide_state';
 import type { PointerSnapshot } from '../../core/types';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from './editor_quick_input_pointer_common';

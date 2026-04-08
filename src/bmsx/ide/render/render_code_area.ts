@@ -1,21 +1,21 @@
-import type { OverlayApi as Api } from '../browser/view/overlay_api';
+import type { OverlayApi as Api } from '../ui/view/overlay_api';
 import type { CachedHighlight, CursorScreenInfo } from '../core/types';
 import type { RectBounds } from '../../rompack/rompack';
 import { clamp } from '../../utils/clamp';
-import { drawHoverTooltip } from '../browser/hover_tooltip';
-import { computeMaximumScrollColumn, getBreakpointLaneWidth, getCodeAreaBounds, maximumLineLength } from '../browser/editor_view';
+import { drawHoverTooltip } from '../ui/hover_tooltip';
+import { computeMaximumScrollColumn, getBreakpointLaneWidth, getCodeAreaBounds, maximumLineLength } from '../ui/editor_view';
 import { renderRuntimeErrorOverlay, type RuntimeErrorOverlayRenderResult } from './render_error_overlay';
 import { renderEditorContextMenu } from './render_context_menu';
 import * as constants from '../core/constants';
 import { ide_state } from '../core/ide_state';
 import { drawEditorText } from './text_renderer';
 import { getBreakpointsForChunk } from '../contrib/debugger/ide_debugger';
-import { getActiveCodeTabContext } from '../browser/editor_tabs';
-import { api } from '../browser/view/overlay_api';
+import { getActiveCodeTabContext } from '../ui/editor_tabs';
+import { api } from '../ui/view/overlay_api';
 import { computeSelectionSlice, ensureVisualLines, getVisualLineCount, visualIndexToSegment, measureText } from '../core/text_utils';
 import { drawCompletionPopup, drawParameterHintOverlay } from './render_completion';
 import { drawCursor } from './render_caret';
-import type { Font } from '../browser/view/font';
+import type { Font } from '../../render/shared/bmsx_font';
 import { getDiagnosticsForRow } from '../contrib/problems/diagnostics_controller';
 
 function drawHighlightSlice(

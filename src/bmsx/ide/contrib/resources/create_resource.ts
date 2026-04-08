@@ -1,7 +1,7 @@
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
-import { setFieldText } from '../../browser/inline_text_field';
-import { getActiveCodeTabContext } from '../../browser/editor_tabs';
+import { setFieldText } from '../../ui/inline_text_field';
+import { getActiveCodeTabContext } from '../../ui/editor_tabs';
 import { resetBlink } from '../../render/render_caret';
 import { focusEditorFromSearch } from '../find/editor_search';
 import { focusEditorFromLineJump } from '../find/line_jump';

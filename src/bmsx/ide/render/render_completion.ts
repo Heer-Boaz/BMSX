@@ -1,5 +1,5 @@
 import { clamp } from '../../utils/clamp';
-import { api } from '../browser/view/overlay_api';
+import { api } from '../ui/view/overlay_api';
 import * as constants from '../core/constants';
 import { wrapTextDynamic } from '../core/text_utils';
 import type { CompletionSession, CursorScreenInfo, ParameterHintState } from '../core/types';

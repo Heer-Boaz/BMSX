@@ -1,7 +1,7 @@
-import type { EditorFont } from '../browser/view/editor_font';
+import type { EditorFont } from '../ui/view/editor_font';
 import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from '../core/text_utils';
 import * as constants from '../core/constants';
-import { api } from '../browser/view/overlay_api';
+import { api } from '../ui/view/overlay_api';
 import { splitText } from '../text/source_text';
 import { ScratchBuffer } from '../../utils/scratchbuffer';
 

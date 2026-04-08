@@ -1,13 +1,13 @@
 import * as constants from '../core/constants';
 import { getActiveSymbolSearchMatch } from '../contrib/symbols/symbol_search_shared';
-import { statusAreaHeight, getStatusMessageLines } from '../browser/editor_view';
-import { getActiveCodeTabContext, isCodeTabActive, isResourceViewActive } from '../browser/editor_tabs';
+import { statusAreaHeight, getStatusMessageLines } from '../ui/editor_view';
+import { getActiveCodeTabContext, isCodeTabActive, isResourceViewActive } from '../ui/editor_tabs';
 import { ide_state } from '../core/ide_state';
 import { getActiveResourceViewer } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from './text_renderer';
 import { measureText, truncateTextToWidth } from '../core/text_utils';
 import { Runtime } from '../../emulator/runtime';
-import { api } from '../browser/view/overlay_api';
+import { api } from '../ui/view/overlay_api';
 
 export function renderStatusBar(): void {
 	const runtime = Runtime.instance;

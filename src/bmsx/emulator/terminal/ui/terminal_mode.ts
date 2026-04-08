@@ -1,7 +1,7 @@
 import type { color } from '../../../render/shared/render_types';
 import { BmsxColors } from '../../vdp';
-import { EditorFont } from '../../../ide/browser/view/editor_font';
-import type { FontVariant } from '../../../ide/browser/view/font';
+import { EditorFont } from '../../../ide/ui/view/editor_font';
+import type { FontVariant } from '../../../render/shared/bmsx_font';
 import { invalidateLuaCommentContextFromRow, applyCaseOutsideStrings } from '../../../ide/core/text_utils';
 import { drawEditorText } from '../../../ide/render/text_renderer';
 import { drawCompletionPopup, drawParameterHintOverlay } from '../../../ide/render/render_completion';
@@ -17,7 +17,7 @@ import {
 	setCursorFromOffset,
 	selectionAnchorOffset,
 	setSelectionAnchorPosition,
-} from '../../../ide/browser/inline_text_field';
+} from '../../../ide/ui/inline_text_field';
 import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext } from '../../../ide/core/types';
 import * as constants from '../../../ide/core/constants';
 import { OverlayRenderer } from '../../overlay_renderer';
@@ -49,8 +49,8 @@ import type { MutableTextPosition, TextBuffer } from '../../../ide/text/text_buf
 import { clamp } from '../../../utils/clamp';
 import { textFromLines } from '../../../ide/text/source_text';
 import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from '../../../ide/core/constants';
-import { advancePhaseBlink, resetBlinkState } from '../../../ide/browser/caret_blink';
-import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from '../../../ide/browser/inline_field_view';
+import { advancePhaseBlink, resetBlinkState } from '../../../ide/ui/caret_blink';
+import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from '../../../ide/ui/inline_field_view';
 
 type TerminalOutputKind =
 	| 'prompt'

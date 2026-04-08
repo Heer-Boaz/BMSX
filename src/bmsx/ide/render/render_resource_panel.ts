@@ -1,12 +1,12 @@
 import type { RectBounds } from '../../rompack/rompack';
 import type { ResourcePanelController } from '../contrib/resources/resource_panel_controller';
 import { clamp } from '../../utils/clamp';
-import { getCodeAreaBounds } from '../browser/editor_view';
+import { getCodeAreaBounds } from '../ui/editor_view';
 import { resourceViewerClampScroll } from '../input/keyboard/resource_viewer_input';
 import { ide_state } from '../core/ide_state';
 import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from './text_renderer';
-import { api } from '../browser/view/overlay_api';
+import { api } from '../ui/view/overlay_api';
 import { measureText, wrapOverlayLine } from '../core/text_utils';
 import * as constants from '../core/constants';
 import { BmsxColors } from '../../emulator/vdp';
