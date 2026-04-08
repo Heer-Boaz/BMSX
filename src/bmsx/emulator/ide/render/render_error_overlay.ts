@@ -12,14 +12,14 @@ import { Runtime } from '../../runtime';
 import { api } from '../../overlay_api';
 import { centerCursorVertically, revealCursor, updateDesiredColumn } from '../caret';
 import * as constants from '../constants';
-import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../runtime_error_overlay';
+import { cloneRuntimeErrorDetails, rebuildRuntimeErrorOverlayView } from '../contrib/runtime_error/runtime_error_overlay';
 import { resetBlink } from './render_caret';
 import { formatRuntimeErrorLocation } from '../../runtime_error_util';
 import { splitText } from '../text/source_text';
 import { BmsxColors } from '../../vdp';
 import { activate } from '../cart_editor';
 import { focusChunkSource } from '../editor_tabs';
-import { setActiveRuntimeErrorOverlay, setExecutionStopHighlight } from '../runtime_error_navigation';
+import { setActiveRuntimeErrorOverlay, setExecutionStopHighlight } from '../contrib/runtime_error/runtime_error_navigation';
 
 export interface ErrorOverlayBounds {
 	left: number;

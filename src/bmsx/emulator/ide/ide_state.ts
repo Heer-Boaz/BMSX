@@ -5,13 +5,13 @@ import type { FontVariant } from '../font';
 import type { TextField, ScrollbarKind, MessageState } from './types';
 import type { InlineFieldMetrics } from './inline_text_field';
 import { Scrollbar, ScrollbarController } from './scrollbar';
-import type { InputController } from './input/editor_text_input';
+import type { InputController } from './input/keyboard/editor_text_input';
 import type { ProblemsPanelController } from './problems_panel';
-import { ResourcePanelController } from './resource_panel_controller';
-import type { RenameController } from './rename_controller';
+import { ResourcePanelController } from './contrib/resources/resource_panel_controller';
+import type { RenameController } from './contrib/rename/rename_controller';
 import type { CompletionController } from './completion_controller';
 import { createMessageController } from './message_controller';
-import { ReferenceState } from './reference_state';
+import { ReferenceState } from './contrib/references/reference_state';
 import { CHARACTER_CODES } from './character_map';
 import type {
 	Position,
@@ -45,7 +45,7 @@ import type { TextBuffer } from './text/text_buffer';
 import { PieceTreeBuffer } from './text/piece_tree_buffer';
 import type { EditorUndoRecord } from './text/editor_undo';
 import type { CanonicalizationType, RectBounds } from '../../rompack/rompack';
-import type { ReferenceCatalogEntry } from './reference_sources';
+import type { ReferenceCatalogEntry } from './contrib/references/reference_sources';
 import { CodeLayout } from './code_layout';
 import type { TimerHandle, SubscriptionHandle } from '../../platform/index';
 import type { DebuggerExecutionState } from './ide_debugger';

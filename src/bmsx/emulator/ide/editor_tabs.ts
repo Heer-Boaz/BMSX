@@ -10,16 +10,16 @@ import type {
 import type { ResourceDescriptor } from '../types';
 import * as constants from './constants';
 import { clamp } from '../../utils/clamp';
-import { syncRuntimeErrorOverlayFromContext } from './runtime_error_navigation';
+import { syncRuntimeErrorOverlayFromContext } from './contrib/runtime_error/runtime_error_navigation';
 import { updateDesiredColumn, ensureCursorVisible } from './caret';
 import { refreshActiveDiagnostics } from './diagnostics_controller';
 import { beginNavigationCapture, completeNavigation } from './navigation_history';
 import { closeLineJump } from './line_jump';
-import { closeSymbolSearch } from './symbol_search_shared';
+import { closeSymbolSearch } from './contrib/symbols/symbol_search_shared';
 import { getCodeAreaBounds, hideResourcePanel, getTabBarTotalHeight, resetPointerClickTracking, selectResourceInPanel } from './editor_view';
 import { markDiagnosticsDirty, markAllDiagnosticsDirty } from './diagnostics';
 import { closeSearch } from './editor_search';
-import { clampResourceViewerScroll, openResourceViewerTab } from './resource_viewer';
+import { clampResourceViewerScroll, openResourceViewerTab } from './contrib/resources/resource_viewer';
 import { measureText, bumpTextVersion, invalidateLuaCommentContextFromRow } from './text_utils';
 import { requestSemanticRefresh } from './intellisense';
 import { resetBlink } from './render/render_caret';
@@ -32,10 +32,10 @@ import { listResources, saveLuaResourceSource } from '../workspace';
 import { buildDirtyFilePath } from './workspace_storage';
 import { setWorkspaceCachedSources } from '../workspace_cache';
 import { breakUndoSequence } from './undo_controller';
-import { tryShowLuaErrorOverlay } from './runtime_error_navigation';
+import { tryShowLuaErrorOverlay } from './contrib/runtime_error/runtime_error_navigation';
 import { extractErrorMessage } from '../../lua/luavalue';
-import { closeResourceSearch } from './resource_search';
-import { findResourceDescriptorForChunk } from './resource_lookup';
+import { closeResourceSearch } from './contrib/resources/resource_search';
+import { findResourceDescriptorForChunk } from './contrib/resources/resource_lookup';
 import { applyAemSourceToRuntime, listAemResourceDescriptors, loadAemResourceSource, saveAemResourceSource } from './aem_editor';
 
 function resolvePath(descriptor: ResourceDescriptor): string {

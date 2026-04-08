@@ -10,7 +10,7 @@ import { drawEditorText } from './render/text_renderer';
 import { markAllDiagnosticsDirty } from './diagnostics';
 import { resetBlink } from './render/render_caret';
 import { gotoDiagnostic } from './diagnostics_controller';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from './input/key_input';
+import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from './input/keyboard/key_input';
 
 type PanelLayout = {
 	headerTop: number;

@@ -2,7 +2,7 @@ import { $ } from '../../core/engine_core';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { ide_state } from './ide_state';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './input/key_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './input/keyboard/key_input';
 import type { InlineInputOptions, Position, TextField } from './types';
 import { clamp } from '../../utils/clamp';
 import { LuaLexer } from '../../lua/syntax/lualexer';

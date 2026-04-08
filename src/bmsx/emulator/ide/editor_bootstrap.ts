@@ -4,13 +4,13 @@ import { ProblemsPanelController } from './problems_panel';
 import { createEntryTabContext, initializeTabs } from './editor_tabs';
 import { createInlineTextField } from './inline_text_field';
 import { Scrollbar, ScrollbarController } from './scrollbar';
-import { ResourcePanelController } from './resource_panel_controller';
-import { InputController } from './input/editor_text_input';
+import { ResourcePanelController } from './contrib/resources/resource_panel_controller';
+import { InputController } from './input/keyboard/editor_text_input';
 import { ide_state } from './ide_state';
 import { initializeDebuggerUiState } from './ide_debugger';
 import { initializeWorkspaceStorage } from './workspace_storage';
 import { Runtime } from '../runtime';
-import { renameController } from './rename_controller';
+import { renameController } from './contrib/rename/rename_controller';
 import { resetSemanticWorkspace } from './semantic_workspace_sync';
 import { assertMonospace } from './text_utils';
 import * as constants from './constants';
@@ -20,12 +20,12 @@ import {
 	configureFontVariant,
 	resetResourcePanelState,
 } from './editor_view';
-import { applyResourceSearchFieldText } from './resource_search';
+import { applyResourceSearchFieldText } from './contrib/resources/resource_search';
 import { applyLineJumpFieldText } from './line_jump';
-import { applyCreateResourceFieldText } from './create_resource';
+import { applyCreateResourceFieldText } from './contrib/resources/create_resource';
 import { applySearchFieldText } from './editor_search';
 import { createNavigationEntry } from './navigation_history';
-import { applySymbolSearchFieldText } from './symbol_search_shared';
+import { applySymbolSearchFieldText } from './contrib/symbols/symbol_search_shared';
 
 export function initializeCartEditor(viewport: Viewport): void {
 	initializeDebuggerUiState();

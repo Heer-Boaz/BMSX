@@ -23,7 +23,7 @@ import { beginNavigationCapture, completeNavigation } from './navigation_history
 import { focusChunkSource } from './editor_tabs';
 import { ensureCursorVisible, updateDesiredColumn } from './caret';
 import { resetBlink } from './render/render_caret';
-import { tryShowLuaErrorOverlay } from './runtime_error_navigation';
+import { tryShowLuaErrorOverlay } from './contrib/runtime_error/runtime_error_navigation';
 import { resolvePointerColumn, resolvePointerRow } from './editor_view';
 import * as constants from './constants';
 import { activateCodeTab, findCodeTabContext, getActiveCodeTabContext, isActiveLuaCodeTab, isReadOnlyCodeTab, setActiveTab } from './editor_tabs';

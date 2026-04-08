@@ -6,7 +6,7 @@ import type {
 	ResourceDescriptor,
 } from '../types';
 import type { StackTraceFrame } from '../../lua/luavalue';
-import type { EditorCommandId } from './input/editor_commands';
+import type { EditorCommandId } from './input/commands/editor_commands';
 import { RectBounds } from '../../rompack/rompack';
 import type { TextBuffer } from './text/text_buffer';
 import type { EditorUndoRecord } from './text/editor_undo';

@@ -4,7 +4,7 @@ import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from './const
 import { startSearchJob } from './editor_search';
 import { getActiveCodeTabContext, findCodeTabContext, updateActiveContextDirtyFlag } from './editor_tabs';
 import { caretNavigation, ide_state } from './ide_state';
-import { rebuildRuntimeErrorOverlayView } from './runtime_error_overlay';
+import { rebuildRuntimeErrorOverlayView } from './contrib/runtime_error/runtime_error_overlay';
 import * as TextEditing from './text_editing_and_selection';
 import { handlePostEditMutation } from './text_editing_and_selection';
 import type { HighlightLine, RuntimeErrorOverlay, VisualLineSegment } from './types';

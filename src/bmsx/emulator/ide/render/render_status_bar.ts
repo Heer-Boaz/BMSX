@@ -1,9 +1,9 @@
 import * as constants from '../constants';
-import { getActiveSymbolSearchMatch } from '../symbol_search_shared';
+import { getActiveSymbolSearchMatch } from '../contrib/symbols/symbol_search_shared';
 import { statusAreaHeight, getStatusMessageLines } from '../editor_view';
 import { getActiveCodeTabContext, isCodeTabActive, isResourceViewActive } from '../editor_tabs';
 import { ide_state } from '../ide_state';
-import { getActiveResourceViewer } from '../resource_viewer';
+import { getActiveResourceViewer } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from './text_renderer';
 import { measureText, truncateTextToWidth } from '../text_utils';
 import { Runtime } from '../../runtime';

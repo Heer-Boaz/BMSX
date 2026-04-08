@@ -5,8 +5,8 @@ import { ide_state } from './ide_state';
 import { clearReferenceHighlights } from './intellisense';
 import { focusEditorFromLineJump } from './line_jump';
 import { resetBlink } from './render/render_caret';
-import { focusEditorFromResourceSearch } from './resource_search';
-import { focusEditorFromSymbolSearch } from './symbol_search_shared';
+import { focusEditorFromResourceSearch } from './contrib/resources/resource_search';
+import { focusEditorFromSymbolSearch } from './contrib/symbols/symbol_search_shared';
 
 export function focusPrimaryEditorSurface(): void {
 	clearReferenceHighlights();

@@ -8,8 +8,8 @@ import { beginNavigationCapture, completeNavigation } from './navigation_history
 import { setCursorPosition } from './caret';
 import { breakUndoSequence } from './undo_controller';
 import * as TextEditing from './text_editing_and_selection';
-import { closeSymbolSearch } from './symbol_search_shared';
-import { closeResourceSearch } from './resource_search';
+import { closeSymbolSearch } from './contrib/symbols/symbol_search_shared';
+import { closeResourceSearch } from './contrib/resources/resource_search';
 
 export function openLineJump(): void {
 	clearReferenceHighlights();

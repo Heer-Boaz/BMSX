@@ -24,27 +24,27 @@ import {
 	renderResourceSearchBar,
 } from './render/render_inline_bars';
 import { renderRuntimeFaultOverlay } from './render/render_error_overlay';
-import { handleEditorInput } from './input/editor_keyboard_dispatch';
-import { handleActionPromptInput } from './input/action_prompt';
-import { handleTextEditorPointerInput } from './input/editor_pointer_dispatch';
-import { handleEditorWheelInput } from './input/editor_wheel_input';
+import { handleEditorInput } from './input/keyboard/editor_keyboard_dispatch';
+import { handleActionPromptInput } from './input/overlays/action_prompt';
+import { handleTextEditorPointerInput } from './input/pointer/editor_pointer_dispatch';
+import { handleEditorWheelInput } from './input/pointer/editor_wheel_input';
 import { updateBlink } from './inline_text_field';
 import { stopWorkspaceAutosaveLoop, runWorkspaceAutosaveTick, initializeWorkspaceStorage } from './workspace_storage';
 import { clearWorkspaceCachedSources } from '../workspace_cache';
 import { clearBackgroundTasks } from './background_tasks';
 import { clearGotoHoverHighlight } from './intellisense';
-import { updateRuntimeErrorOverlay } from './runtime_error_overlay';
+import { updateRuntimeErrorOverlay } from './contrib/runtime_error/runtime_error_overlay';
 import { hideResourcePanel } from './editor_view';
 import {
 	applySearchFieldText,
 	cancelSearchJob,
 } from './editor_search';
-import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from './runtime_error_navigation';
+import { clearExecutionStopHighlights, syncRuntimeErrorOverlayFromContext } from './contrib/runtime_error/runtime_error_navigation';
 import { processDiagnosticsQueue } from './diagnostics_controller';
 import { updateDesiredColumn } from './caret';
-import { resetActionPromptState } from './input/action_prompt';
+import { resetActionPromptState } from './input/overlays/action_prompt';
 import { applyLineJumpFieldText } from './line_jump';
-import { applyCreateResourceFieldText, closeCreateResourcePrompt } from './create_resource';
+import { applyCreateResourceFieldText, closeCreateResourcePrompt } from './contrib/resources/create_resource';
 
 export function tickInput(): void {
 	handleEditorWheelInput();

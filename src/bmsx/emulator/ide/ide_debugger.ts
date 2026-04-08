@@ -11,7 +11,7 @@ import type { LuaCallFrame } from '../../lua/luaruntime';
 import { extractErrorMessage, type LuaDebuggerPauseSignal, type StackTraceFrame } from '../../lua/luavalue';
 import * as constants from './constants';
 import { findFunctionDefinitionRowInActiveFile } from './intellisense';
-import { clearExecutionStopHighlights, setExecutionStopHighlight, clearRuntimeErrorOverlay } from './runtime_error_navigation';
+import { clearExecutionStopHighlights, setExecutionStopHighlight, clearRuntimeErrorOverlay } from './contrib/runtime_error/runtime_error_navigation';
 
 type DebuggerResumeCommand = 'continue' | 'step_over' | 'step_into' | 'step_out' | 'ignore_exception' | 'step_out_exception';
 
