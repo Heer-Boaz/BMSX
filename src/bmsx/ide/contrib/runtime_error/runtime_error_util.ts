@@ -1,8 +1,8 @@
-import { LuaCallFrame } from '../lua/luaruntime';
-import { StackTraceFrame } from '../lua/luavalue';
-import { splitText } from '../ide/text/source_text';
-import { RuntimeErrorDetails } from '../ide/core/types';
-import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from './sourcemap_minimal';
+import { LuaCallFrame } from '../../../lua/luaruntime';
+import { StackTraceFrame } from '../../../lua/luavalue';
+import { splitText } from '../../text/source_text';
+import { RuntimeErrorDetails } from '../../core/types';
+import { createMinimalSourceMapConsumer, InlineSourceMap, MinimalSourceMapConsumer, originalPositionFor } from '../../../emulator/sourcemap_minimal';
 
 type InlineSourceMapRegistry = Map<string, InlineSourceMap>;
 

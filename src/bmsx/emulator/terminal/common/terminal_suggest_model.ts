@@ -1,6 +1,6 @@
-import { clamp } from '../utils/clamp';
-import type { CompletionContext, LuaCompletionItem } from '../ide/core/types';
-import type { SymbolEntry } from './types';
+import { clamp } from '../../../utils/clamp';
+import type { CompletionContext, LuaCompletionItem } from '../../../ide/core/types';
+import type { SymbolEntry } from '../../types';
 import {
 	computePanelGridLayout,
 	findSymbolCompletionBounds,

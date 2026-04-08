@@ -5,7 +5,7 @@ import {
 	MeshRenderSubmission,
 	ParticleRenderSubmission,
 } from '../render/shared/render_types';
-import { Font } from './font';
+import { Font } from '../ide/browser/view/font';
 import { BFont, GlyphMap } from '../render/shared/bitmap_font';
 import { RuntimeStorage } from './storage';
 import type { AudioPlayOptions } from '../audio/soundmaster';

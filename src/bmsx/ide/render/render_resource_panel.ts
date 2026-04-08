@@ -6,7 +6,7 @@ import { resourceViewerClampScroll } from '../input/keyboard/resource_viewer_inp
 import { ide_state } from '../core/ide_state';
 import { getActiveResourceViewer, resourceViewerImageLayout, resourceViewerTextCapacity } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from './text_renderer';
-import { api } from '../../emulator/overlay_api';
+import { api } from '../browser/view/overlay_api';
 import { measureText, wrapOverlayLine } from '../core/text_utils';
 import * as constants from '../core/constants';
 import { BmsxColors } from '../../emulator/vdp';

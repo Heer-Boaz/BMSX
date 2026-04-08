@@ -5,7 +5,7 @@ import { clamp } from '../../../utils/clamp';
 import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from '../../browser/editor_view';
 import * as constants from '../../core/constants';
 import { ide_state } from '../../core/ide_state';
-import { api } from '../../../emulator/overlay_api';
+import { api } from '../../browser/view/overlay_api';
 import { drawEditorText } from '../../render/text_renderer';
 import { markAllDiagnosticsDirty } from './diagnostics';
 import { resetBlink } from '../../render/render_caret';

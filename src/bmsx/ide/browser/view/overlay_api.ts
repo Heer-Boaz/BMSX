@@ -1,7 +1,7 @@
-import type { BFont } from '../render/shared/bitmap_font';
-import type { color, RenderLayer } from '../render/shared/render_types';
-import { BmsxColors } from './vdp';
-import { OverlayRenderer } from './overlay_renderer';
+import type { BFont } from '../../../render/shared/bitmap_font';
+import type { color, RenderLayer } from '../../../render/shared/render_types';
+import { BmsxColors } from '../../../emulator/vdp';
+import { OverlayRenderer } from '../../../emulator/overlay_renderer';
 
 type OverlayBlitOptions = {
 	scale?: number | { x: number; y: number };

@@ -1,7 +1,7 @@
 import type {
 	LuaHoverResult,
 } from '../../emulator/types';
-import type { FontVariant } from '../../emulator/font';
+import type { FontVariant } from '../browser/view/font';
 import type { TextField, ScrollbarKind, MessageState } from './types';
 import type { InlineFieldMetrics } from '../browser/inline_text_field';
 import { Scrollbar, ScrollbarController } from '../browser/scrollbar';
@@ -52,7 +52,7 @@ import type { DebuggerExecutionState } from '../contrib/debugger/ide_debugger';
 import type { LuaDebuggerSessionMetrics } from '../../lua/luadebugger';
 import { TERMINAL_TOGGLE_KEY, EDITOR_TOGGLE_KEY, ESCAPE_KEY, getActiveIdeThemeVariant } from './constants';
 import { CaretNavigationState } from '../browser/caret';
-import { EditorFont } from '../../emulator/editor_font';
+import { EditorFont } from '../browser/view/editor_font';
 
 type BuiltinIdentifierCache = {
 	epoch: number;

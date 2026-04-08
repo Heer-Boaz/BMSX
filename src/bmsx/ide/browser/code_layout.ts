@@ -7,7 +7,7 @@ import { type LuaSemanticModel, type SemanticAnnotations, type SymbolKind, type 
 import type { LuaDefinitionInfo } from '../../lua/syntax/lua_ast';
 import type { CachedHighlight, CodeTabMode, HighlightLine, VisualLineSegment } from '../core/types';
 import { scheduleIdeOnce } from '../core/background_tasks';
-import { EditorFont } from '../../emulator/editor_font';
+import { EditorFont } from './view/editor_font';
 import { getTextSnapshot, splitText } from '../text/source_text';
 import { syncSemanticWorkspacePaths } from '../contrib/intellisense/semantic_workspace_sync';
 import type { TextBuffer } from '../text/text_buffer';

@@ -1,7 +1,7 @@
 import { $ } from '../../core/engine_core';
 import { lower_bound } from '../../utils/lower_bound';
-import { EditorFont } from '../../emulator/editor_font';
-import type { FontVariant } from '../../emulator/font';
+import { EditorFont } from './view/editor_font';
+import type { FontVariant } from './view/font';
 import type { Viewport } from '../../rompack/rompack';
 import type { ResourceDescriptor } from '../core/types';
 import * as constants from '../core/constants';

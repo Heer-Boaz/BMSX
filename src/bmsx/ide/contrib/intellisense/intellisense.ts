@@ -13,7 +13,7 @@ import { API_METHOD_METADATA } from '../../../emulator/api_metadata';
 import { Table, type CpuFrameSnapshot, type LocalSlotDebug, type SourceRange, type Value } from '../../../emulator/cpu';
 import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../emulator/lua_builtin_descriptors';
 import { buildMarshalContext, toNativeValue } from '../../../emulator/lua_js_bridge';
-import { buildLuaSemanticFrontend } from '../../../emulator/lua_semantic_frontend';
+import { buildLuaSemanticFrontend } from './lua_semantic_frontend';
 import { Runtime } from '../../../emulator/runtime';
 import * as runtimeLuaPipeline from '../../../emulator/runtime_lua_pipeline';
 import { isStringValue, stringValueToString } from '../../../emulator/string_pool';

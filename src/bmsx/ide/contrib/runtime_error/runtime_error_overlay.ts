@@ -5,7 +5,7 @@ import type {
 } from '../../core/types';
 import type { StackTraceFrame } from '../../../lua/luavalue';
 import { ide_state } from '../../core/ide_state';
-import { collectRuntimeStackFrames, formatRuntimeStackFrame } from '../../../emulator/runtime_error_util';
+import { collectRuntimeStackFrames, formatRuntimeStackFrame } from './runtime_error_util';
 import { setActiveRuntimeErrorOverlay } from './runtime_error_navigation';
 
 export function cloneRuntimeErrorDetails(details: RuntimeErrorDetails): RuntimeErrorDetails {

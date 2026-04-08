@@ -38,7 +38,7 @@ import { buildModuleAliasesFromPaths, type ProgramConstReloc } from './program_a
 import { StringPool, StringValue, isStringValue } from './string_pool';
 import type { CanonicalizationType } from '../rompack/rompack';
 import { EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, EXT_C_BITS, INSTRUCTION_BYTES, MAX_BX_BITS, MAX_EXT_CONST, MAX_EXT_REGISTER_BC, MAX_OPERAND_BITS, MAX_SIGNED_BX, MIN_SIGNED_BX, writeInstruction } from './instruction_format';
-import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './lua_semantic_frontend';
+import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from '../ide/contrib/intellisense/lua_semantic_frontend';
 import { ENGINE_SYSTEM_GLOBAL_NAME_SET } from './lua_system_globals';
 import { LuaSyntaxError } from '../lua/luaerrors';
 import { Decl } from '../ide/contrib/intellisense/semantic_model';

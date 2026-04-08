@@ -1,10 +1,10 @@
-import type { color } from '../render/shared/render_types';
-import { BmsxColors } from './vdp';
-import { EditorFont } from './editor_font';
-import type { FontVariant } from './font';
-import { invalidateLuaCommentContextFromRow, applyCaseOutsideStrings } from '../ide/core/text_utils';
-import { drawEditorText } from '../ide/render/text_renderer';
-import { drawCompletionPopup, drawParameterHintOverlay } from '../ide/render/render_completion';
+import type { color } from '../../../render/shared/render_types';
+import { BmsxColors } from '../../vdp';
+import { EditorFont } from '../../../ide/browser/view/editor_font';
+import type { FontVariant } from '../../../ide/browser/view/font';
+import { invalidateLuaCommentContextFromRow, applyCaseOutsideStrings } from '../../../ide/core/text_utils';
+import { drawEditorText } from '../../../ide/render/text_renderer';
+import { drawCompletionPopup, drawParameterHintOverlay } from '../../../ide/render/render_completion';
 import {
 	createInlineTextField,
 	applyInlineFieldEditing,
@@ -17,40 +17,40 @@ import {
 	setCursorFromOffset,
 	selectionAnchorOffset,
 	setSelectionAnchorPosition,
-} from '../ide/browser/inline_text_field';
-import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext } from '../ide/core/types';
-import * as constants from '../ide/core/constants';
-import { OverlayRenderer } from './overlay_renderer';
+} from '../../../ide/browser/inline_text_field';
+import type { InlineInputOptions, TextField, CursorScreenInfo, EditContext } from '../../../ide/core/types';
+import * as constants from '../../../ide/core/constants';
+import { OverlayRenderer } from '../../overlay_renderer';
 import {
 	isKeyJustPressed as isKeyJustPressed,
 	isCtrlDown,
 	isMetaDown,
 	isAltDown
-} from '../ide/input/keyboard/key_input';
-import { resolveSnapshotExpression, describeLuaValueForInspector } from '../ide/contrib/intellisense/intellisense';
-import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../ide/input/keyboard/key_input';
-import { CompletionController } from '../ide/contrib/suggest/completion_controller';
-import type { ModuleAliasEntry } from '../ide/contrib/intellisense/semantic_model';
-import type { Viewport } from '../rompack/rompack';
-import { Runtime } from './runtime';
-import * as runtimeLuaPipeline from './runtime_lua_pipeline';
+} from '../../../ide/input/keyboard/key_input';
+import { resolveSnapshotExpression, describeLuaValueForInspector } from '../../../ide/contrib/intellisense/intellisense';
+import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../../ide/input/keyboard/key_input';
+import { CompletionController } from '../../../ide/contrib/suggest/completion_controller';
+import type { ModuleAliasEntry } from '../../../ide/contrib/intellisense/semantic_model';
+import type { Viewport } from '../../../rompack/rompack';
+import { Runtime } from '../../runtime';
+import * as runtimeLuaPipeline from '../../runtime_lua_pipeline';
 import { TerminalCommandDispatcher as TerminalCommandDispatcher } from './terminal_commands';
-import { extractErrorMessage } from '../lua/luavalue';
-import { valueToString } from './lua_globals';
-import type { Value } from './cpu';
+import { extractErrorMessage } from '../../../lua/luavalue';
+import { valueToString } from '../../lua_globals';
+import type { Value } from '../../cpu';
 import {
 	truncatePanelLabel,
 	type TerminalPanelGridLayout,
-} from './terminal_completion_panel_model';
+} from '../common/terminal_completion_panel_model';
 import { drawTerminalGridPanel } from './terminal_completion_panels_renderer';
 import { TerminalSuggestController } from './terminal_suggest_controller';
-import { TerminalSuggestModel } from './terminal_suggest_model';
-import type { MutableTextPosition, TextBuffer } from '../ide/text/text_buffer';
-import { clamp } from '../utils/clamp';
-import { textFromLines } from '../ide/text/source_text';
-import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from '../ide/core/constants';
-import { advancePhaseBlink, resetBlinkState } from '../ide/browser/caret_blink';
-import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from '../ide/browser/inline_field_view';
+import { TerminalSuggestModel } from '../common/terminal_suggest_model';
+import type { MutableTextPosition, TextBuffer } from '../../../ide/text/text_buffer';
+import { clamp } from '../../../utils/clamp';
+import { textFromLines } from '../../../ide/text/source_text';
+import { COLOR_COMPLETION_PREVIEW_TEXT, TAB_SPACES } from '../../../ide/core/constants';
+import { advancePhaseBlink, resetBlinkState } from '../../../ide/browser/caret_blink';
+import { measureWrappedInlineSegmentDecoration, resolveInlineFieldSelectionState } from '../../../ide/browser/inline_field_view';
 
 type TerminalOutputKind =
 	| 'prompt'

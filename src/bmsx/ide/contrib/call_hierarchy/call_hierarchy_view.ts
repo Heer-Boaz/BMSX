@@ -1,4 +1,4 @@
-import type { LuaIncomingCallHierarchyNode } from '../../../emulator/lua_semantic_frontend';
+import type { LuaIncomingCallHierarchyNode } from '../intellisense/lua_semantic_frontend';
 import type { LuaDefinitionLocation } from '../../../emulator/types';
 import { createEditorSemanticFrontend } from '../intellisense/editor_semantic_frontend';
 import type { LuaSemanticWorkspaceSnapshot, SymbolID } from '../intellisense/semantic_model';

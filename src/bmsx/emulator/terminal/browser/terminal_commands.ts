@@ -1,14 +1,14 @@
-import { $ } from '../core/engine_core';
-import { Runtime } from './runtime';
-import * as runtimeIde from './runtime_ide';
-import { getTrackedLuaHeapBytes } from './lua_heap_usage';
-import { clearWorkspaceSessionState } from '../ide/core/workspace_storage';
-import { ide_state } from '../ide/core/ide_state';
-import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from './workspace';
-import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from './runtime_error_util';
-import type { LuaSourceRecord } from './lua_sources';
-import { RAM_SIZE } from './memory_map';
-import { formatByteSize, lenAndHash } from '../utils/byte_hex_string';
+import { $ } from '../../../core/engine_core';
+import { Runtime } from '../../runtime';
+import * as runtimeIde from '../../runtime_ide';
+import { getTrackedLuaHeapBytes } from '../../lua_heap_usage';
+import { clearWorkspaceSessionState } from '../../../ide/core/workspace_storage';
+import { ide_state } from '../../../ide/core/ide_state';
+import { buildWorkspaceDirtyEntryPath, buildWorkspaceStorageKey, nukeWorkspaceState, resetWorkspaceDirtyBuffersAndStorage } from '../../workspace';
+import { collectRuntimeStackFrames, formatRuntimeErrorLocation, formatRuntimeStackFrame } from '../../../ide/contrib/runtime_error/runtime_error_util';
+import type { LuaSourceRecord } from '../../lua_sources';
+import { RAM_SIZE } from '../../memory_map';
+import { formatByteSize, lenAndHash } from '../../../utils/byte_hex_string';
 
 type PathEntryKind = 'rom' | 'saved' | 'dirty' | 'saved_dirty' | 'unsaved';
 

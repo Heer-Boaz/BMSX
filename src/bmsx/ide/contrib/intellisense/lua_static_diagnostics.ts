@@ -1,4 +1,4 @@
-import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
+import { createIdentifierCanonicalizer } from '../../../lua/syntax/identifier_canonicalizer';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -12,19 +12,19 @@ import {
 	type LuaSourceRange,
 	type LuaStatement,
 	type LuaStringLiteralExpression,
-} from '../lua/syntax/lua_ast';
-import type { CanonicalizationType } from '../rompack/rompack';
-import { API_METHOD_METADATA } from './api_metadata';
-import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from './lua_builtin_descriptors';
-import type { LuaBuiltinDescriptor, LuaSymbolEntry } from './types';
+} from '../../../lua/syntax/lua_ast';
+import type { CanonicalizationType } from '../../../rompack/rompack';
+import { API_METHOD_METADATA } from '../../../emulator/api_metadata';
+import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../../../emulator/lua_builtin_descriptors';
+import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../emulator/types';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
 	type Decl,
 	type FileSemanticData,
 	type FunctionSignatureInfo,
 	type LuaSemanticWorkspaceSnapshotInput,
-} from '../ide/contrib/intellisense/semantic_model';
-import { getCachedLuaParse } from '../ide/lua/lua_analysis_cache';
+} from './semantic_model';
+import { getCachedLuaParse } from '../../lua/lua_analysis_cache';
 
 const identityCanonicalizer = (value: string): string => value;
 const RESERVED_MEMORY_MAP_NAMES = ['mem', 'mem8', 'mem16le', 'mem32le', 'memf32le', 'memf64le'] as const;

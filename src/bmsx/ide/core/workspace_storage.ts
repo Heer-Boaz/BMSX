@@ -24,7 +24,7 @@ import {
 } from '../../emulator/workspace';
 import { setFontVariant } from '../browser/editor_view';
 import { findCodeTabContext, initializeTabs, openCodeTabForDescriptor, setTabDirty, updateActiveContextDirtyFlag } from '../browser/editor_tabs';
-import { FontVariant } from '../../emulator/font';
+import { FontVariant } from '../browser/view/font';
 import { getTextSnapshot } from '../text/source_text';
 import { clearWorkspaceCachedSources, deleteWorkspaceCachedSources, getWorkspaceCachedSource, listWorkspaceCachedPaths, setWorkspaceCachedSources } from '../../emulator/workspace_cache';
 import { restoreSnapshot } from '../editing/undo_controller';

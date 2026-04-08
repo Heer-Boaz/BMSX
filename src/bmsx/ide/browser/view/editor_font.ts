@@ -1,7 +1,7 @@
 import type { FontVariant } from './font';
 import type { FontGlyph } from 'bmsx/render/shared/bitmap_font';
 import { Font } from './font';
-import { DEFAULT_FONT_VARIANT } from './start_cart';
+import { DEFAULT_FONT_VARIANT } from '../../../emulator/start_cart';
 
 export class EditorFont {
 	private readonly font: Font;

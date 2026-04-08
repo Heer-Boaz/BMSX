@@ -1,4 +1,4 @@
-import type { OverlayApi as Api } from '../../emulator/overlay_api';
+import type { OverlayApi as Api } from '../browser/view/overlay_api';
 import type { CachedHighlight, CursorScreenInfo } from '../core/types';
 import type { RectBounds } from '../../rompack/rompack';
 import { clamp } from '../../utils/clamp';
@@ -11,11 +11,11 @@ import { ide_state } from '../core/ide_state';
 import { drawEditorText } from './text_renderer';
 import { getBreakpointsForChunk } from '../contrib/debugger/ide_debugger';
 import { getActiveCodeTabContext } from '../browser/editor_tabs';
-import { api } from '../../emulator/overlay_api';
+import { api } from '../browser/view/overlay_api';
 import { computeSelectionSlice, ensureVisualLines, getVisualLineCount, visualIndexToSegment, measureText } from '../core/text_utils';
 import { drawCompletionPopup, drawParameterHintOverlay } from './render_completion';
 import { drawCursor } from './render_caret';
-import type { Font } from '../../emulator/font';
+import type { Font } from '../browser/view/font';
 import { getDiagnosticsForRow } from '../contrib/problems/diagnostics_controller';
 
 function drawHighlightSlice(

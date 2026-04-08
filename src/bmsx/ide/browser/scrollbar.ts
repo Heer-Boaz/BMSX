@@ -5,7 +5,7 @@ import type { RectBounds } from '../../rompack/rompack';
 import { computeMaximumScrollColumn, getCodeAreaBounds } from './editor_view';
 import { ensureVisualLines, getVisualLineCount } from '../core/text_utils';
 import { ide_state } from '../core/ide_state';
-import { api } from '../../emulator/overlay_api';
+import { api } from './view/overlay_api';
 import { getActiveResourceViewer, resourceViewerTextCapacity } from '../contrib/resources/resource_viewer';
 
 export class Scrollbar {

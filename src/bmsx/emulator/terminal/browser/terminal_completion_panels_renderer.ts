@@ -1,6 +1,6 @@
-import type { OverlayRenderer } from './overlay_renderer';
-import type { TerminalPanelGridLayout } from './terminal_completion_panel_model';
-import type { color } from '../render/shared/render_types';
+import type { OverlayRenderer } from '../../overlay_renderer';
+import type { TerminalPanelGridLayout } from '../common/terminal_completion_panel_model';
+import type { color } from '../../../render/shared/render_types';
 
 export type TerminalGridPanelRenderParams = {
 	renderer: OverlayRenderer;

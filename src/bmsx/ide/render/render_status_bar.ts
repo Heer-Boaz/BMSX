@@ -7,7 +7,7 @@ import { getActiveResourceViewer } from '../contrib/resources/resource_viewer';
 import { drawEditorText } from './text_renderer';
 import { measureText, truncateTextToWidth } from '../core/text_utils';
 import { Runtime } from '../../emulator/runtime';
-import { api } from '../../emulator/overlay_api';
+import { api } from '../browser/view/overlay_api';
 
 export function renderStatusBar(): void {
 	const runtime = Runtime.instance;

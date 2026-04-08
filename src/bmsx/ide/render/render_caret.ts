@@ -1,11 +1,11 @@
 import { BmsxColors, resolvePaletteIndex, invertColorIndex } from '../../emulator/vdp';
-import type { OverlayApi as Api } from '../../emulator/overlay_api';
+import type { OverlayApi as Api } from '../browser/view/overlay_api';
 import * as constants from '../core/constants';
 import { ide_state } from '../core/ide_state';
 import { drawEditorText } from './text_renderer';
 import type { CursorScreenInfo, TextField } from '../core/types';
 import { getCursorOffset } from '../browser/inline_text_field';
-import { api } from '../../emulator/overlay_api';
+import { api } from '../browser/view/overlay_api';
 import { textFromLines } from '../text/source_text';
 import { resetBlinkState } from '../browser/caret_blink';
 

@@ -1,7 +1,7 @@
 import { Runtime } from '../../emulator/runtime';
 import * as runtimeIde from '../../emulator/runtime_ide';
 import { $ } from '../../core/engine_core';
-import { api } from '../../emulator/overlay_api';
+import { api } from './view/overlay_api';
 import * as constants from '../core/constants';
 import { activateCodeTab, getActiveCodeTabContext, isResourceViewActive, setActiveTab, storeActiveCodeTabContext } from './editor_tabs';
 import { cancelGlobalSearchJob, startSearchJob } from '../contrib/find/editor_search';

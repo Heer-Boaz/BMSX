@@ -1,13 +1,13 @@
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../ide/input/keyboard/key_input';
-import type { CompletionContext, LuaCompletionItem } from '../ide/core/types';
-import type { CompletionController } from '../ide/contrib/suggest/completion_controller';
-import type { SymbolEntry } from './types';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../ide/input/keyboard/key_input';
+import type { CompletionContext, LuaCompletionItem } from '../../../ide/core/types';
+import type { CompletionController } from '../../../ide/contrib/suggest/completion_controller';
+import type { SymbolEntry } from '../../types';
 import type {
 	TerminalCompletionPanelState,
 	TerminalSymbolPanelMode,
 	TerminalSymbolPanelState,
 	TerminalSymbolQueryContext,
-} from './terminal_suggest_model';
+} from '../common/terminal_suggest_model';
 
 export function handleInlineCompletionAccept(completion: CompletionController): boolean {
 	if (!isKeyJustPressed('ArrowRight')) return false;

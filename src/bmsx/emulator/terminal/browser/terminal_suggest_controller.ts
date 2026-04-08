@@ -1,4 +1,4 @@
-import type { CompletionController } from '../ide/contrib/suggest/completion_controller';
+import type { CompletionController } from '../../../ide/contrib/suggest/completion_controller';
 import {
 	handleCompletionPanelKeybindings as panelHandleCompletionPanelKeybindings,
 	handleCompletionPanelTrigger as panelHandleCompletionPanelTrigger,
@@ -6,7 +6,7 @@ import {
 	handleInlineCompletionAccept as panelHandleInlineCompletionAccept,
 	handleSymbolPanelKeybindings as panelHandleSymbolPanelKeybindings,
 } from './terminal_completion_panels_input';
-import { TerminalSuggestModel } from './terminal_suggest_model';
+import { TerminalSuggestModel } from '../common/terminal_suggest_model';
 
 type TerminalSuggestControllerOptions = {
 	completion: CompletionController;
