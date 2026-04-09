@@ -43,15 +43,109 @@
 --    See the @cx / @cc filename suffix notes in sprite.lua.
 
 local collision2d<const> = {}
-local collision2d_cpu<const> = require('collision2d_cpu')
 local clear_map<const> = require('clear_map')
 local round_to_nearest<const> = require('round_to_nearest')
 local world_instance<const> = require('world').instance
 local active_scope<const> = { scope = 'active' }
 
-local detect_aabb_areas<const> = collision2d_cpu.detect_aabb_areas
-local area_to_poly<const> = collision2d_cpu.area_to_poly
-local polygons_intersect<const> = collision2d_cpu.polygons_intersect
+local eps_parallel<const> = 1e-12
+local detect_aabb_areas<const> = function(a, b)
+	return not (a.left > b.right or a.right < b.left or a.bottom < b.top or a.top > b.bottom)
+end
+
+local area_to_poly<const> = function(area)
+	return {
+		area.left, area.top,
+		area.right, area.top,
+		area.right, area.bottom,
+		area.left, area.bottom,
+	}
+end
+
+local point_in_poly<const> = function(px, py, poly)
+	local inside = false
+	local j = #poly - 1
+	for i = 1, #poly, 2 do
+		local xi<const> = poly[i]
+		local yi<const> = poly[i + 1]
+		local xj<const> = poly[j]
+		local yj<const> = poly[j + 1]
+		if ((yi > py) ~= (yj > py)) and (px < ((xj - xi) * (py - yi) / (((yj - yi) ~= 0 and (yj - yi) or eps_parallel)) + xi)) then
+			inside = not inside
+		end
+		j = i
+	end
+	return inside
+end
+
+local orient2d<const> = function(ax, ay, bx, by, cx, cy)
+	return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+end
+
+local point_on_segment<const> = function(ax, ay, bx, by, cx, cy)
+	local min_x<const> = ax < bx and ax or bx
+	local max_x<const> = ax > bx and ax or bx
+	local min_y<const> = ay < by and ay or by
+	local max_y<const> = ay > by and ay or by
+	return cx >= min_x and cx <= max_x and cy >= min_y and cy <= max_y
+end
+
+local single_polygons_intersect<const> = function(poly1, poly2)
+	for i = 1, #poly1, 2 do
+		local ax<const> = poly1[i]
+		local ay<const> = poly1[i + 1]
+		local ni<const> = (i + 2 > #poly1) and 1 or (i + 2)
+		local bx<const> = poly1[ni]
+		local by<const> = poly1[ni + 1]
+		for j = 1, #poly2, 2 do
+			local cx<const> = poly2[j]
+			local cy<const> = poly2[j + 1]
+			local nj<const> = (j + 2 > #poly2) and 1 or (j + 2)
+			local dx<const> = poly2[nj]
+			local dy<const> = poly2[nj + 1]
+			local o1<const> = orient2d(ax, ay, bx, by, cx, cy)
+			local o2<const> = orient2d(ax, ay, bx, by, dx, dy)
+			local o3<const> = orient2d(cx, cy, dx, dy, ax, ay)
+			local o4<const> = orient2d(cx, cy, dx, dy, bx, by)
+			if (o1 * o2 < 0) and (o3 * o4 < 0) then
+				return true
+			end
+			if o1 == 0 and point_on_segment(ax, ay, bx, by, cx, cy) then
+				return true
+			end
+			if o2 == 0 and point_on_segment(ax, ay, bx, by, dx, dy) then
+				return true
+			end
+			if o3 == 0 and point_on_segment(cx, cy, dx, dy, ax, ay) then
+				return true
+			end
+			if o4 == 0 and point_on_segment(cx, cy, dx, dy, bx, by) then
+				return true
+			end
+		end
+	end
+	if point_in_poly(poly1[1], poly1[2], poly2) then
+		return true
+	end
+	if point_in_poly(poly2[1], poly2[2], poly1) then
+		return true
+	end
+	return false
+end
+
+local polygons_intersect<const> = function(polys1, polys2)
+	for i = 1, #polys1 do
+		local p1<const> = polys1[i]
+		for j = 1, #polys2 do
+			local p2<const> = polys2[j]
+			if single_polygons_intersect(p1, p2) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 local geo_fix16_scale<const> = 65536
 local geo_overlap_instance_bytes<const> = 12
 local geo_overlap_pair_bytes<const> = 12
