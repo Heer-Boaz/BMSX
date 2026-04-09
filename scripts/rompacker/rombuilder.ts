@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, assertMachineManifestUsesRamOnly } from '../../src/bmsx/rompack/rompack';
+import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from '../../src/bmsx/rompack/rompack';
 import type { asset_type, AudioMeta, BoundingBoxPrecalc, CanonicalizationType, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../src/bmsx/rompack/rompack';
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../src/bmsx/core/system_machine';
 import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
@@ -243,7 +243,6 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
 		} catch {
 			manifest = yaml.load(res) as RomManifest;
 		}
-		assertMachineManifestUsesRamOnly(manifest.machine);
 		return manifest;
 	}
 	else return null;
