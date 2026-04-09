@@ -2,9 +2,11 @@
 
 #include "../memory.h"
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <vector>
 
 namespace bmsx {
 
@@ -41,6 +43,9 @@ private:
 		uint32_t stride1 = 0;
 		uint32_t stride2 = 0;
 		uint32_t processed = 0;
+		uint32_t resultCount = 0;
+		uint32_t exactPairCount = 0;
+		uint32_t broadphasePairCount = 0;
 	};
 
 	void tryStart(int64_t nowCycles);
@@ -48,26 +53,54 @@ private:
 	int64_t cyclesUntilWorkUnits(uint32_t targetUnits) const;
 	bool validateXform2Submission(const GeoJob& job);
 	bool validateSat2Submission(const GeoJob& job);
+	bool validateOverlap2dCandidateSubmission(const GeoJob& job);
 	void processXform2Record(GeoJob& job);
-		void processSat2Record(GeoJob& job);
-		void completeRecord(GeoJob& job);
-		void finishSuccess(uint32_t processed);
-		void finishError(uint32_t code, uint32_t recordIndex, bool signalIrq = true);
-		void finishRejected(uint32_t code);
-		std::optional<uint32_t> resolveIndexedSpan(uint32_t base, uint32_t index, uint32_t stride, uint32_t byteLength) const;
-		uint32_t readRegister(uint32_t addr) const;
-		void writeRegister(uint32_t addr, uint32_t value);
-		void writeSat2Result(uint32_t addr, uint32_t hit, int32_t nx, int32_t ny, int32_t depth, uint32_t meta);
-		static uint32_t packFault(uint32_t code, uint32_t recordIndex);
-		static uint32_t packSat2Meta(uint32_t axisIndex, uint32_t shapeSelector);
-		static int32_t roundToI32Clamped(double value);
-		static int32_t transformFixed16(int32_t m0, int32_t m1, int32_t tx, int32_t x, int32_t y);
+	void processSat2Record(GeoJob& job);
+	void processOverlap2dCandidateRecord(GeoJob& job);
+	bool readPieceBounds(uint32_t pieceAddr, int32_t tx, int32_t ty, std::array<int32_t, 4>& out) const;
+	bool computePiecePairContact(uint32_t pieceAAddr, int32_t txA, int32_t tyA, uint32_t pieceBAddr, int32_t txB, int32_t tyB, uint32_t recordIndex);
+	bool loadWorldPoly(uint32_t pieceAddr, int32_t tx, int32_t ty, std::vector<double>& out) const;
+	static void pushWorldVertex(std::vector<double>& out, int32_t tx, int32_t ty, int32_t localX, int32_t localY);
+	static bool boundsOverlap(const std::array<int32_t, 4>& a, const std::array<int32_t, 4>& b);
+	bool computePolyPairContact(const std::vector<double>& polyA, const std::vector<double>& polyB);
+	static std::pair<double, double> projectPoly(const std::vector<double>& poly, double ax, double ay);
+	static std::pair<double, double> computePolyAverage(const std::vector<double>& poly);
+	const std::vector<double>& clipConvexPolygons(const std::vector<double>& polyA, const std::vector<double>& polyB);
+	static double clipPlaneDistance(double x0, double y0, double x1, double y1, double px, double py);
+	void writeOverlap2dSummary(const GeoJob& job, uint32_t flags);
+	void writeOverlap2dResult(uint32_t addr, int32_t nx, int32_t ny, int32_t depth, int32_t px, int32_t py, uint32_t pieceA, uint32_t pieceB, uint32_t featureMeta, uint32_t pairMeta);
+	std::optional<uint32_t> resolveByteOffset(uint32_t base, uint32_t offset, uint32_t byteLength) const;
+	int32_t readI32(uint32_t addr) const;
+	void completeRecord(GeoJob& job);
+	void finishSuccess(uint32_t processed);
+	void finishError(uint32_t code, uint32_t recordIndex, bool signalIrq = true);
+	void finishRejected(uint32_t code);
+	std::optional<uint32_t> resolveIndexedSpan(uint32_t base, uint32_t index, uint32_t stride, uint32_t byteLength) const;
+	uint32_t readRegister(uint32_t addr) const;
+	void writeRegister(uint32_t addr, uint32_t value);
+	void writeSat2Result(uint32_t addr, uint32_t hit, int32_t nx, int32_t ny, int32_t depth, uint32_t meta);
+	static uint32_t packFault(uint32_t code, uint32_t recordIndex);
+	static uint32_t packSat2Meta(uint32_t axisIndex, uint32_t shapeSelector);
+	static int32_t roundToI32Clamped(double value);
+	static int32_t transformFixed16(int32_t m0, int32_t m1, int32_t tx, int32_t x, int32_t y);
 
 	int64_t m_cpuHz = 1;
 	int64_t m_workUnitsPerSec = 1;
 	int64_t m_workCarry = 0;
 	uint32_t m_availableWorkUnits = 0;
 	std::optional<GeoJob> m_activeJob;
+	std::vector<double> m_overlapWorldPolyA;
+	std::vector<double> m_overlapWorldPolyB;
+	std::vector<double> m_overlapClip0;
+	std::vector<double> m_overlapClip1;
+	std::array<int32_t, 4> m_overlapBoundsA = { 0, 0, 0, 0 };
+	std::array<int32_t, 4> m_overlapBoundsB = { 0, 0, 0, 0 };
+	int32_t m_overlapContactNx = 0;
+	int32_t m_overlapContactNy = 0;
+	int32_t m_overlapContactDepth = 0;
+	int32_t m_overlapContactPx = 0;
+	int32_t m_overlapContactPy = 0;
+	uint32_t m_overlapContactFeatureMeta = 0;
 	Memory& m_memory;
 	std::function<void(uint32_t)> m_raiseIrq;
 	std::function<void(int64_t deadlineCycles)> m_scheduleService;

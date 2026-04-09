@@ -24,6 +24,16 @@ constexpr uint32_t SAT2_DESC_WORDS = 4u;
 constexpr uint32_t SAT2_DESC_BYTES = SAT2_DESC_WORDS * 4u;
 constexpr uint32_t SAT2_RESULT_WORDS = 5u;
 constexpr uint32_t SAT2_RESULT_BYTES = SAT2_RESULT_WORDS * 4u;
+constexpr uint32_t OVERLAP2D_INSTANCE_WORDS = 3u;
+constexpr uint32_t OVERLAP2D_INSTANCE_BYTES = OVERLAP2D_INSTANCE_WORDS * 4u;
+constexpr uint32_t OVERLAP2D_PAIR_WORDS = 3u;
+constexpr uint32_t OVERLAP2D_PAIR_BYTES = OVERLAP2D_PAIR_WORDS * 4u;
+constexpr uint32_t OVERLAP2D_RESULT_WORDS = 9u;
+constexpr uint32_t OVERLAP2D_RESULT_BYTES = OVERLAP2D_RESULT_WORDS * 4u;
+constexpr uint32_t OVERLAP2D_SUMMARY_BYTES = 16u;
+constexpr uint32_t OVERLAP2D_DESC_BYTES = 16u;
+constexpr uint32_t OVERLAP2D_BOUNDS_BYTES = 16u;
+constexpr uint32_t OVERLAP2D_KIND_COMPOUND = 4u;
 constexpr uint32_t GEO_SERVICE_BATCH_RECORDS = 1u;
 constexpr int FIX16_SHIFT = 16;
 constexpr double FIX16_SCALE = 65536.0;
@@ -59,7 +69,12 @@ GeometryController::GeometryController(
 	: m_memory(memory)
 	, m_raiseIrq(std::move(raiseIrq))
 	, m_scheduleService(std::move(scheduleService))
-	, m_cancelService(std::move(cancelService)) {}
+	, m_cancelService(std::move(cancelService)) {
+	m_overlapWorldPolyA.reserve(32u);
+	m_overlapWorldPolyB.reserve(32u);
+	m_overlapClip0.reserve(32u);
+	m_overlapClip1.reserve(32u);
+}
 
 void GeometryController::setTiming(int64_t cpuHz, int64_t workUnitsPerSec, int64_t nowCycles) {
 	m_cpuHz = cpuHz;
@@ -175,6 +190,9 @@ void GeometryController::onService(int64_t nowCycles) {
 			case IO_CMD_GEO_SAT2_BATCH:
 				processSat2Record(*m_activeJob);
 				break;
+			case IO_CMD_GEO_OVERLAP2D_PASS:
+				processOverlap2dCandidateRecord(*m_activeJob);
+				break;
 			default:
 				finishRejected(GEO_FAULT_REJECT_BAD_CMD);
 				return;
@@ -210,6 +228,11 @@ void GeometryController::tryStart(int64_t nowCycles) {
 				return;
 			}
 			break;
+		case IO_CMD_GEO_OVERLAP2D_PASS:
+			if (!validateOverlap2dCandidateSubmission(job)) {
+				return;
+			}
+			break;
 		default:
 			finishRejected(GEO_FAULT_REJECT_BAD_CMD);
 			return;
@@ -217,6 +240,12 @@ void GeometryController::tryStart(int64_t nowCycles) {
 	writeRegister(IO_GEO_STATUS, 0u);
 	writeRegister(IO_GEO_PROCESSED, 0u);
 	writeRegister(IO_GEO_FAULT, 0u);
+	if (job.cmd == IO_CMD_GEO_OVERLAP2D_PASS) {
+		job.resultCount = 0u;
+		job.exactPairCount = 0u;
+		job.broadphasePairCount = 0u;
+		writeOverlap2dSummary(job, 0u);
+	}
 	if (job.count == 0u) {
 		finishSuccess(0u);
 		return;
@@ -315,6 +344,50 @@ bool GeometryController::validateSat2Submission(const GeoJob& job) {
 	}
 	if (!m_memory.isRamRange(job.dst0, SAT2_RESULT_BYTES)) {
 		finishRejected(GEO_FAULT_REJECT_DST_NOT_RAM);
+		return false;
+	}
+	return true;
+}
+
+bool GeometryController::validateOverlap2dCandidateSubmission(const GeoJob& job) {
+	if ((job.param0 & GEO_OVERLAP2D_MODE_MASK) != GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS
+		|| (job.param0 & GEO_OVERLAP2D_BROADPHASE_MASK) != GEO_OVERLAP2D_BROADPHASE_NONE
+		|| (job.param0 & GEO_OVERLAP2D_CONTACT_POLICY_MASK) != GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE
+		|| (job.param0 & GEO_OVERLAP2D_OUTPUT_POLICY_MASK) != GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW
+		|| (job.param0 & 0xffff0000u) != 0u) {
+		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
+		return false;
+	}
+	if (job.stride0 != OVERLAP2D_INSTANCE_BYTES || job.stride1 != OVERLAP2D_PAIR_BYTES || job.stride2 == 0u) {
+		finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
+		return false;
+	}
+	if ((job.src0 & WORD_ALIGN_MASK) != 0u
+		|| (job.src1 & WORD_ALIGN_MASK) != 0u
+		|| (job.dst0 & WORD_ALIGN_MASK) != 0u
+		|| (job.dst1 & WORD_ALIGN_MASK) != 0u) {
+		finishRejected(GEO_FAULT_REJECT_MISALIGNED_REGS);
+		return false;
+	}
+	if (!m_memory.isRamRange(job.dst1, OVERLAP2D_SUMMARY_BYTES)) {
+		finishRejected(GEO_FAULT_REJECT_DST_NOT_RAM);
+		return false;
+	}
+	if (job.param1 != 0u && !m_memory.isRamRange(job.dst0, OVERLAP2D_RESULT_BYTES)) {
+		finishRejected(GEO_FAULT_REJECT_DST_NOT_RAM);
+		return false;
+	}
+	if (job.count == 0u) {
+		return true;
+	}
+	if (!m_memory.isReadableMainMemoryRange(job.src1, OVERLAP2D_PAIR_BYTES)) {
+		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
+		return false;
+	}
+	const uint32_t instanceCount = job.stride2;
+	const std::optional<uint32_t> lastInstanceAddr = resolveIndexedSpan(job.src0, instanceCount - 1u, job.stride0, OVERLAP2D_INSTANCE_BYTES);
+	if (!lastInstanceAddr.has_value() || !m_memory.isReadableMainMemoryRange(*lastInstanceAddr, OVERLAP2D_INSTANCE_BYTES)) {
+		finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 		return false;
 	}
 	return true;
@@ -613,6 +686,406 @@ void GeometryController::processSat2Record(GeoJob& job) {
 	completeRecord(job);
 }
 
+void GeometryController::processOverlap2dCandidateRecord(GeoJob& job) {
+	const uint32_t recordIndex = job.processed;
+	const std::optional<uint32_t> pairAddr = resolveIndexedSpan(job.src1, recordIndex, job.stride1, OVERLAP2D_PAIR_BYTES);
+	if (!pairAddr.has_value() || !m_memory.isReadableMainMemoryRange(*pairAddr, OVERLAP2D_PAIR_BYTES)) {
+		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+		return;
+	}
+	const uint32_t instanceAIndex = m_memory.readU32(*pairAddr + 0u);
+	const uint32_t instanceBIndex = m_memory.readU32(*pairAddr + 4u);
+	const uint32_t pairMeta = m_memory.readU32(*pairAddr + 8u);
+	if (instanceAIndex == instanceBIndex) {
+		finishError(GEO_FAULT_BAD_RECORD_FLAGS, recordIndex);
+		return;
+	}
+	const uint32_t instanceCount = job.stride2;
+	if (instanceAIndex >= instanceCount || instanceBIndex >= instanceCount) {
+		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+		return;
+	}
+	const std::optional<uint32_t> instanceAAddr = resolveIndexedSpan(job.src0, instanceAIndex, job.stride0, OVERLAP2D_INSTANCE_BYTES);
+	const std::optional<uint32_t> instanceBAddr = resolveIndexedSpan(job.src0, instanceBIndex, job.stride0, OVERLAP2D_INSTANCE_BYTES);
+	if (!instanceAAddr.has_value() || !instanceBAddr.has_value()
+		|| !m_memory.isReadableMainMemoryRange(*instanceAAddr, OVERLAP2D_INSTANCE_BYTES)
+		|| !m_memory.isReadableMainMemoryRange(*instanceBAddr, OVERLAP2D_INSTANCE_BYTES)) {
+		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+		return;
+	}
+	const uint32_t shapeAAddr = m_memory.readU32(*instanceAAddr + 0u);
+	const int32_t txA = readI32(*instanceAAddr + 4u);
+	const int32_t tyA = readI32(*instanceAAddr + 8u);
+	const uint32_t shapeBAddr = m_memory.readU32(*instanceBAddr + 0u);
+	const int32_t txB = readI32(*instanceBAddr + 4u);
+	const int32_t tyB = readI32(*instanceBAddr + 8u);
+	job.broadphasePairCount += 1u;
+	if (!m_memory.isReadableMainMemoryRange(shapeAAddr, OVERLAP2D_DESC_BYTES)
+		|| !m_memory.isReadableMainMemoryRange(shapeBAddr, OVERLAP2D_DESC_BYTES)) {
+		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+		return;
+	}
+	const uint32_t shapeAKind = m_memory.readU32(shapeAAddr + 0u);
+	const uint32_t shapeACount = m_memory.readU32(shapeAAddr + 4u);
+	const uint32_t shapeADataOffset = m_memory.readU32(shapeAAddr + 8u);
+	const uint32_t shapeBKind = m_memory.readU32(shapeBAddr + 0u);
+	const uint32_t shapeBCount = m_memory.readU32(shapeBAddr + 4u);
+	const uint32_t shapeBDataOffset = m_memory.readU32(shapeBAddr + 8u);
+	const uint32_t shapeAPieceCount = shapeAKind == OVERLAP2D_KIND_COMPOUND ? shapeACount : 1u;
+	const uint32_t shapeBPieceCount = shapeBKind == OVERLAP2D_KIND_COMPOUND ? shapeBCount : 1u;
+	if (shapeAPieceCount == 0u || shapeBPieceCount == 0u
+		|| (shapeAKind == OVERLAP2D_KIND_COMPOUND && (shapeADataOffset & WORD_ALIGN_MASK) != 0u)
+		|| (shapeBKind == OVERLAP2D_KIND_COMPOUND && (shapeBDataOffset & WORD_ALIGN_MASK) != 0u)
+		|| (shapeAKind != OVERLAP2D_KIND_COMPOUND && shapeAKind != GEO_PRIMITIVE_AABB && shapeAKind != GEO_PRIMITIVE_CONVEX_POLY)
+		|| (shapeBKind != OVERLAP2D_KIND_COMPOUND && shapeBKind != GEO_PRIMITIVE_AABB && shapeBKind != GEO_PRIMITIVE_CONVEX_POLY)) {
+		finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
+		return;
+	}
+	job.exactPairCount += 1u;
+	bool bestHit = false;
+	double bestDepth = std::numeric_limits<double>::infinity();
+	uint32_t bestPieceA = 0u;
+	uint32_t bestPieceB = 0u;
+	uint32_t bestFeatureMeta = 0u;
+	int32_t bestNx = 0;
+	int32_t bestNy = 0;
+	int32_t bestPx = 0;
+	int32_t bestPy = 0;
+	for (uint32_t pieceAIndex = 0u; pieceAIndex < shapeAPieceCount; pieceAIndex += 1u) {
+		const std::optional<uint32_t> pieceAAddr = shapeAKind == OVERLAP2D_KIND_COMPOUND
+			? resolveByteOffset(shapeAAddr, shapeADataOffset + pieceAIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
+			: std::optional<uint32_t>(shapeAAddr);
+		if (!pieceAAddr.has_value() || !m_memory.isReadableMainMemoryRange(*pieceAAddr, OVERLAP2D_DESC_BYTES)) {
+			finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+			return;
+		}
+		if (!readPieceBounds(*pieceAAddr, txA, tyA, m_overlapBoundsA)) {
+			finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+			return;
+		}
+		for (uint32_t pieceBIndex = 0u; pieceBIndex < shapeBPieceCount; pieceBIndex += 1u) {
+			const std::optional<uint32_t> pieceBAddr = shapeBKind == OVERLAP2D_KIND_COMPOUND
+				? resolveByteOffset(shapeBAddr, shapeBDataOffset + pieceBIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
+				: std::optional<uint32_t>(shapeBAddr);
+			if (!pieceBAddr.has_value() || !m_memory.isReadableMainMemoryRange(*pieceBAddr, OVERLAP2D_DESC_BYTES)) {
+				finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+				return;
+			}
+			if (!readPieceBounds(*pieceBAddr, txB, tyB, m_overlapBoundsB)) {
+				finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+				return;
+			}
+			if (!boundsOverlap(m_overlapBoundsA, m_overlapBoundsB)) {
+				continue;
+			}
+			if (!computePiecePairContact(*pieceAAddr, txA, tyA, *pieceBAddr, txB, tyB, recordIndex)) {
+				continue;
+			}
+			if (!bestHit
+				|| m_overlapContactDepth < bestDepth
+				|| (m_overlapContactDepth == bestDepth
+					&& (pieceAIndex < bestPieceA
+						|| (pieceAIndex == bestPieceA
+							&& (pieceBIndex < bestPieceB
+								|| (pieceBIndex == bestPieceB && m_overlapContactFeatureMeta < bestFeatureMeta)))))) {
+				bestHit = true;
+				bestDepth = static_cast<double>(m_overlapContactDepth);
+				bestPieceA = pieceAIndex;
+				bestPieceB = pieceBIndex;
+				bestFeatureMeta = m_overlapContactFeatureMeta;
+				bestNx = m_overlapContactNx;
+				bestNy = m_overlapContactNy;
+				bestPx = m_overlapContactPx;
+				bestPy = m_overlapContactPy;
+			}
+		}
+	}
+	if (bestHit) {
+		if (job.resultCount >= job.param1) {
+			writeOverlap2dSummary(job, GEO_OVERLAP2D_SUMMARY_FLAG_OVERFLOW);
+			finishError(GEO_FAULT_RESULT_CAPACITY, recordIndex);
+			return;
+		}
+		const std::optional<uint32_t> resultAddr = resolveIndexedSpan(job.dst0, job.resultCount, OVERLAP2D_RESULT_BYTES, OVERLAP2D_RESULT_BYTES);
+		if (!resultAddr.has_value() || !m_memory.isRamRange(*resultAddr, OVERLAP2D_RESULT_BYTES)) {
+			finishError(GEO_FAULT_DST_RANGE, recordIndex);
+			return;
+		}
+		writeOverlap2dResult(*resultAddr, bestNx, bestNy, bestDepth == std::numeric_limits<double>::infinity() ? 0 : m_overlapContactDepth, bestPx, bestPy, bestPieceA, bestPieceB, bestFeatureMeta, pairMeta);
+		job.resultCount += 1u;
+	}
+	writeOverlap2dSummary(job, 0u);
+	completeRecord(job);
+}
+
+bool GeometryController::readPieceBounds(uint32_t pieceAddr, int32_t tx, int32_t ty, std::array<int32_t, 4>& out) const {
+	const uint32_t boundsOffset = m_memory.readU32(pieceAddr + 12u);
+	const std::optional<uint32_t> boundsAddr = resolveByteOffset(pieceAddr, boundsOffset, OVERLAP2D_BOUNDS_BYTES);
+	if (!boundsAddr.has_value() || !m_memory.isReadableMainMemoryRange(*boundsAddr, OVERLAP2D_BOUNDS_BYTES)) {
+		return false;
+	}
+	out[0] = readI32(*boundsAddr + 0u) + tx;
+	out[1] = readI32(*boundsAddr + 4u) + ty;
+	out[2] = readI32(*boundsAddr + 8u) + tx;
+	out[3] = readI32(*boundsAddr + 12u) + ty;
+	return true;
+}
+
+bool GeometryController::computePiecePairContact(
+	uint32_t pieceAAddr,
+	int32_t txA,
+	int32_t tyA,
+	uint32_t pieceBAddr,
+	int32_t txB,
+	int32_t tyB,
+	uint32_t recordIndex
+) {
+	const uint32_t primitiveA = m_memory.readU32(pieceAAddr + 0u);
+	const uint32_t primitiveB = m_memory.readU32(pieceBAddr + 0u);
+	if ((primitiveA != GEO_PRIMITIVE_AABB && primitiveA != GEO_PRIMITIVE_CONVEX_POLY)
+		|| (primitiveB != GEO_PRIMITIVE_AABB && primitiveB != GEO_PRIMITIVE_CONVEX_POLY)) {
+		finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
+		return false;
+	}
+	if (!loadWorldPoly(pieceAAddr, txA, tyA, m_overlapWorldPolyA)
+		|| !loadWorldPoly(pieceBAddr, txB, tyB, m_overlapWorldPolyB)) {
+		finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+		return false;
+	}
+	return computePolyPairContact(m_overlapWorldPolyA, m_overlapWorldPolyB);
+}
+
+bool GeometryController::loadWorldPoly(uint32_t pieceAddr, int32_t tx, int32_t ty, std::vector<double>& out) const {
+	const uint32_t primitive = m_memory.readU32(pieceAddr + 0u);
+	const uint32_t dataCount = m_memory.readU32(pieceAddr + 4u);
+	const uint32_t dataOffset = m_memory.readU32(pieceAddr + 8u);
+	const uint32_t byteLength = primitive == GEO_PRIMITIVE_AABB ? 16u : dataCount * XFORM2_VERTEX_BYTES;
+	const std::optional<uint32_t> dataAddr = resolveByteOffset(pieceAddr, dataOffset, byteLength);
+	if (!dataAddr.has_value()) {
+		return false;
+	}
+	out.clear();
+	if (primitive == GEO_PRIMITIVE_AABB) {
+		if (dataCount != 4u || !m_memory.isReadableMainMemoryRange(*dataAddr, 16u)) {
+			return false;
+		}
+		const int32_t left = readI32(*dataAddr + 0u);
+		const int32_t top = readI32(*dataAddr + 4u);
+		const int32_t right = readI32(*dataAddr + 8u);
+		const int32_t bottom = readI32(*dataAddr + 12u);
+		pushWorldVertex(out, tx, ty, left, top);
+		pushWorldVertex(out, tx, ty, right, top);
+		pushWorldVertex(out, tx, ty, right, bottom);
+		pushWorldVertex(out, tx, ty, left, bottom);
+		return true;
+	}
+	if (primitive != GEO_PRIMITIVE_CONVEX_POLY || dataCount < 3u || !m_memory.isReadableMainMemoryRange(*dataAddr, dataCount * XFORM2_VERTEX_BYTES)) {
+		return false;
+	}
+	for (uint32_t vertexIndex = 0u; vertexIndex < dataCount; vertexIndex += 1u) {
+		const uint32_t vertexAddr = *dataAddr + vertexIndex * XFORM2_VERTEX_BYTES;
+		pushWorldVertex(out, tx, ty, readI32(vertexAddr + 0u), readI32(vertexAddr + 4u));
+	}
+	return true;
+}
+
+void GeometryController::pushWorldVertex(std::vector<double>& out, int32_t tx, int32_t ty, int32_t localX, int32_t localY) {
+	out.push_back(static_cast<double>(localX + tx) / FIX16_SCALE);
+	out.push_back(static_cast<double>(localY + ty) / FIX16_SCALE);
+}
+
+bool GeometryController::boundsOverlap(const std::array<int32_t, 4>& a, const std::array<int32_t, 4>& b) {
+	return !(a[0] > b[2] || a[2] < b[0] || a[1] > b[3] || a[3] < b[1]);
+}
+
+bool GeometryController::computePolyPairContact(const std::vector<double>& polyA, const std::vector<double>& polyB) {
+	double bestOverlap = std::numeric_limits<double>::infinity();
+	double bestAxisX = 0.0;
+	double bestAxisY = 0.0;
+	uint32_t bestEdgeIndex = 0u;
+	uint32_t bestOwner = 0u;
+	bool sawAxis = false;
+	for (uint32_t owner = 0u; owner < 2u; owner += 1u) {
+		const std::vector<double>& poly = owner == 0u ? polyA : polyB;
+		for (size_t i = 0; i < poly.size(); i += 2u) {
+			const size_t next = i + 2u >= poly.size() ? 0u : i + 2u;
+			const double nx = -(poly[next + 1u] - poly[i + 1u]);
+			const double ny = poly[next] - poly[i];
+			const double len = std::sqrt((nx * nx) + (ny * ny));
+			if (!(len > 0.0)) {
+				continue;
+			}
+			sawAxis = true;
+			const double ax = nx / len;
+			const double ay = ny / len;
+			const auto projA = projectPoly(polyA, ax, ay);
+			const auto projB = projectPoly(polyB, ax, ay);
+			const double overlap = std::min(projA.second, projB.second) - std::max(projA.first, projB.first);
+			if (!(overlap > 0.0)) {
+				return false;
+			}
+			const uint32_t edgeIndex = static_cast<uint32_t>(i >> 1u);
+			if (overlap < bestOverlap || (overlap == bestOverlap && (owner < bestOwner || (owner == bestOwner && edgeIndex < bestEdgeIndex)))) {
+				bestOverlap = overlap;
+				bestAxisX = ax;
+				bestAxisY = ay;
+				bestOwner = owner;
+				bestEdgeIndex = edgeIndex;
+			}
+		}
+	}
+	if (!sawAxis) {
+		return false;
+	}
+	const auto centerA = computePolyAverage(polyA);
+	const auto centerB = computePolyAverage(polyB);
+	if ((((centerA.first - centerB.first) * bestAxisX) + ((centerA.second - centerB.second) * bestAxisY)) < 0.0) {
+		bestAxisX = -bestAxisX;
+		bestAxisY = -bestAxisY;
+	}
+	const std::vector<double>& intersection = clipConvexPolygons(polyA, polyB);
+	double pointX = 0.0;
+	double pointY = 0.0;
+	if (intersection.empty()) {
+		pointX = (centerA.first + centerB.first) * 0.5;
+		pointY = (centerA.second + centerB.second) * 0.5;
+	} else {
+		const auto centroid = computePolyAverage(intersection);
+		pointX = centroid.first;
+		pointY = centroid.second;
+	}
+	m_overlapContactNx = roundToI32Clamped(bestAxisX * FIX16_SCALE);
+	m_overlapContactNy = roundToI32Clamped(bestAxisY * FIX16_SCALE);
+	m_overlapContactDepth = roundToI32Clamped(bestOverlap * FIX16_SCALE);
+	m_overlapContactPx = roundToI32Clamped(pointX * FIX16_SCALE);
+	m_overlapContactPy = roundToI32Clamped(pointY * FIX16_SCALE);
+	m_overlapContactFeatureMeta = bestEdgeIndex;
+	return true;
+}
+
+std::pair<double, double> GeometryController::projectPoly(const std::vector<double>& poly, double ax, double ay) {
+	double min = std::numeric_limits<double>::infinity();
+	double max = -std::numeric_limits<double>::infinity();
+	for (size_t i = 0; i < poly.size(); i += 2u) {
+		const double projection = (poly[i] * ax) + (poly[i + 1u] * ay);
+		if (projection < min) {
+			min = projection;
+		}
+		if (projection > max) {
+			max = projection;
+		}
+	}
+	return { min, max };
+}
+
+std::pair<double, double> GeometryController::computePolyAverage(const std::vector<double>& poly) {
+	double sumX = 0.0;
+	double sumY = 0.0;
+	const double count = static_cast<double>(poly.size() >> 1u);
+	for (size_t i = 0; i < poly.size(); i += 2u) {
+		sumX += poly[i];
+		sumY += poly[i + 1u];
+	}
+	return { sumX / count, sumY / count };
+}
+
+const std::vector<double>& GeometryController::clipConvexPolygons(const std::vector<double>& polyA, const std::vector<double>& polyB) {
+	m_overlapClip0.assign(polyA.begin(), polyA.end());
+	std::vector<double>* input = &m_overlapClip0;
+	std::vector<double>* output = &m_overlapClip1;
+	for (size_t i = 0; i < polyB.size(); i += 2u) {
+		output->clear();
+		const double x0 = polyB[i];
+		const double y0 = polyB[i + 1u];
+		const size_t next = i + 2u >= polyB.size() ? 0u : i + 2u;
+		const double x1 = polyB[next];
+		const double y1 = polyB[next + 1u];
+		if (input->empty()) {
+			break;
+		}
+		double sx = (*input)[input->size() - 2u];
+		double sy = (*input)[input->size() - 1u];
+		double sd = clipPlaneDistance(x0, y0, x1, y1, sx, sy);
+		bool sInside = sd >= 0.0;
+		for (size_t j = 0; j < input->size(); j += 2u) {
+			const double ex = (*input)[j];
+			const double ey = (*input)[j + 1u];
+			const double ed = clipPlaneDistance(x0, y0, x1, y1, ex, ey);
+			const bool eInside = ed >= 0.0;
+			if (sInside && eInside) {
+				output->push_back(ex);
+				output->push_back(ey);
+			} else if (sInside && !eInside) {
+				const double t = sd / (sd - ed);
+				output->push_back(sx + ((ex - sx) * t));
+				output->push_back(sy + ((ey - sy) * t));
+			} else if (!sInside && eInside) {
+				const double t = sd / (sd - ed);
+				output->push_back(sx + ((ex - sx) * t));
+				output->push_back(sy + ((ey - sy) * t));
+				output->push_back(ex);
+				output->push_back(ey);
+			}
+			sx = ex;
+			sy = ey;
+			sd = ed;
+			sInside = eInside;
+		}
+		std::swap(input, output);
+	}
+	return *input;
+}
+
+double GeometryController::clipPlaneDistance(double x0, double y0, double x1, double y1, double px, double py) {
+	return ((x1 - x0) * (py - y0)) - ((y1 - y0) * (px - x0));
+}
+
+void GeometryController::writeOverlap2dSummary(const GeoJob& job, uint32_t flags) {
+	m_memory.writeU32(job.dst1 + 0u, job.resultCount);
+	m_memory.writeU32(job.dst1 + 4u, job.exactPairCount);
+	m_memory.writeU32(job.dst1 + 8u, job.broadphasePairCount);
+	m_memory.writeU32(job.dst1 + 12u, flags);
+}
+
+void GeometryController::writeOverlap2dResult(
+	uint32_t addr,
+	int32_t nx,
+	int32_t ny,
+	int32_t depth,
+	int32_t px,
+	int32_t py,
+	uint32_t pieceA,
+	uint32_t pieceB,
+	uint32_t featureMeta,
+	uint32_t pairMeta
+) {
+	m_memory.writeU32(addr + 0u, static_cast<uint32_t>(nx));
+	m_memory.writeU32(addr + 4u, static_cast<uint32_t>(ny));
+	m_memory.writeU32(addr + 8u, static_cast<uint32_t>(depth));
+	m_memory.writeU32(addr + 12u, static_cast<uint32_t>(px));
+	m_memory.writeU32(addr + 16u, static_cast<uint32_t>(py));
+	m_memory.writeU32(addr + 20u, pieceA);
+	m_memory.writeU32(addr + 24u, pieceB);
+	m_memory.writeU32(addr + 28u, featureMeta);
+	m_memory.writeU32(addr + 32u, pairMeta);
+}
+
+std::optional<uint32_t> GeometryController::resolveByteOffset(uint32_t base, uint32_t offset, uint32_t byteLength) const {
+	const uint64_t addr = static_cast<uint64_t>(base) + static_cast<uint64_t>(offset);
+	if (addr > std::numeric_limits<uint32_t>::max()) {
+		return std::nullopt;
+	}
+	const uint64_t end = addr + static_cast<uint64_t>(byteLength);
+	if (end > (static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()) + 1ull)) {
+		return std::nullopt;
+	}
+	return static_cast<uint32_t>(addr);
+}
+
+int32_t GeometryController::readI32(uint32_t addr) const {
+	return static_cast<int32_t>(m_memory.readU32(addr));
+}
+
 void GeometryController::completeRecord(GeoJob& job) {
 	job.processed += 1u;
 	writeRegister(IO_GEO_PROCESSED, job.processed);
@@ -623,6 +1096,9 @@ void GeometryController::completeRecord(GeoJob& job) {
 
 void GeometryController::finishSuccess(uint32_t processed) {
 	m_activeJob.reset();
+	m_workCarry = 0;
+	m_availableWorkUnits = 0u;
+	m_cancelService();
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_DONE);
 	writeRegister(IO_GEO_PROCESSED, processed);
 	writeRegister(IO_GEO_FAULT, 0u);
@@ -631,6 +1107,9 @@ void GeometryController::finishSuccess(uint32_t processed) {
 
 void GeometryController::finishError(uint32_t code, uint32_t recordIndex, bool signalIrq) {
 	m_activeJob.reset();
+	m_workCarry = 0;
+	m_availableWorkUnits = 0u;
+	m_cancelService();
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_DONE | GEO_STATUS_ERROR);
 	writeRegister(IO_GEO_FAULT, packFault(code, recordIndex));
 	if (signalIrq) {
@@ -640,6 +1119,9 @@ void GeometryController::finishError(uint32_t code, uint32_t recordIndex, bool s
 
 void GeometryController::finishRejected(uint32_t code) {
 	m_activeJob.reset();
+	m_workCarry = 0;
+	m_availableWorkUnits = 0u;
+	m_cancelService();
 	writeRegister(IO_GEO_STATUS, GEO_STATUS_REJECTED);
 	writeRegister(IO_GEO_PROCESSED, 0u);
 	writeRegister(IO_GEO_FAULT, packFault(code, GEO_RECORD_INDEX_NONE));
