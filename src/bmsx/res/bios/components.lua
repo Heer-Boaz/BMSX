@@ -154,10 +154,10 @@ end
 --
 -- DESIGN PRINCIPLES — collider setup
 --
--- 1. SHAPE PRIORITY: circle > polys > AABB.
---    If local_circle is set, it is used. Otherwise local_polys (polygon array).
---    Otherwise the collider uses the owning object's AABB (sx/sy). Always prefer
---    polygon shapes when pixel-accurate hit detection matters.
+-- 1. SHAPE PRIORITY: polys > AABB.
+--    If local_polys is set, it is used. Otherwise the collider uses the owning
+--    object's AABB (sx/sy). Always prefer polygon shapes when pixel-accurate
+--    hit detection matters.
 --
 -- 2. POLYGON SOURCE: use @cx / @cc image-filename suffixes, not manual polys.
 --    When a sprite is loaded via spriteobject:gfx('enemy@cx'), rombuilder bakes
@@ -332,8 +332,6 @@ local prepare_overlap_cache<const> = function(collider)
 		else
 			shape_kind = 'aabb'
 		end
-	elseif collider.local_circle ~= nil then
-		shape_kind = 'circle'
 	elseif local_polys ~= nil and #local_polys > 0 then
 		shape_kind = 'poly'
 	else
@@ -367,13 +365,6 @@ local prepare_overlap_cache<const> = function(collider)
 	area_poly[8] = area.bottom
 
 	collider._world_polys_cache_valid = false
-	if shape_kind == 'circle' then
-		local circle<const> = collider.local_circle
-		local out<const> = collider._world_circle_cache
-		out.x = parent.x + shape_offset_x + circle.x
-		out.y = parent.y + shape_offset_y + circle.y
-		out.r = circle.r
-	end
 	collider._overlap_shape_kind = shape_kind
 	collider._overlap_geo_blob_base = geo_blob_base
 	collider._overlap_geo_shape_offset = geo_shape_offset
@@ -392,7 +383,6 @@ end
 --                   'current' | 'all' | 'ui' | 'both'
 --     local_area   — table {left,top,right,bottom} : explicit AABB override
 --     local_polys  — array of polygon tables : manual polygon override
---     local_circle — {x,y,r} : circle shape (highest shape priority)
 --     shape_offset_x / shape_offset_y — world-space offset added to all shapes
 --   For polygon shapes, prefer the @cx/@cc image suffix over setting local_polys manually.
 function collider2dcomponent.new(opts)
@@ -412,7 +402,9 @@ function collider2dcomponent.new(opts)
 	self.spaceevents = opts.spaceevents or 'current'
 	self.local_area = opts.local_area
 	self.local_polys = opts.local_polys
-	self.local_circle = opts.local_circle
+	if opts.local_circle ~= nil then
+		error('[collider2dcomponent] circle shapes were removed; use local_polys or AABB')
+	end
 	self.shape_offset_x = 0
 	if opts.shape_offset_x ~= nil then
 		self.shape_offset_x = opts.shape_offset_x
@@ -429,7 +421,6 @@ function collider2dcomponent.new(opts)
 	}
 	self._world_area_poly_cache = { 0, 0, 0, 0, 0, 0, 0, 0 }
 	self._world_area_polys_cache = { self._world_area_poly_cache }
-	self._world_circle_cache = { x = 0, y = 0, r = 0 }
 	self._world_polys_cache = {}
 	self._world_polys_cache_valid = false
 	self._overlap_shape_kind = nil
@@ -447,9 +438,11 @@ function collider2dcomponent.new(opts)
 end
 
 function collider2dcomponent:set_local_shape(area, polys, circle)
+	if circle ~= nil then
+		error('[collider2dcomponent] circle shapes were removed; use local_polys or AABB')
+	end
 	self.local_area = area
 	self.local_polys = polys
-	self.local_circle = circle
 end
 
 function collider2dcomponent:set_local_area(area)
@@ -461,7 +454,7 @@ function collider2dcomponent:set_local_poly(poly)
 end
 
 function collider2dcomponent:set_local_circle(circle)
-	self.local_circle = circle
+	error('[collider2dcomponent] circle shapes were removed; use local_polys or AABB')
 end
 
 function collider2dcomponent:set_shape_offset(offset_x, offset_y)
@@ -504,9 +497,6 @@ function collider2dcomponent:get_shape_kind()
 		end
 		return 'aabb'
 	end
-	if self.local_circle ~= nil then
-		return 'circle'
-	end
 	local local_polys<const> = self.local_polys
 	if local_polys ~= nil and #local_polys > 0 then
 		return 'poly'
@@ -547,29 +537,6 @@ function collider2dcomponent:get_world_polys()
 		return nil
 	end
 	return populate_world_polys_cache(self, local_polys, px, py)
-end
-
-function collider2dcomponent:get_world_circle()
-	if self._overlap_cache_valid then
-		if self._overlap_shape_kind ~= 'circle' then
-			return nil
-		end
-		return self._world_circle_cache
-	end
-	if get_driving_sprite_for_collider(self) ~= nil then
-		return nil
-	end
-	local circle<const> = self.local_circle
-	if circle == nil then
-		return nil
-	end
-	local px<const> = self.parent.x + self.shape_offset_x
-	local py<const> = self.parent.y + self.shape_offset_y
-	local out<const> = self._world_circle_cache
-	out.x = px + circle.x
-	out.y = py + circle.y
-	out.r = circle.r
-	return out
 end
 
 function collider2dcomponent:prepare_overlap_cache()

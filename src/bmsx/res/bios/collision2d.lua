@@ -1,5 +1,5 @@
 -- collision2d.lua
--- 2D collision helpers + broadphase index
+-- 2D collision GEO orchestration + broadphase index
 --
 -- DESIGN PRINCIPLES — collision detection
 --
@@ -36,25 +36,23 @@
 --    In all other cases, rely on overlap2dsystem events.
 --
 -- 3. COLLISION SHAPE PRIORITY (per collider, highest wins).
---    circle (set_local_circle)  > polys (set_local_poly)  > AABB (default).
+--    polys (set_local_poly)  > AABB (default).
 --    The AABB is computed automatically from parent.sx / parent.sy when no
 --    explicit shape is set.  Sprite objects populate polys automatically from
 --    the image's imgmeta.hitpolygons (baked at pack-time by the rombuilder).
 --    See the @cx / @cc filename suffix notes in sprite.lua.
 
 local collision2d<const> = {}
+local collision2d_cpu<const> = require('collision2d_cpu')
 local clear_map<const> = require('clear_map')
 local round_to_nearest<const> = require('round_to_nearest')
 local world_instance<const> = require('world').instance
 local active_scope<const> = { scope = 'active' }
 
-local eps<const> = 1e-8
-local eps_parallel<const> = 1e-12
+local detect_aabb_areas<const> = collision2d_cpu.detect_aabb_areas
+local area_to_poly<const> = collision2d_cpu.area_to_poly
+local polygons_intersect<const> = collision2d_cpu.polygons_intersect
 local geo_fix16_scale<const> = 65536
-local geo_sat_vertex_bytes<const> = 8
-local geo_sat_desc_bytes<const> = 16
-local geo_sat_pair_bytes<const> = 20
-local geo_sat_result_bytes<const> = 20
 local geo_overlap_instance_bytes<const> = 48
 local geo_overlap_pair_bytes<const> = 16
 local geo_overlap_result_bytes<const> = 48
@@ -62,438 +60,14 @@ local geo_overlap_summary_bytes<const> = 16
 local geo_overlap_param0<const> = sys_geo_overlap_mode_candidate_pairs | sys_geo_overlap_broadphase_none | sys_geo_overlap_contact_clipped_feature | sys_geo_overlap_output_stop_on_overflow
 local geo_batch_token = 0
 
-local detect_aabb_areas<const> = function(a, b)
-	return not (a.left > b.right or a.right < b.left or a.bottom < b.top or a.top > b.bottom)
-end
-
-local area_to_poly<const> = function(area)
-	return {
-		area.left, area.top,
-		area.right, area.top,
-		area.right, area.bottom,
-		area.left, area.bottom,
-	}
-end
-
 local clear_array<const> = function(array)
 	for i = #array, 1, -1 do
 		array[i] = nil
 	end
 end
 
-local point_in_poly<const> = function(px, py, poly)
-	local inside = false
-	local j = #poly - 1
-	for i = 1, #poly, 2 do
-		local xi<const> = poly[i]
-		local yi<const> = poly[i + 1]
-		local xj<const> = poly[j]
-		local yj<const> = poly[j + 1]
-		if ((yi > py) ~= (yj > py)) and (px < ((xj - xi) * (py - yi) / (((yj - yi) ~= 0 and (yj - yi) or eps_parallel)) + xi)) then
-			inside = not inside
-		end
-		j = i
-	end
-	return inside
-end
-
-local orient2d<const> = function(ax, ay, bx, by, cx, cy)
-	return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
-end
-
-local point_on_segment<const> = function(ax, ay, bx, by, cx, cy)
-	local min_x<const> = ax < bx and ax or bx
-	local max_x<const> = ax > bx and ax or bx
-	local min_y<const> = ay < by and ay or by
-	local max_y<const> = ay > by and ay or by
-	return cx >= min_x and cx <= max_x and cy >= min_y and cy <= max_y
-end
-
-local project_poly_axis<const> = function(poly, ax, ay)
-	local min_proj = math.huge
-	local max_proj = -math.huge
-	for i = 1, #poly, 2 do
-		local proj<const> = (poly[i] * ax) + (poly[i + 1] * ay)
-		if proj < min_proj then
-			min_proj = proj
-		end
-		if proj > max_proj then
-			max_proj = proj
-		end
-	end
-	return min_proj, max_proj
-end
-
-local test_circle_poly_axis<const> = function(poly, circle, ax, ay, best_axis_x, best_axis_y, best_overlap)
-	local pmin<const>, pmax<const> = project_poly_axis(poly, ax, ay)
-	local cproj<const> = (circle.x * ax) + (circle.y * ay)
-	local cmin<const> = cproj - circle.r
-	local cmax<const> = cproj + circle.r
-	local sep<const> = math.max(pmin - cmax, cmin - pmax)
-	if sep > 0 then
-		return false, best_axis_x, best_axis_y, best_overlap
-	end
-	local overlap<const> = -sep
-	if overlap < best_overlap then
-		return true, ax, ay, overlap
-	end
-	return true, best_axis_x, best_axis_y, best_overlap
-end
-
-local test_poly_pair_axis<const> = function(poly_a, poly_b, ax, ay, best_axis_x, best_axis_y, best_overlap)
-	local min_a<const>, max_a<const> = project_poly_axis(poly_a, ax, ay)
-	local min_b<const>, max_b<const> = project_poly_axis(poly_b, ax, ay)
-	local sep<const> = math.max(min_a - max_b, min_b - max_a)
-	if sep > 0 then
-		return false, best_axis_x, best_axis_y, best_overlap
-	end
-	local overlap<const> = -sep
-	if overlap < best_overlap then
-		return true, ax, ay, overlap
-	end
-	return true, best_axis_x, best_axis_y, best_overlap
-end
-
-local test_poly_pair_axes<const> = function(poly, poly_a, poly_b, best_axis_x, best_axis_y, best_overlap)
-	for i = 1, #poly, 2 do
-		local ni<const> = (i + 2 > #poly) and 1 or (i + 2)
-		local nx<const> = -(poly[ni + 1] - poly[i + 1])
-		local ny<const> = poly[ni] - poly[i]
-		local edge_len<const> = math.sqrt((nx * nx) + (ny * ny))
-		if edge_len > eps then
-			local ok
-			ok, best_axis_x, best_axis_y, best_overlap = test_poly_pair_axis(
-				poly_a,
-				poly_b,
-				nx / edge_len,
-				ny / edge_len,
-				best_axis_x,
-				best_axis_y,
-				best_overlap
-			)
-			if not ok then
-				return false, best_axis_x, best_axis_y, best_overlap
-			end
-		end
-	end
-	return true, best_axis_x, best_axis_y, best_overlap
-end
-
-local single_polygons_intersect<const> = function(poly1, poly2)
-	for i = 1, #poly1, 2 do
-		local ax<const> = poly1[i]
-		local ay<const> = poly1[i + 1]
-		local ni<const> = (i + 2 > #poly1) and 1 or (i + 2)
-		local bx<const> = poly1[ni]
-		local by<const> = poly1[ni + 1]
-		for j = 1, #poly2, 2 do
-			local cx<const> = poly2[j]
-			local cy<const> = poly2[j + 1]
-			local nj<const> = (j + 2 > #poly2) and 1 or (j + 2)
-			local dx<const> = poly2[nj]
-			local dy<const> = poly2[nj + 1]
-			local o1<const> = orient2d(ax, ay, bx, by, cx, cy)
-			local o2<const> = orient2d(ax, ay, bx, by, dx, dy)
-			local o3<const> = orient2d(cx, cy, dx, dy, ax, ay)
-			local o4<const> = orient2d(cx, cy, dx, dy, bx, by)
-			if (o1 * o2 < 0) and (o3 * o4 < 0) then
-				return true
-			end
-			if o1 == 0 and point_on_segment(ax, ay, bx, by, cx, cy) then
-				return true
-			end
-			if o2 == 0 and point_on_segment(ax, ay, bx, by, dx, dy) then
-				return true
-			end
-			if o3 == 0 and point_on_segment(cx, cy, dx, dy, ax, ay) then
-				return true
-			end
-			if o4 == 0 and point_on_segment(cx, cy, dx, dy, bx, by) then
-				return true
-			end
-		end
-	end
-
-	if point_in_poly(poly1[1], poly1[2], poly2) then
-		return true
-	end
-	if point_in_poly(poly2[1], poly2[2], poly1) then
-		return true
-	end
-	return false
-end
-
-local polygons_intersect<const> = function(polys1, polys2)
-	for i = 1, #polys1 do
-		local p1<const> = polys1[i]
-		for j = 1, #polys2 do
-			local p2<const> = polys2[j]
-			if single_polygons_intersect(p1, p2) then
-				return true
-			end
-		end
-	end
-	return false
-end
-
-local circle_circle_overlap<const> = function(a, b)
-	local dx<const> = a.x - b.x
-	local dy<const> = a.y - b.y
-	local rr<const> = a.r + b.r
-	return ((dx * dx) + (dy * dy)) <= (rr * rr)
-end
-
-local circle_poly_overlap<const> = function(circle, polys)
-	for i = 1, #polys do
-		local poly<const> = polys[i]
-		for j = 1, #poly, 2 do
-			local ni<const> = (j + 2 > #poly) and 1 or (j + 2)
-			local ex<const> = poly[ni] - poly[j]
-			local ey<const> = poly[ni + 1] - poly[j + 1]
-			local nx<const> = -ey
-			local ny<const> = ex
-			local length<const> = math.sqrt((nx * nx) + (ny * ny))
-			if length > eps then
-				local ax<const> = nx / length
-				local ay<const> = ny / length
-				local pmin = math.huge
-				local pmax = -math.huge
-				for k = 1, #poly, 2 do
-					local proj<const> = (poly[k] * ax) + (poly[k + 1] * ay)
-					if proj < pmin then
-						pmin = proj
-					end
-					if proj > pmax then
-						pmax = proj
-					end
-				end
-				local cproj<const> = (circle.x * ax) + (circle.y * ay)
-				local cmin<const> = cproj - circle.r
-				local cmax<const> = cproj + circle.r
-				local sep<const> = math.max(pmin - cmax, cmin - pmax)
-				if sep > 0 then
-					return false
-				end
-			end
-		end
-		local vx = poly[1]
-		local vy = poly[2]
-		local best_d = ((vx - circle.x) * (vx - circle.x)) + ((vy - circle.y) * (vy - circle.y))
-		for j = 3, #poly, 2 do
-			local dx<const> = poly[j] - circle.x
-			local dy<const> = poly[j + 1] - circle.y
-			local d<const> = (dx * dx) + (dy * dy)
-			if d < best_d then
-				best_d = d
-				vx = poly[j]
-				vy = poly[j + 1]
-			end
-		end
-		local ax<const> = vx - circle.x
-		local ay<const> = vy - circle.y
-		local axis_len<const> = math.sqrt((ax * ax) + (ay * ay))
-		if axis_len > eps then
-			local ux<const> = ax / axis_len
-			local uy<const> = ay / axis_len
-			local pmin = math.huge
-			local pmax = -math.huge
-			for k = 1, #poly, 2 do
-				local proj<const> = (poly[k] * ux) + (poly[k + 1] * uy)
-				if proj < pmin then
-					pmin = proj
-				end
-				if proj > pmax then
-					pmax = proj
-				end
-			end
-			local cproj<const> = (circle.x * ux) + (circle.y * uy)
-			local cmin<const> = cproj - circle.r
-			local cmax<const> = cproj + circle.r
-			local sep<const> = math.max(pmin - cmax, cmin - pmax)
-			if sep > 0 then
-				return false
-			end
-		end
-	end
-	return true
-end
-
-local contact_circle_circle<const> = function(a, b)
-	local dx<const> = a.x - b.x
-	local dy<const> = a.y - b.y
-	local dist<const> = math.sqrt((dx * dx) + (dy * dy))
-	local rr<const> = a.r + b.r
-	if dist >= rr then
-		return nil
-	end
-	local depth<const> = rr - dist
-	local nx
-	local ny
-	if dist > eps then
-		nx = dx / dist
-		ny = dy / dist
-	else
-		nx = 1
-		ny = 0
-	end
-	return {
-		normal = { x = nx, y = ny },
-		depth = depth,
-		point = { x = b.x + (nx * b.r), y = b.y + (ny * b.r) },
-	}
-end
-
-local contact_aabb_aabb<const> = function(a, b)
-	local center_ax<const> = (a.left + a.right) / 2
-	local center_ay<const> = (a.top + a.bottom) / 2
-	local center_bx<const> = (b.left + b.right) / 2
-	local center_by<const> = (b.top + b.bottom) / 2
-	local dx<const> = center_ax - center_bx
-	local dy<const> = center_ay - center_by
-	local half_w<const> = ((a.right - a.left) + (b.right - b.left)) / 2
-	local half_h<const> = ((a.bottom - a.top) + (b.bottom - b.top)) / 2
-	local overlap_x<const> = half_w - math.abs(dx)
-	local overlap_y<const> = half_h - math.abs(dy)
-	if overlap_x <= 0 or overlap_y <= 0 then
-		return nil
-	end
-	local point<const> = {
-		x = (math.max(a.left, b.left) + math.min(a.right, b.right)) / 2,
-		y = (math.max(a.top, b.top) + math.min(a.bottom, b.bottom)) / 2,
-	}
-	if overlap_x < overlap_y then
-		return {
-			normal = { x = dx < 0 and -1 or 1, y = 0 },
-			depth = overlap_x,
-			point = point,
-		}
-	end
-	return {
-		normal = { x = 0, y = dy < 0 and -1 or 1 },
-		depth = overlap_y,
-		point = point,
-	}
-end
-
-local contact_circle_poly<const> = function(circle, polys)
-	local best_axis_x = nil
-	local best_axis_y = nil
-	local best_overlap = math.huge
-
-	for i = 1, #polys do
-		local poly<const> = polys[i]
-		for j = 1, #poly, 2 do
-			local ni<const> = (j + 2 > #poly) and 1 or (j + 2)
-			local nx<const> = -(poly[ni + 1] - poly[j + 1])
-			local ny<const> = poly[ni] - poly[j]
-			local edge_len<const> = math.sqrt((nx * nx) + (ny * ny))
-			if edge_len > eps then
-				local ok
-				ok, best_axis_x, best_axis_y, best_overlap = test_circle_poly_axis(
-					poly,
-					circle,
-					nx / edge_len,
-					ny / edge_len,
-					best_axis_x,
-					best_axis_y,
-					best_overlap
-				)
-				if not ok then
-					return nil
-				end
-			end
-		end
-
-		local vx = poly[1]
-		local vy = poly[2]
-		local best_d = ((vx - circle.x) * (vx - circle.x)) + ((vy - circle.y) * (vy - circle.y))
-		for j = 3, #poly, 2 do
-			local dx<const> = poly[j] - circle.x
-			local dy<const> = poly[j + 1] - circle.y
-			local d<const> = (dx * dx) + (dy * dy)
-			if d < best_d then
-				best_d = d
-				vx = poly[j]
-				vy = poly[j + 1]
-			end
-		end
-		local ax<const> = vx - circle.x
-		local ay<const> = vy - circle.y
-		local axis_len<const> = math.sqrt((ax * ax) + (ay * ay))
-		if axis_len > eps then
-			local ok
-			ok, best_axis_x, best_axis_y, best_overlap = test_circle_poly_axis(
-				poly,
-				circle,
-				ax / axis_len,
-				ay / axis_len,
-				best_axis_x,
-				best_axis_y,
-				best_overlap
-			)
-			if not ok then
-				return nil
-			end
-		end
-	end
-
-	if best_axis_x == nil then
-		return nil
-	end
-	return {
-		normal = { x = best_axis_x, y = best_axis_y },
-		depth = best_overlap,
-	}
-end
-
-local contact_poly_pair<const> = function(poly_a, poly_b)
-	local best_axis_x = nil
-	local best_axis_y = nil
-	local best_overlap = math.huge
-
-	local ok
-	ok, best_axis_x, best_axis_y, best_overlap = test_poly_pair_axes(poly_a, poly_a, poly_b, best_axis_x, best_axis_y, best_overlap)
-	if not ok then
-		return nil
-	end
-	ok, best_axis_x, best_axis_y, best_overlap = test_poly_pair_axes(poly_b, poly_a, poly_b, best_axis_x, best_axis_y, best_overlap)
-	if not ok then
-		return nil
-	end
-	if best_axis_x == nil then
-		return nil
-	end
-	return {
-		normal = { x = best_axis_x, y = best_axis_y },
-		depth = best_overlap,
-	}
-end
-
-local contact_poly_poly<const> = function(polys_a, polys_b)
-	local best = nil
-	for i = 1, #polys_a do
-		local poly_a<const> = polys_a[i]
-		for j = 1, #polys_b do
-			local poly_b<const> = polys_b[j]
-			local contact<const> = contact_poly_pair(poly_a, poly_b)
-			if contact ~= nil and (best == nil or contact.depth < best.depth) then
-				best = contact
-			end
-		end
-	end
-	return best
-end
-
 local is_geo_overlap_pair<const> = function(a, b)
-	if a._overlap_geo_blob_base == nil or b._overlap_geo_blob_base == nil then
-		return false
-	end
-	local kind_a<const> = a._overlap_shape_kind
-	local kind_b<const> = b._overlap_shape_kind
-	if kind_a == 'circle' or kind_b == 'circle' then
-		return false
-	end
-	return true
+	return a._overlap_geo_blob_base ~= nil and b._overlap_geo_blob_base ~= nil
 end
 
 local ensure_pair_contact<const> = function(pair)
@@ -530,35 +104,47 @@ local stage_geo_overlap_instance<const> = function(collider, batch_token, instan
 		return
 	end
 	local instance_addr<const> = instance_base + collider._geo_overlap_instance_index * geo_overlap_instance_bytes
-	mem[instance_addr + 0] = 0
-	mem[instance_addr + 4] = collider._geo_overlap_instance_index + 1
-	mem[instance_addr + 8] = collider._overlap_geo_blob_base
-	mem[instance_addr + 12] = collider._overlap_geo_shape_offset
-	mem[instance_addr + 16] = collider.layer
-	mem[instance_addr + 20] = collider.mask
-	mem[instance_addr + 24] = geo_fix16_scale
-	mem[instance_addr + 28] = 0
-	mem[instance_addr + 32] = round_to_nearest(collider._overlap_geo_tx * geo_fix16_scale)
-	mem[instance_addr + 36] = 0
-	mem[instance_addr + 40] = geo_fix16_scale
-	mem[instance_addr + 44] = round_to_nearest(collider._overlap_geo_ty * geo_fix16_scale)
+	memwrite(
+		instance_addr,
+		0,
+		collider._geo_overlap_instance_index + 1,
+		collider._overlap_geo_blob_base,
+		collider._overlap_geo_shape_offset,
+		collider.layer,
+		collider.mask,
+		geo_fix16_scale,
+		0,
+		round_to_nearest(collider._overlap_geo_tx * geo_fix16_scale),
+		0,
+		geo_fix16_scale,
+		round_to_nearest(collider._overlap_geo_ty * geo_fix16_scale)
+	)
 	collider._geo_overlap_stage_token = batch_token
 end
 
 local submit_geo_overlap_batch<const> = function(instance_base, pair_base, result_base, summary_base, instance_count, pair_count)
-	mem[sys_geo_src0] = instance_base
-	mem[sys_geo_src1] = pair_base
-	mem[sys_geo_src2] = 0
-	mem[sys_geo_dst0] = result_base
-	mem[sys_geo_dst1] = summary_base
-	mem[sys_geo_count] = pair_count
-	mem[sys_geo_param0] = geo_overlap_param0
-	mem[sys_geo_param1] = pair_count
-	mem[sys_geo_stride0] = geo_overlap_instance_bytes
-	mem[sys_geo_stride1] = geo_overlap_pair_bytes
-	mem[sys_geo_stride2] = instance_count
-	mem[sys_geo_cmd] = sys_geo_cmd_overlap2d_pass
-	mem[sys_geo_ctrl] = sys_geo_ctrl_start
+	memwrite(
+		sys_geo_src0,
+		instance_base,
+		pair_base,
+		0,
+		result_base,
+		summary_base,
+		pair_count
+	)
+	memwrite(
+		sys_geo_param0,
+		geo_overlap_param0,
+		pair_count,
+		geo_overlap_instance_bytes,
+		geo_overlap_pair_bytes,
+		instance_count
+	)
+	memwrite(
+		sys_geo_cmd,
+		sys_geo_cmd_overlap2d_pass,
+		sys_geo_ctrl_start
+	)
 	local current_status = mem[sys_geo_status]
 	while (current_status & sys_geo_status_busy) ~= 0 do
 		current_status = mem[sys_geo_status]
@@ -600,7 +186,7 @@ function collision2d.batch_collides(pairs, pair_count)
 			pair.geo_pair_index = geo_pair_count
 			geo_pair_count = geo_pair_count + 1
 		else
-			local contact<const> = collision2d.get_contact2d(a, b)
+			local contact<const> = collision2d_cpu.get_contact2d(a, b)
 			pair.contact = contact
 			pair.hit = contact ~= nil
 		end
@@ -627,10 +213,13 @@ function collision2d.batch_collides(pairs, pair_count)
 			stage_geo_overlap_instance(a, batch_token, instance_base)
 			stage_geo_overlap_instance(b, batch_token, instance_base)
 			local pair_addr<const> = pair_base + pair.geo_pair_index * geo_overlap_pair_bytes
-			mem[pair_addr + 0] = 0
-			mem[pair_addr + 4] = a._geo_overlap_instance_index
-			mem[pair_addr + 8] = b._geo_overlap_instance_index
-			mem[pair_addr + 12] = i
+			memwrite(
+				pair_addr,
+				0,
+				a._geo_overlap_instance_index,
+				b._geo_overlap_instance_index,
+				i
+			)
 		end
 	end
 
@@ -647,103 +236,6 @@ function collision2d.batch_collides(pairs, pair_count)
 		pair.hit = true
 		set_pair_contact_from_geo_result(pair, result_addr)
 	end
-end
-
--- collision2d.collides(a, b): exact shape test between two collider2dcomponents.
--- Performs broadphase AABB check first, then exact shape intersection.
--- Respects `enabled`, `hittable`, layer/mask filters.
--- Prefer overlap2dsystem events over calling this directly — see DESIGN
--- PRINCIPLES rule 1 at the top of this file.
-function collision2d.collides(a, b)
-	if not a.enabled or not b.enabled then
-		return false
-	end
-	if not a.hittable or not b.hittable then
-		return false
-	end
-	local area_a<const> = a:get_world_area()
-	local area_b<const> = b:get_world_area()
-	if not detect_aabb_areas(area_a, area_b) then
-		return false
-	end
-	local kind_a<const> = a:get_shape_kind()
-	local kind_b<const> = b:get_shape_kind()
-	if kind_a == 'aabb' and kind_b == 'aabb' then
-		return true
-	end
-	if kind_a == 'circle' and kind_b == 'circle' then
-		return circle_circle_overlap(a:get_world_circle(), b:get_world_circle())
-	end
-	if kind_a == 'circle' and kind_b == 'poly' then
-		return circle_poly_overlap(a:get_world_circle(), b:get_world_polys())
-	end
-	if kind_a == 'poly' and kind_b == 'circle' then
-		return circle_poly_overlap(b:get_world_circle(), a:get_world_polys())
-	end
-	if kind_a == 'circle' and kind_b == 'aabb' then
-		return circle_poly_overlap(a:get_world_circle(), b:get_world_area_polys())
-	end
-	if kind_a == 'aabb' and kind_b == 'circle' then
-		return circle_poly_overlap(b:get_world_circle(), a:get_world_area_polys())
-	end
-	if kind_a == 'poly' and kind_b == 'poly' then
-		return polygons_intersect(a:get_world_polys(), b:get_world_polys())
-	end
-	if kind_a == 'poly' and kind_b == 'aabb' then
-		return polygons_intersect(a:get_world_polys(), b:get_world_area_polys())
-	end
-	return polygons_intersect(a:get_world_area_polys(), b:get_world_polys())
-end
-
--- collision2d.get_contact2d(a, b)
---   Returns contact data { normal={x,y}, depth, point={x,y} } when a and b
---   overlap, or nil when they do not.
---   Called automatically by overlap2dsystem when building 'overlap.begin' and
---   'overlap.stay' event payloads; only call directly for one-shot queries or
---   inside custom ECS systems that need contact normals.
-function collision2d.get_contact2d(a, b)
-	local area_a<const> = a:get_world_area()
-	local area_b<const> = b:get_world_area()
-	if not detect_aabb_areas(area_a, area_b) then
-		return nil
-	end
-	local kind_a<const> = a:get_shape_kind()
-	local kind_b<const> = b:get_shape_kind()
-	if kind_a == 'aabb' and kind_b == 'aabb' then
-		return contact_aabb_aabb(area_a, area_b)
-	end
-	if kind_a == 'circle' and kind_b == 'circle' then
-		return contact_circle_circle(a:get_world_circle(), b:get_world_circle())
-	end
-	if kind_a == 'circle' and kind_b == 'poly' then
-		return contact_circle_poly(a:get_world_circle(), b:get_world_polys())
-	end
-	if kind_a == 'circle' and kind_b == 'aabb' then
-		return contact_circle_poly(a:get_world_circle(), b:get_world_area_polys())
-	end
-	if kind_a == 'poly' and kind_b == 'circle' then
-		local contact<const> = contact_circle_poly(b:get_world_circle(), a:get_world_polys())
-		if contact ~= nil and contact.normal ~= nil then
-			contact.normal.x = -contact.normal.x
-			contact.normal.y = -contact.normal.y
-		end
-		return contact
-	end
-	if kind_a == 'aabb' and kind_b == 'circle' then
-		local contact<const> = contact_circle_poly(b:get_world_circle(), a:get_world_area_polys())
-		if contact ~= nil and contact.normal ~= nil then
-			contact.normal.x = -contact.normal.x
-			contact.normal.y = -contact.normal.y
-		end
-		return contact
-	end
-	if kind_a == 'poly' and kind_b == 'poly' then
-		return contact_poly_poly(a:get_world_polys(), b:get_world_polys())
-	end
-	if kind_a == 'poly' and kind_b == 'aabb' then
-		return contact_poly_poly(a:get_world_polys(), b:get_world_area_polys())
-	end
-	return contact_poly_poly(a:get_world_area_polys(), b:get_world_polys())
 end
 
 local broadphase_index<const> = {}
@@ -864,6 +356,8 @@ function collision2d.query_aabb(area, out, seen)
 	return collision2d.world_index:query_aabb(area, out, seen)
 end
 
+collision2d.collides = collision2d_cpu.collides
+collision2d.get_contact2d = collision2d_cpu.get_contact2d
 collision2d.detect_aabb_areas = detect_aabb_areas
 collision2d.area_to_poly = area_to_poly
 collision2d.polygons_intersect = polygons_intersect

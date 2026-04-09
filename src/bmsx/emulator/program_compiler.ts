@@ -2573,10 +2573,6 @@ class FunctionBuilder {
 		if (expression.arguments.length < 2) {
 			throw new Error('[Compiler] memwrite expects a base address and at least one word.');
 		}
-		const lastArg = expression.arguments[expression.arguments.length - 1];
-		if (this.isMultiReturnExpression(lastArg)) {
-			throw new Error('[Compiler] memwrite does not support multi-return or vararg operands.');
-		}
 		const addrExpression = expression.arguments[0];
 		const addrConst = this.tryGetNumericConstIndex(addrExpression);
 		let addrReg: number | undefined;
