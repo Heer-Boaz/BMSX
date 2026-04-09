@@ -1584,6 +1584,6 @@ export function runConsoleChunk(runtime: Runtime, source: string): Value[] {
 		runtime.consoleMetadata = compiled.metadata;
 	}
 	const results = runtime.acquireValueScratch();
-	runtime.callClosureInto({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, [], results);
+	runtime.callClosureIntoWithScheduler({ protoIndex: compiled.entryProtoIndex, upvalues: [] }, [], results);
 	return results.slice();
 }

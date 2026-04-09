@@ -59,6 +59,14 @@ local geo_overlap_result_bytes<const> = 36
 local geo_overlap_summary_bytes<const> = 16
 local geo_overlap_param0<const> = sys_geo_overlap_mode_candidate_pairs | sys_geo_overlap_broadphase_none | sys_geo_overlap_contact_clipped_feature | sys_geo_overlap_output_stop_on_overflow
 local geo_batch_token = 0
+local direct_query_pair<const> = {
+	a = nil,
+	b = nil,
+	hit = false,
+	geo_pair_index = -1,
+	contact = nil,
+}
+local direct_query_pairs<const> = { direct_query_pair }
 
 local clear_array<const> = function(array)
 	for i = #array, 1, -1 do
@@ -68,6 +76,22 @@ end
 
 local is_geo_overlap_pair<const> = function(a, b)
 	return a._overlap_geo_shape_ref ~= nil and b._overlap_geo_shape_ref ~= nil
+end
+
+local describe_collider<const> = function(collider)
+	local owner<const> = collider.parent
+	local owner_id = nil
+	if owner ~= nil then
+		owner_id = owner.id
+	end
+	return tostring(collider.id) .. ' (owner=' .. tostring(owner_id) .. ', local=' .. tostring(collider.id_local) .. ')'
+end
+
+local require_geo_overlap_pair<const> = function(a, b)
+	if is_geo_overlap_pair(a, b) then
+		return
+	end
+	error('[collision2d] GEO overlap requires sprite-backed colliders with baked collision bin data: ' .. describe_collider(a) .. ' / ' .. describe_collider(b))
 end
 
 local ensure_pair_contact<const> = function(pair)
@@ -177,9 +201,7 @@ function collision2d.batch_collides(pairs, pair_count)
 			pair.geo_pair_index = geo_pair_count
 			geo_pair_count = geo_pair_count + 1
 		else
-			local contact<const> = collision2d_cpu.get_contact2d(a, b)
-			pair.contact = contact
-			pair.hit = contact ~= nil
+			require_geo_overlap_pair(a, b)
 		end
 	end
 
@@ -355,8 +377,38 @@ function collision2d.query_aabb(area, out, seen)
 	return collision2d.world_index:query_aabb(area, out, seen)
 end
 
-collision2d.collides = collision2d_cpu.collides
-collision2d.get_contact2d = collision2d_cpu.get_contact2d
+function collision2d.get_contact2d(a, b)
+	if not a.enabled or not b.enabled then
+		return nil
+	end
+	if not a.hittable or not b.hittable then
+		return nil
+	end
+	a:prepare_overlap_cache()
+	if b ~= a then
+		b:prepare_overlap_cache()
+	end
+	require_geo_overlap_pair(a, b)
+	local pair<const> = direct_query_pair
+	pair.a = a
+	pair.b = b
+	pair.hit = false
+	pair.geo_pair_index = -1
+	collision2d.batch_collides(direct_query_pairs, 1)
+	if b ~= a then
+		b:clear_overlap_cache()
+	end
+	a:clear_overlap_cache()
+	if not pair.hit then
+		return nil
+	end
+	return pair.contact
+end
+
+function collision2d.collides(a, b)
+	return collision2d.get_contact2d(a, b) ~= nil
+end
+
 collision2d.detect_aabb_areas = detect_aabb_areas
 collision2d.area_to_poly = area_to_poly
 collision2d.polygons_intersect = polygons_intersect

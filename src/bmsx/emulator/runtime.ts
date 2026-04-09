@@ -2931,6 +2931,61 @@ export class Runtime {
 		}
 	}
 
+	public callClosureIntoWithScheduler(fn: Closure, args: Value[], out: Value[]): void {
+		const depth = this.cpu.getFrameDepth();
+		const previousBudget = this.cpu.instructionBudgetRemaining;
+		const budgetSentinel = Number.MAX_SAFE_INTEGER;
+		const previousSink = this.cpu.swapExternalReturnSink(out);
+		out.length = 0;
+		try {
+			this.cpu.callExternal(fn, args);
+			let remaining = budgetSentinel;
+			this.runDueTimers();
+			while (this.cpu.getFrameDepth() > depth) {
+				let sliceBudget = remaining;
+				const nextDeadline = this.nextTimerDeadline();
+				if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
+					const deadlineBudget = nextDeadline - this.schedulerNowCycles;
+					if (deadlineBudget <= 0) {
+						this.runDueTimers();
+						continue;
+					}
+					if (deadlineBudget < sliceBudget) {
+						sliceBudget = deadlineBudget;
+					}
+				}
+				this.schedulerSliceActive = true;
+				this.activeSliceBaseCycle = this.schedulerNowCycles;
+				this.activeSliceBudgetCycles = sliceBudget;
+				this.activeSliceTargetCycle = this.schedulerNowCycles + sliceBudget;
+				const result = this.cpu.runUntilDepth(depth, sliceBudget);
+				this.schedulerSliceActive = false;
+				const sliceRemaining = this.cpu.instructionBudgetRemaining;
+				const consumed = sliceBudget - sliceRemaining;
+				if (consumed > 0) {
+					remaining -= consumed;
+					this.advanceTime(consumed);
+				}
+				if (this.cpu.getFrameDepth() <= depth) {
+					break;
+				}
+				if (result === RunResult.Halted) {
+					break;
+				}
+				if (consumed <= 0) {
+					this.runDueTimers();
+				}
+			}
+		} catch (error) {
+			this.cpu.unwindToDepth(depth);
+			throw error;
+		} finally {
+			this.cpu.swapExternalReturnSink(previousSink);
+			const remaining = this.cpu.instructionBudgetRemaining;
+			this.cpu.instructionBudgetRemaining = previousBudget - (budgetSentinel - remaining);
+		}
+	}
+
 	public callClosure(fn: Closure, args: Value[]): Value[] {
 		this.callClosureInto(fn, args, this.cpu.lastReturnValues);
 		return this.cpu.lastReturnValues;

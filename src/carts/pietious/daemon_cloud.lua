@@ -7,6 +7,7 @@ local anim_timeline_id<const> = 'daemon_cloud.anim'
 
 function daemon_cloud:ctor()
 	self.visible = false
+	self.collider.enabled = false
 end
 
 function daemon_cloud:play_once_at(x, y)
@@ -15,12 +16,14 @@ function daemon_cloud:play_once_at(x, y)
 	self.z = 23
 	self.visible = true
 	self:gfx('daemon_smoke_small')
+	self.collider.enabled = true
 	self:play_timeline(anim_timeline_id, { rewind = true, snap_to_start = true })
 end
 
 function daemon_cloud:stop_and_hide()
 	self:stop_timeline(anim_timeline_id)
 	self.visible = false
+	self.collider.enabled = false
 end
 
 local define_daemon_cloud_fsm<const> = function()
@@ -46,6 +49,7 @@ local define_daemon_cloud_fsm<const> = function()
 						end,
 						on_end = function(self)
 							self.visible = false
+							self.collider.enabled = false
 						end,
 					},
 				},
