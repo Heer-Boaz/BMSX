@@ -1060,13 +1060,70 @@ struct CartRomHeader {
 	u32 programProtoCount = 0;
 	u32 programModuleAliasCount = 0;
 	u32 programConstRelocCount = 0;
+	u32 metadataOffset = 0;
+	u32 metadataLength = 0;
 };
 
 static constexpr u8 CART_ROM_MAGIC[4] = { 0x42, 0x4d, 0x53, 0x58 };
 static constexpr size_t CART_ROM_BASE_HEADER_SIZE = 32;
-static constexpr size_t CART_ROM_HEADER_SIZE = 64;
+static constexpr size_t CART_ROM_PROGRAM_HEADER_SIZE = 64;
+static constexpr size_t CART_ROM_HEADER_SIZE = 72;
+static constexpr u32 ROM_METADATA_MAGIC = 0x44544d42; // 'BMTD' little-endian
+static constexpr u32 ROM_METADATA_VERSION = 1;
+static constexpr size_t ROM_METADATA_HEADER_SIZE = 12;
+
+struct RomMetadataSection {
+	std::vector<std::string> propNames;
+	size_t payloadOffset = 0;
+};
 
 static u32 readLE32(const u8* data);
+
+static u32 readVarUint(const u8* data, size_t size, size_t& pos) {
+	u32 value = 0;
+	u32 shift = 0;
+	int count = 0;
+	while (true) {
+		if (pos >= size) {
+			throw BMSX_RUNTIME_ERROR("ROM metadata varuint truncated.");
+		}
+		const u8 byte = data[pos++];
+		value |= static_cast<u32>(byte & 0x7f) << shift;
+		if ((byte & 0x80) == 0) {
+			return value;
+		}
+		shift += 7;
+		if (++count > 4) {
+			throw BMSX_RUNTIME_ERROR("ROM metadata varuint overflow.");
+		}
+	}
+}
+
+static RomMetadataSection parseRomMetadataSection(const u8* data, size_t size) {
+	if (size < ROM_METADATA_HEADER_SIZE) {
+		throw BMSX_RUNTIME_ERROR("ROM metadata section too small.");
+	}
+	if (readLE32(data + 0) != ROM_METADATA_MAGIC) {
+		throw BMSX_RUNTIME_ERROR("Invalid ROM metadata magic.");
+	}
+	if (readLE32(data + 4) != ROM_METADATA_VERSION) {
+		throw BMSX_RUNTIME_ERROR("Unsupported ROM metadata version.");
+	}
+	const u32 propCount = readLE32(data + 8);
+	size_t pos = ROM_METADATA_HEADER_SIZE;
+	RomMetadataSection section;
+	section.propNames.reserve(propCount);
+	for (u32 i = 0; i < propCount; ++i) {
+		const u32 length = readVarUint(data, size, pos);
+		if (pos + length > size) {
+			throw BMSX_RUNTIME_ERROR("ROM metadata property string truncated.");
+		}
+		section.propNames.emplace_back(reinterpret_cast<const char*>(data + pos), length);
+		pos += length;
+	}
+	section.payloadOffset = pos;
+	return section;
+}
 
 static bool hasCartHeader(const u8* data, size_t size) {
 	if (size < CART_ROM_BASE_HEADER_SIZE) {
@@ -1106,7 +1163,7 @@ static CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	header.tocLength = readLE32(data + 20);
 	header.dataOffset = readLE32(data + 24);
 	header.dataLength = readLE32(data + 28);
-	if (header.headerSize >= CART_ROM_HEADER_SIZE) {
+	if (header.headerSize >= CART_ROM_PROGRAM_HEADER_SIZE) {
 		header.programBootVersion = readLE32(data + 32);
 		header.programBootFlags = readLE32(data + 36);
 		header.programEntryProtoIndex = readLE32(data + 40);
@@ -1116,10 +1173,17 @@ static CartRomHeader parseCartHeader(const u8* data, size_t size) {
 		header.programModuleAliasCount = readLE32(data + 56);
 		header.programConstRelocCount = readLE32(data + 60);
 	}
+	if (header.headerSize >= CART_ROM_HEADER_SIZE) {
+		header.metadataOffset = readLE32(data + 64);
+		header.metadataLength = readLE32(data + 68);
+	}
 
 	assertSectionRange(static_cast<size_t>(header.manifestOffset), static_cast<size_t>(header.manifestLength), size, "manifest");
 	assertSectionRange(static_cast<size_t>(header.tocOffset), static_cast<size_t>(header.tocLength), size, "toc");
 	assertSectionRange(static_cast<size_t>(header.dataOffset), static_cast<size_t>(header.dataLength), size, "data");
+	if (header.metadataLength > 0) {
+		assertSectionRange(static_cast<size_t>(header.metadataOffset), static_cast<size_t>(header.metadataLength), size, "metadata");
+	}
 
 	return header;
 }
@@ -1420,6 +1484,16 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 		assets.projectRootPath = projectRootPath;
 	}
 
+	RomMetadataSection sharedMetadata;
+	size_t sharedMetadataPayloadOffset = 0;
+	size_t sharedMetadataEndOffset = 0;
+	const bool hasSharedMetadata = header.metadataLength > 0;
+	if (hasSharedMetadata) {
+		sharedMetadata = parseRomMetadataSection(romData + header.metadataOffset, header.metadataLength);
+		sharedMetadataPayloadOffset = static_cast<size_t>(header.metadataOffset) + sharedMetadata.payloadOffset;
+		sharedMetadataEndOffset = static_cast<size_t>(header.metadataOffset) + static_cast<size_t>(header.metadataLength);
+	}
+
 	// Step 5: Load assets
 	if (entryCount == 0) {
 		return true;
@@ -1499,6 +1573,12 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 		const i32 metaBufEnd = romInfo.metabufferEnd ? *romInfo.metabufferEnd : -1;
 		const i32 textureBufStart = romInfo.textureStart ? *romInfo.textureStart : -1;
 		const i32 textureBufEnd = romInfo.textureEnd ? *romInfo.textureEnd : -1;
+		const bool useSharedMetadata =
+			hasSharedMetadata &&
+			metaBufStart >= 0 &&
+			metaBufEnd > metaBufStart &&
+			static_cast<size_t>(metaBufStart) >= sharedMetadataPayloadOffset &&
+			static_cast<size_t>(metaBufEnd) <= sharedMetadataEndOffset;
 
 		if (assetType == "image" || assetType == "atlas") {
 			ImgAsset imgAsset;
@@ -1507,7 +1587,9 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 
 			// Load image metadata
 			if (metaBufStart >= 0 && metaBufEnd > metaBufStart) {
-				BinValue metaVal = decodeBinary(romData + metaBufStart, metaBufEnd - metaBufStart);
+				BinValue metaVal = useSharedMetadata
+					? decodeBinaryWithPropTable(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart), sharedMetadata.propNames)
+					: decodeBinary(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart));
 				if (metaVal.isObject()) {
 					const auto& imgMeta = metaVal.asObject();
 					imgAsset.meta.width = imgMeta.count("width") ? imgMeta.at("width").toI32() : 0;
@@ -1585,7 +1667,9 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 			if (metaBufStart < 0 || metaBufEnd <= metaBufStart) {
 				throw BMSX_RUNTIME_ERROR("Audio asset missing metadata: " + assetId);
 			}
-			BinValue metaVal = decodeBinary(romData + metaBufStart, metaBufEnd - metaBufStart);
+			BinValue metaVal = useSharedMetadata
+				? decodeBinaryWithPropTable(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart), sharedMetadata.propNames)
+				: decodeBinary(romData + metaBufStart, static_cast<size_t>(metaBufEnd - metaBufStart));
 			const auto& audioMeta = metaVal.asObject();
 			audioAsset.meta.type = audioTypeFromString(audioMeta.at("audiotype").asString());
 			audioAsset.meta.priority = audioMeta.at("priority").toI32();

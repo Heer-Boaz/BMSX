@@ -15,8 +15,9 @@ import type {
 	color_arr,
 	CartRomHeader,
 } from './rompack';
-import { decodeBinary, toF32, typedArrayFromBytes } from '../serializer/binencoder';
-import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from './rompack';
+import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../serializer/binencoder';
+import { parseRomMetadataSection } from './rom_metadata';
+import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, CART_ROM_PROGRAM_HEADER_SIZE } from './rompack';
 import { inflate } from 'pako';
 import { AssetSourceStack, type RawAssetSource } from './asset_source';
 import { decodeRomToc } from './rom_toc';
@@ -74,19 +75,25 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	const tocLength = dv.getUint32(20, true);
 	const dataOffset = dv.getUint32(24, true);
 	const dataLength = dv.getUint32(28, true);
-	const hasExtendedHeader = headerSize >= CART_ROM_HEADER_SIZE;
-	const programBootVersion = hasExtendedHeader ? dv.getUint32(32, true) : 0;
-	const programBootFlags = hasExtendedHeader ? dv.getUint32(36, true) : 0;
-	const programEntryProtoIndex = hasExtendedHeader ? dv.getUint32(40, true) : 0;
-	const programCodeByteCount = hasExtendedHeader ? dv.getUint32(44, true) : 0;
-	const programConstPoolCount = hasExtendedHeader ? dv.getUint32(48, true) : 0;
-	const programProtoCount = hasExtendedHeader ? dv.getUint32(52, true) : 0;
-	const programModuleAliasCount = hasExtendedHeader ? dv.getUint32(56, true) : 0;
-	const programConstRelocCount = hasExtendedHeader ? dv.getUint32(60, true) : 0;
+	const hasProgramHeader = headerSize >= CART_ROM_PROGRAM_HEADER_SIZE;
+	const hasMetadataHeader = headerSize >= CART_ROM_HEADER_SIZE;
+	const programBootVersion = hasProgramHeader ? dv.getUint32(32, true) : 0;
+	const programBootFlags = hasProgramHeader ? dv.getUint32(36, true) : 0;
+	const programEntryProtoIndex = hasProgramHeader ? dv.getUint32(40, true) : 0;
+	const programCodeByteCount = hasProgramHeader ? dv.getUint32(44, true) : 0;
+	const programConstPoolCount = hasProgramHeader ? dv.getUint32(48, true) : 0;
+	const programProtoCount = hasProgramHeader ? dv.getUint32(52, true) : 0;
+	const programModuleAliasCount = hasProgramHeader ? dv.getUint32(56, true) : 0;
+	const programConstRelocCount = hasProgramHeader ? dv.getUint32(60, true) : 0;
+	const metadataOffset = hasMetadataHeader ? dv.getUint32(64, true) : 0;
+	const metadataLength = hasMetadataHeader ? dv.getUint32(68, true) : 0;
 
 	assertSectionRange(manifestOffset, manifestLength, payload.byteLength, 'manifest');
 	assertSectionRange(tocOffset, tocLength, payload.byteLength, 'toc');
 	assertSectionRange(dataOffset, dataLength, payload.byteLength, 'data');
+	if (metadataLength > 0) {
+		assertSectionRange(metadataOffset, metadataLength, payload.byteLength, 'metadata');
+	}
 
 	return {
 		headerSize,
@@ -104,6 +111,8 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		programProtoCount,
 		programModuleAliasCount,
 		programConstRelocCount,
+		metadataOffset,
+		metadataLength,
 	};
 }
 
@@ -207,6 +216,9 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 	const decoded = decodeRomToc(sliced);
 	const assetList = decoded.assets;
 	const projectRootPath = decoded.projectRootPath ?? '';
+	const sharedMetadata = header.metadataLength > 0
+		? parseRomMetadataSection(rom.subarray(header.metadataOffset, header.metadataOffset + header.metadataLength))
+		: null;
 
 	function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
 		return polys.map(poly => {
@@ -296,8 +308,12 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 
 	for (const asset of assetList) {
 		if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
-			const metaSlice = rom.slice(asset.metabuffer_start, asset.metabuffer_end);
-			const decodedMeta = decodeBinary(new Uint8Array(metaSlice));
+			const metaStart = asset.metabuffer_start;
+			const metaEnd = asset.metabuffer_end;
+			const metaSlice = rom.subarray(metaStart, metaEnd);
+			const decodedMeta = sharedMetadata && metaStart >= (header.metadataOffset + sharedMetadata.payloadOffset) && metaEnd <= (header.metadataOffset + header.metadataLength)
+				? decodeBinaryWithPropTable(metaSlice, sharedMetadata.propNames)
+				: decodeBinary(metaSlice);
 			switch (asset.type) {
 				case 'image':
 				case 'atlas':

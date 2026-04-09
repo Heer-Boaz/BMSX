@@ -174,10 +174,10 @@ BinValue BinDecoder::readValue() {
 			BinObject obj;
 			for (u32 i = 0; i < propCount; ++i) {
 				u32 propId = readVarUint();
-				if (propId >= m_propNames.size()) {
+				if (propId >= m_propNames->size()) {
 					throw BMSX_RUNTIME_ERROR("BinDecoder: invalid property ID");
 				}
-				const std::string& key = m_propNames[propId];
+				const std::string& key = (*m_propNames)[propId];
 				obj[key] = readValue();
 			}
 			return BinValue(std::move(obj));
@@ -213,12 +213,19 @@ BinValue BinDecoder::decode() {
 
 	// Read property name table
 	u32 propCount = readVarUint();
-	m_propNames.reserve(propCount);
+	m_ownedPropNames.clear();
+	m_ownedPropNames.reserve(propCount);
 	for (u32 i = 0; i < propCount; ++i) {
-		m_propNames.push_back(readString());
+		m_ownedPropNames.push_back(readString());
 	}
+	m_propNames = &m_ownedPropNames;
 
 	// Read root value
+	return readValue();
+}
+
+BinValue BinDecoder::decodePayload(const std::vector<std::string>& propNames) {
+	m_propNames = &propNames;
 	return readValue();
 }
 
@@ -233,6 +240,19 @@ BinValue decodeBinary(const u8* data, size_t size) {
 
 BinValue decodeBinary(const std::vector<u8>& data) {
 	return decodeBinary(data.data(), data.size());
+}
+
+BinValue decodeBinaryWithPropTable(const u8* data, size_t size, const std::vector<std::string>& propNames) {
+	BinDecoder decoder(data, size);
+	BinValue value = decoder.decodePayload(propNames);
+	if (decoder.position() != size) {
+		throw BMSX_RUNTIME_ERROR("BinDecoder: trailing bytes after payload decode");
+	}
+	return value;
+}
+
+BinValue decodeBinaryWithPropTable(const std::vector<u8>& data, const std::vector<std::string>& propNames) {
+	return decodeBinaryWithPropTable(data.data(), data.size(), propNames);
 }
 
 } // namespace bmsx

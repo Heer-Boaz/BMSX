@@ -30,6 +30,8 @@ const { finished } = require('stream/promises');
 // @ts-ignore
 const { encodeBinary, decodeBinary } = require('../../src/bmsx/serializer/binencoder');
 // @ts-ignore
+const { buildRomMetadataSection } = require('../../src/bmsx/rompack/rom_metadata');
+// @ts-ignore
 const { LuaLexer } = require('../../src/bmsx/lua/syntax/lualexer');
 // @ts-ignore
 const { LuaParser } = require('../../src/bmsx/lua/syntax/luaparser');
@@ -68,10 +70,22 @@ const GEO_COLLISION_SHAPE_KIND_CONVEX_POLY = 3;
 const GEO_COLLISION_SHAPE_KIND_COMPOUND = 4;
 const GEO_COLLISION_VARIANT_HEADER_WORDS = 8;
 
+type CompleteBoundingBoxPrecalc = BoundingBoxPrecalc & {
+	fliph: RectBounds;
+	flipv: RectBounds;
+	fliphv: RectBounds;
+};
+
+type CompleteHitPolygonsPrecalc = HitPolygonsPrecalc & {
+	fliph: Polygon[];
+	flipv: Polygon[];
+	fliphv: Polygon[];
+};
+
 type ImageCollisionBuild = {
-	boundingbox: BoundingBoxPrecalc;
+	boundingbox: CompleteBoundingBoxPrecalc;
 	centerpoint: vec2arr;
-	hitpolygons: HitPolygonsPrecalc | undefined;
+	hitpolygons: CompleteHitPolygonsPrecalc | undefined;
 	collisionbin: Buffer;
 };
 
@@ -700,12 +714,17 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 	}
 	let imgmeta: ImgMeta = {
 		atlassed: false,
-		atlasid: null,
 		width: img.width,
 		height: img.height,
-		boundingbox: collision.boundingbox,
+		boundingbox: {
+			original: collision.boundingbox.original,
+		},
 		centerpoint: collision.centerpoint,
-		hitpolygons: collision.hitpolygons,
+		hitpolygons: collision.hitpolygons
+			? {
+				original: collision.hitpolygons.original,
+			}
+			: undefined,
 	};
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		const targetAtlas = res.targetAtlasIndex;
@@ -713,7 +732,7 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 		imgmeta = {
 			...imgmeta,
 			atlassed: targetAtlas !== undefined,
-			atlasid: targetAtlas,
+			atlasid: targetAtlas !== undefined ? targetAtlas : undefined,
 			texcoords: texcoords ? [...texcoords] : undefined,
 		};
 	}
@@ -1727,6 +1746,7 @@ export async function finalizeRompack(
 	const writer = createWriteStream(tempFile);
 	let offset = 0;
 	let headerBuffer: Buffer = null;
+	const metadataEntries: Array<{ asset: RomAsset; meta: ImgMeta | AudioMeta }> = [];
 
 	const writeBuffer = async (payload: Buffer) => {
 		if (!payload || payload.length === 0) return;
@@ -1768,11 +1788,7 @@ export async function finalizeRompack(
 			}
 			const perMeta = asset.imgmeta ?? asset.audiometa;
 			if (perMeta) {
-				status?.(`meta ${asset.type}:${asset.resid}`);
-				const encoded = Buffer.from(encodeBinary(perMeta));
-				asset.metabuffer_start = offset;
-				asset.metabuffer_end = offset + encoded.length;
-				await writeBuffer(encoded);
+				metadataEntries.push({ asset, meta: perMeta });
 			}
 			delete asset.imgmeta;
 			delete asset.audiometa;
@@ -1783,6 +1799,23 @@ export async function finalizeRompack(
 		}
 
 		const dataLength = offset - dataOffset;
+		let metadataOffset = 0;
+		let metadataLength = 0;
+		if (metadataEntries.length > 0) {
+			status?.('encode shared metadata');
+			const { header, payloads } = buildRomMetadataSection(metadataEntries.map(entry => entry.meta));
+			metadataOffset = offset;
+			await writeBuffer(Buffer.from(header));
+			for (let index = 0; index < metadataEntries.length; index += 1) {
+				const entry = metadataEntries[index];
+				const encoded = Buffer.from(payloads[index]);
+				status?.(`meta ${entry.asset.type}:${entry.asset.resid}`);
+				entry.asset.metabuffer_start = offset;
+				entry.asset.metabuffer_end = offset + encoded.length;
+				await writeBuffer(encoded);
+			}
+			metadataLength = offset - metadataOffset;
+		}
 		let manifestOffset = 0;
 		let manifestLength = 0;
 		if (options.manifest) {
@@ -1819,6 +1852,8 @@ export async function finalizeRompack(
 		headerBuffer.writeUInt32LE(options.programBoot.protoCount, 52);
 		headerBuffer.writeUInt32LE(options.programBoot.moduleAliasCount, 56);
 		headerBuffer.writeUInt32LE(options.programBoot.constRelocCount, 60);
+		headerBuffer.writeUInt32LE(metadataOffset, 64);
+		headerBuffer.writeUInt32LE(metadataLength, 68);
 	} finally {
 		writer.end();
 	}

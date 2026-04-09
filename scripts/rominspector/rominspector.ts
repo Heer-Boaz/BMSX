@@ -101,27 +101,27 @@ async function loadAssets(
 }
 
 function getTocBuffer(rombin: Buffer | Uint8Array, header: CartRomHeader) {
-	const metadataOffset = header.tocOffset;
-	const metadataLength = header.tocLength;
-	if (metadataOffset + metadataLength > rombin.byteLength) {
-		console.error(`Invalid TOC offset or length: offset=${metadataOffset} (${formatByteSize(metadataOffset)}), length=${metadataLength} (${formatByteSize(metadataLength)})`);
+	const tocOffset = header.tocOffset;
+	const tocLength = header.tocLength;
+	if (tocOffset + tocLength > rombin.byteLength) {
+		console.error(`Invalid TOC offset or length: offset=${tocOffset} (${formatByteSize(tocOffset)}), length=${tocLength} (${formatByteSize(tocLength)})`);
 		process.exit(1);
 	}
 
-	const metaBuf = rombin.slice(metadataOffset, metadataOffset + metadataLength);
+	const metaBuf = rombin.slice(tocOffset, tocOffset + tocLength);
 	if (!metaBuf || metaBuf.byteLength === 0) {
 		console.error('No TOC found in ROM file, invalid ROM file.');
 		process.exit(1);
 	}
-	if (metaBuf.byteLength !== metadataLength) {
-		console.error(`TOC length mismatch: expected ${metadataLength} bytes, got ${metaBuf.byteLength} bytes`);
+	if (metaBuf.byteLength !== tocLength) {
+		console.error(`TOC length mismatch: expected ${tocLength} bytes, got ${metaBuf.byteLength} bytes`);
 		process.exit(1);
 	}
-	console.log(`TOC buffer loaded: offset=${metadataOffset} (${formatByteSize(metadataOffset)}), length=${metadataLength} (${formatByteSize(metadataLength)})`);
+	console.log(`TOC buffer loaded: offset=${tocOffset} (${formatByteSize(tocOffset)}), length=${tocLength} (${formatByteSize(tocLength)})`);
 	return {
 		metaBuf,
-		metadataOffset,
-		metadataLength,
+		metadataOffset: tocOffset,
+		metadataLength: tocLength,
 		manifestOffset: header.manifestOffset,
 		manifestLength: header.manifestLength,
 	};
@@ -292,6 +292,7 @@ async function main() {
 		`manifest=${header.manifestOffset}+${header.manifestLength} ` +
 		`toc=${header.tocOffset}+${header.tocLength} ` +
 		`data=${header.dataOffset}+${header.dataLength} ` +
+		`metadata=${header.metadataOffset}+${header.metadataLength} ` +
 		`boot=v${header.programBootVersion} flags=${formatNumberAsHex(header.programBootFlags, 8)} ` +
 		`entry=${header.programEntryProtoIndex} protos=${header.programProtoCount} code=${header.programCodeByteCount}`
 	);

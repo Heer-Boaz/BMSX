@@ -30,8 +30,9 @@ import {
 	generateAtlasName,
 } from '../rompack/rompack';
 import { AssetSourceStack, type RawAssetSource } from '../rompack/asset_source';
-import { buildRuntimeAssetLayer, type RuntimeAssetLayer } from '../rompack/romloader';
-import { decodeBinary } from '../serializer/binencoder';
+import { buildRuntimeAssetLayer, parseCartHeader, type RuntimeAssetLayer } from '../rompack/romloader';
+import { parseRomMetadataSection } from '../rompack/rom_metadata';
+import { decodeBinary, decodeBinaryWithPropTable } from '../serializer/binencoder';
 import { createIdentifierCanonicalizer } from '../lua/syntax/identifier_canonicalizer';
 import { Api } from './firmware_api';
 import { CPU, Table, type Closure, type Value, type Program, type ProgramMetadata, RunResult, type NativeFunction, type NativeObject } from './cpu';
@@ -2508,6 +2509,7 @@ export class Runtime {
 		if (!source) {
 			throw runtimeFault('asset source not configured.');
 		}
+		const sharedMetadataByPayloadId = new Map<CartridgeLayerId, readonly string[] | null>();
 		const entries = source.list('audio');
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
@@ -2522,7 +2524,23 @@ export class Runtime {
 				start: entry.metabuffer_start,
 				end: entry.metabuffer_end,
 			});
-			const audiometa = decodeBinary(metaBytes) as AudioMeta;
+			const payloadId = entry.payload_id ?? 'cart';
+			let sharedPropNames = sharedMetadataByPayloadId.get(payloadId);
+			if (sharedPropNames === undefined) {
+				const header = parseCartHeader(source.getBytes({ ...entry, start: 0, end: CART_ROM_HEADER_SIZE }));
+				if (header.metadataLength > 0) {
+					const metadataSection = source.getBytes({
+						...entry,
+						start: header.metadataOffset,
+						end: header.metadataOffset + header.metadataLength,
+					});
+					sharedPropNames = parseRomMetadataSection(metadataSection).propNames;
+				} else {
+					sharedPropNames = null;
+				}
+				sharedMetadataByPayloadId.set(payloadId, sharedPropNames);
+			}
+			const audiometa = (sharedPropNames ? decodeBinaryWithPropTable(metaBytes, sharedPropNames) : decodeBinary(metaBytes)) as AudioMeta;
 			resources[entry.resid] = {
 				resid: entry.resid,
 				type: 'audio',

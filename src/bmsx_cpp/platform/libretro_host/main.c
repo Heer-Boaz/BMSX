@@ -73,6 +73,7 @@ typedef struct LibretroCore {
 	void (*bmsx_keyboard_event)(const char* code, bool down);
 	void (*bmsx_keyboard_reset)(void);
 	void (*bmsx_focus_changed)(bool focused);
+	bool (*bmsx_is_cart_program_active)(void);
 } LibretroCore;
 
 typedef struct FbDev {
@@ -122,6 +123,7 @@ typedef struct AudioQueue {
 } AudioQueue;
 
 static volatile sig_atomic_t g_should_quit = 0;
+enum { kInputTimelineAutoQuitGraceFrames = 0 };
 static bool g_input_debug = false;
 static const uint64_t kExitComboHoldMs = 2000;
 static const unsigned kAudioPeriodFrames = 1024;
@@ -450,6 +452,7 @@ static bool g_mouse_position_valid = false;
 static const char* map_ev_key_to_dom_code(uint16_t code);
 static void core_keyboard_event(const char* code, bool down);
 static void core_focus_changed(bool focused);
+static bool core_cart_program_active(void);
 #ifdef BMSX_LIBRETRO_HOST_SDL
 static const char* map_sdl_scancode_to_dom_code(SDL_Scancode scancode);
 static uint8_t map_sdl_mouse_buttons(uint32_t buttons);
@@ -2398,7 +2401,7 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 	menu_render_hw();
 	
 	// Capture screenshot if requested by the active input timeline.
-	if (input_timeline_should_capture_frame(g_frame_number)) {
+	if (core_cart_program_active() && input_timeline_should_capture_frame(g_frame_number)) {
 		fprintf(stderr, "[SCREENSHOT] Capturing frame %u (%ux%u)\n", g_frame_number, g_fb.width, g_fb.height);
 		uint8_t* pixels = malloc(g_fb.width * g_fb.height * 4);
 		if (pixels) {
@@ -2410,8 +2413,54 @@ static bool hw_present_frame(unsigned src_w, unsigned src_h) {
 		}
 	}
 	
-	g_frame_number++;
+	if (core_cart_program_active()) {
+		g_frame_number++;
+	}
 	return true;
+}
+
+static void maybe_capture_software_frame(void) {
+	if (!core_cart_program_active()) {
+		return;
+	}
+	if (!input_timeline_should_capture_frame(g_frame_number)) {
+		g_frame_number++;
+		return;
+	}
+	fprintf(stderr, "[SCREENSHOT] Capturing frame %u (%ux%u)\n", g_frame_number, g_fb.width, g_fb.height);
+	const size_t pixel_count = (size_t)g_fb.width * (size_t)g_fb.height;
+	uint8_t* pixels = (uint8_t*)malloc(pixel_count * 4u);
+	if (pixels) {
+		for (int y = 0; y < g_fb.height; ++y) {
+			const int src_y = g_fb.height - 1 - y;
+			const uint8_t* src_line = g_fb.map + (size_t)src_y * (size_t)g_fb.stride;
+			uint8_t* dst_line = pixels + (size_t)y * (size_t)g_fb.width * 4u;
+			if (g_fb.bpp == 32) {
+				const uint32_t* src = (const uint32_t*)src_line;
+				for (int x = 0; x < g_fb.width; ++x) {
+					const uint32_t p = src[x];
+					dst_line[(size_t)x * 4u + 0] = (uint8_t)((p >> 16) & 0xFF);
+					dst_line[(size_t)x * 4u + 1] = (uint8_t)((p >> 8) & 0xFF);
+					dst_line[(size_t)x * 4u + 2] = (uint8_t)(p & 0xFF);
+					dst_line[(size_t)x * 4u + 3] = 255;
+				}
+			} else if (g_fb.bpp == 16) {
+				const uint16_t* src = (const uint16_t*)src_line;
+				for (int x = 0; x < g_fb.width; ++x) {
+					const uint32_t p = rgb565_to_xrgb8888(src[x]);
+					dst_line[(size_t)x * 4u + 0] = (uint8_t)((p >> 16) & 0xFF);
+					dst_line[(size_t)x * 4u + 1] = (uint8_t)((p >> 8) & 0xFF);
+					dst_line[(size_t)x * 4u + 2] = (uint8_t)(p & 0xFF);
+					dst_line[(size_t)x * 4u + 3] = 255;
+				}
+			}
+		}
+		char filename[128];
+		snprintf(filename, sizeof(filename), "frame_%05u.png", g_frame_number);
+		screenshot_save_png(filename, (uint32_t)g_fb.width, (uint32_t)g_fb.height, pixels);
+		free(pixels);
+	}
+	g_frame_number++;
 }
 
 static void egl_unload(void) {
@@ -3102,6 +3151,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		msg_render_software();
 		fps_render_software();
 		menu_render_software();
+		maybe_capture_software_frame();
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
 			sdl_present();
@@ -3152,6 +3202,7 @@ static void video_cb(const void* data, unsigned width, unsigned height, size_t p
 		msg_render_software();
 		fps_render_software();
 		menu_render_software();
+		maybe_capture_software_frame();
 #ifdef BMSX_LIBRETRO_HOST_SDL
 		if (g_use_sdl) {
 			sdl_present();
@@ -4181,6 +4232,10 @@ static void core_focus_changed(bool focused) {
 	g_core->bmsx_focus_changed(focused);
 }
 
+static bool core_cart_program_active(void) {
+	return g_core->bmsx_is_cart_program_active();
+}
+
 static bool input_init_abs_axis(InputDev* dev, unsigned code, int32_t* min_out, int32_t* max_out, bool* has_axis) {
 	struct input_absinfo absinfo;
 	if (ioctl(dev->fd, EVIOCGABS(code), &absinfo) == 0) {
@@ -4780,6 +4835,7 @@ static void load_core(LibretroCore* core, const char* path) {
 	load_symbol(core->handle, "bmsx_keyboard_event", &core->bmsx_keyboard_event);
 	load_symbol(core->handle, "bmsx_keyboard_reset", &core->bmsx_keyboard_reset);
 	load_symbol(core->handle, "bmsx_focus_changed", &core->bmsx_focus_changed);
+	load_symbol(core->handle, "bmsx_is_cart_program_active", &core->bmsx_is_cart_program_active);
 }
 
 static void usage(const char* argv0) {
@@ -5011,8 +5067,14 @@ int main(int argc, char** argv) {
 #endif
 			}
 		} else {
-			input_timeline_tick_frame();
+			if (core_cart_program_active()) {
+				input_timeline_tick_frame();
+			}
 			core.retro_run();
+			if (core_cart_program_active() && input_timeline_should_auto_quit(kInputTimelineAutoQuitGraceFrames)) {
+				fprintf(stderr, "[libretro-host] input timeline completed, exiting\n");
+				g_should_quit = 1;
+			}
 		}
 		g_drop_video = false;
 		now_ns = monotonic_ns();

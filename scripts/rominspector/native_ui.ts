@@ -1,6 +1,7 @@
 import type { RomAsset } from '../../src/bmsx/rompack/rompack';
 import { PROGRAM_ASSET_ID, PROGRAM_SYMBOLS_ASSET_ID } from '../../src/bmsx/emulator/program_asset';
 import { parseCartHeader } from '../../src/bmsx/rompack/romloader';
+import { parseRomMetadataSection } from '../../src/bmsx/rompack/rom_metadata';
 import { clamp } from '../../src/bmsx/utils/clamp';
 import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferHitRegion, type BufferLegendEntry, type BufferRegion } from './asciiart';
 import { buildAssetModalView, renderPreviewSectionWindow, type AssetModalView, type AssetPreviewSection } from './asset_modal_view';
@@ -665,6 +666,7 @@ function makeRegionColorTag(label: string): string {
 	case 'symbols': return '{#FF6FAE-fg}';
 	case 'texture': return '{#14B8A6-fg}';
 	case 'manifest': return '{light-red-fg}';
+	case 'metadata': return '{#F97316-fg}';
 	case 'toc': return '{#C084FC-fg}';
 	default: return '{light-magenta-fg}';
 	}
@@ -692,6 +694,11 @@ function pushSummaryRegion(regions: BufferRegion[], start: number | undefined, e
 
 function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 	const header = parseCartHeader(ctx.rombin);
+	let metadataHeaderSize = 0;
+	if (header.metadataLength > 0) {
+		const metadataSection = parseRomMetadataSection(ctx.rombin.subarray(header.metadataOffset, header.metadataOffset + header.metadataLength));
+		metadataHeaderSize = metadataSection.payloadOffset;
+	}
 	const metrics: SummaryMetrics = {
 		totalSize: ctx.rombin.byteLength,
 		imageCount: 0,
@@ -704,7 +711,7 @@ function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 		audioSize: 0,
 		dataSize: 0,
 		modelSize: 0,
-		metadataSize: header.tocLength + header.manifestLength,
+		metadataSize: header.tocLength + header.manifestLength + metadataHeaderSize,
 		regions: [],
 	};
 	for (const asset of ctx.assets) {
@@ -733,6 +740,9 @@ function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 	}
 	if (header.manifestLength > 0) {
 		pushSummaryRegion(metrics.regions, header.manifestOffset, header.manifestOffset + header.manifestLength, 'manifest');
+	}
+	if (metadataHeaderSize > 0) {
+		pushSummaryRegion(metrics.regions, header.metadataOffset, header.metadataOffset + metadataHeaderSize, 'metadata');
 	}
 	pushSummaryRegion(metrics.regions, header.tocOffset, header.tocOffset + header.tocLength, 'toc');
 	return metrics;

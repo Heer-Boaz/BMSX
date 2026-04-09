@@ -20,6 +20,7 @@
 #include "libretro.h"
 #include "libretro_platform.h"
 #include "../../core/taskgate.h"
+#include "../../emulator/runtime.h"
 
 // Core info
 static constexpr const char* CORE_NAME = "BMSX";
@@ -41,6 +42,7 @@ extern "C" void bmsx_set_frame_time_usec(retro_usec_t usec);
 extern "C" RETRO_API void bmsx_keyboard_event(const char* code, bool down);
 extern "C" RETRO_API void bmsx_keyboard_reset(void);
 extern "C" RETRO_API void bmsx_focus_changed(bool focused);
+extern "C" RETRO_API bool bmsx_is_cart_program_active(void);
 
 static void frame_time_cb(retro_usec_t usec) {
 	if (usec == 0) {
@@ -108,6 +110,10 @@ extern "C" RETRO_API void bmsx_focus_changed(bool focused) {
 		return;
 	}
 	g_platform->notifyFocusChange(focused);
+}
+
+extern "C" RETRO_API bool bmsx_is_cart_program_active(void) {
+	return bmsx::Runtime::hasInstance() && !bmsx::Runtime::instance().isEngineProgramActive();
 }
 
 static constexpr const char* kOptionRenderBackend = "bmsx_render_backend";

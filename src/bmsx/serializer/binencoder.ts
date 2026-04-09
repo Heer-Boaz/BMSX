@@ -21,22 +21,11 @@ export interface EncodeOptions {
 	capacityHint?: number;
 }
 
-/**
- * Encode an object to a binary format with property-name interning.
- * The output is a Uint8Array that can be decoded with decodeBinary.
- *
- * FORMAT (big picture)
- *   u8 VERSION (0xA1)
- *   varuint property-count N
- *   N * (str property-name)
- *   value payload using interned property IDs
- */
-export function encodeBinary(obj: any, opts: EncodeOptions = {}): Uint8Array {
-	const { sortProps = true, capacityHint } = opts;
+function collectPropNamesFromValues(values: readonly unknown[], sortProps: boolean): string[] {
 	const propNameToId = new Map<string, number>();
 	const propNames: string[] = [];
 	const seen = new WeakSet<object>();
-	const stack: unknown[] = [obj];
+	const stack: unknown[] = values.slice() as unknown[];
 
 	while (stack.length) {
 		const val = stack.pop();
@@ -74,9 +63,40 @@ export function encodeBinary(obj: any, opts: EncodeOptions = {}): Uint8Array {
 
 	if (sortProps && propNames.length > 1) {
 		propNames.sort();
-		propNameToId.clear();
-		for (let i = 0; i < propNames.length; i++) propNameToId.set(propNames[i], i);
 	}
+	return propNames;
+}
+
+function buildPropNameToIdMap(propNames: readonly string[]): Map<string, number> {
+	const propNameToId = new Map<string, number>();
+	for (let i = 0; i < propNames.length; i++) propNameToId.set(propNames[i], i);
+	return propNameToId;
+}
+
+export function buildBinaryPropTable(values: readonly unknown[], opts: Pick<EncodeOptions, 'sortProps'> = {}): string[] {
+	return collectPropNamesFromValues(values, opts.sortProps ?? true);
+}
+
+export function encodeBinaryWithPropTable(obj: any, propNames: readonly string[], opts: Pick<EncodeOptions, 'capacityHint'> = {}): Uint8Array {
+	const writer = new BinWriter(opts.capacityHint);
+	writer.writeWithPropTable(obj, buildPropNameToIdMap(propNames));
+	return writer.finish();
+}
+
+/**
+ * Encode an object to a binary format with property-name interning.
+ * The output is a Uint8Array that can be decoded with decodeBinary.
+ *
+ * FORMAT (big picture)
+ *   u8 VERSION (0xA1)
+ *   varuint property-count N
+ *   N * (str property-name)
+ *   value payload using interned property IDs
+ */
+export function encodeBinary(obj: any, opts: EncodeOptions = {}): Uint8Array {
+	const { sortProps = true, capacityHint } = opts;
+	const propNames = collectPropNamesFromValues([obj], sortProps);
+	const propNameToId = buildPropNameToIdMap(propNames);
 
 	const writer = new BinWriter(capacityHint);
 	writer.u8(VERSION);
@@ -323,6 +343,161 @@ class BinWriter {
 	}
 }
 
+class BinReader {
+	private readonly dv: DataView;
+	private readonly zeroCopyBin: boolean;
+	private readonly maxProps: number;
+	private readonly maxContainerEntries: number;
+	private readonly maxDepth: number;
+	private offset = 0;
+	private depth = 0;
+	private propNames: readonly string[] = [];
+
+	constructor(private readonly buf: Uint8Array, opts: DecodeOptions) {
+		this.dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+		this.zeroCopyBin = opts.zeroCopyBin ?? false;
+		this.maxProps = opts.maxProps ?? 1_000_000;
+		this.maxContainerEntries = opts.maxContainerEntries ?? 1_000_000;
+		this.maxDepth = opts.maxDepth ?? (1 << 15);
+	}
+
+	getOffset(): number {
+		return this.offset;
+	}
+
+	setPropNames(propNames: readonly string[]): void {
+		this.propNames = propNames;
+	}
+
+	readVersion(): number {
+		return this.readUint8();
+	}
+
+	readPropNames(): string[] {
+		const propCount = this.readVarUint();
+		if (propCount > this.maxProps) {
+			throw new Error(`decodeBinary: prop table too large (${propCount}/${this.maxProps})`);
+		}
+		const propNames = new Array<string>(propCount);
+		for (let i = 0; i < propCount; i++) propNames[i] = this.readString();
+		return propNames;
+	}
+
+	readValue(): any {
+		if (++this.depth > this.maxDepth) throw new Error('decodeBinary: nesting too deep');
+		try {
+			const tag = this.readUint8();
+			switch (tag) {
+				case Tag.Null: return null;
+				case Tag.True: return true;
+				case Tag.False: return false;
+				case Tag.F64: {
+					this.need(8);
+					const v = this.dv.getFloat64(this.offset, true);
+					this.offset += 8;
+					return v;
+				}
+				case Tag.Str: return this.readString();
+				case Tag.Arr: {
+					const len = this.readVarUint();
+					if (len > this.maxContainerEntries) throw new Error(`decodeBinary: array too large (${len}/${this.maxContainerEntries})`);
+					const arr = new Array(len);
+					for (let i = 0; i < len; i++) arr[i] = this.readValue();
+					return arr;
+				}
+				case Tag.Ref: {
+					const ref = this.readVarUint();
+					return { r: ref };
+				}
+				case Tag.Obj: {
+					const len = this.readVarUint();
+					if (len > this.maxContainerEntries) throw new Error(`decodeBinary: object too large (${len}/${this.maxContainerEntries})`);
+					const obj: Record<string, any> = {};
+					for (let i = 0; i < len; i++) {
+						const propId = this.readVarUint();
+						if (propId >= this.propNames.length) throw new Error(`decodeBinary: bad prop id ${propId}/${this.propNames.length}`);
+						obj[this.propNames[propId]] = this.readValue();
+					}
+					return obj;
+				}
+				case Tag.Bin: {
+					const len = this.readVarUint();
+					this.need(len);
+					const start = this.offset;
+					this.offset += len;
+					const view = this.buf.subarray(start, this.offset);
+					return this.zeroCopyBin ? view : view.slice();
+				}
+				case Tag.Int: return this.readVarIntSigned();
+				case Tag.F32: {
+					this.need(4);
+					const v = this.dv.getFloat32(this.offset, true);
+					this.offset += 4;
+					return v;
+				}
+				case Tag.Set: {
+					const len = this.readVarUint();
+					if (len > this.maxContainerEntries) throw new Error(`decodeBinary: set too large (${len}/${this.maxContainerEntries})`);
+					const set = new Set<any>();
+					for (let i = 0; i < len; i++) set.add(this.readValue());
+					return set;
+				}
+				default:
+					throw new Error(`Unknown tag in decodeBinary: ${tag}`);
+			}
+		} finally {
+			this.depth--;
+		}
+	}
+
+	private need(n: number): void {
+		if (this.offset + n > this.buf.length) throw new Error('decodeBinary: truncated');
+	}
+
+	private readUint8(): number {
+		this.need(1);
+		return this.dv.getUint8(this.offset++);
+	}
+
+	private readVarUint(): number {
+		let val = 0;
+		let shift = 0;
+		let b = 0;
+		let i = 0;
+		do {
+			if (this.offset >= this.buf.length) throw new Error('decodeBinary: truncated varuint');
+			b = this.buf[this.offset++];
+			val |= (b & 0x7F) << shift;
+			shift += 7;
+			if (++i > 5) throw new Error('decodeBinary: varuint overflow (>32 bits)');
+		} while (b & 0x80);
+		return val >>> 0;
+	}
+
+	private readVarIntSigned(): number {
+		let zz = 0;
+		let shift = 0;
+		let b = 0;
+		let i = 0;
+		do {
+			if (this.offset >= this.buf.length) throw new Error('decodeBinary: truncated varint');
+			b = this.buf[this.offset++];
+			zz |= (b & 0x7F) << shift;
+			shift += 7;
+			if (++i > 5) throw new Error('decodeBinary: varint overflow (>32 bits)');
+		} while (b & 0x80);
+		return ((zz >>> 1) ^ -(zz & 1)) | 0;
+	}
+
+	private readString(): string {
+		const len = this.readVarUint();
+		this.need(len);
+		const arr = this.buf.subarray(this.offset, this.offset + len);
+		this.offset += len;
+		return utf8FatalDecoder.decode(arr);
+	}
+}
+
 export interface DecodeOptions {
 	zeroCopyBin?: boolean;
 	maxProps?: number;
@@ -332,124 +507,26 @@ export interface DecodeOptions {
 
 /** Decode a buffer produced by this module (BREAKING vs legacy A1 semantics). */
 export function decodeBinary(buf: Uint8Array, opts: DecodeOptions = {}) {
-	const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-	let offset = 0;
-	const {
-		zeroCopyBin = false,
-		maxProps = 1_000_000,
-		maxContainerEntries = 1_000_000,
-		maxDepth = 1 << 15,
-	} = opts;
-
-	const need = (n: number) => {
-		if (offset + n > buf.length) throw new Error('decodeBinary: truncated');
-	};
-	const readUint8 = () => { need(1); return dv.getUint8(offset++); };
-	const readVarUint = () => {
-		let val = 0;
-		let shift = 0;
-		let b = 0;
-		let i = 0;
-		do {
-			if (offset >= buf.length) throw new Error('decodeBinary: truncated varuint');
-			b = buf[offset++];
-			val |= (b & 0x7F) << shift;
-			shift += 7;
-			if (++i > 5) throw new Error('decodeBinary: varuint overflow (>32 bits)');
-		} while (b & 0x80);
-		return val >>> 0;
-	};
-	const readVarIntSigned = () => {
-		let zz = 0;
-		let shift = 0;
-		let b = 0;
-		let i = 0;
-		do {
-			if (offset >= buf.length) throw new Error('decodeBinary: truncated varint');
-			b = buf[offset++];
-			zz |= (b & 0x7F) << shift;
-			shift += 7;
-			if (++i > 5) throw new Error('decodeBinary: varint overflow (>32 bits)');
-		} while (b & 0x80);
-		return ((zz >>> 1) ^ -(zz & 1)) | 0;
-	};
-	const readString = () => {
-		const len = readVarUint();
-		need(len);
-		const arr = buf.subarray(offset, offset + len);
-		offset += len;
-		return utf8FatalDecoder.decode(arr);
-	};
-
-	const version = readUint8();
+	const reader = new BinReader(buf, opts);
+	const version = reader.readVersion();
 	if (version !== VERSION) {
 		throw new Error(`decodeBinary: unknown version 0x${version.toString(16)} (expected 0x${VERSION.toString(16)})`);
 	}
-	const propCount = readVarUint();
-	if (propCount > maxProps) {
-		throw new Error(`decodeBinary: prop table too large (${propCount}/${maxProps})`);
+	const propNames = reader.readPropNames();
+	reader.setPropNames(propNames);
+	const value = reader.readValue();
+	if (reader.getOffset() !== buf.length) {
+		throw new Error(`decodeBinary: trailing ${buf.length - reader.getOffset()} bytes`);
 	}
-	const propNames = new Array<string>(propCount);
-	for (let i = 0; i < propCount; i++) propNames[i] = readString();
+	return value;
+}
 
-	let depth = 0;
-	function read(): any {
-		if (++depth > maxDepth) throw new Error('decodeBinary: nesting too deep');
-		try {
-			const tag = readUint8();
-			switch (tag) {
-				case Tag.Null: return null;
-				case Tag.True: return true;
-				case Tag.False: return false;
-				case Tag.F64: { need(8); const v = dv.getFloat64(offset, true); offset += 8; return v; }
-				case Tag.Str: return readString();
-				case Tag.Arr: {
-					const len = readVarUint();
-					if (len > maxContainerEntries) throw new Error(`decodeBinary: array too large (${len}/${maxContainerEntries})`);
-					const arr = new Array(len);
-					for (let i = 0; i < len; i++) arr[i] = read();
-					return arr;
-				}
-				case Tag.Ref: { const ref = readVarUint(); return { r: ref }; }
-				case Tag.Obj: {
-					const len = readVarUint();
-					if (len > maxContainerEntries) throw new Error(`decodeBinary: object too large (${len}/${maxContainerEntries})`);
-					const obj: Record<string, any> = {};
-					for (let i = 0; i < len; i++) {
-						const propId = readVarUint();
-						if (propId >= propNames.length) throw new Error(`decodeBinary: bad prop id ${propId}/${propNames.length}`);
-						obj[propNames[propId]] = read();
-					}
-					return obj;
-				}
-				case Tag.Bin: {
-					const len = readVarUint();
-					need(len);
-					const start = offset;
-					offset += len;
-					const view = buf.subarray(start, offset);
-					return zeroCopyBin ? view : view.slice();
-				}
-				case Tag.Int: return readVarIntSigned();
-				case Tag.F32: { need(4); const v = dv.getFloat32(offset, true); offset += 4; return v; }
-				case Tag.Set: {
-					const len = readVarUint();
-					if (len > maxContainerEntries) throw new Error(`decodeBinary: set too large (${len}/${maxContainerEntries})`);
-					const set = new Set<any>();
-					for (let i = 0; i < len; i++) set.add(read());
-					return set;
-				}
-				default:
-					throw new Error(`Unknown tag in decodeBinary: ${tag}`);
-			}
-		} finally {
-			depth--;
-		}
-	}
-
-	const value = read();
-	if (offset !== buf.length) {
-		throw new Error(`decodeBinary: trailing ${buf.length - offset} bytes`);
+export function decodeBinaryWithPropTable(buf: Uint8Array, propNames: readonly string[], opts: DecodeOptions = {}) {
+	const reader = new BinReader(buf, opts);
+	reader.setPropNames(propNames);
+	const value = reader.readValue();
+	if (reader.getOffset() !== buf.length) {
+		throw new Error(`decodeBinary: trailing ${buf.length - reader.getOffset()} bytes`);
 	}
 	return value;
 }

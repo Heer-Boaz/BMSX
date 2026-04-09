@@ -51,6 +51,8 @@ static size_t g_test_capture_event_count = 0;
 static size_t g_test_capture_event_capacity = 0;
 static size_t g_test_capture_event_next = 0;
 static uint64_t g_frame_counter = 0;
+static uint64_t g_timeline_last_frame = 0;
+static bool g_timeline_active = false;
 static void (*g_emit_keyboard_event)(const char* code, bool down) = NULL;
 
 static uint64_t ms_to_frame_index(uint64_t milliseconds, uint64_t frame_usec) {
@@ -636,6 +638,9 @@ static void parse_input_timeline_file(const char* timeline_path, uint64_t frame_
 	free(g_test_capture_events);
 	g_test_capture_events = NULL;
 	g_test_capture_event_capacity = 0;
+	g_frame_counter = 0;
+	g_timeline_last_frame = 0;
+	g_timeline_active = false;
 
 	json_cursor_skip_ws(&cursor);
 	if (!json_cursor_ensure(&cursor, '[')) {
@@ -673,6 +678,24 @@ static void parse_input_timeline_file(const char* timeline_path, uint64_t frame_
 	sort_test_input_events();
 	if (g_test_capture_event_count > 1) {
 		qsort(g_test_capture_events, g_test_capture_event_count, sizeof(g_test_capture_events[0]), compare_test_capture_events);
+	}
+	if (g_test_input_event_count > 0) {
+		g_timeline_last_frame = g_test_input_events[g_test_input_event_count - 1].frame;
+		g_timeline_active = true;
+	}
+	if (g_test_capture_event_count > 0) {
+		const uint64_t last_capture_frame = g_test_capture_events[g_test_capture_event_count - 1].frame;
+		if (!g_timeline_active || last_capture_frame > g_timeline_last_frame) {
+			g_timeline_last_frame = last_capture_frame;
+		}
+		g_timeline_active = true;
+	}
+	if (g_timeline_active) {
+		timeline_logf("Loaded timeline '%s' with %zu input events, %zu captures, last frame %llu.",
+				timeline_path,
+				g_test_input_event_count,
+				g_test_capture_event_count,
+				(unsigned long long)g_timeline_last_frame);
 	}
 	free(timeline_raw);
 }
@@ -802,6 +825,19 @@ bool input_timeline_should_capture_frame(uint32_t frame_number) {
 	return should_capture;
 }
 
+bool input_timeline_should_auto_quit(uint64_t trailing_frames) {
+	if (!g_timeline_active) {
+		return false;
+	}
+	if (g_test_input_event_next < g_test_input_event_count) {
+		return false;
+	}
+	if (g_test_capture_event_next < g_test_capture_event_count) {
+		return false;
+	}
+	return g_frame_counter > (g_timeline_last_frame + trailing_frames);
+}
+
 void input_timeline_shutdown(void) {
 	free(g_test_input_events);
 	g_test_input_events = NULL;
@@ -813,4 +849,7 @@ void input_timeline_shutdown(void) {
 	g_test_capture_event_count = 0;
 	g_test_capture_event_capacity = 0;
 	g_test_capture_event_next = 0;
+	g_frame_counter = 0;
+	g_timeline_last_frame = 0;
+	g_timeline_active = false;
 }

@@ -127,6 +127,8 @@ public:
 
 	// Decode entire buffer
 	BinValue decode();
+	BinValue decodePayload(const std::vector<std::string>& propNames);
+	size_t position() const { return m_pos; }
 
 private:
 	// Primitives
@@ -145,7 +147,8 @@ private:
 	size_t m_pos = 0;
 
 	// Property name table (interned strings)
-	std::vector<std::string> m_propNames;
+	std::vector<std::string> m_ownedPropNames;
+	const std::vector<std::string>* m_propNames = &m_ownedPropNames;
 };
 
 /* ============================================================================
@@ -155,6 +158,8 @@ private:
 // Decode a binary buffer
 BinValue decodeBinary(const u8* data, size_t size);
 BinValue decodeBinary(const std::vector<u8>& data);
+BinValue decodeBinaryWithPropTable(const u8* data, size_t size, const std::vector<std::string>& propNames);
+BinValue decodeBinaryWithPropTable(const std::vector<u8>& data, const std::vector<std::string>& propNames);
 
 } // namespace bmsx
 

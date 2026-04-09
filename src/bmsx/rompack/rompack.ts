@@ -6,7 +6,8 @@ import { InputMap } from '../input/inputtypes';
 export const CART_ROM_MAGIC = 0x58534D42;
 export const CART_ROM_MAGIC_BYTES = new Uint8Array([0x42, 0x4d, 0x53, 0x58]);
 export const CART_ROM_BASE_HEADER_SIZE = 32;
-export const CART_ROM_HEADER_SIZE = 64;
+export const CART_ROM_PROGRAM_HEADER_SIZE = 64;
+export const CART_ROM_HEADER_SIZE = 72;
 export const CART_PROGRAM_BOOT_FLAG_HAS_BIOS_ENGINE_ALIAS = 1 << 0;
 
 export type CartRomHeader = {
@@ -25,6 +26,8 @@ export type CartRomHeader = {
 	programProtoCount: number;
 	programModuleAliasCount: number;
 	programConstRelocCount: number;
+	metadataOffset: number;
+	metadataLength: number;
 };
 
 export type CartridgeLayerId = 'system' | 'cart' | 'overlay';
@@ -283,16 +286,16 @@ export interface AudioMeta {
 
 export interface BoundingBoxPrecalc {
 	original: RectBounds, // The bounding box of the image. Used for collision detection.
-	fliph: RectBounds, // The bounding box of the image, when flipped horizontally. Used for collision detection.
-	flipv: RectBounds, // The bounding box of the image, when flipped vertically. Used for collision detection.
-	fliphv: RectBounds, // The bounding box of the image, when flipped both horizontally and vertically. Used for collision detection.
+	fliph?: RectBounds, // The bounding box of the image, when flipped horizontally. Used for collision detection.
+	flipv?: RectBounds, // The bounding box of the image, when flipped vertically. Used for collision detection.
+	fliphv?: RectBounds, // The bounding box of the image, when flipped both horizontally and vertically. Used for collision detection.
 }
 
 export interface HitPolygonsPrecalc {
 	original: Polygon[]; // The concave hull polygons of the image, used for collision detection.
-	fliph: Polygon[]; // The concave hull polygons of the image, when flipped horizontally.
-	flipv: Polygon[]; // The concave hull polygons of the image, when flipped vertically.
-	fliphv: Polygon[]; // The concave hull polygons of the image, when flipped both horizontally and vertically.
+	fliph?: Polygon[]; // The concave hull polygons of the image, when flipped horizontally.
+	flipv?: Polygon[]; // The concave hull polygons of the image, when flipped vertically.
+	fliphv?: Polygon[]; // The concave hull polygons of the image, when flipped both horizontally and vertically.
 }
 
 export type color_arr = vec4arr;
