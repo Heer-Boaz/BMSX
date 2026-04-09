@@ -784,6 +784,9 @@ uint32_t Memory::readU32(uint32_t addr) const {
 	if (isVramRange(addr, 4)) {
 		throw std::runtime_error("VRAM read fault @ " + formatNumberAsHex(addr, 8) + ": write-only len=4.");
 	}
+	if (addr < RAM_BASE) {
+		return readU32FromRegion(addr);
+	}
 	const size_t offset = ramOffset(addr, 4);
 	uint32_t value = 0;
 	std::memcpy(&value, m_ram.data() + offset, sizeof(uint32_t));

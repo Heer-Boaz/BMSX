@@ -1049,6 +1049,9 @@ export class Memory {
 
 	public readU32(addr: number): number {
 		this.assertReadableRange(addr, 4);
+		if (addr < RAM_BASE) {
+			return this.readU32FromRegion(addr);
+		}
 		const offset = this.resolveRamOffset(addr, 4);
 		return this.ramView.getUint32(offset, true);
 	}
