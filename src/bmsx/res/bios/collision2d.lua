@@ -244,15 +244,11 @@ broadphase_index.__index = broadphase_index
 function broadphase_index.new(cell_size)
 	local self<const> = setmetatable({}, broadphase_index)
 	self.cell_size = cell_size or 64
+	-- Sparse grid: cells[cx][cy][collider] = true.
 	self.cells = {}
 	self.row_pool = {}
 	self.set_pool = {}
 	return self
-end
-
-function broadphase_index:cell_coords_for_area(area)
-	local cs<const> = self.cell_size
-	return math.floor(area.left / cs), math.floor(area.top / cs), math.floor(area.right / cs), math.floor(area.bottom / cs)
 end
 
 function broadphase_index:clear()
@@ -267,28 +263,37 @@ function broadphase_index:clear()
 	clear_map(self.cells)
 end
 
-function broadphase_index:add_or_update(collider)
+function broadphase_index:add(collider)
 	local area<const> = collider:get_world_area()
-	local cx0<const>, cy0<const>, cx1<const>, cy1<const> = self:cell_coords_for_area(area)
-	for cy = cy0, cy1 do
-		for cx = cx0, cx1 do
-			local row = self.cells[cx]
+	local cs<const> = self.cell_size
+	local cx0<const> = math.floor(area.left / cs)
+	local cy0<const> = math.floor(area.top / cs)
+	local cx1<const> = math.floor(area.right / cs)
+	local cy1<const> = math.floor(area.bottom / cs)
+	local cells<const> = self.cells
+	local row_pool<const> = self.row_pool
+	local set_pool<const> = self.set_pool
+	for cx = cx0, cx1 do
+		local row = cells[cx]
+		if row == nil then
+			local row_pool_index<const> = #row_pool
+			row = row_pool[row_pool_index]
 			if row == nil then
-				row = self.row_pool[#self.row_pool]
-				if row == nil then
-					row = {}
-				else
-					self.row_pool[#self.row_pool] = nil
-				end
-				self.cells[cx] = row
+				row = {}
+			else
+				row_pool[row_pool_index] = nil
 			end
+			cells[cx] = row
+		end
+		for cy = cy0, cy1 do
 			local set = row[cy]
 			if set == nil then
-				set = self.set_pool[#self.set_pool]
+				local set_pool_index<const> = #set_pool
+				set = set_pool[set_pool_index]
 				if set == nil then
 					set = {}
 				else
-					self.set_pool[#self.set_pool] = nil
+					set_pool[set_pool_index] = nil
 				end
 				row[cy] = set
 			end
@@ -303,21 +308,25 @@ function broadphase_index:query_aabb(area, out, seen)
 	clear_array(out)
 	clear_map(seen)
 	local out_count = 0
-	local cx0<const>, cy0<const>, cx1<const>, cy1<const> = self:cell_coords_for_area(area)
-	for cy = cy0, cy1 do
-		for cx = cx0, cx1 do
-			local row<const> = self.cells[cx]
-			local set
-			if row ~= nil then
-				set = row[cy]
-			end
-			if set ~= nil then
-				for collider in pairs(set) do
-					if not seen[collider] then
-						seen[collider] = true
-						if detect_aabb_areas(collider:get_world_area(), area) then
-							out_count = out_count + 1
-							out[out_count] = collider
+	local cs<const> = self.cell_size
+	local cx0<const> = math.floor(area.left / cs)
+	local cy0<const> = math.floor(area.top / cs)
+	local cx1<const> = math.floor(area.right / cs)
+	local cy1<const> = math.floor(area.bottom / cs)
+	local cells<const> = self.cells
+	for cx = cx0, cx1 do
+		local row<const> = cells[cx]
+		if row ~= nil then
+			for cy = cy0, cy1 do
+				local set<const> = row[cy]
+				if set ~= nil then
+					for collider in pairs(set) do
+						if not seen[collider] then
+							seen[collider] = true
+							if detect_aabb_areas(collider:get_world_area(), area) then
+								out_count = out_count + 1
+								out[out_count] = collider
+							end
 						end
 					end
 				end
@@ -341,7 +350,7 @@ function collision2d.rebuild_index(cell_size)
 	index:clear()
 	for _, collider in world_instance:objects_with_components('collider2dcomponent', active_scope) do
 		if collider.enabled then
-			index:add_or_update(collider)
+			index:add(collider)
 		end
 	end
 end
