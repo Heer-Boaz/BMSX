@@ -1649,9 +1649,9 @@ void Runtime::setupBuiltins() {
 		if (dataIt != assets.data.end()) {
 			return &dataIt->second.rom;
 		}
-		auto blobIt = assets.blob.find(token);
-		if (blobIt != assets.blob.end()) {
-			return &blobIt->second.rom;
+		auto binIt = assets.bin.find(token);
+		if (binIt != assets.bin.end()) {
+			return &binIt->second.rom;
 		}
 		auto luaIt = assets.lua.find(token);
 		if (luaIt != assets.lua.end()) {
@@ -3573,17 +3573,17 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 		appendBinEntry(dataTable, entry.second.id, entry.second.value);
 	}
 	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
-	const int blobCapacity = static_cast<int>(assets.blob.size());
-	auto* blobTable = m_cpu.createTable(0, blobCapacity);
-	auto appendBlobEntry = [this, blobTable, str, appendRomAssetFields](const BlobAsset& blobAsset) {
-		auto* blobEntry = m_cpu.createTable(0, 8);
-		appendRomAssetFields(blobEntry, blobAsset.rom, blobAsset.id);
-		blobTable->set(str(blobAsset.id), valueTable(blobEntry));
+	const int binCapacity = static_cast<int>(assets.bin.size());
+	auto* binTable = m_cpu.createTable(0, binCapacity);
+	auto appendBinAssetEntry = [this, binTable, str, appendRomAssetFields](const BinAsset& binAsset) {
+		auto* binEntry = m_cpu.createTable(0, 8);
+		appendRomAssetFields(binEntry, binAsset.rom, binAsset.id);
+		binTable->set(str(binAsset.id), valueTable(binEntry));
 	};
-	for (const auto& entry : assets.blob) {
-		appendBlobEntry(entry.second);
+	for (const auto& entry : assets.bin) {
+		appendBinAssetEntry(entry.second);
 	}
-	assetsTable->set(key("blob"), makeAssetMapNativeObject(blobTable));
+	assetsTable->set(key("bin"), makeAssetMapNativeObject(binTable));
 	const int audioCapacity = static_cast<int>(assets.audio.size());
 	auto* audioTable = m_cpu.createTable(0, audioCapacity);
 	auto appendAudioEntry = [this, audioTable, key, str, appendRomAssetFields](const AudioAsset& audioAsset) {
