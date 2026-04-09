@@ -8,6 +8,7 @@ import {
 	GEO_FAULT_DESCRIPTOR_KIND,
 	GEO_FAULT_DST_RANGE,
 	GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL,
+	GEO_FAULT_RESULT_CAPACITY,
 	GEO_FAULT_REJECT_BAD_CMD,
 	GEO_FAULT_REJECT_BAD_REGISTER_COMBO,
 	GEO_FAULT_REJECT_BAD_STRIDE,
@@ -16,6 +17,17 @@ import {
 	GEO_FAULT_REJECT_BUSY,
 	GEO_FAULT_SRC_RANGE,
 	GEO_INDEX_NONE,
+	GEO_OVERLAP2D_BROADPHASE_MASK,
+	GEO_OVERLAP2D_BROADPHASE_NONE,
+	GEO_OVERLAP2D_CONTACT_POLICY_MASK,
+	GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE,
+	GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS,
+	GEO_OVERLAP2D_MODE_MASK,
+	GEO_OVERLAP2D_OUTPUT_POLICY_MASK,
+	GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW,
+	GEO_OVERLAP2D_SUMMARY_FLAG_OVERFLOW,
+	GEO_PRIMITIVE_AABB,
+	GEO_PRIMITIVE_CONVEX_POLY,
 	GEO_SAT_META_SHAPE_AUX,
 	GEO_SAT_META_SHAPE_SHIFT,
 	GEO_SAT_META_SHAPE_SRC,
@@ -24,6 +36,7 @@ import {
 	GEO_STATUS_DONE,
 	GEO_STATUS_ERROR,
 	GEO_STATUS_REJECTED,
+	IO_CMD_GEO_OVERLAP2D_PASS,
 	IO_CMD_GEO_SAT2_BATCH,
 	IO_CMD_GEO_XFORM2_BATCH,
 	IO_GEO_CMD,
@@ -61,6 +74,9 @@ type GeoJob = {
 	stride1: number;
 	stride2: number;
 	processed: number;
+	resultCount?: number;
+	exactPairCount?: number;
+	broadphasePairCount?: number;
 };
 
 const GEO_RECORD_INDEX_NONE = 0xffff;
@@ -84,6 +100,19 @@ const SAT2_DESC_WORDS = 4;
 const SAT2_DESC_BYTES = SAT2_DESC_WORDS * 4;
 const SAT2_RESULT_WORDS = 5;
 const SAT2_RESULT_BYTES = SAT2_RESULT_WORDS * 4;
+const OVERLAP2D_INSTANCE_WORDS = 12;
+const OVERLAP2D_INSTANCE_BYTES = OVERLAP2D_INSTANCE_WORDS * 4;
+const OVERLAP2D_PAIR_WORDS = 4;
+const OVERLAP2D_PAIR_BYTES = OVERLAP2D_PAIR_WORDS * 4;
+const OVERLAP2D_RESULT_WORDS = 12;
+const OVERLAP2D_RESULT_BYTES = OVERLAP2D_RESULT_WORDS * 4;
+const OVERLAP2D_SUMMARY_BYTES = 16;
+const OVERLAP2D_BLOB_HEADER_BYTES = 32;
+const OVERLAP2D_BLOB_MAGIC = 0x31443247;
+const OVERLAP2D_BLOB_VERSION = 1;
+const OVERLAP2D_DESC_BYTES = 16;
+const OVERLAP2D_BOUNDS_BYTES = 16;
+const OVERLAP2D_KIND_COMPOUND = 4;
 const GEO_SERVICE_BATCH_RECORDS = 1;
 
 function packFault(code: number, recordIndex: number): number {
@@ -133,6 +162,18 @@ export class GeometryController {
 	private workUnitsPerSec: bigint = 1n;
 	private workCarry: bigint = 0n;
 	private availableWorkUnits = 0;
+	private readonly overlapWorldPolyA: number[] = [];
+	private readonly overlapWorldPolyB: number[] = [];
+	private readonly overlapClip0: number[] = [];
+	private readonly overlapClip1: number[] = [];
+	private readonly overlapBoundsA = new Int32Array(4);
+	private readonly overlapBoundsB = new Int32Array(4);
+	private overlapContactNx = 0;
+	private overlapContactNy = 0;
+	private overlapContactDepth = 0;
+	private overlapContactPx = 0;
+	private overlapContactPy = 0;
+	private overlapContactFeatureMeta = 0;
 
 	public constructor(
 		private readonly memory: Memory,
@@ -190,6 +231,9 @@ export class GeometryController {
 					break;
 				case IO_CMD_GEO_SAT2_BATCH:
 					this.processSat2Record(job);
+					break;
+				case IO_CMD_GEO_OVERLAP2D_PASS:
+					this.processOverlap2dCandidateRecord(job);
 					break;
 				default:
 					this.finishRejected(GEO_FAULT_REJECT_BAD_CMD);
@@ -292,6 +336,11 @@ export class GeometryController {
 						return;
 					}
 					break;
+				case IO_CMD_GEO_OVERLAP2D_PASS:
+					if (!this.validateOverlap2dCandidateSubmission(job)) {
+						return;
+					}
+					break;
 				default:
 					this.finishRejected(GEO_FAULT_REJECT_BAD_CMD);
 					return;
@@ -299,6 +348,12 @@ export class GeometryController {
 		this.memory.writeValue(IO_GEO_STATUS, 0);
 		this.memory.writeValue(IO_GEO_PROCESSED, 0);
 		this.memory.writeValue(IO_GEO_FAULT, 0);
+		if (job.cmd === IO_CMD_GEO_OVERLAP2D_PASS) {
+			job.resultCount = 0;
+			job.exactPairCount = 0;
+			job.broadphasePairCount = 0;
+			this.writeOverlap2dSummary(job, 0);
+		}
 		if (job.count === 0) {
 			this.finishSuccess(0);
 			return;
@@ -401,6 +456,50 @@ export class GeometryController {
 		}
 		if (!this.memory.isRamRange(job.dst0, SAT2_RESULT_BYTES)) {
 			this.finishRejected(GEO_FAULT_REJECT_DST_NOT_RAM);
+			return false;
+		}
+		return true;
+	}
+
+	private validateOverlap2dCandidateSubmission(job: GeoJob): boolean {
+		if ((job.param0 & GEO_OVERLAP2D_MODE_MASK) !== GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS
+			|| (job.param0 & GEO_OVERLAP2D_BROADPHASE_MASK) !== GEO_OVERLAP2D_BROADPHASE_NONE
+			|| (job.param0 & GEO_OVERLAP2D_CONTACT_POLICY_MASK) !== GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE
+			|| (job.param0 & GEO_OVERLAP2D_OUTPUT_POLICY_MASK) !== GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW
+			|| (job.param0 & 0xffff_0000) !== 0) {
+			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
+			return false;
+		}
+		if (job.stride0 !== OVERLAP2D_INSTANCE_BYTES || job.stride1 !== OVERLAP2D_PAIR_BYTES || job.stride2 === 0) {
+			this.finishRejected(GEO_FAULT_REJECT_BAD_STRIDE);
+			return false;
+		}
+		if ((job.src0 & WORD_ALIGN_MASK) !== 0
+			|| (job.src1 & WORD_ALIGN_MASK) !== 0
+			|| (job.dst0 & WORD_ALIGN_MASK) !== 0
+			|| (job.dst1 & WORD_ALIGN_MASK) !== 0) {
+			this.finishRejected(GEO_FAULT_REJECT_MISALIGNED_REGS);
+			return false;
+		}
+		if (!this.memory.isRamRange(job.dst1, OVERLAP2D_SUMMARY_BYTES)) {
+			this.finishRejected(GEO_FAULT_REJECT_DST_NOT_RAM);
+			return false;
+		}
+		if (job.param1 !== 0 && !this.memory.isRamRange(job.dst0, OVERLAP2D_RESULT_BYTES)) {
+			this.finishRejected(GEO_FAULT_REJECT_DST_NOT_RAM);
+			return false;
+		}
+		if (job.count === 0) {
+			return true;
+		}
+		if (!this.memory.isReadableMainMemoryRange(job.src1, OVERLAP2D_PAIR_BYTES)) {
+			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
+			return false;
+		}
+		const instanceCount = job.stride2;
+		const lastInstanceAddr = this.resolveIndexedSpan(job.src0, instanceCount - 1, job.stride0, OVERLAP2D_INSTANCE_BYTES);
+		if (lastInstanceAddr === null || !this.memory.isReadableMainMemoryRange(lastInstanceAddr, OVERLAP2D_INSTANCE_BYTES)) {
+			this.finishRejected(GEO_FAULT_REJECT_BAD_REGISTER_COMBO);
 			return false;
 		}
 		return true;
@@ -698,6 +797,472 @@ export class GeometryController {
 			packSat2Meta(bestAxisIndex, bestShapeSelector),
 		);
 		this.completeRecord(job);
+	}
+
+	private processOverlap2dCandidateRecord(job: GeoJob): void {
+		const recordIndex = job.processed;
+		const pairAddr = this.resolveIndexedSpan(job.src1, recordIndex, job.stride1, OVERLAP2D_PAIR_BYTES);
+		if (pairAddr === null || !this.memory.isReadableMainMemoryRange(pairAddr, OVERLAP2D_PAIR_BYTES)) {
+			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+			return;
+		}
+		const pairFlags = this.memory.readU32(pairAddr + 0);
+		const instanceAIndex = this.memory.readU32(pairAddr + 4);
+		const instanceBIndex = this.memory.readU32(pairAddr + 8);
+		const pairMeta = this.memory.readU32(pairAddr + 12);
+		if (pairFlags !== 0 || instanceAIndex === instanceBIndex) {
+			this.finishError(GEO_FAULT_BAD_RECORD_FLAGS, recordIndex);
+			return;
+		}
+		const instanceCount = job.stride2;
+		if (instanceAIndex >= instanceCount || instanceBIndex >= instanceCount) {
+			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+			return;
+		}
+		const instanceAAddr = this.resolveIndexedSpan(job.src0, instanceAIndex, job.stride0, OVERLAP2D_INSTANCE_BYTES);
+		const instanceBAddr = this.resolveIndexedSpan(job.src0, instanceBIndex, job.stride0, OVERLAP2D_INSTANCE_BYTES);
+		if (instanceAAddr === null || instanceBAddr === null
+			|| !this.memory.isReadableMainMemoryRange(instanceAAddr, OVERLAP2D_INSTANCE_BYTES)
+			|| !this.memory.isReadableMainMemoryRange(instanceBAddr, OVERLAP2D_INSTANCE_BYTES)) {
+			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+			return;
+		}
+		const colliderAId = this.memory.readU32(instanceAAddr + 4);
+		const blobBaseA = this.memory.readU32(instanceAAddr + 8);
+		const shapeAOffset = this.memory.readU32(instanceAAddr + 12);
+		const layerA = this.memory.readU32(instanceAAddr + 16);
+		const maskA = this.memory.readU32(instanceAAddr + 20);
+		const m00A = this.readI32(instanceAAddr + 24);
+		const m01A = this.readI32(instanceAAddr + 28);
+		const m02A = this.readI32(instanceAAddr + 32);
+		const m10A = this.readI32(instanceAAddr + 36);
+		const m11A = this.readI32(instanceAAddr + 40);
+		const m12A = this.readI32(instanceAAddr + 44);
+		const colliderBId = this.memory.readU32(instanceBAddr + 4);
+		const blobBaseB = this.memory.readU32(instanceBAddr + 8);
+		const shapeBOffset = this.memory.readU32(instanceBAddr + 12);
+		const layerB = this.memory.readU32(instanceBAddr + 16);
+		const maskB = this.memory.readU32(instanceBAddr + 20);
+		const m00B = this.readI32(instanceBAddr + 24);
+		const m01B = this.readI32(instanceBAddr + 28);
+		const m02B = this.readI32(instanceBAddr + 32);
+		const m10B = this.readI32(instanceBAddr + 36);
+		const m11B = this.readI32(instanceBAddr + 40);
+		const m12B = this.readI32(instanceBAddr + 44);
+		if (((layerA & maskB) === 0) || ((layerB & maskA) === 0)) {
+			this.completeRecord(job);
+			return;
+		}
+		job.broadphasePairCount = (job.broadphasePairCount ?? 0) + 1;
+		const shapeAAddr = this.resolveByteOffset(blobBaseA, shapeAOffset, OVERLAP2D_DESC_BYTES);
+		const shapeBAddr = this.resolveByteOffset(blobBaseB, shapeBOffset, OVERLAP2D_DESC_BYTES);
+		if (shapeAAddr === null || shapeBAddr === null
+			|| !this.memory.isReadableMainMemoryRange(blobBaseA, OVERLAP2D_BLOB_HEADER_BYTES)
+			|| !this.memory.isReadableMainMemoryRange(blobBaseB, OVERLAP2D_BLOB_HEADER_BYTES)
+			|| !this.memory.isReadableMainMemoryRange(shapeAAddr, OVERLAP2D_DESC_BYTES)
+			|| !this.memory.isReadableMainMemoryRange(shapeBAddr, OVERLAP2D_DESC_BYTES)
+			|| this.memory.readU32(blobBaseA + 0) !== OVERLAP2D_BLOB_MAGIC
+			|| this.memory.readU32(blobBaseA + 4) !== OVERLAP2D_BLOB_VERSION
+			|| this.memory.readU32(blobBaseB + 0) !== OVERLAP2D_BLOB_MAGIC
+			|| this.memory.readU32(blobBaseB + 4) !== OVERLAP2D_BLOB_VERSION) {
+			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+			return;
+		}
+		const shapeAKind = this.memory.readU32(shapeAAddr + 0);
+		const shapeACount = this.memory.readU32(shapeAAddr + 4);
+		const shapeADataOffset = this.memory.readU32(shapeAAddr + 8);
+		const shapeBKind = this.memory.readU32(shapeBAddr + 0);
+		const shapeBCount = this.memory.readU32(shapeBAddr + 4);
+		const shapeBDataOffset = this.memory.readU32(shapeBAddr + 8);
+		const shapeAPieceCount = shapeAKind === OVERLAP2D_KIND_COMPOUND ? shapeACount : 1;
+		const shapeBPieceCount = shapeBKind === OVERLAP2D_KIND_COMPOUND ? shapeBCount : 1;
+		if (shapeAPieceCount === 0 || shapeBPieceCount === 0
+			|| (shapeAKind === OVERLAP2D_KIND_COMPOUND && (shapeADataOffset & WORD_ALIGN_MASK) !== 0)
+			|| (shapeBKind === OVERLAP2D_KIND_COMPOUND && (shapeBDataOffset & WORD_ALIGN_MASK) !== 0)
+			|| (shapeAKind !== OVERLAP2D_KIND_COMPOUND && shapeAKind !== GEO_PRIMITIVE_AABB && shapeAKind !== GEO_PRIMITIVE_CONVEX_POLY)
+			|| (shapeBKind !== OVERLAP2D_KIND_COMPOUND && shapeBKind !== GEO_PRIMITIVE_AABB && shapeBKind !== GEO_PRIMITIVE_CONVEX_POLY)) {
+			this.finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
+			return;
+		}
+		job.exactPairCount = (job.exactPairCount ?? 0) + 1;
+		let bestHit = false;
+		let bestDepth = Number.POSITIVE_INFINITY;
+		let bestPieceA = 0;
+		let bestPieceB = 0;
+		let bestFeatureMeta = 0;
+		let bestNx = 0;
+		let bestNy = 0;
+		let bestPx = 0;
+		let bestPy = 0;
+		for (let pieceAIndex = 0; pieceAIndex < shapeAPieceCount; pieceAIndex += 1) {
+			const pieceAAddr = shapeAKind === OVERLAP2D_KIND_COMPOUND
+				? this.resolveByteOffset(blobBaseA, shapeADataOffset + pieceAIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
+				: shapeAAddr;
+			if (pieceAAddr === null || !this.memory.isReadableMainMemoryRange(pieceAAddr, OVERLAP2D_DESC_BYTES)) {
+				this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+				return;
+			}
+			if (!this.readPieceBounds(blobBaseA, pieceAAddr, m00A, m01A, m02A, m10A, m11A, m12A, this.overlapBoundsA)) {
+				this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+				return;
+			}
+			for (let pieceBIndex = 0; pieceBIndex < shapeBPieceCount; pieceBIndex += 1) {
+				const pieceBAddr = shapeBKind === OVERLAP2D_KIND_COMPOUND
+					? this.resolveByteOffset(blobBaseB, shapeBDataOffset + pieceBIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
+					: shapeBAddr;
+				if (pieceBAddr === null || !this.memory.isReadableMainMemoryRange(pieceBAddr, OVERLAP2D_DESC_BYTES)) {
+					this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+					return;
+				}
+				if (!this.readPieceBounds(blobBaseB, pieceBAddr, m00B, m01B, m02B, m10B, m11B, m12B, this.overlapBoundsB)) {
+					this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+					return;
+				}
+				if (!this.boundsOverlap(this.overlapBoundsA, this.overlapBoundsB)) {
+					continue;
+				}
+				if (!this.computePiecePairContact(blobBaseA, pieceAAddr, m00A, m01A, m02A, m10A, m11A, m12A, blobBaseB, pieceBAddr, m00B, m01B, m02B, m10B, m11B, m12B, recordIndex)) {
+					continue;
+				}
+				if (!bestHit
+					|| this.overlapContactDepth < bestDepth
+					|| (this.overlapContactDepth === bestDepth && (pieceAIndex < bestPieceA
+						|| (pieceAIndex === bestPieceA && (pieceBIndex < bestPieceB
+							|| (pieceBIndex === bestPieceB && this.overlapContactFeatureMeta < bestFeatureMeta)))))) {
+					bestHit = true;
+					bestDepth = this.overlapContactDepth;
+					bestPieceA = pieceAIndex;
+					bestPieceB = pieceBIndex;
+					bestFeatureMeta = this.overlapContactFeatureMeta;
+					bestNx = this.overlapContactNx;
+					bestNy = this.overlapContactNy;
+					bestPx = this.overlapContactPx;
+					bestPy = this.overlapContactPy;
+				}
+			}
+		}
+		if (bestHit) {
+			const resultCount = job.resultCount ?? 0;
+			if (resultCount >= job.param1) {
+				this.writeOverlap2dSummary(job, GEO_OVERLAP2D_SUMMARY_FLAG_OVERFLOW);
+				this.finishError(GEO_FAULT_RESULT_CAPACITY, recordIndex);
+				return;
+			}
+			const resultAddr = this.resolveIndexedSpan(job.dst0, resultCount, OVERLAP2D_RESULT_BYTES, OVERLAP2D_RESULT_BYTES);
+			if (resultAddr === null || !this.memory.isRamRange(resultAddr, OVERLAP2D_RESULT_BYTES)) {
+				this.finishError(GEO_FAULT_DST_RANGE, recordIndex);
+				return;
+			}
+			this.writeOverlap2dResult(resultAddr, colliderAId, colliderBId, bestNx, bestNy, bestDepth, bestPx, bestPy, bestPieceA, bestPieceB, bestFeatureMeta, pairMeta);
+			job.resultCount = resultCount + 1;
+		}
+		this.writeOverlap2dSummary(job, 0);
+		this.completeRecord(job);
+	}
+
+	private readPieceBounds(blobBase: number, pieceAddr: number, m00: number, m01: number, m02: number, m10: number, m11: number, m12: number, out: Int32Array): boolean {
+		const boundsOffset = this.memory.readU32(pieceAddr + 12);
+		const boundsAddr = this.resolveByteOffset(blobBase, boundsOffset, OVERLAP2D_BOUNDS_BYTES);
+		if (boundsAddr === null || !this.memory.isReadableMainMemoryRange(boundsAddr, OVERLAP2D_BOUNDS_BYTES)) {
+			return false;
+		}
+		const left = this.readI32(boundsAddr + 0);
+		const top = this.readI32(boundsAddr + 4);
+		const right = this.readI32(boundsAddr + 8);
+		const bottom = this.readI32(boundsAddr + 12);
+		this.writeTransformedBounds(out, m00, m01, m02, m10, m11, m12, left, top, right, bottom);
+		return true;
+	}
+
+	private computePiecePairContact(
+		blobBaseA: number,
+		pieceAAddr: number,
+		m00A: number,
+		m01A: number,
+		m02A: number,
+		m10A: number,
+		m11A: number,
+		m12A: number,
+		blobBaseB: number,
+		pieceBAddr: number,
+		m00B: number,
+		m01B: number,
+		m02B: number,
+		m10B: number,
+		m11B: number,
+		m12B: number,
+		recordIndex: number,
+	): boolean {
+		const primitiveA = this.memory.readU32(pieceAAddr + 0);
+		const primitiveB = this.memory.readU32(pieceBAddr + 0);
+		if ((primitiveA !== GEO_PRIMITIVE_AABB && primitiveA !== GEO_PRIMITIVE_CONVEX_POLY)
+			|| (primitiveB !== GEO_PRIMITIVE_AABB && primitiveB !== GEO_PRIMITIVE_CONVEX_POLY)) {
+			this.finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
+			return false;
+		}
+		if (!this.loadWorldPoly(blobBaseA, pieceAAddr, m00A, m01A, m02A, m10A, m11A, m12A, this.overlapWorldPolyA)
+			|| !this.loadWorldPoly(blobBaseB, pieceBAddr, m00B, m01B, m02B, m10B, m11B, m12B, this.overlapWorldPolyB)) {
+			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
+			return false;
+		}
+		return this.computePolyPairContact(this.overlapWorldPolyA, this.overlapWorldPolyB);
+	}
+
+	private loadWorldPoly(blobBase: number, pieceAddr: number, m00: number, m01: number, m02: number, m10: number, m11: number, m12: number, out: number[]): boolean {
+		const primitive = this.memory.readU32(pieceAddr + 0);
+		const dataCount = this.memory.readU32(pieceAddr + 4);
+		const dataOffset = this.memory.readU32(pieceAddr + 8);
+		const dataAddr = this.resolveByteOffset(blobBase, dataOffset, primitive === GEO_PRIMITIVE_AABB ? 16 : dataCount * XFORM2_VERTEX_BYTES);
+		if (dataAddr === null) {
+			return false;
+		}
+		out.length = 0;
+		if (primitive === GEO_PRIMITIVE_AABB) {
+			if (dataCount !== 4 || !this.memory.isReadableMainMemoryRange(dataAddr, 16)) {
+				return false;
+			}
+			const left = this.readI32(dataAddr + 0);
+			const top = this.readI32(dataAddr + 4);
+			const right = this.readI32(dataAddr + 8);
+			const bottom = this.readI32(dataAddr + 12);
+			this.pushWorldVertex(out, m00, m01, m02, m10, m11, m12, left, top);
+			this.pushWorldVertex(out, m00, m01, m02, m10, m11, m12, right, top);
+			this.pushWorldVertex(out, m00, m01, m02, m10, m11, m12, right, bottom);
+			this.pushWorldVertex(out, m00, m01, m02, m10, m11, m12, left, bottom);
+			return true;
+		}
+		if (primitive !== GEO_PRIMITIVE_CONVEX_POLY || dataCount < 3 || !this.memory.isReadableMainMemoryRange(dataAddr, dataCount * XFORM2_VERTEX_BYTES)) {
+			return false;
+		}
+		for (let vertexIndex = 0; vertexIndex < dataCount; vertexIndex += 1) {
+			const vertexAddr = dataAddr + vertexIndex * XFORM2_VERTEX_BYTES;
+			this.pushWorldVertex(out, m00, m01, m02, m10, m11, m12, this.readI32(vertexAddr + 0), this.readI32(vertexAddr + 4));
+		}
+		return true;
+	}
+
+	private pushWorldVertex(out: number[], m00: number, m01: number, m02: number, m10: number, m11: number, m12: number, localX: number, localY: number): void {
+		out.push(transformFixed16(m00, m01, m02, localX, localY) / FIX16_SCALE);
+		out.push(transformFixed16(m10, m11, m12, localX, localY) / FIX16_SCALE);
+	}
+
+	private writeTransformedBounds(out: Int32Array, m00: number, m01: number, m02: number, m10: number, m11: number, m12: number, left: number, top: number, right: number, bottom: number): void {
+		const x0 = transformFixed16(m00, m01, m02, left, top);
+		const y0 = transformFixed16(m10, m11, m12, left, top);
+		const x1 = transformFixed16(m00, m01, m02, right, top);
+		const y1 = transformFixed16(m10, m11, m12, right, top);
+		const x2 = transformFixed16(m00, m01, m02, right, bottom);
+		const y2 = transformFixed16(m10, m11, m12, right, bottom);
+		const x3 = transformFixed16(m00, m01, m02, left, bottom);
+		const y3 = transformFixed16(m10, m11, m12, left, bottom);
+		let minX = x0;
+		let minY = y0;
+		let maxX = x0;
+		let maxY = y0;
+		if (x1 < minX) minX = x1;
+		if (x2 < minX) minX = x2;
+		if (x3 < minX) minX = x3;
+		if (y1 < minY) minY = y1;
+		if (y2 < minY) minY = y2;
+		if (y3 < minY) minY = y3;
+		if (x1 > maxX) maxX = x1;
+		if (x2 > maxX) maxX = x2;
+		if (x3 > maxX) maxX = x3;
+		if (y1 > maxY) maxY = y1;
+		if (y2 > maxY) maxY = y2;
+		if (y3 > maxY) maxY = y3;
+		out[0] = minX;
+		out[1] = minY;
+		out[2] = maxX;
+		out[3] = maxY;
+	}
+
+	private boundsOverlap(a: Int32Array, b: Int32Array): boolean {
+		return !(a[0] > b[2] || a[2] < b[0] || a[1] > b[3] || a[3] < b[1]);
+	}
+
+	private computePolyPairContact(polyA: number[], polyB: number[]): boolean {
+		let bestOverlap = Number.POSITIVE_INFINITY;
+		let bestAxisX = 0;
+		let bestAxisY = 0;
+		let bestEdgeIndex = 0;
+		let bestOwner = 0;
+		let sawAxis = false;
+		for (let owner = 0; owner < 2; owner += 1) {
+			const poly = owner === 0 ? polyA : polyB;
+			for (let i = 0; i < poly.length; i += 2) {
+				const next = i + 2 >= poly.length ? 0 : i + 2;
+				const nx = -(poly[next + 1] - poly[i + 1]);
+				const ny = poly[next] - poly[i];
+				const len = Math.sqrt((nx * nx) + (ny * ny));
+				if (!(len > 0)) {
+					continue;
+				}
+				sawAxis = true;
+				const ax = nx / len;
+				const ay = ny / len;
+				const projA = this.projectPoly(polyA, ax, ay);
+				const projB = this.projectPoly(polyB, ax, ay);
+				const overlap = Math.min(projA.max, projB.max) - Math.max(projA.min, projB.min);
+				if (!(overlap > 0)) {
+					return false;
+				}
+				const edgeIndex = i >> 1;
+				if (overlap < bestOverlap
+					|| (overlap === bestOverlap && (owner < bestOwner || (owner === bestOwner && edgeIndex < bestEdgeIndex)))) {
+					bestOverlap = overlap;
+					bestAxisX = ax;
+					bestAxisY = ay;
+					bestOwner = owner;
+					bestEdgeIndex = edgeIndex;
+				}
+			}
+		}
+		if (!sawAxis) {
+			return false;
+		}
+		const centerA = this.computePolyAverage(polyA);
+		const centerB = this.computePolyAverage(polyB);
+		if ((((centerA.x - centerB.x) * bestAxisX) + ((centerA.y - centerB.y) * bestAxisY)) < 0) {
+			bestAxisX = -bestAxisX;
+			bestAxisY = -bestAxisY;
+		}
+		const intersection = this.clipConvexPolygons(polyA, polyB);
+		let pointX;
+		let pointY;
+		if (intersection.length === 0) {
+			pointX = (centerA.x + centerB.x) * 0.5;
+			pointY = (centerA.y + centerB.y) * 0.5;
+		} else {
+			const centroid = this.computePolyAverage(intersection);
+			pointX = centroid.x;
+			pointY = centroid.y;
+		}
+		this.overlapContactNx = saturateRoundedI32(bestAxisX * FIX16_SCALE);
+		this.overlapContactNy = saturateRoundedI32(bestAxisY * FIX16_SCALE);
+		this.overlapContactDepth = saturateRoundedI32(bestOverlap * FIX16_SCALE);
+		this.overlapContactPx = saturateRoundedI32(pointX * FIX16_SCALE);
+		this.overlapContactPy = saturateRoundedI32(pointY * FIX16_SCALE);
+		this.overlapContactFeatureMeta = bestEdgeIndex >>> 0;
+		return true;
+	}
+
+	private projectPoly(poly: number[], ax: number, ay: number): { min: number; max: number } {
+		let min = Number.POSITIVE_INFINITY;
+		let max = Number.NEGATIVE_INFINITY;
+		for (let i = 0; i < poly.length; i += 2) {
+			const projection = (poly[i] * ax) + (poly[i + 1] * ay);
+			if (projection < min) {
+				min = projection;
+			}
+			if (projection > max) {
+				max = projection;
+			}
+		}
+		return { min, max };
+	}
+
+	private computePolyAverage(poly: number[]): { x: number; y: number } {
+		let sumX = 0;
+		let sumY = 0;
+		const count = poly.length >> 1;
+		for (let i = 0; i < poly.length; i += 2) {
+			sumX += poly[i];
+			sumY += poly[i + 1];
+		}
+		return { x: sumX / count, y: sumY / count };
+	}
+
+	private clipConvexPolygons(polyA: number[], polyB: number[]): number[] {
+		this.overlapClip0.length = polyA.length;
+		for (let i = 0; i < polyA.length; i += 1) {
+			this.overlapClip0[i] = polyA[i];
+		}
+		let input = this.overlapClip0;
+		let output = this.overlapClip1;
+		for (let i = 0; i < polyB.length; i += 2) {
+			output.length = 0;
+			const x0 = polyB[i];
+			const y0 = polyB[i + 1];
+			const next = i + 2 >= polyB.length ? 0 : i + 2;
+			const x1 = polyB[next];
+			const y1 = polyB[next + 1];
+			if (input.length === 0) {
+				break;
+			}
+			let sx = input[input.length - 2];
+			let sy = input[input.length - 1];
+			let sd = this.clipPlaneDistance(x0, y0, x1, y1, sx, sy);
+			let sInside = sd >= 0;
+			for (let j = 0; j < input.length; j += 2) {
+				const ex = input[j];
+				const ey = input[j + 1];
+				const ed = this.clipPlaneDistance(x0, y0, x1, y1, ex, ey);
+				const eInside = ed >= 0;
+				if (sInside && eInside) {
+					output.push(ex, ey);
+				} else if (sInside && !eInside) {
+					const t = sd / (sd - ed);
+					output.push(sx + ((ex - sx) * t), sy + ((ey - sy) * t));
+				} else if (!sInside && eInside) {
+					const t = sd / (sd - ed);
+					output.push(sx + ((ex - sx) * t), sy + ((ey - sy) * t), ex, ey);
+				}
+				sx = ex;
+				sy = ey;
+				sd = ed;
+				sInside = eInside;
+			}
+			const swap = input;
+			input = output;
+			output = swap;
+		}
+		return input;
+	}
+
+	private clipPlaneDistance(x0: number, y0: number, x1: number, y1: number, px: number, py: number): number {
+		return ((x1 - x0) * (py - y0)) - ((y1 - y0) * (px - x0));
+	}
+
+	private writeOverlap2dSummary(job: GeoJob, flags: number): void {
+		this.memory.writeU32(job.dst1 + 0, (job.resultCount ?? 0) >>> 0);
+		this.memory.writeU32(job.dst1 + 4, (job.exactPairCount ?? 0) >>> 0);
+		this.memory.writeU32(job.dst1 + 8, (job.broadphasePairCount ?? 0) >>> 0);
+		this.memory.writeU32(job.dst1 + 12, flags >>> 0);
+	}
+
+	private writeOverlap2dResult(addr: number, colliderAId: number, colliderBId: number, nx: number, ny: number, depth: number, px: number, py: number, pieceA: number, pieceB: number, featureMeta: number, pairMeta: number): void {
+		this.memory.writeU32(addr + 0, 1);
+		this.memory.writeU32(addr + 4, colliderAId >>> 0);
+		this.memory.writeU32(addr + 8, colliderBId >>> 0);
+		this.memory.writeU32(addr + 12, nx >>> 0);
+		this.memory.writeU32(addr + 16, ny >>> 0);
+		this.memory.writeU32(addr + 20, depth >>> 0);
+		this.memory.writeU32(addr + 24, px >>> 0);
+		this.memory.writeU32(addr + 28, py >>> 0);
+		this.memory.writeU32(addr + 32, pieceA >>> 0);
+		this.memory.writeU32(addr + 36, pieceB >>> 0);
+		this.memory.writeU32(addr + 40, featureMeta >>> 0);
+		this.memory.writeU32(addr + 44, pairMeta >>> 0);
+	}
+
+	private resolveByteOffset(base: number, offset: number, byteLength: number): number | null {
+		if (!Number.isSafeInteger(offset) || offset > 0xffff_ffff) {
+			return null;
+		}
+		const addr = base + offset;
+		if (!Number.isSafeInteger(addr) || addr > 0xffff_ffff) {
+			return null;
+		}
+		const end = addr + byteLength;
+		if (!Number.isSafeInteger(end) || end > 0x1_0000_0000) {
+			return null;
+		}
+		return addr >>> 0;
+	}
+
+	private readI32(addr: number): number {
+		return this.memory.readU32(addr) | 0;
 	}
 
 	private completeRecord(job: GeoJob): void {

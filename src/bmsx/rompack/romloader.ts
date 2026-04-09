@@ -304,7 +304,7 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 				case 'image':
 				case 'atlas':
 					asset.imgmeta = decodedMeta as ImgMeta;
-					if (asset.imgmeta.hitpolygons?.original) {
+					if (asset.imgmeta.hitpolygons?.original && (!asset.imgmeta.hitpolygons.fliph || !asset.imgmeta.hitpolygons.flipv || !asset.imgmeta.hitpolygons.fliphv)) {
 						const extracted_hitpolygon = asset.imgmeta.hitpolygons.original;
 						asset.imgmeta.hitpolygons = {
 							original: extracted_hitpolygon,
@@ -313,18 +313,16 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 							fliphv: flipPolygons(extracted_hitpolygon, true, true, asset.imgmeta.width, asset.imgmeta.height)
 						};
 					}
-					if (asset.imgmeta.atlassed) {
-						if (asset.imgmeta.width && asset.imgmeta.height) {
-							if (asset.imgmeta.boundingbox) {
-								asset.imgmeta.boundingbox = generateFlippedBoundingBox(asset.imgmeta.boundingbox.original, asset.imgmeta.width, asset.imgmeta.height);
-							}
-							if (asset.imgmeta.texcoords) {
-								const { original, fliph, flipv, fliphv } = generateFlippedTexCoords(asset.imgmeta.texcoords);
-								asset.imgmeta.texcoords = original;
-								asset.imgmeta.texcoords_fliph = fliph;
-								asset.imgmeta.texcoords_flipv = flipv;
-								asset.imgmeta.texcoords_fliphv = fliphv;
-							}
+					if (asset.imgmeta.width && asset.imgmeta.height) {
+						if (asset.imgmeta.boundingbox && (!asset.imgmeta.boundingbox.fliph || !asset.imgmeta.boundingbox.flipv || !asset.imgmeta.boundingbox.fliphv)) {
+							asset.imgmeta.boundingbox = generateFlippedBoundingBox(asset.imgmeta.boundingbox.original, asset.imgmeta.width, asset.imgmeta.height);
+						}
+						if (asset.imgmeta.atlassed && asset.imgmeta.texcoords && (!asset.imgmeta.texcoords_fliph || !asset.imgmeta.texcoords_flipv || !asset.imgmeta.texcoords_fliphv)) {
+							const { original, fliph, flipv, fliphv } = generateFlippedTexCoords(asset.imgmeta.texcoords);
+							asset.imgmeta.texcoords = original;
+							asset.imgmeta.texcoords_fliph = fliph;
+							asset.imgmeta.texcoords_flipv = flipv;
+							asset.imgmeta.texcoords_fliphv = fliphv;
 						}
 					}
 					break;
@@ -332,6 +330,7 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 					asset.audiometa = decodedMeta as AudioMeta;
 					break;
 				case 'data':
+				case 'blob':
 					break;
 				case 'model':
 					break;
@@ -544,6 +543,9 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 				assets.data[assetKey] = data;
 			}
 			break;
+		case 'blob':
+			assets.blob[assetKey] = baseAsset;
+			break;
 		case 'aem': {
 			const u8 = source.getBytes(baseAsset);
 			const audioevents = decodeBinary(u8);
@@ -572,6 +574,7 @@ async function loadRuntimeAssetsFromSource(source: RawAssetSource, index: Cartri
 		audio: {},
 		model: {},
 		data: {},
+		blob: {},
 		audioevents: {},
 		project_root_path: index.projectRootPath,
 		cart_manifest: index.cart_manifest,

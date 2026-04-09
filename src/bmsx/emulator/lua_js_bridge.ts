@@ -926,7 +926,7 @@ export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
 	if (cached) {
 		return cached;
 	}
-	const assetMapKeys = new Set<string>(['img', 'audio', 'model', 'data', 'audioevents']);
+	const assetMapKeys = new Set<string>(['img', 'audio', 'model', 'data', 'blob', 'audioevents']);
 	const wrapper = createNativeObject(assets, {
 		get: (key) => {
 			const prop = resolveNativeKey(key);
@@ -938,7 +938,7 @@ export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
 				throw new Error(`Asset '${prop}' does not exist.`);
 			}
 			if (assetMapKeys.has(prop)) {
-				return getOrCreateAssetMapNativeObject(runtime, rawValue as Record<string, unknown>, prop as 'img' | 'audio' | 'model' | 'data' | 'audioevents');
+				return getOrCreateAssetMapNativeObject(runtime, rawValue as Record<string, unknown>, prop as 'img' | 'audio' | 'model' | 'data' | 'blob' | 'audioevents');
 			}
 			if (typeof rawValue === 'function') {
 				return getOrCreateNativeMethod(runtime, assets, prop);
@@ -963,7 +963,7 @@ export function getOrCreateAssetsNativeObject(runtime: Runtime): NativeObject {
 	return wrapper;
 }
 
-export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<string, unknown>, kind: 'img' | 'audio' | 'model' | 'data' | 'audioevents'): NativeObject {
+export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<string, unknown>, kind: 'img' | 'audio' | 'model' | 'data' | 'blob' | 'audioevents'): NativeObject {
 	const cached = runtime.nativeObjectCache.get(map);
 	if (cached) {
 		return cached;
@@ -1001,7 +1001,7 @@ export function getOrCreateAssetMapNativeObject(runtime: Runtime, map: Record<st
 	return wrapper;
 }
 
-function buildNativeNextEntry(runtime: Runtime, raw: object, kind?: 'img' | 'audio' | 'model' | 'data' | 'audioevents'): (after: Value) => [Value, Value] | null {
+function buildNativeNextEntry(runtime: Runtime, raw: object, kind?: 'img' | 'audio' | 'model' | 'data' | 'blob' | 'audioevents'): (after: Value) => [Value, Value] | null {
 	return (after: Value): [Value, Value] | null => {
 		const keys = collectNativeKeys(runtime, raw);
 		if (keys.length === 0) {
@@ -1026,7 +1026,7 @@ function buildNativeNextEntry(runtime: Runtime, raw: object, kind?: 'img' | 'aud
 	};
 }
 
-function toRuntimeAssetEntryValue(runtime: Runtime, value: unknown, kind?: 'img' | 'audio' | 'model' | 'data' | 'audioevents'): Value {
+function toRuntimeAssetEntryValue(runtime: Runtime, value: unknown, kind?: 'img' | 'audio' | 'model' | 'data' | 'blob' | 'audioevents'): Value {
 	if (kind === 'img' || kind === 'audio' || kind === 'model') {
 		if (value !== undefined && value !== null && typeof value === 'object') {
 			return getOrCreateNativeObject(runtime, value as object);

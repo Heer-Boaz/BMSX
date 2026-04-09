@@ -163,12 +163,13 @@ static std::string assetTypeFromId(u32 id) {
 		case 1: return "image";
 		case 2: return "audio";
 		case 3: return "data";
-		case 4: return "atlas";
-		case 5: return "romlabel";
-		case 6: return "model";
-		case 7: return "aem";
-		case 8: return "lua";
-		case 9: return "code";
+		case 4: return "blob";
+		case 5: return "atlas";
+		case 6: return "romlabel";
+		case 7: return "model";
+		case 8: return "aem";
+		case 9: return "lua";
+		case 10: return "code";
 		default:
 			throw BMSX_RUNTIME_ERROR("Unknown asset type id: " + std::to_string(id));
 	}
@@ -965,6 +966,24 @@ const BinValue* RuntimeAssets::getData(const AssetId& id) const {
 	return nullptr;
 }
 
+BlobAsset* RuntimeAssets::getBlob(const AssetId& id) {
+	const AssetToken token = hashAssetToken(id);
+	auto it = blob.find(token);
+	if (it != blob.end()) {
+		return &it->second;
+	}
+	return nullptr;
+}
+
+const BlobAsset* RuntimeAssets::getBlob(const AssetId& id) const {
+	const AssetToken token = hashAssetToken(id);
+	auto it = blob.find(token);
+	if (it != blob.end()) {
+		return &it->second;
+	}
+	return nullptr;
+}
+
 LuaSourceAsset* RuntimeAssets::getLua(const AssetId& path) {
 	const AssetToken token = hashAssetToken(path);
 	auto it = lua.find(token);
@@ -1008,6 +1027,10 @@ bool RuntimeAssets::hasData(const AssetId& id) const {
 	return getData(id) != nullptr;
 }
 
+bool RuntimeAssets::hasBlob(const AssetId& id) const {
+	return getBlob(id) != nullptr;
+}
+
 bool RuntimeAssets::hasLua(const AssetId& path) const {
 	return getLua(path) != nullptr;
 }
@@ -1021,6 +1044,7 @@ void RuntimeAssets::clear() {
 	audio.clear();
 	model.clear();
 	data.clear();
+	blob.clear();
 	lua.clear();
 	audioevents.clear();
 	atlasTextures.clear();
@@ -1541,6 +1565,9 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 						imgAsset.meta.centerY = center[1];
 						imgAsset.meta.hasCenterpoint = true;
 					}
+					if (imgMeta.count("collisionblob_id") && imgMeta.at("collisionblob_id").isString()) {
+						imgAsset.meta.collisionBlobId = imgMeta.at("collisionblob_id").asString();
+					}
 
 						if (imgMeta.count("hitpolygons") && imgMeta.at("hitpolygons").isObject()) {
 							const auto& hpObj = imgMeta.at("hitpolygons").asObject();
@@ -1626,6 +1653,15 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 			audioEventAsset.rom = romInfo;
 			audioEventAsset.value = std::move(audioEvents);
 			assets.audioevents[assetToken] = std::move(audioEventAsset);
+		}
+		else if (assetType == "blob") {
+			if (bufStart < 0 || bufEnd <= bufStart) {
+				throw BMSX_RUNTIME_ERROR("Blob asset missing payload: " + assetId);
+			}
+			BlobAsset blobAsset;
+			blobAsset.id = assetId;
+			blobAsset.rom = romInfo;
+			assets.blob[assetToken] = std::move(blobAsset);
 		}
 		else if (assetType == "lua") {
 			if (!romInfo.sourcePath.has_value()) {

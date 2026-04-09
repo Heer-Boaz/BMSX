@@ -16,12 +16,13 @@ const ASSET_TYPE_IDS: Record<asset_type, number> = {
 	image: 1,
 	audio: 2,
 	data: 3,
-	atlas: 4,
-	romlabel: 5,
-	model: 6,
-	aem: 7,
-	lua: 8,
-	code: 9,
+	blob: 4,
+	atlas: 5,
+	romlabel: 6,
+	model: 7,
+	aem: 8,
+	lua: 9,
+	code: 10,
 };
 
 export function assetTypeToId(type: asset_type): number {
@@ -37,12 +38,13 @@ export function assetTypeFromId(id: number): asset_type {
 		case 1: return 'image';
 		case 2: return 'audio';
 		case 3: return 'data';
-		case 4: return 'atlas';
-		case 5: return 'romlabel';
-		case 6: return 'model';
-		case 7: return 'aem';
-		case 8: return 'lua';
-		case 9: return 'code';
+		case 4: return 'blob';
+		case 5: return 'atlas';
+		case 6: return 'romlabel';
+		case 7: return 'model';
+		case 8: return 'aem';
+		case 9: return 'lua';
+		case 10: return 'code';
 		default:
 			throw new Error(`Unknown asset type id "${id}".`);
 	}

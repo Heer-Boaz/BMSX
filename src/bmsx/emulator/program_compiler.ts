@@ -3268,8 +3268,8 @@ function buildCompilerSemanticFrontend(
 	options: CompileOptions,
 ): LuaSemanticFrontend {
 	const extraGlobalNames = options.baseMetadata
-		? [...options.baseMetadata.systemGlobalNames, ...options.baseMetadata.globalNames]
-		: [];
+		? [...ENGINE_SYSTEM_GLOBAL_NAME_SET, ...options.baseMetadata.systemGlobalNames, ...options.baseMetadata.globalNames]
+		: Array.from(ENGINE_SYSTEM_GLOBAL_NAME_SET);
 	const sources = [{
 		path: entryChunk.range.path,
 		source: requireEntrySource(options, entryChunk.range.path),

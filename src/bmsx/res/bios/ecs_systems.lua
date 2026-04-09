@@ -575,8 +575,7 @@ function overlap2dsystem:update()
 							pair.a = collider
 							pair.b = other
 							pair.hit = false
-							pair.geo_pair_start = 0
-							pair.geo_pair_count = 0
+							pair.geo_pair_index = -1
 						end
 					end
 				end
@@ -585,12 +584,6 @@ function overlap2dsystem:update()
 	end
 
 	collision2d.batch_collides(candidate_pairs.items, candidate_pair_count)
-	for i = 1, candidate_pair_count do
-		local pair<const> = candidate_pairs.items[i]
-		if pair.hit then
-			add_pair(new_pairs, pair_row_pool, pair.a.id, pair.b.id)
-		end
-	end
 
 	local begins<const> = self.begins
 	local stays<const> = self.stays
@@ -598,15 +591,15 @@ function overlap2dsystem:update()
 	clear_array(begins)
 	clear_array(stays)
 	clear_array(ends)
-	for a_id, row in pairs(new_pairs) do
-		local prev_row<const> = prev_pairs[a_id]
-		for b_id in pairs(row) do
-			if prev_row ~= nil and prev_row[b_id] then
-				stays[#stays + 1] = a_id
-				stays[#stays + 1] = b_id
+	for i = 1, candidate_pair_count do
+		local pair<const> = candidate_pairs.items[i]
+		if pair.hit then
+			add_pair(new_pairs, pair_row_pool, pair.a.id, pair.b.id)
+			local prev_row<const> = prev_pairs[pair.a.id]
+			if prev_row ~= nil and prev_row[pair.b.id] then
+				stays[#stays + 1] = pair
 			else
-				begins[#begins + 1] = a_id
-				begins[#begins + 1] = b_id
+				begins[#begins + 1] = pair
 			end
 		end
 	end
@@ -641,29 +634,29 @@ function overlap2dsystem:update()
 		if not owner_a.active or not owner_b.active then
 			return contact
 		end
-		local resolved_contact = contact
-		if resolved_contact == nil and event_name ~= 'overlap.end' then
-			resolved_contact = collision2d.get_contact2d(col_a, col_b)
+		if event_name ~= 'overlap.end' and contact == nil then
+			error('[overlap2dsystem] missing contact for overlap pair "' .. tostring(col_a.id) .. '" / "' .. tostring(col_b.id) .. '"')
 		end
-		owner_a.events:emit_event(build_overlap_event(event_name, owner_a, col_a, col_b, owner_b, resolved_contact, phase))
-		owner_b.events:emit_event(build_overlap_event(event_name, owner_b, col_b, col_a, owner_a, contact_with_flipped_normal(resolved_contact), phase))
-		return resolved_contact
+		owner_a.events:emit_event(build_overlap_event(event_name, owner_a, col_a, col_b, owner_b, contact, phase))
+		owner_b.events:emit_event(build_overlap_event(event_name, owner_b, col_b, col_a, owner_a, contact_with_flipped_normal(contact), phase))
 	end
 
-	for i = 1, #begins, 2 do
-		local a<const>, b<const> = resolve_pair(begins[i], begins[i + 1])
-		if a ~= nil and b ~= nil then
-			local contact<const> = collision2d.get_contact2d(a, b)
-			emit_pair('overlap.begin', a, b, contact, 'begin')
-			emit_pair('overlap', a, b, contact, 'begin')
+	for i = 1, #begins do
+		local pair<const> = begins[i]
+		local a<const> = pair.a
+		local b<const> = pair.b
+		if a ~= nil and b ~= nil and a.parent ~= nil and b.parent ~= nil then
+			emit_pair('overlap.begin', a, b, pair.contact, 'begin')
+			emit_pair('overlap', a, b, pair.contact, 'begin')
 		end
 	end
-	for i = 1, #stays, 2 do
-		local a<const>, b<const> = resolve_pair(stays[i], stays[i + 1])
-		if a ~= nil and b ~= nil then
-			local contact<const> = collision2d.get_contact2d(a, b)
-			emit_pair('overlap.stay', a, b, contact, 'stay')
-			emit_pair('overlap', a, b, contact, 'stay')
+	for i = 1, #stays do
+		local pair<const> = stays[i]
+		local a<const> = pair.a
+		local b<const> = pair.b
+		if a ~= nil and b ~= nil and a.parent ~= nil and b.parent ~= nil then
+			emit_pair('overlap.stay', a, b, pair.contact, 'stay')
+			emit_pair('overlap', a, b, pair.contact, 'stay')
 		end
 	end
 	for i = 1, #ends, 2 do

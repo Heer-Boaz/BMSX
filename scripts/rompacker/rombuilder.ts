@@ -2,7 +2,7 @@ import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
 import { CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES, assertMachineManifestUsesRamOnly } from '../../src/bmsx/rompack/rompack';
-import type { asset_type, AudioMeta, CanonicalizationType, GLTFMesh, ImgMeta, Polygon, RomAsset, RomManifest } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, BoundingBoxPrecalc, CanonicalizationType, GLTFMesh, HitPolygonsPrecalc, ImgMeta, Polygon, RectBounds, RomAsset, RomManifest, vec2arr } from '../../src/bmsx/rompack/rompack';
 import { SYSTEM_BOOT_ENTRY_PATH } from '../../src/bmsx/core/system_machine';
 import { encodeRomToc } from '../../src/bmsx/rompack/rom_toc';
 import type { LuaChunk } from '../../src/bmsx/lua/syntax/lua_ast';
@@ -61,6 +61,19 @@ const { createHash } = require('crypto');
 
 type ProgressNote = (message: string) => void;
 const ADPCM_NO_LOOP = 0xffffffff;
+const GEO_COLLISION_BLOB_MAGIC = 0x31443247; // "G2D1" little-endian
+const GEO_COLLISION_BLOB_VERSION = 1;
+const GEO_COLLISION_SHAPE_KIND_AABB = 1;
+const GEO_COLLISION_SHAPE_KIND_CONVEX_POLY = 3;
+const GEO_COLLISION_SHAPE_KIND_COMPOUND = 4;
+const GEO_COLLISION_VARIANT_HEADER_WORDS = 8;
+
+type ImageCollisionBuild = {
+	boundingbox: BoundingBoxPrecalc;
+	centerpoint: vec2arr;
+	hitpolygons: HitPolygonsPrecalc | undefined;
+	collisionblob: Buffer;
+};
 
 export const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 export const BOOTROM_TS_FILENAME = 'bootrom.ts';
@@ -486,6 +499,214 @@ export function parseImageMeta(filenameWithoutExt: string): {
 		.replace(/@noatlas/ig, '');
 
 	return { sanitizedName, collisionType, targetAtlas, skipAtlas };
+}
+
+function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
+	const flipped: Polygon[] = new Array(polys.length);
+	for (let polyIndex = 0; polyIndex < polys.length; polyIndex += 1) {
+		const poly = polys[polyIndex];
+		const out = new Array<number>(poly.length);
+		for (let i = 0; i < poly.length; i += 2) {
+			const x = poly[i];
+			const y = poly[i + 1];
+			out[i] = flipH ? imgW - 1 - x : x;
+			out[i + 1] = flipV ? imgH - 1 - y : y;
+		}
+		flipped[polyIndex] = out;
+	}
+	return flipped;
+}
+
+function flipBoundingBoxHorizontally(box: RectBounds, width: number): RectBounds {
+	return {
+		left: width - box.right,
+		right: width - box.left,
+		top: box.top,
+		bottom: box.bottom,
+		z: box.z,
+	};
+}
+
+function flipBoundingBoxVertically(box: RectBounds, height: number): RectBounds {
+	return {
+		left: box.left,
+		right: box.right,
+		top: height - box.bottom,
+		bottom: height - box.top,
+		z: box.z,
+	};
+}
+
+function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: number, imgH: number): BoundingBoxPrecalc {
+	const originalBoundingBox = extractedBoundingBox;
+	const horizontalFlipped = flipBoundingBoxHorizontally(originalBoundingBox, imgW);
+	const verticalFlipped = flipBoundingBoxVertically(originalBoundingBox, imgH);
+	const bothFlipped = flipBoundingBoxHorizontally(flipBoundingBoxVertically(originalBoundingBox, imgH), imgW);
+	return {
+		original: originalBoundingBox,
+		fliph: horizontalFlipped,
+		flipv: verticalFlipped,
+		fliphv: bothFlipped,
+	};
+}
+
+function computePolyBounds(poly: Polygon): RectBounds {
+	let left = poly[0];
+	let top = poly[1];
+	let right = left;
+	let bottom = top;
+	for (let index = 2; index < poly.length; index += 2) {
+		const x = poly[index];
+		const y = poly[index + 1];
+		if (x < left) left = x;
+		if (x > right) right = x;
+		if (y < top) top = y;
+		if (y > bottom) bottom = y;
+	}
+	return { left, top, right, bottom };
+}
+
+function encodeFix16(value: number): number {
+	return Math.round(value * 65536);
+}
+
+function createCollisionDescriptor(kind: number, dataCount: number, dataOffset: number, boundsOffset: number): Buffer {
+	const descriptor = Buffer.alloc(16);
+	descriptor.writeUInt32LE(kind >>> 0, 0);
+	descriptor.writeUInt32LE(dataCount >>> 0, 4);
+	descriptor.writeUInt32LE(dataOffset >>> 0, 8);
+	descriptor.writeUInt32LE(boundsOffset >>> 0, 12);
+	return descriptor;
+}
+
+function buildCollisionBlob(bounds: BoundingBoxPrecalc, hitpolygons: HitPolygonsPrecalc | undefined): Buffer {
+	const parts: Buffer[] = [];
+	let offset = GEO_COLLISION_VARIANT_HEADER_WORDS * 4;
+
+	const pushBuffer = (buffer: Buffer): number => {
+		const start = offset;
+		parts.push(buffer);
+		offset += buffer.length;
+		return start;
+	};
+
+	const pushBounds = (rect: RectBounds): number => {
+		const buffer = Buffer.alloc(16);
+		buffer.writeInt32LE(encodeFix16(rect.left), 0);
+		buffer.writeInt32LE(encodeFix16(rect.top), 4);
+		buffer.writeInt32LE(encodeFix16(rect.right), 8);
+		buffer.writeInt32LE(encodeFix16(rect.bottom), 12);
+		return pushBuffer(buffer);
+	};
+
+	const pushPolygon = (poly: Polygon): number => {
+		const buffer = Buffer.alloc(poly.length * 4);
+		for (let index = 0; index < poly.length; index += 1) {
+			buffer.writeInt32LE(encodeFix16(poly[index]), index * 4);
+		}
+		return pushBuffer(buffer);
+	};
+
+	const encodeVariant = (variantBounds: RectBounds, variantPolys: Polygon[] | undefined): number => {
+		if (!variantPolys || variantPolys.length === 0) {
+			const boundsOffset = pushBounds(variantBounds);
+			return pushBuffer(createCollisionDescriptor(GEO_COLLISION_SHAPE_KIND_AABB, 1, boundsOffset, boundsOffset));
+		}
+		if (variantPolys.length === 1) {
+			const poly = variantPolys[0];
+			const dataOffset = pushPolygon(poly);
+			const boundsOffset = pushBounds(computePolyBounds(poly));
+			return pushBuffer(createCollisionDescriptor(GEO_COLLISION_SHAPE_KIND_CONVEX_POLY, poly.length >> 1, dataOffset, boundsOffset));
+		}
+		const pieceDescriptors: Buffer[] = new Array(variantPolys.length);
+		for (let polyIndex = 0; polyIndex < variantPolys.length; polyIndex += 1) {
+			const poly = variantPolys[polyIndex];
+			const dataOffset = pushPolygon(poly);
+			const boundsOffset = pushBounds(computePolyBounds(poly));
+			pieceDescriptors[polyIndex] = createCollisionDescriptor(GEO_COLLISION_SHAPE_KIND_CONVEX_POLY, poly.length >> 1, dataOffset, boundsOffset);
+		}
+		const pieceTableOffset = pushBuffer(Buffer.concat(pieceDescriptors));
+		const boundsOffset = pushBounds(variantBounds);
+		return pushBuffer(createCollisionDescriptor(GEO_COLLISION_SHAPE_KIND_COMPOUND, variantPolys.length, pieceTableOffset, boundsOffset));
+	};
+
+	const originalOffset = encodeVariant(bounds.original, hitpolygons?.original);
+	const fliphOffset = encodeVariant(bounds.fliph, hitpolygons?.fliph);
+	const flipvOffset = encodeVariant(bounds.flipv, hitpolygons?.flipv);
+	const fliphvOffset = encodeVariant(bounds.fliphv, hitpolygons?.fliphv);
+	const header = Buffer.alloc(GEO_COLLISION_VARIANT_HEADER_WORDS * 4);
+	header.writeUInt32LE(GEO_COLLISION_BLOB_MAGIC, 0);
+	header.writeUInt32LE(GEO_COLLISION_BLOB_VERSION, 4);
+	header.writeUInt32LE(originalOffset >>> 0, 8);
+	header.writeUInt32LE(fliphOffset >>> 0, 12);
+	header.writeUInt32LE(flipvOffset >>> 0, 16);
+	header.writeUInt32LE(fliphvOffset >>> 0, 20);
+	header.writeUInt32LE(0, 24);
+	header.writeUInt32LE(0, 28);
+	return Buffer.concat([header, ...parts]);
+}
+
+function buildImageCollisionBuild(res: ImageResource): ImageCollisionBuild {
+	const img = res.img;
+	if (!img) {
+		throw new Error(`Image resource "${res.name}" is missing its decoded image data.`);
+	}
+	const imgBoundingBox = BoundingBoxExtractor.extractBoundingBox(img);
+	let originalPolygons: Polygon[] = undefined;
+	switch (res.collisionType) {
+		case 'concave':
+			originalPolygons = BoundingBoxExtractor.extractDetailedConvexPieces(img);
+			break;
+		case 'convex':
+			originalPolygons = [BoundingBoxExtractor.extractConvexHull(img)].filter(poly => (poly?.length ?? 0) >= 6);
+			break;
+		case 'aabb':
+			break;
+	}
+	const boundingbox = generateFlippedBoundingBox(imgBoundingBox, img.width, img.height);
+	const centerpoint = BoundingBoxExtractor.calculateCenterPoint(imgBoundingBox);
+	const hitpolygons = originalPolygons
+		? {
+			original: originalPolygons,
+			fliph: flipPolygons(originalPolygons, true, false, img.width, img.height),
+			flipv: flipPolygons(originalPolygons, false, true, img.width, img.height),
+			fliphv: flipPolygons(originalPolygons, true, true, img.width, img.height),
+		}
+		: undefined;
+	return {
+		boundingbox,
+		centerpoint,
+		hitpolygons,
+		collisionblob: buildCollisionBlob(boundingbox, hitpolygons),
+	};
+}
+
+function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageCollisionBuild, collisionBlobId?: string): ImgMeta {
+	const img = res.img;
+	if (!img) {
+		throw new Error(`Image resource "${res.name}" is missing its decoded image data.`);
+	}
+	let imgmeta: ImgMeta = {
+		atlassed: false,
+		atlasid: null,
+		width: img.width,
+		height: img.height,
+		boundingbox: collision.boundingbox,
+		centerpoint: collision.centerpoint,
+		hitpolygons: collision.hitpolygons,
+		collisionblob_id: collisionBlobId,
+	};
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		const targetAtlas = res.targetAtlasIndex;
+		const texcoords = res.atlasTexcoords;
+		imgmeta = {
+			...imgmeta,
+			atlassed: targetAtlas !== undefined,
+			atlasid: targetAtlas,
+			texcoords: texcoords ? [...texcoords] : undefined,
+		};
+	}
+	return imgmeta;
 }
 
 /**
@@ -1096,7 +1317,9 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer, source_path: sourcePath });
 				break;
 			case 'image': {
-				const imgmeta = buildImgMeta(res);
+				const collisionBlobId = `${resid}@c2d`;
+				const collision = buildImageCollisionBuild(res);
+				const imgmeta = buildImgMetaFromCollisionBuild(res, collision, collisionBlobId);
 				let baseAsset: RomAsset;
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 					// Preserve raw image buffer for images explicitly marked to skip atlas (@noatlas)
@@ -1106,6 +1329,12 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 					baseAsset = { resid, type, imgmeta, buffer, source_path: sourcePath };
 				}
 				romAssets.push({ ...baseAsset, });
+				romAssets.push({
+					resid: collisionBlobId,
+					type: 'blob',
+					buffer: collision.collisionblob,
+					source_path: sourcePath ? `${sourcePath}#c2d` : undefined,
+				});
 			}
 				break;
 			case 'audio': {
@@ -1391,64 +1620,7 @@ export function appendProgramAsset(
  * @returns An object containing image dimensions, bounding boxes, center point, and (if atlas usage is enabled) texture coordinates.
  */
 export function buildImgMeta(res: ImageResource): ImgMeta {
-	const img = res.img;
-	if (!img) {
-		throw new Error(`Image resource "${res.name}" is missing its decoded image data.`);
-	}
-	const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
-	let extracted_hitpolygon: Polygon[] = undefined;
-	let hitpolygons: {
-		original: Polygon[],
-		fliph: Polygon[],
-		flipv: Polygon[],
-		fliphv: Polygon[]
-	} = undefined;
-	switch (res.collisionType) {
-		case 'concave':
-			extracted_hitpolygon = BoundingBoxExtractor.extractDetailedConvexPieces(img);
-			hitpolygons = {
-				original: extracted_hitpolygon,
-				fliph: null,
-				flipv: null,
-				fliphv: null
-			};
-			break;
-		case 'convex':
-			extracted_hitpolygon = [BoundingBoxExtractor.extractConvexHull(img)].filter(p => (p?.length ?? 0) >= 6);
-			hitpolygons = {
-				original: extracted_hitpolygon,
-				fliph: null,
-				flipv: null,
-				fliphv: null
-			};
-			break;
-		case 'aabb':
-			// No hit polygon, use bounding box instead
-			break;
-	}
-	// const img_boundingbox_precalc = BoundingBoxExtractor.generateFlippedBoundingBox(img, img_boundingbox);
-	const img_centerpoint = BoundingBoxExtractor.calculateCenterPoint(img_boundingbox);
-
-	let imgmeta: ImgMeta = {
-		atlassed: false,
-		atlasid: null,
-		width: img.width,
-		height: img.height,
-		boundingbox: { original: img_boundingbox, fliph: null, flipv: null, fliphv: null },
-		centerpoint: img_centerpoint,
-		hitpolygons: hitpolygons
-	};
-	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		const targetAtlas = res.targetAtlasIndex;
-		const texcoords = res.atlasTexcoords;
-		imgmeta = {
-			...imgmeta,
-			atlassed: targetAtlas !== undefined,
-			atlasid: targetAtlas,
-			texcoords: texcoords ? [...texcoords] : undefined,
-		};
-	}
-	return imgmeta;
+	return buildImgMetaFromCollisionBuild(res, buildImageCollisionBuild(res));
 }
 
 export function buildImgMetaForAtlas(res: AtlasResource): ImgMeta {

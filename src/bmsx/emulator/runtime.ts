@@ -211,7 +211,7 @@ type EditorViewOptionsSnapshot = {
 };
 
 type ProgramSource = 'engine' | 'cart';
-type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'audioevents';
+type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'blob' | 'audioevents';
 type RuntimeLayerLookup = Partial<Record<CartridgeLayerId, RuntimeAssetLayer>>;
 
 const TIMER_KIND_VBLANK_ENTER = 1;
@@ -240,6 +240,7 @@ function getRuntimeLayerAssets(layer: RuntimeAssetLayer, kind: RuntimeAssetColle
 		case 'audio': return layer.assets.audio;
 		case 'model': return layer.assets.model;
 		case 'data': return layer.assets.data;
+		case 'blob': return layer.assets.blob;
 		case 'audioevents': return layer.assets.audioevents;
 	}
 }

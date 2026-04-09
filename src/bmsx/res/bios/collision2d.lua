@@ -55,6 +55,11 @@ local geo_sat_vertex_bytes<const> = 8
 local geo_sat_desc_bytes<const> = 16
 local geo_sat_pair_bytes<const> = 20
 local geo_sat_result_bytes<const> = 20
+local geo_overlap_instance_bytes<const> = 48
+local geo_overlap_pair_bytes<const> = 16
+local geo_overlap_result_bytes<const> = 48
+local geo_overlap_summary_bytes<const> = 16
+local geo_overlap_param0<const> = sys_geo_overlap_mode_candidate_pairs | sys_geo_overlap_broadphase_none | sys_geo_overlap_contact_clipped_feature | sys_geo_overlap_output_stop_on_overflow
 local geo_batch_token = 0
 
 local detect_aabb_areas<const> = function(a, b)
@@ -479,89 +484,87 @@ local contact_poly_poly<const> = function(polys_a, polys_b)
 	return best
 end
 
-local is_geo_sat_pair<const> = function(kind_a, kind_b)
-	if kind_a == 'poly' and kind_b == 'poly' then
-		return true
+local is_geo_overlap_pair<const> = function(a, b)
+	if a._overlap_geo_blob_base == nil or b._overlap_geo_blob_base == nil then
+		return false
 	end
-	if kind_a == 'poly' and kind_b == 'aabb' then
-		return true
+	local kind_a<const> = a._overlap_shape_kind
+	local kind_b<const> = b._overlap_shape_kind
+	if kind_a == 'circle' or kind_b == 'circle' then
+		return false
 	end
-	return kind_a == 'aabb' and kind_b == 'poly'
+	return true
 end
 
-local get_geo_sat_polys<const> = function(collider, kind)
-	if kind == 'poly' then
-		return collider:get_world_polys()
+local ensure_pair_contact<const> = function(pair)
+	local contact<const> = pair.contact
+	if contact ~= nil then
+		return contact
 	end
-	if kind == 'aabb' then
-		return collider:get_world_area_polys()
-	end
-	error('[collision2d] GEO SAT unsupported shape kind "' .. tostring(kind) .. '" for collider ' .. tostring(collider.id))
+	local created<const> = {
+		normal = { x = 0, y = 0 },
+		depth = 0,
+		point = { x = 0, y = 0 },
+		piece_a = 0,
+		piece_b = 0,
+		feature_meta = 0,
+	}
+	pair.contact = created
+	return created
 end
 
-local count_geo_sat_collider_bytes<const> = function(collider, kind)
-	local polys<const> = get_geo_sat_polys(collider, kind)
-	if polys == nil or #polys == 0 then
-		error('[collision2d] GEO SAT expected staged polygons for collider ' .. tostring(collider.id))
-	end
-	local vertex_bytes = 0
-	for i = 1, #polys do
-		local poly<const> = polys[i]
-		local coord_count<const> = #poly
-		if coord_count < 6 or (coord_count & 1) ~= 0 then
-			error('[collision2d] GEO SAT expected convex polygon with at least 3 vertices for collider ' .. tostring(collider.id))
-		end
-		vertex_bytes = vertex_bytes + coord_count * 4
-	end
-	return #polys, vertex_bytes
+local set_pair_contact_from_geo_result<const> = function(pair, result_addr)
+	local contact<const> = ensure_pair_contact(pair)
+	contact.normal.x = fix16_to_f32(mem[result_addr + 12])
+	contact.normal.y = fix16_to_f32(mem[result_addr + 16])
+	contact.depth = fix16_to_f32(mem[result_addr + 20])
+	contact.point.x = fix16_to_f32(mem[result_addr + 24])
+	contact.point.y = fix16_to_f32(mem[result_addr + 28])
+	contact.piece_a = mem[result_addr + 32]
+	contact.piece_b = mem[result_addr + 36]
+	contact.feature_meta = mem[result_addr + 40]
 end
 
-local stage_geo_sat_collider<const> = function(collider, kind, batch_token, vertex_base, desc_base, vertex_cursor, desc_index)
-	if collider._geo_sat_stage_token == batch_token then
-		return vertex_cursor, desc_index
+local stage_geo_overlap_instance<const> = function(collider, batch_token, instance_base)
+	if collider._geo_overlap_stage_token == batch_token then
+		return
 	end
-	local polys<const> = get_geo_sat_polys(collider, kind)
-	collider._geo_sat_desc_first = desc_index
-	collider._geo_sat_stage_token = batch_token
-	for i = 1, #polys do
-		local poly<const> = polys[i]
-		local coord_count<const> = #poly
-		local vertex_count<const> = coord_count >> 1
-		local desc_addr<const> = desc_base + desc_index * geo_sat_desc_bytes
-		mem[desc_addr + 0] = sys_geo_shape_convex_poly
-		mem[desc_addr + 4] = vertex_count
-		mem[desc_addr + 8] = vertex_cursor - vertex_base
-		mem[desc_addr + 12] = 0
-		for j = 1, coord_count, 2 do
-			mem[vertex_cursor + 0] = round_to_nearest(poly[j] * geo_fix16_scale)
-			mem[vertex_cursor + 4] = round_to_nearest(poly[j + 1] * geo_fix16_scale)
-			vertex_cursor = vertex_cursor + geo_sat_vertex_bytes
-		end
-		desc_index = desc_index + 1
-	end
-	return vertex_cursor, desc_index
+	local instance_addr<const> = instance_base + collider._geo_overlap_instance_index * geo_overlap_instance_bytes
+	mem[instance_addr + 0] = 0
+	mem[instance_addr + 4] = collider._geo_overlap_instance_index + 1
+	mem[instance_addr + 8] = collider._overlap_geo_blob_base
+	mem[instance_addr + 12] = collider._overlap_geo_shape_offset
+	mem[instance_addr + 16] = collider.layer
+	mem[instance_addr + 20] = collider.mask
+	mem[instance_addr + 24] = geo_fix16_scale
+	mem[instance_addr + 28] = 0
+	mem[instance_addr + 32] = round_to_nearest(collider._overlap_geo_tx * geo_fix16_scale)
+	mem[instance_addr + 36] = 0
+	mem[instance_addr + 40] = geo_fix16_scale
+	mem[instance_addr + 44] = round_to_nearest(collider._overlap_geo_ty * geo_fix16_scale)
+	collider._geo_overlap_stage_token = batch_token
 end
 
-local submit_geo_sat_batch<const> = function(pair_base, desc_base, vertex_base, result_base, pair_count)
-	mem[sys_geo_src0] = pair_base
-	mem[sys_geo_src1] = desc_base
-	mem[sys_geo_src2] = vertex_base
+local submit_geo_overlap_batch<const> = function(instance_base, pair_base, result_base, summary_base, instance_count, pair_count)
+	mem[sys_geo_src0] = instance_base
+	mem[sys_geo_src1] = pair_base
+	mem[sys_geo_src2] = 0
 	mem[sys_geo_dst0] = result_base
-	mem[sys_geo_dst1] = 0
+	mem[sys_geo_dst1] = summary_base
 	mem[sys_geo_count] = pair_count
-	mem[sys_geo_param0] = 0
-	mem[sys_geo_param1] = 0
-	mem[sys_geo_stride0] = geo_sat_pair_bytes
-	mem[sys_geo_stride1] = geo_sat_desc_bytes
-	mem[sys_geo_stride2] = geo_sat_vertex_bytes
-	mem[sys_geo_cmd] = sys_geo_cmd_sat2_batch
+	mem[sys_geo_param0] = geo_overlap_param0
+	mem[sys_geo_param1] = pair_count
+	mem[sys_geo_stride0] = geo_overlap_instance_bytes
+	mem[sys_geo_stride1] = geo_overlap_pair_bytes
+	mem[sys_geo_stride2] = instance_count
+	mem[sys_geo_cmd] = sys_geo_cmd_overlap2d_pass
 	mem[sys_geo_ctrl] = sys_geo_ctrl_start
 	local current_status = mem[sys_geo_status]
 	while (current_status & sys_geo_status_busy) ~= 0 do
 		current_status = mem[sys_geo_status]
 	end
 	if (current_status & sys_geo_status_rejected) ~= 0 or (current_status & sys_geo_status_error) ~= 0 or (current_status & sys_geo_status_done) == 0 then
-		error('[collision2d] GEO SAT batch failed (status=' .. tostring(current_status) .. ', fault=' .. tostring(mem[sys_geo_fault]) .. ')')
+		error('[collision2d] GEO overlap batch failed (status=' .. tostring(current_status) .. ', fault=' .. tostring(mem[sys_geo_fault]) .. ')')
 	end
 end
 
@@ -574,114 +577,75 @@ function collision2d.batch_collides(pairs, pair_count)
 		geo_batch_token = 1
 	end
 	local batch_token<const> = geo_batch_token
-	local total_desc_count = 0
-	local total_vertex_bytes = 0
-	local total_geo_pair_count = 0
+	local geo_pair_count = 0
+	local instance_count = 0
 
 	for i = 1, pair_count do
 		local pair<const> = pairs[i]
 		pair.hit = false
-		pair.geo_pair_start = 0
-		pair.geo_pair_count = 0
+		pair.geo_pair_index = -1
 		local a<const> = pair.a
 		local b<const> = pair.b
-		local kind_a<const> = a:get_shape_kind()
-		local kind_b<const> = b:get_shape_kind()
-		pair.kind_a = kind_a
-		pair.kind_b = kind_b
-		if is_geo_sat_pair(kind_a, kind_b) then
-			if a._geo_sat_count_token ~= batch_token then
-				local desc_count_a<const>, vertex_bytes_a<const> = count_geo_sat_collider_bytes(a, kind_a)
-				a._geo_sat_count_token = batch_token
-				a._geo_sat_desc_count = desc_count_a
-				a._geo_sat_vertex_bytes = vertex_bytes_a
-				total_desc_count = total_desc_count + desc_count_a
-				total_vertex_bytes = total_vertex_bytes + vertex_bytes_a
+		if is_geo_overlap_pair(a, b) then
+			if a._geo_overlap_instance_token ~= batch_token then
+				a._geo_overlap_instance_token = batch_token
+				a._geo_overlap_instance_index = instance_count
+				instance_count = instance_count + 1
 			end
-			if b._geo_sat_count_token ~= batch_token then
-				local desc_count_b<const>, vertex_bytes_b<const> = count_geo_sat_collider_bytes(b, kind_b)
-				b._geo_sat_count_token = batch_token
-				b._geo_sat_desc_count = desc_count_b
-				b._geo_sat_vertex_bytes = vertex_bytes_b
-				total_desc_count = total_desc_count + desc_count_b
-				total_vertex_bytes = total_vertex_bytes + vertex_bytes_b
+			if b._geo_overlap_instance_token ~= batch_token then
+				b._geo_overlap_instance_token = batch_token
+				b._geo_overlap_instance_index = instance_count
+				instance_count = instance_count + 1
 			end
-			pair.geo_pair_count = a._geo_sat_desc_count * b._geo_sat_desc_count
-			total_geo_pair_count = total_geo_pair_count + pair.geo_pair_count
+			pair.geo_pair_index = geo_pair_count
+			geo_pair_count = geo_pair_count + 1
 		else
-			pair.hit = collision2d.collides(a, b)
+			local contact<const> = collision2d.get_contact2d(a, b)
+			pair.contact = contact
+			pair.hit = contact ~= nil
 		end
 	end
 
-	if total_geo_pair_count == 0 then
+	if geo_pair_count == 0 then
 		return
 	end
 
-	local vertex_base<const> = sys_geo_scratch_base
-	local desc_base<const> = vertex_base + total_vertex_bytes
-	local pair_base<const> = desc_base + total_desc_count * geo_sat_desc_bytes
-	local result_base<const> = pair_base + total_geo_pair_count * geo_sat_pair_bytes
-	local scratch_required<const> = result_base + total_geo_pair_count * geo_sat_result_bytes
+	local instance_base<const> = sys_geo_scratch_base
+	local pair_base<const> = instance_base + instance_count * geo_overlap_instance_bytes
+	local result_base<const> = pair_base + geo_pair_count * geo_overlap_pair_bytes
+	local summary_base<const> = result_base + geo_pair_count * geo_overlap_result_bytes
+	local scratch_required<const> = summary_base + geo_overlap_summary_bytes
 	if scratch_required > sys_geo_scratch_base + sys_geo_scratch_size then
-		error('[collision2d] GEO SAT scratch overflow (' .. tostring(scratch_required - sys_geo_scratch_base) .. ' > ' .. tostring(sys_geo_scratch_size) .. ')')
+		error('[collision2d] GEO overlap scratch overflow (' .. tostring(scratch_required - sys_geo_scratch_base) .. ' > ' .. tostring(sys_geo_scratch_size) .. ')')
 	end
 
-	local vertex_cursor = vertex_base
-	local desc_index = 0
-	local geo_pair_index = 0
 	for i = 1, pair_count do
 		local pair<const> = pairs[i]
-		local geo_pair_count<const> = pair.geo_pair_count
-		if geo_pair_count ~= 0 then
+		if pair.geo_pair_index >= 0 then
 			local a<const> = pair.a
 			local b<const> = pair.b
-			vertex_cursor, desc_index = stage_geo_sat_collider(a, pair.kind_a, batch_token, vertex_base, desc_base, vertex_cursor, desc_index)
-			vertex_cursor, desc_index = stage_geo_sat_collider(b, pair.kind_b, batch_token, vertex_base, desc_base, vertex_cursor, desc_index)
-			pair.geo_pair_start = geo_pair_index
-			local a_desc_first<const> = a._geo_sat_desc_first
-			local a_desc_count<const> = a._geo_sat_desc_count
-			local b_desc_first<const> = b._geo_sat_desc_first
-			local b_desc_count<const> = b._geo_sat_desc_count
-			for a_desc = 0, a_desc_count - 1 do
-				local shape_a_index<const> = a_desc_first + a_desc
-				for b_desc = 0, b_desc_count - 1 do
-					local pair_addr<const> = pair_base + geo_pair_index * geo_sat_pair_bytes
-					mem[pair_addr + 0] = 0
-					mem[pair_addr + 4] = shape_a_index
-					mem[pair_addr + 8] = geo_pair_index
-					mem[pair_addr + 12] = b_desc_first + b_desc
-					mem[pair_addr + 16] = 0
-					geo_pair_index = geo_pair_index + 1
-				end
-			end
+			stage_geo_overlap_instance(a, batch_token, instance_base)
+			stage_geo_overlap_instance(b, batch_token, instance_base)
+			local pair_addr<const> = pair_base + pair.geo_pair_index * geo_overlap_pair_bytes
+			mem[pair_addr + 0] = 0
+			mem[pair_addr + 4] = a._geo_overlap_instance_index
+			mem[pair_addr + 8] = b._geo_overlap_instance_index
+			mem[pair_addr + 12] = i
 		end
 	end
 
-	if geo_pair_index ~= total_geo_pair_count then
-		error('[collision2d] GEO SAT pair staging mismatch (' .. tostring(geo_pair_index) .. ' ~= ' .. tostring(total_geo_pair_count) .. ')')
-	end
-	if desc_index ~= total_desc_count then
-		error('[collision2d] GEO SAT descriptor staging mismatch (' .. tostring(desc_index) .. ' ~= ' .. tostring(total_desc_count) .. ')')
-	end
-	if vertex_cursor ~= desc_base then
-		error('[collision2d] GEO SAT vertex staging mismatch (' .. tostring(vertex_cursor) .. ' ~= ' .. tostring(desc_base) .. ')')
-	end
+	submit_geo_overlap_batch(instance_base, pair_base, result_base, summary_base, instance_count, geo_pair_count)
 
-	submit_geo_sat_batch(pair_base, desc_base, vertex_base, result_base, total_geo_pair_count)
-
-	for i = 1, pair_count do
-		local pair<const> = pairs[i]
-		local geo_pair_count<const> = pair.geo_pair_count
-		if geo_pair_count ~= 0 then
-			local result_addr = result_base + pair.geo_pair_start * geo_sat_result_bytes
-			for j = 1, geo_pair_count do
-				if mem[result_addr] ~= 0 then
-					pair.hit = true
-					break
-				end
-				result_addr = result_addr + geo_sat_result_bytes
-			end
+	local result_count<const> = mem[summary_base + 0]
+	for i = 0, result_count - 1 do
+		local result_addr<const> = result_base + i * geo_overlap_result_bytes
+		local pair_meta<const> = mem[result_addr + 44]
+		if pair_meta < 1 or pair_meta > pair_count then
+			error('[collision2d] GEO overlap returned invalid pair meta ' .. tostring(pair_meta))
 		end
+		local pair<const> = pairs[pair_meta]
+		pair.hit = true
+		set_pair_contact_from_geo_result(pair, result_addr)
 	end
 end
 

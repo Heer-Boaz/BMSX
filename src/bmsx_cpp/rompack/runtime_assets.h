@@ -6,6 +6,7 @@
  * - audio: Audio assets
  * - model: 3D model assets
  * - data: Generic data assets (JSON, etc.)
+ * - blob: Raw ROM-addressable binary assets
  * - audioevents: Audio event definitions
  * - programAsset: Pre-compiled Lua bytecode program
  * - programSymbols: Program metadata (symbols/debug info)
@@ -112,6 +113,7 @@ struct ImgMeta {
 	bool hasCenterpoint = false;
 
 	std::optional<HitPolygons> hitpolygons;
+	std::optional<std::string> collisionBlobId;
 
 	// Helper to get UV rect (u0, v0, u1, v1) for simple blitting
 	void getUVRect(f32& u0, f32& v0, f32& u1, f32& v1, bool flipH = false, bool flipV = false) const {
@@ -202,6 +204,11 @@ struct DataAsset {
 	AssetId id;
 	RomAssetInfo rom;
 	BinValue value;
+};
+
+struct BlobAsset {
+	AssetId id;
+	RomAssetInfo rom;
 };
 
 struct LuaSourceAsset {
@@ -384,6 +391,7 @@ public:
 	std::unordered_map<AssetToken, AudioAsset> audio;
 	std::unordered_map<AssetToken, ModelAsset> model;
 	std::unordered_map<AssetToken, DataAsset> data;  // Generic decoded data assets
+	std::unordered_map<AssetToken, BlobAsset> blob;
 	std::unordered_map<AssetToken, LuaSourceAsset> lua;
 	std::unordered_map<AssetToken, AudioEventAsset> audioevents;
 
@@ -413,6 +421,9 @@ public:
 
 	const BinValue* getData(const AssetId& id) const;
 
+	BlobAsset* getBlob(const AssetId& id);
+	const BlobAsset* getBlob(const AssetId& id) const;
+
 	LuaSourceAsset* getLua(const AssetId& path);
 	const LuaSourceAsset* getLua(const AssetId& path) const;
 
@@ -426,6 +437,7 @@ public:
 	bool hasAudio(const AssetId& id) const;
 	bool hasModel(const AssetId& id) const;
 	bool hasData(const AssetId& id) const;
+	bool hasBlob(const AssetId& id) const;
 	bool hasLua(const AssetId& path) const;
 	bool hasAudioEvent(const AssetId& id) const;
 	bool hasProgram() const { return programAsset != nullptr; }

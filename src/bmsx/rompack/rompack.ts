@@ -38,6 +38,7 @@ export interface RuntimeAssets {
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
+	blob: id2res; // Reference to raw binary blob assets that remain addressable in ROM. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	project_root_path: string; // Workspace-relative cart root path for resolving filesystem writes.
 	cart_manifest: CartManifest | null; // Cart metadata for the active program, absent for system assets.
@@ -45,7 +46,7 @@ export interface RuntimeAssets {
 	entry_path: string; // Entry Lua path for this program.
 }
 
-export type asset_type = 'image' | 'audio' | 'data' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
+export type asset_type = 'image' | 'audio' | 'data' | 'blob' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
 export type asset_id = string;
 
 /**
@@ -98,6 +99,7 @@ export type BitmapId = asset_id;
 export type AudioId = asset_id;
 export type ModelId = asset_id;
 export type DataId = asset_id;
+export type BlobId = asset_id;
 export type LuaId = asset_id;
 
 export type CartridgeIndex = {
@@ -422,6 +424,7 @@ export interface ImgMeta {
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
+	collisionblob_id?: BlobId; // ROM-addressable raw GEO collision blob asset for this image.
 }
 
 export type TextureSource = unknown & { close?(): void; width: number; height: number; data?: Uint8Array; }; // platform-specific source type (e.g. ImageBitmap in browsers)

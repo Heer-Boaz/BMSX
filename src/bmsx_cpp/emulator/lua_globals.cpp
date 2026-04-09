@@ -303,6 +303,9 @@ Table* buildImgMetaTable(CPU& cpu, const ImgMeta& meta, const KeyFn& key) {
 		})));
 		table->set(key("hitpolygons"), valueTable(hitTable));
 	}
+	if (meta.collisionBlobId) {
+		table->set(key("collisionblob_id"), valueString(cpu.internString(*meta.collisionBlobId)));
+	}
 	return table;
 }
 
@@ -1571,6 +1574,14 @@ void Runtime::setupBuiltins() {
 		std::memcpy(&value, &bits, sizeof(value));
 		out.push_back(valueNumber(static_cast<double>(value)));
 	});
+	registerNativeFunction("u32_to_i32", [](NativeArgsView args, NativeResults& out) {
+		const int32_t value = static_cast<int32_t>(static_cast<uint32_t>(asNumber(args.at(0))));
+		out.push_back(valueNumber(static_cast<double>(value)));
+	});
+	registerNativeFunction("fix16_to_f32", [](NativeArgsView args, NativeResults& out) {
+		const int32_t value = static_cast<int32_t>(static_cast<uint32_t>(asNumber(args.at(0))));
+		out.push_back(valueNumber(static_cast<double>(value) / 65536.0));
+	});
 
 	registerNativeFunction("u64_to_f64", [](NativeArgsView args, NativeResults& out) {
 		const uint64_t hi = static_cast<uint64_t>(static_cast<uint32_t>(asNumber(args.at(0))));
@@ -1637,6 +1648,10 @@ void Runtime::setupBuiltins() {
 		auto dataIt = assets.data.find(token);
 		if (dataIt != assets.data.end()) {
 			return &dataIt->second.rom;
+		}
+		auto blobIt = assets.blob.find(token);
+		if (blobIt != assets.blob.end()) {
+			return &blobIt->second.rom;
 		}
 		auto luaIt = assets.lua.find(token);
 		if (luaIt != assets.lua.end()) {
@@ -3558,6 +3573,17 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 		appendBinEntry(dataTable, entry.second.id, entry.second.value);
 	}
 	assetsTable->set(key("data"), makeAssetMapNativeObject(dataTable));
+	const int blobCapacity = static_cast<int>(assets.blob.size());
+	auto* blobTable = m_cpu.createTable(0, blobCapacity);
+	auto appendBlobEntry = [this, blobTable, str, appendRomAssetFields](const BlobAsset& blobAsset) {
+		auto* blobEntry = m_cpu.createTable(0, 8);
+		appendRomAssetFields(blobEntry, blobAsset.rom, blobAsset.id);
+		blobTable->set(str(blobAsset.id), valueTable(blobEntry));
+	};
+	for (const auto& entry : assets.blob) {
+		appendBlobEntry(entry.second);
+	}
+	assetsTable->set(key("blob"), makeAssetMapNativeObject(blobTable));
 	const int audioCapacity = static_cast<int>(assets.audio.size());
 	auto* audioTable = m_cpu.createTable(0, audioCapacity);
 	auto appendAudioEntry = [this, audioTable, key, str, appendRomAssetFields](const AudioAsset& audioAsset) {

@@ -54,23 +54,33 @@ import {
 	GEO_FAULT_DESCRIPTOR_KIND,
 	GEO_FAULT_DST_RANGE,
 	GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL,
+	GEO_FAULT_RESULT_CAPACITY,
 	GEO_FAULT_REJECT_BAD_CMD,
 	GEO_FAULT_REJECT_BAD_REGISTER_COMBO,
 	GEO_FAULT_REJECT_BAD_STRIDE,
 	GEO_FAULT_REJECT_DST_NOT_RAM,
-		GEO_FAULT_REJECT_MISALIGNED_REGS,
-		GEO_FAULT_REJECT_BUSY,
-		GEO_FAULT_SRC_RANGE,
-		GEO_INDEX_NONE,
-		GEO_SAT_META_AXIS_MASK,
-		GEO_SAT_META_SHAPE_AUX,
-		GEO_SAT_META_SHAPE_SHIFT,
-		GEO_SAT_META_SHAPE_SRC,
-		GEO_SHAPE_CONVEX_POLY,
-		GEO_STATUS_BUSY,
-		GEO_STATUS_DONE,
-		GEO_STATUS_ERROR,
-		GEO_STATUS_REJECTED,
+	GEO_FAULT_REJECT_MISALIGNED_REGS,
+	GEO_FAULT_REJECT_BUSY,
+	GEO_FAULT_SRC_RANGE,
+	GEO_INDEX_NONE,
+	GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB,
+	GEO_OVERLAP2D_BROADPHASE_NONE,
+	GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE,
+	GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS,
+	GEO_OVERLAP2D_MODE_FULL_PASS,
+	GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW,
+	GEO_PRIMITIVE_AABB,
+	GEO_PRIMITIVE_CIRCLE,
+	GEO_PRIMITIVE_CONVEX_POLY,
+	GEO_SAT_META_AXIS_MASK,
+	GEO_SAT_META_SHAPE_AUX,
+	GEO_SAT_META_SHAPE_SHIFT,
+	GEO_SAT_META_SHAPE_SRC,
+	GEO_SHAPE_CONVEX_POLY,
+	GEO_STATUS_BUSY,
+	GEO_STATUS_DONE,
+	GEO_STATUS_ERROR,
+	GEO_STATUS_REJECTED,
 	IMG_CTRL_START,
 	IMG_STATUS_BUSY,
 	IMG_STATUS_CLIPPED,
@@ -84,6 +94,7 @@ import {
 	IO_CMD_VDP_FILL_RECT,
 	IO_CMD_VDP_GLYPH_RUN,
 	IO_CMD_VDP_TILE_RUN,
+	IO_CMD_GEO_OVERLAP2D_PASS,
 	IO_CMD_GEO_PROJECT3_BATCH,
 	IO_CMD_GEO_SAT2_BATCH,
 	IO_CMD_GEO_XFORM2_BATCH,
@@ -1289,10 +1300,20 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_status_rejected', GEO_STATUS_REJECTED);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_xform2_batch', IO_CMD_GEO_XFORM2_BATCH);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_sat2_batch', IO_CMD_GEO_SAT2_BATCH);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_overlap2d_pass', IO_CMD_GEO_OVERLAP2D_PASS);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_xform3_batch', IO_CMD_GEO_XFORM3_BATCH);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_cmd_project3_batch', IO_CMD_GEO_PROJECT3_BATCH);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_index_none', GEO_INDEX_NONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_primitive_aabb', GEO_PRIMITIVE_AABB);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_primitive_circle', GEO_PRIMITIVE_CIRCLE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_primitive_convex_poly', GEO_PRIMITIVE_CONVEX_POLY);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_shape_convex_poly', GEO_SHAPE_CONVEX_POLY);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_overlap_mode_candidate_pairs', GEO_OVERLAP2D_MODE_CANDIDATE_PAIRS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_overlap_mode_full_pass', GEO_OVERLAP2D_MODE_FULL_PASS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_overlap_broadphase_none', GEO_OVERLAP2D_BROADPHASE_NONE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_overlap_broadphase_local_bounds_aabb', GEO_OVERLAP2D_BROADPHASE_LOCAL_BOUNDS_AABB);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_overlap_contact_clipped_feature', GEO_OVERLAP2D_CONTACT_POLICY_CLIPPED_FEATURE);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_overlap_output_stop_on_overflow', GEO_OVERLAP2D_OUTPUT_POLICY_STOP_ON_OVERFLOW);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_axis_mask', GEO_SAT_META_AXIS_MASK);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_shape_shift', GEO_SAT_META_SHAPE_SHIFT);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_sat_meta_shape_src', GEO_SAT_META_SHAPE_SRC);
@@ -1305,6 +1326,7 @@ export function seedLuaGlobals(runtime: Runtime): void {
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_descriptor_kind', GEO_FAULT_DESCRIPTOR_KIND);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_numeric_overflow_internal', GEO_FAULT_NUMERIC_OVERFLOW_INTERNAL);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_bad_record_flags', GEO_FAULT_BAD_RECORD_FLAGS);
+	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_result_capacity', GEO_FAULT_RESULT_CAPACITY);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_busy', GEO_FAULT_REJECT_BUSY);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_bad_cmd', GEO_FAULT_REJECT_BAD_CMD);
 	runtimeLuaPipeline.registerGlobal(runtime, 'sys_geo_fault_reject_bad_stride', GEO_FAULT_REJECT_BAD_STRIDE);
@@ -1323,6 +1345,12 @@ export function seedLuaGlobals(runtime: Runtime): void {
 		const bits = (args[0] as number) >>> 0;
 		bitcastView.setUint32(0, bits, true);
 		out.push(bitcastView.getFloat32(0, true));
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'u32_to_i32', createNativeFunction('u32_to_i32', (args, out) => {
+		out.push(((args[0] as number) >>> 0) | 0);
+	}));
+	runtimeLuaPipeline.registerGlobal(runtime, 'fix16_to_f32', createNativeFunction('fix16_to_f32', (args, out) => {
+		out.push((((args[0] as number) >>> 0) | 0) / 65536);
 	}));
 	runtimeLuaPipeline.registerGlobal(runtime, 'u64_to_f64', createNativeFunction('u64_to_f64', (args, out) => {
 		const hi = (args[0] as number) >>> 0;
