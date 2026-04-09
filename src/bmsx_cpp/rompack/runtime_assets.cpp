@@ -139,7 +139,7 @@ static void parseMachineSpecs(const BinObject& machineObj, MachineManifest& mani
 
 static constexpr u32 ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
 static constexpr u32 ROM_TOC_HEADER_SIZE = 48;
-static constexpr u32 ROM_TOC_ENTRY_SIZE = 80;
+static constexpr u32 ROM_TOC_ENTRY_SIZE = 88;
 static constexpr u32 ROM_TOC_INVALID_U32 = 0xffffffff;
 
 static std::string assetTypeFromId(u32 id) {
@@ -147,7 +147,7 @@ static std::string assetTypeFromId(u32 id) {
 		case 1: return "image";
 		case 2: return "audio";
 		case 3: return "data";
-		case 4: return "blob";
+		case 4: return "bin";
 		case 5: return "atlas";
 		case 6: return "romlabel";
 		case 7: return "model";
@@ -950,19 +950,19 @@ const BinValue* RuntimeAssets::getData(const AssetId& id) const {
 	return nullptr;
 }
 
-BlobAsset* RuntimeAssets::getBlob(const AssetId& id) {
+BinAsset* RuntimeAssets::getBin(const AssetId& id) {
 	const AssetToken token = hashAssetToken(id);
-	auto it = blob.find(token);
-	if (it != blob.end()) {
+	auto it = bin.find(token);
+	if (it != bin.end()) {
 		return &it->second;
 	}
 	return nullptr;
 }
 
-const BlobAsset* RuntimeAssets::getBlob(const AssetId& id) const {
+const BinAsset* RuntimeAssets::getBin(const AssetId& id) const {
 	const AssetToken token = hashAssetToken(id);
-	auto it = blob.find(token);
-	if (it != blob.end()) {
+	auto it = bin.find(token);
+	if (it != bin.end()) {
 		return &it->second;
 	}
 	return nullptr;
@@ -1011,8 +1011,8 @@ bool RuntimeAssets::hasData(const AssetId& id) const {
 	return getData(id) != nullptr;
 }
 
-bool RuntimeAssets::hasBlob(const AssetId& id) const {
-	return getBlob(id) != nullptr;
+bool RuntimeAssets::hasBin(const AssetId& id) const {
+	return getBin(id) != nullptr;
 }
 
 bool RuntimeAssets::hasLua(const AssetId& path) const {
@@ -1028,7 +1028,7 @@ void RuntimeAssets::clear() {
 	audio.clear();
 	model.clear();
 	data.clear();
-	blob.clear();
+	bin.clear();
 	lua.clear();
 	audioevents.clear();
 	atlasTextures.clear();
@@ -1449,8 +1449,10 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 		const u32 metaBufEndRaw = readLE32(entry + 60);
 		const u32 textureBufStartRaw = readLE32(entry + 64);
 		const u32 textureBufEndRaw = readLE32(entry + 68);
-		const u32 updateLo = readLE32(entry + 72);
-		const u32 updateHi = readLE32(entry + 76);
+		const u32 collisionBinStartRaw = readLE32(entry + 72);
+		const u32 collisionBinEndRaw = readLE32(entry + 76);
+		const u32 updateLo = readLE32(entry + 80);
+		const u32 updateHi = readLE32(entry + 84);
 
 		const std::string assetId = readStringFromTable(stringTable, stringTableSize, residOffset, residLength);
 		if (assetId.empty()) {
@@ -1475,6 +1477,8 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 		romInfo.metabufferEnd = optionalI32FromU32(metaBufEndRaw);
 		romInfo.textureStart = optionalI32FromU32(textureBufStartRaw);
 		romInfo.textureEnd = optionalI32FromU32(textureBufEndRaw);
+		romInfo.collisionBinStart = optionalI32FromU32(collisionBinStartRaw);
+		romInfo.collisionBinEnd = optionalI32FromU32(collisionBinEndRaw);
 		const std::string sourcePath = readStringFromTable(stringTable, stringTableSize, sourceOffset, sourceLength);
 		if (!sourcePath.empty()) {
 			romInfo.sourcePath = sourcePath;
@@ -1638,14 +1642,14 @@ static bool loadRomAssetPayloadInternal(const u8* romData,
 			audioEventAsset.value = std::move(audioEvents);
 			assets.audioevents[assetToken] = std::move(audioEventAsset);
 		}
-		else if (assetType == "blob") {
+		else if (assetType == "bin") {
 			if (bufStart < 0 || bufEnd <= bufStart) {
-				throw BMSX_RUNTIME_ERROR("Blob asset missing payload: " + assetId);
+				throw BMSX_RUNTIME_ERROR("Bin asset missing payload: " + assetId);
 			}
-			BlobAsset blobAsset;
-			blobAsset.id = assetId;
-			blobAsset.rom = romInfo;
-			assets.blob[assetToken] = std::move(blobAsset);
+			BinAsset binAsset;
+			binAsset.id = assetId;
+			binAsset.rom = romInfo;
+			assets.bin[assetToken] = std::move(binAsset);
 		}
 		else if (assetType == "lua") {
 			if (!romInfo.sourcePath.has_value()) {
