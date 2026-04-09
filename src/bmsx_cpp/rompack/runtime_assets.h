@@ -344,8 +344,6 @@ struct MachineManifest {
 	std::string namespaceName;
 	i32 viewportWidth = 0;
 	i32 viewportHeight = 0;
-	i32 skyboxFaceSize = 0;
-	std::optional<i32> skyboxFaceBytes;
 	CanonicalizationType canonicalization = CanonicalizationType::None;
 	std::optional<i32> ramBytes;
 	std::optional<i32> atlasSlotBytes;

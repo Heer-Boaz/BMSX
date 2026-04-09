@@ -20,8 +20,6 @@ import {
 	VRAM_SYSTEM_ATLAS_SIZE,
 	VRAM_PRIMARY_ATLAS_BASE,
 	VRAM_PRIMARY_ATLAS_SIZE,
-	VRAM_SKYBOX_BASE,
-	VRAM_SKYBOX_SIZE,
 	VRAM_SECONDARY_ATLAS_BASE,
 	VRAM_SECONDARY_ATLAS_SIZE,
 	VRAM_STAGING_BASE,
@@ -1289,7 +1287,6 @@ export class Memory {
 		const end = addr + length;
 		const overlaps = (base: number, size: number): boolean => addr < base + size && end > base;
 		return overlaps(VRAM_STAGING_BASE, VRAM_STAGING_SIZE)
-			|| overlaps(VRAM_SKYBOX_BASE, VRAM_SKYBOX_SIZE)
 			|| overlaps(VRAM_SYSTEM_ATLAS_BASE, VRAM_SYSTEM_ATLAS_SIZE)
 			|| overlaps(VRAM_PRIMARY_ATLAS_BASE, VRAM_PRIMARY_ATLAS_SIZE)
 			|| overlaps(VRAM_SECONDARY_ATLAS_BASE, VRAM_SECONDARY_ATLAS_SIZE)

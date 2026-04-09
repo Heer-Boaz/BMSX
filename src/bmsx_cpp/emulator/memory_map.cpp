@@ -117,9 +117,9 @@ void configureMemoryMap(const MemoryMapConfig& config) {
 	if (config.frameBufferBytes == 0) {
 		throw std::runtime_error("[MemoryMap] framebuffer_bytes must be greater than 0.");
 	}
-	if (config.skyboxFaceBytes == 0) {
-		throw std::runtime_error("[MemoryMap] skybox_face_bytes must be greater than 0.");
-	}
+		if (config.skyboxFaceBytes == 0) {
+			throw std::runtime_error("[MemoryMap] skyboxFaceBytes must be greater than 0.");
+		}
 	recomputeMemoryLayout(config);
 }
 

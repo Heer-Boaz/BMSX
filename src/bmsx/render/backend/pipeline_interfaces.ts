@@ -287,7 +287,16 @@ export type FogUniforms = {
 	fogYMax: number;
 };
 
-export interface SkyboxPipelineState { width: number; height: number; view: Float32Array; proj: Float32Array; tex: TextureHandle; }
+export interface SkyboxPipelineState {
+	width: number;
+	height: number;
+	view: Float32Array;
+	proj: Float32Array;
+	atlasPrimaryTex: TextureHandle;
+	atlasSecondaryTex: TextureHandle;
+	faceUvRects: Float32Array;
+	faceAtlasBindings: Int32Array;
+}
 
 export interface MeshBatchPipelineState {
 	width: number;

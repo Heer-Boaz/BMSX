@@ -23,7 +23,7 @@ import {
 	VRAM_SYSTEM_ATLAS_BASE,
 } from '../memory_map';
 import { ATLAS_PRIMARY_SLOT_ID, ATLAS_SECONDARY_SLOT_ID, ENGINE_ATLAS_INDEX, generateAtlasName } from '../../rompack/rompack';
-import type { AssetEntry, ImageWriteEntry, ImageWritePlan } from '../memory';
+import type { AssetEntry, ImageWritePlan } from '../memory';
 import { Memory } from '../memory';
 import type { DecodedImage } from '../../utils/image_decode';
 import { DmaController } from './dma_controller';
@@ -36,10 +36,7 @@ type ImgDecJob = {
 	reject: (error: unknown) => void;
 };
 
-type ImgDecEntry = AssetEntry | ImageWriteEntry;
 const IMGDEC_SERVICE_BATCH_BYTES = 256;
-
-const isAssetEntry = (entry: ImgDecEntry): entry is AssetEntry => (entry as AssetEntry).id !== undefined;
 
 function imageDecoderFault(message: string): Error {
 	return new Error(`Image decoder fault: ${message}`);
@@ -55,7 +52,7 @@ export class ImgDecController {
 	private status = 0;
 	private pendingError: unknown = null;
 	private pendingResult: DecodedImage | null = null;
-	private pendingEntry: ImgDecEntry | null = null;
+	private pendingEntry: AssetEntry | null = null;
 	private pendingCap = 0;
 	private decodeActive = false;
 	private decodeRemaining = 0;
@@ -67,7 +64,6 @@ export class ImgDecController {
 	private readonly queuedJobs: ImgDecJob[] = [];
 	private activeJob: ImgDecJob | null = null;
 	private signalIrq = false;
-	private readonly externalSlots = new Map<number, ImageWriteEntry>();
 
 	public constructor(
 		private readonly memory: Memory,
@@ -107,14 +103,6 @@ export class ImgDecController {
 
 	public getPendingDecodeBytes(): number {
 		return this.decodeRemaining;
-	}
-
-	public registerExternalSlot(baseAddr: number, entry: ImageWriteEntry): void {
-		this.externalSlots.set(baseAddr, entry);
-	}
-
-	public clearExternalSlots(): void {
-		this.externalSlots.clear();
 	}
 
 	public decodeToVram(params: { bytes: Uint8Array; dst: number; cap: number }): Promise<{ pixels: Uint8Array; width: number; height: number; clipped: boolean }> {
@@ -221,11 +209,7 @@ export class ImgDecController {
 		this.startJob({ buffer: job.buffer, dst: job.dst, cap: job.cap, src: 0, len: job.buffer.byteLength, job, signalIrq: false });
 	}
 
-	private resolveSlotEntry(dst: number): ImgDecEntry {
-		const external = this.externalSlots.get(dst);
-		if (external) {
-			return external;
-		}
+	private resolveSlotEntry(dst: number): AssetEntry {
 		if (dst === VRAM_PRIMARY_ATLAS_BASE) {
 			return this.memory.getAssetEntry(ATLAS_PRIMARY_SLOT_ID);
 		}
@@ -251,7 +235,7 @@ export class ImgDecController {
 		this.memory.writeValue(IO_IMG_DST, params.dst);
 		this.memory.writeValue(IO_IMG_CAP, params.cap);
 
-		let entry: ImgDecEntry;
+		let entry: AssetEntry;
 		try {
 			entry = this.resolveSlotEntry(params.dst);
 		} catch (error) {
@@ -291,12 +275,10 @@ export class ImgDecController {
 		});
 	}
 
-	private beginDecode(result: DecodedImage, entry: ImgDecEntry): void {
+	private beginDecode(result: DecodedImage, entry: AssetEntry): void {
 		const cap = this.pendingCap;
 		this.pendingCap = 0;
-		const plan = isAssetEntry(entry)
-			? this.memory.planImageSlotWrite(entry, { pixels: result.pixels, width: result.width, height: result.height, capacity: cap })
-			: this.memory.planImageWrite(entry, { pixels: result.pixels, width: result.width, height: result.height, capacity: cap });
+		const plan = this.memory.planImageSlotWrite(entry, { pixels: result.pixels, width: result.width, height: result.height, capacity: cap });
 		this.decodePlan = plan;
 		this.decodePixels = result.pixels;
 		this.decodeResult = result;

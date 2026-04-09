@@ -177,21 +177,9 @@ MemoryMapConfig resolveMemoryMapConfig(const MachineManifest& machine, const Mac
 	const uint32_t frameBufferWidth = static_cast<uint32_t>(machine.viewportWidth);
 	const uint32_t frameBufferHeight = static_cast<uint32_t>(machine.viewportHeight);
 	config.frameBufferBytes = frameBufferWidth * frameBufferHeight * 4u;
-	if (machine.skyboxFaceBytes) {
-		const i32 value = *machine.skyboxFaceBytes;
-		if (value <= 0) {
-			throw std::runtime_error("[EngineCore] skybox_face_bytes must be greater than 0.");
-		}
-		config.skyboxFaceBytes = static_cast<uint32_t>(value);
-	} else {
-		const i32 faceSize = machine.skyboxFaceSize > 0
-			? machine.skyboxFaceSize
-			: SKYBOX_FACE_DEFAULT_SIZE;
-		if (faceSize <= 0) {
-			throw std::runtime_error("[EngineCore] skybox_face_size must be greater than 0.");
-		}
-		config.skyboxFaceBytes = static_cast<uint32_t>(faceSize) * static_cast<uint32_t>(faceSize) * 4u;
-	}
+	config.skyboxFaceBytes = static_cast<uint32_t>(SKYBOX_FACE_DEFAULT_SIZE)
+		* static_cast<uint32_t>(SKYBOX_FACE_DEFAULT_SIZE)
+		* 4u;
 
 	const uint32_t requiredAssetTableBytes = computeAssetTableBytes(engineAssets, assets);
 	config.assetTableBytes = requiredAssetTableBytes;

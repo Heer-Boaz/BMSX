@@ -14,7 +14,7 @@ import type { MeshRenderSubmission, ParticleRenderSubmission } from '../shared/r
 import { updateFallbackCamera, FALLBACK_CAMERA } from '../shared/fallback_camera';
 import { resolveActiveCamera3D } from '../shared/hardware_camera';
 import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
-import { VRAM_ATLAS_SLOT_SIZE, VRAM_SKYBOX_FACE_BYTES, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../emulator/memory_map';
+import { VRAM_ATLAS_SLOT_SIZE, VRAM_SYSTEM_ATLAS_SLOT_SIZE } from '../../emulator/memory_map';
 import type { Mesh } from '../3d/mesh';
 import { Runtime } from '../../emulator/runtime';
 import type { HeadlessPresentHost } from './headless_view';
@@ -342,9 +342,6 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 			if (!ids) {
 				return;
 			}
-			if (VRAM_SKYBOX_FACE_BYTES <= 0) {
-				throw new Error('[HeadlessSkybox] VRAM_SKYBOX_FACE_BYTES is not configured.');
-			}
 			const faces: Array<[string, string]> = [
 				['posx', ids.posx],
 				['negx', ids.negx],
@@ -354,19 +351,15 @@ function registerSkyboxPass(registry: RenderPassLibrary): void {
 				['negz', ids.negz],
 			];
 			const snapshot: Snapshot = [`faces=${faces.map((face) => face[1]).join(',')}`];
-			for (const [face, id] of faces) {
-				const meta = Runtime.instance.getImageMeta(id);
-				if (meta.atlassed) {
-					throw new Error(`[HeadlessSkybox] Skybox image '${id}' must not be atlassed.`);
+			for (let index = 0; index < faces.length; index += 1) {
+				const [face, id] = faces[index];
+				const handle = Runtime.instance.resolveAssetHandle(id);
+				const sample = Runtime.instance.vdp.resolveBlitterSample(handle);
+				if (sample.atlasId === ENGINE_ATLAS_INDEX) {
+					throw new Error(`[HeadlessSkybox] Skybox image '${id}' resolved to the engine atlas.`);
 				}
-				if (meta.width <= 0 || meta.height <= 0) {
-					throw new Error(`[HeadlessSkybox] Skybox image '${id}' has invalid dimensions (${meta.width}x${meta.height}).`);
-				}
-				const bytes = meta.width * meta.height * 4;
-				if (bytes > VRAM_SKYBOX_FACE_BYTES) {
-					throw new Error(`[HeadlessSkybox] Skybox image '${id}' size ${meta.width}x${meta.height} exceeds VRAM_SKYBOX_FACE_BYTES (${VRAM_SKYBOX_FACE_BYTES}).`);
-				}
-				snapshot.push(`[skybox:${face}] id=${id} size=${meta.width}x${meta.height}`);
+				const slot = sample.atlasId === 0 ? 'primary' : 'secondary';
+				snapshot.push(`[skybox:${face}] id=${id} size=${sample.source.width}x${sample.source.height} slot=${slot}`);
 			}
 			previousSkyboxSnapshot = emitDiff('skybox', previousSkyboxSnapshot, snapshot);
 		},

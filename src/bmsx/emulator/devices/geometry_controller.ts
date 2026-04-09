@@ -100,16 +100,13 @@ const SAT2_DESC_WORDS = 4;
 const SAT2_DESC_BYTES = SAT2_DESC_WORDS * 4;
 const SAT2_RESULT_WORDS = 5;
 const SAT2_RESULT_BYTES = SAT2_RESULT_WORDS * 4;
-const OVERLAP2D_INSTANCE_WORDS = 12;
+const OVERLAP2D_INSTANCE_WORDS = 3;
 const OVERLAP2D_INSTANCE_BYTES = OVERLAP2D_INSTANCE_WORDS * 4;
-const OVERLAP2D_PAIR_WORDS = 4;
+const OVERLAP2D_PAIR_WORDS = 3;
 const OVERLAP2D_PAIR_BYTES = OVERLAP2D_PAIR_WORDS * 4;
-const OVERLAP2D_RESULT_WORDS = 12;
+const OVERLAP2D_RESULT_WORDS = 9;
 const OVERLAP2D_RESULT_BYTES = OVERLAP2D_RESULT_WORDS * 4;
 const OVERLAP2D_SUMMARY_BYTES = 16;
-const OVERLAP2D_BLOB_HEADER_BYTES = 32;
-const OVERLAP2D_BLOB_MAGIC = 0x31443247;
-const OVERLAP2D_BLOB_VERSION = 1;
 const OVERLAP2D_DESC_BYTES = 16;
 const OVERLAP2D_BOUNDS_BYTES = 16;
 const OVERLAP2D_KIND_COMPOUND = 4;
@@ -806,11 +803,10 @@ export class GeometryController {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return;
 		}
-		const pairFlags = this.memory.readU32(pairAddr + 0);
-		const instanceAIndex = this.memory.readU32(pairAddr + 4);
-		const instanceBIndex = this.memory.readU32(pairAddr + 8);
-		const pairMeta = this.memory.readU32(pairAddr + 12);
-		if (pairFlags !== 0 || instanceAIndex === instanceBIndex) {
+		const instanceAIndex = this.memory.readU32(pairAddr + 0);
+		const instanceBIndex = this.memory.readU32(pairAddr + 4);
+		const pairMeta = this.memory.readU32(pairAddr + 8);
+		if (instanceAIndex === instanceBIndex) {
 			this.finishError(GEO_FAULT_BAD_RECORD_FLAGS, recordIndex);
 			return;
 		}
@@ -827,44 +823,16 @@ export class GeometryController {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return;
 		}
-		const colliderAId = this.memory.readU32(instanceAAddr + 4);
-		const blobBaseA = this.memory.readU32(instanceAAddr + 8);
-		const shapeAOffset = this.memory.readU32(instanceAAddr + 12);
-		const layerA = this.memory.readU32(instanceAAddr + 16);
-		const maskA = this.memory.readU32(instanceAAddr + 20);
-		const m00A = this.readI32(instanceAAddr + 24);
-		const m01A = this.readI32(instanceAAddr + 28);
-		const m02A = this.readI32(instanceAAddr + 32);
-		const m10A = this.readI32(instanceAAddr + 36);
-		const m11A = this.readI32(instanceAAddr + 40);
-		const m12A = this.readI32(instanceAAddr + 44);
-		const colliderBId = this.memory.readU32(instanceBAddr + 4);
-		const blobBaseB = this.memory.readU32(instanceBAddr + 8);
-		const shapeBOffset = this.memory.readU32(instanceBAddr + 12);
-		const layerB = this.memory.readU32(instanceBAddr + 16);
-		const maskB = this.memory.readU32(instanceBAddr + 20);
-		const m00B = this.readI32(instanceBAddr + 24);
-		const m01B = this.readI32(instanceBAddr + 28);
-		const m02B = this.readI32(instanceBAddr + 32);
-		const m10B = this.readI32(instanceBAddr + 36);
-		const m11B = this.readI32(instanceBAddr + 40);
-		const m12B = this.readI32(instanceBAddr + 44);
-		if (((layerA & maskB) === 0) || ((layerB & maskA) === 0)) {
-			this.completeRecord(job);
-			return;
-		}
+		const shapeAAddr = this.memory.readU32(instanceAAddr + 0);
+		const txA = this.readI32(instanceAAddr + 4);
+		const tyA = this.readI32(instanceAAddr + 8);
+		const shapeBAddr = this.memory.readU32(instanceBAddr + 0);
+		const txB = this.readI32(instanceBAddr + 4);
+		const tyB = this.readI32(instanceBAddr + 8);
 		job.broadphasePairCount = (job.broadphasePairCount ?? 0) + 1;
-		const shapeAAddr = this.resolveByteOffset(blobBaseA, shapeAOffset, OVERLAP2D_DESC_BYTES);
-		const shapeBAddr = this.resolveByteOffset(blobBaseB, shapeBOffset, OVERLAP2D_DESC_BYTES);
 		if (shapeAAddr === null || shapeBAddr === null
-			|| !this.memory.isReadableMainMemoryRange(blobBaseA, OVERLAP2D_BLOB_HEADER_BYTES)
-			|| !this.memory.isReadableMainMemoryRange(blobBaseB, OVERLAP2D_BLOB_HEADER_BYTES)
 			|| !this.memory.isReadableMainMemoryRange(shapeAAddr, OVERLAP2D_DESC_BYTES)
-			|| !this.memory.isReadableMainMemoryRange(shapeBAddr, OVERLAP2D_DESC_BYTES)
-			|| this.memory.readU32(blobBaseA + 0) !== OVERLAP2D_BLOB_MAGIC
-			|| this.memory.readU32(blobBaseA + 4) !== OVERLAP2D_BLOB_VERSION
-			|| this.memory.readU32(blobBaseB + 0) !== OVERLAP2D_BLOB_MAGIC
-			|| this.memory.readU32(blobBaseB + 4) !== OVERLAP2D_BLOB_VERSION) {
+			|| !this.memory.isReadableMainMemoryRange(shapeBAddr, OVERLAP2D_DESC_BYTES)) {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return;
 		}
@@ -896,32 +864,32 @@ export class GeometryController {
 		let bestPy = 0;
 		for (let pieceAIndex = 0; pieceAIndex < shapeAPieceCount; pieceAIndex += 1) {
 			const pieceAAddr = shapeAKind === OVERLAP2D_KIND_COMPOUND
-				? this.resolveByteOffset(blobBaseA, shapeADataOffset + pieceAIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
+				? this.resolveByteOffset(shapeAAddr, shapeADataOffset + pieceAIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
 				: shapeAAddr;
 			if (pieceAAddr === null || !this.memory.isReadableMainMemoryRange(pieceAAddr, OVERLAP2D_DESC_BYTES)) {
 				this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 				return;
 			}
-			if (!this.readPieceBounds(blobBaseA, pieceAAddr, m00A, m01A, m02A, m10A, m11A, m12A, this.overlapBoundsA)) {
+			if (!this.readPieceBounds(pieceAAddr, txA, tyA, this.overlapBoundsA)) {
 				this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 				return;
 			}
 			for (let pieceBIndex = 0; pieceBIndex < shapeBPieceCount; pieceBIndex += 1) {
 				const pieceBAddr = shapeBKind === OVERLAP2D_KIND_COMPOUND
-					? this.resolveByteOffset(blobBaseB, shapeBDataOffset + pieceBIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
+					? this.resolveByteOffset(shapeBAddr, shapeBDataOffset + pieceBIndex * OVERLAP2D_DESC_BYTES, OVERLAP2D_DESC_BYTES)
 					: shapeBAddr;
 				if (pieceBAddr === null || !this.memory.isReadableMainMemoryRange(pieceBAddr, OVERLAP2D_DESC_BYTES)) {
 					this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 					return;
 				}
-				if (!this.readPieceBounds(blobBaseB, pieceBAddr, m00B, m01B, m02B, m10B, m11B, m12B, this.overlapBoundsB)) {
+				if (!this.readPieceBounds(pieceBAddr, txB, tyB, this.overlapBoundsB)) {
 					this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 					return;
 				}
 				if (!this.boundsOverlap(this.overlapBoundsA, this.overlapBoundsB)) {
 					continue;
 				}
-				if (!this.computePiecePairContact(blobBaseA, pieceAAddr, m00A, m01A, m02A, m10A, m11A, m12A, blobBaseB, pieceBAddr, m00B, m01B, m02B, m10B, m11B, m12B, recordIndex)) {
+				if (!this.computePiecePairContact(pieceAAddr, txA, tyA, pieceBAddr, txB, tyB, recordIndex)) {
 					continue;
 				}
 				if (!bestHit
@@ -953,44 +921,33 @@ export class GeometryController {
 				this.finishError(GEO_FAULT_DST_RANGE, recordIndex);
 				return;
 			}
-			this.writeOverlap2dResult(resultAddr, colliderAId, colliderBId, bestNx, bestNy, bestDepth, bestPx, bestPy, bestPieceA, bestPieceB, bestFeatureMeta, pairMeta);
+			this.writeOverlap2dResult(resultAddr, bestNx, bestNy, bestDepth, bestPx, bestPy, bestPieceA, bestPieceB, bestFeatureMeta, pairMeta);
 			job.resultCount = resultCount + 1;
 		}
 		this.writeOverlap2dSummary(job, 0);
 		this.completeRecord(job);
 	}
 
-	private readPieceBounds(blobBase: number, pieceAddr: number, m00: number, m01: number, m02: number, m10: number, m11: number, m12: number, out: Int32Array): boolean {
+	private readPieceBounds(pieceAddr: number, tx: number, ty: number, out: Int32Array): boolean {
 		const boundsOffset = this.memory.readU32(pieceAddr + 12);
-		const boundsAddr = this.resolveByteOffset(blobBase, boundsOffset, OVERLAP2D_BOUNDS_BYTES);
+		const boundsAddr = this.resolveByteOffset(pieceAddr, boundsOffset, OVERLAP2D_BOUNDS_BYTES);
 		if (boundsAddr === null || !this.memory.isReadableMainMemoryRange(boundsAddr, OVERLAP2D_BOUNDS_BYTES)) {
 			return false;
 		}
-		const left = this.readI32(boundsAddr + 0);
-		const top = this.readI32(boundsAddr + 4);
-		const right = this.readI32(boundsAddr + 8);
-		const bottom = this.readI32(boundsAddr + 12);
-		this.writeTransformedBounds(out, m00, m01, m02, m10, m11, m12, left, top, right, bottom);
+		out[0] = this.readI32(boundsAddr + 0) + tx;
+		out[1] = this.readI32(boundsAddr + 4) + ty;
+		out[2] = this.readI32(boundsAddr + 8) + tx;
+		out[3] = this.readI32(boundsAddr + 12) + ty;
 		return true;
 	}
 
 	private computePiecePairContact(
-		blobBaseA: number,
 		pieceAAddr: number,
-		m00A: number,
-		m01A: number,
-		m02A: number,
-		m10A: number,
-		m11A: number,
-		m12A: number,
-		blobBaseB: number,
+		txA: number,
+		tyA: number,
 		pieceBAddr: number,
-		m00B: number,
-		m01B: number,
-		m02B: number,
-		m10B: number,
-		m11B: number,
-		m12B: number,
+		txB: number,
+		tyB: number,
 		recordIndex: number,
 	): boolean {
 		const primitiveA = this.memory.readU32(pieceAAddr + 0);
@@ -1000,19 +957,19 @@ export class GeometryController {
 			this.finishError(GEO_FAULT_DESCRIPTOR_KIND, recordIndex);
 			return false;
 		}
-		if (!this.loadWorldPoly(blobBaseA, pieceAAddr, m00A, m01A, m02A, m10A, m11A, m12A, this.overlapWorldPolyA)
-			|| !this.loadWorldPoly(blobBaseB, pieceBAddr, m00B, m01B, m02B, m10B, m11B, m12B, this.overlapWorldPolyB)) {
+		if (!this.loadWorldPoly(pieceAAddr, txA, tyA, this.overlapWorldPolyA)
+			|| !this.loadWorldPoly(pieceBAddr, txB, tyB, this.overlapWorldPolyB)) {
 			this.finishError(GEO_FAULT_SRC_RANGE, recordIndex);
 			return false;
 		}
 		return this.computePolyPairContact(this.overlapWorldPolyA, this.overlapWorldPolyB);
 	}
 
-	private loadWorldPoly(blobBase: number, pieceAddr: number, m00: number, m01: number, m02: number, m10: number, m11: number, m12: number, out: number[]): boolean {
+	private loadWorldPoly(pieceAddr: number, tx: number, ty: number, out: number[]): boolean {
 		const primitive = this.memory.readU32(pieceAddr + 0);
 		const dataCount = this.memory.readU32(pieceAddr + 4);
 		const dataOffset = this.memory.readU32(pieceAddr + 8);
-		const dataAddr = this.resolveByteOffset(blobBase, dataOffset, primitive === GEO_PRIMITIVE_AABB ? 16 : dataCount * XFORM2_VERTEX_BYTES);
+		const dataAddr = this.resolveByteOffset(pieceAddr, dataOffset, primitive === GEO_PRIMITIVE_AABB ? 16 : dataCount * XFORM2_VERTEX_BYTES);
 		if (dataAddr === null) {
 			return false;
 		}
@@ -1025,10 +982,10 @@ export class GeometryController {
 			const top = this.readI32(dataAddr + 4);
 			const right = this.readI32(dataAddr + 8);
 			const bottom = this.readI32(dataAddr + 12);
-			this.pushWorldVertex(out, m00, m01, m02, m10, m11, m12, left, top);
-			this.pushWorldVertex(out, m00, m01, m02, m10, m11, m12, right, top);
-			this.pushWorldVertex(out, m00, m01, m02, m10, m11, m12, right, bottom);
-			this.pushWorldVertex(out, m00, m01, m02, m10, m11, m12, left, bottom);
+			this.pushWorldVertex(out, tx, ty, left, top);
+			this.pushWorldVertex(out, tx, ty, right, top);
+			this.pushWorldVertex(out, tx, ty, right, bottom);
+			this.pushWorldVertex(out, tx, ty, left, bottom);
 			return true;
 		}
 		if (primitive !== GEO_PRIMITIVE_CONVEX_POLY || dataCount < 3 || !this.memory.isReadableMainMemoryRange(dataAddr, dataCount * XFORM2_VERTEX_BYTES)) {
@@ -1036,45 +993,14 @@ export class GeometryController {
 		}
 		for (let vertexIndex = 0; vertexIndex < dataCount; vertexIndex += 1) {
 			const vertexAddr = dataAddr + vertexIndex * XFORM2_VERTEX_BYTES;
-			this.pushWorldVertex(out, m00, m01, m02, m10, m11, m12, this.readI32(vertexAddr + 0), this.readI32(vertexAddr + 4));
+			this.pushWorldVertex(out, tx, ty, this.readI32(vertexAddr + 0), this.readI32(vertexAddr + 4));
 		}
 		return true;
 	}
 
-	private pushWorldVertex(out: number[], m00: number, m01: number, m02: number, m10: number, m11: number, m12: number, localX: number, localY: number): void {
-		out.push(transformFixed16(m00, m01, m02, localX, localY) / FIX16_SCALE);
-		out.push(transformFixed16(m10, m11, m12, localX, localY) / FIX16_SCALE);
-	}
-
-	private writeTransformedBounds(out: Int32Array, m00: number, m01: number, m02: number, m10: number, m11: number, m12: number, left: number, top: number, right: number, bottom: number): void {
-		const x0 = transformFixed16(m00, m01, m02, left, top);
-		const y0 = transformFixed16(m10, m11, m12, left, top);
-		const x1 = transformFixed16(m00, m01, m02, right, top);
-		const y1 = transformFixed16(m10, m11, m12, right, top);
-		const x2 = transformFixed16(m00, m01, m02, right, bottom);
-		const y2 = transformFixed16(m10, m11, m12, right, bottom);
-		const x3 = transformFixed16(m00, m01, m02, left, bottom);
-		const y3 = transformFixed16(m10, m11, m12, left, bottom);
-		let minX = x0;
-		let minY = y0;
-		let maxX = x0;
-		let maxY = y0;
-		if (x1 < minX) minX = x1;
-		if (x2 < minX) minX = x2;
-		if (x3 < minX) minX = x3;
-		if (y1 < minY) minY = y1;
-		if (y2 < minY) minY = y2;
-		if (y3 < minY) minY = y3;
-		if (x1 > maxX) maxX = x1;
-		if (x2 > maxX) maxX = x2;
-		if (x3 > maxX) maxX = x3;
-		if (y1 > maxY) maxY = y1;
-		if (y2 > maxY) maxY = y2;
-		if (y3 > maxY) maxY = y3;
-		out[0] = minX;
-		out[1] = minY;
-		out[2] = maxX;
-		out[3] = maxY;
+	private pushWorldVertex(out: number[], tx: number, ty: number, localX: number, localY: number): void {
+		out.push((localX + tx) / FIX16_SCALE);
+		out.push((localY + ty) / FIX16_SCALE);
 	}
 
 	private boundsOverlap(a: Int32Array, b: Int32Array): boolean {
@@ -1231,19 +1157,16 @@ export class GeometryController {
 		this.memory.writeU32(job.dst1 + 12, flags >>> 0);
 	}
 
-	private writeOverlap2dResult(addr: number, colliderAId: number, colliderBId: number, nx: number, ny: number, depth: number, px: number, py: number, pieceA: number, pieceB: number, featureMeta: number, pairMeta: number): void {
-		this.memory.writeU32(addr + 0, 1);
-		this.memory.writeU32(addr + 4, colliderAId >>> 0);
-		this.memory.writeU32(addr + 8, colliderBId >>> 0);
-		this.memory.writeU32(addr + 12, nx >>> 0);
-		this.memory.writeU32(addr + 16, ny >>> 0);
-		this.memory.writeU32(addr + 20, depth >>> 0);
-		this.memory.writeU32(addr + 24, px >>> 0);
-		this.memory.writeU32(addr + 28, py >>> 0);
-		this.memory.writeU32(addr + 32, pieceA >>> 0);
-		this.memory.writeU32(addr + 36, pieceB >>> 0);
-		this.memory.writeU32(addr + 40, featureMeta >>> 0);
-		this.memory.writeU32(addr + 44, pairMeta >>> 0);
+	private writeOverlap2dResult(addr: number, nx: number, ny: number, depth: number, px: number, py: number, pieceA: number, pieceB: number, featureMeta: number, pairMeta: number): void {
+		this.memory.writeU32(addr + 0, nx >>> 0);
+		this.memory.writeU32(addr + 4, ny >>> 0);
+		this.memory.writeU32(addr + 8, depth >>> 0);
+		this.memory.writeU32(addr + 12, px >>> 0);
+		this.memory.writeU32(addr + 16, py >>> 0);
+		this.memory.writeU32(addr + 20, pieceA >>> 0);
+		this.memory.writeU32(addr + 24, pieceB >>> 0);
+		this.memory.writeU32(addr + 28, featureMeta >>> 0);
+		this.memory.writeU32(addr + 32, pairMeta >>> 0);
 	}
 
 	private resolveByteOffset(base: number, offset: number, byteLength: number): number | null {

@@ -201,16 +201,6 @@
 				"staging_bytes": {
 					"type": "integer",
 					"minimum": 1
-				},
-				"skybox_face_size": {
-					"type": "integer",
-					"minimum": 1,
-					"description": "Maximum skybox face size in pixels (square)."
-				},
-				"skybox_face_bytes": {
-					"type": "integer",
-					"minimum": 1,
-					"description": "Skybox face capacity in bytes (overrides skybox_face_size when set)."
 				}
 			},
 			"additionalProperties": false

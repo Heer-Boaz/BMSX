@@ -15,7 +15,6 @@ import type {
 	color_arr,
 	CartRomHeader,
 } from './rompack';
-import { assertMachineManifestUsesRamOnly } from './rompack';
 import { decodeBinary, toF32, typedArrayFromBytes } from '../serializer/binencoder';
 import { CART_ROM_BASE_HEADER_SIZE, CART_ROM_HEADER_SIZE, CART_ROM_MAGIC_BYTES } from './rompack';
 import { inflate } from 'pako';
@@ -195,7 +194,6 @@ function decodeCartridgeMetadata(rom: Uint8Array, header: CartRomHeader): Cartri
 	}
 	const manifestSlice = rom.subarray(header.manifestOffset, header.manifestOffset + header.manifestLength);
 	const cart_manifest = decodeBinary(manifestSlice) as CartManifest;
-	assertMachineManifestUsesRamOnly(cart_manifest.machine);
 	return {
 		cart_manifest,
 		machine: cart_manifest.machine,
@@ -330,7 +328,7 @@ async function loadRomAssetListFromHeader(rom: Uint8Array, header: CartRomHeader
 					asset.audiometa = decodedMeta as AudioMeta;
 					break;
 				case 'data':
-				case 'blob':
+				case 'bin':
 					break;
 				case 'model':
 					break;
@@ -543,8 +541,8 @@ async function load(source: RawAssetSource, res: RomAsset, assets: RuntimeAssets
 				assets.data[assetKey] = data;
 			}
 			break;
-		case 'blob':
-			assets.blob[assetKey] = baseAsset;
+		case 'bin':
+			assets.bin[assetKey] = baseAsset;
 			break;
 		case 'aem': {
 			const u8 = source.getBytes(baseAsset);
@@ -574,7 +572,7 @@ async function loadRuntimeAssetsFromSource(source: RawAssetSource, index: Cartri
 		audio: {},
 		model: {},
 		data: {},
-		blob: {},
+		bin: {},
 		audioevents: {},
 		project_root_path: index.projectRootPath,
 		cart_manifest: index.cart_manifest,

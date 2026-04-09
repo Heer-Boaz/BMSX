@@ -3,7 +3,7 @@ import { hashAssetId } from './asset_tokens';
 
 export const ROM_TOC_MAGIC = 0x434f5442; // 'BTOC' little-endian
 export const ROM_TOC_HEADER_SIZE = 48;
-export const ROM_TOC_ENTRY_SIZE = 80;
+export const ROM_TOC_ENTRY_SIZE = 88;
 export const ROM_TOC_INVALID_U32 = 0xffffffff;
 const utf8Decoder = new TextDecoder();
 
@@ -16,7 +16,7 @@ const ASSET_TYPE_IDS: Record<asset_type, number> = {
 	image: 1,
 	audio: 2,
 	data: 3,
-	blob: 4,
+	bin: 4,
 	atlas: 5,
 	romlabel: 6,
 	model: 7,
@@ -38,7 +38,7 @@ export function assetTypeFromId(id: number): asset_type {
 		case 1: return 'image';
 		case 2: return 'audio';
 		case 3: return 'data';
-		case 4: return 'blob';
+		case 4: return 'bin';
 		case 5: return 'atlas';
 		case 6: return 'romlabel';
 		case 7: return 'model';
@@ -142,8 +142,10 @@ export function encodeRomToc(params: { assets: RomAsset[]; projectRootPath?: str
 		writeU32(entryView, base + 60, asU32(asset.metabuffer_end));
 		writeU32(entryView, base + 64, asU32(asset.texture_start));
 		writeU32(entryView, base + 68, asU32(asset.texture_end));
-		writeU32(entryView, base + 72, updateLo);
-		writeU32(entryView, base + 76, updateHi);
+		writeU32(entryView, base + 72, asU32(asset.collision_bin_start));
+		writeU32(entryView, base + 76, asU32(asset.collision_bin_end));
+		writeU32(entryView, base + 80, updateLo);
+		writeU32(entryView, base + 84, updateHi);
 	}
 
 	const stringTable = concatArrays(stringChunks, stringTableLength);
@@ -225,8 +227,10 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		const metaEnd = view.getUint32(base + 60, true);
 		const textureStart = view.getUint32(base + 64, true);
 		const textureEnd = view.getUint32(base + 68, true);
-		const updateLo = view.getUint32(base + 72, true);
-		const updateHi = view.getUint32(base + 76, true);
+		const collisionBinStart = view.getUint32(base + 72, true);
+		const collisionBinEnd = view.getUint32(base + 76, true);
+		const updateLo = view.getUint32(base + 80, true);
+		const updateHi = view.getUint32(base + 84, true);
 
 		const resid = decodeString(stringTable, residOffset, residLength, utf8Decoder);
 		if (!resid) {
@@ -254,6 +258,8 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		if (metaEnd !== ROM_TOC_INVALID_U32) asset.metabuffer_end = metaEnd;
 		if (textureStart !== ROM_TOC_INVALID_U32) asset.texture_start = textureStart;
 		if (textureEnd !== ROM_TOC_INVALID_U32) asset.texture_end = textureEnd;
+		if (collisionBinStart !== ROM_TOC_INVALID_U32) asset.collision_bin_start = collisionBinStart;
+		if (collisionBinEnd !== ROM_TOC_INVALID_U32) asset.collision_bin_end = collisionBinEnd;
 
 		const updateTimestamp = (updateHi * 0x100000000) + updateLo;
 		if (updateTimestamp > 0) {

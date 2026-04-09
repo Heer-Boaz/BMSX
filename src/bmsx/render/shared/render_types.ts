@@ -114,3 +114,5 @@ export type SkyboxImageIds = {
 	posz: string;
 	negz: string;
 };
+
+export const SKYBOX_FACE_KEYS = ['posx', 'negx', 'posy', 'negy', 'posz', 'negz'] as const;

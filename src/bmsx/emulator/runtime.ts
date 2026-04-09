@@ -25,7 +25,6 @@ import {
 	DEFAULT_GEO_WORK_UNITS_PER_SEC,
 	DEFAULT_VDP_WORK_UNITS_PER_SEC,
 	ENGINE_ATLAS_INDEX,
-	SKYBOX_FACE_DEFAULT_SIZE,
 	getMachineMemorySpecs,
 	getMachinePerfSpecs,
 	generateAtlasName,
@@ -211,7 +210,7 @@ type EditorViewOptionsSnapshot = {
 };
 
 type ProgramSource = 'engine' | 'cart';
-type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'blob' | 'audioevents';
+type RuntimeAssetCollectionKey = 'img' | 'audio' | 'model' | 'data' | 'bin' | 'audioevents';
 type RuntimeLayerLookup = Partial<Record<CartridgeLayerId, RuntimeAssetLayer>>;
 
 const TIMER_KIND_VBLANK_ENTER = 1;
@@ -240,7 +239,7 @@ function getRuntimeLayerAssets(layer: RuntimeAssetLayer, kind: RuntimeAssetColle
 		case 'audio': return layer.assets.audio;
 		case 'model': return layer.assets.model;
 		case 'data': return layer.assets.data;
-		case 'blob': return layer.assets.blob;
+		case 'bin': return layer.assets.bin;
 		case 'audioevents': return layer.assets.audioevents;
 	}
 }
@@ -1727,16 +1726,6 @@ export class Runtime {
 		const assetTableInfo = this.computeAssetTableBytes(params.engineSource, params.assetSource, params.assetLayers);
 		const requiredAssetTableBytes = assetTableInfo.bytes;
 		const assetTableBytes = requiredAssetTableBytes;
-		const skyboxFaceBytes = memorySpecs.skybox_face_bytes;
-		if (skyboxFaceBytes !== undefined) {
-			if (!Number.isSafeInteger(skyboxFaceBytes) || skyboxFaceBytes <= 0) {
-				throw runtimeFault(`machine.specs.vram.skybox_face_bytes must be a positive integer (got ${skyboxFaceBytes}).`);
-			}
-		}
-		const skyboxFaceSize = memorySpecs.skybox_face_size ?? SKYBOX_FACE_DEFAULT_SIZE;
-		if (skyboxFaceBytes === undefined && skyboxFaceSize <= 0) {
-			throw runtimeFault(`invalid skybox_face_size: ${skyboxFaceSize}.`);
-		}
 		const requiredAssetDataBytes = this.computeRequiredAssetDataBytes(params.assetSource, params.assetLayers);
 		const assetDataBaseOffset = IO_REGION_SIZE
 			+ (stringHandleCount * STRING_HANDLE_ENTRY_SIZE)
@@ -1773,8 +1762,6 @@ export class Runtime {
 			system_atlas_slot_bytes: engineAtlasSlotBytes,
 			staging_bytes: stagingBytes,
 			framebuffer_bytes: frameBufferBytes,
-			skybox_face_size: skyboxFaceBytes === undefined ? skyboxFaceSize : memorySpecs.skybox_face_size,
-			skybox_face_bytes: skyboxFaceBytes,
 		};
 	}
 
@@ -1910,7 +1897,6 @@ export class Runtime {
 			(deadlineCycles) => this.scheduleDeviceService(DEVICE_SERVICE_GEO, deadlineCycles),
 			() => this.cancelDeviceService(DEVICE_SERVICE_GEO),
 		);
-		this.vdp.attachImgDecController(this.imgDecController);
 		this.cpu = new CPU(this.memory, this.runtimeStringPool);
 		this.resourceUsageDetector = new ResourceUsageDetector(
 			this.memory,

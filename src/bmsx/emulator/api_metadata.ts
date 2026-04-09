@@ -143,7 +143,7 @@ export const API_METHOD_METADATA = {
 		returnType: 'void',
 	},
 	skybox: {
-		description: 'Sets the skybox cubemap image ids (posx, negx, posy, negy, posz, negz).',
+		description: 'Sets the skybox face image ids (posx, negx, posy, negy, posz, negz). Faces must be atlassed and mapped into the primary or secondary atlas slot.',
 		parameters: [
 			{ name: 'posx', description: 'Positive X face image id.' },
 			{ name: 'negx', description: 'Negative X face image id.' },

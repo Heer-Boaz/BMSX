@@ -184,17 +184,33 @@ local get_sprite_offset_xy<const> = function(sprite)
 	return sprite.offset.x, sprite.offset.y
 end
 
-local get_sprite_collision_shape_offset<const> = function(blob_base, flip_h, flip_v)
+local get_asset_rom_base<const> = function(asset)
+	local payload_id<const> = asset.payload_id
+	if payload_id == 'system' then
+		return sys_rom_system_base
+	end
+	if payload_id == 'overlay' then
+		return sys_rom_overlay_base
+	end
+	return sys_rom_cart_base
+end
+
+local get_sprite_collision_shape_ref<const> = function(image_asset, flip_h, flip_v)
+	local bin_start<const> = image_asset.collision_bin_start
+	if bin_start == nil then
+		return nil
+	end
+	local bin_base<const> = get_asset_rom_base(image_asset) + bin_start
 	if flip_h and flip_v then
-		return mem[blob_base + 20]
+		return bin_base + mem[bin_base + 20]
 	end
 	if flip_h then
-		return mem[blob_base + 12]
+		return bin_base + mem[bin_base + 12]
 	end
 	if flip_v then
-		return mem[blob_base + 16]
+		return bin_base + mem[bin_base + 16]
 	end
-	return mem[blob_base + 8]
+	return bin_base + mem[bin_base + 8]
 end
 
 local get_driving_sprite_for_collider<const> = function(collider)
@@ -211,12 +227,12 @@ end
 local get_sprite_collision_geometry<const> = function(sprite)
 	local id<const> = sprite.imgid
 	if id == nil then
-		return nil, nil, nil, nil
+		return nil, nil, nil
 	end
 	local flip_h<const> = sprite.flip.flip_h
 	local flip_v<const> = sprite.flip.flip_v
 	if sprite._collision_geometry_imgid == id and sprite._collision_geometry_flip_h == flip_h and sprite._collision_geometry_flip_v == flip_v then
-		return sprite._collision_geometry_area, sprite._collision_geometry_polys, sprite._collision_geometry_blob_base, sprite._collision_geometry_shape_offset
+		return sprite._collision_geometry_area, sprite._collision_geometry_polys, sprite._collision_geometry_shape_ref
 	end
 	local image_asset<const> = assets.img[id]
 	if image_asset == nil or image_asset.imgmeta == nil then
@@ -225,22 +241,14 @@ local get_sprite_collision_geometry<const> = function(sprite)
 	local imgmeta<const> = image_asset.imgmeta
 	local area<const> = select_bounding_box(flip_h, flip_v, imgmeta.boundingbox)
 	local polys<const> = select_hit_polygons(flip_h, flip_v, imgmeta.hitpolygons)
-	local blob_base
-	local shape_offset
-	local collisionblob_id<const> = imgmeta.collisionblob_id
-	if collisionblob_id ~= nil then
-		local rom_base<const>, start<const> = resolve_rom_asset_range(collisionblob_id)
-		blob_base = rom_base + start
-		shape_offset = get_sprite_collision_shape_offset(blob_base, flip_h, flip_v)
-	end
+	local shape_ref<const> = get_sprite_collision_shape_ref(image_asset, flip_h, flip_v)
 	sprite._collision_geometry_imgid = id
 	sprite._collision_geometry_flip_h = flip_h
 	sprite._collision_geometry_flip_v = flip_v
 	sprite._collision_geometry_area = area
 	sprite._collision_geometry_polys = polys
-	sprite._collision_geometry_blob_base = blob_base
-	sprite._collision_geometry_shape_offset = shape_offset
-	return area, polys, blob_base, shape_offset
+	sprite._collision_geometry_shape_ref = shape_ref
+	return area, polys, shape_ref
 end
 
 local update_world_area_cache<const> = function(collider)
@@ -316,16 +324,14 @@ local prepare_overlap_cache<const> = function(collider)
 	local local_area = collider.local_area
 	local local_polys = collider.local_polys
 	local shape_kind
-	local geo_blob_base = nil
-	local geo_shape_offset = nil
+	local geo_shape_ref = nil
 	local geo_tx
 	local geo_ty
 	if sprite ~= nil then
-		local sprite_area<const>, sprite_polys<const>, sprite_blob_base<const>, sprite_shape_offset<const> = get_sprite_collision_geometry(sprite)
+		local sprite_area<const>, sprite_polys<const>, sprite_shape_ref<const> = get_sprite_collision_geometry(sprite)
 		local_area = sprite_area
 		local_polys = sprite_polys
-		geo_blob_base = sprite_blob_base
-		geo_shape_offset = sprite_shape_offset
+		geo_shape_ref = sprite_shape_ref
 		shape_offset_x, shape_offset_y = get_sprite_offset_xy(sprite)
 		if local_polys ~= nil and #local_polys > 0 then
 			shape_kind = 'poly'
@@ -366,8 +372,7 @@ local prepare_overlap_cache<const> = function(collider)
 
 	collider._world_polys_cache_valid = false
 	collider._overlap_shape_kind = shape_kind
-	collider._overlap_geo_blob_base = geo_blob_base
-	collider._overlap_geo_shape_offset = geo_shape_offset
+	collider._overlap_geo_shape_ref = geo_shape_ref
 	collider._overlap_geo_tx = geo_tx
 	collider._overlap_geo_ty = geo_ty
 	collider._overlap_cache_valid = true
@@ -425,8 +430,7 @@ function collider2dcomponent.new(opts)
 	self._world_polys_cache_valid = false
 	self._overlap_shape_kind = nil
 	self._overlap_cache_valid = false
-	self._overlap_geo_blob_base = nil
-	self._overlap_geo_shape_offset = nil
+	self._overlap_geo_shape_ref = nil
 	self._overlap_geo_tx = 0
 	self._overlap_geo_ty = 0
 	self._geo_sat_count_token = 0

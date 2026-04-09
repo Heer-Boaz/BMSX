@@ -3722,8 +3722,8 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 			ramTable->set(key("ram_bytes"), valueNumber(static_cast<double>(*manifest.ramBytes)));
 			specsTable->set(key("ram"), valueTable(ramTable));
 		}
-		if (manifest.atlasSlotBytes || manifest.engineAtlasSlotBytes || manifest.stagingBytes || manifest.skyboxFaceSize > 0 || manifest.skyboxFaceBytes) {
-			auto* vramTable = m_cpu.createTable(0, 5);
+		if (manifest.atlasSlotBytes || manifest.engineAtlasSlotBytes || manifest.stagingBytes) {
+			auto* vramTable = m_cpu.createTable(0, 3);
 			if (manifest.atlasSlotBytes) {
 				vramTable->set(key("atlas_slot_bytes"), valueNumber(static_cast<double>(*manifest.atlasSlotBytes)));
 			}
@@ -3732,12 +3732,6 @@ m_ipairsIterator = m_cpu.createNativeFunction("ipairs.iterator", [](NativeArgsVi
 			}
 			if (manifest.stagingBytes) {
 				vramTable->set(key("staging_bytes"), valueNumber(static_cast<double>(*manifest.stagingBytes)));
-			}
-			if (manifest.skyboxFaceSize > 0) {
-				vramTable->set(key("skybox_face_size"), valueNumber(static_cast<double>(manifest.skyboxFaceSize)));
-			}
-			if (manifest.skyboxFaceBytes) {
-				vramTable->set(key("skybox_face_bytes"), valueNumber(static_cast<double>(*manifest.skyboxFaceBytes)));
 			}
 			specsTable->set(key("vram"), valueTable(vramTable));
 		}

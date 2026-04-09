@@ -38,7 +38,7 @@ export interface RuntimeAssets {
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
-	blob: id2res; // Reference to raw binary blob assets that remain addressable in ROM. ALWAYS PRESENT DURING GAME!
+	bin: id2res; // Reference to raw binary assets that remain addressable in ROM. ALWAYS PRESENT DURING GAME!
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata. ALWAYS PRESENT DURING GAME!
 	project_root_path: string; // Workspace-relative cart root path for resolving filesystem writes.
 	cart_manifest: CartManifest | null; // Cart metadata for the active program, absent for system assets.
@@ -46,7 +46,7 @@ export interface RuntimeAssets {
 	entry_path: string; // Entry Lua path for this program.
 }
 
-export type asset_type = 'image' | 'audio' | 'data' | 'blob' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
+export type asset_type = 'image' | 'audio' | 'data' | 'bin' | 'atlas' | 'romlabel' | 'model' | 'aem' | 'lua' | 'code';
 export type asset_id = string;
 
 /**
@@ -68,10 +68,13 @@ export interface RomAsset {
 	buffer?: Buffer; // The binary buffer of the asset, used for all assets, including images and audio.
 	compiled_buffer?: Buffer; // ???? The compiled Lua chunk buffer for Lua script assets.
 	texture_buffer?: Buffer; // Optional buffer holding packed textures for model assets
+	collision_bin_buffer?: Buffer; // Optional auxiliary collision binary owned by an image asset.
 	imgmeta?: ImgMeta; // The metadata of the asset, if it is an image.
 	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
 	texture_start?: number; // Start offset of the texture buffer within the ROM
 	texture_end?: number;   // End offset of the texture buffer within the ROM
+	collision_bin_start?: number; // Start offset of the image-owned collision binary within the ROM
+	collision_bin_end?: number;   // End offset of the image-owned collision binary within the ROM
 	source_path?: string; // Relative filesystem path for the asset when applicable (e.g., Lua source files).
 	normalized_source_path?: string; // Normalized absolute-ish source path for this asset.
 	update_timestamp?: number; // Last update timestamp for the asset, used for dev hot-resume.
@@ -99,7 +102,7 @@ export type BitmapId = asset_id;
 export type AudioId = asset_id;
 export type ModelId = asset_id;
 export type DataId = asset_id;
-export type BlobId = asset_id;
+export type BinId = asset_id;
 export type LuaId = asset_id;
 
 export type CartridgeIndex = {
@@ -194,21 +197,6 @@ export const ENGINE_ATLAS_TEXTURE_KEY = '_atlas_engine';
 export const ATLAS_PRIMARY_SLOT_ID = '_atlas_primary';
 export const ATLAS_SECONDARY_SLOT_ID = '_atlas_secondary';
 export type AtlasSlotIndex = 0 | 1;
-export const SKYBOX_FACE_DEFAULT_SIZE = 512;
-export const SKYBOX_SLOT_POSX_ID = '_skybox_posx';
-export const SKYBOX_SLOT_NEGX_ID = '_skybox_negx';
-export const SKYBOX_SLOT_POSY_ID = '_skybox_posy';
-export const SKYBOX_SLOT_NEGY_ID = '_skybox_negy';
-export const SKYBOX_SLOT_POSZ_ID = '_skybox_posz';
-export const SKYBOX_SLOT_NEGZ_ID = '_skybox_negz';
-export const SKYBOX_SLOT_IDS = [
-	SKYBOX_SLOT_POSX_ID,
-	SKYBOX_SLOT_NEGX_ID,
-	SKYBOX_SLOT_POSY_ID,
-	SKYBOX_SLOT_NEGY_ID,
-	SKYBOX_SLOT_POSZ_ID,
-	SKYBOX_SLOT_NEGZ_ID,
-] as const;
 
 const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
 
@@ -424,7 +412,6 @@ export interface ImgMeta {
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
-	collisionblob_id?: BlobId; // ROM-addressable raw GEO collision blob asset for this image.
 }
 
 export type TextureSource = unknown & { close?(): void; width: number; height: number; data?: Uint8Array; }; // platform-specific source type (e.g. ImageBitmap in browsers)
@@ -456,8 +443,6 @@ export type MachineVramSpecs = {
 	atlas_slot_bytes?: number;
 	system_atlas_slot_bytes?: number;
 	staging_bytes?: number;
-	skybox_face_size?: number;
-	skybox_face_bytes?: number;
 };
 export type MachineAudioSpecs = {
 	max_voices?: MachineVoiceSpecs;
@@ -506,7 +491,6 @@ export type MachinePerfSpecs = {
 	work_units_per_sec: number;
 	geo_work_units_per_sec: number;
 	ufps: number;
-	skybox_face_size?: number;
 };
 
 export const DEFAULT_VDP_WORK_UNITS_PER_SEC = 25_600;
@@ -517,36 +501,13 @@ export type MachineMemorySpecs = {
 	atlas_slot_bytes?: number;
 	system_atlas_slot_bytes?: number;
 	staging_bytes?: number;
-	skybox_face_size?: number;
-	skybox_face_bytes?: number;
 };
-
-const REMOVED_MACHINE_RAM_FIELDS = [
-	'string_handle_count',
-	'string_heap_bytes',
-	'asset_table_bytes',
-	'asset_data_bytes',
-] as const;
-
-export function assertMachineManifestUsesRamOnly(machine: MachineManifest): void {
-	const ram = machine.specs.ram as Record<string, unknown> | undefined;
-	if (!ram) {
-		return;
-	}
-	for (let index = 0; index < REMOVED_MACHINE_RAM_FIELDS.length; index += 1) {
-		const field = REMOVED_MACHINE_RAM_FIELDS[index];
-		if (Object.prototype.hasOwnProperty.call(ram, field)) {
-			throw new Error(`machine.specs.ram.${field} is no longer supported. Use machine.specs.ram.ram_bytes.`);
-		}
-	}
-}
 
 export function getMachinePerfSpecs(machine: MachineManifest): MachinePerfSpecs {
 	const cpu = machine.specs.cpu;
 	const dma = machine.specs.dma;
 	const vdp = machine.specs.vdp;
 	const geo = machine.specs.geo;
-	const vram = machine.specs.vram;
 	return {
 		cpu_freq_hz: cpu.cpu_freq_hz,
 		imgdec_bytes_per_sec: cpu.imgdec_bytes_per_sec,
@@ -555,7 +516,6 @@ export function getMachinePerfSpecs(machine: MachineManifest): MachinePerfSpecs 
 		work_units_per_sec: vdp?.work_units_per_sec ?? DEFAULT_VDP_WORK_UNITS_PER_SEC,
 		geo_work_units_per_sec: geo?.work_units_per_sec ?? DEFAULT_GEO_WORK_UNITS_PER_SEC,
 		ufps: machine.ufps,
-		skybox_face_size: vram?.skybox_face_size,
 	};
 }
 
@@ -567,8 +527,6 @@ export function getMachineMemorySpecs(machine: MachineManifest): MachineMemorySp
 		atlas_slot_bytes: vram?.atlas_slot_bytes,
 		system_atlas_slot_bytes: vram?.system_atlas_slot_bytes,
 		staging_bytes: vram?.staging_bytes,
-		skybox_face_size: vram?.skybox_face_size,
-		skybox_face_bytes: vram?.skybox_face_bytes,
 	};
 }
 

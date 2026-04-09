@@ -265,8 +265,8 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 		specs.set(key('ram'), ramTable);
 	}
 	const vram = manifest.specs.vram;
-	if (vram && (vram.atlas_slot_bytes || vram.system_atlas_slot_bytes || vram.staging_bytes || vram.skybox_face_size > 0 || vram.skybox_face_bytes)) {
-		const vramTable = new Table(0, 5);
+	if (vram && (vram.atlas_slot_bytes || vram.system_atlas_slot_bytes || vram.staging_bytes)) {
+		const vramTable = new Table(0, 3);
 		if (vram.atlas_slot_bytes) {
 			vramTable.set(key('atlas_slot_bytes'), vram.atlas_slot_bytes);
 		}
@@ -275,12 +275,6 @@ function buildMachineManifestTable(runtime: Runtime, manifest: MachineManifest):
 		}
 		if (vram.staging_bytes) {
 			vramTable.set(key('staging_bytes'), vram.staging_bytes);
-		}
-		if (vram.skybox_face_size > 0) {
-			vramTable.set(key('skybox_face_size'), vram.skybox_face_size);
-		}
-		if (vram.skybox_face_bytes) {
-			vramTable.set(key('skybox_face_bytes'), vram.skybox_face_bytes);
 		}
 		specs.set(key('vram'), vramTable);
 	}

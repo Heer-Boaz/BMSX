@@ -12,12 +12,9 @@ import type {
 	RectRenderSubmission,
 	RenderLayer,
 } from './render_types';
-import { ASSET_FLAG_VIEW } from '../../emulator/memory';
 import { Runtime } from '../../emulator/runtime';
-import { ENGINE_ATLAS_INDEX } from '../../rompack/rompack';
 import { clamp } from '../../utils/clamp';
 import { BFont } from './bitmap_font';
-import { $ } from '../../core/engine_core';
 import { setSpriteParallaxRigValues } from '../2d/sprite_parallax_rig';
 
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
@@ -161,39 +158,15 @@ export function submit_particle(item: ParticleRenderSubmission): void {
 	if (entry.type !== 'image') {
 		throw new Error(`[Particles Pipeline] Asset '${imgid}' is not an image.`);
 	}
-	const meta = runtime.getImageMetaByHandle(handle);
-	if (!meta.atlassed) {
-		throw new Error(`[Particles Pipeline] Image '${imgid}' must be atlassed.`);
-	}
-	if (meta.atlasid === undefined || meta.atlasid === null) {
-		throw new Error(`[Particles Pipeline] Image '${imgid}' missing atlas id.`);
-	}
-	const baseEntry = (entry.flags & ASSET_FLAG_VIEW)
-		? runtime.getAssetEntryByHandle(entry.ownerIndex)
-		: entry;
-	if (baseEntry.regionW <= 0 || baseEntry.regionH <= 0) {
-		throw new Error(`[Particles Pipeline] Atlas backing entry for '${imgid}' missing dimensions.`);
-	}
-	const u0 = entry.regionX / baseEntry.regionW;
-	const v0 = entry.regionY / baseEntry.regionH;
-	const u1 = (entry.regionX + entry.regionW) / baseEntry.regionW;
-	const v1 = (entry.regionY + entry.regionH) / baseEntry.regionH;
-	let atlasBinding = ENGINE_ATLAS_INDEX;
-	if (meta.atlasid !== ENGINE_ATLAS_INDEX) {
-		const primaryAtlasIdInSlot = $.view.primaryAtlasIdInSlot;
-		const secondaryAtlasIdInSlot = $.view.secondaryAtlasIdInSlot;
-		if (meta.atlasid === primaryAtlasIdInSlot) {
-			atlasBinding = 0;
-		} else if (meta.atlasid === secondaryAtlasIdInSlot) {
-			atlasBinding = 1;
-		} else {
-			throw new Error(`[Particles Pipeline] Atlas ${meta.atlasid} not mapped to primary/secondary slots.`);
-		}
-	}
+	const sample = runtime.vdp.resolveBlitterSample(handle);
+	const u0 = sample.source.srcX / sample.surfaceWidth;
+	const v0 = sample.source.srcY / sample.surfaceHeight;
+	const u1 = (sample.source.srcX + sample.source.width) / sample.surfaceWidth;
+	const v1 = (sample.source.srcY + sample.source.height) / sample.surfaceHeight;
 	item.texture = imgid;
 	item.uv0 = [u0, v0];
 	item.uv1 = [u1, v1];
-	item.atlasBinding = atlasBinding;
+	item.atlasBinding = sample.atlasId;
 	particleQueue.submit(item);
 }
 

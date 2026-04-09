@@ -61,8 +61,8 @@ const { createHash } = require('crypto');
 
 type ProgressNote = (message: string) => void;
 const ADPCM_NO_LOOP = 0xffffffff;
-const GEO_COLLISION_BLOB_MAGIC = 0x31443247; // "G2D1" little-endian
-const GEO_COLLISION_BLOB_VERSION = 1;
+const GEO_COLLISION_BIN_MAGIC = 0x31443247; // "G2D1" little-endian
+const GEO_COLLISION_BIN_VERSION = 1;
 const GEO_COLLISION_SHAPE_KIND_AABB = 1;
 const GEO_COLLISION_SHAPE_KIND_CONVEX_POLY = 3;
 const GEO_COLLISION_SHAPE_KIND_COMPOUND = 4;
@@ -72,7 +72,7 @@ type ImageCollisionBuild = {
 	boundingbox: BoundingBoxPrecalc;
 	centerpoint: vec2arr;
 	hitpolygons: HitPolygonsPrecalc | undefined;
-	collisionblob: Buffer;
+	collisionbin: Buffer;
 };
 
 export const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
@@ -579,7 +579,7 @@ function createCollisionDescriptor(kind: number, dataCount: number, dataOffset: 
 	return descriptor;
 }
 
-function buildCollisionBlob(bounds: BoundingBoxPrecalc, hitpolygons: HitPolygonsPrecalc | undefined): Buffer {
+function buildCollisionBin(bounds: BoundingBoxPrecalc, hitpolygons: HitPolygonsPrecalc | undefined): Buffer {
 	const parts: Buffer[] = [];
 	let offset = GEO_COLLISION_VARIANT_HEADER_WORDS * 4;
 
@@ -607,27 +607,40 @@ function buildCollisionBlob(bounds: BoundingBoxPrecalc, hitpolygons: HitPolygons
 		return pushBuffer(buffer);
 	};
 
+	const writeDescriptor = (target: Buffer, kind: number, dataCount: number, descStart: number, dataStart: number, boundsStart: number): void => {
+		target.writeUInt32LE(kind >>> 0, 0);
+		target.writeUInt32LE(dataCount >>> 0, 4);
+		target.writeUInt32LE((dataStart - descStart) >>> 0, 8);
+		target.writeUInt32LE((boundsStart - descStart) >>> 0, 12);
+	};
+
 	const encodeVariant = (variantBounds: RectBounds, variantPolys: Polygon[] | undefined): number => {
+		const descriptor = Buffer.alloc(16);
+		const descriptorStart = pushBuffer(descriptor);
 		if (!variantPolys || variantPolys.length === 0) {
-			const boundsOffset = pushBounds(variantBounds);
-			return pushBuffer(createCollisionDescriptor(GEO_COLLISION_SHAPE_KIND_AABB, 1, boundsOffset, boundsOffset));
+			const boundsStart = pushBounds(variantBounds);
+			writeDescriptor(descriptor, GEO_COLLISION_SHAPE_KIND_AABB, 4, descriptorStart, boundsStart, boundsStart);
+			return descriptorStart;
 		}
 		if (variantPolys.length === 1) {
 			const poly = variantPolys[0];
-			const dataOffset = pushPolygon(poly);
-			const boundsOffset = pushBounds(computePolyBounds(poly));
-			return pushBuffer(createCollisionDescriptor(GEO_COLLISION_SHAPE_KIND_CONVEX_POLY, poly.length >> 1, dataOffset, boundsOffset));
+			const dataStart = pushPolygon(poly);
+			const boundsStart = pushBounds(computePolyBounds(poly));
+			writeDescriptor(descriptor, GEO_COLLISION_SHAPE_KIND_CONVEX_POLY, poly.length >> 1, descriptorStart, dataStart, boundsStart);
+			return descriptorStart;
 		}
-		const pieceDescriptors: Buffer[] = new Array(variantPolys.length);
+		const pieceTable = Buffer.alloc(variantPolys.length * 16);
+		const pieceTableStart = pushBuffer(pieceTable);
 		for (let polyIndex = 0; polyIndex < variantPolys.length; polyIndex += 1) {
 			const poly = variantPolys[polyIndex];
-			const dataOffset = pushPolygon(poly);
-			const boundsOffset = pushBounds(computePolyBounds(poly));
-			pieceDescriptors[polyIndex] = createCollisionDescriptor(GEO_COLLISION_SHAPE_KIND_CONVEX_POLY, poly.length >> 1, dataOffset, boundsOffset);
+			const pieceDescriptorStart = pieceTableStart + polyIndex * 16;
+			const dataStart = pushPolygon(poly);
+			const boundsStart = pushBounds(computePolyBounds(poly));
+			writeDescriptor(pieceTable.subarray(polyIndex * 16, (polyIndex + 1) * 16), GEO_COLLISION_SHAPE_KIND_CONVEX_POLY, poly.length >> 1, pieceDescriptorStart, dataStart, boundsStart);
 		}
-		const pieceTableOffset = pushBuffer(Buffer.concat(pieceDescriptors));
-		const boundsOffset = pushBounds(variantBounds);
-		return pushBuffer(createCollisionDescriptor(GEO_COLLISION_SHAPE_KIND_COMPOUND, variantPolys.length, pieceTableOffset, boundsOffset));
+		const boundsStart = pushBounds(variantBounds);
+		writeDescriptor(descriptor, GEO_COLLISION_SHAPE_KIND_COMPOUND, variantPolys.length, descriptorStart, pieceTableStart, boundsStart);
+		return descriptorStart;
 	};
 
 	const originalOffset = encodeVariant(bounds.original, hitpolygons?.original);
@@ -635,8 +648,8 @@ function buildCollisionBlob(bounds: BoundingBoxPrecalc, hitpolygons: HitPolygons
 	const flipvOffset = encodeVariant(bounds.flipv, hitpolygons?.flipv);
 	const fliphvOffset = encodeVariant(bounds.fliphv, hitpolygons?.fliphv);
 	const header = Buffer.alloc(GEO_COLLISION_VARIANT_HEADER_WORDS * 4);
-	header.writeUInt32LE(GEO_COLLISION_BLOB_MAGIC, 0);
-	header.writeUInt32LE(GEO_COLLISION_BLOB_VERSION, 4);
+	header.writeUInt32LE(GEO_COLLISION_BIN_MAGIC, 0);
+	header.writeUInt32LE(GEO_COLLISION_BIN_VERSION, 4);
 	header.writeUInt32LE(originalOffset >>> 0, 8);
 	header.writeUInt32LE(fliphOffset >>> 0, 12);
 	header.writeUInt32LE(flipvOffset >>> 0, 16);
@@ -677,11 +690,11 @@ function buildImageCollisionBuild(res: ImageResource): ImageCollisionBuild {
 		boundingbox,
 		centerpoint,
 		hitpolygons,
-		collisionblob: buildCollisionBlob(boundingbox, hitpolygons),
+		collisionbin: buildCollisionBin(boundingbox, hitpolygons),
 	};
 }
 
-function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageCollisionBuild, collisionBlobId?: string): ImgMeta {
+function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageCollisionBuild): ImgMeta {
 	const img = res.img;
 	if (!img) {
 		throw new Error(`Image resource "${res.name}" is missing its decoded image data.`);
@@ -694,7 +707,6 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 		boundingbox: collision.boundingbox,
 		centerpoint: collision.centerpoint,
 		hitpolygons: collision.hitpolygons,
-		collisionblob_id: collisionBlobId,
 	};
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		const targetAtlas = res.targetAtlasIndex;
@@ -1317,9 +1329,8 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer, source_path: sourcePath });
 				break;
 			case 'image': {
-				const collisionBlobId = `${resid}@c2d`;
 				const collision = buildImageCollisionBuild(res);
-				const imgmeta = buildImgMetaFromCollisionBuild(res, collision, collisionBlobId);
+				const imgmeta = buildImgMetaFromCollisionBuild(res, collision);
 				let baseAsset: RomAsset;
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 					// Preserve raw image buffer for images explicitly marked to skip atlas (@noatlas)
@@ -1328,13 +1339,8 @@ export async function generateRomAssets(resources: Resource[], reportProgress?: 
 				} else {
 					baseAsset = { resid, type, imgmeta, buffer, source_path: sourcePath };
 				}
+				baseAsset.collision_bin_buffer = collision.collisionbin;
 				romAssets.push({ ...baseAsset, });
-				romAssets.push({
-					resid: collisionBlobId,
-					type: 'blob',
-					buffer: collision.collisionblob,
-					source_path: sourcePath ? `${sourcePath}#c2d` : undefined,
-				});
 			}
 				break;
 			case 'audio': {
@@ -1755,6 +1761,12 @@ export async function finalizeRompack(
 				asset.texture_end = offset + textureBuffer.length;
 				await writeBuffer(textureBuffer);
 			}
+			if (asset.collision_bin_buffer && asset.collision_bin_buffer.length > 0) {
+				const collisionBinBuffer = Buffer.from(asset.collision_bin_buffer);
+				asset.collision_bin_start = offset;
+				asset.collision_bin_end = offset + collisionBinBuffer.length;
+				await writeBuffer(collisionBinBuffer);
+			}
 			const perMeta = asset.imgmeta ?? asset.audiometa;
 			if (perMeta) {
 				status?.(`meta ${asset.type}:${asset.resid}`);
@@ -1768,6 +1780,7 @@ export async function finalizeRompack(
 			delete asset.buffer;
 			delete asset.compiled_buffer;
 			delete asset.texture_buffer;
+			delete asset.collision_bin_buffer;
 		}
 
 		const dataLength = offset - dataOffset;

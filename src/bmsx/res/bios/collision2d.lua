@@ -53,9 +53,9 @@ local detect_aabb_areas<const> = collision2d_cpu.detect_aabb_areas
 local area_to_poly<const> = collision2d_cpu.area_to_poly
 local polygons_intersect<const> = collision2d_cpu.polygons_intersect
 local geo_fix16_scale<const> = 65536
-local geo_overlap_instance_bytes<const> = 48
-local geo_overlap_pair_bytes<const> = 16
-local geo_overlap_result_bytes<const> = 48
+local geo_overlap_instance_bytes<const> = 12
+local geo_overlap_pair_bytes<const> = 12
+local geo_overlap_result_bytes<const> = 36
 local geo_overlap_summary_bytes<const> = 16
 local geo_overlap_param0<const> = sys_geo_overlap_mode_candidate_pairs | sys_geo_overlap_broadphase_none | sys_geo_overlap_contact_clipped_feature | sys_geo_overlap_output_stop_on_overflow
 local geo_batch_token = 0
@@ -67,7 +67,7 @@ local clear_array<const> = function(array)
 end
 
 local is_geo_overlap_pair<const> = function(a, b)
-	return a._overlap_geo_blob_base ~= nil and b._overlap_geo_blob_base ~= nil
+	return a._overlap_geo_shape_ref ~= nil and b._overlap_geo_shape_ref ~= nil
 end
 
 local ensure_pair_contact<const> = function(pair)
@@ -89,14 +89,14 @@ end
 
 local set_pair_contact_from_geo_result<const> = function(pair, result_addr)
 	local contact<const> = ensure_pair_contact(pair)
-	contact.normal.x = fix16_to_f32(mem[result_addr + 12])
-	contact.normal.y = fix16_to_f32(mem[result_addr + 16])
-	contact.depth = fix16_to_f32(mem[result_addr + 20])
-	contact.point.x = fix16_to_f32(mem[result_addr + 24])
-	contact.point.y = fix16_to_f32(mem[result_addr + 28])
-	contact.piece_a = mem[result_addr + 32]
-	contact.piece_b = mem[result_addr + 36]
-	contact.feature_meta = mem[result_addr + 40]
+	contact.normal.x = fix16_to_f32(mem[result_addr + 0])
+	contact.normal.y = fix16_to_f32(mem[result_addr + 4])
+	contact.depth = fix16_to_f32(mem[result_addr + 8])
+	contact.point.x = fix16_to_f32(mem[result_addr + 12])
+	contact.point.y = fix16_to_f32(mem[result_addr + 16])
+	contact.piece_a = mem[result_addr + 20]
+	contact.piece_b = mem[result_addr + 24]
+	contact.feature_meta = mem[result_addr + 28]
 end
 
 local stage_geo_overlap_instance<const> = function(collider, batch_token, instance_base)
@@ -106,17 +106,8 @@ local stage_geo_overlap_instance<const> = function(collider, batch_token, instan
 	local instance_addr<const> = instance_base + collider._geo_overlap_instance_index * geo_overlap_instance_bytes
 	memwrite(
 		instance_addr,
-		0,
-		collider._geo_overlap_instance_index + 1,
-		collider._overlap_geo_blob_base,
-		collider._overlap_geo_shape_offset,
-		collider.layer,
-		collider.mask,
-		geo_fix16_scale,
-		0,
+		collider._overlap_geo_shape_ref,
 		round_to_nearest(collider._overlap_geo_tx * geo_fix16_scale),
-		0,
-		geo_fix16_scale,
 		round_to_nearest(collider._overlap_geo_ty * geo_fix16_scale)
 	)
 	collider._geo_overlap_stage_token = batch_token
@@ -215,7 +206,6 @@ function collision2d.batch_collides(pairs, pair_count)
 			local pair_addr<const> = pair_base + pair.geo_pair_index * geo_overlap_pair_bytes
 			memwrite(
 				pair_addr,
-				0,
 				a._geo_overlap_instance_index,
 				b._geo_overlap_instance_index,
 				i
@@ -228,7 +218,7 @@ function collision2d.batch_collides(pairs, pair_count)
 	local result_count<const> = mem[summary_base + 0]
 	for i = 0, result_count - 1 do
 		local result_addr<const> = result_base + i * geo_overlap_result_bytes
-		local pair_meta<const> = mem[result_addr + 44]
+		local pair_meta<const> = mem[result_addr + 32]
 		if pair_meta < 1 or pair_meta > pair_count then
 			error('[collision2d] GEO overlap returned invalid pair meta ' .. tostring(pair_meta))
 		end

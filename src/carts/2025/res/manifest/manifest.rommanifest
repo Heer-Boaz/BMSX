@@ -20,6 +20,5 @@ machine:
         vram:
             atlas_slot_bytes: 16777216 # 16 MB
             staging_bytes: 4194304 # 4 MB
-            skybox_face_bytes: 1048576 # 1 MB per face (512x512 RGBA8888)
 lua:
     entry_path: cart.lua
