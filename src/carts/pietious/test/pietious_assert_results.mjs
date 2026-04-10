@@ -25,14 +25,14 @@ function buttonEvent(code, down, pressId, timeMs) {
 	};
 }
 
-function fail(message) {
-	throw new Error(`[assert] ${message}`);
-}
+let currentAssert = (condition, message) => {
+	if (!condition) {
+		throw new Error(`[assert] ${message}`);
+	}
+};
 
 function assert(condition, message) {
-	if (!condition) {
-		fail(message);
-	}
+	currentAssert(condition, message);
 }
 
 function evalLua(engine, source) {
@@ -581,6 +581,7 @@ function updateRoomSwitchInputSyncScenario(_engine, scenario, logger) {
 }
 
 export default function schedule({ logger, schedule: scheduleInput, test }) {
+	currentAssert = test.assert;
 	test.run(async () => {
 		let requestedNewGame = false;
 		let cartActiveAt = 0;

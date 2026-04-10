@@ -191,6 +191,17 @@ export class HeadlessGameViewHost implements GameViewHost {
 		});
 	}
 
+	public getPresentedFrameSnapshot(): HeadlessPresentedFrame | null {
+		if (this.presentedFrameIndex <= 0 || this.presentSurface.width <= 0 || this.presentSurface.height <= 0) {
+			return null;
+		}
+		return {
+			frameIndex: this.presentedFrameIndex - 1,
+			width: this.presentSurface.width,
+			height: this.presentSurface.height,
+		};
+	}
+
 	public copyPresentedFramePixels(): Uint8Array {
 		return this.presentSurface.copyPixels();
 	}

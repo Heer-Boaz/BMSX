@@ -38,7 +38,7 @@ export function deriveHeadlessCaptureOutputDir(sourcePath: string): string {
 export class HeadlessCaptureCoordinator {
 	private readonly gate = taskGate.group('headless:capture');
 	private readonly pending: PendingHeadlessCapture[] = [];
-	private readonly frameCaptureCounts = new Map<number, number>();
+	private readonly capturedFrames = new Set<number>();
 	private readonly writeFailures: unknown[] = [];
 	private readonly frameSubscription;
 	private lastPresentedFrame: HeadlessPresentedFrame | null = null;
@@ -49,6 +49,7 @@ export class HeadlessCaptureCoordinator {
 		private readonly logger: (message: string) => void,
 		private readonly nowMs: () => number,
 	) {
+		this.lastPresentedFrame = host.getPresentedFrameSnapshot();
 		this.frameSubscription = host.addPresentedFrameListener(this.handlePresentedFrame);
 	}
 
@@ -57,6 +58,23 @@ export class HeadlessCaptureCoordinator {
 			deadlineMs: this.nowMs() + capture.dueTimeMs,
 			description: capture.description,
 			source: capture.source,
+		});
+	}
+
+	public canCaptureNow(): boolean {
+		const frame = this.lastPresentedFrame;
+		return !!frame && !this.capturedFrames.has(frame.frameIndex);
+	}
+
+	public captureNow(description: string, source: string): void {
+		if (!this.canCaptureNow()) {
+			return;
+		}
+		const frame = this.lastPresentedFrame!;
+		this.captureFrame(frame, {
+			deadlineMs: this.nowMs(),
+			description,
+			source,
 		});
 	}
 
@@ -117,10 +135,13 @@ export class HeadlessCaptureCoordinator {
 	}
 
 	private captureFrame(frame: HeadlessPresentedFrame, capture: PendingHeadlessCapture): void {
+		if (this.capturedFrames.has(frame.frameIndex)) {
+			return;
+		}
+		this.capturedFrames.add(frame.frameIndex);
 		const pixels = this.host.copyPresentedFramePixels();
 		const filename = this.buildFilename(frame.frameIndex);
 		const outputPath = path.join(this.outputDir, filename);
-		this.logger(`[${capture.source}] capture ${capture.description} -> ${outputPath}`);
 		const writePromise = this.gate.trackFn(async () => {
 			await fs.mkdir(this.outputDir, { recursive: true });
 			await fs.writeFile(outputPath, encodePng(frame.width, frame.height, pixels));
@@ -136,12 +157,7 @@ export class HeadlessCaptureCoordinator {
 	}
 
 	private buildFilename(frameIndex: number): string {
-		const nextCount = (this.frameCaptureCounts.get(frameIndex) ?? 0) + 1;
-		this.frameCaptureCounts.set(frameIndex, nextCount);
 		const paddedFrame = String(frameIndex).padStart(5, '0');
-		if (nextCount === 1) {
-			return `frame_${paddedFrame}.png`;
-		}
-		return `frame_${paddedFrame}_${String(nextCount).padStart(2, '0')}.png`;
+		return `frame_${paddedFrame}.png`;
 	}
 }

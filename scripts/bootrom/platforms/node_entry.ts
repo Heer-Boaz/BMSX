@@ -121,6 +121,42 @@ type HeadlessAssertionRunState = {
 	finished: boolean;
 };
 
+class HeadlessAssertionFailure extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'HeadlessAssertionFailure';
+	}
+}
+
+function resolveAssertionCaptureSite(stack: string | undefined): string | null {
+	if (!stack) {
+		return null;
+	}
+	const lines = stack.split('\n');
+	let fallbackSite: string | null = null;
+	for (let i = 1; i < lines.length; i += 1) {
+		const line = lines[i]!.trim();
+		const match = /^at\s+(?:(.*?)\s+\()?(.+?):(\d+):(\d+)\)?$/.exec(line);
+		if (!match) {
+			continue;
+		}
+		const fnName = match[1] ?? '';
+		const filePath = match[2]!;
+		if (filePath.endsWith('/dist/headless_debug.js') || filePath.endsWith('\\dist\\headless_debug.js')) {
+			continue;
+		}
+		const site = `${filePath}:${match[3]}`;
+		if (fallbackSite === null) {
+			fallbackSite = site;
+		}
+		if (fnName === 'assert' || fnName === 'fail' || fnName === 'currentAssert') {
+			continue;
+		}
+		return site;
+	}
+	return fallbackSite;
+}
+
 interface TimelineScheduler {
 	nowMs(): number;
 	scheduleOnce(delayMs: number, cb: () => void): void;
@@ -652,13 +688,44 @@ function createHeadlessTestApi(
 	runState: HeadlessAssertionRunState | null,
 	requestExit: (code: number) => void,
 	scheduler: TimelineScheduler,
+	captureAssert: ((description: string) => void) | null,
+	canCaptureAssertNow: (() => boolean) | null,
 ): HeadlessTestApi {
+	const capturedAssertSites = new Set<string>();
+	const captureAssertSnapshot = (label: string): void => {
+		captureAssert?.(label);
+	};
 	const fail = (message: string): never => {
-		throw new Error(`[assert] ${message}`);
+		if (!captureAssert || (canCaptureAssertNow && !canCaptureAssertNow())) {
+			throw new HeadlessAssertionFailure(`[assert] ${message}`);
+		}
+		const assertIndex = runState ? runState.assertCount + 1 : 0;
+		const captureSite = resolveAssertionCaptureSite(new Error().stack);
+		const captureLabel = captureSite
+			? `assert_fail_${String(assertIndex).padStart(4, '0')} @ ${captureSite}: ${message}`
+			: `assert_fail_${String(assertIndex).padStart(4, '0')}: ${message}`;
+		captureAssertSnapshot(captureLabel);
+		throw new HeadlessAssertionFailure(`[assert] ${message}`);
 	};
 	const assert = (condition: boolean, message: string): asserts condition => {
 		if (runState) {
 			runState.assertCount += 1;
+		}
+		if (condition && (!captureAssert || (canCaptureAssertNow && !canCaptureAssertNow()))) {
+			return;
+		}
+		const assertIndex = runState ? runState.assertCount : 0;
+		if (condition) {
+			const captureSite = resolveAssertionCaptureSite(new Error().stack);
+			if (!captureSite || !capturedAssertSites.has(captureSite)) {
+				if (captureSite) {
+					capturedAssertSites.add(captureSite);
+				}
+				const captureLabel = captureSite
+					? `assert_${String(assertIndex).padStart(4, '0')}_pass @ ${captureSite}: ${message}`
+					: `assert_${String(assertIndex).padStart(4, '0')}_pass: ${message}`;
+				captureAssertSnapshot(captureLabel);
+			}
 		}
 		if (!condition) {
 			fail(message);
@@ -792,6 +859,11 @@ function createHeadlessTestApi(
 					if (err === HEADLESS_EXIT_SIGNAL) {
 						return;
 					}
+					if (err instanceof HeadlessAssertionFailure) {
+						console.error(`[bootrom:${__BOOTROM_TARGET__}] Fatal error:`, err);
+						requestExit(1);
+						return;
+					}
 					setTimeout(() => {
 						throw err;
 					}, 0);
@@ -839,6 +911,8 @@ async function runInputModuleScheduler(
 	frameIntervalMs: number,
 	postInput: (evt: InputEvt) => void,
 	scheduleCapture: ((capture: ScheduledHeadlessCapture) => void) | null,
+	captureAssert: ((description: string) => void) | null,
+	canCaptureAssertNow: (() => boolean) | null,
 	logger: (msg: string) => void,
 	runState: HeadlessAssertionRunState | null,
 	requestExit: (code: number) => void,
@@ -858,7 +932,7 @@ async function runInputModuleScheduler(
 		frameIntervalMs,
 		logger: (message: string) => logger(`module:${moduleLabel} ${message}`),
 		schedule: scheduleInput,
-		test: createHeadlessTestApi(moduleLabel, frameIntervalMs, logger, scheduleInput, runState, requestExit, scheduler),
+		test: createHeadlessTestApi(moduleLabel, frameIntervalMs, logger, scheduleInput, runState, requestExit, scheduler, captureAssert, canCaptureAssertNow),
 	};
 	let result: unknown;
 	try {
@@ -1024,6 +1098,28 @@ function createProcessExitController(getCaptureCoordinator: () => HeadlessCaptur
 	};
 }
 
+function ensureHeadlessCaptureCoordinator(
+	host: HeadlessGameViewHost | null,
+	sourcePath: string,
+	logger: (msg: string) => void,
+	getCoordinator: () => HeadlessCaptureCoordinator | null,
+	setCoordinator: (coordinator: HeadlessCaptureCoordinator) => void,
+	scheduler: TimelineScheduler,
+): HeadlessCaptureCoordinator | null {
+	if (!host) {
+		return null;
+	}
+	let coordinator = getCoordinator();
+	if (coordinator) {
+		return coordinator;
+	}
+	const outputDir = deriveHeadlessCaptureOutputDir(path.resolve(sourcePath));
+	logger(`[capture] screenshots -> ${outputDir}`);
+	coordinator = new HeadlessCaptureCoordinator(host, outputDir, logger, () => scheduler.nowMs());
+	setCoordinator(coordinator);
+	return coordinator;
+}
+
 function createHeadlessCaptureScheduler(
 	host: HeadlessGameViewHost | null,
 	sourcePath: string,
@@ -1035,14 +1131,10 @@ function createHeadlessCaptureScheduler(
 	if (!host) {
 		return null;
 	}
-	const resolvedSourcePath = path.resolve(sourcePath);
 	return (capture: ScheduledHeadlessCapture): void => {
-		let coordinator = getCoordinator();
+		const coordinator = ensureHeadlessCaptureCoordinator(host, sourcePath, logger, getCoordinator, setCoordinator, scheduler);
 		if (!coordinator) {
-			const outputDir = deriveHeadlessCaptureOutputDir(resolvedSourcePath);
-			logger(`[capture] screenshots -> ${outputDir}`);
-			coordinator = new HeadlessCaptureCoordinator(host, outputDir, logger, () => scheduler.nowMs());
-			setCoordinator(coordinator);
+			return;
 		}
 		coordinator.schedule(capture);
 	};
@@ -1162,6 +1254,30 @@ async function main(): Promise<void> {
 			scheduler,
 		);
 	};
+	const ensureImmediateCapture = (sourcePath: string): ((description: string) => void) | null => {
+		if (!headlessHost) {
+			return null;
+		}
+		return (description: string): void => {
+			const coordinator = ensureHeadlessCaptureCoordinator(
+				headlessHost,
+				sourcePath,
+				inputLogger,
+				() => captureCoordinator,
+				(coordinator: HeadlessCaptureCoordinator) => {
+					captureCoordinator = coordinator;
+				},
+				scheduler,
+			);
+			if (!coordinator) {
+				return;
+			}
+			coordinator.captureNow(description, `module:${path.basename(sourcePath)}`);
+		};
+	};
+	const canCaptureImmediately = (): boolean => {
+		return captureCoordinator ? captureCoordinator.canCaptureNow() : !!headlessHost?.getPresentedFrameSnapshot();
+	};
 	if (romFolder) {
 		cartRoot = await resolveCartRoot(romFolder);
 	}
@@ -1179,6 +1295,8 @@ async function main(): Promise<void> {
 			frameInterval,
 			postInput,
 			captureScheduler ?? ensureCaptureScheduler(cliOptions.inputModulePath),
+			ensureImmediateCapture(cliOptions.inputModulePath),
+			canCaptureImmediately,
 			inputLogger,
 			null,
 			requestExit,
@@ -1197,6 +1315,8 @@ async function main(): Promise<void> {
 				frameInterval,
 				postInput,
 				captureScheduler ?? ensureCaptureScheduler(autoModulePath),
+				ensureImmediateCapture(autoModulePath),
+				canCaptureImmediately,
 				inputLogger,
 				assertionRunState,
 				requestExit,
