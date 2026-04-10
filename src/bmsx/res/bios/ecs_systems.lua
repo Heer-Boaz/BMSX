@@ -325,29 +325,6 @@ local overlap2dsystem<const> = {}
 overlap2dsystem.__index = overlap2dsystem
 setmetatable(overlap2dsystem, { __index = ecsystem })
 
-local add_pair<const> = function(set, row_pool, a, b)
-	if b < a then
-		a, b = b, a
-	end
-	local row = set[a]
-	if row == nil then
-		row = row_pool[#row_pool]
-		if row == nil then
-			row = {}
-		else
-			row_pool[#row_pool] = nil
-		end
-		set[a] = row
-	end
-	row[b] = true
-end
-
-local clear_array<const> = function(array)
-	for i = #array, 1, -1 do
-		array[i] = nil
-	end
-end
-
 local clear_pair_set<const> = function(set, row_pool)
 	for key, row in pairs(set) do
 		clear_map(row)
@@ -356,8 +333,8 @@ local clear_pair_set<const> = function(set, row_pool)
 	end
 end
 
-local build_overlap_event<const> = function(event_name, owner, self_col, other_col, other_owner, contact, phase)
-	return {
+local emit_overlap_event<const> = function(event_name, phase, owner, self_col, other_owner, other_col, contact)
+	owner.events:emit_event({
 		type = event_name,
 		emitter = owner,
 		other_id = other_owner.id,
@@ -371,53 +348,9 @@ local build_overlap_event<const> = function(event_name, owner, self_col, other_c
 		collider_mask = self_col.mask,
 		contact = contact,
 		phase = phase,
-	}
+	})
 end
 
-local contact_with_flipped_normal<const> = function(contact)
-	if contact == nil then
-		return nil
-	end
-	local normal<const> = contact.normal
-	if normal == nil then
-		return {
-			depth = contact.depth,
-			point = contact.point,
-		}
-	end
-	return {
-		depth = contact.depth,
-		point = contact.point,
-		normal = {
-			x = -normal.x,
-			y = -normal.y,
-		},
-	}
-end
-
-function overlap2dsystem:space_match(scope, owner_space, other_space)
-	if scope == 'all' then
-		return true
-	end
-	local current<const> = world_instance.active_space_id
-	if scope == 'current' or scope == nil then
-		return other_space == owner_space and other_space == current
-	end
-	if scope == 'ui' then
-		return other_space == 'ui'
-	end
-	if scope == 'both' then
-		return (other_space == owner_space and other_space == current) or other_space == 'ui'
-	end
-	error('[overlap2dsystem] unknown spaceevents scope "' .. tostring(scope) .. '" on collider2dcomponent of object in space "' .. tostring(owner_space) .. '".')
-end
-
--- overlap2dsystem.new(priority?)
---   Creates the system. Priority defaults to 42 inside tickgroup.physics.
---   Instantiated once by the engine; cart code should not create a second instance.
---   The system iterates every active object's collider2dcomponents, builds a
---   broadphase grid, tests exact shapes with collision2d, and fires the three
---   overlap events described in the file header.
 function overlap2dsystem.new(priority)
 	local self<const> = setmetatable(ecsystem.new(tickgroup.physics, priority), overlap2dsystem)
 	self.prev_pairs = {}
@@ -431,7 +364,8 @@ function overlap2dsystem.new(priority)
 	self.pair_row_pool = {}
 	self.begins = {}
 	self.stays = {}
-	self.ends = {}
+	self.ends_a = {}
+	self.ends_b = {}
 	self.grid_cell_size = 64
 	self.broadphase = collision2d.world_index
 	return self
@@ -452,48 +386,41 @@ function overlap2dsystem:update()
 	broadphase:clear()
 
 	local event_colliders<const> = self.event_colliders
-	clear_array(event_colliders)
 	local colliders<const> = world_instance.active_space.active_components_by_type[collider2dcomponent]
+	local event_collider_count = 0
 	for i = 1, #colliders do
 		local collider<const> = colliders[i]
 		if collider.enabled then
-			collider:prepare_overlap_cache()
 			broadphase:add(collider)
 			collider_lookup[collider.id] = collider
-			event_colliders[#event_colliders + 1] = collider
+			event_collider_count = event_collider_count + 1
+			event_colliders[event_collider_count] = collider
 		end
 	end
+	event_colliders[event_collider_count + 1] = nil
 
-	if #event_colliders == 0 then
+	if event_collider_count == 0 then
 		clear_pair_set(prev_pairs, pair_row_pool)
 		clear_map(prev_collider_lookup)
 		return
 	end
 
 	local candidate_pair_count = 0
-	for i = 1, #event_colliders do
+	for i = 1, event_collider_count do
 		local collider<const> = event_colliders[i]
-		local owner<const> = collider.parent
-		local owner_space<const> = owner.space_id
-		local candidates<const> = broadphase:query_aabb(collider:get_world_area(), self.candidate_colliders, self.candidate_seen)
-		for j = 1, #candidates do
+		local candidates<const>, candidate_count<const> = broadphase:query_aabb(collider:get_world_area(), self.candidate_colliders, self.candidate_seen)
+		for j = 1, candidate_count do
 			local other<const> = candidates[j]
 			if other ~= collider then
-				local other_owner<const> = other.parent
 				local a_hits_b<const> = (collider.mask & other.layer) ~= 0
 				local b_hits_a<const> = (other.mask & collider.layer) ~= 0
-				if a_hits_b and b_hits_a then
-					local other_space<const> = other_owner.space_id
-					if self:space_match(collider.spaceevents, owner_space, other_space) then
-						if not (other.id < collider.id) then
-							candidate_pair_count = candidate_pair_count + 1
-							local pair<const> = candidate_pairs:get(candidate_pair_count)
-							pair.a = collider
-							pair.b = other
-							pair.hit = false
-							pair.geo_pair_index = -1
-						end
-					end
+				if a_hits_b and b_hits_a and not (other.id < collider.id) then
+					candidate_pair_count = candidate_pair_count + 1
+					local pair<const> = candidate_pairs:get(candidate_pair_count)
+					pair.a = collider
+					pair.b = other
+					pair.hit = false
+					pair.geo_pair_index = -1
 				end
 			end
 		end
@@ -503,82 +430,89 @@ function overlap2dsystem:update()
 
 	local begins<const> = self.begins
 	local stays<const> = self.stays
-	local ends<const> = self.ends
-	clear_array(begins)
-	clear_array(stays)
-	clear_array(ends)
+	local ends_a<const> = self.ends_a
+	local ends_b<const> = self.ends_b
+	local begin_count = 0
+	local stay_count = 0
+	local end_count = 0
 	for i = 1, candidate_pair_count do
 		local pair<const> = candidate_pairs.items[i]
 		if pair.hit then
-			add_pair(new_pairs, pair_row_pool, pair.a.id, pair.b.id)
+			local a_id<const> = pair.a.id
+			local b_id<const> = pair.b.id
+			local row = new_pairs[a_id]
+			if row == nil then
+				local pooled<const> = pair_row_pool[#pair_row_pool]
+				if pooled == nil then
+					row = {}
+				else
+					row = pooled
+					pair_row_pool[#pair_row_pool] = nil
+				end
+				new_pairs[a_id] = row
+			end
+			row[b_id] = true
 			local prev_row<const> = prev_pairs[pair.a.id]
 			if prev_row ~= nil and prev_row[pair.b.id] then
-				stays[#stays + 1] = pair
+				stay_count = stay_count + 1
+				stays[stay_count] = pair
 			else
-				begins[#begins + 1] = pair
+				begin_count = begin_count + 1
+				begins[begin_count] = pair
 			end
 		end
 	end
+	begins[begin_count + 1] = nil
+	stays[stay_count + 1] = nil
 	for a_id, row in pairs(prev_pairs) do
 		local new_row<const> = new_pairs[a_id]
 		for b_id in pairs(row) do
 			if not (new_row ~= nil and new_row[b_id]) then
-				ends[#ends + 1] = a_id
-				ends[#ends + 1] = b_id
+				end_count = end_count + 1
+				ends_a[end_count] = a_id
+				ends_b[end_count] = b_id
 			end
 		end
 	end
+	ends_a[end_count + 1] = nil
+	ends_b[end_count + 1] = nil
 
-	local resolve_pair<const> = function(a_id, b_id)
-		local a<const> = collider_lookup[a_id] or prev_collider_lookup[a_id]
-		local b<const> = collider_lookup[b_id] or prev_collider_lookup[b_id]
-		if a == nil or b == nil then
-			return nil, nil
-		end
-		if a.parent == nil or b.parent == nil then
-			return nil, nil
-		end
-		return a, b
-	end
-
-	local emit_pair<const> = function(event_name, col_a, col_b, contact, phase)
-		local owner_a<const> = col_a.parent
-		local owner_b<const> = col_b.parent
-		if owner_a == nil or owner_b == nil then
-			error('[overlap2dsystem] attempted to emit overlap event without collider parents')
-		end
-		if not owner_a.active or not owner_b.active then
-			return contact
-		end
-		if event_name ~= 'overlap.end' and contact == nil then
-			error('[overlap2dsystem] missing contact for overlap pair "' .. tostring(col_a.id) .. '" / "' .. tostring(col_b.id) .. '"')
-		end
-		owner_a.events:emit_event(build_overlap_event(event_name, owner_a, col_a, col_b, owner_b, contact, phase))
-		owner_b.events:emit_event(build_overlap_event(event_name, owner_b, col_b, col_a, owner_a, contact_with_flipped_normal(contact), phase))
-	end
-
-	for i = 1, #begins do
+	for i = 1, begin_count do
 		local pair<const> = begins[i]
 		local a<const> = pair.a
 		local b<const> = pair.b
-		if a ~= nil and b ~= nil and a.parent ~= nil and b.parent ~= nil then
-			emit_pair('overlap.begin', a, b, pair.contact, 'begin')
-			emit_pair('overlap', a, b, pair.contact, 'begin')
+		local owner_a<const> = a.parent
+		local owner_b<const> = b.parent
+		if owner_a ~= nil and owner_b ~= nil and owner_a.active and owner_b.active then
+			emit_overlap_event('overlap.begin', 'begin', owner_a, a, owner_b, b, pair.contact)
+			emit_overlap_event('overlap.begin', 'begin', owner_b, b, owner_a, a, pair.contact_other)
+			emit_overlap_event('overlap', 'begin', owner_a, a, owner_b, b, pair.contact)
+			emit_overlap_event('overlap', 'begin', owner_b, b, owner_a, a, pair.contact_other)
 		end
 	end
-	for i = 1, #stays do
+	for i = 1, stay_count do
 		local pair<const> = stays[i]
 		local a<const> = pair.a
 		local b<const> = pair.b
-		if a ~= nil and b ~= nil and a.parent ~= nil and b.parent ~= nil then
-			emit_pair('overlap.stay', a, b, pair.contact, 'stay')
-			emit_pair('overlap', a, b, pair.contact, 'stay')
+		local owner_a<const> = a.parent
+		local owner_b<const> = b.parent
+		if owner_a ~= nil and owner_b ~= nil and owner_a.active and owner_b.active then
+			emit_overlap_event('overlap.stay', 'stay', owner_a, a, owner_b, b, pair.contact)
+			emit_overlap_event('overlap.stay', 'stay', owner_b, b, owner_a, a, pair.contact_other)
+			emit_overlap_event('overlap', 'stay', owner_a, a, owner_b, b, pair.contact)
+			emit_overlap_event('overlap', 'stay', owner_b, b, owner_a, a, pair.contact_other)
 		end
 	end
-	for i = 1, #ends, 2 do
-		local a<const>, b<const> = resolve_pair(ends[i], ends[i + 1])
+	for i = 1, end_count do
+		local a<const> = collider_lookup[ends_a[i]] or prev_collider_lookup[ends_a[i]]
+		local b<const> = collider_lookup[ends_b[i]] or prev_collider_lookup[ends_b[i]]
 		if a ~= nil and b ~= nil then
-			emit_pair('overlap.end', a, b, nil, 'end')
+			local owner_a<const> = a.parent
+			local owner_b<const> = b.parent
+			if owner_a ~= nil and owner_b ~= nil and owner_a.active and owner_b.active then
+				emit_overlap_event('overlap.end', 'end', owner_a, a, owner_b, b, nil)
+				emit_overlap_event('overlap.end', 'end', owner_b, b, owner_a, a, nil)
+			end
 		end
 	end
 
@@ -586,8 +520,10 @@ function overlap2dsystem:update()
 	self.next_pairs = prev_pairs
 	self.prev_collider_lookup = collider_lookup
 	self.next_collider_lookup = prev_collider_lookup
-	for i = 1, #event_colliders do
-		event_colliders[i]:clear_overlap_cache()
+	for i = 1, event_collider_count do
+		local collider<const> = event_colliders[i]
+		collider._overlap_cache_valid = false
+		collider._world_polys_cache_valid = false
 	end
 end
 
@@ -647,9 +583,7 @@ function spriterendersystem:update()
 	for i = 1, #components do
 		local sc<const> = components[i]
 		local obj<const> = sc.parent
-		if not obj.visible or not sc.enabled then
-			goto continue_sprite_render
-		end
+		if not obj.visible or not sc.enabled then return end
 		local offset<const> = sc.offset
 		local x<const> = obj.x + offset.x
 		local y<const> = obj.y + offset.y
@@ -680,7 +614,6 @@ function spriterendersystem:update()
 			sc.colorize.a,
 			sc.parallax_weight
 		)
-		::continue_sprite_render::
 	end
 end
 
@@ -715,37 +648,31 @@ function lightrendersystem:update()
 	for i = 1, #ambient_components do
 		local lc<const> = ambient_components[i]
 		local obj<const> = lc.parent
-		if not obj.visible or not lc.enabled then
-			goto continue_ambient
+		if obj.visible and lc.enabled then
+			put_ambient_light(lc.id, lc.color, lc.intensity)
 		end
-		put_ambient_light(lc.id, lc.color, lc.intensity)
-		::continue_ambient::
 	end
 
 	local directional_components<const> = world_instance.active_space.active_components_by_type[directionallightcomponent]
 	for i = 1, #directional_components do
 		local lc<const> = directional_components[i]
 		local obj<const> = lc.parent
-		if not obj.visible or not lc.enabled then
-			goto continue_directional
+		if obj.visible and lc.enabled then
+			put_directional_light(lc.id, lc.orientation, lc.color, lc.intensity)
 		end
-		put_directional_light(lc.id, lc.orientation, lc.color, lc.intensity)
-		::continue_directional::
 	end
 
 	local point_components<const> = world_instance.active_space.active_components_by_type[pointlightcomponent]
 	for i = 1, #point_components do
 		local lc<const> = point_components[i]
 		local obj<const> = lc.parent
-		if not obj.visible or not lc.enabled then
-			goto continue_point
+		if obj.visible and lc.enabled then
+			local x<const>, y<const>, z<const> = resolve_world_position(obj, lc.offset)
+			point_light_position.x = x
+			point_light_position.y = y
+			point_light_position.z = z
+			put_point_light(lc.id, point_light_position, lc.color, lc.range, lc.intensity)
 		end
-		local x<const>, y<const>, z<const> = resolve_world_position(obj, lc.offset)
-		point_light_position.x = x
-		point_light_position.y = y
-		point_light_position.z = z
-		put_point_light(lc.id, point_light_position, lc.color, lc.range, lc.intensity)
-		::continue_point::
 	end
 end
 
@@ -763,14 +690,12 @@ function meshrendersystem:update()
 	for i = 1, #components do
 		local mc<const> = components[i]
 		local obj<const> = mc.parent
-		if not obj.visible or not mc.enabled then
-			goto continue_mesh_render
+		if obj.visible and mc.enabled then
+			mesh_render_options.joint_matrices = mc.joint_matrices
+			mesh_render_options.morph_weights = mc.morph_weights
+			mesh_render_options.receive_shadow = mc.receive_shadow
+			put_mesh(mc.mesh, mc.matrix, mesh_render_options)
 		end
-		mesh_render_options.joint_matrices = mc.joint_matrices
-		mesh_render_options.morph_weights = mc.morph_weights
-		mesh_render_options.receive_shadow = mc.receive_shadow
-		put_mesh(mc.mesh, mc.matrix, mesh_render_options)
-		::continue_mesh_render::
 	end
 end
 
@@ -788,11 +713,9 @@ function rendersubmitsystem:update()
 	for i = 1, #components do
 		local rc<const> = components[i]
 		local obj<const> = rc.parent
-		if not obj.visible or not rc.enabled then
-			goto continue_render_submit
+		if obj.visible and rc.enabled then
+			rc:flush()
 		end
-		rc:flush()
-		::continue_render_submit::
 	end
 end
 

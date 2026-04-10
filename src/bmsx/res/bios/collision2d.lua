@@ -27,7 +27,7 @@
 --      end
 --
 -- 2. WHEN TO CALL collision2d DIRECTLY.
---    Use collision2d.collides() or collision2d.query_aabb() only for cases
+--    Use collision2d.collides() only for cases
 --    that genuinely fall outside the per-frame ECS pipeline:
 --      a) One-shot hit-scan / ray queries that happen at an arbitrary moment
 --         (e.g. 'is there anything at this point right now?').
@@ -47,102 +47,12 @@ local clear_map<const> = require('clear_map')
 local round_to_nearest<const> = require('round_to_nearest')
 local world_instance<const> = require('world').instance
 
-local eps_parallel<const> = 1e-12
 local detect_aabb_areas<const> = function(a, b)
 	return not (a.left > b.right or a.right < b.left or a.bottom < b.top or a.top > b.bottom)
 end
 
-local area_to_poly<const> = function(area)
-	return {
-		area.left, area.top,
-		area.right, area.top,
-		area.right, area.bottom,
-		area.left, area.bottom,
-	}
-end
-
-local point_in_poly<const> = function(px, py, poly)
-	local inside = false
-	local j = #poly - 1
-	for i = 1, #poly, 2 do
-		local xi<const> = poly[i]
-		local yi<const> = poly[i + 1]
-		local xj<const> = poly[j]
-		local yj<const> = poly[j + 1]
-		if ((yi > py) ~= (yj > py)) and (px < ((xj - xi) * (py - yi) / (((yj - yi) ~= 0 and (yj - yi) or eps_parallel)) + xi)) then
-			inside = not inside
-		end
-		j = i
-	end
-	return inside
-end
-
 local orient2d<const> = function(ax, ay, bx, by, cx, cy)
 	return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
-end
-
-local point_on_segment<const> = function(ax, ay, bx, by, cx, cy)
-	local min_x<const> = ax < bx and ax or bx
-	local max_x<const> = ax > bx and ax or bx
-	local min_y<const> = ay < by and ay or by
-	local max_y<const> = ay > by and ay or by
-	return cx >= min_x and cx <= max_x and cy >= min_y and cy <= max_y
-end
-
-local single_polygons_intersect<const> = function(poly1, poly2)
-	for i = 1, #poly1, 2 do
-		local ax<const> = poly1[i]
-		local ay<const> = poly1[i + 1]
-		local ni<const> = (i + 2 > #poly1) and 1 or (i + 2)
-		local bx<const> = poly1[ni]
-		local by<const> = poly1[ni + 1]
-		for j = 1, #poly2, 2 do
-			local cx<const> = poly2[j]
-			local cy<const> = poly2[j + 1]
-			local nj<const> = (j + 2 > #poly2) and 1 or (j + 2)
-			local dx<const> = poly2[nj]
-			local dy<const> = poly2[nj + 1]
-			local o1<const> = orient2d(ax, ay, bx, by, cx, cy)
-			local o2<const> = orient2d(ax, ay, bx, by, dx, dy)
-			local o3<const> = orient2d(cx, cy, dx, dy, ax, ay)
-			local o4<const> = orient2d(cx, cy, dx, dy, bx, by)
-			if (o1 * o2 < 0) and (o3 * o4 < 0) then
-				return true
-			end
-			if o1 == 0 and point_on_segment(ax, ay, bx, by, cx, cy) then
-				return true
-			end
-			if o2 == 0 and point_on_segment(ax, ay, bx, by, dx, dy) then
-				return true
-			end
-			if o3 == 0 and point_on_segment(cx, cy, dx, dy, ax, ay) then
-				return true
-			end
-			if o4 == 0 and point_on_segment(cx, cy, dx, dy, bx, by) then
-				return true
-			end
-		end
-	end
-	if point_in_poly(poly1[1], poly1[2], poly2) then
-		return true
-	end
-	if point_in_poly(poly2[1], poly2[2], poly1) then
-		return true
-	end
-	return false
-end
-
-local polygons_intersect<const> = function(polys1, polys2)
-	for i = 1, #polys1 do
-		local p1<const> = polys1[i]
-		for j = 1, #polys2 do
-			local p2<const> = polys2[j]
-			if single_polygons_intersect(p1, p2) then
-				return true
-			end
-		end
-	end
-	return false
 end
 
 local geo_fix16_scale<const> = 65536
@@ -158,63 +68,9 @@ local direct_query_pair<const> = {
 	hit = false,
 	geo_pair_index = -1,
 	contact = nil,
+	contact_other = nil,
 }
 local direct_query_pairs<const> = { direct_query_pair }
-
-local clear_array<const> = function(array)
-	for i = #array, 1, -1 do
-		array[i] = nil
-	end
-end
-
-local is_geo_overlap_pair<const> = function(a, b)
-	return a._overlap_geo_shape_ref ~= nil and b._overlap_geo_shape_ref ~= nil
-end
-
-local describe_collider<const> = function(collider)
-	local owner<const> = collider.parent
-	local owner_id = nil
-	if owner ~= nil then
-		owner_id = owner.id
-	end
-	return tostring(collider.id) .. ' (owner=' .. tostring(owner_id) .. ', local=' .. tostring(collider.id_local) .. ')'
-end
-
-local require_geo_overlap_pair<const> = function(a, b)
-	if is_geo_overlap_pair(a, b) then
-		return
-	end
-	error('[collision2d] GEO overlap requires sprite-backed colliders with baked collision bin data: ' .. describe_collider(a) .. ' / ' .. describe_collider(b))
-end
-
-local ensure_pair_contact<const> = function(pair)
-	local contact<const> = pair.contact
-	if contact ~= nil then
-		return contact
-	end
-	local created<const> = {
-		normal = { x = 0, y = 0 },
-		depth = 0,
-		point = { x = 0, y = 0 },
-		piece_a = 0,
-		piece_b = 0,
-		feature_meta = 0,
-	}
-	pair.contact = created
-	return created
-end
-
-local set_pair_contact_from_geo_result<const> = function(pair, result_addr)
-	local contact<const> = ensure_pair_contact(pair)
-	contact.normal.x = fix16_to_f32(mem[result_addr + 0])
-	contact.normal.y = fix16_to_f32(mem[result_addr + 4])
-	contact.depth = fix16_to_f32(mem[result_addr + 8])
-	contact.point.x = fix16_to_f32(mem[result_addr + 12])
-	contact.point.y = fix16_to_f32(mem[result_addr + 16])
-	contact.piece_a = mem[result_addr + 20]
-	contact.piece_b = mem[result_addr + 24]
-	contact.feature_meta = mem[result_addr + 28]
-end
 
 local stage_geo_overlap_instance<const> = function(collider, batch_token, instance_base)
 	if collider._geo_overlap_stage_token == batch_token then
@@ -280,7 +136,7 @@ function collision2d.batch_collides(pairs, pair_count)
 		pair.geo_pair_index = -1
 		local a<const> = pair.a
 		local b<const> = pair.b
-		if is_geo_overlap_pair(a, b) then
+		if a._overlap_geo_shape_ref ~= nil and b._overlap_geo_shape_ref ~= nil then
 			if a._geo_overlap_instance_token ~= batch_token then
 				a._geo_overlap_instance_token = batch_token
 				a._geo_overlap_instance_index = instance_count
@@ -294,7 +150,7 @@ function collision2d.batch_collides(pairs, pair_count)
 			pair.geo_pair_index = geo_pair_count
 			geo_pair_count = geo_pair_count + 1
 		else
-			require_geo_overlap_pair(a, b)
+			error('[collision2d] GEO overlap requires baked collision bin data: ' .. tostring(a.id) .. ' / ' .. tostring(b.id))
 		end
 	end
 
@@ -338,8 +194,53 @@ function collision2d.batch_collides(pairs, pair_count)
 			error('[collision2d] GEO overlap returned invalid pair meta ' .. tostring(pair_meta))
 		end
 		local pair<const> = pairs[pair_meta]
+		local contact = pair.contact
+		local contact_other = pair.contact_other
+		if contact == nil then
+			contact = {
+				normal = { x = 0, y = 0 },
+				depth = 0,
+				point = { x = 0, y = 0 },
+				piece_a = 0,
+				piece_b = 0,
+				feature_meta = 0,
+			}
+			contact_other = {
+				normal = { x = 0, y = 0 },
+				depth = 0,
+				point = { x = 0, y = 0 },
+				piece_a = 0,
+				piece_b = 0,
+				feature_meta = 0,
+			}
+			pair.contact = contact
+			pair.contact_other = contact_other
+		end
+		local normal_x<const> = fix16_to_f32(mem[result_addr + 0])
+		local normal_y<const> = fix16_to_f32(mem[result_addr + 4])
+		local depth<const> = fix16_to_f32(mem[result_addr + 8])
+		local point_x<const> = fix16_to_f32(mem[result_addr + 12])
+		local point_y<const> = fix16_to_f32(mem[result_addr + 16])
+		local piece_a<const> = mem[result_addr + 20]
+		local piece_b<const> = mem[result_addr + 24]
+		local feature_meta<const> = mem[result_addr + 28]
 		pair.hit = true
-		set_pair_contact_from_geo_result(pair, result_addr)
+		contact.normal.x = normal_x
+		contact.normal.y = normal_y
+		contact.depth = depth
+		contact.point.x = point_x
+		contact.point.y = point_y
+		contact.piece_a = piece_a
+		contact.piece_b = piece_b
+		contact.feature_meta = feature_meta
+		contact_other.normal.x = -normal_x
+		contact_other.normal.y = -normal_y
+		contact_other.depth = depth
+		contact_other.point.x = point_x
+		contact_other.point.y = point_y
+		contact_other.piece_a = piece_b
+		contact_other.piece_b = piece_a
+		contact_other.feature_meta = feature_meta
 	end
 end
 
@@ -410,7 +311,6 @@ end
 function broadphase_index:query_aabb(area, out, seen)
 	out = out or {}
 	seen = seen or {}
-	clear_array(out)
 	clear_map(seen)
 	local out_count = 0
 	local cs<const> = self.cell_size
@@ -438,52 +338,23 @@ function broadphase_index:query_aabb(area, out, seen)
 			end
 		end
 	end
-	return out
+	out[out_count + 1] = nil
+	return out, out_count
 end
 
-function collision2d.new_index(cell_size)
-	return broadphase_index.new(cell_size or 64)
-end
+collision2d.world_index = broadphase_index.new(64)
 
-collision2d.world_index = collision2d.new_index(64)
-
-function collision2d.rebuild_index(cell_size)
-	local index<const> = collision2d.world_index
-	if cell_size ~= nil then
-		index.cell_size = cell_size
-	end
-	index:clear()
-	local colliders<const> = world_instance.active_space.active_components_by_type.collider2dcomponent
-	for i = 1, #colliders do
-		local collider<const> = colliders[i]
-		if collider.enabled then
-			index:add(collider)
-		end
-	end
-end
-
--- collision2d.query_aabb(area): returns all colliders in the broadphase grid
--- that overlap the given AABB `area` table { left, top, right, bottom }.
--- Results are broadphase candidates only — always follow up with
--- collision2d.collides() for exact filtering.
--- The broadphase index is rebuilt each frame by overlap2dsystem; calling this
--- outside of an ECS system update may yield stale results for that frame.
-function collision2d.query_aabb(area, out, seen)
-	return collision2d.world_index:query_aabb(area, out, seen)
-end
-
-function collision2d.get_contact2d(a, b)
-	if not a.enabled or not b.enabled then
-		return nil
-	end
+function collision2d.collides(a, b)
 	if not a.hittable or not b.hittable then
 		return nil
 	end
-	a:prepare_overlap_cache()
+	a:get_world_area()
 	if b ~= a then
-		b:prepare_overlap_cache()
+		b:get_world_area()
 	end
-	require_geo_overlap_pair(a, b)
+	if a._overlap_geo_shape_ref == nil or b._overlap_geo_shape_ref == nil then
+		error('[collision2d] GEO overlap requires baked collision bin data: ' .. tostring(a.id) .. ' / ' .. tostring(b.id))
+	end
 	local pair<const> = direct_query_pair
 	pair.a = a
 	pair.b = b
@@ -491,21 +362,15 @@ function collision2d.get_contact2d(a, b)
 	pair.geo_pair_index = -1
 	collision2d.batch_collides(direct_query_pairs, 1)
 	if b ~= a then
-		b:clear_overlap_cache()
+		b._overlap_cache_valid = false
+		b._world_polys_cache_valid = false
 	end
-	a:clear_overlap_cache()
+	a._overlap_cache_valid = false
+	a._world_polys_cache_valid = false
 	if not pair.hit then
 		return nil
 	end
 	return pair.contact
 end
-
-function collision2d.collides(a, b)
-	return collision2d.get_contact2d(a, b) ~= nil
-end
-
-collision2d.detect_aabb_areas = detect_aabb_areas
-collision2d.area_to_poly = area_to_poly
-collision2d.polygons_intersect = polygons_intersect
 
 return collision2d
