@@ -628,8 +628,16 @@ function state.new(definition, target, parent)
 	self.state_count = 0
 	self.concurrent_state_count = 0
 	self.current_id = nil
+	-- Current child state is cached directly so the frame hot path does not keep
+	-- reloading states[self.current_id] from the state map on every recursive step.
+	self.current_state = nil
 	self.timeline_bindings = nil
-	self.transition_queue = {}
+	-- Queued transitions are stored as compact parallel arrays instead of
+	-- per-entry tables. That keeps the deferred-transition path closer to a
+	-- scheduler request queue and avoids record allocation in a hot framework path.
+	self.transition_queue_paths = {}
+	self.transition_queue_diags = {}
+	self.transition_queue_count = 0
 	self.critical_section_counter = 0
 	self.is_processing_queue = false
 	self._transition_context_stack = nil
@@ -703,14 +711,6 @@ function state:states_or_throw(ctx)
 		error('state "' .. tostring(container.id) .. '" does not define substates.')
 	end
 	return container.states
-end
-
-function state:current_state_definition()
-	local current<const> = self.states[self.current_id]
-	if not current then
-		error('current state "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
-	end
-	return current.definition
 end
 
 function state:find_child(ctx, seg)
@@ -848,12 +848,9 @@ function state:enter_initial_substate_chain()
 	if self.state_count == 0 then
 		return
 	end
-	if not self.current_id then
+	local current<const> = self.current_state
+	if current == nil then
 		return
-	end
-	local current<const> = self.states[self.current_id]
-	if not current then
-		error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
 	end
 	self:enter_child_state(current)
 	current:enter_initial_substate_chain()
@@ -876,7 +873,7 @@ end
 function state:leave_critical_section()
 	self.critical_section_counter = self.critical_section_counter - 1
 	if self.critical_section_counter == 0 then
-		if not self.is_processing_queue then
+		if self.transition_queue_count ~= 0 and not self.is_processing_queue then
 			self:process_transition_queue()
 		end
 	elseif self.critical_section_counter < 0 then
@@ -891,39 +888,56 @@ function state:with_critical_section(fn)
 	return r1, r2, r3, r4, r5, r6, r7, r8
 end
 
-function state:process_transition_queue()
-		if self.is_processing_queue then
-			return
-		end
-		self.is_processing_queue = true
-		local ok<const>, err<const> = pcall(function()
-			local i = 1
-			while i <= #self.transition_queue do
-				local t<const> = self.transition_queue[i]
-				if should_trace_transitions() then
-					self:run_with_transition_context(
-						function()
-							return self:hydrate_context(t.diag, 'queue-drain', 'queued-execution')
-						end,
-						function()
-							self:transition_to(t.path)
-						end
-					)
-				else
-					self:transition_to(t.path)
-				end
-				i = i + 1
-			end
-			local queue<const> = self.transition_queue
-			for j = 1, #queue do
-				queue[j] = nil
-			end
-		end)
-		self.is_processing_queue = false
-		if not ok then
-			error(err)
-		end
+local run_queued_transition_with_context<const> = function(self, path, snapshot)
+	local ctx<const> = self:hydrate_context(snapshot, 'queue-drain', 'queued-execution')
+	local stack = self._transition_context_stack
+	if stack == nil then
+		stack = {}
+		self._transition_context_stack = stack
 	end
+	local stack_index<const> = #stack + 1
+	stack[stack_index] = ctx
+	local ok<const>, err<const> = pcall(self.transition_to, self, path)
+	stack[stack_index] = nil
+	if stack_index == 1 then
+		self._transition_context_stack = nil
+	end
+	if not ok then
+		error(err)
+	end
+end
+
+local drain_transition_queue<const> = function(self)
+	local queued_paths<const> = self.transition_queue_paths
+	local queued_diags<const> = self.transition_queue_diags
+	local trace_transitions<const> = should_trace_transitions()
+	local i = 1
+	while i <= self.transition_queue_count do
+		local path<const> = queued_paths[i]
+		local diag<const> = queued_diags[i]
+		queued_paths[i] = nil
+		queued_diags[i] = nil
+		if trace_transitions then
+			run_queued_transition_with_context(self, path, diag)
+		else
+			self:transition_to(path)
+		end
+		i = i + 1
+	end
+	self.transition_queue_count = 0
+end
+
+function state:process_transition_queue()
+	if self.is_processing_queue or self.transition_queue_count == 0 then
+		return
+	end
+	self.is_processing_queue = true
+	local ok<const>, err<const> = pcall(drain_transition_queue, self)
+	self.is_processing_queue = false
+	if not ok then
+		error(err)
+	end
+end
 
 function state:run_with_transition_context(factory, fn)
 	if not should_trace_transitions() then
@@ -1165,7 +1179,7 @@ function state:check_state_guard_conditions(target_state_id)
 	local allowed
 	local evaluations<const> = {}
 
-	local cur_def<const> = self:current_state_definition()
+	local cur_def<const> = self.current_state.definition
 	local exit_guard_def<const> = cur_def.transition_guards
 	local exit_guard<const> = exit_guard_def and exit_guard_def.can_exit
 	if type(exit_guard) == 'function' then
@@ -1274,33 +1288,36 @@ function state:transition_to_state(state_id)
 	local diag_enabled<const> = should_trace_transitions()
 	local execution<const> = self.is_processing_queue and 'deferred' or 'manual'
 
-		if self.critical_section_counter > 0 then
-			if diag_enabled then
-				local context<const> = self:resolve_context_snapshot(nil)
-				local outcome<const> = { from = self.current_id, to = state_id, execution = 'queued', status = 'queued', reason = 'critical-section' }
-				self:record_transition_outcome_on_context(outcome)
-				self:emit_transition_trace({
+	if self.critical_section_counter > 0 then
+		local queue_index<const> = self.transition_queue_count + 1
+		self.transition_queue_count = queue_index
+		self.transition_queue_paths[queue_index] = state_id
+		if diag_enabled then
+			local context<const> = self:resolve_context_snapshot(nil)
+			self.transition_queue_diags[queue_index] = context
+			local outcome<const> = { from = self.current_id, to = state_id, execution = 'queued', status = 'queued', reason = 'critical-section' }
+			self:record_transition_outcome_on_context(outcome)
+			self:emit_transition_trace({
 				outcome = 'queued',
 				execution = 'queued',
 				from = self.current_id,
 				to = state_id,
 				context = context,
-				queue_size = #self.transition_queue + 1,
+				queue_size = queue_index,
 				reason = 'critical-section',
 			})
-			self.transition_queue[#self.transition_queue + 1] = { path = state_id, diag = context }
 		else
-			self.transition_queue[#self.transition_queue + 1] = { path = state_id }
+			self.transition_queue_diags[queue_index] = nil
 		end
 		return
 	end
 
-		if self.current_id == state_id then
-			if diag_enabled then
-				local context<const> = self:resolve_context_snapshot(nil)
-				self:record_transition_outcome_on_context({
-					from = self.current_id,
-					to = state_id,
+	if self.current_id == state_id then
+		if diag_enabled then
+			local context<const> = self:resolve_context_snapshot(nil)
+			self:record_transition_outcome_on_context({
+				from = self.current_id,
+				to = state_id,
 				execution = execution,
 				status = 'noop',
 				reason = 'already-current',
@@ -1317,13 +1334,13 @@ function state:transition_to_state(state_id)
 		return
 	end
 
-		local guard_diagnostics<const> = self:check_state_guard_conditions(state_id)
-		if not guard_diagnostics.allowed then
-			if diag_enabled then
-				local context<const> = self:resolve_context_snapshot(nil)
-				local outcome<const> = {
-					from = self.current_id,
-					to = state_id,
+	local guard_diagnostics<const> = self:check_state_guard_conditions(state_id)
+	if not guard_diagnostics.allowed then
+		if diag_enabled then
+			local context<const> = self:resolve_context_snapshot(nil)
+			local outcome<const> = {
+				from = self.current_id,
+				to = state_id,
 				execution = execution,
 				status = 'blocked',
 				guard_summary = fsm_trace.format_guard_diagnostics(guard_diagnostics),
@@ -1344,12 +1361,8 @@ function state:transition_to_state(state_id)
 
 	self:with_critical_section(function()
 		local prev_id<const> = self.current_id
-		local prev_def<const> = self:current_state_definition()
-		local prev_states<const> = self:states_or_throw()
-		local prev_instance<const> = prev_states[prev_id]
-		if not prev_instance then
-			error('previous state "' .. tostring(prev_id) .. '" not found in "' .. tostring(self.id) .. '".')
-		end
+		local prev_instance<const> = self.current_state
+		local prev_def<const> = prev_instance.definition
 
 		local exit_handler<const> = prev_def.exiting_state
 		if type(exit_handler) == 'function' then
@@ -1364,7 +1377,8 @@ function state:transition_to_state(state_id)
 		if not cur then
 			error('state "' .. tostring(self.id) .. '" transitioned to "' .. tostring(state_id) .. '" but the instance was not created.')
 		end
-		local cur_def<const> = self:current_state_definition()
+		self.current_state = cur
+		local cur_def<const> = cur.definition
 		if cur_def.is_concurrent then
 			error('cannot transition to parallel state "' .. tostring(state_id) .. '".')
 		end
@@ -1781,11 +1795,8 @@ function state:matches_state_tag(tag)
 		return true
 	end
 
-	if self.current_id then
-		local child<const> = self.states[self.current_id]
-		if not child then
-			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
-		end
+	local child<const> = self.current_state
+	if child ~= nil then
 		if child:matches_state_tag(tag) then
 			return true
 		end
@@ -1808,11 +1819,8 @@ function state:collect_active_state_tags(out)
 			out[tags[i]] = true
 		end
 	end
-	if self.current_id then
-		local child<const> = self.states[self.current_id]
-		if not child then
-			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
-		end
+	local child<const> = self.current_state
+	if child ~= nil then
 		child:collect_active_state_tags(out)
 		local concurrent_states<const> = self.concurrent_states
 		for i = 1, self.concurrent_state_count do
@@ -1851,11 +1859,8 @@ function state:add_active_subtree_tags()
 			increment_active_state_tag_ref(root, tags[i])
 		end
 	end
-	if self.current_id then
-		local child<const> = self.states[self.current_id]
-		if not child then
-			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
-		end
+	local child<const> = self.current_state
+	if child ~= nil then
 		child:add_active_subtree_tags()
 		local concurrent_states<const> = self.concurrent_states
 		for i = 1, self.concurrent_state_count do
@@ -1872,11 +1877,8 @@ function state:remove_active_subtree_tags()
 			decrement_active_state_tag_ref(root, tags[i])
 		end
 	end
-	if self.current_id then
-		local child<const> = self.states[self.current_id]
-		if not child then
-			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
-		end
+	local child<const> = self.current_state
+	if child ~= nil then
 		child:remove_active_subtree_tags()
 		local concurrent_states<const> = self.concurrent_states
 		for i = 1, self.concurrent_state_count do
@@ -2107,11 +2109,8 @@ function state:dispatch_event(event_or_name, payload)
 		detail = nil
 	end
 
-	if self.state_count ~= 0 and self.current_id then
-		local child<const> = self.states[self.current_id]
-		if not child then
-			error('current child "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
-		end
+	local child<const> = self.current_state
+	if child ~= nil then
 		local handled = child:dispatch_event(event_name, data)
 		local concurrent_states<const> = self.concurrent_states
 		for i = 1, self.concurrent_state_count do
@@ -2158,95 +2157,83 @@ function state:dispatch_event(event_or_name, payload)
 	return false
 end
 
-function state:process_input_events()
-	local handlers<const> = self.definition.input_event_handler_list
-	if #handlers == 0 then
-		return
-	end
-	local trace_transitions<const> = should_trace_transitions()
-	local player_index<const> = self.target.player_index or 1
-	local eval_mode<const> = self.definition.effective_input_eval
-	for i = 1, #handlers do
-		local entry<const> = handlers[i]
-		local pattern<const> = entry.pattern
-		local handler<const> = entry.handler
-		if action_triggered(pattern, player_index) then
-			local handled
-			if trace_transitions then
-				handled = self:run_with_transition_context(
-					function()
-						return fsm_trace.create_input_context(pattern, player_index)
-					end,
-					function(ctx)
-						ctx.handler_name = fsm_trace.describe_transition_handler(handler)
-						return self:handle_state_transition(handler)
-					end
-				)
-			else
-				handled = self:handle_state_transition(handler)
-			end
-			if handled and eval_mode == 'first' then
-				return
-			end
-		end
-	end
-end
-
-function state:run_current_state()
-	local update_handler<const> = self.definition.update
-	if not update_handler then
-		return
-	end
-	local next_state
-	if should_trace_transitions() then
-		next_state = self:run_with_transition_context(
-			function()
-				return fsm_trace.create_update_context('<anonymous>')
-			end,
-			function()
-				return update_handler(self.target, self, empty_game_event)
-			end
-		)
-	else
-		next_state = update_handler(self.target, self, empty_game_event)
-	end
-	self:transition_to_next_state_if_provided(next_state)
-end
-
-function state:run_substate_machines()
-	if self.state_count == 0 or not self.current_id then
-		return
-	end
-	local states<const> = self.states
-	local cur<const> = states[self.current_id]
-	if not cur then
-		error('current state "' .. tostring(self.current_id) .. '" not found in "' .. tostring(self.id) .. '".')
-	end
-	cur:update()
-	local concurrent_states<const> = self.concurrent_states
-	for i = 1, self.concurrent_state_count do
-		concurrent_states[i]:update()
-	end
-end
-
 function state:update()
 	if self.paused then
 		return
 	end
 	self._transitions_this_update = 0
-	-- update() runs for every active machine every frame, so it stays open-coded.
-	-- Avoiding the higher-order critical-section wrapper here removes a closure
-	-- and an extra call layer from the hottest FSM path while keeping the same
-	-- queue-drain semantics at the end of the update.
+	-- update() runs on every active machine every frame, so the whole frame path
+	-- stays open-coded. Keeping child updates, input scanning and current-state
+	-- execution in one direct loop cuts method-call churn and repeated definition
+	-- lookups that do not help gameplay work on a low-end machine.
 	self.critical_section_counter = self.critical_section_counter + 1
 	self.in_update = true
-	self:run_substate_machines()
-	self:process_input_events()
-	self:run_current_state()
+	local current<const> = self.current_state
+	if current ~= nil then
+		current:update()
+		local concurrent_states<const> = self.concurrent_states
+		for i = 1, self.concurrent_state_count do
+			concurrent_states[i]:update()
+		end
+	end
+
+	local definition<const> = self.definition
+	local target<const> = self.target
+	local diagnostics<const> = state.diagnostics
+	local trace_transitions<const> = diagnostics and diagnostics.trace_transitions
+	local handlers<const> = definition.input_event_handler_list
+	if #handlers ~= 0 then
+		local player_index<const> = target.player_index or 1
+		local eval_mode<const> = definition.effective_input_eval
+		for i = 1, #handlers do
+			local entry<const> = handlers[i]
+			local pattern<const> = entry.pattern
+			local handler<const> = entry.handler
+			if action_triggered(pattern, player_index) then
+				local handled
+				if trace_transitions then
+					handled = self:run_with_transition_context(
+						function()
+							return fsm_trace.create_input_context(pattern, player_index)
+						end,
+						function(ctx)
+							ctx.handler_name = fsm_trace.describe_transition_handler(handler)
+							return self:handle_state_transition(handler)
+						end
+					)
+				else
+					handled = self:handle_state_transition(handler)
+				end
+				if handled and eval_mode == 'first' then
+					break
+				end
+			end
+		end
+	end
+
+	local update_handler<const> = definition.update
+	if update_handler ~= nil then
+		local next_state
+		if trace_transitions then
+			next_state = self:run_with_transition_context(
+				function()
+					return fsm_trace.create_update_context('<anonymous>')
+				end,
+				function()
+					return update_handler(target, self, empty_game_event)
+				end
+			)
+		else
+			next_state = update_handler(target, self, empty_game_event)
+		end
+		if next_state and not is_no_op_string(next_state) then
+			self:transition_to(next_state)
+		end
+	end
 	self.in_update = false
 	self.critical_section_counter = self.critical_section_counter - 1
 	if self.critical_section_counter == 0 then
-		if not self.is_processing_queue then
+		if self.transition_queue_count ~= 0 and not self.is_processing_queue then
 			self:process_transition_queue()
 		end
 	elseif self.critical_section_counter < 0 then
@@ -2297,6 +2284,11 @@ function state:populate_states()
 	if not self.current_id then
 		self.current_id = state_ids[1]
 	end
+	if self.current_id then
+		self.current_state = self.states[self.current_id]
+	else
+		self.current_state = nil
+	end
 end
 
 function state:reset(reset_tree)
@@ -2314,8 +2306,21 @@ end
 function state:reset_submachine(reset_tree)
 	local def<const> = self.definition
 	self.current_id = def.initial
+	if self.current_id then
+		self.current_state = self.states[self.current_id]
+	else
+		self.current_state = nil
+	end
 	self._hist_head = 0
 	self._hist_size = 0
+	local queued_paths<const> = self.transition_queue_paths
+	local queued_diags<const> = self.transition_queue_diags
+	for i = 1, self.transition_queue_count do
+		queued_paths[i] = nil
+		queued_diags[i] = nil
+	end
+	self.transition_queue_count = 0
+	self.is_processing_queue = false
 	self.paused = false
 	self.data = def.data and clone_defaults(def.data) or {}
 	if reset_tree == nil or reset_tree then
@@ -2359,6 +2364,10 @@ function state:dispose()
 	self.state_count = 0
 	self.concurrent_state_count = 0
 	self.current_id = nil
+	self.current_state = nil
+	self.transition_queue_paths = {}
+	self.transition_queue_diags = {}
+	self.transition_queue_count = 0
 end
 
 local statemachinecontroller<const> = {}
